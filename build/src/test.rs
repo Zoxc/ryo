@@ -210,7 +210,7 @@ pub(crate) const CORPUS: &[Program] = &[
             "main", "here", "nested", "with_args", "tc_many", "generic::<std::vec::Vec<u8>>", "checked_div",
             "tc_closure", "tc_closure::{closure#0}", "S::loc", "deep", "<D as std::ops::Drop>::drop", "idx",
             "sort_panics", "sort_panics::{closure#0}", "call_ptr", "tc_panic", "tc_panic - shim(reify)", "rethrow",
-            "compares", "tc_nine", "<S as Loc>::at"
+            "compares", "tc_nine", "<S as Loc>::at", "dyn_locs", "dyn_locs::{closure#0}"
         ],
         // `tc_nine` is entered through its `portal_tc9` from the native `native_caller`.
         entered: &["std::rt::lang_start::<()>", "main::{closure#0}", "tc_nine"]

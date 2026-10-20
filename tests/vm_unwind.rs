@@ -74,8 +74,8 @@ impl Loc for S {
     }
 }
 
-/// `#[track_caller]` through vtables: a trait method, and a closure's `FnOnce` shim. Virtual
-/// calls of these keep this function native for now.
+/// `#[track_caller]` through vtables: a trait method, and a closure's `FnOnce` shim, both
+/// `call.ind` with the location appended.
 fn dyn_locs() {
     let d: &dyn Loc = &S(3);
     println!("{}", d.at());
