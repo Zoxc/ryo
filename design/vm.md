@@ -72,6 +72,17 @@ on the same thread would otherwise create aliasing mutable references.
   function table are keyed by offset, not absolute pc, so the code can be copied elsewhere
   (for quickening/direct threading, or a JIT) and still map back.
 - For call instructions, word 1 is always the destination slot (`ret` reads it).
+- The small immediate field is reserved (must be 0) until superinstructions or quickening
+  use it.
+- The opcode list, with every operand's encoding, is defined once in `ryo_bytecode`
+  (`vm/bytecode/src/ops.rs`). The opcode enum, the decoder, the encoder and the
+  disassembler are all generated from it. Opcode values follow list order, and every change
+  bumps `ryo_bytecode::FORMAT_VERSION`.
+- Variable-length operands (`switch` tables and cases, island operands and targets) are
+  encoded as a count word followed by the elements.
+- Immediates have the instruction's width: one word for `w8`–`w32` (upper bits ignored), two
+  for `w64`, four for `w128`, low word first. The `switch.sparse` case values and the
+  `discr.niche` niche start follow the same rule.
 
 | Operand | Encoding | Meaning |
 |---|---|---|
@@ -84,6 +95,7 @@ on the same thread would otherwise create aliasing mutable references.
 | `site` | u32 | index into the image's writable site cache ([Image format](#image-format)) |
 | `fn` | u32 | function table index (VM function in the same image) |
 | `t` | i32 | branch target, relative to the instruction start, in words |
+| `data` | u32 | byte offset into the image's writable data area (`fixups`) |
 
 Integer ops carry their width (`w8` … `w128`) in the opcode, and float ops their format
 (`f32`, `f64`).
@@ -113,8 +125,9 @@ Integer ops carry their width (`w8` … `w128`) in the opcode, and float ops the
 | `addr.sym d, sym` | address of a native function, static or portal |
 | `addr.sym.ind d, sym` | load the address through the slot (PE `__imp_` data, [platforms.md](platforms.md)) |
 | `addr.k d, k` | address of a constant pool allocation |
-| `ptr.add d, p, imm` | `d = p + imm` (wrapping) |
-| `ptr.index d, p, i, stride` | `d = p + i * stride` |
+| `addr.data d, data` | address of an allocation in the writable `fixups` area (PE) |
+| `ptr.add d, p, imm` | `d = p + imm` (wrapping, `imm` is an i64) |
+| `ptr.index d, p, i, stride` | `d = p + i * stride` (`stride` is a u32. Larger strides use `mul.w64` + `add.w64`) |
 
 ### Integer arithmetic
 
@@ -125,15 +138,19 @@ At widths 8/16/32/64/128, wrapping:
 | `add sub mul .wN d, a, b` | |
 | `div.s div.u rem.s rem.u .wN d, a, b` | no checks (MIR guarantees valid operands) |
 | `and or xor .wN d, a, b` | |
-| `shl shr.s shr.u .wN d, a, b` | amount masked to the width |
+| `shl shr.s shr.u .wN d, a, b` | amount masked to the width. `b` has width N too (the lowering converts a differently typed amount first) |
 | `neg not .wN d, a` | |
-| `add.ovf sub.ovf mul.ovf .{s,u}.wN d, a, b` | result at `d`, overflow flag (u8) at the pair's second field |
+| `add.ovf sub.ovf mul.ovf .{s,u}.wN d, o, a, b` | result at `d`, overflow flag (`bool`) at `o`. The lowering passes the offsets of the pair's two fields, since rustc decides the pair's field order |
 | `eq ne lt.s lt.u le.s le.u .wN d, a, b` | writes a `bool` |
 | `cmp3.s cmp3.u .wN d, a, b` | three-way compare (`Ordering` as `i8`) |
-| `rotl rotr ctpop ctlz cttz bswap bitreverse .wN` | intrinsics |
+| `rotl rotr .wN d, a, b` | `b` is a `u32`, as in the intrinsics |
+| `ctpop ctlz cttz .wN d, a` | result is a `u32`, as in the intrinsics |
+| `bswap bitreverse .wN d, a` | |
 
-There are `.imm` variants (`add.imm.w64 d, a, imm`, `eq.imm`, …) for the common cases. At
-128 bits, `mul`, `div` and `rem` are islands.
+`.imm` variants take an immediate of the width as `b`: `add sub mul and or xor shl shr.s
+shr.u` and the compares `eq ne lt le gt ge` (signed and unsigned; `gt`/`ge` exist only as
+`.imm`, because the register forms can swap operands). At 128 bits, `mul`, `div`, `rem` and
+`mul.ovf` are islands, so those opcodes don't exist at `w128`.
 
 ### Floating point
 
@@ -144,7 +161,8 @@ There are `.imm` variants (`add.imm.w64 d, a, imm`, `eq.imm`, …) for the commo
 | `feq fne flt fle .fN d, a, b` | |
 | `fmin fmax copysign .fN d, a, b` | |
 
-libm functions (`sqrt`, `sin`, `powi`, …) are islands.
+libm functions (`sqrt`, `sin`, `powi`, …) are islands, and so are all `f16` and `f128`
+operations.
 
 ### Conversions
 
@@ -163,14 +181,22 @@ Bit-preserving casts are `mov`/`copy`.
 | `discr.niche.wN d, s, niche_start, variants_start, variants_end, untagged` | decodes a niche-encoded tag into a variant index (`TagEncoding::Niche`) |
 | `set_discr.niche.wN d, variant, niche_start, variants_start, untagged` | stores a variant's niche value (a no-op for the untagged variant) |
 
-Direct-tagged enums use plain loads, stores and integer ops.
+`niche_start` is an immediate of the tag width. The variant indices are u32s, and `d` of
+`discr.niche` receives a `u32` variant index, which the lowering converts to the
+discriminant type. Direct-tagged enums use plain loads, stores and integer ops.
 
 ### Atomics
 
 - **Operations**: `atomic.load/store.wN.ord`,
   `atomic.xchg/add/sub/and/or/xor/nand/min/max/umin/umax.wN.ord`,
   `atomic.cxchg[.weak].wN.ord_s.ord_f`, `fence.ord`, `compiler_fence.ord`. Each handler
-  performs the matching `core::sync::atomic` operation.
+  performs the matching `core::sync::atomic` operation. Orderings are `relaxed`, `acquire`,
+  `release`, `acqrel` and `seqcst`, and only the combinations core accepts exist (loads have
+  no `release`/`acqrel`, stores no `acquire`/`acqrel`, failure orderings are
+  `relaxed`/`acquire`/`seqcst`, fences aren't `relaxed`).
+- **Operands**: `atomic.load d, [p]`, `atomic.store [p], s`, `atomic.<rmw> d, [p], s` (`d`
+  gets the old value), and `atomic.cxchg d, o, [p], old, new`, with the previous value at
+  `d` and the success flag at `o`.
 - **Width and alignment**: widths 8–64 run in the VM. 128-bit atomics are islands (they need
   `cmpxchg16b`, which core provides when the target supports it). Atomic operands are always
   memory operands, aligned as the type requires.
@@ -182,13 +208,13 @@ Direct-tagged enums use plain loads, stores and integer ops.
 | `jmp t` | |
 | `br.if s, t` / `br.unless s, t` | branch on a `bool` slot |
 | `br.cmp.{eq,ne,lt.s,lt.u,le.s,le.u}.wN a, b, t`, and `.imm` variants | fused compare + branch |
-| `switch.dense.wN s, base, n, t_default, t_0 … t_{n-1}` | jump table on `s - base` |
-| `switch.sparse.wN s, n, t_default, (v_i, t_i)…` | sorted values: a linear scan for `n ≤ 4`, binary search above |
+| `switch.dense.wN s, base, t_default, n, t_0 … t_{n-1}` | jump table on `s - base` |
+| `switch.sparse.wN s, t_default, n, (v_i, t_i)…` | sorted values: a linear scan for `n ≤ 4`, binary search above |
 | `unreachable` | report and abort (only reachable through UB) |
 | `abort` | `core::intrinsics::abort` |
 
-`switch.*` are the only variable-length instructions. Their length is given by their `n`
-word.
+`switch.*`, `island` and `island.catch` are the only variable-length instructions. Their
+length is given by their count words.
 
 ### Calls and islands
 
@@ -196,12 +222,16 @@ word.
 |---|---|
 | `call d, fn, frame_size` | call a VM function in this image |
 | `call.ext d, sym, site, island` | call the function at symbol `sym` (an upstream instance): bytecode if it is a portal of a VM function, otherwise through `island` |
+| `call.ext.ind d, sym, site, island` | the same, with the address loaded through the symbol slot (PE `__imp_`, [platforms.md](platforms.md)) |
 | `call.ind d, p, site, island` | indirect call through the fn pointer in slot `p` |
-| `tail_call fn, frame_size` / `tail_call.ind p, site, island` | `become` |
+| `tail_call fn, frame_size` / `tail_call.ind p, site, island` | `become`. A tail call to an upstream instance is `addr.sym` + `tail_call.ind` |
 | `ret s, len` | return `_0` (`len` bytes at `s`) |
 | `island d, sym, n_ops, ops…, n_targets, t…` | call `island(fp, &ops)`, jump to `t[ret]` |
 | `island.catch d, sym, n_ops, ops…, n_targets, t…` | the same through `call_catching`, then unwind if the island panicked |
 | `resume` | continue unwinding |
+
+`island`'s operands are encoded as `d, sym, n_ops, ops…, n_targets, t…`. The island
+receives a pointer to `ops[0]`.
 
 - **`call`**:
   - Sets `new_fp = fp + frame_size(caller)`, checks the stack, and writes `[new_fp] = fp`,
