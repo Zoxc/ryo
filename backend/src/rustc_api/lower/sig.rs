@@ -34,6 +34,9 @@ pub struct AbiSig<'tcx> {
     pub conv: CallConv,
     /// Whether the last input is the implicit `#[track_caller]` location.
     pub caller_location: bool,
+    /// Whether the callee is `extern "rust-call"`: the caller's trailing tuple argument is
+    /// spread over the ABI inputs. Set by the call site, which knows the fn type.
+    pub rust_call: bool,
 }
 
 impl<'tcx> AbiSig<'tcx> {
@@ -80,7 +83,7 @@ fn from_fn_abi<'tcx>(
     if fn_abi.ret.layout.align.abi.bytes() > u64::from(abi::FRAME_ALIGN) {
         return native("return value aligned above 16");
     }
-    Ok(AbiSig { inputs, output: fn_abi.ret.layout, fields, block_size, conv, caller_location })
+    Ok(AbiSig { inputs, output: fn_abi.ret.layout, fields, block_size, conv, caller_location, rust_call: false })
 }
 
 /// The signature of a Rust-ABI fn with these (non-spread) inputs: the `call` template's
@@ -88,7 +91,7 @@ fn from_fn_abi<'tcx>(
 pub fn tys_sig<'tcx>(tcx: TyCtxt<'tcx>, inputs: Vec<Ty<'tcx>>, output: Ty<'tcx>) -> Result<AbiSig<'tcx>, NeedsNative> {
     let (fields, block_size) = arg_block(tcx, &inputs)?;
     let output = super::layout_of(tcx, output)?;
-    Ok(AbiSig { inputs, output, fields, block_size, conv: CallConv::Rust, caller_location: false })
+    Ok(AbiSig { inputs, output, fields, block_size, conv: CallConv::Rust, caller_location: false, rust_call: false })
 }
 
 /// The argument block for `inputs`: the layout of their tuple (design/lowering.md#frame-slots).

@@ -85,6 +85,48 @@ fn make(i: u32) -> Shape {
     }
 }
 
+fn switch128(x: u128) -> u8 {
+    match x {
+        0 => 1,
+        1 => 2,
+        0xffff_ffff_ffff_ffff_ffff => 3,
+        u128::MAX => 4,
+        _ => 0,
+    }
+}
+
+/// Niche-encoded in the `bool`: the untagged variant `Data` sits in the middle of the
+/// niche variant range `A..=D`.
+#[derive(Debug, Clone, Copy)]
+enum Mid {
+    A,
+    B,
+    Data(bool),
+    C,
+    D,
+}
+
+fn mid(i: u8) -> Mid {
+    match i {
+        0 => Mid::A,
+        1 => Mid::B,
+        2 => Mid::Data(true),
+        3 => Mid::C,
+        4 => Mid::D,
+        _ => Mid::Data(false),
+    }
+}
+
+fn mid_index(m: Mid) -> u32 {
+    match m {
+        Mid::A => 10,
+        Mid::B => 11,
+        Mid::Data(b) => 20 + b as u32,
+        Mid::C => 12,
+        Mid::D => 13,
+    }
+}
+
 fn labeled() -> u32 {
     let mut n = 0;
     'outer: for i in 0..10u32 {
@@ -121,4 +163,14 @@ fn main() {
     println!("{:?}", niches(None, None, Some(None)));
     println!("{:?}", niches(black_box(None), black_box(Some(true)), black_box(None)));
     println!("{}", labeled());
+    for x in [0u128, 1, 0xffff_ffff_ffff_ffff_ffff, u128::MAX, 2] {
+        print!("{} ", switch128(black_box(x)));
+    }
+    println!();
+    println!("{}", std::mem::size_of::<Mid>());
+    for i in 0..6 {
+        let m = mid(black_box(i));
+        print!("{m:?}={} ", mid_index(m));
+    }
+    println!();
 }

@@ -291,6 +291,16 @@ pub(crate) fn static_symbol_flags(tcx: TyCtxt<'_>, def_id: rustc_hir::def_id::De
     if is_pe(tcx) && (!def_id.is_local() || tcx.is_foreign_item(def_id)) { ryo_bytecode::image::SYM_INDIRECT } else { 0 }
 }
 
+/// Whether a static with an indirect slot also needs a direct one: a foreign static from a
+/// static library. Upstream Rust statics don't (rustc defines `__imp_<sym>` for the data of
+/// rlibs), and data in a DLL can't be referenced directly.
+pub(crate) fn static_needs_direct_slot(tcx: TyCtxt<'_>, def_id: rustc_hir::def_id::DefId) -> bool {
+    tcx.is_foreign_item(def_id)
+        && tcx
+            .native_library(def_id)
+            .is_some_and(|lib| matches!(lib.kind, rustc_hir::attrs::NativeLibKind::Static { .. }))
+}
+
 /// Whether the target uses PE/COFF objects.
 pub(crate) fn is_pe(tcx: TyCtxt<'_>) -> bool {
     matches!(tcx.sess.target.binary_format, rustc_target::spec::BinaryFormat::Coff)

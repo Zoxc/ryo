@@ -4,14 +4,24 @@ Each VM function is lowered on its own (in parallel, [backend.md](backend.md#pip
 code buffer, a constant list, a relocation list and a cleanup table. The instruction set is
 specified in [vm.md](vm.md#instruction-set).
 
-The entry point is `lower(tcx, instance) -> Result<LoweredFn, NeedsNative>`
-(`backend/src/rustc_api/lower.rs`). A `LoweredFn` holds:
+The entry point is `lower(tcx, cx, instance) -> Result<LoweredFn, NeedsNative>`
+(`backend/src/rustc_api/lower/mod.rs`), where `cx: LowerCx` holds the set of functions
+assumed to be VM functions of this image (a call of one of them is a `call`, any other local
+callee an island). A `LoweredFn` holds:
 
 - the code words, with operands the lowering can't know left as placeholders
 - relocations for those operands, which the merge pass resolves once every function's index
-  and symbol is known: `Call { at, callee }` (a `call` to another VM function of this image:
-  function index and callee `frame_size`) and `Symbol { at, target }` (a `sym` operand: the
-  target's symbol, its portal if it is a VM function, which then gets one)
+  and symbol is known:
+  - `Call { at, callee }`: a `call` to another VM function of this image (function index and
+    callee `frame_size`)
+  - `Symbol { at, target }`: a `sym` operand, the target's symbol (its portal if it is a VM
+    function, which then gets one; an internal native item is made visible to the image)
+  - `Static { at, def_id }`: a `sym` operand naming a static
+  - `Site { at }`: a fresh site cache slot
+  - `Const { at, alloc, offset }`: a `k` operand, `offset` bytes into the pool copy of an
+    allocation
+  - `Bytes { at, bytes, align }`: a `k` operand, a pool allocation of raw bytes (`fill`
+    elements)
 - island requests (template diagnostic item name and generic args, plus the operand to fill)
 - the cleanup entries, `frame_size`, `max_outgoing`, `arg_size` and `ret_size`
 
@@ -106,7 +116,7 @@ so a MIR change in a toolchain bump is a compile error. The tables below follow 
 | `StatementKind` | Bytecode |
 |---|---|
 | `Assign(place, rvalue)` | see Rvalues |
-| `SetDiscriminant` | tag store, or `set_discr.niche` |
+| `SetDiscriminant` | a plain store of the tag value, computed at lowering time (also for niches; `set_discr.niche` is unused so far) |
 | `Intrinsic(CopyNonOverlapping)` | `memcpy` |
 | `Intrinsic(Assume)` | nothing |
 | `StorageLive`, `StorageDead` | nothing (slot allocation used them) |
@@ -114,9 +124,10 @@ so a MIR change in a toolchain bump is a compile error. The tables below follow 
 
 ## Rvalues
 
-**Aggregate copies**: copies between two places where either side is in memory (through a
-deref) use `memmove`. Copies between frame slots use `copy`, because distinct slots never
-overlap.
+**Aggregate copies**: copies between frame slots use `mov`/`copy`, because distinct slots
+never overlap. A copy with one side in memory (through a deref) is a load or a store
+(`load.copy`/`store.copy`, `memmove` semantics). A copy between two memory places goes through
+a temporary slot up to 256 bytes, and uses `memmove` above that.
 
 | `Rvalue` | Bytecode |
 |---|---|
@@ -147,7 +158,7 @@ overlap.
 | `PointerCoercion(ReifyFnPointer)` | `addr.sym` of the target instance's symbol, or its portal for VM functions |
 | `PointerCoercion(ClosureFnPointer)` | `addr.sym` of the closure's `FnOnce` shim (its portal, if it's a VM function) |
 | `PointerCoercion(UnsafeFnPointer, MutToConstPointer, ArrayToPointer)` | `mov` |
-| `PointerCoercion(Unsize)` | builds the wide pointer: data pointer plus metadata (a constant length, or `addr.k` of the vtable in the constant pool). Struct-tail unsizing goes field by field, as cg_ssa does |
+| `PointerCoercion(Unsize)` | builds the wide pointer: data pointer plus metadata (a constant length, or `addr.k` of the vtable in the constant pool). Only pointers and pointer-wrapping structs whose pointer is at offset 0 and whose result is a 16-byte wide pointer are lowered (`Box`, `Rc`, …); cg_ssa's field-by-field struct-tail unsizing (`coerce_unsized_into`) is not done yet and stays native |
 
 ### Binary operations
 
@@ -213,16 +224,26 @@ island.
      `#[inline]`/cross-crate-inlinable items are lowered locally like any other item:
      `call.ext` on its symbol, with a `call_ptrN` island as the native fallback. It doesn't
      matter whether upstream compiled it to bytecode ([vm.md](vm.md#calls-and-islands)).
-   - **Native function**: an `island` with a call template ([stubs.md](stubs.md#templates)).
+   - **Native function**: an `island` with a call template ([stubs.md](stubs.md#templates)):
+     `call<F, Args, R>` for a safe, Rust-ABI fn item without `#[target_feature]` or
+     `#[track_caller]` (no symbol needed), otherwise `addr.sym` of the callee into a slot and
+     `call_ptrN` (Rust ABI) or `call_cN` (`extern "C"`).
    - **`InstanceKind::LlvmIntrinsic`**: not lowerable (no MIR, `unadjusted` ABI). The
      function stays native.
    - **`InstanceKind::Virtual(_, idx)`**: load the fn pointer from the vtable (entry `idx`
      of `tcx.vtable_entries`, read through the receiver's metadata), pass the receiver's
-     data pointer, then `call.ind`.
+     data pointer, then `call.ind`. **Not done yet**: a virtual call whose fn item is safe
+     and Rust-ABI goes through the `call<F, Args, R>` island (its `FnOnce` shim makes the
+     virtual call natively); others (`dyn Fn` calls are `rust-call`) keep the function
+     native. Drops of trait objects already use the vtable and `call.ind`.
    - **`InstanceKind::Intrinsic`**: the matching VM instruction if one exists (`size_of`,
      `transmute`, overflow arithmetic, `copy_nonoverlapping`, `write_bytes`, atomics,
      `abort`, `unreachable`, `likely`/`unlikely`, `caller_location`, …). Otherwise an
-     `island` with the intrinsic's wrapper.
+     `island` with the intrinsic's wrapper. So far: `abort`, `ptr_offset_from(_unsigned)`,
+     `arith_offset`, `copy`, `write_bytes`, `typed_swap_nonoverlapping`,
+     `size_of_val`/`align_of_val`, `ctpop`/`ctlz`/`cttz` (and `_nonzero`), `bswap`,
+     `bitreverse`, rotates; safe intrinsics fall back to the `call` island, and unsafe ones
+     without a lowering keep the function native.
 
    A fn-pointer callee type → `call.ind`.
 2. **Arguments**: the argument operands are copied into the outgoing argument block at

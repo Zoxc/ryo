@@ -112,7 +112,11 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let s = tcx.normalize_erasing_late_bound_regions(TypingEnv::fully_monomorphized(), fty.fn_sig(tcx));
                 tys_sig(tcx, s.inputs().to_vec(), s.output())?
             }
-            Path::Vm | Path::Ext | Path::Ptr(_) => abi_sig(tcx, callee)?,
+            Path::Vm | Path::Ext | Path::Ptr(_) => {
+                let mut sig = abi_sig(tcx, callee)?;
+                sig.rust_call = fty.fn_sig(tcx).abi() == ExternAbi::RustCall;
+                sig
+            }
         };
         self.write_args(&sig, args, source_info)?;
         let (d, after) = self.call_dest(&cont, &sig)?;
@@ -155,7 +159,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         cont: CallCont<'tcx>,
         source_info: SourceInfo,
     ) -> Result<(), NeedsNative> {
-        let sig = fn_ptr_sig(self.tcx, fty.fn_sig(self.tcx))?;
+        let mut sig = fn_ptr_sig(self.tcx, fty.fn_sig(self.tcx))?;
+        sig.rust_call = fty.fn_sig(self.tcx).abi() == ExternAbi::RustCall;
         let (p, _) = self.operand_slot(func)?;
         self.write_args(&sig, args, source_info)?;
         let (d, after) = self.call_dest(&cont, &sig)?;
@@ -220,7 +225,10 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         source_info: SourceInfo,
     ) -> Result<(), NeedsNative> {
         let n = sig.inputs.len() - usize::from(sig.caller_location);
-        let spread = args.len() != n;
+        let spread = sig.rust_call;
+        if !spread && args.len() != n {
+            return native("argument count mismatch");
+        }
         let direct = if spread { args.len().saturating_sub(1) } else { args.len() };
         for (i, a) in args[..direct].iter().enumerate() {
             let f = sig.fields[i];

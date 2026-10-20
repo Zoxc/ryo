@@ -627,7 +627,12 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                         let flags = super::static_symbol_flags(tcx, def_id);
                         let Sym(s) = w.symbol(static_symbol(tcx, def_id).name, flags);
                         code[at as usize] = s;
-                        let _ = set_indirect(&mut code, at, flags);
+                        if set_indirect(&mut code, at, flags) && super::static_needs_direct_slot(tcx, def_id) {
+                            // As for functions: lld synthesizes `__imp_<sym>` only for a
+                            // defined symbol, and a C static library has no `__imp_` of its own
+                            // (design/platforms.md).
+                            w.symbol(static_symbol(tcx, def_id).name, 0);
+                        }
                     }
                     CodeReloc::Site { at } => code[at as usize] = w.site().0,
                     CodeReloc::Const { at, alloc, offset } => {

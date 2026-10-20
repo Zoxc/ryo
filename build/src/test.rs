@@ -23,10 +23,44 @@ pub(crate) struct Program {
     /// A C `main` (relative to `tests/`), compiled with `cc` (`cl` on MSVC) and linked against
     /// the last crate (a staticlib or cdylib). Skipped without that compiler.
     c_main: Option<&'static str>,
+    /// A static library the crates link (`#[link(kind = "static")]`), built before them.
+    pub native_lib: Option<NativeLib>,
+}
+
+/// A stand-in for a C static library: a `#![no_std]` Rust file without Rust symbol
+/// dependencies, compiled to an object by plain rustc and archived with the toolchain's
+/// `llvm-ar`, so it also builds for a cross target without a C compiler.
+pub struct NativeLib {
+    /// The library name (`#[link(name = …)]`).
+    pub name: &'static str,
+    /// Source path, relative to `tests/`.
+    pub src: &'static str,
+}
+
+impl NativeLib {
+    /// Builds the library into `dir`, for `target` (the host if `None`).
+    pub fn build(&self, dir: &Path, target: Option<&str>) -> Result<(), String> {
+        let info = crate::utils::RustcInfo::get()?;
+        let obj = dir.join(format!("{}.o", self.name));
+        let mut c = cmd("rustc");
+        c.args(["--edition=2024", "--crate-type=lib", "--emit=obj", "-Cpanic=abort", "--crate-name", self.name])
+            .arg(root().join("tests").join(self.src))
+            .arg("-o")
+            .arg(&obj);
+        if let Some(t) = target {
+            c.args(["--target", t]);
+        }
+        crate::utils::run(&mut c)?;
+        let msvc = target.unwrap_or(&info.host).contains("msvc");
+        let lib = if msvc { format!("{}.lib", self.name) } else { format!("lib{}.a", self.name) };
+        let ar = info.sysroot.join("lib").join("rustlib").join(&info.host).join("bin").join(exe_name("llvm-ar"));
+        crate::utils::run(cmd(ar).arg("rcs").arg(dir.join(lib)).arg(&obj))
+    }
 }
 
 /// Defaults for [`Program`] fields.
-const PROGRAM: Program = Program { name: "", crates: &[], flags: &[], vm: &[], entered: &[], c_main: None };
+const PROGRAM: Program =
+    Program { name: "", crates: &[], flags: &[], vm: &[], entered: &[], c_main: None, native_lib: None };
 
 pub(crate) struct Crate {
     /// The crate name, passed as `--crate-name`.
@@ -136,7 +170,7 @@ pub(crate) const CORPUS: &[Program] = &[
     ),
     single!(
         "vm_control",
-        vm: &["main", "collatz", "dense", "sparse", "area", "discr", "niches", "make", "labeled"],
+        vm: &["main", "collatz", "dense", "sparse", "area", "discr", "niches", "make", "labeled", "switch128", "mid", "mid_index"],
         entered: &["std::rt::lang_start::<()>"]
     ),
     single!(
@@ -145,6 +179,14 @@ pub(crate) const CORPUS: &[Program] = &[
         // `speak` is called through the vtable from a native island.
         entered: &["std::rt::lang_start::<()>", "<Dog as Speak>::speak"]
     ),
+    Program {
+        name: "vm_ffi",
+        crates: &[krate("main", "vm_ffi/main.rs", CrateKind::Bin)],
+        vm: &["main", "read", "add"],
+        entered: &["std::rt::lang_start::<()>"],
+        native_lib: Some(NativeLib { name: "ryo_clib", src: "vm_ffi/clib.rs" }),
+        ..PROGRAM
+    },
     Program {
         name: "vm_cross",
         crates: &[
@@ -370,6 +412,9 @@ impl Ctx {
         let dir = self.out.join(program.name).join(variant.name);
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
+        if let Some(lib) = &program.native_lib {
+            lib.build(&dir, None)?;
+        }
         let mut exe = None;
         let mut vm_fns = Vec::new();
         let mut native_libs = Vec::new();

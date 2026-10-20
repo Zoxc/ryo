@@ -106,6 +106,9 @@ impl Link<'_> {
         fs::create_dir_all(dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
         let tests = root().join("tests");
         let mut undefined = BTreeSet::new();
+        if let Some(lib) = &program.native_lib {
+            lib.build(dir, Some(self.target))?;
+        }
         for krate in program.crates {
             let mut c = cmd(compiler.get_program());
             c.arg("--edition=2024")
