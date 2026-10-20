@@ -153,4 +153,103 @@ fn main() {
     let (h, f, i, q, u) = half(bb(1234.5678));
     println!("{} {f} {i} {} {u}", h as f64, q as f64);
     println!("{}", scopes(bb(12)));
+    println!("{:?}", half_size(bb(-1234.5), bb(77)));
+    println!("{}", borrow_loop(bb(5)));
+    println!("{}", unwind_live(bb(1)));
+    println!("{}", unwind_live(bb(9)));
+    println!("{}", relive(bb(6)));
+    println!("{:?}", packed(bb(&Packed { t: 1, val: std::mem::ManuallyDrop::new(A16(3)) })));
+    println!("{:?}", packed(bb(&Packed { t: 2, val: std::mem::ManuallyDrop::new(4u32) })));
+    println!("{:?}", min128(bb(i128::MIN), bb(-1)));
+}
+
+/// `f16`/`f128` casts from and to `isize`/`usize`.
+#[inline(never)]
+fn half_size(x: f64, n: usize) -> (usize, isize, f64, f64) {
+    let h = x as f16;
+    let q = x as f128;
+    (h as usize, q as isize, (n as f16) as f64, (-(n as isize) as f128) as f64)
+}
+
+/// A borrow of a scoped local held across the loop's back edge.
+#[inline(never)]
+fn borrow_loop(n: u32) -> u64 {
+    let base = [3u64; 4];
+    let mut r: &[u64; 4] = &base;
+    let mut acc = 0;
+    let mut keep = Vec::new();
+    for i in 0..n {
+        acc += r[i as usize % 4];
+        let next = [i as u64 * 10; 4];
+        keep.push(next);
+        r = keep.last().unwrap();
+        let other = [99u64; 4];
+        acc += other[0];
+    }
+    acc + r[0]
+}
+
+struct Noisy(u32);
+impl Drop for Noisy {
+    fn drop(&mut self) {
+        println!("drop {}", self.0);
+    }
+}
+
+#[inline(never)]
+fn may_panic(k: u32) -> u32 {
+    if k > 5 {
+        panic!("boom");
+    }
+    k
+}
+
+/// Locals live across a call that unwinds into a cleanup block.
+#[inline(never)]
+fn unwind_live(k: u32) -> u32 {
+    let r = std::panic::catch_unwind(|| {
+        let a = Noisy(k);
+        let v = [k; 6];
+        let x = may_panic(bb(k));
+        let b = Noisy(k + 100);
+        x + v[5] + a.0 + b.0
+    });
+    r.unwrap_or(7)
+}
+
+/// A local whose storage starts again on every iteration.
+#[inline(never)]
+fn relive(n: u32) -> u32 {
+    let mut acc = 0;
+    let mut i = 0;
+    loop {
+        let x = [i; 5];
+        i += 1;
+        if i % 2 == 0 {
+            continue;
+        }
+        acc += x[4];
+        if i > n {
+            break acc;
+        }
+    }
+}
+
+#[repr(C, packed(2))]
+struct Packed<X: ?Sized> {
+    t: u8,
+    val: std::mem::ManuallyDrop<X>,
+}
+
+/// `repr(packed)` caps the dynamic alignment of the tail.
+#[inline(never)]
+fn packed(w: &Packed<dyn Shape>) -> (u8, usize, usize, usize) {
+    let off = std::ptr::addr_of!(w.val) as *const u8 as usize - w as *const Packed<dyn Shape> as *const u8 as usize;
+    (w.t, off, size_of_val(w), align_of_val(w))
+}
+
+/// `MIN * -1` and `MIN % -1` at 128 bits, independent of overflow checks.
+#[inline(never)]
+fn min128(a: i128, b: i128) -> (Option<i128>, (i128, bool), Option<i128>, i128, Option<i128>) {
+    (a.checked_mul(b), a.overflowing_mul(b), a.checked_rem(b), a.wrapping_rem(b), a.checked_div(b))
 }

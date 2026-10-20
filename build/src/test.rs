@@ -197,7 +197,7 @@ pub(crate) const CORPUS: &[Program] = &[
     single!("vm_abort_nounwind", vm: &["main", "no_unwind"], entered: &["std::rt::lang_start::<()>"]),
     single!(
         "vm_aggregates",
-        vm: &["main", "tail", "nested", "rcs", "coerce_ref", "coerce_pin", "coerce_tail", "repeat", "wide_cmp", "arith128", "ovf128", "half", "scopes"],
+        vm: &["main", "tail", "nested", "rcs", "coerce_ref", "coerce_pin", "coerce_tail", "repeat", "wide_cmp", "arith128", "ovf128", "half", "scopes", "half_size", "borrow_loop", "unwind_live", "relive", "packed", "min128"],
         entered: &["std::rt::lang_start::<()>"]
     ),
     Program {

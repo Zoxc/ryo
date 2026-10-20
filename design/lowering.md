@@ -81,7 +81,10 @@ so a MIR change in a toolchain bump is a compile error. The tables below follow 
   that may be live at one of its `StorageLive`s. Locals are then placed first-fit, at the
   lowest aligned offset no conflicting local already uses. `_0`, the arguments and locals
   without a `StorageLive` keep slots of their own, and so does every local of a body with
-  more than 4096 locals (the conflict matrix is quadratic).
+  more than 4096 locals (the conflict matrix is quadratic). At `-O0` rustc strips storage
+  markers from local MIR (`RemoveStorageMarkers` runs when lifetime markers are off,
+  `rustc_mir_transform/src/remove_storage_markers.rs:14`), so there sharing only applies to
+  MIR that still has them, such as upstream `#[inline]` and generic items.
 - `_0` (the return value) is a normal slot.
 - `frame_size` = H + argument block + other locals, rounded up to 16.
 - **Alignment**: frames are 16-aligned. The VM stack base is page-aligned, H = 16 and
