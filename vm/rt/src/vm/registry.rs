@@ -155,13 +155,13 @@ pub unsafe fn register(headers: *const *const u8, n: usize) {
     }
     // SAFETY: the first `len` entries are initialized, and nothing else views them.
     let list = unsafe { core::slice::from_raw_parts_mut(by_hash, len) };
-    list.sort_unstable_by_key(|im| im.view.crate_hash());
+    sort_by_key(list, |im| im.view.crate_hash() as usize);
     // SAFETY: `by_code` has room for `cap >= len` entries.
     let codes = unsafe {
         ptr::copy_nonoverlapping(list.as_ptr(), by_code, len);
         core::slice::from_raw_parts_mut(by_code, len)
     };
-    codes.sort_unstable_by_key(|im| im.code as usize);
+    sort_by_key(codes, |im| im.code as usize);
     let snap = alloc_forever(&g, size_of::<Snapshot>(), align_of::<Snapshot>()).cast::<Snapshot>();
     // SAFETY: fresh allocation; fully written before it is published.
     unsafe {
@@ -177,9 +177,30 @@ pub unsafe fn register(headers: *const *const u8, n: usize) {
 
 /// The address a symbol slot designates: the slot value, or for indirect (PE `__imp_`) slots,
 /// the value loaded through it.
+/// An insertion sort: core's sorts reference its panic path (`panic_on_ord_violation`), which
+/// the runtime must not reach (design/vm.md, "No re-entry"). Lists are short (one entry per
+/// image).
+fn sort_by_key(list: &mut [&ImageRt], key: impl Fn(&ImageRt) -> usize) {
+    let p = list.as_mut_ptr();
+    for i in 1..list.len() {
+        let mut j = i;
+        // SAFETY: `j` and `j - 1` are below `list.len()`.
+        unsafe {
+            while j > 0 && key(*p.add(j - 1)) > key(*p.add(j)) {
+                ptr::swap(p.add(j - 1), p.add(j));
+                j -= 1;
+            }
+        }
+    }
+}
+
 fn sym_addr(img: &ImageRt, sym: u32) -> *const () {
-    let v = img.view.symbols()[sym as usize] as usize as *const ();
-    if img.view.symbol_flags()[sym as usize] & SYM_INDIRECT != 0 {
+    let (Some(&v), Some(&flags)) = (img.view.symbols().get(sym as usize), img.view.symbol_flags().get(sym as usize))
+    else {
+        fatal("symbol index out of range")
+    };
+    let v = v as usize as *const ();
+    if flags & SYM_INDIRECT != 0 {
         // SAFETY: an indirect slot holds the address of a readable import slot.
         unsafe { *v.cast::<*const ()>() }
     } else {

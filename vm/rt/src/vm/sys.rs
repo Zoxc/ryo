@@ -33,7 +33,7 @@ mod os {
         pub fn getenv(name: *const core::ffi::c_char) -> *const core::ffi::c_char;
         pub fn pthread_key_create(key: *mut u32, dtor: Option<unsafe extern "C" fn(*mut c_void)>) -> c_int;
         pub fn pthread_setspecific(key: u32, value: *const c_void) -> c_int;
-        pub fn atexit(f: extern "C" fn()) -> c_int;
+        pub fn atexit(f: extern "C-unwind" fn()) -> c_int;
     }
 }
 
@@ -63,7 +63,7 @@ mod os {
 
     // The C runtime's (`msvcrt.lib`), which every Rust program on msvc links.
     unsafe extern "C" {
-        pub fn atexit(f: extern "C" fn()) -> i32;
+        pub fn atexit(f: extern "C-unwind" fn()) -> i32;
     }
 }
 
@@ -152,33 +152,33 @@ pub fn count(counter: &AtomicU64) {
     }
 }
 
-/// Writes `ryo-vm: <n> enters, <n> islands, <n> native calls` to stderr.
-extern "C" fn print_stats() {
+/// Writes `ryo-vm: <n> enters, <n> islands, <n> native calls` to stderr. `C-unwind` and
+/// without indexing, so it references nothing of core's panic path (design/vm.md).
+extern "C-unwind" fn print_stats() {
     let s = &RUN_STATS;
-    let mut buf = [0u8; 128];
-    let mut n = 0;
-    let mut put = |b: &[u8]| {
-        buf[n..n + b.len()].copy_from_slice(b);
-        n += b.len();
-    };
-    put(b"ryo-vm: ");
-    for (c, what) in [(&s.enters, &b" enters, "[..]), (&s.islands, b" islands, "), (&s.native_calls, b" native calls\n")] {
-        let mut digits = [0u8; 20];
-        let mut v = c.load(Ordering::Relaxed);
-        let mut k = digits.len();
-        loop {
-            k -= 1;
-            digits[k] = b'0' + (v % 10) as u8;
-            v /= 10;
-            if v == 0 {
-                break;
-            }
-        }
-        put(&digits[k..]);
-        put(what);
+    write_stderr("ryo-vm: ");
+    for (c, what) in [(&s.enters, " enters, "), (&s.islands, " islands, "), (&s.native_calls, " native calls\n")] {
+        write_u64(c.load(Ordering::Relaxed));
+        write_stderr(what);
     }
-    // SAFETY: the buffer is ASCII.
-    write_stderr(unsafe { core::str::from_utf8_unchecked(&buf[..n]) });
+}
+
+/// Writes `v` in decimal to stderr.
+fn write_u64(mut v: u64) {
+    let mut digits = [0u8; 20];
+    let mut k = digits.len();
+    let p = digits.as_mut_ptr();
+    loop {
+        k -= 1;
+        // SAFETY: `k < 20`: a u64 has at most 20 digits.
+        unsafe { *p.add(k) = b'0' + (v % 10) as u8 };
+        v /= 10;
+        if v == 0 {
+            break;
+        }
+    }
+    // SAFETY: bytes `k..20` are ASCII digits.
+    write_stderr(unsafe { core::str::from_utf8_unchecked(core::slice::from_raw_parts(p.add(k), 20 - k)) });
 }
 
 #[cold]

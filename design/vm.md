@@ -415,8 +415,17 @@ fixups        PE only: constant allocations that point at DLL-imported data
   stack setup and `call_catching` use only `core` and `ryo_rt`'s own lock (a spin lock, or a
   futex/`WaitOnAddress` lock). With `--sysroot ryo`, std's `Mutex`, allocator or TLS code may
   be VM functions, and calling them from inside the runtime would enter the VM before it
-  exists. `ryo_rt` being `#![no_std]` enforces this at compile time, and `y test`
-  (`rt-core-only`) checks its rlibs' undefined symbols. The panic payload box is the exception: it is only touched through
+  exists. `ryo_rt` being `#![no_std]` rules out direct calls into std and alloc, but not
+  core's panic path: under `--sysroot ryo` the `#[panic_handler]` is std's, a VM function, so
+  a panic in the runtime (a bounds check, `unwrap`, core's sorts) would enter the VM too. So
+  runtime code uses `get` + `fatal`, its own insertion sort, and `C-unwind` for its exported
+  C entry points (no abort-on-unwind guard, which calls `core::panicking`). `y test`
+  (`rt-core-only`) checks both: the rlibs' undefined symbols name no crate but `core`,
+  `compiler_builtins` and `ryo_bytecode` (plus libc and the panic runtime's entry points),
+  and no call path from anything `ryo_rt`'s rlib defines, through `ryo_bytecode`, reaches
+  `core::panicking::*`, a `*_fail` helper or `panic_on_ord_violation`. The templates are
+  generic, so they are compiled in the program's crates, not in that rlib, and may panic
+  like any program code. The panic payload box is the exception: it is only touched through
   the panic runtime's `__rust_panic_cleanup`/`__rust_start_panic`, outside the VM's own state
   transitions. In particular, `resume_unwind_from_vm` (which ends in `__rust_start_panic`) runs
   only after `vm::enter` has popped its entry record. The panic runtime itself is never VM

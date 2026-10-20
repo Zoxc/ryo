@@ -373,7 +373,8 @@ unsafe fn unwind(vm: *mut VmThread, r: &mut Regs, mut pop_first: bool) -> bool {
             };
             match img.view.cleanup_at(f, at) {
                 Some(Cleanup::Jump(t)) => {
-                    let start = img.view.functions()[f as usize].code_off;
+                    let Some(e) = img.view.functions().get(f as usize) else { fatal("unwinding: bad function") };
+                    let start = e.code_off;
                     r.pc = img.code.wrapping_add(start as usize + t as usize);
                     return true;
                 }
@@ -1016,7 +1017,10 @@ unsafe fn current_ret_size(vm: *mut VmThread, r: &Regs) -> u32 {
     let img = unsafe { &*(*vm).img };
     let word = (r.pc as usize).wrapping_sub(img.code as usize) / 4;
     match img.view.function_at(word as u32) {
-        Some((f, _)) => img.view.functions()[f as usize].ret_size,
+        Some((f, _)) => match img.view.functions().get(f as usize) {
+            Some(e) => e.ret_size,
+            None => fatal("pc outside every function"),
+        },
         None => fatal("pc outside every function"),
     }
 }

@@ -31,8 +31,11 @@ use thread::Entry;
 /// # Safety
 /// `images` must point at `n` pointers to linked images that stay mapped and unchanged for the
 /// rest of the process (images are never unregistered).
+///
+/// `C-unwind`, so the compiler adds no abort-on-unwind guard, which would reference core's
+/// panic path (design/vm.md, "No re-entry"); nothing in it panics (`y test`'s `rt-core-only`).
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ryo_vm_register(images: *const *const u8, n: usize) {
+pub unsafe extern "C-unwind" fn ryo_vm_register(images: *const *const u8, n: usize) {
     // SAFETY: per the caller.
     unsafe { registry::register(images, n) }
 }

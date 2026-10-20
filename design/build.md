@@ -147,9 +147,12 @@ This gives a third backend, built from the same toolchain, to compare against.
   `cargo-ryo` builds a dev-profile package.
 - `test` checks (`rt-core-only`) that every sysroot's `ryo_rt` rlib references no symbols
   outside `core`, `compiler_builtins`, `ryo_bytecode`, libc and the panic runtime's entry
-  points ([vm.md](vm.md#runtime-crate-ryo_rt), "No re-entry into the VM from the runtime").
+  points, and that no call path from its code reaches core's panic machinery
+  ([vm.md](vm.md#runtime-crate-ryo_rt), "No re-entry into the VM from the runtime").
 - With a ryo sysroot in `dist/`, `test` also builds the corpus against it (`--sysroot ryo`):
-  variants `ryo-std` and `ryo-std-O3` (output and trace consistency only, like `ryo-O3`). Their
+  variants `ryo-std`, `ryo-std-O3` (output and trace consistency only, like `ryo-O3`),
+  `ryo-std-lto` (`-Clto=fat` on the last crate) and `ryo-std-abort` (`-Cpanic=abort`,
+  compared with plain rustc's `-Cpanic=abort` build; programs with a Rust dylib are skipped). Their
   `entered` lists aren't checked: those name what the LLVM std enters through portals, and VM
   std code calls VM functions directly. Without one, they are skipped.
 - `test --cross T`: builds and links, without running, the corpus for target `T` (after

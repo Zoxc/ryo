@@ -363,12 +363,26 @@ struct Variant {
     /// Skipped without it. The `entered` lists aren't checked: they name what the LLVM std
     /// enters through portals, and VM std code calls VM functions directly.
     ryo_std: bool,
+    /// `-Cpanic=abort`, compared with plain rustc's output with the same flag ([`REFERENCE_ABORT`]).
+    /// Programs with a Rust dylib are skipped: std's dylib unwinds.
+    abort: bool,
 }
 
-const VARIANT: Variant =
-    Variant { name: "", compiler: Compiler::Ryo, flags: &[], final_flags: &[], vm_only: false, ryo_std: false };
+const VARIANT: Variant = Variant {
+    name: "",
+    compiler: Compiler::Ryo,
+    flags: &[],
+    final_flags: &[],
+    vm_only: false,
+    ryo_std: false,
+    abort: false,
+};
 
 const REFERENCE: Variant = Variant { name: "rustc", compiler: Compiler::Rustc, ..VARIANT };
+
+/// The reference of the [`Variant::abort`] variants.
+const REFERENCE_ABORT: Variant =
+    Variant { name: "rustc-abort", compiler: Compiler::Rustc, flags: &["-Cpanic=abort"], ..VARIANT };
 
 const VARIANTS: &[Variant] = &[
     Variant { name: "ryo", ..VARIANT },
@@ -381,6 +395,8 @@ const VARIANTS: &[Variant] = &[
     // std itself in the VM (design/build.md#build, `--sysroot ryo`).
     Variant { name: "ryo-std", ryo_std: true, ..VARIANT },
     Variant { name: "ryo-std-O3", flags: &["-Copt-level=3"], vm_only: true, ryo_std: true, ..VARIANT },
+    Variant { name: "ryo-std-lto", final_flags: &["-Clto=fat"], ryo_std: true, ..VARIANT },
+    Variant { name: "ryo-std-abort", flags: &["-Cpanic=abort"], ryo_std: true, abort: true, ..VARIANT },
 ];
 
 /// Added by `test --clif`.
@@ -450,15 +466,28 @@ pub fn run(clif: bool) -> Result<(), String> {
                 continue;
             }
         };
+        let mut reference_abort = None;
         for variant in &variants {
             if variant.vm_only && program.vm.is_empty() {
                 continue;
             }
-            if !variant.final_flags.is_empty() && program.has_dylib() {
+            if (!variant.final_flags.is_empty() || variant.abort) && program.has_dylib() {
                 continue;
             }
             let name = format!("{} [{}]", program.name, variant.name);
-            match ctx.build_and_run(program, variant).and_then(|r| r.compare(&reference)) {
+            let reference = if variant.abort {
+                match reference_abort.get_or_insert_with(|| ctx.build_and_run(program, &REFERENCE_ABORT)) {
+                    Ok(r) => &*r,
+                    Err(msg) => {
+                        eprintln!("[y] test {name}: FAILED with plain rustc -Cpanic=abort: {msg}");
+                        failed.push(name);
+                        continue;
+                    }
+                }
+            } else {
+                &reference
+            };
+            match ctx.build_and_run(program, variant).and_then(|r| r.compare(reference)) {
                 Ok(()) => eprintln!("[y] test {name}: ok"),
                 Err(msg) => {
                     eprintln!("[y] test {name}: FAILED: {msg}");
@@ -762,7 +791,9 @@ mod tests {
     #[test]
     fn clif_variant_only_with_flag() {
         let names = |clif| super::variants(clif).iter().map(|v| v.name).collect::<Vec<_>>();
-        let ryo = ["ryo", "ryo-threads8", "ryo-O3", "ryo-lto", "ryo-thinlto-O3", "ryo-std", "ryo-std-O3"];
+        let ryo = [
+            "ryo", "ryo-threads8", "ryo-O3", "ryo-lto", "ryo-thinlto-O3", "ryo-std", "ryo-std-O3", "ryo-std-lto", "ryo-std-abort",
+        ];
         assert_eq!(names(false), ryo);
         assert_eq!(names(true), [&ryo[..], &["clif"]].concat());
         assert!(super::variants(true).last().unwrap().compiler == super::Compiler::Clif);
@@ -974,8 +1005,77 @@ fn rt_core_only(root: &Path) -> Result<(), String> {
         if !bad.is_empty() {
             return Err(format!("{} uses symbols outside core: {bad:?}", lib.display()));
         }
+        let objdump = nm.with_file_name("llvm-objdump");
+        let dir = lib.parent().unwrap();
+        let bytecode = fs::read_dir(dir)
+            .map_err(|e| e.to_string())?
+            .flatten()
+            .map(|e| e.path())
+            .find(|p| {
+                let n = p.file_name().unwrap_or_default().to_string_lossy();
+                n.starts_with("libryo_bytecode") && n.ends_with(".rlib")
+            })
+            .ok_or_else(|| format!("no ryo_bytecode rlib in {}", dir.display()))?;
+        if let Some(path) = panic_path(&objdump, &lib, &bytecode)? {
+            return Err(format!("{} reaches core's panic path: {}", lib.display(), path.join(" <- ")));
+        }
     }
     Ok(())
+}
+
+/// A call path from `ryo_rt`'s own code to core's panic machinery, through `ryo_bytecode`, if
+/// there is one. Under `--sysroot ryo` the panic handler is std's (VM code), so a panic in the
+/// runtime would enter the VM while it switches state. Everything `ryo_rt`'s rlib defines
+/// counts as runtime: the templates are generic and instantiated in the program's crates,
+/// which may panic like any program code. The edges are the relocations in each function
+/// (`llvm-objdump -dr`), which cover calls and taken addresses.
+fn panic_path(objdump: &Path, rt: &Path, bytecode: &Path) -> Result<Option<Vec<String>>, String> {
+    use std::collections::HashMap;
+    let mut edges: HashMap<String, Vec<String>> = HashMap::new();
+    let mut roots = Vec::new();
+    for (lib, is_rt) in [(rt, true), (bytecode, false)] {
+        let dis = output(cmd(objdump).args(["-dr", "--no-show-raw-insn"]).arg(lib))?;
+        let mut cur: Option<String> = None;
+        for line in dis.lines() {
+            if let Some((_, name)) = line.strip_suffix(">:").and_then(|l| l.split_once(" <")) {
+                let name = name.to_owned();
+                if is_rt {
+                    roots.push(name.clone());
+                }
+                edges.entry(name.clone()).or_default();
+                cur = Some(name);
+            } else if let (Some(f), Some(i)) = (&cur, line.find("R_X86_64_")) {
+                let target = line[i..].split_whitespace().nth(1).unwrap_or("");
+                let target = target.split(['+', '-']).next().unwrap_or("").to_owned();
+                edges.entry(f.clone()).or_default().push(target);
+            }
+        }
+    }
+    // core's panic entry points: `core::panicking::*`, and the `#[cold]` `*_fail`/`*_failed`
+    // helpers (slice indexing, `unwrap`, sort's `panic_on_ord_violation`).
+    let panics = |s: &str| {
+        crate_roots(s).first().is_some_and(|c| c == "4core")
+            && (s.contains("9panicking") || s.contains("_fail") || s.contains("panic_on_ord_violation"))
+    };
+    let mut from: HashMap<String, Option<String>> = HashMap::new();
+    let mut stack: Vec<(String, Option<String>)> = roots.into_iter().map(|r| (r, None)).collect();
+    while let Some((f, parent)) = stack.pop() {
+        if from.contains_key(&f) {
+            continue;
+        }
+        from.insert(f.clone(), parent);
+        if panics(&f) {
+            let mut path = vec![f.clone()];
+            while let Some(Some(p)) = from.get(path.last().unwrap()) {
+                path.push(p.clone());
+            }
+            return Ok(Some(path));
+        }
+        for c in edges.get(&f).into_iter().flatten() {
+            stack.push((c.clone(), Some(f.clone())));
+        }
+    }
+    Ok(None)
 }
 
 /// The crate roots (`<len><name>` after `Cs<disambiguator>_`) in a v0 symbol.

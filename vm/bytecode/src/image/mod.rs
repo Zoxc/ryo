@@ -304,13 +304,15 @@ impl<'a> Image<'a> {
                 .get(f.cleanup_off as usize..)
                 .and_then(|c| c.get(..f.cleanup_len as usize))
                 .ok_or(ImageError::BadCleanup(i))?;
-            for (j, e) in entries.iter().enumerate() {
+            let mut prev: Option<u32> = None;
+            for e in entries {
                 if e.offset >= f.code_len
                     || (e.target != TERMINATE && e.target >= f.code_len)
-                    || (j > 0 && entries[j - 1].offset >= e.offset)
+                    || prev.is_some_and(|p| p >= e.offset)
                 {
                     return Err(ImageError::BadCleanup(i));
                 }
+                prev = Some(e.offset);
             }
         }
         for (i, x) in self.fixups().iter().enumerate() {
@@ -343,12 +345,11 @@ impl<'a> Image<'a> {
         self.header.crate_hash
     }
 
-    // The parts were checked by `parse`, so these casts can't fail.
+    // The parts were checked by `parse`, so these casts can't fail. No panic either way: the
+    // VM runtime reads images, and must not reach core's panic path (whose handler may be VM
+    // code under `--sysroot ryo`, design/vm.md).
     fn part<T>(&self, span: Span) -> &'a [T] {
-        match cast(self.bytes, span, "") {
-            Ok(s) => s,
-            Err(_) => unreachable!(),
-        }
+        cast(self.bytes, span, "").unwrap_or(&[])
     }
 
     /// The function table, sorted by code offset.
@@ -381,7 +382,7 @@ impl<'a> Image<'a> {
     /// or `None` if unwinding leaves the frame.
     pub fn cleanup_at(&self, f: u32, offset: u32) -> Option<Cleanup> {
         let t = self.cleanup(f)?;
-        t.binary_search_by_key(&offset, |e| e.offset).ok().map(|i| t[i].action())
+        t.binary_search_by_key(&offset, |e| e.offset).ok().and_then(|i| t.get(i)).map(|e| e.action())
     }
 
     /// The function containing code word `word` (an index into [`Self::code`]), and the
@@ -389,8 +390,8 @@ impl<'a> Image<'a> {
     pub fn function_at(&self, word: u32) -> Option<(u32, u32)> {
         let fs = self.functions();
         let i = fs.partition_point(|f| f.code_off <= word).checked_sub(1)?;
-        let f = &fs[i];
-        (word - f.code_off < f.code_len).then_some((i as u32, word - f.code_off))
+        let f = fs.get(i)?;
+        (word.wrapping_sub(f.code_off) < f.code_len).then_some((i as u32, word - f.code_off))
     }
 
     pub fn fixups(&self) -> &'a [FixupEntry] {
@@ -446,9 +447,11 @@ impl<'a> Image<'a> {
     pub unsafe fn apply_fixups(&self) {
         let syms = self.symbols();
         for x in self.fixups() {
-            // SAFETY: per the caller; `validate` checked the offsets and indices.
+            // `validate` checked the index; no panic on the runtime's path (see `part`).
+            let Some(&slot) = syms.get(x.sym as usize) else { continue };
+            // SAFETY: per the caller; `validate` checked the offsets.
             unsafe {
-                let target = *(syms[x.sym as usize] as usize as *const u64);
+                let target = *(slot as usize as *const u64);
                 let at = self.data_ptr().add(x.offset as usize).cast::<u64>();
                 at.write(target.wrapping_add(x.addend as u64));
             }
