@@ -177,7 +177,15 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 })?;
                 Ok(true)
             }
-            _ => native("size_of_val of a struct with an unsized tail"),
+            _ => {
+                // A struct with an unsized tail (place.rs).
+                let (s, a) = self.size_and_align_of_dst(layout, Some(p + 8))?;
+                let v = self.dyn_slot(if size { s } else { a });
+                self.into_dest(cont, |fx, d| {
+                    fx.mov(d, v, 8);
+                    Ok(())
+                })
+            }
         }
     }
 

@@ -171,3 +171,74 @@ intrinsic_wrappers! {
     simd_sub "ryo_island_simd_sub" [T] (T, T) -> T = intrinsics::simd::simd_sub;
     simd_mul "ryo_island_simd_mul" [T] (T, T) -> T = intrinsics::simd::simd_mul;
 }
+
+// 128-bit `mul`, `div`, `rem` and `mul.ovf`: the VM has no such instructions
+// (design/vm.md, "Integer arithmetic"), so they are islands, which compile to
+// compiler-builtins' `__multi3`, `__udivti3`, … MIR guarantees non-zero divisors and no
+// `MIN / -1` (design/lowering.md#binary-operations), hence the unchecked forms.
+
+fn mul128(a: u128, b: u128) -> u128 {
+    a.wrapping_mul(b)
+}
+unsafe fn udiv128(a: u128, b: u128) -> u128 {
+    unsafe { intrinsics::unchecked_div(a, b) }
+}
+unsafe fn sdiv128(a: i128, b: i128) -> i128 {
+    unsafe { intrinsics::unchecked_div(a, b) }
+}
+unsafe fn urem128(a: u128, b: u128) -> u128 {
+    unsafe { intrinsics::unchecked_rem(a, b) }
+}
+unsafe fn srem128(a: i128, b: i128) -> i128 {
+    unsafe { intrinsics::unchecked_rem(a, b) }
+}
+fn umulo128(a: u128, b: u128) -> (u128, bool) {
+    a.overflowing_mul(b)
+}
+fn smulo128(a: i128, b: i128) -> (i128, bool) {
+    a.overflowing_mul(b)
+}
+
+intrinsic_wrappers! {
+    mul_w128 "ryo_island_mul_w128" [] (u128, u128) -> u128 = mul128;
+    div_u_w128 "ryo_island_div_u_w128" [] (u128, u128) -> u128 = udiv128;
+    div_s_w128 "ryo_island_div_s_w128" [] (i128, i128) -> i128 = sdiv128;
+    rem_u_w128 "ryo_island_rem_u_w128" [] (u128, u128) -> u128 = urem128;
+    rem_s_w128 "ryo_island_rem_s_w128" [] (i128, i128) -> i128 = srem128;
+    mul_ovf_u_w128 "ryo_island_mul_ovf_u_w128" [] (u128, u128) -> (u128, bool) = umulo128;
+    mul_ovf_s_w128 "ryo_island_mul_ovf_s_w128" [] (i128, i128) -> (i128, bool) = smulo128;
+}
+
+/// A numeric `as` cast the VM has no instruction for (`f16` and `f128`).
+pub trait AsCast<T> {
+    fn as_cast(self) -> T;
+}
+
+macro_rules! as_cast {
+    ($($from:ty => $($to:ty),*;)*) => {$($(
+        impl AsCast<$to> for $from {
+            #[inline(always)]
+            fn as_cast(self) -> $to {
+                self as $to
+            }
+        }
+    )*)*};
+}
+
+as_cast! {
+    f16 => i8, i16, i32, i64, i128, u8, u16, u32, u64, u128, f16, f32, f64, f128;
+    f128 => i8, i16, i32, i64, i128, u8, u16, u32, u64, u128, f16, f32, f64, f128;
+    i8 => f16, f128; i16 => f16, f128; i32 => f16, f128; i64 => f16, f128; i128 => f16, f128;
+    u8 => f16, f128; u16 => f16, f128; u32 => f16, f128; u64 => f16, f128; u128 => f16, f128;
+    f32 => f16, f128; f64 => f16, f128;
+}
+
+/// Island for a numeric `as` cast from `A` to `B` (`f16`/`f128` casts). `ops`: `[src: A, dest: B]`.
+///
+/// # Safety
+/// The operands must hold an initialized `A` and room for a `B`.
+#[rustc_diagnostic_item = "ryo_island_as_cast"]
+pub unsafe fn as_cast<A: AsCast<B>, B>(fp: *mut u8, ops: *const u32) -> u32 {
+    unsafe { slot::<B>(fp, ops, 1).write(slot::<A>(fp, ops, 0).read().as_cast()) };
+    0
+}

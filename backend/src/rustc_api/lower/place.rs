@@ -33,6 +33,13 @@ impl Loc {
     }
 }
 
+/// A `usize` known at lowering time, or computed at run time into a slot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DynVal {
+    Const(u64),
+    Slot(u32),
+}
+
 /// A lowered place: its location, layout, and for unsized places, the slot holding the
 /// pointer metadata (length or vtable).
 #[derive(Clone, Copy, Debug)]
@@ -150,18 +157,164 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
 
     fn field(&mut self, pv: PlaceVal<'tcx>, f: FieldIdx, layout: TyAndLayout<'tcx>) -> Result<PlaceVal<'tcx>, NeedsNative> {
         let off = pv.layout.fields.offset(f.as_usize()).bytes();
-        let meta = if layout.is_unsized() {
-            // A slice or `str` tail has a static offset; a `dyn` tail's depends on the
-            // vtable's alignment, unless it is at offset 0.
-            let tail = self.tcx.struct_tail_for_codegen(layout.ty, ty::TypingEnv::fully_monomorphized());
-            if matches!(tail.kind(), ty::Dynamic(..)) && off != 0 {
-                return native("field of an unsized struct with a dynamically aligned tail");
+        if layout.is_sized() {
+            return Ok(PlaceVal { loc: pv.loc.offset(off)?, layout, meta: None });
+        }
+        // An unsized tail (cg_ssa's `project_field`): `[T]` and `str` have a static
+        // alignment, and at offset 0 rounding changes nothing. Otherwise the offset is
+        // rounded up to the tail's dynamic alignment (from the vtable).
+        if matches!(layout.ty.kind(), ty::Slice(..) | ty::Str) || off == 0 {
+            return Ok(PlaceVal { loc: pv.loc.offset(off)?, layout, meta: pv.meta });
+        }
+        let (_, mut align) = self.size_and_align_of_dst(layout, pv.meta)?;
+        if let ty::Adt(def, _) = pv.layout.ty.kind()
+            && let Some(pack) = def.repr().pack
+        {
+            align = self.dyn_umin(align, DynVal::Const(pack.bytes()));
+        }
+        let off = self.dyn_align_up(DynVal::Const(off), align);
+        let loc = match off {
+            DynVal::Const(c) => pv.loc.offset(c)?,
+            DynVal::Slot(o) => {
+                let base = self.place_addr(pv.loc)?;
+                let p = self.temp8();
+                self.op(opw("Add", Width::W64), &[p, base, o]);
+                Loc::Mem { p, k: 0 }
             }
-            pv.meta
-        } else {
-            None
         };
-        Ok(PlaceVal { loc: pv.loc.offset(off)?, layout, meta })
+        Ok(PlaceVal { loc, layout, meta: pv.meta })
+    }
+
+    /// Size and alignment of a value of `layout`, with metadata in slot `meta` if it is
+    /// unsized (cg_ssa's `size_and_align_of_dst`).
+    pub fn size_and_align_of_dst(
+        &mut self,
+        layout: TyAndLayout<'tcx>,
+        meta: Option<u32>,
+    ) -> Result<(DynVal, DynVal), NeedsNative> {
+        if layout.is_sized() {
+            return Ok((DynVal::Const(layout.size.bytes()), DynVal::Const(layout.align.abi.bytes())));
+        }
+        let Some(meta) = meta else { return native("unsized value without metadata") };
+        match layout.ty.kind() {
+            ty::Dynamic(..) => {
+                // vtable entries 1 and 2: size, align.
+                let (s, a) = (self.temp8(), self.temp8());
+                let size = ty::COMMON_VTABLE_ENTRIES_SIZE as u32 * 8;
+                let align = ty::COMMON_VTABLE_ENTRIES_ALIGN as u32 * 8;
+                self.op(opw("Load", Width::W64), &[s, meta, size]);
+                self.op(opw("Load", Width::W64), &[a, meta, align]);
+                Ok((DynVal::Slot(s), DynVal::Slot(a)))
+            }
+            ty::Slice(_) | ty::Str => {
+                let unit = layout.field(&self.lcx(), 0);
+                let size = match unit.size.bytes() {
+                    1 => DynVal::Slot(meta),
+                    n => {
+                        let s = self.temp8();
+                        self.op(opw("MulImm", Width::W64), &[s, meta, n as u32, (n >> 32) as u32]);
+                        DynVal::Slot(s)
+                    }
+                };
+                Ok((size, DynVal::Const(unit.align.abi.bytes())))
+            }
+            ty::Adt(..) | ty::Tuple(..) => {
+                let i = layout.fields.count() - 1;
+                let unsized_off = layout.fields.offset(i).bytes();
+                let sized_align = layout.align.abi.bytes();
+                let field = layout.field(&self.lcx(), i);
+                let (size, mut align) = self.size_and_align_of_dst(field, Some(meta))?;
+                if let ty::Adt(def, _) = layout.ty.kind()
+                    && let Some(pack) = def.repr().pack
+                {
+                    align = self.dyn_umin(align, DynVal::Const(pack.bytes()));
+                }
+                let full_align = self.dyn_umax(DynVal::Const(sized_align), align);
+                // `unsized_size` is a multiple of its alignment, so one rounding at the end
+                // suffices (as in cg_ssa).
+                let full_size = match size {
+                    DynVal::Const(c) => DynVal::Const(unsized_off + c),
+                    DynVal::Slot(s) => {
+                        let t = self.temp8();
+                        self.op(opw("AddImm", Width::W64), &[t, s, unsized_off as u32, (unsized_off >> 32) as u32]);
+                        DynVal::Slot(t)
+                    }
+                };
+                let full_size = self.dyn_align_up(full_size, full_align);
+                Ok((full_size, full_align))
+            }
+            _ => native("size of an extern type or other unsized type"),
+        }
+    }
+
+    /// A [`DynVal`] in a slot.
+    pub fn dyn_slot(&mut self, v: DynVal) -> u32 {
+        match v {
+            DynVal::Slot(s) => s,
+            DynVal::Const(c) => {
+                let t = self.temp8();
+                self.imm(Width::W64, t, u128::from(c));
+                t
+            }
+        }
+    }
+
+    /// `v` rounded up to `align`, a power of two: `(v + align - 1) & -align`.
+    pub fn dyn_align_up(&mut self, v: DynVal, align: DynVal) -> DynVal {
+        match (v, align) {
+            (DynVal::Const(v), DynVal::Const(a)) => DynVal::Const(v.next_multiple_of(a)),
+            (_, DynVal::Const(1)) => v,
+            (v, DynVal::Const(a)) => {
+                let s = self.dyn_slot(v);
+                let t = self.temp8();
+                let m = a - 1;
+                self.op(opw("AddImm", Width::W64), &[t, s, m as u32, (m >> 32) as u32]);
+                let m = !m;
+                self.op(opw("AndImm", Width::W64), &[t, t, m as u32, (m >> 32) as u32]);
+                DynVal::Slot(t)
+            }
+            (v, DynVal::Slot(a)) => {
+                let s = self.dyn_slot(v);
+                let (t, n) = (self.temp8(), self.temp8());
+                self.op(opw("SubImm", Width::W64), &[t, a, 1, 0]);
+                self.op(opw("Add", Width::W64), &[t, t, s]);
+                self.op(opw("Neg", Width::W64), &[n, a]);
+                self.op(opw("And", Width::W64), &[t, t, n]);
+                DynVal::Slot(t)
+            }
+        }
+    }
+
+    /// The larger of two unsigned values.
+    pub fn dyn_umax(&mut self, a: DynVal, b: DynVal) -> DynVal {
+        match (a, b) {
+            (DynVal::Const(x), DynVal::Const(y)) => DynVal::Const(x.max(y)),
+            (DynVal::Const(0), v) | (v, DynVal::Const(0)) => v,
+            _ => self.dyn_minmax(a, b, true),
+        }
+    }
+
+    /// The smaller of two unsigned values.
+    pub fn dyn_umin(&mut self, a: DynVal, b: DynVal) -> DynVal {
+        match (a, b) {
+            (DynVal::Const(x), DynVal::Const(y)) => DynVal::Const(x.min(y)),
+            _ => self.dyn_minmax(a, b, false),
+        }
+    }
+
+    /// `max(a, b)` or `min(a, b)` without branches: `a ^ ((a ^ b) & -c)`, where `c` says
+    /// whether `b` is the result (`a < b` for max, `b < a` for min).
+    fn dyn_minmax(&mut self, a: DynVal, b: DynVal, max: bool) -> DynVal {
+        let (a, b) = (self.dyn_slot(a), self.dyn_slot(b));
+        let (c, m, t) = (self.frame.temp(1, 1), self.temp8(), self.temp8());
+        let (x, y) = if max { (a, b) } else { (b, a) };
+        self.op(opw("LtU", Width::W64), &[c, x, y]);
+        self.int_cast(m, c, Width::W8, Width::W64, false);
+        self.op(opw("Neg", Width::W64), &[m, m]);
+        self.op(opw("Xor", Width::W64), &[t, a, b]);
+        self.op(opw("And", Width::W64), &[t, t, m]);
+        self.op(opw("Xor", Width::W64), &[t, t, a]);
+        DynVal::Slot(t)
     }
 
     /// Element `idx` (a `usize` in slot `idx`) of the array or slice at `pv`.

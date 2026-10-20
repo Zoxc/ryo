@@ -75,8 +75,13 @@ so a MIR change in a toolchain bump is a compile error. The tables below follow 
 - The argument block starts at `fp + H`, where H is the header size
   ([vm.md](vm.md#frames-and-the-vm-stack)).
 - **Other locals**: each gets a fixed offset after the argument block, aligned to its
-  layout. ZSTs take no space. Locals whose live ranges don't overlap share a slot. Ranges come
-  from `StorageLive`/`StorageDead`, and from liveness for locals that have no storage markers.
+  layout. ZSTs take no space. Locals whose storage ranges don't overlap share bytes
+  (`frame.rs`): a forward dataflow over every CFG edge (unwind edges included) gives the
+  locals that may be storage-live at each block entry, and a local conflicts with every local
+  that may be live at one of its `StorageLive`s. Locals are then placed first-fit, at the
+  lowest aligned offset no conflicting local already uses. `_0`, the arguments and locals
+  without a `StorageLive` keep slots of their own, and so does every local of a body with
+  more than 4096 locals (the conflict matrix is quadratic).
 - `_0` (the return value) is a normal slot.
 - `frame_size` = H + argument block + other locals, rounded up to 16.
 - **Alignment**: frames are 16-aligned. The VM stack base is page-aligned, H = 16 and
@@ -103,7 +108,12 @@ so a MIR change in a toolchain bump is a compile error. The tables below follow 
 - `OpaqueCast`, `UnwrapUnsafeBinder` → nothing (same bytes, different type).
 - Unsized places (`[T]`, `str`, `dyn Trait` behind a deref): the pointer slot holds a wide
   pointer. Lengths and vtables are read from its metadata word. Size-dependent operations use
-  the runtime size (from the vtable or `len * size_of::<T>`).
+  the runtime size (from the vtable or `len * size_of::<T>`), computed as cg_ssa's
+  `size_and_align_of_dst` does, folding what is known at lowering time.
+- A field whose type is an unsized tail other than `[T]`/`str`, at a non-zero offset
+  (`(*p).val` with `p: &Wrapper<dyn Trait>`, `RcInner<dyn Trait>`'s value): its offset is
+  rounded up at run time to the tail's alignment from the vtable (capped by `repr(packed)`),
+  as cg_ssa's `project_field` does, and the place becomes `[t]` on a computed pointer.
 - **Operands**:
   - `Copy`/`Move` of a place are lowered the same way (a move is a copy, and drop
     elaboration has already made moves explicit).
@@ -133,7 +143,7 @@ a temporary slot up to 256 bytes, and uses `memmove` above that.
 |---|---|
 | `Use(op, _)` | `mov.wN` (scalar), `copy`/`memmove` (aggregate), or a load/store when a side is in memory. The retag flag is ignored |
 | `CopyForDeref(place)` | same as `Use(Copy(place))` |
-| `Repeat(op, n)` | `fill` (constant element), or a loop |
+| `Repeat(op, n)` | A scalar constant: `zero` or `fill` into a slot, `memset` into memory if all its bytes are equal. Otherwise the element is written once, then doubled with `memcpy`s (⌈log₂ n⌉ of them) |
 | `Ref`, `RawPtr` | `addr` (slot address) or the place's address computation. For unsized places, the wide pointer (data plus metadata) |
 | `Reborrow(_, _, place)` | same as `Use(Copy(place))`: same layout, bitwise copy |
 | `ThreadLocalRef(def)` | `call_ptr0` on the symbol of `Shim(ThreadLocal(def))`, which returns the address. On ELF, rustc normally doesn't create that shim (`needs_thread_local_shim` is false when the target exports TLS, `rustc_middle/src/ty/util.rs:731-735`), so the backend adds it to the native CGU itself as an `Internal` stub neighbor. Where an upstream crate already exports one (PE), that one is used |
@@ -153,12 +163,13 @@ a temporary slot up to 256 bytes, and uses `memmove` above that.
 | `IntToInt` | `zext`/`sext`/`trunc`, or `mov` for same-width casts |
 | `FloatToInt` | `cvt.f2i.sat` (Rust `as`: saturating, NaN → 0) |
 | `IntToFloat`, `FloatToFloat` | `cvt.i2f`, `cvt.f2f` |
+| any of the four above from or to `f16`/`f128` | the `as_cast<A, B>` island (`ops`: source, destination) |
 | `PtrToPtr`, `FnPtrToPtr`, `Transmute`, `Subtype`, `BoxDerefTransmute` | `mov`/`copy` (bit-preserving). `PtrToPtr` from wide to thin drops the metadata |
 | `PointerExposeProvenance`, `PointerWithExposedProvenance` | `mov` |
 | `PointerCoercion(ReifyFnPointer)` | `addr.sym` of the target instance's symbol, or its portal for VM functions |
 | `PointerCoercion(ClosureFnPointer)` | `addr.sym` of the closure's `FnOnce` shim (its portal, if it's a VM function) |
 | `PointerCoercion(UnsafeFnPointer, MutToConstPointer, ArrayToPointer)` | `mov` |
-| `PointerCoercion(Unsize)` | builds the wide pointer: data pointer plus metadata (a constant length, or `addr.k` of the vtable in the constant pool). Only pointers and pointer-wrapping structs whose pointer is at offset 0 and whose result is a 16-byte wide pointer are lowered (`Box`, `Rc`, …); cg_ssa's field-by-field struct-tail unsizing (`coerce_unsized_into`) is not done yet and stays native |
+| `PointerCoercion(Unsize)` | as cg_ssa's `coerce_unsized_into`: a pointer becomes the wide pointer, data pointer plus metadata (a constant length, `addr.k` of the vtable in the constant pool, or for trait upcasts the old vtable or its supertrait entry). A struct (`Box`, `Rc`, `Ref<'_, T>`, `Pin<Box<T>>`, …) is coerced field by field: non-ZST fields of unchanged type are copied, the others coerced recursively |
 
 ### Binary operations
 
@@ -174,8 +185,11 @@ a temporary slot up to 256 bytes, and uses `memmove` above that.
 | `Offset` | `ptr.index` (pointer + count × pointee size) |
 | float `Add`/`Sub`/`Mul`/`Div`/`Rem` | `fadd`/`fsub`/`fmul`/`fdiv`/`frem.fN` |
 
-128-bit `mul`, `div` and `rem` lower to islands (calling `__multi3`, `__udivti3`, … through
-core). Everything else at 128 bits runs in the VM.
+128-bit `mul`, `div`, `rem` and `MulWithOverflow` lower to islands (`mul_w128`,
+`div_{s,u}_w128`, `rem_{s,u}_w128`, `mul_ovf_{s,u}_w128`; `ops`: `a`, `b`, destination), which
+compile to compiler-builtins' `__multi3`, `__udivti3`, … Everything else at 128 bits runs in
+the VM. Wide pointer orderings are lexicographic: `a < b` is `a.data < b.data ||
+(a.data == b.data && a.meta < b.meta)`.
 
 ## Terminators
 
@@ -323,7 +337,10 @@ Mirrors cg_ssa's `get_caller_location`:
 
 The lowering lives in `backend/src/rustc_api/lower/`, one module per concern (`mod.rs` lists
 them). Implemented: everything above for integers, `bool`, `char`, `f32`/`f64`, places,
-references, aggregates, enums, casts, constants (pool allocations with relocations), switches,
+references, aggregates, enums, all casts (`f16`/`f128` ones through `as_cast`), field-by-field
+unsizing, unsized tails at dynamic offsets, `size_of_val` of any unsized type, `Repeat`, wide
+pointer compares, 128-bit `mul`/`div`/`rem`/`mul.ovf` islands, constants (pool allocations with
+relocations), switches,
 asserts, drops (VM call of the glue, `drop_in_place` island, vtable drop for trait objects),
 unwinding (cleanup entries, terminate stubs, the `catch_unwind` island) and calls: VM `call`,
 `call.ext`, `call.ind` for fn pointers, and islands (`call` for safe Rust fn items, including
@@ -331,13 +348,13 @@ virtual calls and safe intrinsics, `call_ptrN`/`call_cN` through `addr.sym` othe
 first set of intrinsics as VM instructions. `#[track_caller]` functions are VM functions with
 `portal_tcN` portals (up to 16 arguments), and caller locations follow cg_ssa, including a
 `#[track_caller]` function's own incoming location and the `caller_location` intrinsic.
-`SwitchInt` and `Assert` fuse with the compare that feeds them (`br.cmp`). Every local has its
-own slot (no sharing yet), and there is no copy propagation yet.
+`SwitchInt` and `Assert` fuse with the compare that feeds them (`br.cmp`). Locals with storage
+markers share slots; there is no copy propagation yet.
 Still `NeedsNative`, with the reason in `RYO_STATS=2`: `#[track_caller]` functions with more
-than 16 arguments, `TailCall`, `ThreadLocalRef`, 128-bit `mul`/`div`/`rem`, `f16`/`f128`,
+than 16 arguments, `TailCall`, `ThreadLocalRef`, `f16`/`f128` arithmetic and compares,
 virtual calls that aren't safe Rust fn items (`dyn Fn`), unsafe intrinsics without a VM
-lowering, coroutines, dynamically aligned unsized fields, and on PE constants pointing at
-imports (the fixup area).
+lowering, coroutines, extern-type tails, and on PE constants pointing at imports (the fixup
+area).
 
 ## Bytecode optimization
 

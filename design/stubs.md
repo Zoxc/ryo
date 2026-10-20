@@ -87,6 +87,10 @@ pub unsafe fn drop_in_place<T: ?Sized>(fp: *mut u8, ops: *const u32) -> u32 { â€
 - The first set of intrinsic wrappers: `sqrtf32`, `sqrtf64`, `powif32`, `powif64`, `fmaf32`,
   `fmaf64`, `simd_add`, `simd_sub`, `simd_mul`, `catch_unwind` (`ops`: `try_fn`, `data`,
   `catch_fn`, destination), tagged `"ryo_island_<name>"`.
+- Operations the VM has no instruction for, with the same operand convention: the 128-bit
+  `mul_w128`, `div_{s,u}_w128`, `rem_{s,u}_w128`, `mul_ovf_{s,u}_w128`, and
+  `as_cast<A, B>` for numeric casts from or to `f16`/`f128` (through `ryo_rt::island::AsCast`,
+  implemented for exactly those pairs).
 - `call_cN` exist for arities 0..=16. `call_ptrN` exist for 0..=17: 16, plus a trailing
   `&'static Location` for `#[track_caller]` callees ([lowering.md](lowering.md#caller-location)).
 - `call.ext`'s native fallback is always a `call_ptrN` (Rust ABI): upstream instances are Rust

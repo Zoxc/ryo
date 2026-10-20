@@ -1,6 +1,6 @@
 //! Calls the island and unwind templates directly, with fake frames and operand arrays.
 
-#![feature(repr_simd, tuple_trait, unboxed_closures)]
+#![feature(repr_simd, tuple_trait, unboxed_closures, f16, f128)]
 #![allow(internal_features)]
 
 use std::cell::Cell;
@@ -417,4 +417,44 @@ fn call_c_mixed_floats_and_ints() {
     unsafe { call_c10::<f32, i8, f64, u64, f32, i32, f64, f32, u16, f64, f64>(fr.fp(), ops.as_ptr()) };
     let want = 0.5 - 2.0 + 0.25 + 10.0 + 1.5 - 100.0 + 1000.0 + 0.125 + 7.0 + 1e6;
     assert_eq!(fr.get::<f64>(DEST), want);
+}
+
+#[test]
+fn int128_islands() {
+    let mut fr = Frame::new();
+    let (a, b) = (ARGS, ARGS + 16);
+    let ops = [a, b, DEST];
+    fr.put(a, u128::MAX / 3);
+    fr.put(b, 12345_u128);
+    unsafe { mul_w128(fr.fp(), ops.as_ptr()) };
+    assert_eq!(fr.get::<u128>(DEST), (u128::MAX / 3).wrapping_mul(12345));
+    unsafe { div_u_w128(fr.fp(), ops.as_ptr()) };
+    assert_eq!(fr.get::<u128>(DEST), u128::MAX / 3 / 12345);
+    unsafe { rem_u_w128(fr.fp(), ops.as_ptr()) };
+    assert_eq!(fr.get::<u128>(DEST), u128::MAX / 3 % 12345);
+    unsafe { mul_ovf_u_w128(fr.fp(), ops.as_ptr()) };
+    assert_eq!(fr.get::<(u128, bool)>(DEST), (u128::MAX / 3).overflowing_mul(12345));
+
+    fr.put(a, -7_i128);
+    fr.put(b, 2_i128);
+    unsafe { div_s_w128(fr.fp(), ops.as_ptr()) };
+    assert_eq!(fr.get::<i128>(DEST), -3);
+    unsafe { rem_s_w128(fr.fp(), ops.as_ptr()) };
+    assert_eq!(fr.get::<i128>(DEST), -1);
+    fr.put(a, i128::MIN);
+    fr.put(b, -1_i128);
+    unsafe { mul_ovf_s_w128(fr.fp(), ops.as_ptr()) };
+    assert_eq!(fr.get::<(i128, bool)>(DEST), (i128::MIN, true));
+}
+
+#[test]
+fn as_cast_island() {
+    let mut fr = Frame::new();
+    let ops = [ARGS, DEST];
+    fr.put(ARGS, 300.7_f128);
+    unsafe { as_cast::<f128, u8>(fr.fp(), ops.as_ptr()) };
+    assert_eq!(fr.get::<u8>(DEST), 255);
+    fr.put(ARGS, -2_i32);
+    unsafe { as_cast::<i32, f16>(fr.fp(), ops.as_ptr()) };
+    assert_eq!(fr.get::<f16>(DEST), -2.0);
 }

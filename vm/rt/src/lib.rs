@@ -1,7 +1,7 @@
 //! The ryo runtime: the VM, the registry, the portal and island templates, and the panic glue.
 //! See design/vm.md and design/stubs.md.
 
-#![feature(rustc_attrs, std_internals, unboxed_closures, fn_traits, tuple_trait, core_intrinsics, thread_local)]
+#![feature(rustc_attrs, std_internals, unboxed_closures, fn_traits, tuple_trait, core_intrinsics, thread_local, f16, f128)]
 #![allow(internal_features)]
 // The dispatch strategy (build.rs): tail-call handlers or `#[loop_match]`. Both features are
 // `incomplete`, which is why the plain `match` stays built and tested (design/vm.md).

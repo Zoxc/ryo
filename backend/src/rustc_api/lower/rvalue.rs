@@ -87,26 +87,35 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     fn repeat(&mut self, dst: PlaceVal<'tcx>, op: &Operand<'tcx>, n: u64) -> Result<(), NeedsNative> {
         let elem = self.operand_layout(op)?;
         let e = elem.size.bytes();
-        let total = e * n;
+        let total = e.checked_mul(n).ok_or_else(|| NeedsNative("Repeat size overflows".into()))?;
         if total == 0 {
             return Ok(());
         }
-        // A constant that is all zeroes: `zero`.
-        if let (Operand::Constant(c), Loc::Slot(d)) = (op, dst.loc) {
-            let zero = match self.eval_const(c)? {
-                ConstValue::Scalar(Scalar::Int(i)) => i.to_bits(i.size()) == 0,
-                ConstValue::ZeroSized => true,
-                ConstValue::Scalar(Scalar::Ptr(..)) | ConstValue::Slice { .. } | ConstValue::Indirect { .. } => false,
-            };
-            if zero {
-                self.op(Opcode::Zero, &[d, total as u32]);
-                return Ok(());
-            }
-            if let ConstValue::Scalar(Scalar::Int(i)) = self.eval_const(c)? {
-                let bytes = i.to_bits(i.size()).to_le_bytes()[..e as usize].to_vec();
-                let at = self.op(Opcode::Fill, &[d, 0, e as u32, n as u32]);
-                self.relocs.push(CodeReloc::Bytes { at: at + 2, bytes, align: elem.align.abi.bytes() as u32 });
-                return Ok(());
+        // A scalar constant: `zero` or `fill` into a slot (slots are below 1 GiB, so the
+        // sizes fit their u32 operands), `memset` into memory if all its bytes are equal.
+        if let Operand::Constant(c) = op
+            && let ConstValue::Scalar(Scalar::Int(i)) = self.eval_const(c)?
+        {
+            let bytes = i.to_bits(i.size()).to_le_bytes()[..e as usize].to_vec();
+            match dst.loc {
+                Loc::Slot(d) if bytes.iter().all(|&b| b == 0) => {
+                    self.op(Opcode::Zero, &[d, total as u32]);
+                    return Ok(());
+                }
+                Loc::Slot(d) => {
+                    let at = self.op(Opcode::Fill, &[d, 0, e as u32, n as u32]);
+                    self.relocs.push(CodeReloc::Bytes { at: at + 2, bytes, align: elem.align.abi.bytes() as u32 });
+                    return Ok(());
+                }
+                Loc::Mem { .. } if bytes.iter().all(|&b| b == bytes[0]) => {
+                    let dp = self.place_addr(dst.loc)?;
+                    let (b, len) = (self.frame.temp(1, 1), self.temp8());
+                    self.imm(Width::W8, b, u128::from(bytes[0]));
+                    self.imm(Width::W64, len, u128::from(total));
+                    self.op(Opcode::Memset, &[dp, b, len]);
+                    return Ok(());
+                }
+                Loc::Mem { .. } => {}
             }
         }
         self.operand_into(op, dst.loc)?;

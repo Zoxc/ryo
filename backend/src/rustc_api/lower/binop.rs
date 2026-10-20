@@ -9,6 +9,18 @@ use super::emit::{FloatWidth, imm_words, opcode, opw, try_opcode};
 use super::place::PlaceVal;
 use super::{FnCx, NeedsNative, native};
 
+/// Island templates for the 128-bit operations the VM has no instruction for
+/// (`vm/rt/src/island.rs`). `ops`: `[a, b, dest]`.
+mod templates {
+    pub const MUL_W128: &str = "ryo_island_mul_w128";
+    pub const DIV_U_W128: &str = "ryo_island_div_u_w128";
+    pub const DIV_S_W128: &str = "ryo_island_div_s_w128";
+    pub const REM_U_W128: &str = "ryo_island_rem_u_w128";
+    pub const REM_S_W128: &str = "ryo_island_rem_s_w128";
+    pub const MUL_OVF_U_W128: &str = "ryo_island_mul_ovf_u_w128";
+    pub const MUL_OVF_S_W128: &str = "ryo_island_mul_ovf_s_w128";
+}
+
 /// An integer comparison, before operand swapping.
 #[derive(Clone, Copy)]
 enum Cmp {
@@ -49,11 +61,16 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     _ => "MulOvf",
                 };
                 let su = if signed { "S" } else { "U" };
-                let Some(opc) = try_opcode(&format!("{family}{su}{}", w.suffix())) else {
-                    return native("128-bit mul.ovf (island)");
-                };
                 let (sa, _) = self.operand_slot(a)?;
                 let (sb, _) = self.operand_slot(b)?;
+                let Some(opc) = try_opcode(&format!("{family}{su}{}", w.suffix())) else {
+                    // 128-bit `mul.ovf`: an island writing the whole pair.
+                    let template = if signed { templates::MUL_OVF_S_W128 } else { templates::MUL_OVF_U_W128 };
+                    return self.with_place_slot(dst, |fx, d| {
+                        fx.island(template, &[], &[sa, sb, d], None);
+                        Ok(())
+                    });
+                };
                 let (v, o) = (dst.layout.fields.offset(0).bytes() as u32, dst.layout.fields.offset(1).bytes() as u32);
                 self.with_place_slot(dst, |fx, d| {
                     fx.op(opc, &[d + v, d + o, sa, sb]);
@@ -116,7 +133,20 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             _ => unreachable!("not an arithmetic op"),
         };
         if try_opcode(&format!("{family}{}", w.suffix())).is_none() {
-            return native("128-bit mul/div/rem (island)");
+            // 128-bit `mul`, `div`, `rem`: islands (design/lowering.md#binary-operations).
+            let template = match (op, signed) {
+                (BinOp::Div, false) => templates::DIV_U_W128,
+                (BinOp::Div, true) => templates::DIV_S_W128,
+                (BinOp::Rem, false) => templates::REM_U_W128,
+                (BinOp::Rem, true) => templates::REM_S_W128,
+                _ => templates::MUL_W128,
+            };
+            let (sa, _) = self.operand_slot(a)?;
+            let (sb, _) = self.operand_slot(b)?;
+            return self.with_place_slot(dst, |fx, d| {
+                fx.island(template, &[], &[sa, sb, d], None);
+                Ok(())
+            });
         }
         let shift = matches!(op, BinOp::Shl | BinOp::ShlUnchecked | BinOp::Shr | BinOp::ShrUnchecked);
         let (sa, _) = self.operand_slot(a)?;
@@ -228,20 +258,30 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         })
     }
 
-    /// Wide pointer equality: data, then metadata.
+    /// Wide pointer compares: data, then metadata (lexicographic, as cg_ssa does).
     fn compare_wide(&mut self, dst: PlaceVal<'tcx>, cmp: Cmp, a: &Operand<'tcx>, b: &Operand<'tcx>) -> Result<(), NeedsNative> {
-        let (name, combine) = match cmp {
-            Cmp::Eq => ("EqW64", "AndW8"),
-            Cmp::Ne => ("NeW64", "OrW8"),
-            Cmp::Lt | Cmp::Le | Cmp::Gt | Cmp::Ge => return native("ordering of wide pointers"),
-        };
         let (sa, _) = self.operand_slot(a)?;
         let (sb, _) = self.operand_slot(b)?;
-        let t = self.frame.temp(2, 1);
-        self.op(opcode(name), &[t, sa, sb]);
-        self.op(opcode(name), &[t + 1, sa + 8, sb + 8]);
+        let t = self.frame.temp(3, 1);
+        if let Cmp::Eq | Cmp::Ne = cmp {
+            let (name, combine) = if let Cmp::Eq = cmp { ("EqW64", "AndW8") } else { ("NeW64", "OrW8") };
+            self.op(opcode(name), &[t, sa, sb]);
+            self.op(opcode(name), &[t + 1, sa + 8, sb + 8]);
+            return self.with_place_slot(dst, |fx, d| {
+                fx.op(opcode(combine), &[d, t, t + 1]);
+                Ok(())
+            });
+        }
+        // x < y is x.data < y.data, or equal data and x.meta < y.meta (`<=` on the metadata
+        // for `<=`). `>` and `>=` swap the operands.
+        let (x, y) = if let Cmp::Lt | Cmp::Le = cmp { (sa, sb) } else { (sb, sa) };
+        let meta = if let Cmp::Lt | Cmp::Gt = cmp { "LtUW64" } else { "LeUW64" };
+        self.op(opcode("LtUW64"), &[t, x, y]);
+        self.op(opcode("EqW64"), &[t + 1, x, y]);
+        self.op(opcode(meta), &[t + 2, x + 8, y + 8]);
+        self.op(opcode("AndW8"), &[t + 1, t + 1, t + 2]);
         self.with_place_slot(dst, |fx, d| {
-            fx.op(opcode(combine), &[d, t, t + 1]);
+            fx.op(opcode("OrW8"), &[d, t, t + 1]);
             Ok(())
         })
     }

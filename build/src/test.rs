@@ -195,6 +195,11 @@ pub(crate) const CORPUS: &[Program] = &[
     // The terminate stubs: both programs abort (the exit status is compared too).
     single!("vm_abort_cleanup", vm: &["main", "f", "<P as std::ops::Drop>::drop"], entered: &["std::rt::lang_start::<()>"]),
     single!("vm_abort_nounwind", vm: &["main", "no_unwind"], entered: &["std::rt::lang_start::<()>"]),
+    single!(
+        "vm_aggregates",
+        vm: &["main", "tail", "nested", "rcs", "coerce_ref", "coerce_pin", "coerce_tail", "repeat", "wide_cmp", "arith128", "ovf128", "half", "scopes"],
+        entered: &["std::rt::lang_start::<()>"]
+    ),
     Program {
         name: "vm_ffi",
         crates: &[krate("main", "vm_ffi/main.rs", CrateKind::Bin)],

@@ -8,8 +8,12 @@ use rustc_middle::ty::{self, FloatTy, Instance, Ty, TypingEnv};
 use ryo_bytecode::insn::Opcode;
 
 use super::emit::{FloatWidth, Width, opcode};
-use super::place::PlaceVal;
+use super::place::{Loc, PlaceVal};
 use super::{CodeReloc, FnCx, NeedsNative, native};
+
+/// `as_cast<A, B>` (`vm/rt/src/island.rs`): numeric casts from or to `f16`/`f128`.
+/// `ops`: `[src, dest]`.
+const AS_CAST: &str = "ryo_island_as_cast";
 
 /// The VM's view of a scalar type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,6 +53,15 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let to_layout = self.layout_of(to)?;
         match kind {
             CastKind::IntToInt | CastKind::FloatToInt | CastKind::IntToFloat | CastKind::FloatToFloat => {
+                let half_or_quad = |t: Ty<'_>| matches!(t.kind(), ty::Float(FloatTy::F16 | FloatTy::F128));
+                if half_or_quad(src.ty) || half_or_quad(to) {
+                    // No VM instructions for `f16`/`f128`: the `as_cast` island.
+                    let (s, _) = self.operand_slot(op)?;
+                    return self.with_place_slot(dst, |fx, d| {
+                        fx.island(AS_CAST, &[src.ty.into(), to.into()], &[s, d], None);
+                        Ok(())
+                    });
+                }
                 let from = self.scalar_kind(src)?;
                 let into = self.scalar_kind(to_layout)?;
                 let (s, _) = self.operand_slot(op)?;
@@ -129,71 +142,102 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         })
     }
 
-    /// `PointerCoercion::Unsize`: the data pointer, plus the new metadata.
+    /// `PointerCoercion::Unsize`, as cg_ssa's `coerce_unsized_into`: a (wide) pointer, or a
+    /// struct coerced field by field (`Rc<T>`, `Ref<'_, T>`, `Pin<Box<T>>`, …).
     fn unsize(&mut self, dst: PlaceVal<'tcx>, op: &Operand<'tcx>, src: TyAndLayout<'tcx>) -> Result<(), NeedsNative> {
-        let (a, b) = self.unsize_pointees(src.ty, dst.layout.ty)?;
-        let src_wide = match src.size.bytes() {
-            8 => false,
-            16 => true,
-            _ => return native("unsize of an unexpected layout"),
-        };
-        if dst.layout.size.bytes() != 16 {
-            return native("unsize to an unexpected layout");
-        }
-        let (s, _) = self.operand_slot(op)?;
-        let tcx = self.tcx;
-        let (sa, sb) = tcx.struct_lockstep_tails_for_codegen(a, b, TypingEnv::fully_monomorphized());
-        self.with_place_slot(dst, |fx, d| {
-            fx.mov(d, s, 8);
-            match (sa.kind(), sb.kind()) {
-                (ty::Array(_, len), ty::Slice(_)) => {
-                    let len = len.try_to_target_usize(tcx).expect("monomorphic array length");
-                    fx.imm(Width::W64, d + 8, u128::from(len));
+        let src_loc = match op {
+            Operand::Copy(p) | Operand::Move(p) => {
+                let pv = self.place(*p)?;
+                if pv.meta.is_some() {
+                    return native("unsized operand");
                 }
-                (ty::Dynamic(da, _), ty::Dynamic(db, _)) => {
-                    if !src_wide {
-                        return native("dyn upcast of a thin pointer");
-                    }
-                    let same = da.principal_def_id() == db.principal_def_id() || db.principal_def_id().is_none();
-                    match (same, tcx.supertrait_vtable_slot((sa, sb))) {
-                        (false, Some(idx)) => {
-                            fx.op(opcode("LoadW64"), &[d + 8, s + 8, (idx * 8) as u32]);
-                        }
-                        _ => fx.mov(d + 8, s + 8, 8),
-                    }
-                }
-                (_, ty::Dynamic(preds, _)) => {
-                    let vtable = super::constant::vtable_alloc(tcx, sa, preds);
-                    fx.check_alloc(vtable)?;
-                    let at = fx.op(Opcode::AddrK, &[d + 8, 0]);
-                    fx.relocs.push(CodeReloc::Const { at: at + 2, alloc: vtable, offset: 0 });
-                }
-                _ => return native("unsupported unsizing"),
+                pv.loc
             }
-            Ok(())
-        })
+            Operand::Constant(_) | Operand::RuntimeChecks(_) => {
+                let t = self.temp_for(src);
+                self.operand_into(op, Loc::Slot(t))?;
+                Loc::Slot(t)
+            }
+        };
+        self.coerce_unsized_into(dst.loc, dst.layout, src_loc, src)
     }
 
-    /// The pointee types of an unsizing coercion between pointers or pointer-wrapping structs
-    /// (`Box`, `Rc`, … through their one non-1-ZST field).
-    fn unsize_pointees(&self, src: Ty<'tcx>, dst: Ty<'tcx>) -> Result<(Ty<'tcx>, Ty<'tcx>), NeedsNative> {
-        match (src.kind(), dst.kind()) {
-            (ty::Pat(a, _), ty::Pat(b, _)) => self.unsize_pointees(*a, *b),
-            (ty::Ref(_, a, _), ty::Ref(_, b, _) | ty::RawPtr(b, _)) | (ty::RawPtr(a, _), ty::RawPtr(b, _)) => Ok((*a, *b)),
-            (ty::Adt(da, _), ty::Adt(db, _)) if da == db => {
-                let sl = self.layout_of(src)?;
-                let dl = self.layout_of(dst)?;
-                for i in 0..sl.fields.count() {
-                    let sf = sl.field(&self.lcx(), i);
-                    if sf.is_1zst() {
+    fn coerce_unsized_into(
+        &mut self,
+        dst: Loc,
+        dl: TyAndLayout<'tcx>,
+        src: Loc,
+        sl: TyAndLayout<'tcx>,
+    ) -> Result<(), NeedsNative> {
+        match (sl.ty.kind(), dl.ty.kind()) {
+            (ty::Pat(s, _), ty::Pat(d, _)) => {
+                let (sl, dl) = (self.layout_of(*s)?, self.layout_of(*d)?);
+                self.coerce_unsized_into(dst, dl, src, sl)
+            }
+            (ty::Ref(_, a, _), ty::Ref(_, b, _) | ty::RawPtr(b, _)) | (ty::RawPtr(a, _), ty::RawPtr(b, _)) => {
+                let (a, b) = (*a, *b);
+                let src_wide = match sl.size.bytes() {
+                    8 => false,
+                    16 => true,
+                    _ => return native("unsize of an unexpected layout"),
+                };
+                if dl.size.bytes() != 16 {
+                    return native("unsize to an unexpected layout");
+                }
+                let s = self.loc_slot(src, sl)?;
+                self.with_slot(dst, 16, |fx, d| {
+                    fx.mov(d, s, 8);
+                    fx.unsized_info(d + 8, a, b, src_wide.then_some(s + 8))
+                })
+            }
+            (ty::Adt(da, _), ty::Adt(db, _)) if da == db && da.is_struct() => {
+                for i in 0..dl.fields.count() {
+                    let (sf, df) = (sl.field(&self.lcx(), i), dl.field(&self.lcx(), i));
+                    if df.is_zst() {
                         continue;
                     }
-                    let df = dl.field(&self.lcx(), i);
-                    return self.unsize_pointees(sf.ty, df.ty);
+                    let fs = src.offset(sl.fields.offset(i).bytes())?;
+                    let fd = dst.offset(dl.fields.offset(i).bytes())?;
+                    if sf.ty == df.ty {
+                        self.copy_val(fd, fs, sf.size.bytes() as u32)?;
+                    } else {
+                        self.coerce_unsized_into(fd, df, fs, sf)?;
+                    }
                 }
-                native("unsize of a struct without a pointer field")
+                Ok(())
             }
             _ => native("unsize between unexpected types"),
         }
+    }
+
+    /// Writes the metadata of an unsizing from pointee `a` to pointee `b` to slot `d`
+    /// (cg_ssa's `unsized_info`). `old` is the source's metadata slot, if it is wide.
+    fn unsized_info(&mut self, d: u32, a: Ty<'tcx>, b: Ty<'tcx>, old: Option<u32>) -> Result<(), NeedsNative> {
+        let tcx = self.tcx;
+        let (sa, sb) = tcx.struct_lockstep_tails_for_codegen(a, b, TypingEnv::fully_monomorphized());
+        match (sa.kind(), sb.kind()) {
+            (ty::Array(_, len), ty::Slice(_)) => {
+                let len = len.try_to_target_usize(tcx).expect("monomorphic array length");
+                self.imm(Width::W64, d, u128::from(len));
+            }
+            (ty::Dynamic(da, _), ty::Dynamic(db, _)) => {
+                let Some(old) = old else { return native("dyn upcast of a thin pointer") };
+                let same = da.principal_def_id() == db.principal_def_id() || db.principal_def_id().is_none();
+                match (same, tcx.supertrait_vtable_slot((sa, sb))) {
+                    (false, Some(idx)) => {
+                        self.op(opcode("LoadW64"), &[d, old, (idx * 8) as u32]);
+                    }
+                    _ => self.mov(d, old, 8),
+                }
+            }
+            (_, ty::Dynamic(preds, _)) => {
+                let vtable = super::constant::vtable_alloc(tcx, sa, preds);
+                self.check_alloc(vtable)?;
+                let at = self.op(Opcode::AddrK, &[d, 0]);
+                self.relocs.push(CodeReloc::Const { at: at + 2, alloc: vtable, offset: 0 });
+            }
+            _ => return native("unsupported unsizing"),
+        }
+        Ok(())
     }
 }
