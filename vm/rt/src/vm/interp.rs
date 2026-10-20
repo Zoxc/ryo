@@ -264,11 +264,17 @@ unsafe fn site(vm: *mut VmThread, site: u32) -> &'static AtomicPtr<Function> {
 /// site cache (design/vm.md, "the site cache").
 #[inline(always)]
 unsafe fn resolve_ind(vm: *mut VmThread, site_idx: u32, target: *const ()) -> Option<&'static Function> {
-    // SAFETY: cached values are null or published function records.
+    // SAFETY: a cached value is null, a tagged native address (low bit set, never
+    // dereferenced), or a function record published with Release by the store below, after
+    // its own publication (Acquire here makes the record's contents visible).
     unsafe {
         let s = site(vm, site_idx);
-        let c = s.load(Ordering::Relaxed);
-        if let Some(f) = c.as_ref()
+        let c = s.load(Ordering::Acquire);
+        if c.addr() & 1 != 0 {
+            if c == native_tag(target) {
+                return None;
+            }
+        } else if let Some(f) = c.as_ref()
             && ptr::eq(f.portal, target)
         {
             return Some(f);
@@ -277,13 +283,33 @@ unsafe fn resolve_ind(vm: *mut VmThread, site_idx: u32, target: *const ()) -> Op
     }
 }
 
+/// The `call.ind` site cache value for a native target: `addr << 1 | 1`. Function records are
+/// 8-aligned, so the low bit tells the two apart; user-space addresses on x86_64 are below
+/// 2^47, so the shift loses nothing.
+#[inline(always)]
+fn native_tag(target: *const ()) -> *mut Function {
+    ptr::without_provenance_mut(target.addr() << 1 | 1)
+}
+
 #[cold]
 #[inline(never)]
 fn resolve_ind_slow(s: &AtomicPtr<Function>, target: *const ()) -> Option<&'static Function> {
-    let f = lookup_addr(target)?;
-    s.store((f as *const Function).cast_mut(), Ordering::Relaxed);
-    Some(f)
+    match lookup_addr(target) {
+        Some(f) => {
+            s.store((f as *const Function).cast_mut(), Ordering::Release);
+            Some(f)
+        }
+        None => {
+            s.store(native_tag(target), Ordering::Relaxed);
+            None
+        }
+    }
 }
+
+// `do_ret` reads the destination of every call opcode at `off::Call::d`.
+const _: () = assert!(
+    off::Call::d == 1 && off::CallExt::d == 1 && off::CallExtInd::d == 1 && off::CallInd::d == 1
+);
 
 /// The length of the call instruction a return pc points at.
 #[inline(always)]
@@ -867,10 +893,10 @@ macro_rules! call_ext {
             target = *target.cast::<*const ()>();
         }
         let s = site($vm, word(&$r, off::$op::site));
-        let mut c = s.load(Ordering::Relaxed);
+        let mut c = s.load(Ordering::Acquire);
         if c.is_null() {
             c = resolve_ext(target);
-            s.store(c, Ordering::Relaxed);
+            s.store(c, Ordering::Release);
         }
         if c != NATIVE {
             call_function($vm, &mut $r, &*c);

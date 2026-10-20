@@ -37,7 +37,12 @@ on the same thread would otherwise create aliasing mutable references.
   region with a guard page, created on the first `vm::enter` (behind a `cold_path`). It is
   8 MiB (`MAP_NORESERVE`, so untouched pages cost nothing). A pthread key (ELF) or FLS
   (PE) destructor unmaps it when the thread exits, unless the thread exits from inside VM
-  code; a later `vm::enter` from thread-exit code maps a new one. Frames
+  code (then it is leaked). A `vm::enter` from a thread-exit destructor that runs after
+  ours maps a new stack and registers the destructor again; whether that one is freed
+  depends on the platform repeating destructor rounds (glibc does, up to
+  `PTHREAD_DESTRUCTOR_ITERATIONS`), otherwise it is leaked. On PE, FLS is per fiber while
+  the VM stack is per thread, so running VM code on fibers that are deleted before their
+  thread exits is not supported. Frames
   are bump-allocated. That is cheaper than `alloca` (no stack probing, frame size known), and
   leaves the native stack to native code.
 - **Frame layout**, with `fp` pointing at the start (H = 16):
@@ -90,8 +95,9 @@ on the same thread would otherwise create aliasing mutable references.
 - The opcode list, with every operand's encoding, is defined once in `ryo_bytecode`
   (`vm/bytecode/src/ops.rs`). The opcode enum, the decoder, the encoder and the
   disassembler are all generated from it. Opcode values follow list order, and every change
-  bumps `ryo_bytecode::FORMAT_VERSION`. A test pins a hash of the opcode table to the
-  version.
+  bumps `ryo_bytecode::FORMAT_VERSION`, as does every change to an image table layout
+  (`Header`, `FuncEntry`, `CleanupEntry`, `FixupEntry`). Tests pin a hash of the opcode
+  table and the table entry sizes and field offsets to the version.
 - Variable-length operands (`switch` tables and cases, island operands and targets) are
   encoded as a count word followed by the elements.
 - Immediates have the instruction's width: one word for `w8`–`w32` (upper bits ignored), two
@@ -268,15 +274,19 @@ Islands have no `d` word: "destination in word 1" applies only to the call instr
     get from a frame's return pc to its image, function and code offset.
 - **`call.ext` / `call.ind` and the site cache**: each site has one pointer-sized
   `AtomicPtr` slot in the image's writable site cache. It is a single word, so it can't
-  tear, and relaxed loads/stores are enough, because the slot only ever holds a value that
-  is correct for the site.
+  tear, and the slot only ever holds a value that is correct for the site. A
+  `*const Function` is stored with Release and loaded with Acquire: the record was written
+  by another thread (under the runtime lock, published through its image's table), and the
+  reader dereferences it, so the load must synchronize with that publication.
   - **`call.ext`**: the target is the constant `sym`, so the slot caches the resolution:
     null (unresolved), `NATIVE` (a sentinel), or a `*const Function`. On first use,
     `vm::lookup_addr(sym)` fills it.
-  - **`call.ind`**: the slot caches the last VM `*const Function` this site called. On a
-    call, the VM compares the target pointer with that function's portal address (a field of
-    the function record). If they match, it calls the function directly. Otherwise it calls
-    `vm::lookup_addr`, and stores the result if it is a VM function. Concurrent stores of
+  - **`call.ind`**: the slot caches the last target this site called: a VM
+    `*const Function`, or a native address tagged as `addr << 1 | 1` (records are 8-aligned,
+    and x86_64 user addresses fit in 63 bits). On a call, the VM compares the target pointer
+    with the cached function's portal address (a field of the function record) or the tagged
+    native address. If they match, it calls the function directly, or goes straight to the
+    native path. Otherwise it calls `vm::lookup_addr` and caches the result either way. Concurrent stores of
     different functions are fine: whichever wins is a valid cache entry, and every hit is
     verified against the target.
   - **VM function**: called directly. The arguments are already in the argument block layout

@@ -108,5 +108,15 @@ pub unsafe fn thread_exit(base: *mut c_void) {
         (*vm).limit = ptr::null_mut();
         (*vm).top = ptr::null_mut();
         sys::unmap(base.cast(), STACK_SIZE);
+        STACKS_FREED.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     }
 }
+
+/// The current thread's VM stack base, or null if it has none (yet, or any more).
+pub fn stack_base() -> *const u8 {
+    // SAFETY: reads one field of this thread's state through the raw pointer.
+    unsafe { (*(&raw const VM)).stack_base }
+}
+
+/// Number of VM stacks unmapped at thread exit so far (for tests).
+pub static STACKS_FREED: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);

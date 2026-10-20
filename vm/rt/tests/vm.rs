@@ -501,7 +501,11 @@ fn multi_image_calls_and_site_caches() {
     assert_eq!(img.site(sites[3]), gp);
     assert_eq!(ok::<_, u64>(img.id(f3), (pg, 5u64)), 15 + K_B, "hit");
     assert_eq!(ok::<_, u64>(img.id(f3), (native_double as *const () as usize, 5u64)), 10, "native target");
-    assert_eq!(img.site(sites[3]), gp, "native targets don't replace the cached VM function");
+    let nd = native_double as *const () as usize;
+    assert_eq!(img.site(sites[3]), nd << 1 | 1, "native target cached, tagged");
+    assert_eq!(ok::<_, u64>(img.id(f3), (nd, 6u64)), 12, "native hit");
+    assert_eq!(ok::<_, u64>(img.id(f3), (pg, 1u64)), 3 + K_B, "back to VM");
+    assert_eq!(img.site(sites[3]), gp);
 
     // tail_call.ind: VM target in the entry frame and in a called frame; native target in
     // both (the native one returns through `ret`'s logic with the function's ret_size).
@@ -766,4 +770,87 @@ fn fatal_paths() {
             assert!(err.contains(msg), "{case}: stderr lacks {msg:?}:\n{err}");
         }
     }
+}
+
+// ---- concurrency and thread exit ----
+
+const SCID_C: u64 = 0xc0c0_0000_0000_0005;
+const ID_C: u64 = portal_id(crate_hash(SCID_C), 0);
+
+#[test]
+fn concurrent_registration_and_sites() {
+    let pc = portal::<(u64,), u64, ID_C> as *const () as usize;
+    // Image C: c(x) = x + 1, with a portal. Never entered before the threads start, so they
+    // race on its lazy function table and on the portal map.
+    let mut w = ImageWriter::new(SCID_C);
+    let p = w.symbol("portal_c", 0);
+    let mut a = Asm::new();
+    a.i(Insn::AddImmW64 { d: Slot(16), a: Slot(16), imm: 1 });
+    a.i(Insn::Ret { s: Slot(16), len: 8 });
+    let mut f = func(a.done(), 32, 0, 8, 8);
+    f.portal = Some(p);
+    w.add_function(f);
+    let c = link(w.finish().unwrap(), &[("portal_c", pc)]);
+
+    // Image A: e(x) = c(x) via call.ext; i(p, x) = p(x) via call.ind. Shared sites.
+    let mut w = ImageWriter::new(unique_scid());
+    let s_c = w.symbol("portal_c", 0);
+    let i1 = w.symbol("cp1", 0);
+    let (s0, s1) = (w.site(), w.site());
+    let mut a = Asm::new();
+    a.i(Insn::MovW64 { d: Slot(64), s: Slot(16) });
+    a.i(Insn::CallExt { d: Slot(24), sym: s_c, site: s0, island: i1 });
+    a.i(Insn::Ret { s: Slot(24), len: 8 });
+    let fe = w.add_function(func(a.done(), 48, 24, 8, 8));
+    let mut a = Asm::new();
+    a.i(Insn::MovW64 { d: Slot(64), s: Slot(24) });
+    a.i(Insn::CallInd { d: Slot(32), p: Slot(16), site: s1, island: i1 });
+    a.i(Insn::Ret { s: Slot(32), len: 8 });
+    let fi = w.add_function(func(a.done(), 48, 24, 16, 8));
+    let img = link(w.finish().unwrap(), &[("portal_c", pc), ("cp1", cp1())]);
+    register(&[&c, &img]);
+    let (ide, idi) = (img.id(fe), img.id(fi));
+
+    let nd = native_double as *const () as usize;
+    let hs: Vec<_> = (0..8u64)
+        .map(|t| {
+            std::thread::spawn(move || {
+                for k in 0..300u64 {
+                    if k % 50 == t {
+                        // Snapshot churn while others call: a fresh one-function image.
+                        let mut w = ImageWriter::new(unique_scid());
+                        let mut a = Asm::new();
+                        a.i(Insn::ImmW64 { d: Slot(16), imm: k });
+                        a.i(Insn::Ret { s: Slot(16), len: 8 });
+                        w.add_function(func(a.done(), 32, 0, 0, 8));
+                        let n = build(w, &[]);
+                        assert_eq!(ok::<_, u64>(n.id(Func(0)), ()), k);
+                    }
+                    assert_eq!(ok::<_, u64>(ide, (k,)), k + 1);
+                    let (p, want) = if (k + t) % 2 == 0 { (pc, k + 1) } else { (nd, 2 * k) };
+                    assert_eq!(ok::<_, u64>(idi, (p, k)), want);
+                }
+            })
+        })
+        .collect();
+    for h in hs {
+        h.join().unwrap();
+    }
+    assert!(lookup_addr(pc as *const ()).is_some());
+}
+
+#[test]
+fn thread_exit_unmaps_the_stack() {
+    let id = image_b().id(Func(0));
+    let freed = ryo_rt::vm::stacks_freed();
+    let base = std::thread::spawn(move || {
+        assert!(ryo_rt::vm::current_stack_base().is_null());
+        assert_eq!(ok::<_, u64>(id, (1u64,)), 3 + K_B);
+        ryo_rt::vm::current_stack_base() as usize
+    })
+    .join()
+    .unwrap();
+    assert_ne!(base, 0);
+    // Other tests' threads may map a new stack at the same address, so count unmaps.
+    assert!(ryo_rt::vm::stacks_freed() > freed, "no VM stack was unmapped at thread exit");
 }

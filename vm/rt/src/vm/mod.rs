@@ -42,6 +42,18 @@ pub fn lookup_addr(addr: *const ()) -> Option<&'static Function> {
     registry::lookup_addr(addr)
 }
 
+/// The current thread's VM stack base, or null if it has none. For tests.
+#[doc(hidden)]
+pub fn current_stack_base() -> *const u8 {
+    thread::stack_base()
+}
+
+/// Number of VM stacks unmapped at thread exit so far. For tests.
+#[doc(hidden)]
+pub fn stacks_freed() -> usize {
+    thread::STACKS_FREED.load(core::sync::atomic::Ordering::Relaxed)
+}
+
 #[cfg(feature = "registry-anchor")]
 unsafe extern "C" {
     /// Defined by the registry object of each final link (design/backend.md).
@@ -50,7 +62,9 @@ unsafe extern "C" {
 
 /// Pops an entry record: restores the thread's stack top and image context. Runs on the
 /// normal return of `enter` and if a panic unwinds natively through it (which only a buggy
-/// plain `island` can cause), so the chain never points at a dead record.
+/// plain `island` can cause), so the chain never points at a dead record. The same holds for
+/// forced unwinding (`pthread_exit` from native code called by an island): it runs this
+/// guard like any other landing pad, so each `enter` it passes is popped in order.
 struct PopEntry {
     vm: *mut VmThread,
     rec: *mut Entry,

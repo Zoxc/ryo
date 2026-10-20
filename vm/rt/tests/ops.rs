@@ -508,3 +508,49 @@ fn atomics() {
     let img = build(w, &[]);
     assert_eq!(ok::<(), u32>(img.id(f), ()), 42);
 }
+
+/// fmin/fmax/frem special cases against hand-written expected values (not the std calls
+/// the model above uses).
+#[test]
+fn float_special_values() {
+    let mut w = ImageWriter::new(unique_scid());
+    let mut f = |op: Opcode| {
+        let mut a = Asm::new();
+        a.i(Insn::Zero { d: Slot(D as u32), len: 32 });
+        a.raw(op, &[D, A, B]);
+        a.i(Insn::Ret { s: Slot(D as u32), len: 32 });
+        w.add_function(func(a.done(), FRAME, 0, 32, 32))
+    };
+    let ops64 = [f(Opcode::FminF64), f(Opcode::FmaxF64), f(Opcode::FremF64)];
+    let ops32 = [f(Opcode::FminF32), f(Opcode::FmaxF32), f(Opcode::FremF32)];
+    let img = build(w, &[]);
+    let nan = f64::NAN;
+    let inf = f64::INFINITY;
+    // (op index, a, b, expected; NaN means "any NaN").
+    let cases: &[(usize, f64, f64, f64)] = &[
+        (0, nan, 1.0, 1.0),
+        (0, 1.0, nan, 1.0),
+        (0, -2.0, 3.0, -2.0),
+        (0, nan, nan, nan),
+        (1, nan, -1.0, -1.0),
+        (1, -1.0, nan, -1.0),
+        (1, -2.0, 3.0, 3.0),
+        (1, nan, nan, nan),
+        (2, 5.5, 2.0, 1.5),
+        (2, -5.5, 2.0, -1.5),
+        (2, 5.5, -2.0, 1.5),
+        (2, 1.0, 0.0, nan),
+        (2, inf, 1.0, nan),
+        (2, 1.0, inf, 1.0),
+        (2, nan, 1.0, nan),
+    ];
+    for &(i, a, b, want) in cases {
+        let r: Ret = ok(img.id(ops64[i]), (a.to_bits() as u128, b.to_bits() as u128));
+        let got = f64::from_bits(r[0] as u64);
+        assert!(if want.is_nan() { got.is_nan() } else { got == want }, "f64 op {i}: {a} {b} → {got}");
+        let r: Ret = ok(img.id(ops32[i]), ((a as f32).to_bits() as u128, (b as f32).to_bits() as u128));
+        let got = f32::from_bits(r[0] as u32);
+        let want = want as f32;
+        assert!(if want.is_nan() { got.is_nan() } else { got == want }, "f32 op {i}: {a} {b} → {got}");
+    }
+}
