@@ -398,7 +398,10 @@ templates, and the panic glue. It is a normal Rust dependency of every ryo-built
 
 - `ryo_rt` is always compiled by cg_llvm, and the backend treats every `ryo_rt` instance as
   native, including stub instances and their neighbors.
-- It depends on `core`/`std` only.
+- It depends on `core`/`std` and `ryo_bytecode` only, with no third-party crates.
+  `ryo_bytecode` is `#![no_std]`. Its reader needs only `core`, and the encoder and image
+  writer sit behind its `alloc` feature, which `ryo_rt` doesn't enable. `y build` installs
+  `libryo_bytecode.rlib` next to `libryo_rt.rlib`.
 - It carries a `RYO_RT_ABI` const, which the backend checks, erroring on a mismatch.
 - **Panic strategy**: `ryo_rt` is built with `panic=unwind`, like std. It is valid in
   `panic=abort` programs (`verify_ok` in `rustc_metadata/src/dependency_format.rs:404-500`) as

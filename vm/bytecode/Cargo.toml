@@ -1,0 +1,9 @@
+[package]
+name = "ryo_bytecode"
+version = "0.1.0"
+edition.workspace = true
+
+[features]
+default = ["alloc"]
+# The image writer and encoder (used by the backend). The reader works on `core` alone.
+alloc = []

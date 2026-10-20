@@ -1,0 +1,7 @@
+[package]
+name = "ryo_rt"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+ryo_bytecode = { path = "../bytecode", default-features = false }
