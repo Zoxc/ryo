@@ -282,12 +282,16 @@ fn prepare_sources(info: &RustcInfo, root: &Path, dst: &Path) -> Result<(), Stri
     Ok(())
 }
 
-/// The modification time of `dist/`'s backend, in seconds.
+/// A hash of `dist/`'s backend's contents (`y build` copies it fresh each time, so its
+/// modification time always changes).
 fn backend_stamp(dist: &Path) -> Result<u64, String> {
+    use std::hash::Hasher;
     let backend = dist.join("lib").join(crate::utils::dll_name("rustc_codegen_ryo"));
-    let meta = fs::metadata(&backend).map_err(|e| format!("{}: {e}", backend.display()))?;
-    let t = meta.modified().map_err(|e| e.to_string())?;
-    Ok(t.duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_secs())
+    let bytes = fs::read(&backend).map_err(|e| format!("{}: {e}", backend.display()))?;
+    // `DefaultHasher::new` uses fixed keys, so the hash is stable across runs.
+    let mut h = std::hash::DefaultHasher::new();
+    h.write(&bytes);
+    Ok(h.finish())
 }
 
 fn write_if_changed(path: &Path, text: &str) -> Result<(), String> {

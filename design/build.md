@@ -67,8 +67,8 @@ modeled on cg_clif's `build_system/`.
        `rustc-std-workspace-core`, which every other crate depends on. That orders `ryo_rt`
        before them, and `rustc-ryo`'s pathless `--extern force:ryo_rt` finds it through an
        extra `-Lcrate=<deps dir>` (cargo's `-L dependency=` paths aren't searched for it).
-     - Cargo doesn't fingerprint the backend, so a new backend (by modification time)
-       rebuilds from a clean target directory.
+     - Cargo doesn't fingerprint the backend, so a changed backend (by a hash of its
+       contents) rebuilds from a clean target directory; an unchanged one rebuilds nothing.
      - The shim collects each ryo-built crate's `RYO_STATS=2` output, and `y build` prints a
        coverage table: VM and native functions and islands per crate, island instructions
        by template, native functions by reason ([backend.md](backend.md#debugging-switches)).
@@ -99,7 +99,8 @@ modeled on cg_clif's `build_system/`.
    They reject `-Zrandomize-layout`, because argument block layouts must agree between
    crates ([lowering.md](lowering.md#frame-slots)).
 
-   `--sysroot ryo` (or `--sysroot=ryo`) means `dist/sysroot-ryo`. `-Zryo-stats[=N]` (or
+   `--sysroot ryo` (or `--sysroot=ryo`) means `dist/sysroot-ryo`; a directory named `ryo`
+   needs a path, such as `--sysroot ./ryo`. `-Zryo-stats[=N]` (or
    `-Z ryo-stats[=N]`, `N` defaulting to 1) is taken out of the arguments, since rustc has
    no such option and a backend can't add one, and sets `RYO_STATS=N` for the backend
    ([backend.md](backend.md#debugging-switches)).
