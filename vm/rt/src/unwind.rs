@@ -6,18 +6,20 @@
 use std::any::Any;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 
-/// An opaque `Box<dyn Any + Send>` panic payload, as its (data, vtable) pointer pair.
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RawPayload {
-    pub data: *mut (),
-    pub vtable: *mut (),
-}
+/// An opaque `Box<dyn Any + Send>` panic payload: the box's raw wide pointer, stored as is
+/// (the wide-pointer layout is not relied on).
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy)]
+pub struct RawPayload(pub *mut (dyn Any + Send));
 
 impl RawPayload {
-    /// No payload (both pointers null).
-    pub const NONE: RawPayload =
-        RawPayload { data: core::ptr::null_mut(), vtable: core::ptr::null_mut() };
+    /// No payload: a null data pointer (with `()`'s vtable).
+    pub const NONE: RawPayload = RawPayload(core::ptr::null_mut::<()>() as *mut (dyn Any + Send));
+
+    /// Whether this is [`RawPayload::NONE`] (a null data pointer).
+    pub fn is_none(self) -> bool {
+        self.0.is_null()
+    }
 }
 
 /// The outcome of [`call_catching`].
@@ -34,7 +36,8 @@ pub struct CatchResult {
 ///
 /// On a panic, the payload is written to `*payload_out` (the VM passes the current entry
 /// record's payload slot) and `unwinding` is set. The previous value of `*payload_out` is
-/// overwritten without being dropped, so it must be [`RawPayload::NONE`].
+/// overwritten without being dropped, so it must be [`RawPayload::NONE`]. On success,
+/// `*payload_out` is not touched.
 ///
 /// # Safety
 /// `f` must be safe to call with `fp`/`ops`, and `payload_out` must be valid for writes.
@@ -48,10 +51,7 @@ pub unsafe fn call_catching(
     match catch_unwind(AssertUnwindSafe(|| unsafe { f(fp, ops) })) {
         Ok(succ) => CatchResult { succ, unwinding: false },
         Err(payload) => {
-            let raw: *mut (dyn Any + Send) = Box::into_raw(payload);
-            // SAFETY: a `*mut dyn Trait` is a (data, vtable) pointer pair.
-            let raw = unsafe { core::mem::transmute::<*mut (dyn Any + Send), RawPayload>(raw) };
-            unsafe { payload_out.write(raw) };
+            unsafe { payload_out.write(RawPayload(Box::into_raw(payload))) };
             CatchResult { succ: 0, unwinding: true }
         }
     }
@@ -64,7 +64,7 @@ pub unsafe fn call_catching(
 /// `payload` must have been produced by [`call_catching`], and is consumed.
 #[inline(never)]
 pub unsafe fn resume_unwind_from_vm(payload: RawPayload) -> ! {
-    // SAFETY: the inverse of the conversion in `call_catching`.
-    let raw = unsafe { core::mem::transmute::<RawPayload, *mut (dyn Any + Send)>(payload) };
-    resume_unwind(unsafe { Box::from_raw(raw) })
+    debug_assert!(!payload.is_none());
+    // SAFETY: the pointer came from `Box::into_raw` in `call_catching`.
+    resume_unwind(unsafe { Box::from_raw(payload.0) })
 }

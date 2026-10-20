@@ -153,6 +153,39 @@ mod tests {
         assert_eq!((a, l), (5, line));
     }
 
+    unsafe fn tc3_vm(_: u64, args: *const u8, ret: *mut u8, _: *mut RawPayload) -> u32 {
+        type A = (u8, u128, String, &'static Location<'static>);
+        let (a, b, c, loc) = unsafe { args.cast::<A>().read() };
+        unsafe { ret.cast::<(u8, u128, String, u32)>().write((a, b, c, loc.line())) };
+        0
+    }
+
+    #[test]
+    fn portal_tc_arity_3() {
+        HOOK.set(Some(tc3_vm));
+        let line = line!() + 1;
+        let r = portal_tc3::<u8, u128, String, (u8, u128, String, u32), 5>(1, 1 << 100, "s".into());
+        assert_eq!(r, (1, 1 << 100, String::from("s"), line));
+    }
+
+    #[derive(Debug, PartialEq, Clone, Copy)]
+    struct Big([u64; 12]);
+
+    unsafe fn big_vm(_: u64, args: *const u8, ret: *mut u8, _: *mut RawPayload) -> u32 {
+        let (k,) = unsafe { args.cast::<(u64,)>().read() };
+        unsafe { ret.cast::<Big>().write(Big(core::array::from_fn(|i| i as u64 * k))) };
+        0
+    }
+
+    #[test]
+    fn portal_large_return() {
+        HOOK.set(Some(big_vm));
+        assert_eq!(portal::<(u64,), Big, 6>((3,)), Big(core::array::from_fn(|i| i as u64 * 3)));
+        let p: extern "rust-call" fn((u64,)) -> Big = portal::<(u64,), Big, 6>;
+        let f: fn(u64) -> Big = unsafe { core::mem::transmute(p) };
+        assert_eq!(f(2), Big(core::array::from_fn(|i| i as u64 * 2)));
+    }
+
     unsafe fn panicking_island(_: *mut u8, _: *const u32) -> u32 {
         std::panic::resume_unwind(Box::new(77_i32))
     }

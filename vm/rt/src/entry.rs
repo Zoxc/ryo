@@ -31,7 +31,8 @@ where
     S: FnOnce(fn() -> T, isize, *const *const u8, u8) -> isize,
 {
     const { assert!(size_of::<S>() == 0) };
-    // SAFETY: `S` is a ZST `FnDef` type, so it has exactly one value, which needs no bytes.
+    // SAFETY: `S` is a `FnDef` type: a ZST and inhabited, so its one value needs no bytes and
+    // `zeroed` produces it.
     let start: S = unsafe { core::mem::zeroed() };
     start(main, argc as isize, argv.cast::<*const u8>(), SIGPIPE) as c_int
 }

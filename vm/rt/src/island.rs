@@ -17,7 +17,10 @@ use core::marker::Tuple;
 /// The frame slot of operand `i`: `fp + ops[i]`, as a `*mut T`.
 ///
 /// # Safety
-/// `ops` must have at least `i + 1` words, and `fp + ops[i]` must be in the frame.
+/// `ops` must have at least `i + 1` words, and `fp + ops[i]` must be in the frame and aligned
+/// for `T`. VM frames are 16-aligned and every slot is aligned to its type relative to `fp`,
+/// so this holds for every `T` with `align_of::<T>() <= 16`; functions with more-aligned
+/// locals or arguments stay native (design/stubs.md, "Template gaps").
 #[inline(always)]
 pub unsafe fn slot<T>(fp: *mut u8, ops: *const u32, i: usize) -> *mut T {
     unsafe { fp.add(*ops.add(i) as usize).cast::<T>() }
@@ -25,6 +28,10 @@ pub unsafe fn slot<T>(fp: *mut u8, ops: *const u32, i: usize) -> *mut T {
 
 /// Direct call of a safe Rust fn or closure type `F` that is a ZST (a `FnDef`, or a closure
 /// without captures). `ops`: `[args: Args, dest: R]`.
+///
+/// Only for callees that implement `FnOnce`: `unsafe fn`s and `#[target_feature]` fns go
+/// through `call_ptrN`. So do `#[track_caller]` callees, with their location as the trailing
+/// argument; through `call`, `Location::caller()` would point into `ryo_rt`.
 ///
 /// # Safety
 /// The operands must hold an initialized `Args` and room for an `R`.
@@ -34,7 +41,8 @@ pub unsafe fn call<F: FnOnce<Args, Output = R>, Args: Tuple, R>(
     ops: *const u32,
 ) -> u32 {
     const { assert!(size_of::<F>() == 0) };
-    // SAFETY: `F` is a ZST, so it has exactly one value, which needs no bytes.
+    // SAFETY: `F` is a ZST and inhabited (a `FnDef` or a capture-less closure), so its one
+    // value needs no bytes and `zeroed` produces it.
     let f: F = unsafe { core::mem::zeroed() };
     unsafe {
         let args = slot::<Args>(fp, ops, 0).read();

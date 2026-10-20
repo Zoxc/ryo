@@ -52,6 +52,12 @@ so a MIR change in a toolchain bump is a compile error. The tables below follow 
   from `StorageLive`/`StorageDead`, and from liveness for locals that have no storage markers.
 - `_0` (the return value) is a normal slot.
 - `frame_size` = H + argument block + other locals, rounded up to 16.
+- **Alignment**: frames are 16-aligned. The VM stack base is page-aligned, H = 16 and
+  `frame_size` is a multiple of 16, and every slot is aligned to its type relative to `fp`.
+  So every slot whose type has alignment ≤ 16 is properly aligned, and templates access
+  slots with aligned reads and writes. A function whose locals or arguments (including the
+  argument block of any call it makes) contain a type with alignment above 16 is not
+  lowered: it stays native ([stubs.md](stubs.md#template-gaps)).
 
 ## Places and operands
 

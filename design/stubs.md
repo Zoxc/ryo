@@ -92,7 +92,10 @@ pub unsafe fn drop_in_place<T: ?Sized>(fp: *mut u8, ops: *const u32) -> u32 { â€
   functions, and Rust-ABI calls never count as FFI-unwind calls.
 - `call` relies on `FnOnce`, which is only implemented for safe, Rust-ABI, non-variadic fns
   without `#[target_feature]` (`rustc_type_ir/src/ty_kind.rs:1131`,
-  `candidate_assembly.rs:591`). Everything else goes through the pointer variants.
+  `candidate_assembly.rs:591`). Everything else goes through the pointer variants: `unsafe
+  fn`s and `#[target_feature]` fns through `call_ptrN`, and `#[track_caller]` callees through
+  `call_ptr{N+1}` with the trailing `&'static Location` (through `call`,
+  `Location::caller()` would point into `ryo_rt`).
 - Generic argument types are fine for FFI: the fn-pointer ABI is computed after
   monomorphization from concrete layouts, and `improper_ctypes` doesn't apply, because the
   island signature only has raw pointers.
@@ -125,6 +128,9 @@ These make the containing function native ([backend.md](backend.md#pipeline), st
   by `std::arch`): they have no MIR and an `unadjusted` ABI
 - arities above 16
 - functions with unsized parameters (`unsized_fn_params`)
+- functions whose locals or arguments, including the argument block of any call they make,
+  contain a type with alignment above 16: VM frames only guarantee 16
+  ([lowering.md](lowering.md#frame-slots)), and templates access slots aligned
 
 ### Unwinding
 
@@ -136,13 +142,13 @@ Templates don't catch. The VM calls islands that can unwind (the call templates,
 pub unsafe fn call_catching(f: unsafe fn(*mut u8, *const u32) -> u32, fp: *mut u8,
                             ops: *const u32, payload_out: *mut RawPayload) -> CatchResult
 #[repr(C)] pub struct CatchResult { pub succ: u32, pub unwinding: bool }
-#[repr(C)] pub struct RawPayload { pub data: *mut (), pub vtable: *mut () }  // RawPayload::NONE = nulls
+#[repr(transparent)] pub struct RawPayload(pub *mut (dyn Any + Send));  // NONE: null data pointer
 ```
 
 It is a non-generic `catch_unwind` wrapper that returns the successor and an "unwinding"
 flag separately. The VM passes a pointer to the current entry record's payload slot as
 `payload_out`, and on a panic `call_catching` writes the payload there (the
-`Box<dyn Any + Send>` as its raw pointer pair, overwriting the slot, which must be
+`Box<dyn Any + Send>` as its raw wide pointer, from `Box::into_raw`, overwriting the slot, which must be
 `RawPayload::NONE`) ([vm.md](vm.md#unwinding)). The VM then runs the
 function's cleanup blocks ([vm.md](vm.md#unwinding)). Islands that can't unwind are called
 directly.

@@ -41,6 +41,9 @@ on the same thread would otherwise create aliasing mutable references.
   …          other locals, including _0
   fp + frame_size
   ```
+- **Alignment**: `fp` is always 16-aligned (page-aligned stack base, H = 16, `frame_size` a
+  multiple of 16), and slots are aligned to their types relative to `fp`. Types with
+  alignment above 16 never live in VM frames ([lowering.md](lowering.md#frame-slots)).
 - Two words are written per call. The current function isn't stored: on the cold paths that
   need it (unwinding, backtraces), it is found from the pc through the image's function
   table, which is sorted by code offset. The destination slot isn't stored either: `ret`
@@ -383,7 +386,7 @@ templates, and the panic glue. It is a normal Rust dependency of every ryo-built
 - **`vm`**: the interpreter, dispatch, frames and `VmThread` (`#[thread_local]`). The hot path
   uses `core` only.
   - `vm::enter(id, args, ret, payload_out) -> u32`: entry from portals. It returns 0 for ok,
-    and 1 for unwinding, with the payload (`RawPayload`, an opaque pointer pair) moved to
+    and 1 for unwinding, with the payload (`RawPayload`, an opaque raw `Box` pointer) moved to
     `payload_out` before the entry record is popped.
   - `vm::lookup_addr(fnptr)`: portal address → VM function.
   - `vm::register`: `#[no_mangle] extern "C" fn ryo_vm_register(images, n)`.
@@ -392,7 +395,7 @@ templates, and the panic glue. It is a normal Rust dependency of every ryo-built
 - **`unwind`**:
   - `call_catching(f, fp, ops, payload_out) -> CatchResult`: runs an island inside
     `catch_unwind`. On a panic it writes the payload (`Box<dyn Any + Send>`, kept opaque as
-    the pointer pair `RawPayload`) to `payload_out`, which the VM points at the current entry
+    its raw wide pointer in `RawPayload`) to `payload_out`, which the VM points at the current entry
     record's payload slot ([stubs.md](stubs.md#unwinding)).
   - `unsafe fn resume_unwind_from_vm(payload) -> !`: rebuilds the `Box<dyn Any + Send>` and calls
     `resume_unwind`.
