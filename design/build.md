@@ -34,7 +34,10 @@ modeled on cg_clif's `build_system/`.
 
 1. **Backend**: `cargo build --release -Zembed-metadata=no` for `backend/`, with
    `RUSTFLAGS=-Zallow-features=rustc_private,...`. Only the listed features are allowed,
-   even though `RUSTC_BOOTSTRAP` would allow all.
+   even though `RUSTC_BOOTSTRAP` would allow all. The release profile is forced to
+   `CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1` and `CARGO_PROFILE_RELEASE_LTO=fat`, so the
+   backend's own crates are optimized as one unit whatever the user's settings;
+   `librustc_driver` stays a dynamic dependency, outside LTO.
 2. **Sysroot**: a self-contained `dist/` directory:
    ```
    dist/bin/rustc-ryo, cargo-ryo          wrappers

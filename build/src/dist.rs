@@ -76,6 +76,10 @@ fn build_backend(root: &Path, target: &Path, info: &RustcInfo) -> Result<PathBuf
         .arg("--target-dir")
         .arg(&target_dir)
         .env("RUSTFLAGS", rustflags)
+        // Full optimization, independent of user settings: one codegen unit and fat LTO over
+        // the backend's own crates (librustc_driver stays a dynamic dependency).
+        .env("CARGO_PROFILE_RELEASE_CODEGEN_UNITS", "1")
+        .env("CARGO_PROFILE_RELEASE_LTO", "fat")
         .env("RUSTUP_TOOLCHAIN", &info.toolchain))?;
     Ok(target_dir.join("release").join(dll_name("rustc_codegen_ryo")))
 }
