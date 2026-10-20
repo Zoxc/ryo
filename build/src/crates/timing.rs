@@ -33,7 +33,10 @@ pub fn wrapper(log_dir: OsString) -> ExitCode {
         ExitCode::FAILURE
     };
     let name = args.iter().position(|a| a == "--crate-name").and_then(|i| args.get(i + 1)).cloned();
-    let Some(name) = name else {
+    // Cargo's target-info probe (`rustc - --crate-name ___ --print=...`) and other `--print`
+    // queries aren't compilations.
+    let probe = name.as_ref().is_some_and(|n| n == "___") || args.iter().any(|a| a.to_string_lossy().starts_with("--print"));
+    let Some(name) = name.filter(|_| !probe) else {
         // `rustc -vV`, `--print` queries and the like.
         return match std::process::Command::new(&rustc).args(&args).status() {
             Ok(s) => exit(s),

@@ -299,8 +299,19 @@ pub fn run(opts: Options) -> Result<(), String> {
 
     let mut results = Vec::new();
     for &krate in &selected {
-        let src = prepare(&root, &base, krate)?;
         let mut cells: Vec<Cell> = opts.backends.iter().map(|_| Cell::default()).collect();
+        let src = match prepare(&root, &base, krate) {
+            Ok(src) => src,
+            Err(e) => {
+                eprintln!("[y] {}: preparing the sources FAILED: {e}", krate.name);
+                for cell in &mut cells {
+                    cell.errors.push(format!("prepare: {e}"));
+                    cell.build_failed = true;
+                }
+                results.push(CrateResult { krate, cells });
+                continue;
+            }
+        };
         // Builds: one warm-up (ryo's collects RYO_STATS), then the samples, backends
         // interleaved, each from a clean target directory.
         for i in 0..=opts.build_samples {
@@ -352,8 +363,11 @@ pub fn run(opts: Options) -> Result<(), String> {
                 if i == 0 {
                     cell.errors.extend(outcome.failures.iter().map(|f| format!("test: {f}")));
                     cell.tests = Some(outcome);
-                } else {
+                } else if outcome.failures.is_empty() {
                     cell.test_run.push(time);
+                } else {
+                    // A failed or timed-out binary makes the sum meaningless: drop the sample.
+                    cell.errors.push(format!("test: run sample {i} dropped: {}", outcome.failures.join("; ")));
                 }
                 let example = cell.example.clone().unwrap();
                 let w = run_timed(Command::new(&example).current_dir(&src), opts.timeout);
@@ -361,7 +375,7 @@ pub fn run(opts: Options) -> Result<(), String> {
                     Ok((_, out)) if i == 0 => cell.workload_output = Some(out),
                     Ok((t, _)) => cell.workload.push(t),
                     Err(e) if i == 0 => cell.errors.push(format!("workload: {e}")),
-                    Err(_) => {}
+                    Err(e) => cell.errors.push(format!("workload: run sample {i} dropped: {e}")),
                 }
                 eprintln!(
                     "[y] {} run {label} [{}]: tests {time:.2}s, workload {}",
@@ -372,19 +386,13 @@ pub fn run(opts: Options) -> Result<(), String> {
             }
         }
         // The workload prints a checksum that must not depend on the backend.
-        let reference = cells.iter().find_map(|c| c.workload_output.clone());
-        for (bi, cell) in cells.iter_mut().enumerate() {
-            if let (Some(r), Some(o)) = (&reference, &cell.workload_output)
+        let reference = cells.iter().zip(&opts.backends).find_map(|(c, b)| Some((c.workload_output.clone()?, *b)));
+        for cell in &mut cells {
+            if let (Some((r, rb)), Some(o)) = (&reference, &cell.workload_output)
                 && r != o
             {
-                cell.errors.push(format!(
-                    "workload output differs from {}'s: {:?} vs {:?}",
-                    opts.backends[0].name(),
-                    o.trim(),
-                    r.trim()
-                ));
+                cell.errors.push(format!("workload: output differs from {}'s: {:?} vs {:?}", rb.name(), o.trim(), r.trim()));
             }
-            let _ = bi;
         }
         results.push(CrateResult { krate, cells });
     }
@@ -430,6 +438,8 @@ fn prepare(root: &Path, base: &Path, krate: &Crate) -> Result<PathBuf, String> {
     if !dir.join("Cargo.lock").exists() {
         return Err(format!("{id} has no Cargo.lock"));
     }
+    // Everything the builds need, so they can run `--offline`.
+    crate::utils::run(cmd("cargo").current_dir(&dir).args(["fetch", "--locked"]))?;
     let workload = root.join("tests").join("crates").join(format!("{}.rs", krate.name));
     fs::create_dir_all(dir.join("examples")).map_err(|e| e.to_string())?;
     fs::copy(&workload, dir.join("examples").join("ryo_bench.rs"))
@@ -438,6 +448,11 @@ fn prepare(root: &Path, base: &Path, krate: &Crate) -> Result<PathBuf, String> {
     // for one in the parent directories.
     let manifest = dir.join("Cargo.toml");
     let mut text = fs::read_to_string(&manifest).map_err(|e| e.to_string())?;
+    // `CARGO_PROFILE_*` restates the profiles (see `PROFILE_ENV`) but can't reach per-package
+    // overrides, so a crate with any is rejected rather than measured with other settings.
+    if let Some(l) = text.lines().find(|l| l.starts_with("[profile.") && l.contains(".package.")) {
+        return Err(format!("{id}'s manifest has a per-package profile override `{l}`"));
+    }
     text.push_str("\n[[example]]\nname = \"ryo_bench\"\npath = \"examples/ryo_bench.rs\"\n\n[workspace]\n");
     fs::write(&manifest, text).map_err(|e| e.to_string())?;
     Ok(dir)
@@ -466,7 +481,13 @@ impl Env<'_> {
             c.env_remove(v);
         }
         for (k, v) in PROFILE_ENV {
-            c.env(format!("CARGO_PROFILE_DEV_{k}"), v).env(format!("CARGO_PROFILE_TEST_{k}"), v);
+            for p in ["DEV", "TEST", "DEV_BUILD_OVERRIDE", "TEST_BUILD_OVERRIDE"] {
+                // Build overrides can't set `lto`, `panic` or `incremental`.
+                if p.ends_with("OVERRIDE") && matches!(*k, "LTO" | "PANIC" | "INCREMENTAL") {
+                    continue;
+                }
+                c.env(format!("CARGO_PROFILE_{p}_{k}"), v);
+            }
         }
         c.env("RUSTUP_TOOLCHAIN", &self.info.toolchain)
             .env("RUSTC", self.backend.rustc(self.root))
@@ -500,7 +521,7 @@ fn build_sample(env: &Env, logs: &Path, stats: bool) -> Result<BuildSample, Stri
             fs::remove_dir_all(logs).map_err(|e| format!("removing {}: {e}", logs.display()))?;
         }
         let mut c = env.cargo(logs, stats);
-        c.args(["build", "--locked", "-Zsection-timings", "--timings"]).args(args);
+        c.args(["build", "--locked", "--offline", "-Zsection-timings", "--timings"]).args(args);
         let start = Instant::now();
         let out = c.output().map_err(|e| format!("running cargo: {e}"))?;
         let wall = start.elapsed().as_secs_f64();
@@ -652,7 +673,8 @@ fn header(info: &RustcInfo, root: &Path, opts: &Options) -> Vec<(String, String)
     let cpu = cpuinfo.lines().find_map(|l| l.strip_prefix("model name")).map(|l| l.trim_start_matches([' ', '\t', ':']));
     let mem = read("/proc/meminfo");
     let mem = mem.lines().find_map(|l| l.strip_prefix("MemTotal:")).map(|m| m.trim().to_owned()).unwrap_or_default();
-    let threads = std::thread::available_parallelism().map_or(0, |n| n.get());
+    let logical = cpuinfo.lines().filter(|l| l.starts_with("processor")).count();
+    let affinity = std::thread::available_parallelism().map_or(0, |n| n.get());
     let governor = read("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor");
     let commit = sh(Command::new("git").current_dir(root).args(["rev-parse", "--short", "HEAD"]));
     let dirty = !sh(Command::new("git").current_dir(root).args(["status", "--porcelain", "--untracked-files=no"])).is_empty();
@@ -667,13 +689,13 @@ fn header(info: &RustcInfo, root: &Path, opts: &Options) -> Vec<(String, String)
         ("profile".into(), "cargo dev: opt-level 0, debug-assertions and overflow-checks on, panic=unwind, no LTO, incremental off (restated for the test profile too)".into()),
         ("RUSTFLAGS".into(), format!("{RUSTFLAGS} (all crates: deps, build scripts, proc macros, leaf)")),
         ("environment".into(), "CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 RUSTC_BOOTSTRAP=1; no target-cpu, default linker for all".into()),
-        ("notes".into(), "rustc-ryo forces -Ccodegen-units=1 (here every backend gets it). No MIR optimization flags are added for any backend. Doc tests are not run.".into()),
+        ("notes".into(), "rustc-ryo forces -Ccodegen-units=1 (here every backend gets it). rustc-clif and rustc-ryo are wrapper executables: one extra exec per rustc invocation that plain rustc doesn't have (included in the rustc wall times). Build-override profiles are forced the same; crates with per-package profile overrides are rejected. No MIR optimization flags are added for any backend. Doc tests are not run.".into()),
         ("timing".into(), "frontend/backend/link from rustc's --json=timings section records (cargo -Zsection-timings), captured by a RUSTC_WRAPPER; other = rustc wall - the three".into()),
         ("samples".into(), format!(
             "{} build samples (clean target dir each), {} run samples, after one discarded warm-up each; backends interleaved; noisy = stddev > {:.0}% of median",
             opts.build_samples, opts.run_samples, stats::NOISY * 100.0
         )),
-        ("machine".into(), format!("{} ({threads} threads), {mem}, Linux {}", cpu.unwrap_or("?"), read("/proc/sys/kernel/osrelease").trim())),
+        ("machine".into(), format!("{} ({logical} logical CPUs, {affinity} available to y), {mem}, Linux {}", cpu.unwrap_or("?"), read("/proc/sys/kernel/osrelease").trim())),
     ];
     if !governor.is_empty() {
         h.push(("cpufreq governor".into(), governor.trim().to_owned()));

@@ -190,7 +190,8 @@ llvm,clif,ryo] [--timeout SECS] [--out FILE]` compares LLVM (plain rustc), Crane
   dependencies, their own test suites ship in the `.crate` archive, and they build on the
   pinned stable. Each is pinned by version and sha256; the archive is downloaded once into
   `target/bench-crates/cache/`, extracted fresh each run into `target/bench-crates/src/`,
-  and built `--locked` against the `Cargo.lock` it was published with. Dependencies come
+  and built `--locked --offline` against the `Cargo.lock` it was published with (after a
+  `cargo fetch`). A crate that fails to download or prepare is reported, and the rest still run. Dependencies come
   from cargo's registry cache (network on first use). Crates whose archives lack test data
   (regex), or whose dev-dependencies don't build with `RUSTC_BOOTSTRAP=1` (nom, through
   rustix 0.37), were left out.
@@ -202,7 +203,8 @@ llvm,clif,ryo] [--timeout SECS] [--out FILE]` compares LLVM (plain rustc), Crane
   `CARGO_INCREMENTAL=0`, `RUST_TEST_THREADS=1`, no LTO, no target-cpu, the default linker.
   The dev profile's defaults (opt-level 0, debug assertions, overflow checks, unwind) are
   restated through `CARGO_PROFILE_{DEV,TEST}_*`, since crates can override `profile.test`
-  (memchr sets opt-level 3). `rustc-ryo` forces `-Ccodegen-units=1` anyway; no MIR
+  (memchr sets opt-level 3); build overrides are forced the same way, and a crate with
+  per-package profile overrides is rejected (none of the nine has any). `rustc-ryo` forces `-Ccodegen-units=1` anyway; no MIR
   optimization flags are added for any backend.
 - **Steps** of a build sample, from a clean target directory: `cargo build --lib` (the
   dependency graph and the leaf crate), `cargo build --tests` (dev-dependencies and test
@@ -222,7 +224,10 @@ llvm,clif,ryo] [--timeout SECS] [--out FILE]` compares LLVM (plain rustc), Crane
 - **Samples**: default 5 build and 10 run samples (`--quick`: 1 each), always after one
   discarded warm-up; backends are interleaved (llvm clif ryo llvm clif ryo …). Reported:
   median, min, standard deviation, n; a cell is noisy if its standard deviation exceeds 3%
-  of its median. Timing is `y`'s own loop (no hyperfine).
+  of its median. Timing is `y`'s own loop (no hyperfine). A run sample in which a test
+  binary fails or times out, or the workload fails, is dropped (and reported), so n shrinks
+  rather than a partial sum being counted. Cargo's target-info probe and `--print` queries
+  pass through the wrapper unlogged.
 - **Coverage**: ryo's warm-up build runs with `RYO_STATS=1`, which the wrapper strips from
   stderr and logs; the report shows VM/native functions and islands for the library, its
   dependencies and the test targets, native reasons and island templates. The warm-up is

@@ -91,7 +91,7 @@ const METRICS: &[Metric] = &[
     Metric {
         id: "test-build-wall",
         title: "Test build: wall time",
-        what: "cargo build --tests (= cargo test --no-run) after the library build: dev-dependencies and the test targets",
+        what: "cargo build --tests (= cargo test --no-run), on top of the library build in the same target directory, so only dev-dependencies and the test targets",
         unit: Measure::Secs,
         pick: |c| steps(&c.test_build, |s| s.wall),
         summary: true,
@@ -161,12 +161,29 @@ fn esc(s: &str) -> String {
 }
 
 /// Whether a cell has a problem the tables must show.
-fn cell_state(cell: &Cell) -> Option<String> {
+/// Whether a cell has a problem the tables must show, for a metric of kind `kind`
+/// ([`metric_kind`]): the build's, the tests' or the workload's failures.
+fn cell_state(cell: &Cell, kind: &str) -> Option<String> {
     if cell.build_failed {
         return Some("build failed".into());
     }
-    let t = cell.tests.as_ref()?;
-    if t.failures.is_empty() { None } else { Some(format!("{} test failure(s)", t.failures.len())) }
+    let prefix = match kind {
+        "workload" => "workload:",
+        "test" => "test:",
+        _ => return None,
+    };
+    match cell.errors.iter().filter(|e| e.starts_with(prefix)).count() {
+        0 => None,
+        n => Some(format!("{n} {kind} failure(s)")),
+    }
+}
+
+fn metric_kind(id: &str) -> &'static str {
+    match id {
+        "workload" | "size-workload" => "workload",
+        "test-run" | "size-tests" => "test",
+        _ => "build",
+    }
 }
 
 const CSS: &str = r#"
@@ -391,7 +408,7 @@ fn metric_table(r: &Report, m: &Metric, data: &[Vec<Option<Summary>>]) -> String
         let c = &r.crates[ci];
         let _ = write!(s, "<tr><td>{}</td>", c.krate.name);
         for (bi, cell) in row.iter().enumerate() {
-            let state = cell_state(&c.cells[bi]);
+            let state = cell_state(&c.cells[bi], metric_kind(m.id));
             match cell {
                 Some(v) => {
                     let ratio = llvm
@@ -617,7 +634,7 @@ pub fn text_summary(r: &Report) -> String {
         for (ci, row) in data.iter().enumerate() {
             let mut line = vec![r.crates[ci].krate.name.to_owned()];
             for (bi, cell) in row.iter().enumerate() {
-                let bad = cell_state(&r.crates[ci].cells[bi]).is_some();
+                let bad = cell_state(&r.crates[ci].cells[bi], metric_kind(m.id)).is_some();
                 line.push(match cell {
                     Some(v) => format!("{}{}{}", fmt_value(v.median, m.unit), if v.noisy() { "*" } else { "" }, if bad { " !" } else { "" }),
                     None => "failed".to_owned(),
@@ -714,6 +731,17 @@ mod tests {
         // Build wall medians: 2.1 s for llvm, noisy (2.0 and 2.2).
         assert!(text.contains("2.10 s*"), "{text}");
         assert!(text.contains("ryo coverage: 12 VM, 4 native"), "{text}");
+    }
+
+    #[test]
+    fn failure_kinds() {
+        let cell = Cell { errors: vec!["workload: output differs".into()], ..Cell::default() };
+        assert_eq!(cell_state(&cell, metric_kind("workload")).as_deref(), Some("1 workload failure(s)"));
+        assert_eq!(cell_state(&cell, metric_kind("size-workload")).as_deref(), Some("1 workload failure(s)"));
+        assert_eq!(cell_state(&cell, metric_kind("test-run")), None);
+        assert_eq!(cell_state(&cell, metric_kind("build-wall")), None);
+        let cell = Cell { build_failed: true, ..Cell::default() };
+        assert_eq!(cell_state(&cell, metric_kind("build-wall")).as_deref(), Some("build failed"));
     }
 
     #[test]
