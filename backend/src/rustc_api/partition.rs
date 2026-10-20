@@ -149,7 +149,7 @@ pub fn collect_and_partition_mono_items<'tcx>(
     }
     // rustc only allows LTO of a dylib with `-Zdylib-lto`, which isn't tested with the image.
     if matches!(tcx.sess.lto(), rustc_session::config::Lto::Fat | rustc_session::config::Lto::Thin)
-        && tcx.crate_types().contains(&CrateType::Dylib)
+        && tcx.crate_types().iter().any(|t| matches!(t, CrateType::Dylib | CrateType::Sdylib))
     {
         tcx.dcx().fatal("the ryo backend doesn't support `-Clto` for dylibs");
     }
@@ -975,7 +975,9 @@ pub fn exported_non_generic_symbols<'tcx>(
     let Some(r) = results(tcx) else { return list };
     let info = |kind| SymbolExportInfo { level: SymbolExportLevel::Rust, kind, used: true, rustc_std_internal_symbol: false };
     debug_assert!(is_root(&ExportedSymbol::NoDefId(ty::SymbolName::new(tcx, "")), &info(SymbolExportKind::Text)));
-    let roots = r.lto_roots.iter().map(|(name, kind)| (ExportedSymbol::NoDefId(ty::SymbolName::new(tcx, name)), info(*kind)));
+    let mut roots: Vec<_> = r.lto_roots.iter().collect();
+    roots.sort_by(|a, b| a.0.cmp(&b.0));
+    let roots = roots.into_iter().map(|(name, kind)| (ExportedSymbol::NoDefId(ty::SymbolName::new(tcx, name)), info(*kind)));
     tcx.arena.alloc_from_iter(list.iter().copied().chain(roots))
 }
 
@@ -1001,8 +1003,10 @@ fn is_root(s: &ExportedSymbol<'_>, info: &SymbolExportInfo) -> bool {
 /// (Rust dylibs) and the crate isn't `compiler_builtins`, and never for proc macros
 /// (`linker.rs:1677-1716`); the same filter here, so `link` never removes one of rustc's own
 /// entries of the same name (a `#[no_mangle]` function the image calls, exported by a
-/// cdylib). Names are compared undecorated: NoDefId symbols and the export list's `name`
-/// have no target decoration (`symbol_export.rs:737-738`).
+/// cdylib). Names are compared undecorated. That holds for the export list's `name`
+/// (`symbol_export.rs:737-738`), and for `linked_symbols` on x86_64; on targets that
+/// decorate (i686 Windows `_`, Arm64EC `#`, `linking_symbol_name_for_instance_in_crate`)
+/// the roots would stay in `symbols.o`, which ryo doesn't support anyway.
 pub fn linked_roots(tcx: TyCtxt<'_>, crate_type: CrateType) -> (Vec<String>, Vec<String>) {
     let (mut linked, mut exported) = (Vec::new(), Vec::new());
     let Some(deps) = tcx.dependency_formats(()).get(&crate_type) else { return (linked, exported) };

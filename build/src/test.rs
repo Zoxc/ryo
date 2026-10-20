@@ -806,8 +806,8 @@ fn reject_incremental(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), St
     Ok(())
 }
 
-/// The dynamic symbols a ryo cdylib, and an executable with `-Zexport-executable-symbols`,
-/// export are exactly plain rustc's (plus `ryo_rt`'s `ryo_vm_register`), with and without
+/// The dynamic symbols a ryo Rust dylib, cdylib, and an executable with `-Zexport-executable-symbols`,
+/// export are exactly plain rustc's (plus the runtime's own), with and without
 /// `-Clto`: the image's symbols are listed
 /// as exports for LTO, and `link` must remove those, and only those
 /// (design/backend.md#query-overrides). ELF only (`llvm-nm -D`).
@@ -819,7 +819,8 @@ fn same_exports(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> 
     let nm = info.sysroot.join("lib").join("rustlib").join(&info.host).join("bin").join("llvm-nm");
     let dir = out.join("exports");
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let cases: [(&str, &[&str]); 4] = [
+    let cases: [(&str, &[&str]); 5] = [
+        ("dylib", &["--crate-type=dylib", "-Cprefer-dynamic"]),
         ("cdylib", &["--crate-type=cdylib"]),
         ("cdylib-lto", &["--crate-type=cdylib", "-Clto=fat"]),
         ("exe", &["--crate-type=bin", "-Zexport-executable-symbols"]),
@@ -831,9 +832,10 @@ fn same_exports(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> 
             let o = dir.join(format!("{name}-{who}"));
             crate::utils::run(cmd(compiler).arg("--edition=2024").arg(src).args(flags).arg("-o").arg(&o))?;
             let syms = output(cmd(&nm).args(["-D", "--defined-only", "-j"]).arg(&o))?;
-            // `ryo_rt`'s own C-level export, which every ryo output has.
-            let mut syms: Vec<String> =
-                syms.lines().filter(|s| *s != "ryo_vm_register").map(str::to_owned).collect();
+            // The runtime's own symbols, which every ryo output links: `ryo_vm_register`
+            // (C level), and in a Rust dylib everything of `ryo_rt` and `ryo_bytecode`.
+            let runtime = |s: &str| s == "ryo_vm_register" || s.contains("6ryo_rt") || s.contains("12ryo_bytecode");
+            let mut syms: Vec<String> = syms.lines().filter(|s| !runtime(s)).map(str::to_owned).collect();
             syms.sort();
             lists.push(syms);
         }

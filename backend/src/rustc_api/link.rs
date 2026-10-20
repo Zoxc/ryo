@@ -22,9 +22,8 @@ pub struct LinkInfo {
     pub local_image: String,
     /// The name of the image's `CompiledModule`.
     pub image_module: String,
-    /// Per crate type, the image symbols that only LTO needs in `symbols.o`
-    /// (`partition::linked_roots`).
-    /// (its `linked_symbols` entries, its `exported_symbols` entries).
+    /// Per crate type, the image symbols that only LTO needs, as entries of its
+    /// `linked_symbols` and of its `exported_symbols` (`partition::linked_roots`).
     pub linked_roots: Vec<(CrateType, (Vec<String>, Vec<String>))>,
     pub binary_format: object::BinaryFormat,
 }
