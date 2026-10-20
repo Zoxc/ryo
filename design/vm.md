@@ -570,7 +570,10 @@ templates, and the panic glue. It is a normal Rust dependency of every ryo-built
     `payload_out` before the entry record is popped. With `RYO_VM_TRACE` set in the
     environment (read once, with `getenv`/`GetEnvironmentVariableA`), it first prints
     `ryo-vm: enter <crate hash>:<function index>` to stderr, so tests can check that code ran
-    in the VM.
+    in the VM. With `RYO_VM_STATS` set (read once), the VM counts entries, islands run and
+    native calls of `call.ext`/`call.ind` (relaxed atomics, only then), and an `atexit`
+    handler prints `ryo-vm: <n> enters, <n> islands, <n> native calls`: the run-time side
+    of `-Zryo-stats`. `y test` sets it with the trace and checks the enters against it.
   - `vm::lookup_addr(fnptr) -> Option<&'static vm::Function>`: portal address → VM function.
   - `vm::register`: `#[no_mangle] extern "C" fn ryo_vm_register(images, n)`.
 - **`portal`**: `portal`, `portal_tc0..N` ([stubs.md](stubs.md#portals-native--vm)).

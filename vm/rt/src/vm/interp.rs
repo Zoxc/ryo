@@ -42,7 +42,7 @@ use ryo_bytecode::image::Cleanup;
 use ryo_bytecode::insn::{Opcode, off};
 
 use super::registry::{Function, ImageRt, image_of_pc, lookup_addr};
-use super::sys::fatal;
+use super::sys::{self, fatal};
 use super::thread::VmThread;
 use crate::unwind::call_catching;
 
@@ -231,6 +231,7 @@ unsafe fn tail_call_function(vm: *mut VmThread, r: &mut Regs, f: &Function) {
 /// payload is in the innermost entry record).
 #[inline(never)]
 unsafe fn call_native(vm: *mut VmThread, r: &Regs, target: *const (), d: u32, island: u32) -> bool {
+    sys::count(&sys::RUN_STATS.native_calls);
     // SAFETY: the top is 16-aligned and the caller's `max_outgoing` covers its header area and
     // outgoing block. The island symbol is a `call_ptrN` instance. `entry` is non-null while
     // `run` runs.
@@ -960,6 +961,7 @@ macro_rules! ret {
 }
 macro_rules! island {
     ($r:ident, $vm:ident, $op:ident, $catch:literal) => {{
+        sys::count(&sys::RUN_STATS.islands);
         let f: IslandFn = core::mem::transmute(*$r.syms.add(word(&$r, off::$op::sym) as usize));
         let n = word(&$r, off::$op::ops) as usize;
         let ops = $r.pc.add(off::$op::ops + 1);

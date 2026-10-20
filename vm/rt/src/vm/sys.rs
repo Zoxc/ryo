@@ -7,7 +7,7 @@
 
 use core::ffi::c_void;
 use core::ptr;
-use core::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering};
 
 /// Page size assumed for guard pages and mapping granularity (x86_64 ELF and PE).
 pub const PAGE: usize = 4096;
@@ -33,6 +33,7 @@ mod os {
         pub fn getenv(name: *const core::ffi::c_char) -> *const core::ffi::c_char;
         pub fn pthread_key_create(key: *mut u32, dtor: Option<unsafe extern "C" fn(*mut c_void)>) -> c_int;
         pub fn pthread_setspecific(key: u32, value: *const c_void) -> c_int;
+        pub fn atexit(f: extern "C" fn()) -> c_int;
     }
 }
 
@@ -58,6 +59,11 @@ mod os {
         pub fn FlsAlloc(cb: Option<unsafe extern "system" fn(*const c_void)>) -> u32;
         pub fn FlsSetValue(index: u32, value: *const c_void) -> i32;
         pub fn GetEnvironmentVariableA(name: *const u8, buf: *mut u8, size: u32) -> u32;
+    }
+
+    // The C runtime's (`msvcrt.lib`), which every Rust program on msvc links.
+    unsafe extern "C" {
+        pub fn atexit(f: extern "C" fn()) -> i32;
     }
 }
 
@@ -100,6 +106,79 @@ pub fn trace_enabled() -> bool {
         }
         v => v == 2,
     }
+}
+
+/// Run-time counters for `RYO_VM_STATS` (design/vm.md#modules): VM entries, islands run, and
+/// native calls made by `call.ext`/`call.ind`. Counted only when it is set, and printed at exit.
+pub struct RunStats {
+    pub enters: AtomicU64,
+    pub islands: AtomicU64,
+    pub native_calls: AtomicU64,
+}
+
+pub static RUN_STATS: RunStats =
+    RunStats { enters: AtomicU64::new(0), islands: AtomicU64::new(0), native_calls: AtomicU64::new(0) };
+
+/// Whether `RYO_VM_STATS` is set (to anything). Read once; the first reader that finds it set
+/// registers the exit-time report.
+#[inline]
+pub fn stats_enabled() -> bool {
+    // 0: not read yet, 1: off, 2: on.
+    static STATS: AtomicU8 = AtomicU8::new(0);
+    match STATS.load(Ordering::Relaxed) {
+        0 => init_stats(&STATS),
+        v => v == 2,
+    }
+}
+
+#[cold]
+#[inline(never)]
+fn init_stats(state: &AtomicU8) -> bool {
+    let on = env_set(c"RYO_VM_STATS");
+    if state.swap(if on { 2 } else { 1 }, Ordering::Relaxed) == 0 && on {
+        // SAFETY: `print_stats` only reads atomics and writes to stderr.
+        unsafe {
+            os::atexit(print_stats);
+        }
+    }
+    on
+}
+
+/// Adds one to `counter` if `RYO_VM_STATS` is set.
+#[inline]
+pub fn count(counter: &AtomicU64) {
+    if stats_enabled() {
+        counter.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Writes `ryo-vm: <n> enters, <n> islands, <n> native calls` to stderr.
+extern "C" fn print_stats() {
+    let s = &RUN_STATS;
+    let mut buf = [0u8; 128];
+    let mut n = 0;
+    let mut put = |b: &[u8]| {
+        buf[n..n + b.len()].copy_from_slice(b);
+        n += b.len();
+    };
+    put(b"ryo-vm: ");
+    for (c, what) in [(&s.enters, &b" enters, "[..]), (&s.islands, b" islands, "), (&s.native_calls, b" native calls\n")] {
+        let mut digits = [0u8; 20];
+        let mut v = c.load(Ordering::Relaxed);
+        let mut k = digits.len();
+        loop {
+            k -= 1;
+            digits[k] = b'0' + (v % 10) as u8;
+            v /= 10;
+            if v == 0 {
+                break;
+            }
+        }
+        put(&digits[k..]);
+        put(what);
+    }
+    // SAFETY: the buffer is ASCII.
+    write_stderr(unsafe { core::str::from_utf8_unchecked(&buf[..n]) });
 }
 
 #[cold]

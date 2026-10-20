@@ -619,6 +619,15 @@ impl Ctx {
             if !variant.vm_only && !variant.ryo_std && !not_entered.is_empty() {
                 return Err(format!("not entered through vm::enter: {not_entered:?}; entered: {entered:?}"));
             }
+            // `RYO_VM_STATS` (set with the trace) reports one enter per trace line at exit,
+            // unless the program aborted (no exit handlers run) or never entered the VM (the
+            // switch is read on first use).
+            let (stats, rest) = split_stats(&rest);
+            let want = format!("{} enters, ", entries.len());
+            let silent = stats.is_none() && (traced.code.is_none() || entries.is_empty());
+            if !silent && !stats.as_deref().is_some_and(|s| s.starts_with(&want)) {
+                return Err(format!("RYO_VM_STATS reported {stats:?}, but {} entries were traced", entries.len()));
+            }
             // Normalized only now: a trace line can split the line naming the thread.
             let untraced = RunResult { stderr: normalize_thread_ids(&rest), ..traced };
             if untraced != result {
@@ -669,9 +678,9 @@ impl Ctx {
     fn run(&self, dir: &Path, exe: &Path, variant: &Variant, trace: bool) -> Result<RunResult, String> {
         let mut run = Command::new(exe);
         if trace {
-            run.env("RYO_VM_TRACE", "1");
+            run.env("RYO_VM_TRACE", "1").env("RYO_VM_STATS", "1");
         } else {
-            run.env_remove("RYO_VM_TRACE");
+            run.env_remove("RYO_VM_TRACE").env_remove("RYO_VM_STATS");
         }
         run.env_remove("RUST_BACKTRACE").env_remove("RUST_LIB_BACKTRACE").current_dir(dir);
         // Dylibs are found next to the binary, and std's in the sysroot that built it.
@@ -692,6 +701,23 @@ impl Ctx {
             },
         })
     }
+}
+
+/// Takes the `RYO_VM_STATS` report (`ryo-vm: <n> enters, <n> islands, <n> native calls\n`,
+/// printed at exit) out of stderr: the report without its prefix, and the remaining text.
+fn split_stats(s: &str) -> (Option<String>, String) {
+    const P: &str = "ryo-vm: ";
+    let mut from = 0;
+    while let Some(i) = s[from..].find(P).map(|i| i + from) {
+        let line = &s[i + P.len()..];
+        let end = line.find('\n').unwrap_or(line.len());
+        if line[..end].ends_with(" native calls") {
+            let rest = format!("{}{}", &s[..i], line.get(end + 1..).unwrap_or(""));
+            return (Some(line[..end].to_owned()), rest);
+        }
+        from = i + P.len();
+    }
+    (None, s.to_owned())
 }
 
 /// Splits `RYO_VM_TRACE` output (`ryo-vm: enter <id>\n`, wherever it appears) from the rest
@@ -748,6 +774,14 @@ mod tests {
         let want = [("answer", "0000abcd:00000001"), ("a::b::<u8>", "0000abcd:00000000")];
         let want: Vec<_> = want.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect();
         assert_eq!(super::vm_functions(s), want);
+    }
+
+    #[test]
+    fn splits_stats() {
+        let (st, rest) = super::split_stats("a\nryo-vm: 3 enters, 1 islands, 0 native calls\nb");
+        assert_eq!(st.as_deref(), Some("3 enters, 1 islands, 0 native calls"));
+        assert_eq!(rest, "a\nb");
+        assert_eq!(super::split_stats("x").0, None);
     }
 
     #[test]

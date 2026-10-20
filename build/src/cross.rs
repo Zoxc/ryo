@@ -34,6 +34,7 @@ const RT_IMPORTS: &[&str] = &[
     "__declspec(dllimport) FlsAlloc",
     "__declspec(dllimport) FlsSetValue",
     "__declspec(dllimport) GetEnvironmentVariableA",
+    "atexit",
     "memcmp",
     "memcpy",
     "memmove",

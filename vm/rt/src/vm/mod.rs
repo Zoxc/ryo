@@ -101,6 +101,7 @@ pub unsafe fn enter(id: u64, args: *const u8, ret: *mut u8, payload_out: *mut Ra
     if sys::trace_enabled() {
         sys::trace_enter(id);
     }
+    sys::count(&sys::RUN_STATS.enters);
     let vm = thread::current();
     let f = registry::resolve_id(id);
     // SAFETY: `vm` is this thread's state, reached only through the raw pointer. The frame at
