@@ -142,7 +142,9 @@ impl ObjectFormat for Elf {
         let rel = |offset, symbol, r_type| Relocation { offset, symbol, addend: -4, flags: RelocationFlags::Elf { r_type } };
         obj.add_relocation(text, rel(3, images_sym, elf::R_X86_64_PC32)).unwrap();
         obj.add_relocation(text, rel(13, register, elf::R_X86_64_PLT32)).unwrap();
-        let init = obj.add_section(Vec::new(), b".init_array".to_vec(), SectionKind::Elf(elf::SHT_INIT_ARRAY));
+        // Priority 0, before every other constructor: std's own (`.init_array.00099`, args
+        // init) may be VM code (design/platforms.md).
+        let init = obj.add_section(Vec::new(), b".init_array.00000".to_vec(), SectionKind::Elf(elf::SHT_INIT_ARRAY));
         obj.section_mut(init).flags = SectionFlags::Elf { sh_flags: u64::from(elf::SHF_ALLOC | elf::SHF_WRITE) };
         obj.append_section_data(init, &[0; 8], 8);
         let text_sym = obj.section_symbol(text);
@@ -151,7 +153,7 @@ impl ObjectFormat for Elf {
 }
 
 /// PE/COFF (x86_64-pc-windows-msvc). Section names use the `$` grouping suffix, so the linker
-/// merges them into `.rdata`, `.data` and `.text`, and `.CRT$XCU` into the CRT's initializer
+/// merges them into `.rdata`, `.data` and `.text`, and `.CRT$XCT` into the CRT's initializer
 /// table (between `.CRT$XCA` and `.CRT$XCZ`), which the CRT startup code runs before `main` or
 /// on `DLL_PROCESS_ATTACH` (`_initterm`).
 pub struct Coff;
@@ -238,7 +240,9 @@ impl ObjectFormat for Coff {
         obj.add_relocation(text, rel(target_at, target)).unwrap();
         // Read-only, like the CRT's own `.CRT$XC*` sections (`#pragma section(".CRT$XCU",
         // long, read)`), so the linker merges them without an attribute-mismatch warning.
-        let init = obj.add_section(Vec::new(), b".CRT$XCU".to_vec(), SectionKind::ReadOnlyData);
+        // `XCT` sorts before the user initializers in `.CRT$XCU`, std's among them, which may
+        // be VM code (design/platforms.md).
+        let init = obj.add_section(Vec::new(), b".CRT$XCT".to_vec(), SectionKind::ReadOnlyData);
         obj.append_section_data(init, &[0; 8], 8);
         let text_sym = obj.section_symbol(text);
         obj.add_relocation(init, Relocation { offset: 0, symbol: text_sym, addend: 0, flags: self.abs64() }).unwrap();

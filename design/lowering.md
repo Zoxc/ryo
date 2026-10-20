@@ -390,7 +390,10 @@ markers share slots; there is no copy propagation yet.
 Still `NeedsNative`, with the reason in `RYO_STATS=2`: `#[track_caller]` functions with more
 than 16 arguments, `ThreadLocalRef` of foreign thread locals, `f16`/`f128` arithmetic and
 compares, unsafe intrinsics without a VM lowering, wrapper or fallback body (128-bit atomics,
-SIMD intrinsics with constant operands, …), coroutines and extern-type tails.
+SIMD intrinsics with constant operands, …), coroutines, extern-type tails, by-value
+unsized arguments (`unsized_fn_params`: the argument block has no layout) and references to
+foreign statics with a `#[linkage]` (std's `extern_weak` `weak!` statics: cg_llvm's private
+cell holding the symbol's address has no symbol the image could name).
 The PE fixup area is only cross-checked (objects and links), not run, like the rest of the
 PE column ([platforms.md](platforms.md)).
 

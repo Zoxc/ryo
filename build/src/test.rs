@@ -303,6 +303,13 @@ pub(crate) const CORPUS: &[Program] = &[
         entered: &["std::rt::lang_start::<()>"],
         ..PROGRAM
     },
+    // Found building std with ryo (`--sysroot ryo`): a constructor entering the VM before
+    // `main`, unsized arguments, `extern_weak` statics, LLVM intrinsics of local copies.
+    single!(
+        "vm_sysroot",
+        vm: &["main", "ctor_value", "xgetbv_x87"],
+        entered: &["std::rt::lang_start::<()>", "ctor_value"]
+    ),
     Program {
         name: "vm_staticlib",
         crates: &[krate("vmc", "vm_c/lib.rs", CrateKind::Staticlib)],

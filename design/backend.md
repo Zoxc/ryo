@@ -55,7 +55,10 @@ and `codegen_crate` reads them.
      until the set of VM functions doesn't change.
 
      Never VM: everything in a `proc-macro` crate (it keeps VM code out of rustc's own process,
-     and proc macros gain nothing from it), `ryo_rt`'s own instances, and everything when
+     and proc macros gain nothing from it), everything in a panic runtime crate
+     (`#![panic_runtime]`: `panic_unwind`, `panic_abort`; portals re-raise a panic that left
+     the VM through `__rust_start_panic`, so it must be native, [vm.md](vm.md#unwinding)),
+     `ryo_rt`'s own instances, and everything when
      `RYO_NO_VM` is set ([Debugging switches](#debugging-switches)).
    - `Static`, `GlobalAsm` → native. Statics are data, and cg_llvm handles relocations,
      linkage and TLS.
@@ -93,7 +96,10 @@ and `codegen_crate` reads them.
        crates (`#[rustc_inherit_overflow_checks]`, `ub_checks` follow each crate's
        settings). So merging them would be wrong. The `symbol_name` override appends
        `.ryo<local StableCrateId>` to every instance whose instantiation mode is `LocalCopy`
-       and that the local crate defines (`instance.upstream_monomorphization(tcx).is_none()`).
+       and that the local crate defines (`instance.upstream_monomorphization(tcx).is_none()`),
+       unless its symbol comes from its attributes (`symbol_name_from_attrs`: foreign items
+       such as LLVM intrinsics, `#[no_mangle]`, `#[export_name]`,
+       `#[rustc_std_internal_symbol]`), which must keep their names.
        `instantiation_mode` depends on each session's opt-level and incremental settings
        (`rustc_middle/src/mono.rs:178-185`), so an instance that is `LocalCopy` here may be
        `GloballyShared` upstream, and references to an upstream copy must keep upstream's
@@ -180,7 +186,7 @@ and `codegen_crate` reads them.
    - **Plain rustc can't do the final link** of ryo-built rlibs: without our backend there is
      no registry object, and `__ryo_registry_anchor` is undefined. Final links always go
      through `rustc-ryo`.
-     A constructor (`.init_array` on ELF, `.CRT$XCU` on PE) calls
+     A constructor (`.init_array.00000` on ELF, `.CRT$XCT` on PE, ahead of other constructors) calls
      `ryo_vm_register(images, n)`. The registry's own symbols are local, so a dylib and the
      exe that links it don't clash.
    - **`ryo_rt`** arrives through `--extern force:ryo_rt` (`rustc_session/src/config.rs:2621`),
@@ -233,8 +239,9 @@ and `codegen_crate` reads them.
     crate (as cargo passes it), and `y test --cross` links it with `-Clto=fat` on PE.
 - `symbol_name` → for portal instances, the symbol of the VM function they stand for
   ([stubs.md](stubs.md#portals-native--vm)), looked up by the function index in the portal's
-  `ID`. For `c_main`, the target's `entry_name`. For local `LocalCopy` instances, the default
-  symbol plus `.ryo<StableCrateId as 16 hex digits>` (see Linkage). Everything else uses the
+  `ID`. For `c_main`, the target's `entry_name`. For local `LocalCopy` instances without an
+  attribute-given symbol, the default symbol plus `.ryo<StableCrateId as 16 hex digits>` (see
+  Linkage). Everything else uses the
   default provider.
 
 ## Debugging switches

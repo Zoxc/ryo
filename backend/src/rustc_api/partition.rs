@@ -244,7 +244,12 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
     fn vm_enabled(&self) -> bool {
         // Proc macros stay native: it keeps VM code out of rustc's own process, and they gain
         // nothing from it. `RYO_NO_VM` is a debugging switch (design/backend.md#pipeline, step 2).
-        std::env::var_os("RYO_NO_VM").is_none() && !self.tcx.crate_types().contains(&CrateType::ProcMacro)
+        // A panic runtime (`panic_unwind`, `panic_abort`) too: portals re-raise a panic from
+        // the VM through its `__rust_start_panic` (design/vm.md, Unwinding), so that must be
+        // native, and the rest of the runtime gains nothing from the VM.
+        std::env::var_os("RYO_NO_VM").is_none()
+            && !self.tcx.crate_types().contains(&CrateType::ProcMacro)
+            && !self.tcx.is_panic_runtime(LOCAL_CRATE)
     }
 
     fn run(mut self) -> (CodegenUnit<'tcx>, Results) {
@@ -1079,12 +1084,20 @@ pub fn symbol_name<'tcx>(
         }
     }
     let name = original();
-    if MonoItem::Fn(instance).instantiation_mode(tcx) == InstantiationMode::LocalCopy
+    if !symbol_from_attrs(tcx, instance)
+        && MonoItem::Fn(instance).instantiation_mode(tcx) == InstantiationMode::LocalCopy
         && instance.upstream_monomorphization(tcx).is_none()
     {
         return ty::SymbolName::new(tcx, &format!("{}.ryo{:016x}", name.name, local_stable_crate_id(tcx)));
     }
     name
+}
+
+/// Whether `instance`'s symbol is fixed by its attributes or is a foreign item's (an LLVM
+/// intrinsic's, `#[no_mangle]`, `#[rustc_std_internal_symbol]`): it must not get the
+/// crate-unique suffix.
+fn symbol_from_attrs<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> bool {
+    rustc_symbol_mangling::symbol_name_from_attrs(tcx, instance.def).is_some()
 }
 
 /// Our local `exported_generic_symbols` (design/backend.md#query-overrides): portals are

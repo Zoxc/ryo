@@ -124,6 +124,11 @@ pub fn tys_sig<'tcx>(tcx: TyCtxt<'tcx>, inputs: Vec<Ty<'tcx>>, output: Ty<'tcx>)
 /// The argument block for `inputs`: the layout of their tuple (design/lowering.md#frame-slots).
 pub fn arg_block<'tcx>(tcx: TyCtxt<'tcx>, inputs: &[Ty<'tcx>]) -> Result<(Vec<ArgField>, u32), NeedsNative> {
     let typing_env = TypingEnv::fully_monomorphized();
+    // A tuple with an unsized field before the last has no layout (`layout_of` would ICE
+    // through a delayed bug): by-value unsized arguments (`unsized_fn_params`).
+    if inputs.iter().any(|t| !t.is_sized(tcx, typing_env)) {
+        return native("unsized argument");
+    }
     let tuple = Ty::new_tup(tcx, inputs);
     let layout = tcx.layout_of(typing_env.as_query_input(tuple)).map_err(layout_error)?;
     let cx = LayoutCx(tcx);

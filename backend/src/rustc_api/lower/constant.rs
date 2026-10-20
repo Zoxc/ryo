@@ -191,6 +191,13 @@ fn check_static(tcx: TyCtxt<'_>, def_id: DefId) -> Result<(), NeedsNative> {
     if tcx.is_thread_local_static(def_id) {
         return native("pointer to a thread-local static");
     }
+    // A foreign static with `#[linkage]` (std's `weak!`, `extern_weak`): cg_llvm defines a
+    // private static holding the symbol's address (null if undefined,
+    // `rustc_codegen_llvm/src/consts.rs`, `check_and_apply_linkage`), and the static is that
+    // cell. The image can't name it, and can't refer to a weak symbol.
+    if tcx.is_foreign_item(def_id) && tcx.codegen_fn_attrs(def_id).import_linkage.is_some() {
+        return native("static with an import linkage");
+    }
     Ok(())
 }
 

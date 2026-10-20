@@ -417,8 +417,11 @@ fixups        PE only: constant allocations that point at DLL-imported data
   be VM functions, and calling them from inside the runtime would enter the VM before it
   exists. The panic payload box is the exception: it is only touched through
   the panic runtime's `__rust_panic_cleanup`/`__rust_start_panic`, outside the VM's own state
-  transitions. In particular, `resume_unwind_from_vm` (which ends in `__rust_start_panic`, possibly a VM
-  function under `--sysroot ryo`) runs only after `vm::enter` has popped its entry record.
+  transitions. In particular, `resume_unwind_from_vm` (which ends in `__rust_start_panic`) runs
+  only after `vm::enter` has popped its entry record. The panic runtime itself is never VM
+  code ([backend.md](backend.md#pipeline)): if `__rust_start_panic` were, the exception it
+  raises would be caught by its own island, and its portal would re-raise it through
+  `__rust_start_panic` again, forever.
 - **Registry**: `ryo_vm_register(images, n)` is called by the registry object's constructor,
   and also when a shared object loads at run time (`dlopen`/`LoadLibrary`). It appends the
   images to a global list under `ryo_rt`'s lock, applies the PE fixups, and publishes the list:
