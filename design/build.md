@@ -52,7 +52,8 @@ modeled on cg_clif's `build_system/`.
      - `library/` is copied to `target/sysroot-ryo/library` (once per toolchain), and cargo
        builds its `sysroot` crate there (`--release --features "backtrace panic-unwind"`,
        `--target <host>`), with `RUSTFLAGS` `-Zforce-unstable-if-unmarked --sysroot=/dev/null
-       -Cpanic=unwind -Cembed-bitcode=yes`, like cg_clif's sysroot build.
+       -Cembed-bitcode=yes`, like cg_clif's sysroot build. No `-Cpanic`: it would override the
+       workspace profile's `-Cpanic=abort` for `panic_abort`.
      - `RUSTC` is `y` itself (a shim mode selected by an environment variable). It compiles
        `core`, `compiler_builtins`, `rustc-std-workspace-core`, `ryo_rt`, `ryo_bytecode` and
        build scripts with plain rustc, and every other crate with `rustc-ryo`. `ryo_rt` can't

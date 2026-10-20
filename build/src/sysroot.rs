@@ -116,7 +116,6 @@ pub fn build(info: &RustcInfo, dist: &Path) -> Result<(), String> {
         crate_path.as_str(),
         "-Zforce-unstable-if-unmarked",
         "--sysroot=/dev/null",
-        "-Cpanic=unwind",
         // Like the prebuilt std, for users' `-Clto`.
         "-Cembed-bitcode=yes",
     ];
