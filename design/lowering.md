@@ -287,6 +287,22 @@ Mirrors cg_ssa's `get_caller_location`:
   `fixups` area, and registration patches them once ([platforms.md](platforms.md)). This
   is the only load-time fixup.
 
+## Status
+
+The lowering lives in `backend/src/rustc_api/lower/`, one module per concern (`mod.rs` lists
+them). Implemented: everything above for integers, `bool`, `char`, `f32`/`f64`, places,
+references, aggregates, enums, casts, constants (pool allocations with relocations), switches,
+asserts, drops (VM call of the glue, `drop_in_place` island, vtable drop for trait objects),
+unwinding and calls: VM `call`, `call.ext`, `call.ind` for fn pointers, and islands (`call`
+for safe Rust fn items, including virtual calls and safe intrinsics, `call_ptrN`/`call_cN`
+through `addr.sym` otherwise), plus a first set of intrinsics as VM instructions. Every local
+has its own slot (no sharing yet), and there is no `br.cmp` fusion or copy propagation yet.
+Still `NeedsNative`, with the reason in `RYO_STATS=2`: `#[track_caller]` functions themselves
+(callers pass locations), `TailCall`, `ThreadLocalRef`, 128-bit `mul`/`div`/`rem`, `f16`/`f128`,
+virtual calls that aren't safe Rust fn items (`dyn Fn`), unsafe intrinsics without a VM
+lowering, coroutines, dynamically aligned unsized fields, and on PE constants pointing at
+imports (the fixup area).
+
 ## Bytecode optimization
 
 After lowering, a peephole pass:

@@ -615,13 +615,19 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                         let flags = super::symbol_flags(tcx, target, super::SymRole::Target);
                         let Sym(s) = w.symbol(tcx.symbol_name(target).name, flags);
                         code[at as usize] = s;
-                        set_indirect(&mut code, at, flags);
+                        if set_indirect(&mut code, at, flags) {
+                            // A direct reference too, so the linker extracts the archive member
+                            // defining a statically linked function: `__imp_<sym>` is only
+                            // synthesized for symbols that are already defined
+                            // (design/platforms.md). Functions in DLLs resolve to their thunk.
+                            w.symbol(tcx.symbol_name(target).name, 0);
+                        }
                     }
                     CodeReloc::Static { at, def_id } => {
                         let flags = super::static_symbol_flags(tcx, def_id);
                         let Sym(s) = w.symbol(static_symbol(tcx, def_id).name, flags);
                         code[at as usize] = s;
-                        set_indirect(&mut code, at, flags);
+                        let _ = set_indirect(&mut code, at, flags);
                     }
                     CodeReloc::Site { at } => code[at as usize] = w.site().0,
                     CodeReloc::Const { at, alloc, offset } => {
@@ -737,9 +743,10 @@ fn lower_all<'tcx>(
 /// Switches the instruction whose `sym` operand is word `at` to its `.ind` form if the slot is
 /// indirect (PE imports, design/platforms.md). The lowering emits `addr.sym` and `call.ext`,
 /// whose `sym` is operand word 2 in both.
-fn set_indirect(code: &mut [u32], at: u32, flags: u8) {
+/// Returns whether it did.
+fn set_indirect(code: &mut [u32], at: u32, flags: u8) -> bool {
     if flags & ryo_bytecode::image::SYM_INDIRECT == 0 {
-        return;
+        return false;
     }
     let start = at as usize - 2;
     let ind = match Opcode::from_u16(code[start] as u16) {
@@ -748,6 +755,7 @@ fn set_indirect(code: &mut [u32], at: u32, flags: u8) {
         op => panic!("ryo: indirect symbol operand of {op:?}"),
     };
     code[start] = ind as u32;
+    true
 }
 
 /// The symbol of a static (its own, or the foreign item's link name).

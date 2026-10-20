@@ -128,6 +128,23 @@ pub(crate) const CORPUS: &[Program] = &[
         "std::rt::lang_start::<()>",
         "<S as Get>::get"
     ]),
+    // Milestone 4 (design/lowering.md): each feature's functions must be bytecode.
+    single!(
+        "vm_ints",
+        vm: &["main", "ops32", "ops_u8", "wide", "casts", "float_casts", "floats", "checked", "chars", "bits", "neg", "cmp"],
+        entered: &["std::rt::lang_start::<()>"]
+    ),
+    single!(
+        "vm_control",
+        vm: &["main", "collatz", "dense", "sparse", "area", "discr", "niches", "make", "labeled"],
+        entered: &["std::rt::lang_start::<()>"]
+    ),
+    single!(
+        "vm_calls",
+        vm: &["main", "add", "swap", "bump", "sum", "fib", "talk", "<Dog as Speak>::speak", "constants", "apply", "double", "closures", "may_panic", "<Noisy as std::ops::Drop>::drop"],
+        // `speak` is called through the vtable from a native island.
+        entered: &["std::rt::lang_start::<()>", "<Dog as Speak>::speak"]
+    ),
     Program {
         name: "vm_cross",
         crates: &[
