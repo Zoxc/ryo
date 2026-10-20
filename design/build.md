@@ -87,8 +87,8 @@ This gives a third backend, built from the same toolchain, to compare against.
 
 ### `test` and `bench`
 
-- `test`: the test corpus is built with `rustc-ryo` and with plain rustc, and the outputs are
-  diffed. It includes an ABI sweep: argument types (ZST, scalar pairs, large aggregates,
+- `test`: the test corpus is built with `rustc-ryo` (also with `-Zthreads=8`) and with plain
+  rustc, and the exit codes, stdout and stderr are diffed. It includes an ABI sweep: argument types (ZST, scalar pairs, large aggregates,
   `f32`/`f64` mixes, `u128`, `extern "C"`, closures, vtable shims, `#[track_caller]`) through
   portals and island templates, on both targets.
 - `test --clif`: also builds the corpus with `rustc-clif` and diffs its output too. That

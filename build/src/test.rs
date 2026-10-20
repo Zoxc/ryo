@@ -1,12 +1,114 @@
-//! `y test` (design/build.md#test-and-bench). For now: the smoke tests of `dist/`.
+//! `y test` (design/build.md#test-and-bench): the test corpus, diffed against plain rustc, and
+//! the smoke tests of `dist/`.
 
+use std::ffi::OsString;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
-use crate::utils::{cmd, exe_name, output, root};
+use crate::utils::{cmd, describe, dll_name, exe_name, output, root};
 
-/// Programs in `tests/` built with `rustc-ryo` and with plain rustc; their outputs must match.
-const CORPUS: &[&str] = &["hello"];
+/// A test program: one or more crates under `tests/`, built in order. The binary crate runs.
+struct Program {
+    name: &'static str,
+    crates: &'static [Crate],
+    /// Extra flags for every crate.
+    flags: &'static [&'static str],
+}
+
+struct Crate {
+    /// The crate name, passed as `--crate-name`.
+    name: &'static str,
+    /// Source path, relative to `tests/`.
+    src: &'static str,
+    kind: CrateKind,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum CrateKind {
+    Bin,
+    Rlib,
+    Dylib,
+}
+
+impl CrateKind {
+    fn flag(self) -> &'static str {
+        match self {
+            CrateKind::Bin => "bin",
+            CrateKind::Rlib => "rlib",
+            CrateKind::Dylib => "dylib",
+        }
+    }
+}
+
+const fn krate(name: &'static str, src: &'static str, kind: CrateKind) -> Crate {
+    Crate { name, src, kind }
+}
+
+/// A one-file binary program `tests/<name>.rs`.
+macro_rules! single {
+    ($name:literal) => {
+        Program {
+            name: $name,
+            crates: &[krate($name, concat!($name, ".rs"), CrateKind::Bin)],
+            flags: &[],
+        }
+    };
+}
+
+/// Programs built with plain rustc and with every [`Variant`]; their outputs must match.
+const CORPUS: &[Program] = &[
+    single!("hello"),
+    single!("arith"),
+    single!("structs_enums"),
+    single!("generics_traits"),
+    single!("closures_iters"),
+    single!("collections"),
+    single!("panics"),
+    single!("exit_code"),
+    Program {
+        name: "cross_crate",
+        crates: &[
+            krate("ccl", "cross_crate/lib.rs", CrateKind::Rlib),
+            krate("main", "cross_crate/main.rs", CrateKind::Bin),
+        ],
+        flags: &[],
+    },
+    Program {
+        name: "dylib",
+        crates: &[
+            krate("rdy", "dylib/lib.rs", CrateKind::Dylib),
+            krate("main", "dylib/main.rs", CrateKind::Bin),
+        ],
+        // Both link std's dylib, so std shows up once.
+        flags: &["-Cprefer-dynamic"],
+    },
+];
+
+/// Which compiler builds a program.
+#[derive(Clone, Copy, PartialEq)]
+enum Compiler {
+    /// Plain `rustc`: the reference.
+    Rustc,
+    /// `dist/bin/rustc-ryo`.
+    Ryo,
+}
+
+/// A way of building the corpus. Each variant's output is compared with [`REFERENCE`]'s.
+struct Variant {
+    name: &'static str,
+    compiler: Compiler,
+    /// Extra flags for every crate.
+    flags: &'static [&'static str],
+}
+
+const REFERENCE: Variant = Variant { name: "rustc", compiler: Compiler::Rustc, flags: &[] };
+
+/// `test --clif` will add a cg_clif variant.
+const VARIANTS: &[Variant] = &[
+    Variant { name: "ryo", compiler: Compiler::Ryo, flags: &[] },
+    Variant { name: "ryo-threads8", compiler: Compiler::Ryo, flags: &["-Zthreads=8"] },
+];
 
 pub fn run() -> Result<(), String> {
     let root = root();
@@ -16,64 +118,179 @@ pub fn run() -> Result<(), String> {
     }
     let out = root.join("target").join("tests");
     fs::create_dir_all(&out).map_err(|e| format!("creating {}: {e}", out.display()))?;
+    let ctx = Ctx { tests: root.join("tests"), out: out.clone(), rustc_ryo: rustc_ryo.clone() };
 
     let mut failed = Vec::new();
-    for name in CORPUS {
-        let src = root.join("tests").join(format!("{name}.rs"));
-        match diff_test(&rustc_ryo, &src, &out, name) {
-            Ok(()) => eprintln!("[y] test {name}: ok"),
+    for program in CORPUS {
+        let reference = match ctx.build_and_run(program, &REFERENCE) {
+            Ok(r) => r,
             Err(msg) => {
-                eprintln!("[y] test {name}: FAILED: {msg}");
-                failed.push(*name);
+                eprintln!("[y] test {}: FAILED with plain rustc: {msg}", program.name);
+                failed.push(program.name.to_owned());
+                continue;
+            }
+        };
+        for variant in VARIANTS {
+            let name = format!("{} [{}]", program.name, variant.name);
+            match ctx.build_and_run(program, variant).and_then(|r| r.compare(&reference)) {
+                Ok(()) => eprintln!("[y] test {name}: ok"),
+                Err(msg) => {
+                    eprintln!("[y] test {name}: FAILED: {msg}");
+                    failed.push(name);
+                }
             }
         }
     }
-    match reject_randomize_layout(&rustc_ryo, &root.join("tests").join("hello.rs"), &out) {
-        Ok(()) => eprintln!("[y] test reject-randomize-layout: ok"),
-        Err(msg) => {
-            eprintln!("[y] test reject-randomize-layout: FAILED: {msg}");
-            failed.push("reject-randomize-layout");
-        }
-    }
-    match cargo_smoke(&root, &out) {
-        Ok(()) => eprintln!("[y] test cargo-ryo: ok"),
-        Err(msg) => {
-            eprintln!("[y] test cargo-ryo: FAILED: {msg}");
-            failed.push("cargo-ryo");
+    let hello = root.join("tests").join("hello.rs");
+    let checks: [(&str, Result<(), String>); 3] = [
+        ("reject-randomize-layout", reject_randomize_layout(&rustc_ryo, &hello, &out)),
+        ("reject-codegen-units", reject_codegen_units(&rustc_ryo, &hello, &out)),
+        ("cargo-ryo", cargo_smoke(&root, &out)),
+    ];
+    for (name, res) in checks {
+        match res {
+            Ok(()) => eprintln!("[y] test {name}: ok"),
+            Err(msg) => {
+                eprintln!("[y] test {name}: FAILED: {msg}");
+                failed.push(name.to_owned());
+            }
         }
     }
     if !failed.is_empty() {
         return Err(format!("failed tests: {}", failed.join(", ")));
     }
-    eprintln!("[y] the full test corpus and the ABI sweep are not implemented yet");
+    eprintln!("[y] the ABI sweep is not implemented yet");
     Ok(())
 }
 
-fn diff_test(rustc_ryo: &Path, src: &Path, out: &Path, name: &str) -> Result<(), String> {
-    let ryo_exe = out.join(exe_name(&format!("{name}-ryo")));
-    let llvm_exe = out.join(exe_name(&format!("{name}-llvm")));
-    let res = cmd(rustc_ryo)
-        .arg("--edition=2024")
-        .arg(src)
-        .arg("-o")
-        .arg(&ryo_exe)
-        .env("RYO_BACKEND_MARKER", "1")
-        .output()
-        .map_err(|e| e.to_string())?;
-    let stderr = String::from_utf8_lossy(&res.stderr);
-    if !res.status.success() {
-        return Err(format!("rustc-ryo failed:\n{stderr}"));
+struct Ctx {
+    tests: PathBuf,
+    out: PathBuf,
+    rustc_ryo: PathBuf,
+}
+
+/// What a test program did when run.
+#[derive(PartialEq)]
+struct RunResult {
+    code: Option<i32>,
+    stdout: String,
+    stderr: String,
+}
+
+impl RunResult {
+    fn compare(&self, reference: &RunResult) -> Result<(), String> {
+        if self == reference {
+            return Ok(());
+        }
+        Err(format!(
+            "output differs\n--- rustc: exit {:?} ---\nstdout:\n{}stderr:\n{}\
+             --- this: exit {:?} ---\nstdout:\n{}stderr:\n{}",
+            reference.code, reference.stdout, reference.stderr, self.code, self.stdout, self.stderr
+        ))
     }
-    if !stderr.contains(BACKEND_MARKER) {
-        return Err(format!("the ryo backend didn't run; stderr:\n{stderr}"));
+}
+
+impl Ctx {
+    fn compiler(&self, compiler: Compiler) -> Command {
+        match compiler {
+            Compiler::Rustc => cmd("rustc"),
+            Compiler::Ryo => {
+                let mut c = cmd(&self.rustc_ryo);
+                c.env("RYO_BACKEND_MARKER", "1");
+                c
+            }
+        }
     }
-    output(cmd("rustc").args(["--edition=2024"]).arg(src).arg("-o").arg(&llvm_exe))?;
-    let ryo = output(&mut cmd(&ryo_exe))?;
-    let llvm = output(&mut cmd(&llvm_exe))?;
-    if ryo != llvm {
-        return Err(format!("output differs\n--- rustc ---\n{llvm}--- rustc-ryo ---\n{ryo}"));
+
+    /// The compiler's sysroot `lib/rustlib/<target>/lib`, where std's dylib is.
+    fn target_libdir(&self, compiler: Compiler) -> Result<PathBuf, String> {
+        let mut c = self.compiler(compiler);
+        let libdir = output(c.env_remove("RYO_BACKEND_MARKER").args(["--print", "target-libdir"]))?;
+        Ok(PathBuf::from(libdir.trim()))
     }
-    Ok(())
+
+    /// Builds every crate of `program` into `target/tests/<program>/<variant>/` and runs the
+    /// binary there.
+    fn build_and_run(&self, program: &Program, variant: &Variant) -> Result<RunResult, String> {
+        let dir = self.out.join(program.name).join(variant.name);
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
+        let mut exe = None;
+        for krate in program.crates {
+            let mut c = self.compiler(variant.compiler);
+            c.arg("--edition=2024")
+                .arg(self.tests.join(krate.src))
+                .args(["--crate-type", krate.kind.flag(), "--crate-name", krate.name])
+                .arg("--out-dir")
+                .arg(&dir)
+                .arg("-L")
+                .arg(&dir)
+                .args(program.flags)
+                .args(variant.flags);
+            // Every library crate is a dependency of the crates after it.
+            for dep in program.crates.iter().take_while(|d| d.name != krate.name) {
+                if dep.kind != CrateKind::Bin {
+                    c.args(["--extern", dep.name]);
+                }
+            }
+            let res = c.output().map_err(|e| format!("failed to run `{}`: {e}", describe(&c)))?;
+            let stderr = String::from_utf8_lossy(&res.stderr);
+            if !res.status.success() {
+                return Err(format!("`{}` failed:\n{stderr}", describe(&c)));
+            }
+            if variant.compiler == Compiler::Ryo && !stderr.contains(BACKEND_MARKER) {
+                return Err(format!("the ryo backend didn't build {}; stderr:\n{stderr}", krate.name));
+            }
+            if krate.kind == CrateKind::Bin {
+                exe = Some(dir.join(exe_name(krate.name)));
+            }
+        }
+        let exe = exe.ok_or_else(|| format!("{}: no binary crate", program.name))?;
+        let mut run = Command::new(&exe);
+        run.env_remove("RUST_BACKTRACE").env_remove("RUST_LIB_BACKTRACE").current_dir(&dir);
+        // Dylibs are found next to the binary, and std's in the sysroot that built it.
+        let lib_path_var = if cfg!(windows) { "PATH" } else { "LD_LIBRARY_PATH" };
+        let mut paths = vec![dir.clone(), self.target_libdir(variant.compiler)?];
+        paths.extend(std::env::split_paths(&std::env::var_os(lib_path_var).unwrap_or_default()));
+        run.env(lib_path_var, std::env::join_paths(paths).map_err(|e| e.to_string())?);
+        let res = run.output().map_err(|e| format!("failed to run {}: {e}", exe.display()))?;
+        // Panic messages name the source path, which is the same for every variant.
+        Ok(RunResult {
+            code: res.status.code(),
+            stdout: String::from_utf8_lossy(&res.stdout).into_owned(),
+            stderr: normalize_thread_ids(&String::from_utf8_lossy(&res.stderr)),
+        })
+    }
+}
+
+/// Panic messages say `thread 'main' (<os thread id>) panicked`; the id differs between runs.
+fn normalize_thread_ids(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for line in s.split_inclusive('\n') {
+        if let Some(rest) = line.strip_prefix("thread '")
+            && let Some(q) = rest.find("' (")
+            && let Some(close) = rest[q + 3..].find(')')
+            && rest[q + 3..q + 3 + close].bytes().all(|b| b.is_ascii_digit())
+        {
+            out.push_str("thread '");
+            out.push_str(&rest[..q]);
+            out.push_str("' (N");
+            out.push_str(&rest[q + 3 + close..]);
+        } else {
+            out.push_str(line);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn normalizes_thread_ids() {
+        let s = "x\nthread 'main' (1234) panicked at a.rs:1:2:\nthread 'a' (b) c\n";
+        let want = "x\nthread 'main' (N) panicked at a.rs:1:2:\nthread 'a' (b) c\n";
+        assert_eq!(super::normalize_thread_ids(s), want);
+    }
 }
 
 /// `cargo-ryo run` on a one-file package wrapping `tests/hello.rs`.
@@ -120,6 +337,27 @@ fn reject_randomize_layout(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(
     let stderr = String::from_utf8_lossy(&res.stderr);
     if res.status.success() || !stderr.contains("-Zrandomize-layout") {
         return Err(format!("expected rustc-ryo to reject -Zrandomize-layout; stderr:\n{stderr}"));
+    }
+    Ok(())
+}
+
+/// The backend itself rejects more than one codegen unit (design/backend.md#pipeline). `rustc-ryo`
+/// always appends `-Ccodegen-units=1`, so this runs plain rustc with the backend.
+fn reject_codegen_units(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
+    let dist = rustc_ryo.parent().and_then(Path::parent).ok_or("bad dist path")?;
+    let mut backend = OsString::from("-Zcodegen-backend=");
+    backend.push(dist.join("lib").join(dll_name("rustc_codegen_ryo")));
+    let res = cmd("rustc")
+        .arg(backend)
+        .arg(src)
+        .arg("-Ccodegen-units=4")
+        .arg("-o")
+        .arg(out.join(exe_name("cgu4")))
+        .output()
+        .map_err(|e| e.to_string())?;
+    let stderr = String::from_utf8_lossy(&res.stderr);
+    if res.status.success() || !stderr.contains("-Ccodegen-units=1") {
+        return Err(format!("expected the backend to reject 4 codegen units; stderr:\n{stderr}"));
     }
     Ok(())
 }
