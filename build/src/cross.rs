@@ -70,18 +70,25 @@ pub fn run(target: &str) -> Result<(), String> {
     let mut failed = Vec::new();
     for program in CORPUS {
         let res = (|| {
-            let reference = link.build(&cmd("rustc"), program, &out.join(program.name).join("rustc"))?;
-            let ryo = link.build(&cmd(&rustc_ryo), program, &out.join(program.name).join("ryo"))?;
-            // The image refers to a DLL function both through its `__imp_` slot and directly
-            // (design/platforms.md); with the real import library the direct reference
-            // resolves to the import thunk, so it is fine wherever the import itself is.
-            let extra: Vec<&String> = ryo
-                .difference(&reference)
-                .filter(|s| !RT_IMPORTS.contains(&s.as_str()))
-                .filter(|s| !reference.contains(&format!("__declspec(dllimport) {s}")))
-                .collect();
-            if !extra.is_empty() {
-                return Err(format!("unresolved only in the ryo build: {extra:?}"));
+            let reference = link.build(&cmd("rustc"), program, &out.join(program.name).join("rustc"), &[])?;
+            let mut builds = vec![("ryo", &[][..])];
+            // `-Clto` on the last crate, as cargo passes it (no Rust dylibs).
+            if !program.has_dylib() {
+                builds.push(("ryo-lto", &["-Clto=fat"][..]));
+            }
+            for (name, final_flags) in builds {
+                let ryo = link.build(&cmd(&rustc_ryo), program, &out.join(program.name).join(name), final_flags)?;
+                // The image refers to a DLL function both through its `__imp_` slot and directly
+                // (design/platforms.md); with the real import library the direct reference
+                // resolves to the import thunk, so it is fine wherever the import itself is.
+                let extra: Vec<&String> = ryo
+                    .difference(&reference)
+                    .filter(|s| !RT_IMPORTS.contains(&s.as_str()))
+                    .filter(|s| !reference.contains(&format!("__declspec(dllimport) {s}")))
+                    .collect();
+                if !extra.is_empty() {
+                    return Err(format!("unresolved only in the {name} build: {extra:?}"));
+                }
             }
             Ok(())
         })();
@@ -108,7 +115,13 @@ struct Link<'a> {
 impl Link<'_> {
     /// Builds and links every crate of `program` with `compiler` into `dir`, and returns the
     /// symbols the links left unresolved.
-    fn build(&self, compiler: &std::process::Command, program: &Program, dir: &Path) -> Result<BTreeSet<String>, String> {
+    fn build(
+        &self,
+        compiler: &std::process::Command,
+        program: &Program,
+        dir: &Path,
+        final_flags: &[&str],
+    ) -> Result<BTreeSet<String>, String> {
         fs::create_dir_all(dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
         let tests = root().join("tests");
         let mut undefined = BTreeSet::new();
@@ -130,6 +143,9 @@ impl Link<'_> {
                 .args(["-Clinker-flavor=lld-link", "-Clink-arg=/force:unresolved", "-Clink-arg=/DEBUG:NONE"])
                 .arg("-L")
                 .arg(&self.stubs);
+            if std::ptr::eq(krate, program.crates.last().unwrap()) {
+                c.args(final_flags);
+            }
             if krate.kind == CrateKind::Bin {
                 // There is no CRT to provide the default entry point.
                 c.arg("-Clink-arg=/entry:mainCRTStartup");

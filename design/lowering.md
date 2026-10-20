@@ -22,6 +22,8 @@ callee an island). A `LoweredFn` holds:
     allocation
   - `Bytes { at, bytes, align }`: a `k` operand, a pool allocation of raw bytes (`fill`
     elements)
+  - `Data { at, alloc, offset }`: a `data` operand, `offset` bytes into the fixup-area copy
+    of an allocation (PE, [Constants](#constants))
 - island requests (template diagnostic item name and generic args, plus the operand to fill)
 - the cleanup entries, `frame_size`, `max_outgoing`, `arg_size` and `ret_size`
 
@@ -149,7 +151,7 @@ a temporary slot up to 256 bytes, and uses `memmove` above that.
 | `Repeat(op, n)` | A scalar constant: `zero` or `fill` into a slot, `memset` into memory if all its bytes are equal. Otherwise the element is written once, then doubled with `memcpy`s (⌈log₂ n⌉ of them) |
 | `Ref`, `RawPtr` | `addr` (slot address) or the place's address computation. For unsized places, the wide pointer (data plus metadata) |
 | `Reborrow(_, _, place)` | same as `Use(Copy(place))`: same layout, bitwise copy |
-| `ThreadLocalRef(def)` | `call_ptr0` on the symbol of `Shim(ThreadLocal(def))`, which returns the address. On ELF, rustc normally doesn't create that shim (`needs_thread_local_shim` is false when the target exports TLS, `rustc_middle/src/ty/util.rs:731-735`), so the backend adds it to the native CGU itself as an `Internal` stub neighbor. Where an upstream crate already exports one (PE), that one is used |
+| `ThreadLocalRef(def)` | `addr.sym` of `Shim(ThreadLocal(def))` and a `call_ptr0` island on it (plain `island`: the shim can't unwind), which returns the address on the current thread. On ELF, rustc doesn't create that shim (`needs_thread_local_shim` is false when the target exports TLS, `rustc_middle/src/ty/util.rs:731-735`), so the backend adds it to the native CGU itself, also for upstream statics, as `WeakODR` + `Hidden` ([backend.md](backend.md#pipeline), Linkage). On PE, the collector puts a local static's shim in the CGU, and an upstream crate exports its own (`symbol_export.rs:203-220`), which the image reaches through `__imp_`. The shim itself is never a VM function (its body is a `ThreadLocalRef`). Foreign thread locals have no shim and stay native |
 | `Cast(kind, op, ty)` | see Casts |
 | `BinaryOp(op, (a, b))` | see Binary operations |
 | `UnaryOp(Not, a)` | `not.wN` (`bool`: `xor` with 1) |
@@ -344,6 +346,10 @@ Mirrors cg_ssa's `get_caller_location`:
   - to a static or function: against its symbol
 
   The linker applies both ([vm.md](vm.md#image-format)).
+- Type id "pointers" (`GlobalAlloc::TypeId`) have no address: the base is 0 and the offset
+  is part of the hash, as in cg_llvm (`rustc_codegen_llvm/src/common.rs:201-205`). So a
+  type-id scalar is an immediate of its offset, and in an allocation the bytes stay as they
+  are, with no relocation.
 - Pointers to VM functions in constants (vtables, fn-pointer constants) point at the portal, so
   native code can call them too.
 - **Vtables**: cg_llvm emits vtables as private, unnamed constants, so there is no symbol to
@@ -352,10 +358,15 @@ Mirrors cg_ssa's `get_caller_location`:
   native symbols. Vtable addresses aren't guaranteed unique, so a second copy is fine.
   Allocations are walked recursively, and image vtables are roots of the portal-needed
   computation ([backend.md](backend.md#pipeline)).
-- On PE, pointers to data imported from another DLL can't be link-time relocated (they need
-  `__imp_` indirection). Allocations containing them go into the image's writable
-  `fixups` area, and registration patches them once ([platforms.md](platforms.md)). This
-  is the only load-time fixup.
+- On PE, pointers to functions and statics that another crate or library defines (those
+  whose `sym` slot would be indirect, [platforms.md](platforms.md)) can't be link-time
+  relocated: they need `__imp_` indirection. Allocations containing them directly go into
+  the image's writable `fixups` area instead of the pool, with one fixup per such pointer
+  (against an indirect slot; functions and foreign statics of static libraries also get a
+  direct slot, as for code references), and registration patches them once. Their address
+  is `addr.data`, and an `Indirect` constant is copied out of them with a load. Allocations
+  that only point at such allocations stay in the pool, with intra-image relocations into
+  the writable section. This is the only load-time fixup.
 
 ## Status
 
@@ -364,7 +375,8 @@ them). Implemented: everything above for integers, `bool`, `char`, `f32`/`f64`, 
 references, aggregates, enums, all casts (`f16`/`f128` ones through `as_cast`), field-by-field
 unsizing, unsized tails at dynamic offsets, `size_of_val` of any unsized type, `Repeat`, wide
 pointer compares, 128-bit `mul`/`div`/`rem`/`mul.ovf` islands, constants (pool allocations with
-relocations), switches,
+relocations, type ids, vtables, and on PE the fixup area for constants pointing at imports),
+thread locals (`ThreadLocalRef` through the TLS shim), switches,
 asserts, drops (VM call of the glue, `drop_in_place` island, vtable drop for trait objects),
 unwinding (cleanup entries, terminate stubs, the `catch_unwind` island) and calls: VM `call`,
 `call.ext`, `call.ind` for fn pointers and virtual calls (`dyn Fn*` included), tail calls, and
@@ -376,10 +388,11 @@ islands (`call` for safe Rust fn items and safe intrinsics, `call_ptrN`/`call_cN
 `SwitchInt` and `Assert` fuse with the compare that feeds them (`br.cmp`). Locals with storage
 markers share slots; there is no copy propagation yet.
 Still `NeedsNative`, with the reason in `RYO_STATS=2`: `#[track_caller]` functions with more
-than 16 arguments, `ThreadLocalRef`, `f16`/`f128` arithmetic and compares, unsafe
-intrinsics without a VM lowering, wrapper or fallback body (128-bit atomics, SIMD intrinsics
-with constant operands, …), coroutines, extern-type tails, and on PE constants pointing at
-imports (the fixup area).
+than 16 arguments, `ThreadLocalRef` of foreign thread locals, `f16`/`f128` arithmetic and
+compares, unsafe intrinsics without a VM lowering, wrapper or fallback body (128-bit atomics,
+SIMD intrinsics with constant operands, …), coroutines and extern-type tails.
+The PE fixup area is only cross-checked (objects and links), not run, like the rest of the
+PE column ([platforms.md](platforms.md)).
 
 ## Bytecode optimization
 

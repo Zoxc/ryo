@@ -101,7 +101,8 @@ and `codegen_crate` reads them.
        That only depends on `instantiation_mode`, not on partitioning, so there is no query
        cycle. These items, and all other image-referenced `Internal` items whose symbols
        are already crate-unique (statics, generics), become `External` + `Hidden`.
-     - **The TLS shim**, which the backend adds itself: the same static always gives the same
+     - **The TLS shim**, which the backend adds itself on ELF (on PE rustc creates and
+       exports it, [lowering.md](lowering.md#rvalues)): the same static always gives the same
        body, so it is `WeakODR` + `Hidden`. cg_llvm puts WeakODR functions in their own comdat
        where the target supports it (`predefine_fn`, `rustc_codegen_llvm/src/mono_item.rs:80-84`),
        so copies from several crates merge.
@@ -115,7 +116,13 @@ and `codegen_crate` reads them.
    image path. Our `join_codegen` forwards the inner value to cg_llvm's (which downcasts it,
    `rustc_codegen_llvm/src/lib.rs:399-410`), then pushes a `CompiledModule` for the image
    (`kind: ModuleKind::Regular`, `object: Some(path)`) onto `CompiledModules.modules`
-   (`rustc_codegen_ssa/src/lib.rs:124-134`), so `link_rlib` and the object list include it.
+   (`rustc_codegen_ssa/src/lib.rs:124-134`), so the object list of final links includes it.
+   An rlib gets it as a plain (non-Rust) archive member instead: `link` takes the module out
+   before `link_rlib` and appends the object to the finished rlib afterwards (with
+   `ArArchiveBuilder`). `link_rlib` would list it among the rlib's Rust objects
+   (`rmeta-link`), and a downstream `-Clto` build reads bitcode from each of those and leaves
+   them out of the link (`rustc_codegen_llvm/src/back/lto.rs:94-120`,
+   `rustc_codegen_ssa/src/back/link.rs:3756`), which would fail and drop the image.
    The image defines one global symbol, `__ryo_image_<StableCrateId>` (the id as 16 hex
    digits), hidden: only the registry object of the same link unit references it. On ELF the
    read-only part is `.data.rel.ro.ryo_image` (writable only while relocating) and the
@@ -192,13 +199,27 @@ and `codegen_crate` reads them.
     generics.
   - Only portals that are actually emitted are listed, since a listed instance without a
     portal leaves downstream crates with an undefined reference.
-  - Native symbols that only the image refers to (callees, statics, islands) are exported
-    hidden, so `-Clto` doesn't internalize them.
+  - Every symbol the image refers to (portals, callees, statics, islands, the targets of
+    pointers in constants, upstream and foreign ones included) is added to the local
+    `exported_non_generic_symbols` as `NoDefId`, `used`, at the `Rust` level, so `-Clto`
+    doesn't internalize it: LTO keeps every `used` symbol whatever its threshold
+    (`rustc_codegen_ssa/src/back/lto.rs:107`), and the image is an object LTO doesn't see.
+    The `Rust` level keeps them out of the export lists of executables, cdylibs and
+    staticlibs (`linker.rs:1712`). A Rust dylib's export list includes that level, so crates
+    with a dylib (or proc-macro) crate type don't list them, and `-Clto` is rejected for
+    dylibs. `used` symbols also go into `symbols.o` (`linker.rs:1780`), where only LTO
+    needs them, and where a plain-name reference to a static in a DLL wouldn't resolve on
+    PE. So `codegen_crate` collects, per crate type, these entries of every statically
+    linked crate (recognized as `NoDefId` + `used` + `Rust`, which rustc never produces), and
+    `link` removes one occurrence of each from `CrateInfo::linked_symbols` when LTO is off.
+    The image objects reference all of them anyway.
   - The entry wrapper `c_main` (`External`, default visibility) isn't listed.
   - Items made `External` + `Hidden` only for the image (see Linkage) are filtered out of
     `exported_generic_symbols`, whatever `need_visibility` says. So are portals of
     non-generic functions, which `exported_non_generic_symbols` already lists by `DefId`. The default provider exports every `External` CGU item, and
-    skips hidden ones only when `need_visibility` is set (`symbol_export.rs:327, 375-387`). `-Clto` is rejected until this is done.
+    skips hidden ones only when `need_visibility` is set (`symbol_export.rs:327, 375-387`).
+  - `y test` builds the corpus with `-Clto=fat` and `-Clto=thin -Copt-level=3` on the last
+    crate (as cargo passes it), and `y test --cross` links it with `-Clto=fat` on PE.
 - `symbol_name` → for portal instances, the symbol of the VM function they stand for
   ([stubs.md](stubs.md#portals-native--vm)), looked up by the function index in the portal's
   `ID`. For `c_main`, the target's `entry_name`. For local `LocalCopy` instances, the default

@@ -232,9 +232,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             }
             (_, ty::Dynamic(preds, _)) => {
                 let vtable = super::constant::vtable_alloc(tcx, sa, preds);
-                self.check_alloc(vtable)?;
-                let at = self.op(Opcode::AddrK, &[d, 0]);
-                self.relocs.push(CodeReloc::Const { at: at + 2, alloc: vtable, offset: 0 });
+                self.alloc_addr_into(d, vtable, 0)?;
             }
             _ => return native("unsupported unsizing"),
         }

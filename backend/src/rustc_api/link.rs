@@ -4,6 +4,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use rustc_codegen_ssa::back::archive::{AddArchiveKind, ArArchiveBuilderBuilder, ArchiveBuilderBuilder, ArchiveEntryKind};
 use rustc_codegen_ssa::traits::CodegenBackend;
 use rustc_codegen_ssa::{CompiledModule, CompiledModules, CrateInfo};
 use rustc_hir::def_id::LOCAL_CRATE;
@@ -19,6 +20,11 @@ use crate::objfile;
 pub struct LinkInfo {
     /// The local crate's image symbol.
     pub local_image: String,
+    /// The name of the image's `CompiledModule`.
+    pub image_module: String,
+    /// Per crate type, the image symbols that only LTO needs in `symbols.o`
+    /// (`partition::linked_roots`).
+    pub linked_roots: Vec<(CrateType, Vec<String>)>,
     pub binary_format: object::BinaryFormat,
 }
 
@@ -73,12 +79,65 @@ pub fn link(
             fs::write(&path, bytes).unwrap_or_else(|e| sess.dcx().fatal(format!("writing {}: {e}", path.display())));
             these.modules.push(object_module(name, path));
         }
+        // In an rlib, the image must not be a Rust object: `-Clto` downstream reads bitcode
+        // from every Rust object of an rlib and leaves them out of the link, which would drop
+        // the image. So it is added afterwards, as a plain member.
+        let image = if crate_type == CrateType::Rlib {
+            let i = these.modules.iter().position(|m| m.name == info.image_module);
+            i.map(|i| these.modules.remove(i))
+        } else {
+            None
+        };
         let mut single = crate_info.clone();
         single.crate_types = vec![crate_type];
+        if !matches!(sess.lto(), rustc_session::config::Lto::Fat | rustc_session::config::Lto::Thin) {
+            remove_roots(&mut single, info, crate_type);
+        }
         llvm.link(sess, these, single, this_metadata, outputs);
+        if let Some(object) = image.and_then(|m| m.object) {
+            let rlib = rustc_session::output::out_filename(sess, crate_type, outputs, crate_info.local_crate_name);
+            if let rustc_session::config::OutFileName::Real(rlib) = rlib {
+                append_to_rlib(sess, &rlib, &object);
+            }
+            if !sess.opts.cg.save_temps {
+                let _ = fs::remove_file(&object);
+            }
+        }
     }
     if n > 1 && !sess.opts.cg.save_temps {
         let _ = fs::remove_dir_all(&scratch);
+    }
+}
+
+/// Takes the image symbols that only LTO needs out of `symbols.o`: one occurrence per crate
+/// that listed it, so names rustc lists itself stay.
+fn remove_roots(crate_info: &mut CrateInfo, info: &LinkInfo, crate_type: CrateType) {
+    let Some((_, roots)) = info.linked_roots.iter().find(|(t, _)| *t == crate_type) else { return };
+    let Some(linked) = crate_info.linked_symbols.get_mut(&crate_type) else { return };
+    let mut count: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for r in roots {
+        *count.entry(r.as_str()).or_default() += 1;
+    }
+    linked.retain(|(name, _)| match count.get_mut(name.as_str()) {
+        Some(n) if *n > 0 => {
+            *n -= 1;
+            false
+        }
+        _ => true,
+    });
+}
+
+/// Appends `object` to the archive `rlib` as a non-Rust member (`ArchiveEntryKind::Other`).
+fn append_to_rlib(sess: &Session, rlib: &Path, object: &Path) {
+    let tmp = rlib.with_extension("rlib.ryo-tmp");
+    let mut ab = ArArchiveBuilderBuilder.new_archive_builder(sess);
+    if let Err(e) = ab.add_archive(rlib, AddArchiveKind::Other) {
+        sess.dcx().fatal(format!("reading {}: {e}", rlib.display()));
+    }
+    ab.add_file(object, ArchiveEntryKind::Other);
+    ab.build(&tmp, None);
+    if let Err(e) = fs::rename(&tmp, rlib) {
+        sess.dcx().fatal(format!("writing {}: {e}", rlib.display()));
     }
 }
 

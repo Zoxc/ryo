@@ -27,6 +27,14 @@ pub(crate) struct Program {
     pub native_lib: Option<NativeLib>,
 }
 
+impl Program {
+    /// Whether a crate is a Rust dylib, or links std's.
+    pub(crate) fn has_dylib(&self) -> bool {
+        self.flags.contains(&"-Cprefer-dynamic")
+            || self.crates.iter().any(|c| matches!(c.kind, CrateKind::Dylib | CrateKind::RlibDylib))
+    }
+}
+
 /// A stand-in for a C static library: a `#![no_std]` Rust file without Rust symbol
 /// dependencies, compiled to an object by plain rustc and archived with the toolchain's
 /// `llvm-ar`, so it also builds for a cross target without a C compiler.
@@ -253,6 +261,23 @@ pub(crate) const CORPUS: &[Program] = &[
         entered: &["std::rt::lang_start::<()>"],
         ..PROGRAM
     },
+    // Constants and statics (design/lowering.md#constants): type ids, thread locals through
+    // the `ThreadLocal` shim, constants pointing at statics, functions and vtables.
+    single!(
+        "vm_statics",
+        vm: &["main", "bump", "nested", "table", "atomics", "type_ids", "downcast", "tls", "tls_key"],
+        entered: &["std::rt::lang_start::<()>"]
+    ),
+    Program {
+        name: "vm_statics_cross",
+        crates: &[
+            krate("vsl", "vm_statics_cross/lib.rs", CrateKind::Rlib),
+            krate("main", "vm_statics_cross/main.rs", CrateKind::Bin),
+        ],
+        vm: &["main", "statics", "fns", "dyns", "tls", "local", "f", "bump_tl", "<T as Shape>::area"],
+        entered: &["std::rt::lang_start::<()>"],
+        ..PROGRAM
+    },
     Program {
         name: "vm_staticlib",
         crates: &[krate("vmc", "vm_c/lib.rs", CrateKind::Staticlib)],
@@ -288,21 +313,30 @@ struct Variant {
     compiler: Compiler,
     /// Extra flags for every crate.
     flags: &'static [&'static str],
+    /// Extra flags for the last crate only, as cargo passes `-Clto`. Programs with a Rust
+    /// dylib are skipped when this is set: LTO doesn't support them.
+    final_flags: &'static [&'static str],
     /// Only for programs that list VM functions. Their `vm`/`entered` lists aren't checked
     /// (MIR inlining at `-O` removes some functions), only that tracing changes nothing else.
     vm_only: bool,
 }
 
-const REFERENCE: Variant = Variant { name: "rustc", compiler: Compiler::Rustc, flags: &[], vm_only: false };
+const VARIANT: Variant = Variant { name: "", compiler: Compiler::Ryo, flags: &[], final_flags: &[], vm_only: false };
+
+const REFERENCE: Variant = Variant { name: "rustc", compiler: Compiler::Rustc, ..VARIANT };
 
 const VARIANTS: &[Variant] = &[
-    Variant { name: "ryo", compiler: Compiler::Ryo, flags: &[], vm_only: false },
-    Variant { name: "ryo-threads8", compiler: Compiler::Ryo, flags: &["-Zthreads=8"], vm_only: false },
-    Variant { name: "ryo-O3", compiler: Compiler::Ryo, flags: &["-Copt-level=3"], vm_only: true },
+    Variant { name: "ryo", ..VARIANT },
+    Variant { name: "ryo-threads8", flags: &["-Zthreads=8"], ..VARIANT },
+    Variant { name: "ryo-O3", flags: &["-Copt-level=3"], vm_only: true, ..VARIANT },
+    // The image is outside LTO's view: the symbols it refers to must survive internalization,
+    // also those of upstream rlibs built without LTO (design/backend.md#query-overrides).
+    Variant { name: "ryo-lto", final_flags: &["-Clto=fat"], ..VARIANT },
+    Variant { name: "ryo-thinlto-O3", flags: &["-Copt-level=3"], final_flags: &["-Clto=thin"], vm_only: true, ..VARIANT },
 ];
 
 /// Added by `test --clif`.
-const CLIF: Variant = Variant { name: "clif", compiler: Compiler::Clif, flags: &[], vm_only: false };
+const CLIF: Variant = Variant { name: "clif", compiler: Compiler::Clif, ..VARIANT };
 
 /// The variants to build: [`VARIANTS`], plus [`CLIF`] for `test --clif`.
 fn variants(clif: bool) -> Vec<&'static Variant> {
@@ -366,6 +400,9 @@ pub fn run(clif: bool) -> Result<(), String> {
         };
         for variant in &variants {
             if variant.vm_only && program.vm.is_empty() {
+                continue;
+            }
+            if !variant.final_flags.is_empty() && program.has_dylib() {
                 continue;
             }
             let name = format!("{} [{}]", program.name, variant.name);
@@ -474,6 +511,9 @@ impl Ctx {
                 .arg(&dir)
                 .args(program.flags)
                 .args(variant.flags);
+            if std::ptr::eq(krate, program.crates.last().unwrap()) {
+                c.args(variant.final_flags);
+            }
             // Every library crate is a dependency of the crates after it.
             for dep in program.crates.iter().take_while(|d| d.name != krate.name) {
                 if dep.kind != CrateKind::Bin {
@@ -632,8 +672,8 @@ mod tests {
     #[test]
     fn clif_variant_only_with_flag() {
         let names = |clif| super::variants(clif).iter().map(|v| v.name).collect::<Vec<_>>();
-        assert_eq!(names(false), ["ryo", "ryo-threads8", "ryo-O3"]);
-        assert_eq!(names(true), ["ryo", "ryo-threads8", "ryo-O3", "clif"]);
+        assert_eq!(names(false), ["ryo", "ryo-threads8", "ryo-O3", "ryo-lto", "ryo-thinlto-O3"]);
+        assert_eq!(names(true), ["ryo", "ryo-threads8", "ryo-O3", "ryo-lto", "ryo-thinlto-O3", "clif"]);
         assert!(super::variants(true).last().unwrap().compiler == super::Compiler::Clif);
     }
 

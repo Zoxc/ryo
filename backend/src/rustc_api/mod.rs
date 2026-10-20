@@ -61,6 +61,7 @@ struct Originals {
     partition: PartitionProvider,
     symbol_name: SymbolNameProvider,
     exported_generic_symbols: ExportedProvider,
+    exported_non_generic_symbols: ExportedProvider,
 }
 
 static ORIGINALS: OnceLock<Originals> = OnceLock::new();
@@ -82,6 +83,13 @@ fn exported_generic_symbols<'tcx>(
     krate: LocalCrate,
 ) -> &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)] {
     partition::exported_generic_symbols(tcx, (originals().exported_generic_symbols)(tcx, krate))
+}
+
+fn exported_non_generic_symbols<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    krate: LocalCrate,
+) -> &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)] {
+    partition::exported_non_generic_symbols(tcx, (originals().exported_non_generic_symbols)(tcx, krate))
 }
 
 impl CodegenBackend for RyoBackend {
@@ -160,10 +168,12 @@ impl CodegenBackend for RyoBackend {
             partition: q.collect_and_partition_mono_items,
             symbol_name: q.symbol_name,
             exported_generic_symbols: q.exported_generic_symbols,
+            exported_non_generic_symbols: q.exported_non_generic_symbols,
         });
         q.collect_and_partition_mono_items = collect_and_partition_mono_items;
         q.symbol_name = symbol_name;
         q.exported_generic_symbols = exported_generic_symbols;
+        q.exported_non_generic_symbols = exported_non_generic_symbols;
     }
 
     fn target_cpu(&self, sess: &Session) -> String {
@@ -191,6 +201,8 @@ impl CodegenBackend for RyoBackend {
         }
         let _ = self.link_info.set(link::LinkInfo {
             local_image: objfile::image_symbol(scid),
+            image_module: image_name.clone(),
+            linked_roots: tcx.crate_types().iter().map(|&t| (t, partition::linked_roots(tcx, t))).collect(),
             binary_format: binary_format(&tcx.sess.target.binary_format),
         });
         // The native CGU (step 4), compiled by cg_llvm as usual.

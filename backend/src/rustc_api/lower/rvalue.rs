@@ -58,7 +58,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 self.repeat(dst, op, n)
             }
             Rvalue::Ref(_, _, p) | Rvalue::RawPtr(_, p) => self.address_of(dst, *p),
-            Rvalue::ThreadLocalRef(_) => native("ThreadLocalRef"),
+            Rvalue::ThreadLocalRef(def_id) => self.thread_local_ref(dst, *def_id),
             Rvalue::Cast(kind, op, ty) => self.cast(dst, *kind, op, self.mono(*ty)),
             Rvalue::BinaryOp(op, b) => self.binary_op(dst, *op, &b.0, &b.1),
             Rvalue::UnaryOp(op, a) => self.unary_op(dst, *op, a),

@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 use rustc_data_structures::fx::{FxHashMap, FxHashSet, FxIndexMap};
 use rustc_hir::attrs::Linkage;
 use rustc_hir::def_id::{CrateNum, DefId, LOCAL_CRATE};
-use rustc_middle::middle::exported_symbols::{ExportedSymbol, SymbolExportInfo};
+use rustc_middle::middle::exported_symbols::{ExportedSymbol, SymbolExportInfo, SymbolExportKind, SymbolExportLevel};
 use rustc_middle::mir::interpret::{AllocId, GlobalAlloc};
 use rustc_middle::mono::{
     CodegenUnit, CollectionMode, InstantiationMode, MonoItem, MonoItemData, MonoItemPartitions, Visibility,
@@ -16,8 +16,10 @@ use rustc_middle::mono::{
 use rustc_middle::ty::{self, Instance, InstanceKind, Ty, TyCtxt, TypingEnv};
 use rustc_session::config::{CrateType, EntryFnType};
 use rustc_span::Symbol;
-use ryo_bytecode::image::{AllocReloc, AllocTarget, FunctionDef, ImageObject, ImageWriter, portal_id};
-use ryo_bytecode::insn::{Const, Opcode, Sym};
+use ryo_bytecode::image::{
+    AllocFixup, AllocReloc, AllocTarget, FunctionDef, ImageObject, ImageWriter, SYM_INDIRECT, portal_id,
+};
+use ryo_bytecode::insn::{Const, Data, Opcode, Sym};
 
 use super::lower::{self, CodeReloc, LowerCx, LoweredFn, NeedsNative};
 
@@ -88,6 +90,8 @@ pub struct Results {
     /// The symbol of each VM function, by image function index. A portal's symbol is its
     /// function's.
     symbols: Vec<String>,
+    /// For `exported_non_generic_symbols`: the Rust symbols the image refers to ([`Roots`]).
+    lto_roots: Vec<(String, SymbolExportKind)>,
     /// For `exported_generic_symbols`: (portal, original), lifetime-erased.
     portals: Vec<Pair<'static>>,
     /// The portals made `External` + `Hidden` only because the image references them.
@@ -143,10 +147,12 @@ pub fn collect_and_partition_mono_items<'tcx>(
             "the ryo backend requires `-Ccodegen-units=1`, but {n} codegen units were requested"
         ));
     }
-    // The exported-symbols queries don't yet keep image-only native symbols from being
-    // internalized (design/backend.md#query-overrides).
-    if matches!(tcx.sess.lto(), rustc_session::config::Lto::Fat | rustc_session::config::Lto::Thin) {
-        tcx.dcx().fatal("the ryo backend doesn't support `-Clto` yet");
+    // A dylib doesn't list the image's symbols for LTO (`exported_non_generic_symbols`), and
+    // rustc only allows LTO for it with `-Zdylib-lto`.
+    if matches!(tcx.sess.lto(), rustc_session::config::Lto::Fat | rustc_session::config::Lto::Thin)
+        && tcx.crate_types().contains(&CrateType::Dylib)
+    {
+        tcx.dcx().fatal("the ryo backend doesn't support `-Clto` for dylibs");
     }
     if std::env::var_os("RYO_BACKEND_MARKER").is_some() {
         eprintln!("{}", super::PARTITION_MARKER);
@@ -291,6 +297,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                     CodeReloc::Symbol { target, .. } => image_refs.push(MonoItem::Fn(target)),
                     CodeReloc::Static { def_id, .. } => image_refs.push(MonoItem::Static(def_id)),
                     CodeReloc::Const { alloc, .. } => alloc_refs(tcx, alloc, &mut seen_allocs, &mut image_refs),
+                    CodeReloc::Data { alloc, .. } => alloc_refs(tcx, alloc, &mut seen_allocs, &mut image_refs),
                     CodeReloc::Call { .. } | CodeReloc::Site { .. } | CodeReloc::Bytes { .. } => {}
                     CodeReloc::TailCall { .. } => {}
                 }
@@ -362,7 +369,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             );
         }
 
-        let (image, symbols) = self.build_image();
+        let (image, symbols, roots) = self.build_image();
         let portals = self.vm.iter().filter_map(|v| Some((v.portal?, v.instance))).collect();
         let mut hidden: Vec<Instance<'tcx>> = self
             .vm
@@ -382,6 +389,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             image,
             main_portal,
             symbols,
+            lto_roots: roots.0.into_iter().collect(),
             portals: erase(portals),
             // SAFETY: as in `erase`.
             hidden_for_image: unsafe { std::mem::transmute::<Vec<Instance<'tcx>>, Vec<Instance<'static>>>(hidden) },
@@ -580,6 +588,27 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         {
             return; // a VM function: its portal
         }
+        if let MonoItem::Fn(f) = item
+            && lower::is_tls_shim(f)
+            && !super::is_pe(tcx)
+            && !self.cgu.items().contains_key(&item)
+            && !self.added.contains_key(&item)
+        {
+            // rustc only creates `ThreadLocal` shims where the target doesn't export TLS
+            // (`needs_thread_local_shim`), so on ELF the backend adds its own, also for
+            // upstream statics. The same static always gives the same body, so copies from
+            // several crates merge (design/backend.md, Linkage).
+            let data = MonoItemData {
+                inlined: false,
+                linkage: Linkage::WeakODR,
+                visibility: Visibility::Hidden,
+                size_estimate: item.size_estimate(tcx),
+            };
+            self.added.insert(item, data);
+            self.hidden_added.push(f);
+            self.work.push(f);
+            return;
+        }
         if let Some(data) = self.cgu.items().get(&item) {
             if data.linkage == Linkage::Internal {
                 flips.insert(item);
@@ -612,7 +641,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
     }
 
     /// The merge pass: resolves every function's relocations, then lays out the image.
-    fn build_image(&mut self) -> (ImageObject, Vec<String>) {
+    fn build_image(&mut self) -> (ImageObject, Vec<String>, Roots) {
         let tcx = self.tcx;
         let mut w = ImageWriter::new(local_stable_crate_id(tcx));
         let symbols: Vec<String> = self.vm.iter().map(|v| tcx.symbol_name(v.instance).name.to_owned()).collect();
@@ -638,6 +667,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                         code[at as usize + tail_fs] = self.vm[c as usize].lowered.frame_size;
                     }
                     CodeReloc::Symbol { at, target } => {
+                        pool.roots.function(tcx, target);
                         let flags = super::symbol_flags(tcx, target, super::SymRole::Target);
                         let Sym(s) = w.symbol(tcx.symbol_name(target).name, flags);
                         code[at as usize] = s;
@@ -650,6 +680,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                         }
                     }
                     CodeReloc::Static { at, def_id } => {
+                        pool.roots.static_(tcx, def_id);
                         let flags = super::static_symbol_flags(tcx, def_id);
                         let Sym(s) = w.symbol(static_symbol(tcx, def_id).name, flags);
                         code[at as usize] = s;
@@ -667,15 +698,22 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                     CodeReloc::Bytes { at, ref bytes, align } => {
                         code[at as usize] = pool.bytes(&mut w, bytes, align).0;
                     }
+                    CodeReloc::Data { at, alloc, offset } => {
+                        code[at as usize] = pool.data(tcx, &mut w, alloc).0 + offset;
+                    }
                 }
             }
             for r in &l.islands {
                 let island = Instance::new_raw(templates[&r.template], r.args);
+                pool.roots.function(tcx, island);
                 let flags = super::symbol_flags(tcx, island, super::SymRole::Island);
                 let Sym(s) = w.symbol(tcx.symbol_name(island).name, flags);
                 code[r.at as usize] = s;
             }
-            let portal = v.portal.map(|_| w.symbol(&symbols[i], 0));
+            let portal = v.portal.map(|_| {
+                pool.roots.text(&symbols[i]);
+                w.symbol(&symbols[i], 0)
+            });
             w.add_function(FunctionDef {
                 code,
                 frame_size: l.frame_size,
@@ -687,7 +725,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             });
         }
         match w.finish() {
-            Ok(image) => (image, symbols),
+            Ok(image) => (image, symbols, pool.roots),
             Err(e) => tcx.dcx().fatal(format!("ryo: invalid image: {e:?}")),
         }
     }
@@ -795,24 +833,45 @@ fn static_symbol<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> ty::SymbolName<'tcx>
 }
 
 /// The image's constant pool: allocations copied with their pointers relocated
-/// (design/lowering.md#constants), and raw byte constants. Deduplicated.
+/// (design/lowering.md#constants), and raw byte constants. Deduplicated. On PE, allocations
+/// pointing directly at imports go into the writable fixup area instead, with a load-time
+/// fixup per such pointer (`lower::constant::needs_fixup`).
 #[derive(Default)]
 struct Pool {
-    allocs: FxHashMap<AllocId, Const>,
+    allocs: FxHashMap<AllocId, AllocTarget>,
     bytes: FxHashMap<(Vec<u8>, u32), Const>,
+    /// Every symbol the image refers to that LTO must keep.
+    roots: Roots,
 }
 
 impl Pool {
+    /// The pool copy of `id`, which must not need the fixup area.
     fn intern<'tcx>(&mut self, tcx: TyCtxt<'tcx>, w: &mut ImageWriter, id: AllocId) -> Const {
-        if let Some(&k) = self.allocs.get(&id) {
-            return k;
+        match self.target(tcx, w, id) {
+            AllocTarget::Const(k) => k,
+            _ => tcx.dcx().fatal("ryo: constant-pool reference to a fixup-area allocation"),
+        }
+    }
+
+    /// The fixup-area copy of `id`, which must need it.
+    fn data<'tcx>(&mut self, tcx: TyCtxt<'tcx>, w: &mut ImageWriter, id: AllocId) -> Data {
+        match self.target(tcx, w, id) {
+            AllocTarget::Data(d) => d,
+            _ => tcx.dcx().fatal("ryo: fixup-area reference to a constant-pool allocation"),
+        }
+    }
+
+    /// Where the copy of the memory or vtable allocation `id` is.
+    fn target<'tcx>(&mut self, tcx: TyCtxt<'tcx>, w: &mut ImageWriter, id: AllocId) -> AllocTarget {
+        if let Some(&t) = self.allocs.get(&id) {
+            return t;
         }
         let alloc = match tcx.global_alloc(id) {
             GlobalAlloc::Memory(alloc) => alloc,
             GlobalAlloc::VTable(ty, dyn_ty) => {
-                let k = self.intern(tcx, w, lower::vtable_alloc(tcx, ty, dyn_ty));
-                self.allocs.insert(id, k);
-                return k;
+                let t = self.target(tcx, w, lower::vtable_alloc(tcx, ty, dyn_ty));
+                self.allocs.insert(id, t);
+                return t;
             }
             GlobalAlloc::Function { .. } | GlobalAlloc::Static(_) | GlobalAlloc::TypeId { .. } => {
                 tcx.dcx().fatal("ryo: constant-pool reference to a non-memory allocation")
@@ -821,28 +880,136 @@ impl Pool {
         let inner = alloc.inner();
         let mut bytes = inner.inspect_with_uninit_and_ptr_outside_interpreter(0..inner.len()).to_vec();
         let mut relocs = Vec::new();
+        let mut fixups = Vec::new();
         for &(offset, prov) in inner.provenance().ptrs().iter() {
             let at = offset.bytes() as usize;
             let addend = i64::from_le_bytes(bytes[at..at + 8].try_into().unwrap());
-            bytes[at..at + 8].fill(0);
-            let target = match tcx.global_alloc(prov.alloc_id()) {
-                GlobalAlloc::Memory(_) | GlobalAlloc::VTable(..) => {
-                    AllocTarget::Const(self.intern(tcx, w, prov.alloc_id()))
+            let target_alloc = tcx.global_alloc(prov.alloc_id());
+            match target_alloc {
+                GlobalAlloc::Function { instance } => self.roots.function(tcx, instance),
+                GlobalAlloc::Static(def_id) => self.roots.static_(tcx, def_id),
+                GlobalAlloc::Memory(_) | GlobalAlloc::VTable(..) | GlobalAlloc::TypeId { .. } => {}
+            }
+            if lower::is_import(tcx, &target_alloc) {
+                // Patched at registration from the `__imp_` slot (design/platforms.md).
+                let (name, direct) = match target_alloc {
+                    GlobalAlloc::Function { instance } => (tcx.symbol_name(instance).name, true),
+                    GlobalAlloc::Static(def_id) => {
+                        (static_symbol(tcx, def_id).name, super::static_needs_direct_slot(tcx, def_id))
+                    }
+                    _ => unreachable!("only functions and statics are imports"),
+                };
+                if direct {
+                    // So the linker extracts the archive member defining it, as for code
+                    // references (`build_image`).
+                    w.symbol(name, 0);
                 }
+                bytes[at..at + 8].fill(0);
+                fixups.push(AllocFixup { offset: at as u32, sym: w.symbol(name, SYM_INDIRECT), addend });
+                continue;
+            }
+            let target = match target_alloc {
+                GlobalAlloc::Memory(_) | GlobalAlloc::VTable(..) => self.target(tcx, w, prov.alloc_id()),
                 GlobalAlloc::Function { instance } => AllocTarget::Symbol(w.symbol(tcx.symbol_name(instance).name, 0)),
                 GlobalAlloc::Static(def_id) => AllocTarget::Symbol(w.symbol(static_symbol(tcx, def_id).name, 0)),
-                GlobalAlloc::TypeId { .. } => tcx.dcx().fatal("ryo: type id pointer in a constant"),
+                // No address: the bytes (the offset) are part of the type id's hash
+                // (`rustc_codegen_llvm/src/common.rs:201-205`).
+                GlobalAlloc::TypeId { .. } => continue,
             };
+            bytes[at..at + 8].fill(0);
             relocs.push(AllocReloc { offset: at as u32, target, addend });
         }
-        let k = w.add_const(&bytes, inner.align.bytes() as u32, &relocs);
-        self.allocs.insert(id, k);
-        k
+        let align = inner.align.bytes() as u32;
+        let t = if fixups.is_empty() {
+            AllocTarget::Const(w.add_const(&bytes, align, &relocs))
+        } else {
+            AllocTarget::Data(w.add_data(&bytes, align, &relocs, &fixups))
+        };
+        self.allocs.insert(id, t);
+        t
     }
 
     fn bytes(&mut self, w: &mut ImageWriter, bytes: &[u8], align: u32) -> Const {
         *self.bytes.entry((bytes.to_vec(), align)).or_insert_with(|| w.add_const(bytes, align, &[]))
     }
+}
+
+/// The symbols the image refers to, which `-Clto` must not internalize: the image is a
+/// separate object that LTO doesn't see (design/backend.md#query-overrides). That includes
+/// foreign items, which an LTO module may define (the allocator shim's `__rust_alloc`).
+/// Without LTO, `link` takes them out of `symbols.o` again ([`linked_roots`]).
+/// On PE, the image refers to an imported static as `__imp_<name>`, which the linker
+/// synthesizes for a static linked in statically, if LTO kept `<name>`.
+#[derive(Default)]
+struct Roots(FxIndexMap<String, SymbolExportKind>);
+
+impl Roots {
+    fn text(&mut self, name: &str) {
+        self.0.entry(name.to_owned()).or_insert(SymbolExportKind::Text);
+    }
+
+    fn function<'tcx>(&mut self, tcx: TyCtxt<'tcx>, f: Instance<'tcx>) {
+        self.text(tcx.symbol_name(f).name);
+    }
+
+    fn static_(&mut self, tcx: TyCtxt<'_>, def_id: DefId) {
+        self.0.entry(static_symbol(tcx, def_id).name.to_owned()).or_insert(SymbolExportKind::Data);
+    }
+}
+
+/// Our local `exported_non_generic_symbols` (design/backend.md#query-overrides): adds the
+/// image's [`Roots`] as `used` symbols, which LTO keeps whatever its export threshold
+/// (`rustc_codegen_ssa/src/back/lto.rs:107`). At the `Rust` level, they stay out of the export
+/// lists of executables, cdylibs and staticlibs (`linker.rs:1712`). A Rust dylib's export
+/// list includes that level, so crates with a dylib crate type don't get them (rustc only
+/// allows `-Clto` for those with `-Zdylib-lto`, which the backend rejects).
+pub fn exported_non_generic_symbols<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    list: &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)],
+) -> &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)] {
+    if tcx.crate_types().iter().any(|t| matches!(t, CrateType::Dylib | CrateType::ProcMacro)) {
+        return list;
+    }
+    // Forces the partitioning, as `exported_generic_symbols` does during metadata encoding.
+    let _ = tcx.collect_and_partition_mono_items(());
+    let Some(r) = results(tcx) else { return list };
+    let info = |kind| SymbolExportInfo { level: SymbolExportLevel::Rust, kind, used: true, rustc_std_internal_symbol: false };
+    debug_assert!(is_root(&ExportedSymbol::NoDefId(ty::SymbolName::new(tcx, "")), &info(SymbolExportKind::Text)));
+    let roots = r.lto_roots.iter().map(|(name, kind)| (ExportedSymbol::NoDefId(ty::SymbolName::new(tcx, name)), info(*kind)));
+    tcx.arena.alloc_from_iter(list.iter().copied().chain(roots))
+}
+
+/// Whether an exported symbol is one of the [`Roots`] that `exported_non_generic_symbols`
+/// adds: rustc's own `NoDefId` symbols are never `used` at the `Rust` level.
+fn is_root(s: &ExportedSymbol<'_>, info: &SymbolExportInfo) -> bool {
+    matches!(s, ExportedSymbol::NoDefId(_))
+        && info.used
+        && info.level == SymbolExportLevel::Rust
+        && !info.rustc_std_internal_symbol
+}
+
+/// The [`Roots`] of the crates an output of `crate_type` links statically, one entry per
+/// crate that lists it. They are in that output's `CrateInfo::linked_symbols` (`used`
+/// symbols go into `symbols.o`, `rustc_codegen_ssa/src/back/linker.rs:1780`), which only LTO
+/// needs; without it, `link` takes them out again, since a reference by plain name to a
+/// static in a DLL wouldn't resolve on PE. The images still reference every root, so nothing
+/// that `symbols.o` would pull into the link goes missing.
+pub fn linked_roots(tcx: TyCtxt<'_>, crate_type: CrateType) -> Vec<String> {
+    let mut out = Vec::new();
+    let Some(deps) = tcx.dependency_formats(()).get(&crate_type) else { return out };
+    for (cnum, linkage) in deps.iter_enumerated() {
+        if *linkage != rustc_middle::middle::dependency_format::Linkage::Static {
+            continue;
+        }
+        for (s, info) in tcx.exported_non_generic_symbols(cnum) {
+            if let ExportedSymbol::NoDefId(name) = s
+                && is_root(s, info)
+            {
+                out.push(name.name.to_owned());
+            }
+        }
+    }
+    out
 }
 
 /// The items an allocation refers to by symbol (functions and statics), through nested

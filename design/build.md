@@ -51,7 +51,8 @@ modeled on cg_clif's `build_system/`.
      and `ryo_rt` for `T`, for cross-compiling with `rustc-ryo --target T`
      ([platforms.md](platforms.md), cross-checking PE on Linux).
    - `ryo_rt` is always built with the stock LLVM backend, against that std, with
-     `-Copt-level=3 -Ccodegen-units=1 -Cpanic=unwind` regardless of the user's profile, and
+     `-Copt-level=3 -Ccodegen-units=1 -Cpanic=unwind -Cembed-bitcode=yes` regardless of the
+     user's profile (bitcode, like std's, so `-Clto` builds can include it), and
      installed next to std. There is no native library to link.
 3. **Wrappers** (like cg_clif's `scripts/rustc-clif.rs`, `cargo-clif.rs`): tiny Rust programs
    compiled with plain rustc. They locate `dist/` from `current_exe()`, set

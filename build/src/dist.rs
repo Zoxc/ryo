@@ -124,7 +124,9 @@ fn build_runtime(
     eprintln!("[y] runtime: ryo_rt{}", cross.map(|t| format!(" for {t}")).unwrap_or_default());
     let mut sysroot_flag = String::from("--sysroot=");
     sysroot_flag.push_str(dist.to_str().ok_or("dist/ path is not UTF-8")?);
-    let rustflags = [&sysroot_flag, "-Ccodegen-units=1", "-Cpanic=unwind"];
+    // `-Cembed-bitcode=yes` (after cargo's `=no`, so it wins): like std, a sysroot rlib must
+    // carry bitcode for `-Clto` builds against it.
+    let rustflags = [&sysroot_flag, "-Ccodegen-units=1", "-Cpanic=unwind", "-Cembed-bitcode=yes"];
     let mut cargo = cmd("cargo");
     // `registry-anchor`: `vm::enter` references the registry objects the backend generates
     // (design/backend.md#pipeline step 6).

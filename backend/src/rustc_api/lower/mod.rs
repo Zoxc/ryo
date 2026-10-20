@@ -53,7 +53,7 @@ use ryo_bytecode::abi::HEADER_SIZE;
 use ryo_bytecode::image::CleanupEntry;
 use ryo_bytecode::insn::{CodeBuf, Opcode};
 
-pub use self::constant::vtable_alloc;
+pub use self::constant::{is_import, is_tls_shim, vtable_alloc};
 pub use self::sig::{AbiSig, abi_sig};
 use self::emit::{OUT, Width, opw};
 use self::frame::Frame;
@@ -94,6 +94,9 @@ pub enum CodeReloc<'tcx> {
     Bytes { at: u32, bytes: Vec<u8>, align: u32 },
     /// The `tail_call` instruction at word `at` calls `callee`, as for [`CodeReloc::Call`].
     TailCall { at: u32, callee: Instance<'tcx> },
+    /// The `data` operand at word `at` is `offset` bytes into the fixup-area copy of `alloc`
+    /// (PE: an allocation pointing at imports, `constant::needs_fixup`).
+    Data { at: u32, alloc: AllocId, offset: u32 },
 }
 
 /// An island the code calls: the template (by diagnostic item name) and its generic args. The
@@ -143,6 +146,8 @@ pub fn vm_fn_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> Result<Ab
                 return native("no MIR");
             }
         }
+        // The VM reaches thread locals through this shim (`constant.rs`).
+        InstanceKind::Shim(ty::ShimKind::ThreadLocal(_)) => return native("thread-local shim"),
         InstanceKind::Shim(_) => {}
         InstanceKind::Intrinsic(_) | InstanceKind::LlvmIntrinsic(_) | InstanceKind::Virtual(..) => {
             return native("no body");

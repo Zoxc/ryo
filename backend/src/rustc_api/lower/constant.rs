@@ -2,17 +2,23 @@
 //! copied from the image's constant pool. The merge pass copies allocations into the pool
 //! (with their pointers relocated: to other pool allocations, to functions or portals, to
 //! statics), so the lowering only records which allocation an operand refers to
-//! ([`CodeReloc::Const`]).
+//! ([`CodeReloc::Const`]). On PE, allocations pointing directly at imports go into the
+//! image's writable fixup area instead ([`CodeReloc::Data`], [`needs_fixup`]).
+//!
+//! Thread locals are reached through the `ThreadLocal` shim, called by a `call_ptr0` island
+//! (design/lowering.md#rvalues).
 
 use rustc_data_structures::fx::FxHashSet;
+use rustc_hir::def_id::DefId;
 use rustc_middle::mir::interpret::{AllocId, GlobalAlloc, Scalar};
 use rustc_middle::mir::{ConstOperand, ConstValue};
 use rustc_middle::ty::layout::TyAndLayout;
-use rustc_middle::ty::{self, TyCtxt, TypingEnv};
+use rustc_middle::ty::{self, GenericArgs, Instance, InstanceKind, ShimKind, TyCtxt, TypingEnv};
 use ryo_bytecode::insn::Opcode;
 
 use super::emit::Width;
-use super::place::Loc;
+use super::island::templates;
+use super::place::{Loc, PlaceVal};
 use super::{CodeReloc, FnCx, NeedsNative, native};
 
 impl<'a, 'tcx> FnCx<'a, 'tcx> {
@@ -69,6 +75,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 }
                 self.check_alloc(alloc_id)?;
                 let offset = u32::try_from(offset.bytes()).map_err(|_| NeedsNative("constant offset".into()))?;
+                if needs_fixup(self.tcx, alloc_id) {
+                    // Copied out of the fixup area through its address.
+                    let p = self.temp8();
+                    let at = self.op(Opcode::AddrData, &[p, 0]);
+                    self.relocs.push(CodeReloc::Data { at: at + 2, alloc: alloc_id, offset });
+                    return self.copy_val(dst, Loc::Mem { p, k: 0 }, size);
+                }
                 self.with_slot(dst, size, |fx, d| {
                     let at = fx.op(Opcode::Const, &[d, 0, size]);
                     fx.relocs.push(CodeReloc::Const { at: at + 2, alloc: alloc_id, offset });
@@ -82,19 +95,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     pub fn alloc_addr_into(&mut self, d: u32, id: AllocId, offset: u64) -> Result<(), NeedsNative> {
         let tcx = self.tcx;
         match tcx.global_alloc(id) {
-            GlobalAlloc::Memory(_) => {
-                self.check_alloc(id)?;
-                let offset = u32::try_from(offset).map_err(|_| NeedsNative("constant offset".into()))?;
-                let at = self.op(Opcode::AddrK, &[d, 0]);
-                self.relocs.push(CodeReloc::Const { at: at + 2, alloc: id, offset });
-            }
-            GlobalAlloc::VTable(ty, dyn_ty) => {
-                let vtable = vtable_alloc(tcx, ty, dyn_ty);
-                self.check_alloc(vtable)?;
-                let offset = u32::try_from(offset).map_err(|_| NeedsNative("constant offset".into()))?;
-                let at = self.op(Opcode::AddrK, &[d, 0]);
-                self.relocs.push(CodeReloc::Const { at: at + 2, alloc: vtable, offset });
-            }
+            GlobalAlloc::Memory(_) => self.pool_addr_into(d, id, offset)?,
+            // The image's own copy of the vtable (design/lowering.md#constants).
+            GlobalAlloc::VTable(ty, dyn_ty) => self.pool_addr_into(d, vtable_alloc(tcx, ty, dyn_ty), offset)?,
             GlobalAlloc::Function { instance } => {
                 let at = self.op(Opcode::AddrSym, &[d, 0]);
                 self.relocs.push(CodeReloc::Symbol { at: at + 2, target: instance });
@@ -110,9 +113,49 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     self.ptr_add(d, d, offset as i64);
                 }
             }
-            GlobalAlloc::TypeId { .. } => return native("pointer to a type id"),
+            // A type id's "pointer" has no address: base 0, and the offset is part of the hash
+            // (as in `rustc_codegen_llvm/src/common.rs:201-205`).
+            GlobalAlloc::TypeId { .. } => self.imm(Width::W64, d, u128::from(offset)),
         }
         Ok(())
+    }
+
+    /// The address `offset` bytes into the memory allocation `id`, in the constant pool or,
+    /// on PE if it points at imports, in the fixup area.
+    fn pool_addr_into(&mut self, d: u32, id: AllocId, offset: u64) -> Result<(), NeedsNative> {
+        self.check_alloc(id)?;
+        let offset = u32::try_from(offset).map_err(|_| NeedsNative("constant offset".into()))?;
+        if needs_fixup(self.tcx, id) {
+            let at = self.op(Opcode::AddrData, &[d, 0]);
+            self.relocs.push(CodeReloc::Data { at: at + 2, alloc: id, offset });
+        } else {
+            let at = self.op(Opcode::AddrK, &[d, 0]);
+            self.relocs.push(CodeReloc::Const { at: at + 2, alloc: id, offset });
+        }
+        Ok(())
+    }
+
+    /// `ThreadLocalRef(def_id)`: a `call_ptr0` island on the static's `ThreadLocal` shim,
+    /// which returns its address on the current thread (design/lowering.md#rvalues). The
+    /// merge pass adds the shim where rustc doesn't (ELF).
+    pub fn thread_local_ref(&mut self, dst: PlaceVal<'tcx>, def_id: DefId) -> Result<(), NeedsNative> {
+        let tcx = self.tcx;
+        if tcx.is_foreign_item(def_id) {
+            // There is no shim for foreign thread locals (`needs_thread_local_shim`).
+            return native("ThreadLocalRef of a foreign thread local");
+        }
+        let shim = tls_shim(def_id);
+        let ptr_ty = tcx.thread_local_ptr_ty(def_id);
+        self.outgoing(0);
+        self.with_place_slot(dst, |fx, d| {
+            let p = fx.temp8();
+            let at = fx.op(Opcode::AddrSym, &[p, 0]);
+            fx.relocs.push(CodeReloc::Symbol { at: at + 2, target: shim });
+            let name = templates::call_ptr(0).expect("call_ptr0 exists");
+            // The shim only takes an address: it can't unwind.
+            fx.island(&name, &[ptr_ty.into()], &[Self::out(0), d, p], None);
+            Ok(())
+        })
     }
 
     /// Checks that the merge pass can put `id` (and everything it points at) in the pool.
@@ -131,11 +174,51 @@ pub fn vtable_alloc<'tcx>(
     tcx.vtable_allocation((ty, principal))
 }
 
-fn check_static(tcx: TyCtxt<'_>, def_id: rustc_hir::def_id::DefId) -> Result<(), NeedsNative> {
+/// The `ThreadLocal` shim of the thread-local static `def_id`: returns its address.
+pub fn tls_shim<'tcx>(def_id: DefId) -> Instance<'tcx> {
+    Instance { def: InstanceKind::Shim(ShimKind::ThreadLocal(def_id)), args: GenericArgs::empty() }
+}
+
+/// Whether `instance` is a `ThreadLocal` shim.
+pub fn is_tls_shim(instance: Instance<'_>) -> bool {
+    matches!(instance.def, InstanceKind::Shim(ShimKind::ThreadLocal(_)))
+}
+
+fn check_static(tcx: TyCtxt<'_>, def_id: DefId) -> Result<(), NeedsNative> {
+    // MIR reaches thread locals only through `ThreadLocalRef`, and constants can't point at
+    // them (const eval rejects it), so this doesn't happen.
     if tcx.is_thread_local_static(def_id) {
         return native("pointer to a thread-local static");
     }
     Ok(())
+}
+
+/// Whether a pointer to `target` inside a constant must be a load-time fixup: on PE, a
+/// function or static another crate or library defines is reached through its `__imp_`
+/// slot (design/platforms.md), so its address isn't a link-time constant of the image.
+pub fn is_import<'tcx>(tcx: TyCtxt<'tcx>, target: &GlobalAlloc<'tcx>) -> bool {
+    match target {
+        GlobalAlloc::Function { instance } => {
+            super::super::symbol_flags(tcx, *instance, super::super::SymRole::Target) != 0
+        }
+        GlobalAlloc::Static(def_id) => super::super::static_symbol_flags(tcx, *def_id) != 0,
+        GlobalAlloc::Memory(_) | GlobalAlloc::VTable(..) | GlobalAlloc::TypeId { .. } => false,
+    }
+}
+
+/// Whether the memory allocation `id` goes into the image's fixup area rather than the
+/// constant pool: it points directly at an import (PE only, design/lowering.md#constants).
+/// Allocations that only point at such allocations stay in the pool.
+pub fn needs_fixup(tcx: TyCtxt<'_>, id: AllocId) -> bool {
+    if !super::super::is_pe(tcx) {
+        return false;
+    }
+    let alloc = match tcx.global_alloc(id) {
+        GlobalAlloc::Memory(alloc) => alloc,
+        GlobalAlloc::VTable(ty, dyn_ty) => return needs_fixup(tcx, vtable_alloc(tcx, ty, dyn_ty)),
+        GlobalAlloc::Function { .. } | GlobalAlloc::Static(_) | GlobalAlloc::TypeId { .. } => return false,
+    };
+    alloc.inner().provenance().ptrs().values().any(|prov| is_import(tcx, &tcx.global_alloc(prov.alloc_id())))
 }
 
 fn check_alloc(tcx: TyCtxt<'_>, id: AllocId, seen: &mut FxHashSet<AllocId>) -> Result<(), NeedsNative> {
@@ -150,16 +233,7 @@ fn check_alloc(tcx: TyCtxt<'_>, id: AllocId, seen: &mut FxHashSet<AllocId>) -> R
             Ok(())
         }
         GlobalAlloc::VTable(ty, dyn_ty) => check_alloc(tcx, vtable_alloc(tcx, ty, dyn_ty), seen),
-        // On PE, pointers to imports need the image's fixup area, which constants don't use
-        // yet (design/platforms.md).
-        GlobalAlloc::Function { instance } if super::super::is_pe(tcx) && !tcx.should_codegen_locally(instance) => {
-            native("PE: constant pointing at an imported function")
-        }
-        GlobalAlloc::Function { .. } => Ok(()),
-        GlobalAlloc::Static(def_id) if super::super::static_symbol_flags(tcx, def_id) != 0 => {
-            native("PE: constant pointing at an imported static")
-        }
+        GlobalAlloc::Function { .. } | GlobalAlloc::TypeId { .. } => Ok(()),
         GlobalAlloc::Static(def_id) => check_static(tcx, def_id),
-        GlobalAlloc::TypeId { .. } => native("constant with a type id pointer"),
     }
 }
