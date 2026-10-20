@@ -122,6 +122,10 @@ pub enum CodeError {
     BadTarget,
     FuncOutOfRange,
     SymOutOfRange,
+    /// A `sym` operand's slot is indirect ([`SYM_INDIRECT`]) but the instruction loads it
+    /// directly, or the other way round. Only `addr.sym.ind` and `call.ext.ind` load through
+    /// the slot; `island` symbols are always direct.
+    SymIndirection,
     SiteOutOfRange,
     ConstOutOfRange,
     DataOutOfRange,
@@ -136,9 +140,10 @@ pub enum WriteError {
     Code { func: u32, offset: u32, error: CodeError },
     /// Duplicate, out-of-range or not-at-an-instruction cleanup entry.
     Cleanup(u32),
-    /// Portal symbol out of range.
+    /// Portal symbol out of range or indirect.
     Portal(u32),
-    /// Allocation relocation or fixup out of range or misplaced.
+    /// Allocation relocation or fixup out of range or misplaced, or a relocation against an
+    /// indirect symbol (that must be a fixup).
     AllocReloc,
     /// A section exceeds `u32` offsets.
     TooLarge,
@@ -228,6 +233,35 @@ pub fn validate_code(code: &[u32], lim: &CodeLimits) -> Result<Vec<bool>, (u32, 
         }
     }
     Ok(starts)
+}
+
+/// Checks that every `sym` operand's slot is indirect exactly when the instruction loads
+/// through it (`addr.sym.ind`, `call.ext.ind`'s `sym`). `code` must have passed
+/// [`validate_code`] with these symbols.
+fn check_indirection(code: &[u32], symbols: &[SymbolDef]) -> Result<(), (u32, CodeError)> {
+    for r in Decoder::new(code) {
+        let (at, insn) = r.unwrap();
+        let op = insn.opcode();
+        let mut pos = 1usize;
+        for o in op.info().operands {
+            match o.kind {
+                OperandKind::Sym => {
+                    let indirect = symbols[code[at + pos] as usize].flags & SYM_INDIRECT != 0;
+                    let loads_through = matches!(op, Opcode::AddrSymInd | Opcode::CallExtInd) && o.name == "sym";
+                    if indirect != loads_through {
+                        return Err((at as u32, CodeError::SymIndirection));
+                    }
+                }
+                OperandKind::List(e) => {
+                    pos += 1 + code[at + pos] as usize * e.words();
+                    continue;
+                }
+                _ => {}
+            }
+            pos += o.kind.words().unwrap();
+        }
+    }
+    Ok(())
 }
 
 /// Builds an image. Functions are numbered in the order they are added.
@@ -342,6 +376,7 @@ impl ImageWriter {
         for (i, f) in self.functions.iter_mut().enumerate() {
             let i = i as u32;
             let starts = validate_code(&f.code, &lim)
+                .and_then(|s| check_indirection(&f.code, &self.symbols).map(|()| s))
                 .map_err(|(offset, error)| WriteError::Code { func: i, offset, error })?;
             f.cleanup.sort();
             for (j, e) in f.cleanup.iter().enumerate() {
@@ -351,7 +386,7 @@ impl ImageWriter {
                 }
             }
             let portal = match f.portal {
-                Some(Sym(s)) if s < nsyms => s,
+                Some(Sym(s)) if s < nsyms && self.symbols[s as usize].flags & SYM_INDIRECT == 0 => s,
                 Some(_) => return Err(WriteError::Portal(i)),
                 None => NO_PORTAL,
             };
@@ -464,7 +499,11 @@ impl ImageWriter {
                 return Err(WriteError::AllocReloc);
             }
             let (target, addend) = match r.target {
-                AllocTarget::Symbol(s) if s.0 < nsyms => (RelocTarget::Symbol(s), r.addend),
+                // A pointer to an indirect symbol's target is only known at registration: it
+                // must be a fixup. So relocations against indirect symbols are all slots'.
+                AllocTarget::Symbol(s) if s.0 < nsyms && self.symbols[s.0 as usize].flags & SYM_INDIRECT == 0 => {
+                    (RelocTarget::Symbol(s), r.addend)
+                }
                 AllocTarget::Const(k) if (k.0 as usize) <= self.consts.len() => {
                     (RelocTarget::Section(Section::ReadOnly), consts.off as i64 + k.0 as i64 + r.addend)
                 }

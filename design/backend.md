@@ -118,7 +118,8 @@ and `codegen_crate` reads them.
    The image defines one global symbol, `__ryo_image_<StableCrateId>` (the id as 16 hex
    digits), hidden: only the registry object of the same link unit references it. On ELF the
    read-only part is `.data.rel.ro.ryo_image` (writable only while relocating) and the
-   writable part `.data.ryo_image`. Limitation: with `--emit=obj` (no linking) the emitted
+   writable part `.data.ryo_image`; on PE they are `.rdata$ryo_image` and `.data$ryo_image`
+   ([platforms.md](platforms.md)). Limitation: with `--emit=obj` (no linking) the emitted
    `.o` lacks the image, because `join_codegen` adds the image module after cg_ssa has copied
    the module objects to the outputs; and no registry object is generated then. A binary with a VM `main` also gets `__ryo_main` in this
    object ([stubs.md](stubs.md#program-entry-main)).

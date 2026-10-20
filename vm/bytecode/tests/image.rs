@@ -279,6 +279,44 @@ fn writer_rejects_bad_code() {
 }
 
 #[test]
+fn writer_checks_symbol_indirection() {
+    // Only `addr.sym.ind` and `call.ext.ind`'s `sym` load through the slot, and they need an
+    // indirect one (design/platforms.md).
+    let check = |indirect: u8, insn: fn(Sym, Sym, Site) -> Insn<'static>| {
+        let mut w = ImageWriter::new(1);
+        let s = w.symbol("x", indirect);
+        let island = w.symbol("island", 0);
+        let site = w.site();
+        w.add_function(FunctionDef { code: code(&[insn(s, island, site), Insn::Abort {}]), ..Default::default() });
+        w.finish().map(drop)
+    };
+    let bad = Err(WriteError::Code { func: 0, offset: 0, error: CodeError::SymIndirection });
+    let addr_ind: fn(Sym, Sym, Site) -> Insn<'static> = |s, _, _| Insn::AddrSymInd { d: Slot(0), sym: s };
+    let addr: fn(Sym, Sym, Site) -> Insn<'static> = |s, _, _| Insn::AddrSym { d: Slot(0), sym: s };
+    let ext_ind: fn(Sym, Sym, Site) -> Insn<'static> =
+        |s, island, site| Insn::CallExtInd { d: Slot(0), sym: s, site, island };
+    let ext: fn(Sym, Sym, Site) -> Insn<'static> = |s, island, site| Insn::CallExt { d: Slot(0), sym: s, site, island };
+    // `x` as the island: islands are always direct.
+    let island_ind: fn(Sym, Sym, Site) -> Insn<'static> =
+        |s, island, site| Insn::CallExtInd { d: Slot(0), sym: island, site, island: s };
+    assert_eq!(check(SYM_INDIRECT, addr_ind), Ok(()));
+    assert_eq!(check(SYM_INDIRECT, ext_ind), Ok(()));
+    assert_eq!(check(0, addr), Ok(()));
+    assert_eq!(check(0, ext), Ok(()));
+    assert_eq!(check(0, addr_ind), bad);
+    assert_eq!(check(0, ext_ind), bad);
+    assert_eq!(check(SYM_INDIRECT, addr), bad);
+    assert_eq!(check(SYM_INDIRECT, ext), bad);
+    assert_eq!(check(SYM_INDIRECT, island_ind), bad);
+
+    // Portals are local definitions: never indirect.
+    let mut w = ImageWriter::new(1);
+    let p = w.symbol("p", SYM_INDIRECT);
+    w.add_function(FunctionDef { code: code(&[Insn::Abort {}]), portal: Some(p), ..Default::default() });
+    assert_eq!(w.finish().unwrap_err(), WriteError::Portal(0));
+}
+
+#[test]
 fn symbols_are_interned() {
     let mut w = ImageWriter::new(1);
     assert_eq!(w.symbol("a", 0), Sym(0));
@@ -345,18 +383,24 @@ fn validate_rejects_bad_tables() {
 fn writer_rejects_bad_alloc_relocs() {
     // Unaligned pointer in a constant.
     let mut w = ImageWriter::new(1);
-    let s = w.symbol("x", SYM_INDIRECT);
+    let s = w.symbol("x", 0);
     w.add_const(&[0; 16], 8, &[AllocReloc { offset: 4, target: AllocTarget::Symbol(s), addend: 0 }]);
     assert_eq!(w.finish().unwrap_err(), WriteError::AllocReloc);
     // A fixup and a relocation at the same place.
     let mut w = ImageWriter::new(1);
     let s = w.symbol("x", SYM_INDIRECT);
+    let t = w.symbol("y", 0);
     w.add_data(
         &[0; 8],
         8,
-        &[AllocReloc { offset: 0, target: AllocTarget::Symbol(s), addend: 0 }],
+        &[AllocReloc { offset: 0, target: AllocTarget::Symbol(t), addend: 0 }],
         &[AllocFixup { offset: 0, sym: s, addend: 0 }],
     );
+    assert_eq!(w.finish().unwrap_err(), WriteError::AllocReloc);
+    // A pointer to an indirect symbol's target must be a fixup, not a relocation.
+    let mut w = ImageWriter::new(1);
+    let s = w.symbol("x", SYM_INDIRECT);
+    w.add_const(&[0; 8], 8, &[AllocReloc { offset: 0, target: AllocTarget::Symbol(s), addend: 0 }]);
     assert_eq!(w.finish().unwrap_err(), WriteError::AllocReloc);
     // The fixup area is 8-aligned even after an odd number of sites and 1-aligned data.
     let mut w = ImageWriter::new(1);

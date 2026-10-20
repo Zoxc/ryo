@@ -66,7 +66,8 @@ pub fn link(
         // Without linking (`--emit=obj` etc.) a registry object would only be left behind.
         if crate_type != CrateType::Rlib && sess.opts.output_types.should_link() {
             let images = registry_images(sess, info, &crate_info, crate_type);
-            let bytes = objfile::write_registry(&*fmt, &images).unwrap_or_else(|e| sess.dcx().fatal(e));
+            let import = register_is_imported(&crate_info, crate_type);
+            let bytes = objfile::write_registry(&*fmt, &images, import).unwrap_or_else(|e| sess.dcx().fatal(e));
             let name = format!("{}.ryo_registry.{}", crate_info.local_crate_name, crate_type);
             let path = outputs.temp_path_for_cgu(OutputType::Object, &name);
             fs::write(&path, bytes).unwrap_or_else(|e| sess.dcx().fatal(format!("writing {}: {e}", path.display())));
@@ -100,6 +101,17 @@ fn registry_images(sess: &Session, info: &LinkInfo, crate_info: &CrateInfo, crat
         }
     }
     images
+}
+
+/// Whether `ryo_vm_register` lives in another shared object for an output of `crate_type`:
+/// `ryo_rt` is linked as a dylib or included in an upstream Rust dylib. On PE the registry
+/// constructor then calls it through `__imp_ryo_vm_register` (design/platforms.md).
+fn register_is_imported(crate_info: &CrateInfo, crate_type: CrateType) -> bool {
+    let Some(deps) = crate_info.dependency_formats.get(&crate_type) else { return false };
+    deps.iter_enumerated().any(|(cnum, linkage)| {
+        matches!(linkage, Linkage::Dynamic | Linkage::IncludedFromDylib)
+            && crate_info.crate_name.get(&cnum).is_some_and(|n| n.as_str() == "ryo_rt")
+    })
 }
 
 /// Copies the metadata file (and its stub) into `dir`, so later `link_binary` calls can reload

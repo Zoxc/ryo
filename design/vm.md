@@ -35,7 +35,8 @@ on the same thread would otherwise create aliasing mutable references.
 
 - **The stack**: each thread has its own VM stack, an `mmap`ed (ELF) or `VirtualAlloc`ed (PE)
   region with a guard page, created on the first `vm::enter` (behind a `cold_path`). It is
-  8 MiB (`MAP_NORESERVE`, so untouched pages cost nothing). A pthread key (ELF) or FLS
+  8 MiB (`MAP_NORESERVE`, so untouched pages cost nothing; on PE it is committed, which
+  only counts against the commit limit). A pthread key (ELF) or FLS
   (PE) destructor unmaps it when the thread exits, unless the thread exits from inside VM
   code (then it is leaked). A `vm::enter` from a thread-exit destructor that runs after
   ours maps a new stack and registers the destructor again; whether that one is freed

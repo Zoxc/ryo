@@ -8,7 +8,9 @@ use crate::utils::{RustcInfo, cmd, dll_name, exe_name, output, root, run};
 /// Unstable features the backend may use, even though `RUSTC_BOOTSTRAP` allows all.
 const BACKEND_FEATURES: &str = "rustc_private";
 
-pub fn build() -> Result<(), String> {
+/// `targets`: extra targets to install std and `ryo_rt` for, for cross-compiling with
+/// `rustc-ryo --target` (their rust-std component must be installed).
+pub fn build(targets: &[String]) -> Result<(), String> {
     let info = RustcInfo::get()?;
     let root = root();
     let dist = root.join("dist");
@@ -21,16 +23,21 @@ pub fn build() -> Result<(), String> {
         fs::remove_dir_all(&dist).map_err(|e| format!("removing {}: {e}", dist.display()))?;
     }
     let dist_lib = dist.join("lib");
-    let target_lib = dist_lib.join("rustlib").join(&info.host).join("lib");
     let dist_bin = dist.join("bin");
-    for dir in [&target_lib, &dist_bin] {
+    for dir in [&dist_lib, &dist_bin] {
         fs::create_dir_all(dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
     }
     copy(&backend, &dist_lib.join(dll_name("rustc_codegen_ryo")))?;
-    install_llvm_sysroot(&info, &dist)?;
-
-    for (krate, rlib) in build_runtime(&root, &target, &dist)? {
-        copy(&rlib, &target_lib.join(format!("lib{krate}.rlib")))?;
+    let mut all = vec![info.host.clone()];
+    all.extend(targets.iter().filter(|t| **t != info.host).cloned());
+    for triple in &all {
+        let target_lib = dist_lib.join("rustlib").join(triple).join("lib");
+        fs::create_dir_all(&target_lib).map_err(|e| format!("creating {}: {e}", target_lib.display()))?;
+        install_llvm_sysroot(&info, &dist, triple)?;
+        let cross = (*triple != info.host).then_some(triple.as_str());
+        for (krate, rlib) in build_runtime(&root, &target, &dist, cross)? {
+            copy(&rlib, &target_lib.join(format!("lib{krate}.rlib")))?;
+        }
     }
 
     build_wrappers(&root, &dist_bin, &info)?;
@@ -68,11 +75,14 @@ fn build_backend(root: &Path, target: &Path, info: &RustcInfo) -> Result<PathBuf
     Ok(target_dir.join("release").join(dll_name("rustc_codegen_ryo")))
 }
 
-/// Copies the toolchain's prebuilt std into `dist/`, skipping the rustc-dev and LLVM libraries,
-/// as cg_clif does. Also copies the target's `bin/` (the self-contained linker).
-fn install_llvm_sysroot(info: &RustcInfo, dist: &Path) -> Result<(), String> {
-    let rel = Path::new("lib").join("rustlib").join(&info.host);
+/// Copies the toolchain's prebuilt std for `triple` into `dist/`, skipping the rustc-dev and
+/// LLVM libraries, as cg_clif does. Also copies the target's `bin/` (the self-contained linker).
+fn install_llvm_sysroot(info: &RustcInfo, dist: &Path, triple: &str) -> Result<(), String> {
+    let rel = Path::new("lib").join("rustlib").join(triple);
     let src_lib = info.sysroot.join(&rel).join("lib");
+    if !src_lib.is_dir() {
+        return Err(format!("no std for {triple} in the toolchain; run `rustup target add {triple}`"));
+    }
     let dst_lib = dist.join(&rel).join("lib");
     for entry in fs::read_dir(&src_lib).map_err(|e| format!("{}: {e}", src_lib.display()))? {
         let entry = entry.map_err(|e| e.to_string())?;
@@ -103,22 +113,27 @@ fn is_std_lib(file_name: &str) -> bool {
     !rustc_dev && !file_name.contains("LLVM")
 }
 
-/// Builds `ryo_rt` (and `ryo_bytecode`) with the stock LLVM backend against `dist/`'s std, and
-/// returns their crate names and rlibs.
+/// Builds `ryo_rt` (and `ryo_bytecode`) with the stock LLVM backend against `dist/`'s std, for
+/// the host or the `cross` target, and returns their crate names and rlibs.
 fn build_runtime(
     root: &Path,
     target: &Path,
     dist: &Path,
+    cross: Option<&str>,
 ) -> Result<Vec<(&'static str, PathBuf)>, String> {
-    eprintln!("[y] runtime: ryo_rt");
+    eprintln!("[y] runtime: ryo_rt{}", cross.map(|t| format!(" for {t}")).unwrap_or_default());
     let mut sysroot_flag = String::from("--sysroot=");
     sysroot_flag.push_str(dist.to_str().ok_or("dist/ path is not UTF-8")?);
     let rustflags = [&sysroot_flag, "-Ccodegen-units=1", "-Cpanic=unwind"];
+    let mut cargo = cmd("cargo");
+    // `registry-anchor`: `vm::enter` references the registry objects the backend generates
+    // (design/backend.md#pipeline step 6).
+    cargo.args(["build", "--release", "-p", "ryo_rt", "--features", "registry-anchor"]);
+    if let Some(t) = cross {
+        cargo.args(["--target", t]);
+    }
     let out = output(
-        cmd("cargo")
-            // `registry-anchor`: `vm::enter` references the registry objects the backend
-            // generates (design/backend.md#pipeline step 6).
-            .args(["build", "--release", "-p", "ryo_rt", "--features", "registry-anchor"])
+        cargo
             .arg("--message-format=json-render-diagnostics")
             .arg("--manifest-path")
             .arg(root.join("vm").join("Cargo.toml"))

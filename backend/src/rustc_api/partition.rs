@@ -502,7 +502,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                         code[at as usize + call_fs] = self.vm[c as usize].lowered.frame_size;
                     }
                     CodeReloc::Symbol { at, target } => {
-                        let Sym(s) = w.symbol(tcx.symbol_name(target).name, 0);
+                        let Sym(s) = w.symbol(tcx.symbol_name(target).name, super::symbol_flags(tcx, target));
                         code[at as usize] = s;
                     }
                 }

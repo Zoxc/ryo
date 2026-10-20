@@ -20,7 +20,9 @@ const USAGE: &str = "\
 usage: ./y.sh <command>
 
 commands:
-  build [--sysroot llvm|ryo]   build the backend, the sysroot and the wrappers into dist/
+  build [--sysroot llvm|ryo] [--target T]...
+                               build the backend, the sysroot and the wrappers into dist/;
+                               also install std and ryo_rt for each target T
   build-clif                   build cg_clif from the toolchain's rustc-dev sources
   test [--clif]                build the test corpus with rustc-ryo and plain rustc, diff outputs
   bench [--runs N]             compare LLVM -O0/-O3, Cranelift and ryo: compile and run time
@@ -35,7 +37,8 @@ enum Sysroot {
 
 #[derive(Debug, PartialEq)]
 enum Cmd {
-    Build { sysroot: Sysroot },
+    /// `targets`: extra targets (besides the host) to install std and `ryo_rt` for.
+    Build { sysroot: Sysroot, targets: Vec<String> },
     BuildClif,
     Test { clif: bool },
     Bench { runs: u32 },
@@ -54,13 +57,28 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
     };
     match cmd.as_str() {
         "build" => {
-            let sysroot = match rest.as_slice() {
-                [] | ["--sysroot", "llvm"] | ["--sysroot=llvm"] => Sysroot::Llvm,
-                ["--sysroot", "ryo"] | ["--sysroot=ryo"] => Sysroot::Ryo,
-                ["--sysroot", other] => return Err(format!("unknown sysroot `{other}`")),
-                [arg, ..] => return Err(format!("unexpected argument `{arg}`")),
-            };
-            Ok(Cmd::Build { sysroot })
+            let mut sysroot = Sysroot::Llvm;
+            let mut targets = Vec::new();
+            let mut args = rest.iter().copied();
+            while let Some(arg) = args.next() {
+                let (flag, value) = match arg.split_once('=') {
+                    Some((f, v)) if f.starts_with("--") => (f, Some(v)),
+                    _ => (arg, None),
+                };
+                let mut value = || value.or_else(|| args.next()).ok_or(format!("`{flag}` needs a value"));
+                match flag {
+                    "--sysroot" => {
+                        sysroot = match value()? {
+                            "llvm" => Sysroot::Llvm,
+                            "ryo" => Sysroot::Ryo,
+                            other => return Err(format!("unknown sysroot `{other}`")),
+                        }
+                    }
+                    "--target" => targets.push(value()?.to_owned()),
+                    _ => return Err(format!("unexpected argument `{arg}`")),
+                }
+            }
+            Ok(Cmd::Build { sysroot, targets })
         }
         "build-clif" => no_args(Cmd::BuildClif),
         "test" => match rest.as_slice() {
@@ -96,8 +114,8 @@ fn main() -> ExitCode {
             print!("{USAGE}");
             Ok(())
         }
-        Cmd::Build { sysroot: Sysroot::Llvm } => dist::build(),
-        Cmd::Build { sysroot: Sysroot::Ryo } => {
+        Cmd::Build { sysroot: Sysroot::Llvm, targets } => dist::build(&targets),
+        Cmd::Build { sysroot: Sysroot::Ryo, .. } => {
             Err("`build --sysroot ryo` is not implemented yet".to_owned())
         }
         Cmd::BuildClif => clif::build(),
@@ -125,10 +143,18 @@ mod tests {
     #[test]
     fn commands() {
         assert_eq!(parse(&[]), Ok(Cmd::Help));
-        assert_eq!(parse(&["build"]), Ok(Cmd::Build { sysroot: Sysroot::Llvm }));
-        assert_eq!(parse(&["build", "--sysroot", "llvm"]), Ok(Cmd::Build { sysroot: Sysroot::Llvm }));
-        assert_eq!(parse(&["build", "--sysroot=ryo"]), Ok(Cmd::Build { sysroot: Sysroot::Ryo }));
+        let build = |sysroot, targets: &[&str]| {
+            Ok(Cmd::Build { sysroot, targets: targets.iter().map(|t| t.to_string()).collect() })
+        };
+        assert_eq!(parse(&["build"]), build(Sysroot::Llvm, &[]));
+        assert_eq!(parse(&["build", "--sysroot", "llvm"]), build(Sysroot::Llvm, &[]));
+        assert_eq!(parse(&["build", "--sysroot=ryo"]), build(Sysroot::Ryo, &[]));
+        assert_eq!(
+            parse(&["build", "--target", "x86_64-pc-windows-msvc", "--sysroot=llvm", "--target=a"]),
+            build(Sysroot::Llvm, &["x86_64-pc-windows-msvc", "a"])
+        );
         assert!(parse(&["build", "--sysroot", "gcc"]).is_err());
+        assert!(parse(&["build", "--target"]).is_err());
         assert!(parse(&["build", "x"]).is_err());
         assert_eq!(parse(&["test", "--clif"]), Ok(Cmd::Test { clif: true }));
         assert_eq!(parse(&["bench"]), Ok(Cmd::Bench { runs: bench::DEFAULT_RUNS }));

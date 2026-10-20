@@ -61,7 +61,7 @@ fn main() {
 #[allow(dead_code)]
 fn dist_dir() -> PathBuf {
     let exe = env::current_exe().expect("current_exe");
-    let exe = exe.canonicalize().unwrap_or(exe);
+    let exe = real_path(exe);
     let mut dir = exe.parent().expect("exe has a parent").to_path_buf();
     if dir.file_name().is_some_and(|n| n == "bin") {
         dir.pop();
@@ -100,10 +100,39 @@ pub fn ryo_args(dist: &Path, passed: Vec<OsString>) -> Result<Vec<OsString>, Str
     for a in ["-Zunstable-options", "--extern", "force:ryo_rt"] {
         args.push(a.into());
     }
+    let msvc = targets_msvc(&passed);
     args.extend(passed);
     // After the user's arguments, so it wins (design/backend.md#pipeline).
     args.push("-Ccodegen-units=1".into());
+    if msvc {
+        // Image symbol slots of upstream symbols relocate against `__imp_<sym>` even when the
+        // definition is linked statically; link.exe and lld-link then resolve it locally and
+        // warn (LNK4217, LNK4286). That is intended (design/platforms.md).
+        for a in ["-Clink-arg=/IGNORE:4217", "-Clink-arg=/IGNORE:4286"] {
+            args.push(a.into());
+        }
+    }
     Ok(args)
+}
+
+/// Whether the compilation targets windows-msvc: `--target` names an `-msvc` triple, or there
+/// is none and the host is one.
+fn targets_msvc(args: &[OsString]) -> bool {
+    let mut target = None;
+    let mut prev_target = false;
+    for arg in args {
+        let s = arg.to_str().unwrap_or("");
+        if prev_target {
+            target = Some(s);
+        } else if let Some(t) = s.strip_prefix("--target=") {
+            target = Some(t);
+        }
+        prev_target = s == "--target";
+    }
+    match target {
+        Some(t) => t.ends_with("-msvc"),
+        None => cfg!(target_env = "msvc"),
+    }
 }
 
 /// Finds an enabling `-Zrandomize-layout` (`-Zrandomize-layout[=v]` or `-Z randomize-layout[=v]`).
@@ -130,6 +159,19 @@ fn randomize_layout_flag(args: &[OsString]) -> Option<String> {
     None
 }
 
+/// `p` canonicalized, without the `\\?\` prefix `canonicalize` adds on Windows, which some
+/// tools don't accept in paths derived from it (`--sysroot`, linker search paths).
+fn real_path(p: std::path::PathBuf) -> std::path::PathBuf {
+    let c = p.canonicalize().unwrap_or(p);
+    #[cfg(windows)]
+    if let Some(rest) = c.to_str().and_then(|s| s.strip_prefix(r"\\?\"))
+        && !rest.starts_with(r"UNC\")
+    {
+        return rest.into();
+    }
+    c
+}
+
 // Run by `cargo test` in `build/`, which includes this file as a module.
 #[cfg(test)]
 mod tests {
@@ -143,13 +185,30 @@ mod tests {
     fn adds_ryo_flags_around_user_args() {
         let dist = Path::new("/d");
         let got = ryo_args(dist, args(&["foo.rs", "-Ccodegen-units=16"])).unwrap();
-        let backend = format!("-Zcodegen-backend=/d/lib/{}", crate::utils::dll_name("rustc_codegen_ryo"));
-        let want = args(&[
+        // `join`, so the separator is right on Windows too.
+        let backend = dist.join("lib").join(crate::utils::dll_name("rustc_codegen_ryo"));
+        let backend = format!("-Zcodegen-backend={}", backend.display());
+        let mut want = args(&[
             "--sysroot", "/d", &backend, "-Zunstable-options", "--extern", "force:ryo_rt",
             "foo.rs", "-Ccodegen-units=16",
             "-Ccodegen-units=1",
         ]);
+        if cfg!(target_env = "msvc") {
+            want.extend(args(&["-Clink-arg=/IGNORE:4217", "-Clink-arg=/IGNORE:4286"]));
+        }
         assert_eq!(got, want);
+    }
+
+    #[test]
+    fn silences_import_warnings_on_msvc() {
+        let ignore = |list: &[&str]| {
+            let got = ryo_args(Path::new("/d"), args(list)).unwrap();
+            got.iter().any(|a| a == "-Clink-arg=/IGNORE:4217")
+        };
+        assert!(ignore(&["x.rs", "--target", "x86_64-pc-windows-msvc"]));
+        assert!(ignore(&["x.rs", "--target=x86_64-pc-windows-msvc"]));
+        assert!(!ignore(&["x.rs", "--target", "x86_64-unknown-linux-gnu"]));
+        assert_eq!(ignore(&["x.rs"]), cfg!(target_env = "msvc"));
     }
 
     #[test]

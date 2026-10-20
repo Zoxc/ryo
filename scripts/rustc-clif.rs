@@ -26,7 +26,7 @@ fn main() {
         }
     }
     let exe = env::current_exe().expect("current_exe");
-    let exe = exe.canonicalize().unwrap_or(exe);
+    let exe = real_path(exe);
     let mut dist: PathBuf = exe.parent().expect("exe has a parent").to_path_buf();
     if dist.file_name().is_some_and(|n| n == "bin") {
         dist.pop();
@@ -77,6 +77,19 @@ pub fn clif_args(dist: &Path, passed: Vec<OsString>) -> Vec<OsString> {
     args
 }
 
+/// `p` canonicalized, without the `\\?\` prefix `canonicalize` adds on Windows, which some
+/// tools don't accept in paths derived from it (`--sysroot`, linker search paths).
+fn real_path(p: std::path::PathBuf) -> std::path::PathBuf {
+    let c = p.canonicalize().unwrap_or(p);
+    #[cfg(windows)]
+    if let Some(rest) = c.to_str().and_then(|s| s.strip_prefix(r"\\?\"))
+        && !rest.starts_with(r"UNC\")
+    {
+        return rest.into();
+    }
+    c
+}
+
 // Run by `cargo test` in `build/`, which includes this file as a module.
 #[cfg(test)]
 mod tests {
@@ -85,8 +98,8 @@ mod tests {
     #[test]
     fn adds_backend_and_sysroot() {
         let got = clif_args(Path::new("/d"), vec!["foo.rs".into()]);
-        let backend =
-            format!("-Zcodegen-backend=/d/lib/{}", crate::utils::dll_name("rustc_codegen_cranelift"));
+        let backend = Path::new("/d").join("lib").join(crate::utils::dll_name("rustc_codegen_cranelift"));
+        let backend = format!("-Zcodegen-backend={}", backend.display());
         let want: Vec<OsString> =
             ["--sysroot", "/d", &backend, "foo.rs"].iter().map(OsString::from).collect();
         assert_eq!(got, want);

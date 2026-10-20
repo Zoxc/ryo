@@ -20,8 +20,8 @@ struct Program {
     /// Functions that must be entered through `vm::enter` (portals), checked by running the
     /// ryo build again with `RYO_VM_TRACE` and mapping the reported IDs to the `RYO_STATS` names.
     entered: &'static [&'static str],
-    /// A C `main` (relative to `tests/`), compiled with `cc` and linked against the last crate
-    /// (a staticlib or cdylib). Skipped if there is no `cc`.
+    /// A C `main` (relative to `tests/`), compiled with `cc` (`cl` on MSVC) and linked against
+    /// the last crate (a staticlib or cdylib). Skipped without that compiler.
     c_main: Option<&'static str>,
 }
 
@@ -244,7 +244,7 @@ pub fn run(clif: bool) -> Result<(), String> {
     let cc = have_cc();
     for program in CORPUS {
         if program.c_main.is_some() && !cc {
-            eprintln!("[y] test {}: skipped (no `cc`)", program.name);
+            eprintln!("[y] test {}: skipped (no `{C_COMPILER}`)", program.name);
             continue;
         }
         let reference = match ctx.build_and_run(program, &REFERENCE) {
@@ -419,23 +419,39 @@ impl Ctx {
         Ok(result)
     }
 
-    /// Compiles and links the C program `c_main` against `lib` (a staticlib or cdylib in `dir`).
+    /// Compiles and links the C program `c_main` against `lib` (a staticlib or cdylib in `dir`),
+    /// with `cc`, or `cl` on MSVC hosts.
     fn link_c(&self, dir: &Path, c_main: &str, lib: &Crate, native_libs: &[String]) -> Result<PathBuf, String> {
         let exe = dir.join(exe_name("c_main"));
-        let mut c = Command::new("cc");
-        c.arg(self.tests.join(c_main)).arg("-o").arg(&exe);
-        match lib.kind {
-            CrateKind::Staticlib => {
-                c.arg(dir.join(format!("lib{}.a", lib.name))).args(native_libs);
-            }
-            CrateKind::Cdylib => {
-                c.arg("-L").arg(dir).arg(format!("-l{}", lib.name));
-            }
-            _ => return Err("c_main needs a staticlib or cdylib".to_owned()),
+        let mut c = Command::new(C_COMPILER);
+        if MSVC {
+            // Everything after `/link` goes to link.exe, including the `/defaultlib:` options
+            // in `native-static-libs`.
+            let mut fe = OsString::from("/Fe:");
+            fe.push(&exe);
+            c.current_dir(dir).arg("/nologo").arg(self.tests.join(c_main)).arg(fe).arg("/link");
+            match lib.kind {
+                CrateKind::Staticlib => c.arg(dir.join(format!("{}.lib", lib.name))).args(native_libs),
+                CrateKind::Cdylib => c.arg(dir.join(format!("{}.dll.lib", lib.name))),
+                _ => return Err("c_main needs a staticlib or cdylib".to_owned()),
+            };
+        } else {
+            c.arg(self.tests.join(c_main)).arg("-o").arg(&exe);
+            match lib.kind {
+                CrateKind::Staticlib => c.arg(dir.join(format!("lib{}.a", lib.name))).args(native_libs),
+                CrateKind::Cdylib => c.arg("-L").arg(dir).arg(format!("-l{}", lib.name)),
+                _ => return Err("c_main needs a staticlib or cdylib".to_owned()),
+            };
         }
         let res = c.output().map_err(|e| format!("failed to run `{}`: {e}", describe(&c)))?;
         if !res.status.success() {
-            return Err(format!("`{}` failed:\n{}", describe(&c), String::from_utf8_lossy(&res.stderr)));
+            // cl reports errors on stdout.
+            return Err(format!(
+                "`{}` failed:\n{}{}",
+                describe(&c),
+                String::from_utf8_lossy(&res.stdout),
+                String::from_utf8_lossy(&res.stderr)
+            ));
         }
         Ok(exe)
     }
@@ -563,8 +579,20 @@ fn vm_functions(stderr: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-/// Whether a C compiler (`cc`) is available for the [`Program::c_main`] programs.
+/// Whether the host is windows-msvc: C programs are built with `cl`, and the staticlib and
+/// the cdylib's import library are `<name>.lib` and `<name>.dll.lib`.
+const MSVC: bool = cfg!(target_env = "msvc");
+
+/// The C compiler for the [`Program::c_main`] programs.
+const C_COMPILER: &str = if MSVC { "cl" } else { "cc" };
+
+/// Whether [`C_COMPILER`] is available (`cl` is only on `PATH` in a Visual Studio developer
+/// environment).
 fn have_cc() -> bool {
+    if MSVC {
+        // `cl` without arguments prints its banner; starting at all is enough.
+        return Command::new("cl").output().is_ok();
+    }
     Command::new("cc").arg("--version").output().is_ok_and(|o| o.status.success())
 }
 

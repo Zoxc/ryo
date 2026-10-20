@@ -26,7 +26,7 @@ modeled on cg_clif's `build_system/`.
 - A zero-dependency bin crate (its own `Cargo.toml` and `Cargo.lock`, not a workspace member),
   run through `./y.sh <cmd>` (or `y.cmd`/`y.ps1` on Windows), which is
   `cargo run --manifest-path build/Cargo.toml -- <cmd>`.
-- Commands: `build [--sysroot llvm|ryo]`, `build-clif`, `test [--clif]`, `bench [--runs N]`,
+- Commands: `build [--sysroot llvm|ryo] [--target T]...`, `build-clif`, `test [--clif]`, `bench [--runs N]`,
   `clean`.
 - It sets `RUSTC_BOOTSTRAP=1` on everything it spawns.
 
@@ -47,6 +47,9 @@ modeled on cg_clif's `build_system/`.
      x86_64 Linux links with the sysroot's `rust-lld` by default.
    - `--sysroot ryo`: build std from `rust-src` with our backend
      (`-Zforce-unstable-if-unmarked --sysroot=/dev/null -Zcodegen-backend=...`).
+   - `--target T` (repeatable): also install std (from the toolchain's rust-std for `T`)
+     and `ryo_rt` for `T`, for cross-compiling with `rustc-ryo --target T`
+     ([platforms.md](platforms.md), cross-checking PE on Linux).
    - `ryo_rt` is always built with the stock LLVM backend, against that std, with
      `-Copt-level=3 -Ccodegen-units=1 -Cpanic=unwind` regardless of the user's profile, and
      installed next to std. There is no native library to link.
@@ -58,6 +61,8 @@ modeled on cg_clif's `build_system/`.
    - `-Zunstable-options --extern force:ryo_rt`
    - `-Ccodegen-units=1`, appended *after* the user's args so it wins
      ([backend.md](backend.md#pipeline))
+   - on windows-msvc targets (`--target *-msvc`, or none on an msvc host),
+     `-Clink-arg=/IGNORE:4217 -Clink-arg=/IGNORE:4286` ([platforms.md](platforms.md))
 
    They add no MIR optimization flags: ryo gets rustc's defaults, like the other backends
    ([lowering.md](lowering.md#input)).
@@ -106,7 +111,7 @@ This gives a third backend, built from the same toolchain, to compare against.
   ([backend.md](backend.md#debugging-switches)). Programs with VM functions are also built at
   `-Copt-level=3` (`ryo-O3`), where only the output and the trace consistency are checked,
   since MIR inlining removes functions. Some programs are a staticlib or cdylib called from a
-  C `main`, compiled with `cc` (skipped without one). The smoke tests check that `rustc-ryo`
+  C `main`, compiled with `cc`, or `cl` on windows-msvc hosts (skipped without one). The smoke tests check that `rustc-ryo`
   rejects `-Zrandomize-layout`, more than one codegen unit and `-Cincremental`, and that
   `cargo-ryo` builds a dev-profile package.
 - `test --clif`: also builds the corpus with `rustc-clif` and diffs its output too. That

@@ -1,0 +1,35 @@
+# `y build` and `y test` on Linux and Windows (design/platforms.md). The toolchain is the pinned
+# 1.99.1 (design/build.md#toolchain), named explicitly so a newer `stable` on the runner
+# doesn't fail `y`'s version check.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  RUSTUP_TOOLCHAIN: "1.99.1"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the toolchain
+        run: rustup toolchain install 1.99.1 --profile minimal --component rustc-dev,rust-src,llvm-tools
+      # Puts `cl` on PATH, for the C programs of `y test`.
+      - if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+      - if: runner.os != 'Windows'
+        run: ./y.sh build && ./y.sh test
+      - if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          call y.cmd build || exit /b 1
+          call y.cmd test || exit /b 1
