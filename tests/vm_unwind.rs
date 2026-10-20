@@ -74,6 +74,15 @@ impl Loc for S {
     }
 }
 
+/// `#[track_caller]` through vtables: a trait method, and a closure's `FnOnce` shim. Virtual
+/// calls of these keep this function native for now.
+fn dyn_locs() {
+    let d: &dyn Loc = &S(3);
+    println!("{}", d.at());
+    let b: Box<dyn FnOnce() -> u32> = Box::new(#[track_caller] || Location::caller().line());
+    println!("{}", b());
+}
+
 struct S(u32);
 impl S {
     #[track_caller]
@@ -179,10 +188,7 @@ fn main() {
     println!("{:?}", S(5).loc());
     println!("{}", tc_closure());
     println!("{}", unsafe { native_caller() });
-    let d: &dyn Loc = &S(3);
-    println!("{}", d.at());
-    let b: Box<dyn FnOnce() -> u32> = Box::new(#[track_caller] || Location::caller().line());
-    println!("{}", b());
+    dyn_locs();
     let f: fn() -> &'static Location<'static> = here;
     println!("{}", f().line());
 
