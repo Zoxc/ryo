@@ -50,8 +50,9 @@ and `codegen_crate` reads them.
 
      The lowering reports these as `Err(NeedsNative(reason))`.
 
-     Until calls to native code are islands, a function that calls a function that stays
-     native is native too, repeated until nothing changes.
+     The lowering assumes every candidate is a VM function. A function that calls a
+     candidate which then stays native is lowered again, with an island for that call,
+     until the set of VM functions doesn't change.
 
      Never VM: everything in a `proc-macro` crate (it keeps VM code out of rustc's own process,
      and proc macros gain nothing from it), `ryo_rt`'s own instances, and everything when

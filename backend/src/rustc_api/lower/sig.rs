@@ -1,0 +1,114 @@
+//! ABI signatures and argument blocks (design/lowering.md#frame-slots).
+//!
+//! The argument block of a callee is the layout of the tuple of its ABI argument types: the
+//! inputs of `fn_abi_of_instance`, which already spreads a trailing `rust-call` tuple and
+//! appends the `&'static Location` of `#[track_caller]` functions. Callers, callees, portals
+//! and the call templates all use this one definition.
+
+use rustc_abi::CanonAbi;
+use rustc_middle::ty::layout::TyAndLayout;
+use rustc_middle::ty::{self, Instance, Ty, TyCtxt, TypingEnv};
+use ryo_bytecode::abi::{self, ArgField};
+
+use super::{LayoutCx, NeedsNative, layout_error, native};
+
+/// How a callee is called natively.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CallConv {
+    /// `Rust` / `rust-call`: `call_ptrN`, `call`, portals.
+    Rust,
+    /// `extern "C"` that can't unwind: `call_cN`.
+    C,
+}
+
+/// A callee's ABI signature and argument block.
+#[derive(Clone, Debug)]
+pub struct AbiSig<'tcx> {
+    /// The ABI argument types, in order (rust-call spread, caller location last).
+    pub inputs: Vec<Ty<'tcx>>,
+    pub output: TyAndLayout<'tcx>,
+    /// Per input: its place in the argument block.
+    pub fields: Vec<ArgField>,
+    /// Size of the argument block.
+    pub block_size: u32,
+    pub conv: CallConv,
+    /// Whether the last input is the implicit `#[track_caller]` location.
+    pub caller_location: bool,
+}
+
+impl<'tcx> AbiSig<'tcx> {
+    /// The tuple of the inputs: the portal's and the call templates' `Args`.
+    pub fn args_tuple(&self, tcx: TyCtxt<'tcx>) -> Ty<'tcx> {
+        Ty::new_tup(tcx, &self.inputs)
+    }
+}
+
+/// The ABI signature of a direct call of (or the body of) `instance`.
+pub fn abi_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> Result<AbiSig<'tcx>, NeedsNative> {
+    let typing_env = TypingEnv::fully_monomorphized();
+    let fn_abi = tcx
+        .fn_abi_of_instance_no_deduced_attrs(typing_env.as_query_input((instance, ty::List::empty())))
+        .map_err(|e| NeedsNative(super::no_trim(|| format!("fn ABI: {e:?}"))))?;
+    from_fn_abi(tcx, fn_abi, instance.def.requires_caller_location(tcx))
+}
+
+/// The ABI signature of a call through a fn pointer of type `sig`.
+pub fn fn_ptr_sig<'tcx>(tcx: TyCtxt<'tcx>, sig: ty::PolyFnSig<'tcx>) -> Result<AbiSig<'tcx>, NeedsNative> {
+    let typing_env = TypingEnv::fully_monomorphized();
+    let fn_abi = tcx
+        .fn_abi_of_fn_ptr(typing_env.as_query_input((sig, ty::List::empty())))
+        .map_err(|e| NeedsNative(super::no_trim(|| format!("fn ABI: {e:?}"))))?;
+    from_fn_abi(tcx, fn_abi, false)
+}
+
+fn from_fn_abi<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    fn_abi: &rustc_target::callconv::FnAbi<'tcx, Ty<'tcx>>,
+    caller_location: bool,
+) -> Result<AbiSig<'tcx>, NeedsNative> {
+    if fn_abi.c_variadic {
+        return native("C-variadic");
+    }
+    let conv = match fn_abi.conv {
+        CanonAbi::Rust => CallConv::Rust,
+        CanonAbi::C if !fn_abi.can_unwind => CallConv::C,
+        CanonAbi::C => return native("C-unwind ABI"),
+        other => return native(format!("{other} ABI")),
+    };
+    let inputs: Vec<Ty<'tcx>> = fn_abi.args.iter().map(|a| a.layout.ty).collect();
+    let (fields, block_size) = arg_block(tcx, &inputs)?;
+    if fn_abi.ret.layout.align.abi.bytes() > u64::from(abi::FRAME_ALIGN) {
+        return native("return value aligned above 16");
+    }
+    Ok(AbiSig { inputs, output: fn_abi.ret.layout, fields, block_size, conv, caller_location })
+}
+
+/// The signature of a Rust-ABI fn with these (non-spread) inputs: the `call` template's
+/// `Args` and `R`.
+pub fn tys_sig<'tcx>(tcx: TyCtxt<'tcx>, inputs: Vec<Ty<'tcx>>, output: Ty<'tcx>) -> Result<AbiSig<'tcx>, NeedsNative> {
+    let (fields, block_size) = arg_block(tcx, &inputs)?;
+    let output = super::layout_of(tcx, output)?;
+    Ok(AbiSig { inputs, output, fields, block_size, conv: CallConv::Rust, caller_location: false })
+}
+
+/// The argument block for `inputs`: the layout of their tuple (design/lowering.md#frame-slots).
+pub fn arg_block<'tcx>(tcx: TyCtxt<'tcx>, inputs: &[Ty<'tcx>]) -> Result<(Vec<ArgField>, u32), NeedsNative> {
+    let typing_env = TypingEnv::fully_monomorphized();
+    let tuple = Ty::new_tup(tcx, inputs);
+    let layout = tcx.layout_of(typing_env.as_query_input(tuple)).map_err(layout_error)?;
+    let cx = LayoutCx(tcx);
+    let fields: Vec<ArgField> = (0..inputs.len())
+        .map(|i| {
+            let f = layout.field(&cx, i);
+            ArgField {
+                offset: layout.fields.offset(i).bytes() as u32,
+                size: f.size.bytes() as u32,
+                align: f.align.abi.bytes() as u32,
+            }
+        })
+        .collect();
+    let block = abi::arg_block(&fields, layout.size.bytes() as u32, layout.align.abi.bytes() as u32)
+        .map_err(|e| NeedsNative(format!("argument block: {e:?}")))?;
+    let size = block.size();
+    Ok((fields, size))
+}

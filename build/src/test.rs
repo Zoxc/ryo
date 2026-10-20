@@ -109,18 +109,24 @@ pub(crate) const CORPUS: &[Program] = &[
         flags: &["-Cprefer-dynamic"],
         ..PROGRAM
     },
-    // Milestone 3: VM functions behind portals, a VM `main`, and across crates. Local items are
-    // printed without their crate name.
+    // VM functions behind portals, a VM `main`, and across crates. Local items are printed
+    // without their crate name. Since milestone 4, `main` and the functions it calls are
+    // bytecode too, so VM → VM calls (direct, through fn pointers and across images) don't go
+    // through `vm::enter`; `entered` lists what native code still enters: `lang_start` from the
+    // `c_main` entry wrapper, and methods called through vtables from native code.
     single!(
         "vm_answer",
-        vm: &["answer", "pick", "twice", "wide", "always"],
-        entered: &["answer", "pick", "twice", "wide", "always"]
+        vm: &["main", "answer", "pick", "twice", "wide", "always"],
+        entered: &["std::rt::lang_start::<()>"]
     ),
-    single!("vm_main", vm: &["main", "answer"], entered: &["main"]),
-    single!("vm_refs", vm: &["from_static", "<S as Get>::get", "from_const"], entered: &[
-        "from_static",
-        "<S as Get>::get",
-        "from_const"
+    single!(
+        "vm_main",
+        vm: &["main", "answer"],
+        entered: &["std::rt::lang_start::<std::result::Result<(), ()>>"]
+    ),
+    single!("vm_refs", vm: &["main", "from_static", "<S as Get>::get", "from_const"], entered: &[
+        "std::rt::lang_start::<()>",
+        "<S as Get>::get"
     ]),
     Program {
         name: "vm_cross",
@@ -130,7 +136,7 @@ pub(crate) const CORPUS: &[Program] = &[
             krate("main", "vm_cross/main.rs", CrateKind::Bin),
         ],
         vm: &["answer", "calls_answer", "generic::<u16>", "vml::always", "vml::generic::<u8>", "vml::inl", "own"],
-        entered: &["answer", "calls_answer", "generic::<u16>", "vml::always", "vml::generic::<u8>", "own"],
+        entered: &["std::rt::lang_start::<()>"],
         ..PROGRAM
     },
     Program {
@@ -141,7 +147,7 @@ pub(crate) const CORPUS: &[Program] = &[
         ],
         flags: &["-Cprefer-dynamic"],
         vm: &["answer", "vmd::generic::<i8>", "local"],
-        entered: &["answer", "vmd::generic::<i8>", "local"],
+        entered: &["std::rt::lang_start::<()>"],
         ..PROGRAM
     },
     Program {
@@ -400,18 +406,17 @@ impl Ctx {
             // The same run with `RYO_VM_TRACE`: it must enter the expected functions, and
             // otherwise behave the same.
             let traced = self.run(&dir, &exe, variant, true)?;
-            let (entries, rest): (Vec<&str>, Vec<&str>) =
-                traced.stderr.split_inclusive('\n').partition(|l| l.starts_with("ryo-vm: enter "));
+            // Trace lines may land in the middle of a partial line of the program's own stderr.
+            let (entries, rest) = split_trace(&traced.stderr);
             let entered: Vec<&str> = entries
                 .iter()
-                .map(|l| l.trim_end().trim_start_matches("ryo-vm: enter "))
                 .map(|id| vm_fns.iter().find(|(_, i)| i == id).map_or("?", |(n, _)| n.as_str()))
                 .collect();
             let not_entered: Vec<_> = program.entered.iter().filter(|f| !entered.contains(f)).collect();
             if !variant.vm_only && !not_entered.is_empty() {
                 return Err(format!("not entered through vm::enter: {not_entered:?}; entered: {entered:?}"));
             }
-            let untraced = RunResult { stderr: rest.concat(), ..traced };
+            let untraced = RunResult { stderr: rest, ..traced };
             if untraced != result {
                 return Err("the run with RYO_VM_TRACE behaved differently".to_owned());
             }
@@ -478,6 +483,22 @@ impl Ctx {
             stderr: normalize_thread_ids(&String::from_utf8_lossy(&res.stderr)),
         })
     }
+}
+
+/// Splits `RYO_VM_TRACE` output (`ryo-vm: enter <id>\n`, wherever it appears) from the rest
+/// of stderr: the entered ids, and the remaining text.
+fn split_trace(s: &str) -> (Vec<&str>, String) {
+    const P: &str = "ryo-vm: enter ";
+    let (mut ids, mut rest, mut s) = (Vec::new(), String::new(), s);
+    while let Some(i) = s.find(P) {
+        rest.push_str(&s[..i]);
+        let line = &s[i + P.len()..];
+        let end = line.find('\n').unwrap_or(line.len());
+        ids.push(&line[..end]);
+        s = line.get(end + 1..).unwrap_or("");
+    }
+    rest.push_str(s);
+    (ids, rest)
 }
 
 /// Panic messages say `thread 'main' (<os thread id>) panicked`; the id differs between runs.

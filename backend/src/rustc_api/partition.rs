@@ -16,10 +16,10 @@ use rustc_middle::mono::{
 use rustc_middle::ty::{self, Instance, InstanceKind, Ty, TyCtxt, TypingEnv};
 use rustc_session::config::{CrateType, EntryFnType};
 use rustc_span::Symbol;
-use ryo_bytecode::image::{FunctionDef, ImageObject, ImageWriter, portal_id};
-use ryo_bytecode::insn::{Opcode, Sym};
+use ryo_bytecode::image::{AllocReloc, AllocTarget, FunctionDef, ImageObject, ImageWriter, portal_id};
+use ryo_bytecode::insn::{Const, Opcode, Sym};
 
-use super::lower::{self, CodeReloc, LoweredFn};
+use super::lower::{self, CodeReloc, LowerCx, LoweredFn, NeedsNative};
 
 /// The `RYO_RT_ABI` the backend was written against (`vm/rt/src/lib.rs`).
 const EXPECTED_RT_ABI: u32 = 1;
@@ -194,6 +194,18 @@ struct Partitioner<'a, 'tcx> {
     added: FxIndexMap<MonoItem<'tcx>, MonoItemData>,
     /// Stub instances whose neighbors haven't been walked yet.
     work: Vec<Instance<'tcx>>,
+    /// The island instances, deduplicated.
+    islands: FxHashSet<Instance<'tcx>>,
+    /// Added items made External + Hidden only for the image.
+    hidden_added: Vec<Instance<'tcx>>,
+    stats: Stats,
+}
+
+/// Totals for `RYO_STATS`.
+#[derive(Default)]
+struct Stats {
+    native_fns: usize,
+    islands: usize,
 }
 
 impl<'a, 'tcx> Partitioner<'a, 'tcx> {
@@ -206,6 +218,9 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             index: FxHashMap::default(),
             added: FxIndexMap::default(),
             work: Vec::new(),
+            islands: FxHashSet::default(),
+            hidden_added: Vec::new(),
+            stats: Stats::default(),
         }
     }
 
@@ -232,54 +247,45 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         }
         // A stable image order: by symbol name.
         candidates.sort_by_cached_key(|(i, _)| tcx.symbol_name(*i).name.to_owned());
-        let lowered: Vec<_> = rustc_data_structures::sync::par_map(candidates, |(instance, data)| {
-            (instance, data, lower::lower(tcx, instance))
-        });
-        let mut ok: Vec<(Instance<'tcx>, MonoItemData, LoweredFn<'tcx>)> = Vec::new();
-        for (instance, data, r) in lowered {
-            match r {
-                Ok(l) => ok.push((instance, data, l)),
-                Err(why) if stats >= 2 => eprintln!("ryo: native {}: {}", path(instance), why.0),
-                Err(_) => {}
+        let (mut ok, failed) = lower_all(tcx, &candidates);
+        if stats >= 2 {
+            for (instance, why) in &failed {
+                eprintln!("ryo: native {}: {}", path(*instance), why.0);
             }
         }
-        // Calls to native code aren't islands yet: a function calling one is native too.
-        loop {
-            let set: FxHashSet<Instance<'tcx>> = ok.iter().map(|v| v.0).collect();
-            let before = ok.len();
-            ok.retain(|(instance, _, l)| {
-                let keep = l.relocs.iter().all(|r| match r {
-                    CodeReloc::Call { callee, .. } => set.contains(callee),
-                    CodeReloc::Symbol { .. } => true,
-                });
-                if !keep && stats >= 2 {
-                    eprintln!("ryo: native {}: calls a native function", path(*instance));
-                }
-                keep
-            });
-            if ok.len() == before {
-                break;
+        for (instance, data) in candidates {
+            if let Some(lowered) = ok.remove(&instance) {
+                self.index.insert(instance, self.vm.len() as u32);
+                self.vm.push(VmFn { instance, data, lowered, portal: None });
             }
         }
-        for (i, (instance, data, lowered)) in ok.into_iter().enumerate() {
-            self.index.insert(instance, i as u32);
-            self.vm.push(VmFn { instance, data, lowered, portal: None });
-        }
+        self.stats.native_fns = failed.len();
 
-        // Step 1 (portals): VM functions that native code or the image may reach.
+        // Step 1 (portals): VM functions that native code or the image may reach, and the
+        // native items the image refers to by symbol.
         let entry = tcx.entry_fn(()).and_then(|(def_id, ty)| {
             let main = Instance::mono(tcx, def_id);
             self.index.contains_key(&main).then_some((main, ty))
         });
         let mut wanted = Vec::new();
+        let mut image_refs: Vec<MonoItem<'tcx>> = Vec::new();
+        let mut seen_allocs = FxHashSet::default();
         for v in &self.vm {
             if v.data.linkage != Linkage::Internal || entry.is_some_and(|(m, _)| m == v.instance) {
                 wanted.push(v.instance);
             }
             for r in &v.lowered.relocs {
-                if let CodeReloc::Symbol { target, .. } = r {
-                    wanted.push(*target);
+                match *r {
+                    CodeReloc::Symbol { target, .. } => image_refs.push(MonoItem::Fn(target)),
+                    CodeReloc::Static { def_id, .. } => image_refs.push(MonoItem::Static(def_id)),
+                    CodeReloc::Const { alloc, .. } => alloc_refs(tcx, alloc, &mut seen_allocs, &mut image_refs),
+                    CodeReloc::Call { .. } | CodeReloc::Site { .. } | CodeReloc::Bytes { .. } => {}
                 }
+            }
+        }
+        for item in &image_refs {
+            if let MonoItem::Fn(f) = *item {
+                wanted.push(f);
             }
         }
         for f in wanted {
@@ -287,11 +293,18 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         }
         self.scan_native_items();
 
-        // Step 4: the entry wrapper and the stub neighbors.
+        // Step 4: islands, the entry wrapper, the stub neighbors, and the native items the
+        // image refers to.
+        self.add_islands();
         let main_portal = entry.map(|(main, ty)| {
             self.add_c_main(main, ty);
             tcx.symbol_name(main).name.to_owned()
         });
+        self.walk_stub_neighbors();
+        let mut flips = FxHashSet::default();
+        for item in image_refs {
+            self.make_visible(item, &mut flips);
+        }
         self.walk_stub_neighbors();
 
         // The native CGU: the original's native items, then the stubs and their neighbors.
@@ -308,7 +321,12 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         for (item, data) in self.cgu.items() {
             let is_vm = matches!(item, MonoItem::Fn(i) if self.index.contains_key(i));
             if !is_vm {
-                items.insert(*item, *data);
+                let mut data = *data;
+                if flips.contains(item) {
+                    data.linkage = Linkage::External;
+                    data.visibility = Visibility::Hidden;
+                }
+                items.insert(*item, data);
             }
         }
         for (item, data) in &self.added {
@@ -322,17 +340,30 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                 let id = self.portal_id(self.index[&v.instance]);
                 eprintln!("ryo: vm fn {}{portal} id={:08x}:{:08x}", path(v.instance), id >> 32, id as u32);
             }
-            eprintln!("ryo: {} VM functions, {} native items", self.vm.len(), native.items().len());
+            eprintln!(
+                "ryo: {} VM functions, {} native functions, {} islands, {} native items",
+                self.vm.len(),
+                self.stats.native_fns,
+                self.stats.islands,
+                native.items().len()
+            );
         }
 
         let (image, symbols) = self.build_image();
         let portals = self.vm.iter().filter_map(|v| Some((v.portal?, v.instance))).collect();
-        let hidden: Vec<Instance<'tcx>> = self
+        let mut hidden: Vec<Instance<'tcx>> = self
             .vm
             .iter()
             .filter(|v| v.data.linkage == Linkage::Internal)
             .filter_map(|v| v.portal)
             .collect();
+        // Items made External + Hidden only for the image aren't exported
+        // (design/backend.md#query-overrides).
+        hidden.extend(flips.iter().filter_map(|item| match *item {
+            MonoItem::Fn(i) => Some(i),
+            MonoItem::Static(_) | MonoItem::GlobalAsm(_) => None,
+        }));
+        hidden.extend(self.hidden_added.iter().copied());
         let results = Results {
             cgu_name: native.name(),
             image,
@@ -358,11 +389,11 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         }
         let tcx = self.tcx;
         let v = &self.vm[i as usize];
-        let sig = lower::rust_sig(tcx, instance).expect("VM functions have a supported signature");
+        let sig = lower::vm_fn_sig(tcx, instance).expect("VM functions have a supported signature");
         let id = self.portal_id(i);
         let args = tcx.mk_args(&[
-            Ty::new_tup(tcx, &sig.inputs).into(),
-            sig.output.into(),
+            sig.args_tuple(tcx).into(),
+            sig.output.ty.into(),
             ty::Const::from_bits(tcx, u128::from(id), TypingEnv::fully_monomorphized(), tcx.types.u64).into(),
         ]);
         let portal = Instance::new_raw(self.rt.portal, args);
@@ -484,6 +515,83 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         }
     }
 
+    /// Instantiates the island templates the VM functions request (design/stubs.md):
+    /// deduplicated, linked to an upstream copy where one is exported, otherwise added to the
+    /// native CGU, visible to the image.
+    fn add_islands(&mut self) {
+        let tcx = self.tcx;
+        let templates = &tcx.diagnostic_items(self.rt.krate).name_to_id;
+        let mut new = Vec::new();
+        for v in &self.vm {
+            for r in &v.lowered.islands {
+                let Some(&def_id) = templates.get(&r.template) else {
+                    tcx.dcx().fatal(format!("ryo_rt has no island template `{}`; rebuild with `./y.sh build`", r.template))
+                };
+                new.push(Instance::new_raw(def_id, r.args));
+            }
+        }
+        for island in new {
+            let item = MonoItem::Fn(island);
+            if self.added.contains_key(&item) || self.cgu.items().contains_key(&item) || !self.islands.insert(island) {
+                continue;
+            }
+            self.stats.islands += 1;
+            if island.upstream_monomorphization(tcx).is_some() {
+                continue;
+            }
+            let data = MonoItemData {
+                inlined: false,
+                linkage: Linkage::External,
+                visibility: Visibility::Hidden,
+                size_estimate: item.size_estimate(tcx),
+            };
+            self.added.insert(item, data);
+            self.hidden_added.push(island);
+            self.work.push(island);
+        }
+    }
+
+    /// Makes a native item the image refers to by symbol linkable from the image's object: an
+    /// internal item becomes External + Hidden (design/backend.md, Linkage). Items that aren't
+    /// in the CGU yet but are codegened locally are added.
+    fn make_visible(&mut self, item: MonoItem<'tcx>, flips: &mut FxHashSet<MonoItem<'tcx>>) {
+        let tcx = self.tcx;
+        if let MonoItem::Fn(f) = item
+            && self.index.contains_key(&f)
+        {
+            return; // a VM function: its portal
+        }
+        if let Some(data) = self.cgu.items().get(&item) {
+            if data.linkage == Linkage::Internal {
+                flips.insert(item);
+            }
+            return;
+        }
+        if let Some(data) = self.added.get_mut(&item) {
+            if data.linkage == Linkage::Internal {
+                data.linkage = Linkage::External;
+                data.visibility = Visibility::Hidden;
+                if let MonoItem::Fn(f) = item {
+                    self.hidden_added.push(f);
+                }
+            }
+            return;
+        }
+        if let MonoItem::Fn(f) = item
+            && tcx.should_codegen_locally(f)
+        {
+            let data = MonoItemData {
+                inlined: false,
+                linkage: Linkage::External,
+                visibility: Visibility::Hidden,
+                size_estimate: item.size_estimate(tcx),
+            };
+            self.added.insert(item, data);
+            self.hidden_added.push(f);
+            self.work.push(f);
+        }
+    }
+
     /// The merge pass: resolves every function's relocations, then lays out the image.
     fn build_image(&mut self) -> (ImageObject, Vec<String>) {
         let tcx = self.tcx;
@@ -491,6 +599,8 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         let symbols: Vec<String> = self.vm.iter().map(|v| tcx.symbol_name(v.instance).name.to_owned()).collect();
         let call_f = lower::operand_offset(Opcode::Call, 1);
         let call_fs = lower::operand_offset(Opcode::Call, 2);
+        let templates = &tcx.diagnostic_items(self.rt.krate).name_to_id;
+        let mut pool = Pool::default();
         for (i, v) in self.vm.iter().enumerate() {
             let l = &v.lowered;
             let mut code = l.code.clone();
@@ -505,9 +615,24 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                         let Sym(s) = w.symbol(tcx.symbol_name(target).name, super::symbol_flags(tcx, target, super::SymRole::Target));
                         code[at as usize] = s;
                     }
+                    CodeReloc::Static { at, def_id } => {
+                        let Sym(s) = w.symbol(static_symbol(tcx, def_id).name, 0);
+                        code[at as usize] = s;
+                    }
+                    CodeReloc::Site { at } => code[at as usize] = w.site().0,
+                    CodeReloc::Const { at, alloc, offset } => {
+                        code[at as usize] = pool.intern(tcx, &mut w, alloc).0 + offset;
+                    }
+                    CodeReloc::Bytes { at, ref bytes, align } => {
+                        code[at as usize] = pool.bytes(&mut w, bytes, align).0;
+                    }
                 }
             }
-            assert!(l.islands.is_empty(), "island requests aren't supported yet");
+            for r in &l.islands {
+                let island = Instance::new_raw(templates[&r.template], r.args);
+                let Sym(s) = w.symbol(tcx.symbol_name(island).name, 0);
+                code[r.at as usize] = s;
+            }
             let portal = v.portal.map(|_| w.symbol(&symbols[i], 0));
             w.add_function(FunctionDef {
                 code,
@@ -561,6 +686,124 @@ fn alloc_fns<'tcx>(tcx: TyCtxt<'tcx>, id: AllocId, seen: &mut FxHashSet<AllocId>
     }
 }
 
+/// Lowers the candidates (in parallel) until the set of VM functions is stable: a function
+/// that calls a candidate which turned out native is lowered again, with an island for that
+/// call. Returns the lowered functions and the reasons the others stay native.
+fn lower_all<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    candidates: &[(Instance<'tcx>, MonoItemData)],
+) -> (FxHashMap<Instance<'tcx>, LoweredFn<'tcx>>, Vec<(Instance<'tcx>, NeedsNative)>) {
+    let mut vm: FxHashSet<Instance<'tcx>> = candidates.iter().map(|c| c.0).collect();
+    let mut ok: FxHashMap<Instance<'tcx>, LoweredFn<'tcx>> = FxHashMap::default();
+    let mut failed = Vec::new();
+    let mut todo: Vec<Instance<'tcx>> = candidates.iter().map(|c| c.0).collect();
+    while !todo.is_empty() {
+        let cx = LowerCx { vm: &vm };
+        let out: Vec<_> =
+            rustc_data_structures::sync::par_map(todo, |instance| (instance, lower::lower(tcx, &cx, instance)));
+        let mut removed = false;
+        for (instance, r) in out {
+            match r {
+                Ok(l) => {
+                    ok.insert(instance, l);
+                }
+                Err(why) => {
+                    ok.remove(&instance);
+                    vm.remove(&instance);
+                    failed.push((instance, why));
+                    removed = true;
+                }
+            }
+        }
+        if !removed {
+            break;
+        }
+        todo = ok
+            .iter()
+            .filter(|(_, l)| l.relocs.iter().any(|r| matches!(r, CodeReloc::Call { callee, .. } if !vm.contains(callee))))
+            .map(|(i, _)| *i)
+            .collect();
+        todo.sort_by_cached_key(|i| tcx.symbol_name(*i).name.to_owned());
+    }
+    failed.sort_by_cached_key(|(i, _)| tcx.symbol_name(*i).name.to_owned());
+    (ok, failed)
+}
+
+/// The symbol of a static (its own, or the foreign item's link name).
+fn static_symbol<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> ty::SymbolName<'tcx> {
+    tcx.symbol_name(Instance::mono(tcx, def_id))
+}
+
+/// The image's constant pool: allocations copied with their pointers relocated
+/// (design/lowering.md#constants), and raw byte constants. Deduplicated.
+#[derive(Default)]
+struct Pool {
+    allocs: FxHashMap<AllocId, Const>,
+    bytes: FxHashMap<(Vec<u8>, u32), Const>,
+}
+
+impl Pool {
+    fn intern<'tcx>(&mut self, tcx: TyCtxt<'tcx>, w: &mut ImageWriter, id: AllocId) -> Const {
+        if let Some(&k) = self.allocs.get(&id) {
+            return k;
+        }
+        let alloc = match tcx.global_alloc(id) {
+            GlobalAlloc::Memory(alloc) => alloc,
+            GlobalAlloc::VTable(ty, dyn_ty) => {
+                let k = self.intern(tcx, w, lower::vtable_alloc(tcx, ty, dyn_ty));
+                self.allocs.insert(id, k);
+                return k;
+            }
+            GlobalAlloc::Function { .. } | GlobalAlloc::Static(_) | GlobalAlloc::TypeId { .. } => {
+                tcx.dcx().fatal("ryo: constant-pool reference to a non-memory allocation")
+            }
+        };
+        let inner = alloc.inner();
+        let mut bytes = inner.inspect_with_uninit_and_ptr_outside_interpreter(0..inner.len()).to_vec();
+        let mut relocs = Vec::new();
+        for &(offset, prov) in inner.provenance().ptrs().iter() {
+            let at = offset.bytes() as usize;
+            let addend = i64::from_le_bytes(bytes[at..at + 8].try_into().unwrap());
+            bytes[at..at + 8].fill(0);
+            let target = match tcx.global_alloc(prov.alloc_id()) {
+                GlobalAlloc::Memory(_) | GlobalAlloc::VTable(..) => {
+                    AllocTarget::Const(self.intern(tcx, w, prov.alloc_id()))
+                }
+                GlobalAlloc::Function { instance } => AllocTarget::Symbol(w.symbol(tcx.symbol_name(instance).name, 0)),
+                GlobalAlloc::Static(def_id) => AllocTarget::Symbol(w.symbol(static_symbol(tcx, def_id).name, 0)),
+                GlobalAlloc::TypeId { .. } => tcx.dcx().fatal("ryo: type id pointer in a constant"),
+            };
+            relocs.push(AllocReloc { offset: at as u32, target, addend });
+        }
+        let k = w.add_const(&bytes, inner.align.bytes() as u32, &relocs);
+        self.allocs.insert(id, k);
+        k
+    }
+
+    fn bytes(&mut self, w: &mut ImageWriter, bytes: &[u8], align: u32) -> Const {
+        *self.bytes.entry((bytes.to_vec(), align)).or_insert_with(|| w.add_const(bytes, align, &[]))
+    }
+}
+
+/// The items an allocation refers to by symbol (functions and statics), through nested
+/// allocations and vtables.
+fn alloc_refs<'tcx>(tcx: TyCtxt<'tcx>, id: AllocId, seen: &mut FxHashSet<AllocId>, out: &mut Vec<MonoItem<'tcx>>) {
+    if !seen.insert(id) {
+        return;
+    }
+    match tcx.global_alloc(id) {
+        GlobalAlloc::Function { instance } => out.push(MonoItem::Fn(instance)),
+        GlobalAlloc::Static(def_id) => out.push(MonoItem::Static(def_id)),
+        GlobalAlloc::Memory(alloc) => {
+            for prov in alloc.inner().provenance().ptrs().values() {
+                alloc_refs(tcx, prov.alloc_id(), seen, out);
+            }
+        }
+        GlobalAlloc::VTable(ty, dyn_ty) => alloc_refs(tcx, lower::vtable_alloc(tcx, ty, dyn_ty), seen, out),
+        GlobalAlloc::TypeId { .. } => {}
+    }
+}
+
 pub fn local_stable_crate_id(tcx: TyCtxt<'_>) -> u64 {
     tcx.stable_crate_id(LOCAL_CRATE).as_u64()
 }
@@ -604,9 +847,6 @@ pub fn exported_generic_symbols<'tcx>(
     list: &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)],
 ) -> &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)] {
     let Some(rt) = rt_items(tcx) else { return list };
-    if !list.iter().any(|(s, _)| matches!(s, ExportedSymbol::Generic(d, _) if d.krate == rt.krate)) {
-        return list;
-    }
     let Some(r) = results(tcx) else { return list };
     let portals: FxHashMap<Instance<'tcx>, Instance<'tcx>> = r.portals(tcx).iter().copied().collect();
     let hidden: FxHashSet<Instance<'tcx>> = r.hidden_for_image(tcx).iter().copied().collect();
@@ -624,6 +864,7 @@ pub fn exported_generic_symbols<'tcx>(
                     _ => None,
                 }
             }
+            ExportedSymbol::Generic(def_id, args) if hidden.contains(&Instance::new_raw(def_id, args)) => None,
             _ => Some((s, info)),
         })
         .collect();
