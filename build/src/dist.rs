@@ -165,23 +165,28 @@ fn rlib_crate(path: &Path) -> Option<&str> {
 
 fn build_wrappers(root: &Path, dist_bin: &Path, info: &RustcInfo) -> Result<(), String> {
     for name in ["rustc-ryo", "cargo-ryo"] {
-        eprintln!("[y] wrapper: {name}");
-        run(cmd("rustc")
-            .args(["--edition=2024", "-Copt-level=1", "-o"])
-            .arg(dist_bin.join(exe_name(name)))
-            .arg(root.join("scripts").join(format!("{name}.rs")))
-            .env("RYO_TOOLCHAIN", &info.toolchain)
-            .env("RYO_RUSTC_DRIVER", &info.driver)
-            .env("RYO_RUSTC_RELEASE", crate::utils::PINNED_VERSION))?;
+        build_wrapper(root, dist_bin, info, name)?;
     }
     Ok(())
 }
 
-fn copy(from: &Path, to: &Path) -> Result<(), String> {
+/// Compiles `scripts/<name>.rs` into `dist/bin/<name>` with plain rustc.
+pub fn build_wrapper(root: &Path, dist_bin: &Path, info: &RustcInfo, name: &str) -> Result<(), String> {
+    eprintln!("[y] wrapper: {name}");
+    run(cmd("rustc")
+        .args(["--edition=2024", "-Copt-level=1", "-o"])
+        .arg(dist_bin.join(exe_name(name)))
+        .arg(root.join("scripts").join(format!("{name}.rs")))
+        .env("RYO_TOOLCHAIN", &info.toolchain)
+        .env("RYO_RUSTC_DRIVER", &info.driver)
+        .env("RYO_RUSTC_RELEASE", crate::utils::PINNED_VERSION))
+}
+
+pub fn copy(from: &Path, to: &Path) -> Result<(), String> {
     fs::copy(from, to).map(drop).map_err(|e| format!("copying {} to {}: {e}", from.display(), to.display()))
 }
 
-fn copy_dir(from: &Path, to: &Path) -> Result<(), String> {
+pub fn copy_dir(from: &Path, to: &Path) -> Result<(), String> {
     fs::create_dir_all(to).map_err(|e| format!("creating {}: {e}", to.display()))?;
     for entry in fs::read_dir(from).map_err(|e| format!("{}: {e}", from.display()))? {
         let entry = entry.map_err(|e| e.to_string())?;

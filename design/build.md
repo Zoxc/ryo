@@ -74,9 +74,11 @@ sources include `compiler/rustc_codegen_cranelift` at the version that matches t
 toolchain (`lib/rustlib/rustc-src/rust/compiler/rustc_codegen_cranelift`). `y build-clif` builds
 it from there, the same way it builds our backend:
 
-- It copies that directory to `build/clif/` and runs `cargo build --release
-  -Zembed-metadata=no` with `RUSTC_BOOTSTRAP=1`, against the pinned stable toolchain and its
-  `rustc-dev`. It doesn't use cg_clif's own `y.sh`, which would install the nightly from
+- It copies that directory to `build/clif/` (gitignored, and excluded from `build/`'s cargo
+  workspace) and runs `cargo build --release -Zembed-metadata=no --features unwinding` with
+  `RUSTC_BOOTSTRAP=1`, against the pinned stable toolchain and its `rustc-dev`. The target
+  directory is `target/clif/`. `unwinding` is what cg_clif's own `--panic-unwind-support`
+  enables; without it cg_clif aborts on panic, while the LLVM std and the test corpus unwind. It doesn't use cg_clif's own `y.sh`, which would install the nightly from
   cg_clif's `rust-toolchain.toml`.
 - The Cranelift crates come from crates.io through cg_clif's `Cargo.lock`, so the build needs
   network access once, or a vendored copy.
@@ -94,17 +96,22 @@ This gives a third backend, built from the same toolchain, to compare against.
   portals and island templates, on both targets.
 - `test --clif`: also builds the corpus with `rustc-clif` and diffs its output too. That
   helps tell ryo bugs from test-corpus problems.
-- `bench`: VM dispatch benches (fib, sieve, sorting, hashmap), and hyperfine comparisons of
-  each benchmark built with LLVM `-O0`, LLVM `-O3`, Cranelift (`rustc-clif`) and ryo. Each
-  comparison covers compile time (Cranelift is the fast-compile reference ryo competes
-  with) and run time. `y bench` builds cg_clif first if `dist/` doesn't have it.
+- `bench [--runs N]`: VM dispatch benches (fib, sieve, sorting, hashmap; once the VM exists),
+  and hyperfine comparisons of each program in `tests/bench/` (fib, sieve, sort, hashmap)
+  built with LLVM `-O0`, LLVM `-O3`, Cranelift (`rustc-clif`) and ryo. Each comparison
+  covers compile time (Cranelift is the fast-compile reference ryo competes with) and run
+  time, printed as two tables of mean and standard deviation. Without hyperfine on `PATH`,
+  a built-in timer does the same (one warmup, then `N` runs, default 5). The programs'
+  output must agree across backends. `y bench` builds `dist/` and cg_clif first if they are
+  missing; `y test --clif` builds cg_clif too.
 
 ## Layout
 
 ```
 y.sh, y.cmd, y.ps1                         entry points for the build tool
 build/          bin        y                   build tool (own Cargo.lock, no deps)
-scripts/                                       rustc-ryo.rs, cargo-ryo.rs wrappers
+  clif/                                        cg_clif sources copied by `y build-clif` (not committed)
+scripts/                                       rustc-ryo.rs, cargo-ryo.rs, rustc-clif.rs wrappers
 backend/        dylib      rustc_codegen_ryo   #![feature(rustc_private)]
 vm/             cargo workspace for everything that ends up in the output program
   bytecode/     rlib       ryo_bytecode        format: opcodes, encoding, image layout;
@@ -112,6 +119,7 @@ vm/             cargo workspace for everything that ends up in the output progra
   rt/           rlib       ryo_rt              the runtime: VM, registry, portal/island
                                                templates, panic glue
 tests/                                         test programs, driven by `y test`
+  bench/                                       benchmark programs, driven by `y bench`
 ```
 
 The backend is `crate-type = ["dylib"]`, like cg_clif: a Rust dylib that dynamically links

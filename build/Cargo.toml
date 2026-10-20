@@ -6,5 +6,6 @@ publish = false
 
 [dependencies]
 
-# Not a member of any workspace.
+# Not a member of any workspace. build/clif/ is cg_clif's copy (`y build-clif`).
 [workspace]
+exclude = ["clif"]

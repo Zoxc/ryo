@@ -92,6 +92,8 @@ enum Compiler {
     Rustc,
     /// `dist/bin/rustc-ryo`.
     Ryo,
+    /// `dist/bin/rustc-clif`.
+    Clif,
 }
 
 /// A way of building the corpus. Each variant's output is compared with [`REFERENCE`]'s.
@@ -104,21 +106,29 @@ struct Variant {
 
 const REFERENCE: Variant = Variant { name: "rustc", compiler: Compiler::Rustc, flags: &[] };
 
-/// `test --clif` will add a cg_clif variant.
 const VARIANTS: &[Variant] = &[
     Variant { name: "ryo", compiler: Compiler::Ryo, flags: &[] },
     Variant { name: "ryo-threads8", compiler: Compiler::Ryo, flags: &["-Zthreads=8"] },
 ];
 
-pub fn run() -> Result<(), String> {
+/// Added by `test --clif`.
+const CLIF: Variant = Variant { name: "clif", compiler: Compiler::Clif, flags: &[] };
+
+pub fn run(clif: bool) -> Result<(), String> {
     let root = root();
     let rustc_ryo = root.join("dist").join("bin").join(exe_name("rustc-ryo"));
     if !rustc_ryo.exists() {
         return Err("dist/ is missing; run `./y.sh build` first".to_owned());
     }
+    if clif {
+        crate::clif::ensure()?;
+    }
+    let variants: Vec<&Variant> = VARIANTS.iter().chain(clif.then_some(&CLIF)).collect();
     let out = root.join("target").join("tests");
     fs::create_dir_all(&out).map_err(|e| format!("creating {}: {e}", out.display()))?;
-    let ctx = Ctx { tests: root.join("tests"), out: out.clone(), rustc_ryo: rustc_ryo.clone() };
+    let ctx = Ctx { tests: root.join("tests"), out: out.clone(), rustc_ryo: rustc_ryo.clone(),
+        rustc_clif: crate::clif::rustc_clif(&root),
+    };
 
     let mut failed = Vec::new();
     for program in CORPUS {
@@ -130,7 +140,7 @@ pub fn run() -> Result<(), String> {
                 continue;
             }
         };
-        for variant in VARIANTS {
+        for variant in &variants {
             let name = format!("{} [{}]", program.name, variant.name);
             match ctx.build_and_run(program, variant).and_then(|r| r.compare(&reference)) {
                 Ok(()) => eprintln!("[y] test {name}: ok"),
@@ -167,6 +177,7 @@ struct Ctx {
     tests: PathBuf,
     out: PathBuf,
     rustc_ryo: PathBuf,
+    rustc_clif: PathBuf,
 }
 
 /// What a test program did when run.
@@ -199,6 +210,7 @@ impl Ctx {
                 c.env("RYO_BACKEND_MARKER", "1");
                 c
             }
+            Compiler::Clif => cmd(&self.rustc_clif),
         }
     }
 
