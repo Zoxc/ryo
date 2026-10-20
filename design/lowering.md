@@ -20,15 +20,13 @@ so a MIR change in a toolchain bump is a compile error. The tables below follow 
 - Layouts come from `tcx.layout_of`. Every type is concrete, so every size, offset and
   discriminant encoding is known at lowering time, and the bytecode carries no type
   information.
-- **MIR optimization**: the wrappers pass `-Zmir-opt-level=2 -Zinline-mir=yes`, also for debug
-  builds ([build.md](build.md#build)). An interpreter pays a full call for every small
-  `Deref::deref`, `Index::index` or `Iterator::next`. MIR inlining removes most of them, and
-  level 2 adds GVN, copy propagation, dead store elimination and CFG simplification.
-  `mir_opt_level` defaults to 1 at `-O0`. The inliner is off at level 1, and at level 2 it
-  runs only with optimizations on and incremental off (`rustc_mir_transform/src/inline.rs:48-59`).
-  `-Zinline-mir=yes` overrides both. The setting is session-wide, so it applies to
-  native items too. Inlining stops at upstream items without MIR in metadata (non-generic,
-  non-`#[inline]`), and those calls become islands.
+- **MIR optimization**: ryo uses rustc's default MIR settings, so it compiles the same MIR as
+  the other backends and benchmarks compare like with like ([build.md](build.md#build)).
+  At `-O0`, `mir_opt_level` is 1 and the MIR inliner is off
+  (`rustc_mir_transform/src/inline.rs:48-59`), so every small `Deref::deref`, `Index::index`
+  or `Iterator::next` is a full VM call. Users can still pass `-Zmir-opt-level=2
+  -Zinline-mir=yes` themselves. Where inlining happens, it stops at upstream items without
+  MIR in metadata (non-generic, non-`#[inline]`), and those calls become islands.
 
 ## Frame slots
 
@@ -280,7 +278,7 @@ Mirrors cg_ssa's `get_caller_location`:
 After lowering, a peephole pass:
 
 - folds constant offsets into memory operands, and selects the `k = 0` and `.imm` forms
-- removes `mov`s of moved-from locals by copy propagation, which matters at `-O0` (at
-  `-Zmir-opt-level=2`, MIR has already done most of it)
+- removes `mov`s of moved-from locals by copy propagation, which matters at `-O0`, where
+  MIR has had little of it
 - forms superinstructions, choosing the pairs from `y bench` profiles (for example
   `add.imm` + `br.cmp` loop latches, `load` + `br.cmp`)

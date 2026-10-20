@@ -1,5 +1,7 @@
 //! `y`: ryo's build tool (design/build.md#the-y-build-tool).
 
+mod bench;
+mod clif;
 mod dist;
 mod test;
 mod utils;
@@ -7,6 +9,10 @@ mod utils;
 #[cfg(test)]
 #[path = "../../scripts/rustc-ryo.rs"]
 mod rustc_ryo;
+
+#[cfg(test)]
+#[path = "../../scripts/rustc-clif.rs"]
+mod rustc_clif;
 
 use std::process::ExitCode;
 
@@ -17,7 +23,7 @@ commands:
   build [--sysroot llvm|ryo]   build the backend, the sysroot and the wrappers into dist/
   build-clif                   build cg_clif from the toolchain's rustc-dev sources
   test [--clif]                build the test corpus with rustc-ryo and plain rustc, diff outputs
-  bench                        run the benchmarks
+  bench [--runs N]             compare LLVM -O0/-O3, Cranelift and ryo: compile and run time
   clean                        remove dist/ and target/
 ";
 
@@ -32,7 +38,7 @@ enum Cmd {
     Build { sysroot: Sysroot },
     BuildClif,
     Test { clif: bool },
-    Bench,
+    Bench { runs: u32 },
     Clean,
     Help,
 }
@@ -62,7 +68,14 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
             ["--clif"] => Ok(Cmd::Test { clif: true }),
             [arg, ..] => Err(format!("unexpected argument `{arg}`")),
         },
-        "bench" => no_args(Cmd::Bench),
+        "bench" => match rest.as_slice() {
+            [] => Ok(Cmd::Bench { runs: bench::DEFAULT_RUNS }),
+            ["--runs", n] => match n.parse() {
+                Ok(runs) if runs > 0 => Ok(Cmd::Bench { runs }),
+                _ => Err(format!("bad run count `{n}`")),
+            },
+            [arg, ..] => Err(format!("unexpected argument `{arg}`")),
+        },
         "clean" => no_args(Cmd::Clean),
         "help" | "-h" | "--help" => Ok(Cmd::Help),
         other => Err(format!("unknown command `{other}`")),
@@ -87,10 +100,9 @@ fn main() -> ExitCode {
         Cmd::Build { sysroot: Sysroot::Ryo } => {
             Err("`build --sysroot ryo` is not implemented yet".to_owned())
         }
-        Cmd::BuildClif => not_implemented("build-clif"),
-        Cmd::Test { clif: false } => test::run(),
-        Cmd::Test { clif: true } => not_implemented("test --clif"),
-        Cmd::Bench => not_implemented("bench"),
+        Cmd::BuildClif => clif::build(),
+        Cmd::Test { clif } => test::run(clif),
+        Cmd::Bench { runs } => bench::run(runs),
         Cmd::Clean => dist::clean(),
     };
     match result {
@@ -100,10 +112,6 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
-}
-
-fn not_implemented(what: &str) -> Result<(), String> {
-    Err(format!("`{what}`: not implemented yet"))
 }
 
 #[cfg(test)]
@@ -123,6 +131,9 @@ mod tests {
         assert!(parse(&["build", "--sysroot", "gcc"]).is_err());
         assert!(parse(&["build", "x"]).is_err());
         assert_eq!(parse(&["test", "--clif"]), Ok(Cmd::Test { clif: true }));
+        assert_eq!(parse(&["bench"]), Ok(Cmd::Bench { runs: bench::DEFAULT_RUNS }));
+        assert_eq!(parse(&["bench", "--runs", "3"]), Ok(Cmd::Bench { runs: 3 }));
+        assert!(parse(&["bench", "--runs", "0"]).is_err());
         assert_eq!(parse(&["clean"]), Ok(Cmd::Clean));
         assert!(parse(&["clean", "x"]).is_err());
         assert!(parse(&["frobnicate"]).is_err());

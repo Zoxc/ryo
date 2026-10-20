@@ -97,7 +97,7 @@ pub fn ryo_args(dist: &Path, passed: Vec<OsString>) -> Result<Vec<OsString>, Str
         args.push(dist.into());
     }
     args.push(backend);
-    for a in ["-Zunstable-options", "--extern", "force:ryo_rt", "-Zmir-opt-level=2", "-Zinline-mir=yes"] {
+    for a in ["-Zunstable-options", "--extern", "force:ryo_rt"] {
         args.push(a.into());
     }
     args.extend(passed);
@@ -146,7 +146,7 @@ mod tests {
         let backend = format!("-Zcodegen-backend=/d/lib/{}", crate::utils::dll_name("rustc_codegen_ryo"));
         let want = args(&[
             "--sysroot", "/d", &backend, "-Zunstable-options", "--extern", "force:ryo_rt",
-            "-Zmir-opt-level=2", "-Zinline-mir=yes", "foo.rs", "-Ccodegen-units=16",
+            "foo.rs", "-Ccodegen-units=16",
             "-Ccodegen-units=1",
         ]);
         assert_eq!(got, want);
