@@ -441,11 +441,12 @@ pub fn run(clif: bool) -> Result<(), String> {
         }
     }
     let hello = root.join("tests").join("hello.rs");
-    let checks: [(&str, Result<(), String>); 5] = [
+    let checks: [(&str, Result<(), String>); 6] = [
         ("reject-randomize-layout", reject_randomize_layout(&rustc_ryo, &hello, &out)),
         ("reject-codegen-units", reject_codegen_units(&rustc_ryo, &hello, &out)),
         ("reject-incremental", reject_incremental(&rustc_ryo, &hello, &out)),
         ("metadata-only", metadata_only(&rustc_ryo, &hello, &out)),
+        ("exports", same_exports(&rustc_ryo, &root.join("tests").join("vm_exports.rs"), &out)),
         ("cargo-ryo", cargo_smoke(&root, &out)),
     ];
     for (name, res) in checks {
@@ -801,6 +802,44 @@ fn reject_incremental(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), St
     let stderr = String::from_utf8_lossy(&res.stderr);
     if res.status.success() || !stderr.contains("incremental compilation") {
         return Err(format!("expected rustc-ryo to reject -Cincremental; stderr:\n{stderr}"));
+    }
+    Ok(())
+}
+
+/// The dynamic symbols a ryo cdylib, and an executable with `-Zexport-executable-symbols`,
+/// export are exactly plain rustc's (plus `ryo_rt`'s `ryo_vm_register`), with and without
+/// `-Clto`: the image's symbols are listed
+/// as exports for LTO, and `link` must remove those, and only those
+/// (design/backend.md#query-overrides). ELF only (`llvm-nm -D`).
+fn same_exports(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
+    if cfg!(windows) {
+        return Ok(());
+    }
+    let info = crate::utils::RustcInfo::get()?;
+    let nm = info.sysroot.join("lib").join("rustlib").join(&info.host).join("bin").join("llvm-nm");
+    let dir = out.join("exports");
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let cases: [(&str, &[&str]); 4] = [
+        ("cdylib", &["--crate-type=cdylib"]),
+        ("cdylib-lto", &["--crate-type=cdylib", "-Clto=fat"]),
+        ("exe", &["--crate-type=bin", "-Zexport-executable-symbols"]),
+        ("exe-lto", &["--crate-type=bin", "-Zexport-executable-symbols", "-Clto=fat"]),
+    ];
+    for (name, flags) in cases {
+        let mut lists = Vec::new();
+        for (who, compiler) in [("rustc", Path::new("rustc")), ("ryo", rustc_ryo)] {
+            let o = dir.join(format!("{name}-{who}"));
+            crate::utils::run(cmd(compiler).arg("--edition=2024").arg(src).args(flags).arg("-o").arg(&o))?;
+            let syms = output(cmd(&nm).args(["-D", "--defined-only", "-j"]).arg(&o))?;
+            // `ryo_rt`'s own C-level export, which every ryo output has.
+            let mut syms: Vec<String> =
+                syms.lines().filter(|s| *s != "ryo_vm_register").map(str::to_owned).collect();
+            syms.sort();
+            lists.push(syms);
+        }
+        if lists[0] != lists[1] {
+            return Err(format!("{name}: rustc exports {:?}, ryo exports {:?}", lists[0], lists[1]));
+        }
     }
     Ok(())
 }

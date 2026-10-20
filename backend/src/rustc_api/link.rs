@@ -24,7 +24,8 @@ pub struct LinkInfo {
     pub image_module: String,
     /// Per crate type, the image symbols that only LTO needs in `symbols.o`
     /// (`partition::linked_roots`).
-    pub linked_roots: Vec<(CrateType, Vec<String>)>,
+    /// (its `linked_symbols` entries, its `exported_symbols` entries).
+    pub linked_roots: Vec<(CrateType, (Vec<String>, Vec<String>))>,
     pub binary_format: object::BinaryFormat,
 }
 
@@ -113,14 +114,17 @@ pub fn link(
 /// `symbols.o` (rustc already leaves that empty under `-Clto`, `linker.rs:1760-1768`). One
 /// occurrence per crate that listed it, so the names rustc lists itself stay.
 fn remove_roots(crate_info: &mut CrateInfo, info: &LinkInfo, crate_type: CrateType) {
-    let Some((_, roots)) = info.linked_roots.iter().find(|(t, _)| *t == crate_type) else { return };
-    let counts = || {
-        let mut count: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    let Some((_, (linked_roots, exported_roots))) = info.linked_roots.iter().find(|(t, _)| *t == crate_type) else {
+        return;
+    };
+    // Names are undecorated on both sides (`partition::linked_roots`).
+    fn counts(roots: &[String]) -> std::collections::HashMap<&str, usize> {
+        let mut count = std::collections::HashMap::new();
         for r in roots {
             *count.entry(r.as_str()).or_default() += 1;
         }
         count
-    };
+    }
     let take = |count: &mut std::collections::HashMap<&str, usize>, name: &str| match count.get_mut(name) {
         Some(n) if *n > 0 => {
             *n -= 1;
@@ -129,11 +133,11 @@ fn remove_roots(crate_info: &mut CrateInfo, info: &LinkInfo, crate_type: CrateTy
         _ => false,
     };
     if let Some(linked) = crate_info.linked_symbols.get_mut(&crate_type) {
-        let mut count = counts();
+        let mut count = counts(linked_roots);
         linked.retain(|(name, _)| !take(&mut count, name));
     }
     if let Some(exported) = crate_info.exported_symbols.get_mut(&crate_type) {
-        let mut count = counts();
+        let mut count = counts(exported_roots);
         exported.retain(|e| !take(&mut count, &e.name));
     }
 }

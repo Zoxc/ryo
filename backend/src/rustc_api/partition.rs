@@ -995,9 +995,21 @@ fn is_root(s: &ExportedSymbol<'_>, info: &SymbolExportInfo) -> bool {
 /// `-Clto`, `linker.rs:1760-1768`), which `link` removes again. Exporting them would fail
 /// (they include other crates' and foreign symbols), and on PE a plain-name reference in
 /// `symbols.o` to a static in a DLL wouldn't resolve. The images reference every root anyway.
-pub fn linked_roots(tcx: TyCtxt<'_>, crate_type: CrateType) -> Vec<String> {
-    let mut out = Vec::new();
-    let Some(deps) = tcx.dependency_formats(()).get(&crate_type) else { return out };
+///
+/// Returns (the entries in `linked_symbols`, the entries in `exported_symbols`). rustc adds a
+/// root to the export list only where the `Rust` level is below the crate type's threshold
+/// (Rust dylibs) and the crate isn't `compiler_builtins`, and never for proc macros
+/// (`linker.rs:1677-1716`); the same filter here, so `link` never removes one of rustc's own
+/// entries of the same name (a `#[no_mangle]` function the image calls, exported by a
+/// cdylib). Names are compared undecorated: NoDefId symbols and the export list's `name`
+/// have no target decoration (`symbol_export.rs:737-738`).
+pub fn linked_roots(tcx: TyCtxt<'_>, crate_type: CrateType) -> (Vec<String>, Vec<String>) {
+    let (mut linked, mut exported) = (Vec::new(), Vec::new());
+    let Some(deps) = tcx.dependency_formats(()).get(&crate_type) else { return (linked, exported) };
+    let threshold = rustc_codegen_ssa::back::symbol_export::crates_export_threshold(&[crate_type]);
+    let exports_rust = crate_type != CrateType::ProcMacro
+        && SymbolExportLevel::Rust.is_below_threshold(threshold)
+        && tcx.sess.target.override_export_symbols.is_none();
     for (cnum, linkage) in deps.iter_enumerated() {
         if *linkage != rustc_middle::middle::dependency_format::Linkage::Static {
             continue;
@@ -1006,11 +1018,14 @@ pub fn linked_roots(tcx: TyCtxt<'_>, crate_type: CrateType) -> Vec<String> {
             if let ExportedSymbol::NoDefId(name) = s
                 && is_root(s, info)
             {
-                out.push(name.name.to_owned());
+                linked.push(name.name.to_owned());
+                if exports_rust && !tcx.is_compiler_builtins(cnum) {
+                    exported.push(name.name.to_owned());
+                }
             }
         }
     }
-    out
+    (linked, exported)
 }
 
 /// The items an allocation refers to by symbol (functions and statics), through nested

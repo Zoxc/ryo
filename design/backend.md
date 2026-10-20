@@ -214,8 +214,15 @@ and `codegen_crate` reads them.
     plain-name reference to a static in a DLL wouldn't resolve on PE. So `codegen_crate`
     collects, per crate type, these entries of every statically linked crate (recognized
     as `NoDefId` + `used` + `Rust`, which rustc never produces), and `link` removes one
-    occurrence of each from `CrateInfo::exported_symbols` and `linked_symbols`, so the
-    names rustc lists itself stay. The image objects reference all of them anyway.
+    occurrence of each from `linked_symbols`, and from `CrateInfo::exported_symbols` only
+    where rustc put them there: crate types whose export threshold the `Rust` level is below
+    (Rust dylibs), not proc macros, not from `compiler_builtins`, and not with a target
+    `override_export_symbols` (mirroring `linker.rs:1661-1716`). Otherwise a cdylib would
+    lose rustc's own export of a `#[no_mangle]` function the image calls. So the names rustc
+    lists itself stay; names are compared undecorated on both sides. The image objects
+    reference all of them anyway. `y test` (check `exports`) compares the dynamic exports
+    of a cdylib and of an executable with `-Zexport-executable-symbols` with plain rustc's,
+    with and without `-Clto`.
     `-Clto` of a dylib itself (`-Zdylib-lto`) is rejected.
   - The entry wrapper `c_main` (`External`, default visibility) isn't listed.
   - Items made `External` + `Hidden` only for the image (see Linkage) are filtered out of
