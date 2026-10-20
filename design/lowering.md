@@ -247,23 +247,44 @@ island.
      `call_ptrN` (Rust ABI) or `call_cN` (`extern "C"`).
    - **`InstanceKind::LlvmIntrinsic`**: not lowerable (no MIR, `unadjusted` ABI). The
      function stays native.
-   - **`InstanceKind::Virtual(_, idx)`**: load the fn pointer from the vtable (entry `idx`
-     of `tcx.vtable_entries`, read through the receiver's metadata), pass the receiver's
-     data pointer, then `call.ind`. **Not done yet**: a virtual call whose fn item is safe
-     and Rust-ABI goes through the `call<F, Args, R>` island (its `FnOnce` shim makes the
-     virtual call natively); others (`dyn Fn` calls are `rust-call`) keep the function
-     native. Drops of trait objects already use the vtable and `call.ind`.
+   - **`InstanceKind::Virtual(_, idx)`**: load the fn pointer from the vtable (entry `idx`,
+     the word at `idx * 8`, through the receiver's metadata), pass the receiver's data
+     pointer, then `call.ind` (`dyn Fn*` calls are `rust-call` and spread their tuple like
+     any other). As cg_ssa does, the receiver (`Box`, `Rc`, `Pin<&mut _>`, …) is peeled
+     down to its one non-1-ZST field until a pointer remains; an unsized by-value receiver
+     (`Box<dyn FnOnce>`, whose callee is a `VTableShim`) passes its address.
+     `fn_abi_of_instance` gives the receiver the wide pointer's type with a thin layout, so
+     the signature uses a thin type instead, with the niche of the callee's receiver: the
+     argument block is a tuple layout, which depends on niches ([Frame slots](#frame-slots)),
+     and the method behind the vtable takes `&Self`, `Box<Self>`, … (non-null) or `*mut
+     Self` (a `VTableShim`). The caller passes `&()` if the receiver's data pointer is
+     non-null, `*mut ()` otherwise.
    - **`InstanceKind::Intrinsic`**: the matching VM instruction if one exists (`size_of`,
      `transmute`, overflow arithmetic, `copy_nonoverlapping`, `write_bytes`, atomics,
      `abort`, `unreachable`, `likely`/`unlikely`, `caller_location`, …). Otherwise an
-     `island` with the intrinsic's wrapper. So far: `abort`, `caller_location`,
-     `catch_unwind` (island, [Unwinding](#unwinding)), `ptr_offset_from(_unsigned)`,
+     `island` with the intrinsic's wrapper. So far, as VM instructions: `abort`,
+     `caller_location`, `cold_path`, `black_box`, `likely`/`unlikely`,
+     `ptr_offset_from(_unsigned)`,
      `arith_offset`, `copy`, `write_bytes`, `typed_swap_nonoverlapping`,
-     `size_of_val`/`align_of_val`, `ctpop`/`ctlz`/`cttz` (and `_nonzero`), `bswap`,
-     `bitreverse`, rotates; safe intrinsics fall back to the `call` island, and unsafe ones
-     without a lowering keep the function native.
+     `size_of_val`/`align_of_val` (also of structs with an unsized tail, as cg_ssa's
+     `size_and_align_of_dst`), `vtable_size`/`vtable_align`, `ctpop`/`ctlz`/`cttz` (and
+     `_nonzero`), `bswap`, `bitreverse`, rotates, `unchecked_funnel_shl`/`_shr`,
+     `exact_div`, `disjoint_bitor`, `ptr_guaranteed_cmp`, the volatile and nontemporal
+     accesses, `fabs`, `copysign*`, `minimum_number_nsz_*`/`maximum_number_nsz_*` (the VM's
+     `fmin`/`fmax` are `f*::min`/`max`), and the atomics up to 64 bits (an ordering
+     combination the VM lacks uses `SeqCst`). As wrapper islands: `catch_unwind` ([Unwinding](#unwinding)),
+     `compare_bytes`, `raw_eq` and the SIMD intrinsics without constant operands
+     ([stubs.md](stubs.md#templates)). Otherwise: safe intrinsics go through the `call`
+     island (natively), unsafe ones with a fallback body call that body as an ordinary
+     instance (cg_ssa's `IntrinsicResult::Fallback`; a VM function if the collector found
+     it), and the rest keep the function native.
 
    A fn-pointer callee type → `call.ind`.
+
+   **Tail calls** (`TailCall`, `become`): the arguments are staged in the outgoing block as
+   for a call, then `tail_call fn` for a VM function of this image, and `tail_call.ind`
+   otherwise: on a fn pointer, the vtable entry of a virtual call, or `addr.sym` of an
+   upstream or native callee. Calls of intrinsics and non-Rust ABIs stay native.
 2. **Arguments**: the argument operands are copied into the outgoing argument block at
    `fp + frame_size + H` (the callee frame's argument block, in `arg_block` layout) by plain
    `mov`/`copy` instructions immediately before the call. MIR call arguments are operands
@@ -346,18 +367,19 @@ pointer compares, 128-bit `mul`/`div`/`rem`/`mul.ovf` islands, constants (pool a
 relocations), switches,
 asserts, drops (VM call of the glue, `drop_in_place` island, vtable drop for trait objects),
 unwinding (cleanup entries, terminate stubs, the `catch_unwind` island) and calls: VM `call`,
-`call.ext`, `call.ind` for fn pointers, and islands (`call` for safe Rust fn items, including
-virtual calls and safe intrinsics, `call_ptrN`/`call_cN` through `addr.sym` otherwise), plus a
-first set of intrinsics as VM instructions. `#[track_caller]` functions are VM functions with
+`call.ext`, `call.ind` for fn pointers and virtual calls (`dyn Fn*` included), tail calls, and
+islands (`call` for safe Rust fn items and safe intrinsics, `call_ptrN`/`call_cN` through
+`addr.sym` otherwise), every shim kind with a body, plus the intrinsics listed in Calls.
+`#[track_caller]` functions are VM functions with
 `portal_tcN` portals (up to 16 arguments), and caller locations follow cg_ssa, including a
 `#[track_caller]` function's own incoming location and the `caller_location` intrinsic.
 `SwitchInt` and `Assert` fuse with the compare that feeds them (`br.cmp`). Locals with storage
 markers share slots; there is no copy propagation yet.
 Still `NeedsNative`, with the reason in `RYO_STATS=2`: `#[track_caller]` functions with more
-than 16 arguments, `TailCall`, `ThreadLocalRef`, `f16`/`f128` arithmetic and compares,
-virtual calls that aren't safe Rust fn items (`dyn Fn`), unsafe intrinsics without a VM
-lowering, coroutines, extern-type tails, and on PE constants pointing at imports (the fixup
-area).
+than 16 arguments, `ThreadLocalRef`, `f16`/`f128` arithmetic and compares, unsafe
+intrinsics without a VM lowering, wrapper or fallback body (128-bit atomics, SIMD intrinsics
+with constant operands, …), coroutines, extern-type tails, and on PE constants pointing at
+imports (the fixup area).
 
 ## Bytecode optimization
 

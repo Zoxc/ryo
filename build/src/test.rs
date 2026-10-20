@@ -146,8 +146,9 @@ pub(crate) const CORPUS: &[Program] = &[
     // VM functions behind portals, a VM `main`, and across crates. Local items are printed
     // without their crate name. Since milestone 4, `main` and the functions it calls are
     // bytecode too, so VM → VM calls (direct, through fn pointers and across images) don't go
-    // through `vm::enter`; `entered` lists what native code still enters: `lang_start` from the
-    // `c_main` entry wrapper, and methods called through vtables from native code.
+    // through `vm::enter`, and neither do virtual calls from bytecode (`call.ind` through the
+    // vtable); `entered` lists what native code still enters: `lang_start` from the `c_main`
+    // entry wrapper, and methods called through vtables from native code (`fmt`).
     single!(
         "vm_answer",
         vm: &["main", "answer", "pick", "twice", "wide", "always"],
@@ -158,10 +159,11 @@ pub(crate) const CORPUS: &[Program] = &[
         vm: &["main", "answer"],
         entered: &["std::rt::lang_start::<std::result::Result<(), ()>>"]
     ),
-    single!("vm_refs", vm: &["main", "from_static", "<S as Get>::get", "from_const"], entered: &[
-        "std::rt::lang_start::<()>",
-        "<S as Get>::get"
-    ]),
+    single!(
+        "vm_refs",
+        vm: &["main", "from_static", "<S as Get>::get", "from_const"],
+        entered: &["std::rt::lang_start::<()>"]
+    ),
     // Milestone 4 (design/lowering.md): each feature's functions must be bytecode.
     single!(
         "vm_ints",
@@ -176,8 +178,29 @@ pub(crate) const CORPUS: &[Program] = &[
     single!(
         "vm_calls",
         vm: &["main", "add", "swap", "bump", "sum", "fib", "talk", "<Dog as Speak>::speak", "constants", "apply", "double", "closures", "may_panic", "<Noisy as std::ops::Drop>::drop"],
-        // `speak` is called through the vtable from a native island.
-        entered: &["std::rt::lang_start::<()>", "<Dog as Speak>::speak"]
+        // `speak` is a `call.ind` through the vtable; `P`'s `Debug` impl is called through a
+        // vtable by native `fmt` code.
+        entered: &["std::rt::lang_start::<()>", "<P as std::fmt::Debug>::fmt"]
+    ),
+    // Milestone 5 (design/lowering.md#calls).
+    single!(
+        "vm_dyn",
+        vm: &[
+            "main", "shapes", "upcast", "closures", "shims", "apply", "apply_mut", "apply_once",
+            "<Circle as Shape>::mixed", "<Rect as Shape>::boxed", "<Circle as Shape>::pinned",
+            "<dyn Step as Step>::step - shim(reify)", "call_once::<fn(u32) -> u32>"
+        ],
+        entered: &["std::rt::lang_start::<()>"]
+    ),
+    single!(
+        "vm_intrinsics",
+        vm: &["main", "atomics", "unwinding", "misc", "dst"],
+        entered: &["std::rt::lang_start::<()>"]
+    ),
+    single!(
+        "vm_tail",
+        vm: &["main", "count", "even", "odd", "big", "big2", "via_ptr", "to_upstream", "to_native", "virt", "panicky"],
+        entered: &["std::rt::lang_start::<()>"]
     ),
     // Milestone 5: `#[track_caller]` and unwinding. The panic hook is a VM closure that the
     // native panic machinery enters through its portal.

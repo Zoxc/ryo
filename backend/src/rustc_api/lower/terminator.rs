@@ -79,7 +79,10 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             TerminatorKind::Assert { cond, expected, msg, target, unwind } => {
                 self.assert(term, cond, *expected, msg, *target, *unwind)
             }
-            TerminatorKind::TailCall { .. } => native("TailCall"),
+            TerminatorKind::TailCall { func, args, fn_span } => {
+                let source_info = rustc_middle::mir::SourceInfo { span: *fn_span, ..term.source_info };
+                self.tail_call_terminator(func, args, source_info)
+            }
             TerminatorKind::InlineAsm { .. } => native("inline asm"),
             TerminatorKind::Yield { .. }
             | TerminatorKind::CoroutineDrop

@@ -17,8 +17,32 @@ pub mod templates {
     pub const CALL: &str = "ryo_island_call";
     /// `drop_in_place<T>`.
     pub const DROP_IN_PLACE: &str = "ryo_island_drop_in_place";
-    /// `catch_unwind<Data>`: the `catch_unwind` intrinsic.
+    /// `catch_unwind<Data>`: the intrinsic.
     pub const CATCH_UNWIND: &str = "ryo_island_catch_unwind";
+    /// `compare_bytes`: the intrinsic.
+    pub const COMPARE_BYTES: &str = "ryo_island_compare_bytes";
+    /// `raw_eq<T>`: the intrinsic.
+    pub const RAW_EQ: &str = "ryo_island_raw_eq";
+
+    /// The arity of the SIMD intrinsic `name` if `ryo_rt` has a wrapper for it,
+    /// `ryo_island_<name>`, generic like the intrinsic.
+    pub fn simd(name: &str) -> Option<usize> {
+        Some(match name {
+            "simd_add" | "simd_sub" | "simd_mul" | "simd_div" | "simd_rem" | "simd_shl" | "simd_shr" | "simd_and"
+            | "simd_or" | "simd_xor" | "simd_saturating_add" | "simd_saturating_sub" | "simd_minimum_number_nsz"
+            | "simd_maximum_number_nsz" | "simd_eq" | "simd_ne" | "simd_lt" | "simd_le" | "simd_gt" | "simd_ge"
+            | "simd_reduce_add_ordered" | "simd_reduce_mul_ordered" | "simd_arith_offset" => 2,
+            "simd_neg" | "simd_fabs" | "simd_bswap" | "simd_bitreverse" | "simd_ctlz" | "simd_ctpop" | "simd_cttz"
+            | "simd_ceil" | "simd_floor" | "simd_round" | "simd_round_ties_even" | "simd_trunc" | "simd_fsqrt"
+            | "simd_splat" | "simd_cast" | "simd_as" | "simd_bitmask" | "simd_reduce_add_unordered"
+            | "simd_reduce_mul_unordered" | "simd_reduce_max" | "simd_reduce_min" | "simd_reduce_and"
+            | "simd_reduce_or" | "simd_reduce_xor" | "simd_reduce_all" | "simd_reduce_any" | "simd_cast_ptr"
+            | "simd_expose_provenance" | "simd_with_exposed_provenance" => 1,
+            "simd_fma" | "simd_relaxed_fma" | "simd_funnel_shl" | "simd_funnel_shr" | "simd_select"
+            | "simd_select_bitmask" => 3,
+            _ => return None,
+        })
+    }
 
     /// `call_ptrN<A0, …, R>` (Rust ABI through a fn pointer), N ≤ 17.
     pub fn call_ptr(n: usize) -> Option<String> {

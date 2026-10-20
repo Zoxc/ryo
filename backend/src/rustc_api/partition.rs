@@ -292,6 +292,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                     CodeReloc::Static { def_id, .. } => image_refs.push(MonoItem::Static(def_id)),
                     CodeReloc::Const { alloc, .. } => alloc_refs(tcx, alloc, &mut seen_allocs, &mut image_refs),
                     CodeReloc::Call { .. } | CodeReloc::Site { .. } | CodeReloc::Bytes { .. } => {}
+                    CodeReloc::TailCall { .. } => {}
                 }
             }
         }
@@ -553,7 +554,8 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                 continue;
             }
             self.stats.islands += 1;
-            if island.upstream_monomorphization(tcx).is_some() {
+            // Upstream copies, and non-generic templates, which `ryo_rt` itself defines.
+            if island.upstream_monomorphization(tcx).is_some() || !tcx.should_codegen_locally(island) {
                 continue;
             }
             let data = MonoItemData {
@@ -616,6 +618,8 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         let symbols: Vec<String> = self.vm.iter().map(|v| tcx.symbol_name(v.instance).name.to_owned()).collect();
         let call_f = lower::operand_offset(Opcode::Call, 1);
         let call_fs = lower::operand_offset(Opcode::Call, 2);
+        let tail_f = lower::operand_offset(Opcode::TailCall, 0);
+        let tail_fs = lower::operand_offset(Opcode::TailCall, 1);
         let templates = &tcx.diagnostic_items(self.rt.krate).name_to_id;
         let mut pool = Pool::default();
         for (i, v) in self.vm.iter().enumerate() {
@@ -627,6 +631,11 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                         let c = self.index[&callee];
                         code[at as usize + call_f] = c;
                         code[at as usize + call_fs] = self.vm[c as usize].lowered.frame_size;
+                    }
+                    CodeReloc::TailCall { at, callee } => {
+                        let c = self.index[&callee];
+                        code[at as usize + tail_f] = c;
+                        code[at as usize + tail_fs] = self.vm[c as usize].lowered.frame_size;
                     }
                     CodeReloc::Symbol { at, target } => {
                         let flags = super::symbol_flags(tcx, target, super::SymRole::Target);
@@ -753,7 +762,7 @@ fn lower_all<'tcx>(
         }
         todo = ok
             .iter()
-            .filter(|(_, l)| l.relocs.iter().any(|r| matches!(r, CodeReloc::Call { callee, .. } if !vm.contains(callee))))
+            .filter(|(_, l)| l.relocs.iter().any(|r| matches!(r, CodeReloc::Call { callee, .. } | CodeReloc::TailCall { callee, .. } if !vm.contains(callee))))
             .map(|(i, _)| *i)
             .collect();
         todo.sort_by_cached_key(|i| tcx.symbol_name(*i).name.to_owned());

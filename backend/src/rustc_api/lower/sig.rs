@@ -52,7 +52,28 @@ pub fn abi_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> Result<AbiS
     let fn_abi = tcx
         .fn_abi_of_instance_no_deduced_attrs(typing_env.as_query_input((instance, ty::List::empty())))
         .map_err(|e| NeedsNative(super::no_trim(|| format!("fn ABI: {e:?}"))))?;
-    from_fn_abi(tcx, fn_abi, instance.def.requires_caller_location(tcx))
+    from_fn_abi(tcx, fn_abi, instance.def.requires_caller_location(tcx), None)
+}
+
+/// The ABI signature of the virtual call `instance` (`InstanceKind::Virtual`), with `receiver`
+/// (a thin pointer type) as the type of the data pointer passed as the first argument.
+///
+/// `fn_abi_of_instance` gives a virtual call's receiver the wide pointer's type with the layout
+/// of `*mut ()` (`make_thin_self_ptr`, `rustc_ty_utils/src/abi.rs:694`). The method behind the
+/// vtable takes `&Self`, `&mut Self`, `Box<Self>`, `Pin<&mut Self>`, … or `*mut Self` (a
+/// `VTableShim`), and rustc orders tuple fields by niche too, so the caller's argument block
+/// only matches the callee's if `receiver` has the callee receiver's niche: the caller passes
+/// `&()` when the receiver's data pointer is non-null, `*mut ()` otherwise.
+pub fn virtual_sig<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    instance: Instance<'tcx>,
+    receiver: Ty<'tcx>,
+) -> Result<AbiSig<'tcx>, NeedsNative> {
+    let typing_env = TypingEnv::fully_monomorphized();
+    let fn_abi = tcx
+        .fn_abi_of_instance_no_deduced_attrs(typing_env.as_query_input((instance, ty::List::empty())))
+        .map_err(|e| NeedsNative(super::no_trim(|| format!("fn ABI: {e:?}"))))?;
+    from_fn_abi(tcx, fn_abi, instance.def.requires_caller_location(tcx), Some(receiver))
 }
 
 /// The ABI signature of a call through a fn pointer of type `sig`.
@@ -61,13 +82,15 @@ pub fn fn_ptr_sig<'tcx>(tcx: TyCtxt<'tcx>, sig: ty::PolyFnSig<'tcx>) -> Result<A
     let fn_abi = tcx
         .fn_abi_of_fn_ptr(typing_env.as_query_input((sig, ty::List::empty())))
         .map_err(|e| NeedsNative(super::no_trim(|| format!("fn ABI: {e:?}"))))?;
-    from_fn_abi(tcx, fn_abi, false)
+    from_fn_abi(tcx, fn_abi, false, None)
 }
 
+/// `receiver` replaces the type of the first input (virtual calls).
 fn from_fn_abi<'tcx>(
     tcx: TyCtxt<'tcx>,
     fn_abi: &rustc_target::callconv::FnAbi<'tcx, Ty<'tcx>>,
     caller_location: bool,
+    receiver: Option<Ty<'tcx>>,
 ) -> Result<AbiSig<'tcx>, NeedsNative> {
     if fn_abi.c_variadic {
         return native("C-variadic");
@@ -78,7 +101,11 @@ fn from_fn_abi<'tcx>(
         CanonAbi::C => return native("C-unwind ABI"),
         other => return native(format!("{other} ABI")),
     };
-    let inputs: Vec<Ty<'tcx>> = fn_abi.args.iter().map(|a| a.layout.ty).collect();
+    let mut inputs: Vec<Ty<'tcx>> = fn_abi.args.iter().map(|a| a.layout.ty).collect();
+    if let Some(r) = receiver {
+        let Some(first) = inputs.first_mut() else { return native("virtual call without a receiver") };
+        *first = r;
+    }
     let (fields, block_size) = arg_block(tcx, &inputs)?;
     if fn_abi.ret.layout.align.abi.bytes() > u64::from(abi::FRAME_ALIGN) {
         return native("return value aligned above 16");

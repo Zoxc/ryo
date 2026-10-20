@@ -92,6 +92,8 @@ pub enum CodeReloc<'tcx> {
     Const { at: u32, alloc: AllocId, offset: u32 },
     /// The `k` operand at word `at` is a constant-pool allocation of these bytes.
     Bytes { at: u32, bytes: Vec<u8>, align: u32 },
+    /// The `tail_call` instruction at word `at` calls `callee`, as for [`CodeReloc::Call`].
+    TailCall { at: u32, callee: Instance<'tcx> },
 }
 
 /// An island the code calls: the template (by diagnostic item name) and its generic args. The

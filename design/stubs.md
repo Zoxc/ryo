@@ -84,13 +84,21 @@ pub unsafe fn drop_in_place<T: ?Sized>(fp: *mut u8, ops: *const u32) -> u32 { �
   exactly the callee's argument block ([lowering.md](lowering.md#frame-slots)). For
   `call.ext`/`call.ind`, the VM passes `[outgoing block, d, fn pointer slot]`: for
   `call.ind` that is `p`, for `call.ext` a slot the VM writes the resolved address into.
-- The first set of intrinsic wrappers: `sqrtf32`, `sqrtf64`, `powif32`, `powif64`, `fmaf32`,
-  `fmaf64`, `simd_add`, `simd_sub`, `simd_mul`, `catch_unwind` (`ops`: `try_fn`, `data`,
-  `catch_fn`, destination), tagged `"ryo_island_<name>"`.
 - Operations the VM has no instruction for, with the same operand convention: the 128-bit
   `mul_w128`, `div_{s,u}_w128`, `rem_{s,u}_w128`, `mul_ovf_{s,u}_w128`, and
   `as_cast<A, B>` for numeric casts from or to `f16`/`f128` (through `ryo_rt::island::AsCast`,
   implemented for every pair of an `f16`/`f128` with any integer type, `isize`/`usize` included, or float type).
+- The intrinsic wrappers, tagged `"ryo_island_<name>"`: `sqrtf32`, `sqrtf64`, `powif32`,
+  `powif64`, `fmaf32`, `fmaf64`, `compare_bytes`, `raw_eq<T>`, `catch_unwind<Data>` (`ops`:
+  `try_fn`, `data`, `catch_fn`, destination), and
+  the SIMD intrinsics without constant operands (`simd_add<T>`, `simd_eq<T, U>`,
+  `simd_splat<T, U>`, `simd_select<M, T>`, the reductions, …), each generic exactly like its
+  intrinsic, so the lowering passes the intrinsic's generic args unchanged.
+  `catch_unwind`'s fn pointers are usually portals of VM functions (`do_call`, `do_catch`):
+  a panic leaves the VM through the portal and unwinds natively into the intrinsic's
+  landing pad in the island.
+- A non-generic template (`compare_bytes`, …) has one instance, `ryo_rt`'s own: the image
+  links to it instead of adding a copy to the native CGU (it isn't codegened locally).
 - `call_cN` exist for arities 0..=16. `call_ptrN` exist for 0..=17: 16, plus a trailing
   `&'static Location` for `#[track_caller]` callees ([lowering.md](lowering.md#caller-location)).
 - `call.ext`'s native fallback is always a `call_ptrN` (Rust ABI): upstream instances are Rust

@@ -72,8 +72,14 @@ pub fn run(target: &str) -> Result<(), String> {
         let res = (|| {
             let reference = link.build(&cmd("rustc"), program, &out.join(program.name).join("rustc"))?;
             let ryo = link.build(&cmd(&rustc_ryo), program, &out.join(program.name).join("ryo"))?;
-            let extra: Vec<&String> =
-                ryo.difference(&reference).filter(|s| !RT_IMPORTS.contains(&s.as_str())).collect();
+            // The image refers to a DLL function both through its `__imp_` slot and directly
+            // (design/platforms.md); with the real import library the direct reference
+            // resolves to the import thunk, so it is fine wherever the import itself is.
+            let extra: Vec<&String> = ryo
+                .difference(&reference)
+                .filter(|s| !RT_IMPORTS.contains(&s.as_str()))
+                .filter(|s| !reference.contains(&format!("__declspec(dllimport) {s}")))
+                .collect();
             if !extra.is_empty() {
                 return Err(format!("unresolved only in the ryo build: {extra:?}"));
             }
