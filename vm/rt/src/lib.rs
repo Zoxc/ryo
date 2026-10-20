@@ -3,6 +3,9 @@
 
 #![feature(rustc_attrs, std_internals, unboxed_closures, fn_traits, tuple_trait, core_intrinsics, thread_local, f16, f128)]
 #![allow(internal_features)]
+// Only `core`: with `--sysroot ryo`, std and alloc are ryo-built and depend on `ryo_rt`
+// (design/build.md), and the runtime must not enter the VM through them (design/vm.md).
+#![cfg_attr(not(test), no_std)]
 // The dispatch strategy (build.rs): tail-call handlers or `#[loop_match]`. Both features are
 // `incomplete`, which is why the plain `match` stays built and tested (design/vm.md).
 #![cfg_attr(ryo_dispatch_tail, feature(explicit_tail_calls, rust_preserve_none_cc))]

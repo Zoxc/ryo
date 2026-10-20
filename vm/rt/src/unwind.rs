@@ -10,8 +10,8 @@
 //! Nothing here enters the VM.
 
 use core::panic::PanicPayload;
-use std::any::Any;
-use std::fmt;
+use core::any::Any;
+use core::fmt;
 
 #[allow(improper_ctypes)] // declared as std declares it; only Rust code defines it
 unsafe extern "C" {
@@ -119,5 +119,5 @@ pub unsafe fn resume_unwind_from_vm(payload: RawPayload) -> ! {
     let code = unsafe { __rust_start_panic(&mut Rewrap(payload)) };
     // Only reached if the panic runtime can't unwind (as std's `rust_panic`).
     let _ = code;
-    std::process::abort()
+    core::intrinsics::abort()
 }

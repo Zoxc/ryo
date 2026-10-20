@@ -544,9 +544,12 @@ templates, and the panic glue. It is a normal Rust dependency of every ryo-built
 - **Linking** follows Rust's normal rules: a Rust dylib contains one copy of `ryo_rt`, and the
   exe linking it uses that copy (`dependency_format`). Each cdylib or staticlib gets its own
   copy, with the usual Rust symbol hygiene.
-- **std**: the VM uses the program's panic runtime (`__rust_panic_cleanup`,
-  `__rust_start_panic`, [Unwinding](#unwinding)) and std for
-  allocating panic payloads. `y build` builds `ryo_rt` against the sysroot's std.
+- **std**: `ryo_rt` is `#![no_std]`: it uses only `core` (its tests use std). With
+  `--sysroot ryo`, alloc and std are ryo-built and depend on `ryo_rt`
+  ([build.md](build.md#build)), so it can't depend on them, and it must not call into them
+  anyway (see "No re-entry" below). The VM uses the program's panic runtime
+  (`__rust_panic_cleanup`, `__rust_start_panic`, [Unwinding](#unwinding)), which owns the
+  panic payload boxes. `y build` builds `ryo_rt` against each sysroot's `core`.
 - **Speed**:
   - The interpreter is non-generic and compiled once by `y build` at
     `-O3 -Ccodegen-units=1` (`-Cembed-bitcode=yes` for users' LTO), so it's fast even in
