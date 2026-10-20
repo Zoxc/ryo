@@ -544,7 +544,10 @@ templates, and the panic glue. It is a normal Rust dependency of every ryo-built
   uses `core` only.
   - `vm::enter(id, args, ret, payload_out) -> u32`: entry from portals. It returns 0 for ok,
     and 1 for unwinding, with the payload (`RawPayload`, an opaque raw `Box` pointer) moved to
-    `payload_out` before the entry record is popped.
+    `payload_out` before the entry record is popped. With `RYO_VM_TRACE` set in the
+    environment (read once, with `getenv`/`GetEnvironmentVariableA`), it first prints
+    `ryo-vm: enter <crate hash>:<function index>` to stderr, so tests can check that code ran
+    in the VM.
   - `vm::lookup_addr(fnptr) -> Option<&'static vm::Function>`: portal address → VM function.
   - `vm::register`: `#[no_mangle] extern "C" fn ryo_vm_register(images, n)`.
 - **`portal`**: `portal`, `portal_tc0..N` ([stubs.md](stubs.md#portals-native--vm)).
@@ -565,7 +568,8 @@ templates, and the panic glue. It is a normal Rust dependency of every ryo-built
   `ryo_bytecode` is `#![no_std]`. Its reader needs only `core`, and the encoder and image
   writer sit behind its `alloc` feature, which `ryo_rt` doesn't enable. `y build` installs
   `libryo_bytecode.rlib` next to `libryo_rt.rlib`.
-- It carries a `RYO_RT_ABI` const, which the backend checks, erroring on a mismatch.
+- It carries a `RYO_RT_ABI` const (diagnostic item `ryo_rt_abi`), which the backend
+  evaluates and checks, erroring on a mismatch.
 - **Panic strategy**: `ryo_rt` is built with `panic=unwind`, like std. It is valid in
   `panic=abort` programs (`verify_ok` in `rustc_metadata/src/dependency_format.rs:404-500`) as
   long as it makes no `C-unwind` calls (`ffi_unwind_calls.rs:132`). In an abort program,

@@ -4,6 +4,20 @@ Each VM function is lowered on its own (in parallel, [backend.md](backend.md#pip
 code buffer, a constant list, a relocation list and a cleanup table. The instruction set is
 specified in [vm.md](vm.md#instruction-set).
 
+The entry point is `lower(tcx, instance) -> Result<LoweredFn, NeedsNative>`
+(`backend/src/rustc_api/lower.rs`). A `LoweredFn` holds:
+
+- the code words, with operands the lowering can't know left as placeholders
+- relocations for those operands, which the merge pass resolves once every function's index
+  and symbol is known: `Call { at, callee }` (a `call` to another VM function of this image:
+  function index and callee `frame_size`) and `Symbol { at, target }` (a `sym` operand: the
+  target's symbol, its portal if it is a VM function, which then gets one)
+- island requests (template diagnostic item name and generic args, plus the operand to fill)
+- the cleanup entries, `frame_size`, `max_outgoing`, `arg_size` and `ret_size`
+
+`NeedsNative(reason)` keeps the function native as a whole. `RYO_STATS=2` prints the reasons
+([backend.md](backend.md#debugging-switches)).
+
 The lowering matches every MIR enum (`StatementKind`, `Rvalue`, `Operand`, `ProjectionElem`,
 `CastKind`, `BinOp`, `UnOp`, `TerminatorKind`, `AssertKind`, …) exhaustively, with no `_` arm,
 so a MIR change in a toolchain bump is a compile error. The tables below follow 1.99.1

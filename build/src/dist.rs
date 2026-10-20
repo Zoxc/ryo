@@ -116,7 +116,10 @@ fn build_runtime(
     let rustflags = [&sysroot_flag, "-Ccodegen-units=1", "-Cpanic=unwind"];
     let out = output(
         cmd("cargo")
-            .args(["build", "--release", "-p", "ryo_rt", "--message-format=json-render-diagnostics"])
+            // `registry-anchor`: `vm::enter` references the registry objects the backend
+            // generates (design/backend.md#pipeline step 6).
+            .args(["build", "--release", "-p", "ryo_rt", "--features", "registry-anchor"])
+            .arg("--message-format=json-render-diagnostics")
             .arg("--manifest-path")
             .arg(root.join("vm").join("Cargo.toml"))
             .arg("--target-dir")

@@ -61,10 +61,12 @@ and `codegen_crate` reads them.
      and `Location::caller` are program-typed instances. cg_llvm only emits declarations for
      items outside the CGU (`rustc_codegen_llvm/src/callee.rs:75-95`). So the backend walks
      each stub instance's neighbors with the `items_of_instance` query
-     (`rustc_middle/src/queries.rs:2777`) until nothing new appears. It skips items already
-     in the CGU, and decides what to codegen locally with its own copy of the private
-     `should_codegen_locally` (`collector.rs:1075`, starting with
-     `def_id_if_not_guaranteed_local_codegen`). Neighbors are always native.
+     (`rustc_middle/src/queries.rs:2777`, used items) until nothing new appears. It skips
+     items already in the CGU. The query has already dropped what isn't codegened locally:
+     the collector's `should_codegen_locally` (`collector.rs:1075`) runs on every neighbor,
+     and it is public as the hook `tcx.should_codegen_locally` (`rustc_middle/src/hooks/mod.rs:90`),
+     which the lowering uses for callees. Neighbors are always native, and `Internal`: only the
+     stubs reference them. A neighbor that is a VM function gets a portal instead.
    - **Upstream copies**: before defining a stub instance or neighbor, the backend checks
      `instance.upstream_monomorphization(tcx)`. If an upstream crate exports it
      (share-generics), the image relocates against that copy instead of defining a second one,
@@ -101,7 +103,11 @@ and `codegen_crate` reads them.
    `rustc_codegen_llvm/src/lib.rs:399-410`), then pushes a `CompiledModule` for the image
    (`kind: ModuleKind::Regular`, `object: Some(path)`) onto `CompiledModules.modules`
    (`rustc_codegen_ssa/src/lib.rs:124-134`), so `link_rlib` and the object list include it.
-   The image defines one global symbol, `__ryo_image_<StableCrateId>`.
+   The image defines one global symbol, `__ryo_image_<StableCrateId>` (the id as 16 hex
+   digits), hidden: only the registry object of the same link unit references it. On ELF the
+   read-only part is `.data.rel.ro.ryo_image` (writable only while relocating) and the
+   writable part `.data.ryo_image`. A binary with a VM `main` also gets `__ryo_main` in this
+   object ([stubs.md](stubs.md#program-entry-main)).
 6. **Link** with cg_llvm's `link` (`link_binary`). The VM is part of `ryo_rt`, which links like
    any Rust dependency, so there is no native runtime library. Two additions:
    - **Registry object**: image objects in rlibs are archive members that nothing
@@ -110,28 +116,34 @@ and `codegen_crate` reads them.
      `__ryo_image_<id>` for every ryo-built crate linked *statically* into this output, which
      pulls the members in. Which crates those are:
      - The local crate is always included.
-     - Upstream crates come from `CrateInfo.dependency_formats` for the output's crate type,
-       filtered to the ryo-built ones. `link` has no `tcx` and doesn't receive the ongoing
-       value (`rustc_codegen_ssa/src/traits/backend.rs:143-150`), so `codegen_crate`
-       computes that set (crates whose metadata depends on `ryo_rt`) and stores it in a
-       `OnceLock` on `RyoBackend`.
+     - Upstream crates come from `CrateInfo.dependency_formats` for the output's crate type
+       (`Linkage::Static`), filtered to the ryo-built ones: those whose rlib
+       (`CrateInfo.used_crate_source`) has an `__ryo_image_` symbol in its archive symbol
+       table, which also gives the symbol. The compiler has no public query for a crate's own
+       dependencies (`CStore::crate_dependencies_in_postorder` is `pub(crate)`), and `link`
+       has no `tcx` and doesn't receive the ongoing value
+       (`rustc_codegen_ssa/src/traits/backend.rs:143-150`). `codegen_crate` stores the local
+       image's symbol in a `OnceLock` on `RyoBackend` for `link`.
      - Crates already linked into an upstream Rust dylib are registered by that dylib's own
        registry object.
 
      **One `link_binary` call per crate type**: `link_binary` loops over
      `crate_info.crate_types` itself and gives every output the same modules
      (`rustc_codegen_ssa/src/back/link.rs:326-401`), but each output needs its own registry
-     object (and an rlib none). So our `link` calls `link_binary` once per crate type:
+     object (and an rlib none). So our `link` calls `link_binary` once per crate type,
+     through cg_llvm's `link` (cg_llvm's `LlvmArchiveBuilderBuilder` is `pub(crate)`,
+     `rustc_codegen_llvm/src/back/archive.rs:13`, so we can't call `link_binary` with it
+     ourselves):
      - with a single-type copy of `CrateInfo` (it is `Clone`)
      - with that type's registry object added to the modules
      - with every temporary object hardlinked per call (module objects, the allocator module,
-       global-asm and DWARF objects), since `link_binary` deletes them at the end
-       (`link.rs:427-490`)
+       global-asm and DWARF objects) for every call but the last, since `link_binary`
+       deletes them at the end (`link.rs:444-490`)
      - with metadata: `EncodedMetadata` isn't `Clone`, and its file lives in a temp dir that
        is deleted when the value is dropped (`rustc_metadata/src/fs.rs:101-107`). So before
-       the first call, the backend copies `metadata.path()` and the `stub_or_full()` file into
-       its own directory, and later calls reload from that copy with
-       `EncodedMetadata::from_path(path, stub_path, None)` (`encoder.rs:2384-2388`).
+       the first call, the backend copies `metadata.path()` and the `stub_or_full()` bytes into
+       its own directory, and every call but the last (which gets the original) reloads from
+       that copy with `EncodedMetadata::from_path(path, stub_path, None)` (`encoder.rs:2384-2388`).
    - **Staticlib outputs**: nothing in the archive references the registry object, so a C
      linker consuming the staticlib would drop it, and with it the constructor and images.
      So every registry object (for every output type) defines a hidden global
@@ -166,11 +178,28 @@ and `codegen_crate` reads them.
     portal leaves downstream crates with an undefined reference.
   - Native symbols that only the image refers to (callees, statics, islands) are exported
     hidden, so `-Clto` doesn't internalize them.
+  - The entry wrapper `c_main` (`External`, default visibility) isn't listed.
   - Items made `External` + `Hidden` only for the image (see Linkage) are filtered out of
     `exported_generic_symbols`. The default provider exports every `External` CGU item, and
     skips hidden ones only when `need_visibility` is set (`symbol_export.rs:327, 375-387`). `-Clto` is rejected until this is done.
 - `symbol_name` → for portal instances, the symbol of the VM function they stand for
-  ([stubs.md](stubs.md#portals-native--vm)). Everything else uses the default provider.
+  ([stubs.md](stubs.md#portals-native--vm)), looked up by the function index in the portal's
+  `ID`. For `c_main`, the target's `entry_name`. For local `LocalCopy` instances, the default
+  symbol plus `.ryo<StableCrateId as 16 hex digits>` (see Linkage). Everything else uses the
+  default provider.
+
+## Debugging switches
+
+Environment variables read by the backend (and `y test`):
+
+- `RYO_STATS=1` prints each VM function (`ryo: vm fn <instance>`, with ` (portal)` if it got
+  one) and the totals; `RYO_STATS=2` also prints why each other function stayed native.
+- `RYO_NO_VM` keeps every function native.
+- `RYO_BACKEND_MARKER` prints `ryo backend: init` from `init` and `ryo backend: partition`
+  from the partition provider, so tests can tell that the backend and its override ran.
+
+`ryo_rt` reads `RYO_VM_TRACE`: if set, every `vm::enter` prints
+`ryo-vm: enter <crate hash>:<function index>` to stderr ([vm.md](vm.md#modules)).
 
 No MIR is overridden or synthesized, and no DefIds are created. rustc freezes definitions
 right after type checking (`rustc_interface/src/passes.rs:1152`), long before mono items

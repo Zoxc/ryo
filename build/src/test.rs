@@ -14,6 +14,9 @@ struct Program {
     crates: &'static [Crate],
     /// Extra flags for every crate.
     flags: &'static [&'static str],
+    /// Functions the ryo build must compile to bytecode (as `RYO_STATS` prints them). If any
+    /// are listed, the ryo build is also run with `RYO_VM_TRACE`, which must report VM entries.
+    vm: &'static [&'static str],
 }
 
 struct Crate {
@@ -29,14 +32,17 @@ enum CrateKind {
     Bin,
     Rlib,
     Dylib,
+    /// Both an rlib and a dylib from one compilation (one link per crate type in the backend).
+    RlibDylib,
 }
 
 impl CrateKind {
-    fn flag(self) -> &'static str {
+    fn flags(self) -> &'static [&'static str] {
         match self {
-            CrateKind::Bin => "bin",
-            CrateKind::Rlib => "rlib",
-            CrateKind::Dylib => "dylib",
+            CrateKind::Bin => &["--crate-type", "bin"],
+            CrateKind::Rlib => &["--crate-type", "rlib"],
+            CrateKind::Dylib => &["--crate-type", "dylib"],
+            CrateKind::RlibDylib => &["--crate-type", "rlib", "--crate-type", "dylib"],
         }
     }
 }
@@ -52,6 +58,15 @@ macro_rules! single {
             name: $name,
             crates: &[krate($name, concat!($name, ".rs"), CrateKind::Bin)],
             flags: &[],
+            vm: &[],
+        }
+    };
+    ($name:literal, vm: $vm:expr) => {
+        Program {
+            name: $name,
+            crates: &[krate($name, concat!($name, ".rs"), CrateKind::Bin)],
+            flags: &[],
+            vm: $vm,
         }
     };
 }
@@ -73,6 +88,7 @@ const CORPUS: &[Program] = &[
             krate("main", "cross_crate/main.rs", CrateKind::Bin),
         ],
         flags: &[],
+        vm: &[],
     },
     Program {
         name: "dylib",
@@ -82,6 +98,30 @@ const CORPUS: &[Program] = &[
         ],
         // Both link std's dylib, so std shows up once.
         flags: &["-Cprefer-dynamic"],
+        vm: &[],
+    },
+    // Milestone 3: VM functions behind portals, a VM `main`, and across crates.
+    single!("vm_answer", vm: &["answer", "pick", "twice", "wide", "always"]),
+    single!("vm_main", vm: &["main", "answer"]),
+    Program {
+        name: "vm_cross",
+        crates: &[
+            krate("vml", "vm_cross/lib.rs", CrateKind::Rlib),
+            krate("vml2", "vm_cross/lib2.rs", CrateKind::Rlib),
+            krate("main", "vm_cross/main.rs", CrateKind::Bin),
+        ],
+        flags: &[],
+                // Local items are printed without their crate name.
+        vm: &["answer", "calls_answer", "generic::<u16>", "vml::always", "vml::generic::<u8>", "vml::inl", "own"],
+    },
+    Program {
+        name: "vm_dylib",
+        crates: &[
+            krate("vmd", "vm_dylib/lib.rs", CrateKind::RlibDylib),
+            krate("main", "vm_dylib/main.rs", CrateKind::Bin),
+        ],
+        flags: &["-Cprefer-dynamic"],
+        vm: &["answer", "vmd::generic::<i8>", "local"],
     },
 ];
 
@@ -236,7 +276,7 @@ impl Ctx {
             Compiler::Rustc => cmd("rustc"),
             Compiler::Ryo => {
                 let mut c = cmd(&self.rustc_ryo);
-                c.env("RYO_BACKEND_MARKER", "1");
+                c.env("RYO_BACKEND_MARKER", "1").env("RYO_STATS", "1");
                 c
             }
             Compiler::Clif => cmd(&self.rustc_clif),
@@ -246,7 +286,8 @@ impl Ctx {
     /// The compiler's sysroot `lib/rustlib/<target>/lib`, where std's dylib is.
     fn target_libdir(&self, compiler: Compiler) -> Result<PathBuf, String> {
         let mut c = self.compiler(compiler);
-        let libdir = output(c.env_remove("RYO_BACKEND_MARKER").args(["--print", "target-libdir"]))?;
+        let libdir =
+            output(c.env_remove("RYO_BACKEND_MARKER").env_remove("RYO_STATS").args(["--print", "target-libdir"]))?;
         Ok(PathBuf::from(libdir.trim()))
     }
 
@@ -257,11 +298,13 @@ impl Ctx {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
         let mut exe = None;
+        let mut vm_fns = Vec::new();
         for krate in program.crates {
             let mut c = self.compiler(variant.compiler);
             c.arg("--edition=2024")
                 .arg(self.tests.join(krate.src))
-                .args(["--crate-type", krate.kind.flag(), "--crate-name", krate.name])
+                .args(krate.kind.flags())
+                .args(["--crate-name", krate.name])
                 .arg("--out-dir")
                 .arg(&dir)
                 .arg("-L")
@@ -279,19 +322,50 @@ impl Ctx {
             if !res.status.success() {
                 return Err(format!("`{}` failed:\n{stderr}", describe(&c)));
             }
-            if variant.compiler == Compiler::Ryo && !stderr.contains(BACKEND_MARKER) {
-                return Err(format!("the ryo backend didn't build {}; stderr:\n{stderr}", krate.name));
+            if variant.compiler == Compiler::Ryo {
+                if !stderr.contains(BACKEND_MARKER) || !stderr.contains(PARTITION_MARKER) {
+                    return Err(format!("the ryo backend didn't build {}; stderr:\n{stderr}", krate.name));
+                }
+                vm_fns.extend(vm_functions(&stderr));
             }
             if krate.kind == CrateKind::Bin {
                 exe = Some(dir.join(exe_name(krate.name)));
             }
         }
         let exe = exe.ok_or_else(|| format!("{}: no binary crate", program.name))?;
-        let mut run = Command::new(&exe);
-        run.env_remove("RUST_BACKTRACE").env_remove("RUST_LIB_BACKTRACE").current_dir(&dir);
+        let result = self.run(&dir, &exe, variant, false)?;
+        if variant.compiler == Compiler::Ryo && !program.vm.is_empty() {
+            let missing: Vec<_> = program.vm.iter().filter(|f| !vm_fns.iter().any(|v| v == *f)).collect();
+            if !missing.is_empty() {
+                return Err(format!("not compiled to bytecode: {missing:?}; VM functions: {vm_fns:?}"));
+            }
+            // The same run with `RYO_VM_TRACE`: it must enter the VM, and otherwise behave the same.
+            let traced = self.run(&dir, &exe, variant, true)?;
+            let (entries, rest): (Vec<&str>, Vec<&str>) =
+                traced.stderr.split_inclusive('\n').partition(|l| l.starts_with("ryo-vm: enter "));
+            if entries.is_empty() {
+                return Err(format!("RYO_VM_TRACE reported no VM entries; stderr:\n{}", traced.stderr));
+            }
+            let untraced = RunResult { stderr: rest.concat(), ..traced };
+            if untraced != result {
+                return Err("the run with RYO_VM_TRACE behaved differently".to_owned());
+            }
+        }
+        Ok(result)
+    }
+
+    /// Runs a built program in `dir`, with `RYO_VM_TRACE` if `trace`.
+    fn run(&self, dir: &Path, exe: &Path, variant: &Variant, trace: bool) -> Result<RunResult, String> {
+        let mut run = Command::new(exe);
+        if trace {
+            run.env("RYO_VM_TRACE", "1");
+        } else {
+            run.env_remove("RYO_VM_TRACE");
+        }
+        run.env_remove("RUST_BACKTRACE").env_remove("RUST_LIB_BACKTRACE").current_dir(dir);
         // Dylibs are found next to the binary, and std's in the sysroot that built it.
         let lib_path_var = if cfg!(windows) { "PATH" } else { "LD_LIBRARY_PATH" };
-        let mut paths = vec![dir.clone(), self.target_libdir(variant.compiler)?];
+        let mut paths = vec![dir.to_path_buf(), self.target_libdir(variant.compiler)?];
         paths.extend(std::env::split_paths(&std::env::var_os(lib_path_var).unwrap_or_default()));
         run.env(lib_path_var, std::env::join_paths(paths).map_err(|e| e.to_string())?);
         let res = run.output().map_err(|e| format!("failed to run {}: {e}", exe.display()))?;
@@ -335,6 +409,12 @@ mod tests {
     }
 
     #[test]
+    fn parses_vm_functions() {
+        let s = "ryo backend: init\nryo: vm fn answer (portal)\nryo: vm fn a::b::<u8>\nryo: 2 VM functions\n";
+        assert_eq!(super::vm_functions(s), ["answer", "a::b::<u8>"]);
+    }
+
+    #[test]
     fn normalizes_thread_ids() {
         let s = "x\nthread 'main' (1234) panicked at a.rs:1:2:\nthread 'a' (b) c\n";
         let want = "x\nthread 'main' (N) panicked at a.rs:1:2:\nthread 'a' (b) c\n";
@@ -366,7 +446,11 @@ fn cargo_smoke(root: &Path, out: &Path) -> Result<(), String> {
     let _ = fs::remove_dir_all(pkg.join("target"));
     let stdout = String::from_utf8_lossy(&res.stdout);
     let stderr = String::from_utf8_lossy(&res.stderr);
-    if !res.status.success() || stdout != "Hello, world!\n" || !stderr.contains(BACKEND_MARKER) {
+    if !res.status.success()
+        || stdout != "Hello, world!\n"
+        || !stderr.contains(BACKEND_MARKER)
+        || !stderr.contains(PARTITION_MARKER)
+    {
         return Err(format!("{}\nstdout:\n{stdout}\nstderr:\n{stderr}", res.status));
     }
     Ok(())
@@ -374,6 +458,20 @@ fn cargo_smoke(root: &Path, out: &Path) -> Result<(), String> {
 
 /// Printed by the backend's `init` when `RYO_BACKEND_MARKER` is set.
 const BACKEND_MARKER: &str = "ryo backend: init";
+
+/// Printed by the backend's `collect_and_partition_mono_items` override when
+/// `RYO_BACKEND_MARKER` is set: the override, not cg_llvm's default, partitioned the crate.
+const PARTITION_MARKER: &str = "ryo backend: partition";
+
+/// The functions a `RYO_STATS=1` build reports as compiled to bytecode
+/// (`ryo: vm fn <path>`, optionally followed by ` (portal)`).
+fn vm_functions(stderr: &str) -> Vec<String> {
+    stderr
+        .lines()
+        .filter_map(|l| l.strip_prefix("ryo: vm fn "))
+        .map(|f| f.strip_suffix(" (portal)").unwrap_or(f).to_owned())
+        .collect()
+}
 
 fn reject_randomize_layout(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     let res = cmd(rustc_ryo)

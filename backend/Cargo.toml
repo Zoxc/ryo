@@ -8,6 +8,10 @@ publish = false
 crate-type = ["dylib"]
 
 [dependencies]
+ryo_bytecode = { path = "../vm/bytecode" }
+# The version rustc 1.99.1's own compiler crates use (`rustc_codegen_ssa/Cargo.toml`). The
+# sysroot's copies can't be named: `extern crate object` finds three candidates there.
+object = { version = "=0.38.1", default-features = false, features = ["std", "write_std", "elf", "coff", "read_core", "archive"] }
 
 # Not a member of any workspace.
 [workspace]

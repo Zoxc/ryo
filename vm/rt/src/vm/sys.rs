@@ -7,7 +7,7 @@
 
 use core::ffi::c_void;
 use core::ptr;
-use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 
 /// Page size assumed for guard pages and mapping granularity (x86_64 ELF and PE).
 pub const PAGE: usize = 4096;
@@ -30,6 +30,7 @@ mod os {
         pub fn mprotect(addr: *mut c_void, len: usize, prot: c_int) -> c_int;
         pub fn write(fd: c_int, buf: *const c_void, n: usize) -> isize;
         pub fn abort() -> !;
+        pub fn getenv(name: *const core::ffi::c_char) -> *const core::ffi::c_char;
         pub fn pthread_key_create(key: *mut u32, dtor: Option<unsafe extern "C" fn(*mut c_void)>) -> c_int;
         pub fn pthread_setspecific(key: u32, value: *const c_void) -> c_int;
     }
@@ -56,6 +57,7 @@ mod os {
         pub fn WriteFile(h: *mut c_void, buf: *const u8, n: u32, written: *mut u32, ov: *mut c_void) -> i32;
         pub fn FlsAlloc(cb: Option<unsafe extern "system" fn(*const c_void)>) -> u32;
         pub fn FlsSetValue(index: u32, value: *const c_void) -> i32;
+        pub fn GetEnvironmentVariableA(name: *const u8, buf: *mut u8, size: u32) -> u32;
     }
 }
 
@@ -82,6 +84,50 @@ fn write_stderr(s: &str) {
         let mut n = 0;
         os::WriteFile(os::GetStdHandle(os::STD_ERROR_HANDLE), s.as_ptr(), s.len() as u32, &mut n, ptr::null_mut());
     }
+}
+
+/// Whether `RYO_VM_TRACE` is set (to anything): then [`trace_enter`] reports every
+/// `vm::enter` on stderr, which lets tests check that code really ran in the VM. Read once.
+#[inline]
+pub fn trace_enabled() -> bool {
+    // 0: not read yet, 1: off, 2: on.
+    static TRACE: AtomicU8 = AtomicU8::new(0);
+    match TRACE.load(Ordering::Relaxed) {
+        0 => {
+            let on = env_set(c"RYO_VM_TRACE");
+            TRACE.store(if on { 2 } else { 1 }, Ordering::Relaxed);
+            on
+        }
+        v => v == 2,
+    }
+}
+
+#[cold]
+fn env_set(name: &core::ffi::CStr) -> bool {
+    #[cfg(unix)]
+    // SAFETY: `name` is NUL-terminated; the result is only compared with null.
+    unsafe {
+        !os::getenv(name.as_ptr()).is_null()
+    }
+    #[cfg(windows)]
+    // SAFETY: as above; a zero-sized buffer only queries the length (0: not set).
+    unsafe {
+        os::GetEnvironmentVariableA(name.as_ptr().cast(), ptr::null_mut(), 0) != 0
+    }
+}
+
+/// Writes `ryo-vm: enter <crate hash>:<function index>` to stderr.
+#[cold]
+#[inline(never)]
+pub fn trace_enter(id: u64) {
+    let mut buf = *b"ryo-vm: enter 00000000:00000000\n";
+    for i in 0..8 {
+        let hex = |v: u64| b"0123456789abcdef"[(v & 15) as usize];
+        buf[14 + i] = hex(id >> (60 - 4 * i));
+        buf[23 + i] = hex(id >> (28 - 4 * i));
+    }
+    // SAFETY: the buffer is ASCII.
+    write_stderr(unsafe { core::str::from_utf8_unchecked(&buf) });
 }
 
 fn abort() -> ! {

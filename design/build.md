@@ -13,7 +13,9 @@
   their sources under `lib/rustlib/rustc-src/rust/compiler`. Those sources are the reference
   for every compiler API the backend uses.
 - Compiler APIs change every release, so a toolchain bump is a porting task. All rustc API
-  use goes through a thin `backend/src/rustc_api.rs`, so ports stay local.
+  use goes through the `backend/src/rustc_api/` module (the backend impl, the pipeline, the
+  lowering, the link step), so ports stay local. The `extern crate`s for the compiler crates
+  are in `lib.rs`, since they must be at the crate root, and only `rustc_api` uses them.
 - Every rustc/cargo invocation runs with `RUSTC_BOOTSTRAP=1`.
 
 ## The `y` build tool
@@ -95,7 +97,10 @@ This gives a third backend, built from the same toolchain, to compare against.
 - `test`: the test corpus is built with `rustc-ryo` (also with `-Zthreads=8`) and with plain
   rustc, and the exit codes, stdout and stderr are diffed. It includes an ABI sweep: argument types (ZST, scalar pairs, large aggregates,
   `f32`/`f64` mixes, `u128`, `extern "C"`, closures, vtable shims, `#[track_caller]`) through
-  portals and island templates, on both targets.
+  portals and island templates, on both targets. Programs can list functions that must be
+  compiled to bytecode: the ryo builds run with `RYO_STATS=1` and must report them, and the
+  program is run once more with `RYO_VM_TRACE`, which must report VM entries and otherwise
+  give the same output ([backend.md](backend.md#debugging-switches)).
 - `test --clif`: also builds the corpus with `rustc-clif` and diffs its output too. That
   helps tell ryo bugs from test-corpus problems.
 - `bench [--runs N]`: hyperfine comparisons of each program in `tests/bench/` (fib, sieve,

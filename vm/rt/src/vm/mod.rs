@@ -98,6 +98,9 @@ pub unsafe fn enter(id: u64, args: *const u8, ret: *mut u8, payload_out: *mut Ra
     #[cfg(feature = "registry-anchor")]
     core::hint::black_box(&raw const __ryo_registry_anchor);
 
+    if sys::trace_enabled() {
+        sys::trace_enter(id);
+    }
     let vm = thread::current();
     let f = registry::resolve_id(id);
     // SAFETY: `vm` is this thread's state, reached only through the raw pointer. The frame at
