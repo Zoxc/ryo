@@ -41,7 +41,9 @@ details (`fn_abi_of_instance`, `PassMode`, …) come from cg_llvm.
     plus an abort guard). With `extern "C-unwind"`, `ryo_rt`'s calls through island pointers
     would count as FFI-unwind calls, which would make `ryo_rt` require `panic=unwind`
     (`ffi_unwind_calls.rs`) and break `panic=abort` programs.
-- **Frame access**: templates see the frame only through raw pointers (`fp + ops[i]`).
+- **Frame access**: templates see the frame only through raw pointers. Each operand word
+  `ops[i]` is a frame offset, and operand `i` is the slot at `fp + ops[i]`
+  (`ryo_rt::island::slot`).
 - **Dedup**: one instance per (template, generic args). The offsets are runtime operands, so
   one instance serves every site.
 
@@ -69,6 +71,21 @@ pub unsafe fn simd_add<T>(fp: *mut u8, ops: *const u32) -> u32 { … }
 pub unsafe fn drop_in_place<T: ?Sized>(fp: *mut u8, ops: *const u32) -> u32 { … }
 ```
 
+- **Operand conventions** (the lowering and the VM build `ops` this way):
+
+  | Template | `ops[0]` | `ops[1]` | `ops[2]` |
+  |---|---|---|---|
+  | `call` | argument block, `Args` | destination, `R` | |
+  | `call_ptrN`, `call_cN` | argument block, `(A0, …, A{N-1})` in `arg_block` layout | destination, `R` | slot holding the fn pointer |
+  | `drop_in_place` | slot holding the `*mut T` | | |
+  | intrinsic wrappers | the inputs in order, then the destination | | |
+
+  The argument block is read as one tuple (`slot::<(A0, …)>(fp, ops, 0).read()`), so it is
+  exactly the callee's argument block ([lowering.md](lowering.md#frame-slots)). For
+  `call.ext`/`call.ind`, the VM passes `[outgoing block, d, fn pointer slot]`: for
+  `call.ind` that is `p`, for `call.ext` a slot the VM writes the resolved address into.
+- The first set of intrinsic wrappers: `sqrtf32`, `sqrtf64`, `powif32`, `powif64`, `fmaf32`,
+  `fmaf64`, `simd_add`, `simd_sub`, `simd_mul`, tagged `"ryo_island_<name>"`.
 - `call_cN` exist for arities 0..=16. `call_ptrN` exist for 0..=17: 16, plus a trailing
   `&'static Location` for `#[track_caller]` callees ([lowering.md](lowering.md#caller-location)).
 - `call.ext`'s native fallback is always a `call_ptrN` (Rust ABI): upstream instances are Rust
@@ -112,10 +129,21 @@ These make the containing function native ([backend.md](backend.md#pipeline), st
 ### Unwinding
 
 Templates don't catch. The VM calls islands that can unwind (the call templates,
-`drop_in_place`, some intrinsics) through `ryo_rt::unwind::call_catching(fn_ptr, fp, ops)`.
-This is a non-generic `catch_unwind` wrapper that returns the successor and an "unwinding"
-flag separately, and stores the panic payload in the current entry record
-([vm.md](vm.md#unwinding)). The VM then runs the
+`drop_in_place`, some intrinsics) through `ryo_rt::unwind::call_catching`:
+
+```rust
+#[inline(never)]
+pub unsafe fn call_catching(f: unsafe fn(*mut u8, *const u32) -> u32, fp: *mut u8,
+                            ops: *const u32, payload_out: *mut RawPayload) -> CatchResult
+#[repr(C)] pub struct CatchResult { pub succ: u32, pub unwinding: bool }
+#[repr(C)] pub struct RawPayload { pub data: *mut (), pub vtable: *mut () }  // RawPayload::NONE = nulls
+```
+
+It is a non-generic `catch_unwind` wrapper that returns the successor and an "unwinding"
+flag separately. The VM passes a pointer to the current entry record's payload slot as
+`payload_out`, and on a panic `call_catching` writes the payload there (the
+`Box<dyn Any + Send>` as its raw pointer pair, overwriting the slot, which must be
+`RawPayload::NONE`) ([vm.md](vm.md#unwinding)). The VM then runs the
 function's cleanup blocks ([vm.md](vm.md#unwinding)). Islands that can't unwind are called
 directly.
 
@@ -133,7 +161,7 @@ pub extern "rust-call" fn portal<Args: Tuple, R, const ID: u64>(args: Args) -> R
     let args = ManuallyDrop::new(args);         // the VM takes ownership of the args
     let mut payload = RawPayload::NONE;
     let st = unsafe { crate::vm::enter(ID, &raw const args as *const u8, ret.as_mut_ptr() as *mut u8, &mut payload) };
-    if st != 0 { crate::unwind::resume_unwind_from_vm(payload) }
+    if st != 0 { unsafe { crate::unwind::resume_unwind_from_vm(payload) } }
     unsafe { ret.assume_init() }
 }
 ```
@@ -198,6 +226,8 @@ where
 }
 ```
 
+- The body after loading `__ryo_main` is the `pub` helper `entry::start_main::<S, T, SIGPIPE>(main,
+  argc, argv)`, which tests call directly; a test binary can also define `__ryo_main` itself.
 - `lang_start` is private in std, so the template can't name it. The backend resolves the
   `start` lang item as cg_ssa does (`require_lang_item(LangItem::Start)` +
   `Instance::expect_resolve` with `[T]`, `rustc_codegen_ssa/src/base.rs:566-583`), and passes

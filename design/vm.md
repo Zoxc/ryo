@@ -231,7 +231,8 @@ word.
   - **VM function**: called directly. The arguments are already in the argument block layout
     ([lowering.md](lowering.md#frame-slots)), which is the same for every caller.
   - **Native target**: the instruction calls its `island` operand, a `call_ptrN` instance
-    for the signature, with the fn pointer, the outgoing argument block and `d` as operands.
+    for the signature, with the operands `[outgoing argument block, d, fn pointer slot]`
+    ([stubs.md](stubs.md#templates)).
     The island always goes through `call_catching` unless the site's unwind action is
     `Unreachable` (or the crate is `panic=abort`). This is independent of whether the site
     has a cleanup entry: with `Continue`, the caught panic simply unwinds the VM frame.
@@ -254,7 +255,8 @@ word.
   handlers, which would skip entry-record pops. The VM never unwinds
   natively, and VM `call`s don't unwind by themselves.
 - **When `call_catching` reports a panic**: the payload is stored in the innermost entry
-  record (one slot per `vm::enter`), so nested entries each keep their own payload. Then the
+  record (one slot per `vm::enter`; the VM passes a pointer to that slot as
+  `call_catching`'s `payload_out`), so nested entries each keep their own payload. Then the
   VM looks up the current code offset in the function's cleanup table:
   - **Cleanup entry**: jump to the cleanup block. It ends in `resume`, which continues
     unwinding, or it reaches a normal exit as MIR allows.
@@ -388,10 +390,11 @@ templates, and the panic glue. It is a normal Rust dependency of every ryo-built
 - **`portal`**: `portal`, `portal_tc0..N` ([stubs.md](stubs.md#portals-native--vm)).
 - **`island`**: the island templates ([stubs.md](stubs.md#templates)).
 - **`unwind`**:
-  - `call_catching(fn_ptr, fp, ops)`: runs an island inside `catch_unwind`, and stores the
-    payload (`Box<dyn Any + Send>`, kept opaque as a pointer pair) in the current entry
-    record.
-  - `resume_unwind_from_vm(payload)`: rebuilds the `Box<dyn Any + Send>` and calls
+  - `call_catching(f, fp, ops, payload_out) -> CatchResult`: runs an island inside
+    `catch_unwind`. On a panic it writes the payload (`Box<dyn Any + Send>`, kept opaque as
+    the pointer pair `RawPayload`) to `payload_out`, which the VM points at the current entry
+    record's payload slot ([stubs.md](stubs.md#unwinding)).
+  - `unsafe fn resume_unwind_from_vm(payload) -> !`: rebuilds the `Box<dyn Any + Send>` and calls
     `resume_unwind`.
 
 ### Rules
