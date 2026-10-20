@@ -1,7 +1,7 @@
 //! `rustc-clif`: runs the pinned rustc with cg_clif (built by `y build-clif`) and the `dist/`
 //! sysroot, which has the toolchain's prebuilt LLVM std (design/build.md#build-clif).
 //!
-//! Like `rustc-ryo`, without `force:ryo_rt` and the MIR flags.
+//! Like `rustc-ryo`, without `force:ryo_rt` and the forced `-Ccodegen-units=1`.
 
 use std::env;
 use std::ffi::OsString;

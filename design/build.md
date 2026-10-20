@@ -24,7 +24,8 @@ modeled on cg_clif's `build_system/`.
 - A zero-dependency bin crate (its own `Cargo.toml` and `Cargo.lock`, not a workspace member),
   run through `./y.sh <cmd>` (or `y.cmd`/`y.ps1` on Windows), which is
   `cargo run --manifest-path build/Cargo.toml -- <cmd>`.
-- Commands: `build [--sysroot llvm|ryo]`, `build-clif`, `test`, `bench`, `clean`.
+- Commands: `build [--sysroot llvm|ryo]`, `build-clif`, `test [--clif]`, `bench [--runs N]`,
+  `clean`.
 - It sets `RUSTC_BOOTSTRAP=1` on everything it spawns.
 
 ### `build`
@@ -78,13 +79,14 @@ it from there, the same way it builds our backend:
   workspace) and runs `cargo build --release -Zembed-metadata=no --features unwinding` with
   `RUSTC_BOOTSTRAP=1`, against the pinned stable toolchain and its `rustc-dev`. The target
   directory is `target/clif/`. `unwinding` is what cg_clif's own `--panic-unwind-support`
-  enables; without it cg_clif aborts on panic, while the LLVM std and the test corpus unwind. It doesn't use cg_clif's own `y.sh`, which would install the nightly from
+  enables; without it cg_clif aborts on panic, while the LLVM std and the test corpus
+  unwind. It doesn't use cg_clif's own `y.sh`, which would install the nightly from
   cg_clif's `rust-toolchain.toml`.
 - The Cranelift crates come from crates.io through cg_clif's `Cargo.lock`, so the build needs
   network access once, or a vendored copy.
 - It installs `dist/lib/librustc_codegen_cranelift.so` and a `rustc-clif` wrapper (like
-  `rustc-ryo`, without `force:ryo_rt`), using the same prebuilt LLVM std
-  sysroot.
+  `rustc-ryo`, without `force:ryo_rt` and the forced `-Ccodegen-units=1`), using the same
+  prebuilt LLVM std sysroot.
 
 This gives a third backend, built from the same toolchain, to compare against.
 
@@ -100,7 +102,10 @@ This gives a third backend, built from the same toolchain, to compare against.
   and hyperfine comparisons of each program in `tests/bench/` (fib, sieve, sort, hashmap)
   built with LLVM `-O0`, LLVM `-O3`, Cranelift (`rustc-clif`) and ryo. Each comparison
   covers compile time (Cranelift is the fast-compile reference ryo competes with) and run
-  time, printed as two tables of mean and standard deviation. Without hyperfine on `PATH`,
+  time, printed as two tables of mean and standard deviation. Every backend gets its default
+  flags; the one inherent difference is that `rustc-ryo` forces `-Ccodegen-units=1`, while
+  LLVM and Cranelift use rustc's default codegen unit count. A note under the compile-time
+  table says so. Failed builds and runs are collected and reported at the end. Without hyperfine on `PATH`,
   a built-in timer does the same (one warmup, then `N` runs, default 5). The programs'
   output must agree across backends. `y bench` builds `dist/` and cg_clif first if they are
   missing; `y test --clif` builds cg_clif too.

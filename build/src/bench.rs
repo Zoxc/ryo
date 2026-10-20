@@ -124,9 +124,13 @@ fn stats(times: &[f64]) -> Stats {
     Stats { mean, stddev: var.sqrt() }
 }
 
-/// `mean` and `stddev` of the first result in hyperfine's `--export-json` output. A minimal
-/// scan, not a JSON parser (`y` has no dependencies). `stddev` is `null` for a single run.
+/// `mean` and `stddev` of the first entry of the `results` array in hyperfine's
+/// `--export-json` output. A minimal scan, not a JSON parser (`y` has no dependencies).
+/// `stddev` is `null` for a single run.
 fn parse_hyperfine(json: &str) -> Option<Stats> {
+    let start = json.find("\"results\"")?;
+    let json = &json[start..];
+    let json = &json[..json.find(']').unwrap_or(json.len())];
     fn number(json: &str, key: &str) -> Option<f64> {
         let rest = &json[json.find(&format!("\"{key}\":"))? + key.len() + 3..];
         let end = rest.find([',', '}', '\n']).unwrap_or(rest.len());
@@ -145,9 +149,10 @@ fn shell_quote(s: &str) -> String {
 }
 
 /// A cell of the tables.
+/// `None` where building or running failed.
 struct Cell {
-    compile: Stats,
-    run: Stats,
+    compile: Option<Stats>,
+    run: Option<Stats>,
 }
 
 pub fn run(runs: u32) -> Result<(), String> {
@@ -173,7 +178,8 @@ pub fn run(runs: u32) -> Result<(), String> {
     };
 
     let mut rows = Vec::new();
-    let mut mismatches = Vec::new();
+    // Output mismatches and failed builds or runs, reported at the end.
+    let mut failures = Vec::new();
     for &program in PROGRAMS {
         let src = root.join("tests").join("bench").join(format!("{program}.rs"));
         let mut cells = Vec::new();
@@ -191,18 +197,30 @@ pub fn run(runs: u32) -> Result<(), String> {
             let mut args = vec!["--edition=2024".to_owned(), path_str(&src)?];
             args.extend(backend.flags.iter().map(|f| f.to_string()));
             args.extend(["-o".to_owned(), path_str(&exe)?]);
-            let compile = timer.measure(&Job { program: compiler, args }, runs)?;
-
-            let output = run_once(&exe)?;
-            match &reference {
-                None => reference = Some(output),
-                Some(r) if *r != output => mismatches.push(format!(
-                    "{program} [{}] printed {output:?}, {} printed {r:?}",
-                    backend.name, BACKENDS[0].name
-                )),
-                Some(_) => {}
+            let _ = fs::remove_file(&exe);
+            let name = format!("{program} [{}]", backend.name);
+            let mut failed = |what: &str, e: String| failures.push(format!("{name}: {what}: {e}"));
+            let compile = timer.measure(&Job { program: compiler, args }, runs);
+            let compile = compile.map_err(|e| failed("compile", e)).ok();
+            let output = match compile {
+                Some(_) => run_once(&exe).map_err(|e| failed("run", e)).ok(),
+                None => None,
+            };
+            let mut run = None;
+            if let Some(output) = output {
+                match &reference {
+                    None => reference = Some(output),
+                    Some(r) if *r != output => failures.push(format!(
+                        "{name} printed {output:?}, {} printed {r:?}",
+                        BACKENDS[0].name
+                    )),
+                    Some(_) => {}
+                }
+                run = timer
+                    .measure(&Job { program: exe, args: Vec::new() }, runs)
+                    .map_err(|e| failures.push(format!("{name}: run: {e}")))
+                    .ok();
             }
-            let run = timer.measure(&Job { program: exe, args: Vec::new() }, runs)?;
             cells.push(Cell { compile, run });
         }
         rows.push((program, cells));
@@ -210,11 +228,12 @@ pub fn run(runs: u32) -> Result<(), String> {
 
     println!();
     print_table("compile time (ms, mean ± stddev)", &rows, |c| c.compile);
+    println!("note: rustc-ryo forces -Ccodegen-units=1; the others use rustc's default count");
     println!();
     print_table("run time (ms, mean ± stddev)", &rows, |c| c.run);
     vm_benches();
-    if !mismatches.is_empty() {
-        return Err(format!("outputs differ:\n{}", mismatches.join("\n")));
+    if !failures.is_empty() {
+        return Err(format!("benchmarks failed:\n{}", failures.join("\n")));
     }
     Ok(())
 }
@@ -238,19 +257,21 @@ fn path_str(p: &Path) -> Result<String, String> {
     p.to_str().map(str::to_owned).ok_or_else(|| format!("non-UTF-8 path {}", p.display()))
 }
 
-fn print_table(title: &str, rows: &[(&str, Vec<Cell>)], pick: impl Fn(&Cell) -> Stats) {
+fn print_table(title: &str, rows: &[(&str, Vec<Cell>)], pick: impl Fn(&Cell) -> Option<Stats>) {
     print!("{}", table(title, rows, pick));
 }
 
-fn table(title: &str, rows: &[(&str, Vec<Cell>)], pick: impl Fn(&Cell) -> Stats) -> String {
+fn table(title: &str, rows: &[(&str, Vec<Cell>)], pick: impl Fn(&Cell) -> Option<Stats>) -> String {
     let mut lines: Vec<Vec<String>> = vec![
         std::iter::once("program".to_owned()).chain(BACKENDS.iter().map(|b| b.name.to_owned())).collect(),
     ];
     for (program, cells) in rows {
         let mut line = vec![program.to_string()];
         for cell in cells {
-            let s = pick(cell);
-            line.push(format!("{:.1} ± {:.1}", s.mean * 1e3, s.stddev * 1e3));
+            line.push(match pick(cell) {
+                Some(s) => format!("{:.1} ± {:.1}", s.mean * 1e3, s.stddev * 1e3),
+                None => "failed".to_owned(),
+            });
         }
         lines.push(line);
     }
@@ -289,6 +310,8 @@ mod tests {
         let json = "{\n  \"results\": [\n    {\n      \"mean\": 1.5e-3,\n      \"stddev\": null,\n";
         assert_eq!(parse_hyperfine(json), Some(Stats { mean: 1.5e-3, stddev: 0.0 }));
         assert_eq!(parse_hyperfine("{}"), None);
+        // Keys outside `results` don't count.
+        assert_eq!(parse_hyperfine(r#"{"mean":1,"results":[]}"#), None);
     }
 
     #[test]
@@ -308,7 +331,7 @@ mod tests {
     #[test]
     fn table_layout() {
         let s = |m| Stats { mean: m, stddev: 0.001 };
-        let cells = || (0..BACKENDS.len()).map(|i| Cell { compile: s(i as f64), run: s(0.0) }).collect();
+        let cells = || (0..BACKENDS.len()).map(|i| Cell { compile: Some(s(i as f64)), run: None }).collect();
         let t = table("t", &[("fib", cells()), ("hashmap", cells())], |c| c.compile);
         let lines: Vec<&str> = t.lines().collect();
         assert_eq!(lines[0], "t");
@@ -316,5 +339,7 @@ mod tests {
         assert!(lines[3].starts_with("fib      "));
         assert!(lines[4].ends_with("3000.0 ± 1.0"));
         assert_eq!(lines.len(), 5);
+        let t = table("t", &[("fib", cells())], |c| c.run);
+        assert!(t.lines().nth(3).unwrap().ends_with("  failed"));
     }
 }

@@ -114,6 +114,11 @@ const VARIANTS: &[Variant] = &[
 /// Added by `test --clif`.
 const CLIF: Variant = Variant { name: "clif", compiler: Compiler::Clif, flags: &[] };
 
+/// The variants to build: [`VARIANTS`], plus [`CLIF`] for `test --clif`.
+fn variants(clif: bool) -> Vec<&'static Variant> {
+    VARIANTS.iter().chain(clif.then_some(&CLIF)).collect()
+}
+
 pub fn run(clif: bool) -> Result<(), String> {
     let root = root();
     let rustc_ryo = root.join("dist").join("bin").join(exe_name("rustc-ryo"));
@@ -123,10 +128,13 @@ pub fn run(clif: bool) -> Result<(), String> {
     if clif {
         crate::clif::ensure()?;
     }
-    let variants: Vec<&Variant> = VARIANTS.iter().chain(clif.then_some(&CLIF)).collect();
+    let variants = variants(clif);
     let out = root.join("target").join("tests");
     fs::create_dir_all(&out).map_err(|e| format!("creating {}: {e}", out.display()))?;
-    let ctx = Ctx { tests: root.join("tests"), out: out.clone(), rustc_ryo: rustc_ryo.clone(),
+    let ctx = Ctx {
+        tests: root.join("tests"),
+        out: out.clone(),
+        rustc_ryo: rustc_ryo.clone(),
         rustc_clif: crate::clif::rustc_clif(&root),
     };
 
@@ -297,6 +305,14 @@ fn normalize_thread_ids(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn clif_variant_only_with_flag() {
+        let names = |clif| super::variants(clif).iter().map(|v| v.name).collect::<Vec<_>>();
+        assert_eq!(names(false), ["ryo", "ryo-threads8"]);
+        assert_eq!(names(true), ["ryo", "ryo-threads8", "clif"]);
+        assert!(super::variants(true).last().unwrap().compiler == super::Compiler::Clif);
+    }
+
     #[test]
     fn normalizes_thread_ids() {
         let s = "x\nthread 'main' (1234) panicked at a.rs:1:2:\nthread 'a' (b) c\n";
