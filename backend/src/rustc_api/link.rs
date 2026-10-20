@@ -90,9 +90,7 @@ pub fn link(
         };
         let mut single = crate_info.clone();
         single.crate_types = vec![crate_type];
-        if !matches!(sess.lto(), rustc_session::config::Lto::Fat | rustc_session::config::Lto::Thin) {
-            remove_roots(&mut single, info, crate_type);
-        }
+        remove_roots(&mut single, info, crate_type);
         llvm.link(sess, these, single, this_metadata, outputs);
         if let Some(object) = image.and_then(|m| m.object) {
             let rlib = rustc_session::output::out_filename(sess, crate_type, outputs, crate_info.local_crate_name);
@@ -109,22 +107,35 @@ pub fn link(
     }
 }
 
-/// Takes the image symbols that only LTO needs out of `symbols.o`: one occurrence per crate
-/// that listed it, so names rustc lists itself stay.
+/// Takes the image symbols that only LTO needs (`partition::linked_roots`) out of the
+/// output's export list (a Rust dylib's includes the `Rust` level, and the roots include other
+/// crates' and foreign symbols, which a version script or `.def` file can't export) and out of
+/// `symbols.o` (rustc already leaves that empty under `-Clto`, `linker.rs:1760-1768`). One
+/// occurrence per crate that listed it, so the names rustc lists itself stay.
 fn remove_roots(crate_info: &mut CrateInfo, info: &LinkInfo, crate_type: CrateType) {
     let Some((_, roots)) = info.linked_roots.iter().find(|(t, _)| *t == crate_type) else { return };
-    let Some(linked) = crate_info.linked_symbols.get_mut(&crate_type) else { return };
-    let mut count: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
-    for r in roots {
-        *count.entry(r.as_str()).or_default() += 1;
-    }
-    linked.retain(|(name, _)| match count.get_mut(name.as_str()) {
+    let counts = || {
+        let mut count: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+        for r in roots {
+            *count.entry(r.as_str()).or_default() += 1;
+        }
+        count
+    };
+    let take = |count: &mut std::collections::HashMap<&str, usize>, name: &str| match count.get_mut(name) {
         Some(n) if *n > 0 => {
             *n -= 1;
-            false
+            true
         }
-        _ => true,
-    });
+        _ => false,
+    };
+    if let Some(linked) = crate_info.linked_symbols.get_mut(&crate_type) {
+        let mut count = counts();
+        linked.retain(|(name, _)| !take(&mut count, name));
+    }
+    if let Some(exported) = crate_info.exported_symbols.get_mut(&crate_type) {
+        let mut count = counts();
+        exported.retain(|e| !take(&mut count, &e.name));
+    }
 }
 
 /// Appends `object` to the archive `rlib` as a non-Rust member (`ArchiveEntryKind::Other`).

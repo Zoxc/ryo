@@ -147,8 +147,7 @@ pub fn collect_and_partition_mono_items<'tcx>(
             "the ryo backend requires `-Ccodegen-units=1`, but {n} codegen units were requested"
         ));
     }
-    // A dylib doesn't list the image's symbols for LTO (`exported_non_generic_symbols`), and
-    // rustc only allows LTO for it with `-Zdylib-lto`.
+    // rustc only allows LTO of a dylib with `-Zdylib-lto`, which isn't tested with the image.
     if matches!(tcx.sess.lto(), rustc_session::config::Lto::Fat | rustc_session::config::Lto::Thin)
         && tcx.crate_types().contains(&CrateType::Dylib)
     {
@@ -937,7 +936,7 @@ impl Pool {
 /// The symbols the image refers to, which `-Clto` must not internalize: the image is a
 /// separate object that LTO doesn't see (design/backend.md#query-overrides). That includes
 /// foreign items, which an LTO module may define (the allocator shim's `__rust_alloc`).
-/// Without LTO, `link` takes them out of `symbols.o` again ([`linked_roots`]).
+/// `link` takes them out of export lists and `symbols.o` again ([`linked_roots`]).
 /// On PE, the image refers to an imported static as `__imp_<name>`, which the linker
 /// synthesizes for a static linked in statically, if LTO kept `<name>`.
 #[derive(Default)]
@@ -959,15 +958,16 @@ impl Roots {
 
 /// Our local `exported_non_generic_symbols` (design/backend.md#query-overrides): adds the
 /// image's [`Roots`] as `used` symbols, which LTO keeps whatever its export threshold
-/// (`rustc_codegen_ssa/src/back/lto.rs:107`). At the `Rust` level, they stay out of the export
-/// lists of executables, cdylibs and staticlibs (`linker.rs:1712`). A Rust dylib's export
-/// list includes that level, so crates with a dylib crate type don't get them (rustc only
-/// allows `-Clto` for those with `-Zdylib-lto`, which the backend rejects).
+/// (`rustc_codegen_ssa/src/back/lto.rs:107`), also downstream, from this crate's metadata.
+/// They are not meant to be exported: `link` takes them out of every output's export list and
+/// `symbols.o` again ([`linked_roots`]).
 pub fn exported_non_generic_symbols<'tcx>(
     tcx: TyCtxt<'tcx>,
     list: &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)],
 ) -> &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)] {
-    if tcx.crate_types().iter().any(|t| matches!(t, CrateType::Dylib | CrateType::ProcMacro)) {
+    // Without codegen there is no image (rustc's provider returns nothing then,
+    // `symbol_export.rs:188`), and a proc macro's exports are fixed.
+    if !tcx.sess.opts.output_types.should_codegen() || tcx.crate_types().contains(&CrateType::ProcMacro) {
         return list;
     }
     // Forces the partitioning, as `exported_generic_symbols` does during metadata encoding.
@@ -989,11 +989,12 @@ fn is_root(s: &ExportedSymbol<'_>, info: &SymbolExportInfo) -> bool {
 }
 
 /// The [`Roots`] of the crates an output of `crate_type` links statically, one entry per
-/// crate that lists it. They are in that output's `CrateInfo::linked_symbols` (`used`
-/// symbols go into `symbols.o`, `rustc_codegen_ssa/src/back/linker.rs:1780`), which only LTO
-/// needs; without it, `link` takes them out again, since a reference by plain name to a
-/// static in a DLL wouldn't resolve on PE. The images still reference every root, so nothing
-/// that `symbols.o` would pull into the link goes missing.
+/// crate that lists it: the entries they add to that output's `CrateInfo::exported_symbols`
+/// (a Rust dylib exports the `Rust` level, `linker.rs:1700-1716`) and `linked_symbols`
+/// (`used` symbols go into `symbols.o`, `linker.rs:1780`; rustc leaves it empty under
+/// `-Clto`, `linker.rs:1760-1768`), which `link` removes again. Exporting them would fail
+/// (they include other crates' and foreign symbols), and on PE a plain-name reference in
+/// `symbols.o` to a static in a DLL wouldn't resolve. The images reference every root anyway.
 pub fn linked_roots(tcx: TyCtxt<'_>, crate_type: CrateType) -> Vec<String> {
     let mut out = Vec::new();
     let Some(deps) = tcx.dependency_formats(()).get(&crate_type) else { return out };

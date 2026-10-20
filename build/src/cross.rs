@@ -85,6 +85,12 @@ pub fn run(target: &str) -> Result<(), String> {
                     .difference(&reference)
                     .filter(|s| !RT_IMPORTS.contains(&s.as_str()))
                     .filter(|s| !reference.contains(&format!("__declspec(dllimport) {s}")))
+                    // The other way round: the image loads a foreign function's address through
+                    // `__imp_` where plain rustc calls it directly (`abs` from the CRT). An
+                    // import library defines both; for a static one the linker synthesizes it.
+                    .filter(|s| {
+                        s.strip_prefix("__declspec(dllimport) ").is_none_or(|plain| !reference.contains(plain))
+                    })
                     .collect();
                 if !extra.is_empty() {
                     return Err(format!("unresolved only in the {name} build: {extra:?}"));

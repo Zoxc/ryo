@@ -204,15 +204,19 @@ and `codegen_crate` reads them.
     `exported_non_generic_symbols` as `NoDefId`, `used`, at the `Rust` level, so `-Clto`
     doesn't internalize it: LTO keeps every `used` symbol whatever its threshold
     (`rustc_codegen_ssa/src/back/lto.rs:107`), and the image is an object LTO doesn't see.
-    The `Rust` level keeps them out of the export lists of executables, cdylibs and
-    staticlibs (`linker.rs:1712`). A Rust dylib's export list includes that level, so crates
-    with a dylib (or proc-macro) crate type don't list them, and `-Clto` is rejected for
-    dylibs. `used` symbols also go into `symbols.o` (`linker.rs:1780`), where only LTO
-    needs them, and where a plain-name reference to a static in a DLL wouldn't resolve on
-    PE. So `codegen_crate` collects, per crate type, these entries of every statically
-    linked crate (recognized as `NoDefId` + `used` + `Rust`, which rustc never produces), and
-    `link` removes one occurrence of each from `CrateInfo::linked_symbols` when LTO is off.
-    The image objects reference all of them anyway.
+    They are in the crate's metadata, so a downstream `-Clto` build keeps them too (also for
+    a crate that is both an rlib and a dylib). Not in metadata-only builds, where rustc's
+    provider is empty too (`symbol_export.rs:188`) and the partitioning doesn't run.
+    These entries must not be exported: a Rust dylib's export list includes the `Rust`
+    level (`linker.rs:1700-1716`), and a version script or `.def` file can't export another
+    crate's or a foreign symbol. `used` symbols also go into `symbols.o` (`linker.rs:1780`)
+    when LTO is off (rustc empties it under `-Clto`, `linker.rs:1760-1768`), where a
+    plain-name reference to a static in a DLL wouldn't resolve on PE. So `codegen_crate`
+    collects, per crate type, these entries of every statically linked crate (recognized
+    as `NoDefId` + `used` + `Rust`, which rustc never produces), and `link` removes one
+    occurrence of each from `CrateInfo::exported_symbols` and `linked_symbols`, so the
+    names rustc lists itself stay. The image objects reference all of them anyway.
+    `-Clto` of a dylib itself (`-Zdylib-lto`) is rejected.
   - The entry wrapper `c_main` (`External`, default visibility) isn't listed.
   - Items made `External` + `Hidden` only for the image (see Linkage) are filtered out of
     `exported_generic_symbols`, whatever `need_visibility` says. So are portals of

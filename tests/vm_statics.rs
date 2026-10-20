@@ -25,6 +25,16 @@ static mut TL_MUT: [u8; 4] = [1, 2, 3, 4];
 thread_local! {
     static TLK: Cell<i32> = const { Cell::new(10) };
     static TLV: std::cell::RefCell<Vec<i32>> = std::cell::RefCell::new(Vec::new());
+    static NOISY: Noisy = Noisy(String::from("tls"));
+}
+
+/// A thread local with a non-const initializer and a destructor.
+struct Noisy(String);
+
+impl Drop for Noisy {
+    fn drop(&mut self) {
+        println!("drop {}", self.0);
+    }
 }
 
 fn double(x: i32) -> i32 {
@@ -61,6 +71,25 @@ fn type_ids() -> (bool, bool, bool) {
     (a == T, b.type_id() == T, TypeId::of::<i8>() == T)
 }
 
+/// Type ids from a VM constant, hashed, as `u128`, and compared with one from native code.
+fn type_id_bits() -> (u64, bool, bool) {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+    const T: TypeId = TypeId::of::<Option<String>>();
+    let mut h = DefaultHasher::new();
+    T.hash(&mut h);
+    let mut h2 = DefaultHasher::new();
+    unsafe { native_type_id() }.hash(&mut h2);
+    let bits: u128 = unsafe { std::mem::transmute(T) };
+    let native_bits: u128 = unsafe { std::mem::transmute(native_type_id()) };
+    (h.finish() ^ h2.finish(), bits == native_bits, T == unsafe { native_type_id() })
+}
+
+/// Stays native (`#[target_feature]`).
+#[target_feature(enable = "sse2")]
+fn native_type_id() -> TypeId {
+    TypeId::of::<Option<String>>()
+}
+
 fn downcast(v: &dyn Any) -> i32 {
     if let Some(x) = v.downcast_ref::<i32>() {
         *x
@@ -90,9 +119,14 @@ fn main() {
     println!("{}", table(3));
     println!("{}", atomics());
     println!("{:?}", type_ids());
+    println!("{:?}", type_id_bits());
+    NOISY.with(|n| println!("{}", n.0));
     println!("{} {} {}", downcast(&4i32), downcast(&"abc"), downcast(&1u8));
     println!("{} {}", tls(), tls());
     println!("{} {}", tls_key(), tls_key());
-    let h = std::thread::spawn(|| (tls(), tls_key()));
+    let h = std::thread::spawn(|| {
+        NOISY.with(|n| println!("thread {}", n.0));
+        (tls(), tls_key())
+    });
     println!("{:?}", h.join().unwrap());
 }

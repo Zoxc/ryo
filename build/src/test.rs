@@ -28,10 +28,10 @@ pub(crate) struct Program {
 }
 
 impl Program {
-    /// Whether a crate is a Rust dylib, or links std's.
+    /// Whether the binary links a Rust dylib (LTO doesn't support that). A crate that is both
+    /// an rlib and a dylib is linked as the rlib.
     pub(crate) fn has_dylib(&self) -> bool {
-        self.flags.contains(&"-Cprefer-dynamic")
-            || self.crates.iter().any(|c| matches!(c.kind, CrateKind::Dylib | CrateKind::RlibDylib))
+        self.flags.contains(&"-Cprefer-dynamic") || self.crates.iter().any(|c| c.kind == CrateKind::Dylib)
     }
 }
 
@@ -265,7 +265,7 @@ pub(crate) const CORPUS: &[Program] = &[
     // the `ThreadLocal` shim, constants pointing at statics, functions and vtables.
     single!(
         "vm_statics",
-        vm: &["main", "bump", "nested", "table", "atomics", "type_ids", "downcast", "tls", "tls_key"],
+        vm: &["main", "bump", "nested", "table", "atomics", "type_ids", "type_id_bits", "downcast", "tls", "tls_key"],
         entered: &["std::rt::lang_start::<()>"]
     ),
     Program {
@@ -275,6 +275,31 @@ pub(crate) const CORPUS: &[Program] = &[
             krate("main", "vm_statics_cross/main.rs", CrateKind::Bin),
         ],
         vm: &["main", "statics", "fns", "dyns", "tls", "local", "f", "bump_tl", "<T as Shape>::area"],
+        entered: &["std::rt::lang_start::<()>"],
+        ..PROGRAM
+    },
+    // An rlib linked into a Rust dylib: its image's symbols (foreign, other crates') must not
+    // reach the dylib's export list. std is a dylib too, with thread locals on both sides.
+    Program {
+        name: "vm_dylib_dep",
+        crates: &[
+            krate("vda", "vm_dylib_dep/a.rs", CrateKind::Rlib),
+            krate("vdd", "vm_dylib_dep/d.rs", CrateKind::Dylib),
+            krate("main", "vm_dylib_dep/main.rs", CrateKind::Bin),
+        ],
+        flags: &["-Cprefer-dynamic"],
+        vm: &["main", "bump", "f", "g"],
+        entered: &["std::rt::lang_start::<()>"],
+        ..PROGRAM
+    },
+    // `-Clto` (the LTO variants) downstream of a crate built as rlib and dylib.
+    Program {
+        name: "vm_lto_dep",
+        crates: &[
+            krate("vla", "vm_lto_dep/a.rs", CrateKind::RlibDylib),
+            krate("main", "vm_lto_dep/main.rs", CrateKind::Bin),
+        ],
+        vm: &["main", "f", "h"],
         entered: &["std::rt::lang_start::<()>"],
         ..PROGRAM
     },
@@ -416,10 +441,11 @@ pub fn run(clif: bool) -> Result<(), String> {
         }
     }
     let hello = root.join("tests").join("hello.rs");
-    let checks: [(&str, Result<(), String>); 4] = [
+    let checks: [(&str, Result<(), String>); 5] = [
         ("reject-randomize-layout", reject_randomize_layout(&rustc_ryo, &hello, &out)),
         ("reject-codegen-units", reject_codegen_units(&rustc_ryo, &hello, &out)),
         ("reject-incremental", reject_incremental(&rustc_ryo, &hello, &out)),
+        ("metadata-only", metadata_only(&rustc_ryo, &hello, &out)),
         ("cargo-ryo", cargo_smoke(&root, &out)),
     ];
     for (name, res) in checks {
@@ -775,6 +801,23 @@ fn reject_incremental(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), St
     let stderr = String::from_utf8_lossy(&res.stderr);
     if res.status.success() || !stderr.contains("incremental compilation") {
         return Err(format!("expected rustc-ryo to reject -Cincremental; stderr:\n{stderr}"));
+    }
+    Ok(())
+}
+
+/// `--emit=metadata` must not run the partitioning (no codegen, so no image).
+fn metadata_only(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
+    let res = cmd(rustc_ryo)
+        .arg(src)
+        .args(["--crate-type=rlib", "--emit=metadata", "--crate-name=meta_only"])
+        .arg("--out-dir")
+        .arg(out)
+        .env("RYO_BACKEND_MARKER", "1")
+        .output()
+        .map_err(|e| e.to_string())?;
+    let stderr = String::from_utf8_lossy(&res.stderr);
+    if !res.status.success() || stderr.contains(PARTITION_MARKER) {
+        return Err(format!("expected a metadata-only build without partitioning; stderr:\n{stderr}"));
     }
     Ok(())
 }

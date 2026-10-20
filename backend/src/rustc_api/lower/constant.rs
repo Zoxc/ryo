@@ -114,7 +114,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 }
             }
             // A type id's "pointer" has no address: base 0, and the offset is part of the hash
-            // (as in `rustc_codegen_llvm/src/common.rs:201-205`).
+            // (as in `rustc_codegen_llvm/src/common.rs:201-205`). It is a pointer-sized
+            // scalar, so a 64-bit immediate.
             GlobalAlloc::TypeId { .. } => self.imm(Width::W64, d, u128::from(offset)),
         }
         Ok(())
