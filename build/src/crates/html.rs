@@ -582,7 +582,8 @@ pub fn render(r: &Report) -> String {
     let _ = write!(s, "<tr><td>bench time</td><td>{:.1} min</td></tr></table>", r.total_time / 60.0);
     s.push_str("<h2>Crates</h2><table><tr><th>crate</th><th>version</th><th>why</th></tr>");
     for c in &r.crates {
-        let _ = write!(s, "<tr><td>{}</td><td>{}</td><td>{}</td></tr>", c.krate.name, c.krate.version, esc(c.krate.why));
+        let args = if c.krate.test_args.is_empty() { String::new() } else { format!(" (test binaries run with `{}`)", c.krate.test_args.join(" ")) };
+        let _ = write!(s, "<tr><td>{}</td><td>{}</td><td>{}{}</td></tr>", c.krate.name, c.krate.version, esc(c.krate.why), esc(&args));
     }
     s.push_str("</table><p class=\"legend\">");
     for (i, b) in r.backends.iter().enumerate() {

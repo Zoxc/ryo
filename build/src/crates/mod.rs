@@ -23,6 +23,8 @@ pub struct Crate {
     pub sha256: &'static str,
     /// Why it was picked.
     pub why: &'static str,
+    /// Extra arguments for every test binary.
+    pub test_args: &'static [&'static str],
 }
 
 pub const CRATES: &[Crate] = &[
@@ -31,54 +33,64 @@ pub const CRATES: &[Crate] = &[
         version: "1.0.28",
         sha256: "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd",
         why: "parsing and ordering; no dependencies",
+        test_args: &[],
     },
     Crate {
         name: "smallvec",
         version: "1.15.1",
         sha256: "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03",
         why: "unsafe container code, generic over arrays",
+        test_args: &[],
     },
     Crate {
         name: "miniz_oxide",
         version: "0.9.1",
         sha256: "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c",
         why: "deflate/inflate: tight integer loops",
+        test_args: &[],
     },
     Crate {
         name: "memchr",
         version: "2.8.3",
         sha256: "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98",
         why: "SIMD intrinsics (islands) and runtime CPU feature detection",
+        // Five exhaustive tests take 115 of the suite's 120 s with LLVM at opt-level 0.
+        test_args: &["--skip", "forward_packedpair"],
     },
     Crate {
         name: "hashbrown",
         version: "0.17.1",
         sha256: "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a",
         why: "std's HashMap; SSE2 group probing, heavy generics",
+        test_args: &[],
     },
     Crate {
         name: "rand",
         version: "0.10.3",
         sha256: "65c9fb96cbc91e3478eaae79a69fcd3f1ae4ad052e471fe6732fff548984b4af",
         why: "ChaCha and xoshiro generators, getrandom (syscalls), traits",
+        test_args: &[],
     },
     Crate {
         name: "regex-syntax",
         version: "0.8.11",
         sha256: "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4",
         why: "a parser with large Unicode tables; regex's front half",
+        test_args: &[],
     },
     Crate {
         name: "unicode-segmentation",
         version: "1.13.3",
         sha256: "c6f5d3c3b1bf09027a88a6bc961fc00497d651009560b5463668dc81b0fa87a8",
         why: "table-driven state machines over UTF-8",
+        test_args: &[],
     },
     Crate {
         name: "serde_json",
         version: "1.0.154",
         sha256: "e7e9cc8b1b85264074fbcc02a88680c4096b1e47df8f739dceb03bf482f04bd6",
         why: "serde's trait-heavy codegen, proc-macro dev-deps (serde_derive)",
+        test_args: &[],
     },
 ];
 
@@ -579,7 +591,8 @@ fn run_tests(src: &Path, krate: &Crate, exes: &[PathBuf], timeout: u64) -> (f64,
     for exe in exes {
         let name = exe.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned());
         let mut c = Command::new(exe);
-        c.current_dir(src)
+        c.args(krate.test_args)
+            .current_dir(src)
             .env("CARGO_MANIFEST_DIR", src)
             .env("CARGO_PKG_NAME", krate.name)
             .env("CARGO_PKG_VERSION", krate.version);

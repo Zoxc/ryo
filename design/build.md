@@ -208,7 +208,8 @@ llvm,clif,ryo] [--timeout SECS] [--out FILE]` compares LLVM (plain rustc), Crane
   dependency graph and the leaf crate), `cargo build --tests` (dev-dependencies and test
   targets, i.e. `cargo test`'s build), `cargo build --example ryo_bench`. Run samples run
   every test binary from the package directory (as `cargo test` would; doc tests are not
-  run) and the workload. Binary sizes are the workload and the test binaries.
+  run; memchr skips its five exhaustive `forward_packedpair` tests, 115 of its 120 s with
+  LLVM) and the workload. Binary sizes are the workload and the test binaries.
 - **Compile-time sections**, measured inside rustc like cargo's `-Zsection-timings`, not
   with `-Zself-profile`/`-Ztime-passes`: cargo is run with `-Zsection-timings --timings`,
   so it passes `--json=timings` and rustc emits `section_timing` records (`codegen` from
