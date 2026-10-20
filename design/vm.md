@@ -22,15 +22,22 @@ context**. It is always loaded as one unit, whenever control may pass between im
 `call.ext`/`call.ind` into another image, at `ret` into another image, at `vm::enter`, when an
 entry record is restored, and on every frame pop during unwinding.
 
-`VmThread` is the per-thread state: stack bounds, stack top, and the chain of entry records.
-Each entry record holds the payload of a panic unwinding through it. It is `!Send` and `!Sync`, and is only reached through a raw pointer. It
+`VmThread` is the per-thread state: stack bounds, stack top, the image context (current image
+and its code bounds), and the chain of entry records. The **stack top** is the end of the
+current frame (`fp + frame_size` of the innermost running function): outgoing argument blocks
+and the next frame start there, so `call` and `vm::enter` read it as `new_fp`, and every call,
+`ret`, tail call and frame pop updates it. Each entry record holds the payload of a panic
+unwinding through it. It is `!Send` and `!Sync`, and is only reached through a raw pointer. It
 is never a `&mut`, because re-entrant `vm::enter` calls (VM → island → native → portal → VM)
 on the same thread would otherwise create aliasing mutable references.
 
 ## Frames and the VM stack
 
 - **The stack**: each thread has its own VM stack, an `mmap`ed (ELF) or `VirtualAlloc`ed (PE)
-  region with a guard page, created on the first `vm::enter` (behind a `cold_path`). Frames
+  region with a guard page, created on the first `vm::enter` (behind a `cold_path`). It is
+  8 MiB (`MAP_NORESERVE`, so untouched pages cost nothing). A pthread key (ELF) or FLS
+  (PE) destructor unmaps it when the thread exits, unless the thread exits from inside VM
+  code; a later `vm::enter` from thread-exit code maps a new one. Frames
   are bump-allocated. That is cheaper than `alloca` (no stack probing, frame size known), and
   leaves the native stack to native code.
 - **Frame layout**, with `fp` pointing at the start (H = 16):
@@ -61,9 +68,12 @@ on the same thread would otherwise create aliasing mutable references.
   native Rust. Native stack use by islands and portals is protected by the native guard page
   as usual.
 - **Re-entrancy**: `vm::enter` allocates its frame at the thread's current stack top, so it
-  works while the thread is already running bytecode further down the stack. It pushes an
-  *entry record* (the previous stack top, plus the suspended outer dispatch's `pc`, `fp` and
-  image context, if any) onto `VmThread`'s chain, and pops it on return.
+  works while the thread is already running bytecode further down the stack. It copies
+  `arg_size` bytes (from the function table) of the portal's args into the new frame. It
+  pushes an *entry record* (the previous stack top and image context, the portal's `ret`
+  pointer, and the payload slot) onto `VmThread`'s chain, and pops it on return, also if a
+  panic unwinds natively through `enter` (a drop guard). The suspended outer dispatch keeps
+  its own `pc`, `fp`, `syms` and `consts` in its native frame.
 
 ## Encoding
 
@@ -241,8 +251,9 @@ Islands have no `d` word: "destination in word 1" applies only to the call instr
 `ret` returns to (`call`, `call.ext`, `call.ext.ind`, `call.ind`).
 
 - **`call`**:
-  - Sets `new_fp = fp + frame_size(caller)`, checks the stack, and writes `[new_fp] = fp`,
-    `[new_fp + 8] = pc`.
+  - Sets `new_fp = fp + frame_size(caller)` (the stack top), checks the stack with the
+    immediate `frame_size` (the callee's) and the callee's `max_outgoing`, and writes
+    `[new_fp] = fp`, `[new_fp + 8] = pc`.
   - Jumps to the callee's entry. The arguments are already in place.
 - **`ret`**:
   - Reads the caller's call instruction at `return pc`, and takes the destination slot `d`
@@ -285,9 +296,16 @@ Islands have no `d` word: "destination in word 1" applies only to the call instr
   - The arguments are staged in the outgoing block (above the current frame), then
     `memmove`d down to `fp + H`. The header (caller fp, return pc) is kept, so the callee
     returns to the original caller.
-  - The stack check is redone with the callee's `frame_size`.
-  - `tail_call.ind` to a native target can't be a true tail call. It runs the island, then
-    returns as `ret` would, so it uses native stack for the duration of that call.
+  - The stack check is redone with the callee's `frame_size`. The number of bytes moved is
+    the callee's `arg_size` (function table).
+  - `tail_call.ind` to a native target can't be a true tail call. It runs the island with
+    `ops = [frame_size + H, H, frame_size]`, so the result lands at `fp + H` (the frame is
+    dead, and it is at least `H + size_of(R)` bytes, since `_0` lives in it), then returns
+    it as `ret` would, with the function's `ret_size` (function table) as the length. It
+    uses native stack for the duration of that call.
+  - The native path of `call.ext`/`call.ind`/`tail_call.ind` always goes through
+    `call_catching`: the instructions don't encode whether the site's unwind action is
+    `Unreachable`, so the `Unreachable` shortcut above is not taken yet.
 
 ### Unwinding
 
@@ -383,7 +401,16 @@ fixups        PE only: constant allocations that point at DLL-imported data
   Images are never unregistered: unloading a shared object that contains ryo code
   (`dlclose`/`FreeLibrary`) is not supported, because site caches, snapshots and frames
   may still point into it.
-  It does no other work, so startup is O(number of images).
+  It does no other work, so startup is O(number of images): it only parses headers
+  (`Image::parse`, O(1)), and runs `Image::validate` only for images with PE fixups, which
+  `apply_fixups` requires. The per-function run-time records (`vm::Function`: absolute code
+  pointer, frame sizes, image, portal address) are built per image on first use (the first
+  `enter` into it or the first `lookup_addr`). Registry memory comes from `mmap`ed chunks
+  (`VirtualAlloc` on PE), not the Rust allocator.
+- **`__ryo_registry_anchor`**: `vm::enter` references it behind `ryo_rt`'s
+  `registry-anchor` cargo feature, which `y build` enables when it builds the sysroot's
+  `ryo_rt`. Without the backend nothing defines the symbol, so `ryo_rt`'s own tests and
+  plain cargo builds leave the feature off.
 - **`vm::lookup_addr`**: maps a portal address to its VM function. It uses a hash map built
   lazily on the first lookup from all registered images' portal symbols, and rebuilt
   (published the same way) when images are added. The site caches mean it's rarely called.
@@ -419,6 +446,15 @@ The hot loop is written in Rust, using nightly features available through `RUSTC
 - **A plain `loop { match op { … } }`** works on any compiler, and is the reference for
   correctness tests.
 
+The handler list is `vm/rt/src/vm/handlers.rs`: every opcode with a handler *kind* and its
+parameters (`AddW32 => bin(u32, wrapping_add);`). Each kind is a macro producing the handler
+body, which reads its operands at the generated offsets (`ryo_bytecode::insn::off`), and either
+falls through to the next dispatch or returns `run`'s result. A strategy macro expands the
+list; the plain one makes each arm a local function that is `inline(always)` in optimized
+builds and `inline(never)` in unoptimized ones (unoptimized builds don't share stack slots
+between the arms, which made the dispatch frame hundreds of KiB). The plain `match`
+is exhaustive, so an opcode added to `ops.rs` without a handler fails to compile.
+
 All three are generated from one `dispatch!` macro over the handler bodies, and `y bench`
 compares them. `explicit_tail_calls` and `loop_match` are `incomplete` features
 (`unstable.rs:539,619`), so the plain loop stays tested too.
@@ -450,7 +486,7 @@ templates, and the panic glue. It is a normal Rust dependency of every ryo-built
   - `vm::enter(id, args, ret, payload_out) -> u32`: entry from portals. It returns 0 for ok,
     and 1 for unwinding, with the payload (`RawPayload`, an opaque raw `Box` pointer) moved to
     `payload_out` before the entry record is popped.
-  - `vm::lookup_addr(fnptr)`: portal address → VM function.
+  - `vm::lookup_addr(fnptr) -> Option<&'static vm::Function>`: portal address → VM function.
   - `vm::register`: `#[no_mangle] extern "C" fn ryo_vm_register(images, n)`.
 - **`portal`**: `portal`, `portal_tc0..N` ([stubs.md](stubs.md#portals-native--vm)).
 - **`island`**: the island templates ([stubs.md](stubs.md#templates)).
