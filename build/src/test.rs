@@ -468,7 +468,8 @@ pub fn run(clif: bool) -> Result<(), String> {
         }
     }
     let hello = root.join("tests").join("hello.rs");
-    let checks: [(&str, Result<(), String>); 6] = [
+    let checks: [(&str, Result<(), String>); 7] = [
+        ("rt-core-only", rt_core_only(&root)),
         ("reject-randomize-layout", reject_randomize_layout(&rustc_ryo, &hello, &out)),
         ("reject-codegen-units", reject_codegen_units(&rustc_ryo, &hello, &out)),
         ("reject-incremental", reject_incremental(&rustc_ryo, &hello, &out)),
@@ -777,6 +778,14 @@ mod tests {
     }
 
     #[test]
+    fn v0_crate_roots() {
+        let roots = super::crate_roots("_RNvNtNtCs1xp9oXn4fDY_6ryo_rt2vm3sys5fatal");
+        assert_eq!(roots, ["6ryo_rt"]);
+        let roots = super::crate_roots("_RINvNtCsabc_4core3ptr13drop_in_placeNtCsdef_3std6ThreadE");
+        assert_eq!(roots, ["4core", "3std"]);
+    }
+
+    #[test]
     fn splits_stats() {
         let (st, rest) = super::split_stats("a\nryo-vm: 3 enters, 1 islands, 0 native calls\nb");
         assert_eq!(st.as_deref(), Some("3 enters, 1 islands, 0 native calls"));
@@ -915,6 +924,92 @@ fn same_exports(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> 
         }
     }
     Ok(())
+}
+
+/// `ryo_rt` must use only `core`, its own crates, libc, and the panic runtime's two entry
+/// points (native: a panic runtime is never VM code): with `--sysroot ryo`, std's allocator,
+/// locks and TLS may be VM functions, which the runtime must not call while it switches VM
+/// state (design/vm.md, "No re-entry into the VM from the runtime"). Checked on the undefined
+/// symbols of every sysroot's `ryo_rt` rlib, by crate in their v0 mangled names. ELF only.
+fn rt_core_only(root: &Path) -> Result<(), String> {
+    if cfg!(windows) {
+        return Ok(());
+    }
+    let info = crate::utils::RustcInfo::get()?;
+    let nm = info.sysroot.join("lib").join("rustlib").join(&info.host).join("bin").join("llvm-nm");
+    let dist = root.join("dist");
+    let mut libs = Vec::new();
+    for sysroot in [dist.clone(), dist.join(crate::sysroot::SYSROOT_DIR)] {
+        let dir = sysroot.join("lib").join("rustlib").join(&info.host).join("lib");
+        let Ok(entries) = fs::read_dir(&dir) else { continue };
+        for e in entries.flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if name.starts_with("libryo_rt") && name.ends_with(".rlib") {
+                libs.push(e.path());
+            }
+        }
+    }
+    if libs.is_empty() {
+        return Err("no ryo_rt rlib in dist/".to_owned());
+    }
+    // v0 crate roots (`C<disambiguator>_<len><name>`) allowed, and the allowed std symbols.
+    const CRATES: [&str; 4] = ["4core", "17compiler_builtins", "12ryo_bytecode", "6ryo_rt"];
+    const PANIC_RUNTIME: [&str; 3] = ["18___rust_start_panic", "20___rust_panic_cleanup", "rust_eh_personality"];
+    for lib in libs {
+        let syms = output(cmd(&nm).args(["-u", "--no-demangle", "-j"]).arg(&lib))?;
+        let bad: Vec<&str> = syms
+            .lines()
+            .map(str::trim)
+            .filter(|s| !s.is_empty() && !s.ends_with(':'))
+            .filter(|s| !PANIC_RUNTIME.iter().any(|p| s.ends_with(p)))
+            .filter(|s| {
+                // Rust symbols must name only allowed crates; any `__rust_*`/`__rdl_*`/`__rg_*`
+                // allocator shim is std's.
+                if s.starts_with("__rust") || s.starts_with("__rdl") || s.starts_with("__rg_") {
+                    return true;
+                }
+                s.starts_with("_R") && crate_roots(s).iter().any(|c| !CRATES.contains(&c.as_str()))
+            })
+            .collect();
+        if !bad.is_empty() {
+            return Err(format!("{} uses symbols outside core: {bad:?}", lib.display()));
+        }
+    }
+    Ok(())
+}
+
+/// The crate roots (`<len><name>` after `Cs<disambiguator>_`) in a v0 symbol.
+fn crate_roots(sym: &str) -> Vec<String> {
+    let b = sym.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'C' && b.get(i + 1) == Some(&b's') {
+            let mut j = i + 2;
+            while j < b.len() && b[j].is_ascii_alphanumeric() {
+                j += 1;
+            }
+            if b.get(j) != Some(&b'_') {
+                i += 1;
+                continue;
+            }
+            j += 1;
+            let start = j;
+            while j < b.len() && b[j].is_ascii_digit() {
+                j += 1;
+            }
+            if j > start
+                && let Ok(n) = sym[start..j].parse::<usize>()
+                && j + n <= b.len()
+            {
+                out.push(sym[start..j + n].to_owned());
+                i = j + n;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    out
 }
 
 /// `--emit=metadata` must not run the partitioning (no codegen, so no image).

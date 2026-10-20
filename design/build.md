@@ -47,8 +47,11 @@ modeled on cg_clif's `build_system/`.
      x86_64 Linux links with the sysroot's `rust-lld` by default.
    - `--sysroot ryo`: everything above, plus std built from `rust-src` with our backend, in
      its own sysroot `dist/sysroot-ryo/` (`lib/rustlib/<host>/lib`, and the target's `bin/`
-     for `rust-lld`). `rustc-ryo --sysroot ryo` selects it; the default stays the LLVM std, so
-     both can be tested from one `dist/`. Host only.
+     for `rust-lld`). It is opt-in: `rustc-ryo --sysroot ryo` (or `RUSTFLAGS="--sysroot ryo"`
+     for `cargo-ryo`) selects it, while the default of `y build`, the wrappers, `cargo-ryo`
+     and `y test`'s default variants stays `--sysroot llvm`, the toolchain's prebuilt std, in
+     which only std generics instantiated in ryo-built crates become VM functions. Both can be
+     tested from one `dist/`. Host only (Linux is what is tested).
      - `library/` is copied to `target/sysroot-ryo/library` (once per toolchain), and cargo
        builds its `sysroot` crate there (`--release --features "backtrace panic-unwind"`,
        `--target <host>`), with `RUSTFLAGS` `-Zforce-unstable-if-unmarked --sysroot=/dev/null
@@ -142,6 +145,9 @@ This gives a third backend, built from the same toolchain, to compare against.
   C `main`, compiled with `cc`, or `cl` on windows-msvc hosts (skipped without one). The smoke tests check that `rustc-ryo`
   rejects `-Zrandomize-layout`, more than one codegen unit and `-Cincremental`, and that
   `cargo-ryo` builds a dev-profile package.
+- `test` checks (`rt-core-only`) that every sysroot's `ryo_rt` rlib references no symbols
+  outside `core`, `compiler_builtins`, `ryo_bytecode`, libc and the panic runtime's entry
+  points ([vm.md](vm.md#runtime-crate-ryo_rt), "No re-entry into the VM from the runtime").
 - With a ryo sysroot in `dist/`, `test` also builds the corpus against it (`--sysroot ryo`):
   variants `ryo-std` and `ryo-std-O3` (output and trace consistency only, like `ryo-O3`). Their
   `entered` lists aren't checked: those name what the LLVM std enters through portals, and VM

@@ -415,7 +415,8 @@ fixups        PE only: constant allocations that point at DLL-imported data
   stack setup and `call_catching` use only `core` and `ryo_rt`'s own lock (a spin lock, or a
   futex/`WaitOnAddress` lock). With `--sysroot ryo`, std's `Mutex`, allocator or TLS code may
   be VM functions, and calling them from inside the runtime would enter the VM before it
-  exists. The panic payload box is the exception: it is only touched through
+  exists. `ryo_rt` being `#![no_std]` enforces this at compile time, and `y test`
+  (`rt-core-only`) checks its rlibs' undefined symbols. The panic payload box is the exception: it is only touched through
   the panic runtime's `__rust_panic_cleanup`/`__rust_start_panic`, outside the VM's own state
   transitions. In particular, `resume_unwind_from_vm` (which ends in `__rust_start_panic`) runs
   only after `vm::enter` has popped its entry record. The panic runtime itself is never VM
