@@ -258,15 +258,33 @@ fn object_module(name: String, object: PathBuf) -> CompiledModule {
     }
 }
 
-/// The image symbol flags for a `sym` operand naming `target` (design/platforms.md): on PE,
-/// every symbol defined outside this crate (an upstream crate's, or a foreign item) gets an
-/// indirect slot ([`SYM_INDIRECT`](ryo_bytecode::image::SYM_INDIRECT)), relocated against its
-/// `__imp_` import slot. The instruction using the operand must then be the `.ind` form
-/// (`addr.sym.ind`, `call.ext.ind`). `island` operands and the `island` of `call.ext` are
-/// always direct: islands are only called, never compared, so an import thunk will do.
-pub(crate) fn symbol_flags<'tcx>(tcx: TyCtxt<'tcx>, target: Instance<'tcx>) -> u8 {
+/// How an image symbol slot is used, which decides whether it is indirect
+/// (design/platforms.md, design/vm.md#image-format).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SymRole {
+    /// The `sym` of `addr.sym`/`addr.sym.ind` or `call.ext`/`call.ext.ind`: its address is
+    /// observable, so on PE it must be the real one.
+    Target,
+    /// An `island` instruction's `sym`, or the `island` operand of a call: only ever called.
+    // Part of the seam; the merge pass doesn't fill island operands yet.
+    #[allow(dead_code)]
+    Island,
+}
+
+/// The image slot flags for `target` used as `role`: on PE, a [`SymRole::Target`] symbol
+/// defined outside this crate (an upstream crate's, or a foreign item) gets an indirect slot
+/// ([`SYM_INDIRECT`](ryo_bytecode::image::SYM_INDIRECT)), relocated against its `__imp_`
+/// import slot, and the instruction must be the `.ind` form (`addr.sym.ind`,
+/// `call.ext.ind`). Islands are always direct: a direct reference to a function in another
+/// DLL resolves to its import thunk, which is fine to call. The writer keys slots by name and
+/// flags, so one symbol can have both.
+pub(crate) fn symbol_flags<'tcx>(tcx: TyCtxt<'tcx>, target: Instance<'tcx>, role: SymRole) -> u8 {
     let pe = matches!(tcx.sess.target.binary_format, rustc_target::spec::BinaryFormat::Coff);
-    if pe && !tcx.should_codegen_locally(target) { ryo_bytecode::image::SYM_INDIRECT } else { 0 }
+    if pe && role == SymRole::Target && !tcx.should_codegen_locally(target) {
+        ryo_bytecode::image::SYM_INDIRECT
+    } else {
+        0
+    }
 }
 
 fn binary_format(f: &rustc_target::spec::BinaryFormat) -> object::BinaryFormat {

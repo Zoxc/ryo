@@ -277,7 +277,8 @@ pub struct ImageWriter {
     data_relocs: Vec<AllocReloc>,
     fixups: Vec<AllocFixup>,
     symbols: Vec<SymbolDef>,
-    sym_index: BTreeMap<String, u32>,
+    /// Slots by (name, flags): a symbol can have a direct and an indirect slot.
+    sym_index: BTreeMap<(String, u8), u32>,
     sites: u32,
 }
 
@@ -317,16 +318,17 @@ impl ImageWriter {
         crate_hash(self.stable_crate_id)
     }
 
-    /// Interns a symbol and returns its slot index. Panics if it was interned with other
-    /// flags.
+    /// Interns a symbol slot and returns its index. Slots are keyed by name and flags, so
+    /// one symbol used both directly (e.g. as an island) and indirectly (PE `__imp_`, e.g.
+    /// by `call.ext.ind`) gets two slots.
     pub fn symbol(&mut self, name: &str, flags: u8) -> Sym {
-        if let Some(&i) = self.sym_index.get(name) {
-            assert_eq!(self.symbols[i as usize].flags, flags, "symbol {name} with differing flags");
+        let key = (String::from(name), flags);
+        if let Some(&i) = self.sym_index.get(&key) {
             return Sym(i);
         }
         let i = self.symbols.len() as u32;
         self.symbols.push(SymbolDef { name: name.into(), flags });
-        self.sym_index.insert(name.into(), i);
+        self.sym_index.insert(key, i);
         Sym(i)
     }
 

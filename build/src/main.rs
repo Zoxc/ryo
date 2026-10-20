@@ -2,6 +2,7 @@
 
 mod bench;
 mod clif;
+mod cross;
 mod dist;
 mod test;
 mod utils;
@@ -25,6 +26,8 @@ commands:
                                also install std and ryo_rt for each target T
   build-clif                   build cg_clif from the toolchain's rustc-dev sources
   test [--clif]                build the test corpus with rustc-ryo and plain rustc, diff outputs
+  test --cross T               cross-build and link (not run) the corpus for target T, e.g.
+                               x86_64-pc-windows-msvc; needs `build --target T` first
   bench [--runs N]             compare LLVM -O0/-O3, Cranelift and ryo: compile and run time
   clean                        remove dist/ and target/
 ";
@@ -41,6 +44,8 @@ enum Cmd {
     Build { sysroot: Sysroot, targets: Vec<String> },
     BuildClif,
     Test { clif: bool },
+    /// `test --cross <target>`.
+    CrossTest { target: String },
     Bench { runs: u32 },
     Clean,
     Help,
@@ -84,6 +89,8 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
         "test" => match rest.as_slice() {
             [] => Ok(Cmd::Test { clif: false }),
             ["--clif"] => Ok(Cmd::Test { clif: true }),
+            ["--cross", t] => Ok(Cmd::CrossTest { target: t.to_string() }),
+            [a] if a.starts_with("--cross=") => Ok(Cmd::CrossTest { target: a["--cross=".len()..].to_owned() }),
             [arg, ..] => Err(format!("unexpected argument `{arg}`")),
         },
         "bench" => match rest.as_slice() {
@@ -120,6 +127,7 @@ fn main() -> ExitCode {
         }
         Cmd::BuildClif => clif::build(),
         Cmd::Test { clif } => test::run(clif),
+        Cmd::CrossTest { target } => cross::run(&target),
         Cmd::Bench { runs } => bench::run(runs),
         Cmd::Clean => dist::clean(),
     };
@@ -157,6 +165,9 @@ mod tests {
         assert!(parse(&["build", "--target"]).is_err());
         assert!(parse(&["build", "x"]).is_err());
         assert_eq!(parse(&["test", "--clif"]), Ok(Cmd::Test { clif: true }));
+        let cross = || Ok(Cmd::CrossTest { target: "x86_64-pc-windows-msvc".into() });
+        assert_eq!(parse(&["test", "--cross", "x86_64-pc-windows-msvc"]), cross());
+        assert_eq!(parse(&["test", "--cross=x86_64-pc-windows-msvc"]), cross());
         assert_eq!(parse(&["bench"]), Ok(Cmd::Bench { runs: bench::DEFAULT_RUNS }));
         assert_eq!(parse(&["bench", "--runs", "3"]), Ok(Cmd::Bench { runs: 3 }));
         assert!(parse(&["bench", "--runs", "0"]).is_err());

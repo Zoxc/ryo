@@ -26,7 +26,7 @@ modeled on cg_clif's `build_system/`.
 - A zero-dependency bin crate (its own `Cargo.toml` and `Cargo.lock`, not a workspace member),
   run through `./y.sh <cmd>` (or `y.cmd`/`y.ps1` on Windows), which is
   `cargo run --manifest-path build/Cargo.toml -- <cmd>`.
-- Commands: `build [--sysroot llvm|ryo] [--target T]...`, `build-clif`, `test [--clif]`, `bench [--runs N]`,
+- Commands: `build [--sysroot llvm|ryo] [--target T]...`, `build-clif`, `test [--clif | --cross T]`, `bench [--runs N]`,
   `clean`.
 - It sets `RUSTC_BOOTSTRAP=1` on everything it spawns.
 
@@ -114,6 +114,9 @@ This gives a third backend, built from the same toolchain, to compare against.
   C `main`, compiled with `cc`, or `cl` on windows-msvc hosts (skipped without one). The smoke tests check that `rustc-ryo`
   rejects `-Zrandomize-layout`, more than one codegen unit and `-Cincremental`, and that
   `cargo-ryo` builds a dev-profile package.
+- `test --cross T`: builds and links, without running, the corpus for target `T` (after
+  `build --target T`), against stand-in import libraries ([platforms.md](platforms.md),
+  cross-checking). Skipped if the sysroot has no `rust-lld`.
 - `test --clif`: also builds the corpus with `rustc-clif` and diffs its output too. That
   helps tell ryo bugs from test-corpus problems.
 - `bench [--runs N]`: hyperfine comparisons of each program in `tests/bench/` (fib, sieve,

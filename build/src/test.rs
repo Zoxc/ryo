@@ -10,11 +10,11 @@ use crate::utils::{cmd, describe, dll_name, exe_name, output, root};
 
 /// A test program: one or more crates under `tests/`, built in order. The binary crate runs,
 /// or, for [`Program::c_main`], a C program linked against the last crate.
-struct Program {
-    name: &'static str,
-    crates: &'static [Crate],
+pub(crate) struct Program {
+    pub(crate) name: &'static str,
+    pub(crate) crates: &'static [Crate],
     /// Extra flags for every crate.
-    flags: &'static [&'static str],
+    pub(crate) flags: &'static [&'static str],
     /// Functions the ryo build must compile to bytecode (as `RYO_STATS` prints them).
     vm: &'static [&'static str],
     /// Functions that must be entered through `vm::enter` (portals), checked by running the
@@ -28,16 +28,16 @@ struct Program {
 /// Defaults for [`Program`] fields.
 const PROGRAM: Program = Program { name: "", crates: &[], flags: &[], vm: &[], entered: &[], c_main: None };
 
-struct Crate {
+pub(crate) struct Crate {
     /// The crate name, passed as `--crate-name`.
-    name: &'static str,
+    pub(crate) name: &'static str,
     /// Source path, relative to `tests/`.
-    src: &'static str,
-    kind: CrateKind,
+    pub(crate) src: &'static str,
+    pub(crate) kind: CrateKind,
 }
 
 #[derive(Clone, Copy, PartialEq)]
-enum CrateKind {
+pub(crate) enum CrateKind {
     Bin,
     Rlib,
     Dylib,
@@ -48,7 +48,7 @@ enum CrateKind {
 }
 
 impl CrateKind {
-    fn flags(self) -> &'static [&'static str] {
+    pub(crate) fn flags(self) -> &'static [&'static str] {
         match self {
             CrateKind::Bin => &["--crate-type", "bin"],
             CrateKind::Rlib => &["--crate-type", "rlib"],
@@ -82,7 +82,7 @@ macro_rules! single {
 }
 
 /// Programs built with plain rustc and with every [`Variant`]; their outputs must match.
-const CORPUS: &[Program] = &[
+pub(crate) const CORPUS: &[Program] = &[
     single!("hello"),
     single!("arith"),
     single!("structs_enums"),

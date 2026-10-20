@@ -359,7 +359,10 @@ functions     per function, sorted by code offset: code offset, code length,
 code          the instruction words of all functions
 cleanup       per function: sorted (code offset, target block offset | terminate)
 fixups        PE only: (writable offset, symbol index, addend)
-symbol flags  one byte per symbol (bit 0: indirect, load through the slot)
+symbol flags  one byte per symbol (bit 0: indirect, load through the slot; PE only, and
+              only for the `sym` of `addr.sym.ind`/`call.ext.ind`, never for islands,
+              portals or allocation pointers, [platforms.md](platforms.md). A symbol used
+              both ways has two slots)
 symbols       pointer-sized slots, one per referenced native symbol (functions, statics,
               islands, portals), filled in by the linker
               (`R_X86_64_64` / `IMAGE_REL_AMD64_ADDR64`)

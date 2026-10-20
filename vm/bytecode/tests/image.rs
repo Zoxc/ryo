@@ -309,6 +309,20 @@ fn writer_checks_symbol_indirection() {
     assert_eq!(check(SYM_INDIRECT, ext), bad);
     assert_eq!(check(SYM_INDIRECT, island_ind), bad);
 
+    // One upstream function both called through its import slot and used as an island:
+    // an indirect and a direct slot of the same name.
+    let mut w = ImageWriter::new(1);
+    let ind = w.symbol("f", SYM_INDIRECT);
+    let dir = w.symbol("f", 0);
+    assert_ne!(ind, dir);
+    let site = w.site();
+    w.add_function(FunctionDef {
+        code: code(&[Insn::CallExtInd { d: Slot(0), sym: ind, site, island: dir }, Insn::Abort {}]),
+        ..Default::default()
+    });
+    let obj = w.finish().unwrap();
+    assert_eq!(obj.symbols.iter().map(|s| (s.name.as_str(), s.flags)).collect::<Vec<_>>(), [("f", SYM_INDIRECT), ("f", 0)]);
+
     // Portals are local definitions: never indirect.
     let mut w = ImageWriter::new(1);
     let p = w.symbol("p", SYM_INDIRECT);
@@ -322,6 +336,10 @@ fn symbols_are_interned() {
     assert_eq!(w.symbol("a", 0), Sym(0));
     assert_eq!(w.symbol("b", SYM_INDIRECT), Sym(1));
     assert_eq!(w.symbol("a", 0), Sym(0));
+    // The same symbol direct and indirect: two slots.
+    assert_eq!(w.symbol("b", 0), Sym(2));
+    assert_eq!(w.symbol("a", SYM_INDIRECT), Sym(3));
+    assert_eq!(w.symbol("b", SYM_INDIRECT), Sym(1));
 }
 
 #[test]
