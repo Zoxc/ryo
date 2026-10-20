@@ -1,0 +1,271 @@
+# Lowering: MIR → bytecode
+
+Each VM function is lowered on its own (in parallel, [backend.md](backend.md#pipeline)) into a
+code buffer, a constant list, a relocation list and a cleanup table. The instruction set is
+specified in [vm.md](vm.md#instruction-set).
+
+The lowering matches every MIR enum (`StatementKind`, `Rvalue`, `Operand`, `ProjectionElem`,
+`CastKind`, `BinOp`, `UnOp`, `TerminatorKind`, `AssertKind`, …) exhaustively, with no `_` arm,
+so a MIR change in a toolchain bump is a compile error. The tables below follow 1.99.1
+(`rustc_middle/src/mir/syntax.rs`).
+
+## Input
+
+- `tcx.instance_mir(instance.def)`, monomorphized with
+  `instance.instantiate_mir_and_normalize_erasing_regions`, as cg_ssa does. Every
+  `InstanceKind` that has a body is lowered the same way: `Item` and every
+  `Shim(ShimKind)`: `VTable`, `Reify`, `FnPtr`, `ClosureOnce`,
+  `ConstructCoroutineInClosure`, `ThreadLocal`, `FutureDropPoll`, `DropGlue`, `Clone`,
+  `FnPtrAddr`, `AsyncDropGlueCtor`, `AsyncDropGlue` (`rustc_middle/src/ty/instance.rs:62-190`).
+- Layouts come from `tcx.layout_of`. Every type is concrete, so every size, offset and
+  discriminant encoding is known at lowering time, and the bytecode carries no type
+  information.
+- **MIR optimization**: the wrappers pass `-Zmir-opt-level=2 -Zinline-mir=yes`, also for debug
+  builds ([build.md](build.md#build)). An interpreter pays a full call for every small
+  `Deref::deref`, `Index::index` or `Iterator::next`. MIR inlining removes most of them, and
+  level 2 adds GVN, copy propagation, dead store elimination and CFG simplification.
+  `mir_opt_level` defaults to 1 at `-O0`. The inliner is off at level 1, and at level 2 it
+  runs only with optimizations on and incremental off (`rustc_mir_transform/src/inline.rs:48-59`).
+  `-Zinline-mir=yes` overrides both. The setting is session-wide, so it applies to
+  native items too. Inlining stops at upstream items without MIR in metadata (non-generic,
+  non-`#[inline]`), and those calls become islands.
+
+## Frame slots
+
+- **Arguments**: the **argument block** has the layout of the tuple of the callee's *ABI*
+  argument types, as `tcx.layout_of` computes it. That is `fn_sig_for_fn_abi`'s inputs with
+  a trailing `rust-call` tuple spread out, as `fn_abi_new_uncached` does
+  (`rustc_ty_utils/src/abi.rs:553-566`), plus the implicit `&'static Location` for
+  `#[track_caller]` functions (`abi.rs:600`). For most bodies, the argument locals `_1.._n`
+  are the block's fields. Bodies with `spread_arg` (rust-call items whose MIR has one tupled
+  local where the ABI is spread) give the spread local its own slot, and the function's
+  prologue assembles it from the block fields, because the nested and flat tuple layouts
+  differ. Callers (`call`, `call.ind`, `tail_call`), callees, portals
+  (whose `Args` tuple is exactly this tuple) and the `call` island templates all use this
+  one definition (`ryo_bytecode::abi::arg_block`). So an argument block can move between them
+  with one `copy`. The wrappers reject `-Zrandomize-layout`, since tuple layouts must agree
+  between crates. ZST arguments get an offset in the tuple and take no space.
+- The argument block starts at `fp + H`, where H is the header size
+  ([vm.md](vm.md#frames-and-the-vm-stack)).
+- **Other locals**: each gets a fixed offset after the argument block, aligned to its
+  layout. ZSTs take no space. Locals whose live ranges don't overlap share a slot. Ranges come
+  from `StorageLive`/`StorageDead`, and from liveness for locals that have no storage markers.
+- `_0` (the return value) is a normal slot.
+- `frame_size` = H + argument block + other locals, rounded up to 16.
+
+## Places and operands
+
+- `_n` → slot `off_n`.
+- `Field` of a local (any depth, through `Downcast`) → slot `off_n + offset`, folded at
+  lowering time. `Downcast` only selects which variant layout applies.
+- `(*_n).f…` → the memory operand `[slot_n + k]`: the pointer is loaded from the slot and the
+  constant offset `k` is added. A deref anywhere else in the projection list (`(*(*_n).f).g`)
+  first loads the inner pointer into a temporary slot.
+- `Index(_i)`, `ConstantIndex`, `Subslice` → `ptr.index`/`ptr.add` into a temporary slot,
+  then a memory operand on it.
+- `OpaqueCast`, `UnwrapUnsafeBinder` → nothing (same bytes, different type).
+- Unsized places (`[T]`, `str`, `dyn Trait` behind a deref): the pointer slot holds a wide
+  pointer. Lengths and vtables are read from its metadata word. Size-dependent operations use
+  the runtime size (from the vtable or `len * size_of::<T>`).
+- **Operands**:
+  - `Copy`/`Move` of a place are lowered the same way (a move is a copy, and drop
+    elaboration has already made moves explicit).
+  - `Constant` becomes an immediate for scalars, and a constant-pool reference otherwise.
+  - `RuntimeChecks(UbChecks | ContractChecks | OverflowChecks)` becomes an immediate `bool`,
+    the session's setting, as cg_ssa does.
+
+## Statements
+
+| `StatementKind` | Bytecode |
+|---|---|
+| `Assign(place, rvalue)` | see Rvalues |
+| `SetDiscriminant` | tag store, or `set_discr.niche` |
+| `Intrinsic(CopyNonOverlapping)` | `memcpy` |
+| `Intrinsic(Assume)` | nothing |
+| `StorageLive`, `StorageDead` | nothing (slot allocation used them) |
+| `FakeRead`, `PlaceMention`, `AscribeUserType`, `Coverage`, `ConstEvalCounter`, `Nop`, `BackwardIncompatibleDropHint` | nothing |
+
+## Rvalues
+
+**Aggregate copies**: copies between two places where either side is in memory (through a
+deref) use `memmove`. Copies between frame slots use `copy`, because distinct slots never
+overlap.
+
+| `Rvalue` | Bytecode |
+|---|---|
+| `Use(op, _)` | `mov.wN` (scalar), `copy`/`memmove` (aggregate), or a load/store when a side is in memory. The retag flag is ignored |
+| `CopyForDeref(place)` | same as `Use(Copy(place))` |
+| `Repeat(op, n)` | `fill` (constant element), or a loop |
+| `Ref`, `RawPtr` | `addr` (slot address) or the place's address computation. For unsized places, the wide pointer (data plus metadata) |
+| `Reborrow(_, _, place)` | same as `Use(Copy(place))`: same layout, bitwise copy |
+| `ThreadLocalRef(def)` | `call_ptr0` on the symbol of `Shim(ThreadLocal(def))`, which returns the address. On ELF, rustc normally doesn't create that shim (`needs_thread_local_shim` is false when the target exports TLS, `rustc_middle/src/ty/util.rs:731-735`), so the backend adds it to the native CGU itself as an `Internal` stub neighbor. Where an upstream crate already exports one (PE), that one is used |
+| `Cast(kind, op, ty)` | see Casts |
+| `BinaryOp(op, (a, b))` | see Binary operations |
+| `UnaryOp(Not, a)` | `not.wN` (`bool`: `xor` with 1) |
+| `UnaryOp(Neg, a)` | `neg.wN`, `fneg.fN` |
+| `UnaryOp(PtrMetadata, p)` | load of the metadata word (none for thin pointers) |
+| `Discriminant(place)` | tag load, decoded per the layout: `TagEncoding::Direct` (load + zext/sext) or `Niche` (`discr.niche`) |
+| `Aggregate(kind, ops)` | field-wise stores into the destination plus the discriminant write. `RawPtr` aggregates build a (wide) pointer from data + metadata |
+| `WrapUnsafeBinder(op, _)` | same as `Use(op)` |
+
+### Casts
+
+| `CastKind` | Bytecode |
+|---|---|
+| `IntToInt` | `zext`/`sext`/`trunc`, or `mov` for same-width casts |
+| `FloatToInt` | `cvt.f2i.sat` (Rust `as`: saturating, NaN → 0) |
+| `IntToFloat`, `FloatToFloat` | `cvt.i2f`, `cvt.f2f` |
+| `PtrToPtr`, `FnPtrToPtr`, `Transmute`, `Subtype`, `BoxDerefTransmute` | `mov`/`copy` (bit-preserving). `PtrToPtr` from wide to thin drops the metadata |
+| `PointerExposeProvenance`, `PointerWithExposedProvenance` | `mov` |
+| `PointerCoercion(ReifyFnPointer)` | `addr.sym` of the target instance's symbol, or its portal for VM functions |
+| `PointerCoercion(ClosureFnPointer)` | `addr.sym` of the closure's `FnOnce` shim (its portal, if it's a VM function) |
+| `PointerCoercion(UnsafeFnPointer, MutToConstPointer, ArrayToPointer)` | `mov` |
+| `PointerCoercion(Unsize)` | builds the wide pointer: data pointer plus metadata (a constant length, or `addr.k` of the vtable in the constant pool). Struct-tail unsizing goes field by field, as cg_ssa does |
+
+### Binary operations
+
+| `BinOp` | Bytecode |
+|---|---|
+| `Add`, `Sub`, `Mul` and the `*Unchecked` variants | `add`/`sub`/`mul.wN` (wrapping; unchecked overflow is UB, so wrapping is fine) |
+| `AddWithOverflow`, `SubWithOverflow`, `MulWithOverflow` | `add.ovf`/`sub.ovf`/`mul.ovf.{s,u}.wN`, writing the value and the overflow flag (the pair layout) |
+| `Div`, `Rem` | `div`/`rem.{s,u}.wN`. MIR guarantees non-zero divisors and no `MIN / -1` (an `Assert` precedes, or it is UB), so the VM never checks |
+| `Shl`, `Shr` and the `*Unchecked` variants | `shl`/`shr.{s,u}.wN`, with the amount masked to the width |
+| `BitAnd`, `BitOr`, `BitXor` | `and`/`or`/`xor.wN` |
+| `Eq`, `Ne`, `Lt`, `Le`, `Gt`, `Ge` | `eq`/`ne`/`lt`/`le.{s,u}.wN` (`Gt`/`Ge` swap the operands). Float compares: `feq`/`flt`/… Raw-pointer compares: unsigned compares on the address (wide pointers compare data, then metadata) |
+| `Cmp` | `cmp3.{s,u}.wN` (`Ordering` as `i8`) |
+| `Offset` | `ptr.index` (pointer + count × pointee size) |
+| float `Add`/`Sub`/`Mul`/`Div`/`Rem` | `fadd`/`fsub`/`fmul`/`fdiv`/`frem.fN` |
+
+128-bit `mul`, `div` and `rem` lower to islands (calling `__multi3`, `__udivti3`, … through
+core). Everything else at 128 bits runs in the VM.
+
+## Terminators
+
+| `TerminatorKind` | Bytecode |
+|---|---|
+| `Goto` | `jmp`, or fall-through |
+| `SwitchInt(d, targets)` | If `d` is defined by a compare in the same block, `br.cmp.*` on the compare's operands. Otherwise `br.if`/`br.unless` for `bool`, `switch.dense` for dense value sets, and `switch.sparse` otherwise |
+| `Return` | `ret` |
+| `Unreachable` | `unreachable` |
+| `Call` | see Calls |
+| `TailCall` | `tail_call` / `tail_call.ind` ([vm.md](vm.md#calls-and-islands)) |
+| `Drop { place, .. }` | Nothing if the type has no drop glue. Otherwise a call of `DropGlue(T)`: a VM `call` if the glue is a VM function, an `island` with `drop_in_place::<T>` otherwise. Unsized places pass the wide pointer. `replace` doesn't change the lowering, and `drop` (async drop) is `None` in runtime MIR |
+| `Assert { cond, expected, msg, target, unwind }` | `br.cmp`/`br.if` to `target`, and otherwise a call of the panic function for `msg` |
+| `UnwindResume` | `resume` |
+| `UnwindTerminate` | `abort` |
+| `InlineAsm` | not lowerable: the function is native ([backend.md](backend.md#pipeline)) |
+| `Yield`, `CoroutineDrop`, `FalseEdge`, `FalseUnwind` | don't occur in runtime MIR (the coroutine transform and CFG cleanup remove them). The lowering ICEs on them |
+
+### `Assert` messages
+
+Each `AssertKind` maps to its panic lang item, as cg_ssa does (`rustc_codegen_ssa/src/mir/block.rs`).
+
+| `AssertKind` | Panic function |
+|---|---|
+| `BoundsCheck { len, index }` | `panic_bounds_check(index, len)` |
+| `Overflow(op, ..)`, `OverflowNeg`, `DivisionByZero`, `RemainderByZero` | `panic_const_*` |
+| `ResumedAfterReturn`, `ResumedAfterPanic`, `ResumedAfterDrop` | `panic_const_coroutine_*` / `async_fn_*` / `gen_fn_*` |
+| `MisalignedPointerDereference { required, found }` | `panic_misaligned_pointer_dereference` |
+| `NullPointerDereference` | `panic_null_pointer_dereference` |
+| `InvalidEnumConstruction(v)` | `panic_invalid_enum_construction` |
+| `NullReferenceConstructed` | the `PanicNullReferenceConstructed` lang item (`rustc_codegen_ssa/src/mir/block.rs:800-803`) |
+
+These functions are `#[track_caller]`, so they get a location ([Caller location](#caller-location)).
+They are called like any other function: a VM `call` if a VM version exists, otherwise an
+island.
+
+## Calls
+
+`Call { func, args, destination, target, unwind, .. }`:
+
+1. **Resolve the callee.** For a `FnDef` callee type: `Instance::expect_resolve(tcx,
+   typing_env, def_id, args)`, as cg_ssa does. Then:
+   - **VM function in this crate's image**: `call fn`.
+   - **Instance from another crate**, meaning one that `should_codegen_locally` says is not
+     codegened locally (upstream non-generic, or a shared upstream generic). Local copies of
+     `#[inline]`/cross-crate-inlinable items are lowered locally like any other item:
+     `call.ext` on its symbol, with a `call_ptrN` island as the native fallback. It doesn't
+     matter whether upstream compiled it to bytecode ([vm.md](vm.md#calls-and-islands)).
+   - **Native function**: an `island` with a call template ([stubs.md](stubs.md#templates)).
+   - **`InstanceKind::LlvmIntrinsic`**: not lowerable (no MIR, `unadjusted` ABI). The
+     function stays native.
+   - **`InstanceKind::Virtual(_, idx)`**: load the fn pointer from the vtable (entry `idx`
+     of `tcx.vtable_entries`, read through the receiver's metadata), pass the receiver's
+     data pointer, then `call.ind`.
+   - **`InstanceKind::Intrinsic`**: the matching VM instruction if one exists (`size_of`,
+     `transmute`, overflow arithmetic, `copy_nonoverlapping`, `write_bytes`, atomics,
+     `abort`, `unreachable`, `likely`/`unlikely`, `caller_location`, …). Otherwise an
+     `island` with the intrinsic's wrapper.
+
+   A fn-pointer callee type → `call.ind`.
+2. **Arguments**: the argument operands are copied into the outgoing argument block at
+   `fp + frame_size + H` (the callee frame's argument block, in `arg_block` layout) by plain
+   `mov`/`copy` instructions immediately before the call. MIR call arguments are operands
+   (locals or constants), so no other call runs between building the block and the call. For
+   `#[track_caller]` callees, the location is appended ([Caller location](#caller-location)).
+3. **Destination**: the call instruction names the caller's destination slot. A destination
+   behind a deref is first written to a temporary slot, then stored.
+4. **Unwind**: if `unwind` is `Cleanup(bb)`, a cleanup table entry is recorded for this
+   call's pc ([Unwinding](#unwinding)).
+
+Functions with unsized parameters (`unsized_fn_params`) are not lowered: they stay native.
+
+### Caller location
+
+Mirrors cg_ssa's `get_caller_location`:
+
+- The location for a call site is a `core::panic::Location` constant in the constant pool,
+  built from the call's `source_info` span. If the current function is itself
+  `#[track_caller]` and the span comes from its body, the location is instead the function's
+  own incoming location argument (the last field of its argument block).
+- `#[track_caller]` VM callee: the location is the last field of the argument block.
+- `#[track_caller]` native callee: `call_ptrN` with one extra trailing `&'static Location`
+  argument, calling the callee instance's own symbol (not its `ReifyShim`). That signature has
+  the same ABI as the callee with its implicit location argument (`rustc_ty_utils/src/abi.rs:600`).
+- The `caller_location` intrinsic yields the same value.
+
+## Unwinding
+
+- Every call-like instruction (`call`, `call.ext`, `call.ind`, `island.catch`) whose MIR
+  terminator has an `unwind` action records a cleanup entry keyed by its code offset:
+  - `UnwindAction::Cleanup(bb)` → jump to `bb`
+  - `UnwindAction::Terminate(_)` → abort
+  - `UnwindAction::Continue` → no entry: unwinding leaves the frame
+  - `UnwindAction::Unreachable` → no entry
+- Calls inside cleanup blocks carry `Terminate`, so a panic during unwinding aborts, as with
+  native code.
+- Islands whose operation can unwind (call templates, `drop_in_place`, some intrinsics) are
+  emitted as `island.catch` unless the unwind action is `Unreachable`, whether or not there
+  is a cleanup entry. All others are plain `island`.
+
+## Constants
+
+- Scalar constants become immediates.
+- Other `ConstValue`s and allocations go into the image's constant pool, byte for byte.
+- Pointers inside an allocation become relocations:
+  - to another pool allocation: intra-image
+  - to a static or function: against its symbol
+
+  The linker applies both ([vm.md](vm.md#image-format)).
+- Pointers to VM functions in constants (vtables, fn-pointer constants) point at the portal, so
+  native code can call them too.
+- **Vtables**: cg_llvm emits vtables as private, unnamed constants, so there is no symbol to
+  relocate against. Vtables that bytecode needs (for unsizing) are therefore put in the
+  image's own constant pool, from `tcx.vtable_allocation`, with entries relocated to portals or
+  native symbols. Vtable addresses aren't guaranteed unique, so a second copy is fine.
+  Allocations are walked recursively, and image vtables are roots of the portal-needed
+  computation ([backend.md](backend.md#pipeline)).
+- On PE, pointers to data imported from another DLL can't be link-time relocated (they need
+  `__imp_` indirection). Allocations containing them go into the image's writable
+  `fixups` area, and registration patches them once ([platforms.md](platforms.md)). This
+  is the only load-time fixup.
+
+## Bytecode optimization
+
+After lowering, a peephole pass:
+
+- folds constant offsets into memory operands, and selects the `k = 0` and `.imm` forms
+- removes `mov`s of moved-from locals by copy propagation, which matters at `-O0` (at
+  `-Zmir-opt-level=2`, MIR has already done most of it)
+- forms superinstructions, choosing the pairs from `y bench` profiles (for example
+  `add.imm` + `br.cmp` loop latches, `load` + `br.cmp`)
