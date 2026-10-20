@@ -213,7 +213,28 @@ fn opcode_table_is_pinned_to_format_version() {
             eat(&format!("{:?}", o.kind));
         }
     }
-    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (2, 0xbcc1699064bd4540), "opcode table hash {h:#x}");
+    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (3, 0xbcc1699064bd4540), "opcode table hash {h:#x}");
+}
+
+/// Pins the image table layouts to the format version: any change to a table entry's size or
+/// field offsets fails here. When it fails, bump `FORMAT_VERSION` and update the values.
+#[test]
+fn image_layouts_are_pinned_to_format_version() {
+    use ryo_bytecode::image::*;
+    use std::mem::{offset_of, size_of};
+    let layout = (
+        (size_of::<Header>(), offset_of!(Header, data), offset_of!(Header, functions), offset_of!(Header, fixup_area)),
+        (
+            size_of::<FuncEntry>(),
+            offset_of!(FuncEntry, max_outgoing),
+            offset_of!(FuncEntry, arg_size),
+            offset_of!(FuncEntry, ret_size),
+            offset_of!(FuncEntry, portal),
+        ),
+        (size_of::<CleanupEntry>(), size_of::<FixupEntry>(), size_of::<Span>()),
+    );
+    assert_eq!(ryo_bytecode::FORMAT_VERSION, 3);
+    assert_eq!(layout, ((104, 24, 40, 100), (36, 12, 16, 20, 32), (8, 16, 8)), "{layout:?}");
 }
 
 /// Decoding arbitrary words never panics, and whatever decodes re-encodes to the same words.
