@@ -351,9 +351,14 @@ struct Variant {
     /// Only for programs that list VM functions. Their `vm`/`entered` lists aren't checked
     /// (MIR inlining at `-O` removes some functions), only that tracing changes nothing else.
     vm_only: bool,
+    /// Built against the ryo-compiled std (`--sysroot ryo`, after `y build --sysroot ryo`).
+    /// Skipped without it. The `entered` lists aren't checked: they name what the LLVM std
+    /// enters through portals, and VM std code calls VM functions directly.
+    ryo_std: bool,
 }
 
-const VARIANT: Variant = Variant { name: "", compiler: Compiler::Ryo, flags: &[], final_flags: &[], vm_only: false };
+const VARIANT: Variant =
+    Variant { name: "", compiler: Compiler::Ryo, flags: &[], final_flags: &[], vm_only: false, ryo_std: false };
 
 const REFERENCE: Variant = Variant { name: "rustc", compiler: Compiler::Rustc, ..VARIANT };
 
@@ -365,6 +370,9 @@ const VARIANTS: &[Variant] = &[
     // also those of upstream rlibs built without LTO (design/backend.md#query-overrides).
     Variant { name: "ryo-lto", final_flags: &["-Clto=fat"], ..VARIANT },
     Variant { name: "ryo-thinlto-O3", flags: &["-Copt-level=3"], final_flags: &["-Clto=thin"], vm_only: true, ..VARIANT },
+    // std itself in the VM (design/build.md#build, `--sysroot ryo`).
+    Variant { name: "ryo-std", ryo_std: true, ..VARIANT },
+    Variant { name: "ryo-std-O3", flags: &["-Copt-level=3"], vm_only: true, ryo_std: true, ..VARIANT },
 ];
 
 /// Added by `test --clif`.
@@ -390,7 +398,11 @@ pub fn run(clif: bool) -> Result<(), String> {
     if clif {
         crate::clif::ensure()?;
     }
-    let variants = variants(clif);
+    let mut variants = variants(clif);
+    if !root.join("dist").join(crate::sysroot::SYSROOT_DIR).is_dir() {
+        eprintln!("[y] the ryo-std variants are skipped: no ryo sysroot (`./y.sh build --sysroot ryo`)");
+        variants.retain(|v| !v.ryo_std);
+    }
     let out = root.join("target").join("tests");
     fs::create_dir_all(&out).map_err(|e| format!("creating {}: {e}", out.display()))?;
     let ctx = Ctx {
@@ -501,12 +513,15 @@ impl RunResult {
 }
 
 impl Ctx {
-    fn compiler(&self, compiler: Compiler) -> Command {
-        match compiler {
+    fn compiler(&self, variant: &Variant) -> Command {
+        match variant.compiler {
             Compiler::Rustc => cmd("rustc"),
             Compiler::Ryo => {
                 let mut c = cmd(&self.rustc_ryo);
                 c.env("RYO_BACKEND_MARKER", "1").env("RYO_STATS", "1");
+                if variant.ryo_std {
+                    c.args(["--sysroot", "ryo"]);
+                }
                 c
             }
             Compiler::Clif => cmd(&self.rustc_clif),
@@ -514,8 +529,8 @@ impl Ctx {
     }
 
     /// The compiler's sysroot `lib/rustlib/<target>/lib`, where std's dylib is.
-    fn target_libdir(&self, compiler: Compiler) -> Result<PathBuf, String> {
-        let mut c = self.compiler(compiler);
+    fn target_libdir(&self, variant: &Variant) -> Result<PathBuf, String> {
+        let mut c = self.compiler(variant);
         let libdir =
             output(c.env_remove("RYO_BACKEND_MARKER").env_remove("RYO_STATS").args(["--print", "target-libdir"]))?;
         Ok(PathBuf::from(libdir.trim()))
@@ -534,7 +549,7 @@ impl Ctx {
         let mut vm_fns = Vec::new();
         let mut native_libs = Vec::new();
         for krate in program.crates {
-            let mut c = self.compiler(variant.compiler);
+            let mut c = self.compiler(variant);
             c.arg("--edition=2024")
                 .arg(self.tests.join(krate.src))
                 .args(krate.kind.flags())
@@ -593,10 +608,11 @@ impl Ctx {
                 .map(|id| vm_fns.iter().find(|(_, i)| i == id).map_or("?", |(n, _)| n.as_str()))
                 .collect();
             let not_entered: Vec<_> = program.entered.iter().filter(|f| !entered.contains(f)).collect();
-            if !variant.vm_only && !not_entered.is_empty() {
+            if !variant.vm_only && !variant.ryo_std && !not_entered.is_empty() {
                 return Err(format!("not entered through vm::enter: {not_entered:?}; entered: {entered:?}"));
             }
-            let untraced = RunResult { stderr: rest, ..traced };
+            // Normalized only now: a trace line can split the line naming the thread.
+            let untraced = RunResult { stderr: normalize_thread_ids(&rest), ..traced };
             if untraced != result {
                 return Err("the run with RYO_VM_TRACE behaved differently".to_owned());
             }
@@ -652,15 +668,20 @@ impl Ctx {
         run.env_remove("RUST_BACKTRACE").env_remove("RUST_LIB_BACKTRACE").current_dir(dir);
         // Dylibs are found next to the binary, and std's in the sysroot that built it.
         let lib_path_var = if cfg!(windows) { "PATH" } else { "LD_LIBRARY_PATH" };
-        let mut paths = vec![dir.to_path_buf(), self.target_libdir(variant.compiler)?];
+        let mut paths = vec![dir.to_path_buf(), self.target_libdir(variant)?];
         paths.extend(std::env::split_paths(&std::env::var_os(lib_path_var).unwrap_or_default()));
         run.env(lib_path_var, std::env::join_paths(paths).map_err(|e| e.to_string())?);
         let res = run.output().map_err(|e| format!("failed to run {}: {e}", exe.display()))?;
-        // Panic messages name the source path, which is the same for every variant.
+        // Panic messages name the source path, which is the same for every variant. Thread ids
+        // differ between runs; a traced run's stderr is normalized after the trace is removed.
         Ok(RunResult {
             code: res.status.code(),
             stdout: String::from_utf8_lossy(&res.stdout).into_owned(),
-            stderr: normalize_thread_ids(&String::from_utf8_lossy(&res.stderr)),
+            stderr: if trace {
+                String::from_utf8_lossy(&res.stderr).into_owned()
+            } else {
+                normalize_thread_ids(&String::from_utf8_lossy(&res.stderr))
+            },
         })
     }
 }
@@ -706,8 +727,9 @@ mod tests {
     #[test]
     fn clif_variant_only_with_flag() {
         let names = |clif| super::variants(clif).iter().map(|v| v.name).collect::<Vec<_>>();
-        assert_eq!(names(false), ["ryo", "ryo-threads8", "ryo-O3", "ryo-lto", "ryo-thinlto-O3"]);
-        assert_eq!(names(true), ["ryo", "ryo-threads8", "ryo-O3", "ryo-lto", "ryo-thinlto-O3", "clif"]);
+        let ryo = ["ryo", "ryo-threads8", "ryo-O3", "ryo-lto", "ryo-thinlto-O3", "ryo-std", "ryo-std-O3"];
+        assert_eq!(names(false), ryo);
+        assert_eq!(names(true), [&ryo[..], &["clif"]].concat());
         assert!(super::variants(true).last().unwrap().compiler == super::Compiler::Clif);
     }
 

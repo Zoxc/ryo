@@ -45,8 +45,29 @@ modeled on cg_clif's `build_system/`.
    - `--sysroot llvm` (default): copy the toolchain's prebuilt std rlibs, skipping the
      `rustc_*`/LLVM rustc-dev libs, as cg_clif does. The target's `bin/` is copied too, since
      x86_64 Linux links with the sysroot's `rust-lld` by default.
-   - `--sysroot ryo`: build std from `rust-src` with our backend
-     (`-Zforce-unstable-if-unmarked --sysroot=/dev/null -Zcodegen-backend=...`).
+   - `--sysroot ryo`: everything above, plus std built from `rust-src` with our backend, in
+     its own sysroot `dist/sysroot-ryo/` (`lib/rustlib/<host>/lib`, and the target's `bin/`
+     for `rust-lld`). `rustc-ryo --sysroot ryo` selects it; the default stays the LLVM std, so
+     both can be tested from one `dist/`. Host only.
+     - `library/` is copied to `target/sysroot-ryo/library` (once per toolchain), and cargo
+       builds its `sysroot` crate there (`--release --features "backtrace panic-unwind"`,
+       `--target <host>`), with `RUSTFLAGS` `-Zforce-unstable-if-unmarked --sysroot=/dev/null
+       -Cpanic=unwind -Cembed-bitcode=yes`, like cg_clif's sysroot build.
+     - `RUSTC` is `y` itself (a shim mode selected by an environment variable). It compiles
+       `core`, `compiler_builtins`, `rustc-std-workspace-core`, `ryo_rt`, `ryo_bytecode` and
+       build scripts with plain rustc, and every other crate with `rustc-ryo`. `ryo_rt` can't
+       be ryo-built: every ryo-built crate depends on it, so it and what it depends on (only
+       `core`: `ryo_rt` is `#![no_std]`, [vm.md](vm.md#runtime-crate-ryo_rt)) stay LLVM-built.
+     - The copy adds `ryo_rt` and `ryo_bytecode` to the library workspace (manifests pointing
+       at `vm/`'s sources, on the workspace's `core`), and a `ryo_rt` dependency to `alloc` and
+       `rustc-std-workspace-core`, which every other crate depends on. That orders `ryo_rt`
+       before them, and `rustc-ryo`'s pathless `--extern force:ryo_rt` finds it through an
+       extra `-Lcrate=<deps dir>` (cargo's `-L dependency=` paths aren't searched for it).
+     - Cargo doesn't fingerprint the backend, so a new backend (by modification time)
+       rebuilds from a clean target directory.
+     - The shim collects each ryo-built crate's `RYO_STATS=2` output, and `y build` prints a
+       coverage table: VM and native functions and islands per crate, island instructions
+       by template, native functions by reason ([backend.md](backend.md#debugging-switches)).
    - `--target T` (repeatable): also install std (from the toolchain's rust-std for `T`)
      and `ryo_rt` for `T`, for cross-compiling with `rustc-ryo --target T`
      ([platforms.md](platforms.md), cross-checking PE on Linux).
@@ -73,6 +94,11 @@ modeled on cg_clif's `build_system/`.
 
    They reject `-Zrandomize-layout`, because argument block layouts must agree between
    crates ([lowering.md](lowering.md#frame-slots)).
+
+   `--sysroot ryo` (or `--sysroot=ryo`) means `dist/sysroot-ryo`. `-Zryo-stats[=N]` (or
+   `-Z ryo-stats[=N]`, `N` defaulting to 1) is taken out of the arguments, since rustc has
+   no such option and a backend can't add one, and sets `RYO_STATS=N` for the backend
+   ([backend.md](backend.md#debugging-switches)).
 
    `cargo-ryo` sets `RUSTC=rustc-ryo` and `CARGO_INCREMENTAL=0` (incremental compilation is
    a non-goal, and the backend rejects it, [README.md](README.md#goals)).
@@ -115,6 +141,10 @@ This gives a third backend, built from the same toolchain, to compare against.
   C `main`, compiled with `cc`, or `cl` on windows-msvc hosts (skipped without one). The smoke tests check that `rustc-ryo`
   rejects `-Zrandomize-layout`, more than one codegen unit and `-Cincremental`, and that
   `cargo-ryo` builds a dev-profile package.
+- With a ryo sysroot in `dist/`, `test` also builds the corpus against it (`--sysroot ryo`):
+  variants `ryo-std` and `ryo-std-O3` (output and trace consistency only, like `ryo-O3`). Their
+  `entered` lists aren't checked: those name what the LLVM std enters through portals, and VM
+  std code calls VM functions directly. Without one, they are skipped.
 - `test --cross T`: builds and links, without running, the corpus for target `T` (after
   `build --target T`), against stand-in import libraries ([platforms.md](platforms.md),
   cross-checking). Skipped if the sysroot has no `rust-lld`.
@@ -163,4 +193,6 @@ sides share one definition of the format.
 
 `dist/bin/rustc-ryo foo.rs` or `dist/bin/cargo-ryo build`. With the default sysroot, std is
 the prebuilt LLVM-compiled one: std's own code is native, and generic std code instantiated
-in a ryo-built crate goes through ryo like everything else.
+in a ryo-built crate goes through ryo like everything else. With `--sysroot ryo` (after
+`y build --sysroot ryo`), std's own code is bytecode too, except `core`, `compiler_builtins`
+and the panic runtime ([backend.md](backend.md#pipeline)).

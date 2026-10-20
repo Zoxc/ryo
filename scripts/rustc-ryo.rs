@@ -26,7 +26,14 @@ fn main() {
         }
     }
     let sysroot = dist_dir();
-    let passed: Vec<OsString> = env::args_os().skip(1).collect();
+    let mut passed: Vec<OsString> = env::args_os().skip(1).collect();
+    let stats = match take_ryo_stats(&mut passed) {
+        Ok(stats) => stats,
+        Err(msg) => {
+            eprintln!("error: {msg}");
+            std::process::exit(1);
+        }
+    };
     let args = match ryo_args(&sysroot, passed) {
         Ok(args) => args,
         Err(msg) => {
@@ -37,6 +44,9 @@ fn main() {
 
     let mut cmd = Command::new("rustc");
     cmd.args(args).env("RUSTC_BOOTSTRAP", "1");
+    if let Some(level) = stats {
+        cmd.env("RYO_STATS", level);
+    }
     if let Some(toolchain) = option_env!("RYO_TOOLCHAIN") {
         cmd.env("RUSTUP_TOOLCHAIN", toolchain);
     }
@@ -89,9 +99,42 @@ pub fn ryo_args(dist: &Path, passed: Vec<OsString>) -> Result<Vec<OsString>, Str
     )));
 
     let mut args: Vec<OsString> = Vec::new();
-    let user_sysroot = passed
-        .iter()
-        .any(|a| a == "--sysroot" || a.to_str().is_some_and(|s| s.starts_with("--sysroot=")));
+    // `--sysroot ryo` selects the std built with ryo (`y build --sysroot ryo`).
+    let ryo_sysroot = || {
+        let mut s = OsString::from("--sysroot=");
+        s.push(dist.join("sysroot-ryo"));
+        s
+    };
+    let mut passed_sysroot = false;
+    let mut user_sysroot = false;
+    let mut mapped = Vec::with_capacity(passed.len());
+    for a in passed {
+        if passed_sysroot {
+            passed_sysroot = false;
+            mapped.pop();
+            mapped.push(if a == "ryo" { ryo_sysroot() } else { {
+                let mut s = OsString::from("--sysroot=");
+                s.push(a);
+                s
+            } });
+            continue;
+        }
+        if a == "--sysroot" {
+            user_sysroot = true;
+            passed_sysroot = true;
+        } else if a == "--sysroot=ryo" {
+            user_sysroot = true;
+            mapped.push(ryo_sysroot());
+            continue;
+        } else if a.to_str().is_some_and(|s| s.starts_with("--sysroot=")) {
+            user_sysroot = true;
+        }
+        mapped.push(a);
+    }
+    if passed_sysroot {
+        return Err("`--sysroot` needs a value".to_owned());
+    }
+    let passed = mapped;
     if !user_sysroot {
         args.push("--sysroot".into());
         args.push(dist.into());
@@ -113,6 +156,40 @@ pub fn ryo_args(dist: &Path, passed: Vec<OsString>) -> Result<Vec<OsString>, Str
         }
     }
     Ok(args)
+}
+
+/// Removes `-Zryo-stats[=N]` (or `-Z ryo-stats[=N]`) from `args`, which rustc wouldn't
+/// accept, and returns the level for the backend's `RYO_STATS` (design/backend.md#debugging-switches).
+/// The last one wins; `-Zryo-stats` alone is level 1.
+pub fn take_ryo_stats(args: &mut Vec<OsString>) -> Result<Option<String>, String> {
+    let mut level = None;
+    let mut out = Vec::with_capacity(args.len());
+    let mut iter = std::mem::take(args).into_iter().peekable();
+    while let Some(a) = iter.next() {
+        let opt = match a.to_str() {
+            Some("-Z") => match iter.peek().and_then(|n| n.to_str()) {
+                Some(n) if n == "ryo-stats" || n.starts_with("ryo-stats=") => {
+                    let n = n.to_owned();
+                    iter.next();
+                    Some(n)
+                }
+                _ => None,
+            },
+            Some(s) => s.strip_prefix("-Z").filter(|o| *o == "ryo-stats" || o.starts_with("ryo-stats=")).map(str::to_owned),
+            None => None,
+        };
+        let Some(opt) = opt else {
+            out.push(a);
+            continue;
+        };
+        let value = opt.strip_prefix("ryo-stats").unwrap().strip_prefix('=').unwrap_or("1");
+        if value.parse::<u32>().is_err() {
+            return Err(format!("`-Zryo-stats={value}`: expected a number"));
+        }
+        level = Some(value.to_owned());
+    }
+    *args = out;
+    Ok(level)
 }
 
 /// Whether the compilation targets windows-msvc: `--target` names an `-msvc` triple, or there
@@ -216,6 +293,32 @@ mod tests {
         let got = ryo_args(Path::new("/d"), args(&["--sysroot=/s", "x.rs"])).unwrap();
         assert!(!got.iter().any(|a| a == "/d"));
         assert!(ryo_args(Path::new("/d"), vec![]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn ryo_stats_flag() {
+        let mut a = args(&["x.rs", "-Zryo-stats", "-Z", "threads=2"]);
+        assert_eq!(take_ryo_stats(&mut a), Ok(Some("1".into())));
+        assert_eq!(a, args(&["x.rs", "-Z", "threads=2"]));
+        let mut a = args(&["-Z", "ryo-stats=2", "x.rs"]);
+        assert_eq!(take_ryo_stats(&mut a), Ok(Some("2".into())));
+        assert_eq!(a, args(&["x.rs"]));
+        let mut a = args(&["x.rs"]);
+        assert_eq!(take_ryo_stats(&mut a), Ok(None));
+        assert!(take_ryo_stats(&mut args(&["-Zryo-stats=x"])).is_err());
+    }
+
+    #[test]
+    fn ryo_sysroot() {
+        let want = format!("--sysroot={}", Path::new("/d").join("sysroot-ryo").display());
+        for list in [&["x.rs", "--sysroot", "ryo"][..], &["x.rs", "--sysroot=ryo"]] {
+            let got = ryo_args(Path::new("/d"), args(list)).unwrap();
+            assert!(got.iter().any(|a| a.to_str() == Some(want.as_str())), "{got:?}");
+            assert!(!got.iter().any(|a| a == "/d"));
+        }
+        let got = ryo_args(Path::new("/d"), args(&["x.rs", "--sysroot", "/s"])).unwrap();
+        assert!(got.iter().any(|a| a == "--sysroot=/s"));
+        assert!(ryo_args(Path::new("/d"), args(&["x.rs", "--sysroot"])).is_err());
     }
 
     #[test]

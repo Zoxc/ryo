@@ -394,6 +394,10 @@ SIMD intrinsics with constant operands, …), coroutines, extern-type tails, by-
 unsized arguments (`unsized_fn_params`: the argument block has no layout) and references to
 foreign statics with a `#[linkage]` (std's `extern_weak` `weak!` statics: cg_llvm's private
 cell holding the symbol's address has no symbol the image could name).
+With `--sysroot ryo`, std builds and the corpus passes against it; 98.6% of the functions
+of the ryo-built sysroot crates are bytecode. Most of the rest are `#[target_feature]`
+functions (SIMD in `memchr`, `std_detect`), `extern "C"` definitions, C-variadic calls and
+functions without MIR (`y build --sysroot ryo` prints the table).
 The PE fixup area is only cross-checked (objects and links), not run, like the rest of the
 PE column ([platforms.md](platforms.md)).
 

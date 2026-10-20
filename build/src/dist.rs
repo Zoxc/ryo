@@ -10,7 +10,9 @@ const BACKEND_FEATURES: &str = "rustc_private";
 
 /// `targets`: extra targets to install std and `ryo_rt` for, for cross-compiling with
 /// `rustc-ryo --target` (their rust-std component must be installed).
-pub fn build(targets: &[String]) -> Result<(), String> {
+/// With `ryo_std`, also builds std with the ryo backend into `dist/sysroot-ryo`
+/// (`--sysroot ryo`).
+pub fn build(targets: &[String], ryo_std: bool) -> Result<(), String> {
     let info = RustcInfo::get()?;
     let root = root();
     let dist = root.join("dist");
@@ -41,6 +43,9 @@ pub fn build(targets: &[String]) -> Result<(), String> {
     }
 
     build_wrappers(&root, &dist_bin, &info)?;
+    if ryo_std {
+        crate::sysroot::build(&info, &dist)?;
+    }
     eprintln!("[y] done: {}", dist.display());
     Ok(())
 }

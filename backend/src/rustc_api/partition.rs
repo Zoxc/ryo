@@ -371,6 +371,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                 self.stats.islands,
                 native.items().len()
             );
+            self.print_coverage(&failed);
         }
 
         let (image, symbols, roots) = self.build_image();
@@ -400,6 +401,44 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             key: session_key(tcx),
         };
         (native, results)
+    }
+
+    /// The coverage summary of `RYO_STATS` (design/backend.md#debugging-switches): island
+    /// instructions per function and by template, and the native functions by reason.
+    fn print_coverage(&self, failed: &[(Instance<'tcx>, NeedsNative)]) {
+        let mut by_template: FxIndexMap<Symbol, (usize, usize)> = FxIndexMap::default();
+        let mut with_islands = 0;
+        let mut total = 0;
+        for v in &self.vm {
+            let n = v.lowered.islands.len();
+            total += n;
+            with_islands += usize::from(n > 0);
+            let mut seen = FxHashSet::default();
+            for r in &v.lowered.islands {
+                let e = by_template.entry(r.template).or_default();
+                e.0 += 1;
+                e.1 += usize::from(seen.insert(r.template));
+            }
+        }
+        let per_fn = if self.vm.is_empty() { 0.0 } else { total as f64 / self.vm.len() as f64 };
+        eprintln!(
+            "ryo: {total} island instructions in {with_islands} of {} VM functions ({per_fn:.2} per function)",
+            self.vm.len()
+        );
+        let mut templates: Vec<_> = by_template.into_iter().collect();
+        templates.sort_by(|a, b| b.1.0.cmp(&a.1.0).then_with(|| a.0.as_str().cmp(b.0.as_str())));
+        for (t, (n, fns)) in templates {
+            eprintln!("ryo: island {t}: {n} in {fns} functions");
+        }
+        let mut reasons: FxIndexMap<&str, usize> = FxIndexMap::default();
+        for (_, why) in failed {
+            *reasons.entry(why.0.as_str()).or_default() += 1;
+        }
+        let mut reasons: Vec<_> = reasons.into_iter().collect();
+        reasons.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+        for (why, n) in reasons {
+            eprintln!("ryo: native reason: {n} {why}");
+        }
     }
 
     fn portal_id(&self, index: u32) -> u64 {

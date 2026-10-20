@@ -248,8 +248,14 @@ and `codegen_crate` reads them.
 
 Environment variables read by the backend (and `y test`):
 
-- `RYO_STATS=1` prints each VM function (`ryo: vm fn <instance>`, with ` (portal)` if it got
-  one, then ` id=<crate hash>:<index>`, as `RYO_VM_TRACE` prints it) and the totals; `RYO_STATS=2` also prints why each other function stayed native.
+- `RYO_STATS=1` (`-Zryo-stats` through the wrappers, [build.md](build.md#the-y-build-tool))
+  prints each VM function (`ryo: vm fn <instance>`, with ` (portal)` if it got one, then
+  ` id=<crate hash>:<index>`, as `RYO_VM_TRACE` prints it), the totals (`ryo: <n> VM
+  functions, <n> native functions, <n> islands, <n> native items`, where islands counts
+  distinct island instances), and the coverage: island instructions per VM function, island
+  instructions by template (`ryo: island <template>: <n> in <m> functions`) and native
+  functions by reason (`ryo: native reason: <n> <reason>`). `RYO_STATS=2` also prints why
+  each other function stayed native (`ryo: native <instance>: <reason>`).
 - `RYO_NO_VM` keeps every function native.
 - `RYO_BACKEND_MARKER` prints `ryo backend: init` from `init` and `ryo backend: partition`
   from the partition provider, so tests can tell that the backend and its override ran.

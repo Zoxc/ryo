@@ -4,6 +4,7 @@ mod bench;
 mod clif;
 mod cross;
 mod dist;
+mod sysroot;
 mod test;
 mod utils;
 
@@ -108,6 +109,10 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
 }
 
 fn main() -> ExitCode {
+    // `y` is the `RUSTC` of the ryo sysroot's cargo build.
+    if let Some(rustc_ryo) = std::env::var_os(sysroot::SHIM_VAR) {
+        return sysroot::shim(rustc_ryo);
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     let cmd = match parse_args(&args) {
         Ok(cmd) => cmd,
@@ -121,10 +126,7 @@ fn main() -> ExitCode {
             print!("{USAGE}");
             Ok(())
         }
-        Cmd::Build { sysroot: Sysroot::Llvm, targets } => dist::build(&targets),
-        Cmd::Build { sysroot: Sysroot::Ryo, .. } => {
-            Err("`build --sysroot ryo` is not implemented yet".to_owned())
-        }
+        Cmd::Build { sysroot, targets } => dist::build(&targets, sysroot == Sysroot::Ryo),
         Cmd::BuildClif => clif::build(),
         Cmd::Test { clif } => test::run(clif),
         Cmd::CrossTest { target } => cross::run(&target),

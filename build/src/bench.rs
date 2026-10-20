@@ -160,7 +160,7 @@ pub fn run(runs: u32) -> Result<(), String> {
     let dist_bin = root.join("dist").join("bin");
     if !dist_bin.join(exe_name("rustc-ryo")).exists() {
         eprintln!("[y] bench: dist/ is missing, building it");
-        crate::dist::build(&[])?;
+        crate::dist::build(&[], false)?;
     }
     crate::clif::ensure()?;
 
