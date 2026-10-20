@@ -6,7 +6,9 @@
   `rustc-dev`, `rust-src` and `llvm-tools`. `rust-toolchain.toml` says `channel = "stable"`
   rather than `"1.99.1"`: rustup treats `1.99.1` as a separate toolchain and downloads it even
   when the installed `stable` is 1.99.1. `y` enforces the pin instead: it fails unless
-  `rustc -vV` reports release 1.99.1. `rustc-dev` ships the compiler
+  `rustc -vV` reports release 1.99.1. Since `stable` can move after `y build`, the wrappers
+  also bake in the path of the toolchain's `librustc_driver-<hash>` (which the backend links
+  against) and fail with a clear error if it no longer exists. `rustc-dev` ships the compiler
   crates as rlibs (`rustc_codegen_llvm` included) linked against `librustc_driver-*.so`, and
   their sources under `lib/rustlib/rustc-src/rust/compiler`. Those sources are the reference
   for every compiler API the backend uses.

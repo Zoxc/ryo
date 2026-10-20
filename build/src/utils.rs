@@ -52,6 +52,9 @@ pub struct RustcInfo {
     pub sysroot: PathBuf,
     /// The rustup toolchain the wrappers pin through `RUSTUP_TOOLCHAIN`.
     pub toolchain: String,
+    /// The `rustc_driver` dylib the backend links against. The wrappers check that it still
+    /// exists, which catches the toolchain being updated after `y build`.
+    pub driver: PathBuf,
 }
 
 impl RustcInfo {
@@ -65,13 +68,31 @@ impl RustcInfo {
             ));
         }
         let host = field(&vv, "host").ok_or("`rustc -vV`: no host")?.to_owned();
-        let sysroot = output(cmd("rustc").args(["--print", "sysroot"]))?.trim().into();
+        let sysroot: PathBuf = output(cmd("rustc").args(["--print", "sysroot"]))?.trim().into();
         let toolchain = match std::env::var("RUSTUP_TOOLCHAIN") {
             Ok(t) if !t.is_empty() => t,
-            _ => format!("{PINNED_VERSION}-{host}"),
+            // `rust-toolchain.toml`'s channel.
+            _ => format!("stable-{host}"),
         };
-        Ok(RustcInfo { host, sysroot, toolchain })
+        let driver = find_driver(&sysroot)?;
+        Ok(RustcInfo { host, sysroot, toolchain, driver })
     }
+}
+
+/// The toolchain's `librustc_driver-<hash>` dylib (in `lib/`, or `bin/` on Windows).
+fn find_driver(sysroot: &Path) -> Result<PathBuf, String> {
+    let prefix = format!("{}rustc_driver-", std::env::consts::DLL_PREFIX);
+    for dir in [sysroot.join("lib"), sysroot.join("bin")] {
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with(&prefix) && name.ends_with(std::env::consts::DLL_SUFFIX) {
+                return Ok(entry.path());
+            }
+        }
+    }
+    Err(format!("no rustc_driver dylib in {}", sysroot.display()))
 }
 
 /// A `key: value` line from `rustc -vV`.

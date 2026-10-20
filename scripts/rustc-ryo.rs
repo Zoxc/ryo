@@ -12,6 +12,19 @@ use std::process::Command;
 
 #[allow(dead_code)]
 fn main() {
+    // The backend links against this exact `rustc_driver`. If the toolchain was updated after
+    // `y build` (e.g. `rustup update` moved `stable`), it is gone and loading would fail.
+    if let Some(driver) = option_env!("RYO_RUSTC_DRIVER") {
+        if !Path::new(driver).exists() {
+            eprintln!(
+                "error: rustc-ryo was built for rustc {}, but the toolchain `{}` has changed \
+                 ({driver} is gone); install rustc {0} as that toolchain and rerun `./y.sh build`",
+                option_env!("RYO_RUSTC_RELEASE").unwrap_or("?"),
+                option_env!("RYO_TOOLCHAIN").unwrap_or("?"),
+            );
+            std::process::exit(1);
+        }
+    }
     let sysroot = dist_dir();
     let passed: Vec<OsString> = env::args_os().skip(1).collect();
     let args = match ryo_args(&sysroot, passed) {

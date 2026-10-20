@@ -42,6 +42,10 @@ impl CodegenBackend for RyoBackend {
     }
 
     fn init(&self, sess: &Session) {
+        // Lets `y test` check that this backend, not plain cg_llvm, compiled the crate.
+        if std::env::var_os("RYO_BACKEND_MARKER").is_some() {
+            eprintln!("ryo backend: init");
+        }
         self.llvm.init(sess)
     }
 

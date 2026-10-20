@@ -91,8 +91,10 @@ fn install_llvm_sysroot(info: &RustcInfo, dist: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Whether a file in the toolchain's `lib/rustlib/<target>/lib` belongs to std rather than to
-/// rustc-dev (the same filter as cg_clif's `build_llvm_sysroot_for_triple`).
+/// Whether to copy a file from the toolchain's `lib/rustlib/<target>/lib`. This is the same
+/// coarse filter as cg_clif's `build_llvm_sysroot_for_triple`: it skips the `rustc_*` and LLVM
+/// libraries, but still lets through the `.rmeta`s and proc-macro dylibs of rustc-dev's
+/// third-party dependencies (unused, but harmless).
 fn is_std_lib(file_name: &str) -> bool {
     let rustc_dev = file_name.contains("rustc_")
         && !file_name.contains("rustc_std_workspace_")
@@ -136,7 +138,9 @@ fn build_runtime(
         .collect()
 }
 
-/// The `.rlib` paths in the `compiler-artifact` messages of cargo's JSON output.
+/// The `.rlib` paths in the `compiler-artifact` messages of cargo's JSON output. A minimal
+/// scan, not a JSON parser (`y` has no dependencies): paths containing `,`, `]` or escaped
+/// quotes are not supported.
 fn artifact_rlibs(json: &str) -> Vec<PathBuf> {
     let mut rlibs = Vec::new();
     for line in json.lines().filter(|l| l.contains(r#""reason":"compiler-artifact""#)) {
@@ -166,7 +170,9 @@ fn build_wrappers(root: &Path, dist_bin: &Path, info: &RustcInfo) -> Result<(), 
             .args(["--edition=2024", "-Copt-level=1", "-o"])
             .arg(dist_bin.join(exe_name(name)))
             .arg(root.join("scripts").join(format!("{name}.rs")))
-            .env("RYO_TOOLCHAIN", &info.toolchain))?;
+            .env("RYO_TOOLCHAIN", &info.toolchain)
+            .env("RYO_RUSTC_DRIVER", &info.driver)
+            .env("RYO_RUSTC_RELEASE", crate::utils::PINNED_VERSION))?;
     }
     Ok(())
 }
