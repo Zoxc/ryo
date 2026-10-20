@@ -179,6 +179,18 @@ pub(crate) const CORPUS: &[Program] = &[
         // `speak` is called through the vtable from a native island.
         entered: &["std::rt::lang_start::<()>", "<Dog as Speak>::speak"]
     ),
+    // Milestone 5: `#[track_caller]` and unwinding. The panic hook is a VM closure that the
+    // native panic machinery enters through its portal.
+    single!(
+        "vm_unwind",
+        vm: &[
+            "main", "here", "nested", "with_args", "tc_many", "generic::<std::vec::Vec<u8>>", "checked_div",
+            "tc_closure", "tc_closure::{closure#0}", "S::loc", "deep", "<D as std::ops::Drop>::drop", "idx",
+            "sort_panics", "sort_panics::{closure#0}", "call_ptr", "tc_panic", "tc_panic - shim(reify)", "rethrow",
+            "compares"
+        ],
+        entered: &["std::rt::lang_start::<()>", "main::{closure#0}"]
+    ),
     Program {
         name: "vm_ffi",
         crates: &[krate("main", "vm_ffi/main.rs", CrateKind::Bin)],

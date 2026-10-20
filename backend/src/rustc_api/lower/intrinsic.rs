@@ -26,6 +26,16 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     ) -> Result<(), NeedsNative> {
         let name = self.tcx.item_name(callee.def_id());
         let done = match name.as_str() {
+            "caller_location" => self.into_dest(&cont, |fx, d| fx.caller_location_into(source_info, d))?,
+            "catch_unwind" => {
+                // `rustc_nounwind`: a plain island (design/lowering.md#unwinding).
+                let [try_fn, data, catch_fn] = self.arg_slots::<3>(args)?;
+                let data_ty = callee.args.type_at(0);
+                self.into_dest(&cont, |fx, d| {
+                    fx.island(super::island::templates::CATCH_UNWIND, &[data_ty.into()], &[try_fn, data, catch_fn, d], None);
+                    Ok(())
+                })?
+            }
             "abort" => {
                 self.op(Opcode::Abort, &[]);
                 return Ok(());

@@ -22,13 +22,15 @@ use ryo_bytecode::insn::{Const, Opcode, Sym};
 use super::lower::{self, CodeReloc, LowerCx, LoweredFn, NeedsNative};
 
 /// The `RYO_RT_ABI` the backend was written against (`vm/rt/src/lib.rs`).
-const EXPECTED_RT_ABI: u32 = 1;
+const EXPECTED_RT_ABI: u32 = 2;
 
 /// The `ryo_rt` items the backend instantiates or checks (design/stubs.md, Lookup).
 #[derive(Clone, Copy)]
 pub struct RtItems {
     pub krate: CrateNum,
     pub portal: DefId,
+    /// `portal_tc0..=16`, the `#[track_caller]` portals.
+    pub portal_tc: [DefId; lower::MAX_PORTAL_TC_ARITY + 1],
     pub c_main: DefId,
     pub abi: DefId,
 }
@@ -56,7 +58,17 @@ pub fn rt_items(tcx: TyCtxt<'_>) -> Option<RtItems> {
             let krate = *tcx.crates(()).iter().find(|&&c| tcx.crate_name(c).as_str() == "ryo_rt")?;
             let items = tcx.diagnostic_items(krate);
             let get = |name: &str| items.name_to_id.get(&Symbol::intern(name)).copied();
-            Some(RtItems { krate, portal: get("ryo_portal")?, c_main: get("ryo_c_main")?, abi: get("ryo_rt_abi")? })
+            let mut portal_tc = [get("ryo_portal")?; lower::MAX_PORTAL_TC_ARITY + 1];
+            for (n, d) in portal_tc.iter_mut().enumerate() {
+                *d = get(&format!("ryo_portal_tc{n}"))?;
+            }
+            Some(RtItems {
+                krate,
+                portal: get("ryo_portal")?,
+                portal_tc,
+                c_main: get("ryo_c_main")?,
+                abi: get("ryo_rt_abi")?,
+            })
         };
         (session_key(tcx), find())
     });
@@ -390,13 +402,18 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         let tcx = self.tcx;
         let v = &self.vm[i as usize];
         let sig = lower::vm_fn_sig(tcx, instance).expect("VM functions have a supported signature");
-        let id = self.portal_id(i);
-        let args = tcx.mk_args(&[
-            sig.args_tuple(tcx).into(),
-            sig.output.ty.into(),
-            ty::Const::from_bits(tcx, u128::from(id), TypingEnv::fully_monomorphized(), tcx.types.u64).into(),
-        ]);
-        let portal = Instance::new_raw(self.rt.portal, args);
+        let id = ty::Const::from_bits(tcx, u128::from(self.portal_id(i)), TypingEnv::fully_monomorphized(), tcx.types.u64);
+        let portal = if sig.caller_location {
+            // `portal_tcN::<A0, …, R, ID>`: `#[track_caller]` itself, so it has the same ABI,
+            // including the trailing location, which it passes on (design/stubs.md).
+            let n = sig.inputs.len() - 1;
+            let mut args: Vec<ty::GenericArg<'tcx>> = sig.inputs[..n].iter().map(|&t| t.into()).collect();
+            args.extend::<[ty::GenericArg<'tcx>; 2]>([sig.output.ty.into(), id.into()]);
+            Instance::new_raw(self.rt.portal_tc[n], tcx.mk_args(&args))
+        } else {
+            let args = tcx.mk_args(&[sig.args_tuple(tcx).into(), sig.output.ty.into(), id.into()]);
+            Instance::new_raw(self.rt.portal, args)
+        };
         // The image references the portal (function table, `__ryo_main`), and the image is a
         // separate object, so an internal portal becomes hidden (design/backend.md, Linkage).
         let mut data = v.data;
@@ -854,8 +871,10 @@ pub fn symbol_name<'tcx>(
         && let Some(rt) = rt_items(tcx)
         && def_id.krate == rt.krate
     {
-        if def_id == rt.portal {
-            let (_, idx) = ryo_bytecode::image::split_portal_id(instance.args.const_at(2).to_leaf().to_u64());
+        if def_id == rt.portal || rt.portal_tc.contains(&def_id) {
+            // `ID` is the last generic argument of every portal template.
+            let id = instance.args.const_at(instance.args.len() - 1).to_leaf().to_u64();
+            let (_, idx) = ryo_bytecode::image::split_portal_id(id);
             let r = results(tcx).expect("portal symbol requested before partitioning");
             return ty::SymbolName::new(tcx, &r.symbols[idx as usize]);
         }

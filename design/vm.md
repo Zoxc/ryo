@@ -332,7 +332,8 @@ Islands have no `d` word: "destination in word 1" applies only to the call instr
   VM looks up the current code offset in the function's cleanup table:
   - **Cleanup entry**: jump to the cleanup block. It ends in `resume`, which continues
     unwinding, or it reaches a normal exit as MIR allows.
-  - **Terminate entry**: abort.
+  - **Terminate entry**: abort. (The lowering doesn't emit these: it points `Terminate`
+    actions at a stub calling the terminate lang item, [lowering.md](lowering.md#unwinding).)
   - **No entry**: pop the frame, and repeat the lookup in the caller at its call
     instruction's offset (the return pc).
 - **Reaching the entry frame**: when unwinding gets to the frame of the current
@@ -340,7 +341,14 @@ Islands have no `d` word: "destination in word 1" applies only to the call instr
   out-parameter, pops the record, and returns 1. The portal then calls
   `resume_unwind_from_vm(payload)`, which re-raises it natively. If an outer VM frame catches
   it, that happens through its own `island.catch`.
-- A panic during cleanup: calls in cleanup blocks have `Terminate` entries, so this aborts.
+- A panic during cleanup: calls in cleanup blocks have `Terminate` actions, so this aborts.
+- **The panic stays in flight**: `call_catching` catches with the bare `catch_unwind`
+  intrinsic and the panic runtime's `__rust_panic_cleanup`, and `resume_unwind_from_vm`
+  re-raises with `__rust_start_panic`. These are the halves of std's
+  `catch_unwind`/`resume_unwind` that leave std's panic count alone, so while the VM runs
+  cleanup blocks the panic is still counted (`std::thread::panicking()`, `Mutex` poisoning,
+  "panic in a destructor during cleanup"), exactly as during native unwinding, and only the
+  native catch that finally ends the panic uncounts it.
 
 ## Image format
 
@@ -404,8 +412,8 @@ fixups        PE only: constant allocations that point at DLL-imported data
   futex/`WaitOnAddress` lock). With `--sysroot ryo`, std's `Mutex`, allocator or TLS code may
   be VM functions, and calling them from inside the runtime would enter the VM before it
   exists. The panic payload box is the exception: it is only touched through
-  `catch_unwind`/`resume_unwind`, outside the VM's own state transitions. In particular,
-  `resume_unwind_from_vm` (which ends in std's `rust_panic_without_hook`, possibly a VM
+  the panic runtime's `__rust_panic_cleanup`/`__rust_start_panic`, outside the VM's own state
+  transitions. In particular, `resume_unwind_from_vm` (which ends in `__rust_start_panic`, possibly a VM
   function under `--sysroot ryo`) runs only after `vm::enter` has popped its entry record.
 - **Registry**: `ryo_vm_register(images, n)` is called by the registry object's constructor,
   and also when a shared object loads at run time (`dlopen`/`LoadLibrary`). It appends the
@@ -532,7 +540,8 @@ templates, and the panic glue. It is a normal Rust dependency of every ryo-built
 - **Linking** follows Rust's normal rules: a Rust dylib contains one copy of `ryo_rt`, and the
   exe linking it uses that copy (`dependency_format`). Each cdylib or staticlib gets its own
   copy, with the usual Rust symbol hygiene.
-- **std**: the VM uses the program's std for `catch_unwind`/`resume_unwind` and for
+- **std**: the VM uses the program's panic runtime (`__rust_panic_cleanup`,
+  `__rust_start_panic`, [Unwinding](#unwinding)) and std for
   allocating panic payloads. `y build` builds `ryo_rt` against the sysroot's std.
 - **Speed**:
   - The interpreter is non-generic and compiled once by `y build` at
@@ -557,12 +566,12 @@ templates, and the panic glue. It is a normal Rust dependency of every ryo-built
 - **`portal`**: `portal`, `portal_tc0..N` ([stubs.md](stubs.md#portals-native--vm)).
 - **`island`**: the island templates ([stubs.md](stubs.md#templates)).
 - **`unwind`**:
-  - `call_catching(f, fp, ops, payload_out) -> CatchResult`: runs an island inside
-    `catch_unwind`. On a panic it writes the payload (`Box<dyn Any + Send>`, kept opaque as
+  - `call_catching(f, fp, ops, payload_out) -> CatchResult`: runs an island inside the
+    `catch_unwind` intrinsic. On a panic it writes the payload (`Box<dyn Any + Send>`, kept opaque as
     its raw wide pointer in `RawPayload`) to `payload_out`, which the VM points at the current entry
     record's payload slot ([stubs.md](stubs.md#unwinding)).
-  - `unsafe fn resume_unwind_from_vm(payload) -> !`: rebuilds the `Box<dyn Any + Send>` and calls
-    `resume_unwind`.
+  - `unsafe fn resume_unwind_from_vm(payload) -> !`: hands the payload box back to the panic
+    runtime (`__rust_start_panic`), without counting the panic again.
 
 ### Rules
 

@@ -249,13 +249,34 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             }
         }
         if sig.caller_location {
-            let tcx = self.tcx;
-            let loc = self.body.caller_location_span(source_info, None, tcx, |span| tcx.span_as_caller_location(span));
-            let layout = self.layout_of(tcx.caller_location_ty())?;
             let f = sig.fields[n];
-            self.const_value_into(loc, layout, Loc::Slot(Self::out(f.offset)))?;
+            self.caller_location_into(source_info, Self::out(f.offset))?;
         }
         self.outgoing(sig.block_size);
+        Ok(())
+    }
+
+    /// Writes the caller location for a call (or `caller_location`) at `source_info` to
+    /// slot `d`, as cg_ssa's `get_caller_location`: a pool `Location` for the span, or this
+    /// function's own incoming location if it is `#[track_caller]` and the span isn't from a
+    /// non-`#[track_caller]` function inlined into it (design/lowering.md#caller-location).
+    pub fn caller_location_into(&mut self, source_info: SourceInfo, d: u32) -> Result<(), NeedsNative> {
+        enum CallerLoc {
+            Incoming(u32),
+            Const(rustc_middle::mir::ConstValue),
+        }
+        let tcx = self.tcx;
+        let own = self.caller_location.map(CallerLoc::Incoming);
+        let loc = self.body.caller_location_span(source_info, own, tcx, |span| {
+            CallerLoc::Const(tcx.span_as_caller_location(span))
+        });
+        match loc {
+            CallerLoc::Incoming(s) => self.mov(d, s, 8),
+            CallerLoc::Const(c) => {
+                let layout = self.layout_of(tcx.caller_location_ty())?;
+                self.const_value_into(c, layout, Loc::Slot(d))?;
+            }
+        }
         Ok(())
     }
 

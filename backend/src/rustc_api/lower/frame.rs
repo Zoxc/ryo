@@ -56,6 +56,9 @@ impl<'tcx> Frame<'tcx> {
             }
             None => body.arg_count,
         };
+        // A `#[track_caller]` function's location is an extra, last ABI input that no MIR
+        // local stands for (`FnCx::caller_location`).
+        let n_inputs = sig.inputs.len() - usize::from(sig.caller_location);
         let mut end = HEADER_SIZE + sig.block_size;
         let mut locals = IndexVec::with_capacity(body.local_decls.len());
         for local in body.local_decls.indices() {
@@ -86,11 +89,11 @@ impl<'tcx> Frame<'tcx> {
         match spread {
             Some((s, first)) => {
                 let fields = locals[s].layout.fields.count();
-                if first + fields != sig.inputs.len() {
+                if first + fields != n_inputs {
                     return native("spread argument doesn't match the ABI");
                 }
             }
-            None if n_fixed != sig.inputs.len() => return native("argument count doesn't match the ABI"),
+            None if n_fixed != n_inputs => return native("argument count doesn't match the ABI"),
             None => {}
         }
         if end > (1 << 30) {

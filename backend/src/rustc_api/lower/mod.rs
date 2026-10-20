@@ -50,7 +50,7 @@ use rustc_middle::ty::layout::TyAndLayout;
 use rustc_middle::ty::{self, GenericArgsRef, Instance, InstanceKind, Ty, TyCtxt, TypingEnv};
 use rustc_span::Symbol;
 use ryo_bytecode::abi::HEADER_SIZE;
-use ryo_bytecode::image::{CleanupEntry, TERMINATE};
+use ryo_bytecode::image::CleanupEntry;
 use ryo_bytecode::insn::{CodeBuf, Opcode};
 
 pub use self::constant::vtable_alloc;
@@ -157,11 +157,22 @@ pub fn vm_fn_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> Result<Ab
     if sig.conv != sig::CallConv::Rust {
         return native("non-Rust ABI (the portal template is Rust-ABI)");
     }
-    if sig.caller_location {
-        // Needs `portal_tcN` and the location argument (milestone 5).
-        return native("#[track_caller] function");
+    if sig.caller_location && sig.inputs.len() - 1 > MAX_PORTAL_TC_ARITY {
+        // `#[track_caller]` functions get a `portal_tcN` (design/stubs.md#portals-native--vm).
+        return native("#[track_caller] function with more than 16 arguments");
     }
     Ok(sig)
+}
+
+/// The largest `N` of `ryo_rt::portal::portal_tcN`.
+pub const MAX_PORTAL_TC_ARITY: usize = 16;
+
+/// Where unwinding out of a call-like instruction goes.
+#[derive(Clone, Copy)]
+enum UnwindTo {
+    Block(BasicBlock),
+    /// The function's stub calling the reason's lang item ([`FnCx::terminate_stubs`]).
+    Terminate(rustc_middle::mir::UnwindTerminateReason),
 }
 
 /// A pending branch target: word `word` of the instruction at `insn` must branch to `bb`.
@@ -181,8 +192,8 @@ pub struct FnCx<'a, 'tcx> {
     pub code: CodeBuf,
     pub relocs: Vec<CodeReloc<'tcx>>,
     pub islands: Vec<IslandRequest<'tcx>>,
-    /// (call-like instruction, cleanup block or `None` for terminate).
-    cleanup: Vec<(u32, Option<BasicBlock>)>,
+    /// (call-like instruction, where unwinding out of it goes).
+    cleanup: Vec<(u32, UnwindTo)>,
     fixups: Vec<Fixup>,
     /// Largest `H + outgoing argument block` of the calls made so far.
     pub max_outgoing: u32,
@@ -191,6 +202,13 @@ pub struct FnCx<'a, 'tcx> {
     pub next_block: Option<BasicBlock>,
     /// Code position of each block, once lowered.
     block_starts: Vec<u32>,
+    /// For a `#[track_caller]` function: the slot of its incoming `&'static Location` (the
+    /// last field of the argument block, design/lowering.md#caller-location).
+    pub caller_location: Option<u32>,
+    /// The current block's compare, fused into its terminator (`terminator::FusedCmp`).
+    fused: Option<terminator::FusedCmp<'tcx>>,
+    /// Code position of each terminate stub.
+    terminate_at: Vec<(rustc_middle::mir::UnwindTerminateReason, u32)>,
 }
 
 impl<'a, 'tcx> FnCx<'a, 'tcx> {
@@ -220,6 +238,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             arg_size: sig.block_size,
             next_block: None,
             block_starts: Vec::new(),
+            fused: None,
+            terminate_at: Vec::new(),
+            caller_location: sig.caller_location.then(|| HEADER_SIZE + sig.fields.last().expect("location field").offset),
         })
     }
 
@@ -229,10 +250,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let body = self.body;
         let n = body.basic_blocks.len();
         let mut starts = vec![u32::MAX; n];
+        let uses = terminator::local_uses(body);
         for (bb, data) in body.basic_blocks.iter_enumerated() {
             starts[bb.as_usize()] = self.code.pos();
             self.next_block = (bb.as_usize() + 1 < n).then(|| BasicBlock::from_usize(bb.as_usize() + 1));
-            for stmt in &data.statements {
+            self.fused = self.fusable_compare(data, &uses);
+            let stmts = &data.statements[..data.statements.len() - usize::from(self.fused.is_some())];
+            for stmt in stmts {
                 self.frame.reset_temps();
                 self.statement(stmt)?;
             }
@@ -240,6 +264,25 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             self.terminator(data.terminator())?;
         }
         self.block_starts = starts;
+        self.terminate_stubs()
+    }
+
+    /// Emits one stub per terminate reason the cleanup entries use, after the blocks: a call
+    /// of the reason's lang item, as cg_ssa's terminate block (design/lowering.md#unwinding).
+    fn terminate_stubs(&mut self) -> Result<(), NeedsNative> {
+        let mut done = Vec::new();
+        for i in 0..self.cleanup.len() {
+            if let UnwindTo::Terminate(reason) = self.cleanup[i].1
+                && !done.contains(&reason)
+            {
+                done.push(reason);
+                let at = self.code.pos();
+                self.frame.reset_temps();
+                self.next_block = None;
+                self.terminate_call(reason, self.body.source_info(rustc_middle::mir::Location::START).clone())?;
+                self.terminate_at.push((reason, at));
+            }
+        }
         Ok(())
     }
 
@@ -254,7 +297,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let cleanup = self
             .cleanup
             .iter()
-            .map(|&(offset, bb)| CleanupEntry { offset, target: bb.map_or(TERMINATE, |bb| starts[bb.as_usize()]) })
+            .map(|&(offset, to)| {
+                let target = match to {
+                    UnwindTo::Block(bb) => starts[bb.as_usize()],
+                    UnwindTo::Terminate(r) => self.terminate_at.iter().find(|t| t.0 == r).expect("terminate stub").1,
+                };
+                CleanupEntry { offset, target }
+            })
             .collect();
         let frame_size = self.frame.frame_size();
         emit::relocate_out_slots(&mut self.code.words, frame_size);
@@ -313,8 +362,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     pub fn unwind_entry(&mut self, at: u32, unwind: rustc_middle::mir::UnwindAction) {
         use rustc_middle::mir::UnwindAction;
         match unwind {
-            UnwindAction::Cleanup(bb) => self.cleanup.push((at, Some(bb))),
-            UnwindAction::Terminate(_) => self.cleanup.push((at, None)),
+            UnwindAction::Cleanup(bb) => self.cleanup.push((at, UnwindTo::Block(bb))),
+            UnwindAction::Terminate(reason) => self.cleanup.push((at, UnwindTo::Terminate(reason))),
             UnwindAction::Continue | UnwindAction::Unreachable => {}
         }
     }

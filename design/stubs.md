@@ -85,7 +85,8 @@ pub unsafe fn drop_in_place<T: ?Sized>(fp: *mut u8, ops: *const u32) -> u32 { â€
   `call.ext`/`call.ind`, the VM passes `[outgoing block, d, fn pointer slot]`: for
   `call.ind` that is `p`, for `call.ext` a slot the VM writes the resolved address into.
 - The first set of intrinsic wrappers: `sqrtf32`, `sqrtf64`, `powif32`, `powif64`, `fmaf32`,
-  `fmaf64`, `simd_add`, `simd_sub`, `simd_mul`, tagged `"ryo_island_<name>"`.
+  `fmaf64`, `simd_add`, `simd_sub`, `simd_mul`, `catch_unwind` (`ops`: `try_fn`, `data`,
+  `catch_fn`, destination), tagged `"ryo_island_<name>"`.
 - `call_cN` exist for arities 0..=16. `call_ptrN` exist for 0..=17: 16, plus a trailing
   `&'static Location` for `#[track_caller]` callees ([lowering.md](lowering.md#caller-location)).
 - `call.ext`'s native fallback is always a `call_ptrN` (Rust ABI): upstream instances are Rust
@@ -145,7 +146,8 @@ pub unsafe fn call_catching(f: unsafe fn(*mut u8, *const u32) -> u32, fp: *mut u
 #[repr(transparent)] pub struct RawPayload(pub *mut (dyn Any + Send));  // NONE: null data pointer
 ```
 
-It is a non-generic `catch_unwind` wrapper that returns the successor and an "unwinding"
+It is a non-generic wrapper around the `catch_unwind` intrinsic (not std's `catch_unwind`, so
+the panic stays counted while the VM unwinds, [vm.md](vm.md#unwinding)) that returns the successor and an "unwinding"
 flag separately. The VM passes a pointer to the current entry record's payload slot as
 `payload_out`, and on a panic `call_catching` writes the payload there (the
 `Box<dyn Any + Send>` as its raw wide pointer, from `Box::into_raw`, overwriting the slot, which must be

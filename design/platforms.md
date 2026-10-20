@@ -13,7 +13,7 @@ Targets: `x86_64-unknown-linux-gnu` and `x86_64-pc-windows-msvc`.
 | VM stack | `mmap` + `mprotect` guard page | `VirtualAlloc` (committed, so it counts against the commit limit, but pages only get memory when touched) + a `PAGE_NOACCESS` guard page (not `PAGE_GUARD`, which only traps once), via `#[link(name = "kernel32")]` |
 | Thread exit | pthread key destructor | FLS callback. A DLL containing `ryo_rt` must not be unloaded (images are never unregistered anyway): the callback would dangle |
 | TLS for VM state | `#[thread_local]` (initial-exec in exe, general-dynamic in dylib) | `#[thread_local]` (implicit TLS `.tls`, in exe and DLL) |
-| Panics out of islands | Itanium unwinding, caught by `catch_unwind` in `ryo_rt` | SEH-based Rust panics, same `catch_unwind`. The VM never unwinds natively, so only the Rust-compiled handlers need unwind info, and rustc emits it |
+| Panics out of islands | Itanium unwinding, caught by the `catch_unwind` intrinsic in `ryo_rt` | SEH-based Rust panics, same intrinsic. The VM never unwinds natively, so only the Rust-compiled handlers need unwind info, and rustc emits it |
 | Runtime | `libryo_rt.rlib` in the sysroot, linked as a Rust crate | Same, so the linker flavor (`ld`/`lld`/`link.exe`) doesn't matter |
 | ABI | SysV | Win64: different indirect/`i128`/aggregate rules. The ABI sweep test runs on both |
 | Build entry point | `y.sh` | `y.cmd` / `y.ps1`. `y test` builds the C programs with `cl` (from a Visual Studio developer environment). `.github/workflows/ci.yml` is set up to run `y build` and `y test` on Linux and Windows; it has not run yet (see Status) |

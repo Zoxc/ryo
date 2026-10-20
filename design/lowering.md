@@ -182,15 +182,15 @@ core). Everything else at 128 bits runs in the VM.
 | `TerminatorKind` | Bytecode |
 |---|---|
 | `Goto` | `jmp`, or fall-through |
-| `SwitchInt(d, targets)` | If `d` is defined by a compare in the same block, `br.cmp.*` on the compare's operands. Otherwise `br.if`/`br.unless` for `bool`, `switch.dense` for dense value sets, and `switch.sparse` otherwise |
+| `SwitchInt(d, targets)` | If `d` is a `bool` local defined by an integer, `char`, `bool` or thin-pointer compare as the block's last statement, and used nowhere else, `br.cmp.*` on the compare's operands, and the compare isn't emitted. Otherwise `br.if`/`br.unless` for `bool`, `switch.dense` for dense value sets, and `switch.sparse` otherwise |
 | `Return` | `ret` |
 | `Unreachable` | `unreachable` |
 | `Call` | see Calls |
 | `TailCall` | `tail_call` / `tail_call.ind` ([vm.md](vm.md#calls-and-islands)) |
 | `Drop { place, .. }` | Nothing if the type has no drop glue. Otherwise a call of `DropGlue(T)`: a VM `call` if the glue is a VM function, an `island` with `drop_in_place::<T>` otherwise. Unsized places pass the wide pointer. `replace` doesn't change the lowering, and `drop` (async drop) is `None` in runtime MIR |
-| `Assert { cond, expected, msg, target, unwind }` | `br.cmp`/`br.if` to `target`, and otherwise a call of the panic function for `msg` |
+| `Assert { cond, expected, msg, target, unwind }` | `br.cmp` (fused as for `SwitchInt`) or `br.if`/`br.unless` to `target`, and otherwise a call of the panic function for `msg` |
 | `UnwindResume` | `resume` |
-| `UnwindTerminate` | `abort` |
+| `UnwindTerminate(reason)` | a call of the reason's lang item (`panic_cannot_unwind`, `panic_in_cleanup`), which reports the panic and aborts, as cg_ssa's `codegen_terminate_terminator` |
 | `InlineAsm` | not lowerable: the function is native ([backend.md](backend.md#pipeline)) |
 | `Yield`, `CoroutineDrop`, `FalseEdge`, `FalseUnwind` | don't occur in runtime MIR (the coroutine transform and CFG cleanup remove them). The lowering ICEs on them |
 
@@ -239,7 +239,8 @@ island.
    - **`InstanceKind::Intrinsic`**: the matching VM instruction if one exists (`size_of`,
      `transmute`, overflow arithmetic, `copy_nonoverlapping`, `write_bytes`, atomics,
      `abort`, `unreachable`, `likely`/`unlikely`, `caller_location`, …). Otherwise an
-     `island` with the intrinsic's wrapper. So far: `abort`, `ptr_offset_from(_unsigned)`,
+     `island` with the intrinsic's wrapper. So far: `abort`, `caller_location`,
+     `catch_unwind` (island, [Unwinding](#unwinding)), `ptr_offset_from(_unsigned)`,
      `arith_offset`, `copy`, `write_bytes`, `typed_swap_nonoverlapping`,
      `size_of_val`/`align_of_val`, `ctpop`/`ctlz`/`cttz` (and `_nonzero`), `bswap`,
      `bitreverse`, rotates; safe intrinsics fall back to the `call` island, and unsafe ones
@@ -277,11 +278,21 @@ Mirrors cg_ssa's `get_caller_location`:
 - Every call-like instruction (`call`, `call.ext`, `call.ind`, `island.catch`) whose MIR
   terminator has an `unwind` action records a cleanup entry keyed by its code offset:
   - `UnwindAction::Cleanup(bb)` → jump to `bb`
-  - `UnwindAction::Terminate(_)` → abort
+  - `UnwindAction::Terminate(reason)` → jump to a stub after the function's blocks that
+    calls the reason's lang item, like cg_ssa's terminate block, so the message and the
+    panic hook run as natively. One stub per reason the function uses
   - `UnwindAction::Continue` → no entry: unwinding leaves the frame
   - `UnwindAction::Unreachable` → no entry
 - Calls inside cleanup blocks carry `Terminate`, so a panic during unwinding aborts, as with
   native code.
+- The `catch_unwind` intrinsic is an island (`ryo_island_catch_unwind<Data>`, a plain
+  `island`: the intrinsic is `rustc_nounwind`). Its `try_fn`/`catch_fn` operands are fn
+  pointers, so VM functions are reached through their portals: a panic in the VM leaves the
+  portal natively and the intrinsic catches it.
+- A panic stays counted by std while the VM unwinds (`std::thread::panicking()` is true in
+  VM cleanup code, so drops and `Mutex` poisoning behave as natively): `call_catching` and
+  `resume_unwind_from_vm` use the panic runtime's own entry points, not std's
+  `catch_unwind`/`resume_unwind` ([vm.md](vm.md#modules)).
 - Islands whose operation can unwind (call templates, `drop_in_place`, some intrinsics) are
   emitted as `island.catch` unless the unwind action is `Unreachable`, whether or not there
   is a cleanup entry. All others are plain `island`.
@@ -314,12 +325,16 @@ The lowering lives in `backend/src/rustc_api/lower/`, one module per concern (`m
 them). Implemented: everything above for integers, `bool`, `char`, `f32`/`f64`, places,
 references, aggregates, enums, casts, constants (pool allocations with relocations), switches,
 asserts, drops (VM call of the glue, `drop_in_place` island, vtable drop for trait objects),
-unwinding and calls: VM `call`, `call.ext`, `call.ind` for fn pointers, and islands (`call`
-for safe Rust fn items, including virtual calls and safe intrinsics, `call_ptrN`/`call_cN`
-through `addr.sym` otherwise), plus a first set of intrinsics as VM instructions. Every local
-has its own slot (no sharing yet), and there is no `br.cmp` fusion or copy propagation yet.
-Still `NeedsNative`, with the reason in `RYO_STATS=2`: `#[track_caller]` functions themselves
-(callers pass locations), `TailCall`, `ThreadLocalRef`, 128-bit `mul`/`div`/`rem`, `f16`/`f128`,
+unwinding (cleanup entries, terminate stubs, the `catch_unwind` island) and calls: VM `call`,
+`call.ext`, `call.ind` for fn pointers, and islands (`call` for safe Rust fn items, including
+virtual calls and safe intrinsics, `call_ptrN`/`call_cN` through `addr.sym` otherwise), plus a
+first set of intrinsics as VM instructions. `#[track_caller]` functions are VM functions with
+`portal_tcN` portals (up to 16 arguments), and caller locations follow cg_ssa, including a
+`#[track_caller]` function's own incoming location and the `caller_location` intrinsic.
+`SwitchInt` and `Assert` fuse with the compare that feeds them (`br.cmp`). Every local has its
+own slot (no sharing yet), and there is no copy propagation yet.
+Still `NeedsNative`, with the reason in `RYO_STATS=2`: `#[track_caller]` functions with more
+than 16 arguments, `TailCall`, `ThreadLocalRef`, 128-bit `mul`/`div`/`rem`, `f16`/`f128`,
 virtual calls that aren't safe Rust fn items (`dyn Fn`), unsafe intrinsics without a VM
 lowering, coroutines, dynamically aligned unsized fields, and on PE constants pointing at
 imports (the fixup area).

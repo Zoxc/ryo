@@ -17,6 +17,8 @@ pub mod templates {
     pub const CALL: &str = "ryo_island_call";
     /// `drop_in_place<T>`.
     pub const DROP_IN_PLACE: &str = "ryo_island_drop_in_place";
+    /// `catch_unwind<Data>`: the `catch_unwind` intrinsic.
+    pub const CATCH_UNWIND: &str = "ryo_island_catch_unwind";
 
     /// `call_ptrN<A0, …, R>` (Rust ABI through a fn pointer), N ≤ 17.
     pub fn call_ptr(n: usize) -> Option<String> {

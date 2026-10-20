@@ -147,7 +147,9 @@ pub fn call<A, R>(id: u64, args: A) -> Result<R, Box<dyn Any + Send>> {
         Ok(unsafe { ret.assume_init() })
     } else {
         assert_eq!(st, 1);
-        Err(unsafe { Box::from_raw(p.0) })
+        // Re-raise and catch it, as a portal's caller would: the panic is still counted
+        // (ryo_rt::unwind), and only a real catch uncounts it.
+        Err(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe { ryo_rt::unwind::resume_unwind_from_vm(p) })).unwrap_err())
     }
 }
 

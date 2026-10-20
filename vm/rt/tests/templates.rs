@@ -263,7 +263,11 @@ fn call_catching_and_resume() {
     assert_eq!(r, CatchResult { succ: 0, unwinding: true });
     assert!(!payload.is_none());
 
+    // The panic is still in flight while the VM unwinds (cleanup code sees `panicking()`),
+    // until a native catch ends it.
+    assert!(std::thread::panicking());
     let err = catch_unwind(AssertUnwindSafe(|| unsafe { resume_unwind_from_vm(payload) })).unwrap_err();
+    assert!(!std::thread::panicking());
     assert_eq!(err.downcast_ref::<String>().map(|s| &s[..]), Some("boom 5"));
 }
 
@@ -286,7 +290,7 @@ fn call_catching_a_call_island() {
 
 #[test]
 fn abi_version() {
-    assert_eq!(ryo_rt::RYO_RT_ABI, 1);
+    assert_eq!(ryo_rt::RYO_RT_ABI, 2);
 }
 
 thread_local!(static DROPS: Cell<u32> = const { Cell::new(0) });

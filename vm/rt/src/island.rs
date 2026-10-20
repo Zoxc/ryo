@@ -124,6 +124,24 @@ pub unsafe fn drop_in_place<T: ?Sized>(fp: *mut u8, ops: *const u32) -> u32 {
     0
 }
 
+/// Island for `intrinsics::catch_unwind`. `ops`: `[try_fn, data, catch_fn, dest]`. The fn
+/// pointers of VM functions are their portals, so a panic in the VM leaves the portal
+/// natively and is caught here (design/lowering.md#unwinding).
+///
+/// # Safety
+/// As for `intrinsics::catch_unwind`, with the operands initialized.
+#[rustc_diagnostic_item = "ryo_island_catch_unwind"]
+pub unsafe fn catch_unwind<Data>(fp: *mut u8, ops: *const u32) -> u32 {
+    unsafe {
+        let try_fn = slot::<unsafe fn(*mut Data)>(fp, ops, 0).read();
+        let data = slot::<*mut Data>(fp, ops, 1).read();
+        let catch_fn = slot::<unsafe fn(*mut Data, *mut u8)>(fp, ops, 2).read();
+        let r = intrinsics::catch_unwind(try_fn, data, catch_fn);
+        core::ptr::write(slot(fp, ops, 3), r);
+    }
+    0
+}
+
 macro_rules! intrinsic_wrappers {
     ($($name:ident $diag:literal [$($g:ident)?] ($($T:ty),*) -> $R:ty = $f:path;)*) => {$(
         #[doc = concat!("Island for `", stringify!($f), "`. `ops`: the inputs in order, then the destination.")]
