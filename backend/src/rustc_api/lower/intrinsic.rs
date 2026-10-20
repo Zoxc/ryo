@@ -1,6 +1,7 @@
 //! Intrinsic calls (design/lowering.md#calls, `InstanceKind::Intrinsic`): the matching VM
-//! instruction where one exists, otherwise the generic `call` island for safe intrinsics.
-//! Unsafe intrinsics without a VM lowering or a wrapper template keep the function native.
+//! instruction where one exists, else a wrapper island (`catch_unwind`, `compare_bytes`,
+//! SIMD), else the generic `call` island for intrinsics that implement `FnOnce`, else the
+//! fallback body as an ordinary call. Intrinsics with none of these keep the function native.
 //!
 //! Most intrinsics never get here: `LowerIntrinsics` turns them into MIR operations
 //! (`transmute`, overflow arithmetic, `copy_nonoverlapping`, …).
@@ -149,9 +150,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         };
         if !done {
             let tcx = self.tcx;
-            let safe = fty.fn_sig(tcx).safety().is_safe();
-            // Safe intrinsics: natively, through the `call` template (`FnOnce`).
-            if !safe
+            // Intrinsics that implement `FnOnce` (safe, no `#[track_caller]`): natively,
+            // through the `call` template.
+            if !self.fn_once_able(fty, callee)
                 && let Some(i) = tcx.intrinsic(callee.def_id())
                 && !i.must_be_overridden
             {

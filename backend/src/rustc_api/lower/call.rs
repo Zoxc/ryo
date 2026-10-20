@@ -370,7 +370,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// Whether `fty` can be called through `FnOnce` (the `call` template): a safe, Rust-ABI,
     /// non-variadic fn item without `#[target_feature]` or `#[track_caller]`
     /// (design/stubs.md#templates).
-    fn fn_once_able(&self, fty: Ty<'tcx>, callee: Instance<'tcx>) -> bool {
+    pub(super) fn fn_once_able(&self, fty: Ty<'tcx>, callee: Instance<'tcx>) -> bool {
         let tcx = self.tcx;
         let ty::FnDef(def_id, _) = *fty.kind() else { return false };
         let sig = fty.fn_sig(tcx);
@@ -506,7 +506,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         if let Some(m) = pv.meta {
             self.mov(ptr + 8, m, 8);
         }
-        if pv.meta.is_none() && self.cx.vm.contains(&glue) {
+        if self.cx.vm.contains(&glue) {
+            // The glue of an unsized type takes the wide pointer.
             let sig = abi_sig(tcx, glue)?;
             self.write_args(&sig, &[ArgSrc::Slot(ptr)], self.body.source_info(rustc_middle::mir::Location::START).clone())?;
             let d = self.frame.temp(0, 1);
