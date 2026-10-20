@@ -194,7 +194,7 @@ pub(crate) const CORPUS: &[Program] = &[
     ),
     single!(
         "vm_intrinsics",
-        vm: &["main", "atomics", "unwinding", "misc", "dst"],
+        vm: &["main", "atomics", "unwinding", "misc", "dst", "direct", "contention"],
         entered: &["std::rt::lang_start::<()>"]
     ),
     single!(

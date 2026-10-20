@@ -1,7 +1,7 @@
 //! Milestone 5: intrinsics as VM instructions (atomics, fences, volatile accesses, funnel
 //! shifts, float ops, `size_of_val` of structs with unsized tails) and as wrapper islands
 //! (`catch_unwind`, `compare_bytes`, SIMD).
-#![feature(core_intrinsics, funnel_shifts, portable_simd)]
+#![feature(core_intrinsics, funnel_shifts, portable_simd, ptr_metadata)]
 #![allow(internal_features)]
 use std::hint::black_box;
 use std::intrinsics;
@@ -166,9 +166,82 @@ fn dst() {
     println!("{}", weak.upgrade().is_none());
 }
 
+#[inline(never)]
+fn direct() {
+    unsafe {
+        println!("{} {}", intrinsics::exact_div(black_box(-42i32), 7), intrinsics::exact_div(black_box(84u64), 4));
+        println!("{:x}", intrinsics::disjoint_bitor(black_box(0xf0u8), 0x0f));
+        let (a, b) = (1u32, 2u32);
+        println!(
+            "{} {}",
+            intrinsics::ptr_guaranteed_cmp(black_box(&a as *const u32), &a as *const u32),
+            intrinsics::ptr_guaranteed_cmp(black_box(&a as *const u32), &b as *const u32)
+        );
+        let d: &dyn T1 = &[1u16, 2, 3];
+        let vt = std::ptr::metadata(d as *const dyn T1);
+        println!("{} {}", vt.size_of(), vt.align_of());
+        let raw: *const () = std::mem::transmute(vt);
+        println!("{} {}", intrinsics::vtable_size(raw), intrinsics::vtable_align(raw));
+        let mut x = 0u64;
+        intrinsics::nontemporal_store(&mut x, black_box(77));
+        println!("{x}");
+        let mut buf = [0u16; 6];
+        intrinsics::volatile_set_memory(buf.as_mut_ptr(), 0x11, 3);
+        intrinsics::volatile_copy_nonoverlapping_memory(buf.as_mut_ptr().add(3), buf.as_ptr(), 2);
+        intrinsics::volatile_copy_memory(buf.as_mut_ptr().add(1), buf.as_ptr(), 4);
+        println!("{buf:x?}");
+        println!("{} {}", intrinsics::raw_eq(&[1u8, 2, 3], &[1, 2, 3]), intrinsics::raw_eq(&(1u32, 5u32), &(1, black_box(6))));
+        let (p, q) = (b"abcd", b"abce");
+        println!(
+            "{} {} {}",
+            intrinsics::compare_bytes(p.as_ptr(), q.as_ptr(), 4).signum(),
+            intrinsics::compare_bytes(q.as_ptr(), p.as_ptr(), 4).signum(),
+            intrinsics::compare_bytes(p.as_ptr(), q.as_ptr(), black_box(3))
+        );
+    }
+    let h = AtomicU16::new(10);
+    println!(
+        "{} {} {} {} {} {}",
+        h.fetch_sub(20, SeqCst),
+        h.fetch_and(0xff0f, Relaxed),
+        h.fetch_or(0x3, Acquire),
+        h.fetch_xor(0xffff, Release),
+        h.fetch_max(5, AcqRel),
+        h.fetch_min(4, SeqCst)
+    );
+    println!("{}", h.load(SeqCst));
+}
+
+/// Read-modify-write atomics racing from several threads: no update is lost.
+#[inline(never)]
+fn contention() {
+    let n = Arc::new(AtomicUsize::new(0));
+    let m = Arc::new(AtomicU32::new(0));
+    let hs: Vec<_> = (0..4)
+        .map(|t| {
+            let (n, m) = (n.clone(), m.clone());
+            std::thread::spawn(move || {
+                for i in 0..10_000u32 {
+                    n.fetch_add(1, Relaxed);
+                    let mut cur = m.load(Relaxed);
+                    while let Err(v) = m.compare_exchange_weak(cur, cur + (i & 1) + t, AcqRel, Relaxed) {
+                        cur = v;
+                    }
+                }
+            })
+        })
+        .collect();
+    for h in hs {
+        h.join().unwrap();
+    }
+    println!("{} {}", n.load(SeqCst), m.load(SeqCst));
+}
+
 fn main() {
     atomics();
     unwinding();
     misc();
     dst();
+    direct();
+    contention();
 }

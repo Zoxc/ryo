@@ -138,7 +138,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let mut args = args.to_vec();
         if let InstanceKind::Virtual(_, idx) = callee.def {
             let Some(&recv) = args.first() else { return native("virtual call without a receiver") };
-            let (data, vtable, recv_ty) = self.receiver(recv)?;
+            let (data, vtable, recv_ty) = self.receiver(recv, tail)?;
             let mut sig = virtual_sig(tcx, callee, recv_ty)?;
             sig.rust_call = rust_call;
             // The method's entry in the vtable (`VirtualIndex::get_fn`).
@@ -191,7 +191,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// (`codegen_call_terminator`), a wrapper (`Box`, `Rc`, `Pin`, …) is peeled down to its
     /// one non-1-ZST field until a pointer remains, and an unsized by-value receiver (a
     /// `VTableShim` callee) passes its address.
-    fn receiver(&mut self, a: ArgSrc<'_, 'tcx>) -> Result<(u32, u32, Ty<'tcx>), NeedsNative> {
+    fn receiver(&mut self, a: ArgSrc<'_, 'tcx>, tail: bool) -> Result<(u32, u32, Ty<'tcx>), NeedsNative> {
         let tcx = self.tcx;
         let ArgSrc::Operand(op) = a else { return native("virtual call receiver in a slot") };
         let raw = Ty::new_mut_ptr(tcx, tcx.types.unit);
@@ -199,6 +199,10 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             Operand::Copy(place) | Operand::Move(place) => {
                 let pv = self.place(*place)?;
                 if let Some(meta) = pv.meta {
+                    if tail {
+                        // The address of a local of the frame the tail call replaces.
+                        return native("tail call with an unsized by-value receiver");
+                    }
                     let t = self.temp8();
                     self.addr_into(t, pv.loc);
                     return Ok((t, meta, raw));

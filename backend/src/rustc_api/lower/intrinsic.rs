@@ -155,10 +155,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             if !self.fn_once_able(fty, callee)
                 && let Some(i) = tcx.intrinsic(callee.def_id())
                 && !i.must_be_overridden
+                // The collector skips the fallback bodies of intrinsics the backend replaces
+                // (`rustc_monomorphize/src/collector.rs:1016`), so such a body has no symbol
+                // unless it is one of our VM functions anyway.
+                && let fallback = Instance::new_raw(callee.def_id(), callee.args)
+                && (!tcx.sess.replaced_intrinsics.contains(&i.name) || self.cx.vm.contains(&fallback))
             {
                 // The fallback body, as cg_ssa's `IntrinsicResult::Fallback`: an ordinary
                 // instance, a VM function if the collector found it.
-                let fallback = Instance::new_raw(callee.def_id(), callee.args);
                 let fty = Ty::new_fn_def(tcx, callee.def_id(), ty::Binder::dummy(callee.args));
                 return self.direct_call(fty, fallback, args, cont, source_info);
             }
@@ -240,7 +244,6 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         args: &[ArgSrc<'_, 'tcx>],
         cont: &CallCont<'tcx>,
     ) -> Result<bool, NeedsNative> {
-        let tcx = self.tcx;
         let ty0 = || callee.args.type_at(0);
         Ok(match name {
             "cold_path" => true,
@@ -370,7 +373,6 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 if generics.iter().any(|g| g.as_type().is_none()) {
                     return Ok(false);
                 }
-                let _ = tcx;
                 self.wrapper(&format!("ryo_island_{n}"), &generics, &ins, cont)?
             }
             _ => false,
