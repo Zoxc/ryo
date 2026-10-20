@@ -42,8 +42,13 @@ so a MIR change in a toolchain bump is a compile error. The tables below follow 
   prologue assembles it from the block fields, because the nested and flat tuple layouts
   differ. Callers (`call`, `call.ind`, `tail_call`), callees, portals
   (whose `Args` tuple is exactly this tuple) and the `call` island templates all use this
-  one definition (`ryo_bytecode::abi::arg_block`). So an argument block can move between them
-  with one `copy`. The wrappers reject `-Zrandomize-layout`, since tuple layouts must agree
+  one definition. So an argument block can move between them with one `copy`.
+  `ryo_bytecode::abi::arg_block` doesn't compute this layout: rustc's tuple field order
+  depends on niches, not only on sizes and alignments (`(u32, u8, bool, u8)` and
+  `(u32, u8, u8, u8)` differ), and changes between releases. The backend takes the offsets,
+  size and alignment from `tcx.layout_of` of the tuple, and `arg_block` validates them and
+  gives the frame offsets. Blocks aligned to more than 16 bytes can't be placed at
+  `fp + H`, so such functions stay native. The wrappers reject `-Zrandomize-layout`, since tuple layouts must agree
   between crates. ZST arguments get an offset in the tuple and take no space.
 - The argument block starts at `fp + H`, where H is the header size
   ([vm.md](vm.md#frames-and-the-vm-stack)).

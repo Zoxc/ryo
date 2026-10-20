@@ -1,7 +1,7 @@
 //! Instruction encoding: operand types, the per-opcode operand table, decoding, encoding and
 //! disassembly.
 //!
-//! Everything here is derived from the single opcode list in [`crate::ops`]: the [`Opcode`]
+//! Everything here is derived from the single opcode list in `src/ops.rs`: the [`Opcode`]
 //! enum, the [`OP_INFO`] table (mnemonic, operand names and kinds, fixed length), the decoded
 //! [`Insn`] enum, the decoder, the encoder and the [`Display`](fmt::Display) disassembly. So
 //! the VM, the backend's encoder and the disassembler can't drift apart.

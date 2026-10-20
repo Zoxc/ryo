@@ -311,16 +311,19 @@ relocations. It defines the symbol `__ryo_image_<StableCrateId>`, which points a
 **Read-only:**
 
 ```
-header        magic, format version, crate hash, section offsets/counts
+header        magic, format version, crate hash, StableCrateId, pointer to the writable
+              section (relocated), sizes, offset/count of every part below, site count,
+              fixup area offset
 functions     per function, sorted by code offset: code offset, code length,
-              frame_size, cleanup table offset, portal symbol index (or none)
+              frame_size, cleanup table offset and length, portal symbol index (or none)
 code          the instruction words of all functions
 cleanup       per function: sorted (code offset, target block offset | terminate)
-constants     constant pool: allocations, aligned
+fixups        PE only: (writable offset, symbol index, addend)
+symbol flags  one byte per symbol (bit 0: indirect, load through the slot)
 symbols       pointer-sized slots, one per referenced native symbol (functions, statics,
               islands, portals), filled in by the linker
-              (`R_X86_64_64` / `IMAGE_REL_AMD64_ADDR64`); plus a flags array
-              (bit 0: indirect, load through the slot)
+              (`R_X86_64_64` / `IMAGE_REL_AMD64_ADDR64`)
+constants     constant pool: allocations, aligned
 ```
 
 The read-only sections can live in RELRO/`.rdata`, since nothing writes to them after
@@ -333,6 +336,20 @@ site cache    one AtomicPtr per call.ext/call.ind site
 fixups        PE only: constant allocations that point at DLL-imported data
 ```
 
+- `ryo_bytecode::image` defines the exact layout (`Header`, `FuncEntry`, `CleanupEntry`,
+  `FixupEntry`). Code positions in the function and cleanup tables are word offsets, and
+  cleanup offsets and targets are relative to the function start. `data` operands and
+  `addr.data` are offsets from the start of the fixups area.
+- The writer (`ImageWriter`) returns the two sections plus a relocation list: the header's
+  pointer to the writable section, one per symbol slot, and the pointers inside constant and
+  fixup allocations (against a symbol, or intra-image against either section). The backend
+  turns it into an object file. The reader (`Image`) is a zero-copy view over a linked image
+  and needs only `core`.
+- A PE fixup writes `*slot + addend` at its offset, where `slot` is the indirect symbol's
+  slot (the address of `__imp_<sym>`).
+- The portal `ID`'s crate hash is the 32-bit fold of the `StableCrateId`
+  (`ryo_bytecode::image::crate_hash`). It is stored in the header, which also keeps the full
+  `StableCrateId`, so the registry can detect collisions.
 - Instructions refer to native symbols only by symbol-table index, so code contains no
   absolute addresses and needs no relocations.
 - **No re-entry into the VM from the runtime**: the registry, `lookup_addr`, `vm::enter`,
