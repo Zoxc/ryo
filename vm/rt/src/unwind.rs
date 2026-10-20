@@ -104,7 +104,9 @@ pub unsafe fn resume_unwind_from_vm(payload: RawPayload) -> ! {
             core::mem::replace(&mut self.0, RawPayload::NONE).0
         }
         fn get(&mut self) -> &(dyn Any + Send) {
-            // SAFETY: a live box until `take_box`.
+            // SAFETY: a live box until `take_box`. The panic runtime calls `get` only before
+            // `take_box` (as for std's `RewrapBox`); afterwards the pointer is null and `get`
+            // must not be called.
             unsafe { &*self.0.0 }
         }
     }

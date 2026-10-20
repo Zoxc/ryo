@@ -187,10 +187,14 @@ pub(crate) const CORPUS: &[Program] = &[
             "main", "here", "nested", "with_args", "tc_many", "generic::<std::vec::Vec<u8>>", "checked_div",
             "tc_closure", "tc_closure::{closure#0}", "S::loc", "deep", "<D as std::ops::Drop>::drop", "idx",
             "sort_panics", "sort_panics::{closure#0}", "call_ptr", "tc_panic", "tc_panic - shim(reify)", "rethrow",
-            "compares"
+            "compares", "tc_nine", "<S as Loc>::at"
         ],
-        entered: &["std::rt::lang_start::<()>", "main::{closure#0}"]
+        // `tc_nine` is entered through its `portal_tc9` from the native `native_caller`.
+        entered: &["std::rt::lang_start::<()>", "main::{closure#0}", "tc_nine"]
     ),
+    // The terminate stubs: both programs abort (the exit status is compared too).
+    single!("vm_abort_cleanup", vm: &["main", "f", "<P as std::ops::Drop>::drop"], entered: &["std::rt::lang_start::<()>"]),
+    single!("vm_abort_nounwind", vm: &["main", "no_unwind"], entered: &["std::rt::lang_start::<()>"]),
     Program {
         name: "vm_ffi",
         crates: &[krate("main", "vm_ffi/main.rs", CrateKind::Bin)],

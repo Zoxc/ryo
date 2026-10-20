@@ -51,6 +51,29 @@ fn tc_closure() -> u32 {
     f()
 }
 
+#[track_caller]
+fn tc_nine(a: u8, b: u16, c: u32, d: u64, e: i8, f: i16, g: i32, h: i64, i: &str) -> String {
+    format!("{a}{b}{c}{d}{e}{f}{g}{h}{i} {}", line(Location::caller()))
+}
+
+/// Native (`#[target_feature]` functions stay native), so it calls `tc_nine` through its
+/// `portal_tc9`, which passes this call site's location to the VM.
+#[target_feature(enable = "sse2")]
+fn native_caller() -> String {
+    tc_nine(1, 2, 3, 4, -5, -6, -7, -8, "nine")
+}
+
+trait Loc {
+    #[track_caller]
+    fn at(&self) -> u32;
+}
+impl Loc for S {
+    #[track_caller]
+    fn at(&self) -> u32 {
+        self.0 * 1000 + Location::caller().line()
+    }
+}
+
 struct S(u32);
 impl S {
     #[track_caller]
@@ -155,6 +178,11 @@ fn main() {
     println!("{}", generic(vec![1u8]));
     println!("{:?}", S(5).loc());
     println!("{}", tc_closure());
+    println!("{}", unsafe { native_caller() });
+    let d: &dyn Loc = &S(3);
+    println!("{}", d.at());
+    let b: Box<dyn FnOnce() -> u32> = Box::new(#[track_caller] || Location::caller().line());
+    println!("{}", b());
     let f: fn() -> &'static Location<'static> = here;
     println!("{}", f().line());
 

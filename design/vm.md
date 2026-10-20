@@ -332,8 +332,9 @@ Islands have no `d` word: "destination in word 1" applies only to the call instr
   VM looks up the current code offset in the function's cleanup table:
   - **Cleanup entry**: jump to the cleanup block. It ends in `resume`, which continues
     unwinding, or it reaches a normal exit as MIR allows.
-  - **Terminate entry**: abort. (The lowering doesn't emit these: it points `Terminate`
-    actions at a stub calling the terminate lang item, [lowering.md](lowering.md#unwinding).)
+  - **Terminate entry** (`TERMINATE` target): abort without a message. The format keeps it,
+    but the lowering never emits one: a `Terminate` action is a normal cleanup entry whose
+    target is a stub calling the terminate lang item ([lowering.md](lowering.md#unwinding)).
   - **No entry**: pop the frame, and repeat the lookup in the caller at its call
     instruction's offset (the return pc).
 - **Reaching the entry frame**: when unwinding gets to the frame of the current
@@ -349,6 +350,9 @@ Islands have no `d` word: "destination in word 1" applies only to the call instr
   cleanup blocks the panic is still counted (`std::thread::panicking()`, `Mutex` poisoning,
   "panic in a destructor during cleanup"), exactly as during native unwinding, and only the
   native catch that finally ends the panic uncounts it.
+- **Foreign exceptions** (a C++ exception or another Rust runtime's panic unwinding into an
+  island): `__rust_panic_cleanup` aborts on them, as std's `catch_unwind` does, so
+  `island.catch` and the native paths of `call.ext`/`call.ind` abort the process.
 
 ## Image format
 
