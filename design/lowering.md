@@ -246,7 +246,12 @@ island.
    - **Native function**: an `island` with a call template ([stubs.md](stubs.md#templates)):
      `call<F, Args, R>` for a safe, Rust-ABI fn item without `#[target_feature]` or
      `#[track_caller]` (no symbol needed), otherwise `addr.sym` of the callee into a slot and
-     `call_ptrN` (Rust ABI) or `call_cN` (`extern "C"`).
+     `call_ptrN` (Rust ABI) or `call_cN` (`extern "C"`). Not `call` in the `Fn*` shims of
+     the fn item's own type (`ShimKind::FnPtr(_, F)`): the template calls
+     `<F as FnOnce>::call_once`, which is such a shim, so the call would come back to a VM
+     shim calling `F` the same way, forever. Constructors are VM functions like any other
+     item: their body is `mir_for_ctfe`, which metadata always has for them, though
+     `is_mir_available` (which asks for `optimized_mir`) says no for upstream ones.
    - **`InstanceKind::LlvmIntrinsic`**: not lowerable (no MIR, `unadjusted` ABI). The
      function stays native.
    - **`InstanceKind::Virtual(_, idx)`**: load the fn pointer from the vtable (entry `idx`,

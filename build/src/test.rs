@@ -310,6 +310,14 @@ pub(crate) const CORPUS: &[Program] = &[
         vm: &["main", "ctor_value", "xgetbv_x87"],
         entered: &["std::rt::lang_start::<()>", "ctor_value"]
     ),
+    single!(
+        "vm_fn_items",
+        vm: &[
+            "main", "upstream_ctors", "local_ctors", "results", "native_item", "std::option::Option::<Local>::Some",
+            "<fn(u32) -> u32 {with_asm} as std::ops::FnMut<(u32,)>>::call_mut - shim(fn(u32) -> u32 {with_asm})"
+        ],
+        entered: &["std::rt::lang_start::<()>"]
+    ),
     Program {
         name: "vm_staticlib",
         crates: &[krate("vmc", "vm_c/lib.rs", CrateKind::Staticlib)],

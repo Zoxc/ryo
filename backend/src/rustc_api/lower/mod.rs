@@ -142,7 +142,13 @@ pub fn lower<'tcx>(
 pub fn vm_fn_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> Result<AbiSig<'tcx>, NeedsNative> {
     match instance.def {
         InstanceKind::Item(def_id) => {
-            if !tcx.is_mir_available(def_id) {
+            // `instance_mir` reads a constructor's body from `mir_for_ctfe`, which metadata
+            // always has for constructors, while `is_mir_available` asks for `optimized_mir`,
+            // which it never has for them (`should_encode_mir`,
+            // `rustc_metadata/src/rmeta/encoder.rs:1108`).
+            let available = matches!(tcx.def_kind(def_id), rustc_hir::def::DefKind::Ctor(..))
+                || tcx.is_mir_available(def_id);
+            if !available {
                 return native("no MIR");
             }
         }

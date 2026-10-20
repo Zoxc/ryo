@@ -377,6 +377,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     pub(super) fn fn_once_able(&self, fty: Ty<'tcx>, callee: Instance<'tcx>) -> bool {
         let tcx = self.tcx;
         let ty::FnDef(def_id, _) = *fty.kind() else { return false };
+        // The template calls `<F as FnOnce>::call_once`, the `FnPtr` shim of `F`
+        // (`rustc_ty_utils/src/instance.rs:338`). From one of `F`'s own `Fn*` shims, which
+        // calls `F`, that comes back to a VM shim calling `F` the same way, forever.
+        if let InstanceKind::Shim(ty::ShimKind::FnPtr(_, shim_ty)) = self.instance.def
+            && shim_ty == fty
+        {
+            return false;
+        }
         let sig = fty.fn_sig(tcx);
         sig.safety().is_safe()
             && sig.abi() == ExternAbi::Rust
