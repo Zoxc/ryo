@@ -180,7 +180,9 @@ arity-specific, because `#[track_caller]` is rejected on any other ABI (E0737,
   and `Rust`/`RustCall` canonicalize to the same `CanonAbi::Rust`
   (`rustc_target/src/spec/abi_map.rs:99`). So `portal::<(A, B), R, ID>` has the ABI of
   `fn(A, B) -> R`. `Args` is exactly the inputs of the original instance's
-  `fn_sig_for_fn_abi`, flattened, which is exactly the argument block
+  `fn_sig_for_fn_abi`, flattened, which is exactly the argument block. For `Item` instances
+  with the Rust ABI (not `#[track_caller]`), that is the plain `fn_sig` of the instance's
+  type, which the backend uses for them
   ([lowering.md](lowering.md#frame-slots)):
   - **Closures and other `rust-call` items** (`Shim(ClosureOnce)`, `Shim(FnPtr)`): the
     env/self argument as that signature has it (`&Self`, `&mut Self` or `Self`, depending on
@@ -210,7 +212,7 @@ arity-specific, because `#[track_caller]` is rejected on any other ABI (E0737,
 ## Program entry: `main`
 
 cg_ssa only emits the C `main` wrapper if the CGU contains the entry fn's own mono item
-(`maybe_create_entry_wrapper`, `rustc_codegen_ssa/src/base.rs:505-513`). With a VM `main`,
+(`maybe_create_entry_wrapper`, `rustc_codegen_ssa/src/base.rs:508-517`). With a VM `main`,
 the CGU holds a portal instead, so the backend provides the wrapper itself, as a template
 instance:
 

@@ -63,7 +63,8 @@ pub fn link(
             EncodedMetadata::from_path(full, stub, None)
                 .unwrap_or_else(|e| sess.dcx().fatal(format!("reloading the crate metadata: {e}")))
         };
-        if crate_type != CrateType::Rlib {
+        // Without linking (`--emit=obj` etc.) a registry object would only be left behind.
+        if crate_type != CrateType::Rlib && sess.opts.output_types.should_link() {
             let images = registry_images(sess, info, &crate_info, crate_type);
             let bytes = objfile::write_registry(&*fmt, &images).unwrap_or_else(|e| sess.dcx().fatal(e));
             let name = format!("{}.ryo_registry.{}", crate_info.local_crate_name, crate_type);

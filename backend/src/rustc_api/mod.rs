@@ -93,6 +93,15 @@ impl CodegenBackend for RyoBackend {
         if std::env::var_os("RYO_BACKEND_MARKER").is_some() {
             eprintln!("{INIT_MARKER}");
         }
+        // Incremental compilation is a non-goal (design/README.md): the portal symbols and the
+        // image come from per-session state that the query system doesn't track, so reused
+        // objects could carry stale symbols.
+        if sess.opts.incremental.is_some() {
+            sess.dcx().fatal(
+                "the ryo backend doesn't support incremental compilation; remove `-Cincremental` \
+                 (cargo-ryo sets CARGO_INCREMENTAL=0)",
+            );
+        }
         self.llvm.init(sess)
     }
 
@@ -165,7 +174,7 @@ impl CodegenBackend for RyoBackend {
         // Usually already computed (metadata encoding, `exported_generic_symbols`); this forces
         // it otherwise, so the results are set.
         let partitions = tcx.collect_and_partition_mono_items(());
-        let results = partition::results().expect("collect_and_partition_mono_items didn't run our provider");
+        let results = partition::results(tcx).expect("collect_and_partition_mono_items didn't run our provider");
         assert_eq!(partitions.codegen_units[0].name(), results.cgu_name);
         let fmt = match objfile::format_for(binary_format(&tcx.sess.target.binary_format)) {
             Ok(f) => f,

@@ -33,17 +33,35 @@ pub struct RtItems {
     pub abi: DefId,
 }
 
-static RT_ITEMS: OnceLock<Option<RtItems>> = OnceLock::new();
+/// The values below are computed once per session and kept in statics (providers are plain
+/// fns). They are keyed on the session's `GlobalCtxt` address, so a second session in the same
+/// process is detected instead of reading stale values.
+fn session_key(tcx: TyCtxt<'_>) -> usize {
+    std::ptr::from_ref::<rustc_middle::ty::GlobalCtxt<'_>>(*tcx) as usize
+}
+
+fn check_session(tcx: TyCtxt<'_>, key: usize) {
+    if key != session_key(tcx) {
+        tcx.dcx().fatal("the ryo backend supports one compilation session per process");
+    }
+}
+
+static RT_ITEMS: OnceLock<(usize, Option<RtItems>)> = OnceLock::new();
 
 /// `ryo_rt`'s crate and template items, found through its diagnostic items. `None` if
 /// `ryo_rt` isn't loaded (rustc wasn't run through `rustc-ryo`).
 pub fn rt_items(tcx: TyCtxt<'_>) -> Option<RtItems> {
-    *RT_ITEMS.get_or_init(|| {
-        let krate = *tcx.crates(()).iter().find(|&&c| tcx.crate_name(c).as_str() == "ryo_rt")?;
-        let items = tcx.diagnostic_items(krate);
-        let get = |name: &str| items.name_to_id.get(&Symbol::intern(name)).copied();
-        Some(RtItems { krate, portal: get("ryo_portal")?, c_main: get("ryo_c_main")?, abi: get("ryo_rt_abi")? })
-    })
+    let (key, items) = *RT_ITEMS.get_or_init(|| {
+        let find = || {
+            let krate = *tcx.crates(()).iter().find(|&&c| tcx.crate_name(c).as_str() == "ryo_rt")?;
+            let items = tcx.diagnostic_items(krate);
+            let get = |name: &str| items.name_to_id.get(&Symbol::intern(name)).copied();
+            Some(RtItems { krate, portal: get("ryo_portal")?, c_main: get("ryo_c_main")?, abi: get("ryo_rt_abi")? })
+        };
+        (session_key(tcx), find())
+    });
+    check_session(tcx, key);
+    items
 }
 
 /// What the partition provider hands to the other providers and to `codegen_crate`. Set once:
@@ -60,12 +78,18 @@ pub struct Results {
     symbols: Vec<String>,
     /// For `exported_generic_symbols`: (portal, original), lifetime-erased.
     portals: Vec<Pair<'static>>,
+    /// The portals made `External` + `Hidden` only because the image references them.
+    hidden_for_image: Vec<Instance<'static>>,
+    /// `session_key` of the session that computed this.
+    key: usize,
 }
 
 static RESULTS: OnceLock<Results> = OnceLock::new();
 
-pub fn results() -> Option<&'static Results> {
-    RESULTS.get()
+pub fn results(tcx: TyCtxt<'_>) -> Option<&'static Results> {
+    let r = RESULTS.get()?;
+    check_session(tcx, r.key);
+    Some(r)
 }
 
 impl Results {
@@ -75,6 +99,11 @@ impl Results {
         // query provider call, and a process runs one session (`RyoBackend::provide`). Only
         // the lifetime parameter changes.
         unsafe { std::mem::transmute::<&[Pair<'static>], &[Pair<'tcx>]>(&self.portals) }
+    }
+
+    fn hidden_for_image<'tcx>(&self, _tcx: TyCtxt<'tcx>) -> &[Instance<'tcx>] {
+        // SAFETY: as for `portals`.
+        unsafe { std::mem::transmute::<&[Instance<'static>], &[Instance<'tcx>]>(&self.hidden_for_image) }
     }
 }
 
@@ -94,7 +123,8 @@ pub fn collect_and_partition_mono_items<'tcx>(
     tcx: TyCtxt<'tcx>,
     original: super::PartitionProvider,
 ) -> MonoItemPartitions<'tcx> {
-    // `rustc-ryo` forces `-Ccodegen-units=1` (`rustc_session/src/session.rs:1058`).
+    // `rustc-ryo` forces `-Ccodegen-units=1`; `Session::codegen_units`
+    // (`rustc_session/src/session.rs:1058`) returns it.
     let n = tcx.sess.codegen_units().as_usize();
     if n != 1 {
         tcx.dcx().fatal(format!(
@@ -180,8 +210,8 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
     }
 
     fn vm_enabled(&self) -> bool {
-        // Proc macros run inside rustc, which has no ryo registry; `RYO_NO_VM` is a debugging
-        // switch that keeps everything native.
+        // Proc macros stay native: it keeps VM code out of rustc's own process, and they gain
+        // nothing from it. `RYO_NO_VM` is a debugging switch (design/backend.md#pipeline, step 2).
         std::env::var_os("RYO_NO_VM").is_none() && !self.tcx.crate_types().contains(&CrateType::ProcMacro)
     }
 
@@ -289,15 +319,35 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         if stats >= 1 {
             for v in &self.vm {
                 let portal = if v.portal.is_some() { " (portal)" } else { "" };
-                eprintln!("ryo: vm fn {}{portal}", path(v.instance));
+                let id = self.portal_id(self.index[&v.instance]);
+                eprintln!("ryo: vm fn {}{portal} id={:08x}:{:08x}", path(v.instance), id >> 32, id as u32);
             }
             eprintln!("ryo: {} VM functions, {} native items", self.vm.len(), native.items().len());
         }
 
         let (image, symbols) = self.build_image();
         let portals = self.vm.iter().filter_map(|v| Some((v.portal?, v.instance))).collect();
-        let results = Results { cgu_name: native.name(), image, main_portal, symbols, portals: erase(portals) };
+        let hidden: Vec<Instance<'tcx>> = self
+            .vm
+            .iter()
+            .filter(|v| v.data.linkage == Linkage::Internal)
+            .filter_map(|v| v.portal)
+            .collect();
+        let results = Results {
+            cgu_name: native.name(),
+            image,
+            main_portal,
+            symbols,
+            portals: erase(portals),
+            // SAFETY: as in `erase`.
+            hidden_for_image: unsafe { std::mem::transmute::<Vec<Instance<'tcx>>, Vec<Instance<'static>>>(hidden) },
+            key: session_key(tcx),
+        };
         (native, results)
+    }
+
+    fn portal_id(&self, index: u32) -> u64 {
+        portal_id(ryo_bytecode::image::crate_hash(local_stable_crate_id(self.tcx)), index)
     }
 
     /// Gives the VM function `instance` (if it is one) a portal.
@@ -309,7 +359,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         let tcx = self.tcx;
         let v = &self.vm[i as usize];
         let sig = lower::rust_sig(tcx, instance).expect("VM functions have a supported signature");
-        let id = portal_id(ryo_bytecode::image::crate_hash(local_stable_crate_id(tcx)), i);
+        let id = self.portal_id(i);
         let args = tcx.mk_args(&[
             Ty::new_tup(tcx, &sig.inputs).into(),
             sig.output.into(),
@@ -353,7 +403,22 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                         }
                     }
                 }
-                MonoItem::GlobalAsm(_) => {}
+                // `sym` operands are native references (like the collector's handling,
+                // `rustc_monomorphize/src/collector.rs:493-535`).
+                MonoItem::GlobalAsm(item_id) => {
+                    let item = tcx.hir_item(item_id);
+                    if let rustc_hir::ItemKind::GlobalAsm { asm, .. } = item.kind {
+                        for (op, _) in asm.operands {
+                            if let rustc_hir::InlineAsmOperand::SymFn { expr } = *op
+                                && let ty::FnDef(def_id, args) = *tcx.typeck(item_id.owner_id).expr_ty(expr).kind()
+                                && let Some(args) = args.no_bound_vars()
+                            {
+                                let typing_env = TypingEnv::fully_monomorphized();
+                                refs.push(Instance::resolve_for_fn_ptr(tcx, typing_env, def_id, args).unwrap());
+                            }
+                        }
+                    }
+                }
             }
         }
         for f in refs {
@@ -514,7 +579,7 @@ pub fn symbol_name<'tcx>(
     {
         if def_id == rt.portal {
             let (_, idx) = ryo_bytecode::image::split_portal_id(instance.args.const_at(2).to_leaf().to_u64());
-            let r = results().expect("portal symbol requested before partitioning");
+            let r = results(tcx).expect("portal symbol requested before partitioning");
             return ty::SymbolName::new(tcx, &r.symbols[idx as usize]);
         }
         if def_id == rt.c_main {
@@ -531,7 +596,9 @@ pub fn symbol_name<'tcx>(
 }
 
 /// Our local `exported_generic_symbols` (design/backend.md#query-overrides): portals are
-/// listed as the functions they stand for, and `c_main` isn't listed.
+/// listed as the generic functions they stand for (non-generic ones are already in
+/// `exported_non_generic_symbols`), portals made hidden only for the image and `c_main` aren't
+/// listed.
 pub fn exported_generic_symbols<'tcx>(
     tcx: TyCtxt<'tcx>,
     list: &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)],
@@ -540,13 +607,18 @@ pub fn exported_generic_symbols<'tcx>(
     if !list.iter().any(|(s, _)| matches!(s, ExportedSymbol::Generic(d, _) if d.krate == rt.krate)) {
         return list;
     }
-    let portals: FxHashMap<Instance<'tcx>, Instance<'tcx>> =
-        results().map(|r| r.portals(tcx).iter().copied().collect()).unwrap_or_default();
+    let Some(r) = results(tcx) else { return list };
+    let portals: FxHashMap<Instance<'tcx>, Instance<'tcx>> = r.portals(tcx).iter().copied().collect();
+    let hidden: FxHashSet<Instance<'tcx>> = r.hidden_for_image(tcx).iter().copied().collect();
     let mut out: Vec<_> = list
         .iter()
         .filter_map(|&(s, info)| match s {
             ExportedSymbol::Generic(def_id, args) if def_id.krate == rt.krate => {
-                let orig = portals.get(&Instance::new_raw(def_id, args))?;
+                let portal = Instance::new_raw(def_id, args);
+                let orig = portals.get(&portal)?;
+                if hidden.contains(&portal) || orig.args.non_erasable_generics().next().is_none() {
+                    return None;
+                }
                 match orig.def {
                     InstanceKind::Item(d) => Some((ExportedSymbol::Generic(d, orig.args), info)),
                     _ => None,

@@ -68,7 +68,8 @@ modeled on cg_clif's `build_system/`.
    They reject `-Zrandomize-layout`, because argument block layouts must agree between
    crates ([lowering.md](lowering.md#frame-slots)).
 
-   `cargo-ryo` sets `RUSTC=rustc-ryo`.
+   `cargo-ryo` sets `RUSTC=rustc-ryo` and `CARGO_INCREMENTAL=0` (incremental compilation is
+   a non-goal, and the backend rejects it, [README.md](README.md#goals)).
 
 ### `build-clif`: the Cranelift backend on stable
 
@@ -99,8 +100,15 @@ This gives a third backend, built from the same toolchain, to compare against.
   `f32`/`f64` mixes, `u128`, `extern "C"`, closures, vtable shims, `#[track_caller]`) through
   portals and island templates, on both targets. Programs can list functions that must be
   compiled to bytecode: the ryo builds run with `RYO_STATS=1` and must report them, and the
-  program is run once more with `RYO_VM_TRACE`, which must report VM entries and otherwise
-  give the same output ([backend.md](backend.md#debugging-switches)).
+  program is run once more with `RYO_VM_TRACE`: the reported IDs, mapped back to names
+  through the IDs `RYO_STATS` prints, must include the functions the program lists as
+  entered, and the output must otherwise be the same
+  ([backend.md](backend.md#debugging-switches)). Programs with VM functions are also built at
+  `-Copt-level=3` (`ryo-O3`), where only the output and the trace consistency are checked,
+  since MIR inlining removes functions. Some programs are a staticlib or cdylib called from a
+  C `main`, compiled with `cc` (skipped without one). The smoke tests check that `rustc-ryo`
+  rejects `-Zrandomize-layout`, more than one codegen unit and `-Cincremental`, and that
+  `cargo-ryo` builds a dev-profile package.
 - `test --clif`: also builds the corpus with `rustc-clif` and diffs its output too. That
   helps tell ryo bugs from test-corpus problems.
 - `bench [--runs N]`: hyperfine comparisons of each program in `tests/bench/` (fib, sieve,

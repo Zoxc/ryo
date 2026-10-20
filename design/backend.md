@@ -29,6 +29,11 @@ and `codegen_crate` reads them.
      - the entry fn and the `c_main` entry wrapper
        ([stubs.md](stubs.md#program-entry-main))
      - any vtable that the image or a native item references
+     - a `sym` operand of a `global_asm!` (resolved like the collector does,
+       `rustc_monomorphize/src/collector.rs:493-535`)
+
+     VM functions that are not `Internal` always get a portal, and so do those the image
+     refers to by symbol (fn-pointer constants, vtables).
 
    The backend errors if `sess.codegen_units()` isn't 1.
 2. **Classify** each mono item:
@@ -44,6 +49,13 @@ and `codegen_crate` reads them.
      - the other template gaps ([stubs.md](stubs.md#template-gaps))
 
      The lowering reports these as `Err(NeedsNative(reason))`.
+
+     Until calls to native code are islands, a function that calls a function that stays
+     native is native too, repeated until nothing changes.
+
+     Never VM: everything in a `proc-macro` crate (it keeps VM code out of rustc's own process,
+     and proc macros gain nothing from it), `ryo_rt`'s own instances, and everything when
+     `RYO_NO_VM` is set ([Debugging switches](#debugging-switches)).
    - `Static`, `GlobalAsm` → native. Statics are data, and cg_llvm handles relocations,
      linkage and TLS.
 3. **Lower VM functions to bytecode** with `par_for_each_in` over the list. This is the
@@ -106,7 +118,9 @@ and `codegen_crate` reads them.
    The image defines one global symbol, `__ryo_image_<StableCrateId>` (the id as 16 hex
    digits), hidden: only the registry object of the same link unit references it. On ELF the
    read-only part is `.data.rel.ro.ryo_image` (writable only while relocating) and the
-   writable part `.data.ryo_image`. A binary with a VM `main` also gets `__ryo_main` in this
+   writable part `.data.ryo_image`. Limitation: with `--emit=obj` (no linking) the emitted
+   `.o` lacks the image, because `join_codegen` adds the image module after cg_ssa has copied
+   the module objects to the outputs; and no registry object is generated then. A binary with a VM `main` also gets `__ryo_main` in this
    object ([stubs.md](stubs.md#program-entry-main)).
 6. **Link** with cg_llvm's `link` (`link_binary`). The VM is part of `ryo_rt`, which links like
    any Rust dependency, so there is no native runtime library. Two additions:
@@ -180,7 +194,8 @@ and `codegen_crate` reads them.
     hidden, so `-Clto` doesn't internalize them.
   - The entry wrapper `c_main` (`External`, default visibility) isn't listed.
   - Items made `External` + `Hidden` only for the image (see Linkage) are filtered out of
-    `exported_generic_symbols`. The default provider exports every `External` CGU item, and
+    `exported_generic_symbols`, whatever `need_visibility` says. So are portals of
+    non-generic functions, which `exported_non_generic_symbols` already lists by `DefId`. The default provider exports every `External` CGU item, and
     skips hidden ones only when `need_visibility` is set (`symbol_export.rs:327, 375-387`). `-Clto` is rejected until this is done.
 - `symbol_name` → for portal instances, the symbol of the VM function they stand for
   ([stubs.md](stubs.md#portals-native--vm)), looked up by the function index in the portal's
@@ -193,7 +208,7 @@ and `codegen_crate` reads them.
 Environment variables read by the backend (and `y test`):
 
 - `RYO_STATS=1` prints each VM function (`ryo: vm fn <instance>`, with ` (portal)` if it got
-  one) and the totals; `RYO_STATS=2` also prints why each other function stayed native.
+  one, then ` id=<crate hash>:<index>`, as `RYO_VM_TRACE` prints it) and the totals; `RYO_STATS=2` also prints why each other function stayed native.
 - `RYO_NO_VM` keeps every function native.
 - `RYO_BACKEND_MARKER` prints `ryo backend: init` from `init` and `ryo backend: partition`
   from the partition provider, so tests can tell that the backend and its override ran.

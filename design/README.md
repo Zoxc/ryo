@@ -26,7 +26,9 @@ ryo is a rustc codegen backend that compiles MIR to bytecode for a VM, and uses
 - A fully optimized VM dispatch loop, written in Rust (no C).
 
 Non-goals: incremental compilation, debuginfo for VM code, JIT, targets other than x86_64,
-Mach-O.
+Mach-O. The backend rejects `-Cincremental`: portal symbols and the image come from
+per-session state the query system doesn't track, so reused objects could carry stale
+symbols. `cargo-ryo` sets `CARGO_INCREMENTAL=0`, so cargo's dev profile works.
 
 **Targets**: `x86_64-unknown-linux-gnu` (ELF) and `x86_64-pc-windows-msvc` (PE/COFF). Every
 format-specific mechanism has an ELF and a PE variant ([platforms.md](platforms.md)), and
