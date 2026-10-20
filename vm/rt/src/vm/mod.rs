@@ -17,6 +17,7 @@ mod thread;
 use core::ptr;
 
 pub use registry::{Function, ImageRt};
+pub use interp::STRATEGY;
 pub use thread::{STACK_SIZE, VmThread};
 
 use crate::unwind::RawPayload;

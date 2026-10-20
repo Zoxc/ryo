@@ -928,4 +928,12 @@ define_ops! {
     Island = "island" { sym: Sym, ops: Words, targets: Targets },
     IslandCatch = "island.catch" { sym: Sym, ops: Words, targets: Targets },
     Resume = "resume" {  },
+
+    // ---- superinstructions (design/vm.md, "Superinstructions") ----
+    // `first+second`: replaces the opcode of a `first` that is directly followed by a `second`,
+    // and runs both with one dispatch. It has `first`'s operands; `second` stays in place,
+    // unchanged. Listed with their parts in `SUPERINSTRUCTIONS` (insn.rs).
+    AddImmW64BrCmpLtUW64 = "add.imm.w64+br.cmp.lt.u.w64" { d: Slot, a: Slot, imm: U64 },
+    AddImmW32BrCmpLtSW32 = "add.imm.w32+br.cmp.lt.s.w32" { d: Slot, a: Slot, imm: U32 },
+    LoadW64BrCmpLeUW64 = "load.w64+br.cmp.le.u.w64" { d: Slot, m: Mem },
 }

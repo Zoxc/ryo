@@ -90,8 +90,8 @@ on the same thread would otherwise create aliasing mutable references.
   function table are keyed by offset, not absolute pc, so the code can be copied elsewhere
   (for quickening/direct threading, or a JIT) and still map back.
 - For call instructions, word 1 is always the destination slot (`ret` reads it).
-- The small immediate field is reserved (must be 0) until superinstructions or quickening
-  use it.
+- The small immediate field is reserved (must be 0) until quickening uses it.
+  Superinstructions are opcodes of their own ([Superinstructions](#superinstructions)).
 - The opcode list, with every operand's encoding, is defined once in `ryo_bytecode`
   (`vm/bytecode/src/ops.rs`). The opcode enum, the decoder, the encoder and the
   disassembler are all generated from it. Opcode values follow list order, and every change
@@ -429,45 +429,94 @@ fixups        PE only: constant allocations that point at DLL-imported data
 
 ## Dispatch
 
-The hot loop is written in Rust, using nightly features available through `RUSTC_BOOTSTRAP`:
+The hot loop is written in Rust, using nightly features available through `RUSTC_BOOTSTRAP`.
+All three are in the pinned 1.99.1 (`rustc_feature/src/unstable.rs`):
 
 | Need | C technique | Rust |
 |---|---|---|
-| Tail-call threaded dispatch | `musttail` (clang) | `#![feature(explicit_tail_calls)]`: `become handler(…)` |
-| No callee-saved spills, more argument registers | `__attribute__((preserve_none))` | `#![feature(rust_preserve_none_cc)]`: `extern "rust-preserve-none"` (`unstable.rs:724`), lowered to LLVM `preserve_none` on x86_64 |
-| Direct-threaded dispatch | `goto *labels[op]` | `#![feature(loop_match)]` (`#[loop_match]` + `#[const_continue]`) |
+| Tail-call threaded dispatch | `musttail` (clang) | `#![feature(explicit_tail_calls)]` (`unstable.rs:539`): `become handler(…)` |
+| No callee-saved spills, more argument registers | `__attribute__((preserve_none))` | `#![feature(rust_preserve_none_cc)]`: `extern "rust-preserve-none"` (`unstable.rs:724`), lowered to LLVM `preserve_none` on x86_64 and aarch64, and to the C convention elsewhere (`rustc_codegen_llvm/src/abi.rs:724`) |
+| Direct-threaded dispatch | `goto *labels[op]` | `#![feature(loop_match)]` (`unstable.rs:619`; `#[loop_match]` + `#[const_continue]`) |
 | Frame allocation | `alloca` | not needed: a separate VM stack |
 | Branch hints | `__builtin_expect` | `core::hint::{likely, unlikely, cold_path}`, `#[cold]` |
 | Unchecked access | — | `get_unchecked`, `read_unaligned`, `unreachable_unchecked` |
 
-- **Tail-call handlers** are the main strategy:
+- **Tail-call handlers** are the main strategy, and the default:
   - **Shape**: one small `extern "rust-preserve-none"` function per opcode, with the
     signature `(pc, fp, vm, syms, consts)`. Each ends with
-    `become HANDLERS[op(next_pc)](next_pc, fp, vm, syms, consts)`.
+    `become HANDLERS[op(next_pc)](next_pc, fp, vm, syms, consts)`. An opcode outside the
+    table selects an `invalid_handler` (which aborts) instead of calling the abort directly:
+    a call, even a cold one, made LLVM set up a stack frame in handlers it couldn't
+    shrink-wrap.
   - **Why `preserve_none`**: with the plain Rust ABI, `become` still uses the C register
     convention. That means only 4 integer argument registers on Win64, and callee-saved
-    register spills in every handler prologue.
-  - **Fallback**: `dispatch!` falls back to the Rust ABI if `rust-preserve-none` is
-    unavailable.
-  - **Test**: a codegen test checks that handlers compile to `musttail` jumps without
-    prologue pushes.
+    register spills in every handler prologue. `preserve_none` is available on every target
+    (it is the C convention where LLVM has no `preserve_none`, which `become` also
+    supports), so there is no Rust-ABI fallback.
+  - **`rbp`**: on x86_64, `preserve_none` still preserves `rsp` and `rbp`. A handler that
+    keeps a value in `rbp`, across a native call or under register pressure, saves it.
+  - **Unwinding**: `extern "rust-preserve-none"` functions unwind like Rust ones
+    (`fn_can_unwind`), so a forced unwind passes through handler frames as it does through
+    the other strategies' `run`.
+  - **Test**: `vm/rt/tests/codegen.rs` builds `ryo_rt` as `y build` does (release,
+    `-Ccodegen-units=1`) with `--emit=llvm-ir,asm` and checks that every handler is
+    `preserve_nonecc`, that every call between handlers is a `musttail call` (the only other
+    call into the chain is `run`'s), and that dispatch is an indirect `jmp`. No handler saves
+    `rbx` or `r12`–`r15`; a handler sets up a frame only if it makes a native call (`memcpy`,
+    an island, a compiler-rt float conversion) or saves `rbp`; the hot handlers (`add`,
+    `load`, `store`, `mov`, `br.cmp`, `jmp`, superinstructions) have no prologue at all.
 - **`loop_match`** in one function is an alternative strategy, built from the same handler
-  bodies.
+  bodies: the state is the next opcode. The next opcode is read from the code, so every arm
+  ends in a plain `break` with a non-constant value, and `#[const_continue]` is never used;
+  it only changes how rustc lowers the loop.
 - **A plain `loop { match op { … } }`** works on any compiler, and is the reference for
   correctness tests.
 
 The handler list is `vm/rt/src/vm/handlers.rs`: every opcode with a handler *kind* and its
 parameters (`AddW32 => bin(u32, wrapping_add);`). Each kind is a macro producing the handler
 body, which reads its operands at the generated offsets (`ryo_bytecode::insn::off`), and either
-falls through to the next dispatch or returns `run`'s result. A strategy macro expands the
-list; the plain one makes each arm a local function that is `inline(always)` in optimized
-builds and `inline(never)` in unoptimized ones (unoptimized builds don't share stack slots
-between the arms, which made the dispatch frame hundreds of KiB). The plain `match`
-is exhaustive, so an opcode added to `ops.rs` without a handler fails to compile.
+falls through to the next dispatch or returns `run`'s result. The `dispatch!` macro expands
+the list into each strategy, so instruction semantics, re-entrancy, entry records,
+`call_catching` and image-context reloads are the same code in all three:
 
-All three are generated from one `dispatch!` macro over the handler bodies, and `y bench`
-compares them. `explicit_tail_calls` and `loop_match` are `incomplete` features
-(`unstable.rs:539,619`), so the plain loop stays tested too.
+- **plain** and **`loop_match`** make each arm a local function that is `inline(always)` in
+  optimized builds and `inline(never)` in unoptimized ones (unoptimized builds don't share
+  stack slots between the arms, which made the dispatch frame hundreds of KiB). The plain
+  `match` is exhaustive, so an opcode added to `ops.rs` without a handler fails to compile.
+- **tail** makes each entry a handler function and builds the `HANDLERS` table in a `const`
+  block that fails to compile if an opcode has no handler.
+
+The strategy is a `ryo_rt` cargo feature: none for tail calls, `dispatch-loop-match` or
+`dispatch-match` for the others (`vm/rt/build.rs` turns them into a cfg; `match` wins if both
+are on). `ryo_rt::vm::STRATEGY` names the one built. `explicit_tail_calls` and `loop_match`
+are `incomplete` features, so all three stay tested: `y test` runs `vm/`'s tests once per
+strategy, as does `vm/test-dispatch.sh` (which needs no `dist/`), and `y bench` compares them
+([build.md](build.md#test-and-bench)).
+
+### Superinstructions
+
+A superinstruction runs two adjacent instructions with one dispatch. It is an opcode of its
+own (listed after the others in `ops.rs`, with its parts in
+`ryo_bytecode::insn::SUPERINSTRUCTIONS`), named `first+second`:
+
+- **Encoding**: it replaces the opcode word of a `first` that is directly followed by a
+  `second`, and has exactly `first`'s operands. `second` stays in place, unchanged. So the
+  code layout, branch targets (to either part), cleanup offsets and return pcs are
+  unaffected, and forming one only rewrites a word.
+- **Execution**: `first`'s body, then `second`'s body at the next instruction, read with
+  `second`'s operand layout. The handler entry names both kinds
+  (`AddImmW64BrCmpLtUW64 => fused(AddImmW64: bin_imm(…), BrCmpLtUW64: br_cmp(…))`), and a
+  `const` assertion ties it to the table. `second` is executed by its plain semantics, so it
+  may itself have been replaced by a superinstruction (pairs may overlap).
+- **Rules** (checked by `ryo_bytecode`'s tests): `first` is fixed-length and always falls
+  through (no branches, calls, returns, islands), so it is never a call whose opcode `ret`
+  reads back; both parts are plain opcodes.
+- **Forming them**: `ryo_bytecode::peephole::fuse` (`alloc`), over a function's finished
+  `CodeBuf` ([lowering.md](lowering.md#bytecode-optimization)).
+- The current set is a first guess, pending `y bench` profiles of lowered code: the loop
+  latches `add.imm.w64` + `br.cmp.lt.u.w64` and `add.imm.w32` + `br.cmp.lt.s.w32`, and
+  `load.w64` + `br.cmp.le.u.w64`. Adding one: an `ops.rs` entry (bump `FORMAT_VERSION`), a
+  `SUPERINSTRUCTIONS` row and a `fused(…)` handler entry.
 
 ## Runtime crate: `ryo_rt`
 

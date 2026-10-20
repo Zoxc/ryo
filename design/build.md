@@ -98,9 +98,8 @@ This gives a third backend, built from the same toolchain, to compare against.
   portals and island templates, on both targets.
 - `test --clif`: also builds the corpus with `rustc-clif` and diffs its output too. That
   helps tell ryo bugs from test-corpus problems.
-- `bench [--runs N]`: VM dispatch benches (fib, sieve, sorting, hashmap; once the VM exists),
-  and hyperfine comparisons of each program in `tests/bench/` (fib, sieve, sort, hashmap)
-  built with LLVM `-O0`, LLVM `-O3`, Cranelift (`rustc-clif`) and ryo. Each comparison
+- `bench [--runs N]`: hyperfine comparisons of each program in `tests/bench/` (fib, sieve,
+  sort, hashmap) built with LLVM `-O0`, LLVM `-O3`, Cranelift (`rustc-clif`) and ryo. Each comparison
   covers compile time (Cranelift is the fast-compile reference ryo competes with) and run
   time, printed as two tables of mean and standard deviation. Every backend gets its default
   flags; the one inherent difference is that `rustc-ryo` forces `-Ccodegen-units=1`, while
@@ -109,6 +108,12 @@ This gives a third backend, built from the same toolchain, to compare against.
   a built-in timer does the same (one warmup, then `N` runs, default 5). The programs'
   output must agree across backends. `y bench` builds `dist/` and cg_clif first if they are
   missing; `y test --clif` builds cg_clif too.
+- VM dispatch benches: `y bench` also runs `vm/rt/benches/dispatch.rs` (hand-assembled fib,
+  sieve and insertion sort through `vm::enter`, each also with superinstructions formed) once
+  per dispatch strategy ([vm.md](vm.md#dispatch)), and prints a table of programs by
+  strategy (`N` runs after one warmup, mean and standard deviation).
+- `y test` also runs `vm/`'s cargo tests once per dispatch strategy (`vm/test-dispatch.sh`
+  does the same without `dist/`).
 
 ## Layout
 

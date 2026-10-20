@@ -7,10 +7,11 @@
 //! parameters (`AddW32 => bin(u32, wrapping_add);`). Each kind is a macro in this file that
 //! expands to the handler body. A body reads its operands through the generated offsets
 //! (`ryo_bytecode::insn::off::<Opcode>::<operand>`), updates the registers, and leaves `pc` at
-//! the next instruction, or `return`s the result of [`run`]. A dispatch strategy turns the
-//! list into a dispatcher: [`run`] uses `plain_match!`, a `match` inside a `loop`. Other
-//! strategies (tail-call handlers, `loop_match`) can expand the same list with the same
-//! bodies, since a body's only exits are "fall through to the next dispatch" and `return`.
+//! the next instruction, or `return`s the result of [`run`]. `dispatch!` turns the list into
+//! the dispatcher of the strategy chosen by the `ryo_rt` features (`vm/rt/build.rs`):
+//! tail-call handlers (default), `#[loop_match]`, or a plain `match` inside a `loop`. They
+//! share the bodies, since a body's only exits are "fall through to the next dispatch" and
+//! `return`.
 //!
 //! # Safety model
 //!
@@ -993,6 +994,19 @@ macro_rules! resume {
     };
 }
 
+/// A superinstruction `first+second` (design/vm.md, "Superinstructions"): `first`'s body,
+/// which leaves `pc` at the next instruction, then `second`'s body there. The parts' kinds are
+/// repeated here from their own entries; the assertion ties them to `SUPERINSTRUCTIONS`.
+macro_rules! fused {
+    ($r:ident, $vm:ident, $op:ident, $a:ident: $ka:ident ($($pa:tt)*), $b:ident: $kb:ident ($($pb:tt)*)) => {{
+        const {
+            assert!(matches!(Opcode::$op.fused_parts(), Some((Opcode::$a, Opcode::$b))));
+        }
+        $ka!($r, $vm, $a, $($pa)*);
+        $kb!($r, $vm, $b, $($pb)*);
+    }};
+}
+
 /// The return value size of the function containing `r.pc`.
 #[cold]
 unsafe fn current_ret_size(vm: *mut VmThread, r: &Regs) -> u32 {
@@ -1005,25 +1019,77 @@ unsafe fn current_ret_size(vm: *mut VmThread, r: &Regs) -> u32 {
     }
 }
 
-/// The plain dispatch strategy: one `match` over the opcode.
+/// Handler result: continue dispatching at `pc`.
+#[cfg(not(ryo_dispatch_tail))]
+const CONTINUE: u32 = u32::MAX;
+
+/// The opcode at `pc`, aborting on an invalid one.
+#[inline(always)]
+#[cfg(not(ryo_dispatch_tail))]
+unsafe fn opcode_at(pc: *const u32) -> Opcode {
+    // SAFETY: trusted code: `pc` is an instruction start.
+    let op = unsafe { *pc } as u16;
+    if op as usize >= Opcode::COUNT {
+        invalid_opcode()
+    }
+    // SAFETY: `Opcode` is `repr(u16)` with variants numbered 0..COUNT.
+    unsafe { core::mem::transmute::<u16, Opcode>(op) }
+}
+
+/// `loop_match`'s next state. Not inlined in unoptimized builds, where each inlined copy
+/// would get its own stack slots in every arm.
+#[cfg(ryo_dispatch_loop_match)]
+#[cfg_attr(debug_assertions, inline(never))]
+#[cfg_attr(not(debug_assertions), inline(always))]
+unsafe fn next_opcode(r: &Regs) -> Opcode {
+    // SAFETY: per `opcode_at`.
+    unsafe { opcode_at(r.pc) }
+}
+
+#[cold]
+#[inline(never)]
+fn invalid_opcode() -> ! {
+    fatal("invalid opcode")
+}
+
+/// Generates a dispatcher from the handler list (design/vm.md, "Dispatch"). Invoked as
+/// `for_each_handler!(dispatch!(strategy args))`; every strategy expands the same body macros,
+/// so the instruction semantics, re-entrancy (nested `run`s through islands), entry records,
+/// `call_catching` and image-context reloads are identical across strategies. A body's only
+/// exits are falling through (continue at `pc`) and `return x` (`run`'s result).
 ///
-/// Each arm calls its handler as a local function, which returns [`CONTINUE`] or the result
-/// of `run`. In optimized builds the handlers are `inline(always)`, so the match compiles to
-/// one function with the bodies in its arms. Unoptimized builds don't share stack slots
-/// between arms, which made `run`'s frame hundreds of KiB and limited native re-entrancy
-/// depth, so there the handlers stay separate functions.
-macro_rules! plain_match {
-    (($r:ident, $vm:ident, $opv:expr) $($name:ident => $kind:ident ($($a:tt)*);)*) => {
+/// - `plain r, vm, op`: `match op { … }`, to be put in a `loop`. Each arm calls its
+///   handler as a local function returning [`CONTINUE`] or the result. In optimized builds
+///   the handlers are `inline(always)`, so the match compiles to one function with the bodies
+///   in its arms. Unoptimized builds don't share stack slots between arms, which made `run`'s
+///   frame hundreds of KiB and limited native re-entrancy depth, so there they stay separate.
+/// - `loop_match r, vm`: the same arms in a `#[loop_match]` loop whose state is the next
+///   opcode. Every arm ends in a non-constant `break` (the next opcode is read from the code),
+///   so this only differs from `plain` in how rustc lowers the loop.
+/// - `tail`: one `extern "rust-preserve-none"` function per opcode with the hot state
+///   `(pc, fp, vm, syms, consts)` as arguments, ending in
+///   `become HANDLERS[op(pc)](pc, fp, vm, syms, consts)`, and the table `HANDLERS`. The
+///   handlers are private, and only entered from [`run`] or from each other, so their
+///   arguments always satisfy `run`'s contract: `pc` is an instruction of the image whose
+///   `syms`/`consts` are passed and which is `vm`'s current image, and `fp` is the current
+///   frame. `become` replaces the caller's native frame, so dispatch uses no native stack;
+///   bodies that call native code (islands, `call_catching`, a nested `run`) do so from the
+///   handler's own frame, as `run` does in the other strategies.
+macro_rules! dispatch {
+    (@arm $r:ident, $vm:ident, $name:ident, $kind:ident ($($a:tt)*)) => {
+        #[cfg_attr(debug_assertions, inline(never))]
+        #[cfg_attr(not(debug_assertions), inline(always))]
+        #[allow(unreachable_code, non_snake_case, unused_mut, unused_variables, unused_unsafe)]
+        unsafe fn $name(mut $r: &mut Regs, $vm: *mut VmThread) -> u32 {
+            // SAFETY: as for `run`.
+            unsafe { $kind!($r, $vm, $name, $($a)*) };
+            CONTINUE
+        }
+    };
+    ((plain $r:ident, $vm:ident, $opv:expr) $($name:ident => $kind:ident ($($a:tt)*);)*) => {
         match $opv {
             $(Opcode::$name => {
-                #[cfg_attr(debug_assertions, inline(never))]
-                #[cfg_attr(not(debug_assertions), inline(always))]
-                #[allow(unreachable_code, non_snake_case, unused_mut, unused_variables, unused_unsafe)]
-                unsafe fn $name(mut $r: &mut Regs, $vm: *mut VmThread) -> u32 {
-                    // SAFETY: as for `run`.
-                    unsafe { $kind!($r, $vm, $name, $($a)*) };
-                    CONTINUE
-                }
+                dispatch!(@arm $r, $vm, $name, $kind ($($a)*));
                 let x = $name(&mut $r, $vm);
                 if x != CONTINUE {
                     return x;
@@ -1031,12 +1097,105 @@ macro_rules! plain_match {
             })*
         }
     };
+    ((loop_match $r:ident, $vm:ident) $($name:ident => $kind:ident ($($a:tt)*);)*) => {
+        let mut op: Opcode = opcode_at($r.pc);
+        #[loop_match]
+        loop {
+            op = 'next: {
+                match op {
+                    $(Opcode::$name => {
+                        dispatch!(@arm $r, $vm, $name, $kind ($($a)*));
+                        let x = $name(&mut $r, $vm);
+                        if x != CONTINUE {
+                            return x;
+                        }
+                        break 'next next_opcode(&$r);
+                    })*
+                }
+            };
+        }
+    };
+    ((tail) $($name:ident => $kind:ident ($($a:tt)*);)*) => {
+        $(
+            #[allow(unreachable_code, non_snake_case, unused_mut, unused_variables, unused_unsafe)]
+            unsafe extern "rust-preserve-none" fn $name(
+                pc: *const u32,
+                fp: *mut u8,
+                vm: *mut VmThread,
+                syms: *const *const (),
+                consts: *const u8,
+            ) -> u32 {
+                let mut r = Regs { pc, fp, syms, consts };
+                // SAFETY: as for `run`; the arguments are the registers.
+                unsafe {
+                    $kind!(r, vm, $name, $($a)*);
+                    let h = handler(r.pc);
+                    become h(r.pc, r.fp, vm, r.syms, r.consts)
+                }
+            }
+        )*
+
+        /// The handler of each opcode, indexed by its value.
+        static HANDLERS: [Handler; Opcode::COUNT] = {
+            let mut t: [Option<Handler>; Opcode::COUNT] = [None; Opcode::COUNT];
+            $(t[Opcode::$name as usize] = Some($name);)*
+            // Every opcode has a handler, or this fails to compile.
+            let mut out: [Handler; Opcode::COUNT] = [t[0].unwrap(); Opcode::COUNT];
+            let mut i = 0;
+            while i < Opcode::COUNT {
+                out[i] = match t[i] {
+                    Some(h) => h,
+                    None => panic!("an opcode has no handler"),
+                };
+                i += 1;
+            }
+            out
+        };
+    };
 }
 
-/// Handler result: continue dispatching at `pc`.
-const CONTINUE: u32 = u32::MAX;
-
 include!("handlers.rs");
+
+/// A tail-call handler. `extern "rust-preserve-none"`: no callee-saved registers, so handlers
+/// have no prologue spills, and more argument registers (design/vm.md, "Dispatch").
+#[cfg(ryo_dispatch_tail)]
+type Handler = unsafe extern "rust-preserve-none" fn(*const u32, *mut u8, *mut VmThread, *const *const (), *const u8) -> u32;
+
+/// The handler of the instruction at `pc`. An invalid opcode selects [`invalid_handler`]
+/// instead of calling [`invalid_opcode`] here: a call, even a cold one, made LLVM align the
+/// stack with a prologue push in handlers it couldn't shrink-wrap.
+#[cfg(ryo_dispatch_tail)]
+#[inline(always)]
+unsafe fn handler(pc: *const u32) -> Handler {
+    // SAFETY: trusted code: `pc` is an instruction start. The index is checked.
+    unsafe {
+        let op = *pc as u16 as usize;
+        if op < Opcode::COUNT { *HANDLERS.get_unchecked(op) } else { invalid_handler }
+    }
+}
+
+#[cfg(ryo_dispatch_tail)]
+unsafe extern "rust-preserve-none" fn invalid_handler(
+    _: *const u32,
+    _: *mut u8,
+    _: *mut VmThread,
+    _: *const *const (),
+    _: *const u8,
+) -> u32 {
+    invalid_opcode()
+}
+
+#[cfg(ryo_dispatch_tail)]
+for_each_handler!(dispatch!(tail));
+
+/// The name of the dispatch strategy this build uses (`match`, `loop_match` or `tail`).
+pub const STRATEGY: &str = if cfg!(ryo_dispatch_tail) {
+    "tail"
+} else if cfg!(ryo_dispatch_loop_match) {
+    "loop_match"
+} else {
+    "match"
+};
 
 /// Runs bytecode from `pc` in the frame `fp` until the entry frame returns (0) or a panic
 /// unwinds out of it (1, payload in the innermost entry record).
@@ -1049,15 +1208,20 @@ pub unsafe fn run(vm: *mut VmThread, pc: *const u32, fp: *mut u8) -> u32 {
     // SAFETY: see the module docs and the function's contract.
     unsafe {
         let img = &*(*vm).img;
+        #[allow(unused_mut)]
         let mut r = Regs { pc, fp, syms: img.syms, consts: img.consts };
+        #[cfg(ryo_dispatch_tail)]
+        {
+            handler(r.pc)(r.pc, r.fp, vm, r.syms, r.consts)
+        }
+        #[cfg(ryo_dispatch_loop_match)]
+        {
+            for_each_handler!(dispatch!(loop_match r, vm));
+        }
+        #[cfg(ryo_dispatch_match)]
         loop {
-            let op = *r.pc as u16;
-            if op as usize >= Opcode::COUNT {
-                fatal("invalid opcode");
-            }
-            // SAFETY: `Opcode` is `repr(u16)` with variants numbered 0..COUNT.
-            let op: Opcode = core::mem::transmute::<u16, Opcode>(op);
-            for_each_handler!(plain_match!(r, vm, op));
+            let op = opcode_at(r.pc);
+            for_each_handler!(dispatch!(plain r, vm, op));
         }
     }
 }

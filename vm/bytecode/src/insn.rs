@@ -730,6 +730,45 @@ impl Opcode {
     }
 }
 
+/// The superinstructions, as `(fused, first, second)` (design/vm.md, "Superinstructions").
+///
+/// `fused` replaces the opcode word of a `first` directly followed by a `second`. It has
+/// exactly `first`'s operands, and the VM runs it as `first` then `second` (the instruction
+/// after it, read with `second`'s operand layout) with one dispatch. `second` keeps its own
+/// opcode, so branches to it, the code layout and every code offset stay valid.
+///
+/// Rules, checked by the tests: `first` is fixed-length and always falls through (no
+/// branches, calls, returns or islands), so it can't be a call whose opcode `ret` reads back
+/// from the return pc; `fused`'s mnemonic is `first+second`.
+pub const SUPERINSTRUCTIONS: &[(Opcode, Opcode, Opcode)] = &[
+    (Opcode::AddImmW64BrCmpLtUW64, Opcode::AddImmW64, Opcode::BrCmpLtUW64),
+    (Opcode::AddImmW32BrCmpLtSW32, Opcode::AddImmW32, Opcode::BrCmpLtSW32),
+    (Opcode::LoadW64BrCmpLeUW64, Opcode::LoadW64, Opcode::BrCmpLeUW64),
+];
+
+impl Opcode {
+    /// The parts `(first, second)` of a superinstruction, or `None` for a plain opcode.
+    pub const fn fused_parts(self) -> Option<(Opcode, Opcode)> {
+        let mut i = 0;
+        while i < SUPERINSTRUCTIONS.len() {
+            let (f, a, b) = SUPERINSTRUCTIONS[i];
+            if f as u16 == self as u16 {
+                return Some((a, b));
+            }
+            i += 1;
+        }
+        None
+    }
+
+    /// The opcode this one executes first: `first` for a superinstruction, else itself.
+    pub const fn first_part(self) -> Opcode {
+        match self.fused_parts() {
+            Some((a, _)) => a,
+            None => self,
+        }
+    }
+}
+
 /// Length in words of the instruction at the start of `w`, reading its count words if it has
 /// list operands. Doesn't validate the other operands.
 pub fn insn_len(w: &[u32]) -> Result<usize, DecodeError> {

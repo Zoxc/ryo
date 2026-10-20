@@ -213,7 +213,7 @@ fn opcode_table_is_pinned_to_format_version() {
             eat(&format!("{:?}", o.kind));
         }
     }
-    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (3, 0xbcc1699064bd4540), "opcode table hash {h:#x}");
+    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (4, 0xd01fbc244491836c), "opcode table hash {h:#x}");
 }
 
 /// Pins the image table layouts to the format version: any change to a table entry's size or
@@ -233,7 +233,7 @@ fn image_layouts_are_pinned_to_format_version() {
         ),
         (size_of::<CleanupEntry>(), size_of::<FixupEntry>(), size_of::<Span>()),
     );
-    assert_eq!(ryo_bytecode::FORMAT_VERSION, 3);
+    assert_eq!(ryo_bytecode::FORMAT_VERSION, 4);
     assert_eq!(layout, ((104, 24, 40, 100), (36, 12, 16, 20, 32), (8, 16, 8)), "{layout:?}");
 }
 
@@ -278,4 +278,68 @@ fn named_operand_offsets() {
     for op in [Opcode::Call, Opcode::CallExt, Opcode::CallExtInd, Opcode::CallInd] {
         assert_eq!(operand_word(op, "d"), 1);
     }
+}
+
+/// The superinstruction table follows its rules (`SUPERINSTRUCTIONS` docs).
+#[test]
+fn superinstruction_table() {
+    use Opcode::*;
+    let control = [Call, CallExt, CallExtInd, CallInd, TailCall, TailCallInd, Ret, Island, IslandCatch, Resume, Unreachable, Abort];
+    for &(f, a, b) in SUPERINSTRUCTIONS {
+        assert_eq!(f.fused_parts(), Some((a, b)));
+        assert_eq!(f.first_part(), a);
+        assert_eq!(f.info().operands, a.info().operands, "{f:?} has {a:?}'s operands");
+        assert_eq!(f.mnemonic(), format!("{}+{}", a.mnemonic(), b.mnemonic()));
+        assert!(a.fixed_len().is_some() && !control.contains(&a), "{a:?} must fall through");
+        assert!(a.info().operands.iter().all(|o| o.kind != OperandKind::Target), "{a:?} must not branch");
+        assert!(a.fused_parts().is_none() && b.fused_parts().is_none(), "parts are plain opcodes");
+        assert_eq!(ryo_bytecode::peephole::superinstruction(a, b), Some(f));
+    }
+    assert_eq!(AddW32.fused_parts(), None);
+    assert_eq!(AddW32.first_part(), AddW32);
+}
+
+/// `fuse` rewrites only the first opcode word of each pair, leaves branch targets alone, is
+/// idempotent, treats a superinstruction as its first part, and leaves undecodable code
+/// unchanged.
+#[test]
+fn peephole_fuse() {
+    use Opcode::*;
+    use ryo_bytecode::peephole::fuse;
+    let mut c = CodeBuf::new();
+    let top = c.emit(&Insn::LoadW64 { d: Slot(16), m: Mem { p: Slot(8), k: 0 } });
+    let br1 = c.emit(&Insn::BrCmpLeUW64 { a: Slot(16), b: Slot(24), t: Target(0) });
+    let add = c.emit(&Insn::AddImmW64 { d: Slot(32), a: Slot(32), imm: 1 });
+    let br2 = c.emit(&Insn::BrCmpLtUW64 { a: Slot(32), b: Slot(40), t: Target(0) });
+    // Not a pair (`br.cmp.lt.u.w32`, not `.s`).
+    c.emit(&Insn::AddImmW32 { d: Slot(48), a: Slot(48), imm: 1 });
+    c.emit(&Insn::BrCmpLtUW32 { a: Slot(48), b: Slot(52), t: Target(0) });
+    let end = c.emit(&Insn::Ret { s: Slot(16), len: 8 });
+    c.set_target(br1, 2, end);
+    c.set_target(br2, 2, top);
+    let before = c.words.clone();
+
+    assert_eq!(fuse(&mut c), Ok(2));
+    let ops: Vec<Opcode> = Decoder::new(&c.words).map(|r| r.unwrap().1.opcode()).collect();
+    assert_eq!(ops, [LoadW64BrCmpLeUW64, BrCmpLeUW64, AddImmW64BrCmpLtUW64, BrCmpLtUW64, AddImmW32, BrCmpLtUW32, Ret]);
+    let changed: Vec<u32> = (0..before.len() as u32).filter(|&i| before[i as usize] != c.words[i as usize]).collect();
+    assert_eq!(changed, [top, add], "only the first opcode words change");
+    assert_eq!(fuse(&mut c), Ok(0), "idempotent");
+
+    // A superinstruction counts as its first part: `add.imm.w64+…` before `br.cmp.le.u.w64`
+    // is `add.imm.w64`, which doesn't pair with it, so it stays.
+    let mut c = CodeBuf::new();
+    c.emit(&Insn::AddImmW64 { d: Slot(16), a: Slot(16), imm: 1 });
+    c.emit(&Insn::BrCmpLeUW64 { a: Slot(16), b: Slot(24), t: Target(0) });
+    c.words[0] = AddImmW64BrCmpLtUW64 as u32;
+    assert_eq!(fuse(&mut c), Ok(0));
+    assert_eq!(c.words[0], AddImmW64BrCmpLtUW64 as u32);
+
+    let mut bad = CodeBuf::new();
+    bad.emit(&Insn::LoadW64 { d: Slot(16), m: Mem { p: Slot(8), k: 0 } });
+    bad.emit(&Insn::BrCmpLeUW64 { a: Slot(16), b: Slot(24), t: Target(0) });
+    bad.words.push(0xffff);
+    let snapshot = bad.words.clone();
+    assert!(fuse(&mut bad).is_err());
+    assert_eq!(bad.words, snapshot);
 }

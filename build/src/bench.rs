@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
-use crate::utils::{cmd, describe, exe_name, root};
+use crate::utils::{cmd, describe, exe_name, output, root};
 
 pub const DEFAULT_RUNS: u32 = 5;
 
@@ -231,7 +231,7 @@ pub fn run(runs: u32) -> Result<(), String> {
     println!("note: rustc-ryo forces -Ccodegen-units=1; the others use rustc's default count");
     println!();
     print_table("run time (ms, mean ± stddev)", &rows, |c| c.run);
-    vm_benches();
+    vm_benches(runs, &mut failures);
     if !failures.is_empty() {
         return Err(format!("benchmarks failed:\n{}", failures.join("\n")));
     }
@@ -247,10 +247,68 @@ fn run_once(exe: &Path) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&res.stdout).into_owned())
 }
 
-/// Hook for the VM dispatch microbenches (fib, sieve, sorting, hashmap run directly by the VM
-/// interpreter), which need the VM.
-fn vm_benches() {
-    println!("\nVM dispatch benches: not available yet (they need the VM)");
+/// The VM dispatch strategies (design/vm.md, "Dispatch"): column name and `ryo_rt` feature.
+const STRATEGIES: &[(&str, Option<&str>)] =
+    &[("tail", None), ("loop_match", Some("ryo_rt/dispatch-loop-match")), ("match", Some("ryo_rt/dispatch-match"))];
+
+/// The VM dispatch microbenches (`vm/rt/benches/dispatch.rs`: hand-assembled fib, sieve and
+/// insertion sort, plain and with superinstructions), run directly by the interpreter under
+/// each dispatch strategy, printed as one table. Failures are added to `failures`.
+fn vm_benches(runs: u32, failures: &mut Vec<String>) {
+    let vm = root().join("vm");
+    let mut programs: Vec<String> = Vec::new();
+    let mut columns: Vec<Vec<(String, Stats)>> = Vec::new();
+    for &(name, feature) in STRATEGIES {
+        eprintln!("[y] bench vm dispatch [{name}]");
+        let mut c = cmd("cargo");
+        c.current_dir(&vm).args(["bench", "-p", "ryo_rt", "--bench", "dispatch"]);
+        if let Some(f) = feature {
+            c.args(["--features", f]);
+        }
+        c.args(["--", "--runs", &runs.to_string()]);
+        let res = output(&mut c).and_then(|out| parse_vm_bench(&out, name));
+        match res {
+            Ok(rows) => {
+                for (p, _) in &rows {
+                    if !programs.contains(p) {
+                        programs.push(p.clone());
+                    }
+                }
+                columns.push(rows);
+            }
+            Err(e) => {
+                failures.push(format!("vm dispatch [{name}]: {e}"));
+                columns.push(Vec::new());
+            }
+        }
+    }
+    let header: Vec<&str> = STRATEGIES.iter().map(|s| s.0).collect();
+    let rows: Vec<(&str, Vec<Option<Stats>>)> = programs
+        .iter()
+        .map(|p| (p.as_str(), columns.iter().map(|c| c.iter().find(|r| r.0 == *p).map(|r| r.1)).collect()))
+        .collect();
+    println!();
+    print!("{}", grid("VM dispatch (ms, mean ± stddev; +super: with superinstructions)", &header, &rows));
+}
+
+/// Parses the dispatch bench's output: `strategy <name>`, then `<program> <mean ns> <stddev ns>`
+/// lines. Checks that the binary was built with the `expected` strategy.
+fn parse_vm_bench(out: &str, expected: &str) -> Result<Vec<(String, Stats)>, String> {
+    let mut lines = out.lines().filter(|l| !l.trim().is_empty());
+    match lines.next() {
+        Some(l) if l == format!("strategy {expected}") => {}
+        l => return Err(format!("expected `strategy {expected}`, got {l:?}")),
+    }
+    lines
+        .map(|l| {
+            let f: Vec<&str> = l.split_whitespace().collect();
+            let num = |s: &str| s.parse::<f64>().map_err(|_| format!("bad bench line {l:?}"));
+            match f.as_slice() {
+                [p, mean, sd] => Ok((p.to_string(), Stats { mean: num(mean)? * 1e-9, stddev: num(sd)? * 1e-9 })),
+                _ => Err(format!("bad bench line {l:?}")),
+            }
+        })
+        .collect()
 }
 
 fn path_str(p: &Path) -> Result<String, String> {
@@ -262,13 +320,21 @@ fn print_table(title: &str, rows: &[(&str, Vec<Cell>)], pick: impl Fn(&Cell) -> 
 }
 
 fn table(title: &str, rows: &[(&str, Vec<Cell>)], pick: impl Fn(&Cell) -> Option<Stats>) -> String {
-    let mut lines: Vec<Vec<String>> = vec![
-        std::iter::once("program".to_owned()).chain(BACKENDS.iter().map(|b| b.name.to_owned())).collect(),
-    ];
+    let header: Vec<&str> = BACKENDS.iter().map(|b| b.name).collect();
+    let rows: Vec<(&str, Vec<Option<Stats>>)> =
+        rows.iter().map(|(program, cells)| (*program, cells.iter().map(&pick).collect())).collect();
+    grid(title, &header, &rows)
+}
+
+/// A table with a `program` column and one column per `header` entry; cells are mean ±
+/// standard deviation in ms, or `failed`.
+fn grid(title: &str, header: &[&str], rows: &[(&str, Vec<Option<Stats>>)]) -> String {
+    let mut lines: Vec<Vec<String>> =
+        vec![std::iter::once("program").chain(header.iter().copied()).map(str::to_owned).collect()];
     for (program, cells) in rows {
         let mut line = vec![program.to_string()];
         for cell in cells {
-            line.push(match pick(cell) {
+            line.push(match cell {
                 Some(s) => format!("{:.1} ± {:.1}", s.mean * 1e3, s.stddev * 1e3),
                 None => "failed".to_owned(),
             });
@@ -341,5 +407,17 @@ mod tests {
         assert_eq!(lines.len(), 5);
         let t = table("t", &[("fib", cells())], |c| c.run);
         assert!(t.lines().nth(3).unwrap().ends_with("  failed"));
+    }
+
+    #[test]
+    fn vm_bench_output() {
+        let out = "strategy tail\nfib 2000000 500000\nsort+super 1500000 0\n";
+        let rows = parse_vm_bench(out, "tail").unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].0, "fib");
+        assert!((rows[0].1.mean - 2e-3).abs() < 1e-12 && (rows[0].1.stddev - 5e-4).abs() < 1e-12);
+        assert_eq!(rows[1].0, "sort+super");
+        assert!(parse_vm_bench(out, "match").is_err());
+        assert!(parse_vm_bench("strategy tail\nfib x 1\n", "tail").is_err());
     }
 }

@@ -281,4 +281,7 @@ After lowering, a peephole pass:
 - removes `mov`s of moved-from locals by copy propagation, which matters at `-O0`, where
   MIR has had little of it
 - forms superinstructions, choosing the pairs from `y bench` profiles (for example
-  `add.imm` + `br.cmp` loop latches, `load` + `br.cmp`)
+  `add.imm` + `br.cmp` loop latches, `load` + `br.cmp`). This is
+  `ryo_bytecode::peephole::fuse`, run on each function's finished `CodeBuf`: it only rewrites
+  the opcode word of each pair's first instruction, so it can run before or after branch
+  targets are patched ([vm.md](vm.md#superinstructions))

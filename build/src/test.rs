@@ -119,6 +119,12 @@ fn variants(clif: bool) -> Vec<&'static Variant> {
     VARIANTS.iter().chain(clif.then_some(&CLIF)).collect()
 }
 
+/// `vm/`'s own tests run once per VM dispatch strategy (design/vm.md, "Dispatch"): the
+/// strategy and the `ryo_rt` feature selecting it. `vm/test-dispatch.sh` runs the same matrix
+/// without `dist/`.
+const VM_STRATEGIES: [(&str, Option<&str>); 3] =
+    [("tail", None), ("loop_match", Some("ryo_rt/dispatch-loop-match")), ("match", Some("ryo_rt/dispatch-match"))];
+
 pub fn run(clif: bool) -> Result<(), String> {
     let root = root();
     let rustc_ryo = root.join("dist").join("bin").join(exe_name("rustc-ryo"));
@@ -139,6 +145,21 @@ pub fn run(clif: bool) -> Result<(), String> {
     };
 
     let mut failed = Vec::new();
+    for (strategy, feature) in VM_STRATEGIES {
+        let name = format!("vm [{strategy}]");
+        let mut c = cmd("cargo");
+        c.current_dir(root.join("vm")).args(["test", "--workspace"]);
+        if let Some(f) = feature {
+            c.args(["--features", f]);
+        }
+        match crate::utils::run(&mut c) {
+            Ok(()) => eprintln!("[y] test {name}: ok"),
+            Err(msg) => {
+                eprintln!("[y] test {name}: FAILED: {msg}");
+                failed.push(name);
+            }
+        }
+    }
     for program in CORPUS {
         let reference = match ctx.build_and_run(program, &REFERENCE) {
             Ok(r) => r,

@@ -1,11 +1,14 @@
 // The handler table: every opcode with its handler kind and the kind's parameters. Included
-// by interp.rs, whose `*_!` body macros implement the kinds. A dispatch strategy invokes
-// `for_each_handler!(strategy!(args))` and receives `(args) Name => kind(params); ...`.
+// by interp.rs, whose `*_!` body macros implement the kinds. `dispatch!` is invoked as
+// `for_each_handler!(dispatch!(strategy args))` and receives
+// `(strategy args) Name => kind(params); ...`.
 //
-// The `match` the plain strategy builds is exhaustive, so a missing opcode is a compile
-// error. Kinds: integer types select the width and signedness (`i*` for `.s` forms), float
+// The `match` the plain and `loop_match` strategies build is exhaustive and the tail-call
+// strategy's `HANDLERS` table is checked when built, so a missing opcode is a compile error.
+// Kinds: integer types select the width and signedness (`i*` for `.s` forms), float
 // types the format; `Atomic*` the atomic type; orderings are `core::sync::atomic::Ordering`
-// variants.
+// variants. `fused(First: kind(…), Second: kind(…))` is a superinstruction: both parts'
+// entries repeated (design/vm.md, "Superinstructions").
 
 macro_rules! for_each_handler {
     ($m:ident!($($args:tt)*)) => { $m! { ($($args)*)
@@ -911,5 +914,8 @@ macro_rules! for_each_handler {
         Island => island(false);
         IslandCatch => island(true);
         Resume => resume();
+        AddImmW64BrCmpLtUW64 => fused(AddImmW64: bin_imm(u64, wrapping_add), BrCmpLtUW64: br_cmp(u64, <));
+        AddImmW32BrCmpLtSW32 => fused(AddImmW32: bin_imm(u32, wrapping_add), BrCmpLtSW32: br_cmp(i32, <));
+        LoadW64BrCmpLeUW64 => fused(LoadW64: load(u64, mem), BrCmpLeUW64: br_cmp(u64, <=));
     } };
 }

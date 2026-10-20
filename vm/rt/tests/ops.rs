@@ -159,7 +159,7 @@ fn base(mn: &str) -> String {
 fn integer_ops_all_widths() {
     let sel = |op: Opcode| {
         let p: Vec<&str> = op.mnemonic().split('.').collect();
-        INT_OPS.contains(&p[0]) && op.info().operands.iter().all(|o| ["d", "o", "a", "b", "imm"].contains(&o.name))
+        op.fused_parts().is_none() && INT_OPS.contains(&p[0]) && op.info().operands.iter().all(|o| ["d", "o", "a", "b", "imm"].contains(&o.name))
     };
     // The immediate is filled in per sample below, so encode a placeholder and patch it.
     let (img, fns) = image_for(sel, |n, _| Some(match n {
@@ -202,7 +202,7 @@ fn integer_imm_ops_all_widths() {
         .iter()
         .copied()
         .filter(|op| op.mnemonic().contains(".imm") && INT_OPS.contains(&op.mnemonic().split('.').next().unwrap()))
-        .filter(|op| op.info().operand_index("d").is_some())
+        .filter(|op| op.info().operand_index("d").is_some() && op.fused_parts().is_none())
         .collect();
     assert!(imm_ops.len() > 80);
     for &b in &SAMPLES[..SAMPLES.len()] {
@@ -553,4 +553,58 @@ fn float_special_values() {
         let want = want as f32;
         assert!(if want.is_nan() { got.is_nan() } else { got == want }, "f32 op {i}: {a} {b} → {got}");
     }
+}
+
+/// Each superinstruction against its two parts run separately: same result slot and same
+/// branch decision, on boundary values around the branch.
+#[test]
+fn superinstructions() {
+    use ryo_bytecode::insn::SUPERINSTRUCTIONS;
+    // Frame: x@16, y@24, p@32 (arguments), d@48, flag@56.
+    let mut w = ImageWriter::new(unique_scid());
+    let mut fns = vec![];
+    for &(f, first, second) in SUPERINSTRUCTIONS {
+        let mut a = Asm::new();
+        a.i(Insn::Zero { d: Slot(48), len: 16 });
+        let at = a.pos();
+        let vals: Vec<u128> = first
+            .info()
+            .operands
+            .iter()
+            .map(|o| match o.name {
+                "d" => 48,
+                "a" => 16,
+                "imm" => 3,
+                "m" => 32, // [p + 0]
+                n => panic!("operand {n}"),
+            })
+            .collect();
+        a.raw(first, &vals);
+        let br = a.raw(second, &[48, 24, 0]);
+        a.i(Insn::ImmW32 { d: Slot(56), imm: 1 });
+        a.i(Insn::Ret { s: Slot(48), len: 16 });
+        let taken = a.i(Insn::ImmW32 { d: Slot(56), imm: 2 });
+        a.i(Insn::Ret { s: Slot(48), len: 16 });
+        a.patch(br, "t", taken);
+        let plain = a.done();
+        let mut fused = plain.clone();
+        fused[at as usize] = f as u32;
+        fns.push((f, w.add_function(func(plain, 64, 0, 24, 16)), w.add_function(func(fused, 64, 0, 24, 16))));
+    }
+    let img = build(w, &[]);
+    let vals = [0u64, 1, 2, 3, 4, 5, 6, 0x7fff_fffd, 0x7fff_ffff, 0x8000_0000, 0xffff_fffc, 0xffff_ffff, u64::MAX - 2, u64::MAX];
+    let mut taken = [0; 3];
+    for (op, plain, fused) in fns {
+        for &x in &vals {
+            for &y in &vals {
+                let mem = x;
+                let args = (x, y, &raw const mem);
+                let want: [u64; 2] = ok(img.id(plain), args);
+                let got: [u64; 2] = ok(img.id(fused), args);
+                assert_eq!(got, want, "{op:?} x={x:#x} y={y:#x}");
+                taken[want[1] as usize] += 1;
+            }
+        }
+    }
+    assert!(taken[1] > 0 && taken[2] > 0, "both branch outcomes covered: {taken:?}");
 }

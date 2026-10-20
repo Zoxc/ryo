@@ -8,9 +8,19 @@ edition.workspace = true
 # emits at each final link), so that linking any portal pulls the registry in. `y build`
 # enables it; without the backend nothing defines the symbol, so it is off by default.
 registry-anchor = []
+# The VM dispatch strategy (design/vm.md, "Dispatch"). Without either feature the VM uses
+# tail-call handlers (`become` between `extern "rust-preserve-none"` functions).
+# `dispatch-match` selects the plain `loop { match }` reference, `dispatch-loop-match` the
+# `#[loop_match]` variant. `vm/test-dispatch.sh` runs the tests under each.
+dispatch-match = []
+dispatch-loop-match = []
 
 [dependencies]
 ryo_bytecode = { path = "../bytecode", default-features = false }
+
+[[bench]]
+name = "dispatch"
+harness = false
 
 [dev-dependencies]
 ryo_bytecode = { path = "../bytecode" }
