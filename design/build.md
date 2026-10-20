@@ -27,7 +27,7 @@ modeled on cg_clif's `build_system/`.
   run through `./y.sh <cmd>` (or `y.cmd`/`y.ps1` on Windows), which is
   `cargo run --manifest-path build/Cargo.toml -- <cmd>`.
 - Commands: `build [--sysroot llvm|ryo] [--target T]...`, `build-clif`, `test [--clif | --cross T]`, `bench [--runs N]`,
-  `clean`.
+  `bench crates [...]`, `clean`.
 - It sets `RUSTC_BOOTSTRAP=1` on everything it spawns.
 
 ### `build`
@@ -178,6 +178,61 @@ This gives a third backend, built from the same toolchain, to compare against.
 - `y test` also runs `vm/`'s cargo tests once per dispatch strategy (`vm/test-dispatch.sh`
   does the same without `dist/`).
 
+### `bench crates`
+
+`y bench crates [--build-samples N] [--run-samples N] [--quick] [--crates a,b] [--backends
+llvm,clif,ryo] [--timeout SECS] [--out FILE]` compares LLVM (plain rustc), Cranelift
+(`rustc-clif`) and ryo (`rustc-ryo`, default sysroot) on real crates.io crates, in cargo's
+`dev` profile only. Written in Rust in `build/src/crates/`.
+
+- **Crates** (`CRATES` in `build/src/crates/mod.rs`): semver, smallvec, miniz_oxide, memchr,
+  hashbrown, rand, regex-syntax, unicode-segmentation, serde_json. Pure Rust, no C
+  dependencies, their own test suites ship in the `.crate` archive, and they build on the
+  pinned stable. Each is pinned by version and sha256; the archive is downloaded once into
+  `target/bench-crates/cache/`, extracted fresh each run into `target/bench-crates/src/`,
+  and built `--locked` against the `Cargo.lock` it was published with. Dependencies come
+  from cargo's registry cache (network on first use). Crates whose archives lack test data
+  (regex), or whose dev-dependencies don't build with `RUSTC_BOOTSTRAP=1` (nom, through
+  rustix 0.37), were left out.
+- **Workloads**: `tests/crates/<crate>.rs`, added to the extracted package as the
+  `ryo_bench` example (published manifests set `autoexamples = false`). Each prints a
+  checksum that must be the same for every backend.
+- **Fairness**: every backend gets `RUSTFLAGS=-Cdebuginfo=0 -Ccodegen-units=1 -Zthreads=1`
+  (no `--target`, so dependencies, build scripts and proc macros too), `CARGO_BUILD_JOBS=1`,
+  `CARGO_INCREMENTAL=0`, `RUST_TEST_THREADS=1`, no LTO, no target-cpu, the default linker.
+  The dev profile's defaults (opt-level 0, debug assertions, overflow checks, unwind) are
+  restated through `CARGO_PROFILE_{DEV,TEST}_*`, since crates can override `profile.test`
+  (memchr sets opt-level 3). `rustc-ryo` forces `-Ccodegen-units=1` anyway; no MIR
+  optimization flags are added for any backend.
+- **Steps** of a build sample, from a clean target directory: `cargo build --lib` (the
+  dependency graph and the leaf crate), `cargo build --tests` (dev-dependencies and test
+  targets, i.e. `cargo test`'s build), `cargo build --example ryo_bench`. Run samples run
+  every test binary from the package directory (as `cargo test` would; doc tests are not
+  run) and the workload. Binary sizes are the workload and the test binaries.
+- **Compile-time sections**, measured inside rustc like cargo's `-Zsection-timings`, not
+  with `-Zself-profile`/`-Ztime-passes`: cargo is run with `-Zsection-timings --timings`,
+  so it passes `--json=timings` and rustc emits `section_timing` records (`codegen` from
+  `start_codegen`, before the backend's `codegen_crate`, to after `join_codegen`; `link`
+  around linking). Cargo only keeps them rounded to 10 ms in its HTML, so `y` is also the
+  `RUSTC_WRAPPER` (selected by `RYO_Y_BENCH_WRAPPER`): it forwards rustc's stderr to cargo
+  unchanged and logs the records, the process's wall time and `CARGO_PRIMARY_PACKAGE`
+  (leaf vs dependency) per invocation. Frontend = process start to codegen start, backend
+  = codegen, link = link, other = the rest of the rustc process.
+- **Samples**: default 5 build and 10 run samples (`--quick`: 1 each), always after one
+  discarded warm-up; backends are interleaved (llvm clif ryo llvm clif ryo …). Reported:
+  median, min, standard deviation, n; a cell is noisy if its standard deviation exceeds 3%
+  of its median. Timing is `y`'s own loop (no hyperfine).
+- **Coverage**: ryo's warm-up build runs with `RYO_STATS=1`, which the wrapper strips from
+  stderr and logs; the report shows VM/native functions and islands for the library, its
+  dependencies and the test targets, native reasons and island templates. The warm-up is
+  not timed, so the statistics cost nothing in the samples.
+- **Output**: `target/bench-crates/report.html` (or `--out`), self-contained (inline CSS,
+  SVG, a few lines of JS for tooltips): a header with toolchain, flags, machine and date;
+  test results and every build, test or workload failure; a compile-time breakdown; per
+  metric a chart of each backend relative to LLVM (log axis, ± stddev whiskers) and a table;
+  coverage; per-unit times. A text summary goes to stdout. Failures are reported, not fatal.
+
+
 ## Layout
 
 ```
@@ -192,6 +247,7 @@ vm/             cargo workspace for everything that ends up in the output progra
   rt/           rlib       ryo_rt              the runtime: VM, registry, portal/island
                                                templates, panic glue
 tests/                                         test programs, driven by `y test`
+  crates/                                      workloads for `y bench crates`
   bench/                                       benchmark programs, driven by `y bench`
 ```
 

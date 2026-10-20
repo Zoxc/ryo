@@ -2,6 +2,7 @@
 
 mod bench;
 mod clif;
+mod crates;
 mod cross;
 mod dist;
 mod sysroot;
@@ -30,8 +31,13 @@ commands:
   test --cross T               cross-build and link (not run) the corpus for target T, e.g.
                                x86_64-pc-windows-msvc; needs `build --target T` first
   bench [--runs N]             compare LLVM -O0/-O3, Cranelift and ryo: compile and run time
+{CRATES}
   clean                        remove dist/ and target/
 ";
+
+fn usage() -> String {
+    USAGE.replace("{CRATES}", crates::USAGE)
+}
 
 #[derive(Debug, PartialEq)]
 enum Sysroot {
@@ -48,6 +54,7 @@ enum Cmd {
     /// `test --cross <target>`.
     CrossTest { target: String },
     Bench { runs: u32 },
+    BenchCrates(crates::Options),
     Clean,
     Help,
 }
@@ -95,6 +102,7 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
             [arg, ..] => Err(format!("unexpected argument `{arg}`")),
         },
         "bench" => match rest.as_slice() {
+            ["crates", opts @ ..] => crates::parse_options(opts).map(Cmd::BenchCrates),
             [] => Ok(Cmd::Bench { runs: bench::DEFAULT_RUNS }),
             ["--runs", n] => match n.parse() {
                 Ok(runs) if runs > 0 => Ok(Cmd::Bench { runs }),
@@ -113,17 +121,21 @@ fn main() -> ExitCode {
     if let Some(rustc_ryo) = std::env::var_os(sysroot::SHIM_VAR) {
         return sysroot::shim(rustc_ryo);
     }
+    // `y` is the `RUSTC_WRAPPER` of `y bench crates`.
+    if let Some(log_dir) = std::env::var_os(crates::timing::WRAPPER_VAR) {
+        return crates::timing::wrapper(log_dir);
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     let cmd = match parse_args(&args) {
         Ok(cmd) => cmd,
         Err(msg) => {
-            eprintln!("error: {msg}\n\n{USAGE}");
+            eprintln!("error: {msg}\n\n{}", usage());
             return ExitCode::FAILURE;
         }
     };
     let result = match cmd {
         Cmd::Help => {
-            print!("{USAGE}");
+            print!("{}", usage());
             Ok(())
         }
         Cmd::Build { sysroot, targets } => dist::build(&targets, sysroot == Sysroot::Ryo),
@@ -131,6 +143,7 @@ fn main() -> ExitCode {
         Cmd::Test { clif } => test::run(clif),
         Cmd::CrossTest { target } => cross::run(&target),
         Cmd::Bench { runs } => bench::run(runs),
+        Cmd::BenchCrates(opts) => crates::run(opts),
         Cmd::Clean => dist::clean(),
     };
     match result {
@@ -173,6 +186,8 @@ mod tests {
         assert_eq!(parse(&["bench"]), Ok(Cmd::Bench { runs: bench::DEFAULT_RUNS }));
         assert_eq!(parse(&["bench", "--runs", "3"]), Ok(Cmd::Bench { runs: 3 }));
         assert!(parse(&["bench", "--runs", "0"]).is_err());
+        assert!(matches!(parse(&["bench", "crates", "--quick"]), Ok(Cmd::BenchCrates(o)) if o.run_samples == 1));
+        assert!(parse(&["bench", "crates", "--frob"]).is_err());
         assert_eq!(parse(&["clean"]), Ok(Cmd::Clean));
         assert!(parse(&["clean", "x"]).is_err());
         assert!(parse(&["frobnicate"]).is_err());
