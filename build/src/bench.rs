@@ -31,6 +31,9 @@ struct Backend {
     flags: &'static [&'static str],
 }
 
+/// Flags every backend gets, so compile times compare one codegen unit on one thread.
+const COMMON_FLAGS: &[&str] = &["-Ccodegen-units=1", "-Zthreads=1"];
+
 /// The first is the reference whose output the others must match.
 const BACKENDS: &[Backend] = &[
     Backend { name: "llvm -O0", compiler: Compiler::Rustc, flags: &["-Copt-level=0"] },
@@ -195,7 +198,7 @@ pub fn run(runs: u32) -> Result<(), String> {
                 Compiler::Ryo => dist_bin.join(exe_name("rustc-ryo")),
             };
             let mut args = vec!["--edition=2024".to_owned(), path_str(&src)?];
-            args.extend(backend.flags.iter().map(|f| f.to_string()));
+            args.extend(COMMON_FLAGS.iter().chain(backend.flags).map(|f| f.to_string()));
             args.extend(["-o".to_owned(), path_str(&exe)?]);
             let _ = fs::remove_file(&exe);
             let name = format!("{program} [{}]", backend.name);
@@ -228,7 +231,6 @@ pub fn run(runs: u32) -> Result<(), String> {
 
     println!();
     print_table("compile time (ms, mean ± stddev)", &rows, |c| c.compile);
-    println!("note: rustc-ryo forces -Ccodegen-units=1; the others use rustc's default count");
     println!();
     print_table("run time (ms, mean ± stddev)", &rows, |c| c.run);
     vm_benches(runs, &mut failures);

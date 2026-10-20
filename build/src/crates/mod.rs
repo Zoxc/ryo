@@ -136,12 +136,16 @@ pub struct Options {
     pub out: Option<PathBuf>,
 }
 
+/// Crates run without `--crates`: tight integer loops (miniz_oxide), generic hashing and
+/// probing (hashbrown), and a large enum-heavy parser (regex-syntax).
+pub const DEFAULT_CRATES: &[&str] = &["miniz_oxide", "hashbrown", "regex-syntax"];
+
 pub const DEFAULT_BUILD_SAMPLES: u32 = 5;
 pub const DEFAULT_RUN_SAMPLES: u32 = 10;
 pub const DEFAULT_TIMEOUT: u64 = 1800;
 
 pub const USAGE: &str = "\
-  bench crates [--build-samples N] [--run-samples N] [--quick] [--crates a,b] [--backends llvm,clif,ryo]
+  bench crates [--build-samples N] [--run-samples N] [--quick] [--crates a,b|all] [--backends llvm,clif,ryo]
                [--timeout SECS] [--out FILE]
                                build, test and run pinned crates.io crates with each backend
                                (dev profile); writes an HTML report";
@@ -150,7 +154,7 @@ pub fn parse_options(args: &[&str]) -> Result<Options, String> {
     let mut o = Options {
         build_samples: DEFAULT_BUILD_SAMPLES,
         run_samples: DEFAULT_RUN_SAMPLES,
-        crates: Vec::new(),
+        crates: DEFAULT_CRATES.iter().map(|c| c.to_string()).collect(),
         backends: BACKENDS.to_vec(),
         timeout: DEFAULT_TIMEOUT,
         out: None,
@@ -170,7 +174,13 @@ pub fn parse_options(args: &[&str]) -> Result<Options, String> {
             "--timeout" => o.timeout = value()?.parse().ok().filter(|&n| n > 0).ok_or("bad timeout")?,
             "--out" => o.out = Some(value()?.into()),
             "--crates" => {
-                for c in value()?.split(',') {
+                o.crates.clear();
+                let v = value()?;
+                if v == "all" {
+                    o.crates = CRATES.iter().map(|c| c.name.to_owned()).collect();
+                    continue;
+                }
+                for c in v.split(',') {
                     if !CRATES.iter().any(|k| k.name == c) {
                         return Err(format!("unknown crate `{c}`"));
                     }
@@ -293,7 +303,7 @@ pub fn run(opts: Options) -> Result<(), String> {
     }
     let base = root.join("target").join("bench-crates");
     let selected: Vec<&'static Crate> =
-        CRATES.iter().filter(|c| opts.crates.is_empty() || opts.crates.iter().any(|n| n == c.name)).collect();
+        CRATES.iter().filter(|c| opts.crates.iter().any(|n| n == c.name)).collect();
     let y = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
     let header = header(&info, &root, &opts);
 
@@ -714,6 +724,8 @@ mod tests {
         let o = parse_options(&["--quick", "--crates", "semver,memchr", "--backends=ryo"]).unwrap();
         assert_eq!((o.build_samples, o.run_samples), (1, 1));
         assert_eq!(o.crates, ["semver", "memchr"]);
+        assert_eq!(parse_options(&[]).unwrap().crates, DEFAULT_CRATES);
+        assert_eq!(parse_options(&["--crates", "all"]).unwrap().crates.len(), CRATES.len());
         assert_eq!(o.backends, [Backend::Ryo]);
         let o = parse_options(&["--build-samples", "3", "--run-samples=7", "--timeout", "60"]).unwrap();
         assert_eq!((o.build_samples, o.run_samples, o.timeout), (3, 7, 60));

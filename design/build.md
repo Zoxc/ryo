@@ -167,10 +167,9 @@ This gives a third backend, built from the same toolchain, to compare against.
 - `bench [--runs N]`: hyperfine comparisons of each program in `tests/bench/` (fib, sieve,
   sort, hashmap) built with LLVM `-O0`, LLVM `-O3`, Cranelift (`rustc-clif`) and ryo. Each comparison
   covers compile time (Cranelift is the fast-compile reference ryo competes with) and run
-  time, printed as two tables of mean and standard deviation. Every backend gets its default
-  flags; the one inherent difference is that `rustc-ryo` forces `-Ccodegen-units=1`, while
-  LLVM and Cranelift use rustc's default codegen unit count. A note under the compile-time
-  table says so. Failed builds and runs are collected and reported at the end. Without hyperfine on `PATH`,
+  time, printed as two tables of mean and standard deviation. Every backend gets
+  `-Ccodegen-units=1 -Zthreads=1` (what `rustc-ryo` forces anyway) on top of its own flags,
+  so compile times compare one codegen unit on one thread. Failed builds and runs are collected and reported at the end. Without hyperfine on `PATH`,
   a built-in timer does the same (one warmup, then `N` runs, default 5). The programs'
   output must agree across backends. `y bench` builds `dist/` and cg_clif first if they are
   missing; `y test --clif` builds cg_clif too.
@@ -183,7 +182,7 @@ This gives a third backend, built from the same toolchain, to compare against.
 
 ### `bench crates`
 
-`y bench crates [--build-samples N] [--run-samples N] [--quick] [--crates a,b] [--backends
+`y bench crates [--build-samples N] [--run-samples N] [--quick] [--crates a,b|all] [--backends
 llvm,clif,ryo] [--timeout SECS] [--out FILE]` compares LLVM (plain rustc), Cranelift
 (`rustc-clif`) and ryo (`rustc-ryo`, default sysroot) on real crates.io crates, in cargo's
 `dev` profile only. Written in Rust in `build/src/crates/`.
@@ -198,6 +197,9 @@ llvm,clif,ryo] [--timeout SECS] [--out FILE]` compares LLVM (plain rustc), Crane
   from cargo's registry cache (network on first use). Crates whose archives lack test data
   (regex), or whose dev-dependencies don't build with `RUSTC_BOOTSTRAP=1` (nom, through
   rustix 0.37), were left out.
+  Without `--crates`, only `DEFAULT_CRATES` run: miniz_oxide (tight integer loops),
+  hashbrown (generic hashing and probing) and regex-syntax (a large, enum-heavy parser).
+  `--crates all` runs every crate.
 - **Workloads**: `tests/crates/<crate>.rs`, added to the extracted package as the
   `ryo_bench` example (published manifests set `autoexamples = false`). Each prints a
   checksum that must be the same for every backend.
