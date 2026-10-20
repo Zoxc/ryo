@@ -1,0 +1,5 @@
+[toolchain]
+# The pinned version is 1.99.1 (design/build.md#toolchain). The channel is `stable` so that an
+# installed stable 1.99.1 is used without a download; `y` checks that `rustc` really is 1.99.1.
+channel = "stable"
+components = ["rustc-dev", "rust-src", "llvm-tools"]

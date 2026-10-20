@@ -2,8 +2,11 @@
 
 ## Toolchain
 
-- The toolchain is pinned in `rust-toolchain.toml` to an exact stable version (1.99.1), with
-  the components `rustc-dev`, `rust-src` and `llvm-tools`. `rustc-dev` ships the compiler
+- The toolchain is pinned to an exact stable version (1.99.1), with the components
+  `rustc-dev`, `rust-src` and `llvm-tools`. `rust-toolchain.toml` says `channel = "stable"`
+  rather than `"1.99.1"`: rustup treats `1.99.1` as a separate toolchain and downloads it even
+  when the installed `stable` is 1.99.1. `y` enforces the pin instead: it fails unless
+  `rustc -vV` reports release 1.99.1. `rustc-dev` ships the compiler
   crates as rlibs (`rustc_codegen_llvm` included) linked against `librustc_driver-*.so`, and
   their sources under `lib/rustlib/rustc-src/rust/compiler`. Those sources are the reference
   for every compiler API the backend uses.
@@ -31,10 +34,12 @@ modeled on cg_clif's `build_system/`.
    ```
    dist/bin/rustc-ryo, cargo-ryo          wrappers
    dist/lib/librustc_codegen_ryo.so       the backend
-   dist/lib/rustlib/<target>/lib/         std rlibs + libryo_rt.rlib
+   dist/lib/rustlib/<target>/lib/         std rlibs + libryo_rt.rlib, libryo_bytecode.rlib
+   dist/lib/rustlib/<target>/bin/         the toolchain's self-contained linker (rust-lld)
    ```
    - `--sysroot llvm` (default): copy the toolchain's prebuilt std rlibs, skipping the
-     `rustc_*`/LLVM rustc-dev libs, as cg_clif does.
+     `rustc_*`/LLVM rustc-dev libs, as cg_clif does. The target's `bin/` is copied too, since
+     x86_64 Linux links with the sysroot's `rust-lld` by default.
    - `--sysroot ryo`: build std from `rust-src` with our backend
      (`-Zforce-unstable-if-unmarked --sysroot=/dev/null -Zcodegen-backend=...`).
    - `ryo_rt` is always built with the stock LLVM backend, against that std, with
@@ -50,6 +55,9 @@ modeled on cg_clif's `build_system/`.
      ([backend.md](backend.md#pipeline))
    - `-Zmir-opt-level=2 -Zinline-mir=yes`, also for debug builds
      ([lowering.md](lowering.md#input))
+
+   With no arguments, they pass none (so rustc prints its help), and an explicit `--sysroot`
+   from the user replaces `--sysroot dist`.
 
    They reject `-Zrandomize-layout`, because argument block layouts must agree between
    crates ([lowering.md](lowering.md#frame-slots)).

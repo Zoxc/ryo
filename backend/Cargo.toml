@@ -1,0 +1,16 @@
+[package]
+name = "rustc_codegen_ryo"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["dylib"]
+
+[dependencies]
+
+# Not a member of any workspace.
+[workspace]
+
+[package.metadata.rust-analyzer]
+rustc_private = true

@@ -1,0 +1,10 @@
+[package]
+name = "y"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+
+# Not a member of any workspace.
+[workspace]
