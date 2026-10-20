@@ -266,8 +266,6 @@ pub(crate) enum SymRole {
     /// observable, so on PE it must be the real one.
     Target,
     /// An `island` instruction's `sym`, or the `island` operand of a call: only ever called.
-    // Part of the seam; the merge pass doesn't fill island operands yet.
-    #[allow(dead_code)]
     Island,
 }
 
@@ -285,6 +283,17 @@ pub(crate) fn symbol_flags<'tcx>(tcx: TyCtxt<'tcx>, target: Instance<'tcx>, role
     } else {
         0
     }
+}
+
+/// [`symbol_flags`] for a static used as an address: on PE, statics of upstream crates and
+/// foreign statics are imports.
+pub(crate) fn static_symbol_flags(tcx: TyCtxt<'_>, def_id: rustc_hir::def_id::DefId) -> u8 {
+    if is_pe(tcx) && (!def_id.is_local() || tcx.is_foreign_item(def_id)) { ryo_bytecode::image::SYM_INDIRECT } else { 0 }
+}
+
+/// Whether the target uses PE/COFF objects.
+pub(crate) fn is_pe(tcx: TyCtxt<'_>) -> bool {
+    matches!(tcx.sess.target.binary_format, rustc_target::spec::BinaryFormat::Coff)
 }
 
 fn binary_format(f: &rustc_target::spec::BinaryFormat) -> object::BinaryFormat {

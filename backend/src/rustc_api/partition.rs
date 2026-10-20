@@ -612,12 +612,16 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                         code[at as usize + call_fs] = self.vm[c as usize].lowered.frame_size;
                     }
                     CodeReloc::Symbol { at, target } => {
-                        let Sym(s) = w.symbol(tcx.symbol_name(target).name, super::symbol_flags(tcx, target, super::SymRole::Target));
+                        let flags = super::symbol_flags(tcx, target, super::SymRole::Target);
+                        let Sym(s) = w.symbol(tcx.symbol_name(target).name, flags);
                         code[at as usize] = s;
+                        set_indirect(&mut code, at, flags);
                     }
                     CodeReloc::Static { at, def_id } => {
-                        let Sym(s) = w.symbol(static_symbol(tcx, def_id).name, 0);
+                        let flags = super::static_symbol_flags(tcx, def_id);
+                        let Sym(s) = w.symbol(static_symbol(tcx, def_id).name, flags);
                         code[at as usize] = s;
+                        set_indirect(&mut code, at, flags);
                     }
                     CodeReloc::Site { at } => code[at as usize] = w.site().0,
                     CodeReloc::Const { at, alloc, offset } => {
@@ -630,7 +634,8 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             }
             for r in &l.islands {
                 let island = Instance::new_raw(templates[&r.template], r.args);
-                let Sym(s) = w.symbol(tcx.symbol_name(island).name, 0);
+                let flags = super::symbol_flags(tcx, island, super::SymRole::Island);
+                let Sym(s) = w.symbol(tcx.symbol_name(island).name, flags);
                 code[r.at as usize] = s;
             }
             let portal = v.portal.map(|_| w.symbol(&symbols[i], 0));
@@ -727,6 +732,22 @@ fn lower_all<'tcx>(
     }
     failed.sort_by_cached_key(|(i, _)| tcx.symbol_name(*i).name.to_owned());
     (ok, failed)
+}
+
+/// Switches the instruction whose `sym` operand is word `at` to its `.ind` form if the slot is
+/// indirect (PE imports, design/platforms.md). The lowering emits `addr.sym` and `call.ext`,
+/// whose `sym` is operand word 2 in both.
+fn set_indirect(code: &mut [u32], at: u32, flags: u8) {
+    if flags & ryo_bytecode::image::SYM_INDIRECT == 0 {
+        return;
+    }
+    let start = at as usize - 2;
+    let ind = match Opcode::from_u16(code[start] as u16) {
+        Some(Opcode::AddrSym) => Opcode::AddrSymInd,
+        Some(Opcode::CallExt) => Opcode::CallExtInd,
+        op => panic!("ryo: indirect symbol operand of {op:?}"),
+    };
+    code[start] = ind as u32;
 }
 
 /// The symbol of a static (its own, or the foreign item's link name).

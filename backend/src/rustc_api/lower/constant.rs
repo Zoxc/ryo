@@ -150,7 +150,15 @@ fn check_alloc(tcx: TyCtxt<'_>, id: AllocId, seen: &mut FxHashSet<AllocId>) -> R
             Ok(())
         }
         GlobalAlloc::VTable(ty, dyn_ty) => check_alloc(tcx, vtable_alloc(tcx, ty, dyn_ty), seen),
+        // On PE, pointers to imports need the image's fixup area, which constants don't use
+        // yet (design/platforms.md).
+        GlobalAlloc::Function { instance } if super::super::is_pe(tcx) && !tcx.should_codegen_locally(instance) => {
+            native("PE: constant pointing at an imported function")
+        }
         GlobalAlloc::Function { .. } => Ok(()),
+        GlobalAlloc::Static(def_id) if super::super::static_symbol_flags(tcx, def_id) != 0 => {
+            native("PE: constant pointing at an imported static")
+        }
         GlobalAlloc::Static(def_id) => check_static(tcx, def_id),
         GlobalAlloc::TypeId { .. } => native("constant with a type id pointer"),
     }
