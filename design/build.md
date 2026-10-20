@@ -55,8 +55,9 @@ modeled on cg_clif's `build_system/`.
    - `-Zunstable-options --extern force:ryo_rt`
    - `-Ccodegen-units=1`, appended *after* the user's args so it wins
      ([backend.md](backend.md#pipeline))
-   - `-Zmir-opt-level=2 -Zinline-mir=yes`, also for debug builds
-     ([lowering.md](lowering.md#input))
+
+   They add no MIR optimization flags: ryo gets rustc's defaults, like the other backends
+   ([lowering.md](lowering.md#input)).
 
    With no arguments, they pass none (so rustc prints its help), and an explicit `--sysroot`
    from the user replaces `--sysroot dist`.
@@ -80,7 +81,7 @@ it from there, the same way it builds our backend:
 - The Cranelift crates come from crates.io through cg_clif's `Cargo.lock`, so the build needs
   network access once, or a vendored copy.
 - It installs `dist/lib/librustc_codegen_cranelift.so` and a `rustc-clif` wrapper (like
-  `rustc-ryo`, without `force:ryo_rt` and the MIR flags), using the same prebuilt LLVM std
+  `rustc-ryo`, without `force:ryo_rt`), using the same prebuilt LLVM std
   sysroot.
 
 This gives a third backend, built from the same toolchain, to compare against.
