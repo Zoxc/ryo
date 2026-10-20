@@ -543,6 +543,38 @@ impl OpInfo {
     }
 }
 
+const fn str_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+/// Word offset of the operand called `name` of `op`, or `usize::MAX` if it follows a list
+/// operand. Used for the [`off`] constants.
+pub const fn operand_word(op: Opcode, name: &str) -> usize {
+    let info = op.info();
+    let mut i = 0;
+    while i < info.operands.len() {
+        if str_eq(info.operands[i].name, name) {
+            return match info.operand_offset(i) {
+                Some(o) => o,
+                None => usize::MAX,
+            };
+        }
+        i += 1;
+    }
+    panic!("no such operand")
+}
+
 const fn fixed_len(kinds: &[OperandKind]) -> Option<usize> {
     let mut n = 1;
     let mut i = 0;
@@ -572,6 +604,19 @@ macro_rules! define_ops {
             $(
                 #[doc = concat!("`", $mn, $(" ", stringify!($field), ":", stringify!($kind),)* "`")]
                 $name,
+            )*
+        }
+
+        /// Word offsets of each opcode's operands, from the instruction start: `off::AddW32::b`
+        /// is 3. Operands after a list operand have no fixed position and are `usize::MAX`.
+        #[allow(non_snake_case, non_upper_case_globals)]
+        pub mod off {
+            $(
+                #[doc = concat!("Operand word offsets of `", $mn, "`.")]
+                pub mod $name {
+                    $(pub const $field: usize = $crate::insn::operand_word(
+                        $crate::insn::Opcode::$name, stringify!($field));)*
+                }
             )*
         }
 

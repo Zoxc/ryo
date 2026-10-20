@@ -64,6 +64,8 @@ pub struct AllocFixup {
 pub struct FunctionDef {
     pub code: Vec<u32>,
     pub frame_size: u32,
+    /// See [`FuncEntry::max_outgoing`].
+    pub max_outgoing: u32,
     /// Cleanup entries, in any order (the writer sorts them).
     pub cleanup: Vec<CleanupEntry>,
     pub portal: Option<Sym>,
@@ -354,6 +356,7 @@ impl ImageWriter {
                 code_off: code.len().try_into().map_err(too_large)?,
                 code_len: f.code.len().try_into().map_err(too_large)?,
                 frame_size: f.frame_size,
+                max_outgoing: f.max_outgoing,
                 cleanup_off: cleanup.len().try_into().map_err(too_large)?,
                 cleanup_len: f.cleanup.len().try_into().map_err(too_large)?,
                 portal,
@@ -364,9 +367,15 @@ impl ImageWriter {
 
         // Writable section: site cache, then the fixup area.
         let data_align = self.data_align.max(8) as usize;
-        let fixup_area = align_to(self.sites as usize * 8, self.data_align as usize);
+        let fixup_area = align_to(self.sites as usize * 8, data_align);
         let mut data = vec![0u8; fixup_area];
         data.extend_from_slice(&self.data);
+        let fixup_offsets: alloc::collections::BTreeSet<u32> = self.fixups.iter().map(|x| x.offset).collect();
+        if fixup_offsets.len() != self.fixups.len()
+            || self.data_relocs.iter().any(|r| fixup_offsets.contains(&r.offset))
+        {
+            return Err(WriteError::AllocReloc);
+        }
         let mut fixups = Vec::with_capacity(self.fixups.len());
         for x in &self.fixups {
             if x.sym.0 >= nsyms
@@ -416,14 +425,17 @@ impl ImageWriter {
         };
 
         let mut ro = vec![0u8; size];
-        put(&mut ro, 0, slice::from_ref(&header));
-        put(&mut ro, functions.off, &funcs);
-        put(&mut ro, code_span.off, &code);
-        put(&mut ro, cleanup_span.off, &cleanup);
-        put(&mut ro, fixups_span.off, &fixups);
         let flags: Vec<u8> = self.symbols.iter().map(|s| s.flags).collect();
-        put(&mut ro, sym_flags.off, &flags);
-        put(&mut ro, consts.off, &self.consts);
+        // SAFETY: all of these are padding-free plain-data types.
+        unsafe {
+            put(&mut ro, 0, slice::from_ref(&header));
+            put(&mut ro, functions.off, &funcs);
+            put(&mut ro, code_span.off, &code);
+            put(&mut ro, cleanup_span.off, &cleanup);
+            put(&mut ro, fixups_span.off, &fixups);
+            put(&mut ro, sym_flags.off, &flags);
+            put(&mut ro, consts.off, &self.consts);
+        }
 
         // Relocations.
         let mut relocs = Vec::new();
@@ -442,7 +454,7 @@ impl ImageWriter {
             });
         }
         let map = |r: &AllocReloc, section: Section, base: usize, len: usize| -> Result<Reloc, WriteError> {
-            if r.offset as usize + 8 > len {
+            if r.offset as usize + 8 > len || (base + r.offset as usize) % 8 != 0 {
                 return Err(WriteError::AllocReloc);
             }
             let (target, addend) = match r.target {
@@ -476,9 +488,11 @@ impl ImageWriter {
 }
 
 /// Copies plain-data values into `buf` at byte offset `off`.
-fn put<T: Copy>(buf: &mut [u8], off: u32, v: &[T]) {
-    // SAFETY: T is one of the padding-free repr(C) plain-data types of this module, or an
-    // integer.
+///
+/// # Safety
+/// `T` must have no padding bytes (every byte of a `T` is initialized).
+unsafe fn put<T: Copy>(buf: &mut [u8], off: u32, v: &[T]) {
+    // SAFETY: per the caller, all bytes of `v` are initialized.
     let bytes = unsafe { slice::from_raw_parts(v.as_ptr().cast::<u8>(), mem::size_of_val(v)) };
     buf[off as usize..off as usize + bytes.len()].copy_from_slice(bytes);
 }

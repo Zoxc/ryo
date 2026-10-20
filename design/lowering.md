@@ -48,8 +48,8 @@ so a MIR change in a toolchain bump is a compile error. The tables below follow 
   `(u32, u8, u8, u8)` differ), and changes between releases. The backend takes the offsets,
   size and alignment from `tcx.layout_of` of the tuple, and `arg_block` validates them and
   gives the frame offsets. Blocks aligned to more than 16 bytes can't be placed at
-  `fp + H`, so such functions stay native. The wrappers reject `-Zrandomize-layout`, since tuple layouts must agree
-  between crates. ZST arguments get an offset in the tuple and take no space.
+  `fp + H`, so such functions stay native. The wrappers reject `-Zrandomize-layout`, since
+  tuple layouts must agree between crates. ZST arguments get an offset in the tuple and take no space.
 - The argument block starts at `fp + H`, where H is the header size
   ([vm.md](vm.md#frames-and-the-vm-stack)).
 - **Other locals**: each gets a fixed offset after the argument block, aligned to its
@@ -63,6 +63,10 @@ so a MIR change in a toolchain bump is a compile error. The tables below follow 
   slots with aligned reads and writes. A function whose locals or arguments (including the
   argument block of any call it makes) contain a type with alignment above 16 is not
   lowered: it stays native ([stubs.md](stubs.md#template-gaps)).
+- `max_outgoing` = H + the largest outgoing argument block among the function's calls
+  (`call`, `call.ext`, `call.ext.ind`, `call.ind`, and the staging area of tail calls), or 0
+  if it makes none. It goes in the function table, and the stack check on entry covers
+  `frame_size + max_outgoing` ([vm.md](vm.md#frames-and-the-vm-stack)).
 
 ## Places and operands
 

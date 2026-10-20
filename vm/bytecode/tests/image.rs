@@ -86,14 +86,15 @@ fn sample() -> ImageWriter {
     w.add_function(FunctionDef {
         code: f0,
         frame_size: 32,
+        max_outgoing: 48,
         cleanup: vec![CleanupEntry { offset: 0, target: 7 }],
         portal: None,
     });
-    let t = list_words([Target(8)]);
+    let t = list_words([Target(7)]);
     let ops = [16u32, 24];
     let f1 = code(&[
         Insn::CallExt { d: Slot(16), sym: puts, site, island },
-        Insn::Island { d: Slot(24), sym: island, ops: List::from_words(&ops), targets: List::from_words(&t) },
+        Insn::Island { sym: island, ops: List::from_words(&ops), targets: List::from_words(&t) },
         Insn::AddrK { d: Slot(16), k: vt },
         Insn::AddrData { d: Slot(24), off: fx },
         Insn::Ret { s: Slot(16), len: 8 },
@@ -103,8 +104,9 @@ fn sample() -> ImageWriter {
         frame_size: 48,
         cleanup: vec![CleanupEntry { offset: 5, target: TERMINATE }, CleanupEntry { offset: 0, target: TERMINATE }],
         portal: Some(portal1),
+        ..Default::default()
     });
-    w.add_function(FunctionDef { code: code(&[Insn::Abort {}]), frame_size: 16, cleanup: vec![], portal: None });
+    w.add_function(FunctionDef { code: code(&[Insn::Abort {}]), frame_size: 16, ..Default::default() });
     w
 }
 
@@ -145,6 +147,7 @@ fn image_round_trip() {
     assert_eq!(fs[0].code_off, 0);
     assert_eq!(fs[1].code_off, fs[0].code_len);
     assert_eq!(fs[1].frame_size, 48);
+    assert_eq!((fs[0].max_outgoing, fs[1].max_outgoing), (48, 0));
     assert_eq!(fs[0].portal(), None);
     assert_eq!(fs[1].portal(), Some(3));
     assert_eq!(img.symbols()[3], 0x2000 + "_ZN4test3fooE".len() as u64);
@@ -223,7 +226,7 @@ fn reader_rejects_bad_images() {
     let fcount = std::mem::offset_of!(Header, functions) + 4;
     assert!(matches!(Image::parse(patch(fcount, &u32::MAX.to_le_bytes()).bytes()), Err(ImageError::OutOfBounds(_))));
     // Unsorted function table.
-    let f1_code_off = Image::parse(b.bytes()).unwrap().header().functions.off as usize + 24;
+    let f1_code_off = Image::parse(b.bytes()).unwrap().header().functions.off as usize + std::mem::size_of::<FuncEntry>();
     let bad = patch(f1_code_off, &0u32.to_le_bytes());
     let img = Image::parse(bad.bytes()).unwrap();
     assert_eq!(img.validate(), Err(ImageError::BadFunction(1)));
@@ -285,4 +288,82 @@ fn portal_ids() {
     assert_eq!(portal_id(0xdead_beef, 7), 0xdead_beef_0000_0007);
     assert_eq!(split_portal_id(0xdead_beef_0000_0007), (0xdead_beef, 7));
     assert_eq!(crate_hash(0x1111_1111_0000_0001), 0x1111_1110);
+}
+
+/// Parses `obj` after applying `edit` to its read-only bytes, and runs `validate`.
+fn validate_edited(obj: &ImageObject, edit: impl FnOnce(&mut Vec<u8>, &Header)) -> Result<(), ImageError> {
+    let h = *Image::parse(Buf::new(&obj.rodata, 8).bytes()).unwrap().header();
+    let mut r = obj.rodata.clone();
+    edit(&mut r, &h);
+    let b = Buf::new(&r, 8);
+    Image::parse(b.bytes())?.validate()
+}
+
+fn put32(r: &mut [u8], off: usize, v: u32) {
+    r[off..off + 4].copy_from_slice(&v.to_le_bytes());
+}
+
+#[test]
+fn validate_rejects_bad_tables() {
+    use std::mem::{offset_of, size_of};
+    let obj = sample().finish().unwrap();
+    let fe = |h: &Header, i: usize, field: usize| h.functions.off as usize + i * size_of::<FuncEntry>() + field;
+    // Cleanup entry offset past the function.
+    assert_eq!(validate_edited(&obj, |r, h| put32(r, h.cleanup.off as usize, 1000)), Err(ImageError::BadCleanup(0)));
+    // Cleanup entries out of order (f1's second entry).
+    assert_eq!(validate_edited(&obj, |r, h| put32(r, h.cleanup.off as usize + 16, 0)), Err(ImageError::BadCleanup(1)));
+    // Cleanup range past the table.
+    assert_eq!(
+        validate_edited(&obj, |r, h| put32(r, fe(h, 2, offset_of!(FuncEntry, cleanup_len)), 9)),
+        Err(ImageError::BadCleanup(2))
+    );
+    // Portal symbol out of range.
+    assert_eq!(
+        validate_edited(&obj, |r, h| put32(r, fe(h, 1, offset_of!(FuncEntry, portal)), 77)),
+        Err(ImageError::BadFunction(1))
+    );
+    // Code past the end.
+    assert_eq!(
+        validate_edited(&obj, |r, h| put32(r, fe(h, 2, offset_of!(FuncEntry, code_len)), 1000)),
+        Err(ImageError::BadFunction(2))
+    );
+    // Fixups: unaligned, out of range, inside the site cache, bad symbol.
+    let fx = |h: &Header| h.fixups.off as usize;
+    assert_eq!(validate_edited(&obj, |r, h| put32(r, fx(h), 17)), Err(ImageError::BadFixup(0)));
+    assert_eq!(validate_edited(&obj, |r, h| put32(r, fx(h), 4096)), Err(ImageError::BadFixup(0)));
+    assert_eq!(validate_edited(&obj, |r, h| put32(r, fx(h), 8)), Err(ImageError::BadFixup(0)));
+    assert_eq!(validate_edited(&obj, |r, h| put32(r, fx(h) + 4, 4)), Err(ImageError::BadFixup(0)));
+    // Unknown symbol flag bits.
+    assert_eq!(validate_edited(&obj, |r, h| r[h.sym_flags.off as usize + 2] = 0x80), Err(ImageError::BadSymbolFlags(2)));
+    assert_eq!(validate_edited(&obj, |_, _| ()), Ok(()));
+}
+
+#[test]
+fn writer_rejects_bad_alloc_relocs() {
+    // Unaligned pointer in a constant.
+    let mut w = ImageWriter::new(1);
+    let s = w.symbol("x", SYM_INDIRECT);
+    w.add_const(&[0; 16], 8, &[AllocReloc { offset: 4, target: AllocTarget::Symbol(s), addend: 0 }]);
+    assert_eq!(w.finish().unwrap_err(), WriteError::AllocReloc);
+    // A fixup and a relocation at the same place.
+    let mut w = ImageWriter::new(1);
+    let s = w.symbol("x", SYM_INDIRECT);
+    w.add_data(
+        &[0; 8],
+        8,
+        &[AllocReloc { offset: 0, target: AllocTarget::Symbol(s), addend: 0 }],
+        &[AllocFixup { offset: 0, sym: s, addend: 0 }],
+    );
+    assert_eq!(w.finish().unwrap_err(), WriteError::AllocReloc);
+    // The fixup area is 8-aligned even after an odd number of sites and 1-aligned data.
+    let mut w = ImageWriter::new(1);
+    w.site();
+    w.site();
+    w.site();
+    let d = w.add_data(&[1], 1, &[], &[]);
+    let obj = w.finish().unwrap();
+    let b = Buf::new(&obj.rodata, 8);
+    assert_eq!(Image::parse(b.bytes()).unwrap().header().fixup_area, 24);
+    assert_eq!(d, Data(0));
+    assert_eq!(obj.data_align, 8);
 }

@@ -51,10 +51,13 @@ on the same thread would otherwise create aliasing mutable references.
   have their destination operand in the same word ([Encoding](#encoding)).
 - **Outgoing calls**: a callee's frame starts at the caller's `fp + frame_size`. The caller
   writes the arguments there before the call ([lowering.md](lowering.md#calls)).
-- **Stack check**: each call compares `new_fp + callee.frame_size` against the stack limit,
-  where `new_fp = fp + frame_size`, so the header is included. For `call fn`, the callee's
-  `frame_size` is an immediate in the instruction. For `call.ext`/`call.ind`, it is read from
-  the resolved function record. On overflow, the VM reports "stack overflow" and aborts, like
+- **Stack check**: each call compares `new_fp + callee.frame_size + callee.max_outgoing`
+  against the stack limit, where `new_fp = fp + frame_size`, so the header is included.
+  `max_outgoing` (in the function table) is the number of bytes above its `frame_size` that
+  a function may write: H plus its largest outgoing argument block, or 0 if it makes no
+  calls. So a function's own outgoing blocks never need a separate check. For `call fn`, the
+  callee's `frame_size` is an immediate in the instruction and `max_outgoing` comes from the
+  function table. For `call.ext`/`call.ind`, both are read from the resolved function record. On overflow, the VM reports "stack overflow" and aborts, like
   native Rust. Native stack use by islands and portals is protected by the native guard page
   as usual.
 - **Re-entrancy**: `vm::enter` allocates its frame at the thread's current stack top, so it
@@ -77,7 +80,8 @@ on the same thread would otherwise create aliasing mutable references.
 - The opcode list, with every operand's encoding, is defined once in `ryo_bytecode`
   (`vm/bytecode/src/ops.rs`). The opcode enum, the decoder, the encoder and the
   disassembler are all generated from it. Opcode values follow list order, and every change
-  bumps `ryo_bytecode::FORMAT_VERSION`.
+  bumps `ryo_bytecode::FORMAT_VERSION`. A test pins a hash of the opcode table to the
+  version.
 - Variable-length operands (`switch` tables and cases, island operands and targets) are
   encoded as a count word followed by the elements.
 - Immediates have the instruction's width: one word for `w8`–`w32` (upper bits ignored), two
@@ -226,12 +230,15 @@ length is given by their count words.
 | `call.ind d, p, site, island` | indirect call through the fn pointer in slot `p` |
 | `tail_call fn, frame_size` / `tail_call.ind p, site, island` | `become`. A tail call to an upstream instance is `addr.sym` + `tail_call.ind` |
 | `ret s, len` | return `_0` (`len` bytes at `s`) |
-| `island d, sym, n_ops, ops…, n_targets, t…` | call `island(fp, &ops)`, jump to `t[ret]` |
-| `island.catch d, sym, n_ops, ops…, n_targets, t…` | the same through `call_catching`, then unwind if the island panicked |
+| `island sym, n_ops, ops…, n_targets, t…` | call `island(fp, &ops)`, jump to `t[ret]` |
+| `island.catch sym, n_ops, ops…, n_targets, t…` | the same through `call_catching`, then unwind if the island panicked |
 | `resume` | continue unwinding |
 
-`island`'s operands are encoded as `d, sym, n_ops, ops…, n_targets, t…`. The island
-receives a pointer to `ops[0]`.
+`island`'s operands are encoded as `sym, n_ops, ops…, n_targets, t…`, and the island
+receives a pointer to `ops[0]`. The `ops` array is exactly what the template reads
+([stubs.md](stubs.md#islands-vm--native)), so for call templates `ops[1]` is the destination.
+Islands have no `d` word: "destination in word 1" applies only to the call instructions that
+`ret` returns to (`call`, `call.ext`, `call.ext.ind`, `call.ind`).
 
 - **`call`**:
   - Sets `new_fp = fp + frame_size(caller)`, checks the stack, and writes `[new_fp] = fp`,
@@ -264,7 +271,10 @@ receives a pointer to `ops[0]`.
   - **VM function**: called directly. The arguments are already in the argument block layout
     ([lowering.md](lowering.md#frame-slots)), which is the same for every caller.
   - **Native target**: the instruction calls its `island` operand, a `call_ptrN` instance
-    for the signature, with the operands `[outgoing argument block, d, fn pointer slot]`
+    for the signature. The VM writes the fn pointer at `fp + frame_size + 0` (the callee
+    frame's header area, unused by a native call), builds
+    `ops = [frame_size + H, d, frame_size]` (argument block, destination, fn pointer slot) in
+    a local array on the native stack, and calls the island with it
     ([stubs.md](stubs.md#templates)).
     The island always goes through `call_catching` unless the site's unwind action is
     `Unreachable` (or the crate is `panic=abort`). This is independent of whether the site
@@ -315,7 +325,8 @@ header        magic, format version, crate hash, StableCrateId, pointer to the w
               section (relocated), sizes, offset/count of every part below, site count,
               fixup area offset
 functions     per function, sorted by code offset: code offset, code length,
-              frame_size, cleanup table offset and length, portal symbol index (or none)
+              frame_size, max_outgoing, cleanup table offset and length, portal symbol
+              index (or none)
 code          the instruction words of all functions
 cleanup       per function: sorted (code offset, target block offset | terminate)
 fixups        PE only: (writable offset, symbol index, addend)
@@ -350,6 +361,10 @@ fixups        PE only: constant allocations that point at DLL-imported data
 - The portal `ID`'s crate hash is the 32-bit fold of the `StableCrateId`
   (`ryo_bytecode::image::crate_hash`). It is stored in the header, which also keeps the full
   `StableCrateId`, so the registry can detect collisions.
+- **Images are trusted**: they are produced by the backend, and the VM doesn't validate
+  code. `Image::parse` checks the header and part bounds, and `Image::validate` checks the
+  tables only (functions, cleanup, fixups, symbol flags). The writer checks the code
+  (`ryo_bytecode::image::validate_code`).
 - Instructions refer to native symbols only by symbol-table index, so code contains no
   absolute addresses and needs no relocations.
 - **No re-entry into the VM from the runtime**: the registry, `lookup_addr`, `vm::enter`,

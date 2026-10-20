@@ -118,6 +118,10 @@ pub struct FuncEntry {
     /// Length in words.
     pub code_len: u32,
     pub frame_size: u32,
+    /// Bytes above `frame_size` the function may write: H plus its largest outgoing argument
+    /// block, or 0 if it makes no calls. The stack check on entry covers
+    /// `fp + frame_size + max_outgoing`.
+    pub max_outgoing: u32,
     /// First entry of this function's cleanup table.
     pub cleanup_off: u32,
     /// Number of cleanup entries.
@@ -430,12 +434,14 @@ impl<'a> Image<'a> {
     /// Applies the PE fixups.
     ///
     /// # Safety
-    /// The image must be linked and its writable section writable and not in use by other
-    /// threads; every fixup's symbol slot must point at a readable import slot.
+    /// [`Self::validate`] must have succeeded on this image (it checks the fixup offsets and
+    /// symbol indices). The image must be linked, its writable section writable and not in
+    /// use by other threads, and every fixup's symbol slot must point at a readable import
+    /// slot.
     pub unsafe fn apply_fixups(&self) {
         let syms = self.symbols();
         for x in self.fixups() {
-            // SAFETY: per the caller; offsets were checked by `validate` at write time.
+            // SAFETY: per the caller; `validate` checked the offsets and indices.
             unsafe {
                 let target = *(syms[x.sym as usize] as usize as *const u64);
                 let at = self.data_ptr().add(x.offset as usize).cast::<u64>();

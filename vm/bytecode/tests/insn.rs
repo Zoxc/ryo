@@ -139,7 +139,7 @@ fn typed_encoding_and_display() {
         Insn::LoadW32Z { d: Slot(8), m: Deref(Slot(32)) },
         Insn::SwitchDenseW8 { s: Slot(0), base: 3, default: Target(9), table: List::from_words(&table) },
         Insn::SwitchSparseW64 { s: Slot(0), default: Target(9), cases: List::from_words(&cases) },
-        Insn::Island { d: Slot(40), sym: Sym(2), ops: List::from_words(&island_ops), targets: List::from_words(&island_t) },
+        Insn::Island { sym: Sym(2), ops: List::from_words(&island_ops), targets: List::from_words(&island_t) },
         Insn::CallExt { d: Slot(48), sym: Sym(1), site: Site(0), island: Sym(3) },
         Insn::ImmW128 { d: Slot(0), imm: u128::MAX - 1 },
         Insn::Resume {},
@@ -150,7 +150,7 @@ fn typed_encoding_and_display() {
         "load.w32 $8, [$32]",
         "switch.dense.w8 $0, 3, @+9, [@+5, @-2]",
         "switch.sparse.w64 $0, @+9, [1099511627776 => @+7]",
-        "island $40, sym2, [16, 24], [@+4]",
+        "island sym2, [16, 24], [@+4]",
         "call.ext $48, sym1, site0, sym3",
         "imm.w128 $0, 340282366920938463463374607431768211454",
         "resume",
@@ -166,7 +166,7 @@ fn typed_encoding_and_display() {
     assert_eq!(w, [Opcode::SwitchDenseW8 as u32, 0, 3, 9, 2, 5, (-2i32) as u32]);
     w.clear();
     insns[5].encode(&mut w);
-    assert_eq!(w, [Opcode::Island as u32, 40, 2, 2, 16, 24, 1, 4]);
+    assert_eq!(w, [Opcode::Island as u32, 2, 2, 16, 24, 1, 4]);
 
     let decoded: Vec<_> = Decoder::new(&code).map(|r| r.unwrap().1).collect();
     assert_eq!(decoded, insns);
@@ -193,5 +193,68 @@ fn code_buf_patches_targets() {
             assert_eq!(table.iter().collect::<Vec<_>>(), [Target(0), Target((end - sw) as i32)]);
         }
         _ => panic!(),
+    }
+}
+
+/// Pins the encoding: any change to the opcode list (order, mnemonics, operand names or
+/// kinds) changes this hash. When it fails, bump `FORMAT_VERSION` and update both values.
+#[test]
+fn opcode_table_is_pinned_to_format_version() {
+    let mut h: u64 = 0xcbf29ce484222325; // FNV-1a
+    let mut eat = |s: &str| {
+        for b in s.bytes().chain([0]) {
+            h = (h ^ b as u64).wrapping_mul(0x100000001b3);
+        }
+    };
+    for info in &OP_INFO {
+        eat(info.mnemonic);
+        for o in info.operands {
+            eat(o.name);
+            eat(&format!("{:?}", o.kind));
+        }
+    }
+    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (2, 0xbcc1699064bd4540), "opcode table hash {h:#x}");
+}
+
+/// Decoding arbitrary words never panics, and whatever decodes re-encodes to the same words.
+#[test]
+fn decoder_on_random_words() {
+    let mut rng = Rng(0x2545f4914f6cdd1d);
+    let mut ok = 0;
+    for i in 0..200_000 {
+        let n = 1 + (rng.next() % 12) as usize;
+        let m = [8, 64, 1 << 16, u32::MAX][i % 4];
+        let mut w: Vec<u32> = (0..n).map(|_| rng.next() % m).collect();
+        // Mostly valid opcodes, so the operand decoders are exercised.
+        if i % 2 == 0 {
+            w[0] = rng.next() % Opcode::COUNT as u32;
+        }
+        if let Ok((insn, len)) = Insn::decode(&w) {
+            ok += 1;
+            let mut out = Vec::new();
+            insn.encode(&mut out);
+            assert_eq!(out, w[..len]);
+            assert_eq!(insn_len(&w), Ok(len));
+            let _ = insn.to_string();
+        }
+        let _ = Disasm(&w).to_string();
+    }
+    assert!(ok > 10_000, "{ok}");
+}
+
+#[test]
+fn named_operand_offsets() {
+    assert_eq!(off::AddW32::d, 1);
+    assert_eq!(off::AddW32::b, 3);
+    assert_eq!(off::LoadW32::m, 2);
+    assert_eq!(off::StoreW64::s, 3);
+    assert_eq!(off::CallExt::island, 4);
+    assert_eq!(off::SwitchDenseW64::default, 4);
+    assert_eq!(off::SwitchDenseW64::table, 5);
+    assert_eq!(off::Island::sym, 1);
+    assert_eq!(off::Island::ops, 2);
+    assert_eq!(off::Island::targets, usize::MAX);
+    for op in [Opcode::Call, Opcode::CallExt, Opcode::CallExtInd, Opcode::CallInd] {
+        assert_eq!(operand_word(op, "d"), 1);
     }
 }

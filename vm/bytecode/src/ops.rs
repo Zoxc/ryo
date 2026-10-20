@@ -925,7 +925,7 @@ define_ops! {
     TailCall = "tail_call" { f: Func, frame_size: U32 },
     TailCallInd = "tail_call.ind" { p: Slot, site: Site, island: Sym },
     Ret = "ret" { s: Slot, len: U32 },
-    Island = "island" { d: Slot, sym: Sym, ops: Words, targets: Targets },
-    IslandCatch = "island.catch" { d: Slot, sym: Sym, ops: Words, targets: Targets },
+    Island = "island" { sym: Sym, ops: Words, targets: Targets },
+    IslandCatch = "island.catch" { sym: Sym, ops: Words, targets: Targets },
     Resume = "resume" {  },
 }
