@@ -325,8 +325,8 @@ header        magic, format version, crate hash, StableCrateId, pointer to the w
               section (relocated), sizes, offset/count of every part below, site count,
               fixup area offset
 functions     per function, sorted by code offset: code offset, code length,
-              frame_size, max_outgoing, cleanup table offset and length, portal symbol
-              index (or none)
+              frame_size, max_outgoing, argument block size, return value size,
+              cleanup table offset and length, portal symbol index (or none)
 code          the instruction words of all functions
 cleanup       per function: sorted (code offset, target block offset | terminate)
 fixups        PE only: (writable offset, symbol index, addend)

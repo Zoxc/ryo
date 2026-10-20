@@ -122,6 +122,11 @@ pub struct FuncEntry {
     /// block, or 0 if it makes no calls. The stack check on entry covers
     /// `fp + frame_size + max_outgoing`.
     pub max_outgoing: u32,
+    /// Size of the argument block (`ArgBlock::size`): the bytes `vm::enter` copies from the
+    /// portal's args and `tail_call` moves down to `fp + H`.
+    pub arg_size: u32,
+    /// Size of the return value: what a native `tail_call.ind` target returns.
+    pub ret_size: u32,
     /// First entry of this function's cleanup table.
     pub cleanup_off: u32,
     /// Number of cleanup entries.

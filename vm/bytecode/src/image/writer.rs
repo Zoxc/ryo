@@ -66,6 +66,10 @@ pub struct FunctionDef {
     pub frame_size: u32,
     /// See [`FuncEntry::max_outgoing`].
     pub max_outgoing: u32,
+    /// See [`FuncEntry::arg_size`].
+    pub arg_size: u32,
+    /// See [`FuncEntry::ret_size`].
+    pub ret_size: u32,
     /// Cleanup entries, in any order (the writer sorts them).
     pub cleanup: Vec<CleanupEntry>,
     pub portal: Option<Sym>,
@@ -357,6 +361,8 @@ impl ImageWriter {
                 code_len: f.code.len().try_into().map_err(too_large)?,
                 frame_size: f.frame_size,
                 max_outgoing: f.max_outgoing,
+                arg_size: f.arg_size,
+                ret_size: f.ret_size,
                 cleanup_off: cleanup.len().try_into().map_err(too_large)?,
                 cleanup_len: f.cleanup.len().try_into().map_err(too_large)?,
                 portal,
