@@ -57,6 +57,8 @@ pub fn link(
     let mut modules = Some(modules);
     for (i, &crate_type) in types.iter().enumerate() {
         let last = i + 1 == n;
+        // Everything but rustc's own `link_binary` (design/backend.md#self-profile).
+        let prep_t = sess.prof.generic_activity("ryo_link_prep");
         let mut these = if last {
             modules.take().unwrap()
         } else {
@@ -71,6 +73,7 @@ pub fn link(
         };
         // Without linking (`--emit=obj` etc.) a registry object would only be left behind.
         if crate_type != CrateType::Rlib && sess.opts.output_types.should_link() {
+            let registry_t = sess.prof.generic_activity("ryo_registry_images");
             let images = registry_images(sess, info, &crate_info, crate_type);
             let import = register_is_imported(&crate_info, crate_type);
             let bytes = objfile::write_registry(&*fmt, &images, import).unwrap_or_else(|e| sess.dcx().fatal(e));
@@ -78,6 +81,7 @@ pub fn link(
             let path = outputs.temp_path_for_cgu(OutputType::Object, &name);
             fs::write(&path, bytes).unwrap_or_else(|e| sess.dcx().fatal(format!("writing {}: {e}", path.display())));
             these.modules.push(object_module(name, path));
+            drop(registry_t);
         }
         // In an rlib, the image must not be a Rust object: `-Clto` downstream reads bitcode
         // from every Rust object of an rlib and leaves them out of the link, which would drop
@@ -91,8 +95,10 @@ pub fn link(
         let mut single = crate_info.clone();
         single.crate_types = vec![crate_type];
         remove_roots(&mut single, info, crate_type);
+        drop(prep_t);
         llvm.link(sess, these, single, this_metadata, outputs);
         if let Some(object) = image.and_then(|m| m.object) {
+            let _t = sess.prof.generic_activity("ryo_append_rlib");
             let rlib = rustc_session::output::out_filename(sess, crate_type, outputs, crate_info.local_crate_name);
             if let rustc_session::config::OutFileName::Real(rlib) = rlib {
                 append_to_rlib(sess, &rlib, &object);

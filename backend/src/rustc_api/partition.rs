@@ -173,7 +173,10 @@ pub fn collect_and_partition_mono_items<'tcx>(
     };
     check_rt_abi(tcx, rt);
 
-    let (native, results) = Partitioner::new(tcx, rt, cgu).run();
+    let (native, results) = {
+        let _t = tcx.prof.generic_activity("ryo_partition");
+        Partitioner::new(tcx, rt, cgu).run()
+    };
     if RESULTS.set(results).is_err() {
         tcx.dcx().fatal("collect_and_partition_mono_items ran twice in one process");
     }
@@ -292,7 +295,10 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         }
         // A stable image order: by symbol name.
         candidates.sort_by_cached_key(|(i, _)| tcx.symbol_name(*i).name.to_owned());
-        let (mut ok, failed) = lower_all(tcx, &candidates);
+        let (mut ok, failed) = {
+            let _t = tcx.prof.generic_activity("ryo_lower");
+            lower_all(tcx, &candidates)
+        };
         if stats >= 2 {
             for (instance, why) in &failed {
                 eprintln!("ryo: native {}: {}", path(*instance), why.0);
@@ -308,6 +314,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
 
         // Step 1 (portals): VM functions that native code or the image may reach, and the
         // native items the image refers to by symbol.
+        let stubs_t = tcx.prof.generic_activity("ryo_stubs");
         let entry = tcx.entry_fn(()).and_then(|(def_id, ty)| {
             let main = Instance::mono(tcx, def_id);
             self.index.contains_key(&main).then_some((main, ty))
@@ -380,6 +387,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             items.insert(*item, *data);
         }
         native.compute_size_estimate();
+        drop(stubs_t);
 
         if stats >= 1 {
             for v in &self.vm {
@@ -715,6 +723,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         let tail_f = lower::operand_offset(Opcode::TailCall, 0);
         let templates = &tcx.diagnostic_items(self.rt.krate).name_to_id;
         let mut pool = Pool::default();
+        let merge_t = tcx.prof.generic_activity("ryo_merge");
         for (i, v) in self.vm.iter().enumerate() {
             let l = &v.lowered;
             let mut code = l.code.clone();
@@ -781,7 +790,9 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                 portal,
             });
         }
+        drop(merge_t);
         // The machine code, function by function in parallel (design/backend.md#pipeline).
+        let encode_t = tcx.prof.generic_activity("ryo_encode");
         let mode = asm_mode(tcx, self.rt);
         w.prepare(mode);
         let verify = std::env::var_os("RYO_ASM_VERIFY").is_some_and(|v| v != "0");
@@ -795,6 +806,8 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             }
             e
         });
+        drop(encode_t);
+        let _t = tcx.prof.generic_activity("ryo_finish_image");
         let mut rt_used = std::collections::BTreeSet::new();
         for e in &encoded {
             for r in &e.relocs {

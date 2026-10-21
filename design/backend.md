@@ -292,6 +292,15 @@ exist, so every stub is an instance of a generic item that already exists in `ry
 items' MIR also stays as is: it is encoded into metadata, and downstream crates need it to
 instantiate generics in their own VM.
 
+### Self-profile
+
+`-Zself-profile` shows the backend's phases as generic activities next to rustc's:
+`ryo_partition` (steps 2–4, inside rustc's partition query) with `ryo_lower`, `ryo_stubs`
+(portals, islands, stub neighbors, the native CGU), `ryo_merge`, `ryo_encode` and
+`ryo_finish_image` (image layout); `ryo_write_image` (step 5); and at link time
+`ryo_link_prep` (per crate type, everything before rustc's `link_binary`) with
+`ryo_registry_images`, and `ryo_append_rlib`. measureme's `summarize` lists them.
+
 ## Symbol consistency
 
 - `assert_symbols_are_distinct` runs only inside the original provider, over the original
