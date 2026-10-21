@@ -409,11 +409,14 @@ pub fn write_image(
             Ok(undefined(&mut obj, &name, SymbolKind::Unknown))
         })
         .collect::<Result<Vec<SymbolId>, String>>()?;
+    // Handler symbols, by opcode: most relocations are handler calls.
+    let mut handlers: Vec<Option<SymbolId>> = vec![None; ryo_bytecode::insn::ALL_OPCODES.len()];
     for r in &image.relocs {
         let symbol = match r.target {
             RelocTarget::Symbol(s) => syms[s.0 as usize],
             RelocTarget::Section(s) => obj.section_symbol(section(s)),
-            RelocTarget::Handler(op) => undefined(&mut obj, &rt_symbol(&handler_name(op)), SymbolKind::Text),
+            RelocTarget::Handler(op) => *handlers[op as usize]
+                .get_or_insert_with(|| undefined(&mut obj, &rt_symbol(&handler_name(op)), SymbolKind::Text)),
             RelocTarget::Probe => undefined(&mut obj, &rt_symbol(PROBE_SYMBOL), SymbolKind::Text),
         };
         obj.add_relocation(section(r.section), Relocation { offset: r.offset, symbol, addend: r.addend, flags: fmt.reloc(r.kind) })
