@@ -159,7 +159,7 @@ and `codegen_crate` reads them.
      - Upstream crates come from `CrateInfo.dependency_formats` for the output's crate type
        (`Linkage::Static`), filtered to the ryo-built ones: those whose rlib
        (`CrateInfo.used_crate_source`) has an `__ryo_image_` symbol in its archive symbol
-       table, which also gives the symbol. The compiler has no public query for a crate's own
+       table, which also gives the symbol (only that table is read, not the whole rlib). The compiler has no public query for a crate's own
        dependencies (`CStore::crate_dependencies_in_postorder` is `pub(crate)`), and `link`
        has no `tcx` and doesn't receive the ongoing value
        (`rustc_codegen_ssa/src/traits/backend.rs:143-150`). `codegen_crate` stores the local

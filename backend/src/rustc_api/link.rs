@@ -173,8 +173,10 @@ fn registry_images(sess: &Session, info: &LinkInfo, crate_info: &CrateInfo, crat
             continue;
         }
         let Some(rlib) = crate_info.used_crate_source.get(&cnum).and_then(|s| s.rlib.clone()) else { continue };
-        let data = fs::read(&rlib).unwrap_or_else(|e| sess.dcx().fatal(format!("reading {}: {e}", rlib.display())));
-        match objfile::archive_image_symbols(&data) {
+        // Only the archive's symbol table is read, not the whole rlib.
+        let file = fs::File::open(&rlib).unwrap_or_else(|e| sess.dcx().fatal(format!("reading {}: {e}", rlib.display())));
+        let cache = object::ReadCache::new(file);
+        match objfile::archive_image_symbols(&cache) {
             Ok(syms) => images.extend(syms),
             Err(e) => sess.dcx().fatal(format!("reading the symbol table of {}: {e}", rlib.display())),
         }

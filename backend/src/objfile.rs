@@ -453,7 +453,7 @@ pub fn write_registry(fmt: &dyn ObjectFormat, images: &[String], register_import
 }
 
 /// The image symbols an archive (an rlib) defines, from its symbol table.
-pub fn archive_image_symbols(data: &[u8]) -> Result<Vec<String>, String> {
+pub fn archive_image_symbols<'d, R: object::ReadRef<'d>>(data: R) -> Result<Vec<String>, String> {
     let archive = object::read::archive::ArchiveFile::parse(data).map_err(|e| e.to_string())?;
     let mut out = Vec::new();
     if let Some(symbols) = archive.symbols().map_err(|e| e.to_string())? {
