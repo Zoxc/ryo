@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use rustc_codegen_ssa::back::archive::{AddArchiveKind, ArArchiveBuilderBuilder, ArchiveBuilderBuilder, ArchiveEntryKind};
 use rustc_codegen_ssa::traits::CodegenBackend;
 use rustc_codegen_ssa::{CompiledModule, CompiledModules, CrateInfo};
+use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def_id::LOCAL_CRATE;
 use rustc_metadata::EncodedMetadata;
 use rustc_middle::middle::dependency_format::Linkage;
@@ -123,14 +124,14 @@ fn remove_roots(crate_info: &mut CrateInfo, info: &LinkInfo, crate_type: CrateTy
         return;
     };
     // Names are undecorated on both sides (`partition::linked_roots`).
-    fn counts(roots: &[String]) -> std::collections::HashMap<&str, usize> {
-        let mut count = std::collections::HashMap::new();
+    fn counts(roots: &[String]) -> FxHashMap<&str, usize> {
+        let mut count = FxHashMap::default();
         for r in roots {
             *count.entry(r.as_str()).or_default() += 1;
         }
         count
     }
-    let take = |count: &mut std::collections::HashMap<&str, usize>, name: &str| match count.get_mut(name) {
+    let take = |count: &mut FxHashMap<&str, usize>, name: &str| match count.get_mut(name) {
         Some(n) if *n > 0 => {
             *n -= 1;
             true
