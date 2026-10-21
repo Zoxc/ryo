@@ -246,10 +246,12 @@ impl Sharing {
             IndexVec::from_elem_n(DenseBitSet::new_empty(n), blocks);
         let mut work: Vec<BasicBlock> = body.basic_blocks.indices().rev().collect();
         let mut queued: DenseBitSet<BasicBlock> = DenseBitSet::new_filled(blocks);
+        // One scratch set, refilled per block (`clone_from` reuses its words).
+        let mut cur = DenseBitSet::new_empty(n);
         while let Some(bb) = work.pop() {
             queued.remove(bb);
             let data = &body.basic_blocks[bb];
-            let mut cur = entry[bb].clone();
+            cur.clone_from(&entry[bb]);
             storage_effects(&data.statements, &mut cur, |_, _| {});
             cur.intersect(&shareable);
             for succ in data.terminator().successors() {
@@ -260,7 +262,7 @@ impl Sharing {
         }
         let mut conflicts = BitMatrix::new(n, n);
         for (bb, data) in body.basic_blocks.iter_enumerated() {
-            let mut cur = entry[bb].clone();
+            cur.clone_from(&entry[bb]);
             storage_effects(&data.statements, &mut cur, |l, live| {
                 if shareable.contains(l) {
                     conflicts.union_row_with(live, l);
