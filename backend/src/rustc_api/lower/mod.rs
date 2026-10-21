@@ -1,4 +1,5 @@
-//! MIR → bytecode, one function at a time (design/lowering.md).
+//! MIR → machine code, one function at a time (design/lowering.md): each MIR construct becomes
+//! VM instructions, which `asm::Asm` turns into their x86 sequences as they are emitted.
 //!
 //! [`lower`] is the seam between the pipeline (`partition.rs`) and the lowering: it takes one
 //! instance and returns its code plus everything the merge pass needs to place it in the
@@ -11,7 +12,7 @@
 //! | `mod.rs` | the seam, [`FnCx`], the block loop, branch and unwind fixups, landing pads |
 //! | [`sig`] | ABI signatures and argument blocks |
 //! | [`frame`] | slot allocation: arguments, locals, temporaries, the spread-arg prologue |
-//! | [`emit`] | opcode selection, encoding, outgoing-slot relocation |
+//! | [`emit`] | opcode selection by name and width, immediates |
 //! | [`place`] | places → frame slots or memory operands |
 //! | [`operand`] | operands and value moves between slots and memory |
 //! | [`rvalue`] | statements and rvalues |
@@ -113,8 +114,6 @@ pub struct LowerCx<'a, 'tcx> {
     pub vm: &'a FxHashSet<Instance<'tcx>>,
     /// How the machine code is generated.
     pub mode: asm::Mode,
-    /// `RYO_ASM_VERIFY`: check every function's machine code (`FnCx::verify`).
-    pub verify: bool,
 }
 
 /// Lowers `instance` to bytecode, or says why it must stay native.
@@ -200,8 +199,6 @@ pub struct FnCx<'a, 'tcx> {
     cleanup: Vec<(InsnId, UnwindTo)>,
     /// Each block's label.
     block_labels: Vec<Label>,
-    /// With `RYO_ASM_VERIFY`, what was emitted, to check the machine code against.
-    log: Option<Vec<LogEntry>>,
     /// Largest outgoing argument block of the calls made so far.
     pub max_outgoing: u32,
     arg_size: u32,
@@ -216,12 +213,6 @@ pub struct FnCx<'a, 'tcx> {
     terminate_at: Vec<(rustc_middle::mir::UnwindTerminateReason, Label)>,
     /// Label of each landing pad, by where it goes.
     pads: Vec<(UnwindTo, Label)>,
-}
-
-/// An emitted instruction or label binding, for `RYO_ASM_VERIFY`.
-enum LogEntry {
-    Bind(Label),
-    Insn(Opcode, Vec<Opnd<Label>>),
 }
 
 impl<'a, 'tcx> FnCx<'a, 'tcx> {
@@ -248,7 +239,6 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             relocs: Vec::new(),
             cleanup: Vec::new(),
             block_labels,
-            log: cx.verify.then(Vec::new),
             max_outgoing: 0,
             arg_size: sig.block_size,
             next_block: None,
@@ -341,12 +331,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// Finishes the machine code, now that the frame size is known.
     fn finish(mut self) -> Result<LoweredFn<'tcx>, NeedsNative> {
         let frame_size = self.frame.frame_size(self.max_outgoing)?;
-        let log = self.log.take();
         let code = std::mem::replace(&mut self.asm, Asm::new(self.cx.mode))
             .finish(frame_size, |s| frame::frame_offset(s, frame_size) as u32);
-        if let Some(log) = log {
-            self.verify(&log, &code, frame_size);
-        }
         let ret = self.frame.locals[rustc_middle::mir::RETURN_PLACE];
         Ok(LoweredFn {
             code,
@@ -357,95 +343,16 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         })
     }
 
-    /// `RYO_ASM_VERIFY`: decodes the machine code and checks that it gives back the
-    /// instructions emitted (as instruction words), the frame size and the unwind actions, and
-    /// that the LSDA reads back.
-    fn verify(&self, log: &[LogEntry], code: &asm::Encoded, frame_size: u32) {
-        // Word positions of the instructions and labels.
-        let mut label_at = Vec::new();
-        let mut insn_at = Vec::new();
-        let mut w = 0u32;
-        for e in log {
-            match e {
-                LogEntry::Bind(l) => {
-                    if label_at.len() <= l.0 as usize {
-                        label_at.resize(l.0 as usize + 1, u32::MAX);
-                    }
-                    label_at[l.0 as usize] = w;
-                }
-                LogEntry::Insn(op, ops) => {
-                    insn_at.push(w);
-                    w += asm::word_len(*op, ops) as u32;
-                }
-            }
-        }
-        let mut words = Vec::with_capacity(w as usize);
-        for e in log {
-            if let LogEntry::Insn(op, ops) = e {
-                let at = words.len() as u32;
-                let ops: Vec<Opnd> = ops
-                    .iter()
-                    .map(|o| o.clone().map_targets(|l| Ok::<_, ()>(label_at[l.0 as usize].wrapping_sub(at))).unwrap())
-                    .collect();
-                asm::push_words(*op, &ops, &mut words);
-            }
-        }
-        emit::finish_slots(&mut words, frame_size);
-        let mut cleanup: Vec<ryo_bytecode::image::CleanupEntry> = self
-            .cleanup
-            .iter()
-            .map(|&(id, to)| {
-                let pad = |catch: bool| {
-                    let l = self.pads.iter().find(|p| p.0 == to).expect("landing pad").1;
-                    label_at[l.0 as usize] | if catch { ryo_bytecode::image::CATCH } else { 0 }
-                };
-                let target = match to {
-                    UnwindTo::Continue => ryo_bytecode::image::CONTINUE,
-                    UnwindTo::Block(_) => pad(false),
-                    UnwindTo::Terminate(_) => pad(true),
-                };
-                ryo_bytecode::image::CleanupEntry { offset: insn_at[id.0 as usize], target }
-            })
-            .collect();
-        cleanup.sort();
-        let name = no_trim(|| self.instance.to_string());
-        let fail = |what: String| -> ! {
-            self.tcx.dcx().fatal(format!("ryo: RYO_ASM_VERIFY: {name}: {what}\n{}", ryo_bytecode::insn::Disasm(&words)))
-        };
-        let sites = asm::lsda::parse(&asm::lsda::write(&code.call_sites));
-        if sites.as_deref() != Some(&code.call_sites[..]) {
-            fail(format!("LSDA call sites read back as {sites:?}"));
-        }
-        match asm::decode(&code.code, &code.relocs, &code.rodata, &code.call_sites, self.cx.mode) {
-            Err(e) => fail(format!("doesn't decode: {e:?}")),
-            Ok(d) => {
-                if d.words != words {
-                    fail(format!("decodes as\n{}", ryo_bytecode::insn::Disasm(&d.words)));
-                }
-                if d.frame_size != frame_size || d.cleanup != cleanup {
-                    fail(format!("frame size {frame_size} / cleanup {cleanup:?} decode as {} / {:?}", d.frame_size, d.cleanup));
-                }
-            }
-        }
-    }
-
     // ---- emission ----
 
     /// Emits an instruction.
     pub fn emit(&mut self, op: Opcode, ops: Vec<Opnd<Label>>) -> InsnId {
-        let id = self.asm.insn(op, &ops);
-        if let Some(log) = &mut self.log {
-            log.push(LogEntry::Insn(op, ops));
-        }
-        id
+        self.asm.insn(op, &ops)
     }
 
     /// Binds `l` to the current position.
     pub fn bind(&mut self, l: Label) {
         self.asm.bind(l);
-        if let Some(log) = &mut self.log {
-            log.push(LogEntry::Bind(l));
-        }
     }
 
     /// Emits an instruction without branch targets from its operand words, in the

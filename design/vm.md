@@ -66,8 +66,9 @@ native frames, and unwind natively ([Unwinding](#unwinding)). The runtime lives 
 
 ### Instruction words
 
-- The lowering produces each function as a sequence of 32-bit instruction words, the
-  backend's own form of the code ([lowering.md](lowering.md)). The first word holds the
+- Instruction words are the serialized form of VM instructions: what tests hand-assemble,
+  what `asm::decode` recovers and the disassembler prints. The backend doesn't build them;
+  its lowering emits machine code directly ([Machine code](#machine-code)). The first word holds the
   opcode (low 16 bits; the high 16 must be 0). The operands follow in list order, each with
   the words of its kind (`ryo_bytecode::insn`).
 - The opcode list is defined once in `ryo_bytecode` (`vm/bytecode/src/ops.rs`): every opcode
@@ -81,7 +82,7 @@ native frames, and unwind natively ([Unwinding](#unwinding)). The runtime lives 
 - Code positions in instruction words are word offsets from the function start. The
   cleanup entries (`CleanupEntry`: call-like instruction → `lpad` instruction or
   `CONTINUE`, with `CATCH` for a catch-all pad) are keyed by them. Images contain only the
-  machine code; instruction words exist in the backend.
+  machine code.
 - Variable-length operands (`switch` tables and cases, island operands) are a count word
   followed by the elements. `switch.*` and `island` are the only variable-length
   instructions.
@@ -110,8 +111,10 @@ Integer ops carry their width (`w8` … `w128`) in the opcode, and float ops the
 `ryo_bytecode::asm::Asm` builds one function's machine code from instructions given as
 opcodes and operands (`insn`), with labels for branch targets (`label`, `bind`) and unwind
 actions per instruction (`set_unwind`); `finish(F, fix)` resolves what depends on the frame
-size (slots, through `fix`, and the prologue), relaxes branches and writes the code.
-`asm::encode(code, F, cleanup, mode)` does the same from instruction words. The result is
+size (slots, through `fix`, and the prologue), relaxes branches and writes the code. The
+backend's lowering drives it directly ([lowering.md](lowering.md)); `asm::encode(code, F,
+cleanup, mode)` does the same from instruction words (tests and hand-assembled images). The
+result is
 machine code, relocations (`Ref`: a handler, `ryo_probe_stack`, an image function, a
 symbol slot, a site, a constant, a data offset, a code constant), code constants (island
 operand arrays and sparse switch values, deduplicated) and call sites for the LSDA. After the
@@ -157,10 +160,7 @@ prologue, every instruction becomes the canonical sequence of its shape:
   sequences, with operand registers set in order, and recovers every instruction word, the
   frame size and the cleanup entries (from the call sites). It is the encoder's test
   oracle: `vm/bytecode/tests/asm.rs` round-trips every opcode, in all eight modes (`fp-arg`,
-  loop alignment, PE), long branches, packed operands, and rejects non-canonical code. With
-  `RYO_ASM_VERIFY` set, the backend decodes every function it encodes and checks it against
-  its words, frame size and cleanup entries, and that the LSDA reads back
-  ([backend.md](backend.md#debugging-switches)).
+  loop alignment, PE), long branches, packed operands, and rejects non-canonical code.
 
 ## Instruction set
 
@@ -513,10 +513,10 @@ naming it, for backtraces and profilers. **Unwind**: `.eh_frame` and
   - `Rva32` (`IMAGE_REL_AMD64_ADDR32NB`): the `.pdata` entries.
 
   Calls between functions of the image are resolved by the writer, so they need none.
-- **The writer** (`ImageWriter`): `prepare` (the personality slot on ELF), then the backend
-  encodes the functions in parallel (`asm::encode`) and `finish_encoded` lays out the
-  sections, resolves the calls between functions and writes the unwind information.
-  `finish` does both in one thread. The result (`ImageObject`) is the section bytes, each
+- **The writer** (`ImageWriter`): `prepare` (the personality slot on ELF), then
+  `finish_encoded` takes each function's machine code (the backend's, built while lowering)
+  and lays out the sections, resolves the calls between functions and writes the unwind
+  information. `finish` encodes functions given as instruction words first (tests). The result (`ImageObject`) is the section bytes, each
   function's code range and call sites, the symbols and the relocation list; the backend
   turns it into an object file. The reader (`Image`) is a zero-copy view over a linked image
   and needs only `core`.
@@ -527,11 +527,11 @@ naming it, for backtraces and profilers. **Unwind**: `.eh_frame` and
   `StableCrateId`, so the registry can detect collisions.
 - **Images are trusted**: they are produced by the backend, and the VM doesn't validate
   code. `Image::parse` checks the header and part bounds, and `Image::validate` checks the
-  tables only (functions, fixups, symbol flags). The writer checks the instruction words
-  (`ryo_bytecode::image::validate_code`: operands in range, branch targets on instruction
-  starts, no fall-through past the end, symbol indirection) and the cleanup entries, and the
-  encoder checks that every cleanup entry is at an instruction that may unwind and lands on
-  an `lpad`.
+  tables only (functions, fixups, symbol flags). For functions given as instruction words,
+  `finish` checks them (`ryo_bytecode::image::validate_code`: operands in range, branch
+  targets on instruction starts, no fall-through past the end, symbol indirection) and the
+  cleanup entries, and `encode` checks that every cleanup entry is at an instruction that
+  may unwind and lands on an `lpad`. `finish_encoded` checks the relocation targets' ranges.
 - **No re-entry into the VM from the runtime**: the registry, `lookup_addr`, `vm::enter` and
   the handlers use only `core` and `ryo_rt`'s own lock (a spin lock, or a
   futex/`WaitOnAddress` lock). With `--sysroot ryo`, std's `Mutex`, allocator or TLS code may

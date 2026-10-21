@@ -873,9 +873,8 @@ fn lower_all<'tcx>(
     let mut ok: FxHashMap<Instance<'tcx>, LoweredFn<'tcx>> = FxHashMap::default();
     let mut failed = Vec::new();
     let mut todo: Vec<Instance<'tcx>> = candidates.iter().map(|c| c.0).collect();
-    let verify = std::env::var_os("RYO_ASM_VERIFY").is_some_and(|v| v != "0");
     while !todo.is_empty() {
-        let cx = LowerCx { vm: &vm, mode, verify };
+        let cx = LowerCx { vm: &vm, mode };
         let out: Vec<_> =
             rustc_data_structures::sync::par_map(todo, |instance| (instance, lower::lower(tcx, &cx, instance)));
         let mut removed = false;

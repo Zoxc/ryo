@@ -1,5 +1,4 @@
-//! Instruction emission: opcode selection by name and width, raw encoding, and the final
-//! pass over a function's code (slots to signed frame offsets).
+//! Instruction emission helpers: opcode selection by name and width, immediate operands.
 //!
 //! Opcodes are looked up by their `Opcode` variant name (`"AddW32"`, `"BrLtUImmW64"`), built
 //! from a family name and a [`Width`]. The opcode list in `ryo_bytecode` (`ops.rs`) is the
@@ -9,9 +8,8 @@
 use std::sync::LazyLock;
 
 use rustc_data_structures::fx::FxHashMap;
-use ryo_bytecode::insn::{ALL_OPCODES, ElemKind, Opcode, OperandKind, insn_len};
+use ryo_bytecode::insn::{ALL_OPCODES, Opcode};
 
-use super::frame;
 
 /// Integer operand widths of the instruction set.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -107,55 +105,4 @@ pub fn opw(family: &str, w: Width) -> Opcode {
 /// Encodes the words of an immediate of width `w`.
 pub fn imm_words(w: Width, v: u128) -> Vec<u32> {
     (0..w.imm_words()).map(|i| (v >> (32 * i)) as u32).collect()
-}
-
-/// Rewrites every slot the lowering handed out (biased, or relative to the outgoing block,
-/// `frame.rs`) to its signed frame offset in a frame of size `frame_size`: slots, memory
-/// operand bases and island operand words.
-pub fn finish_slots(code: &mut [u32], frame_size: u32) {
-    let fix = |w: &mut u32| *w = frame::frame_offset(*w, frame_size) as u32;
-    let mut at = 0;
-    while at < code.len() {
-        let len = insn_len(&code[at..]).expect("lowered code decodes");
-        let op = Opcode::from_u16(code[at] as u16).unwrap();
-        let mut pos = at + 1;
-        for o in op.info().operands {
-            match o.kind {
-                OperandKind::Slot | OperandKind::Mem => fix(&mut code[pos]),
-                OperandKind::List(ElemKind::Word) => {
-                    let n = code[pos] as usize;
-                    for w in &mut code[pos + 1..pos + 1 + n] {
-                        fix(w);
-                    }
-                }
-                OperandKind::U8
-                | OperandKind::U16
-                | OperandKind::U32
-                | OperandKind::U64
-                | OperandKind::I64
-                | OperandKind::U128
-                | OperandKind::Const
-                | OperandKind::Abs
-                | OperandKind::Sym
-                | OperandKind::Site
-                | OperandKind::Func
-                | OperandKind::Target
-                | OperandKind::Neg
-                | OperandKind::List(
-                    ElemKind::Target
-                    | ElemKind::Case8
-                    | ElemKind::Case16
-                    | ElemKind::Case32
-                    | ElemKind::Case64
-                    | ElemKind::Case128,
-                ) => {}
-            }
-            pos += match o.kind {
-                OperandKind::List(e) => 1 + code[pos] as usize * e.words(),
-                k => k.words().unwrap(),
-            };
-        }
-        debug_assert_eq!(pos - at, len);
-        at += len;
-    }
 }

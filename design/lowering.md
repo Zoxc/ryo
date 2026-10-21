@@ -1,32 +1,41 @@
-# Lowering: MIR → bytecode
+# Lowering: MIR → machine code
 
-Each VM function is lowered on its own (in parallel, [backend.md](backend.md#pipeline)) into
-instruction words, a constant list, a relocation list and a cleanup table. The instruction set
-is specified in [vm.md](vm.md#instruction-set). After the merge pass, the backend encodes the
-words as machine code ([vm.md](vm.md#machine-code)).
+Each VM function is lowered on its own (in parallel, [backend.md](backend.md#pipeline))
+straight into machine code plus a relocation list. The lowering decides VM instructions
+([vm.md](vm.md#instruction-set)) and hands each to the assembler `asm::Asm` as an opcode and
+typed operands, which appends its x86 sequence at once ([vm.md](vm.md#machine-code)); there
+are no instruction words in between. Branch targets are labels (one per block, landing pad
+and terminate stub), unwind actions are set on the call-like instructions, and when the
+frame size is known `Asm::finish` resolves slots to frame offsets, lays out the code and
+writes it.
 
 The entry point is `lower(tcx, cx, instance) -> Result<LoweredFn, NeedsNative>`
 (`backend/src/rustc_api/lower/mod.rs`), where `cx: LowerCx` holds the set of functions
 assumed to be VM functions of this image (a call of one of them is a `call`, any other local
 callee an island). A `LoweredFn` holds:
 
-- the code words, with operands the lowering can't know left as placeholders
-- relocations for those operands, which the merge pass resolves once every function's index
-  and symbol is known:
-  - `Call { at, callee }`, `TailCall { at, callee }`: a `call` / `tail_call` to another VM
-    function of this image (its function index)
-  - `Symbol { at, target }`: a `sym` operand, the target's symbol (its portal if it is a VM
-    function, which then gets one; an internal native item is made visible to the image)
-  - `Static { at, def_id }`: a `sym` operand naming a static
-  - `Site { at }`: a fresh site cache slot
-  - `Const { at, alloc, offset }`: a `k` operand, `offset` bytes into the pool copy of an
+- the machine code (`asm::Encoded`: code bytes, relocations, code constants, LSDA call
+  sites), whose `func`, `sym`, `site`, `k` and `data` operands are indices into the
+  relocation list
+- the relocation list, which the merge pass resolves once every function's index and symbol
+  is known, by rewriting the code's relocation targets (the code bytes aren't touched):
+  - `Call { callee }`: a `call` / `tail_call` to another VM function of this image (its
+    function index)
+  - `Symbol { target }`: a `sym` operand, the target's symbol (its portal if it is a VM
+    function, which then gets one; an internal native item is made visible to the image).
+    On PE an import's slot is indirect, so the lowering emits `addr.sym.ind` /
+    `call.ext.ind` for it
+  - `Static { def_id }`: a `sym` operand naming a static
+  - `Site`: a fresh site cache slot
+  - `Const { alloc, offset }`: a `k` operand, `offset` bytes into the pool copy of an
     allocation
-  - `Bytes { at, bytes, align }`: a `k` operand, a pool allocation of raw bytes (`fill`
+  - `Bytes { bytes, align }`: a `k` operand, a pool allocation of raw bytes (`fill`
     elements)
-  - `Data { at, alloc, offset }`: a `data` operand, `offset` bytes into the fixup-area copy
-    of an allocation (PE, [Constants](#constants))
-- island requests (template diagnostic item name and generic args, plus the operand to fill)
-- the cleanup entries, `frame_size`, `arg_size` and `ret_size`
+  - `Data { alloc, offset }`: a `data` operand, `offset` bytes into the fixup-area copy of
+    an allocation (PE, [Constants](#constants))
+  - `Island { template, args }`: an `isl` operand, the island template instance
+    (diagnostic item name and generic args)
+- `frame_size`, `arg_size` and `ret_size`
 
 `NeedsNative(reason)` keeps the function native as a whole. `RYO_STATS=2` prints the reasons
 ([backend.md](backend.md#debugging-switches)).
@@ -428,9 +437,9 @@ PE column ([platforms.md](platforms.md)). On PE, landing pads don't run
 
 ## Code optimization
 
-There is no optimization pass over the instruction words yet. The lowering itself folds
+There is no optimization pass over the code. The lowering itself folds
 constant offsets into memory operands (`[p + k]`), selects the `.imm` forms for constant
 operands, and fuses a compare with the branch that consumes it. Everything else happens in
-the encoder's fixed sequences ([vm.md](vm.md#machine-code)): shortest register loads,
+the assembler's fixed sequences ([vm.md](vm.md#machine-code)): shortest register loads,
 `rel8` branches where they reach, and 16-byte loop-head alignment. There is no copy
 propagation, which matters at `-O0`, where MIR has had little of it.

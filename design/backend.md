@@ -62,17 +62,15 @@ and `codegen_crate` reads them.
    - `Static`, `GlobalAsm` → native. Statics are data, and cg_llvm handles relocations,
      linkage and TLS.
 3. **Lower VM functions** with `par_map` over the list. This is the "single code unit,
-   parallel loop": every function is lowered on its own into instruction words plus a
-   relocation list ([lowering.md](lowering.md)), and the results are merged in one pass at
-   the end. An operation the VM doesn't support becomes an `island` instruction plus an
-   *island request* (template + generic args). The merge pass deduplicates requests (same
-   template + args → one instance), assigns function indices, symbols and sites, and adds
-   each function to the image writer under the name `<symbol>.vm`. Then every function is
-   **encoded** as machine code (`asm::encode`, [vm.md](vm.md#machine-code)), again with
-   `par_map`, in the mode `asm_mode` gives: `fp` passing as `ryo_rt`'s `FP_ARG` says (the
-   backend evaluates the const), loop alignment unless `RYO_ASM_ALIGN=0`, and the target's
-   object format. With `RYO_ASM_VERIFY`, each result is decoded back and checked
-   ([Debugging switches](#debugging-switches)). The handlers and `ryo_probe_stack` the code
+   parallel loop": every function is lowered on its own straight into machine code plus a
+   relocation list ([lowering.md](lowering.md), [vm.md](vm.md#machine-code)), in the mode
+   `asm_mode` gives: `fp` passing as `ryo_rt`'s `FP_ARG` says (the backend evaluates the
+   const), loop alignment unless `RYO_ASM_ALIGN=0`, and the target's object format. The
+   results are merged in one pass at the end. An operation the VM doesn't support becomes an
+   `island` instruction whose `isl` operand is an *island* relocation (template + generic
+   args). The merge pass deduplicates islands (same template + args → one instance), assigns
+   function indices, symbols and sites, rewrites each function's relocation targets to them,
+   and adds the function to the image writer under the name `<symbol>.vm`. The handlers and `ryo_probe_stack` the code
    calls, and `rust_eh_personality` on ELF, are added to the image's LTO roots
    ([Query overrides](#query-overrides-provide)).
 4. **Build the native CGU.** This is a copy of the original CGU, with the VM functions removed
@@ -270,11 +268,6 @@ Environment variables read by the backend (and `y test`):
   functions by reason (`ryo: native reason: <n> <reason>`). `RYO_STATS=2` also prints why
   each other function stayed native (`ryo: native <instance>: <reason>`).
 - `RYO_NO_VM` keeps every function native.
-- `RYO_ASM_VERIFY` (anything but `0`) decodes the machine code of every function the
-  backend encodes (`asm::decode`) and checks that it gives back the function's instruction
-  words, frame size and cleanup entries, and that its LSDA call-site table reads back; a
-  mismatch is a fatal error with the function's disassembly. `y test` sets it for every ryo
-  build.
 - `RYO_ASM_ALIGN=0` turns off the 16-byte alignment of loop heads
   ([vm.md](vm.md#machine-code)).
 - `RYO_BACKEND_MARKER` prints `ryo backend: init` from `init` and `ryo backend: partition`
@@ -295,9 +288,9 @@ instantiate generics in their own VM.
 ### Self-profile
 
 `-Zself-profile` shows the backend's phases as generic activities next to rustc's:
-`ryo_partition` (steps 2–4, inside rustc's partition query) with `ryo_lower`, `ryo_stubs`
-(portals, islands, stub neighbors, the native CGU), `ryo_merge`, `ryo_encode` and
-`ryo_finish_image` (image layout); `ryo_write_image` (step 5); and at link time
+`ryo_partition` (steps 2–4, inside rustc's partition query) with `ryo_lower` (lowering and
+machine code), `ryo_stubs` (portals, islands, stub neighbors, the native CGU), `ryo_merge`
+(relocation resolution) and `ryo_finish_image` (image layout); `ryo_write_image` (step 5); and at link time
 `ryo_link_prep` (per crate type, everything before rustc's `link_binary`) with
 `ryo_registry_images`, and `ryo_append_rlib`. measureme's `summarize` lists them.
 

@@ -555,7 +555,7 @@ impl Ctx {
                 let mut c = cmd(&self.rustc_ryo);
                 // Every function's machine code is decoded back and compared with its
                 // instructions (design/backend.md#debugging-switches).
-                c.env("RYO_BACKEND_MARKER", "1").env("RYO_STATS", "1").env("RYO_ASM_VERIFY", "1");
+                c.env("RYO_BACKEND_MARKER", "1").env("RYO_STATS", "1");
                 if variant.ryo_std {
                     c.args(["--sysroot", "ryo"]);
                 }
@@ -875,7 +875,7 @@ fn cargo_smoke(root: &Path, out: &Path) -> Result<(), String> {
 /// the VM and the native frames around it, and the cleanup and the catch still run.
 fn backtrace(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     let exe = out.join(exe_name("vm_backtrace"));
-    crate::utils::run(cmd(rustc_ryo).arg("--edition=2024").arg(src).arg("-o").arg(&exe).env("RYO_ASM_VERIFY", "1"))?;
+    crate::utils::run(cmd(rustc_ryo).arg("--edition=2024").arg(src).arg("-o").arg(&exe))?;
     let res = Command::new(&exe).env("RUST_BACKTRACE", "1").output().map_err(|e| e.to_string())?;
     let stdout = String::from_utf8_lossy(&res.stdout);
     let stderr = String::from_utf8_lossy(&res.stderr);

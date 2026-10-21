@@ -139,9 +139,7 @@ This gives a third backend, built from the same toolchain, to compare against.
 
 - `test`: the test corpus is built with `rustc-ryo` (also with `-Zthreads=8`, and as
   `ryo-novm` with `RYO_NO_VM`, where everything stays native) and with plain rustc, and the
-  exit codes, stdout and stderr are diffed. Every ryo build runs with `RYO_ASM_VERIFY`, so
-  the machine code of every VM function is decoded back and checked
-  ([backend.md](backend.md#debugging-switches)). It includes an ABI sweep: argument types (ZST, scalar pairs, large aggregates,
+  exit codes, stdout and stderr are diffed. It includes an ABI sweep: argument types (ZST, scalar pairs, large aggregates,
   `f32`/`f64` mixes, `u128`, `extern "C"`, closures, vtable shims, `#[track_caller]`) through
   portals and island templates, on both targets. Programs can list functions that must be
   compiled to bytecode: the ryo builds run with `RYO_STATS=1` and must report them, and the

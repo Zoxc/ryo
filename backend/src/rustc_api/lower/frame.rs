@@ -15,8 +15,8 @@
 //! Slots are handed out *biased*, as `BIAS + off` for the signed frame offset `off`, so the
 //! lowering's arithmetic on them (`slot + field offset`) never wraps. Slots in the outgoing
 //! block ([`FnCx::out`]) are their offset in the block, below [`OUT_END`], since `F` is only
-//! known once the whole function is lowered. [`FnCx::finish`] rewrites both kinds to signed
-//! offsets.
+//! known once the whole function is lowered. [`FnCx::finish`] has the assembler turn both
+//! kinds into signed offsets ([`frame_offset`]) as it writes the machine code.
 
 use rustc_index::IndexVec;
 use rustc_index::bit_set::{BitMatrix, DenseBitSet};
