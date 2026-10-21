@@ -208,7 +208,9 @@ llvm,clif,ryo] [--path DIR] [--timeout SECS] [--out FILE]` compares LLVM (plain 
 - **Local workspaces**: `--path DIR` benches the workspace at `DIR` instead, in place (only
   the target directory is the bench's). It is built with `--workspace`, so every member is
   the leaf (cargo's primary packages, cleaned with `cargo clean -p` for the leaf samples) and
-  everything else, registry and git crates, a dependency. It has no workload.
+  everything else, registry and git crates, a dependency. It has no workload. Its
+  per-package profile overrides (`[profile.dev.package."*"]`) get the dev defaults restated
+  through `cargo --config` (not under `--stock`), rather than rejecting the workspace.
 - **Workloads**: `tests/crates/<crate>.rs`, added to the extracted package as the
   `ryo_bench` example (published manifests set `autoexamples = false`). Each prints a
   checksum that must be the same for every backend.

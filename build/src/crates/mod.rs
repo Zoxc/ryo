@@ -346,9 +346,9 @@ pub fn run(opts: Options) -> Result<(), String> {
         let mut cells: Vec<Cell> = opts.backends.iter().map(|_| Cell::default()).collect();
         let prepared = match &krate.local {
             Some(dir) => prepare_local(dir),
-            None => prepare(&root, &base, krate).map(|dir| (dir, vec![krate.name.to_owned()])),
+            None => prepare(&root, &base, krate).map(|dir| (dir, vec![krate.name.to_owned()], Vec::new())),
         };
-        let (src, members) = match prepared {
+        let (src, members, overrides) = match prepared {
             Ok(p) => p,
             Err(e) => {
                 eprintln!("[y] {}: preparing the sources FAILED: {e}", krate.name);
@@ -377,7 +377,7 @@ pub fn run(opts: Options) -> Result<(), String> {
                     _ => format!("leaf {}/{}", i - opts.dep_samples, opts.leaf_samples),
                 };
                 let target = base.join("target").join(krate.name).join(backend.name());
-                let env = Env { info: &info, root: &root, y: &y, backend, target: &target, src: &src, stock: opts.stock };
+                let env = Env { info: &info, root: &root, y: &y, backend, target: &target, src: &src, stock: opts.stock, overrides: &overrides };
                 let t = Instant::now();
                 match build_sample(&env, krate, &members, &base.join("logs"), clean, i == 0 && backend == Backend::Ryo) {
                     Ok(sample) => {
@@ -530,21 +530,38 @@ fn local_crate(path: &Path) -> Result<&'static Crate, String> {
     })))
 }
 
-/// Fetches a local workspace's dependencies and lists its members' package names. The
+/// Fetches a local workspace's dependencies and lists its members' package names and its
+/// per-package profile overrides (`profile.dev.package."*"`, see [`override_configs`]). The
 /// sources are used in place (nothing is written to them; the target directory is the
 /// bench's).
-fn prepare_local(dir: &Path) -> Result<(PathBuf, Vec<String>), String> {
+fn prepare_local(dir: &Path) -> Result<(PathBuf, Vec<String>, Vec<String>), String> {
     let text = fs::read_to_string(dir.join("Cargo.toml")).map_err(|e| format!("{}: {e}", dir.display()))?;
-    if let Some(l) = text.lines().find(|l| l.starts_with("[profile.") && l.contains(".package.")) {
-        return Err(format!("the manifest has a per-package profile override `{l}`"));
-    }
+    let overrides = text
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix('[')?.strip_suffix(']'))
+        .filter(|l| l.starts_with("profile.") && l.contains(".package."))
+        .map(str::to_owned)
+        .collect();
     crate::utils::run(cmd("cargo").current_dir(dir).args(["fetch", "--locked"]))?;
     // `viewer v0.1.0 (/path)`, one line per member.
     let tree = output(cmd("cargo").current_dir(dir).args(["tree", "--offline", "--workspace", "--depth", "0", "--prefix", "none"]))?;
     let mut members: Vec<String> = tree.lines().filter_map(|l| l.split_whitespace().next()).map(str::to_owned).collect();
     members.sort();
     members.dedup();
-    Ok((dir.to_owned(), members))
+    Ok((dir.to_owned(), members, overrides))
+}
+
+/// `--config` values restating `PROFILE_ENV` in each per-package override section, which
+/// `CARGO_PROFILE_*` can't reach. Only the keys a package override may set.
+fn override_configs(overrides: &[String]) -> Vec<String> {
+    const KEYS: &[(&str, &str)] = &[
+        ("opt-level", "0"),
+        ("debug", "0"),
+        ("debug-assertions", "true"),
+        ("overflow-checks", "true"),
+        ("codegen-units", "1"),
+    ];
+    overrides.iter().flat_map(|o| KEYS.iter().map(move |(k, v)| format!("{o}.{k}={v}"))).collect()
 }
 
 fn sha256(path: &Path) -> Result<String, String> {
@@ -561,12 +578,17 @@ struct Env<'a> {
     target: &'a Path,
     src: &'a Path,
     stock: bool,
+    /// A local workspace's per-package profile overrides (`prepare_local`).
+    overrides: &'a [String],
 }
 
 impl Env<'_> {
     fn cargo(&self, log_dir: &Path, stats: bool) -> Command {
         let mut c = cmd("cargo");
         c.current_dir(self.src);
+        for o in override_configs(self.overrides).iter().filter(|_| !self.stock) {
+            c.args(["--config", o]);
+        }
         for v in CLEARED_ENV {
             c.env_remove(v);
         }
@@ -804,7 +826,7 @@ fn header(info: &RustcInfo, root: &Path, opts: &Options) -> Vec<(String, String)
         ("profile".into(), "cargo dev: opt-level 0, debug-assertions and overflow-checks on, panic=unwind, no LTO, incremental off (restated for the test profile too)".into()),
         ("RUSTFLAGS".into(), format!("{RUSTFLAGS} (all crates: deps, build scripts, proc macros, leaf)")),
         ("environment".into(), "CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 RUSTC_BOOTSTRAP=1; no target-cpu, default linker for all".into()),
-        ("notes".into(), "rustc-ryo forces -Ccodegen-units=1 (here every backend gets it). rustc-clif and rustc-ryo are wrapper executables: one extra exec per rustc invocation that plain rustc doesn't have (included in the rustc wall times). Build-override profiles are forced the same; crates with per-package profile overrides are rejected. No MIR optimization flags are added for any backend. Doc tests are not run.".into()),
+        ("notes".into(), "rustc-ryo forces -Ccodegen-units=1 (here every backend gets it). rustc-clif and rustc-ryo are wrapper executables: one extra exec per rustc invocation that plain rustc doesn't have (included in the rustc wall times). Build-override profiles are forced the same; crates with per-package profile overrides are rejected, except in a local workspace (--path), where --config restates the defaults in them. No MIR optimization flags are added for any backend. Doc tests are not run.".into()),
         ("timing".into(), "frontend/backend/link from rustc's --json=timings section records (cargo -Zsection-timings), captured by a RUSTC_WRAPPER; other = rustc wall - the three".into()),
         ("samples".into(), format!(
             "{} clean build samples (dependencies metrics), {} leaf build samples (the crate only, dependencies already built; all other build metrics), {} run samples, after one discarded warm-up each; backends interleaved; noisy = stddev > {:.0}% of median",
