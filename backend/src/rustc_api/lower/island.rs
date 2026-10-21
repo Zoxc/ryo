@@ -46,13 +46,27 @@ pub mod templates {
     }
 
     /// `call_ptrN<A0, …, R>` (Rust ABI through a fn pointer), N ≤ 17.
-    pub fn call_ptr(n: usize) -> Option<String> {
-        (n <= 17).then(|| format!("ryo_island_call_ptr{n}"))
+    pub fn call_ptr(n: usize) -> Option<&'static str> {
+        const NAMES: [&str; 18] = [
+            "ryo_island_call_ptr0", "ryo_island_call_ptr1", "ryo_island_call_ptr2", "ryo_island_call_ptr3",
+            "ryo_island_call_ptr4", "ryo_island_call_ptr5", "ryo_island_call_ptr6", "ryo_island_call_ptr7",
+            "ryo_island_call_ptr8", "ryo_island_call_ptr9", "ryo_island_call_ptr10", "ryo_island_call_ptr11",
+            "ryo_island_call_ptr12", "ryo_island_call_ptr13", "ryo_island_call_ptr14", "ryo_island_call_ptr15",
+            "ryo_island_call_ptr16", "ryo_island_call_ptr17",
+        ];
+        NAMES.get(n).copied()
     }
 
     /// `call_cN<A0, …, R>` (`extern "C"` through a fn pointer), N ≤ 16.
-    pub fn call_c(n: usize) -> Option<String> {
-        (n <= 16).then(|| format!("ryo_island_call_c{n}"))
+    pub fn call_c(n: usize) -> Option<&'static str> {
+        const NAMES: [&str; 17] = [
+            "ryo_island_call_c0", "ryo_island_call_c1", "ryo_island_call_c2", "ryo_island_call_c3",
+            "ryo_island_call_c4", "ryo_island_call_c5", "ryo_island_call_c6", "ryo_island_call_c7",
+            "ryo_island_call_c8", "ryo_island_call_c9", "ryo_island_call_c10", "ryo_island_call_c11",
+            "ryo_island_call_c12", "ryo_island_call_c13", "ryo_island_call_c14", "ryo_island_call_c15",
+            "ryo_island_call_c16",
+        ];
+        NAMES.get(n).copied()
     }
 }
 

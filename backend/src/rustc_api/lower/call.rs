@@ -150,6 +150,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             return Ok((Target::Ptr(f, sig.conv), sig, args));
         }
         let has_symbol = !matches!(callee.def, InstanceKind::Intrinsic(_));
+        // The callee's ABI signature, if computed to pick the target (reused below).
+        let mut callee_sig = None;
         let target = if self.cx.vm.contains(&callee) {
             Target::Vm(callee)
         } else if !has_symbol {
@@ -159,11 +161,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             Target::Template(fty)
         } else {
             let sig = abi_sig(tcx, callee)?;
-            match sig.conv {
+            let target = match sig.conv {
                 CallConv::Rust if !tcx.should_codegen_locally(callee) => Target::Ext(callee),
                 CallConv::Rust if !tail && self.fn_once_able(fty, callee) => Target::Template(fty),
                 conv => Target::Sym(callee, conv),
-            }
+            };
+            callee_sig = Some(sig);
+            target
         };
         let sig = match target {
             Target::Template(_) => {
@@ -171,7 +175,10 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 tys_sig(tcx, s.inputs().to_vec(), s.output())?
             }
             Target::Vm(_) | Target::Ext(_) | Target::Sym(..) | Target::Ptr(..) => {
-                let mut sig = abi_sig(tcx, callee)?;
+                let mut sig = match callee_sig {
+                    Some(sig) => sig,
+                    None => abi_sig(tcx, callee)?,
+                };
                 sig.rust_call = rust_call;
                 sig
             }
@@ -367,7 +374,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     }
 
     /// The template and generic args of a fn-pointer call island for `sig`.
-    fn ptr_island(&self, sig: &AbiSig<'tcx>, conv: CallConv) -> Result<(String, Vec<GenericArg<'tcx>>), NeedsNative> {
+    fn ptr_island(&self, sig: &AbiSig<'tcx>, conv: CallConv) -> Result<(&'static str, Vec<GenericArg<'tcx>>), NeedsNative> {
         let n = sig.inputs.len();
         let name = match conv {
             CallConv::Rust => templates::call_ptr(n),
