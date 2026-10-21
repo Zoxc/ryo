@@ -105,14 +105,15 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// The value of `op` in a frame slot: the operand's own slot if it is a local (or a field
     /// of one), else a temporary.
     pub fn operand_slot(&mut self, op: &Operand<'tcx>) -> Result<(u32, TyAndLayout<'tcx>), NeedsNative> {
-        let layout = self.operand_layout(op)?;
         if let Operand::Copy(place) | Operand::Move(place) = op {
+            // The place's layout is the operand's (an operand never ends in a `Downcast`).
             let pv = self.place(*place)?;
             if pv.meta.is_some() {
                 return native("unsized operand");
             }
-            return Ok((self.loc_slot(pv.loc, pv.layout)?, layout));
+            return Ok((self.loc_slot(pv.loc, pv.layout)?, pv.layout));
         }
+        let layout = self.operand_layout(op)?;
         let t = self.temp_for(layout);
         self.operand_into(op, Loc::Slot(t))?;
         Ok((t, layout))

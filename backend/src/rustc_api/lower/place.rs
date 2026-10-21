@@ -52,9 +52,13 @@ pub struct PlaceVal<'tcx> {
 impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// Lowers a place.
     pub fn place(&mut self, place: Place<'tcx>) -> Result<PlaceVal<'tcx>, NeedsNative> {
-        let place = self.mono(place);
         let local = self.frame.locals[place.local];
         let mut pv = PlaceVal { loc: Loc::Slot(local.off), layout: local.layout, meta: None };
+        if place.projection.is_empty() {
+            // The local's layout is already monomorphic: nothing to substitute.
+            return Ok(pv);
+        }
+        let place = self.mono(place);
         let mut pty = PlaceTy::from_ty(local.layout.ty);
         for elem in place.projection {
             let next = pty.projection_ty(self.tcx, elem);
