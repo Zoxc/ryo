@@ -21,7 +21,7 @@ use alloc::vec::Vec;
 use core::{mem, slice};
 
 use super::*;
-use crate::insn::{Const, Data, DecodeError, Decoder, ElemKind, Func, OperandKind, Opcode, Site, Sym};
+use crate::insn::{ABS_DATA, Const, Data, DecodeError, Decoder, ElemKind, Func, OperandKind, Opcode, Site, Sym};
 
 /// A symbol referenced by the image.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -69,7 +69,8 @@ pub struct FunctionDef {
     pub arg_size: u32,
     /// See [`FuncEntry::ret_size`].
     pub ret_size: u32,
-    /// Cleanup entries, in any order (the writer sorts them).
+    /// Cleanup entries, in any order (the writer sorts them): one per call-like instruction
+    /// that can unwind.
     pub cleanup: Vec<CleanupEntry>,
     pub portal: Option<Sym>,
 }
@@ -123,7 +124,7 @@ pub enum CodeError {
     SymOutOfRange,
     /// A `sym` operand's slot is indirect ([`SYM_INDIRECT`]) but the instruction loads it
     /// directly, or the other way round. Only `addr.sym.ind` and `call.ext.ind` load through
-    /// the slot; `island` symbols are always direct.
+    /// the slot; island symbols (`isl`) are always direct.
     SymIndirection,
     SiteOutOfRange,
     ConstOutOfRange,
@@ -137,7 +138,8 @@ pub enum CodeError {
 pub enum WriteError {
     /// Instruction at word `offset` of function `func`.
     Code { func: u32, offset: u32, error: CodeError },
-    /// Duplicate, out-of-range or not-at-an-instruction cleanup entry.
+    /// A duplicate cleanup entry, one not at a call-like instruction, or one whose landing
+    /// pad isn't an `lpad` instruction.
     Cleanup(u32),
     /// Portal symbol out of range or indirect.
     Portal(u32),
@@ -173,6 +175,15 @@ fn op_falls_through(op: Opcode) -> bool {
     ) && !op.mnemonic().starts_with("switch.")
 }
 
+/// Whether `op` calls code that may unwind, so it can have a cleanup entry.
+pub fn op_may_unwind(op: Opcode) -> bool {
+    matches!(
+        op,
+        Opcode::Call | Opcode::CallExt | Opcode::CallExtInd | Opcode::CallInd | Opcode::TailCallInd | Opcode::Island
+            | Opcode::Resume
+    )
+}
+
 /// Decodes all of `code` (one function) and checks every operand: indices in range, branch
 /// targets on instruction starts within the function, and no fall-through past the end.
 /// Returns the instruction start bitmap.
@@ -186,7 +197,7 @@ pub fn validate_code(code: &[u32], lim: &CodeLimits) -> Result<Vec<bool>, (u32, 
     }
     if let Some(op) = last {
         // Islands may return any target, so their fall-through isn't checked.
-        if op_falls_through(op) && !op.mnemonic().starts_with("island") {
+        if op_falls_through(op) && op != Opcode::Island {
             return Err((code.len() as u32, CodeError::FallsOffEnd));
         }
     }
@@ -207,7 +218,10 @@ pub fn validate_code(code: &[u32], lim: &CodeLimits) -> Result<Vec<bool>, (u32, 
                 OperandKind::Sym if w(0) >= lim.symbols => return fail(CodeError::SymOutOfRange),
                 OperandKind::Site if w(0) >= lim.sites => return fail(CodeError::SiteOutOfRange),
                 OperandKind::Const if w(0) > lim.consts => return fail(CodeError::ConstOutOfRange),
-                OperandKind::Data if w(0) > lim.data => return fail(CodeError::DataOutOfRange),
+                OperandKind::Abs if w(0) & ABS_DATA == 0 && w(0) > lim.consts => return fail(CodeError::ConstOutOfRange),
+                OperandKind::Abs if w(0) & ABS_DATA != 0 && w(0) & !ABS_DATA > lim.data => {
+                    return fail(CodeError::DataOutOfRange);
+                }
                 OperandKind::List(e) => {
                     let n = w(0) as usize;
                     let ew = e.words();
@@ -381,8 +395,12 @@ impl ImageWriter {
                 .map_err(|(offset, error)| WriteError::Code { func: i, offset, error })?;
             f.cleanup.sort();
             for (j, e) in f.cleanup.iter().enumerate() {
-                let at = |o: u32| starts.get(o as usize) == Some(&true);
-                if !at(e.offset) || (e.target != TERMINATE && !at(e.target)) || (j > 0 && f.cleanup[j - 1].offset == e.offset) {
+                let op_at = |o: u32| {
+                    (starts.get(o as usize) == Some(&true)).then(|| Opcode::from_u16(f.code[o as usize] as u16)).flatten()
+                };
+                let call = op_at(e.offset).is_some_and(op_may_unwind);
+                let pad = e.target == CONTINUE || op_at(e.target) == Some(Opcode::Lpad);
+                if !call || !pad || (j > 0 && f.cleanup[j - 1].offset == e.offset) {
                     return Err(WriteError::Cleanup(i));
                 }
             }

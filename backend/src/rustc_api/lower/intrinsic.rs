@@ -98,9 +98,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let t = self.frame.temp(size, 16);
                 let n = self.temp8();
                 self.imm(Width::W64, n, u128::from(size));
-                self.op(Opcode::LoadCopyZ, &[t, x, size as u32]);
+                self.op(Opcode::LoadCopy, &[t, x, 0, size as u32]);
                 self.op(Opcode::Memcpy, &[x, y, n]);
-                self.op(Opcode::StoreCopyZ, &[y, t, size as u32]);
+                self.op(Opcode::StoreCopy, &[y, 0, t, size as u32]);
                 true
             }
             "size_of_val" | "align_of_val" => {

@@ -1,8 +1,10 @@
 //! Terminators other than calls and drops (design/lowering.md#terminators).
 //!
-//! `br.cmp` fusion: a `SwitchInt` or `Assert` on a `bool` local that the block's last
+//! Compare fusion: a `SwitchInt` or `Assert` on a `bool` local that the block's last
 //! statement computes with an integer compare, and that nothing else uses, branches with
-//! `br.cmp.*` on the compare's operands; the compare itself isn't emitted ([`FusedCmp`]).
+//! `br.eq`/`br.lt`/`br.gt.imm` on the compare's operands; the compare itself isn't emitted
+//! ([`FusedCmp`]). Each compare is one of those with a polarity and maybe swapped operands
+//! ([`branch_form`]).
 
 use rustc_hir::attrs::lang_items::LangItem;
 use rustc_index::IndexVec;
@@ -17,6 +19,24 @@ use ryo_bytecode::insn::Opcode;
 use super::call::{ArgSrc, CallCont};
 use super::emit::{Width, imm_words, opw, try_opcode};
 use super::{FnCx, NeedsNative, native};
+
+/// The branch that tests `a op b`: the compare it calls (`"Eq"`, `"Lt"`, `"Gt"`), whether
+/// `a` and `b` are swapped, and its polarity (`neg`: branch when the compare is false). The
+/// register forms exist for `eq` and `lt`, the immediate forms (`imm`, `b` the immediate)
+/// also for `gt`.
+pub fn branch_form(op: BinOp, imm: bool) -> (&'static str, bool, bool) {
+    match (op, imm) {
+        (BinOp::Eq, _) => ("Eq", false, false),
+        (BinOp::Ne, _) => ("Eq", false, true),
+        (BinOp::Lt, _) => ("Lt", false, false),
+        (BinOp::Ge, _) => ("Lt", false, true),
+        (BinOp::Gt, false) => ("Lt", true, false),
+        (BinOp::Le, false) => ("Lt", true, true),
+        (BinOp::Gt, true) => ("Gt", false, false),
+        (BinOp::Le, true) => ("Gt", false, true),
+        _ => unreachable!("not a compare: {op:?}"),
+    }
+}
 
 /// An integer compare `a op b` (`Eq` … `Ge`) whose `bool` result only feeds the block's
 /// `SwitchInt` or `Assert`: the block's last statement, which [`FnCx::blocks`] skips.
@@ -64,7 +84,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 Ok(())
             }
             TerminatorKind::UnwindResume => {
-                self.op(Opcode::Resume, &[]);
+                let at = self.op(Opcode::Resume, &[self.frame.exception_slot()]);
+                self.unwind_entry(at, UnwindAction::Continue);
                 Ok(())
             }
             TerminatorKind::UnwindTerminate(reason) => self.terminate_call(*reason, term.source_info),
@@ -128,50 +149,25 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let layout = self.operand_layout(c.a)?;
         let Some(w) = Width::of_size(layout.size.bytes()) else { return native("compare of a non-scalar") };
         let su = if layout.ty.is_signed() { "S" } else { "U" };
-        // The condition to branch on, as a compare of `a` and `b`.
-        let op = if when {
-            c.op
-        } else {
-            match c.op {
-                BinOp::Eq => BinOp::Ne,
-                BinOp::Ne => BinOp::Eq,
-                BinOp::Lt => BinOp::Ge,
-                BinOp::Le => BinOp::Gt,
-                BinOp::Gt => BinOp::Le,
-                BinOp::Ge => BinOp::Lt,
-                _ => unreachable!("fused compare {:?}", c.op),
-            }
-        };
-        let name = |op: BinOp| match op {
-            BinOp::Eq => "Eq".to_owned(),
-            BinOp::Ne => "Ne".to_owned(),
-            BinOp::Lt => format!("Lt{su}"),
-            BinOp::Le => format!("Le{su}"),
-            BinOp::Gt => format!("Gt{su}"),
-            BinOp::Ge => format!("Ge{su}"),
-            _ => unreachable!(),
-        };
+        let name = |cmp: &str| if cmp == "Eq" { cmp.to_owned() } else { format!("{cmp}{su}") };
         let (sa, _) = self.operand_slot(c.a)?;
         if let Some(v) = self.const_int(c.b)? {
-            let Some(opc) = try_opcode(&format!("BrCmp{}Imm{}", name(op), w.suffix())) else {
-                return native("no br.cmp.imm for the width");
+            let (cmp, _, neg) = branch_form(c.op, true);
+            let Some(opc) = try_opcode(&format!("Br{}Imm{}", name(cmp), w.suffix())) else {
+                return native("no br.imm for the width");
             };
             let mut ops = vec![sa];
             ops.extend(imm_words(w, w.truncate(v)));
-            self.op_branch(opc, &ops, bb);
+            self.op_branch(opc, &ops, neg != when, bb);
             return Ok(());
         }
         let (sb, _) = self.operand_slot(c.b)?;
-        // Register forms exist for eq/ne/lt/le only: `a > b` is `b < a`.
-        let (op, x, y) = match op {
-            BinOp::Gt => (BinOp::Lt, sb, sa),
-            BinOp::Ge => (BinOp::Le, sb, sa),
-            op => (op, sa, sb),
+        let (cmp, swap, neg) = branch_form(c.op, false);
+        let (x, y) = if swap { (sb, sa) } else { (sa, sb) };
+        let Some(opc) = try_opcode(&format!("Br{}{}", name(cmp), w.suffix())) else {
+            return native("no br for the width");
         };
-        let Some(opc) = try_opcode(&format!("BrCmp{}{}", name(op), w.suffix())) else {
-            return native("no br.cmp for the width");
-        };
-        self.op_branch(opc, &[x, y], bb);
+        self.op_branch(opc, &[x, y], neg != when, bb);
         Ok(())
     }
 
@@ -204,19 +200,20 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 return Ok(());
             }
             [(v, bb)] => {
-                // One value: a compare-and-branch, falling through where possible.
-                let (op, t, rest) = if Some(bb) == self.next_block && Some(otherwise) != self.next_block {
-                    ("BrCmpNeImm", otherwise, bb)
+                // One value: a compare-and-branch, falling through where possible. `ne`
+                // branches when `s != v`.
+                let (ne, t, rest) = if Some(bb) == self.next_block && Some(otherwise) != self.next_block {
+                    (true, otherwise, bb)
                 } else {
-                    ("BrCmpEqImm", bb, otherwise)
+                    (false, bb, otherwise)
                 };
                 if layout.ty.is_bool() {
-                    let br = if (v == 1) == (op == "BrCmpEqImm") { Opcode::BrIf } else { Opcode::BrUnless };
-                    self.op_branch(br, &[s], t);
+                    // `br` branches when `s != 0`.
+                    self.op_branch(Opcode::Br, &[s], (v == 1) == ne, t);
                 } else {
                     let mut ops = vec![s];
                     ops.extend(imm_words(w, v));
-                    self.op_branch(opw(op, w), &ops, t);
+                    self.op_branch(opw("BrEqImm", w), &ops, ne, t);
                 }
                 self.jump(rest);
                 return Ok(());
@@ -297,8 +294,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             self.branch_cmp(c, expected, target)?;
         } else if known.is_none() {
             let (c, _) = self.operand_slot(cond)?;
-            let br = if expected { Opcode::BrIf } else { Opcode::BrUnless };
-            self.op_branch(br, &[c], target);
+            self.op_branch(Opcode::Br, &[c], !expected, target);
         }
         let (item, args): (LangItem, Vec<ArgSrc<'_, 'tcx>>) = match msg {
             AssertKind::BoundsCheck { len, index } => {

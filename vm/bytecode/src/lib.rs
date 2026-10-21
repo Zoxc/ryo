@@ -6,7 +6,6 @@
 //! - [`abi`]: frame header constants and [`abi::arg_block`], the argument block layout.
 //! - [`image`]: the image format, its zero-copy reader, the writer (`alloc`), and the portal
 //!   `ID` helpers.
-//! - `peephole` (`alloc`): bytecode peephole passes (superinstruction forming).
 //!
 //! The decoder and the image reader use `core` only. The encoder and the image writer need
 //! the `alloc` feature (on by default; `ryo_rt` disables it).
@@ -22,11 +21,9 @@ compile_error!("ryo_bytecode assumes a little-endian target");
 pub mod abi;
 pub mod image;
 pub mod insn;
-#[cfg(feature = "alloc")]
-pub mod peephole;
 
 pub use insn::{ALL_OPCODES, Insn, OP_INFO, OpInfo, Opcode};
 
 /// Version of the bytecode and image format. Bumped on every incompatible change, including
 /// any change to the opcode list. Stored in each image header and checked at registration.
-pub const FORMAT_VERSION: u32 = 5;
+pub const FORMAT_VERSION: u32 = 6;

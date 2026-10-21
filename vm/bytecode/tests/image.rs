@@ -77,33 +77,35 @@ fn sample() -> ImageWriter {
     assert_eq!(vt.0 % 8, 0);
     let fx = w.add_data(&[7u8; 16], 8, &[AllocReloc { offset: 8, target: AllocTarget::Const(vt), addend: 0 }], &[AllocFixup { offset: 0, sym: imp, addend: 4 }]);
 
-    // f0: calls f1 with a cleanup, then returns.
+    // f0: calls f1 with a landing pad at 6 (`lpad; jmp`) whose block resumes, then returns.
     let f0 = code(&[
-        Insn::Call { d: Slot(16), f: Func(1), frame_size: 32 },
-        Insn::Ret { s: Slot(16), len: 8 },
-        Insn::Resume {},
+        Insn::Call { d: Slot(-8), f: Func(1) },
+        Insn::Ret { s: Slot(-8), len: 8 },
+        Insn::Lpad { x: Slot(-16) },
+        Insn::Jmp { t: Target(2) },
+        Insn::Resume { x: Slot(-16) },
     ]);
     w.add_function(FunctionDef {
         code: f0,
         frame_size: 48,
         arg_size: 8,
         ret_size: 8,
-        cleanup: vec![CleanupEntry { offset: 0, target: 7 }],
+        cleanup: vec![CleanupEntry { offset: 0, target: 6 }, CleanupEntry { offset: 10, target: CONTINUE }],
         portal: None,
     });
     let t = list_words([Target(7)]);
-    let ops = [16u32, 24];
+    let ops = [16u32, -24i32 as u32];
     let f1 = code(&[
-        Insn::CallExt { d: Slot(16), sym: puts, site, island },
-        Insn::Island { sym: island, ops: List::from_words(&ops), targets: List::from_words(&t) },
-        Insn::AddrK { d: Slot(16), k: vt },
-        Insn::AddrData { d: Slot(24), off: fx },
-        Insn::Ret { s: Slot(16), len: 8 },
+        Insn::CallExt { d: Slot(-8), sym: puts, site, isl: island, f: Slot(-16) },
+        Insn::Island { isl: island, ops: List::from_words(&ops), succs: List::from_words(&t) },
+        Insn::AddrAbs { d: Slot(-8), a: Abs::Const(vt) },
+        Insn::AddrAbs { d: Slot(-16), a: Abs::Data(fx) },
+        Insn::Ret { s: Slot(-8), len: 8 },
     ]);
     w.add_function(FunctionDef {
         code: f1,
         frame_size: 48,
-        cleanup: vec![CleanupEntry { offset: 5, target: TERMINATE }, CleanupEntry { offset: 0, target: TERMINATE }],
+        cleanup: vec![CleanupEntry { offset: 6, target: CONTINUE }, CleanupEntry { offset: 0, target: CONTINUE }],
         portal: Some(portal1),
         ..Default::default()
     });
@@ -159,13 +161,13 @@ fn image_round_trip() {
 
     // Code decodes back.
     let f1: Vec<_> = Decoder::new(img.function_code(1).unwrap()).map(|r| r.unwrap().1).collect();
-    assert!(matches!(f1[0], Insn::CallExt { d: Slot(16), sym: Sym(0), site: Site(0), island: Sym(2) }));
+    assert!(matches!(f1[0], Insn::CallExt { d: Slot(-8), sym: Sym(0), site: Site(0), isl: Sym(2), f: Slot(-16) }));
     assert_eq!(f1.len(), 5);
 
     // Cleanup tables (sorted by the writer).
-    assert_eq!(img.cleanup(1).unwrap(), &[CleanupEntry { offset: 0, target: TERMINATE }, CleanupEntry { offset: 5, target: TERMINATE }]);
-    assert_eq!(img.cleanup_at(0, 0), Some(Cleanup::Jump(7)));
-    assert_eq!(img.cleanup_at(1, 5), Some(Cleanup::Terminate));
+    assert_eq!(img.cleanup(1).unwrap(), &[CleanupEntry { offset: 0, target: CONTINUE }, CleanupEntry { offset: 6, target: CONTINUE }]);
+    assert_eq!(img.cleanup_at(0, 0), Some(Cleanup::Pad(6)));
+    assert_eq!(img.cleanup_at(0, 10), Some(Cleanup::Continue));
     assert_eq!(img.cleanup_at(1, 13), None);
     assert_eq!(img.cleanup_at(2, 0), None);
 
@@ -240,25 +242,31 @@ fn writer_rejects_bad_code() {
     assert!(matches!(w.finish(), Err(WriteError::Code { func: 0, offset: 0, error: CodeError::BadTarget })));
 
     let mut w = ImageWriter::new(1);
-    w.add_function(FunctionDef { code: code(&[Insn::Abort {}, Insn::BrIf { s: Slot(0), t: Target(-1) }]), ..Default::default() });
+    w.add_function(FunctionDef {
+        code: code(&[Insn::Abort {}, Insn::Br { s: Slot(-1), neg: Neg(false), t: Target(-1) }]),
+        ..Default::default()
+    });
     assert!(matches!(w.finish(), Err(WriteError::Code { error: CodeError::FallsOffEnd, .. })));
 
     let mut w = ImageWriter::new(1);
-    w.add_function(FunctionDef { code: code(&[Insn::Call { d: Slot(0), f: Func(5), frame_size: 0 }, Insn::Abort {}]), ..Default::default() });
+    w.add_function(FunctionDef { code: code(&[Insn::Call { d: Slot(-8), f: Func(5) }, Insn::Abort {}]), ..Default::default() });
     assert!(matches!(w.finish(), Err(WriteError::Code { error: CodeError::FuncOutOfRange, .. })));
 
     let mut w = ImageWriter::new(1);
     w.add_function(FunctionDef { code: code(&[Insn::AddrSym { d: Slot(0), sym: Sym(0) }, Insn::Abort {}]), ..Default::default() });
     assert!(matches!(w.finish(), Err(WriteError::Code { error: CodeError::SymOutOfRange, .. })));
 
-    // Cleanup entry not on an instruction start.
-    let mut w = ImageWriter::new(1);
-    w.add_function(FunctionDef {
-        code: code(&[Insn::Call { d: Slot(0), f: Func(0), frame_size: 16 }, Insn::Abort {}]),
-        cleanup: vec![CleanupEntry { offset: 1, target: TERMINATE }],
-        ..Default::default()
-    });
-    assert_eq!(w.finish().unwrap_err(), WriteError::Cleanup(0));
+    // Cleanup entries: not on an instruction start, not on a call, a landing pad that isn't
+    // an `lpad`.
+    for (offset, target) in [(1, CONTINUE), (3, CONTINUE), (0, 3)] {
+        let mut w = ImageWriter::new(1);
+        w.add_function(FunctionDef {
+            code: code(&[Insn::Call { d: Slot(-8), f: Func(0) }, Insn::Abort {}, Insn::Lpad { x: Slot(-16) }, Insn::Abort {}]),
+            cleanup: vec![CleanupEntry { offset, target }],
+            ..Default::default()
+        });
+        assert_eq!(w.finish().unwrap_err(), WriteError::Cleanup(0), "{offset} {target}");
+    }
 
     // Switch table target out of the function.
     let mut w = ImageWriter::new(1);
@@ -292,11 +300,11 @@ fn writer_checks_symbol_indirection() {
     let addr_ind: fn(Sym, Sym, Site) -> Insn<'static> = |s, _, _| Insn::AddrSymInd { d: Slot(0), sym: s };
     let addr: fn(Sym, Sym, Site) -> Insn<'static> = |s, _, _| Insn::AddrSym { d: Slot(0), sym: s };
     let ext_ind: fn(Sym, Sym, Site) -> Insn<'static> =
-        |s, island, site| Insn::CallExtInd { d: Slot(0), sym: s, site, island };
-    let ext: fn(Sym, Sym, Site) -> Insn<'static> = |s, island, site| Insn::CallExt { d: Slot(0), sym: s, site, island };
+        |s, island, site| Insn::CallExtInd { d: Slot(0), sym: s, site, isl: island, f: Slot(-8) };
+    let ext: fn(Sym, Sym, Site) -> Insn<'static> = |s, island, site| Insn::CallExt { d: Slot(0), sym: s, site, isl: island, f: Slot(-8) };
     // `x` as the island: islands are always direct.
     let island_ind: fn(Sym, Sym, Site) -> Insn<'static> =
-        |s, island, site| Insn::CallExtInd { d: Slot(0), sym: island, site, island: s };
+        |s, island, site| Insn::CallExtInd { d: Slot(0), sym: island, site, isl: s, f: Slot(-8) };
     assert_eq!(check(SYM_INDIRECT, addr_ind), Ok(()));
     assert_eq!(check(SYM_INDIRECT, ext_ind), Ok(()));
     assert_eq!(check(0, addr), Ok(()));
@@ -315,7 +323,7 @@ fn writer_checks_symbol_indirection() {
     assert_ne!(ind, dir);
     let site = w.site();
     w.add_function(FunctionDef {
-        code: code(&[Insn::CallExtInd { d: Slot(0), sym: ind, site, island: dir }, Insn::Abort {}]),
+        code: code(&[Insn::CallExtInd { d: Slot(0), sym: ind, site, isl: dir, f: Slot(-8) }, Insn::Abort {}]),
         ..Default::default()
     });
     let obj = w.finish().unwrap();
@@ -368,7 +376,7 @@ fn validate_rejects_bad_tables() {
     // Cleanup entry offset past the function.
     assert_eq!(validate_edited(&obj, |r, h| put32(r, h.cleanup.off as usize, 1000)), Err(ImageError::BadCleanup(0)));
     // Cleanup entries out of order (f1's second entry).
-    assert_eq!(validate_edited(&obj, |r, h| put32(r, h.cleanup.off as usize + 16, 0)), Err(ImageError::BadCleanup(1)));
+    assert_eq!(validate_edited(&obj, |r, h| put32(r, h.cleanup.off as usize + 24, 0)), Err(ImageError::BadCleanup(1)));
     // Cleanup range past the table.
     assert_eq!(
         validate_edited(&obj, |r, h| put32(r, fe(h, 2, offset_of!(FuncEntry, cleanup_len)), 9)),

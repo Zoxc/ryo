@@ -12,17 +12,28 @@ impl Rng {
 }
 
 /// Builds the words of an instruction of `op` from its operand table, with random operand
-/// values and `n` elements in every list.
+/// values (in each kind's range) and `n` elements in every list.
 fn sample(op: Opcode, rng: &mut Rng, n: usize) -> Vec<u32> {
     let mut w = vec![op as u32];
     for o in op.info().operands {
         match o.kind {
             OperandKind::List(e) => {
                 w.push(n as u32);
-                for _ in 0..n * e.words() {
-                    w.push(rng.next());
+                for _ in 0..n {
+                    for i in 0..e.words() {
+                        let v = rng.next();
+                        // A narrow case value is the element's first word.
+                        w.push(match (e, i) {
+                            (ElemKind::Case8, 0) => v & 0xff,
+                            (ElemKind::Case16, 0) => v & 0xffff,
+                            _ => v,
+                        });
+                    }
                 }
             }
+            OperandKind::U8 => w.push(rng.next() & 0xff),
+            OperandKind::U16 => w.push(rng.next() & 0xffff),
+            OperandKind::Neg => w.push(rng.next() & 1),
             k => {
                 for _ in 0..k.words().unwrap() {
                     w.push(rng.next());
@@ -52,8 +63,8 @@ fn every_opcode_round_trips() {
             // Disassembly starts with the mnemonic and lists every operand.
             let text = insn.to_string();
             assert!(text.starts_with(op.mnemonic()), "{text}");
-            let ops = op.info().operands.len();
-            assert_eq!(text.matches(", ").count() >= ops.saturating_sub(1), true, "{text}");
+            let listed = op.info().operands.iter().filter(|o| o.kind != OperandKind::Neg).count();
+            assert_eq!(text.matches(", ").count() >= listed.saturating_sub(1), true, "{text}");
             // Truncation is detected at every length.
             for cut in 0..words.len() {
                 assert!(Insn::decode(&words[..cut]).is_err(), "{op:?} cut at {cut}");
@@ -73,16 +84,15 @@ fn opcode_numbering() {
     assert_eq!(Opcode::from_u16(Opcode::COUNT as u16), None);
     assert_eq!(Insn::decode(&[Opcode::COUNT as u32]), Err(DecodeError::UnknownOpcode(Opcode::COUNT as u16)));
     assert_eq!(Insn::decode(&[Opcode::Abort as u32 | 1 << 16]), Err(DecodeError::ReservedBits(Opcode::Abort as u32 | 1 << 16)));
+    assert_eq!(Insn::decode(&[Opcode::ImmW8 as u32, 0, 256]), Err(DecodeError::BadOperand(256)));
+    assert_eq!(Insn::decode(&[Opcode::Br as u32, 0, 2, 0]), Err(DecodeError::BadOperand(2)));
 }
 
 #[test]
-fn mnemonics_unique_up_to_deref_forms() {
+fn mnemonics_unique() {
     let mut seen = std::collections::HashMap::new();
     for info in &OP_INFO {
-        let has_deref = info.operands.iter().any(|o| o.kind == OperandKind::Deref);
-        let has_mem = info.operands.iter().any(|o| o.kind == OperandKind::Mem);
-        let key = (info.mnemonic, has_deref && !info.mnemonic.starts_with("atomic"), has_mem);
-        assert!(seen.insert(key, info.opcode).is_none(), "duplicate {}", info.mnemonic);
+        assert!(seen.insert(info.mnemonic, info.opcode).is_none(), "duplicate {}", info.mnemonic);
     }
 }
 
@@ -90,20 +100,35 @@ fn mnemonics_unique_up_to_deref_forms() {
 fn variable_length_opcodes() {
     let var: Vec<_> = ALL_OPCODES.iter().filter(|o| o.fixed_len().is_none()).map(|o| o.mnemonic()).collect();
     for m in &var {
-        assert!(m.starts_with("switch.") || m.starts_with("island"), "{m}");
+        assert!(m.starts_with("switch.") || *m == "island", "{m}");
     }
-    assert_eq!(var.len(), 12);
+    assert_eq!(var.len(), 11);
 }
 
-/// `ret` finds the destination in word 1 of the caller's call instruction.
+/// The VM calls `ret` returns to name their destination first.
 #[test]
-fn call_destination_in_word_1() {
+fn call_destination_first() {
     for op in [Opcode::Call, Opcode::CallExt, Opcode::CallExtInd, Opcode::CallInd] {
         let i = op.info();
         assert_eq!(i.operands[0].name, "d");
         assert_eq!(i.operands[0].kind, OperandKind::Slot);
-        assert_eq!(i.operand_offset(0), Some(1));
         assert!(i.fixed_len.is_some());
+    }
+}
+
+/// Every branch has a polarity and its target last; the register compares exist only as `eq`
+/// and `lt`, the immediate ones also as `gt` (asm-isa: the rest are the same branches with
+/// the other polarity or swapped operands).
+#[test]
+fn branches() {
+    let br: Vec<_> = OP_INFO.iter().filter(|i| i.mnemonic == "br" || i.mnemonic.starts_with("br.")).collect();
+    assert_eq!(br.len(), 41);
+    for i in &br {
+        let n = i.operands.len();
+        assert_eq!((i.operands[n - 2].kind, i.operands[n - 1].kind), (OperandKind::Neg, OperandKind::Target), "{}", i.mnemonic);
+        let cmp = i.mnemonic.split('.').nth(1).unwrap_or("");
+        assert!(["", "eq", "lt", "gt"].contains(&cmp), "{}", i.mnemonic);
+        assert!(cmp != "gt" || i.mnemonic.contains(".imm."), "{}", i.mnemonic);
     }
 }
 
@@ -111,7 +136,7 @@ fn call_destination_in_word_1() {
 fn widths_complete() {
     let has = |m: &str| OP_INFO.iter().any(|i| i.mnemonic == m);
     for w in [8, 16, 32, 64, 128] {
-        for o in ["mov", "imm", "load", "store", "add", "sub", "and", "shl", "shr.s", "eq", "lt.u", "cmp3.s", "rotl", "ctpop", "bswap", "neg", "add.ovf.s", "br.cmp.le.s", "switch.dense", "switch.sparse", "discr.niche"] {
+        for o in ["mov", "imm", "load", "store", "add", "sub", "and", "shl", "shr.s", "eq", "lt.u", "cmp3.s", "rotl", "ctpop", "bswap", "neg", "add.ovf.s", "br.lt.s", "br.gt.u.imm", "switch.dense", "switch.sparse", "discr.niche"] {
             assert!(has(&format!("{o}.w{w}")), "{o}.w{w}");
         }
         let at128 = w != 128;
@@ -131,29 +156,35 @@ fn widths_complete() {
 fn typed_encoding_and_display() {
     let table = list_words([Target(5), Target(-2)]);
     let cases = list_words([Case64 { value: 1 << 40, target: Target(7) }]);
-    let island_ops = [16u32, 24];
+    let island_ops = [16u32, -24i32 as u32];
     let island_t = list_words([Target(4)]);
     let insns = [
-        Insn::AddImmW64 { d: Slot(16), a: Slot(24), imm: u64::MAX },
-        Insn::LoadW32 { d: Slot(8), m: Mem { p: Slot(32), k: -4 } },
-        Insn::LoadW32Z { d: Slot(8), m: Deref(Slot(32)) },
-        Insn::SwitchDenseW8 { s: Slot(0), base: 3, default: Target(9), table: List::from_words(&table) },
-        Insn::SwitchSparseW64 { s: Slot(0), default: Target(9), cases: List::from_words(&cases) },
-        Insn::Island { sym: Sym(2), ops: List::from_words(&island_ops), targets: List::from_words(&island_t) },
-        Insn::CallExt { d: Slot(48), sym: Sym(1), site: Site(0), island: Sym(3) },
-        Insn::ImmW128 { d: Slot(0), imm: u128::MAX - 1 },
-        Insn::Resume {},
+        Insn::AddImmW64 { d: Slot(-16), a: Slot(24), imm: u64::MAX },
+        Insn::LoadW32 { d: Slot(-8), m: Mem { p: Slot(-32), k: -4 } },
+        Insn::LoadW32 { d: Slot(-8), m: Mem { p: Slot(-32), k: 0 } },
+        Insn::SwitchDenseW8 { s: Slot(-1), base: 3, default: Target(9), table: List::from_words(&table) },
+        Insn::SwitchSparseW64 { s: Slot(-8), default: Target(9), cases: List::from_words(&cases) },
+        Insn::Island { isl: Sym(2), ops: List::from_words(&island_ops), succs: List::from_words(&island_t) },
+        Insn::CallExt { d: Slot(-48), sym: Sym(1), site: Site(0), isl: Sym(3), f: Slot(-56) },
+        Insn::ImmW128 { d: Slot(-16), imm: u128::MAX - 1 },
+        Insn::BrLtSW32 { a: Slot(-4), b: Slot(-8), neg: Neg(true), t: Target(-3) },
+        Insn::Br { s: Slot(-1), neg: Neg(false), t: Target(2) },
+        Insn::AddrAbs { d: Slot(-8), a: Abs::Data(Data(24)) },
+        Insn::Resume { x: Slot(-64) },
     ];
     let text = [
-        "add.imm.w64 $16, $24, 18446744073709551615",
-        "load.w32 $8, [$32 - 4]",
-        "load.w32 $8, [$32]",
-        "switch.dense.w8 $0, 3, @+9, [@+5, @-2]",
-        "switch.sparse.w64 $0, @+9, [1099511627776 => @+7]",
-        "island sym2, [16, 24], [@+4]",
-        "call.ext $48, sym1, site0, sym3",
-        "imm.w128 $0, 340282366920938463463374607431768211454",
-        "resume",
+        "add.imm.w64 $-16, $24, 18446744073709551615",
+        "load.w32 $-8, [$-32 - 4]",
+        "load.w32 $-8, [$-32 + 0]",
+        "switch.dense.w8 $-1, 3, @+9, [@+5, @-2]",
+        "switch.sparse.w64 $-8, @+9, [1099511627776 => @+7]",
+        "island sym2, [16, 4294967272], [@+4]",
+        "call.ext $-48, sym1, site0, sym3, $-56",
+        "imm.w128 $-16, 340282366920938463463374607431768211454",
+        "br.lt.s.w32! $-4, $-8, @-3",
+        "br $-1, @+2",
+        "addr.abs $-8, data24",
+        "resume $-64",
     ];
     let mut code = Vec::new();
     for (i, t) in insns.iter().zip(text) {
@@ -163,30 +194,33 @@ fn typed_encoding_and_display() {
     // Exact words of a few.
     let mut w = Vec::new();
     insns[3].encode(&mut w);
-    assert_eq!(w, [Opcode::SwitchDenseW8 as u32, 0, 3, 9, 2, 5, (-2i32) as u32]);
+    assert_eq!(w, [Opcode::SwitchDenseW8 as u32, -1i32 as u32, 3, 9, 2, 5, (-2i32) as u32]);
     w.clear();
     insns[5].encode(&mut w);
-    assert_eq!(w, [Opcode::Island as u32, 2, 2, 16, 24, 1, 4]);
+    assert_eq!(w, [Opcode::Island as u32, 2, 2, 16, -24i32 as u32, 1, 4]);
+    w.clear();
+    insns[10].encode(&mut w);
+    assert_eq!(w, [Opcode::AddrAbs as u32, -8i32 as u32, 24 | ABS_DATA]);
 
     let decoded: Vec<_> = Decoder::new(&code).map(|r| r.unwrap().1).collect();
     assert_eq!(decoded, insns);
     let dis = Disasm(&code).to_string();
     assert_eq!(dis.lines().count(), insns.len());
-    assert!(dis.lines().nth(1).unwrap().ends_with("load.w32 $8, [$32 - 4]"));
+    assert!(dis.lines().nth(1).unwrap().ends_with("load.w32 $-8, [$-32 - 4]"));
 }
 
 #[test]
 fn code_buf_patches_targets() {
     let mut c = CodeBuf::new();
-    let br = c.emit(&Insn::BrIf { s: Slot(8), t: Target(0) });
+    let br = c.emit(&Insn::Br { s: Slot(-8), neg: Neg(false), t: Target(0) });
     let table = list_words([Target(0), Target(0)]);
-    let sw = c.emit(&Insn::SwitchDenseW32 { s: Slot(8), base: 0, default: Target(0), table: List::from_words(&table) });
+    let sw = c.emit(&Insn::SwitchDenseW32 { s: Slot(-8), base: 0, default: Target(0), table: List::from_words(&table) });
     let end = c.emit(&Insn::Abort {});
-    c.set_target(br, 1, end);
+    c.set_target(br, 2, end);
     c.set_target(sw, 2, br);
     c.set_list_target(sw, 3, 1, end);
     let insns: Vec<_> = Decoder::new(&c.words).map(|r| r.unwrap()).collect();
-    assert_eq!(insns[0].1, Insn::BrIf { s: Slot(8), t: Target(end as i32) });
+    assert_eq!(insns[0].1, Insn::Br { s: Slot(-8), neg: Neg(false), t: Target(end as i32) });
     match insns[1].1 {
         Insn::SwitchDenseW32 { default, table, .. } => {
             assert_eq!(default, Target(-(sw as i32)));
@@ -213,7 +247,7 @@ fn opcode_table_is_pinned_to_format_version() {
             eat(&format!("{:?}", o.kind));
         }
     }
-    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (5, 0xd01fbc244491836c), "opcode table hash {h:#x}");
+    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (6, 0x3c4fb6e7f2561e99), "opcode table hash {h:#x}");
 }
 
 /// Pins the image table layouts to the format version: any change to a table entry's size or
@@ -233,7 +267,7 @@ fn image_layouts_are_pinned_to_format_version() {
         ),
         (size_of::<CleanupEntry>(), size_of::<FixupEntry>(), size_of::<Span>()),
     );
-    assert_eq!(ryo_bytecode::FORMAT_VERSION, 5);
+    assert_eq!(ryo_bytecode::FORMAT_VERSION, 6);
     assert_eq!(layout, ((104, 24, 40, 100), (32, 8, 12, 16, 28), (8, 16, 8)), "{layout:?}");
 }
 
@@ -269,77 +303,13 @@ fn named_operand_offsets() {
     assert_eq!(off::AddW32::b, 3);
     assert_eq!(off::LoadW32::m, 2);
     assert_eq!(off::StoreW64::s, 3);
-    assert_eq!(off::CallExt::island, 4);
+    assert_eq!(off::CallExt::isl, 4);
     assert_eq!(off::SwitchDenseW64::default, 4);
     assert_eq!(off::SwitchDenseW64::table, 5);
-    assert_eq!(off::Island::sym, 1);
+    assert_eq!(off::Island::isl, 1);
     assert_eq!(off::Island::ops, 2);
-    assert_eq!(off::Island::targets, usize::MAX);
+    assert_eq!(off::Island::succs, usize::MAX);
     for op in [Opcode::Call, Opcode::CallExt, Opcode::CallExtInd, Opcode::CallInd] {
         assert_eq!(operand_word(op, "d"), 1);
     }
-}
-
-/// The superinstruction table follows its rules (`SUPERINSTRUCTIONS` docs).
-#[test]
-fn superinstruction_table() {
-    use Opcode::*;
-    let control = [Call, CallExt, CallExtInd, CallInd, TailCall, TailCallInd, Ret, Island, IslandCatch, Resume, Unreachable, Abort];
-    for &(f, a, b) in SUPERINSTRUCTIONS {
-        assert_eq!(f.fused_parts(), Some((a, b)));
-        assert_eq!(f.first_part(), a);
-        assert_eq!(f.info().operands, a.info().operands, "{f:?} has {a:?}'s operands");
-        assert_eq!(f.mnemonic(), format!("{}+{}", a.mnemonic(), b.mnemonic()));
-        assert!(a.fixed_len().is_some() && !control.contains(&a), "{a:?} must fall through");
-        assert!(a.info().operands.iter().all(|o| o.kind != OperandKind::Target), "{a:?} must not branch");
-        assert!(a.fused_parts().is_none() && b.fused_parts().is_none(), "parts are plain opcodes");
-        assert_eq!(ryo_bytecode::peephole::superinstruction(a, b), Some(f));
-    }
-    assert_eq!(AddW32.fused_parts(), None);
-    assert_eq!(AddW32.first_part(), AddW32);
-}
-
-/// `fuse` rewrites only the first opcode word of each pair, leaves branch targets alone, is
-/// idempotent, treats a superinstruction as its first part, and leaves undecodable code
-/// unchanged.
-#[test]
-fn peephole_fuse() {
-    use Opcode::*;
-    use ryo_bytecode::peephole::fuse;
-    let mut c = CodeBuf::new();
-    let top = c.emit(&Insn::LoadW64 { d: Slot(16), m: Mem { p: Slot(8), k: 0 } });
-    let br1 = c.emit(&Insn::BrCmpLeUW64 { a: Slot(16), b: Slot(24), t: Target(0) });
-    let add = c.emit(&Insn::AddImmW64 { d: Slot(32), a: Slot(32), imm: 1 });
-    let br2 = c.emit(&Insn::BrCmpLtUW64 { a: Slot(32), b: Slot(40), t: Target(0) });
-    // Not a pair (`br.cmp.lt.u.w32`, not `.s`).
-    c.emit(&Insn::AddImmW32 { d: Slot(48), a: Slot(48), imm: 1 });
-    c.emit(&Insn::BrCmpLtUW32 { a: Slot(48), b: Slot(52), t: Target(0) });
-    let end = c.emit(&Insn::Ret { s: Slot(16), len: 8 });
-    c.set_target(br1, 2, end);
-    c.set_target(br2, 2, top);
-    let before = c.words.clone();
-
-    assert_eq!(fuse(&mut c), Ok(2));
-    let ops: Vec<Opcode> = Decoder::new(&c.words).map(|r| r.unwrap().1.opcode()).collect();
-    assert_eq!(ops, [LoadW64BrCmpLeUW64, BrCmpLeUW64, AddImmW64BrCmpLtUW64, BrCmpLtUW64, AddImmW32, BrCmpLtUW32, Ret]);
-    let changed: Vec<u32> = (0..before.len() as u32).filter(|&i| before[i as usize] != c.words[i as usize]).collect();
-    assert_eq!(changed, [top, add], "only the first opcode words change");
-    assert_eq!(fuse(&mut c), Ok(0), "idempotent");
-
-    // A superinstruction counts as its first part: `add.imm.w64+…` before `br.cmp.le.u.w64`
-    // is `add.imm.w64`, which doesn't pair with it, so it stays.
-    let mut c = CodeBuf::new();
-    c.emit(&Insn::AddImmW64 { d: Slot(16), a: Slot(16), imm: 1 });
-    c.emit(&Insn::BrCmpLeUW64 { a: Slot(16), b: Slot(24), t: Target(0) });
-    c.words[0] = AddImmW64BrCmpLtUW64 as u32;
-    assert_eq!(fuse(&mut c), Ok(0));
-    assert_eq!(c.words[0], AddImmW64BrCmpLtUW64 as u32);
-
-    let mut bad = CodeBuf::new();
-    bad.emit(&Insn::LoadW64 { d: Slot(16), m: Mem { p: Slot(8), k: 0 } });
-    bad.emit(&Insn::BrCmpLeUW64 { a: Slot(16), b: Slot(24), t: Target(0) });
-    bad.words.push(0xffff);
-    let snapshot = bad.words.clone();
-    assert!(fuse(&mut bad).is_err());
-    assert_eq!(bad.words, snapshot);
 }

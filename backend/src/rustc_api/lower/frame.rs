@@ -20,7 +20,7 @@
 
 use rustc_index::IndexVec;
 use rustc_index::bit_set::{BitMatrix, DenseBitSet};
-use rustc_middle::mir::{BasicBlock, Body, Local, StatementKind};
+use rustc_middle::mir::{BasicBlock, Body, Local, StatementKind, TerminatorKind, UnwindAction};
 use rustc_middle::ty::layout::TyAndLayout;
 use ryo_bytecode::abi::{self, HEADER_SIZE};
 
@@ -63,6 +63,9 @@ pub struct Frame<'tcx> {
     /// The spread `rust-call` argument (design/lowering.md#frame-slots), with the index of
     /// its first field in the argument block: the prologue assembles it.
     pub spread: Option<(Local, usize)>,
+    /// Where landing pads store the exception object (`lpad x`) for the cleanup code's
+    /// `resume x`: an 8-byte slot of its own, in functions with cleanup or terminate actions.
+    exception: Option<u32>,
 }
 
 impl<'tcx> Frame<'tcx> {
@@ -122,6 +125,16 @@ impl<'tcx> Frame<'tcx> {
             };
             locals.push(LocalSlot { off, layout });
         }
+        let unwinds = body.basic_blocks.iter().any(|b| {
+            matches!(b.terminator().unwind(), Some(UnwindAction::Cleanup(_) | UnwindAction::Terminate(_)))
+                || matches!(b.terminator().kind, TerminatorKind::UnwindResume)
+        });
+        let exception = if unwinds {
+            end = place_below(end, 8, 8)?;
+            Some(slot(-(end as i32)))
+        } else {
+            None
+        };
         if let Some(sharing) = &sharing {
             end = sharing.place(&mut locals, &shared, end)?;
         }
@@ -139,7 +152,13 @@ impl<'tcx> Frame<'tcx> {
         if end >= OUT_END {
             return native("frame too large");
         }
-        Ok(Frame { locals, locals_end: end, temp_top: end, high: end, spread })
+        Ok(Frame { locals, locals_end: end, temp_top: end, high: end, spread, exception })
+    }
+
+    /// The exception slot. Only functions whose MIR has cleanup or terminate actions, or
+    /// `UnwindResume`, have one.
+    pub fn exception_slot(&self) -> u32 {
+        self.exception.expect("a landing pad in a function without cleanup")
     }
 
     /// A temporary slot, live until [`Frame::reset_temps`].

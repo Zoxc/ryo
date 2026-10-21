@@ -3,8 +3,9 @@
 //! A direct call of a resolved instance is, in order of preference:
 //!
 //! - `call fn`: a VM function of this image ([`LowerCx::vm`])
-//! - `call.ext sym, site, call_ptrN`: a Rust-ABI instance from another crate (one
-//!   `should_codegen_locally` says isn't codegened here)
+//! - `call.ext sym, site, call_ptrN, f`: a Rust-ABI instance from another crate (one
+//!   `should_codegen_locally` says isn't codegened here); `f` is the slot the native path
+//!   passes the resolved address in
 //! - `island call<F, Args, R>`: a safe Rust fn item (through `FnOnce`, no symbol needed)
 //! - `addr.sym` + `island call_ptrN` / `call_cN`: any other local native function
 //!
@@ -240,13 +241,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let block = Self::out(0);
         match target {
             Target::Vm(callee) => {
-                let at = self.op(Opcode::Call, &[d, 0, 0]);
+                let at = self.op(Opcode::Call, &[d, 0]);
                 self.relocs.push(CodeReloc::Call { at, callee });
                 self.unwind_entry(at, cont.unwind);
             }
             Target::Ext(callee) => {
                 let island = self.call_ptr_island(sig)?;
-                let at = self.op(Opcode::CallExt, &[d, 0, 0, 0]);
+                let f = self.temp8();
+                let at = self.op(Opcode::CallExt, &[d, 0, 0, 0, f]);
                 self.relocs.push(CodeReloc::Symbol { at: at + 2, target: callee });
                 self.relocs.push(CodeReloc::Site { at: at + 3 });
                 self.islands.push(super::IslandRequest { at: at + 4, template: island.0, args: island.1 });
@@ -286,8 +288,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
 
     /// `TerminatorKind::TailCall` (`become`): the arguments are staged in the outgoing block,
     /// then `tail_call` (a VM function of this image) or `tail_call.ind` (anything else with
-    /// an address; the VM makes a native target an ordinary call followed by a return)
-    /// replaces the frame (design/vm.md#calls-and-islands).
+    /// an address; the VM makes a native target an ordinary call, whose result goes to `_0`,
+    /// followed by a return) replaces the frame (design/vm.md#calls-and-islands). Both name
+    /// the size of the argument block they move.
     pub fn tail_call_terminator(
         &mut self,
         func: &Operand<'tcx>,
@@ -328,7 +331,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         self.write_args(&sig, &srcs, source_info)?;
         match target {
             Target::Vm(callee) => {
-                let at = self.op(Opcode::TailCall, &[0, 0]);
+                let at = self.op(Opcode::TailCall, &[0, sig.block_size]);
                 self.relocs.push(CodeReloc::TailCall { at, callee });
             }
             Target::Ext(callee) | Target::Sym(callee, _) => {
@@ -343,9 +346,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
 
     fn tail_call_ind(&mut self, p: u32, sig: &AbiSig<'tcx>) -> Result<(), NeedsNative> {
         let island = self.call_ptr_island(sig)?;
-        let at = self.op(Opcode::TailCallInd, &[p, 0, 0]);
+        let ret = self.frame.locals[rustc_middle::mir::RETURN_PLACE];
+        let len = ret.layout.size.bytes() as u32;
+        let at = self.op(Opcode::TailCallInd, &[p, 0, 0, sig.block_size, ret.off, len]);
         self.relocs.push(CodeReloc::Site { at: at + 2 });
         self.islands.push(super::IslandRequest { at: at + 3, template: island.0, args: island.1 });
+        // A tail call keeps no frame to land in: unwinding continues in the caller.
+        self.unwind_entry(at, UnwindAction::Continue);
         Ok(())
     }
 
@@ -523,7 +530,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             let sig = abi_sig(tcx, glue)?;
             self.write_args(&sig, &[ArgSrc::Slot(ptr)], self.body.source_info(rustc_middle::mir::Location::START).clone())?;
             let d = self.frame.temp(0, 1);
-            let at = self.op(Opcode::Call, &[d, 0, 0]);
+            let at = self.op(Opcode::Call, &[d, 0]);
             self.relocs.push(CodeReloc::Call { at, callee: glue });
             self.unwind_entry(at, unwind);
         } else {
@@ -543,7 +550,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let f = self.temp8();
         let idx = ty::COMMON_VTABLE_ENTRIES_DROPINPLACE as u32;
         self.op(super::emit::opcode("LoadW64"), &[f, vtable, idx * 8]);
-        self.op_branch(super::emit::opcode("BrCmpEqImmW64"), &[f, 0, 0], target);
+        self.op_branch(super::emit::opcode("BrEqImmW64"), &[f, 0, 0], false, target);
         let data = Ty::new_mut_ptr(tcx, tcx.types.unit);
         let sig = tys_sig(tcx, vec![data], tcx.types.unit)?;
         let ptr = self.temp8();

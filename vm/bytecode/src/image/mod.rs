@@ -10,7 +10,7 @@
 //! | header | [`Header`] |
 //! | functions | `[FuncEntry]`, sorted by code offset; index = [`Func`](crate::insn::Func) |
 //! | code | `[u32]`: every function's instruction words |
-//! | cleanup | `[CleanupEntry]`: each function's entries, contiguous, sorted by code offset |
+//! | cleanup | `[CleanupEntry]`: each function's unwind entries, contiguous, sorted by code offset |
 //! | fixups | `[FixupEntry]` (PE only, otherwise empty) |
 //! | symbol flags | `[u8]`, one per symbol ([`SYM_INDIRECT`]) |
 //! | symbols | `[u64]`: one pointer slot per symbol, filled by the linker |
@@ -23,6 +23,10 @@
 //!
 //! All code positions are in words: a function's `code_off` indexes the code array, and
 //! cleanup offsets and targets are relative to the function's first word.
+//!
+//! A function's cleanup table says what unwinding out of each call-like instruction does:
+//! continue in the caller, or enter a landing pad (an `lpad` instruction). An instruction
+//! without an entry can't unwind (the unwinder aborts if it does).
 //!
 //! The reader works on `core` only. [`Image::parse`] checks the header and that every part
 //! is in bounds and aligned (cheap, O(1)); [`Image::validate`] also checks every function and
@@ -45,8 +49,8 @@ pub const SYM_INDIRECT: u8 = 1;
 /// `FuncEntry::portal` for functions without a portal.
 pub const NO_PORTAL: u32 = u32::MAX;
 
-/// `CleanupEntry::target` for a terminate entry (abort).
-pub const TERMINATE: u32 = u32::MAX;
+/// `CleanupEntry::target` of a call whose unwinding continues in the caller.
+pub const CONTINUE: u32 = u32::MAX;
 
 /// Builds a portal `ID` (design/stubs.md): crate hash in the high 32 bits, function index in
 /// the low 32.
@@ -139,28 +143,29 @@ impl FuncEntry {
     }
 }
 
-/// A cleanup table entry: a call-like instruction at `offset` unwinds to `target`.
+/// A cleanup table entry: unwinding out of the call-like instruction at `offset` goes to
+/// `target`.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CleanupEntry {
     /// Word offset of the call-like instruction, from the function start.
     pub offset: u32,
-    /// Word offset of the cleanup block, or [`TERMINATE`].
+    /// Word offset of its landing pad (an `lpad` instruction), or [`CONTINUE`].
     pub target: u32,
 }
 
-/// What unwinding does at a code offset.
+/// What unwinding out of a call-like instruction does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Cleanup {
-    /// Jump to this word offset in the function.
-    Jump(u32),
-    /// Abort.
-    Terminate,
+    /// Enter the landing pad at this word offset in the function.
+    Pad(u32),
+    /// Leave the frame, and continue in the caller.
+    Continue,
 }
 
 impl CleanupEntry {
     pub fn action(&self) -> Cleanup {
-        if self.target == TERMINATE { Cleanup::Terminate } else { Cleanup::Jump(self.target) }
+        if self.target == CONTINUE { Cleanup::Continue } else { Cleanup::Pad(self.target) }
     }
 }
 
@@ -305,7 +310,7 @@ impl<'a> Image<'a> {
             let mut prev: Option<u32> = None;
             for e in entries {
                 if e.offset >= f.code_len
-                    || (e.target != TERMINATE && e.target >= f.code_len)
+                    || (e.target != CONTINUE && e.target >= f.code_len)
                     || prev.is_some_and(|p| p >= e.offset)
                 {
                     return Err(ImageError::BadCleanup(i));
@@ -377,7 +382,7 @@ impl<'a> Image<'a> {
     }
 
     /// The unwind action of function `f` at word offset `offset` (a call-like instruction),
-    /// or `None` if unwinding leaves the frame.
+    /// or `None` if it can't unwind.
     pub fn cleanup_at(&self, f: u32, offset: u32) -> Option<Cleanup> {
         let t = self.cleanup(f)?;
         t.binary_search_by_key(&offset, |e| e.offset).ok().and_then(|i| t.get(i)).map(|e| e.action())

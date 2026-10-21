@@ -8,7 +8,7 @@
 //!
 //! | Module | Concern |
 //! |---|---|
-//! | `mod.rs` | the seam, [`FnCx`], the block loop, branch and cleanup fixups |
+//! | `mod.rs` | the seam, [`FnCx`], the block loop, branch and unwind fixups, landing pads |
 //! | [`sig`] | ABI signatures and argument blocks |
 //! | [`frame`] | slot allocation: arguments, locals, temporaries, the spread-arg prologue |
 //! | [`emit`] | opcode selection, encoding, outgoing-slot relocation |
@@ -50,7 +50,7 @@ use rustc_middle::ty::layout::TyAndLayout;
 use rustc_middle::ty::{self, GenericArgsRef, Instance, InstanceKind, Ty, TyCtxt, TypingEnv};
 use rustc_span::Symbol;
 use ryo_bytecode::abi::HEADER_SIZE;
-use ryo_bytecode::image::CleanupEntry;
+use ryo_bytecode::image::{CONTINUE, CleanupEntry};
 use ryo_bytecode::insn::{CodeBuf, Opcode};
 
 pub use self::constant::{is_import, is_tls_shim, vtable_alloc};
@@ -65,7 +65,8 @@ pub struct LoweredFn<'tcx> {
     pub relocs: Vec<CodeReloc<'tcx>>,
     /// Island template instances the code needs.
     pub islands: Vec<IslandRequest<'tcx>>,
-    /// Cleanup table entries (unsorted).
+    /// Cleanup table entries (unsorted): one per call-like instruction that may unwind, with
+    /// its landing pad or [`CONTINUE`].
     pub cleanup: Vec<CleanupEntry>,
     /// The frame size `F`: locals and the largest outgoing argument block.
     pub frame_size: u32,
@@ -76,8 +77,8 @@ pub struct LoweredFn<'tcx> {
 /// An operand the merge pass resolves.
 pub enum CodeReloc<'tcx> {
     /// The `call` instruction at word `at` calls `callee`, a VM function of this image (one of
-    /// [`LowerCx::vm`]): the merge pass fills in its function index and frame size. If
-    /// `callee` ends up native after all, the caller is lowered again.
+    /// [`LowerCx::vm`]): the merge pass fills in its function index. If `callee` ends up
+    /// native after all, the caller is lowered again.
     Call { at: u32, callee: Instance<'tcx> },
     /// The `sym` operand at word `at` refers to `target`'s symbol: its portal if it is a VM
     /// function (which then gets one), the native definition otherwise (made visible to the
@@ -88,14 +89,15 @@ pub enum CodeReloc<'tcx> {
     Static { at: u32, def_id: rustc_hir::def_id::DefId },
     /// The `site` operand at word `at` gets a fresh site cache slot.
     Site { at: u32 },
-    /// The `k` operand at word `at` is `offset` bytes into the constant-pool copy of `alloc`.
+    /// The `k` (or `addr.abs`) operand at word `at` is `offset` bytes into the constant-pool
+    /// copy of `alloc`.
     Const { at: u32, alloc: AllocId, offset: u32 },
     /// The `k` operand at word `at` is a constant-pool allocation of these bytes.
     Bytes { at: u32, bytes: Vec<u8>, align: u32 },
     /// The `tail_call` instruction at word `at` calls `callee`, as for [`CodeReloc::Call`].
     TailCall { at: u32, callee: Instance<'tcx> },
-    /// The `data` operand at word `at` is `offset` bytes into the fixup-area copy of `alloc`
-    /// (PE: an allocation pointing at imports, `constant::needs_fixup`).
+    /// The `addr.abs` operand at word `at` is `offset` bytes into the fixup-area copy of
+    /// `alloc` (PE: an allocation pointing at imports, `constant::needs_fixup`).
     Data { at: u32, alloc: AllocId, offset: u32 },
 }
 
@@ -181,10 +183,14 @@ pub fn vm_fn_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> Result<Ab
 pub const MAX_PORTAL_TC_ARITY: usize = 16;
 
 /// Where unwinding out of a call-like instruction goes.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 enum UnwindTo {
+    /// Out of the frame, to the caller.
+    Continue,
+    /// Through a landing pad ([`FnCx::landing_pads`]) to this block.
     Block(BasicBlock),
-    /// The function's stub calling the reason's lang item ([`FnCx::terminate_stubs`]).
+    /// Through a landing pad to the function's stub calling the reason's lang item
+    /// ([`FnCx::terminate_stubs`]).
     Terminate(rustc_middle::mir::UnwindTerminateReason),
 }
 
@@ -205,7 +211,8 @@ pub struct FnCx<'a, 'tcx> {
     pub code: CodeBuf,
     pub relocs: Vec<CodeReloc<'tcx>>,
     pub islands: Vec<IslandRequest<'tcx>>,
-    /// (call-like instruction, where unwinding out of it goes).
+    /// (call-like instruction, where unwinding out of it goes). Instructions without an entry
+    /// can't unwind.
     cleanup: Vec<(u32, UnwindTo)>,
     fixups: Vec<Fixup>,
     /// Largest outgoing argument block of the calls made so far.
@@ -222,6 +229,8 @@ pub struct FnCx<'a, 'tcx> {
     fused: Option<terminator::FusedCmp<'tcx>>,
     /// Code position of each terminate stub.
     terminate_at: Vec<(rustc_middle::mir::UnwindTerminateReason, u32)>,
+    /// Code position of each landing pad, by where it goes.
+    pads: Vec<(UnwindTo, u32)>,
 }
 
 impl<'a, 'tcx> FnCx<'a, 'tcx> {
@@ -253,14 +262,15 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             block_starts: Vec::new(),
             fused: None,
             terminate_at: Vec::new(),
+            pads: Vec::new(),
             caller_location: sig
                 .caller_location
                 .then(|| frame::slot((HEADER_SIZE + sig.fields.last().expect("location field").offset) as i32)),
         })
     }
 
-    /// Lowers every block, in index order. Cleanup blocks are only reached through cleanup
-    /// table entries.
+    /// Lowers every block, in index order. Cleanup blocks are only reached through landing
+    /// pads.
     fn blocks(&mut self) -> Result<(), NeedsNative> {
         let body = self.body;
         let n = body.basic_blocks.len();
@@ -279,7 +289,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             self.terminator(data.terminator())?;
         }
         self.block_starts = starts;
-        self.terminate_stubs()
+        self.terminate_stubs()?;
+        self.landing_pads();
+        Ok(())
     }
 
     /// Emits one stub per terminate reason the cleanup entries use, after the blocks: a call
@@ -301,8 +313,30 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         Ok(())
     }
 
-    /// Patches branches and cleanup targets, turns slots into signed frame offsets, forms
-    /// superinstructions.
+    /// Emits one landing pad per distinct place unwinding goes to in this frame, after the
+    /// blocks and terminate stubs: `lpad x` (which stores the exception object in the
+    /// function's exception slot `x`), then a jump to the cleanup block or terminate stub. A
+    /// cleanup block may also be reached by a jump from another one, so the pads are separate
+    /// from the blocks, and `lpad` runs once per landing.
+    fn landing_pads(&mut self) {
+        for i in 0..self.cleanup.len() {
+            let to = self.cleanup[i].1;
+            if to == UnwindTo::Continue || self.pads.iter().any(|p| p.0 == to) {
+                continue;
+            }
+            let at = self.op(Opcode::Lpad, &[self.frame.exception_slot()]);
+            let jmp = self.op(Opcode::Jmp, &[0]);
+            let target = match to {
+                UnwindTo::Block(bb) => self.block_starts[bb.as_usize()],
+                UnwindTo::Terminate(r) => self.terminate_at.iter().find(|t| t.0 == r).expect("terminate stub").1,
+                UnwindTo::Continue => unreachable!(),
+            };
+            self.code.words[jmp as usize + 1] = target.wrapping_sub(jmp);
+            self.pads.push((to, at));
+        }
+    }
+
+    /// Patches branches and unwind targets, turns slots into signed frame offsets.
     fn finish(mut self) -> Result<LoweredFn<'tcx>, NeedsNative> {
         let starts = std::mem::take(&mut self.block_starts);
         for f in &self.fixups {
@@ -314,15 +348,16 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             .iter()
             .map(|&(offset, to)| {
                 let target = match to {
-                    UnwindTo::Block(bb) => starts[bb.as_usize()],
-                    UnwindTo::Terminate(r) => self.terminate_at.iter().find(|t| t.0 == r).expect("terminate stub").1,
+                    UnwindTo::Continue => CONTINUE,
+                    UnwindTo::Block(_) | UnwindTo::Terminate(_) => {
+                        self.pads.iter().find(|p| p.0 == to).expect("landing pad").1
+                    }
                 };
                 CleanupEntry { offset, target }
             })
             .collect();
         let frame_size = self.frame.frame_size(self.max_outgoing)?;
         emit::finish_slots(&mut self.code.words, frame_size);
-        ryo_bytecode::peephole::fuse(&mut self.code).expect("lowered code decodes");
         let ret = self.frame.locals[rustc_middle::mir::RETURN_PLACE];
         Ok(LoweredFn {
             code: self.code.words,
@@ -346,17 +381,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         at
     }
 
-    /// Emits an instruction whose last operand is a branch target to `bb`.
-    pub fn op_branch(&mut self, op: Opcode, operands: &[u32], bb: BasicBlock) -> u32 {
-        let at = self.op_with_target(op, operands);
+    /// Emits a branch to `bb`: an instruction whose last operands are its polarity and target.
+    /// With `neg`, it branches when its condition is false.
+    pub fn op_branch(&mut self, op: Opcode, operands: &[u32], neg: bool, bb: BasicBlock) -> u32 {
+        let mut w = operands.to_vec();
+        w.extend([u32::from(neg), 0]);
+        let at = self.op(op, &w);
         self.fixups.push(Fixup { insn: at, word: self.code.pos() - 1, bb });
         at
-    }
-
-    fn op_with_target(&mut self, op: Opcode, operands: &[u32]) -> u32 {
-        let mut w = operands.to_vec();
-        w.push(0);
-        self.op(op, &w)
     }
 
     /// Records that word `word` of the instruction at `insn` is a branch target to `bb`.
@@ -367,18 +399,21 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// `jmp` to `bb`, unless it is the next block.
     pub fn jump(&mut self, bb: BasicBlock) {
         if Some(bb) != self.next_block {
-            self.op_branch(Opcode::Jmp, &[], bb);
+            let at = self.op(Opcode::Jmp, &[0]);
+            self.fixups.push(Fixup { insn: at, word: at + 1, bb });
         }
     }
 
     /// Records the unwind action of the call-like instruction at `at`
-    /// (design/lowering.md#unwinding).
+    /// (design/lowering.md#unwinding). `Unreachable` records nothing: the instruction can't
+    /// unwind.
     pub fn unwind_entry(&mut self, at: u32, unwind: rustc_middle::mir::UnwindAction) {
         use rustc_middle::mir::UnwindAction;
         match unwind {
+            UnwindAction::Continue => self.cleanup.push((at, UnwindTo::Continue)),
             UnwindAction::Cleanup(bb) => self.cleanup.push((at, UnwindTo::Block(bb))),
             UnwindAction::Terminate(reason) => self.cleanup.push((at, UnwindTo::Terminate(reason))),
-            UnwindAction::Continue | UnwindAction::Unreachable => {}
+            UnwindAction::Unreachable => {}
         }
     }
 

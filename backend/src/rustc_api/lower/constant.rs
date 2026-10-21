@@ -78,7 +78,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 if needs_fixup(self.tcx, alloc_id) {
                     // Copied out of the fixup area through its address.
                     let p = self.temp8();
-                    let at = self.op(Opcode::AddrData, &[p, 0]);
+                    let at = self.op(Opcode::AddrAbs, &[p, 0]);
                     self.relocs.push(CodeReloc::Data { at: at + 2, alloc: alloc_id, offset });
                     return self.copy_val(dst, Loc::Mem { p, k: 0 }, size);
                 }
@@ -126,11 +126,10 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     fn pool_addr_into(&mut self, d: u32, id: AllocId, offset: u64) -> Result<(), NeedsNative> {
         self.check_alloc(id)?;
         let offset = u32::try_from(offset).map_err(|_| NeedsNative("constant offset".into()))?;
+        let at = self.op(Opcode::AddrAbs, &[d, 0]);
         if needs_fixup(self.tcx, id) {
-            let at = self.op(Opcode::AddrData, &[d, 0]);
             self.relocs.push(CodeReloc::Data { at: at + 2, alloc: id, offset });
         } else {
-            let at = self.op(Opcode::AddrK, &[d, 0]);
             self.relocs.push(CodeReloc::Const { at: at + 2, alloc: id, offset });
         }
         Ok(())

@@ -121,25 +121,34 @@ pub fn finish_slots(code: &mut [u32], frame_size: u32) {
         let mut pos = at + 1;
         for o in op.info().operands {
             match o.kind {
-                OperandKind::Slot | OperandKind::Deref | OperandKind::Mem => fix(&mut code[pos]),
+                OperandKind::Slot | OperandKind::Mem => fix(&mut code[pos]),
                 OperandKind::List(ElemKind::Word) => {
                     let n = code[pos] as usize;
                     for w in &mut code[pos + 1..pos + 1 + n] {
                         fix(w);
                     }
                 }
-                OperandKind::U32
-                | OperandKind::I32
+                OperandKind::U8
+                | OperandKind::U16
+                | OperandKind::U32
                 | OperandKind::U64
                 | OperandKind::I64
                 | OperandKind::U128
                 | OperandKind::Const
-                | OperandKind::Data
+                | OperandKind::Abs
                 | OperandKind::Sym
                 | OperandKind::Site
                 | OperandKind::Func
                 | OperandKind::Target
-                | OperandKind::List(ElemKind::Target | ElemKind::Case32 | ElemKind::Case64 | ElemKind::Case128) => {}
+                | OperandKind::Neg
+                | OperandKind::List(
+                    ElemKind::Target
+                    | ElemKind::Case8
+                    | ElemKind::Case16
+                    | ElemKind::Case32
+                    | ElemKind::Case64
+                    | ElemKind::Case128,
+                ) => {}
             }
             pos += match o.kind {
                 OperandKind::List(e) => 1 + code[pos] as usize * e.words(),

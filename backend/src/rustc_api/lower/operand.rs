@@ -8,7 +8,7 @@ use rustc_middle::mir::Operand;
 use rustc_middle::ty::layout::TyAndLayout;
 use ryo_bytecode::insn::Opcode;
 
-use super::emit::{Width, opcode, opw};
+use super::emit::{Width, opw};
 use super::place::{Loc, PlaceVal};
 use super::{FnCx, NeedsNative, native};
 
@@ -50,11 +50,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 if size == 0 {
                     return;
                 }
-                match (Width::of_size(u64::from(size)), k) {
-                    (Some(w), 0) => self.op(opcode(&format!("Load{}Z", w.suffix())), &[d, p]),
-                    (Some(w), k) => self.op(opw("Load", w), &[d, p, k as u32]),
-                    (None, 0) => self.op(Opcode::LoadCopyZ, &[d, p, size]),
-                    (None, k) => self.op(Opcode::LoadCopy, &[d, p, k as u32, size]),
+                match Width::of_size(u64::from(size)) {
+                    Some(w) => self.op(opw("Load", w), &[d, p, k as u32]),
+                    None => self.op(Opcode::LoadCopy, &[d, p, k as u32, size]),
                 };
             }
         }
@@ -68,11 +66,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 if size == 0 {
                     return;
                 }
-                match (Width::of_size(u64::from(size)), k) {
-                    (Some(w), 0) => self.op(opcode(&format!("Store{}Z", w.suffix())), &[p, s]),
-                    (Some(w), k) => self.op(opw("Store", w), &[p, k as u32, s]),
-                    (None, 0) => self.op(Opcode::StoreCopyZ, &[p, s, size]),
-                    (None, k) => self.op(Opcode::StoreCopy, &[p, k as u32, s, size]),
+                match Width::of_size(u64::from(size)) {
+                    Some(w) => self.op(opw("Store", w), &[p, k as u32, s]),
+                    None => self.op(Opcode::StoreCopy, &[p, k as u32, s, size]),
                 };
             }
         }

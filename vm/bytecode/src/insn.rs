@@ -8,33 +8,31 @@
 //!
 //! # Encoding
 //!
-//! An instruction is a sequence of little-endian `u32` words. Word 0 holds the opcode in its
-//! low 16 bits; its high 16 bits are the *small immediate* field, which no opcode uses yet
-//! and which must be 0 (reserved for superinstructions and quickening). The operands follow
-//! in the order they are listed, each taking the words of its [`OperandKind`]:
+//! Instruction words are the backend's own form of a function's code: the lowering produces
+//! them, and the x86 encoder ([`crate::asm`]) turns them into machine code, which decodes
+//! back to the same words. An instruction is a sequence of little-endian `u32` words. Word 0
+//! holds the opcode in its low 16 bits; its high 16 bits must be 0. The operands follow in
+//! the order they are listed, each taking the words of its [`OperandKind`]:
 //!
 //! | Kind | Words | Rust type |
 //! |---|---|---|
 //! | `Slot` | 1 | [`Slot`]: signed frame offset |
 //! | `Mem` | 2 | [`Mem`]: `[p + k]`, slot `p` then signed `k` |
-//! | `Deref` | 1 | [`Deref`]: `[p]` |
-//! | `U32` / `I32` | 1 | `u32` / `i32` |
+//! | `U8` / `U16` / `U32` | 1 | `u8` / `u16` / `u32` (the upper bits of the word are 0) |
 //! | `U64` / `I64` | 2 | `u64` / `i64`, low word first |
 //! | `U128` | 4 | `u128`, low word first |
 //! | `Const` | 1 | [`Const`]: constant pool byte offset |
-//! | `Data` | 1 | [`Data`]: byte offset into the image's writable data area |
+//! | `Abs` | 1 | [`Abs`]: a constant pool or data area offset |
 //! | `Sym` | 1 | [`Sym`]: symbol table index |
 //! | `Site` | 1 | [`Site`]: site cache index |
 //! | `Func` | 1 | [`Func`]: function table index |
 //! | `Target` | 1 | [`Target`]: branch target, signed words relative to the instruction start |
+//! | `Neg` | 1 | [`Neg`]: a branch's polarity, 0 or 1 |
 //! | `Targets`, `Words`, `Cases*` | 1 + n·e | a [`List`]: count `n`, then `n` elements of `e` words |
 //!
 //! Instructions without a list operand have a fixed length ([`Opcode::fixed_len`]). The
-//! variable-length ones are `switch.dense`, `switch.sparse`, `island` and `island.catch`;
-//! their lengths follow from their count words ([`insn_len`]).
-//!
-//! Integer immediates of widths 8 and 16 are stored in a full `U32` word (the upper bits are
-//! ignored by the VM); width 64 uses `U64` and width 128 `U128`.
+//! variable-length ones are `switch.dense`, `switch.sparse` and `island`; their lengths
+//! follow from their count words ([`insn_len`]).
 
 use core::fmt;
 use core::marker::PhantomData;
@@ -79,11 +77,6 @@ newtype!(
     Const(u32), Const, "k"
 );
 newtype!(
-    /// A byte offset into the image's writable data area (after the site cache). Displayed as
-    /// `data<off>`.
-    Data(u32), Data, "data"
-);
-newtype!(
     /// A symbol table index. Displayed as `sym<idx>`.
     Sym(u32), Sym, "sym"
 );
@@ -115,27 +108,52 @@ pub struct Mem {
     pub k: i32,
 }
 
-/// Memory operand `[p]`: the pointer in slot `p`.
+/// A byte offset into the image's writable data area (after the site cache). Displayed as
+/// `data<off>`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[repr(transparent)]
+pub struct Data(pub u32);
+
+impl fmt::Display for Data {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "data{}", self.0)
+    }
+}
+
+/// The address `addr.abs` writes: a constant pool allocation, or one in the writable data
+/// area (PE). One word: the offset, with bit 31 set for the data area.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Deref(pub Slot);
+pub enum Abs {
+    Const(Const),
+    Data(Data),
+}
+
+/// Bit 31 of an [`Abs`] word: the data area.
+pub const ABS_DATA: u32 = 1 << 31;
+
+/// A branch's polarity: with `Neg(true)` (`!` after the mnemonic) the branch is taken when
+/// its condition is false.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+pub struct Neg(pub bool);
 
 /// The encoding of an operand. See the [module docs](self).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum OperandKind {
     Slot,
     Mem,
-    Deref,
+    U8,
+    U16,
     U32,
-    I32,
     U64,
     I64,
     U128,
     Const,
-    Data,
+    Abs,
     Sym,
     Site,
     Func,
     Target,
+    Neg,
     /// A count word followed by that many elements of the given kind.
     List(ElemKind),
 }
@@ -147,6 +165,10 @@ pub enum ElemKind {
     Target,
     /// Raw `u32` (1 word): island operands.
     Word,
+    /// [`Case8`] (2 words).
+    Case8,
+    /// [`Case16`] (2 words).
+    Case16,
     /// [`Case32`] (2 words).
     Case32,
     /// [`Case64`] (3 words).
@@ -159,7 +181,7 @@ impl ElemKind {
     pub const fn words(self) -> usize {
         match self {
             ElemKind::Target | ElemKind::Word => 1,
-            ElemKind::Case32 => 2,
+            ElemKind::Case8 | ElemKind::Case16 | ElemKind::Case32 => 2,
             ElemKind::Case64 => 3,
             ElemKind::Case128 => 5,
         }
@@ -171,15 +193,16 @@ impl OperandKind {
     pub const fn words(self) -> Option<usize> {
         Some(match self {
             OperandKind::Slot
-            | OperandKind::Deref
+            | OperandKind::U8
+            | OperandKind::U16
             | OperandKind::U32
-            | OperandKind::I32
             | OperandKind::Const
-            | OperandKind::Data
+            | OperandKind::Abs
             | OperandKind::Sym
             | OperandKind::Site
             | OperandKind::Func
-            | OperandKind::Target => 1,
+            | OperandKind::Target
+            | OperandKind::Neg => 1,
             OperandKind::Mem | OperandKind::U64 | OperandKind::I64 => 2,
             OperandKind::U128 => 4,
             OperandKind::List(_) => return None,
@@ -194,8 +217,10 @@ pub enum DecodeError {
     Truncated,
     /// Word 0's low 16 bits aren't an opcode.
     UnknownOpcode(u16),
-    /// Word 0's small immediate field (high 16 bits) is non-zero.
+    /// Word 0's high 16 bits are non-zero.
     ReservedBits(u32),
+    /// An operand word out of its kind's range (a `U8` above 255, a `Neg` other than 0/1).
+    BadOperand(u32),
 }
 
 impl fmt::Display for DecodeError {
@@ -204,6 +229,7 @@ impl fmt::Display for DecodeError {
             DecodeError::Truncated => f.write_str("truncated instruction"),
             DecodeError::UnknownOpcode(op) => write!(f, "unknown opcode {op:#x}"),
             DecodeError::ReservedBits(w) => write!(f, "reserved bits set in word 0 ({w:#x})"),
+            DecodeError::BadOperand(w) => write!(f, "operand word out of range ({w:#x})"),
         }
     }
 }
@@ -218,11 +244,17 @@ fn take<'a, const N: usize>(w: &'a [u32], pos: &mut usize) -> Result<&'a [u32; N
 /// An operand type: how it is read from and written to instruction words.
 pub trait Operand<'a>: Sized + Copy {
     const KIND: OperandKind;
+    /// Whether the disassembly lists the operand (a [`Neg`] is a suffix of the mnemonic).
+    const LISTED: bool = true;
     /// Reads the operand at `w[*pos..]` and advances `pos`.
     fn read(w: &'a [u32], pos: &mut usize) -> Result<Self, DecodeError>;
     /// Appends the operand's words.
     #[cfg(feature = "alloc")]
     fn write(&self, out: &mut Vec<u32>);
+    /// What the disassembly appends to the mnemonic.
+    fn suffix(&self) -> &'static str {
+        ""
+    }
 }
 
 macro_rules! int_operand {
@@ -251,10 +283,80 @@ macro_rules! int_operand {
     };
 }
 int_operand!(u32, U32, 1);
-int_operand!(i32, I32, 1);
 int_operand!(u64, U64, 2);
 int_operand!(i64, I64, 2);
 int_operand!(u128, U128, 4);
+
+/// The narrow immediates: one word, whose bits above the width must be 0.
+macro_rules! narrow_operand {
+    ($t:ty, $kind:ident) => {
+        impl<'a> Operand<'a> for $t {
+            const KIND: OperandKind = OperandKind::$kind;
+            #[inline]
+            fn read(w: &'a [u32], pos: &mut usize) -> Result<Self, DecodeError> {
+                let v = take::<1>(w, pos)?[0];
+                <$t>::try_from(v).map_err(|_| DecodeError::BadOperand(v))
+            }
+            #[cfg(feature = "alloc")]
+            fn write(&self, out: &mut Vec<u32>) {
+                out.push(u32::from(*self));
+            }
+        }
+    };
+}
+narrow_operand!(u8, U8);
+narrow_operand!(u16, U16);
+
+impl<'a> Operand<'a> for Abs {
+    const KIND: OperandKind = OperandKind::Abs;
+    #[inline]
+    fn read(w: &'a [u32], pos: &mut usize) -> Result<Self, DecodeError> {
+        let v = take::<1>(w, pos)?[0];
+        Ok(if v & ABS_DATA != 0 { Abs::Data(Data(v & !ABS_DATA)) } else { Abs::Const(Const(v)) })
+    }
+    #[cfg(feature = "alloc")]
+    fn write(&self, out: &mut Vec<u32>) {
+        out.push(match self {
+            Abs::Const(k) => k.0,
+            Abs::Data(d) => d.0 | ABS_DATA,
+        });
+    }
+}
+
+impl fmt::Display for Abs {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Abs::Const(k) => fmt::Display::fmt(k, f),
+            Abs::Data(d) => fmt::Display::fmt(d, f),
+        }
+    }
+}
+
+impl<'a> Operand<'a> for Neg {
+    const KIND: OperandKind = OperandKind::Neg;
+    const LISTED: bool = false;
+    #[inline]
+    fn read(w: &'a [u32], pos: &mut usize) -> Result<Self, DecodeError> {
+        match take::<1>(w, pos)?[0] {
+            0 => Ok(Neg(false)),
+            1 => Ok(Neg(true)),
+            v => Err(DecodeError::BadOperand(v)),
+        }
+    }
+    #[cfg(feature = "alloc")]
+    fn write(&self, out: &mut Vec<u32>) {
+        out.push(self.0 as u32);
+    }
+    fn suffix(&self) -> &'static str {
+        if self.0 { "!" } else { "" }
+    }
+}
+
+impl fmt::Display for Neg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.suffix())
+    }
+}
 
 impl<'a> Operand<'a> for Target {
     const KIND: OperandKind = OperandKind::Target;
@@ -282,18 +384,6 @@ impl<'a> Operand<'a> for Mem {
     }
 }
 
-impl<'a> Operand<'a> for Deref {
-    const KIND: OperandKind = OperandKind::Deref;
-    #[inline]
-    fn read(w: &'a [u32], pos: &mut usize) -> Result<Self, DecodeError> {
-        Ok(Deref(Slot(take::<1>(w, pos)?[0] as i32)))
-    }
-    #[cfg(feature = "alloc")]
-    fn write(&self, out: &mut Vec<u32>) {
-        out.push(self.0.0 as u32);
-    }
-}
-
 impl fmt::Display for Mem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.k < 0 {
@@ -301,12 +391,6 @@ impl fmt::Display for Mem {
         } else {
             write!(f, "[{} + {}]", self.p, self.k)
         }
-    }
-}
-
-impl fmt::Display for Deref {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[{}]", self.0)
     }
 }
 
@@ -380,7 +464,15 @@ macro_rules! case_elem {
     };
 }
 case_elem!(
-    /// A `switch.sparse` case for widths 8–32: value word, then target.
+    /// A `switch.sparse.w8` case: value word, then target.
+    Case8, u8, Case8, 1
+);
+case_elem!(
+    /// A `switch.sparse.w16` case: value word, then target.
+    Case16, u16, Case16, 1
+);
+case_elem!(
+    /// A `switch.sparse.w32` case: value word, then target.
     Case32, u32, Case32, 1
 );
 case_elem!(
@@ -484,20 +576,23 @@ impl<'a, T: Elem> Operand<'a> for List<'a, T> {
 macro_rules! op_ty {
     ($lt:lifetime, Slot) => { $crate::insn::Slot };
     ($lt:lifetime, Mem) => { $crate::insn::Mem };
-    ($lt:lifetime, Deref) => { $crate::insn::Deref };
+    ($lt:lifetime, U8) => { u8 };
+    ($lt:lifetime, U16) => { u16 };
     ($lt:lifetime, U32) => { u32 };
-    ($lt:lifetime, I32) => { i32 };
     ($lt:lifetime, U64) => { u64 };
     ($lt:lifetime, I64) => { i64 };
     ($lt:lifetime, U128) => { u128 };
     ($lt:lifetime, Const) => { $crate::insn::Const };
-    ($lt:lifetime, Data) => { $crate::insn::Data };
+    ($lt:lifetime, Abs) => { $crate::insn::Abs };
     ($lt:lifetime, Sym) => { $crate::insn::Sym };
     ($lt:lifetime, Site) => { $crate::insn::Site };
     ($lt:lifetime, Func) => { $crate::insn::Func };
     ($lt:lifetime, Target) => { $crate::insn::Target };
+    ($lt:lifetime, Neg) => { $crate::insn::Neg };
     ($lt:lifetime, Targets) => { $crate::insn::List<$lt, $crate::insn::Target> };
     ($lt:lifetime, Words) => { $crate::insn::List<$lt, u32> };
+    ($lt:lifetime, Cases8) => { $crate::insn::List<$lt, $crate::insn::Case8> };
+    ($lt:lifetime, Cases16) => { $crate::insn::List<$lt, $crate::insn::Case16> };
     ($lt:lifetime, Cases32) => { $crate::insn::List<$lt, $crate::insn::Case32> };
     ($lt:lifetime, Cases64) => { $crate::insn::List<$lt, $crate::insn::Case64> };
     ($lt:lifetime, Cases128) => { $crate::insn::List<$lt, $crate::insn::Case128> };
@@ -514,7 +609,7 @@ pub struct OperandInfo {
 #[derive(Clone, Copy, Debug)]
 pub struct OpInfo {
     pub opcode: Opcode,
-    /// Assembly mnemonic. `[p]` forms share the mnemonic of their `[p + k]` form.
+    /// Assembly mnemonic.
     pub mnemonic: &'static str,
     /// Operands in encoding order (word 1 onwards).
     pub operands: &'static [OperandInfo],
@@ -690,11 +785,14 @@ macro_rules! define_ops {
                 match self {
                     $(Insn::$name { $($field),* } => {
                         f.write_str($mn)?;
+                        $(f.write_str(Operand::suffix($field))?;)*
                         let mut sep = " ";
                         $(
-                            f.write_str(sep)?;
-                            fmt::Display::fmt($field, f)?;
-                            sep = ", ";
+                            if <op_ty!('_, $kind) as Operand<'_>>::LISTED {
+                                f.write_str(sep)?;
+                                fmt::Display::fmt($field, f)?;
+                                sep = ", ";
+                            }
                         )*
                         Ok(())
                     })*
@@ -728,45 +826,6 @@ impl Opcode {
     #[inline]
     pub const fn fixed_len(self) -> Option<usize> {
         self.info().fixed_len
-    }
-}
-
-/// The superinstructions, as `(fused, first, second)` (design/vm.md, "Superinstructions").
-///
-/// `fused` replaces the opcode word of a `first` directly followed by a `second`. It has
-/// exactly `first`'s operands, and the VM runs it as `first` then `second` (the instruction
-/// after it, read with `second`'s operand layout) with one dispatch. `second` keeps its own
-/// opcode, so branches to it, the code layout and every code offset stay valid.
-///
-/// Rules, checked by the tests: `first` is fixed-length and always falls through (no
-/// branches, calls, returns or islands), so it can't be a call whose opcode `ret` reads back
-/// from the return pc; `fused`'s mnemonic is `first+second`.
-pub const SUPERINSTRUCTIONS: &[(Opcode, Opcode, Opcode)] = &[
-    (Opcode::AddImmW64BrCmpLtUW64, Opcode::AddImmW64, Opcode::BrCmpLtUW64),
-    (Opcode::AddImmW32BrCmpLtSW32, Opcode::AddImmW32, Opcode::BrCmpLtSW32),
-    (Opcode::LoadW64BrCmpLeUW64, Opcode::LoadW64, Opcode::BrCmpLeUW64),
-];
-
-impl Opcode {
-    /// The parts `(first, second)` of a superinstruction, or `None` for a plain opcode.
-    pub const fn fused_parts(self) -> Option<(Opcode, Opcode)> {
-        let mut i = 0;
-        while i < SUPERINSTRUCTIONS.len() {
-            let (f, a, b) = SUPERINSTRUCTIONS[i];
-            if f as u16 == self as u16 {
-                return Some((a, b));
-            }
-            i += 1;
-        }
-        None
-    }
-
-    /// The opcode this one executes first: `first` for a superinstruction, else itself.
-    pub const fn first_part(self) -> Opcode {
-        match self.fused_parts() {
-            Some((a, _)) => a,
-            None => self,
-        }
     }
 }
 

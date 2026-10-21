@@ -19,7 +19,7 @@ use rustc_span::Symbol;
 use ryo_bytecode::image::{
     AllocFixup, AllocReloc, AllocTarget, FunctionDef, ImageObject, ImageWriter, SYM_INDIRECT, portal_id,
 };
-use ryo_bytecode::insn::{Const, Data, Opcode, Sym};
+use ryo_bytecode::insn::{ABS_DATA, Const, Data, Opcode, Sym};
 
 use super::lower::{self, CodeReloc, LowerCx, LoweredFn, NeedsNative};
 
@@ -689,9 +689,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         let mut w = ImageWriter::new(local_stable_crate_id(tcx));
         let symbols: Vec<String> = self.vm.iter().map(|v| tcx.symbol_name(v.instance).name.to_owned()).collect();
         let call_f = lower::operand_offset(Opcode::Call, 1);
-        let call_fs = lower::operand_offset(Opcode::Call, 2);
         let tail_f = lower::operand_offset(Opcode::TailCall, 0);
-        let tail_fs = lower::operand_offset(Opcode::TailCall, 1);
         let templates = &tcx.diagnostic_items(self.rt.krate).name_to_id;
         let mut pool = Pool::default();
         for (i, v) in self.vm.iter().enumerate() {
@@ -699,16 +697,8 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             let mut code = l.code.clone();
             for r in &l.relocs {
                 match *r {
-                    CodeReloc::Call { at, callee } => {
-                        let c = self.index[&callee];
-                        code[at as usize + call_f] = c;
-                        code[at as usize + call_fs] = self.vm[c as usize].lowered.frame_size;
-                    }
-                    CodeReloc::TailCall { at, callee } => {
-                        let c = self.index[&callee];
-                        code[at as usize + tail_f] = c;
-                        code[at as usize + tail_fs] = self.vm[c as usize].lowered.frame_size;
-                    }
+                    CodeReloc::Call { at, callee } => code[at as usize + call_f] = self.index[&callee],
+                    CodeReloc::TailCall { at, callee } => code[at as usize + tail_f] = self.index[&callee],
                     CodeReloc::Symbol { at, target } => {
                         pool.roots.function(tcx, target);
                         let flags = super::symbol_flags(tcx, target, super::SymRole::Target);
@@ -742,7 +732,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                         code[at as usize] = pool.bytes(&mut w, bytes, align).0;
                     }
                     CodeReloc::Data { at, alloc, offset } => {
-                        code[at as usize] = pool.data(tcx, &mut w, alloc).0 + offset;
+                        code[at as usize] = (pool.data(tcx, &mut w, alloc).0 + offset) | ABS_DATA;
                     }
                 }
             }
