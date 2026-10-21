@@ -174,6 +174,64 @@ pub fn operands(code: &[u32], at: usize) -> Vec<Opnd> {
     out
 }
 
+/// The instruction-word length of `op` with operands `ops`.
+pub fn word_len<T>(op: Opcode, ops: &[Opnd<T>]) -> usize {
+    1 + op
+        .info()
+        .operands
+        .iter()
+        .zip(ops)
+        .map(|(o, v)| match (o.kind, v) {
+            (OperandKind::List(e), Opnd::Targets(t)) => 1 + t.len() * e.words(),
+            (OperandKind::List(e), Opnd::Words(t)) => 1 + t.len() * e.words(),
+            (OperandKind::List(e), Opnd::Cases(_, t)) => 1 + t.len() * e.words(),
+            (k, _) => k.words().unwrap(),
+        })
+        .sum::<usize>()
+}
+
+/// Appends the instruction words of `op` with operands `ops`, targets relative to the
+/// instruction.
+pub fn push_words(op: Opcode, ops: &[Opnd], words: &mut Vec<u32>) {
+    words.push(op as u32);
+    for (o, info) in ops.iter().zip(op.info().operands) {
+        match o {
+            Opnd::Slot(s) => words.push(*s as u32),
+            Opnd::Mem(a, k) => words.extend([*a as u32, *k as u32]),
+            Opnd::Imm(v) => match info.kind {
+                OperandKind::U64 | OperandKind::I64 => words.extend([*v as u32, (*v >> 32) as u32]),
+                _ => words.push(*v as u32),
+            },
+            Opnd::Imm128(v) => words.extend((0..4).map(|k| (*v >> (32 * k)) as u32)),
+            Opnd::Const(k) => words.push(k.0),
+            Opnd::Data(d) => words.push(d.0 | crate::insn::ABS_DATA),
+            Opnd::Sym(s) => words.push(s.0),
+            Opnd::Site(s) => words.push(s.0),
+            Opnd::Func(f) => words.push(f.0),
+            Opnd::Target(t) => words.push(*t),
+            Opnd::Neg(n) => words.push(*n as u32),
+            Opnd::Targets(ts) => {
+                words.push(ts.len() as u32);
+                words.extend_from_slice(ts);
+            }
+            Opnd::Words(ws) => {
+                words.push(ws.len() as u32);
+                words.extend_from_slice(ws);
+            }
+            Opnd::Cases(vals, ts) => {
+                let OperandKind::List(e) = info.kind else { unreachable!() };
+                words.push(ts.len() as u32);
+                for (v, t) in vals.iter().zip(ts) {
+                    for k in 0..e.words() - 1 {
+                        words.push((*v >> (32 * k)) as u32);
+                    }
+                    words.push(*t);
+                }
+            }
+        }
+    }
+}
+
 /// The element size of a case list's value array in the rodata.
 pub(super) fn case_size(e: ElemKind) -> usize {
     match e {

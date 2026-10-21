@@ -50,64 +50,52 @@ use rustc_middle::ty::layout::TyAndLayout;
 use rustc_middle::ty::{self, GenericArgsRef, Instance, InstanceKind, Ty, TyCtxt, TypingEnv};
 use rustc_span::Symbol;
 use ryo_bytecode::abi::HEADER_SIZE;
-use ryo_bytecode::image::{CATCH, CONTINUE, CleanupEntry};
-use ryo_bytecode::insn::{CodeBuf, Opcode};
+use ryo_bytecode::asm::{self, Asm, InsnId, Label, Opnd, Unwind};
+use ryo_bytecode::insn::{Abs, Const, ElemKind, Func, Opcode, OperandKind, Site, Sym};
 
 pub use self::constant::{is_import, is_tls_shim, vtable_alloc};
 pub use self::sig::{AbiSig, abi_sig};
 use self::emit::{Width, opw};
 use self::frame::{Frame, OUT_END};
 
-/// A lowered function. Code positions are word offsets from the function's start.
+/// A lowered function: its machine code, whose `Func`, `Sym`, `Site`, `Const` and `Data`
+/// references are indices into `relocs` until the merge pass resolves them.
 pub struct LoweredFn<'tcx> {
-    pub code: Vec<u32>,
-    /// Operands the merge pass fills in, once every function's index and symbol is known.
+    pub code: asm::Encoded,
+    /// What the code refers to, resolved by the merge pass once every function's index and
+    /// symbol is known.
     pub relocs: Vec<CodeReloc<'tcx>>,
-    /// Island template instances the code needs.
-    pub islands: Vec<IslandRequest<'tcx>>,
-    /// Cleanup table entries (unsorted): one per call-like instruction that may unwind, with
-    /// its landing pad or [`CONTINUE`].
-    pub cleanup: Vec<CleanupEntry>,
     /// The frame size `F`: locals and the largest outgoing argument block.
     pub frame_size: u32,
     pub arg_size: u32,
     pub ret_size: u32,
 }
 
-/// An operand the merge pass resolves.
+/// Something the code refers to, which the merge pass resolves. The code names it by its
+/// index in [`LoweredFn::relocs`], as the operand of the kind the variant says.
 pub enum CodeReloc<'tcx> {
-    /// The `call` instruction at word `at` calls `callee`, a VM function of this image (one of
-    /// [`LowerCx::vm`]): the merge pass fills in its function index. If `callee` ends up
+    /// A `func` operand (`call`, `tail_call`): `callee`, a VM function of this image (one of
+    /// [`LowerCx::vm`]); the merge pass fills in its function index. If `callee` ends up
     /// native after all, the caller is lowered again.
-    Call { at: u32, callee: Instance<'tcx> },
-    /// The `sym` operand at word `at` refers to `target`'s symbol: its portal if it is a VM
-    /// function (which then gets one), the native definition otherwise (made visible to the
-    /// image if it is internal).
-    Symbol { at: u32, target: Instance<'tcx> },
-    /// The `sym` operand at word `at` refers to the static `def_id` (made visible to the image
-    /// if it is internal).
-    Static { at: u32, def_id: rustc_hir::def_id::DefId },
-    /// The `site` operand at word `at` gets a fresh site cache slot.
-    Site { at: u32 },
-    /// The `k` (or `addr.abs`) operand at word `at` is `offset` bytes into the constant-pool
-    /// copy of `alloc`.
-    Const { at: u32, alloc: AllocId, offset: u32 },
-    /// The `k` operand at word `at` is a constant-pool allocation of these bytes.
-    Bytes { at: u32, bytes: Vec<u8>, align: u32 },
-    /// The `tail_call` instruction at word `at` calls `callee`, as for [`CodeReloc::Call`].
-    TailCall { at: u32, callee: Instance<'tcx> },
-    /// The `addr.abs` operand at word `at` is `offset` bytes into the fixup-area copy of
-    /// `alloc` (PE: an allocation pointing at imports, `constant::needs_fixup`).
-    Data { at: u32, alloc: AllocId, offset: u32 },
-}
-
-/// An island the code calls: the template (by diagnostic item name) and its generic args. The
-/// merge pass deduplicates requests, adds the instances to the native CGU, and fills the
-/// `sym` operand at word `at` with the instance's symbol.
-pub struct IslandRequest<'tcx> {
-    pub at: u32,
-    pub template: Symbol,
-    pub args: GenericArgsRef<'tcx>,
+    Call { callee: Instance<'tcx> },
+    /// A `sym` operand: `target`'s symbol, its portal if it is a VM function (which then gets
+    /// one), the native definition otherwise (made visible to the image if it is internal).
+    Symbol { target: Instance<'tcx> },
+    /// A `sym` operand: the static `def_id` (made visible to the image if it is internal).
+    Static { def_id: rustc_hir::def_id::DefId },
+    /// A `site` operand: a fresh site cache slot.
+    Site,
+    /// A `k` (or `addr.abs`) operand: `offset` bytes into the constant-pool copy of `alloc`.
+    Const { alloc: AllocId, offset: u32 },
+    /// A `k` operand: a constant-pool allocation of these bytes.
+    Bytes { bytes: Vec<u8>, align: u32 },
+    /// An `addr.abs` operand: `offset` bytes into the fixup-area copy of `alloc` (PE: an
+    /// allocation pointing at imports, `constant::needs_fixup`).
+    Data { alloc: AllocId, offset: u32 },
+    /// An `isl` operand: an island the code calls, the template (by diagnostic item name) and
+    /// its generic args. The merge pass deduplicates them, adds the instances to the native
+    /// CGU, and uses the instance's symbol.
+    Island { template: Symbol, args: GenericArgsRef<'tcx> },
 }
 
 /// Why a function stays native.
@@ -123,6 +111,10 @@ pub struct LowerCx<'a, 'tcx> {
     /// The functions assumed to be VM functions of this image. A call of one of them is a
     /// `call`; any other local callee is called through an island.
     pub vm: &'a FxHashSet<Instance<'tcx>>,
+    /// How the machine code is generated.
+    pub mode: asm::Mode,
+    /// `RYO_ASM_VERIFY`: check every function's machine code (`FnCx::verify`).
+    pub verify: bool,
 }
 
 /// Lowers `instance` to bytecode, or says why it must stay native.
@@ -194,13 +186,6 @@ enum UnwindTo {
     Terminate(rustc_middle::mir::UnwindTerminateReason),
 }
 
-/// A pending branch target: word `word` of the instruction at `insn` must branch to `bb`.
-struct Fixup {
-    insn: u32,
-    word: u32,
-    bb: BasicBlock,
-}
-
 /// The per-function lowering state. Each module adds its own `impl` block.
 pub struct FnCx<'a, 'tcx> {
     pub tcx: TyCtxt<'tcx>,
@@ -208,29 +193,35 @@ pub struct FnCx<'a, 'tcx> {
     pub instance: Instance<'tcx>,
     pub body: &'tcx Body<'tcx>,
     pub frame: Frame<'tcx>,
-    pub code: CodeBuf,
+    pub asm: Asm,
     pub relocs: Vec<CodeReloc<'tcx>>,
-    pub islands: Vec<IslandRequest<'tcx>>,
     /// (call-like instruction, where unwinding out of it goes). Instructions without an entry
     /// can't unwind.
-    cleanup: Vec<(u32, UnwindTo)>,
-    fixups: Vec<Fixup>,
+    cleanup: Vec<(InsnId, UnwindTo)>,
+    /// Each block's label.
+    block_labels: Vec<Label>,
+    /// With `RYO_ASM_VERIFY`, what was emitted, to check the machine code against.
+    log: Option<Vec<LogEntry>>,
     /// Largest outgoing argument block of the calls made so far.
     pub max_outgoing: u32,
     arg_size: u32,
     /// The block after the one being lowered, in code order (for fall-through).
     pub next_block: Option<BasicBlock>,
-    /// Code position of each block, once lowered.
-    block_starts: Vec<u32>,
     /// For a `#[track_caller]` function: the slot of its incoming `&'static Location` (the
     /// last field of the argument block, design/lowering.md#caller-location).
     pub caller_location: Option<u32>,
     /// The current block's compare, fused into its terminator (`terminator::FusedCmp`).
     fused: Option<terminator::FusedCmp<'tcx>>,
-    /// Code position of each terminate stub.
-    terminate_at: Vec<(rustc_middle::mir::UnwindTerminateReason, u32)>,
-    /// Code position of each landing pad, by where it goes.
-    pads: Vec<(UnwindTo, u32)>,
+    /// Label of each terminate stub.
+    terminate_at: Vec<(rustc_middle::mir::UnwindTerminateReason, Label)>,
+    /// Label of each landing pad, by where it goes.
+    pads: Vec<(UnwindTo, Label)>,
+}
+
+/// An emitted instruction or label binding, for `RYO_ASM_VERIFY`.
+enum LogEntry {
+    Bind(Label),
+    Insn(Opcode, Vec<Opnd<Label>>),
 }
 
 impl<'a, 'tcx> FnCx<'a, 'tcx> {
@@ -245,21 +236,22 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             let ty = mono(tcx, instance, body.local_decls[local].ty);
             layout_of(tcx, ty)
         })?;
+        let mut asm = Asm::new(cx.mode);
+        let block_labels = (0..body.basic_blocks.len()).map(|_| asm.label()).collect();
         Ok(FnCx {
             tcx,
             cx,
             instance,
             body,
             frame,
-            code: CodeBuf::new(),
+            asm,
             relocs: Vec::new(),
-            islands: Vec::new(),
             cleanup: Vec::new(),
-            fixups: Vec::new(),
+            block_labels,
+            log: cx.verify.then(Vec::new),
             max_outgoing: 0,
             arg_size: sig.block_size,
             next_block: None,
-            block_starts: Vec::new(),
             fused: None,
             terminate_at: Vec::new(),
             pads: Vec::new(),
@@ -274,10 +266,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     fn blocks(&mut self) -> Result<(), NeedsNative> {
         let body = self.body;
         let n = body.basic_blocks.len();
-        let mut starts = vec![u32::MAX; n];
         let uses = terminator::local_uses(body);
         for (bb, data) in body.basic_blocks.iter_enumerated() {
-            starts[bb.as_usize()] = self.code.pos();
+            self.bind(self.block_labels[bb.as_usize()]);
             self.next_block = (bb.as_usize() + 1 < n).then(|| BasicBlock::from_usize(bb.as_usize() + 1));
             self.fused = self.fusable_compare(data, &uses);
             let stmts = &data.statements[..data.statements.len() - usize::from(self.fused.is_some())];
@@ -288,7 +279,6 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             self.frame.reset_temps();
             self.terminator(data.terminator())?;
         }
-        self.block_starts = starts;
         self.terminate_stubs()?;
         self.landing_pads();
         Ok(())
@@ -303,7 +293,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 && !done.contains(&reason)
             {
                 done.push(reason);
-                let at = self.code.pos();
+                let at = self.asm.label();
+                self.bind(at);
                 self.frame.reset_temps();
                 self.next_block = None;
                 self.terminate_call(reason, self.body.source_info(rustc_middle::mir::Location::START).clone())?;
@@ -324,92 +315,199 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             if to == UnwindTo::Continue || self.pads.iter().any(|p| p.0 == to) {
                 continue;
             }
-            let at = self.op(Opcode::Lpad, &[self.frame.exception_slot()]);
-            let jmp = self.op(Opcode::Jmp, &[0]);
+            let at = self.asm.label();
+            self.bind(at);
+            self.op(Opcode::Lpad, &[self.frame.exception_slot()]);
             let target = match to {
-                UnwindTo::Block(bb) => self.block_starts[bb.as_usize()],
+                UnwindTo::Block(bb) => self.block_labels[bb.as_usize()],
                 UnwindTo::Terminate(r) => self.terminate_at.iter().find(|t| t.0 == r).expect("terminate stub").1,
                 UnwindTo::Continue => unreachable!(),
             };
-            self.code.words[jmp as usize + 1] = target.wrapping_sub(jmp);
+            self.emit(Opcode::Jmp, vec![Opnd::Target(target)]);
             self.pads.push((to, at));
+        }
+        for &(id, to) in &self.cleanup {
+            let u = match to {
+                UnwindTo::Continue => Unwind::Continue,
+                UnwindTo::Block(_) => Unwind::Pad { pad: self.pads.iter().find(|p| p.0 == to).expect("landing pad").1, catch: false },
+                // As cg_llvm's terminate pads: a catch-all, so it runs even when nothing up
+                // the stack catches.
+                UnwindTo::Terminate(_) => Unwind::Pad { pad: self.pads.iter().find(|p| p.0 == to).expect("landing pad").1, catch: true },
+            };
+            self.asm.set_unwind(id, u);
         }
     }
 
-    /// Patches branches and unwind targets, turns slots into signed frame offsets.
+    /// Finishes the machine code, now that the frame size is known.
     fn finish(mut self) -> Result<LoweredFn<'tcx>, NeedsNative> {
-        let starts = std::mem::take(&mut self.block_starts);
-        for f in &self.fixups {
-            let target = starts[f.bb.as_usize()];
-            self.code.words[f.word as usize] = target.wrapping_sub(f.insn);
-        }
-        let cleanup = self
-            .cleanup
-            .iter()
-            .map(|&(offset, to)| {
-                let pad = || self.pads.iter().find(|p| p.0 == to).expect("landing pad").1;
-                let target = match to {
-                    UnwindTo::Continue => CONTINUE,
-                    UnwindTo::Block(_) => pad(),
-                    // As cg_llvm's terminate pads: a catch-all, so it runs even when nothing up
-                    // the stack catches.
-                    UnwindTo::Terminate(_) => pad() | CATCH,
-                };
-                CleanupEntry { offset, target }
-            })
-            .collect();
         let frame_size = self.frame.frame_size(self.max_outgoing)?;
-        emit::finish_slots(&mut self.code.words, frame_size);
+        let log = self.log.take();
+        let code = std::mem::replace(&mut self.asm, Asm::new(self.cx.mode))
+            .finish(frame_size, |s| frame::frame_offset(s, frame_size) as u32);
+        if let Some(log) = log {
+            self.verify(&log, &code, frame_size);
+        }
         let ret = self.frame.locals[rustc_middle::mir::RETURN_PLACE];
         Ok(LoweredFn {
-            code: self.code.words,
+            code,
             relocs: self.relocs,
-            islands: self.islands,
-            cleanup,
             frame_size,
             arg_size: self.arg_size,
             ret_size: ret.layout.size.bytes() as u32,
         })
     }
 
+    /// `RYO_ASM_VERIFY`: decodes the machine code and checks that it gives back the
+    /// instructions emitted (as instruction words), the frame size and the unwind actions, and
+    /// that the LSDA reads back.
+    fn verify(&self, log: &[LogEntry], code: &asm::Encoded, frame_size: u32) {
+        // Word positions of the instructions and labels.
+        let mut label_at = Vec::new();
+        let mut insn_at = Vec::new();
+        let mut w = 0u32;
+        for e in log {
+            match e {
+                LogEntry::Bind(l) => {
+                    if label_at.len() <= l.0 as usize {
+                        label_at.resize(l.0 as usize + 1, u32::MAX);
+                    }
+                    label_at[l.0 as usize] = w;
+                }
+                LogEntry::Insn(op, ops) => {
+                    insn_at.push(w);
+                    w += asm::word_len(*op, ops) as u32;
+                }
+            }
+        }
+        let mut words = Vec::with_capacity(w as usize);
+        for e in log {
+            if let LogEntry::Insn(op, ops) = e {
+                let at = words.len() as u32;
+                let ops: Vec<Opnd> = ops
+                    .iter()
+                    .map(|o| o.clone().map_targets(|l| Ok::<_, ()>(label_at[l.0 as usize].wrapping_sub(at))).unwrap())
+                    .collect();
+                asm::push_words(*op, &ops, &mut words);
+            }
+        }
+        emit::finish_slots(&mut words, frame_size);
+        let mut cleanup: Vec<ryo_bytecode::image::CleanupEntry> = self
+            .cleanup
+            .iter()
+            .map(|&(id, to)| {
+                let pad = |catch: bool| {
+                    let l = self.pads.iter().find(|p| p.0 == to).expect("landing pad").1;
+                    label_at[l.0 as usize] | if catch { ryo_bytecode::image::CATCH } else { 0 }
+                };
+                let target = match to {
+                    UnwindTo::Continue => ryo_bytecode::image::CONTINUE,
+                    UnwindTo::Block(_) => pad(false),
+                    UnwindTo::Terminate(_) => pad(true),
+                };
+                ryo_bytecode::image::CleanupEntry { offset: insn_at[id.0 as usize], target }
+            })
+            .collect();
+        cleanup.sort();
+        let name = no_trim(|| self.instance.to_string());
+        let fail = |what: String| -> ! {
+            self.tcx.dcx().fatal(format!("ryo: RYO_ASM_VERIFY: {name}: {what}\n{}", ryo_bytecode::insn::Disasm(&words)))
+        };
+        let sites = asm::lsda::parse(&asm::lsda::write(&code.call_sites));
+        if sites.as_deref() != Some(&code.call_sites[..]) {
+            fail(format!("LSDA call sites read back as {sites:?}"));
+        }
+        match asm::decode(&code.code, &code.relocs, &code.rodata, &code.call_sites, self.cx.mode) {
+            Err(e) => fail(format!("doesn't decode: {e:?}")),
+            Ok(d) => {
+                if d.words != words {
+                    fail(format!("decodes as\n{}", ryo_bytecode::insn::Disasm(&d.words)));
+                }
+                if d.frame_size != frame_size || d.cleanup != cleanup {
+                    fail(format!("frame size {frame_size} / cleanup {cleanup:?} decode as {} / {:?}", d.frame_size, d.cleanup));
+                }
+            }
+        }
+    }
+
     // ---- emission ----
 
-    /// Emits a fixed-length instruction from its operand words; returns its position.
-    pub fn op(&mut self, op: Opcode, operands: &[u32]) -> u32 {
-        debug_assert_eq!(op.fixed_len(), Some(1 + operands.len()), "{op:?}");
-        let at = self.code.pos();
-        self.code.words.push(op as u32);
-        self.code.words.extend_from_slice(operands);
-        at
+    /// Emits an instruction.
+    pub fn emit(&mut self, op: Opcode, ops: Vec<Opnd<Label>>) -> InsnId {
+        let id = self.asm.insn(op, &ops);
+        if let Some(log) = &mut self.log {
+            log.push(LogEntry::Insn(op, ops));
+        }
+        id
+    }
+
+    /// Binds `l` to the current position.
+    pub fn bind(&mut self, l: Label) {
+        self.asm.bind(l);
+        if let Some(log) = &mut self.log {
+            log.push(LogEntry::Bind(l));
+        }
+    }
+
+    /// Emits an instruction without branch targets from its operand words, in the
+    /// instruction-word encoding of each operand kind (`sym`, `func`, `site`, `k` operands:
+    /// indices into [`FnCx::relocs`]).
+    pub fn op(&mut self, op: Opcode, operands: &[u32]) -> InsnId {
+        let ops = opnds(op, operands);
+        self.emit(op, ops)
     }
 
     /// Emits a branch to `bb`: an instruction whose last operands are its polarity and target.
     /// With `neg`, it branches when its condition is false.
-    pub fn op_branch(&mut self, op: Opcode, operands: &[u32], neg: bool, bb: BasicBlock) -> u32 {
-        let mut w = operands.to_vec();
-        w.extend([u32::from(neg), 0]);
-        let at = self.op(op, &w);
-        self.fixups.push(Fixup { insn: at, word: self.code.pos() - 1, bb });
-        at
+    pub fn op_branch(&mut self, op: Opcode, operands: &[u32], neg: bool, bb: BasicBlock) -> InsnId {
+        let mut ops = opnds(op, operands);
+        ops.push(Opnd::Neg(neg));
+        ops.push(Opnd::Target(self.block_labels[bb.as_usize()]));
+        self.emit(op, ops)
     }
 
-    /// Records that word `word` of the instruction at `insn` is a branch target to `bb`.
-    pub fn target_fixup(&mut self, insn: u32, word: u32, bb: BasicBlock) {
-        self.fixups.push(Fixup { insn, word, bb });
+    /// `bb`'s label.
+    pub fn block_label(&self, bb: BasicBlock) -> Label {
+        self.block_labels[bb.as_usize()]
+    }
+
+    /// Adds a reference for the merge pass to resolve; returns its index, the operand value
+    /// that names it.
+    pub fn reloc(&mut self, r: CodeReloc<'tcx>) -> u32 {
+        self.relocs.push(r);
+        self.relocs.len() as u32 - 1
+    }
+
+    /// Whether a `sym` operand naming `r` (a [`CodeReloc::Symbol`] or [`CodeReloc::Static`])
+    /// loads through an indirect slot (PE imports, design/platforms.md): then the
+    /// instruction takes its `.ind` form.
+    pub fn sym_indirect(&self, r: &CodeReloc<'tcx>) -> bool {
+        let flags = match *r {
+            CodeReloc::Symbol { target } => super::symbol_flags(self.tcx, target, super::SymRole::Target),
+            CodeReloc::Static { def_id } => super::static_symbol_flags(self.tcx, def_id),
+            _ => unreachable!("not a symbol"),
+        };
+        flags & ryo_bytecode::image::SYM_INDIRECT != 0
+    }
+
+    /// `addr.sym d, sym` of `r` (a [`CodeReloc::Symbol`] or [`CodeReloc::Static`]), or
+    /// `addr.sym.ind` for an indirect slot.
+    pub fn addr_sym(&mut self, d: u32, r: CodeReloc<'tcx>) {
+        let op = if self.sym_indirect(&r) { Opcode::AddrSymInd } else { Opcode::AddrSym };
+        let s = self.reloc(r);
+        self.op(op, &[d, s]);
     }
 
     /// `jmp` to `bb`, unless it is the next block.
     pub fn jump(&mut self, bb: BasicBlock) {
         if Some(bb) != self.next_block {
-            let at = self.op(Opcode::Jmp, &[0]);
-            self.fixups.push(Fixup { insn: at, word: at + 1, bb });
+            self.emit(Opcode::Jmp, vec![Opnd::Target(self.block_labels[bb.as_usize()])]);
         }
     }
 
-    /// Records the unwind action of the call-like instruction at `at`
+    /// Records the unwind action of the call-like instruction `at`
     /// (design/lowering.md#unwinding). `Unreachable` records nothing: the instruction can't
     /// unwind.
-    pub fn unwind_entry(&mut self, at: u32, unwind: rustc_middle::mir::UnwindAction) {
+    pub fn unwind_entry(&mut self, at: InsnId, unwind: rustc_middle::mir::UnwindAction) {
         use rustc_middle::mir::UnwindAction;
         match unwind {
             UnwindAction::Continue => self.cleanup.push((at, UnwindTo::Continue)),
@@ -501,9 +599,42 @@ fn layout_error(e: &ty::layout::LayoutError<'_>) -> NeedsNative {
     NeedsNative(no_trim(|| format!("layout: {e:?}")))
 }
 
-/// Word offset of operand `i` within an instruction of opcode `op`.
-pub fn operand_offset(op: Opcode, i: usize) -> usize {
-    op.info().operand_offset(i).expect("operand after a list")
+/// The operands of `op` from their instruction words, up to the first branch target (which
+/// the callers add as labels). A `Words` list takes the rest of `w`.
+fn opnds(op: Opcode, w: &[u32]) -> Vec<Opnd<Label>> {
+    let mut out = Vec::with_capacity(op.info().operands.len());
+    let mut pos = 0;
+    for o in op.info().operands {
+        if pos == w.len() && matches!(o.kind, OperandKind::Neg | OperandKind::Target) {
+            break;
+        }
+        let wide = |n: usize| (0..n).fold(0u128, |v, i| v | (w[pos + i] as u128) << (32 * i));
+        out.push(match o.kind {
+            OperandKind::Slot => Opnd::Slot(w[pos] as i32),
+            OperandKind::Mem => Opnd::Mem(w[pos] as i32, w[pos + 1] as i32),
+            OperandKind::U8 | OperandKind::U16 | OperandKind::U32 => Opnd::Imm(w[pos] as u64),
+            OperandKind::U64 | OperandKind::I64 => Opnd::Imm(wide(2) as u64),
+            OperandKind::U128 => Opnd::Imm128(wide(4)),
+            OperandKind::Const => Opnd::Const(Const(w[pos])),
+            OperandKind::Abs => match Abs::from_word(w[pos]) {
+                Abs::Const(k) => Opnd::Const(k),
+                Abs::Data(d) => Opnd::Data(d),
+            },
+            OperandKind::Sym => Opnd::Sym(Sym(w[pos])),
+            OperandKind::Site => Opnd::Site(Site(w[pos])),
+            OperandKind::Func => Opnd::Func(Func(w[pos])),
+            OperandKind::Neg => Opnd::Neg(w[pos] != 0),
+            OperandKind::List(ElemKind::Word) => {
+                out.push(Opnd::Words(w[pos..].to_vec()));
+                pos = w.len();
+                continue;
+            }
+            OperandKind::Target | OperandKind::List(_) => panic!("ryo lowering: {op:?} takes labels"),
+        });
+        pos += o.kind.words().unwrap();
+    }
+    debug_assert_eq!(pos, w.len(), "{op:?}");
+    out
 }
 
 fn mono<'tcx, T>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>, v: T) -> T

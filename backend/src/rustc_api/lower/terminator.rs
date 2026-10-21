@@ -14,6 +14,7 @@ use rustc_middle::mir::{
     StatementKind, SwitchTargets, Terminator, TerminatorKind, UnwindAction, UnwindTerminateReason,
 };
 use rustc_middle::ty::{self, Instance, Ty};
+use ryo_bytecode::asm::Opnd;
 use ryo_bytecode::insn::Opcode;
 
 use super::call::{ArgSrc, CallCont};
@@ -225,18 +226,12 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         cases.sort_by_key(|&(v, _)| v);
         let (lo, hi) = (cases[0].0, cases[cases.len() - 1].0);
         let span = (hi - lo).saturating_add(1);
-        let at = self.code.pos();
+        let base = |v: u128| if w == Width::W128 { Opnd::Imm128(v) } else { Opnd::Imm(v as u64) };
+        let default = self.block_label(otherwise);
         if span <= DENSE_MAX_SPAN && span <= 2 * cases.len() as u128 + 4 {
-            let op = opw("SwitchDense", w);
-            self.code.words.extend([op as u32, s]);
-            self.code.words.extend(imm_words(w, lo));
-            let default_word = self.code.pos();
-            self.code.words.extend([0, span as u32]);
-            self.target_fixup(at, default_word, otherwise);
             let mut next = cases.iter().peekable();
+            let mut targets = Vec::with_capacity(span as usize);
             for v in lo..=hi {
-                let word = self.code.pos();
-                self.code.words.push(0);
                 let bb = match next.peek() {
                     Some(&&(cv, bb)) if cv == v => {
                         next.next();
@@ -244,20 +239,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     }
                     _ => otherwise,
                 };
-                self.target_fixup(at, word, bb);
+                targets.push(self.block_label(bb));
             }
+            self.emit(opw("SwitchDense", w), vec![Opnd::Slot(s as i32), base(lo), Opnd::Target(default), Opnd::Targets(targets)]);
         } else {
-            let op = opw("SwitchSparse", w);
-            self.code.words.extend([op as u32, s]);
-            let default_word = self.code.pos();
-            self.code.words.extend([0, cases.len() as u32]);
-            self.target_fixup(at, default_word, otherwise);
-            for &(v, bb) in &cases {
-                self.code.words.extend(imm_words(w, v));
-                let word = self.code.pos();
-                self.code.words.push(0);
-                self.target_fixup(at, word, bb);
-            }
+            let vals = cases.iter().map(|&(v, _)| v).collect();
+            let targets = cases.iter().map(|&(_, bb)| self.block_label(bb)).collect();
+            self.emit(opw("SwitchSparse", w), vec![Opnd::Slot(s as i32), Opnd::Target(default), Opnd::Cases(vals, targets)]);
         }
         Ok(())
     }

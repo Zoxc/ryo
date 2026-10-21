@@ -5,11 +5,11 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
-use super::encode::{CallSite, Opnd, PROBE_FROM, Ref, RegVal, Reloc, case_size};
+use super::encode::{CallSite, Opnd, PROBE_FROM, Ref, RegVal, Reloc, case_size, push_words, word_len};
 use super::x86::{ARGS, BadItem, Cond, Cursor, Item, Reg, island_args};
 use super::{Mode, has_handler, layout};
 use crate::image::{CATCH, CONTINUE, CleanupEntry, op_may_unwind};
-use crate::insn::{ABS_DATA, ElemKind, Opcode, OperandKind, Shape};
+use crate::insn::{ElemKind, Opcode, OperandKind, Shape};
 
 /// A function decoded from machine code.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -158,64 +158,14 @@ pub fn decode(code: &[u8], relocs: &[Reloc], rodata: &[u8], call_sites: &[CallSi
     // Words.
     let mut words = Vec::with_capacity(w as usize);
     for (i, p) in protos.iter().enumerate() {
-        let rel = |b: u32| -> Result<u32, AsmError> { Ok(wpos[index(p.pos, b)?].wrapping_sub(wpos[i])) };
-        words.push(p.op as u32);
-        for (o, info) in p.ops.iter().zip(p.op.info().operands) {
-            match o {
-                Opnd::Slot(s) => words.push(*s as u32),
-                Opnd::Mem(a, k) => words.extend([*a as u32, *k as u32]),
-                Opnd::Imm(v) => match info.kind {
-                    OperandKind::U64 | OperandKind::I64 => words.extend([*v as u32, (*v >> 32) as u32]),
-                    _ => words.push(*v as u32),
-                },
-                Opnd::Imm128(v) => words.extend((0..4).map(|k| (*v >> (32 * k)) as u32)),
-                Opnd::Const(k) => words.push(k.0),
-                Opnd::Data(d) => words.push(d.0 | ABS_DATA),
-                Opnd::Sym(s) => words.push(s.0),
-                Opnd::Site(s) => words.push(s.0),
-                Opnd::Func(f) => words.push(f.0),
-                Opnd::Target(t) => words.push(rel(*t)?),
-                Opnd::Neg(n) => words.push(*n as u32),
-                Opnd::Targets(ts) => {
-                    words.push(ts.len() as u32);
-                    for t in ts {
-                        words.push(rel(*t)?);
-                    }
-                }
-                Opnd::Words(ws) => {
-                    words.push(ws.len() as u32);
-                    words.extend_from_slice(ws);
-                }
-                Opnd::Cases(vals, ts) => {
-                    let OperandKind::List(e) = info.kind else { unreachable!() };
-                    words.push(ts.len() as u32);
-                    for (v, t) in vals.iter().zip(ts) {
-                        for k in 0..e.words() - 1 {
-                            words.push((*v >> (32 * k)) as u32);
-                        }
-                        words.push(rel(*t)?);
-                    }
-                }
-            }
-        }
+        let ops = p
+            .ops
+            .iter()
+            .map(|o| o.clone().map_targets(|b| Ok::<_, AsmError>(wpos[index(p.pos, b)?].wrapping_sub(wpos[i]))))
+            .collect::<Result<Vec<_>, _>>()?;
+        push_words(p.op, &ops, &mut words);
     }
     Ok(Decoded { words, frame_size, cleanup })
-}
-
-/// The instruction-word length of `op` with operands `ops`.
-fn word_len(op: Opcode, ops: &[Opnd]) -> usize {
-    1 + op
-        .info()
-        .operands
-        .iter()
-        .zip(ops)
-        .map(|(o, v)| match (o.kind, v) {
-            (OperandKind::List(e), Opnd::Targets(t)) => 1 + t.len() * e.words(),
-            (OperandKind::List(e), Opnd::Words(t)) => 1 + t.len() * e.words(),
-            (OperandKind::List(e), Opnd::Cases(_, t)) => 1 + t.len() * e.words(),
-            (k, _) => k.words().unwrap(),
-        })
-        .sum::<usize>()
 }
 
 fn read_u32(ro: &[u8], at: u32) -> Option<u32> {

@@ -241,17 +241,19 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let block = Self::out(0);
         match target {
             Target::Vm(callee) => {
-                let at = self.op(Opcode::Call, &[d, 0]);
-                self.relocs.push(CodeReloc::Call { at, callee });
+                let f = self.reloc(CodeReloc::Call { callee });
+                let at = self.op(Opcode::Call, &[d, f]);
                 self.unwind_entry(at, cont.unwind);
             }
             Target::Ext(callee) => {
                 let island = self.call_ptr_island(sig)?;
                 let f = self.temp8();
-                let at = self.op(Opcode::CallExt, &[d, 0, 0, 0, f]);
-                self.relocs.push(CodeReloc::Symbol { at: at + 2, target: callee });
-                self.relocs.push(CodeReloc::Site { at: at + 3 });
-                self.islands.push(super::IslandRequest { at: at + 4, template: island.0, args: island.1 });
+                let r = CodeReloc::Symbol { target: callee };
+                let op = if self.sym_indirect(&r) { Opcode::CallExtInd } else { Opcode::CallExt };
+                let sym = self.reloc(r);
+                let site = self.reloc(CodeReloc::Site);
+                let isl = self.reloc(CodeReloc::Island { template: island.0, args: island.1 });
+                let at = self.op(op, &[d, sym, site, isl, f]);
                 self.unwind_entry(at, cont.unwind);
             }
             Target::Template(fty) => {
@@ -265,9 +267,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             }
             Target::Ptr(p, CallConv::Rust) => {
                 let island = self.call_ptr_island(sig)?;
-                let at = self.op(Opcode::CallInd, &[d, p, 0, 0]);
-                self.relocs.push(CodeReloc::Site { at: at + 3 });
-                self.islands.push(super::IslandRequest { at: at + 4, template: island.0, args: island.1 });
+                let site = self.reloc(CodeReloc::Site);
+                let isl = self.reloc(CodeReloc::Island { template: island.0, args: island.1 });
+                let at = self.op(Opcode::CallInd, &[d, p, site, isl]);
                 self.unwind_entry(at, cont.unwind);
             }
             Target::Ptr(p, CallConv::C) => {
@@ -281,8 +283,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// `addr.sym` of `callee`'s symbol into a temporary.
     fn sym_addr(&mut self, callee: Instance<'tcx>) -> u32 {
         let p = self.temp8();
-        let at = self.op(Opcode::AddrSym, &[p, 0]);
-        self.relocs.push(CodeReloc::Symbol { at: at + 2, target: callee });
+        self.addr_sym(p, CodeReloc::Symbol { target: callee });
         p
     }
 
@@ -331,8 +332,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         self.write_args(&sig, &srcs, source_info)?;
         match target {
             Target::Vm(callee) => {
-                let at = self.op(Opcode::TailCall, &[0, sig.block_size]);
-                self.relocs.push(CodeReloc::TailCall { at, callee });
+                let f = self.reloc(CodeReloc::Call { callee });
+                self.op(Opcode::TailCall, &[f, sig.block_size]);
             }
             Target::Ext(callee) | Target::Sym(callee, _) => {
                 let p = self.sym_addr(callee);
@@ -348,9 +349,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let island = self.call_ptr_island(sig)?;
         let ret = self.frame.locals[rustc_middle::mir::RETURN_PLACE];
         let len = ret.layout.size.bytes() as u32;
-        let at = self.op(Opcode::TailCallInd, &[p, 0, 0, sig.block_size, ret.off, len]);
-        self.relocs.push(CodeReloc::Site { at: at + 2 });
-        self.islands.push(super::IslandRequest { at: at + 3, template: island.0, args: island.1 });
+        let site = self.reloc(CodeReloc::Site);
+        let isl = self.reloc(CodeReloc::Island { template: island.0, args: island.1 });
+        let at = self.op(Opcode::TailCallInd, &[p, site, isl, sig.block_size, ret.off, len]);
         // A tail call keeps no frame to land in: unwinding continues in the caller.
         self.unwind_entry(at, UnwindAction::Continue);
         Ok(())
@@ -530,8 +531,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             let sig = abi_sig(tcx, glue)?;
             self.write_args(&sig, &[ArgSrc::Slot(ptr)], self.body.source_info(rustc_middle::mir::Location::START).clone())?;
             let d = self.frame.temp(0, 1);
-            let at = self.op(Opcode::Call, &[d, 0]);
-            self.relocs.push(CodeReloc::Call { at, callee: glue });
+            let f = self.reloc(CodeReloc::Call { callee: glue });
+            let at = self.op(Opcode::Call, &[d, f]);
             self.unwind_entry(at, unwind);
         } else {
             self.island(templates::DROP_IN_PLACE, &[ty.into()], &[ptr], Some(unwind));
@@ -558,9 +559,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         self.write_args(&sig, &[ArgSrc::Slot(ptr)], self.body.source_info(rustc_middle::mir::Location::START).clone())?;
         let island = self.call_ptr_island(&sig)?;
         let d = self.frame.temp(0, 1);
-        let at = self.op(Opcode::CallInd, &[d, f, 0, 0]);
-        self.relocs.push(CodeReloc::Site { at: at + 3 });
-        self.islands.push(super::IslandRequest { at: at + 4, template: island.0, args: island.1 });
+        let site = self.reloc(CodeReloc::Site);
+        let isl = self.reloc(CodeReloc::Island { template: island.0, args: island.1 });
+        let at = self.op(Opcode::CallInd, &[d, f, site, isl]);
         self.unwind_entry(at, unwind);
         self.jump(target);
         Ok(())

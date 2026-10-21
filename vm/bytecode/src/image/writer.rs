@@ -503,14 +503,13 @@ impl ImageWriter {
         }
     }
 
-    /// Validates everything and lays out the image, with the functions' machine code
-    /// already encoded (`encoded[i]` from [`asm::encode`] of function `i`), after
-    /// [`prepare`](Self::prepare).
+    /// Lays out the image with the functions' machine code already built (`encoded[i]` of
+    /// function `i`, from [`asm::Asm`] or [`asm::encode`]), after [`prepare`](Self::prepare).
+    /// Instruction words, if any, aren't looked at: [`finish`](Self::finish) validates them.
     pub fn finish_encoded(mut self, encoded: Vec<Encoded>) -> Result<ImageObject, WriteError> {
         assert_eq!(encoded.len(), self.functions.len());
         let pe = self.pe.expect("prepare before finish_encoded");
         let nsyms = self.symbols.len() as u32;
-        let lim = self.limits();
 
         // Function table and text.
         let mut funcs = Vec::with_capacity(self.functions.len());
@@ -521,7 +520,6 @@ impl ImageWriter {
         let mut code_refs: Vec<(u32, Ref, u32)> = Vec::new();
         for (i, f) in self.functions.iter_mut().enumerate() {
             let i = i as u32;
-            check_function(i, f, &lim, &self.symbols)?;
             let portal = match f.portal {
                 Some(Sym(s)) if s < nsyms && self.symbols[s as usize].flags & SYM_INDIRECT == 0 => s,
                 Some(_) => return Err(WriteError::Portal(i)),

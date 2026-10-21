@@ -7,9 +7,10 @@
 use rustc_middle::mir::UnwindAction;
 use rustc_middle::ty::GenericArg;
 use rustc_span::Symbol;
-use ryo_bytecode::insn::Opcode;
+use ryo_bytecode::asm::{InsnId, Opnd};
+use ryo_bytecode::insn::{Opcode, Sym};
 
-use super::{FnCx, IslandRequest};
+use super::{CodeReloc, FnCx};
 
 /// Template diagnostic item names (`vm/rt/src/island.rs`).
 pub mod templates {
@@ -65,11 +66,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         args: &[GenericArg<'tcx>],
         ops: &[u32],
         unwind: Option<UnwindAction>,
-    ) -> u32 {
-        let at = self.code.pos();
-        self.code.words.extend([Opcode::Island as u32, 0, ops.len() as u32]);
-        self.code.words.extend_from_slice(ops);
-        self.islands.push(IslandRequest { at: at + 1, template: Symbol::intern(template), args: self.tcx.mk_args(args) });
+    ) -> InsnId {
+        let isl = self.reloc(CodeReloc::Island { template: Symbol::intern(template), args: self.tcx.mk_args(args) });
+        let at = self.emit(Opcode::Island, vec![Opnd::Sym(Sym(isl)), Opnd::Words(ops.to_vec())]);
         if let Some(u) = unwind {
             self.unwind_entry(at, u);
         }

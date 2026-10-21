@@ -5,7 +5,6 @@ use rustc_middle::mir::{CastKind, Operand};
 use rustc_middle::ty::adjustment::PointerCoercion;
 use rustc_middle::ty::layout::TyAndLayout;
 use rustc_middle::ty::{self, FloatTy, Instance, Ty, TypingEnv};
-use ryo_bytecode::insn::Opcode;
 
 use super::emit::{FloatWidth, Width, opcode};
 use super::place::{Loc, PlaceVal};
@@ -136,8 +135,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// `addr.sym` of `instance` (its portal if it is a VM function).
     fn fn_addr_into(&mut self, dst: PlaceVal<'tcx>, instance: Instance<'tcx>) -> Result<(), NeedsNative> {
         self.with_place_slot(dst, |fx, d| {
-            let at = fx.op(Opcode::AddrSym, &[d, 0]);
-            fx.relocs.push(CodeReloc::Symbol { at: at + 2, target: instance });
+            fx.addr_sym(d, CodeReloc::Symbol { target: instance });
             Ok(())
         })
     }

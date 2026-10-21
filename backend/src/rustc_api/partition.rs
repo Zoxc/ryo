@@ -19,8 +19,8 @@ use rustc_span::Symbol;
 use ryo_bytecode::image::{
     AllocFixup, AllocReloc, AllocTarget, FunctionDef, ImageObject, ImageWriter, SYM_INDIRECT, portal_id,
 };
-use ryo_bytecode::asm;
-use ryo_bytecode::insn::{ABS_DATA, Const, Data, Opcode, Sym};
+use ryo_bytecode::asm::{self, Ref};
+use ryo_bytecode::insn::{Const, Data, Func, Site, Sym};
 
 use crate::objfile;
 
@@ -297,7 +297,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         candidates.sort_by_cached_key(|(i, _)| tcx.symbol_name(*i).name.to_owned());
         let (mut ok, failed) = {
             let _t = tcx.prof.generic_activity("ryo_lower");
-            lower_all(tcx, &candidates)
+            lower_all(tcx, &candidates, asm_mode(tcx, self.rt))
         };
         if stats >= 2 {
             for (instance, why) in &failed {
@@ -332,8 +332,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                     CodeReloc::Static { def_id, .. } => image_refs.push(MonoItem::Static(def_id)),
                     CodeReloc::Const { alloc, .. } => alloc_refs(tcx, alloc, &mut seen_allocs, &mut image_refs),
                     CodeReloc::Data { alloc, .. } => alloc_refs(tcx, alloc, &mut seen_allocs, &mut image_refs),
-                    CodeReloc::Call { .. } | CodeReloc::Site { .. } | CodeReloc::Bytes { .. } => {}
-                    CodeReloc::TailCall { .. } => {}
+                    CodeReloc::Call { .. } | CodeReloc::Site | CodeReloc::Bytes { .. } | CodeReloc::Island { .. } => {}
                 }
             }
         }
@@ -441,15 +440,18 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         let mut with_islands = 0;
         let mut total = 0;
         for v in &self.vm {
-            let n = v.lowered.islands.len();
+            let mut n = 0;
+            let mut seen = FxHashSet::default();
+            for r in &v.lowered.relocs {
+                if let CodeReloc::Island { template, .. } = *r {
+                    n += 1;
+                    let e = by_template.entry(template).or_default();
+                    e.0 += 1;
+                    e.1 += usize::from(seen.insert(template));
+                }
+            }
             total += n;
             with_islands += usize::from(n > 0);
-            let mut seen = FxHashSet::default();
-            for r in &v.lowered.islands {
-                let e = by_template.entry(r.template).or_default();
-                e.0 += 1;
-                e.1 += usize::from(seen.insert(r.template));
-            }
         }
         let per_fn = if self.vm.is_empty() { 0.0 } else { total as f64 / self.vm.len() as f64 };
         eprintln!(
@@ -623,11 +625,12 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         let templates = &tcx.diagnostic_items(self.rt.krate).name_to_id;
         let mut new = Vec::new();
         for v in &self.vm {
-            for r in &v.lowered.islands {
-                let Some(&def_id) = templates.get(&r.template) else {
-                    tcx.dcx().fatal(format!("ryo_rt has no island template `{}`; rebuild with `./y.sh build`", r.template))
+            for r in &v.lowered.relocs {
+                let CodeReloc::Island { template, args } = *r else { continue };
+                let Some(&def_id) = templates.get(&template) else {
+                    tcx.dcx().fatal(format!("ryo_rt has no island template `{template}`; rebuild with `./y.sh build`"))
                 };
-                new.push(Instance::new_raw(def_id, r.args));
+                new.push(Instance::new_raw(def_id, args));
             }
         }
         for island in new {
@@ -719,61 +722,68 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         let tcx = self.tcx;
         let mut w = ImageWriter::new(local_stable_crate_id(tcx));
         let symbols: Vec<String> = self.vm.iter().map(|v| tcx.symbol_name(v.instance).name.to_owned()).collect();
-        let call_f = lower::operand_offset(Opcode::Call, 1);
-        let tail_f = lower::operand_offset(Opcode::TailCall, 0);
         let templates = &tcx.diagnostic_items(self.rt.krate).name_to_id;
         let mut pool = Pool::default();
+        let mode = asm_mode(tcx, self.rt);
+        w.prepare(mode);
+        let mut encoded = Vec::with_capacity(self.vm.len());
         let merge_t = tcx.prof.generic_activity("ryo_merge");
-        for (i, v) in self.vm.iter().enumerate() {
-            let l = &v.lowered;
-            let mut code = l.code.clone();
-            for r in &l.relocs {
-                match *r {
-                    CodeReloc::Call { at, callee } => code[at as usize + call_f] = self.index[&callee],
-                    CodeReloc::TailCall { at, callee } => code[at as usize + tail_f] = self.index[&callee],
-                    CodeReloc::Symbol { at, target } => {
+        for (i, v) in self.vm.iter_mut().enumerate() {
+            let l = &mut v.lowered;
+            // Each reference's value.
+            let vals: Vec<u32> = l
+                .relocs
+                .iter()
+                .map(|r| match *r {
+                    CodeReloc::Call { callee } => self.index[&callee],
+                    CodeReloc::Symbol { target } => {
                         pool.roots.function(tcx, target);
                         let flags = super::symbol_flags(tcx, target, super::SymRole::Target);
                         let Sym(s) = w.symbol(tcx.symbol_name(target).name, flags);
-                        code[at as usize] = s;
-                        if set_indirect(&mut code, at, flags) {
+                        if flags & ryo_bytecode::image::SYM_INDIRECT != 0 {
                             // A direct reference too, so the linker extracts the archive member
                             // defining a statically linked function: `__imp_<sym>` is only
                             // synthesized for symbols that are already defined
                             // (design/platforms.md). Functions in DLLs resolve to their thunk.
                             w.symbol(tcx.symbol_name(target).name, 0);
                         }
+                        s
                     }
-                    CodeReloc::Static { at, def_id } => {
+                    CodeReloc::Static { def_id } => {
                         pool.roots.static_(tcx, def_id);
                         let flags = super::static_symbol_flags(tcx, def_id);
                         let Sym(s) = w.symbol(static_symbol(tcx, def_id).name, flags);
-                        code[at as usize] = s;
-                        if set_indirect(&mut code, at, flags) && super::static_needs_direct_slot(tcx, def_id) {
+                        if flags & ryo_bytecode::image::SYM_INDIRECT != 0 && super::static_needs_direct_slot(tcx, def_id) {
                             // As for functions: lld synthesizes `__imp_<sym>` only for a
                             // defined symbol, and a C static library has no `__imp_` of its own
                             // (design/platforms.md).
                             w.symbol(static_symbol(tcx, def_id).name, 0);
                         }
+                        s
                     }
-                    CodeReloc::Site { at } => code[at as usize] = w.site().0,
-                    CodeReloc::Const { at, alloc, offset } => {
-                        code[at as usize] = pool.intern(tcx, &mut w, alloc).0 + offset;
+                    CodeReloc::Site => w.site().0,
+                    CodeReloc::Const { alloc, offset } => pool.intern(tcx, &mut w, alloc).0 + offset,
+                    CodeReloc::Bytes { ref bytes, align } => pool.bytes(&mut w, bytes, align).0,
+                    CodeReloc::Data { alloc, offset } => pool.data(tcx, &mut w, alloc).0 + offset,
+                    CodeReloc::Island { template, args } => {
+                        let island = Instance::new_raw(templates[&template], args);
+                        pool.roots.function(tcx, island);
+                        let flags = super::symbol_flags(tcx, island, super::SymRole::Island);
+                        w.symbol(tcx.symbol_name(island).name, flags).0
                     }
-                    CodeReloc::Bytes { at, ref bytes, align } => {
-                        code[at as usize] = pool.bytes(&mut w, bytes, align).0;
-                    }
-                    CodeReloc::Data { at, alloc, offset } => {
-                        code[at as usize] = (pool.data(tcx, &mut w, alloc).0 + offset) | ABS_DATA;
-                    }
-                }
-            }
-            for r in &l.islands {
-                let island = Instance::new_raw(templates[&r.template], r.args);
-                pool.roots.function(tcx, island);
-                let flags = super::symbol_flags(tcx, island, super::SymRole::Island);
-                let Sym(s) = w.symbol(tcx.symbol_name(island).name, flags);
-                code[r.at as usize] = s;
+                })
+                .collect();
+            let mut code = std::mem::take(&mut l.code);
+            for r in &mut code.relocs {
+                let v = |i: u32| vals[i as usize];
+                r.to = match r.to {
+                    Ref::Func(Func(i)) => Ref::Func(Func(v(i))),
+                    Ref::Sym(Sym(i)) => Ref::Sym(Sym(v(i))),
+                    Ref::Site(Site(i)) => Ref::Site(Site(v(i))),
+                    Ref::Const(Const(i)) => Ref::Const(Const(v(i))),
+                    Ref::Data(Data(i)) => Ref::Data(Data(v(i))),
+                    to @ (Ref::Handler(_) | Ref::Probe | Ref::Ro(_)) => to,
+                };
             }
             let portal = v.portal.map(|_| {
                 pool.roots.text(&symbols[i]);
@@ -782,31 +792,16 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             w.add_function(FunctionDef {
                 // Not the portal's symbol, which the image's relocations name.
                 name: format!("{}.vm", symbols[i]),
-                code,
+                code: Vec::new(),
                 frame_size: l.frame_size,
                 arg_size: l.arg_size,
                 ret_size: l.ret_size,
-                cleanup: l.cleanup.clone(),
+                cleanup: Vec::new(),
                 portal,
             });
+            encoded.push(code);
         }
         drop(merge_t);
-        // The machine code, function by function in parallel (design/backend.md#pipeline).
-        let encode_t = tcx.prof.generic_activity("ryo_encode");
-        let mode = asm_mode(tcx, self.rt);
-        w.prepare(mode);
-        let verify = std::env::var_os("RYO_ASM_VERIFY").is_some_and(|v| v != "0");
-        let encoded: Vec<asm::Encoded> = rustc_data_structures::sync::par_map(w.functions().iter().enumerate().collect::<Vec<_>>(), |(i, f)| {
-            let e = match asm::encode(&f.code, f.frame_size, &f.cleanup, mode) {
-                Ok(e) => e,
-                Err(e) => tcx.dcx().fatal(format!("ryo: encoding {}: {e:?}", symbols[i])),
-            };
-            if verify {
-                verify_encoding(tcx, &symbols[i], f, &e, mode);
-            }
-            e
-        });
-        drop(encode_t);
         let _t = tcx.prof.generic_activity("ryo_finish_image");
         let mut rt_used = std::collections::BTreeSet::new();
         for e in &encoded {
@@ -828,33 +823,6 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             Ok(image) => (image, symbols, pool.roots),
             Err(e) => tcx.dcx().fatal(format!("ryo: invalid image: {e:?}")),
         }
-    }
-}
-
-/// `RYO_ASM_VERIFY`: decodes the machine code of `f` and checks that it gives back its
-/// instruction words, frame size and cleanup entries, the LSDA call-site table included.
-fn verify_encoding(tcx: TyCtxt<'_>, name: &str, f: &FunctionDef, e: &asm::Encoded, mode: asm::Mode) {
-    let sites = asm::lsda::parse(&asm::lsda::write(&e.call_sites));
-    let fail = |what: String| -> ! {
-        tcx.dcx().fatal(format!(
-            "ryo: RYO_ASM_VERIFY: {name}: {what}\n{}",
-            ryo_bytecode::insn::Disasm(&f.code)
-        ))
-    };
-    if sites.as_deref() != Some(&e.call_sites[..]) {
-        fail("the LSDA doesn't read back".to_owned());
-    }
-    let d = match asm::decode(&e.code, &e.relocs, &e.rodata, &e.call_sites, mode) {
-        Ok(d) => d,
-        Err(err) => fail(format!("doesn't decode: {err:?}")),
-    };
-    let mut cleanup = f.cleanup.clone();
-    cleanup.sort();
-    if d.words != f.code {
-        fail(format!("decodes to other instructions:\n{}", ryo_bytecode::insn::Disasm(&d.words)));
-    }
-    if d.frame_size != f.frame_size || d.cleanup != cleanup {
-        fail(format!("frame size {} / cleanup {:?} decode as {} / {:?}", f.frame_size, cleanup, d.frame_size, d.cleanup));
     }
 }
 
@@ -899,13 +867,15 @@ fn alloc_fns<'tcx>(tcx: TyCtxt<'tcx>, id: AllocId, seen: &mut FxHashSet<AllocId>
 fn lower_all<'tcx>(
     tcx: TyCtxt<'tcx>,
     candidates: &[(Instance<'tcx>, MonoItemData)],
+    mode: asm::Mode,
 ) -> (FxHashMap<Instance<'tcx>, LoweredFn<'tcx>>, Vec<(Instance<'tcx>, NeedsNative)>) {
     let mut vm: FxHashSet<Instance<'tcx>> = candidates.iter().map(|c| c.0).collect();
     let mut ok: FxHashMap<Instance<'tcx>, LoweredFn<'tcx>> = FxHashMap::default();
     let mut failed = Vec::new();
     let mut todo: Vec<Instance<'tcx>> = candidates.iter().map(|c| c.0).collect();
+    let verify = std::env::var_os("RYO_ASM_VERIFY").is_some_and(|v| v != "0");
     while !todo.is_empty() {
-        let cx = LowerCx { vm: &vm };
+        let cx = LowerCx { vm: &vm, mode, verify };
         let out: Vec<_> =
             rustc_data_structures::sync::par_map(todo, |instance| (instance, lower::lower(tcx, &cx, instance)));
         let mut removed = false;
@@ -927,31 +897,13 @@ fn lower_all<'tcx>(
         }
         todo = ok
             .iter()
-            .filter(|(_, l)| l.relocs.iter().any(|r| matches!(r, CodeReloc::Call { callee, .. } | CodeReloc::TailCall { callee, .. } if !vm.contains(callee))))
+            .filter(|(_, l)| l.relocs.iter().any(|r| matches!(r, CodeReloc::Call { callee } if !vm.contains(callee))))
             .map(|(i, _)| *i)
             .collect();
         todo.sort_by_cached_key(|i| tcx.symbol_name(*i).name.to_owned());
     }
     failed.sort_by_cached_key(|(i, _)| tcx.symbol_name(*i).name.to_owned());
     (ok, failed)
-}
-
-/// Switches the instruction whose `sym` operand is word `at` to its `.ind` form if the slot is
-/// indirect (PE imports, design/platforms.md). The lowering emits `addr.sym` and `call.ext`,
-/// whose `sym` is operand word 2 in both.
-/// Returns whether it did.
-fn set_indirect(code: &mut [u32], at: u32, flags: u8) -> bool {
-    if flags & ryo_bytecode::image::SYM_INDIRECT == 0 {
-        return false;
-    }
-    let start = at as usize - 2;
-    let ind = match Opcode::from_u16(code[start] as u16) {
-        Some(Opcode::AddrSym) => Opcode::AddrSymInd,
-        Some(Opcode::CallExt) => Opcode::CallExtInd,
-        op => panic!("ryo: indirect symbol operand of {op:?}"),
-    };
-    code[start] = ind as u32;
-    true
 }
 
 /// The symbol of a static (its own, or the foreign item's link name).

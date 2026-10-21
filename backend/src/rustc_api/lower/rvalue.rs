@@ -103,8 +103,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     return Ok(());
                 }
                 Loc::Slot(d) => {
-                    let at = self.op(Opcode::Fill, &[d, 0, e as u32, n as u32]);
-                    self.relocs.push(CodeReloc::Bytes { at: at + 2, bytes, align: elem.align.abi.bytes() as u32 });
+                    let k = self.reloc(CodeReloc::Bytes { bytes, align: elem.align.abi.bytes() as u32 });
+                    self.op(Opcode::Fill, &[d, k, e as u32, n as u32]);
                     return Ok(());
                 }
                 Loc::Mem { .. } if bytes.iter().all(|&b| b == bytes[0]) => {

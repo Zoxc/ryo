@@ -14,7 +14,7 @@ use rustc_middle::mir::interpret::{AllocId, GlobalAlloc, Scalar};
 use rustc_middle::mir::{ConstOperand, ConstValue};
 use rustc_middle::ty::layout::TyAndLayout;
 use rustc_middle::ty::{self, GenericArgs, Instance, InstanceKind, ShimKind, TyCtxt, TypingEnv};
-use ryo_bytecode::insn::Opcode;
+use ryo_bytecode::insn::{ABS_DATA, Opcode};
 
 use super::emit::Width;
 use super::island::templates;
@@ -78,13 +78,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 if needs_fixup(self.tcx, alloc_id) {
                     // Copied out of the fixup area through its address.
                     let p = self.temp8();
-                    let at = self.op(Opcode::AddrAbs, &[p, 0]);
-                    self.relocs.push(CodeReloc::Data { at: at + 2, alloc: alloc_id, offset });
+                    let a = self.reloc(CodeReloc::Data { alloc: alloc_id, offset }) | ABS_DATA;
+                    self.op(Opcode::AddrAbs, &[p, a]);
                     return self.copy_val(dst, Loc::Mem { p, k: 0 }, size);
                 }
                 self.with_slot(dst, size, |fx, d| {
-                    let at = fx.op(Opcode::Const, &[d, 0, size]);
-                    fx.relocs.push(CodeReloc::Const { at: at + 2, alloc: alloc_id, offset });
+                    let k = fx.reloc(CodeReloc::Const { alloc: alloc_id, offset });
+                    fx.op(Opcode::Const, &[d, k, size]);
                     Ok(())
                 })
             }
@@ -99,16 +99,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             // The image's own copy of the vtable (design/lowering.md#constants).
             GlobalAlloc::VTable(ty, dyn_ty) => self.pool_addr_into(d, vtable_alloc(tcx, ty, dyn_ty), offset)?,
             GlobalAlloc::Function { instance } => {
-                let at = self.op(Opcode::AddrSym, &[d, 0]);
-                self.relocs.push(CodeReloc::Symbol { at: at + 2, target: instance });
+                self.addr_sym(d, CodeReloc::Symbol { target: instance });
                 if offset != 0 {
                     self.ptr_add(d, d, offset as i64);
                 }
             }
             GlobalAlloc::Static(def_id) => {
                 check_static(tcx, def_id)?;
-                let at = self.op(Opcode::AddrSym, &[d, 0]);
-                self.relocs.push(CodeReloc::Static { at: at + 2, def_id });
+                self.addr_sym(d, CodeReloc::Static { def_id });
                 if offset != 0 {
                     self.ptr_add(d, d, offset as i64);
                 }
@@ -126,12 +124,12 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     fn pool_addr_into(&mut self, d: u32, id: AllocId, offset: u64) -> Result<(), NeedsNative> {
         self.check_alloc(id)?;
         let offset = u32::try_from(offset).map_err(|_| NeedsNative("constant offset".into()))?;
-        let at = self.op(Opcode::AddrAbs, &[d, 0]);
-        if needs_fixup(self.tcx, id) {
-            self.relocs.push(CodeReloc::Data { at: at + 2, alloc: id, offset });
+        let a = if needs_fixup(self.tcx, id) {
+            self.reloc(CodeReloc::Data { alloc: id, offset }) | ABS_DATA
         } else {
-            self.relocs.push(CodeReloc::Const { at: at + 2, alloc: id, offset });
-        }
+            self.reloc(CodeReloc::Const { alloc: id, offset })
+        };
+        self.op(Opcode::AddrAbs, &[d, a]);
         Ok(())
     }
 
@@ -149,8 +147,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         self.outgoing(0);
         self.with_place_slot(dst, |fx, d| {
             let p = fx.temp8();
-            let at = fx.op(Opcode::AddrSym, &[p, 0]);
-            fx.relocs.push(CodeReloc::Symbol { at: at + 2, target: shim });
+            fx.addr_sym(p, CodeReloc::Symbol { target: shim });
             let name = templates::call_ptr(0).expect("call_ptr0 exists");
             // The shim only takes an address: it can't unwind.
             fx.island(&name, &[ptr_ty.into()], &[Self::out(0), d, p], None);
