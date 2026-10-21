@@ -24,7 +24,7 @@ use ryo_bytecode::insn::{Const, Data, Opcode, Sym};
 use super::lower::{self, CodeReloc, LowerCx, LoweredFn, NeedsNative};
 
 /// The `RYO_RT_ABI` the backend was written against (`vm/rt/src/lib.rs`).
-const EXPECTED_RT_ABI: u32 = 2;
+const EXPECTED_RT_ABI: u32 = 3;
 
 /// The `ryo_rt` items the backend instantiates or checks (design/stubs.md, Lookup).
 #[derive(Clone, Copy)]
@@ -760,7 +760,6 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             w.add_function(FunctionDef {
                 code,
                 frame_size: l.frame_size,
-                max_outgoing: l.max_outgoing,
                 arg_size: l.arg_size,
                 ret_size: l.ret_size,
                 cleanup: l.cleanup.clone(),

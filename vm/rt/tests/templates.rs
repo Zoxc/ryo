@@ -1,4 +1,5 @@
-//! Calls the island and unwind templates directly, with fake frames and operand arrays.
+//! Calls the island templates directly, with fake frames and operand arrays. Islands unwind
+//! natively, so a panicking one is caught like any other Rust call.
 
 #![feature(repr_simd, tuple_trait, unboxed_closures, f16, f128)]
 #![allow(internal_features)]
@@ -8,9 +9,9 @@ use std::panic::{AssertUnwindSafe, Location, catch_unwind};
 use std::rc::Rc;
 
 use ryo_rt::island::*;
-use ryo_rt::unwind::{CatchResult, RawPayload, call_catching, resume_unwind_from_vm};
 
-/// A fake VM frame: 16-aligned bytes.
+/// A fake VM frame: 16-aligned bytes, with `fp` in the middle. Offsets are signed, passed as
+/// the `u32` words of an `ops` array.
 #[repr(C, align(16))]
 struct Frame([u8; 512]);
 
@@ -19,20 +20,21 @@ impl Frame {
         Box::new(Frame([0xAA; 512]))
     }
     fn fp(&mut self) -> *mut u8 {
-        self.0.as_mut_ptr()
+        unsafe { self.0.as_mut_ptr().add(256) }
     }
     fn put<T>(&mut self, off: u32, v: T) {
-        assert_eq!(off as usize % align_of::<T>(), 0);
-        unsafe { self.fp().add(off as usize).cast::<T>().write(v) }
+        assert_eq!(off as i32 as usize % align_of::<T>(), 0);
+        unsafe { self.fp().offset(off as i32 as isize).cast::<T>().write(v) }
     }
     fn get<T>(&mut self, off: u32) -> T {
-        unsafe { self.fp().add(off as usize).cast::<T>().read() }
+        unsafe { self.fp().offset(off as i32 as isize).cast::<T>().read() }
     }
 }
 
-const ARGS: u32 = 16;
-const DEST: u32 = 256;
-const FNP: u32 = 320;
+/// The outgoing argument block (below `fp`), a destination and a fn pointer slot.
+const ARGS: u32 = -240i32 as u32;
+const DEST: u32 = 16;
+const FNP: u32 = -32i32 as u32;
 
 fn add(a: u64, b: u32) -> u64 {
     a + b as u64
@@ -186,7 +188,7 @@ fn drop_in_place_sized_and_unsized() {
 
     // Sized: a value living in the frame.
     fr.put(ARGS + 16, Rc::clone(&rc));
-    let p = unsafe { fr.fp().add(ARGS as usize + 16) }.cast::<Rc<()>>();
+    let p = unsafe { fr.fp().offset(ARGS as i32 as isize + 16) }.cast::<Rc<()>>();
     fr.put(ARGS, p);
     assert_eq!(Rc::strong_count(&rc), 2);
     unsafe { drop_in_place::<Rc<()>>(fr.fp(), ops.as_ptr()) };
@@ -243,37 +245,9 @@ fn intrinsics() {
     assert_eq!(fr.get::<[i32; 4]>(DEST), [11, 22, 33, 44]);
 }
 
-unsafe fn ok_island(_: *mut u8, _: *const u32) -> u32 {
-    3
-}
-
-unsafe fn panicking_island(_: *mut u8, _: *const u32) -> u32 {
-    let n = std::hint::black_box(5);
-    panic!("boom {n}")
-}
-
 #[test]
-fn call_catching_and_resume() {
-    let mut payload = RawPayload::NONE;
-    let r = unsafe { call_catching(ok_island, std::ptr::null_mut(), std::ptr::null(), &mut payload) };
-    assert_eq!(r, CatchResult { succ: 3, unwinding: false });
-    assert!(payload.is_none());
-
-    let r = unsafe { call_catching(panicking_island, std::ptr::null_mut(), std::ptr::null(), &mut payload) };
-    assert_eq!(r, CatchResult { succ: 0, unwinding: true });
-    assert!(!payload.is_none());
-
-    // The panic is still in flight while the VM unwinds (cleanup code sees `panicking()`),
-    // until a native catch ends it.
-    assert!(std::thread::panicking());
-    let err = catch_unwind(AssertUnwindSafe(|| unsafe { resume_unwind_from_vm(payload) })).unwrap_err();
-    assert!(!std::thread::panicking());
-    assert_eq!(err.downcast_ref::<String>().map(|s| &s[..]), Some("boom 5"));
-}
-
-#[test]
-fn call_catching_a_call_island() {
-    // A native callee that panics, through `call_ptr1` and `call_catching`.
+fn call_island_unwinds() {
+    // A native callee that panics, through `call_ptr1`: the panic leaves the island natively.
     fn fails(x: u32) -> u32 {
         std::panic::resume_unwind(Box::new(x))
     }
@@ -281,16 +255,13 @@ fn call_catching_a_call_island() {
     fr.put(ARGS, (11_u32,));
     fr.put(FNP, fails as unsafe fn(u32) -> u32);
     let ops = [ARGS, DEST, FNP];
-    let mut payload = RawPayload::NONE;
-    let r = unsafe { call_catching(call_ptr1::<u32, u32>, fr.fp(), ops.as_ptr(), &mut payload) };
-    assert!(r.unwinding);
-    let err = catch_unwind(AssertUnwindSafe(|| unsafe { resume_unwind_from_vm(payload) })).unwrap_err();
+    let err = catch_unwind(AssertUnwindSafe(|| unsafe { call_ptr1::<u32, u32>(fr.fp(), ops.as_ptr()) })).unwrap_err();
     assert_eq!(err.downcast_ref::<u32>(), Some(&11));
 }
 
 #[test]
 fn abi_version() {
-    assert_eq!(ryo_rt::RYO_RT_ABI, 2);
+    assert_eq!(ryo_rt::RYO_RT_ABI, 3);
 }
 
 thread_local!(static DROPS: Cell<u32> = const { Cell::new(0) });
@@ -316,14 +287,10 @@ fn call_ptr_drops_args_once() {
         fr.put(ARGS, (Droppy(1), ok));
         fr.put(FNP, consume as unsafe fn(Droppy, bool) -> u8);
         let ops = [ARGS, DEST, FNP];
-        let mut payload = RawPayload::NONE;
-        let r = unsafe {
-            call_catching(call_ptr2::<Droppy, bool, u8>, fr.fp(), ops.as_ptr(), &mut payload)
-        };
-        assert_eq!(r.unwinding, !ok);
+        let r = catch_unwind(AssertUnwindSafe(|| unsafe { call_ptr2::<Droppy, bool, u8>(fr.fp(), ops.as_ptr()) }));
+        assert_eq!(r.is_err(), !ok);
         assert_eq!(DROPS.get(), 1, "ok = {ok}");
-        if !ok {
-            let err = catch_unwind(AssertUnwindSafe(|| unsafe { resume_unwind_from_vm(payload) })).unwrap_err();
+        if let Err(err) = r {
             assert_eq!(err.downcast_ref::<&str>(), Some(&"fail"));
         }
     }
@@ -341,28 +308,12 @@ fn drop_in_place_unwinds() {
     let mut fr = Frame::new();
     // The second field is still dropped while unwinding out of the first one's drop.
     fr.put(ARGS + 16, (PanicDrop, Droppy(0)));
-    let p = unsafe { fr.fp().add(ARGS as usize + 16) }.cast::<(PanicDrop, Droppy)>();
+    let p = unsafe { fr.fp().offset(ARGS as i32 as isize + 16) }.cast::<(PanicDrop, Droppy)>();
     fr.put(ARGS, p);
     let ops = [ARGS];
-    let mut payload = RawPayload::NONE;
-    let r = unsafe {
-        call_catching(drop_in_place::<(PanicDrop, Droppy)>, fr.fp(), ops.as_ptr(), &mut payload)
-    };
-    assert!(r.unwinding);
+    let r = catch_unwind(AssertUnwindSafe(|| unsafe { drop_in_place::<(PanicDrop, Droppy)>(fr.fp(), ops.as_ptr()) }));
     assert_eq!(DROPS.get(), 1);
-    let err = catch_unwind(AssertUnwindSafe(|| unsafe { resume_unwind_from_vm(payload) })).unwrap_err();
-    assert_eq!(err.downcast_ref::<u64>(), Some(&99));
-}
-
-#[test]
-fn success_leaves_payload_slot_alone() {
-    let marker: Box<dyn std::any::Any + Send> = Box::new(5_u8);
-    let before = RawPayload(Box::into_raw(marker));
-    let mut payload = before;
-    let r = unsafe { call_catching(ok_island, std::ptr::null_mut(), std::ptr::null(), &mut payload) };
-    assert!(!r.unwinding);
-    assert!(std::ptr::addr_eq(payload.0, before.0));
-    drop(unsafe { Box::from_raw(payload.0) });
+    assert_eq!(r.unwrap_err().downcast_ref::<u64>(), Some(&99));
 }
 
 #[test]

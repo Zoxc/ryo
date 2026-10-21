@@ -85,8 +85,7 @@ fn sample() -> ImageWriter {
     ]);
     w.add_function(FunctionDef {
         code: f0,
-        frame_size: 32,
-        max_outgoing: 48,
+        frame_size: 48,
         arg_size: 8,
         ret_size: 8,
         cleanup: vec![CleanupEntry { offset: 0, target: 7 }],
@@ -149,7 +148,6 @@ fn image_round_trip() {
     assert_eq!(fs[0].code_off, 0);
     assert_eq!(fs[1].code_off, fs[0].code_len);
     assert_eq!(fs[1].frame_size, 48);
-    assert_eq!((fs[0].max_outgoing, fs[1].max_outgoing), (48, 0));
     assert_eq!((fs[0].arg_size, fs[0].ret_size, fs[1].arg_size), (8, 8, 0));
     assert_eq!(fs[0].portal(), None);
     assert_eq!(fs[1].portal(), Some(3));

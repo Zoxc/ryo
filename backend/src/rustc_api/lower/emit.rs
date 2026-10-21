@@ -1,5 +1,5 @@
 //! Instruction emission: opcode selection by name and width, raw encoding, and the final
-//! passes over a function's code (outgoing-slot relocation, branch patching).
+//! pass over a function's code (slots to signed frame offsets).
 //!
 //! Opcodes are looked up by their `Opcode` variant name (`"AddW32"`, `"LoadW64Z"`), built
 //! from a family name and a [`Width`]. The opcode list in `ryo_bytecode` (`ops.rs`) is the
@@ -10,6 +10,8 @@ use std::sync::LazyLock;
 
 use rustc_data_structures::fx::FxHashMap;
 use ryo_bytecode::insn::{ALL_OPCODES, ElemKind, Opcode, OperandKind, insn_len};
+
+use super::frame;
 
 /// Integer operand widths of the instruction set.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -107,19 +109,11 @@ pub fn imm_words(w: Width, v: u128) -> Vec<u32> {
     (0..w.imm_words()).map(|i| (v >> (32 * i)) as u32).collect()
 }
 
-/// Bit 31 marks a frame offset relative to the start of the outgoing area
-/// (`fp + frame_size`), which is only known once the whole function is lowered.
-/// [`relocate_out_slots`] rewrites them.
-pub const OUT: u32 = 1 << 31;
-
-/// Rewrites every frame-offset operand tagged with [`OUT`] to `frame_size + offset`: slots,
-/// memory operand bases and island operand words.
-pub fn relocate_out_slots(code: &mut [u32], frame_size: u32) {
-    let fix = |w: &mut u32| {
-        if *w & OUT != 0 {
-            *w = frame_size + (*w & !OUT);
-        }
-    };
+/// Rewrites every slot the lowering handed out (biased, or relative to the outgoing block,
+/// `frame.rs`) to its signed frame offset in a frame of size `frame_size`: slots, memory
+/// operand bases and island operand words.
+pub fn finish_slots(code: &mut [u32], frame_size: u32) {
+    let fix = |w: &mut u32| *w = frame::frame_offset(*w, frame_size) as u32;
     let mut at = 0;
     while at < code.len() {
         let len = insn_len(&code[at..]).expect("lowered code decodes");

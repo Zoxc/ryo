@@ -258,12 +258,11 @@ fn prepare_sources(info: &RustcInfo, root: &Path, dst: &Path) -> Result<(), Stri
     write_if_changed(
         &dst.join("ryo_rt").join("Cargo.toml"),
         &format!(
-            "[package]\nname = \"ryo_rt\"\nversion = \"0.1.0\"\nedition = \"2024\"\nbuild = {}\n\n\
+            "[package]\nname = \"ryo_rt\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n\
              [lib]\npath = {}\ntest = false\nbench = false\ndoc = false\n\n\
              [dependencies]\ncore = {{ path = \"../core\" }}\ncompiler_builtins = {{ path = \"../compiler-builtins/compiler-builtins\", features = [\"compiler-builtins\"] }}\n\
              ryo_bytecode = {{ path = \"../ryo_bytecode\" }}\n\n\
-             [features]\nregistry-anchor = []\ndispatch-match = []\ndispatch-loop-match = []\n",
-            path(vm.join("rt").join("build.rs"))?,
+             [features]\nregistry-anchor = []\n",
             path(vm.join("rt").join("src").join("lib.rs"))?,
         ),
     )?;

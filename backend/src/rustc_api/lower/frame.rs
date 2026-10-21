@@ -1,14 +1,22 @@
 //! Frame layout: argument block, local slots and temporaries (design/lowering.md#frame-slots).
 //!
+//! Frames grow downward ([`ryo_bytecode::abi`]):
+//!
 //! ```text
-//! fp + 0      header (caller fp, return pc)
-//! fp + H      argument block (the ABI arguments, `sig::arg_block` layout)
-//! …           other locals, then the temporaries of the statement being lowered
-//! fp + frame_size
+//! fp + H      argument block (the ABI arguments, `sig::arg_block` layout), in the caller's frame
+//! fp + 0      header (caller fp, return address)
+//! fp - …      other locals, then the temporaries of the statement being lowered
+//! fp - F      the outgoing argument block of the calls this function makes
 //! ```
 //!
 //! Locals with storage markers share slots when their storage ranges never overlap
 //! ([`Sharing`]). Arguments, `_0` and locals without `StorageLive` get slots of their own.
+//!
+//! Slots are handed out *biased*, as `BIAS + off` for the signed frame offset `off`, so the
+//! lowering's arithmetic on them (`slot + field offset`) never wraps. Slots in the outgoing
+//! block ([`FnCx::out`]) are their offset in the block, below [`OUT_END`], since `F` is only
+//! known once the whole function is lowered. [`FnCx::finish`] rewrites both kinds to signed
+//! offsets.
 
 use rustc_index::IndexVec;
 use rustc_index::bit_set::{BitMatrix, DenseBitSet};
@@ -19,6 +27,24 @@ use ryo_bytecode::abi::{self, HEADER_SIZE};
 use super::sig::AbiSig;
 use super::{FnCx, NeedsNative, native};
 
+/// The bias of a slot handed out by the lowering: the slot of frame offset `off` is
+/// `BIAS + off`.
+pub const BIAS: u32 = 1 << 31;
+
+/// Outgoing-block slots are below this, and frames and argument blocks must be smaller.
+pub const OUT_END: u32 = 1 << 30;
+
+/// The biased slot of the frame offset `off`.
+pub const fn slot(off: i32) -> u32 {
+    BIAS.wrapping_add(off as u32)
+}
+
+/// The signed frame offset of a slot handed out by the lowering, in a frame of size
+/// `frame_size`.
+pub fn frame_offset(slot: u32, frame_size: u32) -> i32 {
+    if slot < OUT_END { slot as i32 - frame_size as i32 } else { slot.wrapping_sub(BIAS) as i32 }
+}
+
 /// A local's slot.
 #[derive(Clone, Copy)]
 pub struct LocalSlot<'tcx> {
@@ -28,11 +54,11 @@ pub struct LocalSlot<'tcx> {
 
 pub struct Frame<'tcx> {
     pub locals: IndexVec<Local, LocalSlot<'tcx>>,
-    /// End of the local slots: temporaries start here.
+    /// Bytes below `fp` taken by the locals: temporaries start below.
     locals_end: u32,
-    /// Next free temporary byte.
+    /// Bytes below `fp` taken by the locals and the live temporaries.
     temp_top: u32,
-    /// Highest `temp_top` reached: the end of the frame.
+    /// Largest `temp_top` reached: the frame size without the outgoing block.
     high: u32,
     /// The spread `rust-call` argument (design/lowering.md#frame-slots), with the index of
     /// its first field in the argument block: the prologue assembles it.
@@ -59,7 +85,11 @@ impl<'tcx> Frame<'tcx> {
         // A `#[track_caller]` function's location is an extra, last ABI input that no MIR
         // local stands for (`FnCx::caller_location`).
         let n_inputs = sig.inputs.len() - usize::from(sig.caller_location);
-        let mut end = HEADER_SIZE + sig.block_size;
+        if sig.block_size >= OUT_END {
+            return native("argument block too large");
+        }
+        // Bytes below `fp` taken so far.
+        let mut end = 0u32;
         let mut locals = IndexVec::with_capacity(body.local_decls.len());
         let sharing = Sharing::new(body);
         // Locals that share slots, placed after the others.
@@ -80,16 +110,15 @@ impl<'tcx> Frame<'tcx> {
                 if f.size != size {
                     return native("argument local doesn't match the ABI");
                 }
-                HEADER_SIZE + f.offset
+                slot((HEADER_SIZE + f.offset) as i32)
             } else if size == 0 {
-                end
+                slot(-(end as i32))
             } else if sharing.as_ref().is_some_and(|s| s.shareable.contains(local)) {
                 shared.push(local);
                 0
             } else {
-                let off = end.next_multiple_of(align.max(1));
-                end = off.checked_add(size).ok_or_else(|| NeedsNative("frame too large".into()))?;
-                off
+                end = place_below(end, size, align)?;
+                slot(-(end as i32))
             };
             locals.push(LocalSlot { off, layout });
         }
@@ -107,7 +136,7 @@ impl<'tcx> Frame<'tcx> {
             None if n_fixed != n_inputs => return native("argument count doesn't match the ABI"),
             None => {}
         }
-        if end > (1 << 30) {
+        if end >= OUT_END {
             return native("frame too large");
         }
         Ok(Frame { locals, locals_end: end, temp_top: end, high: end, spread })
@@ -115,10 +144,9 @@ impl<'tcx> Frame<'tcx> {
 
     /// A temporary slot, live until [`Frame::reset_temps`].
     pub fn temp(&mut self, size: u64, align: u64) -> u32 {
-        let off = self.temp_top.next_multiple_of(align.clamp(1, 16) as u32);
-        self.temp_top = off + size as u32;
+        self.temp_top = (self.temp_top + size as u32).next_multiple_of(align.clamp(1, 16) as u32);
         self.high = self.high.max(self.temp_top);
-        off
+        slot(-(self.temp_top as i32))
     }
 
     /// Frees every temporary (between statements).
@@ -126,8 +154,14 @@ impl<'tcx> Frame<'tcx> {
         self.temp_top = self.locals_end;
     }
 
-    pub fn frame_size(&self) -> u32 {
-        abi::frame_size(self.high)
+    /// The frame size `F`, for a function whose largest outgoing argument block is
+    /// `outgoing` bytes. Fails if the frame doesn't fit [`OUT_END`].
+    pub fn frame_size(&self, outgoing: u32) -> Result<u32, NeedsNative> {
+        let f = abi::frame_size(self.high, outgoing);
+        if self.high >= OUT_END || outgoing >= OUT_END || f >= OUT_END {
+            return native("frame too large");
+        }
+        Ok(f)
     }
 }
 
@@ -149,7 +183,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         for i in 0..slot.layout.fields.count() {
             let f = sig.fields[first + i];
             let dst = slot.off + slot.layout.fields.offset(i).bytes() as u32;
-            self.mov(dst, HEADER_SIZE + f.offset, f.size);
+            self.mov(dst, self::slot((HEADER_SIZE + f.offset) as i32), f.size);
         }
     }
 }
@@ -221,8 +255,13 @@ impl Sharing {
         self.conflicts.contains(a, b) || self.conflicts.contains(b, a)
     }
 
-    /// Places the `shared` locals from `start` on, each at the lowest offset that doesn't
-    /// overlap a conflicting local placed before it. Returns the end of the locals.
+    /// Places the `shared` locals below the `start` bytes under `fp` already taken, each as
+    /// close to `fp` as it can go without overlapping a conflicting local placed before it.
+    /// Returns the bytes below `fp` the locals take.
+    ///
+    /// Positions are depths below `fp`: a local of `size` bytes at depth `d` takes the bytes
+    /// `fp - d .. fp - d + size`, the depth range `d - size .. d`, and `d` is a multiple of
+    /// its alignment.
     fn place(&self, locals: &mut IndexVec<Local, LocalSlot<'_>>, shared: &[Local], start: u32) -> Result<u32, NeedsNative> {
         let mut end = start;
         let mut placed: Vec<(u32, u32, Local)> = Vec::with_capacity(shared.len());
@@ -233,21 +272,29 @@ impl Sharing {
             busy.clear();
             busy.extend(placed.iter().filter(|p| self.conflict(l, p.2)).map(|p| (p.0, p.1)));
             busy.sort_unstable();
-            let mut off = start.next_multiple_of(align);
-            for &(b, e) in &busy {
-                if off.checked_add(size).is_some_and(|x| x <= b) {
+            let mut d = place_below(start, size, align)?;
+            for &(lo, hi) in &busy {
+                if d <= lo {
                     break;
                 }
-                if e > off {
-                    off = e.next_multiple_of(align);
+                if hi > d - size {
+                    d = place_below(hi, size, align)?;
                 }
             }
-            let e = off.checked_add(size).ok_or_else(|| NeedsNative("frame too large".into()))?;
-            locals[l].off = off;
-            end = end.max(e);
-            placed.push((off, e, l));
+            locals[l].off = slot(-(d as i32));
+            end = end.max(d);
+            placed.push((d - size, d, l));
         }
         Ok(end)
+    }
+}
+
+/// The depth of a local of `size` bytes placed directly below the `taken` bytes under `fp`:
+/// `taken + size`, rounded up to `align`.
+fn place_below(taken: u32, size: u32, align: u32) -> Result<u32, NeedsNative> {
+    match taken.checked_add(size) {
+        Some(d) if d < OUT_END => Ok(d.next_multiple_of(align.max(1))),
+        _ => native("frame too large"),
     }
 }
 

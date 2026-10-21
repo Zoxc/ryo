@@ -63,9 +63,8 @@ pub struct AllocFixup {
 #[derive(Clone, Debug, Default)]
 pub struct FunctionDef {
     pub code: Vec<u32>,
+    /// See [`FuncEntry::frame_size`].
     pub frame_size: u32,
-    /// See [`FuncEntry::max_outgoing`].
-    pub max_outgoing: u32,
     /// See [`FuncEntry::arg_size`].
     pub arg_size: u32,
     /// See [`FuncEntry::ret_size`].
@@ -397,7 +396,6 @@ impl ImageWriter {
                 code_off: code.len().try_into().map_err(too_large)?,
                 code_len: f.code.len().try_into().map_err(too_large)?,
                 frame_size: f.frame_size,
-                max_outgoing: f.max_outgoing,
                 arg_size: f.arg_size,
                 ret_size: f.ret_size,
                 cleanup_off: cleanup.len().try_into().map_err(too_large)?,

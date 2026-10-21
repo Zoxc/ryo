@@ -5,9 +5,8 @@
 //! not call them while it sets up or switches VM state (design/vm.md, "No re-entry into the
 //! VM from the runtime").
 
-use core::ffi::c_void;
 use core::ptr;
-use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 
 /// Page size assumed for guard pages and mapping granularity (x86_64 ELF and PE).
 pub const PAGE: usize = 4096;
@@ -26,13 +25,10 @@ mod os {
 
     unsafe extern "C" {
         pub fn mmap(addr: *mut c_void, len: usize, prot: c_int, flags: c_int, fd: c_int, off: i64) -> *mut c_void;
-        pub fn munmap(addr: *mut c_void, len: usize) -> c_int;
         pub fn mprotect(addr: *mut c_void, len: usize, prot: c_int) -> c_int;
         pub fn write(fd: c_int, buf: *const c_void, n: usize) -> isize;
         pub fn abort() -> !;
         pub fn getenv(name: *const core::ffi::c_char) -> *const core::ffi::c_char;
-        pub fn pthread_key_create(key: *mut u32, dtor: Option<unsafe extern "C" fn(*mut c_void)>) -> c_int;
-        pub fn pthread_setspecific(key: u32, value: *const c_void) -> c_int;
         pub fn atexit(f: extern "C-unwind" fn()) -> c_int;
     }
 }
@@ -43,21 +39,16 @@ mod os {
 
     pub const MEM_COMMIT: u32 = 0x1000;
     pub const MEM_RESERVE: u32 = 0x2000;
-    pub const MEM_RELEASE: u32 = 0x8000;
     pub const PAGE_NOACCESS: u32 = 0x01;
     pub const PAGE_READWRITE: u32 = 0x04;
     pub const STD_ERROR_HANDLE: u32 = -12i32 as u32;
-    pub const FLS_OUT_OF_INDEXES: u32 = u32::MAX;
 
     #[link(name = "kernel32")]
     unsafe extern "system" {
         pub fn VirtualAlloc(addr: *mut c_void, size: usize, ty: u32, protect: u32) -> *mut c_void;
-        pub fn VirtualFree(addr: *mut c_void, size: usize, ty: u32) -> i32;
         pub fn VirtualProtect(addr: *mut c_void, size: usize, protect: u32, old: *mut u32) -> i32;
         pub fn GetStdHandle(which: u32) -> *mut c_void;
         pub fn WriteFile(h: *mut c_void, buf: *const u8, n: u32, written: *mut u32, ov: *mut c_void) -> i32;
-        pub fn FlsAlloc(cb: Option<unsafe extern "system" fn(*const c_void)>) -> u32;
-        pub fn FlsSetValue(index: u32, value: *const c_void) -> i32;
         pub fn GetEnvironmentVariableA(name: *const u8, buf: *mut u8, size: u32) -> u32;
     }
 
@@ -108,16 +99,14 @@ pub fn trace_enabled() -> bool {
     }
 }
 
-/// Run-time counters for `RYO_VM_STATS` (design/vm.md#modules): VM entries, islands run, and
-/// native calls made by `call.ext`/`call.ind`. Counted only when it is set, and printed at exit.
+/// Run-time counters for `RYO_VM_STATS` (design/vm.md#modules): VM entries and native calls
+/// made by `call.ext`/`call.ind`. Counted only when it is set, and printed at exit.
 pub struct RunStats {
     pub enters: AtomicU64,
-    pub islands: AtomicU64,
     pub native_calls: AtomicU64,
 }
 
-pub static RUN_STATS: RunStats =
-    RunStats { enters: AtomicU64::new(0), islands: AtomicU64::new(0), native_calls: AtomicU64::new(0) };
+pub static RUN_STATS: RunStats = RunStats { enters: AtomicU64::new(0), native_calls: AtomicU64::new(0) };
 
 /// Whether `RYO_VM_STATS` is set (to anything). Read once; the first reader that finds it set
 /// registers the exit-time report.
@@ -152,12 +141,12 @@ pub fn count(counter: &AtomicU64) {
     }
 }
 
-/// Writes `ryo-vm: <n> enters, <n> islands, <n> native calls` to stderr. `C-unwind` and
-/// without indexing, so it references nothing of core's panic path (design/vm.md).
+/// Writes `ryo-vm: <n> enters, <n> native calls` to stderr. `C-unwind` and without indexing,
+/// so it references nothing of core's panic path (design/vm.md).
 extern "C-unwind" fn print_stats() {
     let s = &RUN_STATS;
     write_stderr("ryo-vm: ");
-    for (c, what) in [(&s.enters, " enters, "), (&s.islands, " islands, "), (&s.native_calls, " native calls\n")] {
+    for (c, what) in [(&s.enters, " enters, "), (&s.native_calls, " native calls\n")] {
         write_u64(c.load(Ordering::Relaxed));
         write_stderr(what);
     }
@@ -258,82 +247,6 @@ pub fn map(len: usize, guard: usize) -> *mut u8 {
             fatal("VirtualProtect failed");
         }
         p.cast()
-    }
-}
-
-/// Unmaps memory returned by [`map`].
-///
-/// # Safety
-/// `p`/`len` must be exactly one earlier [`map`] result, and nothing may use it afterwards.
-pub unsafe fn unmap(p: *mut u8, len: usize) {
-    #[cfg(unix)]
-    // SAFETY: per the caller.
-    unsafe {
-        os::munmap(p.cast(), len);
-    }
-    #[cfg(windows)]
-    // SAFETY: per the caller. MEM_RELEASE requires size 0.
-    unsafe {
-        let _ = len;
-        os::VirtualFree(p.cast(), 0, os::MEM_RELEASE);
-    }
-}
-
-/// Arranges for [`super::thread::thread_exit`] to run with `value` when the current thread
-/// exits (a pthread key / FLS destructor). `value` must be non-null. Aborts if no key can be
-/// created.
-pub fn on_thread_exit(value: *mut c_void) {
-    // One key for the whole process, created under the lock on first use; stored plus 1, so
-    // 0 means "not created yet".
-    static KEY: AtomicUsize = AtomicUsize::new(0);
-    let mut key = KEY.load(Ordering::Acquire);
-    if key == 0 {
-        let _g = lock();
-        key = KEY.load(Ordering::Relaxed);
-        if key == 0 {
-            key = create_key();
-            KEY.store(key, Ordering::Release);
-        }
-    }
-    let key = (key - 1) as u32;
-    #[cfg(unix)]
-    // SAFETY: `key` came from `pthread_key_create`.
-    unsafe {
-        os::pthread_setspecific(key, value);
-    }
-    #[cfg(windows)]
-    // SAFETY: `key` came from `FlsAlloc`.
-    unsafe {
-        os::FlsSetValue(key, value);
-    }
-
-    fn create_key() -> usize {
-        #[cfg(unix)]
-        {
-            unsafe extern "C" fn dtor(v: *mut c_void) {
-                // SAFETY: runs on the exiting thread, with the value it registered.
-                unsafe { super::thread::thread_exit(v) }
-            }
-            let mut k = 0u32;
-            // SAFETY: `k` is a valid out-pointer.
-            if unsafe { os::pthread_key_create(&mut k, Some(dtor)) } != 0 {
-                fatal("pthread_key_create failed");
-            }
-            k as usize + 1
-        }
-        #[cfg(windows)]
-        {
-            unsafe extern "system" fn dtor(v: *const c_void) {
-                // SAFETY: as on unix.
-                unsafe { super::thread::thread_exit(v as *mut c_void) }
-            }
-            // SAFETY: plain FLS allocation.
-            let k = unsafe { os::FlsAlloc(Some(dtor)) };
-            if k == os::FLS_OUT_OF_INDEXES {
-                fatal("FlsAlloc failed");
-            }
-            k as usize + 1
-        }
     }
 }
 

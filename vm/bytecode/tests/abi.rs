@@ -56,14 +56,15 @@ fn rejects_bad_layouts() {
     // ZSTs may share offsets with anything.
     let ok = [x(0, 4, 4), x(0, 0, 1), x(4, 0, 4)];
     let b = arg_block(&ok, 4, 4).unwrap();
-    assert_eq!(b.frame_offset(0), HEADER_SIZE);
-    assert_eq!(b.outgoing_offset(64, 0), 64 + HEADER_SIZE);
-    assert_eq!(b.end(), HEADER_SIZE + 4);
+    assert_eq!(b.frame_offset(0), HEADER_SIZE as i32);
+    assert_eq!(b.frame_offset(2), HEADER_SIZE as i32 + 4);
+    assert_eq!(b.outgoing_offset(64, 2), 4 - 64);
 }
 
 #[test]
 fn frame_size_rounds_to_16() {
-    assert_eq!(frame_size(16), 16);
-    assert_eq!(frame_size(17), 32);
-    assert_eq!(frame_size(HEADER_SIZE + 1), 32);
+    assert_eq!(frame_size(0, 0), 0);
+    assert_eq!(frame_size(16, 0), 16);
+    assert_eq!(frame_size(17, 0), 32);
+    assert_eq!(frame_size(9, 8), 32);
 }

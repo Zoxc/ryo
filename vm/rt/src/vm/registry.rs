@@ -20,7 +20,6 @@ pub struct Function {
     /// First instruction.
     pub code: *const u32,
     pub frame_size: u32,
-    pub max_outgoing: u32,
     pub arg_size: u32,
     pub ret_size: u32,
     /// The function's image.
@@ -52,8 +51,6 @@ pub struct ImageRt {
 struct Snapshot {
     /// Images sorted by crate hash, for `enter`'s ID lookup.
     by_hash: *const *const ImageRt,
-    /// The same images sorted by code address, for the pc → image map.
-    by_code: *const *const ImageRt,
     n: usize,
     /// Portal address → function, built on the first `lookup_addr` against this snapshot.
     portals: AtomicPtr<PortalMap>,
@@ -92,7 +89,6 @@ pub unsafe fn register(headers: *const *const u8, n: usize) {
     };
     let cap = old.len() + n;
     let by_hash = alloc_forever(&g, cap * size_of::<*const ImageRt>(), align_of::<*const ImageRt>()).cast::<&ImageRt>();
-    let by_code = alloc_forever(&g, cap * size_of::<*const ImageRt>(), align_of::<*const ImageRt>()).cast::<&ImageRt>();
     // SAFETY: fresh, suitably sized and aligned allocations. Elements are written before
     // they are viewed: `done(len)` covers only the first `len`, which are initialized.
     unsafe { ptr::copy_nonoverlapping(old.as_ptr(), by_hash, old.len()) };
@@ -156,18 +152,11 @@ pub unsafe fn register(headers: *const *const u8, n: usize) {
     // SAFETY: the first `len` entries are initialized, and nothing else views them.
     let list = unsafe { core::slice::from_raw_parts_mut(by_hash, len) };
     sort_by_key(list, |im| im.view.crate_hash() as usize);
-    // SAFETY: `by_code` has room for `cap >= len` entries.
-    let codes = unsafe {
-        ptr::copy_nonoverlapping(list.as_ptr(), by_code, len);
-        core::slice::from_raw_parts_mut(by_code, len)
-    };
-    sort_by_key(codes, |im| im.code as usize);
     let snap = alloc_forever(&g, size_of::<Snapshot>(), align_of::<Snapshot>()).cast::<Snapshot>();
     // SAFETY: fresh allocation; fully written before it is published.
     unsafe {
         snap.write(Snapshot {
             by_hash: by_hash.cast(),
-            by_code: by_code.cast(),
             n: len,
             portals: AtomicPtr::new(ptr::null_mut()),
         })
@@ -231,7 +220,6 @@ impl ImageRt {
             let rec = Function {
                 code: self.code.wrapping_add(e.code_off as usize),
                 frame_size: e.frame_size,
-                max_outgoing: e.max_outgoing,
                 arg_size: e.arg_size,
                 ret_size: e.ret_size,
                 img: self,
@@ -258,19 +246,6 @@ pub fn resolve_id(id: u64) -> &'static Function {
         Some(f) => f,
         None => fatal("vm::enter: function index out of range"),
     }
-}
-
-/// The image whose code contains `pc`. Aborts if there is none (a corrupt return pc).
-#[cold]
-pub fn image_of_pc(pc: *const u32) -> &'static ImageRt {
-    if let Some(s) = snapshot() {
-        let list = images(s, s.by_code);
-        let i = list.partition_point(|im| im.code as usize <= pc as usize);
-        if i > 0 && (pc as usize) < list[i - 1].code_end as usize {
-            return list[i - 1];
-        }
-    }
-    fatal("return address outside every registered image")
 }
 
 fn hash(addr: usize) -> usize {

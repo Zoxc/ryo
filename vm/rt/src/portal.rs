@@ -2,13 +2,13 @@
 //!
 //! `portal::<(A, B), R, ID>` has the ABI of `fn(A, B) -> R`: `rust-call` spreads the tuple, and
 //! `Rust`/`RustCall` share `CanonAbi::Rust`. The args tuple is the callee's argument block. The
-//! VM takes ownership of the args and writes the return value to `ret`.
+//! VM takes ownership of the args and writes the return value to `ret`. A panic in the VM
+//! unwinds out of `vm::enter` and the portal natively.
 
 use core::marker::Tuple;
 use core::mem::{ManuallyDrop, MaybeUninit};
 use core::panic::Location;
 
-use crate::unwind::{RawPayload, resume_unwind_from_vm};
 #[cfg(not(test))]
 use crate::vm::enter;
 #[cfg(test)]
@@ -21,14 +21,10 @@ use test_hook::enter;
 pub extern "rust-call" fn portal<Args: Tuple, R, const ID: u64>(args: Args) -> R {
     let mut ret = MaybeUninit::<R>::uninit();
     let args = ManuallyDrop::new(args);
-    let mut payload = RawPayload::NONE;
-    let st = unsafe {
-        enter(ID, (&raw const args).cast::<u8>(), ret.as_mut_ptr().cast::<u8>(), &mut payload)
-    };
-    if st != 0 {
-        unsafe { resume_unwind_from_vm(payload) }
+    unsafe {
+        enter(ID, (&raw const args).cast::<u8>(), ret.as_mut_ptr().cast::<u8>());
+        ret.assume_init()
     }
-    unsafe { ret.assume_init() }
 }
 
 macro_rules! portal_tc_family {
@@ -40,14 +36,10 @@ macro_rules! portal_tc_family {
         pub fn $name<$($T,)* R, const ID: u64>($($a: $T),*) -> R {
             let mut ret = MaybeUninit::<R>::uninit();
             let args = ManuallyDrop::new(($($a,)* Location::caller(),));
-            let mut payload = RawPayload::NONE;
-            let st = unsafe {
-                enter(ID, (&raw const args).cast::<u8>(), ret.as_mut_ptr().cast::<u8>(), &mut payload)
-            };
-            if st != 0 {
-                unsafe { resume_unwind_from_vm(payload) }
+            unsafe {
+                enter(ID, (&raw const args).cast::<u8>(), ret.as_mut_ptr().cast::<u8>());
+                ret.assume_init()
             }
-            unsafe { ret.assume_init() }
         }
     )*};
 }
@@ -75,18 +67,17 @@ portal_tc_family! {
 /// In unit tests, portals call a per-thread hook instead of the VM.
 #[cfg(test)]
 mod test_hook {
-    use crate::unwind::RawPayload;
     use std::cell::Cell;
 
-    pub type Hook = unsafe fn(u64, *const u8, *mut u8, *mut RawPayload) -> u32;
+    pub type Hook = unsafe fn(u64, *const u8, *mut u8);
 
     thread_local! {
         pub static HOOK: Cell<Option<Hook>> = const { Cell::new(None) };
     }
 
-    pub unsafe fn enter(id: u64, args: *const u8, ret: *mut u8, out: *mut RawPayload) -> u32 {
+    pub unsafe fn enter(id: u64, args: *const u8, ret: *mut u8) {
         let hook = HOOK.get().expect("no portal test hook set");
-        unsafe { hook(id, args, ret, out) }
+        unsafe { hook(id, args, ret) }
     }
 }
 
@@ -94,7 +85,6 @@ mod test_hook {
 mod tests {
     use super::test_hook::HOOK;
     use super::*;
-    use crate::unwind::call_catching;
     use std::cell::RefCell;
     use std::panic::{catch_unwind, Location};
 
@@ -103,11 +93,10 @@ mod tests {
     }
 
     /// Fake VM for `ID`s whose args are `(u64, u64)`: returns their sum as a u64.
-    unsafe fn add_vm(id: u64, args: *const u8, ret: *mut u8, _: *mut RawPayload) -> u32 {
+    unsafe fn add_vm(id: u64, args: *const u8, ret: *mut u8) {
         let (a, b) = unsafe { args.cast::<(u64, u64)>().read() };
         SEEN.with_borrow_mut(|s| s.push((id, vec![a, b])));
         unsafe { ret.cast::<u64>().write(a + b) };
-        0
     }
 
     #[test]
@@ -127,10 +116,9 @@ mod tests {
     }
 
     /// Args `(String,)`: the VM owns the args, so the portal must not drop them.
-    unsafe fn take_string(_: u64, args: *const u8, ret: *mut u8, _: *mut RawPayload) -> u32 {
+    unsafe fn take_string(_: u64, args: *const u8, ret: *mut u8) {
         let (s,) = unsafe { args.cast::<(String,)>().read() };
         unsafe { ret.cast::<String>().write(s + "!") };
-        0
     }
 
     #[test]
@@ -139,10 +127,9 @@ mod tests {
         assert_eq!(portal::<(String,), String, 1>((String::from("hi"),)), "hi!");
     }
 
-    unsafe fn tc_vm(_: u64, args: *const u8, ret: *mut u8, _: *mut RawPayload) -> u32 {
+    unsafe fn tc_vm(_: u64, args: *const u8, ret: *mut u8) {
         let (a, loc) = unsafe { args.cast::<(u32, &'static Location<'static>)>().read() };
         unsafe { ret.cast::<(u32, u32)>().write((a, loc.line())) };
-        0
     }
 
     #[test]
@@ -153,11 +140,10 @@ mod tests {
         assert_eq!((a, l), (5, line));
     }
 
-    unsafe fn tc3_vm(_: u64, args: *const u8, ret: *mut u8, _: *mut RawPayload) -> u32 {
+    unsafe fn tc3_vm(_: u64, args: *const u8, ret: *mut u8) {
         type A = (u8, u128, String, &'static Location<'static>);
         let (a, b, c, loc) = unsafe { args.cast::<A>().read() };
         unsafe { ret.cast::<(u8, u128, String, u32)>().write((a, b, c, loc.line())) };
-        0
     }
 
     #[test]
@@ -171,10 +157,9 @@ mod tests {
     #[derive(Debug, PartialEq, Clone, Copy)]
     struct Big([u64; 12]);
 
-    unsafe fn big_vm(_: u64, args: *const u8, ret: *mut u8, _: *mut RawPayload) -> u32 {
+    unsafe fn big_vm(_: u64, args: *const u8, ret: *mut u8) {
         let (k,) = unsafe { args.cast::<(u64,)>().read() };
         unsafe { ret.cast::<Big>().write(Big(core::array::from_fn(|i| i as u64 * k))) };
-        0
     }
 
     #[test]
@@ -186,19 +171,13 @@ mod tests {
         assert_eq!(f(2), Big(core::array::from_fn(|i| i as u64 * 2)));
     }
 
-    unsafe fn panicking_island(_: *mut u8, _: *const u32) -> u32 {
+    /// Fake VM that panics, as VM code does: the panic unwinds through the portal natively.
+    unsafe fn unwinding_vm(_: u64, _: *const u8, _: *mut u8) {
         std::panic::resume_unwind(Box::new(77_i32))
     }
 
-    /// Fake VM that runs a panicking island through `call_catching` and reports unwinding.
-    unsafe fn unwinding_vm(_: u64, _: *const u8, _: *mut u8, out: *mut RawPayload) -> u32 {
-        let r = unsafe { call_catching(panicking_island, core::ptr::null_mut(), core::ptr::null(), out) };
-        assert!(r.unwinding);
-        1
-    }
-
     #[test]
-    fn portal_resumes_unwinding() {
+    fn portal_unwinds_natively() {
         HOOK.set(Some(unwinding_vm));
         let err = catch_unwind(|| portal::<(), u8, 3>(())).unwrap_err();
         assert_eq!(err.downcast_ref::<i32>(), Some(&77));

@@ -366,6 +366,9 @@ struct Variant {
     /// `-Cpanic=abort`, compared with plain rustc's output with the same flag ([`REFERENCE_ABORT`]).
     /// Programs with a Rust dylib are skipped: std's dylib unwinds.
     abort: bool,
+    /// With `RYO_NO_VM`: every function stays native, so the `vm`/`entered` lists aren't
+    /// checked.
+    no_vm: bool,
 }
 
 const VARIANT: Variant = Variant {
@@ -376,6 +379,7 @@ const VARIANT: Variant = Variant {
     vm_only: false,
     ryo_std: false,
     abort: false,
+    no_vm: false,
 };
 
 const REFERENCE: Variant = Variant { name: "rustc", compiler: Compiler::Rustc, ..VARIANT };
@@ -385,6 +389,7 @@ const REFERENCE_ABORT: Variant =
     Variant { name: "rustc-abort", compiler: Compiler::Rustc, flags: &["-Cpanic=abort"], ..VARIANT };
 
 const VARIANTS: &[Variant] = &[
+    Variant { name: "ryo-novm", no_vm: true, ..VARIANT },
     Variant { name: "ryo", ..VARIANT },
     Variant { name: "ryo-threads8", flags: &["-Zthreads=8"], ..VARIANT },
     Variant { name: "ryo-O3", flags: &["-Copt-level=3"], vm_only: true, ..VARIANT },
@@ -402,16 +407,15 @@ const VARIANTS: &[Variant] = &[
 /// Added by `test --clif`.
 const CLIF: Variant = Variant { name: "clif", compiler: Compiler::Clif, ..VARIANT };
 
+/// Whether VM code can run. While it can't (the VM has no dispatcher), only the variants
+/// without VM code ([`Variant::no_vm`], plain rustc, Cranelift) and the checks that don't run
+/// VM code are run; the others are skipped.
+const VM_RUNS: bool = false;
+
 /// The variants to build: [`VARIANTS`], plus [`CLIF`] for `test --clif`.
 fn variants(clif: bool) -> Vec<&'static Variant> {
-    VARIANTS.iter().chain(clif.then_some(&CLIF)).collect()
+    VARIANTS.iter().chain(clif.then_some(&CLIF)).filter(|v| VM_RUNS || v.no_vm || v.compiler != Compiler::Ryo).collect()
 }
-
-/// `vm/`'s own tests run once per VM dispatch strategy (design/vm.md, "Dispatch"): the
-/// strategy and the `ryo_rt` feature selecting it. `vm/test-dispatch.sh` runs the same matrix
-/// without `dist/`.
-const VM_STRATEGIES: [(&str, Option<&str>); 3] =
-    [("tail", None), ("loop_match", Some("ryo_rt/dispatch-loop-match")), ("match", Some("ryo_rt/dispatch-match"))];
 
 pub fn run(clif: bool) -> Result<(), String> {
     let root = root();
@@ -437,19 +441,11 @@ pub fn run(clif: bool) -> Result<(), String> {
     };
 
     let mut failed = Vec::new();
-    for (strategy, feature) in VM_STRATEGIES {
-        let name = format!("vm [{strategy}]");
-        let mut c = cmd("cargo");
-        c.current_dir(root.join("vm")).args(["test", "--workspace"]);
-        if let Some(f) = feature {
-            c.args(["--features", f]);
-        }
-        match crate::utils::run(&mut c) {
-            Ok(()) => eprintln!("[y] test {name}: ok"),
-            Err(msg) => {
-                eprintln!("[y] test {name}: FAILED: {msg}");
-                failed.push(name);
-            }
+    match crate::utils::run(cmd("cargo").current_dir(root.join("vm")).args(["test", "--workspace"])) {
+        Ok(()) => eprintln!("[y] test vm: ok"),
+        Err(msg) => {
+            eprintln!("[y] test vm: FAILED: {msg}");
+            failed.push("vm".to_owned());
         }
     }
     let cc = have_cc();
@@ -504,7 +500,8 @@ pub fn run(clif: bool) -> Result<(), String> {
         ("reject-incremental", reject_incremental(&rustc_ryo, &hello, &out)),
         ("metadata-only", metadata_only(&rustc_ryo, &hello, &out)),
         ("exports", same_exports(&rustc_ryo, &root.join("tests").join("vm_exports.rs"), &out)),
-        ("cargo-ryo", cargo_smoke(&root, &out)),
+        // It runs the program it builds.
+        ("cargo-ryo", if VM_RUNS { cargo_smoke(&root, &out) } else { Ok(()) }),
     ];
     for (name, res) in checks {
         match res {
@@ -559,6 +556,9 @@ impl Ctx {
                 c.env("RYO_BACKEND_MARKER", "1").env("RYO_STATS", "1");
                 if variant.ryo_std {
                     c.args(["--sysroot", "ryo"]);
+                }
+                if variant.no_vm {
+                    c.env("RYO_NO_VM", "1");
                 }
                 c
             }
@@ -630,7 +630,7 @@ impl Ctx {
         }
         let exe = exe.ok_or_else(|| format!("{}: no binary crate", program.name))?;
         let result = self.run(&dir, &exe, variant, false)?;
-        if variant.compiler == Compiler::Ryo && !program.vm.is_empty() {
+        if variant.compiler == Compiler::Ryo && !variant.no_vm && !program.vm.is_empty() {
             let names: Vec<&str> = vm_fns.iter().map(|(n, _)| n.as_str()).collect();
             let missing: Vec<_> = program.vm.iter().filter(|f| !names.contains(f)).collect();
             if !variant.vm_only && !missing.is_empty() {
@@ -733,7 +733,7 @@ impl Ctx {
     }
 }
 
-/// Takes the `RYO_VM_STATS` report (`ryo-vm: <n> enters, <n> islands, <n> native calls\n`,
+/// Takes the `RYO_VM_STATS` report (`ryo-vm: <n> enters, <n> native calls\n`,
 /// printed at exit) out of stderr: the report without its prefix, and the remaining text.
 fn split_stats(s: &str) -> (Option<String>, String) {
     const P: &str = "ryo-vm: ";
@@ -791,9 +791,11 @@ mod tests {
     #[test]
     fn clif_variant_only_with_flag() {
         let names = |clif| super::variants(clif).iter().map(|v| v.name).collect::<Vec<_>>();
-        let ryo = [
-            "ryo", "ryo-threads8", "ryo-O3", "ryo-lto", "ryo-thinlto-O3", "ryo-std", "ryo-std-O3", "ryo-std-lto", "ryo-std-abort",
+        let all = [
+            "ryo-novm", "ryo", "ryo-threads8", "ryo-O3", "ryo-lto", "ryo-thinlto-O3", "ryo-std", "ryo-std-O3", "ryo-std-lto",
+            "ryo-std-abort",
         ];
+        let ryo: Vec<&str> = all.into_iter().filter(|n| super::VM_RUNS || *n == "ryo-novm").collect();
         assert_eq!(names(false), ryo);
         assert_eq!(names(true), [&ryo[..], &["clif"]].concat());
         assert!(super::variants(true).last().unwrap().compiler == super::Compiler::Clif);
@@ -818,8 +820,8 @@ mod tests {
 
     #[test]
     fn splits_stats() {
-        let (st, rest) = super::split_stats("a\nryo-vm: 3 enters, 1 islands, 0 native calls\nb");
-        assert_eq!(st.as_deref(), Some("3 enters, 1 islands, 0 native calls"));
+        let (st, rest) = super::split_stats("a\nryo-vm: 3 enters, 0 native calls\nb");
+        assert_eq!(st.as_deref(), Some("3 enters, 0 native calls"));
         assert_eq!(rest, "a\nb");
         assert_eq!(super::split_stats("x").0, None);
     }

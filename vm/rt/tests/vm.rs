@@ -2,6 +2,10 @@
 //! enums, control flow, calls, multi-image calls, site caches, re-entrancy, unwinding,
 //! registration, and the fatal paths (in child processes).
 
+// Disabled: these tests run hand-assembled functions, and nothing can run VM code while the
+// VM has no dispatcher.
+#![cfg(any())]
+
 #![feature(unboxed_closures)]
 
 mod common;

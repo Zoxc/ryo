@@ -1,8 +1,8 @@
 //! Island templates (VM → native). See design/stubs.md (Islands).
 //!
 //! Every island has the signature `unsafe fn(fp: *mut u8, ops: *const u32) -> u32` (Rust ABI).
-//! `ops[i]` is a frame offset: operand `i` is the slot at `fp + ops[i]`. The return value is
-//! the successor index. Operand conventions (also in design/stubs.md, "Operand conventions"):
+//! `ops[i]` is a signed frame offset: operand `i` is the slot at `fp + ops[i]`. The return
+//! value is the successor index. Operand conventions (also in design/stubs.md, "Operand conventions"):
 //!
 //! | Template | `ops[0]` | `ops[1]` | `ops[2]` |
 //! |---|---|---|---|
@@ -14,7 +14,7 @@
 use core::intrinsics;
 use core::marker::Tuple;
 
-/// The frame slot of operand `i`: `fp + ops[i]`, as a `*mut T`.
+/// The frame slot of operand `i`: `fp + ops[i]` (`ops[i]` is a signed offset), as a `*mut T`.
 ///
 /// # Safety
 /// `ops` must have at least `i + 1` words, and `fp + ops[i]` must be in the frame and aligned
@@ -23,7 +23,7 @@ use core::marker::Tuple;
 /// locals or arguments stay native (design/stubs.md, "Template gaps").
 #[inline(always)]
 pub unsafe fn slot<T>(fp: *mut u8, ops: *const u32, i: usize) -> *mut T {
-    unsafe { fp.add(*ops.add(i) as usize).cast::<T>() }
+    unsafe { fp.offset(*ops.add(i) as i32 as isize).cast::<T>() }
 }
 
 /// Direct call of a safe Rust fn or closure type `F` that is a ZST (a `FnDef`, or a closure

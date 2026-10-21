@@ -15,7 +15,7 @@
 //!
 //! | Kind | Words | Rust type |
 //! |---|---|---|
-//! | `Slot` | 1 | [`Slot`]: frame offset |
+//! | `Slot` | 1 | [`Slot`]: signed frame offset |
 //! | `Mem` | 2 | [`Mem`]: `[p + k]`, slot `p` then signed `k` |
 //! | `Deref` | 1 | [`Deref`]: `[p]` |
 //! | `U32` / `I32` | 1 | `u32` / `i32` |
@@ -70,8 +70,9 @@ macro_rules! newtype {
 }
 
 newtype!(
-    /// A frame slot: the value at `fp + offset` (bytes). Displayed as `$off`.
-    Slot(u32), Slot, "$"
+    /// A frame slot: the value at `fp + offset` (bytes, signed: frames grow downward, so
+    /// locals are below `fp` and the incoming arguments above it). Displayed as `$off`.
+    Slot(i32), Slot, "$"
 );
 newtype!(
     /// A constant pool byte offset. Displayed as `k<off>`.
@@ -272,11 +273,11 @@ impl<'a> Operand<'a> for Mem {
     #[inline]
     fn read(w: &'a [u32], pos: &mut usize) -> Result<Self, DecodeError> {
         let [p, k] = *take::<2>(w, pos)?;
-        Ok(Mem { p: Slot(p), k: k as i32 })
+        Ok(Mem { p: Slot(p as i32), k: k as i32 })
     }
     #[cfg(feature = "alloc")]
     fn write(&self, out: &mut Vec<u32>) {
-        out.push(self.p.0);
+        out.push(self.p.0 as u32);
         out.push(self.k as u32);
     }
 }
@@ -285,11 +286,11 @@ impl<'a> Operand<'a> for Deref {
     const KIND: OperandKind = OperandKind::Deref;
     #[inline]
     fn read(w: &'a [u32], pos: &mut usize) -> Result<Self, DecodeError> {
-        Ok(Deref(Slot(take::<1>(w, pos)?[0])))
+        Ok(Deref(Slot(take::<1>(w, pos)?[0] as i32)))
     }
     #[cfg(feature = "alloc")]
     fn write(&self, out: &mut Vec<u32>) {
-        out.push(self.0.0);
+        out.push(self.0.0 as u32);
     }
 }
 

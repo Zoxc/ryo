@@ -1,5 +1,20 @@
 //! Frame layout constants and the argument block layout.
 //!
+//! # Frames
+//!
+//! Frames grow downward, and slot offsets are signed, relative to `fp`:
+//!
+//! ```text
+//! fp + 16 + …   argument block (written by the caller, in its outgoing area)
+//! fp + 8        return address
+//! fp + 0        caller fp
+//! fp - 1 … fp - L       locals, `_0`, temporaries
+//! fp - F … fp - F + A   outgoing argument block (the callee's), F = round16(L + largest block)
+//! ```
+//!
+//! A callee's `fp` is its caller's `fp - F - 16`, so its argument block (at its `fp + 16`) is
+//! exactly the caller's outgoing block.
+//!
 //! # Why `arg_block` takes offsets instead of computing them
 //!
 //! The argument block has the layout of the tuple of the callee's ABI argument types, as
@@ -14,25 +29,27 @@
 //! So this crate doesn't replicate it. The backend gets the offsets from
 //! `tcx.layout_of(tuple)` and passes them to [`arg_block`], which checks that they form a
 //! valid block and describes where each argument lives in the frame. The VM and the
-//! templates never need the computation: they either run bytecode that already contains the
+//! templates never need the computation: they either run code that already contains the
 //! offsets, or use the real Rust tuple type.
 
-/// Size of the frame header (caller fp, return pc). The argument block starts at `fp + H`.
+/// Size of the frame header (caller fp, return address). The argument block starts at
+/// `fp + H`.
 pub const HEADER_SIZE: u32 = 16;
 
-/// Alignment of every frame (`fp`), and of `frame_size`.
+/// Alignment of every frame (`fp`), and of the frame size `F`.
 pub const FRAME_ALIGN: u32 = 16;
 
 /// Byte offset of the caller fp in the frame header.
 pub const CALLER_FP_OFFSET: u32 = 0;
 
-/// Byte offset of the return pc in the frame header.
-pub const RETURN_PC_OFFSET: u32 = 8;
+/// Byte offset of the return address in the frame header.
+pub const RETURN_ADDRESS_OFFSET: u32 = 8;
 
-/// `frame_size` for a frame whose locals end at `end` bytes from `fp` (header included):
-/// `end` rounded up to [`FRAME_ALIGN`].
-pub const fn frame_size(end: u32) -> u32 {
-    (end + FRAME_ALIGN - 1) & !(FRAME_ALIGN - 1)
+/// The frame size `F` of a function whose locals take `locals` bytes below `fp` and whose
+/// largest outgoing argument block is `outgoing` bytes: their sum rounded up to
+/// [`FRAME_ALIGN`]. The outgoing block is at `fp - F`.
+pub const fn frame_size(locals: u32, outgoing: u32) -> u32 {
+    (locals + outgoing + FRAME_ALIGN - 1) & !(FRAME_ALIGN - 1)
 }
 
 /// One argument's place in the block, as rustc laid it out.
@@ -128,18 +145,13 @@ impl<'a> ArgBlock<'a> {
     }
 
     /// Offset of argument `i` from the callee's `fp` (`H + offset`).
-    pub fn frame_offset(&self, i: usize) -> u32 {
-        HEADER_SIZE + self.fields[i].offset
+    pub fn frame_offset(&self, i: usize) -> i32 {
+        (HEADER_SIZE + self.fields[i].offset) as i32
     }
 
-    /// Offset of argument `i` from the *caller's* `fp`, for a caller with `frame_size`
-    /// writing its outgoing block (design/lowering.md, "Calls").
-    pub fn outgoing_offset(&self, caller_frame_size: u32, i: usize) -> u32 {
-        caller_frame_size + self.frame_offset(i)
-    }
-
-    /// First frame offset after the block, where the other locals may start.
-    pub fn end(&self) -> u32 {
-        HEADER_SIZE + self.size
+    /// Offset of argument `i` from the *caller's* `fp`, for a caller with frame size `F`
+    /// writing its outgoing block at `fp - F` (design/lowering.md, "Calls").
+    pub fn outgoing_offset(&self, caller_frame_size: u32, i: usize) -> i32 {
+        self.fields[i].offset as i32 - caller_frame_size as i32
     }
 }

@@ -55,8 +55,8 @@ use ryo_bytecode::insn::{CodeBuf, Opcode};
 
 pub use self::constant::{is_import, is_tls_shim, vtable_alloc};
 pub use self::sig::{AbiSig, abi_sig};
-use self::emit::{OUT, Width, opw};
-use self::frame::Frame;
+use self::emit::{Width, opw};
+use self::frame::{Frame, OUT_END};
 
 /// A lowered function. Code positions are word offsets from the function's start.
 pub struct LoweredFn<'tcx> {
@@ -67,8 +67,8 @@ pub struct LoweredFn<'tcx> {
     pub islands: Vec<IslandRequest<'tcx>>,
     /// Cleanup table entries (unsorted).
     pub cleanup: Vec<CleanupEntry>,
+    /// The frame size `F`: locals and the largest outgoing argument block.
     pub frame_size: u32,
-    pub max_outgoing: u32,
     pub arg_size: u32,
     pub ret_size: u32,
 }
@@ -208,7 +208,7 @@ pub struct FnCx<'a, 'tcx> {
     /// (call-like instruction, where unwinding out of it goes).
     cleanup: Vec<(u32, UnwindTo)>,
     fixups: Vec<Fixup>,
-    /// Largest `H + outgoing argument block` of the calls made so far.
+    /// Largest outgoing argument block of the calls made so far.
     pub max_outgoing: u32,
     arg_size: u32,
     /// The block after the one being lowered, in code order (for fall-through).
@@ -253,7 +253,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             block_starts: Vec::new(),
             fused: None,
             terminate_at: Vec::new(),
-            caller_location: sig.caller_location.then(|| HEADER_SIZE + sig.fields.last().expect("location field").offset),
+            caller_location: sig
+                .caller_location
+                .then(|| frame::slot((HEADER_SIZE + sig.fields.last().expect("location field").offset) as i32)),
         })
     }
 
@@ -299,7 +301,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         Ok(())
     }
 
-    /// Patches branches and cleanup targets, relocates outgoing slots, forms
+    /// Patches branches and cleanup targets, turns slots into signed frame offsets, forms
     /// superinstructions.
     fn finish(mut self) -> Result<LoweredFn<'tcx>, NeedsNative> {
         let starts = std::mem::take(&mut self.block_starts);
@@ -318,8 +320,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 CleanupEntry { offset, target }
             })
             .collect();
-        let frame_size = self.frame.frame_size();
-        emit::relocate_out_slots(&mut self.code.words, frame_size);
+        let frame_size = self.frame.frame_size(self.max_outgoing)?;
+        emit::finish_slots(&mut self.code.words, frame_size);
         ryo_bytecode::peephole::fuse(&mut self.code).expect("lowered code decodes");
         let ret = self.frame.locals[rustc_middle::mir::RETURN_PLACE];
         Ok(LoweredFn {
@@ -328,7 +330,6 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             islands: self.islands,
             cleanup,
             frame_size,
-            max_outgoing: self.max_outgoing,
             arg_size: self.arg_size,
             ret_size: ret.layout.size.bytes() as u32,
         })
@@ -399,14 +400,16 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         self.op(opw("Imm", w), &ops);
     }
 
-    /// The outgoing argument block's field at `off`: a slot relative to the end of the frame.
+    /// The outgoing argument block's field at `off`: the slot at `fp - F + off`, once the
+    /// frame size `F` is known (`frame.rs`).
     pub fn out(off: u32) -> u32 {
-        OUT | (HEADER_SIZE + off)
+        debug_assert!(off < OUT_END);
+        off
     }
 
     /// Notes an outgoing argument block of `size` bytes.
     pub fn outgoing(&mut self, size: u32) {
-        self.max_outgoing = self.max_outgoing.max(HEADER_SIZE + size);
+        self.max_outgoing = self.max_outgoing.max(size);
     }
 
     // ---- types ----

@@ -117,13 +117,11 @@ pub struct FuncEntry {
     pub code_off: u32,
     /// Length in words.
     pub code_len: u32,
+    /// The frame size `F`: locals and the largest outgoing argument block, below `fp`
+    /// ([`crate::abi`]).
     pub frame_size: u32,
-    /// Bytes above `frame_size` the function may write: H plus its largest outgoing argument
-    /// block, or 0 if it makes no calls. The stack check on entry covers
-    /// `fp + frame_size + max_outgoing`.
-    pub max_outgoing: u32,
     /// Size of the argument block (`ArgBlock::size`): the bytes `vm::enter` copies from the
-    /// portal's args and `tail_call` moves down to `fp + H`.
+    /// portal's args and `tail_call` moves up to `fp + H`.
     pub arg_size: u32,
     /// Size of the return value: what a native `tail_call.ind` target returns.
     pub ret_size: u32,

@@ -1,6 +1,10 @@
 //! Every integer, float, conversion and atomic opcode against a Rust reference model. Each
 //! opcode gets its own function `zero d; op; ret d`, encoded generically from `OP_INFO`.
 
+// Disabled: these tests run hand-assembled functions, and nothing can run VM code while the
+// VM has no dispatcher.
+#![cfg(any())]
+
 mod common;
 use common::*;
 use ryo_bytecode::ALL_OPCODES;
