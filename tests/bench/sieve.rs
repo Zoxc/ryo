@@ -19,7 +19,7 @@ fn sieve(limit: usize) -> Vec<bool> {
 }
 
 fn main() {
-    let limit = std::hint::black_box(20_000_000);
+    let limit = std::hint::black_box(13_000_000);
     let prime = sieve(limit);
     let count = prime.iter().filter(|&&p| p).count();
     let last = (0..=limit).rev().find(|&i| prime[i]).unwrap();

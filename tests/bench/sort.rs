@@ -47,7 +47,7 @@ fn checksum(v: &[u32]) -> u64 {
 }
 
 fn main() {
-    let n = std::hint::black_box(1_000_000);
+    let n = std::hint::black_box(250_000);
     let mut rng = Rng(0x2545_f491_4f6c_dd1d);
     let data: Vec<u32> = (0..n).map(|_| rng.next() as u32).collect();
 

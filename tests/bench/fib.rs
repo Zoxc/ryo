@@ -5,6 +5,6 @@ fn fib(n: u32) -> u64 {
 }
 
 fn main() {
-    let n = std::hint::black_box(37);
+    let n = std::hint::black_box(39);
     println!("fib({n}) = {}", fib(n));
 }
