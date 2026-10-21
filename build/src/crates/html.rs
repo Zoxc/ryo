@@ -465,7 +465,7 @@ fn coverage_section(r: &Report) -> String {
     let mut all: Vec<&Unit> = Vec::new();
     for c in &r.crates {
         let cell = &c.cells[ryo];
-        let Some([build, tests, _]) = cell.warmup.get(..3).and_then(|w| <&[Step; 3]>::try_from(w).ok()) else {
+        let [build, tests, ..] = cell.warmup.as_slice() else {
             let _ = write!(s, "<tr><td>{}</td><td colspan=5 class=\"bad\">no data</td></tr>", c.krate.name);
             continue;
         };

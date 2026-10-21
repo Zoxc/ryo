@@ -25,6 +25,9 @@ pub struct Crate {
     pub why: &'static str,
     /// Extra arguments for every test binary.
     pub test_args: &'static [&'static str],
+    /// A local workspace (`--path`), built in place with `--workspace`: every member is the
+    /// leaf, everything else a dependency. It has no workload.
+    pub local: Option<PathBuf>,
 }
 
 pub const CRATES: &[Crate] = &[
@@ -34,6 +37,7 @@ pub const CRATES: &[Crate] = &[
         sha256: "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd",
         why: "parsing and ordering; no dependencies",
         test_args: &[],
+        local: None,
     },
     Crate {
         name: "smallvec",
@@ -41,6 +45,7 @@ pub const CRATES: &[Crate] = &[
         sha256: "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03",
         why: "unsafe container code, generic over arrays",
         test_args: &[],
+        local: None,
     },
     Crate {
         name: "miniz_oxide",
@@ -48,6 +53,7 @@ pub const CRATES: &[Crate] = &[
         sha256: "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c",
         why: "deflate/inflate: tight integer loops",
         test_args: &[],
+        local: None,
     },
     Crate {
         name: "memchr",
@@ -56,6 +62,7 @@ pub const CRATES: &[Crate] = &[
         why: "SIMD intrinsics (islands) and runtime CPU feature detection",
         // Five exhaustive tests take 115 of the suite's 120 s with LLVM at opt-level 0.
         test_args: &["--skip", "forward_packedpair"],
+        local: None,
     },
     Crate {
         name: "hashbrown",
@@ -63,6 +70,7 @@ pub const CRATES: &[Crate] = &[
         sha256: "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a",
         why: "std's HashMap; SSE2 group probing, heavy generics",
         test_args: &[],
+        local: None,
     },
     Crate {
         name: "rand",
@@ -70,6 +78,7 @@ pub const CRATES: &[Crate] = &[
         sha256: "65c9fb96cbc91e3478eaae79a69fcd3f1ae4ad052e471fe6732fff548984b4af",
         why: "ChaCha and xoshiro generators, getrandom (syscalls), traits",
         test_args: &[],
+        local: None,
     },
     Crate {
         name: "regex-syntax",
@@ -77,6 +86,7 @@ pub const CRATES: &[Crate] = &[
         sha256: "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4",
         why: "a parser with large Unicode tables; regex's front half",
         test_args: &[],
+        local: None,
     },
     Crate {
         name: "unicode-segmentation",
@@ -84,6 +94,7 @@ pub const CRATES: &[Crate] = &[
         sha256: "c6f5d3c3b1bf09027a88a6bc961fc00497d651009560b5463668dc81b0fa87a8",
         why: "table-driven state machines over UTF-8",
         test_args: &[],
+        local: None,
     },
     Crate {
         name: "serde_json",
@@ -91,6 +102,7 @@ pub const CRATES: &[Crate] = &[
         sha256: "e7e9cc8b1b85264074fbcc02a88680c4096b1e47df8f739dceb03bf482f04bd6",
         why: "serde's trait-heavy codegen, proc-macro dev-deps (serde_derive)",
         test_args: &[],
+        local: None,
     },
 ];
 
@@ -138,6 +150,8 @@ pub struct Options {
     /// Per test binary or workload run, in seconds.
     pub timeout: u64,
     pub out: Option<PathBuf>,
+    /// A local workspace to bench instead of `crates`.
+    pub path: Option<PathBuf>,
     /// Cargo's and rustc's defaults: no `RUSTFLAGS`, profile, job or incremental settings;
     /// only the backend is changed (an unfair comparison).
     pub stock: bool,
@@ -154,7 +168,7 @@ pub const DEFAULT_TIMEOUT: u64 = 1800;
 
 pub const USAGE: &str = "\
   bench crates [--dep-samples N] [--leaf-samples N] [--build-samples N (both)] [--run-samples N (0: no runs)] [--quick] [--crates a,b|all] [--backends llvm,clif,ryo]
-               [--timeout SECS] [--out FILE] [--stock (cargo/rustc defaults, only RUSTC changed)]
+               [--path DIR (a local workspace instead: members are the leaf)] [--timeout SECS] [--out FILE] [--stock (cargo/rustc defaults, only RUSTC changed)]
                                build, test and run pinned crates.io crates with each backend
                                (dev profile); writes an HTML report";
 
@@ -167,6 +181,7 @@ pub fn parse_options(args: &[&str]) -> Result<Options, String> {
         backends: BACKENDS.to_vec(),
         timeout: DEFAULT_TIMEOUT,
         out: None,
+        path: None,
         stock: false,
     };
     let mut args = args.iter().copied();
@@ -186,6 +201,7 @@ pub fn parse_options(args: &[&str]) -> Result<Options, String> {
             "--quick" => (o.dep_samples, o.leaf_samples, o.run_samples) = (1, 1, 1),
             "--timeout" => o.timeout = value()?.parse().ok().filter(|&n| n > 0).ok_or("bad timeout")?,
             "--out" => o.out = Some(value()?.into()),
+            "--path" => o.path = Some(value()?.into()),
             "--stock" => o.stock = true,
             "--crates" => {
                 o.crates.clear();
@@ -318,16 +334,22 @@ pub fn run(opts: Options) -> Result<(), String> {
         crate::clif::ensure()?;
     }
     let base = root.join("target").join("bench-crates");
-    let selected: Vec<&'static Crate> =
-        CRATES.iter().filter(|c| opts.crates.iter().any(|n| n == c.name)).collect();
+    let selected: Vec<&'static Crate> = match &opts.path {
+        Some(path) => vec![local_crate(path)?],
+        None => CRATES.iter().filter(|c| opts.crates.iter().any(|n| n == c.name)).collect(),
+    };
     let y = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
     let header = header(&info, &root, &opts);
 
     let mut results = Vec::new();
     for &krate in &selected {
         let mut cells: Vec<Cell> = opts.backends.iter().map(|_| Cell::default()).collect();
-        let src = match prepare(&root, &base, krate) {
-            Ok(src) => src,
+        let prepared = match &krate.local {
+            Some(dir) => prepare_local(dir),
+            None => prepare(&root, &base, krate).map(|dir| (dir, vec![krate.name.to_owned()])),
+        };
+        let (src, members) = match prepared {
+            Ok(p) => p,
             Err(e) => {
                 eprintln!("[y] {}: preparing the sources FAILED: {e}", krate.name);
                 for cell in &mut cells {
@@ -357,19 +379,19 @@ pub fn run(opts: Options) -> Result<(), String> {
                 let target = base.join("target").join(krate.name).join(backend.name());
                 let env = Env { info: &info, root: &root, y: &y, backend, target: &target, src: &src, stock: opts.stock };
                 let t = Instant::now();
-                match build_sample(&env, krate, &base.join("logs"), clean, i == 0 && backend == Backend::Ryo) {
+                match build_sample(&env, krate, &members, &base.join("logs"), clean, i == 0 && backend == Backend::Ryo) {
                     Ok(sample) => {
                         eprintln!("[y] {} build {label} [{}]: {:.1}s", krate.name, backend.name(), t.elapsed().as_secs_f64());
                         cell.test_exes = sample.test_exes;
-                        cell.example = Some(sample.example);
+                        cell.example = sample.example;
                         if i == 0 {
                             cell.warmup = sample.steps.to_vec();
                         } else if clean {
                             cell.dep_build.push(sample.steps[0].clone());
                         } else {
-                            let [build, tests, _] = sample.steps;
-                            cell.build.push(build);
-                            cell.test_build.push(tests);
+                            let mut steps = sample.steps.into_iter();
+                            cell.build.extend(steps.next());
+                            cell.test_build.extend(steps.next());
                         }
                     }
                     Err(e) => {
@@ -404,13 +426,13 @@ pub fn run(opts: Options) -> Result<(), String> {
                     // A failed or timed-out binary makes the sum meaningless: drop the sample.
                     cell.errors.push(format!("test: run sample {i} dropped: {}", outcome.failures.join("; ")));
                 }
-                let example = cell.example.clone().unwrap();
-                let w = run_timed(Command::new(&example).current_dir(&src), opts.timeout);
+                let w = cell.example.as_ref().map(|e| run_timed(Command::new(e).current_dir(&src), opts.timeout));
                 match w {
-                    Ok((_, out)) if i == 0 => cell.workload_output = Some(out),
-                    Ok((t, _)) => cell.workload.push(t),
-                    Err(e) if i == 0 => cell.errors.push(format!("workload: {e}")),
-                    Err(e) => cell.errors.push(format!("workload: run sample {i} dropped: {e}")),
+                    None => {}
+                    Some(Ok((_, out))) if i == 0 => cell.workload_output = Some(out),
+                    Some(Ok((t, _))) => cell.workload.push(t),
+                    Some(Err(e)) if i == 0 => cell.errors.push(format!("workload: {e}")),
+                    Some(Err(e)) => cell.errors.push(format!("workload: run sample {i} dropped: {e}")),
                 }
                 eprintln!(
                     "[y] {} run {label} [{}]: tests {time:.2}s, workload {}",
@@ -493,6 +515,38 @@ fn prepare(root: &Path, base: &Path, krate: &Crate) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
+/// The [`Crate`] of a local workspace, named after its directory.
+fn local_crate(path: &Path) -> Result<&'static Crate, String> {
+    let dir = fs::canonicalize(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let name = dir.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or("bad --path")?;
+    let why = format!("local workspace {}", dir.display());
+    Ok(Box::leak(Box::new(Crate {
+        name: name.leak(),
+        version: "local",
+        sha256: "",
+        why: why.leak(),
+        test_args: &[],
+        local: Some(dir),
+    })))
+}
+
+/// Fetches a local workspace's dependencies and lists its members' package names. The
+/// sources are used in place (nothing is written to them; the target directory is the
+/// bench's).
+fn prepare_local(dir: &Path) -> Result<(PathBuf, Vec<String>), String> {
+    let text = fs::read_to_string(dir.join("Cargo.toml")).map_err(|e| format!("{}: {e}", dir.display()))?;
+    if let Some(l) = text.lines().find(|l| l.starts_with("[profile.") && l.contains(".package.")) {
+        return Err(format!("the manifest has a per-package profile override `{l}`"));
+    }
+    crate::utils::run(cmd("cargo").current_dir(dir).args(["fetch", "--locked"]))?;
+    // `viewer v0.1.0 (/path)`, one line per member.
+    let tree = output(cmd("cargo").current_dir(dir).args(["tree", "--offline", "--workspace", "--depth", "0", "--prefix", "none"]))?;
+    let mut members: Vec<String> = tree.lines().filter_map(|l| l.split_whitespace().next()).map(str::to_owned).collect();
+    members.sort();
+    members.dedup();
+    Ok((dir.to_owned(), members))
+}
+
 fn sha256(path: &Path) -> Result<String, String> {
     let out = output(Command::new("sha256sum").arg(path))?;
     Ok(out.split_whitespace().next().unwrap_or("").to_owned())
@@ -544,22 +598,28 @@ impl Env<'_> {
 }
 
 struct BuildSample {
-    /// `cargo build --lib`, `cargo build --tests`, `cargo build --example ryo_bench`.
-    steps: [Step; 3],
+    /// `cargo build --lib`, `cargo build --tests`, `cargo build --example ryo_bench` (not for
+    /// a local workspace, whose first step is `cargo build --workspace`).
+    steps: Vec<Step>,
     test_exes: Vec<PathBuf>,
-    example: PathBuf,
+    example: Option<PathBuf>,
 }
 
 /// Builds the crate: library, tests, then the workload. `clean` starts from a clean target
 /// directory; otherwise only the crate's own artifacts are cleaned (`cargo clean -p`), so
 /// the dependencies aren't rebuilt, and a rebuilt one is an error.
-fn build_sample(env: &Env, krate: &Crate, logs: &Path, clean: bool, stats: bool) -> Result<BuildSample, String> {
+fn build_sample(env: &Env, krate: &Crate, members: &[String], logs: &Path, clean: bool, stats: bool) -> Result<BuildSample, String> {
     if clean {
         if env.target.exists() {
             fs::remove_dir_all(env.target).map_err(|e| format!("removing {}: {e}", env.target.display()))?;
         }
     } else {
-        crate::utils::run(env.cargo(logs, false).args(["clean", "--offline", "-p", krate.name]))?;
+        let mut c = env.cargo(logs, false);
+        c.args(["clean", "--offline"]);
+        for m in members {
+            c.args(["-p", m]);
+        }
+        crate::utils::run(&mut c)?;
     }
     let step = |args: &[&str]| -> Result<(Step, String), String> {
         if logs.exists() {
@@ -578,17 +638,22 @@ fn build_sample(env: &Env, krate: &Crate, logs: &Path, clean: bool, stats: bool)
         }
         Ok((Step { wall, units: timing::read_units(logs)? }, String::from_utf8_lossy(&out.stdout).into_owned()))
     };
-    let (build, _) = step(&["--lib"])?;
-    let (tests, json) = step(&["--tests", "--message-format=json-render-diagnostics"])?;
-    let (example, _) = step(&["--example", "ryo_bench"])?;
+    let local = krate.local.is_some();
+    let (build, _) = step(if local { &["--workspace"] } else { &["--lib"] })?;
+    let test_args: &[&str] = &["--workspace", "--tests", "--message-format=json-render-diagnostics"];
+    let (tests, json) = step(if local { test_args } else { &test_args[1..] })?;
+    let mut steps = vec![build, tests];
+    if !local {
+        steps.push(step(&["--example", "ryo_bench"])?.0);
+    }
     if !clean
-        && let Some(u) = [&build, &tests, &example].iter().flat_map(|s| &s.units).find(|u| !u.primary)
+        && let Some(u) = steps.iter().flat_map(|s| &s.units).find(|u| !u.primary)
     {
         return Err(format!("dependency `{}` was rebuilt in a sample", u.krate));
     }
     let test_exes = test_executables(&json);
-    let example_exe = env.target.join("debug").join("examples").join(exe_name("ryo_bench"));
-    Ok(BuildSample { steps: [build, tests, example], test_exes, example: example_exe })
+    let example = (!local).then(|| env.target.join("debug").join("examples").join(exe_name("ryo_bench")));
+    Ok(BuildSample { steps, test_exes, example })
 }
 
 /// The test binaries in cargo's `--message-format=json` output: `compiler-artifact` messages

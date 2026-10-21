@@ -188,7 +188,7 @@ This gives a third backend, built from the same toolchain, to compare against.
 ### `bench crates`
 
 `y bench crates [--build-samples N] [--run-samples N] [--quick] [--crates a,b|all] [--backends
-llvm,clif,ryo] [--timeout SECS] [--out FILE]` compares LLVM (plain rustc), Cranelift
+llvm,clif,ryo] [--path DIR] [--timeout SECS] [--out FILE]` compares LLVM (plain rustc), Cranelift
 (`rustc-clif`) and ryo (`rustc-ryo`, default sysroot) on real crates.io crates, in cargo's
 `dev` profile only. Written in Rust in `build/src/crates/`.
 
@@ -205,6 +205,10 @@ llvm,clif,ryo] [--timeout SECS] [--out FILE]` compares LLVM (plain rustc), Crane
   Without `--crates`, only `DEFAULT_CRATES` run: miniz_oxide (tight integer loops),
   hashbrown (generic hashing and probing) and regex-syntax (a large, enum-heavy parser).
   `--crates all` runs every crate.
+- **Local workspaces**: `--path DIR` benches the workspace at `DIR` instead, in place (only
+  the target directory is the bench's). It is built with `--workspace`, so every member is
+  the leaf (cargo's primary packages, cleaned with `cargo clean -p` for the leaf samples) and
+  everything else, registry and git crates, a dependency. It has no workload.
 - **Workloads**: `tests/crates/<crate>.rs`, added to the extracted package as the
   `ryo_bench` example (published manifests set `autoexamples = false`). Each prints a
   checksum that must be the same for every backend.
