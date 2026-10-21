@@ -3,7 +3,8 @@
 - **Portal** (native → VM): a native function with the real symbol and signature of a VM
   function. Calling it enters the VM.
 - **Island** (VM → native): one operation the VM can't do itself (a call to native code, an
-  intrinsic, a SIMD op, …), run from the bytecode with the `island` instruction.
+  intrinsic, a SIMD op, …), called directly from VM code by the `island` instruction and
+  the native paths of the call instructions.
 
 Both are **instances of generic templates in `ryo_rt`**. The backend instantiates them and
 adds them to the native CGU ([backend.md](backend.md#pipeline)), and cg_llvm compiles them
@@ -32,15 +33,16 @@ details (`fn_abi_of_instance`, `PassMode`, …) come from cg_llvm.
 
 - **Signature** (uniform): `unsafe fn(fp: *mut u8, ops: *const u32) -> u32` (Rust ABI).
   - `fp` is the VM frame pointer.
-  - `ops` points at the operand words that follow the `island` instruction
-    ([vm.md](vm.md#calls-and-islands)).
-  - The return value is the successor index: 0 for single-target operations, and the arm for
-    multi-target ones. Unwinding is never signalled through it.
-  - Rust ABI, because the VM calling the island is Rust code from the same toolchain, and
-    Rust-ABI calls may unwind. With `extern "C"`, a panic couldn't leave the island (nounwind
-    plus an abort guard). With `extern "C-unwind"`, `ryo_rt`'s calls through island pointers
-    would count as FFI-unwind calls, which would make `ryo_rt` require `panic=unwind`
-    (`ffi_unwind_calls.rs`) and break `panic=abort` programs.
+  - `ops` points at the island's operand array in the image's code constants: the operand
+    words of the `island` instruction, or the array the call instructions' native path
+    passes ([vm.md](vm.md#calls-and-islands)).
+  - The return value is 0, and VM code ignores it.
+  - **Called directly**: VM code calls the island through its symbol slot,
+    `mov rdi, rbp; lea rsi, [rip + ops]; call [rip + isl]`, with the Rust ABI's argument
+    registers (`rcx`/`rdx` and 32 bytes of shadow space on PE). Rust ABI, because Rust-ABI
+    functions may unwind: a panic leaves the island natively, into the VM frame
+    ([Unwinding](#unwinding)). With `extern "C"`, a panic couldn't leave the island
+    (nounwind plus an abort guard).
 - **Frame access**: templates see the frame only through raw pointers. Each operand word
   `ops[i]` is a frame offset, and operand `i` is the slot at `fp + ops[i]`
   (`ryo_rt::island::slot`).
@@ -83,7 +85,8 @@ pub unsafe fn drop_in_place<T: ?Sized>(fp: *mut u8, ops: *const u32) -> u32 { �
   The argument block is read as one tuple (`slot::<(A0, …)>(fp, ops, 0).read()`), so it is
   exactly the callee's argument block ([lowering.md](lowering.md#frame-slots)). For
   `call.ext`/`call.ind`, the VM passes `[outgoing block, d, fn pointer slot]`: for
-  `call.ind` that is `p`, for `call.ext` a slot the VM writes the resolved address into.
+  `call.ind` that is `p`, for `call.ext` its `f` slot, which the handler writes the resolved
+  address into. `tail_call.ind` passes `_0`'s slot as the destination.
 - Operations the VM has no instruction for, with the same operand convention: the 128-bit
   `mul_w128`, `div_{s,u}_w128`, `rem_{s,u}_w128`, `mul_ovf_{s,u}_w128`, and
   `as_cast<A, B>` for numeric casts from or to `f16`/`f128` (through `ryo_rt::island::AsCast`,
@@ -147,25 +150,11 @@ These make the containing function native ([backend.md](backend.md#pipeline), st
 
 ### Unwinding
 
-Templates don't catch. The VM calls islands that can unwind (the call templates,
-`drop_in_place`, some intrinsics) through `ryo_rt::unwind::call_catching`:
-
-```rust
-#[inline(never)]
-pub unsafe fn call_catching(f: unsafe fn(*mut u8, *const u32) -> u32, fp: *mut u8,
-                            ops: *const u32, payload_out: *mut RawPayload) -> CatchResult
-#[repr(C)] pub struct CatchResult { pub succ: u32, pub unwinding: bool }
-#[repr(transparent)] pub struct RawPayload(pub *mut (dyn Any + Send));  // NONE: null data pointer
-```
-
-It is a non-generic wrapper around the `catch_unwind` intrinsic (not std's `catch_unwind`, so
-the panic stays counted while the VM unwinds, [vm.md](vm.md#unwinding)) that returns the successor and an "unwinding"
-flag separately. The VM passes a pointer to the current entry record's payload slot as
-`payload_out`, and on a panic `call_catching` writes the payload there (the
-`Box<dyn Any + Send>` as its raw wide pointer, from `Box::into_raw`, overwriting the slot, which must be
-`RawPayload::NONE`) ([vm.md](vm.md#unwinding)). The VM then runs the
-function's cleanup blocks ([vm.md](vm.md#unwinding)). Islands that can't unwind are called
-directly.
+Templates don't catch, and the VM doesn't either: a panic in an island unwinds natively out
+of it into the calling VM frame, whose LSDA sends it to the frame's landing pad or on to its
+caller ([vm.md](vm.md#unwinding)). Whether an island call is a call site at all follows the
+MIR unwind action ([lowering.md](lowering.md#unwinding)): islands that can't unwind, and
+calls with `UnwindAction::Unreachable`, are none, so unwinding out of them aborts.
 
 ## Portals (native → VM)
 
@@ -179,12 +168,15 @@ upstream-visible generics and `main`. A portal is an instance of:
 pub extern "rust-call" fn portal<Args: Tuple, R, const ID: u64>(args: Args) -> R {
     let mut ret = MaybeUninit::<R>::uninit();
     let args = ManuallyDrop::new(args);         // the VM takes ownership of the args
-    let mut payload = RawPayload::NONE;
-    let st = unsafe { crate::vm::enter(ID, &raw const args as *const u8, ret.as_mut_ptr() as *mut u8, &mut payload) };
-    if st != 0 { unsafe { crate::unwind::resume_unwind_from_vm(payload) } }
-    unsafe { ret.assume_init() }
+    unsafe {
+        enter(ID, (&raw const args).cast::<u8>(), ret.as_mut_ptr().cast::<u8>());
+        ret.assume_init()
+    }
 }
 ```
+
+A panic in the VM unwinds out of `vm::enter` and the portal natively, so the portal has no
+status to check ([vm.md](vm.md#entry)).
 
 `portal_tc0..N<A, B, …, R, const ID>` are the `#[track_caller]` variants. They are Rust-ABI and
 arity-specific, because `#[track_caller]` is rejected on any other ABI (E0737,
@@ -267,16 +259,16 @@ where
 
 ## Calls between VM and native code
 
-- **VM → VM, same image**: `call fn`, straight through the bytecode, with no stub.
+- **VM → VM, same image**: `call fn`, a direct machine call, with no stub.
 - **Calls to upstream instances**: `call.ext` on the callee's symbol, for every callee whose
   instance comes from another crate. The backend doesn't need to know whether upstream
   compiled it to bytecode. On first use, the site cache resolves the symbol: either it is a
-  portal of a registered VM function (later calls go straight to the bytecode), or it is
+  portal of a registered VM function (later calls go straight to its code), or it is
   native (later calls go through the instruction's `call_ptrN` island)
   ([vm.md](vm.md#calls-and-islands)).
 - **Indirect calls** (fn pointer, `dyn` vtable): `call.ind`, with a site cache for the last VM
   target. Non-VM targets go through the `call_ptrN` island for the signature.
 - **Separate `ryo_rt` copies**: each cdylib or staticlib carries its own `ryo_rt`, with its own
-  registry. A function pointer into another copy's bytecode isn't recognized by `lookup_addr`,
+  registry. A function pointer into another copy's VM code isn't recognized by `lookup_addr`,
   so it goes through the native path (island → portal). Rust dylibs and the exe that links
   them share one copy.

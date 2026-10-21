@@ -81,7 +81,9 @@ modeled on cg_clif's `build_system/`.
    - `ryo_rt` is always built with the stock LLVM backend, against that std, with
      `-Copt-level=3 -Ccodegen-units=1 -Cpanic=unwind -Cembed-bitcode=yes` regardless of the
      user's profile (bitcode, like std's, so `-Clto` builds can include it), and
-     installed next to std. There is no native library to link.
+     installed next to std. There is no native library to link. Its cargo features are
+     `registry-anchor` plus those listed in `RYO_RT_FEATURES` (comma-separated, such as
+     `fp-arg`, [vm.md](vm.md#handlers)).
 3. **Wrappers** (like cg_clif's `scripts/rustc-clif.rs`, `cargo-clif.rs`): tiny Rust programs
    compiled with plain rustc. They locate `dist/` from `current_exe()`, set
    `RUSTC_BOOTSTRAP=1` and `RUSTUP_TOOLCHAIN` (baked in at build time), and add:
@@ -135,8 +137,11 @@ This gives a third backend, built from the same toolchain, to compare against.
 
 ### `test` and `bench`
 
-- `test`: the test corpus is built with `rustc-ryo` (also with `-Zthreads=8`) and with plain
-  rustc, and the exit codes, stdout and stderr are diffed. It includes an ABI sweep: argument types (ZST, scalar pairs, large aggregates,
+- `test`: the test corpus is built with `rustc-ryo` (also with `-Zthreads=8`, and as
+  `ryo-novm` with `RYO_NO_VM`, where everything stays native) and with plain rustc, and the
+  exit codes, stdout and stderr are diffed. Every ryo build runs with `RYO_ASM_VERIFY`, so
+  the machine code of every VM function is decoded back and checked
+  ([backend.md](backend.md#debugging-switches)). It includes an ABI sweep: argument types (ZST, scalar pairs, large aggregates,
   `f32`/`f64` mixes, `u128`, `extern "C"`, closures, vtable shims, `#[track_caller]`) through
   portals and island templates, on both targets. Programs can list functions that must be
   compiled to bytecode: the ryo builds run with `RYO_STATS=1` and must report them, and the
@@ -148,7 +153,11 @@ This gives a third backend, built from the same toolchain, to compare against.
   since MIR inlining removes functions. Some programs are a staticlib or cdylib called from a
   C `main`, compiled with `cc`, or `cl` on windows-msvc hosts (skipped without one). The smoke tests check that `rustc-ryo`
   rejects `-Zrandomize-layout`, more than one codegen unit and `-Cincremental`, and that
-  `cargo-ryo` builds a dev-profile package.
+  `cargo-ryo` builds a dev-profile package. The `backtrace` check builds
+  `tests/vm_backtrace.rs` (a panic two VM calls deep, caught by `catch_unwind`) and runs it
+  with `RUST_BACKTRACE=1`: the backtrace must name the VM functions (`<symbol>.vm`),
+  `ryo_asm_enter`, `ryo_rt::vm::enter` and the native frames around them, and the cleanup
+  and the catch must still run ([vm.md](vm.md#unwinding)).
 - `test` checks (`rt-core-only`) that every sysroot's `ryo_rt` rlib references no symbols
   outside `core`, `compiler_builtins`, `ryo_bytecode`, libc and the panic runtime's entry
   points, and that no call path from its code reaches core's panic machinery
@@ -173,12 +182,10 @@ This gives a third backend, built from the same toolchain, to compare against.
   a built-in timer does the same (one warmup, then `N` runs, default 5). The programs'
   output must agree across backends. `y bench` builds `dist/` and cg_clif first if they are
   missing; `y test --clif` builds cg_clif too.
-- VM dispatch benches: `y bench` also runs `vm/rt/benches/dispatch.rs` (hand-assembled fib,
-  sieve and insertion sort through `vm::enter`, each also with superinstructions formed) once
-  per dispatch strategy ([vm.md](vm.md#dispatch)), and prints a table of programs by
-  strategy (`N` runs after one warmup, mean and standard deviation).
-- `y test` also runs `vm/`'s cargo tests once per dispatch strategy (`vm/test-dispatch.sh`
-  does the same without `dist/`).
+- `y test` also runs `vm/`'s cargo tests (`cargo test --workspace` in `vm/`): the encoder
+  against the decoder, the image writer and reader, every handler against a reference
+  model, the handlers' codegen, and hand-assembled functions run through `vm::enter`
+  ([vm.md](vm.md#handlers)).
 
 ### `bench crates`
 
@@ -253,10 +260,10 @@ build/          bin        y                   build tool (own Cargo.lock, no de
 scripts/                                       rustc-ryo.rs, cargo-ryo.rs, rustc-clif.rs wrappers
 backend/        dylib      rustc_codegen_ryo   #![feature(rustc_private)]
 vm/             cargo workspace for everything that ends up in the output program
-  bytecode/     rlib       ryo_bytecode        format: opcodes, encoding, image layout;
+  bytecode/     rlib       ryo_bytecode        format: opcodes, machine code, image layout;
                                                used by the backend (writer) and the VM (reader)
-  rt/           rlib       ryo_rt              the runtime: VM, registry, portal/island
-                                               templates, panic glue
+  rt/           rlib       ryo_rt              the runtime: handlers, entry, registry,
+                                               portal/island templates
 tests/                                         test programs, driven by `y test`
   crates/                                      workloads for `y bench crates`
   bench/                                       benchmark programs, driven by `y bench`

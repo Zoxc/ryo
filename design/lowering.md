@@ -1,8 +1,9 @@
 # Lowering: MIR → bytecode
 
-Each VM function is lowered on its own (in parallel, [backend.md](backend.md#pipeline)) into a
-code buffer, a constant list, a relocation list and a cleanup table. The instruction set is
-specified in [vm.md](vm.md#instruction-set).
+Each VM function is lowered on its own (in parallel, [backend.md](backend.md#pipeline)) into
+instruction words, a constant list, a relocation list and a cleanup table. The instruction set
+is specified in [vm.md](vm.md#instruction-set). After the merge pass, the backend encodes the
+words as machine code ([vm.md](vm.md#machine-code)).
 
 The entry point is `lower(tcx, cx, instance) -> Result<LoweredFn, NeedsNative>`
 (`backend/src/rustc_api/lower/mod.rs`), where `cx: LowerCx` holds the set of functions
@@ -12,8 +13,8 @@ callee an island). A `LoweredFn` holds:
 - the code words, with operands the lowering can't know left as placeholders
 - relocations for those operands, which the merge pass resolves once every function's index
   and symbol is known:
-  - `Call { at, callee }`: a `call` to another VM function of this image (function index and
-    callee `frame_size`)
+  - `Call { at, callee }`, `TailCall { at, callee }`: a `call` / `tail_call` to another VM
+    function of this image (its function index)
   - `Symbol { at, target }`: a `sym` operand, the target's symbol (its portal if it is a VM
     function, which then gets one; an internal native item is made visible to the image)
   - `Static { at, def_id }`: a `sym` operand naming a static
@@ -25,7 +26,7 @@ callee an island). A `LoweredFn` holds:
   - `Data { at, alloc, offset }`: a `data` operand, `offset` bytes into the fixup-area copy
     of an allocation (PE, [Constants](#constants))
 - island requests (template diagnostic item name and generic args, plus the operand to fill)
-- the cleanup entries, `frame_size`, `max_outgoing`, `arg_size` and `ret_size`
+- the cleanup entries, `frame_size`, `arg_size` and `ret_size`
 
 `NeedsNative(reason)` keeps the function native as a whole. `RYO_STATS=2` prints the reasons
 ([backend.md](backend.md#debugging-switches)).
@@ -72,33 +73,40 @@ so a MIR change in a toolchain bump is a compile error. The tables below follow 
   `(u32, u8, u8, u8)` differ), and changes between releases. The backend takes the offsets,
   size and alignment from `tcx.layout_of` of the tuple, and `arg_block` validates them and
   gives the frame offsets. Blocks aligned to more than 16 bytes can't be placed at
-  `fp + H`, so such functions stay native. The wrappers reject `-Zrandomize-layout`, since
+  `fp + 16`, so such functions stay native. The wrappers reject `-Zrandomize-layout`, since
   tuple layouts must agree between crates. ZST arguments get an offset in the tuple and take no space.
-- The argument block starts at `fp + H`, where H is the header size
-  ([vm.md](vm.md#frames-and-the-vm-stack)).
-- **Other locals**: each gets a fixed offset after the argument block, aligned to its
-  layout. ZSTs take no space. Locals whose storage ranges don't overlap share bytes
+- Frames grow downward, and slots are signed offsets from `fp` ([vm.md](vm.md#frames)). The
+  argument block starts at `fp + 16`, above the return address and the caller's `fp`, in the
+  caller's frame.
+- **Other locals**: each gets a fixed offset below `fp`, aligned to its layout. ZSTs take no
+  space. Locals whose storage ranges don't overlap share bytes
   (`frame.rs`): a forward dataflow over every CFG edge (unwind edges included) gives the
   locals that may be storage-live at each block entry, and a local conflicts with every local
-  that may be live at one of its `StorageLive`s. Locals are then placed first-fit, at the
-  lowest aligned offset no conflicting local already uses. `_0`, the arguments and locals
+  that may be live at one of its `StorageLive`s. Locals are then placed first-fit, as
+  close to `fp` as they can go without overlapping a conflicting local. `_0`, the arguments and locals
   without a `StorageLive` keep slots of their own, and so does every local of a body with
   more than 4096 locals (the conflict matrix is quadratic). At `-O0` rustc strips storage
   markers from local MIR (`RemoveStorageMarkers` runs when lifetime markers are off,
   `rustc_mir_transform/src/remove_storage_markers.rs:14`), so there sharing only applies to
   MIR that still has them, such as upstream `#[inline]` and generic items.
 - `_0` (the return value) is a normal slot.
-- `frame_size` = H + argument block + other locals, rounded up to 16.
-- **Alignment**: frames are 16-aligned. The VM stack base is page-aligned, H = 16 and
-  `frame_size` is a multiple of 16, and every slot is aligned to its type relative to `fp`.
+- **Temporaries** of the statement being lowered go below the locals, and are freed between
+  statements.
+- **Exception slot**: functions with cleanup or terminate actions, or an `UnwindResume`, have
+  one 8-byte slot where landing pads store the exception object ([Unwinding](#unwinding)).
+- **Outgoing block**: the argument blocks of the calls a function makes are written at
+  `fp - F`, the bottom of the frame (`rsp`), which is the callee's `fp + 16`. The lowering
+  hands out outgoing slots as offsets in the block and turns them into frame offsets once
+  `F` is known (`frame.rs`, `emit::finish_slots`).
+- `frame_size` `F` = locals + temporaries + the largest outgoing argument block (the
+  staging area of tail calls included), rounded up to 16 (`abi::frame_size`). It is an
+  operand of the prologue's `sub rsp, F` ([vm.md](vm.md#frames)).
+- **Alignment**: frames are 16-aligned (`fp` is 16-aligned and `F` a multiple of 16), and
+  every slot is aligned to its type relative to `fp`.
   So every slot whose type has alignment ≤ 16 is properly aligned, and templates access
   slots with aligned reads and writes. A function whose locals or arguments (including the
   argument block of any call it makes) contain a type with alignment above 16 is not
   lowered: it stays native ([stubs.md](stubs.md#template-gaps)).
-- `max_outgoing` = H + the largest outgoing argument block among the function's calls
-  (`call`, `call.ext`, `call.ext.ind`, `call.ind`, and the staging area of tail calls), or 0
-  if it makes none. It goes in the function table, and the stack check on entry covers
-  `frame_size + max_outgoing` ([vm.md](vm.md#frames-and-the-vm-stack)).
 
 ## Places and operands
 
@@ -151,7 +159,7 @@ a temporary slot up to 256 bytes, and uses `memmove` above that.
 | `Repeat(op, n)` | A scalar constant: `zero` or `fill` into a slot, `memset` into memory if all its bytes are equal. Otherwise the element is written once, then doubled with `memcpy`s (⌈log₂ n⌉ of them) |
 | `Ref`, `RawPtr` | `addr` (slot address) or the place's address computation. For unsized places, the wide pointer (data plus metadata) |
 | `Reborrow(_, _, place)` | same as `Use(Copy(place))`: same layout, bitwise copy |
-| `ThreadLocalRef(def)` | `addr.sym` of `Shim(ThreadLocal(def))` and a `call_ptr0` island on it (plain `island`: the shim can't unwind), which returns the address on the current thread. On ELF, rustc doesn't create that shim (`needs_thread_local_shim` is false when the target exports TLS, `rustc_middle/src/ty/util.rs:731-735`), so the backend adds it to the native CGU itself, also for upstream statics, as `WeakODR` + `Hidden` ([backend.md](backend.md#pipeline), Linkage). On PE, the collector puts a local static's shim in the CGU, and an upstream crate exports its own (`symbol_export.rs:203-220`), which the image reaches through `__imp_`. The shim itself is never a VM function (its body is a `ThreadLocalRef`). Foreign thread locals have no shim and stay native |
+| `ThreadLocalRef(def)` | `addr.sym` of `Shim(ThreadLocal(def))` and a `call_ptr0` island on it (without a cleanup entry: the shim can't unwind), which returns the address on the current thread. On ELF, rustc doesn't create that shim (`needs_thread_local_shim` is false when the target exports TLS, `rustc_middle/src/ty/util.rs:731-735`), so the backend adds it to the native CGU itself, also for upstream statics, as `WeakODR` + `Hidden` ([backend.md](backend.md#pipeline), Linkage). On PE, the collector puts a local static's shim in the CGU, and an upstream crate exports its own (`symbol_export.rs:203-220`), which the image reaches through `__imp_`. The shim itself is never a VM function (its body is a `ThreadLocalRef`). Foreign thread locals have no shim and stay native |
 | `Cast(kind, op, ty)` | see Casts |
 | `BinaryOp(op, (a, b))` | see Binary operations |
 | `UnaryOp(Not, a)` | `not.wN` (`bool`: `xor` with 1) |
@@ -174,7 +182,7 @@ a temporary slot up to 256 bytes, and uses `memmove` above that.
 | `PointerCoercion(ReifyFnPointer)` | `addr.sym` of the target instance's symbol, or its portal for VM functions |
 | `PointerCoercion(ClosureFnPointer)` | `addr.sym` of the closure's `FnOnce` shim (its portal, if it's a VM function) |
 | `PointerCoercion(UnsafeFnPointer, MutToConstPointer, ArrayToPointer)` | `mov` |
-| `PointerCoercion(Unsize)` | as cg_ssa's `coerce_unsized_into`: a pointer becomes the wide pointer, data pointer plus metadata (a constant length, `addr.k` of the vtable in the constant pool, or for trait upcasts the old vtable or its supertrait entry). A struct (`Box`, `Rc`, `Ref<'_, T>`, `Pin<Box<T>>`, …) is coerced field by field: non-ZST fields of unchanged type are copied, the others coerced recursively |
+| `PointerCoercion(Unsize)` | as cg_ssa's `coerce_unsized_into`: a pointer becomes the wide pointer, data pointer plus metadata (a constant length, `addr.abs` of the vtable in the constant pool, or for trait upcasts the old vtable or its supertrait entry). A struct (`Box`, `Rc`, `Ref<'_, T>`, `Pin<Box<T>>`, …) is coerced field by field: non-ZST fields of unchanged type are copied, the others coerced recursively |
 
 ### Binary operations
 
@@ -201,14 +209,14 @@ the VM. Wide pointer orderings are lexicographic: `a < b` is `a.data < b.data ||
 | `TerminatorKind` | Bytecode |
 |---|---|
 | `Goto` | `jmp`, or fall-through |
-| `SwitchInt(d, targets)` | If `d` is a `bool` local defined by an integer, `char`, `bool` or thin-pointer compare as the block's last statement, and used nowhere else, `br.cmp.*` on the compare's operands, and the compare isn't emitted. Otherwise `br.if`/`br.unless` for `bool`, `switch.dense` for dense value sets, and `switch.sparse` otherwise |
+| `SwitchInt(d, targets)` | If `d` is a `bool` local defined by an integer, `char`, `bool` or thin-pointer compare as the block's last statement, and used nowhere else, a compare branch on the compare's operands (`br.eq`, `br.lt`, their `.imm` forms or `br.gt.imm`, with the polarity and operand order that give the compare), and the compare isn't emitted. Otherwise `br`/`br!` for `bool`, `br.eq.imm` for a single case, `switch.dense` for dense value sets, and `switch.sparse` otherwise |
 | `Return` | `ret` |
 | `Unreachable` | `unreachable` |
 | `Call` | see Calls |
 | `TailCall` | `tail_call` / `tail_call.ind` ([vm.md](vm.md#calls-and-islands)) |
 | `Drop { place, .. }` | Nothing if the type has no drop glue. Otherwise a call of `DropGlue(T)`: a VM `call` if the glue is a VM function, an `island` with `drop_in_place::<T>` otherwise. Unsized places pass the wide pointer. `replace` doesn't change the lowering, and `drop` (async drop) is `None` in runtime MIR |
-| `Assert { cond, expected, msg, target, unwind }` | `br.cmp` (fused as for `SwitchInt`) or `br.if`/`br.unless` to `target`, and otherwise a call of the panic function for `msg` |
-| `UnwindResume` | `resume` |
+| `Assert { cond, expected, msg, target, unwind }` | a compare branch (fused as for `SwitchInt`) or `br`/`br!` to `target`, and otherwise a call of the panic function for `msg` |
+| `UnwindResume` | `resume x`, `x` the exception slot |
 | `UnwindTerminate(reason)` | a call of the reason's lang item (`panic_cannot_unwind`, `panic_in_cleanup`), which reports the panic and aborts, as cg_ssa's `codegen_terminate_terminator` |
 | `InlineAsm` | not lowerable: the function is native ([backend.md](backend.md#pipeline)) |
 | `Yield`, `CoroutineDrop`, `FalseEdge`, `FalseUnwind` | don't occur in runtime MIR (the coroutine transform and CFG cleanup remove them). The lowering ICEs on them |
@@ -293,14 +301,16 @@ island.
    otherwise: on a fn pointer, the vtable entry of a virtual call, or `addr.sym` of an
    upstream or native callee. Calls of intrinsics and non-Rust ABIs stay native.
 2. **Arguments**: the argument operands are copied into the outgoing argument block at
-   `fp + frame_size + H` (the callee frame's argument block, in `arg_block` layout) by plain
+   `fp - F` (the callee frame's argument block, in `arg_block` layout) by plain
    `mov`/`copy` instructions immediately before the call. MIR call arguments are operands
    (locals or constants), so no other call runs between building the block and the call. For
    `#[track_caller]` callees, the location is appended ([Caller location](#caller-location)).
-3. **Destination**: the call instruction names the caller's destination slot. A destination
-   behind a deref is first written to a temporary slot, then stored.
-4. **Unwind**: if `unwind` is `Cleanup(bb)`, a cleanup table entry is recorded for this
-   call's pc ([Unwinding](#unwinding)).
+3. **Destination**: the call instruction names the caller's destination slot, which the
+   call marker after the call carries ([vm.md](vm.md#calls-and-islands)). A destination
+   behind a deref is first written to a temporary slot, then stored. `call.ext` also gets an
+   8-byte temporary `f` for the resolved address of its native path.
+4. **Unwind**: the call's unwind action becomes a cleanup entry for the instruction
+   ([Unwinding](#unwinding)).
 
 Functions with unsized parameters (`unsized_fn_params`) are not lowered: they stay native.
 
@@ -320,27 +330,36 @@ Mirrors cg_ssa's `get_caller_location`:
 
 ## Unwinding
 
-- Every call-like instruction (`call`, `call.ext`, `call.ind`, `island.catch`) whose MIR
-  terminator has an `unwind` action records a cleanup entry keyed by its code offset:
-  - `UnwindAction::Cleanup(bb)` → jump to `bb`
-  - `UnwindAction::Terminate(reason)` → jump to a stub after the function's blocks that
-    calls the reason's lang item, like cg_ssa's terminate block, so the message and the
-    panic hook run as natively. One stub per reason the function uses
-  - `UnwindAction::Continue` → no entry: unwinding leaves the frame
-  - `UnwindAction::Unreachable` → no entry
+VM frames unwind natively ([vm.md](vm.md#unwinding)). The lowering records the unwind action
+of every call-like instruction (`call`, `call.ext`, `call.ext.ind`, `call.ind`,
+`tail_call.ind`, an `island` whose operation can unwind, `resume`) as a cleanup entry keyed
+by its code offset, which the encoder turns into the function's LSDA call-site table:
+
+- `UnwindAction::Continue` → a `CONTINUE` entry: the call is a call site without a landing
+  pad, so unwinding leaves the frame. `resume` and `tail_call.ind` (whose frame is gone for
+  a VM callee) always have it.
+- `UnwindAction::Cleanup(bb)` → the landing pad of `bb`.
+- `UnwindAction::Terminate(reason)` → a catch-all landing pad (`CATCH`), as cg_llvm's
+  terminate pads, so it runs even when nothing up the stack catches. It jumps to a stub
+  after the function's blocks that calls the reason's lang item (`panic_cannot_unwind`,
+  `panic_in_cleanup`), like cg_ssa's terminate block, so the message and the panic hook run
+  as natively. One stub per reason the function uses.
+- `UnwindAction::Unreachable` → no entry: the call is no call site, and unwinding out of it
+  aborts.
+
+- **Landing pads**: one per distinct destination, after the blocks and terminate stubs:
+  `lpad x` (which stores the exception object in the function's exception slot `x`), then a
+  `jmp` to the cleanup block or terminate stub. A cleanup block may also be reached by a
+  jump from another one, so the pads are separate from the blocks, and `lpad` runs once per
+  landing. The cleanup code ends in `resume x`.
 - Calls inside cleanup blocks carry `Terminate`, so a panic during unwinding aborts, as with
   native code.
-- The `catch_unwind` intrinsic is an island (`ryo_island_catch_unwind<Data>`, a plain
-  `island`: the intrinsic is `rustc_nounwind`). Its `try_fn`/`catch_fn` operands are fn
-  pointers, so VM functions are reached through their portals: a panic in the VM leaves the
-  portal natively and the intrinsic catches it.
-- A panic stays counted by std while the VM unwinds (`std::thread::panicking()` is true in
-  VM cleanup code, so drops and `Mutex` poisoning behave as natively): `call_catching` and
-  `resume_unwind_from_vm` use the panic runtime's own entry points, not std's
-  `catch_unwind`/`resume_unwind` ([vm.md](vm.md#modules)).
-- Islands whose operation can unwind (call templates, `drop_in_place`, some intrinsics) are
-  emitted as `island.catch` unless the unwind action is `Unreachable`, whether or not there
-  is a cleanup entry. All others are plain `island`.
+- The `catch_unwind` intrinsic is an island (`ryo_island_catch_unwind<Data>`, without a
+  cleanup entry: the intrinsic is `rustc_nounwind`). Its `try_fn`/`catch_fn` operands are fn
+  pointers, so VM functions are reached through their portals, and the intrinsic catches a
+  panic unwinding out of them.
+- Islands whose operation can't unwind (intrinsic wrappers, `as_cast`, the 128-bit
+  arithmetic, the TLS shim call) get no cleanup entry.
 
 ## Constants
 
@@ -369,7 +388,7 @@ Mirrors cg_ssa's `get_caller_location`:
   the image's writable `fixups` area instead of the pool, with one fixup per such pointer
   (against an indirect slot; functions and foreign statics of static libraries also get a
   direct slot, as for code references), and registration patches them once. Their address
-  is `addr.data`, and an `Indirect` constant is copied out of them with a load. Allocations
+  is `addr.abs` of the data area, and an `Indirect` constant is copied out of them with a load. Allocations
   that only point at such allocations stay in the pool, with intra-image relocations into
   the writable section. This is the only load-time fixup.
 
@@ -383,14 +402,14 @@ pointer compares, 128-bit `mul`/`div`/`rem`/`mul.ovf` islands, constants (pool a
 relocations, type ids, vtables, and on PE the fixup area for constants pointing at imports),
 thread locals (`ThreadLocalRef` through the TLS shim), switches,
 asserts, drops (VM call of the glue, `drop_in_place` island, vtable drop for trait objects),
-unwinding (cleanup entries, terminate stubs, the `catch_unwind` island) and calls: VM `call`,
+unwinding (cleanup entries, landing pads, terminate stubs, the `catch_unwind` island) and calls: VM `call`,
 `call.ext`, `call.ind` for fn pointers and virtual calls (`dyn Fn*` included), tail calls, and
 islands (`call` for safe Rust fn items and safe intrinsics, `call_ptrN`/`call_cN` through
 `addr.sym` otherwise), every shim kind with a body, plus the intrinsics listed in Calls.
 `#[track_caller]` functions are VM functions with
 `portal_tcN` portals (up to 16 arguments), and caller locations follow cg_ssa, including a
 `#[track_caller]` function's own incoming location and the `caller_location` intrinsic.
-`SwitchInt` and `Assert` fuse with the compare that feeds them (`br.cmp`). Locals with storage
+`SwitchInt` and `Assert` fuse with the compare that feeds them (compare branches). Locals with storage
 markers share slots; there is no copy propagation yet.
 Still `NeedsNative`, with the reason in `RYO_STATS=2`: `#[track_caller]` functions with more
 than 16 arguments, `ThreadLocalRef` of foreign thread locals, `f16`/`f128` arithmetic and
@@ -404,17 +423,14 @@ of the ryo-built sysroot crates are bytecode. Most of the rest are `#[target_fea
 functions (SIMD in `memchr`, `std_detect`), `extern "C"` definitions, C-variadic calls and over-aligned
 argument blocks (`y build --sysroot ryo` prints the table).
 The PE fixup area is only cross-checked (objects and links), not run, like the rest of the
-PE column ([platforms.md](platforms.md)).
+PE column ([platforms.md](platforms.md)). On PE, landing pads don't run
+([vm.md](vm.md#unwinding)).
 
-## Bytecode optimization
+## Code optimization
 
-After lowering, a peephole pass:
-
-- folds constant offsets into memory operands, and selects the `k = 0` and `.imm` forms
-- removes `mov`s of moved-from locals by copy propagation, which matters at `-O0`, where
-  MIR has had little of it
-- forms superinstructions, choosing the pairs from `y bench` profiles (for example
-  `add.imm` + `br.cmp` loop latches, `load` + `br.cmp`). This is
-  `ryo_bytecode::peephole::fuse`, run on each function's finished `CodeBuf`: it only rewrites
-  the opcode word of each pair's first instruction, so it can run before or after branch
-  targets are patched ([vm.md](vm.md#superinstructions))
+There is no optimization pass over the instruction words yet. The lowering itself folds
+constant offsets into memory operands (`[p + k]`), selects the `.imm` forms for constant
+operands, and fuses a compare with the branch that consumes it. Everything else happens in
+the encoder's fixed sequences ([vm.md](vm.md#machine-code)): shortest register loads,
+`rel8` branches where they reach, and 16-byte loop-head alignment. There is no copy
+propagation, which matters at `-O0`, where MIR has had little of it.

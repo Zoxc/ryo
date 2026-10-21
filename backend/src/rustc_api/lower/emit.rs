@@ -1,7 +1,7 @@
 //! Instruction emission: opcode selection by name and width, raw encoding, and the final
 //! pass over a function's code (slots to signed frame offsets).
 //!
-//! Opcodes are looked up by their `Opcode` variant name (`"AddW32"`, `"LoadW64Z"`), built
+//! Opcodes are looked up by their `Opcode` variant name (`"AddW32"`, `"BrLtUImmW64"`), built
 //! from a family name and a [`Width`]. The opcode list in `ryo_bytecode` (`ops.rs`) is the
 //! single source of truth, so a missing combination is a lowering bug that shows up as a
 //! panic with the name, not as a wrong encoding.

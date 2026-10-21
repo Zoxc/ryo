@@ -10,7 +10,7 @@ Steps 1–4 run **inside our `collect_and_partition_mono_items` override**, not 
 `codegen_crate`. Metadata encoding runs before `codegen_crate`
 (`rustc_interface/src/passes.rs:1314` vs `:1338`), and when generics are shared it already
 calls the query through `exported_generic_symbols` (`symbol_export.rs:330`). The query is
-`eval_always` and computed once. The provider stores the bytecode results in a `OnceLock`,
+`eval_always` and computed once. The provider stores the VM results in a `OnceLock`,
 and `codegen_crate` reads them.
 
 1. **Collect.** Call the original `collect_and_partition_mono_items` provider (saved in
@@ -56,18 +56,25 @@ and `codegen_crate` reads them.
 
      Never VM: everything in a `proc-macro` crate (it keeps VM code out of rustc's own process,
      and proc macros gain nothing from it), everything in a panic runtime crate
-     (`#![panic_runtime]`: `panic_unwind`, `panic_abort`; portals re-raise a panic that left
-     the VM through `__rust_start_panic`, so it must be native, [vm.md](vm.md#unwinding)),
+     (`#![panic_runtime]`: `panic_unwind`, `panic_abort`),
      `ryo_rt`'s own instances, and everything when
      `RYO_NO_VM` is set ([Debugging switches](#debugging-switches)).
    - `Static`, `GlobalAsm` → native. Statics are data, and cg_llvm handles relocations,
      linkage and TLS.
-3. **Lower VM functions to bytecode** with `par_for_each_in` over the list. This is the
-   "single code unit, parallel loop": every function is lowered on its own into code plus a
+3. **Lower VM functions** with `par_map` over the list. This is the "single code unit,
+   parallel loop": every function is lowered on its own into instruction words plus a
    relocation list ([lowering.md](lowering.md)), and the results are merged in one pass at
    the end. An operation the VM doesn't support becomes an `island` instruction plus an
    *island request* (template + generic args). The merge pass deduplicates requests (same
-   template + args → one instance).
+   template + args → one instance), assigns function indices, symbols and sites, and adds
+   each function to the image writer under the name `<symbol>.vm`. Then every function is
+   **encoded** as machine code (`asm::encode`, [vm.md](vm.md#machine-code)), again with
+   `par_map`, in the mode `asm_mode` gives: `fp` passing as `ryo_rt`'s `FP_ARG` says (the
+   backend evaluates the const), loop alignment unless `RYO_ASM_ALIGN=0`, and the target's
+   object format. With `RYO_ASM_VERIFY`, each result is decoded back and checked
+   ([Debugging switches](#debugging-switches)). The handlers and `ryo_probe_stack` the code
+   calls, and `rust_eh_personality` on ELF, are added to the image's LTO roots
+   ([Query overrides](#query-overrides-provide)).
 4. **Build the native CGU.** This is a copy of the original CGU, with the VM functions removed
    and the stub instances (portals and islands) added. Our override returns exactly this CGU,
    so `self.llvm.codegen_crate(tcx)` compiles only what we ask for.
@@ -116,7 +123,10 @@ and `codegen_crate` reads them.
        nothing leaks.
      - Aliases aren't an option: cg_llvm only creates them for foreign-item DefIds
        (`mono_item.rs:54-134`).
-5. **Emit the image** as one extra object with the `object` crate ([vm.md](vm.md#image-format)).
+5. **Emit the image** as one extra object with the `object` crate ([vm.md](vm.md#image-format)):
+   `ImageWriter::finish_encoded` lays out the sections and unwind information, and
+   `objfile.rs` writes them with their relocations, the handler calls against the handlers'
+   mangled symbols (`rt_symbol`), and a local symbol per function.
    The object is written to disk inside `codegen_crate`, where `tcx` is available. Our
    `codegen_crate` returns a wrapper ongoing type holding cg_llvm's `Box<dyn Any>` and the
    image path. Our `join_codegen` forwards the inner value to cg_llvm's (which downcasts it,
@@ -131,9 +141,10 @@ and `codegen_crate` reads them.
    `rustc_codegen_ssa/src/back/link.rs:3756`), which would fail and drop the image.
    The image defines one global symbol, `__ryo_image_<StableCrateId>` (the id as 16 hex
    digits), hidden: only the registry object of the same link unit references it. On ELF the
-   read-only part is `.data.rel.ro.ryo_image` (writable only while relocating) and the
-   writable part `.data.ryo_image`; on PE they are `.rdata$ryo_image` and `.data$ryo_image`
-   ([platforms.md](platforms.md)). Limitation: with `--emit=obj` (no linking) the emitted
+   read-only part is `.data.rel.ro.ryo_image` (writable only while relocating), the writable
+   part `.data.ryo_image`, the code `.text.ryo_image`, and the unwind information
+   `.eh_frame` and `.gcc_except_table.ryo_image`; on PE they are `.rdata$ryo_image`,
+   `.data$ryo_image`, `.text$ryo_image`, `.pdata` and `.xdata` ([platforms.md](platforms.md)). Limitation: with `--emit=obj` (no linking) the emitted
    `.o` lacks the image, because `join_codegen` adds the image module after cg_ssa has copied
    the module objects to the outputs; and no registry object is generated then. A binary with a VM `main` also gets `__ryo_main` in this
    object ([stubs.md](stubs.md#program-entry-main)).
@@ -206,7 +217,9 @@ and `codegen_crate` reads them.
   - Only portals that are actually emitted are listed, since a listed instance without a
     portal leaves downstream crates with an undefined reference.
   - Every symbol the image refers to (portals, callees, statics, islands, the targets of
-    pointers in constants, upstream and foreign ones included) is added to the local
+    pointers in constants, upstream and foreign ones included, and `ryo_rt`'s handlers,
+    `ryo_probe_stack` and `rust_eh_personality`, which the machine code and the unwind
+    information reference) is added to the local
     `exported_non_generic_symbols` as `NoDefId`, `used`, at the `Rust` level, so `-Clto`
     doesn't internalize it: LTO keeps every `used` symbol whatever its threshold
     (`rustc_codegen_ssa/src/back/lto.rs:107`), and the image is an object LTO doesn't see.
@@ -257,11 +270,21 @@ Environment variables read by the backend (and `y test`):
   functions by reason (`ryo: native reason: <n> <reason>`). `RYO_STATS=2` also prints why
   each other function stayed native (`ryo: native <instance>: <reason>`).
 - `RYO_NO_VM` keeps every function native.
+- `RYO_ASM_VERIFY` (anything but `0`) decodes the machine code of every function the
+  backend encodes (`asm::decode`) and checks that it gives back the function's instruction
+  words, frame size and cleanup entries, and that its LSDA call-site table reads back; a
+  mismatch is a fatal error with the function's disassembly. `y test` sets it for every ryo
+  build.
+- `RYO_ASM_ALIGN=0` turns off the 16-byte alignment of loop heads
+  ([vm.md](vm.md#machine-code)).
 - `RYO_BACKEND_MARKER` prints `ryo backend: init` from `init` and `ryo backend: partition`
   from the partition provider, so tests can tell that the backend and its override ran.
 
 `ryo_rt` reads `RYO_VM_TRACE`: if set, every `vm::enter` prints
-`ryo-vm: enter <crate hash>:<function index>` to stderr ([vm.md](vm.md#modules)).
+`ryo-vm: enter <crate hash>:<function index>` to stderr; and `RYO_VM_STATS`: if set, it
+prints `ryo-vm: <n> enters, <n> native calls` at exit ([vm.md](vm.md#modules)). `y build`
+reads `RYO_RT_FEATURES`, extra cargo features for the sysroot's `ryo_rt` (such as `fp-arg`,
+[vm.md](vm.md#handlers)); the backend follows `ryo_rt`'s `FP_ARG`.
 
 No MIR is overridden or synthesized, and no DefIds are created. rustc freezes definitions
 right after type checking (`rustc_interface/src/passes.rs:1152`), long before mono items

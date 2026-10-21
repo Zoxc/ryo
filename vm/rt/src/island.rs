@@ -1,8 +1,8 @@
 //! Island templates (VM → native). See design/stubs.md (Islands).
 //!
 //! Every island has the signature `unsafe fn(fp: *mut u8, ops: *const u32) -> u32` (Rust ABI).
-//! `ops[i]` is a signed frame offset: operand `i` is the slot at `fp + ops[i]`. The return
-//! value is the successor index. Operand conventions (also in design/stubs.md, "Operand conventions"):
+//! `ops[i]` is a signed frame offset: operand `i` is the slot at `fp + ops[i]`. VM code calls
+//! islands directly and ignores the return value (0). Operand conventions (also in design/stubs.md, "Operand conventions"):
 //!
 //! | Template | `ops[0]` | `ops[1]` | `ops[2]` |
 //! |---|---|---|---|

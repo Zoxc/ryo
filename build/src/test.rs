@@ -407,10 +407,9 @@ const VARIANTS: &[Variant] = &[
 /// Added by `test --clif`.
 const CLIF: Variant = Variant { name: "clif", compiler: Compiler::Clif, ..VARIANT };
 
-/// Whether VM code can run. While it can't (the VM has no dispatcher), only the variants
-/// without VM code ([`Variant::no_vm`], plain rustc, Cranelift) and the checks that don't run
-/// VM code are run; the others are skipped.
-const VM_RUNS: bool = false;
+/// Whether the VM variants and the checks that run VM code are run. Without them, only the
+/// variants without VM code ([`Variant::no_vm`], plain rustc, Cranelift) are.
+const VM_RUNS: bool = true;
 
 /// The variants to build: [`VARIANTS`], plus [`CLIF`] for `test --clif`.
 fn variants(clif: bool) -> Vec<&'static Variant> {
@@ -493,13 +492,14 @@ pub fn run(clif: bool) -> Result<(), String> {
         }
     }
     let hello = root.join("tests").join("hello.rs");
-    let checks: [(&str, Result<(), String>); 7] = [
+    let checks: [(&str, Result<(), String>); 8] = [
         ("rt-core-only", rt_core_only(&root)),
         ("reject-randomize-layout", reject_randomize_layout(&rustc_ryo, &hello, &out)),
         ("reject-codegen-units", reject_codegen_units(&rustc_ryo, &hello, &out)),
         ("reject-incremental", reject_incremental(&rustc_ryo, &hello, &out)),
         ("metadata-only", metadata_only(&rustc_ryo, &hello, &out)),
         ("exports", same_exports(&rustc_ryo, &root.join("tests").join("vm_exports.rs"), &out)),
+        ("backtrace", backtrace(&rustc_ryo, &root.join("tests").join("vm_backtrace.rs"), &out)),
         // It runs the program it builds.
         ("cargo-ryo", if VM_RUNS { cargo_smoke(&root, &out) } else { Ok(()) }),
     ];
@@ -553,7 +553,9 @@ impl Ctx {
             Compiler::Rustc => cmd("rustc"),
             Compiler::Ryo => {
                 let mut c = cmd(&self.rustc_ryo);
-                c.env("RYO_BACKEND_MARKER", "1").env("RYO_STATS", "1");
+                // Every function's machine code is decoded back and compared with its
+                // instructions (design/backend.md#debugging-switches).
+                c.env("RYO_BACKEND_MARKER", "1").env("RYO_STATS", "1").env("RYO_ASM_VERIFY", "1");
                 if variant.ryo_std {
                     c.args(["--sysroot", "ryo"]);
                 }
@@ -864,6 +866,23 @@ fn cargo_smoke(root: &Path, out: &Path) -> Result<(), String> {
         || !stderr.contains(PARTITION_MARKER)
     {
         return Err(format!("{}\nstdout:\n{stdout}\nstderr:\n{stderr}", res.status));
+    }
+    Ok(())
+}
+
+/// `RUST_BACKTRACE=1` through VM frames: a panic two VM calls deep, caught by
+/// `catch_unwind`, prints a backtrace naming the VM functions (`<symbol>.vm`), the entry into
+/// the VM and the native frames around it, and the cleanup and the catch still run.
+fn backtrace(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
+    let exe = out.join(exe_name("vm_backtrace"));
+    crate::utils::run(cmd(rustc_ryo).arg("--edition=2024").arg(src).arg("-o").arg(&exe).env("RYO_ASM_VERIFY", "1"))?;
+    let res = Command::new(&exe).env("RUST_BACKTRACE", "1").output().map_err(|e| e.to_string())?;
+    let stdout = String::from_utf8_lossy(&res.stdout);
+    let stderr = String::from_utf8_lossy(&res.stderr);
+    let want = ["vm_backtrace::inner.vm", "vm_backtrace::outer.vm", "ryo_asm_enter", "ryo_rt::vm::enter", "__rust_try", "vm_backtrace::main"];
+    let missing: Vec<_> = want.iter().filter(|w| !stderr.contains(*w)).collect();
+    if !res.status.success() || stdout != "guard dropped\ncaught: true\n" || !missing.is_empty() {
+        return Err(format!("{}, missing frames {missing:?}\nstdout:\n{stdout}stderr:\n{stderr}", res.status));
     }
     Ok(())
 }
