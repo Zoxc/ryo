@@ -946,8 +946,11 @@ fn same_exports(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> 
             crate::utils::run(cmd(compiler).arg("--edition=2024").arg(src).args(flags).arg("-o").arg(&o))?;
             let syms = output(cmd(&nm).args(["-D", "--defined-only", "-j"]).arg(&o))?;
             // The runtime's own symbols, which every ryo output links: `ryo_vm_register`
-            // (C level), and in a Rust dylib everything of `ryo_rt` and `ryo_bytecode`.
-            let runtime = |s: &str| s == "ryo_vm_register" || s.contains("6ryo_rt") || s.contains("12ryo_bytecode");
+            // (C level), and in a Rust dylib everything of `ryo_rt` and `ryo_bytecode`,
+            // the handlers included.
+            let runtime = |s: &str| {
+                s == "ryo_vm_register" || s.contains("6ryo_rt") || s.contains("12ryo_bytecode") || is_rt_internal(s)
+            };
             let mut syms: Vec<String> = syms.lines().filter(|s| !runtime(s)).map(str::to_owned).collect();
             syms.sort();
             lists.push(syms);
@@ -957,6 +960,12 @@ fn same_exports(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> 
         }
     }
     Ok(())
+}
+
+/// Whether `s` is one of `ryo_rt`'s own `#[rustc_std_internal_symbol]`s (mangled under the
+/// `__rustc` root): the handlers `ryo_h_*` and `ryo_probe_stack`.
+fn is_rt_internal(s: &str) -> bool {
+    s.starts_with("_R") && s.contains("7___rustc") && (s.contains("ryo_h_") || s.ends_with("15ryo_probe_stack"))
 }
 
 /// `ryo_rt` must use only `core`, its own crates, libc, and the panic runtime's two entry
@@ -1001,7 +1010,7 @@ fn rt_core_only(root: &Path) -> Result<(), String> {
                 if s.starts_with("__rust") || s.starts_with("__rdl") || s.starts_with("__rg_") {
                     return true;
                 }
-                s.starts_with("_R") && crate_roots(s).iter().any(|c| !CRATES.contains(&c.as_str()))
+                s.starts_with("_R") && !is_rt_internal(s) && crate_roots(s).iter().any(|c| !CRATES.contains(&c.as_str()))
             })
             .collect();
         if !bad.is_empty() {

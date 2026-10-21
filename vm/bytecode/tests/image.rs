@@ -93,11 +93,10 @@ fn sample() -> ImageWriter {
         cleanup: vec![CleanupEntry { offset: 0, target: 6 }, CleanupEntry { offset: 10, target: CONTINUE }],
         portal: None,
     });
-    let t = list_words([Target(7)]);
     let ops = [16u32, -24i32 as u32];
     let f1 = code(&[
         Insn::CallExt { d: Slot(-8), sym: puts, site, isl: island, f: Slot(-16) },
-        Insn::Island { isl: island, ops: List::from_words(&ops), succs: List::from_words(&t) },
+        Insn::Island { isl: island, ops: List::from_words(&ops) },
         Insn::AddrAbs { d: Slot(-8), a: Abs::Const(vt) },
         Insn::AddrAbs { d: Slot(-16), a: Abs::Data(fx) },
         Insn::Ret { s: Slot(-8), len: 8 },

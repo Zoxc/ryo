@@ -1,6 +1,6 @@
 //! Island instructions and requests (design/stubs.md#islands-vm--native).
 //!
-//! An island is `island isl, n_ops, ops…, n_succs, t…`: the merge pass instantiates the
+//! An island is `island isl, n_ops, ops…`: the merge pass instantiates the
 //! template (found by its diagnostic item name in `ryo_rt`) with the generic args, adds the
 //! instance and its neighbors to the native CGU, and fills `isl`.
 
@@ -69,7 +69,6 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let at = self.code.pos();
         self.code.words.extend([Opcode::Island as u32, 0, ops.len() as u32]);
         self.code.words.extend_from_slice(ops);
-        self.code.words.push(0);
         self.islands.push(IslandRequest { at: at + 1, template: Symbol::intern(template), args: self.tcx.mk_args(args) });
         if let Some(u) = unwind {
             self.unwind_entry(at, u);

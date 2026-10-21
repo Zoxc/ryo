@@ -1,4 +1,4 @@
-//! The VM: entry from portals, the interpreter, the registry and per-thread state. See
+//! The VM: entry from portals, the handlers, the registry and per-thread state. See
 //! design/vm.md.
 //!
 //! - [`enter`]: entry from portals.
@@ -15,6 +15,7 @@ mod sys;
 mod thread;
 
 pub use registry::{Function, ImageRt};
+pub use interp::{FP_ARG, MODE, handler, h};
 pub use thread::VmThread;
 
 use thread::Entry;
@@ -92,6 +93,126 @@ pub unsafe fn enter(id: u64, args: *const u8, ret: *mut u8) {
         let rec = &raw mut rec;
         (*vm).entry = rec;
         let _pop = PopEntry { vm, rec };
-        interp::run(f, args);
+        ryo_asm_enter(f.entry, args, f.arg_size as usize);
     }
 }
+
+unsafe extern "Rust" {
+    /// Calls the VM function at `entry` with the `size`-byte argument block at `args`
+    /// (design/vm.md, "Entry"): reserves and copies the block, and calls it with `rbp = 0`,
+    /// so its frame has a null caller fp and `ret` writes to the entry record. Panics unwind
+    /// through it. The Rust ABI, so the call may unwind without being an FFI call.
+    fn ryo_asm_enter(entry: *const u8, args: *const u8, size: usize);
+}
+
+// The frame of `ryo_asm_enter` is addressed through `rbx`: `rbp` is 0 while VM code runs
+// (the null caller fp of the entry frame), and the reserved size is dynamic.
+#[cfg(not(windows))]
+core::arch::global_asm!(
+    ".text",
+    ".p2align 4",
+    ".globl ryo_asm_enter",
+    ".hidden ryo_asm_enter",
+    ".type ryo_asm_enter, @function",
+    "ryo_asm_enter:",
+    ".cfi_startproc",
+    "push rbp",
+    ".cfi_def_cfa_offset 16",
+    ".cfi_offset rbp, -16",
+    "push rbx",
+    ".cfi_def_cfa_offset 24",
+    ".cfi_offset rbx, -24",
+    "mov rbx, rsp",
+    ".cfi_def_cfa_register rbx",
+    "lea rcx, [rdx + 15]",
+    "and rcx, -16",
+    "sub rsp, 8",
+    "sub rsp, rcx",
+    "mov rax, rdi",
+    "mov rdi, rsp",
+    "mov rcx, rdx",
+    "rep movsb",
+    "xor ebp, ebp",
+    "call rax",
+    "mov rsp, rbx",
+    "pop rbx",
+    ".cfi_def_cfa rsp, 16",
+    "pop rbp",
+    ".cfi_def_cfa_offset 8",
+    "ret",
+    ".cfi_endproc",
+    ".size ryo_asm_enter, . - ryo_asm_enter",
+);
+
+// Win64: `rcx`, `rdx`, `r8`, and `rdi`, `rsi`, `xmm6`–`xmm15` are callee-saved here but not
+// in the `sysv64` handlers, so they are saved too.
+#[cfg(windows)]
+core::arch::global_asm!(
+    ".text",
+    ".p2align 4",
+    ".globl ryo_asm_enter",
+    ".def ryo_asm_enter; .scl 2; .type 32; .endef",
+    "ryo_asm_enter:",
+    ".seh_proc ryo_asm_enter",
+    "push rbp",
+    ".seh_pushreg rbp",
+    "push rbx",
+    ".seh_pushreg rbx",
+    "push rdi",
+    ".seh_pushreg rdi",
+    "push rsi",
+    ".seh_pushreg rsi",
+    "sub rsp, 168",
+    ".seh_stackalloc 168",
+    "movaps [rsp + 0], xmm6",
+    ".seh_savexmm xmm6, 0",
+    "movaps [rsp + 16], xmm7",
+    ".seh_savexmm xmm7, 16",
+    "movaps [rsp + 32], xmm8",
+    ".seh_savexmm xmm8, 32",
+    "movaps [rsp + 48], xmm9",
+    ".seh_savexmm xmm9, 48",
+    "movaps [rsp + 64], xmm10",
+    ".seh_savexmm xmm10, 64",
+    "movaps [rsp + 80], xmm11",
+    ".seh_savexmm xmm11, 80",
+    "movaps [rsp + 96], xmm12",
+    ".seh_savexmm xmm12, 96",
+    "movaps [rsp + 112], xmm13",
+    ".seh_savexmm xmm13, 112",
+    "movaps [rsp + 128], xmm14",
+    ".seh_savexmm xmm14, 128",
+    "movaps [rsp + 144], xmm15",
+    ".seh_savexmm xmm15, 144",
+    "lea rbx, [rsp + 160]",
+    ".seh_setframe rbx, 160",
+    ".seh_endprologue",
+    "lea rax, [r8 + 15]",
+    "and rax, -16",
+    "sub rsp, rax",
+    "mov rax, rcx",
+    "mov rsi, rdx",
+    "mov rdi, rsp",
+    "mov rcx, r8",
+    "rep movsb",
+    "xor ebp, ebp",
+    "call rax",
+    "lea rsp, [rbx - 160]",
+    "movaps xmm6, [rsp + 0]",
+    "movaps xmm7, [rsp + 16]",
+    "movaps xmm8, [rsp + 32]",
+    "movaps xmm9, [rsp + 48]",
+    "movaps xmm10, [rsp + 64]",
+    "movaps xmm11, [rsp + 80]",
+    "movaps xmm12, [rsp + 96]",
+    "movaps xmm13, [rsp + 112]",
+    "movaps xmm14, [rsp + 128]",
+    "movaps xmm15, [rsp + 144]",
+    "add rsp, 168",
+    "pop rsi",
+    "pop rdi",
+    "pop rbx",
+    "pop rbp",
+    "ret",
+    ".seh_endproc",
+);

@@ -17,8 +17,9 @@ use super::sys::{LockGuard, alloc_forever, fatal, lock};
 #[repr(C)]
 #[derive(Debug)]
 pub struct Function {
-    /// First instruction.
-    pub code: *const u32,
+    /// The function's machine code: what `call.ext`/`call.ind` handlers return and
+    /// `vm::enter` calls.
+    pub entry: *const u8,
     pub frame_size: u32,
     pub arg_size: u32,
     pub ret_size: u32,
@@ -218,7 +219,7 @@ impl ImageRt {
         let p = alloc_forever(g, n.max(1) * size_of::<Function>(), align_of::<Function>()).cast::<Function>();
         for (i, e) in self.view.functions().iter().enumerate() {
             let rec = Function {
-                code: self.code.wrapping_add(e.code_off as usize),
+                entry: self.code.wrapping_add(e.code_off as usize).cast(),
                 frame_size: e.frame_size,
                 arg_size: e.arg_size,
                 ret_size: e.ret_size,

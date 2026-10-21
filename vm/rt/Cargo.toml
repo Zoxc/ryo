@@ -8,6 +8,9 @@ edition.workspace = true
 # emits at each final link), so that linking any portal pulls the registry in. `y build`
 # enables it; without the backend nothing defines the symbol, so it is off by default.
 registry-anchor = []
+# Handlers take the frame pointer in `rdi` instead of reading `rbp` (design/vm.md,
+# "Handlers"); the backend reads `FP_ARG` and encodes to match.
+fp-arg = []
 
 [dependencies]
 ryo_bytecode = { path = "../bytecode", default-features = false }

@@ -1,14 +1,13 @@
-// The handler table: every opcode with its handler kind and the kind's parameters. Included
-// by interp.rs, whose `*_!` body macros implement the kinds. `dispatch!` is invoked as
-// `for_each_handler!(dispatch!(strategy args))` and receives
-// `(strategy args) Name => kind(params); ...`.
+// The handler table: every opcode with a handler, with its handler kind, the kind's
+// parameters and, unless it is `()`, the handler's return type. Included by interp.rs,
+// whose `*_!` body macros implement the kinds. `handlers!` is invoked as
+// `for_each_handler!(handlers!())` and receives `Name => kind(params) [-> R]; ...`.
 //
-// The `match` the plain and `loop_match` strategies build is exhaustive and the tail-call
-// strategy's `HANDLERS` table is checked when built, so a missing opcode is a compile error.
+// `ops.rs` has no handler for `jmp`, `call` and `island`; `tail_call` and `resume` are
+// written in assembly (interp.rs). The list is checked against `ops.rs` when built.
 // Kinds: integer types select the width and signedness (`i*` for `.s` forms), float
 // types the format; `Atomic*` the atomic type; orderings are `core::sync::atomic::Ordering`
-// variants. `fused(First: kind(…), Second: kind(…))` is a superinstruction: both parts'
-// entries repeated (design/vm.md, "Superinstructions").
+// variants.
 
 macro_rules! for_each_handler {
     ($m:ident!($($args:tt)*)) => { $m! { ($($args)*)
@@ -25,30 +24,18 @@ macro_rules! for_each_handler {
         ImmW128 => imm(u128);
         Const => konst();
         Zero => zero();
-        LoadW8 => load(u8, mem);
-        LoadW8Z => load(u8, deref);
-        LoadW16 => load(u16, mem);
-        LoadW16Z => load(u16, deref);
-        LoadW32 => load(u32, mem);
-        LoadW32Z => load(u32, deref);
-        LoadW64 => load(u64, mem);
-        LoadW64Z => load(u64, deref);
-        LoadW128 => load(u128, mem);
-        LoadW128Z => load(u128, deref);
-        StoreW8 => store(u8, mem);
-        StoreW8Z => store(u8, deref);
-        StoreW16 => store(u16, mem);
-        StoreW16Z => store(u16, deref);
-        StoreW32 => store(u32, mem);
-        StoreW32Z => store(u32, deref);
-        StoreW64 => store(u64, mem);
-        StoreW64Z => store(u64, deref);
-        StoreW128 => store(u128, mem);
-        StoreW128Z => store(u128, deref);
-        LoadCopy => load_copy(mem);
-        LoadCopyZ => load_copy(deref);
-        StoreCopy => store_copy(mem);
-        StoreCopyZ => store_copy(deref);
+        LoadW8 => load(u8);
+        LoadW16 => load(u16);
+        LoadW32 => load(u32);
+        LoadW64 => load(u64);
+        LoadW128 => load(u128);
+        StoreW8 => store(u8);
+        StoreW16 => store(u16);
+        StoreW32 => store(u32);
+        StoreW64 => store(u64);
+        StoreW128 => store(u128);
+        LoadCopy => load_copy();
+        StoreCopy => store_copy();
         Memcpy => memcpy();
         Memmove => memmove();
         Memset => memset();
@@ -56,8 +43,7 @@ macro_rules! for_each_handler {
         Addr => addr();
         AddrSym => addr_sym(false);
         AddrSymInd => addr_sym(true);
-        AddrK => addr_k();
-        AddrData => addr_data();
+        AddrAbs => addr_abs();
         PtrAdd => ptr_add();
         PtrIndex => ptr_index();
         AddW8 => bin(u8, wrapping_add);
@@ -809,113 +795,63 @@ macro_rules! for_each_handler {
         CompilerFenceRelease => compiler_fence(Release);
         CompilerFenceAcqrel => compiler_fence(AcqRel);
         CompilerFenceSeqcst => compiler_fence(SeqCst);
-        Jmp => jmp();
-        BrIf => br_if(true);
-        BrUnless => br_if(false);
-        BrCmpEqW8 => br_cmp(u8, ==);
-        BrCmpNeW8 => br_cmp(u8, !=);
-        BrCmpLtSW8 => br_cmp(i8, <);
-        BrCmpLtUW8 => br_cmp(u8, <);
-        BrCmpLeSW8 => br_cmp(i8, <=);
-        BrCmpLeUW8 => br_cmp(u8, <=);
-        BrCmpEqImmW8 => br_cmp_imm(u8, ==);
-        BrCmpNeImmW8 => br_cmp_imm(u8, !=);
-        BrCmpLtSImmW8 => br_cmp_imm(i8, <);
-        BrCmpLtUImmW8 => br_cmp_imm(u8, <);
-        BrCmpLeSImmW8 => br_cmp_imm(i8, <=);
-        BrCmpLeUImmW8 => br_cmp_imm(u8, <=);
-        BrCmpGtSImmW8 => br_cmp_imm(i8, >);
-        BrCmpGtUImmW8 => br_cmp_imm(u8, >);
-        BrCmpGeSImmW8 => br_cmp_imm(i8, >=);
-        BrCmpGeUImmW8 => br_cmp_imm(u8, >=);
-        BrCmpEqW16 => br_cmp(u16, ==);
-        BrCmpNeW16 => br_cmp(u16, !=);
-        BrCmpLtSW16 => br_cmp(i16, <);
-        BrCmpLtUW16 => br_cmp(u16, <);
-        BrCmpLeSW16 => br_cmp(i16, <=);
-        BrCmpLeUW16 => br_cmp(u16, <=);
-        BrCmpEqImmW16 => br_cmp_imm(u16, ==);
-        BrCmpNeImmW16 => br_cmp_imm(u16, !=);
-        BrCmpLtSImmW16 => br_cmp_imm(i16, <);
-        BrCmpLtUImmW16 => br_cmp_imm(u16, <);
-        BrCmpLeSImmW16 => br_cmp_imm(i16, <=);
-        BrCmpLeUImmW16 => br_cmp_imm(u16, <=);
-        BrCmpGtSImmW16 => br_cmp_imm(i16, >);
-        BrCmpGtUImmW16 => br_cmp_imm(u16, >);
-        BrCmpGeSImmW16 => br_cmp_imm(i16, >=);
-        BrCmpGeUImmW16 => br_cmp_imm(u16, >=);
-        BrCmpEqW32 => br_cmp(u32, ==);
-        BrCmpNeW32 => br_cmp(u32, !=);
-        BrCmpLtSW32 => br_cmp(i32, <);
-        BrCmpLtUW32 => br_cmp(u32, <);
-        BrCmpLeSW32 => br_cmp(i32, <=);
-        BrCmpLeUW32 => br_cmp(u32, <=);
-        BrCmpEqImmW32 => br_cmp_imm(u32, ==);
-        BrCmpNeImmW32 => br_cmp_imm(u32, !=);
-        BrCmpLtSImmW32 => br_cmp_imm(i32, <);
-        BrCmpLtUImmW32 => br_cmp_imm(u32, <);
-        BrCmpLeSImmW32 => br_cmp_imm(i32, <=);
-        BrCmpLeUImmW32 => br_cmp_imm(u32, <=);
-        BrCmpGtSImmW32 => br_cmp_imm(i32, >);
-        BrCmpGtUImmW32 => br_cmp_imm(u32, >);
-        BrCmpGeSImmW32 => br_cmp_imm(i32, >=);
-        BrCmpGeUImmW32 => br_cmp_imm(u32, >=);
-        BrCmpEqW64 => br_cmp(u64, ==);
-        BrCmpNeW64 => br_cmp(u64, !=);
-        BrCmpLtSW64 => br_cmp(i64, <);
-        BrCmpLtUW64 => br_cmp(u64, <);
-        BrCmpLeSW64 => br_cmp(i64, <=);
-        BrCmpLeUW64 => br_cmp(u64, <=);
-        BrCmpEqImmW64 => br_cmp_imm(u64, ==);
-        BrCmpNeImmW64 => br_cmp_imm(u64, !=);
-        BrCmpLtSImmW64 => br_cmp_imm(i64, <);
-        BrCmpLtUImmW64 => br_cmp_imm(u64, <);
-        BrCmpLeSImmW64 => br_cmp_imm(i64, <=);
-        BrCmpLeUImmW64 => br_cmp_imm(u64, <=);
-        BrCmpGtSImmW64 => br_cmp_imm(i64, >);
-        BrCmpGtUImmW64 => br_cmp_imm(u64, >);
-        BrCmpGeSImmW64 => br_cmp_imm(i64, >=);
-        BrCmpGeUImmW64 => br_cmp_imm(u64, >=);
-        BrCmpEqW128 => br_cmp(u128, ==);
-        BrCmpNeW128 => br_cmp(u128, !=);
-        BrCmpLtSW128 => br_cmp(i128, <);
-        BrCmpLtUW128 => br_cmp(u128, <);
-        BrCmpLeSW128 => br_cmp(i128, <=);
-        BrCmpLeUW128 => br_cmp(u128, <=);
-        BrCmpEqImmW128 => br_cmp_imm(u128, ==);
-        BrCmpNeImmW128 => br_cmp_imm(u128, !=);
-        BrCmpLtSImmW128 => br_cmp_imm(i128, <);
-        BrCmpLtUImmW128 => br_cmp_imm(u128, <);
-        BrCmpLeSImmW128 => br_cmp_imm(i128, <=);
-        BrCmpLeUImmW128 => br_cmp_imm(u128, <=);
-        BrCmpGtSImmW128 => br_cmp_imm(i128, >);
-        BrCmpGtUImmW128 => br_cmp_imm(u128, >);
-        BrCmpGeSImmW128 => br_cmp_imm(i128, >=);
-        BrCmpGeUImmW128 => br_cmp_imm(u128, >=);
-        SwitchDenseW8 => switch_dense(u8);
-        SwitchDenseW16 => switch_dense(u16);
-        SwitchDenseW32 => switch_dense(u32);
-        SwitchDenseW64 => switch_dense(u64);
-        SwitchDenseW128 => switch_dense(u128);
-        SwitchSparseW8 => switch_sparse(u8, Case32);
-        SwitchSparseW16 => switch_sparse(u16, Case32);
-        SwitchSparseW32 => switch_sparse(u32, Case32);
-        SwitchSparseW64 => switch_sparse(u64, Case64);
-        SwitchSparseW128 => switch_sparse(u128, Case128);
-        Unreachable => trap();
-        Abort => abort_now();
-        Call => call();
-        CallExt => call_ext(false);
-        CallExtInd => call_ext(true);
-        CallInd => call_ind();
-        TailCall => tail_call();
-        TailCallInd => tail_call_ind();
+        Br => br() -> bool;
+        BrEqW8 => br_cmp(u8, ==) -> bool;
+        BrLtSW8 => br_cmp(i8, <) -> bool;
+        BrLtUW8 => br_cmp(u8, <) -> bool;
+        BrEqImmW8 => br_cmp_imm(u8, ==) -> bool;
+        BrLtSImmW8 => br_cmp_imm(i8, <) -> bool;
+        BrLtUImmW8 => br_cmp_imm(u8, <) -> bool;
+        BrGtSImmW8 => br_cmp_imm(i8, >) -> bool;
+        BrGtUImmW8 => br_cmp_imm(u8, >) -> bool;
+        BrEqW16 => br_cmp(u16, ==) -> bool;
+        BrLtSW16 => br_cmp(i16, <) -> bool;
+        BrLtUW16 => br_cmp(u16, <) -> bool;
+        BrEqImmW16 => br_cmp_imm(u16, ==) -> bool;
+        BrLtSImmW16 => br_cmp_imm(i16, <) -> bool;
+        BrLtUImmW16 => br_cmp_imm(u16, <) -> bool;
+        BrGtSImmW16 => br_cmp_imm(i16, >) -> bool;
+        BrGtUImmW16 => br_cmp_imm(u16, >) -> bool;
+        BrEqW32 => br_cmp(u32, ==) -> bool;
+        BrLtSW32 => br_cmp(i32, <) -> bool;
+        BrLtUW32 => br_cmp(u32, <) -> bool;
+        BrEqImmW32 => br_cmp_imm(u32, ==) -> bool;
+        BrLtSImmW32 => br_cmp_imm(i32, <) -> bool;
+        BrLtUImmW32 => br_cmp_imm(u32, <) -> bool;
+        BrGtSImmW32 => br_cmp_imm(i32, >) -> bool;
+        BrGtUImmW32 => br_cmp_imm(u32, >) -> bool;
+        BrEqW64 => br_cmp(u64, ==) -> bool;
+        BrLtSW64 => br_cmp(i64, <) -> bool;
+        BrLtUW64 => br_cmp(u64, <) -> bool;
+        BrEqImmW64 => br_cmp_imm(u64, ==) -> bool;
+        BrLtSImmW64 => br_cmp_imm(i64, <) -> bool;
+        BrLtUImmW64 => br_cmp_imm(u64, <) -> bool;
+        BrGtSImmW64 => br_cmp_imm(i64, >) -> bool;
+        BrGtUImmW64 => br_cmp_imm(u64, >) -> bool;
+        BrEqW128 => br_cmp(u128, ==) -> bool;
+        BrLtSW128 => br_cmp(i128, <) -> bool;
+        BrLtUW128 => br_cmp(u128, <) -> bool;
+        BrEqImmW128 => br_cmp_imm(u128, ==) -> bool;
+        BrLtSImmW128 => br_cmp_imm(i128, <) -> bool;
+        BrLtUImmW128 => br_cmp_imm(u128, <) -> bool;
+        BrGtSImmW128 => br_cmp_imm(i128, >) -> bool;
+        BrGtUImmW128 => br_cmp_imm(u128, >) -> bool;
+        SwitchDenseW8 => switch_dense(u8) -> usize;
+        SwitchDenseW16 => switch_dense(u16) -> usize;
+        SwitchDenseW32 => switch_dense(u32) -> usize;
+        SwitchDenseW64 => switch_dense(u64) -> usize;
+        SwitchDenseW128 => switch_dense(u128) -> usize;
+        SwitchSparseW8 => switch_sparse(u8, Case32) -> usize;
+        SwitchSparseW16 => switch_sparse(u16, Case32) -> usize;
+        SwitchSparseW32 => switch_sparse(u32, Case32) -> usize;
+        SwitchSparseW64 => switch_sparse(u64, Case64) -> usize;
+        SwitchSparseW128 => switch_sparse(u128, Case128) -> usize;
+        Unreachable => trap() -> !;
+        Abort => abort_now() -> !;
+        CallExt => call_ext(false) -> *const u8;
+        CallExtInd => call_ext(true) -> *const u8;
+        CallInd => call_ind() -> *const u8;
         Ret => ret();
-        Island => island(false);
-        IslandCatch => island(true);
-        Resume => resume();
-        AddImmW64BrCmpLtUW64 => fused(AddImmW64: bin_imm(u64, wrapping_add), BrCmpLtUW64: br_cmp(u64, <));
-        AddImmW32BrCmpLtSW32 => fused(AddImmW32: bin_imm(u32, wrapping_add), BrCmpLtSW32: br_cmp(i32, <));
-        LoadW64BrCmpLeUW64 => fused(LoadW64: load(u64, mem), BrCmpLeUW64: br_cmp(u64, <=));
+        Lpad => lpad();
     } };
 }

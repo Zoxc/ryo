@@ -131,6 +131,13 @@ pub enum Abs {
 /// Bit 31 of an [`Abs`] word: the data area.
 pub const ABS_DATA: u32 = 1 << 31;
 
+impl Abs {
+    /// The operand of an `Abs` word.
+    pub fn from_word(v: u32) -> Abs {
+        if v & ABS_DATA != 0 { Abs::Data(Data(v & !ABS_DATA)) } else { Abs::Const(Const(v)) }
+    }
+}
+
 /// A branch's polarity: with `Neg(true)` (`!` after the mnemonic) the branch is taken when
 /// its condition is false.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
@@ -311,8 +318,7 @@ impl<'a> Operand<'a> for Abs {
     const KIND: OperandKind = OperandKind::Abs;
     #[inline]
     fn read(w: &'a [u32], pos: &mut usize) -> Result<Self, DecodeError> {
-        let v = take::<1>(w, pos)?[0];
-        Ok(if v & ABS_DATA != 0 { Abs::Data(Data(v & !ABS_DATA)) } else { Abs::Const(Const(v)) })
+        Ok(Abs::from_word(take::<1>(w, pos)?[0]))
     }
     #[cfg(feature = "alloc")]
     fn write(&self, out: &mut Vec<u32>) {
@@ -598,6 +604,57 @@ macro_rules! op_ty {
     ($lt:lifetime, Cases128) => { $crate::insn::List<$lt, $crate::insn::Case128> };
 }
 
+/// How an instruction runs as machine code ([`crate::asm`]): which handler it calls, and what
+/// control flow follows the call. Given in the opcode list.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Shape {
+    /// A call of the opcode's handler, then the next instruction (`op`).
+    Op,
+    /// The handler returns a `bool`, and the instruction branches on it with its polarity
+    /// (`br`).
+    Br,
+    /// The handler returns a case index, and the instruction jumps through a table (`switch`).
+    Switch,
+    /// The handler doesn't return (`trap`).
+    Trap,
+    /// The handler copies the return value, and the function returns (`ret`).
+    Ret,
+    /// A jump, without a handler (`jmp`).
+    Jmp,
+    /// A call of a VM function of the same image, without a handler (`call`).
+    Call,
+    /// `call.ext`: the handler resolves the symbol to a VM entry or the native path (`call_ext`).
+    CallExt,
+    /// `call.ind`: the same for a fn pointer (`call_ind`).
+    CallInd,
+    /// The handler moves the arguments, and the function jumps to the callee (`tail_call`).
+    TailCall,
+    /// `tail_call.ind`: the handler resolves and moves the arguments; a native target is
+    /// called through the island and returned from (`tail_call_ind`).
+    TailCallInd,
+    /// A direct call of an island, without a handler (`island`).
+    Island,
+    /// A landing pad: the handler stores the exception object (`lpad`).
+    Lpad,
+}
+
+/// Maps a shape name in the opcode list to its [`Shape`].
+macro_rules! shape {
+    (op) => { $crate::insn::Shape::Op };
+    (br) => { $crate::insn::Shape::Br };
+    (switch) => { $crate::insn::Shape::Switch };
+    (trap) => { $crate::insn::Shape::Trap };
+    (ret) => { $crate::insn::Shape::Ret };
+    (jmp) => { $crate::insn::Shape::Jmp };
+    (call) => { $crate::insn::Shape::Call };
+    (call_ext) => { $crate::insn::Shape::CallExt };
+    (call_ind) => { $crate::insn::Shape::CallInd };
+    (tail_call) => { $crate::insn::Shape::TailCall };
+    (tail_call_ind) => { $crate::insn::Shape::TailCallInd };
+    (island) => { $crate::insn::Shape::Island };
+    (lpad) => { $crate::insn::Shape::Lpad };
+}
+
 /// One operand of an opcode: its name in the instruction set docs, and its encoding.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct OperandInfo {
@@ -611,6 +668,7 @@ pub struct OpInfo {
     pub opcode: Opcode,
     /// Assembly mnemonic.
     pub mnemonic: &'static str,
+    pub shape: Shape,
     /// Operands in encoding order (word 1 onwards).
     pub operands: &'static [OperandInfo],
     /// Length in words, or `None` if the instruction has a list operand.
@@ -639,7 +697,7 @@ impl OpInfo {
     }
 }
 
-const fn str_eq(a: &str, b: &str) -> bool {
+pub(crate) const fn str_eq(a: &str, b: &str) -> bool {
     let (a, b) = (a.as_bytes(), b.as_bytes());
     if a.len() != b.len() {
         return false;
@@ -652,6 +710,19 @@ const fn str_eq(a: &str, b: &str) -> bool {
         i += 1;
     }
     true
+}
+
+/// Index of the operand called `name` of `op`, for `const` contexts. Panics if there is none.
+pub const fn operand_index_const(op: Opcode, name: &str) -> usize {
+    let info = op.info();
+    let mut i = 0;
+    while i < info.operands.len() {
+        if str_eq(info.operands[i].name, name) {
+            return i;
+        }
+        i += 1;
+    }
+    panic!("no such operand")
 }
 
 /// Word offset of the operand called `name` of `op`, or `usize::MAX` if it follows a list
@@ -686,10 +757,11 @@ const fn fixed_len(kinds: &[OperandKind]) -> Option<usize> {
 
 /// Defines [`Opcode`], [`OP_INFO`], [`Insn`] and their decode/encode/display from one list.
 ///
-/// Syntax: `Variant = "mnemonic" { operand: Kind, ... },` where `Kind` is one of the names
-/// handled by `op_ty!`. Field order is encoding order.
+/// Syntax: `Variant = "mnemonic" shape { operand: Kind, ... },` where `shape` is one of the
+/// names handled by `shape!` and `Kind` one of those handled by `op_ty!`. Field order is
+/// encoding order.
 macro_rules! define_ops {
-    ($($name:ident = $mn:literal { $($field:ident : $kind:ident),* $(,)? },)*) => {
+    ($($name:ident = $mn:literal $shape:ident { $($field:ident : $kind:ident),* $(,)? },)*) => {
         /// An opcode: the low 16 bits of an instruction's word 0.
         ///
         /// Variants are numbered in list order; any change to the list changes the encoding
@@ -724,6 +796,7 @@ macro_rules! define_ops {
             OpInfo {
                 opcode: Opcode::$name,
                 mnemonic: $mn,
+                shape: shape!($shape),
                 operands: &[$(OperandInfo {
                     name: stringify!($field),
                     kind: <op_ty!('static, $kind) as Operand<'static>>::KIND,

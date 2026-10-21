@@ -196,8 +196,7 @@ pub fn validate_code(code: &[u32], lim: &CodeLimits) -> Result<Vec<bool>, (u32, 
         last = Some(insn.opcode());
     }
     if let Some(op) = last {
-        // Islands may return any target, so their fall-through isn't checked.
-        if op_falls_through(op) && op != Opcode::Island {
+        if op_falls_through(op) {
             return Err((code.len() as u32, CodeError::FallsOffEnd));
         }
     }

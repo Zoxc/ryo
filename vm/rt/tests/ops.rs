@@ -1,50 +1,102 @@
-//! Every integer, float, conversion and atomic opcode against a Rust reference model. Each
-//! opcode gets its own function `zero d; op; ret d`, encoded generically from `OP_INFO`.
+//! Every handler against a Rust reference model: integer, float, conversion, atomic, enum,
+//! branch, switch and data movement opcodes. Each handler is called directly on a buffer
+//! frame, its operands placed in the argument registers by `asm::layout`.
 
-// Disabled: these tests run hand-assembled functions, and nothing can run VM code while the
-// VM has no dispatcher.
-#![cfg(any())]
+#![cfg(target_arch = "x86_64")]
 
-mod common;
-use common::*;
-use ryo_bytecode::ALL_OPCODES;
+use ryo_bytecode::asm::layout;
+use ryo_bytecode::{ALL_OPCODES, Opcode};
+use ryo_rt::vm::{FP_ARG, MODE, handler};
 
-const A: u128 = 16;
-const B: u128 = 32;
-const D: u128 = 48;
-const O: u128 = 64;
-const FRAME: u32 = 80;
+/// Calls `f(a0..a5)` with `rbp = fp`, returning `rax`.
+#[unsafe(naked)]
+extern "sysv64" fn call_with_fp(a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64, fp: *mut u8, f: *const ()) -> u64 {
+    core::arch::naked_asm!("push rbp", "mov rbp, [rsp + 16]", "call qword ptr [rsp + 24]", "pop rbp", "ret");
+}
 
-type Args = (u128, u128);
-type Ret = [u128; 2];
+/// A VM frame: `fp` in the middle, so slots are at negative and positive offsets.
+#[repr(C, align(16))]
+struct Frame([u8; 1024]);
+
+impl Frame {
+    fn new() -> Box<Frame> {
+        Box::new(Frame([0; 1024]))
+    }
+    fn fp(&mut self) -> *mut u8 {
+        unsafe { self.0.as_mut_ptr().add(512) }
+    }
+}
+
+const A: i32 = -48;
+const B: i32 = 16;
+const D: i32 = -96;
+const O: i32 = 48;
+const P: i32 = -16;
+const OLD: i32 = -64;
+const NEW: i32 = 80;
+
+/// The operand value of slot `off`.
+fn slot(off: i32) -> u128 {
+    off as u32 as u128
+}
+
+fn put(fp: *mut u8, off: i32, v: u128) {
+    unsafe { fp.offset(off as isize).cast::<u128>().write_unaligned(v) }
+}
+
+fn get(fp: *mut u8, off: i32) -> u128 {
+    unsafe { fp.offset(off as isize).cast::<u128>().read_unaligned() }
+}
+
+fn put_bytes(fp: *mut u8, off: i32, b: &[u8]) {
+    unsafe { std::ptr::copy_nonoverlapping(b.as_ptr(), fp.offset(off as isize), b.len()) }
+}
+
+fn get_bytes(fp: *mut u8, off: i32, n: usize) -> Vec<u8> {
+    unsafe { std::slice::from_raw_parts(fp.offset(off as isize), n).to_vec() }
+}
+
+/// Calls `op`'s handler with `vals` (one per operand, in operand order) on frame `fp`.
+fn call(op: Opcode, vals: &[u128], fp: *mut u8) -> u64 {
+    assert_eq!(vals.len(), op.info().operands.len(), "{}", op.mnemonic());
+    let l = layout(op, MODE);
+    let mut r = [0u64; 6];
+    if FP_ARG {
+        r[0] = fp as u64;
+    }
+    for (loc, &v) in l.locs.iter().zip(vals) {
+        let i = loc.reg as usize;
+        match (loc.count, loc.shared) {
+            (0, _) => {}
+            (2, _) => (r[i], r[i + 1]) = (v as u64, (v >> 64) as u64),
+            (_, true) => r[i] |= (v as u32 as u64) << loc.shift,
+            _ => r[i] = v as u64,
+        }
+    }
+    let f = handler(op).unwrap_or_else(|| panic!("{}: no handler", op.mnemonic()));
+    call_with_fp(r[0], r[1], r[2], r[3], r[4], r[5], fp, f)
+}
+
+/// Calls `op` with each operand's value given by its name.
+fn run(op: Opcode, fp: *mut u8, val: impl Fn(&str) -> u128) -> u64 {
+    let vals: Vec<u128> = op.info().operands.iter().map(|o| val(o.name)).collect();
+    call(op, &vals, fp)
+}
 
 fn width(parts: &[&str]) -> Option<u32> {
     parts.iter().rev().find_map(|p| p.strip_prefix('w').and_then(|n| n.parse().ok()))
 }
 
-/// Builds one image with a function per selected opcode. `operand` maps an operand name to
-/// its value (or None to skip the opcode).
-fn image_for(sel: impl Fn(Opcode) -> bool, operand: impl Fn(&str, Opcode) -> Option<u128>) -> (Linked, Vec<(Opcode, Func)>) {
-    let mut w = ImageWriter::new(unique_scid());
-    let mut fns = vec![];
-    'ops: for &op in ALL_OPCODES {
-        if !sel(op) {
-            continue;
-        }
-        let mut vals = vec![];
-        for o in op.info().operands {
-            match operand(o.name, op) {
-                Some(v) => vals.push(v),
-                None => continue 'ops,
-            }
-        }
-        let mut a = Asm::new();
-        a.i(Insn::Zero { d: Slot(D as u32), len: 32 });
-        a.raw(op, &vals);
-        a.i(Insn::Ret { s: Slot(D as u32), len: 32 });
-        fns.push((op, w.add_function(func(a.done(), FRAME, 0, 32, 32))));
-    }
-    (build(w, &[]), fns)
+fn mn_width(mn: &str) -> u32 {
+    width(&mn.split('.').collect::<Vec<_>>()).unwrap()
+}
+
+fn mask(bits: u32) -> u128 {
+    if bits >= 128 { u128::MAX } else { (1u128 << bits) - 1 }
+}
+
+fn ops_where(sel: impl Fn(Opcode) -> bool) -> Vec<Opcode> {
+    ALL_OPCODES.iter().copied().filter(|&op| sel(op)).collect()
 }
 
 const SAMPLES: &[u128] = &[
@@ -154,44 +206,49 @@ const INT_OPS: &[&str] = &[
     "gt", "ge", "cmp3", "rotl", "rotr", "ctpop", "ctlz", "cttz", "bswap", "bitreverse",
 ];
 
-/// The model's op name: the mnemonic without the width and `.imm`.
+/// The model's op name: the mnemonic without `br`, the width and `.imm`.
 fn base(mn: &str) -> String {
+    let mn = mn.strip_prefix("br.").unwrap_or(mn);
     mn.split('.').filter(|p| *p != "imm" && width(&[p]).is_none()).collect::<Vec<_>>().join(".")
+}
+
+fn int_ops(imm: bool) -> Vec<Opcode> {
+    ops_where(|op| {
+        let mn = op.mnemonic();
+        INT_OPS.contains(&mn.split('.').next().unwrap())
+            && mn.contains(".imm") == imm
+            && op.info().operands.iter().all(|o| ["d", "o", "a", "b", "imm"].contains(&o.name))
+    })
 }
 
 #[test]
 fn integer_ops_all_widths() {
-    let sel = |op: Opcode| {
-        let p: Vec<&str> = op.mnemonic().split('.').collect();
-        op.fused_parts().is_none() && INT_OPS.contains(&p[0]) && op.info().operands.iter().all(|o| ["d", "o", "a", "b", "imm"].contains(&o.name))
-    };
-    // The immediate is filled in per sample below, so encode a placeholder and patch it.
-    let (img, fns) = image_for(sel, |n, _| Some(match n {
-        "d" => D,
-        "o" => O,
-        "a" => A,
-        "b" => B,
-        _ => 0,
-    }));
-    assert_eq!(fns.len(), 267);
-    // Imm forms: rebuild per sample is costly, so instead run them through a second image
-    // per immediate value. Register-form ops are checked here.
+    let ops = int_ops(false);
+    assert_eq!(ops.len(), 173);
+    let mut f = Frame::new();
+    let fp = f.fp();
     let mut checked = 0;
-    for &(op, f) in &fns {
+    for op in ops {
         let mn = op.mnemonic();
-        if mn.contains(".imm") {
-            continue;
-        }
-        let n = width(&mn.split('.').collect::<Vec<_>>()).unwrap();
-        let b_name = base(mn);
+        let n = mn_width(mn);
+        let name = base(mn);
         for &a in SAMPLES {
             for &b in SAMPLES {
-                let Some((v, bytes, o)) = int_ref(&b_name, n, a, b) else { continue };
-                let mask = if bytes == 16 { u128::MAX } else { (1u128 << (bytes * 8)) - 1 };
-                let r: Ret = ok(img.id(f), (a, b) as Args);
-                assert_eq!(r[0], v & mask, "{mn} {a:#x} {b:#x}");
+                let Some((v, bytes, o)) = int_ref(&name, n, a, b) else { continue };
+                put(fp, A, a);
+                put(fp, B, b);
+                put(fp, D, 0);
+                put(fp, O, 0);
+                run(op, fp, |n| slot(match n {
+                    "d" => D,
+                    "o" => O,
+                    "a" => A,
+                    "b" => B,
+                    _ => unreachable!(),
+                }));
+                assert_eq!(get(fp, D), v & mask(bytes * 8), "{mn} {a:#x} {b:#x}");
                 if let Some(o) = o {
-                    assert_eq!(r[1], o as u128, "{mn} overflow flag {a:#x} {b:#x}");
+                    assert_eq!(get(fp, O), o as u128, "{mn} overflow flag {a:#x} {b:#x}");
                 }
                 checked += 1;
             }
@@ -202,28 +259,26 @@ fn integer_ops_all_widths() {
 
 #[test]
 fn integer_imm_ops_all_widths() {
-    let imm_ops: Vec<Opcode> = ALL_OPCODES
-        .iter()
-        .copied()
-        .filter(|op| op.mnemonic().contains(".imm") && INT_OPS.contains(&op.mnemonic().split('.').next().unwrap()))
-        .filter(|op| op.info().operand_index("d").is_some() && op.fused_parts().is_none())
-        .collect();
-    assert!(imm_ops.len() > 80);
-    for &b in &SAMPLES[..SAMPLES.len()] {
-        let (img, fns) = image_for(|op| imm_ops.contains(&op), |n, _| Some(match n {
-            "d" => D,
-            "a" => A,
-            "imm" => b,
-            _ => unreachable!(),
-        }));
-        for &(op, f) in &fns {
-            let mn = op.mnemonic();
-            let n = width(&mn.split('.').collect::<Vec<_>>()).unwrap();
+    let ops = int_ops(true);
+    assert_eq!(ops.len(), 94);
+    let mut f = Frame::new();
+    let fp = f.fp();
+    for op in ops {
+        let mn = op.mnemonic();
+        let n = mn_width(mn);
+        for &b in SAMPLES {
+            let imm = b & mask(n);
             for &a in SAMPLES {
-                let Some((v, bytes, _)) = int_ref(&base(mn), n, a, b) else { continue };
-                let mask = if bytes == 16 { u128::MAX } else { (1u128 << (bytes * 8)) - 1 };
-                let r: Ret = ok(img.id(f), (a, 0u128) as Args);
-                assert_eq!(r[0], v & mask, "{mn} {a:#x} imm {b:#x}");
+                let Some((v, bytes, _)) = int_ref(&base(mn), n, a, imm) else { continue };
+                put(fp, A, a);
+                put(fp, D, 0);
+                run(op, fp, |n| match n {
+                    "d" => slot(D),
+                    "a" => slot(A),
+                    "imm" => imm,
+                    _ => unreachable!(),
+                });
+                assert_eq!(get(fp, D), v & mask(bytes * 8), "{mn} {a:#x} imm {b:#x}");
             }
         }
     }
@@ -298,28 +353,38 @@ fn float_ref32(op: &str, a: f32, b: f32) -> (u128, u32) {
     }
 }
 
-fn same_float(bits: u32, x: u128, y: u128) -> bool {
+fn same_float(bytes: u32, x: u128, y: u128) -> bool {
     x == y
-        || match bits {
+        || match bytes {
             8 => f64::from_bits(x as u64).is_nan() && f64::from_bits(y as u64).is_nan(),
             4 => f32::from_bits(x as u32).is_nan() && f32::from_bits(y as u32).is_nan(),
             _ => false,
         }
 }
 
-#[test]
-fn float_ops() {
-    const FOPS: &[&str] =
-        &["fadd", "fsub", "fmul", "fdiv", "frem", "fneg", "fabs", "feq", "fne", "flt", "fle", "fmin", "fmax", "copysign"];
-    let sel = |op: Opcode| FOPS.contains(&op.mnemonic().split('.').next().unwrap());
-    let (img, fns) = image_for(sel, |n, _| Some(match n {
+/// `d = op a, b` on slots, returning `d`.
+fn dab(op: Opcode, fp: *mut u8, a: u128, b: u128) -> u128 {
+    put(fp, A, a);
+    put(fp, B, b);
+    put(fp, D, 0);
+    run(op, fp, |n| slot(match n {
         "d" => D,
         "a" => A,
         "b" => B,
         _ => unreachable!(),
     }));
-    assert_eq!(fns.len(), FOPS.len() * 2);
-    for &(op, f) in &fns {
+    get(fp, D)
+}
+
+#[test]
+fn float_ops() {
+    const FOPS: &[&str] =
+        &["fadd", "fsub", "fmul", "fdiv", "frem", "fneg", "fabs", "feq", "fne", "flt", "fle", "fmin", "fmax", "copysign"];
+    let ops = ops_where(|op| FOPS.contains(&op.mnemonic().split('.').next().unwrap()));
+    assert_eq!(ops.len(), FOPS.len() * 2);
+    let mut f = Frame::new();
+    let fp = f.fp();
+    for op in ops {
         let mn = op.mnemonic();
         let (name, fmt) = mn.split_once('.').unwrap();
         for &a in F64S {
@@ -330,11 +395,48 @@ fn float_ops() {
                     let (a, b) = (a as f32, b as f32);
                     ((a.to_bits() as u128, b.to_bits() as u128), float_ref32(name, a, b))
                 };
-                let r: Ret = ok(img.id(f), args);
-                let mask = (1u128 << (bytes * 8)) - 1;
-                assert!(same_float(bytes, r[0], v & mask), "{mn} {a} {b}: {:#x} vs {v:#x}", r[0]);
+                let r = dab(op, fp, args.0, args.1);
+                assert!(same_float(bytes, r, v & mask(bytes * 8)), "{mn} {a} {b}: {r:#x} vs {v:#x}");
             }
         }
+    }
+}
+
+/// fmin/fmax/frem special cases against hand-written expected values (not the std calls
+/// the model above uses).
+#[test]
+fn float_special_values() {
+    let ops64 = [Opcode::FminF64, Opcode::FmaxF64, Opcode::FremF64];
+    let ops32 = [Opcode::FminF32, Opcode::FmaxF32, Opcode::FremF32];
+    let mut f = Frame::new();
+    let fp = f.fp();
+    let nan = f64::NAN;
+    let inf = f64::INFINITY;
+    // (op index, a, b, expected; NaN means "any NaN").
+    let cases: &[(usize, f64, f64, f64)] = &[
+        (0, nan, 1.0, 1.0),
+        (0, 1.0, nan, 1.0),
+        (0, -2.0, 3.0, -2.0),
+        (0, nan, nan, nan),
+        (1, nan, -1.0, -1.0),
+        (1, -1.0, nan, -1.0),
+        (1, -2.0, 3.0, 3.0),
+        (1, nan, nan, nan),
+        (2, 5.5, 2.0, 1.5),
+        (2, -5.5, 2.0, -1.5),
+        (2, 5.5, -2.0, 1.5),
+        (2, 1.0, 0.0, nan),
+        (2, inf, 1.0, nan),
+        (2, 1.0, inf, 1.0),
+        (2, nan, 1.0, nan),
+    ];
+    for &(i, a, b, want) in cases {
+        let got = f64::from_bits(dab(ops64[i], fp, a.to_bits() as u128, b.to_bits() as u128) as u64);
+        assert!(if want.is_nan() { got.is_nan() } else { got == want }, "f64 op {i}: {a} {b} → {got}");
+        let r = dab(ops32[i], fp, (a as f32).to_bits() as u128, (b as f32).to_bits() as u128);
+        let got = f32::from_bits(r as u32);
+        let want = want as f32;
+        assert!(if want.is_nan() { got.is_nan() } else { got == want }, "f32 op {i}: {a} {b} → {got}");
     }
 }
 
@@ -348,7 +450,7 @@ enum Val {
 
 fn src_val(ty: &str, bits: u128) -> Val {
     let n: u32 = ty[1..].parse().unwrap();
-    let mask = if n == 128 { u128::MAX } else { (1 << n) - 1 };
+    let mask = mask(n);
     match &ty[..1] {
         "u" => Val::U(bits & mask),
         "i" => Val::I(((bits & mask) << (128 - n)) as i128 >> (128 - n)),
@@ -360,7 +462,7 @@ fn src_val(ty: &str, bits: u128) -> Val {
 
 fn dst_bits(ty: &str, v: Val) -> u128 {
     let n: u32 = ty[1..].parse().unwrap();
-    let mask = if n == 128 { u128::MAX } else { (1 << n) - 1 };
+    let mask = mask(n);
     match (&ty[..1], v) {
         ("f", Val::U(u)) if n == 32 => (u as f32).to_bits() as u128,
         ("f", Val::I(i)) if n == 32 => (i as f32).to_bits() as u128,
@@ -398,68 +500,63 @@ fn cvt_types(mn: &str) -> Option<(String, String)> {
 
 #[test]
 fn conversions() {
-    let (img, fns) = image_for(|op| cvt_types(op.mnemonic()).is_some(), |n, _| Some(match n {
-        "d" => D,
-        "s" => A,
-        _ => unreachable!(),
-    }));
-    assert_eq!(fns.len(), 72);
+    let ops = ops_where(|op| cvt_types(op.mnemonic()).is_some());
+    assert_eq!(ops.len(), 72);
     let mut inputs: Vec<u128> = SAMPLES.to_vec();
     for &f in F64S {
         inputs.push(f.to_bits() as u128);
         inputs.push((f as f32).to_bits() as u128);
     }
-    for &(op, f) in &fns {
+    let mut f = Frame::new();
+    let fp = f.fp();
+    for op in ops {
         let (s, d) = cvt_types(op.mnemonic()).unwrap();
         for &x in &inputs {
             let want = dst_bits(&d, src_val(&s, x));
-            let r: Ret = ok(img.id(f), (x, 0u128));
-            assert_eq!(r[0], want, "{} {x:#x}", op.mnemonic());
+            put(fp, A, x);
+            put(fp, D, 0);
+            run(op, fp, |n| slot(match n {
+                "d" => D,
+                "s" => A,
+                _ => unreachable!(),
+            }));
+            assert_eq!(get(fp, D), want, "{} {x:#x}", op.mnemonic());
         }
     }
 }
 
 #[test]
 fn atomics() {
-    // Frame: p@16, v@32, old@48, new@64, d@80, o@96.
-    let sel = |op: Opcode| op.mnemonic().starts_with("atomic.");
-    let mut w = ImageWriter::new(unique_scid());
-    let mut fns = vec![];
-    for &op in ALL_OPCODES.iter().filter(|&&op| sel(op)) {
-        let vals: Vec<u128> = op
-            .info()
-            .operands
-            .iter()
-            .map(|o| match o.name {
-                "m" => 16,
-                "s" => 32,
-                "old" => 48,
-                "new" => 64,
-                "d" => 80,
-                "o" => 96,
-                n => panic!("{n}"),
-            })
-            .collect();
-        let mut a = Asm::new();
-        a.i(Insn::Zero { d: Slot(80), len: 32 });
-        a.raw(op, &vals);
-        a.i(Insn::Ret { s: Slot(80), len: 32 });
-        fns.push((op, w.add_function(func(a.done(), 112, 0, 64, 32))));
-    }
-    let img = build(w, &[]);
-    assert!(fns.len() >= 4 * (3 + 3 + 11 * 5 + 2 * 15));
-    for &(op, f) in &fns {
+    let ops = ops_where(|op| op.mnemonic().starts_with("atomic."));
+    assert_eq!(ops.len(), 4 * (3 + 3 + 11 * 5 + 2 * 15));
+    let mut f = Frame::new();
+    let fp = f.fp();
+    for op in ops {
         let mn = op.mnemonic();
         let p: Vec<&str> = mn.split('.').collect();
         let n = width(&p).unwrap();
-        let mask = (1u128 << n) - 1;
+        let mask = mask(n);
         let sx = |v: u128| ((v << (128 - n)) as i128) >> (128 - n);
         for &(init, v, old) in &[(5u128, 9u128, 5u128), (0xff, 0x80, 1), (0x8000_0000_0000_0001, 3, 7), (u128::MAX, 1, u128::MAX)] {
             let (init, v, old) = (init & mask, v & mask, old & mask);
             let mut cell = [0u64; 2];
             unsafe { std::ptr::copy_nonoverlapping((&raw const init).cast::<u8>(), cell.as_mut_ptr().cast(), (n / 8) as usize) };
-            let ptr = cell.as_mut_ptr() as u128;
-            let r: Ret = ok(img.id(f), (ptr, v, old, 0x77u128 & mask));
+            put(fp, P, cell.as_mut_ptr() as u128);
+            put(fp, B, v);
+            put(fp, OLD, old);
+            put(fp, NEW, 0x77 & mask);
+            put(fp, D, 0);
+            put(fp, O, 0);
+            run(op, fp, |n| slot(match n {
+                "p" => P,
+                "s" => B,
+                "old" => OLD,
+                "new" => NEW,
+                "d" => D,
+                "o" => O,
+                n => panic!("{n}"),
+            }));
+            let (d, o) = (get(fp, D), get(fp, O));
             let mem = (cell[0] as u128 | (cell[1] as u128) << 64) & mask;
             let (want_d, want_mem, want_o) = match p[1] {
                 "load" => (init, init, None),
@@ -467,7 +564,7 @@ fn atomics() {
                 "cxchg" => {
                     // `weak` may fail spuriously; accept that only if memory is unchanged.
                     let ok = init == old;
-                    if p[2] == "weak" && ok && r[1] == 0 {
+                    if p[2] == "weak" && ok && o == 0 {
                         assert_eq!(mem, init, "{mn}");
                         continue;
                     }
@@ -492,123 +589,325 @@ fn atomics() {
                 }
             };
             assert_eq!(mem, want_mem, "{mn} memory, init {init:#x} v {v:#x}");
-            if p[1] != "store" {
-                assert_eq!(r[0], want_d, "{mn} result");
-            }
-            if let Some(o) = want_o {
-                assert_eq!(r[1], o as u128, "{mn} success flag");
+            assert_eq!(d, want_d, "{mn} result");
+            if let Some(ok) = want_o {
+                assert_eq!(o, ok as u128, "{mn} success flag");
             }
         }
     }
     // Fences have no observable single-thread effect; check they execute.
-    let mut w = ImageWriter::new(unique_scid());
-    let mut a = Asm::new();
-    for &op in ALL_OPCODES.iter().filter(|op| op.mnemonic().contains("fence")) {
-        a.raw(op, &[]);
-    }
-    a.i(Insn::ImmW32 { d: Slot(16), imm: 42 });
-    a.i(Insn::Ret { s: Slot(16), len: 4 });
-    let f = w.add_function(func(a.done(), 32, 0, 0, 4));
-    let img = build(w, &[]);
-    assert_eq!(ok::<(), u32>(img.id(f), ()), 42);
-}
-
-/// fmin/fmax/frem special cases against hand-written expected values (not the std calls
-/// the model above uses).
-#[test]
-fn float_special_values() {
-    let mut w = ImageWriter::new(unique_scid());
-    let mut f = |op: Opcode| {
-        let mut a = Asm::new();
-        a.i(Insn::Zero { d: Slot(D as u32), len: 32 });
-        a.raw(op, &[D, A, B]);
-        a.i(Insn::Ret { s: Slot(D as u32), len: 32 });
-        w.add_function(func(a.done(), FRAME, 0, 32, 32))
-    };
-    let ops64 = [f(Opcode::FminF64), f(Opcode::FmaxF64), f(Opcode::FremF64)];
-    let ops32 = [f(Opcode::FminF32), f(Opcode::FmaxF32), f(Opcode::FremF32)];
-    let img = build(w, &[]);
-    let nan = f64::NAN;
-    let inf = f64::INFINITY;
-    // (op index, a, b, expected; NaN means "any NaN").
-    let cases: &[(usize, f64, f64, f64)] = &[
-        (0, nan, 1.0, 1.0),
-        (0, 1.0, nan, 1.0),
-        (0, -2.0, 3.0, -2.0),
-        (0, nan, nan, nan),
-        (1, nan, -1.0, -1.0),
-        (1, -1.0, nan, -1.0),
-        (1, -2.0, 3.0, 3.0),
-        (1, nan, nan, nan),
-        (2, 5.5, 2.0, 1.5),
-        (2, -5.5, 2.0, -1.5),
-        (2, 5.5, -2.0, 1.5),
-        (2, 1.0, 0.0, nan),
-        (2, inf, 1.0, nan),
-        (2, 1.0, inf, 1.0),
-        (2, nan, 1.0, nan),
-    ];
-    for &(i, a, b, want) in cases {
-        let r: Ret = ok(img.id(ops64[i]), (a.to_bits() as u128, b.to_bits() as u128));
-        let got = f64::from_bits(r[0] as u64);
-        assert!(if want.is_nan() { got.is_nan() } else { got == want }, "f64 op {i}: {a} {b} → {got}");
-        let r: Ret = ok(img.id(ops32[i]), ((a as f32).to_bits() as u128, (b as f32).to_bits() as u128));
-        let got = f32::from_bits(r[0] as u32);
-        let want = want as f32;
-        assert!(if want.is_nan() { got.is_nan() } else { got == want }, "f32 op {i}: {a} {b} → {got}");
+    for op in ops_where(|op| op.mnemonic().contains("fence")) {
+        run(op, fp, |_| unreachable!());
     }
 }
 
-/// Each superinstruction against its two parts run separately: same result slot and same
-/// branch decision, on boundary values around the branch.
 #[test]
-fn superinstructions() {
-    use ryo_bytecode::insn::SUPERINSTRUCTIONS;
-    // Frame: x@16, y@24, p@32 (arguments), d@48, flag@56.
-    let mut w = ImageWriter::new(unique_scid());
-    let mut fns = vec![];
-    for &(f, first, second) in SUPERINSTRUCTIONS {
-        let mut a = Asm::new();
-        a.i(Insn::Zero { d: Slot(48), len: 16 });
-        let at = a.pos();
-        let vals: Vec<u128> = first
-            .info()
-            .operands
-            .iter()
-            .map(|o| match o.name {
-                "d" => 48,
-                "a" => 16,
-                "imm" => 3,
-                "m" => 32, // [p + 0]
-                n => panic!("operand {n}"),
-            })
-            .collect();
-        a.raw(first, &vals);
-        let br = a.raw(second, &[48, 24, 0]);
-        a.i(Insn::ImmW32 { d: Slot(56), imm: 1 });
-        a.i(Insn::Ret { s: Slot(48), len: 16 });
-        let taken = a.i(Insn::ImmW32 { d: Slot(56), imm: 2 });
-        a.i(Insn::Ret { s: Slot(48), len: 16 });
-        a.patch(br, "t", taken);
-        let plain = a.done();
-        let mut fused = plain.clone();
-        fused[at as usize] = f as u32;
-        fns.push((f, w.add_function(func(plain, 64, 0, 24, 16)), w.add_function(func(fused, 64, 0, 24, 16))));
+fn branches() {
+    let mut f = Frame::new();
+    let fp = f.fp();
+    for b in [0u8, 1, 2, 0x80, 0xff] {
+        put(fp, A, 0xff00 | b as u128);
+        let taken = call(Opcode::Br, &[slot(A), 0, 0], fp) as u8 != 0;
+        assert_eq!(taken, b != 0, "br {b:#x}");
     }
-    let img = build(w, &[]);
-    let vals = [0u64, 1, 2, 3, 4, 5, 6, 0x7fff_fffd, 0x7fff_ffff, 0x8000_0000, 0xffff_fffc, 0xffff_ffff, u64::MAX - 2, u64::MAX];
-    let mut taken = [0; 3];
-    for (op, plain, fused) in fns {
-        for &x in &vals {
-            for &y in &vals {
-                let mem = x;
-                let args = (x, y, &raw const mem);
-                let want: [u64; 2] = ok(img.id(plain), args);
-                let got: [u64; 2] = ok(img.id(fused), args);
-                assert_eq!(got, want, "{op:?} x={x:#x} y={y:#x}");
-                taken[want[1] as usize] += 1;
+    let ops = ops_where(|op| op.mnemonic().starts_with("br."));
+    assert_eq!(ops.len(), 5 * 8);
+    let mut seen = [0; 2];
+    for op in ops {
+        let mn = op.mnemonic();
+        let n = mn_width(mn);
+        let imm = mn.contains(".imm");
+        for &a in SAMPLES {
+            for &b in SAMPLES {
+                let b = b & mask(n);
+                let want = int_ref(&base(mn), n, a, b).unwrap().0 != 0;
+                put(fp, A, a);
+                put(fp, B, if imm { !0 } else { b });
+                let taken = run(op, fp, |name| match name {
+                    "a" => slot(A),
+                    "b" => slot(B),
+                    "imm" => b,
+                    _ => 0,
+                }) as u8
+                    != 0;
+                assert_eq!(taken, want, "{mn} {a:#x} {b:#x}");
+                seen[want as usize] += 1;
             }
         }
     }
-    assert!(taken[1] > 0 && taken[2] > 0, "both branch outcomes covered: {taken:?}");
+    assert!(seen[0] > 0 && seen[1] > 0);
+}
+
+#[test]
+fn switches() {
+    let mut f = Frame::new();
+    let fp = f.fp();
+    let dense = ops_where(|op| op.mnemonic().starts_with("switch.dense."));
+    assert_eq!(dense.len(), 5);
+    for op in dense {
+        let n = mn_width(op.mnemonic());
+        let m = mask(n);
+        for &base in SAMPLES {
+            let base = base & m;
+            for len in [0u128, 1, 3, 256] {
+                let ss = SAMPLES.iter().copied().chain((0..5).map(|k| base.wrapping_add(k)));
+                for s in ss {
+                    let i = s.wrapping_sub(base) & m;
+                    let want = if i < len { i } else { len };
+                    put(fp, A, s);
+                    let got = run(op, fp, |name| match name {
+                        "s" => slot(A),
+                        "base" => base,
+                        "table" => len,
+                        _ => 0,
+                    });
+                    assert_eq!(got as u128, want, "{} s {s:#x} base {base:#x} len {len}", op.mnemonic());
+                }
+            }
+        }
+    }
+    let sparse = ops_where(|op| op.mnemonic().starts_with("switch.sparse."));
+    assert_eq!(sparse.len(), 5);
+    for op in sparse {
+        let n = mn_width(op.mnemonic());
+        let bytes = (n / 8) as usize;
+        let mut all: Vec<u128> = SAMPLES.iter().map(|&v| v & mask(n)).collect();
+        all.sort();
+        all.dedup();
+        for step in [1, 2, 3] {
+            for len in [0, 1, 2, 4, 5, 8, all.len()] {
+                let vals: Vec<u128> = all.iter().copied().step_by(step).take(len).collect();
+                let mut arr = vec![0u128; vals.len() + 1];
+                for (i, v) in vals.iter().enumerate() {
+                    let p = unsafe { arr.as_mut_ptr().cast::<u8>().add(i * bytes) };
+                    unsafe { std::ptr::copy_nonoverlapping((&raw const *v).cast::<u8>(), p, bytes) };
+                }
+                let cases = arr.as_ptr() as u128 | (vals.len() as u128) << 64;
+                for &s in &all {
+                    let want = vals.iter().position(|&v| v == s).unwrap_or(vals.len());
+                    put(fp, A, s);
+                    let got = run(op, fp, |name| match name {
+                        "s" => slot(A),
+                        "cases" => cases,
+                        _ => 0,
+                    });
+                    assert_eq!(got as usize, want, "{} s {s:#x} cases {vals:x?}", op.mnemonic());
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn niche_discriminants() {
+    let mut f = Frame::new();
+    let fp = f.fp();
+    let ranges: &[(u32, u32, u32)] = &[(3, 7, 1), (0, 0, 9), (1, 254, 0), (0xffff_fff0, 0xffff_fff5, 2)];
+    let discr = ops_where(|op| op.mnemonic().starts_with("discr.niche."));
+    let set = ops_where(|op| op.mnemonic().starts_with("set_discr.niche."));
+    assert_eq!((discr.len(), set.len()), (5, 5));
+    for (op, set_op) in discr.into_iter().zip(set) {
+        let n = mn_width(op.mnemonic());
+        let m = mask(n);
+        for &ns in SAMPLES {
+            let ns = ns & m;
+            for &(vs, ve, untagged) in ranges {
+                let tags = SAMPLES.iter().map(|&t| t & m).chain((0..300).map(|k| ns.wrapping_add(k) & m));
+                for tag in tags {
+                    let rel = tag.wrapping_sub(ns) & m;
+                    let want = if rel <= ve.wrapping_sub(vs) as u128 { vs.wrapping_add(rel as u32) } else { untagged };
+                    put(fp, A, tag | !m);
+                    put(fp, D, 0);
+                    run(op, fp, |name| match name {
+                        "d" => slot(D),
+                        "s" => slot(A),
+                        "niche_start" => ns,
+                        "variants_start" => vs as u128,
+                        "variants_end" => ve as u128,
+                        "untagged" => untagged as u128,
+                        _ => unreachable!(),
+                    });
+                    assert_eq!(get(fp, D), want as u128, "{} tag {tag:#x} ns {ns:#x} {vs}..={ve}", op.mnemonic());
+                }
+                for variant in (vs..=vs.wrapping_add(4)).chain([untagged]) {
+                    const FILL: u128 = 0xa5a5_a5a5_a5a5_a5a5_a5a5_a5a5_a5a5_a5a5;
+                    put(fp, D, FILL);
+                    run(set_op, fp, |name| match name {
+                        "d" => slot(D),
+                        "variant" => variant as u128,
+                        "niche_start" => ns,
+                        "variants_start" => vs as u128,
+                        "untagged" => untagged as u128,
+                        _ => unreachable!(),
+                    });
+                    let want = if variant == untagged {
+                        FILL
+                    } else {
+                        let tag = (variant.wrapping_sub(vs) as u128 & m).wrapping_add(ns) & m;
+                        FILL & !m | tag
+                    };
+                    assert_eq!(get(fp, D), want, "{} variant {variant} ns {ns:#x} vs {vs}", set_op.mnemonic());
+                }
+            }
+        }
+    }
+}
+
+const PAT: u128 = 0x0f1e_2d3c_4b5a_6978_8796_a5b4_c3d2_e1f0;
+
+fn pattern(n: usize, seed: u8) -> Vec<u8> {
+    (0..n).map(|i| (i as u8).wrapping_mul(7).wrapping_add(seed)).collect()
+}
+
+#[test]
+fn data_movement() {
+    let mut f = Frame::new();
+    let fp = f.fp();
+    let width_ops = |prefix: &str| {
+        let ops = ops_where(|op| op.mnemonic().strip_prefix(prefix).is_some_and(|r| r.starts_with(".w")));
+        assert_eq!(ops.len(), 5, "{prefix}");
+        ops
+    };
+    for op in width_ops("mov") {
+        let m = mask(mn_width(op.mnemonic()));
+        put(fp, A, PAT);
+        put(fp, D, 0);
+        call(op, &[slot(D), slot(A)], fp);
+        assert_eq!(get(fp, D), PAT & m, "{}", op.mnemonic());
+    }
+    for op in width_ops("imm") {
+        let m = mask(mn_width(op.mnemonic()));
+        put(fp, D, 0);
+        call(op, &[slot(D), PAT & m], fp);
+        assert_eq!(get(fp, D), PAT & m, "{}", op.mnemonic());
+    }
+    // Memory operands: `p` holds a pointer into `mem`, and `k` is a signed offset from it.
+    #[repr(align(16))]
+    struct Mem([u8; 64]);
+    let mut mem = Mem([0; 64]);
+    let base = unsafe { mem.0.as_mut_ptr().add(32) };
+    put(fp, P, base as u128);
+    let at = |k: i32| unsafe { base.offset(k as isize) };
+    let m_op = |k: i32| slot(P) | (k as u32 as u128) << 64;
+    for op in width_ops("load") {
+        let bytes = mn_width(op.mnemonic()) / 8;
+        for k in [-13, 0, 5] {
+            mem.0 = pattern(64, k as u8).try_into().unwrap();
+            put(fp, D, 0);
+            call(op, &[slot(D), m_op(k)], fp);
+            let want = unsafe { at(k).cast::<u128>().read_unaligned() } & mask(bytes * 8);
+            assert_eq!(get(fp, D), want, "{} k {k}", op.mnemonic());
+        }
+    }
+    for op in width_ops("store") {
+        let bytes = mn_width(op.mnemonic()) as usize / 8;
+        for k in [-13, 0, 5] {
+            mem.0 = [0; 64];
+            put(fp, A, PAT);
+            call(op, &[m_op(k), slot(A)], fp);
+            let mut want = [0u8; 64];
+            want[(32 + k) as usize..][..bytes].copy_from_slice(&PAT.to_le_bytes()[..bytes]);
+            assert_eq!(mem.0, want, "{} k {k}", op.mnemonic());
+        }
+    }
+    for len in [0, 1, 7, 16, 23] {
+        mem.0 = pattern(64, 3).try_into().unwrap();
+        put_bytes(fp, -200, &[0xee; 32]);
+        call(Opcode::LoadCopy, &[slot(-200), m_op(-9), len as u128], fp);
+        let mut want = vec![0xee; 32];
+        want[..len].copy_from_slice(&mem.0[23..][..len]);
+        assert_eq!(get_bytes(fp, -200, 32), want, "load.copy {len}");
+
+        mem.0 = [0xee; 64];
+        put_bytes(fp, 200, &pattern(32, 9));
+        call(Opcode::StoreCopy, &[m_op(4), slot(200), len as u128], fp);
+        let mut want = [0xee; 64];
+        want[36..][..len].copy_from_slice(&pattern(len, 9));
+        assert_eq!(mem.0, want, "store.copy {len}");
+
+        put_bytes(fp, -300, &pattern(32, 1));
+        put_bytes(fp, 300, &[0xee; 32]);
+        call(Opcode::Copy, &[slot(300), slot(-300), len as u128], fp);
+        let mut want = vec![0xee; 32];
+        want[..len].copy_from_slice(&pattern(len, 1));
+        assert_eq!(get_bytes(fp, 300, 32), want, "copy {len}");
+
+        static K: [u8; 32] = [0x5a; 32];
+        put_bytes(fp, 300, &[0xee; 32]);
+        call(Opcode::Const, &[slot(300), K.as_ptr() as u128, len as u128], fp);
+        assert_eq!(get_bytes(fp, 300, 32), [vec![0x5a; len], vec![0xee; 32 - len]].concat(), "const {len}");
+
+        put_bytes(fp, 300, &[0xee; 32]);
+        call(Opcode::Zero, &[slot(300), len as u128], fp);
+        assert_eq!(get_bytes(fp, 300, 32), [vec![0; len], vec![0xee; 32 - len]].concat(), "zero {len}");
+
+        // memcpy/memmove/memset take pointers and the length in slots.
+        mem.0 = pattern(64, 2).try_into().unwrap();
+        put(fp, A, at(-20) as u128);
+        put(fp, B, at(8) as u128);
+        put(fp, O, len as u128);
+        call(Opcode::Memcpy, &[slot(A), slot(B), slot(O)], fp);
+        let mut want: [u8; 64] = pattern(64, 2).try_into().unwrap();
+        want.copy_within(40..40 + len, 12);
+        assert_eq!(mem.0, want, "memcpy {len}");
+
+        for (dk, sk) in [(-20, -17), (-17, -20)] {
+            mem.0 = pattern(64, 4).try_into().unwrap();
+            put(fp, A, at(dk) as u128);
+            put(fp, B, at(sk) as u128);
+            call(Opcode::Memmove, &[slot(A), slot(B), slot(O)], fp);
+            let mut want: [u8; 64] = pattern(64, 4).try_into().unwrap();
+            want.copy_within((32 + sk) as usize..(32 + sk) as usize + len, (32 + dk) as usize);
+            assert_eq!(mem.0, want, "memmove {dk} {sk} {len}");
+        }
+
+        mem.0 = [0xee; 64];
+        put(fp, A, at(-3) as u128);
+        put(fp, B, 0xff42);
+        call(Opcode::Memset, &[slot(A), slot(B), slot(O)], fp);
+        let mut want = [0xee; 64];
+        want[29..29 + len].fill(0x42);
+        assert_eq!(mem.0, want, "memset {len}");
+    }
+    for (es, count) in [(0usize, 3usize), (1, 0), (3, 5), (8, 2)] {
+        static K: [u8; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
+        put_bytes(fp, -400, &[0xee; 32]);
+        call(Opcode::Fill, &[slot(-400), K.as_ptr() as u128, es as u128, count as u128], fp);
+        let mut want = vec![0xee; 32];
+        for i in 0..count {
+            want[i * es..][..es].copy_from_slice(&K[..es]);
+        }
+        assert_eq!(get_bytes(fp, -400, 32), want, "fill {es} x {count}");
+    }
+}
+
+#[test]
+fn addresses() {
+    let mut f = Frame::new();
+    let fp = f.fp();
+    put(fp, D, 0);
+    call(Opcode::Addr, &[slot(D), slot(-200)], fp);
+    assert_eq!(get(fp, D), unsafe { fp.offset(-200) } as u128);
+    call(Opcode::AddrAbs, &[slot(D), 0x1234_5678_9abc], fp);
+    assert_eq!(get(fp, D), 0x1234_5678_9abc);
+    // `sym` is the address of a cell holding the symbol's address; `.ind` loads through it.
+    let target = 0xdead_beef_usize;
+    let cell = &raw const target as usize;
+    let sym = &raw const cell as u128;
+    call(Opcode::AddrSym, &[slot(D), sym], fp);
+    assert_eq!(get(fp, D), cell as u128);
+    call(Opcode::AddrSymInd, &[slot(D), sym], fp);
+    assert_eq!(get(fp, D), target as u128);
+    for imm in [0i64, 1, -5, 1 << 40, i64::MIN] {
+        put(fp, A, 0x1000_0000);
+        call(Opcode::PtrAdd, &[slot(D), slot(A), imm as u64 as u128], fp);
+        assert_eq!(get(fp, D), 0x1000_0000u64.wrapping_add(imm as u64) as u128, "ptr.add {imm}");
+    }
+    for (i, stride) in [(0u64, 8u32), (3, 16), (u64::MAX, 4), (7, 0), (5, u32::MAX)] {
+        put(fp, A, 0x1000_0000);
+        put(fp, B, i as u128);
+        call(Opcode::PtrIndex, &[slot(D), slot(A), slot(B), stride as u128], fp);
+        let want = 0x1000_0000u64.wrapping_add(i.wrapping_mul(stride as u64));
+        assert_eq!(get(fp, D), want as u128, "ptr.index {i} {stride}");
+    }
 }
