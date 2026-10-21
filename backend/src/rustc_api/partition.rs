@@ -727,6 +727,9 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         let mode = asm_mode(tcx, self.rt);
         w.prepare(mode);
         let mut encoded = Vec::with_capacity(self.vm.len());
+        // The handlers the code calls, and whether it probes the stack.
+        let mut handlers = vec![false; ryo_bytecode::insn::ALL_OPCODES.len()];
+        let mut probe = false;
         let merge_t = tcx.prof.generic_activity("ryo_merge");
         for (i, v) in self.vm.iter_mut().enumerate() {
             let l = &mut v.lowered;
@@ -782,7 +785,15 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                     Ref::Site(Site(i)) => Ref::Site(Site(v(i))),
                     Ref::Const(Const(i)) => Ref::Const(Const(v(i))),
                     Ref::Data(Data(i)) => Ref::Data(Data(v(i))),
-                    to @ (Ref::Handler(_) | Ref::Probe | Ref::Ro(_)) => to,
+                    Ref::Handler(op) => {
+                        handlers[op as usize] = true;
+                        r.to
+                    }
+                    Ref::Probe => {
+                        probe = true;
+                        r.to
+                    }
+                    Ref::Ro(_) => r.to,
                 };
             }
             let portal = v.portal.map(|_| {
@@ -803,18 +814,11 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         }
         drop(merge_t);
         let _t = tcx.prof.generic_activity("ryo_finish_image");
-        let mut rt_used = std::collections::BTreeSet::new();
-        for e in &encoded {
-            for r in &e.relocs {
-                match r.to {
-                    asm::Ref::Handler(op) => rt_used.insert(objfile::handler_name(op)),
-                    asm::Ref::Probe => rt_used.insert(objfile::PROBE_SYMBOL.to_owned()),
-                    _ => false,
-                };
-            }
+        for (i, _) in handlers.iter().enumerate().filter(|h| *h.1) {
+            pool.roots.text(&rt_symbol(tcx, &objfile::handler_name(ryo_bytecode::insn::ALL_OPCODES[i])));
         }
-        for name in rt_used {
-            pool.roots.text(&rt_symbol(tcx, &name));
+        if probe {
+            pool.roots.text(&rt_symbol(tcx, objfile::PROBE_SYMBOL));
         }
         if !mode.pe {
             pool.roots.text(ryo_bytecode::image::PERSONALITY);

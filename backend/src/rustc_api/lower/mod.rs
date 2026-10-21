@@ -199,6 +199,8 @@ pub struct FnCx<'a, 'tcx> {
     cleanup: Vec<(InsnId, UnwindTo)>,
     /// Each block's label.
     block_labels: Vec<Label>,
+    /// Reused operand buffer of [`FnCx::op`].
+    scratch: Vec<Opnd<Label>>,
     /// Largest outgoing argument block of the calls made so far.
     pub max_outgoing: u32,
     arg_size: u32,
@@ -239,6 +241,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             relocs: Vec::new(),
             cleanup: Vec::new(),
             block_labels,
+            scratch: Vec::new(),
             max_outgoing: 0,
             arg_size: sig.block_size,
             next_block: None,
@@ -359,17 +362,23 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// instruction-word encoding of each operand kind (`sym`, `func`, `site`, `k` operands:
     /// indices into [`FnCx::relocs`]).
     pub fn op(&mut self, op: Opcode, operands: &[u32]) -> InsnId {
-        let ops = opnds(op, operands);
-        self.emit(op, ops)
+        let mut ops = std::mem::take(&mut self.scratch);
+        opnds(op, operands, &mut ops);
+        let id = self.asm.insn(op, &ops);
+        self.scratch = ops;
+        id
     }
 
     /// Emits a branch to `bb`: an instruction whose last operands are its polarity and target.
     /// With `neg`, it branches when its condition is false.
     pub fn op_branch(&mut self, op: Opcode, operands: &[u32], neg: bool, bb: BasicBlock) -> InsnId {
-        let mut ops = opnds(op, operands);
+        let mut ops = std::mem::take(&mut self.scratch);
+        opnds(op, operands, &mut ops);
         ops.push(Opnd::Neg(neg));
         ops.push(Opnd::Target(self.block_labels[bb.as_usize()]));
-        self.emit(op, ops)
+        let id = self.asm.insn(op, &ops);
+        self.scratch = ops;
+        id
     }
 
     /// `bb`'s label.
@@ -508,8 +517,8 @@ fn layout_error(e: &ty::layout::LayoutError<'_>) -> NeedsNative {
 
 /// The operands of `op` from their instruction words, up to the first branch target (which
 /// the callers add as labels). A `Words` list takes the rest of `w`.
-fn opnds(op: Opcode, w: &[u32]) -> Vec<Opnd<Label>> {
-    let mut out = Vec::with_capacity(op.info().operands.len());
+fn opnds(op: Opcode, w: &[u32], out: &mut Vec<Opnd<Label>>) {
+    out.clear();
     let mut pos = 0;
     for o in op.info().operands {
         if pos == w.len() && matches!(o.kind, OperandKind::Neg | OperandKind::Target) {
@@ -541,7 +550,6 @@ fn opnds(op: Opcode, w: &[u32]) -> Vec<Opnd<Label>> {
         pos += o.kind.words().unwrap();
     }
     debug_assert_eq!(pos, w.len(), "{op:?}");
-    out
 }
 
 fn mono<'tcx, T>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>, v: T) -> T

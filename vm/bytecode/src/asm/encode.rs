@@ -470,7 +470,7 @@ impl Asm {
 
     /// Sets the argument registers of `op`'s handler from `ops` and calls it.
     fn handler_call(&mut self, op: Opcode, ops: &[Opnd<Label>], site: Option<InsnId>) {
-        let l = layout(op, self.mode);
+        let l = layouts(self.mode.fp_arg)[op as usize];
         if self.mode.fp_arg {
             self.fixed(Item::Mov(ARGS[0], Reg::Rbp));
         }
@@ -747,35 +747,73 @@ impl Asm {
     }
 }
 
+/// Every opcode's handler register layout, without and with `fp-arg`, computed at compile
+/// time.
+fn layouts(fp_arg: bool) -> &'static [Layout] {
+    const fn all(fp_arg: bool) -> [Layout; crate::insn::ALL_OPCODES.len()] {
+        let mode = Mode { fp_arg, align_loops: false, pe: false };
+        let mut out = [layout(Opcode::Jmp, mode); crate::insn::ALL_OPCODES.len()];
+        let mut i = 0;
+        while i < out.len() {
+            out[i] = layout(crate::insn::ALL_OPCODES[i], mode);
+            i += 1;
+        }
+        out
+    }
+    static NO_FP: [Layout; crate::insn::ALL_OPCODES.len()] = all(false);
+    static FP: [Layout; crate::insn::ALL_OPCODES.len()] = all(true);
+    if fp_arg { &FP } else { &NO_FP }
+}
+
 /// Lays out the elements (relaxing branches) and writes the code.
 fn layout_code(mut pieces: Vec<Laid>) -> Encoded {
+    const VAR: u32 = u32::MAX;
     let n = pieces.len();
+    // Lengths that don't depend on the position (`VAR` for the others), and the short
+    // branches, which may grow.
+    let mut lens: Vec<u32> = Vec::with_capacity(n);
+    let mut short = Vec::new();
+    for (k, piece) in pieces.iter().enumerate() {
+        lens.push(match piece {
+            Laid::Fixed { item, .. } => item.len(),
+            Laid::Branch { cond, long, .. } => {
+                if !long {
+                    short.push(k);
+                }
+                Item::Branch { cond: *cond, target: 0, long: *long }.len()
+            }
+            Laid::Skip { .. } => 2,
+            Laid::LeaTable => 7,
+            Laid::Table(_) | Laid::Align => VAR,
+        });
+    }
     let mut pos = vec![0u32; n + 1];
     loop {
         let mut p = 0u32;
-        for (k, piece) in pieces.iter().enumerate() {
+        for (k, &len) in lens.iter().enumerate() {
             pos[k] = p;
-            p += match piece {
-                Laid::Fixed { item, .. } => item.len(),
-                Laid::Branch { cond, long, .. } => Item::Branch { cond: *cond, target: 0, long: *long }.len(),
-                Laid::Skip { .. } => 2,
-                Laid::LeaTable => 7,
-                Laid::Table(t) => p.next_multiple_of(4) - p + 4 * t.len() as u32,
-                Laid::Align => p.next_multiple_of(16) - p,
+            p += if len != VAR {
+                len
+            } else {
+                match &pieces[k] {
+                    Laid::Table(t) => p.next_multiple_of(4) - p + 4 * t.len() as u32,
+                    _ => p.next_multiple_of(16) - p,
+                }
             };
         }
         pos[n] = p;
         let mut changed = false;
-        for k in 0..n {
-            if let Laid::Branch { to, long: false, .. } = pieces[k] {
-                let d = pos[to] as i64 - (pos[k] as i64 + 2);
-                if i8::try_from(d).is_err() {
-                    let Laid::Branch { long, .. } = &mut pieces[k] else { unreachable!() };
-                    *long = true;
-                    changed = true;
-                }
+        short.retain(|&k| {
+            let Laid::Branch { to, cond, long } = &mut pieces[k] else { unreachable!() };
+            let d = pos[*to] as i64 - (pos[k] as i64 + 2);
+            if i8::try_from(d).is_ok() {
+                return true;
             }
-        }
+            *long = true;
+            lens[k] = Item::Branch { cond: *cond, target: 0, long: true }.len();
+            changed = true;
+            false
+        });
         if !changed {
             break;
         }

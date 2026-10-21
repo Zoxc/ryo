@@ -49,8 +49,14 @@ impl Width {
     }
 
     /// The opcode-name suffix: `W32`.
-    pub fn suffix(self) -> String {
-        format!("W{}", self.bits())
+    pub fn suffix(self) -> &'static str {
+        match self {
+            Width::W8 => "W8",
+            Width::W16 => "W16",
+            Width::W32 => "W32",
+            Width::W64 => "W64",
+            Width::W128 => "W128",
+        }
     }
 
     /// Words an immediate of this width takes (`U32` for widths up to 32).
@@ -99,7 +105,12 @@ pub fn opcode(name: &str) -> Opcode {
 
 /// `family` at width `w`: `opw("Add", W32)` is `AddW32`.
 pub fn opw(family: &str, w: Width) -> Opcode {
-    opcode(&format!("{family}{}", w.suffix()))
+    // The name on the stack: this runs for most instructions.
+    let mut buf = [0u8; 64];
+    let (f, su) = (family.as_bytes(), w.suffix().as_bytes());
+    buf[..f.len()].copy_from_slice(f);
+    buf[f.len()..f.len() + su.len()].copy_from_slice(su);
+    opcode(std::str::from_utf8(&buf[..f.len() + su.len()]).expect("ASCII"))
 }
 
 /// Encodes the words of an immediate of width `w`.
