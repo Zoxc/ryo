@@ -48,7 +48,7 @@ use rustc_data_structures::fx::FxHashSet;
 use rustc_middle::mir::interpret::AllocId;
 use rustc_middle::mir::{BasicBlock, Body};
 use rustc_middle::ty::layout::TyAndLayout;
-use rustc_middle::ty::{self, GenericArgsRef, Instance, InstanceKind, Ty, TyCtxt, TypingEnv};
+use rustc_middle::ty::{self, GenericArgsRef, Instance, InstanceKind, Ty, TyCtxt, TypeVisitableExt, TypingEnv};
 use rustc_span::Symbol;
 use ryo_bytecode::abi::HEADER_SIZE;
 use ryo_bytecode::asm::{self, Asm, InsnId, Label, Opnd, Unwind};
@@ -556,6 +556,12 @@ fn mono<'tcx, T>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>, v: T) -> T
 where
     T: ty::TypeFoldable<TyCtxt<'tcx>>,
 {
+    // Most MIR types have nothing to instantiate, normalize or erase: the folding would
+    // return them unchanged.
+    let flags = ty::TypeFlags::HAS_PARAM | ty::TypeFlags::HAS_ALIAS | ty::TypeFlags::HAS_FREE_REGIONS | ty::TypeFlags::HAS_RE_BOUND;
+    if !v.has_type_flags(flags) {
+        return v;
+    }
     instance.instantiate_mir_and_normalize_erasing_regions(
         tcx,
         TypingEnv::fully_monomorphized(),
