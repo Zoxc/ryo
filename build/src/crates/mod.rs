@@ -127,37 +127,47 @@ impl Backend {
 
 #[derive(Debug, PartialEq)]
 pub struct Options {
-    pub build_samples: u32,
+    /// Builds from a clean target directory: the dependencies and the crate.
+    pub dep_samples: u32,
+    /// Builds of only the crate, its dependencies already built.
+    pub leaf_samples: u32,
+    /// 0 skips the tests and the workload.
     pub run_samples: u32,
     pub crates: Vec<String>,
     pub backends: Vec<Backend>,
     /// Per test binary or workload run, in seconds.
     pub timeout: u64,
     pub out: Option<PathBuf>,
+    /// Cargo's and rustc's defaults: no `RUSTFLAGS`, profile, job or incremental settings;
+    /// only the backend is changed (an unfair comparison).
+    pub stock: bool,
 }
 
 /// Crates run without `--crates`: tight integer loops (miniz_oxide), generic hashing and
 /// probing (hashbrown), and a large enum-heavy parser (regex-syntax).
 pub const DEFAULT_CRATES: &[&str] = &["miniz_oxide", "hashbrown", "regex-syntax"];
 
-pub const DEFAULT_BUILD_SAMPLES: u32 = 5;
+pub const DEFAULT_DEP_SAMPLES: u32 = 5;
+pub const DEFAULT_LEAF_SAMPLES: u32 = 5;
 pub const DEFAULT_RUN_SAMPLES: u32 = 10;
 pub const DEFAULT_TIMEOUT: u64 = 1800;
 
 pub const USAGE: &str = "\
-  bench crates [--build-samples N] [--run-samples N] [--quick] [--crates a,b|all] [--backends llvm,clif,ryo]
-               [--timeout SECS] [--out FILE]
+  bench crates [--dep-samples N] [--leaf-samples N] [--build-samples N (both)] [--run-samples N (0: no runs)] [--quick] [--crates a,b|all] [--backends llvm,clif,ryo]
+               [--timeout SECS] [--out FILE] [--stock (cargo/rustc defaults, only RUSTC changed)]
                                build, test and run pinned crates.io crates with each backend
                                (dev profile); writes an HTML report";
 
 pub fn parse_options(args: &[&str]) -> Result<Options, String> {
     let mut o = Options {
-        build_samples: DEFAULT_BUILD_SAMPLES,
+        dep_samples: DEFAULT_DEP_SAMPLES,
+        leaf_samples: DEFAULT_LEAF_SAMPLES,
         run_samples: DEFAULT_RUN_SAMPLES,
         crates: DEFAULT_CRATES.iter().map(|c| c.to_string()).collect(),
         backends: BACKENDS.to_vec(),
         timeout: DEFAULT_TIMEOUT,
         out: None,
+        stock: false,
     };
     let mut args = args.iter().copied();
     while let Some(arg) = args.next() {
@@ -166,13 +176,17 @@ pub fn parse_options(args: &[&str]) -> Result<Options, String> {
             _ => (arg, None),
         };
         let mut value = || value.or_else(|| args.next()).ok_or(format!("`{flag}` needs a value"));
-        let count = |v: &str| v.parse::<u32>().ok().filter(|&n| n > 0).ok_or(format!("bad count `{v}`"));
+        let count0 = |v: &str| v.parse::<u32>().map_err(|_| format!("bad count `{v}`"));
+        let count = |v: &str| count0(v).ok().filter(|&n| n > 0).ok_or(format!("bad count `{v}`"));
         match flag {
-            "--build-samples" => o.build_samples = count(value()?)?,
-            "--run-samples" => o.run_samples = count(value()?)?,
-            "--quick" => (o.build_samples, o.run_samples) = (1, 1),
+            "--dep-samples" => o.dep_samples = count0(value()?)?,
+            "--leaf-samples" => o.leaf_samples = count(value()?)?,
+            "--build-samples" => o.dep_samples = count(value()?).inspect(|&n| o.leaf_samples = n)?,
+            "--run-samples" => o.run_samples = count0(value()?)?,
+            "--quick" => (o.dep_samples, o.leaf_samples, o.run_samples) = (1, 1, 1),
             "--timeout" => o.timeout = value()?.parse().ok().filter(|&n| n > 0).ok_or("bad timeout")?,
             "--out" => o.out = Some(value()?.into()),
+            "--stock" => o.stock = true,
             "--crates" => {
                 o.crates.clear();
                 let v = value()?;
@@ -224,7 +238,9 @@ pub struct Cell {
     /// Build or run errors. A failed build stops the backend for this crate.
     pub errors: Vec<String>,
     pub build_failed: bool,
-    /// `cargo build --lib`.
+    /// `cargo build --lib` from a clean target directory.
+    pub dep_build: Vec<Step>,
+    /// `cargo build --lib` of only the crate.
     pub build: Vec<Step>,
     /// `cargo build --tests`, after `build` in the same target directory.
     pub test_build: Vec<Step>,
@@ -322,25 +338,34 @@ pub fn run(opts: Options) -> Result<(), String> {
                 continue;
             }
         };
-        // Builds: one warm-up (ryo's collects RYO_STATS), then the samples, backends
-        // interleaved, each from a clean target directory.
-        for i in 0..=opts.build_samples {
+        // Builds, backends interleaved: one warm-up from a clean target directory (ryo's
+        // collects RYO_STATS), the dependency samples (clean too), then the leaf samples,
+        // each rebuilding only the crate itself.
+        let builds = opts.dep_samples + opts.leaf_samples;
+        for i in 0..=builds {
+            let clean = i <= opts.dep_samples;
             for (bi, &backend) in opts.backends.iter().enumerate() {
                 let cell = &mut cells[bi];
                 if cell.build_failed {
                     continue;
                 }
-                let label = if i == 0 { "warm-up".to_owned() } else { format!("{i}/{}", opts.build_samples) };
+                let label = match i {
+                    0 => "warm-up".to_owned(),
+                    _ if clean => format!("clean {i}/{}", opts.dep_samples),
+                    _ => format!("leaf {}/{}", i - opts.dep_samples, opts.leaf_samples),
+                };
                 let target = base.join("target").join(krate.name).join(backend.name());
-                let env = Env { info: &info, root: &root, y: &y, backend, target: &target, src: &src };
+                let env = Env { info: &info, root: &root, y: &y, backend, target: &target, src: &src, stock: opts.stock };
                 let t = Instant::now();
-                match build_sample(&env, &base.join("logs"), i == 0 && backend == Backend::Ryo) {
+                match build_sample(&env, krate, &base.join("logs"), clean, i == 0 && backend == Backend::Ryo) {
                     Ok(sample) => {
                         eprintln!("[y] {} build {label} [{}]: {:.1}s", krate.name, backend.name(), t.elapsed().as_secs_f64());
                         cell.test_exes = sample.test_exes;
                         cell.example = Some(sample.example);
                         if i == 0 {
                             cell.warmup = sample.steps.to_vec();
+                        } else if clean {
+                            cell.dep_build.push(sample.steps[0].clone());
                         } else {
                             let [build, tests, _] = sample.steps;
                             cell.build.push(build);
@@ -362,7 +387,7 @@ pub fn run(opts: Options) -> Result<(), String> {
         }
         // Runs: one warm-up (which records the test results and the workload's output), then
         // the samples, interleaved.
-        for i in 0..=opts.run_samples {
+        for i in (0..=opts.run_samples).filter(|_| opts.run_samples > 0) {
             for (bi, &backend) in opts.backends.iter().enumerate() {
                 let cell = &mut cells[bi];
                 if cell.build_failed {
@@ -481,6 +506,7 @@ struct Env<'a> {
     backend: Backend,
     target: &'a Path,
     src: &'a Path,
+    stock: bool,
 }
 
 impl Env<'_> {
@@ -490,7 +516,7 @@ impl Env<'_> {
         for v in CLEARED_ENV {
             c.env_remove(v);
         }
-        for (k, v) in PROFILE_ENV {
+        for (k, v) in PROFILE_ENV.iter().filter(|_| !self.stock) {
             for p in ["DEV", "TEST", "DEV_BUILD_OVERRIDE", "TEST_BUILD_OVERRIDE"] {
                 // Build overrides can't set `lto`, `panic` or `incremental`.
                 if p.ends_with("OVERRIDE") && matches!(*k, "LTO" | "PANIC" | "INCREMENTAL") {
@@ -503,10 +529,13 @@ impl Env<'_> {
             .env("RUSTC", self.backend.rustc(self.root))
             .env("RUSTC_WRAPPER", self.y)
             .env(WRAPPER_VAR, log_dir)
-            .env("RUSTFLAGS", RUSTFLAGS)
-            .env("CARGO_INCREMENTAL", "0")
-            .env("CARGO_BUILD_JOBS", "1")
             .env("CARGO_TARGET_DIR", self.target);
+        if !self.stock {
+            c.env("RUSTFLAGS", RUSTFLAGS).env("CARGO_INCREMENTAL", "0").env("CARGO_BUILD_JOBS", "1");
+        } else if self.backend == Backend::Ryo {
+            // ryo can't compile incrementally; cargo-ryo sets this too.
+            c.env("CARGO_INCREMENTAL", "0");
+        }
         if stats {
             c.env("RYO_STATS", "1");
         }
@@ -521,10 +550,16 @@ struct BuildSample {
     example: PathBuf,
 }
 
-/// Builds the crate from a clean target directory: library, tests, then the workload.
-fn build_sample(env: &Env, logs: &Path, stats: bool) -> Result<BuildSample, String> {
-    if env.target.exists() {
-        fs::remove_dir_all(env.target).map_err(|e| format!("removing {}: {e}", env.target.display()))?;
+/// Builds the crate: library, tests, then the workload. `clean` starts from a clean target
+/// directory; otherwise only the crate's own artifacts are cleaned (`cargo clean -p`), so
+/// the dependencies aren't rebuilt, and a rebuilt one is an error.
+fn build_sample(env: &Env, krate: &Crate, logs: &Path, clean: bool, stats: bool) -> Result<BuildSample, String> {
+    if clean {
+        if env.target.exists() {
+            fs::remove_dir_all(env.target).map_err(|e| format!("removing {}: {e}", env.target.display()))?;
+        }
+    } else {
+        crate::utils::run(env.cargo(logs, false).args(["clean", "--offline", "-p", krate.name]))?;
     }
     let step = |args: &[&str]| -> Result<(Step, String), String> {
         if logs.exists() {
@@ -546,6 +581,11 @@ fn build_sample(env: &Env, logs: &Path, stats: bool) -> Result<BuildSample, Stri
     let (build, _) = step(&["--lib"])?;
     let (tests, json) = step(&["--tests", "--message-format=json-render-diagnostics"])?;
     let (example, _) = step(&["--example", "ryo_bench"])?;
+    if !clean
+        && let Some(u) = [&build, &tests, &example].iter().flat_map(|s| &s.units).find(|u| !u.primary)
+    {
+        return Err(format!("dependency `{}` was rebuilt in a sample", u.krate));
+    }
     let test_exes = test_executables(&json);
     let example_exe = env.target.join("debug").join("examples").join(exe_name("ryo_bench"));
     Ok(BuildSample { steps: [build, tests, example], test_exes, example: example_exe })
@@ -690,7 +730,7 @@ fn header(info: &RustcInfo, root: &Path, opts: &Options) -> Vec<(String, String)
     let dirty = !sh(Command::new("git").current_dir(root).args(["status", "--porcelain", "--untracked-files=no"])).is_empty();
     let rustc = sh(cmd("rustc").arg("-V"));
     let cargo = sh(cmd("cargo").arg("-V"));
-    let mut h = vec![
+    let mut h: Vec<(String, String)> = vec![
         ("date".into(), sh(Command::new("date").args(["-u", "+%Y-%m-%d %H:%M:%S UTC"]))),
         ("ryo".into(), format!("{commit}{}", if dirty { " (with uncommitted changes)" } else { "" })),
         ("rustc".into(), format!("{rustc} ({}), host {}", info.toolchain, info.host)),
@@ -702,11 +742,15 @@ fn header(info: &RustcInfo, root: &Path, opts: &Options) -> Vec<(String, String)
         ("notes".into(), "rustc-ryo forces -Ccodegen-units=1 (here every backend gets it). rustc-clif and rustc-ryo are wrapper executables: one extra exec per rustc invocation that plain rustc doesn't have (included in the rustc wall times). Build-override profiles are forced the same; crates with per-package profile overrides are rejected. No MIR optimization flags are added for any backend. Doc tests are not run.".into()),
         ("timing".into(), "frontend/backend/link from rustc's --json=timings section records (cargo -Zsection-timings), captured by a RUSTC_WRAPPER; other = rustc wall - the three".into()),
         ("samples".into(), format!(
-            "{} build samples (clean target dir each), {} run samples, after one discarded warm-up each; backends interleaved; noisy = stddev > {:.0}% of median",
-            opts.build_samples, opts.run_samples, stats::NOISY * 100.0
+            "{} clean build samples (dependencies metrics), {} leaf build samples (the crate only, dependencies already built; all other build metrics), {} run samples, after one discarded warm-up each; backends interleaved; noisy = stddev > {:.0}% of median",
+            opts.dep_samples, opts.leaf_samples, opts.run_samples, stats::NOISY * 100.0
         )),
         ("machine".into(), format!("{} ({logical} logical CPUs, {affinity} available to y), {mem}, Linux {}", cpu.unwrap_or("?"), read("/proc/sys/kernel/osrelease").trim())),
     ];
+    if opts.stock {
+        h.retain(|(k, _)| !matches!(k.as_str(), "profile" | "RUSTFLAGS" | "environment"));
+        h.push(("stock".into(), "cargo's and rustc's defaults (crate profiles, jobs, codegen units, incremental, debuginfo as cargo sets them); only RUSTC is changed, plus CARGO_INCREMENTAL=0 for ryo (as cargo-ryo). Not a fair comparison.".into()));
+    }
     if !governor.is_empty() {
         h.push(("cpufreq governor".into(), governor.trim().to_owned()));
     }
@@ -720,15 +764,19 @@ mod tests {
     #[test]
     fn options() {
         let o = parse_options(&[]).unwrap();
-        assert_eq!((o.build_samples, o.run_samples, o.backends.len()), (DEFAULT_BUILD_SAMPLES, DEFAULT_RUN_SAMPLES, 3));
+        assert_eq!((o.dep_samples, o.leaf_samples, o.run_samples, o.backends.len()), (DEFAULT_DEP_SAMPLES, DEFAULT_LEAF_SAMPLES, DEFAULT_RUN_SAMPLES, 3));
         let o = parse_options(&["--quick", "--crates", "semver,memchr", "--backends=ryo"]).unwrap();
-        assert_eq!((o.build_samples, o.run_samples), (1, 1));
+        assert_eq!((o.dep_samples, o.leaf_samples, o.run_samples), (1, 1, 1));
         assert_eq!(o.crates, ["semver", "memchr"]);
         assert_eq!(parse_options(&[]).unwrap().crates, DEFAULT_CRATES);
         assert_eq!(parse_options(&["--crates", "all"]).unwrap().crates.len(), CRATES.len());
         assert_eq!(o.backends, [Backend::Ryo]);
         let o = parse_options(&["--build-samples", "3", "--run-samples=7", "--timeout", "60"]).unwrap();
-        assert_eq!((o.build_samples, o.run_samples, o.timeout), (3, 7, 60));
+        assert_eq!((o.dep_samples, o.leaf_samples, o.run_samples, o.timeout), (3, 3, 7, 60));
+        let o = parse_options(&["--dep-samples", "0", "--leaf-samples=16", "--run-samples", "0"]).unwrap();
+        assert_eq!((o.dep_samples, o.leaf_samples, o.run_samples), (0, 16, 0));
+        assert!(parse_options(&["--leaf-samples", "0"]).is_err());
+        assert!(parse_options(&["--stock"]).unwrap().stock && !parse_options(&[]).unwrap().stock);
         assert!(parse_options(&["--crates", "nope"]).is_err());
         assert!(parse_options(&["--backends", "gcc"]).is_err());
         assert!(parse_options(&["--build-samples", "0"]).is_err());

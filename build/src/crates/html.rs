@@ -35,7 +35,7 @@ const METRICS: &[Metric] = &[
     Metric {
         id: "build-wall",
         title: "Build: wall time",
-        what: "cargo build --lib from a clean target directory: the whole dependency graph and the crate",
+        what: "cargo build --lib of the crate, its dependencies already built",
         unit: Measure::Secs,
         pick: |c| steps(&c.build, |s| s.wall),
         summary: true,
@@ -43,9 +43,9 @@ const METRICS: &[Metric] = &[
     Metric {
         id: "build-deps-backend",
         title: "Build: dependencies, backend",
-        what: "the codegen section (backend) summed over the dependencies, build scripts and proc macros",
+        what: "the codegen section (backend) summed over the dependencies, build scripts and proc macros (clean builds)",
         unit: Measure::Secs,
-        pick: |c| steps(&c.build, |s| sum(s, Some(false)).backend),
+        pick: |c| steps(&c.dep_build, |s| sum(s, Some(false)).backend),
         summary: false,
     },
     Metric {
@@ -53,7 +53,7 @@ const METRICS: &[Metric] = &[
         title: "Build: dependencies, frontend",
         what: "process start to the codegen section, summed over the dependencies",
         unit: Measure::Secs,
-        pick: |c| steps(&c.build, |s| sum(s, Some(false)).frontend),
+        pick: |c| steps(&c.dep_build, |s| sum(s, Some(false)).frontend),
         summary: false,
     },
     Metric {
@@ -61,7 +61,7 @@ const METRICS: &[Metric] = &[
         title: "Build: dependencies, rustc total",
         what: "rustc wall time summed over the dependencies",
         unit: Measure::Secs,
-        pick: |c| steps(&c.build, |s| sum(s, Some(false)).wall),
+        pick: |c| steps(&c.dep_build, |s| sum(s, Some(false)).wall),
         summary: true,
     },
     Metric {

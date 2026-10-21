@@ -218,9 +218,16 @@ llvm,clif,ryo] [--timeout SECS] [--out FILE]` compares LLVM (plain rustc), Crane
   (memchr sets opt-level 3); build overrides are forced the same way, and a crate with
   per-package profile overrides is rejected (none of the nine has any). `rustc-ryo` forces `-Ccodegen-units=1` anyway; no MIR
   optimization flags are added for any backend.
-- **Steps** of a build sample, from a clean target directory: `cargo build --lib` (the
-  dependency graph and the leaf crate), `cargo build --tests` (dev-dependencies and test
-  targets, i.e. `cargo test`'s build), `cargo build --example ryo_bench`. Run samples run
+- **`--stock`**: none of the above; cargo's and rustc's defaults (the crate's own profiles,
+  parallel jobs, codegen units, incremental, debuginfo), only `RUSTC` changed, plus
+  `CARGO_INCREMENTAL=0` for ryo, which can't compile incrementally (as `cargo-ryo`). An unfair
+  comparison, for what a user would see.
+- **Steps** of a build: `cargo build --lib`, `cargo build --tests` (`cargo test`'s build),
+  `cargo build --example ryo_bench`. The warm-up starts from a clean target directory and
+  builds the dependencies. Dependency samples (`--dep-samples`) start from a clean target
+  directory too and give the dependency metrics; leaf samples (`--leaf-samples`) first run
+  `cargo clean -p <crate>`, so only the crate is rebuilt (one that rebuilds a dependency
+  fails), and give all other build metrics. `--build-samples N` sets both. Run samples run
   every test binary from the package directory (as `cargo test` would; doc tests are not
   run; memchr skips its five exhaustive `forward_packedpair` tests, 115 of its 120 s with
   LLVM) and the workload. Binary sizes are the workload and the test binaries.
@@ -233,7 +240,8 @@ llvm,clif,ryo] [--timeout SECS] [--out FILE]` compares LLVM (plain rustc), Crane
   unchanged and logs the records, the process's wall time and `CARGO_PRIMARY_PACKAGE`
   (leaf vs dependency) per invocation. Frontend = process start to codegen start, backend
   = codegen, link = link, other = the rest of the rustc process.
-- **Samples**: default 5 build and 10 run samples (`--quick`: 1 each), always after one
+- **Samples**: default 5 dependency, 5 leaf and 10 run samples (`--quick`: 1 each;
+  `--dep-samples 0` and `--run-samples 0` skip those), always after one
   discarded warm-up; backends are interleaved (llvm clif ryo llvm clif ryo …). Reported:
   median, min, standard deviation, n; a cell is noisy if its standard deviation exceeds 3%
   of its median. Timing is `y`'s own loop (no hyperfine). A run sample in which a test
