@@ -80,9 +80,13 @@ pub enum EncodeError {
     BadCleanup(u32),
 }
 
-/// An operand of an instruction, read from its words by kind.
+/// An instruction operand, by kind. Branch targets are `T`: word offsets from the function
+/// start when read from instruction words ([`operands`]), [`Label`]s for [`Asm`].
+///
+/// For [`Asm`], `Slot`, the pointer slot of `Mem` and every element of `Words` are raw slot
+/// values that [`Asm::finish`] turns into frame offsets.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) enum Opnd {
+pub enum Opnd<T = u32> {
     Slot(i32),
     Mem(i32, i32),
     /// `U8` … `U64`, `I64`.
@@ -93,17 +97,38 @@ pub(super) enum Opnd {
     Sym(Sym),
     Site(Site),
     Func(Func),
-    /// Word offset of the target, from the function start.
-    Target(u32),
+    Target(T),
     Neg(bool),
-    Targets(Vec<u32>),
+    Targets(Vec<T>),
     Words(Vec<u32>),
     /// Values and targets.
-    Cases(Vec<u128>, Vec<u32>),
+    Cases(Vec<u128>, Vec<T>),
+}
+
+impl<T> Opnd<T> {
+    /// The same operand with its targets mapped by `f`.
+    pub fn map_targets<U, E>(self, mut f: impl FnMut(T) -> Result<U, E>) -> Result<Opnd<U>, E> {
+        Ok(match self {
+            Opnd::Slot(s) => Opnd::Slot(s),
+            Opnd::Mem(p, k) => Opnd::Mem(p, k),
+            Opnd::Imm(v) => Opnd::Imm(v),
+            Opnd::Imm128(v) => Opnd::Imm128(v),
+            Opnd::Const(k) => Opnd::Const(k),
+            Opnd::Data(d) => Opnd::Data(d),
+            Opnd::Sym(s) => Opnd::Sym(s),
+            Opnd::Site(s) => Opnd::Site(s),
+            Opnd::Func(x) => Opnd::Func(x),
+            Opnd::Target(t) => Opnd::Target(f(t)?),
+            Opnd::Neg(n) => Opnd::Neg(n),
+            Opnd::Targets(ts) => Opnd::Targets(ts.into_iter().map(&mut f).collect::<Result<_, _>>()?),
+            Opnd::Words(w) => Opnd::Words(w),
+            Opnd::Cases(v, ts) => Opnd::Cases(v, ts.into_iter().map(&mut f).collect::<Result<_, _>>()?),
+        })
+    }
 }
 
 /// The operands of the instruction at word `at` of `code`, by kind.
-pub(super) fn operands(code: &[u32], at: usize) -> Vec<Opnd> {
+pub fn operands(code: &[u32], at: usize) -> Vec<Opnd> {
     let op = Opcode::from_u16(code[at] as u16).expect("decoded");
     let mut pos = at + 1;
     let mut out = Vec::new();
@@ -161,21 +186,74 @@ pub(super) fn case_size(e: ElemKind) -> usize {
     }
 }
 
-/// An element of a function's code before layout.
+/// A branch target of [`Asm`]: a position in the code, bound with [`Asm::bind`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Label(pub u32);
+
+/// An instruction emitted by [`Asm::insn`], in emission order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct InsnId(pub u32);
+
+/// Where unwinding out of an instruction goes ([`Asm::set_unwind`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Unwind {
+    /// Out of the frame, to the caller.
+    Continue,
+    /// To the landing pad (an `lpad`) at the label; `catch` if it catches every exception
+    /// ([`crate::image::CATCH`]).
+    Pad { pad: Label, catch: bool },
+}
+
+/// An element of a function's code before [`Asm::finish`].
 #[derive(Clone, Debug)]
 enum Piece {
-    /// A fixed item, a call site if `site`.
-    Fixed { item: Item, site: bool },
-    /// A branch to the instruction with this index.
-    Branch { cond: Cond, to: usize, long: bool },
+    /// A fixed item; a call site if `site`'s instruction may unwind.
+    Fixed { item: Item, site: Option<InsnId> },
+    /// `reg = v`, where the 32-bit halves flagged in `slots` (bit 0: low, bit 1: high) are raw
+    /// slots that become frame offsets.
+    SetReg { reg: Reg, v: u64, slots: u8 },
+    /// The call marker of the raw result slot.
+    Marker(u32),
+    /// `lea reg, [rip + x]` of the code constant [`Asm::ro`]`[i]`.
+    LeaRo { reg: Reg, ro: u32 },
+    /// A branch to the label.
+    Branch { cond: Cond, to: Label },
     /// A short forward branch over the next `skip` bytes (inside a call sequence).
     Skip { cond: Cond, skip: u32 },
     /// `lea rcx, [rip + T]` of the instruction's jump table.
     LeaTable,
     /// The jump table: `int3`s up to a multiple of 4, then the entries.
+    Table(Vec<Label>),
+}
+
+/// An element of a function's code at layout: targets are element indices.
+#[derive(Clone, Debug)]
+enum Laid {
+    /// A fixed item; a call site with its landing pad (element index) and catch flag.
+    Fixed { item: Item, site: Option<(Option<usize>, bool)> },
+    Branch { cond: Cond, to: usize, long: bool },
+    Skip { cond: Cond, skip: u32 },
+    LeaTable,
     Table(Vec<usize>),
     /// Padding up to a multiple of 16 (a loop head).
     Align,
+}
+
+/// A word of a code constant operand array.
+#[derive(Clone, Copy, Debug)]
+enum RoWord {
+    /// The outgoing argument block's frame offset, `-F`.
+    ArgBlock,
+    /// A raw slot.
+    Slot(u32),
+}
+
+/// A code constant, built once the frame size is known.
+#[derive(Clone, Debug)]
+enum RoReq {
+    Bytes(Vec<u8>, usize),
+    /// An operand array: the count, then the words.
+    Ops(Vec<RoWord>),
 }
 
 /// The rodata being built, deduplicated.
@@ -208,7 +286,8 @@ impl Rodata {
     }
 }
 
-/// Encodes one function: its instruction words, frame size `F` and cleanup entries.
+/// Encodes one function from its instruction words, frame size `F` and cleanup entries:
+/// decodes the words and feeds them to an [`Asm`] (slots are already frame offsets).
 pub fn encode(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], mode: Mode) -> Result<Encoded, EncodeError> {
     let mut starts = Vec::new();
     let mut index = vec![usize::MAX; code.len() + 1];
@@ -223,9 +302,8 @@ pub fn encode(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], mode: Mod
         index.get(w as usize).copied().filter(|&i| i != usize::MAX).ok_or(EncodeError::BadTarget(w))
     };
 
-    // Unwind actions, by instruction: `Some(None)` continues, `Some(Some((i, catch)))` lands
-    // in `i`.
-    let mut action: Vec<Option<Option<(usize, bool)>>> = vec![None; starts.len()];
+    // Unwind actions, by instruction.
+    let mut action: Vec<Option<Unwind>> = vec![None; starts.len()];
     for e in cleanup {
         let i = idx(e.offset).map_err(|_| EncodeError::BadCleanup(e.offset))?;
         let op = Opcode::from_u16(code[starts[i]] as u16).unwrap();
@@ -233,58 +311,49 @@ pub fn encode(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], mode: Mod
             return Err(EncodeError::BadCleanup(e.offset));
         }
         action[i] = Some(if e.target == CONTINUE {
-            None
+            Unwind::Continue
         } else {
             let p = idx(e.target & !CATCH).map_err(|_| EncodeError::BadCleanup(e.offset))?;
             if Opcode::from_u16(code[starts[p]] as u16) != Some(Opcode::Lpad) {
                 return Err(EncodeError::BadCleanup(e.offset));
             }
-            Some((p, e.target & CATCH != 0))
+            Unwind::Pad { pad: Label(p as u32), catch: e.target & CATCH != 0 }
         });
     }
 
-    let mut cx = Cx { mode, frame_size, ro: Rodata::default(), pieces: Vec::new() };
-    // The pieces of each instruction (`first[i]..first[i + 1]`), after the prologue's.
-    cx.prologue();
-    let mut first = Vec::with_capacity(starts.len() + 1);
-    // Backward branch targets.
-    let mut loop_head = vec![false; starts.len()];
-    for (i, &at) in starts.iter().enumerate() {
-        for o in operands(code, at) {
-            match o {
-                Opnd::Target(t) => {
-                    let t = idx(t)?;
-                    if t <= i {
-                        loop_head[t] = true;
-                    }
-                }
-                Opnd::Targets(ts) | Opnd::Cases(_, ts) => {
-                    for t in ts {
-                        idx(t)?;
-                    }
-                }
-                _ => {}
-            }
-        }
+    let mut asm = Asm::new(mode);
+    for _ in 0..starts.len() {
+        asm.label();
     }
     for (i, &at) in starts.iter().enumerate() {
-        first.push(cx.pieces.len());
-        if mode.align_loops && loop_head[i] {
-            cx.pieces.push(Piece::Align);
-        }
+        asm.bind(Label(i as u32));
         let op = Opcode::from_u16(code[at] as u16).unwrap();
-        cx.insn(op, &operands(code, at), action[i].is_some(), &idx)?;
+        let ops = operands(code, at)
+            .into_iter()
+            .map(|o| o.map_targets(|t| idx(t).map(|i| Label(i as u32))))
+            .collect::<Result<Vec<_>, _>>()?;
+        let id = asm.insn(op, &ops);
+        if let Some(a) = action[i] {
+            asm.set_unwind(id, a);
+        }
     }
-    first.push(cx.pieces.len());
-    cx.layout(&first, &starts, &action)
+    Ok(asm.finish(frame_size, |s| s))
 }
 
-/// The state of one function's encoding.
-struct Cx {
+/// One function's machine code being built: instructions go in as opcodes and operands
+/// ([`Asm::insn`]), each becoming its canonical sequence; [`Asm::finish`] resolves what
+/// depends on the frame size, lays out the code (relaxing branches) and writes it.
+pub struct Asm {
     mode: Mode,
-    frame_size: u32,
-    ro: Rodata,
     pieces: Vec<Piece>,
+    /// The piece index each label is bound at (`usize::MAX` while unbound).
+    labels: Vec<usize>,
+    ro: Vec<RoReq>,
+    /// Unwind actions by instruction, for the ones that have one.
+    unwind: Vec<Option<Unwind>>,
+    /// `Target` operands: (label, the piece index of the instruction's start). The ones bound
+    /// at or before their instruction are loop heads.
+    targets: Vec<(Label, usize)>,
 }
 
 /// The register an operand register value goes in: a constant, or the address of a [`Ref`].
@@ -294,31 +363,55 @@ pub(super) enum RegVal {
     Addr(Ref),
 }
 
-impl Cx {
+/// A handler argument register's value for [`Asm`]: a constant with raw slots in the halves
+/// `slots` flags, a [`Ref`]'s address, or a code constant's.
+#[derive(Clone, Copy)]
+enum ArgVal {
+    Imm(u64, u8),
+    Addr(Ref),
+    Ro(u32),
+}
+
+impl Asm {
+    pub fn new(mode: Mode) -> Asm {
+        Asm { mode, pieces: Vec::new(), labels: Vec::new(), ro: Vec::new(), unwind: Vec::new(), targets: Vec::new() }
+    }
+
+    /// A new, unbound label.
+    pub fn label(&mut self) -> Label {
+        self.labels.push(usize::MAX);
+        Label(self.labels.len() as u32 - 1)
+    }
+
+    /// Binds `l` to the current position.
+    pub fn bind(&mut self, l: Label) {
+        debug_assert_eq!(self.labels[l.0 as usize], usize::MAX, "label bound twice");
+        self.labels[l.0 as usize] = self.pieces.len();
+    }
+
+    /// Sets where unwinding out of instruction `id` goes (once; only for instructions that
+    /// may unwind). Instructions without an action can't unwind.
+    pub fn set_unwind(&mut self, id: InsnId, to: Unwind) {
+        let a = &mut self.unwind[id.0 as usize];
+        debug_assert!(a.is_none(), "two unwind actions");
+        *a = Some(to);
+    }
+
     fn fixed(&mut self, item: Item) {
-        self.pieces.push(Piece::Fixed { item, site: false });
+        self.pieces.push(Piece::Fixed { item, site: None });
     }
 
-    fn site(&mut self, item: Item) {
-        self.pieces.push(Piece::Fixed { item, site: true });
+    fn maybe_site(&mut self, item: Item, site: Option<InsnId>) {
+        self.pieces.push(Piece::Fixed { item, site });
     }
 
-    /// `push rbp; mov rbp, rsp`, then for `F > 0` (with a stack probe from 4096 bytes)
-    /// `sub rsp, F`.
-    fn prologue(&mut self) {
-        self.fixed(Item::PushRbp);
-        self.fixed(Item::Mov(Reg::Rbp, Reg::Rsp));
-        if self.frame_size >= PROBE_FROM {
-            self.fixed(Item::SetReg(Reg::Rax, self.frame_size as u64));
-            self.fixed(Item::Call(Ref::Probe));
-        }
-        if self.frame_size != 0 {
-            self.fixed(Item::SubRsp(self.frame_size));
-        }
+    fn ro(&mut self, r: RoReq) -> u32 {
+        self.ro.push(r);
+        self.ro.len() as u32 - 1
     }
 
     /// Sets the argument registers of `op`'s handler from `ops` and calls it.
-    fn handler_call(&mut self, op: Opcode, ops: &[Opnd], site: bool) {
+    fn handler_call(&mut self, op: Opcode, ops: &[Opnd<Label>], site: Option<InsnId>) {
         let l = layout(op, self.mode);
         if self.mode.fp_arg {
             self.fixed(Item::Mov(ARGS[0], Reg::Rbp));
@@ -327,28 +420,28 @@ impl Cx {
             // The exception object, in `rax` at a landing pad.
             self.fixed(Item::Mov(ARGS[l.first as usize - 1], Reg::Rax));
         }
-        for (reg, v) in reg_values(op, &l, ops, &mut self.ro).into_iter().enumerate() {
+        for (reg, v) in arg_values(op, &l, ops, self).into_iter().enumerate() {
             match v {
-                Some(RegVal::Imm(v)) => self.fixed(Item::SetReg(ARGS[reg], v)),
-                Some(RegVal::Addr(r)) => self.fixed(Item::Lea(ARGS[reg], r)),
+                Some(ArgVal::Imm(v, 0)) => self.fixed(Item::SetReg(ARGS[reg], v)),
+                Some(ArgVal::Imm(v, slots)) => self.pieces.push(Piece::SetReg { reg: ARGS[reg], v, slots }),
+                Some(ArgVal::Addr(r)) => self.fixed(Item::Lea(ARGS[reg], r)),
+                Some(ArgVal::Ro(ro)) => self.pieces.push(Piece::LeaRo { reg: ARGS[reg], ro }),
                 None => {}
             }
         }
-        let call = Item::Call(Ref::Handler(op));
-        if site { self.site(call) } else { self.fixed(call) }
+        self.maybe_site(Item::Call(Ref::Handler(op)), site);
     }
 
     /// The direct island call `island(fp, ops)` through the symbol slot `isl`, `ops` the
-    /// operand array at `ops_ro` (PE: with 32 bytes of shadow space).
-    fn island_call(&mut self, isl: Sym, ops_ro: u32, site: bool) {
+    /// operand array [`Asm::ro`]`[ro]` (PE: with 32 bytes of shadow space).
+    fn island_call(&mut self, isl: Sym, ro: u32, site: Option<InsnId>) {
         let [fp, ops] = island_args(self.mode.pe);
         self.fixed(Item::Mov(fp, Reg::Rbp));
-        self.fixed(Item::Lea(ops, Ref::Ro(ops_ro)));
+        self.pieces.push(Piece::LeaRo { reg: ops, ro });
         if self.mode.pe {
             self.fixed(Item::SubRsp(32));
         }
-        let call = Item::CallMem(Ref::Sym(isl));
-        if site { self.site(call) } else { self.fixed(call) }
+        self.maybe_site(Item::CallMem(Ref::Sym(isl)), site);
         if self.mode.pe {
             self.fixed(Item::AddRsp(32));
         }
@@ -359,7 +452,7 @@ impl Cx {
     }
 
     /// The jump-table sequence on the index in `rax`, with `targets`.
-    fn table(&mut self, targets: Vec<usize>) {
+    fn table(&mut self, targets: Vec<Label>) {
         self.pieces.push(Piece::LeaTable);
         self.fixed(Item::LoadTableEntry);
         self.fixed(Item::AddRaxRcx);
@@ -367,17 +460,20 @@ impl Cx {
         self.pieces.push(Piece::Table(targets));
     }
 
-    fn insn(
-        &mut self,
-        op: Opcode,
-        ops: &[Opnd],
-        unwinds: bool,
-        idx: &dyn Fn(u32) -> Result<usize, EncodeError>,
-    ) -> Result<(), EncodeError> {
+    /// Emits instruction `op` with operands `ops` (in the opcode's operand order).
+    pub fn insn(&mut self, op: Opcode, ops: &[Opnd<Label>]) -> InsnId {
+        let id = InsnId(self.unwind.len() as u32);
+        self.unwind.push(None);
+        let site = Some(id);
         let info = op.info();
+        for o in ops {
+            if let Opnd::Target(t) = o {
+                self.targets.push((*t, self.pieces.len()));
+            }
+        }
         let named = |name: &str| &ops[info.operand_index(name).expect("operand")];
         let slot = |name: &str| match named(name) {
-            Opnd::Slot(s) => *s,
+            Opnd::Slot(s) => *s as u32,
             _ => unreachable!(),
         };
         let sym = |name: &str| match named(name) {
@@ -385,203 +481,306 @@ impl Cx {
             _ => unreachable!(),
         };
         let target = |name: &str| match named(name) {
-            Opnd::Target(t) => idx(*t),
+            Opnd::Target(t) => *t,
             _ => unreachable!(),
         };
-        let argblk = (self.frame_size as i32).wrapping_neg() as u32;
         match info.shape {
-            Shape::Op | Shape::Lpad => self.handler_call(op, ops, false),
+            Shape::Op | Shape::Lpad => self.handler_call(op, ops, None),
             Shape::Br => {
-                self.handler_call(op, ops, false);
+                self.handler_call(op, ops, None);
                 self.fixed(Item::TestAl);
                 let Opnd::Neg(neg) = named("neg") else { unreachable!() };
                 let cond = if *neg { Cond::Z } else { Cond::Nz };
-                self.pieces.push(Piece::Branch { cond, to: target("t")?, long: false });
+                self.pieces.push(Piece::Branch { cond, to: target("t") });
             }
             Shape::Switch => {
-                self.handler_call(op, ops, false);
+                self.handler_call(op, ops, None);
                 let mut ts = Vec::new();
                 for o in ops {
                     if let Opnd::Targets(t) | Opnd::Cases(_, t) = o {
-                        for &t in t {
-                            ts.push(idx(t)?);
-                        }
+                        ts.extend_from_slice(t);
                     }
                 }
-                ts.push(target("default")?);
+                ts.push(target("default"));
                 self.table(ts);
             }
             Shape::Trap => {
-                self.handler_call(op, ops, unwinds);
+                self.handler_call(op, ops, site);
                 self.fixed(Item::Ud2);
             }
             Shape::Ret => {
-                self.handler_call(op, ops, false);
+                self.handler_call(op, ops, None);
                 self.fixed(Item::Leave);
                 self.fixed(Item::Ret);
             }
-            Shape::Jmp => self.pieces.push(Piece::Branch { cond: Cond::Always, to: target("t")?, long: false }),
+            Shape::Jmp => self.pieces.push(Piece::Branch { cond: Cond::Always, to: target("t") }),
             Shape::Call => {
                 let Opnd::Func(f) = named("f") else { unreachable!() };
-                if unwinds { self.site(Item::Call(Ref::Func(*f))) } else { self.fixed(Item::Call(Ref::Func(*f))) }
-                self.fixed(Item::Marker(slot("d")));
+                self.maybe_site(Item::Call(Ref::Func(*f)), site);
+                self.pieces.push(Piece::Marker(slot("d")));
             }
             Shape::CallExt | Shape::CallInd => {
-                self.handler_call(op, ops, false);
+                self.handler_call(op, ops, None);
                 // `rax`: the VM entry, or 0 for the native path through the island.
                 let fnp = if info.shape == Shape::CallExt { slot("f") } else { slot("p") };
                 let d = slot("d");
-                let ops_ro = self.ro.ops(&[argblk, d as u32, fnp as u32]);
+                let ro = self.ro(RoReq::Ops(vec![RoWord::ArgBlock, RoWord::Slot(d), RoWord::Slot(fnp)]));
                 self.fixed(Item::TestRax);
                 self.pieces.push(Piece::Skip { cond: Cond::Z, skip: 2 + 7 + 2 });
-                if unwinds { self.site(Item::CallRax) } else { self.fixed(Item::CallRax) }
-                self.fixed(Item::Marker(d));
+                self.maybe_site(Item::CallRax, site);
+                self.pieces.push(Piece::Marker(d));
                 self.pieces.push(Piece::Skip { cond: Cond::Always, skip: self.island_len() });
-                self.island_call(sym("isl"), ops_ro, unwinds);
+                self.island_call(sym("isl"), ro, site);
             }
             Shape::TailCall => {
-                self.handler_call(op, ops, false);
+                self.handler_call(op, ops, None);
                 self.fixed(Item::Leave);
                 let Opnd::Func(f) = named("f") else { unreachable!() };
                 self.fixed(Item::Jmp(Ref::Func(*f)));
             }
             Shape::TailCallInd => {
-                self.handler_call(op, ops, false);
+                self.handler_call(op, ops, None);
                 let s = slot("s");
-                let ops_ro = self.ro.ops(&[argblk, s as u32, slot("p") as u32]);
+                let ro = self.ro(RoReq::Ops(vec![RoWord::ArgBlock, RoWord::Slot(s), RoWord::Slot(slot("p"))]));
                 self.fixed(Item::TestRax);
                 self.pieces.push(Piece::Skip { cond: Cond::Z, skip: 1 + 2 });
                 self.fixed(Item::Leave);
                 self.fixed(Item::JmpRax);
-                self.island_call(sym("isl"), ops_ro, unwinds);
+                self.island_call(sym("isl"), ro, site);
                 // Then `ret s, len`.
-                let ret = [Opnd::Slot(s), named("len").clone()];
-                self.handler_call(Opcode::Ret, &ret, false);
+                let ret = [Opnd::Slot(s as i32), named("len").clone()];
+                self.handler_call(Opcode::Ret, &ret, None);
                 self.fixed(Item::Leave);
                 self.fixed(Item::Ret);
             }
             Shape::Island => {
                 let Opnd::Words(w) = named("ops") else { unreachable!() };
-                let ops_ro = self.ro.ops(w);
-                self.island_call(sym("isl"), ops_ro, unwinds);
+                let ro = self.ro(RoReq::Ops(w.iter().map(|&w| RoWord::Slot(w)).collect()));
+                self.island_call(sym("isl"), ro, site);
             }
         }
-        Ok(())
+        id
     }
 
-    /// Lays out the pieces (relaxing branches) and writes the code.
-    fn layout(
-        mut self,
-        first: &[usize],
-        starts: &[usize],
-        action: &[Option<Option<(usize, bool)>>],
-    ) -> Result<Encoded, EncodeError> {
-        let n = self.pieces.len();
-        let mut pos = vec![0u32; n + 1];
-        // The position of instruction `i` (after its alignment padding).
-        let insn_pos = |pos: &[u32], pieces: &[Piece], i: usize| -> u32 {
-            let p = first[i];
-            if matches!(pieces.get(p), Some(Piece::Align)) { pos[p + 1] } else { pos[p] }
-        };
-        loop {
-            let mut p = 0u32;
-            for (k, piece) in self.pieces.iter().enumerate() {
-                pos[k] = p;
-                p += match piece {
-                    Piece::Fixed { item, .. } => item.len(),
-                    Piece::Branch { cond, long, .. } => Item::Branch { cond: *cond, target: 0, long: *long }.len(),
-                    Piece::Skip { .. } => 2,
-                    Piece::LeaTable => 7,
-                    Piece::Table(t) => p.next_multiple_of(4) - p + 4 * t.len() as u32,
-                    Piece::Align => p.next_multiple_of(16) - p,
-                };
-            }
-            pos[n] = p;
-            let mut changed = false;
-            for k in 0..n {
-                if let Piece::Branch { to, long: false, .. } = self.pieces[k] {
-                    let d = insn_pos(&pos, &self.pieces, to) as i64 - (pos[k] as i64 + 2);
-                    if i8::try_from(d).is_err() {
-                        let Piece::Branch { long, .. } = &mut self.pieces[k] else { unreachable!() };
-                        *long = true;
-                        changed = true;
-                    }
+    /// Finishes the function in a frame of size `frame_size`: `fix` turns a raw slot into
+    /// its frame offset. Every label a branch uses must be bound.
+    pub fn finish(self, frame_size: u32, fix: impl Fn(u32) -> u32) -> Encoded {
+        let Asm { mode, pieces, labels, ro, unwind, targets } = self;
+        // Code constants, in emission order (so deduplication matches the word encoder's).
+        let mut rodata = Rodata::default();
+        let argblk = (frame_size as i32).wrapping_neg() as u32;
+        let ro_off: Vec<u32> = ro
+            .into_iter()
+            .map(|r| match r {
+                RoReq::Bytes(b, align) => rodata.add(b, align),
+                RoReq::Ops(ws) => {
+                    let w: Vec<u32> = ws
+                        .iter()
+                        .map(|w| match *w {
+                            RoWord::ArgBlock => argblk,
+                            RoWord::Slot(s) => fix(s),
+                        })
+                        .collect();
+                    rodata.ops(&w)
                 }
-            }
-            if !changed {
-                break;
+            })
+            .collect();
+
+        // Loop heads: labels bound before a branch to them.
+        let mut head = vec![false; pieces.len() + 1];
+        if mode.align_loops {
+            for (to, k) in targets {
+                let at = labels[to.0 as usize];
+                debug_assert_ne!(at, usize::MAX, "unbound label");
+                if at <= k {
+                    head[at] = true;
+                }
             }
         }
-        let mut out = Encoded { code: Vec::with_capacity(pos[n] as usize), ..Default::default() };
-        let mut items = Vec::new();
-        for (k, piece) in self.pieces.iter().enumerate() {
-            let p = pos[k];
-            items.clear();
-            let mut site = false;
-            match piece {
-                Piece::Fixed { item, site: s } => {
-                    items.push(*item);
-                    site = *s;
-                }
-                Piece::Branch { cond, to, long } => {
-                    items.push(Item::Branch { cond: *cond, target: insn_pos(&pos, &self.pieces, *to), long: *long })
-                }
-                Piece::Skip { cond, skip } => items.push(Item::Branch { cond: *cond, target: p + 2 + skip, long: false }),
-                Piece::LeaTable => {
-                    // The table follows the rest of the sequence: `movsxd`, `add`, `jmp rax`.
-                    let t = (p + 7 + 4 + 3 + 2).next_multiple_of(4);
-                    items.push(Item::LeaTable(t));
-                }
-                Piece::Table(targets) => {
-                    for _ in p..p.next_multiple_of(4) {
-                        items.push(Item::Int3);
-                    }
-                    let base = p.next_multiple_of(4);
-                    for &t in targets {
-                        items.push(Item::TableEntry { base, target: insn_pos(&pos, &self.pieces, t) });
-                    }
-                }
-                Piece::Align => padding(p.next_multiple_of(16) - p, &mut items),
+
+        // The prologue, then the pieces with alignment padding, frame offsets and code
+        // constants resolved. `remap[k]` is the element of piece `k` (after its padding).
+        let mut out: Vec<Laid> = Vec::with_capacity(pieces.len() + 8);
+        let fixed = |out: &mut Vec<Laid>, item| out.push(Laid::Fixed { item, site: None });
+        // `push rbp; mov rbp, rsp`, then for `F > 0` (with a stack probe from 4096 bytes)
+        // `sub rsp, F`.
+        fixed(&mut out, Item::PushRbp);
+        fixed(&mut out, Item::Mov(Reg::Rbp, Reg::Rsp));
+        if frame_size >= PROBE_FROM {
+            fixed(&mut out, Item::SetReg(Reg::Rax, frame_size as u64));
+            fixed(&mut out, Item::Call(Ref::Probe));
+        }
+        if frame_size != 0 {
+            fixed(&mut out, Item::SubRsp(frame_size));
+        }
+        let mut remap = Vec::with_capacity(pieces.len() + 1);
+        let lab = |l: &Label| labels[l.0 as usize];
+        let mut tables = Vec::new();
+        let mut branches = Vec::new();
+        let mut sites = Vec::new();
+        for (k, p) in pieces.into_iter().enumerate() {
+            if head[k] {
+                out.push(Laid::Align);
             }
-            let mut q = p;
-            for it in &items {
-                if site {
-                    out.call_sites.push(CallSite { start: q, len: it.len(), pad: None, catch: false });
+            remap.push(out.len());
+            out.push(match p {
+                Piece::Fixed { item, site } => {
+                    let a = site.and_then(|id| unwind[id.0 as usize]);
+                    if let Some(Unwind::Pad { pad, .. }) = a {
+                        sites.push((out.len(), lab(&pad)));
+                    }
+                    Laid::Fixed {
+                        item,
+                        site: a.map(|a| match a {
+                            Unwind::Continue => (None, false),
+                            Unwind::Pad { catch, .. } => (Some(usize::MAX), catch),
+                        }),
+                    }
                 }
-                it.write(q, &mut out.code, &mut out.relocs);
-                q += it.len();
+                Piece::Marker(d) => Laid::Fixed { item: Item::Marker(fix(d) as i32), site: None },
+                Piece::SetReg { reg, v, slots } => {
+                    let mut v = v;
+                    if slots & 1 != 0 {
+                        v = v & !0xffff_ffff | fix(v as u32) as u64;
+                    }
+                    if slots & 2 != 0 {
+                        v = v & 0xffff_ffff | (fix((v >> 32) as u32) as u64) << 32;
+                    }
+                    Laid::Fixed { item: Item::SetReg(reg, v), site: None }
+                }
+                Piece::LeaRo { reg, ro } => Laid::Fixed { item: Item::Lea(reg, Ref::Ro(ro_off[ro as usize])), site: None },
+                Piece::Branch { cond, to } => {
+                    branches.push(out.len());
+                    Laid::Branch { cond, to: lab(&to), long: false }
+                }
+                Piece::Skip { cond, skip } => Laid::Skip { cond, skip },
+                Piece::LeaTable => Laid::LeaTable,
+                Piece::Table(ts) => {
+                    tables.push(out.len());
+                    Laid::Table(ts.iter().map(lab).collect())
+                }
+            });
+        }
+        if head.last() == Some(&true) {
+            out.push(Laid::Align);
+        }
+        remap.push(out.len());
+        // Piece indices to element indices.
+        for &b in &branches {
+            if let Laid::Branch { to, .. } = &mut out[b] {
+                *to = remap[*to];
             }
         }
-        debug_assert_eq!(out.code.len(), pos[n] as usize);
-        // Landing pads of the call sites, by the instruction each is in.
-        let mut sites = out.call_sites.iter_mut().peekable();
-        for i in 0..starts.len() {
-            let (lo, hi) = (pos[first[i]], pos[first[i + 1]]);
-            while let Some(s) = sites.next_if(|s| s.start < hi) {
-                debug_assert!(s.start >= lo);
-                let a = action[i].expect("a call site has an action");
-                s.pad = a.map(|(p, _)| insn_pos(&pos, &self.pieces, p));
-                s.catch = a.is_some_and(|(_, c)| c);
+        for &t in &tables {
+            if let Laid::Table(ts) = &mut out[t] {
+                for x in ts {
+                    *x = remap[*x];
+                }
             }
         }
-        out.rodata = core::mem::take(&mut self.ro.bytes);
-        Ok(out)
+        for (e, pad) in sites {
+            if let Laid::Fixed { site: Some((p, _)), .. } = &mut out[e] {
+                *p = Some(remap[pad]);
+            }
+        }
+        let mut e = layout_code(out);
+        e.rodata = rodata.bytes;
+        e
     }
+}
+
+/// Lays out the elements (relaxing branches) and writes the code.
+fn layout_code(mut pieces: Vec<Laid>) -> Encoded {
+    let n = pieces.len();
+    let mut pos = vec![0u32; n + 1];
+    loop {
+        let mut p = 0u32;
+        for (k, piece) in pieces.iter().enumerate() {
+            pos[k] = p;
+            p += match piece {
+                Laid::Fixed { item, .. } => item.len(),
+                Laid::Branch { cond, long, .. } => Item::Branch { cond: *cond, target: 0, long: *long }.len(),
+                Laid::Skip { .. } => 2,
+                Laid::LeaTable => 7,
+                Laid::Table(t) => p.next_multiple_of(4) - p + 4 * t.len() as u32,
+                Laid::Align => p.next_multiple_of(16) - p,
+            };
+        }
+        pos[n] = p;
+        let mut changed = false;
+        for k in 0..n {
+            if let Laid::Branch { to, long: false, .. } = pieces[k] {
+                let d = pos[to] as i64 - (pos[k] as i64 + 2);
+                if i8::try_from(d).is_err() {
+                    let Laid::Branch { long, .. } = &mut pieces[k] else { unreachable!() };
+                    *long = true;
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    let mut out = Encoded { code: Vec::with_capacity(pos[n] as usize), ..Default::default() };
+    let mut items = Vec::new();
+    for (k, piece) in pieces.iter().enumerate() {
+        let p = pos[k];
+        items.clear();
+        let mut site = None;
+        match piece {
+            Laid::Fixed { item, site: s } => {
+                items.push(*item);
+                site = *s;
+            }
+            Laid::Branch { cond, to, long } => items.push(Item::Branch { cond: *cond, target: pos[*to], long: *long }),
+            Laid::Skip { cond, skip } => items.push(Item::Branch { cond: *cond, target: p + 2 + skip, long: false }),
+            Laid::LeaTable => {
+                // The table follows the rest of the sequence: `movsxd`, `add`, `jmp rax`.
+                let t = (p + 7 + 4 + 3 + 2).next_multiple_of(4);
+                items.push(Item::LeaTable(t));
+            }
+            Laid::Table(targets) => {
+                for _ in p..p.next_multiple_of(4) {
+                    items.push(Item::Int3);
+                }
+                let base = p.next_multiple_of(4);
+                for &t in targets {
+                    items.push(Item::TableEntry { base, target: pos[t] });
+                }
+            }
+            Laid::Align => padding(p.next_multiple_of(16) - p, &mut items),
+        }
+        let mut q = p;
+        for it in &items {
+            if let Some((pad, catch)) = site {
+                out.call_sites.push(CallSite { start: q, len: it.len(), pad: pad.map(|e| pos[e]), catch });
+            }
+            it.write(q, &mut out.code, &mut out.relocs);
+            q += it.len();
+        }
+    }
+    debug_assert_eq!(out.code.len(), pos[n] as usize);
+    out
 }
 
 /// Functions with frames of at least this size probe the stack in the prologue.
 pub const PROBE_FROM: u32 = 4096;
 
 /// The values of `op`'s handler argument registers for operands `ops` (`None` for the
-/// registers set otherwise: `fp`, the exception object). Adds case value arrays to `ro`.
-fn reg_values(op: Opcode, l: &Layout, ops: &[Opnd], ro: &mut Rodata) -> Vec<Option<RegVal>> {
+/// registers set otherwise: `fp`, the exception object). Adds case value arrays to `asm`'s
+/// code constants.
+fn arg_values(op: Opcode, l: &Layout, ops: &[Opnd<Label>], asm: &mut Asm) -> Vec<Option<ArgVal>> {
     let info = op.info();
-    let mut regs: Vec<Option<RegVal>> = vec![None; l.regs as usize];
-    let mut set = |loc: Loc, part: u8, v: RegVal| {
+    let mut regs: Vec<Option<ArgVal>> = vec![None; l.regs as usize];
+    // `slot`: the value is a raw slot.
+    let mut set = |loc: Loc, part: u8, v: ArgVal, slot: bool| {
         let r = &mut regs[(loc.reg + part) as usize];
+        let half = |shift: u8| if slot { 1u8 << (shift / 32) } else { 0 };
         *r = Some(match (v, *r) {
-            (RegVal::Imm(v), Some(RegVal::Imm(lo))) if loc.shared => RegVal::Imm(lo | v << loc.shift),
-            (RegVal::Imm(v), None) if loc.shared => RegVal::Imm(v << loc.shift),
+            (ArgVal::Imm(v, _), Some(ArgVal::Imm(lo, m))) if loc.shared => ArgVal::Imm(lo | v << loc.shift, m | half(loc.shift)),
+            (ArgVal::Imm(v, _), None) if loc.shared => ArgVal::Imm(v << loc.shift, half(loc.shift)),
+            (ArgVal::Imm(v, _), _) => ArgVal::Imm(v, half(0)),
             (v, _) => v,
         });
     };
@@ -590,22 +789,23 @@ fn reg_values(op: Opcode, l: &Layout, ops: &[Opnd], ro: &mut Rodata) -> Vec<Opti
         if loc.count == 0 {
             continue;
         }
+        let imm = |v: u64| ArgVal::Imm(v, 0);
         match o {
-            Opnd::Slot(s) => set(loc, 0, RegVal::Imm(*s as u32 as u64)),
+            Opnd::Slot(s) => set(loc, 0, imm(*s as u32 as u64), true),
             Opnd::Mem(p, k) => {
-                set(loc, 0, RegVal::Imm(*p as u32 as u64));
-                set(loc, 1, RegVal::Imm(*k as u32 as u64));
+                set(loc, 0, imm(*p as u32 as u64), true);
+                set(loc, 1, imm(*k as u32 as u64), false);
             }
-            Opnd::Imm(v) => set(loc, 0, RegVal::Imm(*v)),
+            Opnd::Imm(v) => set(loc, 0, imm(*v), false),
             Opnd::Imm128(v) => {
-                set(loc, 0, RegVal::Imm(*v as u64));
-                set(loc, 1, RegVal::Imm((*v >> 64) as u64));
+                set(loc, 0, imm(*v as u64), false);
+                set(loc, 1, imm((*v >> 64) as u64), false);
             }
-            Opnd::Const(k) => set(loc, 0, RegVal::Addr(Ref::Const(*k))),
-            Opnd::Data(d) => set(loc, 0, RegVal::Addr(Ref::Data(*d))),
-            Opnd::Sym(s) => set(loc, 0, RegVal::Addr(Ref::Sym(*s))),
-            Opnd::Site(s) => set(loc, 0, RegVal::Addr(Ref::Site(*s))),
-            Opnd::Targets(t) => set(loc, 0, RegVal::Imm(t.len() as u64)),
+            Opnd::Const(k) => set(loc, 0, ArgVal::Addr(Ref::Const(*k)), false),
+            Opnd::Data(d) => set(loc, 0, ArgVal::Addr(Ref::Data(*d)), false),
+            Opnd::Sym(s) => set(loc, 0, ArgVal::Addr(Ref::Sym(*s)), false),
+            Opnd::Site(s) => set(loc, 0, ArgVal::Addr(Ref::Site(*s)), false),
+            Opnd::Targets(t) => set(loc, 0, imm(t.len() as u64), false),
             Opnd::Cases(vals, _) => {
                 let OperandKind::List(e) = info.operands[i].kind else { unreachable!() };
                 let size = case_size(e);
@@ -613,8 +813,9 @@ fn reg_values(op: Opcode, l: &Layout, ops: &[Opnd], ro: &mut Rodata) -> Vec<Opti
                 for v in vals {
                     b.extend_from_slice(&v.to_le_bytes()[..size]);
                 }
-                set(loc, 0, RegVal::Addr(Ref::Ro(ro.add(b, size.max(4)))));
-                set(loc, 1, RegVal::Imm(vals.len() as u64));
+                let ro = asm.ro(RoReq::Bytes(b, size.max(4)));
+                set(loc, 0, ArgVal::Ro(ro), false);
+                set(loc, 1, imm(vals.len() as u64), false);
             }
             Opnd::Func(_) | Opnd::Target(_) | Opnd::Neg(_) | Opnd::Words(_) => {
                 unreachable!("not a register operand")

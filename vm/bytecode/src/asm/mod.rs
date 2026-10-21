@@ -33,7 +33,7 @@ mod x86;
 #[cfg(feature = "alloc")]
 pub use decode::{AsmError, Decoded, decode};
 #[cfg(feature = "alloc")]
-pub use encode::{CallSite, EncodeError, Encoded, PROBE_FROM, Ref, Reloc, encode};
+pub use encode::{Asm, CallSite, EncodeError, Encoded, InsnId, Label, Opnd, PROBE_FROM, Ref, Reloc, Unwind, encode, operands};
 
 use crate::insn::{ElemKind, Opcode, OperandKind, Shape};
 

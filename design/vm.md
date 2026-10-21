@@ -107,8 +107,12 @@ Integer ops carry their width (`w8` … `w128`) in the opcode, and float ops the
 
 ### Machine code
 
-`ryo_bytecode::asm::encode(code, F, cleanup, mode)` turns one function's instruction words
-into machine code, relocations (`Ref`: a handler, `ryo_probe_stack`, an image function, a
+`ryo_bytecode::asm::Asm` builds one function's machine code from instructions given as
+opcodes and operands (`insn`), with labels for branch targets (`label`, `bind`) and unwind
+actions per instruction (`set_unwind`); `finish(F, fix)` resolves what depends on the frame
+size (slots, through `fix`, and the prologue), relaxes branches and writes the code.
+`asm::encode(code, F, cleanup, mode)` does the same from instruction words. The result is
+machine code, relocations (`Ref`: a handler, `ryo_probe_stack`, an image function, a
 symbol slot, a site, a constant, a data offset, a code constant), code constants (island
 operand arrays and sparse switch values, deduplicated) and call sites for the LSDA. After the
 prologue, every instruction becomes the canonical sequence of its shape:
