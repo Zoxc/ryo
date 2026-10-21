@@ -19,7 +19,10 @@ use rustc_span::Symbol;
 use ryo_bytecode::image::{
     AllocFixup, AllocReloc, AllocTarget, FunctionDef, ImageObject, ImageWriter, SYM_INDIRECT, portal_id,
 };
+use ryo_bytecode::asm;
 use ryo_bytecode::insn::{ABS_DATA, Const, Data, Opcode, Sym};
+
+use crate::objfile;
 
 use super::lower::{self, CodeReloc, LowerCx, LoweredFn, NeedsNative};
 
@@ -35,6 +38,8 @@ pub struct RtItems {
     pub portal_tc: [DefId; lower::MAX_PORTAL_TC_ARITY + 1],
     pub c_main: DefId,
     pub abi: DefId,
+    /// `ryo_rt::vm::FP_ARG`: whether its handlers take `fp` in `rdi`.
+    pub fp_arg: DefId,
 }
 
 /// The values below are computed once per session and kept in statics (providers are plain
@@ -70,6 +75,7 @@ pub fn rt_items(tcx: TyCtxt<'_>) -> Option<RtItems> {
                 portal_tc,
                 c_main: get("ryo_c_main")?,
                 abi: get("ryo_rt_abi")?,
+                fp_arg: get("ryo_rt_fp_arg")?,
             })
         };
         (session_key(tcx), find())
@@ -190,6 +196,23 @@ fn check_rt_abi(tcx: TyCtxt<'_>, rt: RtItems) {
             "ryo_rt's RYO_RT_ABI is {abi:?}, but this backend expects {EXPECTED_RT_ABI}; rebuild with `./y.sh build`"
         ));
     }
+}
+
+/// How the image's machine code is generated: as `ryo_rt`'s handlers expect `fp`, with
+/// loop-head alignment unless `RYO_ASM_ALIGN=0`, and for the target's object format.
+pub fn asm_mode(tcx: TyCtxt<'_>, rt: RtItems) -> asm::Mode {
+    let fp_arg = tcx.const_eval_poly(rt.fp_arg).ok().and_then(|v| v.try_to_scalar_int()).map(|i| i.to_u8() != 0);
+    let Some(fp_arg) = fp_arg else { tcx.dcx().fatal("ryo_rt's FP_ARG isn't a bool") };
+    asm::Mode {
+        fp_arg,
+        align_loops: std::env::var_os("RYO_ASM_ALIGN").is_none_or(|v| v != "0"),
+        pe: tcx.sess.target.binary_format == rustc_target::spec::BinaryFormat::Coff,
+    }
+}
+
+/// The symbol of one of `ryo_rt`'s handlers or `ryo_probe_stack` (`#[rustc_std_internal_symbol]`s).
+pub fn rt_symbol(tcx: TyCtxt<'_>, name: &str) -> String {
+    rustc_symbol_mangling::mangle_internal_symbol(tcx, name)
 }
 
 /// A VM function: its lowering, index and portal.
@@ -748,6 +771,8 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                 w.symbol(&symbols[i], 0)
             });
             w.add_function(FunctionDef {
+                // Not the portal's symbol, which the image's relocations name.
+                name: format!("{}.vm", symbols[i]),
                 code,
                 frame_size: l.frame_size,
                 arg_size: l.arg_size,
@@ -756,10 +781,67 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                 portal,
             });
         }
-        match w.finish() {
+        // The machine code, function by function in parallel (design/backend.md#pipeline).
+        let mode = asm_mode(tcx, self.rt);
+        w.prepare(mode);
+        let verify = std::env::var_os("RYO_ASM_VERIFY").is_some_and(|v| v != "0");
+        let encoded: Vec<asm::Encoded> = rustc_data_structures::sync::par_map(w.functions().iter().enumerate().collect::<Vec<_>>(), |(i, f)| {
+            let e = match asm::encode(&f.code, f.frame_size, &f.cleanup, mode) {
+                Ok(e) => e,
+                Err(e) => tcx.dcx().fatal(format!("ryo: encoding {}: {e:?}", symbols[i])),
+            };
+            if verify {
+                verify_encoding(tcx, &symbols[i], f, &e, mode);
+            }
+            e
+        });
+        let mut rt_used = std::collections::BTreeSet::new();
+        for e in &encoded {
+            for r in &e.relocs {
+                match r.to {
+                    asm::Ref::Handler(op) => rt_used.insert(objfile::handler_name(op)),
+                    asm::Ref::Probe => rt_used.insert(objfile::PROBE_SYMBOL.to_owned()),
+                    _ => false,
+                };
+            }
+        }
+        for name in rt_used {
+            pool.roots.text(&rt_symbol(tcx, &name));
+        }
+        if !mode.pe {
+            pool.roots.text(ryo_bytecode::image::PERSONALITY);
+        }
+        match w.finish_encoded(encoded) {
             Ok(image) => (image, symbols, pool.roots),
             Err(e) => tcx.dcx().fatal(format!("ryo: invalid image: {e:?}")),
         }
+    }
+}
+
+/// `RYO_ASM_VERIFY`: decodes the machine code of `f` and checks that it gives back its
+/// instruction words, frame size and cleanup entries, the LSDA call-site table included.
+fn verify_encoding(tcx: TyCtxt<'_>, name: &str, f: &FunctionDef, e: &asm::Encoded, mode: asm::Mode) {
+    let sites = asm::lsda::parse(&asm::lsda::write(&e.call_sites));
+    let fail = |what: String| -> ! {
+        tcx.dcx().fatal(format!(
+            "ryo: RYO_ASM_VERIFY: {name}: {what}\n{}",
+            ryo_bytecode::insn::Disasm(&f.code)
+        ))
+    };
+    if sites.as_deref() != Some(&e.call_sites[..]) {
+        fail("the LSDA doesn't read back".to_owned());
+    }
+    let d = match asm::decode(&e.code, &e.relocs, &e.rodata, &e.call_sites, mode) {
+        Ok(d) => d,
+        Err(err) => fail(format!("doesn't decode: {err:?}")),
+    };
+    let mut cleanup = f.cleanup.clone();
+    cleanup.sort();
+    if d.words != f.code {
+        fail(format!("decodes to other instructions:\n{}", ryo_bytecode::insn::Disasm(&d.words)));
+    }
+    if d.frame_size != f.frame_size || d.cleanup != cleanup {
+        fail(format!("frame size {} / cleanup {:?} decode as {} / {:?}", f.frame_size, cleanup, d.frame_size, d.cleanup));
     }
 }
 

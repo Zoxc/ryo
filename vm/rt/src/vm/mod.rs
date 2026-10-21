@@ -15,7 +15,7 @@ mod sys;
 mod thread;
 
 pub use registry::{Function, ImageRt};
-pub use interp::{FP_ARG, MODE, handler, h};
+pub use interp::{FP_ARG, MODE, h, handler, probe_stack};
 pub use thread::VmThread;
 
 use thread::Entry;

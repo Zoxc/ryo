@@ -50,7 +50,7 @@ use rustc_middle::ty::layout::TyAndLayout;
 use rustc_middle::ty::{self, GenericArgsRef, Instance, InstanceKind, Ty, TyCtxt, TypingEnv};
 use rustc_span::Symbol;
 use ryo_bytecode::abi::HEADER_SIZE;
-use ryo_bytecode::image::{CONTINUE, CleanupEntry};
+use ryo_bytecode::image::{CATCH, CONTINUE, CleanupEntry};
 use ryo_bytecode::insn::{CodeBuf, Opcode};
 
 pub use self::constant::{is_import, is_tls_shim, vtable_alloc};
@@ -347,11 +347,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             .cleanup
             .iter()
             .map(|&(offset, to)| {
+                let pad = || self.pads.iter().find(|p| p.0 == to).expect("landing pad").1;
                 let target = match to {
                     UnwindTo::Continue => CONTINUE,
-                    UnwindTo::Block(_) | UnwindTo::Terminate(_) => {
-                        self.pads.iter().find(|p| p.0 == to).expect("landing pad").1
-                    }
+                    UnwindTo::Block(_) => pad(),
+                    // As cg_llvm's terminate pads: a catch-all, so it runs even when nothing up
+                    // the stack catches.
+                    UnwindTo::Terminate(_) => pad() | CATCH,
                 };
                 CleanupEntry { offset, target }
             })

@@ -1,6 +1,9 @@
+use ryo_bytecode::asm::{self, Mode};
 use ryo_bytecode::image::*;
 use ryo_bytecode::insn::*;
 use ryo_bytecode::{FORMAT_VERSION, Insn};
+
+const ELF: Mode = Mode { fp_arg: false, align_loops: true, pe: false };
 
 fn code(insns: &[Insn<'_>]) -> Vec<u32> {
     let mut c = CodeBuf::new();
@@ -37,25 +40,56 @@ impl Buf {
     }
 }
 
-/// Links an image object the way the system linker would: places both sections and applies
-/// every relocation, resolving symbols through `resolve`.
-fn link(obj: &ImageObject, resolve: impl Fn(&SymbolDef) -> u64) -> (Buf, Buf) {
-    let mut ro = Buf::new(&obj.rodata, obj.rodata_align);
-    let mut data = Buf::new(&obj.data, obj.data_align);
-    assert_eq!(ro.addr() % obj.rodata_align, 0);
+/// A linked image: the read-only, writable and text sections.
+struct Linked {
+    ro: Buf,
+    data: Buf,
+    text: Buf,
+}
+
+/// Links an image object the way the system linker would: places the sections and applies
+/// every relocation (the unwind sections' aren't), resolving symbols through `resolve` and
+/// `ryo_rt`'s handlers to 0x7000 + the opcode.
+fn link(obj: &ImageObject, resolve: impl Fn(&SymbolDef) -> u64) -> Linked {
+    let mut l = Linked {
+        ro: Buf::new(&obj.rodata, obj.rodata_align),
+        data: Buf::new(&obj.data, obj.data_align),
+        text: Buf::new(&obj.text, 16),
+    };
+    assert_eq!(l.ro.addr() % obj.rodata_align, 0);
     for r in &obj.relocs {
         let target = match r.target {
             RelocTarget::Symbol(s) => resolve(&obj.symbols[s.0 as usize]),
-            RelocTarget::Section(Section::ReadOnly) => ro.addr(),
-            RelocTarget::Section(Section::Writable) => data.addr(),
+            RelocTarget::Section(Section::ReadOnly) => l.ro.addr(),
+            RelocTarget::Section(Section::Writable) => l.data.addr(),
+            RelocTarget::Section(Section::Text) => l.text.addr(),
+            RelocTarget::Section(_) => continue,
+            RelocTarget::Handler(op) => 0x7000 + op as u64,
+            RelocTarget::Probe => 0x6000,
         };
         let v = target.wrapping_add(r.addend as u64);
-        match r.section {
-            Section::ReadOnly => ro.write_u64(r.offset, v),
-            Section::Writable => data.write_u64(r.offset, v),
+        let buf = match r.section {
+            Section::ReadOnly => &mut l.ro,
+            Section::Writable => &mut l.data,
+            Section::Text => &mut l.text,
+            _ => continue,
+        };
+        match r.kind {
+            RelocKind::Abs64 => buf.write_u64(r.offset, v),
+            RelocKind::Pc32 | RelocKind::Call32 => {
+                let field = buf.addr() + r.offset;
+                let d = (v.wrapping_sub(field) as i64 as i32).to_le_bytes();
+                unsafe { std::ptr::copy_nonoverlapping(d.as_ptr(), (buf.addr() + r.offset) as *mut u8, 4) };
+            }
+            RelocKind::Rva32 => unreachable!("ELF"),
         }
     }
-    (ro, data)
+    l
+}
+
+/// The i32 at `off` in `b`.
+fn i32_at(b: &Buf, off: u64) -> i32 {
+    i32::from_le_bytes(b.bytes()[off as usize..off as usize + 4].try_into().unwrap())
 }
 
 const SCID: u64 = 0x1234_5678_9abc_def0;
@@ -86,6 +120,7 @@ fn sample() -> ImageWriter {
         Insn::Resume { x: Slot(-16) },
     ]);
     w.add_function(FunctionDef {
+        name: "f0".into(),
         code: f0,
         frame_size: 48,
         arg_size: 8,
@@ -102,80 +137,97 @@ fn sample() -> ImageWriter {
         Insn::Ret { s: Slot(-8), len: 8 },
     ]);
     w.add_function(FunctionDef {
+        name: "f1".into(),
         code: f1,
         frame_size: 48,
         cleanup: vec![CleanupEntry { offset: 6, target: CONTINUE }, CleanupEntry { offset: 0, target: CONTINUE }],
         portal: Some(portal1),
         ..Default::default()
     });
-    w.add_function(FunctionDef { code: code(&[Insn::Abort {}]), frame_size: 16, ..Default::default() });
+    w.add_function(FunctionDef { name: String::new(), code: code(&[Insn::Abort {}]), frame_size: 16, ..Default::default() });
     w
 }
 
 #[test]
 fn image_round_trip() {
-    let obj = sample().finish().unwrap();
-    assert_eq!(obj.symbols.len(), 4);
-    assert_eq!(obj.relocs.iter().filter(|r| r.target == RelocTarget::Section(Section::Writable)).count(), 1);
+    let obj = sample().finish(ELF).unwrap();
+    // puts, some_dll_static, the island, f1's portal, rust_eh_personality.
+    assert_eq!(obj.symbols.len(), 5);
+    assert_eq!(obj.symbols[4].name, PERSONALITY);
 
     // Unlinked bytes parse too.
     let unlinked = Buf::new(&obj.rodata, obj.rodata_align);
     let img = Image::parse(unlinked.bytes()).unwrap();
     img.validate().unwrap();
-    assert!(img.data_ptr().is_null());
+    assert!(img.data_ptr().is_null() && img.text_ptr().is_null());
 
     let real_static: Box<u64> = Box::new(0x5000);
     let imp_cell: Box<u64> = Box::new(&*real_static as *const u64 as u64);
     let imp_addr = &*imp_cell as *const u64 as u64;
-    let (ro, data) = link(&obj, |s| match s.name.as_str() {
+    let l = link(&obj, |s| match s.name.as_str() {
         "some_dll_static" => imp_addr,
         "puts" => 0x1000,
         n => 0x2000 + n.len() as u64,
     });
-    let img = unsafe { Image::from_header(ro.bytes().as_ptr()) }.unwrap();
+    let img = unsafe { Image::from_header(l.ro.bytes().as_ptr()) }.unwrap();
     img.validate().unwrap();
     let h = img.header();
     assert_eq!(h.magic, MAGIC);
     assert_eq!(h.version, FORMAT_VERSION);
     assert_eq!(h.stable_crate_id, SCID);
     assert_eq!(img.crate_hash(), crate_hash(SCID));
-    assert_eq!(img.data_ptr() as u64, data.addr());
+    assert_eq!(img.data_ptr() as u64, l.data.addr());
+    assert_eq!(img.text_ptr() as u64, l.text.addr());
+    assert_eq!(h.text_size as usize, obj.text.len());
     assert_eq!(h.site_count, 2);
     assert_eq!(h.fixup_area, 16);
 
-    // Functions.
+    // Functions: machine code, each aligned to 16, in order.
     let fs = img.functions();
     assert_eq!(fs.len(), 3);
     assert_eq!(fs[0].code_off, 0);
-    assert_eq!(fs[1].code_off, fs[0].code_len);
-    assert_eq!(fs[1].frame_size, 48);
+    assert_eq!(fs[1].code_off, fs[0].code_len.next_multiple_of(16));
     assert_eq!((fs[0].arg_size, fs[0].ret_size, fs[1].arg_size), (8, 8, 0));
     assert_eq!(fs[0].portal(), None);
     assert_eq!(fs[1].portal(), Some(3));
     assert_eq!(img.symbols()[3], 0x2000 + "_ZN4test3fooE".len() as u64);
     assert_eq!(img.symbols()[0], 0x1000);
-    assert_eq!(img.symbol_flags(), &[0, SYM_INDIRECT, 0, 0]);
+    assert_eq!(img.symbol_flags(), &[0, SYM_INDIRECT, 0, 0, 0]);
     assert_eq!(img.portal_id(1), portal_id(crate_hash(SCID), 1));
     assert_eq!(split_portal_id(img.portal_id(1)), (crate_hash(SCID), 1));
+    assert_eq!(obj.functions.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), ["f0", "f1", ""]);
+    assert_eq!(obj.functions[0].frame_size, 48);
 
-    // Code decodes back.
-    let f1: Vec<_> = Decoder::new(img.function_code(1).unwrap()).map(|r| r.unwrap().1).collect();
-    assert!(matches!(f1[0], Insn::CallExt { d: Slot(-8), sym: Sym(0), site: Site(0), isl: Sym(2), f: Slot(-16) }));
-    assert_eq!(f1.len(), 5);
+    // f0's code: the prologue, then `call f1` resolved within the text, then the marker.
+    let t = l.text.bytes();
+    assert_eq!(&t[..8], [0x55, 0x48, 0x89, 0xe5, 0x48, 0x83, 0xec, 48]);
+    assert_eq!(t[8], 0xe8);
+    assert_eq!(9 + 4 + i32_at(&l.text, 9) as i64, fs[1].code_off as i64);
+    assert_eq!(&t[13..16], asm::CALL_MARKER);
+    assert_eq!(i32_at(&l.text, 16), -8);
+    // f1's `call.ext`: `lea rdi, [rip + sym slot 0]` reaches the slot.
+    let at = fs[1].code_off as u64 + 4 + 4; // after the prologue (`sub rsp, 48`)
+    assert_eq!(&t[at as usize..at as usize + 3], [0x48, 0x8d, 0x3d]);
+    let slot = (l.text.addr() + at + 7).wrapping_add(i32_at(&l.text, at + 3) as i64 as u64);
+    assert_eq!(slot, img.symbols_ptr() as u64);
 
-    // Cleanup tables (sorted by the writer).
-    assert_eq!(img.cleanup(1).unwrap(), &[CleanupEntry { offset: 0, target: CONTINUE }, CleanupEntry { offset: 6, target: CONTINUE }]);
-    assert_eq!(img.cleanup_at(0, 0), Some(Cleanup::Pad(6)));
-    assert_eq!(img.cleanup_at(0, 10), Some(Cleanup::Continue));
-    assert_eq!(img.cleanup_at(1, 13), None);
-    assert_eq!(img.cleanup_at(2, 0), None);
+    // Unwind information: f0's call and resume are call sites, f0's to its landing pad.
+    assert_eq!(obj.functions[0].call_sites.len(), 2);
+    assert!(obj.functions[0].call_sites[0].pad.is_some() && obj.functions[0].call_sites[1].pad.is_none());
+    assert_eq!(obj.functions[1].call_sites.len(), 3); // `call rax`, the island call, the island
+    assert!(obj.functions[2].call_sites.is_empty());
+    let secs: Vec<_> = obj.unwind.iter().map(|u| u.0).collect();
+    assert_eq!(secs, [Section::EhFrame, Section::Lsda]);
+    // One CIE, then one FDE per function, each pointing at its code and LSDA.
+    let fdes = obj.relocs.iter().filter(|r| r.section == Section::EhFrame && r.target == RelocTarget::Section(Section::Text)).count();
+    assert_eq!(fdes, 3);
 
     // pc → function.
     let c1 = fs[1].code_off;
     assert_eq!(img.function_at(0), Some((0, 0)));
     assert_eq!(img.function_at(c1 + 3), Some((1, 3)));
     assert_eq!(img.function_at(fs[2].code_off), Some((2, 0)));
-    assert_eq!(img.function_at(img.code().len() as u32), None);
+    assert_eq!(img.function_at(h.text_size), None);
 
     // Constants, with relocated pointers.
     let k = img.consts();
@@ -186,9 +238,12 @@ fn image_round_trip() {
     assert_eq!(p0, 0x1000);
     assert_eq!(p1, k.as_ptr() as u64 + 2);
     assert_eq!(k.as_ptr() as u64 % 8, 0);
+    // The island operand arrays are code constants.
+    assert!(!img.code_consts().is_empty());
 
     // Writable section: zeroed site cache, fixup area with an intra-image pointer, and the
     // PE fixup applied at registration.
+    let data = &l.data;
     assert_eq!(data.read_u64(0), 0);
     assert_eq!(data.read_u64(8), 0);
     assert_eq!(data.read_u64(24), k.as_ptr() as u64 + vt_off as u64);
@@ -199,19 +254,33 @@ fn image_round_trip() {
 }
 
 #[test]
+fn pe_unwind_info() {
+    let obj = sample().finish(Mode { pe: true, ..ELF }).unwrap();
+    let secs: Vec<_> = obj.unwind.iter().map(|u| u.0).collect();
+    assert_eq!(secs, [Section::Pdata, Section::Xdata]);
+    assert_eq!(obj.unwind[0].1.len(), 3 * 12);
+    // f0: version 1, prologue 8 bytes, 3 codes (alloc small 48, set fpreg, push rbp), rbp.
+    assert_eq!(&obj.unwind[1].1[..10], [1, 8, 3, 5, 8, 2 | (48 / 8 - 1) << 4, 4, 3, 1, 5 << 4]);
+    assert_eq!(obj.relocs.iter().filter(|r| r.kind == RelocKind::Rva32).count(), 9);
+    // No personality on PE.
+    assert_eq!(obj.symbols.len(), 4);
+}
+
+#[test]
 fn empty_image() {
-    let obj = ImageWriter::new(1).finish().unwrap();
+    let obj = ImageWriter::new(1).finish(ELF).unwrap();
     let b = Buf::new(&obj.rodata, obj.rodata_align);
     let img = Image::parse(b.bytes()).unwrap();
     img.validate().unwrap();
-    assert!(img.functions().is_empty() && img.code().is_empty() && img.consts().is_empty());
+    assert!(img.functions().is_empty() && obj.text.is_empty() && img.consts().is_empty());
     assert_eq!(img.function_at(0), None);
-    assert_eq!(obj.relocs.len(), 1);
+    // `data`, `text`, the personality slot.
+    assert_eq!(obj.relocs.iter().filter(|r| r.kind == RelocKind::Abs64).count(), 3);
 }
 
 #[test]
 fn reader_rejects_bad_images() {
-    let obj = sample().finish().unwrap();
+    let obj = sample().finish(ELF).unwrap();
     let patch = |off: usize, v: &[u8]| {
         let mut r = obj.rodata.clone();
         r[off..off + v.len()].copy_from_slice(v);
@@ -237,23 +306,23 @@ fn reader_rejects_bad_images() {
 #[test]
 fn writer_rejects_bad_code() {
     let mut w = ImageWriter::new(1);
-    w.add_function(FunctionDef { code: code(&[Insn::Jmp { t: Target(1) }]), ..Default::default() });
-    assert!(matches!(w.finish(), Err(WriteError::Code { func: 0, offset: 0, error: CodeError::BadTarget })));
+    w.add_function(FunctionDef { name: String::new(), code: code(&[Insn::Jmp { t: Target(1) }]), ..Default::default() });
+    assert!(matches!(w.finish(ELF), Err(WriteError::Code { func: 0, offset: 0, error: CodeError::BadTarget })));
 
     let mut w = ImageWriter::new(1);
     w.add_function(FunctionDef {
         code: code(&[Insn::Abort {}, Insn::Br { s: Slot(-1), neg: Neg(false), t: Target(-1) }]),
         ..Default::default()
     });
-    assert!(matches!(w.finish(), Err(WriteError::Code { error: CodeError::FallsOffEnd, .. })));
+    assert!(matches!(w.finish(ELF), Err(WriteError::Code { error: CodeError::FallsOffEnd, .. })));
 
     let mut w = ImageWriter::new(1);
-    w.add_function(FunctionDef { code: code(&[Insn::Call { d: Slot(-8), f: Func(5) }, Insn::Abort {}]), ..Default::default() });
-    assert!(matches!(w.finish(), Err(WriteError::Code { error: CodeError::FuncOutOfRange, .. })));
+    w.add_function(FunctionDef { name: String::new(), code: code(&[Insn::Call { d: Slot(-8), f: Func(5) }, Insn::Abort {}]), ..Default::default() });
+    assert!(matches!(w.finish(ELF), Err(WriteError::Code { error: CodeError::FuncOutOfRange, .. })));
 
     let mut w = ImageWriter::new(1);
-    w.add_function(FunctionDef { code: code(&[Insn::AddrSym { d: Slot(0), sym: Sym(0) }, Insn::Abort {}]), ..Default::default() });
-    assert!(matches!(w.finish(), Err(WriteError::Code { error: CodeError::SymOutOfRange, .. })));
+    w.add_function(FunctionDef { name: String::new(), code: code(&[Insn::AddrSym { d: Slot(0), sym: Sym(5) }, Insn::Abort {}]), ..Default::default() });
+    assert!(matches!(w.finish(ELF), Err(WriteError::Code { error: CodeError::SymOutOfRange, .. })));
 
     // Cleanup entries: not on an instruction start, not on a call, a landing pad that isn't
     // an `lpad`.
@@ -264,7 +333,7 @@ fn writer_rejects_bad_code() {
             cleanup: vec![CleanupEntry { offset, target }],
             ..Default::default()
         });
-        assert_eq!(w.finish().unwrap_err(), WriteError::Cleanup(0), "{offset} {target}");
+        assert_eq!(w.finish(ELF).unwrap_err(), WriteError::Cleanup(0), "{offset} {target}");
     }
 
     // Switch table target out of the function.
@@ -274,13 +343,13 @@ fn writer_rejects_bad_code() {
         code: code(&[Insn::SwitchDenseW32 { s: Slot(0), base: 0, default: Target(0), table: List::from_words(&t) }]),
         ..Default::default()
     });
-    assert!(matches!(w.finish(), Err(WriteError::Code { error: CodeError::BadTarget, .. })));
+    assert!(matches!(w.finish(ELF), Err(WriteError::Code { error: CodeError::BadTarget, .. })));
 
     // Fixups need an indirect symbol.
     let mut w = ImageWriter::new(1);
     let s = w.symbol("x", 0);
     w.add_data(&[0; 8], 8, &[], &[AllocFixup { offset: 0, sym: s, addend: 0 }]);
-    assert_eq!(w.finish().unwrap_err(), WriteError::AllocReloc);
+    assert_eq!(w.finish(ELF).unwrap_err(), WriteError::AllocReloc);
 }
 
 #[test]
@@ -292,8 +361,8 @@ fn writer_checks_symbol_indirection() {
         let s = w.symbol("x", indirect);
         let island = w.symbol("island", 0);
         let site = w.site();
-        w.add_function(FunctionDef { code: code(&[insn(s, island, site), Insn::Abort {}]), ..Default::default() });
-        w.finish().map(drop)
+        w.add_function(FunctionDef { name: String::new(), code: code(&[insn(s, island, site), Insn::Abort {}]), ..Default::default() });
+        w.finish(ELF).map(drop)
     };
     let bad = Err(WriteError::Code { func: 0, offset: 0, error: CodeError::SymIndirection });
     let addr_ind: fn(Sym, Sym, Site) -> Insn<'static> = |s, _, _| Insn::AddrSymInd { d: Slot(0), sym: s };
@@ -325,14 +394,14 @@ fn writer_checks_symbol_indirection() {
         code: code(&[Insn::CallExtInd { d: Slot(0), sym: ind, site, isl: dir, f: Slot(-8) }, Insn::Abort {}]),
         ..Default::default()
     });
-    let obj = w.finish().unwrap();
-    assert_eq!(obj.symbols.iter().map(|s| (s.name.as_str(), s.flags)).collect::<Vec<_>>(), [("f", SYM_INDIRECT), ("f", 0)]);
+    let obj = w.finish(ELF).unwrap();
+    assert_eq!(obj.symbols.iter().map(|s| (s.name.as_str(), s.flags)).collect::<Vec<_>>(), [("f", SYM_INDIRECT), ("f", 0), (PERSONALITY, 0)]);
 
     // Portals are local definitions: never indirect.
     let mut w = ImageWriter::new(1);
     let p = w.symbol("p", SYM_INDIRECT);
-    w.add_function(FunctionDef { code: code(&[Insn::Abort {}]), portal: Some(p), ..Default::default() });
-    assert_eq!(w.finish().unwrap_err(), WriteError::Portal(0));
+    w.add_function(FunctionDef { name: String::new(), code: code(&[Insn::Abort {}]), portal: Some(p), ..Default::default() });
+    assert_eq!(w.finish(ELF).unwrap_err(), WriteError::Portal(0));
 }
 
 #[test]
@@ -370,17 +439,8 @@ fn put32(r: &mut [u8], off: usize, v: u32) {
 #[test]
 fn validate_rejects_bad_tables() {
     use std::mem::{offset_of, size_of};
-    let obj = sample().finish().unwrap();
+    let obj = sample().finish(ELF).unwrap();
     let fe = |h: &Header, i: usize, field: usize| h.functions.off as usize + i * size_of::<FuncEntry>() + field;
-    // Cleanup entry offset past the function.
-    assert_eq!(validate_edited(&obj, |r, h| put32(r, h.cleanup.off as usize, 1000)), Err(ImageError::BadCleanup(0)));
-    // Cleanup entries out of order (f1's second entry).
-    assert_eq!(validate_edited(&obj, |r, h| put32(r, h.cleanup.off as usize + 24, 0)), Err(ImageError::BadCleanup(1)));
-    // Cleanup range past the table.
-    assert_eq!(
-        validate_edited(&obj, |r, h| put32(r, fe(h, 2, offset_of!(FuncEntry, cleanup_len)), 9)),
-        Err(ImageError::BadCleanup(2))
-    );
     // Portal symbol out of range.
     assert_eq!(
         validate_edited(&obj, |r, h| put32(r, fe(h, 1, offset_of!(FuncEntry, portal)), 77)),
@@ -396,7 +456,7 @@ fn validate_rejects_bad_tables() {
     assert_eq!(validate_edited(&obj, |r, h| put32(r, fx(h), 17)), Err(ImageError::BadFixup(0)));
     assert_eq!(validate_edited(&obj, |r, h| put32(r, fx(h), 4096)), Err(ImageError::BadFixup(0)));
     assert_eq!(validate_edited(&obj, |r, h| put32(r, fx(h), 8)), Err(ImageError::BadFixup(0)));
-    assert_eq!(validate_edited(&obj, |r, h| put32(r, fx(h) + 4, 4)), Err(ImageError::BadFixup(0)));
+    assert_eq!(validate_edited(&obj, |r, h| put32(r, fx(h) + 4, 5)), Err(ImageError::BadFixup(0)));
     // Unknown symbol flag bits.
     assert_eq!(validate_edited(&obj, |r, h| r[h.sym_flags.off as usize + 2] = 0x80), Err(ImageError::BadSymbolFlags(2)));
     assert_eq!(validate_edited(&obj, |_, _| ()), Ok(()));
@@ -408,7 +468,7 @@ fn writer_rejects_bad_alloc_relocs() {
     let mut w = ImageWriter::new(1);
     let s = w.symbol("x", 0);
     w.add_const(&[0; 16], 8, &[AllocReloc { offset: 4, target: AllocTarget::Symbol(s), addend: 0 }]);
-    assert_eq!(w.finish().unwrap_err(), WriteError::AllocReloc);
+    assert_eq!(w.finish(ELF).unwrap_err(), WriteError::AllocReloc);
     // A fixup and a relocation at the same place.
     let mut w = ImageWriter::new(1);
     let s = w.symbol("x", SYM_INDIRECT);
@@ -419,19 +479,19 @@ fn writer_rejects_bad_alloc_relocs() {
         &[AllocReloc { offset: 0, target: AllocTarget::Symbol(t), addend: 0 }],
         &[AllocFixup { offset: 0, sym: s, addend: 0 }],
     );
-    assert_eq!(w.finish().unwrap_err(), WriteError::AllocReloc);
+    assert_eq!(w.finish(ELF).unwrap_err(), WriteError::AllocReloc);
     // A pointer to an indirect symbol's target must be a fixup, not a relocation.
     let mut w = ImageWriter::new(1);
     let s = w.symbol("x", SYM_INDIRECT);
     w.add_const(&[0; 8], 8, &[AllocReloc { offset: 0, target: AllocTarget::Symbol(s), addend: 0 }]);
-    assert_eq!(w.finish().unwrap_err(), WriteError::AllocReloc);
+    assert_eq!(w.finish(ELF).unwrap_err(), WriteError::AllocReloc);
     // The fixup area is 8-aligned even after an odd number of sites and 1-aligned data.
     let mut w = ImageWriter::new(1);
     w.site();
     w.site();
     w.site();
     let d = w.add_data(&[1], 1, &[], &[]);
-    let obj = w.finish().unwrap();
+    let obj = w.finish(ELF).unwrap();
     let b = Buf::new(&obj.rodata, 8);
     assert_eq!(Image::parse(b.bytes()).unwrap().header().fixup_area, 24);
     assert_eq!(d, Data(0));

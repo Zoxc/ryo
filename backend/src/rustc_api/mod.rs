@@ -194,7 +194,8 @@ impl CodegenBackend for RyoBackend {
         // Step 5: the image object (design/backend.md#pipeline).
         let image_name = format!("{}.ryo_image", results.cgu_name);
         let image_path = tcx.output_filenames(()).temp_path_for_cgu(OutputType::Object, &image_name);
-        let bytes = objfile::write_image(&*fmt, &results.image, scid, results.main_portal.as_deref())
+        let rt_symbol = |name: &str| partition::rt_symbol(tcx, name);
+        let bytes = objfile::write_image(&*fmt, &results.image, scid, results.main_portal.as_deref(), &rt_symbol)
             .unwrap_or_else(|e| tcx.dcx().fatal(e));
         if let Err(e) = std::fs::write(&image_path, bytes) {
             tcx.dcx().fatal(format!("writing {}: {e}", image_path.display()));

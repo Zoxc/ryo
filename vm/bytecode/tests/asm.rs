@@ -2,7 +2,7 @@
 //! with the frame size and the unwind entries (through the LSDA), in every mode.
 
 use ryo_bytecode::asm::{self, Mode, lsda};
-use ryo_bytecode::image::{CONTINUE, CleanupEntry, op_may_unwind};
+use ryo_bytecode::image::{CATCH, CONTINUE, CleanupEntry, op_may_unwind};
 use ryo_bytecode::insn::*;
 
 struct Rng(u64);
@@ -44,8 +44,8 @@ struct Fn {
     insns: Vec<Vec<u32>>,
     /// (instruction index of the target word, word index in the instruction, target index).
     targets: Vec<(usize, usize, usize)>,
-    /// (call, landing pad index or `None` for continue).
-    unwind: Vec<(usize, Option<usize>)>,
+    /// (call, landing pad index and whether it catches, or `None` for continue).
+    unwind: Vec<(usize, Option<(usize, bool)>)>,
 }
 
 impl Fn {
@@ -63,7 +63,10 @@ impl Fn {
         let cleanup = self
             .unwind
             .iter()
-            .map(|&(c, p)| CleanupEntry { offset: starts[c], target: p.map_or(CONTINUE, |p| starts[p]) })
+            .map(|&(c, p)| CleanupEntry {
+                offset: starts[c],
+                target: p.map_or(CONTINUE, |(p, catch)| starts[p] | if catch { CATCH } else { 0 }),
+            })
             .collect();
         (code.concat(), cleanup)
     }
@@ -169,7 +172,7 @@ fn every_opcode_round_trips() {
                 f.targets.push((pad + 1, 1, 0));
                 f.insns.push(vec![Opcode::Abort as u32]);
                 if op_may_unwind(op) && list_len != 1 {
-                    f.unwind.push((1, if list_len == 0 { None } else { Some(pad) }));
+                    f.unwind.push((1, if list_len == 0 { None } else { Some((pad, round % 2 == 0)) }));
                 }
                 check(&f, FRAMES[(round + list_len) % FRAMES.len()], *mode, op.mnemonic());
             }
@@ -253,7 +256,7 @@ fn rejects_non_canonical_code() {
     assert!(asm::decode(&code, &enc.relocs, &enc.rodata, &enc.call_sites, m).is_err());
     // A call site that is no call.
     let mut sites = enc.call_sites.clone();
-    sites.push(asm::CallSite { start: 4, len: 5, pad: None });
+    sites.push(asm::CallSite { start: 4, len: 5, pad: None, catch: false });
     assert!(asm::decode(&enc.code, &enc.relocs, &enc.rodata, &sites, m).is_err());
 }
 
@@ -275,7 +278,7 @@ fn templates_are_pinned_to_format_version() {
             f.insns.push(w);
             f.insns.push(vec![Opcode::Abort as u32]);
             if op_may_unwind(op) {
-                f.unwind.push((1, Some(0)));
+                f.unwind.push((1, Some((0, false))));
             }
             let enc = check(&f, 4096, mode, op.mnemonic());
             eat(&enc.code);
@@ -286,5 +289,5 @@ fn templates_are_pinned_to_format_version() {
             eat(&lsda::write(&enc.call_sites));
         }
     }
-    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (7, 0xcb85d80086ed2cc1), "template hash {h:#x}");
+    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (8, 0xcb85d80086ed2cc1), "template hash {h:#x}");
 }

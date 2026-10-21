@@ -247,7 +247,7 @@ fn opcode_table_is_pinned_to_format_version() {
             eat(&format!("{:?}", o.kind));
         }
     }
-    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (7, 0x28323093b5e1687), "opcode table hash {h:#x}");
+    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (8, 0x28323093b5e1687), "opcode table hash {h:#x}");
 }
 
 /// Pins the image table layouts to the format version: any change to a table entry's size or
@@ -257,18 +257,18 @@ fn image_layouts_are_pinned_to_format_version() {
     use ryo_bytecode::image::*;
     use std::mem::{offset_of, size_of};
     let layout = (
-        (size_of::<Header>(), offset_of!(Header, data), offset_of!(Header, functions), offset_of!(Header, fixup_area)),
+        (size_of::<Header>(), offset_of!(Header, data), offset_of!(Header, functions), offset_of!(Header, text), offset_of!(Header, fixup_area)),
         (
             size_of::<FuncEntry>(),
-            offset_of!(FuncEntry, frame_size),
+            offset_of!(FuncEntry, code_len),
             offset_of!(FuncEntry, arg_size),
             offset_of!(FuncEntry, ret_size),
             offset_of!(FuncEntry, portal),
         ),
         (size_of::<CleanupEntry>(), size_of::<FixupEntry>(), size_of::<Span>()),
     );
-    assert_eq!(ryo_bytecode::FORMAT_VERSION, 7);
-    assert_eq!(layout, ((104, 24, 40, 100), (32, 8, 12, 16, 28), (8, 16, 8)), "{layout:?}");
+    assert_eq!(ryo_bytecode::FORMAT_VERSION, 8);
+    assert_eq!(layout, ((112, 24, 40, 48, 104), (20, 4, 8, 12, 16), (8, 16, 8)), "{layout:?}");
 }
 
 /// Decoding arbitrary words never panics, and whatever decodes re-encodes to the same words.

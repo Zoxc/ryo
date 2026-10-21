@@ -12,7 +12,7 @@ use alloc::vec::Vec;
 
 use super::x86::{ARGS, Cond, Item, Reg, island_args, padding};
 use super::{Layout, Loc, Mode, layout};
-use crate::image::{CONTINUE, CleanupEntry};
+use crate::image::{CATCH, CONTINUE, CleanupEntry};
 use crate::insn::{Const, Data, DecodeError, ElemKind, Func, Opcode, OperandKind, Shape, Site, Sym, insn_len};
 
 /// What a relocated 4-byte field of the code refers to. Every field is PC-relative: once
@@ -52,6 +52,9 @@ pub struct CallSite {
     pub start: u32,
     pub len: u32,
     pub pad: Option<u32>,
+    /// The landing pad catches every exception, rather than being a cleanup
+    /// ([`crate::image::CATCH`]).
+    pub catch: bool,
 }
 
 /// One function's machine code.
@@ -220,8 +223,9 @@ pub fn encode(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], mode: Mod
         index.get(w as usize).copied().filter(|&i| i != usize::MAX).ok_or(EncodeError::BadTarget(w))
     };
 
-    // Unwind actions, by instruction: `Some(None)` continues, `Some(Some(i))` lands in `i`.
-    let mut action: Vec<Option<Option<usize>>> = vec![None; starts.len()];
+    // Unwind actions, by instruction: `Some(None)` continues, `Some(Some((i, catch)))` lands
+    // in `i`.
+    let mut action: Vec<Option<Option<(usize, bool)>>> = vec![None; starts.len()];
     for e in cleanup {
         let i = idx(e.offset).map_err(|_| EncodeError::BadCleanup(e.offset))?;
         let op = Opcode::from_u16(code[starts[i]] as u16).unwrap();
@@ -231,11 +235,11 @@ pub fn encode(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], mode: Mod
         action[i] = Some(if e.target == CONTINUE {
             None
         } else {
-            let p = idx(e.target).map_err(|_| EncodeError::BadCleanup(e.offset))?;
+            let p = idx(e.target & !CATCH).map_err(|_| EncodeError::BadCleanup(e.offset))?;
             if Opcode::from_u16(code[starts[p]] as u16) != Some(Opcode::Lpad) {
                 return Err(EncodeError::BadCleanup(e.offset));
             }
-            Some(p)
+            Some((p, e.target & CATCH != 0))
         });
     }
 
@@ -466,7 +470,12 @@ impl Cx {
     }
 
     /// Lays out the pieces (relaxing branches) and writes the code.
-    fn layout(mut self, first: &[usize], starts: &[usize], action: &[Option<Option<usize>>]) -> Result<Encoded, EncodeError> {
+    fn layout(
+        mut self,
+        first: &[usize],
+        starts: &[usize],
+        action: &[Option<Option<(usize, bool)>>],
+    ) -> Result<Encoded, EncodeError> {
         let n = self.pieces.len();
         let mut pos = vec![0u32; n + 1];
         // The position of instruction `i` (after its alignment padding).
@@ -537,7 +546,7 @@ impl Cx {
             let mut q = p;
             for it in &items {
                 if site {
-                    out.call_sites.push(CallSite { start: q, len: it.len(), pad: None });
+                    out.call_sites.push(CallSite { start: q, len: it.len(), pad: None, catch: false });
                 }
                 it.write(q, &mut out.code, &mut out.relocs);
                 q += it.len();
@@ -550,7 +559,9 @@ impl Cx {
             let (lo, hi) = (pos[first[i]], pos[first[i + 1]]);
             while let Some(s) = sites.next_if(|s| s.start < hi) {
                 debug_assert!(s.start >= lo);
-                s.pad = action[i].expect("a call site has an action").map(|p| insn_pos(&pos, &self.pieces, p));
+                let a = action[i].expect("a call site has an action");
+                s.pad = a.map(|(p, _)| insn_pos(&pos, &self.pieces, p));
+                s.catch = a.is_some_and(|(_, c)| c);
             }
         }
         out.rodata = core::mem::take(&mut self.ro.bytes);

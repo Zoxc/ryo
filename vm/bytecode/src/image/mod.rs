@@ -1,6 +1,6 @@
 //! The image format (design/vm.md, "Image format") and its zero-copy reader.
 //!
-//! An image is two sections:
+//! An image is three sections:
 //!
 //! **Read-only** (starts with [`Header`], aligned to at least 8; byte offsets below are
 //! from the header):
@@ -9,8 +9,7 @@
 //! |---|---|
 //! | header | [`Header`] |
 //! | functions | `[FuncEntry]`, sorted by code offset; index = [`Func`](crate::insn::Func) |
-//! | code | `[u32]`: every function's instruction words |
-//! | cleanup | `[CleanupEntry]`: each function's unwind entries, contiguous, sorted by code offset |
+//! | code constants | what the machine code refers to: island operand arrays, switch values |
 //! | fixups | `[FixupEntry]` (PE only, otherwise empty) |
 //! | symbol flags | `[u8]`, one per symbol ([`SYM_INDIRECT`]) |
 //! | symbols | `[u64]`: one pointer slot per symbol, filled by the linker |
@@ -21,16 +20,14 @@
 //!
 //! The header's `data` field is a pointer to the writable section, filled by a relocation.
 //!
-//! All code positions are in words: a function's `code_off` indexes the code array, and
-//! cleanup offsets and targets are relative to the function's first word.
-//!
-//! A function's cleanup table says what unwinding out of each call-like instruction does:
-//! continue in the caller, or enter a landing pad (an `lpad` instruction). An instruction
-//! without an entry can't unwind (the unwinder aborts if it does).
+//! **Text** (executable): every function's machine code ([`crate::asm`]), in function table
+//! order, each aligned to 16. The header's `text` field points at it (a relocation), and a
+//! function's `code_off` is its byte offset there. Unwinding information (CFI and the LSDA
+//! call-site tables, or PE unwind info) is emitted with the text by the backend.
 //!
 //! The reader works on `core` only. [`Image::parse`] checks the header and that every part
 //! is in bounds and aligned (cheap, O(1)); [`Image::validate`] also checks every function and
-//! cleanup table (O(size)).
+//! fixups (O(size)).
 
 #[cfg(feature = "alloc")]
 mod writer;
@@ -49,8 +46,14 @@ pub const SYM_INDIRECT: u8 = 1;
 /// `FuncEntry::portal` for functions without a portal.
 pub const NO_PORTAL: u32 = u32::MAX;
 
-/// `CleanupEntry::target` of a call whose unwinding continues in the caller.
+/// `CleanupEntry::target` of a call whose unwinding continues in the caller (in the
+/// writer's function definitions; images carry LSDAs instead).
 pub const CONTINUE: u32 = u32::MAX;
+
+/// Set in `CleanupEntry::target` (with a landing pad) when the landing pad catches every
+/// exception instead of being a cleanup: a `Terminate` action, whose pad must be found by
+/// the unwinder's search phase even if nothing up the stack catches the panic.
+pub const CATCH: u32 = 1 << 31;
 
 /// Builds a portal `ID` (design/stubs.md): crate hash in the high 32 bits, function index in
 /// the low 32.
@@ -95,10 +98,12 @@ pub struct Header {
     pub data_size: u32,
     /// `[FuncEntry]`.
     pub functions: Span,
-    /// `[u32]` code words.
-    pub code: Span,
-    /// `[CleanupEntry]`.
-    pub cleanup: Span,
+    /// Address of the text section (relocated; 0 in the unlinked bytes).
+    pub text: u64,
+    /// Size of the text section in bytes.
+    pub text_size: u32,
+    /// The code constants (bytes).
+    pub code_consts: Span,
     /// `[FixupEntry]`.
     pub fixups: Span,
     /// `[u8]` symbol flags (same count as `symbols`).
@@ -111,28 +116,23 @@ pub struct Header {
     pub site_count: u32,
     /// Byte offset of the fixup area in the writable section (after the site cache).
     pub fixup_area: u32,
+    /// 0.
+    pub reserved: u32,
 }
 
 /// A function table entry.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct FuncEntry {
-    /// First word in the code array.
+    /// Byte offset of the machine code in the text section.
     pub code_off: u32,
-    /// Length in words.
+    /// Length in bytes.
     pub code_len: u32,
-    /// The frame size `F`: locals and the largest outgoing argument block, below `fp`
-    /// ([`crate::abi`]).
-    pub frame_size: u32,
     /// Size of the argument block (`ArgBlock::size`): the bytes `vm::enter` copies from the
     /// portal's args and `tail_call` moves up to `fp + H`.
     pub arg_size: u32,
-    /// Size of the return value: what a native `tail_call.ind` target returns.
+    /// Size of the return value.
     pub ret_size: u32,
-    /// First entry of this function's cleanup table.
-    pub cleanup_off: u32,
-    /// Number of cleanup entries.
-    pub cleanup_len: u32,
     /// Symbol index of the function's portal, or [`NO_PORTAL`].
     pub portal: u32,
 }
@@ -150,22 +150,28 @@ impl FuncEntry {
 pub struct CleanupEntry {
     /// Word offset of the call-like instruction, from the function start.
     pub offset: u32,
-    /// Word offset of its landing pad (an `lpad` instruction), or [`CONTINUE`].
+    /// Word offset of its landing pad (an `lpad` instruction), with [`CATCH`] for a
+    /// catch-all one, or [`CONTINUE`].
     pub target: u32,
 }
 
 /// What unwinding out of a call-like instruction does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Cleanup {
-    /// Enter the landing pad at this word offset in the function.
-    Pad(u32),
+    /// Enter the landing pad at this word offset in the function, catching the exception if
+    /// `catch`.
+    Pad(u32, bool),
     /// Leave the frame, and continue in the caller.
     Continue,
 }
 
 impl CleanupEntry {
     pub fn action(&self) -> Cleanup {
-        if self.target == CONTINUE { Cleanup::Continue } else { Cleanup::Pad(self.target) }
+        if self.target == CONTINUE {
+            Cleanup::Continue
+        } else {
+            Cleanup::Pad(self.target & !CATCH, self.target & CATCH != 0)
+        }
     }
 }
 
@@ -194,8 +200,6 @@ pub enum ImageError {
     OutOfBounds(&'static str),
     /// The function table isn't sorted, or a function's code is out of range.
     BadFunction(u32),
-    /// A cleanup table is unsorted, out of range, or targets past the function.
-    BadCleanup(u32),
     /// A fixup is out of range of the writable section or the symbol table.
     BadFixup(u32),
     /// A symbol flag byte has unknown bits.
@@ -253,8 +257,7 @@ impl<'a> Image<'a> {
         let bytes = &bytes[..header.size as usize];
         let img = Image { bytes, header };
         cast::<FuncEntry>(bytes, header.functions, "functions")?;
-        cast::<u32>(bytes, header.code, "code")?;
-        cast::<CleanupEntry>(bytes, header.cleanup, "cleanup")?;
+        cast::<u8>(bytes, header.code_consts, "code constants")?;
         cast::<FixupEntry>(bytes, header.fixups, "fixups")?;
         cast::<u8>(bytes, header.sym_flags, "symbol flags")?;
         cast::<u64>(bytes, header.symbols, "symbols")?;
@@ -287,35 +290,19 @@ impl<'a> Image<'a> {
         Self::parse(unsafe { slice::from_raw_parts(header, size) })
     }
 
-    /// Full consistency check of the function table, cleanup tables, fixups and symbol
-    /// flags. Doesn't decode the code (see [`crate::image::validate_code`] with `alloc`).
+    /// Full consistency check of the function table, fixups and symbol flags.
     pub fn validate(&self) -> Result<(), ImageError> {
-        let code_len = self.code().len() as u64;
+        let text = self.header.text_size as u64;
         let mut prev_end = 0u64;
-        let cleanup = self.all_cleanup();
         for (i, f) in self.functions().iter().enumerate() {
             let i = i as u32;
             let end = f.code_off as u64 + f.code_len as u64;
-            if (f.code_off as u64) < prev_end || end > code_len {
+            if (f.code_off as u64) < prev_end || end > text {
                 return Err(ImageError::BadFunction(i));
             }
             prev_end = end;
             if f.portal != NO_PORTAL && f.portal >= self.header.symbols.count {
                 return Err(ImageError::BadFunction(i));
-            }
-            let entries = cleanup
-                .get(f.cleanup_off as usize..)
-                .and_then(|c| c.get(..f.cleanup_len as usize))
-                .ok_or(ImageError::BadCleanup(i))?;
-            let mut prev: Option<u32> = None;
-            for e in entries {
-                if e.offset >= f.code_len
-                    || (e.target != CONTINUE && e.target >= f.code_len)
-                    || prev.is_some_and(|p| p >= e.offset)
-                {
-                    return Err(ImageError::BadCleanup(i));
-                }
-                prev = Some(e.offset);
             }
         }
         for (i, x) in self.fixups().iter().enumerate() {
@@ -360,41 +347,22 @@ impl<'a> Image<'a> {
         self.part(self.header.functions)
     }
 
-    /// All code words.
-    pub fn code(&self) -> &'a [u32] {
-        self.part(self.header.code)
+    /// The text section (from the relocated header field; null before linking).
+    pub fn text_ptr(&self) -> *const u8 {
+        self.header.text as usize as *const u8
     }
 
-    /// Code words of function `f`.
-    pub fn function_code(&self, f: u32) -> Option<&'a [u32]> {
-        let e = self.functions().get(f as usize)?;
-        self.code().get(e.code_off as usize..)?.get(..e.code_len as usize)
+    /// The code constants.
+    pub fn code_consts(&self) -> &'a [u8] {
+        self.part(self.header.code_consts)
     }
 
-    fn all_cleanup(&self) -> &'a [CleanupEntry] {
-        self.part(self.header.cleanup)
-    }
-
-    /// Cleanup table of function `f`, sorted by offset.
-    pub fn cleanup(&self, f: u32) -> Option<&'a [CleanupEntry]> {
-        let e = self.functions().get(f as usize)?;
-        self.all_cleanup().get(e.cleanup_off as usize..)?.get(..e.cleanup_len as usize)
-    }
-
-    /// The unwind action of function `f` at word offset `offset` (a call-like instruction),
-    /// or `None` if it can't unwind.
-    pub fn cleanup_at(&self, f: u32, offset: u32) -> Option<Cleanup> {
-        let t = self.cleanup(f)?;
-        t.binary_search_by_key(&offset, |e| e.offset).ok().and_then(|i| t.get(i)).map(|e| e.action())
-    }
-
-    /// The function containing code word `word` (an index into [`Self::code`]), and the
-    /// offset within it.
-    pub fn function_at(&self, word: u32) -> Option<(u32, u32)> {
+    /// The function whose code contains text byte `off`, and the offset within it.
+    pub fn function_at(&self, off: u32) -> Option<(u32, u32)> {
         let fs = self.functions();
-        let i = fs.partition_point(|f| f.code_off <= word).checked_sub(1)?;
+        let i = fs.partition_point(|f| f.code_off <= off).checked_sub(1)?;
         let f = fs.get(i)?;
-        (word.wrapping_sub(f.code_off) < f.code_len).then_some((i as u32, word - f.code_off))
+        (off.wrapping_sub(f.code_off) < f.code_len).then_some((i as u32, off - f.code_off))
     }
 
     pub fn fixups(&self) -> &'a [FixupEntry] {

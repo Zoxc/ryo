@@ -1,11 +1,12 @@
 //! The LSDA (`.gcc_except_table`) of a function: the call-site table `rust_eh_personality`
-//! reads. No type table and no actions: a landing pad is a cleanup, and a call outside every
-//! call site terminates when it unwinds.
+//! reads. A landing pad is a cleanup (action 0), or catches everything (action 1, the one
+//! action record: type filter 1, which the Rust personality takes as a catch without reading
+//! a type table). A call outside every call site terminates when it unwinds.
 //!
 //! Layout: `lpstart` omitted (`0xff`, landing pads are relative to the function start),
 //! `ttype` omitted (`0xff`), call-site encoding `uleb128` (`0x01`), the table's length, then
-//! per call site its start, length, landing pad (0: none, unwinding continues) and action
-//! (0), all `uleb128`.
+//! per call site its start, length, landing pad (0: none, unwinding continues) and action,
+//! all `uleb128`; then, if a call site catches, the action record `01 00`.
 
 use alloc::vec::Vec;
 
@@ -30,12 +31,15 @@ pub fn write(sites: &[CallSite]) -> Vec<u8> {
         uleb(&mut table, s.start);
         uleb(&mut table, s.len);
         uleb(&mut table, s.pad.unwrap_or(0));
-        uleb(&mut table, 0);
+        uleb(&mut table, s.catch as u32);
     }
     let mut out = Vec::with_capacity(table.len() + 8);
     out.extend_from_slice(&[0xff, 0xff, 0x01]);
     uleb(&mut out, table.len() as u32);
     out.extend_from_slice(&table);
+    if sites.iter().any(|s| s.catch) {
+        out.extend_from_slice(&[1, 0]);
+    }
     out
 }
 
@@ -68,13 +72,14 @@ pub fn parse(lsda: &[u8]) -> Option<Vec<CallSite>> {
     let mut out = Vec::new();
     while read < end {
         let (start, l, pad, action) = (next()?, next()?, next()?, next()?);
-        if action != 0 {
+        if action > 1 || (action == 1 && pad == 0) {
             return None;
         }
         read += [start, l, pad, action].iter().map(|&v| uleb_len(v)).sum::<usize>();
-        out.push(CallSite { start, len: l, pad: (pad != 0).then_some(pad) });
+        out.push(CallSite { start, len: l, pad: (pad != 0).then_some(pad), catch: action == 1 });
     }
-    (read == end && end == lsda.len()).then_some(out)
+    let actions: &[u8] = if out.iter().any(|s| s.catch) { &[1, 0] } else { &[] };
+    (read == end && lsda.get(end..) == Some(actions)).then_some(out)
 }
 
 fn uleb_len(v: u32) -> usize {

@@ -755,9 +755,11 @@ pub unsafe extern "sysv64-unwind" fn resume() -> ! {
 }
 
 #[cfg(not(windows))]
-unsafe extern "C" {
+unsafe extern "C-unwind" {
     /// The unwinder's (libgcc_s / libunwind). Only reached from assembly, so `ryo_rt` makes no
-    /// unwinding FFI call (which would require `panic=unwind` of every program).
+    /// unwinding FFI call (which would require `panic=unwind` of every program). `C-unwind`:
+    /// LLVM lowers `resume` to calls of this same symbol, and a `nounwind` declaration would
+    /// leave those calls out of `ryo_rt`'s own call-site tables.
     fn _Unwind_Resume(exception: *mut u8) -> !;
 }
 

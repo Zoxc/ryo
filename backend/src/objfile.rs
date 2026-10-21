@@ -9,7 +9,8 @@ use object::{
     Architecture, BinaryFormat, Endianness, RelocationFlags, SectionFlags, SectionKind, SymbolFlags, SymbolKind,
     SymbolScope, elf, pe,
 };
-use ryo_bytecode::image::{ImageObject, RelocTarget, SYM_INDIRECT, Section};
+use ryo_bytecode::image::{ImageObject, RelocKind, RelocTarget, SYM_INDIRECT, Section};
+use ryo_bytecode::insn::Opcode;
 
 /// The symbol an image defines: `__ryo_image_<StableCrateId>`, with the id in hex.
 pub fn image_symbol(stable_crate_id: u64) -> String {
@@ -28,11 +29,29 @@ pub const ANCHOR_SYMBOL: &str = "__ryo_registry_anchor";
 /// The registration entry point in `ryo_rt`.
 pub const REGISTER_SYMBOL: &str = "ryo_vm_register";
 
+/// The stack probe of large frames, in `ryo_rt` (before mangling).
+pub const PROBE_SYMBOL: &str = "ryo_probe_stack";
+
+/// The name of opcode `op`'s handler in `ryo_rt` (before mangling).
+pub fn handler_name(op: Opcode) -> String {
+    format!("ryo_h_{op:?}")
+}
+
 /// The object-format-specific parts of the image and registry objects.
 pub trait ObjectFormat {
     fn new_object(&self) -> Object<'static>;
     /// An absolute 64-bit data relocation.
-    fn abs64(&self) -> RelocationFlags;
+    fn abs64(&self) -> RelocationFlags {
+        self.reloc(RelocKind::Abs64)
+    }
+    /// A relocation of an image field of kind `kind`.
+    fn reloc(&self, kind: RelocKind) -> RelocationFlags;
+    /// The executable section of VM code.
+    fn text_section(&self, obj: &mut Object<'static>) -> object::write::SectionId;
+    /// An unwind section of the image ([`Section::EhFrame`] …).
+    fn unwind_section(&self, obj: &mut Object<'static>, which: Section) -> object::write::SectionId;
+    /// A local symbol naming the code of a VM function (backtraces, profilers).
+    fn local_function(&self, obj: &mut Object<'static>, name: &str, section: object::write::SectionId, offset: u64, size: u64);
     /// A section for data that is only written by relocations (RELRO / `.rdata`).
     fn relro_section(&self, obj: &mut Object<'static>, name: &str) -> object::write::SectionId;
     /// A writable data section.
@@ -81,8 +100,44 @@ impl ObjectFormat for Elf {
         obj
     }
 
-    fn abs64(&self) -> RelocationFlags {
-        RelocationFlags::Elf { r_type: elf::R_X86_64_64 }
+    fn reloc(&self, kind: RelocKind) -> RelocationFlags {
+        RelocationFlags::Elf {
+            r_type: match kind {
+                RelocKind::Abs64 => elf::R_X86_64_64,
+                RelocKind::Pc32 => elf::R_X86_64_PC32,
+                RelocKind::Call32 => elf::R_X86_64_PLT32,
+                RelocKind::Rva32 => unreachable!("no image-relative relocations on ELF"),
+            },
+        }
+    }
+
+    fn text_section(&self, obj: &mut Object<'static>) -> object::write::SectionId {
+        obj.add_section(obj.segment_name(StandardSegment::Text).to_vec(), b".text.ryo_image".to_vec(), SectionKind::Text)
+    }
+
+    fn unwind_section(&self, obj: &mut Object<'static>, which: Section) -> object::write::SectionId {
+        match which {
+            Section::EhFrame => {
+                let s = obj.add_section(Vec::new(), b".eh_frame".to_vec(), SectionKind::Elf(elf::SHT_X86_64_UNWIND));
+                obj.section_mut(s).flags = SectionFlags::Elf { sh_flags: u64::from(elf::SHF_ALLOC) };
+                s
+            }
+            Section::Lsda => obj.add_section(Vec::new(), b".gcc_except_table.ryo_image".to_vec(), SectionKind::ReadOnlyData),
+            _ => unreachable!("not an ELF unwind section"),
+        }
+    }
+
+    fn local_function(&self, obj: &mut Object<'static>, name: &str, section: object::write::SectionId, offset: u64, size: u64) {
+        obj.add_symbol(Symbol {
+            name: name.as_bytes().to_vec(),
+            value: offset,
+            size,
+            kind: SymbolKind::Text,
+            scope: SymbolScope::Compilation,
+            weak: false,
+            section: SymbolSection::Section(section),
+            flags: SymbolFlags::None,
+        });
     }
 
     fn relro_section(&self, obj: &mut Object<'static>, name: &str) -> object::write::SectionId {
@@ -163,8 +218,40 @@ impl ObjectFormat for Coff {
         Object::new(BinaryFormat::Coff, Architecture::X86_64, Endianness::Little)
     }
 
-    fn abs64(&self) -> RelocationFlags {
-        RelocationFlags::Coff { typ: pe::IMAGE_REL_AMD64_ADDR64 }
+    fn reloc(&self, kind: RelocKind) -> RelocationFlags {
+        RelocationFlags::Coff {
+            typ: match kind {
+                RelocKind::Abs64 => pe::IMAGE_REL_AMD64_ADDR64,
+                RelocKind::Pc32 | RelocKind::Call32 => pe::IMAGE_REL_AMD64_REL32,
+                RelocKind::Rva32 => pe::IMAGE_REL_AMD64_ADDR32NB,
+            },
+        }
+    }
+
+    fn text_section(&self, obj: &mut Object<'static>) -> object::write::SectionId {
+        obj.add_section(Vec::new(), b".text$ryo_image".to_vec(), SectionKind::Text)
+    }
+
+    fn unwind_section(&self, obj: &mut Object<'static>, which: Section) -> object::write::SectionId {
+        let name: &[u8] = match which {
+            Section::Pdata => b".pdata",
+            Section::Xdata => b".xdata",
+            _ => unreachable!("not a PE unwind section"),
+        };
+        obj.add_section(Vec::new(), name.to_vec(), SectionKind::ReadOnlyData)
+    }
+
+    fn local_function(&self, obj: &mut Object<'static>, name: &str, section: object::write::SectionId, offset: u64, size: u64) {
+        obj.add_symbol(Symbol {
+            name: name.as_bytes().to_vec(),
+            value: offset,
+            size,
+            kind: SymbolKind::Text,
+            scope: SymbolScope::Compilation,
+            weak: false,
+            section: SymbolSection::Section(section),
+            flags: SymbolFlags::None,
+        });
     }
 
     fn relro_section(&self, obj: &mut Object<'static>, name: &str) -> object::write::SectionId {
@@ -274,19 +361,41 @@ fn undefined(obj: &mut Object<'static>, name: &str, kind: SymbolKind) -> SymbolI
     })
 }
 
-/// The image object: the two image sections, `__ryo_image_<id>` at the start of the read-only
-/// one, and, for binaries with a VM `main`, the `__ryo_main` slot pointing at `main_portal`.
+/// The image object: the image sections, `__ryo_image_<id>` at the start of the read-only
+/// one, a local symbol per VM function, and, for binaries with a VM `main`, the `__ryo_main`
+/// slot pointing at `main_portal`. `rt_symbol` names `ryo_rt`'s handlers (`ryo_h_<op>`) and
+/// `ryo_probe_stack`, as rustc mangles them.
 pub fn write_image(
     fmt: &dyn ObjectFormat,
     image: &ImageObject,
     stable_crate_id: u64,
     main_portal: Option<&str>,
+    rt_symbol: &dyn Fn(&str) -> String,
 ) -> Result<Vec<u8>, String> {
     let mut obj = fmt.new_object();
     let ro = fmt.relro_section(&mut obj, "ryo_image");
     obj.append_section_data(ro, &image.rodata, image.rodata_align);
     let rw = fmt.data_section(&mut obj, "ryo_image");
     obj.append_section_data(rw, &image.data, image.data_align);
+    let text = fmt.text_section(&mut obj);
+    obj.append_section_data(text, &image.text, 16);
+    for f in &image.functions {
+        fmt.local_function(&mut obj, &f.name, text, f.start as u64, f.len as u64);
+    }
+    let mut unwind = Vec::new();
+    for (which, bytes) in &image.unwind {
+        let s = fmt.unwind_section(&mut obj, *which);
+        obj.append_section_data(s, bytes, if *which == Section::EhFrame { 8 } else { 4 });
+        unwind.push((*which, s));
+    }
+    let section = |s: Section| match s {
+        Section::ReadOnly => ro,
+        Section::Writable => rw,
+        Section::Text => text,
+        Section::EhFrame | Section::Lsda | Section::Pdata | Section::Xdata => {
+            unwind.iter().find(|u| u.0 == s).expect("unwind section").1
+        }
+    };
     fmt.hidden_global(&mut obj, &image_symbol(stable_crate_id), ro, 0, image.rodata.len() as u64, SymbolKind::Data);
 
     // Indirect slots relocate against the import slot (design/platforms.md). The writer only
@@ -301,16 +410,13 @@ pub fn write_image(
         })
         .collect::<Result<Vec<SymbolId>, String>>()?;
     for r in &image.relocs {
-        let section = match r.section {
-            Section::ReadOnly => ro,
-            Section::Writable => rw,
-        };
         let symbol = match r.target {
             RelocTarget::Symbol(s) => syms[s.0 as usize],
-            RelocTarget::Section(Section::ReadOnly) => obj.section_symbol(ro),
-            RelocTarget::Section(Section::Writable) => obj.section_symbol(rw),
+            RelocTarget::Section(s) => obj.section_symbol(section(s)),
+            RelocTarget::Handler(op) => undefined(&mut obj, &rt_symbol(&handler_name(op)), SymbolKind::Text),
+            RelocTarget::Probe => undefined(&mut obj, &rt_symbol(PROBE_SYMBOL), SymbolKind::Text),
         };
-        obj.add_relocation(section, Relocation { offset: r.offset, symbol, addend: r.addend, flags: fmt.abs64() })
+        obj.add_relocation(section(r.section), Relocation { offset: r.offset, symbol, addend: r.addend, flags: fmt.reloc(r.kind) })
             .map_err(|e| format!("image relocation: {e}"))?;
     }
 

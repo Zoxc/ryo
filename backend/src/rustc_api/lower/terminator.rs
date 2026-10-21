@@ -144,7 +144,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         Some(FusedCmp { op: *op, a, b })
     }
 
-    /// Branches to `bb` if the fused compare `c` is `when`, and falls through otherwise.
+    /// Branches to `bb` if the fused compare `c` is `when`, and falls through otherwise. The
+    /// branch's handler computes the compare or (`neg` of [`branch_form`]) its negation, so the
+    /// branch is taken on a false handler result exactly when those two agree.
     fn branch_cmp(&mut self, c: FusedCmp<'tcx>, when: bool, bb: BasicBlock) -> Result<(), NeedsNative> {
         let layout = self.operand_layout(c.a)?;
         let Some(w) = Width::of_size(layout.size.bytes()) else { return native("compare of a non-scalar") };
@@ -158,7 +160,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             };
             let mut ops = vec![sa];
             ops.extend(imm_words(w, w.truncate(v)));
-            self.op_branch(opc, &ops, neg != when, bb);
+            self.op_branch(opc, &ops, neg == when, bb);
             return Ok(());
         }
         let (sb, _) = self.operand_slot(c.b)?;
@@ -167,7 +169,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let Some(opc) = try_opcode(&format!("Br{}{}", name(cmp), w.suffix())) else {
             return native("no br for the width");
         };
-        self.op_branch(opc, &[x, y], neg != when, bb);
+        self.op_branch(opc, &[x, y], neg == when, bb);
         Ok(())
     }
 

@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 use super::encode::{CallSite, Opnd, PROBE_FROM, Ref, RegVal, Reloc, case_size};
 use super::x86::{ARGS, BadItem, Cond, Cursor, Item, Reg, island_args};
 use super::{Mode, has_handler, layout};
-use crate::image::{CONTINUE, CleanupEntry, op_may_unwind};
+use crate::image::{CATCH, CONTINUE, CleanupEntry, op_may_unwind};
 use crate::insn::{ABS_DATA, ElemKind, Opcode, OperandKind, Shape};
 
 /// A function decoded from machine code.
@@ -93,7 +93,7 @@ pub fn decode(code: &[u8], relocs: &[Reloc], rodata: &[u8], call_sites: &[CallSi
         wpos.push(w);
         w += word_len(p.op, &p.ops) as u32;
     }
-    // Loop heads must be padded exactly when aligning.
+    // When aligning, loop heads start at multiples of 16, and only they are padded.
     let mut head = vec![false; protos.len()];
     for (i, p) in protos.iter().enumerate() {
         for o in &p.ops {
@@ -106,7 +106,7 @@ pub fn decode(code: &[u8], relocs: &[Reloc], rodata: &[u8], call_sites: &[CallSi
         }
     }
     for i in 0..protos.len() {
-        if padded[i] != (mode.align_loops && head[i]) {
+        if (padded[i] && !head[i]) || (mode.align_loops && head[i] && ipos[i] % 16 != 0) {
             return Err(err(ipos[i], "loop head padding"));
         }
     }
@@ -115,16 +115,16 @@ pub fn decode(code: &[u8], relocs: &[Reloc], rodata: &[u8], call_sites: &[CallSi
     let mut cleanup = Vec::new();
     let mut used = 0;
     for (i, p) in protos.iter().enumerate() {
-        let mut action: Option<Option<u32>> = None;
+        let mut action: Option<(Option<u32>, bool)> = None;
         let mut missing = false;
         for &(s, l) in &p.sites {
             match call_sites.iter().find(|cs| cs.start == s) {
                 Some(cs) if cs.len == l => {
                     used += 1;
-                    if action.is_some_and(|a| a != cs.pad) {
+                    if action.is_some_and(|a| a != (cs.pad, cs.catch)) || (cs.catch && cs.pad.is_none()) {
                         return Err(err(s, "call sites of one instruction disagree"));
                     }
-                    action = Some(cs.pad);
+                    action = Some((cs.pad, cs.catch));
                 }
                 Some(_) => return Err(err(s, "call site length")),
                 None => missing = true,
@@ -132,7 +132,7 @@ pub fn decode(code: &[u8], relocs: &[Reloc], rodata: &[u8], call_sites: &[CallSi
         }
         match action {
             Some(_) if missing => return Err(err(ipos[i], "call sites of one instruction disagree")),
-            Some(pad) => {
+            Some((pad, catch)) => {
                 if !op_may_unwind(p.op) {
                     return Err(err(ipos[i], "call site of an instruction that can't unwind"));
                 }
@@ -143,7 +143,7 @@ pub fn decode(code: &[u8], relocs: &[Reloc], rodata: &[u8], call_sites: &[CallSi
                         if protos[j].op != Opcode::Lpad {
                             return Err(err(b, "landing pad isn't an lpad"));
                         }
-                        wpos[j]
+                        wpos[j] | if catch { CATCH } else { 0 }
                     }
                 };
                 cleanup.push(CleanupEntry { offset: wpos[i], target });

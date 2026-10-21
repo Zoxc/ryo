@@ -8,7 +8,7 @@
 use core::ptr;
 use core::sync::atomic::{AtomicPtr, Ordering};
 
-use ryo_bytecode::image::{FuncEntry, Image, SYM_INDIRECT};
+use ryo_bytecode::image::{Image, SYM_INDIRECT};
 
 use super::sys::{LockGuard, alloc_forever, fatal, lock};
 
@@ -20,7 +20,6 @@ pub struct Function {
     /// The function's machine code: what `call.ext`/`call.ind` handlers return and
     /// `vm::enter` calls.
     pub entry: *const u8,
-    pub frame_size: u32,
     pub arg_size: u32,
     pub ret_size: u32,
     /// The function's image.
@@ -29,22 +28,13 @@ pub struct Function {
     pub portal: *const (),
 }
 
-/// A registered image: the reader view plus the absolute pointers the dispatch loop uses.
-/// Immutable once published, except for the lazily built `funcs` table.
+/// A registered image: the reader view plus its text address. Immutable once published,
+/// except for the lazily built `funcs` table.
 pub struct ImageRt {
     pub view: Image<'static>,
-    /// The code array, and one past its end.
-    pub code: *const u32,
-    pub code_end: *const u32,
-    pub syms: *const *const (),
-    pub consts: *const u8,
-    /// The image's function table.
-    pub fentries: *const FuncEntry,
+    /// The machine code.
+    pub text: *const u8,
     pub nfuncs: u32,
-    /// The site cache (`site_count` slots in the writable section).
-    pub sites: *const AtomicPtr<Function>,
-    /// Base of `data` operands.
-    pub fixup_area: *mut u8,
     /// `[Function; nfuncs]`, built on first use (`funcs`), then never changed.
     funcs: AtomicPtr<Function>,
 }
@@ -125,17 +115,13 @@ pub unsafe fn register(headers: *const *const u8, n: usize) {
             // point at import slots (per the caller).
             unsafe { view.apply_fixups() };
         }
-        let code = view.code();
+        if view.text_ptr().is_null() && hdr.text_size != 0 {
+            fatal("ryo_vm_register: image is not linked");
+        }
         let rt = ImageRt {
             view,
-            code: code.as_ptr(),
-            code_end: code.as_ptr_range().end,
-            syms: view.symbols_ptr(),
-            consts: view.consts().as_ptr(),
-            fentries: view.functions().as_ptr(),
+            text: view.text_ptr(),
             nfuncs: view.functions().len() as u32,
-            sites: view.site_cache().cast_const().cast(),
-            fixup_area: view.fixup_area(),
             funcs: AtomicPtr::new(ptr::null_mut()),
         };
         let p = alloc_forever(&g, size_of::<ImageRt>(), align_of::<ImageRt>()).cast::<ImageRt>();
@@ -219,8 +205,7 @@ impl ImageRt {
         let p = alloc_forever(g, n.max(1) * size_of::<Function>(), align_of::<Function>()).cast::<Function>();
         for (i, e) in self.view.functions().iter().enumerate() {
             let rec = Function {
-                entry: self.code.wrapping_add(e.code_off as usize).cast(),
-                frame_size: e.frame_size,
+                entry: self.text.wrapping_add(e.code_off as usize),
                 arg_size: e.arg_size,
                 ret_size: e.ret_size,
                 img: self,
