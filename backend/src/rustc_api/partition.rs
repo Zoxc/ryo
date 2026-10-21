@@ -294,7 +294,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             }
         }
         // A stable image order: by symbol name.
-        candidates.sort_by_cached_key(|(i, _)| tcx.symbol_name(*i).name.to_owned());
+        candidates.sort_by_cached_key(|(i, _)| tcx.symbol_name(*i).name);
         let (mut ok, failed) = {
             let _t = tcx.prof.generic_activity("ryo_lower");
             lower_all(tcx, &candidates, asm_mode(tcx, self.rt))
@@ -903,9 +903,9 @@ fn lower_all<'tcx>(
             .filter(|(_, l)| l.relocs.iter().any(|r| matches!(r, CodeReloc::Call { callee } if !vm.contains(callee))))
             .map(|(i, _)| *i)
             .collect();
-        todo.sort_by_cached_key(|i| tcx.symbol_name(*i).name.to_owned());
+        todo.sort_by_cached_key(|i| tcx.symbol_name(*i).name);
     }
-    failed.sort_by_cached_key(|(i, _)| tcx.symbol_name(*i).name.to_owned());
+    failed.sort_by_cached_key(|(i, _)| tcx.symbol_name(*i).name);
     (ok, failed)
 }
 
@@ -1027,7 +1027,14 @@ struct Roots(FxIndexMap<String, SymbolExportKind>);
 
 impl Roots {
     fn text(&mut self, name: &str) {
-        self.0.entry(name.to_owned()).or_insert(SymbolExportKind::Text);
+        self.add(name, SymbolExportKind::Text);
+    }
+
+    /// Adds `name` unless present, allocating only then (most references repeat a symbol).
+    fn add(&mut self, name: &str, kind: SymbolExportKind) {
+        if !self.0.contains_key(name) {
+            self.0.insert(name.to_owned(), kind);
+        }
     }
 
     fn function<'tcx>(&mut self, tcx: TyCtxt<'tcx>, f: Instance<'tcx>) {
@@ -1035,7 +1042,7 @@ impl Roots {
     }
 
     fn static_(&mut self, tcx: TyCtxt<'_>, def_id: DefId) {
-        self.0.entry(static_symbol(tcx, def_id).name.to_owned()).or_insert(SymbolExportKind::Data);
+        self.add(static_symbol(tcx, def_id).name, SymbolExportKind::Data);
     }
 }
 
