@@ -478,7 +478,7 @@ impl Asm {
             // The exception object, in `rax` at a landing pad.
             self.fixed(Item::Mov(ARGS[l.first as usize - 1], Reg::Rax));
         }
-        for (reg, v) in arg_values(op, &l, ops, self).into_iter().enumerate() {
+        for (reg, v) in arg_values(op, &l, ops, self).into_iter().take(l.regs as usize).enumerate() {
             match v {
                 Some(ArgVal::Imm(v, 0)) => self.fixed(Item::SetReg(ARGS[reg], v)),
                 Some(ArgVal::Imm(v, slots)) => self.pieces.push(Piece::SetReg { reg: ARGS[reg], v, slots }),
@@ -866,9 +866,9 @@ pub const PROBE_FROM: u32 = 4096;
 /// The values of `op`'s handler argument registers for operands `ops` (`None` for the
 /// registers set otherwise: `fp`, the exception object). Adds case value arrays to `asm`'s
 /// code constants.
-fn arg_values(op: Opcode, l: &Layout, ops: &[Opnd<Label>], asm: &mut Asm) -> Vec<Option<ArgVal>> {
+fn arg_values(op: Opcode, l: &Layout, ops: &[Opnd<Label>], asm: &mut Asm) -> [Option<ArgVal>; super::ARG_REGS] {
     let info = op.info();
-    let mut regs: Vec<Option<ArgVal>> = vec![None; l.regs as usize];
+    let mut regs = [None; super::ARG_REGS];
     // `slot`: the value is a raw slot.
     let mut set = |loc: Loc, part: u8, v: ArgVal, slot: bool| {
         let r = &mut regs[(loc.reg + part) as usize];
