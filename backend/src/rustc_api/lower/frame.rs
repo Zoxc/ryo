@@ -26,7 +26,8 @@ use rustc_middle::ty::layout::TyAndLayout;
 use ryo_bytecode::abi::{self, HEADER_SIZE};
 use ryo_bytecode::insn::Opcode;
 
-use super::sig::AbiSig;
+use super::sig::{AbiSig, ArgLoc};
+use ryo_bytecode::asm::ArgReg;
 use super::{FnCx, NeedsNative, native};
 
 /// The bias of a slot handed out by the lowering: the slot of frame offset `off` is
@@ -62,22 +63,25 @@ pub struct Frame<'tcx> {
     temp_top: u32,
     /// Largest `temp_top` reached: the frame size without the outgoing block.
     high: u32,
-    /// The spread `rust-call` argument (design/lowering.md#frame-slots), with the index of
-    /// its first field in the argument block: the prologue assembles it.
-    pub spread: Option<(Local, usize)>,
     /// Where landing pads store the exception object (`lpad x`) for the cleanup code's
     /// `resume x`: an 8-byte slot of its own, in functions with cleanup or terminate actions.
     exception: Option<u32>,
     /// An sret function's slot for the return value's address, which it gets in the first
     /// argument register (`arg`, [`FnCx::prologue`]).
     pub sret: Option<u32>,
+    /// Each ABI input's slot ([`FnCx::prologue`]).
+    pub arg_homes: Vec<u32>,
+    /// Each `Indirect` input's slot for the pointer it comes as.
+    pub arg_ptrs: Vec<Option<u32>>,
 }
 
 impl<'tcx> Frame<'tcx> {
     /// Lays out the locals of `body`, whose arguments come in the argument block of `sig`.
+    /// On PE, the top 16 bytes of the frame hold the saved `rdi` and `rsi` (`pe`).
     pub fn new(
         body: &Body<'tcx>,
         sig: &AbiSig<'tcx>,
+        pe: bool,
         layout_of_local: impl Fn(Local) -> Result<TyAndLayout<'tcx>, NeedsNative>,
     ) -> Result<Self, NeedsNative> {
         let spread = body.spread_arg;
@@ -97,7 +101,7 @@ impl<'tcx> Frame<'tcx> {
             return native("argument block too large");
         }
         // Bytes below `fp` taken so far.
-        let mut end = 0u32;
+        let mut end = if pe { 16 } else { 0 };
         let mut locals = IndexVec::with_capacity(body.local_decls.len());
         let sharing = Sharing::new(body);
         // Locals that share slots, placed after the others.
@@ -118,7 +122,10 @@ impl<'tcx> Frame<'tcx> {
                 if f.size != size {
                     return native("argument local doesn't match the ABI");
                 }
-                slot((HEADER_SIZE + f.offset) as i32)
+                // A slot of its own, which the prologue fills from the argument's registers
+                // and stack slots.
+                end = place_below(end, size, align)?;
+                slot(-(end as i32))
             } else if size == 0 {
                 slot(-(end as i32))
             } else if sharing.as_ref().is_some_and(|s| s.shareable.contains(local)) {
@@ -149,6 +156,33 @@ impl<'tcx> Frame<'tcx> {
         if let Some(sharing) = &sharing {
             end = sharing.place(&mut locals, &shared, end)?;
         }
+        // Each input's home: its local, a field of the spread local, or for the caller
+        // location an 8-byte slot. An `Indirect` input also gets a slot for its pointer.
+        let mut arg_homes = Vec::with_capacity(sig.inputs.len());
+        for i in 0..n_fixed.min(sig.inputs.len()) {
+            arg_homes.push(locals[Local::from_usize(i + 1)].off);
+        }
+        if let Some(s) = spread {
+            let l = locals[s];
+            for j in 0..l.layout.fields.count() {
+                arg_homes.push(l.off + l.layout.fields.offset(j).bytes() as u32);
+            }
+        }
+        if sig.caller_location {
+            end = place_below(end, 8, 8)?;
+            arg_homes.push(slot(-(end as i32)));
+        }
+        let mut arg_ptrs = Vec::with_capacity(sig.inputs.len());
+        for i in 0..sig.inputs.len() {
+            let indirect =
+                sig.plan.as_ref().is_some_and(|p| p.locs.get(i).is_some_and(|l| matches!(l[..], [ArgLoc::PtrReg(_) | ArgLoc::PtrStack(_)])));
+            arg_ptrs.push(if indirect {
+                end = place_below(end, 8, 8)?;
+                Some(slot(-(end as i32)))
+            } else {
+                None
+            });
+        }
         let spread = spread.map(|s| (s, n_fixed));
         match spread {
             Some((s, first)) => {
@@ -163,7 +197,10 @@ impl<'tcx> Frame<'tcx> {
         if end >= OUT_END {
             return native("frame too large");
         }
-        Ok(Frame { locals, locals_end: end, temp_top: end, high: end, spread, exception, sret })
+        if arg_homes.len() != sig.inputs.len() {
+            return native("argument count doesn't match the ABI");
+        }
+        Ok(Frame { locals, locals_end: end, temp_top: end, high: end, exception, sret, arg_homes, arg_ptrs })
     }
 
     /// The exception slot. Only functions whose MIR has cleanup or terminate actions, or
@@ -225,20 +262,43 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         self.frame.temp(8, 8)
     }
 
-    /// The prologue: saves an sret function's return value address (`arg`s come first), and
-    /// assembles the spread `rust-call` argument from the argument block.
-    pub fn prologue(&mut self, sig: &AbiSig<'tcx>) {
+    /// The prologue: stores the argument registers (`arg`s come first: the first handler
+    /// call clobbers them) to the inputs' homes, the sret address and `Indirect` inputs'
+    /// pointers to their slots; then copies the inputs on the stack and the values behind the
+    /// pointers to the homes.
+    pub fn prologue(&mut self, sig: &AbiSig<'tcx>) -> Result<(), NeedsNative> {
+        let Some(plan) = sig.plan.clone() else { return native("a VM function without a calling convention") };
+        let arg = |fx: &mut Self, d: u32, r: ArgReg| {
+            fx.op(Opcode::Arg, &[d, r.word()]);
+        };
         if let Some(p) = self.frame.sret {
-            let r = ryo_bytecode::asm::ArgReg { xmm: false, size: 8, index: 0 };
-            self.op(Opcode::Arg, &[p, r.word()]);
+            arg(self, p, ArgReg { xmm: false, size: 8, index: 0 });
         }
-        let Some((local, first)) = self.frame.spread else { return };
-        let slot = self.frame.locals[local];
-        for i in 0..slot.layout.fields.count() {
-            let f = sig.fields[first + i];
-            let dst = slot.off + slot.layout.fields.offset(i).bytes() as u32;
-            self.mov(dst, self::slot((HEADER_SIZE + f.offset) as i32), f.size);
+        for (i, locs) in plan.locs.iter().enumerate() {
+            for &l in locs {
+                match l {
+                    ArgLoc::Reg { reg, off } => arg(self, self.frame.arg_homes[i] + off, reg),
+                    ArgLoc::PtrReg(index) => arg(self, self.frame.arg_ptrs[i].unwrap(), ArgReg { xmm: false, size: 8, index }),
+                    ArgLoc::Stack { .. } | ArgLoc::PtrStack(_) => {}
+                }
+            }
         }
+        // The stack argument area is at `fp + 16`.
+        let incoming = |at: u32| self::slot((HEADER_SIZE + at) as i32);
+        for (i, locs) in plan.locs.iter().enumerate() {
+            for &l in locs {
+                match l {
+                    ArgLoc::Stack { at, off, size } => self.mov(self.frame.arg_homes[i] + off, incoming(at), size),
+                    ArgLoc::PtrStack(at) => self.mov(self.frame.arg_ptrs[i].unwrap(), incoming(at), 8),
+                    ArgLoc::Reg { .. } | ArgLoc::PtrReg(_) => {}
+                }
+            }
+            if let Some(p) = self.frame.arg_ptrs[i] {
+                let size = sig.fields[i].size;
+                self.op(Opcode::LoadCopy, &[self.frame.arg_homes[i], p, 0, size]);
+            }
+        }
+        Ok(())
     }
 }
 

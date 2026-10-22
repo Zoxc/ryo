@@ -4,10 +4,6 @@ version = "0.1.0"
 edition.workspace = true
 
 [features]
-# `vm::enter` references `__ryo_registry_anchor` (defined by the registry object the backend
-# emits at each final link), so that linking any portal pulls the registry in. `y build`
-# enables it; without the backend nothing defines the symbol, so it is off by default.
-registry-anchor = []
 # Handlers read the frame pointer from `rbp` instead of taking it in `rdi` (design/vm.md,
 # "Handlers"), so VM code keeps it there; the backend reads `FP_ARG` and encodes to match.
 fp-rbp = []

@@ -12,7 +12,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use super::x86::{ARGS, Cond, Item, M, Reg, Sh, W, island_args, padding};
-use super::{ArgReg, Layout, Loc, Mode, RET_SRET, RetPart, layout, ret_parts};
+use super::{ArgReg, Layout, Loc, Mode, RetPart, layout, ret_parts};
 use crate::image::{CATCH, CONTINUE, CleanupEntry};
 use crate::insn::{Const, Data, DecodeError, ElemKind, Func, Opcode, OperandKind, Shape, Site, Sym, insn_len};
 
@@ -347,9 +347,23 @@ pub(super) fn arg_store(a: ArgReg, d: i32, pe: bool) -> Vec<Item> {
     if a.xmm {
         sse_store(a.size, a.index as u8, m, &mut out);
     } else {
-        out.push(Item::St { w: width(a.size), src: int_arg(pe, a.index), m });
+        int_store(a.size, int_arg(pe, a.index), m, &mut out);
     }
     out
+}
+
+/// A call argument list entry's load of the raw slot `s` into its register ([`super::params_ok`]).
+pub(super) fn param_load(s: i32, w: u32, pe: bool) -> Vec<Item> {
+    let a = super::param_reg(w).expect("argument register");
+    let m = M::frame(s);
+    if w & super::ARG_ADDR != 0 {
+        return vec![Item::LeaM { dst: int_arg(pe, a.index), m }];
+    }
+    match (a.xmm, a.size) {
+        (false, size) => vec![Item::Ld { w: width(size), sx: false, dst: int_arg(pe, a.index), m }],
+        (true, 2) => vec![Item::Ld { w: W::W, sx: false, dst: F16_TMP, m }, Item::Movd { to_xmm: true, x: a.index as u8, r: F16_TMP }],
+        (true, size) => vec![Item::Sse { st: false, size: size as u8, x: a.index as u8, m }],
+    }
 }
 
 /// The element size of a case list's value array in the rodata.
@@ -399,8 +413,6 @@ enum Piece {
     LeaRo { reg: Reg, ro: u32 },
     /// A branch to the label.
     Branch { cond: Cond, to: Label },
-    /// A short forward branch over the next `over` pieces (inside a call sequence).
-    Skip { cond: Cond, over: u32 },
     /// `reg = fp`: `mov reg, rbp`, or without a frame pointer `lea reg, [rsp + F]`.
     Fp(Reg),
     /// The epilogue before `ret` or a tail jump: `leave`, or without a frame pointer
@@ -555,8 +567,6 @@ enum Laid {
     /// A fixed item; a call site with its landing pad (element index) and catch flag.
     Fixed { item: Item, site: Option<(Option<usize>, bool)> },
     Branch { cond: Cond, to: usize, long: bool },
-    /// A short branch over the next `over` elements.
-    Skip { cond: Cond, over: u32 },
     LeaTable,
     Table(Vec<usize>),
     /// Padding up to a multiple of 16 (a loop head).
@@ -568,8 +578,6 @@ enum Laid {
 /// A word of a code constant operand array.
 #[derive(Clone, Copy, Debug)]
 enum RoWord {
-    /// The outgoing argument block's frame offset, `-F`.
-    ArgBlock,
     /// A raw slot.
     Slot(u32),
 }
@@ -788,11 +796,6 @@ impl Asm {
         }
     }
 
-    /// The pieces of [`Asm::island_call`].
-    fn island_pieces(&self) -> u32 {
-        if self.mode.pe { 5 } else { 3 }
-    }
-
     /// The jump-table sequence on the index in `rax`, with `targets`.
     fn table(&mut self, targets: Vec<Label>) {
         self.pieces.push(Piece::LeaTable);
@@ -811,22 +814,13 @@ impl Asm {
         self.fixed(Item::Ret);
     }
 
-    /// Before a call: an sret destination's address into the first argument register.
-    fn sret_arg(&mut self, k: u32, d: u32) -> u32 {
-        if k != RET_SRET {
-            return 0;
-        }
-        let dst = int_arg(self.mode.pe, 0);
-        self.pieces.push(Piece::Frame(Item::LeaM { dst, m: M::frame(d as i32) }));
-        1
-    }
-
-    /// Before a tail jump of an sret function: its return value's address, from `q`, into
-    /// the first argument register.
-    fn pass_sret(&mut self, k: u32, q: u32) {
-        if k == RET_SRET {
-            let dst = int_arg(self.mode.pe, 0);
-            self.pieces.push(Piece::Frame(Item::Ld { w: W::Q, sx: false, dst, m: M::frame(q as i32) }));
+    /// A call's argument list ([`super::params_ok`]): the argument registers' loads.
+    fn params(&mut self, a: &Opnd<Label>) {
+        let Opnd::Words(w) = a else { unreachable!() };
+        for p in w.chunks(2) {
+            for it in param_load(p[0] as i32, p[1], self.mode.pe) {
+                self.pieces.push(Piece::Frame(it));
+            }
         }
     }
 
@@ -900,50 +894,45 @@ impl Asm {
             }
             Shape::Ret => self.ret(slot("s"), imm("k")),
             Shape::Arg => {
-                let a = ArgReg::of(imm("r")).expect("arg register");
+                let a = ArgReg::of(imm("r"), true).expect("arg register");
                 for it in arg_store(a, slot("d") as i32, self.mode.pe) {
                     self.pieces.push(Piece::Frame(it));
                 }
             }
             Shape::Jmp => self.pieces.push(Piece::Branch { cond: Cond::Always, to: target("t") }),
             Shape::Call => {
-                let Opnd::Func(f) = named("f") else { unreachable!() };
-                self.sret_arg(imm("k"), slot("d"));
-                self.maybe_site(Item::Call(Ref::Func(*f)), site);
-                self.result(imm("k"), slot("d"));
-            }
-            Shape::CallExt | Shape::CallInd => {
-                self.handler_call(op, ops, None);
-                // `rax`: the VM entry, or 0 for the native path through the island.
-                let fnp = if info.shape == Shape::CallExt { slot("f") } else { slot("p") };
-                let d = slot("d");
-                let ro = self.ro(RoReq::Ops(vec![RoWord::ArgBlock, RoWord::Slot(d), RoWord::Slot(fnp)]));
-                self.fixed(Item::TestRax);
-                let (k, n) = (imm("k"), result_stores(imm("k"), d as i32).len() as u32);
-                self.pieces.push(Piece::Skip { cond: Cond::Z, over: 2 + (k == RET_SRET) as u32 + n });
-                self.sret_arg(k, d);
-                self.maybe_site(Item::CallRax, site);
+                let (d, k) = (slot("d"), imm("k"));
+                // The callee's address, where it isn't the call's own operand.
+                match op {
+                    Opcode::CallSymInd => self.fixed(Item::LoadRip(Ref::Sym(sym("sym")))),
+                    Opcode::CallPtr => self.pieces.push(Piece::Frame(Item::Ld { w: W::Q, sx: false, dst: Reg::Rax, m: M::frame(slot("p") as i32) })),
+                    _ => {}
+                }
+                self.params(named("a"));
+                let call = match op {
+                    Opcode::Call => {
+                        let Opnd::Func(f) = named("f") else { unreachable!() };
+                        Item::Call(Ref::Func(*f))
+                    }
+                    Opcode::CallSym => Item::CallMem(Ref::Sym(sym("sym"))),
+                    Opcode::CallSymInd => Item::CallMemRax,
+                    _ => Item::CallRax,
+                };
+                self.maybe_site(call, site);
                 self.result(k, d);
-                self.pieces.push(Piece::Skip { cond: Cond::Always, over: self.island_pieces() });
-                self.island_call(sym("isl"), ro, site);
             }
             Shape::TailCall => {
-                self.handler_call(op, ops, None);
-                self.pass_sret(imm("k"), slot("q"));
+                if op == Opcode::TailCallPtr {
+                    self.pieces.push(Piece::Frame(Item::Ld { w: W::Q, sx: false, dst: Reg::Rax, m: M::frame(slot("p") as i32) }));
+                }
+                self.params(named("a"));
                 self.pieces.push(Piece::Epilogue);
-                let Opnd::Func(f) = named("f") else { unreachable!() };
-                self.fixed(Item::Jmp(Ref::Func(*f)));
-            }
-            Shape::TailCallInd => {
-                self.handler_call(op, ops, None);
-                let s = slot("s");
-                let ro = self.ro(RoReq::Ops(vec![RoWord::ArgBlock, RoWord::Slot(s), RoWord::Slot(slot("p"))]));
-                self.fixed(Item::TestRax);
-                self.pieces.push(Piece::Skip { cond: Cond::Z, over: 2 + (imm("k") == RET_SRET) as u32 });
-                self.pass_sret(imm("k"), slot("q"));
-                self.pieces.push(Piece::Epilogue);
-                self.fixed(Item::JmpRax);
-                self.island_call(sym("isl"), ro, site);
+                if op == Opcode::TailCall {
+                    let Opnd::Func(f) = named("f") else { unreachable!() };
+                    self.fixed(Item::Jmp(Ref::Func(*f)));
+                } else {
+                    self.fixed(Item::JmpRax);
+                }
             }
             Shape::Island => {
                 let Opnd::Words(w) = named("ops") else { unreachable!() };
@@ -964,7 +953,6 @@ impl Asm {
         drop_dead_stores(&mut pieces, &target);
         // Code constants, in emission order (so deduplication matches the word encoder's).
         let mut rodata = Rodata::default();
-        let argblk = (frame_size as i32).wrapping_neg() as u32;
         let ro_off: Vec<u32> = ro
             .into_iter()
             .map(|r| match r {
@@ -973,7 +961,6 @@ impl Asm {
                     let w: Vec<u32> = ws
                         .iter()
                         .map(|w| match *w {
-                            RoWord::ArgBlock => argblk,
                             RoWord::Slot(s) => fix(s),
                         })
                         .collect();
@@ -1063,7 +1050,6 @@ impl Asm {
                     branches.push(out.len());
                     Laid::Branch { cond, to: lab(&to), long: false }
                 }
-                Piece::Skip { cond, over } => Laid::Skip { cond, over },
                 Piece::LeaTable => Laid::LeaTable,
                 Piece::Table(ts) => {
                     tables.push(out.len());
@@ -1103,11 +1089,17 @@ impl Asm {
 }
 
 /// The prologue of a function with frame size `F`: `push rbp; mov rbp, rsp`, then for
-/// `F > 0` `sub rsp, F`; or without a frame pointer `sub rsp, F + 8`. A stack probe of the
-/// `sub`'s size comes before it for `F` from [`PROBE_FROM`].
+/// `F > 0` `sub rsp, F`; or without a frame pointer `sub rsp, F + 8`. On PE, the top 16 bytes
+/// of the frame hold `rdi` and `rsi` ([`Item::WinPrologue`], so `F` is at least 16), and the
+/// `sub` is of `F - 16`. A stack probe of the `sub`'s size comes before it for `F` from
+/// [`PROBE_FROM`].
 pub(super) fn prologue(frame_size: u32, mode: Mode) -> Vec<Item> {
     let mut out = Vec::with_capacity(4);
-    let alloc = if mode.frame_pointer {
+    let alloc = if mode.pe {
+        debug_assert!(frame_size >= 16, "PE frames keep rdi and rsi at the top");
+        out.push(Item::WinPrologue);
+        frame_size - 16
+    } else if mode.frame_pointer {
         out.extend([Item::PushRbp, Item::Mov(Reg::Rbp, Reg::Rsp)]);
         frame_size
     } else {
@@ -1127,9 +1119,16 @@ pub fn prologue_len(frame_size: u32, mode: Mode) -> u32 {
     prologue(frame_size, mode).iter().map(Item::len).sum()
 }
 
-/// The epilogue before `ret` and tail jumps: `leave`, or `add rsp, F + 8`.
+/// The epilogue before `ret` and tail jumps: `leave`, or `add rsp, F + 8`, or on PE
+/// [`Item::WinEpilogue`].
 pub(super) fn epilogue(frame_size: u32, mode: Mode) -> Item {
-    if mode.frame_pointer { Item::Leave } else { Item::AddRsp(frame_size + 8) }
+    if mode.pe {
+        Item::WinEpilogue
+    } else if mode.frame_pointer {
+        Item::Leave
+    } else {
+        Item::AddRsp(frame_size + 8)
+    }
 }
 
 /// `reg = fp`: `mov reg, rbp`, or `lea reg, [rsp + F]`.
@@ -1176,7 +1175,6 @@ fn layout_code(mut pieces: Vec<Laid>) -> Encoded {
                 }
                 Item::Branch { cond: *cond, target: 0, long: *long }.len()
             }
-            Laid::Skip { .. } => 2,
             Laid::LeaTable => 7,
             Laid::Dropped(_) => 0,
             Laid::Table(_) | Laid::Align => VAR,
@@ -1225,7 +1223,6 @@ fn layout_code(mut pieces: Vec<Laid>) -> Encoded {
                 site = *s;
             }
             Laid::Branch { cond, to, long } => items.push(Item::Branch { cond: *cond, target: pos[*to], long: *long }),
-            Laid::Skip { cond, over } => items.push(Item::Branch { cond: *cond, target: pos[k + 1 + *over as usize], long: false }),
             Laid::LeaTable => {
                 // The table follows the rest of the sequence: `movsxd`, `add`, `jmp rax`.
                 let t = (p + 7 + 4 + 3 + 2).next_multiple_of(4);

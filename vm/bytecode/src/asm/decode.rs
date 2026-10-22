@@ -8,9 +8,9 @@ use alloc::vec::Vec;
 use super::encode::{CallSite, DroppedStore, Opnd, Ref, RegVal, Reloc, arg_store, case_size, epilogue, fp_item, int_arg, prologue, push_words, result_stores, ret_loads, word_len};
 use super::inline::Cache;
 use super::x86::{ARGS, BadItem, Cond, Cursor, Item, M, Reg, island_args};
-use super::{ArgReg, Mode, RET_SRET, RetPart, has_handler, layout, ret_kind};
+use super::{ARG_ADDR, ArgReg, Mode, RetPart, has_handler, layout, ret_kind};
 use crate::image::{CATCH, CONTINUE, CleanupEntry, op_may_unwind};
-use crate::insn::{ElemKind, Opcode, OperandKind, Shape};
+use crate::insn::{ElemKind, Opcode, OperandKind, Shape, Sym};
 
 /// A function decoded from machine code.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -66,12 +66,18 @@ pub fn decode(
     loop {
         match c.item() {
             Ok(Item::SubRsp(n)) => alloc = n,
-            Ok(Item::PushRbp | Item::Mov(Reg::Rbp, Reg::Rsp) | Item::SetReg(Reg::Rax, _) | Item::Call(Ref::Probe)) => continue,
+            Ok(Item::PushRbp | Item::WinPrologue | Item::Mov(Reg::Rbp, Reg::Rsp) | Item::SetReg(Reg::Rax, _) | Item::Call(Ref::Probe)) => continue,
             _ => {}
         }
         break;
     }
-    let frame_size = if mode.frame_pointer { alloc } else { alloc.wrapping_sub(8) };
+    let frame_size = if mode.pe {
+        alloc + 16
+    } else if mode.frame_pointer {
+        alloc
+    } else {
+        alloc.wrapping_sub(8)
+    };
     if frame_size % 16 != 0 {
         return Err(err(0, "frame size not a multiple of 16"));
     }
@@ -86,17 +92,16 @@ pub fn decode(
         c.sp_frame = Some(frame_size);
     }
     let fr = Frame { size: frame_size, mode };
-    let argblk = (frame_size as i32).wrapping_neg() as u32;
 
     // Twice: the register cache is cleared at branch targets, which are only known once the
     // whole function is read. The first pass only finds the instructions and targets; the
     // second decodes them, with the cache cleared at the targets of the first.
     let body = c.pos;
-    let (protos, _) = instructions(&mut c, &fr, rodata, argblk, dropped, None)?;
+    let (protos, _) = instructions(&mut c, &fr, rodata, dropped, None)?;
     let mut targets: Vec<u32> = protos.iter().flat_map(|p| p.ops.iter()).flat_map(op_targets).collect();
     targets.sort_unstable();
     c.pos = body;
-    let (protos, padded) = instructions(&mut c, &fr, rodata, argblk, dropped, Some(&targets))?;
+    let (protos, padded) = instructions(&mut c, &fr, rodata, dropped, Some(&targets))?;
 
     // Instruction positions → indices and word offsets.
     let ipos: Vec<u32> = protos.iter().map(|p| p.pos).collect();
@@ -209,7 +214,6 @@ fn instructions(
     c: &mut Cursor<'_>,
     fr: &Frame,
     ro: &[u8],
-    argblk: u32,
     mut dropped: &[DroppedStore],
     targets: Option<&[u32]>,
 ) -> Result<(Vec<Proto>, Vec<bool>), AsmError> {
@@ -232,11 +236,16 @@ fn instructions(
             protos.push(p);
             continue;
         }
+        if let Some(p) = call_insn(c, fr, dropped) {
+            cache = Cache::default();
+            protos.push(p);
+            continue;
+        }
         let p = match inline_insn(c, &mut cache, &mut dropped, targets.is_some()) {
             Some(p) => p,
             None => {
                 cache = Cache::default();
-                insn(c, fr, ro, argblk)?
+                insn(c, fr, ro)?
             }
         };
         protos.push(p);
@@ -269,8 +278,7 @@ impl Frame {
 }
 
 /// Reads one instruction that isn't inline.
-fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8], argblk: u32) -> Result<Proto, AsmError> {
-    let mode = fr.mode;
+fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8]) -> Result<Proto, AsmError> {
     let pos = c.pos;
     let err = |at: u32, what: &'static str| AsmError { at, what };
     let mut setup = Vec::new();
@@ -322,90 +330,14 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8], argblk: u32) -> Result<Proto,
                     }
                     fixed(c, Item::Ud2)?;
                 }
-                Shape::CallExt | Shape::CallInd => {
-                    fixed(c, Item::TestRax)?;
-                    let at = c.pos;
-                    let Item::Branch { cond: Cond::Z, target: native, long: false } = c.item()? else {
-                        return Err(err(at, "no native path branch"));
-                    };
-                    let sret = sret_arg(c, mode);
-                    sites.push((c.pos, 2));
-                    fixed(c, Item::CallRax)?;
-                    let (rd, k) = match sret {
-                        Some(d) => (d, RET_SRET),
-                        None => result(c),
-                    };
-                    let island_len = fp_item(island_args(mode.pe)[0], fr.size, mode).len() + if mode.pe { 7 + 4 + 6 + 4 } else { 7 + 6 };
-                    fixed(c, Item::Branch { cond: Cond::Always, target: c.pos + 2 + island_len, long: false })?;
-                    if native != c.pos {
-                        return Err(err(at, "native path branch"));
-                    }
-                    let (isl, ops_ro, site) = island_call(c, fr)?;
-                    sites.push(site);
-                    let fnp = if info.shape == Shape::CallExt { "f" } else { "p" };
-                    let Opnd::Slot(f) = ops[info.operand_index(fnp).unwrap()] else { unreachable!() };
-                    let Some([_, d, _]) = ops_array(ro, ops_ro).and_then(|w| <[u32; 3]>::try_from(w).ok()) else {
-                        return Err(err(at, "native path operands"));
-                    };
-                    if ops_array(ro, ops_ro) != Some(vec![argblk, d, f as u32]) || (k != 0 && rd != d as i32) {
-                        return Err(err(at, "native path operands"));
-                    }
-                    set(&mut ops, "d", Opnd::Slot(d as i32));
-                    set(&mut ops, "isl", Opnd::Sym(isl));
-                    set(&mut ops, "k", Opnd::Imm(k as u64));
-                }
-                Shape::TailCall => {
-                    let (q, k) = pass_sret(c, mode);
-                    fixed(c, fr.epilogue())?;
-                    let at = c.pos;
-                    let Item::Jmp(Ref::Func(f)) = c.item()? else { return Err(err(at, "no tail jump")) };
-                    set(&mut ops, "f", Opnd::Func(f));
-                    set(&mut ops, "q", Opnd::Slot(q));
-                    set(&mut ops, "k", Opnd::Imm(k as u64));
-                }
-                Shape::TailCallInd => {
-                    fixed(c, Item::TestRax)?;
-                    let at = c.pos;
-                    let Item::Branch { cond: Cond::Z, target: native, long: false } = c.item()? else {
-                        return Err(err(at, "no native path branch"));
-                    };
-                    let (q, k) = pass_sret(c, mode);
-                    fixed(c, fr.epilogue())?;
-                    fixed(c, Item::JmpRax)?;
-                    if native != c.pos {
-                        return Err(err(at, "native path branch"));
-                    }
-                    let (isl, ops_ro, site) = island_call(c, fr)?;
-                    sites.push(site);
-                    let Opnd::Slot(p) = ops[0] else { unreachable!() };
-                    let Some([_, s, _]) = ops_array(ro, ops_ro).and_then(|w| <[u32; 3]>::try_from(w).ok()) else {
-                        return Err(err(at, "native path operands"));
-                    };
-                    if ops_array(ro, ops_ro) != Some(vec![argblk, s, p as u32]) {
-                        return Err(err(at, "native path operands"));
-                    }
-                    set(&mut ops, "isl", Opnd::Sym(isl));
-                    set(&mut ops, "s", Opnd::Slot(s as i32));
-                    set(&mut ops, "q", Opnd::Slot(q));
-                    set(&mut ops, "k", Opnd::Imm(k as u64));
-                }
-                Shape::Jmp | Shape::Call | Shape::Ret | Shape::Island | Shape::Arg => unreachable!(),
+                Shape::Jmp | Shape::Call | Shape::TailCall | Shape::Ret | Shape::Island | Shape::Arg => unreachable!(),
             }
             if super::inline::sequence(op, &ops).is_some() {
                 return Err(err(hat, "handler call of an inlined instruction"));
             }
             Proto { op, ops, pos, sites }
         }
-        Item::Call(Ref::Func(f)) => {
-            sites.push((hat, 5));
-            let (d, k) = match setup[..] {
-                [] => result(c),
-                [(_, Item::LeaM { dst, m })] if dst == int_arg(mode.pe, 0) => (m.disp, RET_SRET),
-                _ => return Err(err(pos, "call setup")),
-            };
-            Proto { op: Opcode::Call, ops: vec![Opnd::Slot(d), Opnd::Func(f), Opnd::Imm(k as u64)], pos, sites }
-        }
-        Item::Ld { .. } | Item::Sse { .. } | Item::Leave | Item::AddRsp(_) if setup.is_empty() => {
+        Item::Ld { .. } | Item::Sse { .. } | Item::Leave | Item::WinEpilogue | Item::AddRsp(_) if setup.is_empty() => {
             c.pos = pos;
             let (s, k) = ret(c, fr)?;
             Proto { op: Opcode::Ret, ops: vec![Opnd::Slot(s), Opnd::Imm(k as u64)], pos, sites }
@@ -527,60 +459,136 @@ fn result(c: &mut Cursor<'_>) -> (i32, u32) {
     (0, 0)
 }
 
-/// Before `call rax`: an sret destination's address in the first argument register.
-fn sret_arg(c: &mut Cursor<'_>, mode: Mode) -> Option<i32> {
-    let at = c.pos;
-    match c.item() {
-        Ok(Item::LeaM { dst, m }) if dst == int_arg(mode.pe, 0) && m.base == Reg::Rbp => Some(m.disp),
-        _ => {
-            c.pos = at;
-            None
-        }
+/// The integer argument register index of `r` in the mode's convention.
+fn int_index(r: Reg, mode: Mode) -> Option<u32> {
+    (0..if mode.pe { 4 } else { 6 }).find(|&i| int_arg(mode.pe, i) == r)
+}
+
+/// A call's argument registers' loads at the cursor ([`super::params_ok`]): (slot, register)
+/// pairs.
+fn params(c: &mut Cursor<'_>, mode: Mode) -> Vec<u32> {
+    let mut out = Vec::new();
+    loop {
+        let at = c.pos;
+        let (s, w) = match c.item() {
+            Ok(Item::Ld { w, sx: false, dst, m }) if m.base == Reg::Rbp && int_index(dst, mode).is_some() => {
+                (m.disp, ArgReg { xmm: false, size: w.bits() / 8, index: int_index(dst, mode).unwrap() }.word())
+            }
+            Ok(Item::LeaM { dst, m }) if m.base == Reg::Rbp && int_index(dst, mode).is_some() => {
+                (m.disp, ArgReg { xmm: false, size: 8, index: int_index(dst, mode).unwrap() }.word() | ARG_ADDR)
+            }
+            Ok(Item::Sse { st: false, size, x, m }) => (m.disp, ArgReg { xmm: true, size: size as u32, index: x as u32 }.word()),
+            Ok(Item::Ld { w: super::x86::W::W, sx: false, dst: Reg::R11, m }) if m.base == Reg::Rbp => match c.item() {
+                Ok(Item::Movd { to_xmm: true, x, r: Reg::R11 }) => (m.disp, ArgReg { xmm: true, size: 2, index: x as u32 }.word()),
+                _ => {
+                    c.pos = at;
+                    return out;
+                }
+            },
+            _ => {
+                c.pos = at;
+                return out;
+            }
+        };
+        out.extend([s as u32, w]);
     }
 }
 
-/// Before a tail jump: an sret function's return value address loaded into the first
-/// argument register. Returns its slot and the kind ([`RET_SRET`], or 0 and slot 0).
-fn pass_sret(c: &mut Cursor<'_>, mode: Mode) -> (i32, u32) {
-    let at = c.pos;
-    match c.item() {
-        Ok(Item::Ld { w: super::x86::W::Q, sx: false, dst, m }) if dst == int_arg(mode.pe, 0) && m.base == Reg::Rbp => (m.disp, RET_SRET),
-        _ => {
-            c.pos = at;
-            (0, 0)
-        }
+/// A call or tail call at the cursor, which have no handler: the callee's address (`call.ptr`,
+/// `call.sym.ind`, `tail_call.ptr`), the argument registers' loads, then the call and the
+/// result's stores, or the epilogue and the jump. `None`, with the cursor unmoved, if there
+/// is none, or if a dropped store of an inline sequence lies within it (that sequence's
+/// loads aren't arguments).
+fn call_insn(c: &mut Cursor<'_>, fr: &Frame, dropped: &[DroppedStore]) -> Option<Proto> {
+    enum Pre {
+        None,
+        Sym(Sym),
+        Ptr(i32),
     }
+    let pos = c.pos;
+    let a = c.pos;
+    let pre = match c.item() {
+        Ok(Item::LoadRip(Ref::Sym(s))) => Pre::Sym(s),
+        Ok(Item::Ld { w: super::x86::W::Q, sx: false, dst: Reg::Rax, m }) if m.base == Reg::Rbp => Pre::Ptr(m.disp),
+        _ => {
+            c.pos = a;
+            Pre::None
+        }
+    };
+    let ps = params(c, fr.mode);
+    let call_at = c.pos;
+    let fail = |c: &mut Cursor<'_>| {
+        c.pos = pos;
+        None
+    };
+    if dropped.first().is_some_and(|d| d.at < call_at) {
+        return fail(c);
+    }
+    let a_op = Opnd::Words(ps);
+    let item = c.item();
+    let (op, mut ops, call) = match (item, &pre) {
+        (Ok(Item::Call(Ref::Func(f))), Pre::None) => (Opcode::Call, vec![Opnd::Func(f)], true),
+        (Ok(Item::CallMem(Ref::Sym(s))), Pre::None) => (Opcode::CallSym, vec![Opnd::Sym(s)], true),
+        (Ok(Item::CallMemRax), Pre::Sym(s)) => (Opcode::CallSymInd, vec![Opnd::Sym(*s)], true),
+        (Ok(Item::CallRax), Pre::Ptr(p)) => (Opcode::CallPtr, vec![Opnd::Slot(*p)], true),
+        (Ok(it), _) if it == fr.epilogue() => match (c.item(), &pre) {
+            (Ok(Item::Jmp(Ref::Func(f))), Pre::None) => (Opcode::TailCall, vec![Opnd::Func(f), a_op.clone()], false),
+            (Ok(Item::JmpRax), Pre::Ptr(p)) => (Opcode::TailCallPtr, vec![Opnd::Slot(*p), a_op.clone()], false),
+            _ => return fail(c),
+        },
+        _ => return fail(c),
+    };
+    let mut sites = Vec::new();
+    if call {
+        sites.push((call_at, c.pos - call_at));
+        let (d, k) = result(c);
+        ops.insert(0, Opnd::Slot(d));
+        ops.extend([Opnd::Imm(k as u64), a_op]);
+    }
+    Some(Proto { op, ops, pos, sites })
 }
 
 /// An `arg` at the cursor: the store of an argument register to its slot.
 fn arg(c: &mut Cursor<'_>, mode: Mode) -> Option<Proto> {
     let pos = c.pos;
-    let first = c.item().ok();
-    let (a, m) = match first {
-        Some(Item::St { w, src, m }) => {
-            let n = if mode.pe { 4 } else { 6 };
-            let index = (0..n).find(|&i| int_arg(mode.pe, i) == src);
-            (index.map(|index| ArgReg { xmm: false, size: w.bits() / 8, index }), m)
+    let (a, m) = match c.item().ok()? {
+        Item::St { w, src, m } => {
+            // An integer of 3, 5, 6 or 7 bytes: its pieces, shifting the register down.
+            let mut size = w.bits() / 8;
+            loop {
+                let at = c.pos;
+                match (c.item(), c.item()) {
+                    (Ok(Item::Shift { reg, .. }), Ok(Item::St { w, src: s, m: m2 })) if reg == src && s == src && m2.disp == m.disp.wrapping_add(size as i32) => {
+                        size += w.bits() / 8
+                    }
+                    _ => {
+                        c.pos = at;
+                        break;
+                    }
+                }
+            }
+            (int_index(src, mode).map(|index| ArgReg { xmm: false, size, index }), m)
         }
-        Some(Item::Sse { st: true, size, x, m }) => (Some(ArgReg { xmm: true, size: size as u32, index: x as u32 }), m),
-        Some(Item::Movd { to_xmm: false, x, .. }) => match c.item() {
-            Ok(Item::St { m, .. }) => (Some(ArgReg { xmm: true, size: 2, index: x as u32 }), m),
+        Item::Sse { st: true, size, x, m } => (Some(ArgReg { xmm: true, size: size as u32, index: x as u32 }), m),
+        Item::Movd { to_xmm: false, x, r: Reg::R11 } => match c.item().ok()? {
+            Item::St { m, .. } => (Some(ArgReg { xmm: true, size: 2, index: x as u32 }), m),
             _ => (None, M::frame(0)),
         },
         _ => (None, M::frame(0)),
     };
-    let ok = a.filter(|a| ArgReg::of(a.word()).is_some() && m.base == Reg::Rbp);
     let end = c.pos;
     c.pos = pos;
-    let a = ok?;
-    let want = arg_store(a, m.disp, mode.pe);
-    for w in &want {
-        if c.item().ok() != Some(*w) {
+    let a = a.filter(|a| ArgReg::of(a.word(), true).is_some() && m.base == Reg::Rbp)?;
+    for w in arg_store(a, m.disp, mode.pe) {
+        if c.item().ok() != Some(w) {
             c.pos = pos;
             return None;
         }
     }
-    debug_assert_eq!(c.pos, end);
+    if c.pos != end {
+        c.pos = pos;
+        return None;
+    }
     Some(Proto { op: Opcode::Arg, ops: vec![Opnd::Slot(m.disp), Opnd::Imm(a.word() as u64)], pos, sites: Vec::new() })
 }
 

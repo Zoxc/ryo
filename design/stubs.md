@@ -1,15 +1,17 @@
-# Stubs: portals and islands
+# Stubs: islands
 
-- **Portal** (native → VM): a native function with the real symbol and signature of a VM
-  function. Calling it enters the VM.
-- **Island** (VM → native): one operation the VM can't do itself (a call to native code, an
-  intrinsic, a SIMD op, …), called directly from VM code by the `island` instruction and
-  the native paths of the call instructions.
+- **Island** (VM → native): one operation the VM can't do itself (a call of an `extern "C"`
+  function or of a callee without a symbol, an intrinsic, a SIMD op, …), called directly
+  from VM code by the `island` instruction.
+- No stub is needed the other way: VM functions are native functions of their signatures,
+  and native code calls them at their own symbols ([VM functions as native
+  functions](#vm-functions-as-native-functions)). Rust-ABI calls from VM code to native
+  code need none either ([vm.md](vm.md#calls-and-islands)).
 
-Both are **instances of generic templates in `ryo_rt`**. The backend instantiates them and
+Islands are **instances of generic templates in `ryo_rt`**. The backend instantiates them and
 adds them to the native CGU ([backend.md](backend.md#pipeline)), and cg_llvm compiles them
 from `ryo_rt`'s MIR in its metadata, like any other upstream generic. Whatever is specific to
-one stub (types, callee, VM function id) is a generic argument. The calling-convention
+one stub (types, callee) is a generic argument. The calling-convention
 details (`fn_abi_of_instance`, `PassMode`, …) come from cg_llvm.
 
 - **Constructing instances**:
@@ -24,7 +26,7 @@ details (`fn_abi_of_instance`, `PassMode`, …) come from cg_llvm.
   two crates instantiating the same island get the same symbol. Islands therefore follow
   the share-generics rules ([backend.md](backend.md#pipeline), "Upstream copies"), or are
   `Internal` when sharing is off.
-- **Lookup**: templates are tagged with `#[rustc_diagnostic_item = "ryo_portal"]`,
+- **Lookup**: templates are tagged with `#[rustc_diagnostic_item = "ryo_island_call"]`,
   `"ryo_island_call_c2"` etc., and the backend finds them through
   `tcx.diagnostic_items(ryo_rt_cnum)`. `get_diagnostic_item` only searches user-visible crates
   (`rustc_passes/src/diagnostic_items.rs:81`).
@@ -34,8 +36,7 @@ details (`fn_abi_of_instance`, `PassMode`, …) come from cg_llvm.
 - **Signature** (uniform): `unsafe fn(fp: *mut u8, ops: *const u32) -> u32` (Rust ABI).
   - `fp` is the VM frame pointer.
   - `ops` points at the island's operand array in the image's code constants: the operand
-    words of the `island` instruction, or the array the call instructions' native path
-    passes ([vm.md](vm.md#calls-and-islands)).
+    words of the `island` instruction ([vm.md](vm.md#calls-and-islands)).
   - The return value is 0, and VM code ignores it.
   - **Called directly**: VM code calls the island through its symbol slot,
     `lea rdi, [rsp + F]; lea rsi, [rip + ops]; call [rip + isl]` (`mov rdi, rbp` with a
@@ -55,7 +56,7 @@ details (`fn_abi_of_instance`, `PassMode`, …) come from cg_llvm.
 In `ryo_rt::island`, much of it macro-generated:
 
 ```rust
-// direct call of a safe Rust fn; F = the callee's FnDef type (ZST)
+// direct call of a safe Rust fn without a symbol; F = the callee's FnDef type (ZST)
 pub unsafe fn call<F: FnOnce<Args, Output = R>, Args: Tuple, R>(fp: *mut u8, ops: *const u32) -> u32 {
     const { assert!(size_of::<F>() == 0) };
     let f: F = unsafe { mem::zeroed() };
@@ -63,9 +64,6 @@ pub unsafe fn call<F: FnOnce<Args, Output = R>, Args: Tuple, R>(fp: *mut u8, ops
     unsafe { slot::<R>(fp, ops, 1).write(f.call_once(args)) };
     0
 }
-// through a fn pointer: unsafe fns, #[target_feature] fns (coercible to `unsafe fn` pointers),
-// indirect calls that don't hit a VM function
-pub unsafe fn call_ptr2<A, B, R>(fp: *mut u8, ops: *const u32) -> u32 { /* f: unsafe fn(A, B) -> R */ }
 // FFI, one per arity, generic over the argument types
 pub unsafe fn call_c2<A, B, R>(fp: *mut u8, ops: *const u32) -> u32 { /* f: unsafe extern "C" fn(A, B) -> R */ }
 // intrinsics: one wrapper each, generic like the intrinsic itself
@@ -79,15 +77,12 @@ pub unsafe fn drop_in_place<T: ?Sized>(fp: *mut u8, ops: *const u32) -> u32 { �
   | Template | `ops[0]` | `ops[1]` | `ops[2]` |
   |---|---|---|---|
   | `call` | argument block, `Args` | destination, `R` | |
-  | `call_ptrN`, `call_cN` | argument block, `(A0, …, A{N-1})` in `arg_block` layout | destination, `R` | slot holding the fn pointer |
+  | `call_cN` | argument block, `(A0, …, A{N-1})` in `arg_block` layout | destination, `R` | slot holding the fn pointer |
   | `drop_in_place` | slot holding the `*mut T` | | |
   | intrinsic wrappers | the inputs in order, then the destination | | |
 
-  The argument block is read as one tuple (`slot::<(A0, …)>(fp, ops, 0).read()`), so it is
-  exactly the callee's argument block ([lowering.md](lowering.md#frame-slots)). For
-  `call.ext`/`call.ind`, the VM passes `[outgoing block, d, fn pointer slot]`: for
-  `call.ind` that is `p`, for `call.ext` its `f` slot, which the handler writes the resolved
-  address into. `tail_call.ind` passes `_0`'s slot as the destination.
+  The argument block is read as one tuple (`slot::<(A0, …)>(fp, ops, 0).read()`), which the
+  lowering writes in the outgoing area ([lowering.md](lowering.md#frame-slots)).
 - Operations the VM has no instruction for, with the same operand convention: the 128-bit
   `mul_w128`, `div_{s,u}_w128`, `rem_{s,u}_w128`, `mul_ovf_{s,u}_w128`, and
   `as_cast<A, B>` for numeric casts from or to `f16`/`f128` (through `ryo_rt::island::AsCast`,
@@ -98,33 +93,29 @@ pub unsafe fn drop_in_place<T: ?Sized>(fp: *mut u8, ops: *const u32) -> u32 { �
   the SIMD intrinsics without constant operands (`simd_add<T>`, `simd_eq<T, U>`,
   `simd_splat<T, U>`, `simd_select<M, T>`, the reductions, …), each generic exactly like its
   intrinsic, so the lowering passes the intrinsic's generic args unchanged.
-  `catch_unwind`'s fn pointers are usually portals of VM functions (`do_call`, `do_catch`):
-  a panic leaves the VM through the portal and unwinds natively into the intrinsic's
-  landing pad in the island.
+  `catch_unwind`'s fn pointers are often VM functions (`do_call`, `do_catch`), called
+  natively: a panic in them unwinds natively into the intrinsic's landing pad in the
+  island.
 - A non-generic template (`compare_bytes`, …) has one instance, `ryo_rt`'s own: the image
   links to it instead of adding a copy to the native CGU (it isn't codegened locally).
-- `call_cN` exist for arities 0..=16. `call_ptrN` exist for 0..=17: 16, plus a trailing
-  `&'static Location` for `#[track_caller]` callees ([lowering.md](lowering.md#caller-location)).
-- `call.ext`'s native fallback is always a `call_ptrN` (Rust ABI): upstream instances are Rust
-  functions, and Rust-ABI calls never count as FFI-unwind calls.
-- `call` relies on `FnOnce`, which is only implemented for safe, Rust-ABI, non-variadic fns
-  without `#[target_feature]` (`rustc_type_ir/src/ty_kind.rs:1131`,
-  `candidate_assembly.rs:591`). Everything else goes through the pointer variants: `unsafe
-  fn`s and `#[target_feature]` fns through `call_ptrN`, and `#[track_caller]` callees through
-  `call_ptr{N+1}` with the trailing `&'static Location` (through `call`,
-  `Location::caller()` would point into `ryo_rt`).
+- `call_cN` exist for arities 0..=16.
+- `call` is only for callees without a symbol (intrinsics the lowering calls as fn items);
+  everything with a symbol is a direct `call.sym`. It relies on `FnOnce`, which is only
+  implemented for safe, Rust-ABI, non-variadic fns without `#[target_feature]`
+  (`rustc_type_ir/src/ty_kind.rs:1131`, `candidate_assembly.rs:591`), and isn't used for
+  `#[track_caller]` callees (`Location::caller()` would point into `ryo_rt`).
 - Generic argument types are fine for FFI: the fn-pointer ABI is computed after
   monomorphization from concrete layouts, and `improper_ctypes` doesn't apply, because the
   island signature only has raw pointers.
 
-`#[track_caller]` native callees are no gap: they go through `call_ptrN` with an explicit
-trailing `&'static Location`, to the callee instance's own symbol
-([lowering.md](lowering.md#caller-location)). This covers `panic_bounds_check` and the other
-panic lang items that `Assert` calls.
+`#[track_caller]` native callees are no gap: they are called directly at their symbol,
+with the `&'static Location` as the last ABI input ([lowering.md](lowering.md#caller-location)).
+This covers `panic_bounds_check` and the other panic lang items that `Assert` calls.
 
 What becomes an island:
 
-- calls to native code: cg_llvm-compiled items, upstream crates, FFI
+- calls of `extern "C"` functions (FFI, local `extern "C" fn`s), and of safe callees
+  without a symbol
 - intrinsics the VM doesn't implement, SIMD operations, float ops that need libm
   (`sqrtf64`, …), unusual casts
 - drop glue of types the VM doesn't drop itself
@@ -143,9 +134,9 @@ These make the containing function native ([backend.md](backend.md#pipeline), st
   in `ryo_rt`, not at its instances.
 - LLVM intrinsics (`InstanceKind::LlvmIntrinsic`, the `link_name = "llvm.*"` functions used
   by `std::arch`): they have no MIR and an `unadjusted` ABI
-- arities above 16
+- `call_cN` arities above 16
 - functions with unsized parameters (`unsized_fn_params`)
-- functions whose locals or arguments, including the argument block of any call they make,
+- functions whose locals or arguments, including the argument block of any island call they make,
   contain a type with alignment above 16: VM frames only guarantee 16
   ([lowering.md](lowering.md#frame-slots)), and templates access slots aligned
 
@@ -157,76 +148,40 @@ caller ([vm.md](vm.md#unwinding)). Whether an island call is a call site at all 
 MIR unwind action ([lowering.md](lowering.md#unwinding)): islands that can't unwind, and
 calls with `UnwindAction::Unreachable`, are none, so unwinding out of them aborts.
 
-## Portals (native → VM)
+## VM functions as native functions
 
-Every VM function that native code may reach gets a portal. That covers exported functions,
-functions whose address is taken, ones called from a native function, vtable entries,
-upstream-visible generics and `main`. A portal is an instance of:
+There are no portals: the image object defines each VM function's real symbol on its code
+([backend.md](backend.md#pipeline), [vm.md](vm.md#image-format)), and the code follows the
+platform calling convention for the function's Rust-ABI signature
+([vm.md](vm.md#calls-and-islands)). Native callers, other crates, fn pointers and vtables
+link to it unchanged.
 
-```rust
-// vm/rt/src/portal.rs
-#[inline(never)]
-pub extern "rust-call" fn portal<Args: Tuple, R, const ID: u64>(args: Args) -> R {
-    let mut ret = MaybeUninit::<R>::uninit();
-    let args = ManuallyDrop::new(args);         // the VM takes ownership of the args
-    unsafe {
-        enter(ID, (&raw const args).cast::<u8>(), ret.as_mut_ptr().cast::<u8>());
-        ret.assume_init()
-    }
-}
-```
-
-A panic in the VM unwinds out of `vm::enter` and the portal natively, so the portal has no
-status to check ([vm.md](vm.md#entry)).
-
-`portal_tc0..N<A, B, …, R, const ID>` are the `#[track_caller]` variants. They are Rust-ABI and
-arity-specific, because `#[track_caller]` is rejected on any other ABI (E0737,
-`rustc_ast_passes/src/ast_validation.rs:1966`). They pass `Location::caller()` to the VM.
-
-- **ABI**: `rust-call` spreads the last tuple argument (`rustc_ty_utils/src/abi.rs:548-561`),
-  and `Rust`/`RustCall` canonicalize to the same `CanonAbi::Rust`
-  (`rustc_target/src/spec/abi_map.rs:99`). So `portal::<(A, B), R, ID>` has the ABI of
-  `fn(A, B) -> R`. `Args` is exactly the inputs of the original instance's
-  `fn_sig_for_fn_abi`, flattened, which is exactly the argument block. For `Item` instances
-  with the Rust ABI (not `#[track_caller]`), that is the plain `fn_sig` of the instance's
-  type, which the backend uses for them
-  ([lowering.md](lowering.md#frame-slots)):
-  - **Closures and other `rust-call` items** (`Shim(ClosureOnce)`, `Shim(FnPtr)`): the
-    env/self argument as that signature has it (`&Self`, `&mut Self` or `Self`, depending on
-    closure kind), then the tupled args spread out, which is what `fn_abi` does
-    (`abi.rs:553-566`).
-  - **Vtable shims**: the receiver is `*mut Self` (`abi.rs:50-54`).
-  - **`#[track_caller]` functions**: `portal_tcN`. The implicit `Location` arg comes last in
-    both (`abi.rs:600`). Their `Shim(Reify)` instance (used for fn pointers and vtables) has
-    its own symbol and no `Location`, so it gets a plain `portal`.
-- **Symbol and linkage**: the `symbol_name` override gives the portal instance the original
-  instance's symbol, so callers (native code, other crates, fn pointers, vtables) link to it
-  unchanged. Linkage/visibility are copied from the original's entry in the partition.
-  `#[no_mangle]`/`#[export_name]` VM functions keep their `SymbolExportLevel::C` export, and
-  the portal is listed in the exported-symbols queries with that level, so internalization
-  and LTO keep it. `#[used]` only applies to statics, which are native anyway.
-- **One portal per instance**: each instance of a generic VM function has its own portal (the
-  ID is per instance). Upstream generic instances that resolve to the upstream crate's shared
-  copy (`-Zshare-generics`) get no local portal.
-- **Indirect args**: callers mark indirect args `ReadOnly`/`CapturesNone` based on the
-  original function's MIR (deduced param attrs, `rustc_ty_utils/src/abi.rs:652-660`). The
-  portal copies its spread arguments into the local `args` tuple, so the VM never writes to
-  the caller's memory.
-- **`ID`**: `StableCrateId`-derived crate hash (high 32 bits) and the function index in that
-  crate's image (low 32 bits). `vm::enter` resolves it through the registry and caches the
-  result.
+- **Symbol and linkage**: when native code or the image refers to the function by name
+  (`partition.rs`, `need_symbol`), the symbol is global, with the function's linkage and
+  visibility from the partition; an `Internal` one becomes hidden, since the image is a
+  separate object. Otherwise it is local. `#[no_mangle]`/`#[export_name]` VM functions keep
+  their `SymbolExportLevel::C` export through the exported-symbols queries
+  ([backend.md](backend.md#query-overrides)).
+- **`#[track_caller]` functions** take their `Location` as the last ABI input, as natively
+  (`rustc_ty_utils/src/abi.rs:600`). Their `Shim(Reify)` instance (fn pointers, vtables)
+  has its own symbol and no `Location`.
+- **Indirect args**: callers may mark them `ReadOnly`/`CapturesNone` from the original MIR
+  (deduced param attrs, `rustc_ty_utils/src/abi.rs:652-660`). The prologue copies each
+  `Indirect` input into its own home slot, so the function body never writes the caller's
+  memory. A tail call reuses that memory as rustc does ([vm.md](vm.md#calls-and-islands)).
+- **Unwinding**: a panic in a VM function unwinds natively into its caller.
 
 ## Program entry: `main`
 
 cg_ssa only emits the C `main` wrapper if the CGU contains the entry fn's own mono item
 (`maybe_create_entry_wrapper`, `rustc_codegen_ssa/src/base.rs:508-517`). With a VM `main`,
-the CGU holds a portal instead, so the backend provides the wrapper itself, as a template
+the entry fn is a VM function in the image instead, so the backend provides the wrapper itself, as a template
 instance:
 
 ```rust
 // vm/rt/src/entry.rs
 unsafe extern "C" {
-    // defined by the binary crate's image: the address of the entry fn's portal
+    // defined by the binary crate's image: the address of the entry fn
     static __ryo_main: *const ();
 }
 // S = FnDef type of the `start` lang item (std's private `lang_start::<T>`)
@@ -254,22 +209,19 @@ where
   upstream generic, it would otherwise be internal or hidden. It adds the instance and its
   neighbors to the native CGU.
 - The binary crate's image defines `__ryo_main`, a pointer slot relocated against the entry
-  fn's portal. Only binaries instantiate `c_main`, so dylibs and cdylibs never reference the
+  fn's symbol. Only binaries instantiate `c_main`, so dylibs and cdylibs never reference the
   symbol.
 - `#[no_main]` crates and `-Zcrate-attr=no_main` skip this, exactly like cg_ssa.
 
 ## Calls between VM and native code
 
 - **VM → VM, same image**: `call fn`, a direct machine call, with no stub.
-- **Calls to upstream instances**: `call.ext` on the callee's symbol, for every callee whose
-  instance comes from another crate. The backend doesn't need to know whether upstream
-  compiled it to bytecode. On first use, the site cache resolves the symbol: either it is a
-  portal of a registered VM function (later calls go straight to its code), or it is
-  native (later calls go through the instruction's `call_ptrN` island)
-  ([vm.md](vm.md#calls-and-islands)).
-- **Indirect calls** (fn pointer, `dyn` vtable): `call.ind`, with a site cache for the last VM
-  target. Non-VM targets go through the `call_ptrN` island for the signature.
-- **Separate `ryo_rt` copies**: each cdylib or staticlib carries its own `ryo_rt`, with its own
-  registry. A function pointer into another copy's VM code isn't recognized by `lookup_addr`,
-  so it goes through the native path (island → portal). Rust dylibs and the exe that links
-  them share one copy.
+- **Calls with a symbol** (upstream instances, local native Rust-ABI functions, VM
+  functions of other images): `call.sym` on the callee's symbol (`call.sym.ind` through
+  `__imp_` on PE). The backend doesn't need to know whether upstream compiled it to
+  bytecode: both are native functions of the same signature.
+- **Indirect calls** (fn pointer, `dyn` vtable): `call.ptr` for Rust-ABI pointers, the
+  `call_cN` island for `extern "C"` ones.
+- **Separate `ryo_rt` copies**: each cdylib or staticlib carries its own `ryo_rt`, with its
+  own registry. Calls across them are plain native calls, so nothing depends on which copy
+  registered the callee.

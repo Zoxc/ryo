@@ -6,7 +6,7 @@
 //! VM from the runtime").
 
 use core::ptr;
-use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, Ordering};
 
 /// Page size assumed for guard pages and mapping granularity (x86_64 ELF and PE).
 pub const PAGE: usize = 4096;
@@ -28,8 +28,6 @@ mod os {
         pub fn mprotect(addr: *mut c_void, len: usize, prot: c_int) -> c_int;
         pub fn write(fd: c_int, buf: *const c_void, n: usize) -> isize;
         pub fn abort() -> !;
-        pub fn getenv(name: *const core::ffi::c_char) -> *const core::ffi::c_char;
-        pub fn atexit(f: extern "C-unwind" fn()) -> c_int;
     }
 }
 
@@ -49,12 +47,6 @@ mod os {
         pub fn VirtualProtect(addr: *mut c_void, size: usize, protect: u32, old: *mut u32) -> i32;
         pub fn GetStdHandle(which: u32) -> *mut c_void;
         pub fn WriteFile(h: *mut c_void, buf: *const u8, n: u32, written: *mut u32, ov: *mut c_void) -> i32;
-        pub fn GetEnvironmentVariableA(name: *const u8, buf: *mut u8, size: u32) -> u32;
-    }
-
-    // The C runtime's (`msvcrt.lib`), which every Rust program on msvc links.
-    unsafe extern "C" {
-        pub fn atexit(f: extern "C-unwind" fn()) -> i32;
     }
 }
 
@@ -81,121 +73,6 @@ fn write_stderr(s: &str) {
         let mut n = 0;
         os::WriteFile(os::GetStdHandle(os::STD_ERROR_HANDLE), s.as_ptr(), s.len() as u32, &mut n, ptr::null_mut());
     }
-}
-
-/// Whether `RYO_VM_TRACE` is set (to anything): then [`trace_enter`] reports every
-/// `vm::enter` on stderr, which lets tests check that code really ran in the VM. Read once.
-#[inline]
-pub fn trace_enabled() -> bool {
-    // 0: not read yet, 1: off, 2: on.
-    static TRACE: AtomicU8 = AtomicU8::new(0);
-    match TRACE.load(Ordering::Relaxed) {
-        0 => {
-            let on = env_set(c"RYO_VM_TRACE");
-            TRACE.store(if on { 2 } else { 1 }, Ordering::Relaxed);
-            on
-        }
-        v => v == 2,
-    }
-}
-
-/// Run-time counters for `RYO_VM_STATS` (design/vm.md#modules): VM entries and native calls
-/// made by `call.ext`/`call.ind`. Counted only when it is set, and printed at exit.
-pub struct RunStats {
-    pub enters: AtomicU64,
-    pub native_calls: AtomicU64,
-}
-
-pub static RUN_STATS: RunStats = RunStats { enters: AtomicU64::new(0), native_calls: AtomicU64::new(0) };
-
-/// Whether `RYO_VM_STATS` is set (to anything). Read once; the first reader that finds it set
-/// registers the exit-time report.
-#[inline]
-pub fn stats_enabled() -> bool {
-    // 0: not read yet, 1: off, 2: on.
-    static STATS: AtomicU8 = AtomicU8::new(0);
-    match STATS.load(Ordering::Relaxed) {
-        0 => init_stats(&STATS),
-        v => v == 2,
-    }
-}
-
-#[cold]
-#[inline(never)]
-fn init_stats(state: &AtomicU8) -> bool {
-    let on = env_set(c"RYO_VM_STATS");
-    if state.swap(if on { 2 } else { 1 }, Ordering::Relaxed) == 0 && on {
-        // SAFETY: `print_stats` only reads atomics and writes to stderr.
-        unsafe {
-            os::atexit(print_stats);
-        }
-    }
-    on
-}
-
-/// Adds one to `counter` if `RYO_VM_STATS` is set.
-#[inline]
-pub fn count(counter: &AtomicU64) {
-    if stats_enabled() {
-        counter.fetch_add(1, Ordering::Relaxed);
-    }
-}
-
-/// Writes `ryo-vm: <n> enters, <n> native calls` to stderr. `C-unwind` and without indexing,
-/// so it references nothing of core's panic path (design/vm.md).
-extern "C-unwind" fn print_stats() {
-    let s = &RUN_STATS;
-    write_stderr("ryo-vm: ");
-    for (c, what) in [(&s.enters, " enters, "), (&s.native_calls, " native calls\n")] {
-        write_u64(c.load(Ordering::Relaxed));
-        write_stderr(what);
-    }
-}
-
-/// Writes `v` in decimal to stderr.
-fn write_u64(mut v: u64) {
-    let mut digits = [0u8; 20];
-    let mut k = digits.len();
-    let p = digits.as_mut_ptr();
-    loop {
-        k -= 1;
-        // SAFETY: `k < 20`: a u64 has at most 20 digits.
-        unsafe { *p.add(k) = b'0' + (v % 10) as u8 };
-        v /= 10;
-        if v == 0 {
-            break;
-        }
-    }
-    // SAFETY: bytes `k..20` are ASCII digits.
-    write_stderr(unsafe { core::str::from_utf8_unchecked(core::slice::from_raw_parts(p.add(k), 20 - k)) });
-}
-
-#[cold]
-fn env_set(name: &core::ffi::CStr) -> bool {
-    #[cfg(unix)]
-    // SAFETY: `name` is NUL-terminated; the result is only compared with null.
-    unsafe {
-        !os::getenv(name.as_ptr()).is_null()
-    }
-    #[cfg(windows)]
-    // SAFETY: as above; a zero-sized buffer only queries the length (0: not set).
-    unsafe {
-        os::GetEnvironmentVariableA(name.as_ptr().cast(), ptr::null_mut(), 0) != 0
-    }
-}
-
-/// Writes `ryo-vm: enter <crate hash>:<function index>` to stderr.
-#[cold]
-#[inline(never)]
-pub fn trace_enter(id: u64) {
-    let mut buf = *b"ryo-vm: enter 00000000:00000000\n";
-    for i in 0..8 {
-        let hex = |v: u64| b"0123456789abcdef"[(v & 15) as usize];
-        buf[14 + i] = hex(id >> (60 - 4 * i));
-        buf[23 + i] = hex(id >> (28 - 4 * i));
-    }
-    // SAFETY: the buffer is ASCII.
-    write_stderr(unsafe { core::str::from_utf8_unchecked(&buf) });
 }
 
 fn abort() -> ! {

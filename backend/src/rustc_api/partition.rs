@@ -17,7 +17,8 @@ use rustc_middle::ty::{self, Instance, InstanceKind, Ty, TyCtxt, TypingEnv};
 use rustc_session::config::{CrateType, EntryFnType};
 use rustc_span::Symbol;
 use ryo_bytecode::image::{
-    AllocFixup, AllocReloc, AllocTarget, CATCH, CONTINUE, FunctionDef, ImageObject, ImageWriter, SYM_INDIRECT, portal_id,
+    AllocFixup, AllocReloc, AllocTarget, CATCH, CONTINUE, FuncSymbol, FunctionDef, ImageObject, ImageWriter, SYM_INDIRECT,
+    SymVisibility,
 };
 use ryo_bytecode::asm::{self, Ref};
 use ryo_bytecode::insn::{Const, Data, Func, Site, Sym};
@@ -27,15 +28,12 @@ use crate::objfile;
 use super::lower::{self, CodeReloc, LowerCx, LoweredFn, NeedsNative};
 
 /// The `RYO_RT_ABI` the backend was written against (`vm/rt/src/lib.rs`).
-const EXPECTED_RT_ABI: u32 = 4;
+const EXPECTED_RT_ABI: u32 = 5;
 
 /// The `ryo_rt` items the backend instantiates or checks (design/stubs.md, Lookup).
 #[derive(Clone, Copy)]
 pub struct RtItems {
     pub krate: CrateNum,
-    pub portal: DefId,
-    /// `portal_tc0..=16`, the `#[track_caller]` portals.
-    pub portal_tc: [DefId; lower::MAX_PORTAL_TC_ARITY + 1],
     pub c_main: DefId,
     pub abi: DefId,
     /// `ryo_rt::vm::FP_ARG`: whether its handlers take `fp` in `rdi`.
@@ -65,14 +63,8 @@ pub fn rt_items(tcx: TyCtxt<'_>) -> Option<RtItems> {
             let krate = *tcx.crates(()).iter().find(|&&c| tcx.crate_name(c).as_str() == "ryo_rt")?;
             let items = tcx.diagnostic_items(krate);
             let get = |name: &str| items.name_to_id.get(&Symbol::intern(name)).copied();
-            let mut portal_tc = [get("ryo_portal")?; lower::MAX_PORTAL_TC_ARITY + 1];
-            for (n, d) in portal_tc.iter_mut().enumerate() {
-                *d = get(&format!("ryo_portal_tc{n}"))?;
-            }
             Some(RtItems {
                 krate,
-                portal: get("ryo_portal")?,
-                portal_tc,
                 c_main: get("ryo_c_main")?,
                 abi: get("ryo_rt_abi")?,
                 fp_arg: get("ryo_rt_fp_arg")?,
@@ -91,16 +83,14 @@ pub struct Results {
     pub cgu_name: Symbol,
     /// The image, ready to be written as an object.
     pub image: ImageObject,
-    /// The symbol `__ryo_main` points at: the entry fn's portal, for a VM `main`.
-    pub main_portal: Option<String>,
-    /// The symbol of each VM function, by image function index. A portal's symbol is its
-    /// function's.
-    symbols: Vec<String>,
+    /// The symbol `__ryo_main` points at: the entry fn's, for a VM `main`.
+    pub main_symbol: Option<String>,
     /// For `exported_non_generic_symbols`: the Rust symbols the image refers to ([`Roots`]).
     lto_roots: Vec<(String, SymbolExportKind)>,
-    /// For `exported_generic_symbols`: (portal, original), lifetime-erased.
-    portals: Vec<Pair<'static>>,
-    /// The portals made `External` + `Hidden` only because the image references them.
+    /// For `exported_generic_symbols`: the VM functions with `External` linkage whose symbols
+    /// the image defines, with their visibility; lifetime-erased.
+    vm_exports: Vec<(Instance<'static>, Visibility)>,
+    /// Native items made `External` + `Hidden` only because the image references them.
     hidden_for_image: Vec<Instance<'static>>,
     /// `session_key` of the session that computed this.
     key: usize,
@@ -115,25 +105,17 @@ pub fn results(tcx: TyCtxt<'_>) -> Option<&'static Results> {
 }
 
 impl Results {
-    /// The (portal, original) pairs.
-    fn portals<'tcx>(&self, _tcx: TyCtxt<'tcx>) -> &[(Instance<'tcx>, Instance<'tcx>)] {
+    fn vm_exports<'tcx>(&self, _tcx: TyCtxt<'tcx>) -> &[(Instance<'tcx>, Visibility)] {
         // SAFETY: the instances were interned by this session's `TyCtxt`, which outlives every
         // query provider call, and a process runs one session (`RyoBackend::provide`). Only
         // the lifetime parameter changes.
-        unsafe { std::mem::transmute::<&[Pair<'static>], &[Pair<'tcx>]>(&self.portals) }
+        unsafe { std::mem::transmute::<&[(Instance<'static>, Visibility)], &[(Instance<'tcx>, Visibility)]>(&self.vm_exports) }
     }
 
     fn hidden_for_image<'tcx>(&self, _tcx: TyCtxt<'tcx>) -> &[Instance<'tcx>] {
-        // SAFETY: as for `portals`.
+        // SAFETY: as for `vm_exports`.
         unsafe { std::mem::transmute::<&[Instance<'static>], &[Instance<'tcx>]>(&self.hidden_for_image) }
     }
-}
-
-type Pair<'tcx> = (Instance<'tcx>, Instance<'tcx>);
-
-fn erase(v: Vec<Pair<'_>>) -> Vec<Pair<'static>> {
-    // SAFETY: see `Results::portals`; the values are only read back with the session's `'tcx`.
-    unsafe { std::mem::transmute(v) }
 }
 
 fn stats_level() -> u32 {
@@ -235,12 +217,13 @@ pub fn rt_symbol(tcx: TyCtxt<'_>, name: &str) -> String {
     rustc_symbol_mangling::mangle_internal_symbol(tcx, name)
 }
 
-/// A VM function: its lowering, index and portal.
+/// A VM function: its lowering, and whether native code or the image calls it by name (then
+/// the image defines its symbol globally, with its linkage; an internal one becomes hidden).
 struct VmFn<'tcx> {
     instance: Instance<'tcx>,
     data: MonoItemData,
     lowered: LoweredFn<'tcx>,
-    portal: Option<Instance<'tcx>>,
+    global: bool,
 }
 
 struct Partitioner<'a, 'tcx> {
@@ -324,13 +307,13 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         for (instance, data) in candidates {
             if let Some(lowered) = ok.remove(&instance) {
                 self.index.insert(instance, self.vm.len() as u32);
-                self.vm.push(VmFn { instance, data, lowered, portal: None });
+                self.vm.push(VmFn { instance, data, lowered, global: false });
             }
         }
         self.stats.native_fns = failed.len();
 
-        // Step 1 (portals): VM functions that native code or the image may reach, and the
-        // native items the image refers to by symbol.
+        // Step 1 (symbols): VM functions that native code or the image may reach by name, and
+        // the native items the image refers to by symbol.
         let stubs_t = tcx.prof.generic_activity("ryo_stubs");
         let entry = tcx.entry_fn(()).and_then(|(def_id, ty)| {
             let main = Instance::mono(tcx, def_id);
@@ -349,7 +332,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                     CodeReloc::Static { def_id, .. } => image_refs.push(MonoItem::Static(def_id)),
                     CodeReloc::Const { alloc, .. } => alloc_refs(tcx, alloc, &mut seen_allocs, &mut image_refs),
                     CodeReloc::Data { alloc, .. } => alloc_refs(tcx, alloc, &mut seen_allocs, &mut image_refs),
-                    CodeReloc::Call { .. } | CodeReloc::Site | CodeReloc::Bytes { .. } | CodeReloc::Island { .. } => {}
+                    CodeReloc::Call { .. } | CodeReloc::Bytes { .. } | CodeReloc::Island { .. } => {}
                 }
             }
         }
@@ -359,14 +342,14 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             }
         }
         for f in wanted {
-            self.need_portal(f);
+            self.need_symbol(f);
         }
         self.scan_native_items();
 
         // Step 4: islands, the entry wrapper, the stub neighbors, and the native items the
         // image refers to.
         self.add_islands();
-        let main_portal = entry.map(|(main, ty)| {
+        let main_symbol = entry.map(|(main, ty)| {
             self.add_c_main(main, ty);
             tcx.symbol_name(main).name.to_owned()
         });
@@ -407,9 +390,8 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
 
         if stats >= 1 {
             for v in &self.vm {
-                let portal = if v.portal.is_some() { " (portal)" } else { "" };
-                let id = self.portal_id(self.index[&v.instance]);
-                eprintln!("ryo: vm fn {}{portal} id={:08x}:{:08x}", path(v.instance), id >> 32, id as u32);
+                let global = if v.global { " (global)" } else { "" };
+                eprintln!("ryo: vm fn {}{global}", path(v.instance));
             }
             eprintln!(
                 "ryo: {} VM functions, {} native functions, {} islands, {} native items",
@@ -421,16 +403,16 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             self.print_coverage(&failed);
         }
 
-        let (image, symbols, roots) = self.build_image();
-        let portals = self.vm.iter().filter_map(|v| Some((v.portal?, v.instance))).collect();
-        let mut hidden: Vec<Instance<'tcx>> = self
+        let (image, roots) = self.build_image();
+        let vm_exports: Vec<(Instance<'tcx>, Visibility)> = self
             .vm
             .iter()
-            .filter(|v| v.data.linkage == Linkage::Internal)
-            .filter_map(|v| v.portal)
+            .filter(|v| v.global && v.data.linkage == Linkage::External)
+            .map(|v| (v.instance, v.data.visibility))
             .collect();
         // Items made External + Hidden only for the image aren't exported
         // (design/backend.md#query-overrides).
+        let mut hidden: Vec<Instance<'tcx>> = Vec::new();
         hidden.extend(flips.iter().filter_map(|item| match *item {
             MonoItem::Fn(i) => Some(i),
             MonoItem::Static(_) | MonoItem::GlobalAsm(_) => None,
@@ -439,10 +421,10 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         let results = Results {
             cgu_name: native.name(),
             image,
-            main_portal,
-            symbols,
+            main_symbol,
             lto_roots: roots.0.into_iter().collect(),
-            portals: erase(portals),
+            // SAFETY: as in `Results::vm_exports`.
+            vm_exports: unsafe { std::mem::transmute::<Vec<(Instance<'tcx>, Visibility)>, Vec<(Instance<'static>, Visibility)>>(vm_exports) },
             // SAFETY: as in `erase`.
             hidden_for_image: unsafe { std::mem::transmute::<Vec<Instance<'tcx>>, Vec<Instance<'static>>>(hidden) },
             key: session_key(tcx),
@@ -512,7 +494,6 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                     CodeReloc::Call { callee } => format!("fn{i} = {}", path(callee)),
                     CodeReloc::Symbol { target } => format!("sym{i} = {}", path(target)),
                     CodeReloc::Static { def_id } => format!("sym{i} = static {}", tcx.def_path_str(def_id)),
-                    CodeReloc::Site => format!("site{i}"),
                     CodeReloc::Const { offset, .. } => format!("k{i} = const allocation + {offset}"),
                     CodeReloc::Bytes { ref bytes, align } => format!("k{i} = bytes {bytes:02x?} align {align}"),
                     CodeReloc::Data { offset, .. } => format!("data{i} = allocation + {offset}"),
@@ -558,43 +539,12 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         out
     }
 
-    fn portal_id(&self, index: u32) -> u64 {
-        portal_id(ryo_bytecode::image::crate_hash(local_stable_crate_id(self.tcx)), index)
-    }
-
-    /// Gives the VM function `instance` (if it is one) a portal.
-    fn need_portal(&mut self, instance: Instance<'tcx>) {
-        let Some(&i) = self.index.get(&instance) else { return };
-        if self.vm[i as usize].portal.is_some() {
-            return;
+    /// Gives the VM function `instance` (if it is one) a global symbol: native code or the
+    /// image calls it by name.
+    fn need_symbol(&mut self, instance: Instance<'tcx>) {
+        if let Some(&i) = self.index.get(&instance) {
+            self.vm[i as usize].global = true;
         }
-        let tcx = self.tcx;
-        let v = &self.vm[i as usize];
-        let sig = lower::vm_fn_sig(tcx, instance).expect("VM functions have a supported signature");
-        let id = ty::Const::from_bits(tcx, u128::from(self.portal_id(i)), TypingEnv::fully_monomorphized(), tcx.types.u64);
-        let portal = if sig.caller_location {
-            // `portal_tcN::<A0, …, R, ID>`: `#[track_caller]` itself, so it has the same ABI,
-            // including the trailing location, which it passes on (design/stubs.md).
-            let n = sig.inputs.len() - 1;
-            let mut args: Vec<ty::GenericArg<'tcx>> = sig.inputs[..n].iter().map(|&t| t.into()).collect();
-            args.extend::<[ty::GenericArg<'tcx>; 2]>([sig.output.ty.into(), id.into()]);
-            Instance::new_raw(self.rt.portal_tc[n], tcx.mk_args(&args))
-        } else {
-            let args = tcx.mk_args(&[sig.args_tuple(tcx).into(), sig.output.ty.into(), id.into()]);
-            Instance::new_raw(self.rt.portal, args)
-        };
-        // The image references the portal (function table, `__ryo_main`), and the image is a
-        // separate object, so an internal portal becomes hidden (design/backend.md, Linkage).
-        let mut data = v.data;
-        data.inlined = false;
-        data.size_estimate = MonoItem::Fn(portal).size_estimate(tcx);
-        if data.linkage == Linkage::Internal {
-            data.linkage = Linkage::External;
-            data.visibility = Visibility::Hidden;
-        }
-        self.vm[i as usize].portal = Some(portal);
-        self.added.insert(MonoItem::Fn(portal), data);
-        self.work.push(portal);
     }
 
     /// Marks VM functions referenced by the original CGU's native items: functions (their
@@ -639,7 +589,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             }
         }
         for f in refs {
-            self.need_portal(f);
+            self.need_symbol(f);
         }
     }
 
@@ -681,7 +631,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                 if let MonoItem::Fn(f) = n
                     && self.index.contains_key(&f)
                 {
-                    self.need_portal(f);
+                    self.need_symbol(f);
                     continue;
                 }
                 if self.cgu.items().contains_key(&n) || self.added.contains_key(&n) {
@@ -747,7 +697,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         if let MonoItem::Fn(f) = item
             && self.index.contains_key(&f)
         {
-            return; // a VM function: its portal
+            return; // a VM function: its global symbol
         }
         if let MonoItem::Fn(f) = item
             && lower::is_tls_shim(f)
@@ -802,10 +752,9 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
     }
 
     /// The merge pass: resolves every function's relocations, then lays out the image.
-    fn build_image(&mut self) -> (ImageObject, Vec<String>, Roots) {
+    fn build_image(&mut self) -> (ImageObject, Roots) {
         let tcx = self.tcx;
         let mut w = ImageWriter::new(local_stable_crate_id(tcx));
-        let symbols: Vec<String> = self.vm.iter().map(|v| tcx.symbol_name(v.instance).name.to_owned()).collect();
         let templates = &tcx.diagnostic_items(self.rt.krate).name_to_id;
         let mut pool = Pool::default();
         let mode = asm_mode(tcx, self.rt);
@@ -856,7 +805,6 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                         }
                         s
                     }
-                    CodeReloc::Site => w.site().0,
                     CodeReloc::Const { alloc, offset } => pool.intern(tcx, &mut w, alloc).0 + offset,
                     CodeReloc::Bytes { ref bytes, align } => pool.bytes(&mut w, bytes, align).0,
                     CodeReloc::Data { alloc, offset } => pool.data(tcx, &mut w, alloc).0 + offset,
@@ -888,20 +836,27 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                     Ref::Ro(_) => r.to,
                 };
             }
-            let portal = v.portal.map(|_| {
-                pool.roots.text(&symbols[i]);
-                w.symbol(&symbols[i], 0)
+            // A global symbol with the function's linkage; an internal function native code
+            // calls becomes hidden (design/backend.md, Linkage).
+            let symbol = v.global.then(|| {
+                let weak = !matches!(v.data.linkage, Linkage::External | Linkage::Internal);
+                let visibility = match (v.data.linkage, v.data.visibility) {
+                    (Linkage::Internal, _) | (_, Visibility::Hidden) => SymVisibility::Hidden,
+                    (_, Visibility::Protected) => SymVisibility::Protected,
+                    (_, Visibility::Default) => SymVisibility::Default,
+                };
+                FuncSymbol { visibility, weak }
             });
+            let _ = i;
             w.add_function(FunctionDef {
-                // Not the portal's symbol, which the image's relocations name.
-                name: format!("{}.vm", symbols[i]),
+                name: tcx.symbol_name(v.instance).name.to_owned(),
                 code: Vec::new(),
                 frame_size: l.frame_size,
                 arg_size: l.arg_size,
                 ret_size: l.ret_size,
                 ret_kind: l.ret_kind,
                 cleanup: Vec::new(),
-                portal,
+                symbol,
             });
             encoded.push(code);
         }
@@ -917,7 +872,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             pool.roots.text(ryo_bytecode::image::PERSONALITY);
         }
         match w.finish_encoded(encoded) {
-            Ok(image) => (image, symbols, pool.roots),
+            Ok(image) => (image, pool.roots),
             Err(e) => tcx.dcx().fatal(format!("ryo: invalid image: {e:?}")),
         }
     }
@@ -1238,8 +1193,7 @@ pub fn local_stable_crate_id(tcx: TyCtxt<'_>) -> u64 {
     tcx.stable_crate_id(LOCAL_CRATE).as_u64()
 }
 
-/// Our `symbol_name` (design/backend.md#query-overrides): portals take their function's
-/// symbol, `c_main` is the target's entry name, and local copies of `LocalCopy` instances get
+/// Our `symbol_name` (design/backend.md#query-overrides): `c_main` is the target's entry name, and local copies of `LocalCopy` instances get
 /// a crate-unique suffix (design/backend.md, Linkage).
 pub fn symbol_name<'tcx>(
     tcx: TyCtxt<'tcx>,
@@ -1250,13 +1204,6 @@ pub fn symbol_name<'tcx>(
         && let Some(rt) = rt_items(tcx)
         && def_id.krate == rt.krate
     {
-        if def_id == rt.portal || rt.portal_tc.contains(&def_id) {
-            // `ID` is the last generic argument of every portal template.
-            let id = instance.args.const_at(instance.args.len() - 1).to_leaf().to_u64();
-            let (_, idx) = ryo_bytecode::image::split_portal_id(id);
-            let r = results(tcx).expect("portal symbol requested before partitioning");
-            return ty::SymbolName::new(tcx, &r.symbols[idx as usize]);
-        }
         if def_id == rt.c_main {
             return ty::SymbolName::new(tcx, &tcx.sess.target.entry_name);
         }
@@ -1278,36 +1225,55 @@ fn symbol_from_attrs<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> bool 
     rustc_symbol_mangling::symbol_name_from_attrs(tcx, instance.def).is_some()
 }
 
-/// Our local `exported_generic_symbols` (design/backend.md#query-overrides): portals are
-/// listed as the generic functions they stand for (non-generic ones are already in
-/// `exported_non_generic_symbols`), portals made hidden only for the image and `c_main` aren't
-/// listed.
+/// Our local `exported_generic_symbols` (design/backend.md#query-overrides): rustc lists the
+/// native CGU's generic items; the VM functions' symbols the image defines are added as
+/// rustc would list them if they were in the CGU (`exported_generic_symbols_provider_local`,
+/// generic `Item` instances only), and items made hidden only for the image aren't listed.
 pub fn exported_generic_symbols<'tcx>(
     tcx: TyCtxt<'tcx>,
     list: &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)],
 ) -> &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)] {
-    let Some(rt) = rt_items(tcx) else { return list };
     let Some(r) = results(tcx) else { return list };
-    let portals: FxHashMap<Instance<'tcx>, Instance<'tcx>> = r.portals(tcx).iter().copied().collect();
     let hidden: FxHashSet<Instance<'tcx>> = r.hidden_for_image(tcx).iter().copied().collect();
     let mut out: Vec<_> = list
         .iter()
-        .filter_map(|&(s, info)| match s {
-            ExportedSymbol::Generic(def_id, args) if def_id.krate == rt.krate => {
-                let portal = Instance::new_raw(def_id, args);
-                let orig = portals.get(&portal)?;
-                if hidden.contains(&portal) || orig.args.non_erasable_generics().next().is_none() {
-                    return None;
-                }
-                match orig.def {
-                    InstanceKind::Item(d) => Some((ExportedSymbol::Generic(d, orig.args), info)),
-                    _ => None,
-                }
-            }
-            ExportedSymbol::Generic(def_id, args) if hidden.contains(&Instance::new_raw(def_id, args)) => None,
-            _ => Some((s, info)),
-        })
+        .copied()
+        .filter(|&(s, _)| !matches!(s, ExportedSymbol::Generic(def_id, args) if hidden.contains(&Instance::new_raw(def_id, args))))
         .collect();
+    if tcx.local_crate_exports_generics() {
+        let need_visibility = tcx.sess.target.dynamic_linking && !tcx.sess.target.only_cdylib;
+        let reachable = tcx.reachable_set(());
+        let local_unreachable = |ty: Ty<'tcx>| {
+            let root = match ty.peel_refs().kind() {
+                ty::Closure(d, _) | ty::FnDef(d, _) | ty::Coroutine(d, _) | ty::CoroutineClosure(d, _) | ty::CoroutineWitness(d, _) => *d,
+                _ => return false,
+            };
+            root.as_local().is_some_and(|d| !reachable.contains(&d))
+        };
+        for &(instance, vis) in r.vm_exports(tcx) {
+            let InstanceKind::Item(def) = instance.def else { continue };
+            if need_visibility && vis == Visibility::Hidden {
+                continue;
+            }
+            if !tcx.sess.opts.share_generics() && tcx.codegen_fn_attrs(def).inline != rustc_hir::attrs::InlineAttr::Never {
+                continue;
+            }
+            let downstream = instance
+                .args
+                .types()
+                .chain([tcx.type_of(def).skip_binder()])
+                .all(|t| t.walk().all(|a| a.as_type().is_none_or(|t| !local_unreachable(t))));
+            if instance.args.non_erasable_generics().next().is_some() && downstream {
+                let info = SymbolExportInfo {
+                    level: SymbolExportLevel::Rust,
+                    kind: SymbolExportKind::Text,
+                    used: false,
+                    rustc_std_internal_symbol: false,
+                };
+                out.push((ExportedSymbol::Generic(def, instance.args), info));
+            }
+        }
+    }
     out.sort_by_cached_key(|s| s.0.symbol_name_for_local_instance(tcx));
     tcx.arena.alloc_from_iter(out)
 }

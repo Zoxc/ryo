@@ -50,7 +50,6 @@ use rustc_middle::mir::{BasicBlock, Body};
 use rustc_middle::ty::layout::TyAndLayout;
 use rustc_middle::ty::{self, GenericArgsRef, Instance, InstanceKind, Ty, TyCtxt, TypeVisitableExt, TypingEnv};
 use rustc_span::Symbol;
-use ryo_bytecode::abi::HEADER_SIZE;
 use ryo_bytecode::asm::{self, Asm, InsnId, Label, Opnd, Unwind};
 use ryo_bytecode::insn::{Abs, Const, ElemKind, Func, Opcode, OperandKind, Site, Sym};
 
@@ -81,13 +80,12 @@ pub enum CodeReloc<'tcx> {
     /// [`LowerCx::vm`]); the merge pass fills in its function index. If `callee` ends up
     /// native after all, the caller is lowered again.
     Call { callee: Instance<'tcx> },
-    /// A `sym` operand: `target`'s symbol, its portal if it is a VM function (which then gets
-    /// one), the native definition otherwise (made visible to the image if it is internal).
+    /// A `sym` operand: `target`'s symbol: a VM function's (which the image then defines
+    /// globally), the native definition otherwise (made visible to the image if it is
+    /// internal).
     Symbol { target: Instance<'tcx> },
     /// A `sym` operand: the static `def_id` (made visible to the image if it is internal).
     Static { def_id: rustc_hir::def_id::DefId },
-    /// A `site` operand: a fresh site cache slot.
-    Site,
     /// A `k` (or `addr.abs`) operand: `offset` bytes into the constant-pool copy of `alloc`.
     Const { alloc: AllocId, offset: u32 },
     /// A `k` operand: a constant-pool allocation of these bytes.
@@ -127,13 +125,14 @@ pub fn lower<'tcx>(
     let sig = vm_fn_sig(tcx, instance)?;
     let body = tcx.instance_mir(instance.def);
     let mut fx = FnCx::new(tcx, cx, instance, body, &sig)?;
-    fx.prologue(&sig);
+    fx.prologue(&sig)?;
     fx.blocks()?;
     fx.finish()
 }
 
-/// The signature of `instance` if it can be a VM function: one whose portal (a `Rust`-ABI
-/// template) can stand in for it (design/backend.md#pipeline, step 2).
+/// The signature of `instance` if it can be a VM function: a Rust-ABI function whose
+/// arguments and return value the backend can pass in the platform calling convention
+/// (design/backend.md#pipeline, step 2).
 pub fn vm_fn_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> Result<AbiSig<'tcx>, NeedsNative> {
     match instance.def {
         InstanceKind::Item(def_id) => {
@@ -163,17 +162,10 @@ pub fn vm_fn_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> Result<Ab
     }
     let sig = abi_sig(tcx, instance)?;
     if sig.conv != sig::CallConv::Rust {
-        return native("non-Rust ABI (the portal template is Rust-ABI)");
-    }
-    if sig.caller_location && sig.inputs.len() - 1 > MAX_PORTAL_TC_ARITY {
-        // `#[track_caller]` functions get a `portal_tcN` (design/stubs.md#portals-native--vm).
-        return native("#[track_caller] function with more than 16 arguments");
+        return native("non-Rust ABI");
     }
     Ok(sig)
 }
-
-/// The largest `N` of `ryo_rt::portal::portal_tcN`.
-pub const MAX_PORTAL_TC_ARITY: usize = 16;
 
 /// Where unwinding out of a call-like instruction goes.
 #[derive(Clone, Copy, PartialEq)]
@@ -229,12 +221,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         body: &'tcx Body<'tcx>,
         sig: &AbiSig<'tcx>,
     ) -> Result<Self, NeedsNative> {
-        let frame = Frame::new(body, sig, |local| {
+        let frame = Frame::new(body, sig, cx.mode.pe, |local| {
             let ty = mono(tcx, instance, body.local_decls[local].ty);
             layout_of(tcx, ty)
         })?;
         let mut asm = Asm::new(cx.mode);
         let block_labels = (0..body.basic_blocks.len()).map(|_| asm.label()).collect();
+        let caller_location = sig.caller_location.then(|| *frame.arg_homes.last().expect("location input"));
         Ok(FnCx {
             tcx,
             cx,
@@ -247,15 +240,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             block_labels,
             scratch: Vec::new(),
             max_outgoing: 0,
-            arg_size: sig.block_size,
+            arg_size: sig.plan.as_ref().map_or(0, |p| p.stack_size),
             ret_kind: sig.ret_kind,
             next_block: None,
             fused: None,
             terminate_at: Vec::new(),
             pads: Vec::new(),
-            caller_location: sig
-                .caller_location
-                .then(|| frame::slot((HEADER_SIZE + sig.fields.last().expect("location field").offset) as i32)),
+            caller_location,
         })
     }
 

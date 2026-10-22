@@ -7,7 +7,7 @@
 //! | Template | `ops[0]` | `ops[1]` | `ops[2]` |
 //! |---|---|---|---|
 //! | `call` | argument block (`Args`) | destination (`R`) | |
-//! | `call_ptrN`, `call_cN` | argument block (`(A0, …)`) | destination (`R`) | fn pointer |
+//! | `call_cN` | argument block (`(A0, …)`) | destination (`R`) | fn pointer |
 //! | `drop_in_place` | `*mut T` (wide if `T: !Sized`) | | |
 //! | intrinsic wrappers | inputs, in order, then the destination | | |
 
@@ -29,9 +29,8 @@ pub unsafe fn slot<T>(fp: *mut u8, ops: *const u32, i: usize) -> *mut T {
 /// Direct call of a safe Rust fn or closure type `F` that is a ZST (a `FnDef`, or a closure
 /// without captures). `ops`: `[args: Args, dest: R]`.
 ///
-/// Only for callees that implement `FnOnce`: `unsafe fn`s and `#[target_feature]` fns go
-/// through `call_ptrN`. So do `#[track_caller]` callees, with their location as the trailing
-/// argument; through `call`, `Location::caller()` would point into `ryo_rt`.
+/// Only for callees that implement `FnOnce` and aren't `#[track_caller]` (through `call`,
+/// `Location::caller()` would point into `ryo_rt`).
 ///
 /// # Safety
 /// The operands must hold an initialized `Args` and room for an `R`.
@@ -51,10 +50,8 @@ pub unsafe fn call<F: FnOnce<Args, Output = R>, Args: Tuple, R>(
     0
 }
 
-macro_rules! call_ptr_families {
-    ($($n:literal: $ptr:ident $ptr_diag:literal, $c:ident $c_diag:literal ($($T:ident $a:ident),*);)*) => {$(
-        call_ptr_families!(@ptr $ptr $ptr_diag ($($T $a),*));
-
+macro_rules! call_c_families {
+    ($($n:literal: $c:ident $c_diag:literal ($($T:ident $a:ident),*);)*) => {$(
         #[doc = concat!("Call of an `unsafe extern \"C\" fn` with ", stringify!($n), " arguments.")]
         /// `ops`: `[args: (A0, …), dest: R, fn pointer]`.
         ///
@@ -71,48 +68,27 @@ macro_rules! call_ptr_families {
             0
         }
     )*};
-    (@ptr $ptr:ident $ptr_diag:literal ($($T:ident $a:ident),*)) => {
-        #[doc = concat!("Call through an `unsafe fn` pointer (Rust ABI) with ", stringify!($ptr), "'s arity.")]
-        /// `ops`: `[args: (A0, …), dest: R, fn pointer]`. For a `#[track_caller]` callee, the
-        /// last argument is its `&'static Location`.
-        ///
-        /// # Safety
-        /// The operands must hold an initialized argument block, room for an `R`, and a fn
-        /// pointer that is safe to call with these arguments.
-        #[rustc_diagnostic_item = $ptr_diag]
-        pub unsafe fn $ptr<$($T,)* R>(fp: *mut u8, ops: *const u32) -> u32 {
-            unsafe {
-                let f = slot::<unsafe fn($($T),*) -> R>(fp, ops, 2).read();
-                let ($($a,)*) = slot::<($($T,)*)>(fp, ops, 0).read();
-                slot::<R>(fp, ops, 1).write(f($($a),*));
-            }
-            0
-        }
-    };
 }
 
-call_ptr_families! {
-    0: call_ptr0 "ryo_island_call_ptr0", call_c0 "ryo_island_call_c0" ();
-    1: call_ptr1 "ryo_island_call_ptr1", call_c1 "ryo_island_call_c1" (A0 a0);
-    2: call_ptr2 "ryo_island_call_ptr2", call_c2 "ryo_island_call_c2" (A0 a0, A1 a1);
-    3: call_ptr3 "ryo_island_call_ptr3", call_c3 "ryo_island_call_c3" (A0 a0, A1 a1, A2 a2);
-    4: call_ptr4 "ryo_island_call_ptr4", call_c4 "ryo_island_call_c4" (A0 a0, A1 a1, A2 a2, A3 a3);
-    5: call_ptr5 "ryo_island_call_ptr5", call_c5 "ryo_island_call_c5" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4);
-    6: call_ptr6 "ryo_island_call_ptr6", call_c6 "ryo_island_call_c6" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5);
-    7: call_ptr7 "ryo_island_call_ptr7", call_c7 "ryo_island_call_c7" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6);
-    8: call_ptr8 "ryo_island_call_ptr8", call_c8 "ryo_island_call_c8" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7);
-    9: call_ptr9 "ryo_island_call_ptr9", call_c9 "ryo_island_call_c9" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8);
-    10: call_ptr10 "ryo_island_call_ptr10", call_c10 "ryo_island_call_c10" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9);
-    11: call_ptr11 "ryo_island_call_ptr11", call_c11 "ryo_island_call_c11" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10);
-    12: call_ptr12 "ryo_island_call_ptr12", call_c12 "ryo_island_call_c12" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11);
-    13: call_ptr13 "ryo_island_call_ptr13", call_c13 "ryo_island_call_c13" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11, A12 a12);
-    14: call_ptr14 "ryo_island_call_ptr14", call_c14 "ryo_island_call_c14" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11, A12 a12, A13 a13);
-    15: call_ptr15 "ryo_island_call_ptr15", call_c15 "ryo_island_call_c15" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11, A12 a12, A13 a13, A14 a14);
-    16: call_ptr16 "ryo_island_call_ptr16", call_c16 "ryo_island_call_c16" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11, A12 a12, A13 a13, A14 a14, A15 a15);
+call_c_families! {
+    0: call_c0 "ryo_island_call_c0" ();
+    1: call_c1 "ryo_island_call_c1" (A0 a0);
+    2: call_c2 "ryo_island_call_c2" (A0 a0, A1 a1);
+    3: call_c3 "ryo_island_call_c3" (A0 a0, A1 a1, A2 a2);
+    4: call_c4 "ryo_island_call_c4" (A0 a0, A1 a1, A2 a2, A3 a3);
+    5: call_c5 "ryo_island_call_c5" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4);
+    6: call_c6 "ryo_island_call_c6" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5);
+    7: call_c7 "ryo_island_call_c7" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6);
+    8: call_c8 "ryo_island_call_c8" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7);
+    9: call_c9 "ryo_island_call_c9" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8);
+    10: call_c10 "ryo_island_call_c10" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9);
+    11: call_c11 "ryo_island_call_c11" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10);
+    12: call_c12 "ryo_island_call_c12" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11);
+    13: call_c13 "ryo_island_call_c13" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11, A12 a12);
+    14: call_c14 "ryo_island_call_c14" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11, A12 a12, A13 a13);
+    15: call_c15 "ryo_island_call_c15" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11, A12 a12, A13 a13, A14 a14);
+    16: call_c16 "ryo_island_call_c16" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11, A12 a12, A13 a13, A14 a14, A15 a15);
 }
-
-// 16 arguments plus the trailing `&'static Location` of a `#[track_caller]` callee.
-call_ptr_families!(@ptr call_ptr17 "ryo_island_call_ptr17" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11, A12 a12, A13 a13, A14 a14, A15 a15, A16 a16));
 
 /// Drop glue. `ops`: `[ptr: *mut T]`, a wide pointer if `T` is unsized.
 ///

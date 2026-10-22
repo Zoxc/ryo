@@ -864,12 +864,12 @@ define_ops! {
     Abort = "abort" trap {  },
 
     // ---- calls, returns, islands ----
-    Call = "call" call { d: Slot, f: Func, k: U32 },
-    CallExt = "call.ext" call_ext { d: Slot, sym: Sym, site: Site, isl: Sym, f: Slot, k: U32 },
-    CallExtInd = "call.ext.ind" call_ext { d: Slot, sym: Sym, site: Site, isl: Sym, f: Slot, k: U32 },
-    CallInd = "call.ind" call_ind { d: Slot, p: Slot, site: Site, isl: Sym, k: U32 },
-    TailCall = "tail_call" tail_call { f: Func, n: U32, q: Slot, k: U32 },
-    TailCallInd = "tail_call.ind" tail_call_ind { p: Slot, site: Site, isl: Sym, n: U32, s: Slot, q: Slot, k: U32 },
+    Call = "call" call { d: Slot, f: Func, k: U32, a: Words },
+    CallSym = "call.sym" call { d: Slot, sym: Sym, k: U32, a: Words },
+    CallSymInd = "call.sym.ind" call { d: Slot, sym: Sym, k: U32, a: Words },
+    CallPtr = "call.ptr" call { d: Slot, p: Slot, k: U32, a: Words },
+    TailCall = "tail_call" tail_call { f: Func, a: Words },
+    TailCallPtr = "tail_call.ptr" tail_call { p: Slot, a: Words },
     Ret = "ret" ret { s: Slot, k: U32 },
     Arg = "arg" arg { d: Slot, r: U32 },
     Island = "island" island { isl: Sym, ops: Words },

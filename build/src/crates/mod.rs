@@ -315,9 +315,7 @@ const CLEARED_ENV: &[&str] = &[
     "CARGO_BUILD_TARGET",
     "CARGO_BUILD_RUSTC_WRAPPER",
     "RYO_STATS",
-    "RYO_VM_TRACE",
     "RYO_NO_VM",
-    "RYO_VM_STATS",
     "RUST_TEST_THREADS",
     "RUST_BACKTRACE",
 ];

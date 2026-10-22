@@ -4,7 +4,7 @@
 use core::ffi::{c_char, c_int};
 
 unsafe extern "C" {
-    /// Defined by the binary crate's image: the address of the entry fn's portal.
+    /// Defined by the binary crate's image: the address of the entry fn.
     static __ryo_main: *const ();
 }
 
@@ -15,7 +15,7 @@ pub extern "C" fn c_main<S, T, const SIGPIPE: u8>(argc: c_int, argv: *const *con
 where
     S: FnOnce(fn() -> T, isize, *const *const u8, u8) -> isize,
 {
-    // SAFETY: `__ryo_main` holds the address of a portal with the signature `fn() -> T`.
+    // SAFETY: `__ryo_main` holds the address of a function with the signature `fn() -> T`.
     let main: fn() -> T = unsafe { core::mem::transmute::<*const (), fn() -> T>(__ryo_main) };
     start_main::<S, T, SIGPIPE>(main, argc, argv)
 }

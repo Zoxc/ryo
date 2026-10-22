@@ -45,18 +45,6 @@ pub mod templates {
         })
     }
 
-    /// `call_ptrN<A0, …, R>` (Rust ABI through a fn pointer), N ≤ 17.
-    pub fn call_ptr(n: usize) -> Option<&'static str> {
-        const NAMES: [&str; 18] = [
-            "ryo_island_call_ptr0", "ryo_island_call_ptr1", "ryo_island_call_ptr2", "ryo_island_call_ptr3",
-            "ryo_island_call_ptr4", "ryo_island_call_ptr5", "ryo_island_call_ptr6", "ryo_island_call_ptr7",
-            "ryo_island_call_ptr8", "ryo_island_call_ptr9", "ryo_island_call_ptr10", "ryo_island_call_ptr11",
-            "ryo_island_call_ptr12", "ryo_island_call_ptr13", "ryo_island_call_ptr14", "ryo_island_call_ptr15",
-            "ryo_island_call_ptr16", "ryo_island_call_ptr17",
-        ];
-        NAMES.get(n).copied()
-    }
-
     /// `call_cN<A0, …, R>` (`extern "C"` through a fn pointer), N ≤ 16.
     pub fn call_c(n: usize) -> Option<&'static str> {
         const NAMES: [&str; 17] = [

@@ -17,9 +17,6 @@ pub(crate) struct Program {
     pub(crate) flags: &'static [&'static str],
     /// Functions the ryo build must compile to bytecode (as `RYO_STATS` prints them).
     vm: &'static [&'static str],
-    /// Functions that must be entered through `vm::enter` (portals), checked by running the
-    /// ryo build again with `RYO_VM_TRACE` and mapping the reported IDs to the `RYO_STATS` names.
-    entered: &'static [&'static str],
     /// A C `main` (relative to `tests/`), compiled with `cc` (`cl` on MSVC) and linked against
     /// the last crate (a staticlib or cdylib). Skipped without that compiler.
     c_main: Option<&'static str>,
@@ -68,7 +65,7 @@ impl NativeLib {
 
 /// Defaults for [`Program`] fields.
 const PROGRAM: Program =
-    Program { name: "", crates: &[], flags: &[], vm: &[], entered: &[], c_main: None, native_lib: None };
+    Program { name: "", crates: &[], flags: &[], vm: &[], c_main: None, native_lib: None };
 
 pub(crate) struct Crate {
     /// The crate name, passed as `--crate-name`.
@@ -112,14 +109,8 @@ macro_rules! single {
     ($name:literal) => {
         Program { name: $name, crates: &[krate($name, concat!($name, ".rs"), CrateKind::Bin)], ..PROGRAM }
     };
-    ($name:literal, vm: $vm:expr, entered: $entered:expr) => {
-        Program {
-            name: $name,
-            crates: &[krate($name, concat!($name, ".rs"), CrateKind::Bin)],
-            vm: $vm,
-            entered: $entered,
-            ..PROGRAM
-        }
+    ($name:literal, vm: $vm:expr $(,)?) => {
+        Program { name: $name, crates: &[krate($name, concat!($name, ".rs"), CrateKind::Bin)], vm: $vm, ..PROGRAM }
     };
 }
 
@@ -151,44 +142,34 @@ pub(crate) const CORPUS: &[Program] = &[
         flags: &["-Cprefer-dynamic"],
         ..PROGRAM
     },
-    // VM functions behind portals, a VM `main`, and across crates. Local items are printed
-    // without their crate name. Since milestone 4, `main` and the functions it calls are
-    // bytecode too, so VM → VM calls (direct, through fn pointers and across images) don't go
-    // through `vm::enter`, and neither do virtual calls from bytecode (`call.ind` through the
-    // vtable); `entered` lists what native code still enters: `lang_start` from the `c_main`
-    // entry wrapper, and methods called through vtables from native code (`fmt`).
+    // VM functions called from native code, a VM `main`, and across crates. Local items are
+    // printed without their crate name.
     single!(
         "vm_answer",
-        vm: &["main", "answer", "pick", "twice", "wide", "always"],
-        entered: &["std::rt::lang_start::<()>"]
+        vm: &["main", "answer", "pick", "twice", "wide", "always"]
     ),
     single!(
         "vm_main",
-        vm: &["main", "answer"],
-        entered: &["std::rt::lang_start::<std::result::Result<(), ()>>"]
+        vm: &["main", "answer"]
     ),
     single!(
         "vm_refs",
-        vm: &["main", "from_static", "<S as Get>::get", "from_const"],
-        entered: &["std::rt::lang_start::<()>"]
+        vm: &["main", "from_static", "<S as Get>::get", "from_const"]
     ),
     // Milestone 4 (design/lowering.md): each feature's functions must be bytecode.
     single!(
         "vm_ints",
-        vm: &["main", "ops32", "ops_u8", "wide", "casts", "float_casts", "floats", "checked", "chars", "bits", "neg", "cmp"],
-        entered: &["std::rt::lang_start::<()>"]
+        vm: &["main", "ops32", "ops_u8", "wide", "casts", "float_casts", "floats", "checked", "chars", "bits", "neg", "cmp"]
     ),
     single!(
         "vm_control",
-        vm: &["main", "collatz", "dense", "sparse", "area", "discr", "niches", "make", "labeled", "switch128", "mid", "mid_index"],
-        entered: &["std::rt::lang_start::<()>"]
+        vm: &["main", "collatz", "dense", "sparse", "area", "discr", "niches", "make", "labeled", "switch128", "mid", "mid_index"]
     ),
     single!(
         "vm_calls",
         vm: &["main", "add", "swap", "bump", "sum", "fib", "talk", "<Dog as Speak>::speak", "constants", "apply", "double", "closures", "may_panic", "<Noisy as std::ops::Drop>::drop"],
         // `speak` is a `call.ind` through the vtable; `P`'s `Debug` impl is called through a
         // vtable by native `fmt` code.
-        entered: &["std::rt::lang_start::<()>", "<P as std::fmt::Debug>::fmt"]
     ),
     // Milestone 5 (design/lowering.md#calls).
     single!(
@@ -197,13 +178,11 @@ pub(crate) const CORPUS: &[Program] = &[
             "main", "shapes", "upcast", "closures", "shims", "apply", "apply_mut", "apply_once",
             "<Circle as Shape>::mixed", "<Rect as Shape>::boxed", "<Circle as Shape>::pinned",
             "<dyn Step as Step>::step - shim(reify)", "call_once::<fn(u32) -> u32>"
-        ],
-        entered: &["std::rt::lang_start::<()>"]
+        ]
     ),
     single!(
         "vm_intrinsics",
-        vm: &["main", "atomics", "unwinding", "misc", "dst", "direct", "contention"],
-        entered: &["std::rt::lang_start::<()>"]
+        vm: &["main", "atomics", "unwinding", "misc", "dst", "direct", "contention"]
     ),
     // The ABI sweep (design/build.md#test-and-bench).
     single!(
@@ -213,22 +192,20 @@ pub(crate) const CORPUS: &[Program] = &[
             "unit::vm", "unit::vm_to_native", "unit::vm_to_vm", "unit::vm_ptrs", "ints::vm", "ints::vm_to_native", "ints::vm_ptrs",
             "narrow::vm", "narrow::vm_to_native", "wide::vm", "wide::vm_to_native", "wide_late::vm", "wide_late::vm_to_native",
             "floats::vm", "floats::vm_to_native", "float_pair::vm", "mixed_pair::vm", "xmm_gpr::vm", "many_f64::vm",
-            "many_f64::vm_to_native", "many_u64::vm", "many_u64::vm_to_native", "interleaved::vm", "interleaved::vm_to_native",
+            "many_f64::vm_to_native", "many_u64::vm", "many_u64::vm_to_native", "interleaved::vm", "interleaved::vm_to_native", "interleaved::vm_ptrs",
             "pair_split::vm", "pair_split::vm_to_native", "slices::vm", "bytes3::vm", "bytes3::vm_to_native", "bytes5::vm",
             "bytes6::vm", "bytes7::vm", "bytes7::vm_ptrs", "three_u32::vm", "three_u32::vm_to_native", "quad_f32::vm",
             "big::vm", "big::vm_to_native", "big::vm_ptrs", "big_late::vm", "big_late::vm_to_native", "opt_wide::vm",
             "niches::vm", "enums::vm", "enums::vm_to_native", "zsts::vm", "f16s::vm", "f16s::vm_to_native", "f128s::vm",
             "f128s::vm_to_native",
-        ],
-        entered: &[]
+        ]
     ),
     single!(
         "vm_tail",
-        vm: &["main", "count", "even", "odd", "big", "big2", "via_ptr", "to_upstream", "to_native", "virt", "panicky"],
-        entered: &["std::rt::lang_start::<()>"]
+        vm: &["main", "count", "even", "odd", "big", "big2", "via_ptr", "to_upstream", "to_native", "virt", "panicky"]
     ),
     // Milestone 5: `#[track_caller]` and unwinding. The panic hook is a VM closure that the
-    // native panic machinery enters through its portal.
+    // native panic machinery calls.
     single!(
         "vm_unwind",
         vm: &[
@@ -237,22 +214,19 @@ pub(crate) const CORPUS: &[Program] = &[
             "sort_panics", "sort_panics::{closure#0}", "call_ptr", "tc_panic", "tc_panic - shim(reify)", "rethrow",
             "compares", "tc_nine", "<S as Loc>::at", "dyn_locs", "dyn_locs::{closure#0}"
         ],
-        // `tc_nine` is entered through its `portal_tc9` from the native `native_caller`.
-        entered: &["std::rt::lang_start::<()>", "main::{closure#0}", "tc_nine"]
+        // `tc_nine` is called from the native `native_caller`.
     ),
     // The terminate stubs: both programs abort (the exit status is compared too).
-    single!("vm_abort_cleanup", vm: &["main", "f", "<P as std::ops::Drop>::drop"], entered: &["std::rt::lang_start::<()>"]),
-    single!("vm_abort_nounwind", vm: &["main", "no_unwind"], entered: &["std::rt::lang_start::<()>"]),
+    single!("vm_abort_cleanup", vm: &["main", "f", "<P as std::ops::Drop>::drop"]),
+    single!("vm_abort_nounwind", vm: &["main", "no_unwind"]),
     single!(
         "vm_aggregates",
-        vm: &["main", "tail", "nested", "rcs", "coerce_ref", "coerce_pin", "coerce_tail", "repeat", "wide_cmp", "arith128", "ovf128", "half", "scopes", "half_size", "borrow_loop", "unwind_live", "relive", "packed", "min128"],
-        entered: &["std::rt::lang_start::<()>"]
+        vm: &["main", "tail", "nested", "rcs", "coerce_ref", "coerce_pin", "coerce_tail", "repeat", "wide_cmp", "arith128", "ovf128", "half", "scopes", "half_size", "borrow_loop", "unwind_live", "relive", "packed", "min128"]
     ),
     Program {
         name: "vm_ffi",
         crates: &[krate("main", "vm_ffi/main.rs", CrateKind::Bin)],
         vm: &["main", "read", "add"],
-        entered: &["std::rt::lang_start::<()>"],
         native_lib: Some(NativeLib { name: "ryo_clib", src: "vm_ffi/clib.rs" }),
         ..PROGRAM
     },
@@ -264,7 +238,6 @@ pub(crate) const CORPUS: &[Program] = &[
             krate("main", "vm_cross/main.rs", CrateKind::Bin),
         ],
         vm: &["answer", "calls_answer", "generic::<u16>", "vml::always", "vml::generic::<u8>", "vml::inl", "own"],
-        entered: &["std::rt::lang_start::<()>"],
         ..PROGRAM
     },
     Program {
@@ -275,15 +248,13 @@ pub(crate) const CORPUS: &[Program] = &[
         ],
         flags: &["-Cprefer-dynamic"],
         vm: &["answer", "vmd::generic::<i8>", "local"],
-        entered: &["std::rt::lang_start::<()>"],
         ..PROGRAM
     },
     // Constants and statics (design/lowering.md#constants): type ids, thread locals through
     // the `ThreadLocal` shim, constants pointing at statics, functions and vtables.
     single!(
         "vm_statics",
-        vm: &["main", "bump", "nested", "table", "atomics", "type_ids", "type_id_bits", "downcast", "tls", "tls_key"],
-        entered: &["std::rt::lang_start::<()>"]
+        vm: &["main", "bump", "nested", "table", "atomics", "type_ids", "type_id_bits", "downcast", "tls", "tls_key"]
     ),
     Program {
         name: "vm_statics_cross",
@@ -292,7 +263,6 @@ pub(crate) const CORPUS: &[Program] = &[
             krate("main", "vm_statics_cross/main.rs", CrateKind::Bin),
         ],
         vm: &["main", "statics", "fns", "dyns", "tls", "local", "f", "bump_tl", "<T as Shape>::area"],
-        entered: &["std::rt::lang_start::<()>"],
         ..PROGRAM
     },
     // An rlib linked into a Rust dylib: its image's symbols (foreign, other crates') must not
@@ -306,7 +276,6 @@ pub(crate) const CORPUS: &[Program] = &[
         ],
         flags: &["-Cprefer-dynamic"],
         vm: &["main", "bump", "f", "g"],
-        entered: &["std::rt::lang_start::<()>"],
         ..PROGRAM
     },
     // `-Clto` (the LTO variants) downstream of a crate built as rlib and dylib.
@@ -317,29 +286,25 @@ pub(crate) const CORPUS: &[Program] = &[
             krate("main", "vm_lto_dep/main.rs", CrateKind::Bin),
         ],
         vm: &["main", "f", "h"],
-        entered: &["std::rt::lang_start::<()>"],
         ..PROGRAM
     },
     // Found building std with ryo (`--sysroot ryo`): a constructor entering the VM before
     // `main`, unsized arguments, `extern_weak` statics, LLVM intrinsics of local copies.
     single!(
         "vm_sysroot",
-        vm: &["main", "ctor_value", "xgetbv_x87"],
-        entered: &["std::rt::lang_start::<()>", "ctor_value"]
+        vm: &["main", "ctor_value", "xgetbv_x87"]
     ),
     single!(
         "vm_fn_items",
         vm: &[
             "main", "upstream_ctors", "local_ctors", "results", "native_item", "std::option::Option::<Local>::Some",
             "<fn(u32) -> u32 {with_asm} as std::ops::FnMut<(u32,)>>::call_mut - shim(fn(u32) -> u32 {with_asm})"
-        ],
-        entered: &["std::rt::lang_start::<()>"]
+        ]
     ),
     Program {
         name: "vm_staticlib",
         crates: &[krate("vmc", "vm_c/lib.rs", CrateKind::Staticlib)],
         vm: &["answer"],
-        entered: &["answer"],
         c_main: Some("vm_c/main.c"),
         ..PROGRAM
     },
@@ -347,7 +312,6 @@ pub(crate) const CORPUS: &[Program] = &[
         name: "vm_cdylib",
         crates: &[krate("vmc", "vm_c/lib.rs", CrateKind::Cdylib)],
         vm: &["answer"],
-        entered: &["answer"],
         c_main: Some("vm_c/main.c"),
         ..PROGRAM
     },
@@ -373,18 +337,16 @@ struct Variant {
     /// Extra flags for the last crate only, as cargo passes `-Clto`. Programs with a Rust
     /// dylib are skipped when this is set: LTO doesn't support them.
     final_flags: &'static [&'static str],
-    /// Only for programs that list VM functions. Their `vm`/`entered` lists aren't checked
-    /// (MIR inlining at `-O` removes some functions), only that tracing changes nothing else.
+    /// Only for programs that list VM functions. Their `vm` lists aren't checked (MIR inlining
+    /// at `-O` removes some functions).
     vm_only: bool,
     /// Built against the ryo-compiled std (`--sysroot ryo`, after `y build --sysroot ryo`).
-    /// Skipped without it. The `entered` lists aren't checked: they name what the LLVM std
-    /// enters through portals, and VM std code calls VM functions directly.
+    /// Skipped without it.
     ryo_std: bool,
     /// `-Cpanic=abort`, compared with plain rustc's output with the same flag ([`REFERENCE_ABORT`]).
     /// Programs with a Rust dylib are skipped: std's dylib unwinds.
     abort: bool,
-    /// With `RYO_NO_VM`: every function stays native, so the `vm`/`entered` lists aren't
-    /// checked.
+    /// With `RYO_NO_VM`: every function stays native, so the `vm` lists aren't checked.
     no_vm: bool,
 }
 
@@ -653,39 +615,12 @@ impl Ctx {
             exe = Some(self.link_c(&dir, c_main, program.crates.last().unwrap(), &native_libs)?);
         }
         let exe = exe.ok_or_else(|| format!("{}: no binary crate", program.name))?;
-        let result = self.run(&dir, &exe, variant, false)?;
+        let result = self.run(&dir, &exe, variant)?;
         if variant.compiler == Compiler::Ryo && !variant.no_vm && !program.vm.is_empty() {
-            let names: Vec<&str> = vm_fns.iter().map(|(n, _)| n.as_str()).collect();
+            let names: Vec<&str> = vm_fns.iter().map(String::as_str).collect();
             let missing: Vec<_> = program.vm.iter().filter(|f| !names.contains(f)).collect();
             if !variant.vm_only && !missing.is_empty() {
                 return Err(format!("not compiled to bytecode: {missing:?}; VM functions: {names:?}"));
-            }
-            // The same run with `RYO_VM_TRACE`: it must enter the expected functions, and
-            // otherwise behave the same.
-            let traced = self.run(&dir, &exe, variant, true)?;
-            // Trace lines may land in the middle of a partial line of the program's own stderr.
-            let (entries, rest) = split_trace(&traced.stderr);
-            let entered: Vec<&str> = entries
-                .iter()
-                .map(|id| vm_fns.iter().find(|(_, i)| i == id).map_or("?", |(n, _)| n.as_str()))
-                .collect();
-            let not_entered: Vec<_> = program.entered.iter().filter(|f| !entered.contains(f)).collect();
-            if !variant.vm_only && !variant.ryo_std && !not_entered.is_empty() {
-                return Err(format!("not entered through vm::enter: {not_entered:?}; entered: {entered:?}"));
-            }
-            // `RYO_VM_STATS` (set with the trace) reports one enter per trace line at exit,
-            // unless the program aborted (no exit handlers run) or never entered the VM (the
-            // switch is read on first use).
-            let (stats, rest) = split_stats(&rest);
-            let want = format!("{} enters, ", entries.len());
-            let silent = stats.is_none() && (traced.code.is_none() || entries.is_empty());
-            if !silent && !stats.as_deref().is_some_and(|s| s.starts_with(&want)) {
-                return Err(format!("RYO_VM_STATS reported {stats:?}, but {} entries were traced", entries.len()));
-            }
-            // Normalized only now: a trace line can split the line naming the thread.
-            let untraced = RunResult { stderr: normalize_thread_ids(&rest), ..traced };
-            if untraced != result {
-                return Err("the run with RYO_VM_TRACE behaved differently".to_owned());
             }
         }
         Ok(result)
@@ -728,14 +663,9 @@ impl Ctx {
         Ok(exe)
     }
 
-    /// Runs a built program in `dir`, with `RYO_VM_TRACE` if `trace`.
-    fn run(&self, dir: &Path, exe: &Path, variant: &Variant, trace: bool) -> Result<RunResult, String> {
+    /// Runs a built program in `dir`.
+    fn run(&self, dir: &Path, exe: &Path, variant: &Variant) -> Result<RunResult, String> {
         let mut run = Command::new(exe);
-        if trace {
-            run.env("RYO_VM_TRACE", "1").env("RYO_VM_STATS", "1");
-        } else {
-            run.env_remove("RYO_VM_TRACE").env_remove("RYO_VM_STATS");
-        }
         run.env_remove("RUST_BACKTRACE").env_remove("RUST_LIB_BACKTRACE").current_dir(dir);
         // Dylibs are found next to the binary, and std's in the sysroot that built it.
         let lib_path_var = if cfg!(windows) { "PATH" } else { "LD_LIBRARY_PATH" };
@@ -744,50 +674,13 @@ impl Ctx {
         run.env(lib_path_var, std::env::join_paths(paths).map_err(|e| e.to_string())?);
         let res = run.output().map_err(|e| format!("failed to run {}: {e}", exe.display()))?;
         // Panic messages name the source path, which is the same for every variant. Thread ids
-        // differ between runs; a traced run's stderr is normalized after the trace is removed.
+        // differ between runs.
         Ok(RunResult {
             code: res.status.code(),
             stdout: String::from_utf8_lossy(&res.stdout).into_owned(),
-            stderr: if trace {
-                String::from_utf8_lossy(&res.stderr).into_owned()
-            } else {
-                normalize_thread_ids(&String::from_utf8_lossy(&res.stderr))
-            },
+            stderr: normalize_thread_ids(&String::from_utf8_lossy(&res.stderr)),
         })
     }
-}
-
-/// Takes the `RYO_VM_STATS` report (`ryo-vm: <n> enters, <n> native calls\n`,
-/// printed at exit) out of stderr: the report without its prefix, and the remaining text.
-fn split_stats(s: &str) -> (Option<String>, String) {
-    const P: &str = "ryo-vm: ";
-    let mut from = 0;
-    while let Some(i) = s[from..].find(P).map(|i| i + from) {
-        let line = &s[i + P.len()..];
-        let end = line.find('\n').unwrap_or(line.len());
-        if line[..end].ends_with(" native calls") {
-            let rest = format!("{}{}", &s[..i], line.get(end + 1..).unwrap_or(""));
-            return (Some(line[..end].to_owned()), rest);
-        }
-        from = i + P.len();
-    }
-    (None, s.to_owned())
-}
-
-/// Splits `RYO_VM_TRACE` output (`ryo-vm: enter <id>\n`, wherever it appears) from the rest
-/// of stderr: the entered ids, and the remaining text.
-fn split_trace(s: &str) -> (Vec<&str>, String) {
-    const P: &str = "ryo-vm: enter ";
-    let (mut ids, mut rest, mut s) = (Vec::new(), String::new(), s);
-    while let Some(i) = s.find(P) {
-        rest.push_str(&s[..i]);
-        let line = &s[i + P.len()..];
-        let end = line.find('\n').unwrap_or(line.len());
-        ids.push(&line[..end]);
-        s = line.get(end + 1..).unwrap_or("");
-    }
-    rest.push_str(s);
-    (ids, rest)
 }
 
 /// Panic messages say `thread 'main' (<os thread id>) panicked`; the id differs between runs.
@@ -827,11 +720,8 @@ mod tests {
 
     #[test]
     fn parses_vm_functions() {
-        let s = "ryo backend: init\nryo: vm fn answer (portal) id=0000abcd:00000001\n\
-                 ryo: vm fn a::b::<u8> id=0000abcd:00000000\nryo: 2 VM functions\n";
-        let want = [("answer", "0000abcd:00000001"), ("a::b::<u8>", "0000abcd:00000000")];
-        let want: Vec<_> = want.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect();
-        assert_eq!(super::vm_functions(s), want);
+        let s = "ryo backend: init\nryo: vm fn answer (global)\nryo: vm fn a::b::<u8>\nryo: 2 VM functions\n";
+        assert_eq!(super::vm_functions(s), ["answer", "a::b::<u8>"]);
     }
 
     #[test]
@@ -840,14 +730,6 @@ mod tests {
         assert_eq!(roots, ["6ryo_rt"]);
         let roots = super::crate_roots("_RINvNtCsabc_4core3ptr13drop_in_placeNtCsdef_3std6ThreadE");
         assert_eq!(roots, ["4core", "3std"]);
-    }
-
-    #[test]
-    fn splits_stats() {
-        let (st, rest) = super::split_stats("a\nryo-vm: 3 enters, 0 native calls\nb");
-        assert_eq!(st.as_deref(), Some("3 enters, 0 native calls"));
-        assert_eq!(rest, "a\nb");
-        assert_eq!(super::split_stats("x").0, None);
     }
 
     #[test]
@@ -893,15 +775,15 @@ fn cargo_smoke(root: &Path, out: &Path) -> Result<(), String> {
 }
 
 /// `RUST_BACKTRACE=1` through VM frames: a panic two VM calls deep, caught by
-/// `catch_unwind`, prints a backtrace naming the VM functions (`<symbol>.vm`), the entry into
-/// the VM and the native frames around it, and the cleanup and the catch still run.
+/// `catch_unwind`, prints a backtrace naming the VM functions (by their symbols) and the
+/// native frames around them, and the cleanup and the catch still run.
 fn backtrace(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     let exe = out.join(exe_name("vm_backtrace"));
     crate::utils::run(cmd(rustc_ryo).arg("--edition=2024").arg(src).arg("-o").arg(&exe))?;
     let res = Command::new(&exe).env("RUST_BACKTRACE", "1").output().map_err(|e| e.to_string())?;
     let stdout = String::from_utf8_lossy(&res.stdout);
     let stderr = String::from_utf8_lossy(&res.stderr);
-    let want = ["vm_backtrace::inner.vm", "vm_backtrace::outer.vm", "ryo_asm_enter", "ryo_rt::vm::enter", "__rust_try", "vm_backtrace::main"];
+    let want = ["vm_backtrace::inner", "vm_backtrace::outer", "__rust_try", "vm_backtrace::main"];
     let missing: Vec<_> = want.iter().filter(|w| !stderr.contains(*w)).collect();
     if !res.status.success() || stdout != "guard dropped\ncaught: true\n" || !missing.is_empty() {
         return Err(format!("{}, missing frames {missing:?}\nstdout:\n{stdout}stderr:\n{stderr}", res.status));
@@ -916,14 +798,13 @@ const BACKEND_MARKER: &str = "ryo backend: init";
 /// `RYO_BACKEND_MARKER` is set: the override, not cg_llvm's default, partitioned the crate.
 const PARTITION_MARKER: &str = "ryo backend: partition";
 
-/// The functions a `RYO_STATS=1` build reports as compiled to bytecode, with their IDs as
-/// `RYO_VM_TRACE` prints them: `ryo: vm fn <path>[ (portal)] id=<hash>:<index>`.
-fn vm_functions(stderr: &str) -> Vec<(String, String)> {
+/// The functions a `RYO_STATS=1` build reports as compiled to bytecode:
+/// `ryo: vm fn <path>[ (global)]`.
+fn vm_functions(stderr: &str) -> Vec<String> {
     stderr
         .lines()
         .filter_map(|l| l.strip_prefix("ryo: vm fn "))
-        .filter_map(|l| l.rsplit_once(" id="))
-        .map(|(f, id)| (f.strip_suffix(" (portal)").unwrap_or(f).to_owned(), id.to_owned()))
+        .map(|f| f.strip_suffix(" (global)").unwrap_or(f).to_owned())
         .collect()
 }
 

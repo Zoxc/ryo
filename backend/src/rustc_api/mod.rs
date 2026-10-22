@@ -196,7 +196,7 @@ impl CodegenBackend for RyoBackend {
         let image_path = tcx.output_filenames(()).temp_path_for_cgu(OutputType::Object, &image_name);
         let rt_symbol = |name: &str| partition::rt_symbol(tcx, name);
         let write_t = tcx.prof.generic_activity("ryo_write_image");
-        let bytes = objfile::write_image(&*fmt, &results.image, scid, results.main_portal.as_deref(), &rt_symbol)
+        let bytes = objfile::write_image(&*fmt, &results.image, scid, results.main_symbol.as_deref(), &rt_symbol)
             .unwrap_or_else(|e| tcx.dcx().fatal(e));
         if let Err(e) = std::fs::write(&image_path, bytes) {
             tcx.dcx().fatal(format!("writing {}: {e}", image_path.display()));

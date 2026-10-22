@@ -53,7 +53,11 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         match kind {
             CastKind::IntToInt | CastKind::FloatToInt | CastKind::IntToFloat | CastKind::FloatToFloat => {
                 let half_or_quad = |t: Ty<'_>| matches!(t.kind(), ty::Float(FloatTy::F16 | FloatTy::F128));
-                if half_or_quad(src.ty) || half_or_quad(to) {
+                // On PE, the `i128` saturating float casts' handlers keep the value in `xmm6`
+                // across a call, which Win64 callers expect preserved (design/platforms.md).
+                let wide_int = |t: Ty<'_>| matches!(t.kind(), ty::Int(ty::IntTy::I128) | ty::Uint(ty::UintTy::U128));
+                let pe_f2i128 = self.cx.mode.pe && matches!(src.ty.kind(), ty::Float(_)) && wide_int(to);
+                if half_or_quad(src.ty) || half_or_quad(to) || pe_f2i128 {
                     // No VM instructions for `f16`/`f128`: the `as_cast` island.
                     let (s, _) = self.operand_slot(op)?;
                     return self.with_place_slot(dst, |fx, d| {

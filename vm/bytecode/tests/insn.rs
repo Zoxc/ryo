@@ -100,19 +100,18 @@ fn mnemonics_unique() {
 fn variable_length_opcodes() {
     let var: Vec<_> = ALL_OPCODES.iter().filter(|o| o.fixed_len().is_none()).map(|o| o.mnemonic()).collect();
     for m in &var {
-        assert!(m.starts_with("switch.") || *m == "island", "{m}");
+        assert!(m.starts_with("switch.") || m.starts_with("call") || m.starts_with("tail_call") || *m == "island", "{m}");
     }
-    assert_eq!(var.len(), 11);
+    assert_eq!(var.len(), 17);
 }
 
 /// The VM calls name their destination first.
 #[test]
 fn call_destination_first() {
-    for op in [Opcode::Call, Opcode::CallExt, Opcode::CallExtInd, Opcode::CallInd] {
+    for op in [Opcode::Call, Opcode::CallSym, Opcode::CallSymInd, Opcode::CallPtr] {
         let i = op.info();
         assert_eq!(i.operands[0].name, "d");
         assert_eq!(i.operands[0].kind, OperandKind::Slot);
-        assert!(i.fixed_len.is_some());
     }
 }
 
@@ -157,6 +156,7 @@ fn typed_encoding_and_display() {
     let table = list_words([Target(5), Target(-2)]);
     let cases = list_words([Case64 { value: 1 << 40, target: Target(7) }]);
     let island_ops = [16u32, -24i32 as u32];
+    let call_args = [-64i32 as u32, 8u32];
     let insns = [
         Insn::AddImmW64 { d: Slot(-16), a: Slot(24), imm: u64::MAX },
         Insn::LoadW32 { d: Slot(-8), m: Mem { p: Slot(-32), k: -4 } },
@@ -164,7 +164,7 @@ fn typed_encoding_and_display() {
         Insn::SwitchDenseW8 { s: Slot(-1), base: 3, default: Target(9), table: List::from_words(&table) },
         Insn::SwitchSparseW64 { s: Slot(-8), default: Target(9), cases: List::from_words(&cases) },
         Insn::Island { isl: Sym(2), ops: List::from_words(&island_ops) },
-        Insn::CallExt { d: Slot(-48), sym: Sym(1), site: Site(0), isl: Sym(3), f: Slot(-56), k: 0 },
+        Insn::CallSym { d: Slot(-48), sym: Sym(1), k: 8, a: List::from_words(&call_args) },
         Insn::ImmW128 { d: Slot(-16), imm: u128::MAX - 1 },
         Insn::BrLtSW32 { a: Slot(-4), b: Slot(-8), neg: Neg(true), t: Target(-3) },
         Insn::Br { s: Slot(-1), neg: Neg(false), t: Target(2) },
@@ -178,7 +178,7 @@ fn typed_encoding_and_display() {
         "switch.dense.w8 $-1, 3, @+9, [@+5, @-2]",
         "switch.sparse.w64 $-8, @+9, [1099511627776 => @+7]",
         "island sym2, [16, 4294967272]",
-        "call.ext $-48, sym1, site0, sym3, $-56, 0",
+        "call.sym $-48, sym1, 8, [4294967232, 8]",
         "imm.w128 $-16, 340282366920938463463374607431768211454",
         "br.lt.s.w32! $-4, $-8, @-3",
         "br $-1, @+2",
@@ -247,7 +247,7 @@ fn opcode_table_is_pinned_to_format_version() {
             eat(&format!("{:?}", o.kind));
         }
     }
-    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (15, 0xa92cdf7676910ee4), "opcode table hash {h:#x}");
+    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (16, 0x5ce68c517e36460b), "opcode table hash {h:#x}");
 }
 
 /// Pins the image table layouts to the format version: any change to a table entry's size or
@@ -263,12 +263,12 @@ fn image_layouts_are_pinned_to_format_version() {
             offset_of!(FuncEntry, code_len),
             offset_of!(FuncEntry, arg_size),
             offset_of!(FuncEntry, ret_size),
-            offset_of!(FuncEntry, portal),
+            offset_of!(FuncEntry, ret_kind),
         ),
         (size_of::<CleanupEntry>(), size_of::<FixupEntry>(), size_of::<Span>()),
     );
-    assert_eq!(ryo_bytecode::FORMAT_VERSION, 15);
-    assert_eq!(layout, ((112, 24, 40, 48, 104), (24, 4, 8, 12, 20), (8, 16, 8)), "{layout:?}");
+    assert_eq!(ryo_bytecode::FORMAT_VERSION, 16);
+    assert_eq!(layout, ((112, 24, 40, 48, 104), (20, 4, 8, 12, 16), (8, 16, 8)), "{layout:?}");
 }
 
 /// Decoding arbitrary words never panics, and whatever decodes re-encodes to the same words.
@@ -303,12 +303,12 @@ fn named_operand_offsets() {
     assert_eq!(off::AddW32::b, 3);
     assert_eq!(off::LoadW32::m, 2);
     assert_eq!(off::StoreW64::s, 3);
-    assert_eq!(off::CallExt::isl, 4);
+    assert_eq!(off::CallSym::k, 3);
     assert_eq!(off::SwitchDenseW64::default, 4);
     assert_eq!(off::SwitchDenseW64::table, 5);
     assert_eq!(off::Island::isl, 1);
     assert_eq!(off::Island::ops, 2);
-    for op in [Opcode::Call, Opcode::CallExt, Opcode::CallExtInd, Opcode::CallInd] {
+    for op in [Opcode::Call, Opcode::CallSym, Opcode::CallSymInd, Opcode::CallPtr] {
         assert_eq!(operand_word(op, "d"), 1);
     }
 }

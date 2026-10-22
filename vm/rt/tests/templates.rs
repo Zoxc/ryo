@@ -5,7 +5,7 @@
 #![allow(internal_features)]
 
 use std::cell::Cell;
-use std::panic::{AssertUnwindSafe, Location, catch_unwind};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::Rc;
 
 use ryo_rt::island::*;
@@ -72,79 +72,6 @@ fn call_closure_and_unit() {
     thread_local!(static HIT: Cell<bool> = const { Cell::new(false) });
     unsafe { island_of(&hit)(fr.fp(), ops.as_ptr()) };
     assert!(HIT.get());
-}
-
-unsafe fn sub3(a: i32, b: i32, c: i32) -> i32 {
-    a - b - c
-}
-
-#[test]
-fn call_ptr() {
-    let mut fr = Frame::new();
-    fr.put(ARGS, (10_i32, 3_i32, 2_i32));
-    fr.put(FNP, sub3 as unsafe fn(i32, i32, i32) -> i32);
-    let ops = [ARGS, DEST, FNP];
-    assert_eq!(unsafe { call_ptr3::<i32, i32, i32, i32>(fr.fp(), ops.as_ptr()) }, 0);
-    assert_eq!(fr.get::<i32>(DEST), 5);
-
-    fn seven() -> u16 {
-        7
-    }
-    fr.put(FNP, seven as unsafe fn() -> u16);
-    unsafe { call_ptr0::<u16>(fr.fp(), ops.as_ptr()) };
-    assert_eq!(fr.get::<u16>(DEST), 7);
-}
-
-#[track_caller]
-fn where_am_i(x: u8) -> (u8, u32, &'static str) {
-    let l = Location::caller();
-    (x, l.line(), l.file())
-}
-
-/// The callee's own `#[track_caller]` symbol, with its implicit location argument explicit.
-/// `where_am_i as fn` would be the `ReifyShim`, which has no location argument, so the test
-/// builds that signature by hand: a `#[track_caller]` fn's ABI is its signature plus a
-/// trailing `&'static Location` (`rustc_ty_utils/src/abi.rs`).
-fn explicit_loc(x: u8, l: &'static Location<'static>) -> (u8, u32, &'static str) {
-    (x, l.line(), l.file())
-}
-
-#[test]
-fn call_ptr_track_caller_location() {
-    let mut fr = Frame::new();
-    let loc: &'static Location<'static> = Location::caller();
-    fr.put(ARGS, (9_u8, loc));
-    fr.put(FNP, explicit_loc as unsafe fn(u8, &'static Location<'static>) -> (u8, u32, &'static str));
-    let ops = [ARGS, DEST, FNP];
-    unsafe { call_ptr2::<u8, &'static Location<'static>, (u8, u32, &'static str)>(fr.fp(), ops.as_ptr()) };
-    assert_eq!(fr.get::<(u8, u32, &str)>(DEST), (9, loc.line(), file!()));
-    // Sanity: what the real `#[track_caller]` fn sees when called natively.
-    assert_eq!(where_am_i(9).2, file!());
-}
-
-#[test]
-fn call_ptr_17_arity() {
-    type T17 = (u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, &'static Location<'static>);
-    #[allow(clippy::too_many_arguments)]
-    fn f(
-        a: u8, b: u8, c: u8, d: u8, e: u8, f: u8, g: u8, h: u8, i: u8, j: u8, k: u8, l: u8,
-        m: u8, n: u8, o: u8, p: u8, loc: &'static Location<'static>,
-    ) -> u32 {
-        [a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p].iter().map(|&x| x as u32).sum::<u32>()
-            + loc.line()
-    }
-    let loc = Location::caller();
-    let mut fr = Frame::new();
-    fr.put::<T17>(ARGS, (1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, loc));
-    fr.put(FNP, f as unsafe fn(u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, &'static Location<'static>) -> u32);
-    let ops = [ARGS, DEST, FNP];
-    unsafe {
-        call_ptr17::<u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, &'static Location<'static>, u32>(
-            fr.fp(),
-            ops.as_ptr(),
-        )
-    };
-    assert_eq!(fr.get::<u32>(DEST), 16 + loc.line());
 }
 
 extern "C" fn c_mix(a: u8, b: f64, c: *const u64) -> f64 {
@@ -247,24 +174,28 @@ fn intrinsics() {
 
 #[test]
 fn call_island_unwinds() {
-    // A native callee that panics, through `call_ptr1`: the panic leaves the island natively.
+    // A native callee that panics, through `call`: the panic leaves the island natively.
     fn fails(x: u32) -> u32 {
         std::panic::resume_unwind(Box::new(x))
     }
     let mut fr = Frame::new();
     fr.put(ARGS, (11_u32,));
-    fr.put(FNP, fails as unsafe fn(u32) -> u32);
-    let ops = [ARGS, DEST, FNP];
-    let err = catch_unwind(AssertUnwindSafe(|| unsafe { call_ptr1::<u32, u32>(fr.fp(), ops.as_ptr()) })).unwrap_err();
+    let ops = [ARGS, DEST];
+    let err = catch_unwind(AssertUnwindSafe(|| unsafe { island_for(&fails)(fr.fp(), ops.as_ptr()) })).unwrap_err();
     assert_eq!(err.downcast_ref::<u32>(), Some(&11));
 }
 
 #[test]
 fn abi_version() {
-    assert_eq!(ryo_rt::RYO_RT_ABI, 4);
+    assert_eq!(ryo_rt::RYO_RT_ABI, 5);
 }
 
 thread_local!(static DROPS: Cell<u32> = const { Cell::new(0) });
+
+/// The `call` island of the fn item `F`.
+fn island_for<F: FnOnce<A, Output = R>, A: std::marker::Tuple, R>(_: &F) -> unsafe fn(*mut u8, *const u32) -> u32 {
+    call::<F, A, R>
+}
 
 struct Droppy(#[allow(dead_code)] u32);
 impl Drop for Droppy {
@@ -274,7 +205,7 @@ impl Drop for Droppy {
 }
 
 #[test]
-fn call_ptr_drops_args_once() {
+fn call_drops_args_once() {
     fn consume(_d: Droppy, ok: bool) -> u8 {
         if !ok {
             std::panic::resume_unwind(Box::new("fail"));
@@ -285,9 +216,8 @@ fn call_ptr_drops_args_once() {
         DROPS.set(0);
         let mut fr = Frame::new();
         fr.put(ARGS, (Droppy(1), ok));
-        fr.put(FNP, consume as unsafe fn(Droppy, bool) -> u8);
-        let ops = [ARGS, DEST, FNP];
-        let r = catch_unwind(AssertUnwindSafe(|| unsafe { call_ptr2::<Droppy, bool, u8>(fr.fp(), ops.as_ptr()) }));
+        let ops = [ARGS, DEST];
+        let r = catch_unwind(AssertUnwindSafe(|| unsafe { island_for(&consume)(fr.fp(), ops.as_ptr()) }));
         assert_eq!(r.is_err(), !ok);
         assert_eq!(DROPS.get(), 1, "ok = {ok}");
         if let Err(err) = r {
@@ -317,34 +247,25 @@ fn drop_in_place_unwinds() {
 }
 
 #[test]
-fn call_ptr_zst_in_the_middle() {
+fn call_zst_in_the_middle() {
     use std::marker::PhantomData;
     fn f(a: u8, _: (), b: u64, _: PhantomData<u32>) -> u64 {
         a as u64 * 1000 + b
     }
     let mut fr = Frame::new();
     fr.put::<(u8, (), u64, PhantomData<u32>)>(ARGS, (3, (), 7, PhantomData));
-    fr.put(FNP, f as unsafe fn(u8, (), u64, PhantomData<u32>) -> u64);
-    let ops = [ARGS, DEST, FNP];
-    unsafe { call_ptr4::<u8, (), u64, PhantomData<u32>, u64>(fr.fp(), ops.as_ptr()) };
+    let ops = [ARGS, DEST];
+    unsafe { island_for(&f)(fr.fp(), ops.as_ptr()) };
     assert_eq!(fr.get::<u64>(DEST), 3007);
 }
 
 #[test]
-fn call_ptr_and_call_c_128_bit() {
-    fn f(a: u128, b: i128) -> i128 {
-        a as i128 - b
-    }
+fn call_c_128_bit() {
     extern "C" fn g(a: u8, b: u128, c: i128) -> u128 {
         a as u128 + b + c as u128
     }
     let mut fr = Frame::new();
     let ops = [ARGS, DEST, FNP];
-    fr.put::<(u128, i128)>(ARGS, (u128::MAX >> 2, -(1_i128 << 100)));
-    fr.put(FNP, f as unsafe fn(u128, i128) -> i128);
-    unsafe { call_ptr2::<u128, i128, i128>(fr.fp(), ops.as_ptr()) };
-    assert_eq!(fr.get::<i128>(DEST), (u128::MAX >> 2) as i128 + (1_i128 << 100));
-
     fr.put::<(u8, u128, i128)>(ARGS, (1, 1 << 90, 1 << 70));
     fr.put(FNP, g as unsafe extern "C" fn(u8, u128, i128) -> u128);
     unsafe { call_c3::<u8, u128, i128, u128>(fr.fp(), ops.as_ptr()) };

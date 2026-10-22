@@ -98,9 +98,9 @@ fn sample() -> ImageWriter {
     let mut w = ImageWriter::new(SCID);
     let puts = w.symbol("puts", 0);
     let imp = w.symbol("some_dll_static", SYM_INDIRECT);
-    let island = w.symbol("_ZN6ryo_rt6island9call_ptr1", 0);
-    let portal1 = w.symbol("_ZN4test3fooE", 0);
-    let site = w.site();
+    let island = w.symbol("_ZN6ryo_rt6island5call_c1", 0);
+    let _other = w.symbol("_ZN4test3fooE", 0);
+    let _site = w.site();
     let _site2 = w.site();
 
     let s1 = w.add_const(b"hello\0", 1, &[]);
@@ -111,9 +111,9 @@ fn sample() -> ImageWriter {
     assert_eq!(vt.0 % 8, 0);
     let fx = w.add_data(&[7u8; 16], 8, &[AllocReloc { offset: 8, target: AllocTarget::Const(vt), addend: 0 }], &[AllocFixup { offset: 0, sym: imp, addend: 4 }]);
 
-    // f0: calls f1 with a landing pad at 7 (`lpad; jmp`) whose block resumes, then returns.
+    // f0: calls f1 with a landing pad at 8 (`lpad; jmp`) whose block resumes, then returns.
     let f0 = code(&[
-        Insn::Call { d: Slot(-8), f: Func(1), k: 8 },
+        Insn::Call { d: Slot(-8), f: Func(1), k: 8, a: List::from_words(&[]) },
         Insn::Ret { s: Slot(-8), k: 8 },
         Insn::Lpad { x: Slot(-16) },
         Insn::Jmp { t: Target(2) },
@@ -126,12 +126,12 @@ fn sample() -> ImageWriter {
         arg_size: 8,
         ret_size: 8,
         ret_kind: 8,
-        cleanup: vec![CleanupEntry { offset: 0, target: 7 }, CleanupEntry { offset: 11, target: CONTINUE }],
-        portal: None,
+        cleanup: vec![CleanupEntry { offset: 0, target: 8 }, CleanupEntry { offset: 12, target: CONTINUE }],
+        symbol: None,
     });
     let ops = [16u32, -24i32 as u32];
     let f1 = code(&[
-        Insn::CallExt { d: Slot(-8), sym: puts, site, isl: island, f: Slot(-16), k: 8 },
+        Insn::CallSym { d: Slot(-8), sym: puts, k: 8, a: List::from_words(&[]) },
         Insn::Island { isl: island, ops: List::from_words(&ops) },
         Insn::AddrAbs { d: Slot(-8), a: Abs::Const(vt) },
         Insn::AddrAbs { d: Slot(-16), a: Abs::Data(fx) },
@@ -141,8 +141,8 @@ fn sample() -> ImageWriter {
         name: "f1".into(),
         code: f1,
         frame_size: 48,
-        cleanup: vec![CleanupEntry { offset: 7, target: CONTINUE }, CleanupEntry { offset: 0, target: CONTINUE }],
-        portal: Some(portal1),
+        cleanup: vec![CleanupEntry { offset: 5, target: CONTINUE }, CleanupEntry { offset: 0, target: CONTINUE }],
+        symbol: Some(FuncSymbol { visibility: SymVisibility::Default, weak: false }),
         ..Default::default()
     });
     w.add_function(FunctionDef { name: String::new(), code: code(&[Insn::Abort {}]), frame_size: 16, ..Default::default() });
@@ -152,7 +152,7 @@ fn sample() -> ImageWriter {
 #[test]
 fn image_round_trip() {
     let obj = sample().finish(ELF).unwrap();
-    // puts, some_dll_static, the island, f1's portal, rust_eh_personality.
+    // puts, some_dll_static, the island, another, rust_eh_personality.
     assert_eq!(obj.symbols.len(), 5);
     assert_eq!(obj.symbols[4].name, PERSONALITY);
 
@@ -189,13 +189,10 @@ fn image_round_trip() {
     assert_eq!(fs[0].code_off, 0);
     assert_eq!(fs[1].code_off, fs[0].code_len.next_multiple_of(16));
     assert_eq!((fs[0].arg_size, fs[0].ret_size, fs[1].arg_size), (8, 8, 0));
-    assert_eq!(fs[0].portal(), None);
-    assert_eq!(fs[1].portal(), Some(3));
     assert_eq!(img.symbols()[3], 0x2000 + "_ZN4test3fooE".len() as u64);
     assert_eq!(img.symbols()[0], 0x1000);
     assert_eq!(img.symbol_flags(), &[0, SYM_INDIRECT, 0, 0, 0]);
-    assert_eq!(img.portal_id(1), portal_id(crate_hash(SCID), 1));
-    assert_eq!(split_portal_id(img.portal_id(1)), (crate_hash(SCID), 1));
+    assert_eq!(obj.functions[1].symbol, Some(FuncSymbol { visibility: SymVisibility::Default, weak: false }));
     assert_eq!(obj.functions.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), ["f0", "f1", ""]);
     assert_eq!(obj.functions[0].frame_size, 48);
 
@@ -206,16 +203,16 @@ fn image_round_trip() {
     assert_eq!(t[8], 0xe8);
     assert_eq!(9 + 4 + i32_at(&l.text, 9) as i64, fs[1].code_off as i64);
     assert_eq!(&t[13..17], [0x48, 0x89, 0x45, 0xf8]); // `mov [rbp - 8], rax`
-    // f1's `call.ext`: `lea rdi, [rip + sym slot 0]` reaches the slot.
+    // f1's `call.sym`: `call [rip + sym slot 0]` reaches the slot.
     let at = fs[1].code_off as u64 + 4 + 4; // after the prologue (`sub rsp, 48`)
-    assert_eq!(&t[at as usize..at as usize + 3], [0x48, 0x8d, 0x3d]);
-    let slot = (l.text.addr() + at + 7).wrapping_add(i32_at(&l.text, at + 3) as i64 as u64);
+    assert_eq!(&t[at as usize..at as usize + 2], [0xff, 0x15]);
+    let slot = (l.text.addr() + at + 6).wrapping_add(i32_at(&l.text, at + 2) as i64 as u64);
     assert_eq!(slot, img.symbols_ptr() as u64);
 
     // Unwind information: f0's call and resume are call sites, f0's to its landing pad.
     assert_eq!(obj.functions[0].call_sites.len(), 2);
     assert!(obj.functions[0].call_sites[0].pad.is_some() && obj.functions[0].call_sites[1].pad.is_none());
-    assert_eq!(obj.functions[1].call_sites.len(), 3); // `call rax`, the island call, the island
+    assert_eq!(obj.functions[1].call_sites.len(), 2); // `call [rip + slot]`, the island
     assert!(obj.functions[2].call_sites.is_empty());
     let secs: Vec<_> = obj.unwind.iter().map(|u| u.0).collect();
     assert_eq!(secs, [Section::EhFrame, Section::Lsda]);
@@ -271,8 +268,12 @@ fn pe_unwind_info() {
     let secs: Vec<_> = obj.unwind.iter().map(|u| u.0).collect();
     assert_eq!(secs, [Section::Pdata, Section::Xdata]);
     assert_eq!(obj.unwind[0].1.len(), 3 * 12);
-    // f0: version 1, prologue 8 bytes, 3 codes (alloc small 48, set fpreg, push rbp), rbp.
-    assert_eq!(&obj.unwind[1].1[..10], [1, 8, 3, 5, 8, 2 | (48 / 8 - 1) << 4, 4, 3, 1, 5 << 4]);
+    // f0: version 1, prologue 12 bytes, 5 codes (alloc small 48 - 16, set fpreg, push rsi,
+    // push rdi, push rbp), rbp at rsp + 16.
+    assert_eq!(
+        &obj.unwind[1].1[..14],
+        [1, 12, 5, 5 | 1 << 4, 12, 2 | (32 / 8 - 1) << 4, 8, 3, 3, 6 << 4, 2, 7 << 4, 1, 5 << 4]
+    );
     assert_eq!(obj.relocs.iter().filter(|r| r.kind == RelocKind::Rva32).count(), 9);
     // No personality on PE.
     assert_eq!(obj.symbols.len(), 4);
@@ -329,7 +330,7 @@ fn writer_rejects_bad_code() {
     assert!(matches!(w.finish(ELF), Err(WriteError::Code { error: CodeError::FallsOffEnd, .. })));
 
     let mut w = ImageWriter::new(1);
-    w.add_function(FunctionDef { name: String::new(), code: code(&[Insn::Call { d: Slot(0), f: Func(5), k: 0 }, Insn::Abort {}]), ..Default::default() });
+    w.add_function(FunctionDef { name: String::new(), code: code(&[Insn::Call { d: Slot(0), f: Func(5), k: 0, a: List::from_words(&[]) }, Insn::Abort {}]), ..Default::default() });
     assert!(matches!(w.finish(ELF), Err(WriteError::Code { error: CodeError::FuncOutOfRange, .. })));
 
     let mut w = ImageWriter::new(1);
@@ -338,10 +339,10 @@ fn writer_rejects_bad_code() {
 
     // Cleanup entries: not on an instruction start, not on a call, a landing pad that isn't
     // an `lpad`.
-    for (offset, target) in [(1, CONTINUE), (3, CONTINUE), (0, 3)] {
+    for (offset, target) in [(1, CONTINUE), (5, CONTINUE), (0, 5)] {
         let mut w = ImageWriter::new(1);
         w.add_function(FunctionDef {
-            code: code(&[Insn::Call { d: Slot(0), f: Func(0), k: 0 }, Insn::Abort {}, Insn::Lpad { x: Slot(-16) }, Insn::Abort {}]),
+            code: code(&[Insn::Call { d: Slot(0), f: Func(0), k: 0, a: List::from_words(&[]) }, Insn::Abort {}, Insn::Lpad { x: Slot(-16) }, Insn::Abort {}]),
             cleanup: vec![CleanupEntry { offset, target }],
             ..Default::default()
         });
@@ -366,34 +367,31 @@ fn writer_rejects_bad_code() {
 
 #[test]
 fn writer_checks_symbol_indirection() {
-    // Only `addr.sym.ind` and `call.ext.ind`'s `sym` load through the slot, and they need an
+    // Only `addr.sym.ind` and `call.sym.ind` load through the slot, and they need an
     // indirect one (design/platforms.md).
-    let check = |indirect: u8, insn: fn(Sym, Sym, Site) -> Insn<'static>| {
+    let check = |indirect: u8, insn: fn(Sym) -> Insn<'static>| {
         let mut w = ImageWriter::new(1);
         let s = w.symbol("x", indirect);
-        let island = w.symbol("island", 0);
-        let site = w.site();
-        w.add_function(FunctionDef { name: String::new(), code: code(&[insn(s, island, site), Insn::Abort {}]), ..Default::default() });
+        w.add_function(FunctionDef { name: String::new(), code: code(&[insn(s), Insn::Abort {}]), ..Default::default() });
         w.finish(ELF).map(drop)
     };
     let bad = Err(WriteError::Code { func: 0, offset: 0, error: CodeError::SymIndirection });
-    let addr_ind: fn(Sym, Sym, Site) -> Insn<'static> = |s, _, _| Insn::AddrSymInd { d: Slot(0), sym: s };
-    let addr: fn(Sym, Sym, Site) -> Insn<'static> = |s, _, _| Insn::AddrSym { d: Slot(0), sym: s };
-    let ext_ind: fn(Sym, Sym, Site) -> Insn<'static> =
-        |s, island, site| Insn::CallExtInd { d: Slot(0), sym: s, site, isl: island, f: Slot(-8), k: 0 };
-    let ext: fn(Sym, Sym, Site) -> Insn<'static> = |s, island, site| Insn::CallExt { d: Slot(0), sym: s, site, isl: island, f: Slot(-8), k: 0 };
-    // `x` as the island: islands are always direct.
-    let island_ind: fn(Sym, Sym, Site) -> Insn<'static> =
-        |s, island, site| Insn::CallExtInd { d: Slot(0), sym: island, site, isl: s, f: Slot(-8), k: 0 };
+    let addr_ind: fn(Sym) -> Insn<'static> = |s| Insn::AddrSymInd { d: Slot(0), sym: s };
+    let addr: fn(Sym) -> Insn<'static> = |s| Insn::AddrSym { d: Slot(0), sym: s };
+    let call_ind: fn(Sym) -> Insn<'static> = |s| Insn::CallSymInd { d: Slot(0), sym: s, k: 0, a: List::from_words(&[]) };
+    let call: fn(Sym) -> Insn<'static> = |s| Insn::CallSym { d: Slot(0), sym: s, k: 0, a: List::from_words(&[]) };
+    // `x` as an island: islands are always direct.
+    let island: fn(Sym) -> Insn<'static> = |s| Insn::Island { isl: s, ops: List::from_words(&[]) };
     assert_eq!(check(SYM_INDIRECT, addr_ind), Ok(()));
-    assert_eq!(check(SYM_INDIRECT, ext_ind), Ok(()));
+    assert_eq!(check(SYM_INDIRECT, call_ind), Ok(()));
     assert_eq!(check(0, addr), Ok(()));
-    assert_eq!(check(0, ext), Ok(()));
+    assert_eq!(check(0, call), Ok(()));
+    assert_eq!(check(0, island), Ok(()));
     assert_eq!(check(0, addr_ind), bad);
-    assert_eq!(check(0, ext_ind), bad);
+    assert_eq!(check(0, call_ind), bad);
     assert_eq!(check(SYM_INDIRECT, addr), bad);
-    assert_eq!(check(SYM_INDIRECT, ext), bad);
-    assert_eq!(check(SYM_INDIRECT, island_ind), bad);
+    assert_eq!(check(SYM_INDIRECT, call), bad);
+    assert_eq!(check(SYM_INDIRECT, island), bad);
 
     // One upstream function both called through its import slot and used as an island:
     // an indirect and a direct slot of the same name.
@@ -401,19 +399,16 @@ fn writer_checks_symbol_indirection() {
     let ind = w.symbol("f", SYM_INDIRECT);
     let dir = w.symbol("f", 0);
     assert_ne!(ind, dir);
-    let site = w.site();
     w.add_function(FunctionDef {
-        code: code(&[Insn::CallExtInd { d: Slot(0), sym: ind, site, isl: dir, f: Slot(-8), k: 0 }, Insn::Abort {}]),
+        code: code(&[
+            Insn::CallSymInd { d: Slot(0), sym: ind, k: 0, a: List::from_words(&[]) },
+            Insn::Island { isl: dir, ops: List::from_words(&[]) },
+            Insn::Abort {},
+        ]),
         ..Default::default()
     });
     let obj = w.finish(ELF).unwrap();
     assert_eq!(obj.symbols.iter().map(|s| (s.name.as_str(), s.flags)).collect::<Vec<_>>(), [("f", SYM_INDIRECT), ("f", 0), (PERSONALITY, 0)]);
-
-    // Portals are local definitions: never indirect.
-    let mut w = ImageWriter::new(1);
-    let p = w.symbol("p", SYM_INDIRECT);
-    w.add_function(FunctionDef { name: String::new(), code: code(&[Insn::Abort {}]), portal: Some(p), ..Default::default() });
-    assert_eq!(w.finish(ELF).unwrap_err(), WriteError::Portal(0));
 }
 
 #[test]
@@ -429,9 +424,7 @@ fn symbols_are_interned() {
 }
 
 #[test]
-fn portal_ids() {
-    assert_eq!(portal_id(0xdead_beef, 7), 0xdead_beef_0000_0007);
-    assert_eq!(split_portal_id(0xdead_beef_0000_0007), (0xdead_beef, 7));
+fn crate_hashes() {
     assert_eq!(crate_hash(0x1111_1111_0000_0001), 0x1111_1110);
 }
 
@@ -453,11 +446,6 @@ fn validate_rejects_bad_tables() {
     use std::mem::{offset_of, size_of};
     let obj = sample().finish(ELF).unwrap();
     let fe = |h: &Header, i: usize, field: usize| h.functions.off as usize + i * size_of::<FuncEntry>() + field;
-    // Portal symbol out of range.
-    assert_eq!(
-        validate_edited(&obj, |r, h| put32(r, fe(h, 1, offset_of!(FuncEntry, portal)), 77)),
-        Err(ImageError::BadFunction(1))
-    );
     // Code past the end.
     assert_eq!(
         validate_edited(&obj, |r, h| put32(r, fe(h, 2, offset_of!(FuncEntry, code_len)), 1000)),

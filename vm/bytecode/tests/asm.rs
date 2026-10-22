@@ -131,49 +131,52 @@ fn insn(op: Opcode, rng: &mut Rng, list_len: usize, f: &mut Fn, target: &mut dyn
             }
         }
     }
-    canonical_return(op, &mut w, rng);
+    canonical_return(op, &mut w, rng, list_len);
     w
 }
 
-/// Makes a call's or `ret`'s return kind one the machine code can pass, and an `arg`'s
-/// register valid ([`asm::return_ok`]).
-fn canonical_return(op: Opcode, w: &mut [u32], rng: &mut Rng) {
+/// Makes a call's or `ret`'s return kind one the machine code can pass, an `arg`'s
+/// register valid, and a call's argument list one of `n` valid entries ([`asm::return_ok`]).
+fn canonical_return(op: Opcode, w: &mut Vec<u32>, rng: &mut Rng, n: usize) {
     if op == Opcode::Arg {
         let xmm = rng.below(2) == 0;
-        let size = if xmm { [2, 4, 8, 16] } else { [1, 2, 4, 8] }[rng.below(4) as usize];
+        let size = if xmm { [2, 4, 8, 16][rng.below(4) as usize] } else { 1 + rng.below(8) as u32 };
         w[operand_word(op, "r")] = asm::ArgReg { xmm, size, index: rng.below(4) as u32 }.word();
         return;
     }
-    if matches!(op, Opcode::TailCall | Opcode::TailCallInd) {
-        if rng.below(2) == 0 {
-            w[operand_word(op, "k")] = asm::RET_SRET;
-        } else {
-            w[operand_word(op, "k")] = 0;
-            w[operand_word(op, "q")] = 0;
+    let call = matches!(op, Opcode::Call | Opcode::CallSym | Opcode::CallSymInd | Opcode::CallPtr);
+    if call || matches!(op, Opcode::TailCall | Opcode::TailCallPtr) {
+        // The argument list: `n` distinct registers.
+        let a = operand_word(op, "a");
+        w.truncate(a);
+        w.push(2 * n as u32);
+        let mut regs: Vec<(bool, u32)> = (0..4).flat_map(|i| [(false, i), (true, i)]).collect();
+        for _ in 0..n {
+            let (xmm, index) = regs.remove(rng.below(regs.len() as u64) as usize);
+            let size = if xmm { [2, 4, 8, 16][rng.below(4) as usize] } else { [1, 2, 4, 8][rng.below(4) as usize] };
+            let addr = !xmm && rng.below(3) == 0;
+            let r = asm::ArgReg { xmm, size: if addr { 8 } else { size }, index }.word();
+            w.extend([rng.next() as u32, if addr { r | asm::ARG_ADDR } else { r }]);
         }
-        return;
     }
-    let (unused, load) = match op {
-        Opcode::Call => (Some("d"), false),
-        Opcode::Ret => (Some("s"), true),
-        Opcode::CallExt | Opcode::CallExtInd | Opcode::CallInd => (None, false),
-        _ => return,
-    };
-    let k = random_kind(rng, load);
-    w[operand_word(op, "k")] = k;
-    if k == 0
-        && let Some(u) = unused
-    {
-        w[operand_word(op, u)] = 0;
+    if call {
+        let k = random_kind(rng, false);
+        w[operand_word(op, "k")] = k;
+        if k == 0 {
+            w[operand_word(op, "d")] = 0;
+        }
+    } else if op == Opcode::Ret {
+        let k = random_kind(rng, true);
+        w[operand_word(op, "k")] = k;
+        if k == 0 {
+            w[operand_word(op, "s")] = 0;
+        }
     }
-    assert!(asm::return_ok(w), "{k:#x}");
+    assert!(asm::return_ok(w), "{}", op.mnemonic());
 }
 
 /// A random return kind ([`asm::RET_SRET`]): exact sizes for a call, load widths for `ret`.
 fn random_kind(rng: &mut Rng, load: bool) -> u32 {
-    if !load && rng.below(6) == 0 {
-        return asm::RET_SRET;
-    }
     let part = |rng: &mut Rng, off: u32| {
         let xmm = rng.below(2) == 0;
         let size = match (xmm, load) {
@@ -199,6 +202,8 @@ fn random_kind(rng: &mut Rng, load: bool) -> u32 {
 }
 
 fn check(f: &Fn, frame_size: u32, mode: Mode, what: &str) -> asm::Encoded {
+    // PE frames keep `rdi` and `rsi` in their top 16 bytes.
+    let frame_size = if mode.pe { frame_size.max(16) } else { frame_size };
     let (code, mut cleanup) = f.words();
     let enc = asm::encode(&code, frame_size, &cleanup, mode).unwrap_or_else(|e| panic!("{what}: {e:?}\n{}", Disasm(&code)));
     let sites = lsda::parse(&lsda::write(&enc.call_sites)).expect("LSDA");
@@ -517,5 +522,5 @@ fn templates_are_pinned_to_format_version() {
             eat(&lsda::write(&enc.call_sites));
         }
     }
-    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (15, 0x2e69699699fd8c7c), "template hash {h:#x}");
+    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (16, 0xea372da345c565f6), "template hash {h:#x}");
 }

@@ -9,7 +9,7 @@ use object::{
     Architecture, BinaryFormat, Endianness, RelocationFlags, SectionFlags, SectionKind, SymbolFlags, SymbolKind,
     SymbolScope, elf, pe,
 };
-use ryo_bytecode::image::{ImageObject, RelocKind, RelocTarget, SYM_INDIRECT, Section};
+use ryo_bytecode::image::{FuncSymbol, ImageObject, RelocKind, RelocTarget, SYM_INDIRECT, Section, SymVisibility};
 use ryo_bytecode::insn::Opcode;
 
 /// The symbol an image defines: `__ryo_image_<StableCrateId>`, with the id in hex.
@@ -20,10 +20,10 @@ pub fn image_symbol(stable_crate_id: u64) -> String {
 /// Prefix of [`image_symbol`]; the registry finds upstream images by it.
 pub const IMAGE_SYMBOL_PREFIX: &str = "__ryo_image_";
 
-/// The pointer slot `ryo_rt::entry::c_main` loads the entry fn's portal from.
+/// The pointer slot `ryo_rt::entry::c_main` loads the entry fn's address from.
 pub const MAIN_SLOT_SYMBOL: &str = "__ryo_main";
 
-/// Defined by every registry object; `ryo_rt::vm::enter` references it.
+/// Defined by every registry object; every image object references it.
 pub const ANCHOR_SYMBOL: &str = "__ryo_registry_anchor";
 
 /// The registration entry point in `ryo_rt`.
@@ -52,6 +52,16 @@ pub trait ObjectFormat {
     fn unwind_section(&self, obj: &mut Object<'static>, which: Section) -> object::write::SectionId;
     /// A local symbol naming the code of a VM function (backtraces, profilers).
     fn local_function(&self, obj: &mut Object<'static>, name: &str, section: object::write::SectionId, offset: u64, size: u64);
+    /// The global symbol of a VM function that native code calls by name.
+    fn global_function(
+        &self,
+        obj: &mut Object<'static>,
+        name: &str,
+        section: object::write::SectionId,
+        offset: u64,
+        size: u64,
+        sym: FuncSymbol,
+    );
     /// A section for data that is only written by relocations (RELRO / `.rdata`).
     fn relro_section(&self, obj: &mut Object<'static>, name: &str) -> object::write::SectionId;
     /// A writable data section.
@@ -137,6 +147,33 @@ impl ObjectFormat for Elf {
             weak: false,
             section: SymbolSection::Section(section),
             flags: SymbolFlags::None,
+        });
+    }
+
+    fn global_function(
+        &self,
+        obj: &mut Object<'static>,
+        name: &str,
+        section: object::write::SectionId,
+        offset: u64,
+        size: u64,
+        sym: FuncSymbol,
+    ) {
+        let (scope, st_other) = match sym.visibility {
+            SymVisibility::Default => (SymbolScope::Dynamic, elf::STV_DEFAULT),
+            SymVisibility::Hidden => (SymbolScope::Linkage, elf::STV_HIDDEN),
+            SymVisibility::Protected => (SymbolScope::Dynamic, elf::STV_PROTECTED),
+        };
+        let bind = if sym.weak { elf::STB_WEAK } else { elf::STB_GLOBAL };
+        obj.add_symbol(Symbol {
+            name: name.as_bytes().to_vec(),
+            value: offset,
+            size,
+            kind: SymbolKind::Text,
+            scope,
+            weak: sym.weak,
+            section: SymbolSection::Section(section),
+            flags: SymbolFlags::Elf { st_info: (bind << 4) | elf::STT_FUNC, st_other },
         });
     }
 
@@ -254,6 +291,30 @@ impl ObjectFormat for Coff {
         });
     }
 
+    fn global_function(
+        &self,
+        obj: &mut Object<'static>,
+        name: &str,
+        section: object::write::SectionId,
+        offset: u64,
+        size: u64,
+        _sym: FuncSymbol,
+    ) {
+        // PE has no symbol visibility: a DLL exports what its export list names (rustc's
+        // `/EXPORT` directives). A weak definition would need a comdat; VM functions with
+        // weak linkage get an ordinary one.
+        obj.add_symbol(Symbol {
+            name: name.as_bytes().to_vec(),
+            value: offset,
+            size,
+            kind: SymbolKind::Text,
+            scope: SymbolScope::Dynamic,
+            weak: false,
+            section: SymbolSection::Section(section),
+            flags: SymbolFlags::None,
+        });
+    }
+
     fn relro_section(&self, obj: &mut Object<'static>, name: &str) -> object::write::SectionId {
         // The loader applies base relocations to read-only sections too.
         obj.add_section(Vec::new(), format!(".rdata${name}").into_bytes(), SectionKind::ReadOnlyData)
@@ -362,14 +423,15 @@ fn undefined(obj: &mut Object<'static>, name: &str, kind: SymbolKind) -> SymbolI
 }
 
 /// The image object: the image sections, `__ryo_image_<id>` at the start of the read-only
-/// one, a local symbol per VM function, and, for binaries with a VM `main`, the `__ryo_main`
-/// slot pointing at `main_portal`. `rt_symbol` names `ryo_rt`'s handlers (`ryo_h_<op>`) and
+/// one, a symbol per VM function (global for those native code calls by name), a reference
+/// to the registry anchor, and, for binaries with a VM `main`, the `__ryo_main` slot
+/// pointing at `main_symbol`. `rt_symbol` names `ryo_rt`'s handlers (`ryo_h_<op>`) and
 /// `ryo_probe_stack`, as rustc mangles them.
 pub fn write_image(
     fmt: &dyn ObjectFormat,
     image: &ImageObject,
     stable_crate_id: u64,
-    main_portal: Option<&str>,
+    main_symbol: Option<&str>,
     rt_symbol: &dyn Fn(&str) -> String,
 ) -> Result<Vec<u8>, String> {
     let mut obj = fmt.new_object();
@@ -380,7 +442,10 @@ pub fn write_image(
     let text = fmt.text_section(&mut obj);
     obj.append_section_data(text, &image.text, 16);
     for f in &image.functions {
-        fmt.local_function(&mut obj, &f.name, text, f.start as u64, f.len as u64);
+        match f.symbol {
+            Some(sym) => fmt.global_function(&mut obj, &f.name, text, f.start as u64, f.len as u64, sym),
+            None => fmt.local_function(&mut obj, &f.name, text, f.start as u64, f.len as u64),
+        }
     }
     let mut unwind = Vec::new();
     for (which, bytes) in &image.unwind {
@@ -423,11 +488,19 @@ pub fn write_image(
             .map_err(|e| format!("image relocation: {e}"))?;
     }
 
-    if let Some(portal) = main_portal {
+    // A reference to the registry object of the link unit, so that a C linker taking the
+    // image out of a staticlib takes the registry object too (design/backend.md#pipeline).
+    let anchor_slot = fmt.relro_section(&mut obj, "ryo_anchor");
+    obj.append_section_data(anchor_slot, &[0; 8], 8);
+    let anchor = undefined(&mut obj, ANCHOR_SYMBOL, SymbolKind::Data);
+    obj.add_relocation(anchor_slot, Relocation { offset: 0, symbol: anchor, addend: 0, flags: fmt.abs64() })
+        .map_err(|e| format!("registry anchor relocation: {e}"))?;
+
+    if let Some(main) = main_symbol {
         let slot = fmt.relro_section(&mut obj, "ryo_main");
         obj.append_section_data(slot, &[0; 8], 8);
         fmt.hidden_global(&mut obj, MAIN_SLOT_SYMBOL, slot, 0, 8, SymbolKind::Data);
-        let target = undefined(&mut obj, portal, SymbolKind::Text);
+        let target = undefined(&mut obj, main, SymbolKind::Text);
         obj.add_relocation(slot, Relocation { offset: 0, symbol: target, addend: 0, flags: fmt.abs64() })
             .map_err(|e| format!("__ryo_main relocation: {e}"))?;
     }

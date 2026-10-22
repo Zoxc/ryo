@@ -12,7 +12,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 pub use ryo_bytecode::Opcode;
-pub use ryo_bytecode::asm::{Mode, RET_SRET};
+pub use ryo_bytecode::asm::Mode;
 pub use ryo_bytecode::image::*;
 pub use ryo_bytecode::insn::*;
 
@@ -286,13 +286,20 @@ pub fn build(w: ImageWriter, syms: &[(&str, usize)]) -> Linked {
     l
 }
 
+/// A function to call through [`call`]: its code, argument block size and return kind.
+#[derive(Clone, Copy)]
+pub struct Entry {
+    pub code: *const u8,
+    pub arg_size: u32,
+    pub ret_kind: u32,
+}
+
+unsafe impl Send for Entry {}
+
 impl Linked {
-    pub fn id(&self, f: Func) -> u64 {
-        portal_id(self.crate_hash, f.0)
-    }
-    /// Site cache slot `s`.
-    pub fn site(&self, s: Site) -> usize {
-        unsafe { self.data.cast::<usize>().add(s.0 as usize).read() }
+    pub fn id(&self, f: Func) -> Entry {
+        let e = unsafe { Image::from_header(self.header) }.unwrap().functions()[f.0 as usize];
+        Entry { code: self.code(f), arg_size: e.arg_size, ret_kind: e.ret_kind }
     }
     /// The machine code of function `f`.
     pub fn code(&self, f: Func) -> *const u8 {
@@ -300,18 +307,127 @@ impl Linked {
     }
 }
 
-/// Calls VM function `id` with the argument block `args` through `vm::enter`, catching a
-/// panic that unwinds out of it.
-pub fn call<A, R>(id: u64, args: A) -> Result<R, Box<dyn Any + Send>> {
+/// [`test_enter`]'s operands and results (`repr(C)`: the assembly uses the offsets).
+#[repr(C)]
+struct EnterCall {
+    args: *const u8,
+    arg_size: usize,
+    /// A multiple of 16, at least `arg_size` and 48.
+    reserve: usize,
+    /// The first integer argument: an sret function's return value pointer.
+    sret: *mut u8,
+    regs: [u64; 2],
+    xmm: [[u8; 16]; 2],
+}
+
+unsafe extern "Rust" {
+    /// Calls `entry` with the argument block copied to the stack (the callee's `fp + 16`),
+    /// its first six words also in `rdi rsi rdx rcx r8 r9` (with `call.sret`, if not null,
+    /// in `rdi` instead and the words in the others), and stores the return registers. The
+    /// hand-written test functions take their arguments either way.
+    fn test_enter(entry: *const u8, call: *mut EnterCall);
+}
+
+core::arch::global_asm!(
+    ".text",
+    ".p2align 4",
+    ".globl test_enter",
+    "test_enter:",
+    ".cfi_startproc",
+    "push rbp",
+    ".cfi_def_cfa_offset 16",
+    ".cfi_offset rbp, -16",
+    "push rbx",
+    ".cfi_def_cfa_offset 24",
+    ".cfi_offset rbx, -24",
+    "mov rbx, rsp",
+    ".cfi_def_cfa_register rbx",
+    "push rsi",
+    "sub rsp, [rsi + 16]",
+    "mov rax, rdi",
+    "mov rdi, rsp",
+    "mov rcx, [rsi + 8]",
+    "mov rsi, [rsi]",
+    "rep movsb",
+    "mov r11, [rbx - 8]",
+    "mov rdi, [r11 + 24]",
+    "test rdi, rdi",
+    "jnz 2f",
+    "mov rdi, [rsp]",
+    "mov rsi, [rsp + 8]",
+    "mov rdx, [rsp + 16]",
+    "mov rcx, [rsp + 24]",
+    "mov r8, [rsp + 32]",
+    "mov r9, [rsp + 40]",
+    "jmp 3f",
+    "2:",
+    "mov rsi, [rsp]",
+    "mov rdx, [rsp + 8]",
+    "mov rcx, [rsp + 16]",
+    "mov r8, [rsp + 24]",
+    "mov r9, [rsp + 32]",
+    "3:",
+    "xor ebp, ebp",
+    "call rax",
+    "mov rcx, [rbx - 8]",
+    "mov [rcx + 32], rax",
+    "mov [rcx + 40], rdx",
+    "movups [rcx + 48], xmm0",
+    "movups [rcx + 64], xmm1",
+    "mov rsp, rbx",
+    "pop rbx",
+    ".cfi_def_cfa rsp, 16",
+    "pop rbp",
+    ".cfi_def_cfa_offset 8",
+    "ret",
+    ".cfi_endproc",
+);
+
+/// Calls the VM function `e` with the argument block `args` ([`test_enter`]), catching a
+/// panic that unwinds out of it, and collects its return value as its return kind says.
+pub fn call<A, R>(e: Entry, args: A) -> Result<R, Box<dyn Any + Send>> {
+    use ryo_bytecode::asm::{RET_SRET, ret_parts};
     let args = ManuallyDrop::new(args);
     let mut ret = MaybeUninit::<R>::uninit();
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
-        ryo_rt::vm::enter(id, (&raw const args).cast(), ret.as_mut_ptr().cast())
-    }))?;
+    let mut c = EnterCall {
+        args: (&raw const args).cast(),
+        arg_size: e.arg_size as usize,
+        reserve: (e.arg_size as usize).max(48).next_multiple_of(16),
+        sret: if e.ret_kind == RET_SRET { ret.as_mut_ptr().cast() } else { std::ptr::null_mut() },
+        regs: [0; 2],
+        xmm: [[0; 16]; 2],
+    };
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe { test_enter(e.code, &mut c) }))?;
+    let (mut g, mut x) = (0, 0);
+    for p in ret_parts(e.ret_kind, false).into_iter().flatten().flatten() {
+        let src: &[u8] = if p.xmm {
+            x += 1;
+            &c.xmm[x - 1]
+        } else {
+            g += 1;
+            unsafe { std::slice::from_raw_parts((&raw const c.regs[g - 1]).cast(), 8) }
+        };
+        unsafe { std::ptr::copy_nonoverlapping(src.as_ptr(), ret.as_mut_ptr().cast::<u8>().add(p.off as usize), p.size as usize) };
+    }
     Ok(unsafe { ret.assume_init() })
 }
 
-pub fn ok<A, R>(id: u64, args: A) -> R {
+/// A call's argument list ([`ryo_bytecode::asm::params_ok`]): each slot's 8 bytes into the
+/// next integer argument register.
+pub fn regs(slots: &[i32]) -> Vec<u32> {
+    let mut a = Vec::new();
+    for (i, &s) in slots.iter().enumerate() {
+        a.extend([s as u32, ryo_bytecode::asm::ArgReg { xmm: false, size: 8, index: i as u32 }.word()]);
+    }
+    a
+}
+
+/// `arg`: the integer argument register `i` to slot `d`.
+pub fn arg(d: i32, i: u32) -> Insn<'static> {
+    Insn::Arg { d: Slot(d), r: ryo_bytecode::asm::ArgReg { xmm: false, size: 8, index: i }.word() }
+}
+
+pub fn ok<A, R>(id: Entry, args: A) -> R {
     match call(id, args) {
         Ok(r) => r,
         Err(e) => std::panic::resume_unwind(e),

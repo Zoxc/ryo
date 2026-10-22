@@ -622,17 +622,13 @@ pub enum Shape {
     Ret,
     /// A jump, without a handler (`jmp`).
     Jmp,
-    /// A call of a VM function of the same image, without a handler (`call`).
+    /// A call, without a handler: the argument registers loaded from the list `a`, the call
+    /// of a VM function of the same image, a symbol or a fn pointer, then the result's
+    /// stores (`call`).
     Call,
-    /// `call.ext`: the handler resolves the symbol to a VM entry or the native path (`call_ext`).
-    CallExt,
-    /// `call.ind`: the same for a fn pointer (`call_ind`).
-    CallInd,
-    /// The handler moves the arguments, and the function jumps to the callee (`tail_call`).
+    /// The same as a tail call: the argument registers, the epilogue and a jump
+    /// (`tail_call`).
     TailCall,
-    /// `tail_call.ind`: the handler resolves and moves the arguments; a native target is
-    /// called through the island, and the next instruction follows (`tail_call_ind`).
-    TailCallInd,
     /// A direct call of an island, without a handler (`island`).
     Island,
     /// A landing pad: the handler stores the exception object (`lpad`).
@@ -651,10 +647,7 @@ macro_rules! shape {
     (ret) => { $crate::insn::Shape::Ret };
     (jmp) => { $crate::insn::Shape::Jmp };
     (call) => { $crate::insn::Shape::Call };
-    (call_ext) => { $crate::insn::Shape::CallExt };
-    (call_ind) => { $crate::insn::Shape::CallInd };
     (tail_call) => { $crate::insn::Shape::TailCall };
-    (tail_call_ind) => { $crate::insn::Shape::TailCallInd };
     (arg) => { $crate::insn::Shape::Arg };
     (island) => { $crate::insn::Shape::Island };
     (lpad) => { $crate::insn::Shape::Lpad };

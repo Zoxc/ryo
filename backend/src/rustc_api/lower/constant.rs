@@ -5,7 +5,7 @@
 //! ([`CodeReloc::Const`]). On PE, allocations pointing directly at imports go into the
 //! image's writable fixup area instead ([`CodeReloc::Data`], [`needs_fixup`]).
 //!
-//! Thread locals are reached through the `ThreadLocal` shim, called by a `call_ptr0` island
+//! Thread locals are reached through the `ThreadLocal` shim, called directly
 //! (design/lowering.md#rvalues).
 
 use rustc_data_structures::fx::FxHashSet;
@@ -17,7 +17,6 @@ use rustc_middle::ty::{self, GenericArgs, Instance, InstanceKind, ShimKind, TyCt
 use ryo_bytecode::insn::{ABS_DATA, Opcode};
 
 use super::emit::Width;
-use super::island::templates;
 use super::place::{Loc, PlaceVal};
 use super::{CodeReloc, FnCx, NeedsNative, native};
 
@@ -133,9 +132,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         Ok(())
     }
 
-    /// `ThreadLocalRef(def_id)`: a `call_ptr0` island on the static's `ThreadLocal` shim,
-    /// which returns its address on the current thread (design/lowering.md#rvalues). The
-    /// merge pass adds the shim where rustc doesn't (ELF).
+    /// `ThreadLocalRef(def_id)`: a call of the static's `ThreadLocal` shim, which returns its
+    /// address on the current thread in `rax` (design/lowering.md#rvalues). The merge pass
+    /// adds the shim where rustc doesn't (ELF).
     pub fn thread_local_ref(&mut self, dst: PlaceVal<'tcx>, def_id: DefId) -> Result<(), NeedsNative> {
         let tcx = self.tcx;
         if tcx.is_foreign_item(def_id) {
@@ -143,14 +142,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             return native("ThreadLocalRef of a foreign thread local");
         }
         let shim = tls_shim(def_id);
-        let ptr_ty = tcx.thread_local_ptr_ty(def_id);
         self.outgoing(0);
         self.with_place_slot(dst, |fx, d| {
-            let p = fx.temp8();
-            fx.addr_sym(p, CodeReloc::Symbol { target: shim });
-            let name = templates::call_ptr(0).expect("call_ptr0 exists");
-            // The shim only takes an address: it can't unwind.
-            fx.island(&name, &[ptr_ty.into()], &[Self::out(0), d, p], None);
+            let r = CodeReloc::Symbol { target: shim };
+            let op = if fx.sym_indirect(&r) { Opcode::CallSymInd } else { Opcode::CallSym };
+            let sym = fx.reloc(r);
+            // The shim only takes an address: it can't unwind (no cleanup entry).
+            let k = ryo_bytecode::asm::ret_kind(&[ryo_bytecode::asm::RetPart { xmm: false, size: 8, off: 0 }]);
+            fx.op(op, &[d, sym, k]);
             Ok(())
         })
     }

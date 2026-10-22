@@ -261,14 +261,13 @@ fn prepare_sources(info: &RustcInfo, root: &Path, dst: &Path) -> Result<(), Stri
             "[package]\nname = \"ryo_rt\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n\
              [lib]\npath = {}\ntest = false\nbench = false\ndoc = false\n\n\
              [dependencies]\ncore = {{ path = \"../core\" }}\ncompiler_builtins = {{ path = \"../compiler-builtins/compiler-builtins\", features = [\"compiler-builtins\"] }}\n\
-             ryo_bytecode = {{ path = \"../ryo_bytecode\" }}\n\n\
-             [features]\nregistry-anchor = []\n",
+             ryo_bytecode = {{ path = \"../ryo_bytecode\" }}\n",
             path(vm.join("rt").join("src").join("lib.rs"))?,
         ),
     )?;
     // The crates directly on `core` that the ryo backend builds depend on `ryo_rt` through
     // these two (everything else in the sysroot depends on one of them).
-    let dep = "ryo_rt = { path = \"../ryo_rt\", features = [\"registry-anchor\"] }\n";
+    let dep = "ryo_rt = { path = \"../ryo_rt\" }\n";
     for krate in ["alloc", "rustc-std-workspace-core"] {
         let manifest = dst.join(krate).join("Cargo.toml");
         let text = fs::read_to_string(src.join(krate).join("Cargo.toml")).map_err(|e| e.to_string())?;

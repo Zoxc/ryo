@@ -1,7 +1,7 @@
-//! Hand-assembled functions, encoded to machine code, linked in memory and run through
-//! `vm::enter` and portals: data movement, addresses, enums, control flow, calls and tail
-//! calls, multi-image calls, site caches, registration, re-entrancy, unwinding, large frames,
-//! deep recursion, and the fatal paths (in child processes).
+//! Hand-assembled functions, encoded to machine code, linked in memory and run, called from
+//! the tests and from native code: data movement, addresses, enums, control flow, calls and
+//! tail calls, multi-image calls, registration, re-entrancy, unwinding, large frames, deep
+//! recursion, and the fatal paths (in child processes).
 
 #![cfg(all(target_arch = "x86_64", target_os = "linux"))]
 #![feature(unboxed_closures)]
@@ -11,17 +11,7 @@ use common::*;
 
 use std::panic::{catch_unwind, resume_unwind};
 use std::sync::OnceLock;
-
-use ryo_rt::island::{call_ptr1, call_ptr2};
-use ryo_rt::portal::portal;
-use ryo_rt::vm::lookup_addr;
-
-fn cp1() -> usize {
-    island(call_ptr1::<u64, u64>)
-}
-fn cp2() -> usize {
-    island(call_ptr2::<u64, u64, u64>)
-}
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 const T: Neg = Neg(false);
 const F: Neg = Neg(true);
@@ -426,9 +416,9 @@ fn calls_and_tail_calls() {
     let mut a = Asm::new();
     let b = a.i(Insn::BrLtUImmW64 { a: Slot(16), imm: 2, neg: T, t: Target(0) });
     a.i(Insn::SubImmW64 { d: Slot(-32), a: Slot(16), imm: 1 });
-    a.i(Insn::Call { d: Slot(-8), f: Func(0), k: 8 });
+    a.i(Insn::Call { d: Slot(-8), f: Func(0), k: 8, a: List::from_words(&[]) });
     a.i(Insn::SubImmW64 { d: Slot(-32), a: Slot(16), imm: 2 });
-    a.i(Insn::Call { d: Slot(-16), f: Func(0), k: 8 });
+    a.i(Insn::Call { d: Slot(-16), f: Func(0), k: 8, a: List::from_words(&[]) });
     a.i(Insn::AddW64 { d: Slot(-8), a: Slot(-8), b: Slot(-16) });
     a.ret(Slot(-8), 8);
     let base = a.ret(Slot(16), 8);
@@ -442,7 +432,9 @@ fn calls_and_tail_calls() {
     let b = a.i(Insn::BrEqImmW64 { a: Slot(16), imm: 0, neg: T, t: Target(0) });
     a.i(Insn::SubImmW64 { d: Slot(-16), a: Slot(16), imm: 1 });
     a.i(Insn::AddW64 { d: Slot(-8), a: Slot(24), b: Slot(16) });
-    a.i(Insn::TailCall { f: Func(1), n: 16, q: Slot(0), k: 0 });
+    // The staged arguments over the incoming ones, then the jump.
+    a.i(Insn::MovW128 { d: Slot(16), s: Slot(-16) });
+    a.i(Insn::TailCall { f: Func(1), a: List::from_words(&[]) });
     let done = a.ret(Slot(24), 8);
     a.patch(b, "t", done);
     let countdown = w.add_function(func(a.done(), 16, 16, 8));
@@ -452,7 +444,7 @@ fn calls_and_tail_calls() {
     let mut a = Asm::new();
     a.i(Insn::MovW64 { d: Slot(-32), s: Slot(16) });
     a.i(Insn::ImmW64 { d: Slot(-24), imm: 0 });
-    a.i(Insn::Call { d: Slot(-8), f: countdown, k: 8 });
+    a.i(Insn::Call { d: Slot(-8), f: countdown, k: 8, a: List::from_words(&[]) });
     a.i(Insn::AddImmW64 { d: Slot(-8), a: Slot(-8), imm: 1 });
     a.ret(Slot(-8), 8);
     let wrap = w.add_function(func(a.done(), 32, 8, 8));
@@ -461,7 +453,8 @@ fn calls_and_tail_calls() {
     // become fib(n / 2).
     let mut a = Asm::new();
     a.i(Insn::ShrUImmW64 { d: Slot(-16), a: Slot(16), imm: 1 });
-    a.i(Insn::TailCall { f: fib, n: 8, q: Slot(0), k: 0 });
+    a.i(Insn::MovW64 { d: Slot(16), s: Slot(-16) });
+    a.i(Insn::TailCall { f: fib, a: List::from_words(&[]) });
     let half = w.add_function(func(a.done(), 16, 16, 8));
 
     // A 24-byte return value through `call` (sret), and a caller that returns it with an offset.
@@ -476,7 +469,9 @@ fn calls_and_tail_calls() {
     a.sret(Slot(-72));
     a.i(Insn::ImmW64 { d: Slot(-48), imm: 0 });
     a.i(Insn::MovW64 { d: Slot(-80), s: Slot(16) });
-    a.i(Insn::Call { d: Slot(-40), f: triple, k: RET_SRET });
+    // An sret callee: the destination's address in `rdi`.
+    let sret = [-40i32 as u32, ryo_bytecode::asm::ArgReg { xmm: false, size: 8, index: 0 }.word() | ryo_bytecode::asm::ARG_ADDR];
+    a.i(Insn::Call { d: Slot(0), f: triple, k: 0, a: List::from_words(&sret) });
     a.ret(Slot(-48), 32);
     let call_triple = w.add_function(func(a.done(), 80, 8, 32));
     let img = build(w, &[]);
@@ -496,7 +491,7 @@ fn deep_recursion() {
     let mut a = Asm::new();
     let b = a.i(Insn::BrEqImmW64 { a: Slot(16), imm: 0, neg: T, t: Target(0) });
     a.i(Insn::SubImmW64 { d: Slot(-16), a: Slot(16), imm: 1 });
-    a.i(Insn::Call { d: Slot(-8), f: Func(0), k: 8 });
+    a.i(Insn::Call { d: Slot(-8), f: Func(0), k: 8, a: List::from_words(&[]) });
     a.i(Insn::AddImmW64 { d: Slot(-8), a: Slot(-8), imm: 1 });
     a.ret(Slot(-8), 8);
     let z = a.ret(Slot(16), 8);
@@ -518,7 +513,7 @@ fn large_frames() {
     a.i(Insn::AddImmW64 { d: Slot(-FS + 16), a: Slot(-FS + 16), imm: 1 });
     a.i(Insn::SubImmW64 { d: Slot(-FS), a: Slot(16), imm: 1 });
     a.i(Insn::MovW64 { d: Slot(-FS + 8), s: Slot(-FS + 16) });
-    a.i(Insn::Call { d: Slot(-8), f: Func(0), k: 8 });
+    a.i(Insn::Call { d: Slot(-8), f: Func(0), k: 8, a: List::from_words(&[]) });
     a.ret(Slot(-8), 8);
     let base = a.ret(Slot(24), 8);
     a.patch(b, "t", base);
@@ -542,34 +537,25 @@ fn large_frames() {
     assert_eq!(big_stack(64, move || ok::<_, u64>(id, (200u64, 5u64))), 205);
 }
 
-// ---- multi-image calls and site caches ----
+// ---- multi-image calls ----
 
-const SCID_B: u64 = 0xb0b0_0000_0000_0001;
-const ID_G: u64 = portal_id(crate_hash(SCID_B), 0);
 const K_B: u64 = 1000;
 
-/// Image B: g(x) = 3x + K_B (K_B from B's constant pool), with a portal.
+/// Image B: g(x) = 3x + K_B (K_B from B's constant pool), native-callable: x in `rdi`.
 fn image_b() -> &'static Linked {
     static B: OnceLock<Linked> = OnceLock::new();
     B.get_or_init(|| {
-        let mut w = ImageWriter::new(SCID_B);
-        let p = w.symbol("portal_g", 0);
+        let mut w = ImageWriter::new(unique_scid());
         let k = w.add_const(&K_B.to_le_bytes(), 8, &[]);
         let mut a = Asm::new();
+        a.i(arg(-24, 0));
         a.i(Insn::Const { d: Slot(-16), k, len: 8 });
-        a.i(Insn::MulImmW64 { d: Slot(-8), a: Slot(16), imm: 3 });
+        a.i(Insn::MulImmW64 { d: Slot(-8), a: Slot(-24), imm: 3 });
         a.i(Insn::AddW64 { d: Slot(-8), a: Slot(-8), b: Slot(-16) });
         a.ret(Slot(-8), 8);
-        let mut f = func(a.done(), 16, 8, 8);
-        f.portal = Some(p);
-        w.add_function(f);
-        build(w, &[("portal_g", portal::<(u64,), u64, ID_G> as *const () as usize)])
+        w.add_function(func(a.done(), 32, 8, 8));
+        build(w, &[])
     })
-}
-
-fn portal_g(x: u64) -> u64 {
-    let p: extern "rust-call" fn((u64,)) -> u64 = portal::<(u64,), u64, ID_G>;
-    p((x,))
 }
 
 fn native_add(a: u64, b: u64) -> u64 {
@@ -579,120 +565,81 @@ fn native_double(x: u64) -> u64 {
     2 * x
 }
 
-/// Plays an `__imp_` slot holding g's portal address.
-static IMP_G: SyncPtr = SyncPtr(portal::<(u64,), u64, ID_G> as *const ());
+/// Plays an `__imp_` slot holding g's address.
+static IMP_G: AtomicUsize = AtomicUsize::new(0);
 
 #[test]
-fn multi_image_calls_and_site_caches() {
+fn multi_image_calls() {
     let b = image_b();
-    let pg = portal::<(u64,), u64, ID_G> as *const () as usize;
+    let pg = b.code(Func(0)) as usize;
+    IMP_G.store(pg, Ordering::Relaxed);
     let mut w = ImageWriter::new(unique_scid());
-    let s_g = w.symbol("portal_g", 0);
+    let s_g = w.symbol("g", 0);
     let s_add = w.symbol("native_add", 0);
     let s_imp = w.symbol("imp_g", SYM_INDIRECT);
-    let i1 = w.symbol("cp1", 0);
-    let i2 = w.symbol("cp2", 0);
     let k_a = w.add_const(&7u64.to_le_bytes(), 8, &[]);
-    let sites: Vec<Site> = (0..5).map(|_| w.site()).collect();
+    let x = regs(&[16]);
+    let px = regs(&[24]);
 
-    // f0(x) = g(x) + 7 via call.ext; the + 7 reads A's pool after returning from B.
+    // f0(x) = g(x) + 7 via call.sym; the + 7 reads A's pool after returning from B.
     let mut a = Asm::new();
-    a.i(Insn::MovW64 { d: Slot(-32), s: Slot(16) });
-    a.i(Insn::CallExt { d: Slot(-8), sym: s_g, site: sites[0], isl: i1, f: Slot(-16), k: 8 });
+    a.i(Insn::CallSym { d: Slot(-8), sym: s_g, k: 8, a: List::from_words(&x) });
     a.i(Insn::Const { d: Slot(-24), k: k_a, len: 8 });
     a.i(Insn::AddW64 { d: Slot(-8), a: Slot(-8), b: Slot(-24) });
     a.ret(Slot(-8), 8);
     let f0 = w.add_function(func(a.done(), 32, 8, 8));
 
-    // f1(a, b) = native_add(a, b) via call.ext's native path.
+    // f1(a, b) = native_add(a, b).
     let mut a = Asm::new();
-    a.i(Insn::MovW64 { d: Slot(-32), s: Slot(16) });
-    a.i(Insn::MovW64 { d: Slot(-24), s: Slot(24) });
-    a.i(Insn::CallExt { d: Slot(-8), sym: s_add, site: sites[1], isl: i2, f: Slot(-16), k: 8 });
+    a.i(Insn::CallSym { d: Slot(-8), sym: s_add, k: 8, a: List::from_words(&regs(&[16, 24])) });
     a.ret(Slot(-8), 8);
-    let f1 = w.add_function(func(a.done(), 32, 16, 8));
+    let f1 = w.add_function(func(a.done(), 16, 16, 8));
 
-    // f2(x) = g(x) via call.ext.ind through an import slot.
+    // f2(x) = g(x) via call.sym.ind through an import slot.
     let mut a = Asm::new();
-    a.i(Insn::MovW64 { d: Slot(-32), s: Slot(16) });
-    a.i(Insn::CallExtInd { d: Slot(-8), sym: s_imp, site: sites[2], isl: i1, f: Slot(-16), k: 8 });
+    a.i(Insn::CallSymInd { d: Slot(-8), sym: s_imp, k: 8, a: List::from_words(&x) });
     a.ret(Slot(-8), 8);
-    let f2 = w.add_function(func(a.done(), 32, 8, 8));
+    let f2 = w.add_function(func(a.done(), 16, 8, 8));
 
-    // f3(p, x) = p(x) via call.ind.
+    // f3(p, x) = p(x) via call.ptr.
     let mut a = Asm::new();
-    a.i(Insn::MovW64 { d: Slot(-16), s: Slot(24) });
-    a.i(Insn::CallInd { d: Slot(-8), p: Slot(16), site: sites[3], isl: i1, k: 8 });
+    a.i(Insn::CallPtr { d: Slot(-8), p: Slot(16), k: 8, a: List::from_words(&px) });
     a.ret(Slot(-8), 8);
     let f3 = w.add_function(func(a.done(), 16, 16, 8));
 
     // f4(p, x) = become p(x).
     let mut a = Asm::new();
-    a.i(Insn::MovW64 { d: Slot(-16), s: Slot(24) });
-    a.i(Insn::TailCallInd { p: Slot(16), site: sites[4], isl: i1, n: 8, s: Slot(-8), q: Slot(0), k: 0 });
-    a.ret(Slot(-8), 8);
+    a.i(Insn::TailCallPtr { p: Slot(16), a: List::from_words(&px) });
     let f4 = w.add_function(func(a.done(), 16, 16, 8));
 
-    // f5(p, x) = f4(p, x) + 1, so f4's tail call happens in a non-entry frame.
+    // f5(p, x) = f4(p, x) + 1, so f4's tail call happens in a called frame.
     let mut a = Asm::new();
     a.i(Insn::MovW64 { d: Slot(-32), s: Slot(16) });
     a.i(Insn::MovW64 { d: Slot(-24), s: Slot(24) });
-    a.i(Insn::Call { d: Slot(-8), f: f4, k: 8 });
+    a.i(Insn::Call { d: Slot(-8), f: f4, k: 8, a: List::from_words(&[]) });
     a.i(Insn::AddImmW64 { d: Slot(-8), a: Slot(-8), imm: 1 });
     a.ret(Slot(-8), 8);
     let f5 = w.add_function(func(a.done(), 32, 16, 8));
 
-    let img = build(w, &[
-        ("portal_g", pg),
-        ("native_add", native_add as *const () as usize),
-        ("imp_g", addr(&raw const IMP_G)),
-        ("cp1", cp1()),
-        ("cp2", cp2()),
-    ]);
-
-    let g = lookup_addr(pg as *const ()).expect("g's portal is registered");
-    assert_eq!(g.portal as usize, pg);
-    assert_eq!(unsafe { (*g.img).view.header() as *const Header as usize }, b.header as usize);
-    assert_eq!(g.entry, b.code(Func(0)));
-    assert!(lookup_addr(native_add as *const ()).is_none());
-    assert!(lookup_addr(std::ptr::null()).is_none());
-    let gp = g as *const _ as usize;
+    let img = build(w, &[("g", pg), ("native_add", native_add as *const () as usize), ("imp_g", addr(&raw const IMP_G))]);
 
     for x in [0u64, 5, 1 << 40] {
         assert_eq!(ok::<_, u64>(img.id(f0), (x,)), 3 * x + K_B + 7);
     }
-    assert_eq!(img.site(sites[0]), gp, "call.ext cached g's record");
-
     assert_eq!(ok::<_, u64>(img.id(f1), (40u64, 2u64)), 42);
-    assert_eq!(img.site(sites[1]), 1, "call.ext cached NATIVE");
-    assert_eq!(ok::<_, u64>(img.id(f1), (1u64, 2u64)), 3);
-
     assert_eq!(ok::<_, u64>(img.id(f2), (2u64,)), 6 + K_B);
-    assert_eq!(img.site(sites[2]), gp);
-
     let nd = native_double as *const () as usize;
-    assert_eq!(img.site(sites[3]), 0);
-    assert_eq!(ok::<_, u64>(img.id(f3), (pg, 4u64)), 12 + K_B, "miss → VM");
-    assert_eq!(img.site(sites[3]), gp);
-    assert_eq!(ok::<_, u64>(img.id(f3), (pg, 5u64)), 15 + K_B, "hit");
+    assert_eq!(ok::<_, u64>(img.id(f3), (pg, 4u64)), 12 + K_B, "VM target");
     assert_eq!(ok::<_, u64>(img.id(f3), (nd, 5u64)), 10, "native target");
-    assert_eq!(img.site(sites[3]), nd << 1 | 1, "native target cached, tagged");
-    assert_eq!(ok::<_, u64>(img.id(f3), (nd, 6u64)), 12, "native hit");
-    assert_eq!(ok::<_, u64>(img.id(f3), (pg, 1u64)), 3 + K_B, "back to VM");
-    assert_eq!(img.site(sites[3]), gp);
-
-    // tail_call.ind: VM target in the entry frame and in a called frame; native target in
-    // both (through the island, then `ret`).
+    // tail_call.ptr: VM and native targets, from the test's call and from a VM caller.
     assert_eq!(ok::<_, u64>(img.id(f4), (pg, 1u64)), 3 + K_B);
     assert_eq!(ok::<_, u64>(img.id(f5), (pg, 1u64)), 4 + K_B);
     assert_eq!(ok::<_, u64>(img.id(f4), (nd, 21u64)), 42);
-    assert_eq!(img.site(sites[4]), nd << 1 | 1);
     assert_eq!(ok::<_, u64>(img.id(f5), (nd, 21u64)), 43);
-    assert_eq!(ok::<_, u64>(img.id(f5), (pg, 2u64)), 7 + K_B);
-    assert_eq!(img.site(sites[4]), gp);
 
-    // The portal itself, called natively.
-    assert_eq!(portal_g(10), 30 + K_B);
+    // g itself, called natively.
+    let g: fn(u64) -> u64 = unsafe { std::mem::transmute(pg) };
+    assert_eq!(g(10), 30 + K_B);
 }
 
 #[test]
@@ -720,39 +667,38 @@ fn registration() {
 
 // ---- re-entrancy ----
 
-const SCID_R: u64 = 0xeeee_0000_0000_0003;
-const ID_R0: u64 = portal_id(crate_hash(SCID_R), 0);
+/// The address of `r0`, VM code that native code calls.
+static R0: AtomicUsize = AtomicUsize::new(0);
 
-/// Native: r0(n - 1) + n, through r0's portal (VM → island → native → portal → VM).
+/// Native: r0(n - 1) + n (VM → native → VM).
 fn reenter(n: u64) -> u64 {
-    let p: extern "rust-call" fn((u64,)) -> u64 = portal::<(u64,), u64, ID_R0>;
-    p((n - 1,)) + n
+    let r0: fn(u64) -> u64 = unsafe { std::mem::transmute(R0.load(Ordering::Relaxed)) };
+    r0(n - 1) + n
 }
 
 #[test]
 fn reentrancy() {
-    let mut w = ImageWriter::new(SCID_R);
+    let mut w = ImageWriter::new(unique_scid());
     let s = w.symbol("reenter", 0);
-    let i1 = w.symbol("cp1", 0);
-    // r0(n) = n == 0 ? 0 : reenter(n). n@16, r@-8, fn pointer@-16.
+    // r0(n) = n == 0 ? 0 : reenter(n). n in `rdi`, kept at -16; r@-8.
     let mut a = Asm::new();
-    let b = a.i(Insn::BrEqImmW64 { a: Slot(16), imm: 0, neg: F, t: Target(0) });
-    a.ret(Slot(16), 8);
-    let l = a.i(Insn::AddrSym { d: Slot(-16), sym: s });
+    a.i(arg(-16, 0));
+    let b = a.i(Insn::BrEqImmW64 { a: Slot(-16), imm: 0, neg: F, t: Target(0) });
+    a.ret(Slot(-16), 8);
+    let l = a.i(Insn::CallSym { d: Slot(-8), sym: s, k: 8, a: List::from_words(&regs(&[-16])) });
     a.patch(b, "t", l);
-    let ops = [16, op(-8), op(-16)];
-    a.i(Insn::Island { isl: i1, ops: List::from_words(&ops) });
     a.ret(Slot(-8), 8);
     w.add_function(func(a.done(), 16, 8, 8));
-    let img = build(w, &[("reenter", reenter as *const () as usize), ("cp1", cp1())]);
-    assert_eq!(img.id(Func(0)), ID_R0);
+    let img = build(w, &[("reenter", reenter as *const () as usize)]);
+    R0.store(img.code(Func(0)) as usize, Ordering::Relaxed);
+    let id = img.id(Func(0));
     for n in [0u64, 1, 2, 50] {
-        assert_eq!(ok::<_, u64>(ID_R0, (n,)), n * (n + 1) / 2);
+        assert_eq!(ok::<_, u64>(id, (n,)), n * (n + 1) / 2);
     }
-    // 1000 nested `enter`s: needs more native stack than a test thread has in debug builds.
-    assert_eq!(big_stack(256, || ok::<_, u64>(ID_R0, (1000u64,))), 500500);
-    // Threads have independent VM state.
-    let hs: Vec<_> = (0..4u64).map(|t| std::thread::spawn(move || ok::<_, u64>(ID_R0, (100 + t,)))).collect();
+    // 1000 nested calls through native code: needs more native stack than a test thread has
+    // in debug builds.
+    assert_eq!(big_stack(256, move || ok::<_, u64>(id, (1000u64,))), 500500);
+    let hs: Vec<_> = (0..4u64).map(|t| std::thread::spawn(move || ok::<_, u64>(id, (100 + t,)))).collect();
     for (t, h) in hs.into_iter().enumerate() {
         let n = 100 + t as u64;
         assert_eq!(h.join().unwrap(), n * (n + 1) / 2);
@@ -760,10 +706,6 @@ fn reentrancy() {
 }
 
 // ---- unwinding ----
-
-const SCID_U: u64 = 0x0dd0_0000_0000_0004;
-const ID_U2: u64 = portal_id(crate_hash(SCID_U), 2);
-const ID_O: u64 = portal_id(crate_hash(SCID_U), 3);
 
 #[derive(Debug, PartialEq)]
 struct Boom(u64);
@@ -775,25 +717,25 @@ fn boom(x: u64) -> u64 {
     x
 }
 
-/// Native: u2's portal + 100 (nested `enter` that may unwind).
-fn via_portal(x: u64, log: u64) -> u64 {
-    let p: extern "rust-call" fn((u64, u64)) -> u64 = portal::<(u64, u64), u64, ID_U2>;
-    p((x, log)) + 100
+/// The address of `u2`, VM code that native code calls.
+static U2: AtomicUsize = AtomicUsize::new(0);
+
+/// Native: u2(x, log) + 100 (a nested VM call that may unwind).
+fn via_native(x: u64, log: u64) -> u64 {
+    let u2: fn(u64, u64) -> u64 = unsafe { std::mem::transmute(U2.load(Ordering::Relaxed)) };
+    u2(x, log) + 100
 }
 
 fn image_u() -> &'static Linked {
     static U: OnceLock<Linked> = OnceLock::new();
     U.get_or_init(|| {
-        let mut w = ImageWriter::new(SCID_U);
+        let mut w = ImageWriter::new(unique_scid());
         let s_boom = w.symbol("boom", 0);
-        let s_via = w.symbol("via_portal", 0);
-        let i1 = w.symbol("cp1", 0);
-        let i2 = w.symbol("cp2", 0);
+        let s_via = w.symbol("via_native", 0);
         // u1(x, log) = boom(x); landing pad: log[0] = 999, resume. x@16, log@24, r@-8,
-        // fn@-16, exception@-24, tmp@-32.
+        // exception@-24, tmp@-32.
         let mut a = Asm::new();
-        a.i(Insn::AddrSym { d: Slot(-16), sym: s_boom });
-        let call = a.i(Insn::Island { isl: i1, ops: List::from_words(&[16, op(-8), op(-16)]) });
+        let call = a.i(Insn::CallSym { d: Slot(-8), sym: s_boom, k: 8, a: List::from_words(&regs(&[16])) });
         a.ret(Slot(-8), 8);
         let c = a.i(Insn::Lpad { x: Slot(-24) });
         a.i(Insn::ImmW64 { d: Slot(-32), imm: 999 });
@@ -808,7 +750,7 @@ fn image_u() -> &'static Linked {
         let mut a = Asm::new();
         a.i(Insn::MovW64 { d: Slot(-32), s: Slot(16) });
         a.i(Insn::MovW64 { d: Slot(-24), s: Slot(24) });
-        let call = a.i(Insn::Call { d: Slot(-8), f: Func(0), k: 8 });
+        let call = a.i(Insn::Call { d: Slot(-8), f: Func(0), k: 8, a: List::from_words(&[]) });
         a.i(Insn::ImmW64 { d: Slot(-16), imm: 1 });
         a.i(Insn::StoreW64 { m: Mem { p: Slot(24), k: 8 }, s: Slot(-16) });
         a.ret(Slot(-8), 8);
@@ -816,62 +758,59 @@ fn image_u() -> &'static Linked {
         f.cleanup = vec![CleanupEntry { offset: call, target: CONTINUE }];
         assert_eq!(w.add_function(f), Func(1));
 
-        // u2(x, log) = u0(x, log); landing pad `lpad; jmp` to a block that sets log[2] =
-        // 555 and resumes.
+        // u2(x, log) = u0(x, log), native-callable (x, log in `rdi`, `rsi`, kept at -56,
+        // -64); landing pad `lpad; jmp` to a block that sets log[2] = 555 and resumes.
         let mut a = Asm::new();
-        a.i(Insn::MovW64 { d: Slot(-48), s: Slot(16) });
-        a.i(Insn::MovW64 { d: Slot(-40), s: Slot(24) });
-        let call = a.i(Insn::Call { d: Slot(-8), f: Func(1), k: 8 });
+        a.i(arg(-56, 0));
+        a.i(arg(-64, 1));
+        a.i(Insn::MovW64 { d: Slot(-80), s: Slot(-56) });
+        a.i(Insn::MovW64 { d: Slot(-72), s: Slot(-64) });
+        let call = a.i(Insn::Call { d: Slot(-8), f: Func(1), k: 8, a: List::from_words(&[]) });
         a.ret(Slot(-8), 8);
         let c = a.i(Insn::Lpad { x: Slot(-24) });
         let j = a.i(Insn::Jmp { t: Target(0) });
         a.i(Insn::Abort {});
         let l = a.i(Insn::ImmW64 { d: Slot(-16), imm: 555 });
         a.patch(j, "t", l);
-        a.i(Insn::StoreW64 { m: Mem { p: Slot(24), k: 16 }, s: Slot(-16) });
+        a.i(Insn::StoreW64 { m: Mem { p: Slot(-64), k: 16 }, s: Slot(-16) });
         let r = a.i(Insn::Resume { x: Slot(-24) });
-        let mut f = func(a.done(), 48, 16, 8);
+        let mut f = func(a.done(), 80, 16, 8);
         f.cleanup = vec![CleanupEntry { offset: call, target: c }, CleanupEntry { offset: r, target: CONTINUE }];
         assert_eq!(w.add_function(f), Func(2));
 
-        // o(x, log) = via_portal(x, log); landing pad: log[3] = 777.
+        // o(x, log) = via_native(x, log), native-callable (x, log kept at -40, -48); landing
+        // pad: log[3] = 777.
         let mut a = Asm::new();
-        a.i(Insn::AddrSym { d: Slot(-16), sym: s_via });
-        let call = a.i(Insn::Island { isl: i2, ops: List::from_words(&[16, op(-8), op(-16)]) });
+        a.i(arg(-40, 0));
+        a.i(arg(-48, 1));
+        let call = a.i(Insn::CallSym { d: Slot(-8), sym: s_via, k: 8, a: List::from_words(&regs(&[-40, -48])) });
         a.ret(Slot(-8), 8);
         let c = a.i(Insn::Lpad { x: Slot(-24) });
         a.i(Insn::ImmW64 { d: Slot(-32), imm: 777 });
-        a.i(Insn::StoreW64 { m: Mem { p: Slot(24), k: 24 }, s: Slot(-32) });
+        a.i(Insn::StoreW64 { m: Mem { p: Slot(-48), k: 24 }, s: Slot(-32) });
         let r = a.i(Insn::Resume { x: Slot(-24) });
-        let mut f = func(a.done(), 32, 16, 8);
+        let mut f = func(a.done(), 48, 16, 8);
         f.cleanup = vec![CleanupEntry { offset: call, target: c }, CleanupEntry { offset: r, target: CONTINUE }];
         assert_eq!(w.add_function(f), Func(3));
 
-        // u4(x) = boom(x) through call.ext's native path, Continue.
-        let site = w.site();
+        // u4(x) = boom(x), Continue.
         let mut a = Asm::new();
-        a.i(Insn::MovW64 { d: Slot(-32), s: Slot(16) });
-        let call = a.i(Insn::CallExt { d: Slot(-8), sym: s_boom, site, isl: i1, f: Slot(-16), k: 8 });
+        let call = a.i(Insn::CallSym { d: Slot(-8), sym: s_boom, k: 8, a: List::from_words(&regs(&[16])) });
         a.ret(Slot(-8), 8);
-        let mut f = func(a.done(), 32, 8, 8);
+        let mut f = func(a.done(), 16, 8, 8);
         f.cleanup = vec![CleanupEntry { offset: call, target: CONTINUE }];
         assert_eq!(w.add_function(f), Func(4));
 
-        // u5(p, x) = become p(x) through tail_call.ind's native path, Continue.
-        let site = w.site();
+        // u5(p, x) = become p(x): no frame of its own to unwind through.
         let mut a = Asm::new();
-        a.i(Insn::MovW64 { d: Slot(-16), s: Slot(24) });
-        let call = a.i(Insn::TailCallInd { p: Slot(16), site, isl: i1, n: 8, s: Slot(-8), q: Slot(0), k: 0 });
-        a.ret(Slot(-8), 8);
-        let mut f = func(a.done(), 16, 16, 8);
-        f.cleanup = vec![CleanupEntry { offset: call, target: CONTINUE }];
-        assert_eq!(w.add_function(f), Func(5));
+        a.i(Insn::TailCallPtr { p: Slot(16), a: List::from_words(&regs(&[24])) });
+        assert_eq!(w.add_function(func(a.done(), 16, 16, 8)), Func(5));
 
         // u6(p, x, log) = u5(p, x) with a landing pad: log[0] = 6.
         let mut a = Asm::new();
         a.i(Insn::MovW64 { d: Slot(-48), s: Slot(16) });
         a.i(Insn::MovW64 { d: Slot(-40), s: Slot(24) });
-        let call = a.i(Insn::Call { d: Slot(-8), f: Func(5), k: 8 });
+        let call = a.i(Insn::Call { d: Slot(-8), f: Func(5), k: 8, a: List::from_words(&[]) });
         a.ret(Slot(-8), 8);
         let c = a.i(Insn::Lpad { x: Slot(-24) });
         a.i(Insn::ImmW64 { d: Slot(-16), imm: 6 });
@@ -881,12 +820,9 @@ fn image_u() -> &'static Linked {
         f.cleanup = vec![CleanupEntry { offset: call, target: c }, CleanupEntry { offset: r, target: CONTINUE }];
         assert_eq!(w.add_function(f), Func(6));
 
-        build(w, &[
-            ("boom", boom as *const () as usize),
-            ("via_portal", via_portal as *const () as usize),
-            ("cp1", cp1()),
-            ("cp2", cp2()),
-        ])
+        let u = build(w, &[("boom", boom as *const () as usize), ("via_native", via_native as *const () as usize)]);
+        U2.store(u.code(Func(2)) as usize, Ordering::Relaxed);
+        u
     })
 }
 
@@ -910,20 +846,20 @@ fn unwinding() {
     assert_eq!(payload(e), Boom(7));
     assert_eq!(log, [999, 0, 555, 0]);
 
-    // Through a nested `enter`: o → island → via_portal → portal(u2) → VM panics → unwinds
-    // through the inner `enter` and the native frames → o's landing pad → out to us.
+    // Through native code: o → via_native → u2 → VM panics → unwinds through the native
+    // frames → o's landing pad → out to us.
     log = [0; 4];
-    let o: extern "rust-call" fn((u64, u64)) -> u64 = portal::<(u64, u64), u64, ID_O>;
-    let e = catch_unwind(|| o((7, lp))).unwrap_err();
+    let o: fn(u64, u64) -> u64 = unsafe { std::mem::transmute(u.code(Func(3))) };
+    let e = catch_unwind(|| o(7, lp)).unwrap_err();
     assert_eq!(payload(e), Boom(7));
     assert_eq!(log, [999, 0, 555, 777]);
-    assert_eq!(o((3, lp)), 103);
+    assert_eq!(o(3, lp), 103);
 
-    // call.ext's native path.
+    // A native callee.
     assert_eq!(ok::<_, u64>(u.id(Func(4)), (5u64,)), 5);
     assert_eq!(payload(call::<_, u64>(u.id(Func(4)), (7u64,)).unwrap_err()), Boom(7));
 
-    // tail_call.ind's native path, in the entry frame and in a called one.
+    // A tail call to native code, from the test's call and from a VM caller.
     let pb = boom as *const () as usize;
     assert_eq!(ok::<_, u64>(u.id(Func(5)), (pb, 5u64)), 5);
     assert_eq!(payload(call::<_, u64>(u.id(Func(5)), (pb, 7u64)).unwrap_err()), Boom(7));
@@ -961,19 +897,17 @@ fn fatal_child() {
     let mut cleanup = vec![];
     let s_boom = w.symbol("boom", 0);
     let s_term = w.symbol("say_terminate", 0);
-    let i1 = w.symbol("cp1", 0);
     let mut fs = 32;
     let boom_call = |a: &mut Asm| {
         a.i(Insn::ImmW64 { d: Slot(-32), imm: 7 });
-        a.i(Insn::AddrSym { d: Slot(-16), sym: s_boom });
-        a.i(Insn::Island { isl: i1, ops: List::from_words(&[op(-32), op(-8), op(-16)]) })
+        a.i(Insn::CallSym { d: Slot(-8), sym: s_boom, k: 8, a: List::from_words(&regs(&[-32])) })
     };
     match case.as_str() {
         "overflow" | "overflow_probe" => {
             if case == "overflow_probe" {
                 fs = 1 << 16;
             }
-            a.i(Insn::Call { d: Slot(-8), f: Func(0), k: 8 });
+            a.i(Insn::Call { d: Slot(-8), f: Func(0), k: 8, a: List::from_words(&[]) });
             a.ret(Slot(-8), 8);
         }
         "unreachable" => {
@@ -993,8 +927,7 @@ fn fatal_child() {
             let c = boom_call(&mut a);
             a.ret(Slot(-8), 8);
             let pad = a.i(Insn::Lpad { x: Slot(-24) });
-            a.i(Insn::AddrSym { d: Slot(-16), sym: s_term });
-            a.i(Insn::Island { isl: i1, ops: List::from_words(&[op(-32), op(-8), op(-16)]) });
+            a.i(Insn::CallSym { d: Slot(-8), sym: s_term, k: 8, a: List::from_words(&regs(&[-32])) });
             a.i(Insn::Abort {});
             cleanup.push(CleanupEntry { offset: c, target: pad | CATCH });
         }
@@ -1003,11 +936,7 @@ fn fatal_child() {
     let mut f = func(a.done(), fs, 0, 8);
     f.cleanup = cleanup;
     w.add_function(f);
-    let img = build(w, &[
-        ("boom", boom as *const () as usize),
-        ("say_terminate", say_terminate as *const () as usize),
-        ("cp1", cp1()),
-    ]);
+    let img = build(w, &[("boom", boom as *const () as usize), ("say_terminate", say_terminate as *const () as usize)]);
     let r = call::<_, u64>(img.id(Func(0)), ());
     eprintln!("RETURNED {:?}", r.map_err(payload));
 }
@@ -1039,40 +968,30 @@ fn fatal_paths() {
 
 // ---- concurrency ----
 
-const SCID_C: u64 = 0xc0c0_0000_0000_0005;
-const ID_C: u64 = portal_id(crate_hash(SCID_C), 0);
-
 #[test]
-fn concurrent_registration_and_sites() {
-    let pc = portal::<(u64,), u64, ID_C> as *const () as usize;
-    // Image C: c(x) = x + 1, with a portal. Never entered before the threads start, so they
-    // race on its lazy function table and on the portal map.
-    let mut w = ImageWriter::new(SCID_C);
-    let p = w.symbol("portal_c", 0);
-    let mut a = Asm::new();
-    a.i(Insn::AddImmW64 { d: Slot(-16), a: Slot(16), imm: 1 });
-    a.ret(Slot(-16), 8);
-    let mut f = func(a.done(), 16, 8, 8);
-    f.portal = Some(p);
-    w.add_function(f);
-    let c = assemble(w, &[("portal_c", pc)]);
-
-    // Image A: e(x) = c(x) via call.ext; i(p, x) = p(x) via call.ind. Shared sites.
+fn concurrent_registration() {
+    // Image C: c(x) = x + 1, native-callable (x in `rdi`).
     let mut w = ImageWriter::new(unique_scid());
-    let s_c = w.symbol("portal_c", 0);
-    let i1 = w.symbol("cp1", 0);
-    let (s0, s1) = (w.site(), w.site());
     let mut a = Asm::new();
-    a.i(Insn::MovW64 { d: Slot(-32), s: Slot(16) });
-    a.i(Insn::CallExt { d: Slot(-8), sym: s_c, site: s0, isl: i1, f: Slot(-16), k: 8 });
+    a.i(arg(-24, 0));
+    a.i(Insn::AddImmW64 { d: Slot(-16), a: Slot(-24), imm: 1 });
+    a.ret(Slot(-16), 8);
+    w.add_function(func(a.done(), 32, 8, 8));
+    let c = assemble(w, &[]);
+    let pc = c.code(Func(0)) as usize;
+
+    // Image A: e(x) = c(x) via call.sym; i(p, x) = p(x) via call.ptr.
+    let mut w = ImageWriter::new(unique_scid());
+    let s_c = w.symbol("c", 0);
+    let mut a = Asm::new();
+    a.i(Insn::CallSym { d: Slot(-8), sym: s_c, k: 8, a: List::from_words(&regs(&[16])) });
     a.ret(Slot(-8), 8);
-    let fe = w.add_function(func(a.done(), 32, 8, 8));
+    let fe = w.add_function(func(a.done(), 16, 8, 8));
     let mut a = Asm::new();
-    a.i(Insn::MovW64 { d: Slot(-16), s: Slot(24) });
-    a.i(Insn::CallInd { d: Slot(-8), p: Slot(16), site: s1, isl: i1, k: 8 });
+    a.i(Insn::CallPtr { d: Slot(-8), p: Slot(16), k: 8, a: List::from_words(&regs(&[24])) });
     a.ret(Slot(-8), 8);
     let fi = w.add_function(func(a.done(), 16, 16, 8));
-    let img = assemble(w, &[("portal_c", pc), ("cp1", cp1())]);
+    let img = assemble(w, &[("c", pc)]);
     register(&[&c, &img]);
     let (ide, idi) = (img.id(fe), img.id(fi));
 
@@ -1101,5 +1020,4 @@ fn concurrent_registration_and_sites() {
     for h in hs {
         h.join().unwrap();
     }
-    assert!(lookup_addr(pc as *const ()).is_some());
 }

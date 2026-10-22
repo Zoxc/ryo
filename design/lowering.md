@@ -15,18 +15,17 @@ assumed to be VM functions of this image (a call of one of them is a `call`, any
 callee an island). A `LoweredFn` holds:
 
 - the machine code (`asm::Encoded`: code bytes, relocations, code constants, LSDA call
-  sites), whose `func`, `sym`, `site`, `k` and `data` operands are indices into the
+  sites), whose `func`, `sym`, `k` and `data` operands are indices into the
   relocation list
 - the relocation list, which the merge pass resolves once every function's index and symbol
   is known, by rewriting the code's relocation targets (the code bytes aren't touched):
   - `Call { callee }`: a `call` / `tail_call` to another VM function of this image (its
     function index)
-  - `Symbol { target }`: a `sym` operand, the target's symbol (its portal if it is a VM
-    function, which then gets one; an internal native item is made visible to the image).
-    On PE an import's slot is indirect, so the lowering emits `addr.sym.ind` /
-    `call.ext.ind` for it
+  - `Symbol { target }`: a `sym` operand, the target's symbol (a VM function's then becomes
+    global, [backend.md](backend.md#pipeline); an internal native item is made visible to
+    the image). On PE an import's slot is indirect, so the lowering emits `addr.sym.ind` /
+    `call.sym.ind` for it
   - `Static { def_id }`: a `sym` operand naming a static
-  - `Site`: a fresh site cache slot
   - `Const { alloc, offset }`: a `k` operand, `offset` bytes into the pool copy of an
     allocation
   - `Bytes { bytes, align }`: a `k` operand, a pool allocation of raw bytes (`fill`
@@ -66,27 +65,29 @@ so a MIR change in a toolchain bump is a compile error. The tables below follow 
 
 ## Frame slots
 
-- **Arguments**: the **argument block** has the layout of the tuple of the callee's *ABI*
-  argument types, as `tcx.layout_of` computes it. That is `fn_sig_for_fn_abi`'s inputs with
-  a trailing `rust-call` tuple spread out, as `fn_abi_new_uncached` does
+- **ABI inputs**: a function's inputs are those of its `fn_abi`: `fn_sig_for_fn_abi`'s
+  inputs with a trailing `rust-call` tuple spread out, as `fn_abi_new_uncached` does
   (`rustc_ty_utils/src/abi.rs:553-566`), plus the implicit `&'static Location` for
-  `#[track_caller]` functions (`abi.rs:600`). For most bodies, the argument locals `_1.._n`
-  are the block's fields. Bodies with `spread_arg` (rust-call items whose MIR has one tupled
-  local where the ABI is spread) give the spread local its own slot, and the function's
-  prologue assembles it from the block fields, because the nested and flat tuple layouts
-  differ. Callers (`call`, `call.ind`, `tail_call`), callees, portals
-  (whose `Args` tuple is exactly this tuple) and the `call` island templates all use this
-  one definition. So an argument block can move between them with one `copy`.
-  `ryo_bytecode::abi::arg_block` doesn't compute this layout: rustc's tuple field order
-  depends on niches, not only on sizes and alignments (`(u32, u8, bool, u8)` and
-  `(u32, u8, u8, u8)` differ), and changes between releases. The backend takes the offsets,
-  size and alignment from `tcx.layout_of` of the tuple, and `arg_block` validates them and
-  gives the frame offsets. Blocks aligned to more than 16 bytes can't be placed at
-  `fp + 16`, so such functions stay native. The wrappers reject `-Zrandomize-layout`, since
-  tuple layouts must agree between crates. ZST arguments get an offset in the tuple and take no space.
-- Frames grow downward, and slots are signed offsets from `fp` ([vm.md](vm.md#frames)). The
-  argument block starts at `fp + 16`, above the return address and the caller's `fp`, in the
-  caller's frame.
+  `#[track_caller]` functions (`abi.rs:600`). Their `PassMode`s say where each piece goes
+  in registers and on the stack ([vm.md](vm.md#calls-and-islands), `sig.rs`, `arg_plan`);
+  a mode the plan doesn't handle keeps the function native.
+- **Homes**: each input has a home slot below `fp` (`frame.rs`): its argument local
+  `_1.._n`, a field of the spread local for bodies with `spread_arg` (rust-call items whose
+  MIR has one tupled local where the ABI is spread), or an 8-byte slot for the caller
+  location. The prologue fills the homes from the argument registers (`arg`) and the
+  stack argument area at `fp + 16` (after 32 bytes of shadow space on PE), and copies
+  `Indirect` inputs from behind their pointers, which get slots of their own. An sret
+  function also keeps its destination pointer in a slot.
+- **Argument blocks** remain for island calls and for checking the inputs' sizes: the
+  layout of the tuple of the ABI input types, as `tcx.layout_of` computes it
+  (`sig.rs`, `arg_block`). The `call` and `call_cN` templates read their arguments as that
+  tuple. `ryo_bytecode::abi::arg_block` doesn't compute this layout: rustc's tuple field
+  order depends on niches, not only on sizes and alignments (`(u32, u8, bool, u8)` and
+  `(u32, u8, u8, u8)` differ), and changes between releases; the backend takes the
+  offsets, size and alignment from `tcx.layout_of`, and `arg_block` validates them. The
+  wrappers reject `-Zrandomize-layout`, so tuple layouts agree between crates. ZST
+  arguments take no space.
+- Frames grow downward, and slots are signed offsets from `fp` ([vm.md](vm.md#frames)).
 - **Other locals**: each gets a fixed offset below `fp`, aligned to its layout. ZSTs take no
   space. Locals whose storage ranges don't overlap share bytes
   (`frame.rs`): a forward dataflow over every CFG edge (unwind edges included) gives the
@@ -104,18 +105,19 @@ so a MIR change in a toolchain bump is a compile error. The tables below follow 
   local that nothing reads again (`frame::dead_after_read`).
 - **Exception slot**: functions with cleanup or terminate actions, or an `UnwindResume`, have
   one 8-byte slot where landing pads store the exception object ([Unwinding](#unwinding)).
-- **Outgoing block**: the argument blocks of the calls a function makes are written at
-  `fp - F`, the bottom of the frame (`rsp`), which is the callee's `fp + 16`. The lowering
+- **Outgoing area**: the stack arguments of the calls a function makes, and island
+  argument blocks, are written at `fp - F`, the bottom of the frame (`rsp`), which is the
+  callee's `fp + 16`. The lowering
   hands out outgoing slots as offsets in the block and turns them into frame offsets once
   `F` is known (`frame.rs`, `emit::finish_slots`).
-- `frame_size` `F` = locals + temporaries + the largest outgoing argument block (the
-  staging area of tail calls included), rounded up to 16 (`abi::frame_size`). It is an
+- `frame_size` `F` = locals + temporaries + the largest outgoing area (and on PE the 16
+  bytes of saved `rdi`/`rsi` at the top), rounded up to 16 (`abi::frame_size`). It is an
   operand of the prologue's `sub rsp, F` ([vm.md](vm.md#frames)).
 - **Alignment**: frames are 16-aligned (`fp` is 16-aligned and `F` a multiple of 16), and
   every slot is aligned to its type relative to `fp`.
   So every slot whose type has alignment ≤ 16 is properly aligned, and templates access
   slots with aligned reads and writes. A function whose locals or arguments (including the
-  argument block of any call it makes) contain a type with alignment above 16 is not
+  argument block of any island call it makes) contain a type with alignment above 16 is not
   lowered: it stays native ([stubs.md](stubs.md#template-gaps)).
 
 ## Places and operands
@@ -169,7 +171,7 @@ a temporary slot up to 256 bytes, and uses `memmove` above that.
 | `Repeat(op, n)` | A scalar constant: `zero` or `fill` into a slot, `memset` into memory if all its bytes are equal. Otherwise the element is written once, then doubled with `memcpy`s (⌈log₂ n⌉ of them) |
 | `Ref`, `RawPtr` | `addr` (slot address) or the place's address computation. For unsized places, the wide pointer (data plus metadata) |
 | `Reborrow(_, _, place)` | same as `Use(Copy(place))`: same layout, bitwise copy |
-| `ThreadLocalRef(def)` | `addr.sym` of `Shim(ThreadLocal(def))` and a `call_ptr0` island on it (without a cleanup entry: the shim can't unwind), which returns the address on the current thread. On ELF, rustc doesn't create that shim (`needs_thread_local_shim` is false when the target exports TLS, `rustc_middle/src/ty/util.rs:731-735`), so the backend adds it to the native CGU itself, also for upstream statics, as `WeakODR` + `Hidden` ([backend.md](backend.md#pipeline), Linkage). On PE, the collector puts a local static's shim in the CGU, and an upstream crate exports its own (`symbol_export.rs:203-220`), which the image reaches through `__imp_`. The shim itself is never a VM function (its body is a `ThreadLocalRef`). Foreign thread locals have no shim and stay native |
+| `ThreadLocalRef(def)` | `call.sym` (`call.sym.ind` through `__imp_` on PE) of `Shim(ThreadLocal(def))`, without a cleanup entry (the shim can't unwind), which returns the address on the current thread in `rax`. On ELF, rustc doesn't create that shim (`needs_thread_local_shim` is false when the target exports TLS, `rustc_middle/src/ty/util.rs:731-735`), so the backend adds it to the native CGU itself, also for upstream statics, as `WeakODR` + `Hidden` ([backend.md](backend.md#pipeline), Linkage). On PE, the collector puts a local static's shim in the CGU, and an upstream crate exports its own (`symbol_export.rs:203-220`), which the image reaches through `__imp_`. The shim itself is never a VM function (its body is a `ThreadLocalRef`). Foreign thread locals have no shim and stay native |
 | `Cast(kind, op, ty)` | see Casts |
 | `BinaryOp(op, (a, b))` | see Binary operations |
 | `UnaryOp(Not, a)` | `not.wN` (`bool`: `xor` with 1) |
@@ -189,8 +191,8 @@ a temporary slot up to 256 bytes, and uses `memmove` above that.
 | any of the four above from or to `f16`/`f128` | the `as_cast<A, B>` island (`ops`: source, destination) |
 | `PtrToPtr`, `FnPtrToPtr`, `Transmute`, `Subtype`, `BoxDerefTransmute` | `mov`/`copy` (bit-preserving). `PtrToPtr` from wide to thin drops the metadata |
 | `PointerExposeProvenance`, `PointerWithExposedProvenance` | `mov` |
-| `PointerCoercion(ReifyFnPointer)` | `addr.sym` of the target instance's symbol, or its portal for VM functions |
-| `PointerCoercion(ClosureFnPointer)` | `addr.sym` of the closure's `FnOnce` shim (its portal, if it's a VM function) |
+| `PointerCoercion(ReifyFnPointer)` | `addr.sym` of the target instance's symbol (VM functions included) |
+| `PointerCoercion(ClosureFnPointer)` | `addr.sym` of the closure's `FnOnce` shim |
 | `PointerCoercion(UnsafeFnPointer, MutToConstPointer, ArrayToPointer)` | `mov` |
 | `PointerCoercion(Unsize)` | as cg_ssa's `coerce_unsized_into`: a pointer becomes the wide pointer, data pointer plus metadata (a constant length, `addr.abs` of the vtable in the constant pool, or for trait upcasts the old vtable or its supertrait entry). A struct (`Box`, `Rc`, `Ref<'_, T>`, `Pin<Box<T>>`, …) is coerced field by field: non-ZST fields of unchanged type are copied, the others coerced recursively |
 
@@ -223,7 +225,7 @@ the VM. Wide pointer orderings are lexicographic: `a < b` is `a.data < b.data ||
 | `Return` | `ret`; for sret, after `store.copy` of `_0` to the address saved by the prologue's `arg` |
 | `Unreachable` | `unreachable` |
 | `Call` | see Calls |
-| `TailCall` | `tail_call` / `tail_call.ind` ([vm.md](vm.md#calls-and-islands)) |
+| `TailCall` | `tail_call` / `tail_call.ptr` ([vm.md](vm.md#calls-and-islands)) |
 | `Drop { place, .. }` | Nothing if the type has no drop glue. Otherwise a call of `DropGlue(T)`: a VM `call` if the glue is a VM function, an `island` with `drop_in_place::<T>` otherwise. Unsized places pass the wide pointer. `replace` doesn't change the lowering, and `drop` (async drop) is `None` in runtime MIR |
 | `Assert { cond, expected, msg, target, unwind }` | a compare branch (fused as for `SwitchInt`) or `br`/`br!` to `target`, and otherwise a call of the panic function for `msg` |
 | `UnwindResume` | `resume x`, `x` the exception slot |
@@ -256,16 +258,18 @@ island.
 1. **Resolve the callee.** For a `FnDef` callee type: `Instance::expect_resolve(tcx,
    typing_env, def_id, args)`, as cg_ssa does. Then:
    - **VM function in this crate's image**: `call fn`.
-   - **Instance from another crate**, meaning one that `should_codegen_locally` says is not
-     codegened locally (upstream non-generic, or a shared upstream generic). Local copies of
-     `#[inline]`/cross-crate-inlinable items are lowered locally like any other item:
-     `call.ext` on its symbol, with a `call_ptrN` island as the native fallback. It doesn't
-     matter whether upstream compiled it to bytecode ([vm.md](vm.md#calls-and-islands)).
-   - **Native function**: an `island` with a call template ([stubs.md](stubs.md#templates)):
-     `call<F, Args, R>` for a safe, Rust-ABI fn item without `#[target_feature]` or
-     `#[track_caller]` (no symbol needed), otherwise `addr.sym` of the callee into a slot and
-     `call_ptrN` (Rust ABI) or `call_cN` (`extern "C"`). Not `call` in the `Fn*` shims of
-     the fn item's own type (`ShimKind::FnPtr(_, F)`): the template calls
+   - **Anything else with a symbol and the Rust ABI**: `call.sym` on its symbol
+     (`call.sym.ind` through `__imp_` on PE): instances from another crate (those
+     `should_codegen_locally` says aren't codegened locally: upstream non-generic, or a
+     shared upstream generic) and local native functions. It doesn't matter whether the
+     callee is VM code ([vm.md](vm.md#calls-and-islands)). Local copies of
+     `#[inline]`/cross-crate-inlinable items are lowered locally like any other item.
+   - **`extern "C"` functions**: `addr.sym` of the callee into a slot and the `call_cN`
+     island ([stubs.md](stubs.md#templates)).
+   - **Safe callees without a symbol** (intrinsics without a VM lowering): the `call<F,
+     Args, R>` island, for a safe, Rust-ABI fn item without `#[target_feature]` or
+     `#[track_caller]`. Not in the `Fn*` shims of the fn item's own type
+     (`ShimKind::FnPtr(_, F)`): the template calls
      `<F as FnOnce>::call_once`, which is such a shim, so the call would come back to a VM
      shim calling `F` the same way, forever. Constructors are VM functions like any other
      item: their body is `mir_for_ctfe`, which metadata always has for them, though
@@ -274,15 +278,14 @@ island.
      function stays native.
    - **`InstanceKind::Virtual(_, idx)`**: load the fn pointer from the vtable (entry `idx`,
      the word at `idx * 8`, through the receiver's metadata), pass the receiver's data
-     pointer, then `call.ind` (`dyn Fn*` calls are `rust-call` and spread their tuple like
+     pointer, then `call.ptr` (`dyn Fn*` calls are `rust-call` and spread their tuple like
      any other). As cg_ssa does, the receiver (`Box`, `Rc`, `Pin<&mut _>`, …) is peeled
      down to its one non-1-ZST field until a pointer remains; an unsized by-value receiver
      (`Box<dyn FnOnce>`, whose callee is a `VTableShim`) passes its address.
      `fn_abi_of_instance` gives the receiver the wide pointer's type with a thin layout, so
-     the signature uses a thin type instead, with the niche of the callee's receiver: the
-     argument block is a tuple layout, which depends on niches ([Frame slots](#frame-slots)),
-     and the method behind the vtable takes `&Self`, `Box<Self>`, … (non-null) or `*mut
-     Self` (a `VTableShim`). The caller passes `&()` if the receiver's data pointer is
+     the signature uses a thin type instead, with the niche of the callee's receiver, so
+     that its layout matches the method's, which takes `&Self`, `Box<Self>`, … (non-null)
+     or `*mut Self` (a `VTableShim`). The caller passes `&()` if the receiver's data pointer is
      non-null, `*mut ()` otherwise.
    - **`InstanceKind::Intrinsic`**: the matching VM instruction if one exists (`size_of`,
      `transmute`, overflow arithmetic, `copy_nonoverlapping`, `write_bytes`, atomics,
@@ -304,22 +307,25 @@ island.
      instance (cg_ssa's `IntrinsicResult::Fallback`; a VM function if the collector found
      it), and the rest keep the function native.
 
-   A fn-pointer callee type → `call.ind`.
+   A Rust-ABI fn-pointer callee type → `call.ptr`; an `extern "C"` one → `call_cN`.
 
-   **Tail calls** (`TailCall`, `become`): the arguments are staged in the outgoing block as
-   for a call, then `tail_call fn` for a VM function of this image, and `tail_call.ind`
-   otherwise: on a fn pointer, the vtable entry of a virtual call, or `addr.sym` of an
-   upstream or native callee. Calls of intrinsics and non-Rust ABIs stay native.
-2. **Arguments**: the argument operands are copied into the outgoing argument block at
-   `fp - F` (the callee frame's argument block, in `arg_block` layout) by plain
-   `mov`/`copy` instructions immediately before the call. MIR call arguments are operands
-   (locals or constants), so no other call runs between building the block and the call. For
+   **Tail calls** (`TailCall`, `become`): the arguments are staged in temporaries, their
+   stack pieces stored over the function's own incoming ones, then `tail_call fn` for a VM
+   function of this image, and `tail_call.ptr` otherwise: on a fn pointer, the vtable entry
+   of a virtual call, or `addr.sym` of any other callee with a symbol. Calls of intrinsics,
+   non-Rust ABIs and an sret callee from a non-sret function stay native.
+2. **Arguments** (`call.rs`, `write_args`, `pass_args`): each ABI input's slot is the
+   operand's own slot, except that an `Indirect` input, which the callee may write to, is
+   copied to a temporary. The stack pieces are stored to the outgoing area at `rsp` by
+   plain moves, and the register pieces go into the call's argument list, loaded right
+   before the call (`Indirect` inputs as their slot's address). MIR call arguments are
+   operands (locals or constants), so no other call runs in between. For island calls the
+   arguments are copied into the outgoing area as an argument block instead. For
    `#[track_caller]` callees, the location is appended ([Caller location](#caller-location)).
 3. **Destination**: the call instruction names the caller's destination slot, which it
-   stores the return registers to after the call, or passes the address of for sret, as
-   the callee signature's `PassMode` says ([vm.md](vm.md#calls-and-islands)). A
-   destination behind a deref is first written to a temporary slot, then stored. `call.ext` also gets an
-   8-byte temporary `f` for the resolved address of its native path.
+   stores the return registers to after the call; for sret, the argument list passes its
+   address, as the callee signature's `PassMode` says ([vm.md](vm.md#calls-and-islands)). A
+   destination behind a deref is first written to a temporary slot, then stored.
 4. **Unwind**: the call's unwind action becomes a cleanup entry for the instruction
    ([Unwinding](#unwinding)).
 
@@ -332,23 +338,22 @@ Mirrors cg_ssa's `get_caller_location`:
 - The location for a call site is a `core::panic::Location` constant in the constant pool,
   built from the call's `source_info` span. If the current function is itself
   `#[track_caller]` and the span comes from its body, the location is instead the function's
-  own incoming location argument (the last field of its argument block).
-- `#[track_caller]` VM callee: the location is the last field of the argument block.
-- `#[track_caller]` native callee: `call_ptrN` with one extra trailing `&'static Location`
-  argument, calling the callee instance's own symbol (not its `ReifyShim`). That signature has
-  the same ABI as the callee with its implicit location argument (`rustc_ty_utils/src/abi.rs:600`).
+  own incoming location argument (the home of its last ABI input).
+- `#[track_caller]` callee, VM or native: the location is the last ABI input
+  (`rustc_ty_utils/src/abi.rs:600`), and the call goes to the callee instance's own symbol
+  (not its `ReifyShim`).
 - The `caller_location` intrinsic yields the same value.
 
 ## Unwinding
 
 VM frames unwind natively ([vm.md](vm.md#unwinding)). The lowering records the unwind action
-of every call-like instruction (`call`, `call.ext`, `call.ext.ind`, `call.ind`,
-`tail_call.ind`, an `island` whose operation can unwind, `resume`) as a cleanup entry keyed
+of every call-like instruction (`call`, `call.sym`, `call.sym.ind`, `call.ptr`, an
+`island` whose operation can unwind, `resume`) as a cleanup entry keyed
 by its code offset, which the encoder turns into the function's LSDA call-site table:
 
 - `UnwindAction::Continue` → a `CONTINUE` entry: the call is a call site without a landing
-  pad, so unwinding leaves the frame. `resume` and `tail_call.ind` (whose frame is gone for
-  a VM callee) always have it.
+  pad, so unwinding leaves the frame. `resume` always has it; tail calls leave no frame
+  and have no entry.
 - `UnwindAction::Cleanup(bb)` → the landing pad of `bb`.
 - `UnwindAction::Terminate(reason)` → a catch-all landing pad (`CATCH`), as cg_llvm's
   terminate pads, so it runs even when nothing up the stack catches. It jumps to a stub
@@ -367,8 +372,8 @@ by its code offset, which the encoder turns into the function's LSDA call-site t
   native code.
 - The `catch_unwind` intrinsic is an island (`ryo_island_catch_unwind<Data>`, without a
   cleanup entry: the intrinsic is `rustc_nounwind`). Its `try_fn`/`catch_fn` operands are fn
-  pointers, so VM functions are reached through their portals, and the intrinsic catches a
-  panic unwinding out of them.
+  pointers, VM functions or not, called natively, and the intrinsic catches a panic
+  unwinding out of them.
 - Islands whose operation can't unwind (intrinsic wrappers, `as_cast`, the 128-bit
   arithmetic, the TLS shim call) get no cleanup entry.
 
@@ -385,13 +390,13 @@ by its code offset, which the encoder turns into the function's LSDA call-site t
   is part of the hash, as in cg_llvm (`rustc_codegen_llvm/src/common.rs:201-205`). So a
   type-id scalar is an immediate of its offset, and in an allocation the bytes stay as they
   are, with no relocation.
-- Pointers to VM functions in constants (vtables, fn-pointer constants) point at the portal, so
-  native code can call them too.
+- Pointers to VM functions in constants (vtables, fn-pointer constants) point at their
+  symbols, which then become global, so native code can call them too.
 - **Vtables**: cg_llvm emits vtables as private, unnamed constants, so there is no symbol to
   relocate against. Vtables that bytecode needs (for unsizing) are therefore put in the
-  image's own constant pool, from `tcx.vtable_allocation`, with entries relocated to portals or
-  native symbols. Vtable addresses aren't guaranteed unique, so a second copy is fine.
-  Allocations are walked recursively, and image vtables are roots of the portal-needed
+  image's own constant pool, from `tcx.vtable_allocation`, with entries relocated to the functions'
+  symbols. Vtable addresses aren't guaranteed unique, so a second copy is fine.
+  Allocations are walked recursively, and image vtables are roots of the global-symbol
   computation ([backend.md](backend.md#pipeline)).
 - On PE, pointers to functions and statics that another crate or library defines (those
   whose `sym` slot would be indirect, [platforms.md](platforms.md)) can't be link-time
@@ -413,20 +418,19 @@ pointer compares, 128-bit `mul`/`div`/`rem`/`mul.ovf` islands, constants (pool a
 relocations, type ids, vtables, and on PE the fixup area for constants pointing at imports),
 thread locals (`ThreadLocalRef` through the TLS shim), switches,
 asserts, drops (VM call of the glue, `drop_in_place` island, vtable drop for trait objects),
-unwinding (cleanup entries, landing pads, terminate stubs, the `catch_unwind` island) and calls: VM `call`,
-`call.ext`, `call.ind` for fn pointers and virtual calls (`dyn Fn*` included), tail calls, and
-islands (`call` for safe Rust fn items and safe intrinsics, `call_ptrN`/`call_cN` through
-`addr.sym` otherwise), every shim kind with a body, plus the intrinsics listed in Calls.
-`#[track_caller]` functions are VM functions with
-`portal_tcN` portals (up to 16 arguments), and caller locations follow cg_ssa, including a
+unwinding (cleanup entries, landing pads, terminate stubs, the `catch_unwind` island) and calls in the platform convention: VM `call`, `call.sym` for everything else with a
+symbol, `call.ptr` for fn pointers and virtual calls (`dyn Fn*` included), tail calls, and
+islands (`call` for safe intrinsics without a symbol, `call_cN` for `extern "C"`), every
+shim kind with a body, plus the intrinsics listed in Calls.
+`#[track_caller]` functions are VM functions, and caller locations follow cg_ssa, including a
 `#[track_caller]` function's own incoming location and the `caller_location` intrinsic.
 `SwitchInt` and `Assert` fuse with the compare that feeds them (compare branches). Locals with storage
 markers share slots; there is no copy propagation yet.
-Still `NeedsNative`, with the reason in `RYO_STATS=2`: `#[track_caller]` functions with more
-than 16 arguments, `ThreadLocalRef` of foreign thread locals, `f16`/`f128` arithmetic and
+Still `NeedsNative`, with the reason in `RYO_STATS=2`: argument and return `PassMode`s the
+VM doesn't place (on Win64 also `i128`, `f16` and `f128`), `ThreadLocalRef` of foreign thread locals, `f16`/`f128` arithmetic and
 compares, unsafe intrinsics without a VM lowering, wrapper or fallback body (128-bit atomics,
 SIMD intrinsics with constant operands, …), coroutines, extern-type tails, by-value
-unsized arguments (`unsized_fn_params`: the argument block has no layout) and references to
+unsized arguments (`unsized_fn_params`) and references to
 foreign statics with a `#[linkage]` (std's `extern_weak` `weak!` statics: cg_llvm's private
 cell holding the symbol's address has no symbol the image could name).
 With `--sysroot ryo`, std builds and the corpus passes against it; 98.8% of the functions

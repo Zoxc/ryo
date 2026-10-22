@@ -19,9 +19,9 @@ and `codegen_crate` reads them.
    `-Ccodegen-units=1`, so partitioning is cheap (`place_mono_items`, one merge pass,
    internalize), and the single CGU it returns is useful as-is:
    - its item list is the work list
-   - each item's `linkage`/`visibility` is what rustc decided. A portal inherits it from the
-     VM function it replaces.
-   - VM functions that are `Internal` and not referenced by native code need no portal.
+   - each item's `linkage`/`visibility` is what rustc decided. The image object defines each
+     VM function's symbol with it ([stubs.md](stubs.md#vm-functions-as-native-functions)).
+   - VM functions that are `Internal` and not referenced by native code get a local symbol.
      "Referenced by native code" means referenced by any of:
      - a native function, or a stub neighbor (via `items_of_instance`)
      - the initializer of a native static: the provenance of its allocation, from
@@ -32,8 +32,10 @@ and `codegen_crate` reads them.
      - a `sym` operand of a `global_asm!` (resolved like the collector does,
        `rustc_monomorphize/src/collector.rs:493-535`)
 
-     VM functions that are not `Internal` always get a portal, and so do those the image
-     refers to by symbol (fn-pointer constants, vtables).
+     VM functions referenced that way, those that are not `Internal`, and those the image
+     refers to by symbol (fn-pointer constants, vtables, `call.sym`) get a global symbol
+     (`partition.rs`, `need_symbol`; `objfile.rs`, `global_function`), with their linkage
+     and visibility; an `Internal` one becomes hidden.
 
    The backend errors if `sess.codegen_units()` isn't 1.
 2. **Classify** each mono item:
@@ -42,8 +44,10 @@ and `codegen_crate` reads them.
      - `#[naked]` functions
      - inline asm
      - calls to C-variadic functions
-     - functions with non-Rust ABIs defined in Rust (`extern "C" fn`), since the portal
-       template is Rust-ABI
+     - functions with non-Rust ABIs defined in Rust (`extern "C" fn`): VM code follows only
+       the Rust ABI's convention
+     - signatures whose arguments or return the VM can't place as LLVM does (other
+       `PassMode`s, and on Win64 `i128`, `f16` and `f128`, [vm.md](vm.md#calls-and-islands))
      - functions with unsized parameters
      - calls to `C-unwind` functions and LLVM intrinsics
      - the other template gaps ([stubs.md](stubs.md#template-gaps))
@@ -71,12 +75,12 @@ and `codegen_crate` reads them.
    results are merged in one pass at the end. An operation the VM doesn't support becomes an
    `island` instruction whose `isl` operand is an *island* relocation (template + generic
    args). The merge pass deduplicates islands (same template + args → one instance), assigns
-   function indices, symbols and sites, rewrites each function's relocation targets to them,
-   and adds the function to the image writer under the name `<symbol>.vm`. The handlers and `ryo_probe_stack` the code
+   function indices and symbols, rewrites each function's relocation targets to them,
+   and adds the function to the image writer under its own symbol. The handlers and `ryo_probe_stack` the code
    calls, and `rust_eh_personality` on ELF, are added to the image's LTO roots
    ([Query overrides](#query-overrides-provide)).
 4. **Build the native CGU.** This is a copy of the original CGU, with the VM functions removed
-   and the stub instances (portals and islands) added. Our override returns exactly this CGU,
+   and the stub instances (islands and `c_main`) added. Our override returns exactly this CGU,
    so `self.llvm.codegen_crate(tcx)` compiles only what we ask for.
    - **Stub neighbors**: the collector never saw the stubs, so whatever a template body uses
      is missing. Examples: `f.call_once(args)` on a FnDef resolves to a `Shim(FnPtr)`
@@ -89,7 +93,7 @@ and `codegen_crate` reads them.
      the collector's `should_codegen_locally` (`collector.rs:1075`) runs on every neighbor,
      and it is public as the hook `tcx.should_codegen_locally` (`rustc_middle/src/hooks/mod.rs:90`),
      which the lowering uses for callees. Neighbors are always native, and `Internal`: only the
-     stubs reference them. A neighbor that is a VM function gets a portal instead.
+     stubs reference them. A neighbor that is a VM function gets a global symbol instead.
    - **Upstream copies**: before defining a stub instance or neighbor, the backend checks
      `instance.upstream_monomorphization(tcx)`. If an upstream crate exports it
      (share-generics), the image relocates against that copy instead of defining a second one,
@@ -126,7 +130,7 @@ and `codegen_crate` reads them.
 5. **Emit the image** as one extra object with the `object` crate ([vm.md](vm.md#image-format)):
    `ImageWriter::finish_encoded` lays out the sections and unwind information, and
    `objfile.rs` writes them with their relocations, the handler calls against the handlers'
-   mangled symbols (`rt_symbol`), and a local symbol per function.
+   mangled symbols (`rt_symbol`), and each function's symbol (global or local, step 1).
    The object is written to disk inside `codegen_crate`, where `tcx` is available. Our
    `codegen_crate` returns a wrapper ongoing type holding cg_llvm's `Box<dyn Any>` and the
    image path. Our `join_codegen` forwards the inner value to cg_llvm's (which downcasts it,
@@ -187,9 +191,10 @@ and `codegen_crate` reads them.
    - **Staticlib outputs**: nothing in the archive references the registry object, so a C
      linker consuming the staticlib would drop it, and with it the constructor and images.
      So every registry object (for every output type) defines a hidden global
-     `__ryo_registry_anchor`, and `ryo_rt::vm::enter` references it with a strong reference.
-     Each link unit has exactly one registry object, so the symbol is unique per unit. In a
-     staticlib, any use of the VM (any portal) then pulls the registry object in, and with it
+     `__ryo_registry_anchor`, and every image object references it with a strong reference
+     (a pointer slot relocated against it, `objfile.rs`, `write_image`). Each link unit has
+     exactly one registry object, so the symbol is unique per unit. In a staticlib, any
+     image the C linker takes (any VM function called) then pulls the registry object in, and with it
      the constructor and the images. (A weak reference would not cause archive extraction.)
      The limitation: one ryo staticlib per final C link. With two, both define the anchor,
      the archive extractor takes the first, and the second staticlib's images are never
@@ -212,11 +217,13 @@ and `codegen_crate` reads them.
   (`rustc_codegen_ssa/src/base.rs`), and cg_llvm uses that to pick hidden visibility for
   declarations (`callee.rs`). The CGU's name is what `codegen_unit(name)` looks up.
 - `exported_non_generic_symbols` / `exported_generic_symbols`:
-  - Portals are listed under the functions they stand for, not as `ryo_rt::portal<…>`
-    generics.
-  - Only portals that are actually emitted are listed, since a listed instance without a
-    portal leaves downstream crates with an undefined reference.
-  - Every symbol the image refers to (portals, callees, statics, islands, the targets of
+  - VM functions aren't in the native CGU, so rustc's provider doesn't list the generic
+    ones. The `exported_generic_symbols` override adds the VM generic `Item` instances with
+    `External` linkage whose global symbols the image defines, as rustc would list them if
+    they were in the CGU (`exported_generic_symbols_provider_local`), with their
+    visibility. Only symbols the image actually defines are listed, since a listed instance
+    without a definition leaves downstream crates with an undefined reference.
+  - Every symbol the image refers to (VM functions of other crates, callees, statics, islands, the targets of
     pointers in constants, upstream and foreign ones included, and `ryo_rt`'s handlers,
     `ryo_probe_stack` and `rust_eh_personality`, which the machine code and the unwind
     information reference) is added to the local
@@ -245,14 +252,11 @@ and `codegen_crate` reads them.
     `-Clto` of a dylib itself (`-Zdylib-lto`) is rejected.
   - The entry wrapper `c_main` (`External`, default visibility) isn't listed.
   - Items made `External` + `Hidden` only for the image (see Linkage) are filtered out of
-    `exported_generic_symbols`, whatever `need_visibility` says. So are portals of
-    non-generic functions, which `exported_non_generic_symbols` already lists by `DefId`. The default provider exports every `External` CGU item, and
+    `exported_generic_symbols`, whatever `need_visibility` says. The default provider exports every `External` CGU item, and
     skips hidden ones only when `need_visibility` is set (`symbol_export.rs:327, 375-387`).
   - `y test` builds the corpus with `-Clto=fat` and `-Clto=thin -Copt-level=3` on the last
     crate (as cargo passes it), and `y test --cross` links it with `-Clto=fat` on PE.
-- `symbol_name` → for portal instances, the symbol of the VM function they stand for
-  ([stubs.md](stubs.md#portals-native--vm)), looked up by the function index in the portal's
-  `ID`. For `c_main`, the target's `entry_name`. For local `LocalCopy` instances without an
+- `symbol_name` → for `c_main`, the target's `entry_name`. For local `LocalCopy` instances without an
   attribute-given symbol, the default symbol plus `.ryo<StableCrateId as 16 hex digits>` (see
   Linkage). Everything else uses the
   default provider.
@@ -262,8 +266,8 @@ and `codegen_crate` reads them.
 Environment variables read by the backend (and `y test`):
 
 - `RYO_STATS=1` (`-Zryo-stats` through the wrappers, [build.md](build.md#the-y-build-tool))
-  prints each VM function (`ryo: vm fn <instance>`, with ` (portal)` if it got one, then
-  ` id=<crate hash>:<index>`, as `RYO_VM_TRACE` prints it), the totals (`ryo: <n> VM
+  prints each VM function (`ryo: vm fn <instance>`, with ` (global)` if the image defines
+  its symbol globally), the totals (`ryo: <n> VM
   functions, <n> native functions, <n> islands, <n> native items`, where islands counts
   distinct island instances), and the coverage: island instructions per VM function, island
   instructions by template (`ryo: island <template>: <n> in <m> functions`) and native
@@ -275,7 +279,7 @@ Environment variables read by the backend (and `y test`):
   disassembler prints instruction words, but without offsets: branch and switch targets
   are labels `L<n>`, numbered per function by position, with `L<n>:` before each target),
   its cleanup entries (`cleanup <call label> -> <landing pad label>|continue`), and what its `fn`, `sym`,
-  `site`, `k` and `data` operands refer to. Those operands are numbered per function (by
+  `k` and `data` operands refer to. Those operands are numbered per function (by
   relocation, before the merge pass), so the dump doesn't change with unrelated functions.
 - `RYO_DUMP_CODE=<file>` writes the same functions' machine code, in the same order, for
   `y bench codegen` to disassemble: `fn <instance>`, `code <hex>`, and `reloc <offset>
@@ -287,10 +291,7 @@ Environment variables read by the backend (and `y test`):
 - `RYO_BACKEND_MARKER` prints `ryo backend: init` from `init` and `ryo backend: partition`
   from the partition provider, so tests can tell that the backend and its override ran.
 
-`ryo_rt` reads `RYO_VM_TRACE`: if set, every `vm::enter` prints
-`ryo-vm: enter <crate hash>:<function index>` to stderr; and `RYO_VM_STATS`: if set, it
-prints `ryo-vm: <n> enters, <n> native calls` at exit ([vm.md](vm.md#modules)). `y build`
-reads `RYO_RT_FEATURES`, extra cargo features for the sysroot's `ryo_rt` (such as `fp-rbp`,
+`ryo_rt` reads no environment variables. `y build` reads `RYO_RT_FEATURES`, extra cargo features for the sysroot's `ryo_rt` (such as `fp-rbp`,
 [vm.md](vm.md#handlers)); the backend follows `ryo_rt`'s `FP_ARG`.
 
 No MIR is overridden or synthesized, and no DefIds are created. rustc freezes definitions
@@ -303,7 +304,7 @@ instantiate generics in their own VM.
 
 `-Zself-profile` shows the backend's phases as generic activities next to rustc's:
 `ryo_partition` (steps 2–4, inside rustc's partition query) with `ryo_lower` (lowering and
-machine code), `ryo_stubs` (portals, islands, stub neighbors, the native CGU), `ryo_merge`
+machine code), `ryo_stubs` (islands, stub neighbors, the native CGU), `ryo_merge`
 (relocation resolution) and `ryo_finish_image` (image layout); `ryo_write_image` (step 5); and at link time
 `ryo_link_prep` (per crate type, everything before rustc's `link_binary`) with
 `ryo_registry_images`, and `ryo_append_rlib`. measureme's `summarize` lists them.
@@ -311,11 +312,11 @@ machine code), `ryo_stubs` (portals, islands, stub neighbors, the native CGU), `
 ## Symbol consistency
 
 - `assert_symbols_are_distinct` runs only inside the original provider, over the original
-  items (`partitioning.rs:1191`). Portals don't exist yet at that point, and the VM originals
-  are gone from the native CGU, so nothing collides.
-- cg_llvm predefines every CGU item before defining any (`rustc_codegen_llvm/src/mono_item.rs:59-88`).
-  So `get_fn(original)` finds the portal by name (`callee.rs:35`) instead of declaring it a
-  second time. Call sites use the original's `fn_abi`. With opaque pointers that's fine as long
-  as the PassModes are identical, and the ABI sweep test checks that.
-- A portal's linkage/visibility matches what the original would have had, and the
-  exported-symbols queries list exactly the emitted portals (`#[no_mangle]`, share-generics).
+  items (`partitioning.rs:1191`). The VM functions are gone from the native CGU, and the
+  image defines their symbols once, so nothing collides.
+- Native callers of a VM function only declare it (`callee.rs:75-95`) and call it with its
+  `fn_abi`, which the VM code follows as LLVM lowers it ([vm.md](vm.md#calls-and-islands));
+  the ABI sweep test (`tests/vm_abi.rs`) checks that both sides agree.
+- A VM function's global symbol has the linkage/visibility the original would have had, and
+  the exported-symbols queries list exactly the symbols the image defines (`#[no_mangle]`,
+  share-generics).

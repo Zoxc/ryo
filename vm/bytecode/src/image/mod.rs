@@ -43,9 +43,6 @@ pub const MAGIC: [u8; 8] = *b"RYOIMAGE";
 /// real address is loaded through it.
 pub const SYM_INDIRECT: u8 = 1;
 
-/// `FuncEntry::portal` for functions without a portal.
-pub const NO_PORTAL: u32 = u32::MAX;
-
 /// `CleanupEntry::target` of a call whose unwinding continues in the caller (in the
 /// writer's function definitions; images carry LSDAs instead).
 pub const CONTINUE: u32 = u32::MAX;
@@ -55,18 +52,7 @@ pub const CONTINUE: u32 = u32::MAX;
 /// the unwinder's search phase even if nothing up the stack catches the panic.
 pub const CATCH: u32 = 1 << 31;
 
-/// Builds a portal `ID` (design/stubs.md): crate hash in the high 32 bits, function index in
-/// the low 32.
-pub const fn portal_id(crate_hash: u32, func: u32) -> u64 {
-    (crate_hash as u64) << 32 | func as u64
-}
-
-/// Splits a portal `ID` into (crate hash, function index).
-pub const fn split_portal_id(id: u64) -> (u32, u32) {
-    ((id >> 32) as u32, id as u32)
-}
-
-/// The 32-bit crate hash used in portal IDs and the registry, folded from the crate's
+/// The 32-bit crate hash the registry uses, folded from the crate's
 /// `StableCrateId` (its `u64` value).
 pub const fn crate_hash(stable_crate_id: u64) -> u32 {
     (stable_crate_id ^ (stable_crate_id >> 32)) as u32
@@ -128,22 +114,13 @@ pub struct FuncEntry {
     pub code_off: u32,
     /// Length in bytes.
     pub code_len: u32,
-    /// Size of the argument block (`ArgBlock::size`): the bytes `vm::enter` copies from the
-    /// portal's args and `tail_call` moves up to `fp + H`.
+    /// Size of the stack argument area (informative: VM functions are called natively).
     pub arg_size: u32,
     /// Size of the return value.
     pub ret_size: u32,
     /// How the function returns its value ([`crate::asm::RET_SRET`], exact sizes): how
-    /// `vm::enter` collects it.
+    /// a caller collects it (informative).
     pub ret_kind: u32,
-    /// Symbol index of the function's portal, or [`NO_PORTAL`].
-    pub portal: u32,
-}
-
-impl FuncEntry {
-    pub fn portal(&self) -> Option<u32> {
-        (self.portal != NO_PORTAL).then_some(self.portal)
-    }
 }
 
 /// A cleanup table entry: unwinding out of the call-like instruction at `offset` goes to
@@ -304,9 +281,6 @@ impl<'a> Image<'a> {
                 return Err(ImageError::BadFunction(i));
             }
             prev_end = end;
-            if f.portal != NO_PORTAL && f.portal >= self.header.symbols.count {
-                return Err(ImageError::BadFunction(i));
-            }
         }
         for (i, x) in self.fixups().iter().enumerate() {
             if x.sym >= self.header.symbols.count
@@ -404,11 +378,6 @@ impl<'a> Image<'a> {
     /// The fixup area, base of [`Data`](crate::insn::Data) offsets.
     pub fn fixup_area(&self) -> *mut u8 {
         self.data_ptr().wrapping_add(self.header.fixup_area as usize)
-    }
-
-    /// The portal `ID` of function `f`.
-    pub fn portal_id(&self, f: u32) -> u64 {
-        portal_id(self.header.crate_hash, f)
     }
 
     /// Applies the PE fixups.

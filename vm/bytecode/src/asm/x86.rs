@@ -289,6 +289,11 @@ fn imm8(v: i32) -> bool {
 pub enum Item {
     /// `push rbp`
     PushRbp,
+    /// The PE prologue's saves: `push rbp; push rdi; push rsi; lea rbp, [rsp + 16]` (`rdi`
+    /// and `rsi` are callee-saved on Win64, but not in the `sysv64` handlers).
+    WinPrologue,
+    /// The PE epilogue: `lea rsp, [rbp - 16]; pop rsi; pop rdi; pop rbp`.
+    WinEpilogue,
     /// `sub rsp, imm` (`imm8` below 128, else `imm32`)
     SubRsp(u32),
     /// `add rsp, imm` (`imm8` below 128, else `imm32`)
@@ -308,6 +313,11 @@ pub enum Item {
     CallMem(Ref),
     /// `call rax`
     CallRax,
+    /// `mov rax, [rip + disp32]`: a symbol slot's value, the field relocated against the
+    /// [`Ref`].
+    LoadRip(Ref),
+    /// `call [rax]`: through an import slot whose address `rax` holds.
+    CallMemRax,
     /// `jmp rax`
     JmpRax,
     /// `jmp rel32` to another function (a tail call).
@@ -370,6 +380,11 @@ pub enum Item {
     Movd { to_xmm: bool, x: u8, r: Reg },
 }
 
+/// [`Item::WinPrologue`]'s bytes.
+const WIN_PROLOGUE: [u8; 8] = [0x55, 0x57, 0x56, 0x48, 0x8d, 0x6c, 0x24, 0x10];
+/// [`Item::WinEpilogue`]'s bytes.
+const WIN_EPILOGUE: [u8; 7] = [0x48, 0x8d, 0x65, 0xf0, 0x5e, 0x5f, 0x5d];
+
 /// The standard multi-byte `nop`s (Intel SDM), by length.
 const NOPS: [&[u8]; 10] = [
     &[],
@@ -412,7 +427,9 @@ impl Item {
     pub fn len(&self) -> u32 {
         match *self {
             Item::PushRbp | Item::Leave | Item::Ret | Item::Int3 => 1,
-            Item::TestAl | Item::CallRax | Item::JmpRax | Item::Ud2 => 2,
+            Item::WinPrologue => 8,
+            Item::WinEpilogue => 7,
+            Item::TestAl | Item::CallRax | Item::JmpRax | Item::Ud2 | Item::CallMemRax => 2,
             Item::TestRax | Item::Mov(..) | Item::AddRaxRcx => 3,
             Item::LoadTableEntry | Item::TableEntry { .. } => 4,
             Item::SubRsp(v) | Item::AddRsp(v) => {
@@ -431,7 +448,7 @@ impl Item {
                     _ => 10,
                 }
             }
-            Item::Lea(..) | Item::LeaTable(_) => 7,
+            Item::Lea(..) | Item::LeaTable(_) | Item::LoadRip(_) => 7,
             Item::Call(_) | Item::Jmp(_) => 5,
             Item::CallMem(_) => 6,
             Item::Branch { cond, long, .. } => match (cond, long) {
@@ -651,6 +668,8 @@ impl Item {
         };
         match *self {
             Item::PushRbp => out.push(0x55),
+            Item::WinPrologue => out.extend_from_slice(&WIN_PROLOGUE),
+            Item::WinEpilogue => out.extend_from_slice(&WIN_EPILOGUE),
             Item::SubRsp(v) | Item::AddRsp(v) => {
                 let ext = if matches!(self, Item::SubRsp(_)) { 0xec } else { 0xc4 };
                 if v < 128 {
@@ -703,6 +722,11 @@ impl Item {
                 reloc(out, relocs, to);
             }
             Item::CallRax => out.extend_from_slice(&[0xff, 0xd0]),
+            Item::CallMemRax => out.extend_from_slice(&[0xff, 0x10]),
+            Item::LoadRip(to) => {
+                out.extend_from_slice(&[0x48, 0x8b, 0x05]);
+                reloc(out, relocs, to);
+            }
             Item::JmpRax => out.extend_from_slice(&[0xff, 0xe0]),
             Item::Jmp(to) => {
                 out.push(0xe9);
@@ -1054,6 +1078,14 @@ impl<'a> Cursor<'a> {
         let (rex, at) = if (0x40..=0x4f).contains(&b[0]) { (b[0], 1) } else { (0, 0) };
         let (w, r, x, bx) = (rex & 8 != 0, rex & 4 != 0, rex & 2 != 0, rex & 1 != 0);
         let op = get(at)?;
+        if all.starts_with(&WIN_PROLOGUE) {
+            self.pos += WIN_PROLOGUE.len() as u32;
+            return Ok(Item::WinPrologue);
+        }
+        if all.starts_with(&WIN_EPILOGUE) {
+            self.pos += WIN_EPILOGUE.len() as u32;
+            return Ok(Item::WinEpilogue);
+        }
         let item = match (rex, op) {
             (0, 0x55) => Item::PushRbp,
             (0x48, 0x83 | 0x81) => {
@@ -1128,9 +1160,11 @@ impl<'a> Cursor<'a> {
                 Item::Mov(dst, src)
             }
             (0, 0xe8) => Item::Call(self.field_ref(1)?),
+            (0x48, 0x8b) if get(2)? == 0x05 => Item::LoadRip(self.field_ref(3)?),
             (0, 0xff) => match get(1)? {
                 0x15 => Item::CallMem(self.field_ref(2)?),
                 0xd0 => Item::CallRax,
+                0x10 => Item::CallMemRax,
                 0xe0 => Item::JmpRax,
                 _ => return Err(bad),
             },
@@ -1174,7 +1208,7 @@ impl<'a> Cursor<'a> {
         // A relocation must be the item's own field.
         let len = item.len();
         let own = match item {
-            Item::Lea(..) => Some(3),
+            Item::Lea(..) | Item::LoadRip(_) => Some(3),
             Item::Call(_) | Item::Jmp(_) => Some(1),
             Item::CallMem(_) => Some(2),
             _ => None,

@@ -42,7 +42,7 @@ pub struct SymbolDef {
 /// What a pointer inside an allocation points at.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AllocTarget {
-    /// A native symbol (function, static, portal).
+    /// A native symbol (function or static).
     Symbol(Sym),
     /// A constant pool allocation (intra-image).
     Const(Const),
@@ -70,7 +70,8 @@ pub struct AllocFixup {
 /// One function's instruction words and tables.
 #[derive(Clone, Debug, Default)]
 pub struct FunctionDef {
-    /// The local symbol naming its machine code (for backtraces and profilers).
+    /// The symbol naming its machine code: local (for backtraces and profilers), or defined
+    /// as `symbol` says.
     pub name: String,
     pub code: Vec<u32>,
     /// See [`FuncEntry::frame_size`].
@@ -84,7 +85,25 @@ pub struct FunctionDef {
     /// Cleanup entries, in any order (the writer sorts them): one per call-like instruction
     /// that can unwind.
     pub cleanup: Vec<CleanupEntry>,
-    pub portal: Option<Sym>,
+    /// The function's symbol is global: native code calls it by name.
+    pub symbol: Option<FuncSymbol>,
+}
+
+/// How a function's symbol is defined in the image object, if it is global ([`FunctionDef`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FuncSymbol {
+    /// ELF visibility: default, hidden or protected (PE has none: a DLL exports what its
+    /// export list names).
+    pub visibility: SymVisibility,
+    /// A weak definition (ELF; on PE, an ordinary one).
+    pub weak: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SymVisibility {
+    Default,
+    Hidden,
+    Protected,
 }
 
 /// Section of an [`ImageObject`].
@@ -144,6 +163,7 @@ pub struct Reloc {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FuncCode {
     pub name: String,
+    pub symbol: Option<FuncSymbol>,
     pub start: u32,
     pub len: u32,
     pub frame_size: u32,
@@ -203,8 +223,6 @@ pub enum WriteError {
     /// A duplicate cleanup entry, one not at a call-like instruction, or one whose landing
     /// pad isn't an `lpad` instruction.
     Cleanup(u32),
-    /// Portal symbol out of range or indirect.
-    Portal(u32),
     /// Allocation relocation or fixup out of range or misplaced, or a relocation against an
     /// indirect symbol (that must be a fixup).
     AllocReloc,
@@ -235,6 +253,7 @@ fn op_falls_through(op: Opcode) -> bool {
             | Opcode::Ret
             | Opcode::Resume
             | Opcode::TailCall
+            | Opcode::TailCallPtr
     ) && !op.mnemonic().starts_with("switch.")
 }
 
@@ -242,7 +261,7 @@ fn op_falls_through(op: Opcode) -> bool {
 pub fn op_may_unwind(op: Opcode) -> bool {
     matches!(
         op,
-        Opcode::Call | Opcode::CallExt | Opcode::CallExtInd | Opcode::CallInd | Opcode::TailCallInd | Opcode::Island
+        Opcode::Call | Opcode::CallSym | Opcode::CallSymInd | Opcode::CallPtr | Opcode::Island
             | Opcode::Resume
     )
 }
@@ -330,7 +349,7 @@ fn check_indirection(code: &[u32], symbols: &[SymbolDef]) -> Result<(), (u32, Co
             match o.kind {
                 OperandKind::Sym => {
                     let indirect = symbols[code[at + pos] as usize].flags & SYM_INDIRECT != 0;
-                    let loads_through = matches!(op, Opcode::AddrSymInd | Opcode::CallExtInd) && o.name == "sym";
+                    let loads_through = matches!(op, Opcode::AddrSymInd | Opcode::CallSymInd) && o.name == "sym";
                     if indirect != loads_through {
                         return Err((at as u32, CodeError::SymIndirection));
                     }
@@ -423,7 +442,7 @@ impl ImageWriter {
         }
     }
 
-    /// The 32-bit crate hash used in portal IDs.
+    /// The 32-bit crate hash the registry uses.
     pub fn crate_hash(&self) -> u32 {
         crate_hash(self.stable_crate_id)
     }
@@ -445,7 +464,7 @@ impl ImageWriter {
         Sym(i)
     }
 
-    /// Allocates a site cache slot for a `call.ext`/`call.ind` site.
+    /// Allocates a slot in the image's site area (no instruction uses one any more).
     pub fn site(&mut self) -> Site {
         self.sites += 1;
         Site(self.sites - 1)
@@ -538,11 +557,6 @@ impl ImageWriter {
         let mut code_refs: Vec<(u32, Ref, u32)> = Vec::new();
         for (i, f) in self.functions.iter_mut().enumerate() {
             let i = i as u32;
-            let portal = match f.portal {
-                Some(Sym(s)) if s < nsyms && self.symbols[s as usize].flags & SYM_INDIRECT == 0 => s,
-                Some(_) => return Err(WriteError::Portal(i)),
-                None => NO_PORTAL,
-            };
             let too_large = |_| WriteError::TooLarge;
             let e = &encoded[i as usize];
             while text.len() % 16 != 0 {
@@ -564,10 +578,10 @@ impl ImageWriter {
                 arg_size: f.arg_size,
                 ret_size: f.ret_size,
                 ret_kind: f.ret_kind,
-                portal,
             });
             func_code.push(FuncCode {
                 name: core::mem::take(&mut f.name),
+                symbol: f.symbol,
                 start,
                 len: e.code.len() as u32,
                 frame_size: f.frame_size,
@@ -801,8 +815,9 @@ fn unwind_elf(funcs: &[FuncCode], personality_slot: u64, mode: Mode, relocs: &mu
 }
 
 /// `.pdata` and `.xdata`: per function, its range and unwind info for the shared prologue
-/// (`push rbp; mov rbp, rsp; sub rsp, F`, `rbp` the frame register). There is no exception
-/// handler: panics unwind through VM frames, but their landing pads don't run.
+/// (`push rbp; push rdi; push rsi; lea rbp, [rsp + 16]; sub rsp, F - 16`, `rbp` the frame
+/// register at offset 16 from `rsp`). There is no exception handler: panics unwind through VM
+/// frames, but their landing pads don't run.
 fn unwind_pe(funcs: &[FuncCode], relocs: &mut Vec<Reloc>) -> Vec<(Section, Vec<u8>)> {
     let rva = |section, offset, target, addend| Reloc { section, offset, target: RelocTarget::Section(target), addend, kind: RelocKind::Rva32 };
     let (mut pdata, mut xdata) = (Vec::new(), Vec::new());
@@ -813,27 +828,31 @@ fn unwind_pe(funcs: &[FuncCode], relocs: &mut Vec<Reloc>) -> Vec<(Section, Vec<u
         relocs.push(rva(Section::Pdata, p + 4, Section::Text, (f.start + f.len) as i64));
         relocs.push(rva(Section::Pdata, p + 8, Section::Xdata, x));
         pdata.extend_from_slice(&[0; 12]);
-        // Prologue: push rbp (1), mov rbp, rsp (3), [mov eax, F (5); call probe (5)], sub (4 or 7).
-        let fs = f.frame_size;
-        let probe = if fs >= asm::PROBE_FROM { 10 } else { 0 };
-        let sub_end = 4 + probe + if fs == 0 { 0 } else if fs < 128 { 4 } else { 7 };
+        // Prologue: push rbp (1), push rdi (1), push rsi (1), lea rbp, [rsp + 16] (5),
+        // [mov eax, F - 16 (5); call probe (5)], sub (4 or 7).
+        let alloc = f.frame_size - 16;
+        let probe = if f.frame_size >= asm::PROBE_FROM { 10 } else { 0 };
+        let sub_end = 8 + probe + if alloc == 0 { 0 } else if alloc < 128 { 4 } else { 7 };
         // Unwind codes, last operation first: (offset after it, op | info << 4, extra slots).
         let mut codes: Vec<u8> = Vec::new();
-        if fs != 0 {
-            if fs <= 128 {
-                codes.extend_from_slice(&[sub_end as u8, 2 | (((fs / 8 - 1) as u8) << 4)]);
-            } else if fs <= 512 * 1024 - 8 {
+        if alloc != 0 {
+            if alloc <= 128 {
+                codes.extend_from_slice(&[sub_end as u8, 2 | (((alloc / 8 - 1) as u8) << 4)]);
+            } else if alloc <= 512 * 1024 - 8 {
                 codes.extend_from_slice(&[sub_end as u8, 1]);
-                codes.extend_from_slice(&((fs / 8) as u16).to_le_bytes());
+                codes.extend_from_slice(&((alloc / 8) as u16).to_le_bytes());
             } else {
                 codes.extend_from_slice(&[sub_end as u8, 1 | 1 << 4]);
-                codes.extend_from_slice(&fs.to_le_bytes());
+                codes.extend_from_slice(&alloc.to_le_bytes());
             }
         }
-        codes.extend_from_slice(&[4, 3]); // UWOP_SET_FPREG
+        codes.extend_from_slice(&[8, 3]); // UWOP_SET_FPREG
+        codes.extend_from_slice(&[3, 0 | 6 << 4]); // UWOP_PUSH_NONVOL rsi
+        codes.extend_from_slice(&[2, 0 | 7 << 4]); // UWOP_PUSH_NONVOL rdi
         codes.extend_from_slice(&[1, 0 | 5 << 4]); // UWOP_PUSH_NONVOL rbp
         let slots = codes.len() / 2;
-        xdata.extend_from_slice(&[1, sub_end as u8, slots as u8, 5]); // version 1, frame register rbp
+        // Version 1; the frame register rbp, at rsp + 1 * 16.
+        xdata.extend_from_slice(&[1, sub_end as u8, slots as u8, 5 | 1 << 4]);
         xdata.extend_from_slice(&codes);
         while xdata.len() % 4 != 0 {
             xdata.push(0);

@@ -15,8 +15,7 @@
 //! before anything else, and must not write `rbp` before that (`ryo_rt` is built without
 //! forced frame pointers, and `tests/codegen.rs` checks every handler) ([`MODE`]).
 //!
-//! `tail_call`, `resume` and the argument move of `tail_call.ind` need the caller's stack
-//! pointer or end in a tail jump, so they are written in assembly.
+//! `resume` ends in a tail jump, so it is written in assembly.
 //!
 //! # Safety model
 //!
@@ -37,14 +36,13 @@ use core::mem::MaybeUninit;
 use core::ops::Not;
 use core::ptr;
 use core::sync::atomic::{
-    AtomicI8, AtomicI16, AtomicI32, AtomicI64, AtomicPtr, AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering,
+    AtomicI8, AtomicI16, AtomicI32, AtomicI64, AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering,
 };
 
 use ryo_bytecode::asm::{self, ARG_REGS, Loc};
 use ryo_bytecode::insn::Opcode;
 
-use super::registry::{Function, lookup_addr};
-use super::sys::{self, fatal};
+use super::sys::fatal;
 
 /// How the machine code passes `fp`: the backend reads this (through `FP_ARG`) and encodes
 /// to match. The handlers work with and without a frame pointer when they take `fp` in
@@ -55,9 +53,6 @@ pub const MODE: asm::Mode =
 /// Whether handlers take `fp` in `rdi`; the backend checks it agrees with its encoding.
 #[rustc_diagnostic_item = "ryo_rt_fp_arg"]
 pub const FP_ARG: bool = MODE.fp_arg;
-
-/// Site cache value for a `call.ext` target that is native code.
-pub const NATIVE: *mut Function = ptr::without_provenance_mut(1);
 
 /// The location of operand `name` of `op` in the argument registers.
 const fn loc(op: Opcode, name: &str) -> Loc {
@@ -453,55 +448,6 @@ macro_rules! lpad {
         put!($a, $fp, $op, x, $a[const { asm::layout(Opcode::$op, MODE).first as usize - 1 }])
     };
 }
-macro_rules! call_ext {
-    ($a:ident, $fp:ident, $op:ident, $ind:literal) => {{
-        let mut target = *addr_of!($a, $op, sym).cast::<*const ()>();
-        if $ind {
-            target = *target.cast::<*const ()>();
-        }
-        let s = &*addr_of!($a, $op, site).cast::<AtomicPtr<Function>>();
-        let mut c = s.load(Ordering::Acquire);
-        if c.is_null() {
-            c = resolve_ext(target);
-            s.store(c, Ordering::Release);
-        }
-        if c != NATIVE {
-            (*c).entry
-        } else {
-            sys::count(&sys::RUN_STATS.native_calls);
-            put!($a, $fp, $op, f, target);
-            ptr::null()
-        }
-    }};
-}
-macro_rules! call_ind {
-    ($a:ident, $fp:ident, $op:ident,) => {
-        match resolve_ind(&*addr_of!($a, $op, site).cast(), get!(*const (), $a, $fp, $op, p)) {
-            Some(f) => f.entry,
-            None => {
-                sys::count(&sys::RUN_STATS.native_calls);
-                ptr::null()
-            }
-        }
-    };
-}
-macro_rules! tail_call_ind {
-    ($a:ident, $fp:ident, $op:ident,) => {
-        // The assembly entry `ryo_h_TailCallInd` adds the caller's stack pointer, where the
-        // staged arguments are, as a seventh register (see `tail_call_ind_move`).
-        match resolve_ind(&*addr_of!($a, $op, site).cast(), get!(*const (), $a, $fp, $op, p)) {
-            Some(f) => {
-                ptr::copy_nonoverlapping($a[ARG_REGS - 1] as usize as *const u8, $fp.add(16), word!($a, $op, n) as usize);
-                f.entry
-            }
-            None => {
-                sys::count(&sys::RUN_STATS.native_calls);
-                ptr::null()
-            }
-        }
-    };
-}
-
 /// Writes `v` to the slot at `p`.
 #[inline(always)]
 unsafe fn put_at<T>(p: *mut u8, v: T) {
@@ -534,61 +480,6 @@ unsafe fn sparse<T: Copy + Ord>(vals: *const T, n: usize, v: T) -> usize {
             }
         }
         n
-    }
-}
-
-/// Resolves a `call.ext` site: the symbol's address, then the registry.
-#[cold]
-#[inline(never)]
-fn resolve_ext(target: *const ()) -> *mut Function {
-    match lookup_addr(target) {
-        Some(f) => (f as *const Function).cast_mut(),
-        None => NATIVE,
-    }
-}
-
-/// The VM function an indirect call to `target` reaches, if any, using and updating the
-/// site cache (design/vm.md, "the site cache").
-#[inline(always)]
-unsafe fn resolve_ind(s: &AtomicPtr<Function>, target: *const ()) -> Option<&'static Function> {
-    // SAFETY: a cached value is null, a tagged native address (low bit set, never
-    // dereferenced), or a function record published with Release by the store below, after
-    // its own publication (Acquire here makes the record's contents visible).
-    unsafe {
-        let c = s.load(Ordering::Acquire);
-        if c.addr() & 1 != 0 {
-            if c == native_tag(target) {
-                return None;
-            }
-        } else if let Some(f) = c.as_ref()
-            && ptr::eq(f.portal, target)
-        {
-            return Some(f);
-        }
-        resolve_ind_slow(s, target)
-    }
-}
-
-/// The `call.ind` site cache value for a native target: `addr << 1 | 1`. Function records are
-/// 8-aligned, so the low bit tells the two apart; user-space addresses on x86_64 are below
-/// 2^47, so the shift loses nothing.
-#[inline(always)]
-fn native_tag(target: *const ()) -> *mut Function {
-    ptr::without_provenance_mut(target.addr() << 1 | 1)
-}
-
-#[cold]
-#[inline(never)]
-fn resolve_ind_slow(s: &AtomicPtr<Function>, target: *const ()) -> Option<&'static Function> {
-    match lookup_addr(target) {
-        Some(f) => {
-            s.store((f as *const Function).cast_mut(), Ordering::Release);
-            Some(f)
-        }
-        None => {
-            s.store(native_tag(target), Ordering::Relaxed);
-            None
-        }
     }
 }
 
@@ -625,9 +516,7 @@ macro_rules! handlers {
         pub fn handler(op: Opcode) -> Option<*const ()> {
             match op {
                 $(Opcode::$name => Some(h::$name as *const ()),)*
-                Opcode::TailCall => Some(tail_call as *const ()),
                 Opcode::Resume => Some(resume as *const ()),
-                Opcode::TailCallInd => Some(tail_call_ind_move as *const ()),
                 _ => None,
             }
         }
@@ -642,66 +531,11 @@ const _: () = {
     let mut i = 0;
     while i < Opcode::COUNT {
         let op = ryo_bytecode::ALL_OPCODES[i];
-        let asm_written = matches!(op, Opcode::TailCall | Opcode::Resume | Opcode::TailCallInd);
+        let asm_written = matches!(op, Opcode::Resume);
         assert!(HANDLED[i] == (asm::has_handler(op) && !asm_written), "the handler list doesn't match ops.rs");
         i += 1;
     }
 };
-
-/// `tail_call f, n`: moves the `n` bytes of the staged argument block from the caller's
-/// stack pointer (`fp - F`) up to `fp + 16`, then returns to the epilogue and `jmp f`. The two never
-/// overlap: `F` is at least the block's size. The return address is at `rsp`, so the
-/// caller's stack pointer is `rsp + 8`.
-#[unsafe(naked)]
-#[rustc_std_internal_symbol]
-#[unsafe(export_name = "ryo_h_TailCall")]
-pub unsafe extern "sysv64-unwind" fn tail_call() {
-    #[cfg(feature = "fp-rbp")]
-    core::arch::naked_asm!(
-        ".cfi_startproc",
-        "mov ecx, edi",
-        "lea rsi, [rsp + 8]",
-        "lea rdi, [rbp + 16]",
-        "rep movsb",
-        "ret",
-        ".cfi_endproc",
-    );
-    #[cfg(not(feature = "fp-rbp"))]
-    core::arch::naked_asm!(
-        ".cfi_startproc",
-        "mov ecx, esi",
-        "lea rsi, [rsp + 8]",
-        "add rdi, 16",
-        "rep movsb",
-        "ret",
-        ".cfi_endproc",
-    );
-}
-
-/// `tail_call.ind`: passes the caller's stack pointer (`rsp + 8`, the staged arguments) in
-/// the last argument register, and continues in the Rust handler, which resolves the target
-/// and, for a VM function, moves the arguments.
-#[unsafe(naked)]
-#[rustc_std_internal_symbol]
-#[unsafe(export_name = "ryo_h_TailCallInd")]
-pub unsafe extern "sysv64-unwind" fn tail_call_ind_move() -> *const u8 {
-    core::arch::naked_asm!(
-        ".cfi_startproc",
-        "lea r9, [rsp + 8]",
-        "jmp {}",
-        ".cfi_endproc",
-        sym tail_call_ind,
-    );
-}
-
-/// The Rust part of `tail_call.ind`, with the caller's stack pointer in `a5`.
-#[allow(non_snake_case)]
-unsafe extern "sysv64-unwind" fn tail_call_ind(a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> *const u8 {
-    let a = [a0, a1, a2, a3, a4, a5];
-    let fp = read_fp(&a);
-    // SAFETY: see the module docs.
-    unsafe { tail_call_ind!(a, fp, TailCallInd,) }
-}
 
 /// `resume x`: continues unwinding with the exception object in slot `x`
 /// (`_Unwind_Resume`). Jumps, so `_Unwind_Resume` sees the VM function as its caller.

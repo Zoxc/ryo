@@ -1,5 +1,5 @@
 //! A panic through VM frames with `RUST_BACKTRACE=1`: the backtrace walks the machine code
-//! of VM functions (their unwind information and `<symbol>.vm` names) into native frames.
+//! of VM functions (their unwind information and symbols) into native frames.
 use std::hint::black_box;
 
 struct Guard;

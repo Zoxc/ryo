@@ -144,23 +144,16 @@ const fn shareable(k: OperandKind) -> bool {
 
 /// Whether `shape`'s handler receives operand `name`. The call shapes pass only what the
 /// handler resolves; the rest goes to the call sequence around it.
-const fn passed(shape: Shape, name: &str) -> bool {
-    const fn eq(a: &str, b: &str) -> bool {
-        crate::insn::str_eq(a, b)
-    }
+const fn passed(shape: Shape, _name: &str) -> bool {
     match shape {
         Shape::Op | Shape::Br | Shape::Switch | Shape::Trap | Shape::Lpad => true,
-        Shape::Jmp | Shape::Call | Shape::Ret | Shape::Island | Shape::Arg => false,
-        Shape::CallExt => eq(name, "sym") || eq(name, "site") || eq(name, "f"),
-        Shape::CallInd => eq(name, "p") || eq(name, "site"),
-        Shape::TailCall => eq(name, "n"),
-        Shape::TailCallInd => eq(name, "p") || eq(name, "site") || eq(name, "n"),
+        Shape::Jmp | Shape::Call | Shape::TailCall | Shape::Ret | Shape::Island | Shape::Arg => false,
     }
 }
 
 /// Whether instructions of `op` call a handler.
 pub const fn has_handler(op: Opcode) -> bool {
-    !matches!(op.info().shape, Shape::Jmp | Shape::Call | Shape::Ret | Shape::Island | Shape::Arg)
+    !matches!(op.info().shape, Shape::Jmp | Shape::Call | Shape::TailCall | Shape::Ret | Shape::Island | Shape::Arg)
 }
 
 /// The register layout of `op`'s handler call (see the [module docs](self)). Fails to
@@ -260,8 +253,9 @@ pub const fn read(args: &[u64; ARG_REGS], loc: Loc) -> u128 {
 
 /// A return kind (the `k` of `ret` and the calls): how a value comes back.
 /// 0 is nothing, [`RET_SRET`] memory the caller passes the address of (in the first integer
-/// argument register; the callee returns it in `rax`), anything else up to two register
-/// parts ([`ret_parts`]). The parts take `rax` then `rdx` (integers) and `xmm0` then `xmm1`
+/// argument register; the callee returns it in `rax`; only in the function table: in code,
+/// such a call is one of kind 0 with that argument, and the callee's `ret` returns the
+/// address as an 8-byte part), anything else up to two register parts ([`ret_parts`]). The parts take `rax` then `rdx` (integers) and `xmm0` then `xmm1`
 /// (floats) in order, as LLVM returns a first-class aggregate.
 ///
 /// A call's kind gives each part's exact size, which it stores. `ret`'s gives the width it
@@ -323,34 +317,68 @@ pub fn ret_parts(k: u32, load: bool) -> Option<[Option<RetPart>; 2]> {
     }
 }
 
-/// Whether the instruction `words` (opcode first) has a return kind the machine code can
-/// pass ([`RET_SRET`]), and with kind 0, a `call` destination and a `ret` source of 0,
-/// since nothing in the machine code holds them; and for `arg`, a valid register
-/// ([`ArgReg`]).
+/// Whether the instruction `words` (opcode first) has operands the machine code can pass: a
+/// return kind ([`RET_SRET`]), with kind 0 a `call` destination and a `ret` source of 0
+/// (nothing in the machine code holds them), an `arg`'s register ([`ArgReg`]), and a call's
+/// argument list ([`params_ok`]).
 pub fn return_ok(words: &[u32]) -> bool {
     use crate::insn::operand_word;
     let Some(op) = Opcode::from_u16(words[0] as u16) else { return true };
-    let (unused, load) = match op {
-        Opcode::Call => (Some(operand_word(op, "d")), false),
-        Opcode::Ret => (Some(operand_word(op, "s")), true),
-        Opcode::CallExt | Opcode::CallExtInd | Opcode::CallInd => (None, false),
-        Opcode::TailCall | Opcode::TailCallInd => {
-            // An sret function passes its return value's address on.
-            let (q, k) = (words[operand_word(op, "q")], words[operand_word(op, "k")]);
-            return k == RET_SRET || k == 0 && q == 0;
+    let k_ok = |k: u32, load: bool| k == 0 || (k == RET_SRET && !load) || ret_parts(k, load).is_some();
+    match op {
+        Opcode::Ret => {
+            let (s, k) = (words[operand_word(op, "s")], words[operand_word(op, "k")]);
+            k_ok(k, true) && (k != 0 || s == 0)
         }
-        Opcode::Arg => return ArgReg::of(words[operand_word(op, "r")]).is_some(),
-        _ => return true,
-    };
-    let k = words[operand_word(op, "k")];
-    if k == 0 {
-        return unused.is_none_or(|u| words[u] == 0);
+        Opcode::Arg => ArgReg::of(words[operand_word(op, "r")], true).is_some(),
+        Opcode::Call | Opcode::CallSym | Opcode::CallSymInd | Opcode::CallPtr => {
+            let (d, k) = (words[operand_word(op, "d")], words[operand_word(op, "k")]);
+            let a = operand_word(op, "a");
+            k != RET_SRET && k_ok(k, false) && (k != 0 || d == 0) && params_ok(&words[a + 1..][..words[a] as usize])
+        }
+        Opcode::TailCall | Opcode::TailCallPtr => {
+            let a = operand_word(op, "a");
+            params_ok(&words[a + 1..][..words[a] as usize])
+        }
+        _ => true,
     }
-    (k == RET_SRET && !load) || ret_parts(k, load).is_some()
 }
 
-/// An `arg`'s register `r`: bits 0–4 the size it stores (1, 2, 4 or 8 bytes of an integer
-/// register, 2, 4, 8 or 16 of an SSE one), bit 5 an SSE register, bits 8–15 the register's
+/// A call's argument list `a`: (slot, register) pairs, the register an [`ArgReg`] word with
+/// load sizes, or [`ARG_ADDR`] for the slot's address in an integer register. No register
+/// twice. A call of an sret function passes the destination's address as an argument (the
+/// first integer register), and its kind is 0: the machine code is the same.
+pub fn params_ok(a: &[u32]) -> bool {
+    if a.len() % 2 != 0 {
+        return false;
+    }
+    let mut used = 0u32;
+    for p in a.chunks(2) {
+        let Some(r) = param_reg(p[1]) else { return false };
+        let bit = 1 << (r.index + if r.xmm { 8 } else { 0 });
+        if used & bit != 0 {
+            return false;
+        }
+        used |= bit;
+    }
+    true
+}
+
+/// The register of an argument list entry ([`params_ok`]), if valid: [`ARG_ADDR`] gives an
+/// 8-byte integer register.
+pub fn param_reg(w: u32) -> Option<ArgReg> {
+    if w & ARG_ADDR != 0 {
+        return ArgReg::of(w & !ARG_ADDR, false).filter(|r| !r.xmm && r.size == 8);
+    }
+    ArgReg::of(w, false)
+}
+
+/// In a call's argument list ([`params_ok`]): the register gets the slot's address.
+pub const ARG_ADDR: u32 = 1 << 6;
+
+/// An `arg`'s register `r`: bits 0–4 the size it stores (1 to 8 bytes of an integer register,
+/// 2, 4, 8 or 16 of an SSE one; in a call's argument list ([`params_ok`]) the size it loads,
+/// integers 1, 2, 4 or 8), bit 5 an SSE register, bits 8–15 the register's
 /// index among the convention's argument registers of its class: `rdi rsi rdx rcx r8 r9`
 /// (PE: `rcx rdx r8 r9`) and `xmm0`–`xmm7` (PE: `xmm0`–`xmm3`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -365,10 +393,11 @@ impl ArgReg {
         self.size | (self.xmm as u32) << 5 | self.index << 8
     }
 
-    /// The register of the word `r`, if valid.
-    pub fn of(r: u32) -> Option<ArgReg> {
+    /// The register of the word `r`, if valid: `exact` for an `arg`'s store sizes.
+    pub fn of(r: u32, exact: bool) -> Option<ArgReg> {
         let a = ArgReg { xmm: r & 0x20 != 0, size: r & 0x1f, index: r >> 8 };
-        let ok = if a.xmm { matches!(a.size, 2 | 4 | 8 | 16) && a.index < 8 } else { matches!(a.size, 1 | 2 | 4 | 8) && a.index < 6 };
+        let int = if exact { (1..=8).contains(&a.size) } else { matches!(a.size, 1 | 2 | 4 | 8) };
+        let ok = if a.xmm { matches!(a.size, 2 | 4 | 8 | 16) && a.index < 8 } else { int && a.index < 6 };
         (ok && r & 0xc0 == 0 && a.word() == r).then_some(a)
     }
 }

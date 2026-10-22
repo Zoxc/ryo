@@ -82,8 +82,8 @@ modeled on cg_clif's `build_system/`.
      `-Copt-level=3 -Ccodegen-units=1 -Cpanic=unwind -Cembed-bitcode=yes` regardless of the
      user's profile (bitcode, like std's, so `-Clto` builds can include it), and
      installed next to std. There is no native library to link. Its cargo features are
-     `registry-anchor` plus those listed in `RYO_RT_FEATURES` (comma-separated, such as
-     `fp-rbp`, [vm.md](vm.md#handlers)).
+     those listed in `RYO_RT_FEATURES` (comma-separated, such as `fp-rbp`,
+     [vm.md](vm.md#handlers)), none by default.
 3. **Wrappers** (like cg_clif's `scripts/rustc-clif.rs`, `cargo-clif.rs`): tiny Rust programs
    compiled with plain rustc. They locate `dist/` from `current_exe()`, set
    `RUSTC_BOOTSTRAP=1` and `RUSTUP_TOOLCHAIN` (baked in at build time), and add:
@@ -101,8 +101,8 @@ modeled on cg_clif's `build_system/`.
    With no arguments, they pass none (so rustc prints its help), and an explicit `--sysroot`
    from the user replaces `--sysroot dist`.
 
-   They reject `-Zrandomize-layout`, because argument block layouts must agree between
-   crates ([lowering.md](lowering.md#frame-slots)).
+   They reject `-Zrandomize-layout`, because tuple layouts (island argument blocks) must
+   agree between crates ([lowering.md](lowering.md#frame-slots)).
 
    `--sysroot ryo` (or `--sysroot=ryo`) means `dist/sysroot-ryo`; a directory named `ryo`
    needs a path, such as `--sysroot ./ryo`. `-Zryo-stats[=N]` (or
@@ -144,31 +144,28 @@ This gives a third backend, built from the same toolchain, to compare against.
   aggregates, `f16`/`f32`/`f64`/`f128` mixes, `u128` with one integer register left, enough
   arguments to spill to the stack, `extern "C"`, closures, vtables, `#[track_caller]`)
   passed and returned VM → native, native → VM and VM → VM, directly and through fn
-  pointers. Programs can list functions that must be
-  compiled to bytecode: the ryo builds run with `RYO_STATS=1` and must report them, and the
-  program is run once more with `RYO_VM_TRACE`: the reported IDs, mapped back to names
-  through the IDs `RYO_STATS` prints, must include the functions the program lists as
-  entered, and the output must otherwise be the same
-  ([backend.md](backend.md#debugging-switches)). Programs with VM functions are also built at
-  `-Copt-level=3` (`ryo-O3`), where only the output and the trace consistency are checked,
-  since MIR inlining removes functions. Some programs are a staticlib or cdylib called from a
+  pointers. VM functions follow the platform calling convention, so it checks that VM code
+  and cg_llvm agree on where every piece goes ([vm.md](vm.md#calls-and-islands)). Programs
+  can list functions that must be compiled to bytecode: the ryo builds run with
+  `RYO_STATS=1` and must report them ([backend.md](backend.md#debugging-switches)).
+  Programs with VM functions are also built at `-Copt-level=3` (`ryo-O3`), where only the
+  output is checked, since MIR inlining removes functions. Some programs are a staticlib or cdylib called from a
   C `main`, compiled with `cc`, or `cl` on windows-msvc hosts (skipped without one). The smoke tests check that `rustc-ryo`
   rejects `-Zrandomize-layout`, more than one codegen unit and `-Cincremental`, and that
   `cargo-ryo` builds a dev-profile package. The `backtrace` check builds
   `tests/vm_backtrace.rs` (a panic two VM calls deep, caught by `catch_unwind`) and runs it
-  with `RUST_BACKTRACE=1`: the backtrace must name the VM functions (`<symbol>.vm`),
-  `ryo_asm_enter`, `ryo_rt::vm::enter` and the native frames around them, and the cleanup
+  with `RUST_BACKTRACE=1`: the backtrace must name the VM functions by their own
+  symbols, and the native frames around them, and the cleanup
   and the catch must still run ([vm.md](vm.md#unwinding)).
 - `test` checks (`rt-core-only`) that every sysroot's `ryo_rt` rlib references no symbols
   outside `core`, `compiler_builtins`, `ryo_bytecode`, libc and the panic runtime's entry
   points, and that no call path from its code reaches core's panic machinery
   ([vm.md](vm.md#runtime-crate-ryo_rt), "No re-entry into the VM from the runtime").
 - With a ryo sysroot in `dist/`, `test` also builds the corpus against it (`--sysroot ryo`):
-  variants `ryo-std`, `ryo-std-O3` (output and trace consistency only, like `ryo-O3`),
+  variants `ryo-std`, `ryo-std-O3` (output only, like `ryo-O3`),
   `ryo-std-lto` (`-Clto=fat` on the last crate) and `ryo-std-abort` (`-Cpanic=abort`,
-  compared with plain rustc's `-Cpanic=abort` build; programs with a Rust dylib are skipped). Their
-  `entered` lists aren't checked: those name what the LLVM std enters through portals, and VM
-  std code calls VM functions directly. Without one, they are skipped.
+  compared with plain rustc's `-Cpanic=abort` build; programs with a Rust dylib are skipped).
+  Without one, they are skipped.
 - `test --cross T`: builds and links, without running, the corpus for target `T` (after
   `build --target T`), against stand-in import libraries ([platforms.md](platforms.md),
   cross-checking). Skipped if the sysroot has no `rust-lld`.
@@ -194,7 +191,7 @@ This gives a third backend, built from the same toolchain, to compare against.
   first.
 - `y test` also runs `vm/`'s cargo tests (`cargo test --workspace` in `vm/`): the encoder
   against the decoder, the image writer and reader, every handler against a reference
-  model, the handlers' codegen, and hand-assembled functions run through `vm::enter`
+  model, the handlers' codegen, and hand-assembled functions called as native functions
   ([vm.md](vm.md#handlers)), then `ryo_rt`'s again with `--features fp-rbp`, which takes
   the frame-pointer path.
 
@@ -287,8 +284,8 @@ backend/        dylib      rustc_codegen_ryo   #![feature(rustc_private)]
 vm/             cargo workspace for everything that ends up in the output program
   bytecode/     rlib       ryo_bytecode        format: opcodes, machine code, image layout;
                                                used by the backend (writer) and the VM (reader)
-  rt/           rlib       ryo_rt              the runtime: handlers, entry, registry,
-                                               portal/island templates
+  rt/           rlib       ryo_rt              the runtime: handlers, registry,
+                                               island templates, `main` wrapper
 tests/                                         test programs, driven by `y test`
   crates/                                      workloads for `y bench crates`
   bench/                                       benchmark programs, driven by `y bench`

@@ -2,19 +2,20 @@
 //!
 //! A direct call of a resolved instance is, in order of preference:
 //!
-//! - `call fn`: a VM function of this image ([`LowerCx::vm`])
-//! - `call.ext sym, site, call_ptrN, f`: a Rust-ABI instance from another crate (one
-//!   `should_codegen_locally` says isn't codegened here); `f` is the slot the native path
-//!   passes the resolved address in
-//! - `island call<F, Args, R>`: a safe Rust fn item (through `FnOnce`, no symbol needed)
-//! - `addr.sym` + `island call_ptrN` / `call_cN`: any other local native function
+//! - `call fn`: a Rust-ABI VM function of this image ([`LowerCx::vm`])
+//! - `call.sym sym` (`call.sym.ind` through a PE import slot): any other Rust-ABI instance
+//!   with a symbol, native or from another crate
+//! - `island call<F, Args, R>`: a safe Rust fn item without a symbol (through `FnOnce`)
+//! - `addr.sym` + `island call_cN`: a function with another ABI
 //!
 //! Fn-pointer calls and virtual calls (`InstanceKind::Virtual`, the fn pointer loaded from
-//! the receiver's vtable) are `call.ind` (Rust ABI) or a `call_cN` island. `become` is
-//! `tail_call` / `tail_call.ind`.
+//! the receiver's vtable) are `call.ptr` (Rust ABI) or a `call_cN` island. `become` is
+//! `tail_call` / `tail_call.ptr`.
 //!
-//! Arguments are written to the outgoing argument block just before the call. For a
-//! `#[track_caller]` callee the caller location is appended (design/lowering.md#caller-location).
+//! Arguments go where the platform calling convention says ([`super::sig::ArgPlan`]): the
+//! stack pieces are stored to the outgoing area before the call, the register pieces are
+//! the call instruction's argument list. For a `#[track_caller]` callee the caller location
+//! is appended (design/lowering.md#caller-location).
 //!
 //! [`LowerCx::vm`]: super::LowerCx::vm
 
@@ -22,13 +23,15 @@ use rustc_abi::{BackendRepr, ExternAbi};
 use rustc_middle::mir::{BasicBlock, Operand, Place, SourceInfo, UnwindAction};
 use rustc_middle::ty::{self, GenericArg, Instance, InstanceKind, Ty, TypingEnv};
 use rustc_span::Spanned;
-use ryo_bytecode::asm::{RET_SRET, RetPart, ret_kind, ret_parts};
+use ryo_bytecode::abi::HEADER_SIZE;
+use ryo_bytecode::asm::{ARG_ADDR, ArgReg, RET_SRET, RetPart, ret_kind, ret_parts};
 use ryo_bytecode::insn::Opcode;
 
+use super::frame;
 use super::island::templates;
 use super::place::{Loc, PlaceVal};
 use super::emit::opcode;
-use super::sig::{AbiSig, CallConv, abi_sig, fn_ptr_sig, tys_sig, virtual_sig};
+use super::sig::{AbiSig, ArgLoc, CallConv, abi_sig, fn_ptr_sig, tys_sig, virtual_sig};
 use super::{CodeReloc, FnCx, NeedsNative, native, no_trim};
 
 /// Where an argument comes from.
@@ -44,13 +47,13 @@ pub enum ArgSrc<'b, 'tcx> {
 enum Target<'tcx> {
     /// `call fn` / `tail_call fn`: a VM function of this image.
     Vm(Instance<'tcx>),
-    /// `call.ext sym`: a Rust-ABI instance from another crate.
+    /// `call.sym sym`: a Rust-ABI instance with a symbol, native or from another crate.
     Ext(Instance<'tcx>),
-    /// `island call<F, Args, R>`: a safe Rust fn item `F`, through `FnOnce`.
+    /// `island call<F, Args, R>`: a safe Rust fn item `F` without a symbol, through `FnOnce`.
     Template(Ty<'tcx>),
-    /// `addr.sym` of a local native instance, then a fn-pointer island.
+    /// `addr.sym` of a local native instance with another ABI, then a `call_cN` island.
     Sym(Instance<'tcx>, CallConv),
-    /// The fn pointer in this slot: `call.ind` (Rust ABI) or a `call_cN` island. Fn-pointer
+    /// The fn pointer in this slot: `call.ptr` (Rust ABI) or a `call_cN` island. Fn-pointer
     /// calls and virtual calls (the pointer loaded from the vtable).
     Ptr(u32, CallConv),
 }
@@ -106,8 +109,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         source_info: SourceInfo,
     ) -> Result<(), NeedsNative> {
         let (target, sig, args) = self.direct_target(fty, callee, args, false)?;
-        self.write_args(&sig, &args, source_info)?;
-        self.emit_call(target, &sig, cont)
+        let homes = self.write_args(&sig, &args, source_info, island_target(target))?;
+        self.emit_call(target, &sig, &homes, cont)
     }
 
     /// A call through a fn pointer: `call.ind` (Rust ABI) or a `call_cN` island.
@@ -120,8 +123,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         source_info: SourceInfo,
     ) -> Result<(), NeedsNative> {
         let (target, sig) = self.ptr_target(func, fty)?;
-        self.write_args(&sig, args, source_info)?;
-        self.emit_call(target, &sig, cont)
+        let homes = self.write_args(&sig, args, source_info, island_target(target))?;
+        self.emit_call(target, &sig, &homes, cont)
     }
 
     /// How to reach the resolved `callee` (fn item type `fty`), its signature, and the
@@ -153,7 +156,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let has_symbol = !matches!(callee.def, InstanceKind::Intrinsic(_));
         // The callee's ABI signature, if computed to pick the target (reused below).
         let mut callee_sig = None;
-        let target = if self.cx.vm.contains(&callee) {
+        // VM functions are Rust-ABI; a candidate with another ABI stays native.
+        let target = if self.cx.vm.contains(&callee) && abi_sig(tcx, callee).is_ok_and(|s| s.conv == CallConv::Rust) {
             Target::Vm(callee)
         } else if !has_symbol {
             if tail || !self.fn_once_able(fty, callee) {
@@ -163,8 +167,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         } else {
             let sig = abi_sig(tcx, callee)?;
             let target = match sig.conv {
-                CallConv::Rust if !tcx.should_codegen_locally(callee) => Target::Ext(callee),
-                CallConv::Rust if !tail && self.fn_once_able(fty, callee) => Target::Template(fty),
+                CallConv::Rust => Target::Ext(callee),
                 conv => Target::Sym(callee, conv),
             };
             callee_sig = Some(sig);
@@ -242,61 +245,114 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         Ok((s + off, s + off + b_offset.bytes() as u32, thin))
     }
 
-    /// Emits the call (arguments already written) and continues as `cont` says. The result
-    /// comes back as the signature's return kind says, into `d`.
-    fn emit_call(&mut self, target: Target<'tcx>, sig: &AbiSig<'tcx>, cont: CallCont<'tcx>) -> Result<(), NeedsNative> {
+    /// Emits the call (arguments already written, `homes` their slots) and continues as
+    /// `cont` says. The result comes back as the signature's return kind says, into `d`; for
+    /// sret, the call passes `d`'s address.
+    fn emit_call(
+        &mut self,
+        target: Target<'tcx>,
+        sig: &AbiSig<'tcx>,
+        homes: &[u32],
+        cont: CallCont<'tcx>,
+    ) -> Result<(), NeedsNative> {
         let tcx = self.tcx;
         let (d, after) = self.call_dest(&cont, sig)?;
         let block = Self::out(0);
-        let k = sig.ret_kind;
-        match target {
+        let k = if sig.ret_kind == RET_SRET { 0 } else { sig.ret_kind };
+        let rd = if k == 0 { 0 } else { d };
+        let at = match target {
             Target::Vm(callee) => {
+                let a = self.pass_args(sig, homes, Some(d), false)?;
                 let f = self.reloc(CodeReloc::Call { callee });
-                let at = self.op(Opcode::Call, &[if k == 0 { 0 } else { d }, f, k]);
-                self.unwind_entry(at, cont.unwind);
+                Some(self.op(Opcode::Call, &[&[rd, f, k][..], &a].concat()))
             }
             Target::Ext(callee) => {
-                let island = self.call_ptr_island(sig)?;
-                let f = self.temp8();
+                let a = self.pass_args(sig, homes, Some(d), false)?;
                 let r = CodeReloc::Symbol { target: callee };
-                let op = if self.sym_indirect(&r) { Opcode::CallExtInd } else { Opcode::CallExt };
+                let op = if self.sym_indirect(&r) { Opcode::CallSymInd } else { Opcode::CallSym };
                 let sym = self.reloc(r);
-                let site = self.reloc(CodeReloc::Site);
-                let isl = self.reloc(CodeReloc::Island { template: island.0, args: island.1 });
-                let at = self.op(op, &[d, sym, site, isl, f, k]);
-                self.unwind_entry(at, cont.unwind);
+                Some(self.op(op, &[&[rd, sym, k][..], &a].concat()))
+            }
+            Target::Ptr(p, CallConv::Rust) => {
+                let a = self.pass_args(sig, homes, Some(d), false)?;
+                Some(self.op(Opcode::CallPtr, &[&[rd, p, k][..], &a].concat()))
             }
             Target::Template(fty) => {
                 let args = [fty.into(), sig.args_tuple(tcx).into(), sig.output.ty.into()];
                 self.island(templates::CALL, &args, &[block, d], Some(cont.unwind));
+                None
             }
             Target::Sym(callee, conv) => {
                 let p = self.sym_addr(callee);
                 let (name, args) = self.ptr_island(sig, conv)?;
                 self.island(&name, &args, &[block, d, p], Some(cont.unwind));
-            }
-            Target::Ptr(p, CallConv::Rust) => {
-                let island = self.call_ptr_island(sig)?;
-                let site = self.reloc(CodeReloc::Site);
-                let isl = self.reloc(CodeReloc::Island { template: island.0, args: island.1 });
-                let at = self.op(Opcode::CallInd, &[d, p, site, isl, k]);
-                self.unwind_entry(at, cont.unwind);
+                None
             }
             Target::Ptr(p, CallConv::C) => {
                 let (name, args) = self.ptr_island(sig, CallConv::C)?;
                 self.island(&name, &args, &[block, d, p], Some(cont.unwind));
+                None
             }
+        };
+        if let Some(at) = at {
+            self.unwind_entry(at, cont.unwind);
         }
         self.finish_call(cont, d, after)
     }
 
-    /// The `q`, `k` operands of a tail call: an sret function passes its return value's
-    /// address on to the callee.
-    fn pass_sret(&self) -> (u32, u32) {
-        match self.frame.sret {
-            Some(q) => (q, RET_SRET),
-            None => (0, 0),
+    /// Passes the inputs in their slots `homes` as `sig`'s calling convention says: the
+    /// stack pieces stored to the outgoing area (or for a tail call, over the function's own
+    /// incoming one), and the argument list of the call instruction for the registers. An
+    /// `Indirect` input is passed as its home's address, or for a tail call copied over the
+    /// function's own incoming value, whose address is passed on (as rustc does). For an
+    /// sret callee, the destination `d`'s address, or for a tail call the function's own.
+    fn pass_args(&mut self, sig: &AbiSig<'tcx>, homes: &[u32], d: Option<u32>, tail: bool) -> Result<Vec<u32>, NeedsNative> {
+        let Some(plan) = sig.plan.clone() else { return native("a call without a calling convention") };
+        let mut a = Vec::new();
+        let gpr = |index| ArgReg { xmm: false, size: 8, index }.word();
+        if sig.ret_kind == RET_SRET {
+            match (tail, self.frame.sret) {
+                (false, _) => a.extend([d.expect("call destination"), gpr(0) | ARG_ADDR]),
+                (true, Some(p)) => a.extend([p, gpr(0)]),
+                (true, None) => return native("tail call of an sret function from another one"),
+            }
         }
+        // A stack piece's slot: the outgoing area at `rsp`, or the incoming one at `fp + 16`.
+        let stack = |at: u32| if tail { frame::slot((HEADER_SIZE + at) as i32) } else { Self::out(at) };
+        for (i, locs) in plan.locs.iter().enumerate() {
+            let home = homes[i];
+            // A tail call reuses the incoming `Indirect` value's memory.
+            let incoming_ptr = |fx: &mut Self| -> Result<u32, NeedsNative> {
+                let Some(p) = fx.frame.arg_ptrs.get(i).copied().flatten() else {
+                    return native("tail call passing an indirect argument the function didn't get");
+                };
+                fx.op(Opcode::StoreCopy, &[p, 0, home, sig.fields[i].size]);
+                Ok(p)
+            };
+            for &l in locs {
+                match l {
+                    ArgLoc::Reg { reg, off } => {
+                        let size = if reg.xmm { reg.size } else { reg.size.next_power_of_two() };
+                        a.extend([home + off, ArgReg { size, ..reg }.word()]);
+                    }
+                    ArgLoc::Stack { at, off, size } => self.mov(stack(at), home + off, size),
+                    ArgLoc::PtrReg(index) if tail => {
+                        let p = incoming_ptr(self)?;
+                        a.extend([p, gpr(index)]);
+                    }
+                    ArgLoc::PtrReg(index) => a.extend([home, gpr(index) | ARG_ADDR]),
+                    ArgLoc::PtrStack(at) if tail => {
+                        let p = incoming_ptr(self)?;
+                        self.mov(stack(at), p, 8);
+                    }
+                    ArgLoc::PtrStack(at) => self.addr_into(stack(at), Loc::Slot(home)),
+                }
+            }
+        }
+        if !tail {
+            self.outgoing(plan.stack_size);
+        }
+        Ok(a)
     }
 
     /// `ret` of `_0`, as the function's return kind says: in registers, or (sret) copied to
@@ -322,11 +378,10 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         p
     }
 
-    /// `TerminatorKind::TailCall` (`become`): the arguments are staged in the outgoing block,
-    /// then `tail_call` (a VM function of this image) or `tail_call.ind` (anything else with
-    /// an address; the VM makes a native target an ordinary call, whose result goes to `_0`,
-    /// followed by a return) replaces the frame (design/vm.md#calls-and-islands). Both name
-    /// the size of the argument block they move.
+    /// `TerminatorKind::TailCall` (`become`): the arguments are staged in temporaries, their
+    /// stack pieces stored over the function's own incoming ones, then `tail_call` (a VM
+    /// function of this image) or `tail_call.ptr` (anything else with an address) loads the
+    /// argument registers and jumps (design/vm.md#calls-and-islands).
     pub fn tail_call_terminator(
         &mut self,
         func: &Operand<'tcx>,
@@ -358,58 +413,38 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         if sig.conv != CallConv::Rust {
             return native("tail call of a non-Rust ABI");
         }
-        // The VM returns a native target's result with the caller's `ret_size`, and `become`
-        // requires matching signatures.
+        // `become` requires matching signatures.
         let ret = self.frame.locals[rustc_middle::mir::RETURN_PLACE].layout;
-        if ret.size != sig.output.size {
-            return native("tail call with a different return size");
+        if ret.size != sig.output.size || sig.ret_kind != self.ret_kind {
+            return native("tail call with a different return");
         }
-        self.write_args(&sig, &srcs, source_info)?;
-        match target {
-            Target::Vm(callee) => {
-                let f = self.reloc(CodeReloc::Call { callee });
-                let (q, k) = self.pass_sret();
-                self.op(Opcode::TailCall, &[f, sig.block_size, q, k]);
-            }
-            Target::Ext(callee) | Target::Sym(callee, _) => {
-                let p = self.sym_addr(callee);
-                self.tail_call_ind(p, &sig)?;
-            }
-            Target::Ptr(p, _) => self.tail_call_ind(p, &sig)?,
+        let homes = self.write_args(&sig, &srcs, source_info, false)?;
+        let p = match target {
+            Target::Vm(_) => None,
+            Target::Ext(callee) | Target::Sym(callee, _) => Some(self.sym_addr(callee)),
+            Target::Ptr(p, _) => Some(p),
             Target::Template(_) => unreachable!("tail calls don't use the call template"),
+        };
+        let a = self.pass_args(&sig, &homes, None, true)?;
+        match (target, p) {
+            (Target::Vm(callee), _) => {
+                let f = self.reloc(CodeReloc::Call { callee });
+                self.op(Opcode::TailCall, &[&[f][..], &a].concat());
+            }
+            (_, Some(p)) => {
+                self.op(Opcode::TailCallPtr, &[&[p][..], &a].concat());
+            }
+            (_, None) => unreachable!(),
         }
         Ok(())
     }
 
-    fn tail_call_ind(&mut self, p: u32, sig: &AbiSig<'tcx>) -> Result<(), NeedsNative> {
-        let island = self.call_ptr_island(sig)?;
-        let ret = self.frame.locals[rustc_middle::mir::RETURN_PLACE];
-        let site = self.reloc(CodeReloc::Site);
-        let isl = self.reloc(CodeReloc::Island { template: island.0, args: island.1 });
-        let (q, k) = self.pass_sret();
-        let at = self.op(Opcode::TailCallInd, &[p, site, isl, sig.block_size, ret.off, q, k]);
-        // A tail call keeps no frame to land in: unwinding continues in the caller.
-        self.unwind_entry(at, UnwindAction::Continue);
-        // A native target's result is in `_0`.
-        self.ret();
-        Ok(())
-    }
-
-    /// The `call_ptrN` island for a `call.ext` / `call.ind` native fallback.
-    fn call_ptr_island(
-        &mut self,
-        sig: &AbiSig<'tcx>,
-    ) -> Result<(rustc_span::Symbol, ty::GenericArgsRef<'tcx>), NeedsNative> {
-        let (name, args) = self.ptr_island(sig, CallConv::Rust)?;
-        Ok((rustc_span::Symbol::intern(&name), self.tcx.mk_args(&args)))
-    }
-
-    /// The template and generic args of a fn-pointer call island for `sig`.
+    /// The template and generic args of a `call_cN` island for `sig`.
     fn ptr_island(&self, sig: &AbiSig<'tcx>, conv: CallConv) -> Result<(&'static str, Vec<GenericArg<'tcx>>), NeedsNative> {
         let n = sig.inputs.len();
         let name = match conv {
-            CallConv::Rust => templates::call_ptr(n),
             CallConv::C => templates::call_c(n),
+            CallConv::Rust => unreachable!("Rust-ABI calls are direct"),
         };
         let Some(name) = name else { return native(format!("call with {n} arguments")) };
         let mut args: Vec<GenericArg<'tcx>> = sig.inputs.iter().map(|&t| t.into()).collect();
@@ -439,23 +474,57 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             && !callee.def.requires_caller_location(tcx)
     }
 
-    /// Writes the arguments to the outgoing argument block. A `rust-call` callee's trailing
-    /// tuple is spread; a `#[track_caller]` callee gets the caller location last.
+    /// The arguments' slots, one per ABI input: a `rust-call` callee's trailing tuple is
+    /// spread, a `#[track_caller]` callee gets the caller location last. For an `island`
+    /// call, they are the fields of the argument block in the outgoing area (the templates'
+    /// `Args`). Otherwise each is the operand's own slot, except that an `Indirect` input,
+    /// which the callee may write to, is a copy in a temporary.
     pub fn write_args(
         &mut self,
         sig: &AbiSig<'tcx>,
         args: &[ArgSrc<'_, 'tcx>],
         source_info: SourceInfo,
-    ) -> Result<(), NeedsNative> {
+        island: bool,
+    ) -> Result<Vec<u32>, NeedsNative> {
         let n = sig.inputs.len() - usize::from(sig.caller_location);
         let spread = sig.rust_call;
         if !spread && args.len() != n {
             return native("argument count mismatch");
         }
+        let indirect = |i: usize| {
+            sig.plan.as_ref().is_some_and(|p| matches!(p.locs.get(i).map(|l| &l[..]), Some([ArgLoc::PtrReg(_) | ArgLoc::PtrStack(_)])))
+        };
+        // The slot of input `i` whose value is at `s`.
+        let home = |fx: &mut Self, i: usize, s: u32| -> u32 {
+            let f = sig.fields[i];
+            if island {
+                fx.mov(Self::out(f.offset), s, f.size);
+                Self::out(f.offset)
+            } else if indirect(i) {
+                let t = fx.frame.temp(u64::from(f.size), u64::from(f.align));
+                fx.mov(t, s, f.size);
+                t
+            } else {
+                s
+            }
+        };
         let direct = if spread { args.len().saturating_sub(1) } else { args.len() };
+        let mut homes = Vec::with_capacity(sig.inputs.len());
         for (i, a) in args[..direct].iter().enumerate() {
             let f = sig.fields[i];
-            self.arg_into(*a, Self::out(f.offset), f.size)?;
+            let s = match *a {
+                ArgSrc::Slot(s) => s,
+                ArgSrc::Operand(op) => match self.operand_slot(op) {
+                    Ok((s, _)) => s,
+                    Err(_) => {
+                        // An operand without a slot of its own: a temporary.
+                        let t = self.frame.temp(u64::from(f.size), u64::from(f.align));
+                        self.arg_into(*a, t, f.size)?;
+                        t
+                    }
+                },
+            };
+            homes.push(home(self, i, s));
         }
         if spread {
             let Some(&last) = args.last() else { return native("argument count mismatch") };
@@ -467,16 +536,19 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 return native("argument count mismatch");
             }
             for j in 0..layout.fields.count() {
-                let f = sig.fields[direct + j];
-                self.mov(Self::out(f.offset), s + layout.fields.offset(j).bytes() as u32, f.size);
+                let h = home(self, direct + j, s + layout.fields.offset(j).bytes() as u32);
+                homes.push(h);
             }
         }
         if sig.caller_location {
-            let f = sig.fields[n];
-            self.caller_location_into(source_info, Self::out(f.offset))?;
+            let t = if island { Self::out(sig.fields[n].offset) } else { self.temp8() };
+            self.caller_location_into(source_info, t)?;
+            homes.push(t);
         }
-        self.outgoing(sig.block_size);
-        Ok(())
+        if island {
+            self.outgoing(sig.block_size);
+        }
+        Ok(homes)
     }
 
     /// Writes the caller location for a call (or `caller_location`) at `source_info` to
@@ -567,9 +639,11 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         if self.cx.vm.contains(&glue) {
             // The glue of an unsized type takes the wide pointer.
             let sig = abi_sig(tcx, glue)?;
-            self.write_args(&sig, &[ArgSrc::Slot(ptr)], self.body.source_info(rustc_middle::mir::Location::START).clone())?;
+            let homes =
+                self.write_args(&sig, &[ArgSrc::Slot(ptr)], self.body.source_info(rustc_middle::mir::Location::START).clone(), false)?;
+            let a = self.pass_args(&sig, &homes, None, false)?;
             let f = self.reloc(CodeReloc::Call { callee: glue });
-            let at = self.op(Opcode::Call, &[0, f, 0]);
+            let at = self.op(Opcode::Call, &[&[0, f, 0][..], &a].concat());
             self.unwind_entry(at, unwind);
         } else {
             self.island(templates::DROP_IN_PLACE, &[ty.into()], &[ptr], Some(unwind));
@@ -583,22 +657,16 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// Drop of a trait object: the vtable's `drop_in_place` entry (null if the type needs no
     /// drop), called with the data pointer, as cg_ssa does.
     fn virtual_drop(&mut self, pv: PlaceVal<'tcx>, target: BasicBlock, unwind: UnwindAction) -> Result<(), NeedsNative> {
-        let tcx = self.tcx;
         let Some(vtable) = pv.meta else { return native("trait object without metadata") };
         let f = self.temp8();
         let idx = ty::COMMON_VTABLE_ENTRIES_DROPINPLACE as u32;
         self.op(super::emit::opcode("LoadW64"), &[f, vtable, idx * 8]);
         self.op_branch(super::emit::opcode("BrEqImmW64"), &[f, 0, 0], false, target);
-        let data = Ty::new_mut_ptr(tcx, tcx.types.unit);
-        let sig = tys_sig(tcx, vec![data], tcx.types.unit)?;
         let ptr = self.temp8();
         self.addr_into(ptr, pv.loc);
-        self.write_args(&sig, &[ArgSrc::Slot(ptr)], self.body.source_info(rustc_middle::mir::Location::START).clone())?;
-        let island = self.call_ptr_island(&sig)?;
-        let d = self.frame.temp(0, 1);
-        let site = self.reloc(CodeReloc::Site);
-        let isl = self.reloc(CodeReloc::Island { template: island.0, args: island.1 });
-        let at = self.op(Opcode::CallInd, &[d, f, site, isl, 0]);
+        // `unsafe fn(*mut ())`: the pointer in the first integer register.
+        let a = [ptr, ArgReg { xmm: false, size: 8, index: 0 }.word()];
+        let at = self.op(Opcode::CallPtr, &[&[0, f, 0][..], &a].concat());
         self.unwind_entry(at, unwind);
         self.jump(target);
         Ok(())
@@ -622,4 +690,9 @@ pub fn load_kind(k: u32) -> u32 {
         .map(|p| if p.xmm { p } else { RetPart { size: p.size.next_power_of_two(), ..p } })
         .collect();
     ret_kind(&parts)
+}
+
+/// Whether a call of `target` goes through an island, which takes its arguments as a block.
+fn island_target(target: Target<'_>) -> bool {
+    matches!(target, Target::Template(_) | Target::Sym(..) | Target::Ptr(_, CallConv::C))
 }
