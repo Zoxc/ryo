@@ -237,13 +237,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
 
     /// Intrinsics beyond the first set: VM instructions where they exist, otherwise wrapper
     /// islands. Returns whether `name` was lowered.
-    fn more_intrinsics(
-        &mut self,
-        name: &str,
-        callee: Instance<'tcx>,
-        args: &[ArgSrc<'_, 'tcx>],
-        cont: &CallCont<'tcx>,
-    ) -> Result<bool, NeedsNative> {
+    fn more_intrinsics(&mut self, name: &str, callee: Instance<'tcx>, args: &[ArgSrc<'_, 'tcx>], cont: &CallCont<'tcx>) -> Result<bool, NeedsNative> {
         let ty0 = || callee.args.type_at(0);
         Ok(match name {
             "cold_path" => true,
@@ -324,8 +318,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let [a, b, s] = self.arg_slots::<3>(args)?;
                 self.funnel_shift(name == "unchecked_funnel_shl", w, a, b, s, cont)?
             }
-            "fabs" | "copysignf32" | "copysignf64" | "minimum_number_nsz_f32" | "minimum_number_nsz_f64"
-            | "maximum_number_nsz_f32" | "maximum_number_nsz_f64" => {
+            "fabs"
+            | "copysignf32"
+            | "copysignf64"
+            | "minimum_number_nsz_f32"
+            | "minimum_number_nsz_f64"
+            | "maximum_number_nsz_f32"
+            | "maximum_number_nsz_f64" => {
                 let Some(dest) = cont.dest else { return native("intrinsic without a destination") };
                 // f16/f128 go through the `call` template.
                 let fw = match dest.layout.ty.kind() {
@@ -380,13 +379,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     }
 
     /// An intrinsic wrapper island: `ops` = the inputs, then the destination.
-    fn wrapper(
-        &mut self,
-        template: &str,
-        generics: &[GenericArg<'tcx>],
-        ins: &[u32],
-        cont: &CallCont<'tcx>,
-    ) -> Result<bool, NeedsNative> {
+    fn wrapper(&mut self, template: &str, generics: &[GenericArg<'tcx>], ins: &[u32], cont: &CallCont<'tcx>) -> Result<bool, NeedsNative> {
         let ins = ins.to_vec();
         self.into_dest(cont, |fx, d| {
             let mut ops = ins;
@@ -438,13 +431,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
 
     /// `atomic_*` intrinsics: the VM's atomic instructions. An ordering combination the VM
     /// doesn't have uses `SeqCst`, which is stronger than any other.
-    fn atomic(
-        &mut self,
-        name: &str,
-        callee: Instance<'tcx>,
-        args: &[ArgSrc<'_, 'tcx>],
-        cont: &CallCont<'tcx>,
-    ) -> Result<bool, NeedsNative> {
+    fn atomic(&mut self, name: &str, callee: Instance<'tcx>, args: &[ArgSrc<'_, 'tcx>], cont: &CallCont<'tcx>) -> Result<bool, NeedsNative> {
         let ord = |i: usize| ord_name(callee.args.const_at(i).to_value().to_branch()[0].to_leaf().to_atomic_ordering());
         let pick = |base: String, ords: &[&str]| -> Result<Opcode, NeedsNative> {
             let exact = format!("{base}{}", ords.concat());
@@ -547,11 +534,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     }
 
     /// Runs `f` with a slot standing for the call's destination. Returns `true` (handled).
-    fn into_dest(
-        &mut self,
-        cont: &CallCont<'tcx>,
-        f: impl FnOnce(&mut Self, u32) -> Result<(), NeedsNative>,
-    ) -> Result<bool, NeedsNative> {
+    fn into_dest(&mut self, cont: &CallCont<'tcx>, f: impl FnOnce(&mut Self, u32) -> Result<(), NeedsNative>) -> Result<bool, NeedsNative> {
         let Some(dest) = cont.dest else { return native("intrinsic without a destination") };
         self.with_place_slot(dest, f)?;
         Ok(true)

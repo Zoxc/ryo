@@ -27,8 +27,8 @@ use ryo_bytecode::abi::{self, HEADER_SIZE};
 use ryo_bytecode::full::Opcode;
 
 use super::sig::{AbiSig, ArgLoc};
-use ryo_bytecode::asm::ArgReg;
 use super::{FnCx, NeedsNative, native};
+use ryo_bytecode::asm::ArgReg;
 
 /// The bias of a slot handed out by the lowering: the slot of frame offset `off` is
 /// `BIAS + off`.
@@ -381,8 +381,7 @@ impl Sharing {
         // Maybe-storage-live at each block's entry. Locals without `StorageLive` are always
         // live, but they have slots of their own, so only shareable locals are tracked.
         let blocks = body.basic_blocks.len();
-        let mut entry: IndexVec<BasicBlock, DenseBitSet<Local>> =
-            IndexVec::from_elem_n(DenseBitSet::new_empty(n), blocks);
+        let mut entry: IndexVec<BasicBlock, DenseBitSet<Local>> = IndexVec::from_elem_n(DenseBitSet::new_empty(n), blocks);
         let mut work: Vec<BasicBlock> = body.basic_blocks.indices().rev().collect();
         let mut queued: DenseBitSet<BasicBlock> = DenseBitSet::new_filled(blocks);
         // One scratch set, refilled per block (`clone_from` reuses its words).
@@ -460,11 +459,7 @@ fn place_below(taken: u32, size: u32, align: u32) -> Result<u32, NeedsNative> {
 
 /// Applies the `StorageLive`/`StorageDead` statements to `live`, calling `on_live(l, live)`
 /// before each `StorageLive(l)`.
-fn storage_effects(
-    stmts: &[rustc_middle::mir::Statement<'_>],
-    live: &mut DenseBitSet<Local>,
-    mut on_live: impl FnMut(Local, &DenseBitSet<Local>),
-) {
+fn storage_effects(stmts: &[rustc_middle::mir::Statement<'_>], live: &mut DenseBitSet<Local>, mut on_live: impl FnMut(Local, &DenseBitSet<Local>)) {
     for stmt in stmts {
         match stmt.kind {
             StatementKind::StorageLive(l) => {
@@ -509,9 +504,11 @@ pub fn dead_after_read(body: &Body<'_>) -> Vec<(Location, Local)> {
             // Borrowing, dropping or indexing the local itself (not through a pointer in it)
             // takes its address. The local alone only gets a projection context.
             let direct = !place.projection.iter().any(|e| matches!(e, ProjectionElem::Deref));
-            let indexed = place.projection.iter().take_while(|e| !matches!(e, ProjectionElem::Deref)).any(|e| {
-                matches!(e, ProjectionElem::Index(_) | ProjectionElem::ConstantIndex { .. } | ProjectionElem::Subslice { .. })
-            });
+            let indexed = place
+                .projection
+                .iter()
+                .take_while(|e| !matches!(e, ProjectionElem::Deref))
+                .any(|e| matches!(e, ProjectionElem::Index(_) | ProjectionElem::ConstantIndex { .. } | ProjectionElem::Subslice { .. }));
             if indexed || (direct && escaping(cx)) {
                 self.0[place.local].escapes = true;
             }
@@ -537,16 +534,15 @@ pub fn dead_after_read(body: &Body<'_>) -> Vec<(Location, Local)> {
     }
     let mut v = Uses(IndexVec::from_elem(Use::default(), &body.local_decls));
     v.visit_body(body);
-    let mut out: Vec<(Location, Local)> = v
-        .0
-        .iter_enumerated()
-        .filter(|&(l, u)| l.as_usize() > body.arg_count && !u.escapes && u.reads == 1 && u.defs == 1)
-        .filter_map(|(l, u)| {
-            let (r, d) = (u.read?, u.def?);
-            let in_stmt = r.statement_index < body.basic_blocks[r.block].statements.len();
-            (in_stmt && d.block == r.block && d.statement_index < r.statement_index).then_some((r, l))
-        })
-        .collect();
+    let mut out: Vec<(Location, Local)> =
+        v.0.iter_enumerated()
+            .filter(|&(l, u)| l.as_usize() > body.arg_count && !u.escapes && u.reads == 1 && u.defs == 1)
+            .filter_map(|(l, u)| {
+                let (r, d) = (u.read?, u.def?);
+                let in_stmt = r.statement_index < body.basic_blocks[r.block].statements.len();
+                (in_stmt && d.block == r.block && d.statement_index < r.statement_index).then_some((r, l))
+            })
+            .collect();
     out.sort_unstable();
     out
 }

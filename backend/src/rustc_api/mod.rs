@@ -5,7 +5,6 @@
 //! - [`lower`]: MIR → bytecode
 //! - [`link`]: step 6, one `link_binary` per crate type with its registry object
 
-
 mod link;
 mod lower;
 mod partition;
@@ -78,17 +77,11 @@ fn symbol_name<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> ty::SymbolN
     partition::symbol_name(tcx, instance, || (originals().symbol_name)(tcx, instance))
 }
 
-fn exported_generic_symbols<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    krate: LocalCrate,
-) -> &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)] {
+fn exported_generic_symbols<'tcx>(tcx: TyCtxt<'tcx>, krate: LocalCrate) -> &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)] {
     partition::exported_generic_symbols(tcx, (originals().exported_generic_symbols)(tcx, krate))
 }
 
-fn exported_non_generic_symbols<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    krate: LocalCrate,
-) -> &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)] {
+fn exported_non_generic_symbols<'tcx>(tcx: TyCtxt<'tcx>, krate: LocalCrate) -> &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)] {
     partition::exported_non_generic_symbols(tcx, (originals().exported_non_generic_symbols)(tcx, krate))
 }
 
@@ -196,8 +189,8 @@ impl CodegenBackend for RyoBackend {
         let image_path = tcx.output_filenames(()).temp_path_for_cgu(OutputType::Object, &image_name);
         let rt_symbol = |name: &str| partition::rt_symbol(tcx, name);
         let write_t = tcx.prof.generic_activity("ryo_write_image");
-        let bytes = objfile::write_image(&*fmt, &results.image, scid, results.main_symbol.as_deref(), &rt_symbol)
-            .unwrap_or_else(|e| tcx.dcx().fatal(e));
+        let bytes =
+            objfile::write_image(&*fmt, &results.image, scid, results.main_symbol.as_deref(), &rt_symbol).unwrap_or_else(|e| tcx.dcx().fatal(e));
         if let Err(e) = std::fs::write(&image_path, bytes) {
             tcx.dcx().fatal(format!("writing {}: {e}", image_path.display()));
         }
@@ -221,12 +214,9 @@ impl CodegenBackend for RyoBackend {
         outputs: &OutputFilenames,
         crate_info: &CrateInfo,
     ) -> (CompiledModules, WorkProductMap) {
-        let ongoing = ongoing_codegen
-            .downcast::<RyoOngoingCodegen>()
-            .expect("expected RyoOngoingCodegen from RyoBackend::codegen_crate");
+        let ongoing = ongoing_codegen.downcast::<RyoOngoingCodegen>().expect("expected RyoOngoingCodegen from RyoBackend::codegen_crate");
         // cg_llvm downcasts this to its own `OngoingCodegen` (`rustc_codegen_llvm/src/lib.rs:407-410`).
-        let (mut modules, work_products) =
-            self.llvm.join_codegen(ongoing.llvm, sess, incr_comp_session, outputs, crate_info);
+        let (mut modules, work_products) = self.llvm.join_codegen(ongoing.llvm, sess, incr_comp_session, outputs, crate_info);
         // The image, so `link_rlib` and the object list include it (design/backend.md#pipeline
         // step 5).
         let (name, path) = ongoing.image;
@@ -246,14 +236,7 @@ impl CodegenBackend for RyoBackend {
         self.llvm.print_statistics_json()
     }
 
-    fn link(
-        &self,
-        sess: &Session,
-        compiled_modules: CompiledModules,
-        crate_info: CrateInfo,
-        metadata: EncodedMetadata,
-        outputs: &OutputFilenames,
-    ) {
+    fn link(&self, sess: &Session, compiled_modules: CompiledModules, crate_info: CrateInfo, metadata: EncodedMetadata, outputs: &OutputFilenames) {
         link::link(&*self.llvm, self.link_info.get(), sess, compiled_modules, crate_info, metadata, outputs)
     }
 }
@@ -293,11 +276,7 @@ pub(crate) enum SymRole {
 /// flags, so one symbol can have both.
 pub(crate) fn symbol_flags<'tcx>(tcx: TyCtxt<'tcx>, target: Instance<'tcx>, role: SymRole) -> u8 {
     let pe = matches!(tcx.sess.target.binary_format, rustc_target::spec::BinaryFormat::Coff);
-    if pe && role == SymRole::Target && !tcx.should_codegen_locally(target) {
-        ryo_bytecode::image::SYM_INDIRECT
-    } else {
-        0
-    }
+    if pe && role == SymRole::Target && !tcx.should_codegen_locally(target) { ryo_bytecode::image::SYM_INDIRECT } else { 0 }
 }
 
 /// [`symbol_flags`] for a static used as an address: on PE, statics of upstream crates and
@@ -310,10 +289,7 @@ pub(crate) fn static_symbol_flags(tcx: TyCtxt<'_>, def_id: rustc_hir::def_id::De
 /// static library. Upstream Rust statics don't (rustc defines `__imp_<sym>` for the data of
 /// rlibs), and data in a DLL can't be referenced directly.
 pub(crate) fn static_needs_direct_slot(tcx: TyCtxt<'_>, def_id: rustc_hir::def_id::DefId) -> bool {
-    tcx.is_foreign_item(def_id)
-        && tcx
-            .native_library(def_id)
-            .is_some_and(|lib| matches!(lib.kind, rustc_hir::attrs::NativeLibKind::Static { .. }))
+    tcx.is_foreign_item(def_id) && tcx.native_library(def_id).is_some_and(|lib| matches!(lib.kind, rustc_hir::attrs::NativeLibKind::Static { .. }))
 }
 
 /// Whether the target uses PE/COFF objects.

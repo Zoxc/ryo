@@ -3,8 +3,8 @@
 
 use ryo_bytecode::asm;
 use ryo_bytecode::full;
-use ryo_bytecode::reduced::{self, Arg, Handler, Insn, Opcode};
 use ryo_bytecode::full::{List, Neg, Target, list_words};
+use ryo_bytecode::reduced::{self, Arg, Handler, Insn, Opcode};
 
 #[test]
 fn subset_of_the_full_set() {
@@ -34,12 +34,7 @@ fn subset_of_the_full_set() {
 fn handler_round_trips() {
     let args = list_words([Arg::Fp, Arg::Imm(u64::MAX - 5), Arg::Const(full::Const(8)), Arg::Ro(16)]);
     let t = list_words([Target(-3)]);
-    let insn = Insn::Handler {
-        h: Handler(full::Opcode::DivSW32),
-        args: List::from_words(&args),
-        neg: Neg(true),
-        t: List::from_words(&t),
-    };
+    let insn = Insn::Handler { h: Handler(full::Opcode::DivSW32), args: List::from_words(&args), neg: Neg(true), t: List::from_words(&t) };
     let mut w = Vec::new();
     insn.encode(&mut w);
     assert_eq!(Insn::decode(&w), Ok((insn, w.len())));

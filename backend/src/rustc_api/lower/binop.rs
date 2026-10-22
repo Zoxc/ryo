@@ -33,19 +33,12 @@ enum Cmp {
 }
 
 impl<'a, 'tcx> FnCx<'a, 'tcx> {
-    pub fn binary_op(
-        &mut self,
-        dst: PlaceVal<'tcx>,
-        op: BinOp,
-        a: &Operand<'tcx>,
-        b: &Operand<'tcx>,
-    ) -> Result<(), NeedsNative> {
+    pub fn binary_op(&mut self, dst: PlaceVal<'tcx>, op: BinOp, a: &Operand<'tcx>, b: &Operand<'tcx>) -> Result<(), NeedsNative> {
         let la = self.operand_layout(a)?;
         match op {
             BinOp::Offset => {
                 let pointee = la.ty.builtin_deref(true).ok_or_else(|| NeedsNative("Offset of a non-pointer".into()))?;
-                let stride = u32::try_from(self.layout_of(pointee)?.size.bytes())
-                    .map_err(|_| NeedsNative("Offset stride above 4 GiB".into()))?;
+                let stride = u32::try_from(self.layout_of(pointee)?.size.bytes()).map_err(|_| NeedsNative("Offset stride above 4 GiB".into()))?;
                 let (p, _) = self.operand_slot(a)?;
                 let (i, _) = self.operand_slot(b)?;
                 self.with_place_slot(dst, |fx, d| {
@@ -177,14 +170,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         })
     }
 
-    fn float_arith(
-        &mut self,
-        dst: PlaceVal<'tcx>,
-        op: BinOp,
-        f: FloatWidth,
-        a: &Operand<'tcx>,
-        b: &Operand<'tcx>,
-    ) -> Result<(), NeedsNative> {
+    fn float_arith(&mut self, dst: PlaceVal<'tcx>, op: BinOp, f: FloatWidth, a: &Operand<'tcx>, b: &Operand<'tcx>) -> Result<(), NeedsNative> {
         let family = match op {
             BinOp::Add => "Fadd",
             BinOp::Sub => "Fsub",
@@ -329,9 +315,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let Operand::Constant(c) = op else { return Ok(None) };
         Ok(match self.eval_const(c)? {
             ConstValue::Scalar(Scalar::Int(i)) => Some(i.to_bits(i.size())),
-            ConstValue::Scalar(Scalar::Ptr(..)) | ConstValue::ZeroSized | ConstValue::Slice { .. } | ConstValue::Indirect { .. } => {
-                None
-            }
+            ConstValue::Scalar(Scalar::Ptr(..)) | ConstValue::ZeroSized | ConstValue::Slice { .. } | ConstValue::Indirect { .. } => None,
         })
     }
 }

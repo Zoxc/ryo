@@ -5,11 +5,11 @@
 //! templates take.
 
 use rustc_abi::{BackendRepr, CanonAbi, Primitive, RegKind, Scalar};
-use rustc_target::callconv::{ArgAbi, FnAbi, PassMode};
-use ryo_bytecode::asm::{self, ArgReg, RET_SRET, RetPart};
 use rustc_middle::ty::layout::TyAndLayout;
 use rustc_middle::ty::{self, Instance, Ty, TyCtxt, TypingEnv};
+use rustc_target::callconv::{ArgAbi, FnAbi, PassMode};
 use ryo_bytecode::abi::{self, ArgField};
+use ryo_bytecode::asm::{self, ArgReg, RET_SRET, RetPart};
 
 use super::{LayoutCx, NeedsNative, layout_error, native};
 
@@ -97,11 +97,7 @@ pub fn abi_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> Result<AbiS
 /// `VTableShim`), and rustc orders tuple fields by niche too, so the caller's argument block
 /// only matches the callee's if `receiver` has the callee receiver's niche: the caller passes
 /// `&()` when the receiver's data pointer is non-null, `*mut ()` otherwise.
-pub fn virtual_sig<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    instance: Instance<'tcx>,
-    receiver: Ty<'tcx>,
-) -> Result<AbiSig<'tcx>, NeedsNative> {
+pub fn virtual_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>, receiver: Ty<'tcx>) -> Result<AbiSig<'tcx>, NeedsNative> {
     let typing_env = TypingEnv::fully_monomorphized();
     let fn_abi = tcx
         .fn_abi_of_instance_no_deduced_attrs(typing_env.as_query_input((instance, ty::List::empty())))
@@ -157,17 +153,7 @@ fn from_fn_abi<'tcx>(
 pub fn tys_sig<'tcx>(tcx: TyCtxt<'tcx>, inputs: Vec<Ty<'tcx>>, output: Ty<'tcx>) -> Result<AbiSig<'tcx>, NeedsNative> {
     let (fields, block_size) = arg_block(tcx, &inputs)?;
     let output = super::layout_of(tcx, output)?;
-    Ok(AbiSig {
-        inputs,
-        output,
-        fields,
-        block_size,
-        conv: CallConv::Rust,
-        caller_location: false,
-        rust_call: false,
-        ret_kind: 0,
-        plan: None,
-    })
+    Ok(AbiSig { inputs, output, fields, block_size, conv: CallConv::Rust, caller_location: false, rust_call: false, ret_kind: 0, plan: None })
 }
 
 /// The argument block for `inputs`: the layout of their tuple (design/lowering.md#frame-slots).
@@ -184,11 +170,7 @@ pub fn arg_block<'tcx>(tcx: TyCtxt<'tcx>, inputs: &[Ty<'tcx>]) -> Result<(Vec<Ar
     let fields: Vec<ArgField> = (0..inputs.len())
         .map(|i| {
             let f = layout.field(&cx, i);
-            ArgField {
-                offset: layout.fields.offset(i).bytes() as u32,
-                size: f.size.bytes() as u32,
-                align: f.align.abi.bytes() as u32,
-            }
+            ArgField { offset: layout.fields.offset(i).bytes() as u32, size: f.size.bytes() as u32, align: f.align.abi.bytes() as u32 }
         })
         .collect();
     let block = abi::arg_block(&fields, layout.size.bytes() as u32, layout.align.abi.bytes() as u32)

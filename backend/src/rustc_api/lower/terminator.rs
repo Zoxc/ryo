@@ -10,8 +10,8 @@ use rustc_hir::attrs::lang_items::LangItem;
 use rustc_index::IndexVec;
 use rustc_middle::mir::visit::{PlaceContext, Visitor};
 use rustc_middle::mir::{
-    AssertKind, BasicBlock, BasicBlockData, BinOp, Body, Local, Location, Operand, Rvalue, SourceInfo,
-    StatementKind, SwitchTargets, Terminator, TerminatorKind, UnwindAction, UnwindTerminateReason,
+    AssertKind, BasicBlock, BasicBlockData, BinOp, Body, Local, Location, Operand, Rvalue, SourceInfo, StatementKind, SwitchTargets, Terminator,
+    TerminatorKind, UnwindAction, UnwindTerminateReason,
 };
 use rustc_middle::ty::{self, Instance, Ty};
 use ryo_bytecode::asm::Opnd;
@@ -94,21 +94,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let source_info = rustc_middle::mir::SourceInfo { span: *fn_span, ..term.source_info };
                 self.call_terminator(func, args, *destination, *target, *unwind, source_info)
             }
-            TerminatorKind::Drop { place, target, unwind, replace: _, drop: _ } => {
-                self.drop_terminator(*place, *target, *unwind)
-            }
-            TerminatorKind::Assert { cond, expected, msg, target, unwind } => {
-                self.assert(term, cond, *expected, msg, *target, *unwind)
-            }
+            TerminatorKind::Drop { place, target, unwind, replace: _, drop: _ } => self.drop_terminator(*place, *target, *unwind),
+            TerminatorKind::Assert { cond, expected, msg, target, unwind } => self.assert(term, cond, *expected, msg, *target, *unwind),
             TerminatorKind::TailCall { func, args, fn_span } => {
                 let source_info = rustc_middle::mir::SourceInfo { span: *fn_span, ..term.source_info };
                 self.tail_call_terminator(func, args, source_info)
             }
             TerminatorKind::InlineAsm { .. } => native("inline asm"),
-            TerminatorKind::Yield { .. }
-            | TerminatorKind::CoroutineDrop
-            | TerminatorKind::FalseEdge { .. }
-            | TerminatorKind::FalseUnwind { .. } => {
+            TerminatorKind::Yield { .. } | TerminatorKind::CoroutineDrop | TerminatorKind::FalseEdge { .. } | TerminatorKind::FalseUnwind { .. } => {
                 rustc_middle::bug!("{:?} in runtime MIR of {}", term.kind, self.instance)
             }
         }
@@ -136,8 +129,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             return None;
         }
         let ty = self.mono(a.ty(self.body, self.tcx));
-        let thin_ptr = matches!(ty.kind(), ty::RawPtr(..) | ty::Ref(..) | ty::FnPtr(..))
-            && self.layout_of(ty).is_ok_and(|l| l.size.bytes() == 8);
+        let thin_ptr = matches!(ty.kind(), ty::RawPtr(..) | ty::Ref(..) | ty::FnPtr(..)) && self.layout_of(ty).is_ok_and(|l| l.size.bytes() == 8);
         if !(ty.is_integral() || ty.is_bool() || ty.is_char() || thin_ptr) {
             return None;
         }
@@ -204,11 +196,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             [(v, bb)] => {
                 // One value: a compare-and-branch, falling through where possible. `ne`
                 // branches when `s != v`.
-                let (ne, t, rest) = if Some(bb) == self.next_block && Some(otherwise) != self.next_block {
-                    (true, otherwise, bb)
-                } else {
-                    (false, bb, otherwise)
-                };
+                let (ne, t, rest) =
+                    if Some(bb) == self.next_block && Some(otherwise) != self.next_block { (true, otherwise, bb) } else { (false, bb, otherwise) };
                 if layout.ty.is_bool() {
                     // `br` branches when `s != 0`.
                     self.op_branch(Opcode::Br, &[s], (v == 1) == ne, t);
@@ -286,17 +275,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             self.op_branch(Opcode::Br, &[c], !expected, target);
         }
         let (item, args): (LangItem, Vec<ArgSrc<'_, 'tcx>>) = match msg {
-            AssertKind::BoundsCheck { len, index } => {
-                (LangItem::PanicBoundsCheck, vec![ArgSrc::Operand(index), ArgSrc::Operand(len)])
-            }
+            AssertKind::BoundsCheck { len, index } => (LangItem::PanicBoundsCheck, vec![ArgSrc::Operand(index), ArgSrc::Operand(len)]),
             AssertKind::MisalignedPointerDereference { required, found } => {
                 (LangItem::PanicMisalignedPointerDereference, vec![ArgSrc::Operand(required), ArgSrc::Operand(found)])
             }
             AssertKind::NullPointerDereference => (LangItem::PanicNullPointerDereference, vec![]),
             AssertKind::NullReferenceConstructed => (LangItem::PanicNullReferenceConstructed, vec![]),
-            AssertKind::InvalidEnumConstruction(source) => {
-                (LangItem::PanicInvalidEnumConstruction, vec![ArgSrc::Operand(source)])
-            }
+            AssertKind::InvalidEnumConstruction(source) => (LangItem::PanicInvalidEnumConstruction, vec![ArgSrc::Operand(source)]),
             AssertKind::Overflow(..)
             | AssertKind::OverflowNeg(_)
             | AssertKind::DivisionByZero(_)

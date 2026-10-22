@@ -13,8 +13,8 @@ use alloc::vec::Vec;
 
 use super::x86::{ARGS, Cond, Item, M, Reg, Sh, W, island_args, padding};
 use super::{ArgReg, Layout, Loc, Mode, RetPart, layout, ret_parts};
-use crate::image::{CATCH, CONTINUE, CleanupEntry};
 use crate::full::{Const, Data, DecodeError, ElemKind, Func, Opcode, OperandKind, Shape, Site, Sym, insn_len};
+use crate::image::{CATCH, CONTINUE, CleanupEntry};
 
 /// What a relocated 4-byte field of the code refers to. Every field is PC-relative: once
 /// linked, it holds `target - (field + 4)`.
@@ -318,7 +318,11 @@ fn part_regs(k: u32, load: bool) -> Vec<(RetPart, Reg, u8)> {
         .flatten()
         .map(|p| {
             let r = (p, [Reg::Rax, Reg::Rdx][g], x);
-            if p.xmm { x += 1 } else { g += 1 }
+            if p.xmm {
+                x += 1
+            } else {
+                g += 1
+            }
             r
         })
         .collect()
@@ -606,8 +610,15 @@ fn cache(pieces: &mut [Piece], target: &[bool]) {
 #[derive(Clone, Debug)]
 enum Laid {
     /// A fixed item; a call site with its landing pad (element index) and catch flag.
-    Fixed { item: Item, site: Option<(Option<usize>, bool)> },
-    Branch { cond: Cond, to: usize, long: bool },
+    Fixed {
+        item: Item,
+        site: Option<(Option<usize>, bool)>,
+    },
+    Branch {
+        cond: Cond,
+        to: usize,
+        long: bool,
+    },
     LeaTable,
     Table(Vec<usize>),
     /// Padding up to a multiple of 16 (a loop head).
@@ -683,9 +694,7 @@ pub fn encode(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], scopes: &
             return Err(EncodeError::ArgNotFirst(start as u32));
         }
     }
-    let idx = |w: u32| -> Result<usize, EncodeError> {
-        index.get(w as usize).copied().filter(|&i| i != usize::MAX).ok_or(EncodeError::BadTarget(w))
-    };
+    let idx = |w: u32| -> Result<usize, EncodeError> { index.get(w as usize).copied().filter(|&i| i != usize::MAX).ok_or(EncodeError::BadTarget(w)) };
 
     // Unwind actions, by instruction.
     let mut action: Vec<Option<Unwind>> = vec![None; starts.len()];
@@ -727,10 +736,7 @@ pub fn encode(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], scopes: &
         asm.bind(Label(i as u32));
         scopes_at(&mut asm, at)?;
         let op = Opcode::from_u16(code[at] as u16).unwrap();
-        let ops = operands(code, at)
-            .into_iter()
-            .map(|o| o.map_targets(|t| idx(t).map(|i| Label(i as u32))))
-            .collect::<Result<Vec<_>, _>>()?;
+        let ops = operands(code, at).into_iter().map(|o| o.map_targets(|t| idx(t).map(|i| Label(i as u32)))).collect::<Result<Vec<_>, _>>()?;
         let id = asm.insn(op, &ops);
         if let Some(a) = action[i] {
             asm.set_unwind(id, a);
@@ -1122,9 +1128,7 @@ impl Asm {
                 Piece::Frame(item) => Laid::Fixed { item: slot(item), site: None },
                 Piece::Gone | Piece::Dead { .. } => unreachable!(),
                 Piece::Dropped(item) => Laid::Dropped(item.map_frame(|s| fix(s as u32) as i32)),
-                Piece::Scope { slot, size, kind } => {
-                    Laid::Scope(Scope { code_offset: 0, frame_offset: fix(slot) as i32, size, kind })
-                }
+                Piece::Scope { slot, size, kind } => Laid::Scope(Scope { code_offset: 0, frame_offset: fix(slot) as i32, size, kind }),
                 Piece::Native(item) => Laid::Fixed { item: slot(item), site: None },
                 Piece::Fp(reg) => Laid::Fixed { item: fp_item(reg, frame_size, mode), site: None },
                 Piece::Epilogue => Laid::Fixed { item: epilogue, site: None },
@@ -1226,11 +1230,7 @@ pub(super) fn epilogue(frame_size: u32, mode: Mode) -> Item {
 
 /// `reg = fp`: `mov reg, rbp`, or `lea reg, [rsp + F]`.
 pub(super) fn fp_item(reg: Reg, frame_size: u32, mode: Mode) -> Item {
-    if mode.frame_pointer {
-        Item::Mov(reg, Reg::Rbp)
-    } else {
-        Item::LeaM { dst: reg, m: super::x86::M { base: Reg::Rsp, disp: frame_size as i32 } }
-    }
+    if mode.frame_pointer { Item::Mov(reg, Reg::Rbp) } else { Item::LeaM { dst: reg, m: super::x86::M { base: Reg::Rsp, disp: frame_size as i32 } } }
 }
 
 /// Every opcode's handler register layout, with `fp` in `rbp` and in `rdi`, computed at compile

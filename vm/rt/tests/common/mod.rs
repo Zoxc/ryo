@@ -13,8 +13,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 pub use ryo_bytecode::Opcode;
 pub use ryo_bytecode::asm::Mode;
-pub use ryo_bytecode::image::*;
 pub use ryo_bytecode::full::*;
+pub use ryo_bytecode::image::*;
 
 /// The encoding mode: the runtime's, with loop alignment on.
 pub const ENC: Mode = Mode { align_loops: true, pe: false, ..ryo_rt::vm::MODE };
@@ -153,14 +153,7 @@ fn new_arena() -> Arena {
         for sign in [1isize, -1] {
             let hint = (near as isize + sign * k * (128 << 20)) as usize & !(PAGE - 1);
             let p = unsafe {
-                mmap(
-                    hint as *mut c_void,
-                    ARENA,
-                    PROT_READ | PROT_WRITE,
-                    MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE,
-                    -1,
-                    0,
-                )
+                mmap(hint as *mut c_void, ARENA, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0)
             };
             if p as isize == -1 {
                 continue;
@@ -259,14 +252,7 @@ pub fn link(obj: ImageObject, syms: &[(&str, usize)]) -> Linked {
     assert_eq!(unsafe { mprotect(text.cast(), text_len, PROT_READ | PROT_EXEC) }, 0, "mprotect");
     unsafe { __register_frame(eh) };
     let crate_hash = unsafe { Image::from_header(ro) }.unwrap().crate_hash();
-    Linked {
-        header: ro,
-        data,
-        text,
-        crate_hash,
-        symbols: obj.symbols.iter().map(|s| s.name.clone()).collect(),
-        functions: obj.functions,
-    }
+    Linked { header: ro, data, text, crate_hash, symbols: obj.symbols.iter().map(|s| s.name.clone()).collect(), functions: obj.functions }
 }
 
 pub fn register(images: &[&Linked]) {

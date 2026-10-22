@@ -50,8 +50,7 @@ pub fn link(
     let mut saved_metadata = None;
     if n > 1 {
         let _ = fs::remove_dir_all(&scratch);
-        fs::create_dir_all(&scratch)
-            .unwrap_or_else(|e| sess.dcx().fatal(format!("creating {}: {e}", scratch.display())));
+        fs::create_dir_all(&scratch).unwrap_or_else(|e| sess.dcx().fatal(format!("creating {}: {e}", scratch.display())));
         saved_metadata = Some(save_metadata(sess, &metadata, &scratch));
     }
     let mut metadata = Some(metadata);
@@ -60,17 +59,12 @@ pub fn link(
         let last = i + 1 == n;
         // Everything but rustc's own `link_binary` (design/backend.md#self-profile).
         let prep_t = sess.prof.generic_activity("ryo_link_prep");
-        let mut these = if last {
-            modules.take().unwrap()
-        } else {
-            hardlinked(sess, modules.as_ref().unwrap(), &scratch.join(i.to_string()))
-        };
+        let mut these = if last { modules.take().unwrap() } else { hardlinked(sess, modules.as_ref().unwrap(), &scratch.join(i.to_string())) };
         let this_metadata = if last {
             metadata.take().unwrap()
         } else {
             let (full, stub) = saved_metadata.clone().unwrap();
-            EncodedMetadata::from_path(full, stub, None)
-                .unwrap_or_else(|e| sess.dcx().fatal(format!("reloading the crate metadata: {e}")))
+            EncodedMetadata::from_path(full, stub, None).unwrap_or_else(|e| sess.dcx().fatal(format!("reloading the crate metadata: {e}")))
         };
         // Without linking (`--emit=obj` etc.) a registry object would only be left behind.
         if crate_type != CrateType::Rlib && sess.opts.output_types.should_link() {
@@ -191,8 +185,7 @@ fn registry_images(sess: &Session, info: &LinkInfo, crate_info: &CrateInfo, crat
 fn register_is_imported(crate_info: &CrateInfo, crate_type: CrateType) -> bool {
     let Some(deps) = crate_info.dependency_formats.get(&crate_type) else { return false };
     deps.iter_enumerated().any(|(cnum, linkage)| {
-        matches!(linkage, Linkage::Dynamic | Linkage::IncludedFromDylib)
-            && crate_info.crate_name.get(&cnum).is_some_and(|n| n.as_str() == "ryo_rt")
+        matches!(linkage, Linkage::Dynamic | Linkage::IncludedFromDylib) && crate_info.crate_name.get(&cnum).is_some_and(|n| n.as_str() == "ryo_rt")
     })
 }
 
@@ -201,9 +194,7 @@ fn register_is_imported(crate_info: &CrateInfo, crate_type: CrateType) -> bool {
 fn save_metadata(sess: &Session, metadata: &EncodedMetadata, dir: &Path) -> (PathBuf, Option<PathBuf>) {
     let full = dir.join("metadata.rmeta");
     let stub = dir.join("metadata.stub");
-    let write = |p: &Path, data: &[u8]| {
-        fs::write(p, data).unwrap_or_else(|e| sess.dcx().fatal(format!("writing {}: {e}", p.display())))
-    };
+    let write = |p: &Path, data: &[u8]| fs::write(p, data).unwrap_or_else(|e| sess.dcx().fatal(format!("writing {}: {e}", p.display())));
     match metadata.path() {
         Some(p) => {
             fs::copy(p, &full).unwrap_or_else(|e| sess.dcx().fatal(format!("copying {}: {e}", p.display())));
@@ -236,8 +227,5 @@ fn hardlinked(sess: &Session, modules: &CompiledModules, dir: &Path) -> Compiled
         llvm_ir: m.llvm_ir.clone(),
         links_from_incr_cache: m.links_from_incr_cache.clone(),
     };
-    CompiledModules {
-        modules: modules.modules.iter().map(module).collect(),
-        allocator_module: modules.allocator_module.as_ref().map(module),
-    }
+    CompiledModules { modules: modules.modules.iter().map(module).collect(), allocator_module: modules.allocator_module.as_ref().map(module) }
 }

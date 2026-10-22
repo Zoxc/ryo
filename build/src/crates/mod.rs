@@ -401,8 +401,7 @@ pub fn run(opts: Options) -> Result<(), String> {
             }
         }
         for cell in &mut cells {
-            cell.tests_size = (!cell.test_exes.is_empty())
-                .then(|| cell.test_exes.iter().filter_map(|e| fs::metadata(e).ok()).map(|m| m.len()).sum());
+            cell.tests_size = (!cell.test_exes.is_empty()).then(|| cell.test_exes.iter().filter_map(|e| fs::metadata(e).ok()).map(|m| m.len()).sum());
             cell.workload_size = cell.example.as_ref().and_then(|e| fs::metadata(e).ok()).map(|m| m.len());
         }
         // Runs: one warm-up (which records the test results and the workload's output), then
@@ -452,12 +451,7 @@ pub fn run(opts: Options) -> Result<(), String> {
         results.push(CrateResult { krate, cells });
     }
 
-    let report = Report {
-        backends: opts.backends.clone(),
-        crates: results,
-        header,
-        total_time: started.elapsed().as_secs_f64(),
-    };
+    let report = Report { backends: opts.backends.clone(), crates: results, header, total_time: started.elapsed().as_secs_f64() };
     let out = opts.out.clone().unwrap_or_else(|| base.join("report.html"));
     fs::write(&out, html::render(&report)).map_err(|e| format!("writing {}: {e}", out.display()))?;
     print!("{}", html::text_summary(&report));
@@ -497,8 +491,7 @@ fn prepare(root: &Path, base: &Path, krate: &Crate) -> Result<PathBuf, String> {
     crate::utils::run(cmd("cargo").current_dir(&dir).args(["fetch", "--locked"]))?;
     let workload = root.join("tests").join("crates").join(format!("{}.rs", krate.name));
     fs::create_dir_all(dir.join("examples")).map_err(|e| e.to_string())?;
-    fs::copy(&workload, dir.join("examples").join("ryo_bench.rs"))
-        .map_err(|e| format!("copying {}: {e}", workload.display()))?;
+    fs::copy(&workload, dir.join("examples").join("ryo_bench.rs")).map_err(|e| format!("copying {}: {e}", workload.display()))?;
     // Published manifests set `autoexamples = false`. `[workspace]` keeps cargo from looking
     // for one in the parent directories.
     let manifest = dir.join("Cargo.toml");
@@ -518,14 +511,7 @@ fn local_crate(path: &Path) -> Result<&'static Crate, String> {
     let dir = fs::canonicalize(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let name = dir.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or("bad --path")?;
     let why = format!("local workspace {}", dir.display());
-    Ok(Box::leak(Box::new(Crate {
-        name: name.leak(),
-        version: "local",
-        sha256: "",
-        why: why.leak(),
-        test_args: &[],
-        local: Some(dir),
-    })))
+    Ok(Box::leak(Box::new(Crate { name: name.leak(), version: "local", sha256: "", why: why.leak(), test_args: &[], local: Some(dir) })))
 }
 
 /// Fetches a local workspace's dependencies and lists its members' package names and its
@@ -552,13 +538,8 @@ fn prepare_local(dir: &Path) -> Result<(PathBuf, Vec<String>, Vec<String>), Stri
 /// `--config` values restating `PROFILE_ENV` in each per-package override section, which
 /// `CARGO_PROFILE_*` can't reach. Only the keys a package override may set.
 fn override_configs(overrides: &[String]) -> Vec<String> {
-    const KEYS: &[(&str, &str)] = &[
-        ("opt-level", "0"),
-        ("debug", "0"),
-        ("debug-assertions", "true"),
-        ("overflow-checks", "true"),
-        ("codegen-units", "1"),
-    ];
+    const KEYS: &[(&str, &str)] =
+        &[("opt-level", "0"), ("debug", "0"), ("debug-assertions", "true"), ("overflow-checks", "true"), ("codegen-units", "1")];
     overrides.iter().flat_map(|o| KEYS.iter().map(move |(k, v)| format!("{o}.{k}={v}"))).collect()
 }
 
@@ -666,9 +647,7 @@ fn build_sample(env: &Env, krate: &Crate, members: &[String], logs: &Path, clean
     if !local {
         steps.push(step(&["--example", "ryo_bench"])?.0);
     }
-    if !clean
-        && let Some(u) = steps.iter().flat_map(|s| &s.units).find(|u| !u.primary)
-    {
+    if !clean && let Some(u) = steps.iter().flat_map(|s| &s.units).find(|u| !u.primary) {
         return Err(format!("dependency `{}` was rebuilt in a sample", u.krate));
     }
     let test_exes = test_executables(&json);
@@ -766,11 +745,7 @@ fn run_tests(src: &Path, krate: &Crate, exes: &[PathBuf], timeout: u64) -> (f64,
                 if !out.status.success() && f == 0 {
                     let err = String::from_utf8_lossy(&out.stderr);
                     let tail: Vec<&str> = err.lines().collect();
-                    o.failures.push(format!(
-                        "{name}: exited with {}: {}",
-                        out.status,
-                        tail[tail.len().saturating_sub(5)..].join(" | ")
-                    ));
+                    o.failures.push(format!("{name}: exited with {}: {}", out.status, tail[tail.len().saturating_sub(5)..].join(" | ")));
                 }
             }
             Err(e) => o.failures.push(format!("{name}: {e}")),
@@ -849,7 +824,10 @@ mod tests {
     #[test]
     fn options() {
         let o = parse_options(&[]).unwrap();
-        assert_eq!((o.dep_samples, o.leaf_samples, o.run_samples, o.backends.len()), (DEFAULT_DEP_SAMPLES, DEFAULT_LEAF_SAMPLES, DEFAULT_RUN_SAMPLES, 3));
+        assert_eq!(
+            (o.dep_samples, o.leaf_samples, o.run_samples, o.backends.len()),
+            (DEFAULT_DEP_SAMPLES, DEFAULT_LEAF_SAMPLES, DEFAULT_RUN_SAMPLES, 3)
+        );
         let o = parse_options(&["--quick", "--crates", "semver,memchr", "--backends=ryo"]).unwrap();
         assert_eq!((o.dep_samples, o.leaf_samples, o.run_samples), (1, 1, 1));
         assert_eq!(o.crates, ["semver", "memchr"]);

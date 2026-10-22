@@ -55,9 +55,7 @@ fn call_fndef() {
 
 #[test]
 fn call_closure_and_unit() {
-    fn island_of<F: FnOnce<A, Output = R>, A: std::marker::Tuple, R>(
-        _: &F,
-    ) -> unsafe fn(*mut u8, *const u32) -> u32 {
+    fn island_of<F: FnOnce<A, Output = R>, A: std::marker::Tuple, R>(_: &F) -> unsafe fn(*mut u8, *const u32) -> u32 {
         call::<F, A, R>
     }
     let mut fr = Frame::new();
@@ -275,9 +273,7 @@ fn call_c_128_bit() {
 #[test]
 fn call_c_mixed_floats_and_ints() {
     #[allow(clippy::too_many_arguments)]
-    extern "C" fn m(
-        a: f32, b: i8, c: f64, d: u64, e: f32, f: i32, g: f64, h: f32, i: u16, j: f64,
-    ) -> f64 {
+    extern "C" fn m(a: f32, b: i8, c: f64, d: u64, e: f32, f: i32, g: f64, h: f32, i: u16, j: f64) -> f64 {
         a as f64 + b as f64 + c + d as f64 + e as f64 + f as f64 + g + h as f64 + i as f64 + j
     }
     type F = unsafe extern "C" fn(f32, i8, f64, u64, f32, i32, f64, f32, u16, f64) -> f64;

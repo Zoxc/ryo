@@ -211,11 +211,7 @@ pub enum Cleanup {
 
 impl CleanupEntry {
     pub fn action(&self) -> Cleanup {
-        if self.target == CONTINUE {
-            Cleanup::Continue
-        } else {
-            Cleanup::Pad(self.target & !CATCH, self.target & CATCH != 0)
-        }
+        if self.target == CONTINUE { Cleanup::Continue } else { Cleanup::Pad(self.target & !CATCH, self.target & CATCH != 0) }
     }
 }
 

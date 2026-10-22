@@ -22,11 +22,7 @@ where
 
 /// The body of [`c_main`], with `main` passed in.
 #[inline(always)]
-pub fn start_main<S, T, const SIGPIPE: u8>(
-    main: fn() -> T,
-    argc: c_int,
-    argv: *const *const c_char,
-) -> c_int
+pub fn start_main<S, T, const SIGPIPE: u8>(main: fn() -> T, argc: c_int, argv: *const *const c_char) -> c_int
 where
     S: FnOnce(fn() -> T, isize, *const *const u8, u8) -> isize,
 {

@@ -49,11 +49,14 @@ mod x86;
 #[cfg(feature = "alloc")]
 pub use decode::{AsmError, Decoded, decode, decode_reduced};
 #[cfg(feature = "alloc")]
+pub use encode::{
+    Asm, CallSite, DroppedStore, EncodeError, Encoded, InsnId, Label, Opnd, PROBE_FROM, Ref, Reloc, Scope, ScopeKind, Unwind, encode, operands,
+    prologue_len, push_words, word_len,
+};
+#[cfg(feature = "alloc")]
 pub use inline::has_inline;
 #[cfg(feature = "alloc")]
 pub use reduced::{is_native, reduce};
-#[cfg(feature = "alloc")]
-pub use encode::{Asm, CallSite, DroppedStore, EncodeError, Encoded, InsnId, Label, Opnd, PROBE_FROM, Ref, Reloc, Scope, ScopeKind, Unwind, encode, operands, prologue_len, push_words, word_len};
 
 use crate::full::{ElemKind, Opcode, OperandKind, Shape};
 
@@ -219,12 +222,8 @@ pub const fn layout(op: Opcode, mode: Mode) -> Layout {
         while k < size[g] {
             let (o, part, _) = units[u];
             if part == 0 {
-                locs[o as usize] = Loc {
-                    reg: first + g as u8,
-                    shift: 32 * k,
-                    count: kind_regs(info.operands[o as usize].kind),
-                    shared: size[g] == 2,
-                };
+                locs[o as usize] =
+                    Loc { reg: first + g as u8, shift: 32 * k, count: kind_regs(info.operands[o as usize].kind), shared: size[g] == 2 };
             }
             u += 1;
             k += 1;
@@ -310,7 +309,13 @@ pub fn ret_parts(k: u32, load: bool) -> Option<[Option<RetPart>; 2]> {
             return Some(None);
         }
         let (xmm, size) = (b & 0x20 != 0, b & 0x1f);
-        let ok = if xmm { matches!(size, 2 | 4 | 8 | 16) } else if load { matches!(size, 1 | 2 | 4 | 8) } else { (1..=8).contains(&size) };
+        let ok = if xmm {
+            matches!(size, 2 | 4 | 8 | 16)
+        } else if load {
+            matches!(size, 1 | 2 | 4 | 8)
+        } else {
+            (1..=8).contains(&size)
+        };
         (b & !0x3f == 0 && ok).then_some(Some(RetPart { xmm, size, off }))
     };
     let a = part(k & 0xff, 0)?;

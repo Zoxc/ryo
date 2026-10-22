@@ -97,10 +97,7 @@ pub(super) fn words(insns: &[Insn], cleanup: &[(usize, Option<usize>, bool)], sc
     }
     let cleanup = cleanup
         .iter()
-        .map(|&(i, pad, catch)| CleanupEntry {
-            offset: wpos[i],
-            target: pad.map_or(CONTINUE, |p| wpos[p] | if catch { CATCH } else { 0 }),
-        })
+        .map(|&(i, pad, catch)| CleanupEntry { offset: wpos[i], target: pad.map_or(CONTINUE, |p| wpos[p] | if catch { CATCH } else { 0 }) })
         .collect();
     let scopes = scopes.iter().map(|&(i, sc)| Scope { code_offset: wpos[i], ..sc }).collect();
     Decoded { words: out, frame_size, cleanup, scopes }
@@ -170,9 +167,8 @@ pub fn reduce(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], scopes: &
     let mut out = Vec::with_capacity(cleanup.len());
     for e in cleanup {
         let at = idx(e.offset).map_err(|_| EncodeError::BadCleanup(e.offset))? as usize;
-        let pad = (e.target != CONTINUE)
-            .then(|| idx(e.target & !CATCH).map(|p| p as usize).map_err(|_| EncodeError::BadCleanup(e.offset)))
-            .transpose()?;
+        let pad =
+            (e.target != CONTINUE).then(|| idx(e.target & !CATCH).map(|p| p as usize).map_err(|_| EncodeError::BadCleanup(e.offset))).transpose()?;
         out.push((at, pad, pad.is_some() && e.target & CATCH != 0));
     }
     out.sort();

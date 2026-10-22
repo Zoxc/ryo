@@ -5,12 +5,9 @@
 //! (design/platforms.md): ELF ([`Elf`]) and PE/COFF ([`Coff`]).
 
 use object::write::{Object, Relocation, StandardSegment, Symbol, SymbolId, SymbolSection};
-use object::{
-    Architecture, BinaryFormat, Endianness, RelocationFlags, SectionFlags, SectionKind, SymbolFlags, SymbolKind,
-    SymbolScope, elf, pe,
-};
-use ryo_bytecode::image::{FuncSymbol, ImageObject, RelocKind, RelocTarget, SYM_INDIRECT, Section, SymVisibility};
+use object::{Architecture, BinaryFormat, Endianness, RelocationFlags, SectionFlags, SectionKind, SymbolFlags, SymbolKind, SymbolScope, elf, pe};
 use ryo_bytecode::full::Opcode;
+use ryo_bytecode::image::{FuncSymbol, ImageObject, RelocKind, RelocTarget, SYM_INDIRECT, Section, SymVisibility};
 
 /// The symbol an image defines: `__ryo_image_<StableCrateId>`, with the id in hex.
 pub fn image_symbol(stable_crate_id: u64) -> String {
@@ -53,15 +50,7 @@ pub trait ObjectFormat {
     /// A local symbol naming the code of a VM function (backtraces, profilers).
     fn local_function(&self, obj: &mut Object<'static>, name: &str, section: object::write::SectionId, offset: u64, size: u64);
     /// The global symbol of a VM function that native code calls by name.
-    fn global_function(
-        &self,
-        obj: &mut Object<'static>,
-        name: &str,
-        section: object::write::SectionId,
-        offset: u64,
-        size: u64,
-        sym: FuncSymbol,
-    );
+    fn global_function(&self, obj: &mut Object<'static>, name: &str, section: object::write::SectionId, offset: u64, size: u64, sym: FuncSymbol);
     /// A section for data that is only written by relocations (RELRO / `.rdata`).
     fn relro_section(&self, obj: &mut Object<'static>, name: &str) -> object::write::SectionId;
     /// A writable data section.
@@ -81,13 +70,7 @@ pub trait ObjectFormat {
     fn import_slot(&self, name: &str) -> Result<String, String>;
     /// Adds a constructor that calls `ryo_vm_register(images, n)`. With `register_import`,
     /// `ryo_vm_register` is in another DLL and is called through its import slot.
-    fn add_registry_ctor(
-        &self,
-        obj: &mut Object<'static>,
-        images: object::write::SectionId,
-        n: usize,
-        register_import: bool,
-    );
+    fn add_registry_ctor(&self, obj: &mut Object<'static>, images: object::write::SectionId, n: usize, register_import: bool);
 }
 
 /// The format for a target's binary format, or an error for formats not implemented yet.
@@ -150,15 +133,7 @@ impl ObjectFormat for Elf {
         });
     }
 
-    fn global_function(
-        &self,
-        obj: &mut Object<'static>,
-        name: &str,
-        section: object::write::SectionId,
-        offset: u64,
-        size: u64,
-        sym: FuncSymbol,
-    ) {
+    fn global_function(&self, obj: &mut Object<'static>, name: &str, section: object::write::SectionId, offset: u64, size: u64, sym: FuncSymbol) {
         let (scope, st_other) = match sym.visibility {
             SymVisibility::Default => (SymbolScope::Dynamic, elf::STV_DEFAULT),
             SymVisibility::Hidden => (SymbolScope::Linkage, elf::STV_HIDDEN),
@@ -211,23 +186,13 @@ impl ObjectFormat for Elf {
         Err(format!("indirect symbol `{name}` in an ELF image (indirect slots are PE-only)"))
     }
 
-    fn add_registry_ctor(
-        &self,
-        obj: &mut Object<'static>,
-        images: object::write::SectionId,
-        n: usize,
-        _register_import: bool,
-    ) {
+    fn add_registry_ctor(&self, obj: &mut Object<'static>, images: object::write::SectionId, n: usize, _register_import: bool) {
         // The dynamic linker resolves the PLT entry if `ryo_rt` is in a shared object.
         // lea rdi, [rip + images]; mov esi, n; jmp ryo_vm_register
         let mut code = vec![0x48, 0x8d, 0x3d, 0, 0, 0, 0, 0xbe];
         code.extend_from_slice(&u32::try_from(n).expect("too many images").to_le_bytes());
         code.extend_from_slice(&[0xe9, 0, 0, 0, 0]);
-        let text = obj.add_section(
-            obj.segment_name(StandardSegment::Text).to_vec(),
-            b".text.ryo_registry".to_vec(),
-            SectionKind::Text,
-        );
+        let text = obj.add_section(obj.segment_name(StandardSegment::Text).to_vec(), b".text.ryo_registry".to_vec(), SectionKind::Text);
         obj.append_section_data(text, &code, 16);
         let images_sym = obj.section_symbol(images);
         let register = undefined(obj, REGISTER_SYMBOL, SymbolKind::Text);
@@ -291,15 +256,7 @@ impl ObjectFormat for Coff {
         });
     }
 
-    fn global_function(
-        &self,
-        obj: &mut Object<'static>,
-        name: &str,
-        section: object::write::SectionId,
-        offset: u64,
-        size: u64,
-        _sym: FuncSymbol,
-    ) {
+    fn global_function(&self, obj: &mut Object<'static>, name: &str, section: object::write::SectionId, offset: u64, size: u64, _sym: FuncSymbol) {
         // PE has no symbol visibility: a DLL exports what its export list names (rustc's
         // `/EXPORT` directives). A weak definition would need a comdat; VM functions with
         // weak linkage get an ordinary one.
@@ -353,13 +310,7 @@ impl ObjectFormat for Coff {
         Ok(format!("__imp_{name}"))
     }
 
-    fn add_registry_ctor(
-        &self,
-        obj: &mut Object<'static>,
-        images: object::write::SectionId,
-        n: usize,
-        register_import: bool,
-    ) {
+    fn add_registry_ctor(&self, obj: &mut Object<'static>, images: object::write::SectionId, n: usize, register_import: bool) {
         // Win64: the first two arguments are in rcx and rdx. The tail jump leaves rsp alone,
         // so this is a leaf function and needs no unwind info (no `.pdata`).
         // lea rcx, [rip + images]; mov edx, n; jmp ryo_vm_register / jmp [rip + __imp_...]
@@ -378,12 +329,7 @@ impl ObjectFormat for Coff {
         let images_sym = obj.section_symbol(images);
         // `object` turns the addend into COFF's implicit one (REL32 is relative to the end of
         // the field, so -4 becomes 0).
-        let rel = |offset, symbol| Relocation {
-            offset,
-            symbol,
-            addend: -4,
-            flags: RelocationFlags::Coff { typ: pe::IMAGE_REL_AMD64_REL32 },
-        };
+        let rel = |offset, symbol| Relocation { offset, symbol, addend: -4, flags: RelocationFlags::Coff { typ: pe::IMAGE_REL_AMD64_REL32 } };
         obj.add_relocation(text, rel(3, images_sym)).unwrap();
         obj.add_relocation(text, rel(target_at, target)).unwrap();
         // Read-only, like the CRT's own `.CRT$XC*` sections (`#pragma section(".CRT$XCU",
@@ -457,9 +403,7 @@ pub fn write_image(
         Section::ReadOnly => ro,
         Section::Writable => rw,
         Section::Text => text,
-        Section::EhFrame | Section::Lsda | Section::Pdata | Section::Xdata => {
-            unwind.iter().find(|u| u.0 == s).expect("unwind section").1
-        }
+        Section::EhFrame | Section::Lsda | Section::Pdata | Section::Xdata => unwind.iter().find(|u| u.0 == s).expect("unwind section").1,
     };
     fmt.hidden_global(&mut obj, &image_symbol(stable_crate_id), ro, 0, image.rodata.len() as u64, SymbolKind::Data);
 
@@ -480,8 +424,9 @@ pub fn write_image(
         let symbol = match r.target {
             RelocTarget::Symbol(s) => syms[s.0 as usize],
             RelocTarget::Section(s) => obj.section_symbol(section(s)),
-            RelocTarget::Handler(op) => *handlers[op as usize]
-                .get_or_insert_with(|| undefined(&mut obj, &rt_symbol(&handler_name(op)), SymbolKind::Text)),
+            RelocTarget::Handler(op) => {
+                *handlers[op as usize].get_or_insert_with(|| undefined(&mut obj, &rt_symbol(&handler_name(op)), SymbolKind::Text))
+            }
             RelocTarget::Probe => undefined(&mut obj, &rt_symbol(PROBE_SYMBOL), SymbolKind::Text),
         };
         obj.add_relocation(section(r.section), Relocation { offset: r.offset, symbol, addend: r.addend, flags: fmt.reloc(r.kind) })

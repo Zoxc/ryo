@@ -17,8 +17,18 @@ use crate::utils::{RustcInfo, cmd, describe, exe_name, root};
 /// Import libraries std, `ryo_rt` and the corpus name on windows-msvc, replaced by empty
 /// archives. A library missing here fails the link with "could not open"; add it.
 const STUB_LIBS: &[&str] = &[
-    "kernel32", "ntdll", "userenv", "ws2_32", "dbghelp", "msvcrt", "synchronization", "bcryptprimitives",
-    "advapi32", "ucrt", "vcruntime", "legacy_stdio_definitions",
+    "kernel32",
+    "ntdll",
+    "userenv",
+    "ws2_32",
+    "dbghelp",
+    "msvcrt",
+    "synchronization",
+    "bcryptprimitives",
+    "advapi32",
+    "ucrt",
+    "vcruntime",
+    "legacy_stdio_definitions",
 ];
 
 /// CRT and SDK symbols `ryo_rt` uses that a plain rustc build of a program may not: its
@@ -89,9 +99,7 @@ pub fn run(target: &str) -> Result<(), String> {
                     // The other way round: the image loads a foreign function's address through
                     // `__imp_` where plain rustc calls it directly (`abs` from the CRT). An
                     // import library defines both; for a static one the linker synthesizes it.
-                    .filter(|s| {
-                        s.strip_prefix("__declspec(dllimport) ").is_none_or(|plain| !reference.contains(plain))
-                    })
+                    .filter(|s| s.strip_prefix("__declspec(dllimport) ").is_none_or(|plain| !reference.contains(plain)))
                     .collect();
                 if !extra.is_empty() {
                     return Err(format!("unresolved only in the {name} build: {extra:?}"));
@@ -122,13 +130,7 @@ struct Link<'a> {
 impl Link<'_> {
     /// Builds and links every crate of `program` with `compiler` into `dir`, and returns the
     /// symbols the links left unresolved.
-    fn build(
-        &self,
-        compiler: &std::process::Command,
-        program: &Program,
-        dir: &Path,
-        final_flags: &[&str],
-    ) -> Result<BTreeSet<String>, String> {
+    fn build(&self, compiler: &std::process::Command, program: &Program, dir: &Path, final_flags: &[&str]) -> Result<BTreeSet<String>, String> {
         fs::create_dir_all(dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
         let tests = root().join("tests");
         let mut undefined = BTreeSet::new();

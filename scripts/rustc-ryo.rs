@@ -86,17 +86,11 @@ pub fn ryo_args(dist: &Path, passed: Vec<OsString>) -> Result<Vec<OsString>, Str
         return Ok(passed);
     }
     if let Some(flag) = randomize_layout_flag(&passed) {
-        return Err(format!(
-            "`{flag}` is not supported by rustc-ryo: argument block layouts must agree between crates"
-        ));
+        return Err(format!("`{flag}` is not supported by rustc-ryo: argument block layouts must agree between crates"));
     }
 
     let mut backend = OsString::from("-Zcodegen-backend=");
-    backend.push(dist.join("lib").join(format!(
-        "{}rustc_codegen_ryo{}",
-        env::consts::DLL_PREFIX,
-        env::consts::DLL_SUFFIX
-    )));
+    backend.push(dist.join("lib").join(format!("{}rustc_codegen_ryo{}", env::consts::DLL_PREFIX, env::consts::DLL_SUFFIX)));
 
     let mut args: Vec<OsString> = Vec::new();
     // `--sysroot ryo` selects the std built with ryo (`y build --sysroot ryo`).
@@ -112,11 +106,15 @@ pub fn ryo_args(dist: &Path, passed: Vec<OsString>) -> Result<Vec<OsString>, Str
         if passed_sysroot {
             passed_sysroot = false;
             mapped.pop();
-            mapped.push(if a == "ryo" { ryo_sysroot() } else { {
-                let mut s = OsString::from("--sysroot=");
-                s.push(a);
-                s
-            } });
+            mapped.push(if a == "ryo" {
+                ryo_sysroot()
+            } else {
+                {
+                    let mut s = OsString::from("--sysroot=");
+                    s.push(a);
+                    s
+                }
+            });
             continue;
         }
         if a == "--sysroot" {
@@ -227,9 +225,7 @@ fn randomize_layout_flag(args: &[OsString]) -> Option<String> {
             Some((n, v)) => (n, Some(v)),
             None => (opt, None),
         };
-        if name.replace('_', "-") == "randomize-layout"
-            && !matches!(value, Some("no" | "n" | "off" | "false"))
-        {
+        if name.replace('_', "-") == "randomize-layout" && !matches!(value, Some("no" | "n" | "off" | "false")) {
             return Some(format!("-Z{opt}"));
         }
     }
@@ -266,8 +262,14 @@ mod tests {
         let backend = dist.join("lib").join(crate::utils::dll_name("rustc_codegen_ryo"));
         let backend = format!("-Zcodegen-backend={}", backend.display());
         let mut want = args(&[
-            "--sysroot", "/d", &backend, "-Zunstable-options", "--extern", "force:ryo_rt",
-            "foo.rs", "-Ccodegen-units=16",
+            "--sysroot",
+            "/d",
+            &backend,
+            "-Zunstable-options",
+            "--extern",
+            "force:ryo_rt",
+            "foo.rs",
+            "-Ccodegen-units=16",
             "-Ccodegen-units=1",
         ]);
         if cfg!(target_env = "msvc") {

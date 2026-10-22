@@ -14,8 +14,8 @@ mod interp;
 mod registry;
 mod sys;
 
-pub use registry::ImageRt;
 pub use interp::{FP_ARG, MODE, h, handler, probe_stack};
+pub use registry::ImageRt;
 
 /// Registers `n` images. `images[i]` is the address of an image header
 /// (`__ryo_image_<StableCrateId>`). Called by each link unit's registry object constructor,
@@ -33,4 +33,3 @@ pub unsafe extern "C-unwind" fn ryo_vm_register(images: *const *const u8, n: usi
     // SAFETY: per the caller.
     unsafe { registry::register(images, n) }
 }
-

@@ -93,14 +93,7 @@ pub fn map(len: usize, guard: usize) -> *mut u8 {
     // SAFETY: an anonymous private mapping at a kernel-chosen address touches no existing
     // memory. `mprotect` only covers the end of the new mapping.
     unsafe {
-        let p = os::mmap(
-            ptr::null_mut(),
-            len,
-            os::PROT_READ | os::PROT_WRITE,
-            os::MAP_PRIVATE | os::MAP_ANONYMOUS | os::MAP_NORESERVE,
-            -1,
-            0,
-        );
+        let p = os::mmap(ptr::null_mut(), len, os::PROT_READ | os::PROT_WRITE, os::MAP_PRIVATE | os::MAP_ANONYMOUS | os::MAP_NORESERVE, -1, 0);
         if p == os::MAP_FAILED {
             fatal("out of memory mapping VM memory");
         }
@@ -118,9 +111,7 @@ pub fn map(len: usize, guard: usize) -> *mut u8 {
             fatal("out of memory mapping VM memory");
         }
         let mut old = 0;
-        if guard != 0
-            && os::VirtualProtect(p.cast::<u8>().add(len - guard).cast(), guard, os::PAGE_NOACCESS, &mut old) == 0
-        {
+        if guard != 0 && os::VirtualProtect(p.cast::<u8>().add(len - guard).cast(), guard, os::PAGE_NOACCESS, &mut old) == 0 {
             fatal("VirtualProtect failed");
         }
         p.cast()

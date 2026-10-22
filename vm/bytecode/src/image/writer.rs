@@ -29,7 +29,7 @@ use core::{mem, slice};
 
 use super::*;
 use crate::asm::{self, CallSite, Encoded, Mode, Ref, Scope, ScopeKind};
-use crate::full::{ABS_DATA, Const, Data, DecodeError, Decoder, ElemKind, Func, OperandKind, Opcode, Site, Sym};
+use crate::full::{ABS_DATA, Const, Data, DecodeError, Decoder, ElemKind, Func, Opcode, OperandKind, Site, Sym};
 
 /// A symbol referenced by the image.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -245,25 +245,13 @@ pub struct CodeLimits {
 }
 
 fn op_falls_through(op: Opcode) -> bool {
-    !matches!(
-        op,
-        Opcode::Jmp
-            | Opcode::Unreachable
-            | Opcode::Abort
-            | Opcode::Ret
-            | Opcode::Resume
-            | Opcode::TailCall
-            | Opcode::TailCallPtr
-    ) && !op.mnemonic().starts_with("switch.")
+    !matches!(op, Opcode::Jmp | Opcode::Unreachable | Opcode::Abort | Opcode::Ret | Opcode::Resume | Opcode::TailCall | Opcode::TailCallPtr)
+        && !op.mnemonic().starts_with("switch.")
 }
 
 /// Whether `op` calls code that may unwind, so it can have a cleanup entry.
 pub fn op_may_unwind(op: Opcode) -> bool {
-    matches!(
-        op,
-        Opcode::Call | Opcode::CallSym | Opcode::CallSymInd | Opcode::CallPtr | Opcode::Island
-            | Opcode::Resume
-    )
+    matches!(op, Opcode::Call | Opcode::CallSym | Opcode::CallSymInd | Opcode::CallPtr | Opcode::Island | Opcode::Resume)
 }
 
 /// Decodes all of `code` (one function) and checks every operand: indices in range, branch
@@ -373,8 +361,7 @@ fn check_function(i: u32, f: &mut FunctionDef, lim: &CodeLimits, symbols: &[Symb
         .map_err(|(offset, error)| WriteError::Code { func: i, offset, error })?;
     f.cleanup.sort();
     for (j, e) in f.cleanup.iter().enumerate() {
-        let op_at =
-            |o: u32| (starts.get(o as usize) == Some(&true)).then(|| Opcode::from_u16(f.code[o as usize] as u16)).flatten();
+        let op_at = |o: u32| (starts.get(o as usize) == Some(&true)).then(|| Opcode::from_u16(f.code[o as usize] as u16)).flatten();
         let call = op_at(e.offset).is_some_and(op_may_unwind);
         let pad = e.target == CONTINUE || op_at(e.target & !CATCH) == Some(Opcode::Lpad);
         if !call || !pad || (j > 0 && f.cleanup[j - 1].offset == e.offset) {
@@ -604,9 +591,7 @@ impl ImageWriter {
         let mut data = vec![0u8; fixup_area];
         data.extend_from_slice(&self.data);
         let fixup_offsets: alloc::collections::BTreeSet<u32> = self.fixups.iter().map(|x| x.offset).collect();
-        if fixup_offsets.len() != self.fixups.len()
-            || self.data_relocs.iter().any(|r| fixup_offsets.contains(&r.offset))
-        {
+        if fixup_offsets.len() != self.fixups.len() || self.data_relocs.iter().any(|r| fixup_offsets.contains(&r.offset)) {
             return Err(WriteError::AllocReloc);
         }
         let mut fixups = Vec::with_capacity(self.fixups.len());
@@ -722,9 +707,7 @@ impl ImageWriter {
             let (target, addend) = match r.target {
                 // A pointer to an indirect symbol's target is only known at registration: it
                 // must be a fixup. So relocations against indirect symbols are all slots'.
-                AllocTarget::Symbol(s) if s.0 < nsyms && self.symbols[s.0 as usize].flags & SYM_INDIRECT == 0 => {
-                    (RelocTarget::Symbol(s), r.addend)
-                }
+                AllocTarget::Symbol(s) if s.0 < nsyms && self.symbols[s.0 as usize].flags & SYM_INDIRECT == 0 => (RelocTarget::Symbol(s), r.addend),
                 AllocTarget::Const(k) if (k.0 as usize) <= self.consts.len() => {
                     (RelocTarget::Section(Section::ReadOnly), consts.off as i64 + k.0 as i64 + r.addend)
                 }
@@ -884,7 +867,15 @@ fn unwind_pe(funcs: &[FuncCode], relocs: &mut Vec<Reloc>) -> Vec<(Section, Vec<u
         // [mov eax, F - 16 (5); call probe (5)], sub (4 or 7).
         let alloc = f.frame_size - 16;
         let probe = if f.frame_size >= asm::PROBE_FROM { 10 } else { 0 };
-        let sub_end = 8 + probe + if alloc == 0 { 0 } else if alloc < 128 { 4 } else { 7 };
+        let sub_end = 8
+            + probe
+            + if alloc == 0 {
+                0
+            } else if alloc < 128 {
+                4
+            } else {
+                7
+            };
         // Unwind codes, last operation first: (offset after it, op | info << 4, extra slots).
         let mut codes: Vec<u8> = Vec::new();
         if alloc != 0 {

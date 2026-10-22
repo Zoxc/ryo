@@ -1,6 +1,6 @@
 use ryo_bytecode::asm::{self, CallSite, Mode, Scope, ScopeKind};
-use ryo_bytecode::image::*;
 use ryo_bytecode::full::*;
+use ryo_bytecode::image::*;
 use ryo_bytecode::{FORMAT_VERSION, Insn};
 
 const ELF: Mode = Mode { fp_arg: false, frame_pointer: true, align_loops: true, pe: false };
@@ -51,11 +51,7 @@ struct Linked {
 /// every relocation (the unwind sections' aren't), resolving symbols through `resolve` and
 /// `ryo_rt`'s handlers to 0x7000 + the opcode.
 fn link(obj: &ImageObject, resolve: impl Fn(&SymbolDef) -> u64) -> Linked {
-    let mut l = Linked {
-        ro: Buf::new(&obj.rodata, obj.rodata_align),
-        data: Buf::new(&obj.data, obj.data_align),
-        text: Buf::new(&obj.text, 16),
-    };
+    let mut l = Linked { ro: Buf::new(&obj.rodata, obj.rodata_align), data: Buf::new(&obj.data, obj.data_align), text: Buf::new(&obj.text, 16) };
     assert_eq!(l.ro.addr() % obj.rodata_align, 0);
     for r in &obj.relocs {
         let target = match r.target {
@@ -104,12 +100,21 @@ fn sample() -> ImageWriter {
     let _site2 = w.site();
 
     let s1 = w.add_const(b"hello\0", 1, &[]);
-    let vt = w.add_const(&[0u8; 24], 8, &[
-        AllocReloc { offset: 0, target: AllocTarget::Symbol(puts), addend: 0 },
-        AllocReloc { offset: 8, target: AllocTarget::Const(s1), addend: 2 },
-    ]);
+    let vt = w.add_const(
+        &[0u8; 24],
+        8,
+        &[
+            AllocReloc { offset: 0, target: AllocTarget::Symbol(puts), addend: 0 },
+            AllocReloc { offset: 8, target: AllocTarget::Const(s1), addend: 2 },
+        ],
+    );
     assert_eq!(vt.0 % 8, 0);
-    let fx = w.add_data(&[7u8; 16], 8, &[AllocReloc { offset: 8, target: AllocTarget::Const(vt), addend: 0 }], &[AllocFixup { offset: 0, sym: imp, addend: 4 }]);
+    let fx = w.add_data(
+        &[7u8; 16],
+        8,
+        &[AllocReloc { offset: 8, target: AllocTarget::Const(vt), addend: 0 }],
+        &[AllocFixup { offset: 0, sym: imp, addend: 4 }],
+    );
 
     // f0: calls f1 with a landing pad at 8 (`lpad; jmp`) whose block resumes, then returns.
     let f0 = code(&[
@@ -280,10 +285,7 @@ fn pe_unwind_info() {
     assert_eq!(obj.unwind[0].1.len(), 3 * 12);
     // f0: version 1, prologue 12 bytes, 5 codes (alloc small 48 - 16, set fpreg, push rsi,
     // push rdi, push rbp), rbp at rsp + 16.
-    assert_eq!(
-        &obj.unwind[1].1[..14],
-        [1, 12, 5, 5 | 1 << 4, 12, 2 | (32 / 8 - 1) << 4, 8, 3, 3, 6 << 4, 2, 7 << 4, 1, 5 << 4]
-    );
+    assert_eq!(&obj.unwind[1].1[..14], [1, 12, 5, 5 | 1 << 4, 12, 2 | (32 / 8 - 1) << 4, 8, 3, 3, 6 << 4, 2, 7 << 4, 1, 5 << 4]);
     assert_eq!(obj.relocs.iter().filter(|r| r.kind == RelocKind::Rva32).count(), 9);
     // No personality on PE.
     assert_eq!(obj.symbols.len(), 4);
@@ -333,18 +335,23 @@ fn writer_rejects_bad_code() {
     assert!(matches!(w.finish(ELF), Err(WriteError::Code { func: 0, offset: 0, error: CodeError::BadTarget })));
 
     let mut w = ImageWriter::new(1);
-    w.add_function(FunctionDef {
-        code: code(&[Insn::Abort {}, Insn::Br { s: Slot(-1), neg: Neg(false), t: Target(-1) }]),
-        ..Default::default()
-    });
+    w.add_function(FunctionDef { code: code(&[Insn::Abort {}, Insn::Br { s: Slot(-1), neg: Neg(false), t: Target(-1) }]), ..Default::default() });
     assert!(matches!(w.finish(ELF), Err(WriteError::Code { error: CodeError::FallsOffEnd, .. })));
 
     let mut w = ImageWriter::new(1);
-    w.add_function(FunctionDef { name: String::new(), code: code(&[Insn::Call { d: Slot(0), f: Func(5), k: 0, a: List::from_words(&[]) }, Insn::Abort {}]), ..Default::default() });
+    w.add_function(FunctionDef {
+        name: String::new(),
+        code: code(&[Insn::Call { d: Slot(0), f: Func(5), k: 0, a: List::from_words(&[]) }, Insn::Abort {}]),
+        ..Default::default()
+    });
     assert!(matches!(w.finish(ELF), Err(WriteError::Code { error: CodeError::FuncOutOfRange, .. })));
 
     let mut w = ImageWriter::new(1);
-    w.add_function(FunctionDef { name: String::new(), code: code(&[Insn::AddrSym { d: Slot(0), sym: Sym(5) }, Insn::Abort {}]), ..Default::default() });
+    w.add_function(FunctionDef {
+        name: String::new(),
+        code: code(&[Insn::AddrSym { d: Slot(0), sym: Sym(5) }, Insn::Abort {}]),
+        ..Default::default()
+    });
     assert!(matches!(w.finish(ELF), Err(WriteError::Code { error: CodeError::SymOutOfRange, .. })));
 
     // Cleanup entries: not on an instruction start, not on a call, a landing pad that isn't
@@ -352,7 +359,12 @@ fn writer_rejects_bad_code() {
     for (offset, target) in [(1, CONTINUE), (5, CONTINUE), (0, 5)] {
         let mut w = ImageWriter::new(1);
         w.add_function(FunctionDef {
-            code: code(&[Insn::Call { d: Slot(0), f: Func(0), k: 0, a: List::from_words(&[]) }, Insn::Abort {}, Insn::Lpad { x: Slot(-16) }, Insn::Abort {}]),
+            code: code(&[
+                Insn::Call { d: Slot(0), f: Func(0), k: 0, a: List::from_words(&[]) },
+                Insn::Abort {},
+                Insn::Lpad { x: Slot(-16) },
+                Insn::Abort {},
+            ]),
             cleanup: vec![CleanupEntry { offset, target }],
             ..Default::default()
         });
@@ -457,10 +469,7 @@ fn validate_rejects_bad_tables() {
     let obj = sample().finish(ELF).unwrap();
     let fe = |h: &Header, i: usize, field: usize| h.functions.off as usize + i * size_of::<FuncEntry>() + field;
     // Code past the end.
-    assert_eq!(
-        validate_edited(&obj, |r, h| put32(r, fe(h, 2, offset_of!(FuncEntry, code_len)), 1000)),
-        Err(ImageError::BadFunction(2))
-    );
+    assert_eq!(validate_edited(&obj, |r, h| put32(r, fe(h, 2, offset_of!(FuncEntry, code_len)), 1000)), Err(ImageError::BadFunction(2)));
     // Fixups: unaligned, out of range, inside the site cache, bad symbol.
     let fx = |h: &Header| h.fixups.off as usize;
     assert_eq!(validate_edited(&obj, |r, h| put32(r, fx(h), 17)), Err(ImageError::BadFixup(0)));
@@ -483,12 +492,7 @@ fn writer_rejects_bad_alloc_relocs() {
     let mut w = ImageWriter::new(1);
     let s = w.symbol("x", SYM_INDIRECT);
     let t = w.symbol("y", 0);
-    w.add_data(
-        &[0; 8],
-        8,
-        &[AllocReloc { offset: 0, target: AllocTarget::Symbol(t), addend: 0 }],
-        &[AllocFixup { offset: 0, sym: s, addend: 0 }],
-    );
+    w.add_data(&[0; 8], 8, &[AllocReloc { offset: 0, target: AllocTarget::Symbol(t), addend: 0 }], &[AllocFixup { offset: 0, sym: s, addend: 0 }]);
     assert_eq!(w.finish(ELF).unwrap_err(), WriteError::AllocReloc);
     // A pointer to an indirect symbol's target must be a fixup, not a relocation.
     let mut w = ImageWriter::new(1);
@@ -538,10 +542,7 @@ fn scopes_and_call_sites_round_trip() {
     ];
     let cleanup = [CleanupEntry { offset: s0[1], target: s0[3] | CATCH }, CleanupEntry { offset: s0[4], target: CONTINUE }];
     for mode in [ELF, Mode { fp_arg: true, frame_pointer: false, align_loops: false, ..ELF }, Mode { pe: true, ..ELF }] {
-        let enc = vec![
-            asm::encode(&f0, 48, &cleanup, &scopes, mode).unwrap(),
-            asm::encode(&f1, 16, &[], &[], mode).unwrap(),
-        ];
+        let enc = vec![asm::encode(&f0, 48, &cleanup, &scopes, mode).unwrap(), asm::encode(&f1, 16, &[], &[], mode).unwrap()];
         assert_eq!(enc[0].scopes.len(), 2);
         assert_eq!(enc[0].call_sites.len(), 2);
         assert!(enc[0].call_sites[0].catch);
@@ -570,10 +571,7 @@ fn scopes_and_call_sites_round_trip() {
         let sc = |h: &Header, i: usize, field: usize| h.scopes.off as usize + i * size_of::<ScopeEntry>() + field;
         let cs = |h: &Header, i: usize, field: usize| h.call_sites.off as usize + i * size_of::<CallSiteEntry>() + field;
         assert_eq!(validate_edited(&obj, |r, h| put32(r, fe(h, 1, offset_of!(FuncEntry, scopes)), 3)), Err(ImageError::BadFunction(1)));
-        assert_eq!(
-            validate_edited(&obj, |r, h| put32(r, fe(h, 0, offset_of!(FuncEntry, call_sites) + 4), 3)),
-            Err(ImageError::BadFunction(0))
-        );
+        assert_eq!(validate_edited(&obj, |r, h| put32(r, fe(h, 0, offset_of!(FuncEntry, call_sites) + 4), 3)), Err(ImageError::BadFunction(0)));
         assert_eq!(validate_edited(&obj, |r, h| put32(r, sc(h, 1, offset_of!(ScopeEntry, align)), 3)), Err(ImageError::BadScope(1)));
         assert_eq!(validate_edited(&obj, |r, h| put32(r, sc(h, 0, 0), 10_000)), Err(ImageError::BadScope(0)));
         assert_eq!(validate_edited(&obj, |r, h| put32(r, cs(h, 1, offset_of!(CallSiteEntry, len)), 10_000)), Err(ImageError::BadCallSite(1)));
@@ -582,18 +580,15 @@ fn scopes_and_call_sites_round_trip() {
             let at = fe(h, 0, offset_of!(FuncEntry, code_len));
             u32::from_le_bytes(r[at..at + 4].try_into().unwrap())
         };
-        assert_eq!(validate_edited(&obj, |r, h| {
-            let n = len0(r, h);
-            put32(r, sc(h, 0, 0), n)
-        }), Err(ImageError::BadScope(1)));
+        assert_eq!(
+            validate_edited(&obj, |r, h| {
+                let n = len0(r, h);
+                put32(r, sc(h, 0, 0), n)
+            }),
+            Err(ImageError::BadScope(1))
+        );
         assert_eq!(validate_edited(&obj, |r, h| put32(r, cs(h, 1, 0), 0)), Err(ImageError::BadCallSite(1)));
-        assert!(matches!(
-            validate_edited(&obj, |r, _| put32(r, offset_of!(Header, mode), MODE_PE)),
-            Err(ImageError::BadMode)
-        ));
-        assert!(matches!(
-            validate_edited(&obj, |r, _| put32(r, offset_of!(Header, mode), 16)),
-            Err(ImageError::BadMode)
-        ));
+        assert!(matches!(validate_edited(&obj, |r, _| put32(r, offset_of!(Header, mode), MODE_PE)), Err(ImageError::BadMode)));
+        assert!(matches!(validate_edited(&obj, |r, _| put32(r, offset_of!(Header, mode), 16)), Err(ImageError::BadMode)));
     }
 }

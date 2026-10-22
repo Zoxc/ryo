@@ -25,9 +25,7 @@ fn fake_start(main: fn() -> u8, argc: isize, argv: *const *const u8, sigpipe: u8
     main() as isize + argc
 }
 
-fn c_main_of<S: FnOnce(fn() -> u8, isize, *const *const u8, u8) -> isize>(
-    _: S,
-) -> extern "C" fn(c_int, *const *const c_char) -> c_int {
+fn c_main_of<S: FnOnce(fn() -> u8, isize, *const *const u8, u8) -> isize>(_: S) -> extern "C" fn(c_int, *const *const c_char) -> c_int {
     ryo_rt::entry::c_main::<S, u8, 2>
 }
 

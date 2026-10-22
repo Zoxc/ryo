@@ -36,12 +36,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     }
 
     /// Writes the constant value `val` of `layout` to `dst` (cg_ssa's `OperandRef::from_const`).
-    pub fn const_value_into(
-        &mut self,
-        val: ConstValue,
-        layout: TyAndLayout<'tcx>,
-        dst: Loc,
-    ) -> Result<(), NeedsNative> {
+    pub fn const_value_into(&mut self, val: ConstValue, layout: TyAndLayout<'tcx>, dst: Loc) -> Result<(), NeedsNative> {
         let size = layout.size.bytes() as u32;
         match val {
             ConstValue::ZeroSized => Ok(()),
@@ -161,11 +156,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
 }
 
 /// The vtable allocation of `ty` for the trait object with predicates `preds`.
-pub fn vtable_alloc<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    ty: ty::Ty<'tcx>,
-    preds: &'tcx ty::List<ty::PolyExistentialPredicate<'tcx>>,
-) -> AllocId {
+pub fn vtable_alloc<'tcx>(tcx: TyCtxt<'tcx>, ty: ty::Ty<'tcx>, preds: &'tcx ty::List<ty::PolyExistentialPredicate<'tcx>>) -> AllocId {
     let principal = preds.principal().map(|p| tcx.instantiate_bound_regions_with_erased(p));
     tcx.vtable_allocation((ty, principal))
 }
@@ -201,9 +192,7 @@ fn check_static(tcx: TyCtxt<'_>, def_id: DefId) -> Result<(), NeedsNative> {
 /// slot (design/platforms.md), so its address isn't a link-time constant of the image.
 pub fn is_import<'tcx>(tcx: TyCtxt<'tcx>, target: &GlobalAlloc<'tcx>) -> bool {
     match target {
-        GlobalAlloc::Function { instance } => {
-            super::super::symbol_flags(tcx, *instance, super::super::SymRole::Target) != 0
-        }
+        GlobalAlloc::Function { instance } => super::super::symbol_flags(tcx, *instance, super::super::SymRole::Target) != 0,
         GlobalAlloc::Static(def_id) => super::super::static_symbol_flags(tcx, *def_id) != 0,
         GlobalAlloc::Memory(_) | GlobalAlloc::VTable(..) | GlobalAlloc::TypeId { .. } => false,
     }

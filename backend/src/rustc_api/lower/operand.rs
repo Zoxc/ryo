@@ -133,12 +133,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
 
     /// Runs `f` with a frame slot to write `size` bytes to, standing for `dst`: `dst` itself
     /// if it is a slot, else a temporary that is stored to `dst` afterwards.
-    pub fn with_slot(
-        &mut self,
-        dst: Loc,
-        size: u32,
-        f: impl FnOnce(&mut Self, u32) -> Result<(), NeedsNative>,
-    ) -> Result<(), NeedsNative> {
+    pub fn with_slot(&mut self, dst: Loc, size: u32, f: impl FnOnce(&mut Self, u32) -> Result<(), NeedsNative>) -> Result<(), NeedsNative> {
         match dst {
             Loc::Slot(d) => f(self, d),
             Loc::Mem { .. } => {
@@ -151,11 +146,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     }
 
     /// [`with_slot`](Self::with_slot) for a place.
-    pub fn with_place_slot(
-        &mut self,
-        dst: PlaceVal<'tcx>,
-        f: impl FnOnce(&mut Self, u32) -> Result<(), NeedsNative>,
-    ) -> Result<(), NeedsNative> {
+    pub fn with_place_slot(&mut self, dst: PlaceVal<'tcx>, f: impl FnOnce(&mut Self, u32) -> Result<(), NeedsNative>) -> Result<(), NeedsNative> {
         if dst.meta.is_some() {
             return native("assignment to an unsized place");
         }

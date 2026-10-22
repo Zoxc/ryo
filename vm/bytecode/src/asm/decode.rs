@@ -7,14 +7,17 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
-use super::encode::{CallSite, DroppedStore, Scope, Opnd, Ref, RegVal, Reloc, arg_store, case_size, epilogue, fp_item, int_arg, prologue, push_words, result_stores, ret_loads, word_len};
+use super::encode::{
+    CallSite, DroppedStore, Opnd, Ref, RegVal, Reloc, Scope, arg_store, case_size, epilogue, fp_item, int_arg, prologue, push_words, result_stores,
+    ret_loads, word_len,
+};
 use super::inline::Cache;
-use super::x86::{ARGS, BadItem, Cond, Cursor, Item, M, Reg, island_args};
 use super::reduced::{self, Then, addr_arg};
-use crate::reduced::Arg;
+use super::x86::{ARGS, BadItem, Cond, Cursor, Item, M, Reg, island_args};
 use super::{ARG_ADDR, ArgReg, Mode, RetPart, has_handler, layout, ret_kind};
-use crate::image::{CATCH, CONTINUE, CleanupEntry, op_may_unwind};
 use crate::full::{ElemKind, Opcode, OperandKind, Shape, Sym};
+use crate::image::{CATCH, CONTINUE, CleanupEntry, op_may_unwind};
+use crate::reduced::Arg;
 
 /// A function decoded from machine code.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -140,9 +143,7 @@ pub fn decode_reduced(
 ) -> Result<Decoded, AsmError> {
     let Read { protos, frame_size, actions, scopes } = read(code, relocs, rodata, call_sites, dropped, scopes, mode, true)?;
     let ipos: Vec<u32> = protos.iter().map(|p| p.pos).collect();
-    let index = |at: u32, b: u32| {
-        ipos.binary_search(&b).map(|i| i as u32).map_err(|_| AsmError { at, what: "target isn't an instruction" })
-    };
+    let index = |at: u32, b: u32| ipos.binary_search(&b).map(|i| i as u32).map_err(|_| AsmError { at, what: "target isn't an instruction" });
     let cleanup: Vec<_> = actions.iter().enumerate().filter_map(|(i, a)| a.map(|(pad, catch)| (i, pad, catch))).collect();
     let mut insns = Vec::with_capacity(protos.len());
     for p in protos {
@@ -462,9 +463,7 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8]) -> Result<Proto, AsmError> {
             let (s, k) = ret(c, fr)?;
             Proto::new(Opcode::Ret, vec![Opnd::Slot(s), Opnd::Imm(k as u64)], pos, sites)
         }
-        Item::Branch { cond: Cond::Always, target, .. } if setup.is_empty() => {
-            Proto::new(Opcode::Jmp, vec![Opnd::Target(target)], pos, sites)
-        }
+        Item::Branch { cond: Cond::Always, target, .. } if setup.is_empty() => Proto::new(Opcode::Jmp, vec![Opnd::Target(target)], pos, sites),
         Item::CallMem(_) | Item::SubRsp(32) => {
             // An island: `fp`, `ops`, (PE) shadow space, the call through the slot.
             c.pos = pos;
@@ -566,7 +565,10 @@ fn result(c: &mut Cursor<'_>) -> (i32, u32) {
     let items = take(c, |it| {
         matches!(
             it,
-            Item::St { src: Reg::Rax | Reg::Rdx | Reg::R11, .. } | Item::Shift { reg: Reg::Rax | Reg::Rdx, .. } | Item::Sse { st: true, .. } | Item::Movd { to_xmm: false, .. }
+            Item::St { src: Reg::Rax | Reg::Rdx | Reg::R11, .. }
+                | Item::Shift { reg: Reg::Rax | Reg::Rdx, .. }
+                | Item::Sse { st: true, .. }
+                | Item::Movd { to_xmm: false, .. }
         )
     });
     if let Some((d, parts)) = parts_of(&items).filter(|(_, p)| p.len() <= 2) {
@@ -678,7 +680,9 @@ fn arg(c: &mut Cursor<'_>, mode: Mode) -> Option<Proto> {
             loop {
                 let at = c.pos;
                 match (c.item(), c.item()) {
-                    (Ok(Item::Shift { reg, .. }), Ok(Item::St { w, src: s, m: m2 })) if reg == src && s == src && m2.disp == m.disp.wrapping_add(size as i32) => {
+                    (Ok(Item::Shift { reg, .. }), Ok(Item::St { w, src: s, m: m2 }))
+                        if reg == src && s == src && m2.disp == m.disp.wrapping_add(size as i32) =>
+                    {
                         size += w.bits() / 8
                     }
                     _ => {
@@ -951,17 +955,10 @@ fn handler_operands(op: Opcode, setup: &[(u32, Item)], fr: &Frame, ro: &[u8], po
                 let n = imm(loc.reg + 1)? as usize;
                 let size = case_size(e);
                 let b = ro.get(at as usize..).and_then(|b| b.get(..n * size)).ok_or(err("case values"))?;
-                let vals = b
-                    .chunks(size)
-                    .map(|c| c.iter().rev().fold(0u128, |v, &x| v << 8 | x as u128))
-                    .collect();
+                let vals = b.chunks(size).map(|c| c.iter().rev().fold(0u128, |v, &x| v << 8 | x as u128)).collect();
                 Opnd::Cases(vals, vec![0; n])
             }
-            OperandKind::Func
-            | OperandKind::Target
-            | OperandKind::Neg
-            | OperandKind::List(ElemKind::Word | ElemKind::Arg)
-            | OperandKind::Handler => {
+            OperandKind::Func | OperandKind::Target | OperandKind::Neg | OperandKind::List(ElemKind::Word | ElemKind::Arg) | OperandKind::Handler => {
                 return Err(err("operand in a register"));
             }
         });

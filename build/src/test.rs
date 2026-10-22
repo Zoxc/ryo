@@ -64,8 +64,7 @@ impl NativeLib {
 }
 
 /// Defaults for [`Program`] fields.
-const PROGRAM: Program =
-    Program { name: "", crates: &[], flags: &[], vm: &[], c_main: None, native_lib: None };
+const PROGRAM: Program = Program { name: "", crates: &[], flags: &[], vm: &[], c_main: None, native_lib: None };
 
 pub(crate) struct Crate {
     /// The crate name, passed as `--crate-name`.
@@ -126,18 +125,12 @@ pub(crate) const CORPUS: &[Program] = &[
     single!("exit_code"),
     Program {
         name: "cross_crate",
-        crates: &[
-            krate("ccl", "cross_crate/lib.rs", CrateKind::Rlib),
-            krate("main", "cross_crate/main.rs", CrateKind::Bin),
-        ],
+        crates: &[krate("ccl", "cross_crate/lib.rs", CrateKind::Rlib), krate("main", "cross_crate/main.rs", CrateKind::Bin)],
         ..PROGRAM
     },
     Program {
         name: "dylib",
-        crates: &[
-            krate("rdy", "dylib/lib.rs", CrateKind::Dylib),
-            krate("main", "dylib/main.rs", CrateKind::Bin),
-        ],
+        crates: &[krate("rdy", "dylib/lib.rs", CrateKind::Dylib), krate("main", "dylib/main.rs", CrateKind::Bin)],
         // Both link std's dylib, so std shows up once.
         flags: &["-Cprefer-dynamic"],
         ..PROGRAM
@@ -242,10 +235,7 @@ pub(crate) const CORPUS: &[Program] = &[
     },
     Program {
         name: "vm_dylib",
-        crates: &[
-            krate("vmd", "vm_dylib/lib.rs", CrateKind::RlibDylib),
-            krate("main", "vm_dylib/main.rs", CrateKind::Bin),
-        ],
+        crates: &[krate("vmd", "vm_dylib/lib.rs", CrateKind::RlibDylib), krate("main", "vm_dylib/main.rs", CrateKind::Bin)],
         flags: &["-Cprefer-dynamic"],
         vm: &["answer", "vmd::generic::<i8>", "local"],
         ..PROGRAM
@@ -258,10 +248,7 @@ pub(crate) const CORPUS: &[Program] = &[
     ),
     Program {
         name: "vm_statics_cross",
-        crates: &[
-            krate("vsl", "vm_statics_cross/lib.rs", CrateKind::Rlib),
-            krate("main", "vm_statics_cross/main.rs", CrateKind::Bin),
-        ],
+        crates: &[krate("vsl", "vm_statics_cross/lib.rs", CrateKind::Rlib), krate("main", "vm_statics_cross/main.rs", CrateKind::Bin)],
         vm: &["main", "statics", "fns", "dyns", "tls", "local", "f", "bump_tl", "<T as Shape>::area"],
         ..PROGRAM
     },
@@ -281,10 +268,7 @@ pub(crate) const CORPUS: &[Program] = &[
     // `-Clto` (the LTO variants) downstream of a crate built as rlib and dylib.
     Program {
         name: "vm_lto_dep",
-        crates: &[
-            krate("vla", "vm_lto_dep/a.rs", CrateKind::RlibDylib),
-            krate("main", "vm_lto_dep/main.rs", CrateKind::Bin),
-        ],
+        crates: &[krate("vla", "vm_lto_dep/a.rs", CrateKind::RlibDylib), krate("main", "vm_lto_dep/main.rs", CrateKind::Bin)],
         vm: &["main", "f", "h"],
         ..PROGRAM
     },
@@ -308,13 +292,7 @@ pub(crate) const CORPUS: &[Program] = &[
         c_main: Some("vm_c/main.c"),
         ..PROGRAM
     },
-    Program {
-        name: "vm_cdylib",
-        crates: &[krate("vmc", "vm_c/lib.rs", CrateKind::Cdylib)],
-        vm: &["answer"],
-        c_main: Some("vm_c/main.c"),
-        ..PROGRAM
-    },
+    Program { name: "vm_cdylib", crates: &[krate("vmc", "vm_c/lib.rs", CrateKind::Cdylib)], vm: &["answer"], c_main: Some("vm_c/main.c"), ..PROGRAM },
 ];
 
 /// Which compiler builds a program.
@@ -350,22 +328,13 @@ struct Variant {
     no_vm: bool,
 }
 
-const VARIANT: Variant = Variant {
-    name: "",
-    compiler: Compiler::Ryo,
-    flags: &[],
-    final_flags: &[],
-    vm_only: false,
-    ryo_std: false,
-    abort: false,
-    no_vm: false,
-};
+const VARIANT: Variant =
+    Variant { name: "", compiler: Compiler::Ryo, flags: &[], final_flags: &[], vm_only: false, ryo_std: false, abort: false, no_vm: false };
 
 const REFERENCE: Variant = Variant { name: "rustc", compiler: Compiler::Rustc, ..VARIANT };
 
 /// The reference of the [`Variant::abort`] variants.
-const REFERENCE_ABORT: Variant =
-    Variant { name: "rustc-abort", compiler: Compiler::Rustc, flags: &["-Cpanic=abort"], ..VARIANT };
+const REFERENCE_ABORT: Variant = Variant { name: "rustc-abort", compiler: Compiler::Rustc, flags: &["-Cpanic=abort"], ..VARIANT };
 
 const VARIANTS: &[Variant] = &[
     Variant { name: "ryo-novm", no_vm: true, ..VARIANT },
@@ -411,18 +380,12 @@ pub fn run(clif: bool) -> Result<(), String> {
     }
     let out = root.join("target").join("tests");
     fs::create_dir_all(&out).map_err(|e| format!("creating {}: {e}", out.display()))?;
-    let ctx = Ctx {
-        tests: root.join("tests"),
-        out: out.clone(),
-        rustc_ryo: rustc_ryo.clone(),
-        rustc_clif: crate::clif::rustc_clif(&root),
-    };
+    let ctx = Ctx { tests: root.join("tests"), out: out.clone(), rustc_ryo: rustc_ryo.clone(), rustc_clif: crate::clif::rustc_clif(&root) };
 
     let mut failed = Vec::new();
     // The runtime once more with handlers that read `fp` from `rbp`, so VM code keeps the
     // frame pointer (design/vm.md#handlers).
-    let vm_runs: [(&str, &[&str]); 2] =
-        [("vm", &["test", "--workspace"]), ("vm fp-rbp", &["test", "-p", "ryo_rt", "--features", "fp-rbp"])];
+    let vm_runs: [(&str, &[&str]); 2] = [("vm", &["test", "--workspace"]), ("vm fp-rbp", &["test", "-p", "ryo_rt", "--features", "fp-rbp"])];
     for (name, args) in vm_runs {
         match crate::utils::run(cmd("cargo").current_dir(root.join("vm")).args(args)) {
             Ok(()) => eprintln!("[y] test {name}: ok"),
@@ -555,8 +518,7 @@ impl Ctx {
     /// The compiler's sysroot `lib/rustlib/<target>/lib`, where std's dylib is.
     fn target_libdir(&self, variant: &Variant) -> Result<PathBuf, String> {
         let mut c = self.compiler(variant);
-        let libdir =
-            output(c.env_remove("RYO_BACKEND_MARKER").env_remove("RYO_STATS").args(["--print", "target-libdir"]))?;
+        let libdir = output(c.env_remove("RYO_BACKEND_MARKER").env_remove("RYO_STATS").args(["--print", "target-libdir"]))?;
         Ok(PathBuf::from(libdir.trim()))
     }
 
@@ -653,12 +615,7 @@ impl Ctx {
         let res = c.output().map_err(|e| format!("failed to run `{}`: {e}", describe(&c)))?;
         if !res.status.success() {
             // cl reports errors on stdout.
-            return Err(format!(
-                "`{}` failed:\n{}{}",
-                describe(&c),
-                String::from_utf8_lossy(&res.stdout),
-                String::from_utf8_lossy(&res.stderr)
-            ));
+            return Err(format!("`{}` failed:\n{}{}", describe(&c), String::from_utf8_lossy(&res.stdout), String::from_utf8_lossy(&res.stderr)));
         }
         Ok(exe)
     }
@@ -708,10 +665,7 @@ mod tests {
     #[test]
     fn clif_variant_only_with_flag() {
         let names = |clif| super::variants(clif).iter().map(|v| v.name).collect::<Vec<_>>();
-        let all = [
-            "ryo-novm", "ryo", "ryo-threads8", "ryo-O3", "ryo-lto", "ryo-thinlto-O3", "ryo-std", "ryo-std-O3", "ryo-std-lto",
-            "ryo-std-abort",
-        ];
+        let all = ["ryo-novm", "ryo", "ryo-threads8", "ryo-O3", "ryo-lto", "ryo-thinlto-O3", "ryo-std", "ryo-std-O3", "ryo-std-lto", "ryo-std-abort"];
         let ryo: Vec<&str> = all.into_iter().filter(|n| super::VM_RUNS || *n == "ryo-novm").collect();
         assert_eq!(names(false), ryo);
         assert_eq!(names(true), [&ryo[..], &["clif"]].concat());
@@ -764,11 +718,7 @@ fn cargo_smoke(root: &Path, out: &Path) -> Result<(), String> {
     let _ = fs::remove_dir_all(pkg.join("target"));
     let stdout = String::from_utf8_lossy(&res.stdout);
     let stderr = String::from_utf8_lossy(&res.stderr);
-    if !res.status.success()
-        || stdout != "Hello, world!\n"
-        || !stderr.contains(BACKEND_MARKER)
-        || !stderr.contains(PARTITION_MARKER)
-    {
+    if !res.status.success() || stdout != "Hello, world!\n" || !stderr.contains(BACKEND_MARKER) || !stderr.contains(PARTITION_MARKER) {
         return Err(format!("{}\nstdout:\n{stdout}\nstderr:\n{stderr}", res.status));
     }
     Ok(())
@@ -801,11 +751,7 @@ const PARTITION_MARKER: &str = "ryo backend: partition";
 /// The functions a `RYO_STATS=1` build reports as compiled to bytecode:
 /// `ryo: vm fn <path>[ (global)]`.
 fn vm_functions(stderr: &str) -> Vec<String> {
-    stderr
-        .lines()
-        .filter_map(|l| l.strip_prefix("ryo: vm fn "))
-        .map(|f| f.strip_suffix(" (global)").unwrap_or(f).to_owned())
-        .collect()
+    stderr.lines().filter_map(|l| l.strip_prefix("ryo: vm fn ")).map(|f| f.strip_suffix(" (global)").unwrap_or(f).to_owned()).collect()
 }
 
 /// Whether the host is windows-msvc: C programs are built with `cl`, and the staticlib and
@@ -870,9 +816,7 @@ fn same_exports(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> 
             // The runtime's own symbols, which every ryo output links: `ryo_vm_register`
             // (C level), and in a Rust dylib everything of `ryo_rt` and `ryo_bytecode`,
             // the handlers included.
-            let runtime = |s: &str| {
-                s == "ryo_vm_register" || s.contains("6ryo_rt") || s.contains("12ryo_bytecode") || is_rt_internal(s)
-            };
+            let runtime = |s: &str| s == "ryo_vm_register" || s.contains("6ryo_rt") || s.contains("12ryo_bytecode") || is_rt_internal(s);
             let mut syms: Vec<String> = syms.lines().filter(|s| !runtime(s)).map(str::to_owned).collect();
             syms.sort();
             lists.push(syms);
@@ -1063,13 +1007,8 @@ fn metadata_only(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String>
 }
 
 fn reject_randomize_layout(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
-    let res = cmd(rustc_ryo)
-        .arg(src)
-        .arg("-Zrandomize-layout")
-        .arg("-o")
-        .arg(out.join(exe_name("randomized")))
-        .output()
-        .map_err(|e| e.to_string())?;
+    let res =
+        cmd(rustc_ryo).arg(src).arg("-Zrandomize-layout").arg("-o").arg(out.join(exe_name("randomized"))).output().map_err(|e| e.to_string())?;
     let stderr = String::from_utf8_lossy(&res.stderr);
     if res.status.success() || !stderr.contains("-Zrandomize-layout") {
         return Err(format!("expected rustc-ryo to reject -Zrandomize-layout; stderr:\n{stderr}"));
@@ -1083,14 +1022,8 @@ fn reject_codegen_units(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), 
     let dist = rustc_ryo.parent().and_then(Path::parent).ok_or("bad dist path")?;
     let mut backend = OsString::from("-Zcodegen-backend=");
     backend.push(dist.join("lib").join(dll_name("rustc_codegen_ryo")));
-    let res = cmd("rustc")
-        .arg(backend)
-        .arg(src)
-        .arg("-Ccodegen-units=4")
-        .arg("-o")
-        .arg(out.join(exe_name("cgu4")))
-        .output()
-        .map_err(|e| e.to_string())?;
+    let res =
+        cmd("rustc").arg(backend).arg(src).arg("-Ccodegen-units=4").arg("-o").arg(out.join(exe_name("cgu4"))).output().map_err(|e| e.to_string())?;
     let stderr = String::from_utf8_lossy(&res.stderr);
     if res.status.success() || !stderr.contains("-Ccodegen-units=1") {
         return Err(format!("expected the backend to reject 4 codegen units; stderr:\n{stderr}"));

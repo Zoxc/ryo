@@ -25,10 +25,7 @@ impl Loc {
         let d32 = u32::try_from(d).map_err(|_| NeedsNative("offset above 4 GiB".into()))?;
         Ok(match self {
             Loc::Slot(off) => Loc::Slot(off + d32),
-            Loc::Mem { p, k } => Loc::Mem {
-                p,
-                k: k.checked_add_unsigned(d32).ok_or_else(|| NeedsNative("offset above 2 GiB".into()))?,
-            },
+            Loc::Mem { p, k } => Loc::Mem { p, k: k.checked_add_unsigned(d32).ok_or_else(|| NeedsNative("offset above 2 GiB".into()))? },
         })
     }
 }
@@ -88,9 +85,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             ProjectionElem::Deref => self.deref(pv, next_layout(self)?),
             ProjectionElem::Field(f, _) => self.field(pv, f, next_layout(self)?),
             ProjectionElem::Downcast(_, v) => Ok(PlaceVal { layout: pv.layout.for_variant(&self.lcx(), v), ..pv }),
-            ProjectionElem::OpaqueCast(_) | ProjectionElem::UnwrapUnsafeBinder(_) => {
-                Ok(PlaceVal { layout: next_layout(self)?, ..pv })
-            }
+            ProjectionElem::OpaqueCast(_) | ProjectionElem::UnwrapUnsafeBinder(_) => Ok(PlaceVal { layout: next_layout(self)?, ..pv }),
             ProjectionElem::Index(i) => {
                 let idx = self.frame.locals[i].off;
                 self.index(pv, idx, next_layout(self)?)
@@ -195,11 +190,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
 
     /// Size and alignment of a value of `layout`, with metadata in slot `meta` if it is
     /// unsized (cg_ssa's `size_and_align_of_dst`).
-    pub fn size_and_align_of_dst(
-        &mut self,
-        layout: TyAndLayout<'tcx>,
-        meta: Option<u32>,
-    ) -> Result<(DynVal, DynVal), NeedsNative> {
+    pub fn size_and_align_of_dst(&mut self, layout: TyAndLayout<'tcx>, meta: Option<u32>) -> Result<(DynVal, DynVal), NeedsNative> {
         if layout.is_sized() {
             return Ok((DynVal::Const(layout.size.bytes()), DynVal::Const(layout.align.abi.bytes())));
         }

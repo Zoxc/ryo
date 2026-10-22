@@ -10,18 +10,15 @@ use rustc_hir::attrs::Linkage;
 use rustc_hir::def_id::{CrateNum, DefId, LOCAL_CRATE};
 use rustc_middle::middle::exported_symbols::{ExportedSymbol, SymbolExportInfo, SymbolExportKind, SymbolExportLevel};
 use rustc_middle::mir::interpret::{AllocId, GlobalAlloc};
-use rustc_middle::mono::{
-    CodegenUnit, CollectionMode, InstantiationMode, MonoItem, MonoItemData, MonoItemPartitions, Visibility,
-};
+use rustc_middle::mono::{CodegenUnit, CollectionMode, InstantiationMode, MonoItem, MonoItemData, MonoItemPartitions, Visibility};
 use rustc_middle::ty::{self, Instance, InstanceKind, Ty, TyCtxt, TypingEnv};
 use rustc_session::config::{CrateType, EntryFnType};
 use rustc_span::Symbol;
-use ryo_bytecode::image::{
-    AllocFixup, AllocReloc, AllocTarget, CATCH, CONTINUE, FuncSymbol, FunctionDef, ImageObject, ImageWriter, SYM_INDIRECT,
-    SymVisibility,
-};
 use ryo_bytecode::asm::{self, Ref};
 use ryo_bytecode::full::{Const, Data, Func, Site, Sym};
+use ryo_bytecode::image::{
+    AllocFixup, AllocReloc, AllocTarget, CATCH, CONTINUE, FuncSymbol, FunctionDef, ImageObject, ImageWriter, SYM_INDIRECT, SymVisibility,
+};
 
 use crate::objfile;
 
@@ -63,12 +60,7 @@ pub fn rt_items(tcx: TyCtxt<'_>) -> Option<RtItems> {
             let krate = *tcx.crates(()).iter().find(|&&c| tcx.crate_name(c).as_str() == "ryo_rt")?;
             let items = tcx.diagnostic_items(krate);
             let get = |name: &str| items.name_to_id.get(&Symbol::intern(name)).copied();
-            Some(RtItems {
-                krate,
-                c_main: get("ryo_c_main")?,
-                abi: get("ryo_rt_abi")?,
-                fp_arg: get("ryo_rt_fp_arg")?,
-            })
+            Some(RtItems { krate, c_main: get("ryo_c_main")?, abi: get("ryo_rt_abi")?, fp_arg: get("ryo_rt_fp_arg")? })
         };
         (session_key(tcx), find())
     });
@@ -123,17 +115,12 @@ fn stats_level() -> u32 {
 }
 
 /// Our `collect_and_partition_mono_items` (design/backend.md#pipeline steps 1–4).
-pub fn collect_and_partition_mono_items<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    original: super::PartitionProvider,
-) -> MonoItemPartitions<'tcx> {
+pub fn collect_and_partition_mono_items<'tcx>(tcx: TyCtxt<'tcx>, original: super::PartitionProvider) -> MonoItemPartitions<'tcx> {
     // `rustc-ryo` forces `-Ccodegen-units=1`; `Session::codegen_units`
     // (`rustc_session/src/session.rs:1058`) returns it.
     let n = tcx.sess.codegen_units().as_usize();
     if n != 1 {
-        tcx.dcx().fatal(format!(
-            "the ryo backend requires `-Ccodegen-units=1`, but {n} codegen units were requested"
-        ));
+        tcx.dcx().fatal(format!("the ryo backend requires `-Ccodegen-units=1`, but {n} codegen units were requested"));
     }
     // rustc only allows LTO of a dylib with `-Zdylib-lto`, which isn't tested with the image.
     if matches!(tcx.sess.lto(), rustc_session::config::Lto::Fat | rustc_session::config::Lto::Thin)
@@ -150,9 +137,7 @@ pub fn collect_and_partition_mono_items<'tcx>(
     let [cgu] = partitions.codegen_units else {
         tcx.dcx().fatal(format!("the ryo backend expected one codegen unit, got {}", partitions.codegen_units.len()));
     };
-    let Some(rt) = rt_items(tcx) else {
-        tcx.dcx().fatal("the ryo backend needs `ryo_rt` (`--extern force:ryo_rt`); run it through `rustc-ryo`")
-    };
+    let Some(rt) = rt_items(tcx) else { tcx.dcx().fatal("the ryo backend needs `ryo_rt` (`--extern force:ryo_rt`); run it through `rustc-ryo`") };
     check_rt_abi(tcx, rt);
 
     let (native, results) = {
@@ -171,15 +156,9 @@ pub fn collect_and_partition_mono_items<'tcx>(
 }
 
 fn check_rt_abi(tcx: TyCtxt<'_>, rt: RtItems) {
-    let abi = tcx
-        .const_eval_poly(rt.abi)
-        .ok()
-        .and_then(|v| v.try_to_scalar_int())
-        .map(|i| i.to_u32());
+    let abi = tcx.const_eval_poly(rt.abi).ok().and_then(|v| v.try_to_scalar_int()).map(|i| i.to_u32());
     if abi != Some(EXPECTED_RT_ABI) {
-        tcx.dcx().fatal(format!(
-            "ryo_rt's RYO_RT_ABI is {abi:?}, but this backend expects {EXPECTED_RT_ABI}; rebuild with `./y.sh build`"
-        ));
+        tcx.dcx().fatal(format!("ryo_rt's RYO_RT_ABI is {abi:?}, but this backend expects {EXPECTED_RT_ABI}; rebuild with `./y.sh build`"));
     }
 }
 
@@ -273,9 +252,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         // A panic runtime (`panic_unwind`, `panic_abort`) too: portals re-raise a panic from
         // the VM through its `__rust_start_panic` (design/vm.md, Unwinding), so that must be
         // native, and the rest of the runtime gains nothing from the VM.
-        std::env::var_os("RYO_NO_VM").is_none()
-            && !self.tcx.crate_types().contains(&CrateType::ProcMacro)
-            && !self.tcx.is_panic_runtime(LOCAL_CRATE)
+        std::env::var_os("RYO_NO_VM").is_none() && !self.tcx.crate_types().contains(&CrateType::ProcMacro) && !self.tcx.is_panic_runtime(LOCAL_CRATE)
     }
 
     fn run(mut self) -> (CodegenUnit<'tcx>, Results) {
@@ -404,12 +381,8 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         }
 
         let (image, roots) = self.build_image();
-        let vm_exports: Vec<(Instance<'tcx>, Visibility)> = self
-            .vm
-            .iter()
-            .filter(|v| v.global && v.data.linkage == Linkage::External)
-            .map(|v| (v.instance, v.data.visibility))
-            .collect();
+        let vm_exports: Vec<(Instance<'tcx>, Visibility)> =
+            self.vm.iter().filter(|v| v.global && v.data.linkage == Linkage::External).map(|v| (v.instance, v.data.visibility)).collect();
         // Items made External + Hidden only for the image aren't exported
         // (design/backend.md#query-overrides).
         let mut hidden: Vec<Instance<'tcx>> = Vec::new();
@@ -453,10 +426,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             with_islands += usize::from(n > 0);
         }
         let per_fn = if self.vm.is_empty() { 0.0 } else { total as f64 / self.vm.len() as f64 };
-        eprintln!(
-            "ryo: {total} island instructions in {with_islands} of {} VM functions ({per_fn:.2} per function)",
-            self.vm.len()
-        );
+        eprintln!("ryo: {total} island instructions in {with_islands} of {} VM functions ({per_fn:.2} per function)", self.vm.len());
         let mut templates: Vec<_> = by_template.into_iter().collect();
         templates.sort_by(|a, b| b.1.0.cmp(&a.1.0).then_with(|| a.0.as_str().cmp(b.0.as_str())));
         for (t, (n, fns)) in templates {
@@ -604,11 +574,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         let start_args = tcx.mk_args(&[main_ret.into()]);
         let start = Instance::expect_resolve(tcx, typing_env, start_def, start_args, rustc_span::DUMMY_SP);
         let start_ty = Ty::new_fn_def(tcx, start.def_id(), ty::Binder::dummy(start.args));
-        let args = tcx.mk_args(&[
-            start_ty.into(),
-            main_ret.into(),
-            ty::Const::from_bits(tcx, u128::from(sigpipe), typing_env, tcx.types.u8).into(),
-        ]);
+        let args = tcx.mk_args(&[start_ty.into(), main_ret.into(), ty::Const::from_bits(tcx, u128::from(sigpipe), typing_env, tcx.types.u8).into()]);
         let c_main = Instance::new_raw(self.rt.c_main, args);
         let data = MonoItemData {
             inlined: false,
@@ -637,12 +603,8 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                 if self.cgu.items().contains_key(&n) || self.added.contains_key(&n) {
                     continue;
                 }
-                let data = MonoItemData {
-                    inlined: false,
-                    linkage: Linkage::Internal,
-                    visibility: Visibility::Default,
-                    size_estimate: n.size_estimate(tcx),
-                };
+                let data =
+                    MonoItemData { inlined: false, linkage: Linkage::Internal, visibility: Visibility::Default, size_estimate: n.size_estimate(tcx) };
                 self.added.insert(n, data);
                 if let MonoItem::Fn(f) = n {
                     self.work.push(f);
@@ -677,12 +639,8 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             if island.upstream_monomorphization(tcx).is_some() || !tcx.should_codegen_locally(island) {
                 continue;
             }
-            let data = MonoItemData {
-                inlined: false,
-                linkage: Linkage::External,
-                visibility: Visibility::Hidden,
-                size_estimate: item.size_estimate(tcx),
-            };
+            let data =
+                MonoItemData { inlined: false, linkage: Linkage::External, visibility: Visibility::Hidden, size_estimate: item.size_estimate(tcx) };
             self.added.insert(item, data);
             self.hidden_added.push(island);
             self.work.push(island);
@@ -709,12 +667,8 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             // (`needs_thread_local_shim`), so on ELF the backend adds its own, also for
             // upstream statics. The same static always gives the same body, so copies from
             // several crates merge (design/backend.md, Linkage).
-            let data = MonoItemData {
-                inlined: false,
-                linkage: Linkage::WeakODR,
-                visibility: Visibility::Hidden,
-                size_estimate: item.size_estimate(tcx),
-            };
+            let data =
+                MonoItemData { inlined: false, linkage: Linkage::WeakODR, visibility: Visibility::Hidden, size_estimate: item.size_estimate(tcx) };
             self.added.insert(item, data);
             self.hidden_added.push(f);
             self.work.push(f);
@@ -739,12 +693,8 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         if let MonoItem::Fn(f) = item
             && tcx.should_codegen_locally(f)
         {
-            let data = MonoItemData {
-                inlined: false,
-                linkage: Linkage::External,
-                visibility: Visibility::Hidden,
-                size_estimate: item.size_estimate(tcx),
-            };
+            let data =
+                MonoItemData { inlined: false, linkage: Linkage::External, visibility: Visibility::Hidden, size_estimate: item.size_estimate(tcx) };
             self.added.insert(item, data);
             self.hidden_added.push(f);
             self.work.push(f);
@@ -927,8 +877,7 @@ fn lower_all<'tcx>(
     let mut todo: Vec<Instance<'tcx>> = candidates.iter().map(|c| c.0).collect();
     while !todo.is_empty() {
         let cx = LowerCx { vm: &vm, mode };
-        let out: Vec<_> =
-            rustc_data_structures::sync::par_map(todo, |instance| (instance, lower::lower(tcx, &cx, instance)));
+        let out: Vec<_> = rustc_data_structures::sync::par_map(todo, |instance| (instance, lower::lower(tcx, &cx, instance)));
         let mut removed = false;
         for (instance, r) in out {
             match r {
@@ -1024,9 +973,7 @@ impl Pool {
                 // Patched at registration from the `__imp_` slot (design/platforms.md).
                 let (name, direct) = match target_alloc {
                     GlobalAlloc::Function { instance } => (tcx.symbol_name(instance).name, true),
-                    GlobalAlloc::Static(def_id) => {
-                        (static_symbol(tcx, def_id).name, super::static_needs_direct_slot(tcx, def_id))
-                    }
+                    GlobalAlloc::Static(def_id) => (static_symbol(tcx, def_id).name, super::static_needs_direct_slot(tcx, def_id)),
                     _ => unreachable!("only functions and statics are imports"),
                 };
                 if direct {
@@ -1122,10 +1069,7 @@ pub fn exported_non_generic_symbols<'tcx>(
 /// Whether an exported symbol is one of the [`Roots`] that `exported_non_generic_symbols`
 /// adds: rustc's own `NoDefId` symbols are never `used` at the `Rust` level.
 fn is_root(s: &ExportedSymbol<'_>, info: &SymbolExportInfo) -> bool {
-    matches!(s, ExportedSymbol::NoDefId(_))
-        && info.used
-        && info.level == SymbolExportLevel::Rust
-        && !info.rustc_std_internal_symbol
+    matches!(s, ExportedSymbol::NoDefId(_)) && info.used && info.level == SymbolExportLevel::Rust && !info.rustc_std_internal_symbol
 }
 
 /// The [`Roots`] of the crates an output of `crate_type` links statically, one entry per
@@ -1195,11 +1139,7 @@ pub fn local_stable_crate_id(tcx: TyCtxt<'_>) -> u64 {
 
 /// Our `symbol_name` (design/backend.md#query-overrides): `c_main` is the target's entry name, and local copies of `LocalCopy` instances get
 /// a crate-unique suffix (design/backend.md, Linkage).
-pub fn symbol_name<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    instance: Instance<'tcx>,
-    original: impl FnOnce() -> ty::SymbolName<'tcx>,
-) -> ty::SymbolName<'tcx> {
+pub fn symbol_name<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>, original: impl FnOnce() -> ty::SymbolName<'tcx>) -> ty::SymbolName<'tcx> {
     if let InstanceKind::Item(def_id) = instance.def
         && let Some(rt) = rt_items(tcx)
         && def_id.krate == rt.krate
@@ -1264,12 +1204,8 @@ pub fn exported_generic_symbols<'tcx>(
                 .chain([tcx.type_of(def).skip_binder()])
                 .all(|t| t.walk().all(|a| a.as_type().is_none_or(|t| !local_unreachable(t))));
             if instance.args.non_erasable_generics().next().is_some() && downstream {
-                let info = SymbolExportInfo {
-                    level: SymbolExportLevel::Rust,
-                    kind: SymbolExportKind::Text,
-                    used: false,
-                    rustc_std_internal_symbol: false,
-                };
+                let info =
+                    SymbolExportInfo { level: SymbolExportLevel::Rust, kind: SymbolExportKind::Text, used: false, rustc_std_internal_symbol: false };
                 out.push((ExportedSymbol::Generic(def, instance.args), info));
             }
         }

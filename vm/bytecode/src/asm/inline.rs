@@ -15,7 +15,7 @@ use alloc::vec::Vec;
 
 use super::encode::Opnd;
 use super::x86::{Alu, Cond, Item, M, Reg, Rm, Sh, W};
-use crate::full::{ALL_OPCODES, OperandKind, Opcode};
+use crate::full::{ALL_OPCODES, Opcode, OperandKind};
 
 /// The inline sequence kinds, by the opcode's operation and width.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -215,11 +215,9 @@ pub(super) fn sequence<T>(op: Opcode, ops: &[Opnd<T>]) -> Option<(Vec<Item>, Opt
             match w {
                 W::D | W::Q => v.extend([ld(w, slot(1)), Item::Imul { w, reg: R, rm: Rm::Mem(slot(2)) }]),
                 // 8 and 16 bits as 32: the low bits of the product are the same.
-                W::B | W::W => v.extend([
-                    ld(w, slot(1)),
-                    Item::Ld { w, sx: false, dst: C, m: slot(2) },
-                    Item::Imul { w: W::D, reg: R, rm: Rm::Reg(C) },
-                ]),
+                W::B | W::W => {
+                    v.extend([ld(w, slot(1)), Item::Ld { w, sx: false, dst: C, m: slot(2) }, Item::Imul { w: W::D, reg: R, rm: Rm::Reg(C) }])
+                }
             }
             v.push(st(w, slot(0)));
         }
@@ -241,11 +239,9 @@ pub(super) fn sequence<T>(op: Opcode, ops: &[Opnd<T>]) -> Option<(Vec<Item>, Opt
             let sw = if w == W::Q { W::Q } else { W::D };
             v.extend([Item::Ld { w, sx, dst: R, m: slot(1) }, Item::Shift { op: sh, w: sw, reg: R, amt: x as u8 }, st(w, slot(0))]);
         }
-        Class::Cmp(c, w) => v.extend([
-            ld(w, slot(1)),
-            Item::Alu { op: Alu::Cmp, w, reg: R, rm: Rm::Mem(slot(2)) },
-            Item::Setcc { cond: c, m: slot(0) },
-        ]),
+        Class::Cmp(c, w) => {
+            v.extend([ld(w, slot(1)), Item::Alu { op: Alu::Cmp, w, reg: R, rm: Rm::Mem(slot(2)) }, Item::Setcc { cond: c, m: slot(0) }])
+        }
         Class::CmpImm(c, w) => {
             cmp_imm(&mut v, w, slot(1), imm(2));
             v.push(Item::Setcc { cond: c, m: slot(0) });
@@ -307,12 +303,8 @@ fn classify(items: &[Item], br: bool) -> Option<Class> {
         ([Ld { .. }, Ld { .. }, St { w, m, .. }], _) if !frame(m) => Class::Store(*w),
         ([Ld { .. }, Ld { m, .. }, St { w, .. }], _) if !frame(m) => Class::Load(*w),
         ([Ld { .. }, Alu { op, rm: Rm::Mem(_), .. }, St { w, .. }], _) => Class::Bin(*op, *w),
-        ([Ld { .. }, AluImm { op, .. }, St { w, .. }], _) | ([Ld { .. }, SetReg(..), Alu { op, .. }, St { w, .. }], _) => {
-            Class::BinImm(*op, *w)
-        }
-        ([Ld { .. }, Imul { rm: Rm::Mem(_), .. }, St { w, .. }], _) | ([Ld { .. }, Ld { .. }, Imul { .. }, St { w, .. }], _) => {
-            Class::Mul(*w)
-        }
+        ([Ld { .. }, AluImm { op, .. }, St { w, .. }], _) | ([Ld { .. }, SetReg(..), Alu { op, .. }, St { w, .. }], _) => Class::BinImm(*op, *w),
+        ([Ld { .. }, Imul { rm: Rm::Mem(_), .. }, St { w, .. }], _) | ([Ld { .. }, Ld { .. }, Imul { .. }, St { w, .. }], _) => Class::Mul(*w),
         ([ImulImm { .. }, St { w, .. }], _)
         | ([Ld { .. }, ImulImm { .. }, St { w, .. }], _)
         | ([Ld { .. }, SetReg(..), Imul { .. }, St { w, .. }], _) => Class::MulImm(*w),
@@ -495,14 +487,23 @@ impl Cache {
         let mut out = Vec::new();
         // The register computed in appears in the items, unless the sequence computes
         // nothing in a register, when it is the one any would get.
-        let mut xs: Vec<usize> = (0..POOL.len()).filter(|&i| items.iter().any(|it| it.map_regs(|r| if r == POOL[i] { Reg::Rbp } else { r }) != *it)).collect();
+        let mut xs: Vec<usize> =
+            (0..POOL.len()).filter(|&i| items.iter().any(|it| it.map_regs(|r| if r == POOL[i] { Reg::Rbp } else { r }) != *it)).collect();
         if xs.is_empty() {
             xs.push(self.fresh());
         }
         for x in xs {
             let xr = POOL[x];
             // The registers swapped, so nothing else becomes `rax`.
-            let back = |r: Reg| if r == xr { R } else if r == R { xr } else { r };
+            let back = |r: Reg| {
+                if r == xr {
+                    R
+                } else if r == R {
+                    xr
+                } else {
+                    r
+                }
+            };
             for reload in [false, true] {
                 let mut c = *self;
                 let mut head = Vec::new();

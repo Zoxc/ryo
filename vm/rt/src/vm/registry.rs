@@ -105,9 +105,7 @@ pub unsafe fn register(headers: *const *const u8, n: usize) {
     sort_by_key(list, |im| im.view.crate_hash() as usize);
     let snap = alloc_forever(&g, size_of::<Snapshot>(), align_of::<Snapshot>()).cast::<Snapshot>();
     // SAFETY: fresh allocation; fully written before it is published.
-    unsafe {
-        snap.write(Snapshot { by_hash: by_hash.cast(), n: len })
-    };
+    unsafe { snap.write(Snapshot { by_hash: by_hash.cast(), n: len }) };
     SNAPSHOT.store(snap, Ordering::Release);
 }
 
@@ -127,4 +125,3 @@ fn sort_by_key(list: &mut [&ImageRt], key: impl Fn(&ImageRt) -> usize) {
         }
     }
 }
-

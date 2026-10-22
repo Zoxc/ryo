@@ -49,12 +49,21 @@ enum Sysroot {
 #[derive(Debug, PartialEq)]
 enum Cmd {
     /// `targets`: extra targets (besides the host) to install std and `ryo_rt` for.
-    Build { sysroot: Sysroot, targets: Vec<String> },
+    Build {
+        sysroot: Sysroot,
+        targets: Vec<String>,
+    },
     BuildClif,
-    Test { clif: bool },
+    Test {
+        clif: bool,
+    },
     /// `test --cross <target>`.
-    CrossTest { target: String },
-    Bench { runs: u32 },
+    CrossTest {
+        target: String,
+    },
+    Bench {
+        runs: u32,
+    },
     BenchCodegen,
     BenchCrates(crates::Options),
     Clean,
@@ -170,9 +179,7 @@ mod tests {
     #[test]
     fn commands() {
         assert_eq!(parse(&[]), Ok(Cmd::Help));
-        let build = |sysroot, targets: &[&str]| {
-            Ok(Cmd::Build { sysroot, targets: targets.iter().map(|t| t.to_string()).collect() })
-        };
+        let build = |sysroot, targets: &[&str]| Ok(Cmd::Build { sysroot, targets: targets.iter().map(|t| t.to_string()).collect() });
         assert_eq!(parse(&["build"]), build(Sysroot::Llvm, &[]));
         assert_eq!(parse(&["build", "--sysroot", "llvm"]), build(Sysroot::Llvm, &[]));
         assert_eq!(parse(&["build", "--sysroot=ryo"]), build(Sysroot::Ryo, &[]));

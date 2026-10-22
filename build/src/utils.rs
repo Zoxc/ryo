@@ -36,10 +36,7 @@ pub fn run(cmd: &mut Command) -> Result<(), String> {
 
 /// Runs `cmd` and returns its stdout, failing if it doesn't exit successfully.
 pub fn output(cmd: &mut Command) -> Result<String, String> {
-    let out = cmd
-        .stderr(Stdio::inherit())
-        .output()
-        .map_err(|e| format!("failed to run `{}`: {e}", describe(cmd)))?;
+    let out = cmd.stderr(Stdio::inherit()).output().map_err(|e| format!("failed to run `{}`: {e}", describe(cmd)))?;
     if !out.status.success() {
         return Err(format!("`{}` failed with {}", describe(cmd), out.status));
     }

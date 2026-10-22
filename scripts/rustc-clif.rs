@@ -59,19 +59,13 @@ pub fn clif_args(dist: &Path, passed: Vec<OsString>) -> Vec<OsString> {
         return passed;
     }
     let mut args: Vec<OsString> = Vec::new();
-    let user_sysroot = passed
-        .iter()
-        .any(|a| a == "--sysroot" || a.to_str().is_some_and(|s| s.starts_with("--sysroot=")));
+    let user_sysroot = passed.iter().any(|a| a == "--sysroot" || a.to_str().is_some_and(|s| s.starts_with("--sysroot=")));
     if !user_sysroot {
         args.push("--sysroot".into());
         args.push(dist.into());
     }
     let mut backend = OsString::from("-Zcodegen-backend=");
-    backend.push(dist.join("lib").join(format!(
-        "{}rustc_codegen_cranelift{}",
-        env::consts::DLL_PREFIX,
-        env::consts::DLL_SUFFIX
-    )));
+    backend.push(dist.join("lib").join(format!("{}rustc_codegen_cranelift{}", env::consts::DLL_PREFIX, env::consts::DLL_SUFFIX)));
     args.push(backend);
     args.extend(passed);
     args
@@ -100,8 +94,7 @@ mod tests {
         let got = clif_args(Path::new("/d"), vec!["foo.rs".into()]);
         let backend = Path::new("/d").join("lib").join(crate::utils::dll_name("rustc_codegen_cranelift"));
         let backend = format!("-Zcodegen-backend={}", backend.display());
-        let want: Vec<OsString> =
-            ["--sysroot", "/d", &backend, "foo.rs"].iter().map(OsString::from).collect();
+        let want: Vec<OsString> = ["--sysroot", "/d", &backend, "foo.rs"].iter().map(OsString::from).collect();
         assert_eq!(got, want);
         let got = clif_args(Path::new("/d"), vec!["--sysroot=/s".into(), "x.rs".into()]);
         assert!(!got.iter().any(|a| a == "/d"));

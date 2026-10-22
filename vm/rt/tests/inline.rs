@@ -234,11 +234,13 @@ fn inline_runs_match_handlers() {
             let mut vals = Vec::new();
             for o in op.info().operands {
                 vals.push(match o.kind {
-                    OperandKind::Slot if o.name == "d" => (match (last_d, rng.below(3)) {
-                        (Some(d), 0) => d,
-                        (Some(d), 1) => (d + [-4, -2, -1, 1, 2, 4][rng.below(6) as usize]).clamp(RES, RES + 24),
-                        _ => RES + rng.below(24) as i32,
-                    }) as u32 as u128,
+                    OperandKind::Slot if o.name == "d" => {
+                        (match (last_d, rng.below(3)) {
+                            (Some(d), 0) => d,
+                            (Some(d), 1) => (d + [-4, -2, -1, 1, 2, 4][rng.below(6) as usize]).clamp(RES, RES + 24),
+                            _ => RES + rng.below(24) as i32,
+                        }) as u32 as u128
+                    }
                     // Mostly results of earlier instructions, at the offsets they were written.
                     // Mostly results of the instructions just before.
                     OperandKind::Slot if rng.below(3) != 0 => {
@@ -327,7 +329,16 @@ fn frame_effects(op: Opcode, vals: &[u128]) -> (Vec<i32>, Vec<i32>) {
     for (o, &v) in op.info().operands.iter().zip(vals) {
         let s = v as u32 as i32;
         match o.kind {
-            OperandKind::Slot if o.name == "d" => wr.extend(bytes(s, if ptr { 8 } else if cmp { 1 } else { w(m) })),
+            OperandKind::Slot if o.name == "d" => wr.extend(bytes(
+                s,
+                if ptr {
+                    8
+                } else if cmp {
+                    1
+                } else {
+                    w(m)
+                },
+            )),
             OperandKind::Slot => r.extend(bytes(s, if ptr { 8 } else { w(m) })),
             OperandKind::Mem => r.extend(bytes(s, 8)),
             _ => {}

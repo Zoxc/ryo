@@ -2,9 +2,9 @@
 //! with the frame size and the unwind entries (through the LSDA), in every mode.
 
 use ryo_bytecode::asm::{self, Mode, Scope, ScopeKind, lsda};
-use ryo_bytecode::reduced;
-use ryo_bytecode::image::{CATCH, CONTINUE, CleanupEntry, op_may_unwind};
 use ryo_bytecode::full::*;
+use ryo_bytecode::image::{CATCH, CONTINUE, CleanupEntry, op_may_unwind};
+use ryo_bytecode::reduced;
 
 struct Rng(u64);
 impl Rng {
@@ -68,10 +68,7 @@ impl Fn {
         let cleanup = self
             .unwind
             .iter()
-            .map(|&(c, p)| CleanupEntry {
-                offset: starts[c],
-                target: p.map_or(CONTINUE, |(p, catch)| starts[p] | if catch { CATCH } else { 0 }),
-            })
+            .map(|&(c, p)| CleanupEntry { offset: starts[c], target: p.map_or(CONTINUE, |(p, catch)| starts[p] | if catch { CATCH } else { 0 }) })
             .collect();
         (code.concat(), cleanup)
     }
@@ -380,16 +377,13 @@ fn register_cache_drops_reloads() {
     let f = Fn { insns: vec![mov(-16, -8), mov(-24, -16), vec![Opcode::Abort as u32]], targets: Vec::new(), unwind: Vec::new() };
     assert!(!has(&check(&f, 32, m, "reload").code));
     // The same with a branch to the second `mov`.
-    let f = Fn {
-        insns: vec![mov(-16, -8), mov(-24, -16), vec![Opcode::Jmp as u32, 0]],
-        targets: vec![(2, 1, 1)],
-        unwind: Vec::new(),
-    };
+    let f = Fn { insns: vec![mov(-16, -8), mov(-24, -16), vec![Opcode::Jmp as u32, 0]], targets: vec![(2, 1, 1)], unwind: Vec::new() };
     assert!(has(&check(&f, 32, m, "reload at a target").code));
     // Values stay in other registers: `mov.w64 $-24, $-32` goes through `rdx`, as `rax`
     // holds `$-16`, so the last `add` is `add rax, rdx`.
     let add = |d: i32, a: i32, b: i32| vec![Opcode::AddW64 as u32, d as u32, a as u32, b as u32];
-    let f = Fn { insns: vec![add(-16, -8, -8), mov(-24, -32), add(-40, -16, -24), vec![Opcode::Abort as u32]], targets: Vec::new(), unwind: Vec::new() };
+    let f =
+        Fn { insns: vec![add(-16, -8, -8), mov(-24, -32), add(-40, -16, -24), vec![Opcode::Abort as u32]], targets: Vec::new(), unwind: Vec::new() };
     let code = check(&f, 64, m, "two registers").code;
     assert!(code.windows(3).any(|w| w == [0x48, 0x03, 0xc2]), "{code:02x?}");
 }

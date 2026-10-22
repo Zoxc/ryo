@@ -128,13 +128,20 @@ fn addresses_and_fixups() {
     let s_static = w.symbol("static", 0);
     let s_imp = w.symbol("imp", SYM_INDIRECT);
     let k = w.add_const(&0x5555_6666_7777_8888u64.to_le_bytes(), 8, &[]);
-    let kp = w.add_const(&[0; 16], 8, &[
-        AllocReloc { offset: 0, target: AllocTarget::Symbol(s_static), addend: 0 },
-        AllocReloc { offset: 8, target: AllocTarget::Const(k), addend: 2 },
-    ]);
-    let data = w.add_data(&[0xab; 24], 8, &[AllocReloc { offset: 16, target: AllocTarget::Const(k), addend: 0 }], &[
-        AllocFixup { offset: 8, sym: s_imp, addend: 4 },
-    ]);
+    let kp = w.add_const(
+        &[0; 16],
+        8,
+        &[
+            AllocReloc { offset: 0, target: AllocTarget::Symbol(s_static), addend: 0 },
+            AllocReloc { offset: 8, target: AllocTarget::Const(k), addend: 2 },
+        ],
+    );
+    let data = w.add_data(
+        &[0xab; 24],
+        8,
+        &[AllocReloc { offset: 16, target: AllocTarget::Const(k), addend: 0 }],
+        &[AllocFixup { offset: 8, sym: s_imp, addend: 4 }],
+    );
     let mut a = Asm::new();
     a.sret(Slot(-80));
     a.i(Insn::AddrSym { d: Slot(-64), sym: s_static });
@@ -201,8 +208,7 @@ fn enums_niche() {
     }
     let img = build(w, &[]);
     for (n, mask, ns, fd, fs) in fns {
-        for tag in [ns.wrapping_sub(1) & mask, ns, ns.wrapping_add(1) & mask, ns.wrapping_add(2) & mask, 3, 1, mask >> 1]
-        {
+        for tag in [ns.wrapping_sub(1) & mask, ns, ns.wrapping_add(1) & mask, ns.wrapping_add(2) & mask, 3, 1, mask >> 1] {
             let rel = tag.wrapping_sub(ns) & mask;
             let want = if rel <= 2 { 3 + rel as u32 } else { 1 };
             assert_eq!(ok::<_, u32>(img.id(fd), (tag,)), want, "w{n} tag {tag:#x}");

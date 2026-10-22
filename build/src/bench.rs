@@ -77,11 +77,8 @@ impl Timer {
                 for i in 0..=runs {
                     let mut c = job.command();
                     let start = Instant::now();
-                    let status = c
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::null())
-                        .status()
-                        .map_err(|e| format!("failed to run `{}`: {e}", describe(&c)))?;
+                    let status =
+                        c.stdout(Stdio::null()).stderr(Stdio::null()).status().map_err(|e| format!("failed to run `{}`: {e}", describe(&c)))?;
                     let elapsed = start.elapsed().as_secs_f64();
                     if !status.success() {
                         return Err(format!("`{}` failed with {status}", describe(&c)));
@@ -95,10 +92,7 @@ impl Timer {
             }
             Timer::Hyperfine { json } => {
                 let line: Vec<String> =
-                    std::iter::once(job.program.to_string_lossy().into_owned())
-                        .chain(job.args.iter().cloned())
-                        .map(|a| shell_quote(&a))
-                        .collect();
+                    std::iter::once(job.program.to_string_lossy().into_owned()).chain(job.args.iter().cloned()).map(|a| shell_quote(&a)).collect();
                 let mut c = cmd("hyperfine");
                 c.args(["-N", "--style", "none", "--warmup", "1", "--runs"])
                     .arg(runs.to_string())
@@ -120,11 +114,7 @@ impl Timer {
 fn stats(times: &[f64]) -> Stats {
     let n = times.len() as f64;
     let mean = times.iter().sum::<f64>() / n;
-    let var = if times.len() > 1 {
-        times.iter().map(|t| (t - mean) * (t - mean)).sum::<f64>() / (n - 1.0)
-    } else {
-        0.0
-    };
+    let var = if times.len() > 1 { times.iter().map(|t| (t - mean) * (t - mean)).sum::<f64>() / (n - 1.0) } else { 0.0 };
     Stats { mean, stddev: var.sqrt() }
 }
 
@@ -234,7 +224,10 @@ fn disassemble(dump: &str) -> Result<String, String> {
                 table = Some(insn.ip_rel_memory_address() as usize);
             }
             if !reloc_in(&insn) {
-                if insn.op_kinds().any(|k| matches!(k, iced_x86::OpKind::NearBranch16 | iced_x86::OpKind::NearBranch32 | iced_x86::OpKind::NearBranch64)) {
+                if insn
+                    .op_kinds()
+                    .any(|k| matches!(k, iced_x86::OpKind::NearBranch16 | iced_x86::OpKind::NearBranch32 | iced_x86::OpKind::NearBranch64))
+                {
                     targets.insert(insn.near_branch_target());
                 }
                 if insn.is_ip_rel_memory_operand() && (insn.ip_rel_memory_address() as usize) < code.len() {
@@ -311,7 +304,8 @@ impl iced_x86::SymbolResolver for Relocs {
         if let Some((_, to)) = self.0.iter().find(|(at, _)| (start..end).contains(at)) {
             return Some(iced_x86::SymbolResult::with_str(address, to.as_str()));
         }
-        let near = insn.op_kinds().any(|k| matches!(k, iced_x86::OpKind::NearBranch16 | iced_x86::OpKind::NearBranch32 | iced_x86::OpKind::NearBranch64));
+        let near =
+            insn.op_kinds().any(|k| matches!(k, iced_x86::OpKind::NearBranch16 | iced_x86::OpKind::NearBranch32 | iced_x86::OpKind::NearBranch64));
         if (near && insn.near_branch_target() == address) || (insn.is_ip_rel_memory_operand() && insn.ip_rel_memory_address() == address) {
             return self.1.get(&address).map(|l| iced_x86::SymbolResult::with_str(address, l.as_str()));
         }
@@ -380,16 +374,10 @@ pub fn run(runs: u32) -> Result<(), String> {
             if let Some(output) = output {
                 match &reference {
                     None => reference = Some(output),
-                    Some(r) if *r != output => failures.push(format!(
-                        "{name} printed {output:?}, {} printed {r:?}",
-                        BACKENDS[0].name
-                    )),
+                    Some(r) if *r != output => failures.push(format!("{name} printed {output:?}, {} printed {r:?}", BACKENDS[0].name)),
                     Some(_) => {}
                 }
-                run = timer
-                    .measure(&Job { program: exe, args: Vec::new() }, runs)
-                    .map_err(|e| failures.push(format!("{name}: run: {e}")))
-                    .ok();
+                run = timer.measure(&Job { program: exe, args: Vec::new() }, runs).map_err(|e| failures.push(format!("{name}: run: {e}"))).ok();
             }
             cells.push(Cell { compile, run });
         }
@@ -425,16 +413,14 @@ fn print_table(title: &str, rows: &[(&str, Vec<Cell>)], pick: impl Fn(&Cell) -> 
 
 fn table(title: &str, rows: &[(&str, Vec<Cell>)], pick: impl Fn(&Cell) -> Option<Stats>) -> String {
     let header: Vec<&str> = BACKENDS.iter().map(|b| b.name).collect();
-    let rows: Vec<(&str, Vec<Option<Stats>>)> =
-        rows.iter().map(|(program, cells)| (*program, cells.iter().map(&pick).collect())).collect();
+    let rows: Vec<(&str, Vec<Option<Stats>>)> = rows.iter().map(|(program, cells)| (*program, cells.iter().map(&pick).collect())).collect();
     grid(title, &header, &rows)
 }
 
 /// A table with a `program` column and one column per `header` entry; cells are mean ±
 /// standard deviation in ms, or `failed`.
 fn grid(title: &str, header: &[&str], rows: &[(&str, Vec<Option<Stats>>)]) -> String {
-    let mut lines: Vec<Vec<String>> =
-        vec![std::iter::once("program").chain(header.iter().copied()).map(str::to_owned).collect()];
+    let mut lines: Vec<Vec<String>> = vec![std::iter::once("program").chain(header.iter().copied()).map(str::to_owned).collect()];
     for (program, cells) in rows {
         let mut line = vec![program.to_string()];
         for cell in cells {
@@ -446,8 +432,7 @@ fn grid(title: &str, header: &[&str], rows: &[(&str, Vec<Option<Stats>>)]) -> St
         lines.push(line);
     }
     let cols = lines[0].len();
-    let widths: Vec<usize> =
-        (0..cols).map(|i| lines.iter().map(|l| l.get(i).map_or(0, |c| c.chars().count())).max().unwrap()).collect();
+    let widths: Vec<usize> = (0..cols).map(|i| lines.iter().map(|l| l.get(i).map_or(0, |c| c.chars().count())).max().unwrap()).collect();
     let mut out = format!("{title}\n");
     for (n, line) in lines.iter().enumerate() {
         let mut text = String::new();

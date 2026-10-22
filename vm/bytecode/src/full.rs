@@ -398,11 +398,7 @@ impl<'a> Operand<'a> for Mem {
 
 impl fmt::Display for Mem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.k < 0 {
-            write!(f, "[{} - {}]", self.p, (self.k as i64).unsigned_abs())
-        } else {
-            write!(f, "[{} + {}]", self.p, self.k)
-        }
+        if self.k < 0 { write!(f, "[{} - {}]", self.p, (self.k as i64).unsigned_abs()) } else { write!(f, "[{} + {}]", self.p, self.k) }
     }
 }
 
@@ -655,17 +651,39 @@ pub enum Shape {
 
 /// Maps a shape name in the opcode list to its [`Shape`].
 macro_rules! shape {
-    (op) => { $crate::full::Shape::Op };
-    (br) => { $crate::full::Shape::Br };
-    (switch) => { $crate::full::Shape::Switch };
-    (trap) => { $crate::full::Shape::Trap };
-    (ret) => { $crate::full::Shape::Ret };
-    (jmp) => { $crate::full::Shape::Jmp };
-    (call) => { $crate::full::Shape::Call };
-    (tail_call) => { $crate::full::Shape::TailCall };
-    (arg) => { $crate::full::Shape::Arg };
-    (island) => { $crate::full::Shape::Island };
-    (lpad) => { $crate::full::Shape::Lpad };
+    (op) => {
+        $crate::full::Shape::Op
+    };
+    (br) => {
+        $crate::full::Shape::Br
+    };
+    (switch) => {
+        $crate::full::Shape::Switch
+    };
+    (trap) => {
+        $crate::full::Shape::Trap
+    };
+    (ret) => {
+        $crate::full::Shape::Ret
+    };
+    (jmp) => {
+        $crate::full::Shape::Jmp
+    };
+    (call) => {
+        $crate::full::Shape::Call
+    };
+    (tail_call) => {
+        $crate::full::Shape::TailCall
+    };
+    (arg) => {
+        $crate::full::Shape::Arg
+    };
+    (island) => {
+        $crate::full::Shape::Island
+    };
+    (lpad) => {
+        $crate::full::Shape::Lpad
+    };
 }
 
 /// One operand of an opcode: its name in the instruction set docs, and its encoding.

@@ -135,7 +135,30 @@ fn branches() {
 fn widths_complete() {
     let has = |m: &str| OP_INFO.iter().any(|i| i.mnemonic == m);
     for w in [8, 16, 32, 64, 128] {
-        for o in ["mov", "imm", "load", "store", "add", "sub", "and", "shl", "shr.s", "eq", "lt.u", "cmp3.s", "rotl", "ctpop", "bswap", "neg", "add.ovf.s", "br.lt.s", "br.gt.u.imm", "switch.dense", "switch.sparse", "discr.niche"] {
+        for o in [
+            "mov",
+            "imm",
+            "load",
+            "store",
+            "add",
+            "sub",
+            "and",
+            "shl",
+            "shr.s",
+            "eq",
+            "lt.u",
+            "cmp3.s",
+            "rotl",
+            "ctpop",
+            "bswap",
+            "neg",
+            "add.ovf.s",
+            "br.lt.s",
+            "br.gt.u.imm",
+            "switch.dense",
+            "switch.sparse",
+            "discr.niche",
+        ] {
             assert!(has(&format!("{o}.w{w}")), "{o}.w{w}");
         }
         let at128 = w != 128;

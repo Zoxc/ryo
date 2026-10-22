@@ -22,8 +22,7 @@ pub const SHIM_VAR: &str = "RYO_Y_SYSROOT_SHIM";
 /// Crates the sysroot build compiles with plain rustc: `ryo_rt` and everything it depends on
 /// (they are below it in the crate graph, so they can't use it), the facade crate re-exporting
 /// `core`, and build scripts.
-const NATIVE_CRATES: &[&str] =
-    &["core", "compiler_builtins", "rustc_std_workspace_core", "ryo_rt", "ryo_bytecode", "build_script_build"];
+const NATIVE_CRATES: &[&str] = &["core", "compiler_builtins", "rustc_std_workspace_core", "ryo_rt", "ryo_bytecode", "build_script_build"];
 
 /// The sysroot directory inside `dist/` (`rustc-ryo --sysroot ryo` selects it).
 pub const SYSROOT_DIR: &str = "sysroot-ryo";

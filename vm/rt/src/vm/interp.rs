@@ -35,9 +35,7 @@
 use core::mem::MaybeUninit;
 use core::ops::Not;
 use core::ptr;
-use core::sync::atomic::{
-    AtomicI8, AtomicI16, AtomicI32, AtomicI64, AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering,
-};
+use core::sync::atomic::{AtomicI8, AtomicI16, AtomicI32, AtomicI64, AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering};
 
 use ryo_bytecode::asm::{self, ARG_REGS, Loc};
 use ryo_bytecode::full::Opcode;
@@ -47,8 +45,7 @@ use super::sys::fatal;
 /// How the machine code passes `fp`: the backend reads this (through `FP_ARG`) and encodes
 /// to match. The handlers work with and without a frame pointer when they take `fp` in
 /// `rdi`; tests encode without one then. The other fields don't concern the handlers.
-pub const MODE: asm::Mode =
-    asm::Mode { fp_arg: !cfg!(feature = "fp-rbp"), frame_pointer: cfg!(feature = "fp-rbp"), align_loops: false, pe: false };
+pub const MODE: asm::Mode = asm::Mode { fp_arg: !cfg!(feature = "fp-rbp"), frame_pointer: cfg!(feature = "fp-rbp"), align_loops: false, pe: false };
 
 /// Whether handlers take `fp` in `rdi`; the backend checks it agrees with its encoding.
 #[rustc_diagnostic_item = "ryo_rt_fp_arg"]
@@ -123,10 +120,7 @@ macro_rules! addr_of {
 macro_rules! mem_addr {
     ($a:ident, $fp:ident, $op:ident) => {{
         let m = v!($a, $op, m);
-        $fp.wrapping_offset(m as u32 as i32 as isize)
-            .cast::<*mut u8>()
-            .read_unaligned()
-            .wrapping_offset((m >> 64) as u32 as i32 as isize)
+        $fp.wrapping_offset(m as u32 as i32 as isize).cast::<*mut u8>().read_unaligned().wrapping_offset((m >> 64) as u32 as i32 as isize)
     }};
 }
 
@@ -183,11 +177,7 @@ macro_rules! store_copy {
 }
 macro_rules! memcpy {
     ($a:ident, $fp:ident, $op:ident,) => {
-        ptr::copy_nonoverlapping(
-            get!(*const u8, $a, $fp, $op, sp),
-            get!(*mut u8, $a, $fp, $op, dp),
-            get!(usize, $a, $fp, $op, n),
-        )
+        ptr::copy_nonoverlapping(get!(*const u8, $a, $fp, $op, sp), get!(*mut u8, $a, $fp, $op, dp), get!(usize, $a, $fp, $op, n))
     };
 }
 macro_rules! memmove {

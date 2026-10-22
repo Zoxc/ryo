@@ -10,7 +10,6 @@ use std::sync::LazyLock;
 use rustc_data_structures::fx::FxHashMap;
 use ryo_bytecode::full::{ALL_OPCODES, Opcode};
 
-
 /// Integer operand widths of the instruction set.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Width {
@@ -90,8 +89,7 @@ impl FloatWidth {
     }
 }
 
-static BY_NAME: LazyLock<FxHashMap<String, Opcode>> =
-    LazyLock::new(|| ALL_OPCODES.iter().map(|&op| (format!("{op:?}"), op)).collect());
+static BY_NAME: LazyLock<FxHashMap<String, Opcode>> = LazyLock::new(|| ALL_OPCODES.iter().map(|&op| (format!("{op:?}"), op)).collect());
 
 /// The opcode whose `Opcode` variant is called `name`, if there is one.
 pub fn try_opcode(name: &str) -> Option<Opcode> {

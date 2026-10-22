@@ -124,12 +124,7 @@ fn is_std_lib(file_name: &str) -> bool {
 
 /// Builds `ryo_rt` (and `ryo_bytecode`) with the stock LLVM backend against `dist/`'s std, for
 /// the host or the `cross` target, and returns their crate names and rlibs.
-fn build_runtime(
-    root: &Path,
-    target: &Path,
-    dist: &Path,
-    cross: Option<&str>,
-) -> Result<Vec<(&'static str, PathBuf)>, String> {
+fn build_runtime(root: &Path, target: &Path, dist: &Path, cross: Option<&str>) -> Result<Vec<(&'static str, PathBuf)>, String> {
     eprintln!("[y] runtime: ryo_rt{}", cross.map(|t| format!(" for {t}")).unwrap_or_default());
     let mut sysroot_flag = String::from("--sysroot=");
     sysroot_flag.push_str(dist.to_str().ok_or("dist/ path is not UTF-8")?);
@@ -256,10 +251,7 @@ mod tests {
             r#"{"reason":"build-finished","success":true}"#,
         );
         let rlibs = artifact_rlibs(json);
-        assert_eq!(
-            rlibs,
-            [PathBuf::from("/t/release/deps/libryo_bytecode-ab12.rlib"), PathBuf::from(r"C:\t\release\libryo_rt.rlib")]
-        );
+        assert_eq!(rlibs, [PathBuf::from("/t/release/deps/libryo_bytecode-ab12.rlib"), PathBuf::from(r"C:\t\release\libryo_rt.rlib")]);
         assert_eq!(rlib_crate(&rlibs[0]), Some("ryo_bytecode"));
         assert_eq!(rlib_crate(Path::new("libryo_rt.rlib")), Some("ryo_rt"));
     }

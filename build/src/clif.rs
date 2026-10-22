@@ -30,10 +30,7 @@ pub fn build() -> Result<(), String> {
 
     let src = info.sysroot.join("lib/rustlib/rustc-src/rust/compiler/rustc_codegen_cranelift");
     if !src.join("Cargo.toml").exists() {
-        return Err(format!(
-            "{} is missing; install the `rustc-dev` component of the pinned toolchain",
-            src.display()
-        ));
+        return Err(format!("{} is missing; install the `rustc-dev` component of the pinned toolchain", src.display()));
     }
     eprintln!("[y] cg_clif: copying {} to build/clif/", src.display());
     let copy_to = root.join("build").join("clif");

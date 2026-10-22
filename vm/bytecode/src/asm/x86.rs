@@ -714,9 +714,7 @@ impl Item {
                 out.extend_from_slice(&[0x48, 0x8d, 0x0d]);
                 rel32(out, t);
             }
-            Item::Mov(dst, src) => {
-                out.extend_from_slice(&[0x48 | (src.ext() as u8) << 2 | dst.ext() as u8, 0x89, 0xc0 | src.low() << 3 | dst.low()])
-            }
+            Item::Mov(dst, src) => out.extend_from_slice(&[0x48 | (src.ext() as u8) << 2 | dst.ext() as u8, 0x89, 0xc0 | src.low() << 3 | dst.low()]),
             Item::Call(to) => {
                 out.push(0xe8);
                 reloc(out, relocs, to);
@@ -796,7 +794,13 @@ impl Item {
             Item::AluImm { op, w, rm, imm } => {
                 self.prefixes(out);
                 let short = w == W::B || imm8(imm);
-                out.push(if w == W::B { 0x80 } else if short { 0x83 } else { 0x81 });
+                out.push(if w == W::B {
+                    0x80
+                } else if short {
+                    0x83
+                } else {
+                    0x81
+                });
                 rm.write(op as u8, out);
                 if short {
                     out.push(imm as u8);
@@ -998,9 +1002,7 @@ impl<'a> Cursor<'a> {
                         Item::Ld { w: if op2 & 1 == 0 { W::B } else { W::W }, sx: op2 & 8 != 0, dst: reg(r)?, m: mem(rm)? }
                     }
                     0xaf => Item::Imul { w, reg: reg(r)?, rm },
-                    0x90..=0x9f if w == W::D && r == 0 => {
-                        Item::Setcc { cond: Cond::from_cc(op2 & 0xf).ok_or(bad)?, m: mem(rm)? }
-                    }
+                    0x90..=0x9f if w == W::D && r == 0 => Item::Setcc { cond: Cond::from_cc(op2 & 0xf).ok_or(bad)?, m: mem(rm)? },
                     _ => return Err(bad),
                 }
             }
@@ -1054,7 +1056,11 @@ impl<'a> Cursor<'a> {
             }
             _ => return Err(bad),
         };
-        if let Item::Alu { rm: Rm::Reg(r), .. } | Item::AluImm { rm: Rm::Reg(r), .. } | Item::Imul { rm: Rm::Reg(r), .. } | Item::ImulImm { rm: Rm::Reg(r), .. } = item {
+        if let Item::Alu { rm: Rm::Reg(r), .. }
+        | Item::AluImm { rm: Rm::Reg(r), .. }
+        | Item::Imul { rm: Rm::Reg(r), .. }
+        | Item::ImulImm { rm: Rm::Reg(r), .. } = item
+        {
             reg(r as u8)?;
         }
         let len = item.len();
@@ -1182,9 +1188,7 @@ impl<'a> Cursor<'a> {
                 Item::Branch { cond, target: (self.pos + 2).wrapping_add(d), long: false }
             }
             (0, 0x0f) => match get(1)? {
-                cc @ 0x80..=0x8f => {
-                    Item::Branch { cond: Cond::from_cc(cc & 0xf).ok_or(bad)?, target: self.local(2, 6)?, long: true }
-                }
+                cc @ 0x80..=0x8f => Item::Branch { cond: Cond::from_cc(cc & 0xf).ok_or(bad)?, target: self.local(2, 6)?, long: true },
                 0x0b => Item::Ud2,
                 op2 @ (0x10 | 0x11) => return self.sse(0, 16, op2 == 0x11),
                 _ => return Err(bad),

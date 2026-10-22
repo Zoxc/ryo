@@ -202,8 +202,32 @@ fn int_ref(op: &str, n: u32, a: u128, b: u128) -> Option<(u128, u32, Option<bool
 }
 
 const INT_OPS: &[&str] = &[
-    "add", "sub", "mul", "div", "rem", "and", "or", "xor", "shl", "shr", "neg", "not", "eq", "ne", "lt", "le",
-    "gt", "ge", "cmp3", "rotl", "rotr", "ctpop", "ctlz", "cttz", "bswap", "bitreverse",
+    "add",
+    "sub",
+    "mul",
+    "div",
+    "rem",
+    "and",
+    "or",
+    "xor",
+    "shl",
+    "shr",
+    "neg",
+    "not",
+    "eq",
+    "ne",
+    "lt",
+    "le",
+    "gt",
+    "ge",
+    "cmp3",
+    "rotl",
+    "rotr",
+    "ctpop",
+    "ctlz",
+    "cttz",
+    "bswap",
+    "bitreverse",
 ];
 
 /// The model's op name: the mnemonic without `br`, the width and `.imm`.
@@ -239,13 +263,15 @@ fn integer_ops_all_widths() {
                 put(fp, B, b);
                 put(fp, D, 0);
                 put(fp, O, 0);
-                run(op, fp, |n| slot(match n {
-                    "d" => D,
-                    "o" => O,
-                    "a" => A,
-                    "b" => B,
-                    _ => unreachable!(),
-                }));
+                run(op, fp, |n| {
+                    slot(match n {
+                        "d" => D,
+                        "o" => O,
+                        "a" => A,
+                        "b" => B,
+                        _ => unreachable!(),
+                    })
+                });
                 assert_eq!(get(fp, D), v & mask(bytes * 8), "{mn} {a:#x} {b:#x}");
                 if let Some(o) = o {
                     assert_eq!(get(fp, O), o as u128, "{mn} overflow flag {a:#x} {b:#x}");
@@ -367,19 +393,20 @@ fn dab(op: Opcode, fp: *mut u8, a: u128, b: u128) -> u128 {
     put(fp, A, a);
     put(fp, B, b);
     put(fp, D, 0);
-    run(op, fp, |n| slot(match n {
-        "d" => D,
-        "a" => A,
-        "b" => B,
-        _ => unreachable!(),
-    }));
+    run(op, fp, |n| {
+        slot(match n {
+            "d" => D,
+            "a" => A,
+            "b" => B,
+            _ => unreachable!(),
+        })
+    });
     get(fp, D)
 }
 
 #[test]
 fn float_ops() {
-    const FOPS: &[&str] =
-        &["fadd", "fsub", "fmul", "fdiv", "frem", "fneg", "fabs", "feq", "fne", "flt", "fle", "fmin", "fmax", "copysign"];
+    const FOPS: &[&str] = &["fadd", "fsub", "fmul", "fdiv", "frem", "fneg", "fabs", "feq", "fne", "flt", "fle", "fmin", "fmax", "copysign"];
     let ops = ops_where(|op| FOPS.contains(&op.mnemonic().split('.').next().unwrap()));
     assert_eq!(ops.len(), FOPS.len() * 2);
     let mut f = Frame::new();
@@ -515,11 +542,13 @@ fn conversions() {
             let want = dst_bits(&d, src_val(&s, x));
             put(fp, A, x);
             put(fp, D, 0);
-            run(op, fp, |n| slot(match n {
-                "d" => D,
-                "s" => A,
-                _ => unreachable!(),
-            }));
+            run(op, fp, |n| {
+                slot(match n {
+                    "d" => D,
+                    "s" => A,
+                    _ => unreachable!(),
+                })
+            });
             assert_eq!(get(fp, D), want, "{} {x:#x}", op.mnemonic());
         }
     }
@@ -547,15 +576,17 @@ fn atomics() {
             put(fp, NEW, 0x77 & mask);
             put(fp, D, 0);
             put(fp, O, 0);
-            run(op, fp, |n| slot(match n {
-                "p" => P,
-                "s" => B,
-                "old" => OLD,
-                "new" => NEW,
-                "d" => D,
-                "o" => O,
-                n => panic!("{n}"),
-            }));
+            run(op, fp, |n| {
+                slot(match n {
+                    "p" => P,
+                    "s" => B,
+                    "old" => OLD,
+                    "new" => NEW,
+                    "d" => D,
+                    "o" => O,
+                    n => panic!("{n}"),
+                })
+            });
             let (d, o) = (get(fp, D), get(fp, O));
             let mem = (cell[0] as u128 | (cell[1] as u128) << 64) & mask;
             let (want_d, want_mem, want_o) = match p[1] {
@@ -579,8 +610,20 @@ fn atomics() {
                         "or" => init | v,
                         "xor" => init ^ v,
                         "nand" => !(init & v),
-                        "min" => if sx(init) <= sx(v) { init } else { v },
-                        "max" => if sx(init) >= sx(v) { init } else { v },
+                        "min" => {
+                            if sx(init) <= sx(v) {
+                                init
+                            } else {
+                                v
+                            }
+                        }
+                        "max" => {
+                            if sx(init) >= sx(v) {
+                                init
+                            } else {
+                                v
+                            }
+                        }
                         "umin" => init.min(v),
                         "umax" => init.max(v),
                         _ => panic!("{rmw}"),

@@ -91,11 +91,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                         let v = self.frame.temp(4, 4);
                         let mut ops = vec![v, t];
                         ops.extend(imm_words(tw, niche_start));
-                        ops.extend([
-                            niche_variants.start.as_u32(),
-                            niche_variants.last.as_u32(),
-                            untagged_variant.as_u32(),
-                        ]);
+                        ops.extend([niche_variants.start.as_u32(), niche_variants.last.as_u32(), untagged_variant.as_u32()]);
                         self.op(opw("DiscrNiche", tw), &ops);
                         self.with_place_slot(dst, |fx, d| {
                             fx.int_cast(d, v, Width::W32, dw, false);

@@ -267,10 +267,7 @@ fn ratio_chart(r: &Report, m: &Metric, data: &[Vec<Option<Summary>>]) -> String 
     let group_h = nb * row_h + band;
     let height = 30.0 + data.len() as f64 * group_h;
     let x = |v: f64| left + (v.ln() - lo.ln()) / (hi.ln() - lo.ln()) * (width - left - 20.0);
-    let mut s = format!(
-        r#"<svg viewBox="0 0 {width} {height}" width="100%" role="img" aria-label="{} relative to LLVM">"#,
-        esc(m.title)
-    );
+    let mut s = format!(r#"<svg viewBox="0 0 {width} {height}" width="100%" role="img" aria-label="{} relative to LLVM">"#, esc(m.title));
     for t in &ticks {
         let tx = x(*t);
         let class = if *t == 1.0 { "ref" } else { "grid" };
@@ -291,11 +288,8 @@ fn ratio_chart(r: &Report, m: &Metric, data: &[Vec<Option<Summary>>]) -> String 
             let backend = r.backends[bi];
             match (cell, base) {
                 (Some(v), Some(b)) => {
-                    let (x0, x1, xm) = (
-                        x(((v.median - v.stddev).max(v.median * 0.5)) / b.median),
-                        x((v.median + v.stddev) / b.median),
-                        x(v.median / b.median),
-                    );
+                    let (x0, x1, xm) =
+                        (x(((v.median - v.stddev).max(v.median * 0.5)) / b.median), x((v.median + v.stddev) / b.median), x(v.median / b.median));
                     let tip = esc(&tip_text(name, backend, v, m.unit, Some(b)));
                     let _ = write!(
                         s,
@@ -314,12 +308,7 @@ fn ratio_chart(r: &Report, m: &Metric, data: &[Vec<Option<Summary>>]) -> String 
                 }
                 _ => {
                     let what = if cell.is_some() { "no LLVM baseline" } else { "failed / no data" };
-                    let _ = write!(
-                        s,
-                        r#"<text class="axis" x="{left}" y="{:.1}" fill="var(--bad)">{} {what}</text>"#,
-                        cy + 4.0,
-                        backend.name()
-                    );
+                    let _ = write!(s, r#"<text class="axis" x="{left}" y="{:.1}" fill="var(--bad)">{} {what}</text>"#, cy + 4.0, backend.name());
                 }
             }
         }
@@ -416,7 +405,13 @@ fn metric_table(r: &Report, m: &Metric, data: &[Vec<Option<Summary>>]) -> String
                         .filter(|l| l.median > 0.0 && Some(bi) != llvm)
                         .map(|l| format!(" ({:.2}×)", v.median / l.median))
                         .unwrap_or_default();
-                    let class = if state.is_some() { " class=\"bad\"" } else if v.noisy() { " class=\"noisy\"" } else { "" };
+                    let class = if state.is_some() {
+                        " class=\"bad\""
+                    } else if v.noisy() {
+                        " class=\"noisy\""
+                    } else {
+                        ""
+                    };
                     let detail = if m.unit == Measure::Bytes {
                         String::new()
                     } else {
@@ -443,13 +438,7 @@ fn metric_table(r: &Report, m: &Metric, data: &[Vec<Option<Summary>>]) -> String
 }
 
 fn coverage_row(name: &str, c: &Coverage) -> String {
-    format!(
-        "<tr><td>{name}</td><td>{}</td><td>{}</td><td>{:.1}%</td><td>{}</td></tr>",
-        c.vm,
-        c.native,
-        c.vm_percent(),
-        c.islands
-    )
+    format!("<tr><td>{name}</td><td>{}</td><td>{}</td><td>{:.1}%</td><td>{}</td></tr>", c.vm, c.native, c.vm_percent(), c.islands)
 }
 
 /// Coverage from ryo's warm-up builds (`RYO_STATS=1`): the crate's library, its dependencies,
@@ -503,7 +492,9 @@ fn coverage_section(r: &Report) -> String {
 
 /// Per-unit medians (rustc wall and backend) of every crate's build and test build.
 fn unit_details(r: &Report) -> String {
-    let mut s = String::from("<h2 id=\"units\">Per-unit compile times</h2><p class=\"muted\">Median rustc wall time / backend (codegen section) per rustc invocation; ★ marks units of the benchmarked package.</p>");
+    let mut s = String::from(
+        "<h2 id=\"units\">Per-unit compile times</h2><p class=\"muted\">Median rustc wall time / backend (codegen section) per rustc invocation; ★ marks units of the benchmarked package.</p>",
+    );
     for c in &r.crates {
         let mut keys: Vec<(String, String, bool, usize)> = Vec::new();
         for cell in &c.cells {
@@ -629,8 +620,7 @@ pub fn text_summary(r: &Report) -> String {
     let mut out = String::new();
     for m in METRICS.iter().filter(|m| m.summary) {
         let data = metric_data(r, m);
-        let mut lines: Vec<Vec<String>> =
-            vec![std::iter::once("crate".to_owned()).chain(r.backends.iter().map(|b| b.name().to_owned())).collect()];
+        let mut lines: Vec<Vec<String>> = vec![std::iter::once("crate".to_owned()).chain(r.backends.iter().map(|b| b.name().to_owned())).collect()];
         for (ci, row) in data.iter().enumerate() {
             let mut line = vec![r.crates[ci].krate.name.to_owned()];
             for (bi, cell) in row.iter().enumerate() {
@@ -654,14 +644,10 @@ pub fn text_summary(r: &Report) -> String {
         }
     }
     if let Some(ryo) = r.backends.iter().position(|&b| b == Backend::Ryo) {
-        let all: Vec<&Unit> = r
-            .crates
-            .iter()
-            .flat_map(|c| c.cells[ryo].warmup.iter().take(2))
-            .flat_map(|s| &s.units)
-            .collect();
+        let all: Vec<&Unit> = r.crates.iter().flat_map(|c| c.cells[ryo].warmup.iter().take(2)).flat_map(|s| &s.units).collect();
         let cov = coverage(all.iter().copied());
-        let _ = writeln!(out, "\nryo coverage: {} VM, {} native functions ({:.1}% VM), {} islands", cov.vm, cov.native, cov.vm_percent(), cov.islands);
+        let _ =
+            writeln!(out, "\nryo coverage: {} VM, {} native functions ({:.1}% VM), {} islands", cov.vm, cov.native, cov.vm_percent(), cov.islands);
     }
     for c in &r.crates {
         for (bi, cell) in c.cells.iter().enumerate() {

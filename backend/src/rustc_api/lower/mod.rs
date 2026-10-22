@@ -54,9 +54,9 @@ use ryo_bytecode::asm::{self, Asm, InsnId, Label, Opnd, Unwind};
 use ryo_bytecode::full::{Abs, Const, ElemKind, Func, Opcode, OperandKind, Site, Sym};
 
 pub use self::constant::{is_import, is_tls_shim, vtable_alloc};
-pub use self::sig::{AbiSig, abi_sig};
 use self::emit::{Width, opw};
 use self::frame::{Frame, OUT_END};
+pub use self::sig::{AbiSig, abi_sig};
 
 /// A lowered function: its machine code, whose `Func`, `Sym`, `Site`, `Const` and `Data`
 /// references are indices into `relocs` until the merge pass resolves them.
@@ -117,11 +117,7 @@ pub struct LowerCx<'a, 'tcx> {
 }
 
 /// Lowers `instance` to bytecode, or says why it must stay native.
-pub fn lower<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    cx: &LowerCx<'_, 'tcx>,
-    instance: Instance<'tcx>,
-) -> Result<LoweredFn<'tcx>, NeedsNative> {
+pub fn lower<'tcx>(tcx: TyCtxt<'tcx>, cx: &LowerCx<'_, 'tcx>, instance: Instance<'tcx>) -> Result<LoweredFn<'tcx>, NeedsNative> {
     let sig = vm_fn_sig(tcx, instance)?;
     let body = tcx.instance_mir(instance.def);
     let mut fx = FnCx::new(tcx, cx, instance, body, &sig)?;
@@ -140,8 +136,7 @@ pub fn vm_fn_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> Result<Ab
             // always has for constructors, while `is_mir_available` asks for `optimized_mir`,
             // which it never has for them (`should_encode_mir`,
             // `rustc_metadata/src/rmeta/encoder.rs:1108`).
-            let available = matches!(tcx.def_kind(def_id), rustc_hir::def::DefKind::Ctor(..))
-                || tcx.is_mir_available(def_id);
+            let available = matches!(tcx.def_kind(def_id), rustc_hir::def::DefKind::Ctor(..)) || tcx.is_mir_available(def_id);
             if !available {
                 return native("no MIR");
             }
@@ -341,8 +336,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// Finishes the machine code, now that the frame size is known.
     fn finish(mut self) -> Result<LoweredFn<'tcx>, NeedsNative> {
         let frame_size = self.frame.frame_size(self.max_outgoing)?;
-        let code = std::mem::replace(&mut self.asm, Asm::new(self.cx.mode))
-            .finish(frame_size, |s| frame::frame_offset(s, frame_size) as u32);
+        let code = std::mem::replace(&mut self.asm, Asm::new(self.cx.mode)).finish(frame_size, |s| frame::frame_offset(s, frame_size) as u32);
         let ret = self.frame.locals[rustc_middle::mir::RETURN_PLACE];
         Ok(LoweredFn {
             code,
@@ -571,9 +565,5 @@ where
     if !v.has_type_flags(flags) {
         return v;
     }
-    instance.instantiate_mir_and_normalize_erasing_regions(
-        tcx,
-        TypingEnv::fully_monomorphized(),
-        ty::EarlyBinder::bind(tcx, v),
-    )
+    instance.instantiate_mir_and_normalize_erasing_regions(tcx, TypingEnv::fully_monomorphized(), ty::EarlyBinder::bind(tcx, v))
 }

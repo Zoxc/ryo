@@ -27,10 +27,10 @@ use ryo_bytecode::abi::HEADER_SIZE;
 use ryo_bytecode::asm::{ARG_ADDR, ArgReg, RET_SRET, RetPart, ret_kind, ret_parts};
 use ryo_bytecode::full::Opcode;
 
+use super::emit::opcode;
 use super::frame;
 use super::island::templates;
 use super::place::{Loc, PlaceVal};
-use super::emit::opcode;
 use super::sig::{AbiSig, ArgLoc, CallConv, abi_sig, fn_ptr_sig, tys_sig, virtual_sig};
 use super::{CodeReloc, FnCx, NeedsNative, native, no_trim};
 
@@ -84,8 +84,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         match *fty.kind() {
             ty::FnDef(def_id, fn_args) => {
                 let fn_args = fn_args.no_bound_vars().expect("monomorphic callee");
-                let callee =
-                    Instance::expect_resolve(tcx, TypingEnv::fully_monomorphized(), def_id, fn_args, source_info.span);
+                let callee = Instance::expect_resolve(tcx, TypingEnv::fully_monomorphized(), def_id, fn_args, source_info.span);
                 match callee.def {
                     InstanceKind::Intrinsic(_) => self.intrinsic_call(callee, fty, &srcs, cont, source_info),
                     InstanceKind::LlvmIntrinsic(_) => native("call of an LLVM intrinsic"),
@@ -235,9 +234,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         }
         // The niche comes from the outermost type (`Box`'s `NonNull`, a reference), the
         // offsets from the pointer itself.
-        let (BackendRepr::ScalarPair { a: data, .. }, BackendRepr::ScalarPair { b_offset, .. }) =
-            (layout.backend_repr, l.backend_repr)
-        else {
+        let (BackendRepr::ScalarPair { a: data, .. }, BackendRepr::ScalarPair { b_offset, .. }) = (layout.backend_repr, l.backend_repr) else {
             return native("virtual call receiver isn't a wide pointer");
         };
         let nonnull = !data.valid_range(&cx).contains(0);
@@ -248,13 +245,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// Emits the call (arguments already written, `homes` their slots) and continues as
     /// `cont` says. The result comes back as the signature's return kind says, into `d`; for
     /// sret, the call passes `d`'s address.
-    fn emit_call(
-        &mut self,
-        target: Target<'tcx>,
-        sig: &AbiSig<'tcx>,
-        homes: &[u32],
-        cont: CallCont<'tcx>,
-    ) -> Result<(), NeedsNative> {
+    fn emit_call(&mut self, target: Target<'tcx>, sig: &AbiSig<'tcx>, homes: &[u32], cont: CallCont<'tcx>) -> Result<(), NeedsNative> {
         let tcx = self.tcx;
         let (d, after) = self.call_dest(&cont, sig)?;
         let block = Self::out(0);
@@ -397,14 +388,11 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let (target, sig, srcs) = match *fty.kind() {
             ty::FnDef(def_id, fn_args) => {
                 let fn_args = fn_args.no_bound_vars().expect("monomorphic callee");
-                let callee =
-                    Instance::expect_resolve(tcx, TypingEnv::fully_monomorphized(), def_id, fn_args, source_info.span);
+                let callee = Instance::expect_resolve(tcx, TypingEnv::fully_monomorphized(), def_id, fn_args, source_info.span);
                 match callee.def {
                     InstanceKind::Intrinsic(_) => return native("tail call of an intrinsic"),
                     InstanceKind::LlvmIntrinsic(_) => return native("call of an LLVM intrinsic"),
-                    InstanceKind::Item(_) | InstanceKind::Virtual(..) | InstanceKind::Shim(_) => {
-                        self.direct_target(fty, callee, &srcs, true)?
-                    }
+                    InstanceKind::Item(_) | InstanceKind::Virtual(..) | InstanceKind::Shim(_) => self.direct_target(fty, callee, &srcs, true)?,
                 }
             }
             ty::FnPtr(..) => {
@@ -494,9 +482,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         if !spread && args.len() != n {
             return native("argument count mismatch");
         }
-        let indirect = |i: usize| {
-            sig.plan.as_ref().is_some_and(|p| matches!(p.locs.get(i).map(|l| &l[..]), Some([ArgLoc::PtrReg(_) | ArgLoc::PtrStack(_)])))
-        };
+        let indirect =
+            |i: usize| sig.plan.as_ref().is_some_and(|p| matches!(p.locs.get(i).map(|l| &l[..]), Some([ArgLoc::PtrReg(_) | ArgLoc::PtrStack(_)])));
         // The slot of input `i` whose value is at `s`.
         let home = |fx: &mut Self, i: usize, s: u32| -> u32 {
             let f = sig.fields[i];
@@ -565,9 +552,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         }
         let tcx = self.tcx;
         let own = self.caller_location.map(CallerLoc::Incoming);
-        let loc = self.body.caller_location_span(source_info, own, tcx, |span| {
-            CallerLoc::Const(tcx.span_as_caller_location(span))
-        });
+        let loc = self.body.caller_location_span(source_info, own, tcx, |span| CallerLoc::Const(tcx.span_as_caller_location(span)));
         match loc {
             CallerLoc::Incoming(s) => self.mov(d, s, 8),
             CallerLoc::Const(c) => {
@@ -622,12 +607,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
 
     /// `TerminatorKind::Drop`: nothing without drop glue, a VM `call` of the glue if it is a
     /// VM function, else the `drop_in_place::<T>` island.
-    pub fn drop_terminator(
-        &mut self,
-        place: Place<'tcx>,
-        target: BasicBlock,
-        unwind: UnwindAction,
-    ) -> Result<(), NeedsNative> {
+    pub fn drop_terminator(&mut self, place: Place<'tcx>, target: BasicBlock, unwind: UnwindAction) -> Result<(), NeedsNative> {
         let tcx = self.tcx;
         let ty = self.mono(place.ty(self.body, tcx).ty);
         let glue = Instance::resolve_drop_glue(tcx, ty);
@@ -647,8 +627,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         if self.cx.vm.contains(&glue) {
             // The glue of an unsized type takes the wide pointer.
             let sig = abi_sig(tcx, glue)?;
-            let homes =
-                self.write_args(&sig, &[ArgSrc::Slot(ptr)], self.body.source_info(rustc_middle::mir::Location::START).clone(), false)?;
+            let homes = self.write_args(&sig, &[ArgSrc::Slot(ptr)], self.body.source_info(rustc_middle::mir::Location::START).clone(), false)?;
             let a = self.pass_args(&sig, &homes, None, false)?;
             let f = self.reloc(CodeReloc::Call { callee: glue });
             let at = self.op(Opcode::Call, &[&[0, f, 0][..], &a].concat());

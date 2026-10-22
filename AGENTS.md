@@ -11,3 +11,8 @@
   commit before with `scripts/compare-branches.py --worktree <base> --build head=. --metric
   cachegrind` (instruction counts: deterministic, so small differences are real), and report
   those counts alongside CPU-time numbers.
+
+# Project rules
+
+- Formatting. Run `cargo fmt` in each workspace you changed (`backend`, `build`, `vm`) before
+  committing; `rustfmt.toml` at the root sets the style.

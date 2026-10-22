@@ -118,9 +118,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 PointerCoercion::ReifyFnPointer(_) => {
                     let ty::FnDef(def_id, args) = *src.ty.kind() else { return native("reify of a non-FnDef") };
                     let args = args.no_bound_vars().expect("monomorphic fn item");
-                    let instance =
-                        Instance::resolve_for_fn_ptr(self.tcx, TypingEnv::fully_monomorphized(), def_id, args)
-                            .ok_or_else(|| NeedsNative("unresolvable fn pointer".into()))?;
+                    let instance = Instance::resolve_for_fn_ptr(self.tcx, TypingEnv::fully_monomorphized(), def_id, args)
+                        .ok_or_else(|| NeedsNative("unresolvable fn pointer".into()))?;
                     self.fn_addr_into(dst, instance)
                 }
                 PointerCoercion::ClosureFnPointer(_) => {
@@ -164,13 +163,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         self.coerce_unsized_into(dst.loc, dst.layout, src_loc, src)
     }
 
-    fn coerce_unsized_into(
-        &mut self,
-        dst: Loc,
-        dl: TyAndLayout<'tcx>,
-        src: Loc,
-        sl: TyAndLayout<'tcx>,
-    ) -> Result<(), NeedsNative> {
+    fn coerce_unsized_into(&mut self, dst: Loc, dl: TyAndLayout<'tcx>, src: Loc, sl: TyAndLayout<'tcx>) -> Result<(), NeedsNative> {
         match (sl.ty.kind(), dl.ty.kind()) {
             (ty::Pat(s, _), ty::Pat(d, _)) => {
                 let (sl, dl) = (self.layout_of(*s)?, self.layout_of(*d)?);

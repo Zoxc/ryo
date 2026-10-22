@@ -35,10 +35,7 @@ pub unsafe fn slot<T>(fp: *mut u8, ops: *const u32, i: usize) -> *mut T {
 /// # Safety
 /// The operands must hold an initialized `Args` and room for an `R`.
 #[rustc_diagnostic_item = "ryo_island_call"]
-pub unsafe fn call<F: FnOnce<Args, Output = R>, Args: Tuple, R>(
-    fp: *mut u8,
-    ops: *const u32,
-) -> u32 {
+pub unsafe fn call<F: FnOnce<Args, Output = R>, Args: Tuple, R>(fp: *mut u8, ops: *const u32) -> u32 {
     const { assert!(size_of::<F>() == 0) };
     // SAFETY: `F` is a ZST and inhabited (a `FnDef` or a capture-less closure), so its one
     // value needs no bytes and `zeroed` produces it.
