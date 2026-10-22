@@ -351,6 +351,28 @@ fn register_cache_drops_reloads() {
     assert!(code.windows(3).any(|w| w == [0x48, 0x03, 0xc2]), "{code:02x?}");
 }
 
+/// `mov.w128`, inline as two 64-bit moves, decodes apart from two `mov.w64` of its
+/// halves, in either order, and from itself on overlapping slots.
+#[test]
+fn mov_w128_is_not_two_mov_w64() {
+    let mov = |op: Opcode, d: i32, s: i32| vec![op as u32, d as u32, s as u32];
+    let (m64, m128) = (Opcode::MovW64, Opcode::MovW128);
+    let runs = [
+        vec![mov(m64, -32, -16), mov(m64, -24, -8)],
+        vec![mov(m64, -24, -8), mov(m64, -32, -16)],
+        vec![mov(m128, -32, -16), mov(m64, -16, -40)],
+        vec![mov(m128, -24, -32), mov(m128, -40, -24)],
+    ];
+    for mode in [MODES[0], MODES[1]] {
+        for insns in &runs {
+            let mut insns = insns.clone();
+            insns.push(vec![Opcode::Abort as u32]);
+            let f = Fn { insns, targets: Vec::new(), unwind: Vec::new() };
+            check(&f, 48, mode, "mov.w128");
+        }
+    }
+}
+
 /// A label at a dead-slot hint (no code), right before a padded loop head, is the loop
 /// head's position, after the padding.
 #[test]
@@ -522,5 +544,5 @@ fn templates_are_pinned_to_format_version() {
             eat(&lsda::write(&enc.call_sites));
         }
     }
-    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (16, 0xea372da345c565f6), "template hash {h:#x}");
+    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (17, 0xd71363eb35d66868), "template hash {h:#x}");
 }

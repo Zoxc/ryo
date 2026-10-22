@@ -98,6 +98,14 @@ const ARGS: [i32; 7] = [16, 24, 32, 40, 48, 56, 64];
 const PTR: i32 = 72;
 /// The result area, returned whole.
 const RES: i32 = -32;
+/// Slot `s` moved down so an operand of `op` there stays inside the result area, which ends
+/// at the frame's top: the slots are drawn for 8-byte operands.
+fn in_res(op: Opcode, s: u128) -> u128 {
+    let s = s as u32 as i32;
+    let top = if op == Opcode::MovW128 { RES + 16 } else { RES + 24 };
+    (if (RES..0).contains(&s) { s.min(top) } else { s }) as u32 as u128
+}
+
 /// The sret pointer's slot.
 const SRET: i32 = -48;
 
@@ -111,7 +119,7 @@ fn function(op: Opcode, rng: &mut Rng, args: &[u64; 8]) -> (Vec<u32>, Vec<u128>)
     let info = op.info();
     for o in info.operands {
         vals.push(match o.kind {
-            OperandKind::Slot if o.name == "d" => (RES + rng.below(24) as i32) as u32 as u128,
+            OperandKind::Slot if o.name == "d" => in_res(op, (RES + rng.below(24) as i32) as u32 as u128),
             OperandKind::Slot => ARGS[rng.below(7) as usize] as u32 as u128,
             OperandKind::Mem => (PTR as u32 as u128) | (rng.below(57) as u128) << 32,
             OperandKind::U8 | OperandKind::U16 | OperandKind::U32 | OperandKind::U64 | OperandKind::I64 => {
@@ -252,6 +260,11 @@ fn inline_runs_match_handlers() {
                     k => panic!("{}: operand {k:?}", op.mnemonic()),
                 });
             }
+            for (o, v) in op.info().operands.iter().zip(&mut vals) {
+                if o.kind == OperandKind::Slot {
+                    *v = in_res(op, *v);
+                }
+            }
             a.raw(op, &vals);
             run.push((op, vals));
         }
@@ -304,6 +317,7 @@ fn frame_effects(op: Opcode, vals: &[u128]) -> (Vec<i32>, Vec<i32>) {
         "w8" => 1,
         "w16" => 2,
         "w32" => 4,
+        "w128" => 16,
         _ => 8,
     };
     let bytes = |s: i32, n: i32| (s..s + n).collect::<Vec<_>>();

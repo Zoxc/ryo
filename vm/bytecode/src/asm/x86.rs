@@ -548,7 +548,11 @@ impl Item {
     /// Whether the item ends an inline sequence: it writes the result (to the frame or to
     /// memory). The other end is a conditional branch.
     pub fn ends_inline(&self) -> bool {
-        matches!(self, Item::St { .. } | Item::StImm { .. } | Item::Setcc { .. })
+        match self {
+            // `mov.w128`'s high half, before its last store.
+            Item::St { src: Reg::Rcx, m, .. } => m.base != Reg::Rbp,
+            _ => matches!(self, Item::St { .. } | Item::StImm { .. } | Item::Setcc { .. }),
+        }
     }
 
     /// Whether the item may be part of an inline sequence.

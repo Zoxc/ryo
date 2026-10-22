@@ -1,12 +1,13 @@
 //! The inline form of the common VM instructions (design/vm.md, "Inline instructions"):
 //! moves, immediates, address arithmetic, loads and stores, integer add/sub/logic/multiply,
-//! shifts by an immediate, compares and compare-branches, at widths up to 64 bits. They
+//! shifts by an immediate, compares and compare-branches, at widths up to 64 bits (and
+//! 128-bit moves, as two 64-bit halves). They
 //! are short native sequences on `rax` and `rcx` instead of handler calls; the register cache
 //! ([`Cache`]) renames `rax` as it emits them.
 //!
-//! Every sequence ends in its one write (to the frame or to memory), or in a conditional
-//! branch, and no other element of a sequence writes anything, so the decoder knows where a
-//! sequence ends. Each opcode has one sequence per operand pattern, and no two opcodes share
+//! Every sequence ends in its last write (to the frame or to memory), or in a conditional
+//! branch, and the only earlier write is `mov.w128`'s store of `rcx` to the frame, so the
+//! decoder knows where a sequence ends. Each opcode has one sequence per operand pattern, and no two opcodes share
 //! one: the decoder recovers the opcode and operands by matching against [`sequence`].
 
 use alloc::vec;
@@ -20,6 +21,8 @@ use crate::insn::{ALL_OPCODES, OperandKind, Opcode};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Class {
     Mov(W),
+    /// A 128-bit move: both halves loaded, then the high one stored from `rcx`.
+    Mov128,
     Imm(W),
     Addr,
     PtrAdd,
@@ -46,6 +49,7 @@ fn class(op: Opcode) -> Option<Class> {
     use Opcode::*;
     Some(match op {
         MovW8 => Mov(W::B), MovW16 => Mov(W::W), MovW32 => Mov(W::D), MovW64 => Mov(W::Q),
+        MovW128 => Class::Mov128,
         ImmW8 => Imm(W::B), ImmW16 => Imm(W::W), ImmW32 => Imm(W::D), ImmW64 => Imm(W::Q),
         LoadW8 => Load(W::B), LoadW16 => Load(W::W), LoadW32 => Load(W::D), LoadW64 => Load(W::Q),
         StoreW8 => Store(W::B), StoreW16 => Store(W::W), StoreW32 => Store(W::D), StoreW64 => Store(W::Q),
@@ -150,6 +154,15 @@ pub(super) fn sequence<T>(op: Opcode, ops: &[Opnd<T>]) -> Option<(Vec<Item>, Opt
     // Operands by position: `d` first where there is one.
     match c {
         Class::Mov(w) => v.extend([ld(w, slot(1)), st(w, slot(0))]),
+        Class::Mov128 => {
+            let hi = |m: M| M::frame(m.disp + 8);
+            v.extend([
+                ld(W::Q, slot(1)),
+                Item::Ld { w: W::Q, sx: false, dst: C, m: hi(slot(1)) },
+                Item::St { w: W::Q, src: C, m: hi(slot(0)) },
+                st(W::Q, slot(0)),
+            ]);
+        }
         Class::Imm(w) => {
             let x = imm(1);
             if w != W::Q || fits(x) {
@@ -285,6 +298,9 @@ fn classify(items: &[Item], br: bool) -> Option<Class> {
         ([StImm { w, .. }], _) => Class::Imm(*w),
         ([SetReg(..), St { .. }], _) => Class::Imm(W::Q),
         ([Ld { w, .. }, St { m, .. }], _) if frame(m) => Class::Mov(*w),
+        ([Ld { .. }, Ld { dst: Reg::Rcx, m: a, .. }, St { src: Reg::Rcx, m: b, .. }, St { m, .. }], _) if frame(a) && frame(b) && frame(m) => {
+            Class::Mov128
+        }
         ([LeaM { .. }, St { .. }], _) => Class::Addr,
         ([Ld { .. }, LeaM { .. }, St { .. }], _) => Class::PtrAdd,
         ([Ld { .. }, ImulImm { .. }, Alu { .. }, St { .. }], _) => Class::PtrIndex,

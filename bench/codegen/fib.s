@@ -61,12 +61,10 @@ fn core::fmt::rt::Argument::<'_>::new_display::<u32>
     call    ryo_h_AddrSym
     mov     rax,[rsp]
     mov     rdx,[rsp+10h]
-    mov     [rsp+18h],rdx
     mov     [rsp+20h],rax
-    lea     rdi,[rsp+50h]
-    mov     esi,0FFFFFFF0h
-    mov     edx,0FFFFFFC8h
-    call    ryo_h_MovW128
+    mov     rcx,[rsp+20h]
+    mov     [rsp+48h],rcx
+    mov     [rsp+40h],rdx
     lea     rdi,[rsp+50h]
     mov     esi,0FFFFFFD8h
     xor     edx,edx
@@ -89,12 +87,10 @@ fn core::fmt::rt::Argument::<'_>::new_display::<u64>
     call    ryo_h_AddrSym
     mov     rax,[rsp]
     mov     rdx,[rsp+10h]
-    mov     [rsp+18h],rdx
     mov     [rsp+20h],rax
-    lea     rdi,[rsp+50h]
-    mov     esi,0FFFFFFF0h
-    mov     edx,0FFFFFFC8h
-    call    ryo_h_MovW128
+    mov     rcx,[rsp+20h]
+    mov     [rsp+48h],rcx
+    mov     [rsp+40h],rdx
     lea     rdi,[rsp+50h]
     mov     esi,0FFFFFFD8h
     xor     edx,edx
@@ -211,14 +207,14 @@ fn main
     lea     rdi,[rsp+30h]
     mov     rsi,[rsp+10h]
     call    fn3
-    lea     rdi,[rsp+0B0h]
-    mov     esi,0FFFFFFA0h
-    mov     edx,0FFFFFF90h
-    call    ryo_h_MovW128
-    lea     rdi,[rsp+0B0h]
-    mov     esi,0FFFFFFB0h
-    mov     edx,0FFFFFF80h
-    call    ryo_h_MovW128
+    mov     rax,[rsp+40h]
+    mov     rcx,[rsp+48h]
+    mov     [rsp+58h],rcx
+    mov     [rsp+50h],rax
+    mov     rdx,[rsp+30h]
+    mov     rcx,[rsp+38h]
+    mov     [rsp+68h],rcx
+    mov     [rsp+60h],rdx
     lea     rdi,[rsp+0B0h]
     mov     esi,0FFFFFF78h
     lea     rdx,[k4]

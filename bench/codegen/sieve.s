@@ -147,10 +147,10 @@ L11:
     call    ryo_h_Unreachable
     ud2
 L12:
-    lea     rdi,[rsp+0B0h]
-    mov     esi,0FFFFFF68h
-    mov     edx,0FFFFFF88h
-    call    ryo_h_MovW128
+    mov     rax,[rsp+38h]
+    mov     rcx,[rsp+40h]
+    mov     [rsp+20h],rcx
+    mov     [rsp+18h],rax
     mov     rdi,[rsp+18h]
     mov     rsi,[rsp+20h]
     call    qword ptr [sym6]
@@ -158,42 +158,35 @@ L12:
     call    ryo_h_Unreachable
     ud2
 L13:
-    lea     rdi,[rsp+0B0h]
-    mov     esi,0FFFFFF98h
-    mov     edx,0FFFFFF88h
-    call    ryo_h_MovW128
-    lea     rdi,[rsp+0B0h]
-    mov     esi,0FFFFFFA8h
-    mov     edx,0FFFFFF98h
-    call    ryo_h_MovW128
-    lea     rdi,[rsp+0B0h]
-    mov     esi,0FFFFFFE8h
-    mov     edx,0FFFFFFA8h
-    call    ryo_h_MovW128
-    mov     rax,[rsp+88h]
-    mov     [rsp+0A8h],rax
+    mov     rax,[rsp+38h]
+    mov     rcx,[rsp+40h]
+    mov     [rsp+50h],rcx
+    mov     rcx,[rsp+50h]
+    mov     [rsp+60h],rcx
+    mov     rcx,[rsp+60h]
+    mov     [rsp+0A0h],rcx
+    mov     [rsp+98h],rax
+    mov     rdx,[rsp+88h]
+    mov     [rsp+0A8h],rdx
     jmp     L2
 L14:
-    lea     rdi,[rsp+0B0h]
-    mov     esi,0FFFFFF98h
-    mov     edx,0FFFFFF88h
-    call    ryo_h_MovW128
-    lea     rdi,[rsp+0B0h]
-    mov     esi,0FFFFFFA8h
-    mov     edx,0FFFFFF98h
-    call    ryo_h_MovW128
+    mov     rax,[rsp+38h]
+    mov     rcx,[rsp+40h]
+    mov     [rsp+50h],rcx
+    mov     rcx,[rsp+50h]
+    mov     [rsp+60h],rcx
+    mov     [rsp+58h],rax
     mov     qword ptr [rsp+68h],0
-    lea     rdx,[rsp+58h]
-    mov     [rsp+50h],rdx
+    lea     rsi,[rsp+58h]
+    mov     [rsp+50h],rsi
     mov     byte ptr [rsp+86h],0
-    movzx   edi,byte ptr [rsp+97h]
-    mov     [rsp+4Fh],dil
+    movzx   r8d,byte ptr [rsp+97h]
+    mov     [rsp+4Fh],r8b
     mov     rdi,[rsp+50h]
     mov     rsi,[rsp+88h]
     movzx   edx,byte ptr [rsp+4Fh]
     call    fn7
     jmp     L1
-    nop     [rax+rax]
     nop     [rax+rax]
 L15:
     call    qword ptr [sym8]
@@ -267,11 +260,10 @@ fn <std::iter::Filter<std::slice::Iter<'_, bool>, {closure@bench/sieve.rs:24:37:
     lea     rdi,[rsp+18h]
     mov     rsi,[rsp+10h]
     call    fn0
-    lea     rdi,[rsp+70h]
-    mov     esi,0FFFFFFC0h
-    mov     edx,0FFFFFFB0h
-    call    ryo_h_MovW128
-    mov     rax,[rsp+30h]
+    mov     rax,[rsp+20h]
+    mov     rcx,[rsp+28h]
+    mov     [rsp+38h],rcx
+    mov     [rsp+30h],rax
     mov     [rsp+10h],rax
     lea     rdi,[rsp+70h]
     mov     esi,0FFFFFFA0h
@@ -282,20 +274,16 @@ fn <std::iter::Filter<std::slice::Iter<'_, bool>, {closure@bench/sieve.rs:24:37:
     movsxd  rax,[rcx+rax*4]
     add     rax,rcx
     jmp     rax
-    int3
-    int3
-    int3
 L0:
     .long   L9
     .long   L10
     .long   L8
-    nop     [rax+rax]
     nop     [rax]
 L1:
-    lea     rdi,[rsp+70h]
-    mov     esi,0FFFFFFB0h
-    mov     edx,0FFFFFFC0h
-    call    ryo_h_MovW128
+    mov     rax,[rsp+30h]
+    mov     rcx,[rsp+38h]
+    mov     [rsp+28h],rcx
+    mov     [rsp+20h],rax
     mov     qword ptr [rsp+8],0
     mov     rdi,[rsp+20h]
     mov     rsi,[rsp+28h]
@@ -332,10 +320,10 @@ L6:
     nop     [rax]
 L7:
     mov     byte ptr [rsp+4Eh],0
-    lea     rdi,[rsp+70h]
-    mov     esi,0FFFFFFB0h
-    mov     edx,0FFFFFFE8h
-    call    ryo_h_MovW128
+    mov     rdx,[rsp+58h]
+    mov     rcx,[rsp+60h]
+    mov     [rsp+28h],rcx
+    mov     [rsp+20h],rdx
     mov     byte ptr [rsp+4Fh],0
     mov     rdi,[rsp+20h]
     mov     rsi,[rsp+28h]
@@ -760,10 +748,10 @@ fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::filter::<{closure@bench/
     sub     rsp,28h
     mov     [rsp],rdi
     mov     [rsp+8],rsi
-    lea     rdi,[rsp+20h]
-    mov     esi,0FFFFFFF0h
-    mov     edx,0FFFFFFE0h
-    call    ryo_h_MovW128
+    mov     rax,[rsp]
+    mov     rcx,[rsp+8]
+    mov     [rsp+18h],rcx
+    mov     [rsp+10h],rax
     mov     rax,[rsp+10h]
     mov     rdx,[rsp+18h]
     add     rsp,28h
@@ -963,10 +951,10 @@ fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::map::<usize, {closure@<s
     sub     rsp,28h
     mov     [rsp],rdi
     mov     [rsp+8],rsi
-    lea     rdi,[rsp+20h]
-    mov     esi,0FFFFFFF0h
-    mov     edx,0FFFFFFE0h
-    call    ryo_h_MovW128
+    mov     rax,[rsp]
+    mov     rcx,[rsp+8]
+    mov     [rsp+18h],rcx
+    mov     [rsp+10h],rax
     mov     rax,[rsp+10h]
     mov     rdx,[rsp+18h]
     add     rsp,28h
@@ -1001,15 +989,14 @@ L0:
     xchg    ax,ax
 L1:
     mov     rax,[rsp+58h]
-    mov     [rsp+48h],rax
     mov     rdx,[rsp+58h]
     mov     [rsp+40h],rdx
     mov     qword ptr [rsp+38h],1
     mov     [rsp+68h],rax
-    lea     rdi,[rsp+80h]
-    mov     esi,0FFFFFFF0h
-    mov     edx,0FFFFFFB8h
-    call    ryo_h_MovW128
+    mov     rdi,[rsp+38h]
+    mov     rcx,[rsp+40h]
+    mov     [rsp+78h],rcx
+    mov     [rsp+70h],rdi
     lea     rdi,[rsp+80h]
     mov     esi,0FFFFFFD0h
     xor     edx,edx
@@ -1019,8 +1006,7 @@ L1:
     mov     rax,[rsp+50h]
     add     rsp,88h
     ret
-    nop     [rax+rax]
-    xchg    ax,ax
+    nop     [rax]
 L2:
     jmp     L1
 L3:
@@ -1361,10 +1347,10 @@ L1:
     call    ryo_h_Unreachable
     ud2
 L2:
-    lea     rdi,[rsp+90h]
-    mov     esi,0FFFFFF98h
-    mov     edx,0FFFFFFB0h
-    call    ryo_h_MovW128
+    mov     rax,[rsp+40h]
+    mov     rcx,[rsp+48h]
+    mov     [rsp+30h],rcx
+    mov     [rsp+28h],rax
     mov     rdi,[rsp+28h]
     mov     rsi,[rsp+30h]
     call    qword ptr [sym1]
@@ -1372,13 +1358,13 @@ L2:
     call    ryo_h_Unreachable
     ud2
 L3:
-    lea     rdi,[rsp+90h]
-    mov     esi,0FFFFFFF0h
-    mov     edx,0FFFFFFB0h
-    call    ryo_h_MovW128
-    mov     rax,[rsp+70h]
-    mov     [rsp+18h],rax
-    cmp     rax,0
+    mov     rax,[rsp+40h]
+    mov     rcx,[rsp+48h]
+    mov     [rsp+88h],rcx
+    mov     [rsp+80h],rax
+    mov     rdx,[rsp+70h]
+    mov     [rsp+18h],rdx
+    cmp     rdx,0
     je      L5
     jmp     L6
     nop     [rax+rax]
@@ -1427,12 +1413,10 @@ fn core::fmt::rt::Argument::<'_>::new_display::<usize>
     call    ryo_h_AddrSym
     mov     rax,[rsp]
     mov     rdx,[rsp+10h]
-    mov     [rsp+18h],rdx
     mov     [rsp+20h],rax
-    lea     rdi,[rsp+50h]
-    mov     esi,0FFFFFFF0h
-    mov     edx,0FFFFFFC8h
-    call    ryo_h_MovW128
+    mov     rcx,[rsp+20h]
+    mov     [rsp+48h],rcx
+    mov     [rsp+40h],rdx
     lea     rdi,[rsp+50h]
     mov     esi,0FFFFFFD8h
     xor     edx,edx
@@ -1643,18 +1627,18 @@ fn main
     lea     rdi,[rsp+50h]
     mov     rsi,[rsp+28h]
     call    fn13
-    lea     rdi,[rsp+1B0h]
-    mov     esi,0FFFFFED0h
-    mov     edx,0FFFFFEC0h
-    call    ryo_h_MovW128
-    lea     rdi,[rsp+1B0h]
-    mov     esi,0FFFFFEE0h
-    mov     edx,0FFFFFEB0h
-    call    ryo_h_MovW128
-    lea     rdi,[rsp+1B0h]
-    mov     esi,0FFFFFEF0h
-    mov     edx,0FFFFFEA0h
-    call    ryo_h_MovW128
+    mov     rax,[rsp+70h]
+    mov     rcx,[rsp+78h]
+    mov     [rsp+88h],rcx
+    mov     [rsp+80h],rax
+    mov     rdx,[rsp+60h]
+    mov     rcx,[rsp+68h]
+    mov     [rsp+98h],rcx
+    mov     [rsp+90h],rdx
+    mov     rsi,[rsp+50h]
+    mov     rcx,[rsp+58h]
+    mov     [rsp+0A8h],rcx
+    mov     [rsp+0A0h],rsi
     lea     rdi,[rsp+1B0h]
     mov     esi,0FFFFFE98h
     lea     rdx,[k14]
@@ -1675,7 +1659,6 @@ fn main
     call    fn17
     add     rsp,1B8h
     ret
-    nop     [rax+rax]
 L0:
     lea     rax,[rsp+190h]
     mov     [rsp+18h],rax
@@ -2430,24 +2413,17 @@ fn std::slice::Iter::<'_, bool>::new
     mov     rax,[rsp+58h]
     mov     [rsp+40h],rax
     mov     rdx,[rsp+50h]
-    mov     [rsp+18h],rdx
     mov     rsi,[rsp+58h]
     mov     [rsp+20h],rsi
-    lea     rdi,[rsp+70h]
-    mov     esi,0FFFFFFB8h
-    mov     edx,0FFFFFFA8h
-    call    ryo_h_MovW128
-    lea     rdi,[rsp+70h]
-    mov     esi,0FFFFFFA0h
-    mov     edx,0FFFFFFB8h
-    call    ryo_h_MovW128
-    mov     rax,[rsp+10h]
-    mov     [rsp+38h],rax
+    mov     rcx,[rsp+20h]
+    mov     [rsp+30h],rcx
+    mov     rcx,[rsp+30h]
+    mov     [rsp+18h],rcx
+    mov     [rsp+38h],rdx
     mov     byte ptr [rsp+0Fh],0
     test    byte ptr [rsp+0Fh],0FFh
     je      L0
-    mov     rdi,[rsp+40h]
-    mov     [rsp+48h],rdi
+    mov     [rsp+48h],rax
     jmp     L1
 L0:
     mov     rax,[rsp+38h]

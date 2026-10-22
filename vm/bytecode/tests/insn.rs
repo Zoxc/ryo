@@ -247,7 +247,7 @@ fn opcode_table_is_pinned_to_format_version() {
             eat(&format!("{:?}", o.kind));
         }
     }
-    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (16, 0x5ce68c517e36460b), "opcode table hash {h:#x}");
+    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (17, 0x5ce68c517e36460b), "opcode table hash {h:#x}");
 }
 
 /// Pins the image table layouts to the format version: any change to a table entry's size or
@@ -267,7 +267,7 @@ fn image_layouts_are_pinned_to_format_version() {
         ),
         (size_of::<CleanupEntry>(), size_of::<FixupEntry>(), size_of::<Span>()),
     );
-    assert_eq!(ryo_bytecode::FORMAT_VERSION, 16);
+    assert_eq!(ryo_bytecode::FORMAT_VERSION, 17);
     assert_eq!(layout, ((112, 24, 40, 48, 104), (20, 4, 8, 12, 16), (8, 16, 8)), "{layout:?}");
 }
 
