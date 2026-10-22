@@ -211,6 +211,62 @@ fn long_branches_and_loops() {
     }
 }
 
+/// The register cache: random runs of inline instructions on a few overlapping slots, with
+/// branches into them and some handler calls, so reloads are dropped and the cache is
+/// cleared at targets.
+#[test]
+fn register_cache_round_trips() {
+    let mut rng = Rng(7);
+    let inline: Vec<Opcode> = ALL_OPCODES.iter().copied().filter(|&op| asm::has_inline(op)).collect();
+    // Slots at 8-byte and 4-byte offsets, so writes overlap cached slots partly.
+    const SLOTS: [i32; 6] = [-8, -16, -24, -12, -32, 16];
+    for round in 0..400 {
+        let mode = MODES[round % MODES.len()];
+        let n = 4 + rng.below(40) as usize;
+        let mut f = Fn { insns: Vec::new(), targets: Vec::new(), unwind: Vec::new() };
+        for _ in 0..n {
+            let op = match rng.below(12) {
+                0 => Opcode::DivUW32,
+                _ => inline[rng.below(inline.len() as u64) as usize],
+            };
+            let mut w = insn(op, &mut rng, 0, &mut f, &mut |rng| rng.below(n as u64 + 1) as usize);
+            // Slot operands from the pool (a memory operand's pointer slot too).
+            let mut at = 1;
+            for o in op.info().operands {
+                if matches!(o.kind, OperandKind::Slot | OperandKind::Mem) {
+                    w[at] = SLOTS[rng.below(SLOTS.len() as u64) as usize] as u32;
+                }
+                at += match o.kind {
+                    OperandKind::Mem | OperandKind::U64 | OperandKind::I64 => 2,
+                    _ => 1,
+                };
+            }
+            f.insns.push(w);
+        }
+        f.insns.push(vec![Opcode::Abort as u32]);
+        check(&f, 32, mode, "register cache");
+    }
+}
+
+/// A reload of the value just stored is dropped, but not at a branch target.
+#[test]
+fn register_cache_drops_reloads() {
+    let m = MODES[0];
+    // mov.w64 $-16, $-8; mov.w64 $-24, $-16
+    let mov = |d: i32, s: i32| vec![Opcode::MovW64 as u32, d as u32, s as u32];
+    let reload = [0x48, 0x8b, 0x45, 0xf0]; // mov rax, [rbp - 16]
+    let has = |code: &[u8]| code.windows(4).any(|w| w == reload);
+    let f = Fn { insns: vec![mov(-16, -8), mov(-24, -16), vec![Opcode::Abort as u32]], targets: Vec::new(), unwind: Vec::new() };
+    assert!(!has(&check(&f, 32, m, "reload").code));
+    // The same with a branch to the second `mov`.
+    let f = Fn {
+        insns: vec![mov(-16, -8), mov(-24, -16), vec![Opcode::Jmp as u32, 0]],
+        targets: vec![(2, 1, 1)],
+        unwind: Vec::new(),
+    };
+    assert!(has(&check(&f, 32, m, "reload at a target").code));
+}
+
 /// The register packing of the opcodes with more operands than registers.
 #[test]
 fn packed_operands() {
@@ -359,5 +415,5 @@ fn templates_are_pinned_to_format_version() {
             eat(&lsda::write(&enc.call_sites));
         }
     }
-    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (9, 0x7d7935189c173d73), "template hash {h:#x}");
+    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (10, 0x7d7935189c173d73), "template hash {h:#x}");
 }

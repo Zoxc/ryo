@@ -6,6 +6,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use super::encode::{CallSite, Opnd, PROBE_FROM, Ref, RegVal, Reloc, case_size, push_words, word_len};
+use super::inline::Cache;
 use super::x86::{ARGS, BadItem, Cond, Cursor, Item, Reg, island_args};
 use super::{Mode, has_handler, layout};
 use crate::image::{CATCH, CONTINUE, CleanupEntry, op_may_unwind};
@@ -73,16 +74,15 @@ pub fn decode(code: &[u8], relocs: &[Reloc], rodata: &[u8], call_sites: &[CallSi
     }
     let argblk = (frame_size as i32).wrapping_neg() as u32;
 
-    let mut protos: Vec<Proto> = Vec::new();
-    let mut padded = Vec::new();
-    while !c.at_end() {
-        let pad = c.padding();
-        if pad != 0 && (!mode.align_loops || pad >= 16 || c.pos % 16 != 0) {
-            return Err(err(c.pos, "padding"));
-        }
-        padded.push(pad != 0);
-        protos.push(insn(&mut c, mode, rodata, argblk)?);
-    }
+    // Twice: the register cache is cleared at branch targets, which are only known once the
+    // whole function is decoded. The first pass takes every inline sequence that is right
+    // with the cache or without it; the second is exact, with the targets of the first.
+    let body = c.pos;
+    let (protos, _) = instructions(&mut c, mode, rodata, argblk, None)?;
+    let mut targets: Vec<u32> = protos.iter().flat_map(|p| p.ops.iter()).flat_map(op_targets).collect();
+    targets.sort_unstable();
+    c.pos = body;
+    let (protos, padded) = instructions(&mut c, mode, rodata, argblk, Some(&targets))?;
 
     // Instruction positions → indices and word offsets.
     let ipos: Vec<u32> = protos.iter().map(|p| p.pos).collect();
@@ -179,13 +179,53 @@ fn ops_array(ro: &[u8], at: u32) -> Option<Vec<u32>> {
     (0..n).map(|i| read_u32(ro, at + 4 * i)).collect()
 }
 
-/// Reads one instruction.
+/// The branch targets of an operand (byte positions).
+fn op_targets(o: &Opnd) -> Vec<u32> {
+    match o {
+        Opnd::Target(t) => vec![*t],
+        Opnd::Targets(ts) | Opnd::Cases(_, ts) => ts.clone(),
+        _ => Vec::new(),
+    }
+}
+
+/// The instructions from the cursor to the end, and whether each is padded. With `targets`
+/// (sorted), the register cache is cleared at them and every inline sequence must be exactly
+/// as the cache emits it; without, a sequence may also be one emitted with an empty cache.
+fn instructions(
+    c: &mut Cursor<'_>,
+    mode: Mode,
+    ro: &[u8],
+    argblk: u32,
+    targets: Option<&[u32]>,
+) -> Result<(Vec<Proto>, Vec<bool>), AsmError> {
+    let mut protos: Vec<Proto> = Vec::new();
+    let mut padded = Vec::new();
+    let mut cache = Cache::default();
+    while !c.at_end() {
+        let pad = c.padding();
+        if pad != 0 && (!mode.align_loops || pad >= 16 || c.pos % 16 != 0) {
+            return Err(AsmError { at: c.pos, what: "padding" });
+        }
+        padded.push(pad != 0);
+        if targets.is_some_and(|t| t.binary_search(&c.pos).is_ok()) {
+            cache = Cache::default();
+        }
+        let p = match inline_insn(c, &mut cache, targets.is_some()) {
+            Some(p) => p,
+            None => {
+                cache = Cache::default();
+                insn(c, mode, ro, argblk)?
+            }
+        };
+        protos.push(p);
+    }
+    Ok((protos, padded))
+}
+
+/// Reads one instruction that isn't inline.
 fn insn(c: &mut Cursor<'_>, mode: Mode, ro: &[u8], argblk: u32) -> Result<Proto, AsmError> {
     let pos = c.pos;
     let err = |at: u32, what: &'static str| AsmError { at, what };
-    if let Some(p) = inline_insn(c) {
-        return Ok(p);
-    }
     let mut setup = Vec::new();
     let head = loop {
         let at = c.pos;
@@ -325,8 +365,10 @@ fn insn(c: &mut Cursor<'_>, mode: Mode, ro: &[u8], argblk: u32) -> Result<Proto,
 }
 
 /// An inline sequence at the cursor, or `None` (the cursor unmoved) if there is none: native
-/// items up to the one that writes the result, or up to a conditional branch.
-fn inline_insn(c: &mut Cursor<'_>) -> Option<Proto> {
+/// items up to the one that writes the result, or up to a conditional branch. They must be
+/// the sequence as the register cache `cache` emits it (updated to after it), or, unless
+/// `exact`, the sequence as emitted with an empty cache.
+fn inline_insn(c: &mut Cursor<'_>, cache: &mut Cache, exact: bool) -> Option<Proto> {
     let pos = c.pos;
     let mut items = Vec::new();
     let mut branch = None;
@@ -348,13 +390,23 @@ fn inline_insn(c: &mut Cursor<'_>) -> Option<Proto> {
             }
         }
     }
-    match super::inline::decode(&items, branch) {
-        Some((op, ops)) => Some(Proto { op, ops, pos, sites: Vec::new() }),
-        None => {
-            c.pos = pos;
-            None
+    let mut cands = cache.unrewrite(&items);
+    cands.insert(0, items.clone());
+    for cand in cands {
+        let Some((op, ops)) = super::inline::decode(&cand, branch) else { continue };
+        let mut after = *cache;
+        if after.emit(&cand) == items {
+            *cache = after;
+        } else if !exact && cand == items {
+            *cache = Cache::default();
+            cache.emit(&cand);
+        } else {
+            continue;
         }
+        return Some(Proto { op, ops, pos, sites: Vec::new() });
     }
+    c.pos = pos;
+    None
 }
 
 /// The jump table sequence and its `n` entries.

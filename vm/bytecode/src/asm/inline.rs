@@ -349,3 +349,123 @@ pub(super) fn decode(items: &[Item], branch: Option<(Cond, u32)>) -> Option<(Opc
     }
     None
 }
+
+/// What `rax` is known to hold between inline sequences (design/vm.md, "Register cache"):
+/// the zero-extended value of a frame slot, by its displacement (raw or resolved: the rules
+/// only compare displacements) and width. Every store still happens, so a hit only drops a
+/// reload.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct Cache {
+    /// `rax` is the zero-extended value of the slot at this displacement and width.
+    slot: Option<(i32, W)>,
+    /// `rax` is the zero-extension of its low bytes of this width.
+    zx: Option<W>,
+}
+
+/// Whether the `n`-byte range at `a` overlaps the `m`-byte one at `b` (wrapping: raw slots
+/// are biased).
+fn overlaps(a: i32, n: u32, b: i32, m: u32) -> bool {
+    (b.wrapping_sub(a) as u32) < n || (a.wrapping_sub(b) as u32) < m
+}
+
+fn bytes(w: W) -> u32 {
+    w.bits() / 8
+}
+
+impl Cache {
+    /// The first item of a sequence as emitted with the cache: `None` to drop it (a reload of
+    /// `rax`), or the item with its frame operand read from `rax`.
+    pub(super) fn rewrite(&self, item: Item) -> Option<Item> {
+        let Some((s, sw)) = self.slot else { return Some(item) };
+        let hit = |m: M, w: W| m.base == Reg::Rbp && m.disp == s && w == sw;
+        match item {
+            Item::Ld { w, sx: false, dst: R, m } if hit(m, w) => None,
+            Item::AluImm { op: Alu::Cmp, w, rm: Rm::Mem(m), imm } if hit(m, w) => Some(Item::AluImm { op: Alu::Cmp, w, rm: Rm::Reg(R), imm }),
+            Item::ImulImm { w, reg: R, rm: Rm::Mem(m), imm } if hit(m, w) => Some(Item::ImulImm { w, reg: R, rm: Rm::Reg(R), imm }),
+            it => Some(it),
+        }
+    }
+
+    /// The sequences that [`Cache::rewrite`] may have turned into `items`: with the dropped
+    /// reload put back first, or with the first item's `rax` operand back in the frame. The
+    /// decoder checks each candidate by rewriting it again.
+    pub(super) fn unrewrite(&self, items: &[Item]) -> Vec<Vec<Item>> {
+        let Some((s, w)) = self.slot else { return Vec::new() };
+        let m = M::frame(s);
+        let mut out = Vec::with_capacity(2);
+        let mut ld = Vec::with_capacity(items.len() + 1);
+        ld.push(Item::Ld { w, sx: false, dst: R, m });
+        ld.extend_from_slice(items);
+        out.push(ld);
+        let first = match items.first() {
+            Some(&Item::AluImm { op: Alu::Cmp, w: iw, rm: Rm::Reg(R), imm }) if iw == w => {
+                Some(Item::AluImm { op: Alu::Cmp, w, rm: Rm::Mem(m), imm })
+            }
+            Some(&Item::ImulImm { w: iw, reg: R, rm: Rm::Reg(R), imm }) if iw == w => Some(Item::ImulImm { w, reg: R, rm: Rm::Mem(m), imm }),
+            _ => None,
+        };
+        if let Some(f) = first {
+            let mut v = items.to_vec();
+            v[0] = f;
+            out.push(v);
+        }
+        out
+    }
+
+    /// `items` (an inline sequence) as emitted with the cache, and the cache after it.
+    pub(super) fn emit(&mut self, items: &[Item]) -> Vec<Item> {
+        let mut v = Vec::with_capacity(items.len());
+        for (i, &it) in items.iter().enumerate() {
+            let it = if i == 0 { self.rewrite(it) } else { Some(it) };
+            if let Some(it) = it {
+                self.update(&it);
+                v.push(it);
+            }
+        }
+        v
+    }
+
+    /// Updates the cache for an emitted item of an inline sequence.
+    pub(super) fn update(&mut self, item: &Item) {
+        // Frame writes drop an overlapping slot; stores through a pointer drop it too (it may
+        // point into the frame).
+        let mut write = |m: M, n: u32| {
+            if m.base != Reg::Rbp {
+                self.slot = None;
+            } else if self.slot.is_some_and(|(s, w)| overlaps(s, bytes(w), m.disp, n)) {
+                self.slot = None;
+            }
+        };
+        match *item {
+            Item::St { w, m, .. } | Item::StImm { w, m, .. } => write(m, bytes(w)),
+            Item::Setcc { m, .. } => write(m, 1),
+            _ => {}
+        }
+        // `rax` writes. Ops at 32 or 64 bits leave it zero-extended from their width; at 8
+        // or 16 bits they keep the bits above.
+        let wide = |w: W| matches!(w, W::D | W::Q).then_some(w);
+        let zx = match *item {
+            Item::Ld { w, sx, dst: R, m } => {
+                self.slot = (!sx && m.base == Reg::Rbp).then_some((m.disp, w));
+                Some(if sx { W::D } else { w })
+            }
+            Item::Alu { op, w, reg: R, .. } if op != Alu::Cmp => wide(w),
+            Item::AluImm { op, w, rm: Rm::Reg(R), .. } if op != Alu::Cmp => wide(w),
+            Item::Imul { w, reg: R, .. } | Item::ImulImm { w, reg: R, .. } | Item::Shift { w, reg: R, .. } => wide(w),
+            Item::LeaM { dst: R, .. } | Item::SetReg(R, _) => Some(W::Q),
+            Item::St { w, src: R, m } => {
+                // `rax` is the zero-extension of the value stored when its known extension
+                // is no wider than the store.
+                if m.base == Reg::Rbp && self.zx.is_some_and(|z| bytes(z) <= bytes(w)) {
+                    self.slot = Some((m.disp, w));
+                }
+                return;
+            }
+            _ => return,
+        };
+        if !matches!(item, Item::Ld { .. }) {
+            self.slot = None;
+        }
+        self.zx = zx;
+    }
+}

@@ -285,6 +285,48 @@ enum Piece {
     LeaTable,
     /// The jump table: `int3`s up to a multiple of 4, then the entries.
     Table(Vec<Label>),
+    /// A native item the register cache dropped.
+    Gone,
+}
+
+/// Runs the register cache ([`super::inline::Cache`]) over the inline sequences: from the
+/// start of the code, and cleared at every branch target and by every other instruction.
+fn cache(pieces: &mut [Piece], labels: &[usize]) {
+    let mut target = vec![false; pieces.len() + 1];
+    for p in pieces.iter() {
+        match p {
+            Piece::Branch { to, .. } => target[labels[to.0 as usize]] = true,
+            Piece::Table(ls) => ls.iter().for_each(|l| target[labels[l.0 as usize]] = true),
+            _ => {}
+        }
+    }
+    let mut c = super::inline::Cache::default();
+    // The next native item starts a sequence.
+    let mut first = true;
+    for (k, p) in pieces.iter_mut().enumerate() {
+        if target[k] {
+            c = Default::default();
+        }
+        match p {
+            Piece::Native(item) => {
+                let start = first;
+                first = item.ends_inline();
+                match if start { c.rewrite(*item) } else { Some(*item) } {
+                    Some(it) => {
+                        c.update(&it);
+                        *item = it;
+                    }
+                    None => *p = Piece::Gone,
+                }
+            }
+            // The end of a compare-branch.
+            Piece::Branch { cond, .. } if *cond != Cond::Always && !first => first = true,
+            _ => {
+                c = Default::default();
+                first = true;
+            }
+        }
+    }
 }
 
 /// An element of a function's code at layout: targets are element indices.
@@ -634,7 +676,8 @@ impl Asm {
     /// Finishes the function in a frame of size `frame_size`: `fix` turns a raw slot into
     /// its frame offset. Every label a branch uses must be bound.
     pub fn finish(self, frame_size: u32, fix: impl Fn(u32) -> u32) -> Encoded {
-        let Asm { mode, pieces, labels, ro, unwind, targets } = self;
+        let Asm { mode, mut pieces, labels, ro, unwind, targets } = self;
+        cache(&mut pieces, &labels);
         // Code constants, in emission order (so deduplication matches the word encoder's).
         let mut rodata = Rodata::default();
         let argblk = (frame_size as i32).wrapping_neg() as u32;
@@ -707,6 +750,7 @@ impl Asm {
                     }
                 }
                 Piece::Marker(d) => Laid::Fixed { item: Item::Marker(fix(d) as i32), site: None },
+                Piece::Gone => continue,
                 Piece::Native(item) => Laid::Fixed { item: item.map_frame(|s| fix(s as u32) as i32), site: None },
                 Piece::SetReg { reg, v, slots } => {
                     let mut v = v;

@@ -441,5 +441,6 @@ There is no optimization pass over the code. The lowering itself folds
 constant offsets into memory operands (`[p + k]`), selects the `.imm` forms for constant
 operands, and fuses a compare with the branch that consumes it. Everything else happens in
 the assembler's fixed sequences ([vm.md](vm.md#machine-code)): shortest register loads,
-`rel8` branches where they reach, and 16-byte loop-head alignment. There is no copy
+`rel8` branches where they reach, 16-byte loop-head alignment, and dropping reloads of
+values still in `rax` ([register cache](vm.md#register-cache)). There is no copy
 propagation, which matters at `-O0`, where MIR has had little of it.

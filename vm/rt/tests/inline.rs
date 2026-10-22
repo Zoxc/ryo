@@ -189,3 +189,102 @@ fn inline_matches_handlers() {
         }
     }
 }
+
+/// Runs of inline instructions against their handlers, one after the other on one frame:
+/// the instructions read the results of the ones before, so the register cache keeps and
+/// drops values between them.
+#[test]
+fn inline_runs_match_handlers() {
+    let mut rng = Rng(0x5eed_cafe);
+    let buf: *mut [u8; 64] = Box::into_raw(Box::new([0u8; 64]));
+    // `addr`'s result is a frame address; branches would leave the run.
+    let ops: Vec<Opcode> =
+        ALL_OPCODES.iter().copied().filter(|&op| has_inline(op) && op != Opcode::Addr && op.info().operand_index("t").is_none()).collect();
+    let mut runs = Vec::new();
+    let mut w = ImageWriter::new(unique_scid());
+    let mut fs = Vec::new();
+    for _ in 0..2000 {
+        let mut a = Asm::new();
+        a.i(Insn::Zero { d: Slot(RES), len: 32 });
+        let mut run = Vec::new();
+        for _ in 0..2 + rng.below(12) {
+            let last: Option<&(Opcode, Vec<u128>)> = run.last();
+            // Mostly at the width of the instruction before, writing where it wrote or next
+            // to it, so cached values are reused and partly overwritten.
+            let width = |op: Opcode| op.mnemonic().rsplit('.').next().unwrap();
+            let op = loop {
+                let op = ops[rng.below(ops.len() as u64) as usize];
+                if last.is_none_or(|(l, _)| rng.below(4) == 0 || width(*l) == width(op)) {
+                    break op;
+                }
+            };
+            let last_d = last.and_then(|(op, v)| Some(v[op.info().operand_index("d")?] as u32 as i32));
+            let mut vals = Vec::new();
+            for o in op.info().operands {
+                vals.push(match o.kind {
+                    OperandKind::Slot if o.name == "d" => (match (last_d, rng.below(3)) {
+                        (Some(d), 0) => d,
+                        (Some(d), 1) => (d + [-4, -2, -1, 1, 2, 4][rng.below(6) as usize]).clamp(RES, RES + 24),
+                        _ => RES + rng.below(24) as i32,
+                    }) as u32 as u128,
+                    // Mostly results of earlier instructions, at the offsets they were written.
+                    // Mostly results of the instructions just before.
+                    OperandKind::Slot if rng.below(3) != 0 => {
+                        let back = run.iter().rev().take(3).filter_map(|(op, v): &(Opcode, Vec<u128>)| Some(v[op.info().operand_index("d")?]));
+                        let back: Vec<u128> = back.collect();
+                        match back.len() {
+                            0 => (RES + rng.below(24) as i32) as u32 as u128,
+                            n => back[rng.below(n as u64) as usize],
+                        }
+                    }
+                    OperandKind::Slot => ARGS[rng.below(7) as usize] as u32 as u128,
+                    OperandKind::Mem => (PTR as u32 as u128) | (rng.below(57) as u128) << 32,
+                    OperandKind::U8 => rng.below(8) as u128,
+                    OperandKind::U16 | OperandKind::U32 => rng.below(16) as u128,
+                    OperandKind::U64 | OperandKind::I64 => match rng.below(3) {
+                        0 => rng.below(16) as u128,
+                        _ => rng.value() as u128,
+                    },
+                    k => panic!("{}: operand {k:?}", op.mnemonic()),
+                });
+            }
+            a.raw(op, &vals);
+            run.push((op, vals));
+        }
+        a.i(Insn::Ret { s: Slot(RES), len: 32 });
+        let code = a.done();
+        fs.push(w.add_function(func(code.clone(), 32, 64, 32)));
+        runs.push((code, run));
+    }
+    let img = link(w.finish(ENC).expect("image"), &[]);
+    register(&[&img]);
+    for (i, (code, run)) in runs.iter().enumerate() {
+        let mut args: [u64; 8] = std::array::from_fn(|_| rng.value());
+        args[7] = buf as u64;
+        let fresh: [u8; 64] = std::array::from_fn(|j| (rng.next() >> (j % 8)) as u8);
+        unsafe { buf.write(fresh) };
+        let r_vm: [u8; 32] = ok(img.id(fs[i]), args);
+        let m_vm = unsafe { buf.read() };
+        unsafe { buf.write(fresh) };
+        let (r_h, m_h) = by_handlers(run, &args, buf);
+        let what = || Disasm(code).to_string();
+        assert_eq!(r_vm, r_h, "result:\n{}\nargs {args:x?}", what());
+        assert_eq!(m_vm, m_h, "memory:\n{}", what());
+    }
+}
+
+/// The result area and the buffer after the handlers of `run` on a frame with `args`.
+fn by_handlers(run: &[(Opcode, Vec<u128>)], args: &[u64; 8], buf: *mut [u8; 64]) -> ([u8; 32], [u8; 64]) {
+    #[repr(C, align(16))]
+    struct Frame([u8; 1024]);
+    let mut frame = Box::new(Frame([0; 1024]));
+    let fp = unsafe { frame.0.as_mut_ptr().add(512) };
+    for (i, a) in args.iter().enumerate() {
+        unsafe { fp.offset(ARGS[0] as isize + 8 * i as isize).cast::<u64>().write_unaligned(*a) };
+    }
+    for (op, vals) in run {
+        call_handler(*op, vals, fp);
+    }
+    let res = unsafe { fp.offset(RES as isize) };
+    (std::array::from_fn(|i| unsafe { *res.add(i) }), unsafe { buf.read() })
+}
