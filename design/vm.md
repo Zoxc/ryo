@@ -215,9 +215,20 @@ and handlers, calls, unwinding and the decoder's view of the frame don't change.
   slot, a store through a pointer (it may point into the frame), every instruction that isn't
   inline (handler calls clobber these registers), and every branch target, including jump
   table entries. So the cache never crosses a block boundary that is a target.
+- **Dead stores**: a store from a register is dropped when its slot is dead before
+  anything reads it from the frame: the lowering marks slots dead (`Asm::dead`), the
+  temporaries of each statement after it and a local after its only read (one definition
+  earlier in the same block, never borrowed, dropped or indexed, `frame::dead_after_read`),
+  or a later store covers it. Reads that hit the cache read the register, so only the frame
+  is stale, where nothing looks. A store stays if a flush point comes first: a branch target,
+  a branch, any instruction that isn't inline, a frame read of the slot, or a pointer access
+  when an `addr` in the function points into the dead range (pointers into the frame only
+  come from `addr`).
 - **Encoding**: `r8`–`r11` take REX prefixes, and so do byte operands in `sil` and `dil`.
   Pointer registers address without a displacement when it is 0.
-- **Decoding**: the decoder runs the same cache. Branch targets are only known once a
+- **Decoding**: the decoder runs the same cache. Dropped stores aren't in the code, so
+  `Encoded::dropped` lists them (the item and where it would have been), and the decoder
+  reads each where it would have been; it doesn't check that the store was dead. Branch targets are only known once a
   function is read, so it reads it twice: first only delimiting the inline sequences, to
   find the targets, then decoding them with the cache cleared at the targets. It tries each
   sequence on `rax`, the register renamed back, with register operands that may have been
@@ -225,7 +236,8 @@ and handlers, calls, unwinding and the decoder's view of the frame don't change.
   code is.
 - **Testing**: `vm/bytecode/tests/asm.rs` round-trips random runs of inline instructions on
   a few overlapping slots, with branches into them, and `vm/rt/tests/inline.rs` runs such
-  runs against their handlers.
+  runs against their handlers, also with dead-slot hints from a liveness pass, built with
+  `Asm` directly.
 
 ## Instruction set
 

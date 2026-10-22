@@ -69,6 +69,16 @@ pub struct Encoded {
     pub rodata: Vec<u8>,
     /// Sorted by position.
     pub call_sites: Vec<CallSite>,
+    /// The stores the encoder dropped as dead ([`Asm::dead`]), sorted by position: for the
+    /// decoder, which can't see them in the code.
+    pub dropped: Vec<DroppedStore>,
+}
+
+/// A store of an inline sequence the encoder dropped: the sequence ends at `at` without it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DroppedStore {
+    pub at: u32,
+    pub(super) item: Item,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -287,19 +297,107 @@ enum Piece {
     Table(Vec<Label>),
     /// A native item the register cache dropped.
     Gone,
+    /// The raw slots `lo .. lo + len` are dead: nothing reads them before writing them
+    /// ([`Asm::dead`]).
+    Dead { lo: i32, len: u32 },
+    /// A store dropped as dead.
+    Dropped(Item),
 }
 
-/// Runs the register cache ([`super::inline::Cache`]) over the inline sequences: from the
-/// start of the code, and cleared at every branch target and by every other instruction.
-fn cache(pieces: &mut [Piece], labels: &[usize]) {
+/// Whether each piece is a branch target (one more for the end).
+fn branch_targets(pieces: &[Piece], labels: &[usize]) -> Vec<bool> {
     let mut target = vec![false; pieces.len() + 1];
-    for p in pieces.iter() {
+    for p in pieces {
         match p {
             Piece::Branch { to, .. } => target[labels[to.0 as usize]] = true,
             Piece::Table(ls) => ls.iter().for_each(|l| target[labels[l.0 as usize]] = true),
             _ => {}
         }
     }
+    target
+}
+
+/// Drops the stores of inline sequences that nothing reads from the frame before the slot is
+/// dead ([`Piece::Dead`]) or overwritten. A stored value that is read again is read from the
+/// register the cache keeps it in, so dropping the store leaves only the frame stale, where
+/// nothing reads it. A store must stay if a flush point comes first: a branch target, a
+/// branch, any instruction that isn't inline (handlers read the frame), a frame read, or a
+/// pointer access if a pointer may reach the slot. Pointers into the frame only come from the
+/// function's `addr`s, so a dead range no `addr` points into is out of every pointer's reach.
+fn drop_dead_stores(pieces: &mut [Piece], target: &[bool]) {
+    struct Pending {
+        k: usize,
+        lo: i32,
+        len: u32,
+        /// A pointer was used since the store.
+        ptr: bool,
+    }
+    let within = |lo: i32, len: u32, a: i32, n: u32| (a.wrapping_sub(lo) as u32) <= len.saturating_sub(n) && n <= len;
+    let overlaps = |a: i32, n: u32, b: i32, m: u32| (b.wrapping_sub(a) as u32) < n || (a.wrapping_sub(b) as u32) < m;
+    let addrs: Vec<i32> = pieces
+        .iter()
+        .filter_map(|p| match p {
+            Piece::Native(Item::LeaM { m, .. }) if m.base == Reg::Rbp => Some(m.disp),
+            _ => None,
+        })
+        .collect();
+    let mut pending: Vec<Pending> = Vec::new();
+    let mut drop = Vec::new();
+    for k in 0..pieces.len() {
+        if target[k] {
+            pending.clear();
+        }
+        match pieces[k] {
+            Piece::Native(it) => {
+                if let Some(m) = it.mem() {
+                    if m.base != Reg::Rbp {
+                        pending.iter_mut().for_each(|p| p.ptr = true);
+                    }
+                }
+                // Frame reads (and addresses) keep the stores they overlap.
+                if let Some((m, n)) = it.frame_read() {
+                    pending.retain(|p| !overlaps(p.lo, p.len, m.disp, n));
+                }
+                if let Some((m, n)) = it.frame_write() {
+                    // Fully overwritten stores are dead, unless a pointer may have read them;
+                    // partly overwritten ones stay.
+                    pending.retain(|p| {
+                        if within(m.disp, n, p.lo, p.len) && !p.ptr {
+                            drop.push(p.k);
+                            false
+                        } else {
+                            !overlaps(p.lo, p.len, m.disp, n)
+                        }
+                    });
+                    if let Item::St { src, .. } = it
+                        && src != Reg::Rcx
+                    {
+                        pending.push(Pending { k, lo: m.disp, len: n, ptr: false });
+                    }
+                }
+            }
+            Piece::Dead { lo, len } => pending.retain(|p| {
+                let safe = !addrs.iter().any(|&a| (a.wrapping_sub(lo) as u32) < len);
+                if within(lo, len, p.lo, p.len) && (safe || !p.ptr) {
+                    drop.push(p.k);
+                    false
+                } else {
+                    !overlaps(p.lo, p.len, lo, len)
+                }
+            }),
+            Piece::Gone => {}
+            _ => pending.clear(),
+        }
+    }
+    for k in drop {
+        let Piece::Native(it) = pieces[k] else { unreachable!() };
+        pieces[k] = Piece::Dropped(it);
+    }
+}
+
+/// Runs the register cache ([`super::inline::Cache`]) over the inline sequences: from the
+/// start of the code, and cleared at every branch target and by every other instruction.
+fn cache(pieces: &mut [Piece], target: &[bool]) {
     let mut c = super::inline::Cache::default();
     let mut items = Vec::new();
     let mut k = 0;
@@ -308,7 +406,9 @@ fn cache(pieces: &mut [Piece], labels: &[usize]) {
             c = Default::default();
         }
         if !matches!(pieces[k], Piece::Native(_)) {
-            c = Default::default();
+            if !matches!(pieces[k], Piece::Dead { .. }) {
+                c = Default::default();
+            }
             k += 1;
             continue;
         }
@@ -345,6 +445,8 @@ enum Laid {
     Table(Vec<usize>),
     /// Padding up to a multiple of 16 (a loop head).
     Align,
+    /// A store dropped as dead, at this position: no code.
+    Dropped(Item),
 }
 
 /// A word of a code constant operand array.
@@ -495,6 +597,14 @@ impl Asm {
     pub fn bind(&mut self, l: Label) {
         debug_assert_eq!(self.labels[l.0 as usize], usize::MAX, "label bound twice");
         self.labels[l.0 as usize] = self.pieces.len();
+    }
+
+    /// Marks the raw slots `slot .. slot + len` dead here: nothing reads them before writing
+    /// them, so stores to them that nothing read yet may be dropped.
+    pub fn dead(&mut self, slot: u32, len: u32) {
+        if len != 0 {
+            self.pieces.push(Piece::Dead { lo: slot as i32, len });
+        }
     }
 
     /// Sets where unwinding out of instruction `id` goes (once; only for instructions that
@@ -682,7 +792,9 @@ impl Asm {
     /// its frame offset. Every label a branch uses must be bound.
     pub fn finish(self, frame_size: u32, fix: impl Fn(u32) -> u32) -> Encoded {
         let Asm { mode, mut pieces, labels, ro, unwind, targets } = self;
-        cache(&mut pieces, &labels);
+        let target = branch_targets(&pieces, &labels);
+        cache(&mut pieces, &target);
+        drop_dead_stores(&mut pieces, &target);
         // Code constants, in emission order (so deduplication matches the word encoder's).
         let mut rodata = Rodata::default();
         let argblk = (frame_size as i32).wrapping_neg() as u32;
@@ -735,11 +847,22 @@ impl Asm {
         let mut tables = Vec::new();
         let mut branches = Vec::new();
         let mut sites = Vec::new();
+        // Pieces without code, which take the element after them (after its padding): a
+        // label there must not land before the padding of a loop head right after.
+        let mut empty = Vec::new();
         for (k, p) in pieces.into_iter().enumerate() {
             if head[k] {
                 out.push(Laid::Align);
             }
+            if matches!(p, Piece::Gone | Piece::Dead { .. }) {
+                remap.push(usize::MAX);
+                empty.push(k);
+                continue;
+            }
             remap.push(out.len());
+            for e in empty.drain(..) {
+                remap[e] = out.len();
+            }
             out.push(match p {
                 Piece::Fixed { item, site } => {
                     let a = site.and_then(|id| unwind[id.0 as usize]);
@@ -755,7 +878,8 @@ impl Asm {
                     }
                 }
                 Piece::Marker(d) => Laid::Fixed { item: Item::Marker(fix(d) as i32), site: None },
-                Piece::Gone => continue,
+                Piece::Gone | Piece::Dead { .. } => unreachable!(),
+                Piece::Dropped(item) => Laid::Dropped(item.map_frame(|s| fix(s as u32) as i32)),
                 Piece::Native(item) => Laid::Fixed { item: item.map_frame(|s| fix(s as u32) as i32), site: None },
                 Piece::SetReg { reg, v, slots } => {
                     let mut v = v;
@@ -784,6 +908,9 @@ impl Asm {
             out.push(Laid::Align);
         }
         remap.push(out.len());
+        for e in empty {
+            remap[e] = out.len();
+        }
         // Piece indices to element indices.
         for &b in &branches {
             if let Laid::Branch { to, .. } = &mut out[b] {
@@ -845,6 +972,7 @@ fn layout_code(mut pieces: Vec<Laid>) -> Encoded {
             }
             Laid::Skip { .. } => 2,
             Laid::LeaTable => 7,
+            Laid::Dropped(_) => 0,
             Laid::Table(_) | Laid::Align => VAR,
         });
     }
@@ -907,6 +1035,7 @@ fn layout_code(mut pieces: Vec<Laid>) -> Encoded {
                 }
             }
             Laid::Align => padding(p.next_multiple_of(16) - p, &mut items),
+            Laid::Dropped(item) => out.dropped.push(DroppedStore { at: p, item: *item }),
         }
         let mut q = p;
         for it in &items {

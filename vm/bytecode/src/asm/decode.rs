@@ -5,7 +5,7 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
-use super::encode::{CallSite, Opnd, PROBE_FROM, Ref, RegVal, Reloc, case_size, push_words, word_len};
+use super::encode::{CallSite, DroppedStore, Opnd, PROBE_FROM, Ref, RegVal, Reloc, case_size, push_words, word_len};
 use super::inline::Cache;
 use super::x86::{ARGS, BadItem, Cond, Cursor, Item, Reg, island_args};
 use super::{Mode, has_handler, layout};
@@ -45,9 +45,16 @@ struct Proto {
     sites: Vec<(u32, u32)>,
 }
 
-/// Decodes one function's machine code, with its relocations (sorted), rodata and call
-/// sites.
-pub fn decode(code: &[u8], relocs: &[Reloc], rodata: &[u8], call_sites: &[CallSite], mode: Mode) -> Result<Decoded, AsmError> {
+/// Decodes one function's machine code, with its relocations (sorted), rodata, call sites and
+/// dropped stores ([`super::Encoded`]).
+pub fn decode(
+    code: &[u8],
+    relocs: &[Reloc],
+    rodata: &[u8],
+    call_sites: &[CallSite],
+    dropped: &[DroppedStore],
+    mode: Mode,
+) -> Result<Decoded, AsmError> {
     let mut c = Cursor::new(code, relocs);
     let err = |at: u32, what: &'static str| AsmError { at, what };
     // Prologue.
@@ -78,11 +85,11 @@ pub fn decode(code: &[u8], relocs: &[Reloc], rodata: &[u8], call_sites: &[CallSi
     // whole function is read. The first pass only finds the instructions and targets; the
     // second decodes them, with the cache cleared at the targets of the first.
     let body = c.pos;
-    let (protos, _) = instructions(&mut c, mode, rodata, argblk, None)?;
+    let (protos, _) = instructions(&mut c, mode, rodata, argblk, dropped, None)?;
     let mut targets: Vec<u32> = protos.iter().flat_map(|p| p.ops.iter()).flat_map(op_targets).collect();
     targets.sort_unstable();
     c.pos = body;
-    let (protos, padded) = instructions(&mut c, mode, rodata, argblk, Some(&targets))?;
+    let (protos, padded) = instructions(&mut c, mode, rodata, argblk, dropped, Some(&targets))?;
 
     // Instruction positions → indices and word offsets.
     let ipos: Vec<u32> = protos.iter().map(|p| p.pos).collect();
@@ -196,6 +203,7 @@ fn instructions(
     mode: Mode,
     ro: &[u8],
     argblk: u32,
+    mut dropped: &[DroppedStore],
     targets: Option<&[u32]>,
 ) -> Result<(Vec<Proto>, Vec<bool>), AsmError> {
     let mut protos: Vec<Proto> = Vec::new();
@@ -210,7 +218,7 @@ fn instructions(
         if targets.is_some_and(|t| t.binary_search(&c.pos).is_ok()) {
             cache = Cache::default();
         }
-        let p = match inline_insn(c, &mut cache, targets.is_some()) {
+        let p = match inline_insn(c, &mut cache, &mut dropped, targets.is_some()) {
             Some(p) => p,
             None => {
                 cache = Cache::default();
@@ -218,6 +226,9 @@ fn instructions(
             }
         };
         protos.push(p);
+    }
+    if let Some(d) = dropped.first() {
+        return Err(AsmError { at: d.at, what: "dropped store not at the end of a sequence" });
     }
     Ok((protos, padded))
 }
@@ -365,14 +376,24 @@ fn insn(c: &mut Cursor<'_>, mode: Mode, ro: &[u8], argblk: u32) -> Result<Proto,
 }
 
 /// An inline sequence at the cursor, or `None` (the cursor unmoved) if there is none: native
-/// items up to the one that writes the result, or up to a conditional branch, which must be
-/// the sequence as the register cache `cache` emits it (updated to after it). Unless `exact`,
-/// they are only read for their extent and branch target, as a `jmp` or an `abort`.
-fn inline_insn(c: &mut Cursor<'_>, cache: &mut Cache, exact: bool) -> Option<Proto> {
+/// items up to the one that writes the result (or its dropped store, taken from `dropped`),
+/// or up to a conditional branch, which must be the sequence as the register cache `cache`
+/// emits it (updated to after it). Unless `exact`, they are only read for their extent and
+/// branch target, as a `jmp` or an `abort`.
+fn inline_insn(c: &mut Cursor<'_>, cache: &mut Cache, dropped: &mut &[DroppedStore], exact: bool) -> Option<Proto> {
     let pos = c.pos;
+    let left = *dropped;
     let mut items = Vec::new();
     let mut branch = None;
     loop {
+        // A dropped store ends the sequence where it would have been.
+        if let Some(d) = dropped.first()
+            && d.at == c.pos
+        {
+            items.push(d.item);
+            *dropped = &dropped[1..];
+            break;
+        }
         match c.item() {
             Ok(it) if it.is_inline() => {
                 items.push(it);
@@ -386,6 +407,7 @@ fn inline_insn(c: &mut Cursor<'_>, cache: &mut Cache, exact: bool) -> Option<Pro
             }
             _ => {
                 c.pos = pos;
+                *dropped = left;
                 return None;
             }
         }
@@ -411,6 +433,7 @@ fn inline_insn(c: &mut Cursor<'_>, cache: &mut Cache, exact: bool) -> Option<Pro
         return Some(Proto { op, ops, pos, sites: Vec::new() });
     }
     c.pos = pos;
+    *dropped = left;
     None
 }
 

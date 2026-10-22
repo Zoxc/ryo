@@ -260,16 +260,27 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let body = self.body;
         let n = body.basic_blocks.len();
         let uses = terminator::local_uses(body);
+        let dead = frame::dead_after_read(body);
+        let mut dead = dead.iter().peekable();
         for (bb, data) in body.basic_blocks.iter_enumerated() {
             self.bind(self.block_labels[bb.as_usize()]);
             self.next_block = (bb.as_usize() + 1 < n).then(|| BasicBlock::from_usize(bb.as_usize() + 1));
             self.fused = self.fusable_compare(data, &uses);
             let stmts = &data.statements[..data.statements.len() - usize::from(self.fused.is_some())];
-            for stmt in stmts {
-                self.frame.reset_temps();
+            for (i, stmt) in stmts.iter().enumerate() {
+                self.reset_temps();
                 self.statement(stmt)?;
+                let here = rustc_middle::mir::Location { block: bb, statement_index: i };
+                while let Some(&&(at, local)) = dead.peek()
+                    && at <= here
+                {
+                    if at == here {
+                        self.local_dead(local);
+                    }
+                    dead.next();
+                }
             }
-            self.frame.reset_temps();
+            self.reset_temps();
             self.terminator(data.terminator())?;
         }
         self.terminate_stubs()?;
@@ -288,7 +299,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 done.push(reason);
                 let at = self.asm.label();
                 self.bind(at);
-                self.frame.reset_temps();
+                self.reset_temps();
                 self.next_block = None;
                 self.terminate_call(reason, self.body.source_info(rustc_middle::mir::Location::START).clone())?;
                 self.terminate_at.push((reason, at));

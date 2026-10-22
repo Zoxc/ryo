@@ -486,7 +486,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             let l = &v.lowered;
             let c = &l.code;
             writeln!(out, "fn {name} (frame {}, args {}, ret {})", l.frame_size, l.arg_size, l.ret_size).unwrap();
-            match asm::decode(&c.code, &c.relocs, &c.rodata, &c.call_sites, mode) {
+            match asm::decode(&c.code, &c.relocs, &c.rodata, &c.call_sites, &c.dropped, mode) {
                 Ok(d) => dump_labeled(&mut out, &d.words, &d.cleanup),
                 Err(e) => writeln!(out, "  undecodable: {e:?}").unwrap(),
             }

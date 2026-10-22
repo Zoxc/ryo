@@ -100,7 +100,8 @@ so a MIR change in a toolchain bump is a compile error. The tables below follow 
   MIR that still has them, such as upstream `#[inline]` and generic items.
 - `_0` (the return value) is a normal slot.
 - **Temporaries** of the statement being lowered go below the locals, and are freed between
-  statements.
+  statements, which marks them dead for the assembler (`Asm::dead`). So does the read of a
+  local that nothing reads again (`frame::dead_after_read`).
 - **Exception slot**: functions with cleanup or terminate actions, or an `UnwindResume`, have
   one 8-byte slot where landing pads store the exception object ([Unwinding](#unwinding)).
 - **Outgoing block**: the argument blocks of the calls a function makes are written at
@@ -442,5 +443,6 @@ constant offsets into memory operands (`[p + k]`), selects the `.imm` forms for 
 operands, and fuses a compare with the branch that consumes it. Everything else happens in
 the assembler's fixed sequences ([vm.md](vm.md#machine-code)): shortest register loads,
 `rel8` branches where they reach, 16-byte loop-head alignment, and keeping values in the
-caller-saved registers between inline instructions ([register cache](vm.md#register-cache)). There is no copy
+caller-saved registers between inline instructions, dropping stores to slots the lowering
+marks dead ([register cache](vm.md#register-cache)). There is no copy
 propagation, which matters at `-O0`, where MIR has had little of it.

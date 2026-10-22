@@ -46,7 +46,6 @@ fn <bool as std::vec::is_zero::IsZero>::is_zero
     sub     rsp,10h
     mov     rax,[rbp+10h]
     movzx   eax,byte ptr [rax]
-    mov     [rbp-2],al
     xor     al,1
     mov     [rbp-1],al
     mov     edi,0FFFFFFFFh
@@ -282,7 +281,6 @@ fn <std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize::<&bool, {c
     mov     rax,[rbp+10h]
     mov     [rbp-20h],rax
     lea     rdx,[rbp+18h]
-    mov     [rbp-30h],rdx
     mov     [rbp-28h],rdx
     mov     [rbp-40h],rax
     mov     [rbp-38h],rdx
@@ -296,6 +294,7 @@ fn <std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize::<&bool, {c
     call    ryo_h_Ret
     leave
     ret
+    nop     [rax]
 L0:
     mov     edi,0FFFFFFF0h
     call    ryo_h_Resume
@@ -433,7 +432,6 @@ fn <std::ops::ControlFlow<usize> as std::ops::FromResidual<std::ops::ControlFlow
     cmp     qword ptr [rbp-18h],1
     sete    [rbp-19h]
     mov     rsi,[rbp+10h]
-    mov     [rbp-28h],rsi
     mov     [rbp-8],rsi
     mov     qword ptr [rbp-10h],1
     mov     edi,0FFFFFFF0h
@@ -468,8 +466,6 @@ L1:
     ud2
 L2:
     mov     rax,[rbp+18h]
-    mov     [rbp-20h],rax
-    mov     [rbp-28h],rax
     mov     [rbp-8],rax
     mov     qword ptr [rbp-10h],1
     jmp     L4
@@ -526,7 +522,6 @@ L1:
     ud2
 L2:
     mov     rax,[rbp-18h]
-    mov     [rbp-30h],rax
     mov     [rbp-8],rax
     mov     qword ptr [rbp-10h],1
     jmp     L6
@@ -534,6 +529,7 @@ L3:
     mov     qword ptr [rbp-10h],0
     jmp     L6
     nop     [rax+rax]
+    nop     [rax]
 L4:
     mov     edi,0FFFFFFF0h
     mov     esi,10h
@@ -683,7 +679,6 @@ L7:
     mov     byte ptr [rbp-29h],0
     mov     rdi,[rbp+10h]
     mov     rdi,[rdi]
-    mov     [rbp-78h],rdi
     mov     [rbp-70h],rdi
     mov     [rbp-0A0h],rdx
     mov     [rbp-98h],rdi
@@ -731,7 +726,7 @@ L12:
     leave
     ret
     nop     [rax+rax]
-    nop
+    nop     [rax+rax]
 L13:
     jmp     L18
     nop     [rax+rax]
@@ -804,19 +799,12 @@ fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::fold::<usize, {closure@s
     test    byte ptr [rbp-0A1h],0FFh
     je      L0
     mov     rsi,[rbp+18h]
-    mov     [rbp-58h],rsi
-    mov     [rbp-50h],rsi
     cmp     rsi,0
     sete    [rbp-41h]
     jmp     L1
 L0:
     mov     rax,[rbp+18h]
-    mov     [rbp-58h],rax
-    mov     [rbp-50h],rax
     mov     rdx,[rbp+10h]
-    mov     [rbp-60h],rdx
-    mov     [rbp-58h],rdx
-    mov     [rbp-60h],rax
     cmp     rdx,rax
     sete    [rbp-41h]
 L1:
@@ -836,12 +824,10 @@ L2:
     test    byte ptr [rbp-0A1h],0FFh
     je      L3
     mov     r10,[rbp+18h]
-    mov     [rbp-50h],r10
     mov     [rbp-28h],r10
     jmp     L4
 L3:
     mov     rax,[rbp+18h]
-    mov     [rbp-58h],rax
     mov     [rbp-50h],rax
     mov     rdx,[rbp+10h]
     mov     [rbp-58h],rdx
@@ -853,24 +839,16 @@ L3:
     test    byte ptr [rbp-0A1h],0FFh
     je      L16
     jmp     L15
-    xchg    ax,ax
+    nop     [rax+rax]
 L4:
     lea     rax,[rbp+28h]
     mov     [rbp-58h],rax
     mov     byte ptr [rbp-31h],0
     mov     rsi,[rbp-48h]
-    mov     [rbp-70h],rsi
     mov     rdi,[rbp+10h]
-    mov     [rbp-88h],rdi
     mov     r8,[rbp-20h]
-    mov     [rbp-90h],r8
-    mov     [rbp-0A0h],rdi
     imul    rcx,r8,1
     add     rdi,rcx
-    mov     [rbp-98h],rdi
-    mov     [rbp-80h],rdi
-    mov     [rbp-78h],rdi
-    mov     [rbp-30h],rdi
     mov     [rbp-68h],rsi
     mov     [rbp-60h],rdi
     mov     [rbp-0C0h],rax
@@ -884,8 +862,7 @@ L4:
     test    byte ptr [rbp-0A1h],0FFh
     je      L21
     jmp     L20
-    nop     [rax+rax]
-    xchg    ax,ax
+    nop     [rax]
 L5:
     mov     rax,[rbp-48h]
     mov     [rbp-8],rax
@@ -993,7 +970,6 @@ L20:
 L21:
     mov     rax,[rbp-20h]
     add     rax,1
-    mov     [rbp-50h],rax
     mov     [rbp-20h],rax
     mov     [rbp-58h],rax
     mov     rdx,[rbp-28h]
@@ -1028,13 +1004,11 @@ fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::size_hint
     je      L0
     mov     rsi,[rbp+10h]
     mov     rsi,[rsi+8]
-    mov     [rbp-28h],rsi
     mov     [rbp-20h],rsi
     jmp     L1
 L0:
     mov     rax,[rbp+10h]
     mov     rax,[rax+8]
-    mov     [rbp-30h],rax
     mov     [rbp-28h],rax
     mov     rdx,[rbp+10h]
     mov     rdx,[rdx]
@@ -1047,7 +1021,7 @@ L0:
     test    byte ptr [rbp-59h],0FFh
     je      L4
     jmp     L3
-    xchg    ax,ax
+    nop     [rax+rax]
 L1:
     mov     rax,[rbp-20h]
     mov     [rbp-28h],rax
@@ -1150,13 +1124,8 @@ fn <std::vec::Vec<bool> as std::ops::Deref>::deref
     sub     rsp,30h
     mov     rax,[rbp+10h]
     mov     rax,[rax+8]
-    mov     [rbp-30h],rax
-    mov     [rbp-28h],rax
     mov     rdx,[rbp+10h]
     mov     rdx,[rdx+10h]
-    mov     [rbp-30h],rdx
-    mov     [rbp-20h],rax
-    mov     [rbp-18h],rdx
     mov     [rbp-10h],rax
     mov     [rbp-8],rdx
     mov     edi,0FFFFFFF0h
@@ -1171,13 +1140,8 @@ fn <std::vec::Vec<bool> as std::ops::Drop>::drop
     sub     rsp,40h
     mov     rax,[rbp+10h]
     mov     rax,[rax+8]
-    mov     [rbp-20h],rax
-    mov     [rbp-18h],rax
     mov     rdx,[rbp+10h]
     mov     rdx,[rdx+10h]
-    mov     [rbp-20h],rdx
-    mov     [rbp-10h],rax
-    mov     [rbp-8],rdx
     mov     [rbp-20h],rax
     mov     [rbp-18h],rdx
     mov     edi,0FFFFFFC0h
@@ -1201,13 +1165,8 @@ fn <std::vec::Vec<bool> as std::ops::Index<usize>>::index
     sub     rsp,60h
     mov     rax,[rbp+10h]
     mov     rax,[rax+8]
-    mov     [rbp-38h],rax
-    mov     [rbp-30h],rax
     mov     rdx,[rbp+10h]
     mov     rdx,[rdx+10h]
-    mov     [rbp-38h],rdx
-    mov     [rbp-28h],rax
-    mov     [rbp-20h],rdx
     mov     [rbp-18h],rax
     mov     [rbp-10h],rdx
     mov     rsi,[rbp+18h]
@@ -1231,13 +1190,8 @@ fn <std::vec::Vec<bool> as std::ops::IndexMut<usize>>::index_mut
     sub     rsp,60h
     mov     rax,[rbp+10h]
     mov     rax,[rax+8]
-    mov     [rbp-38h],rax
-    mov     [rbp-30h],rax
     mov     rdx,[rbp+10h]
     mov     rdx,[rdx+10h]
-    mov     [rbp-38h],rdx
-    mov     [rbp-28h],rax
-    mov     [rbp-20h],rdx
     mov     [rbp-18h],rax
     mov     [rbp-10h],rdx
     mov     rsi,[rbp+18h]
@@ -1264,7 +1218,6 @@ fn <std::vec::set_len_on_drop::SetLenOnDrop<'_> as std::ops::Drop>::drop
     mov     [rbp-10h],rax
     mov     rdx,[rbp+10h]
     mov     rdx,[rdx]
-    mov     [rbp-8],rdx
     mov     rcx,[rbp-10h]
     mov     [rdx],rcx
     xor     edi,edi
@@ -1371,7 +1324,6 @@ L2:
     mov     rax,[rbp+10h]
     imul    rcx,[rbp+20h],1
     add     rax,rcx
-    mov     [rbp-20h],rax
     mov     [rbp-8],rax
     mov     edi,0FFFFFFF8h
     mov     esi,8
@@ -1412,7 +1364,6 @@ L2:
     mov     rax,[rbp+10h]
     imul    rcx,[rbp+20h],1
     add     rax,rcx
-    mov     [rbp-20h],rax
     mov     [rbp-8],rax
     mov     edi,0FFFFFFF8h
     mov     esi,8
@@ -1540,7 +1491,6 @@ L7:
 L8:
     mov     rax,[rbp-58h]
     sub     rax,0
-    mov     [rbp-50h],rax
     cmp     rax,[rbp+10h]
     setb    [rbp-42h]
     movzx   edx,byte ptr [rbp-42h]
@@ -1555,7 +1505,6 @@ L9:
     jmp     L8
 L10:
     mov     rax,[rbp-10h]
-    mov     [rbp-68h],rax
     mov     [rbp-58h],rax
     jmp     L8
 L11:
@@ -1578,13 +1527,11 @@ fn core::fmt::rt::Argument::<'_>::new_display::<usize>
     mov     rbp,rsp
     sub     rsp,40h
     mov     rax,[rbp+10h]
-    mov     [rbp-18h],rax
     mov     [rbp-30h],rax
     mov     edi,0FFFFFFC0h
     lea     rsi,[sym0]
     call    ryo_h_AddrSym
     mov     rax,[rbp-40h]
-    mov     [rbp-38h],rax
     mov     rdx,[rbp-30h]
     mov     [rbp-28h],rdx
     mov     [rbp-20h],rax
@@ -1619,22 +1566,15 @@ fn core::num::<impl usize>::unchecked_add::precondition_check
     call    ryo_h_AddrAbs
     mov     qword ptr [rbp-8],0BAh
     mov     rdx,[rbp-10h]
-    mov     [rbp-48h],rdx
     mov     rsi,[rbp-8]
-    mov     [rbp-40h],rsi
-    mov     [rbp-38h],rdx
     mov     [rbp-30h],rdx
     mov     edi,0FFFFFFA0h
     lea     rsi,[k1]
     call    ryo_h_AddrAbs
     mov     qword ptr [rbp-58h],0BAh
     mov     rdx,[rbp-58h]
-    mov     [rbp-50h],rdx
     shl     rdx,1
-    mov     [rbp-48h],rdx
     or      rdx,1
-    mov     [rbp-40h],rdx
-    mov     [rbp-38h],rdx
     mov     rsi,[rbp-30h]
     mov     [rbp-28h],rsi
     mov     [rbp-20h],rdx
@@ -1689,22 +1629,15 @@ fn core::num::<impl usize>::unchecked_sub::precondition_check
     call    ryo_h_AddrAbs
     mov     qword ptr [rbp-8],0BAh
     mov     rdx,[rbp-10h]
-    mov     [rbp-48h],rdx
     mov     rsi,[rbp-8]
-    mov     [rbp-40h],rsi
-    mov     [rbp-38h],rdx
     mov     [rbp-30h],rdx
     mov     edi,0FFFFFFA0h
     lea     rsi,[k1]
     call    ryo_h_AddrAbs
     mov     qword ptr [rbp-58h],0BAh
     mov     rdx,[rbp-58h]
-    mov     [rbp-50h],rdx
     shl     rdx,1
-    mov     [rbp-48h],rdx
     or      rdx,1
-    mov     [rbp-40h],rdx
-    mov     [rbp-38h],rdx
     mov     rsi,[rbp-30h]
     mov     [rbp-28h],rsi
     mov     [rbp-20h],rdx
@@ -1797,7 +1730,6 @@ fn main
     lea     rax,[rbp-98h]
     mov     [rbp-80h],rax
     lea     rdx,[rbp-20h]
-    mov     [rbp-0C0h],rdx
     mov     [rbp-0B8h],rdx
     mov     [rbp-1B0h],rax
     mov     [rbp-1A8h],rdx
@@ -1812,11 +1744,8 @@ fn main
     call    fn10
     nop     [rcx-68h]
     lea     rax,[rbp-28h]
-    mov     [rbp-0F0h],rax
     lea     rdx,[rbp-8]
-    mov     [rbp-0F8h],rdx
     lea     rsi,[rbp-68h]
-    mov     [rbp-100h],rsi
     mov     [rbp-0E8h],rax
     mov     [rbp-0E0h],rdx
     mov     [rbp-0D8h],rsi
@@ -1923,7 +1852,6 @@ fn main::{closure#0}
     sub     rsp,10h
     mov     rax,[rbp+18h]
     mov     rax,[rax]
-    mov     [rbp-10h],rax
     movzx   eax,byte ptr [rax]
     mov     [rbp-1],al
     mov     edi,0FFFFFFFFh
@@ -2264,10 +2192,8 @@ fn std::cmp::impls::<impl std::cmp::PartialEq for usize>::eq
     sub     rsp,20h
     mov     rax,[rbp+10h]
     mov     rax,[rax]
-    mov     [rbp-10h],rax
     mov     rdx,[rbp+18h]
     mov     rdx,[rdx]
-    mov     [rbp-18h],rdx
     cmp     rax,rdx
     sete    [rbp-1]
     mov     edi,0FFFFFFFFh
@@ -2282,10 +2208,8 @@ fn std::cmp::impls::<impl std::cmp::PartialOrd for usize>::le
     sub     rsp,20h
     mov     rax,[rbp+10h]
     mov     rax,[rax]
-    mov     [rbp-10h],rax
     mov     rdx,[rbp+18h]
     mov     rdx,[rdx]
-    mov     [rbp-18h],rdx
     cmp     rax,rdx
     setbe   [rbp-1]
     mov     edi,0FFFFFFFFh
@@ -2300,10 +2224,8 @@ fn std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt
     sub     rsp,20h
     mov     rax,[rbp+10h]
     mov     rax,[rax]
-    mov     [rbp-10h],rax
     mov     rdx,[rbp+18h]
     mov     rdx,[rdx]
-    mov     [rbp-18h],rdx
     cmp     rax,rdx
     setb    [rbp-1]
     mov     edi,0FFFFFFFFh
@@ -2317,9 +2239,7 @@ fn std::fmt::Arguments::<'_>::new::<39, 3>
     mov     rbp,rsp
     sub     rsp,20h
     mov     rax,[rbp+10h]
-    mov     [rbp-18h],rax
     mov     rdx,[rbp+18h]
-    mov     [rbp-20h],rdx
     mov     [rbp-10h],rax
     mov     [rbp-8],rdx
     mov     edi,0FFFFFFF0h
@@ -2339,22 +2259,15 @@ fn std::hint::assert_unchecked::precondition_check
     call    ryo_h_AddrAbs
     mov     qword ptr [rbp-8],0DDh
     mov     rdx,[rbp-10h]
-    mov     [rbp-40h],rdx
     mov     rsi,[rbp-8]
-    mov     [rbp-38h],rsi
-    mov     [rbp-30h],rdx
     mov     [rbp-28h],rdx
     mov     edi,0FFFFFFA8h
     lea     rsi,[k1]
     call    ryo_h_AddrAbs
     mov     qword ptr [rbp-50h],0DDh
     mov     rdx,[rbp-50h]
-    mov     [rbp-48h],rdx
     shl     rdx,1
-    mov     [rbp-40h],rdx
     or      rdx,1
-    mov     [rbp-38h],rdx
-    mov     [rbp-30h],rdx
     mov     rsi,[rbp-28h]
     mov     [rbp-20h],rsi
     mov     [rbp-18h],rdx
@@ -2406,7 +2319,6 @@ fn std::iter::DoubleEndedIterator::rfind::check::<usize, {closure@bench/sieve.rs
     mov     rax,[rbp+10h]
     mov     [rbp-28h],rax
     lea     rdx,[rbp+18h]
-    mov     [rbp-38h],rdx
     mov     [rbp-30h],rdx
     mov     [rbp-50h],rax
     mov     [rbp-48h],rdx
@@ -2415,7 +2327,6 @@ fn std::iter::DoubleEndedIterator::rfind::check::<usize, {closure@bench/sieve.rs
     test    byte ptr [rbp-19h],0FFh
     je      L0
     mov     rdx,[rbp+18h]
-    mov     [rbp-28h],rdx
     mov     [rbp-8],rdx
     mov     qword ptr [rbp-10h],1
     jmp     L1
@@ -2427,8 +2338,7 @@ L1:
     call    ryo_h_Ret
     leave
     ret
-    nop     [rax+rax]
-    xchg    ax,ax
+    nop     [rax]
 L2:
     mov     edi,0FFFFFFE8h
     call    ryo_h_Resume
@@ -2592,22 +2502,15 @@ L0:
     call    ryo_h_AddrAbs
     mov     qword ptr [rbp-8],0C9h
     mov     rdx,[rbp-10h]
-    mov     [rbp-48h],rdx
     mov     rsi,[rbp-8]
-    mov     [rbp-40h],rsi
-    mov     [rbp-38h],rdx
     mov     [rbp-30h],rdx
     mov     edi,0FFFFFFA0h
     lea     rsi,[k1]
     call    ryo_h_AddrAbs
     mov     qword ptr [rbp-58h],0C9h
     mov     rdx,[rbp-58h]
-    mov     [rbp-50h],rdx
     shl     rdx,1
-    mov     [rbp-48h],rdx
     or      rdx,1
-    mov     [rbp-40h],rdx
-    mov     [rbp-38h],rdx
     mov     rsi,[rbp-30h]
     mov     [rbp-28h],rsi
     mov     [rbp-20h],rdx
@@ -2811,7 +2714,6 @@ fn std::slice::Iter::<'_, bool>::new
     mov     esi,0FFFFFFC8h
     call    ryo_h_MovW128
     mov     rax,[rbp-50h]
-    mov     [rbp-40h],rax
     mov     [rbp-28h],rax
     mov     byte ptr [rbp-51h],0
     test    byte ptr [rbp-51h],0FFh
@@ -2821,10 +2723,8 @@ fn std::slice::Iter::<'_, bool>::new
     jmp     L1
 L0:
     mov     rax,[rbp-28h]
-    mov     [rbp-38h],rax
     imul    rcx,[rbp-20h],1
     add     rax,rcx
-    mov     [rbp-30h],rax
     mov     [rbp-18h],rax
 L1:
     mov     rax,[rbp-28h]
@@ -2864,8 +2764,6 @@ fn std::vec::Vec::<bool>::extend_with
     nop     [rcx]
     mov     rax,[rbp+10h]
     mov     rax,[rax+8]
-    mov     [rbp-60h],rax
-    mov     [rbp-58h],rax
     mov     rdx,[rbp+10h]
     mov     rdx,[rdx+10h]
     mov     [rbp-60h],rdx
@@ -2879,26 +2777,22 @@ fn std::vec::Vec::<bool>::extend_with
     lea     rsi,[rsi+10h]
     mov     [rbp-68h],rsi
     mov     rsi,[rsi]
-    mov     [rbp-70h],rsi
     mov     rdi,[rbp-68h]
     mov     [rbp-60h],rdi
     mov     [rbp-58h],rsi
     mov     qword ptr [rbp-18h],1
     mov     r9,[rbp+18h]
     mov     [rbp-10h],r9
-    nop     [rax+rax]
+    nop     [rax]
 L0:
     mov     rax,[rbp-18h]
-    mov     [rbp-70h],rax
     mov     rdx,[rbp-10h]
-    mov     [rbp-78h],rdx
     cmp     rax,rdx
     setb    [rbp-61h]
     test    byte ptr [rbp-61h],0FFh
     je      L11
     jmp     L10
-    nop     [rax+rax]
-    nop
+    xchg    ax,ax
 L1:
     mov     rax,[rbp-68h]
     movzx   ecx,byte ptr [rbp-69h]
@@ -2907,14 +2801,11 @@ L1:
     mov     rsi,[rbp-8]
     imul    rcx,[rbp-80h],1
     add     rsi,rcx
-    mov     [rbp-68h],rsi
     mov     [rbp-8],rsi
     mov     rdi,[rbp-58h]
     add     rdi,1
     mov     [rbp-58h],rdi
     jmp     L0
-    nop     [rax+rax]
-    nop     [rax]
 L2:
     mov     byte ptr [rbp-31h],0
     movzx   edx,byte ptr [rbp+20h]
@@ -2996,7 +2887,6 @@ L12:
 L13:
     mov     rax,[rbp-70h]
     add     rax,1
-    mov     [rbp-78h],rax
     mov     [rbp-18h],rax
     mov     rdx,[rbp-8]
     mov     [rbp-68h],rdx
@@ -3008,7 +2898,7 @@ L13:
     jmp     L1
 L14:
     jmp     L4
-    nop     [rax]
+    nop     [rax+rax]
 L15:
     lea     rdi,[sym7]
     lea     rsi,[site8]
@@ -3094,7 +2984,6 @@ L3:
 L4:
     mov     rax,[rbp-48h]
     sub     rax,[rbp-18h]
-    mov     [rbp-40h],rax
     cmp     rax,[rbp+18h]
     setb    [rbp-31h]
     test    byte ptr [rbp-31h],0FFh
@@ -3106,7 +2995,6 @@ L5:
 L6:
     mov     rax,[rbp-20h]
     mov     rax,[rax]
-    mov     [rbp-58h],rax
     mov     [rbp-48h],rax
     jmp     L4
 

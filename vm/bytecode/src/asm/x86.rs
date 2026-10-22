@@ -572,6 +572,30 @@ impl Item {
         }
     }
 
+    /// The frame slot the item reads, and how many bytes.
+    pub fn frame_read(&self) -> Option<(M, u32)> {
+        let (m, w) = match *self {
+            Item::Ld { w, m, .. } => (m, w),
+            Item::Alu { w, rm: Rm::Mem(m), .. }
+            | Item::AluImm { w, rm: Rm::Mem(m), .. }
+            | Item::Imul { w, rm: Rm::Mem(m), .. }
+            | Item::ImulImm { w, rm: Rm::Mem(m), .. } => (m, w),
+            Item::TestM8(m) => (m, W::B),
+            _ => return None,
+        };
+        (m.base == Reg::Rbp).then_some((m, w.bits() / 8))
+    }
+
+    /// The frame slot the item writes, and how many bytes.
+    pub fn frame_write(&self) -> Option<(M, u32)> {
+        let (m, w) = match *self {
+            Item::St { w, m, .. } | Item::StImm { w, m, .. } => (m, w),
+            Item::Setcc { m, .. } => (m, W::B),
+            _ => return None,
+        };
+        (m.base == Reg::Rbp).then_some((m, w.bits() / 8))
+    }
+
     /// The immediate of the item, sign-extended.
     pub fn imm(&self) -> Option<u64> {
         match *self {

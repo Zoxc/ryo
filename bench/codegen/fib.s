@@ -76,13 +76,11 @@ fn core::fmt::rt::Argument::<'_>::new_display::<u32>
     mov     rbp,rsp
     sub     rsp,40h
     mov     rax,[rbp+10h]
-    mov     [rbp-18h],rax
     mov     [rbp-30h],rax
     mov     edi,0FFFFFFC0h
     lea     rsi,[sym0]
     call    ryo_h_AddrSym
     mov     rax,[rbp-40h]
-    mov     [rbp-38h],rax
     mov     rdx,[rbp-30h]
     mov     [rbp-28h],rdx
     mov     [rbp-20h],rax
@@ -100,13 +98,11 @@ fn core::fmt::rt::Argument::<'_>::new_display::<u64>
     mov     rbp,rsp
     sub     rsp,40h
     mov     rax,[rbp+10h]
-    mov     [rbp-18h],rax
     mov     [rbp-30h],rax
     mov     edi,0FFFFFFC0h
     lea     rsi,[sym0]
     call    ryo_h_AddrSym
     mov     rax,[rbp-40h]
-    mov     [rbp-38h],rax
     mov     rdx,[rbp-30h]
     mov     [rbp-28h],rdx
     mov     [rbp-20h],rax
@@ -244,9 +240,7 @@ fn main
     call    fn1
     nop     [rcx-38h]
     lea     rax,[rbp-38h]
-    mov     [rbp-30h],rax
     lea     rdx,[rbp-4]
-    mov     [rbp-40h],rdx
     mov     [rbp-28h],rax
     mov     [rbp-20h],rdx
     mov     [rbp-98h],rdx
@@ -302,9 +296,7 @@ fn std::fmt::Arguments::<'_>::new::<15, 2>
     mov     rbp,rsp
     sub     rsp,20h
     mov     rax,[rbp+10h]
-    mov     [rbp-18h],rax
     mov     rdx,[rbp+18h]
-    mov     [rbp-20h],rdx
     mov     [rbp-10h],rax
     mov     [rbp-8],rdx
     mov     edi,0FFFFFFF0h

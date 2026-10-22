@@ -135,7 +135,7 @@ fn check(f: &Fn, frame_size: u32, mode: Mode, what: &str) -> asm::Encoded {
     let enc = asm::encode(&code, frame_size, &cleanup, mode).unwrap_or_else(|e| panic!("{what}: {e:?}\n{}", Disasm(&code)));
     let sites = lsda::parse(&lsda::write(&enc.call_sites)).expect("LSDA");
     assert_eq!(sites, enc.call_sites, "{what}");
-    let dec = asm::decode(&enc.code, &enc.relocs, &enc.rodata, &sites, mode)
+    let dec = asm::decode(&enc.code, &enc.relocs, &enc.rodata, &sites, &enc.dropped, mode)
         .unwrap_or_else(|e| panic!("{what} {mode:?}: {e:?}\n{}\n{:02x?}", Disasm(&code), enc.code));
     if dec.words != code {
         panic!("{what} {mode:?}:\n{}\n---\n{}", Disasm(&code), Disasm(&dec.words));
@@ -273,6 +273,25 @@ fn register_cache_drops_reloads() {
     assert!(code.windows(3).any(|w| w == [0x48, 0x03, 0xc2]), "{code:02x?}");
 }
 
+/// A label at a dead-slot hint (no code), right before a padded loop head, is the loop
+/// head's position, after the padding.
+#[test]
+fn label_at_a_dead_hint_before_a_loop_head() {
+    use asm::Opnd::{Imm, Neg, Slot, Target};
+    let mode = Mode { fp_arg: false, align_loops: true, pe: false };
+    let mut a = asm::Asm::new(mode);
+    let (empty, head) = (a.label(), a.label());
+    a.insn(Opcode::BrEqImmW64, &[Slot(-8), Imm(0), Neg(false), Target(empty)]);
+    a.insn(Opcode::MovW64, &[Slot(-16), Slot(-8)]);
+    a.bind(empty);
+    a.dead(-16i32 as u32, 8);
+    a.bind(head);
+    a.insn(Opcode::AddImmW64, &[Slot(-8), Slot(-8), Imm(1)]);
+    a.insn(Opcode::Jmp, &[Target(head)]);
+    let enc = a.finish(16, |s| s);
+    asm::decode(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, mode).expect("decodes");
+}
+
 /// The register packing of the opcodes with more operands than registers.
 #[test]
 fn packed_operands() {
@@ -311,16 +330,16 @@ fn rejects_non_canonical_code() {
     let mut code = enc.code.clone();
     code.splice(i..i + 5, [0x48, 0xc7, 0xc2, 70, 0, 0, 0]);
     let relocs: Vec<_> = enc.relocs.iter().map(|r| asm::Reloc { at: if r.at as usize > i { r.at + 2 } else { r.at }, ..*r }).collect();
-    assert!(asm::decode(&code, &relocs, &enc.rodata, &enc.call_sites, m).is_err());
+    assert!(asm::decode(&code, &relocs, &enc.rodata, &enc.call_sites, &enc.dropped, m).is_err());
     // Operand registers out of order.
     let j = enc.code.windows(5).position(|w| w[0] == 0xbf).unwrap();
     let mut code = enc.code.clone();
     code[j] = 0xbe; // `mov esi` instead of `mov edi`
-    assert!(asm::decode(&code, &enc.relocs, &enc.rodata, &enc.call_sites, m).is_err());
+    assert!(asm::decode(&code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, m).is_err());
     // A call site that is no call.
     let mut sites = enc.call_sites.clone();
     sites.push(asm::CallSite { start: 4, len: 5, pad: None, catch: false });
-    assert!(asm::decode(&enc.code, &enc.relocs, &enc.rodata, &sites, m).is_err());
+    assert!(asm::decode(&enc.code, &enc.relocs, &enc.rodata, &sites, &enc.dropped, m).is_err());
 }
 
 /// The inline sequences with every displacement and immediate form: frame slots and memory
@@ -389,7 +408,7 @@ fn rejects_handler_calls_of_inlined_ops() {
         .iter()
         .map(|r| if r.to == asm::Ref::Handler(Opcode::FaddF32) { asm::Reloc { to: asm::Ref::Handler(Opcode::AddW32), ..*r } } else { *r })
         .collect();
-    assert!(asm::decode(&enc.code, &relocs, &enc.rodata, &enc.call_sites, m).is_err());
+    assert!(asm::decode(&enc.code, &relocs, &enc.rodata, &enc.call_sites, &enc.dropped, m).is_err());
 }
 
 /// Pins the canonical sequences: any change to how an opcode is encoded changes this hash.
@@ -421,5 +440,5 @@ fn templates_are_pinned_to_format_version() {
             eat(&lsda::write(&enc.call_sites));
         }
     }
-    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (11, 0x7d7935189c173d73), "template hash {h:#x}");
+    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (12, 0x7d7935189c173d73), "template hash {h:#x}");
 }

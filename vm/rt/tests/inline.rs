@@ -8,7 +8,7 @@
 mod common;
 use common::*;
 
-use ryo_bytecode::asm::{has_inline, layout};
+use ryo_bytecode::asm::{self as rasm, has_inline, layout};
 use ryo_rt::vm::{FP_ARG, MODE, handler};
 
 /// Calls `f(a0..a5)` with `rbp = fp`, returning `rax`.
@@ -287,4 +287,135 @@ fn by_handlers(run: &[(Opcode, Vec<u128>)], args: &[u64; 8], buf: *mut [u8; 64])
     }
     let res = unsafe { fp.offset(RES as isize) };
     (std::array::from_fn(|i| unsafe { *res.add(i) }), unsafe { buf.read() })
+}
+
+/// Scratch slots below the result area: written and read by the runs, not returned.
+const SCR: i32 = -64;
+
+/// The frame bytes an inline instruction of `op` with operand values `vals` reads and
+/// writes, as offsets from `fp` (reads over-approximated, writes exact).
+fn frame_effects(op: Opcode, vals: &[u128]) -> (Vec<i32>, Vec<i32>) {
+    let m = op.mnemonic();
+    let w = |m: &str| match m.rsplit('.').next().unwrap() {
+        "w8" => 1,
+        "w16" => 2,
+        "w32" => 4,
+        _ => 8,
+    };
+    let bytes = |s: i32, n: i32| (s..s + n).collect::<Vec<_>>();
+    let (mut r, mut wr) = (Vec::new(), Vec::new());
+    let ptr = m.starts_with("ptr.") || m == "addr";
+    let cmp = ["eq", "ne", "lt", "le", "gt", "ge"].iter().any(|c| m.starts_with(c));
+    for (o, &v) in op.info().operands.iter().zip(vals) {
+        let s = v as u32 as i32;
+        match o.kind {
+            OperandKind::Slot if o.name == "d" => wr.extend(bytes(s, if ptr { 8 } else if cmp { 1 } else { w(m) })),
+            OperandKind::Slot => r.extend(bytes(s, if ptr { 8 } else { w(m) })),
+            OperandKind::Mem => r.extend(bytes(s, 8)),
+            _ => {}
+        }
+    }
+    (r, wr)
+}
+
+/// Runs of inline instructions with dead-slot hints (`Asm::dead`) where scratch bytes are
+/// dead, so the encoder drops stores, against their handlers.
+#[test]
+fn dead_stores_match_handlers() {
+    let mut rng = Rng(0xdead_5107);
+    let buf: *mut [u8; 64] = Box::into_raw(Box::new([0u8; 64]));
+    let ops: Vec<Opcode> =
+        ALL_OPCODES.iter().copied().filter(|&op| has_inline(op) && op != Opcode::Addr && op.info().operand_index("t").is_none()).collect();
+    let mut w = ImageWriter::new(unique_scid());
+    w.prepare(ENC);
+    let (mut runs, mut encoded, mut fs) = (Vec::new(), Vec::new(), Vec::new());
+    let mut dropped = 0;
+    for _ in 0..5000 {
+        let mut run: Vec<(Opcode, Vec<u128>)> = Vec::new();
+        let mut recent: Vec<i32> = Vec::new();
+        for _ in 0..2 + rng.below(12) {
+            let op = ops[rng.below(ops.len() as u64) as usize];
+            let mut vals = Vec::new();
+            for o in op.info().operands {
+                vals.push(match o.kind {
+                    // Mostly scratch, where things die.
+                    OperandKind::Slot if o.name == "d" => {
+                        let base = if rng.below(4) == 0 { RES } else { SCR };
+                        (base + rng.below(3) as i32 * 8) as u32 as u128
+                    }
+                    OperandKind::Slot if !recent.is_empty() && rng.below(3) != 0 => recent[rng.below(recent.len() as u64) as usize] as u32 as u128,
+                    OperandKind::Slot => ARGS[rng.below(7) as usize] as u32 as u128,
+                    OperandKind::Mem => (PTR as u32 as u128) | (rng.below(57) as u128) << 32,
+                    OperandKind::U8 => rng.below(8) as u128,
+                    OperandKind::U16 | OperandKind::U32 => rng.below(16) as u128,
+                    OperandKind::U64 | OperandKind::I64 => rng.value() as u128,
+                    k => panic!("{}: operand {k:?}", op.mnemonic()),
+                });
+            }
+            if let Some(d) = op.info().operand_index("d") {
+                recent.push(vals[d] as u32 as i32);
+            }
+            run.push((op, vals));
+        }
+        // Scratch bytes dead after each instruction: not read again before written. The
+        // result area is read by the `ret`.
+        let mut live: std::collections::BTreeSet<i32> = (RES..RES + 32).collect();
+        let mut dead_after = vec![Vec::new(); run.len()];
+        for (i, (op, vals)) in run.iter().enumerate().rev() {
+            let mut start = None;
+            for b in SCR..=SCR + 24 {
+                match (b < SCR + 24 && !live.contains(&b), start) {
+                    (true, None) => start = Some(b),
+                    (false, Some(s)) => {
+                        dead_after[i].push((s, (b - s) as u32));
+                        start = None;
+                    }
+                    _ => {}
+                }
+            }
+            let (r, wr) = frame_effects(*op, vals);
+            wr.iter().for_each(|b| _ = live.remove(b));
+            live.extend(r);
+        }
+        let mut a = rasm::Asm::new(ENC);
+        // Scratch and results start zeroed, as on the handlers' frame.
+        a.insn(Opcode::Zero, &[rasm::Opnd::Slot(SCR), rasm::Opnd::Imm(64)]);
+        for (i, (op, vals)) in run.iter().enumerate() {
+            let mut words = vec![*op as u32];
+            for (o, &v) in op.info().operands.iter().zip(vals) {
+                match o.kind {
+                    OperandKind::Mem | OperandKind::U64 | OperandKind::I64 => words.extend([v as u32, (v >> 32) as u32]),
+                    _ => words.push(v as u32),
+                }
+            }
+            let opnds: Vec<rasm::Opnd<rasm::Label>> =
+                rasm::operands(&words, 0).into_iter().map(|o| o.map_targets(|_| Err::<rasm::Label, ()>(())).unwrap()).collect();
+            a.insn(*op, &opnds);
+            for &(lo, len) in &dead_after[i] {
+                a.dead(lo as u32, len);
+            }
+        }
+        a.insn(Opcode::Ret, &[rasm::Opnd::Slot(RES), rasm::Opnd::Imm(32)]);
+        let enc = a.finish(64, |s| s);
+        dropped += enc.dropped.len();
+        encoded.push(enc);
+        fs.push(w.add_function(func(Vec::new(), 64, 64, 32)));
+        runs.push(run);
+    }
+    assert!(dropped > 1000, "{dropped} stores dropped");
+    let img = link(w.finish_encoded(encoded).expect("image"), &[]);
+    register(&[&img]);
+    for (i, run) in runs.iter().enumerate() {
+        let mut args: [u64; 8] = std::array::from_fn(|_| rng.value());
+        args[7] = buf as u64;
+        let fresh: [u8; 64] = std::array::from_fn(|j| (rng.next() >> (j % 8)) as u8);
+        unsafe { buf.write(fresh) };
+        let r_vm: [u8; 32] = ok(img.id(fs[i]), args);
+        let m_vm = unsafe { buf.read() };
+        unsafe { buf.write(fresh) };
+        let (r_h, m_h) = by_handlers(run, &args, buf);
+        let what = || run.iter().map(|(op, v)| format!("{} {v:x?}", op.mnemonic())).collect::<Vec<_>>().join("\n");
+        assert_eq!(r_vm, r_h, "result:\n{}\nargs {args:x?}", what());
+        assert_eq!(m_vm, m_h, "memory:\n{}", what());
+    }
 }
