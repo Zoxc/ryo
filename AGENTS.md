@@ -7,3 +7,7 @@
 - Codegen dumps. After every change that can affect the generated code, run
   `./y.sh build && ./y.sh bench codegen` and commit the regenerated `bench/codegen/`
   with that change, so its diff shows the effect.
+- Optimizing. When a change is meant to make generated code faster, compare it against the
+  commit before with `scripts/compare-branches.py --worktree <base> --build head=. --metric
+  cachegrind` (instruction counts: deterministic, so small differences are real), and report
+  those counts alongside CPU-time numbers.
