@@ -205,6 +205,23 @@ pub(crate) const CORPUS: &[Program] = &[
         vm: &["main", "atomics", "unwinding", "misc", "dst", "direct", "contention"],
         entered: &["std::rt::lang_start::<()>"]
     ),
+    // The ABI sweep (design/build.md#test-and-bench).
+    single!(
+        "vm_abi",
+        vm: &[
+            "main", "track_caller_vm", "shapes_vm", "<VmShape as Shape>::big", "<VmShape as Shape>::small", "c_calls",
+            "unit::vm", "unit::vm_to_native", "unit::vm_to_vm", "unit::vm_ptrs", "ints::vm", "ints::vm_to_native", "ints::vm_ptrs",
+            "narrow::vm", "narrow::vm_to_native", "wide::vm", "wide::vm_to_native", "wide_late::vm", "wide_late::vm_to_native",
+            "floats::vm", "floats::vm_to_native", "float_pair::vm", "mixed_pair::vm", "xmm_gpr::vm", "many_f64::vm",
+            "many_f64::vm_to_native", "many_u64::vm", "many_u64::vm_to_native", "interleaved::vm", "interleaved::vm_to_native",
+            "pair_split::vm", "pair_split::vm_to_native", "slices::vm", "bytes3::vm", "bytes3::vm_to_native", "bytes5::vm",
+            "bytes6::vm", "bytes7::vm", "bytes7::vm_ptrs", "three_u32::vm", "three_u32::vm_to_native", "quad_f32::vm",
+            "big::vm", "big::vm_to_native", "big::vm_ptrs", "big_late::vm", "big_late::vm_to_native", "opt_wide::vm",
+            "niches::vm", "enums::vm", "enums::vm_to_native", "zsts::vm", "f16s::vm", "f16s::vm_to_native", "f128s::vm",
+            "f128s::vm_to_native",
+        ],
+        entered: &[]
+    ),
     single!(
         "vm_tail",
         vm: &["main", "count", "even", "odd", "big", "big2", "via_ptr", "to_upstream", "to_native", "virt", "panicky"],
@@ -521,7 +538,6 @@ pub fn run(clif: bool) -> Result<(), String> {
     if !failed.is_empty() {
         return Err(format!("failed tests: {}", failed.join(", ")));
     }
-    eprintln!("[y] the ABI sweep is not implemented yet");
     Ok(())
 }
 

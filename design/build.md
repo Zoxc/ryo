@@ -139,9 +139,12 @@ This gives a third backend, built from the same toolchain, to compare against.
 
 - `test`: the test corpus is built with `rustc-ryo` (also with `-Zthreads=8`, and as
   `ryo-novm` with `RYO_NO_VM`, where everything stays native) and with plain rustc, and the
-  exit codes, stdout and stderr are diffed. It includes an ABI sweep: argument types (ZST, scalar pairs, large aggregates,
-  `f32`/`f64` mixes, `u128`, `extern "C"`, closures, vtable shims, `#[track_caller]`) through
-  portals and island templates, on both targets. Programs can list functions that must be
+  exit codes, stdout and stderr are diffed. It includes an ABI sweep (`tests/vm_abi.rs`): a value of each kind of
+  `PassMode` (ZSTs, scalars, scalar pairs, the Rust ABI's small-aggregate integers, large
+  aggregates, `f16`/`f32`/`f64`/`f128` mixes, `u128` with one integer register left, enough
+  arguments to spill to the stack, `extern "C"`, closures, vtables, `#[track_caller]`)
+  passed and returned VM → native, native → VM and VM → VM, directly and through fn
+  pointers. Programs can list functions that must be
   compiled to bytecode: the ryo builds run with `RYO_STATS=1` and must report them, and the
   program is run once more with `RYO_VM_TRACE`: the reported IDs, mapped back to names
   through the IDs `RYO_STATS` prints, must include the functions the program lists as
