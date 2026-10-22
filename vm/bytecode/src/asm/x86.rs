@@ -55,14 +55,228 @@ pub const fn island_args(pe: bool) -> [Reg; 2] {
     if pe { [Reg::Rcx, Reg::Rdx] } else { [Reg::Rdi, Reg::Rsi] }
 }
 
-/// A branch condition, on the flags of the `test` before it.
+/// A branch condition, on the flags of the `test` or `cmp` before it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Cond {
     Always,
-    /// `jz`: the value tested was zero (false).
+    /// `jz`: the value tested was zero (false), or the compared values are equal.
     Z,
     /// `jnz`.
     Nz,
+    /// Signed `<`, `>=`, `<=`, `>` (`jl`, `jge`, `jle`, `jg`).
+    L,
+    Ge,
+    Le,
+    G,
+    /// Unsigned `<`, `>=`, `<=`, `>` (`jb`, `jae`, `jbe`, `ja`).
+    B,
+    Ae,
+    Be,
+    A,
+}
+
+impl Cond {
+    /// The x86 condition code (`jcc rel8` is `0x70 | cc`).
+    fn cc(self) -> u8 {
+        match self {
+            Cond::Always => unreachable!("no condition code"),
+            Cond::B => 0x2,
+            Cond::Ae => 0x3,
+            Cond::Z => 0x4,
+            Cond::Nz => 0x5,
+            Cond::Be => 0x6,
+            Cond::A => 0x7,
+            Cond::L => 0xc,
+            Cond::Ge => 0xd,
+            Cond::Le => 0xe,
+            Cond::G => 0xf,
+        }
+    }
+
+    fn from_cc(cc: u8) -> Option<Cond> {
+        Some(match cc {
+            0x2 => Cond::B,
+            0x3 => Cond::Ae,
+            0x4 => Cond::Z,
+            0x5 => Cond::Nz,
+            0x6 => Cond::Be,
+            0x7 => Cond::A,
+            0xc => Cond::L,
+            0xd => Cond::Ge,
+            0xe => Cond::Le,
+            0xf => Cond::G,
+            _ => return None,
+        })
+    }
+
+    /// The opposite condition.
+    pub fn not(self) -> Cond {
+        Cond::from_cc(self.cc() ^ 1).unwrap()
+    }
+}
+
+/// The operand size of a native instruction: 8, 16, 32 or 64 bits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum W {
+    B,
+    W,
+    D,
+    Q,
+}
+
+impl W {
+    pub fn bits(self) -> u32 {
+        match self {
+            W::B => 8,
+            W::W => 16,
+            W::D => 32,
+            W::Q => 64,
+        }
+    }
+
+    /// The low bits of `v` at this width, sign-extended: the value of an immediate field.
+    pub fn sext(self, v: u64) -> i64 {
+        match self {
+            W::B => v as i8 as i64,
+            W::W => v as i16 as i64,
+            W::D => v as i32 as i64,
+            W::Q => v as i64,
+        }
+    }
+
+    /// The operand-size prefix: `66` (16 bits) or `REX.W` (64 bits).
+    fn prefix(self, out: &mut Vec<u8>) {
+        match self {
+            W::W => out.push(0x66),
+            W::Q => out.push(0x48),
+            W::B | W::D => {}
+        }
+    }
+
+    fn prefix_len(self) -> u32 {
+        matches!(self, W::W | W::Q) as u32
+    }
+
+    /// A full-width immediate field (`Q`: 32 bits, sign-extended).
+    fn imm(self, imm: i32, out: &mut Vec<u8>) {
+        match self {
+            W::B => out.push(imm as u8),
+            W::W => out.extend_from_slice(&(imm as u16).to_le_bytes()),
+            W::D | W::Q => out.extend_from_slice(&imm.to_le_bytes()),
+        }
+    }
+
+    fn imm_len(self) -> u32 {
+        match self {
+            W::B => 1,
+            W::W => 2,
+            W::D | W::Q => 4,
+        }
+    }
+}
+
+/// A memory operand `[base + disp]`, `base` `rbp` (a frame slot) or `rax` (a pointer).
+/// The displacement takes its shortest form: none for `[rax]`, then `disp8`, then `disp32`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct M {
+    pub base: Reg,
+    pub disp: i32,
+}
+
+impl M {
+    pub fn frame(disp: i32) -> M {
+        M { base: Reg::Rbp, disp }
+    }
+
+    pub fn rax(disp: i32) -> M {
+        M { base: Reg::Rax, disp }
+    }
+
+    fn len(self) -> u32 {
+        1 + if self.base == Reg::Rax && self.disp == 0 {
+            0
+        } else if i8::try_from(self.disp).is_ok() {
+            1
+        } else {
+            4
+        }
+    }
+
+    /// The ModRM byte (`reg` in its middle field) and the displacement.
+    fn write(self, reg: u8, out: &mut Vec<u8>) {
+        let rm = self.base.low();
+        if self.base == Reg::Rax && self.disp == 0 {
+            out.push(reg << 3 | rm);
+        } else if let Ok(d) = i8::try_from(self.disp) {
+            out.extend_from_slice(&[0x40 | reg << 3 | rm, d as u8]);
+        } else {
+            out.push(0x80 | reg << 3 | rm);
+            out.extend_from_slice(&self.disp.to_le_bytes());
+        }
+    }
+}
+
+/// A register or memory operand (ModRM `r/m`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Rm {
+    Reg(Reg),
+    Mem(M),
+}
+
+impl Rm {
+    fn len(self) -> u32 {
+        match self {
+            Rm::Reg(_) => 1,
+            Rm::Mem(m) => m.len(),
+        }
+    }
+
+    fn write(self, reg: u8, out: &mut Vec<u8>) {
+        match self {
+            Rm::Reg(r) => out.push(0xc0 | reg << 3 | r.low()),
+            Rm::Mem(m) => m.write(reg, out),
+        }
+    }
+}
+
+/// The integer ALU operations, by their x86 `/digit`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum Alu {
+    Add = 0,
+    Or = 1,
+    And = 4,
+    Sub = 5,
+    Xor = 6,
+    Cmp = 7,
+}
+
+impl Alu {
+    fn from_num(n: u8) -> Option<Alu> {
+        Some(match n {
+            0 => Alu::Add,
+            1 => Alu::Or,
+            4 => Alu::And,
+            5 => Alu::Sub,
+            6 => Alu::Xor,
+            7 => Alu::Cmp,
+            _ => return None,
+        })
+    }
+}
+
+/// The shifts by an immediate, by their x86 `/digit`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum Sh {
+    Shl = 4,
+    Shr = 5,
+    Sar = 7,
+}
+
+/// Whether `v` fits a sign-extended 8-bit immediate.
+fn imm8(v: i32) -> bool {
+    i8::try_from(v).is_ok()
 }
 
 /// A machine-code element. Positions are byte offsets in the function.
@@ -117,6 +331,32 @@ pub enum Item {
     Int3,
     /// A jump table entry: the offset of `target` from the table start `base`.
     TableEntry { base: u32, target: u32 },
+
+    // The native instructions of inlined VM instructions (`rax`, `rcx` and `rdx` only).
+    /// `mov dst, [m]` (32 or 64 bits), or for `B`/`W` `movzx` (`sx`: `movsx`) `dst32, [m]`.
+    Ld { w: W, sx: bool, dst: Reg, m: M },
+    /// `mov [m], src` at width `w`.
+    St { w: W, src: Reg, m: M },
+    /// `mov [m], imm` at width `w` (`Q`: a sign-extended `imm32`). `imm` is the field's value,
+    /// sign-extended.
+    StImm { w: W, m: M, imm: i32 },
+    /// `lea dst, [m]` (64 bits).
+    LeaM { dst: Reg, m: M },
+    /// `op reg, r/m` at width `w`.
+    Alu { op: Alu, w: W, reg: Reg, rm: Rm },
+    /// `op r/m, imm` at width `w`: a sign-extended `imm8` where it fits, else the full width
+    /// (`Q`: `imm32`). `B` is always `imm8`.
+    AluImm { op: Alu, w: W, rm: Rm, imm: i32 },
+    /// `imul reg, r/m` (`D` or `Q`).
+    Imul { w: W, reg: Reg, rm: Rm },
+    /// `imul reg, r/m, imm` (`D` or `Q`; `imm8` where it fits, else `imm32`).
+    ImulImm { w: W, reg: Reg, rm: Rm, imm: i32 },
+    /// `shl`/`shr`/`sar reg, imm8` (`D` or `Q`).
+    Shift { op: Sh, w: W, reg: Reg, amt: u8 },
+    /// `setcc byte [m]`.
+    Setcc { cond: Cond, m: M },
+    /// `test byte [m], 0xff`.
+    TestM8(M),
 }
 
 /// The standard multi-byte `nop`s (Intel SDM), by length.
@@ -186,9 +426,96 @@ impl Item {
             Item::Branch { cond, long, .. } => match (cond, long) {
                 (_, false) => 2,
                 (Cond::Always, true) => 5,
-                (Cond::Z | Cond::Nz, true) => 6,
+                (_, true) => 6,
             },
             Item::Nop(n) => n as u32,
+            Item::Ld { w, m, .. } => (if w == W::D { 1 } else { 2 }) + m.len(),
+            Item::St { w, m, .. } => w.prefix_len() + 1 + m.len(),
+            Item::StImm { w, m, .. } => w.prefix_len() + 1 + m.len() + w.imm_len(),
+            Item::LeaM { m, .. } => 2 + m.len(),
+            Item::Alu { w, rm, .. } => w.prefix_len() + 1 + rm.len(),
+            Item::AluImm { w, rm, imm, .. } => {
+                w.prefix_len() + 1 + rm.len() + if w == W::B || imm8(imm) { 1 } else { w.imm_len() }
+            }
+            Item::Imul { w, rm, .. } => w.prefix_len() + 2 + rm.len(),
+            Item::ImulImm { w, rm, imm, .. } => w.prefix_len() + 1 + rm.len() + if imm8(imm) { 1 } else { 4 },
+            Item::Shift { w, .. } => w.prefix_len() + 3,
+            Item::Setcc { m, .. } => 2 + m.len(),
+            Item::TestM8(m) => 2 + m.len(),
+        }
+    }
+
+    /// Whether the item ends an inline sequence: it writes the result (to the frame or to
+    /// memory). The other end is a conditional branch.
+    pub fn ends_inline(&self) -> bool {
+        matches!(self, Item::St { .. } | Item::StImm { .. } | Item::Setcc { .. })
+    }
+
+    /// Whether the item may be part of an inline sequence.
+    pub fn is_inline(&self) -> bool {
+        matches!(
+            self,
+            Item::Ld { .. }
+                | Item::St { .. }
+                | Item::StImm { .. }
+                | Item::LeaM { .. }
+                | Item::Alu { .. }
+                | Item::AluImm { .. }
+                | Item::Imul { .. }
+                | Item::ImulImm { .. }
+                | Item::Shift { .. }
+                | Item::Setcc { .. }
+                | Item::TestM8(_)
+                | Item::SetReg(Reg::Rax | Reg::Rcx, _)
+        )
+    }
+
+    /// The item with the displacements of its frame operands (`[rbp + d]`) mapped by `f`.
+    pub fn map_frame(self, f: impl Fn(i32) -> i32) -> Item {
+        let fm = |m: M| if m.base == Reg::Rbp { M { disp: f(m.disp), ..m } } else { m };
+        let frm = |rm: Rm| match rm {
+            Rm::Mem(m) => Rm::Mem(fm(m)),
+            r => r,
+        };
+        match self {
+            Item::Ld { w, sx, dst, m } => Item::Ld { w, sx, dst, m: fm(m) },
+            Item::St { w, src, m } => Item::St { w, src, m: fm(m) },
+            Item::StImm { w, m, imm } => Item::StImm { w, m: fm(m), imm },
+            Item::LeaM { dst, m } => Item::LeaM { dst, m: fm(m) },
+            Item::Alu { op, w, reg, rm } => Item::Alu { op, w, reg, rm: frm(rm) },
+            Item::AluImm { op, w, rm, imm } => Item::AluImm { op, w, rm: frm(rm), imm },
+            Item::Imul { w, reg, rm } => Item::Imul { w, reg, rm: frm(rm) },
+            Item::ImulImm { w, reg, rm, imm } => Item::ImulImm { w, reg, rm: frm(rm), imm },
+            Item::Setcc { cond, m } => Item::Setcc { cond, m: fm(m) },
+            Item::TestM8(m) => Item::TestM8(fm(m)),
+            it => it,
+        }
+    }
+
+    /// The memory operand of the item.
+    pub fn mem(&self) -> Option<M> {
+        match *self {
+            Item::Ld { m, .. }
+            | Item::St { m, .. }
+            | Item::StImm { m, .. }
+            | Item::LeaM { m, .. }
+            | Item::Setcc { m, .. }
+            | Item::TestM8(m) => Some(m),
+            Item::Alu { rm: Rm::Mem(m), .. }
+            | Item::AluImm { rm: Rm::Mem(m), .. }
+            | Item::Imul { rm: Rm::Mem(m), .. }
+            | Item::ImulImm { rm: Rm::Mem(m), .. } => Some(m),
+            _ => None,
+        }
+    }
+
+    /// The immediate of the item, sign-extended.
+    pub fn imm(&self) -> Option<u64> {
+        match *self {
+            Item::StImm { imm, .. } | Item::AluImm { imm, .. } | Item::ImulImm { imm, .. } => Some(imm as i64 as u64),
+            Item::Shift { amt, .. } => Some(amt as u64),
+            Item::SetReg(_, v) => Some(v),
+            _ => None,
         }
     }
 
@@ -266,15 +593,13 @@ impl Item {
                 if long {
                     match cond {
                         Cond::Always => out.push(0xe9),
-                        Cond::Z => out.extend_from_slice(&[0x0f, 0x84]),
-                        Cond::Nz => out.extend_from_slice(&[0x0f, 0x85]),
+                        c => out.extend_from_slice(&[0x0f, 0x80 | c.cc()]),
                     }
                     rel32(out, target);
                 } else {
                     out.push(match cond {
                         Cond::Always => 0xeb,
-                        Cond::Z => 0x74,
-                        Cond::Nz => 0x75,
+                        c => 0x70 | c.cc(),
                     });
                     let d = target.wrapping_sub(pos + 2) as i32;
                     debug_assert!(i8::try_from(d).is_ok(), "short branch out of range");
@@ -295,6 +620,74 @@ impl Item {
             Item::Nop(n) => out.extend_from_slice(NOPS[n as usize]),
             Item::Int3 => out.push(0xcc),
             Item::TableEntry { base, target } => out.extend_from_slice(&(target.wrapping_sub(base) as i32).to_le_bytes()),
+            Item::Ld { w, sx, dst, m } => {
+                match w {
+                    W::B => out.extend_from_slice(&[0x0f, if sx { 0xbe } else { 0xb6 }]),
+                    W::W => out.extend_from_slice(&[0x0f, if sx { 0xbf } else { 0xb7 }]),
+                    W::D => out.push(0x8b),
+                    W::Q => out.extend_from_slice(&[0x48, 0x8b]),
+                }
+                m.write(dst.low(), out);
+            }
+            Item::St { w, src, m } => {
+                w.prefix(out);
+                out.push(if w == W::B { 0x88 } else { 0x89 });
+                m.write(src.low(), out);
+            }
+            Item::StImm { w, m, imm } => {
+                w.prefix(out);
+                out.push(if w == W::B { 0xc6 } else { 0xc7 });
+                m.write(0, out);
+                w.imm(imm, out);
+            }
+            Item::LeaM { dst, m } => {
+                out.extend_from_slice(&[0x48, 0x8d]);
+                m.write(dst.low(), out);
+            }
+            Item::Alu { op, w, reg, rm } => {
+                w.prefix(out);
+                out.push((op as u8) << 3 | if w == W::B { 2 } else { 3 });
+                rm.write(reg.low(), out);
+            }
+            Item::AluImm { op, w, rm, imm } => {
+                w.prefix(out);
+                let short = w == W::B || imm8(imm);
+                out.push(if w == W::B { 0x80 } else if short { 0x83 } else { 0x81 });
+                rm.write(op as u8, out);
+                if short {
+                    out.push(imm as u8);
+                } else {
+                    w.imm(imm, out);
+                }
+            }
+            Item::Imul { w, reg, rm } => {
+                w.prefix(out);
+                out.extend_from_slice(&[0x0f, 0xaf]);
+                rm.write(reg.low(), out);
+            }
+            Item::ImulImm { w, reg, rm, imm } => {
+                w.prefix(out);
+                out.push(if imm8(imm) { 0x6b } else { 0x69 });
+                rm.write(reg.low(), out);
+                if imm8(imm) {
+                    out.push(imm as u8);
+                } else {
+                    out.extend_from_slice(&imm.to_le_bytes());
+                }
+            }
+            Item::Shift { op, w, reg, amt } => {
+                w.prefix(out);
+                out.extend_from_slice(&[0xc1, 0xc0 | (op as u8) << 3 | reg.low(), amt]);
+            }
+            Item::Setcc { cond, m } => {
+                out.extend_from_slice(&[0x0f, 0x90 | cond.cc()]);
+                m.write(0, out);
+            }
+            Item::TestM8(m) => {
+                out.push(0xf6);
+                m.write(0, out);
+                out.push(0xff);
+            }
         }
         debug_assert_eq!(out.len() - start, self.len() as usize, "{self:?}");
     }
@@ -351,6 +744,145 @@ impl<'a> Cursor<'a> {
     /// Reads the next element (not padding, `int3` or a table entry), and checks that its
     /// encoding is canonical.
     pub fn item(&mut self) -> Result<Item, BadItem> {
+        match self.base_item() {
+            Ok(it) => Ok(it),
+            Err(e) => self.native().map_err(|_| e),
+        }
+    }
+
+    /// Reads a native instruction of an inline sequence. It parses leniently, then checks the
+    /// bytes are the item's canonical encoding.
+    fn native(&mut self) -> Result<Item, BadItem> {
+        let bad = BadItem(self.pos);
+        let all = &self.code[self.pos as usize..];
+        let get = |i: usize| all.get(i).copied().ok_or(bad);
+        let i32_at = |i: usize| -> Result<i32, BadItem> {
+            let b = all.get(i..i + 4).ok_or(bad)?;
+            Ok(i32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        };
+        let (w, mut i) = match get(0)? {
+            0x66 => (W::W, 1),
+            0x48 => (W::Q, 1),
+            _ => (W::D, 0),
+        };
+        let op = get(i)?;
+        i += 1;
+        // The ModRM operand at `i`: the `reg` field, the `r/m` operand, and the next position.
+        let modrm = |i: usize| -> Result<(u8, Rm, usize), BadItem> {
+            let m = get(i)?;
+            let (md, reg, rm) = (m >> 6, m >> 3 & 7, m & 7);
+            if md == 3 {
+                return Ok((reg, Rm::Reg(Reg::from_num(rm).ok_or(bad)?), i + 1));
+            }
+            let base = match rm {
+                5 if md != 0 => Reg::Rbp,
+                0 => Reg::Rax,
+                _ => return Err(bad),
+            };
+            let (disp, n) = match md {
+                0 => (0, 0),
+                1 => (get(i + 1)? as i8 as i32, 1),
+                _ => (i32_at(i + 1)?, 4),
+            };
+            Ok((reg, Rm::Mem(M { base, disp }), i + 1 + n))
+        };
+        let mem = |rm: Rm| match rm {
+            Rm::Mem(m) => Ok(m),
+            Rm::Reg(_) => Err(bad),
+        };
+        let reg = |n: u8| Reg::from_num(n).filter(|r| matches!(r, Reg::Rax | Reg::Rcx | Reg::Rdx)).ok_or(bad);
+        let rm_reg = |rm: Rm| match rm {
+            Rm::Reg(r) => reg(r as u8),
+            Rm::Mem(_) => Err(bad),
+        };
+        // A full-width immediate at `j`.
+        let imm_at = |w: W, j: usize| -> Result<i32, BadItem> {
+            Ok(match w {
+                W::B => get(j)? as i8 as i32,
+                W::W => i16::from_le_bytes([get(j)?, get(j + 1)?]) as i32,
+                W::D | W::Q => i32_at(j)?,
+            })
+        };
+        let dq = |w: W| if matches!(w, W::D | W::Q) { Ok(w) } else { Err(bad) };
+        let item = match (w, op) {
+            (W::D | W::Q, 0x0f) => {
+                let op2 = get(i)?;
+                let (r, rm, _) = modrm(i + 1)?;
+                match op2 {
+                    0xb6 | 0xb7 | 0xbe | 0xbf if w == W::D => {
+                        Item::Ld { w: if op2 & 1 == 0 { W::B } else { W::W }, sx: op2 & 8 != 0, dst: reg(r)?, m: mem(rm)? }
+                    }
+                    0xaf => Item::Imul { w, reg: reg(r)?, rm },
+                    0x90..=0x9f if w == W::D && r == 0 => {
+                        Item::Setcc { cond: Cond::from_cc(op2 & 0xf).ok_or(bad)?, m: mem(rm)? }
+                    }
+                    _ => return Err(bad),
+                }
+            }
+            (W::D | W::Q, 0x8b) => {
+                let (r, rm, _) = modrm(i)?;
+                Item::Ld { w, sx: false, dst: reg(r)?, m: mem(rm)? }
+            }
+            (_, 0x88 | 0x89) => {
+                let w = if op == 0x88 { if w == W::D { W::B } else { return Err(bad) } } else { w };
+                let (r, rm, _) = modrm(i)?;
+                Item::St { w, src: reg(r)?, m: mem(rm)? }
+            }
+            (_, 0xc6 | 0xc7) => {
+                let w = if op == 0xc6 { if w == W::D { W::B } else { return Err(bad) } } else { w };
+                let (_, rm, j) = modrm(i)?;
+                Item::StImm { w, m: mem(rm)?, imm: imm_at(w, j)? }
+            }
+            (W::Q, 0x8d) => {
+                let (r, rm, _) = modrm(i)?;
+                Item::LeaM { dst: reg(r)?, m: mem(rm)? }
+            }
+            (_, 0x00..=0x3f) if op & 6 == 2 => {
+                let w = if op & 1 == 0 { if w == W::D { W::B } else { return Err(bad) } } else { w };
+                let (r, rm, _) = modrm(i)?;
+                Item::Alu { op: Alu::from_num(op >> 3).ok_or(bad)?, w, reg: reg(r)?, rm }
+            }
+            (_, 0x80 | 0x81 | 0x83) => {
+                let w = if op == 0x80 { if w == W::D { W::B } else { return Err(bad) } } else { w };
+                let (r, rm, j) = modrm(i)?;
+                let imm = if op == 0x81 { imm_at(w, j)? } else { get(j)? as i8 as i32 };
+                Item::AluImm { op: Alu::from_num(r).ok_or(bad)?, w, rm, imm }
+            }
+            (_, 0x69 | 0x6b) => {
+                let (r, rm, j) = modrm(i)?;
+                let imm = if op == 0x69 { i32_at(j)? } else { get(j)? as i8 as i32 };
+                Item::ImulImm { w: dq(w)?, reg: reg(r)?, rm, imm }
+            }
+            (_, 0xc1) => {
+                let (r, rm, j) = modrm(i)?;
+                let op = match r {
+                    4 => Sh::Shl,
+                    5 => Sh::Shr,
+                    7 => Sh::Sar,
+                    _ => return Err(bad),
+                };
+                Item::Shift { op, w: dq(w)?, reg: rm_reg(rm)?, amt: get(j)? }
+            }
+            (W::D, 0xf6) => {
+                let (_, rm, _) = modrm(i)?;
+                Item::TestM8(mem(rm)?)
+            }
+            _ => return Err(bad),
+        };
+        if let Item::Alu { rm: Rm::Reg(r), .. } | Item::AluImm { rm: Rm::Reg(r), .. } | Item::Imul { rm: Rm::Reg(r), .. } | Item::ImulImm { rm: Rm::Reg(r), .. } = item {
+            reg(r as u8)?;
+        }
+        let len = item.len();
+        let mut want = Vec::with_capacity(len as usize);
+        item.write(self.pos, &mut want, &mut Vec::new());
+        if all.get(..len as usize) != Some(&want[..]) || self.reloc_in(self.pos, len) {
+            return Err(bad);
+        }
+        self.pos += len;
+        Ok(item)
+    }
+
+    fn base_item(&mut self) -> Result<Item, BadItem> {
         let bad = BadItem(self.pos);
         let b = self.bytes(1)?;
         let all = &self.code[self.pos as usize..];
@@ -443,18 +975,15 @@ impl<'a> Cursor<'a> {
                 Some(to) => Item::Jmp(to),
                 None => Item::Branch { cond: Cond::Always, target: self.local(1, 5)?, long: true },
             },
-            (0, 0xeb | 0x74 | 0x75) => {
+            (0, 0xeb | 0x70..=0x7f) => {
                 let d = get(1)? as i8 as i32 as u32;
-                let cond = match op {
-                    0xeb => Cond::Always,
-                    0x74 => Cond::Z,
-                    _ => Cond::Nz,
-                };
+                let cond = if op == 0xeb { Cond::Always } else { Cond::from_cc(op & 0xf).ok_or(bad)? };
                 Item::Branch { cond, target: (self.pos + 2).wrapping_add(d), long: false }
             }
             (0, 0x0f) => match get(1)? {
-                0x84 => Item::Branch { cond: Cond::Z, target: self.local(2, 6)?, long: true },
-                0x85 => Item::Branch { cond: Cond::Nz, target: self.local(2, 6)?, long: true },
+                cc @ 0x80..=0x8f => {
+                    Item::Branch { cond: Cond::from_cc(cc & 0xf).ok_or(bad)?, target: self.local(2, 6)?, long: true }
+                }
                 0x0b => Item::Ud2,
                 0x1f if get(2)? == super::CALL_MARKER[2] => Item::Marker(self.i32_at(3)?),
                 _ => return Err(bad),

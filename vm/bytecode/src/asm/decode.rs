@@ -183,6 +183,11 @@ fn ops_array(ro: &[u8], at: u32) -> Option<Vec<u32>> {
 fn insn(c: &mut Cursor<'_>, mode: Mode, ro: &[u8], argblk: u32) -> Result<Proto, AsmError> {
     let pos = c.pos;
     let err = |at: u32, what: &'static str| AsmError { at, what };
+    if mode.inline
+        && let Some(p) = inline_insn(c)
+    {
+        return Ok(p);
+    }
     let mut setup = Vec::new();
     let head = loop {
         let at = c.pos;
@@ -294,6 +299,9 @@ fn insn(c: &mut Cursor<'_>, mode: Mode, ro: &[u8], argblk: u32) -> Result<Proto,
                 }
                 Shape::Jmp | Shape::Call | Shape::Island => unreachable!(),
             }
+            if mode.inline && super::inline::sequence(op, &ops).is_some() {
+                return Err(err(hat, "handler call of an inlined instruction"));
+            }
             Proto { op, ops, pos, sites }
         }
         Item::Call(Ref::Func(f)) if setup.is_empty() => {
@@ -316,6 +324,39 @@ fn insn(c: &mut Cursor<'_>, mode: Mode, ro: &[u8], argblk: u32) -> Result<Proto,
         _ => return Err(err(hat, "not an instruction")),
     };
     Ok(ops)
+}
+
+/// An inline sequence at the cursor, or `None` (the cursor unmoved) if there is none: native
+/// items up to the one that writes the result, or up to a conditional branch.
+fn inline_insn(c: &mut Cursor<'_>) -> Option<Proto> {
+    let pos = c.pos;
+    let mut items = Vec::new();
+    let mut branch = None;
+    loop {
+        match c.item() {
+            Ok(it) if it.is_inline() => {
+                items.push(it);
+                if it.ends_inline() {
+                    break;
+                }
+            }
+            Ok(Item::Branch { cond, target, .. }) if cond != Cond::Always && !items.is_empty() => {
+                branch = Some((cond, target));
+                break;
+            }
+            _ => {
+                c.pos = pos;
+                return None;
+            }
+        }
+    }
+    match super::inline::decode(&items, branch) {
+        Some((op, ops)) => Some(Proto { op, ops, pos, sites: Vec::new() }),
+        None => {
+            c.pos = pos;
+            None
+        }
+    }
 }
 
 /// The jump table sequence and its `n` entries.

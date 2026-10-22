@@ -202,7 +202,8 @@ fn check_rt_abi(tcx: TyCtxt<'_>, rt: RtItems) {
 }
 
 /// How the image's machine code is generated: as `ryo_rt`'s handlers expect `fp`, with
-/// loop-head alignment unless `RYO_ASM_ALIGN=0`, and for the target's object format.
+/// loop-head alignment unless `RYO_ASM_ALIGN=0`, the common instructions inline unless
+/// `RYO_ASM_INLINE=0`, and for the target's object format.
 pub fn asm_mode(tcx: TyCtxt<'_>, rt: RtItems) -> asm::Mode {
     let fp_arg = tcx.const_eval_poly(rt.fp_arg).ok().and_then(|v| v.try_to_scalar_int()).map(|i| i.to_u8() != 0);
     let Some(fp_arg) = fp_arg else { tcx.dcx().fatal("ryo_rt's FP_ARG isn't a bool") };
@@ -210,6 +211,7 @@ pub fn asm_mode(tcx: TyCtxt<'_>, rt: RtItems) -> asm::Mode {
         fp_arg,
         align_loops: std::env::var_os("RYO_ASM_ALIGN").is_none_or(|v| v != "0"),
         pe: tcx.sess.target.binary_format == rustc_target::spec::BinaryFormat::Coff,
+        inline: std::env::var_os("RYO_ASM_INLINE").is_none_or(|v| v != "0"),
     }
 }
 

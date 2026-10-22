@@ -1,6 +1,7 @@
 //! The x86-64 form of VM code (design/vm.md, "Encoding"): every instruction is a call of its
 //! handler `ryo_h_<Opcode>` with its operands in argument registers, followed by the control
-//! flow its [`Shape`] gives it.
+//! flow its [`Shape`] gives it, except that with [`Mode::inline`] the common instructions are
+//! native sequences.
 //!
 //! - [`layout`] (here, `core` only): which argument register holds which operand. The
 //!   handlers in `ryo_rt` read their operands through it, and the encoder writes them through
@@ -10,6 +11,7 @@
 //! - [`encode`] / [`decode`] (`alloc`): instruction words to machine code and back. The
 //!   decoder is the encoder's test oracle: `decode(encode(f)) == f`, frame size and unwind
 //!   entries included.
+//! - `inline` (`alloc`): the native sequences of the instructions [`Mode::inline`] inlines.
 //! - [`lsda`] (`alloc`): the call-site table of a function's LSDA.
 //!
 //! # Operands and registers
@@ -26,12 +28,16 @@ mod decode;
 #[cfg(feature = "alloc")]
 mod encode;
 #[cfg(feature = "alloc")]
+mod inline;
+#[cfg(feature = "alloc")]
 pub mod lsda;
 #[cfg(feature = "alloc")]
 mod x86;
 
 #[cfg(feature = "alloc")]
 pub use decode::{AsmError, Decoded, decode};
+#[cfg(feature = "alloc")]
+pub use inline::has_inline;
 #[cfg(feature = "alloc")]
 pub use encode::{Asm, CallSite, EncodeError, Encoded, InsnId, Label, Opnd, PROBE_FROM, Ref, Reloc, Unwind, encode, operands, push_words, word_len};
 
@@ -53,6 +59,8 @@ pub struct Mode {
     /// The target is PE/COFF: islands take the Win64 convention (`rcx`, `rdx`, 32 bytes of
     /// shadow space).
     pub pe: bool,
+    /// The common instructions ([`has_inline`]) are native sequences, not handler calls.
+    pub inline: bool,
 }
 
 /// Where a handler finds an operand: `count` argument registers from `reg` (0 is `rdi`),

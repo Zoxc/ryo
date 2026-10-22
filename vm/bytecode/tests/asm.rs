@@ -29,11 +29,11 @@ impl Rng {
     }
 }
 
-const MODES: [Mode; 8] = {
-    let mut m = [Mode { fp_arg: false, align_loops: false, pe: false }; 8];
+const MODES: [Mode; 16] = {
+    let mut m = [Mode { fp_arg: false, align_loops: false, pe: false, inline: false }; 16];
     let mut i = 0;
-    while i < 8 {
-        m[i] = Mode { fp_arg: i & 1 != 0, align_loops: i & 2 != 0, pe: i & 4 != 0 };
+    while i < 16 {
+        m[i] = Mode { fp_arg: i & 1 != 0, align_loops: i & 2 != 0, pe: i & 4 != 0, inline: i & 8 != 0 };
         i += 1;
     }
     m
@@ -214,7 +214,7 @@ fn long_branches_and_loops() {
 /// The register packing of the opcodes with more operands than registers.
 #[test]
 fn packed_operands() {
-    let m = Mode { fp_arg: false, align_loops: false, pe: false };
+    let m = Mode { fp_arg: false, align_loops: false, pe: false, inline: false };
     let l = asm::layout(Opcode::DiscrNicheW128, m);
     // d, s, niche_start (2), variants_start, variants_end | untagged << 32.
     assert_eq!(l.regs, 6);
@@ -236,7 +236,7 @@ fn packed_operands() {
 /// Machine code that isn't canonical is rejected.
 #[test]
 fn rejects_non_canonical_code() {
-    let m = Mode { fp_arg: false, align_loops: false, pe: false };
+    let m = Mode { fp_arg: false, align_loops: false, pe: false, inline: false };
     let f = Fn {
         insns: vec![vec![Opcode::ImmW64 as u32, -8i32 as u32, 5, 0], vec![Opcode::Ret as u32, -8i32 as u32, 8]],
         targets: Vec::new(),
@@ -260,6 +260,71 @@ fn rejects_non_canonical_code() {
     assert!(asm::decode(&enc.code, &enc.relocs, &enc.rodata, &sites, m).is_err());
 }
 
+/// The inline sequences with every displacement and immediate form: frame slots and memory
+/// offsets of 0, 8 and 32 bits, immediates of every size class. The ones that are inlined
+/// call no handler.
+#[test]
+fn inline_operand_forms() {
+    const SLOTS: [i32; 8] = [-8, 16, -128, 127, -129, 128, 1 << 20, -(1 << 20)];
+    const KS: [i32; 5] = [0, 1, -128, 300, -70000];
+    let mut rng = Rng(0x1234);
+    for &op in ALL_OPCODES {
+        if !asm::has_inline(op) {
+            continue;
+        }
+        for round in 0..24 {
+            let mode = MODES[8 + round % 8];
+            // [abort], insn, abort, abort.
+            let mut f = Fn { insns: vec![vec![Opcode::Abort as u32]], targets: Vec::new(), unwind: Vec::new() };
+            let mut w = vec![op as u32];
+            for o in op.info().operands {
+                let slot = SLOTS[rng.below(8) as usize] as u32;
+                match o.kind {
+                    OperandKind::Slot => w.push(slot),
+                    OperandKind::Mem => w.extend([slot, KS[rng.below(5) as usize] as u32]),
+                    OperandKind::U8 => w.push(if round % 3 == 0 { rng.below(10) } else { rng.imm() } as u8 as u32),
+                    OperandKind::U16 => w.push(if round % 3 == 0 { rng.below(20) } else { rng.imm() } as u16 as u32),
+                    OperandKind::U32 => w.push(if round % 3 == 0 { rng.below(40) } else { rng.imm() } as u32),
+                    OperandKind::U64 | OperandKind::I64 => {
+                        let v = if round % 3 == 0 { rng.below(70) } else { rng.imm() };
+                        w.extend([v as u32, (v >> 32) as u32]);
+                    }
+                    OperandKind::Neg => w.push(rng.below(2) as u32),
+                    OperandKind::Target => {
+                        f.targets.push((1, w.len(), [0, 1, 2, 3][rng.below(4) as usize]));
+                        w.push(0);
+                    }
+                    k => panic!("{}: operand kind {k:?}", op.mnemonic()),
+                }
+            }
+            f.insns.push(w);
+            f.insns.push(vec![Opcode::Abort as u32]);
+            f.insns.push(vec![Opcode::Abort as u32]);
+            let enc = check(&f, FRAMES[round % FRAMES.len()], mode, op.mnemonic());
+            let small = !matches!(op, Opcode::PtrAdd | Opcode::PtrIndex) && !op.mnemonic().starts_with("sh");
+            if small || (round % 3 == 0 && !op.mnemonic().starts_with("sh")) {
+                assert!(!enc.relocs.iter().any(|r| r.to == asm::Ref::Handler(op)), "{} isn't inlined", op.mnemonic());
+            }
+        }
+    }
+}
+
+/// In inline mode, a handler call of an instruction that has an inline form isn't canonical.
+#[test]
+fn rejects_handler_calls_of_inlined_ops() {
+    let m = Mode { fp_arg: false, align_loops: false, pe: false, inline: false };
+    let f = Fn {
+        insns: vec![vec![Opcode::AddW32 as u32, -8i32 as u32, -16i32 as u32, 16], vec![Opcode::Abort as u32]],
+        targets: Vec::new(),
+        unwind: Vec::new(),
+    };
+    let enc = check(&f, 16, m, "add.w32");
+    let inline = Mode { inline: true, ..m };
+    assert!(asm::decode(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, inline).is_err());
+    let enc = check(&f, 16, inline, "add.w32");
+    assert!(asm::decode(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, m).is_err());
+}
+
 /// Pins the canonical sequences: any change to how an opcode is encoded changes this hash.
 /// When it fails, bump `FORMAT_VERSION` and update both values.
 #[test]
@@ -272,7 +337,7 @@ fn templates_are_pinned_to_format_version() {
     };
     let mut rng = Rng(7);
     for &op in ALL_OPCODES {
-        for mode in [MODES[0], MODES[1], MODES[6]] {
+        for mode in [MODES[0], MODES[1], MODES[6], MODES[8], MODES[14]] {
             let mut f = Fn { insns: vec![vec![Opcode::Lpad as u32, -8i32 as u32]], targets: Vec::new(), unwind: Vec::new() };
             let w = insn(op, &mut rng, 2, &mut f, &mut |_| 0);
             f.insns.push(w);
@@ -289,5 +354,5 @@ fn templates_are_pinned_to_format_version() {
             eat(&lsda::write(&enc.call_sites));
         }
     }
-    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (8, 0xcb85d80086ed2cc1), "template hash {h:#x}");
+    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (9, 0x61ae0989ca170ae9), "template hash {h:#x}");
 }

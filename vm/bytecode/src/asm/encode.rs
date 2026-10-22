@@ -1,7 +1,8 @@
 //! Instruction words to machine code (design/vm.md, "Encoding").
 //!
 //! Every instruction becomes its canonical sequence ([`super::x86`]): the handler call with
-//! the operands in their registers, then its shape's control flow. Branches within the
+//! the operands in their registers, then its shape's control flow, or with [`Mode::inline`]
+//! for the common instructions a native sequence (`super::inline`). Branches within the
 //! function start short (`rel8`) and grow to `rel32` where they don't reach, until nothing
 //! changes. With [`Mode::align_loops`], the targets of backward branches are padded to 16
 //! bytes.
@@ -267,6 +268,8 @@ pub enum Unwind {
 enum Piece {
     /// A fixed item; a call site if `site`'s instruction may unwind.
     Fixed { item: Item, site: Option<InsnId> },
+    /// A native item of an inline sequence, its frame displacements raw slots.
+    Native(Item),
     /// `reg = v`, where the 32-bit halves flagged in `slots` (bit 0: low, bit 1: high) are raw
     /// slots that become frame offsets.
     SetReg { reg: Reg, v: u64, slots: u8 },
@@ -529,6 +532,16 @@ impl Asm {
                 self.targets.push((*t, self.pieces.len()));
             }
         }
+        if self.mode.inline
+            && let Some((items, br)) = super::inline::sequence(op, ops)
+        {
+            self.pieces.extend(items.into_iter().map(Piece::Native));
+            if let Some(cond) = br {
+                let Some(Opnd::Target(t)) = ops.last() else { unreachable!("a branch's target is last") };
+                self.pieces.push(Piece::Branch { cond, to: *t });
+            }
+            return id;
+        }
         let named = |name: &str| &ops[info.operand_index(name).expect("operand")];
         let slot = |name: &str| match named(name) {
             Opnd::Slot(s) => *s as u32,
@@ -696,6 +709,7 @@ impl Asm {
                     }
                 }
                 Piece::Marker(d) => Laid::Fixed { item: Item::Marker(fix(d) as i32), site: None },
+                Piece::Native(item) => Laid::Fixed { item: item.map_frame(|s| fix(s as u32) as i32), site: None },
                 Piece::SetReg { reg, v, slots } => {
                     let mut v = v;
                     if slots & 1 != 0 {
@@ -751,7 +765,7 @@ impl Asm {
 /// time.
 fn layouts(fp_arg: bool) -> &'static [Layout] {
     const fn all(fp_arg: bool) -> [Layout; crate::insn::ALL_OPCODES.len()] {
-        let mode = Mode { fp_arg, align_loops: false, pe: false };
+        let mode = Mode { fp_arg, align_loops: false, pe: false, inline: false };
         let mut out = [layout(Opcode::Jmp, mode); crate::insn::ALL_OPCODES.len()];
         let mut i = 0;
         while i < out.len() {
@@ -930,9 +944,9 @@ mod tests {
         // Every opcode with a handler has a layout (const-evaluable for all of them).
         for &op in crate::insn::ALL_OPCODES {
             if super::super::has_handler(op) {
-                let l = layout(op, Mode { fp_arg: false, align_loops: true, pe: false });
+                let l = layout(op, Mode { fp_arg: false, align_loops: true, pe: false, inline: false });
                 assert!(l.regs as usize <= super::super::ARG_REGS);
-                let l = layout(op, Mode { fp_arg: true, align_loops: true, pe: false });
+                let l = layout(op, Mode { fp_arg: true, align_loops: true, pe: false, inline: false });
                 assert!(l.regs as usize <= super::super::ARG_REGS);
             }
         }

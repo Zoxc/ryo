@@ -47,8 +47,8 @@ use super::registry::{Function, lookup_addr};
 use super::sys::{self, fatal};
 
 /// How the machine code passes `fp`: the backend reads this (through `FP_ARG`) and encodes
-/// to match.
-pub const MODE: asm::Mode = asm::Mode { fp_arg: cfg!(feature = "fp-arg"), align_loops: false, pe: false };
+/// to match (the other fields don't concern the handlers).
+pub const MODE: asm::Mode = asm::Mode { fp_arg: cfg!(feature = "fp-arg"), align_loops: false, pe: false, inline: false };
 
 /// Whether handlers take `fp` in `rdi`; the backend checks it agrees with its encoding.
 #[rustc_diagnostic_item = "ryo_rt_fp_arg"]
