@@ -554,6 +554,7 @@ fn opnds(op: Opcode, w: &[u32], out: &mut Vec<Opnd<Label>>) {
                 continue;
             }
             OperandKind::Target | OperandKind::List(_) => panic!("ryo lowering: {op:?} takes labels"),
+            OperandKind::Handler => unreachable!("not in the full set"),
         });
         pos += o.kind.words().unwrap();
     }

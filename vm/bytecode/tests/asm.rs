@@ -1,7 +1,8 @@
 //! The machine-code encoder against its decoder: `decode(encode(f)) == f` for every opcode,
 //! with the frame size and the unwind entries (through the LSDA), in every mode.
 
-use ryo_bytecode::asm::{self, Mode, lsda, reduced};
+use ryo_bytecode::asm::{self, Mode, lsda};
+use ryo_bytecode::reduced;
 use ryo_bytecode::image::{CATCH, CONTINUE, CleanupEntry, op_may_unwind};
 use ryo_bytecode::full::*;
 
@@ -98,6 +99,7 @@ fn insn(op: Opcode, rng: &mut Rng, list_len: usize, f: &mut Fn, target: &mut dyn
             OperandKind::Const | OperandKind::Sym | OperandKind::Site | OperandKind::Func => w.push(rng.below(1 << 20) as u32),
             OperandKind::Abs => w.push(rng.below(1 << 20) as u32 | if rng.below(2) == 0 { ABS_DATA } else { 0 }),
             OperandKind::Neg => w.push(rng.below(2) as u32),
+            OperandKind::Handler => unreachable!("not in the full set"),
             OperandKind::Target => {
                 f.targets.push((i, w.len(), target(rng)));
                 w.push(0);
@@ -219,8 +221,13 @@ fn check(f: &Fn, frame_size: u32, mode: Mode, what: &str) -> asm::Encoded {
     // The reduced decoder reads the same function as the full one, reduced.
     let red = asm::decode_reduced(&enc.code, &enc.relocs, &enc.rodata, &sites, &enc.dropped, mode)
         .unwrap_or_else(|e| panic!("{what} {mode:?} (reduced): {e:?}\n{}", Disasm(&code)));
-    let want = reduced::reduce(&dec.words, dec.frame_size, &dec.cleanup, mode).expect("reduces");
-    assert_eq!(red, want, "{what} {mode:?} (reduced)\n{}", Disasm(&code));
+    let want = asm::reduce(&dec.words, dec.frame_size, &dec.cleanup, mode).expect("reduces");
+    for r in reduced::Decoder::new(&red.words) {
+        r.unwrap_or_else(|e| panic!("{what} {mode:?} (reduced words): {e}"));
+    }
+    if red != want {
+        panic!("{what} {mode:?} (reduced):\n{}\n---\n{}", reduced::Disasm(&want.words), reduced::Disasm(&red.words));
+    }
     enc
 }
 

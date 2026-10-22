@@ -10,7 +10,8 @@ use alloc::vec::Vec;
 use super::encode::{CallSite, DroppedStore, Opnd, Ref, RegVal, Reloc, arg_store, case_size, epilogue, fp_item, int_arg, prologue, push_words, result_stores, ret_loads, word_len};
 use super::inline::Cache;
 use super::x86::{ARGS, BadItem, Cond, Cursor, Item, M, Reg, island_args};
-use super::reduced::{self, Arg, Then};
+use super::reduced::{self, Then, addr_arg};
+use crate::reduced::Arg;
 use super::{ARG_ADDR, ArgReg, Mode, RetPart, has_handler, layout, ret_kind};
 use crate::image::{CATCH, CONTINUE, CleanupEntry, op_may_unwind};
 use crate::full::{ElemKind, Opcode, OperandKind, Shape, Sym};
@@ -117,9 +118,9 @@ pub fn decode(
     Ok(Decoded { words, frame_size, cleanup })
 }
 
-/// Decodes one function's machine code, as [`decode`], to the reduced set: handler calls are
-/// read from their argument registers, without their operand lists, so it doesn't check that
-/// they are of operands that aren't inlined.
+/// Decodes one function's machine code, as [`decode`], to the reduced set
+/// ([`crate::reduced`]): handler calls are read from their argument registers, without their
+/// operand lists, so it doesn't check that they are of operands that aren't inlined.
 pub fn decode_reduced(
     code: &[u8],
     relocs: &[Reloc],
@@ -127,17 +128,13 @@ pub fn decode_reduced(
     call_sites: &[CallSite],
     dropped: &[DroppedStore],
     mode: Mode,
-) -> Result<reduced::Function, AsmError> {
+) -> Result<Decoded, AsmError> {
     let Read { protos, frame_size, actions } = read(code, relocs, rodata, call_sites, dropped, mode, true)?;
     let ipos: Vec<u32> = protos.iter().map(|p| p.pos).collect();
     let index = |at: u32, b: u32| {
         ipos.binary_search(&b).map(|i| i as u32).map_err(|_| AsmError { at, what: "target isn't an instruction" })
     };
-    let cleanup = actions
-        .iter()
-        .enumerate()
-        .filter_map(|(i, a)| a.map(|(pad, catch)| reduced::Cleanup { at: i as u32, pad: pad.map(|j| j as u32), catch }))
-        .collect();
+    let cleanup: Vec<_> = actions.iter().enumerate().filter_map(|(i, a)| a.map(|(pad, catch)| (i, pad, catch))).collect();
     let mut insns = Vec::with_capacity(protos.len());
     for p in protos {
         let at = p.pos;
@@ -149,15 +146,15 @@ pub fn decode_reduced(
                     Then::Table(ts) => Then::Table(ts.into_iter().map(|t| index(at, t)).collect::<Result<_, _>>()?),
                     Then::Trap => Then::Trap,
                 };
-                reduced::Insn::Handler { op: p.op, args, then }
+                reduced::Insn::Handler(p.op, args, then)
             }
             None => {
                 let ops = p.ops.into_iter().map(|o| o.map_targets(|b| index(at, b))).collect::<Result<_, _>>()?;
-                reduced::Insn::Native { op: p.op, ops }
+                reduced::Insn::Native(p.op, ops)
             }
         });
     }
-    Ok(reduced::Function { insns, frame_size, cleanup })
+    Ok(reduced::words(&insns, &cleanup, frame_size))
 }
 
 /// Reads one function's machine code ([`decode`]), handler calls in the reduced form with
@@ -844,7 +841,7 @@ fn handler_args(setup: &[(u32, Item)], fr: &Frame, pos: u32) -> Result<Vec<Arg>,
             it if it == fr.fp(r) => Arg::Fp,
             Item::Mov(g, Reg::Rax) if g == r => Arg::Exception,
             Item::SetReg(g, v) if g == r => Arg::Imm(v),
-            Item::Lea(g, to) if g == r => Arg::Addr(to),
+            Item::Lea(g, to) if g == r && addr_arg(to).is_some() => addr_arg(to).unwrap(),
             _ => return Err(AsmError { at: pos, what: "operand registers out of order" }),
         });
     }
@@ -948,7 +945,11 @@ fn handler_operands(op: Opcode, setup: &[(u32, Item)], fr: &Frame, ro: &[u8], po
                     .collect();
                 Opnd::Cases(vals, vec![0; n])
             }
-            OperandKind::Func | OperandKind::Target | OperandKind::Neg | OperandKind::List(ElemKind::Word) => {
+            OperandKind::Func
+            | OperandKind::Target
+            | OperandKind::Neg
+            | OperandKind::List(ElemKind::Word | ElemKind::Arg)
+            | OperandKind::Handler => {
                 return Err(err("operand in a register"));
             }
         });

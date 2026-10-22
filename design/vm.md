@@ -278,25 +278,32 @@ and handlers, calls, unwinding and the decoder's view of the frame don't change.
 
 ### Reduced instructions
 
-The instruction set above, the opcode list, is the *full* set (`ryo_bytecode::full`): the
-lowering emits it. The *reduced* set (`asm::reduced`) is what the machine code consists of:
-the instructions of the full set that run as native code, which are the inline instructions
-with operands they inline and the shapes without a handler (`jmp`, the calls, `ret`, `arg`,
-`island`), plus one `handler` instruction for every handler call:
+The instruction set below, the opcode list, is the *full* set (`ryo_bytecode::full`): the
+lowering emits it. The *reduced* set (`ryo_bytecode::reduced`) is what the machine code
+consists of: the instructions of the full set that run as native code, which are the inline
+instructions and the shapes without a handler (`jmp`, the calls, `ret`, `arg`, `island`), with
+the same mnemonics, shapes and operands, plus `handler` for every handler call. Its list
+(`vm/bytecode/src/reduced_ops.rs`) goes through the same `define_ops!` as the full one, so it
+has its own `Opcode`, `Insn`, decoder, encoder and disassembly, in the same word encoding;
+`Opcode::full` and `Opcode::of_full` map between the two. Nothing stores it, so it has no
+format version.
 
-- **`handler`**: the handler `ryo_h_<Opcode>`, the values of its argument registers from
-  `rdi` on (`fp`, the exception object, an immediate, or an address: a constant, data, a
-  symbol slot or a code constant), and what follows the call, its shape's control flow: the
-  next instruction, a branch on the returned `bool` with its polarity, a jump table on the
-  returned index, or nothing (`trap`).
-- **Mapping**: `reduce` maps a function in the full set to the reduced set, case value
-  arrays placed in the code constants as the encoder places them. Targets and cleanup
-  entries are instruction indices.
+- **`handler h, args, t`** (`!` with `neg`): a call of the handler of the full opcode `h`
+  with the argument registers `args` from `rdi` on (each three words: `fp`, the exception
+  object, an immediate, or the address of a constant, data, a symbol slot, a site or a code
+  constant), then `h`'s shape's control flow: a branch to `t[0]` on the returned `bool`
+  (`br`), a jump through the table `t` on the returned index, the default last (`switch`),
+  or nothing (`t` empty).
+- **Mapping**: `asm::reduce` maps a function in the full set to the reduced set: a full
+  instruction with operands that aren't inlined becomes a `handler`, case value arrays at
+  the code constants where the encoder puts them.
 - **Decoding**: `asm::decode_reduced` reads machine code to the reduced set like
   `asm::decode` to the full one, sharing everything but handler calls, which it reads from
   their registers without the handlers' operand lists (only a switch's case count comes from
-  its handler's layout). `vm/bytecode/tests/asm.rs` checks on every round trip that it gives
-  what `reduce` gives for the full decoder's output.
+  its handler's layout).
+- **Testing**: `vm/bytecode/tests/asm.rs` checks on every round trip that `decode_reduced`
+  gives what `reduce` gives for the full decoder's output, and `vm/bytecode/tests/reduced.rs`
+  that the reduced list is the full list's native instructions.
 
 ## Instruction set
 

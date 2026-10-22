@@ -22,10 +22,12 @@ extern crate alloc;
 #[cfg(target_endian = "big")]
 compile_error!("ryo_bytecode assumes a little-endian target");
 
+#[macro_use]
+pub mod full;
 pub mod abi;
 pub mod asm;
 pub mod image;
-pub mod full;
+pub mod reduced;
 
 pub use full::{ALL_OPCODES, Insn, OP_INFO, OpInfo, Opcode};
 

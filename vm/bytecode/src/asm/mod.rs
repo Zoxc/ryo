@@ -12,9 +12,8 @@
 //!   decoder is the encoder's test oracle: `decode(encode(f)) == f`, frame size and unwind
 //!   entries included.
 //! - `inline` (`alloc`): the native sequences of the inlined instructions.
-//! - [`reduced`] (`alloc`): the reduced instruction set, the instructions that run as native
-//!   code and one `handler` instruction for every handler call, which [`decode_reduced`]
-//!   reads machine code back to.
+//! - [`reduce`] (`alloc`): full code to the reduced set ([`crate::reduced`]), which
+//!   [`decode_reduced`] reads machine code back to.
 //! - [`lsda`] (`alloc`): the call-site table of a function's LSDA.
 //!
 //! # Operands and registers
@@ -43,7 +42,7 @@ mod inline;
 #[cfg(feature = "alloc")]
 pub mod lsda;
 #[cfg(feature = "alloc")]
-pub mod reduced;
+mod reduced;
 #[cfg(feature = "alloc")]
 mod x86;
 
@@ -51,6 +50,8 @@ mod x86;
 pub use decode::{AsmError, Decoded, decode, decode_reduced};
 #[cfg(feature = "alloc")]
 pub use inline::has_inline;
+#[cfg(feature = "alloc")]
+pub use reduced::{is_native, reduce};
 #[cfg(feature = "alloc")]
 pub use encode::{Asm, CallSite, DroppedStore, EncodeError, Encoded, InsnId, Label, Opnd, PROBE_FROM, Ref, Reloc, Unwind, encode, operands, prologue_len, push_words, word_len};
 
@@ -138,7 +139,8 @@ pub const fn kind_regs(k: OperandKind) -> u8 {
         OperandKind::Mem
         | OperandKind::U128
         | OperandKind::List(ElemKind::Case8 | ElemKind::Case16 | ElemKind::Case32 | ElemKind::Case64 | ElemKind::Case128) => 2,
-        OperandKind::Func | OperandKind::Target | OperandKind::Neg => 0,
+        // Only the reduced `handler` has the last two, and it has no layout.
+        OperandKind::Func | OperandKind::Target | OperandKind::Neg | OperandKind::Handler | OperandKind::List(ElemKind::Arg) => 0,
     }
 }
 

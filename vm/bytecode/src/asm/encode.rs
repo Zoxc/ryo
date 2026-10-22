@@ -168,12 +168,14 @@ pub fn operands(code: &[u32], at: usize) -> Vec<Opnd> {
             OperandKind::Func => Opnd::Func(Func(w(0))),
             OperandKind::Target => Opnd::Target(target(w(0))),
             OperandKind::Neg => Opnd::Neg(w(0) != 0),
+            OperandKind::Handler | OperandKind::List(ElemKind::Arg) => unreachable!("not in the full set"),
             OperandKind::List(e) => {
                 let n = w(0) as usize;
                 let el = |i: usize, j: usize| code[pos + 1 + i * e.words() + j];
                 let o = match e {
                     ElemKind::Target => Opnd::Targets((0..n).map(|i| target(el(i, 0))).collect()),
                     ElemKind::Word => Opnd::Words((0..n).map(|i| el(i, 0)).collect()),
+                    ElemKind::Arg => unreachable!("not in the full set"),
                     ElemKind::Case8 | ElemKind::Case16 | ElemKind::Case32 | ElemKind::Case64 | ElemKind::Case128 => {
                         let vw = e.words() - 1;
                         let vals = (0..n).map(|i| (0..vw).fold(0u128, |v, j| v | (el(i, j) as u128) << (32 * j))).collect();
@@ -374,7 +376,7 @@ pub(super) fn case_size(e: ElemKind) -> usize {
         ElemKind::Case32 => 4,
         ElemKind::Case64 => 8,
         ElemKind::Case128 => 16,
-        ElemKind::Target | ElemKind::Word => unreachable!("not a case list"),
+        ElemKind::Target | ElemKind::Word | ElemKind::Arg => unreachable!("not a case list"),
     }
 }
 

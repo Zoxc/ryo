@@ -164,6 +164,8 @@ pub enum OperandKind {
     Neg,
     /// A count word followed by that many elements of the given kind.
     List(ElemKind),
+    /// The handler of a reduced `handler` ([`crate::reduced::Handler`]): a full opcode.
+    Handler,
 }
 
 /// The element kind of a [`List`] operand.
@@ -183,6 +185,8 @@ pub enum ElemKind {
     Case64,
     /// [`Case128`] (5 words).
     Case128,
+    /// [`crate::reduced::Arg`] (3 words): a reduced `handler`'s argument registers.
+    Arg,
 }
 
 impl ElemKind {
@@ -190,7 +194,7 @@ impl ElemKind {
         match self {
             ElemKind::Target | ElemKind::Word => 1,
             ElemKind::Case8 | ElemKind::Case16 | ElemKind::Case32 => 2,
-            ElemKind::Case64 => 3,
+            ElemKind::Case64 | ElemKind::Arg => 3,
             ElemKind::Case128 => 5,
         }
     }
@@ -210,7 +214,8 @@ impl OperandKind {
             | OperandKind::Site
             | OperandKind::Func
             | OperandKind::Target
-            | OperandKind::Neg => 1,
+            | OperandKind::Neg
+            | OperandKind::Handler => 1,
             OperandKind::Mem | OperandKind::U64 | OperandKind::I64 => 2,
             OperandKind::U128 => 4,
             OperandKind::List(_) => return None,
@@ -409,6 +414,10 @@ pub trait Elem: Copy + 'static {
     #[cfg(feature = "alloc")]
     fn put(&self, out: &mut Vec<u32>);
     fn fmt_elem(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
+    /// Whether the `KIND.words()` words `w` are an element.
+    fn valid(_w: &[u32]) -> bool {
+        true
+    }
 }
 
 impl Elem for Target {
@@ -569,6 +578,9 @@ impl<'a, T: Elem> Operand<'a> for List<'a, T> {
         let n = take::<1>(w, pos)?[0] as usize;
         let len = n.checked_mul(T::KIND.words()).ok_or(DecodeError::Truncated)?;
         let words = w.get(*pos..).and_then(|r| r.get(..len)).ok_or(DecodeError::Truncated)?;
+        if let Some(e) = words.chunks_exact(T::KIND.words()).find(|e| !T::valid(e)) {
+            return Err(DecodeError::BadOperand(e[0]));
+        }
         *pos += len;
         Ok(List { words, _elem: PhantomData })
     }
@@ -603,6 +615,8 @@ macro_rules! op_ty {
     ($lt:lifetime, Cases32) => { $crate::full::List<$lt, $crate::full::Case32> };
     ($lt:lifetime, Cases64) => { $crate::full::List<$lt, $crate::full::Case64> };
     ($lt:lifetime, Cases128) => { $crate::full::List<$lt, $crate::full::Case128> };
+    ($lt:lifetime, Handler) => { $crate::reduced::Handler };
+    ($lt:lifetime, Args) => { $crate::full::List<$lt, $crate::reduced::Arg> };
 }
 
 /// How an instruction runs as machine code ([`crate::asm`]): which handler it calls, and what
@@ -661,10 +675,11 @@ pub struct OperandInfo {
     pub kind: OperandKind,
 }
 
-/// Static description of an opcode.
+/// Static description of an opcode of the full set, or with `O` the reduced one's
+/// ([`crate::reduced`]).
 #[derive(Clone, Copy, Debug)]
-pub struct OpInfo {
-    pub opcode: Opcode,
+pub struct OpInfo<O: 'static = Opcode> {
+    pub opcode: O,
     /// Assembly mnemonic.
     pub mnemonic: &'static str,
     pub shape: Shape,
@@ -674,7 +689,7 @@ pub struct OpInfo {
     pub fixed_len: Option<usize>,
 }
 
-impl OpInfo {
+impl<O> OpInfo<O> {
     /// Word index (from the instruction start) of operand `i`, if every operand before it
     /// has a fixed size.
     pub const fn operand_offset(&self, i: usize) -> Option<usize> {
@@ -711,37 +726,7 @@ pub(crate) const fn str_eq(a: &str, b: &str) -> bool {
     true
 }
 
-/// Index of the operand called `name` of `op`, for `const` contexts. Panics if there is none.
-pub const fn operand_index_const(op: Opcode, name: &str) -> usize {
-    let info = op.info();
-    let mut i = 0;
-    while i < info.operands.len() {
-        if str_eq(info.operands[i].name, name) {
-            return i;
-        }
-        i += 1;
-    }
-    panic!("no such operand")
-}
-
-/// Word offset of the operand called `name` of `op`, or `usize::MAX` if it follows a list
-/// operand. Used for the [`off`] constants.
-pub const fn operand_word(op: Opcode, name: &str) -> usize {
-    let info = op.info();
-    let mut i = 0;
-    while i < info.operands.len() {
-        if str_eq(info.operands[i].name, name) {
-            return match info.operand_offset(i) {
-                Some(o) => o,
-                None => usize::MAX,
-            };
-        }
-        i += 1;
-    }
-    panic!("no such operand")
-}
-
-const fn fixed_len(kinds: &[OperandKind]) -> Option<usize> {
+pub(crate) const fn fixed_len(kinds: &[OperandKind]) -> Option<usize> {
     let mut n = 1;
     let mut i = 0;
     while i < kinds.len() {
@@ -781,8 +766,8 @@ macro_rules! define_ops {
             $(
                 #[doc = concat!("Operand word offsets of `", $mn, "`.")]
                 pub mod $name {
-                    $(pub const $field: usize = $crate::full::operand_word(
-                        $crate::full::Opcode::$name, stringify!($field));)*
+                    $(pub const $field: usize = super::super::operand_word(
+                        super::super::Opcode::$name, stringify!($field));)*
                 }
             )*
         }
@@ -791,8 +776,8 @@ macro_rules! define_ops {
         pub const ALL_OPCODES: &[Opcode] = &[$(Opcode::$name),*];
 
         /// Static description of every opcode, indexed by its value.
-        pub static OP_INFO: [OpInfo; ALL_OPCODES.len()] = [$(
-            OpInfo {
+        pub static OP_INFO: [$crate::full::OpInfo<Opcode>; ALL_OPCODES.len()] = [$(
+            $crate::full::OpInfo {
                 opcode: Opcode::$name,
                 mnemonic: $mn,
                 shape: shape!($shape),
@@ -851,6 +836,133 @@ macro_rules! define_ops {
             }
         }
 
+        /// Index of the operand called `name` of `op`, for `const` contexts. Panics if there is none.
+        pub const fn operand_index_const(op: Opcode, name: &str) -> usize {
+            let info = op.info();
+            let mut i = 0;
+            while i < info.operands.len() {
+                if str_eq(info.operands[i].name, name) {
+                    return i;
+                }
+                i += 1;
+            }
+            panic!("no such operand")
+        }
+
+        /// Word offset of the operand called `name` of `op`, or `usize::MAX` if it follows a list
+        /// operand. Used for the [`off`] constants.
+        pub const fn operand_word(op: Opcode, name: &str) -> usize {
+            let info = op.info();
+            let mut i = 0;
+            while i < info.operands.len() {
+                if str_eq(info.operands[i].name, name) {
+                    return match info.operand_offset(i) {
+                        Some(o) => o,
+                        None => usize::MAX,
+                    };
+                }
+                i += 1;
+            }
+            panic!("no such operand")
+        }
+
+        impl Opcode {
+            /// Number of opcodes.
+            pub const COUNT: usize = ALL_OPCODES.len();
+
+            #[inline]
+            pub const fn from_u16(v: u16) -> Option<Opcode> {
+                if (v as usize) < Self::COUNT { Some(ALL_OPCODES[v as usize]) } else { None }
+            }
+
+            #[inline]
+            pub const fn info(self) -> &'static $crate::full::OpInfo<Opcode> {
+                &OP_INFO[self as usize]
+            }
+
+            pub const fn mnemonic(self) -> &'static str {
+                self.info().mnemonic
+            }
+
+            /// Length in words, or `None` for the variable-length opcodes (see [`insn_len`]).
+            #[inline]
+            pub const fn fixed_len(self) -> Option<usize> {
+                self.info().fixed_len
+            }
+        }
+
+        /// Length in words of the instruction at the start of `w`, reading its count words if it has
+        /// list operands. Doesn't validate the other operands.
+        pub fn insn_len(w: &[u32]) -> Result<usize, DecodeError> {
+            let w0 = *w.first().ok_or(DecodeError::Truncated)?;
+            let op = Opcode::from_u16(w0 as u16).ok_or(DecodeError::UnknownOpcode(w0 as u16))?;
+            if let Some(n) = op.fixed_len() {
+                return Ok(n);
+            }
+            let mut pos = 1usize;
+            for o in op.info().operands {
+                pos += match o.kind {
+                    OperandKind::List(e) => {
+                        let n = *w.get(pos).ok_or(DecodeError::Truncated)? as usize;
+                        1 + n.checked_mul(e.words()).ok_or(DecodeError::Truncated)?
+                    }
+                    k => k.words().unwrap(),
+                };
+            }
+            if pos > w.len() {
+                return Err(DecodeError::Truncated);
+            }
+            Ok(pos)
+        }
+
+        /// Iterates over the instructions of a code sequence, yielding `(word offset, insn)`.
+        pub struct Decoder<'a> {
+            code: &'a [u32],
+            pos: usize,
+        }
+
+        impl<'a> Decoder<'a> {
+            pub fn new(code: &'a [u32]) -> Self {
+                Decoder { code, pos: 0 }
+            }
+        }
+
+        impl<'a> Iterator for Decoder<'a> {
+            type Item = Result<(usize, Insn<'a>), DecodeError>;
+            fn next(&mut self) -> Option<Self::Item> {
+                if self.pos >= self.code.len() {
+                    return None;
+                }
+                let at = self.pos;
+                Some(match Insn::decode(&self.code[at..]) {
+                    Ok((insn, n)) => {
+                        self.pos += n;
+                        Ok((at, insn))
+                    }
+                    Err(e) => {
+                        self.pos = self.code.len();
+                        Err(e)
+                    }
+                })
+            }
+        }
+
+        /// Disassembly of a code sequence, one instruction per line, prefixed by its word offset.
+        /// Branch targets are printed relative to their instruction, as encoded.
+        pub struct Disasm<'a>(pub &'a [u32]);
+
+        impl fmt::Display for Disasm<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                for r in Decoder::new(self.0) {
+                    match r {
+                        Ok((at, insn)) => writeln!(f, "{at:6}: {insn}")?,
+                        Err(e) => return writeln!(f, "error: {e}"),
+                    }
+                }
+                Ok(())
+            }
+        }
+
         impl fmt::Display for Insn<'_> {
             #[allow(unused_assignments, unused_mut, unused_variables)]
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -875,103 +987,6 @@ macro_rules! define_ops {
 }
 
 include!("ops.rs");
-
-impl Opcode {
-    /// Number of opcodes.
-    pub const COUNT: usize = ALL_OPCODES.len();
-
-    #[inline]
-    pub const fn from_u16(v: u16) -> Option<Opcode> {
-        if (v as usize) < Self::COUNT { Some(ALL_OPCODES[v as usize]) } else { None }
-    }
-
-    #[inline]
-    pub const fn info(self) -> &'static OpInfo {
-        &OP_INFO[self as usize]
-    }
-
-    pub const fn mnemonic(self) -> &'static str {
-        self.info().mnemonic
-    }
-
-    /// Length in words, or `None` for the variable-length opcodes (see [`insn_len`]).
-    #[inline]
-    pub const fn fixed_len(self) -> Option<usize> {
-        self.info().fixed_len
-    }
-}
-
-/// Length in words of the instruction at the start of `w`, reading its count words if it has
-/// list operands. Doesn't validate the other operands.
-pub fn insn_len(w: &[u32]) -> Result<usize, DecodeError> {
-    let w0 = *w.first().ok_or(DecodeError::Truncated)?;
-    let op = Opcode::from_u16(w0 as u16).ok_or(DecodeError::UnknownOpcode(w0 as u16))?;
-    if let Some(n) = op.fixed_len() {
-        return Ok(n);
-    }
-    let mut pos = 1usize;
-    for o in op.info().operands {
-        pos += match o.kind {
-            OperandKind::List(e) => {
-                let n = *w.get(pos).ok_or(DecodeError::Truncated)? as usize;
-                1 + n.checked_mul(e.words()).ok_or(DecodeError::Truncated)?
-            }
-            k => k.words().unwrap(),
-        };
-    }
-    if pos > w.len() {
-        return Err(DecodeError::Truncated);
-    }
-    Ok(pos)
-}
-
-/// Iterates over the instructions of a code sequence, yielding `(word offset, insn)`.
-pub struct Decoder<'a> {
-    code: &'a [u32],
-    pos: usize,
-}
-
-impl<'a> Decoder<'a> {
-    pub fn new(code: &'a [u32]) -> Self {
-        Decoder { code, pos: 0 }
-    }
-}
-
-impl<'a> Iterator for Decoder<'a> {
-    type Item = Result<(usize, Insn<'a>), DecodeError>;
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.pos >= self.code.len() {
-            return None;
-        }
-        let at = self.pos;
-        Some(match Insn::decode(&self.code[at..]) {
-            Ok((insn, n)) => {
-                self.pos += n;
-                Ok((at, insn))
-            }
-            Err(e) => {
-                self.pos = self.code.len();
-                Err(e)
-            }
-        })
-    }
-}
-
-/// Disassembly of a code sequence, one instruction per line, prefixed by its word offset.
-/// Branch targets are printed relative to their instruction, as encoded.
-pub struct Disasm<'a>(pub &'a [u32]);
-
-impl fmt::Display for Disasm<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for r in Decoder::new(self.0) {
-            match r {
-                Ok((at, insn)) => writeln!(f, "{at:6}: {insn}")?,
-                Err(e) => return writeln!(f, "error: {e}"),
-            }
-        }
-        Ok(())
-    }
-}
 
 /// A code buffer for one function, with helpers to emit instructions and patch branch
 /// targets once the target position is known.
