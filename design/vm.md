@@ -276,6 +276,34 @@ and handlers, calls, unwinding and the decoder's view of the frame don't change.
   runs against their handlers, also with dead-slot hints from a liveness pass, built with
   `Asm` directly.
 
+#### Escapes and storage ends
+
+The decoded code addresses frame slots with exact widths, but not where its objects begin
+and end. An optimizer of decoded code needs that only for the objects whose address
+escapes, so `Encoded::scopes` (`asm::Scope`) records, as side data like `dropped`:
+
+- **Escape**: a pointer to an object escapes before the instruction: an `addr` of the
+  object or a part of it, or a call argument passed by address (an sret destination, an
+  `Indirect` input's copy). The scope has the whole object, the local or temporary, not the
+  addressed part: its frame offset, size and alignment, since a pointer may reach any of its
+  bytes. The lowering finds the object from the place's local, else the live temporary or
+  the only local containing the slot (`frame.rs`, `Frame::object`), and keeps the function
+  native if there is none.
+- **End**: the storage of the bytes ends before the instruction: `StorageDead` of a local,
+  or the temporaries' reset before each statement. Pointers into them dangle afterwards (as
+  for LLVM's `lifetime.end`), so an escape of the bytes ends there, and slot sharing may
+  give them to another local. `Asm::finish` keeps only the ends that overlap an escape.
+
+Bytes are escaped at an instruction if an escape of them reaches it on some path, landing
+pad edges included, without an end. Everything else is accessed only at the widths
+the instructions give. Island operands aren't escapes: templates read and write each at
+its type during the call. `Asm::escape` and `Asm::storage_end` add pieces without code,
+which the register cache and dead-store dropping pass over, and layout records their
+positions. The decoder maps them to word offsets (`Decoded::scopes`, also through
+`reduce` and `decode_reduced`), and `vm/bytecode/tests/asm.rs` round-trips them and checks
+that they don't change the code. `RYO_DUMP` shows them as `; escape …` and `; end …`
+lines.
+
 ### Reduced instructions
 
 The instruction set below, the opcode list, is the *full* set (`ryo_bytecode::full`): the

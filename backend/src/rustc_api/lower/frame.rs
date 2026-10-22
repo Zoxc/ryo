@@ -63,6 +63,8 @@ pub struct Frame<'tcx> {
     temp_top: u32,
     /// Largest `temp_top` reached: the frame size without the outgoing block.
     high: u32,
+    /// The live temporaries: slot, size and alignment.
+    temps: Vec<(u32, u32, u32)>,
     /// Where landing pads store the exception object (`lpad x`) for the cleanup code's
     /// `resume x`: an 8-byte slot of its own, in functions with cleanup or terminate actions.
     exception: Option<u32>,
@@ -200,7 +202,7 @@ impl<'tcx> Frame<'tcx> {
         if arg_homes.len() != sig.inputs.len() {
             return native("argument count doesn't match the ABI");
         }
-        Ok(Frame { locals, locals_end: end, temp_top: end, high: end, exception, sret, arg_homes, arg_ptrs })
+        Ok(Frame { locals, locals_end: end, temp_top: end, high: end, temps: Vec::new(), exception, sret, arg_homes, arg_ptrs })
     }
 
     /// The exception slot. Only functions whose MIR has cleanup or terminate actions, or
@@ -211,14 +213,38 @@ impl<'tcx> Frame<'tcx> {
 
     /// A temporary slot, live until [`Frame::reset_temps`].
     pub fn temp(&mut self, size: u64, align: u64) -> u32 {
-        self.temp_top = (self.temp_top + size as u32).next_multiple_of(align.clamp(1, 16) as u32);
+        let align = align.clamp(1, 16) as u32;
+        self.temp_top = (self.temp_top + size as u32).next_multiple_of(align);
         self.high = self.high.max(self.temp_top);
-        slot(-(self.temp_top as i32))
+        let s = slot(-(self.temp_top as i32));
+        self.temps.push((s, size as u32, align));
+        s
     }
 
     /// Frees every temporary (between statements).
     pub fn reset_temps(&mut self) {
         self.temp_top = self.locals_end;
+        self.temps.clear();
+    }
+
+    /// The object the slot `s` is part of, as its slot, size and alignment: the local
+    /// `base`, or else the live temporary or the only local containing it. `None` if none
+    /// is known, or if locals sharing the bytes make it ambiguous.
+    pub fn object(&self, s: u32, base: Option<Local>) -> Option<(u32, u32, u32)> {
+        let local = |l: &LocalSlot<'_>| (l.off, l.layout.size.bytes() as u32, l.layout.align.abi.bytes().min(16) as u32);
+        let within = |&(o, n, _): &(u32, u32, u32)| s.wrapping_sub(o) < n.max(1);
+        if let Some(b) = base {
+            // Up to its end: the address of a zero-sized part there.
+            return Some(local(&self.locals[b])).filter(|&(o, n, _)| s.wrapping_sub(o) <= n);
+        }
+        if let Some(t) = self.temps.iter().copied().find(within) {
+            return Some(t);
+        }
+        let mut found = self.locals.iter().map(local).filter(within);
+        match (found.next(), found.next()) {
+            (Some(o), None) => Some(o),
+            _ => None,
+        }
     }
 
     /// The temporaries in use: their first slot and their size.
@@ -243,7 +269,25 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     pub fn reset_temps(&mut self) {
         let (lo, len) = self.frame.temps();
         self.asm.dead(lo, len);
+        self.asm.storage_end(lo, len);
         self.frame.reset_temps();
+    }
+
+    /// Records that the address of the slot `s`, part of `base` (else of the object
+    /// [`Frame::object`] finds), escapes: the whole object's ([`ryo_bytecode::asm::Asm::escape`]). Keeps
+    /// the function native if the object isn't known.
+    pub fn escape(&mut self, s: u32, base: Option<Local>) -> Result<(), NeedsNative> {
+        let Some((at, size, align)) = self.frame.object(s, base) else {
+            return native("address of a slot of no known object");
+        };
+        self.asm.escape(at, size, align);
+        Ok(())
+    }
+
+    /// `StorageDead(local)`: its storage ends ([`ryo_bytecode::asm::Asm::storage_end`]).
+    pub fn storage_dead(&mut self, local: Local) {
+        let l = self.frame.locals[local];
+        self.asm.storage_end(l.off, l.layout.size.bytes() as u32);
     }
 
     /// Tells the assembler that `local`'s slot is dead.

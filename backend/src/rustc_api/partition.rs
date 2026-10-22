@@ -485,8 +485,8 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             let l = &v.lowered;
             let c = &l.code;
             writeln!(out, "fn {name} (frame {}, args {}, ret {})", l.frame_size, l.arg_size, l.ret_size).unwrap();
-            match asm::decode(&c.code, &c.relocs, &c.rodata, &c.call_sites, &c.dropped, mode) {
-                Ok(d) => dump_labeled(&mut out, &d.words, &d.cleanup),
+            match asm::decode(&c.code, &c.relocs, &c.rodata, &c.call_sites, &c.dropped, &c.scopes, mode) {
+                Ok(d) => dump_labeled(&mut out, &d.words, &d.cleanup, &d.scopes),
                 Err(e) => writeln!(out, "  undecodable: {e:?}").unwrap(),
             }
             for (i, r) in l.relocs.iter().enumerate() {
@@ -1281,7 +1281,7 @@ pub fn exported_generic_symbols<'tcx>(
 /// Prints decoded VM code for `RYO_DUMP`: one instruction per line, without offsets, with
 /// branch targets (`@±n`) and cleanup entries naming labels `L<n>`, numbered in order of
 /// position, and `L<n>:` printed before each labeled instruction.
-fn dump_labeled(out: &mut String, words: &[u32], cleanup: &[ryo_bytecode::image::CleanupEntry]) {
+fn dump_labeled(out: &mut String, words: &[u32], cleanup: &[ryo_bytecode::image::CleanupEntry], scopes: &[asm::Scope]) {
     use std::fmt::Write;
     let mut lines = Vec::new();
     for r in ryo_bytecode::full::Decoder::new(words) {
@@ -1326,12 +1326,25 @@ fn dump_labeled(out: &mut String, words: &[u32], cleanup: &[ryo_bytecode::image:
         Some(l) => format!("L{l}"),
         None => format!("@{at}"),
     };
+    // The escapes and storage ends before the instruction at `at`.
+    let mut scopes = scopes.iter().peekable();
+    let mut scopes_at = |out: &mut String, at: usize| {
+        while let Some(sc) = scopes.next_if(|sc| sc.code_offset as usize <= at) {
+            let what = match sc.kind {
+                asm::ScopeKind::Escape { align } => format!("escape align {align}"),
+                asm::ScopeKind::End => "end".to_owned(),
+            };
+            writeln!(out, "    ; {what} ${}, {} bytes", sc.frame_offset, sc.size).unwrap();
+        }
+    };
     for (at, text) in &lines {
         if label.contains_key(at) {
             writeln!(out, "{}:", name(*at)).unwrap();
         }
+        scopes_at(out, *at);
         writeln!(out, "    {}", targets(text, *at, name)).unwrap();
     }
+    scopes_at(out, usize::MAX);
     for e in cleanup {
         let to = match e.target {
             CONTINUE => "continue".to_owned(),

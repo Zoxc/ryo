@@ -53,7 +53,7 @@ pub use inline::has_inline;
 #[cfg(feature = "alloc")]
 pub use reduced::{is_native, reduce};
 #[cfg(feature = "alloc")]
-pub use encode::{Asm, CallSite, DroppedStore, EncodeError, Encoded, InsnId, Label, Opnd, PROBE_FROM, Ref, Reloc, Unwind, encode, operands, prologue_len, push_words, word_len};
+pub use encode::{Asm, CallSite, DroppedStore, EncodeError, Encoded, InsnId, Label, Opnd, PROBE_FROM, Ref, Reloc, Scope, ScopeKind, Unwind, encode, operands, prologue_len, push_words, word_len};
 
 use crate::full::{ElemKind, Opcode, OperandKind, Shape};
 

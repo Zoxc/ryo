@@ -32,8 +32,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 self.store(dst, t, size);
             }
             (Loc::Mem { .. }, Loc::Mem { .. }) => {
-                let dp = self.place_addr(dst)?;
-                let sp = self.place_addr(src)?;
+                let dp = self.place_addr(dst, None)?;
+                let sp = self.place_addr(src, None)?;
                 let n = self.temp8();
                 self.imm(Width::W64, n, u128::from(size));
                 self.op(Opcode::Memmove, &[dp, sp, n]);

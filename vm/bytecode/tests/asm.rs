@@ -1,7 +1,7 @@
 //! The machine-code encoder against its decoder: `decode(encode(f)) == f` for every opcode,
 //! with the frame size and the unwind entries (through the LSDA), in every mode.
 
-use ryo_bytecode::asm::{self, Mode, lsda};
+use ryo_bytecode::asm::{self, Mode, Scope, ScopeKind, lsda};
 use ryo_bytecode::reduced;
 use ryo_bytecode::image::{CATCH, CONTINUE, CleanupEntry, op_may_unwind};
 use ryo_bytecode::full::*;
@@ -203,14 +203,40 @@ fn random_kind(rng: &mut Rng, load: bool) -> u32 {
     }
 }
 
+/// A few escapes and storage ends of small overlapping objects, at instruction starts and the
+/// end of `code`, sorted, from a seed of the code.
+fn random_scopes(code: &[u32]) -> Vec<Scope> {
+    let mut rng = Rng(code.iter().fold(0x2545f4914f6cdd1d, |h, &w| (h ^ w as u64).wrapping_mul(0x100000001b3)) | 1);
+    let mut starts: Vec<u32> = Decoder::new(code).map(|r| r.unwrap().0 as u32).collect();
+    starts.push(code.len() as u32);
+    let mut out: Vec<Scope> = (0..rng.below(5))
+        .map(|_| {
+            let align = 1 << rng.below(5);
+            let kind = if rng.below(2) == 0 { ScopeKind::Escape { align } } else { ScopeKind::End };
+            Scope {
+                code_offset: starts[rng.below(starts.len() as u64) as usize],
+                frame_offset: -(align as i32) * (1 + rng.below(4) as i32),
+                size: 1 + rng.below(32) as u32,
+                kind,
+            }
+        })
+        .collect();
+    out.sort_by_key(|s| s.code_offset);
+    out
+}
+
 fn check(f: &Fn, frame_size: u32, mode: Mode, what: &str) -> asm::Encoded {
     // PE frames keep `rdi` and `rsi` in their top 16 bytes.
     let frame_size = if mode.pe { frame_size.max(16) } else { frame_size };
     let (code, mut cleanup) = f.words();
-    let enc = asm::encode(&code, frame_size, &cleanup, mode).unwrap_or_else(|e| panic!("{what}: {e:?}\n{}", Disasm(&code)));
+    let scopes = random_scopes(&code);
+    let enc = asm::encode(&code, frame_size, &cleanup, &scopes, mode).unwrap_or_else(|e| panic!("{what}: {e:?}\n{}", Disasm(&code)));
+    // Scopes are side data: the code is the same without them.
+    let plain = asm::encode(&code, frame_size, &cleanup, &[], mode).expect("encodes");
+    assert_eq!((&plain.code, &plain.dropped), (&enc.code, &enc.dropped), "{what}: scopes changed the code");
     let sites = lsda::parse(&lsda::write(&enc.call_sites)).expect("LSDA");
     assert_eq!(sites, enc.call_sites, "{what}");
-    let dec = asm::decode(&enc.code, &enc.relocs, &enc.rodata, &sites, &enc.dropped, mode)
+    let dec = asm::decode(&enc.code, &enc.relocs, &enc.rodata, &sites, &enc.dropped, &enc.scopes, mode)
         .unwrap_or_else(|e| panic!("{what} {mode:?}: {e:?}\n{}\n{:02x?}", Disasm(&code), enc.code));
     if dec.words != code {
         panic!("{what} {mode:?}:\n{}\n---\n{}", Disasm(&code), Disasm(&dec.words));
@@ -218,10 +244,15 @@ fn check(f: &Fn, frame_size: u32, mode: Mode, what: &str) -> asm::Encoded {
     assert_eq!(dec.frame_size, frame_size, "{what}");
     cleanup.sort();
     assert_eq!(dec.cleanup, cleanup, "{what}");
+    // The scopes come back, but for the storage ends that overlap no escape.
+    let escapes: Vec<_> = scopes.iter().filter(|s| matches!(s.kind, ScopeKind::Escape { .. })).collect();
+    let overlap = |a: &Scope, b: &Scope| a.frame_offset < b.frame_offset + b.size as i32 && b.frame_offset < a.frame_offset + a.size as i32;
+    let kept: Vec<Scope> = scopes.iter().copied().filter(|s| s.kind != ScopeKind::End || escapes.iter().any(|e| overlap(s, e))).collect();
+    assert_eq!(dec.scopes, kept, "{what} {mode:?}");
     // The reduced decoder reads the same function as the full one, reduced.
-    let red = asm::decode_reduced(&enc.code, &enc.relocs, &enc.rodata, &sites, &enc.dropped, mode)
+    let red = asm::decode_reduced(&enc.code, &enc.relocs, &enc.rodata, &sites, &enc.dropped, &enc.scopes, mode)
         .unwrap_or_else(|e| panic!("{what} {mode:?} (reduced): {e:?}\n{}", Disasm(&code)));
-    let want = asm::reduce(&dec.words, dec.frame_size, &dec.cleanup, mode).expect("reduces");
+    let want = asm::reduce(&dec.words, dec.frame_size, &dec.cleanup, &dec.scopes, mode).expect("reduces");
     for r in reduced::Decoder::new(&red.words) {
         r.unwrap_or_else(|e| panic!("{what} {mode:?} (reduced words): {e}"));
     }
@@ -401,7 +432,7 @@ fn label_at_a_dead_hint_before_a_loop_head() {
     a.insn(Opcode::AddImmW64, &[Slot(-8), Slot(-8), Imm(1)]);
     a.insn(Opcode::Jmp, &[Target(head)]);
     let enc = a.finish(16, |s| s);
-    asm::decode(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, mode).expect("decodes");
+    asm::decode(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, mode).expect("decodes");
 }
 
 /// The register packing of the opcodes with more operands than registers.
@@ -442,16 +473,16 @@ fn rejects_non_canonical_code() {
     let mut code = enc.code.clone();
     code.splice(i..i + 5, [0x48, 0xc7, 0xc2, 70, 0, 0, 0]);
     let relocs: Vec<_> = enc.relocs.iter().map(|r| asm::Reloc { at: if r.at as usize > i { r.at + 2 } else { r.at }, ..*r }).collect();
-    assert!(asm::decode(&code, &relocs, &enc.rodata, &enc.call_sites, &enc.dropped, m).is_err());
+    assert!(asm::decode(&code, &relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, m).is_err());
     // Operand registers out of order.
     let j = enc.code.windows(5).position(|w| w[0] == 0xbf).unwrap();
     let mut code = enc.code.clone();
     code[j] = 0xbe; // `mov esi` instead of `mov edi`
-    assert!(asm::decode(&code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, m).is_err());
+    assert!(asm::decode(&code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, m).is_err());
     // A call site that is no call.
     let mut sites = enc.call_sites.clone();
     sites.push(asm::CallSite { start: 4, len: 5, pad: None, catch: false });
-    assert!(asm::decode(&enc.code, &enc.relocs, &enc.rodata, &sites, &enc.dropped, m).is_err());
+    assert!(asm::decode(&enc.code, &enc.relocs, &enc.rodata, &sites, &enc.dropped, &enc.scopes, m).is_err());
 }
 
 /// The inline sequences with every displacement and immediate form: frame slots and memory
@@ -520,7 +551,7 @@ fn rejects_handler_calls_of_inlined_ops() {
         .iter()
         .map(|r| if r.to == asm::Ref::Handler(Opcode::FaddF32) { asm::Reloc { to: asm::Ref::Handler(Opcode::AddW32), ..*r } } else { *r })
         .collect();
-    assert!(asm::decode(&enc.code, &relocs, &enc.rodata, &enc.call_sites, &enc.dropped, m).is_err());
+    assert!(asm::decode(&enc.code, &relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, m).is_err());
 }
 
 /// Pins the canonical sequences: any change to how an opcode is encoded changes this hash.

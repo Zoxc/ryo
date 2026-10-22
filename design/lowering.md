@@ -154,7 +154,8 @@ so a MIR change in a toolchain bump is a compile error. The tables below follow 
 | `SetDiscriminant` | a plain store of the tag value, computed at lowering time (also for niches; `set_discr.niche` is unused so far) |
 | `Intrinsic(CopyNonOverlapping)` | `memcpy` |
 | `Intrinsic(Assume)` | nothing |
-| `StorageLive`, `StorageDead` | nothing (slot allocation used them) |
+| `StorageLive` | nothing (slot allocation used it) |
+| `StorageDead` | no code: a storage end of the local's slot ([vm.md](vm.md#escapes-and-storage-ends)) |
 | `FakeRead`, `PlaceMention`, `AscribeUserType`, `Coverage`, `ConstEvalCounter`, `Nop`, `BackwardIncompatibleDropHint` | nothing |
 
 ## Rvalues

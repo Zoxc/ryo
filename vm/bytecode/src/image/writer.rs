@@ -505,7 +505,7 @@ impl ImageWriter {
             .functions
             .iter()
             .enumerate()
-            .map(|(i, f)| asm::encode(&f.code, f.frame_size, &f.cleanup, mode).map_err(|error| WriteError::Encode { func: i as u32, error }))
+            .map(|(i, f)| asm::encode(&f.code, f.frame_size, &f.cleanup, &[], mode).map_err(|error| WriteError::Encode { func: i as u32, error }))
             .collect::<Result<Vec<_>, _>>()?;
         self.finish_encoded(enc)
     }

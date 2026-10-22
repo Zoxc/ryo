@@ -33,8 +33,11 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     Ok(())
                 }
             },
+            StatementKind::StorageDead(l) => {
+                self.storage_dead(*l);
+                Ok(())
+            }
             StatementKind::StorageLive(_)
-            | StatementKind::StorageDead(_)
             | StatementKind::FakeRead(_)
             | StatementKind::PlaceMention(_)
             | StatementKind::AscribeUserType(..)
@@ -75,7 +78,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             return native("reference with unexpected metadata");
         }
         self.with_place_slot(dst, |fx, d| {
-            fx.addr_into(d, pv.loc);
+            fx.addr_into(d, pv.loc, pv.base)?;
             if let Some(m) = pv.meta {
                 fx.mov(d + 8, m, 8);
             }
@@ -108,7 +111,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     return Ok(());
                 }
                 Loc::Mem { .. } if bytes.iter().all(|&b| b == bytes[0]) => {
-                    let dp = self.place_addr(dst.loc)?;
+                    let dp = self.place_addr(dst.loc, dst.base)?;
                     let (b, len) = (self.frame.temp(1, 1), self.temp8());
                     self.imm(Width::W8, b, u128::from(bytes[0]));
                     self.imm(Width::W64, len, u128::from(total));
@@ -122,7 +125,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         if n == 1 {
             return Ok(());
         }
-        let base = self.place_addr(dst.loc)?;
+        let base = self.place_addr(dst.loc, dst.base)?;
         let dp = self.temp8();
         let len = self.temp8();
         let mut done = 1;

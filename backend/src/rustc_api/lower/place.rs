@@ -2,7 +2,7 @@
 //! memory operand `[p + k]`, with constant offsets folded at lowering time.
 
 use rustc_abi::FieldIdx;
-use rustc_middle::mir::{Place, PlaceTy, ProjectionElem};
+use rustc_middle::mir::{Local, Place, PlaceTy, ProjectionElem};
 use rustc_middle::ty::layout::TyAndLayout;
 use rustc_middle::ty::{self, Ty};
 
@@ -47,13 +47,16 @@ pub struct PlaceVal<'tcx> {
     pub loc: Loc,
     pub layout: TyAndLayout<'tcx>,
     pub meta: Option<u32>,
+    /// The local a frame place (`Loc::Slot`) is part of: the object its address escapes as
+    /// ([`FnCx::escape`]). `None` for memory and for places not rooted in a local.
+    pub base: Option<Local>,
 }
 
 impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// Lowers a place.
     pub fn place(&mut self, place: Place<'tcx>) -> Result<PlaceVal<'tcx>, NeedsNative> {
         let local = self.frame.locals[place.local];
-        let mut pv = PlaceVal { loc: Loc::Slot(local.off), layout: local.layout, meta: None };
+        let mut pv = PlaceVal { loc: Loc::Slot(local.off), layout: local.layout, meta: None, base: Some(place.local) };
         if place.projection.is_empty() {
             // The local's layout is already monomorphic: nothing to substitute.
             return Ok(pv);
@@ -95,13 +98,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             ProjectionElem::ConstantIndex { offset, min_length: _, from_end } => {
                 let elem = next_layout(self)?;
                 if !from_end {
-                    return Ok(PlaceVal { loc: pv.loc.offset(offset * elem.size.bytes())?, layout: elem, meta: None });
+                    return Ok(PlaceVal { loc: pv.loc.offset(offset * elem.size.bytes())?, layout: elem, meta: None, ..pv });
                 }
                 match (pv.layout.ty.kind(), pv.meta) {
                     (ty::Array(_, len), _) => {
                         let len = len.try_to_target_usize(self.tcx).expect("monomorphic array length");
                         let i = len - offset;
-                        Ok(PlaceVal { loc: pv.loc.offset(i * elem.size.bytes())?, layout: elem, meta: None })
+                        Ok(PlaceVal { loc: pv.loc.offset(i * elem.size.bytes())?, layout: elem, meta: None, ..pv })
                     }
                     (_, Some(meta)) => {
                         // len - offset
@@ -121,16 +124,16 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 };
                 if !from_end {
                     // An array: the result is an array too.
-                    return Ok(PlaceVal { loc: pv.loc.offset(from * stride)?, layout, meta: None });
+                    return Ok(PlaceVal { loc: pv.loc.offset(from * stride)?, layout, meta: None, ..pv });
                 }
                 let Some(meta) = pv.meta else { return native("Subslice from the end of an array") };
-                let base = self.place_addr(pv.loc)?;
+                let base = self.place_addr(pv.loc, pv.base)?;
                 let p = self.temp8();
                 self.ptr_add(p, base, (from * stride) as i64);
                 let len = self.temp8();
                 let cut = from + to;
                 self.op(opw("SubImm", Width::W64), &[len, meta, cut as u32, (cut >> 32) as u32]);
-                Ok(PlaceVal { loc: Loc::Mem { p, k: 0 }, layout, meta: Some(len) })
+                Ok(PlaceVal { loc: Loc::Mem { p, k: 0 }, layout, meta: Some(len), base: None })
             }
         }
     }
@@ -156,19 +159,19 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 (t, wide.then_some(t + 8))
             }
         };
-        Ok(PlaceVal { loc: Loc::Mem { p, k: 0 }, layout: pointee, meta })
+        Ok(PlaceVal { loc: Loc::Mem { p, k: 0 }, layout: pointee, meta, base: None })
     }
 
     fn field(&mut self, pv: PlaceVal<'tcx>, f: FieldIdx, layout: TyAndLayout<'tcx>) -> Result<PlaceVal<'tcx>, NeedsNative> {
         let off = pv.layout.fields.offset(f.as_usize()).bytes();
         if layout.is_sized() {
-            return Ok(PlaceVal { loc: pv.loc.offset(off)?, layout, meta: None });
+            return Ok(PlaceVal { loc: pv.loc.offset(off)?, layout, meta: None, ..pv });
         }
         // An unsized tail (cg_ssa's `project_field`): `[T]` and `str` have a static
         // alignment, and at offset 0 rounding changes nothing. Otherwise the offset is
         // rounded up to the tail's dynamic alignment (from the vtable).
         if matches!(layout.ty.kind(), ty::Slice(..) | ty::Str) || off == 0 {
-            return Ok(PlaceVal { loc: pv.loc.offset(off)?, layout, meta: pv.meta });
+            return Ok(PlaceVal { loc: pv.loc.offset(off)?, layout, ..pv });
         }
         let (_, mut align) = self.size_and_align_of_dst(layout, pv.meta)?;
         if let ty::Adt(def, _) = pv.layout.ty.kind()
@@ -180,13 +183,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let loc = match off {
             DynVal::Const(c) => pv.loc.offset(c)?,
             DynVal::Slot(o) => {
-                let base = self.place_addr(pv.loc)?;
+                let base = self.place_addr(pv.loc, pv.base)?;
                 let p = self.temp8();
                 self.op(opw("Add", Width::W64), &[p, base, o]);
                 Loc::Mem { p, k: 0 }
             }
         };
-        Ok(PlaceVal { loc, layout, meta: pv.meta })
+        let base = if matches!(loc, Loc::Slot(_)) { pv.base } else { None };
+        Ok(PlaceVal { loc, layout, meta: pv.meta, base })
     }
 
     /// Size and alignment of a value of `layout`, with metadata in slot `meta` if it is
@@ -327,6 +331,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let t = self.temp8();
         let k = match pv.loc {
             Loc::Slot(s) => {
+                self.escape(s, pv.base)?;
                 self.op(Opcode::Addr, &[t, s]);
                 self.op(Opcode::PtrIndex, &[t, t, idx, stride]);
                 0
@@ -336,13 +341,15 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 k
             }
         };
-        Ok(PlaceVal { loc: Loc::Mem { p: t, k }, layout: elem, meta: None })
+        Ok(PlaceVal { loc: Loc::Mem { p: t, k }, layout: elem, meta: None, base: None })
     }
 
-    /// The address of `loc` in a slot (which may be the pointer slot itself).
-    pub fn place_addr(&mut self, loc: Loc) -> Result<u32, NeedsNative> {
+    /// The address of `loc` in a slot (which may be the pointer slot itself). A frame place
+    /// escapes as part of `base` ([`FnCx::escape`]).
+    pub fn place_addr(&mut self, loc: Loc, base: Option<Local>) -> Result<u32, NeedsNative> {
         Ok(match loc {
             Loc::Slot(s) => {
+                self.escape(s, base)?;
                 let t = self.temp8();
                 self.op(Opcode::Addr, &[t, s]);
                 t
@@ -356,15 +363,18 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         })
     }
 
-    /// Writes the address of `loc` to slot `d`.
-    pub fn addr_into(&mut self, d: u32, loc: Loc) {
+    /// Writes the address of `loc` to slot `d`. A frame place escapes as part of `base`
+    /// ([`FnCx::escape`]).
+    pub fn addr_into(&mut self, d: u32, loc: Loc, base: Option<Local>) -> Result<(), NeedsNative> {
         match loc {
             Loc::Slot(s) => {
+                self.escape(s, base)?;
                 self.op(Opcode::Addr, &[d, s]);
             }
             Loc::Mem { p, k: 0 } => self.mov(d, p, 8),
             Loc::Mem { p, k } => self.ptr_add(d, p, i64::from(k)),
         }
+        Ok(())
     }
 
     /// `d = p + imm`.

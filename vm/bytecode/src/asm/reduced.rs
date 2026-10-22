@@ -4,7 +4,7 @@
 use alloc::vec::Vec;
 
 use super::decode::Decoded;
-use super::encode::{ArgVal, EncodeError, Opnd, Ref, RoReq, Rodata, handler_args, operands, push_words, word_len};
+use super::encode::{ArgVal, EncodeError, Opnd, Ref, RoReq, Rodata, Scope, handler_args, operands, push_words, word_len};
 use super::{Mode, has_handler};
 use crate::full::{Opcode, Shape, insn_len};
 use crate::image::{CATCH, CONTINUE, CleanupEntry};
@@ -49,8 +49,9 @@ pub(super) fn addr_arg(r: Ref) -> Option<Arg> {
 }
 
 /// The reduced instruction words of `insns`, with cleanup entries (instruction, landing pad
-/// instruction or `None` to continue, catch) by index.
-pub(super) fn words(insns: &[Insn], cleanup: &[(usize, Option<usize>, bool)], frame_size: u32) -> Decoded {
+/// instruction or `None` to continue, catch) and scopes by instruction index (the count for
+/// the end).
+pub(super) fn words(insns: &[Insn], cleanup: &[(usize, Option<usize>, bool)], scopes: &[(usize, Scope)], frame_size: u32) -> Decoded {
     let len = |i: &Insn| match i {
         Insn::Native(op, ops) => word_len(*op, ops),
         Insn::Handler(_, args, then) => {
@@ -68,6 +69,7 @@ pub(super) fn words(insns: &[Insn], cleanup: &[(usize, Option<usize>, bool)], fr
         wpos.push(w);
         w += len(i) as u32;
     }
+    wpos.push(w);
     let mut out = Vec::with_capacity(w as usize);
     for (k, i) in insns.iter().enumerate() {
         let rel = |t: u32| wpos[t as usize].wrapping_sub(wpos[k]);
@@ -100,14 +102,15 @@ pub(super) fn words(insns: &[Insn], cleanup: &[(usize, Option<usize>, bool)], fr
             target: pad.map_or(CONTINUE, |p| wpos[p] | if catch { CATCH } else { 0 }),
         })
         .collect();
-    Decoded { words: out, frame_size, cleanup }
+    let scopes = scopes.iter().map(|&(i, sc)| Scope { code_offset: wpos[i], ..sc }).collect();
+    Decoded { words: out, frame_size, cleanup, scopes }
 }
 
 /// The reduced form of a function given as full instruction words (slots already frame
-/// offsets), with its cleanup entries, as [`super::encode`] encodes it in `mode`: case value
-/// addresses are where its code constants put them. Returns the reduced words and cleanup
-/// entries.
-pub fn reduce(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], mode: Mode) -> Result<Decoded, EncodeError> {
+/// offsets), with its cleanup entries and scopes, as [`super::encode`] encodes it in `mode`:
+/// case value addresses are where its code constants put them. Returns the reduced words,
+/// cleanup entries and scopes.
+pub fn reduce(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], scopes: &[Scope], mode: Mode) -> Result<Decoded, EncodeError> {
     let mut starts = Vec::new();
     let mut at = 0;
     while at < code.len() {
@@ -173,5 +176,12 @@ pub fn reduce(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], mode: Mod
         out.push((at, pad, pad.is_some() && e.target & CATCH != 0));
     }
     out.sort();
-    Ok(words(&insns, &out, frame_size))
+    let scopes = scopes
+        .iter()
+        .map(|sc| {
+            let i = if sc.code_offset as usize == code.len() { Ok(starts.len() as u32) } else { idx(sc.code_offset) };
+            Ok((i? as usize, *sc))
+        })
+        .collect::<Result<Vec<_>, EncodeError>>()?;
+    Ok(words(&insns, &out, &scopes, frame_size))
 }

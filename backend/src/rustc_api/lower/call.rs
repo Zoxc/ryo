@@ -216,7 +216,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                         return native("tail call with an unsized by-value receiver");
                     }
                     let t = self.temp8();
-                    self.addr_into(t, pv.loc);
+                    self.addr_into(t, pv.loc, pv.base)?;
                     return Ok((t, meta, raw));
                 }
                 (self.loc_slot(pv.loc, pv.layout)?, pv.layout)
@@ -340,12 +340,15 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                         let p = incoming_ptr(self)?;
                         a.extend([p, gpr(index)]);
                     }
-                    ArgLoc::PtrReg(index) => a.extend([home, gpr(index) | ARG_ADDR]),
+                    ArgLoc::PtrReg(index) => {
+                        self.escape(home, None)?;
+                        a.extend([home, gpr(index) | ARG_ADDR]);
+                    }
                     ArgLoc::PtrStack(at) if tail => {
                         let p = incoming_ptr(self)?;
                         self.mov(stack(at), p, 8);
                     }
-                    ArgLoc::PtrStack(at) => self.addr_into(stack(at), Loc::Slot(home)),
+                    ArgLoc::PtrStack(at) => self.addr_into(stack(at), Loc::Slot(home), None)?,
                 }
             }
         }
@@ -586,15 +589,20 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     }
 
     /// The destination slot of a call, and whether it must be stored to memory afterwards.
+    /// An sret callee gets its address, so it escapes ([`FnCx::escape`]).
     fn call_dest(&mut self, cont: &CallCont<'tcx>, sig: &AbiSig<'tcx>) -> Result<(u32, bool), NeedsNative> {
-        match cont.dest {
-            Some(PlaceVal { loc: Loc::Slot(d), meta: None, .. }) => Ok((d, false)),
+        let (d, base, store) = match cont.dest {
+            Some(PlaceVal { loc: Loc::Slot(d), meta: None, base, .. }) => (d, base, false),
             Some(PlaceVal { loc: Loc::Mem { .. }, meta: None, .. }) | None => {
                 let t = self.frame.temp(sig.output.size.bytes(), sig.output.align.abi.bytes());
-                Ok((t, cont.dest.is_some()))
+                (t, None, cont.dest.is_some())
             }
-            Some(PlaceVal { meta: Some(_), .. }) => native("unsized call destination"),
+            Some(PlaceVal { meta: Some(_), .. }) => return native("unsized call destination"),
+        };
+        if sig.ret_kind == RET_SRET {
+            self.escape(d, base)?;
         }
+        Ok((d, store))
     }
 
     /// After the call instruction: stores a destination in memory, then continues at the
@@ -632,7 +640,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             return self.virtual_drop(pv, target, unwind);
         }
         let ptr = self.frame.temp(if pv.meta.is_some() { 16 } else { 8 }, 8);
-        self.addr_into(ptr, pv.loc);
+        self.addr_into(ptr, pv.loc, pv.base)?;
         if let Some(m) = pv.meta {
             self.mov(ptr + 8, m, 8);
         }
@@ -663,7 +671,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         self.op(super::emit::opcode("LoadW64"), &[f, vtable, idx * 8]);
         self.op_branch(super::emit::opcode("BrEqImmW64"), &[f, 0, 0], false, target);
         let ptr = self.temp8();
-        self.addr_into(ptr, pv.loc);
+        self.addr_into(ptr, pv.loc, pv.base)?;
         // `unsafe fn(*mut ())`: the pointer in the first integer register.
         let a = [ptr, ArgReg { xmm: false, size: 8, index: 0 }.word()];
         let at = self.op(Opcode::CallPtr, &[&[0, f, 0][..], &a].concat());

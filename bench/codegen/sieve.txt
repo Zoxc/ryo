@@ -25,17 +25,22 @@ fn <bool as std::vec::spec_from_elem::SpecFromElem>::from_elem::<std::alloc::Glo
     arg $-40, 520
     imm.w8 $-42, 1
     imm.w8 $-41, 1
+    ; escape align 1 $-25, 1 bytes
     addr $-80, $-25
 L0:
     call $-65, fn0, 1, [4294967216, 8]
     br! $-65, L2
+    ; end $-80, 8 bytes
     imm.w8 $-41, 0
     imm.w8 $-153, 1
     const $-176, k1, 16
 L1:
+    ; escape align 8 $-128, 24 bytes
     call.sym $0, sym2, 0, [4294967168, 72, 4294967256, 264, 4294967143, 513, 4294967120, 776, 4294967128, 1032]
     jmp L13
 L2:
+    ; end $-80, 8 bytes
+    ; end $-65, 1 bytes
     imm.w8 $-41, 0
     const $-168, k3, 16
 L3:
@@ -44,9 +49,11 @@ L3:
 L4:
     copy $-24, $-88, 24
 L5:
+    ; end $-88, 24 bytes
     store.copy [$-64 + 0], $-24, 24
     ret $-64, 8
 L6:
+    ; escape align 8 $-88, 24 bytes
     addr $-160, $-88
 L7:
     call $0, fn5, 0, [4294967136, 8]
@@ -74,14 +81,19 @@ L16:
     unreachable
 L17:
     mov.w128 $-104, $-120
+    ; end $-128, 24 bytes
     mov.w128 $-88, $-104
     mov.w128 $-24, $-88
     mov.w64 $-8, $-40
+    ; end $-88, 16 bytes
+    ; end $-65, 1 bytes
     jmp L5
 L18:
     mov.w128 $-104, $-120
+    ; end $-120, 16 bytes
     mov.w128 $-88, $-104
     imm.w64 $-72, 0
+    ; escape align 8 $-88, 24 bytes
     addr $-96, $-88
     imm.w8 $-42, 0
     mov.w8 $-97, $-25
@@ -128,6 +140,7 @@ fn <std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize::<&bool, {c
     arg $-16, 8
     arg $-24, 264
     mov.w64 $-48, $-16
+    ; escape align 8 $-24, 8 bytes
     addr $-64, $-24
     mov.w64 $-56, $-64
 L0:
@@ -148,13 +161,16 @@ fn <std::iter::Filter<std::slice::Iter<'_, bool>, {closure@bench/sieve.rs:24:37:
     arg $-16, 264
     imm.w8 $-33, 1
     imm.w8 $-34, 1
+    ; escape align 8 $-24, 16 bytes
     addr $-96, $-24
 L0:
+    ; escape align 8 $-88, 24 bytes
     call $0, fn0, 0, [4294967208, 72, 4294967200, 264]
     mov.w128 $-64, $-80
     mov.w64 $-96, $-64
     switch.dense.w64 $-96, 0, L10, [L11, L12]
 L1:
+    ; end $-80, 16 bytes
     mov.w128 $-80, $-64
     imm.w64 $-104, 0
 L2:
@@ -173,6 +189,7 @@ L7:
     br! $-34, L5
     jmp L6
 L8:
+    ; end $-88, 24 bytes
     imm.w8 $-34, 0
     mov.w128 $-80, $-24
     imm.w8 $-33, 0
@@ -188,6 +205,7 @@ L12:
     mov.w64 $-32, $-56
     jmp L8
 L13:
+    ; end $-80, 16 bytes
     call $0, fn3, 0, [4294967288, 8, 4294967264, 264]
     jmp L3
 L14:
@@ -307,6 +325,7 @@ L5:
     call $-88, fn2, 8, [4294967200, 8, 4294967144, 264]
     load.w64 $-96, [$-24 + 8]
     store.w64 [$-24 + 8], $-88
+    ; escape align 8 $-32, 8 bytes
     addr $-136, $-32
     imm.w8 $-57, 0
     mov.w64 $-144, $-96
@@ -334,6 +353,7 @@ L12:
 L13:
     call $-73, fn6, 1, [4294967208, 8, 4294967200, 264]
     br! $-73, L19
+    ; escape align 8 $-32, 8 bytes
     addr $-120, $-32
     imm.w8 $-57, 0
     load.w64 $-136, [$-24 + 0]
@@ -763,6 +783,7 @@ L1:
 
 fn <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::call_once - shim (frame 32, args 0, ret 4)
     arg $-16, 8
+    ; escape align 8 $-16, 8 bytes
     addr $-24, $-16
 L0:
     call $-4, fn0, 4, [4294967272, 8]
@@ -791,6 +812,7 @@ fn alloc::raw_vec::RawVecInner::with_capacity_in (frame 144, args 0, ret 16)
     arg $-32, 520
     imm.w8 $-129, 0
 L0:
+    ; escape align 8 $-88, 24 bytes
     call.sym $0, sym0, 0, [4294967208, 72, 4294967272, 264, 4294967167, 513, 4294967256, 776, 4294967264, 1032]
     mov.w64 $-48, $-88
     switch.dense.w64 $-48, 0, L1, [L4, L2]
@@ -824,6 +846,7 @@ L8:
     addr.abs $-136, k2
     call $0, fn3, 0, [4294967207, 1, 4294967160, 264]
 L9:
+    ; end $-88, 24 bytes
     ret $-16, 526344
   cleanup L0 -> continue
   cleanup L3 -> continue
@@ -926,7 +949,10 @@ fn main (frame 432, args 0, ret 0)
 L0:
     call $-8, fn0, 8, [4294966888, 8]
 L1:
+    ; end $-408, 8 bytes
+    ; escape align 8 $-32, 24 bytes
     call $0, fn1, 0, [4294967264, 72, 4294967288, 264]
+    ; escape align 8 $-32, 24 bytes
     addr $-96, $-32
 L2:
     call $-88, fn2, 526344, [4294967200, 8]
@@ -938,11 +964,18 @@ L5:
     call $-40, fn5, 8, [4294967240, 8, 4294967248, 264]
     imm.w64 $-408, 0
 L6:
+    ; escape align 8 $-176, 24 bytes
     call $0, fn6, 0, [4294967120, 72, 4294966888, 264, 4294967288, 520]
+    ; end $-408, 8 bytes
     copy $-424, $-176, 24
 L7:
+    ; escape align 8 $-152, 24 bytes
+    ; escape align 8 $-424, 24 bytes
     call $0, fn7, 0, [4294967144, 72, 4294966872, 328]
+    ; end $-424, 24 bytes
+    ; escape align 8 $-152, 24 bytes
     addr $-128, $-152
+    ; escape align 8 $-32, 24 bytes
     addr $-192, $-32
     mov.w64 $-184, $-192
 L8:
@@ -950,39 +983,51 @@ L8:
     addr.abs $-408, k9
 L9:
     call $-104, fn10, 8, [4294967176, 8, 4294967184, 264, 4294966888, 520]
+    ; end $-408, 8 bytes
+    ; escape align 8 $-40, 8 bytes
     addr $-240, $-40
+    ; escape align 8 $-8, 8 bytes
     addr $-248, $-8
+    ; escape align 8 $-104, 8 bytes
     addr $-256, $-104
     mov.w64 $-232, $-240
     mov.w64 $-224, $-248
     mov.w64 $-216, $-256
     mov.w64 $-376, $-232
 L10:
+    ; escape align 8 $-320, 16 bytes
     call $0, fn11, 0, [4294966976, 72, 4294966920, 264]
     mov.w64 $-384, $-224
 L11:
+    ; escape align 8 $-336, 16 bytes
     call $0, fn12, 0, [4294966960, 72, 4294966912, 264]
     mov.w64 $-392, $-216
 L12:
+    ; escape align 8 $-352, 16 bytes
     call $0, fn13, 0, [4294966944, 72, 4294966904, 264]
     mov.w128 $-304, $-320
     mov.w128 $-288, $-336
     mov.w128 $-272, $-352
     addr.abs $-360, k14
+    ; escape align 8 $-304, 48 bytes
     addr $-368, $-304
 L13:
     call $-208, fn15, 526344, [4294966936, 8, 4294966928, 264]
 L14:
     call.sym $0, sym16, 0, [4294967088, 8, 4294967096, 264]
+    ; escape align 8 $-32, 24 bytes
     addr $-408, $-32
 L15:
     call $0, fn17, 0, [4294966888, 8]
+    ; end $-408, 8 bytes
     ret $0, 0
 L16:
+    ; escape align 8 $-32, 24 bytes
     addr $-408, $-32
 L17:
     call $0, fn18, 0, [4294966888, 8]
 L18:
+    ; end $-408, 8 bytes
     resume $-400
 L19:
     call.sym $0, sym19, 0, []
@@ -1067,7 +1112,9 @@ L1:
     mov.w64 $-64, $-80
     imm.w8 $-337, 1
 L2:
+    ; escape align 8 $-56, 24 bytes
     call $0, fn2, 0, [4294967240, 72, 4294966959, 257, 4294967232, 520]
+    ; escape align 8 $-56, 24 bytes
     addr $-96, $-56
     imm.w64 $-344, 0
     addr.abs $-352, k3
@@ -1075,6 +1122,7 @@ L3:
     call $-88, fn4, 8, [4294967200, 8, 4294966952, 264, 4294966944, 520]
     imm.w8 $-352, 0
     store.w8 [$-88 + 0], $-352
+    ; escape align 8 $-56, 24 bytes
     addr $-112, $-56
     imm.w64 $-344, 1
     addr.abs $-352, k5
@@ -1095,6 +1143,7 @@ L6:
 L7:
     mov.w64 $-136, $-168
     br.lt.u.w64 $-32, $-136, L18
+    ; escape align 8 $-56, 24 bytes
     addr $-192, $-56
     mov.w64 $-200, $-120
     addr.abs $-344, k9
@@ -1115,6 +1164,7 @@ L10:
 L11:
     mov.w64 $-256, $-208
     br.lt.u.w64 $-32, $-256, L15
+    ; escape align 8 $-56, 24 bytes
     addr $-272, $-56
     mov.w64 $-280, $-208
     addr.abs $-344, k13
@@ -1148,6 +1198,7 @@ L18:
     store.copy [$-336 + 0], $-24, 24
     ret $-336, 8
 L19:
+    ; escape align 8 $-56, 24 bytes
     addr $-344, $-56
 L20:
     call $0, fn19, 0, [4294966952, 8]
@@ -1271,6 +1322,7 @@ fn std::iter::DoubleEndedIterator::rfind::check::<usize, {closure@bench/sieve.rs
     arg $-24, 8
     arg $-32, 264
     mov.w64 $-56, $-24
+    ; escape align 8 $-32, 8 bytes
     addr $-72, $-32
     mov.w64 $-64, $-72
 L0:
@@ -1455,11 +1507,13 @@ fn std::rt::lang_start::<()> (frame 80, args 0, ret 8)
     arg $-32, 520
     arg $-33, 769
     mov.w64 $-72, $-16
+    ; escape align 8 $-72, 8 bytes
     addr $-64, $-72
     mov.w64 $-56, $-64
     addr.abs $-48, k0
 L0:
     call.sym $-8, sym1, 8, [4294967240, 8, 4294967248, 264, 4294967272, 520, 4294967264, 776, 4294967263, 1025]
+    ; end $-72, 8 bytes
     ret $-8, 8
   cleanup L0 -> continue
   k0 = const allocation + 0
@@ -1519,10 +1573,13 @@ fn std::vec::Vec::<bool>::extend_with (frame 160, args 0, ret 0)
 L0:
     call $0, fn0, 0, [4294967288, 8, 4294967280, 264]
     load.w64 $-120, [$-8 + 8]
+    ; end $-120, 8 bytes
     mov.w64 $-112, $-120
     load.w64 $-120, [$-8 + 16]
     le.u.imm.w64 $-121, $-120, 9223372036854775807
     ptr.index $-32, $-112, $-120, 1
+    ; end $-120, 8 bytes
+    ; end $-112, 8 bytes
     ptr.add $-128, $-8, 16
     load.w64 $-136, [$-128 + 0]
     mov.w64 $-120, $-128
@@ -1547,18 +1604,22 @@ L3:
     mov.w8 $-122, $-17
     store.w8 [$-32 + 0], $-122
     add.imm.w64 $-112, $-112, 1
+    ; escape align 8 $-120, 16 bytes
     addr $-152, $-120
 L4:
     call $0, fn1, 0, [4294967144, 8]
     jmp L19
 L5:
+    ; escape align 8 $-120, 16 bytes
     addr $-152, $-120
 L6:
     call $0, fn2, 0, [4294967144, 8]
+    ; end $-120, 16 bytes
     br $-73, L11
 L7:
     ret $0, 0
 L8:
+    ; escape align 8 $-120, 16 bytes
     addr $-152, $-120
 L9:
     call $0, fn3, 0, [4294967144, 8]
@@ -1588,11 +1649,13 @@ L17:
     add.imm.w64 $-144, $-136, 1
     mov.w64 $-48, $-144
     mov.w64 $-128, $-32
+    ; escape align 1 $-17, 1 bytes
     addr $-144, $-17
 L18:
     call $-129, fn6, 1, [4294967152, 8]
     jmp L2
 L19:
+    ; end $-120, 16 bytes
     jmp L7
 L20:
     call.sym $0, sym7, 0, []
@@ -1655,6 +1718,7 @@ fn std::vec::from_elem::<bool> (frame 48, args 0, ret 24)
     arg $-25, 257
     arg $-40, 520
 L0:
+    ; escape align 8 $-24, 24 bytes
     call $0, fn0, 0, [4294967272, 72, 4294967271, 257, 4294967256, 520]
     store.copy [$-48 + 0], $-24, 24
     ret $-48, 8

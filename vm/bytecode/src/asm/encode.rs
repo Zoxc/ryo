@@ -72,6 +72,43 @@ pub struct Encoded {
     /// The stores the encoder dropped as dead ([`Asm::dead`]), sorted by position: for the
     /// decoder, which can't see them in the code.
     pub dropped: Vec<DroppedStore>,
+    /// Where frame objects escape and where their storage ends ([`Asm::escape`],
+    /// [`Asm::storage_end`]), sorted by position. Like `dropped`, side data for the decoder:
+    /// the machine code doesn't show them.
+    pub scopes: Vec<Scope>,
+}
+
+/// A change in which frame bytes may be reached through a pointer, at a code position. In
+/// [`Encoded::scopes`] the position is a byte offset in the machine code, in
+/// [`super::Decoded::scopes`] a word offset in the instruction words.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Scope {
+    /// Where the change takes effect: before the instruction at this position (or at the end
+    /// of the function). For an escape, the address-taking instruction; for an end, the
+    /// first instruction after the storage is dead.
+    pub code_offset: u32,
+    /// Signed byte offset from `fp` of the start of the object: the whole local or
+    /// temporary, not the addressed field.
+    pub frame_offset: i32,
+    /// Size of the object in bytes.
+    pub size: u32,
+    pub kind: ScopeKind,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ScopeKind {
+    /// A pointer to the object escapes here (`addr`, or a call argument passed by address).
+    /// Until a later `End` covers them, any access through a pointer may read or write any
+    /// of the object's bytes.
+    Escape {
+        /// The object's alignment in bytes (a power of two, at most 16): what an optimizer
+        /// needs to move an escaped object, or to merge two into one slot.
+        align: u32,
+    },
+    /// The object's storage ends here (`StorageDead`, or the temporaries' reset after a
+    /// statement). Pointers to it dangle afterwards, so earlier escapes of these bytes stop
+    /// here, and other locals may reuse them.
+    End,
 }
 
 /// A store of an inline sequence the encoder dropped: the sequence ends at `at` without it.
@@ -431,6 +468,8 @@ enum Piece {
     Dead { lo: i32, len: u32 },
     /// A store dropped as dead.
     Dropped(Item),
+    /// An escape or a storage end ([`Scope`]) here, its frame offset a raw slot: no code.
+    Scope { slot: u32, size: u32, kind: ScopeKind },
 }
 
 /// Whether each piece is a branch target (one more for the end).
@@ -514,7 +553,7 @@ fn drop_dead_stores(pieces: &mut [Piece], target: &[bool]) {
                     !overlaps(p.lo, p.len, lo, len)
                 }
             }),
-            Piece::Gone => {}
+            Piece::Gone | Piece::Scope { .. } => {}
             _ => pending.clear(),
         }
     }
@@ -535,7 +574,7 @@ fn cache(pieces: &mut [Piece], target: &[bool]) {
             c = Default::default();
         }
         if !matches!(pieces[k], Piece::Native(_)) {
-            if !matches!(pieces[k], Piece::Dead { .. }) {
+            if !matches!(pieces[k], Piece::Dead { .. } | Piece::Scope { .. }) {
                 c = Default::default();
             }
             k += 1;
@@ -575,6 +614,8 @@ enum Laid {
     Align,
     /// A store dropped as dead, at this position: no code.
     Dropped(Item),
+    /// A scope change at this position: no code.
+    Scope(Scope),
 }
 
 /// A word of a code constant operand array.
@@ -622,9 +663,10 @@ impl Rodata {
     }
 }
 
-/// Encodes one function from its instruction words, frame size `F` and cleanup entries:
-/// decodes the words and feeds them to an [`Asm`] (slots are already frame offsets).
-pub fn encode(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], mode: Mode) -> Result<Encoded, EncodeError> {
+/// Encodes one function from its instruction words, frame size `F`, cleanup entries and
+/// scopes (sorted, at word offsets of instructions or the end): decodes the words and feeds
+/// them to an [`Asm`] (slots are already frame offsets).
+pub fn encode(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], scopes: &[Scope], mode: Mode) -> Result<Encoded, EncodeError> {
     let mut starts = Vec::new();
     let mut index = vec![usize::MAX; code.len() + 1];
     let mut at = 0;
@@ -668,8 +710,22 @@ pub fn encode(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], mode: Mod
     for _ in 0..starts.len() {
         asm.label();
     }
+    let mut scopes = scopes.iter().peekable();
+    let mut scopes_at = |asm: &mut Asm, at: usize| -> Result<(), EncodeError> {
+        while let Some(sc) = scopes.next_if(|sc| sc.code_offset as usize <= at) {
+            if sc.code_offset as usize != at {
+                return Err(EncodeError::BadTarget(sc.code_offset));
+            }
+            match sc.kind {
+                ScopeKind::Escape { align } => asm.escape(sc.frame_offset as u32, sc.size, align),
+                ScopeKind::End => asm.storage_end(sc.frame_offset as u32, sc.size),
+            }
+        }
+        Ok(())
+    };
     for (i, &at) in starts.iter().enumerate() {
         asm.bind(Label(i as u32));
+        scopes_at(&mut asm, at)?;
         let op = Opcode::from_u16(code[at] as u16).unwrap();
         let ops = operands(code, at)
             .into_iter()
@@ -679,6 +735,10 @@ pub fn encode(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], mode: Mod
         if let Some(a) = action[i] {
             asm.set_unwind(id, a);
         }
+    }
+    scopes_at(&mut asm, code.len())?;
+    if scopes.next().is_some() {
+        return Err(EncodeError::BadTarget(code.len() as u32));
     }
     Ok(asm.finish(frame_size, |s| s))
 }
@@ -739,6 +799,23 @@ impl Asm {
     pub fn dead(&mut self, slot: u32, len: u32) {
         if len != 0 {
             self.pieces.push(Piece::Dead { lo: slot as i32, len });
+        }
+    }
+
+    /// Records that a pointer to the object at the raw slot `slot`, of `size` bytes and
+    /// alignment `align`, escapes before the next instruction ([`ScopeKind::Escape`]).
+    pub fn escape(&mut self, slot: u32, size: u32, align: u32) {
+        if size != 0 {
+            self.pieces.push(Piece::Scope { slot, size, kind: ScopeKind::Escape { align } });
+        }
+    }
+
+    /// Records that the storage of the raw slots `slot .. slot + size` ends before the next
+    /// instruction ([`ScopeKind::End`]). [`Asm::finish`] keeps only the ends that overlap an
+    /// escape.
+    pub fn storage_end(&mut self, slot: u32, size: u32) {
+        if size != 0 {
+            self.pieces.push(Piece::Scope { slot, size, kind: ScopeKind::End });
         }
     }
 
@@ -949,6 +1026,21 @@ impl Asm {
         let target = branch_targets(&pieces, &labels);
         cache(&mut pieces, &target);
         drop_dead_stores(&mut pieces, &target);
+        // Storage ends matter only for the bytes of escaped objects.
+        let escapes: Vec<(u32, u32)> = pieces
+            .iter()
+            .filter_map(|p| match *p {
+                Piece::Scope { slot, size, kind: ScopeKind::Escape { .. } } => Some((slot, size)),
+                _ => None,
+            })
+            .collect();
+        for p in &mut pieces {
+            if let Piece::Scope { slot, size, kind: ScopeKind::End } = *p
+                && !escapes.iter().any(|&(e, n)| e.wrapping_sub(slot) < size || slot.wrapping_sub(e) < n)
+            {
+                *p = Piece::Gone;
+            }
+        }
         // Code constants, in emission order (so deduplication matches the word encoder's).
         let mut rodata = Rodata::default();
         let ro_off: Vec<u32> = ro
@@ -1030,6 +1122,9 @@ impl Asm {
                 Piece::Frame(item) => Laid::Fixed { item: slot(item), site: None },
                 Piece::Gone | Piece::Dead { .. } => unreachable!(),
                 Piece::Dropped(item) => Laid::Dropped(item.map_frame(|s| fix(s as u32) as i32)),
+                Piece::Scope { slot, size, kind } => {
+                    Laid::Scope(Scope { code_offset: 0, frame_offset: fix(slot) as i32, size, kind })
+                }
                 Piece::Native(item) => Laid::Fixed { item: slot(item), site: None },
                 Piece::Fp(reg) => Laid::Fixed { item: fp_item(reg, frame_size, mode), site: None },
                 Piece::Epilogue => Laid::Fixed { item: epilogue, site: None },
@@ -1174,7 +1269,7 @@ fn layout_code(mut pieces: Vec<Laid>) -> Encoded {
                 Item::Branch { cond: *cond, target: 0, long: *long }.len()
             }
             Laid::LeaTable => 7,
-            Laid::Dropped(_) => 0,
+            Laid::Dropped(_) | Laid::Scope(_) => 0,
             Laid::Table(_) | Laid::Align => VAR,
         });
     }
@@ -1237,6 +1332,7 @@ fn layout_code(mut pieces: Vec<Laid>) -> Encoded {
             }
             Laid::Align => padding(p.next_multiple_of(16) - p, &mut items),
             Laid::Dropped(item) => out.dropped.push(DroppedStore { at: p, item: *item }),
+            Laid::Scope(sc) => out.scopes.push(Scope { code_offset: p, ..*sc }),
         }
         let mut q = p;
         for it in &items {

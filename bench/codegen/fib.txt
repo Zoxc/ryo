@@ -11,6 +11,7 @@ L0:
 
 fn <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::call_once - shim (frame 32, args 0, ret 4)
     arg $-16, 8
+    ; escape align 8 $-16, 8 bytes
     addr $-24, $-16
 L0:
     call $-4, fn0, 4, [4294967272, 8]
@@ -119,19 +120,24 @@ L0:
     call $-4, fn0, 4, [4294967132, 4]
 L1:
     call $-56, fn1, 8, [4294967292, 4]
+    ; escape align 8 $-56, 8 bytes
     addr $-48, $-56
+    ; escape align 4 $-4, 4 bytes
     addr $-64, $-4
     mov.w64 $-40, $-48
     mov.w64 $-32, $-64
     mov.w64 $-152, $-32
 L2:
+    ; escape align 8 $-112, 16 bytes
     call $0, fn2, 0, [4294967184, 72, 4294967144, 264]
     mov.w64 $-160, $-40
 L3:
+    ; escape align 8 $-128, 16 bytes
     call $0, fn3, 0, [4294967168, 72, 4294967136, 264]
     mov.w128 $-96, $-112
     mov.w128 $-80, $-128
     addr.abs $-136, k4
+    ; escape align 8 $-96, 32 bytes
     addr $-144, $-96
 L4:
     call $-24, fn5, 526344, [4294967160, 8, 4294967152, 264]
@@ -172,11 +178,13 @@ fn std::rt::lang_start::<()> (frame 80, args 0, ret 8)
     arg $-32, 520
     arg $-33, 769
     mov.w64 $-72, $-16
+    ; escape align 8 $-72, 8 bytes
     addr $-64, $-72
     mov.w64 $-56, $-64
     addr.abs $-48, k0
 L0:
     call.sym $-8, sym1, 8, [4294967240, 8, 4294967248, 264, 4294967272, 520, 4294967264, 776, 4294967263, 1025]
+    ; end $-72, 8 bytes
     ret $-8, 8
   cleanup L0 -> continue
   k0 = const allocation + 0

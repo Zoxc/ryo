@@ -7,7 +7,7 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
-use super::encode::{CallSite, DroppedStore, Opnd, Ref, RegVal, Reloc, arg_store, case_size, epilogue, fp_item, int_arg, prologue, push_words, result_stores, ret_loads, word_len};
+use super::encode::{CallSite, DroppedStore, Scope, Opnd, Ref, RegVal, Reloc, arg_store, case_size, epilogue, fp_item, int_arg, prologue, push_words, result_stores, ret_loads, word_len};
 use super::inline::Cache;
 use super::x86::{ARGS, BadItem, Cond, Cursor, Item, M, Reg, island_args};
 use super::reduced::{self, Then, addr_arg};
@@ -23,6 +23,8 @@ pub struct Decoded {
     pub frame_size: u32,
     /// Sorted by offset.
     pub cleanup: Vec<CleanupEntry>,
+    /// Sorted, at word offsets ([`Scope`]).
+    pub scopes: Vec<Scope>,
 }
 
 /// Why machine code isn't the canonical form of any function: a description, and the byte
@@ -75,6 +77,9 @@ struct Read {
     protos: Vec<Proto>,
     frame_size: u32,
     actions: Vec<Option<(Option<usize>, bool)>>,
+    /// The scopes, each with the index of the instruction it comes before (the count for
+    /// the end).
+    scopes: Vec<(usize, Scope)>,
 }
 
 /// Decodes one function's machine code, with its relocations (sorted), rodata, call sites and
@@ -85,9 +90,10 @@ pub fn decode(
     rodata: &[u8],
     call_sites: &[CallSite],
     dropped: &[DroppedStore],
+    scopes: &[Scope],
     mode: Mode,
 ) -> Result<Decoded, AsmError> {
-    let Read { protos, frame_size, actions } = read(code, relocs, rodata, call_sites, dropped, mode, false)?;
+    let Read { protos, frame_size, actions, scopes } = read(code, relocs, rodata, call_sites, dropped, scopes, mode, false)?;
     let err = |at: u32, what: &'static str| AsmError { at, what };
     let ipos: Vec<u32> = protos.iter().map(|p| p.pos).collect();
     let index = |at: u32, b: u32| ipos.binary_search(&b).map_err(|_| err(at, "target isn't an instruction"));
@@ -115,7 +121,9 @@ pub fn decode(
             .collect::<Result<Vec<_>, _>>()?;
         push_words(p.op, &ops, &mut words);
     }
-    Ok(Decoded { words, frame_size, cleanup })
+    wpos.push(w);
+    let scopes = scopes.into_iter().map(|(i, sc)| Scope { code_offset: wpos[i], ..sc }).collect();
+    Ok(Decoded { words, frame_size, cleanup, scopes })
 }
 
 /// Decodes one function's machine code, as [`decode`], to the reduced set
@@ -127,9 +135,10 @@ pub fn decode_reduced(
     rodata: &[u8],
     call_sites: &[CallSite],
     dropped: &[DroppedStore],
+    scopes: &[Scope],
     mode: Mode,
 ) -> Result<Decoded, AsmError> {
-    let Read { protos, frame_size, actions } = read(code, relocs, rodata, call_sites, dropped, mode, true)?;
+    let Read { protos, frame_size, actions, scopes } = read(code, relocs, rodata, call_sites, dropped, scopes, mode, true)?;
     let ipos: Vec<u32> = protos.iter().map(|p| p.pos).collect();
     let index = |at: u32, b: u32| {
         ipos.binary_search(&b).map(|i| i as u32).map_err(|_| AsmError { at, what: "target isn't an instruction" })
@@ -154,7 +163,7 @@ pub fn decode_reduced(
             }
         });
     }
-    Ok(reduced::words(&insns, &cleanup, frame_size))
+    Ok(reduced::words(&insns, &cleanup, &scopes, frame_size))
 }
 
 /// Reads one function's machine code ([`decode`]), handler calls in the reduced form with
@@ -165,6 +174,7 @@ fn read(
     rodata: &[u8],
     call_sites: &[CallSite],
     dropped: &[DroppedStore],
+    scopes: &[Scope],
     mode: Mode,
     reduced: bool,
 ) -> Result<Read, AsmError> {
@@ -289,7 +299,9 @@ fn read(
     if used != call_sites.len() {
         return Err(err(0, "call site outside every call"));
     }
-    Ok(Read { protos, frame_size, actions })
+    // Scopes: before the first instruction at or after their position.
+    let scopes = scopes.iter().map(|sc| (ipos.partition_point(|&p| p < sc.code_offset), *sc)).collect();
+    Ok(Read { protos, frame_size, actions, scopes })
 }
 
 fn read_u32(ro: &[u8], at: u32) -> Option<u32> {
