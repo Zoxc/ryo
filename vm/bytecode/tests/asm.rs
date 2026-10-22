@@ -256,7 +256,80 @@ fn check(f: &Fn, frame_size: u32, mode: Mode, what: &str) -> asm::Encoded {
     if red != want {
         panic!("{what} {mode:?} (reduced):\n{}\n---\n{}", reduced::Disasm(&want.words), reduced::Disasm(&red.words));
     }
+    // The same from the linked code, its references recovered from the resolved fields.
+    let linked = Fake::link(&enc);
+    let lin = asm::decode_linked(&linked, Fake::CODE, &Fake { ro: &enc.rodata }, &sites, &enc.dropped, &enc.scopes, mode)
+        .unwrap_or_else(|e| panic!("{what} {mode:?} (linked): {e:?}\n{}", Disasm(&code)));
+    if lin != red {
+        panic!("{what} {mode:?} (linked):\n{}\n---\n{}", reduced::Disasm(&red.words), reduced::Disasm(&lin.words));
+    }
     enc
+}
+
+/// A fake address space for linking a function's code: the code at [`Fake::CODE`], and each
+/// kind of reference in a range of its own below it, within `rel32` reach.
+struct Fake<'a> {
+    ro: &'a [u8],
+}
+
+impl Fake<'_> {
+    const CODE: u64 = 0x4000_0000;
+    const PROBE: u64 = 0x0f00_0000;
+    const HANDLERS: u64 = 0x1000_0000;
+    const FUNCS: u64 = 0x2000_0000;
+    const SYMS: u64 = 0x3000_0000;
+    const SITES: u64 = 0x3100_0000;
+    const CONSTS: u64 = 0x3200_0000;
+    const DATA: u64 = 0x3300_0000;
+    const RO: u64 = 0x3400_0000;
+
+    fn addr(to: asm::Ref) -> u64 {
+        use asm::Ref;
+        match to {
+            Ref::Handler(op) => Self::HANDLERS + 16 * op as u64,
+            Ref::Probe => Self::PROBE,
+            Ref::Func(f) => Self::FUNCS + 16 * f.0 as u64,
+            Ref::Sym(s) => Self::SYMS + 8 * s.0 as u64,
+            Ref::Site(s) => Self::SITES + 8 * s.0 as u64,
+            Ref::Const(k) => Self::CONSTS + k.0 as u64,
+            Ref::Data(d) => Self::DATA + d.0 as u64,
+            Ref::Ro(o) => Self::RO + o as u64,
+        }
+    }
+
+    /// The code with its relocations applied, at [`Fake::CODE`].
+    fn link(enc: &asm::Encoded) -> Vec<u8> {
+        let mut code = enc.code.clone();
+        for r in &enc.relocs {
+            let end = Self::CODE + r.at as u64 + 4;
+            let d = i32::try_from(Self::addr(r.to) as i64 - end as i64).expect("in reach");
+            code[r.at as usize..][..4].copy_from_slice(&d.to_le_bytes());
+        }
+        code
+    }
+}
+
+impl asm::Resolver for Fake<'_> {
+    fn resolve(&self, a: u64) -> Option<asm::Ref> {
+        use asm::Ref;
+        let r = match a {
+            Self::PROBE => Ref::Probe,
+            _ if (Self::HANDLERS..Self::FUNCS).contains(&a) => Ref::Handler(Opcode::from_u16(((a - Self::HANDLERS) / 16) as u16)?),
+            _ if (Self::FUNCS..Self::SYMS).contains(&a) => Ref::Func(Func(((a - Self::FUNCS) / 16) as u32)),
+            _ if (Self::SYMS..Self::SITES).contains(&a) => Ref::Sym(Sym(((a - Self::SYMS) / 8) as u32)),
+            _ if (Self::SITES..Self::CONSTS).contains(&a) => Ref::Site(Site(((a - Self::SITES) / 8) as u32)),
+            _ if (Self::CONSTS..Self::DATA).contains(&a) => Ref::Const(Const((a - Self::CONSTS) as u32)),
+            _ if (Self::DATA..Self::RO).contains(&a) => Ref::Data(Data((a - Self::DATA) as u32)),
+            _ if (Self::RO..Self::CODE).contains(&a) => Ref::Ro((a - Self::RO) as u32),
+            _ => return None,
+        };
+        // Only what `addr` gives: a misread field must not resolve by accident.
+        (Self::addr(r) == a).then_some(r)
+    }
+
+    fn code_consts(&self) -> &[u8] {
+        self.ro
+    }
 }
 
 const FRAMES: [u32; 6] = [0, 16, 112, 128, 4096, 1 << 20];
@@ -449,6 +522,26 @@ fn packed_operands() {
     assert_eq!((l.regs, l.loc(Opcode::AddW32, "b").reg), (3, 2));
     // `lpad` takes the exception object first.
     assert_eq!(asm::layout(Opcode::Lpad, m).loc(Opcode::Lpad, "x").reg, 1);
+}
+
+/// In linked code, a field whose target the resolver doesn't know is rejected.
+#[test]
+fn linked_fields_must_resolve() {
+    let m = MODES[0];
+    let f = Fn {
+        insns: vec![vec![Opcode::DivUW32 as u32, -8i32 as u32, -8i32 as u32, -16i32 as u32], vec![Opcode::Jmp as u32, 0]],
+        targets: vec![(1, 1, 0)],
+        unwind: Vec::new(),
+    };
+    let enc = check(&f, 16, m, "div; jmp");
+    let decode = |code: &[u8]| asm::decode_linked(code, Fake::CODE, &Fake { ro: &enc.rodata }, &enc.call_sites, &enc.dropped, &enc.scopes, m);
+    let linked = Fake::link(&enc);
+    assert!(decode(&linked).is_ok());
+    // The handler call one byte off.
+    let at = enc.relocs[0].at as usize;
+    let mut code = linked.clone();
+    code[at] = code[at].wrapping_add(1);
+    assert!(decode(&code).is_err());
 }
 
 /// Machine code that isn't canonical is rejected.

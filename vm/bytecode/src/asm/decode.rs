@@ -2,7 +2,8 @@
 //! canonical sequences ([`super::x86`]), with operand registers set in order, and recovers
 //! every operand, the frame size and the unwind entries: in the full set ([`decode`]), or in
 //! the reduced set ([`decode_reduced`]), which reads handler calls as their register values
-//! without the handlers' operand lists.
+//! without the handlers' operand lists. [`decode_linked`] reads linked code, as it sits in
+//! memory, to the reduced set: a [`Resolver`] says what its resolved fields point at.
 
 use alloc::vec;
 use alloc::vec::Vec;
@@ -13,7 +14,7 @@ use super::encode::{
 };
 use super::inline::Cache;
 use super::reduced::{self, Then, addr_arg};
-use super::x86::{ARGS, BadItem, Cond, Cursor, Item, M, Reg, island_args};
+use super::x86::{ARGS, BadItem, Cond, Cursor, Fields, Item, M, Reg, island_args};
 use super::{ARG_ADDR, ArgReg, Mode, RetPart, has_handler, layout, ret_kind};
 use crate::full::{ElemKind, Opcode, OperandKind, Shape, Sym};
 use crate::image::{CATCH, CONTINUE, CleanupEntry, op_may_unwind};
@@ -96,7 +97,7 @@ pub fn decode(
     scopes: &[Scope],
     mode: Mode,
 ) -> Result<Decoded, AsmError> {
-    let Read { protos, frame_size, actions, scopes } = read(code, relocs, rodata, call_sites, dropped, scopes, mode, false)?;
+    let Read { protos, frame_size, actions, scopes } = read(code, Fields::Relocs(relocs), rodata, call_sites, dropped, scopes, mode, false)?;
     let err = |at: u32, what: &'static str| AsmError { at, what };
     let ipos: Vec<u32> = protos.iter().map(|p| p.pos).collect();
     let index = |at: u32, b: u32| ipos.binary_search(&b).map_err(|_| err(at, "target isn't an instruction"));
@@ -141,7 +142,44 @@ pub fn decode_reduced(
     scopes: &[Scope],
     mode: Mode,
 ) -> Result<Decoded, AsmError> {
-    let Read { protos, frame_size, actions, scopes } = read(code, relocs, rodata, call_sites, dropped, scopes, mode, true)?;
+    reduced_of(read(code, Fields::Relocs(relocs), rodata, call_sites, dropped, scopes, mode, true)?)
+}
+
+/// What the `rel32` fields of linked code point at, for [`decode_linked`].
+pub trait Resolver {
+    /// The reference at the absolute address `addr`, the target of a `call`/`jmp rel32` or of
+    /// a `[rip + x]` field outside the function: a handler, `ryo_probe_stack`, a function of
+    /// the image (by its first byte), a symbol slot, a site cache slot, a constant, a data
+    /// offset, or a code constant ([`Ref::Ro`], an offset in [`Resolver::code_consts`]).
+    /// `None` if it is none of them.
+    fn resolve(&self, addr: u64) -> Option<Ref>;
+    /// The bytes [`Ref::Ro`] offsets index: the island operand arrays and switch values the
+    /// decoder reads.
+    fn code_consts(&self) -> &[u8];
+}
+
+/// Decodes one function's linked machine code at address `code_addr` to the reduced set, as
+/// [`decode_reduced`], with the references recovered from the resolved fields by `resolver`
+/// instead of a relocation list: a field whose target lies inside the function (past its
+/// first byte) is a branch or jump table within it, any other is the reference `resolver`
+/// gives. The dropped stores aren't in the code or the image; until they are, they must be
+/// given ([`super::Encoded::dropped`]).
+pub fn decode_linked(
+    code: &[u8],
+    code_addr: u64,
+    resolver: &dyn Resolver,
+    call_sites: &[CallSite],
+    dropped: &[DroppedStore],
+    scopes: &[Scope],
+    mode: Mode,
+) -> Result<Decoded, AsmError> {
+    let fields = Fields::Linked { addr: code_addr, resolver };
+    reduced_of(read(code, fields, resolver.code_consts(), call_sites, dropped, scopes, mode, true)?)
+}
+
+/// The reduced instruction words of a function read with handler calls in the reduced form.
+fn reduced_of(r: Read) -> Result<Decoded, AsmError> {
+    let Read { protos, frame_size, actions, scopes } = r;
     let ipos: Vec<u32> = protos.iter().map(|p| p.pos).collect();
     let index = |at: u32, b: u32| ipos.binary_search(&b).map(|i| i as u32).map_err(|_| AsmError { at, what: "target isn't an instruction" });
     let cleanup: Vec<_> = actions.iter().enumerate().filter_map(|(i, a)| a.map(|(pad, catch)| (i, pad, catch))).collect();
@@ -171,7 +209,7 @@ pub fn decode_reduced(
 /// `reduced`.
 fn read(
     code: &[u8],
-    relocs: &[Reloc],
+    fields: Fields<'_>,
     rodata: &[u8],
     call_sites: &[CallSite],
     dropped: &[DroppedStore],
@@ -179,7 +217,7 @@ fn read(
     mode: Mode,
     reduced: bool,
 ) -> Result<Read, AsmError> {
-    let mut c = Cursor::new(code, relocs);
+    let mut c = Cursor::new(code, fields);
     let err = |at: u32, what: &'static str| AsmError { at, what };
     // Prologue: the frame size is its `sub`'s (less the 8 bytes in place of the saved `rbp`
     // without a frame pointer), and the prologue must be that size's.

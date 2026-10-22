@@ -329,9 +329,19 @@ format version.
   `asm::decode` to the full one, sharing everything but handler calls, which it reads from
   their registers without the handlers' operand lists (only a switch's case count comes from
   its handler's layout).
+- **Linked code**: `asm::decode_linked` reads a function as it sits in memory, its fields
+  resolved, at its address, without the relocation list: a `rel32` field whose target lies
+  inside the function past its first byte (the prologue, never a branch target) is a branch
+  or jump table, and any other target is classified by an `asm::Resolver` (a handler, a
+  function of the image, a symbol slot, …), which also gives the code constants' bytes. The
+  decoder shares everything else with `decode_reduced`. `image::ImageResolver` classifies by
+  the image header's ranges, given the handlers' addresses. The dropped stores aren't
+  recoverable from the code, so it still takes them.
 - **Testing**: `vm/bytecode/tests/asm.rs` checks on every round trip that `decode_reduced`
-  gives what `reduce` gives for the full decoder's output, and `vm/bytecode/tests/reduced.rs`
-  that the reduced list is the full list's native instructions.
+  gives what `reduce` gives for the full decoder's output, and that `decode_linked` of the
+  code linked at fake addresses gives the same, and `vm/bytecode/tests/reduced.rs` that the
+  reduced list is the full list's native instructions. `vm/bytecode/tests/image.rs` decodes
+  a linked image's functions through `ImageResolver`.
 
 ## Instruction set
 
@@ -647,8 +657,9 @@ Scopes and call sites are for decoding a linked function's code at run time
 (`asm::decode_reduced`), which the code alone doesn't allow: scopes aren't in the code at
 all, and the call sites are the LSDA's, which the runtime can't find per function without
 parsing `.eh_frame` (and PE has none). The records are the encoder's on both formats.
-They aren't all `decode_reduced` takes yet: the dropped stores (`Encoded::dropped`) and the
-code's relocations aren't stored.
+The code's relocations needn't be stored: `asm::decode_linked` recovers them from the
+resolved fields ([Reduced instructions](#reduced-instructions)). The dropped stores
+(`Encoded::dropped`) aren't stored yet.
 
 The read-only section can live in RELRO/`.rdata`, since nothing writes to it after
 relocation.

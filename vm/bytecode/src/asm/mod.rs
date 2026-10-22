@@ -13,7 +13,8 @@
 //!   entries included.
 //! - `inline` (`alloc`): the native sequences of the inlined instructions.
 //! - [`reduce`] (`alloc`): full code to the reduced set ([`crate::reduced`]), which
-//!   [`decode_reduced`] reads machine code back to.
+//!   [`decode_reduced`] reads machine code back to, and [`decode_linked`] linked machine
+//!   code, through a [`Resolver`].
 //! - [`lsda`] (`alloc`): the call-site table of a function's LSDA.
 //!
 //! # Operands and registers
@@ -47,7 +48,7 @@ mod reduced;
 mod x86;
 
 #[cfg(feature = "alloc")]
-pub use decode::{AsmError, Decoded, decode, decode_reduced};
+pub use decode::{AsmError, Decoded, Resolver, decode, decode_linked, decode_reduced};
 #[cfg(feature = "alloc")]
 pub use encode::{
     Asm, CallSite, DroppedStore, EncodeError, Encoded, InsnId, Label, Opnd, PROBE_FROM, Ref, Reloc, Scope, ScopeKind, Unwind, encode, operands,

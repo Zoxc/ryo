@@ -4,6 +4,7 @@
 
 use alloc::vec::Vec;
 
+use super::decode::Resolver;
 use super::encode::{Ref, Reloc};
 
 /// The general-purpose registers the encoder uses, by their x86 number.
@@ -859,12 +860,31 @@ impl Item {
     }
 }
 
-/// A function's code being read: the bytes, the position, and the relocations (sorted by
-/// field position).
+/// What a function's `rel32` fields refer to, for the [`Cursor`].
+#[derive(Clone, Copy)]
+pub enum Fields<'a> {
+    /// Unlinked code: the relocations, sorted by field position. A field without one is a
+    /// branch within the function.
+    Relocs(&'a [Reloc]),
+    /// Linked code at address `addr`, its fields resolved: a field whose target lies inside
+    /// the function, past its first byte, is a branch within it; any other target is
+    /// classified by the resolver. (A function's first byte is its prologue, never a branch
+    /// target, so a field to it is a call or tail call of the function itself.)
+    Linked { addr: u64, resolver: &'a dyn Resolver },
+}
+
+/// A `rel32` field: a branch within the function (its target position), or a reference.
+enum Field {
+    Local(u32),
+    Ref(Ref),
+    Bad,
+}
+
+/// A function's code being read: the bytes, the position, and what its fields refer to.
 pub struct Cursor<'a> {
     pub code: &'a [u8],
     pub pos: u32,
-    relocs: &'a [Reloc],
+    fields: Fields<'a>,
     /// Without a frame pointer, the frame size `F`: frame slots are `[rsp + F + d]`, which
     /// [`Cursor::item`] returns as `[rbp + d]`, the form the encoder works in.
     pub sp_frame: Option<u32>,
@@ -875,8 +895,8 @@ pub struct Cursor<'a> {
 pub struct BadItem(pub u32);
 
 impl<'a> Cursor<'a> {
-    pub fn new(code: &'a [u8], relocs: &'a [Reloc]) -> Self {
-        Cursor { code, pos: 0, relocs, sp_frame: None }
+    pub fn new(code: &'a [u8], fields: Fields<'a>) -> Self {
+        Cursor { code, pos: 0, fields, sp_frame: None }
     }
 
     pub fn at_end(&self) -> bool {
@@ -887,27 +907,43 @@ impl<'a> Cursor<'a> {
         self.code.get(self.pos as usize..).and_then(|b| b.get(..n)).ok_or(BadItem(self.pos))
     }
 
-    fn reloc(&self, at: u32) -> Option<Ref> {
-        self.relocs.binary_search_by_key(&at, |r| r.at).ok().map(|i| self.relocs[i].to)
-    }
-
     fn i32_at(&self, off: usize) -> Result<i32, BadItem> {
         let b = self.bytes(off + 4)?;
         Ok(i32::from_le_bytes([b[off], b[off + 1], b[off + 2], b[off + 3]]))
     }
 
-    /// The relocation of the 4-byte field `off` bytes into the item.
-    fn field_ref(&self, off: u32) -> Result<Ref, BadItem> {
-        self.reloc(self.pos + off).ok_or(BadItem(self.pos))
+    /// The PC-relative field `off` bytes into an item of length `len`.
+    fn field(&self, off: u32, len: u32) -> Result<Field, BadItem> {
+        let d = self.i32_at(off as usize)?;
+        let local = (self.pos + len).wrapping_add(d as u32);
+        Ok(match self.fields {
+            Fields::Relocs(relocs) => match relocs.binary_search_by_key(&(self.pos + off), |r| r.at) {
+                Ok(i) => Field::Ref(relocs[i].to),
+                Err(_) => Field::Local(local),
+            },
+            Fields::Linked { addr, resolver } => {
+                let to = addr.wrapping_add((self.pos + len) as u64).wrapping_add(d as i64 as u64);
+                let inside = to.wrapping_sub(addr).wrapping_sub(1) < (self.code.len() as u64).wrapping_sub(1);
+                if inside { Field::Local(local) } else { resolver.resolve(to).map_or(Field::Bad, Field::Ref) }
+            }
+        })
+    }
+
+    /// The reference of the field `off` bytes into an item of length `len`.
+    fn field_ref(&self, off: u32, len: u32) -> Result<Ref, BadItem> {
+        match self.field(off, len)? {
+            Field::Ref(r) => Ok(r),
+            _ => Err(BadItem(self.pos)),
+        }
     }
 
     /// The target of the PC-relative field `off` bytes into an item of length `len`, which
-    /// must not be relocated.
+    /// must be a branch within the function.
     fn local(&self, off: u32, len: u32) -> Result<u32, BadItem> {
-        if self.reloc(self.pos + off).is_some() {
-            return Err(BadItem(self.pos));
+        match self.field(off, len)? {
+            Field::Local(t) => Ok(t),
+            _ => Err(BadItem(self.pos)),
         }
-        Ok((self.pos + len).wrapping_add(self.i32_at(off as usize)? as u32))
     }
 
     /// Reads the next element (not padding, `int3` or a table entry), and checks that its
@@ -1154,10 +1190,10 @@ impl<'a> Cursor<'a> {
                     return Err(bad);
                 }
                 let reg = Reg::from_num(m >> 3 & 7 | (r as u8) << 3).ok_or(bad)?;
-                match self.reloc(self.pos + 3) {
-                    Some(to) => Item::Lea(reg, to),
-                    None if reg == Reg::Rcx => Item::LeaTable(self.local(3, 7)?),
-                    None => return Err(bad),
+                match self.field(3, 7)? {
+                    Field::Ref(to) => Item::Lea(reg, to),
+                    Field::Local(t) if reg == Reg::Rcx => Item::LeaTable(t),
+                    _ => return Err(bad),
                 }
             }
             (0x48..=0x4f, 0x89) if w && !x => {
@@ -1169,18 +1205,19 @@ impl<'a> Cursor<'a> {
                 let dst = Reg::from_num(m & 7 | (bx as u8) << 3).ok_or(bad)?;
                 Item::Mov(dst, src)
             }
-            (0, 0xe8) => Item::Call(self.field_ref(1)?),
-            (0x48, 0x8b) if get(2)? == 0x05 => Item::LoadRip(self.field_ref(3)?),
+            (0, 0xe8) => Item::Call(self.field_ref(1, 5)?),
+            (0x48, 0x8b) if get(2)? == 0x05 => Item::LoadRip(self.field_ref(3, 7)?),
             (0, 0xff) => match get(1)? {
-                0x15 => Item::CallMem(self.field_ref(2)?),
+                0x15 => Item::CallMem(self.field_ref(2, 6)?),
                 0xd0 => Item::CallRax,
                 0x10 => Item::CallMemRax,
                 0xe0 => Item::JmpRax,
                 _ => return Err(bad),
             },
-            (0, 0xe9) => match self.reloc(self.pos + 1) {
-                Some(to) => Item::Jmp(to),
-                None => Item::Branch { cond: Cond::Always, target: self.local(1, 5)?, long: true },
+            (0, 0xe9) => match self.field(1, 5)? {
+                Field::Ref(to) => Item::Jmp(to),
+                Field::Local(target) => Item::Branch { cond: Cond::Always, target, long: true },
+                Field::Bad => return Err(bad),
             },
             (0, 0xeb | 0x70..=0x7f) => {
                 let d = get(1)? as i8 as i32 as u32;
@@ -1281,11 +1318,13 @@ impl<'a> Cursor<'a> {
         self.pos - start
     }
 
-    /// The relocations of the fields starting in `at..at + len`.
+    /// The relocations of the fields starting in `at..at + len` (none in linked code, where
+    /// only the items' own fields can be references).
     fn relocs_in(&self, at: u32, len: u32) -> &'a [Reloc] {
-        let lo = self.relocs.partition_point(|r| r.at < at);
-        let hi = self.relocs.partition_point(|r| r.at < at + len);
-        &self.relocs[lo..hi]
+        let Fields::Relocs(relocs) = self.fields else { return &[] };
+        let lo = relocs.partition_point(|r| r.at < at);
+        let hi = relocs.partition_point(|r| r.at < at + len);
+        &relocs[lo..hi]
     }
 
     fn reloc_in(&self, at: u32, len: u32) -> bool {

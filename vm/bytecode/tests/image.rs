@@ -13,27 +13,39 @@ fn code(insns: &[Insn<'_>]) -> Vec<u32> {
     c.words
 }
 
-/// An 8-aligned (or more) byte buffer.
+/// A 16-aligned byte buffer (leaked: tests only).
 struct Buf {
-    mem: Vec<u128>,
+    ptr: *mut u8,
     len: usize,
 }
 impl Buf {
     fn new(bytes: &[u8], align: u64) -> Buf {
-        assert!(align <= 16);
-        let mut mem = vec![0u128; bytes.len().div_ceil(16) + 1];
-        let b = unsafe { std::slice::from_raw_parts_mut(mem.as_mut_ptr().cast::<u8>(), bytes.len()) };
-        b.copy_from_slice(bytes);
-        Buf { mem, len: bytes.len() }
+        Buf::several(&[(bytes, align)]).pop().unwrap()
+    }
+    /// Buffers in one allocation, so that `rel32` fields reach across them.
+    fn several(parts: &[(&[u8], u64)]) -> Vec<Buf> {
+        let n: usize = parts.iter().map(|p| p.0.len().div_ceil(16) + 1).sum();
+        let mem: &mut [u128] = Vec::leak(vec![0u128; n]);
+        let mut at = mem.as_mut_ptr();
+        parts
+            .iter()
+            .map(|&(bytes, align)| {
+                assert!(align <= 16);
+                let b = Buf { ptr: at.cast(), len: bytes.len() };
+                unsafe { std::slice::from_raw_parts_mut(b.ptr, b.len) }.copy_from_slice(bytes);
+                at = unsafe { at.add(bytes.len().div_ceil(16) + 1) };
+                b
+            })
+            .collect()
     }
     fn addr(&self) -> u64 {
-        self.mem.as_ptr() as u64
+        self.ptr as u64
     }
     fn bytes(&self) -> &[u8] {
-        unsafe { std::slice::from_raw_parts(self.mem.as_ptr().cast(), self.len) }
+        unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
     }
     fn write_u64(&mut self, off: u64, v: u64) {
-        unsafe { (self.mem.as_mut_ptr().cast::<u8>().add(off as usize) as *mut u64).write_unaligned(v) }
+        unsafe { (self.ptr.add(off as usize) as *mut u64).write_unaligned(v) }
     }
     fn read_u64(&self, off: u64) -> u64 {
         u64::from_le_bytes(self.bytes()[off as usize..off as usize + 8].try_into().unwrap())
@@ -49,9 +61,11 @@ struct Linked {
 
 /// Links an image object the way the system linker would: places the sections and applies
 /// every relocation (the unwind sections' aren't), resolving symbols through `resolve` and
-/// `ryo_rt`'s handlers to 0x7000 + the opcode.
+/// `ryo_rt`'s handlers to [`handler_addr`] and `ryo_probe_stack` to [`probe_addr`], past the
+/// text section.
 fn link(obj: &ImageObject, resolve: impl Fn(&SymbolDef) -> u64) -> Linked {
-    let mut l = Linked { ro: Buf::new(&obj.rodata, obj.rodata_align), data: Buf::new(&obj.data, obj.data_align), text: Buf::new(&obj.text, 16) };
+    let [ro, data, text] = Buf::several(&[(&obj.rodata, obj.rodata_align), (&obj.data, obj.data_align), (&obj.text, 16)]).try_into().ok().unwrap();
+    let mut l = Linked { ro, data, text };
     assert_eq!(l.ro.addr() % obj.rodata_align, 0);
     for r in &obj.relocs {
         let target = match r.target {
@@ -60,8 +74,8 @@ fn link(obj: &ImageObject, resolve: impl Fn(&SymbolDef) -> u64) -> Linked {
             RelocTarget::Section(Section::Writable) => l.data.addr(),
             RelocTarget::Section(Section::Text) => l.text.addr(),
             RelocTarget::Section(_) => continue,
-            RelocTarget::Handler(op) => 0x7000 + op as u64,
-            RelocTarget::Probe => 0x6000,
+            RelocTarget::Handler(op) => handler_addr(&l.text, op),
+            RelocTarget::Probe => probe_addr(&l.text),
         };
         let v = target.wrapping_add(r.addend as u64);
         let buf = match r.section {
@@ -81,6 +95,15 @@ fn link(obj: &ImageObject, resolve: impl Fn(&SymbolDef) -> u64) -> Linked {
         }
     }
     l
+}
+
+/// Where [`link`] puts the handler of `op`: in reach of `text`'s `rel32` calls.
+fn handler_addr(text: &Buf, op: Opcode) -> u64 {
+    text.addr() + 0x10_0000 + 16 * op as u64
+}
+
+fn probe_addr(text: &Buf) -> u64 {
+    text.addr() + 0x8_0000
 }
 
 /// The i32 at `off` in `b`.
@@ -590,5 +613,40 @@ fn scopes_and_call_sites_round_trip() {
         assert_eq!(validate_edited(&obj, |r, h| put32(r, cs(h, 1, 0), 0)), Err(ImageError::BadCallSite(1)));
         assert!(matches!(validate_edited(&obj, |r, _| put32(r, offset_of!(Header, mode), MODE_PE)), Err(ImageError::BadMode)));
         assert!(matches!(validate_edited(&obj, |r, _| put32(r, offset_of!(Header, mode), 16)), Err(ImageError::BadMode)));
+    }
+}
+
+/// The functions of a linked image decode from its text section through the image's ranges
+/// ([`ImageResolver`]) as their encoder output decodes with its relocations.
+#[test]
+fn linked_functions_decode() {
+    for mode in [ELF, Mode { fp_arg: true, frame_pointer: false, ..ELF }] {
+        let w = sample();
+        let defs = w.functions().to_vec();
+        let obj = w.finish(mode).unwrap();
+        let l = link(&obj, |s| 0x1000 + s.name.len() as u64);
+        let img = unsafe { Image::from_header(l.ro.bytes().as_ptr()) }.unwrap();
+        let mut handlers: Vec<(usize, Opcode)> = ALL_OPCODES.iter().map(|&op| (handler_addr(&l.text, op) as usize, op)).collect();
+        handlers.sort();
+        let res = ImageResolver { image: img, handlers: &handlers, probe: probe_addr(&l.text) as usize };
+        for (i, f) in defs.iter().enumerate() {
+            let got = res.decode(i as u32, l.text.bytes(), &[]).expect("a function").unwrap_or_else(|e| panic!("f{i}: {e:?}"));
+            // The encoder's output, its code constants at their place in the image's.
+            let enc = asm::encode(&f.code, f.frame_size, &f.cleanup, &[], mode).unwrap();
+            let cc = img.code_consts();
+            let base = if enc.rodata.is_empty() { 0 } else { cc.windows(enc.rodata.len()).position(|w| w == enc.rodata).unwrap() as u32 };
+            let relocs: Vec<asm::Reloc> = enc
+                .relocs
+                .iter()
+                .map(|r| match r.to {
+                    asm::Ref::Ro(o) => asm::Reloc { to: asm::Ref::Ro(base + o), ..*r },
+                    _ => *r,
+                })
+                .collect();
+            let want = asm::decode_reduced(&enc.code, &relocs, cc, &enc.call_sites, &enc.dropped, &enc.scopes, mode).unwrap();
+            assert_eq!(got, want, "f{i} {mode:?}");
+        }
+        // Not a function.
+        assert!(res.decode(defs.len() as u32, l.text.bytes(), &[]).is_none());
     }
 }

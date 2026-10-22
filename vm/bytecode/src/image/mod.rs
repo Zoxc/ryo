@@ -535,6 +535,73 @@ impl<'a> Image<'a> {
     }
 }
 
+/// Classifies the addresses an image's linked code refers to ([`crate::asm::Resolver`]), by
+/// the image's header ranges, for decoding its functions at run time
+/// ([`crate::asm::decode_linked`]). The handlers aren't in the image: `handlers` gives their
+/// addresses (sorted), `probe` that of `ryo_probe_stack`.
+#[cfg(feature = "alloc")]
+#[derive(Clone, Copy)]
+pub struct ImageResolver<'a> {
+    pub image: Image<'a>,
+    pub handlers: &'a [(usize, crate::full::Opcode)],
+    pub probe: usize,
+}
+
+#[cfg(feature = "alloc")]
+impl ImageResolver<'_> {
+    /// Decodes function `func` to the reduced set, from the image's linked text section
+    /// `text` (`Header::text_size` bytes at `Header::text`), with its scopes and call sites.
+    /// `None` for an unknown function.
+    pub fn decode(&self, func: u32, text: &[u8], dropped: &[crate::asm::DroppedStore]) -> Option<Result<crate::asm::Decoded, crate::asm::AsmError>> {
+        use alloc::vec::Vec;
+        let f = self.image.functions().get(func as usize)?;
+        let code = text.get(f.code_off as usize..)?.get(..f.code_len as usize)?;
+        let sites: Vec<_> = self.image.call_sites(func).iter().map(crate::asm::CallSite::from).collect();
+        let scopes: Vec<_> = self.image.scopes(func).iter().map(crate::asm::Scope::from).collect();
+        let addr = self.image.header().text + f.code_off as u64;
+        Some(crate::asm::decode_linked(code, addr, self, &sites, dropped, &scopes, self.image.mode()))
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl crate::asm::Resolver for ImageResolver<'_> {
+    fn resolve(&self, addr: u64) -> Option<crate::asm::Ref> {
+        use crate::asm::Ref;
+        use crate::full::{Const, Data, Func, Site, Sym};
+        if let Ok(i) = self.handlers.binary_search_by_key(&(addr as usize), |h| h.0) {
+            return Some(Ref::Handler(self.handlers[i].1));
+        }
+        if addr == self.probe as u64 {
+            return Some(Ref::Probe);
+        }
+        let h = self.image.header();
+        // The offset of `addr` in the `len` bytes at `base` (one past the end with `end`).
+        let within = |base: u64, len: u32, end: bool| addr.checked_sub(base).filter(|&o| o < len as u64 + end as u64).map(|o| o as u32);
+        let ro = self.image.bytes().as_ptr() as u64;
+        if let Some(o) = within(h.text, h.text_size, false) {
+            let fs = self.image.functions();
+            return fs.binary_search_by_key(&o, |f| f.code_off).ok().map(|i| Ref::Func(Func(i as u32)));
+        }
+        if let Some(o) = within(ro + h.symbols.off as u64, h.symbols.count * 8, false) {
+            return (o % 8 == 0).then_some(Ref::Sym(Sym(o / 8)));
+        }
+        if let Some(o) = within(ro + h.code_consts.off as u64, h.code_consts.count, false) {
+            return Some(Ref::Ro(o));
+        }
+        if let Some(o) = within(ro + h.consts.off as u64, h.consts.count, true) {
+            return Some(Ref::Const(Const(o)));
+        }
+        if let Some(o) = within(h.data, h.site_count * 8, false) {
+            return (o % 8 == 0).then_some(Ref::Site(Site(o / 8)));
+        }
+        within(h.data + h.fixup_area as u64, h.data_size - h.fixup_area, true).map(|o| Ref::Data(Data(o)))
+    }
+
+    fn code_consts(&self) -> &[u8] {
+        self.image.code_consts()
+    }
+}
+
 impl fmt::Debug for Image<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Image").field("header", self.header).finish()
