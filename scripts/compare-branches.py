@@ -12,7 +12,7 @@ median / the baseline's median).
 
     scripts/compare-branches.py [--build [NAME=]PATH]... [--worktree REV]...
                                 [--samples N] [--warmup N] [--max-time S]
-                                [--metric cpu|wall|cachegrind]
+                                [--metric cpu|wall|cachegrind] [--no-cache-sim]
                                 [--pin CPU] [--seed N] [--programs a,b] [--flags "..."]
                                 [--crates [a,b|all|default]] [--only-crates]
 
@@ -31,13 +31,16 @@ time (user+sys, `--metric cpu`, the default; less sensitive to scheduling noise)
 time; `--pin CPU` runs timed commands under `taskset -c CPU`. Reported: median, min and
 MAD (median absolute deviation).
 
-`--metric cachegrind` counts instructions instead: every command runs under `valgrind
---tool=cachegrind --cache-sim=no` (children traced, their counts summed), and the reported
-numbers are millions of instructions executed. They don't depend on the machine's load, so
-one sample is taken (`--samples 1 --warmup 0`) and small differences are real; but they
-don't see cache misses, branch mispredictions or dependency chains, so a change can cut
-instructions without getting faster. Runs are about 50 times slower than native. Not for
-`--crates`.
+`--metric cachegrind` counts instead: every command runs under `valgrind --tool=cachegrind`
+with its cache simulation (children traced, their counts summed). Compiles report millions
+of instructions executed; runs also report instruction-cache (I1) misses, data reads and
+writes, and first-level (D1) and last-level (LL) data cache misses, each in its own table.
+The counts don't depend on the machine's load, so one sample is taken (`--samples 1
+--warmup 0`) and small differences are real. Valgrind's caches are a simple model, not the
+machine's, so take the misses as a guide; and nothing sees branch mispredictions or
+dependency chains, so a change can cut instructions without getting faster. Runs are about
+100 times slower than native; `--no-cache-sim` drops the simulation and reports only
+instructions, about twice as fast. Not for `--crates`.
 
 Crates: each build's own `./y.sh bench crates --backends ryo`, crate by crate, builds in
 shuffled order, with `--samples` build and run samples; their summary tables (medians) are
@@ -189,12 +192,12 @@ def resolve_builds(args):
 
 # --- timing -----------------------------------------------------------------------------
 
-def timed(cmd, pin, cwd=None, cachegrind=False):
+def timed(cmd, pin, cwd=None, cachegrind=False, cache_sim=True):
     """Runs `cmd`; returns (returncode, stdout, stderr, wall, cpu) with cpu = user+sys of
-    the child and its waited-for descendants, or with `cachegrind`, the instructions they
-    executed (in place of cpu)."""
+    the child and its waited-for descendants, or with `cachegrind`, their counts
+    (`cachegrind_counts`, in place of cpu)."""
     if cachegrind:
-        cmd = ["valgrind", "--tool=cachegrind", "--cache-sim=no", "--trace-children=yes",
+        cmd = ["valgrind", "--tool=cachegrind", f"--cache-sim={'yes' if cache_sim else 'no'}", "--trace-children=yes",
                "--cachegrind-out-file=/dev/null", *cmd]
     if pin is not None:
         cmd = ["taskset", "-c", str(pin), *cmd]
@@ -209,12 +212,38 @@ def timed(cmd, pin, cwd=None, cachegrind=False):
         stderr = err.read().decode(errors="replace")
         cpu = ru.ru_utime + ru.ru_stime
         if cachegrind:
-            # `==pid== I refs:      1,234,567`, one per traced process.
-            refs = [line.split("I refs:")[1] for line in stderr.splitlines() if line.startswith("==") and "I refs:" in line]
-            if not refs and p.returncode == 0:
+            cpu = cachegrind_counts(stderr)
+            if not cpu["instructions"] and p.returncode == 0:
                 sys.exit(f"no cachegrind summary from {' '.join(cmd)}:\n{stderr}")
-            cpu = sum(int(r.strip().replace(",", "")) for r in refs)
         return p.returncode, out.read().decode(errors="replace"), stderr, wall, cpu
+
+
+# The counts `--metric cachegrind` reports: name, the summary line, and which number on it
+# (0: the total, 1: reads, 2: writes).
+CACHEGRIND = [
+    ("instructions", "I refs:", 0),
+    ("I1 misses", "I1  misses:", 0),
+    ("data reads", "D refs:", 1),
+    ("data writes", "D refs:", 2),
+    ("D1 misses", "D1  misses:", 0),
+    ("LL misses", "LL misses:", 0),
+]
+
+
+def cachegrind_counts(stderr):
+    """The CACHEGRIND counts of a cachegrind run's summaries (`==pid== D refs:  55,104
+    (40,022 rd + 15,082 wr)`), summed over the traced processes."""
+    out = {name: 0 for name, _, _ in CACHEGRIND}
+    for line in stderr.splitlines():
+        if not line.startswith("=="):
+            continue
+        for name, key, i in CACHEGRIND:
+            if key in line:
+                nums = [w.replace(",", "") for w in line.split(key)[1].replace("(", " ").split()]
+                nums = [int(n) for n in nums if n.isdigit()]
+                if len(nums) > i:
+                    out[name] += nums[i]
+    return out
 
 
 def sample(label, names, args, rng, eta, fn):
@@ -269,7 +298,7 @@ def programs_(args, builds, rng, programs, eta):
         def compile_(name):
             cmd = [str(builds[name] / "dist" / "bin" / "rustc-ryo"), "--edition=2024", str(src),
                    "-o", str(exes[name]), *flags]
-            rc, _, err, wall, cpu = timed(cmd, args.pin, cachegrind=args.metric == "cachegrind")
+            rc, _, err, wall, cpu = timed(cmd, args.pin, cachegrind=args.metric == "cachegrind", cache_sim=args.cache_sim)
             if rc != 0:
                 PROGRESS.log("")
                 sys.exit(f"{prog} [{name}]: compile failed:\n{err}")
@@ -278,7 +307,7 @@ def programs_(args, builds, rng, programs, eta):
         outputs = {}
 
         def run(name):
-            rc, stdout, err, wall, cpu = timed([str(exes[name])], args.pin, cachegrind=args.metric == "cachegrind")
+            rc, stdout, err, wall, cpu = timed([str(exes[name])], args.pin, cachegrind=args.metric == "cachegrind", cache_sim=args.cache_sim)
             if rc != 0:
                 PROGRESS.log("")
                 sys.exit(f"{prog} [{name}]: exit {rc}\n{err}")
@@ -298,23 +327,39 @@ def programs_(args, builds, rng, programs, eta):
         rows.append((prog, compile_t, run_t))
         PROGRESS.log(f"[compare] {prog} done")
 
-    # Seconds as ms, or instructions as millions.
-    scale, unit = (1e-6, "M instructions") if args.metric == "cachegrind" else (1e3, "ms")
+    # Seconds as ms, or counts as millions (one table per count).
+    if args.metric == "cachegrind":
+        counts = [name for name, _, _ in CACHEGRIND] if args.cache_sim else ["instructions"]
+        tables = [("compile", 1, "instructions")] + [("run", 2, name) for name in counts]
+    else:
+        tables = [("compile time", 1, None), ("run time", 2, None)]
+    for title, pick, count in tables:
+        if count is not None:
+            scale, unit, title = 1e-6, "M", f"{title} {count}"
+            get = lambda xs: [x[count] for x in xs]
+        else:
+            scale, unit = 1e3, "ms"
+            get = lambda xs: xs
 
-    def cell(xs):
-        return f"{statistics.median(xs) * scale:.1f} ({min(xs) * scale:.1f}, ±{mad(xs) * scale:.1f})"
+        def cell(xs):
+            if count is not None:
+                v = statistics.median(xs) * scale
+                return f"{v:.3f}" if v < 100 else f"{v:.1f}"
+            return f"{statistics.median(xs) * scale:.1f} ({min(xs) * scale:.1f}, ±{mad(xs) * scale:.1f})"
 
-    for title, pick in [("compile time", 1), ("run time", 2)]:
-        cells = [[cell(row[pick][n]) for n in names] for row in rows]
+        cells = [[cell(get(row[pick][n])) for n in names] for row in rows]
         w = max([len(n) for n in names] + [len(c) for r in cells for c in r])
         rw = max([7] + [len(f"{n}/{names[0]}") for n in names[1:]])
-        print(f"\n{title} ({args.metric}, {unit}: median (min, ±MAD)), up to {args.samples} samples")
+        if count is not None:
+            print(f"\n{title} (cachegrind, millions)")
+        else:
+            print(f"\n{title} ({args.metric}, {unit}: median (min, ±MAD)), up to {args.samples} samples")
         print(f"{'program':10} " + " ".join(f"{n:>{w}}" for n in names)
               + "".join(f" {n + '/' + names[0]:>{rw}}" for n in names[1:]))
         for row, cs in zip(rows, cells):
             t = row[pick]
-            b = statistics.median(t[names[0]])
-            ratios = "".join(f" {statistics.median(t[n]) / b if b else float('nan'):>{rw}.3f}" for n in names[1:])
+            b = statistics.median(get(t[names[0]]))
+            ratios = "".join(f" {statistics.median(get(t[n])) / b if b else float('nan'):>{rw}.3f}" for n in names[1:])
             print(f"{row[0]:10} " + " ".join(f"{c:>{w}}" for c in cs) + ratios)
 
 
@@ -440,6 +485,8 @@ def main():
     p.add_argument("--metric", choices=["cpu", "wall", "cachegrind"], default="cpu",
                    help="report child CPU time (user+sys, default), wall time, or instructions "
                         "executed under cachegrind (one sample)")
+    p.add_argument("--no-cache-sim", dest="cache_sim", action="store_false",
+                   help="with --metric cachegrind, count instructions only (no cache simulation; faster)")
     p.add_argument("--pin", metavar="CPU", help="run timed commands under `taskset -c CPU`")
     p.add_argument("--seed", type=int, default=0, help="seed for the per-round build order shuffle")
     p.add_argument("--programs", default="", help="comma-separated names in bench/ (default: all)")
