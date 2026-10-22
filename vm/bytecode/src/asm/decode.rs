@@ -162,8 +162,8 @@ pub trait Resolver {
 /// [`decode_reduced`], with the references recovered from the resolved fields by `resolver`
 /// instead of a relocation list: a field whose target lies inside the function (past its
 /// first byte) is a branch or jump table within it, any other is the reference `resolver`
-/// gives. The dropped stores aren't in the code or the image; until they are, they must be
-/// given ([`super::Encoded::dropped`]).
+/// gives. The dropped stores aren't in the code: they come from the image's table
+/// ([`crate::image::ImageResolver::decode`]) or [`super::Encoded::dropped`].
 pub fn decode_linked(
     code: &[u8],
     code_addr: u64,

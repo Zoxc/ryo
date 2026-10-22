@@ -264,7 +264,8 @@ and handlers, calls, unwinding and the decoder's view of the frame don't change.
 - **Encoding**: `r8`–`r11` take REX prefixes, and so do byte operands in `sil` and `dil`.
   Pointer registers address without a displacement when it is 0.
 - **Decoding**: the decoder runs the same cache. Dropped stores aren't in the code, so
-  `Encoded::dropped` lists them (the item and where it would have been), and the decoder
+  `Encoded::dropped` lists them (the item and where it would have been; images store them
+  too), and the decoder
   reads each where it would have been; it doesn't check that the store was dead. Branch targets are only known once a
   function is read, so it reads it twice: first only delimiting the inline sequences, to
   find the targets, then decoding them with the cache cleared at the targets. It tries each
@@ -335,8 +336,9 @@ format version.
   or jump table, and any other target is classified by an `asm::Resolver` (a handler, a
   function of the image, a symbol slot, …), which also gives the code constants' bytes. The
   decoder shares everything else with `decode_reduced`. `image::ImageResolver` classifies by
-  the image header's ranges, given the handlers' addresses. The dropped stores aren't
-  recoverable from the code, so it still takes them.
+  the image header's ranges, given the handlers' addresses, and takes the scopes, call sites
+  and dropped stores from the image's tables (dropped stores aren't recoverable from the
+  code: a `mov` whose reload hit the cache and whose store was dropped leaves no code).
 - **Testing**: `vm/bytecode/tests/asm.rs` checks on every round trip that `decode_reduced`
   gives what `reduce` gives for the full decoder's output, and that `decode_linked` of the
   code linked at fake addresses gives the same, and `vm/bytecode/tests/reduced.rs` that the
@@ -635,7 +637,8 @@ header          magic, format version, crate hash, StableCrateId, pointers to th
                 site count, fixup area offset, the `asm::Mode` the code was encoded in
 functions       per function, sorted by code offset: code offset and length (bytes in the
                 text section), argument block size, return value size, return kind, and
-                its runs of the scope and call-site tables (first index, count)
+                its runs of the scope, call-site and dropped-store tables (first index,
+                count)
 code constants  what the machine code refers to: island operand arrays (a count, then the
                 words), sparse switch values
 fixups          PE only: (writable offset, symbol index, addend)
@@ -651,15 +654,16 @@ scopes          per function, sorted by position: where a frame object escapes o
                 0 for an end)
 call sites      per function, sorted by position: code offset and length, landing pad
                 offset (with the catch bit) or none (`asm::CallSite`)
+dropped stores  per function, sorted by position: the stores of inline sequences dropped as
+                dead (`asm::DroppedStore`: code offset, frame offset, size, register)
 ```
 
-Scopes and call sites are for decoding a linked function's code at run time
-(`asm::decode_reduced`), which the code alone doesn't allow: scopes aren't in the code at
-all, and the call sites are the LSDA's, which the runtime can't find per function without
+Scopes, call sites and dropped stores are for decoding a linked function's code at run time
+(`asm::decode_linked`), which the code alone doesn't allow: scopes and dropped stores aren't
+in the code at all, and the call sites are the LSDA's, which the runtime can't find per function without
 parsing `.eh_frame` (and PE has none). The records are the encoder's on both formats.
 The code's relocations needn't be stored: `asm::decode_linked` recovers them from the
-resolved fields ([Reduced instructions](#reduced-instructions)). The dropped stores
-(`Encoded::dropped`) aren't stored yet.
+resolved fields ([Reduced instructions](#reduced-instructions)).
 
 The read-only section can live in RELRO/`.rdata`, since nothing writes to it after
 relocation.
@@ -679,7 +683,7 @@ calls it by name, local otherwise (backtraces, profilers) ([backend.md](backend.
 `.gcc_except_table.ryo_image` (ELF), `.pdata` and `.xdata` (PE) ([Unwinding](#unwinding)).
 
 - `ryo_bytecode::image` defines the exact layout (`Header`, `FuncEntry`, `FixupEntry`,
-  `ScopeEntry`, `CallSiteEntry`).
+  `ScopeEntry`, `CallSiteEntry`, `DroppedEntry`).
   `addr.abs` data offsets are offsets from the start of the fixups area.
 - **Relocations** (`RelocKind`):
   - `Abs64` (`R_X86_64_64` / `IMAGE_REL_AMD64_ADDR64`): the header's `data` and `text`

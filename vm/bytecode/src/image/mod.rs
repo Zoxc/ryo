@@ -11,6 +11,7 @@
 //! | functions | `[FuncEntry]`, sorted by code offset; index = [`Func`](crate::full::Func) |
 //! | scopes | `[ScopeEntry]`, each function's in a run ([`FuncEntry::scopes`]) |
 //! | call sites | `[CallSiteEntry]`, each function's in a run ([`FuncEntry::call_sites`]) |
+//! | dropped stores | `[DroppedEntry]`, each function's in a run ([`FuncEntry::dropped`]) |
 //! | code constants | what the machine code refers to: island operand arrays, switch values |
 //! | fixups | `[FixupEntry]` (PE only, otherwise empty) |
 //! | symbol flags | `[u8]`, one per symbol ([`SYM_INDIRECT`]) |
@@ -120,6 +121,8 @@ pub struct Header {
     pub scopes: Span,
     /// `[CallSiteEntry]`.
     pub call_sites: Span,
+    /// `[DroppedEntry]`.
+    pub dropped: Span,
     /// Number of site cache slots at the start of the writable section.
     pub site_count: u32,
     /// Byte offset of the fixup area in the writable section (after the site cache).
@@ -149,6 +152,33 @@ pub struct FuncEntry {
     /// The function's call sites: a run of the call-site table (`off` is an index), sorted
     /// by position.
     pub call_sites: Span,
+    /// The function's dropped stores: a run of the dropped-store table (`off` is an index),
+    /// sorted by position.
+    pub dropped: Span,
+}
+
+/// A dropped-store table entry: a store of an inline sequence the encoder dropped as dead
+/// (`asm::DroppedStore`, for the decoder; the machine code doesn't show it).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DroppedEntry {
+    /// Byte offset in the function's code where the store would have been.
+    pub code_offset: u32,
+    /// Signed byte offset from `fp` of the slot it would have written.
+    pub frame_offset: i32,
+    /// Its size in bytes: 1, 2, 4 or 8.
+    pub size: u8,
+    /// The register it would have stored, by its x86 number: one the inline sequences
+    /// compute in (`rax`, `rdx`, `rsi`, `rdi`, `r8`–`r11`).
+    pub reg: u8,
+    /// 0.
+    pub reserved: u16,
+}
+
+impl DroppedEntry {
+    fn valid(&self, code_len: u32) -> bool {
+        self.code_offset <= code_len && matches!(self.size, 1 | 2 | 4 | 8) && matches!(self.reg, 0 | 2 | 6..=11) && self.reserved == 0
+    }
 }
 
 /// A scope table entry: where a frame object escapes or its storage ends (`asm::Scope`, for
@@ -252,6 +282,9 @@ pub enum ImageError {
     /// A call-site table entry (index) is out of range of its function or overlaps the one
     /// before.
     BadCallSite(u32),
+    /// A dropped-store table entry (index) is out of range of its function, out of order or
+    /// malformed.
+    BadDropped(u32),
     /// The writable section layout is inconsistent.
     BadData,
 }
@@ -312,6 +345,7 @@ impl<'a> Image<'a> {
         cast::<u8>(bytes, header.consts, "constants")?;
         cast::<ScopeEntry>(bytes, header.scopes, "scopes")?;
         cast::<CallSiteEntry>(bytes, header.call_sites, "call sites")?;
+        cast::<DroppedEntry>(bytes, header.dropped, "dropped stores")?;
         let mode = MODE_FP_ARG | MODE_FRAME_POINTER | MODE_ALIGN_LOOPS | MODE_PE;
         if header.mode & !mode != 0 || !Self::mode_of(header.mode).valid() {
             return Err(ImageError::BadMode);
@@ -357,7 +391,10 @@ impl<'a> Image<'a> {
             }
             prev_end = end;
             let run = |s: Span, n: u32| s.off as u64 + s.count as u64 <= n as u64;
-            if !run(f.scopes, self.header.scopes.count) || !run(f.call_sites, self.header.call_sites.count) {
+            if !run(f.scopes, self.header.scopes.count)
+                || !run(f.call_sites, self.header.call_sites.count)
+                || !run(f.dropped, self.header.dropped.count)
+            {
                 return Err(ImageError::BadFunction(i));
             }
             let mut prev = 0;
@@ -379,6 +416,14 @@ impl<'a> Image<'a> {
                 prev = end;
                 if !sorted || end > f.code_len as u64 || !pad_ok {
                     return Err(ImageError::BadCallSite(f.call_sites.off + j as u32));
+                }
+            }
+            let mut prev = 0;
+            for (j, d) in self.dropped(i).iter().enumerate() {
+                let sorted = d.code_offset >= prev;
+                prev = d.code_offset;
+                if !sorted || !d.valid(f.code_len) {
+                    return Err(ImageError::BadDropped(f.dropped.off + j as u32));
                 }
             }
         }
@@ -455,6 +500,12 @@ impl<'a> Image<'a> {
     pub fn call_sites(&self, func: u32) -> &'a [CallSiteEntry] {
         let Some(f) = self.functions().get(func as usize) else { return &[] };
         self.run(self.header.call_sites, f.call_sites)
+    }
+
+    /// Function `func`'s dropped stores, sorted by position (empty for an unknown function).
+    pub fn dropped(&self, func: u32) -> &'a [DroppedEntry] {
+        let Some(f) = self.functions().get(func as usize) else { return &[] };
+        self.run(self.header.dropped, f.dropped)
     }
 
     /// The text section (from the relocated header field; null before linking).
@@ -550,16 +601,23 @@ pub struct ImageResolver<'a> {
 #[cfg(feature = "alloc")]
 impl ImageResolver<'_> {
     /// Decodes function `func` to the reduced set, from the image's linked text section
-    /// `text` (`Header::text_size` bytes at `Header::text`), with its scopes and call sites.
-    /// `None` for an unknown function.
-    pub fn decode(&self, func: u32, text: &[u8], dropped: &[crate::asm::DroppedStore]) -> Option<Result<crate::asm::Decoded, crate::asm::AsmError>> {
+    /// `text` (`Header::text_size` bytes at `Header::text`), with its scopes, call sites and
+    /// dropped stores. `None` for an unknown function or a malformed dropped store (which
+    /// [`Image::validate`] rejects).
+    pub fn decode(&self, func: u32, text: &[u8]) -> Option<Result<crate::asm::Decoded, crate::asm::AsmError>> {
         use alloc::vec::Vec;
         let f = self.image.functions().get(func as usize)?;
         let code = text.get(f.code_off as usize..)?.get(..f.code_len as usize)?;
         let sites: Vec<_> = self.image.call_sites(func).iter().map(crate::asm::CallSite::from).collect();
         let scopes: Vec<_> = self.image.scopes(func).iter().map(crate::asm::Scope::from).collect();
+        let dropped = self
+            .image
+            .dropped(func)
+            .iter()
+            .map(|d| crate::asm::DroppedStore::from_parts(d.code_offset, d.frame_offset, d.size, d.reg))
+            .collect::<Option<Vec<_>>>()?;
         let addr = self.image.header().text + f.code_off as u64;
-        Some(crate::asm::decode_linked(code, addr, self, &sites, dropped, &scopes, self.image.mode()))
+        Some(crate::asm::decode_linked(code, addr, self, &sites, &dropped, &scopes, self.image.mode()))
     }
 }
 

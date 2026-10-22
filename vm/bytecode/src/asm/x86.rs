@@ -25,7 +25,7 @@ pub enum Reg {
 }
 
 impl Reg {
-    fn from_num(n: u8) -> Option<Reg> {
+    pub(super) fn from_num(n: u8) -> Option<Reg> {
         Some(match n {
             0 => Reg::Rax,
             1 => Reg::Rcx,

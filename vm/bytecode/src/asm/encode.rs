@@ -118,6 +118,29 @@ pub struct DroppedStore {
     pub(super) item: Item,
 }
 
+impl DroppedStore {
+    /// The store: `mov [fp + frame_offset], reg` of `size` bytes (1, 2, 4 or 8), the register
+    /// by its x86 number, as an image stores it.
+    pub fn parts(&self) -> (i32, u8, u8) {
+        let Item::St { w, src, m } = self.item else { unreachable!("a dropped store is a register store") };
+        (m.disp, (w.bits() / 8) as u8, src as u8)
+    }
+
+    /// The dropped store [`DroppedStore::parts`] describe, at `at`, if they describe one: a
+    /// register the inline sequences compute in.
+    pub fn from_parts(at: u32, frame_offset: i32, size: u8, reg: u8) -> Option<DroppedStore> {
+        let w = match size {
+            1 => W::B,
+            2 => W::W,
+            4 => W::D,
+            8 => W::Q,
+            _ => return None,
+        };
+        let src = Reg::from_num(reg).filter(|r| super::inline::POOL.contains(r))?;
+        Some(DroppedStore { at, item: Item::St { w, src, m: M::frame(frame_offset) } })
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EncodeError {
     Decode(DecodeError),

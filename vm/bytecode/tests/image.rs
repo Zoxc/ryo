@@ -616,26 +616,50 @@ fn scopes_and_call_sites_round_trip() {
     }
 }
 
+/// A function whose inline sequences' stores are dropped as dead ([`asm::Asm::dead`]), one
+/// of them a `mov` that leaves no code at all, around a call of function 0.
+fn dead_stores(mode: Mode) -> asm::Encoded {
+    use asm::Opnd::{Imm, Slot};
+    let mut a = asm::Asm::new(mode);
+    a.insn(Opcode::MovW64, &[Slot(-16), Slot(-8)]);
+    a.insn(Opcode::MovW64, &[Slot(-56), Slot(-16)]);
+    a.insn(Opcode::MovW128, &[Slot(-48), Slot(-24)]);
+    a.insn(Opcode::ImmW64, &[Slot(-16), Imm(5)]);
+    a.insn(Opcode::AddW64, &[Slot(-32), Slot(-56), Slot(-56)]);
+    a.dead(-56i32 as u32, 8);
+    a.insn(Opcode::AddImmW32, &[Slot(-60), Slot(-32), Imm(3)]);
+    a.insn(Opcode::MulW32, &[Slot(-64), Slot(-60), Slot(-60)]);
+    a.dead(-60i32 as u32, 4);
+    a.insn(Opcode::Call, &[Slot(0), asm::Opnd::Func(Func(0)), Imm(0), asm::Opnd::Words(vec![])]);
+    a.insn(Opcode::Ret, &[Slot(-64), Imm(4)]);
+    a.finish(64, |s| s)
+}
+
 /// The functions of a linked image decode from its text section through the image's ranges
-/// ([`ImageResolver`]) as their encoder output decodes with its relocations.
+/// and tables alone ([`ImageResolver`]) as their encoder output decodes with its side data,
+/// dropped stores included.
 #[test]
 fn linked_functions_decode() {
-    for mode in [ELF, Mode { fp_arg: true, frame_pointer: false, ..ELF }] {
-        let w = sample();
-        let defs = w.functions().to_vec();
-        let obj = w.finish(mode).unwrap();
+    for mode in [ELF, Mode { fp_arg: true, frame_pointer: false, ..ELF }, Mode { pe: true, ..ELF }] {
+        let mut w = sample();
+        let mut enc: Vec<asm::Encoded> = w.functions().iter().map(|f| asm::encode(&f.code, f.frame_size, &f.cleanup, &[], mode).unwrap()).collect();
+        enc.push(dead_stores(mode));
+        assert!(enc.last().unwrap().dropped.len() >= 2);
+        w.add_function(FunctionDef { name: "dead".into(), frame_size: 64, ..Default::default() });
+        w.prepare(mode);
+        let obj = w.finish_encoded(enc.clone()).unwrap();
         let l = link(&obj, |s| 0x1000 + s.name.len() as u64);
         let img = unsafe { Image::from_header(l.ro.bytes().as_ptr()) }.unwrap();
+        img.validate().unwrap();
         let mut handlers: Vec<(usize, Opcode)> = ALL_OPCODES.iter().map(|&op| (handler_addr(&l.text, op) as usize, op)).collect();
         handlers.sort();
         let res = ImageResolver { image: img, handlers: &handlers, probe: probe_addr(&l.text) as usize };
-        for (i, f) in defs.iter().enumerate() {
-            let got = res.decode(i as u32, l.text.bytes(), &[]).expect("a function").unwrap_or_else(|e| panic!("f{i}: {e:?}"));
+        for (i, e) in enc.iter().enumerate() {
+            let got = res.decode(i as u32, l.text.bytes()).expect("a function").unwrap_or_else(|e| panic!("f{i} {mode:?}: {e:?}"));
             // The encoder's output, its code constants at their place in the image's.
-            let enc = asm::encode(&f.code, f.frame_size, &f.cleanup, &[], mode).unwrap();
             let cc = img.code_consts();
-            let base = if enc.rodata.is_empty() { 0 } else { cc.windows(enc.rodata.len()).position(|w| w == enc.rodata).unwrap() as u32 };
-            let relocs: Vec<asm::Reloc> = enc
+            let base = if e.rodata.is_empty() { 0 } else { cc.windows(e.rodata.len()).position(|w| w == e.rodata).unwrap() as u32 };
+            let relocs: Vec<asm::Reloc> = e
                 .relocs
                 .iter()
                 .map(|r| match r.to {
@@ -643,10 +667,55 @@ fn linked_functions_decode() {
                     _ => *r,
                 })
                 .collect();
-            let want = asm::decode_reduced(&enc.code, &relocs, cc, &enc.call_sites, &enc.dropped, &enc.scopes, mode).unwrap();
+            let want = asm::decode_reduced(&e.code, &relocs, cc, &e.call_sites, &e.dropped, &e.scopes, mode).unwrap();
             assert_eq!(got, want, "f{i} {mode:?}");
         }
         // Not a function.
-        assert!(res.decode(defs.len() as u32, l.text.bytes(), &[]).is_none());
+        assert!(res.decode(enc.len() as u32, l.text.bytes()).is_none());
+    }
+}
+
+/// The dropped stores of `finish_encoded`'s `Encoded`s are read back unchanged, and
+/// `validate` checks them.
+#[test]
+fn dropped_stores_round_trip() {
+    for mode in [ELF, Mode { fp_arg: true, frame_pointer: false, ..ELF }] {
+        let enc = vec![asm::encode(&code(&[Insn::Abort {}]), 16, &[], &[], mode).unwrap(), dead_stores(mode)];
+        let mut w = ImageWriter::new(SCID);
+        w.add_function(FunctionDef { name: "f0".into(), frame_size: 16, ..Default::default() });
+        w.add_function(FunctionDef { name: "dead".into(), frame_size: 64, ..Default::default() });
+        w.prepare(mode);
+        let obj = w.finish_encoded(enc.clone()).unwrap();
+        let b = Buf::new(&obj.rodata, obj.rodata_align);
+        let img = Image::parse(b.bytes()).unwrap();
+        img.validate().unwrap();
+        for (i, e) in enc.iter().enumerate() {
+            let read: Vec<asm::DroppedStore> =
+                img.dropped(i as u32).iter().map(|d| asm::DroppedStore::from_parts(d.code_offset, d.frame_offset, d.size, d.reg).unwrap()).collect();
+            assert_eq!(read, e.dropped, "{mode:?}");
+        }
+        assert!(img.dropped(0).is_empty() && img.dropped(2).is_empty());
+        let n = enc[1].dropped.len();
+        assert!(n >= 2);
+        assert_eq!((img.dropped(1)[0].frame_offset, img.dropped(1)[0].size), (-56, 8));
+
+        use std::mem::{offset_of, size_of};
+        let fe = |h: &Header, i: usize, field: usize| h.functions.off as usize + i * size_of::<FuncEntry>() + field;
+        let dr = |h: &Header, i: usize, field: usize| h.dropped.off as usize + i * size_of::<DroppedEntry>() + field;
+        assert_eq!(
+            validate_edited(&obj, |r, h| put32(r, fe(h, 1, offset_of!(FuncEntry, dropped) + 4), n as u32 + 1)),
+            Err(ImageError::BadFunction(1))
+        );
+        assert_eq!(validate_edited(&obj, |r, h| put32(r, dr(h, 0, 0), 10_000)), Err(ImageError::BadDropped(0)));
+        assert_eq!(validate_edited(&obj, |r, h| r[dr(h, 1, offset_of!(DroppedEntry, size))] = 3), Err(ImageError::BadDropped(1)));
+        assert_eq!(validate_edited(&obj, |r, h| r[dr(h, 0, offset_of!(DroppedEntry, reg))] = 1), Err(ImageError::BadDropped(0)));
+        // Out of order: the second before the first.
+        assert_eq!(
+            validate_edited(&obj, |r, h| {
+                let first = u32::from_le_bytes(r[dr(h, 0, 0)..][..4].try_into().unwrap());
+                put32(r, dr(h, 1, 0), first.wrapping_sub(1))
+            }),
+            Err(ImageError::BadDropped(1))
+        );
     }
 }

@@ -674,5 +674,5 @@ fn templates_are_pinned_to_format_version() {
             eat(&lsda::write(&enc.call_sites));
         }
     }
-    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (18, 0xd71363eb35d66868), "template hash {h:#x}");
+    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (19, 0xd71363eb35d66868), "template hash {h:#x}");
 }
