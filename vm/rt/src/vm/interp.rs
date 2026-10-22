@@ -40,7 +40,7 @@ use core::sync::atomic::{
     AtomicI8, AtomicI16, AtomicI32, AtomicI64, AtomicPtr, AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering,
 };
 
-use ryo_bytecode::asm::{self, ARG_REGS, CALL_MARKER, Loc};
+use ryo_bytecode::asm::{self, ARG_REGS, Loc};
 use ryo_bytecode::insn::Opcode;
 
 use super::registry::{Function, lookup_addr};
@@ -448,11 +448,6 @@ macro_rules! abort_now {
         core::intrinsics::abort()
     };
 }
-macro_rules! ret {
-    ($a:ident, $fp:ident, $op:ident,) => {
-        do_ret($fp, slot!($a, $fp, $op, s), word!($a, $op, len) as usize)
-    };
-}
 macro_rules! lpad {
     ($a:ident, $fp:ident, $op:ident,) => {
         put!($a, $fp, $op, x, $a[const { asm::layout(Opcode::$op, MODE).first as usize - 1 }])
@@ -512,27 +507,6 @@ macro_rules! tail_call_ind {
 unsafe fn put_at<T>(p: *mut u8, v: T) {
     // SAFETY: per the caller.
     unsafe { p.cast::<T>().write_unaligned(v) }
-}
-
-/// `ret`: copies `len` bytes from `src` to the caller's destination slot: the slot named by
-/// the call marker at the return address (`nop dword [rcx + d]`, `d` relative to the caller's
-/// `rsp`, which is `fp + 16`), or, from the entry frame (returning into `ryo_asm_enter`), the
-/// entry record's `ret`.
-#[inline(always)]
-unsafe fn do_ret(fp: *mut u8, src: *mut u8, len: usize) {
-    // SAFETY: the return address was written by the call that made the frame.
-    unsafe {
-        let ra = fp.add(8).cast::<*const u8>().read();
-        let dst = if ptr::eq(ra, super::enter_return()) {
-            (*(*super::thread::current()).entry).ret
-        } else {
-            if ra.cast::<[u8; 3]>().read_unaligned() != CALL_MARKER {
-                fatal("return address isn't after a VM call")
-            }
-            fp.add(16).offset(ra.add(3).cast::<i32>().read_unaligned() as isize)
-        };
-        ptr::copy_nonoverlapping(src, dst, len)
-    }
 }
 
 /// `switch.sparse`: the index of the case equal to `v`, or `n`. Cases are sorted by value

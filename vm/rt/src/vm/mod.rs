@@ -1,4 +1,4 @@
-//! The VM: entry from portals, the handlers, the registry and per-thread state. See
+//! The VM: entry from portals, the handlers and the registry. See
 //! design/vm.md.
 //!
 //! - [`enter`]: entry from portals.
@@ -12,13 +12,13 @@
 mod interp;
 mod registry;
 mod sys;
-mod thread;
+
+use core::ptr;
+
+use ryo_bytecode::asm;
 
 pub use registry::{Function, ImageRt};
 pub use interp::{FP_ARG, MODE, h, handler, probe_stack};
-pub use thread::VmThread;
-
-use thread::Entry;
 
 /// Registers `n` images. `images[i]` is the address of an image header
 /// (`__ryo_image_<StableCrateId>`). Called by each link unit's registry object constructor,
@@ -49,23 +49,6 @@ unsafe extern "C" {
     static __ryo_registry_anchor: u8;
 }
 
-/// Pops an entry record. Runs on the normal return of `enter` and when a panic unwinds
-/// through it, so the chain never points at a dead record. The same holds for forced
-/// unwinding (`pthread_exit` from native code): it runs this guard like any other landing
-/// pad, so each `enter` it passes is popped in order.
-struct PopEntry {
-    vm: *mut VmThread,
-    rec: *mut Entry,
-}
-
-impl Drop for PopEntry {
-    fn drop(&mut self) {
-        // SAFETY: `rec` is the innermost record of this thread's `vm`, still alive (it is a
-        // local of the `enter` frame this guard belongs to).
-        unsafe { (*self.vm).entry = (*self.rec).prev };
-    }
-}
-
 /// Entry from portals: runs the VM function `id` (crate hash, function index) with the
 /// argument block at `args`, and writes its return value to `ret`. A panic unwinds out of
 /// it natively.
@@ -84,37 +67,50 @@ pub unsafe fn enter(id: u64, args: *const u8, ret: *mut u8) {
         sys::trace_enter(id);
     }
     sys::count(&sys::RUN_STATS.enters);
-    let vm = thread::current();
     let f = registry::resolve_id(id);
-    // SAFETY: `vm` is this thread's state, reached only through the raw pointer. `rec` lives
-    // until `PopEntry` unlinks it at the end of this function.
+    // A value that doesn't return in registers comes back at the start of the block.
+    let regs = asm::ret_in_regs(f.ret_size);
+    let mem_len = if regs { 0 } else { f.ret_size as usize };
+    let mut call = EnterCall {
+        args,
+        arg_size: f.arg_size as usize,
+        reserve: (f.arg_size as usize).max(mem_len).next_multiple_of(16),
+        regs: [0; 2],
+        mem: ret,
+        mem_len,
+    };
+    // SAFETY: per the caller; `ret` takes `ret_size` bytes.
     unsafe {
-        let mut rec = Entry { prev: (*vm).entry, ret };
-        let rec = &raw mut rec;
-        (*vm).entry = rec;
-        let _pop = PopEntry { vm, rec };
-        ryo_asm_enter(f.entry, args, f.arg_size as usize);
+        ryo_asm_enter(f.entry, &mut call);
+        if regs {
+            ptr::copy_nonoverlapping(call.regs.as_ptr().cast::<u8>(), ret, f.ret_size as usize);
+        }
     }
 }
 
+/// [`ryo_asm_enter`]'s operands and results (`repr(C)`: the assembly uses the offsets).
+#[repr(C)]
+struct EnterCall {
+    /// The argument block, `arg_size` bytes.
+    args: *const u8,
+    arg_size: usize,
+    /// The bytes to reserve for the block, a multiple of 16 of at least `arg_size` and the
+    /// size of a value returned in the block.
+    reserve: usize,
+    /// `rax` and `rdx` after the call.
+    regs: [u64; 2],
+    /// Where to copy `mem_len` bytes from the block after the call.
+    mem: *mut u8,
+    mem_len: usize,
+}
+
 unsafe extern "Rust" {
-    /// Calls the VM function at `entry` with the `size`-byte argument block at `args`
-    /// (design/vm.md, "Entry"): reserves and copies the block, and calls it with `rbp = 0`,
-    /// so a frame-pointer chain ends at the entry frame. The call returns to
-    /// `ryo_asm_enter_ret`, where `ret` writes to the entry record. Panics unwind through it.
-    /// The Rust ABI, so the call may unwind without being an FFI call.
-    fn ryo_asm_enter(entry: *const u8, args: *const u8, size: usize);
-}
-
-unsafe extern "C" {
-    /// The return address of `ryo_asm_enter`'s call of the entry.
-    static ryo_asm_enter_ret: u8;
-}
-
-/// The return address of an entry frame ([`ryo_asm_enter`]).
-#[inline(always)]
-pub(crate) fn enter_return() -> *const u8 {
-    &raw const ryo_asm_enter_ret
+    /// Calls the VM function at `entry` (design/vm.md, "Entry"): reserves and copies the
+    /// argument block, and calls it with `rbp = 0`, so a frame-pointer chain ends at the
+    /// entry frame. Afterwards it stores `rax` and `rdx`, and copies the start of the block,
+    /// as `call` says. Panics unwind through it. The Rust ABI, so the call may unwind without
+    /// being an FFI call.
+    fn ryo_asm_enter(entry: *const u8, call: *mut EnterCall);
 }
 
 // The frame of `ryo_asm_enter` is addressed through `rbx`: `rbp` is 0 while VM code runs
@@ -125,8 +121,6 @@ core::arch::global_asm!(
     ".p2align 4",
     ".globl ryo_asm_enter",
     ".hidden ryo_asm_enter",
-    ".globl ryo_asm_enter_ret",
-    ".hidden ryo_asm_enter_ret",
     ".type ryo_asm_enter, @function",
     "ryo_asm_enter:",
     ".cfi_startproc",
@@ -138,17 +132,22 @@ core::arch::global_asm!(
     ".cfi_offset rbx, -24",
     "mov rbx, rsp",
     ".cfi_def_cfa_register rbx",
-    "lea rcx, [rdx + 15]",
-    "and rcx, -16",
-    "sub rsp, 8",
-    "sub rsp, rcx",
+    "push rsi",
+    "sub rsp, [rsi + 16]",
     "mov rax, rdi",
     "mov rdi, rsp",
-    "mov rcx, rdx",
+    "mov rcx, [rsi + 8]",
+    "mov rsi, [rsi]",
     "rep movsb",
     "xor ebp, ebp",
     "call rax",
-    "ryo_asm_enter_ret:",
+    "mov rcx, [rbx - 8]",
+    "mov [rcx + 24], rax",
+    "mov [rcx + 32], rdx",
+    "mov rdi, [rcx + 40]",
+    "mov rsi, rsp",
+    "mov rcx, [rcx + 48]",
+    "rep movsb",
     "mov rsp, rbx",
     "pop rbx",
     ".cfi_def_cfa rsp, 16",
@@ -167,7 +166,6 @@ core::arch::global_asm!(
     ".p2align 4",
     ".globl ryo_asm_enter",
     ".def ryo_asm_enter; .scl 2; .type 32; .endef",
-    ".globl ryo_asm_enter_ret",
     "ryo_asm_enter:",
     ".seh_proc ryo_asm_enter",
     "push rbp",
@@ -203,17 +201,22 @@ core::arch::global_asm!(
     "lea rbx, [rsp + 160]",
     ".seh_setframe rbx, 160",
     ".seh_endprologue",
-    "lea rax, [r8 + 15]",
-    "and rax, -16",
-    "sub rsp, rax",
+    "mov [rbx], rdx",
+    "sub rsp, [rdx + 16]",
     "mov rax, rcx",
-    "mov rsi, rdx",
+    "mov rsi, [rdx]",
     "mov rdi, rsp",
-    "mov rcx, r8",
+    "mov rcx, [rdx + 8]",
     "rep movsb",
     "xor ebp, ebp",
     "call rax",
-    "ryo_asm_enter_ret:",
+    "mov rcx, [rbx]",
+    "mov [rcx + 24], rax",
+    "mov [rcx + 32], rdx",
+    "mov rdi, [rcx + 40]",
+    "mov rsi, rsp",
+    "mov rcx, [rcx + 48]",
+    "rep movsb",
     "lea rsp, [rbx - 160]",
     "movaps xmm6, [rsp + 0]",
     "movaps xmm7, [rsp + 16]",

@@ -76,8 +76,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             }
             TerminatorKind::SwitchInt { discr, targets } => self.switch_int(discr, targets),
             TerminatorKind::Return => {
-                let r = self.frame.locals[rustc_middle::mir::RETURN_PLACE];
-                self.op(Opcode::Ret, &[r.off, r.layout.size.bytes() as u32]);
+                self.ret();
                 Ok(())
             }
             TerminatorKind::Unreachable => {

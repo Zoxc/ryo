@@ -1,7 +1,6 @@
 //! The canonical machine-code elements of VM code: every [`Item`] has exactly one encoding,
 //! and [`read`] accepts only that one. Immediates take their shortest form; padding is the
-//! standard multi-byte `nop`s, which never use `rcx`, so they can't be mistaken for the call
-//! marker `nop dword [rcx + d]`.
+//! standard multi-byte `nop`s.
 
 use alloc::vec::Vec;
 
@@ -325,8 +324,6 @@ pub enum Item {
     Ret,
     /// `ud2`
     Ud2,
-    /// `nop dword [rcx + d]`: the call marker, carrying the destination slot `d`.
-    Marker(i32),
     /// `movsxd rax, [rcx + rax*4]`
     LoadTableEntry,
     /// `add rax, rcx`
@@ -427,7 +424,7 @@ impl Item {
                     _ => 10,
                 }
             }
-            Item::Lea(..) | Item::LeaTable(_) | Item::Marker(_) => 7,
+            Item::Lea(..) | Item::LeaTable(_) => 7,
             Item::Call(_) | Item::Jmp(_) => 5,
             Item::CallMem(_) => 6,
             Item::Branch { cond, long, .. } => match (cond, long) {
@@ -722,10 +719,6 @@ impl Item {
             Item::Leave => out.push(0xc9),
             Item::Ret => out.push(0xc3),
             Item::Ud2 => out.extend_from_slice(&[0x0f, 0x0b]),
-            Item::Marker(d) => {
-                out.extend_from_slice(&super::CALL_MARKER);
-                out.extend_from_slice(&d.to_le_bytes());
-            }
             Item::LoadTableEntry => out.extend_from_slice(&[0x48, 0x63, 0x04, 0x81]),
             Item::AddRaxRcx => out.extend_from_slice(&[0x48, 0x01, 0xc8]),
             Item::Nop(n) => out.extend_from_slice(NOPS[n as usize]),
@@ -1128,7 +1121,6 @@ impl<'a> Cursor<'a> {
                     Item::Branch { cond: Cond::from_cc(cc & 0xf).ok_or(bad)?, target: self.local(2, 6)?, long: true }
                 }
                 0x0b => Item::Ud2,
-                0x1f if get(2)? == super::CALL_MARKER[2] => Item::Marker(self.i32_at(3)?),
                 _ => return Err(bad),
             },
             (0, 0x84) if get(1)? == 0xc0 => Item::TestAl,

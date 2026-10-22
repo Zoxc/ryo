@@ -11,7 +11,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use super::x86::{ARGS, Cond, Item, Reg, island_args, padding};
+use super::x86::{ARGS, Cond, Item, M, Reg, W, island_args, padding};
 use super::{Layout, Loc, Mode, layout};
 use crate::image::{CATCH, CONTINUE, CleanupEntry};
 use crate::insn::{Const, Data, DecodeError, ElemKind, Func, Opcode, OperandKind, Shape, Site, Sym, insn_len};
@@ -89,6 +89,9 @@ pub enum EncodeError {
     /// A cleanup entry not at an instruction that may unwind, or whose landing pad isn't an
     /// `lpad`.
     BadCleanup(u32),
+    /// A call or `ret` whose return value the machine code can't pass ([`super::return_ok`])
+    /// (word offset of the instruction).
+    BadReturn(u32),
 }
 
 /// An instruction operand, by kind. Branch targets are `T`: word offsets from the function
@@ -243,6 +246,30 @@ pub fn push_words(op: Opcode, ops: &[Opnd], words: &mut Vec<u32>) {
     }
 }
 
+/// The parts of a `len`-byte return value in registers: width, offset, register. None for 0;
+/// panics for a length that doesn't return in registers ([`super::ret_in_regs`]).
+pub(super) fn ret_parts(len: u32) -> Vec<(W, u32, Reg)> {
+    match len {
+        0 => vec![],
+        1 => vec![(W::B, 0, Reg::Rax)],
+        2 => vec![(W::W, 0, Reg::Rax)],
+        4 => vec![(W::D, 0, Reg::Rax)],
+        8 => vec![(W::Q, 0, Reg::Rax)],
+        16 => vec![(W::Q, 0, Reg::Rax), (W::Q, 8, Reg::Rdx)],
+        _ => panic!("a {len}-byte value doesn't return in registers"),
+    }
+}
+
+/// The stores of a call's result into its destination `d` (raw slots), from the call's
+/// operands `d` and `len`.
+fn result_stores<T>(op: Opcode, ops: &[Opnd<T>]) -> Vec<Item> {
+    let info = op.info();
+    let (Opnd::Slot(d), Opnd::Imm(len)) = (&ops[info.operand_index("d").unwrap()], &ops[info.operand_index("len").unwrap()]) else {
+        unreachable!()
+    };
+    ret_parts(*len as u32).into_iter().map(|(w, off, src)| Item::St { w, src, m: M::frame(d.wrapping_add(off as i32)) }).collect()
+}
+
 /// The element size of a case list's value array in the rodata.
 pub(super) fn case_size(e: ElemKind) -> usize {
     match e {
@@ -283,8 +310,9 @@ enum Piece {
     /// `reg = v`, where the 32-bit halves flagged in `slots` (bit 0: low, bit 1: high) are raw
     /// slots that become frame offsets.
     SetReg { reg: Reg, v: u64, slots: u8 },
-    /// The call marker of the raw result slot.
-    Marker(u32),
+    /// A fixed item whose frame displacements are raw slots: the loads of a returned value
+    /// and the stores of a call's result, outside the register cache.
+    Frame(Item),
     /// `lea reg, [rip + x]` of the code constant [`Asm::ro`]`[i]`.
     LeaRo { reg: Reg, ro: u32 },
     /// A branch to the label.
@@ -513,6 +541,10 @@ pub fn encode(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], mode: Mod
         starts.push(at);
         at += insn_len(&code[at..]).map_err(EncodeError::Decode)?;
         crate::insn::Insn::decode(&code[starts[starts.len() - 1]..]).map_err(EncodeError::Decode)?;
+        let start = starts[starts.len() - 1];
+        if !super::return_ok(&code[start..]) {
+            return Err(EncodeError::BadReturn(start as u32));
+        }
     }
     let idx = |w: u32| -> Result<usize, EncodeError> {
         index.get(w as usize).copied().filter(|&i| i != usize::MAX).ok_or(EncodeError::BadTarget(w))
@@ -685,6 +717,22 @@ impl Asm {
         self.pieces.push(Piece::Table(targets));
     }
 
+    /// `ret s, len`: the value into `rax`/`rdx` ([`super::ret_in_regs`]), the epilogue, `ret`.
+    fn ret(&mut self, s: u32, len: u32) {
+        for (w, off, reg) in ret_parts(len) {
+            self.pieces.push(Piece::Frame(Item::Ld { w, sx: false, dst: reg, m: M::frame(s.wrapping_add(off) as i32) }));
+        }
+        self.pieces.push(Piece::Epilogue);
+        self.fixed(Item::Ret);
+    }
+
+    /// The stores of a call's result from `rax`/`rdx` into `d`.
+    fn result(&mut self, op: Opcode, ops: &[Opnd<Label>]) {
+        for it in result_stores(op, ops) {
+            self.pieces.push(Piece::Frame(it));
+        }
+    }
+
     /// Emits instruction `op` with operands `ops` (in the opcode's operand order).
     pub fn insn(&mut self, op: Opcode, ops: &[Opnd<Label>]) -> InsnId {
         let id = InsnId(self.unwind.len() as u32);
@@ -742,15 +790,14 @@ impl Asm {
                 self.fixed(Item::Ud2);
             }
             Shape::Ret => {
-                self.handler_call(op, ops, None);
-                self.pieces.push(Piece::Epilogue);
-                self.fixed(Item::Ret);
+                let Opnd::Imm(len) = named("len") else { unreachable!() };
+                self.ret(slot("s"), *len as u32);
             }
             Shape::Jmp => self.pieces.push(Piece::Branch { cond: Cond::Always, to: target("t") }),
             Shape::Call => {
                 let Opnd::Func(f) = named("f") else { unreachable!() };
                 self.maybe_site(Item::Call(Ref::Func(*f)), site);
-                self.pieces.push(Piece::Marker(slot("d")));
+                self.result(op, ops);
             }
             Shape::CallExt | Shape::CallInd => {
                 self.handler_call(op, ops, None);
@@ -759,9 +806,10 @@ impl Asm {
                 let d = slot("d");
                 let ro = self.ro(RoReq::Ops(vec![RoWord::ArgBlock, RoWord::Slot(d), RoWord::Slot(fnp)]));
                 self.fixed(Item::TestRax);
-                self.pieces.push(Piece::Skip { cond: Cond::Z, over: 3 });
+                let stores = result_stores(op, ops).len() as u32;
+                self.pieces.push(Piece::Skip { cond: Cond::Z, over: 2 + stores });
                 self.maybe_site(Item::CallRax, site);
-                self.pieces.push(Piece::Marker(d));
+                self.result(op, ops);
                 self.pieces.push(Piece::Skip { cond: Cond::Always, over: self.island_pieces() });
                 self.island_call(sym("isl"), ro, site);
             }
@@ -781,10 +829,8 @@ impl Asm {
                 self.fixed(Item::JmpRax);
                 self.island_call(sym("isl"), ro, site);
                 // Then `ret s, len`.
-                let ret = [Opnd::Slot(s as i32), named("len").clone()];
-                self.handler_call(Opcode::Ret, &ret, None);
-                self.pieces.push(Piece::Epilogue);
-                self.fixed(Item::Ret);
+                let Opnd::Imm(len) = named("len") else { unreachable!() };
+                self.ret(s, *len as u32);
             }
             Shape::Island => {
                 let Opnd::Words(w) = named("ops") else { unreachable!() };
@@ -883,8 +929,7 @@ impl Asm {
                         }),
                     }
                 }
-                // The destination relative to `rsp`.
-                Piece::Marker(d) => Laid::Fixed { item: Item::Marker((fix(d) as i32).wrapping_add(frame_size as i32)), site: None },
+                Piece::Frame(item) => Laid::Fixed { item: slot(item), site: None },
                 Piece::Gone | Piece::Dead { .. } => unreachable!(),
                 Piece::Dropped(item) => Laid::Dropped(item.map_frame(|s| fix(s as u32) as i32)),
                 Piece::Native(item) => Laid::Fixed { item: slot(item), site: None },

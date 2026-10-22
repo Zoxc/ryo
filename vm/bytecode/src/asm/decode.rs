@@ -5,7 +5,7 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
-use super::encode::{CallSite, DroppedStore, Opnd, Ref, RegVal, Reloc, case_size, epilogue, fp_item, prologue, push_words, word_len};
+use super::encode::{CallSite, DroppedStore, Opnd, Ref, RegVal, Reloc, case_size, epilogue, fp_item, prologue, push_words, ret_parts, word_len};
 use super::inline::Cache;
 use super::x86::{ARGS, BadItem, Cond, Cursor, Item, M, Reg, island_args};
 use super::{Mode, has_handler, layout};
@@ -315,29 +315,33 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8], argblk: u32) -> Result<Proto,
                     }
                     fixed(c, Item::Ud2)?;
                 }
-                Shape::Ret => {
-                    fixed(c, fr.epilogue())?;
-                    fixed(c, Item::Ret)?;
-                }
                 Shape::CallExt | Shape::CallInd => {
                     fixed(c, Item::TestRax)?;
-                    fixed(c, Item::Branch { cond: Cond::Z, target: c.pos + 2 + 2 + 7 + 2, long: false })?;
+                    let at = c.pos;
+                    let Item::Branch { cond: Cond::Z, target: native, long: false } = c.item()? else {
+                        return Err(err(at, "no native path branch"));
+                    };
                     sites.push((c.pos, 2));
                     fixed(c, Item::CallRax)?;
-                    let at = c.pos;
-                    let Item::Marker(m) = c.item()? else { return Err(err(at, "no call marker")) };
-                    let d = m.wrapping_sub(fr.size as i32);
+                    let (rd, len) = result(c);
                     let island_len = fp_item(island_args(mode.pe)[0], fr.size, mode).len() + if mode.pe { 7 + 4 + 6 + 4 } else { 7 + 6 };
                     fixed(c, Item::Branch { cond: Cond::Always, target: c.pos + 2 + island_len, long: false })?;
+                    if native != c.pos {
+                        return Err(err(at, "native path branch"));
+                    }
                     let (isl, ops_ro, site) = island_call(c, fr)?;
                     sites.push(site);
                     let fnp = if info.shape == Shape::CallExt { "f" } else { "p" };
                     let Opnd::Slot(f) = ops[info.operand_index(fnp).unwrap()] else { unreachable!() };
-                    if ops_array(ro, ops_ro) != Some(vec![argblk, d as u32, f as u32]) {
+                    let Some([_, d, _]) = ops_array(ro, ops_ro).and_then(|w| <[u32; 3]>::try_from(w).ok()) else {
+                        return Err(err(at, "native path operands"));
+                    };
+                    if ops_array(ro, ops_ro) != Some(vec![argblk, d, f as u32]) || (len != 0 && rd != d as i32) {
                         return Err(err(at, "native path operands"));
                     }
-                    set(&mut ops, "d", Opnd::Slot(d));
+                    set(&mut ops, "d", Opnd::Slot(d as i32));
                     set(&mut ops, "isl", Opnd::Sym(isl));
+                    set(&mut ops, "len", Opnd::Imm(len as u64));
                 }
                 Shape::TailCall => {
                     fixed(c, fr.epilogue())?;
@@ -354,29 +358,19 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8], argblk: u32) -> Result<Proto,
                     let (isl, ops_ro, site) = island_call(c, fr)?;
                     sites.push(site);
                     // Then `ret s, len`.
-                    let mut rsetup = Vec::new();
-                    let ret = loop {
-                        let a = c.pos;
-                        match c.item()? {
-                            it @ (Item::SetReg(..) | Item::Mov(..) | Item::LeaM { .. }) => rsetup.push((a, it)),
-                            it => break it,
-                        }
+                    let (rs, len) = ret(c, fr)?;
+                    let Opnd::Slot(p) = ops[0] else { unreachable!() };
+                    let Some([_, s, _]) = ops_array(ro, ops_ro).and_then(|w| <[u32; 3]>::try_from(w).ok()) else {
+                        return Err(err(at, "native path operands"));
                     };
-                    if ret != Item::Call(Ref::Handler(Opcode::Ret)) {
-                        return Err(err(at, "no return"));
-                    }
-                    let r = handler_operands(Opcode::Ret, &rsetup, fr, ro, at)?;
-                    fixed(c, fr.epilogue())?;
-                    fixed(c, Item::Ret)?;
-                    let (Opnd::Slot(s), Opnd::Slot(p)) = (&r[0], &ops[0]) else { unreachable!() };
-                    if ops_array(ro, ops_ro) != Some(vec![argblk, *s as u32, *p as u32]) {
+                    if ops_array(ro, ops_ro) != Some(vec![argblk, s, p as u32]) || (len != 0 && rs != s as i32) {
                         return Err(err(at, "native path operands"));
                     }
                     set(&mut ops, "isl", Opnd::Sym(isl));
-                    set(&mut ops, "s", r[0].clone());
-                    set(&mut ops, "len", r[1].clone());
+                    set(&mut ops, "s", Opnd::Slot(s as i32));
+                    set(&mut ops, "len", Opnd::Imm(len as u64));
                 }
-                Shape::Jmp | Shape::Call | Shape::Island => unreachable!(),
+                Shape::Jmp | Shape::Call | Shape::Ret | Shape::Island => unreachable!(),
             }
             if super::inline::sequence(op, &ops).is_some() {
                 return Err(err(hat, "handler call of an inlined instruction"));
@@ -385,10 +379,13 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8], argblk: u32) -> Result<Proto,
         }
         Item::Call(Ref::Func(f)) if setup.is_empty() => {
             sites.push((hat, 5));
-            let at = c.pos;
-            let Item::Marker(m) = c.item()? else { return Err(err(at, "no call marker")) };
-            let d = m.wrapping_sub(fr.size as i32);
-            Proto { op: Opcode::Call, ops: vec![Opnd::Slot(d), Opnd::Func(f)], pos, sites }
+            let (d, len) = result(c);
+            Proto { op: Opcode::Call, ops: vec![Opnd::Slot(d), Opnd::Func(f), Opnd::Imm(len as u64)], pos, sites }
+        }
+        Item::Ld { .. } | Item::Leave | Item::AddRsp(_) if setup.is_empty() => {
+            c.pos = pos;
+            let (s, len) = ret(c, fr)?;
+            Proto { op: Opcode::Ret, ops: vec![Opnd::Slot(s), Opnd::Imm(len as u64)], pos, sites }
         }
         Item::Branch { cond: Cond::Always, target, .. } if setup.is_empty() => {
             Proto { op: Opcode::Jmp, ops: vec![Opnd::Target(target)], pos, sites }
@@ -404,6 +401,72 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8], argblk: u32) -> Result<Proto,
         _ => return Err(err(hat, "not an instruction")),
     };
     Ok(ops)
+}
+
+/// `ret`'s sequence at the cursor: the loads of the value into `rax`/`rdx`, the epilogue and
+/// `ret`. Returns the slot and the length (slot 0 for nothing returned).
+fn ret(c: &mut Cursor<'_>, fr: &Frame) -> Result<(i32, u32), AsmError> {
+    let at = c.pos;
+    let mut parts = Vec::new();
+    loop {
+        let a = c.pos;
+        match c.item()? {
+            Item::Ld { w, sx: false, dst, m } if m.base == Reg::Rbp => parts.push((w, m.disp as u32, dst)),
+            _ => {
+                c.pos = a;
+                break;
+            }
+        }
+    }
+    let (s, len) = match parts.first() {
+        None => (0, 0),
+        Some(&(_, s, _)) => {
+            let len = [1, 2, 4, 8, 16].into_iter().find(|&l| {
+                ret_parts(l).into_iter().map(|(w, off, r)| (w, s.wrapping_add(off), r)).eq(parts.iter().copied())
+            });
+            (s as i32, len.ok_or(AsmError { at, what: "return value loads" })?)
+        }
+    };
+    for want in [fr.epilogue(), Item::Ret] {
+        let a = c.pos;
+        if c.item()? != want {
+            return Err(AsmError { at: a, what: "not the return sequence" });
+        }
+    }
+    Ok((s, len))
+}
+
+/// A call's result stores from `rax`/`rdx` at the cursor, if any: the destination and the
+/// length (slot 0 for none).
+fn result(c: &mut Cursor<'_>) -> (i32, u32) {
+    let at = c.pos;
+    let mut parts = Vec::new();
+    loop {
+        let a = c.pos;
+        match c.item() {
+            Ok(Item::St { w, src: src @ (Reg::Rax | Reg::Rdx), m }) if m.base == Reg::Rbp && parts.len() < 2 => {
+                parts.push((w, m.disp as u32, src))
+            }
+            _ => {
+                c.pos = a;
+                break;
+            }
+        }
+    }
+    let Some(&(_, d, _)) = parts.first() else { return (0, 0) };
+    // The longest form the stores begin with.
+    for l in [16, 8, 4, 2, 1] {
+        let want: Vec<_> = ret_parts(l).into_iter().map(|(w, off, r)| (w, d.wrapping_add(off), r)).collect();
+        if parts.starts_with(&want) {
+            c.pos = at;
+            for _ in 0..want.len() {
+                let _ = c.item();
+            }
+            return (d as i32, l);
+        }
+    }
+    c.pos = at;
+    (0, 0)
 }
 
 /// An inline sequence at the cursor, or `None` (the cursor unmoved) if there is none: native

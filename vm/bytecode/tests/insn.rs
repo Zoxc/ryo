@@ -105,7 +105,7 @@ fn variable_length_opcodes() {
     assert_eq!(var.len(), 11);
 }
 
-/// The VM calls `ret` returns to name their destination first.
+/// The VM calls name their destination first.
 #[test]
 fn call_destination_first() {
     for op in [Opcode::Call, Opcode::CallExt, Opcode::CallExtInd, Opcode::CallInd] {
@@ -164,7 +164,7 @@ fn typed_encoding_and_display() {
         Insn::SwitchDenseW8 { s: Slot(-1), base: 3, default: Target(9), table: List::from_words(&table) },
         Insn::SwitchSparseW64 { s: Slot(-8), default: Target(9), cases: List::from_words(&cases) },
         Insn::Island { isl: Sym(2), ops: List::from_words(&island_ops) },
-        Insn::CallExt { d: Slot(-48), sym: Sym(1), site: Site(0), isl: Sym(3), f: Slot(-56) },
+        Insn::CallExt { d: Slot(-48), sym: Sym(1), site: Site(0), isl: Sym(3), f: Slot(-56), len: 0 },
         Insn::ImmW128 { d: Slot(-16), imm: u128::MAX - 1 },
         Insn::BrLtSW32 { a: Slot(-4), b: Slot(-8), neg: Neg(true), t: Target(-3) },
         Insn::Br { s: Slot(-1), neg: Neg(false), t: Target(2) },
@@ -178,7 +178,7 @@ fn typed_encoding_and_display() {
         "switch.dense.w8 $-1, 3, @+9, [@+5, @-2]",
         "switch.sparse.w64 $-8, @+9, [1099511627776 => @+7]",
         "island sym2, [16, 4294967272]",
-        "call.ext $-48, sym1, site0, sym3, $-56",
+        "call.ext $-48, sym1, site0, sym3, $-56, 0",
         "imm.w128 $-16, 340282366920938463463374607431768211454",
         "br.lt.s.w32! $-4, $-8, @-3",
         "br $-1, @+2",
@@ -247,7 +247,7 @@ fn opcode_table_is_pinned_to_format_version() {
             eat(&format!("{:?}", o.kind));
         }
     }
-    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (13, 0x28323093b5e1687), "opcode table hash {h:#x}");
+    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (14, 0x5e9aee8df64707ff), "opcode table hash {h:#x}");
 }
 
 /// Pins the image table layouts to the format version: any change to a table entry's size or
@@ -267,7 +267,7 @@ fn image_layouts_are_pinned_to_format_version() {
         ),
         (size_of::<CleanupEntry>(), size_of::<FixupEntry>(), size_of::<Span>()),
     );
-    assert_eq!(ryo_bytecode::FORMAT_VERSION, 13);
+    assert_eq!(ryo_bytecode::FORMAT_VERSION, 14);
     assert_eq!(layout, ((112, 24, 40, 48, 104), (20, 4, 8, 12, 16), (8, 16, 8)), "{layout:?}");
 }
 

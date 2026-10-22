@@ -42,7 +42,7 @@ fn data_movement() {
     a.i(Insn::MovW32 { d: Slot(-48), s: Slot(16) });
     a.i(Insn::MovW64 { d: Slot(-32), s: Slot(16) });
     a.i(Insn::MovW128 { d: Slot(-16), s: Slot(16) });
-    a.i(Insn::Ret { s: Slot(-80), len: 80 });
+    a.ret(Slot(-80), 80);
     let f_mov = w.add_function(func(a.done(), 80, 16, 80));
 
     // copy, imm.w128, const, fill, zero.
@@ -57,7 +57,7 @@ fn data_movement() {
     a.i(Insn::ImmW64 { d: Slot(-80), imm: u64::MAX });
     a.i(Insn::Zero { d: Slot(-79), len: 2 });
     a.i(Insn::MovW64 { d: Slot(-8), s: Slot(-80) });
-    a.i(Insn::Ret { s: Slot(-64), len: 64 });
+    a.ret(Slot(-64), 64);
     let f_misc = w.add_function(func(a.done(), 80, 16, 64));
 
     // Memory: p@16 points at a 64-byte buffer holding 0..64. Results: 12 words at -96.
@@ -85,7 +85,7 @@ fn data_movement() {
     a.i(Insn::Memmove { dp: r(8), sp: r(9), n: r(5) });
     a.i(Insn::PtrIndex { d: r(10), p, i: r(5), stride: 3 });
     a.i(Insn::StoreCopy { m: Mem { p: r(10), k: 0 }, s: r(7), len: 1 });
-    a.i(Insn::Ret { s: r(0), len: 96 });
+    a.ret(r(0), 96);
     let f_mem = w.add_function(func(a.done(), 96, 8, 96));
     let img = build(w, &[]);
 
@@ -151,7 +151,7 @@ fn addresses_and_fixups() {
     a.i(Insn::ImmW64 { d: Slot(-24), imm: 0x99 });
     a.i(Insn::LoadW64 { d: Slot(-16), m: Mem { p: Slot(-32), k: 0 } });
     a.i(Insn::AddrAbs { d: Slot(-8), a: Abs::Const(kp) });
-    a.i(Insn::Ret { s: Slot(-64), len: 64 });
+    a.ret(Slot(-64), 64);
     let f = w.add_function(func(a.done(), 64, 0, 64));
     let img = build(w, &[("static", addr(&raw const STATIC_VAL)), ("imp", addr(&raw const IMP_STATIC))]);
 
@@ -193,14 +193,14 @@ fn enums_niche() {
         let mut a = Asm::new();
         a.i(Insn::Zero { d: Slot(-16), len: 16 });
         a.raw(dop, &[d, 16, ns, 3, 5, 1]);
-        a.i(Insn::Ret { s: Slot(-16), len: 4 });
+        a.ret(Slot(-16), 4);
         let fd = w.add_function(func(a.done(), 16, 16, 4));
         let mut fs = vec![];
         for v in [1u128, 3, 4, 5] {
             let mut a = Asm::new();
             a.i(Insn::MovW128 { d: Slot(-16), s: Slot(16) });
             a.raw(sop, &[d, v, ns, 3, 1]);
-            a.i(Insn::Ret { s: Slot(-16), len: 16 });
+            a.ret(Slot(-16), 16);
             fs.push(w.add_function(func(a.done(), 16, 16, 16)));
         }
         fns.push((n, mask, ns, fd, fs));
@@ -234,7 +234,7 @@ fn control_flow() {
     a.i(Insn::AddImmW64 { d: Slot(-16), a: Slot(-16), imm: 1 });
     let j = a.i(Insn::Jmp { t: Target(0) });
     a.patch(j, "t", top);
-    let exit = a.i(Insn::Ret { s: Slot(-8), len: 8 });
+    let exit = a.ret(Slot(-8), 8);
     a.patch(top, "t", exit);
     let f_sum = w.add_function(func(a.done(), 16, 8, 8));
 
@@ -254,7 +254,7 @@ fn control_flow() {
     a.i(Insn::AddImmW64 { d: Slot(-16), a: Slot(-16), imm: 1 });
     let j = a.i(Insn::Jmp { t: Target(0) });
     a.patch(j, "t", top);
-    let exit = a.i(Insn::Ret { s: Slot(-8), len: 8 });
+    let exit = a.ret(Slot(-8), 8);
     a.patch(top, "t", exit);
     let f_long = w.add_function(func(a.done(), 16, 8, 8));
 
@@ -265,10 +265,10 @@ fn control_flow() {
     a.i(Insn::AddImmW32 { d: Slot(-16), a: Slot(-16), imm: 1 });
     let l1 = a.i(Insn::Br { s: Slot(16), neg: T, t: Target(0) });
     a.patch(b1, "t", l1);
-    a.i(Insn::Ret { s: Slot(-16), len: 4 });
+    a.ret(Slot(-16), 4);
     let l2 = a.i(Insn::AddImmW32 { d: Slot(-16), a: Slot(-16), imm: 1 });
     a.patch(l1, "t", l2);
-    a.i(Insn::Ret { s: Slot(-16), len: 4 });
+    a.ret(Slot(-16), 4);
     let f_br = w.add_function(func(a.done(), 16, 1, 4));
 
     // Fused compares: (a, b) → bit 0: a == b (br.eq!, w64), bit 1: a <s b (w8), bit 2:
@@ -296,17 +296,17 @@ fn control_flow() {
     bit(&mut a, Insn::BrGtUImmW32 { a: Slot(16), imm: 100, neg: F, t: Target(0) }, true, 4);
     bit(&mut a, Insn::BrEqImmW16 { a: Slot(16), imm: 7, neg: T, t: Target(0) }, false, 8);
     bit(&mut a, Insn::BrLtUW16 { a: Slot(16), b: Slot(24), neg: F, t: Target(0) }, true, 16);
-    a.i(Insn::Ret { s: Slot(-16), len: 4 });
+    a.ret(Slot(-16), 4);
     let f_cmp = w.add_function(func(a.done(), 16, 16, 4));
 
     // Fused compare with an immediate at 128 bits: x > -5 (signed).
     let mut a = Asm::new();
     a.i(Insn::ImmW32 { d: Slot(-16), imm: 0 });
     let b = a.i(Insn::BrGtSImmW128 { a: Slot(16), imm: (-5i128) as u128, neg: T, t: Target(0) });
-    a.i(Insn::Ret { s: Slot(-16), len: 4 });
+    a.ret(Slot(-16), 4);
     let t = a.i(Insn::ImmW32 { d: Slot(-16), imm: 1 });
     a.patch(b, "t", t);
-    a.i(Insn::Ret { s: Slot(-16), len: 4 });
+    a.ret(Slot(-16), 4);
     let f_gt = w.add_function(func(a.done(), 16, 16, 4));
 
     // switch.dense at every width: x@16 (u128); cases base..base+3 return 100+i, else 99.
@@ -318,11 +318,11 @@ fn control_flow() {
             for i in 0..3 {
                 let at = a.i(Insn::ImmW32 { d: Slot(-16), imm: 100 + i as u32 });
                 a.patch_list(sw, "table", i, at);
-                a.i(Insn::Ret { s: Slot(-16), len: 4 });
+                a.ret(Slot(-16), 4);
             }
             let d = a.i(Insn::ImmW32 { d: Slot(-16), imm: 99 });
             a.patch(sw, "default", d);
-            a.i(Insn::Ret { s: Slot(-16), len: 4 });
+            a.ret(Slot(-16), 4);
             w.add_function(func(a.done(), 16, 16, 4))
         }};
     }
@@ -344,11 +344,11 @@ fn control_flow() {
             let mut targets = vec![];
             for i in 0..vals.len() {
                 targets.push(a.i(Insn::ImmW32 { d: Slot(-16), imm: 100 + i as u32 }));
-                a.i(Insn::Ret { s: Slot(-16), len: 4 });
+                a.ret(Slot(-16), 4);
             }
             let d = a.i(Insn::ImmW32 { d: Slot(-16), imm: 99 });
             a.patch(sw, "default", d);
-            a.i(Insn::Ret { s: Slot(-16), len: 4 });
+            a.ret(Slot(-16), 4);
             let mut code = a.done();
             // Patch case targets: each case's last word, after the count word.
             let ew = cw.len() / vals.len();
@@ -422,12 +422,12 @@ fn calls_and_tail_calls() {
     let mut a = Asm::new();
     let b = a.i(Insn::BrLtUImmW64 { a: Slot(16), imm: 2, neg: T, t: Target(0) });
     a.i(Insn::SubImmW64 { d: Slot(-32), a: Slot(16), imm: 1 });
-    a.i(Insn::Call { d: Slot(-8), f: Func(0) });
+    a.i(Insn::Call { d: Slot(-8), f: Func(0), len: 8 });
     a.i(Insn::SubImmW64 { d: Slot(-32), a: Slot(16), imm: 2 });
-    a.i(Insn::Call { d: Slot(-16), f: Func(0) });
+    a.i(Insn::Call { d: Slot(-16), f: Func(0), len: 8 });
     a.i(Insn::AddW64 { d: Slot(-8), a: Slot(-8), b: Slot(-16) });
-    a.i(Insn::Ret { s: Slot(-8), len: 8 });
-    let base = a.i(Insn::Ret { s: Slot(16), len: 8 });
+    a.ret(Slot(-8), 8);
+    let base = a.ret(Slot(16), 8);
     a.patch(b, "t", base);
     let fib = w.add_function(func(a.done(), 32, 8, 8));
     assert_eq!(fib, Func(0));
@@ -439,7 +439,7 @@ fn calls_and_tail_calls() {
     a.i(Insn::SubImmW64 { d: Slot(-16), a: Slot(16), imm: 1 });
     a.i(Insn::AddW64 { d: Slot(-8), a: Slot(24), b: Slot(16) });
     a.i(Insn::TailCall { f: Func(1), n: 16 });
-    let done = a.i(Insn::Ret { s: Slot(24), len: 8 });
+    let done = a.ret(Slot(24), 8);
     a.patch(b, "t", done);
     let countdown = w.add_function(func(a.done(), 16, 16, 8));
 
@@ -448,9 +448,9 @@ fn calls_and_tail_calls() {
     let mut a = Asm::new();
     a.i(Insn::MovW64 { d: Slot(-32), s: Slot(16) });
     a.i(Insn::ImmW64 { d: Slot(-24), imm: 0 });
-    a.i(Insn::Call { d: Slot(-8), f: countdown });
+    a.i(Insn::Call { d: Slot(-8), f: countdown, len: 8 });
     a.i(Insn::AddImmW64 { d: Slot(-8), a: Slot(-8), imm: 1 });
-    a.i(Insn::Ret { s: Slot(-8), len: 8 });
+    a.ret(Slot(-8), 8);
     let wrap = w.add_function(func(a.done(), 32, 8, 8));
 
     // A tail call to a different function with a smaller argument block: half(n, _) =
@@ -465,14 +465,16 @@ fn calls_and_tail_calls() {
     a.i(Insn::MovW64 { d: Slot(-32), s: Slot(16) });
     a.i(Insn::AddImmW64 { d: Slot(-24), a: Slot(16), imm: 1 });
     a.i(Insn::AddImmW64 { d: Slot(-16), a: Slot(16), imm: 2 });
-    a.i(Insn::Ret { s: Slot(-32), len: 24 });
+    a.ret(Slot(-32), 24);
     let triple = w.add_function(func(a.done(), 32, 8, 24));
     let mut a = Asm::new();
     a.i(Insn::ImmW64 { d: Slot(-48), imm: 0 });
-    a.i(Insn::MovW64 { d: Slot(-64), s: Slot(16) });
-    a.i(Insn::Call { d: Slot(-40), f: triple });
-    a.i(Insn::Ret { s: Slot(-48), len: 32 });
-    let call_triple = w.add_function(func(a.done(), 64, 8, 32));
+    // The result comes back in the outgoing block, which takes 24 bytes for it (F = 80).
+    a.i(Insn::MovW64 { d: Slot(-80), s: Slot(16) });
+    a.i(Insn::Call { d: Slot(0), f: triple, len: 0 });
+    a.i(Insn::Copy { d: Slot(-40), s: Slot(-80), len: 24 });
+    a.ret(Slot(-48), 32);
+    let call_triple = w.add_function(func(a.done(), 80, 8, 32));
     let img = build(w, &[]);
 
     assert_eq!(ok::<_, u64>(img.id(fib), (20u64,)), 6765);
@@ -490,10 +492,10 @@ fn deep_recursion() {
     let mut a = Asm::new();
     let b = a.i(Insn::BrEqImmW64 { a: Slot(16), imm: 0, neg: T, t: Target(0) });
     a.i(Insn::SubImmW64 { d: Slot(-16), a: Slot(16), imm: 1 });
-    a.i(Insn::Call { d: Slot(-8), f: Func(0) });
+    a.i(Insn::Call { d: Slot(-8), f: Func(0), len: 8 });
     a.i(Insn::AddImmW64 { d: Slot(-8), a: Slot(-8), imm: 1 });
-    a.i(Insn::Ret { s: Slot(-8), len: 8 });
-    let z = a.i(Insn::Ret { s: Slot(16), len: 8 });
+    a.ret(Slot(-8), 8);
+    let z = a.ret(Slot(16), 8);
     a.patch(b, "t", z);
     w.add_function(func(a.done(), 16, 8, 8));
     let id = build(w, &[]).id(Func(0));
@@ -512,9 +514,9 @@ fn large_frames() {
     a.i(Insn::AddImmW64 { d: Slot(-FS + 16), a: Slot(-FS + 16), imm: 1 });
     a.i(Insn::SubImmW64 { d: Slot(-FS), a: Slot(16), imm: 1 });
     a.i(Insn::MovW64 { d: Slot(-FS + 8), s: Slot(-FS + 16) });
-    a.i(Insn::Call { d: Slot(-8), f: Func(0) });
-    a.i(Insn::Ret { s: Slot(-8), len: 8 });
-    let base = a.i(Insn::Ret { s: Slot(24), len: 8 });
+    a.i(Insn::Call { d: Slot(-8), f: Func(0), len: 8 });
+    a.ret(Slot(-8), 8);
+    let base = a.ret(Slot(24), 8);
     a.patch(b, "t", base);
     let big = w.add_function(func(a.done(), FS as u32, 16, 8));
 
@@ -525,7 +527,7 @@ fn large_frames() {
         let mut a = Asm::new();
         a.i(Insn::Zero { d: Slot(s), len: size });
         a.i(Insn::MovW64 { d: Slot(s), s: Slot(16) });
-        a.i(Insn::Ret { s: Slot(s), len: 8 });
+        a.ret(Slot(s), 8);
         fs.push(w.add_function(func(a.done(), size, 8, 8)));
     }
     let img = build(w, &[]);
@@ -553,7 +555,7 @@ fn image_b() -> &'static Linked {
         a.i(Insn::Const { d: Slot(-16), k, len: 8 });
         a.i(Insn::MulImmW64 { d: Slot(-8), a: Slot(16), imm: 3 });
         a.i(Insn::AddW64 { d: Slot(-8), a: Slot(-8), b: Slot(-16) });
-        a.i(Insn::Ret { s: Slot(-8), len: 8 });
+        a.ret(Slot(-8), 8);
         let mut f = func(a.done(), 16, 8, 8);
         f.portal = Some(p);
         w.add_function(f);
@@ -592,32 +594,32 @@ fn multi_image_calls_and_site_caches() {
     // f0(x) = g(x) + 7 via call.ext; the + 7 reads A's pool after returning from B.
     let mut a = Asm::new();
     a.i(Insn::MovW64 { d: Slot(-32), s: Slot(16) });
-    a.i(Insn::CallExt { d: Slot(-8), sym: s_g, site: sites[0], isl: i1, f: Slot(-16) });
+    a.i(Insn::CallExt { d: Slot(-8), sym: s_g, site: sites[0], isl: i1, f: Slot(-16), len: 8 });
     a.i(Insn::Const { d: Slot(-24), k: k_a, len: 8 });
     a.i(Insn::AddW64 { d: Slot(-8), a: Slot(-8), b: Slot(-24) });
-    a.i(Insn::Ret { s: Slot(-8), len: 8 });
+    a.ret(Slot(-8), 8);
     let f0 = w.add_function(func(a.done(), 32, 8, 8));
 
     // f1(a, b) = native_add(a, b) via call.ext's native path.
     let mut a = Asm::new();
     a.i(Insn::MovW64 { d: Slot(-32), s: Slot(16) });
     a.i(Insn::MovW64 { d: Slot(-24), s: Slot(24) });
-    a.i(Insn::CallExt { d: Slot(-8), sym: s_add, site: sites[1], isl: i2, f: Slot(-16) });
-    a.i(Insn::Ret { s: Slot(-8), len: 8 });
+    a.i(Insn::CallExt { d: Slot(-8), sym: s_add, site: sites[1], isl: i2, f: Slot(-16), len: 8 });
+    a.ret(Slot(-8), 8);
     let f1 = w.add_function(func(a.done(), 32, 16, 8));
 
     // f2(x) = g(x) via call.ext.ind through an import slot.
     let mut a = Asm::new();
     a.i(Insn::MovW64 { d: Slot(-32), s: Slot(16) });
-    a.i(Insn::CallExtInd { d: Slot(-8), sym: s_imp, site: sites[2], isl: i1, f: Slot(-16) });
-    a.i(Insn::Ret { s: Slot(-8), len: 8 });
+    a.i(Insn::CallExtInd { d: Slot(-8), sym: s_imp, site: sites[2], isl: i1, f: Slot(-16), len: 8 });
+    a.ret(Slot(-8), 8);
     let f2 = w.add_function(func(a.done(), 32, 8, 8));
 
     // f3(p, x) = p(x) via call.ind.
     let mut a = Asm::new();
     a.i(Insn::MovW64 { d: Slot(-16), s: Slot(24) });
-    a.i(Insn::CallInd { d: Slot(-8), p: Slot(16), site: sites[3], isl: i1 });
-    a.i(Insn::Ret { s: Slot(-8), len: 8 });
+    a.i(Insn::CallInd { d: Slot(-8), p: Slot(16), site: sites[3], isl: i1, len: 8 });
+    a.ret(Slot(-8), 8);
     let f3 = w.add_function(func(a.done(), 16, 16, 8));
 
     // f4(p, x) = become p(x).
@@ -630,9 +632,9 @@ fn multi_image_calls_and_site_caches() {
     let mut a = Asm::new();
     a.i(Insn::MovW64 { d: Slot(-32), s: Slot(16) });
     a.i(Insn::MovW64 { d: Slot(-24), s: Slot(24) });
-    a.i(Insn::Call { d: Slot(-8), f: f4 });
+    a.i(Insn::Call { d: Slot(-8), f: f4, len: 8 });
     a.i(Insn::AddImmW64 { d: Slot(-8), a: Slot(-8), imm: 1 });
-    a.i(Insn::Ret { s: Slot(-8), len: 8 });
+    a.ret(Slot(-8), 8);
     let f5 = w.add_function(func(a.done(), 32, 16, 8));
 
     let img = build(w, &[
@@ -694,7 +696,7 @@ fn registration() {
         let mut w = ImageWriter::new(unique_scid());
         let mut a = Asm::new();
         a.i(Insn::ImmW32 { d: Slot(-16), imm: v });
-        a.i(Insn::Ret { s: Slot(-16), len: 4 });
+        a.ret(Slot(-16), 4);
         w.add_function(func(a.done(), 16, 0, 4));
         assemble(w, &[])
     };
@@ -730,12 +732,12 @@ fn reentrancy() {
     // r0(n) = n == 0 ? 0 : reenter(n). n@16, r@-8, fn pointer@-16.
     let mut a = Asm::new();
     let b = a.i(Insn::BrEqImmW64 { a: Slot(16), imm: 0, neg: F, t: Target(0) });
-    a.i(Insn::Ret { s: Slot(16), len: 8 });
+    a.ret(Slot(16), 8);
     let l = a.i(Insn::AddrSym { d: Slot(-16), sym: s });
     a.patch(b, "t", l);
     let ops = [16, op(-8), op(-16)];
     a.i(Insn::Island { isl: i1, ops: List::from_words(&ops) });
-    a.i(Insn::Ret { s: Slot(-8), len: 8 });
+    a.ret(Slot(-8), 8);
     w.add_function(func(a.done(), 16, 8, 8));
     let img = build(w, &[("reenter", reenter as *const () as usize), ("cp1", cp1())]);
     assert_eq!(img.id(Func(0)), ID_R0);
@@ -787,7 +789,7 @@ fn image_u() -> &'static Linked {
         let mut a = Asm::new();
         a.i(Insn::AddrSym { d: Slot(-16), sym: s_boom });
         let call = a.i(Insn::Island { isl: i1, ops: List::from_words(&[16, op(-8), op(-16)]) });
-        a.i(Insn::Ret { s: Slot(-8), len: 8 });
+        a.ret(Slot(-8), 8);
         let c = a.i(Insn::Lpad { x: Slot(-24) });
         a.i(Insn::ImmW64 { d: Slot(-32), imm: 999 });
         a.i(Insn::StoreW64 { m: Mem { p: Slot(24), k: 0 }, s: Slot(-32) });
@@ -801,10 +803,10 @@ fn image_u() -> &'static Linked {
         let mut a = Asm::new();
         a.i(Insn::MovW64 { d: Slot(-32), s: Slot(16) });
         a.i(Insn::MovW64 { d: Slot(-24), s: Slot(24) });
-        let call = a.i(Insn::Call { d: Slot(-8), f: Func(0) });
+        let call = a.i(Insn::Call { d: Slot(-8), f: Func(0), len: 8 });
         a.i(Insn::ImmW64 { d: Slot(-16), imm: 1 });
         a.i(Insn::StoreW64 { m: Mem { p: Slot(24), k: 8 }, s: Slot(-16) });
-        a.i(Insn::Ret { s: Slot(-8), len: 8 });
+        a.ret(Slot(-8), 8);
         let mut f = func(a.done(), 32, 16, 8);
         f.cleanup = vec![CleanupEntry { offset: call, target: CONTINUE }];
         assert_eq!(w.add_function(f), Func(1));
@@ -814,8 +816,8 @@ fn image_u() -> &'static Linked {
         let mut a = Asm::new();
         a.i(Insn::MovW64 { d: Slot(-48), s: Slot(16) });
         a.i(Insn::MovW64 { d: Slot(-40), s: Slot(24) });
-        let call = a.i(Insn::Call { d: Slot(-8), f: Func(1) });
-        a.i(Insn::Ret { s: Slot(-8), len: 8 });
+        let call = a.i(Insn::Call { d: Slot(-8), f: Func(1), len: 8 });
+        a.ret(Slot(-8), 8);
         let c = a.i(Insn::Lpad { x: Slot(-24) });
         let j = a.i(Insn::Jmp { t: Target(0) });
         a.i(Insn::Abort {});
@@ -831,7 +833,7 @@ fn image_u() -> &'static Linked {
         let mut a = Asm::new();
         a.i(Insn::AddrSym { d: Slot(-16), sym: s_via });
         let call = a.i(Insn::Island { isl: i2, ops: List::from_words(&[16, op(-8), op(-16)]) });
-        a.i(Insn::Ret { s: Slot(-8), len: 8 });
+        a.ret(Slot(-8), 8);
         let c = a.i(Insn::Lpad { x: Slot(-24) });
         a.i(Insn::ImmW64 { d: Slot(-32), imm: 777 });
         a.i(Insn::StoreW64 { m: Mem { p: Slot(24), k: 24 }, s: Slot(-32) });
@@ -844,8 +846,8 @@ fn image_u() -> &'static Linked {
         let site = w.site();
         let mut a = Asm::new();
         a.i(Insn::MovW64 { d: Slot(-32), s: Slot(16) });
-        let call = a.i(Insn::CallExt { d: Slot(-8), sym: s_boom, site, isl: i1, f: Slot(-16) });
-        a.i(Insn::Ret { s: Slot(-8), len: 8 });
+        let call = a.i(Insn::CallExt { d: Slot(-8), sym: s_boom, site, isl: i1, f: Slot(-16), len: 8 });
+        a.ret(Slot(-8), 8);
         let mut f = func(a.done(), 32, 8, 8);
         f.cleanup = vec![CleanupEntry { offset: call, target: CONTINUE }];
         assert_eq!(w.add_function(f), Func(4));
@@ -863,8 +865,8 @@ fn image_u() -> &'static Linked {
         let mut a = Asm::new();
         a.i(Insn::MovW64 { d: Slot(-48), s: Slot(16) });
         a.i(Insn::MovW64 { d: Slot(-40), s: Slot(24) });
-        let call = a.i(Insn::Call { d: Slot(-8), f: Func(5) });
-        a.i(Insn::Ret { s: Slot(-8), len: 8 });
+        let call = a.i(Insn::Call { d: Slot(-8), f: Func(5), len: 8 });
+        a.ret(Slot(-8), 8);
         let c = a.i(Insn::Lpad { x: Slot(-24) });
         a.i(Insn::ImmW64 { d: Slot(-16), imm: 6 });
         a.i(Insn::StoreW64 { m: Mem { p: Slot(32), k: 0 }, s: Slot(-16) });
@@ -965,8 +967,8 @@ fn fatal_child() {
             if case == "overflow_probe" {
                 fs = 1 << 16;
             }
-            a.i(Insn::Call { d: Slot(-8), f: Func(0) });
-            a.i(Insn::Ret { s: Slot(-8), len: 8 });
+            a.i(Insn::Call { d: Slot(-8), f: Func(0), len: 8 });
+            a.ret(Slot(-8), 8);
         }
         "unreachable" => {
             a.i(Insn::Unreachable {});
@@ -977,13 +979,13 @@ fn fatal_child() {
         "no_entry" => {
             // A call that unwinds without a cleanup entry terminates.
             boom_call(&mut a);
-            a.i(Insn::Ret { s: Slot(-8), len: 8 });
+            a.ret(Slot(-8), 8);
         }
         "catch" => {
             // A catch-all landing pad (a `Terminate` action): the search phase stops at it,
             // and it runs and terminates.
             let c = boom_call(&mut a);
-            a.i(Insn::Ret { s: Slot(-8), len: 8 });
+            a.ret(Slot(-8), 8);
             let pad = a.i(Insn::Lpad { x: Slot(-24) });
             a.i(Insn::AddrSym { d: Slot(-16), sym: s_term });
             a.i(Insn::Island { isl: i1, ops: List::from_words(&[op(-32), op(-8), op(-16)]) });
@@ -1043,7 +1045,7 @@ fn concurrent_registration_and_sites() {
     let p = w.symbol("portal_c", 0);
     let mut a = Asm::new();
     a.i(Insn::AddImmW64 { d: Slot(-16), a: Slot(16), imm: 1 });
-    a.i(Insn::Ret { s: Slot(-16), len: 8 });
+    a.ret(Slot(-16), 8);
     let mut f = func(a.done(), 16, 8, 8);
     f.portal = Some(p);
     w.add_function(f);
@@ -1056,13 +1058,13 @@ fn concurrent_registration_and_sites() {
     let (s0, s1) = (w.site(), w.site());
     let mut a = Asm::new();
     a.i(Insn::MovW64 { d: Slot(-32), s: Slot(16) });
-    a.i(Insn::CallExt { d: Slot(-8), sym: s_c, site: s0, isl: i1, f: Slot(-16) });
-    a.i(Insn::Ret { s: Slot(-8), len: 8 });
+    a.i(Insn::CallExt { d: Slot(-8), sym: s_c, site: s0, isl: i1, f: Slot(-16), len: 8 });
+    a.ret(Slot(-8), 8);
     let fe = w.add_function(func(a.done(), 32, 8, 8));
     let mut a = Asm::new();
     a.i(Insn::MovW64 { d: Slot(-16), s: Slot(24) });
-    a.i(Insn::CallInd { d: Slot(-8), p: Slot(16), site: s1, isl: i1 });
-    a.i(Insn::Ret { s: Slot(-8), len: 8 });
+    a.i(Insn::CallInd { d: Slot(-8), p: Slot(16), site: s1, isl: i1, len: 8 });
+    a.ret(Slot(-8), 8);
     let fi = w.add_function(func(a.done(), 16, 16, 8));
     let img = assemble(w, &[("portal_c", pc), ("cp1", cp1())]);
     register(&[&c, &img]);
@@ -1078,7 +1080,7 @@ fn concurrent_registration_and_sites() {
                         let mut w = ImageWriter::new(unique_scid());
                         let mut a = Asm::new();
                         a.i(Insn::ImmW64 { d: Slot(-16), imm: k });
-                        a.i(Insn::Ret { s: Slot(-16), len: 8 });
+                        a.ret(Slot(-16), 8);
                         w.add_function(func(a.done(), 16, 0, 8));
                         let n = build(w, &[]);
                         assert_eq!(ok::<_, u64>(n.id(Func(0)), ()), k);

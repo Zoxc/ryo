@@ -617,7 +617,8 @@ pub enum Shape {
     Switch,
     /// The handler doesn't return (`trap`).
     Trap,
-    /// The handler copies the return value, and the function returns (`ret`).
+    /// The return value is loaded into `rax`/`rdx`, and the function returns, without a
+    /// handler (`ret`).
     Ret,
     /// A jump, without a handler (`jmp`).
     Jmp,

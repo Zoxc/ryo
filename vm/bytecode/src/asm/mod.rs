@@ -149,8 +149,8 @@ const fn passed(shape: Shape, name: &str) -> bool {
         crate::insn::str_eq(a, b)
     }
     match shape {
-        Shape::Op | Shape::Br | Shape::Switch | Shape::Trap | Shape::Ret | Shape::Lpad => true,
-        Shape::Jmp | Shape::Call | Shape::Island => false,
+        Shape::Op | Shape::Br | Shape::Switch | Shape::Trap | Shape::Lpad => true,
+        Shape::Jmp | Shape::Call | Shape::Ret | Shape::Island => false,
         Shape::CallExt => eq(name, "sym") || eq(name, "site") || eq(name, "f"),
         Shape::CallInd => eq(name, "p") || eq(name, "site"),
         Shape::TailCall => eq(name, "n"),
@@ -160,7 +160,7 @@ const fn passed(shape: Shape, name: &str) -> bool {
 
 /// Whether instructions of `op` call a handler.
 pub const fn has_handler(op: Opcode) -> bool {
-    !matches!(op.info().shape, Shape::Jmp | Shape::Call | Shape::Island)
+    !matches!(op.info().shape, Shape::Jmp | Shape::Call | Shape::Ret | Shape::Island)
 }
 
 /// The register layout of `op`'s handler call (see the [module docs](self)). Fails to
@@ -258,7 +258,26 @@ pub const fn read(args: &[u64; ARG_REGS], loc: Loc) -> u128 {
     }
 }
 
-/// The byte sequence `nop dword [rcx + d]` begins with: the marker after a VM call
-/// (`0F 1F 81 disp32`), which `ret` reads `d` from. `d` is relative to the caller's `rsp`,
-/// which is the callee's `fp + 16`.
-pub const CALL_MARKER: [u8; 3] = [0x0f, 0x1f, 0x81];
+/// Whether a return value of `len` bytes comes back in registers: `rax`, and `rdx` for the
+/// high half of 16 bytes. `ret` and the calls take only these lengths and 0 (nothing
+/// returned); a value of any other size the lowering copies through the argument block
+/// (design/vm.md, "Calls and islands").
+pub const fn ret_in_regs(len: u32) -> bool {
+    matches!(len, 1 | 2 | 4 | 8 | 16)
+}
+
+/// Whether the instruction `words` (opcode first) passes its return value as the machine
+/// code can: a `len` of 0 or one [`ret_in_regs`], and with 0, a `call` destination and a
+/// `ret` source of 0, since nothing in the machine code holds them.
+pub fn return_ok(words: &[u32]) -> bool {
+    use crate::insn::operand_word;
+    let Some(op) = Opcode::from_u16(words[0] as u16) else { return true };
+    let (unused, len) = match op {
+        Opcode::Call => (Some(operand_word(op, "d")), operand_word(op, "len")),
+        Opcode::Ret => (Some(operand_word(op, "s")), operand_word(op, "len")),
+        Opcode::CallExt | Opcode::CallExtInd | Opcode::CallInd | Opcode::TailCallInd => (None, operand_word(op, "len")),
+        _ => return true,
+    };
+    let len = words[len];
+    len == 0 && unused.is_none_or(|u| words[u] == 0) || ret_in_regs(len)
+}

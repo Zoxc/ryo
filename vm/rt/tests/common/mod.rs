@@ -61,6 +61,20 @@ impl Asm {
         let op = Opcode::from_u16(self.c.words[at as usize] as u16).unwrap();
         self.c.set_list_target(at, op.info().operand_index(name).unwrap(), i, target);
     }
+    /// `ret s, len`, or for a value that doesn't return in registers, its copy to the start
+    /// of the argument block, then `ret` of nothing, as the lowering does. Returns the
+    /// position of the first instruction.
+    pub fn ret(&mut self, s: Slot, len: u32) -> u32 {
+        if ryo_bytecode::asm::ret_in_regs(len) {
+            self.i(Insn::Ret { s, len })
+        } else if len == 0 {
+            self.i(Insn::Ret { s: Slot(0), len: 0 })
+        } else {
+            let at = self.i(Insn::Copy { d: Slot(16), s, len });
+            self.i(Insn::Ret { s: Slot(0), len: 0 });
+            at
+        }
+    }
     pub fn done(self) -> Vec<u32> {
         self.c.words
     }
@@ -114,7 +128,7 @@ struct Arena {
 static MEM: Mutex<Option<Arena>> = Mutex::new(None);
 
 fn new_arena() -> Arena {
-    let near = ryo_rt::vm::handler(Opcode::Ret).unwrap() as usize & !(PAGE - 1);
+    let near = ryo_rt::vm::handler(Opcode::Copy).unwrap() as usize & !(PAGE - 1);
     for k in 1..8isize {
         for sign in [1isize, -1] {
             let hint = (near as isize + sign * k * (128 << 20)) as usize & !(PAGE - 1);

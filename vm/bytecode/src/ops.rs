@@ -864,10 +864,10 @@ define_ops! {
     Abort = "abort" trap {  },
 
     // ---- calls, returns, islands ----
-    Call = "call" call { d: Slot, f: Func },
-    CallExt = "call.ext" call_ext { d: Slot, sym: Sym, site: Site, isl: Sym, f: Slot },
-    CallExtInd = "call.ext.ind" call_ext { d: Slot, sym: Sym, site: Site, isl: Sym, f: Slot },
-    CallInd = "call.ind" call_ind { d: Slot, p: Slot, site: Site, isl: Sym },
+    Call = "call" call { d: Slot, f: Func, len: U32 },
+    CallExt = "call.ext" call_ext { d: Slot, sym: Sym, site: Site, isl: Sym, f: Slot, len: U32 },
+    CallExtInd = "call.ext.ind" call_ext { d: Slot, sym: Sym, site: Site, isl: Sym, f: Slot, len: U32 },
+    CallInd = "call.ind" call_ind { d: Slot, p: Slot, site: Site, isl: Sym, len: U32 },
     TailCall = "tail_call" tail_call { f: Func, n: U32 },
     TailCallInd = "tail_call.ind" tail_call_ind { p: Slot, site: Site, isl: Sym, n: U32, s: Slot, len: U32 },
     Ret = "ret" ret { s: Slot, len: U32 },

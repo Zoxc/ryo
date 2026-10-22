@@ -135,12 +135,12 @@ fn function(op: Opcode, rng: &mut Rng, args: &[u64; 8]) -> (Vec<u32>, Vec<u128>)
     let at = a.raw(op, &vals);
     if info.operand_index("t").is_some() {
         a.i(Insn::ImmW8 { d: Slot(RES), imm: 1 });
-        a.i(Insn::Ret { s: Slot(RES), len: 32 });
+        a.ret(Slot(RES), 32);
         let l = a.pos();
         a.patch(at, "t", l);
         a.i(Insn::ImmW8 { d: Slot(RES), imm: 2 });
     }
-    a.i(Insn::Ret { s: Slot(RES), len: 32 });
+    a.ret(Slot(RES), 32);
     (a.done(), vals)
 }
 
@@ -251,7 +251,7 @@ fn inline_runs_match_handlers() {
             a.raw(op, &vals);
             run.push((op, vals));
         }
-        a.i(Insn::Ret { s: Slot(RES), len: 32 });
+        a.ret(Slot(RES), 32);
         let code = a.done();
         fs.push(w.add_function(func(code.clone(), 32, 64, 32)));
         runs.push((code, run));
@@ -395,7 +395,9 @@ fn dead_stores_match_handlers() {
                 a.dead(lo as u32, len);
             }
         }
-        a.insn(Opcode::Ret, &[rasm::Opnd::Slot(RES), rasm::Opnd::Imm(32)]);
+        // The 32-byte result goes back at the start of the argument block.
+        a.insn(Opcode::Copy, &[rasm::Opnd::Slot(16), rasm::Opnd::Slot(RES), rasm::Opnd::Imm(32)]);
+        a.insn(Opcode::Ret, &[rasm::Opnd::Slot(0), rasm::Opnd::Imm(0)]);
         let enc = a.finish(64, |s| s);
         dropped += enc.dropped.len();
         encoded.push(enc);

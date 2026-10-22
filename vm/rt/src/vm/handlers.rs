@@ -3,7 +3,7 @@
 // whose `*_!` body macros implement the kinds. `handlers!` is invoked as
 // `for_each_handler!(handlers!())` and receives `Name => kind(params) [-> R]; ...`.
 //
-// `ops.rs` has no handler for `jmp`, `call` and `island`; `tail_call` and `resume` are
+// `ops.rs` has no handler for `jmp`, `call`, `ret` and `island`; `tail_call` and `resume` are
 // written in assembly (interp.rs). The list is checked against `ops.rs` when built.
 // Kinds: integer types select the width and signedness (`i*` for `.s` forms), float
 // types the format; `Atomic*` the atomic type; orderings are `core::sync::atomic::Ordering`
@@ -851,7 +851,6 @@ macro_rules! for_each_handler {
         CallExt => call_ext(false) -> *const u8;
         CallExtInd => call_ext(true) -> *const u8;
         CallInd => call_ind() -> *const u8;
-        Ret => ret();
         Lpad => lpad();
     } };
 }

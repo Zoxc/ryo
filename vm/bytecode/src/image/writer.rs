@@ -186,6 +186,9 @@ pub enum CodeError {
     DataOutOfRange,
     /// The last instruction can fall through past the function's end.
     FallsOffEnd,
+    /// A call or `ret` passes its return value in a way the machine code can't
+    /// ([`crate::asm::return_ok`]).
+    BadReturn,
 }
 
 /// Why [`ImageWriter::finish`] failed.
@@ -265,6 +268,9 @@ pub fn validate_code(code: &[u32], lim: &CodeLimits) -> Result<Vec<bool>, (u32, 
         let (at, insn) = r.unwrap();
         let words = &code[at..];
         let fail = |e| Err((at as u32, e));
+        if !crate::asm::return_ok(words) {
+            return fail(CodeError::BadReturn);
+        }
         let mut pos = 1usize;
         for o in insn.opcode().info().operands {
             let w = |i: usize| words[pos + i];

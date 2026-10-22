@@ -220,7 +220,7 @@ the VM. Wide pointer orderings are lexicographic: `a < b` is `a.data < b.data ||
 |---|---|
 | `Goto` | `jmp`, or fall-through |
 | `SwitchInt(d, targets)` | If `d` is a `bool` local defined by an integer, `char`, `bool` or thin-pointer compare as the block's last statement, and used nowhere else, a compare branch on the compare's operands (`br.eq`, `br.lt`, their `.imm` forms or `br.gt.imm`, with the polarity and operand order that give the compare), and the compare isn't emitted. Otherwise `br`/`br!` for `bool`, `br.eq.imm` for a single case, `switch.dense` for dense value sets, and `switch.sparse` otherwise |
-| `Return` | `ret` |
+| `Return` | `ret`, after copying `_0` to the argument block if it doesn't return in registers |
 | `Unreachable` | `unreachable` |
 | `Call` | see Calls |
 | `TailCall` | `tail_call` / `tail_call.ind` ([vm.md](vm.md#calls-and-islands)) |
@@ -315,9 +315,11 @@ island.
    `mov`/`copy` instructions immediately before the call. MIR call arguments are operands
    (locals or constants), so no other call runs between building the block and the call. For
    `#[track_caller]` callees, the location is appended ([Caller location](#caller-location)).
-3. **Destination**: the call instruction names the caller's destination slot, which the
-   call marker after the call carries ([vm.md](vm.md#calls-and-islands)). A destination
-   behind a deref is first written to a temporary slot, then stored. `call.ext` also gets an
+3. **Destination**: the call instruction names the caller's destination slot, which it
+   stores `rax`/`rdx` to after the call ([vm.md](vm.md#calls-and-islands)). A result of a
+   size that doesn't return in registers comes back at the start of the outgoing block,
+   which is made large enough, and is copied from there. A destination behind a deref is
+   first written to a temporary slot, then stored. `call.ext` also gets an
    8-byte temporary `f` for the resolved address of its native path.
 4. **Unwind**: the call's unwind action becomes a cleanup entry for the instruction
    ([Unwinding](#unwinding)).

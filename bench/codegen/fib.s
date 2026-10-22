@@ -1,10 +1,7 @@
 fn <() as std::process::Termination>::report
     sub     rsp,18h
     mov     byte ptr [rsp+0Fh],0
-    lea     rdi,[rsp+10h]
-    mov     esi,0FFFFFFFFh
-    mov     edx,1
-    call    ryo_h_Ret
+    movzx   eax,byte ptr [rsp+0Fh]
     add     rsp,18h
     ret
 
@@ -17,17 +14,12 @@ fn <fn() as std::ops::FnOnce<()>>::call_once - shim(fn())
     test    rax,rax
     je      L0
     call    rax
-    nop     [rcx]
     jmp     L1
 L0:
     lea     rdi,[rsp]
     lea     rsi,[ro+4]
     call    qword ptr [sym1]
 L1:
-    lea     rdi,[rsp]
-    xor     esi,esi
-    xor     edx,edx
-    call    ryo_h_Ret
     add     rsp,8
     ret
 
@@ -37,14 +29,12 @@ fn <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::cal
     mov     [rsp+10h],rax
     mov     [rsp],rax
     call    fn0
-    nop     [rcx+1Ch]
-    lea     rdi,[rsp+20h]
-    mov     esi,0FFFFFFFCh
-    mov     edx,4
-    call    ryo_h_Ret
+    mov     [rsp+1Ch],eax
+    mov     eax,[rsp+1Ch]
     add     rsp,28h
     ret
     nop     [rax+rax]
+    nop     [rax]
 L0:
     lea     rdi,[rsp+20h]
     mov     esi,0FFFFFFE8h
@@ -62,11 +52,8 @@ fn <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::cal
     mov     rax,[rax]
     mov     [rsp],rax
     call    fn0
-    nop     [rcx+0Ch]
-    lea     rdi,[rsp+10h]
-    mov     esi,0FFFFFFFCh
-    mov     edx,4
-    call    ryo_h_Ret
+    mov     [rsp+0Ch],eax
+    mov     eax,[rsp+0Ch]
     add     rsp,18h
     ret
 
@@ -86,10 +73,8 @@ fn core::fmt::rt::Argument::<'_>::new_display::<u32>
     mov     esi,0FFFFFFF0h
     mov     edx,0FFFFFFD8h
     call    ryo_h_MovW128
-    lea     rdi,[rsp+40h]
-    mov     esi,0FFFFFFF0h
-    mov     edx,10h
-    call    ryo_h_Ret
+    mov     rax,[rsp+30h]
+    mov     rdx,[rsp+38h]
     add     rsp,48h
     ret
 
@@ -109,10 +94,8 @@ fn core::fmt::rt::Argument::<'_>::new_display::<u64>
     mov     esi,0FFFFFFF0h
     mov     edx,0FFFFFFD8h
     call    ryo_h_MovW128
-    lea     rdi,[rsp+40h]
-    mov     esi,0FFFFFFF0h
-    mov     edx,10h
-    call    ryo_h_Ret
+    mov     rax,[rsp+30h]
+    mov     rdx,[rsp+38h]
     add     rsp,48h
     ret
 
@@ -147,7 +130,6 @@ L0:
     test    rax,rax
     je      L1
     call    rax
-    nop     [rcx+10h]
     jmp     L2
 L1:
     lea     rdi,[rsp+60h]
@@ -162,7 +144,7 @@ L3:
     mov     [rsp+44h],eax
     mov     [rsp],eax
     call    fn4
-    nop     [rcx+48h]
+    mov     [rsp+48h],rax
     mov     dword ptr [rsp+0Ch],2
     lea     rdi,[rsp+60h]
     mov     esi,0FFFFFFC4h
@@ -184,7 +166,6 @@ L3:
     test    rax,rax
     je      L4
     call    rax
-    nop     [rcx+10h]
     jmp     L5
 L4:
     lea     rdi,[rsp+60h]
@@ -199,7 +180,7 @@ L6:
     mov     [rsp+2Ch],eax
     mov     [rsp],eax
     call    fn9
-    nop     [rcx+30h]
+    mov     [rsp+30h],rax
     lea     rdi,[rsp+60h]
     mov     esi,0FFFFFFB0h
     mov     edx,0FFFFFFB8h
@@ -220,7 +201,6 @@ L6:
     test    rax,rax
     je      L7
     call    rax
-    nop     [rcx+10h]
     jmp     L8
 L7:
     lea     rdi,[rsp+60h]
@@ -234,10 +214,7 @@ L9:
     mov     rax,[rsp+10h]
     mov     [rsp+58h],rax
 L10:
-    lea     rdi,[rsp+60h]
-    mov     esi,0FFFFFFF8h
-    mov     edx,8
-    call    ryo_h_Ret
+    mov     rax,[rsp+58h]
     add     rsp,68h
     ret
 
@@ -245,11 +222,11 @@ fn main
     sub     rsp,0C8h
     mov     dword ptr [rsp],27h
     call    fn0
-    nop     [rcx+0BCh]
+    mov     [rsp+0BCh],eax
     mov     eax,[rsp+0BCh]
     mov     [rsp],eax
     call    fn1
-    nop     [rcx+88h]
+    mov     [rsp+88h],rax
     lea     rax,[rsp+88h]
     lea     rdx,[rsp+0BCh]
     mov     [rsp+98h],rax
@@ -257,12 +234,14 @@ fn main
     mov     [rsp+28h],rdx
     mov     [rsp],rdx
     call    fn2
-    nop     [rcx+50h]
+    mov     [rsp+50h],rax
+    mov     [rsp+58h],rdx
     mov     rax,[rsp+98h]
     mov     [rsp+20h],rax
     mov     [rsp],rax
     call    fn3
-    nop     [rcx+40h]
+    mov     [rsp+40h],rax
+    mov     [rsp+48h],rdx
     lea     rdi,[rsp+0C0h]
     mov     esi,0FFFFFFA0h
     mov     edx,0FFFFFF90h
@@ -281,7 +260,8 @@ fn main
     mov     [rsp],rdx
     mov     [rsp+8],rax
     call    fn5
-    nop     [rcx+0A8h]
+    mov     [rsp+0A8h],rax
+    mov     [rsp+0B0h],rdx
     lea     rdi,[rsp+0C0h]
     mov     esi,0FFFFFF40h
     mov     edx,0FFFFFFE8h
@@ -294,17 +274,12 @@ fn main
     test    rax,rax
     je      L0
     call    rax
-    nop     [rcx+0BCh]
     jmp     L1
 L0:
     lea     rdi,[rsp+0C0h]
     lea     rsi,[ro+4]
     call    qword ptr [sym8]
 L1:
-    lea     rdi,[rsp+0C0h]
-    xor     esi,esi
-    xor     edx,edx
-    call    ryo_h_Ret
     add     rsp,0C8h
     ret
 
@@ -314,10 +289,8 @@ fn std::fmt::Arguments::<'_>::new::<15, 2>
     mov     rdx,[rsp+38h]
     mov     [rsp+10h],rax
     mov     [rsp+18h],rdx
-    lea     rdi,[rsp+20h]
-    mov     esi,0FFFFFFF0h
-    mov     edx,10h
-    call    ryo_h_Ret
+    mov     rax,[rsp+10h]
+    mov     rdx,[rsp+18h]
     add     rsp,28h
     ret
 
@@ -325,10 +298,7 @@ fn std::hint::black_box::<u32>
     sub     rsp,18h
     mov     eax,[rsp+20h]
     mov     [rsp+0Ch],eax
-    lea     rdi,[rsp+10h]
-    mov     esi,0FFFFFFFCh
-    mov     edx,4
-    call    ryo_h_Ret
+    mov     eax,[rsp+0Ch]
     add     rsp,18h
     ret
 
@@ -361,17 +331,14 @@ fn std::rt::lang_start::<()>
     test    rax,rax
     je      L0
     call    rax
-    nop     [rcx+58h]
+    mov     [rsp+58h],rax
     jmp     L1
 L0:
     lea     rdi,[rsp+60h]
     lea     rsi,[ro+4]
     call    qword ptr [sym3]
 L1:
-    lea     rdi,[rsp+60h]
-    mov     esi,0FFFFFFF8h
-    mov     edx,8
-    call    ryo_h_Ret
+    mov     rax,[rsp+58h]
     add     rsp,68h
     ret
 
@@ -382,19 +349,15 @@ fn std::rt::lang_start::<()>::{closure#0}
     mov     [rsp+10h],rax
     mov     [rsp],rax
     call    fn0
-    nop     [rcx+1Ch]
     call    fn1
-    nop     [rcx+1Bh]
+    mov     [rsp+1Bh],al
     movzx   eax,byte ptr [rsp+1Bh]
     mov     [rsp+1Ah],al
     lea     rdi,[rsp+20h]
     mov     esi,0FFFFFFFCh
     mov     edx,0FFFFFFFAh
     call    ryo_h_ZextW8W32
-    lea     rdi,[rsp+20h]
-    mov     esi,0FFFFFFFCh
-    mov     edx,4
-    call    ryo_h_Ret
+    mov     eax,[rsp+1Ch]
     add     rsp,28h
     ret
 
@@ -403,11 +366,6 @@ fn std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
     mov     rax,[rsp+20h]
     mov     [rsp],rax
     call    fn0
-    nop     [rcx+10h]
-    lea     rdi,[rsp+10h]
-    xor     esi,esi
-    xor     edx,edx
-    call    ryo_h_Ret
     add     rsp,18h
     ret
 

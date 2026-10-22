@@ -131,7 +131,27 @@ fn insn(op: Opcode, rng: &mut Rng, list_len: usize, f: &mut Fn, target: &mut dyn
             }
         }
     }
+    canonical_return(op, &mut w, rng);
     w
+}
+
+/// Makes a call's or `ret`'s return value one the machine code can pass
+/// ([`asm::return_ok`]).
+fn canonical_return(op: Opcode, w: &mut [u32], rng: &mut Rng) {
+    let unused = match op {
+        Opcode::Call => Some("d"),
+        Opcode::Ret => Some("s"),
+        Opcode::CallExt | Opcode::CallExtInd | Opcode::CallInd | Opcode::TailCallInd => None,
+        _ => return,
+    };
+    let len = [0, 1, 2, 4, 8, 16][rng.below(6) as usize];
+    w[operand_word(op, "len")] = len;
+    if len == 0
+        && let Some(u) = unused
+    {
+        w[operand_word(op, u)] = 0;
+    }
+    assert!(asm::return_ok(w));
 }
 
 fn check(f: &Fn, frame_size: u32, mode: Mode, what: &str) -> asm::Encoded {
@@ -444,5 +464,5 @@ fn templates_are_pinned_to_format_version() {
             eat(&lsda::write(&enc.call_sites));
         }
     }
-    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (13, 0xdfd4fd52b40f8bdc), "template hash {h:#x}");
+    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (14, 0x1148a99d28281bbd), "template hash {h:#x}");
 }

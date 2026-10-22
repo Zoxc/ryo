@@ -7,7 +7,7 @@ fn <alloc::raw_vec::RawVec<bool> as std::ops::Drop>::drop (frame 48, args 8, ret
     mov.w64 $-48, $-8
     const $-40, k0, 16
 L0:
-    call.ext $0, sym1, site2, sym3, $-16
+    call.ext $0, sym1, site2, sym3, $-16, 0
     ret $0, 0
   cleanup L0 -> continue
   k0 = const allocation + 0
@@ -26,31 +26,33 @@ fn <bool as std::vec::spec_from_elem::SpecFromElem>::from_elem::<std::alloc::Glo
     addr $-56, $24
     mov.w64 $-176, $-56
 L0:
-    call $-41, fn0
+    call $-41, fn0, 1
     br! $-41, L2
     imm.w8 $-25, 0
     mov.w64 $-176, $16
     imm.w8 $-168, 1
     const $-160, k1, 16
 L1:
-    call.ext $-104, sym2, site3, sym4, $-136
+    call.ext $-176, sym2, site3, sym4, $-136, 0
+    copy $-104, $-176, 24
     jmp L13
 L2:
     imm.w8 $-25, 0
     mov.w64 $-176, $16
     const $-168, k5, 16
 L3:
-    call $-96, fn6
+    call $-96, fn6, 16
     jmp L18
 L4:
     copy $-24, $-64, 24
 L5:
-    ret $-24, 24
+    copy $16, $-24, 24
+    ret $0, 0
 L6:
     addr $-136, $-64
     mov.w64 $-176, $-136
 L7:
-    call $-136, fn7
+    call $0, fn7, 0
     jmp L11
 L8:
     br $-26, L12
@@ -72,7 +74,7 @@ L15:
     mov.w128 $-128, $-96
     mov.w128 $-176, $-128
 L16:
-    call.ext $-26, sym8, site9, sym10, $-136
+    call.ext $-26, sym8, site9, sym10, $-136, 0
     unreachable
 L17:
     mov.w128 $-80, $-96
@@ -91,10 +93,10 @@ L18:
     mov.w64 $-168, $16
     mov.w8 $-160, $-73
 L19:
-    call $-24, fn11
+    call $0, fn11, 0
     jmp L4
 L20:
-    call.ext $-128, sym12, site13, sym14, $-136
+    call.ext $-128, sym12, site13, sym14, $-136, 0
     unreachable
 L21:
     lpad $-40
@@ -130,7 +132,7 @@ L23:
 
 fn <fn() as std::ops::FnOnce<()>>::call_once - shim(fn()) (frame 0, args 8, ret 0)
 L0:
-    call.ind $0, $16, site0, sym1
+    call.ind $0, $16, site0, sym1, 0
     ret $0, 0
   cleanup L0 -> continue
   site0
@@ -143,7 +145,7 @@ fn <std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize::<&bool, {c
     mov.w64 $-64, $-32
     mov.w64 $-56, $-40
 L0:
-    call $-17, fn0
+    call $-17, fn0, 1
     zext.w8.w64 $-8, $-17
     ret $-8, 8
 L1:
@@ -161,7 +163,8 @@ fn <std::iter::Filter<std::slice::Iter<'_, bool>, {closure@bench/sieve.rs:24:37:
     addr $-80, $16
     mov.w64 $-112, $-80
 L0:
-    call $-72, fn0
+    call $0, fn0, 0
+    copy $-72, $-112, 24
     mov.w128 $-48, $-64
     mov.w64 $-80, $-48
     switch.dense.w64 $-80, 0, L10, [L11, L12]
@@ -170,7 +173,7 @@ L1:
     mov.w128 $-112, $-64
     imm.w64 $-96, 0
 L2:
-    call $-8, fn1
+    call $-8, fn1, 8
     jmp L13
 L3:
     ret $-8, 8
@@ -190,7 +193,7 @@ L8:
     imm.w8 $-17, 0
     mov.w128 $-112, $-64
 L9:
-    call $-48, fn2
+    call $-48, fn2, 16
     jmp L1
 L10:
     unreachable
@@ -204,7 +207,7 @@ L13:
     mov.w64 $-112, $-8
     mov.w64 $-104, $-16
 L14:
-    call $-16, fn3
+    call $0, fn3, 0
     jmp L3
 L15:
     lpad $-32
@@ -224,7 +227,7 @@ fn <std::iter::Rev<std::ops::RangeInclusive<usize>> as std::iter::Iterator>::fin
     mov.w64 $-48, $-24
     mov.w64 $-40, $24
 L0:
-    call $-16, fn0
+    call $-16, fn0, 16
     ret $-16, 16
   cleanup L0 -> continue
   fn0 = <std::ops::RangeInclusive<usize> as std::iter::DoubleEndedIterator>::rfind::<{closure@bench/sieve.rs:25:39: 25:43}>
@@ -262,7 +265,7 @@ fn <std::ops::RangeInclusive<usize> as std::iter::DoubleEndedIterator>::rfind::<
     mov.w64 $-80, $16
     mov.w64 $-72, $-40
 L0:
-    call $-32, fn0
+    call $-32, fn0, 16
     mov.w64 $-40, $-32
     switch.dense.w64 $-40, 0, L1, [L3, L2]
 L1:
@@ -287,7 +290,8 @@ L6:
 
 fn <std::ops::RangeInclusive<usize> as std::iter::Iterator>::rev (frame 32, args 24, ret 24)
     copy $-24, $16, 24
-    ret $-24, 24
+    copy $16, $-24, 24
+    ret $0, 0
 
 fn <std::ops::RangeInclusive<usize> as std::iter::range::RangeInclusiveIteratorImpl>::spec_try_rfold::<(), {closure@std::iter::DoubleEndedIterator::rfind::check<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0}}, std::ops::ControlFlow<usize>> (frame 160, args 16, ret 16)
     imm.w8 $-42, 1
@@ -297,7 +301,7 @@ fn <std::ops::RangeInclusive<usize> as std::iter::range::RangeInclusiveIteratorI
 L0:
     imm.w8 $-42, 0
 L1:
-    call $-16, fn0
+    call $-16, fn0, 16
     jmp L21
 L2:
     imm.w8 $-42, 0
@@ -308,13 +312,13 @@ L3:
     mov.w64 $-160, $-72
     mov.w64 $-152, $-80
 L4:
-    call $-57, fn1
+    call $-57, fn1, 1
     br! $-57, L12
     load.w64 $-80, [$16 + 8]
     mov.w64 $-160, $-80
     imm.w64 $-152, 1
 L5:
-    call $-72, fn2
+    call $-72, fn2, 8
     load.w64 $-80, [$16 + 8]
     store.w64 [$16 + 8], $-72
     addr $-120, $24
@@ -323,10 +327,10 @@ L5:
     mov.w64 $-160, $-120
     mov.w64 $-152, $-128
 L6:
-    call $-112, fn3
+    call $-112, fn3, 16
     mov.w128 $-160, $-112
 L7:
-    call $-96, fn4
+    call $-96, fn4, 16
     mov.w64 $-32, $-96
     switch.dense.w64 $-32, 0, L8, [L9, L10]
 L8:
@@ -338,7 +342,7 @@ L10:
     mov.w64 $-104, $-88
     mov.w64 $-160, $-104
 L11:
-    call $-16, fn5
+    call $-16, fn5, 16
     jmp L21
 L12:
     imm.w8 $-144, 1
@@ -348,7 +352,7 @@ L12:
     mov.w64 $-160, $-72
     mov.w64 $-152, $-80
 L13:
-    call $-57, fn6
+    call $-57, fn6, 1
     br! $-57, L19
     addr $-104, $24
     imm.w8 $-41, 0
@@ -357,10 +361,10 @@ L13:
     mov.w64 $-160, $-104
     mov.w64 $-152, $-112
 L14:
-    call $-96, fn7
+    call $-96, fn7, 16
     mov.w128 $-160, $-96
 L15:
-    call $-80, fn8
+    call $-80, fn8, 16
     mov.w64 $-40, $-80
     switch.dense.w64 $-40, 0, L8, [L16, L17]
 L16:
@@ -369,12 +373,12 @@ L17:
     mov.w64 $-88, $-72
     mov.w64 $-160, $-88
 L18:
-    call $-16, fn9
+    call $-16, fn9, 16
     jmp L21
 L19:
     imm.w8 $-41, 0
 L20:
-    call $-16, fn10
+    call $-16, fn10, 16
     jmp L21
 L21:
     ret $-16, 16
@@ -400,7 +404,7 @@ L29:
     mov.w64 $-160, $-72
     mov.w64 $-152, $-80
 L30:
-    call $-59, fn11
+    call $-59, fn11, 1
     xor.imm.w8 $-57, $-59, 1
     br! $-57, L2
     jmp L0
@@ -496,7 +500,7 @@ L4:
     mov.w64 $-184, $-104
     mov.w64 $-176, $-96
 L5:
-    call $-80, fn0
+    call $-80, fn0, 8
     mov.w64 $-72, $-80
     imm.w8 $-161, 1
     br! $-161, L21
@@ -530,7 +534,7 @@ L16:
     mov.w64 $-192, $-120
     mov.w64 $-184, $-128
     addr.abs $-176, k1
-    call $-50, fn2
+    call $0, fn2, 0
 L17:
     imm.w64 $-168, 0
     lt.u.imm.w64 $-113, $-168, 1
@@ -545,13 +549,13 @@ L18:
     imm.w64 $-184, 73
     addr.abs $-176, k4
 L19:
-    call.ext $-50, sym5, site6, sym7, $-168
+    call.ext $-50, sym5, site6, sym7, $-168, 0
     unreachable
 L20:
     mov.w64 $-192, $-32
     imm.w64 $-184, 1
     addr.abs $-176, k8
-    call $-50, fn9
+    call $0, fn9, 0
 L21:
     add.imm.w64 $-80, $-32, 1
     mov.w64 $-32, $-80
@@ -602,7 +606,8 @@ L1:
     imm.w64 $-56, 1
     mov.w64 $-24, $-40
     mov.w128 $-16, $-56
-    ret $-24, 24
+    copy $16, $-24, 24
+    ret $0, 0
 L2:
     jmp L1
 L3:
@@ -611,7 +616,7 @@ L3:
     mov.w64 $-128, $-80
     mov.w64 $-120, $-88
     addr.abs $-112, k0
-    call $-32, fn1
+    call $0, fn1, 0
 L4:
     imm.w64 $-96, 0
     lt.u.imm.w64 $-73, $-96, 1
@@ -626,7 +631,7 @@ L5:
     imm.w64 $-120, 73
     addr.abs $-112, k3
 L6:
-    call.ext $-32, sym4, site5, sym6, $-96
+    call.ext $-32, sym4, site5, sym6, $-96, 0
     unreachable
   cleanup L6 -> continue
   k0 = const allocation + 0
@@ -643,7 +648,7 @@ fn <std::slice::Iter<'_, bool> as std::iter::adapters::filter::SpecAssumeCount>:
     br! $-2, L0
     mov.w8 $-32, $-1
     addr.abs $-24, k0
-    call $0, fn1
+    call $0, fn1, 0
 L0:
     ret $0, 0
   k0 = const allocation + 0
@@ -688,7 +693,7 @@ fn <std::vec::Vec<bool> as std::ops::Index<usize>>::index (frame 96, args 24, re
     mov.w128 $-96, $-24
     mov.w64 $-72, $32
 L0:
-    call $-8, fn0
+    call $-8, fn0, 8
     ret $-8, 8
   cleanup L0 -> continue
   fn0 = <usize as std::slice::SliceIndex<[bool]>>::index
@@ -705,7 +710,7 @@ fn <std::vec::Vec<bool> as std::ops::IndexMut<usize>>::index_mut (frame 96, args
     mov.w128 $-96, $-24
     mov.w64 $-72, $32
 L0:
-    call $-8, fn0
+    call $-8, fn0, 8
     ret $-8, 8
   cleanup L0 -> continue
   fn0 = <usize as std::slice::SliceIndex<[bool]>>::index_mut
@@ -722,7 +727,7 @@ fn <usize as std::iter::Step>::backward_unchecked (frame 48, args 16, ret 8)
     mov.w64 $-48, $16
     mov.w64 $-40, $24
     addr.abs $-32, k0
-    call $-8, fn1
+    call $0, fn1, 0
 L0:
     sub.w64 $-8, $16, $24
     ret $-8, 8
@@ -734,7 +739,7 @@ fn <usize as std::iter::Sum>::sum::<std::iter::Map<std::slice::Iter<'_, bool>, {
     br! $-16, L1
     addr.abs $-48, k0
 L0:
-    call.ext $-24, sym1, site2, sym3, $-32
+    call.ext $-24, sym1, site2, sym3, $-32, 0
     unreachable
 L1:
     mov.w64 $-8, $-24
@@ -752,7 +757,7 @@ fn <usize as std::slice::SliceIndex<[bool]>>::index (frame 64, args 32, ret 8)
     mov.w64 $-56, $-16
     mov.w64 $-48, $40
 L0:
-    call.ext $-17, sym0, site1, sym2, $-32
+    call.ext $-17, sym0, site1, sym2, $-32, 0
     unreachable
 L1:
     ptr.index $-32, $16, $32, 1
@@ -770,7 +775,7 @@ fn <usize as std::slice::SliceIndex<[bool]>>::index_mut (frame 64, args 32, ret 
     mov.w64 $-56, $-16
     mov.w64 $-48, $40
 L0:
-    call.ext $-17, sym0, site1, sym2, $-32
+    call.ext $-17, sym0, site1, sym2, $-32, 0
     unreachable
 L1:
     ptr.index $-32, $16, $32, 1
@@ -785,7 +790,7 @@ fn <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::cal
     addr $-16, $16
     mov.w64 $-32, $-16
 L0:
-    call $-4, fn0
+    call $-4, fn0, 4
     ret $-4, 4
 L1:
     resume $-24
@@ -799,7 +804,7 @@ L2:
 fn <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::call_once - shim(vtable) (frame 16, args 8, ret 4)
     load.w64 $-16, [$16 + 0]
 L0:
-    call $-4, fn0
+    call $-4, fn0, 4
     ret $-4, 4
   cleanup L0 -> continue
   fn0 = <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::call_once - shim
@@ -809,7 +814,8 @@ fn alloc::raw_vec::RawVecInner::with_capacity_in (frame 144, args 24, ret 16)
     imm.w8 $-136, 0
     mov.w128 $-128, $24
 L0:
-    call.ext $-64, sym0, site1, sym2, $-112
+    call.ext $-144, sym0, site1, sym2, $-112, 0
+    copy $-64, $-144, 24
     mov.w64 $-24, $-64
     switch.dense.w64 $-24, 0, L1, [L4, L2]
 L1:
@@ -818,7 +824,7 @@ L2:
     mov.w128 $-80, $-56
     mov.w128 $-144, $-80
 L3:
-    call.ext $-32, sym3, site4, sym5, $-112
+    call.ext $-32, sym3, site4, sym5, $-112, 0
     unreachable
 L4:
     mov.w128 $-16, $-56
@@ -842,7 +848,7 @@ L7:
 L8:
     mov.w8 $-144, $-65
     addr.abs $-136, k6
-    call $-40, fn7
+    call $0, fn7, 0
 L9:
     ret $-16, 16
   cleanup L0 -> continue
@@ -890,7 +896,7 @@ fn core::num::<impl usize>::unchecked_add::precondition_check (frame 144, args 2
     mov.w128 $-144, $-40
     imm.w8 $-128, 0
     mov.w64 $-120, $32
-    call.ext $-16, sym2, site3, sym4, $-104
+    call.ext $-16, sym2, site3, sym4, $-104, 0
     unreachable
 L0:
     ret $0, 0
@@ -923,7 +929,7 @@ fn core::num::<impl usize>::unchecked_sub::precondition_check (frame 144, args 2
     mov.w128 $-144, $-40
     imm.w8 $-128, 0
     mov.w64 $-120, $32
-    call.ext $-16, sym2, site3, sym4, $-104
+    call.ext $-16, sym2, site3, sym4, $-104, 0
     unreachable
 L0:
     ret $0, 0
@@ -936,7 +942,7 @@ L0:
 fn core::slice::<impl [bool]>::iter (frame 32, args 16, ret 16)
     mov.w128 $-32, $16
 L0:
-    call $-16, fn0
+    call $-16, fn0, 16
     ret $-16, 16
   cleanup L0 -> continue
   fn0 = std::slice::Iter::<'_, bool>::new
@@ -944,41 +950,44 @@ L0:
 fn main (frame 432, args 0, ret 0)
     imm.w64 $-432, 13000000
 L0:
-    call $-8, fn0
+    call $-8, fn0, 8
     mov.w64 $-432, $-8
 L1:
-    call $-32, fn1
+    call $0, fn1, 0
+    copy $-32, $-432, 24
     addr $-96, $-32
     mov.w64 $-432, $-96
 L2:
-    call $-88, fn2
+    call $-88, fn2, 16
     mov.w128 $-432, $-88
 L3:
-    call $-72, fn3
+    call $-72, fn3, 16
     mov.w128 $-432, $-72
 L4:
-    call $-56, fn4
+    call $-56, fn4, 16
     mov.w128 $-432, $-56
 L5:
-    call $-40, fn5
+    call $-40, fn5, 8
     imm.w64 $-432, 0
     mov.w64 $-424, $-8
 L6:
-    call $-176, fn6
+    call $0, fn6, 0
+    copy $-176, $-432, 24
     copy $-432, $-176, 24
 L7:
-    call $-152, fn7
+    call $0, fn7, 0
+    copy $-152, $-432, 24
     addr $-128, $-152
     addr $-192, $-32
     mov.w64 $-184, $-192
     mov.w64 $-432, $-128
     mov.w64 $-424, $-184
 L8:
-    call $-120, fn8
+    call $-120, fn8, 16
     mov.w128 $-432, $-120
     addr.abs $-416, k9
 L9:
-    call $-104, fn10
+    call $-104, fn10, 8
     addr $-240, $-40
     addr $-248, $-8
     addr $-256, $-104
@@ -988,15 +997,15 @@ L9:
     mov.w64 $-376, $-232
     mov.w64 $-432, $-376
 L10:
-    call $-320, fn11
+    call $-320, fn11, 16
     mov.w64 $-384, $-224
     mov.w64 $-432, $-384
 L11:
-    call $-336, fn12
+    call $-336, fn12, 16
     mov.w64 $-392, $-216
     mov.w64 $-432, $-392
 L12:
-    call $-352, fn13
+    call $-352, fn13, 16
     mov.w128 $-304, $-320
     mov.w128 $-288, $-336
     mov.w128 $-272, $-352
@@ -1005,24 +1014,24 @@ L12:
     mov.w64 $-432, $-360
     mov.w64 $-424, $-368
 L13:
-    call $-208, fn15
+    call $-208, fn15, 16
     mov.w128 $-432, $-208
 L14:
-    call.ext $-192, sym16, site17, sym18, $-408
+    call.ext $-192, sym16, site17, sym18, $-408, 0
     addr $-408, $-32
     mov.w64 $-432, $-408
 L15:
-    call $-408, fn19
+    call $0, fn19, 0
     ret $0, 0
 L16:
     addr $-408, $-32
     mov.w64 $-432, $-408
 L17:
-    call $-408, fn20
+    call $0, fn20, 0
 L18:
     resume $-400
 L19:
-    call.ext $-400, sym21, site22, sym23, $-408
+    call.ext $-400, sym21, site22, sym23, $-408, 0
     unreachable
 L20:
     lpad $-400
@@ -1085,7 +1094,7 @@ fn main::{closure#1} (frame 64, args 16, ret 1)
     mov.w64 $-56, $-16
     addr.abs $-48, k0
 L0:
-    call $-24, fn1
+    call $-24, fn1, 8
     load.w8 $-1, [$-24 + 0]
     ret $-1, 1
   cleanup L0 -> continue
@@ -1098,20 +1107,21 @@ fn sieve (frame 368, args 8, ret 24)
     br! $-64, L1
     addr.abs $-368, k0
 L0:
-    call.ext $-320, sym1, site2, sym3, $-328
+    call.ext $-320, sym1, site2, sym3, $-328, 0
     unreachable
 L1:
     mov.w64 $-56, $-72
     imm.w8 $-368, 1
     mov.w64 $-360, $-56
 L2:
-    call $-48, fn4
+    call $0, fn4, 0
+    copy $-48, $-368, 24
     addr $-88, $-48
     mov.w64 $-368, $-88
     imm.w64 $-360, 0
     addr.abs $-352, k5
 L3:
-    call $-80, fn6
+    call $-80, fn6, 8
     imm.w8 $-336, 0
     store.w8 [$-80 + 0], $-336
     addr $-104, $-48
@@ -1119,7 +1129,7 @@ L3:
     imm.w64 $-360, 1
     addr.abs $-352, k7
 L4:
-    call $-96, fn8
+    call $-96, fn8, 8
     imm.w8 $-336, 0
     store.w8 [$-96 + 0], $-336
     imm.w64 $-112, 2
@@ -1130,7 +1140,7 @@ L5:
     br! $-152, L7
     addr.abs $-368, k9
 L6:
-    call.ext $-320, sym10, site11, sym12, $-328
+    call.ext $-320, sym10, site11, sym12, $-328, 0
     unreachable
 L7:
     mov.w64 $-128, $-160
@@ -1141,7 +1151,7 @@ L7:
     mov.w64 $-360, $-192
     addr.abs $-352, k13
 L8:
-    call $-176, fn14
+    call $-176, fn14, 8
     load.w8 $-161, [$-176 + 0]
     br! $-161, L15
     mov.w64 $-208, $-112
@@ -1150,7 +1160,7 @@ L8:
     br! $-224, L10
     addr.abs $-368, k15
 L9:
-    call.ext $-320, sym16, site17, sym18, $-328
+    call.ext $-320, sym16, site17, sym18, $-328, 0
     unreachable
 L10:
     mov.w64 $-200, $-232
@@ -1163,7 +1173,7 @@ L11:
     mov.w64 $-360, $-272
     addr.abs $-352, k19
 L12:
-    call $-256, fn20
+    call $-256, fn20, 8
     imm.w8 $-336, 0
     store.w8 [$-256 + 0], $-336
     mov.w64 $-280, $-112
@@ -1171,7 +1181,7 @@ L12:
     br! $-288, L14
     addr.abs $-368, k21
 L13:
-    call.ext $-320, sym22, site23, sym24, $-328
+    call.ext $-320, sym22, site23, sym24, $-328, 0
     unreachable
 L14:
     mov.w64 $-200, $-296
@@ -1182,23 +1192,24 @@ L15:
     br! $-304, L17
     addr.abs $-368, k25
 L16:
-    call.ext $-320, sym26, site27, sym28, $-328
+    call.ext $-320, sym26, site27, sym28, $-328, 0
     unreachable
 L17:
     mov.w64 $-112, $-312
     jmp L5
 L18:
     copy $-24, $-48, 24
-    ret $-24, 24
+    copy $16, $-24, 24
+    ret $0, 0
 L19:
     addr $-328, $-48
     mov.w64 $-368, $-328
 L20:
-    call $-328, fn29
+    call $0, fn29, 0
 L21:
     resume $-320
 L22:
-    call.ext $-320, sym30, site31, sym32, $-328
+    call.ext $-320, sym30, site31, sym32, $-328, 0
     unreachable
 L23:
     lpad $-320
@@ -1300,7 +1311,7 @@ fn std::hint::assert_unchecked::precondition_check (frame 128, args 16, ret 0)
     mov.w128 $-128, $-32
     imm.w8 $-112, 0
     mov.w64 $-104, $24
-    call.ext $-16, sym2, site3, sym4, $-96
+    call.ext $-16, sym2, site3, sym4, $-96, 0
     unreachable
 L0:
     ret $0, 0
@@ -1321,7 +1332,7 @@ fn std::iter::DoubleEndedIterator::rfind::check::<usize, {closure@bench/sieve.rs
     mov.w64 $-80, $-40
     mov.w64 $-72, $-48
 L0:
-    call $-25, fn0
+    call $-25, fn0, 1
     br! $-25, L1
     mov.w64 $-40, $24
     mov.w64 $-8, $-40
@@ -1349,7 +1360,7 @@ fn std::iter::adapters::map::map_fold::<&bool, usize, usize, {closure@<std::iter
     mov.w64 $-112, $-72
     mov.w64 $-104, $-80
 L0:
-    call $-64, fn0
+    call $-64, fn0, 8
     imm.w8 $-9, 0
     mov.w64 $-48, $-56
     mov.w64 $-40, $-64
@@ -1357,7 +1368,7 @@ L0:
     mov.w64 $-104, $-48
     mov.w64 $-96, $-40
 L1:
-    call $-8, fn1
+    call $-8, fn1, 8
     ret $-8, 8
 L2:
     resume $-24
@@ -1379,7 +1390,7 @@ fn std::iter::range::<impl std::iter::DoubleEndedIterator for std::ops::RangeInc
     mov.w64 $-32, $16
     mov.w64 $-24, $24
 L0:
-    call $-16, fn0
+    call $-16, fn0, 16
     ret $-16, 16
   cleanup L0 -> continue
   fn0 = <std::ops::RangeInclusive<usize> as std::iter::range::RangeInclusiveIteratorImpl>::spec_try_rfold::<(), {closure@std::iter::DoubleEndedIterator::rfind::check<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0}}, std::ops::ControlFlow<usize>>
@@ -1388,7 +1399,8 @@ fn std::ops::RangeInclusive::<usize>::new (frame 32, args 16, ret 24)
     mov.w64 $-24, $16
     mov.w64 $-16, $24
     imm.w8 $-8, 0
-    ret $-24, 24
+    copy $16, $-24, 24
+    ret $0, 0
 
 fn std::option::Option::<usize>::unwrap (frame 32, args 24, ret 8)
     mov.w64 $-16, $16
@@ -1398,7 +1410,7 @@ L0:
 L1:
     mov.w64 $-32, $32
 L2:
-    call.ext $-16, sym0, site1, sym2, $-24
+    call.ext $-16, sym0, site1, sym2, $-24, 0
     unreachable
 L3:
     mov.w64 $-8, $24
@@ -1429,7 +1441,7 @@ L0:
     mov.w128 $-144, $-40
     imm.w8 $-128, 0
     mov.w64 $-120, $32
-    call.ext $-16, sym2, site3, sym4, $-104
+    call.ext $-16, sym2, site3, sym4, $-104, 0
     unreachable
   k0 = const allocation + 0
   k1 = const allocation + 0
@@ -1441,7 +1453,7 @@ fn std::ptr::drop_glue::<alloc::raw_vec::RawVec<bool>> - shim(Some(alloc::raw_ve
     mov.w64 $-8, $16
     mov.w64 $-16, $-8
 L0:
-    call $-8, fn0
+    call $0, fn0, 0
     ret $0, 0
   cleanup L0 -> continue
   fn0 = <alloc::raw_vec::RawVec<bool> as std::ops::Drop>::drop
@@ -1450,7 +1462,7 @@ fn std::ptr::drop_glue::<std::vec::Vec<bool>> - shim(Some(std::vec::Vec<bool>)) 
     mov.w64 $-8, $16
     mov.w64 $-32, $-8
 L0:
-    call $-8, fn0
+    call $0, fn0, 0
     jmp L5
 L1:
     ret $0, 0
@@ -1460,16 +1472,16 @@ L3:
     mov.w64 $-24, $16
     mov.w64 $-32, $-24
 L4:
-    call $-24, fn1
+    call $0, fn1, 0
     jmp L2
 L5:
     mov.w64 $-24, $16
     mov.w64 $-32, $-24
 L6:
-    call $-24, fn2
+    call $0, fn2, 0
     jmp L1
 L7:
-    call.ext $-16, sym3, site4, sym5, $-24
+    call.ext $-16, sym3, site4, sym5, $-24, 0
     unreachable
 L8:
     lpad $-16
@@ -1492,7 +1504,7 @@ fn std::ptr::drop_glue::<std::vec::set_len_on_drop::SetLenOnDrop<'_>> - shim(Som
     mov.w64 $-8, $16
     mov.w64 $-16, $-8
 L0:
-    call $-8, fn0
+    call $0, fn0, 0
     ret $0, 0
   cleanup L0 -> continue
   fn0 = <std::vec::set_len_on_drop::SetLenOnDrop<'_> as std::ops::Drop>::drop
@@ -1507,7 +1519,7 @@ fn std::rt::lang_start::<()> (frame 96, args 32, ret 8)
     mov.w64 $-72, $32
     mov.w8 $-64, $40
 L0:
-    call.ext $-8, sym1, site2, sym3, $-48
+    call.ext $-8, sym1, site2, sym3, $-48, 8
     ret $-8, 8
   cleanup L0 -> continue
   k0 = const allocation + 0
@@ -1519,9 +1531,9 @@ fn std::rt::lang_start::<()>::{closure#0} (frame 32, args 8, ret 4)
     load.w64 $-16, [$16 + 0]
     mov.w64 $-32, $-16
 L0:
-    call $-4, fn0
+    call $0, fn0, 0
 L1:
-    call $-5, fn1
+    call $-5, fn1, 1
     mov.w8 $-6, $-5
     zext.w8.w32 $-4, $-6
     ret $-4, 4
@@ -1554,7 +1566,7 @@ L1:
 fn std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> (frame 16, args 8, ret 0)
     mov.w64 $-16, $16
 L0:
-    call $0, fn0
+    call $0, fn0, 0
     ret $0, 0
   cleanup L0 -> continue
   fn0 = <fn() as std::ops::FnOnce<()>>::call_once - shim(fn())
@@ -1564,7 +1576,7 @@ fn std::vec::Vec::<bool>::extend_with (frame 160, args 24, ret 0)
     mov.w64 $-160, $16
     mov.w64 $-152, $24
 L0:
-    call $0, fn0
+    call $0, fn0, 0
     load.w64 $-96, [$16 + 8]
     mov.w64 $-88, $-96
     load.w64 $-96, [$16 + 16]
@@ -1597,13 +1609,13 @@ L3:
     addr $-128, $-96
     mov.w64 $-160, $-128
 L4:
-    call $-128, fn1
+    call $0, fn1, 0
     jmp L19
 L5:
     addr $-128, $-96
     mov.w64 $-160, $-128
 L6:
-    call $-128, fn2
+    call $0, fn2, 0
     br $-49, L11
 L7:
     ret $0, 0
@@ -1611,7 +1623,7 @@ L8:
     addr $-128, $-96
     mov.w64 $-160, $-128
 L9:
-    call $-128, fn3
+    call $0, fn3, 0
     jmp L13
 L10:
     resume $-80
@@ -1634,7 +1646,7 @@ L16:
     mov.w64 $-160, $-112
     imm.w64 $-152, 1
     addr.abs $-144, k4
-    call $-72, fn5
+    call $0, fn5, 0
 L17:
     add.imm.w64 $-120, $-112, 1
     mov.w64 $-24, $-120
@@ -1642,12 +1654,12 @@ L17:
     addr $-120, $32
     mov.w64 $-160, $-120
 L18:
-    call $-105, fn6
+    call $-105, fn6, 1
     jmp L2
 L19:
     jmp L7
 L20:
-    call.ext $-120, sym7, site8, sym9, $-128
+    call.ext $-120, sym7, site8, sym9, $-128, 0
     unreachable
 L21:
     lpad $-80
@@ -1688,7 +1700,7 @@ L0:
     mov.w64 $-128, $24
     mov.w128 $-120, $-48
 L1:
-    call.ext $-8, sym1, site2, sym3, $-96
+    call.ext $-8, sym1, site2, sym3, $-96, 0
 L2:
     ret $0, 0
 L3:
@@ -1713,8 +1725,10 @@ fn std::vec::from_elem::<bool> (frame 48, args 16, ret 24)
     mov.w8 $-40, $16
     mov.w64 $-48, $24
 L0:
-    call $-24, fn0
-    ret $-24, 24
+    call $0, fn0, 0
+    copy $-24, $-48, 24
+    copy $16, $-24, 24
+    ret $0, 0
   cleanup L0 -> continue
   fn0 = <bool as std::vec::spec_from_elem::SpecFromElem>::from_elem::<std::alloc::Global>
 

@@ -4,7 +4,7 @@ fn <() as std::process::Termination>::report (frame 16, args 0, ret 1)
 
 fn <fn() as std::ops::FnOnce<()>>::call_once - shim(fn()) (frame 0, args 8, ret 0)
 L0:
-    call.ind $0, $16, site0, sym1
+    call.ind $0, $16, site0, sym1, 0
     ret $0, 0
   cleanup L0 -> continue
   site0
@@ -14,7 +14,7 @@ fn <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::cal
     addr $-16, $16
     mov.w64 $-32, $-16
 L0:
-    call $-4, fn0
+    call $-4, fn0, 4
     ret $-4, 4
 L1:
     resume $-24
@@ -28,7 +28,7 @@ L2:
 fn <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::call_once - shim(vtable) (frame 16, args 8, ret 4)
     load.w64 $-16, [$16 + 0]
 L0:
-    call $-4, fn0
+    call $-4, fn0, 4
     ret $-4, 4
   cleanup L0 -> continue
   fn0 = <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::call_once - shim
@@ -65,30 +65,30 @@ L0:
     br! $-32, L2
     addr.abs $-96, k0
 L1:
-    call.ext $-80, sym1, site2, sym3, $-88
+    call.ext $-80, sym1, site2, sym3, $-88, 0
     unreachable
 L2:
     mov.w32 $-28, $-36
     mov.w32 $-96, $-28
 L3:
-    call $-24, fn4
+    call $-24, fn4, 8
     imm.w32 $-84, 2
     sub.ovf.u.w32 $-60, $-56, $16, $-84
     br! $-56, L5
     addr.abs $-96, k5
 L4:
-    call.ext $-80, sym6, site7, sym8, $-88
+    call.ext $-80, sym6, site7, sym8, $-88, 0
     unreachable
 L5:
     mov.w32 $-52, $-60
     mov.w32 $-96, $-52
 L6:
-    call $-48, fn9
+    call $-48, fn9, 8
     add.ovf.u.w64 $-80, $-72, $-24, $-48
     br! $-72, L8
     addr.abs $-96, k10
 L7:
-    call.ext $-80, sym11, site12, sym13, $-88
+    call.ext $-80, sym11, site12, sym13, $-88, 0
     unreachable
 L8:
     mov.w64 $-8, $-80
@@ -117,10 +117,10 @@ L9:
 fn main (frame 192, args 0, ret 0)
     imm.w32 $-192, 39
 L0:
-    call $-4, fn0
+    call $-4, fn0, 4
     mov.w32 $-192, $-4
 L1:
-    call $-56, fn1
+    call $-56, fn1, 8
     addr $-48, $-56
     addr $-64, $-4
     mov.w64 $-40, $-48
@@ -128,11 +128,11 @@ L1:
     mov.w64 $-152, $-32
     mov.w64 $-192, $-152
 L2:
-    call $-112, fn2
+    call $-112, fn2, 16
     mov.w64 $-160, $-40
     mov.w64 $-192, $-160
 L3:
-    call $-128, fn3
+    call $-128, fn3, 16
     mov.w128 $-96, $-112
     mov.w128 $-80, $-128
     addr.abs $-136, k4
@@ -140,10 +140,10 @@ L3:
     mov.w64 $-192, $-136
     mov.w64 $-184, $-144
 L4:
-    call $-24, fn5
+    call $-24, fn5, 16
     mov.w128 $-192, $-24
 L5:
-    call.ext $-4, sym6, site7, sym8, $-168
+    call.ext $-4, sym6, site7, sym8, $-168, 0
     ret $0, 0
   cleanup L0 -> continue
   cleanup L1 -> continue
@@ -182,7 +182,7 @@ fn std::rt::lang_start::<()> (frame 96, args 32, ret 8)
     mov.w64 $-72, $32
     mov.w8 $-64, $40
 L0:
-    call.ext $-8, sym1, site2, sym3, $-48
+    call.ext $-8, sym1, site2, sym3, $-48, 8
     ret $-8, 8
   cleanup L0 -> continue
   k0 = const allocation + 0
@@ -194,9 +194,9 @@ fn std::rt::lang_start::<()>::{closure#0} (frame 32, args 8, ret 4)
     load.w64 $-16, [$16 + 0]
     mov.w64 $-32, $-16
 L0:
-    call $-4, fn0
+    call $0, fn0, 0
 L1:
-    call $-5, fn1
+    call $-5, fn1, 1
     mov.w8 $-6, $-5
     zext.w8.w32 $-4, $-6
     ret $-4, 4
@@ -208,7 +208,7 @@ L1:
 fn std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> (frame 16, args 8, ret 0)
     mov.w64 $-16, $16
 L0:
-    call $0, fn0
+    call $0, fn0, 0
     ret $0, 0
   cleanup L0 -> continue
   fn0 = <fn() as std::ops::FnOnce<()>>::call_once - shim(fn())

@@ -1,4 +1,4 @@
-use ryo_bytecode::asm::{self, Mode};
+use ryo_bytecode::asm::Mode;
 use ryo_bytecode::image::*;
 use ryo_bytecode::insn::*;
 use ryo_bytecode::{FORMAT_VERSION, Insn};
@@ -111,9 +111,9 @@ fn sample() -> ImageWriter {
     assert_eq!(vt.0 % 8, 0);
     let fx = w.add_data(&[7u8; 16], 8, &[AllocReloc { offset: 8, target: AllocTarget::Const(vt), addend: 0 }], &[AllocFixup { offset: 0, sym: imp, addend: 4 }]);
 
-    // f0: calls f1 with a landing pad at 6 (`lpad; jmp`) whose block resumes, then returns.
+    // f0: calls f1 with a landing pad at 7 (`lpad; jmp`) whose block resumes, then returns.
     let f0 = code(&[
-        Insn::Call { d: Slot(-8), f: Func(1) },
+        Insn::Call { d: Slot(-8), f: Func(1), len: 8 },
         Insn::Ret { s: Slot(-8), len: 8 },
         Insn::Lpad { x: Slot(-16) },
         Insn::Jmp { t: Target(2) },
@@ -125,12 +125,12 @@ fn sample() -> ImageWriter {
         frame_size: 48,
         arg_size: 8,
         ret_size: 8,
-        cleanup: vec![CleanupEntry { offset: 0, target: 6 }, CleanupEntry { offset: 10, target: CONTINUE }],
+        cleanup: vec![CleanupEntry { offset: 0, target: 7 }, CleanupEntry { offset: 11, target: CONTINUE }],
         portal: None,
     });
     let ops = [16u32, -24i32 as u32];
     let f1 = code(&[
-        Insn::CallExt { d: Slot(-8), sym: puts, site, isl: island, f: Slot(-16) },
+        Insn::CallExt { d: Slot(-8), sym: puts, site, isl: island, f: Slot(-16), len: 8 },
         Insn::Island { isl: island, ops: List::from_words(&ops) },
         Insn::AddrAbs { d: Slot(-8), a: Abs::Const(vt) },
         Insn::AddrAbs { d: Slot(-16), a: Abs::Data(fx) },
@@ -140,7 +140,7 @@ fn sample() -> ImageWriter {
         name: "f1".into(),
         code: f1,
         frame_size: 48,
-        cleanup: vec![CleanupEntry { offset: 6, target: CONTINUE }, CleanupEntry { offset: 0, target: CONTINUE }],
+        cleanup: vec![CleanupEntry { offset: 7, target: CONTINUE }, CleanupEntry { offset: 0, target: CONTINUE }],
         portal: Some(portal1),
         ..Default::default()
     });
@@ -198,13 +198,13 @@ fn image_round_trip() {
     assert_eq!(obj.functions.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), ["f0", "f1", ""]);
     assert_eq!(obj.functions[0].frame_size, 48);
 
-    // f0's code: the prologue, then `call f1` resolved within the text, then the marker.
+    // f0's code: the prologue, then `call f1` resolved within the text, then the result's
+    // store.
     let t = l.text.bytes();
     assert_eq!(&t[..8], [0x55, 0x48, 0x89, 0xe5, 0x48, 0x83, 0xec, 48]);
     assert_eq!(t[8], 0xe8);
     assert_eq!(9 + 4 + i32_at(&l.text, 9) as i64, fs[1].code_off as i64);
-    assert_eq!(&t[13..16], asm::CALL_MARKER);
-    assert_eq!(i32_at(&l.text, 16), 48 - 8); // the destination `fp - 8`, relative to `rsp`
+    assert_eq!(&t[13..17], [0x48, 0x89, 0x45, 0xf8]); // `mov [rbp - 8], rax`
     // f1's `call.ext`: `lea rdi, [rip + sym slot 0]` reaches the slot.
     let at = fs[1].code_off as u64 + 4 + 4; // after the prologue (`sub rsp, 48`)
     assert_eq!(&t[at as usize..at as usize + 3], [0x48, 0x8d, 0x3d]);
@@ -328,7 +328,7 @@ fn writer_rejects_bad_code() {
     assert!(matches!(w.finish(ELF), Err(WriteError::Code { error: CodeError::FallsOffEnd, .. })));
 
     let mut w = ImageWriter::new(1);
-    w.add_function(FunctionDef { name: String::new(), code: code(&[Insn::Call { d: Slot(-8), f: Func(5) }, Insn::Abort {}]), ..Default::default() });
+    w.add_function(FunctionDef { name: String::new(), code: code(&[Insn::Call { d: Slot(0), f: Func(5), len: 0 }, Insn::Abort {}]), ..Default::default() });
     assert!(matches!(w.finish(ELF), Err(WriteError::Code { error: CodeError::FuncOutOfRange, .. })));
 
     let mut w = ImageWriter::new(1);
@@ -340,7 +340,7 @@ fn writer_rejects_bad_code() {
     for (offset, target) in [(1, CONTINUE), (3, CONTINUE), (0, 3)] {
         let mut w = ImageWriter::new(1);
         w.add_function(FunctionDef {
-            code: code(&[Insn::Call { d: Slot(-8), f: Func(0) }, Insn::Abort {}, Insn::Lpad { x: Slot(-16) }, Insn::Abort {}]),
+            code: code(&[Insn::Call { d: Slot(0), f: Func(0), len: 0 }, Insn::Abort {}, Insn::Lpad { x: Slot(-16) }, Insn::Abort {}]),
             cleanup: vec![CleanupEntry { offset, target }],
             ..Default::default()
         });
@@ -379,11 +379,11 @@ fn writer_checks_symbol_indirection() {
     let addr_ind: fn(Sym, Sym, Site) -> Insn<'static> = |s, _, _| Insn::AddrSymInd { d: Slot(0), sym: s };
     let addr: fn(Sym, Sym, Site) -> Insn<'static> = |s, _, _| Insn::AddrSym { d: Slot(0), sym: s };
     let ext_ind: fn(Sym, Sym, Site) -> Insn<'static> =
-        |s, island, site| Insn::CallExtInd { d: Slot(0), sym: s, site, isl: island, f: Slot(-8) };
-    let ext: fn(Sym, Sym, Site) -> Insn<'static> = |s, island, site| Insn::CallExt { d: Slot(0), sym: s, site, isl: island, f: Slot(-8) };
+        |s, island, site| Insn::CallExtInd { d: Slot(0), sym: s, site, isl: island, f: Slot(-8), len: 0 };
+    let ext: fn(Sym, Sym, Site) -> Insn<'static> = |s, island, site| Insn::CallExt { d: Slot(0), sym: s, site, isl: island, f: Slot(-8), len: 0 };
     // `x` as the island: islands are always direct.
     let island_ind: fn(Sym, Sym, Site) -> Insn<'static> =
-        |s, island, site| Insn::CallExtInd { d: Slot(0), sym: island, site, isl: s, f: Slot(-8) };
+        |s, island, site| Insn::CallExtInd { d: Slot(0), sym: island, site, isl: s, f: Slot(-8), len: 0 };
     assert_eq!(check(SYM_INDIRECT, addr_ind), Ok(()));
     assert_eq!(check(SYM_INDIRECT, ext_ind), Ok(()));
     assert_eq!(check(0, addr), Ok(()));
@@ -402,7 +402,7 @@ fn writer_checks_symbol_indirection() {
     assert_ne!(ind, dir);
     let site = w.site();
     w.add_function(FunctionDef {
-        code: code(&[Insn::CallExtInd { d: Slot(0), sym: ind, site, isl: dir, f: Slot(-8) }, Insn::Abort {}]),
+        code: code(&[Insn::CallExtInd { d: Slot(0), sym: ind, site, isl: dir, f: Slot(-8), len: 0 }, Insn::Abort {}]),
         ..Default::default()
     });
     let obj = w.finish(ELF).unwrap();

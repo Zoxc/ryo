@@ -19,11 +19,9 @@ native frames, and unwind natively ([Unwinding](#unwinding)). The runtime lives 
 - **No image context**: the code addresses its image's symbol slots, site cache, constant
   pool, data area and code constants RIP-relative (relocations, [Image format](#image-format)),
   so a call into another image switches nothing.
-- **`VmThread`** is the per-thread state (`#[thread_local]`): only the chain of entry
-  records, one per active `vm::enter` ([Entry](#entry)). It is `!Send` and `!Sync`, and is
-  only reached through a raw pointer, never a `&mut`, because re-entrant `vm::enter` calls
-  (VM → island → native → portal → VM) on the same thread would otherwise create aliasing
-  mutable references.
+- **No per-thread state**: a return value goes to `rax`/`rdx` or the caller's outgoing
+  block, never through a pointer the VM keeps ([Calls and islands](#calls-and-islands)), so
+  re-entrant `vm::enter` calls (VM → island → native → portal → VM) share nothing.
 
 ## Frames
 
@@ -69,8 +67,9 @@ native frames, and unwind natively ([Unwinding](#unwinding)). The runtime lives 
   with alignment above 16 never live in VM frames ([lowering.md](lowering.md#frame-slots)).
 - One word is written per call, the return address (and with a frame pointer the caller's
   `rbp`, by `push rbp`). The current function isn't stored: unwinders and backtraces find it from the pc, like any
-  native function ([Unwinding](#unwinding)). The destination slot isn't stored either: `ret`
-  reads it from the call marker at the return address ([Calls and islands](#calls-and-islands)).
+  native function ([Unwinding](#unwinding)). The destination slot isn't stored either: the
+  value comes back in registers or the outgoing block, and the caller stores it ([Calls and
+  islands](#calls-and-islands)).
 - **Stack overflow**: there is no VM stack and no explicit stack check. A frame below 4096
   bytes touches at most one page past `rsp`, so running into the thread's guard page faults
   as in native code, and std's handler reports "has overflowed its stack". Larger frames
@@ -144,10 +143,10 @@ ones, which are [inlined](#inline-instructions):
 | `br` | `br`, `br.eq`, `br.lt`, `br.gt.imm`, … | handler call (returns a `bool`), `test al, al`, `jnz t` (`jz t` with `!`) |
 | `switch` | `switch.dense`, `switch.sparse` | handler call (returns the case index, `n` for the default), `lea rcx, [rip + T]; movsxd rax, [rcx + rax*4]; add rax, rcx; jmp rax`, then `int3`s to a multiple of 4 and the table `T` inline in the text: one `i32` offset from `T` per case, the default last |
 | `trap` | `unreachable`, `abort`, `resume` | handler call, `ud2` |
-| `ret` | `ret` | handler call (copies the return value), epilogue, `ret` |
+| `ret` | `ret` | the value's loads into `rax`/`rdx`, epilogue, `ret` |
 | `jmp` | `jmp` | `jmp t` |
-| `call` | `call` | `call fn` (`rel32`), call marker |
-| `call_ext`, `call_ind` | `call.ext`, `call.ext.ind`, `call.ind` | resolving handler call, then `call rax` + call marker, or the island ([Calls and islands](#calls-and-islands)) |
+| `call` | `call` | `call fn` (`rel32`), the result's stores from `rax`/`rdx` |
+| `call_ext`, `call_ind` | `call.ext`, `call.ext.ind`, `call.ind` | resolving handler call, then `call rax` + the result's stores, or the island ([Calls and islands](#calls-and-islands)) |
 | `tail_call` | `tail_call` | handler call (moves the arguments), epilogue, `jmp fn` |
 | `tail_call_ind` | `tail_call.ind` | resolving handler call, then epilogue and `jmp rax`, or the island and a `ret` |
 | `island` | `island` | `lea rdi, [rsp + F]; lea rsi, [rip + ops]; call [rip + isl]` (with a frame pointer `mov rdi, rbp`; PE: `rcx`/`rdx` and 32 bytes of shadow space) |
@@ -170,8 +169,7 @@ The epilogue is `add rsp, F + 8`, or `leave` with a frame pointer ([Frames](#fra
 - **Canonical form**: every element has exactly one encoding. Register values take the
   shortest of `xor r32, r32`, `mov r32, imm32`, `mov r64, simm32` and `mov r64, imm64`.
   Branches within the function start as `rel8` and grow to `rel32` where they don't reach,
-  until nothing changes. Padding is the standard multi-byte `nop`s, none of which uses
-  `rcx`, so padding can't look like a call marker.
+  until nothing changes. Padding is the standard multi-byte `nop`s.
 - **Loop heads**: the targets of backward branches are padded to 16 bytes, unless
   `RYO_ASM_ALIGN=0` ([backend.md](backend.md#debugging-switches)).
 - **Calls between image functions** (`call`, `tail_call`) are `rel32` fields that the
@@ -380,10 +378,10 @@ Branches have a polarity: `br.eq! a, b, t` branches when `a != b`.
 
 | Instruction | Semantics |
 |---|---|
-| `call d, fn` | call a VM function in this image |
-| `call.ext d, sym, site, isl, f` | call the function at symbol `sym` (an upstream instance): the VM function directly if it is a portal of one, otherwise the `isl` island, with the address in slot `f` |
-| `call.ext.ind d, sym, site, isl, f` | the same, with the address loaded through the symbol slot (PE `__imp_`, [platforms.md](platforms.md)) |
-| `call.ind d, p, site, isl` | indirect call through the fn pointer in slot `p` |
+| `call d, fn, len` | call a VM function in this image |
+| `call.ext d, sym, site, isl, f, len` | call the function at symbol `sym` (an upstream instance): the VM function directly if it is a portal of one, otherwise the `isl` island, with the address in slot `f` |
+| `call.ext.ind d, sym, site, isl, f, len` | the same, with the address loaded through the symbol slot (PE `__imp_`, [platforms.md](platforms.md)) |
+| `call.ind d, p, site, isl, len` | indirect call through the fn pointer in slot `p` |
 | `tail_call fn, n` | `become` a VM function in this image, with an `n`-byte argument block |
 | `tail_call.ind p, site, isl, n, s, len` | `become` through the fn pointer in `p`. A tail call to an upstream instance is `addr.sym` + `tail_call.ind` |
 | `ret s, len` | return `_0` (`len` bytes at `s`) |
@@ -391,16 +389,19 @@ Branches have a polarity: `br.eq! a, b, t` branches when `a != b`.
 | `lpad x` | landing pad: store the exception object in slot `x` |
 | `resume x` | continue unwinding the exception object in slot `x` |
 
+- **Return values**: a value of 1, 2, 4, 8 or 16 bytes comes back in `rax` (and `rdx` for
+  the high half of 16 bytes), the `len` of `ret` and of the calls (`asm::ret_in_regs`). A
+  value of any other size comes back at the start of the callee's argument block, its
+  `fp + 16`, which is the caller's outgoing block at `rsp`: the lowering copies `_0` there
+  before `ret`, and from there to the destination after the call, and makes the caller's
+  outgoing block large enough. Its `ret` and call then have `len` 0, like those of an
+  empty value. The arguments are dead by then, so they can be overwritten.
 - **`call`**: the arguments are already in the outgoing block at `rsp`. `call fn` pushes
-  the return address. After the call comes the **call marker** `nop dword [rcx + m]`
-  (`0F 1F 81` + `disp32`), a 7-byte `nop` carrying the destination slot `d` relative to
-  the caller's `rsp`: `m = F + d`.
-- **`ret`**: `ryo_h_Ret` reads the return address at `[fp + 8]`. If it is
-  `ryo_asm_enter_ret`, this is the entry frame, and the destination is the innermost entry
-  record's `ret` pointer ([Entry](#entry)). Otherwise it checks that the return address
-  points at a call marker (aborting if not), and the destination is `fp + 16 + m` (the
-  callee's `fp + 16` is the caller's `rsp`), so `ret` needs no caller fp. It copies `len`
-  bytes from `fp + s`, and the epilogue and `ret` return.
+  the return address, and after the call come the stores of `rax`/`rdx` into `d`. With
+  `len` 0 there is none, and `d` must be 0.
+- **`ret`**: loads the `len` bytes at `fp + s` into `rax`/`rdx` (`movzx` for 1 and 2 bytes),
+  and the epilogue and `ret` return. With `len` 0, `s` must be 0. It works the same in the
+  entry frame ([Entry](#entry)).
 - **`call.ext` / `call.ind`**: the handler resolves the target (below) and returns its VM
   entry in `rax`, or 0 for a native target:
   ```
@@ -451,7 +452,8 @@ Branches have a polarity: `br.eq! a, b, t` branches when `a != b`.
   moves the arguments as `tail_call` does and returns the entry, and the epilogue and `jmp rax`
   follows. A native target can't be a true tail call: the island runs with
   `ops = [-F, s, p]`, so the result lands in `_0`'s slot `s`, then the sequence of
-  `ret s, len` returns it. It uses native stack for the duration of that call.
+  `ret s, len` returns it. A result that doesn't return in registers has `len` 0 and `s` the
+  start of the function's own argument block, where its caller expects it. It uses native stack for the duration of that call.
 - **`island`**: `island(fp, ops)` through the symbol slot `isl`, with the operand words in
   the code constants. The island's return value is ignored, and execution continues after
   the call. The `ops` array is exactly what the template reads
@@ -511,26 +513,24 @@ panic runtime, as through native frames. The image carries the unwind informatio
 
 1. It resolves `id` (crate hash → image, then function index → record, [Image
    format](#image-format)).
-2. It pushes an *entry record* (the previous record and the portal's `ret` pointer) onto
-   `VmThread`'s chain, with a drop guard that pops it on return and when a panic, or a forced
-   unwind (`pthread_exit` from native code), unwinds through `enter`. So the chain never
-   points at a dead record.
-3. It calls `ryo_asm_enter(entry, args, arg_size)` (`global_asm!` in `vm/rt/src/vm/mod.rs`):
-   it saves `rbp` and `rbx`, anchors its frame (and its CFI) in `rbx`, reserves the
-   argument block at `rsp` (`arg_size` from the function table, rounded up to 16, plus 8 to
-   keep the callee's `fp` 16-aligned), so that it is the callee's `fp + 16`, copies the
-   portal's args there, sets `rbp = 0` (so a frame-pointer chain ends there) and calls the
-   entry. The call returns to the label `ryo_asm_enter_ret`, which is how the entry frame's
-   `ret` knows to write to the entry record's `ret`. The Win64 version also saves `rdi`, `rsi`
-   and `xmm6`–`xmm15`, which are callee-saved there but not in the `sysv64` convention VM
-   code and the handlers follow, and has SEH unwind info.
+2. It calls `ryo_asm_enter(entry, call)` (`global_asm!` in `vm/rt/src/vm/mod.rs`), `call`
+   holding the operands and the results: it saves `rbp` and `rbx`, anchors its frame (and
+   its CFI) in `rbx`, reserves the argument block at `rsp` (the larger of `arg_size` and a
+   `ret_size` that doesn't return in registers, rounded up to 16, plus 8 to keep the
+   callee's `fp` 16-aligned), so that it is the callee's `fp + 16`, copies the portal's
+   args there, sets `rbp = 0` (so a frame-pointer chain ends there) and calls the entry.
+   Afterwards it stores `rax` and `rdx`, and for a value that doesn't return in registers
+   copies it from the start of the block to `ret`. `enter` copies a value in registers to
+   `ret`. The Win64 version also saves `rdi`, `rsi` and `xmm6`–`xmm15`, which are
+   callee-saved there but not in the `sysv64` convention VM code and the handlers follow,
+   and has SEH unwind info.
 
 The VM takes ownership of the args. A panic unwinds out of `ryo_asm_enter` and `enter`
 natively, so `enter` returns nothing and the portal has no status to check.
 
 ## Handlers
 
-Each opcode with a handler (all but `jmp`, `call` and `island`) has one non-inlined function
+Each opcode with a handler (all but `jmp`, `call`, `ret` and `island`) has one non-inlined function
 in `ryo_rt`, `ryo_h_<Opcode>`:
 
 - **Signature**: `unsafe extern "sysv64-unwind" fn(a0, …, a5: u64) -> R`, the six argument
@@ -704,8 +704,8 @@ portal and island templates. It is a normal Rust dependency of every ryo-built c
 
 ### Modules
 
-- **`vm`**: the handlers (`vm::h`, generated, plus the assembly ones), `enter`, the registry
-  and `VmThread` (`#[thread_local]`). Everything uses `core` only.
+- **`vm`**: the handlers (`vm::h`, generated, plus the assembly ones), `enter` and the
+  registry. Everything uses `core` only.
   - `vm::enter(id, args, ret)`: entry from portals ([Entry](#entry)). With `RYO_VM_TRACE`
     set in the environment (read once, with `getenv`/`GetEnvironmentVariableA`), it first
     prints `ryo-vm: enter <crate hash>:<function index>` to stderr, so tests can check that
