@@ -166,8 +166,7 @@ ones, which are [inlined](#inline-instructions):
 
 #### Inline instructions
 
-With `Mode::inline` (always on in the backend; off only in tests that compare against the
-handlers) the common instructions (`asm::has_inline`) are short native sequences instead of handler
+The common instructions (`asm::has_inline`) are short native sequences instead of handler
 calls (`asm::inline`): `mov`, `imm`, `addr`, `ptr.add` (a 32-bit offset), `ptr.index` (a
 stride below 2^31), `load`, `store`, `add`, `sub`, `and`, `or`, `xor`, `mul` and their
 `.imm` forms, the shifts by an immediate below the width, the compares to a `bool` (`eq`
@@ -186,11 +185,12 @@ these with other operands, keeps its handler call.
   aren't sign-extended 32-bit ones go through `rcx`.
 - **Canonical form**: each instruction has one sequence per operand pattern, displacements
   and immediates in their shortest form, and no two instructions share a sequence; a handler
-  call of an instruction that has an inline sequence isn't canonical in inline mode. The
+  call of an instruction that has an inline sequence isn't canonical. The
   decoder reads native elements up to the write or the branch and matches them against the
   encoder's sequences.
-- **Testing**: `vm/rt/tests/inline.rs` runs every inlined opcode on random operands, encoded
-  with and without inlining, and compares the results and memory.
+- **Testing**: `vm/rt/tests/inline.rs` runs every inlined opcode on random operands through
+  the VM and compares the results and memory with its handler, called directly on the same
+  frame.
 
 ## Instruction set
 

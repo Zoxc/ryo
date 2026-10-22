@@ -1,6 +1,6 @@
 //! The x86-64 form of VM code (design/vm.md, "Encoding"): every instruction is a call of its
 //! handler `ryo_h_<Opcode>` with its operands in argument registers, followed by the control
-//! flow its [`Shape`] gives it, except that with [`Mode::inline`] the common instructions are
+//! flow its [`Shape`] gives it, except that the common instructions ([`has_inline`]) are
 //! native sequences.
 //!
 //! - [`layout`] (here, `core` only): which argument register holds which operand. The
@@ -11,7 +11,7 @@
 //! - [`encode`] / [`decode`] (`alloc`): instruction words to machine code and back. The
 //!   decoder is the encoder's test oracle: `decode(encode(f)) == f`, frame size and unwind
 //!   entries included.
-//! - `inline` (`alloc`): the native sequences of the instructions [`Mode::inline`] inlines.
+//! - `inline` (`alloc`): the native sequences of the inlined instructions.
 //! - [`lsda`] (`alloc`): the call-site table of a function's LSDA.
 //!
 //! # Operands and registers
@@ -59,8 +59,6 @@ pub struct Mode {
     /// The target is PE/COFF: islands take the Win64 convention (`rcx`, `rdx`, 32 bytes of
     /// shadow space).
     pub pe: bool,
-    /// The common instructions ([`has_inline`]) are native sequences, not handler calls.
-    pub inline: bool,
 }
 
 /// Where a handler finds an operand: `count` argument registers from `reg` (0 is `rdi`),

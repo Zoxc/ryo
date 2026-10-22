@@ -1,8 +1,7 @@
 //! The inline form of the common VM instructions (design/vm.md, "Inline instructions"):
 //! moves, immediates, address arithmetic, loads and stores, integer add/sub/logic/multiply,
-//! shifts by an immediate, compares and compare-branches, at widths up to 64 bits. With
-//! [`Mode::inline`](super::Mode::inline) they become short native sequences on `rax` and
-//! `rcx` instead of handler calls.
+//! shifts by an immediate, compares and compare-branches, at widths up to 64 bits. They
+//! are short native sequences on `rax` and `rcx` instead of handler calls.
 //!
 //! Every sequence ends in its one write (to the frame or to memory), or in a conditional
 //! branch, and no other element of a sequence writes anything, so the decoder knows where a
@@ -95,8 +94,7 @@ fn class(op: Opcode) -> Option<Class> {
     })
 }
 
-/// Whether instructions of `op` are inlined with [`Mode::inline`](super::Mode::inline), for
-/// some operands at least: `ptr.add` only with a 32-bit offset, `ptr.index` with a stride
+/// Whether instructions of `op` are inlined, for some operands at least: `ptr.add` only with a 32-bit offset, `ptr.index` with a stride
 /// below 2^31, shifts by less than the width.
 pub fn has_inline(op: Opcode) -> bool {
     class(op).is_some()

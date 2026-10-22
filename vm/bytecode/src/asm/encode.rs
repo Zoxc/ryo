@@ -1,8 +1,8 @@
 //! Instruction words to machine code (design/vm.md, "Encoding").
 //!
 //! Every instruction becomes its canonical sequence ([`super::x86`]): the handler call with
-//! the operands in their registers, then its shape's control flow, or with [`Mode::inline`]
-//! for the common instructions a native sequence (`super::inline`). Branches within the
+//! the operands in their registers, then its shape's control flow, or for the common
+//! instructions a native sequence (`super::inline`). Branches within the
 //! function start short (`rel8`) and grow to `rel32` where they don't reach, until nothing
 //! changes. With [`Mode::align_loops`], the targets of backward branches are padded to 16
 //! bytes.
@@ -532,9 +532,7 @@ impl Asm {
                 self.targets.push((*t, self.pieces.len()));
             }
         }
-        if self.mode.inline
-            && let Some((items, br)) = super::inline::sequence(op, ops)
-        {
+        if let Some((items, br)) = super::inline::sequence(op, ops) {
             self.pieces.extend(items.into_iter().map(Piece::Native));
             if let Some(cond) = br {
                 let Some(Opnd::Target(t)) = ops.last() else { unreachable!("a branch's target is last") };
@@ -765,7 +763,7 @@ impl Asm {
 /// time.
 fn layouts(fp_arg: bool) -> &'static [Layout] {
     const fn all(fp_arg: bool) -> [Layout; crate::insn::ALL_OPCODES.len()] {
-        let mode = Mode { fp_arg, align_loops: false, pe: false, inline: false };
+        let mode = Mode { fp_arg, align_loops: false, pe: false };
         let mut out = [layout(Opcode::Jmp, mode); crate::insn::ALL_OPCODES.len()];
         let mut i = 0;
         while i < out.len() {
@@ -944,9 +942,9 @@ mod tests {
         // Every opcode with a handler has a layout (const-evaluable for all of them).
         for &op in crate::insn::ALL_OPCODES {
             if super::super::has_handler(op) {
-                let l = layout(op, Mode { fp_arg: false, align_loops: true, pe: false, inline: false });
+                let l = layout(op, Mode { fp_arg: false, align_loops: true, pe: false });
                 assert!(l.regs as usize <= super::super::ARG_REGS);
-                let l = layout(op, Mode { fp_arg: true, align_loops: true, pe: false, inline: false });
+                let l = layout(op, Mode { fp_arg: true, align_loops: true, pe: false });
                 assert!(l.regs as usize <= super::super::ARG_REGS);
             }
         }

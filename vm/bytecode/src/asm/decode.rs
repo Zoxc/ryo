@@ -183,9 +183,7 @@ fn ops_array(ro: &[u8], at: u32) -> Option<Vec<u32>> {
 fn insn(c: &mut Cursor<'_>, mode: Mode, ro: &[u8], argblk: u32) -> Result<Proto, AsmError> {
     let pos = c.pos;
     let err = |at: u32, what: &'static str| AsmError { at, what };
-    if mode.inline
-        && let Some(p) = inline_insn(c)
-    {
+    if let Some(p) = inline_insn(c) {
         return Ok(p);
     }
     let mut setup = Vec::new();
@@ -299,7 +297,7 @@ fn insn(c: &mut Cursor<'_>, mode: Mode, ro: &[u8], argblk: u32) -> Result<Proto,
                 }
                 Shape::Jmp | Shape::Call | Shape::Island => unreachable!(),
             }
-            if mode.inline && super::inline::sequence(op, &ops).is_some() {
+            if super::inline::sequence(op, &ops).is_some() {
                 return Err(err(hat, "handler call of an inlined instruction"));
             }
             Proto { op, ops, pos, sites }

@@ -3,7 +3,7 @@ use ryo_bytecode::image::*;
 use ryo_bytecode::insn::*;
 use ryo_bytecode::{FORMAT_VERSION, Insn};
 
-const ELF: Mode = Mode { fp_arg: false, align_loops: true, pe: false, inline: true };
+const ELF: Mode = Mode { fp_arg: false, align_loops: true, pe: false };
 
 fn code(insns: &[Insn<'_>]) -> Vec<u32> {
     let mut c = CodeBuf::new();

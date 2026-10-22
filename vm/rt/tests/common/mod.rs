@@ -16,8 +16,8 @@ pub use ryo_bytecode::asm::Mode;
 pub use ryo_bytecode::image::*;
 pub use ryo_bytecode::insn::*;
 
-/// The encoding mode: the runtime's, with loop alignment and inline instructions on.
-pub const ENC: Mode = Mode { align_loops: true, pe: false, inline: true, ..ryo_rt::vm::MODE };
+/// The encoding mode: the runtime's, with loop alignment on.
+pub const ENC: Mode = Mode { align_loops: true, pe: false, ..ryo_rt::vm::MODE };
 
 /// A code buffer with patchable branch targets.
 #[derive(Default)]
