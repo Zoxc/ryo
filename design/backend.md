@@ -65,7 +65,8 @@ and `codegen_crate` reads them.
    parallel loop": every function is lowered on its own straight into machine code plus a
    relocation list ([lowering.md](lowering.md), [vm.md](vm.md#machine-code)), in the mode
    `asm_mode` gives: `fp` passing as `ryo_rt`'s `FP_ARG` says (the backend evaluates the
-   const), loop alignment unless `RYO_ASM_ALIGN=0`, and the target's object format. The
+   const), loop alignment unless `RYO_ASM_ALIGN=0`, inline instructions unless
+   `RYO_ASM_INLINE=0`, and the target's object format. The
    results are merged in one pass at the end. An operation the VM doesn't support becomes an
    `island` instruction whose `isl` operand is an *island* relocation (template + generic
    args). The merge pass deduplicates islands (same template + args → one instance), assigns
@@ -270,6 +271,8 @@ Environment variables read by the backend (and `y test`):
 - `RYO_NO_VM` keeps every function native.
 - `RYO_ASM_ALIGN=0` turns off the 16-byte alignment of loop heads
   ([vm.md](vm.md#machine-code)).
+- `RYO_ASM_INLINE=0` turns off inline instructions: every instruction with a handler calls it
+  ([vm.md](vm.md#inline-instructions)).
 - `RYO_BACKEND_MARKER` prints `ryo backend: init` from `init` and `ryo backend: partition`
   from the partition provider, so tests can tell that the backend and its override ran.
 

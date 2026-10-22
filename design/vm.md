@@ -118,7 +118,8 @@ result is
 machine code, relocations (`Ref`: a handler, `ryo_probe_stack`, an image function, a
 symbol slot, a site, a constant, a data offset, a code constant), code constants (island
 operand arrays and sparse switch values, deduplicated) and call sites for the LSDA. After the
-prologue, every instruction becomes the canonical sequence of its shape:
+prologue, every instruction becomes the canonical sequence of its shape, except the common
+ones, which are [inlined](#inline-instructions):
 
 | Shape | Opcodes | Sequence |
 |---|---|---|
@@ -159,8 +160,37 @@ prologue, every instruction becomes the canonical sequence of its shape:
 - **The decoder** `asm::decode` is the exact inverse: it accepts only the canonical
   sequences, with operand registers set in order, and recovers every instruction word, the
   frame size and the cleanup entries (from the call sites). It is the encoder's test
-  oracle: `vm/bytecode/tests/asm.rs` round-trips every opcode, in all eight modes (`fp-arg`,
-  loop alignment, PE), long branches, packed operands, and rejects non-canonical code.
+  oracle: `vm/bytecode/tests/asm.rs` round-trips every opcode, in all sixteen modes
+  (`fp-arg`, loop alignment, PE, inline), long branches, packed operands, every
+  displacement and immediate form of the inline sequences, and rejects non-canonical code.
+
+#### Inline instructions
+
+With `Mode::inline` (unless `RYO_ASM_INLINE=0`, [backend.md](backend.md#debugging-switches))
+the common instructions (`asm::has_inline`) are short native sequences instead of handler
+calls (`asm::inline`): `mov`, `imm`, `addr`, `ptr.add` (a 32-bit offset), `ptr.index` (a
+stride below 2^31), `load`, `store`, `add`, `sub`, `and`, `or`, `xor`, `mul` and their
+`.imm` forms, the shifts by an immediate below the width, the compares to a `bool` (`eq`
+… `ge.u.imm`), `br` and the compare-branches, all at `w8`–`w64`. Everything else, and
+these with other operands, keeps its handler call.
+
+- **Registers**: the sequences use `rax` and `rcx` and the flags only, which every handler
+  call clobbers too; nothing stays in a register between instructions. They read frame
+  slots as `[rbp + off]`, in either `fp` mode, never move `rsp` and call nothing, so they
+  are no call sites and the unwind information doesn't change.
+- **Shape**: a sequence loads its operands (`movzx` for `w8`/`w16`), computes in `rax`, and
+  ends in its one write: `mov [rbp + d], al…rax`, `mov [rbp + d], imm` (`imm`), `setcc
+  [rbp + d]` (compares), `mov [rax + k], cl…rcx` (`store`), or for branches a `cmp`/`test`
+  and `jcc t` (the condition inverted with `!`), which relaxes like the other branches.
+  `w8`/`w16` arithmetic with an immediate computes in 32 bits; 64-bit immediates that
+  aren't sign-extended 32-bit ones go through `rcx`.
+- **Canonical form**: each instruction has one sequence per operand pattern, displacements
+  and immediates in their shortest form, and no two instructions share a sequence; a handler
+  call of an instruction that has an inline sequence isn't canonical in inline mode. The
+  decoder reads native elements up to the write or the branch and matches them against the
+  encoder's sequences.
+- **Testing**: `vm/rt/tests/inline.rs` runs every inlined opcode on random operands, encoded
+  with and without inlining, and compares the results and memory.
 
 ## Instruction set
 
