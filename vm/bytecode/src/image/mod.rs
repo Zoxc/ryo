@@ -248,11 +248,13 @@ pub enum ImageError {
     BadFixup(u32),
     /// A symbol flag byte has unknown bits.
     BadSymbolFlags(u32),
-    /// `Header::mode` has unknown bits.
+    /// `Header::mode` has unknown bits or a combination the encoder doesn't support.
     BadMode,
-    /// A scope table entry (index) is out of range of its function or malformed.
+    /// A scope table entry (index) is out of range of its function, out of order or
+    /// malformed.
     BadScope(u32),
-    /// A call-site table entry (index) is out of range of its function.
+    /// A call-site table entry (index) is out of range of its function or overlaps the one
+    /// before.
     BadCallSite(u32),
     /// The writable section layout is inconsistent.
     BadData,
@@ -314,7 +316,8 @@ impl<'a> Image<'a> {
         cast::<u8>(bytes, header.consts, "constants")?;
         cast::<ScopeEntry>(bytes, header.scopes, "scopes")?;
         cast::<CallSiteEntry>(bytes, header.call_sites, "call sites")?;
-        if header.mode & !(MODE_FP_ARG | MODE_FRAME_POINTER | MODE_ALIGN_LOOPS | MODE_PE) != 0 {
+        let mode = MODE_FP_ARG | MODE_FRAME_POINTER | MODE_ALIGN_LOOPS | MODE_PE;
+        if header.mode & !mode != 0 || !Self::mode_of(header.mode).valid() {
             return Err(ImageError::BadMode);
         }
         if header.sym_flags.count != header.symbols.count {
@@ -361,17 +364,24 @@ impl<'a> Image<'a> {
             if !run(f.scopes, self.header.scopes.count) || !run(f.call_sites, self.header.call_sites.count) {
                 return Err(ImageError::BadFunction(i));
             }
+            let mut prev = 0;
             for (j, s) in self.scopes(i).iter().enumerate() {
-                if s.code_offset > f.code_len || (s.align != 0 && (!s.align.is_power_of_two() || s.align > 16)) {
+                let sorted = s.code_offset >= prev;
+                prev = s.code_offset;
+                if !sorted || s.code_offset > f.code_len || (s.align != 0 && (!s.align.is_power_of_two() || s.align > 16)) {
                     return Err(ImageError::BadScope(f.scopes.off + j as u32));
                 }
             }
+            let mut prev = 0u64;
             for (j, c) in self.call_sites(i).iter().enumerate() {
                 let pad_ok = match c.action() {
                     Cleanup::Pad(p, _) => p < f.code_len,
                     Cleanup::Continue => true,
                 };
-                if c.start as u64 + c.len as u64 > f.code_len as u64 || !pad_ok {
+                let end = c.start as u64 + c.len as u64;
+                let sorted = c.start as u64 >= prev;
+                prev = end;
+                if !sorted || end > f.code_len as u64 || !pad_ok {
                     return Err(ImageError::BadCallSite(f.call_sites.off + j as u32));
                 }
             }
@@ -420,7 +430,10 @@ impl<'a> Image<'a> {
 
     /// The [`Mode`] the code was encoded in.
     pub fn mode(&self) -> Mode {
-        let m = self.header.mode;
+        Self::mode_of(self.header.mode)
+    }
+
+    fn mode_of(m: u32) -> Mode {
         Mode {
             fp_arg: m & MODE_FP_ARG != 0,
             frame_pointer: m & MODE_FRAME_POINTER != 0,

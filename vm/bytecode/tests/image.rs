@@ -578,6 +578,19 @@ fn scopes_and_call_sites_round_trip() {
         assert_eq!(validate_edited(&obj, |r, h| put32(r, sc(h, 0, 0), 10_000)), Err(ImageError::BadScope(0)));
         assert_eq!(validate_edited(&obj, |r, h| put32(r, cs(h, 1, offset_of!(CallSiteEntry, len)), 10_000)), Err(ImageError::BadCallSite(1)));
         assert_eq!(validate_edited(&obj, |r, h| put32(r, cs(h, 0, offset_of!(CallSiteEntry, pad)), 10_000)), Err(ImageError::BadCallSite(0)));
+        let len0 = |r: &[u8], h: &Header| {
+            let at = fe(h, 0, offset_of!(FuncEntry, code_len));
+            u32::from_le_bytes(r[at..at + 4].try_into().unwrap())
+        };
+        assert_eq!(validate_edited(&obj, |r, h| {
+            let n = len0(r, h);
+            put32(r, sc(h, 0, 0), n)
+        }), Err(ImageError::BadScope(1)));
+        assert_eq!(validate_edited(&obj, |r, h| put32(r, cs(h, 1, 0), 0)), Err(ImageError::BadCallSite(1)));
+        assert!(matches!(
+            validate_edited(&obj, |r, _| put32(r, offset_of!(Header, mode), MODE_PE)),
+            Err(ImageError::BadMode)
+        ));
         assert!(matches!(
             validate_edited(&obj, |r, _| put32(r, offset_of!(Header, mode), 16)),
             Err(ImageError::BadMode)

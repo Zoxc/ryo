@@ -647,6 +647,8 @@ Scopes and call sites are for decoding a linked function's code at run time
 (`asm::decode_reduced`), which the code alone doesn't allow: scopes aren't in the code at
 all, and the call sites are the LSDA's, which the runtime can't find per function without
 parsing `.eh_frame` (and PE has none). The records are the encoder's on both formats.
+They aren't all `decode_reduced` takes yet: the dropped stores (`Encoded::dropped`) and the
+code's relocations aren't stored.
 
 The read-only section can live in RELRO/`.rdata`, since nothing writes to it after
 relocation.
@@ -691,9 +693,9 @@ calls it by name, local otherwise (backtraces, profilers) ([backend.md](backend.
   (`ryo_bytecode::image::crate_hash`). It is stored in the header, which also keeps the full
   `StableCrateId`, so the registry can detect collisions.
 - **Images are trusted**: they are produced by the backend, and the VM doesn't validate
-  code. `Image::parse` checks the header, the mode bits and part bounds, and `Image::validate`
-  checks the tables only (functions with their scope and call-site runs, fixups, symbol
-  flags). For functions given as instruction words,
+  code. `Image::parse` checks the header (with the mode: known bits, `Mode::valid`) and
+  part bounds, and `Image::validate` checks the tables only (functions with their scope and
+  call-site runs, sorted and in range, fixups, symbol flags). For functions given as instruction words,
   `finish` checks them (`ryo_bytecode::image::validate_code`: operands in range, branch
   targets on instruction starts, no fall-through past the end, symbol indirection) and the
   cleanup entries, and `encode` checks that every cleanup entry is at an instruction that
