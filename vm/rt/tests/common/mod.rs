@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 pub use ryo_bytecode::Opcode;
 pub use ryo_bytecode::asm::Mode;
 pub use ryo_bytecode::image::*;
-pub use ryo_bytecode::insn::*;
+pub use ryo_bytecode::full::*;
 
 /// The encoding mode: the runtime's, with loop alignment on.
 pub const ENC: Mode = Mode { align_loops: true, pe: false, ..ryo_rt::vm::MODE };

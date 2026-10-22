@@ -8,7 +8,7 @@ use rustc_middle::mir::UnwindAction;
 use rustc_middle::ty::GenericArg;
 use rustc_span::Symbol;
 use ryo_bytecode::asm::{InsnId, Opnd};
-use ryo_bytecode::insn::{Opcode, Sym};
+use ryo_bytecode::full::{Opcode, Sym};
 
 use super::{CodeReloc, FnCx};
 

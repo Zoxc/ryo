@@ -8,7 +8,7 @@
 //! | Part | Contents |
 //! |---|---|
 //! | header | [`Header`] |
-//! | functions | `[FuncEntry]`, sorted by code offset; index = [`Func`](crate::insn::Func) |
+//! | functions | `[FuncEntry]`, sorted by code offset; index = [`Func`](crate::full::Func) |
 //! | code constants | what the machine code refers to: island operand arrays, switch values |
 //! | fixups | `[FixupEntry]` (PE only, otherwise empty) |
 //! | symbol flags | `[u8]`, one per symbol ([`SYM_INDIRECT`]) |
@@ -375,7 +375,7 @@ impl<'a> Image<'a> {
         self.data_ptr().cast()
     }
 
-    /// The fixup area, base of [`Data`](crate::insn::Data) offsets.
+    /// The fixup area, base of [`Data`](crate::full::Data) offsets.
     pub fn fixup_area(&self) -> *mut u8 {
         self.data_ptr().wrapping_add(self.header.fixup_area as usize)
     }

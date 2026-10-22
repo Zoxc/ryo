@@ -21,7 +21,7 @@ use ryo_bytecode::image::{
     SymVisibility,
 };
 use ryo_bytecode::asm::{self, Ref};
-use ryo_bytecode::insn::{Const, Data, Func, Site, Sym};
+use ryo_bytecode::full::{Const, Data, Func, Site, Sym};
 
 use crate::objfile;
 
@@ -761,7 +761,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         w.prepare(mode);
         let mut encoded = Vec::with_capacity(self.vm.len());
         // The handlers the code calls, and whether it probes the stack.
-        let mut handlers = vec![false; ryo_bytecode::insn::ALL_OPCODES.len()];
+        let mut handlers = vec![false; ryo_bytecode::full::ALL_OPCODES.len()];
         let mut probe = false;
         if let Some(path) = std::env::var_os("RYO_DUMP") {
             let text = self.dump(mode);
@@ -863,7 +863,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         drop(merge_t);
         let _t = tcx.prof.generic_activity("ryo_finish_image");
         for (i, _) in handlers.iter().enumerate().filter(|h| *h.1) {
-            pool.roots.text(&rt_symbol(tcx, &objfile::handler_name(ryo_bytecode::insn::ALL_OPCODES[i])));
+            pool.roots.text(&rt_symbol(tcx, &objfile::handler_name(ryo_bytecode::full::ALL_OPCODES[i])));
         }
         if probe {
             pool.roots.text(&rt_symbol(tcx, objfile::PROBE_SYMBOL));
@@ -1284,7 +1284,7 @@ pub fn exported_generic_symbols<'tcx>(
 fn dump_labeled(out: &mut String, words: &[u32], cleanup: &[ryo_bytecode::image::CleanupEntry]) {
     use std::fmt::Write;
     let mut lines = Vec::new();
-    for r in ryo_bytecode::insn::Decoder::new(words) {
+    for r in ryo_bytecode::full::Decoder::new(words) {
         match r {
             Ok((at, insn)) => lines.push((at, insn.to_string())),
             Err(e) => {

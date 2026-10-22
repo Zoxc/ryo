@@ -1,6 +1,8 @@
 //! Machine code back to instruction words: the encoder's test oracle. It accepts only the
 //! canonical sequences ([`super::x86`]), with operand registers set in order, and recovers
-//! every operand, the frame size and the unwind entries.
+//! every operand, the frame size and the unwind entries: in the full set ([`decode`]), or in
+//! the reduced set ([`decode_reduced`]), which reads handler calls as their register values
+//! without the handlers' operand lists.
 
 use alloc::vec;
 use alloc::vec::Vec;
@@ -8,9 +10,10 @@ use alloc::vec::Vec;
 use super::encode::{CallSite, DroppedStore, Opnd, Ref, RegVal, Reloc, arg_store, case_size, epilogue, fp_item, int_arg, prologue, push_words, result_stores, ret_loads, word_len};
 use super::inline::Cache;
 use super::x86::{ARGS, BadItem, Cond, Cursor, Item, M, Reg, island_args};
+use super::reduced::{self, Arg, Then};
 use super::{ARG_ADDR, ArgReg, Mode, RetPart, has_handler, layout, ret_kind};
 use crate::image::{CATCH, CONTINUE, CleanupEntry, op_may_unwind};
-use crate::insn::{ElemKind, Opcode, OperandKind, Shape, Sym};
+use crate::full::{ElemKind, Opcode, OperandKind, Shape, Sym};
 
 /// A function decoded from machine code.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -39,14 +42,42 @@ impl From<BadItem> for AsmError {
 /// its calls that may be call sites.
 struct Proto {
     op: Opcode,
+    /// Empty for a reduced handler call.
     ops: Vec<Opnd>,
+    /// A reduced handler call: its argument registers and its control flow.
+    handler: Option<(Vec<Arg>, Then)>,
     /// Position of the instruction (after padding).
     pos: u32,
     sites: Vec<(u32, u32)>,
 }
 
+impl Proto {
+    fn new(op: Opcode, ops: Vec<Opnd>, pos: u32, sites: Vec<(u32, u32)>) -> Proto {
+        Proto { op, ops, handler: None, pos, sites }
+    }
+
+    /// The branch targets (byte positions).
+    fn targets(&self) -> Vec<u32> {
+        let mut out: Vec<u32> = self.ops.iter().flat_map(op_targets).collect();
+        match &self.handler {
+            Some((_, Then::Branch { target, .. })) => out.push(*target),
+            Some((_, Then::Table(ts))) => out.extend(ts),
+            _ => {}
+        }
+        out
+    }
+}
+
+/// A function read from machine code: its instructions, frame size, and the unwind action of
+/// each that has one (the landing pad's instruction index, and whether it catches).
+struct Read {
+    protos: Vec<Proto>,
+    frame_size: u32,
+    actions: Vec<Option<(Option<usize>, bool)>>,
+}
+
 /// Decodes one function's machine code, with its relocations (sorted), rodata, call sites and
-/// dropped stores ([`super::Encoded`]).
+/// dropped stores ([`super::Encoded`]), to the full set.
 pub fn decode(
     code: &[u8],
     relocs: &[Reloc],
@@ -55,6 +86,91 @@ pub fn decode(
     dropped: &[DroppedStore],
     mode: Mode,
 ) -> Result<Decoded, AsmError> {
+    let Read { protos, frame_size, actions } = read(code, relocs, rodata, call_sites, dropped, mode, false)?;
+    let err = |at: u32, what: &'static str| AsmError { at, what };
+    let ipos: Vec<u32> = protos.iter().map(|p| p.pos).collect();
+    let index = |at: u32, b: u32| ipos.binary_search(&b).map_err(|_| err(at, "target isn't an instruction"));
+    let mut wpos = Vec::with_capacity(protos.len());
+    let mut w = 0u32;
+    for p in &protos {
+        wpos.push(w);
+        w += word_len(p.op, &p.ops) as u32;
+    }
+    let cleanup = actions
+        .iter()
+        .enumerate()
+        .filter_map(|(i, a)| {
+            let (pad, catch) = (*a)?;
+            let target = pad.map_or(CONTINUE, |j| wpos[j] | if catch { CATCH } else { 0 });
+            Some(CleanupEntry { offset: wpos[i], target })
+        })
+        .collect();
+    let mut words = Vec::with_capacity(w as usize);
+    for (i, p) in protos.iter().enumerate() {
+        let ops = p
+            .ops
+            .iter()
+            .map(|o| o.clone().map_targets(|b| Ok::<_, AsmError>(wpos[index(p.pos, b)?].wrapping_sub(wpos[i]))))
+            .collect::<Result<Vec<_>, _>>()?;
+        push_words(p.op, &ops, &mut words);
+    }
+    Ok(Decoded { words, frame_size, cleanup })
+}
+
+/// Decodes one function's machine code, as [`decode`], to the reduced set: handler calls are
+/// read from their argument registers, without their operand lists, so it doesn't check that
+/// they are of operands that aren't inlined.
+pub fn decode_reduced(
+    code: &[u8],
+    relocs: &[Reloc],
+    rodata: &[u8],
+    call_sites: &[CallSite],
+    dropped: &[DroppedStore],
+    mode: Mode,
+) -> Result<reduced::Function, AsmError> {
+    let Read { protos, frame_size, actions } = read(code, relocs, rodata, call_sites, dropped, mode, true)?;
+    let ipos: Vec<u32> = protos.iter().map(|p| p.pos).collect();
+    let index = |at: u32, b: u32| {
+        ipos.binary_search(&b).map(|i| i as u32).map_err(|_| AsmError { at, what: "target isn't an instruction" })
+    };
+    let cleanup = actions
+        .iter()
+        .enumerate()
+        .filter_map(|(i, a)| a.map(|(pad, catch)| reduced::Cleanup { at: i as u32, pad: pad.map(|j| j as u32), catch }))
+        .collect();
+    let mut insns = Vec::with_capacity(protos.len());
+    for p in protos {
+        let at = p.pos;
+        insns.push(match p.handler {
+            Some((args, then)) => {
+                let then = match then {
+                    Then::Next => Then::Next,
+                    Then::Branch { neg, target } => Then::Branch { neg, target: index(at, target)? },
+                    Then::Table(ts) => Then::Table(ts.into_iter().map(|t| index(at, t)).collect::<Result<_, _>>()?),
+                    Then::Trap => Then::Trap,
+                };
+                reduced::Insn::Handler { op: p.op, args, then }
+            }
+            None => {
+                let ops = p.ops.into_iter().map(|o| o.map_targets(|b| index(at, b))).collect::<Result<_, _>>()?;
+                reduced::Insn::Native { op: p.op, ops }
+            }
+        });
+    }
+    Ok(reduced::Function { insns, frame_size, cleanup })
+}
+
+/// Reads one function's machine code ([`decode`]), handler calls in the reduced form with
+/// `reduced`.
+fn read(
+    code: &[u8],
+    relocs: &[Reloc],
+    rodata: &[u8],
+    call_sites: &[CallSite],
+    dropped: &[DroppedStore],
+    mode: Mode,
+    reduced: bool,
+) -> Result<Read, AsmError> {
     let mut c = Cursor::new(code, relocs);
     let err = |at: u32, what: &'static str| AsmError { at, what };
     // Prologue: the frame size is its `sub`'s (less the 8 bytes in place of the saved `rbp`
@@ -91,36 +207,39 @@ pub fn decode(
     if !mode.frame_pointer {
         c.sp_frame = Some(frame_size);
     }
-    let fr = Frame { size: frame_size, mode };
+    let fr = Frame { size: frame_size, mode, reduced };
 
     // Twice: the register cache is cleared at branch targets, which are only known once the
     // whole function is read. The first pass only finds the instructions and targets; the
     // second decodes them, with the cache cleared at the targets of the first.
     let body = c.pos;
     let (protos, _) = instructions(&mut c, &fr, rodata, dropped, None)?;
-    let mut targets: Vec<u32> = protos.iter().flat_map(|p| p.ops.iter()).flat_map(op_targets).collect();
+    let mut targets: Vec<u32> = protos.iter().flat_map(Proto::targets).collect();
     targets.sort_unstable();
     c.pos = body;
     let (protos, padded) = instructions(&mut c, &fr, rodata, dropped, Some(&targets))?;
 
-    // Instruction positions → indices and word offsets.
+    // Instruction positions → indices.
     let ipos: Vec<u32> = protos.iter().map(|p| p.pos).collect();
     let index = |at: u32, b: u32| ipos.binary_search(&b).map_err(|_| err(at, "target isn't an instruction"));
-    let mut wpos = Vec::with_capacity(protos.len());
-    let mut w = 0u32;
-    for p in &protos {
-        wpos.push(w);
-        w += word_len(p.op, &p.ops) as u32;
-    }
-    // When aligning, loop heads start at multiples of 16, and only they are padded.
+    // When aligning, loop heads start at multiples of 16, and only they are padded. Only
+    // single branch targets make loop heads, not jump tables.
     let mut head = vec![false; protos.len()];
     for (i, p) in protos.iter().enumerate() {
-        for o in &p.ops {
-            if let Opnd::Target(t) = o {
-                let j = index(p.pos, *t)?;
-                if j <= i {
-                    head[j] = true;
-                }
+        let single = p.ops.iter().filter_map(|o| match o {
+            Opnd::Target(t) => Some(*t),
+            _ => None,
+        });
+        // A handler call's branch, or its table's default (an operand of its own).
+        let br = match &p.handler {
+            Some((_, Then::Branch { target, .. })) => Some(*target),
+            Some((_, Then::Table(ts))) => ts.last().copied(),
+            _ => None,
+        };
+        for t in single.chain(br) {
+            let j = index(p.pos, t)?;
+            if j <= i {
+                head[j] = true;
             }
         }
     }
@@ -130,8 +249,8 @@ pub fn decode(
         }
     }
 
-    // Unwind entries from the call sites.
-    let mut cleanup = Vec::new();
+    // Unwind actions from the call sites.
+    let mut actions = vec![None; protos.len()];
     let mut used = 0;
     for (i, p) in protos.iter().enumerate() {
         let mut action: Option<(Option<u32>, bool)> = None;
@@ -155,17 +274,17 @@ pub fn decode(
                 if !op_may_unwind(p.op) {
                     return Err(err(ipos[i], "call site of an instruction that can't unwind"));
                 }
-                let target = match pad {
-                    None => CONTINUE,
+                let pad = match pad {
+                    None => None,
                     Some(b) => {
                         let j = index(ipos[i], b)?;
                         if protos[j].op != Opcode::Lpad {
                             return Err(err(b, "landing pad isn't an lpad"));
                         }
-                        wpos[j] | if catch { CATCH } else { 0 }
+                        Some(j)
                     }
                 };
-                cleanup.push(CleanupEntry { offset: wpos[i], target });
+                actions[i] = Some((pad, catch));
             }
             None => {}
         }
@@ -173,18 +292,7 @@ pub fn decode(
     if used != call_sites.len() {
         return Err(err(0, "call site outside every call"));
     }
-
-    // Words.
-    let mut words = Vec::with_capacity(w as usize);
-    for (i, p) in protos.iter().enumerate() {
-        let ops = p
-            .ops
-            .iter()
-            .map(|o| o.clone().map_targets(|b| Ok::<_, AsmError>(wpos[index(p.pos, b)?].wrapping_sub(wpos[i]))))
-            .collect::<Result<Vec<_>, _>>()?;
-        push_words(p.op, &ops, &mut words);
-    }
-    Ok(Decoded { words, frame_size, cleanup })
+    Ok(Read { protos, frame_size, actions })
 }
 
 fn read_u32(ro: &[u8], at: u32) -> Option<u32> {
@@ -256,10 +364,12 @@ fn instructions(
     Ok((protos, padded))
 }
 
-/// The frame size and the mode, which the prologue, the epilogue and `fp` depend on.
+/// The frame size and the mode, which the prologue, the epilogue and `fp` depend on, and
+/// whether handler calls are read in the reduced form.
 struct Frame {
     size: u32,
     mode: Mode,
+    reduced: bool,
 }
 
 impl Frame {
@@ -292,31 +402,39 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8]) -> Result<Proto, AsmError> {
     let (hat, head) = head;
     let mut sites = Vec::new();
     let ops = match head {
+        Item::Call(Ref::Handler(op)) if has_handler(op) && fr.reduced => {
+            let args = handler_args(&setup, fr, pos)?;
+            // A switch's table has an entry per case, from the register its handler takes the
+            // count in, and the default.
+            let l = layout(op, fr.mode);
+            let n = op.info().operands.iter().zip(l.locs).find_map(|(o, loc)| match o.kind {
+                OperandKind::List(ElemKind::Target) => Some(loc.reg),
+                OperandKind::List(ElemKind::Case8 | ElemKind::Case16 | ElemKind::Case32 | ElemKind::Case64 | ElemKind::Case128) => Some(loc.reg + 1),
+                _ => None,
+            });
+            let n = match n.map(|r| args.get(r as usize)) {
+                None => 0,
+                Some(Some(Arg::Imm(n))) if *n < 1 << 31 => *n as usize,
+                Some(_) => return Err(err(pos, "case count")),
+            };
+            let then = then(c, op, n, hat, &mut sites)?;
+            Proto { op, ops: Vec::new(), handler: Some((args, then)), pos, sites }
+        }
         Item::Call(Ref::Handler(op)) if has_handler(op) => {
             let mut ops = handler_operands(op, &setup, fr, ro, pos)?;
             let info = op.info();
             let set = |ops: &mut Vec<Opnd>, name: &str, v: Opnd| ops[info.operand_index(name).unwrap()] = v;
-            let fixed = |c: &mut Cursor<'_>, want: Item| -> Result<(), AsmError> {
-                let at = c.pos;
-                if c.item()? != want { Err(err(at, "not the instruction's canonical sequence")) } else { Ok(()) }
-            };
-            match info.shape {
-                Shape::Op | Shape::Lpad => {}
-                Shape::Br => {
-                    fixed(c, Item::TestAl)?;
-                    let at = c.pos;
-                    let Item::Branch { cond: cond @ (Cond::Z | Cond::Nz), target, .. } = c.item()? else {
-                        return Err(err(at, "branch"));
-                    };
-                    set(&mut ops, "neg", Opnd::Neg(cond == Cond::Z));
+            let n = ops.iter().find_map(|o| match o {
+                Opnd::Targets(t) | Opnd::Cases(_, t) => Some(t.len()),
+                _ => None,
+            });
+            match then(c, op, n.unwrap_or(0), hat, &mut sites)? {
+                Then::Next | Then::Trap => {}
+                Then::Branch { neg, target } => {
+                    set(&mut ops, "neg", Opnd::Neg(neg));
                     set(&mut ops, "t", Opnd::Target(target));
                 }
-                Shape::Switch => {
-                    let n = ops.iter().find_map(|o| match o {
-                        Opnd::Targets(t) | Opnd::Cases(_, t) => Some(t.len()),
-                        _ => None,
-                    });
-                    let mut t = table(c, n.unwrap() + 1)?;
+                Then::Table(mut t) => {
                     set(&mut ops, "default", Opnd::Target(t.pop().unwrap()));
                     for o in &mut ops {
                         if let Opnd::Targets(ts) | Opnd::Cases(_, ts) = o {
@@ -324,26 +442,19 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8]) -> Result<Proto, AsmError> {
                         }
                     }
                 }
-                Shape::Trap => {
-                    if op == Opcode::Resume {
-                        sites.push((hat, 5));
-                    }
-                    fixed(c, Item::Ud2)?;
-                }
-                Shape::Jmp | Shape::Call | Shape::TailCall | Shape::Ret | Shape::Island | Shape::Arg => unreachable!(),
             }
             if super::inline::sequence(op, &ops).is_some() {
                 return Err(err(hat, "handler call of an inlined instruction"));
             }
-            Proto { op, ops, pos, sites }
+            Proto::new(op, ops, pos, sites)
         }
         Item::Ld { .. } | Item::Sse { .. } | Item::Leave | Item::WinEpilogue | Item::AddRsp(_) if setup.is_empty() => {
             c.pos = pos;
             let (s, k) = ret(c, fr)?;
-            Proto { op: Opcode::Ret, ops: vec![Opnd::Slot(s), Opnd::Imm(k as u64)], pos, sites }
+            Proto::new(Opcode::Ret, vec![Opnd::Slot(s), Opnd::Imm(k as u64)], pos, sites)
         }
         Item::Branch { cond: Cond::Always, target, .. } if setup.is_empty() => {
-            Proto { op: Opcode::Jmp, ops: vec![Opnd::Target(target)], pos, sites }
+            Proto::new(Opcode::Jmp, vec![Opnd::Target(target)], pos, sites)
         }
         Item::CallMem(_) | Item::SubRsp(32) => {
             // An island: `fp`, `ops`, (PE) shadow space, the call through the slot.
@@ -351,7 +462,7 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8]) -> Result<Proto, AsmError> {
             let (isl, ops_ro, site) = island_call(c, fr)?;
             sites.push(site);
             let ws = ops_array(ro, ops_ro).ok_or(err(pos, "island operands"))?;
-            Proto { op: Opcode::Island, ops: vec![Opnd::Sym(isl), Opnd::Words(ws)], pos, sites }
+            Proto::new(Opcode::Island, vec![Opnd::Sym(isl), Opnd::Words(ws)], pos, sites)
         }
         _ => return Err(err(hat, "not an instruction")),
     };
@@ -545,7 +656,7 @@ fn call_insn(c: &mut Cursor<'_>, fr: &Frame, dropped: &[DroppedStore]) -> Option
         ops.insert(0, Opnd::Slot(d));
         ops.extend([Opnd::Imm(k as u64), a_op]);
     }
-    Some(Proto { op, ops, pos, sites })
+    Some(Proto::new(op, ops, pos, sites))
 }
 
 /// An `arg` at the cursor: the store of an argument register to its slot.
@@ -589,7 +700,7 @@ fn arg(c: &mut Cursor<'_>, mode: Mode) -> Option<Proto> {
         c.pos = pos;
         return None;
     }
-    Some(Proto { op: Opcode::Arg, ops: vec![Opnd::Slot(m.disp), Opnd::Imm(a.word() as u64)], pos, sites: Vec::new() })
+    Some(Proto::new(Opcode::Arg, vec![Opnd::Slot(m.disp), Opnd::Imm(a.word() as u64)], pos, Vec::new()))
 }
 
 /// An inline sequence at the cursor, or `None` (the cursor unmoved) if there is none: native
@@ -635,7 +746,7 @@ fn inline_insn(c: &mut Cursor<'_>, cache: &mut Cache, dropped: &mut &[DroppedSto
             Some((_, t)) => (Opcode::Jmp, vec![Opnd::Target(t)]),
             None => (Opcode::Abort, Vec::new()),
         };
-        return Some(Proto { op, ops, pos, sites: Vec::new() });
+        return Some(Proto::new(op, ops, pos, Vec::new()));
     }
     // As emitted with an empty cache, the common case, else the sequences the cache may
     // have emitted this from.
@@ -647,7 +758,7 @@ fn inline_insn(c: &mut Cursor<'_>, cache: &mut Cache, dropped: &mut &[DroppedSto
             continue;
         }
         *cache = after;
-        return Some(Proto { op, ops, pos, sites: Vec::new() });
+        return Some(Proto::new(op, ops, pos, Vec::new()));
     }
     c.pos = pos;
     *dropped = left;
@@ -671,7 +782,7 @@ fn table(c: &mut Cursor<'_>, n: usize) -> Result<Vec<u32>, AsmError> {
 
 /// An island call sequence: its symbol slot, the rodata offset of its operands, and the call
 /// site (position, length).
-fn island_call(c: &mut Cursor<'_>, fr: &Frame) -> Result<(crate::insn::Sym, u32, (u32, u32)), AsmError> {
+fn island_call(c: &mut Cursor<'_>, fr: &Frame) -> Result<(crate::full::Sym, u32, (u32, u32)), AsmError> {
     let mode = fr.mode;
     let at = c.pos;
     let bad = AsmError { at, what: "island call" };
@@ -689,6 +800,55 @@ fn island_call(c: &mut Cursor<'_>, fr: &Frame) -> Result<(crate::insn::Sym, u32,
         return Err(bad);
     }
     Ok((isl, ops, (site, 6)))
+}
+
+/// The control flow after `op`'s handler call at the cursor, its shape's: for a switch, a
+/// table of `n` cases and the default. `hat` is the call's position, a call site for
+/// `resume`.
+fn then(c: &mut Cursor<'_>, op: Opcode, n: usize, hat: u32, sites: &mut Vec<(u32, u32)>) -> Result<Then, AsmError> {
+    let err = |at: u32, what: &'static str| AsmError { at, what };
+    let fixed = |c: &mut Cursor<'_>, want: Item| -> Result<(), AsmError> {
+        let at = c.pos;
+        if c.item()? != want { Err(err(at, "not the instruction's canonical sequence")) } else { Ok(()) }
+    };
+    Ok(match op.info().shape {
+        Shape::Op | Shape::Lpad => Then::Next,
+        Shape::Br => {
+            fixed(c, Item::TestAl)?;
+            let at = c.pos;
+            let Item::Branch { cond: cond @ (Cond::Z | Cond::Nz), target, .. } = c.item()? else {
+                return Err(err(at, "branch"));
+            };
+            Then::Branch { neg: cond == Cond::Z, target }
+        }
+        Shape::Switch => Then::Table(table(c, n + 1)?),
+        Shape::Trap => {
+            if op == Opcode::Resume {
+                sites.push((hat, 5));
+            }
+            fixed(c, Item::Ud2)?;
+            Then::Trap
+        }
+        Shape::Jmp | Shape::Call | Shape::TailCall | Shape::Ret | Shape::Island | Shape::Arg => unreachable!(),
+    })
+}
+
+/// The argument registers of a handler call from the register setup before it (positions
+/// and items): each sets the next register from `rdi`, to `fp`, the exception object, a
+/// value or an address.
+fn handler_args(setup: &[(u32, Item)], fr: &Frame, pos: u32) -> Result<Vec<Arg>, AsmError> {
+    let mut out = Vec::with_capacity(setup.len());
+    for (i, &(at, it)) in setup.iter().enumerate() {
+        let r = *ARGS.get(i).ok_or(AsmError { at, what: "too many argument registers" })?;
+        out.push(match it {
+            it if it == fr.fp(r) => Arg::Fp,
+            Item::Mov(g, Reg::Rax) if g == r => Arg::Exception,
+            Item::SetReg(g, v) if g == r => Arg::Imm(v),
+            Item::Lea(g, to) if g == r => Arg::Addr(to),
+            _ => return Err(AsmError { at: pos, what: "operand registers out of order" }),
+        });
+    }
+    Ok(out)
 }
 
 /// The operands of `op`'s handler call from the register setup before it (positions and
@@ -735,8 +895,8 @@ fn handler_operands(op: Opcode, setup: &[(u32, Item)], fr: &Frame, ro: &[u8], po
         if loc.count == 0 {
             ops.push(match o.kind {
                 OperandKind::Slot => Opnd::Slot(0),
-                OperandKind::Func => Opnd::Func(crate::insn::Func(0)),
-                OperandKind::Sym => Opnd::Sym(crate::insn::Sym(0)),
+                OperandKind::Func => Opnd::Func(crate::full::Func(0)),
+                OperandKind::Sym => Opnd::Sym(crate::full::Sym(0)),
                 OperandKind::U32 => Opnd::Imm(0),
                 OperandKind::Target => Opnd::Target(0),
                 OperandKind::Neg => Opnd::Neg(false),

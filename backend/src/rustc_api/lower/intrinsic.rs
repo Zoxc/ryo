@@ -9,7 +9,7 @@
 use rustc_middle::mir::SourceInfo;
 use rustc_middle::ty::layout::TyAndLayout;
 use rustc_middle::ty::{self, GenericArg, Instance, Ty};
-use ryo_bytecode::insn::Opcode;
+use ryo_bytecode::full::Opcode;
 
 use super::call::{ArgSrc, CallCont};
 use super::cast::ScalarKind;

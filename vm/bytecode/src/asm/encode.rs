@@ -14,7 +14,7 @@ use alloc::vec::Vec;
 use super::x86::{ARGS, Cond, Item, M, Reg, Sh, W, island_args, padding};
 use super::{ArgReg, Layout, Loc, Mode, RetPart, layout, ret_parts};
 use crate::image::{CATCH, CONTINUE, CleanupEntry};
-use crate::insn::{Const, Data, DecodeError, ElemKind, Func, Opcode, OperandKind, Shape, Site, Sym, insn_len};
+use crate::full::{Const, Data, DecodeError, ElemKind, Func, Opcode, OperandKind, Shape, Site, Sym, insn_len};
 
 /// What a relocated 4-byte field of the code refers to. Every field is PC-relative: once
 /// linked, it holds `target - (field + 4)`.
@@ -159,9 +159,9 @@ pub fn operands(code: &[u32], at: usize) -> Vec<Opnd> {
             OperandKind::U64 | OperandKind::I64 => Opnd::Imm(wide(2) as u64),
             OperandKind::U128 => Opnd::Imm128(wide(4)),
             OperandKind::Const => Opnd::Const(Const(w(0))),
-            OperandKind::Abs => match crate::insn::Abs::from_word(w(0)) {
-                crate::insn::Abs::Const(k) => Opnd::Const(k),
-                crate::insn::Abs::Data(d) => Opnd::Data(d),
+            OperandKind::Abs => match crate::full::Abs::from_word(w(0)) {
+                crate::full::Abs::Const(k) => Opnd::Const(k),
+                crate::full::Abs::Data(d) => Opnd::Data(d),
             },
             OperandKind::Sym => Opnd::Sym(Sym(w(0))),
             OperandKind::Site => Opnd::Site(Site(w(0))),
@@ -220,7 +220,7 @@ pub fn push_words(op: Opcode, ops: &[Opnd], words: &mut Vec<u32>) {
             },
             Opnd::Imm128(v) => words.extend((0..4).map(|k| (*v >> (32 * k)) as u32)),
             Opnd::Const(k) => words.push(k.0),
-            Opnd::Data(d) => words.push(d.0 | crate::insn::ABS_DATA),
+            Opnd::Data(d) => words.push(d.0 | crate::full::ABS_DATA),
             Opnd::Sym(s) => words.push(s.0),
             Opnd::Site(s) => words.push(s.0),
             Opnd::Func(f) => words.push(f.0),
@@ -577,14 +577,14 @@ enum Laid {
 
 /// A word of a code constant operand array.
 #[derive(Clone, Copy, Debug)]
-enum RoWord {
+pub(super) enum RoWord {
     /// A raw slot.
     Slot(u32),
 }
 
 /// A code constant, built once the frame size is known.
 #[derive(Clone, Debug)]
-enum RoReq {
+pub(super) enum RoReq {
     Bytes(Vec<u8>, usize),
     /// An operand array: the count, then the words.
     Ops(Vec<RoWord>),
@@ -592,13 +592,13 @@ enum RoReq {
 
 /// The rodata being built, deduplicated.
 #[derive(Default)]
-struct Rodata {
+pub(super) struct Rodata {
     bytes: Vec<u8>,
     seen: BTreeMap<(Vec<u8>, usize), u32>,
 }
 
 impl Rodata {
-    fn add(&mut self, bytes: Vec<u8>, align: usize) -> u32 {
+    pub(super) fn add(&mut self, bytes: Vec<u8>, align: usize) -> u32 {
         if let Some(&off) = self.seen.get(&(bytes.clone(), align)) {
             return off;
         }
@@ -610,7 +610,7 @@ impl Rodata {
     }
 
     /// An operand array: the count, then the words. Returns the offset of the words.
-    fn ops(&mut self, words: &[u32]) -> u32 {
+    pub(super) fn ops(&mut self, words: &[u32]) -> u32 {
         let mut b = Vec::with_capacity(4 + 4 * words.len());
         b.extend_from_slice(&(words.len() as u32).to_le_bytes());
         for w in words {
@@ -630,7 +630,7 @@ pub fn encode(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], mode: Mod
         index[at] = starts.len();
         starts.push(at);
         at += insn_len(&code[at..]).map_err(EncodeError::Decode)?;
-        crate::insn::Insn::decode(&code[starts[starts.len() - 1]..]).map_err(EncodeError::Decode)?;
+        crate::full::Insn::decode(&code[starts[starts.len() - 1]..]).map_err(EncodeError::Decode)?;
         let start = starts[starts.len() - 1];
         if !super::return_ok(&code[start..]) {
             return Err(EncodeError::BadReturn(start as u32));
@@ -704,10 +704,12 @@ pub(super) enum RegVal {
     Addr(Ref),
 }
 
-/// A handler argument register's value for [`Asm`]: a constant with raw slots in the halves
-/// `slots` flags, a [`Ref`]'s address, or a code constant's.
+/// A handler argument register's value: `fp`, the exception object (`lpad`), a constant
+/// with raw slots in the halves `slots` flags, a [`Ref`]'s address, or a code constant's.
 #[derive(Clone, Copy)]
-enum ArgVal {
+pub(super) enum ArgVal {
+    Fp,
+    Exception,
     Imm(u64, u8),
     Addr(Ref),
     Ro(u32),
@@ -761,21 +763,15 @@ impl Asm {
 
     /// Sets the argument registers of `op`'s handler from `ops` and calls it.
     fn handler_call(&mut self, op: Opcode, ops: &[Opnd<Label>], site: Option<InsnId>) {
-        let l = layouts(self.mode.fp_arg)[op as usize];
-        if self.mode.fp_arg {
-            self.pieces.push(Piece::Fp(ARGS[0]));
-        }
-        if op.info().shape == Shape::Lpad {
-            // The exception object, in `rax` at a landing pad.
-            self.fixed(Item::Mov(ARGS[l.first as usize - 1], Reg::Rax));
-        }
-        for (reg, v) in arg_values(op, &l, ops, self).into_iter().take(l.regs as usize).enumerate() {
+        for (reg, v) in handler_args(op, ops, self.mode.fp_arg, |r| self.ro(r)).into_iter().enumerate() {
             match v {
-                Some(ArgVal::Imm(v, 0)) => self.fixed(Item::SetReg(ARGS[reg], v)),
-                Some(ArgVal::Imm(v, slots)) => self.pieces.push(Piece::SetReg { reg: ARGS[reg], v, slots }),
-                Some(ArgVal::Addr(r)) => self.fixed(Item::Lea(ARGS[reg], r)),
-                Some(ArgVal::Ro(ro)) => self.pieces.push(Piece::LeaRo { reg: ARGS[reg], ro }),
-                None => {}
+                ArgVal::Fp => self.pieces.push(Piece::Fp(ARGS[reg])),
+                // The exception object, in `rax` at a landing pad.
+                ArgVal::Exception => self.fixed(Item::Mov(ARGS[reg], Reg::Rax)),
+                ArgVal::Imm(v, 0) => self.fixed(Item::SetReg(ARGS[reg], v)),
+                ArgVal::Imm(v, slots) => self.pieces.push(Piece::SetReg { reg: ARGS[reg], v, slots }),
+                ArgVal::Addr(r) => self.fixed(Item::Lea(ARGS[reg], r)),
+                ArgVal::Ro(ro) => self.pieces.push(Piece::LeaRo { reg: ARGS[reg], ro }),
             }
         }
         self.maybe_site(Item::Call(Ref::Handler(op)), site);
@@ -1143,18 +1139,18 @@ pub(super) fn fp_item(reg: Reg, frame_size: u32, mode: Mode) -> Item {
 /// Every opcode's handler register layout, with `fp` in `rbp` and in `rdi`, computed at compile
 /// time.
 fn layouts(fp_arg: bool) -> &'static [Layout] {
-    const fn all(fp_arg: bool) -> [Layout; crate::insn::ALL_OPCODES.len()] {
+    const fn all(fp_arg: bool) -> [Layout; crate::full::ALL_OPCODES.len()] {
         let mode = Mode { fp_arg, frame_pointer: true, align_loops: false, pe: false };
-        let mut out = [layout(Opcode::Jmp, mode); crate::insn::ALL_OPCODES.len()];
+        let mut out = [layout(Opcode::Jmp, mode); crate::full::ALL_OPCODES.len()];
         let mut i = 0;
         while i < out.len() {
-            out[i] = layout(crate::insn::ALL_OPCODES[i], mode);
+            out[i] = layout(crate::full::ALL_OPCODES[i], mode);
             i += 1;
         }
         out
     }
-    static NO_FP: [Layout; crate::insn::ALL_OPCODES.len()] = all(false);
-    static FP: [Layout; crate::insn::ALL_OPCODES.len()] = all(true);
+    static NO_FP: [Layout; crate::full::ALL_OPCODES.len()] = all(false);
+    static FP: [Layout; crate::full::ALL_OPCODES.len()] = all(true);
     if fp_arg { &FP } else { &NO_FP }
 }
 
@@ -1256,12 +1252,20 @@ fn layout_code(mut pieces: Vec<Laid>) -> Encoded {
 /// Functions with frames of at least this size probe the stack in the prologue.
 pub const PROBE_FROM: u32 = 4096;
 
-/// The values of `op`'s handler argument registers for operands `ops` (`None` for the
-/// registers set otherwise: `fp`, the exception object). Adds case value arrays to `asm`'s
-/// code constants.
-fn arg_values(op: Opcode, l: &Layout, ops: &[Opnd<Label>], asm: &mut Asm) -> [Option<ArgVal>; super::ARG_REGS] {
+/// The values of `op`'s handler argument registers for operands `ops`, from `rdi` on: `fp`
+/// (with [`Mode::fp_arg`]), the exception object (`lpad`), then the operands' ([`layout`]).
+/// Case value arrays become code constants through `ro`, which returns the value of their
+/// [`ArgVal::Ro`].
+pub(super) fn handler_args<T>(op: Opcode, ops: &[Opnd<T>], fp_arg: bool, mut ro: impl FnMut(RoReq) -> u32) -> Vec<ArgVal> {
+    let l = layouts(fp_arg)[op as usize];
     let info = op.info();
     let mut regs = [None; super::ARG_REGS];
+    if fp_arg {
+        regs[0] = Some(ArgVal::Fp);
+    }
+    if info.shape == Shape::Lpad {
+        regs[l.first as usize - 1] = Some(ArgVal::Exception);
+    }
     // `slot`: the value is a raw slot.
     let mut set = |loc: Loc, part: u8, v: ArgVal, slot: bool| {
         let r = &mut regs[(loc.reg + part) as usize];
@@ -1302,7 +1306,7 @@ fn arg_values(op: Opcode, l: &Layout, ops: &[Opnd<Label>], asm: &mut Asm) -> [Op
                 for v in vals {
                     b.extend_from_slice(&v.to_le_bytes()[..size]);
                 }
-                let ro = asm.ro(RoReq::Bytes(b, size.max(4)));
+                let ro = ro(RoReq::Bytes(b, size.max(4)));
                 set(loc, 0, ArgVal::Ro(ro), false);
                 set(loc, 1, imm(vals.len() as u64), false);
             }
@@ -1311,7 +1315,7 @@ fn arg_values(op: Opcode, l: &Layout, ops: &[Opnd<Label>], asm: &mut Asm) -> [Op
             }
         }
     }
-    regs
+    regs[..l.regs as usize].iter().map(|r| r.expect("every register set")).collect()
 }
 
 #[cfg(test)]
@@ -1321,7 +1325,7 @@ mod tests {
     #[test]
     fn handler_count() {
         // Every opcode with a handler has a layout (const-evaluable for all of them).
-        for &op in crate::insn::ALL_OPCODES {
+        for &op in crate::full::ALL_OPCODES {
             if super::super::has_handler(op) {
                 let l = layout(op, Mode { fp_arg: false, frame_pointer: true, align_loops: true, pe: false });
                 assert!(l.regs as usize <= super::super::ARG_REGS);

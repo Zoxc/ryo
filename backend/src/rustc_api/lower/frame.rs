@@ -24,7 +24,7 @@ use rustc_middle::mir::visit::{MutatingUseContext, NonMutatingUseContext, PlaceC
 use rustc_middle::mir::{BasicBlock, Body, Local, Location, Place, ProjectionElem, StatementKind, TerminatorKind, UnwindAction};
 use rustc_middle::ty::layout::TyAndLayout;
 use ryo_bytecode::abi::{self, HEADER_SIZE};
-use ryo_bytecode::insn::Opcode;
+use ryo_bytecode::full::Opcode;
 
 use super::sig::{AbiSig, ArgLoc};
 use ryo_bytecode::asm::ArgReg;

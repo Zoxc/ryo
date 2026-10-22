@@ -2,7 +2,7 @@
 
 use rustc_middle::mir::interpret::Scalar;
 use rustc_middle::mir::{ConstValue, NonDivergingIntrinsic, Operand, Place, Rvalue, Statement, StatementKind};
-use ryo_bytecode::insn::Opcode;
+use ryo_bytecode::full::Opcode;
 
 use super::emit::{Width, opw};
 use super::place::{Loc, PlaceVal};

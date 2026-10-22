@@ -6,7 +6,7 @@
 
 use rustc_middle::mir::Operand;
 use rustc_middle::ty::layout::TyAndLayout;
-use ryo_bytecode::insn::Opcode;
+use ryo_bytecode::full::Opcode;
 
 use super::emit::{Width, opw};
 use super::place::{Loc, PlaceVal};

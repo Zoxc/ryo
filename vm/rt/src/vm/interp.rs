@@ -40,7 +40,7 @@ use core::sync::atomic::{
 };
 
 use ryo_bytecode::asm::{self, ARG_REGS, Loc};
-use ryo_bytecode::insn::Opcode;
+use ryo_bytecode::full::Opcode;
 
 use super::sys::fatal;
 

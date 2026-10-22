@@ -25,7 +25,7 @@ use rustc_middle::ty::{self, GenericArg, Instance, InstanceKind, Ty, TypingEnv};
 use rustc_span::Spanned;
 use ryo_bytecode::abi::HEADER_SIZE;
 use ryo_bytecode::asm::{ARG_ADDR, ArgReg, RET_SRET, RetPart, ret_kind, ret_parts};
-use ryo_bytecode::insn::Opcode;
+use ryo_bytecode::full::Opcode;
 
 use super::frame;
 use super::island::templates;

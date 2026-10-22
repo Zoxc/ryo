@@ -103,7 +103,7 @@ native frames, and unwind natively ([Unwinding](#unwinding)). The runtime lives 
   what `asm::decode` recovers and the disassembler prints. The backend doesn't build them;
   its lowering emits machine code directly ([Machine code](#machine-code)). The first word holds the
   opcode (low 16 bits; the high 16 must be 0). The operands follow in list order, each with
-  the words of its kind (`ryo_bytecode::insn`).
+  the words of its kind (`ryo_bytecode::full`).
 - The opcode list is defined once in `ryo_bytecode` (`vm/bytecode/src/ops.rs`): every opcode
   with its mnemonic, its *shape* ([Machine code](#machine-code)) and its operands. The
   opcode enum, the operand table, the decoder, the encoder and the disassembler of
@@ -275,6 +275,28 @@ and handlers, calls, unwinding and the decoder's view of the frame don't change.
   a few overlapping slots, with branches into them, and `vm/rt/tests/inline.rs` runs such
   runs against their handlers, also with dead-slot hints from a liveness pass, built with
   `Asm` directly.
+
+### Reduced instructions
+
+The instruction set above, the opcode list, is the *full* set (`ryo_bytecode::full`): the
+lowering emits it. The *reduced* set (`asm::reduced`) is what the machine code consists of:
+the instructions of the full set that run as native code, which are the inline instructions
+with operands they inline and the shapes without a handler (`jmp`, the calls, `ret`, `arg`,
+`island`), plus one `handler` instruction for every handler call:
+
+- **`handler`**: the handler `ryo_h_<Opcode>`, the values of its argument registers from
+  `rdi` on (`fp`, the exception object, an immediate, or an address: a constant, data, a
+  symbol slot or a code constant), and what follows the call, its shape's control flow: the
+  next instruction, a branch on the returned `bool` with its polarity, a jump table on the
+  returned index, or nothing (`trap`).
+- **Mapping**: `reduce` maps a function in the full set to the reduced set, case value
+  arrays placed in the code constants as the encoder places them. Targets and cleanup
+  entries are instruction indices.
+- **Decoding**: `asm::decode_reduced` reads machine code to the reduced set like
+  `asm::decode` to the full one, sharing everything but handler calls, which it reads from
+  their registers without the handlers' operand lists (only a switch's case count comes from
+  its handler's layout). `vm/bytecode/tests/asm.rs` checks on every round trip that it gives
+  what `reduce` gives for the full decoder's output.
 
 ## Instruction set
 

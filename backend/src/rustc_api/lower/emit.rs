@@ -8,7 +8,7 @@
 use std::sync::LazyLock;
 
 use rustc_data_structures::fx::FxHashMap;
-use ryo_bytecode::insn::{ALL_OPCODES, Opcode};
+use ryo_bytecode::full::{ALL_OPCODES, Opcode};
 
 
 /// Integer operand widths of the instruction set.

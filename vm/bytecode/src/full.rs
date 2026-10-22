@@ -1,5 +1,6 @@
-//! Instruction encoding: operand types, the per-opcode operand table, decoding, encoding and
-//! disassembly.
+//! The full instruction set: operand types, the per-opcode operand table, decoding, encoding
+//! and disassembly. The lowering emits it; the reduced set ([`crate::asm::reduced`]) is the
+//! subset of it that runs as native code, with every handler call one `handler` instruction.
 //!
 //! Everything here is derived from the single opcode list in `src/ops.rs`: the [`Opcode`]
 //! enum, the [`OP_INFO`] table (mnemonic, operand names and kinds, fixed length), the decoded
@@ -580,28 +581,28 @@ impl<'a, T: Elem> Operand<'a> for List<'a, T> {
 
 /// Maps an operand kind name in the opcode list to its Rust type.
 macro_rules! op_ty {
-    ($lt:lifetime, Slot) => { $crate::insn::Slot };
-    ($lt:lifetime, Mem) => { $crate::insn::Mem };
+    ($lt:lifetime, Slot) => { $crate::full::Slot };
+    ($lt:lifetime, Mem) => { $crate::full::Mem };
     ($lt:lifetime, U8) => { u8 };
     ($lt:lifetime, U16) => { u16 };
     ($lt:lifetime, U32) => { u32 };
     ($lt:lifetime, U64) => { u64 };
     ($lt:lifetime, I64) => { i64 };
     ($lt:lifetime, U128) => { u128 };
-    ($lt:lifetime, Const) => { $crate::insn::Const };
-    ($lt:lifetime, Abs) => { $crate::insn::Abs };
-    ($lt:lifetime, Sym) => { $crate::insn::Sym };
-    ($lt:lifetime, Site) => { $crate::insn::Site };
-    ($lt:lifetime, Func) => { $crate::insn::Func };
-    ($lt:lifetime, Target) => { $crate::insn::Target };
-    ($lt:lifetime, Neg) => { $crate::insn::Neg };
-    ($lt:lifetime, Targets) => { $crate::insn::List<$lt, $crate::insn::Target> };
-    ($lt:lifetime, Words) => { $crate::insn::List<$lt, u32> };
-    ($lt:lifetime, Cases8) => { $crate::insn::List<$lt, $crate::insn::Case8> };
-    ($lt:lifetime, Cases16) => { $crate::insn::List<$lt, $crate::insn::Case16> };
-    ($lt:lifetime, Cases32) => { $crate::insn::List<$lt, $crate::insn::Case32> };
-    ($lt:lifetime, Cases64) => { $crate::insn::List<$lt, $crate::insn::Case64> };
-    ($lt:lifetime, Cases128) => { $crate::insn::List<$lt, $crate::insn::Case128> };
+    ($lt:lifetime, Const) => { $crate::full::Const };
+    ($lt:lifetime, Abs) => { $crate::full::Abs };
+    ($lt:lifetime, Sym) => { $crate::full::Sym };
+    ($lt:lifetime, Site) => { $crate::full::Site };
+    ($lt:lifetime, Func) => { $crate::full::Func };
+    ($lt:lifetime, Target) => { $crate::full::Target };
+    ($lt:lifetime, Neg) => { $crate::full::Neg };
+    ($lt:lifetime, Targets) => { $crate::full::List<$lt, $crate::full::Target> };
+    ($lt:lifetime, Words) => { $crate::full::List<$lt, u32> };
+    ($lt:lifetime, Cases8) => { $crate::full::List<$lt, $crate::full::Case8> };
+    ($lt:lifetime, Cases16) => { $crate::full::List<$lt, $crate::full::Case16> };
+    ($lt:lifetime, Cases32) => { $crate::full::List<$lt, $crate::full::Case32> };
+    ($lt:lifetime, Cases64) => { $crate::full::List<$lt, $crate::full::Case64> };
+    ($lt:lifetime, Cases128) => { $crate::full::List<$lt, $crate::full::Case128> };
 }
 
 /// How an instruction runs as machine code ([`crate::asm`]): which handler it calls, and what
@@ -640,17 +641,17 @@ pub enum Shape {
 
 /// Maps a shape name in the opcode list to its [`Shape`].
 macro_rules! shape {
-    (op) => { $crate::insn::Shape::Op };
-    (br) => { $crate::insn::Shape::Br };
-    (switch) => { $crate::insn::Shape::Switch };
-    (trap) => { $crate::insn::Shape::Trap };
-    (ret) => { $crate::insn::Shape::Ret };
-    (jmp) => { $crate::insn::Shape::Jmp };
-    (call) => { $crate::insn::Shape::Call };
-    (tail_call) => { $crate::insn::Shape::TailCall };
-    (arg) => { $crate::insn::Shape::Arg };
-    (island) => { $crate::insn::Shape::Island };
-    (lpad) => { $crate::insn::Shape::Lpad };
+    (op) => { $crate::full::Shape::Op };
+    (br) => { $crate::full::Shape::Br };
+    (switch) => { $crate::full::Shape::Switch };
+    (trap) => { $crate::full::Shape::Trap };
+    (ret) => { $crate::full::Shape::Ret };
+    (jmp) => { $crate::full::Shape::Jmp };
+    (call) => { $crate::full::Shape::Call };
+    (tail_call) => { $crate::full::Shape::TailCall };
+    (arg) => { $crate::full::Shape::Arg };
+    (island) => { $crate::full::Shape::Island };
+    (lpad) => { $crate::full::Shape::Lpad };
 }
 
 /// One operand of an opcode: its name in the instruction set docs, and its encoding.
@@ -780,8 +781,8 @@ macro_rules! define_ops {
             $(
                 #[doc = concat!("Operand word offsets of `", $mn, "`.")]
                 pub mod $name {
-                    $(pub const $field: usize = $crate::insn::operand_word(
-                        $crate::insn::Opcode::$name, stringify!($field));)*
+                    $(pub const $field: usize = $crate::full::operand_word(
+                        $crate::full::Opcode::$name, stringify!($field));)*
                 }
             )*
         }

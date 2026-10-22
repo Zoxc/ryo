@@ -51,7 +51,7 @@ use rustc_middle::ty::layout::TyAndLayout;
 use rustc_middle::ty::{self, GenericArgsRef, Instance, InstanceKind, Ty, TyCtxt, TypeVisitableExt, TypingEnv};
 use rustc_span::Symbol;
 use ryo_bytecode::asm::{self, Asm, InsnId, Label, Opnd, Unwind};
-use ryo_bytecode::insn::{Abs, Const, ElemKind, Func, Opcode, OperandKind, Site, Sym};
+use ryo_bytecode::full::{Abs, Const, ElemKind, Func, Opcode, OperandKind, Site, Sym};
 
 pub use self::constant::{is_import, is_tls_shim, vtable_alloc};
 pub use self::sig::{AbiSig, abi_sig};

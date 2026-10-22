@@ -8,7 +8,7 @@ use rustc_middle::ty::{self, Ty};
 
 use super::emit::{Width, opw};
 use super::{FnCx, NeedsNative, native};
-use ryo_bytecode::insn::Opcode;
+use ryo_bytecode::full::Opcode;
 
 /// Where a value lives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

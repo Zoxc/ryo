@@ -29,7 +29,7 @@ use core::{mem, slice};
 
 use super::*;
 use crate::asm::{self, CallSite, Encoded, Mode, Ref};
-use crate::insn::{ABS_DATA, Const, Data, DecodeError, Decoder, ElemKind, Func, OperandKind, Opcode, Site, Sym};
+use crate::full::{ABS_DATA, Const, Data, DecodeError, Decoder, ElemKind, Func, OperandKind, Opcode, Site, Sym};
 
 /// A symbol referenced by the image.
 #[derive(Clone, Debug, PartialEq, Eq)]

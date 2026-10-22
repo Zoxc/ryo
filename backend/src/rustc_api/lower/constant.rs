@@ -14,7 +14,7 @@ use rustc_middle::mir::interpret::{AllocId, GlobalAlloc, Scalar};
 use rustc_middle::mir::{ConstOperand, ConstValue};
 use rustc_middle::ty::layout::TyAndLayout;
 use rustc_middle::ty::{self, GenericArgs, Instance, InstanceKind, ShimKind, TyCtxt, TypingEnv};
-use ryo_bytecode::insn::{ABS_DATA, Opcode};
+use ryo_bytecode::full::{ABS_DATA, Opcode};
 
 use super::emit::Width;
 use super::place::{Loc, PlaceVal};

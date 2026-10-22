@@ -15,7 +15,7 @@ use rustc_middle::mir::{
 };
 use rustc_middle::ty::{self, Instance, Ty};
 use ryo_bytecode::asm::Opnd;
-use ryo_bytecode::insn::Opcode;
+use ryo_bytecode::full::Opcode;
 
 use super::call::{ArgSrc, CallCont};
 use super::emit::{Width, imm_words, opw, try_opcode};

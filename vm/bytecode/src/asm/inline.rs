@@ -15,7 +15,7 @@ use alloc::vec::Vec;
 
 use super::encode::Opnd;
 use super::x86::{Alu, Cond, Item, M, Reg, Rm, Sh, W};
-use crate::insn::{ALL_OPCODES, OperandKind, Opcode};
+use crate::full::{ALL_OPCODES, OperandKind, Opcode};
 
 /// The inline sequence kinds, by the opcode's operation and width.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -1,4 +1,4 @@
-use ryo_bytecode::insn::*;
+use ryo_bytecode::full::*;
 
 /// A small deterministic generator (xorshift).
 struct Rng(u64);

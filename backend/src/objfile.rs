@@ -10,7 +10,7 @@ use object::{
     SymbolScope, elf, pe,
 };
 use ryo_bytecode::image::{FuncSymbol, ImageObject, RelocKind, RelocTarget, SYM_INDIRECT, Section, SymVisibility};
-use ryo_bytecode::insn::Opcode;
+use ryo_bytecode::full::Opcode;
 
 /// The symbol an image defines: `__ryo_image_<StableCrateId>`, with the id in hex.
 pub fn image_symbol(stable_crate_id: u64) -> String {
@@ -475,7 +475,7 @@ pub fn write_image(
         })
         .collect::<Result<Vec<SymbolId>, String>>()?;
     // Handler symbols, by opcode: most relocations are handler calls.
-    let mut handlers: Vec<Option<SymbolId>> = vec![None; ryo_bytecode::insn::ALL_OPCODES.len()];
+    let mut handlers: Vec<Option<SymbolId>> = vec![None; ryo_bytecode::full::ALL_OPCODES.len()];
     for r in &image.relocs {
         let symbol = match r.target {
             RelocTarget::Symbol(s) => syms[s.0 as usize],

@@ -49,7 +49,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let (p, _) = self.operand_slot(a)?;
                 let (i, _) = self.operand_slot(b)?;
                 self.with_place_slot(dst, |fx, d| {
-                    fx.op(ryo_bytecode::insn::Opcode::PtrIndex, &[d, p, i, stride]);
+                    fx.op(ryo_bytecode::full::Opcode::PtrIndex, &[d, p, i, stride]);
                     Ok(())
                 })
             }

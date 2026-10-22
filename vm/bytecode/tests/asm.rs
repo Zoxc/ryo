@@ -1,9 +1,9 @@
 //! The machine-code encoder against its decoder: `decode(encode(f)) == f` for every opcode,
 //! with the frame size and the unwind entries (through the LSDA), in every mode.
 
-use ryo_bytecode::asm::{self, Mode, lsda};
+use ryo_bytecode::asm::{self, Mode, lsda, reduced};
 use ryo_bytecode::image::{CATCH, CONTINUE, CleanupEntry, op_may_unwind};
-use ryo_bytecode::insn::*;
+use ryo_bytecode::full::*;
 
 struct Rng(u64);
 impl Rng {
@@ -216,6 +216,11 @@ fn check(f: &Fn, frame_size: u32, mode: Mode, what: &str) -> asm::Encoded {
     assert_eq!(dec.frame_size, frame_size, "{what}");
     cleanup.sort();
     assert_eq!(dec.cleanup, cleanup, "{what}");
+    // The reduced decoder reads the same function as the full one, reduced.
+    let red = asm::decode_reduced(&enc.code, &enc.relocs, &enc.rodata, &sites, &enc.dropped, mode)
+        .unwrap_or_else(|e| panic!("{what} {mode:?} (reduced): {e:?}\n{}", Disasm(&code)));
+    let want = reduced::reduce(&dec.words, dec.frame_size, &dec.cleanup, mode).expect("reduces");
+    assert_eq!(red, want, "{what} {mode:?} (reduced)\n{}", Disasm(&code));
     enc
 }
 

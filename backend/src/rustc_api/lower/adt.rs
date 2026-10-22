@@ -5,7 +5,7 @@
 use rustc_abi::{BackendRepr, TagEncoding, VariantIdx, Variants};
 use rustc_index::IndexVec;
 use rustc_middle::mir::{AggregateKind, Operand, Place};
-use ryo_bytecode::insn::Opcode;
+use ryo_bytecode::full::Opcode;
 
 use super::emit::{Width, imm_words, opw};
 use super::place::{Loc, PlaceVal};

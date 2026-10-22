@@ -12,6 +12,9 @@
 //!   decoder is the encoder's test oracle: `decode(encode(f)) == f`, frame size and unwind
 //!   entries included.
 //! - `inline` (`alloc`): the native sequences of the inlined instructions.
+//! - [`reduced`] (`alloc`): the reduced instruction set, the instructions that run as native
+//!   code and one `handler` instruction for every handler call, which [`decode_reduced`]
+//!   reads machine code back to.
 //! - [`lsda`] (`alloc`): the call-site table of a function's LSDA.
 //!
 //! # Operands and registers
@@ -40,16 +43,18 @@ mod inline;
 #[cfg(feature = "alloc")]
 pub mod lsda;
 #[cfg(feature = "alloc")]
+pub mod reduced;
+#[cfg(feature = "alloc")]
 mod x86;
 
 #[cfg(feature = "alloc")]
-pub use decode::{AsmError, Decoded, decode};
+pub use decode::{AsmError, Decoded, decode, decode_reduced};
 #[cfg(feature = "alloc")]
 pub use inline::has_inline;
 #[cfg(feature = "alloc")]
 pub use encode::{Asm, CallSite, DroppedStore, EncodeError, Encoded, InsnId, Label, Opnd, PROBE_FROM, Ref, Reloc, Unwind, encode, operands, prologue_len, push_words, word_len};
 
-use crate::insn::{ElemKind, Opcode, OperandKind, Shape};
+use crate::full::{ElemKind, Opcode, OperandKind, Shape};
 
 /// The argument registers handlers take: `rdi, rsi, rdx, rcx, r8, r9`.
 pub const ARG_REGS: usize = 6;
@@ -112,7 +117,7 @@ impl Mode {
 impl Layout {
     /// The location of the operand called `name`.
     pub const fn loc(&self, op: Opcode, name: &str) -> Loc {
-        self.locs[crate::insn::operand_index_const(op, name)]
+        self.locs[crate::full::operand_index_const(op, name)]
     }
 }
 
@@ -322,7 +327,7 @@ pub fn ret_parts(k: u32, load: bool) -> Option<[Option<RetPart>; 2]> {
 /// (nothing in the machine code holds them), an `arg`'s register ([`ArgReg`]), and a call's
 /// argument list ([`params_ok`]).
 pub fn return_ok(words: &[u32]) -> bool {
-    use crate::insn::operand_word;
+    use crate::full::operand_word;
     let Some(op) = Opcode::from_u16(words[0] as u16) else { return true };
     let k_ok = |k: u32, load: bool| k == 0 || (k == RET_SRET && !load) || ret_parts(k, load).is_some();
     match op {
