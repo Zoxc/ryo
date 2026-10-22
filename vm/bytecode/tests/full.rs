@@ -247,7 +247,7 @@ fn opcode_table_is_pinned_to_format_version() {
             eat(&format!("{:?}", o.kind));
         }
     }
-    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (17, 0x5ce68c517e36460b), "opcode table hash {h:#x}");
+    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (18, 0x5ce68c517e36460b), "opcode table hash {h:#x}");
 }
 
 /// Pins the image table layouts to the format version: any change to a table entry's size or
@@ -264,11 +264,16 @@ fn image_layouts_are_pinned_to_format_version() {
             offset_of!(FuncEntry, arg_size),
             offset_of!(FuncEntry, ret_size),
             offset_of!(FuncEntry, ret_kind),
+            offset_of!(FuncEntry, scopes),
+            offset_of!(FuncEntry, call_sites),
         ),
         (size_of::<CleanupEntry>(), size_of::<FixupEntry>(), size_of::<Span>()),
+        (size_of::<ScopeEntry>(), offset_of!(ScopeEntry, frame_offset), offset_of!(ScopeEntry, size), offset_of!(ScopeEntry, align)),
+        (size_of::<CallSiteEntry>(), offset_of!(CallSiteEntry, len), offset_of!(CallSiteEntry, pad)),
+        (offset_of!(Header, scopes), offset_of!(Header, call_sites), offset_of!(Header, mode)),
     );
-    assert_eq!(ryo_bytecode::FORMAT_VERSION, 17);
-    assert_eq!(layout, ((112, 24, 40, 48, 104), (20, 4, 8, 12, 16), (8, 16, 8)), "{layout:?}");
+    assert_eq!(ryo_bytecode::FORMAT_VERSION, 18);
+    assert_eq!(layout, ((128, 24, 40, 48, 120), (36, 4, 8, 12, 16, 20, 28), (8, 16, 8), (16, 4, 8, 12), (12, 4, 8), (100, 108, 124)), "{layout:?}");
 }
 
 /// Decoding arbitrary words never panics, and whatever decodes re-encodes to the same words.

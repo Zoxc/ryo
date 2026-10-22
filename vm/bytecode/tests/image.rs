@@ -1,4 +1,4 @@
-use ryo_bytecode::asm::Mode;
+use ryo_bytecode::asm::{self, CallSite, Mode, Scope, ScopeKind};
 use ryo_bytecode::image::*;
 use ryo_bytecode::full::*;
 use ryo_bytecode::{FORMAT_VERSION, Insn};
@@ -219,6 +219,16 @@ fn image_round_trip() {
     // One CIE, then one FDE per function, each pointing at its code and LSDA.
     let fdes = obj.relocs.iter().filter(|r| r.section == Section::EhFrame && r.target == RelocTarget::Section(Section::Text)).count();
     assert_eq!(fdes, 3);
+
+    // The same call sites in the read-only section, and the mode in the header.
+    for (i, f) in obj.functions.iter().enumerate() {
+        let read: Vec<CallSite> = img.call_sites(i as u32).iter().map(CallSite::from).collect();
+        assert_eq!(read, f.call_sites);
+    }
+    assert_eq!(img.call_sites(0)[0].action(), Cleanup::Pad(obj.functions[0].call_sites[0].pad.unwrap(), false));
+    assert_eq!(img.call_sites(3), &[]);
+    assert_eq!(img.mode(), ELF);
+    assert_eq!(h.mode, MODE_FRAME_POINTER | MODE_ALIGN_LOOPS);
 
     // pc → function.
     let c1 = fs[1].code_off;
@@ -496,4 +506,81 @@ fn writer_rejects_bad_alloc_relocs() {
     assert_eq!(Image::parse(b.bytes()).unwrap().header().fixup_area, 24);
     assert_eq!(d, Data(0));
     assert_eq!(obj.data_align, 8);
+}
+
+/// Scopes and call sites from `finish_encoded`'s `Encoded`s are read back unchanged, in
+/// every mode.
+#[test]
+fn scopes_and_call_sites_round_trip() {
+    // f0: takes the address of a 16-byte local, calls f1 (cleanup at `lpad`), ends the
+    // local's storage, returns. f1: just returns.
+    let f0 = code(&[
+        Insn::Addr { d: Slot(-8), s: Slot(-32) },
+        Insn::Call { d: Slot(-8), f: Func(1), k: 8, a: List::from_words(&[]) },
+        Insn::Ret { s: Slot(-8), k: 8 },
+        Insn::Lpad { x: Slot(-16) },
+        Insn::Resume { x: Slot(-16) },
+    ]);
+    let f1 = code(&[Insn::Abort {}]);
+    let starts = |c: &[u32]| {
+        let mut v = vec![];
+        let mut at = 0;
+        while at < c.len() {
+            v.push(at as u32);
+            at += Insn::decode(&c[at..]).unwrap().1;
+        }
+        v
+    };
+    let s0 = starts(&f0);
+    let scopes = [
+        Scope { code_offset: s0[0], frame_offset: -32, size: 16, kind: ScopeKind::Escape { align: 8 } },
+        Scope { code_offset: s0[2], frame_offset: -32, size: 16, kind: ScopeKind::End },
+    ];
+    let cleanup = [CleanupEntry { offset: s0[1], target: s0[3] | CATCH }, CleanupEntry { offset: s0[4], target: CONTINUE }];
+    for mode in [ELF, Mode { fp_arg: true, frame_pointer: false, align_loops: false, ..ELF }, Mode { pe: true, ..ELF }] {
+        let enc = vec![
+            asm::encode(&f0, 48, &cleanup, &scopes, mode).unwrap(),
+            asm::encode(&f1, 16, &[], &[], mode).unwrap(),
+        ];
+        assert_eq!(enc[0].scopes.len(), 2);
+        assert_eq!(enc[0].call_sites.len(), 2);
+        assert!(enc[0].call_sites[0].catch);
+        let mut w = ImageWriter::new(SCID);
+        for (name, frame_size) in [("f0", 48), ("f1", 16)] {
+            w.add_function(FunctionDef { name: name.into(), frame_size, ..Default::default() });
+        }
+        w.prepare(mode);
+        let obj = w.finish_encoded(enc.clone()).unwrap();
+        let b = Buf::new(&obj.rodata, obj.rodata_align);
+        let img = Image::parse(b.bytes()).unwrap();
+        img.validate().unwrap();
+        assert_eq!(img.mode(), mode);
+        for (i, e) in enc.iter().enumerate() {
+            let scopes: Vec<Scope> = img.scopes(i as u32).iter().map(Scope::from).collect();
+            let sites: Vec<CallSite> = img.call_sites(i as u32).iter().map(CallSite::from).collect();
+            assert_eq!((scopes, sites), (e.scopes.clone(), e.call_sites.clone()), "{mode:?}");
+        }
+        assert_eq!(img.scopes(0)[0].align, 8);
+        assert_eq!(img.scopes(0)[1].align, 0);
+        assert!(img.scopes(1).is_empty() && img.scopes(2).is_empty());
+
+        // `validate` checks the runs and the entries.
+        use std::mem::{offset_of, size_of};
+        let fe = |h: &Header, i: usize, field: usize| h.functions.off as usize + i * size_of::<FuncEntry>() + field;
+        let sc = |h: &Header, i: usize, field: usize| h.scopes.off as usize + i * size_of::<ScopeEntry>() + field;
+        let cs = |h: &Header, i: usize, field: usize| h.call_sites.off as usize + i * size_of::<CallSiteEntry>() + field;
+        assert_eq!(validate_edited(&obj, |r, h| put32(r, fe(h, 1, offset_of!(FuncEntry, scopes)), 3)), Err(ImageError::BadFunction(1)));
+        assert_eq!(
+            validate_edited(&obj, |r, h| put32(r, fe(h, 0, offset_of!(FuncEntry, call_sites) + 4), 3)),
+            Err(ImageError::BadFunction(0))
+        );
+        assert_eq!(validate_edited(&obj, |r, h| put32(r, sc(h, 1, offset_of!(ScopeEntry, align)), 3)), Err(ImageError::BadScope(1)));
+        assert_eq!(validate_edited(&obj, |r, h| put32(r, sc(h, 0, 0), 10_000)), Err(ImageError::BadScope(0)));
+        assert_eq!(validate_edited(&obj, |r, h| put32(r, cs(h, 1, offset_of!(CallSiteEntry, len)), 10_000)), Err(ImageError::BadCallSite(1)));
+        assert_eq!(validate_edited(&obj, |r, h| put32(r, cs(h, 0, offset_of!(CallSiteEntry, pad)), 10_000)), Err(ImageError::BadCallSite(0)));
+        assert!(matches!(
+            validate_edited(&obj, |r, _| put32(r, offset_of!(Header, mode), 16)),
+            Err(ImageError::BadMode)
+        ));
+    }
 }

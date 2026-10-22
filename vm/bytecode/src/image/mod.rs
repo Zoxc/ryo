@@ -9,6 +9,8 @@
 //! |---|---|
 //! | header | [`Header`] |
 //! | functions | `[FuncEntry]`, sorted by code offset; index = [`Func`](crate::full::Func) |
+//! | scopes | `[ScopeEntry]`, each function's in a run ([`FuncEntry::scopes`]) |
+//! | call sites | `[CallSiteEntry]`, each function's in a run ([`FuncEntry::call_sites`]) |
 //! | code constants | what the machine code refers to: island operand arrays, switch values |
 //! | fixups | `[FixupEntry]` (PE only, otherwise empty) |
 //! | symbol flags | `[u8]`, one per symbol ([`SYM_INDIRECT`]) |
@@ -36,6 +38,8 @@ pub use writer::*;
 
 use core::{fmt, mem, slice};
 
+use crate::asm::Mode;
+
 /// `Header::magic`.
 pub const MAGIC: [u8; 8] = *b"RYOIMAGE";
 
@@ -51,6 +55,20 @@ pub const CONTINUE: u32 = u32::MAX;
 /// exception instead of being a cleanup: a `Terminate` action, whose pad must be found by
 /// the unwinder's search phase even if nothing up the stack catches the panic.
 pub const CATCH: u32 = 1 << 31;
+
+/// `Header::mode` bits: the fields of [`Mode`].
+pub const MODE_FP_ARG: u32 = 1;
+pub const MODE_FRAME_POINTER: u32 = 2;
+pub const MODE_ALIGN_LOOPS: u32 = 4;
+pub const MODE_PE: u32 = 8;
+
+/// `Header::mode` of `mode`.
+pub const fn mode_bits(mode: Mode) -> u32 {
+    (mode.fp_arg as u32) * MODE_FP_ARG
+        | (mode.frame_pointer as u32) * MODE_FRAME_POINTER
+        | (mode.align_loops as u32) * MODE_ALIGN_LOOPS
+        | (mode.pe as u32) * MODE_PE
+}
 
 /// The 32-bit crate hash the registry uses, folded from the crate's
 /// `StableCrateId` (its `u64` value).
@@ -98,12 +116,16 @@ pub struct Header {
     pub symbols: Span,
     /// Constant pool bytes.
     pub consts: Span,
+    /// `[ScopeEntry]`.
+    pub scopes: Span,
+    /// `[CallSiteEntry]`.
+    pub call_sites: Span,
     /// Number of site cache slots at the start of the writable section.
     pub site_count: u32,
     /// Byte offset of the fixup area in the writable section (after the site cache).
     pub fixup_area: u32,
-    /// 0.
-    pub reserved: u32,
+    /// The [`Mode`] the code was encoded in ([`mode_bits`]).
+    pub mode: u32,
 }
 
 /// A function table entry.
@@ -121,6 +143,48 @@ pub struct FuncEntry {
     /// How the function returns its value ([`crate::asm::RET_SRET`], exact sizes): how
     /// a caller collects it (informative).
     pub ret_kind: u32,
+    /// The function's scopes: a run of the scope table (`off` is an index), sorted by
+    /// position.
+    pub scopes: Span,
+    /// The function's call sites: a run of the call-site table (`off` is an index), sorted
+    /// by position.
+    pub call_sites: Span,
+}
+
+/// A scope table entry: where a frame object escapes or its storage ends (`asm::Scope`, for
+/// the decoder; the machine code doesn't show them).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ScopeEntry {
+    /// Byte offset in the function's code.
+    pub code_offset: u32,
+    /// Signed byte offset from `fp` of the object.
+    pub frame_offset: i32,
+    /// Size of the object in bytes.
+    pub size: u32,
+    /// An escape: the object's alignment (a power of two, at most 16); 0 for a storage end.
+    pub align: u32,
+}
+
+/// A call-site table entry: a call-like instruction's range and what unwinding out of it
+/// does (`asm::CallSite`, the same as the LSDA's records).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CallSiteEntry {
+    /// Byte offset in the function's code.
+    pub start: u32,
+    /// Length in bytes.
+    pub len: u32,
+    /// Byte offset of the landing pad in the function's code, with [`CATCH`] for a
+    /// catch-all one, or [`CONTINUE`].
+    pub pad: u32,
+}
+
+impl CallSiteEntry {
+    /// The landing pad's byte offset and whether it catches, or `Continue`.
+    pub fn action(&self) -> Cleanup {
+        if self.pad == CONTINUE { Cleanup::Continue } else { Cleanup::Pad(self.pad & !CATCH, self.pad & CATCH != 0) }
+    }
 }
 
 /// A cleanup table entry: unwinding out of the call-like instruction at `offset` goes to
@@ -184,6 +248,12 @@ pub enum ImageError {
     BadFixup(u32),
     /// A symbol flag byte has unknown bits.
     BadSymbolFlags(u32),
+    /// `Header::mode` has unknown bits.
+    BadMode,
+    /// A scope table entry (index) is out of range of its function or malformed.
+    BadScope(u32),
+    /// A call-site table entry (index) is out of range of its function.
+    BadCallSite(u32),
     /// The writable section layout is inconsistent.
     BadData,
 }
@@ -242,6 +312,11 @@ impl<'a> Image<'a> {
         cast::<u8>(bytes, header.sym_flags, "symbol flags")?;
         cast::<u64>(bytes, header.symbols, "symbols")?;
         cast::<u8>(bytes, header.consts, "constants")?;
+        cast::<ScopeEntry>(bytes, header.scopes, "scopes")?;
+        cast::<CallSiteEntry>(bytes, header.call_sites, "call sites")?;
+        if header.mode & !(MODE_FP_ARG | MODE_FRAME_POINTER | MODE_ALIGN_LOOPS | MODE_PE) != 0 {
+            return Err(ImageError::BadMode);
+        }
         if header.sym_flags.count != header.symbols.count {
             return Err(ImageError::OutOfBounds("symbol flags"));
         }
@@ -270,7 +345,8 @@ impl<'a> Image<'a> {
         Self::parse(unsafe { slice::from_raw_parts(header, size) })
     }
 
-    /// Full consistency check of the function table, fixups and symbol flags.
+    /// Full consistency check of the function table (with each function's scopes and call
+    /// sites), fixups and symbol flags.
     pub fn validate(&self) -> Result<(), ImageError> {
         let text = self.header.text_size as u64;
         let mut prev_end = 0u64;
@@ -281,6 +357,24 @@ impl<'a> Image<'a> {
                 return Err(ImageError::BadFunction(i));
             }
             prev_end = end;
+            let run = |s: Span, n: u32| s.off as u64 + s.count as u64 <= n as u64;
+            if !run(f.scopes, self.header.scopes.count) || !run(f.call_sites, self.header.call_sites.count) {
+                return Err(ImageError::BadFunction(i));
+            }
+            for (j, s) in self.scopes(i).iter().enumerate() {
+                if s.code_offset > f.code_len || (s.align != 0 && (!s.align.is_power_of_two() || s.align > 16)) {
+                    return Err(ImageError::BadScope(f.scopes.off + j as u32));
+                }
+            }
+            for (j, c) in self.call_sites(i).iter().enumerate() {
+                let pad_ok = match c.action() {
+                    Cleanup::Pad(p, _) => p < f.code_len,
+                    Cleanup::Continue => true,
+                };
+                if c.start as u64 + c.len as u64 > f.code_len as u64 || !pad_ok {
+                    return Err(ImageError::BadCallSite(f.call_sites.off + j as u32));
+                }
+            }
         }
         for (i, x) in self.fixups().iter().enumerate() {
             if x.sym >= self.header.symbols.count
@@ -322,6 +416,36 @@ impl<'a> Image<'a> {
     /// The function table, sorted by code offset.
     pub fn functions(&self) -> &'a [FuncEntry] {
         self.part(self.header.functions)
+    }
+
+    /// The [`Mode`] the code was encoded in.
+    pub fn mode(&self) -> Mode {
+        let m = self.header.mode;
+        Mode {
+            fp_arg: m & MODE_FP_ARG != 0,
+            frame_pointer: m & MODE_FRAME_POINTER != 0,
+            align_loops: m & MODE_ALIGN_LOOPS != 0,
+            pe: m & MODE_PE != 0,
+        }
+    }
+
+    /// The run of `entries` of `table` that `run` (an index range) names, empty if out of
+    /// range (only [`Self::validate`] checks the runs).
+    fn run<T>(&self, table: Span, run: Span) -> &'a [T] {
+        let all = self.part::<T>(table);
+        all.get(run.off as usize..).and_then(|s| s.get(..run.count as usize)).unwrap_or(&[])
+    }
+
+    /// Function `func`'s scopes, sorted by position (empty for an unknown function).
+    pub fn scopes(&self, func: u32) -> &'a [ScopeEntry] {
+        let Some(f) = self.functions().get(func as usize) else { return &[] };
+        self.run(self.header.scopes, f.scopes)
+    }
+
+    /// Function `func`'s call sites, sorted by position (empty for an unknown function).
+    pub fn call_sites(&self, func: u32) -> &'a [CallSiteEntry] {
+        let Some(f) = self.functions().get(func as usize) else { return &[] };
+        self.run(self.header.call_sites, f.call_sites)
     }
 
     /// The text section (from the relocated header field; null before linking).

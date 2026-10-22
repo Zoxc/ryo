@@ -28,7 +28,7 @@ use alloc::vec::Vec;
 use core::{mem, slice};
 
 use super::*;
-use crate::asm::{self, CallSite, Encoded, Mode, Ref};
+use crate::asm::{self, CallSite, Encoded, Mode, Ref, Scope, ScopeKind};
 use crate::full::{ABS_DATA, Const, Data, DecodeError, Decoder, ElemKind, Func, OperandKind, Opcode, Site, Sym};
 
 /// A symbol referenced by the image.
@@ -552,6 +552,8 @@ impl ImageWriter {
         let mut funcs = Vec::with_capacity(self.functions.len());
         let mut text: Vec<u8> = Vec::new();
         let mut code_consts: Vec<u8> = Vec::new();
+        let mut scopes: Vec<ScopeEntry> = Vec::new();
+        let mut call_sites: Vec<CallSiteEntry> = Vec::new();
         let mut func_code = Vec::with_capacity(self.functions.len());
         // (text offset of the field, target): resolved once the layout is known.
         let mut code_refs: Vec<(u32, Ref, u32)> = Vec::new();
@@ -572,12 +574,19 @@ impl ImageWriter {
             for r in &e.relocs {
                 code_refs.push((start + r.at, r.to, ro_base));
             }
+            let run = |len: usize, n: usize| -> Result<Span, WriteError> {
+                Ok(Span { off: (len - n).try_into().map_err(too_large)?, count: n.try_into().map_err(too_large)? })
+            };
+            scopes.extend(e.scopes.iter().map(ScopeEntry::from));
+            call_sites.extend(e.call_sites.iter().map(CallSiteEntry::from));
             funcs.push(FuncEntry {
                 code_off: start,
                 code_len: e.code.len().try_into().map_err(too_large)?,
                 arg_size: f.arg_size,
                 ret_size: f.ret_size,
                 ret_kind: f.ret_kind,
+                scopes: run(scopes.len(), e.scopes.len())?,
+                call_sites: run(call_sites.len(), e.call_sites.len())?,
             });
             func_code.push(FuncCode {
                 name: core::mem::take(&mut f.name),
@@ -626,6 +635,8 @@ impl ImageWriter {
         let sym_flags = span(self.symbols.len(), 1, 1)?;
         let symbols = span(self.symbols.len(), 8, 8)?;
         let consts = span(self.consts.len(), 1, self.const_align as usize)?;
+        let scopes_span = span(scopes.len(), mem::size_of::<ScopeEntry>(), 4)?;
+        let call_sites_span = span(call_sites.len(), mem::size_of::<CallSiteEntry>(), 4)?;
         let size = off;
 
         let header = Header {
@@ -644,9 +655,11 @@ impl ImageWriter {
             sym_flags,
             symbols,
             consts,
+            scopes: scopes_span,
+            call_sites: call_sites_span,
             site_count: self.sites,
             fixup_area: fixup_area as u32,
-            reserved: 0,
+            mode: mode_bits(mode),
         };
 
         let mut ro = vec![0u8; size];
@@ -659,6 +672,8 @@ impl ImageWriter {
             put(&mut ro, fixups_span.off, &fixups);
             put(&mut ro, sym_flags.off, &flags);
             put(&mut ro, consts.off, &self.consts);
+            put(&mut ro, scopes_span.off, &scopes);
+            put(&mut ro, call_sites_span.off, &call_sites);
         }
 
         // Relocations.
@@ -745,6 +760,43 @@ impl ImageWriter {
             symbols: self.symbols,
             relocs,
         })
+    }
+}
+
+impl From<&Scope> for ScopeEntry {
+    fn from(s: &Scope) -> ScopeEntry {
+        let align = match s.kind {
+            ScopeKind::Escape { align } => align,
+            ScopeKind::End => 0,
+        };
+        ScopeEntry { code_offset: s.code_offset, frame_offset: s.frame_offset, size: s.size, align }
+    }
+}
+
+impl From<&ScopeEntry> for Scope {
+    fn from(s: &ScopeEntry) -> Scope {
+        let kind = if s.align == 0 { ScopeKind::End } else { ScopeKind::Escape { align: s.align } };
+        Scope { code_offset: s.code_offset, frame_offset: s.frame_offset, size: s.size, kind }
+    }
+}
+
+impl From<&CallSite> for CallSiteEntry {
+    fn from(c: &CallSite) -> CallSiteEntry {
+        let pad = match c.pad {
+            Some(p) => p | if c.catch { CATCH } else { 0 },
+            None => CONTINUE,
+        };
+        CallSiteEntry { start: c.start, len: c.len, pad }
+    }
+}
+
+impl From<&CallSiteEntry> for CallSite {
+    fn from(c: &CallSiteEntry) -> CallSite {
+        let (pad, catch) = match c.action() {
+            Cleanup::Pad(p, catch) => (Some(p), catch),
+            Cleanup::Continue => (None, false),
+        };
+        CallSite { start: c.start, len: c.len, pad, catch }
     }
 }
 

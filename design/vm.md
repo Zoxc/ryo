@@ -622,9 +622,10 @@ section and unwind sections, plus relocations. It defines the symbol
 ```
 header          magic, format version, crate hash, StableCrateId, pointers to the writable
                 and text sections (relocated), sizes, offset/count of every part below,
-                site count, fixup area offset
+                site count, fixup area offset, the `asm::Mode` the code was encoded in
 functions       per function, sorted by code offset: code offset and length (bytes in the
-                text section), argument block size, return value size, return kind
+                text section), argument block size, return value size, return kind, and
+                its runs of the scope and call-site tables (first index, count)
 code constants  what the machine code refers to: island operand arrays (a count, then the
                 words), sparse switch values
 fixups          PE only: (writable offset, symbol index, addend)
@@ -635,7 +636,17 @@ symbol flags    one byte per symbol (bit 0: indirect, load through the slot; PE 
 symbols         pointer-sized slots, one per referenced native symbol (functions, statics,
                 islands, `rust_eh_personality` on ELF), filled in by the linker
 constants       constant pool: allocations, aligned
+scopes          per function, sorted by position: where a frame object escapes or its
+                storage ends (`asm::Scope`: code offset, frame offset, size, alignment or
+                0 for an end)
+call sites      per function, sorted by position: code offset and length, landing pad
+                offset (with the catch bit) or none (`asm::CallSite`)
 ```
+
+Scopes and call sites are for decoding a linked function's code at run time
+(`asm::decode_reduced`), which the code alone doesn't allow: scopes aren't in the code at
+all, and the call sites are the LSDA's, which the runtime can't find per function without
+parsing `.eh_frame` (and PE has none). The records are the encoder's on both formats.
 
 The read-only section can live in RELRO/`.rdata`, since nothing writes to it after
 relocation.
@@ -654,7 +665,8 @@ on it: global, with the function's linkage and visibility, when native code or t
 calls it by name, local otherwise (backtraces, profilers) ([backend.md](backend.md#pipeline)). **Unwind**: `.eh_frame` and
 `.gcc_except_table.ryo_image` (ELF), `.pdata` and `.xdata` (PE) ([Unwinding](#unwinding)).
 
-- `ryo_bytecode::image` defines the exact layout (`Header`, `FuncEntry`, `FixupEntry`).
+- `ryo_bytecode::image` defines the exact layout (`Header`, `FuncEntry`, `FixupEntry`,
+  `ScopeEntry`, `CallSiteEntry`).
   `addr.abs` data offsets are offsets from the start of the fixups area.
 - **Relocations** (`RelocKind`):
   - `Abs64` (`R_X86_64_64` / `IMAGE_REL_AMD64_ADDR64`): the header's `data` and `text`
@@ -679,8 +691,9 @@ calls it by name, local otherwise (backtraces, profilers) ([backend.md](backend.
   (`ryo_bytecode::image::crate_hash`). It is stored in the header, which also keeps the full
   `StableCrateId`, so the registry can detect collisions.
 - **Images are trusted**: they are produced by the backend, and the VM doesn't validate
-  code. `Image::parse` checks the header and part bounds, and `Image::validate` checks the
-  tables only (functions, fixups, symbol flags). For functions given as instruction words,
+  code. `Image::parse` checks the header, the mode bits and part bounds, and `Image::validate`
+  checks the tables only (functions with their scope and call-site runs, fixups, symbol
+  flags). For functions given as instruction words,
   `finish` checks them (`ryo_bytecode::image::validate_code`: operands in range, branch
   targets on instruction starts, no fall-through past the end, symbol indirection) and the
   cleanup entries, and `encode` checks that every cleanup entry is at an instruction that
