@@ -589,7 +589,8 @@ impl<'a> Image<'a> {
 /// Classifies the addresses an image's linked code refers to ([`crate::asm::Resolver`]), by
 /// the image's header ranges, for decoding its functions at run time
 /// ([`crate::asm::decode_linked`]). The handlers aren't in the image: `handlers` gives their
-/// addresses (sorted), `probe` that of `ryo_probe_stack`.
+/// addresses (sorted; an address shared by several opcodes resolves to none of them), `probe`
+/// that of `ryo_probe_stack`.
 #[cfg(feature = "alloc")]
 #[derive(Clone, Copy)]
 pub struct ImageResolver<'a> {
@@ -616,7 +617,7 @@ impl ImageResolver<'_> {
             .iter()
             .map(|d| crate::asm::DroppedStore::from_parts(d.code_offset, d.frame_offset, d.size, d.reg))
             .collect::<Option<Vec<_>>>()?;
-        let addr = self.image.header().text + f.code_off as u64;
+        let addr = self.image.header().text.wrapping_add(f.code_off as u64);
         Some(crate::asm::decode_linked(code, addr, self, &sites, &dropped, &scopes, self.image.mode()))
     }
 }
@@ -626,33 +627,51 @@ impl crate::asm::Resolver for ImageResolver<'_> {
     fn resolve(&self, addr: u64) -> Option<crate::asm::Ref> {
         use crate::asm::Ref;
         use crate::full::{Const, Data, Func, Site, Sym};
-        if let Ok(i) = self.handlers.binary_search_by_key(&(addr as usize), |h| h.0) {
-            return Some(Ref::Handler(self.handlers[i].1));
+        // A handler address shared by several opcodes (folded handlers) is ambiguous.
+        let lo = self.handlers.partition_point(|h| (h.0 as u64) < addr);
+        let hi = self.handlers.partition_point(|h| (h.0 as u64) <= addr);
+        if hi - lo == 1 {
+            return Some(Ref::Handler(self.handlers[lo].1));
+        }
+        if hi > lo {
+            return None;
         }
         if addr == self.probe as u64 {
             return Some(Ref::Probe);
         }
         let h = self.image.header();
         // The offset of `addr` in the `len` bytes at `base` (one past the end with `end`).
-        let within = |base: u64, len: u32, end: bool| addr.checked_sub(base).filter(|&o| o < len as u64 + end as u64).map(|o| o as u32);
+        let within = |base: u64, len: u64, end: bool| {
+            addr.checked_sub(base).filter(|&o| o < len.saturating_add(end as u64)).and_then(|o| u32::try_from(o).ok())
+        };
         let ro = self.image.bytes().as_ptr() as u64;
-        if let Some(o) = within(h.text, h.text_size, false) {
+        let consts = (ro.wrapping_add(h.consts.off as u64), h.consts.count as u64);
+        let data = (h.data.wrapping_add(h.fixup_area as u64), h.data_size.saturating_sub(h.fixup_area) as u64);
+        if let Some(o) = within(h.text, h.text_size as u64, false) {
             let fs = self.image.functions();
             return fs.binary_search_by_key(&o, |f| f.code_off).ok().map(|i| Ref::Func(Func(i as u32)));
         }
-        if let Some(o) = within(ro + h.symbols.off as u64, h.symbols.count * 8, false) {
+        if let Some(o) = within(ro.wrapping_add(h.symbols.off as u64), h.symbols.count as u64 * 8, false) {
             return (o % 8 == 0).then_some(Ref::Sym(Sym(o / 8)));
         }
-        if let Some(o) = within(ro + h.code_consts.off as u64, h.code_consts.count, false) {
+        if let Some(o) = within(ro.wrapping_add(h.code_consts.off as u64), h.code_consts.count as u64, false) {
             return Some(Ref::Ro(o));
         }
-        if let Some(o) = within(ro + h.consts.off as u64, h.consts.count, true) {
+        if let Some(o) = within(consts.0, consts.1, false) {
             return Some(Ref::Const(Const(o)));
         }
-        if let Some(o) = within(h.data, h.site_count * 8, false) {
+        if let Some(o) = within(h.data, h.site_count as u64 * 8, false) {
             return (o % 8 == 0).then_some(Ref::Site(Site(o / 8)));
         }
-        within(h.data + h.fixup_area as u64, h.data_size - h.fixup_area, true).map(|o| Ref::Data(Data(o)))
+        if let Some(o) = within(data.0, data.1, false) {
+            return Some(Ref::Data(Data(o)));
+        }
+        // One past the end of the constants or the data, only once no range holds `addr`
+        // (sections may be adjacent).
+        if let Some(o) = within(consts.0, consts.1, true) {
+            return Some(Ref::Const(Const(o)));
+        }
+        within(data.0, data.1, true).map(|o| Ref::Data(Data(o)))
     }
 
     fn code_consts(&self) -> &[u8] {
