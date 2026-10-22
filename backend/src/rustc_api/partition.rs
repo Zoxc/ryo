@@ -487,17 +487,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             let c = &l.code;
             writeln!(out, "fn {name} (frame {}, args {}, ret {})", l.frame_size, l.arg_size, l.ret_size).unwrap();
             match asm::decode(&c.code, &c.relocs, &c.rodata, &c.call_sites, mode) {
-                Ok(d) => {
-                    write!(out, "{}", ryo_bytecode::insn::Disasm(&d.words)).unwrap();
-                    for e in &d.cleanup {
-                        let to = match e.target {
-                            CONTINUE => "continue".to_owned(),
-                            t if t & CATCH != 0 => format!("{} (catch)", t & !CATCH),
-                            t => t.to_string(),
-                        };
-                        writeln!(out, "  cleanup {} -> {to}", e.offset).unwrap();
-                    }
-                }
+                Ok(d) => dump_labeled(&mut out, &d.words, &d.cleanup),
                 Err(e) => writeln!(out, "  undecodable: {e:?}").unwrap(),
             }
             for (i, r) in l.relocs.iter().enumerate() {
@@ -1302,4 +1292,68 @@ pub fn exported_generic_symbols<'tcx>(
         .collect();
     out.sort_by_cached_key(|s| s.0.symbol_name_for_local_instance(tcx));
     tcx.arena.alloc_from_iter(out)
+}
+
+/// Prints decoded VM code for `RYO_DUMP`: one instruction per line, without offsets, with
+/// branch targets (`@±n`) and cleanup entries naming labels `L<n>`, numbered in order of
+/// position, and `L<n>:` printed before each labeled instruction.
+fn dump_labeled(out: &mut String, words: &[u32], cleanup: &[ryo_bytecode::image::CleanupEntry]) {
+    use std::fmt::Write;
+    let mut lines = Vec::new();
+    for r in ryo_bytecode::insn::Decoder::new(words) {
+        match r {
+            Ok((at, insn)) => lines.push((at, insn.to_string())),
+            Err(e) => {
+                lines.push((usize::MAX, format!("error: {e}")));
+                break;
+            }
+        }
+    }
+    // Rewrites each `@±n` in `text` (at `at`) with `f(at + n)`.
+    fn targets(text: &str, at: usize, mut f: impl FnMut(usize) -> String) -> String {
+        let mut res = String::new();
+        let mut rest = text;
+        while let Some(i) = rest.find('@') {
+            res.push_str(&rest[..i]);
+            let t = &rest[i + 1..];
+            let n = t.find(|c: char| c != '+' && c != '-' && !c.is_ascii_digit()).unwrap_or(t.len());
+            let off: i64 = t[..n].parse().expect("a branch offset");
+            res.push_str(&f((at as i64 + off) as usize));
+            rest = &t[n..];
+        }
+        res.push_str(rest);
+        res
+    }
+    let mut labeled = std::collections::BTreeSet::new();
+    for (at, text) in &lines {
+        targets(text, *at, |t| {
+            labeled.insert(t);
+            String::new()
+        });
+    }
+    for e in cleanup {
+        labeled.insert(e.offset as usize);
+        if e.target != CONTINUE {
+            labeled.insert((e.target & !CATCH) as usize);
+        }
+    }
+    let label: FxHashMap<usize, usize> = labeled.iter().enumerate().map(|(i, &at)| (at, i)).collect();
+    let name = |at: usize| match label.get(&at) {
+        Some(l) => format!("L{l}"),
+        None => format!("@{at}"),
+    };
+    for (at, text) in &lines {
+        if label.contains_key(at) {
+            writeln!(out, "{}:", name(*at)).unwrap();
+        }
+        writeln!(out, "    {}", targets(text, *at, name)).unwrap();
+    }
+    for e in cleanup {
+        let to = match e.target {
+            CONTINUE => "continue".to_owned(),
+            t if t & CATCH != 0 => format!("{} (catch)", name((t & !CATCH) as usize)),
+            t => name(t as usize),
+        };
+        writeln!(out, "  cleanup {} -> {to}", name(e.offset as usize)).unwrap();
+    }
 }

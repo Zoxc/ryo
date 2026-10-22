@@ -271,7 +271,9 @@ Environment variables read by the backend (and `y test`):
 - `RYO_DUMP=<file>` writes every VM function of the crate's image (local and upstream generic
   instances alike) to `<file>`, sorted by instance path: `fn <instance> (frame F, args A, ret R)`,
   its machine code decoded back to VM instructions (`asm::decode`, printed as the
-  disassembler prints instruction words), its cleanup entries, and what its `fn`, `sym`,
+  disassembler prints instruction words, but without offsets: branch and switch targets
+  are labels `L<n>`, numbered per function by position, with `L<n>:` before each target),
+  its cleanup entries (`cleanup <call label> -> <landing pad label>|continue`), and what its `fn`, `sym`,
   `site`, `k` and `data` operands refer to. Those operands are numbered per function (by
   relocation, before the merge pass), so the dump doesn't change with unrelated functions.
 - `RYO_DUMP_CODE=<file>` writes the same functions' machine code, in the same order, for

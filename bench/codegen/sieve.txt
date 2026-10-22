@@ -1,92 +1,117 @@
 fn <() as std::process::Termination>::report (frame 16, args 0, ret 1)
-     0: imm.w8 $-1, 0
-     3: ret $-1, 1
+    imm.w8 $-1, 0
+    ret $-1, 1
 
 fn <alloc::raw_vec::RawVec<bool> as std::ops::Drop>::drop (frame 48, args 8, ret 0)
-     0: mov.w64 $-8, $16
-     3: mov.w64 $-48, $-8
-     6: const $-40, k0, 16
-    10: call.ext $0, sym1, site2, sym3, $-16
-    16: ret $0, 0
-  cleanup 10 -> continue
+    mov.w64 $-8, $16
+    mov.w64 $-48, $-8
+    const $-40, k0, 16
+L0:
+    call.ext $0, sym1, site2, sym3, $-16
+    ret $0, 0
+  cleanup L0 -> continue
   k0 = const allocation + 0
   sym1 = alloc::raw_vec::RawVecInner::deallocate
   site2
   sym3 = island ryo_island_call_ptr2[&'{erased} mut alloc::raw_vec::RawVecInner<std::alloc::Global>, std::alloc::Layout, ()]
 
 fn <bool as std::vec::is_zero::IsZero>::is_zero (frame 16, args 8, ret 1)
-     0: load.w8 $-2, [$16 + 0]
-     4: xor.imm.w8 $-1, $-2, 1
-     8: ret $-1, 1
+    load.w8 $-2, [$16 + 0]
+    xor.imm.w8 $-1, $-2, 1
+    ret $-1, 1
 
 fn <bool as std::vec::spec_from_elem::SpecFromElem>::from_elem::<std::alloc::Global> (frame 176, args 16, ret 24)
-     0: imm.w8 $-26, 1
-     3: imm.w8 $-25, 1
-     6: addr $-56, $24
-     9: mov.w64 $-176, $-56
-    12: call $-41, fn0
-    15: br! $-41, @+25
-    19: imm.w8 $-25, 0
-    22: mov.w64 $-176, $16
-    25: imm.w8 $-168, 1
-    28: const $-160, k1, 16
-    32: call.ext $-104, sym2, site3, sym4, $-136
-    38: jmp @+51
-    40: imm.w8 $-25, 0
-    43: mov.w64 $-176, $16
-    46: const $-168, k5, 16
-    50: call $-96, fn6
-    53: jmp @+75
-    55: copy $-24, $-64, 24
-    59: ret $-24, 24
-    62: addr $-136, $-64
-    65: mov.w64 $-176, $-136
-    68: call $-136, fn7
-    71: jmp @+10
-    73: br $-26, @+14
-    77: resume $-40
-    79: jmp @-6
-    81: br! $-25, @-8
-    85: jmp @-6
-    87: jmp @-10
-    89: mov.w64 $-112, $-104
-    92: switch.dense.w64 $-112, 0, @+8, [@+22, @+9]
-   100: unreachable
-   101: mov.w128 $-128, $-96
-   104: mov.w128 $-176, $-128
-   107: call.ext $-26, sym8, site9, sym10, $-136
-   113: unreachable
-   114: mov.w128 $-80, $-96
-   117: mov.w128 $-64, $-80
-   120: mov.w128 $-24, $-64
-   123: mov.w64 $-8, $16
-   126: jmp @-67
-   128: mov.w128 $-80, $-96
-   131: mov.w128 $-64, $-80
-   134: imm.w64 $-48, 0
-   138: addr $-72, $-64
-   141: imm.w8 $-26, 0
-   144: mov.w8 $-73, $24
-   147: mov.w64 $-176, $-72
-   150: mov.w64 $-168, $16
-   153: mov.w8 $-160, $-73
-   156: call $-24, fn11
-   159: jmp @-104
-   161: call.ext $-128, sym12, site13, sym14, $-136
-   167: unreachable
-   168: lpad $-40
-   170: jmp @-89
-   172: lpad $-40
-   174: jmp @-13
-   176: lpad $-40
-   178: jmp @-116
-  cleanup 12 -> 168
-  cleanup 32 -> 168
-  cleanup 50 -> 168
-  cleanup 68 -> 172 (catch)
-  cleanup 77 -> continue
-  cleanup 107 -> 168
-  cleanup 156 -> 176
+    imm.w8 $-26, 1
+    imm.w8 $-25, 1
+    addr $-56, $24
+    mov.w64 $-176, $-56
+L0:
+    call $-41, fn0
+    br! $-41, L2
+    imm.w8 $-25, 0
+    mov.w64 $-176, $16
+    imm.w8 $-168, 1
+    const $-160, k1, 16
+L1:
+    call.ext $-104, sym2, site3, sym4, $-136
+    jmp L13
+L2:
+    imm.w8 $-25, 0
+    mov.w64 $-176, $16
+    const $-168, k5, 16
+L3:
+    call $-96, fn6
+    jmp L18
+L4:
+    copy $-24, $-64, 24
+L5:
+    ret $-24, 24
+L6:
+    addr $-136, $-64
+    mov.w64 $-176, $-136
+L7:
+    call $-136, fn7
+    jmp L11
+L8:
+    br $-26, L12
+L9:
+    resume $-40
+L10:
+    jmp L8
+L11:
+    br! $-25, L8
+    jmp L10
+L12:
+    jmp L9
+L13:
+    mov.w64 $-112, $-104
+    switch.dense.w64 $-112, 0, L14, [L17, L15]
+L14:
+    unreachable
+L15:
+    mov.w128 $-128, $-96
+    mov.w128 $-176, $-128
+L16:
+    call.ext $-26, sym8, site9, sym10, $-136
+    unreachable
+L17:
+    mov.w128 $-80, $-96
+    mov.w128 $-64, $-80
+    mov.w128 $-24, $-64
+    mov.w64 $-8, $16
+    jmp L5
+L18:
+    mov.w128 $-80, $-96
+    mov.w128 $-64, $-80
+    imm.w64 $-48, 0
+    addr $-72, $-64
+    imm.w8 $-26, 0
+    mov.w8 $-73, $24
+    mov.w64 $-176, $-72
+    mov.w64 $-168, $16
+    mov.w8 $-160, $-73
+L19:
+    call $-24, fn11
+    jmp L4
+L20:
+    call.ext $-128, sym12, site13, sym14, $-136
+    unreachable
+L21:
+    lpad $-40
+    jmp L11
+L22:
+    lpad $-40
+    jmp L20
+L23:
+    lpad $-40
+    jmp L6
+  cleanup L0 -> L21
+  cleanup L1 -> L21
+  cleanup L3 -> L21
+  cleanup L7 -> L22 (catch)
+  cleanup L9 -> continue
+  cleanup L16 -> L21
+  cleanup L19 -> L23
   fn0 = <bool as std::vec::is_zero::IsZero>::is_zero
   k1 = const allocation + 0
   sym2 = alloc::raw_vec::RawVecInner::try_allocate_in
@@ -104,235 +129,300 @@ fn <bool as std::vec::spec_from_elem::SpecFromElem>::from_elem::<std::alloc::Glo
   sym14 = island ryo_island_call_ptr0[!]
 
 fn <fn() as std::ops::FnOnce<()>>::call_once - shim(fn()) (frame 0, args 8, ret 0)
-     0: call.ind $0, $16, site0, sym1
-     5: ret $0, 0
-  cleanup 0 -> continue
+L0:
+    call.ind $0, $16, site0, sym1
+    ret $0, 0
+  cleanup L0 -> continue
   site0
   sym1 = island ryo_island_call_ptr0[()]
 
 fn <std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize::<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0} (frame 64, args 16, ret 8)
-     0: mov.w64 $-32, $16
-     3: addr $-48, $24
-     6: mov.w64 $-40, $-48
-     9: mov.w64 $-64, $-32
-    12: mov.w64 $-56, $-40
-    15: call $-17, fn0
-    18: zext.w8.w64 $-8, $-17
-    21: ret $-8, 8
-    24: resume $-16
-    26: lpad $-16
-    28: jmp @-4
-  cleanup 15 -> 26
-  cleanup 24 -> continue
+    mov.w64 $-32, $16
+    addr $-48, $24
+    mov.w64 $-40, $-48
+    mov.w64 $-64, $-32
+    mov.w64 $-56, $-40
+L0:
+    call $-17, fn0
+    zext.w8.w64 $-8, $-17
+    ret $-8, 8
+L1:
+    resume $-16
+L2:
+    lpad $-16
+    jmp L1
+  cleanup L0 -> L2
+  cleanup L1 -> continue
   fn0 = main::{closure#0}
 
 fn <std::iter::Filter<std::slice::Iter<'_, bool>, {closure@bench/sieve.rs:24:37: 24:42}> as std::iter::Iterator>::count (frame 112, args 16, ret 8)
-     0: imm.w8 $-17, 1
-     3: imm.w8 $-18, 1
-     6: addr $-80, $16
-     9: mov.w64 $-112, $-80
-    12: call $-72, fn0
-    15: mov.w128 $-48, $-64
-    18: mov.w64 $-80, $-48
-    21: switch.dense.w64 $-80, 0, @+59, [@+60, @+66]
-    29: mov.w128 $-64, $-48
-    32: mov.w128 $-112, $-64
-    35: imm.w64 $-96, 0
-    39: call $-8, fn1
-    42: jmp @+50
-    44: ret $-8, 8
-    47: resume $-32
-    49: br! $-17, @-2
-    53: jmp @-6
-    55: jmp @-6
-    57: br! $-18, @-8
-    61: jmp @-6
-    63: imm.w8 $-18, 0
-    66: mov.w128 $-64, $16
-    69: imm.w8 $-17, 0
-    72: mov.w128 $-112, $-64
-    75: call $-48, fn2
-    78: jmp @-49
-    80: unreachable
-    81: imm.w64 $-16, 18446744073709551615
-    85: jmp @-22
-    87: mov.w64 $-16, $-40
-    90: jmp @-27
-    92: mov.w64 $-112, $-8
-    95: mov.w64 $-104, $-16
-    98: call $-16, fn3
-   101: jmp @-57
-   103: lpad $-32
-   105: jmp @-48
-  cleanup 12 -> 103
-  cleanup 39 -> 103
-  cleanup 47 -> continue
-  cleanup 75 -> 103
-  cleanup 98 -> 103
+    imm.w8 $-17, 1
+    imm.w8 $-18, 1
+    addr $-80, $16
+    mov.w64 $-112, $-80
+L0:
+    call $-72, fn0
+    mov.w128 $-48, $-64
+    mov.w64 $-80, $-48
+    switch.dense.w64 $-80, 0, L10, [L11, L12]
+L1:
+    mov.w128 $-64, $-48
+    mov.w128 $-112, $-64
+    imm.w64 $-96, 0
+L2:
+    call $-8, fn1
+    jmp L13
+L3:
+    ret $-8, 8
+L4:
+    resume $-32
+L5:
+    br! $-17, L4
+    jmp L4
+L6:
+    jmp L5
+L7:
+    br! $-18, L5
+    jmp L6
+L8:
+    imm.w8 $-18, 0
+    mov.w128 $-64, $16
+    imm.w8 $-17, 0
+    mov.w128 $-112, $-64
+L9:
+    call $-48, fn2
+    jmp L1
+L10:
+    unreachable
+L11:
+    imm.w64 $-16, 18446744073709551615
+    jmp L8
+L12:
+    mov.w64 $-16, $-40
+    jmp L8
+L13:
+    mov.w64 $-112, $-8
+    mov.w64 $-104, $-16
+L14:
+    call $-16, fn3
+    jmp L3
+L15:
+    lpad $-32
+    jmp L7
+  cleanup L0 -> L15
+  cleanup L2 -> L15
+  cleanup L4 -> continue
+  cleanup L9 -> L15
+  cleanup L14 -> L15
   fn0 = <std::slice::Iter<'_, bool> as std::iter::Iterator>::size_hint
   fn1 = <std::slice::Iter<'_, bool> as std::iter::Iterator>::fold::<usize, {closure@std::iter::adapters::map::map_fold<&bool, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}}>::{closure#0}}>
   fn2 = <std::slice::Iter<'_, bool> as std::iter::Iterator>::map::<usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>
   fn3 = <std::slice::Iter<'_, bool> as std::iter::adapters::filter::SpecAssumeCount>::assume_count_le_upper_bound
 
 fn <std::iter::Rev<std::ops::RangeInclusive<usize>> as std::iter::Iterator>::find::<{closure@bench/sieve.rs:25:39: 25:43}> (frame 48, args 16, ret 16)
-     0: mov.w64 $-24, $16
-     3: mov.w64 $-48, $-24
-     6: mov.w64 $-40, $24
-     9: call $-16, fn0
-    12: ret $-16, 16
-  cleanup 9 -> continue
+    mov.w64 $-24, $16
+    mov.w64 $-48, $-24
+    mov.w64 $-40, $24
+L0:
+    call $-16, fn0
+    ret $-16, 16
+  cleanup L0 -> continue
   fn0 = <std::ops::RangeInclusive<usize> as std::iter::DoubleEndedIterator>::rfind::<{closure@bench/sieve.rs:25:39: 25:43}>
 
 fn <std::ops::ControlFlow<usize> as std::ops::FromResidual<std::ops::ControlFlow<usize, std::convert::Infallible>>>::from_residual (frame 48, args 8, ret 16)
-     0: imm.w64 $-24, 1
-     4: eq.imm.w64 $-25, $-24, 1
-     9: mov.w64 $-40, $16
-    12: mov.w64 $-8, $-40
-    15: imm.w64 $-16, 1
-    19: ret $-16, 16
+    imm.w64 $-24, 1
+    eq.imm.w64 $-25, $-24, 1
+    mov.w64 $-40, $16
+    mov.w64 $-8, $-40
+    imm.w64 $-16, 1
+    ret $-16, 16
 
 fn <std::ops::ControlFlow<usize> as std::ops::Try>::branch (frame 48, args 16, ret 16)
-     0: mov.w64 $-24, $16
-     3: switch.dense.w64 $-24, 0, @+8, [@+24, @+9]
-    11: unreachable
-    12: mov.w64 $-32, $24
-    15: mov.w64 $-40, $-32
-    18: mov.w64 $-8, $-40
-    21: imm.w64 $-16, 1
-    25: jmp @+6
-    27: imm.w64 $-16, 0
-    31: ret $-16, 16
+    mov.w64 $-24, $16
+    switch.dense.w64 $-24, 0, L0, [L2, L1]
+L0:
+    unreachable
+L1:
+    mov.w64 $-32, $24
+    mov.w64 $-40, $-32
+    mov.w64 $-8, $-40
+    imm.w64 $-16, 1
+    jmp L3
+L2:
+    imm.w64 $-16, 0
+L3:
+    ret $-16, 16
 
 fn <std::ops::ControlFlow<usize> as std::ops::Try>::from_output (frame 16, args 0, ret 16)
-     0: imm.w64 $-16, 0
-     4: ret $-16, 16
+    imm.w64 $-16, 0
+    ret $-16, 16
 
 fn <std::ops::RangeInclusive<usize> as std::iter::DoubleEndedIterator>::rfind::<{closure@bench/sieve.rs:25:39: 25:43}> (frame 80, args 16, ret 16)
-     0: mov.w64 $-40, $24
-     3: mov.w64 $-80, $16
-     6: mov.w64 $-72, $-40
-     9: call $-32, fn0
-    12: mov.w64 $-40, $-32
-    15: switch.dense.w64 $-40, 0, @+8, [@+21, @+9]
-    23: unreachable
-    24: mov.w64 $-48, $-24
-    27: mov.w64 $-8, $-48
-    30: imm.w64 $-16, 1
-    34: jmp @+13
-    36: imm.w64 $-16, 0
-    40: jmp @+7
-    42: ret $-16, 16
-    45: jmp @-3
-    47: mov.w64 $-56, $-32
-    50: switch.dense.w64 $-56, 0, @-27, [@-5, @-8]
-  cleanup 9 -> continue
+    mov.w64 $-40, $24
+    mov.w64 $-80, $16
+    mov.w64 $-72, $-40
+L0:
+    call $-32, fn0
+    mov.w64 $-40, $-32
+    switch.dense.w64 $-40, 0, L1, [L3, L2]
+L1:
+    unreachable
+L2:
+    mov.w64 $-48, $-24
+    mov.w64 $-8, $-48
+    imm.w64 $-16, 1
+    jmp L6
+L3:
+    imm.w64 $-16, 0
+    jmp L6
+L4:
+    ret $-16, 16
+L5:
+    jmp L4
+L6:
+    mov.w64 $-56, $-32
+    switch.dense.w64 $-56, 0, L1, [L5, L4]
+  cleanup L0 -> continue
   fn0 = std::iter::range::<impl std::iter::DoubleEndedIterator for std::ops::RangeInclusive<usize>>::try_rfold::<(), {closure@std::iter::DoubleEndedIterator::rfind::check<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0}}, std::ops::ControlFlow<usize>>
 
 fn <std::ops::RangeInclusive<usize> as std::iter::Iterator>::rev (frame 32, args 24, ret 24)
-     0: copy $-24, $16, 24
-     4: ret $-24, 24
+    copy $-24, $16, 24
+    ret $-24, 24
 
 fn <std::ops::RangeInclusive<usize> as std::iter::range::RangeInclusiveIteratorImpl>::spec_try_rfold::<(), {closure@std::iter::DoubleEndedIterator::rfind::check<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0}}, std::ops::ControlFlow<usize>> (frame 160, args 16, ret 16)
-     0: imm.w8 $-42, 1
-     3: load.w8 $-58, [$16 + 16]
-     7: br! $-58, @+228
-    11: jmp @+222
-    13: imm.w8 $-42, 0
-    16: call $-16, fn0
-    19: jmp @+191
-    21: imm.w8 $-42, 0
-    24: imm.w8 $-41, 1
-    27: mov.w64 $-72, $16
-    30: ptr.add $-80, $16, 8
-    35: mov.w64 $-160, $-72
-    38: mov.w64 $-152, $-80
-    41: call $-57, fn1
-    44: br! $-57, @+78
-    48: load.w64 $-80, [$16 + 8]
-    52: mov.w64 $-160, $-80
-    55: imm.w64 $-152, 1
-    59: call $-72, fn2
-    62: load.w64 $-80, [$16 + 8]
-    66: store.w64 [$16 + 8], $-72
-    70: addr $-120, $24
-    73: imm.w8 $-41, 0
-    76: mov.w64 $-128, $-80
-    79: mov.w64 $-160, $-120
-    82: mov.w64 $-152, $-128
-    85: call $-112, fn3
-    88: mov.w128 $-160, $-112
-    91: call $-96, fn4
-    94: mov.w64 $-32, $-96
-    97: switch.dense.w64 $-32, 0, @+8, [@+9, @+14]
-   105: unreachable
-   106: imm.w8 $-41, 1
-   109: jmp @-82
-   111: mov.w64 $-104, $-88
-   114: mov.w64 $-160, $-104
-   117: call $-16, fn5
-   120: jmp @+90
-   122: imm.w8 $-144, 1
-   125: store.w8 [$16 + 16], $-144
-   129: mov.w64 $-72, $16
-   132: ptr.add $-80, $16, 8
-   137: mov.w64 $-160, $-72
-   140: mov.w64 $-152, $-80
-   143: call $-57, fn6
-   146: br! $-57, @+56
-   150: addr $-104, $24
-   153: imm.w8 $-41, 0
-   156: load.w64 $-120, [$16 + 0]
-   160: mov.w64 $-112, $-120
-   163: mov.w64 $-160, $-104
-   166: mov.w64 $-152, $-112
-   169: call $-96, fn7
-   172: mov.w128 $-160, $-96
-   175: call $-80, fn8
-   178: mov.w64 $-40, $-80
-   181: switch.dense.w64 $-40, 0, @-76, [@+8, @+10]
-   189: jmp @+13
-   191: mov.w64 $-88, $-72
-   194: mov.w64 $-160, $-88
-   197: call $-16, fn9
-   200: jmp @+10
-   202: imm.w8 $-41, 0
-   205: call $-16, fn10
-   208: jmp @+2
-   210: ret $-16, 16
-   213: jmp @+14
-   215: resume $-56
-   217: jmp @-4
-   219: br! $-41, @-6
-   223: jmp @-6
-   225: jmp @-10
-   227: br! $-42, @-12
-   231: jmp @-6
-   233: jmp @-220
-   235: mov.w64 $-72, $16
-   238: ptr.add $-80, $16, 8
-   243: mov.w64 $-160, $-72
-   246: mov.w64 $-152, $-80
-   249: call $-59, fn11
-   252: xor.imm.w8 $-57, $-59, 1
-   256: br! $-57, @-235
-   260: jmp @-247
-   262: lpad $-56
-   264: jmp @-51
-   266: lpad $-56
-   268: jmp @-49
-  cleanup 16 -> 262
-  cleanup 41 -> 266
-  cleanup 59 -> 266
-  cleanup 85 -> 266
-  cleanup 91 -> 266
-  cleanup 117 -> 266
-  cleanup 143 -> 266
-  cleanup 169 -> 266
-  cleanup 175 -> 266
-  cleanup 197 -> 266
-  cleanup 205 -> 266
-  cleanup 215 -> continue
-  cleanup 249 -> 262
+    imm.w8 $-42, 1
+    load.w8 $-58, [$16 + 16]
+    br! $-58, L29
+    jmp L28
+L0:
+    imm.w8 $-42, 0
+L1:
+    call $-16, fn0
+    jmp L21
+L2:
+    imm.w8 $-42, 0
+    imm.w8 $-41, 1
+L3:
+    mov.w64 $-72, $16
+    ptr.add $-80, $16, 8
+    mov.w64 $-160, $-72
+    mov.w64 $-152, $-80
+L4:
+    call $-57, fn1
+    br! $-57, L12
+    load.w64 $-80, [$16 + 8]
+    mov.w64 $-160, $-80
+    imm.w64 $-152, 1
+L5:
+    call $-72, fn2
+    load.w64 $-80, [$16 + 8]
+    store.w64 [$16 + 8], $-72
+    addr $-120, $24
+    imm.w8 $-41, 0
+    mov.w64 $-128, $-80
+    mov.w64 $-160, $-120
+    mov.w64 $-152, $-128
+L6:
+    call $-112, fn3
+    mov.w128 $-160, $-112
+L7:
+    call $-96, fn4
+    mov.w64 $-32, $-96
+    switch.dense.w64 $-32, 0, L8, [L9, L10]
+L8:
+    unreachable
+L9:
+    imm.w8 $-41, 1
+    jmp L3
+L10:
+    mov.w64 $-104, $-88
+    mov.w64 $-160, $-104
+L11:
+    call $-16, fn5
+    jmp L21
+L12:
+    imm.w8 $-144, 1
+    store.w8 [$16 + 16], $-144
+    mov.w64 $-72, $16
+    ptr.add $-80, $16, 8
+    mov.w64 $-160, $-72
+    mov.w64 $-152, $-80
+L13:
+    call $-57, fn6
+    br! $-57, L19
+    addr $-104, $24
+    imm.w8 $-41, 0
+    load.w64 $-120, [$16 + 0]
+    mov.w64 $-112, $-120
+    mov.w64 $-160, $-104
+    mov.w64 $-152, $-112
+L14:
+    call $-96, fn7
+    mov.w128 $-160, $-96
+L15:
+    call $-80, fn8
+    mov.w64 $-40, $-80
+    switch.dense.w64 $-40, 0, L8, [L16, L17]
+L16:
+    jmp L19
+L17:
+    mov.w64 $-88, $-72
+    mov.w64 $-160, $-88
+L18:
+    call $-16, fn9
+    jmp L21
+L19:
+    imm.w8 $-41, 0
+L20:
+    call $-16, fn10
+    jmp L21
+L21:
+    ret $-16, 16
+L22:
+    jmp L27
+L23:
+    resume $-56
+L24:
+    jmp L22
+L25:
+    br! $-41, L22
+    jmp L24
+L26:
+    jmp L23
+L27:
+    br! $-42, L23
+    jmp L26
+L28:
+    jmp L0
+L29:
+    mov.w64 $-72, $16
+    ptr.add $-80, $16, 8
+    mov.w64 $-160, $-72
+    mov.w64 $-152, $-80
+L30:
+    call $-59, fn11
+    xor.imm.w8 $-57, $-59, 1
+    br! $-57, L2
+    jmp L0
+L31:
+    lpad $-56
+    jmp L22
+L32:
+    lpad $-56
+    jmp L25
+  cleanup L1 -> L31
+  cleanup L4 -> L32
+  cleanup L5 -> L32
+  cleanup L6 -> L32
+  cleanup L7 -> L32
+  cleanup L11 -> L32
+  cleanup L13 -> L32
+  cleanup L14 -> L32
+  cleanup L15 -> L32
+  cleanup L18 -> L32
+  cleanup L20 -> L32
+  cleanup L23 -> continue
+  cleanup L30 -> L31
   fn0 = <std::ops::ControlFlow<usize> as std::ops::Try>::from_output
   fn1 = std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt
   fn2 = <usize as std::iter::Step>::backward_unchecked
@@ -347,111 +437,134 @@ fn <std::ops::RangeInclusive<usize> as std::iter::range::RangeInclusiveIteratorI
   fn11 = std::cmp::impls::<impl std::cmp::PartialOrd for usize>::le
 
 fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::filter::<{closure@bench/sieve.rs:24:37: 24:42}> (frame 16, args 16, ret 16)
-     0: mov.w128 $-16, $16
-     3: ret $-16, 16
+    mov.w128 $-16, $16
+    ret $-16, 16
 
 fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::fold::<usize, {closure@std::iter::adapters::map::map_fold<&bool, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}}>::{closure#0}}> (frame 192, args 24, ret 8)
-     0: imm.w8 $-161, 0
-     3: br! $-161, @+17
-     7: mov.w64 $-88, $24
-    10: mov.w64 $-80, $-88
-    13: eq.imm.w64 $-65, $-80, 0
-    18: jmp @+21
-    20: mov.w64 $-88, $24
-    23: mov.w64 $-80, $-88
-    26: mov.w64 $-96, $16
-    29: mov.w64 $-88, $-96
-    32: mov.w64 $-96, $-80
-    35: eq.w64 $-65, $-88, $-96
-    39: br! $-65, @+12
-    43: imm.w8 $-50, 0
-    46: mov.w64 $-8, $32
-    49: jmp @+126
-    51: imm.w8 $-50, 0
-    54: imm.w8 $-49, 1
-    57: mov.w64 $-72, $32
-    60: imm.w64 $-32, 0
-    64: imm.w8 $-161, 0
-    67: br! $-161, @+12
-    71: mov.w64 $-80, $24
-    74: mov.w64 $-40, $-80
-    77: jmp @+29
-    79: mov.w64 $-88, $24
-    82: mov.w64 $-80, $-88
-    85: mov.w64 $-88, $16
-    88: mov.w64 $-96, $-80
-    91: mov.w64 $-104, $-88
-    94: mov.w64 $-112, $-80
-    97: imm.w8 $-161, 1
-   100: br! $-161, @+118
-   104: jmp @+96
-   106: addr $-88, $40
-   109: imm.w8 $-49, 0
-   112: mov.w64 $-112, $-72
-   115: mov.w64 $-136, $16
-   118: mov.w64 $-144, $-32
-   121: mov.w64 $-160, $-136
-   124: ptr.index $-152, $-160, $-144, 1
-   129: mov.w64 $-128, $-152
-   132: mov.w64 $-120, $-128
-   135: mov.w64 $-48, $-120
-   138: mov.w64 $-104, $-112
-   141: mov.w64 $-96, $-48
-   144: mov.w64 $-192, $-88
-   147: mov.w64 $-184, $-104
-   150: mov.w64 $-176, $-96
-   153: call $-80, fn0
-   156: mov.w64 $-72, $-80
-   159: imm.w8 $-161, 1
-   162: br! $-161, @+118
-   166: jmp @+101
-   168: mov.w64 $-8, $-72
-   171: jmp @+4
-   173: jmp @-67
-   175: ret $-8, 8
-   178: jmp @+14
-   180: resume $-64
-   182: jmp @-4
-   184: br! $-49, @-6
-   188: jmp @-6
-   190: jmp @-10
-   192: br! $-50, @-12
-   196: jmp @-6
-   198: jmp @-92
-   200: mov.w64 $-120, $-80
-   203: mov.w64 $-128, $-88
-   206: mov.w64 $-192, $-120
-   209: mov.w64 $-184, $-128
-   212: addr.abs $-176, k1
-   215: call $-50, fn2
-   218: imm.w64 $-168, 0
-   222: lt.u.imm.w64 $-113, $-168, 1
-   227: br! $-113, @+23
-   231: imm.w64 $-168, 1
-   235: le.u.imm.w64 $-114, $-168, 9223372036854775807
-   240: br! $-114, @+10
-   244: sub.w64 $-40, $-112, $-104
-   248: jmp @-50
-   250: addr.abs $-192, k3
-   253: imm.w64 $-184, 73
-   257: addr.abs $-176, k4
-   260: call.ext $-50, sym5, site6, sym7, $-168
-   266: unreachable
-   267: mov.w64 $-192, $-32
-   270: imm.w64 $-184, 1
-   274: addr.abs $-176, k8
-   277: call $-50, fn9
-   280: add.imm.w64 $-80, $-32, 1
-   285: mov.w64 $-32, $-80
-   288: mov.w64 $-88, $-32
-   291: mov.w64 $-96, $-40
-   294: br.eq.w64 $-88, $-96, @-126
-   299: jmp @-126
-   301: lpad $-64
-   303: jmp @-119
-  cleanup 153 -> 301
-  cleanup 180 -> continue
-  cleanup 260 -> 301
+    imm.w8 $-161, 0
+    br! $-161, L0
+    mov.w64 $-88, $24
+    mov.w64 $-80, $-88
+    eq.imm.w64 $-65, $-80, 0
+    jmp L1
+L0:
+    mov.w64 $-88, $24
+    mov.w64 $-80, $-88
+    mov.w64 $-96, $16
+    mov.w64 $-88, $-96
+    mov.w64 $-96, $-80
+    eq.w64 $-65, $-88, $-96
+L1:
+    br! $-65, L2
+    imm.w8 $-50, 0
+    mov.w64 $-8, $32
+    jmp L8
+L2:
+    imm.w8 $-50, 0
+    imm.w8 $-49, 1
+    mov.w64 $-72, $32
+    imm.w64 $-32, 0
+    imm.w8 $-161, 0
+    br! $-161, L3
+    mov.w64 $-80, $24
+    mov.w64 $-40, $-80
+    jmp L4
+L3:
+    mov.w64 $-88, $24
+    mov.w64 $-80, $-88
+    mov.w64 $-88, $16
+    mov.w64 $-96, $-80
+    mov.w64 $-104, $-88
+    mov.w64 $-112, $-80
+    imm.w8 $-161, 1
+    br! $-161, L17
+    jmp L16
+L4:
+    addr $-88, $40
+    imm.w8 $-49, 0
+    mov.w64 $-112, $-72
+    mov.w64 $-136, $16
+    mov.w64 $-144, $-32
+    mov.w64 $-160, $-136
+    ptr.index $-152, $-160, $-144, 1
+    mov.w64 $-128, $-152
+    mov.w64 $-120, $-128
+    mov.w64 $-48, $-120
+    mov.w64 $-104, $-112
+    mov.w64 $-96, $-48
+    mov.w64 $-192, $-88
+    mov.w64 $-184, $-104
+    mov.w64 $-176, $-96
+L5:
+    call $-80, fn0
+    mov.w64 $-72, $-80
+    imm.w8 $-161, 1
+    br! $-161, L21
+    jmp L20
+L6:
+    mov.w64 $-8, $-72
+    jmp L8
+L7:
+    jmp L4
+L8:
+    ret $-8, 8
+L9:
+    jmp L14
+L10:
+    resume $-64
+L11:
+    jmp L9
+L12:
+    br! $-49, L9
+    jmp L11
+L13:
+    jmp L10
+L14:
+    br! $-50, L10
+    jmp L13
+L15:
+    jmp L4
+L16:
+    mov.w64 $-120, $-80
+    mov.w64 $-128, $-88
+    mov.w64 $-192, $-120
+    mov.w64 $-184, $-128
+    addr.abs $-176, k1
+    call $-50, fn2
+L17:
+    imm.w64 $-168, 0
+    lt.u.imm.w64 $-113, $-168, 1
+    br! $-113, L18
+    imm.w64 $-168, 1
+    le.u.imm.w64 $-114, $-168, 9223372036854775807
+    br! $-114, L18
+    sub.w64 $-40, $-112, $-104
+    jmp L15
+L18:
+    addr.abs $-192, k3
+    imm.w64 $-184, 73
+    addr.abs $-176, k4
+L19:
+    call.ext $-50, sym5, site6, sym7, $-168
+    unreachable
+L20:
+    mov.w64 $-192, $-32
+    imm.w64 $-184, 1
+    addr.abs $-176, k8
+    call $-50, fn9
+L21:
+    add.imm.w64 $-80, $-32, 1
+    mov.w64 $-32, $-80
+    mov.w64 $-88, $-32
+    mov.w64 $-96, $-40
+    br.eq.w64 $-88, $-96, L6
+    jmp L7
+L22:
+    lpad $-64
+    jmp L12
+  cleanup L5 -> L22
+  cleanup L10 -> continue
+  cleanup L19 -> L22
   fn0 = std::iter::adapters::map::map_fold::<&bool, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}}>::{closure#0}
   k1 = const allocation + 0
   fn2 = std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_check
@@ -464,51 +577,58 @@ fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::fold::<usize, {closure@s
   fn9 = core::num::<impl usize>::unchecked_add::precondition_check
 
 fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::map::<usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}> (frame 16, args 16, ret 16)
-     0: mov.w128 $-16, $16
-     3: ret $-16, 16
+    mov.w128 $-16, $16
+    ret $-16, 16
 
 fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::size_hint (frame 128, args 8, ret 24)
-     0: imm.w8 $-89, 0
-     3: br! $-89, @+13
-     7: load.w64 $-40, [$16 + 8]
-    11: mov.w64 $-32, $-40
-    14: jmp @+31
-    16: load.w64 $-48, [$16 + 8]
-    20: mov.w64 $-40, $-48
-    23: load.w64 $-48, [$16 + 0]
-    27: mov.w64 $-56, $-40
-    30: mov.w64 $-64, $-48
-    33: mov.w64 $-72, $-40
-    36: imm.w8 $-89, 1
-    39: br! $-89, @+45
-    43: jmp @+23
-    45: mov.w64 $-40, $-32
-    48: mov.w64 $-48, $-32
-    51: imm.w64 $-56, 1
-    55: mov.w64 $-24, $-40
-    58: mov.w128 $-16, $-56
-    61: ret $-24, 24
-    64: jmp @-19
-    66: mov.w64 $-80, $-40
-    69: mov.w64 $-88, $-48
-    72: mov.w64 $-128, $-80
-    75: mov.w64 $-120, $-88
-    78: addr.abs $-112, k0
-    81: call $-32, fn1
-    84: imm.w64 $-96, 0
-    88: lt.u.imm.w64 $-73, $-96, 1
-    93: br! $-73, @+23
-    97: imm.w64 $-96, 1
-   101: le.u.imm.w64 $-74, $-96, 9223372036854775807
-   106: br! $-74, @+10
-   110: sub.w64 $-32, $-72, $-64
-   114: jmp @-50
-   116: addr.abs $-128, k2
-   119: imm.w64 $-120, 73
-   123: addr.abs $-112, k3
-   126: call.ext $-32, sym4, site5, sym6, $-96
-   132: unreachable
-  cleanup 126 -> continue
+    imm.w8 $-89, 0
+    br! $-89, L0
+    load.w64 $-40, [$16 + 8]
+    mov.w64 $-32, $-40
+    jmp L1
+L0:
+    load.w64 $-48, [$16 + 8]
+    mov.w64 $-40, $-48
+    load.w64 $-48, [$16 + 0]
+    mov.w64 $-56, $-40
+    mov.w64 $-64, $-48
+    mov.w64 $-72, $-40
+    imm.w8 $-89, 1
+    br! $-89, L4
+    jmp L3
+L1:
+    mov.w64 $-40, $-32
+    mov.w64 $-48, $-32
+    imm.w64 $-56, 1
+    mov.w64 $-24, $-40
+    mov.w128 $-16, $-56
+    ret $-24, 24
+L2:
+    jmp L1
+L3:
+    mov.w64 $-80, $-40
+    mov.w64 $-88, $-48
+    mov.w64 $-128, $-80
+    mov.w64 $-120, $-88
+    addr.abs $-112, k0
+    call $-32, fn1
+L4:
+    imm.w64 $-96, 0
+    lt.u.imm.w64 $-73, $-96, 1
+    br! $-73, L5
+    imm.w64 $-96, 1
+    le.u.imm.w64 $-74, $-96, 9223372036854775807
+    br! $-74, L5
+    sub.w64 $-32, $-72, $-64
+    jmp L2
+L5:
+    addr.abs $-128, k2
+    imm.w64 $-120, 73
+    addr.abs $-112, k3
+L6:
+    call.ext $-32, sym4, site5, sym6, $-96
+    unreachable
+  cleanup L6 -> continue
   k0 = const allocation + 0
   fn1 = std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_check
   k2 = const allocation + 0
@@ -518,190 +638,215 @@ fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::size_hint (frame 128, ar
   sym6 = island ryo_island_call_ptr2[&'{erased} str, &'{erased} std::panic::Location<'{erased}>, !]
 
 fn <std::slice::Iter<'_, bool> as std::iter::adapters::filter::SpecAssumeCount>::assume_count_le_upper_bound (frame 32, args 16, ret 0)
-     0: le.u.w64 $-1, $16, $24
-     4: imm.w8 $-2, 1
-     7: br! $-2, @+13
-    11: mov.w8 $-32, $-1
-    14: addr.abs $-24, k0
-    17: call $0, fn1
-    20: ret $0, 0
+    le.u.w64 $-1, $16, $24
+    imm.w8 $-2, 1
+    br! $-2, L0
+    mov.w8 $-32, $-1
+    addr.abs $-24, k0
+    call $0, fn1
+L0:
+    ret $0, 0
   k0 = const allocation + 0
   fn1 = std::hint::assert_unchecked::precondition_check
 
 fn <std::vec::Vec<bool> as std::ops::Deref>::deref (frame 48, args 8, ret 16)
-     0: load.w64 $-48, [$16 + 8]
-     4: mov.w64 $-40, $-48
-     7: load.w64 $-48, [$16 + 16]
-    11: mov.w64 $-32, $-40
-    14: mov.w64 $-24, $-48
-    17: mov.w64 $-16, $-32
-    20: mov.w64 $-8, $-24
-    23: ret $-16, 16
+    load.w64 $-48, [$16 + 8]
+    mov.w64 $-40, $-48
+    load.w64 $-48, [$16 + 16]
+    mov.w64 $-32, $-40
+    mov.w64 $-24, $-48
+    mov.w64 $-16, $-32
+    mov.w64 $-8, $-24
+    ret $-16, 16
 
 fn <std::vec::Vec<bool> as std::ops::Drop>::drop (frame 64, args 8, ret 0)
-     0: load.w64 $-32, [$16 + 8]
-     4: mov.w64 $-24, $-32
-     7: load.w64 $-32, [$16 + 16]
-    11: mov.w64 $-16, $-24
-    14: mov.w64 $-8, $-32
-    17: mov.w64 $-32, $-16
-    20: mov.w64 $-24, $-8
-    23: mov.w128 $-64, $-32
-    26: addr.sym $-40, sym0
-    29: island sym1, [4294967232, 0, 4294967256]
-    35: ret $0, 0
-  cleanup 29 -> continue
+    load.w64 $-32, [$16 + 8]
+    mov.w64 $-24, $-32
+    load.w64 $-32, [$16 + 16]
+    mov.w64 $-16, $-24
+    mov.w64 $-8, $-32
+    mov.w64 $-32, $-16
+    mov.w64 $-24, $-8
+    mov.w128 $-64, $-32
+    addr.sym $-40, sym0
+L0:
+    island sym1, [4294967232, 0, 4294967256]
+    ret $0, 0
+  cleanup L0 -> continue
   sym0 = std::ptr::drop_glue::<[bool]> - shim(None)
   sym1 = island ryo_island_call_ptr1[&'{erased} mut [bool], ()]
 
 fn <std::vec::Vec<bool> as std::ops::Index<usize>>::index (frame 96, args 24, ret 8)
-     0: load.w64 $-56, [$16 + 8]
-     4: mov.w64 $-48, $-56
-     7: load.w64 $-56, [$16 + 16]
-    11: mov.w64 $-40, $-48
-    14: mov.w64 $-32, $-56
-    17: mov.w64 $-24, $-40
-    20: mov.w64 $-16, $-32
-    23: mov.w64 $-80, $24
-    26: mov.w128 $-96, $-24
-    29: mov.w64 $-72, $32
-    32: call $-8, fn0
-    35: ret $-8, 8
-  cleanup 32 -> continue
+    load.w64 $-56, [$16 + 8]
+    mov.w64 $-48, $-56
+    load.w64 $-56, [$16 + 16]
+    mov.w64 $-40, $-48
+    mov.w64 $-32, $-56
+    mov.w64 $-24, $-40
+    mov.w64 $-16, $-32
+    mov.w64 $-80, $24
+    mov.w128 $-96, $-24
+    mov.w64 $-72, $32
+L0:
+    call $-8, fn0
+    ret $-8, 8
+  cleanup L0 -> continue
   fn0 = <usize as std::slice::SliceIndex<[bool]>>::index
 
 fn <std::vec::Vec<bool> as std::ops::IndexMut<usize>>::index_mut (frame 96, args 24, ret 8)
-     0: load.w64 $-56, [$16 + 8]
-     4: mov.w64 $-48, $-56
-     7: load.w64 $-56, [$16 + 16]
-    11: mov.w64 $-40, $-48
-    14: mov.w64 $-32, $-56
-    17: mov.w64 $-24, $-40
-    20: mov.w64 $-16, $-32
-    23: mov.w64 $-80, $24
-    26: mov.w128 $-96, $-24
-    29: mov.w64 $-72, $32
-    32: call $-8, fn0
-    35: ret $-8, 8
-  cleanup 32 -> continue
+    load.w64 $-56, [$16 + 8]
+    mov.w64 $-48, $-56
+    load.w64 $-56, [$16 + 16]
+    mov.w64 $-40, $-48
+    mov.w64 $-32, $-56
+    mov.w64 $-24, $-40
+    mov.w64 $-16, $-32
+    mov.w64 $-80, $24
+    mov.w128 $-96, $-24
+    mov.w64 $-72, $32
+L0:
+    call $-8, fn0
+    ret $-8, 8
+  cleanup L0 -> continue
   fn0 = <usize as std::slice::SliceIndex<[bool]>>::index_mut
 
 fn <std::vec::set_len_on_drop::SetLenOnDrop<'_> as std::ops::Drop>::drop (frame 16, args 8, ret 0)
-     0: load.w64 $-16, [$16 + 8]
-     4: load.w64 $-8, [$16 + 0]
-     8: store.w64 [$-8 + 0], $-16
-    12: ret $0, 0
+    load.w64 $-16, [$16 + 8]
+    load.w64 $-8, [$16 + 0]
+    store.w64 [$-8 + 0], $-16
+    ret $0, 0
 
 fn <usize as std::iter::Step>::backward_unchecked (frame 48, args 16, ret 8)
-     0: imm.w8 $-9, 1
-     3: br! $-9, @+16
-     7: mov.w64 $-48, $16
-    10: mov.w64 $-40, $24
-    13: addr.abs $-32, k0
-    16: call $-8, fn1
-    19: sub.w64 $-8, $16, $24
-    23: ret $-8, 8
+    imm.w8 $-9, 1
+    br! $-9, L0
+    mov.w64 $-48, $16
+    mov.w64 $-40, $24
+    addr.abs $-32, k0
+    call $-8, fn1
+L0:
+    sub.w64 $-8, $16, $24
+    ret $-8, 8
   k0 = const allocation + 0
   fn1 = core::num::<impl usize>::unchecked_sub::precondition_check
 
 fn <usize as std::iter::Sum>::sum::<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0} (frame 48, args 24, ret 8)
-     0: add.ovf.u.w64 $-24, $-16, $24, $32
-     5: br! $-16, @+14
-     9: addr.abs $-48, k0
-    12: call.ext $-24, sym1, site2, sym3, $-32
-    18: unreachable
-    19: mov.w64 $-8, $-24
-    22: ret $-8, 8
-  cleanup 12 -> continue
+    add.ovf.u.w64 $-24, $-16, $24, $32
+    br! $-16, L1
+    addr.abs $-48, k0
+L0:
+    call.ext $-24, sym1, site2, sym3, $-32
+    unreachable
+L1:
+    mov.w64 $-8, $-24
+    ret $-8, 8
+  cleanup L0 -> continue
   k0 = const allocation + 0
   sym1 = core::panicking::panic_const::panic_const_add_overflow
   site2
   sym3 = island ryo_island_call_ptr1[&'{erased} std::panic::Location<'{erased}>, !]
 
 fn <usize as std::slice::SliceIndex<[bool]>>::index (frame 64, args 32, ret 8)
-     0: mov.w64 $-16, $24
-     3: br.lt.u.w64 $32, $-16, @+21
-     8: mov.w64 $-64, $32
-    11: mov.w64 $-56, $-16
-    14: mov.w64 $-48, $40
-    17: call.ext $-17, sym0, site1, sym2, $-32
-    23: unreachable
-    24: ptr.index $-32, $16, $32, 1
-    29: mov.w64 $-8, $-32
-    32: ret $-8, 8
-  cleanup 17 -> continue
+    mov.w64 $-16, $24
+    br.lt.u.w64 $32, $-16, L1
+    mov.w64 $-64, $32
+    mov.w64 $-56, $-16
+    mov.w64 $-48, $40
+L0:
+    call.ext $-17, sym0, site1, sym2, $-32
+    unreachable
+L1:
+    ptr.index $-32, $16, $32, 1
+    mov.w64 $-8, $-32
+    ret $-8, 8
+  cleanup L0 -> continue
   sym0 = core::panicking::panic_bounds_check
   site1
   sym2 = island ryo_island_call_ptr3[usize, usize, &'{erased} std::panic::Location<'{erased}>, !]
 
 fn <usize as std::slice::SliceIndex<[bool]>>::index_mut (frame 64, args 32, ret 8)
-     0: mov.w64 $-16, $24
-     3: br.lt.u.w64 $32, $-16, @+21
-     8: mov.w64 $-64, $32
-    11: mov.w64 $-56, $-16
-    14: mov.w64 $-48, $40
-    17: call.ext $-17, sym0, site1, sym2, $-32
-    23: unreachable
-    24: ptr.index $-32, $16, $32, 1
-    29: mov.w64 $-8, $-32
-    32: ret $-8, 8
-  cleanup 17 -> continue
+    mov.w64 $-16, $24
+    br.lt.u.w64 $32, $-16, L1
+    mov.w64 $-64, $32
+    mov.w64 $-56, $-16
+    mov.w64 $-48, $40
+L0:
+    call.ext $-17, sym0, site1, sym2, $-32
+    unreachable
+L1:
+    ptr.index $-32, $16, $32, 1
+    mov.w64 $-8, $-32
+    ret $-8, 8
+  cleanup L0 -> continue
   sym0 = core::panicking::panic_bounds_check
   site1
   sym2 = island ryo_island_call_ptr3[usize, usize, &'{erased} std::panic::Location<'{erased}>, !]
 
 fn <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::call_once - shim (frame 32, args 8, ret 4)
-     0: addr $-16, $16
-     3: mov.w64 $-32, $-16
-     6: call $-4, fn0
-     9: ret $-4, 4
-    12: resume $-24
-    14: lpad $-24
-    16: jmp @-4
-  cleanup 6 -> 14
-  cleanup 12 -> continue
+    addr $-16, $16
+    mov.w64 $-32, $-16
+L0:
+    call $-4, fn0
+    ret $-4, 4
+L1:
+    resume $-24
+L2:
+    lpad $-24
+    jmp L1
+  cleanup L0 -> L2
+  cleanup L1 -> continue
   fn0 = std::rt::lang_start::<()>::{closure#0}
 
 fn <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::call_once - shim(vtable) (frame 16, args 8, ret 4)
-     0: load.w64 $-16, [$16 + 0]
-     4: call $-4, fn0
-     7: ret $-4, 4
-  cleanup 4 -> continue
+    load.w64 $-16, [$16 + 0]
+L0:
+    call $-4, fn0
+    ret $-4, 4
+  cleanup L0 -> continue
   fn0 = <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::call_once - shim
 
 fn alloc::raw_vec::RawVecInner::with_capacity_in (frame 144, args 24, ret 16)
-     0: mov.w64 $-144, $16
-     3: imm.w8 $-136, 0
-     6: mov.w128 $-128, $24
-     9: call.ext $-64, sym0, site1, sym2, $-112
-    15: mov.w64 $-24, $-64
-    18: switch.dense.w64 $-24, 0, @+8, [@+22, @+9]
-    26: unreachable
-    27: mov.w128 $-80, $-56
-    30: mov.w128 $-144, $-80
-    33: call.ext $-32, sym3, site4, sym5, $-112
-    39: unreachable
-    40: mov.w128 $-16, $-56
-    43: mov.w64 $-96, $32
-    46: br.eq.imm.w64 $-96, 0, @+30
-    52: jmp @+30
-    54: sub.imm.w64 $-80, $-88, 0
-    59: lt.u.w64 $-66, $-80, $16
-    63: xor.imm.w8 $-65, $-66, 1
-    67: imm.w8 $-105, 1
-    70: br! $-105, @+29
-    74: jmp @+16
-    76: imm.w64 $-88, 18446744073709551615
-    80: jmp @-26
-    82: mov.w64 $-104, $-16
-    85: mov.w64 $-88, $-104
-    88: jmp @-34
-    90: mov.w8 $-144, $-65
-    93: addr.abs $-136, k6
-    96: call $-40, fn7
-    99: ret $-16, 16
-  cleanup 9 -> continue
-  cleanup 33 -> continue
+    mov.w64 $-144, $16
+    imm.w8 $-136, 0
+    mov.w128 $-128, $24
+L0:
+    call.ext $-64, sym0, site1, sym2, $-112
+    mov.w64 $-24, $-64
+    switch.dense.w64 $-24, 0, L1, [L4, L2]
+L1:
+    unreachable
+L2:
+    mov.w128 $-80, $-56
+    mov.w128 $-144, $-80
+L3:
+    call.ext $-32, sym3, site4, sym5, $-112
+    unreachable
+L4:
+    mov.w128 $-16, $-56
+    mov.w64 $-96, $32
+    br.eq.imm.w64 $-96, 0, L6
+    jmp L7
+L5:
+    sub.imm.w64 $-80, $-88, 0
+    lt.u.w64 $-66, $-80, $16
+    xor.imm.w8 $-65, $-66, 1
+    imm.w8 $-105, 1
+    br! $-105, L9
+    jmp L8
+L6:
+    imm.w64 $-88, 18446744073709551615
+    jmp L5
+L7:
+    mov.w64 $-104, $-16
+    mov.w64 $-88, $-104
+    jmp L5
+L8:
+    mov.w8 $-144, $-65
+    addr.abs $-136, k6
+    call $-40, fn7
+L9:
+    ret $-16, 16
+  cleanup L0 -> continue
+  cleanup L3 -> continue
   sym0 = alloc::raw_vec::RawVecInner::try_allocate_in
   site1
   sym2 = island ryo_island_call_ptr4[usize, alloc::raw_vec::AllocInit, std::alloc::Global, std::alloc::Layout, std::result::Result<alloc::raw_vec::RawVecInner<std::alloc::Global>, std::collections::TryReserveError>]
@@ -712,42 +857,43 @@ fn alloc::raw_vec::RawVecInner::with_capacity_in (frame 144, args 24, ret 16)
   fn7 = std::hint::assert_unchecked::precondition_check
 
 fn core::fmt::rt::Argument::<'_>::new_display::<usize> (frame 64, args 8, ret 16)
-     0: mov.w64 $-24, $16
-     3: mov.w64 $-48, $-24
-     6: addr.sym $-64, sym0
-     9: mov.w64 $-56, $-64
-    12: mov.w64 $-40, $-48
-    15: mov.w64 $-32, $-56
-    18: mov.w128 $-16, $-40
-    21: ret $-16, 16
+    mov.w64 $-24, $16
+    mov.w64 $-48, $-24
+    addr.sym $-64, sym0
+    mov.w64 $-56, $-64
+    mov.w64 $-40, $-48
+    mov.w64 $-32, $-56
+    mov.w128 $-16, $-40
+    ret $-16, 16
   sym0 = core::fmt::num::imp::<impl std::fmt::Display for usize>::fmt
 
 fn core::num::<impl usize>::unchecked_add::precondition_check (frame 144, args 24, ret 0)
-     0: mov.w64 $-48, $16
-     3: mov.w64 $-56, $24
-     6: add.ovf.u.w64 $-40, $-32, $-48, $-56
-    11: mov.w8 $-17, $-32
-    14: br! $-17, @+68
-    18: addr.abs $-16, k0
-    21: imm.w64 $-8, 186
-    25: mov.w64 $-72, $-16
-    28: mov.w64 $-64, $-8
-    31: mov.w64 $-56, $-72
-    34: mov.w64 $-48, $-56
-    37: addr.abs $-96, k1
-    40: imm.w64 $-88, 186
-    44: mov.w64 $-80, $-88
-    47: shl.imm.w64 $-72, $-80, 1
-    52: or.imm.w64 $-64, $-72, 1
-    57: mov.w64 $-56, $-64
-    60: mov.w64 $-40, $-48
-    63: mov.w64 $-32, $-56
-    66: mov.w128 $-144, $-40
-    69: imm.w8 $-128, 0
-    72: mov.w64 $-120, $32
-    75: call.ext $-16, sym2, site3, sym4, $-104
-    81: unreachable
-    82: ret $0, 0
+    mov.w64 $-48, $16
+    mov.w64 $-56, $24
+    add.ovf.u.w64 $-40, $-32, $-48, $-56
+    mov.w8 $-17, $-32
+    br! $-17, L0
+    addr.abs $-16, k0
+    imm.w64 $-8, 186
+    mov.w64 $-72, $-16
+    mov.w64 $-64, $-8
+    mov.w64 $-56, $-72
+    mov.w64 $-48, $-56
+    addr.abs $-96, k1
+    imm.w64 $-88, 186
+    mov.w64 $-80, $-88
+    shl.imm.w64 $-72, $-80, 1
+    or.imm.w64 $-64, $-72, 1
+    mov.w64 $-56, $-64
+    mov.w64 $-40, $-48
+    mov.w64 $-32, $-56
+    mov.w128 $-144, $-40
+    imm.w8 $-128, 0
+    mov.w64 $-120, $32
+    call.ext $-16, sym2, site3, sym4, $-104
+    unreachable
+L0:
+    ret $0, 0
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -755,31 +901,32 @@ fn core::num::<impl usize>::unchecked_add::precondition_check (frame 144, args 2
   sym4 = island ryo_island_call_ptr3[std::fmt::Arguments<'{erased}>, bool, &'{erased} std::panic::Location<'{erased}>, !]
 
 fn core::num::<impl usize>::unchecked_sub::precondition_check (frame 144, args 24, ret 0)
-     0: mov.w64 $-48, $16
-     3: mov.w64 $-56, $24
-     6: sub.ovf.u.w64 $-40, $-32, $-48, $-56
-    11: mov.w8 $-17, $-32
-    14: br! $-17, @+68
-    18: addr.abs $-16, k0
-    21: imm.w64 $-8, 186
-    25: mov.w64 $-72, $-16
-    28: mov.w64 $-64, $-8
-    31: mov.w64 $-56, $-72
-    34: mov.w64 $-48, $-56
-    37: addr.abs $-96, k1
-    40: imm.w64 $-88, 186
-    44: mov.w64 $-80, $-88
-    47: shl.imm.w64 $-72, $-80, 1
-    52: or.imm.w64 $-64, $-72, 1
-    57: mov.w64 $-56, $-64
-    60: mov.w64 $-40, $-48
-    63: mov.w64 $-32, $-56
-    66: mov.w128 $-144, $-40
-    69: imm.w8 $-128, 0
-    72: mov.w64 $-120, $32
-    75: call.ext $-16, sym2, site3, sym4, $-104
-    81: unreachable
-    82: ret $0, 0
+    mov.w64 $-48, $16
+    mov.w64 $-56, $24
+    sub.ovf.u.w64 $-40, $-32, $-48, $-56
+    mov.w8 $-17, $-32
+    br! $-17, L0
+    addr.abs $-16, k0
+    imm.w64 $-8, 186
+    mov.w64 $-72, $-16
+    mov.w64 $-64, $-8
+    mov.w64 $-56, $-72
+    mov.w64 $-48, $-56
+    addr.abs $-96, k1
+    imm.w64 $-88, 186
+    mov.w64 $-80, $-88
+    shl.imm.w64 $-72, $-80, 1
+    or.imm.w64 $-64, $-72, 1
+    mov.w64 $-56, $-64
+    mov.w64 $-40, $-48
+    mov.w64 $-32, $-56
+    mov.w128 $-144, $-40
+    imm.w8 $-128, 0
+    mov.w64 $-120, $32
+    call.ext $-16, sym2, site3, sym4, $-104
+    unreachable
+L0:
+    ret $0, 0
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -787,97 +934,120 @@ fn core::num::<impl usize>::unchecked_sub::precondition_check (frame 144, args 2
   sym4 = island ryo_island_call_ptr3[std::fmt::Arguments<'{erased}>, bool, &'{erased} std::panic::Location<'{erased}>, !]
 
 fn core::slice::<impl [bool]>::iter (frame 32, args 16, ret 16)
-     0: mov.w128 $-32, $16
-     3: call $-16, fn0
-     6: ret $-16, 16
-  cleanup 3 -> continue
+    mov.w128 $-32, $16
+L0:
+    call $-16, fn0
+    ret $-16, 16
+  cleanup L0 -> continue
   fn0 = std::slice::Iter::<'_, bool>::new
 
 fn main (frame 432, args 0, ret 0)
-     0: imm.w64 $-432, 13000000
-     4: call $-8, fn0
-     7: mov.w64 $-432, $-8
-    10: call $-32, fn1
-    13: addr $-96, $-32
-    16: mov.w64 $-432, $-96
-    19: call $-88, fn2
-    22: mov.w128 $-432, $-88
-    25: call $-72, fn3
-    28: mov.w128 $-432, $-72
-    31: call $-56, fn4
-    34: mov.w128 $-432, $-56
-    37: call $-40, fn5
-    40: imm.w64 $-432, 0
-    44: mov.w64 $-424, $-8
-    47: call $-176, fn6
-    50: copy $-432, $-176, 24
-    54: call $-152, fn7
-    57: addr $-128, $-152
-    60: addr $-192, $-32
-    63: mov.w64 $-184, $-192
-    66: mov.w64 $-432, $-128
-    69: mov.w64 $-424, $-184
-    72: call $-120, fn8
-    75: mov.w128 $-432, $-120
-    78: addr.abs $-416, k9
-    81: call $-104, fn10
-    84: addr $-240, $-40
-    87: addr $-248, $-8
-    90: addr $-256, $-104
-    93: mov.w64 $-232, $-240
-    96: mov.w64 $-224, $-248
-    99: mov.w64 $-216, $-256
-   102: mov.w64 $-376, $-232
-   105: mov.w64 $-432, $-376
-   108: call $-320, fn11
-   111: mov.w64 $-384, $-224
-   114: mov.w64 $-432, $-384
-   117: call $-336, fn12
-   120: mov.w64 $-392, $-216
-   123: mov.w64 $-432, $-392
-   126: call $-352, fn13
-   129: mov.w128 $-304, $-320
-   132: mov.w128 $-288, $-336
-   135: mov.w128 $-272, $-352
-   138: addr.abs $-360, k14
-   141: addr $-368, $-304
-   144: mov.w64 $-432, $-360
-   147: mov.w64 $-424, $-368
-   150: call $-208, fn15
-   153: mov.w128 $-432, $-208
-   156: call.ext $-192, sym16, site17, sym18, $-408
-   162: addr $-408, $-32
-   165: mov.w64 $-432, $-408
-   168: call $-408, fn19
-   171: ret $0, 0
-   174: addr $-408, $-32
-   177: mov.w64 $-432, $-408
-   180: call $-408, fn20
-   183: resume $-400
-   185: call.ext $-400, sym21, site22, sym23, $-408
-   191: unreachable
-   192: lpad $-400
-   194: jmp @-20
-   196: lpad $-400
-   198: jmp @-13
-  cleanup 4 -> continue
-  cleanup 10 -> continue
-  cleanup 19 -> 192
-  cleanup 25 -> 192
-  cleanup 31 -> 192
-  cleanup 37 -> 192
-  cleanup 47 -> 192
-  cleanup 54 -> 192
-  cleanup 72 -> 192
-  cleanup 81 -> 192
-  cleanup 108 -> 192
-  cleanup 117 -> 192
-  cleanup 126 -> 192
-  cleanup 150 -> 192
-  cleanup 156 -> 192
-  cleanup 168 -> continue
-  cleanup 180 -> 196 (catch)
-  cleanup 183 -> continue
+    imm.w64 $-432, 13000000
+L0:
+    call $-8, fn0
+    mov.w64 $-432, $-8
+L1:
+    call $-32, fn1
+    addr $-96, $-32
+    mov.w64 $-432, $-96
+L2:
+    call $-88, fn2
+    mov.w128 $-432, $-88
+L3:
+    call $-72, fn3
+    mov.w128 $-432, $-72
+L4:
+    call $-56, fn4
+    mov.w128 $-432, $-56
+L5:
+    call $-40, fn5
+    imm.w64 $-432, 0
+    mov.w64 $-424, $-8
+L6:
+    call $-176, fn6
+    copy $-432, $-176, 24
+L7:
+    call $-152, fn7
+    addr $-128, $-152
+    addr $-192, $-32
+    mov.w64 $-184, $-192
+    mov.w64 $-432, $-128
+    mov.w64 $-424, $-184
+L8:
+    call $-120, fn8
+    mov.w128 $-432, $-120
+    addr.abs $-416, k9
+L9:
+    call $-104, fn10
+    addr $-240, $-40
+    addr $-248, $-8
+    addr $-256, $-104
+    mov.w64 $-232, $-240
+    mov.w64 $-224, $-248
+    mov.w64 $-216, $-256
+    mov.w64 $-376, $-232
+    mov.w64 $-432, $-376
+L10:
+    call $-320, fn11
+    mov.w64 $-384, $-224
+    mov.w64 $-432, $-384
+L11:
+    call $-336, fn12
+    mov.w64 $-392, $-216
+    mov.w64 $-432, $-392
+L12:
+    call $-352, fn13
+    mov.w128 $-304, $-320
+    mov.w128 $-288, $-336
+    mov.w128 $-272, $-352
+    addr.abs $-360, k14
+    addr $-368, $-304
+    mov.w64 $-432, $-360
+    mov.w64 $-424, $-368
+L13:
+    call $-208, fn15
+    mov.w128 $-432, $-208
+L14:
+    call.ext $-192, sym16, site17, sym18, $-408
+    addr $-408, $-32
+    mov.w64 $-432, $-408
+L15:
+    call $-408, fn19
+    ret $0, 0
+L16:
+    addr $-408, $-32
+    mov.w64 $-432, $-408
+L17:
+    call $-408, fn20
+L18:
+    resume $-400
+L19:
+    call.ext $-400, sym21, site22, sym23, $-408
+    unreachable
+L20:
+    lpad $-400
+    jmp L16
+L21:
+    lpad $-400
+    jmp L19
+  cleanup L0 -> continue
+  cleanup L1 -> continue
+  cleanup L2 -> L20
+  cleanup L3 -> L20
+  cleanup L4 -> L20
+  cleanup L5 -> L20
+  cleanup L6 -> L20
+  cleanup L7 -> L20
+  cleanup L8 -> L20
+  cleanup L9 -> L20
+  cleanup L10 -> L20
+  cleanup L11 -> L20
+  cleanup L12 -> L20
+  cleanup L13 -> L20
+  cleanup L14 -> L20
+  cleanup L15 -> continue
+  cleanup L17 -> L21 (catch)
+  cleanup L18 -> continue
   fn0 = std::hint::black_box::<usize>
   fn1 = sieve
   fn2 = <std::vec::Vec<bool> as std::ops::Deref>::deref
@@ -904,124 +1074,150 @@ fn main (frame 432, args 0, ret 0)
   sym23 = island ryo_island_call_ptr0[!]
 
 fn main::{closure#0} (frame 16, args 16, ret 1)
-     0: load.w64 $-16, [$24 + 0]
-     4: load.w8 $-1, [$-16 + 0]
-     8: ret $-1, 1
+    load.w64 $-16, [$24 + 0]
+    load.w8 $-1, [$-16 + 0]
+    ret $-1, 1
 
 fn main::{closure#1} (frame 64, args 16, ret 1)
-     0: load.w64 $-16, [$24 + 0]
-     4: load.w64 $-32, [$16 + 0]
-     8: mov.w64 $-64, $-32
-    11: mov.w64 $-56, $-16
-    14: addr.abs $-48, k0
-    17: call $-24, fn1
-    20: load.w8 $-1, [$-24 + 0]
-    24: ret $-1, 1
-  cleanup 17 -> continue
+    load.w64 $-16, [$24 + 0]
+    load.w64 $-32, [$16 + 0]
+    mov.w64 $-64, $-32
+    mov.w64 $-56, $-16
+    addr.abs $-48, k0
+L0:
+    call $-24, fn1
+    load.w8 $-1, [$-24 + 0]
+    ret $-1, 1
+  cleanup L0 -> continue
   k0 = const allocation + 0
   fn1 = <std::vec::Vec<bool> as std::ops::Index<usize>>::index
 
 fn sieve (frame 368, args 8, ret 24)
-     0: imm.w64 $-328, 1
-     4: add.ovf.u.w64 $-72, $-64, $16, $-328
-     9: br! $-64, @+14
-    13: addr.abs $-368, k0
-    16: call.ext $-320, sym1, site2, sym3, $-328
-    22: unreachable
-    23: mov.w64 $-56, $-72
-    26: imm.w8 $-368, 1
-    29: mov.w64 $-360, $-56
-    32: call $-48, fn4
-    35: addr $-88, $-48
-    38: mov.w64 $-368, $-88
-    41: imm.w64 $-360, 0
-    45: addr.abs $-352, k5
-    48: call $-80, fn6
-    51: imm.w8 $-336, 0
-    54: store.w8 [$-80 + 0], $-336
-    58: addr $-104, $-48
-    61: mov.w64 $-368, $-104
-    64: imm.w64 $-360, 1
-    68: addr.abs $-352, k7
-    71: call $-96, fn8
-    74: imm.w8 $-336, 0
-    77: store.w8 [$-96 + 0], $-336
-    81: imm.w64 $-112, 2
-    85: mov.w64 $-136, $-112
-    88: mov.w64 $-144, $-112
-    91: mul.ovf.u.w64 $-160, $-152, $-136, $-144
-    96: br! $-152, @+14
-   100: addr.abs $-368, k9
-   103: call.ext $-320, sym10, site11, sym12, $-328
-   109: unreachable
-   110: mov.w64 $-128, $-160
-   113: br.lt.u.w64 $16, $-128, @+147
-   118: addr $-184, $-48
-   121: mov.w64 $-192, $-112
-   124: mov.w64 $-368, $-184
-   127: mov.w64 $-360, $-192
-   130: addr.abs $-352, k13
-   133: call $-176, fn14
-   136: load.w8 $-161, [$-176 + 0]
-   140: br! $-161, @+92
-   144: mov.w64 $-208, $-112
-   147: mov.w64 $-216, $-112
-   150: mul.ovf.u.w64 $-232, $-224, $-208, $-216
-   155: br! $-224, @+14
-   159: addr.abs $-368, k15
-   162: call.ext $-320, sym16, site17, sym18, $-328
-   168: unreachable
-   169: mov.w64 $-200, $-232
-   172: mov.w64 $-248, $-200
-   175: br.lt.u.w64 $16, $-248, @+57
-   180: addr $-264, $-48
-   183: mov.w64 $-272, $-200
-   186: mov.w64 $-368, $-264
-   189: mov.w64 $-360, $-272
-   192: addr.abs $-352, k19
-   195: call $-256, fn20
-   198: imm.w8 $-336, 0
-   201: store.w8 [$-256 + 0], $-336
-   205: mov.w64 $-280, $-112
-   208: add.ovf.u.w64 $-296, $-288, $-200, $-280
-   213: br! $-288, @+14
-   217: addr.abs $-368, k21
-   220: call.ext $-320, sym22, site23, sym24, $-328
-   226: unreachable
-   227: mov.w64 $-200, $-296
-   230: jmp @-58
-   232: imm.w64 $-328, 1
-   236: add.ovf.u.w64 $-312, $-304, $-112, $-328
-   241: br! $-304, @+14
-   245: addr.abs $-368, k25
-   248: call.ext $-320, sym26, site27, sym28, $-328
-   254: unreachable
-   255: mov.w64 $-112, $-312
-   258: jmp @-173
-   260: copy $-24, $-48, 24
-   264: ret $-24, 24
-   267: addr $-328, $-48
-   270: mov.w64 $-368, $-328
-   273: call $-328, fn29
-   276: resume $-320
-   278: call.ext $-320, sym30, site31, sym32, $-328
-   284: unreachable
-   285: lpad $-320
-   287: jmp @-20
-   289: lpad $-320
-   291: jmp @-13
-  cleanup 16 -> continue
-  cleanup 32 -> continue
-  cleanup 48 -> 285
-  cleanup 71 -> 285
-  cleanup 103 -> 285
-  cleanup 133 -> 285
-  cleanup 162 -> 285
-  cleanup 195 -> 285
-  cleanup 220 -> 285
-  cleanup 248 -> 285
-  cleanup 273 -> 289 (catch)
-  cleanup 276 -> continue
+    imm.w64 $-328, 1
+    add.ovf.u.w64 $-72, $-64, $16, $-328
+    br! $-64, L1
+    addr.abs $-368, k0
+L0:
+    call.ext $-320, sym1, site2, sym3, $-328
+    unreachable
+L1:
+    mov.w64 $-56, $-72
+    imm.w8 $-368, 1
+    mov.w64 $-360, $-56
+L2:
+    call $-48, fn4
+    addr $-88, $-48
+    mov.w64 $-368, $-88
+    imm.w64 $-360, 0
+    addr.abs $-352, k5
+L3:
+    call $-80, fn6
+    imm.w8 $-336, 0
+    store.w8 [$-80 + 0], $-336
+    addr $-104, $-48
+    mov.w64 $-368, $-104
+    imm.w64 $-360, 1
+    addr.abs $-352, k7
+L4:
+    call $-96, fn8
+    imm.w8 $-336, 0
+    store.w8 [$-96 + 0], $-336
+    imm.w64 $-112, 2
+L5:
+    mov.w64 $-136, $-112
+    mov.w64 $-144, $-112
+    mul.ovf.u.w64 $-160, $-152, $-136, $-144
+    br! $-152, L7
+    addr.abs $-368, k9
+L6:
+    call.ext $-320, sym10, site11, sym12, $-328
+    unreachable
+L7:
+    mov.w64 $-128, $-160
+    br.lt.u.w64 $16, $-128, L18
+    addr $-184, $-48
+    mov.w64 $-192, $-112
+    mov.w64 $-368, $-184
+    mov.w64 $-360, $-192
+    addr.abs $-352, k13
+L8:
+    call $-176, fn14
+    load.w8 $-161, [$-176 + 0]
+    br! $-161, L15
+    mov.w64 $-208, $-112
+    mov.w64 $-216, $-112
+    mul.ovf.u.w64 $-232, $-224, $-208, $-216
+    br! $-224, L10
+    addr.abs $-368, k15
+L9:
+    call.ext $-320, sym16, site17, sym18, $-328
+    unreachable
+L10:
+    mov.w64 $-200, $-232
+L11:
+    mov.w64 $-248, $-200
+    br.lt.u.w64 $16, $-248, L15
+    addr $-264, $-48
+    mov.w64 $-272, $-200
+    mov.w64 $-368, $-264
+    mov.w64 $-360, $-272
+    addr.abs $-352, k19
+L12:
+    call $-256, fn20
+    imm.w8 $-336, 0
+    store.w8 [$-256 + 0], $-336
+    mov.w64 $-280, $-112
+    add.ovf.u.w64 $-296, $-288, $-200, $-280
+    br! $-288, L14
+    addr.abs $-368, k21
+L13:
+    call.ext $-320, sym22, site23, sym24, $-328
+    unreachable
+L14:
+    mov.w64 $-200, $-296
+    jmp L11
+L15:
+    imm.w64 $-328, 1
+    add.ovf.u.w64 $-312, $-304, $-112, $-328
+    br! $-304, L17
+    addr.abs $-368, k25
+L16:
+    call.ext $-320, sym26, site27, sym28, $-328
+    unreachable
+L17:
+    mov.w64 $-112, $-312
+    jmp L5
+L18:
+    copy $-24, $-48, 24
+    ret $-24, 24
+L19:
+    addr $-328, $-48
+    mov.w64 $-368, $-328
+L20:
+    call $-328, fn29
+L21:
+    resume $-320
+L22:
+    call.ext $-320, sym30, site31, sym32, $-328
+    unreachable
+L23:
+    lpad $-320
+    jmp L19
+L24:
+    lpad $-320
+    jmp L22
+  cleanup L0 -> continue
+  cleanup L2 -> continue
+  cleanup L3 -> L23
+  cleanup L4 -> L23
+  cleanup L6 -> L23
+  cleanup L8 -> L23
+  cleanup L9 -> L23
+  cleanup L12 -> L23
+  cleanup L13 -> L23
+  cleanup L16 -> L23
+  cleanup L20 -> L24 (catch)
+  cleanup L21 -> continue
   k0 = const allocation + 0
   sym1 = core::panicking::panic_const::panic_const_add_overflow
   site2
@@ -1057,56 +1253,57 @@ fn sieve (frame 368, args 8, ret 24)
   sym32 = island ryo_island_call_ptr0[!]
 
 fn std::clone::impls::<impl std::clone::Clone for bool>::clone (frame 16, args 8, ret 1)
-     0: load.w8 $-1, [$16 + 0]
-     4: ret $-1, 1
+    load.w8 $-1, [$16 + 0]
+    ret $-1, 1
 
 fn std::cmp::impls::<impl std::cmp::PartialEq for usize>::eq (frame 32, args 16, ret 1)
-     0: load.w64 $-16, [$16 + 0]
-     4: load.w64 $-24, [$24 + 0]
-     8: eq.w64 $-1, $-16, $-24
-    12: ret $-1, 1
+    load.w64 $-16, [$16 + 0]
+    load.w64 $-24, [$24 + 0]
+    eq.w64 $-1, $-16, $-24
+    ret $-1, 1
 
 fn std::cmp::impls::<impl std::cmp::PartialOrd for usize>::le (frame 32, args 16, ret 1)
-     0: load.w64 $-16, [$16 + 0]
-     4: load.w64 $-24, [$24 + 0]
-     8: le.u.w64 $-1, $-16, $-24
-    12: ret $-1, 1
+    load.w64 $-16, [$16 + 0]
+    load.w64 $-24, [$24 + 0]
+    le.u.w64 $-1, $-16, $-24
+    ret $-1, 1
 
 fn std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt (frame 32, args 16, ret 1)
-     0: load.w64 $-16, [$16 + 0]
-     4: load.w64 $-24, [$24 + 0]
-     8: lt.u.w64 $-1, $-16, $-24
-    12: ret $-1, 1
+    load.w64 $-16, [$16 + 0]
+    load.w64 $-24, [$24 + 0]
+    lt.u.w64 $-1, $-16, $-24
+    ret $-1, 1
 
 fn std::fmt::Arguments::<'_>::new::<39, 3> (frame 32, args 16, ret 16)
-     0: mov.w64 $-24, $16
-     3: mov.w64 $-32, $24
-     6: mov.w64 $-16, $-24
-     9: mov.w64 $-8, $-32
-    12: ret $-16, 16
+    mov.w64 $-24, $16
+    mov.w64 $-32, $24
+    mov.w64 $-16, $-24
+    mov.w64 $-8, $-32
+    ret $-16, 16
 
 fn std::hint::assert_unchecked::precondition_check (frame 128, args 16, ret 0)
-     0: br $16, @+68
-     4: addr.abs $-16, k0
-     7: imm.w64 $-8, 221
-    11: mov.w64 $-64, $-16
-    14: mov.w64 $-56, $-8
-    17: mov.w64 $-48, $-64
-    20: mov.w64 $-40, $-48
-    23: addr.abs $-88, k1
-    26: imm.w64 $-80, 221
-    30: mov.w64 $-72, $-80
-    33: shl.imm.w64 $-64, $-72, 1
-    38: or.imm.w64 $-56, $-64, 1
-    43: mov.w64 $-48, $-56
-    46: mov.w64 $-32, $-40
-    49: mov.w64 $-24, $-48
-    52: mov.w128 $-128, $-32
-    55: imm.w8 $-112, 0
-    58: mov.w64 $-104, $24
-    61: call.ext $-16, sym2, site3, sym4, $-96
-    67: unreachable
-    68: ret $0, 0
+    br $16, L0
+    addr.abs $-16, k0
+    imm.w64 $-8, 221
+    mov.w64 $-64, $-16
+    mov.w64 $-56, $-8
+    mov.w64 $-48, $-64
+    mov.w64 $-40, $-48
+    addr.abs $-88, k1
+    imm.w64 $-80, 221
+    mov.w64 $-72, $-80
+    shl.imm.w64 $-64, $-72, 1
+    or.imm.w64 $-56, $-64, 1
+    mov.w64 $-48, $-56
+    mov.w64 $-32, $-40
+    mov.w64 $-24, $-48
+    mov.w128 $-128, $-32
+    imm.w8 $-112, 0
+    mov.w64 $-104, $24
+    call.ext $-16, sym2, site3, sym4, $-96
+    unreachable
+L0:
+    ret $0, 0
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -1114,109 +1311,126 @@ fn std::hint::assert_unchecked::precondition_check (frame 128, args 16, ret 0)
   sym4 = island ryo_island_call_ptr3[std::fmt::Arguments<'{erased}>, bool, &'{erased} std::panic::Location<'{erased}>, !]
 
 fn std::hint::black_box::<usize> (frame 16, args 8, ret 8)
-     0: mov.w64 $-8, $16
-     3: ret $-8, 8
+    mov.w64 $-8, $16
+    ret $-8, 8
 
 fn std::iter::DoubleEndedIterator::rfind::check::<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0} (frame 80, args 16, ret 16)
-     0: mov.w64 $-40, $16
-     3: addr $-56, $24
-     6: mov.w64 $-48, $-56
-     9: mov.w64 $-80, $-40
-    12: mov.w64 $-72, $-48
-    15: call $-25, fn0
-    18: br! $-25, @+16
-    22: mov.w64 $-40, $24
-    25: mov.w64 $-8, $-40
-    28: imm.w64 $-16, 1
-    32: jmp @+6
-    34: imm.w64 $-16, 0
-    38: ret $-16, 16
-    41: resume $-24
-    43: lpad $-24
-    45: jmp @-4
-  cleanup 15 -> 43
-  cleanup 41 -> continue
+    mov.w64 $-40, $16
+    addr $-56, $24
+    mov.w64 $-48, $-56
+    mov.w64 $-80, $-40
+    mov.w64 $-72, $-48
+L0:
+    call $-25, fn0
+    br! $-25, L1
+    mov.w64 $-40, $24
+    mov.w64 $-8, $-40
+    imm.w64 $-16, 1
+    jmp L2
+L1:
+    imm.w64 $-16, 0
+L2:
+    ret $-16, 16
+L3:
+    resume $-24
+L4:
+    lpad $-24
+    jmp L3
+  cleanup L0 -> L4
+  cleanup L3 -> continue
   fn0 = main::{closure#1}
 
 fn std::iter::adapters::map::map_fold::<&bool, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}}>::{closure#0} (frame 112, args 24, ret 8)
-     0: mov.w64 $-32, $16
-     3: imm.w8 $-9, 1
-     6: mov.w64 $-56, $24
-     9: mov.w64 $-72, $16
-    12: mov.w64 $-80, $32
-    15: mov.w64 $-112, $-72
-    18: mov.w64 $-104, $-80
-    21: call $-64, fn0
-    24: imm.w8 $-9, 0
-    27: mov.w64 $-48, $-56
-    30: mov.w64 $-40, $-64
-    33: mov.w64 $-112, $-32
-    36: mov.w64 $-104, $-48
-    39: mov.w64 $-96, $-40
-    42: call $-8, fn1
-    45: ret $-8, 8
-    48: resume $-24
-    50: jmp @-2
-    52: br! $-9, @-4
-    56: jmp @-6
-    58: lpad $-24
-    60: jmp @-8
-  cleanup 21 -> 58
-  cleanup 42 -> 58
-  cleanup 48 -> continue
+    mov.w64 $-32, $16
+    imm.w8 $-9, 1
+    mov.w64 $-56, $24
+    mov.w64 $-72, $16
+    mov.w64 $-80, $32
+    mov.w64 $-112, $-72
+    mov.w64 $-104, $-80
+L0:
+    call $-64, fn0
+    imm.w8 $-9, 0
+    mov.w64 $-48, $-56
+    mov.w64 $-40, $-64
+    mov.w64 $-112, $-32
+    mov.w64 $-104, $-48
+    mov.w64 $-96, $-40
+L1:
+    call $-8, fn1
+    ret $-8, 8
+L2:
+    resume $-24
+L3:
+    jmp L2
+L4:
+    br! $-9, L2
+    jmp L3
+L5:
+    lpad $-24
+    jmp L4
+  cleanup L0 -> L5
+  cleanup L1 -> L5
+  cleanup L2 -> continue
   fn0 = <std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize::<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}
   fn1 = <usize as std::iter::Sum>::sum::<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}
 
 fn std::iter::range::<impl std::iter::DoubleEndedIterator for std::ops::RangeInclusive<usize>>::try_rfold::<(), {closure@std::iter::DoubleEndedIterator::rfind::check<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0}}, std::ops::ControlFlow<usize>> (frame 32, args 16, ret 16)
-     0: mov.w64 $-32, $16
-     3: mov.w64 $-24, $24
-     6: call $-16, fn0
-     9: ret $-16, 16
-  cleanup 6 -> continue
+    mov.w64 $-32, $16
+    mov.w64 $-24, $24
+L0:
+    call $-16, fn0
+    ret $-16, 16
+  cleanup L0 -> continue
   fn0 = <std::ops::RangeInclusive<usize> as std::iter::range::RangeInclusiveIteratorImpl>::spec_try_rfold::<(), {closure@std::iter::DoubleEndedIterator::rfind::check<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0}}, std::ops::ControlFlow<usize>>
 
 fn std::ops::RangeInclusive::<usize>::new (frame 32, args 16, ret 24)
-     0: mov.w64 $-24, $16
-     3: mov.w64 $-16, $24
-     6: imm.w8 $-8, 0
-     9: ret $-24, 24
+    mov.w64 $-24, $16
+    mov.w64 $-16, $24
+    imm.w8 $-8, 0
+    ret $-24, 24
 
 fn std::option::Option::<usize>::unwrap (frame 32, args 24, ret 8)
-     0: mov.w64 $-16, $16
-     3: switch.dense.w64 $-16, 0, @+8, [@+9, @+19]
-    11: unreachable
-    12: mov.w64 $-32, $32
-    15: call.ext $-16, sym0, site1, sym2, $-24
-    21: unreachable
-    22: mov.w64 $-8, $24
-    25: ret $-8, 8
-  cleanup 15 -> continue
+    mov.w64 $-16, $16
+    switch.dense.w64 $-16, 0, L0, [L1, L3]
+L0:
+    unreachable
+L1:
+    mov.w64 $-32, $32
+L2:
+    call.ext $-16, sym0, site1, sym2, $-24
+    unreachable
+L3:
+    mov.w64 $-8, $24
+    ret $-8, 8
+  cleanup L2 -> continue
   sym0 = std::option::unwrap_failed
   site1
   sym2 = island ryo_island_call_ptr1[&'{erased} std::panic::Location<'{erased}>, !]
 
 fn std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_check (frame 144, args 24, ret 0)
-     0: br.lt.u.w64 $16, $24, @+8
-     5: ret $0, 0
-     8: addr.abs $-16, k0
-    11: imm.w64 $-8, 201
-    15: mov.w64 $-72, $-16
-    18: mov.w64 $-64, $-8
-    21: mov.w64 $-56, $-72
-    24: mov.w64 $-48, $-56
-    27: addr.abs $-96, k1
-    30: imm.w64 $-88, 201
-    34: mov.w64 $-80, $-88
-    37: shl.imm.w64 $-72, $-80, 1
-    42: or.imm.w64 $-64, $-72, 1
-    47: mov.w64 $-56, $-64
-    50: mov.w64 $-40, $-48
-    53: mov.w64 $-32, $-56
-    56: mov.w128 $-144, $-40
-    59: imm.w8 $-128, 0
-    62: mov.w64 $-120, $32
-    65: call.ext $-16, sym2, site3, sym4, $-104
-    71: unreachable
+    br.lt.u.w64 $16, $24, L0
+    ret $0, 0
+L0:
+    addr.abs $-16, k0
+    imm.w64 $-8, 201
+    mov.w64 $-72, $-16
+    mov.w64 $-64, $-8
+    mov.w64 $-56, $-72
+    mov.w64 $-48, $-56
+    addr.abs $-96, k1
+    imm.w64 $-88, 201
+    mov.w64 $-80, $-88
+    shl.imm.w64 $-72, $-80, 1
+    or.imm.w64 $-64, $-72, 1
+    mov.w64 $-56, $-64
+    mov.w64 $-40, $-48
+    mov.w64 $-32, $-56
+    mov.w128 $-144, $-40
+    imm.w8 $-128, 0
+    mov.w64 $-120, $32
+    call.ext $-16, sym2, site3, sym4, $-104
+    unreachable
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -1224,38 +1438,49 @@ fn std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_chec
   sym4 = island ryo_island_call_ptr3[std::fmt::Arguments<'{erased}>, bool, &'{erased} std::panic::Location<'{erased}>, !]
 
 fn std::ptr::drop_glue::<alloc::raw_vec::RawVec<bool>> - shim(Some(alloc::raw_vec::RawVec<bool>)) (frame 16, args 8, ret 0)
-     0: mov.w64 $-8, $16
-     3: mov.w64 $-16, $-8
-     6: call $-8, fn0
-     9: ret $0, 0
-  cleanup 6 -> continue
+    mov.w64 $-8, $16
+    mov.w64 $-16, $-8
+L0:
+    call $-8, fn0
+    ret $0, 0
+  cleanup L0 -> continue
   fn0 = <alloc::raw_vec::RawVec<bool> as std::ops::Drop>::drop
 
 fn std::ptr::drop_glue::<std::vec::Vec<bool>> - shim(Some(std::vec::Vec<bool>)) (frame 32, args 8, ret 0)
-     0: mov.w64 $-8, $16
-     3: mov.w64 $-32, $-8
-     6: call $-8, fn0
-     9: jmp @+18
-    11: ret $0, 0
-    14: resume $-16
-    16: mov.w64 $-24, $16
-    19: mov.w64 $-32, $-24
-    22: call $-24, fn1
-    25: jmp @-11
-    27: mov.w64 $-24, $16
-    30: mov.w64 $-32, $-24
-    33: call $-24, fn2
-    36: jmp @-25
-    38: call.ext $-16, sym3, site4, sym5, $-24
-    44: unreachable
-    45: lpad $-16
-    47: jmp @-31
-    49: lpad $-16
-    51: jmp @-13
-  cleanup 6 -> 45
-  cleanup 14 -> continue
-  cleanup 22 -> 49 (catch)
-  cleanup 33 -> continue
+    mov.w64 $-8, $16
+    mov.w64 $-32, $-8
+L0:
+    call $-8, fn0
+    jmp L5
+L1:
+    ret $0, 0
+L2:
+    resume $-16
+L3:
+    mov.w64 $-24, $16
+    mov.w64 $-32, $-24
+L4:
+    call $-24, fn1
+    jmp L2
+L5:
+    mov.w64 $-24, $16
+    mov.w64 $-32, $-24
+L6:
+    call $-24, fn2
+    jmp L1
+L7:
+    call.ext $-16, sym3, site4, sym5, $-24
+    unreachable
+L8:
+    lpad $-16
+    jmp L3
+L9:
+    lpad $-16
+    jmp L7
+  cleanup L0 -> L8
+  cleanup L2 -> continue
+  cleanup L4 -> L9 (catch)
+  cleanup L6 -> continue
   fn0 = <std::vec::Vec<bool> as std::ops::Drop>::drop
   fn1 = std::ptr::drop_glue::<alloc::raw_vec::RawVec<bool>> - shim(Some(alloc::raw_vec::RawVec<bool>))
   fn2 = std::ptr::drop_glue::<alloc::raw_vec::RawVec<bool>> - shim(Some(alloc::raw_vec::RawVec<bool>))
@@ -1264,150 +1489,181 @@ fn std::ptr::drop_glue::<std::vec::Vec<bool>> - shim(Some(std::vec::Vec<bool>)) 
   sym5 = island ryo_island_call_ptr0[!]
 
 fn std::ptr::drop_glue::<std::vec::set_len_on_drop::SetLenOnDrop<'_>> - shim(Some(std::vec::set_len_on_drop::SetLenOnDrop<'_>)) (frame 16, args 8, ret 0)
-     0: mov.w64 $-8, $16
-     3: mov.w64 $-16, $-8
-     6: call $-8, fn0
-     9: ret $0, 0
-  cleanup 6 -> continue
+    mov.w64 $-8, $16
+    mov.w64 $-16, $-8
+L0:
+    call $-8, fn0
+    ret $0, 0
+  cleanup L0 -> continue
   fn0 = <std::vec::set_len_on_drop::SetLenOnDrop<'_> as std::ops::Drop>::drop
 
 fn std::rt::lang_start::<()> (frame 96, args 32, ret 8)
-     0: mov.w64 $-40, $16
-     3: addr $-32, $-40
-     6: mov.w64 $-24, $-32
-     9: addr.abs $-16, k0
-    12: mov.w128 $-96, $-24
-    15: mov.w64 $-80, $24
-    18: mov.w64 $-72, $32
-    21: mov.w8 $-64, $40
-    24: call.ext $-8, sym1, site2, sym3, $-48
-    30: ret $-8, 8
-  cleanup 24 -> continue
+    mov.w64 $-40, $16
+    addr $-32, $-40
+    mov.w64 $-24, $-32
+    addr.abs $-16, k0
+    mov.w128 $-96, $-24
+    mov.w64 $-80, $24
+    mov.w64 $-72, $32
+    mov.w8 $-64, $40
+L0:
+    call.ext $-8, sym1, site2, sym3, $-48
+    ret $-8, 8
+  cleanup L0 -> continue
   k0 = const allocation + 0
   sym1 = std::rt::lang_start_internal
   site2
   sym3 = island ryo_island_call_ptr4[&'{erased} dyn [Binder { value: Trait(std::ops::Fn<()>), bound_vars: [] }, Binder { value: Projection(ExistentialProjection { def_id: DefId(2:4658 ~ core[efd5]::ops::function::FnOnce::Output), args: [()], term: Term::Ty(i32), .. }), bound_vars: [] }, Binder { value: AutoTrait(DefId(2:53405 ~ core[efd5]::panic::unwind_safe::RefUnwindSafe)), bound_vars: [] }, Binder { value: AutoTrait(DefId(2:4385 ~ core[efd5]::marker::Sync)), bound_vars: [] }] + '{erased}, isize, *const *const u8, u8, isize]
 
 fn std::rt::lang_start::<()>::{closure#0} (frame 32, args 8, ret 4)
-     0: load.w64 $-16, [$16 + 0]
-     4: mov.w64 $-32, $-16
-     7: call $-4, fn0
-    10: call $-5, fn1
-    13: mov.w8 $-6, $-5
-    16: zext.w8.w32 $-4, $-6
-    19: ret $-4, 4
-  cleanup 7 -> continue
-  cleanup 10 -> continue
+    load.w64 $-16, [$16 + 0]
+    mov.w64 $-32, $-16
+L0:
+    call $-4, fn0
+L1:
+    call $-5, fn1
+    mov.w8 $-6, $-5
+    zext.w8.w32 $-4, $-6
+    ret $-4, 4
+  cleanup L0 -> continue
+  cleanup L1 -> continue
   fn0 = std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
   fn1 = <() as std::process::Termination>::report
 
 fn std::slice::Iter::<'_, bool>::new (frame 96, args 16, ret 16)
-     0: mov.w64 $-32, $24
-     3: mov.w64 $-72, $16
-     6: mov.w64 $-64, $24
-     9: mov.w128 $-56, $-72
-    12: mov.w128 $-80, $-56
-    15: mov.w64 $-64, $-80
-    18: mov.w64 $-40, $-64
-    21: imm.w8 $-81, 0
-    24: br! $-81, @+9
-    28: mov.w64 $-24, $-32
-    31: jmp @+13
-    33: mov.w64 $-56, $-40
-    36: ptr.index $-48, $-56, $-32, 1
-    41: mov.w64 $-24, $-48
-    44: mov.w64 $-16, $-40
-    47: mov.w64 $-8, $-24
-    50: ret $-16, 16
+    mov.w64 $-32, $24
+    mov.w64 $-72, $16
+    mov.w64 $-64, $24
+    mov.w128 $-56, $-72
+    mov.w128 $-80, $-56
+    mov.w64 $-64, $-80
+    mov.w64 $-40, $-64
+    imm.w8 $-81, 0
+    br! $-81, L0
+    mov.w64 $-24, $-32
+    jmp L1
+L0:
+    mov.w64 $-56, $-40
+    ptr.index $-48, $-56, $-32, 1
+    mov.w64 $-24, $-48
+L1:
+    mov.w64 $-16, $-40
+    mov.w64 $-8, $-24
+    ret $-16, 16
 
 fn std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> (frame 16, args 8, ret 0)
-     0: mov.w64 $-16, $16
-     3: call $0, fn0
-     6: ret $0, 0
-  cleanup 3 -> continue
+    mov.w64 $-16, $16
+L0:
+    call $0, fn0
+    ret $0, 0
+  cleanup L0 -> continue
   fn0 = <fn() as std::ops::FnOnce<()>>::call_once - shim(fn())
 
 fn std::vec::Vec::<bool>::extend_with (frame 160, args 24, ret 0)
-     0: imm.w8 $-49, 1
-     3: mov.w64 $-160, $16
-     6: mov.w64 $-152, $24
-     9: call $0, fn0
-    12: load.w64 $-96, [$16 + 8]
-    16: mov.w64 $-88, $-96
-    19: load.w64 $-96, [$16 + 16]
-    23: le.u.imm.w64 $-97, $-96, 9223372036854775807
-    28: ptr.index $-8, $-88, $-96, 1
-    33: ptr.add $-104, $16, 16
-    38: load.w64 $-112, [$-104 + 0]
-    42: mov.w64 $-96, $-104
-    45: mov.w64 $-88, $-112
-    48: imm.w64 $-24, 1
-    52: mov.w64 $-16, $24
-    55: mov.w64 $-112, $-24
-    58: mov.w64 $-120, $-16
-    61: lt.u.w64 $-97, $-112, $-120
-    65: br! $-97, @+106
-    69: jmp @+90
-    71: store.w8 [$-104 + 0], $-105
-    75: imm.w64 $-128, 1
-    79: ptr.index $-104, $-8, $-128, 1
-    84: mov.w64 $-8, $-104
-    87: add.imm.w64 $-88, $-88, 1
-    92: jmp @-37
-    94: imm.w8 $-49, 0
-    97: mov.w8 $-98, $32
-   100: store.w8 [$-8 + 0], $-98
-   104: add.imm.w64 $-88, $-88, 1
-   109: addr $-128, $-96
-   112: mov.w64 $-160, $-128
-   115: call $-128, fn1
-   118: jmp @+96
-   120: addr $-128, $-96
-   123: mov.w64 $-160, $-128
-   126: call $-128, fn2
-   129: br $-49, @+20
-   133: ret $0, 0
-   136: addr $-128, $-96
-   139: mov.w64 $-160, $-128
-   142: call $-128, fn3
-   145: jmp @+8
-   147: resume $-80
-   149: jmp @-16
-   151: jmp @-4
-   153: br! $-49, @-6
-   157: jmp @-6
-   159: mov.w64 $-112, $-24
-   162: imm.w8 $-121, 1
-   165: br! $-121, @+27
-   169: jmp @+10
-   171: br.gt.u.imm.w64 $24, 0, @-77
-   177: jmp @-57
-   179: mov.w64 $-160, $-112
-   182: imm.w64 $-152, 1
-   186: addr.abs $-144, k4
-   189: call $-72, fn5
-   192: add.imm.w64 $-120, $-112, 1
-   197: mov.w64 $-24, $-120
-   200: mov.w64 $-104, $-8
-   203: addr $-120, $32
-   206: mov.w64 $-160, $-120
-   209: call $-105, fn6
-   212: jmp @-141
-   214: jmp @-81
-   216: call.ext $-120, sym7, site8, sym9, $-128
-   222: unreachable
-   223: lpad $-80
-   225: jmp @-72
-   227: lpad $-80
-   229: jmp @-13
-   231: lpad $-80
-   233: jmp @-97
-  cleanup 9 -> 223
-  cleanup 115 -> 223
-  cleanup 126 -> 223
-  cleanup 142 -> 227 (catch)
-  cleanup 147 -> continue
-  cleanup 209 -> 231
+    imm.w8 $-49, 1
+    mov.w64 $-160, $16
+    mov.w64 $-152, $24
+L0:
+    call $0, fn0
+    load.w64 $-96, [$16 + 8]
+    mov.w64 $-88, $-96
+    load.w64 $-96, [$16 + 16]
+    le.u.imm.w64 $-97, $-96, 9223372036854775807
+    ptr.index $-8, $-88, $-96, 1
+    ptr.add $-104, $16, 16
+    load.w64 $-112, [$-104 + 0]
+    mov.w64 $-96, $-104
+    mov.w64 $-88, $-112
+    imm.w64 $-24, 1
+    mov.w64 $-16, $24
+L1:
+    mov.w64 $-112, $-24
+    mov.w64 $-120, $-16
+    lt.u.w64 $-97, $-112, $-120
+    br! $-97, L15
+    jmp L14
+L2:
+    store.w8 [$-104 + 0], $-105
+    imm.w64 $-128, 1
+    ptr.index $-104, $-8, $-128, 1
+    mov.w64 $-8, $-104
+    add.imm.w64 $-88, $-88, 1
+    jmp L1
+L3:
+    imm.w8 $-49, 0
+    mov.w8 $-98, $32
+    store.w8 [$-8 + 0], $-98
+    add.imm.w64 $-88, $-88, 1
+    addr $-128, $-96
+    mov.w64 $-160, $-128
+L4:
+    call $-128, fn1
+    jmp L19
+L5:
+    addr $-128, $-96
+    mov.w64 $-160, $-128
+L6:
+    call $-128, fn2
+    br $-49, L11
+L7:
+    ret $0, 0
+L8:
+    addr $-128, $-96
+    mov.w64 $-160, $-128
+L9:
+    call $-128, fn3
+    jmp L13
+L10:
+    resume $-80
+L11:
+    jmp L7
+L12:
+    jmp L10
+L13:
+    br! $-49, L10
+    jmp L12
+L14:
+    mov.w64 $-112, $-24
+    imm.w8 $-121, 1
+    br! $-121, L17
+    jmp L16
+L15:
+    br.gt.u.imm.w64 $24, 0, L3
+    jmp L5
+L16:
+    mov.w64 $-160, $-112
+    imm.w64 $-152, 1
+    addr.abs $-144, k4
+    call $-72, fn5
+L17:
+    add.imm.w64 $-120, $-112, 1
+    mov.w64 $-24, $-120
+    mov.w64 $-104, $-8
+    addr $-120, $32
+    mov.w64 $-160, $-120
+L18:
+    call $-105, fn6
+    jmp L2
+L19:
+    jmp L7
+L20:
+    call.ext $-120, sym7, site8, sym9, $-128
+    unreachable
+L21:
+    lpad $-80
+    jmp L13
+L22:
+    lpad $-80
+    jmp L20
+L23:
+    lpad $-80
+    jmp L8
+  cleanup L0 -> L21
+  cleanup L4 -> L21
+  cleanup L6 -> L21
+  cleanup L9 -> L22 (catch)
+  cleanup L10 -> continue
+  cleanup L18 -> L23
   fn0 = std::vec::Vec::<bool>::reserve
   fn1 = std::ptr::drop_glue::<std::vec::set_len_on_drop::SetLenOnDrop<'_>> - shim(Some(std::vec::set_len_on_drop::SetLenOnDrop<'_>))
   fn2 = std::ptr::drop_glue::<std::vec::set_len_on_drop::SetLenOnDrop<'_>> - shim(Some(std::vec::set_len_on_drop::SetLenOnDrop<'_>))
@@ -1420,38 +1676,45 @@ fn std::vec::Vec::<bool>::extend_with (frame 160, args 24, ret 0)
   sym9 = island ryo_island_call_ptr0[!]
 
 fn std::vec::Vec::<bool>::reserve (frame 144, args 16, ret 0)
-     0: load.w64 $-24, [$16 + 16]
-     4: mov.w64 $-32, $16
-     7: const $-48, k0, 16
-    11: mov.w64 $-80, $-40
-    14: br.eq.imm.w64 $-80, 0, @+43
-    20: jmp @+43
-    22: mov.w64 $-144, $-32
-    25: mov.w64 $-136, $-24
-    28: mov.w64 $-128, $24
-    31: mov.w128 $-120, $-48
-    34: call.ext $-8, sym1, site2, sym3, $-96
-    40: ret $0, 0
-    43: sub.w64 $-64, $-72, $-24
-    47: lt.u.w64 $-49, $-64, $24
-    51: br! $-49, @-11
-    55: jmp @-33
-    57: imm.w64 $-72, 18446744073709551615
-    61: jmp @-18
-    63: load.w64 $-88, [$-32 + 0]
-    67: mov.w64 $-72, $-88
-    70: jmp @-27
-  cleanup 34 -> continue
+    load.w64 $-24, [$16 + 16]
+    mov.w64 $-32, $16
+    const $-48, k0, 16
+    mov.w64 $-80, $-40
+    br.eq.imm.w64 $-80, 0, L4
+    jmp L5
+L0:
+    mov.w64 $-144, $-32
+    mov.w64 $-136, $-24
+    mov.w64 $-128, $24
+    mov.w128 $-120, $-48
+L1:
+    call.ext $-8, sym1, site2, sym3, $-96
+L2:
+    ret $0, 0
+L3:
+    sub.w64 $-64, $-72, $-24
+    lt.u.w64 $-49, $-64, $24
+    br! $-49, L2
+    jmp L0
+L4:
+    imm.w64 $-72, 18446744073709551615
+    jmp L3
+L5:
+    load.w64 $-88, [$-32 + 0]
+    mov.w64 $-72, $-88
+    jmp L3
+  cleanup L1 -> continue
   k0 = const allocation + 0
   sym1 = alloc::raw_vec::RawVecInner::<A>::reserve::do_reserve_and_handle::<std::alloc::Global>
   site2
   sym3 = island ryo_island_call_ptr4[&'{erased} mut alloc::raw_vec::RawVecInner<std::alloc::Global>, usize, usize, std::alloc::Layout, ()]
 
 fn std::vec::from_elem::<bool> (frame 48, args 16, ret 24)
-     0: mov.w8 $-40, $16
-     3: mov.w64 $-48, $24
-     6: call $-24, fn0
-     9: ret $-24, 24
-  cleanup 6 -> continue
+    mov.w8 $-40, $16
+    mov.w64 $-48, $24
+L0:
+    call $-24, fn0
+    ret $-24, 24
+  cleanup L0 -> continue
   fn0 = <bool as std::vec::spec_from_elem::SpecFromElem>::from_elem::<std::alloc::Global>
 
