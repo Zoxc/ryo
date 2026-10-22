@@ -5,6 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
+iced-x86 = { version = "1.21.0", default-features = false, features = ["std", "decoder", "intel"] }
 
 # Not a member of any workspace. build/clif/ is cg_clif's copy (`y build-clif`).
 [workspace]

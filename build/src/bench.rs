@@ -152,7 +152,8 @@ fn shell_quote(s: &str) -> String {
 }
 
 /// `y bench codegen` (design/build.md#test-and-bench): compiles each program with `rustc-ryo`
-/// and `RYO_DUMP`, writing what the backend generated to `bench/codegen/<name>.txt`.
+/// and `RYO_DUMP`/`RYO_DUMP_CODE`, writing what the backend generated to
+/// `bench/codegen/<name>.txt` (VM instructions) and `bench/codegen/<name>.s` (x86).
 pub fn codegen() -> Result<(), String> {
     let root = root();
     let rustc_ryo = root.join("dist").join("bin").join(exe_name("rustc-ryo"));
@@ -171,11 +172,112 @@ pub fn codegen() -> Result<(), String> {
         c.args(["--edition=2024", &path_str(&src)?, "-o", &path_str(&out.join(exe_name(program)))?]);
         // Paths relative to the repository, so the dumps don't depend on where it is.
         c.arg(format!("--remap-path-prefix={}{}=", path_str(&root)?, std::path::MAIN_SEPARATOR));
+        let code = out.join(format!("{program}.code"));
         c.env("RYO_DUMP", &dump);
+        c.env("RYO_DUMP_CODE", &code);
         eprintln!("[y] bench codegen {program}: {}", dump.display());
         crate::utils::run(&mut c)?;
+        let code = fs::read_to_string(&code).map_err(|e| format!("reading {}: {e}", code.display()))?;
+        let s = dump_dir.join(format!("{program}.s"));
+        fs::write(&s, disassemble(&code)?).map_err(|e| format!("writing {}: {e}", s.display()))?;
     }
     Ok(())
+}
+
+/// The `RYO_DUMP_CODE` text as x86 assembly: per function, its instructions at offsets from
+/// the function start, with relocated operands named by their targets.
+fn disassemble(dump: &str) -> Result<String, String> {
+    use iced_x86::{Decoder, DecoderOptions, Formatter, IntelFormatter};
+    use std::fmt::Write;
+    let mut out = String::new();
+    let flush = |out: &mut String, code: &[u8], relocs: &[(u32, String)]| {
+        let mut fmt = IntelFormatter::with_options(Some(Box::new(Relocs(relocs.to_vec()))), None);
+        let o = fmt.options_mut();
+        o.set_first_operand_char_index(8);
+        o.set_branch_leading_zeros(false);
+        o.set_show_branch_size(false);
+        let mut text = String::new();
+        let mut d = Decoder::with_ip(64, code, 0, DecoderOptions::NONE);
+        // A jump table's position: the `lea rcx, [rip + T]` of the switch sequence.
+        let mut table = None;
+        while d.can_decode() {
+            let at = d.ip() as usize;
+            if table == Some(at) {
+                // `i32` offsets from the table to its targets. The table ends at the first
+                // target after it, or (all targets before it) at an offset out of the function.
+                let mut end = code.len();
+                let mut pos = at;
+                while pos + 4 <= end {
+                    let e = i32::from_le_bytes(code[pos..pos + 4].try_into().unwrap()) as i64;
+                    let to = at as i64 + e;
+                    if !(0..code.len() as i64).contains(&to) {
+                        break;
+                    }
+                    if to as usize >= pos + 4 {
+                        end = end.min(to as usize);
+                    }
+                    writeln!(out, "  {pos:5x}: .long   {to:x}h").unwrap();
+                    pos += 4;
+                }
+                table = None;
+                d.set_position(pos).unwrap();
+                d.set_ip(pos as u64);
+                continue;
+            }
+            let insn = d.decode();
+            if insn.mnemonic() == iced_x86::Mnemonic::Lea && insn.op0_register() == iced_x86::Register::RCX && insn.is_ip_rel_memory_operand() {
+                table = Some(insn.ip_rel_memory_address() as usize);
+            }
+            text.clear();
+            fmt.format(&insn, &mut text);
+            writeln!(out, "  {:5x}: {text}", insn.ip()).unwrap();
+        }
+        out.push('\n');
+    };
+    let mut code = Vec::new();
+    let mut relocs = Vec::new();
+    for line in dump.lines() {
+        if let Some(name) = line.strip_prefix("fn ") {
+            if !out.is_empty() || !code.is_empty() {
+                flush(&mut out, &code, &relocs);
+            }
+            writeln!(out, "fn {name}").unwrap();
+            code.clear();
+            relocs.clear();
+        } else if let Some(hex) = line.strip_prefix("code ") {
+            code = (0..hex.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&hex[i..i + 2], 16))
+                .collect::<Result<_, _>>()
+                .map_err(|e| format!("RYO_DUMP_CODE: {e}"))?;
+        } else if let Some(r) = line.strip_prefix("reloc ") {
+            let (at, to) = r.split_once(' ').ok_or("RYO_DUMP_CODE: bad reloc")?;
+            relocs.push((at.parse::<u32>().map_err(|e| format!("RYO_DUMP_CODE: {e}"))?, to.to_owned()));
+        }
+    }
+    if !code.is_empty() {
+        flush(&mut out, &code, &relocs);
+    }
+    Ok(out)
+}
+
+/// Names the relocated operands of one function's instructions: each relocated field is a
+/// 4-byte branch or RIP-relative displacement within its instruction.
+struct Relocs(Vec<(u32, String)>);
+
+impl iced_x86::SymbolResolver for Relocs {
+    fn symbol(
+        &mut self,
+        insn: &iced_x86::Instruction,
+        _operand: u32,
+        _insn_operand: Option<u32>,
+        address: u64,
+        _address_size: u32,
+    ) -> Option<iced_x86::SymbolResult<'_>> {
+        let (start, end) = (insn.ip() as u32, insn.next_ip() as u32);
+        let (_, to) = self.0.iter().find(|(at, _)| (start..end).contains(at))?;
+        Some(iced_x86::SymbolResult::with_str(address, to.as_str()))
+    }
 }
 
 /// A cell of the tables. `None` where building or running failed.

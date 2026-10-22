@@ -274,6 +274,10 @@ Environment variables read by the backend (and `y test`):
   disassembler prints instruction words), its cleanup entries, and what its `fn`, `sym`,
   `site`, `k` and `data` operands refer to. Those operands are numbered per function (by
   relocation, before the merge pass), so the dump doesn't change with unrelated functions.
+- `RYO_DUMP_CODE=<file>` writes the same functions' machine code, in the same order, for
+  `y bench codegen` to disassemble: `fn <instance>`, `code <hex>`, and `reloc <offset>
+  <target>` per relocated field, its target named as `RYO_DUMP` names operands (handlers as
+  `ryo_h_<Opcode>`, code constants as `ro+<offset>`).
 - `RYO_NO_VM` keeps every function native.
 - `RYO_ASM_ALIGN=0` turns off the 16-byte alignment of loop heads
   ([vm.md](vm.md#machine-code)).

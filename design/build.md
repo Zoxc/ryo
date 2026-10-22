@@ -180,9 +180,11 @@ This gives a third backend, built from the same toolchain, to compare against.
   a built-in timer does the same (one warmup, then `N` runs, default 5). The programs'
   output must agree across backends. `y bench` builds `dist/` and cg_clif first if they are
   missing; `y test --clif` builds cg_clif too.
-- `bench codegen`: compiles each program in `bench/` with `rustc-ryo` and `RYO_DUMP`
-  ([backend.md](backend.md#debugging-switches)), writing the dump to
-  `bench/codegen/<program>.txt`. The dumps are checked in, so `git diff` shows how a
+- `bench codegen`: compiles each program in `bench/` with `rustc-ryo`, `RYO_DUMP` and
+  `RYO_DUMP_CODE` ([backend.md](backend.md#debugging-switches)), writing the VM instructions
+  to `bench/codegen/<program>.txt` and the x86 code, disassembled with iced-x86, to
+  `bench/codegen/<program>.s` (offsets from the function start, relocated operands by name,
+  jump tables as `.long` entries). The dumps are checked in, so `git diff` shows how a
   backend change alters the generated code. It uses the backend in `dist/`: run `y build`
   first.
 - `y test` also runs `vm/`'s cargo tests (`cargo test --workspace` in `vm/`): the encoder

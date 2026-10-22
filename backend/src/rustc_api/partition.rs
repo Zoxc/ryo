@@ -518,6 +518,39 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         out
     }
 
+    /// The `RYO_DUMP_CODE` text, for `y bench codegen` to disassemble: each VM function, by
+    /// path, as `fn <path>`, then `code <hex>` and one `reloc <offset> <target>` per relocated
+    /// field, the targets named as the `RYO_DUMP` operands are.
+    fn dump_code(&self) -> String {
+        use std::fmt::Write;
+        let mut fns: Vec<(String, &VmFn<'tcx>)> = self.vm.iter().map(|v| (path(v.instance), v)).collect();
+        fns.sort_by(|a, b| a.0.cmp(&b.0));
+        let mut out = String::new();
+        for (name, v) in fns {
+            let c = &v.lowered.code;
+            writeln!(out, "fn {name}").unwrap();
+            out.push_str("code ");
+            for b in &c.code {
+                write!(out, "{b:02x}").unwrap();
+            }
+            out.push('\n');
+            for r in &c.relocs {
+                let to = match r.to {
+                    Ref::Handler(op) => format!("ryo_h_{op:?}"),
+                    Ref::Probe => "ryo_probe_stack".to_owned(),
+                    Ref::Func(x) => x.to_string(),
+                    Ref::Sym(x) => x.to_string(),
+                    Ref::Site(x) => x.to_string(),
+                    Ref::Const(x) => x.to_string(),
+                    Ref::Data(x) => x.to_string(),
+                    Ref::Ro(off) => format!("ro+{off}"),
+                };
+                writeln!(out, "reloc {} {to}", r.at).unwrap();
+            }
+        }
+        out
+    }
+
     fn portal_id(&self, index: u32) -> u64 {
         portal_id(ryo_bytecode::image::crate_hash(local_stable_crate_id(self.tcx)), index)
     }
@@ -777,6 +810,10 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         if let Some(path) = std::env::var_os("RYO_DUMP") {
             let text = self.dump(mode);
             std::fs::write(&path, text).unwrap_or_else(|e| tcx.dcx().fatal(format!("ryo: RYO_DUMP: {e}")));
+        }
+        if let Some(path) = std::env::var_os("RYO_DUMP_CODE") {
+            let text = self.dump_code();
+            std::fs::write(&path, text).unwrap_or_else(|e| tcx.dcx().fatal(format!("ryo: RYO_DUMP_CODE: {e}")));
         }
         let merge_t = tcx.prof.generic_activity("ryo_merge");
         for (i, v) in self.vm.iter_mut().enumerate() {
