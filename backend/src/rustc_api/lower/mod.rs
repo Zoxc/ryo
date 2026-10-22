@@ -70,6 +70,8 @@ pub struct LoweredFn<'tcx> {
     pub frame_size: u32,
     pub arg_size: u32,
     pub ret_size: u32,
+    /// See [`ryo_bytecode::image::FuncEntry::ret_kind`].
+    pub ret_kind: u32,
 }
 
 /// Something the code refers to, which the merge pass resolves. The code names it by its
@@ -204,6 +206,8 @@ pub struct FnCx<'a, 'tcx> {
     /// Largest outgoing argument block of the calls made so far.
     pub max_outgoing: u32,
     arg_size: u32,
+    /// How the function returns ([`ryo_bytecode::asm::RET_SRET`]).
+    pub ret_kind: u32,
     /// The block after the one being lowered, in code order (for fall-through).
     pub next_block: Option<BasicBlock>,
     /// For a `#[track_caller]` function: the slot of its incoming `&'static Location` (the
@@ -244,6 +248,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             scratch: Vec::new(),
             max_outgoing: 0,
             arg_size: sig.block_size,
+            ret_kind: sig.ret_kind,
             next_block: None,
             fused: None,
             terminate_at: Vec::new(),
@@ -354,6 +359,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             frame_size,
             arg_size: self.arg_size,
             ret_size: ret.layout.size.bytes() as u32,
+            ret_kind: self.ret_kind,
         })
     }
 

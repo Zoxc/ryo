@@ -24,6 +24,7 @@ use rustc_middle::mir::visit::{MutatingUseContext, NonMutatingUseContext, PlaceC
 use rustc_middle::mir::{BasicBlock, Body, Local, Location, Place, ProjectionElem, StatementKind, TerminatorKind, UnwindAction};
 use rustc_middle::ty::layout::TyAndLayout;
 use ryo_bytecode::abi::{self, HEADER_SIZE};
+use ryo_bytecode::insn::Opcode;
 
 use super::sig::AbiSig;
 use super::{FnCx, NeedsNative, native};
@@ -67,6 +68,9 @@ pub struct Frame<'tcx> {
     /// Where landing pads store the exception object (`lpad x`) for the cleanup code's
     /// `resume x`: an 8-byte slot of its own, in functions with cleanup or terminate actions.
     exception: Option<u32>,
+    /// An sret function's slot for the return value's address, which it gets in the first
+    /// argument register (`arg`, [`FnCx::prologue`]).
+    pub sret: Option<u32>,
 }
 
 impl<'tcx> Frame<'tcx> {
@@ -136,6 +140,12 @@ impl<'tcx> Frame<'tcx> {
         } else {
             None
         };
+        let sret = if sig.ret_kind == ryo_bytecode::asm::RET_SRET {
+            end = place_below(end, 8, 8)?;
+            Some(slot(-(end as i32)))
+        } else {
+            None
+        };
         if let Some(sharing) = &sharing {
             end = sharing.place(&mut locals, &shared, end)?;
         }
@@ -153,7 +163,7 @@ impl<'tcx> Frame<'tcx> {
         if end >= OUT_END {
             return native("frame too large");
         }
-        Ok(Frame { locals, locals_end: end, temp_top: end, high: end, spread, exception })
+        Ok(Frame { locals, locals_end: end, temp_top: end, high: end, spread, exception, sret })
     }
 
     /// The exception slot. Only functions whose MIR has cleanup or terminate actions, or
@@ -215,8 +225,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         self.frame.temp(8, 8)
     }
 
-    /// The prologue: assembles the spread `rust-call` argument from the argument block.
+    /// The prologue: saves an sret function's return value address (`arg`s come first), and
+    /// assembles the spread `rust-call` argument from the argument block.
     pub fn prologue(&mut self, sig: &AbiSig<'tcx>) {
+        if let Some(p) = self.frame.sret {
+            let r = ryo_bytecode::asm::ArgReg { xmm: false, size: 8, index: 0 };
+            self.op(Opcode::Arg, &[p, r.word()]);
+        }
         let Some((local, first)) = self.frame.spread else { return };
         let slot = self.frame.locals[local];
         for i in 0..slot.layout.fields.count() {

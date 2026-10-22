@@ -22,6 +22,8 @@ pub struct Function {
     pub entry: *const u8,
     pub arg_size: u32,
     pub ret_size: u32,
+    /// How it returns ([`ryo_bytecode::asm::RET_SRET`]).
+    pub ret_kind: u32,
     /// The function's image.
     pub img: *const ImageRt,
     /// The address of the function's portal, or null if it has none.
@@ -208,6 +210,7 @@ impl ImageRt {
                 entry: self.text.wrapping_add(e.code_off as usize),
                 arg_size: e.arg_size,
                 ret_size: e.ret_size,
+                ret_kind: e.ret_kind,
                 img: self,
                 portal: e.portal().map_or(ptr::null(), |s| sym_addr(self, s)),
             };

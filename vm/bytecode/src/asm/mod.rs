@@ -150,7 +150,7 @@ const fn passed(shape: Shape, name: &str) -> bool {
     }
     match shape {
         Shape::Op | Shape::Br | Shape::Switch | Shape::Trap | Shape::Lpad => true,
-        Shape::Jmp | Shape::Call | Shape::Ret | Shape::Island => false,
+        Shape::Jmp | Shape::Call | Shape::Ret | Shape::Island | Shape::Arg => false,
         Shape::CallExt => eq(name, "sym") || eq(name, "site") || eq(name, "f"),
         Shape::CallInd => eq(name, "p") || eq(name, "site"),
         Shape::TailCall => eq(name, "n"),
@@ -160,7 +160,7 @@ const fn passed(shape: Shape, name: &str) -> bool {
 
 /// Whether instructions of `op` call a handler.
 pub const fn has_handler(op: Opcode) -> bool {
-    !matches!(op.info().shape, Shape::Jmp | Shape::Call | Shape::Ret | Shape::Island)
+    !matches!(op.info().shape, Shape::Jmp | Shape::Call | Shape::Ret | Shape::Island | Shape::Arg)
 }
 
 /// The register layout of `op`'s handler call (see the [module docs](self)). Fails to
@@ -258,26 +258,117 @@ pub const fn read(args: &[u64; ARG_REGS], loc: Loc) -> u128 {
     }
 }
 
-/// Whether a return value of `len` bytes comes back in registers: `rax`, and `rdx` for the
-/// high half of 16 bytes. `ret` and the calls take only these lengths and 0 (nothing
-/// returned); a value of any other size the lowering copies through the argument block
-/// (design/vm.md, "Calls and islands").
-pub const fn ret_in_regs(len: u32) -> bool {
-    matches!(len, 1 | 2 | 4 | 8 | 16)
+/// A return kind (the `k` of `ret` and the calls): how a value comes back.
+/// 0 is nothing, [`RET_SRET`] memory the caller passes the address of (in the first integer
+/// argument register; the callee returns it in `rax`), anything else up to two register
+/// parts ([`ret_parts`]). The parts take `rax` then `rdx` (integers) and `xmm0` then `xmm1`
+/// (floats) in order, as LLVM returns a first-class aggregate.
+///
+/// A call's kind gives each part's exact size, which it stores. `ret`'s gives the width it
+/// loads: integer parts are 1, 2, 4 or 8 bytes (reading up to the next one past a 3-, 5-, 6-
+/// or 7-byte value leaves garbage in the register's unused bits, as the ABI allows), and
+/// an sret function returns the pointer as an 8-byte part.
+pub const RET_SRET: u32 = 1 << 31;
+
+/// A part of a value returned in registers ([`RET_SRET`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RetPart {
+    /// An SSE register, else a general-purpose one.
+    pub xmm: bool,
+    /// 1 to 8 bytes for an integer part, 2, 4, 8 or 16 for a float one.
+    pub size: u32,
+    /// The part's offset in the value.
+    pub off: u32,
 }
 
-/// Whether the instruction `words` (opcode first) passes its return value as the machine
-/// code can: a `len` of 0 or one [`ret_in_regs`], and with 0, a `call` destination and a
-/// `ret` source of 0, since nothing in the machine code holds them.
+impl RetPart {
+    /// The kind byte of the part, and its offset byte.
+    const fn bits(self) -> u32 {
+        self.size | (self.xmm as u32) << 5
+    }
+}
+
+/// The kind of a value in the registers `parts` (none to two).
+pub const fn ret_kind(parts: &[RetPart]) -> u32 {
+    match parts {
+        [] => 0,
+        [a] => a.bits(),
+        [a, b] => a.bits() | b.bits() << 8 | b.off << 16,
+        _ => panic!("more than two return parts"),
+    }
+}
+
+/// The register parts of the kind `k`, or `None` for [`RET_SRET`] and invalid kinds. A call
+/// kind (`load` false) has exact sizes, a `ret` kind (`load`) load widths ([`RET_SRET`]).
+pub fn ret_parts(k: u32, load: bool) -> Option<[Option<RetPart>; 2]> {
+    if k >> 24 != 0 {
+        return None;
+    }
+    let part = |b: u32, off: u32| -> Option<Option<RetPart>> {
+        if b == 0 {
+            return Some(None);
+        }
+        let (xmm, size) = (b & 0x20 != 0, b & 0x1f);
+        let ok = if xmm { matches!(size, 2 | 4 | 8 | 16) } else if load { matches!(size, 1 | 2 | 4 | 8) } else { (1..=8).contains(&size) };
+        (b & !0x3f == 0 && ok).then_some(Some(RetPart { xmm, size, off }))
+    };
+    let a = part(k & 0xff, 0)?;
+    let b = part(k >> 8 & 0xff, k >> 16 & 0xff)?;
+    match (a, b) {
+        (None, Some(_)) => None,
+        (None, None) if k != 0 => None,
+        (Some(a), Some(b)) if b.off < a.size || b.off + b.size > 16 => None,
+        (Some(_), None) if k >> 16 != 0 => None,
+        _ => Some([a, b]),
+    }
+}
+
+/// Whether the instruction `words` (opcode first) has a return kind the machine code can
+/// pass ([`RET_SRET`]), and with kind 0, a `call` destination and a `ret` source of 0,
+/// since nothing in the machine code holds them; and for `arg`, a valid register
+/// ([`ArgReg`]).
 pub fn return_ok(words: &[u32]) -> bool {
     use crate::insn::operand_word;
     let Some(op) = Opcode::from_u16(words[0] as u16) else { return true };
-    let (unused, len) = match op {
-        Opcode::Call => (Some(operand_word(op, "d")), operand_word(op, "len")),
-        Opcode::Ret => (Some(operand_word(op, "s")), operand_word(op, "len")),
-        Opcode::CallExt | Opcode::CallExtInd | Opcode::CallInd | Opcode::TailCallInd => (None, operand_word(op, "len")),
+    let (unused, load) = match op {
+        Opcode::Call => (Some(operand_word(op, "d")), false),
+        Opcode::Ret => (Some(operand_word(op, "s")), true),
+        Opcode::CallExt | Opcode::CallExtInd | Opcode::CallInd => (None, false),
+        Opcode::TailCall | Opcode::TailCallInd => {
+            // An sret function passes its return value's address on.
+            let (q, k) = (words[operand_word(op, "q")], words[operand_word(op, "k")]);
+            return k == RET_SRET || k == 0 && q == 0;
+        }
+        Opcode::Arg => return ArgReg::of(words[operand_word(op, "r")]).is_some(),
         _ => return true,
     };
-    let len = words[len];
-    len == 0 && unused.is_none_or(|u| words[u] == 0) || ret_in_regs(len)
+    let k = words[operand_word(op, "k")];
+    if k == 0 {
+        return unused.is_none_or(|u| words[u] == 0);
+    }
+    (k == RET_SRET && !load) || ret_parts(k, load).is_some()
+}
+
+/// An `arg`'s register `r`: bits 0–4 the size it stores (1, 2, 4 or 8 bytes of an integer
+/// register, 2, 4, 8 or 16 of an SSE one), bit 5 an SSE register, bits 8–15 the register's
+/// index among the convention's argument registers of its class: `rdi rsi rdx rcx r8 r9`
+/// (PE: `rcx rdx r8 r9`) and `xmm0`–`xmm7` (PE: `xmm0`–`xmm3`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ArgReg {
+    pub xmm: bool,
+    pub size: u32,
+    pub index: u32,
+}
+
+impl ArgReg {
+    pub const fn word(self) -> u32 {
+        self.size | (self.xmm as u32) << 5 | self.index << 8
+    }
+
+    /// The register of the word `r`, if valid.
+    pub fn of(r: u32) -> Option<ArgReg> {
+        let a = ArgReg { xmm: r & 0x20 != 0, size: r & 0x1f, index: r >> 8 };
+        let ok = if a.xmm { matches!(a.size, 2 | 4 | 8 | 16) && a.index < 8 } else { matches!(a.size, 1 | 2 | 4 | 8) && a.index < 6 };
+        (ok && r & 0xc0 == 0 && a.word() == r).then_some(a)
+    }
 }

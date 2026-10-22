@@ -5,7 +5,7 @@ fn <&mut core::io::write::default_write_fmt::Adapter<'_, std::sys::stdio::unix::
     addr $-40, $24
     mov.w64 $-96, $-40
 L0:
-    call $-32, fn0, 16
+    call $-32, fn0, 526344
     discr.niche.w64 $-52, $-32, 0, 0, 0, 1
     zext.w32.w64 $-16, $-52
     switch.dense.w64 $-16, 0, L6, [L3, L1]
@@ -467,7 +467,7 @@ fn <core::io::error::repr::Repr as std::ops::Drop>::drop (frame 48, args 8, ret 
     load.w64 $-24, [$16 + 0]
     mov.w64 $-48, $-24
 L0:
-    call $-16, fn0, 16
+    call $-16, fn0, 2147483648
     addr $-32, $-16
     mov.w64 $-48, $-32
 L1:
@@ -501,7 +501,7 @@ fn <core::io::write::default_write_fmt::Adapter<'_, std::sys::stdio::unix::Stder
     mov.w32 $-128, $-72
     mov.w128 $-120, $-56
 L0:
-    call $-88, fn0, 16
+    call $-88, fn0, 526344
     jmp L2
 L1:
     ret $-1, 1
@@ -573,8 +573,8 @@ L9:
 
 fn <fn() -> std::cell::Cell<(u64, u64)> {std::hash::RandomState::new::KEYS::__rust_std_internal_init_fn} as std::ops::FnOnce<()>>::call_once - shim(fn() -> std::cell::Cell<(u64, u64)> {std::hash::RandomState::new::KEYS::__rust_std_internal_init_fn}) (frame 16, args 0, ret 16)
 L0:
-    call $-16, fn0, 16
-    ret $-16, 16
+    call $-16, fn0, 526344
+    ret $-16, 526344
   cleanup L0 -> continue
   fn0 = std::hash::RandomState::new::KEYS::__rust_std_internal_init_fn
 
@@ -587,13 +587,13 @@ L0:
   sym1 = island ryo_island_call_ptr0[()]
 
 fn <for<'a> fn(&'a str) -> <str as std::borrow::ToOwned>::Owned {<str as std::borrow::ToOwned>::to_owned} as std::ops::FnOnce<(&str,)>>::call_once - shim(for<'a> fn(&'a str) -> <str as std::borrow::ToOwned>::Owned {<str as std::borrow::ToOwned>::to_owned}) (frame 64, args 16, ret 24)
+    arg $-48, 8
     mov.w128 $-40, $16
     mov.w128 $-64, $-40
 L0:
-    call $0, fn0, 0
-    copy $-24, $-64, 24
-    copy $16, $-24, 24
-    ret $0, 0
+    call $-24, fn0, 2147483648
+    store.copy [$-48 + 0], $-24, 24
+    ret $-48, 8
   cleanup L0 -> continue
   fn0 = std::str::<impl std::borrow::ToOwned for str>::to_owned
 
@@ -718,8 +718,8 @@ fn <std::alloc::Global as std::alloc::Allocator>::allocate (frame 48, args 24, r
     mov.w128 $-48, $24
     imm.w8 $-32, 0
 L0:
-    call $-16, fn0, 16
-    ret $-16, 16
+    call $-16, fn0, 526344
+    ret $-16, 526344
   cleanup L0 -> continue
   fn0 = std::alloc::Global::alloc_impl_runtime
 
@@ -820,43 +820,43 @@ L0:
   fn0 = <std::hash::DefaultHasher as std::hash::Hasher>::write
 
 fn <std::hash::RandomState as std::hash::BuildHasher>::build_hasher (frame 352, args 8, ret 72)
-    load.w64 $-152, [$16 + 0]
-    load.w64 $-160, [$16 + 8]
+    arg $-80, 8
+    load.w64 $-160, [$16 + 0]
+    load.w64 $-168, [$16 + 8]
+    imm.w64 $-344, 0
     imm.w64 $-336, 0
     imm.w64 $-328, 0
     imm.w64 $-320, 0
-    imm.w64 $-312, 0
-    mov.w64 $-272, $-152
-    mov.w64 $-264, $-160
+    mov.w64 $-280, $-160
+    mov.w64 $-272, $-168
+    imm.w64 $-264, 0
+    copy $-312, $-344, 32
     imm.w64 $-256, 0
-    copy $-304, $-336, 32
     imm.w64 $-248, 0
-    imm.w64 $-240, 0
-    addr $-312, $-304
-    mov.w64 $-352, $-312
+    addr $-320, $-312
+    mov.w64 $-352, $-320
 L0:
     call $0, fn0, 0
-    copy $-232, $-304, 72
-    copy $-144, $-232, 72
-    copy $-72, $-144, 72
-    copy $16, $-72, 72
-    ret $0, 0
+    copy $-240, $-312, 72
+    copy $-152, $-240, 72
+    copy $-72, $-152, 72
+    store.copy [$-80 + 0], $-72, 72
+    ret $-80, 8
   cleanup L0 -> continue
   fn0 = core::hash::sip::Hasher::<core::hash::sip::Sip13Rounds>::reset
 
-fn <std::hash::RandomState as std::hash::BuildHasher>::hash_one::<&std::string::String> (frame 176, args 16, ret 8)
-    mov.w64 $-176, $16
+fn <std::hash::RandomState as std::hash::BuildHasher>::hash_one::<&std::string::String> (frame 128, args 16, ret 8)
+    mov.w64 $-128, $16
 L0:
-    call $0, fn0, 0
-    copy $-88, $-176, 72
+    call $-88, fn0, 2147483648
     addr $-96, $24
     addr $-104, $-88
-    mov.w64 $-176, $-96
-    mov.w64 $-168, $-104
+    mov.w64 $-128, $-96
+    mov.w64 $-120, $-104
 L1:
     call $0, fn1, 0
     addr $-96, $-88
-    mov.w64 $-176, $-96
+    mov.w64 $-128, $-96
 L2:
     call $-8, fn2, 8
     ret $-8, 8
@@ -876,19 +876,18 @@ L5:
   fn1 = core::hash::impls::<impl std::hash::Hash for &std::string::String>::hash::<std::hash::DefaultHasher>
   fn2 = <std::hash::DefaultHasher as std::hash::Hasher>::finish
 
-fn <std::hash::RandomState as std::hash::BuildHasher>::hash_one::<&u64> (frame 176, args 16, ret 8)
-    mov.w64 $-176, $16
+fn <std::hash::RandomState as std::hash::BuildHasher>::hash_one::<&u64> (frame 128, args 16, ret 8)
+    mov.w64 $-128, $16
 L0:
-    call $0, fn0, 0
-    copy $-88, $-176, 72
+    call $-88, fn0, 2147483648
     addr $-96, $24
     addr $-104, $-88
-    mov.w64 $-176, $-96
-    mov.w64 $-168, $-104
+    mov.w64 $-128, $-96
+    mov.w64 $-120, $-104
 L1:
     call $0, fn1, 0
     addr $-96, $-88
-    mov.w64 $-176, $-96
+    mov.w64 $-128, $-96
 L2:
     call $-8, fn2, 8
     ret $-8, 8
@@ -908,22 +907,23 @@ L5:
   fn1 = core::hash::impls::<impl std::hash::Hash for &u64>::hash::<std::hash::DefaultHasher>
   fn2 = <std::hash::DefaultHasher as std::hash::Hasher>::finish
 
-fn <std::iter::StepBy<std::ops::Range<u64>> as std::iter::IntoIterator>::into_iter (frame 32, args 32, ret 32)
+fn <std::iter::StepBy<std::ops::Range<u64>> as std::iter::IntoIterator>::into_iter (frame 48, args 32, ret 32)
+    arg $-40, 8
     copy $-32, $16, 32
-    copy $16, $-32, 32
-    ret $0, 0
+    store.copy [$-40 + 0], $-32, 32
+    ret $-40, 8
 
 fn <std::iter::StepBy<std::ops::Range<u64>> as std::iter::Iterator>::next (frame 32, args 8, ret 16)
     mov.w64 $-32, $16
 L0:
-    call $-16, fn0, 16
-    ret $-16, 16
+    call $-16, fn0, 526344
+    ret $-16, 526344
   cleanup L0 -> continue
   fn0 = std::iter::adapters::step_by::step_by_spec::<impl std::iter::adapters::step_by::StepByImpl<std::ops::Range<u64>> for std::iter::StepBy<std::ops::Range<u64>>>::spec_next
 
 fn <std::ops::Range<u32> as std::iter::IntoIterator>::into_iter (frame 16, args 8, ret 8)
     mov.w64 $-8, $16
-    ret $-8, 8
+    ret $-8, 263172
 
 fn <std::ops::Range<u32> as std::iter::range::RangeIteratorImpl>::spec_next (frame 48, args 8, ret 8)
     mov.w64 $-24, $16
@@ -945,7 +945,7 @@ L1:
 L2:
     imm.w32 $-8, 0
 L3:
-    ret $-8, 8
+    ret $-8, 263172
   cleanup L0 -> continue
   cleanup L1 -> continue
   fn0 = std::cmp::impls::<impl std::cmp::PartialOrd for u32>::lt
@@ -953,16 +953,16 @@ L3:
 
 fn <std::ops::Range<u64> as std::iter::IntoIterator>::into_iter (frame 16, args 16, ret 16)
     mov.w128 $-16, $16
-    ret $-16, 16
+    ret $-16, 526344
 
 fn <std::ops::Range<u64> as std::iter::Iterator>::step_by (frame 64, args 24, ret 32)
+    arg $-40, 8
     mov.w128 $-64, $16
     mov.w64 $-48, $32
 L0:
-    call $0, fn0, 0
-    copy $-32, $-64, 32
-    copy $16, $-32, 32
-    ret $0, 0
+    call $-32, fn0, 2147483648
+    store.copy [$-40 + 0], $-32, 32
+    ret $-40, 8
   cleanup L0 -> continue
   fn0 = std::iter::StepBy::<std::ops::Range<u64>>::new
 
@@ -986,7 +986,7 @@ L1:
 L2:
     imm.w64 $-16, 0
 L3:
-    ret $-16, 16
+    ret $-16, 526344
   cleanup L0 -> continue
   cleanup L1 -> continue
   fn0 = std::cmp::impls::<impl std::cmp::PartialOrd for u64>::lt
@@ -1033,7 +1033,7 @@ L1:
     mov.w64 $-192, $16
     mov.w128 $-184, $-88
 L2:
-    call.ext $-72, sym0, site1, sym2, $-152, 16
+    call.ext $-72, sym0, site1, sym2, $-152, 526344
     mov.w64 $-16, $-72
     switch.dense.w64 $-16, 0, L3, [L4, L5]
 L3:
@@ -1140,7 +1140,7 @@ fn <std::sys::stdio::unix::Stderr as std::io::Write>::write_fmt (frame 96, args 
     addr $-40, $24
     mov.w64 $-96, $-40
 L0:
-    call $-32, fn0, 16
+    call $-32, fn0, 526344
     discr.niche.w64 $-68, $-32, 0, 0, 0, 1
     zext.w32.w64 $-16, $-68
     switch.dense.w64 $-16, 0, L6, [L3, L1]
@@ -1224,63 +1224,64 @@ fn <u8 as core::slice::cmp::SlicePartialEq<u8>>::equal_same_length (frame 32, ar
   sym0 = island ryo_island_compare_bytes[]
 
 fn <u8 as std::slice::<impl [T]>::to_vec_in::ConvertVec>::to_vec::<std::alloc::Global> (frame 192, args 16, ret 24)
-    mov.w64 $-88, $24
-    mov.w64 $-192, $-88
+    arg $-88, 8
+    mov.w64 $-96, $24
+    mov.w64 $-192, $-96
     const $-184, k0, 16
 L0:
-    call $-120, fn1, 16
+    call $-128, fn1, 526344
     jmp L3
 L1:
     mov.w64 $-56, $16
     mov.w64 $-48, $24
-    mov.w64 $-104, $-56
+    mov.w64 $-112, $-56
     mov.w64 $-64, $-16
-    mov.w64 $-112, $-64
-    imm.w8 $-129, 1
-    br! $-129, L5
+    mov.w64 $-120, $-64
+    imm.w8 $-137, 1
+    br! $-137, L5
     jmp L4
 L2:
-    copy $16, $-24, 24
-    ret $0, 0
+    store.copy [$-88 + 0], $-24, 24
+    ret $-88, 8
 L3:
-    mov.w128 $-104, $-120
-    mov.w128 $-24, $-104
+    mov.w128 $-112, $-128
+    mov.w128 $-24, $-112
     imm.w64 $-8, 0
-    br.gt.u.imm.w64 $-88, 0, L1
+    br.gt.u.imm.w64 $-96, 0, L1
     jmp L2
 L4:
-    mov.w64 $-120, $-56
-    mov.w64 $-128, $-64
-    mov.w64 $-192, $-120
-    mov.w64 $-184, $-128
+    mov.w64 $-128, $-56
+    mov.w64 $-136, $-64
+    mov.w64 $-192, $-128
+    mov.w64 $-184, $-136
     imm.w64 $-176, 1
     imm.w64 $-168, 1
-    mov.w64 $-160, $-88
+    mov.w64 $-160, $-96
     addr.abs $-152, k2
     call $0, fn3, 0
 L5:
-    mul.imm.w64 $-136, $-88, 1
-    memcpy $-112, $-104, $-136
-    imm.w8 $-129, 1
-    br! $-129, L6
-    imm.w64 $-136, 1
-    br.eq.imm.w64 $-136, 0, L8
+    mul.imm.w64 $-144, $-96, 1
+    memcpy $-120, $-112, $-144
+    imm.w8 $-137, 1
+    br! $-137, L6
+    imm.w64 $-144, 1
+    br.eq.imm.w64 $-144, 0, L8
     jmp L9
 L6:
-    mov.w64 $-8, $-88
+    mov.w64 $-8, $-96
     jmp L2
 L7:
-    mov.w64 $-192, $-88
-    mov.w64 $-184, $-104
+    mov.w64 $-192, $-96
+    mov.w64 $-184, $-112
     addr.abs $-176, k4
     call $0, fn5, 0
     jmp L6
 L8:
-    imm.w64 $-104, 18446744073709551615
+    imm.w64 $-112, 18446744073709551615
     jmp L7
 L9:
-    mov.w64 $-112, $-24
-    mov.w64 $-104, $-112
+    mov.w64 $-120, $-24
+    mov.w64 $-112, $-120
     jmp L7
   cleanup L0 -> continue
   k0 = const allocation + 0
@@ -1592,8 +1593,7 @@ fn alloc::raw_vec::RawVecInner::with_capacity_in (frame 144, args 24, ret 16)
     imm.w8 $-136, 0
     mov.w128 $-128, $24
 L0:
-    call.ext $-144, sym0, site1, sym2, $-112, 0
-    copy $-64, $-144, 24
+    call.ext $-64, sym0, site1, sym2, $-112, 2147483648
     mov.w64 $-24, $-64
     switch.dense.w64 $-24, 0, L1, [L4, L2]
 L1:
@@ -1628,7 +1628,7 @@ L8:
     addr.abs $-136, k6
     call $0, fn7, 0
 L9:
-    ret $-16, 16
+    ret $-16, 526344
   cleanup L0 -> continue
   cleanup L3 -> continue
   sym0 = alloc::raw_vec::RawVecInner::try_allocate_in
@@ -1640,46 +1640,56 @@ L9:
   k6 = const allocation + 0
   fn7 = std::hint::assert_unchecked::precondition_check
 
-fn core::core_arch::simd::Simd::<i8, 16>::splat (frame 16, args 1, ret 16)
+fn core::core_arch::simd::Simd::<i8, 16>::splat (frame 32, args 1, ret 16)
+    arg $-24, 8
     island sym0, [16, 4294967280]
-    ret $-16, 16
+    store.copy [$-24 + 0], $-16, 16
+    ret $-24, 8
   sym0 = island ryo_island_simd_splat[core::core_arch::simd::Simd<i8, 16_usize>, i8]
 
-fn core::core_arch::x86::<impl core::core_arch::simd::Simd<i8, 16>>::as_m128i (frame 16, args 16, ret 16)
+fn core::core_arch::x86::<impl core::core_arch::simd::Simd<i8, 16>>::as_m128i (frame 32, args 16, ret 16)
+    arg $-24, 8
     mov.w128 $-16, $16
-    ret $-16, 16
+    store.copy [$-24 + 0], $-16, 16
+    ret $-24, 8
 
-fn core::fmt::rt::Argument::<'_>::new_display::<u32> (frame 64, args 8, ret 16)
+fn core::fmt::rt::Argument::<'_>::new_display::<u32> (frame 80, args 8, ret 16)
+    arg $-32, 8
     mov.w64 $-24, $16
-    mov.w64 $-48, $-24
-    addr.sym $-64, sym0
-    mov.w64 $-56, $-64
-    mov.w64 $-40, $-48
-    mov.w64 $-32, $-56
-    mov.w128 $-16, $-40
-    ret $-16, 16
+    mov.w64 $-56, $-24
+    addr.sym $-72, sym0
+    mov.w64 $-64, $-72
+    mov.w64 $-48, $-56
+    mov.w64 $-40, $-64
+    mov.w128 $-16, $-48
+    store.copy [$-32 + 0], $-16, 16
+    ret $-32, 8
   sym0 = core::fmt::num::imp::<impl std::fmt::Display for u32>::fmt
 
-fn core::fmt::rt::Argument::<'_>::new_display::<u64> (frame 64, args 8, ret 16)
+fn core::fmt::rt::Argument::<'_>::new_display::<u64> (frame 80, args 8, ret 16)
+    arg $-32, 8
     mov.w64 $-24, $16
-    mov.w64 $-48, $-24
-    addr.sym $-64, sym0
-    mov.w64 $-56, $-64
-    mov.w64 $-40, $-48
-    mov.w64 $-32, $-56
-    mov.w128 $-16, $-40
-    ret $-16, 16
+    mov.w64 $-56, $-24
+    addr.sym $-72, sym0
+    mov.w64 $-64, $-72
+    mov.w64 $-48, $-56
+    mov.w64 $-40, $-64
+    mov.w128 $-16, $-48
+    store.copy [$-32 + 0], $-16, 16
+    ret $-32, 8
   sym0 = core::fmt::num::imp::<impl std::fmt::Display for u64>::fmt
 
-fn core::fmt::rt::Argument::<'_>::new_display::<usize> (frame 64, args 8, ret 16)
+fn core::fmt::rt::Argument::<'_>::new_display::<usize> (frame 80, args 8, ret 16)
+    arg $-32, 8
     mov.w64 $-24, $16
-    mov.w64 $-48, $-24
-    addr.sym $-64, sym0
-    mov.w64 $-56, $-64
-    mov.w64 $-40, $-48
-    mov.w64 $-32, $-56
-    mov.w128 $-16, $-40
-    ret $-16, 16
+    mov.w64 $-56, $-24
+    addr.sym $-72, sym0
+    mov.w64 $-64, $-72
+    mov.w64 $-48, $-56
+    mov.w64 $-40, $-64
+    mov.w128 $-16, $-48
+    store.copy [$-32 + 0], $-16, 16
+    ret $-32, 8
   sym0 = core::fmt::num::imp::<impl std::fmt::Display for usize>::fmt
 
 fn core::hash::impls::<impl std::hash::Hash for &std::string::String>::hash::<std::hash::DefaultHasher> (frame 32, args 16, ret 0)
@@ -1845,55 +1855,57 @@ fn core::io::error::repr::Repr::data::{closure#0} (frame 16, args 8, ret 8)
     mov.w64 $-8, $16
     ret $-8, 8
 
-fn core::io::error::repr::decode_repr::<&core::io::error::Custom, {closure@core::io::error::repr::Repr::data::{closure#0}}> (frame 192, args 8, ret 16)
+fn core::io::error::repr::decode_repr::<&core::io::error::Custom, {closure@core::io::error::repr::Repr::data::{closure#0}}> (frame 208, args 8, ret 16)
+    arg $-120, 8
     imm.w8 $-33, 1
     mov.w64 $-24, $16
-    mov.w64 $-120, $16
-    and.imm.w64 $-128, $-120, 3
-    switch.dense.w64 $-128, 0, L0, [L3, L2, L6, L4]
+    mov.w64 $-128, $16
+    and.imm.w64 $-136, $-128, 3
+    switch.dense.w64 $-136, 0, L0, [L3, L2, L6, L4]
 L0:
-    addr.abs $-192, k0
-    imm.w64 $-184, 40
-    addr.abs $-176, k1
+    addr.abs $-208, k0
+    imm.w64 $-200, 40
+    addr.abs $-192, k1
 L1:
-    call.ext $-32, sym2, site3, sym4, $-168, 0
+    call.ext $-32, sym2, site3, sym4, $-176, 0
     unreachable
 L2:
-    mov.w64 $-152, $16
     mov.w64 $-160, $16
-    imm.w64 $-168, 18446744073709551615
-    ptr.index $-104, $-160, $-168, 1
+    mov.w64 $-168, $16
+    imm.w64 $-176, 18446744073709551615
+    ptr.index $-104, $-168, $-176, 1
     jmp L16
 L3:
     mov.w64 $-48, $16
-    mov.w64 $-144, $16
-    mov.w64 $-136, $-48
-    mov.w64 $-8, $-136
+    mov.w64 $-152, $16
+    mov.w64 $-144, $-48
+    mov.w64 $-8, $-144
     imm.w8 $-16, 2
     jmp L18
 L4:
-    shr.u.imm.w64 $-144, $-120, 32
-    trunc.w64.w32 $-132, $-144
-    mov.w32 $-192, $-132
+    shr.u.imm.w64 $-152, $-128, 32
+    trunc.w64.w32 $-140, $-152
+    mov.w32 $-208, $-140
 L5:
-    call $-134, fn5, 1
+    call $-142, fn5, 1
     jmp L7
 L6:
-    mov.w64 $-152, $-120
-    shr.s.imm.w64 $-144, $-152, 32
-    trunc.w64.w32 $-132, $-144
-    mov.w32 $-12, $-132
+    mov.w64 $-160, $-128
+    shr.s.imm.w64 $-152, $-160, 32
+    trunc.w64.w32 $-140, $-152
+    mov.w32 $-12, $-140
     imm.w8 $-16, 0
     jmp L18
 L7:
-    discr.niche.w8 $-164, $-134, 255, 0, 0, 1
-    zext.w32.w64 $-144, $-164
-    switch.dense.w64 $-144, 0, L13, [L14, L15]
+    discr.niche.w8 $-172, $-142, 255, 0, 0, 1
+    zext.w32.w64 $-152, $-172
+    switch.dense.w64 $-152, 0, L13, [L14, L15]
 L8:
-    mov.w64 $-8, $-144
+    mov.w64 $-8, $-152
     imm.w8 $-16, 3
 L9:
-    ret $-16, 16
+    store.copy [$-120 + 0], $-16, 16
+    ret $-120, 8
 L10:
     resume $-112
 L11:
@@ -1904,24 +1916,24 @@ L12:
 L13:
     unreachable
 L14:
-    addr.abs $-192, k6
+    addr.abs $-208, k6
     call $0, fn7, 0
     jmp L13
 L15:
-    mov.w8 $-133, $-134
-    mov.w8 $-15, $-133
+    mov.w8 $-141, $-142
+    mov.w8 $-15, $-141
     imm.w8 $-16, 1
     jmp L18
 L16:
+    mov.w64 $-152, $-104
+    mov.w64 $-160, $16
+    mov.w64 $-168, $-104
     mov.w64 $-144, $-104
-    mov.w64 $-152, $16
-    mov.w64 $-160, $-104
-    mov.w64 $-136, $-104
     imm.w8 $-33, 0
-    mov.w64 $-152, $-136
-    mov.w64 $-192, $-152
+    mov.w64 $-160, $-144
+    mov.w64 $-208, $-160
 L17:
-    call $-144, fn8, 8
+    call $-152, fn8, 8
     jmp L8
 L18:
     jmp L9
@@ -1942,55 +1954,57 @@ L19:
   fn7 = std::hint::unreachable_unchecked::precondition_check
   fn8 = core::io::error::repr::Repr::data::{closure#0}
 
-fn core::io::error::repr::decode_repr::<core::io::error::CustomOwner, {closure@<core::io::error::repr::Repr as std::ops::Drop>::drop::{closure#0}}> (frame 192, args 8, ret 16)
+fn core::io::error::repr::decode_repr::<core::io::error::CustomOwner, {closure@<core::io::error::repr::Repr as std::ops::Drop>::drop::{closure#0}}> (frame 208, args 8, ret 16)
+    arg $-120, 8
     imm.w8 $-33, 1
     mov.w64 $-24, $16
-    mov.w64 $-120, $16
-    and.imm.w64 $-128, $-120, 3
-    switch.dense.w64 $-128, 0, L0, [L3, L2, L6, L4]
+    mov.w64 $-128, $16
+    and.imm.w64 $-136, $-128, 3
+    switch.dense.w64 $-136, 0, L0, [L3, L2, L6, L4]
 L0:
-    addr.abs $-192, k0
-    imm.w64 $-184, 40
-    addr.abs $-176, k1
+    addr.abs $-208, k0
+    imm.w64 $-200, 40
+    addr.abs $-192, k1
 L1:
-    call.ext $-32, sym2, site3, sym4, $-168, 0
+    call.ext $-32, sym2, site3, sym4, $-176, 0
     unreachable
 L2:
-    mov.w64 $-152, $16
     mov.w64 $-160, $16
-    imm.w64 $-168, 18446744073709551615
-    ptr.index $-104, $-160, $-168, 1
+    mov.w64 $-168, $16
+    imm.w64 $-176, 18446744073709551615
+    ptr.index $-104, $-168, $-176, 1
     jmp L16
 L3:
     mov.w64 $-48, $16
-    mov.w64 $-144, $16
-    mov.w64 $-136, $-48
-    mov.w64 $-8, $-136
+    mov.w64 $-152, $16
+    mov.w64 $-144, $-48
+    mov.w64 $-8, $-144
     imm.w8 $-16, 2
     jmp L18
 L4:
-    shr.u.imm.w64 $-144, $-120, 32
-    trunc.w64.w32 $-132, $-144
-    mov.w32 $-192, $-132
+    shr.u.imm.w64 $-152, $-128, 32
+    trunc.w64.w32 $-140, $-152
+    mov.w32 $-208, $-140
 L5:
-    call $-134, fn5, 1
+    call $-142, fn5, 1
     jmp L7
 L6:
-    mov.w64 $-152, $-120
-    shr.s.imm.w64 $-144, $-152, 32
-    trunc.w64.w32 $-132, $-144
-    mov.w32 $-12, $-132
+    mov.w64 $-160, $-128
+    shr.s.imm.w64 $-152, $-160, 32
+    trunc.w64.w32 $-140, $-152
+    mov.w32 $-12, $-140
     imm.w8 $-16, 0
     jmp L18
 L7:
-    discr.niche.w8 $-164, $-134, 255, 0, 0, 1
-    zext.w32.w64 $-144, $-164
-    switch.dense.w64 $-144, 0, L13, [L14, L15]
+    discr.niche.w8 $-172, $-142, 255, 0, 0, 1
+    zext.w32.w64 $-152, $-172
+    switch.dense.w64 $-152, 0, L13, [L14, L15]
 L8:
-    mov.w64 $-8, $-144
+    mov.w64 $-8, $-152
     imm.w8 $-16, 3
 L9:
-    ret $-16, 16
+    store.copy [$-120 + 0], $-16, 16
+    ret $-120, 8
 L10:
     resume $-112
 L11:
@@ -2001,24 +2015,24 @@ L12:
 L13:
     unreachable
 L14:
-    addr.abs $-192, k6
+    addr.abs $-208, k6
     call $0, fn7, 0
     jmp L13
 L15:
-    mov.w8 $-133, $-134
-    mov.w8 $-15, $-133
+    mov.w8 $-141, $-142
+    mov.w8 $-15, $-141
     imm.w8 $-16, 1
     jmp L18
 L16:
+    mov.w64 $-152, $-104
+    mov.w64 $-160, $16
+    mov.w64 $-168, $-104
     mov.w64 $-144, $-104
-    mov.w64 $-152, $16
-    mov.w64 $-160, $-104
-    mov.w64 $-136, $-104
     imm.w8 $-33, 0
-    mov.w64 $-152, $-136
-    mov.w64 $-192, $-152
+    mov.w64 $-160, $-144
+    mov.w64 $-208, $-160
 L17:
-    call $-144, fn8, 8
+    call $-152, fn8, 8
     jmp L8
 L18:
     jmp L9
@@ -2263,27 +2277,29 @@ L2:
   site2
   sym3 = island ryo_island_call_ptr1[&'{erased} str, !]
 
-fn hashbrown::control::group::sse2::Group::convert_special_to_empty_and_full_to_deleted (frame 128, args 16, ret 16)
-    addr.sym $-88, sym0
+fn hashbrown::control::group::sse2::Group::convert_special_to_empty_and_full_to_deleted (frame 144, args 16, ret 16)
+    arg $-24, 8
+    addr.sym $-104, sym0
 L0:
-    island sym1, [4294967168, 4294967264, 4294967208]
-    mov.w128 $-64, $16
-    mov.w128 $-128, $-32
-    mov.w128 $-112, $-64
-    addr.sym $-88, sym2
+    island sym1, [4294967152, 4294967248, 4294967192]
+    mov.w128 $-80, $16
+    mov.w128 $-144, $-48
+    mov.w128 $-128, $-80
+    addr.sym $-104, sym2
 L1:
-    island sym3, [4294967168, 4294967248, 4294967208]
-    imm.w8 $-128, 128
-    addr.sym $-88, sym4
+    island sym3, [4294967152, 4294967232, 4294967192]
+    imm.w8 $-144, 128
+    addr.sym $-104, sym4
 L2:
-    island sym5, [4294967168, 4294967216, 4294967208]
-    mov.w128 $-128, $-48
-    mov.w128 $-112, $-80
-    addr.sym $-88, sym6
+    island sym5, [4294967152, 4294967200, 4294967192]
+    mov.w128 $-144, $-64
+    mov.w128 $-128, $-96
+    addr.sym $-104, sym6
 L3:
-    island sym7, [4294967168, 4294967232, 4294967208]
-    mov.w128 $-16, $-64
-    ret $-16, 16
+    island sym7, [4294967152, 4294967216, 4294967192]
+    mov.w128 $-16, $-80
+    store.copy [$-24 + 0], $-16, 16
+    ret $-24, 8
   cleanup L0 -> continue
   cleanup L1 -> continue
   cleanup L2 -> continue
@@ -2363,36 +2379,36 @@ L13:
   fn1 = hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::map::equivalent_key<u64, u64, u64>::{closure#0}}>
 
 fn hashbrown::map::HashMap::<u64, u64, std::hash::RandomState>::iter (frame 224, args 8, ret 40)
-    load.w64 $-160, [$16 + 0]
-    mov.w64 $-112, $-160
-    imm.w8 $-177, 0
-    br! $-177, L2
+    arg $-64, 8
+    load.w64 $-168, [$16 + 0]
+    mov.w64 $-120, $-168
+    imm.w8 $-185, 0
+    br! $-185, L2
     jmp L1
 L0:
-    load.w64 $-144, [$16 + 24]
-    copy $-96, $-136, 32
-    mov.w64 $-64, $-144
-    copy $-40, $-96, 40
-    copy $16, $-40, 40
-    ret $0, 0
+    load.w64 $-152, [$16 + 24]
+    copy $-104, $-144, 32
+    mov.w64 $-72, $-152
+    copy $-40, $-104, 40
+    store.copy [$-64 + 0], $-40, 40
+    ret $-64, 8
 L1:
-    imm.w64 $-168, 1
+    imm.w64 $-176, 1
     jmp L3
 L2:
-    mov.w64 $-168, $-160
+    mov.w64 $-176, $-168
 L3:
-    mov.w64 $-120, $-168
-    mov.w64 $-104, $-120
-    load.w64 $-152, [$16 + 0]
-    mov.w64 $-144, $-152
-    load.w64 $-176, [$16 + 8]
-    add.imm.w64 $-152, $-176, 1
-    mov.w64 $-216, $-144
-    mov.w64 $-224, $-104
-    mov.w64 $-208, $-152
+    mov.w64 $-128, $-176
+    mov.w64 $-112, $-128
+    load.w64 $-160, [$16 + 0]
+    mov.w64 $-152, $-160
+    load.w64 $-184, [$16 + 8]
+    add.imm.w64 $-160, $-184, 1
+    mov.w64 $-216, $-152
+    mov.w64 $-224, $-112
+    mov.w64 $-208, $-160
 L4:
-    call $0, fn0, 0
-    copy $-136, $-224, 32
+    call $-144, fn0, 2147483648
     jmp L0
   cleanup L4 -> continue
   fn0 = hashbrown::raw::RawIterRange::<(u64, u64)>::new
@@ -2453,8 +2469,7 @@ L13:
     mov.w64 $-240, $-104
     mov.w64 $-224, $-152
 L14:
-    call $0, fn1, 0
-    copy $-136, $-240, 32
+    call $-136, fn1, 2147483648
     jmp L10
 L15:
     imm.w64 $-144, 0
@@ -2596,7 +2611,7 @@ L5:
     add.w64 $-144, $-152, $-136
     mov.w64 $-8, $-144
     imm.w64 $-16, 1
-    ret $-16, 16
+    ret $-16, 526344
 L6:
     mov.w128 $-208, $-112
     addr.sym $-184, sym3
@@ -2619,30 +2634,31 @@ L7:
   sym3 = std::arch::x86_64::_mm_movemask_epi8
   sym4 = island ryo_island_call_ptr1[std::arch::x86_64::__m128i, i32]
 
-fn hashbrown::raw::RawIterRange::<(std::string::String, usize)>::new (frame 192, args 24, ret 32)
-    ptr.index $-152, $24, $32, 1
-    mov.w64 $-160, $24
+fn hashbrown::raw::RawIterRange::<(std::string::String, usize)>::new (frame 208, args 24, ret 32)
+    arg $-152, 8
+    ptr.index $-160, $24, $32, 1
     mov.w64 $-168, $24
-    mov.w64 $-192, $-168
-    addr.sym $-176, sym0
+    mov.w64 $-176, $24
+    mov.w64 $-208, $-176
+    addr.sym $-184, sym0
 L0:
-    island sym1, [4294967104, 4294967152, 4294967120]
-    mov.w128 $-192, $-144
-    addr.sym $-176, sym2
+    island sym1, [4294967088, 4294967152, 4294967112]
+    mov.w128 $-208, $-144
+    addr.sym $-184, sym2
 L1:
-    island sym3, [4294967104, 4294967136, 4294967120]
-    trunc.w32.w16 $-156, $-160
-    not.w16 $-154, $-156
-    mov.w16 $-76, $-154
-    imm.w64 $-176, 16
-    ptr.index $-96, $24, $-176, 1
-    mov.w16 $-154, $-76
-    mov.w16 $-8, $-154
+    island sym3, [4294967088, 4294967128, 4294967112]
+    trunc.w32.w16 $-164, $-168
+    not.w16 $-162, $-164
+    mov.w16 $-76, $-162
+    imm.w64 $-184, 16
+    ptr.index $-96, $24, $-184, 1
+    mov.w16 $-162, $-76
+    mov.w16 $-8, $-162
     mov.w64 $-32, $16
     mov.w64 $-24, $-96
-    mov.w64 $-16, $-152
-    copy $16, $-32, 32
-    ret $0, 0
+    mov.w64 $-16, $-160
+    store.copy [$-152 + 0], $-32, 32
+    ret $-152, 8
   cleanup L0 -> continue
   cleanup L1 -> continue
   sym0 = std::arch::x86_64::_mm_load_si128
@@ -2942,30 +2958,31 @@ L27:
   sym4 = std::arch::x86_64::_mm_movemask_epi8
   sym5 = island ryo_island_call_ptr1[std::arch::x86_64::__m128i, i32]
 
-fn hashbrown::raw::RawIterRange::<(u64, u64)>::new (frame 192, args 24, ret 32)
-    ptr.index $-152, $24, $32, 1
-    mov.w64 $-160, $24
+fn hashbrown::raw::RawIterRange::<(u64, u64)>::new (frame 208, args 24, ret 32)
+    arg $-152, 8
+    ptr.index $-160, $24, $32, 1
     mov.w64 $-168, $24
-    mov.w64 $-192, $-168
-    addr.sym $-176, sym0
+    mov.w64 $-176, $24
+    mov.w64 $-208, $-176
+    addr.sym $-184, sym0
 L0:
-    island sym1, [4294967104, 4294967152, 4294967120]
-    mov.w128 $-192, $-144
-    addr.sym $-176, sym2
+    island sym1, [4294967088, 4294967152, 4294967112]
+    mov.w128 $-208, $-144
+    addr.sym $-184, sym2
 L1:
-    island sym3, [4294967104, 4294967136, 4294967120]
-    trunc.w32.w16 $-156, $-160
-    not.w16 $-154, $-156
-    mov.w16 $-76, $-154
-    imm.w64 $-176, 16
-    ptr.index $-96, $24, $-176, 1
-    mov.w16 $-154, $-76
-    mov.w16 $-8, $-154
+    island sym3, [4294967088, 4294967128, 4294967112]
+    trunc.w32.w16 $-164, $-168
+    not.w16 $-162, $-164
+    mov.w16 $-76, $-162
+    imm.w64 $-184, 16
+    ptr.index $-96, $24, $-184, 1
+    mov.w16 $-162, $-76
+    mov.w16 $-8, $-162
     mov.w64 $-32, $16
     mov.w64 $-24, $-96
-    mov.w64 $-16, $-152
-    copy $16, $-32, 32
-    ret $0, 0
+    mov.w64 $-16, $-160
+    store.copy [$-152 + 0], $-32, 32
+    ret $-152, 8
   cleanup L0 -> continue
   cleanup L1 -> continue
   sym0 = std::arch::x86_64::_mm_load_si128
@@ -3117,7 +3134,7 @@ fn hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@has
     mov.w64 $-168, $24
     mov.w128 $-160, $-96
 L0:
-    call $-72, fn1, 16
+    call $-72, fn1, 526344
     mov.w64 $-16, $-72
     switch.dense.w64 $-16, 0, L1, [L2, L3]
 L1:
@@ -3374,7 +3391,7 @@ L5:
     mov.w64 $-104, $-64
     imm.w8 $-88, 1
 L6:
-    call $-56, fn0, 16
+    call $-56, fn0, 526344
     jmp L0
 L7:
     jmp L1
@@ -3409,8 +3426,8 @@ L1:
     const $-136, k2, 16
     mov.w64 $-112, $-80
 L2:
-    call $-16, fn3, 16
-    ret $-16, 16
+    call $-16, fn3, 526344
+    ret $-16, 526344
 L3:
     resume $-24
 L4:
@@ -3605,7 +3622,7 @@ fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::map::equiv
     mov.w64 $-168, $24
     mov.w128 $-160, $-96
 L0:
-    call $-72, fn1, 16
+    call $-72, fn1, 526344
     mov.w64 $-16, $-72
     switch.dense.w64 $-16, 0, L1, [L2, L3]
 L1:
@@ -3732,7 +3749,7 @@ fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entr
     mov.w64 $-168, $24
     mov.w128 $-160, $-96
 L0:
-    call $-72, fn1, 16
+    call $-72, fn1, 526344
     mov.w64 $-16, $-72
     switch.dense.w64 $-16, 0, L1, [L2, L3]
 L1:
@@ -3974,7 +3991,7 @@ L5:
     mov.w64 $-104, $-64
     imm.w8 $-88, 1
 L6:
-    call $-56, fn0, 16
+    call $-56, fn0, 526344
     jmp L0
 L7:
     jmp L1
@@ -4009,8 +4026,8 @@ L1:
     const $-136, k2, 16
     mov.w64 $-112, $-80
 L2:
-    call $-16, fn3, 16
-    ret $-16, 16
+    call $-16, fn3, 526344
+    ret $-16, 526344
 L3:
     resume $-24
 L4:
@@ -4132,8 +4149,7 @@ L8:
     mov.w64 $-192, $-80
     mov.w64 $-176, $-128
 L9:
-    call $0, fn0, 0
-    copy $-112, $-192, 32
+    call $-112, fn0, 2147483648
     jmp L5
 L10:
     imm.w64 $-120, 0
@@ -4227,8 +4243,7 @@ L8:
     mov.w64 $-192, $-80
     mov.w64 $-176, $-128
 L9:
-    call $0, fn0, 0
-    copy $-112, $-192, 32
+    call $-112, fn0, 2147483648
     jmp L5
 L10:
     imm.w64 $-120, 0
@@ -4289,8 +4304,7 @@ L0:
     mov.w128 $-144, $32
     mov.w64 $-128, $-64
 L1:
-    call $0, fn1, 0
-    copy $-56, $-144, 24
+    call $-56, fn1, 2147483648
     jmp L4
 L2:
     ret $0, 0
@@ -4334,8 +4348,7 @@ L0:
     mov.w128 $-144, $32
     mov.w64 $-128, $-64
 L1:
-    call $0, fn1, 0
-    copy $-56, $-144, 24
+    call $-56, fn1, 2147483648
     jmp L4
 L2:
     ret $0, 0
@@ -4480,92 +4493,92 @@ L11:
   sym14 = std::arch::x86_64::_mm_movemask_epi8
   sym15 = island ryo_island_call_ptr1[std::arch::x86_64::__m128i, i32]
 
-fn hashbrown::raw::RawTableInner::fallible_with_capacity::<std::alloc::Global> (frame 256, args 40, ret 32)
+fn hashbrown::raw::RawTableInner::fallible_with_capacity::<std::alloc::Global> (frame 272, args 40, ret 32)
+    arg $-104, 8
     br.eq.imm.w64! $40, 0, L0
     const $-32, k0, 32
     jmp L4
 L0:
-    mov.w64 $-256, $40
-    mov.w128 $-248, $24
+    mov.w64 $-272, $40
+    mov.w128 $-264, $24
 L1:
-    call $-144, fn1, 16
-    mov.w64 $-152, $-144
-    switch.dense.w64 $-152, 0, L2, [L6, L8]
+    call $-152, fn1, 526344
+    mov.w64 $-160, $-152
+    switch.dense.w64 $-160, 0, L2, [L6, L8]
 L2:
     unreachable
 L3:
-    discr.niche.w64 $-204, $-160, 0, 1, 1, 0
-    zext.w32.w64 $-168, $-204
-    switch.dense.w64 $-168, 0, L2, [L12, L11]
+    discr.niche.w64 $-212, $-168, 0, 1, 1, 0
+    zext.w32.w64 $-176, $-212
+    switch.dense.w64 $-176, 0, L2, [L12, L11]
 L4:
     jmp L5
 L5:
-    copy $16, $-32, 32
-    ret $0, 0
+    store.copy [$-104 + 0], $-32, 32
+    ret $-104, 8
 L6:
-    mov.w8 $-256, $48
+    mov.w8 $-272, $48
 L7:
-    call.ext $-168, sym2, site3, sym4, $-208, 16
+    call.ext $-176, sym2, site3, sym4, $-216, 526344
     jmp L10
 L8:
-    mov.w64 $-160, $-136
-    mov.w64 $-120, $-160
-    imm.w64 $-128, 18446744073709551615
-    mov.w64 $-136, $-120
-    mov.w64 $-104, $-136
-    imm.w64 $-112, 18446744073709551615
-    mov.w64 $-48, $-104
-    mov.w64 $-256, $16
-    mov.w128 $-248, $24
-    mov.w64 $-232, $-48
-    mov.w8 $-224, $48
+    mov.w64 $-168, $-144
+    mov.w64 $-128, $-168
+    imm.w64 $-136, 18446744073709551615
+    mov.w64 $-144, $-128
+    mov.w64 $-112, $-144
+    imm.w64 $-120, 18446744073709551615
+    mov.w64 $-48, $-112
+    mov.w64 $-272, $16
+    mov.w128 $-264, $24
+    mov.w64 $-248, $-48
+    mov.w8 $-240, $48
 L9:
-    call $0, fn5, 0
-    copy $-160, $-256, 32
+    call $-168, fn5, 2147483648
     jmp L3
 L10:
-    mov.w128 $-128, $-168
-    mov.w128 $-144, $-128
-    mov.w128 $-160, $-144
-    mov.w128 $-112, $-160
-    mov.w128 $-128, $-112
-    imm.w64 $-136, 1
-    eq.imm.w64 $-153, $-136, 1
-    mov.w128 $-152, $-128
-    mov.w128 $-24, $-152
+    mov.w128 $-136, $-176
+    mov.w128 $-152, $-136
+    mov.w128 $-168, $-152
+    mov.w128 $-120, $-168
+    mov.w128 $-136, $-120
+    imm.w64 $-144, 1
+    eq.imm.w64 $-161, $-144, 1
+    mov.w128 $-160, $-136
+    mov.w128 $-24, $-160
     imm.w64 $-32, 0
     jmp L5
 L11:
-    mov.w128 $-184, $-152
-    mov.w128 $-200, $-184
-    mov.w128 $-120, $-200
-    imm.w64 $-128, 0
-    mov.w128 $-144, $-120
-    imm.w64 $-152, 1
-    eq.imm.w64 $-169, $-152, 1
-    mov.w128 $-168, $-144
-    mov.w128 $-24, $-168
+    mov.w128 $-192, $-160
+    mov.w128 $-208, $-192
+    mov.w128 $-128, $-208
+    imm.w64 $-136, 0
+    mov.w128 $-152, $-128
+    imm.w64 $-160, 1
+    eq.imm.w64 $-177, $-160, 1
+    mov.w128 $-176, $-152
+    mov.w128 $-24, $-176
     imm.w64 $-32, 0
     jmp L5
 L12:
-    copy $-200, $-160, 32
-    copy $-128, $-200, 32
-    copy $-80, $-128, 32
-    mov.w64 $-128, $-80
-    mov.w64 $-120, $-128
-    mov.w64 $-144, $-72
-    add.imm.w64 $-136, $-144, 1
-    add.imm.w64 $-96, $-136, 16
-    mov.w64 $-144, $-120
-    mov.w64 $-136, $-96
+    copy $-208, $-168, 32
+    copy $-136, $-208, 32
+    copy $-80, $-136, 32
+    mov.w64 $-136, $-80
+    mov.w64 $-128, $-136
+    mov.w64 $-152, $-72
+    add.imm.w64 $-144, $-152, 1
+    add.imm.w64 $-96, $-144, 16
+    mov.w64 $-152, $-128
+    mov.w64 $-144, $-96
+    mov.w64 $-120, $-152
     mov.w64 $-112, $-144
-    mov.w64 $-104, $-136
+    mov.w64 $-144, $-120
     mov.w64 $-136, $-112
-    mov.w64 $-128, $-104
-    mov.w64 $-120, $-136
-    imm.w8 $-201, 255
-    mul.imm.w64 $-216, $-96, 1
-    memset $-120, $-201, $-216
+    mov.w64 $-128, $-144
+    imm.w8 $-209, 255
+    mul.imm.w64 $-224, $-96, 1
+    memset $-128, $-209, $-224
     copy $-32, $-80, 32
     jmp L4
   cleanup L1 -> continue
@@ -4611,7 +4624,7 @@ L4:
     br! $-107, L19
     jmp L18
 L5:
-    ret $-16, 16
+    ret $-16, 526344
 L6:
     mov.w8 $-109, $-41
     mov.w8 $-224, $-109
@@ -4760,7 +4773,7 @@ L4:
     mov.w64 $-136, $-104
     mov.w64 $-128, $-112
 L5:
-    call $-96, fn2, 16
+    call $-96, fn2, 526344
     jmp L2
 L6:
     eq.imm.w64 $-41, $-40, 1
@@ -4793,7 +4806,7 @@ L0:
     island sym1, [4294967184, 4294967240, 4294967200]
     jmp L2
 L1:
-    ret $-16, 16
+    ret $-16, 526344
 L2:
     trunc.w32.w16 $-42, $-56
     mov.w16 $-54, $-42
@@ -4900,119 +4913,118 @@ L10:
   sym3 = island ryo_island_call_ptr1[std::arch::x86_64::__m128i, i32]
   k4 = const allocation + 0
 
-fn hashbrown::raw::RawTableInner::new_uninitialized::<std::alloc::Global> (frame 272, args 40, ret 32)
-    mov.w64 $-136, $40
-    mov.w128 $-272, $24
-    mov.w64 $-256, $-136
+fn hashbrown::raw::RawTableInner::new_uninitialized::<std::alloc::Global> (frame 288, args 40, ret 32)
+    arg $-136, 8
+    mov.w64 $-144, $40
+    mov.w128 $-288, $24
+    mov.w64 $-272, $-144
 L0:
-    call $0, fn0, 0
-    copy $-168, $-272, 24
+    call $-176, fn0, 2147483648
     jmp L2
 L1:
-    mov.w128 $-24, $-144
+    mov.w128 $-24, $-152
     imm.w64 $-32, 0
     jmp L13
 L2:
-    discr.niche.w64 $-236, $-168, 0, 0, 0, 1
-    zext.w32.w64 $-48, $-236
+    discr.niche.w64 $-252, $-176, 0, 0, 0, 1
+    zext.w32.w64 $-48, $-252
     switch.dense.w64 $-48, 0, L7, [L5, L3]
 L3:
-    mov.w128 $-144, $-168
-    mov.w64 $-120, $-152
-    mov.w64 $-272, $16
-    mov.w128 $-264, $-144
+    mov.w128 $-152, $-176
+    mov.w64 $-120, $-160
+    mov.w64 $-288, $16
+    mov.w128 $-280, $-152
 L4:
-    call $-184, fn1, 16
+    call $-192, fn1, 526344
     jmp L14
 L5:
-    mov.w8 $-272, $48
+    mov.w8 $-288, $48
 L6:
-    call.ext $-144, sym2, site3, sym4, $-240, 16
+    call.ext $-152, sym2, site3, sym4, $-256, 526344
     jmp L1
 L7:
     unreachable
 L8:
-    mov.w64 $-224, $24
-    mov.w64 $-232, $32
-    sub.imm.w64 $-200, $-56, 16
-    add.imm.w64 $-208, $-224, 1
-    br.eq.imm.w64! $-208, 0, L18
-    addr.abs $-272, k5
+    mov.w64 $-240, $24
+    mov.w64 $-248, $32
+    sub.imm.w64 $-216, $-56, 16
+    add.imm.w64 $-224, $-240, 1
+    br.eq.imm.w64! $-224, 0, L18
+    addr.abs $-288, k5
 L9:
-    call.ext $-232, sym6, site7, sym8, $-240, 0
+    call.ext $-248, sym6, site7, sym8, $-256, 0
     unreachable
 L10:
-    discr.niche.w64 $-236, $-208, 0, 0, 0, 1
-    zext.w32.w64 $-216, $-236
-    eq.imm.w64 $-121, $-216, 1
-    mov.w128 $-232, $-208
-    mov.w64 $-120, $-192
+    discr.niche.w64 $-252, $-224, 0, 0, 0, 1
+    zext.w32.w64 $-232, $-252
+    eq.imm.w64 $-121, $-232, 1
+    mov.w128 $-248, $-224
+    mov.w64 $-120, $-208
     jmp L11
 L11:
-    mov.w64 $-192, $-112
-    mov.w64 $-152, $-192
-    mov.w64 $-176, $-152
-    ptr.index $-168, $-176, $-120, 1
-    mov.w64 $-160, $-168
-    mov.w64 $-208, $40
-    sub.imm.w64 $-200, $-208, 1
+    mov.w64 $-200, $-112
+    mov.w64 $-160, $-200
+    mov.w64 $-184, $-160
+    ptr.index $-176, $-184, $-120, 1
+    mov.w64 $-168, $-176
+    mov.w64 $-216, $40
+    sub.imm.w64 $-208, $-216, 1
     sub.imm.w64 $-96, $40, 1
     br.lt.u.imm.w64 $-96, 8, L20
     jmp L21
 L12:
-    mov.w128 $-24, $-184
+    mov.w128 $-24, $-192
     imm.w64 $-32, 0
 L13:
-    copy $16, $-32, 32
-    ret $0, 0
+    store.copy [$-136 + 0], $-32, 32
+    ret $-136, 8
 L14:
-    discr.niche.w64 $-236, $-184, 0, 1, 1, 0
-    zext.w32.w64 $-192, $-236
-    switch.dense.w64 $-192, 0, L7, [L17, L15]
+    discr.niche.w64 $-252, $-192, 0, 1, 1, 0
+    zext.w32.w64 $-200, $-252
+    switch.dense.w64 $-200, 0, L7, [L17, L15]
 L15:
-    mov.w8 $-272, $48
-    mov.w128 $-264, $-144
+    mov.w8 $-288, $48
+    mov.w128 $-280, $-152
 L16:
-    call.ext $-184, sym9, site10, sym11, $-240, 16
+    call.ext $-192, sym9, site10, sym11, $-256, 526344
     jmp L12
 L17:
-    mov.w128 $-208, $-184
-    mov.w128 $-168, $-208
-    mov.w128 $-184, $-168
-    mov.w128 $-112, $-184
+    mov.w128 $-216, $-192
+    mov.w128 $-176, $-216
+    mov.w128 $-192, $-176
+    mov.w128 $-112, $-192
     mov.w64 $-56, $-104
-    mov.w64 $-192, $-136
-    br.eq.w64! $-56, $-192, L8
+    mov.w64 $-208, $-144
+    br.eq.w64! $-56, $-208, L8
     jmp L11
 L18:
-    div.u.w64 $-192, $-200, $-208
-    mov.w64 $-216, $-192
-    ctlz.w64 $-236, $-216
-    mov.w32 $-128, $-236
-    zext.w32.w64 $-208, $-128
-    imm.w64 $-240, 63
-    sub.w64 $-200, $-240, $-208
-    imm.w64 $-240, 1
-    shl.w64 $40, $-240, $-200
-    mov.w128 $-272, $24
-    mov.w64 $-256, $40
+    div.u.w64 $-208, $-216, $-224
+    mov.w64 $-232, $-208
+    ctlz.w64 $-252, $-232
+    mov.w32 $-200, $-252
+    zext.w32.w64 $-224, $-200
+    imm.w64 $-256, 63
+    sub.w64 $-216, $-256, $-224
+    imm.w64 $-256, 1
+    shl.w64 $40, $-256, $-216
+    mov.w128 $-288, $24
+    mov.w64 $-272, $40
 L19:
-    call $0, fn12, 0
-    copy $-208, $-272, 24
+    call $-224, fn12, 2147483648
     jmp L10
 L20:
     jmp L22
 L21:
-    add.imm.w64 $-216, $-96, 1
-    imm.w64 $-240, 8
-    div.u.w64 $-208, $-216, $-240
-    mul.imm.w64 $-96, $-208, 7
+    add.imm.w64 $-232, $-96, 1
+    imm.w64 $-256, 8
+    div.u.w64 $-224, $-232, $-256
+    mul.imm.w64 $-96, $-224, 7
 L22:
-    mov.w64 $-184, $-200
-    mov.w64 $-192, $-160
-    mov.w64 $-176, $-96
-    imm.w64 $-168, 0
-    copy $-32, $-192, 32
+    mov.w64 $-192, $-208
+    mov.w64 $-200, $-168
+    mov.w64 $-184, $-96
+    imm.w64 $-176, 0
+    copy $-32, $-200, 32
     jmp L13
   cleanup L0 -> continue
   cleanup L4 -> continue
@@ -5042,8 +5054,7 @@ fn hashbrown::raw::RawTableInner::prepare_rehash_in_place (frame 288, args 8, re
     mov.w128 $-288, $-152
     imm.w64 $-272, 16
 L0:
-    call $0, fn0, 0
-    copy $-32, $-288, 32
+    call $-32, fn0, 2147483648
     jmp L5
 L1:
     mov.w64 $-192, $-16
@@ -5103,7 +5114,7 @@ L9:
     mov.w128 $-176, $-208
     mov.w128 $-288, $-176
 L10:
-    call $-192, fn5, 16
+    call $-192, fn5, 2147483648
     jmp L2
 L11:
     jmp L1
@@ -5161,8 +5172,7 @@ fn hashbrown::raw::RawTableInner::prepare_resize::<std::alloc::Global>::{closure
     mov.w128 $-176, $-56
     mov.w64 $-160, $-88
 L0:
-    call $0, fn0, 0
-    copy $-80, $-176, 24
+    call $-80, fn0, 2147483648
     jmp L3
 L1:
     ret $0, 0
@@ -5562,13 +5572,13 @@ L4:
     mov.w8 $-104, $72
     mov.w128 $-96, $56
 L5:
-    call $-16, fn3, 16
+    call $-16, fn3, 526344
 L6:
-    ret $-16, 16
+    ret $-16, 526344
 L7:
     mov.w8 $-144, $72
 L8:
-    call.ext $-40, sym4, site5, sym6, $-80, 16
+    call.ext $-40, sym4, site5, sym6, $-80, 526344
     jmp L0
 L9:
     add.w64 $-56, $-32, $48
@@ -5607,8 +5617,7 @@ fn hashbrown::raw::RawTableInner::resize_inner::<std::alloc::Global> (frame 576,
     mov.w64 $-552, $48
     mov.w8 $-544, $56
 L0:
-    call $0, fn0, 0
-    copy $-416, $-576, 32
+    call $-416, fn0, 2147483648
     jmp L12
 L1:
     unreachable
@@ -5648,7 +5657,7 @@ L7:
     call $-176, fn3, 8
     jmp L20
 L8:
-    ret $-16, 16
+    ret $-16, 526344
 L9:
     addr $-496, $-240
     mov.w64 $-576, $-496
@@ -5724,7 +5733,7 @@ L17:
 L18:
     mov.w64 $-576, $-296
 L19:
-    call $-288, fn10, 16
+    call $-288, fn10, 526344
     load.w64 $-496, [$-296 + 16]
     sub.imm.w64 $-512, $-496, 1
     store.w64 [$-296 + 16], $-512
@@ -5817,85 +5826,86 @@ L25:
   site14
   sym15 = island ryo_island_call_ptr0[!]
 
-fn hashbrown::raw::TableLayout::calculate_layout_for (frame 208, args 24, ret 24)
-    mov.w64 $-72, $16
-    mov.w64 $-80, $24
-    mov.w64 $-160, $-72
-    mov.w64 $-192, $32
-    mul.ovf.u.w64 $-184, $-176, $-160, $-192
-    mov.w64 $-160, $-184
-    mov.w8 $-161, $-176
-    mov.w64 $-200, $-160
-    br! $-161, L5
+fn hashbrown::raw::TableLayout::calculate_layout_for (frame 224, args 24, ret 24)
+    arg $-72, 8
+    mov.w64 $-80, $16
+    mov.w64 $-88, $24
+    mov.w64 $-168, $-80
+    mov.w64 $-200, $32
+    mul.ovf.u.w64 $-192, $-184, $-168, $-200
+    mov.w64 $-168, $-192
+    mov.w8 $-169, $-184
+    mov.w64 $-208, $-168
+    br! $-169, L5
     jmp L4
 L0:
     imm.w64 $-24, 0
     jmp L2
 L1:
-    mov.w64 $-136, $-80
-    mov.w64 $-120, $-64
-    mov.w64 $-128, $-136
-    mov.w128 $-112, $-128
-    mov.w64 $-96, $-88
-    copy $-24, $-112, 24
+    mov.w64 $-144, $-88
+    mov.w64 $-128, $-64
+    mov.w64 $-136, $-144
+    mov.w128 $-120, $-136
+    mov.w64 $-104, $-96
+    copy $-24, $-120, 24
     jmp L3
 L2:
     jmp L3
 L3:
-    copy $16, $-24, 24
-    ret $0, 0
+    store.copy [$-72 + 0], $-24, 24
+    ret $-72, 8
 L4:
-    const $-152, k0, 16
-    imm.w64 $-144, 0
-    eq.imm.w64 $-145, $-144, 0
+    const $-160, k0, 16
+    imm.w64 $-152, 0
+    eq.imm.w64 $-153, $-152, 0
     imm.w64 $-24, 0
     jmp L3
 L5:
-    mov.w64 $-144, $-200
-    imm.w64 $-152, 1
-    mov.w64 $-160, $-144
-    mov.w64 $-128, $-160
-    imm.w64 $-136, 0
-    mov.w64 $-40, $-128
-    sub.imm.w64 $-48, $-80, 1
-    add.ovf.u.w64 $-160, $-152, $-40, $-48
-    mov.w8 $-137, $-152
-    br! $-137, L6
-    const $-120, k1, 16
-    imm.w64 $-112, 0
-    eq.imm.w64 $-113, $-112, 0
+    mov.w64 $-152, $-208
+    imm.w64 $-160, 1
+    mov.w64 $-168, $-152
+    mov.w64 $-136, $-168
+    imm.w64 $-144, 0
+    mov.w64 $-40, $-136
+    sub.imm.w64 $-48, $-88, 1
+    add.ovf.u.w64 $-168, $-160, $-40, $-48
+    mov.w8 $-145, $-160
+    br! $-145, L6
+    const $-128, k1, 16
+    imm.w64 $-120, 0
+    eq.imm.w64 $-121, $-120, 0
     imm.w64 $-24, 0
     jmp L3
 L6:
-    add.w64 $-144, $-40, $-48
-    mov.w64 $-112, $-144
-    imm.w64 $-120, 1
-    mov.w64 $-144, $-112
-    mov.w64 $-96, $-144
-    imm.w64 $-104, 0
-    mov.w64 $-56, $-96
-    not.w64 $-112, $-48
-    and.w64 $-88, $-56, $-112
-    add.imm.w64 $-128, $32, 16
-    add.ovf.u.w64 $-152, $-144, $-88, $-128
-    mov.w8 $-129, $-144
-    br! $-129, L7
-    const $-120, k2, 16
+    add.w64 $-152, $-40, $-48
+    mov.w64 $-120, $-152
+    imm.w64 $-128, 1
+    mov.w64 $-152, $-120
+    mov.w64 $-104, $-152
     imm.w64 $-112, 0
-    eq.imm.w64 $-113, $-112, 0
+    mov.w64 $-56, $-104
+    not.w64 $-120, $-48
+    and.w64 $-96, $-56, $-120
+    add.imm.w64 $-136, $32, 16
+    add.ovf.u.w64 $-160, $-152, $-96, $-136
+    mov.w8 $-137, $-152
+    br! $-137, L7
+    const $-128, k2, 16
+    imm.w64 $-120, 0
+    eq.imm.w64 $-121, $-120, 0
     imm.w64 $-24, 0
     jmp L2
 L7:
-    add.w64 $-136, $-88, $-128
-    mov.w64 $-112, $-136
-    imm.w64 $-120, 1
-    mov.w64 $-128, $-112
-    mov.w64 $-96, $-128
-    imm.w64 $-104, 0
-    mov.w64 $-64, $-96
-    imm.w64 $-208, 9223372036854775807
-    sub.w64 $-104, $-208, $-48
-    br.lt.u.w64 $-104, $-64, L0
+    add.w64 $-144, $-96, $-136
+    mov.w64 $-120, $-144
+    imm.w64 $-128, 1
+    mov.w64 $-136, $-120
+    mov.w64 $-104, $-136
+    imm.w64 $-112, 0
+    mov.w64 $-64, $-104
+    imm.w64 $-216, 9223372036854775807
+    sub.w64 $-112, $-216, $-48
+    br.lt.u.w64 $-112, $-64, L0
     jmp L1
   k0 = const allocation + 0
   k1 = const allocation + 0
@@ -5954,7 +5964,7 @@ L10:
     br! $-129, L17
     jmp L16
 L11:
-    ret $-16, 16
+    ret $-16, 526344
 L12:
     mov.w64 $-112, $-56
     mov.w64 $-136, $-104
@@ -6044,71 +6054,72 @@ L26:
   sym6 = island ryo_island_call_ptr1[&'{erased} std::panic::Location<'{erased}>, !]
 
 fn hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>>::rustc_entry (frame 176, args 32, ret 40)
-    ptr.add $-72, $16, 32
-    addr $-80, $24
-    mov.w64 $-176, $-72
-    mov.w64 $-168, $-80
+    arg $-64, 8
+    ptr.add $-80, $16, 32
+    addr $-88, $24
+    mov.w64 $-176, $-80
+    mov.w64 $-168, $-88
 L0:
-    call $-64, fn0, 8
+    call $-72, fn0, 8
     jmp L10
 L1:
-    discr.niche.w64 $-140, $-72, 0, 0, 0, 1
-    zext.w32.w64 $-48, $-140
+    discr.niche.w64 $-148, $-80, 0, 0, 0, 1
+    zext.w32.w64 $-48, $-148
     switch.dense.w64 $-48, 0, L13, [L4, L2]
 L2:
-    mov.w64 $-80, $-72
-    mov.w64 $-104, $16
-    mov.w64 $-96, $-80
-    mov.w64 $-88, $-104
-    mov.w128 $-32, $-96
+    mov.w64 $-88, $-80
+    mov.w64 $-112, $16
+    mov.w64 $-104, $-88
+    mov.w64 $-96, $-112
+    mov.w128 $-32, $-104
     imm.w64 $-40, 18446744073709551615
-    addr $-144, $24
-    mov.w64 $-176, $-144
+    addr $-152, $24
+    mov.w64 $-176, $-152
 L3:
     call $0, fn1, 0
     jmp L6
 L4:
-    mov.w64 $-72, $16
-    ptr.add $-88, $16, 32
-    mov.w64 $-80, $-88
-    mov.w64 $-176, $-72
+    mov.w64 $-80, $16
+    ptr.add $-96, $16, 32
+    mov.w64 $-88, $-96
+    mov.w64 $-176, $-80
     imm.w64 $-168, 1
-    mov.w64 $-160, $-80
+    mov.w64 $-160, $-88
 L5:
     call $0, fn2, 0
     jmp L12
 L6:
-    copy $16, $-40, 40
-    ret $0, 0
+    store.copy [$-64 + 0], $-40, 40
+    ret $-64, 8
 L7:
-    addr $-144, $24
-    mov.w64 $-176, $-144
+    addr $-152, $24
+    mov.w64 $-176, $-152
 L8:
     call $0, fn3, 0
 L9:
     resume $-56
 L10:
-    mov.w64 $-80, $16
-    addr $-96, $24
-    mov.w64 $-88, $-96
-    mov.w64 $-176, $-80
-    mov.w64 $-168, $-64
-    mov.w64 $-160, $-88
+    mov.w64 $-88, $16
+    addr $-104, $24
+    mov.w64 $-96, $-104
+    mov.w64 $-176, $-88
+    mov.w64 $-168, $-72
+    mov.w64 $-160, $-96
 L11:
-    call $-72, fn4, 8
+    call $-80, fn4, 8
     jmp L1
 L12:
-    copy $-128, $24, 24
-    mov.w64 $-136, $16
-    mov.w64 $-72, $-64
-    copy $-104, $-128, 24
-    mov.w64 $-80, $-136
-    copy $-40, $-104, 40
+    copy $-136, $24, 24
+    mov.w64 $-144, $16
+    mov.w64 $-80, $-72
+    copy $-112, $-136, 24
+    mov.w64 $-88, $-144
+    copy $-40, $-112, 40
     jmp L6
 L13:
     unreachable
 L14:
-    call.ext $-136, sym5, site6, sym7, $-144, 0
+    call.ext $-144, sym5, site6, sym7, $-152, 0
     unreachable
 L15:
     lpad $-56
@@ -6143,57 +6154,58 @@ L0:
   fn0 = <std::string::String as std::cmp::PartialEq>::eq
 
 fn hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::RandomState>>::rustc_entry (frame 128, args 16, ret 24)
-    ptr.add $-56, $16, 32
-    addr $-64, $24
-    mov.w64 $-128, $-56
-    mov.w64 $-120, $-64
+    arg $-48, 8
+    ptr.add $-64, $16, 32
+    addr $-72, $24
+    mov.w64 $-128, $-64
+    mov.w64 $-120, $-72
 L0:
-    call $-48, fn0, 8
+    call $-56, fn0, 8
     jmp L7
 L1:
-    discr.niche.w64 $-92, $-56, 0, 0, 0, 1
-    zext.w32.w64 $-32, $-92
+    discr.niche.w64 $-100, $-64, 0, 0, 0, 1
+    zext.w32.w64 $-32, $-100
     switch.dense.w64 $-32, 0, L10, [L3, L2]
 L2:
-    mov.w64 $-64, $-56
-    mov.w64 $-88, $16
-    mov.w64 $-80, $-64
-    mov.w64 $-72, $-88
-    mov.w128 $-16, $-80
+    mov.w64 $-72, $-64
+    mov.w64 $-96, $16
+    mov.w64 $-88, $-72
+    mov.w64 $-80, $-96
+    mov.w128 $-16, $-88
     imm.w64 $-24, 0
     jmp L5
 L3:
-    mov.w64 $-56, $16
-    ptr.add $-72, $16, 32
-    mov.w64 $-64, $-72
-    mov.w64 $-128, $-56
+    mov.w64 $-64, $16
+    ptr.add $-80, $16, 32
+    mov.w64 $-72, $-80
+    mov.w64 $-128, $-64
     imm.w64 $-120, 1
-    mov.w64 $-112, $-64
+    mov.w64 $-112, $-72
 L4:
     call $0, fn1, 0
     jmp L9
 L5:
-    copy $16, $-24, 24
-    ret $0, 0
+    store.copy [$-48 + 0], $-24, 24
+    ret $-48, 8
 L6:
     resume $-40
 L7:
-    mov.w64 $-64, $16
-    addr $-80, $24
-    mov.w64 $-72, $-80
-    mov.w64 $-128, $-64
-    mov.w64 $-120, $-48
-    mov.w64 $-112, $-72
+    mov.w64 $-72, $16
+    addr $-88, $24
+    mov.w64 $-80, $-88
+    mov.w64 $-128, $-72
+    mov.w64 $-120, $-56
+    mov.w64 $-112, $-80
 L8:
-    call $-56, fn2, 8
+    call $-64, fn2, 8
     jmp L1
 L9:
-    mov.w64 $-80, $24
-    mov.w64 $-88, $16
-    mov.w64 $-64, $-48
-    mov.w64 $-56, $-80
-    mov.w64 $-72, $-88
-    copy $-24, $-72, 24
+    mov.w64 $-88, $24
+    mov.w64 $-96, $16
+    mov.w64 $-72, $-56
+    mov.w64 $-64, $-88
+    mov.w64 $-80, $-96
+    copy $-24, $-80, 24
     jmp L5
 L10:
     unreachable
@@ -6224,20 +6236,19 @@ fn main (frame 1392, args 0, ret 0)
 L0:
     call $-8, fn0, 8
 L1:
-    call $0, fn1, 0
-    copy $-56, $-1392, 48
+    call $-56, fn1, 2147483648
     imm.w64 $-64, 1
     imm.w64 $-96, 0
     mov.w64 $-88, $-8
     mov.w128 $-1392, $-96
 L2:
-    call $-80, fn2, 16
+    call $-80, fn2, 526344
     mov.w128 $-112, $-80
 L3:
     addr $-136, $-112
     mov.w64 $-1392, $-136
 L4:
-    call $-128, fn3, 16
+    call $-128, fn3, 526344
     mov.w64 $-144, $-128
     switch.dense.w64 $-144, 0, L5, [L8, L6]
 L5:
@@ -6280,8 +6291,7 @@ L13:
     mov.w64 $-1392, $-216
     mov.w64 $-1384, $-224
 L14:
-    call $0, fn14, 0
-    copy $-208, $-1392, 24
+    call $-208, fn14, 2147483648
     copy $-1392, $-208, 24
     imm.w64 $-1368, 0
 L15:
@@ -6304,18 +6314,16 @@ L18:
     mov.w128 $-1392, $-352
     imm.w64 $-1376, 2
 L19:
-    call $0, fn20, 0
-    copy $-336, $-1392, 32
+    call $-336, fn20, 2147483648
     copy $-1392, $-336, 32
 L20:
-    call $0, fn21, 0
-    copy $-304, $-1392, 32
+    call $-304, fn21, 2147483648
     copy $-400, $-304, 32
 L21:
     addr $-424, $-400
     mov.w64 $-1392, $-424
 L22:
-    call $-416, fn22, 16
+    call $-416, fn22, 526344
     mov.w64 $-432, $-416
     switch.dense.w64 $-432, 0, L5, [L25, L23]
 L23:
@@ -6364,26 +6372,24 @@ L33:
     addr $-600, $-56
     mov.w64 $-1392, $-600
 L34:
-    call $0, fn31, 0
-    copy $-592, $-1392, 40
+    call $-592, fn31, 2147483648
     copy $-1392, $-592, 40
     imm.w64 $-1352, 0
 L35:
     call $-552, fn32, 8
 L36:
-    call $0, fn33, 0
-    copy $-648, $-1392, 48
+    call $-648, fn33, 2147483648
     imm.w32 $-664, 0
     imm.w32 $-660, 130000
     mov.w64 $-1392, $-664
 L37:
-    call $-656, fn34, 8
+    call $-656, fn34, 263172
     mov.w64 $-672, $-656
 L38:
     addr $-688, $-672
     mov.w64 $-1392, $-688
 L39:
-    call $-680, fn35, 8
+    call $-680, fn35, 263172
     zext.w32.w64 $-696, $-680
     switch.dense.w64 $-696, 0, L5, [L42, L40]
 L40:
@@ -6410,27 +6416,24 @@ L44:
     mov.w64 $-1272, $-832
     mov.w64 $-1392, $-1272
 L45:
-    call $-880, fn41, 16
+    call $-880, fn41, 2147483648
     mov.w128 $-864, $-880
     addr.abs $-888, k42
     addr $-896, $-864
     mov.w64 $-1392, $-888
     mov.w64 $-1384, $-896
 L46:
-    call $-824, fn43, 16
+    call $-824, fn43, 526344
     mov.w128 $-1392, $-824
 L47:
-    call $0, fn44, 0
-    copy $-808, $-1392, 24
+    call $-808, fn44, 2147483648
     copy $-1392, $-808, 24
 L48:
-    call $0, fn45, 0
-    copy $-784, $-1392, 24
+    call $-784, fn45, 2147483648
     mov.w64 $-1392, $-760
     copy $-1384, $-784, 24
 L49:
-    call $0, fn46, 0
-    copy $-752, $-1392, 40
+    call $-752, fn46, 2147483648
     copy $-1392, $-752, 40
 L50:
     call $-712, fn47, 8
@@ -6465,27 +6468,27 @@ L54:
     mov.w64 $-1280, $-960
     mov.w64 $-1392, $-1280
 L55:
-    call $-1168, fn53, 16
+    call $-1168, fn53, 2147483648
     mov.w64 $-1288, $-952
     mov.w64 $-1392, $-1288
 L56:
-    call $-1184, fn54, 16
+    call $-1184, fn54, 2147483648
     mov.w64 $-1296, $-944
     mov.w64 $-1392, $-1296
 L57:
-    call $-1200, fn55, 16
+    call $-1200, fn55, 2147483648
     mov.w64 $-1304, $-976
     mov.w64 $-1392, $-1304
 L58:
-    call $-1216, fn56, 16
+    call $-1216, fn56, 2147483648
     mov.w64 $-1312, $-936
     mov.w64 $-1392, $-1312
 L59:
-    call $-1232, fn57, 16
+    call $-1232, fn57, 2147483648
     mov.w64 $-1320, $-968
     mov.w64 $-1392, $-1320
 L60:
-    call $-1248, fn58, 16
+    call $-1248, fn58, 2147483648
     mov.w128 $-1152, $-1168
     mov.w128 $-1136, $-1184
     mov.w128 $-1120, $-1200
@@ -6497,7 +6500,7 @@ L60:
     mov.w64 $-1392, $-1256
     mov.w64 $-1384, $-1264
 L61:
-    call $-928, fn60, 16
+    call $-928, fn60, 526344
     mov.w128 $-1392, $-928
 L62:
     call.ext $-912, sym61, site62, sym63, $-1336, 0
@@ -6701,7 +6704,7 @@ L3:
     br! $-121, L10
     jmp L9
 L4:
-    ret $-16, 16
+    ret $-16, 526344
 L5:
     mov.w64 $-144, $-56
     mov.w64 $-176, $-144
@@ -6778,9 +6781,11 @@ L12:
   k17 = const allocation + 0
   fn18 = std::ptr::NonNull::<T>::new_unchecked::precondition_check
 
-fn std::arch::x86_64::__m128i::as_i8x16 (frame 16, args 16, ret 16)
+fn std::arch::x86_64::__m128i::as_i8x16 (frame 32, args 16, ret 16)
+    arg $-24, 8
     mov.w128 $-16, $16
-    ret $-16, 16
+    store.copy [$-24 + 0], $-16, 16
+    ret $-24, 8
 
 fn std::char::encode_utf8_raw (frame 128, args 24, ret 16)
     br.lt.u.imm.w32 $16, 128, L8
@@ -6839,7 +6844,7 @@ L10:
     mov.w64 $-64, $-24
     mov.w64 $-16, $-72
     mov.w64 $-8, $-64
-    ret $-16, 16
+    ret $-16, 526344
   cleanup L1 -> continue
   cleanup L3 -> continue
   k0 = const allocation + 0
@@ -6991,29 +6996,29 @@ fn std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt (frame 32, args 16
     ret $-1, 1
 
 fn std::collections::HashMap::<std::string::String, usize>::entry (frame 224, args 32, ret 40)
-    mov.w64 $-88, $16
-    mov.w64 $-224, $-88
+    arg $-48, 8
+    mov.w64 $-96, $16
+    mov.w64 $-224, $-96
     copy $-216, $24, 24
 L0:
-    call $0, fn0, 0
-    copy $-80, $-224, 40
-    discr.niche.w64 $-172, $-80, 18446744073709551615, 0, 0, 1
-    zext.w32.w64 $-88, $-172
-    switch.dense.w64 $-88, 0, L2, [L4, L3]
+    call $-88, fn0, 2147483648
+    discr.niche.w64 $-180, $-88, 18446744073709551615, 0, 0, 1
+    zext.w32.w64 $-96, $-180
+    switch.dense.w64 $-96, 0, L2, [L4, L3]
 L1:
-    copy $16, $-40, 40
-    ret $0, 0
+    store.copy [$-48 + 0], $-40, 40
+    ret $-48, 8
 L2:
     unreachable
 L3:
-    copy $-128, $-80, 40
-    copy $-168, $-128, 40
-    copy $-40, $-168, 40
+    copy $-136, $-88, 40
+    copy $-176, $-136, 40
+    copy $-40, $-176, 40
     jmp L1
 L4:
-    mov.w128 $-104, $-72
-    mov.w128 $-120, $-104
-    mov.w128 $-32, $-120
+    mov.w128 $-112, $-80
+    mov.w128 $-128, $-112
+    mov.w128 $-32, $-128
     imm.w64 $-40, 18446744073709551615
     jmp L1
   cleanup L0 -> continue
@@ -7024,44 +7029,45 @@ fn std::collections::HashMap::<std::string::String, usize>::len (frame 16, args 
     ret $-8, 8
 
 fn std::collections::HashMap::<std::string::String, usize>::new (frame 160, args 0, ret 48)
+    arg $-56, 8
     addr.abs $-160, k0
 L0:
-    call $-64, fn1, 16
-    const $-144, k2, 32
-    mov.w128 $-80, $-64
-    copy $-112, $-144, 32
-    copy $-48, $-112, 48
-    copy $16, $-48, 48
-    ret $0, 0
+    call $-72, fn1, 526344
+    const $-152, k2, 32
+    mov.w128 $-88, $-72
+    copy $-120, $-152, 32
+    copy $-48, $-120, 48
+    store.copy [$-56 + 0], $-48, 48
+    ret $-56, 8
   cleanup L0 -> continue
   k0 = const allocation + 0
   fn1 = std::thread::LocalKey::<std::cell::Cell<(u64, u64)>>::with::<{closure@std::hash::RandomState::new::{closure#0}}, std::hash::RandomState>
   k2 = const allocation + 0
 
 fn std::collections::HashMap::<u64, u64>::entry (frame 144, args 16, ret 24)
-    mov.w64 $-56, $16
-    mov.w64 $-144, $-56
+    arg $-32, 8
+    mov.w64 $-64, $16
+    mov.w64 $-144, $-64
     mov.w64 $-136, $24
 L0:
-    call $0, fn0, 0
-    copy $-48, $-144, 24
-    discr.niche.w64 $-108, $-48, 0, 0, 0, 1
-    zext.w32.w64 $-56, $-108
-    switch.dense.w64 $-56, 0, L2, [L4, L3]
+    call $-56, fn0, 2147483648
+    discr.niche.w64 $-116, $-56, 0, 0, 0, 1
+    zext.w32.w64 $-64, $-116
+    switch.dense.w64 $-64, 0, L2, [L4, L3]
 L1:
-    copy $16, $-24, 24
-    ret $0, 0
+    store.copy [$-32 + 0], $-24, 24
+    ret $-32, 8
 L2:
     unreachable
 L3:
-    copy $-80, $-48, 24
-    copy $-104, $-80, 24
-    copy $-24, $-104, 24
+    copy $-88, $-56, 24
+    copy $-112, $-88, 24
+    copy $-24, $-112, 24
     jmp L1
 L4:
-    mov.w128 $-72, $-40
-    mov.w128 $-88, $-72
-    mov.w128 $-16, $-88
+    mov.w128 $-80, $-48
+    mov.w128 $-96, $-80
+    mov.w128 $-16, $-96
     imm.w64 $-24, 0
     jmp L1
   cleanup L0 -> continue
@@ -7082,15 +7088,16 @@ fn std::collections::HashMap::<u64, u64>::len (frame 16, args 8, ret 8)
     ret $-8, 8
 
 fn std::collections::HashMap::<u64, u64>::new (frame 160, args 0, ret 48)
+    arg $-56, 8
     addr.abs $-160, k0
 L0:
-    call $-64, fn1, 16
-    const $-144, k2, 32
-    mov.w128 $-80, $-64
-    copy $-112, $-144, 32
-    copy $-48, $-112, 48
-    copy $16, $-48, 48
-    ret $0, 0
+    call $-72, fn1, 526344
+    const $-152, k2, 32
+    mov.w128 $-88, $-72
+    copy $-120, $-152, 32
+    copy $-48, $-120, 48
+    store.copy [$-56 + 0], $-48, 48
+    ret $-56, 8
   cleanup L0 -> continue
   k0 = const allocation + 0
   fn1 = std::thread::LocalKey::<std::cell::Cell<(u64, u64)>>::with::<{closure@std::hash::RandomState::new::{closure#0}}, std::hash::RandomState>
@@ -7105,16 +7112,16 @@ L0:
   cleanup L0 -> continue
   fn0 = hashbrown::map::HashMap::<u64, u64, std::hash::RandomState>::retain::<{closure@bench/hashmap.rs:23:16: 23:22}>
 
-fn std::collections::HashMap::<u64, u64>::values (frame 176, args 8, ret 40)
-    mov.w64 $-128, $16
-    mov.w64 $-176, $-128
+fn std::collections::HashMap::<u64, u64>::values (frame 144, args 8, ret 40)
+    arg $-48, 8
+    mov.w64 $-136, $16
+    mov.w64 $-144, $-136
 L0:
-    call $0, fn0, 0
-    copy $-120, $-176, 40
-    copy $-80, $-120, 40
-    copy $-40, $-80, 40
-    copy $16, $-40, 40
-    ret $0, 0
+    call $-128, fn0, 2147483648
+    copy $-88, $-128, 40
+    copy $-40, $-88, 40
+    store.copy [$-48 + 0], $-40, 40
+    ret $-48, 8
   cleanup L0 -> continue
   fn0 = hashbrown::map::HashMap::<u64, u64, std::hash::RandomState>::iter
 
@@ -7331,7 +7338,7 @@ L0:
 L1:
     const $-16, k0, 16
 L2:
-    ret $-16, 16
+    ret $-16, 526344
 L3:
     load.w64 $-80, [$16 + 0]
     mov.w64 $-40, $-80
@@ -7375,57 +7382,57 @@ fn std::fmt::Arguments::<'_>::new::<4, 1> (frame 32, args 16, ret 16)
     mov.w64 $-32, $24
     mov.w64 $-16, $-24
     mov.w64 $-8, $-32
-    ret $-16, 16
+    ret $-16, 526344
 
 fn std::fmt::Arguments::<'_>::new::<59, 6> (frame 32, args 16, ret 16)
     mov.w64 $-24, $16
     mov.w64 $-32, $24
     mov.w64 $-16, $-24
     mov.w64 $-8, $-32
-    ret $-16, 16
+    ret $-16, 526344
 
-fn std::fmt::format (frame 176, args 16, ret 24)
-    mov.w64 $-64, $24
-    mov.w64 $-56, $-64
-    and.imm.w64 $-64, $-56, 1
-    br.eq.imm.w64 $-64, 1, L1
+fn std::fmt::format (frame 192, args 16, ret 24)
+    arg $-40, 8
+    mov.w64 $-72, $24
+    mov.w64 $-64, $-72
+    and.imm.w64 $-72, $-64, 1
+    br.eq.imm.w64 $-72, 1, L1
     jmp L2
 L0:
-    copy $16, $-24, 24
-    ret $0, 0
+    store.copy [$-40 + 0], $-24, 24
+    ret $-40, 8
 L1:
-    mov.w64 $-104, $16
-    mov.w64 $-64, $-104
-    shr.u.imm.w64 $-112, $-56, 1
-    imm.w8 $-129, 1
-    br! $-129, L6
+    mov.w64 $-112, $16
+    mov.w64 $-72, $-112
+    shr.u.imm.w64 $-120, $-64, 1
+    imm.w8 $-137, 1
+    br! $-137, L6
     jmp L5
 L2:
-    const $-48, k0, 16
+    const $-56, k0, 16
 L3:
-    addr $-64, $16
-    mov.w64 $-56, $-64
-    mov.w128 $-168, $-48
-    mov.w64 $-176, $-56
+    addr $-72, $16
+    mov.w64 $-64, $-72
+    mov.w128 $-184, $-56
+    mov.w64 $-192, $-64
 L4:
-    call $0, fn1, 0
-    copy $-24, $-176, 24
+    call $-24, fn1, 2147483648
     jmp L0
 L5:
-    mov.w64 $-120, $-104
-    mov.w64 $-176, $-120
-    imm.w64 $-168, 1
-    imm.w64 $-160, 1
-    mov.w64 $-152, $-112
-    addr.abs $-144, k2
+    mov.w64 $-128, $-112
+    mov.w64 $-192, $-128
+    imm.w64 $-184, 1
+    imm.w64 $-176, 1
+    mov.w64 $-168, $-120
+    addr.abs $-160, k2
     call $0, fn3, 0
 L6:
-    mov.w64 $-128, $-64
-    mov.w64 $-120, $-112
+    mov.w64 $-136, $-72
+    mov.w64 $-128, $-120
+    mov.w64 $-104, $-136
     mov.w64 $-96, $-128
-    mov.w64 $-88, $-120
-    mov.w128 $-80, $-96
-    mov.w128 $-48, $-80
+    mov.w128 $-88, $-104
+    mov.w128 $-56, $-88
     jmp L3
   cleanup L4 -> continue
   k0 = const allocation + 0
@@ -7434,14 +7441,14 @@ L6:
   fn3 = std::slice::from_raw_parts::precondition_check
 
 fn std::fmt::format::{closure#0} (frame 80, args 8, ret 24)
+    arg $-40, 8
     mov.w64 $-32, $16
-    load.w128 $-48, [$-32 + 0]
-    mov.w128 $-80, $-48
+    load.w128 $-56, [$-32 + 0]
+    mov.w128 $-80, $-56
 L0:
-    call.ext $-80, sym0, site1, sym2, $-56, 0
-    copy $-24, $-80, 24
-    copy $16, $-24, 24
-    ret $0, 0
+    call.ext $-24, sym0, site1, sym2, $-64, 2147483648
+    store.copy [$-40 + 0], $-24, 24
+    ret $-40, 8
   cleanup L0 -> continue
   sym0 = std::fmt::format::format_inner
   site1
@@ -7449,10 +7456,10 @@ L0:
 
 fn std::hash::RandomState::new::KEYS::__rust_std_internal_init_fn (frame 64, args 0, ret 16)
 L0:
-    call.ext $-32, sym0, site1, sym2, $-56, 16
+    call.ext $-32, sym0, site1, sym2, $-56, 526344
     mov.w128 $-48, $-32
     mov.w128 $-16, $-48
-    ret $-16, 16
+    ret $-16, 526344
   cleanup L0 -> continue
   sym0 = std::sys::random::linux::hashmap_random_keys
   site1
@@ -7484,7 +7491,7 @@ fn std::hash::RandomState::new::{closure#0} (frame 64, args 8, ret 16)
     store.w128 [$-56 + 0], $-48
     mov.w64 $-16, $-24
     mov.w64 $-8, $-32
-    ret $-16, 16
+    ret $-16, 526344
 
 fn std::hint::assert_unchecked::precondition_check (frame 128, args 16, ret 0)
     br $16, L0
@@ -7520,9 +7527,10 @@ fn std::hint::black_box::<u64> (frame 16, args 8, ret 8)
     ret $-8, 8
 
 fn std::hint::must_use::<std::string::String> (frame 32, args 24, ret 24)
+    arg $-32, 8
     copy $-24, $16, 24
-    copy $16, $-24, 24
-    ret $0, 0
+    store.copy [$-32 + 0], $-24, 24
+    ret $-32, 8
 
 fn std::hint::unreachable_unchecked::precondition_check (frame 128, args 8, ret 0)
     addr.abs $-16, k0
@@ -7616,7 +7624,7 @@ fn std::io::Error::is_interrupted (frame 128, args 8, ret 1)
     load.w64 $-88, [$16 + 0]
     mov.w64 $-128, $-88
 L0:
-    call $-80, fn0, 16
+    call $-80, fn0, 2147483648
     jmp L8
 L1:
     unreachable
@@ -7844,30 +7852,31 @@ L43:
 L44:
     ret $-1, 1
 
-fn std::iter::StepBy::<std::ops::Range<u64>>::new (frame 112, args 24, ret 32)
+fn std::iter::StepBy::<std::ops::Range<u64>>::new (frame 128, args 24, ret 32)
+    arg $-56, 8
     imm.w8 $-33, 1
     br.eq.imm.w64 $32, 0, L1
     imm.w8 $-33, 0
-    mov.w128 $-80, $16
-    mov.w128 $-112, $-80
-    mov.w64 $-96, $32
+    mov.w128 $-88, $16
+    mov.w128 $-128, $-88
+    mov.w64 $-112, $32
 L0:
-    call $-64, fn0, 16
+    call $-72, fn0, 526344
     jmp L3
 L1:
-    addr.abs $-112, k1
-    imm.w64 $-104, 27
-    addr.abs $-96, k2
+    addr.abs $-128, k1
+    imm.w64 $-120, 27
+    addr.abs $-112, k2
 L2:
-    call.ext $-32, sym3, site4, sym5, $-88, 0
+    call.ext $-32, sym3, site4, sym5, $-96, 0
     unreachable
 L3:
-    sub.imm.w64 $-72, $32, 1
-    mov.w128 $-32, $-64
-    mov.w64 $-16, $-72
+    sub.imm.w64 $-80, $32, 1
+    mov.w128 $-32, $-72
+    mov.w64 $-16, $-80
     imm.w8 $-8, 1
-    copy $16, $-32, 32
-    ret $0, 0
+    store.copy [$-56 + 0], $-32, 32
+    ret $-56, 8
 L4:
     resume $-48
 L5:
@@ -7888,30 +7897,31 @@ L7:
   site4
   sym5 = island ryo_island_call_ptr2[&'{erased} str, &'{erased} std::panic::Location<'{erased}>, !]
 
-fn std::iter::StepBy::<std::ops::Range<usize>>::new (frame 112, args 24, ret 32)
+fn std::iter::StepBy::<std::ops::Range<usize>>::new (frame 128, args 24, ret 32)
+    arg $-56, 8
     imm.w8 $-33, 1
     br.eq.imm.w64 $32, 0, L1
     imm.w8 $-33, 0
-    mov.w128 $-80, $16
-    mov.w128 $-112, $-80
-    mov.w64 $-96, $32
+    mov.w128 $-88, $16
+    mov.w128 $-128, $-88
+    mov.w64 $-112, $32
 L0:
-    call $-64, fn0, 16
+    call $-72, fn0, 526344
     jmp L3
 L1:
-    addr.abs $-112, k1
-    imm.w64 $-104, 27
-    addr.abs $-96, k2
+    addr.abs $-128, k1
+    imm.w64 $-120, 27
+    addr.abs $-112, k2
 L2:
-    call.ext $-32, sym3, site4, sym5, $-88, 0
+    call.ext $-32, sym3, site4, sym5, $-96, 0
     unreachable
 L3:
-    sub.imm.w64 $-72, $32, 1
-    mov.w128 $-32, $-64
-    mov.w64 $-16, $-72
+    sub.imm.w64 $-80, $32, 1
+    mov.w128 $-32, $-72
+    mov.w64 $-16, $-80
     imm.w8 $-8, 1
-    copy $16, $-32, 32
-    ret $0, 0
+    store.copy [$-56 + 0], $-32, 32
+    ret $-56, 8
 L4:
     resume $-48
 L5:
@@ -7975,7 +7985,7 @@ L9:
 L10:
     mov.w64 $24, $-32
     mov.w128 $-16, $16
-    ret $-16, 16
+    ret $-16, 526344
   cleanup L2 -> continue
   cleanup L7 -> continue
   k0 = const allocation + 0
@@ -8029,7 +8039,7 @@ L9:
 L10:
     mov.w64 $24, $-32
     mov.w128 $-16, $16
-    ret $-16, 16
+    ret $-16, 526344
   cleanup L2 -> continue
   cleanup L7 -> continue
   k0 = const allocation + 0
@@ -8060,7 +8070,7 @@ L0:
 L1:
     const $-16, k0, 16
 L2:
-    ret $-16, 16
+    ret $-16, 526344
 L3:
     unreachable
 L4:
@@ -8083,16 +8093,16 @@ L5:
 fn std::iter::range::<impl std::iter::Iterator for std::ops::Range<u32>>::next (frame 16, args 8, ret 8)
     mov.w64 $-16, $16
 L0:
-    call $-8, fn0, 8
-    ret $-8, 8
+    call $-8, fn0, 263172
+    ret $-8, 263172
   cleanup L0 -> continue
   fn0 = <std::ops::Range<u32> as std::iter::range::RangeIteratorImpl>::spec_next
 
 fn std::iter::range::<impl std::iter::Iterator for std::ops::Range<u64>>::next (frame 32, args 8, ret 16)
     mov.w64 $-32, $16
 L0:
-    call $-16, fn0, 16
-    ret $-16, 16
+    call $-16, fn0, 526344
+    ret $-16, 526344
   cleanup L0 -> continue
   fn0 = <std::ops::Range<u64> as std::iter::range::RangeIteratorImpl>::spec_next
 
@@ -8127,33 +8137,32 @@ fn std::num::NonZero::<T>::new_unchecked::precondition_check (frame 128, args 8,
   sym4 = island ryo_island_call_ptr3[std::fmt::Arguments<'{erased}>, bool, &'{erased} std::panic::Location<'{erased}>, !]
 
 fn std::option::Option::<&str>::map_or_else::<std::string::String, {closure@std::fmt::format::{closure#0}}, for<'a> fn(&'a str) -> <str as std::borrow::ToOwned>::Owned {<str as std::borrow::ToOwned>::to_owned}> (frame 112, args 24, ret 24)
+    arg $-56, 8
     imm.w8 $-34, 1
     imm.w8 $-33, 1
-    discr.niche.w64 $-84, $24, 0, 0, 0, 1
-    zext.w32.w64 $-32, $-84
+    discr.niche.w64 $-92, $24, 0, 0, 0, 1
+    zext.w32.w64 $-32, $-92
     switch.dense.w64 $-32, 0, L0, [L1, L3]
 L0:
     unreachable
 L1:
     imm.w8 $-34, 0
-    mov.w64 $-56, $16
-    mov.w64 $-112, $-56
+    mov.w64 $-64, $16
+    mov.w64 $-112, $-64
 L2:
-    call $0, fn0, 0
-    copy $-24, $-112, 24
+    call $-24, fn0, 2147483648
     jmp L5
 L3:
-    mov.w128 $-64, $24
+    mov.w128 $-72, $24
     imm.w8 $-33, 0
-    mov.w128 $-80, $-64
-    mov.w128 $-112, $-80
+    mov.w128 $-88, $-72
+    mov.w128 $-112, $-88
 L4:
-    call $0, fn1, 0
-    copy $-24, $-112, 24
+    call $-24, fn1, 2147483648
     jmp L5
 L5:
-    copy $16, $-24, 24
-    ret $0, 0
+    store.copy [$-56 + 0], $-24, 24
+    ret $-56, 8
 L6:
     br $-34, L10
 L7:
@@ -9175,14 +9184,14 @@ L12:
   sym8 = island ryo_island_call_ptr0[!]
 
 fn std::str::<impl std::borrow::ToOwned for str>::to_owned (frame 96, args 16, ret 24)
-    mov.w128 $-64, $16
-    mov.w128 $-96, $-64
+    arg $-32, 8
+    mov.w128 $-72, $16
+    mov.w128 $-96, $-72
 L0:
-    call $0, fn0, 0
-    copy $-48, $-96, 24
-    copy $-24, $-48, 24
-    copy $16, $-24, 24
-    ret $0, 0
+    call $-56, fn0, 2147483648
+    copy $-24, $-56, 24
+    store.copy [$-32 + 0], $-24, 24
+    ret $-32, 8
   cleanup L0 -> continue
   fn0 = <u8 as std::slice::<impl [T]>::to_vec_in::ConvertVec>::to_vec::<std::alloc::Global>
 
@@ -9195,21 +9204,22 @@ L0:
   fn0 = <fn() as std::ops::FnOnce<()>>::call_once - shim(fn())
 
 fn std::thread::LocalKey::<std::cell::Cell<(u64, u64)>>::try_with::<{closure@std::hash::RandomState::new::{closure#0}}, std::hash::RandomState> (frame 112, args 8, ret 24)
+    arg $-56, 8
     imm.w8 $-33, 1
-    load.w64 $-88, [$16 + 0]
+    load.w64 $-96, [$16 + 0]
     imm.w64 $-112, 0
 L0:
-    call.ind $-80, $-88, site0, sym1, 8
-    mov.w64 $-96, $-80
-    eq.imm.w64 $-81, $-96, 0
-    br! $-81, L7
+    call.ind $-88, $-96, site0, sym1, 8
+    mov.w64 $-104, $-88
+    eq.imm.w64 $-89, $-104, 0
+    br! $-89, L7
     jmp L6
 L1:
-    mov.w128 $-16, $-64
+    mov.w128 $-16, $-72
     imm.w64 $-24, 0
 L2:
-    copy $16, $-24, 24
-    ret $0, 0
+    store.copy [$-56 + 0], $-24, 24
+    ret $-56, 8
 L3:
     resume $-48
 L4:
@@ -9218,25 +9228,25 @@ L5:
     br! $-33, L3
     jmp L4
 L6:
+    imm.w64 $-80, 0
     imm.w64 $-72, 0
-    imm.w64 $-64, 0
-    imm.w64 $-64, 1
-    eq.imm.w64 $-65, $-64, 1
+    imm.w64 $-72, 1
+    eq.imm.w64 $-73, $-72, 1
     imm.w64 $-24, 1
     jmp L2
 L7:
-    mov.w64 $-96, $-80
-    mov.w64 $-72, $-96
+    mov.w64 $-104, $-88
+    mov.w64 $-80, $-104
+    mov.w64 $-88, $-80
+    mov.w64 $-72, $-88
     mov.w64 $-80, $-72
     mov.w64 $-64, $-80
-    mov.w64 $-72, $-64
-    mov.w64 $-56, $-72
-    mov.w64 $-32, $-56
+    mov.w64 $-32, $-64
     imm.w8 $-33, 0
-    mov.w64 $-72, $-32
-    mov.w64 $-112, $-72
+    mov.w64 $-80, $-32
+    mov.w64 $-112, $-80
 L8:
-    call $-64, fn2, 16
+    call $-72, fn2, 526344
     jmp L1
 L9:
     lpad $-48
@@ -9248,23 +9258,22 @@ L9:
   sym1 = island ryo_island_call_ptr1[std::option::Option<&'{erased} mut std::option::Option<std::cell::Cell<(u64, u64)>>>, *const std::cell::Cell<(u64, u64)>]
   fn2 = std::hash::RandomState::new::{closure#0}
 
-fn std::thread::LocalKey::<std::cell::Cell<(u64, u64)>>::with::<{closure@std::hash::RandomState::new::{closure#0}}, std::hash::RandomState> (frame 80, args 8, ret 16)
-    mov.w64 $-80, $16
+fn std::thread::LocalKey::<std::cell::Cell<(u64, u64)>>::with::<{closure@std::hash::RandomState::new::{closure#0}}, std::hash::RandomState> (frame 64, args 8, ret 16)
+    mov.w64 $-64, $16
 L0:
-    call $0, fn0, 0
-    copy $-48, $-80, 24
+    call $-48, fn0, 2147483648
     mov.w64 $-24, $-48
     switch.dense.w64 $-24, 0, L1, [L4, L2]
 L1:
     unreachable
 L2:
-    addr.abs $-80, k1
+    addr.abs $-64, k1
 L3:
     call.ext $-24, sym2, site3, sym4, $-56, 0
     unreachable
 L4:
     mov.w128 $-16, $-40
-    ret $-16, 16
+    ret $-16, 526344
   cleanup L0 -> continue
   cleanup L3 -> continue
   fn0 = std::thread::LocalKey::<std::cell::Cell<(u64, u64)>>::try_with::<{closure@std::hash::RandomState::new::{closure#0}}, std::hash::RandomState>
@@ -9395,7 +9404,7 @@ L17:
     br! $-241, L23
     jmp L22
 L18:
-    call $-48, fn10, 16
+    call $-48, fn10, 526344
     jmp L20
 L19:
     mov.w128 $-48, $-128

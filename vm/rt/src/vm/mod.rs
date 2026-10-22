@@ -68,22 +68,28 @@ pub unsafe fn enter(id: u64, args: *const u8, ret: *mut u8) {
     }
     sys::count(&sys::RUN_STATS.enters);
     let f = registry::resolve_id(id);
-    // A value that doesn't return in registers comes back at the start of the block.
-    let regs = asm::ret_in_regs(f.ret_size);
-    let mem_len = if regs { 0 } else { f.ret_size as usize };
     let mut call = EnterCall {
         args,
         arg_size: f.arg_size as usize,
-        reserve: (f.arg_size as usize).max(mem_len).next_multiple_of(16),
+        reserve: (f.arg_size as usize).next_multiple_of(16),
+        sret: ret,
         regs: [0; 2],
-        mem: ret,
-        mem_len,
+        xmm: [[0; 16]; 2],
     };
-    // SAFETY: per the caller; `ret` takes `ret_size` bytes.
+    // SAFETY: per the caller; `ret` takes `ret_size` bytes, and the parts lie within them.
     unsafe {
         ryo_asm_enter(f.entry, &mut call);
-        if regs {
-            ptr::copy_nonoverlapping(call.regs.as_ptr().cast::<u8>(), ret, f.ret_size as usize);
+        let (mut g, mut x) = (0usize, 0usize);
+        for p in asm::ret_parts(f.ret_kind, false).into_iter().flatten().flatten() {
+            // Pointer arithmetic, not indexing: no panic path ([`crate::vm`]).
+            let src = if p.xmm {
+                x += 1;
+                (&raw const call.xmm).cast::<u8>().add(16 * (x - 1))
+            } else {
+                g += 1;
+                (&raw const call.regs).cast::<u8>().add(8 * (g - 1))
+            };
+            ptr::copy_nonoverlapping(src, ret.add(p.off as usize), p.size as usize);
         }
     }
 }
@@ -94,21 +100,21 @@ struct EnterCall {
     /// The argument block, `arg_size` bytes.
     args: *const u8,
     arg_size: usize,
-    /// The bytes to reserve for the block, a multiple of 16 of at least `arg_size` and the
-    /// size of a value returned in the block.
+    /// The bytes to reserve for the block: `arg_size` rounded up to 16.
     reserve: usize,
+    /// The first integer argument: an sret function's return value pointer.
+    sret: *mut u8,
     /// `rax` and `rdx` after the call.
     regs: [u64; 2],
-    /// Where to copy `mem_len` bytes from the block after the call.
-    mem: *mut u8,
-    mem_len: usize,
+    /// `xmm0` and `xmm1` after the call.
+    xmm: [[u8; 16]; 2],
 }
 
 unsafe extern "Rust" {
     /// Calls the VM function at `entry` (design/vm.md, "Entry"): reserves and copies the
     /// argument block, and calls it with `rbp = 0`, so a frame-pointer chain ends at the
-    /// entry frame. Afterwards it stores `rax` and `rdx`, and copies the start of the block,
-    /// as `call` says. Panics unwind through it. The Rust ABI, so the call may unwind without
+    /// entry frame, and `call.sret` in the first integer argument register. Afterwards it
+    /// stores the return registers into `call`. Panics unwind through it. The Rust ABI, so the call may unwind without
     /// being an FFI call.
     fn ryo_asm_enter(entry: *const u8, call: *mut EnterCall);
 }
@@ -139,15 +145,15 @@ core::arch::global_asm!(
     "mov rcx, [rsi + 8]",
     "mov rsi, [rsi]",
     "rep movsb",
+    "mov rcx, [rbx - 8]",
+    "mov rdi, [rcx + 24]",
     "xor ebp, ebp",
     "call rax",
     "mov rcx, [rbx - 8]",
-    "mov [rcx + 24], rax",
-    "mov [rcx + 32], rdx",
-    "mov rdi, [rcx + 40]",
-    "mov rsi, rsp",
-    "mov rcx, [rcx + 48]",
-    "rep movsb",
+    "mov [rcx + 32], rax",
+    "mov [rcx + 40], rdx",
+    "movups [rcx + 48], xmm0",
+    "movups [rcx + 64], xmm1",
     "mov rsp, rbx",
     "pop rbx",
     ".cfi_def_cfa rsp, 16",
@@ -208,15 +214,15 @@ core::arch::global_asm!(
     "mov rdi, rsp",
     "mov rcx, [rdx + 8]",
     "rep movsb",
+    "mov rcx, [rbx]",
+    "mov rcx, [rcx + 24]",
     "xor ebp, ebp",
     "call rax",
     "mov rcx, [rbx]",
-    "mov [rcx + 24], rax",
-    "mov [rcx + 32], rdx",
-    "mov rdi, [rcx + 40]",
-    "mov rsi, rsp",
-    "mov rcx, [rcx + 48]",
-    "rep movsb",
+    "mov [rcx + 32], rax",
+    "mov [rcx + 40], rdx",
+    "movups [rcx + 48], xmm0",
+    "movups [rcx + 64], xmm1",
     "lea rsp, [rbx - 160]",
     "movaps xmm6, [rsp + 0]",
     "movaps xmm7, [rsp + 16]",

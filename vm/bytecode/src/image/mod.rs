@@ -133,6 +133,9 @@ pub struct FuncEntry {
     pub arg_size: u32,
     /// Size of the return value.
     pub ret_size: u32,
+    /// How the function returns its value ([`crate::asm::RET_SRET`], exact sizes): how
+    /// `vm::enter` collects it.
+    pub ret_kind: u32,
     /// Symbol index of the function's portal, or [`NO_PORTAL`].
     pub portal: u32,
 }

@@ -143,12 +143,13 @@ ones, which are [inlined](#inline-instructions):
 | `br` | `br`, `br.eq`, `br.lt`, `br.gt.imm`, … | handler call (returns a `bool`), `test al, al`, `jnz t` (`jz t` with `!`) |
 | `switch` | `switch.dense`, `switch.sparse` | handler call (returns the case index, `n` for the default), `lea rcx, [rip + T]; movsxd rax, [rcx + rax*4]; add rax, rcx; jmp rax`, then `int3`s to a multiple of 4 and the table `T` inline in the text: one `i32` offset from `T` per case, the default last |
 | `trap` | `unreachable`, `abort`, `resume` | handler call, `ud2` |
-| `ret` | `ret` | the value's loads into `rax`/`rdx`, epilogue, `ret` |
+| `ret` | `ret` | the value's loads into the return registers, epilogue, `ret` |
+| `arg` | `arg` | the store of an argument register |
 | `jmp` | `jmp` | `jmp t` |
-| `call` | `call` | `call fn` (`rel32`), the result's stores from `rax`/`rdx` |
+| `call` | `call` | `call fn` (`rel32`), the result's stores from the return registers |
 | `call_ext`, `call_ind` | `call.ext`, `call.ext.ind`, `call.ind` | resolving handler call, then `call rax` + the result's stores, or the island ([Calls and islands](#calls-and-islands)) |
 | `tail_call` | `tail_call` | handler call (moves the arguments), epilogue, `jmp fn` |
-| `tail_call_ind` | `tail_call.ind` | resolving handler call, then epilogue and `jmp rax`, or the island and a `ret` |
+| `tail_call_ind` | `tail_call.ind` | resolving handler call, then epilogue and `jmp rax`, or the island |
 | `island` | `island` | `lea rdi, [rsp + F]; lea rsi, [rip + ops]; call [rip + isl]` (with a frame pointer `mov rdi, rbp`; PE: `rcx`/`rdx` and 32 bytes of shadow space) |
 | `lpad` | `lpad` | `mov rsi, rax` (the exception object; `rdi` with `fp-rbp`), operand registers, handler call |
 
@@ -378,38 +379,47 @@ Branches have a polarity: `br.eq! a, b, t` branches when `a != b`.
 
 | Instruction | Semantics |
 |---|---|
-| `call d, fn, len` | call a VM function in this image |
-| `call.ext d, sym, site, isl, f, len` | call the function at symbol `sym` (an upstream instance): the VM function directly if it is a portal of one, otherwise the `isl` island, with the address in slot `f` |
-| `call.ext.ind d, sym, site, isl, f, len` | the same, with the address loaded through the symbol slot (PE `__imp_`, [platforms.md](platforms.md)) |
-| `call.ind d, p, site, isl, len` | indirect call through the fn pointer in slot `p` |
-| `tail_call fn, n` | `become` a VM function in this image, with an `n`-byte argument block |
-| `tail_call.ind p, site, isl, n, s, len` | `become` through the fn pointer in `p`. A tail call to an upstream instance is `addr.sym` + `tail_call.ind` |
-| `ret s, len` | return `_0` (`len` bytes at `s`) |
+| `call d, fn, k` | call a VM function in this image |
+| `call.ext d, sym, site, isl, f, k` | call the function at symbol `sym` (an upstream instance): the VM function directly if it is a portal of one, otherwise the `isl` island, with the address in slot `f` |
+| `call.ext.ind d, sym, site, isl, f, k` | the same, with the address loaded through the symbol slot (PE `__imp_`, [platforms.md](platforms.md)) |
+| `call.ind d, p, site, isl, k` | indirect call through the fn pointer in slot `p` |
+| `tail_call fn, n, q, k` | `become` a VM function in this image, with an `n`-byte argument block |
+| `tail_call.ind p, site, isl, n, s, q, k` | `become` through the fn pointer in `p`. A tail call to an upstream instance is `addr.sym` + `tail_call.ind` |
+| `ret s, k` | return `_0` at `s` as the return kind `k` says |
+| `arg d, r` | store the argument register `r` to slot `d` (only first in a function) |
 | `island isl, n, ops…` | call `isl(fp, &ops)` and continue |
 | `lpad x` | landing pad: store the exception object in slot `x` |
 | `resume x` | continue unwinding the exception object in slot `x` |
 
-- **Return values**: a value of 1, 2, 4, 8 or 16 bytes comes back in `rax` (and `rdx` for
-  the high half of 16 bytes), the `len` of `ret` and of the calls (`asm::ret_in_regs`). A
-  value of any other size comes back at the start of the callee's argument block, its
-  `fp + 16`, which is the caller's outgoing block at `rsp`: the lowering copies `_0` there
-  before `ret`, and from there to the destination after the call, and makes the caller's
-  outgoing block large enough. Its `ret` and call then have `len` 0, like those of an
-  empty value. The arguments are dead by then, so they can be overwritten.
-- **`call`**: the arguments are already in the outgoing block at `rsp`. `call fn` pushes
-  the return address, and after the call come the stores of `rax`/`rdx` into `d`. With
-  `len` 0 there is none, and `d` must be 0.
-- **`ret`**: loads the `len` bytes at `fp + s` into `rax`/`rdx` (`movzx` for 1 and 2 bytes),
-  and the epilogue and `ret` return. With `len` 0, `s` must be 0. It works the same in the
-  entry frame ([Entry](#entry)).
+- **Return values** go where rustc's `PassMode` of the return says, as LLVM lowers it:
+  the *return kind* `k` (`asm::RET_SRET`). It is 0 for nothing, up to two register parts
+  (class, size and offset of each) for `Direct`, `Pair` and the Rust ABI's integer `Cast`,
+  or `RET_SRET` for `Indirect`. Integer parts take `rax` then `rdx` (`i128` takes both),
+  float parts `xmm0` then `xmm1` (`movss`, `movsd`, `movups`, and `movd` through `r11` for
+  `f16`), in order, as LLVM returns a first-class aggregate. A call's kind has each part's
+  exact size; `ret`'s has the width it loads (integers rounded up to 1, 2, 4 or 8 bytes:
+  the extra bytes are within the frame, and the ABI leaves the register's high bits
+  undefined).
+- **sret**: the caller passes the destination's address in the first integer argument
+  register (`rdi`, PE `rcx`). The callee saves it with `arg` (a store before anything else,
+  since the first handler call clobbers it), copies `_0` there with `store.copy` before
+  `ret`, and returns the address in `rax` (`ret` of the saved slot as an 8-byte part).
+- **`call`**: the arguments are already in the outgoing block at `rsp`. For sret,
+  `lea rdi, [d]` comes first. `call fn` pushes the return address, and after the call come
+  the stores of the return registers into `d` (pieces of 4, 2 and 1 bytes with shifts in
+  between for a 3-, 5-, 6- or 7-byte integer part). With `k` 0 there is none, and `d` must
+  be 0.
+- **`ret`**: loads the value at `fp + s` into the return registers, and the epilogue and
+  `ret` return. With `k` 0, `s` must be 0. It works the same in the entry frame
+  ([Entry](#entry)).
 - **`call.ext` / `call.ind`**: the handler resolves the target (below) and returns its VM
   entry in `rax`, or 0 for a native target:
   ```
   call ryo_h_CallExt            ; rax = VM entry, or 0
   test rax, rax
   jz 1f
-  call rax
-  nop dword [rcx + d]
+  call rax                      ; after `lea rdi, [d]` for sret
+  ...                           ; the result's stores into `d`
   jmp 2f
   1: lea rdi, [rsp + F]         ; mov rdi, rbp with a frame pointer
      lea rsi, [rip + ops]       ; [-F, d, f] (call.ind: [-F, d, p])
@@ -442,18 +452,20 @@ Branches have a polarity: `br.eq! a, b, t` branches when `a != b`.
   - **VM function**: called directly, in whichever image it is. The arguments are already in
     the argument block layout ([lowering.md](lowering.md#frame-slots)), which is the same for
     every caller.
-- **`tail_call fn, n`**: the arguments are staged in the outgoing block at `rsp`.
+- **`tail_call fn, n, q, k`**: the arguments are staged in the outgoing block at `rsp`.
   `ryo_h_TailCall` (assembly) moves the `n` bytes up to `fp + 16`, over the function's own
   argument block, then the epilogue and `jmp fn` keep the return address (and the caller's
   `rbp`), so the callee returns to the original caller. The two ranges never overlap. `become` requires
-  matching signatures, so the block fits the caller's.
-- **`tail_call.ind p, site, isl, n, s, len`**: `ryo_h_TailCallInd` (an assembly entry that
+  matching signatures, so the block fits the caller's, and the return kinds match: an sret
+  function passes its own return value's address on (`k` `RET_SRET`, the address saved in
+  slot `q`, loaded into `rdi` before the jump; else `q` and `k` are 0).
+- **`tail_call.ind p, site, isl, n, s, q, k`**: `ryo_h_TailCallInd` (an assembly entry that
   passes the caller's `rsp` in `r9`) resolves `p` as `call.ind` does. For a VM function it
-  moves the arguments as `tail_call` does and returns the entry, and the epilogue and `jmp rax`
-  follows. A native target can't be a true tail call: the island runs with
-  `ops = [-F, s, p]`, so the result lands in `_0`'s slot `s`, then the sequence of
-  `ret s, len` returns it. A result that doesn't return in registers has `len` 0 and `s` the
-  start of the function's own argument block, where its caller expects it. It uses native stack for the duration of that call.
+  moves the arguments as `tail_call` does and returns the entry, and the sret address (as
+  for `tail_call`), the epilogue and `jmp rax` follow. A native target can't be a true tail
+  call: the island runs with `ops = [-F, s, p]`, so the result lands in `_0`'s slot `s`,
+  and the next instruction follows, the lowering's `ret`. It uses native stack for the
+  duration of that call.
 - **`island`**: `island(fp, ops)` through the symbol slot `isl`, with the operand words in
   the code constants. The island's return value is ignored, and execution continues after
   the call. The `ops` array is exactly what the template reads
@@ -515,12 +527,12 @@ panic runtime, as through native frames. The image carries the unwind informatio
    format](#image-format)).
 2. It calls `ryo_asm_enter(entry, call)` (`global_asm!` in `vm/rt/src/vm/mod.rs`), `call`
    holding the operands and the results: it saves `rbp` and `rbx`, anchors its frame (and
-   its CFI) in `rbx`, reserves the argument block at `rsp` (the larger of `arg_size` and a
-   `ret_size` that doesn't return in registers, rounded up to 16, plus 8 to keep the
-   callee's `fp` 16-aligned), so that it is the callee's `fp + 16`, copies the portal's
-   args there, sets `rbp = 0` (so a frame-pointer chain ends there) and calls the entry.
-   Afterwards it stores `rax` and `rdx`, and for a value that doesn't return in registers
-   copies it from the start of the block to `ret`. `enter` copies a value in registers to
+   its CFI) in `rbx`, reserves the argument block at `rsp` (`arg_size`, rounded up to 16,
+   plus 8 to keep the callee's `fp` 16-aligned), so that it is the callee's `fp + 16`,
+   copies the portal's args there, sets `rbp = 0` (so a frame-pointer chain ends there),
+   puts `ret` in the first argument register (the sret address, if the function takes one)
+   and calls the entry. Afterwards it stores `rax`, `rdx`, `xmm0` and `xmm1`, and `enter`
+   copies the parts of the function's return kind (`ret_kind` in the function table) to
    `ret`. The Win64 version also saves `rdi`, `rsi` and `xmm6`–`xmm15`, which are
    callee-saved there but not in the `sysv64` convention VM code and the handlers follow,
    and has SEH unwind info.

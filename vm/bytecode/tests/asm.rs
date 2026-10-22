@@ -135,23 +135,67 @@ fn insn(op: Opcode, rng: &mut Rng, list_len: usize, f: &mut Fn, target: &mut dyn
     w
 }
 
-/// Makes a call's or `ret`'s return value one the machine code can pass
-/// ([`asm::return_ok`]).
+/// Makes a call's or `ret`'s return kind one the machine code can pass, and an `arg`'s
+/// register valid ([`asm::return_ok`]).
 fn canonical_return(op: Opcode, w: &mut [u32], rng: &mut Rng) {
-    let unused = match op {
-        Opcode::Call => Some("d"),
-        Opcode::Ret => Some("s"),
-        Opcode::CallExt | Opcode::CallExtInd | Opcode::CallInd | Opcode::TailCallInd => None,
+    if op == Opcode::Arg {
+        let xmm = rng.below(2) == 0;
+        let size = if xmm { [2, 4, 8, 16] } else { [1, 2, 4, 8] }[rng.below(4) as usize];
+        w[operand_word(op, "r")] = asm::ArgReg { xmm, size, index: rng.below(4) as u32 }.word();
+        return;
+    }
+    if matches!(op, Opcode::TailCall | Opcode::TailCallInd) {
+        if rng.below(2) == 0 {
+            w[operand_word(op, "k")] = asm::RET_SRET;
+        } else {
+            w[operand_word(op, "k")] = 0;
+            w[operand_word(op, "q")] = 0;
+        }
+        return;
+    }
+    let (unused, load) = match op {
+        Opcode::Call => (Some("d"), false),
+        Opcode::Ret => (Some("s"), true),
+        Opcode::CallExt | Opcode::CallExtInd | Opcode::CallInd => (None, false),
         _ => return,
     };
-    let len = [0, 1, 2, 4, 8, 16][rng.below(6) as usize];
-    w[operand_word(op, "len")] = len;
-    if len == 0
+    let k = random_kind(rng, load);
+    w[operand_word(op, "k")] = k;
+    if k == 0
         && let Some(u) = unused
     {
         w[operand_word(op, u)] = 0;
     }
-    assert!(asm::return_ok(w));
+    assert!(asm::return_ok(w), "{k:#x}");
+}
+
+/// A random return kind ([`asm::RET_SRET`]): exact sizes for a call, load widths for `ret`.
+fn random_kind(rng: &mut Rng, load: bool) -> u32 {
+    if !load && rng.below(6) == 0 {
+        return asm::RET_SRET;
+    }
+    let part = |rng: &mut Rng, off: u32| {
+        let xmm = rng.below(2) == 0;
+        let size = match (xmm, load) {
+            (true, _) => [2, 4, 8, 16][rng.below(4) as usize],
+            (false, true) => [1, 2, 4, 8][rng.below(4) as usize],
+            (false, false) => 1 + rng.below(8) as u32,
+        };
+        asm::RetPart { xmm, size, off }
+    };
+    match rng.below(3) {
+        0 => 0,
+        1 => asm::ret_kind(&[part(rng, 0)]),
+        _ => {
+            let a = part(rng, 0);
+            let mut b = part(rng, 0);
+            if a.size + b.size > 16 {
+                return asm::ret_kind(&[a]);
+            }
+            b.off = a.size + rng.below((16 - a.size - b.size + 1) as u64) as u32;
+            asm::ret_kind(&[a, b])
+        }
+    }
 }
 
 fn check(f: &Fn, frame_size: u32, mode: Mode, what: &str) -> asm::Encoded {
@@ -184,7 +228,12 @@ fn every_opcode_round_trips() {
                 let last = 2 + fillers + 2;
                 let mut target = |rng: &mut Rng| [0, 1, last, 2 + fillers][rng.below(4) as usize];
                 let w = insn(op, &mut rng, list_len, &mut f, &mut target);
-                f.insns.push(w);
+                if op == Opcode::Arg {
+                    // `arg`s come first.
+                    f.insns[0] = w;
+                } else {
+                    f.insns.push(w);
+                }
                 for k in 0..fillers {
                     let filler = insn(Opcode::AddImmW64, &mut rng, 0, &mut f, &mut |_| 0);
                     let _ = k;
@@ -450,7 +499,11 @@ fn templates_are_pinned_to_format_version() {
         for mode in [MODES[0], MODES[1], MODES[6], MODES[8]] {
             let mut f = Fn { insns: vec![vec![Opcode::Lpad as u32, -8i32 as u32]], targets: Vec::new(), unwind: Vec::new() };
             let w = insn(op, &mut rng, 2, &mut f, &mut |_| 0);
-            f.insns.push(w);
+            if op == Opcode::Arg {
+                f.insns.insert(0, w);
+            } else {
+                f.insns.push(w);
+            }
             f.insns.push(vec![Opcode::Abort as u32]);
             if op_may_unwind(op) {
                 f.unwind.push((1, Some((0, false))));
@@ -464,5 +517,5 @@ fn templates_are_pinned_to_format_version() {
             eat(&lsda::write(&enc.call_sites));
         }
     }
-    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (14, 0x1148a99d28281bbd), "template hash {h:#x}");
+    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (15, 0x2e69699699fd8c7c), "template hash {h:#x}");
 }

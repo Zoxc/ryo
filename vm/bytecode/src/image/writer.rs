@@ -79,6 +79,8 @@ pub struct FunctionDef {
     pub arg_size: u32,
     /// See [`FuncEntry::ret_size`].
     pub ret_size: u32,
+    /// See [`FuncEntry::ret_kind`].
+    pub ret_kind: u32,
     /// Cleanup entries, in any order (the writer sorts them): one per call-like instruction
     /// that can unwind.
     pub cleanup: Vec<CleanupEntry>,
@@ -186,9 +188,11 @@ pub enum CodeError {
     DataOutOfRange,
     /// The last instruction can fall through past the function's end.
     FallsOffEnd,
-    /// A call or `ret` passes its return value in a way the machine code can't
-    /// ([`crate::asm::return_ok`]).
+    /// A call or `ret` passes its return value in a way the machine code can't, or an `arg`
+    /// names an invalid register ([`crate::asm::return_ok`]).
     BadReturn,
+    /// An `arg` after an instruction that isn't one.
+    ArgNotFirst,
 }
 
 /// Why [`ImageWriter::finish`] failed.
@@ -231,7 +235,6 @@ fn op_falls_through(op: Opcode) -> bool {
             | Opcode::Ret
             | Opcode::Resume
             | Opcode::TailCall
-            | Opcode::TailCallInd
     ) && !op.mnemonic().starts_with("switch.")
 }
 
@@ -264,6 +267,7 @@ pub fn validate_code(code: &[u32], lim: &CodeLimits) -> Result<Vec<bool>, (u32, 
         let p = at as i64 + t as i64;
         p >= 0 && (p as usize) < code.len() && starts[p as usize]
     };
+    let mut args_only = true;
     for r in Decoder::new(code) {
         let (at, insn) = r.unwrap();
         let words = &code[at..];
@@ -271,6 +275,10 @@ pub fn validate_code(code: &[u32], lim: &CodeLimits) -> Result<Vec<bool>, (u32, 
         if !crate::asm::return_ok(words) {
             return fail(CodeError::BadReturn);
         }
+        if insn.opcode() == Opcode::Arg && !args_only {
+            return fail(CodeError::ArgNotFirst);
+        }
+        args_only &= insn.opcode() == Opcode::Arg;
         let mut pos = 1usize;
         for o in insn.opcode().info().operands {
             let w = |i: usize| words[pos + i];
@@ -555,6 +563,7 @@ impl ImageWriter {
                 code_len: e.code.len().try_into().map_err(too_large)?,
                 arg_size: f.arg_size,
                 ret_size: f.ret_size,
+                ret_kind: f.ret_kind,
                 portal,
             });
             func_code.push(FuncCode {

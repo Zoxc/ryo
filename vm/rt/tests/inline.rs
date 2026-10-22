@@ -98,11 +98,14 @@ const ARGS: [i32; 7] = [16, 24, 32, 40, 48, 56, 64];
 const PTR: i32 = 72;
 /// The result area, returned whole.
 const RES: i32 = -32;
+/// The sret pointer's slot.
+const SRET: i32 = -48;
 
 /// An instruction of `op` on random operands, followed by `ret` (branches: setting the
 /// result to 1 or 2, by the path taken), and the operand values.
 fn function(op: Opcode, rng: &mut Rng, args: &[u64; 8]) -> (Vec<u32>, Vec<u128>) {
     let mut a = Asm::new();
+    a.sret(Slot(SRET));
     a.i(Insn::Zero { d: Slot(RES), len: 32 });
     let mut vals = Vec::new();
     let info = op.info();
@@ -168,7 +171,7 @@ fn inline_matches_handlers() {
             inputs.push(args);
         }
         let mut w = ImageWriter::new(unique_scid());
-        let fs: Vec<Func> = code.iter().map(|c| w.add_function(func(c.clone(), 32, 64, 32))).collect();
+        let fs: Vec<Func> = code.iter().map(|c| w.add_function(func(c.clone(), 48, 64, 32))).collect();
         let img = link(w.finish(ENC).expect("image"), &[]);
         register(&[&img]);
         for (i, args) in inputs.iter().enumerate() {
@@ -205,6 +208,7 @@ fn inline_runs_match_handlers() {
     let mut fs = Vec::new();
     for _ in 0..20000 {
         let mut a = Asm::new();
+        a.sret(Slot(SRET));
         a.i(Insn::Zero { d: Slot(RES), len: 32 });
         let mut run = Vec::new();
         for _ in 0..2 + rng.below(12) {
@@ -253,7 +257,7 @@ fn inline_runs_match_handlers() {
         }
         a.ret(Slot(RES), 32);
         let code = a.done();
-        fs.push(w.add_function(func(code.clone(), 32, 64, 32)));
+        fs.push(w.add_function(func(code.clone(), 48, 64, 32)));
         runs.push((code, run));
     }
     let img = link(w.finish(ENC).expect("image"), &[]);
@@ -378,6 +382,8 @@ fn dead_stores_match_handlers() {
             live.extend(r);
         }
         let mut a = rasm::Asm::new(ENC);
+        let sret = rasm::Opnd::Slot(-80);
+        a.insn(Opcode::Arg, &[sret.clone(), rasm::Opnd::Imm(ryo_bytecode::asm::ArgReg { xmm: false, size: 8, index: 0 }.word() as u64)]);
         // Scratch and results start zeroed, as on the handlers' frame.
         a.insn(Opcode::Zero, &[rasm::Opnd::Slot(SCR), rasm::Opnd::Imm(64)]);
         for (i, (op, vals)) in run.iter().enumerate() {
@@ -395,13 +401,13 @@ fn dead_stores_match_handlers() {
                 a.dead(lo as u32, len);
             }
         }
-        // The 32-byte result goes back at the start of the argument block.
-        a.insn(Opcode::Copy, &[rasm::Opnd::Slot(16), rasm::Opnd::Slot(RES), rasm::Opnd::Imm(32)]);
-        a.insn(Opcode::Ret, &[rasm::Opnd::Slot(0), rasm::Opnd::Imm(0)]);
-        let enc = a.finish(64, |s| s);
+        // The 32-byte result goes through the sret pointer.
+        a.insn(Opcode::StoreCopy, &[rasm::Opnd::Mem(-80, 0), rasm::Opnd::Slot(RES), rasm::Opnd::Imm(32)]);
+        a.insn(Opcode::Ret, &[sret, rasm::Opnd::Imm(8)]);
+        let enc = a.finish(80, |s| s);
         dropped += enc.dropped.len();
         encoded.push(enc);
-        fs.push(w.add_function(func(Vec::new(), 64, 64, 32)));
+        fs.push(w.add_function(func(Vec::new(), 80, 64, 32)));
         runs.push(run);
     }
     assert!(dropped > 1000, "{dropped} stores dropped");

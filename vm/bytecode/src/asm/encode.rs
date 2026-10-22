@@ -11,8 +11,8 @@ use alloc::collections::BTreeMap;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use super::x86::{ARGS, Cond, Item, M, Reg, W, island_args, padding};
-use super::{Layout, Loc, Mode, layout};
+use super::x86::{ARGS, Cond, Item, M, Reg, Sh, W, island_args, padding};
+use super::{ArgReg, Layout, Loc, Mode, RET_SRET, RetPart, layout, ret_parts};
 use crate::image::{CATCH, CONTINUE, CleanupEntry};
 use crate::insn::{Const, Data, DecodeError, ElemKind, Func, Opcode, OperandKind, Shape, Site, Sym, insn_len};
 
@@ -89,9 +89,11 @@ pub enum EncodeError {
     /// A cleanup entry not at an instruction that may unwind, or whose landing pad isn't an
     /// `lpad`.
     BadCleanup(u32),
-    /// A call or `ret` whose return value the machine code can't pass ([`super::return_ok`])
-    /// (word offset of the instruction).
+    /// A call or `ret` whose return value the machine code can't pass, or an `arg` with an
+    /// invalid register ([`super::return_ok`]) (word offset of the instruction).
     BadReturn(u32),
+    /// An `arg` after an instruction that isn't one (word offset).
+    ArgNotFirst(u32),
 }
 
 /// An instruction operand, by kind. Branch targets are `T`: word offsets from the function
@@ -246,28 +248,108 @@ pub fn push_words(op: Opcode, ops: &[Opnd], words: &mut Vec<u32>) {
     }
 }
 
-/// The parts of a `len`-byte return value in registers: width, offset, register. None for 0;
-/// panics for a length that doesn't return in registers ([`super::ret_in_regs`]).
-pub(super) fn ret_parts(len: u32) -> Vec<(W, u32, Reg)> {
-    match len {
-        0 => vec![],
-        1 => vec![(W::B, 0, Reg::Rax)],
-        2 => vec![(W::W, 0, Reg::Rax)],
-        4 => vec![(W::D, 0, Reg::Rax)],
-        8 => vec![(W::Q, 0, Reg::Rax)],
-        16 => vec![(W::Q, 0, Reg::Rax), (W::Q, 8, Reg::Rdx)],
-        _ => panic!("a {len}-byte value doesn't return in registers"),
+/// The integer argument register `i` of the convention: `rdi rsi rdx rcx r8 r9`, on PE
+/// `rcx rdx r8 r9`.
+pub(super) fn int_arg(pe: bool, i: u32) -> Reg {
+    const SYSV: [Reg; 6] = [Reg::Rdi, Reg::Rsi, Reg::Rdx, Reg::Rcx, Reg::R8, Reg::R9];
+    const WIN64: [Reg; 4] = [Reg::Rcx, Reg::Rdx, Reg::R8, Reg::R9];
+    if pe { WIN64[i as usize] } else { SYSV[i as usize] }
+}
+
+/// `f16` values move between SSE registers and memory through this register (`movd`).
+const F16_TMP: Reg = Reg::R11;
+
+/// The operand width of 1, 2, 4 or 8 bytes.
+fn width(size: u32) -> W {
+    match size {
+        1 => W::B,
+        2 => W::W,
+        4 => W::D,
+        _ => W::Q,
     }
 }
 
-/// The stores of a call's result into its destination `d` (raw slots), from the call's
-/// operands `d` and `len`.
-fn result_stores<T>(op: Opcode, ops: &[Opnd<T>]) -> Vec<Item> {
-    let info = op.info();
-    let (Opnd::Slot(d), Opnd::Imm(len)) = (&ops[info.operand_index("d").unwrap()], &ops[info.operand_index("len").unwrap()]) else {
-        unreachable!()
-    };
-    ret_parts(*len as u32).into_iter().map(|(w, off, src)| Item::St { w, src, m: M::frame(d.wrapping_add(off as i32)) }).collect()
+/// The register parts of the kind `k` with their registers: `rax`, `rdx` for integers,
+/// `xmm0`, `xmm1` for floats, in order.
+fn part_regs(k: u32, load: bool) -> Vec<(RetPart, Reg, u8)> {
+    let Some(parts) = ret_parts(k, load) else { return Vec::new() };
+    let (mut g, mut x) = (0, 0);
+    parts
+        .into_iter()
+        .flatten()
+        .map(|p| {
+            let r = (p, [Reg::Rax, Reg::Rdx][g], x);
+            if p.xmm { x += 1 } else { g += 1 }
+            r
+        })
+        .collect()
+}
+
+/// The store of `size` bytes of SSE register `x` at `m`.
+fn sse_store(size: u32, x: u8, m: M, out: &mut Vec<Item>) {
+    if size == 2 {
+        out.extend([Item::Movd { to_xmm: false, x, r: F16_TMP }, Item::St { w: W::W, src: F16_TMP, m }]);
+    } else {
+        out.push(Item::Sse { st: true, size: size as u8, x, m });
+    }
+}
+
+/// The store of the low `size` bytes (1 to 8) of `r` at `m`: in pieces of 4, 2 and 1 bytes,
+/// shifting `r` down between them, unless it is 1, 2, 4 or 8.
+fn int_store(size: u32, r: Reg, m: M, out: &mut Vec<Item>) {
+    if matches!(size, 1 | 2 | 4 | 8) {
+        out.push(Item::St { w: width(size), src: r, m });
+        return;
+    }
+    let (mut done, mut prev) = (0, 0);
+    for c in [4, 2, 1] {
+        if size - done >= c {
+            if prev != 0 {
+                out.push(Item::Shift { op: Sh::Shr, w: W::Q, reg: r, amt: (8 * prev) as u8 });
+            }
+            out.push(Item::St { w: width(c), src: r, m: M { disp: m.disp.wrapping_add(done as i32), ..m } });
+            done += c;
+            prev = c;
+        }
+    }
+}
+
+/// `ret`'s loads of the value of kind `k` (load widths) at the raw slot `s` into the return
+/// registers ([`super::RET_SRET`]).
+pub(super) fn ret_loads(k: u32, s: i32) -> Vec<Item> {
+    let mut out = Vec::new();
+    for (p, r, x) in part_regs(k, true) {
+        let m = M::frame(s.wrapping_add(p.off as i32));
+        match (p.xmm, p.size) {
+            (false, size) => out.push(Item::Ld { w: width(size), sx: false, dst: r, m }),
+            (true, 2) => out.extend([Item::Ld { w: W::W, sx: false, dst: F16_TMP, m }, Item::Movd { to_xmm: true, x, r: F16_TMP }]),
+            (true, size) => out.push(Item::Sse { st: false, size: size as u8, x, m }),
+        }
+    }
+    out
+}
+
+/// The stores of a call's result of kind `k` (exact sizes) from the return registers into
+/// the raw slot `d`: none for nothing and for sret, whose callee writes `d` itself.
+pub(super) fn result_stores(k: u32, d: i32) -> Vec<Item> {
+    let mut out = Vec::new();
+    for (p, r, x) in part_regs(k, false) {
+        let m = M::frame(d.wrapping_add(p.off as i32));
+        if p.xmm { sse_store(p.size, x, m, &mut out) } else { int_store(p.size, r, m, &mut out) }
+    }
+    out
+}
+
+/// `arg`'s store of the argument register `a` to the raw slot `d`.
+pub(super) fn arg_store(a: ArgReg, d: i32, pe: bool) -> Vec<Item> {
+    let mut out = Vec::new();
+    let m = M::frame(d);
+    if a.xmm {
+        sse_store(a.size, a.index as u8, m, &mut out);
+    } else {
+        out.push(Item::St { w: width(a.size), src: int_arg(pe, a.index), m });
+    }
+    out
 }
 
 /// The element size of a case list's value array in the rodata.
@@ -545,6 +627,9 @@ pub fn encode(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], mode: Mod
         if !super::return_ok(&code[start..]) {
             return Err(EncodeError::BadReturn(start as u32));
         }
+        if code[start] == Opcode::Arg as u32 && starts[..starts.len() - 1].iter().any(|&a| code[a] != Opcode::Arg as u32) {
+            return Err(EncodeError::ArgNotFirst(start as u32));
+        }
     }
     let idx = |w: u32| -> Result<usize, EncodeError> {
         index.get(w as usize).copied().filter(|&i| i != usize::MAX).ok_or(EncodeError::BadTarget(w))
@@ -717,20 +802,40 @@ impl Asm {
         self.pieces.push(Piece::Table(targets));
     }
 
-    /// `ret s, len`: the value into `rax`/`rdx` ([`super::ret_in_regs`]), the epilogue, `ret`.
-    fn ret(&mut self, s: u32, len: u32) {
-        for (w, off, reg) in ret_parts(len) {
-            self.pieces.push(Piece::Frame(Item::Ld { w, sx: false, dst: reg, m: M::frame(s.wrapping_add(off) as i32) }));
+    /// `ret s, k`: the value into the return registers, the epilogue, `ret`.
+    fn ret(&mut self, s: u32, k: u32) {
+        for it in ret_loads(k, s as i32) {
+            self.pieces.push(Piece::Frame(it));
         }
         self.pieces.push(Piece::Epilogue);
         self.fixed(Item::Ret);
     }
 
-    /// The stores of a call's result from `rax`/`rdx` into `d`.
-    fn result(&mut self, op: Opcode, ops: &[Opnd<Label>]) {
-        for it in result_stores(op, ops) {
-            self.pieces.push(Piece::Frame(it));
+    /// Before a call: an sret destination's address into the first argument register.
+    fn sret_arg(&mut self, k: u32, d: u32) -> u32 {
+        if k != RET_SRET {
+            return 0;
         }
+        let dst = int_arg(self.mode.pe, 0);
+        self.pieces.push(Piece::Frame(Item::LeaM { dst, m: M::frame(d as i32) }));
+        1
+    }
+
+    /// Before a tail jump of an sret function: its return value's address, from `q`, into
+    /// the first argument register.
+    fn pass_sret(&mut self, k: u32, q: u32) {
+        if k == RET_SRET {
+            let dst = int_arg(self.mode.pe, 0);
+            self.pieces.push(Piece::Frame(Item::Ld { w: W::Q, sx: false, dst, m: M::frame(q as i32) }));
+        }
+    }
+
+    /// After a call: the stores of its result into `d`. Returns how many.
+    fn result(&mut self, k: u32, d: u32) -> u32 {
+        let items = result_stores(k, d as i32);
+        let n = items.len() as u32;
+        self.pieces.extend(items.into_iter().map(Piece::Frame));
+        n
     }
 
     /// Emits instruction `op` with operands `ops` (in the opcode's operand order).
@@ -761,6 +866,10 @@ impl Asm {
             Opnd::Sym(s) => *s,
             _ => unreachable!(),
         };
+        let imm = |name: &str| match named(name) {
+            Opnd::Imm(v) => *v as u32,
+            _ => unreachable!(),
+        };
         let target = |name: &str| match named(name) {
             Opnd::Target(t) => *t,
             _ => unreachable!(),
@@ -789,15 +898,19 @@ impl Asm {
                 self.handler_call(op, ops, site);
                 self.fixed(Item::Ud2);
             }
-            Shape::Ret => {
-                let Opnd::Imm(len) = named("len") else { unreachable!() };
-                self.ret(slot("s"), *len as u32);
+            Shape::Ret => self.ret(slot("s"), imm("k")),
+            Shape::Arg => {
+                let a = ArgReg::of(imm("r")).expect("arg register");
+                for it in arg_store(a, slot("d") as i32, self.mode.pe) {
+                    self.pieces.push(Piece::Frame(it));
+                }
             }
             Shape::Jmp => self.pieces.push(Piece::Branch { cond: Cond::Always, to: target("t") }),
             Shape::Call => {
                 let Opnd::Func(f) = named("f") else { unreachable!() };
+                self.sret_arg(imm("k"), slot("d"));
                 self.maybe_site(Item::Call(Ref::Func(*f)), site);
-                self.result(op, ops);
+                self.result(imm("k"), slot("d"));
             }
             Shape::CallExt | Shape::CallInd => {
                 self.handler_call(op, ops, None);
@@ -806,15 +919,17 @@ impl Asm {
                 let d = slot("d");
                 let ro = self.ro(RoReq::Ops(vec![RoWord::ArgBlock, RoWord::Slot(d), RoWord::Slot(fnp)]));
                 self.fixed(Item::TestRax);
-                let stores = result_stores(op, ops).len() as u32;
-                self.pieces.push(Piece::Skip { cond: Cond::Z, over: 2 + stores });
+                let (k, n) = (imm("k"), result_stores(imm("k"), d as i32).len() as u32);
+                self.pieces.push(Piece::Skip { cond: Cond::Z, over: 2 + (k == RET_SRET) as u32 + n });
+                self.sret_arg(k, d);
                 self.maybe_site(Item::CallRax, site);
-                self.result(op, ops);
+                self.result(k, d);
                 self.pieces.push(Piece::Skip { cond: Cond::Always, over: self.island_pieces() });
                 self.island_call(sym("isl"), ro, site);
             }
             Shape::TailCall => {
                 self.handler_call(op, ops, None);
+                self.pass_sret(imm("k"), slot("q"));
                 self.pieces.push(Piece::Epilogue);
                 let Opnd::Func(f) = named("f") else { unreachable!() };
                 self.fixed(Item::Jmp(Ref::Func(*f)));
@@ -824,13 +939,11 @@ impl Asm {
                 let s = slot("s");
                 let ro = self.ro(RoReq::Ops(vec![RoWord::ArgBlock, RoWord::Slot(s), RoWord::Slot(slot("p"))]));
                 self.fixed(Item::TestRax);
-                self.pieces.push(Piece::Skip { cond: Cond::Z, over: 2 });
+                self.pieces.push(Piece::Skip { cond: Cond::Z, over: 2 + (imm("k") == RET_SRET) as u32 });
+                self.pass_sret(imm("k"), slot("q"));
                 self.pieces.push(Piece::Epilogue);
                 self.fixed(Item::JmpRax);
                 self.island_call(sym("isl"), ro, site);
-                // Then `ret s, len`.
-                let Opnd::Imm(len) = named("len") else { unreachable!() };
-                self.ret(s, *len as u32);
             }
             Shape::Island => {
                 let Opnd::Words(w) = named("ops") else { unreachable!() };

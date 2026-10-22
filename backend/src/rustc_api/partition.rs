@@ -899,6 +899,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                 frame_size: l.frame_size,
                 arg_size: l.arg_size,
                 ret_size: l.ret_size,
+                ret_kind: l.ret_kind,
                 cleanup: Vec::new(),
                 portal,
             });

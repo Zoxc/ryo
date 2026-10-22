@@ -58,45 +58,57 @@ fn <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::cal
     ret
 
 fn core::fmt::rt::Argument::<'_>::new_display::<u32>
-    sub     rsp,48h
-    mov     rax,[rsp+50h]
-    mov     [rsp+10h],rax
-    lea     rdi,[rsp+40h]
-    mov     esi,0FFFFFFC0h
+    sub     rsp,58h
+    mov     [rsp+30h],rdi
+    mov     rax,[rsp+60h]
+    mov     [rsp+18h],rax
+    lea     rdi,[rsp+50h]
+    mov     esi,0FFFFFFB8h
     lea     rdx,[sym0]
     call    ryo_h_AddrSym
-    mov     rax,[rsp]
-    mov     rdx,[rsp+10h]
-    mov     [rsp+18h],rdx
-    mov     [rsp+20h],rax
-    lea     rdi,[rsp+40h]
+    mov     rax,[rsp+8]
+    mov     rdx,[rsp+18h]
+    mov     [rsp+20h],rdx
+    mov     [rsp+28h],rax
+    lea     rdi,[rsp+50h]
     mov     esi,0FFFFFFF0h
-    mov     edx,0FFFFFFD8h
+    mov     edx,0FFFFFFD0h
     call    ryo_h_MovW128
+    lea     rdi,[rsp+50h]
+    mov     esi,0FFFFFFE0h
+    xor     edx,edx
+    mov     ecx,0FFFFFFF0h
+    mov     r8d,10h
+    call    ryo_h_StoreCopy
     mov     rax,[rsp+30h]
-    mov     rdx,[rsp+38h]
-    add     rsp,48h
+    add     rsp,58h
     ret
 
 fn core::fmt::rt::Argument::<'_>::new_display::<u64>
-    sub     rsp,48h
-    mov     rax,[rsp+50h]
-    mov     [rsp+10h],rax
-    lea     rdi,[rsp+40h]
-    mov     esi,0FFFFFFC0h
+    sub     rsp,58h
+    mov     [rsp+30h],rdi
+    mov     rax,[rsp+60h]
+    mov     [rsp+18h],rax
+    lea     rdi,[rsp+50h]
+    mov     esi,0FFFFFFB8h
     lea     rdx,[sym0]
     call    ryo_h_AddrSym
-    mov     rax,[rsp]
-    mov     rdx,[rsp+10h]
-    mov     [rsp+18h],rdx
-    mov     [rsp+20h],rax
-    lea     rdi,[rsp+40h]
+    mov     rax,[rsp+8]
+    mov     rdx,[rsp+18h]
+    mov     [rsp+20h],rdx
+    mov     [rsp+28h],rax
+    lea     rdi,[rsp+50h]
     mov     esi,0FFFFFFF0h
-    mov     edx,0FFFFFFD8h
+    mov     edx,0FFFFFFD0h
     call    ryo_h_MovW128
+    lea     rdi,[rsp+50h]
+    mov     esi,0FFFFFFE0h
+    xor     edx,edx
+    mov     ecx,0FFFFFFF0h
+    mov     r8d,10h
+    call    ryo_h_StoreCopy
     mov     rax,[rsp+30h]
-    mov     rdx,[rsp+38h]
-    add     rsp,48h
+    add     rsp,58h
     ret
 
 fn fib
@@ -233,15 +245,13 @@ fn main
     mov     [rsp+0A0h],rdx
     mov     [rsp+28h],rdx
     mov     [rsp],rdx
+    lea     rdi,[rsp+50h]
     call    fn2
-    mov     [rsp+50h],rax
-    mov     [rsp+58h],rdx
     mov     rax,[rsp+98h]
     mov     [rsp+20h],rax
     mov     [rsp],rax
+    lea     rdi,[rsp+40h]
     call    fn3
-    mov     [rsp+40h],rax
-    mov     [rsp+48h],rdx
     lea     rdi,[rsp+0C0h]
     mov     esi,0FFFFFFA0h
     mov     edx,0FFFFFF90h

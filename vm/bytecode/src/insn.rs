@@ -631,12 +631,15 @@ pub enum Shape {
     /// The handler moves the arguments, and the function jumps to the callee (`tail_call`).
     TailCall,
     /// `tail_call.ind`: the handler resolves and moves the arguments; a native target is
-    /// called through the island and returned from (`tail_call_ind`).
+    /// called through the island, and the next instruction follows (`tail_call_ind`).
     TailCallInd,
     /// A direct call of an island, without a handler (`island`).
     Island,
     /// A landing pad: the handler stores the exception object (`lpad`).
     Lpad,
+    /// The store of an argument register to a slot, without a handler, at the start of the
+    /// function (`arg`).
+    Arg,
 }
 
 /// Maps a shape name in the opcode list to its [`Shape`].
@@ -652,6 +655,7 @@ macro_rules! shape {
     (call_ind) => { $crate::insn::Shape::CallInd };
     (tail_call) => { $crate::insn::Shape::TailCall };
     (tail_call_ind) => { $crate::insn::Shape::TailCallInd };
+    (arg) => { $crate::insn::Shape::Arg };
     (island) => { $crate::insn::Shape::Island };
     (lpad) => { $crate::insn::Shape::Lpad };
 }

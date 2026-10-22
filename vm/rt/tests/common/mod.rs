@@ -12,7 +12,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 pub use ryo_bytecode::Opcode;
-pub use ryo_bytecode::asm::Mode;
+pub use ryo_bytecode::asm::{Mode, RET_SRET};
 pub use ryo_bytecode::image::*;
 pub use ryo_bytecode::insn::*;
 
@@ -23,6 +23,8 @@ pub const ENC: Mode = Mode { align_loops: true, pe: false, ..ryo_rt::vm::MODE };
 #[derive(Default)]
 pub struct Asm {
     pub c: CodeBuf,
+    /// The slot of the sret pointer ([`Asm::sret`]).
+    sret: Option<Slot>,
 }
 
 impl Asm {
@@ -61,18 +63,24 @@ impl Asm {
         let op = Opcode::from_u16(self.c.words[at as usize] as u16).unwrap();
         self.c.set_list_target(at, op.info().operand_index(name).unwrap(), i, target);
     }
-    /// `ret s, len`, or for a value that doesn't return in registers, its copy to the start
-    /// of the argument block, then `ret` of nothing, as the lowering does. Returns the
-    /// position of the first instruction.
+    /// `arg` of the sret pointer into `at`, first in a function that returns a value of a
+    /// size other than 0, 1, 2, 4, 8 and 16 bytes ([`Asm::ret`]).
+    pub fn sret(&mut self, at: Slot) -> u32 {
+        self.sret = Some(at);
+        self.i(Insn::Arg { d: at, r: ryo_bytecode::asm::ArgReg { xmm: false, size: 8, index: 0 }.word() })
+    }
+    /// `ret` of the `len` bytes at `s`: in `rax` (and `rdx`), or for another size through the
+    /// sret pointer ([`Asm::sret`]). Returns the position of the first instruction.
     pub fn ret(&mut self, s: Slot, len: u32) -> u32 {
-        if ryo_bytecode::asm::ret_in_regs(len) {
-            self.i(Insn::Ret { s, len })
-        } else if len == 0 {
-            self.i(Insn::Ret { s: Slot(0), len: 0 })
-        } else {
-            let at = self.i(Insn::Copy { d: Slot(16), s, len });
-            self.i(Insn::Ret { s: Slot(0), len: 0 });
-            at
+        match len {
+            0 => self.i(Insn::Ret { s: Slot(0), k: 0 }),
+            1 | 2 | 4 | 8 | 16 => self.i(Insn::Ret { s, k: kind(len) }),
+            _ => {
+                let p = self.sret.expect("sret function");
+                let at = self.i(Insn::StoreCopy { m: Mem { p, k: 0 }, s, len });
+                self.i(Insn::Ret { s: p, k: 8 });
+                at
+            }
         }
     }
     pub fn done(self) -> Vec<u32> {
@@ -80,14 +88,26 @@ impl Asm {
     }
 }
 
+/// The return kind of a `len`-byte integer value in registers (1, 2, 4, 8 or 16 bytes).
+pub fn kind(len: u32) -> u32 {
+    use ryo_bytecode::asm::{RetPart, ret_kind};
+    let p = |size, off| RetPart { xmm: false, size, off };
+    if len == 16 { ret_kind(&[p(8, 0), p(8, 8)]) } else { ret_kind(&[p(len, 0)]) }
+}
+
 static NEXT_NAME: AtomicU64 = AtomicU64::new(0);
 
 /// A function definition with frame size `frame_size` (`F`: locals plus the largest outgoing
 /// block, a multiple of 16), named `f<n>`.
 pub fn func(code: Vec<u32>, frame_size: u32, arg_size: u32, ret_size: u32) -> FunctionDef {
+    let ret_kind = match ret_size {
+        0 => 0,
+        1 | 2 | 4 | 8 | 16 => kind(ret_size),
+        _ => ryo_bytecode::asm::RET_SRET,
+    };
     assert_eq!(frame_size % 16, 0, "frames are 16-aligned");
     let name = format!("f{}", NEXT_NAME.fetch_add(1, Ordering::Relaxed));
-    FunctionDef { name, code, frame_size, arg_size, ret_size, ..Default::default() }
+    FunctionDef { name, code, frame_size, arg_size, ret_size, ret_kind, ..Default::default() }
 }
 
 static NEXT_SCID: AtomicU64 = AtomicU64::new(0x5eed_0000_0000_0001);

@@ -33,26 +33,30 @@ L0:
   cleanup L0 -> continue
   fn0 = <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::call_once - shim
 
-fn core::fmt::rt::Argument::<'_>::new_display::<u32> (frame 64, args 8, ret 16)
+fn core::fmt::rt::Argument::<'_>::new_display::<u32> (frame 80, args 8, ret 16)
+    arg $-32, 8
     mov.w64 $-24, $16
-    mov.w64 $-48, $-24
-    addr.sym $-64, sym0
-    mov.w64 $-56, $-64
-    mov.w64 $-40, $-48
-    mov.w64 $-32, $-56
-    mov.w128 $-16, $-40
-    ret $-16, 16
+    mov.w64 $-56, $-24
+    addr.sym $-72, sym0
+    mov.w64 $-64, $-72
+    mov.w64 $-48, $-56
+    mov.w64 $-40, $-64
+    mov.w128 $-16, $-48
+    store.copy [$-32 + 0], $-16, 16
+    ret $-32, 8
   sym0 = core::fmt::num::imp::<impl std::fmt::Display for u32>::fmt
 
-fn core::fmt::rt::Argument::<'_>::new_display::<u64> (frame 64, args 8, ret 16)
+fn core::fmt::rt::Argument::<'_>::new_display::<u64> (frame 80, args 8, ret 16)
+    arg $-32, 8
     mov.w64 $-24, $16
-    mov.w64 $-48, $-24
-    addr.sym $-64, sym0
-    mov.w64 $-56, $-64
-    mov.w64 $-40, $-48
-    mov.w64 $-32, $-56
-    mov.w128 $-16, $-40
-    ret $-16, 16
+    mov.w64 $-56, $-24
+    addr.sym $-72, sym0
+    mov.w64 $-64, $-72
+    mov.w64 $-48, $-56
+    mov.w64 $-40, $-64
+    mov.w128 $-16, $-48
+    store.copy [$-32 + 0], $-16, 16
+    ret $-32, 8
   sym0 = core::fmt::num::imp::<impl std::fmt::Display for u64>::fmt
 
 fn fib (frame 96, args 4, ret 8)
@@ -128,11 +132,11 @@ L1:
     mov.w64 $-152, $-32
     mov.w64 $-192, $-152
 L2:
-    call $-112, fn2, 16
+    call $-112, fn2, 2147483648
     mov.w64 $-160, $-40
     mov.w64 $-192, $-160
 L3:
-    call $-128, fn3, 16
+    call $-128, fn3, 2147483648
     mov.w128 $-96, $-112
     mov.w128 $-80, $-128
     addr.abs $-136, k4
@@ -140,7 +144,7 @@ L3:
     mov.w64 $-192, $-136
     mov.w64 $-184, $-144
 L4:
-    call $-24, fn5, 16
+    call $-24, fn5, 526344
     mov.w128 $-192, $-24
 L5:
     call.ext $-4, sym6, site7, sym8, $-168, 0
@@ -166,7 +170,7 @@ fn std::fmt::Arguments::<'_>::new::<15, 2> (frame 32, args 16, ret 16)
     mov.w64 $-32, $24
     mov.w64 $-16, $-24
     mov.w64 $-8, $-32
-    ret $-16, 16
+    ret $-16, 526344
 
 fn std::hint::black_box::<u32> (frame 16, args 4, ret 4)
     mov.w32 $-4, $16

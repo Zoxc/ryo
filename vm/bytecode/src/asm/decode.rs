@@ -5,10 +5,10 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
-use super::encode::{CallSite, DroppedStore, Opnd, Ref, RegVal, Reloc, case_size, epilogue, fp_item, prologue, push_words, ret_parts, word_len};
+use super::encode::{CallSite, DroppedStore, Opnd, Ref, RegVal, Reloc, arg_store, case_size, epilogue, fp_item, int_arg, prologue, push_words, result_stores, ret_loads, word_len};
 use super::inline::Cache;
 use super::x86::{ARGS, BadItem, Cond, Cursor, Item, M, Reg, island_args};
-use super::{Mode, has_handler, layout};
+use super::{ArgReg, Mode, RET_SRET, RetPart, has_handler, layout, ret_kind};
 use crate::image::{CATCH, CONTINUE, CleanupEntry, op_may_unwind};
 use crate::insn::{ElemKind, Opcode, OperandKind, Shape};
 
@@ -225,6 +225,13 @@ fn instructions(
         if targets.is_some_and(|t| t.binary_search(&c.pos).is_ok()) {
             cache = Cache::default();
         }
+        // `arg`s come first.
+        if protos.iter().all(|p| p.op == Opcode::Arg)
+            && let Some(p) = arg(c, fr.mode)
+        {
+            protos.push(p);
+            continue;
+        }
         let p = match inline_insn(c, &mut cache, &mut dropped, targets.is_some()) {
             Some(p) => p,
             None => {
@@ -321,9 +328,13 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8], argblk: u32) -> Result<Proto,
                     let Item::Branch { cond: Cond::Z, target: native, long: false } = c.item()? else {
                         return Err(err(at, "no native path branch"));
                     };
+                    let sret = sret_arg(c, mode);
                     sites.push((c.pos, 2));
                     fixed(c, Item::CallRax)?;
-                    let (rd, len) = result(c);
+                    let (rd, k) = match sret {
+                        Some(d) => (d, RET_SRET),
+                        None => result(c),
+                    };
                     let island_len = fp_item(island_args(mode.pe)[0], fr.size, mode).len() + if mode.pe { 7 + 4 + 6 + 4 } else { 7 + 6 };
                     fixed(c, Item::Branch { cond: Cond::Always, target: c.pos + 2 + island_len, long: false })?;
                     if native != c.pos {
@@ -336,56 +347,68 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8], argblk: u32) -> Result<Proto,
                     let Some([_, d, _]) = ops_array(ro, ops_ro).and_then(|w| <[u32; 3]>::try_from(w).ok()) else {
                         return Err(err(at, "native path operands"));
                     };
-                    if ops_array(ro, ops_ro) != Some(vec![argblk, d, f as u32]) || (len != 0 && rd != d as i32) {
+                    if ops_array(ro, ops_ro) != Some(vec![argblk, d, f as u32]) || (k != 0 && rd != d as i32) {
                         return Err(err(at, "native path operands"));
                     }
                     set(&mut ops, "d", Opnd::Slot(d as i32));
                     set(&mut ops, "isl", Opnd::Sym(isl));
-                    set(&mut ops, "len", Opnd::Imm(len as u64));
+                    set(&mut ops, "k", Opnd::Imm(k as u64));
                 }
                 Shape::TailCall => {
+                    let (q, k) = pass_sret(c, mode);
                     fixed(c, fr.epilogue())?;
                     let at = c.pos;
                     let Item::Jmp(Ref::Func(f)) = c.item()? else { return Err(err(at, "no tail jump")) };
                     set(&mut ops, "f", Opnd::Func(f));
+                    set(&mut ops, "q", Opnd::Slot(q));
+                    set(&mut ops, "k", Opnd::Imm(k as u64));
                 }
                 Shape::TailCallInd => {
                     fixed(c, Item::TestRax)?;
-                    fixed(c, Item::Branch { cond: Cond::Z, target: c.pos + 2 + fr.epilogue().len() + 2, long: false })?;
+                    let at = c.pos;
+                    let Item::Branch { cond: Cond::Z, target: native, long: false } = c.item()? else {
+                        return Err(err(at, "no native path branch"));
+                    };
+                    let (q, k) = pass_sret(c, mode);
                     fixed(c, fr.epilogue())?;
                     fixed(c, Item::JmpRax)?;
-                    let at = c.pos;
+                    if native != c.pos {
+                        return Err(err(at, "native path branch"));
+                    }
                     let (isl, ops_ro, site) = island_call(c, fr)?;
                     sites.push(site);
-                    // Then `ret s, len`.
-                    let (rs, len) = ret(c, fr)?;
                     let Opnd::Slot(p) = ops[0] else { unreachable!() };
                     let Some([_, s, _]) = ops_array(ro, ops_ro).and_then(|w| <[u32; 3]>::try_from(w).ok()) else {
                         return Err(err(at, "native path operands"));
                     };
-                    if ops_array(ro, ops_ro) != Some(vec![argblk, s, p as u32]) || (len != 0 && rs != s as i32) {
+                    if ops_array(ro, ops_ro) != Some(vec![argblk, s, p as u32]) {
                         return Err(err(at, "native path operands"));
                     }
                     set(&mut ops, "isl", Opnd::Sym(isl));
                     set(&mut ops, "s", Opnd::Slot(s as i32));
-                    set(&mut ops, "len", Opnd::Imm(len as u64));
+                    set(&mut ops, "q", Opnd::Slot(q));
+                    set(&mut ops, "k", Opnd::Imm(k as u64));
                 }
-                Shape::Jmp | Shape::Call | Shape::Ret | Shape::Island => unreachable!(),
+                Shape::Jmp | Shape::Call | Shape::Ret | Shape::Island | Shape::Arg => unreachable!(),
             }
             if super::inline::sequence(op, &ops).is_some() {
                 return Err(err(hat, "handler call of an inlined instruction"));
             }
             Proto { op, ops, pos, sites }
         }
-        Item::Call(Ref::Func(f)) if setup.is_empty() => {
+        Item::Call(Ref::Func(f)) => {
             sites.push((hat, 5));
-            let (d, len) = result(c);
-            Proto { op: Opcode::Call, ops: vec![Opnd::Slot(d), Opnd::Func(f), Opnd::Imm(len as u64)], pos, sites }
+            let (d, k) = match setup[..] {
+                [] => result(c),
+                [(_, Item::LeaM { dst, m })] if dst == int_arg(mode.pe, 0) => (m.disp, RET_SRET),
+                _ => return Err(err(pos, "call setup")),
+            };
+            Proto { op: Opcode::Call, ops: vec![Opnd::Slot(d), Opnd::Func(f), Opnd::Imm(k as u64)], pos, sites }
         }
-        Item::Ld { .. } | Item::Leave | Item::AddRsp(_) if setup.is_empty() => {
+        Item::Ld { .. } | Item::Sse { .. } | Item::Leave | Item::AddRsp(_) if setup.is_empty() => {
             c.pos = pos;
-            let (s, len) = ret(c, fr)?;
-            Proto { op: Opcode::Ret, ops: vec![Opnd::Slot(s), Opnd::Imm(len as u64)], pos, sites }
+            let (s, k) = ret(c, fr)?;
+            Proto { op: Opcode::Ret, ops: vec![Opnd::Slot(s), Opnd::Imm(k as u64)], pos, sites }
         }
         Item::Branch { cond: Cond::Always, target, .. } if setup.is_empty() => {
             Proto { op: Opcode::Jmp, ops: vec![Opnd::Target(target)], pos, sites }
@@ -403,70 +426,162 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8], argblk: u32) -> Result<Proto,
     Ok(ops)
 }
 
-/// `ret`'s sequence at the cursor: the loads of the value into `rax`/`rdx`, the epilogue and
-/// `ret`. Returns the slot and the length (slot 0 for nothing returned).
-fn ret(c: &mut Cursor<'_>, fr: &Frame) -> Result<(i32, u32), AsmError> {
-    let at = c.pos;
-    let mut parts = Vec::new();
+/// The items at the cursor while `f` takes them (the cursor after the last one taken).
+fn take(c: &mut Cursor<'_>, mut f: impl FnMut(&Item) -> bool) -> Vec<Item> {
+    let mut out = Vec::new();
     loop {
         let a = c.pos;
-        match c.item()? {
-            Item::Ld { w, sx: false, dst, m } if m.base == Reg::Rbp => parts.push((w, m.disp as u32, dst)),
+        match c.item() {
+            Ok(it) if f(&it) => out.push(it),
             _ => {
                 c.pos = a;
-                break;
+                return out;
             }
         }
     }
-    let (s, len) = match parts.first() {
-        None => (0, 0),
-        Some(&(_, s, _)) => {
-            let len = [1, 2, 4, 8, 16].into_iter().find(|&l| {
-                ret_parts(l).into_iter().map(|(w, off, r)| (w, s.wrapping_add(off), r)).eq(parts.iter().copied())
-            });
-            (s as i32, len.ok_or(AsmError { at, what: "return value loads" })?)
-        }
+}
+
+/// The register parts the loads (`ret`) or stores (a call's result) `items` move, relative to
+/// the slot of the first: the slot and the parts, or `None` if they aren't parts. Integer
+/// parts take the sizes of their pieces together.
+fn parts_of(items: &[Item]) -> Option<(i32, Vec<RetPart>)> {
+    let mut parts: Vec<RetPart> = Vec::new();
+    let mut base = None;
+    let mut it = items.iter().peekable();
+    // The offset of the frame slot `m` from the first part's.
+    let mut off = |m: M| -> Option<u32> {
+        let b = *base.get_or_insert(m.disp);
+        (m.base == Reg::Rbp).then_some(m.disp.wrapping_sub(b) as u32)
     };
+    let mut last_int = None;
+    while let Some(&x) = it.next() {
+        match x {
+            Item::Ld { sx: false, dst: Reg::Rax | Reg::Rdx, w, m } => {
+                parts.push(RetPart { xmm: false, size: w.bits() / 8, off: off(m)? });
+            }
+            Item::St { src: r @ (Reg::Rax | Reg::Rdx), w, m } => {
+                let o = off(m)?;
+                match parts.last_mut() {
+                    // The next piece of the same register, after its shift.
+                    Some(p) if !p.xmm && last_int == Some(r) && o == p.off + p.size => p.size += w.bits() / 8,
+                    _ => parts.push(RetPart { xmm: false, size: w.bits() / 8, off: o }),
+                }
+                last_int = Some(r);
+                continue;
+            }
+            Item::Shift { reg, .. } if last_int == Some(reg) => continue,
+            Item::Sse { size, m, .. } => parts.push(RetPart { xmm: true, size: size as u32, off: off(m)? }),
+            Item::Ld { w: super::x86::W::W, sx: false, dst: Reg::R11, m } => {
+                it.next()?;
+                parts.push(RetPart { xmm: true, size: 2, off: off(m)? });
+            }
+            Item::Movd { to_xmm: false, .. } => {
+                let Some(&&Item::St { m, .. }) = it.peek() else { return None };
+                it.next();
+                parts.push(RetPart { xmm: true, size: 2, off: off(m)? });
+            }
+            _ => return None,
+        }
+        last_int = None;
+    }
+    Some((base.unwrap_or(0), parts))
+}
+
+/// `ret`'s sequence at the cursor: the loads of the value into the return registers, the
+/// epilogue and `ret`. Returns the slot and the kind (slot 0 for nothing returned).
+fn ret(c: &mut Cursor<'_>, fr: &Frame) -> Result<(i32, u32), AsmError> {
+    let at = c.pos;
+    let bad = AsmError { at, what: "return value loads" };
+    let items = take(c, |it| matches!(it, Item::Ld { .. } | Item::Sse { st: false, .. } | Item::Movd { to_xmm: true, .. }));
+    let (s, parts) = parts_of(&items).filter(|(_, p)| p.len() <= 2).ok_or(bad)?;
+    let k = ret_kind(&parts);
+    if ret_loads(k, s) != items || super::ret_parts(k, true).is_none() && k != 0 {
+        return Err(bad);
+    }
     for want in [fr.epilogue(), Item::Ret] {
         let a = c.pos;
         if c.item()? != want {
             return Err(AsmError { at: a, what: "not the return sequence" });
         }
     }
-    Ok((s, len))
+    Ok((s, k))
 }
 
-/// A call's result stores from `rax`/`rdx` at the cursor, if any: the destination and the
-/// length (slot 0 for none).
+/// A call's result stores from the return registers at the cursor, if any: the destination
+/// and the kind (slot 0 for none).
 fn result(c: &mut Cursor<'_>) -> (i32, u32) {
     let at = c.pos;
-    let mut parts = Vec::new();
-    loop {
-        let a = c.pos;
-        match c.item() {
-            Ok(Item::St { w, src: src @ (Reg::Rax | Reg::Rdx), m }) if m.base == Reg::Rbp && parts.len() < 2 => {
-                parts.push((w, m.disp as u32, src))
-            }
-            _ => {
-                c.pos = a;
-                break;
-            }
-        }
-    }
-    let Some(&(_, d, _)) = parts.first() else { return (0, 0) };
-    // The longest form the stores begin with.
-    for l in [16, 8, 4, 2, 1] {
-        let want: Vec<_> = ret_parts(l).into_iter().map(|(w, off, r)| (w, d.wrapping_add(off), r)).collect();
-        if parts.starts_with(&want) {
-            c.pos = at;
-            for _ in 0..want.len() {
-                let _ = c.item();
-            }
-            return (d as i32, l);
+    let items = take(c, |it| {
+        matches!(
+            it,
+            Item::St { src: Reg::Rax | Reg::Rdx | Reg::R11, .. } | Item::Shift { reg: Reg::Rax | Reg::Rdx, .. } | Item::Sse { st: true, .. } | Item::Movd { to_xmm: false, .. }
+        )
+    });
+    if let Some((d, parts)) = parts_of(&items).filter(|(_, p)| p.len() <= 2) {
+        let k = ret_kind(&parts);
+        if super::ret_parts(k, false).is_some() && result_stores(k, d) == items {
+            return (d, k);
         }
     }
     c.pos = at;
     (0, 0)
+}
+
+/// Before `call rax`: an sret destination's address in the first argument register.
+fn sret_arg(c: &mut Cursor<'_>, mode: Mode) -> Option<i32> {
+    let at = c.pos;
+    match c.item() {
+        Ok(Item::LeaM { dst, m }) if dst == int_arg(mode.pe, 0) && m.base == Reg::Rbp => Some(m.disp),
+        _ => {
+            c.pos = at;
+            None
+        }
+    }
+}
+
+/// Before a tail jump: an sret function's return value address loaded into the first
+/// argument register. Returns its slot and the kind ([`RET_SRET`], or 0 and slot 0).
+fn pass_sret(c: &mut Cursor<'_>, mode: Mode) -> (i32, u32) {
+    let at = c.pos;
+    match c.item() {
+        Ok(Item::Ld { w: super::x86::W::Q, sx: false, dst, m }) if dst == int_arg(mode.pe, 0) && m.base == Reg::Rbp => (m.disp, RET_SRET),
+        _ => {
+            c.pos = at;
+            (0, 0)
+        }
+    }
+}
+
+/// An `arg` at the cursor: the store of an argument register to its slot.
+fn arg(c: &mut Cursor<'_>, mode: Mode) -> Option<Proto> {
+    let pos = c.pos;
+    let first = c.item().ok();
+    let (a, m) = match first {
+        Some(Item::St { w, src, m }) => {
+            let n = if mode.pe { 4 } else { 6 };
+            let index = (0..n).find(|&i| int_arg(mode.pe, i) == src);
+            (index.map(|index| ArgReg { xmm: false, size: w.bits() / 8, index }), m)
+        }
+        Some(Item::Sse { st: true, size, x, m }) => (Some(ArgReg { xmm: true, size: size as u32, index: x as u32 }), m),
+        Some(Item::Movd { to_xmm: false, x, .. }) => match c.item() {
+            Ok(Item::St { m, .. }) => (Some(ArgReg { xmm: true, size: 2, index: x as u32 }), m),
+            _ => (None, M::frame(0)),
+        },
+        _ => (None, M::frame(0)),
+    };
+    let ok = a.filter(|a| ArgReg::of(a.word()).is_some() && m.base == Reg::Rbp);
+    let end = c.pos;
+    c.pos = pos;
+    let a = ok?;
+    let want = arg_store(a, m.disp, mode.pe);
+    for w in &want {
+        if c.item().ok() != Some(*w) {
+            c.pos = pos;
+            return None;
+        }
+    }
+    debug_assert_eq!(c.pos, end);
+    Some(Proto { op: Opcode::Arg, ops: vec![Opnd::Slot(m.disp), Opnd::Imm(a.word() as u64)], pos, sites: Vec::new() })
 }
 
 /// An inline sequence at the cursor, or `None` (the cursor unmoved) if there is none: native

@@ -22,11 +22,9 @@ use rustc_abi::{BackendRepr, ExternAbi};
 use rustc_middle::mir::{BasicBlock, Operand, Place, SourceInfo, UnwindAction};
 use rustc_middle::ty::{self, GenericArg, Instance, InstanceKind, Ty, TypingEnv};
 use rustc_span::Spanned;
-use ryo_bytecode::abi::HEADER_SIZE;
-use ryo_bytecode::asm::ret_in_regs;
+use ryo_bytecode::asm::{RET_SRET, RetPart, ret_kind, ret_parts};
 use ryo_bytecode::insn::Opcode;
 
-use super::frame;
 use super::island::templates;
 use super::place::{Loc, PlaceVal};
 use super::emit::opcode;
@@ -244,26 +242,18 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         Ok((s + off, s + off + b_offset.bytes() as u32, thin))
     }
 
-    /// Emits the call (arguments already written) and continues as `cont` says. A result
-    /// that doesn't come back in registers comes back at the start of the outgoing block
-    /// ([`ret_len`]), where the VM callee or the native path's island leaves it.
+    /// Emits the call (arguments already written) and continues as `cont` says. The result
+    /// comes back as the signature's return kind says, into `d`.
     fn emit_call(&mut self, target: Target<'tcx>, sig: &AbiSig<'tcx>, cont: CallCont<'tcx>) -> Result<(), NeedsNative> {
         let tcx = self.tcx;
         let (d, after) = self.call_dest(&cont, sig)?;
         let block = Self::out(0);
-        let size = sig.output.size.bytes() as u32;
-        let len = ret_len(size);
-        let in_block = size != 0 && len == 0;
-        // The destination of `call.ext`/`call.ind`, which their island writes.
-        let cd = if in_block { block } else { d };
-        let mut copy = false;
+        let k = sig.ret_kind;
         match target {
             Target::Vm(callee) => {
                 let f = self.reloc(CodeReloc::Call { callee });
-                let d = if len == 0 { 0 } else { d };
-                let at = self.op(Opcode::Call, &[d, f, len]);
+                let at = self.op(Opcode::Call, &[if k == 0 { 0 } else { d }, f, k]);
                 self.unwind_entry(at, cont.unwind);
-                copy = in_block;
             }
             Target::Ext(callee) => {
                 let island = self.call_ptr_island(sig)?;
@@ -273,9 +263,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let sym = self.reloc(r);
                 let site = self.reloc(CodeReloc::Site);
                 let isl = self.reloc(CodeReloc::Island { template: island.0, args: island.1 });
-                let at = self.op(op, &[cd, sym, site, isl, f, len]);
+                let at = self.op(op, &[d, sym, site, isl, f, k]);
                 self.unwind_entry(at, cont.unwind);
-                copy = in_block;
             }
             Target::Template(fty) => {
                 let args = [fty.into(), sig.args_tuple(tcx).into(), sig.output.ty.into()];
@@ -290,34 +279,40 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let island = self.call_ptr_island(sig)?;
                 let site = self.reloc(CodeReloc::Site);
                 let isl = self.reloc(CodeReloc::Island { template: island.0, args: island.1 });
-                let at = self.op(Opcode::CallInd, &[cd, p, site, isl, len]);
+                let at = self.op(Opcode::CallInd, &[d, p, site, isl, k]);
                 self.unwind_entry(at, cont.unwind);
-                copy = in_block;
             }
             Target::Ptr(p, CallConv::C) => {
                 let (name, args) = self.ptr_island(sig, CallConv::C)?;
                 self.island(&name, &args, &[block, d, p], Some(cont.unwind));
             }
         }
-        if copy {
-            self.outgoing(size);
-            self.mov(d, block, size);
-        }
         self.finish_call(cont, d, after)
     }
 
-    /// `ret` of `_0`: in registers, or copied to the start of the argument block first
-    /// ([`ret_len`]).
+    /// The `q`, `k` operands of a tail call: an sret function passes its return value's
+    /// address on to the callee.
+    fn pass_sret(&self) -> (u32, u32) {
+        match self.frame.sret {
+            Some(q) => (q, RET_SRET),
+            None => (0, 0),
+        }
+    }
+
+    /// `ret` of `_0`, as the function's return kind says: in registers, or (sret) copied to
+    /// the address the caller passed, which is returned.
     pub fn ret(&mut self) {
         let r = self.frame.locals[rustc_middle::mir::RETURN_PLACE];
         let size = r.layout.size.bytes() as u32;
-        let len = ret_len(size);
-        if len == 0 {
-            self.mov(frame::slot(HEADER_SIZE as i32), r.off, size);
-            self.op(Opcode::Ret, &[0, 0]);
-        } else {
-            self.op(Opcode::Ret, &[r.off, len]);
-        }
+        match self.ret_kind {
+            0 => self.op(Opcode::Ret, &[0, 0]),
+            RET_SRET => {
+                let p = self.frame.sret.expect("sret slot");
+                self.op(Opcode::StoreCopy, &[p, 0, r.off, size]);
+                self.op(Opcode::Ret, &[p, load_kind(ret_kind(&[RetPart { xmm: false, size: 8, off: 0 }]))])
+            }
+            k => self.op(Opcode::Ret, &[r.off, load_kind(k)]),
+        };
     }
 
     /// `addr.sym` of `callee`'s symbol into a temporary.
@@ -373,7 +368,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         match target {
             Target::Vm(callee) => {
                 let f = self.reloc(CodeReloc::Call { callee });
-                self.op(Opcode::TailCall, &[f, sig.block_size]);
+                let (q, k) = self.pass_sret();
+                self.op(Opcode::TailCall, &[f, sig.block_size, q, k]);
             }
             Target::Ext(callee) | Target::Sym(callee, _) => {
                 let p = self.sym_addr(callee);
@@ -388,16 +384,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     fn tail_call_ind(&mut self, p: u32, sig: &AbiSig<'tcx>) -> Result<(), NeedsNative> {
         let island = self.call_ptr_island(sig)?;
         let ret = self.frame.locals[rustc_middle::mir::RETURN_PLACE];
-        let size = ret.layout.size.bytes() as u32;
-        let len = ret_len(size);
-        // A result that doesn't return in registers the island writes straight to the start
-        // of the argument block.
-        let s = if size != 0 && len == 0 { frame::slot(HEADER_SIZE as i32) } else { ret.off };
         let site = self.reloc(CodeReloc::Site);
         let isl = self.reloc(CodeReloc::Island { template: island.0, args: island.1 });
-        let at = self.op(Opcode::TailCallInd, &[p, site, isl, sig.block_size, s, len]);
+        let (q, k) = self.pass_sret();
+        let at = self.op(Opcode::TailCallInd, &[p, site, isl, sig.block_size, ret.off, q, k]);
         // A tail call keeps no frame to land in: unwinding continues in the caller.
         self.unwind_entry(at, UnwindAction::Continue);
+        // A native target's result is in `_0`.
+        self.ret();
         Ok(())
     }
 
@@ -618,10 +612,14 @@ impl<'tcx> CallCont<'tcx> {
     }
 }
 
-/// The `len` operand of a call or `ret` of a `size`-byte value: `size` if it returns in
-/// registers ([`ret_in_regs`]), else 0, and the value goes through the start of the
-/// argument block, which the lowering copies it to and from (design/vm.md, "Calls and
-/// islands").
-pub fn ret_len(size: u32) -> u32 {
-    if ret_in_regs(size) { size } else { 0 }
+/// The kind `ret` loads for the call kind `k`: integer parts rounded up to the width of a
+/// load ([`ryo_bytecode::asm::RET_SRET`]).
+pub fn load_kind(k: u32) -> u32 {
+    let parts: Vec<RetPart> = ret_parts(k, false)
+        .expect("register parts")
+        .into_iter()
+        .flatten()
+        .map(|p| if p.xmm { p } else { RetPart { size: p.size.next_power_of_two(), ..p } })
+        .collect();
+    ret_kind(&parts)
 }

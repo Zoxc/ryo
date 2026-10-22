@@ -5,7 +5,9 @@
 //! appends the `&'static Location` of `#[track_caller]` functions. Callers, callees, portals
 //! and the call templates all use this one definition.
 
-use rustc_abi::CanonAbi;
+use rustc_abi::{BackendRepr, CanonAbi, Primitive, RegKind, Scalar};
+use rustc_target::callconv::{ArgAbi, PassMode};
+use ryo_bytecode::asm::{self, RET_SRET, RetPart};
 use rustc_middle::ty::layout::TyAndLayout;
 use rustc_middle::ty::{self, Instance, Ty, TyCtxt, TypingEnv};
 use ryo_bytecode::abi::{self, ArgField};
@@ -37,6 +39,9 @@ pub struct AbiSig<'tcx> {
     /// Whether the callee is `extern "rust-call"`: the caller's trailing tuple argument is
     /// spread over the ABI inputs. Set by the call site, which knows the fn type.
     pub rust_call: bool,
+    /// How a VM function of this signature returns its value (a call's kind, exact sizes,
+    /// [`ryo_bytecode::asm::RET_SRET`]); 0 for signatures only islands call.
+    pub ret_kind: u32,
 }
 
 impl<'tcx> AbiSig<'tcx> {
@@ -110,7 +115,8 @@ fn from_fn_abi<'tcx>(
     if fn_abi.ret.layout.align.abi.bytes() > u64::from(abi::FRAME_ALIGN) {
         return native("return value aligned above 16");
     }
-    Ok(AbiSig { inputs, output: fn_abi.ret.layout, fields, block_size, conv, caller_location, rust_call: false })
+    let ret_kind = if conv == CallConv::Rust { ret_kind(tcx, &fn_abi.ret)? } else { 0 };
+    Ok(AbiSig { inputs, output: fn_abi.ret.layout, fields, block_size, conv, caller_location, rust_call: false, ret_kind })
 }
 
 /// The signature of a Rust-ABI fn with these (non-spread) inputs: the `call` template's
@@ -118,7 +124,7 @@ fn from_fn_abi<'tcx>(
 pub fn tys_sig<'tcx>(tcx: TyCtxt<'tcx>, inputs: Vec<Ty<'tcx>>, output: Ty<'tcx>) -> Result<AbiSig<'tcx>, NeedsNative> {
     let (fields, block_size) = arg_block(tcx, &inputs)?;
     let output = super::layout_of(tcx, output)?;
-    Ok(AbiSig { inputs, output, fields, block_size, conv: CallConv::Rust, caller_location: false, rust_call: false })
+    Ok(AbiSig { inputs, output, fields, block_size, conv: CallConv::Rust, caller_location: false, rust_call: false, ret_kind: 0 })
 }
 
 /// The argument block for `inputs`: the layout of their tuple (design/lowering.md#frame-slots).
@@ -146,4 +152,47 @@ pub fn arg_block<'tcx>(tcx: TyCtxt<'tcx>, inputs: &[Ty<'tcx>]) -> Result<(Vec<Ar
         .map_err(|e| NeedsNative(format!("argument block: {e:?}")))?;
     let size = block.size();
     Ok((fields, size))
+}
+
+/// The return kind of `ret` ([`ryo_bytecode::asm::RET_SRET`]): its `PassMode` as LLVM lowers
+/// it on x86-64. `Direct` and `Pair` scalars go to the next of `rax`, `rdx` (integers and
+/// pointers; `i128` takes both) or `xmm0`, `xmm1` (floats); a `Cast` is the Rust ABI's
+/// integer for an aggregate of up to 8 bytes; `Indirect` is sret.
+fn ret_kind<'tcx>(tcx: TyCtxt<'tcx>, ret: &ArgAbi<'tcx, Ty<'tcx>>) -> Result<u32, NeedsNative> {
+    let cx = LayoutCx(tcx);
+    let scalar = |s: Scalar, off: u32, out: &mut Vec<RetPart>| -> Result<(), NeedsNative> {
+        let size = s.size(&cx).bytes() as u32;
+        match s.primitive() {
+            Primitive::Float(_) => out.push(RetPart { xmm: true, size, off }),
+            Primitive::Int(..) | Primitive::Pointer(_) if size == 16 => {
+                out.extend([RetPart { xmm: false, size: 8, off }, RetPart { xmm: false, size: 8, off: off + 8 }])
+            }
+            Primitive::Int(..) | Primitive::Pointer(_) => out.push(RetPart { xmm: false, size, off }),
+        }
+        Ok(())
+    };
+    let mut parts = Vec::new();
+    match (&ret.mode, ret.layout.backend_repr) {
+        (PassMode::Ignore, _) => return Ok(0),
+        (PassMode::Indirect { .. }, _) => return Ok(RET_SRET),
+        (PassMode::Direct(_), BackendRepr::Scalar(s)) => scalar(s, 0, &mut parts)?,
+        (PassMode::Pair(..), BackendRepr::ScalarPair { a, b, b_offset }) => {
+            scalar(a, 0, &mut parts)?;
+            scalar(b, b_offset.bytes() as u32, &mut parts)?;
+        }
+        (PassMode::Cast { cast, pad_i32: false }, _)
+            if cast.prefix.is_empty()
+                && cast.rest_offset.is_none()
+                && cast.rest.unit.kind == RegKind::Integer
+                && cast.rest.total == cast.rest.unit.size
+                && cast.rest.total.bytes() <= 8 =>
+        {
+            parts.push(RetPart { xmm: false, size: cast.rest.total.bytes() as u32, off: 0 })
+        }
+        (mode, repr) => return native(format!("return passed as {mode:?} ({repr:?})")),
+    }
+    if parts.len() > 2 {
+        return native("return value in more than two registers");
+    }
+    Ok(asm::ret_kind(&parts))
 }

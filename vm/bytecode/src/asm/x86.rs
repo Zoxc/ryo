@@ -361,6 +361,13 @@ pub enum Item {
     Setcc { cond: Cond, m: M },
     /// `test byte [m], 0xff`.
     TestM8(M),
+
+    // Return values and arguments in SSE registers (`xmm0`–`xmm7`).
+    /// An SSE load (`st` false) or store of `xmm{x}` at the frame slot `[m]`: `movss` for 4
+    /// bytes, `movsd` for 8, `movups` for 16.
+    Sse { st: bool, size: u8, x: u8, m: M },
+    /// `movd xmm{x}, r32` (`to_xmm`), or `movd r32, xmm{x}`.
+    Movd { to_xmm: bool, x: u8, r: Reg },
 }
 
 /// The standard multi-byte `nop`s (Intel SDM), by length.
@@ -444,6 +451,8 @@ impl Item {
             Item::Shift { .. } => self.prefix_len() + 3,
             Item::Setcc { m, .. } => self.prefix_len() + 2 + m.len(),
             Item::TestM8(m) => self.prefix_len() + 2 + m.len(),
+            Item::Sse { size, m, .. } => (size != 16) as u32 + 2 + m.len(),
+            Item::Movd { r, .. } => 4 + r.ext() as u32,
         }
     }
 
@@ -566,6 +575,7 @@ impl Item {
             Item::ImulImm { w, reg, rm, imm } => Item::ImulImm { w, reg, rm: frm(rm), imm },
             Item::Setcc { cond, m } => Item::Setcc { cond, m: f(m) },
             Item::TestM8(m) => Item::TestM8(f(m)),
+            Item::Sse { st, size, x, m } => Item::Sse { st, size, x, m: f(m) },
             it => it,
         }
     }
@@ -584,6 +594,7 @@ impl Item {
             | Item::StImm { m, .. }
             | Item::LeaM { m, .. }
             | Item::Setcc { m, .. }
+            | Item::Sse { m, .. }
             | Item::TestM8(m) => Some(m),
             Item::Alu { rm: Rm::Mem(m), .. }
             | Item::AluImm { rm: Rm::Mem(m), .. }
@@ -794,6 +805,22 @@ impl Item {
                 out.push(0xf6);
                 m.write(0, out);
                 out.push(0xff);
+            }
+            Item::Sse { st, size, x, m } => {
+                match size {
+                    4 => out.push(0xf3),
+                    8 => out.push(0xf2),
+                    _ => debug_assert_eq!(size, 16),
+                }
+                out.extend_from_slice(&[0x0f, 0x10 | st as u8]);
+                m.write(x, out);
+            }
+            Item::Movd { to_xmm, x, r } => {
+                out.push(0x66);
+                if r.ext() {
+                    out.push(0x41);
+                }
+                out.extend_from_slice(&[0x0f, if to_xmm { 0x6e } else { 0x7e }, 0xc0 | x << 3 | r.low()]);
             }
         }
         debug_assert_eq!(out.len() - start, self.len() as usize, "{self:?}");
@@ -1121,8 +1148,21 @@ impl<'a> Cursor<'a> {
                     Item::Branch { cond: Cond::from_cc(cc & 0xf).ok_or(bad)?, target: self.local(2, 6)?, long: true }
                 }
                 0x0b => Item::Ud2,
+                op2 @ (0x10 | 0x11) => return self.sse(0, 16, op2 == 0x11),
                 _ => return Err(bad),
             },
+            (0, 0xf3 | 0xf2) if get(1)? == 0x0f && matches!(get(2)?, 0x10 | 0x11) => {
+                return self.sse(1, if op == 0xf3 { 4 } else { 8 }, get(2)? == 0x11);
+            }
+            (0, 0x66) => {
+                let (r_ext, i) = if get(1)? == 0x41 { (8, 2) } else { (0, 1) };
+                let (op2, m) = (get(i + 1)?, get(i + 2)?);
+                if get(i)? != 0x0f || !matches!(op2, 0x6e | 0x7e) || m >> 6 != 3 {
+                    return Err(bad);
+                }
+                let r = Reg::from_num(m & 7 | r_ext).filter(|r| !matches!(r, Reg::Rsp | Reg::Rbp)).ok_or(bad)?;
+                Item::Movd { to_xmm: op2 == 0x6e, x: m >> 3 & 7, r }
+            }
             (0, 0x84) if get(1)? == 0xc0 => Item::TestAl,
             (0x48, 0x85) if get(2)? == 0xc0 => Item::TestRax,
             (0, 0xc9) => Item::Leave,
@@ -1143,6 +1183,41 @@ impl<'a> Cursor<'a> {
             return Err(bad);
         }
         self.bytes(len as usize)?;
+        self.pos += len;
+        Ok(item)
+    }
+
+    /// Reads an SSE load or store of a frame slot (`movss`, `movsd`, `movups`) whose `0f`
+    /// opcode byte is `pre` bytes in.
+    fn sse(&mut self, pre: usize, size: u8, st: bool) -> Result<Item, BadItem> {
+        let bad = BadItem(self.pos);
+        let all = &self.code[self.pos as usize..];
+        let get = |i: usize| all.get(i).copied().ok_or(bad);
+        let at = pre + 2;
+        let m = get(at)?;
+        let (md, x, rm) = (m >> 6, m >> 3 & 7, m & 7);
+        let (base, d) = match rm {
+            5 => (Reg::Rbp, at + 1),
+            4 if get(at + 1)? == 0x24 => (Reg::Rsp, at + 2),
+            _ => return Err(bad),
+        };
+        let disp = match md {
+            1 => get(d)? as i8 as i32,
+            2 => self.i32_at(d)?,
+            _ => return Err(bad),
+        };
+        let item = Item::Sse { st, size, x, m: M { base, disp } };
+        let len = item.len();
+        let mut want = Vec::with_capacity(len as usize);
+        item.write(self.pos, &mut want, &mut Vec::new());
+        if all.get(..len as usize) != Some(&want[..]) || self.reloc_in(self.pos, len) {
+            return Err(bad);
+        }
+        let item = match (base, self.sp_frame) {
+            (Reg::Rbp, Some(_)) | (Reg::Rsp, None) => return Err(bad),
+            (Reg::Rsp, Some(f)) => item.map_mem(|m| M::frame(m.disp.wrapping_sub(f as i32))),
+            _ => item,
+        };
         self.pos += len;
         Ok(item)
     }
