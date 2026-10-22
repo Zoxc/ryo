@@ -171,7 +171,7 @@ This gives a third backend, built from the same toolchain, to compare against.
   cross-checking). Skipped if the sysroot has no `rust-lld`.
 - `test --clif`: also builds the corpus with `rustc-clif` and diffs its output too. That
   helps tell ryo bugs from test-corpus problems.
-- `bench [--runs N]`: hyperfine comparisons of each program in `tests/bench/` (fib, sieve,
+- `bench [--runs N]`: hyperfine comparisons of each program in `bench/` (fib, sieve,
   sort, hashmap) built with LLVM `-O0`, LLVM `-O3`, Cranelift (`rustc-clif`) and ryo. Each comparison
   covers compile time (Cranelift is the fast-compile reference ryo competes with) and run
   time, printed as two tables of mean and standard deviation. Every backend gets
@@ -180,9 +180,9 @@ This gives a third backend, built from the same toolchain, to compare against.
   a built-in timer does the same (one warmup, then `N` runs, default 5). The programs'
   output must agree across backends. `y bench` builds `dist/` and cg_clif first if they are
   missing; `y test --clif` builds cg_clif too.
-- `bench codegen`: compiles each program in `tests/bench/` with `rustc-ryo` and `RYO_DUMP`
+- `bench codegen`: compiles each program in `bench/` with `rustc-ryo` and `RYO_DUMP`
   ([backend.md](backend.md#debugging-switches)), writing the dump to
-  `tests/bench/codegen/<program>.txt`. The dumps are checked in, so `git diff` shows how a
+  `bench/codegen/<program>.txt`. The dumps are checked in, so `git diff` shows how a
   backend change alters the generated code. It uses the backend in `dist/`: run `y build`
   first.
 - `y test` also runs `vm/`'s cargo tests (`cargo test --workspace` in `vm/`): the encoder

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compares any number of ryo builds on the `tests/bench/` programs (compile time and run
+"""Compares any number of ryo builds on the `bench/` programs (compile time and run
 time) and, with `--crates` (or only, with `--only-crates`), on `y bench crates`.
 
 A build is a checkout with a built `dist/` (`./y.sh build`). Builds are given as
@@ -227,7 +227,7 @@ def mad(xs):
 # --- programs ---------------------------------------------------------------------------
 
 def program_list(args):
-    bench = ROOT / "tests" / "bench"
+    bench = ROOT / "bench"
     programs = args.programs.split(",") if args.programs else sorted(f.stem for f in bench.glob("*.rs"))
     for prog in programs:
         if not (bench / f"{prog}.rs").exists():
@@ -236,7 +236,7 @@ def program_list(args):
 
 
 def programs_(args, builds, rng, programs, eta):
-    bench = ROOT / "tests" / "bench"
+    bench = ROOT / "bench"
     flags = ["-Ccodegen-units=1", "-Zthreads=1", *args.flags.split()]
     names = list(builds)
     out = Path(tempfile.mkdtemp(prefix="ryo-compare-"))
@@ -417,7 +417,7 @@ def main():
                    help="report child CPU time (user+sys, default) or wall time")
     p.add_argument("--pin", metavar="CPU", help="run timed commands under `taskset -c CPU`")
     p.add_argument("--seed", type=int, default=0, help="seed for the per-round build order shuffle")
-    p.add_argument("--programs", default="", help="comma-separated names in tests/bench (default: all)")
+    p.add_argument("--programs", default="", help="comma-separated names in bench/ (default: all)")
     p.add_argument("--flags", default="", help="extra rustc flags for all builds")
     p.add_argument("--crates", nargs="?", const="default", default=None,
                    help="also compare `y bench crates` (a,b | all | default, as y's --crates)")

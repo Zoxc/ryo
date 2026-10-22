@@ -546,7 +546,7 @@ fn <for<'a> fn(&'a str) -> <str as std::borrow::ToOwned>::Owned {<str as std::bo
   cleanup 6 -> continue
   fn0 = std::str::<impl std::borrow::ToOwned for str>::to_owned
 
-fn <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@/home/john/dev/ryo/tests/bench/hashmap.rs:24:43: 24:50}>::{closure#0}}> (frame 128, args 56, ret 8)
+fn <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:24:43: 24:50}>::{closure#0}}> (frame 128, args 56, ret 8)
      0: copy $-64, $16, 32
      4: mov.w64 $-72, $48
      7: addr $-32, $64
@@ -564,9 +564,9 @@ fn <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {clo
     40: jmp @-6
   cleanup 26 -> 38
   cleanup 34 -> continue
-  fn0 = hashbrown::raw::RawIterRange::<(u64, u64)>::fold_impl::<{closure@<hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@/home/john/dev/ryo/tests/bench/hashmap.rs:24:43: 24:50}>::{closure#0}}>::{closure#0}}, u64>
+  fn0 = hashbrown::raw::RawIterRange::<(u64, u64)>::fold_impl::<{closure@<hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:24:43: 24:50}>::{closure#0}}>::{closure#0}}, u64>
 
-fn <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@/home/john/dev/ryo/tests/bench/hashmap.rs:24:43: 24:50}>::{closure#0}}>::{closure#0} (frame 128, args 24, ret 8)
+fn <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:24:43: 24:50}>::{closure#0}}>::{closure#0} (frame 128, args 24, ret 8)
      0: imm.w8 $-81, 0
      3: br! $-81, @+56
      7: jmp @+46
@@ -598,7 +598,7 @@ fn <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {clo
     85: ptr.index $-32, $-40, $-88, 16
     90: jmp @-16
   cleanup 48 -> continue
-  fn0 = <std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@/home/john/dev/ryo/tests/bench/hashmap.rs:24:43: 24:50}>::{closure#0}
+  fn0 = <std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@bench/hashmap.rs:24:43: 24:50}>::{closure#0}
 
 fn <hashbrown::raw::RawTable<(std::string::String, usize)> as std::ops::Drop>::drop (frame 48, args 8, ret 0)
      0: mov.w64 $-8, $16
@@ -669,7 +669,7 @@ fn <std::alloc::Global as std::alloc::Allocator>::deallocate (frame 80, args 32,
   site1
   sym2 = island ryo_island_call_ptr3[std::ptr::NonNull<u8>, usize, std::mem::Alignment, ()]
 
-fn <std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@/home/john/dev/ryo/tests/bench/hashmap.rs:24:43: 24:50}> (frame 128, args 48, ret 8)
+fn <std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@bench/hashmap.rs:24:43: 24:50}> (frame 128, args 48, ret 8)
      0: copy $-72, $16, 40
      4: addr $-32, $64
      7: mov.w64 $-24, $-32
@@ -685,9 +685,9 @@ fn <std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fo
     34: jmp @-6
   cleanup 20 -> 32
   cleanup 28 -> continue
-  fn0 = <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@/home/john/dev/ryo/tests/bench/hashmap.rs:24:43: 24:50}>::{closure#0}}>
+  fn0 = <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:24:43: 24:50}>::{closure#0}}>
 
-fn <std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@/home/john/dev/ryo/tests/bench/hashmap.rs:24:43: 24:50}>::{closure#0} (frame 64, args 32, ret 8)
+fn <std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@bench/hashmap.rs:24:43: 24:50}>::{closure#0} (frame 64, args 32, ret 8)
      0: mov.w64 $-24, $40
      3: load.w64 $-16, [$16 + 0]
      7: mov.w64 $-40, $24
@@ -2081,7 +2081,7 @@ fn hashbrown::map::HashMap::<u64, u64, std::hash::RandomState>::iter (frame 208,
   cleanup 74 -> continue
   fn0 = hashbrown::raw::RawIterRange::<(u64, u64)>::new
 
-fn hashbrown::map::HashMap::<u64, u64, std::hash::RandomState>::retain::<{closure@/home/john/dev/ryo/tests/bench/hashmap.rs:23:16: 23:22}> (frame 240, args 8, ret 0)
+fn hashbrown::map::HashMap::<u64, u64, std::hash::RandomState>::retain::<{closure@bench/hashmap.rs:23:16: 23:22}> (frame 240, args 8, ret 0)
      0: load.w64 $-160, [$16 + 0]
      4: mov.w64 $-112, $-160
      7: imm.w8 $-201, 0
@@ -2404,7 +2404,7 @@ fn hashbrown::raw::RawIterRange::<(std::string::String, usize)>::next_impl::<fal
   sym3 = std::arch::x86_64::_mm_movemask_epi8
   sym4 = island ryo_island_call_ptr1[std::arch::x86_64::__m128i, i32]
 
-fn hashbrown::raw::RawIterRange::<(u64, u64)>::fold_impl::<{closure@<hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@/home/john/dev/ryo/tests/bench/hashmap.rs:24:43: 24:50}>::{closure#0}}>::{closure#0}}, u64> (frame 224, args 56, ret 8)
+fn hashbrown::raw::RawIterRange::<(u64, u64)>::fold_impl::<{closure@<hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:24:43: 24:50}>::{closure#0}}>::{closure#0}}, u64> (frame 224, args 56, ret 8)
      0: imm.w8 $-49, 1
      3: mov.w16 $-180, $40
      6: mov.w16 $-154, $-180
@@ -2532,7 +2532,7 @@ fn hashbrown::raw::RawIterRange::<(u64, u64)>::fold_impl::<{closure@<hashbrown::
   sym0 = std::arch::x86_64::_mm_load_si128
   sym1 = island ryo_island_call_ptr1[*const std::arch::x86_64::__m128i, std::arch::x86_64::__m128i]
   k2 = const allocation + 0
-  fn3 = <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@/home/john/dev/ryo/tests/bench/hashmap.rs:24:43: 24:50}>::{closure#0}}>::{closure#0}
+  fn3 = <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:24:43: 24:50}>::{closure#0}}>::{closure#0}
   sym4 = std::arch::x86_64::_mm_movemask_epi8
   sym5 = island ryo_island_call_ptr1[std::arch::x86_64::__m128i, i32]
 
@@ -5576,9 +5576,9 @@ fn main (frame 1392, args 0, ret 0)
   site27
   sym28 = island ryo_island_call_ptr1[&'{erased} std::panic::Location<'{erased}>, !]
   fn29 = core::num::<impl u64>::wrapping_add
-  fn30 = std::collections::HashMap::<u64, u64>::retain::<{closure@/home/john/dev/ryo/tests/bench/hashmap.rs:23:16: 23:22}>
+  fn30 = std::collections::HashMap::<u64, u64>::retain::<{closure@bench/hashmap.rs:23:16: 23:22}>
   fn31 = std::collections::HashMap::<u64, u64>::values
-  fn32 = <std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@/home/john/dev/ryo/tests/bench/hashmap.rs:24:43: 24:50}>
+  fn32 = <std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@bench/hashmap.rs:24:43: 24:50}>
   fn33 = std::collections::HashMap::<std::string::String, usize>::new
   fn34 = <std::ops::Range<u32> as std::iter::IntoIterator>::into_iter
   fn35 = std::iter::range::<impl std::iter::Iterator for std::ops::Range<u32>>::next
@@ -6006,13 +6006,13 @@ fn std::collections::HashMap::<u64, u64>::new (frame 160, args 0, ret 48)
   fn1 = std::thread::LocalKey::<std::cell::Cell<(u64, u64)>>::with::<{closure@std::hash::RandomState::new::{closure#0}}, std::hash::RandomState>
   k2 = const allocation + 0
 
-fn std::collections::HashMap::<u64, u64>::retain::<{closure@/home/john/dev/ryo/tests/bench/hashmap.rs:23:16: 23:22}> (frame 16, args 8, ret 0)
+fn std::collections::HashMap::<u64, u64>::retain::<{closure@bench/hashmap.rs:23:16: 23:22}> (frame 16, args 8, ret 0)
      0: mov.w64 $-8, $16
      3: mov.w64 $-16, $-8
      6: call $0, fn0
      9: ret $0, 0
   cleanup 6 -> continue
-  fn0 = hashbrown::map::HashMap::<u64, u64, std::hash::RandomState>::retain::<{closure@/home/john/dev/ryo/tests/bench/hashmap.rs:23:16: 23:22}>
+  fn0 = hashbrown::map::HashMap::<u64, u64, std::hash::RandomState>::retain::<{closure@bench/hashmap.rs:23:16: 23:22}>
 
 fn std::collections::HashMap::<u64, u64>::values (frame 144, args 8, ret 40)
      0: mov.w64 $-128, $16

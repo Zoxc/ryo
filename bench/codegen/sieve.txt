@@ -110,7 +110,7 @@ fn <fn() as std::ops::FnOnce<()>>::call_once - shim(fn()) (frame 0, args 8, ret 
   site0
   sym1 = island ryo_island_call_ptr0[()]
 
-fn <std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize::<&bool, {closure@/home/john/dev/ryo/tests/bench/sieve.rs:24:37: 24:42}>::{closure#0} (frame 64, args 16, ret 8)
+fn <std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize::<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0} (frame 64, args 16, ret 8)
      0: mov.w64 $-32, $16
      3: addr $-48, $24
      6: mov.w64 $-40, $-48
@@ -126,7 +126,7 @@ fn <std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize::<&bool, {c
   cleanup 24 -> continue
   fn0 = main::{closure#0}
 
-fn <std::iter::Filter<std::slice::Iter<'_, bool>, {closure@/home/john/dev/ryo/tests/bench/sieve.rs:24:37: 24:42}> as std::iter::Iterator>::count (frame 112, args 16, ret 8)
+fn <std::iter::Filter<std::slice::Iter<'_, bool>, {closure@bench/sieve.rs:24:37: 24:42}> as std::iter::Iterator>::count (frame 112, args 16, ret 8)
      0: imm.w8 $-17, 1
      3: imm.w8 $-18, 1
      6: addr $-80, $16
@@ -170,18 +170,18 @@ fn <std::iter::Filter<std::slice::Iter<'_, bool>, {closure@/home/john/dev/ryo/te
   cleanup 75 -> 103
   cleanup 98 -> 103
   fn0 = <std::slice::Iter<'_, bool> as std::iter::Iterator>::size_hint
-  fn1 = <std::slice::Iter<'_, bool> as std::iter::Iterator>::fold::<usize, {closure@std::iter::adapters::map::map_fold<&bool, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@/home/john/dev/ryo/tests/bench/sieve.rs:24:37: 24:42}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@/home/john/dev/ryo/tests/bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}}>::{closure#0}}>
-  fn2 = <std::slice::Iter<'_, bool> as std::iter::Iterator>::map::<usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@/home/john/dev/ryo/tests/bench/sieve.rs:24:37: 24:42}>::{closure#0}}>
+  fn1 = <std::slice::Iter<'_, bool> as std::iter::Iterator>::fold::<usize, {closure@std::iter::adapters::map::map_fold<&bool, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}}>::{closure#0}}>
+  fn2 = <std::slice::Iter<'_, bool> as std::iter::Iterator>::map::<usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>
   fn3 = <std::slice::Iter<'_, bool> as std::iter::adapters::filter::SpecAssumeCount>::assume_count_le_upper_bound
 
-fn <std::iter::Rev<std::ops::RangeInclusive<usize>> as std::iter::Iterator>::find::<{closure@/home/john/dev/ryo/tests/bench/sieve.rs:25:39: 25:43}> (frame 48, args 16, ret 16)
+fn <std::iter::Rev<std::ops::RangeInclusive<usize>> as std::iter::Iterator>::find::<{closure@bench/sieve.rs:25:39: 25:43}> (frame 48, args 16, ret 16)
      0: mov.w64 $-24, $16
      3: mov.w64 $-48, $-24
      6: mov.w64 $-40, $24
      9: call $-16, fn0
     12: ret $-16, 16
   cleanup 9 -> continue
-  fn0 = <std::ops::RangeInclusive<usize> as std::iter::DoubleEndedIterator>::rfind::<{closure@/home/john/dev/ryo/tests/bench/sieve.rs:25:39: 25:43}>
+  fn0 = <std::ops::RangeInclusive<usize> as std::iter::DoubleEndedIterator>::rfind::<{closure@bench/sieve.rs:25:39: 25:43}>
 
 fn <std::ops::ControlFlow<usize> as std::ops::FromResidual<std::ops::ControlFlow<usize, std::convert::Infallible>>>::from_residual (frame 48, args 8, ret 16)
      0: imm.w64 $-24, 1
@@ -207,7 +207,7 @@ fn <std::ops::ControlFlow<usize> as std::ops::Try>::from_output (frame 16, args 
      0: imm.w64 $-16, 0
      4: ret $-16, 16
 
-fn <std::ops::RangeInclusive<usize> as std::iter::DoubleEndedIterator>::rfind::<{closure@/home/john/dev/ryo/tests/bench/sieve.rs:25:39: 25:43}> (frame 80, args 16, ret 16)
+fn <std::ops::RangeInclusive<usize> as std::iter::DoubleEndedIterator>::rfind::<{closure@bench/sieve.rs:25:39: 25:43}> (frame 80, args 16, ret 16)
      0: mov.w64 $-40, $24
      3: mov.w64 $-80, $16
      6: mov.w64 $-72, $-40
@@ -226,13 +226,13 @@ fn <std::ops::RangeInclusive<usize> as std::iter::DoubleEndedIterator>::rfind::<
     47: mov.w64 $-56, $-32
     50: switch.dense.w64 $-56, 0, @-27, [@-5, @-8]
   cleanup 9 -> continue
-  fn0 = std::iter::range::<impl std::iter::DoubleEndedIterator for std::ops::RangeInclusive<usize>>::try_rfold::<(), {closure@std::iter::DoubleEndedIterator::rfind::check<usize, {closure@/home/john/dev/ryo/tests/bench/sieve.rs:25:39: 25:43}>::{closure#0}}, std::ops::ControlFlow<usize>>
+  fn0 = std::iter::range::<impl std::iter::DoubleEndedIterator for std::ops::RangeInclusive<usize>>::try_rfold::<(), {closure@std::iter::DoubleEndedIterator::rfind::check<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0}}, std::ops::ControlFlow<usize>>
 
 fn <std::ops::RangeInclusive<usize> as std::iter::Iterator>::rev (frame 32, args 24, ret 24)
      0: copy $-24, $16, 24
      4: ret $-24, 24
 
-fn <std::ops::RangeInclusive<usize> as std::iter::range::RangeInclusiveIteratorImpl>::spec_try_rfold::<(), {closure@std::iter::DoubleEndedIterator::rfind::check<usize, {closure@/home/john/dev/ryo/tests/bench/sieve.rs:25:39: 25:43}>::{closure#0}}, std::ops::ControlFlow<usize>> (frame 160, args 16, ret 16)
+fn <std::ops::RangeInclusive<usize> as std::iter::range::RangeInclusiveIteratorImpl>::spec_try_rfold::<(), {closure@std::iter::DoubleEndedIterator::rfind::check<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0}}, std::ops::ControlFlow<usize>> (frame 160, args 16, ret 16)
      0: imm.w8 $-42, 1
      3: load.w8 $-58, [$16 + 16]
      7: br! $-58, @+228
@@ -336,21 +336,21 @@ fn <std::ops::RangeInclusive<usize> as std::iter::range::RangeInclusiveIteratorI
   fn0 = <std::ops::ControlFlow<usize> as std::ops::Try>::from_output
   fn1 = std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt
   fn2 = <usize as std::iter::Step>::backward_unchecked
-  fn3 = std::iter::DoubleEndedIterator::rfind::check::<usize, {closure@/home/john/dev/ryo/tests/bench/sieve.rs:25:39: 25:43}>::{closure#0}
+  fn3 = std::iter::DoubleEndedIterator::rfind::check::<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0}
   fn4 = <std::ops::ControlFlow<usize> as std::ops::Try>::branch
   fn5 = <std::ops::ControlFlow<usize> as std::ops::FromResidual<std::ops::ControlFlow<usize, std::convert::Infallible>>>::from_residual
   fn6 = std::cmp::impls::<impl std::cmp::PartialEq for usize>::eq
-  fn7 = std::iter::DoubleEndedIterator::rfind::check::<usize, {closure@/home/john/dev/ryo/tests/bench/sieve.rs:25:39: 25:43}>::{closure#0}
+  fn7 = std::iter::DoubleEndedIterator::rfind::check::<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0}
   fn8 = <std::ops::ControlFlow<usize> as std::ops::Try>::branch
   fn9 = <std::ops::ControlFlow<usize> as std::ops::FromResidual<std::ops::ControlFlow<usize, std::convert::Infallible>>>::from_residual
   fn10 = <std::ops::ControlFlow<usize> as std::ops::Try>::from_output
   fn11 = std::cmp::impls::<impl std::cmp::PartialOrd for usize>::le
 
-fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::filter::<{closure@/home/john/dev/ryo/tests/bench/sieve.rs:24:37: 24:42}> (frame 16, args 16, ret 16)
+fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::filter::<{closure@bench/sieve.rs:24:37: 24:42}> (frame 16, args 16, ret 16)
      0: mov.w128 $-16, $16
      3: ret $-16, 16
 
-fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::fold::<usize, {closure@std::iter::adapters::map::map_fold<&bool, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@/home/john/dev/ryo/tests/bench/sieve.rs:24:37: 24:42}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@/home/john/dev/ryo/tests/bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}}>::{closure#0}}> (frame 192, args 24, ret 8)
+fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::fold::<usize, {closure@std::iter::adapters::map::map_fold<&bool, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}}>::{closure#0}}> (frame 192, args 24, ret 8)
      0: imm.w8 $-161, 0
      3: br! $-161, @+17
      7: mov.w64 $-88, $24
@@ -452,7 +452,7 @@ fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::fold::<usize, {closure@s
   cleanup 153 -> 301
   cleanup 180 -> continue
   cleanup 260 -> 301
-  fn0 = std::iter::adapters::map::map_fold::<&bool, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@/home/john/dev/ryo/tests/bench/sieve.rs:24:37: 24:42}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@/home/john/dev/ryo/tests/bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}}>::{closure#0}
+  fn0 = std::iter::adapters::map::map_fold::<&bool, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}}>::{closure#0}
   k1 = const allocation + 0
   fn2 = std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_check
   k3 = const allocation + 0
@@ -463,7 +463,7 @@ fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::fold::<usize, {closure@s
   k8 = const allocation + 0
   fn9 = core::num::<impl usize>::unchecked_add::precondition_check
 
-fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::map::<usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@/home/john/dev/ryo/tests/bench/sieve.rs:24:37: 24:42}>::{closure#0}}> (frame 16, args 16, ret 16)
+fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::map::<usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}> (frame 16, args 16, ret 16)
      0: mov.w128 $-16, $16
      3: ret $-16, 16
 
@@ -604,7 +604,7 @@ fn <usize as std::iter::Step>::backward_unchecked (frame 48, args 16, ret 8)
   k0 = const allocation + 0
   fn1 = core::num::<impl usize>::unchecked_sub::precondition_check
 
-fn <usize as std::iter::Sum>::sum::<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@/home/john/dev/ryo/tests/bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0} (frame 48, args 24, ret 8)
+fn <usize as std::iter::Sum>::sum::<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0} (frame 48, args 24, ret 8)
      0: add.ovf.u.w64 $-24, $-16, $24, $32
      5: br! $-16, @+14
      9: addr.abs $-48, k0
@@ -882,11 +882,11 @@ fn main (frame 432, args 0, ret 0)
   fn1 = sieve
   fn2 = <std::vec::Vec<bool> as std::ops::Deref>::deref
   fn3 = core::slice::<impl [bool]>::iter
-  fn4 = <std::slice::Iter<'_, bool> as std::iter::Iterator>::filter::<{closure@/home/john/dev/ryo/tests/bench/sieve.rs:24:37: 24:42}>
-  fn5 = <std::iter::Filter<std::slice::Iter<'_, bool>, {closure@/home/john/dev/ryo/tests/bench/sieve.rs:24:37: 24:42}> as std::iter::Iterator>::count
+  fn4 = <std::slice::Iter<'_, bool> as std::iter::Iterator>::filter::<{closure@bench/sieve.rs:24:37: 24:42}>
+  fn5 = <std::iter::Filter<std::slice::Iter<'_, bool>, {closure@bench/sieve.rs:24:37: 24:42}> as std::iter::Iterator>::count
   fn6 = std::ops::RangeInclusive::<usize>::new
   fn7 = <std::ops::RangeInclusive<usize> as std::iter::Iterator>::rev
-  fn8 = <std::iter::Rev<std::ops::RangeInclusive<usize>> as std::iter::Iterator>::find::<{closure@/home/john/dev/ryo/tests/bench/sieve.rs:25:39: 25:43}>
+  fn8 = <std::iter::Rev<std::ops::RangeInclusive<usize>> as std::iter::Iterator>::find::<{closure@bench/sieve.rs:25:39: 25:43}>
   k9 = const allocation + 0
   fn10 = std::option::Option::<usize>::unwrap
   fn11 = core::fmt::rt::Argument::<'_>::new_display::<usize>
@@ -1117,7 +1117,7 @@ fn std::hint::black_box::<usize> (frame 16, args 8, ret 8)
      0: mov.w64 $-8, $16
      3: ret $-8, 8
 
-fn std::iter::DoubleEndedIterator::rfind::check::<usize, {closure@/home/john/dev/ryo/tests/bench/sieve.rs:25:39: 25:43}>::{closure#0} (frame 80, args 16, ret 16)
+fn std::iter::DoubleEndedIterator::rfind::check::<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0} (frame 80, args 16, ret 16)
      0: mov.w64 $-40, $16
      3: addr $-56, $24
      6: mov.w64 $-48, $-56
@@ -1138,7 +1138,7 @@ fn std::iter::DoubleEndedIterator::rfind::check::<usize, {closure@/home/john/dev
   cleanup 41 -> continue
   fn0 = main::{closure#1}
 
-fn std::iter::adapters::map::map_fold::<&bool, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@/home/john/dev/ryo/tests/bench/sieve.rs:24:37: 24:42}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@/home/john/dev/ryo/tests/bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}}>::{closure#0} (frame 112, args 24, ret 8)
+fn std::iter::adapters::map::map_fold::<&bool, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}}>::{closure#0} (frame 112, args 24, ret 8)
      0: mov.w64 $-32, $16
      3: imm.w8 $-9, 1
      6: mov.w64 $-56, $24
@@ -1164,16 +1164,16 @@ fn std::iter::adapters::map::map_fold::<&bool, usize, usize, {closure@<std::iter
   cleanup 21 -> 58
   cleanup 42 -> 58
   cleanup 48 -> continue
-  fn0 = <std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize::<&bool, {closure@/home/john/dev/ryo/tests/bench/sieve.rs:24:37: 24:42}>::{closure#0}
-  fn1 = <usize as std::iter::Sum>::sum::<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@/home/john/dev/ryo/tests/bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}
+  fn0 = <std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize::<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}
+  fn1 = <usize as std::iter::Sum>::sum::<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}
 
-fn std::iter::range::<impl std::iter::DoubleEndedIterator for std::ops::RangeInclusive<usize>>::try_rfold::<(), {closure@std::iter::DoubleEndedIterator::rfind::check<usize, {closure@/home/john/dev/ryo/tests/bench/sieve.rs:25:39: 25:43}>::{closure#0}}, std::ops::ControlFlow<usize>> (frame 32, args 16, ret 16)
+fn std::iter::range::<impl std::iter::DoubleEndedIterator for std::ops::RangeInclusive<usize>>::try_rfold::<(), {closure@std::iter::DoubleEndedIterator::rfind::check<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0}}, std::ops::ControlFlow<usize>> (frame 32, args 16, ret 16)
      0: mov.w64 $-32, $16
      3: mov.w64 $-24, $24
      6: call $-16, fn0
      9: ret $-16, 16
   cleanup 6 -> continue
-  fn0 = <std::ops::RangeInclusive<usize> as std::iter::range::RangeInclusiveIteratorImpl>::spec_try_rfold::<(), {closure@std::iter::DoubleEndedIterator::rfind::check<usize, {closure@/home/john/dev/ryo/tests/bench/sieve.rs:25:39: 25:43}>::{closure#0}}, std::ops::ControlFlow<usize>>
+  fn0 = <std::ops::RangeInclusive<usize> as std::iter::range::RangeInclusiveIteratorImpl>::spec_try_rfold::<(), {closure@std::iter::DoubleEndedIterator::rfind::check<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0}}, std::ops::ControlFlow<usize>>
 
 fn std::ops::RangeInclusive::<usize>::new (frame 32, args 16, ret 24)
      0: mov.w64 $-24, $16

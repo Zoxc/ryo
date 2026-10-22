@@ -20,14 +20,14 @@ fn <() as std::process::Termination>::report (frame 16, args 0, ret 1)
      0: imm.w8 $-1, 0
      3: ret $-1, 1
 
-fn <(u32, u32) as core::slice::sort::shared::smallsort::StableSmallSortTypeImpl>::small_sort::<{closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 48, args 40, ret 0)
+fn <(u32, u32) as core::slice::sort::shared::smallsort::StableSmallSortTypeImpl>::small_sort::<{closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 48, args 40, ret 0)
      0: mov.w128 $-48, $16
      3: mov.w128 $-32, $32
      6: mov.w64 $-16, $48
      9: call $0, fn0
     12: ret $0, 0
   cleanup 9 -> continue
-  fn0 = core::slice::sort::shared::smallsort::small_sort_general_with_scratch::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn0 = core::slice::sort::shared::smallsort::small_sort_general_with_scratch::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
 
 fn <(u32, u32) as core::slice::sort::shared::smallsort::StableSmallSortTypeImpl>::small_sort_threshold (frame 16, args 0, ret 8)
      0: imm.w64 $-8, 32
@@ -334,7 +334,7 @@ fn <std::hint::select_unpredictable::DropOnPanic<*mut u32> as std::ops::Drop>::d
   sym0 = std::ptr::drop_glue::<*mut u32> - shim(None)
   sym1 = island ryo_island_call_ptr1[&'{erased} mut *mut u32, ()]
 
-fn <std::iter::Enumerate<I> as std::iter::Iterator>::fold::enumerate::<&u32, u64, {closure@/home/john/dev/ryo/tests/bench/sort.rs:46:37: 46:51}>::{closure#0} (frame 144, args 24, ret 8)
+fn <std::iter::Enumerate<I> as std::iter::Iterator>::fold::enumerate::<&u32, u64, {closure@bench/sort.rs:46:37: 46:51}>::{closure#0} (frame 144, args 24, ret 8)
      0: ptr.add $-48, $16, 8
      5: load.w64 $-96, [$16 + 0]
      9: mov.w64 $-88, $-96
@@ -367,7 +367,7 @@ fn <std::iter::Enumerate<I> as std::iter::Iterator>::fold::enumerate::<&u32, u64
   site3
   sym4 = island ryo_island_call_ptr1[&'{erased} std::panic::Location<'{erased}>, !]
 
-fn <std::iter::Enumerate<std::slice::Iter<'_, u32>> as std::iter::Iterator>::fold::<u64, {closure@/home/john/dev/ryo/tests/bench/sort.rs:46:37: 46:51}> (frame 80, args 32, ret 8)
+fn <std::iter::Enumerate<std::slice::Iter<'_, u32>> as std::iter::Iterator>::fold::<u64, {closure@bench/sort.rs:46:37: 46:51}> (frame 80, args 32, ret 8)
      0: mov.w128 $-24, $16
      3: mov.w64 $-40, $32
      6: mov.w64 $-32, $-40
@@ -377,20 +377,20 @@ fn <std::iter::Enumerate<std::slice::Iter<'_, u32>> as std::iter::Iterator>::fol
     18: call $-8, fn0
     21: ret $-8, 8
   cleanup 18 -> continue
-  fn0 = <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<u64, {closure@<std::iter::Enumerate<I> as std::iter::Iterator>::fold::enumerate<&u32, u64, {closure@/home/john/dev/ryo/tests/bench/sort.rs:46:37: 46:51}>::{closure#0}}>
+  fn0 = <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<u64, {closure@<std::iter::Enumerate<I> as std::iter::Iterator>::fold::enumerate<&u32, u64, {closure@bench/sort.rs:46:37: 46:51}>::{closure#0}}>
 
-fn <std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}> as std::iter::IntoIterator>::into_iter (frame 32, args 24, ret 24)
+fn <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::IntoIterator>::into_iter (frame 32, args 24, ret 24)
      0: copy $-24, $16, 24
      4: ret $-24, 24
 
-fn <std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::collect::<std::vec::Vec<u32>> (frame 176, args 24, ret 24)
+fn <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::collect::<std::vec::Vec<u32>> (frame 176, args 24, ret 24)
      0: copy $-176, $16, 24
      4: call $-24, fn0
      7: ret $-24, 24
   cleanup 4 -> continue
-  fn0 = <std::vec::Vec<u32> as std::iter::FromIterator<u32>>::from_iter::<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>
+  fn0 = <std::vec::Vec<u32> as std::iter::FromIterator<u32>>::from_iter::<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>
 
-fn <std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::fold::<(), {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}> (frame 112, args 48, ret 0)
+fn <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::fold::<(), {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}> (frame 112, args 48, ret 0)
      0: mov.w128 $-16, $24
      3: mov.w64 $-56, $16
      6: copy $-48, $40, 24
@@ -400,18 +400,18 @@ fn <std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/ben
     20: call $0, fn0
     23: ret $0, 0
   cleanup 20 -> continue
-  fn0 = <std::ops::Range<usize> as std::iter::Iterator>::fold::<(), {closure@std::iter::adapters::map::map_fold<usize, u32, (), {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0}}>
+  fn0 = <std::ops::Range<usize> as std::iter::Iterator>::fold::<(), {closure@std::iter::adapters::map::map_fold<usize, u32, (), {closure@bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0}}>
 
-fn <std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::for_each::<{closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>::{closure#0}}> (frame 80, args 48, ret 0)
+fn <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::for_each::<{closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}> (frame 80, args 48, ret 0)
      0: copy $-24, $40, 24
      4: copy $-80, $16, 24
      8: copy $-56, $-24, 24
     12: call $0, fn0
     15: ret $0, 0
   cleanup 12 -> continue
-  fn0 = <std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::fold::<(), {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>
+  fn0 = <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::fold::<(), {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>
 
-fn <std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::size_hint (frame 48, args 8, ret 24)
+fn <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::size_hint (frame 48, args 8, ret 24)
      0: ptr.add $-32, $16, 8
      5: mov.w64 $-48, $-32
      8: call $-24, fn0
@@ -419,18 +419,18 @@ fn <std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/ben
   cleanup 8 -> continue
   fn0 = std::iter::range::<impl std::iter::Iterator for std::ops::Range<usize>>::size_hint
 
-fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}> as std::iter::IntoIterator>::into_iter (frame 16, args 16, ret 16)
+fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::IntoIterator>::into_iter (frame 16, args 16, ret 16)
      0: mov.w128 $-16, $16
      3: ret $-16, 16
 
-fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::collect::<std::vec::Vec<(u32, u32)>> (frame 160, args 16, ret 24)
+fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::collect::<std::vec::Vec<(u32, u32)>> (frame 160, args 16, ret 24)
      0: mov.w128 $-160, $16
      3: call $-24, fn0
      6: ret $-24, 24
   cleanup 3 -> continue
-  fn0 = <std::vec::Vec<(u32, u32)> as std::iter::FromIterator<(u32, u32)>>::from_iter::<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>
+  fn0 = <std::vec::Vec<(u32, u32)> as std::iter::FromIterator<(u32, u32)>>::from_iter::<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>
 
-fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::fold::<(), {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}> (frame 80, args 40, ret 0)
+fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::fold::<(), {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}> (frame 80, args 40, ret 0)
      0: mov.w128 $-16, $16
      3: copy $-40, $32, 24
      7: mov.w128 $-80, $-16
@@ -438,18 +438,18 @@ fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/
     14: call $0, fn0
     17: ret $0, 0
   cleanup 14 -> continue
-  fn0 = <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<(), {closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}>
+  fn0 = <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<(), {closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}>
 
-fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::for_each::<{closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}}> (frame 64, args 40, ret 0)
+fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::for_each::<{closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}> (frame 64, args 40, ret 0)
      0: copy $-24, $32, 24
      4: mov.w128 $-64, $16
      7: copy $-48, $-24, 24
     11: call $0, fn0
     14: ret $0, 0
   cleanup 11 -> continue
-  fn0 = <std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::fold::<(), {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>
+  fn0 = <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::fold::<(), {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>
 
-fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::size_hint (frame 48, args 8, ret 24)
+fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::size_hint (frame 48, args 8, ret 24)
      0: mov.w64 $-32, $16
      3: mov.w64 $-48, $-32
      6: call $-24, fn0
@@ -461,7 +461,7 @@ fn <std::ops::Range<usize> as std::iter::IntoIterator>::into_iter (frame 16, arg
      0: mov.w128 $-16, $16
      3: ret $-16, 16
 
-fn <std::ops::Range<usize> as std::iter::Iterator>::fold::<(), {closure@std::iter::adapters::map::map_fold<usize, u32, (), {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> (frame 96, args 48, ret 0)
+fn <std::ops::Range<usize> as std::iter::Iterator>::fold::<(), {closure@std::iter::adapters::map::map_fold<usize, u32, (), {closure@bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> (frame 96, args 48, ret 0)
      0: imm.w8 $-9, 1
      3: addr $-48, $16
      6: mov.w64 $-96, $-48
@@ -503,14 +503,14 @@ fn <std::ops::Range<usize> as std::iter::Iterator>::fold::<(), {closure@std::ite
   cleanup 67 -> 96 (catch)
   cleanup 70 -> continue
   fn0 = std::iter::range::<impl std::iter::Iterator for std::ops::Range<usize>>::next
-  fn1 = std::iter::adapters::map::map_fold::<usize, u32, (), {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0}
-  fn2 = std::ptr::drop_glue::<{closure@std::iter::adapters::map::map_fold<usize, u32, (), {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::adapters::map::map_fold<usize, u32, (), {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0}}))
-  fn3 = std::ptr::drop_glue::<{closure@std::iter::adapters::map::map_fold<usize, u32, (), {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::adapters::map::map_fold<usize, u32, (), {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0}}))
+  fn1 = std::iter::adapters::map::map_fold::<usize, u32, (), {closure@bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0}
+  fn2 = std::ptr::drop_glue::<{closure@std::iter::adapters::map::map_fold<usize, u32, (), {closure@bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::adapters::map::map_fold<usize, u32, (), {closure@bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0}}))
+  fn3 = std::ptr::drop_glue::<{closure@std::iter::adapters::map::map_fold<usize, u32, (), {closure@bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::adapters::map::map_fold<usize, u32, (), {closure@bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0}}))
   sym4 = core::panicking::panic_in_cleanup
   site5
   sym6 = island ryo_island_call_ptr0[!]
 
-fn <std::ops::Range<usize> as std::iter::Iterator>::map::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}> (frame 32, args 24, ret 24)
+fn <std::ops::Range<usize> as std::iter::Iterator>::map::<u32, {closure@bench/sort.rs:52:37: 52:40}> (frame 32, args 24, ret 24)
      0: mov.w128 $-16, $16
      3: mov.w64 $-24, $32
      6: ret $-24, 24
@@ -705,7 +705,7 @@ fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::enumerate (frame 32, args
      3: imm.w64 $-8, 0
      7: ret $-24, 24
 
-fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<(), {closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> (frame 160, args 40, ret 0)
+fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<(), {closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> (frame 160, args 40, ret 0)
      0: imm.w8 $-121, 0
      3: br! $-121, @+17
      7: mov.w64 $-80, $24
@@ -820,10 +820,10 @@ fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<(), {closure@std::
   cleanup 181 -> 330 (catch)
   cleanup 186 -> continue
   cleanup 274 -> 326
-  fn0 = std::ptr::drop_glue::<{closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}))
-  fn1 = std::iter::adapters::map::map_fold::<&u32, (u32, u32), (), {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}
-  fn2 = std::ptr::drop_glue::<{closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}))
-  fn3 = std::ptr::drop_glue::<{closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}))
+  fn0 = std::ptr::drop_glue::<{closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}))
+  fn1 = std::iter::adapters::map::map_fold::<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}
+  fn2 = std::ptr::drop_glue::<{closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}))
+  fn3 = std::ptr::drop_glue::<{closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}))
   k4 = const allocation + 0
   fn5 = std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_check
   k6 = const allocation + 0
@@ -837,7 +837,7 @@ fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<(), {closure@std::
   site14
   sym15 = island ryo_island_call_ptr0[!]
 
-fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<u64, {closure@<std::iter::Enumerate<I> as std::iter::Iterator>::fold::enumerate<&u32, u64, {closure@/home/john/dev/ryo/tests/bench/sort.rs:46:37: 46:51}>::{closure#0}}> (frame 192, args 32, ret 8)
+fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<u64, {closure@<std::iter::Enumerate<I> as std::iter::Iterator>::fold::enumerate<&u32, u64, {closure@bench/sort.rs:46:37: 46:51}>::{closure#0}}> (frame 192, args 32, ret 8)
      0: imm.w8 $-161, 0
      3: br! $-161, @+17
      7: mov.w64 $-88, $24
@@ -941,7 +941,7 @@ fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<u64, {closure@<std
   cleanup 153 -> 309
   cleanup 180 -> continue
   cleanup 268 -> 309
-  fn0 = <std::iter::Enumerate<I> as std::iter::Iterator>::fold::enumerate::<&u32, u64, {closure@/home/john/dev/ryo/tests/bench/sort.rs:46:37: 46:51}>::{closure#0}
+  fn0 = <std::iter::Enumerate<I> as std::iter::Iterator>::fold::enumerate::<&u32, u64, {closure@bench/sort.rs:46:37: 46:51}>::{closure#0}
   k1 = const allocation + 0
   fn2 = std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_check
   k3 = const allocation + 0
@@ -952,7 +952,7 @@ fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<u64, {closure@<std
   k8 = const allocation + 0
   fn9 = core::num::<impl usize>::unchecked_add::precondition_check
 
-fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::map::<(u32, u32), {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}> (frame 16, args 16, ret 16)
+fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::map::<(u32, u32), {closure@bench/sort.rs:59:50: 59:54}> (frame 16, args 16, ret 16)
      0: mov.w128 $-16, $16
      3: ret $-16, 16
 
@@ -1046,7 +1046,7 @@ fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::size_hint (frame 128, arg
   site5
   sym6 = island ryo_island_call_ptr2[&'{erased} str, &'{erased} std::panic::Location<'{erased}>, !]
 
-fn <std::vec::Vec<(u32, u32)> as std::iter::FromIterator<(u32, u32)>>::from_iter::<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>> (frame 64, args 16, ret 24)
+fn <std::vec::Vec<(u32, u32)> as std::iter::FromIterator<(u32, u32)>>::from_iter::<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>> (frame 64, args 16, ret 24)
      0: mov.w128 $-64, $16
      3: call $-40, fn0
      6: mov.w128 $-64, $-40
@@ -1054,8 +1054,8 @@ fn <std::vec::Vec<(u32, u32)> as std::iter::FromIterator<(u32, u32)>>::from_iter
     12: ret $-24, 24
   cleanup 3 -> continue
   cleanup 9 -> continue
-  fn0 = <std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}> as std::iter::IntoIterator>::into_iter
-  fn1 = <std::vec::Vec<(u32, u32)> as std::vec::spec_from_iter::SpecFromIter<(u32, u32), std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>>::from_iter
+  fn0 = <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::IntoIterator>::into_iter
+  fn1 = <std::vec::Vec<(u32, u32)> as std::vec::spec_from_iter::SpecFromIter<(u32, u32), std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>>::from_iter
 
 fn <std::vec::Vec<(u32, u32)> as std::ops::DerefMut>::deref_mut (frame 48, args 8, ret 16)
      0: load.w64 $-48, [$16 + 8]
@@ -1099,22 +1099,22 @@ fn <std::vec::Vec<(u32, u32)> as std::ops::Index<usize>>::index (frame 96, args 
   cleanup 32 -> continue
   fn0 = <usize as std::slice::SliceIndex<[(u32, u32)]>>::index
 
-fn <std::vec::Vec<(u32, u32)> as std::vec::spec_extend::SpecExtend<(u32, u32), std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>>::spec_extend (frame 32, args 24, ret 0)
+fn <std::vec::Vec<(u32, u32)> as std::vec::spec_extend::SpecExtend<(u32, u32), std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>>::spec_extend (frame 32, args 24, ret 0)
      0: mov.w64 $-32, $16
      3: mov.w128 $-24, $24
      6: call $0, fn0
      9: ret $0, 0
   cleanup 6 -> continue
-  fn0 = std::vec::Vec::<(u32, u32)>::extend_trusted::<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>
+  fn0 = std::vec::Vec::<(u32, u32)>::extend_trusted::<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>
 
-fn <std::vec::Vec<(u32, u32)> as std::vec::spec_from_iter::SpecFromIter<(u32, u32), std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>>::from_iter (frame 48, args 16, ret 24)
+fn <std::vec::Vec<(u32, u32)> as std::vec::spec_from_iter::SpecFromIter<(u32, u32), std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>>::from_iter (frame 48, args 16, ret 24)
      0: mov.w128 $-48, $16
      3: call $-24, fn0
      6: ret $-24, 24
   cleanup 3 -> continue
-  fn0 = <std::vec::Vec<(u32, u32)> as std::vec::spec_from_iter_nested::SpecFromIterNested<(u32, u32), std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>>::from_iter
+  fn0 = <std::vec::Vec<(u32, u32)> as std::vec::spec_from_iter_nested::SpecFromIterNested<(u32, u32), std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>>::from_iter
 
-fn <std::vec::Vec<(u32, u32)> as std::vec::spec_from_iter_nested::SpecFromIterNested<(u32, u32), std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>>::from_iter (frame 224, args 16, ret 24)
+fn <std::vec::Vec<(u32, u32)> as std::vec::spec_from_iter_nested::SpecFromIterNested<(u32, u32), std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>>::from_iter (frame 224, args 16, ret 24)
      0: imm.w8 $-33, 1
      3: addr $-104, $16
      6: mov.w64 $-224, $-104
@@ -1179,7 +1179,7 @@ fn <std::vec::Vec<(u32, u32)> as std::vec::spec_from_iter_nested::SpecFromIterNe
   cleanup 112 -> 169 (catch)
   cleanup 117 -> continue
   cleanup 152 -> 173
-  fn0 = <std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::size_hint
+  fn0 = <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::size_hint
   k1 = const allocation + 0
   k2 = const allocation + 0
   k3 = const allocation + 0
@@ -1189,7 +1189,7 @@ fn <std::vec::Vec<(u32, u32)> as std::vec::spec_from_iter_nested::SpecFromIterNe
   k7 = const allocation + 0
   fn8 = alloc::raw_vec::RawVecInner::with_capacity_in
   fn9 = std::ptr::drop_glue::<std::vec::Vec<(u32, u32)>> - shim(Some(std::vec::Vec<(u32, u32)>))
-  fn10 = <std::vec::Vec<(u32, u32)> as std::vec::spec_extend::SpecExtend<(u32, u32), std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>>::spec_extend
+  fn10 = <std::vec::Vec<(u32, u32)> as std::vec::spec_extend::SpecExtend<(u32, u32), std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>>::spec_extend
   sym11 = core::panicking::panic_in_cleanup
   site12
   sym13 = island ryo_island_call_ptr0[!]
@@ -1228,7 +1228,7 @@ fn <std::vec::Vec<u32> as std::fmt::Debug>::fmt (frame 80, args 16, ret 1)
   cleanup 29 -> continue
   fn0 = <[u32] as std::fmt::Debug>::fmt
 
-fn <std::vec::Vec<u32> as std::iter::FromIterator<u32>>::from_iter::<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>> (frame 80, args 24, ret 24)
+fn <std::vec::Vec<u32> as std::iter::FromIterator<u32>>::from_iter::<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>> (frame 80, args 24, ret 24)
      0: copy $-80, $16, 24
      4: call $-48, fn0
      7: copy $-80, $-48, 24
@@ -1236,8 +1236,8 @@ fn <std::vec::Vec<u32> as std::iter::FromIterator<u32>>::from_iter::<std::iter::
     14: ret $-24, 24
   cleanup 4 -> continue
   cleanup 11 -> continue
-  fn0 = <std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}> as std::iter::IntoIterator>::into_iter
-  fn1 = <std::vec::Vec<u32> as std::vec::spec_from_iter::SpecFromIter<u32, std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>>::from_iter
+  fn0 = <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::IntoIterator>::into_iter
+  fn1 = <std::vec::Vec<u32> as std::vec::spec_from_iter::SpecFromIter<u32, std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>>::from_iter
 
 fn <std::vec::Vec<u32> as std::ops::Deref>::deref (frame 48, args 8, ret 16)
      0: load.w64 $-48, [$16 + 8]
@@ -1292,22 +1292,22 @@ fn <std::vec::Vec<u32> as std::vec::spec_extend::SpecExtend<&u32, std::slice::It
   fn0 = std::slice::Iter::<'_, u32>::make_slice
   fn1 = std::vec::Vec::<u32>::append_elements
 
-fn <std::vec::Vec<u32> as std::vec::spec_extend::SpecExtend<u32, std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>>::spec_extend (frame 32, args 32, ret 0)
+fn <std::vec::Vec<u32> as std::vec::spec_extend::SpecExtend<u32, std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>>::spec_extend (frame 32, args 32, ret 0)
      0: mov.w64 $-32, $16
      3: copy $-24, $24, 24
      7: call $0, fn0
     10: ret $0, 0
   cleanup 7 -> continue
-  fn0 = std::vec::Vec::<u32>::extend_trusted::<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>
+  fn0 = std::vec::Vec::<u32>::extend_trusted::<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>
 
-fn <std::vec::Vec<u32> as std::vec::spec_from_iter::SpecFromIter<u32, std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>>::from_iter (frame 48, args 24, ret 24)
+fn <std::vec::Vec<u32> as std::vec::spec_from_iter::SpecFromIter<u32, std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>>::from_iter (frame 48, args 24, ret 24)
      0: copy $-48, $16, 24
      4: call $-24, fn0
      7: ret $-24, 24
   cleanup 4 -> continue
-  fn0 = <std::vec::Vec<u32> as std::vec::spec_from_iter_nested::SpecFromIterNested<u32, std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>>::from_iter
+  fn0 = <std::vec::Vec<u32> as std::vec::spec_from_iter_nested::SpecFromIterNested<u32, std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>>::from_iter
 
-fn <std::vec::Vec<u32> as std::vec::spec_from_iter_nested::SpecFromIterNested<u32, std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>>::from_iter (frame 224, args 24, ret 24)
+fn <std::vec::Vec<u32> as std::vec::spec_from_iter_nested::SpecFromIterNested<u32, std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>>::from_iter (frame 224, args 24, ret 24)
      0: imm.w8 $-33, 1
      3: addr $-104, $16
      6: mov.w64 $-224, $-104
@@ -1372,7 +1372,7 @@ fn <std::vec::Vec<u32> as std::vec::spec_from_iter_nested::SpecFromIterNested<u3
   cleanup 112 -> 171 (catch)
   cleanup 117 -> continue
   cleanup 154 -> 175
-  fn0 = <std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::size_hint
+  fn0 = <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::size_hint
   k1 = const allocation + 0
   k2 = const allocation + 0
   k3 = const allocation + 0
@@ -1382,7 +1382,7 @@ fn <std::vec::Vec<u32> as std::vec::spec_from_iter_nested::SpecFromIterNested<u3
   k7 = const allocation + 0
   fn8 = alloc::raw_vec::RawVecInner::with_capacity_in
   fn9 = std::ptr::drop_glue::<std::vec::Vec<u32>> - shim(Some(std::vec::Vec<u32>))
-  fn10 = <std::vec::Vec<u32> as std::vec::spec_extend::SpecExtend<u32, std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>>::spec_extend
+  fn10 = <std::vec::Vec<u32> as std::vec::spec_extend::SpecExtend<u32, std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>>::spec_extend
   sym11 = core::panicking::panic_in_cleanup
   site12
   sym13 = island ryo_island_call_ptr0[!]
@@ -1798,7 +1798,7 @@ fn checksum (frame 80, args 16, ret 8)
   cleanup 20 -> continue
   fn0 = core::slice::<impl [u32]>::iter
   fn1 = <std::slice::Iter<'_, u32> as std::iter::Iterator>::enumerate
-  fn2 = <std::iter::Enumerate<std::slice::Iter<'_, u32>> as std::iter::Iterator>::fold::<u64, {closure@/home/john/dev/ryo/tests/bench/sort.rs:46:37: 46:51}>
+  fn2 = <std::iter::Enumerate<std::slice::Iter<'_, u32>> as std::iter::Iterator>::fold::<u64, {closure@bench/sort.rs:46:37: 46:51}>
 
 fn checksum::{closure#0} (frame 80, args 32, ret 8)
      0: mov.w64 $-16, $32
@@ -2598,7 +2598,7 @@ fn core::slice::index::<impl std::ops::IndexMut<std::ops::RangeTo<usize>> for [u
   cleanup 9 -> continue
   fn0 = <std::ops::RangeTo<usize> as std::slice::SliceIndex<[u32]>>::index_mut
 
-fn core::slice::sort::shared::find_existing_run::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 128, args 24, ret 16)
+fn core::slice::sort::shared::find_existing_run::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 128, args 24, ret 16)
      0: mov.w64 $-32, $24
      3: br.lt.u.imm.w64! $-32, 2, @+14
      9: mov.w64 $-16, $-32
@@ -2719,17 +2719,17 @@ fn core::slice::sort::shared::find_existing_run::<(u32, u32), {closure@std::slic
   fn1 = <usize as std::slice::SliceIndex<[T]>>::get_unchecked::precondition_check
   k2 = const allocation + 0
   fn3 = <usize as std::slice::SliceIndex<[T]>>::get_unchecked::precondition_check
-  fn4 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}
+  fn4 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
   k5 = const allocation + 0
   fn6 = <usize as std::slice::SliceIndex<[T]>>::get_unchecked::precondition_check
   k7 = const allocation + 0
   fn8 = <usize as std::slice::SliceIndex<[T]>>::get_unchecked::precondition_check
-  fn9 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}
+  fn9 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
   k10 = const allocation + 0
   fn11 = <usize as std::slice::SliceIndex<[T]>>::get_unchecked::precondition_check
   k12 = const allocation + 0
   fn13 = <usize as std::slice::SliceIndex<[T]>>::get_unchecked::precondition_check
-  fn14 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}
+  fn14 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
 
 fn core::slice::sort::shared::find_existing_run::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 128, args 24, ret 16)
      0: mov.w64 $-32, $24
@@ -2864,7 +2864,7 @@ fn core::slice::sort::shared::find_existing_run::<u32, for<'a, 'b> fn(&'a u32, &
   fn13 = <usize as std::slice::SliceIndex<[T]>>::get_unchecked::precondition_check
   fn14 = <for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt} as std::ops::FnMut<(&u32, &u32)>>::call_mut - shim(for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt})
 
-fn core::slice::sort::shared::pivot::choose_pivot::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 176, args 24, ret 8)
+fn core::slice::sort::shared::pivot::choose_pivot::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 176, args 24, ret 8)
      0: mov.w64 $-40, $24
      3: br.lt.u.imm.w64! $-40, 8, @+7
      9: abort
@@ -2955,8 +2955,8 @@ fn core::slice::sort::shared::pivot::choose_pivot::<(u32, u32), {closure@std::sl
   cleanup 101 -> continue
   cleanup 199 -> continue
   cleanup 276 -> continue
-  fn0 = core::slice::sort::shared::pivot::median3::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
-  fn1 = core::slice::sort::shared::pivot::median3_rec::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn0 = core::slice::sort::shared::pivot::median3::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn1 = core::slice::sort::shared::pivot::median3_rec::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
   k2 = const allocation + 0
   fn3 = std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_check
   k4 = const allocation + 0
@@ -3084,7 +3084,7 @@ fn core::slice::sort::shared::pivot::choose_pivot::<u32, for<'a, 'b> fn(&'a u32,
   k16 = const allocation + 0
   fn17 = std::hint::assert_unchecked::precondition_check
 
-fn core::slice::sort::shared::pivot::median3::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 64, args 32, ret 8)
+fn core::slice::sort::shared::pivot::median3::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 64, args 32, ret 8)
      0: mov.w64 $-32, $16
      3: mov.w64 $-24, $24
      6: mov.w64 $-64, $40
@@ -3115,9 +3115,9 @@ fn core::slice::sort::shared::pivot::median3::<(u32, u32), {closure@std::slice::
   cleanup 15 -> continue
   cleanup 33 -> continue
   cleanup 56 -> continue
-  fn0 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}
-  fn1 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}
-  fn2 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}
+  fn0 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
+  fn1 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
+  fn2 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
 
 fn core::slice::sort::shared::pivot::median3::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 64, args 32, ret 8)
      0: mov.w64 $-32, $16
@@ -3154,7 +3154,7 @@ fn core::slice::sort::shared::pivot::median3::<u32, for<'a, 'b> fn(&'a u32, &'b 
   fn1 = <for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt} as std::ops::FnMut<(&u32, &u32)>>::call_mut - shim(for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt})
   fn2 = <for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt} as std::ops::FnMut<(&u32, &u32)>>::call_mut - shim(for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt})
 
-fn core::slice::sort::shared::pivot::median3_rec::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 112, args 40, ret 8)
+fn core::slice::sort::shared::pivot::median3_rec::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 112, args 40, ret 8)
      0: mul.imm.w64 $-40, $40, 8
      5: br.lt.u.imm.w64 $-40, 64, @+128
     11: imm.w64 $-72, 8
@@ -3205,10 +3205,10 @@ fn core::slice::sort::shared::pivot::median3_rec::<(u32, u32), {closure@std::sli
   cleanup 94 -> continue
   cleanup 128 -> continue
   cleanup 154 -> continue
-  fn0 = core::slice::sort::shared::pivot::median3_rec::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
-  fn1 = core::slice::sort::shared::pivot::median3_rec::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
-  fn2 = core::slice::sort::shared::pivot::median3_rec::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
-  fn3 = core::slice::sort::shared::pivot::median3::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn0 = core::slice::sort::shared::pivot::median3_rec::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn1 = core::slice::sort::shared::pivot::median3_rec::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn2 = core::slice::sort::shared::pivot::median3_rec::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn3 = core::slice::sort::shared::pivot::median3::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
 
 fn core::slice::sort::shared::pivot::median3_rec::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 112, args 40, ret 8)
      0: mul.imm.w64 $-40, $40, 8
@@ -3266,7 +3266,7 @@ fn core::slice::sort::shared::pivot::median3_rec::<u32, for<'a, 'b> fn(&'a u32, 
   fn2 = core::slice::sort::shared::pivot::median3_rec::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
   fn3 = core::slice::sort::shared::pivot::median3::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
 
-fn core::slice::sort::shared::smallsort::bidirectional_merge::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 224, args 32, ret 0)
+fn core::slice::sort::shared::smallsort::bidirectional_merge::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 224, args 32, ret 0)
      0: mov.w64 $-104, $24
      3: mov.w64 $-128, $16
      6: mov.w64 $-120, $24
@@ -3366,13 +3366,13 @@ fn core::slice::sort::shared::smallsort::bidirectional_merge::<(u32, u32), {clos
   cleanup 105 -> continue
   cleanup 161 -> continue
   cleanup 227 -> continue
-  fn0 = core::slice::sort::shared::smallsort::merge_down::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn0 = core::slice::sort::shared::smallsort::merge_down::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
   sym1 = core::slice::sort::shared::smallsort::panic_on_ord_violation
   site2
   sym3 = island ryo_island_call_ptr0[!]
   k4 = const allocation + 0
   fn5 = core::num::<impl usize>::unchecked_add::precondition_check
-  fn6 = core::slice::sort::shared::smallsort::merge_up::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn6 = core::slice::sort::shared::smallsort::merge_up::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
   k7 = const allocation + 0
   fn8 = std::ptr::copy_nonoverlapping::precondition_check
 
@@ -3486,7 +3486,7 @@ fn core::slice::sort::shared::smallsort::bidirectional_merge::<u32, for<'a, 'b> 
   k7 = const allocation + 0
   fn8 = std::ptr::copy_nonoverlapping::precondition_check
 
-fn core::slice::sort::shared::smallsort::insert_tail::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 176, args 24, ret 0)
+fn core::slice::sort::shared::smallsort::insert_tail::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 176, args 24, ret 0)
      0: imm.w8 $-113, 0
      3: br! $-113, @+129
      7: jmp @+120
@@ -3580,10 +3580,10 @@ fn core::slice::sort::shared::smallsort::insert_tail::<(u32, u32), {closure@std:
   cleanup 226 -> 258
   fn0 = std::ptr::drop_glue::<core::slice::sort::shared::smallsort::CopyOnDrop<(u32, u32)>> - shim(Some(core::slice::sort::shared::smallsort::CopyOnDrop<(u32, u32)>))
   fn1 = std::ptr::drop_glue::<core::slice::sort::shared::smallsort::CopyOnDrop<(u32, u32)>> - shim(Some(core::slice::sort::shared::smallsort::CopyOnDrop<(u32, u32)>))
-  fn2 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}
+  fn2 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
   k3 = const allocation + 0
   fn4 = std::ptr::copy_nonoverlapping::precondition_check
-  fn5 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}
+  fn5 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
   sym6 = core::panicking::panic_in_cleanup
   site7
   sym8 = island ryo_island_call_ptr0[!]
@@ -3690,7 +3690,7 @@ fn core::slice::sort::shared::smallsort::insert_tail::<u32, for<'a, 'b> fn(&'a u
   site7
   sym8 = island ryo_island_call_ptr0[!]
 
-fn core::slice::sort::shared::smallsort::insertion_sort_shift_left::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 80, args 32, ret 0)
+fn core::slice::sort::shared::smallsort::insertion_sort_shift_left::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 80, args 32, ret 0)
      0: mov.w64 $-16, $24
      3: br.eq.imm.w64 $32, 0, @+11
      9: br.lt.u.w64! $-16, $32, @+6
@@ -3713,7 +3713,7 @@ fn core::slice::sort::shared::smallsort::insertion_sort_shift_left::<(u32, u32),
     69: jmp @-35
     71: ret $0, 0
   cleanup 54 -> continue
-  fn0 = core::slice::sort::shared::smallsort::insert_tail::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn0 = core::slice::sort::shared::smallsort::insert_tail::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
 
 fn core::slice::sort::shared::smallsort::insertion_sort_shift_left::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 80, args 32, ret 0)
      0: mov.w64 $-16, $24
@@ -3740,7 +3740,7 @@ fn core::slice::sort::shared::smallsort::insertion_sort_shift_left::<u32, for<'a
   cleanup 54 -> continue
   fn0 = core::slice::sort::shared::smallsort::insert_tail::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
 
-fn core::slice::sort::shared::smallsort::merge_down::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 144, args 32, ret 24)
+fn core::slice::sort::shared::smallsort::merge_down::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 144, args 32, ret 24)
      0: mov.w64 $-72, $24
      3: mov.w64 $-80, $16
      6: mov.w64 $-64, $-72
@@ -3795,7 +3795,7 @@ fn core::slice::sort::shared::smallsort::merge_down::<(u32, u32), {closure@std::
    170: ptr.index $-56, $32, $-88, 8
    175: jmp @-29
   cleanup 21 -> continue
-  fn0 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}
+  fn0 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
   k1 = const allocation + 0
   fn2 = std::ptr::copy_nonoverlapping::precondition_check
 
@@ -3858,7 +3858,7 @@ fn core::slice::sort::shared::smallsort::merge_down::<u32, for<'a, 'b> fn(&'a u3
   k1 = const allocation + 0
   fn2 = std::ptr::copy_nonoverlapping::precondition_check
 
-fn core::slice::sort::shared::smallsort::merge_up::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 144, args 32, ret 24)
+fn core::slice::sort::shared::smallsort::merge_up::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 144, args 32, ret 24)
      0: mov.w64 $-72, $24
      3: mov.w64 $-80, $16
      6: mov.w64 $-64, $-72
@@ -3901,7 +3901,7 @@ fn core::slice::sort::shared::smallsort::merge_up::<(u32, u32), {closure@std::sl
    133: mov.w64 $-8, $32
    136: ret $-24, 24
   cleanup 21 -> continue
-  fn0 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}
+  fn0 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
   k1 = const allocation + 0
   fn2 = std::ptr::copy_nonoverlapping::precondition_check
 
@@ -3980,7 +3980,7 @@ fn core::slice::sort::shared::smallsort::small_sort_general::<u32, for<'a, 'b> f
   fn1 = std::slice::from_raw_parts_mut::precondition_check
   fn2 = core::slice::sort::shared::smallsort::small_sort_general_with_scratch::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
 
-fn core::slice::sort::shared::smallsort::small_sort_general_with_scratch::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 400, args 40, ret 0)
+fn core::slice::sort::shared::smallsort::small_sort_general_with_scratch::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 400, args 40, ret 0)
      0: mov.w64 $-144, $24
      3: br.lt.u.imm.w64! $-144, 2, @+8
      9: jmp @+336
@@ -4198,10 +4198,10 @@ fn core::slice::sort::shared::smallsort::small_sort_general_with_scratch::<(u32,
   cleanup 365 -> 678 (catch)
   cleanup 610 -> 674
   cleanup 662 -> 682
-  fn0 = core::slice::sort::shared::smallsort::sort8_stable::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
-  fn1 = core::slice::sort::shared::smallsort::sort8_stable::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
-  fn2 = core::slice::sort::shared::smallsort::sort4_stable::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
-  fn3 = core::slice::sort::shared::smallsort::sort4_stable::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn0 = core::slice::sort::shared::smallsort::sort8_stable::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn1 = core::slice::sort::shared::smallsort::sort8_stable::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn2 = core::slice::sort::shared::smallsort::sort4_stable::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn3 = core::slice::sort::shared::smallsort::sort4_stable::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
   k4 = const allocation + 0
   fn5 = std::array::iter::iter_inner::PolymorphicIter::<[std::mem::MaybeUninit<usize>]>::next
   fn6 = std::ptr::drop_glue::<std::array::IntoIter<usize, 2>> - shim(Some(std::array::IntoIter<usize, 2>))
@@ -4215,10 +4215,10 @@ fn core::slice::sort::shared::smallsort::small_sort_general_with_scratch::<(u32,
   fn14 = core::num::<impl usize>::unchecked_add::precondition_check
   k15 = const allocation + 0
   fn16 = std::ptr::copy_nonoverlapping::precondition_check
-  fn17 = core::slice::sort::shared::smallsort::insert_tail::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn17 = core::slice::sort::shared::smallsort::insert_tail::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
   k18 = const allocation + 0
   fn19 = std::slice::from_raw_parts::precondition_check
-  fn20 = core::slice::sort::shared::smallsort::bidirectional_merge::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn20 = core::slice::sort::shared::smallsort::bidirectional_merge::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
   sym21 = core::panicking::panic_in_cleanup
   site22
   sym23 = island ryo_island_call_ptr0[!]
@@ -4928,7 +4928,7 @@ fn core::slice::sort::shared::smallsort::sort13_optimal::<u32, for<'a, 'b> fn(&'
   fn43 = core::slice::sort::shared::smallsort::swap_if_less::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
   fn44 = core::slice::sort::shared::smallsort::swap_if_less::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
 
-fn core::slice::sort::shared::smallsort::sort4_stable::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 176, args 24, ret 0)
+fn core::slice::sort::shared::smallsort::sort4_stable::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 176, args 24, ret 0)
      0: imm.w64 $-120, 1
      4: ptr.index $-40, $16, $-120, 8
      9: mov.w64 $-32, $-40
@@ -5097,17 +5097,17 @@ fn core::slice::sort::shared::smallsort::sort4_stable::<(u32, u32), {closure@std
   cleanup 272 -> continue
   cleanup 284 -> continue
   cleanup 296 -> continue
-  fn0 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}
-  fn1 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}
-  fn2 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}
-  fn3 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}
+  fn0 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
+  fn1 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
+  fn2 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
+  fn3 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
   fn4 = std::hint::select_unpredictable::<*const (u32, u32)>
   fn5 = std::hint::select_unpredictable::<*const (u32, u32)>
   fn6 = std::hint::select_unpredictable::<*const (u32, u32)>
   fn7 = std::hint::select_unpredictable::<*const (u32, u32)>
   fn8 = std::hint::select_unpredictable::<*const (u32, u32)>
   fn9 = std::hint::select_unpredictable::<*const (u32, u32)>
-  fn10 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}
+  fn10 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
   fn11 = std::hint::select_unpredictable::<*const (u32, u32)>
   fn12 = std::hint::select_unpredictable::<*const (u32, u32)>
   k13 = const allocation + 0
@@ -5310,7 +5310,7 @@ fn core::slice::sort::shared::smallsort::sort4_stable::<u32, for<'a, 'b> fn(&'a 
   k19 = const allocation + 0
   fn20 = std::ptr::copy_nonoverlapping::precondition_check
 
-fn core::slice::sort::shared::smallsort::sort8_stable::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 96, args 32, ret 0)
+fn core::slice::sort::shared::smallsort::sort8_stable::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 96, args 32, ret 0)
      0: mov.w64 $-8, $16
      3: mov.w64 $-96, $-8
      6: mov.w64 $-88, $32
@@ -5349,11 +5349,11 @@ fn core::slice::sort::shared::smallsort::sort8_stable::<(u32, u32), {closure@std
   cleanup 12 -> continue
   cleanup 45 -> continue
   cleanup 109 -> continue
-  fn0 = core::slice::sort::shared::smallsort::sort4_stable::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
-  fn1 = core::slice::sort::shared::smallsort::sort4_stable::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn0 = core::slice::sort::shared::smallsort::sort4_stable::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn1 = core::slice::sort::shared::smallsort::sort4_stable::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
   k2 = const allocation + 0
   fn3 = std::slice::from_raw_parts::precondition_check
-  fn4 = core::slice::sort::shared::smallsort::bidirectional_merge::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn4 = core::slice::sort::shared::smallsort::bidirectional_merge::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
 
 fn core::slice::sort::shared::smallsort::sort8_stable::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 96, args 32, ret 0)
      0: mov.w64 $-8, $16
@@ -5695,7 +5695,7 @@ fn core::slice::sort::stable::AlignedStorage::<(u32, u32), 4096>::as_uninit_slic
   k4 = const allocation + 0
   fn5 = std::slice::from_raw_parts_mut::precondition_check
 
-fn core::slice::sort::stable::drift::create_run::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 160, args 56, ret 8)
+fn core::slice::sort::stable::drift::create_run::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 160, args 56, ret 8)
      0: mov.w64 $-24, $24
      3: br.lt.u.w64 $-24, $48, @+62
      8: mov.w64 $-64, $16
@@ -5781,7 +5781,7 @@ fn core::slice::sort::stable::drift::create_run::<(u32, u32), {closure@std::slic
   cleanup 156 -> continue
   cleanup 206 -> continue
   cleanup 224 -> continue
-  fn0 = core::slice::sort::shared::find_existing_run::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn0 = core::slice::sort::shared::find_existing_run::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
   fn1 = <(u32, u32) as core::slice::sort::shared::smallsort::StableSmallSortTypeImpl>::small_sort_threshold
   fn2 = <usize as std::cmp::Ord>::min
   fn3 = <usize as std::cmp::Ord>::min
@@ -5790,13 +5790,13 @@ fn core::slice::sort::stable::drift::create_run::<(u32, u32), {closure@std::slic
   site6
   sym7 = island ryo_island_call_ptr4[usize, usize, usize, &'{erased} std::panic::Location<'{erased}>, !]
   fn8 = core::slice::<impl [(u32, u32)]>::reverse
-  fn9 = core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn9 = core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
   k10 = const allocation + 0
   sym11 = core::slice::index::slice_index_fail
   site12
   sym13 = island ryo_island_call_ptr4[usize, usize, usize, &'{erased} std::panic::Location<'{erased}>, !]
 
-fn core::slice::sort::stable::drift::logical_merge::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 176, args 56, ret 8)
+fn core::slice::sort::stable::drift::logical_merge::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 176, args 56, ret 8)
      0: mov.w64 $-40, $24
      3: mov.w64 $-56, $40
      6: le.u.w64 $-41, $-40, $-56
@@ -5884,8 +5884,8 @@ fn core::slice::sort::stable::drift::logical_merge::<(u32, u32), {closure@std::s
   cleanup 205 -> continue
   cleanup 233 -> continue
   cleanup 279 -> continue
-  fn0 = core::slice::sort::stable::merge::merge::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
-  fn1 = core::slice::sort::stable::drift::stable_quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn0 = core::slice::sort::stable::merge::merge::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn1 = core::slice::sort::stable::drift::stable_quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
   k2 = const allocation + 0
   sym3 = core::slice::index::slice_index_fail
   site4
@@ -5894,9 +5894,9 @@ fn core::slice::sort::stable::drift::logical_merge::<(u32, u32), {closure@std::s
   sym7 = core::slice::index::slice_index_fail
   site8
   sym9 = island ryo_island_call_ptr4[usize, usize, usize, &'{erased} std::panic::Location<'{erased}>, !]
-  fn10 = core::slice::sort::stable::drift::stable_quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn10 = core::slice::sort::stable::drift::stable_quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
 
-fn core::slice::sort::stable::drift::sort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 912, args 48, ret 0)
+fn core::slice::sort::stable::drift::sort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 912, args 48, ret 0)
      0: mov.w64 $-96, $24
      3: br.lt.u.imm.w64! $-96, 2, @+8
      9: jmp @+388
@@ -6086,7 +6086,7 @@ fn core::slice::sort::stable::drift::sort::<(u32, u32), {closure@std::slice::<im
   sym7 = island ryo_island_call_ptr1[usize, usize]
   k8 = const allocation + 0
   k9 = const allocation + 0
-  fn10 = core::slice::sort::stable::drift::stable_quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn10 = core::slice::sort::stable::drift::stable_quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
   k11 = const allocation + 0
   sym12 = core::panicking::panic_const::panic_const_rem_by_zero
   site13
@@ -6095,12 +6095,12 @@ fn core::slice::sort::stable::drift::sort::<(u32, u32), {closure@std::slice::<im
   sym16 = core::slice::index::slice_index_fail
   site17
   sym18 = island ryo_island_call_ptr4[usize, usize, usize, &'{erased} std::panic::Location<'{erased}>, !]
-  fn19 = core::slice::sort::stable::drift::create_run::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn19 = core::slice::sort::stable::drift::create_run::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
   k20 = const allocation + 0
   fn21 = <std::ops::Range<usize> as std::slice::SliceIndex<[T]>>::get_unchecked_mut::precondition_check
-  fn22 = core::slice::sort::stable::drift::logical_merge::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn22 = core::slice::sort::stable::drift::logical_merge::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
 
-fn core::slice::sort::stable::drift::stable_quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 128, args 40, ret 0)
+fn core::slice::sort::stable::drift::stable_quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 128, args 40, ret 0)
      0: mov.w64 $-24, $24
      3: or.imm.w64 $-16, $-24, 1
      8: mov.w64 $-24, $-16
@@ -6133,9 +6133,9 @@ fn core::slice::sort::stable::drift::stable_quicksort::<(u32, u32), {closure@std
   sym1 = core::num::imp::int_log10::panic_for_nonpositive_argument
   site2
   sym3 = island ryo_island_call_ptr1[&'{erased} std::panic::Location<'{erased}>, !]
-  fn4 = core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn4 = core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
 
-fn core::slice::sort::stable::driftsort_main::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}, std::vec::Vec<(u32, u32)>> (frame 8336, args 24, ret 0)
+fn core::slice::sort::stable::driftsort_main::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}, std::vec::Vec<(u32, u32)>> (frame 8336, args 24, ret 0)
      0: imm.w8 $-25, 0
      3: imm.w64 $-8264, 8
      7: eq.imm.w64 $-1, $-8264, 0
@@ -6260,7 +6260,7 @@ fn core::slice::sort::stable::driftsort_main::<(u32, u32), {closure@std::slice::
   fn5 = std::slice::<impl core::slice::sort::stable::BufGuard<(u32, u32)> for std::vec::Vec<(u32, u32)>>::with_capacity
   fn6 = std::slice::<impl core::slice::sort::stable::BufGuard<(u32, u32)> for std::vec::Vec<(u32, u32)>>::as_uninit_slice_mut
   fn7 = <(u32, u32) as core::slice::sort::shared::smallsort::StableSmallSortTypeImpl>::small_sort_threshold
-  fn8 = core::slice::sort::stable::drift::sort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn8 = core::slice::sort::stable::drift::sort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
   fn9 = std::ptr::drop_glue::<std::vec::Vec<(u32, u32)>> - shim(Some(std::vec::Vec<(u32, u32)>))
   fn10 = std::ptr::drop_glue::<std::vec::Vec<(u32, u32)>> - shim(Some(std::vec::Vec<(u32, u32)>))
   fn11 = <usize as std::cmp::Ord>::max
@@ -6271,7 +6271,7 @@ fn core::slice::sort::stable::driftsort_main::<(u32, u32), {closure@std::slice::
   site16
   sym17 = island ryo_island_call_ptr0[!]
 
-fn core::slice::sort::stable::merge::MergeState::<(u32, u32)>::merge_down::<{closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 144, args 40, ret 0)
+fn core::slice::sort::stable::merge::MergeState::<(u32, u32)>::merge_down::<{closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 144, args 40, ret 0)
      0: load.w64 $-48, [$16 + 16]
      4: imm.w8 $-81, 0
      7: br! $-81, @+68
@@ -6346,11 +6346,11 @@ fn core::slice::sort::stable::merge::MergeState::<(u32, u32)>::merge_down::<{clo
    234: br.eq.w64 $-32, $24, @-182
    239: jmp @-199
   cleanup 135 -> continue
-  fn0 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}
+  fn0 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
   k1 = const allocation + 0
   fn2 = std::ptr::copy_nonoverlapping::precondition_check
 
-fn core::slice::sort::stable::merge::MergeState::<(u32, u32)>::merge_up::<{closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 160, args 32, ret 0)
+fn core::slice::sort::stable::merge::MergeState::<(u32, u32)>::merge_up::<{closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 160, args 32, ret 0)
      0: load.w64 $-64, [$16 + 0]
      4: load.w64 $-72, [$16 + 8]
      8: br.eq.w64 $-64, $-72, @+74
@@ -6401,11 +6401,11 @@ fn core::slice::sort::stable::merge::MergeState::<(u32, u32)>::merge_up::<{closu
    168: store.w64 [$16 + 16], $-64
    172: jmp @-172
   cleanup 46 -> continue
-  fn0 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}
+  fn0 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
   k1 = const allocation + 0
   fn2 = std::ptr::copy_nonoverlapping::precondition_check
 
-fn core::slice::sort::stable::merge::merge::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 208, args 48, ret 0)
+fn core::slice::sort::stable::merge::merge::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 208, args 48, ret 0)
      0: mov.w64 $-72, $24
      3: br.eq.imm.w64 $48, 0, @+29
      9: br.lt.u.w64! $48, $-72, @+23
@@ -6496,8 +6496,8 @@ fn core::slice::sort::stable::merge::merge::<(u32, u32), {closure@std::slice::<i
   cleanup 176 -> 257 (catch)
   cleanup 179 -> continue
   fn0 = <usize as std::cmp::Ord>::min
-  fn1 = core::slice::sort::stable::merge::MergeState::<(u32, u32)>::merge_up::<{closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
-  fn2 = core::slice::sort::stable::merge::MergeState::<(u32, u32)>::merge_down::<{closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn1 = core::slice::sort::stable::merge::MergeState::<(u32, u32)>::merge_up::<{closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn2 = core::slice::sort::stable::merge::MergeState::<(u32, u32)>::merge_down::<{closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
   fn3 = std::ptr::drop_glue::<core::slice::sort::stable::merge::MergeState<(u32, u32)>> - shim(Some(core::slice::sort::stable::merge::MergeState<(u32, u32)>))
   fn4 = std::ptr::drop_glue::<core::slice::sort::stable::merge::MergeState<(u32, u32)>> - shim(Some(core::slice::sort::stable::merge::MergeState<(u32, u32)>))
   k5 = const allocation + 0
@@ -6552,7 +6552,7 @@ fn core::slice::sort::stable::quicksort::PartitionState::<(u32, u32)>::partition
   k0 = const allocation + 0
   fn1 = std::ptr::copy_nonoverlapping::precondition_check
 
-fn core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 272, args 56, ret 0)
+fn core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 272, args 56, ret 0)
      0: mov.w64 $-136, $16
      3: mov.w64 $-128, $24
      6: mov.w64 $-120, $-128
@@ -6700,9 +6700,9 @@ fn core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::s
   cleanup 309 -> continue
   cleanup 377 -> continue
   fn0 = <(u32, u32) as core::slice::sort::shared::smallsort::StableSmallSortTypeImpl>::small_sort_threshold
-  fn1 = <(u32, u32) as core::slice::sort::shared::smallsort::StableSmallSortTypeImpl>::small_sort::<{closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
-  fn2 = core::slice::sort::stable::drift::sort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
-  fn3 = core::slice::sort::shared::pivot::choose_pivot::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn1 = <(u32, u32) as core::slice::sort::shared::smallsort::StableSmallSortTypeImpl>::small_sort::<{closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn2 = core::slice::sort::stable::drift::sort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn3 = core::slice::sort::shared::pivot::choose_pivot::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
   k4 = const allocation + 0
   sym5 = core::panicking::panic_bounds_check
   site6
@@ -6712,18 +6712,18 @@ fn core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::s
   sym10 = core::panicking::panic_bounds_check
   site11
   sym12 = island ryo_island_call_ptr3[usize, usize, &'{erased} std::panic::Location<'{erased}>, !]
-  fn13 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}
-  fn14 = core::slice::sort::stable::quicksort::stable_partition::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
-  fn15 = core::slice::sort::stable::quicksort::stable_partition::<(u32, u32), {closure@core::slice::sort::stable::quicksort::quicksort<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>::{closure#0}}>
+  fn13 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
+  fn14 = core::slice::sort::stable::quicksort::stable_partition::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn15 = core::slice::sort::stable::quicksort::stable_partition::<(u32, u32), {closure@core::slice::sort::stable::quicksort::quicksort<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>::{closure#0}}>
   k16 = const allocation + 0
   fn17 = core::slice::<impl [(u32, u32)]>::split_at_mut
-  fn18 = core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn18 = core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
   k19 = const allocation + 0
   sym20 = core::slice::index::slice_index_fail
   site21
   sym22 = island ryo_island_call_ptr4[usize, usize, usize, &'{erased} std::panic::Location<'{erased}>, !]
 
-fn core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>::{closure#0} (frame 64, args 24, ret 1)
+fn core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>::{closure#0} (frame 64, args 24, ret 1)
      0: load.w64 $-16, [$16 + 0]
      4: mov.w64 $-40, $32
      7: mov.w64 $-32, $24
@@ -6734,9 +6734,9 @@ fn core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::s
     22: xor.imm.w8 $-1, $-17, 1
     26: ret $-1, 1
   cleanup 19 -> continue
-  fn0 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}
+  fn0 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
 
-fn core::slice::sort::stable::quicksort::stable_partition::<(u32, u32), {closure@core::slice::sort::stable::quicksort::quicksort<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>::{closure#0}}> (frame 336, args 56, ret 8)
+fn core::slice::sort::stable::quicksort::stable_partition::<(u32, u32), {closure@core::slice::sort::stable::quicksort::quicksort<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>::{closure#0}}> (frame 336, args 56, ret 8)
      0: mov.w64 $-144, $24
      3: mov.w64 $-160, $40
      6: br.lt.u.w64! $-160, $-144, @+10
@@ -6950,15 +6950,15 @@ fn core::slice::sort::stable::quicksort::stable_partition::<(u32, u32), {closure
   cleanup 278 -> continue
   cleanup 292 -> continue
   sym0 = island ryo_island_call[FnDef(DefId(2:2308 ~ core[efd5]::intrinsics::saturating_sub), Binder { value: [usize], bound_vars: [] }), (usize, usize), usize]
-  fn1 = core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>::{closure#0}
+  fn1 = core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>::{closure#0}
   fn2 = core::slice::sort::stable::quicksort::PartitionState::<(u32, u32)>::partition_one
-  fn3 = core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>::{closure#0}
+  fn3 = core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>::{closure#0}
   fn4 = core::slice::sort::stable::quicksort::PartitionState::<(u32, u32)>::partition_one
-  fn5 = core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>::{closure#0}
+  fn5 = core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>::{closure#0}
   fn6 = core::slice::sort::stable::quicksort::PartitionState::<(u32, u32)>::partition_one
-  fn7 = core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>::{closure#0}
+  fn7 = core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>::{closure#0}
   fn8 = core::slice::sort::stable::quicksort::PartitionState::<(u32, u32)>::partition_one
-  fn9 = core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>::{closure#0}
+  fn9 = core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>::{closure#0}
   fn10 = core::slice::sort::stable::quicksort::PartitionState::<(u32, u32)>::partition_one
   fn11 = <(u32, u32) as core::slice::sort::stable::quicksort::IsFreeze>::is_freeze
   fn12 = core::slice::sort::stable::quicksort::PartitionState::<(u32, u32)>::partition_one
@@ -6971,7 +6971,7 @@ fn core::slice::sort::stable::quicksort::stable_partition::<(u32, u32), {closure
   k19 = const allocation + 0
   fn20 = std::ptr::copy_nonoverlapping::precondition_check
 
-fn core::slice::sort::stable::quicksort::stable_partition::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 336, args 56, ret 8)
+fn core::slice::sort::stable::quicksort::stable_partition::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 336, args 56, ret 8)
      0: mov.w64 $-144, $24
      3: mov.w64 $-160, $40
      6: br.lt.u.w64! $-160, $-144, @+10
@@ -7185,15 +7185,15 @@ fn core::slice::sort::stable::quicksort::stable_partition::<(u32, u32), {closure
   cleanup 278 -> continue
   cleanup 292 -> continue
   sym0 = island ryo_island_call[FnDef(DefId(2:2308 ~ core[efd5]::intrinsics::saturating_sub), Binder { value: [usize], bound_vars: [] }), (usize, usize), usize]
-  fn1 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}
+  fn1 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
   fn2 = core::slice::sort::stable::quicksort::PartitionState::<(u32, u32)>::partition_one
-  fn3 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}
+  fn3 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
   fn4 = core::slice::sort::stable::quicksort::PartitionState::<(u32, u32)>::partition_one
-  fn5 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}
+  fn5 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
   fn6 = core::slice::sort::stable::quicksort::PartitionState::<(u32, u32)>::partition_one
-  fn7 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}
+  fn7 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
   fn8 = core::slice::sort::stable::quicksort::PartitionState::<(u32, u32)>::partition_one
-  fn9 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}
+  fn9 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
   fn10 = core::slice::sort::stable::quicksort::PartitionState::<(u32, u32)>::partition_one
   fn11 = <(u32, u32) as core::slice::sort::stable::quicksort::IsFreeze>::is_freeze
   fn12 = core::slice::sort::stable::quicksort::PartitionState::<(u32, u32)>::partition_one
@@ -8350,8 +8350,8 @@ fn main (frame 816, args 0, ret 0)
   cleanup 455 -> 487 (catch)
   cleanup 458 -> continue
   fn0 = std::hint::black_box::<usize>
-  fn1 = <std::ops::Range<usize> as std::iter::Iterator>::map::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>
-  fn2 = <std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::collect::<std::vec::Vec<u32>>
+  fn1 = <std::ops::Range<usize> as std::iter::Iterator>::map::<u32, {closure@bench/sort.rs:52:37: 52:40}>
+  fn2 = <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::collect::<std::vec::Vec<u32>>
   fn3 = <std::vec::Vec<u32> as std::clone::Clone>::clone
   fn4 = <std::vec::Vec<u32> as std::ops::DerefMut>::deref_mut
   fn5 = core::slice::<impl [u32]>::sort_unstable
@@ -8365,10 +8365,10 @@ fn main (frame 816, args 0, ret 0)
   k13 = const allocation + 0
   fn14 = core::panicking::assert_failed::<std::vec::Vec<u32>, std::vec::Vec<u32>>
   fn15 = core::slice::<impl [u32]>::iter
-  fn16 = <std::slice::Iter<'_, u32> as std::iter::Iterator>::map::<(u32, u32), {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>
-  fn17 = <std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::collect::<std::vec::Vec<(u32, u32)>>
+  fn16 = <std::slice::Iter<'_, u32> as std::iter::Iterator>::map::<(u32, u32), {closure@bench/sort.rs:59:50: 59:54}>
+  fn17 = <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::collect::<std::vec::Vec<(u32, u32)>>
   fn18 = <std::vec::Vec<(u32, u32)> as std::ops::DerefMut>::deref_mut
-  fn19 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>
+  fn19 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>
   fn20 = <std::vec::Vec<u32> as std::ops::Deref>::deref
   fn21 = checksum
   k22 = const allocation + 0
@@ -9163,7 +9163,7 @@ fn std::intrinsics::typed_swap_nonoverlapping::<u32> (frame 48, args 16, ret 0)
   site3
   sym4 = island ryo_island_call_ptr0[!]
 
-fn std::iter::Iterator::for_each::call::<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0} (frame 32, args 16, ret 0)
+fn std::iter::Iterator::for_each::call::<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0} (frame 32, args 16, ret 0)
      0: mov.w64 $-8, $16
      3: mov.w64 $-16, $24
      6: mov.w64 $-32, $-8
@@ -9171,9 +9171,9 @@ fn std::iter::Iterator::for_each::call::<(u32, u32), {closure@std::vec::Vec<(u32
     12: call $0, fn0
     15: ret $0, 0
   cleanup 12 -> continue
-  fn0 = std::vec::Vec::<(u32, u32)>::extend_trusted::<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}
+  fn0 = std::vec::Vec::<(u32, u32)>::extend_trusted::<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}
 
-fn std::iter::Iterator::for_each::call::<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0} (frame 32, args 16, ret 0)
+fn std::iter::Iterator::for_each::call::<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0} (frame 32, args 16, ret 0)
      0: mov.w64 $-8, $16
      3: mov.w32 $-12, $24
      6: mov.w64 $-32, $-8
@@ -9181,9 +9181,9 @@ fn std::iter::Iterator::for_each::call::<u32, {closure@std::vec::Vec<u32>::exten
     12: call $0, fn0
     15: ret $0, 0
   cleanup 12 -> continue
-  fn0 = std::vec::Vec::<u32>::extend_trusted::<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>::{closure#0}
+  fn0 = std::vec::Vec::<u32>::extend_trusted::<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}
 
-fn std::iter::adapters::map::map_fold::<&u32, (u32, u32), (), {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0} (frame 80, args 16, ret 0)
+fn std::iter::adapters::map::map_fold::<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0} (frame 80, args 16, ret 0)
      0: mov.w64 $-24, $16
      3: imm.w8 $-1, 1
      6: ptr.add $-48, $16, 24
@@ -9207,9 +9207,9 @@ fn std::iter::adapters::map::map_fold::<&u32, (u32, u32), (), {closure@/home/joh
   cleanup 35 -> 51
   cleanup 41 -> continue
   fn0 = main::{closure#1}
-  fn1 = std::iter::Iterator::for_each::call::<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}
+  fn1 = std::iter::Iterator::for_each::call::<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}
 
-fn std::iter::adapters::map::map_fold::<usize, u32, (), {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0} (frame 64, args 16, ret 0)
+fn std::iter::adapters::map::map_fold::<usize, u32, (), {closure@bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0} (frame 64, args 16, ret 0)
      0: mov.w64 $-24, $16
      3: imm.w8 $-1, 1
      6: ptr.add $-40, $16, 24
@@ -9233,7 +9233,7 @@ fn std::iter::adapters::map::map_fold::<usize, u32, (), {closure@/home/john/dev/
   cleanup 35 -> 51
   cleanup 41 -> continue
   fn0 = main::{closure#0}
-  fn1 = std::iter::Iterator::for_each::call::<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}
+  fn1 = std::iter::Iterator::for_each::call::<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}
 
 fn std::iter::range::<impl std::iter::Iterator for std::ops::Range<usize>>::next (frame 32, args 8, ret 16)
      0: mov.w64 $-32, $16
@@ -9645,39 +9645,39 @@ fn std::ptr::drop_glue::<std::vec::set_len_on_drop::SetLenOnDrop<'_>> - shim(Som
   cleanup 6 -> continue
   fn0 = <std::vec::set_len_on_drop::SetLenOnDrop<'_> as std::ops::Drop>::drop
 
-fn std::ptr::drop_glue::<{closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}})) (frame 16, args 8, ret 0)
+fn std::ptr::drop_glue::<{closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}})) (frame 16, args 8, ret 0)
      0: mov.w64 $-8, $16
      3: mov.w64 $-16, $-8
      6: call $-8, fn0
      9: ret $0, 0
   cleanup 6 -> continue
-  fn0 = std::ptr::drop_glue::<{closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}}> - shim(Some({closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}}))
+  fn0 = std::ptr::drop_glue::<{closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}> - shim(Some({closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}))
 
-fn std::ptr::drop_glue::<{closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}})) (frame 16, args 8, ret 0)
+fn std::ptr::drop_glue::<{closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}})) (frame 16, args 8, ret 0)
      0: mov.w64 $-8, $16
      3: mov.w64 $-16, $-8
      6: call $-8, fn0
      9: ret $0, 0
   cleanup 6 -> continue
-  fn0 = std::ptr::drop_glue::<{closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>::{closure#0}}> - shim(Some({closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>::{closure#0}}))
+  fn0 = std::ptr::drop_glue::<{closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}> - shim(Some({closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}))
 
-fn std::ptr::drop_glue::<{closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}})) (frame 16, args 8, ret 0)
+fn std::ptr::drop_glue::<{closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}})) (frame 16, args 8, ret 0)
      0: mov.w64 $-8, $16
      3: mov.w64 $-16, $-8
      6: call $-8, fn0
      9: ret $0, 0
   cleanup 6 -> continue
-  fn0 = std::ptr::drop_glue::<{closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}))
+  fn0 = std::ptr::drop_glue::<{closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}))
 
-fn std::ptr::drop_glue::<{closure@std::iter::adapters::map::map_fold<usize, u32, (), {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::adapters::map::map_fold<usize, u32, (), {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0}})) (frame 16, args 8, ret 0)
+fn std::ptr::drop_glue::<{closure@std::iter::adapters::map::map_fold<usize, u32, (), {closure@bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::adapters::map::map_fold<usize, u32, (), {closure@bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0}})) (frame 16, args 8, ret 0)
      0: mov.w64 $-8, $16
      3: mov.w64 $-16, $-8
      6: call $-8, fn0
      9: ret $0, 0
   cleanup 6 -> continue
-  fn0 = std::ptr::drop_glue::<{closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}))
+  fn0 = std::ptr::drop_glue::<{closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}))
 
-fn std::ptr::drop_glue::<{closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}}> - shim(Some({closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}})) (frame 16, args 8, ret 0)
+fn std::ptr::drop_glue::<{closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}> - shim(Some({closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}})) (frame 16, args 8, ret 0)
      0: mov.w64 $-8, $16
      3: mov.w64 $-16, $-8
      6: call $-8, fn0
@@ -9685,7 +9685,7 @@ fn std::ptr::drop_glue::<{closure@std::vec::Vec<(u32, u32)>::extend_trusted<std:
   cleanup 6 -> continue
   fn0 = std::ptr::drop_glue::<std::vec::set_len_on_drop::SetLenOnDrop<'_>> - shim(Some(std::vec::set_len_on_drop::SetLenOnDrop<'_>))
 
-fn std::ptr::drop_glue::<{closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>::{closure#0}}> - shim(Some({closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>::{closure#0}})) (frame 16, args 8, ret 0)
+fn std::ptr::drop_glue::<{closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}> - shim(Some({closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}})) (frame 16, args 8, ret 0)
      0: mov.w64 $-8, $16
      3: mov.w64 $-16, $-8
      6: call $-8, fn0
@@ -10102,7 +10102,7 @@ fn std::rt::lang_start::<()>::{closure#0} (frame 32, args 8, ret 4)
   fn0 = std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
   fn1 = <() as std::process::Termination>::report
 
-fn std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}> (frame 48, args 16, ret 0)
+fn std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}> (frame 48, args 16, ret 0)
      0: addr $-24, $32
      3: mov.w64 $-16, $-24
      6: mov.w128 $-48, $16
@@ -10114,9 +10114,9 @@ fn std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/r
     22: jmp @-4
   cleanup 12 -> 20
   cleanup 18 -> continue
-  fn0 = std::slice::stable_sort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn0 = std::slice::stable_sort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
 
-fn std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0} (frame 80, args 24, ret 1)
+fn std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0} (frame 80, args 24, ret 1)
      0: load.w64 $-16, [$16 + 0]
      4: mov.w64 $-56, $24
      7: mov.w64 $-80, $-16
@@ -10394,7 +10394,7 @@ fn std::slice::from_raw_parts_mut::precondition_check (frame 144, args 40, ret 0
   site7
   sym8 = island ryo_island_call_ptr0[!]
 
-fn std::slice::stable_sort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 64, args 24, ret 0)
+fn std::slice::stable_sort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 64, args 24, ret 0)
      0: addr $-16, $32
      3: imm.w8 $-26, 0
      6: br! $-26, @+13
@@ -10426,8 +10426,8 @@ fn std::slice::stable_sort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]
   cleanup 15 -> continue
   cleanup 58 -> 76
   cleanup 69 -> 76
-  fn0 = core::slice::sort::shared::smallsort::insertion_sort_shift_left::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}>
-  fn1 = core::slice::sort::stable::driftsort_main::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@/home/john/dev/ryo/tests/bench/sort.rs:60:19: 60:28}>::{closure#0}}, std::vec::Vec<(u32, u32)>>
+  fn0 = core::slice::sort::shared::smallsort::insertion_sort_shift_left::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+  fn1 = core::slice::sort::stable::driftsort_main::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}, std::vec::Vec<(u32, u32)>>
 
 fn std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> (frame 16, args 8, ret 0)
      0: mov.w64 $-16, $16
@@ -10436,7 +10436,7 @@ fn std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> (frame 16, args
   cleanup 3 -> continue
   fn0 = <fn() as std::ops::FnOnce<()>>::call_once - shim(fn())
 
-fn std::vec::Vec::<(u32, u32)>::extend_trusted::<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>> (frame 256, args 24, ret 0)
+fn std::vec::Vec::<(u32, u32)>::extend_trusted::<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>> (frame 256, args 24, ret 0)
      0: imm.w8 $-73, 1
      3: addr $-104, $24
      6: mov.w64 $-256, $-104
@@ -10493,9 +10493,9 @@ fn std::vec::Vec::<(u32, u32)>::extend_trusted::<std::iter::Map<std::slice::Iter
   cleanup 82 -> 160
   cleanup 142 -> 160
   cleanup 149 -> continue
-  fn0 = <std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::size_hint
+  fn0 = <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::size_hint
   fn1 = std::vec::Vec::<(u32, u32)>::reserve
-  fn2 = <std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::for_each::<{closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0}}>
+  fn2 = <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::for_each::<{closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>
   k3 = const allocation + 0
   k4 = const allocation + 0
   k5 = const allocation + 0
@@ -10503,7 +10503,7 @@ fn std::vec::Vec::<(u32, u32)>::extend_trusted::<std::iter::Map<std::slice::Iter
   site7
   sym8 = island ryo_island_call_ptr2[std::fmt::Arguments<'{erased}>, &'{erased} std::panic::Location<'{erased}>, !]
 
-fn std::vec::Vec::<(u32, u32)>::extend_trusted::<std::iter::Map<std::slice::Iter<'_, u32>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:59:50: 59:54}>>::{closure#0} (frame 48, args 16, ret 0)
+fn std::vec::Vec::<(u32, u32)>::extend_trusted::<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0} (frame 48, args 16, ret 0)
      0: load.w64 $-16, [$16 + 16]
      4: load.w64 $-24, [$16 + 8]
      8: ptr.index $-8, $-16, $-24, 8
@@ -10649,7 +10649,7 @@ fn std::vec::Vec::<u32>::extend_from_slice (frame 112, args 24, ret 0)
   cleanup 61 -> continue
   fn0 = <std::vec::Vec<u32> as std::vec::spec_extend::SpecExtend<&u32, std::slice::Iter<'_, u32>>>::spec_extend
 
-fn std::vec::Vec::<u32>::extend_trusted::<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>> (frame 272, args 32, ret 0)
+fn std::vec::Vec::<u32>::extend_trusted::<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>> (frame 272, args 32, ret 0)
      0: imm.w8 $-73, 1
      3: addr $-104, $24
      6: mov.w64 $-272, $-104
@@ -10706,9 +10706,9 @@ fn std::vec::Vec::<u32>::extend_trusted::<std::iter::Map<std::ops::Range<usize>,
   cleanup 84 -> 162
   cleanup 144 -> 162
   cleanup 151 -> continue
-  fn0 = <std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::size_hint
+  fn0 = <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::size_hint
   fn1 = std::vec::Vec::<u32>::reserve
-  fn2 = <std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::for_each::<{closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>::{closure#0}}>
+  fn2 = <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::for_each::<{closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>
   k3 = const allocation + 0
   k4 = const allocation + 0
   k5 = const allocation + 0
@@ -10716,7 +10716,7 @@ fn std::vec::Vec::<u32>::extend_trusted::<std::iter::Map<std::ops::Range<usize>,
   site7
   sym8 = island ryo_island_call_ptr2[std::fmt::Arguments<'{erased}>, &'{erased} std::panic::Location<'{erased}>, !]
 
-fn std::vec::Vec::<u32>::extend_trusted::<std::iter::Map<std::ops::Range<usize>, {closure@/home/john/dev/ryo/tests/bench/sort.rs:52:37: 52:40}>>::{closure#0} (frame 48, args 16, ret 0)
+fn std::vec::Vec::<u32>::extend_trusted::<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0} (frame 48, args 16, ret 0)
      0: load.w64 $-16, [$16 + 16]
      4: load.w64 $-24, [$16 + 8]
      8: ptr.index $-8, $-16, $-24, 4

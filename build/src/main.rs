@@ -31,7 +31,7 @@ commands:
   test --cross T               cross-build and link (not run) the corpus for target T, e.g.
                                x86_64-pc-windows-msvc; needs `build --target T` first
   bench [--runs N]             compare LLVM -O0/-O3, Cranelift and ryo: compile and run time
-  bench codegen                dump ryo's code for each bench program to tests/bench/codegen/
+  bench codegen                dump ryo's code for each bench program to bench/codegen/
 {CRATES}
   clean                        remove dist/ and target/
 ";

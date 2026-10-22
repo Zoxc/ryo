@@ -1,4 +1,4 @@
-//! `y bench` (design/build.md#test-and-bench): each program under `tests/bench/` is compiled
+//! `y bench` (design/build.md#test-and-bench): each program under `bench/` is compiled
 //! and run with every [`Backend`], timing both, and the results are printed as tables.
 //!
 //! Timing uses hyperfine if it is on `PATH`, and otherwise a built-in timer (one warmup run,
@@ -13,7 +13,7 @@ use crate::utils::{cmd, describe, exe_name, root};
 
 pub const DEFAULT_RUNS: u32 = 5;
 
-/// Programs `tests/bench/<name>.rs`. Each prints a result that must be the same for every
+/// Programs `bench/<name>.rs`. Each prints a result that must be the same for every
 /// backend.
 const PROGRAMS: &[&str] = &["fib", "sieve", "sort", "hashmap"];
 
@@ -151,25 +151,26 @@ fn shell_quote(s: &str) -> String {
     }
 }
 
-/// A cell of the tables.
 /// `y bench codegen` (design/build.md#test-and-bench): compiles each program with `rustc-ryo`
-/// and `RYO_DUMP`, writing what the backend generated to `tests/bench/codegen/<name>.txt`.
+/// and `RYO_DUMP`, writing what the backend generated to `bench/codegen/<name>.txt`.
 pub fn codegen() -> Result<(), String> {
     let root = root();
     let rustc_ryo = root.join("dist").join("bin").join(exe_name("rustc-ryo"));
     if !rustc_ryo.exists() {
         return Err("dist/ is missing; run `./y.sh build` first".to_owned());
     }
-    let dump_dir = root.join("tests").join("bench").join("codegen");
+    let dump_dir = root.join("bench").join("codegen");
     let out = root.join("target").join("bench-codegen");
     for dir in [&dump_dir, &out] {
         fs::create_dir_all(dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
     }
     for &program in PROGRAMS {
-        let src = root.join("tests").join("bench").join(format!("{program}.rs"));
+        let src = root.join("bench").join(format!("{program}.rs"));
         let dump = dump_dir.join(format!("{program}.txt"));
         let mut c = cmd(&rustc_ryo);
         c.args(["--edition=2024", &path_str(&src)?, "-o", &path_str(&out.join(exe_name(program)))?]);
+        // Paths relative to the repository, so the dumps don't depend on where it is.
+        c.arg(format!("--remap-path-prefix={}{}=", path_str(&root)?, std::path::MAIN_SEPARATOR));
         c.env("RYO_DUMP", &dump);
         eprintln!("[y] bench codegen {program}: {}", dump.display());
         crate::utils::run(&mut c)?;
@@ -177,7 +178,7 @@ pub fn codegen() -> Result<(), String> {
     Ok(())
 }
 
-/// `None` where building or running failed.
+/// A cell of the tables. `None` where building or running failed.
 struct Cell {
     compile: Option<Stats>,
     run: Option<Stats>,
@@ -209,7 +210,7 @@ pub fn run(runs: u32) -> Result<(), String> {
     // Output mismatches and failed builds or runs, reported at the end.
     let mut failures = Vec::new();
     for &program in PROGRAMS {
-        let src = root.join("tests").join("bench").join(format!("{program}.rs"));
+        let src = root.join("bench").join(format!("{program}.rs"));
         let mut cells = Vec::new();
         let mut reference: Option<String> = None;
         for backend in BACKENDS {
