@@ -166,8 +166,8 @@ ones, which are [inlined](#inline-instructions):
 
 #### Inline instructions
 
-With `Mode::inline` (unless `RYO_ASM_INLINE=0`, [backend.md](backend.md#debugging-switches))
-the common instructions (`asm::has_inline`) are short native sequences instead of handler
+With `Mode::inline` (always on in the backend; off only in tests that compare against the
+handlers) the common instructions (`asm::has_inline`) are short native sequences instead of handler
 calls (`asm::inline`): `mov`, `imm`, `addr`, `ptr.add` (a 32-bit offset), `ptr.index` (a
 stride below 2^31), `load`, `store`, `add`, `sub`, `and`, `or`, `xor`, `mul` and their
 `.imm` forms, the shifts by an immediate below the width, the compares to a `bool` (`eq`
