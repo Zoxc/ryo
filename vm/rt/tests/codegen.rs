@@ -1,13 +1,14 @@
 //! Codegen check of the handlers (design/vm.md, "Handlers"): builds `ryo_rt` as `y build`
-//! does (release, `-Ccodegen-units=1`, default features) with `--emit=asm`, and checks that
+//! does (release, `-Ccodegen-units=1`, this test's `fp-rbp` feature) with `--emit=asm`, and
+//! checks that
 //! - every opcode with a handler has its `ryo_h_<Opcode>` function;
-//! - every handler written in Rust reads `rbp` (the VM function's fp) before any instruction
-//!   that writes `rbp`, so it sees the caller's (no frame pointer was set up; a handler may
-//!   save `rbp` and use it as a register afterwards);
+//! - with `fp-rbp`, every handler written in Rust reads `rbp` (the VM function's fp) before
+//!   any instruction that writes `rbp`, so it sees the caller's (no frame pointer was set up;
+//!   a handler may save `rbp` and use it as a register afterwards);
 //! - the hot handlers have no prologue (no push, no stack adjustment) and make no call.
 //!
 //! It builds into its own target directory, so it doesn't contend with the running `cargo
-//! test`. Skipped with the `fp-arg` feature, where handlers take `fp` in `rdi`.
+//! test`.
 
 #![cfg(target_arch = "x86_64")]
 
@@ -37,11 +38,8 @@ fn asm_of<'a>(asm: &'a str, suffix: &str) -> Option<Vec<&'a str>> {
 
 #[test]
 fn handlers_read_rbp_first_and_hot_ones_have_no_prologue() {
-    if ryo_rt::vm::FP_ARG {
-        eprintln!("skipped: handlers take fp in rdi");
-        return;
-    }
-    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("codegen");
+    let fp_rbp = !ryo_rt::vm::FP_ARG;
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(if fp_rbp { "codegen-fp-rbp" } else { "codegen" });
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
     let st = Command::new(env!("CARGO"))
         .env("RUSTC_BOOTSTRAP", "1")
@@ -51,6 +49,7 @@ fn handlers_read_rbp_first_and_hot_ones_have_no_prologue() {
         .arg(&manifest)
         .arg("--target-dir")
         .arg(&dir)
+        .args(if fp_rbp { &["--features", "fp-rbp"][..] } else { &[] })
         .args(["--", "-Ccodegen-units=1", "--emit=asm"])
         .status()
         .expect("running cargo");
@@ -74,6 +73,10 @@ fn handlers_read_rbp_first_and_hot_ones_have_no_prologue() {
         let name = format!("ryo_h_{op:?}");
         let a = asm_of(&asm, &name).unwrap_or_else(|| panic!("{name}: not in the assembly"));
         if naked.contains(&op) {
+            continue;
+        }
+        if !fp_rbp {
+            checked += 1;
             continue;
         }
         let dump = || a.join("\n");

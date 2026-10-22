@@ -261,7 +261,7 @@ fn call_island_unwinds() {
 
 #[test]
 fn abi_version() {
-    assert_eq!(ryo_rt::RYO_RT_ABI, 3);
+    assert_eq!(ryo_rt::RYO_RT_ABI, 4);
 }
 
 thread_local!(static DROPS: Cell<u32> = const { Cell::new(0) });

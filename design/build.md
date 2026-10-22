@@ -83,7 +83,7 @@ modeled on cg_clif's `build_system/`.
      user's profile (bitcode, like std's, so `-Clto` builds can include it), and
      installed next to std. There is no native library to link. Its cargo features are
      `registry-anchor` plus those listed in `RYO_RT_FEATURES` (comma-separated, such as
-     `fp-arg`, [vm.md](vm.md#handlers)).
+     `fp-rbp`, [vm.md](vm.md#handlers)).
 3. **Wrappers** (like cg_clif's `scripts/rustc-clif.rs`, `cargo-clif.rs`): tiny Rust programs
    compiled with plain rustc. They locate `dist/` from `current_exe()`, set
    `RUSTC_BOOTSTRAP=1` and `RUSTUP_TOOLCHAIN` (baked in at build time), and add:
@@ -192,7 +192,8 @@ This gives a third backend, built from the same toolchain, to compare against.
 - `y test` also runs `vm/`'s cargo tests (`cargo test --workspace` in `vm/`): the encoder
   against the decoder, the image writer and reader, every handler against a reference
   model, the handlers' codegen, and hand-assembled functions run through `vm::enter`
-  ([vm.md](vm.md#handlers)).
+  ([vm.md](vm.md#handlers)), then `ryo_rt`'s again with `--features fp-rbp`, which takes
+  the frame-pointer path.
 
 ### `bench crates`
 

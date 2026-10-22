@@ -100,19 +100,33 @@ pub unsafe fn enter(id: u64, args: *const u8, ret: *mut u8) {
 unsafe extern "Rust" {
     /// Calls the VM function at `entry` with the `size`-byte argument block at `args`
     /// (design/vm.md, "Entry"): reserves and copies the block, and calls it with `rbp = 0`,
-    /// so its frame has a null caller fp and `ret` writes to the entry record. Panics unwind
-    /// through it. The Rust ABI, so the call may unwind without being an FFI call.
+    /// so a frame-pointer chain ends at the entry frame. The call returns to
+    /// `ryo_asm_enter_ret`, where `ret` writes to the entry record. Panics unwind through it.
+    /// The Rust ABI, so the call may unwind without being an FFI call.
     fn ryo_asm_enter(entry: *const u8, args: *const u8, size: usize);
 }
 
+unsafe extern "C" {
+    /// The return address of `ryo_asm_enter`'s call of the entry.
+    static ryo_asm_enter_ret: u8;
+}
+
+/// The return address of an entry frame ([`ryo_asm_enter`]).
+#[inline(always)]
+pub(crate) fn enter_return() -> *const u8 {
+    &raw const ryo_asm_enter_ret
+}
+
 // The frame of `ryo_asm_enter` is addressed through `rbx`: `rbp` is 0 while VM code runs
-// (the null caller fp of the entry frame), and the reserved size is dynamic.
+// (the end of the frame-pointer chain), and the reserved size is dynamic.
 #[cfg(not(windows))]
 core::arch::global_asm!(
     ".text",
     ".p2align 4",
     ".globl ryo_asm_enter",
     ".hidden ryo_asm_enter",
+    ".globl ryo_asm_enter_ret",
+    ".hidden ryo_asm_enter_ret",
     ".type ryo_asm_enter, @function",
     "ryo_asm_enter:",
     ".cfi_startproc",
@@ -134,6 +148,7 @@ core::arch::global_asm!(
     "rep movsb",
     "xor ebp, ebp",
     "call rax",
+    "ryo_asm_enter_ret:",
     "mov rsp, rbx",
     "pop rbx",
     ".cfi_def_cfa rsp, 16",
@@ -152,6 +167,7 @@ core::arch::global_asm!(
     ".p2align 4",
     ".globl ryo_asm_enter",
     ".def ryo_asm_enter; .scl 2; .type 32; .endef",
+    ".globl ryo_asm_enter_ret",
     "ryo_asm_enter:",
     ".seh_proc ryo_asm_enter",
     "push rbp",
@@ -197,6 +213,7 @@ core::arch::global_asm!(
     "rep movsb",
     "xor ebp, ebp",
     "call rax",
+    "ryo_asm_enter_ret:",
     "lea rsp, [rbx - 160]",
     "movaps xmm6, [rsp + 0]",
     "movaps xmm7, [rsp + 16]",

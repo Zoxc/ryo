@@ -27,7 +27,7 @@ use crate::objfile;
 use super::lower::{self, CodeReloc, LowerCx, LoweredFn, NeedsNative};
 
 /// The `RYO_RT_ABI` the backend was written against (`vm/rt/src/lib.rs`).
-const EXPECTED_RT_ABI: u32 = 3;
+const EXPECTED_RT_ABI: u32 = 4;
 
 /// The `ryo_rt` items the backend instantiates or checks (design/stubs.md, Lookup).
 #[derive(Clone, Copy)]
@@ -201,16 +201,33 @@ fn check_rt_abi(tcx: TyCtxt<'_>, rt: RtItems) {
     }
 }
 
-/// How the image's machine code is generated: as `ryo_rt`'s handlers expect `fp`, with
-/// loop-head alignment unless `RYO_ASM_ALIGN=0`, and for the target's object format.
+/// How the image's machine code is generated: as `ryo_rt`'s handlers expect `fp`, with a
+/// frame pointer where the session needs one, with loop-head alignment unless
+/// `RYO_ASM_ALIGN=0`, and for the target's object format.
 pub fn asm_mode(tcx: TyCtxt<'_>, rt: RtItems) -> asm::Mode {
     let fp_arg = tcx.const_eval_poly(rt.fp_arg).ok().and_then(|v| v.try_to_scalar_int()).map(|i| i.to_u8() != 0);
     let Some(fp_arg) = fp_arg else { tcx.dcx().fatal("ryo_rt's FP_ARG isn't a bool") };
+    let pe = tcx.sess.target.binary_format == rustc_target::spec::BinaryFormat::Coff;
     asm::Mode {
         fp_arg,
+        // Handlers that read `rbp` and PE unwind info need it (`asm::Mode::frame_pointer`).
+        frame_pointer: !fp_arg || pe || needs_frame_pointer(tcx.sess),
         align_loops: std::env::var_os("RYO_ASM_ALIGN").is_none_or(|v| v != "0"),
-        pe: tcx.sess.target.binary_format == rustc_target::spec::BinaryFormat::Coff,
+        pe,
     }
+}
+
+/// Whether the session asks for frame pointers, as `rustc_codegen_llvm::attributes::
+/// frame_pointer` decides: the target's default, `-Zinstrument-mcount` and
+/// `-Cforce-frame-pointers`. `NonLeaf` counts as `Always`: VM functions call handlers.
+fn needs_frame_pointer(sess: &rustc_session::Session) -> bool {
+    use rustc_target::spec::FramePointer;
+    let mut fp = sess.target.frame_pointer;
+    if let rustc_session::config::InstrumentMcount::Mcount(_) = sess.opts.unstable_opts.instrument_mcount {
+        fp.ratchet(FramePointer::Always);
+    }
+    fp.ratchet(sess.opts.cg.force_frame_pointers);
+    fp != FramePointer::MayOmit
 }
 
 /// The symbol of one of `ryo_rt`'s handlers or `ryo_probe_stack` (`#[rustc_std_internal_symbol]`s).

@@ -10,10 +10,10 @@
 //! `name` from them through the opcode's register layout ([`ryo_bytecode::asm::layout`],
 //! a constant), so an unused register costs nothing and every handler is one function body.
 //!
-//! The frame pointer is `rbp`, which the caller (VM code) keeps at its frame: the handler
-//! reads it before anything else, and must not write `rbp` before that (`ryo_rt` is built
-//! without forced frame pointers, and `tests/codegen.rs` checks every handler). With the
-//! `fp-arg` feature, `fp` comes in `rdi` instead ([`MODE`]).
+//! The frame pointer `fp` comes in `rdi`, before the operands. With the `fp-rbp` feature it
+//! is `rbp` instead, which the caller (VM code) then keeps at its frame: the handler reads it
+//! before anything else, and must not write `rbp` before that (`ryo_rt` is built without
+//! forced frame pointers, and `tests/codegen.rs` checks every handler) ([`MODE`]).
 //!
 //! `tail_call`, `resume` and the argument move of `tail_call.ind` need the caller's stack
 //! pointer or end in a tail jump, so they are written in assembly.
@@ -47,8 +47,10 @@ use super::registry::{Function, lookup_addr};
 use super::sys::{self, fatal};
 
 /// How the machine code passes `fp`: the backend reads this (through `FP_ARG`) and encodes
-/// to match (the other fields don't concern the handlers).
-pub const MODE: asm::Mode = asm::Mode { fp_arg: cfg!(feature = "fp-arg"), align_loops: false, pe: false };
+/// to match. The handlers work with and without a frame pointer when they take `fp` in
+/// `rdi`; tests encode without one then. The other fields don't concern the handlers.
+pub const MODE: asm::Mode =
+    asm::Mode { fp_arg: !cfg!(feature = "fp-rbp"), frame_pointer: cfg!(feature = "fp-rbp"), align_loops: false, pe: false };
 
 /// Whether handlers take `fp` in `rdi`; the backend checks it agrees with its encoding.
 #[rustc_diagnostic_item = "ryo_rt_fp_arg"]
@@ -513,21 +515,21 @@ unsafe fn put_at<T>(p: *mut u8, v: T) {
 }
 
 /// `ret`: copies `len` bytes from `src` to the caller's destination slot: the slot named by
-/// the call marker at the return address (`nop dword [rcx + d]`), or, from the entry frame
-/// (null caller fp), the entry record's `ret`.
+/// the call marker at the return address (`nop dword [rcx + d]`, `d` relative to the caller's
+/// `rsp`, which is `fp + 16`), or, from the entry frame (returning into `ryo_asm_enter`), the
+/// entry record's `ret`.
 #[inline(always)]
 unsafe fn do_ret(fp: *mut u8, src: *mut u8, len: usize) {
-    // SAFETY: the frame header was written by the call (and `push rbp`) that made the frame.
+    // SAFETY: the return address was written by the call that made the frame.
     unsafe {
-        let caller = fp.cast::<*mut u8>().read();
-        let dst = if caller.is_null() {
+        let ra = fp.add(8).cast::<*const u8>().read();
+        let dst = if ptr::eq(ra, super::enter_return()) {
             (*(*super::thread::current()).entry).ret
         } else {
-            let ra = fp.add(8).cast::<*const u8>().read();
             if ra.cast::<[u8; 3]>().read_unaligned() != CALL_MARKER {
                 fatal("return address isn't after a VM call")
             }
-            caller.offset(ra.add(3).cast::<i32>().read_unaligned() as isize)
+            fp.add(16).offset(ra.add(3).cast::<i32>().read_unaligned() as isize)
         };
         ptr::copy_nonoverlapping(src, dst, len)
     }
@@ -673,14 +675,14 @@ const _: () = {
 };
 
 /// `tail_call f, n`: moves the `n` bytes of the staged argument block from the caller's
-/// stack pointer (`fp - F`) up to `fp + 16`, then returns to `leave; jmp f`. The two never
+/// stack pointer (`fp - F`) up to `fp + 16`, then returns to the epilogue and `jmp f`. The two never
 /// overlap: `F` is at least the block's size. The return address is at `rsp`, so the
 /// caller's stack pointer is `rsp + 8`.
 #[unsafe(naked)]
 #[rustc_std_internal_symbol]
 #[unsafe(export_name = "ryo_h_TailCall")]
 pub unsafe extern "sysv64-unwind" fn tail_call() {
-    #[cfg(not(feature = "fp-arg"))]
+    #[cfg(feature = "fp-rbp")]
     core::arch::naked_asm!(
         ".cfi_startproc",
         "mov ecx, edi",
@@ -690,7 +692,7 @@ pub unsafe extern "sysv64-unwind" fn tail_call() {
         "ret",
         ".cfi_endproc",
     );
-    #[cfg(feature = "fp-arg")]
+    #[cfg(not(feature = "fp-rbp"))]
     core::arch::naked_asm!(
         ".cfi_startproc",
         "mov ecx, esi",
@@ -734,7 +736,7 @@ unsafe extern "sysv64-unwind" fn tail_call_ind(a0: u64, a1: u64, a2: u64, a3: u6
 #[rustc_std_internal_symbol]
 #[unsafe(export_name = "ryo_h_Resume")]
 pub unsafe extern "sysv64-unwind" fn resume() -> ! {
-    #[cfg(not(feature = "fp-arg"))]
+    #[cfg(feature = "fp-rbp")]
     core::arch::naked_asm!(
         ".cfi_startproc",
         "movsxd rdi, edi",
@@ -743,7 +745,7 @@ pub unsafe extern "sysv64-unwind" fn resume() -> ! {
         ".cfi_endproc",
         sym _Unwind_Resume,
     );
-    #[cfg(feature = "fp-arg")]
+    #[cfg(not(feature = "fp-rbp"))]
     core::arch::naked_asm!(
         ".cfi_startproc",
         "movsxd rsi, esi",

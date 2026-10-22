@@ -20,6 +20,14 @@
 //! order (the `sysv64` convention on every target). An operand takes one register, except
 //! `Mem` (`p`, `k`), `U128` (low, high) and a case list (values, count), which take two.
 //! The handler finds `fp` in `rbp`, or with [`Mode::fp_arg`] in `rdi`, before the operands.
+//!
+//! # Frames
+//!
+//! `fp` is the address below the return address, so the argument block is at `fp + 16`, and
+//! `rsp` is `fp - F` while the function runs. With [`Mode::frame_pointer`] the prologue
+//! saves the caller's `rbp` at `fp` and sets `rbp = fp`, and frame slots are `[rbp + d]`;
+//! without, the prologue is `sub rsp, F + 8`, slots are `[rsp + F + d]` and `rbp` is left
+//! alone, as LLVM omits frame pointers.
 //! If an opcode has more operands than registers, adjacent 32-bit operands (`Slot`, `U8`,
 //! `U16`, `U32`) share one, `a | b << 32`, pairing from the last pair.
 
@@ -39,7 +47,7 @@ pub use decode::{AsmError, Decoded, decode};
 #[cfg(feature = "alloc")]
 pub use inline::has_inline;
 #[cfg(feature = "alloc")]
-pub use encode::{Asm, CallSite, DroppedStore, EncodeError, Encoded, InsnId, Label, Opnd, PROBE_FROM, Ref, Reloc, Unwind, encode, operands, push_words, word_len};
+pub use encode::{Asm, CallSite, DroppedStore, EncodeError, Encoded, InsnId, Label, Opnd, PROBE_FROM, Ref, Reloc, Unwind, encode, operands, prologue_len, push_words, word_len};
 
 use crate::insn::{ElemKind, Opcode, OperandKind, Shape};
 
@@ -54,6 +62,11 @@ pub const MAX_OPERANDS: usize = 8;
 pub struct Mode {
     /// Handlers take `fp` in `rdi` (before the operands) instead of reading `rbp`.
     pub fp_arg: bool,
+    /// Functions keep `fp` in `rbp` (`push rbp; mov rbp, rsp`) and address their slots
+    /// through it. Without, they address them through `rsp`, which requires `fp_arg` (the
+    /// handlers can't find `fp` otherwise) and not `pe` (the island calls move `rsp`, which
+    /// PE unwind info can't describe).
+    pub frame_pointer: bool,
     /// Backward branch targets are padded to 16 bytes.
     pub align_loops: bool,
     /// The target is PE/COFF: islands take the Win64 convention (`rcx`, `rdx`, 32 bytes of
@@ -87,6 +100,13 @@ pub struct Layout {
     pub first: u8,
     /// The registers the handler call sets, `fp` and the exception object included.
     pub regs: u8,
+}
+
+impl Mode {
+    /// Whether the encoder supports the combination (see [`Mode::frame_pointer`]).
+    pub const fn valid(self) -> bool {
+        self.frame_pointer || (self.fp_arg && !self.pe)
+    }
 }
 
 impl Layout {
@@ -239,5 +259,6 @@ pub const fn read(args: &[u64; ARG_REGS], loc: Loc) -> u128 {
 }
 
 /// The byte sequence `nop dword [rcx + d]` begins with: the marker after a VM call
-/// (`0F 1F 81 disp32`), which `ret` reads `d` from.
+/// (`0F 1F 81 disp32`), which `ret` reads `d` from. `d` is relative to the caller's `rsp`,
+/// which is the callee's `fp + 16`.
 pub const CALL_MARKER: [u8; 3] = [0x0f, 0x1f, 0x81];

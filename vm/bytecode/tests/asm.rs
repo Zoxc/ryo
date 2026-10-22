@@ -29,13 +29,17 @@ impl Rng {
     }
 }
 
-const MODES: [Mode; 8] = {
-    let mut m = [Mode { fp_arg: false, align_loops: false, pe: false }; 8];
+/// Every valid mode: the eight with a frame pointer, then the two without (which need
+/// `fp_arg` and not `pe`).
+const MODES: [Mode; 10] = {
+    let mut m = [Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false }; 10];
     let mut i = 0;
     while i < 8 {
-        m[i] = Mode { fp_arg: i & 1 != 0, align_loops: i & 2 != 0, pe: i & 4 != 0 };
+        m[i] = Mode { fp_arg: i & 1 != 0, frame_pointer: true, align_loops: i & 2 != 0, pe: i & 4 != 0 };
         i += 1;
     }
+    m[8] = Mode { fp_arg: true, frame_pointer: false, align_loops: false, pe: false };
+    m[9] = Mode { fp_arg: true, frame_pointer: false, align_loops: true, pe: false };
     m
 };
 
@@ -278,7 +282,7 @@ fn register_cache_drops_reloads() {
 #[test]
 fn label_at_a_dead_hint_before_a_loop_head() {
     use asm::Opnd::{Imm, Neg, Slot, Target};
-    let mode = Mode { fp_arg: false, align_loops: true, pe: false };
+    let mode = Mode { fp_arg: false, frame_pointer: true, align_loops: true, pe: false };
     let mut a = asm::Asm::new(mode);
     let (empty, head) = (a.label(), a.label());
     a.insn(Opcode::BrEqImmW64, &[Slot(-8), Imm(0), Neg(false), Target(empty)]);
@@ -295,7 +299,7 @@ fn label_at_a_dead_hint_before_a_loop_head() {
 /// The register packing of the opcodes with more operands than registers.
 #[test]
 fn packed_operands() {
-    let m = Mode { fp_arg: false, align_loops: false, pe: false };
+    let m = Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false };
     let l = asm::layout(Opcode::DiscrNicheW128, m);
     // d, s, niche_start (2), variants_start, variants_end | untagged << 32.
     assert_eq!(l.regs, 6);
@@ -317,7 +321,7 @@ fn packed_operands() {
 /// Machine code that isn't canonical is rejected.
 #[test]
 fn rejects_non_canonical_code() {
-    let m = Mode { fp_arg: false, align_loops: false, pe: false };
+    let m = Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false };
     let f = Fn {
         // A shift by the width or more calls its handler.
         insns: vec![vec![Opcode::ShlImmW64 as u32, -8i32 as u32, -16i32 as u32, 70, 0], vec![Opcode::Ret as u32, -8i32 as u32, 8]],
@@ -354,8 +358,8 @@ fn inline_operand_forms() {
         if !asm::has_inline(op) {
             continue;
         }
-        for round in 0..24 {
-            let mode = MODES[round % 8];
+        for round in 0..30 {
+            let mode = MODES[round % MODES.len()];
             // [abort], insn, abort, abort.
             let mut f = Fn { insns: vec![vec![Opcode::Abort as u32]], targets: Vec::new(), unwind: Vec::new() };
             let mut w = vec![op as u32];
@@ -395,7 +399,7 @@ fn inline_operand_forms() {
 /// call (same operands as `add.w32`) retargeted to `add.w32`'s handler.
 #[test]
 fn rejects_handler_calls_of_inlined_ops() {
-    let m = Mode { fp_arg: false, align_loops: false, pe: false };
+    let m = Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false };
     let f = Fn {
         insns: vec![vec![Opcode::FaddF32 as u32, -8i32 as u32, -16i32 as u32, 16], vec![Opcode::Abort as u32]],
         targets: Vec::new(),
@@ -423,7 +427,7 @@ fn templates_are_pinned_to_format_version() {
     };
     let mut rng = Rng(7);
     for &op in ALL_OPCODES {
-        for mode in [MODES[0], MODES[1], MODES[6]] {
+        for mode in [MODES[0], MODES[1], MODES[6], MODES[8]] {
             let mut f = Fn { insns: vec![vec![Opcode::Lpad as u32, -8i32 as u32]], targets: Vec::new(), unwind: Vec::new() };
             let w = insn(op, &mut rng, 2, &mut f, &mut |_| 0);
             f.insns.push(w);
@@ -440,5 +444,5 @@ fn templates_are_pinned_to_format_version() {
             eat(&lsda::write(&enc.call_sites));
         }
     }
-    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (12, 0x7d7935189c173d73), "template hash {h:#x}");
+    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (13, 0xdfd4fd52b40f8bdc), "template hash {h:#x}");
 }

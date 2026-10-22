@@ -289,8 +289,13 @@ enum Piece {
     LeaRo { reg: Reg, ro: u32 },
     /// A branch to the label.
     Branch { cond: Cond, to: Label },
-    /// A short forward branch over the next `skip` bytes (inside a call sequence).
-    Skip { cond: Cond, skip: u32 },
+    /// A short forward branch over the next `over` pieces (inside a call sequence).
+    Skip { cond: Cond, over: u32 },
+    /// `reg = fp`: `mov reg, rbp`, or without a frame pointer `lea reg, [rsp + F]`.
+    Fp(Reg),
+    /// The epilogue before `ret` or a tail jump: `leave`, or without a frame pointer
+    /// `add rsp, F + 8`.
+    Epilogue,
     /// `lea rcx, [rip + T]` of the instruction's jump table.
     LeaTable,
     /// The jump table: `int3`s up to a multiple of 4, then the entries.
@@ -440,7 +445,8 @@ enum Laid {
     /// A fixed item; a call site with its landing pad (element index) and catch flag.
     Fixed { item: Item, site: Option<(Option<usize>, bool)> },
     Branch { cond: Cond, to: usize, long: bool },
-    Skip { cond: Cond, skip: u32 },
+    /// A short branch over the next `over` elements.
+    Skip { cond: Cond, over: u32 },
     LeaTable,
     Table(Vec<usize>),
     /// Padding up to a multiple of 16 (a loop head).
@@ -632,7 +638,7 @@ impl Asm {
     fn handler_call(&mut self, op: Opcode, ops: &[Opnd<Label>], site: Option<InsnId>) {
         let l = layouts(self.mode.fp_arg)[op as usize];
         if self.mode.fp_arg {
-            self.fixed(Item::Mov(ARGS[0], Reg::Rbp));
+            self.pieces.push(Piece::Fp(ARGS[0]));
         }
         if op.info().shape == Shape::Lpad {
             // The exception object, in `rax` at a landing pad.
@@ -654,7 +660,7 @@ impl Asm {
     /// operand array [`Asm::ro`]`[ro]` (PE: with 32 bytes of shadow space).
     fn island_call(&mut self, isl: Sym, ro: u32, site: Option<InsnId>) {
         let [fp, ops] = island_args(self.mode.pe);
-        self.fixed(Item::Mov(fp, Reg::Rbp));
+        self.pieces.push(Piece::Fp(fp));
         self.pieces.push(Piece::LeaRo { reg: ops, ro });
         if self.mode.pe {
             self.fixed(Item::SubRsp(32));
@@ -665,8 +671,9 @@ impl Asm {
         }
     }
 
-    fn island_len(&self) -> u32 {
-        if self.mode.pe { 3 + 7 + 4 + 6 + 4 } else { 3 + 7 + 6 }
+    /// The pieces of [`Asm::island_call`].
+    fn island_pieces(&self) -> u32 {
+        if self.mode.pe { 5 } else { 3 }
     }
 
     /// The jump-table sequence on the index in `rax`, with `targets`.
@@ -736,7 +743,7 @@ impl Asm {
             }
             Shape::Ret => {
                 self.handler_call(op, ops, None);
-                self.fixed(Item::Leave);
+                self.pieces.push(Piece::Epilogue);
                 self.fixed(Item::Ret);
             }
             Shape::Jmp => self.pieces.push(Piece::Branch { cond: Cond::Always, to: target("t") }),
@@ -752,15 +759,15 @@ impl Asm {
                 let d = slot("d");
                 let ro = self.ro(RoReq::Ops(vec![RoWord::ArgBlock, RoWord::Slot(d), RoWord::Slot(fnp)]));
                 self.fixed(Item::TestRax);
-                self.pieces.push(Piece::Skip { cond: Cond::Z, skip: 2 + 7 + 2 });
+                self.pieces.push(Piece::Skip { cond: Cond::Z, over: 3 });
                 self.maybe_site(Item::CallRax, site);
                 self.pieces.push(Piece::Marker(d));
-                self.pieces.push(Piece::Skip { cond: Cond::Always, skip: self.island_len() });
+                self.pieces.push(Piece::Skip { cond: Cond::Always, over: self.island_pieces() });
                 self.island_call(sym("isl"), ro, site);
             }
             Shape::TailCall => {
                 self.handler_call(op, ops, None);
-                self.fixed(Item::Leave);
+                self.pieces.push(Piece::Epilogue);
                 let Opnd::Func(f) = named("f") else { unreachable!() };
                 self.fixed(Item::Jmp(Ref::Func(*f)));
             }
@@ -769,14 +776,14 @@ impl Asm {
                 let s = slot("s");
                 let ro = self.ro(RoReq::Ops(vec![RoWord::ArgBlock, RoWord::Slot(s), RoWord::Slot(slot("p"))]));
                 self.fixed(Item::TestRax);
-                self.pieces.push(Piece::Skip { cond: Cond::Z, skip: 1 + 2 });
-                self.fixed(Item::Leave);
+                self.pieces.push(Piece::Skip { cond: Cond::Z, over: 2 });
+                self.pieces.push(Piece::Epilogue);
                 self.fixed(Item::JmpRax);
                 self.island_call(sym("isl"), ro, site);
                 // Then `ret s, len`.
                 let ret = [Opnd::Slot(s as i32), named("len").clone()];
                 self.handler_call(Opcode::Ret, &ret, None);
-                self.fixed(Item::Leave);
+                self.pieces.push(Piece::Epilogue);
                 self.fixed(Item::Ret);
             }
             Shape::Island => {
@@ -792,6 +799,7 @@ impl Asm {
     /// its frame offset. Every label a branch uses must be bound.
     pub fn finish(self, frame_size: u32, fix: impl Fn(u32) -> u32) -> Encoded {
         let Asm { mode, mut pieces, labels, ro, unwind, targets } = self;
+        debug_assert!(mode.valid(), "{mode:?}");
         let target = branch_targets(&pieces, &labels);
         cache(&mut pieces, &target);
         drop_dead_stores(&mut pieces, &target);
@@ -831,17 +839,15 @@ impl Asm {
         // constants resolved. `remap[k]` is the element of piece `k` (after its padding).
         let mut out: Vec<Laid> = Vec::with_capacity(pieces.len() + 8);
         let fixed = |out: &mut Vec<Laid>, item| out.push(Laid::Fixed { item, site: None });
-        // `push rbp; mov rbp, rsp`, then for `F > 0` (with a stack probe from 4096 bytes)
-        // `sub rsp, F`.
-        fixed(&mut out, Item::PushRbp);
-        fixed(&mut out, Item::Mov(Reg::Rbp, Reg::Rsp));
-        if frame_size >= PROBE_FROM {
-            fixed(&mut out, Item::SetReg(Reg::Rax, frame_size as u64));
-            fixed(&mut out, Item::Call(Ref::Probe));
+        for item in prologue(frame_size, mode) {
+            fixed(&mut out, item);
         }
-        if frame_size != 0 {
-            fixed(&mut out, Item::SubRsp(frame_size));
-        }
+        let epilogue = epilogue(frame_size, mode);
+        // Frame slots: `[rbp + d]`, or `[rsp + F + d]`.
+        let slot = |item: Item| {
+            let item = item.map_frame(|s| fix(s as u32) as i32);
+            if mode.frame_pointer { item } else { item.sp_frame(frame_size) }
+        };
         let mut remap = Vec::with_capacity(pieces.len() + 1);
         let lab = |l: &Label| labels[l.0 as usize];
         let mut tables = Vec::new();
@@ -877,10 +883,13 @@ impl Asm {
                         }),
                     }
                 }
-                Piece::Marker(d) => Laid::Fixed { item: Item::Marker(fix(d) as i32), site: None },
+                // The destination relative to `rsp`.
+                Piece::Marker(d) => Laid::Fixed { item: Item::Marker((fix(d) as i32).wrapping_add(frame_size as i32)), site: None },
                 Piece::Gone | Piece::Dead { .. } => unreachable!(),
                 Piece::Dropped(item) => Laid::Dropped(item.map_frame(|s| fix(s as u32) as i32)),
-                Piece::Native(item) => Laid::Fixed { item: item.map_frame(|s| fix(s as u32) as i32), site: None },
+                Piece::Native(item) => Laid::Fixed { item: slot(item), site: None },
+                Piece::Fp(reg) => Laid::Fixed { item: fp_item(reg, frame_size, mode), site: None },
+                Piece::Epilogue => Laid::Fixed { item: epilogue, site: None },
                 Piece::SetReg { reg, v, slots } => {
                     let mut v = v;
                     if slots & 1 != 0 {
@@ -896,7 +905,7 @@ impl Asm {
                     branches.push(out.len());
                     Laid::Branch { cond, to: lab(&to), long: false }
                 }
-                Piece::Skip { cond, skip } => Laid::Skip { cond, skip },
+                Piece::Skip { cond, over } => Laid::Skip { cond, over },
                 Piece::LeaTable => Laid::LeaTable,
                 Piece::Table(ts) => {
                     tables.push(out.len());
@@ -935,11 +944,50 @@ impl Asm {
     }
 }
 
-/// Every opcode's handler register layout, without and with `fp-arg`, computed at compile
+/// The prologue of a function with frame size `F`: `push rbp; mov rbp, rsp`, then for
+/// `F > 0` `sub rsp, F`; or without a frame pointer `sub rsp, F + 8`. A stack probe of the
+/// `sub`'s size comes before it for `F` from [`PROBE_FROM`].
+pub(super) fn prologue(frame_size: u32, mode: Mode) -> Vec<Item> {
+    let mut out = Vec::with_capacity(4);
+    let alloc = if mode.frame_pointer {
+        out.extend([Item::PushRbp, Item::Mov(Reg::Rbp, Reg::Rsp)]);
+        frame_size
+    } else {
+        frame_size + 8
+    };
+    if frame_size >= PROBE_FROM {
+        out.extend([Item::SetReg(Reg::Rax, alloc as u64), Item::Call(Ref::Probe)]);
+    }
+    if alloc != 0 {
+        out.push(Item::SubRsp(alloc));
+    }
+    out
+}
+
+/// The length of [`prologue`]: where the frame is set up.
+pub fn prologue_len(frame_size: u32, mode: Mode) -> u32 {
+    prologue(frame_size, mode).iter().map(Item::len).sum()
+}
+
+/// The epilogue before `ret` and tail jumps: `leave`, or `add rsp, F + 8`.
+pub(super) fn epilogue(frame_size: u32, mode: Mode) -> Item {
+    if mode.frame_pointer { Item::Leave } else { Item::AddRsp(frame_size + 8) }
+}
+
+/// `reg = fp`: `mov reg, rbp`, or `lea reg, [rsp + F]`.
+pub(super) fn fp_item(reg: Reg, frame_size: u32, mode: Mode) -> Item {
+    if mode.frame_pointer {
+        Item::Mov(reg, Reg::Rbp)
+    } else {
+        Item::LeaM { dst: reg, m: super::x86::M { base: Reg::Rsp, disp: frame_size as i32 } }
+    }
+}
+
+/// Every opcode's handler register layout, with `fp` in `rbp` and in `rdi`, computed at compile
 /// time.
 fn layouts(fp_arg: bool) -> &'static [Layout] {
     const fn all(fp_arg: bool) -> [Layout; crate::insn::ALL_OPCODES.len()] {
-        let mode = Mode { fp_arg, align_loops: false, pe: false };
+        let mode = Mode { fp_arg, frame_pointer: true, align_loops: false, pe: false };
         let mut out = [layout(Opcode::Jmp, mode); crate::insn::ALL_OPCODES.len()];
         let mut i = 0;
         while i < out.len() {
@@ -1019,7 +1067,7 @@ fn layout_code(mut pieces: Vec<Laid>) -> Encoded {
                 site = *s;
             }
             Laid::Branch { cond, to, long } => items.push(Item::Branch { cond: *cond, target: pos[*to], long: *long }),
-            Laid::Skip { cond, skip } => items.push(Item::Branch { cond: *cond, target: p + 2 + skip, long: false }),
+            Laid::Skip { cond, over } => items.push(Item::Branch { cond: *cond, target: pos[k + 1 + *over as usize], long: false }),
             Laid::LeaTable => {
                 // The table follows the rest of the sequence: `movsxd`, `add`, `jmp rax`.
                 let t = (p + 7 + 4 + 3 + 2).next_multiple_of(4);
@@ -1120,9 +1168,9 @@ mod tests {
         // Every opcode with a handler has a layout (const-evaluable for all of them).
         for &op in crate::insn::ALL_OPCODES {
             if super::super::has_handler(op) {
-                let l = layout(op, Mode { fp_arg: false, align_loops: true, pe: false });
+                let l = layout(op, Mode { fp_arg: false, frame_pointer: true, align_loops: true, pe: false });
                 assert!(l.regs as usize <= super::super::ARG_REGS);
-                let l = layout(op, Mode { fp_arg: true, align_loops: true, pe: false });
+                let l = layout(op, Mode { fp_arg: true, frame_pointer: false, align_loops: true, pe: false });
                 assert!(l.regs as usize <= super::super::ARG_REGS);
             }
         }

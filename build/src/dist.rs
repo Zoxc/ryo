@@ -138,7 +138,7 @@ fn build_runtime(
     let rustflags = [&sysroot_flag, "-Ccodegen-units=1", "-Cpanic=unwind", "-Cembed-bitcode=yes"];
     let mut cargo = cmd("cargo");
     // `registry-anchor`: `vm::enter` references the registry objects the backend generates
-    // (design/backend.md#pipeline step 6). `RYO_RT_FEATURES` adds others, such as `fp-arg`
+    // (design/backend.md#pipeline step 6). `RYO_RT_FEATURES` adds others, such as `fp-rbp`
     // for measurements (design/build.md#test-and-bench).
     let mut features = String::from("registry-anchor");
     if let Some(extra) = std::env::var("RYO_RT_FEATURES").ok().filter(|f| !f.is_empty()) {

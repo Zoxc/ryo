@@ -3,7 +3,7 @@ use ryo_bytecode::image::*;
 use ryo_bytecode::insn::*;
 use ryo_bytecode::{FORMAT_VERSION, Insn};
 
-const ELF: Mode = Mode { fp_arg: false, align_loops: true, pe: false };
+const ELF: Mode = Mode { fp_arg: false, frame_pointer: true, align_loops: true, pe: false };
 
 fn code(insns: &[Insn<'_>]) -> Vec<u32> {
     let mut c = CodeBuf::new();
@@ -204,7 +204,7 @@ fn image_round_trip() {
     assert_eq!(t[8], 0xe8);
     assert_eq!(9 + 4 + i32_at(&l.text, 9) as i64, fs[1].code_off as i64);
     assert_eq!(&t[13..16], asm::CALL_MARKER);
-    assert_eq!(i32_at(&l.text, 16), -8);
+    assert_eq!(i32_at(&l.text, 16), 48 - 8); // the destination `fp - 8`, relative to `rsp`
     // f1's `call.ext`: `lea rdi, [rip + sym slot 0]` reaches the slot.
     let at = fs[1].code_off as u64 + 4 + 4; // after the prologue (`sub rsp, 48`)
     assert_eq!(&t[at as usize..at as usize + 3], [0x48, 0x8d, 0x3d]);
@@ -251,6 +251,17 @@ fn image_round_trip() {
     unsafe { img.apply_fixups() };
     assert_eq!(data.read_u64(16), &*real_static as *const u64 as u64 + 4);
     assert_eq!(img.fixup_area() as u64, data.addr() + 16);
+}
+
+#[test]
+fn elf_unwind_without_frame_pointer() {
+    let obj = sample().finish(Mode { fp_arg: true, frame_pointer: false, ..ELF }).unwrap();
+    // f0: `sub rsp, 56` (F + 8) is the whole prologue.
+    assert_eq!(&obj.text[..4], [0x48, 0x83, 0xec, 56]);
+    // Its FDE: after 4 bytes, CFA = rsp + 64 (F + 16).
+    let eh = &obj.unwind[0].1;
+    assert!(eh.windows(3).any(|w| w == [0x44, 0x0e, 64]), "{eh:02x?}");
+    assert!(!eh.windows(2).any(|w| w == [0x0d, 6]), "a CFA in rbp: {eh:02x?}");
 }
 
 #[test]

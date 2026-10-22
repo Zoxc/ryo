@@ -5,9 +5,9 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
-use super::encode::{CallSite, DroppedStore, Opnd, PROBE_FROM, Ref, RegVal, Reloc, case_size, push_words, word_len};
+use super::encode::{CallSite, DroppedStore, Opnd, Ref, RegVal, Reloc, case_size, epilogue, fp_item, prologue, push_words, word_len};
 use super::inline::Cache;
-use super::x86::{ARGS, BadItem, Cond, Cursor, Item, Reg, island_args};
+use super::x86::{ARGS, BadItem, Cond, Cursor, Item, M, Reg, island_args};
 use super::{Mode, has_handler, layout};
 use crate::image::{CATCH, CONTINUE, CleanupEntry, op_may_unwind};
 use crate::insn::{ElemKind, Opcode, OperandKind, Shape};
@@ -57,39 +57,46 @@ pub fn decode(
 ) -> Result<Decoded, AsmError> {
     let mut c = Cursor::new(code, relocs);
     let err = |at: u32, what: &'static str| AsmError { at, what };
-    // Prologue.
-    if c.item()? != Item::PushRbp || c.item()? != Item::Mov(Reg::Rbp, Reg::Rsp) {
-        return Err(err(0, "no prologue"));
+    // Prologue: the frame size is its `sub`'s (less the 8 bytes in place of the saved `rbp`
+    // without a frame pointer), and the prologue must be that size's.
+    if !mode.valid() {
+        return Err(err(0, "unsupported mode"));
     }
-    let mut frame_size = 0;
-    let save = c.pos;
-    match c.item() {
-        Ok(Item::SetReg(Reg::Rax, f)) => {
-            if c.item()? != Item::Call(Ref::Probe) {
-                return Err(err(c.pos, "no stack probe"));
-            }
-            match c.item()? {
-                Item::SubRsp(g) if g as u64 == f && g >= PROBE_FROM => frame_size = g,
-                _ => return Err(err(c.pos, "probe size isn't the frame size")),
-            }
+    let mut alloc = 0;
+    loop {
+        match c.item() {
+            Ok(Item::SubRsp(n)) => alloc = n,
+            Ok(Item::PushRbp | Item::Mov(Reg::Rbp, Reg::Rsp) | Item::SetReg(Reg::Rax, _) | Item::Call(Ref::Probe)) => continue,
+            _ => {}
         }
-        Ok(Item::SubRsp(f)) if f < PROBE_FROM && f != 0 => frame_size = f,
-        _ => c.pos = save,
+        break;
     }
+    let frame_size = if mode.frame_pointer { alloc } else { alloc.wrapping_sub(8) };
     if frame_size % 16 != 0 {
-        return Err(err(save, "frame size not a multiple of 16"));
+        return Err(err(0, "frame size not a multiple of 16"));
     }
+    c.pos = 0;
+    for want in prologue(frame_size, mode) {
+        let at = c.pos;
+        if c.item().ok() != Some(want) {
+            return Err(err(at, "not the prologue of the frame size"));
+        }
+    }
+    if !mode.frame_pointer {
+        c.sp_frame = Some(frame_size);
+    }
+    let fr = Frame { size: frame_size, mode };
     let argblk = (frame_size as i32).wrapping_neg() as u32;
 
     // Twice: the register cache is cleared at branch targets, which are only known once the
     // whole function is read. The first pass only finds the instructions and targets; the
     // second decodes them, with the cache cleared at the targets of the first.
     let body = c.pos;
-    let (protos, _) = instructions(&mut c, mode, rodata, argblk, dropped, None)?;
+    let (protos, _) = instructions(&mut c, &fr, rodata, argblk, dropped, None)?;
     let mut targets: Vec<u32> = protos.iter().flat_map(|p| p.ops.iter()).flat_map(op_targets).collect();
     targets.sort_unstable();
     c.pos = body;
-    let (protos, padded) = instructions(&mut c, mode, rodata, argblk, dropped, Some(&targets))?;
+    let (protos, padded) = instructions(&mut c, &fr, rodata, argblk, dropped, Some(&targets))?;
 
     // Instruction positions → indices and word offsets.
     let ipos: Vec<u32> = protos.iter().map(|p| p.pos).collect();
@@ -200,7 +207,7 @@ fn op_targets(o: &Opnd) -> Vec<u32> {
 /// as the cache emits it; without, inline sequences are only delimited ([`inline_insn`]).
 fn instructions(
     c: &mut Cursor<'_>,
-    mode: Mode,
+    fr: &Frame,
     ro: &[u8],
     argblk: u32,
     mut dropped: &[DroppedStore],
@@ -211,7 +218,7 @@ fn instructions(
     let mut cache = Cache::default();
     while !c.at_end() {
         let pad = c.padding();
-        if pad != 0 && (!mode.align_loops || pad >= 16 || c.pos % 16 != 0) {
+        if pad != 0 && (!fr.mode.align_loops || pad >= 16 || c.pos % 16 != 0) {
             return Err(AsmError { at: c.pos, what: "padding" });
         }
         padded.push(pad != 0);
@@ -222,7 +229,7 @@ fn instructions(
             Some(p) => p,
             None => {
                 cache = Cache::default();
-                insn(c, mode, ro, argblk)?
+                insn(c, fr, ro, argblk)?
             }
         };
         protos.push(p);
@@ -233,15 +240,37 @@ fn instructions(
     Ok((protos, padded))
 }
 
+/// The frame size and the mode, which the prologue, the epilogue and `fp` depend on.
+struct Frame {
+    size: u32,
+    mode: Mode,
+}
+
+impl Frame {
+    fn epilogue(&self) -> Item {
+        epilogue(self.size, self.mode)
+    }
+
+    /// `reg = fp`, as [`Cursor::item`] returns it: without a frame pointer, `lea reg,
+    /// [rsp + F]` is `lea reg, [rbp + 0]`.
+    fn fp(&self, reg: Reg) -> Item {
+        match fp_item(reg, self.size, self.mode) {
+            Item::LeaM { dst, .. } => Item::LeaM { dst, m: M::frame(0) },
+            it => it,
+        }
+    }
+}
+
 /// Reads one instruction that isn't inline.
-fn insn(c: &mut Cursor<'_>, mode: Mode, ro: &[u8], argblk: u32) -> Result<Proto, AsmError> {
+fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8], argblk: u32) -> Result<Proto, AsmError> {
+    let mode = fr.mode;
     let pos = c.pos;
     let err = |at: u32, what: &'static str| AsmError { at, what };
     let mut setup = Vec::new();
     let head = loop {
         let at = c.pos;
         match c.item()? {
-            it @ (Item::SetReg(..) | Item::Lea(..) | Item::Mov(..)) => setup.push((at, it)),
+            it @ (Item::SetReg(..) | Item::Lea(..) | Item::Mov(..) | Item::LeaM { .. }) => setup.push((at, it)),
             it => break (at, it),
         }
     };
@@ -249,7 +278,7 @@ fn insn(c: &mut Cursor<'_>, mode: Mode, ro: &[u8], argblk: u32) -> Result<Proto,
     let mut sites = Vec::new();
     let ops = match head {
         Item::Call(Ref::Handler(op)) if has_handler(op) => {
-            let mut ops = handler_operands(op, &setup, mode, ro, pos)?;
+            let mut ops = handler_operands(op, &setup, fr, ro, pos)?;
             let info = op.info();
             let set = |ops: &mut Vec<Opnd>, name: &str, v: Opnd| ops[info.operand_index(name).unwrap()] = v;
             let fixed = |c: &mut Cursor<'_>, want: Item| -> Result<(), AsmError> {
@@ -287,7 +316,7 @@ fn insn(c: &mut Cursor<'_>, mode: Mode, ro: &[u8], argblk: u32) -> Result<Proto,
                     fixed(c, Item::Ud2)?;
                 }
                 Shape::Ret => {
-                    fixed(c, Item::Leave)?;
+                    fixed(c, fr.epilogue())?;
                     fixed(c, Item::Ret)?;
                 }
                 Shape::CallExt | Shape::CallInd => {
@@ -296,10 +325,11 @@ fn insn(c: &mut Cursor<'_>, mode: Mode, ro: &[u8], argblk: u32) -> Result<Proto,
                     sites.push((c.pos, 2));
                     fixed(c, Item::CallRax)?;
                     let at = c.pos;
-                    let Item::Marker(d) = c.item()? else { return Err(err(at, "no call marker")) };
-                    let island_len = if mode.pe { 24 } else { 16 };
+                    let Item::Marker(m) = c.item()? else { return Err(err(at, "no call marker")) };
+                    let d = m.wrapping_sub(fr.size as i32);
+                    let island_len = fp_item(island_args(mode.pe)[0], fr.size, mode).len() + if mode.pe { 7 + 4 + 6 + 4 } else { 7 + 6 };
                     fixed(c, Item::Branch { cond: Cond::Always, target: c.pos + 2 + island_len, long: false })?;
-                    let (isl, ops_ro, site) = island_call(c, mode)?;
+                    let (isl, ops_ro, site) = island_call(c, fr)?;
                     sites.push(site);
                     let fnp = if info.shape == Shape::CallExt { "f" } else { "p" };
                     let Opnd::Slot(f) = ops[info.operand_index(fnp).unwrap()] else { unreachable!() };
@@ -310,33 +340,33 @@ fn insn(c: &mut Cursor<'_>, mode: Mode, ro: &[u8], argblk: u32) -> Result<Proto,
                     set(&mut ops, "isl", Opnd::Sym(isl));
                 }
                 Shape::TailCall => {
-                    fixed(c, Item::Leave)?;
+                    fixed(c, fr.epilogue())?;
                     let at = c.pos;
                     let Item::Jmp(Ref::Func(f)) = c.item()? else { return Err(err(at, "no tail jump")) };
                     set(&mut ops, "f", Opnd::Func(f));
                 }
                 Shape::TailCallInd => {
                     fixed(c, Item::TestRax)?;
-                    fixed(c, Item::Branch { cond: Cond::Z, target: c.pos + 2 + 1 + 2, long: false })?;
-                    fixed(c, Item::Leave)?;
+                    fixed(c, Item::Branch { cond: Cond::Z, target: c.pos + 2 + fr.epilogue().len() + 2, long: false })?;
+                    fixed(c, fr.epilogue())?;
                     fixed(c, Item::JmpRax)?;
                     let at = c.pos;
-                    let (isl, ops_ro, site) = island_call(c, mode)?;
+                    let (isl, ops_ro, site) = island_call(c, fr)?;
                     sites.push(site);
                     // Then `ret s, len`.
                     let mut rsetup = Vec::new();
                     let ret = loop {
                         let a = c.pos;
                         match c.item()? {
-                            it @ (Item::SetReg(..) | Item::Mov(..)) => rsetup.push((a, it)),
+                            it @ (Item::SetReg(..) | Item::Mov(..) | Item::LeaM { .. }) => rsetup.push((a, it)),
                             it => break it,
                         }
                     };
                     if ret != Item::Call(Ref::Handler(Opcode::Ret)) {
                         return Err(err(at, "no return"));
                     }
-                    let r = handler_operands(Opcode::Ret, &rsetup, mode, ro, at)?;
-                    fixed(c, Item::Leave)?;
+                    let r = handler_operands(Opcode::Ret, &rsetup, fr, ro, at)?;
+                    fixed(c, fr.epilogue())?;
                     fixed(c, Item::Ret)?;
                     let (Opnd::Slot(s), Opnd::Slot(p)) = (&r[0], &ops[0]) else { unreachable!() };
                     if ops_array(ro, ops_ro) != Some(vec![argblk, *s as u32, *p as u32]) {
@@ -356,7 +386,8 @@ fn insn(c: &mut Cursor<'_>, mode: Mode, ro: &[u8], argblk: u32) -> Result<Proto,
         Item::Call(Ref::Func(f)) if setup.is_empty() => {
             sites.push((hat, 5));
             let at = c.pos;
-            let Item::Marker(d) = c.item()? else { return Err(err(at, "no call marker")) };
+            let Item::Marker(m) = c.item()? else { return Err(err(at, "no call marker")) };
+            let d = m.wrapping_sub(fr.size as i32);
             Proto { op: Opcode::Call, ops: vec![Opnd::Slot(d), Opnd::Func(f)], pos, sites }
         }
         Item::Branch { cond: Cond::Always, target, .. } if setup.is_empty() => {
@@ -365,7 +396,7 @@ fn insn(c: &mut Cursor<'_>, mode: Mode, ro: &[u8], argblk: u32) -> Result<Proto,
         Item::CallMem(_) | Item::SubRsp(32) => {
             // An island: `fp`, `ops`, (PE) shadow space, the call through the slot.
             c.pos = pos;
-            let (isl, ops_ro, site) = island_call(c, mode)?;
+            let (isl, ops_ro, site) = island_call(c, fr)?;
             sites.push(site);
             let ws = ops_array(ro, ops_ro).ok_or(err(pos, "island operands"))?;
             Proto { op: Opcode::Island, ops: vec![Opnd::Sym(isl), Opnd::Words(ws)], pos, sites }
@@ -454,11 +485,12 @@ fn table(c: &mut Cursor<'_>, n: usize) -> Result<Vec<u32>, AsmError> {
 
 /// An island call sequence: its symbol slot, the rodata offset of its operands, and the call
 /// site (position, length).
-fn island_call(c: &mut Cursor<'_>, mode: Mode) -> Result<(crate::insn::Sym, u32, (u32, u32)), AsmError> {
+fn island_call(c: &mut Cursor<'_>, fr: &Frame) -> Result<(crate::insn::Sym, u32, (u32, u32)), AsmError> {
+    let mode = fr.mode;
     let at = c.pos;
     let bad = AsmError { at, what: "island call" };
     let [fp, opsr] = island_args(mode.pe);
-    if c.item()? != Item::Mov(fp, Reg::Rbp) {
+    if c.item()? != fr.fp(fp) {
         return Err(bad);
     }
     let Item::Lea(r, Ref::Ro(ops)) = c.item()? else { return Err(bad) };
@@ -475,12 +507,13 @@ fn island_call(c: &mut Cursor<'_>, mode: Mode) -> Result<(crate::insn::Sym, u32,
 
 /// The operands of `op`'s handler call from the register setup before it (positions and
 /// items); operands handlers don't receive are left as placeholders.
-fn handler_operands(op: Opcode, setup: &[(u32, Item)], mode: Mode, ro: &[u8], pos: u32) -> Result<Vec<Opnd>, AsmError> {
+fn handler_operands(op: Opcode, setup: &[(u32, Item)], fr: &Frame, ro: &[u8], pos: u32) -> Result<Vec<Opnd>, AsmError> {
+    let mode = fr.mode;
     let err = |what: &'static str| AsmError { at: pos, what };
     let l = layout(op, mode);
     let info = op.info();
     let mut it = setup.iter().map(|s| s.1);
-    if mode.fp_arg && it.next() != Some(Item::Mov(ARGS[0], Reg::Rbp)) {
+    if mode.fp_arg && it.next() != Some(fr.fp(ARGS[0])) {
         return Err(err("no fp argument"));
     }
     if info.shape == Shape::Lpad && it.next() != Some(Item::Mov(ARGS[l.first as usize - 1], Reg::Rax)) {

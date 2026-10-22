@@ -65,7 +65,8 @@ and `codegen_crate` reads them.
    parallel loop": every function is lowered on its own straight into machine code plus a
    relocation list ([lowering.md](lowering.md), [vm.md](vm.md#machine-code)), in the mode
    `asm_mode` gives: `fp` passing as `ryo_rt`'s `FP_ARG` says (the backend evaluates the
-   const), loop alignment unless `RYO_ASM_ALIGN=0`, inline instructions, and the target's object
+   const), a frame pointer only where rustc's LLVM backend would keep one, or `FP_ARG`
+   or PE require it ([vm.md](vm.md#frames)), loop alignment unless `RYO_ASM_ALIGN=0`, inline instructions, and the target's object
    format. The
    results are merged in one pass at the end. An operation the VM doesn't support becomes an
    `island` instruction whose `isl` operand is an *island* relocation (template + generic
@@ -289,7 +290,7 @@ Environment variables read by the backend (and `y test`):
 `ryo_rt` reads `RYO_VM_TRACE`: if set, every `vm::enter` prints
 `ryo-vm: enter <crate hash>:<function index>` to stderr; and `RYO_VM_STATS`: if set, it
 prints `ryo-vm: <n> enters, <n> native calls` at exit ([vm.md](vm.md#modules)). `y build`
-reads `RYO_RT_FEATURES`, extra cargo features for the sysroot's `ryo_rt` (such as `fp-arg`,
+reads `RYO_RT_FEATURES`, extra cargo features for the sysroot's `ryo_rt` (such as `fp-rbp`,
 [vm.md](vm.md#handlers)); the backend follows `ryo_rt`'s `FP_ARG`.
 
 No MIR is overridden or synthesized, and no DefIds are created. rustc freezes definitions

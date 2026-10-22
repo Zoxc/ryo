@@ -367,8 +367,8 @@ pub struct ImageWriter {
     /// Slots by (name, flags): a symbol can have a direct and an indirect slot.
     sym_index: BTreeMap<(String, u8), u32>,
     sites: u32,
-    /// The target format (PE?), from `prepare`.
-    pe: Option<bool>,
+    /// The code's mode, from `prepare`.
+    mode: Option<Mode>,
     /// The slot of `rust_eh_personality` (ELF).
     personality: Option<Sym>,
 }
@@ -404,7 +404,7 @@ impl ImageWriter {
             symbols: Vec::new(),
             sym_index: BTreeMap::new(),
             sites: 0,
-            pe: None,
+            mode: None,
             personality: None,
         }
     }
@@ -500,7 +500,7 @@ impl ImageWriter {
     /// Adds what the unwind information of `mode`'s format refers to (the slot of
     /// `rust_eh_personality` on ELF). Call before [`finish_encoded`](Self::finish_encoded).
     pub fn prepare(&mut self, mode: Mode) {
-        self.pe = Some(mode.pe);
+        self.mode = Some(mode);
         if !mode.pe {
             self.personality = Some(self.symbol(PERSONALITY, 0));
         }
@@ -511,7 +511,8 @@ impl ImageWriter {
     /// Instruction words, if any, aren't looked at: [`finish`](Self::finish) validates them.
     pub fn finish_encoded(mut self, encoded: Vec<Encoded>) -> Result<ImageObject, WriteError> {
         assert_eq!(encoded.len(), self.functions.len());
-        let pe = self.pe.expect("prepare before finish_encoded");
+        let mode = self.mode.expect("prepare before finish_encoded");
+        let pe = mode.pe;
         let nsyms = self.symbols.len() as u32;
 
         // Function table and text.
@@ -697,10 +698,11 @@ impl ImageWriter {
             relocs.push(map(r, Section::Writable, fixup_area, self.data.len())?);
         }
         let unwind = if pe {
+            assert!(mode.frame_pointer, "PE unwind info needs the frame pointer");
             unwind_pe(&func_code, &mut relocs)
         } else {
             let slot = symbols.off as u64 + 8 * self.personality.expect("prepare").0 as u64;
-            unwind_elf(&func_code, slot, &mut relocs)
+            unwind_elf(&func_code, slot, mode, &mut relocs)
         };
 
         Ok(ImageObject {
@@ -729,9 +731,11 @@ unsafe fn put<T: Copy>(buf: &mut [u8], off: u32, v: &[T]) {
 
 /// `.eh_frame` and `.gcc_except_table`: one CIE naming `rust_eh_personality` (through the
 /// symbol slot at `personality_slot` of the read-only section, `DW_EH_PE_indirect`), then per
-/// function an FDE for the prologue every function shares (`push rbp; mov rbp, rsp`, after
-/// which the CFA is `rbp + 16`) and its LSDA ([`asm::lsda`]).
-fn unwind_elf(funcs: &[FuncCode], personality_slot: u64, relocs: &mut Vec<Reloc>) -> Vec<(Section, Vec<u8>)> {
+/// function an FDE for its prologue and its LSDA ([`asm::lsda`]). With a frame pointer, every
+/// function has the same rules (`push rbp; mov rbp, rsp`, after which the CFA is `rbp + 16`);
+/// without, the CFA is `rsp + F + 16` after the prologue's `sub rsp, F + 8`. Epilogues have
+/// no rules: they make no calls, so only asynchronous unwinding could stop there.
+fn unwind_elf(funcs: &[FuncCode], personality_slot: u64, mode: Mode, relocs: &mut Vec<Reloc>) -> Vec<(Section, Vec<u8>)> {
     const PCREL_SDATA4: u8 = 0x1b;
     let pc = |section, offset, target, addend| Reloc { section, offset, target: RelocTarget::Section(target), addend, kind: RelocKind::Pc32 };
     let mut eh = Vec::new();
@@ -762,8 +766,16 @@ fn unwind_elf(funcs: &[FuncCode], personality_slot: u64, relocs: &mut Vec<Reloc>
         fde.push(4);
         relocs.push(pc(Section::EhFrame, at + 4 + fde.len() as u64, Section::Lsda, l as i64));
         fde.extend_from_slice(&[0; 4]);
-        // After `push rbp`: CFA = rsp + 16, rbp at CFA - 16; after `mov rbp, rsp`: CFA = rbp + 16.
-        fde.extend_from_slice(&[0x41, 0x0e, 16, 0x86, 2, 0x43, 0x0d, 6]);
+        if mode.frame_pointer {
+            // After `push rbp`: CFA = rsp + 16, rbp at CFA - 16; after `mov rbp, rsp`: CFA = rbp + 16.
+            fde.extend_from_slice(&[0x41, 0x0e, 16, 0x86, 2, 0x43, 0x0d, 6]);
+        } else {
+            // After the prologue: CFA = rsp + F + 16 (`DW_CFA_advance_loc`, `DW_CFA_def_cfa_offset`).
+            let len = asm::prologue_len(f.frame_size, mode);
+            debug_assert!(len < 64);
+            fde.extend_from_slice(&[0x40 | len as u8, 0x0e]);
+            asm::lsda::uleb(&mut fde, f.frame_size + 16);
+        }
         while (fde.len() + 4) % 8 != 0 {
             fde.push(0);
         }

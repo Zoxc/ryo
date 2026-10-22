@@ -12,7 +12,7 @@ use alloc::vec::Vec;
 
 use super::CallSite;
 
-fn uleb(out: &mut Vec<u8>, mut v: u32) {
+pub(crate) fn uleb(out: &mut Vec<u8>, mut v: u32) {
     loop {
         let b = (v & 0x7f) as u8;
         v >>= 7;

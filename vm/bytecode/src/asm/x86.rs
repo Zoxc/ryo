@@ -166,9 +166,11 @@ impl W {
     }
 }
 
-/// A memory operand `[base + disp]`, `base` `rbp` (a frame slot) or a register holding a
-/// pointer (one whose ModRM encoding needs no SIB byte). The displacement takes its shortest
-/// form: none for a zero displacement off a pointer register, then `disp8`, then `disp32`.
+/// A memory operand `[base + disp]`, `base` `rbp` (a frame slot), `rsp` (a frame slot
+/// without a frame pointer: [`Cursor::sp_frame`]) or a register holding a pointer (one whose
+/// ModRM encoding needs no SIB byte). `rsp` takes the SIB byte `0x24`. The displacement takes
+/// its shortest form: none for a zero displacement off a register other than `rbp`, then
+/// `disp8`, then `disp32`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct M {
     pub base: Reg,
@@ -185,24 +187,36 @@ impl M {
     }
 
     fn len(self) -> u32 {
-        1 + if self.base != Reg::Rbp && self.disp == 0 {
-            0
-        } else if i8::try_from(self.disp).is_ok() {
-            1
-        } else {
-            4
-        }
+        let sib = (self.base == Reg::Rsp) as u32;
+        1 + sib
+            + if self.base != Reg::Rbp && self.disp == 0 {
+                0
+            } else if i8::try_from(self.disp).is_ok() {
+                1
+            } else {
+                4
+            }
     }
 
-    /// The ModRM byte (`reg` in its middle field) and the displacement.
+    /// The ModRM byte (`reg` in its middle field), the SIB byte of `rsp`, and the
+    /// displacement.
     fn write(self, reg: u8, out: &mut Vec<u8>) {
         let rm = self.base.low();
+        let sib = |out: &mut Vec<u8>| {
+            if self.base == Reg::Rsp {
+                out.push(0x24);
+            }
+        };
         if self.base != Reg::Rbp && self.disp == 0 {
             out.push(reg << 3 | rm);
+            sib(out);
         } else if let Ok(d) = i8::try_from(self.disp) {
-            out.extend_from_slice(&[0x40 | reg << 3 | rm, d as u8]);
+            out.push(0x40 | reg << 3 | rm);
+            sib(out);
+            out.push(d as u8);
         } else {
             out.push(0x80 | reg << 3 | rm);
+            sib(out);
             out.extend_from_slice(&self.disp.to_le_bytes());
         }
     }
@@ -535,24 +549,34 @@ impl Item {
 
     /// The item with the displacements of its frame operands (`[rbp + d]`) mapped by `f`.
     pub fn map_frame(self, f: impl Fn(i32) -> i32) -> Item {
-        let fm = |m: M| if m.base == Reg::Rbp { M { disp: f(m.disp), ..m } } else { m };
+        self.map_mem(|m| if m.base == Reg::Rbp { M { disp: f(m.disp), ..m } } else { m })
+    }
+
+    /// The item with its memory operand mapped by `f`.
+    pub fn map_mem(self, f: impl Fn(M) -> M) -> Item {
         let frm = |rm: Rm| match rm {
-            Rm::Mem(m) => Rm::Mem(fm(m)),
+            Rm::Mem(m) => Rm::Mem(f(m)),
             r => r,
         };
         match self {
-            Item::Ld { w, sx, dst, m } => Item::Ld { w, sx, dst, m: fm(m) },
-            Item::St { w, src, m } => Item::St { w, src, m: fm(m) },
-            Item::StImm { w, m, imm } => Item::StImm { w, m: fm(m), imm },
-            Item::LeaM { dst, m } => Item::LeaM { dst, m: fm(m) },
+            Item::Ld { w, sx, dst, m } => Item::Ld { w, sx, dst, m: f(m) },
+            Item::St { w, src, m } => Item::St { w, src, m: f(m) },
+            Item::StImm { w, m, imm } => Item::StImm { w, m: f(m), imm },
+            Item::LeaM { dst, m } => Item::LeaM { dst, m: f(m) },
             Item::Alu { op, w, reg, rm } => Item::Alu { op, w, reg, rm: frm(rm) },
             Item::AluImm { op, w, rm, imm } => Item::AluImm { op, w, rm: frm(rm), imm },
             Item::Imul { w, reg, rm } => Item::Imul { w, reg, rm: frm(rm) },
             Item::ImulImm { w, reg, rm, imm } => Item::ImulImm { w, reg, rm: frm(rm), imm },
-            Item::Setcc { cond, m } => Item::Setcc { cond, m: fm(m) },
-            Item::TestM8(m) => Item::TestM8(fm(m)),
+            Item::Setcc { cond, m } => Item::Setcc { cond, m: f(m) },
+            Item::TestM8(m) => Item::TestM8(f(m)),
             it => it,
         }
+    }
+
+    /// The item with its frame operand (`[rbp + d]`) as `[rsp + F + d]`: its form in a frame
+    /// of size `F` without a frame pointer.
+    pub fn sp_frame(self, frame_size: u32) -> Item {
+        self.map_mem(|m| if m.base == Reg::Rbp { M { base: Reg::Rsp, disp: m.disp.wrapping_add(frame_size as i32) } } else { m })
     }
 
     /// The memory operand of the item.
@@ -789,6 +813,9 @@ pub struct Cursor<'a> {
     pub code: &'a [u8],
     pub pos: u32,
     relocs: &'a [Reloc],
+    /// Without a frame pointer, the frame size `F`: frame slots are `[rsp + F + d]`, which
+    /// [`Cursor::item`] returns as `[rbp + d]`, the form the encoder works in.
+    pub sp_frame: Option<u32>,
 }
 
 /// The code at the cursor isn't a canonical element.
@@ -797,7 +824,7 @@ pub struct BadItem(pub u32);
 
 impl<'a> Cursor<'a> {
     pub fn new(code: &'a [u8], relocs: &'a [Reloc]) -> Self {
-        Cursor { code, pos: 0, relocs }
+        Cursor { code, pos: 0, relocs, sp_frame: None }
     }
 
     pub fn at_end(&self) -> bool {
@@ -876,11 +903,19 @@ impl<'a> Cursor<'a> {
             if md == 3 {
                 return Ok((reg, Rm::Reg(Reg::from_num(rm | rb).ok_or(bad)?), i + 1));
             }
-            // No SIB and no RIP-relative forms: `rbp` (frame slots) or a pointer register.
-            if rm == 4 || (rm == 5 && md == 0) {
+            // No RIP-relative forms, and SIB only for `rsp`: `rbp` or `rsp` (frame slots) or a
+            // pointer register.
+            if rm == 5 && md == 0 {
                 return Err(bad);
             }
-            let base = Reg::from_num(rm | rb).filter(|&b| b == Reg::Rbp || usable(b)).ok_or(bad)?;
+            let (base, i) = if rm == 4 {
+                if rb != 0 || get(i + 1)? != 0x24 {
+                    return Err(bad);
+                }
+                (Reg::Rsp, i + 1)
+            } else {
+                (Reg::from_num(rm | rb).filter(|&b| b == Reg::Rbp || usable(b)).ok_or(bad)?, i)
+            };
             let (disp, n) = match md {
                 0 => (0, 0),
                 1 => (get(i + 1)? as i8 as i32, 1),
@@ -980,6 +1015,12 @@ impl<'a> Cursor<'a> {
         if all.get(..len as usize) != Some(&want[..]) || self.reloc_in(self.pos, len) {
             return Err(bad);
         }
+        // Frame slots in the mode's form, returned in the encoder's.
+        let item = match (item.mem().map(|m| m.base), self.sp_frame) {
+            (Some(Reg::Rbp), Some(_)) | (Some(Reg::Rsp), None) => return Err(bad),
+            (Some(Reg::Rsp), Some(f)) => item.map_mem(|m| M::frame(m.disp.wrapping_sub(f as i32))),
+            _ => item,
+        };
         self.pos += len;
         Ok(item)
     }

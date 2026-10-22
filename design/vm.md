@@ -11,9 +11,11 @@ native frames, and unwind natively ([Unwinding](#unwinding)). The runtime lives 
 
 ## Execution state
 
-- **`fp`** is `rbp`: every VM function keeps its frame pointer there, and handlers read it
-  from `rbp` (or, with `ryo_rt`'s `fp-arg` feature, take it in `rdi`,
-  [Handlers](#handlers)). Nothing else is kept in registers across instructions.
+- **`fp`** is the address of the frame ([Frames](#frames)). Handlers take it in `rdi`, which
+  VM code sets to `rsp + F` before each handler call; nothing is kept in registers across
+  instructions but what the [register cache](#register-cache) keeps between inline
+  sequences. With a frame pointer ([Frames](#frames)), VM code keeps `fp` in `rbp`, and with
+  `ryo_rt`'s `fp-rbp` feature the handlers read it from there ([Handlers](#handlers)).
 - **No image context**: the code addresses its image's symbol slots, site cache, constant
   pool, data area and code constants RIP-relative (relocations, [Image format](#image-format)),
   so a call into another image switches nothing.
@@ -25,21 +27,36 @@ native frames, and unwind natively ([Unwinding](#unwinding)). The runtime lives 
 
 ## Frames
 
-- **Native frames**: VM functions run on the thread's native stack. Each has an `rbp` frame,
-  set up by the prologue every function starts with:
+- **Native frames**: VM functions run on the thread's native stack. Like LLVM's code, they
+  omit the frame pointer unless the session asks for one (`asm::Mode::frame_pointer`): the
+  prologue every function starts with is
+  ```
+  mov eax, F + 8; call ryo_probe_stack ; only if F >= 4096
+  sub rsp, F + 8
+  ```
+  and `add rsp, F + 8` undoes it before `ret` and tail jumps. Frame slots are addressed
+  through `rsp`, `[rsp + F + off]`, and `rbp` is untouched.
+- **Frame pointer**: the backend keeps one where rustc's LLVM backend would
+  (`partition::asm_mode`, following `rustc_codegen_llvm::attributes::frame_pointer`): if
+  the target's `frame_pointer` isn't `MayOmit`, with `-Cforce-frame-pointers` or
+  `-Zinstrument-mcount`. Also on PE, whose unwind info can't describe the island calls'
+  `rsp` adjustment ([Calls and islands](#calls-and-islands)), and when `ryo_rt`'s handlers
+  read `fp` from `rbp` (`fp-rbp`). Then the prologue is
   ```
   push rbp
   mov rbp, rsp
   mov eax, F; call ryo_probe_stack     ; only if F >= 4096
   sub rsp, F                           ; only if F > 0
   ```
+  the epilogue is `leave`, slots are `[rbp + off]`, and handlers get `mov rdi, rbp`.
 - **Layout**: frames grow downward, and slots are signed offsets from `fp`
   (`ryo_bytecode::abi`):
   ```
   fp + 16 + …       argument block (arg_block layout of the signature, lowering.md),
                     written by the caller in its outgoing area
   fp + 8            return address (points after the caller's call instruction)
-  fp + 0            caller fp      (null for the entry frame of a vm::enter)
+  fp + 0            caller's rbp with a frame pointer (0 for the entry frame of a
+                    vm::enter), else unused
   fp - 1 … fp - L   locals, `_0`, temporaries, the exception slot
   fp - F … fp - F + A   outgoing argument block of the calls this function makes
   ```
@@ -50,15 +67,15 @@ native frames, and unwind natively ([Unwinding](#unwinding)). The runtime lives 
 - **Alignment**: `fp` is always 16-aligned (`F` is a multiple of 16, and every entry is
   16-aligned, [Entry](#entry)), and slots are aligned to their types relative to `fp`. Types
   with alignment above 16 never live in VM frames ([lowering.md](lowering.md#frame-slots)).
-- Two words are written per call (return address, caller fp), by `call` and `push rbp`. The
-  current function isn't stored: unwinders and backtraces find it from the pc, like any
+- One word is written per call, the return address (and with a frame pointer the caller's
+  `rbp`, by `push rbp`). The current function isn't stored: unwinders and backtraces find it from the pc, like any
   native function ([Unwinding](#unwinding)). The destination slot isn't stored either: `ret`
   reads it from the call marker at the return address ([Calls and islands](#calls-and-islands)).
 - **Stack overflow**: there is no VM stack and no explicit stack check. A frame below 4096
   bytes touches at most one page past `rsp`, so running into the thread's guard page faults
   as in native code, and std's handler reports "has overflowed its stack". Larger frames
   call `ryo_probe_stack` first, which touches every page of the new frame top down (with
-  `rax = F`, preserving every register but `r11`), as `__rust_probestack` does.
+  `rax` the `sub`'s size, preserving every register but `r11`), as `__rust_probestack` does.
 - **Re-entrancy** is plain native nesting: `vm::enter` pushes its frames below whatever is
   already on the stack.
 
@@ -127,21 +144,24 @@ ones, which are [inlined](#inline-instructions):
 | `br` | `br`, `br.eq`, `br.lt`, `br.gt.imm`, … | handler call (returns a `bool`), `test al, al`, `jnz t` (`jz t` with `!`) |
 | `switch` | `switch.dense`, `switch.sparse` | handler call (returns the case index, `n` for the default), `lea rcx, [rip + T]; movsxd rax, [rcx + rax*4]; add rax, rcx; jmp rax`, then `int3`s to a multiple of 4 and the table `T` inline in the text: one `i32` offset from `T` per case, the default last |
 | `trap` | `unreachable`, `abort`, `resume` | handler call, `ud2` |
-| `ret` | `ret` | handler call (copies the return value), `leave; ret` |
+| `ret` | `ret` | handler call (copies the return value), epilogue, `ret` |
 | `jmp` | `jmp` | `jmp t` |
 | `call` | `call` | `call fn` (`rel32`), call marker |
 | `call_ext`, `call_ind` | `call.ext`, `call.ext.ind`, `call.ind` | resolving handler call, then `call rax` + call marker, or the island ([Calls and islands](#calls-and-islands)) |
-| `tail_call` | `tail_call` | handler call (moves the arguments), `leave; jmp fn` |
-| `tail_call_ind` | `tail_call.ind` | resolving handler call, then `leave; jmp rax`, or the island and a `ret` |
-| `island` | `island` | `mov rdi, rbp; lea rsi, [rip + ops]; call [rip + isl]` (PE: `rcx`/`rdx` and 32 bytes of shadow space) |
-| `lpad` | `lpad` | `mov rdi, rax` (the exception object), operand registers, handler call |
+| `tail_call` | `tail_call` | handler call (moves the arguments), epilogue, `jmp fn` |
+| `tail_call_ind` | `tail_call.ind` | resolving handler call, then epilogue and `jmp rax`, or the island and a `ret` |
+| `island` | `island` | `lea rdi, [rsp + F]; lea rsi, [rip + ops]; call [rip + isl]` (with a frame pointer `mov rdi, rbp`; PE: `rcx`/`rdx` and 32 bytes of shadow space) |
+| `lpad` | `lpad` | `mov rsi, rax` (the exception object; `rdi` with `fp-rbp`), operand registers, handler call |
+
+The epilogue is `add rsp, F + 8`, or `leave` with a frame pointer ([Frames](#frames)).
 
 - **Operand registers** (`asm::layout`, `core` only, shared by the encoder and the
   handlers): a handler takes up to six registers, `rdi, rsi, rdx, rcx, r8, r9`, in operand
   order, on every target (`sysv64`). An operand takes one register, except a memory operand
-  (`p`, `k`), a `U128` (low, high) and a case list (values, count), which take two. With
-  `fp-arg`, `rdi` holds `fp` and the operands start at `rsi`; `lpad` takes the exception
-  object before its operand. If an opcode has more operands than registers, adjacent 32-bit
+  (`p`, `k`), a `U128` (low, high) and a case list (values, count), which take two. `rdi`
+  holds `fp` (`lea rdi, [rsp + F]`, or `mov rdi, rbp` with a frame pointer) and the operands
+  start at `rsi`, except with `fp-rbp`, where handlers read `rbp` and the operands start at
+  `rdi`; `lpad` takes the exception object before its operand. If an opcode has more operands than registers, adjacent 32-bit
   operands (slots, `U8`–`U32`) share one, `a | b << 32`, pairing from the last pair. A
   constant, symbol, site or data operand is passed as its address (`lea reg, [rip + …]`).
   Branch and call targets and polarities aren't passed; the call shapes pass only what
@@ -160,8 +180,8 @@ ones, which are [inlined](#inline-instructions):
 - **The decoder** `asm::decode` is the exact inverse: it accepts only the canonical
   sequences, with operand registers set in order, and recovers every instruction word, the
   frame size and the cleanup entries (from the call sites). It is the encoder's test
-  oracle: `vm/bytecode/tests/asm.rs` round-trips every opcode, in all sixteen modes
-  (`fp-arg`, loop alignment, PE, inline), long branches, packed operands, every
+  oracle: `vm/bytecode/tests/asm.rs` round-trips every opcode, in every mode (`fp` in `rdi`
+  or `rbp`, with and without a frame pointer, loop alignment, PE), long branches, packed operands, every
   displacement and immediate form of the inline sequences, and rejects non-canonical code.
 
 #### Inline instructions
@@ -177,11 +197,13 @@ these with other operands, keeps its handler call.
   use `rcx` as scratch, and the flags, all of which every handler call clobbers too. Only the
   register cache ([below](#register-cache)) keeps anything in a register between
   instructions. They read frame
-  slots as `[rbp + off]`, in either `fp` mode, never move `rsp` and call nothing, so they
-  are no call sites and the unwind information doesn't change.
+  slots as `[rsp + F + off]` (`[rbp + off]` with a frame pointer), never move `rsp` and call
+  nothing, so they are no call sites and the unwind information doesn't change. The
+  encoder, the cache and the decoder work on them as `[rbp + off]`, and `Asm::finish`
+  writes them in the frame's form.
 - **Shape**: a sequence loads its operands (`movzx` for `w8`/`w16`), computes in `rax`, and
-  ends in its one write: `mov [rbp + d], al…rax`, `mov [rbp + d], imm` (`imm`), `setcc
-  [rbp + d]` (compares), `mov [rax + k], cl…rcx` (`store`), or for branches a `cmp`/`test`
+  ends in its one write: `mov [fp + d], al…rax`, `mov [fp + d], imm` (`imm`), `setcc
+  [fp + d]` (compares), `mov [rax + k], cl…rcx` (`store`), or for branches a `cmp`/`test`
   and `jcc t` (the condition inverted with `!`), which relaxes like the other branches.
   `w8`/`w16` arithmetic with an immediate computes in 32 bits; 64-bit immediates that
   aren't sign-extended 32-bit ones go through `rcx`.
@@ -370,14 +392,15 @@ Branches have a polarity: `br.eq! a, b, t` branches when `a != b`.
 | `resume x` | continue unwinding the exception object in slot `x` |
 
 - **`call`**: the arguments are already in the outgoing block at `rsp`. `call fn` pushes
-  the return address, and the callee's prologue the caller's `fp`. After the call comes the
-  **call marker** `nop dword [rcx + d]` (`0F 1F 81` + `disp32`), a 7-byte `nop` carrying the
-  destination slot `d`.
-- **`ret`**: `ryo_h_Ret` reads the caller fp at `[fp]`. If it is null, this is the entry
-  frame, and the destination is the innermost entry record's `ret` pointer
-  ([Entry](#entry)). Otherwise it checks that the return address `[fp + 8]` points at a call
-  marker (aborting if not), and the destination is `caller_fp + d`. It copies `len` bytes
-  from `fp + s`, and `leave; ret` returns.
+  the return address. After the call comes the **call marker** `nop dword [rcx + m]`
+  (`0F 1F 81` + `disp32`), a 7-byte `nop` carrying the destination slot `d` relative to
+  the caller's `rsp`: `m = F + d`.
+- **`ret`**: `ryo_h_Ret` reads the return address at `[fp + 8]`. If it is
+  `ryo_asm_enter_ret`, this is the entry frame, and the destination is the innermost entry
+  record's `ret` pointer ([Entry](#entry)). Otherwise it checks that the return address
+  points at a call marker (aborting if not), and the destination is `fp + 16 + m` (the
+  callee's `fp + 16` is the caller's `rsp`), so `ret` needs no caller fp. It copies `len`
+  bytes from `fp + s`, and the epilogue and `ret` return.
 - **`call.ext` / `call.ind`**: the handler resolves the target (below) and returns its VM
   entry in `rax`, or 0 for a native target:
   ```
@@ -387,7 +410,7 @@ Branches have a polarity: `br.eq! a, b, t` branches when `a != b`.
   call rax
   nop dword [rcx + d]
   jmp 2f
-  1: mov rdi, rbp
+  1: lea rdi, [rsp + F]         ; mov rdi, rbp with a frame pointer
      lea rsi, [rip + ops]       ; [-F, d, f] (call.ind: [-F, d, p])
      call [rip + isl]
   2:
@@ -420,12 +443,12 @@ Branches have a polarity: `br.eq! a, b, t` branches when `a != b`.
     every caller.
 - **`tail_call fn, n`**: the arguments are staged in the outgoing block at `rsp`.
   `ryo_h_TailCall` (assembly) moves the `n` bytes up to `fp + 16`, over the function's own
-  argument block, then `leave; jmp fn` keeps the return address and caller fp, so the
-  callee returns to the original caller. The two ranges never overlap. `become` requires
+  argument block, then the epilogue and `jmp fn` keep the return address (and the caller's
+  `rbp`), so the callee returns to the original caller. The two ranges never overlap. `become` requires
   matching signatures, so the block fits the caller's.
 - **`tail_call.ind p, site, isl, n, s, len`**: `ryo_h_TailCallInd` (an assembly entry that
   passes the caller's `rsp` in `r9`) resolves `p` as `call.ind` does. For a VM function it
-  moves the arguments as `tail_call` does and returns the entry, and `leave; jmp rax`
+  moves the arguments as `tail_call` does and returns the entry, and the epilogue and `jmp rax`
   follows. A native target can't be a true tail call: the island runs with
   `ops = [-F, s, p]`, so the result lands in `_0`'s slot `s`, then the sequence of
   `ret s, len` returns it. It uses native stack for the duration of that call.
@@ -443,10 +466,13 @@ panic runtime, as through native frames. The image carries the unwind informatio
 
 - **CFI** (ELF): `.eh_frame` with one CIE, augmentation `zPLR`, whose personality is
   `rust_eh_personality`, read through the image's symbol slot for it (`DW_EH_PE_indirect`,
-  PC-relative), and one FDE per function. Every function has the same prologue, so every FDE
-  has the same rules: after `push rbp` the CFA is `rsp + 16` with `rbp` saved at CFA − 16,
-  after `mov rbp, rsp` the CFA is `rbp + 16`. The linker merges the section into the
-  program's `.eh_frame` (and its `.eh_frame_hdr`).
+  PC-relative), and one FDE per function. Its rules describe the prologue: after the
+  `sub rsp, F + 8` the CFA is `rsp + F + 16`. With a frame pointer every FDE has the same
+  rules: after `push rbp` the CFA is `rsp + 16` with `rbp` saved at CFA − 16, after
+  `mov rbp, rsp` the CFA is `rbp + 16`. Epilogues have no rules of their own: they call
+  nothing, so only an asynchronous unwinder (a profiler's) could stop between them and the
+  `ret` or tail jump. The linker merges the section into the program's `.eh_frame` (and its
+  `.eh_frame_hdr`).
 - **LSDA** (`asm::lsda`, in `.gcc_except_table.ryo_image`): per function, the call-site
   table `rust_eh_personality` reads (`uleb128` entries, landing pads relative to the
   function start, no type table). Every call that may unwind is a call site: the `call`,
@@ -460,8 +486,8 @@ panic runtime, as through native frames. The image carries the unwind informatio
     reason's lang item ([lowering.md](lowering.md#unwinding)).
   - **Unreachable**: no call site, so unwinding out of it aborts, as for a `nounwind` call.
 - **Landing pads**: the lowering emits one `lpad x; jmp bb` stub per distinct unwind
-  destination. The personality enters it with the exception object in `rax`, `rbp`
-  restored and `rsp` at `fp - F`; `ryo_h_Lpad` stores the object in the function's
+  destination. The personality enters it with the exception object in `rax`, `rsp` at
+  `fp - F` (and `rbp` restored); `ryo_h_Lpad` stores the object in the function's
   exception slot `x`. The cleanup code ends in `resume x`, whose handler (assembly) loads the
   object and jumps to `_Unwind_Resume`, so the unwinder sees the VM function as its caller.
 - **Panic state**: nothing is caught or re-raised on the way, so std's panic count, the
@@ -473,7 +499,8 @@ panic runtime, as through native frames. The image carries the unwind informatio
 - **Backtraces**: frames of VM functions are named by the local symbol `<symbol>.vm` of
   their code, so `RUST_BACKTRACE=1` and profilers show them between the native frames
   (`y test`'s `backtrace` check, [build.md](build.md#test-and-bench)).
-- **PE**: `.pdata`/`.xdata` describe each function's prologue (`rbp` as frame register), so
+- **PE**: VM code keeps the frame pointer ([Frames](#frames)), and `.pdata`/`.xdata`
+  describe each function's prologue (`rbp` as frame register), so
   the system unwinder can walk through VM frames, but they register no exception handler:
   landing pads don't run on PE, and `resume` aborts. Like the rest of the PE column this is
   only cross-checked ([platforms.md](platforms.md)).
@@ -492,8 +519,9 @@ panic runtime, as through native frames. The image carries the unwind informatio
    it saves `rbp` and `rbx`, anchors its frame (and its CFI) in `rbx`, reserves the
    argument block at `rsp` (`arg_size` from the function table, rounded up to 16, plus 8 to
    keep the callee's `fp` 16-aligned), so that it is the callee's `fp + 16`, copies the
-   portal's args there, sets `rbp = 0` and calls the entry. So the entry frame has a null caller fp, and
-   its `ret` writes to the entry record's `ret`. The Win64 version also saves `rdi`, `rsi`
+   portal's args there, sets `rbp = 0` (so a frame-pointer chain ends there) and calls the
+   entry. The call returns to the label `ryo_asm_enter_ret`, which is how the entry frame's
+   `ret` knows to write to the entry record's `ret`. The Win64 version also saves `rdi`, `rsi`
    and `xmm6`–`xmm15`, which are callee-saved there but not in the `sysv64` convention VM
    code and the handlers follow, and has SEH unwind info.
 
@@ -509,8 +537,10 @@ in `ryo_rt`, `ryo_h_<Opcode>`:
   registers, on every target. `R` is `()`, `bool` (branches), `usize` (switches), `!`
   (traps) or `*const u8` (the resolving call handlers). Each handler body reads its
   operands through the opcode's `asm::layout`, a constant, so an unused register costs
-  nothing. `fp` comes from `rbp`, read before anything else (handlers set up no frame
-  pointer: `ryo_rt` is built without forced frame pointers), or from `rdi` with `fp-arg`.
+  nothing. `fp` comes in `rdi`, or with the `fp-rbp` feature from `rbp`, read before
+  anything else (handlers set up no frame pointer: `ryo_rt` is built without forced frame
+  pointers). `fp-rbp` saves the `fp` argument of every handler call, but VM code must then
+  keep the frame pointer.
 - **Symbols**: `#[rustc_std_internal_symbol]` with `export_name = "ryo_h_<Opcode>"`, so the
   symbol is mangled as rustc mangles internal symbols (`mangle_internal_symbol`, under
   `__rustc`), the same in every crate that links `ryo_rt`. The backend references them by
@@ -530,11 +560,13 @@ in `ryo_rt`, `ryo_h_<Opcode>`:
   arithmetic is wrapping, errors go to `fatal`).
 - **Test**: `vm/rt/tests/codegen.rs` builds `ryo_rt` as `y build` does (release,
   `-Ccodegen-units=1`) with `--emit=asm`, and checks that every opcode with a handler has its
-  `ryo_h_<Opcode>` function, that every Rust handler reads `rbp` before any instruction that
-  writes it, and that the hot handlers have no prologue (no push, no stack adjustment) and
-  make no call. `vm/rt/tests/ops.rs` calls every handler directly against a Rust reference
-  model, and `vm/rt/tests/vm.rs` runs hand-assembled functions, encoded and linked in memory,
-  through `vm::enter` and portals.
+  `ryo_h_<Opcode>` function, that with `fp-rbp` every Rust handler reads `rbp` before any
+  instruction that writes it, and that the hot handlers have no prologue (no push, no stack
+  adjustment) and make no call. `vm/rt/tests/ops.rs` calls every handler directly against a
+  Rust reference model, and `vm/rt/tests/vm.rs` runs hand-assembled functions, encoded and
+  linked in memory, through `vm::enter` and portals, in `vm::MODE` (without a frame pointer,
+  or with `fp-rbp` with one). `cargo test` covers the default; run it with
+  `--features fp-rbp` too after changing frames or handlers.
 
 ## Image format
 
@@ -684,8 +716,8 @@ portal and island templates. It is a normal Rust dependency of every ryo-built c
   - `vm::lookup_addr(fnptr) -> Option<&'static vm::Function>`: portal address → VM function.
   - `vm::register`: `#[no_mangle] extern "C-unwind" fn ryo_vm_register(images, n)`.
   - `vm::MODE` / `vm::FP_ARG` (diagnostic item `ryo_rt_fp_arg`): whether the handlers take
-    `fp` in `rdi` (the `fp-arg` cargo feature). The backend evaluates `FP_ARG` and encodes
-    to match.
+    `fp` in `rdi` (unless the `fp-rbp` cargo feature is on). The backend evaluates `FP_ARG`
+    and encodes to match, with a frame pointer if it is false.
 - **`portal`**: `portal`, `portal_tc0..N` ([stubs.md](stubs.md#portals-native--vm)).
 - **`island`**: the island templates ([stubs.md](stubs.md#templates)).
 - **`entry`**: the C `main` wrapper `c_main` ([stubs.md](stubs.md#program-entry-main)).

@@ -440,11 +440,17 @@ pub fn run(clif: bool) -> Result<(), String> {
     };
 
     let mut failed = Vec::new();
-    match crate::utils::run(cmd("cargo").current_dir(root.join("vm")).args(["test", "--workspace"])) {
-        Ok(()) => eprintln!("[y] test vm: ok"),
-        Err(msg) => {
-            eprintln!("[y] test vm: FAILED: {msg}");
-            failed.push("vm".to_owned());
+    // The runtime once more with handlers that read `fp` from `rbp`, so VM code keeps the
+    // frame pointer (design/vm.md#handlers).
+    let vm_runs: [(&str, &[&str]); 2] =
+        [("vm", &["test", "--workspace"]), ("vm fp-rbp", &["test", "-p", "ryo_rt", "--features", "fp-rbp"])];
+    for (name, args) in vm_runs {
+        match crate::utils::run(cmd("cargo").current_dir(root.join("vm")).args(args)) {
+            Ok(()) => eprintln!("[y] test {name}: ok"),
+            Err(msg) => {
+                eprintln!("[y] test {name}: FAILED: {msg}");
+                failed.push(name.to_owned());
+            }
         }
     }
     let cc = have_cc();
