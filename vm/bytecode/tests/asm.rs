@@ -265,6 +265,12 @@ fn register_cache_drops_reloads() {
         unwind: Vec::new(),
     };
     assert!(has(&check(&f, 32, m, "reload at a target").code));
+    // Values stay in other registers: `mov.w64 $-24, $-32` goes through `rdx`, as `rax`
+    // holds `$-16`, so the last `add` is `add rax, rdx`.
+    let add = |d: i32, a: i32, b: i32| vec![Opcode::AddW64 as u32, d as u32, a as u32, b as u32];
+    let f = Fn { insns: vec![add(-16, -8, -8), mov(-24, -32), add(-40, -16, -24), vec![Opcode::Abort as u32]], targets: Vec::new(), unwind: Vec::new() };
+    let code = check(&f, 64, m, "two registers").code;
+    assert!(code.windows(3).any(|w| w == [0x48, 0x03, 0xc2]), "{code:02x?}");
 }
 
 /// The register packing of the opcodes with more operands than registers.
@@ -415,5 +421,5 @@ fn templates_are_pinned_to_format_version() {
             eat(&lsda::write(&enc.call_sites));
         }
     }
-    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (10, 0x7d7935189c173d73), "template hash {h:#x}");
+    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (11, 0x7d7935189c173d73), "template hash {h:#x}");
 }

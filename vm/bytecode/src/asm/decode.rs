@@ -75,8 +75,8 @@ pub fn decode(code: &[u8], relocs: &[Reloc], rodata: &[u8], call_sites: &[CallSi
     let argblk = (frame_size as i32).wrapping_neg() as u32;
 
     // Twice: the register cache is cleared at branch targets, which are only known once the
-    // whole function is decoded. The first pass takes every inline sequence that is right
-    // with the cache or without it; the second is exact, with the targets of the first.
+    // whole function is read. The first pass only finds the instructions and targets; the
+    // second decodes them, with the cache cleared at the targets of the first.
     let body = c.pos;
     let (protos, _) = instructions(&mut c, mode, rodata, argblk, None)?;
     let mut targets: Vec<u32> = protos.iter().flat_map(|p| p.ops.iter()).flat_map(op_targets).collect();
@@ -190,7 +190,7 @@ fn op_targets(o: &Opnd) -> Vec<u32> {
 
 /// The instructions from the cursor to the end, and whether each is padded. With `targets`
 /// (sorted), the register cache is cleared at them and every inline sequence must be exactly
-/// as the cache emits it; without, a sequence may also be one emitted with an empty cache.
+/// as the cache emits it; without, inline sequences are only delimited ([`inline_insn`]).
 fn instructions(
     c: &mut Cursor<'_>,
     mode: Mode,
@@ -365,9 +365,9 @@ fn insn(c: &mut Cursor<'_>, mode: Mode, ro: &[u8], argblk: u32) -> Result<Proto,
 }
 
 /// An inline sequence at the cursor, or `None` (the cursor unmoved) if there is none: native
-/// items up to the one that writes the result, or up to a conditional branch. They must be
-/// the sequence as the register cache `cache` emits it (updated to after it), or, unless
-/// `exact`, the sequence as emitted with an empty cache.
+/// items up to the one that writes the result, or up to a conditional branch, which must be
+/// the sequence as the register cache `cache` emits it (updated to after it). Unless `exact`,
+/// they are only read for their extent and branch target, as a `jmp` or an `abort`.
 fn inline_insn(c: &mut Cursor<'_>, cache: &mut Cache, exact: bool) -> Option<Proto> {
     let pos = c.pos;
     let mut items = Vec::new();
@@ -390,19 +390,24 @@ fn inline_insn(c: &mut Cursor<'_>, cache: &mut Cache, exact: bool) -> Option<Pro
             }
         }
     }
-    let mut cands = cache.unrewrite(&items);
-    cands.insert(0, items.clone());
-    for cand in cands {
-        let Some((op, ops)) = super::inline::decode(&cand, branch) else { continue };
+    if !exact {
+        // Only its extent and its branch target matter.
+        let (op, ops) = match branch {
+            Some((_, t)) => (Opcode::Jmp, vec![Opnd::Target(t)]),
+            None => (Opcode::Abort, Vec::new()),
+        };
+        return Some(Proto { op, ops, pos, sites: Vec::new() });
+    }
+    // As emitted with an empty cache, the common case, else the sequences the cache may
+    // have emitted this from.
+    let plain = super::inline::decode(&items, branch).map(|d| (d, items.clone()));
+    let cands = plain.into_iter().chain(cache.unemit(&items).into_iter().filter_map(|c| Some((super::inline::decode(&c, branch)?, c))));
+    for ((op, ops), cand) in cands {
         let mut after = *cache;
-        if after.emit(&cand) == items {
-            *cache = after;
-        } else if !exact && cand == items {
-            *cache = Cache::default();
-            cache.emit(&cand);
-        } else {
+        if after.emit(&cand) != items {
             continue;
         }
+        *cache = after;
         return Some(Proto { op, ops, pos, sites: Vec::new() });
     }
     c.pos = pos;

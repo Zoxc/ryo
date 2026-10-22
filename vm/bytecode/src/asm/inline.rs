@@ -1,13 +1,15 @@
 //! The inline form of the common VM instructions (design/vm.md, "Inline instructions"):
 //! moves, immediates, address arithmetic, loads and stores, integer add/sub/logic/multiply,
 //! shifts by an immediate, compares and compare-branches, at widths up to 64 bits. They
-//! are short native sequences on `rax` and `rcx` instead of handler calls.
+//! are short native sequences on `rax` and `rcx` instead of handler calls; the register cache
+//! ([`Cache`]) renames `rax` as it emits them.
 //!
 //! Every sequence ends in its one write (to the frame or to memory), or in a conditional
 //! branch, and no other element of a sequence writes anything, so the decoder knows where a
 //! sequence ends. Each opcode has one sequence per operand pattern, and no two opcodes share
 //! one: the decoder recovers the opcode and operands by matching against [`sequence`].
 
+use alloc::vec;
 use alloc::vec::Vec;
 
 use super::encode::Opnd;
@@ -350,16 +352,31 @@ pub(super) fn decode(items: &[Item], branch: Option<(Cond, u32)>) -> Option<(Opc
     None
 }
 
-/// What `rax` is known to hold between inline sequences (design/vm.md, "Register cache"):
-/// the zero-extended value of a frame slot, by its displacement (raw or resolved: the rules
-/// only compare displacements) and width. Every store still happens, so a hit only drops a
-/// reload.
+/// The registers inline sequences compute in: the caller-saved ones but `rcx`, the sequences'
+/// scratch register. Every handler call clobbers them anyway.
+pub(super) const POOL: [Reg; 8] = [Reg::Rax, Reg::Rdx, Reg::Rsi, Reg::Rdi, Reg::R8, Reg::R9, Reg::R10, Reg::R11];
+
+/// What a [`POOL`] register is known to hold.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Entry {
+    /// The zero-extended value of the frame slot at this displacement and width.
+    slot: Option<(i32, W)>,
+    /// The register is the zero-extension of its low bytes of this width.
+    zx: Option<W>,
+    /// When the register was last used ([`Cache::tick`]).
+    used: u32,
+}
+
+/// The register cache (design/vm.md, "Register cache"): what the [`POOL`] registers hold
+/// between inline sequences, frame slots by displacement (raw or resolved: the rules only
+/// compare displacements). Each sequence computes in a register of its own choosing
+/// ([`Cache::emit`]), so values survive the sequences after it, and frame operands held in a
+/// register are read from it. Every store still happens, so the frame stays up to date.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) struct Cache {
-    /// `rax` is the zero-extended value of the slot at this displacement and width.
-    slot: Option<(i32, W)>,
-    /// `rax` is the zero-extension of its low bytes of this width.
-    zx: Option<W>,
+    regs: [Entry; POOL.len()],
+    /// Sequences emitted.
+    tick: u32,
 }
 
 /// Whether the `n`-byte range at `a` overlaps the `m`-byte one at `b` (wrapping: raw slots
@@ -372,68 +389,155 @@ fn bytes(w: W) -> u32 {
     w.bits() / 8
 }
 
+fn pool(r: Reg) -> Option<usize> {
+    POOL.iter().position(|&p| p == r)
+}
+
+/// The frame slot `[rbp + d]` of an `r/m` operand that only reads it, and the width read.
+fn read_operand(it: &Item) -> Option<(M, W)> {
+    match *it {
+        Item::Alu { w, rm: Rm::Mem(m), .. } | Item::AluImm { op: Alu::Cmp, w, rm: Rm::Mem(m), .. } => Some((m, w)),
+        Item::Imul { w, rm: Rm::Mem(m), .. } | Item::ImulImm { w, rm: Rm::Mem(m), .. } => Some((m, w)),
+        _ => None,
+    }
+    .filter(|(m, _)| m.base == Reg::Rbp)
+}
+
+/// The item with its `r/m` operand replaced.
+fn with_rm(it: Item, rm: Rm) -> Item {
+    match it {
+        Item::Alu { op, w, reg, .. } => Item::Alu { op, w, reg, rm },
+        Item::AluImm { op, w, imm, .. } => Item::AluImm { op, w, rm, imm },
+        Item::Imul { w, reg, .. } => Item::Imul { w, reg, rm },
+        Item::ImulImm { w, reg, imm, .. } => Item::ImulImm { w, reg, rm, imm },
+        it => it,
+    }
+}
+
+/// The register read by an `r/m` register operand of an item that could have read the frame
+/// there instead.
+fn read_reg(it: &Item) -> Option<Reg> {
+    match *it {
+        Item::Alu { rm: Rm::Reg(r), .. } | Item::AluImm { op: Alu::Cmp, rm: Rm::Reg(r), .. } => Some(r),
+        Item::Imul { rm: Rm::Reg(r), .. } | Item::ImulImm { rm: Rm::Reg(r), .. } => Some(r),
+        _ => None,
+    }
+}
+
 impl Cache {
-    /// The first item of a sequence as emitted with the cache: `None` to drop it (a reload of
-    /// `rax`), or the item with its frame operand read from `rax`.
-    pub(super) fn rewrite(&self, item: Item) -> Option<Item> {
-        let Some((s, sw)) = self.slot else { return Some(item) };
-        let hit = |m: M, w: W| m.base == Reg::Rbp && m.disp == s && w == sw;
-        match item {
-            Item::Ld { w, sx: false, dst: R, m } if hit(m, w) => None,
-            Item::AluImm { op: Alu::Cmp, w, rm: Rm::Mem(m), imm } if hit(m, w) => Some(Item::AluImm { op: Alu::Cmp, w, rm: Rm::Reg(R), imm }),
-            Item::ImulImm { w, reg: R, rm: Rm::Mem(m), imm } if hit(m, w) => Some(Item::ImulImm { w, reg: R, rm: Rm::Reg(R), imm }),
-            it => Some(it),
+    /// The register holding the slot at `m` (a frame operand) at width `w` exactly, or at
+    /// least `w` wide unless `exact`.
+    fn find(&self, m: M, w: W, exact: bool) -> Option<usize> {
+        if m.base != Reg::Rbp {
+            return None;
         }
+        self.regs.iter().position(|e| e.slot.is_some_and(|(s, sw)| s == m.disp && if exact { sw == w } else { bytes(sw) >= bytes(w) }))
     }
 
-    /// The sequences that [`Cache::rewrite`] may have turned into `items`: with the dropped
-    /// reload put back first, or with the first item's `rax` operand back in the frame. The
-    /// decoder checks each candidate by rewriting it again.
-    pub(super) fn unrewrite(&self, items: &[Item]) -> Vec<Vec<Item>> {
-        let Some((s, w)) = self.slot else { return Vec::new() };
-        let m = M::frame(s);
-        let mut out = Vec::with_capacity(2);
-        let mut ld = Vec::with_capacity(items.len() + 1);
-        ld.push(Item::Ld { w, sx: false, dst: R, m });
-        ld.extend_from_slice(items);
-        out.push(ld);
-        let first = match items.first() {
-            Some(&Item::AluImm { op: Alu::Cmp, w: iw, rm: Rm::Reg(R), imm }) if iw == w => {
-                Some(Item::AluImm { op: Alu::Cmp, w, rm: Rm::Mem(m), imm })
+    /// The register a sequence that doesn't start by reloading a cached slot computes in: an
+    /// empty one if there is one, the least recently used first.
+    fn fresh(&self) -> usize {
+        (0..POOL.len()).min_by_key(|&i| (self.regs[i].slot.is_some(), self.regs[i].used, i)).unwrap()
+    }
+
+    /// `items` (an inline sequence, on `rax`) as emitted with the cache, which is updated to
+    /// after it. The sequence computes in the register that holds its first operand's slot,
+    /// dropping the reload, or else in [`Cache::fresh`]; frame operands held in a register
+    /// are read from it. Only the first item can be dropped.
+    pub(super) fn emit(&mut self, items: &[Item]) -> Vec<Item> {
+        self.tick += 1;
+        let mut out = Vec::with_capacity(items.len());
+        let mut rest = items;
+        let x = match items.first() {
+            Some(&Item::Ld { w, sx: false, dst: R, m }) if let Some(i) = self.find(m, w, true) => {
+                rest = &items[1..];
+                i
             }
-            Some(&Item::ImulImm { w: iw, reg: R, rm: Rm::Reg(R), imm }) if iw == w => Some(Item::ImulImm { w, reg: R, rm: Rm::Mem(m), imm }),
-            _ => None,
+            _ => self.fresh(),
         };
-        if let Some(f) = first {
-            let mut v = items.to_vec();
-            v[0] = f;
-            out.push(v);
+        self.regs[x].used = self.tick;
+        let xr = POOL[x];
+        for &it in rest {
+            let mut it = it.map_regs(|r| if r == R { xr } else { r });
+            if let Some((m, w)) = read_operand(&it)
+                && let Some(i) = self.find(m, w, false)
+            {
+                it = with_rm(it, Rm::Reg(POOL[i]));
+                self.regs[i].used = self.tick;
+            }
+            self.update(&it);
+            out.push(it);
         }
         out
     }
 
-    /// `items` (an inline sequence) as emitted with the cache, and the cache after it.
-    pub(super) fn emit(&mut self, items: &[Item]) -> Vec<Item> {
-        let mut v = Vec::with_capacity(items.len());
-        for (i, &it) in items.iter().enumerate() {
-            let it = if i == 0 { self.rewrite(it) } else { Some(it) };
-            if let Some(it) = it {
-                self.update(&it);
-                v.push(it);
+    /// The sequences on `rax` that [`Cache::emit`] may have turned into `items`, for the
+    /// decoder, which checks each by emitting it again: for each register the sequence may
+    /// have computed in, with the register renamed back, register operands that may have
+    /// been frame operands put back, and the dropped reload put back or not.
+    pub(super) fn unemit(&self, items: &[Item]) -> Vec<Vec<Item>> {
+        let mut out = Vec::new();
+        // The register computed in appears in the items, unless the sequence computes
+        // nothing in a register, when it is the one any would get.
+        let mut xs: Vec<usize> = (0..POOL.len()).filter(|&i| items.iter().any(|it| it.map_regs(|r| if r == POOL[i] { Reg::Rbp } else { r }) != *it)).collect();
+        if xs.is_empty() {
+            xs.push(self.fresh());
+        }
+        for x in xs {
+            let xr = POOL[x];
+            // The registers swapped, so nothing else becomes `rax`.
+            let back = |r: Reg| if r == xr { R } else if r == R { xr } else { r };
+            for reload in [false, true] {
+                let mut c = *self;
+                let mut head = Vec::new();
+                if reload {
+                    let Some((s, w)) = c.regs[x].slot else { continue };
+                    head.push(Item::Ld { w, sx: false, dst: R, m: M::frame(s) });
+                }
+                // Each register operand: as it is, or the frame slot its register held.
+                let mut alts: Vec<Vec<Item>> = vec![head];
+                for &it in items {
+                    let mut opts = vec![it.map_regs(back)];
+                    if let Some(r) = read_reg(&it)
+                        && let Some(i) = pool(r)
+                        && let Some((s, _)) = c.regs[i].slot
+                    {
+                        let m = Rm::Mem(M::frame(s));
+                        let o = with_rm(it, m).map_regs(back);
+                        // Another register than the computing one is always a cached slot.
+                        if i == x {
+                            opts.push(o);
+                        } else {
+                            opts = vec![o];
+                        }
+                    }
+                    c.update(&it);
+                    alts = alts
+                        .into_iter()
+                        .flat_map(|a| {
+                            opts.iter().map(move |&o| {
+                                let mut a = a.clone();
+                                a.push(o);
+                                a
+                            })
+                        })
+                        .collect();
+                }
+                out.extend(alts);
             }
         }
-        v
+        out
     }
 
     /// Updates the cache for an emitted item of an inline sequence.
-    pub(super) fn update(&mut self, item: &Item) {
-        // Frame writes drop an overlapping slot; stores through a pointer drop it too (it may
-        // point into the frame).
+    fn update(&mut self, item: &Item) {
+        // Frame writes drop the slots they overlap; stores through a pointer drop every slot
+        // (it may point into the frame).
         let mut write = |m: M, n: u32| {
-            if m.base != Reg::Rbp {
-                self.slot = None;
-            } else if self.slot.is_some_and(|(s, w)| overlaps(s, bytes(w), m.disp, n)) {
-                self.slot = None;
+            for e in &mut self.regs {
+                if m.base != Reg::Rbp || e.slot.is_some_and(|(s, w)| overlaps(s, bytes(w), m.disp, n)) {
+                    e.slot = None;
+                }
             }
         };
         match *item {
@@ -441,31 +545,31 @@ impl Cache {
             Item::Setcc { m, .. } => write(m, 1),
             _ => {}
         }
-        // `rax` writes. Ops at 32 or 64 bits leave it zero-extended from their width; at 8
-        // or 16 bits they keep the bits above.
+        // Register writes. Ops at 32 or 64 bits leave the register zero-extended from their
+        // width; at 8 or 16 bits they keep the bits above.
         let wide = |w: W| matches!(w, W::D | W::Q).then_some(w);
-        let zx = match *item {
-            Item::Ld { w, sx, dst: R, m } => {
-                self.slot = (!sx && m.base == Reg::Rbp).then_some((m.disp, w));
-                Some(if sx { W::D } else { w })
-            }
-            Item::Alu { op, w, reg: R, .. } if op != Alu::Cmp => wide(w),
-            Item::AluImm { op, w, rm: Rm::Reg(R), .. } if op != Alu::Cmp => wide(w),
-            Item::Imul { w, reg: R, .. } | Item::ImulImm { w, reg: R, .. } | Item::Shift { w, reg: R, .. } => wide(w),
-            Item::LeaM { dst: R, .. } | Item::SetReg(R, _) => Some(W::Q),
-            Item::St { w, src: R, m } => {
-                // `rax` is the zero-extension of the value stored when its known extension
-                // is no wider than the store.
-                if m.base == Reg::Rbp && self.zx.is_some_and(|z| bytes(z) <= bytes(w)) {
-                    self.slot = Some((m.disp, w));
+        let (r, slot, zx) = match *item {
+            Item::Ld { w, sx, dst, m } => (dst, (!sx && m.base == Reg::Rbp).then_some((m.disp, w)), Some(if sx { W::D } else { w })),
+            Item::Alu { op, w, reg, .. } if op != Alu::Cmp => (reg, None, wide(w)),
+            Item::AluImm { op, w, rm: Rm::Reg(reg), .. } if op != Alu::Cmp => (reg, None, wide(w)),
+            Item::Imul { w, reg, .. } | Item::ImulImm { w, reg, .. } | Item::Shift { w, reg, .. } => (reg, None, wide(w)),
+            Item::LeaM { dst, .. } | Item::SetReg(dst, _) => (dst, None, Some(W::Q)),
+            Item::St { w, src, m } => {
+                // The register is the zero-extension of the value stored when its known
+                // extension is no wider than the store.
+                if let Some(i) = pool(src)
+                    && m.base == Reg::Rbp
+                    && self.regs[i].zx.is_some_and(|z| bytes(z) <= bytes(w))
+                {
+                    self.regs[i].slot = Some((m.disp, w));
                 }
                 return;
             }
             _ => return,
         };
-        if !matches!(item, Item::Ld { .. }) {
-            self.slot = None;
+        if let Some(i) = pool(r) {
+            self.regs[i].slot = slot;
+            self.regs[i].zx = zx;
         }
-        self.zx = zx;
     }
 }

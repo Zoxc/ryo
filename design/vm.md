@@ -173,9 +173,10 @@ stride below 2^31), `load`, `store`, `add`, `sub`, `and`, `or`, `xor`, `mul` and
 … `ge.u.imm`), `br` and the compare-branches, all at `w8`–`w64`. Everything else, and
 these with other operands, keeps its handler call.
 
-- **Registers**: the sequences use `rax` and `rcx` and the flags only, which every handler
-  call clobbers too. Only the register cache ([below](#register-cache)) keeps anything in a
-  register between instructions. They read frame
+- **Registers**: the sequences compute in one of the caller-saved registers but `rcx`, and
+  use `rcx` as scratch, and the flags, all of which every handler call clobbers too. Only the
+  register cache ([below](#register-cache)) keeps anything in a register between
+  instructions. They read frame
   slots as `[rbp + off]`, in either `fp` mode, never move `rsp` and call nothing, so they
   are no call sites and the unwind information doesn't change.
 - **Shape**: a sequence loads its operands (`movzx` for `w8`/`w16`), computes in `rax`, and
@@ -196,25 +197,35 @@ these with other operands, keeps its handler call.
 
 #### Register cache
 
-Between inline sequences, `rax` often still holds a slot's value. The encoder tracks that
-(`inline::Cache`, run over the code in `Asm::finish`) and drops the reload: a sequence whose
-first element is `mov rax, [rbp + s]` at the width `rax` holds `s` at loses it, and a first
-`cmp [rbp + s], imm` or `imul rax, [rbp + s], imm` reads `rax` instead. Every store still
-happens, so the frame is always up to date, and handlers, calls, unwinding and the decoder's
-view of the frame don't change.
+Values stay in registers between inline sequences. The encoder tracks what the caller-saved
+registers but `rcx` hold (`inline::Cache`, run over the code in `Asm::finish`): `rax`, `rdx`,
+`rsi`, `rdi` and `r8`–`r11`. Every store still happens, so the frame is always up to date,
+and handlers, calls, unwinding and the decoder's view of the frame don't change.
 
-- **What `rax` holds**: the slot (displacement and width) it was loaded from without sign
-  extension, or stored to, when `rax` is the zero-extension of the stored value (stores of
+- **Which register**: a sequence is written on `rax` and renamed. If its first element
+  reloads a slot a register holds at that width, it computes in that register and the reload
+  is dropped. Otherwise it computes in an empty register, or the least recently used one.
+- **Register operands**: a frame operand that a register holds at least as wide (`add`,
+  `sub`, … and `imul` sources, `cmp` with a register or an immediate) reads the register
+  instead.
+- **What a register holds**: the slot (displacement and width) it was loaded from without
+  sign extension, or stored to, when it is the zero-extension of the stored value (stores of
   32- and 64-bit results, and of values loaded at the store's width).
-- **What clears it**: any write of `rax` other than those, a frame write overlapping the
+- **What clears it**: a write of the register other than those, a frame write overlapping the
   slot, a store through a pointer (it may point into the frame), every instruction that isn't
-  inline (handler calls clobber `rax`), and every branch target, including jump table
-  entries. So the cache never crosses a block boundary that is a target.
+  inline (handler calls clobber these registers), and every branch target, including jump
+  table entries. So the cache never crosses a block boundary that is a target.
+- **Encoding**: `r8`–`r11` take REX prefixes, and so do byte operands in `sil` and `dil`.
+  Pointer registers address without a displacement when it is 0.
 - **Decoding**: the decoder runs the same cache. Branch targets are only known once a
-  function is decoded, so it decodes twice: first taking each sequence with the cache or
-  without it, then exactly, with the cache cleared at the targets of the first pass.
+  function is read, so it reads it twice: first only delimiting the inline sequences, to
+  find the targets, then decoding them with the cache cleared at the targets. It tries each
+  sequence on `rax`, the register renamed back, with register operands that may have been
+  frame operands and the dropped reload put back, and keeps the one the cache emits as the
+  code is.
 - **Testing**: `vm/bytecode/tests/asm.rs` round-trips random runs of inline instructions on
-  a few overlapping slots, with branches into them.
+  a few overlapping slots, with branches into them, and `vm/rt/tests/inline.rs` runs such
+  runs against their handlers.
 
 ## Instruction set
 

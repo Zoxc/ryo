@@ -80,18 +80,17 @@ fn core::fmt::rt::Argument::<'_>::new_display::<u32>
      20: call    ryo_h_AddrSym
      25: mov     rax,[rbp-40h]
      29: mov     [rbp-38h],rax
-     2d: mov     rax,[rbp-30h]
-     31: mov     [rbp-28h],rax
-     35: mov     rax,[rbp-38h]
-     39: mov     [rbp-20h],rax
-     3d: mov     edi,0FFFFFFF0h
-     42: mov     esi,0FFFFFFD8h
-     47: call    ryo_h_MovW128
-     4c: mov     edi,0FFFFFFF0h
-     51: mov     esi,10h
-     56: call    ryo_h_Ret
-     5b: leave
-     5c: ret
+     2d: mov     rdx,[rbp-30h]
+     31: mov     [rbp-28h],rdx
+     35: mov     [rbp-20h],rax
+     39: mov     edi,0FFFFFFF0h
+     3e: mov     esi,0FFFFFFD8h
+     43: call    ryo_h_MovW128
+     48: mov     edi,0FFFFFFF0h
+     4d: mov     esi,10h
+     52: call    ryo_h_Ret
+     57: leave
+     58: ret
 
 fn core::fmt::rt::Argument::<'_>::new_display::<u64>
       0: push    rbp
@@ -105,18 +104,17 @@ fn core::fmt::rt::Argument::<'_>::new_display::<u64>
      20: call    ryo_h_AddrSym
      25: mov     rax,[rbp-40h]
      29: mov     [rbp-38h],rax
-     2d: mov     rax,[rbp-30h]
-     31: mov     [rbp-28h],rax
-     35: mov     rax,[rbp-38h]
-     39: mov     [rbp-20h],rax
-     3d: mov     edi,0FFFFFFF0h
-     42: mov     esi,0FFFFFFD8h
-     47: call    ryo_h_MovW128
-     4c: mov     edi,0FFFFFFF0h
-     51: mov     esi,10h
-     56: call    ryo_h_Ret
-     5b: leave
-     5c: ret
+     2d: mov     rdx,[rbp-30h]
+     31: mov     [rbp-28h],rdx
+     35: mov     [rbp-20h],rax
+     39: mov     edi,0FFFFFFF0h
+     3e: mov     esi,0FFFFFFD8h
+     43: call    ryo_h_MovW128
+     48: mov     edi,0FFFFFFF0h
+     4d: mov     esi,10h
+     52: call    ryo_h_Ret
+     57: leave
+     58: ret
 
 fn fib
       0: push    rbp
@@ -233,58 +231,55 @@ fn main
      2f: nop     [rcx-38h]
      36: lea     rax,[rbp-38h]
      3a: mov     [rbp-30h],rax
-     3e: lea     rax,[rbp-4]
-     42: mov     [rbp-40h],rax
-     46: mov     rax,[rbp-30h]
-     4a: mov     [rbp-28h],rax
-     4e: mov     rax,[rbp-40h]
-     52: mov     [rbp-20h],rax
-     56: mov     [rbp-98h],rax
-     5d: mov     [rbp-0C0h],rax
-     64: call    fn2
-     69: nop     [rcx-70h]
-     70: mov     rax,[rbp-28h]
-     74: mov     [rbp-0A0h],rax
-     7b: mov     [rbp-0C0h],rax
-     82: call    fn3
-     87: nop     [rcx-80h]
-     8e: mov     edi,0FFFFFFA0h
-     93: mov     esi,0FFFFFF90h
-     98: call    ryo_h_MovW128
-     9d: mov     edi,0FFFFFFB0h
-     a2: mov     esi,0FFFFFF80h
-     a7: call    ryo_h_MovW128
-     ac: mov     edi,0FFFFFF78h
-     b1: lea     rsi,[k4]
-     b8: call    ryo_h_AddrAbs
-     bd: lea     rax,[rbp-60h]
-     c1: mov     [rbp-90h],rax
-     c8: mov     rax,[rbp-88h]
-     cf: mov     [rbp-0C0h],rax
-     d6: mov     rax,[rbp-90h]
-     dd: mov     [rbp-0B8h],rax
-     e4: call    fn5
-     e9: nop     [rcx-18h]
-     f0: mov     edi,0FFFFFF40h
-     f5: mov     esi,0FFFFFFE8h
-     fa: call    ryo_h_MovW128
-     ff: lea     rdi,[sym6]
-    106: lea     rsi,[site7]
-    10d: mov     edx,0FFFFFF58h
-    112: call    ryo_h_CallExt
-    117: test    rax,rax
-    11a: je      127h
-    11c: call    rax
-    11e: nop     [rcx-4]
-    125: jmp     137h
-    127: mov     rdi,rbp
-    12a: lea     rsi,[ro+4]
-    131: call    qword ptr [sym8]
-    137: xor     edi,edi
-    139: xor     esi,esi
-    13b: call    ryo_h_Ret
-    140: leave
-    141: ret
+     3e: lea     rdx,[rbp-4]
+     42: mov     [rbp-40h],rdx
+     46: mov     [rbp-28h],rax
+     4a: mov     [rbp-20h],rdx
+     4e: mov     [rbp-98h],rdx
+     55: mov     [rbp-0C0h],rdx
+     5c: call    fn2
+     61: nop     [rcx-70h]
+     68: mov     rax,[rbp-28h]
+     6c: mov     [rbp-0A0h],rax
+     73: mov     [rbp-0C0h],rax
+     7a: call    fn3
+     7f: nop     [rcx-80h]
+     86: mov     edi,0FFFFFFA0h
+     8b: mov     esi,0FFFFFF90h
+     90: call    ryo_h_MovW128
+     95: mov     edi,0FFFFFFB0h
+     9a: mov     esi,0FFFFFF80h
+     9f: call    ryo_h_MovW128
+     a4: mov     edi,0FFFFFF78h
+     a9: lea     rsi,[k4]
+     b0: call    ryo_h_AddrAbs
+     b5: lea     rax,[rbp-60h]
+     b9: mov     [rbp-90h],rax
+     c0: mov     rdx,[rbp-88h]
+     c7: mov     [rbp-0C0h],rdx
+     ce: mov     [rbp-0B8h],rax
+     d5: call    fn5
+     da: nop     [rcx-18h]
+     e1: mov     edi,0FFFFFF40h
+     e6: mov     esi,0FFFFFFE8h
+     eb: call    ryo_h_MovW128
+     f0: lea     rdi,[sym6]
+     f7: lea     rsi,[site7]
+     fe: mov     edx,0FFFFFF58h
+    103: call    ryo_h_CallExt
+    108: test    rax,rax
+    10b: je      118h
+    10d: call    rax
+    10f: nop     [rcx-4]
+    116: jmp     128h
+    118: mov     rdi,rbp
+    11b: lea     rsi,[ro+4]
+    122: call    qword ptr [sym8]
+    128: xor     edi,edi
+    12a: xor     esi,esi
+    12c: call    ryo_h_Ret
+    131: leave
+    132: ret
 
 fn std::fmt::Arguments::<'_>::new::<15, 2>
       0: push    rbp
@@ -292,17 +287,15 @@ fn std::fmt::Arguments::<'_>::new::<15, 2>
       4: sub     rsp,20h
       8: mov     rax,[rbp+10h]
       c: mov     [rbp-18h],rax
-     10: mov     rax,[rbp+18h]
-     14: mov     [rbp-20h],rax
-     18: mov     rax,[rbp-18h]
-     1c: mov     [rbp-10h],rax
-     20: mov     rax,[rbp-20h]
-     24: mov     [rbp-8],rax
-     28: mov     edi,0FFFFFFF0h
-     2d: mov     esi,10h
-     32: call    ryo_h_Ret
-     37: leave
-     38: ret
+     10: mov     rdx,[rbp+18h]
+     14: mov     [rbp-20h],rdx
+     18: mov     [rbp-10h],rax
+     1c: mov     [rbp-8],rdx
+     20: mov     edi,0FFFFFFF0h
+     25: mov     esi,10h
+     2a: call    ryo_h_Ret
+     2f: leave
+     30: ret
 
 fn std::hint::black_box::<u32>
       0: push    rbp
@@ -322,9 +315,9 @@ fn std::rt::lang_start::<()>
       4: sub     rsp,60h
       8: mov     rax,[rbp+10h]
       c: mov     [rbp-28h],rax
-     10: lea     rax,[rbp-28h]
-     14: mov     [rbp-20h],rax
-     18: mov     [rbp-18h],rax
+     10: lea     rdx,[rbp-28h]
+     14: mov     [rbp-20h],rdx
+     18: mov     [rbp-18h],rdx
      1c: mov     edi,0FFFFFFF0h
      21: lea     rsi,[k0]
      28: call    ryo_h_AddrAbs
@@ -333,27 +326,27 @@ fn std::rt::lang_start::<()>
      37: call    ryo_h_MovW128
      3c: mov     rax,[rbp+18h]
      40: mov     [rbp-50h],rax
-     44: mov     rax,[rbp+20h]
-     48: mov     [rbp-48h],rax
-     4c: movzx   eax,byte ptr [rbp+28h]
-     50: mov     [rbp-40h],al
-     53: lea     rdi,[sym1]
-     5a: lea     rsi,[site2]
-     61: mov     edx,0FFFFFFD0h
-     66: call    ryo_h_CallExt
-     6b: test    rax,rax
-     6e: je      7Bh
-     70: call    rax
-     72: nop     [rcx-8]
-     79: jmp     8Bh
-     7b: mov     rdi,rbp
-     7e: lea     rsi,[ro+4]
-     85: call    qword ptr [sym3]
-     8b: mov     edi,0FFFFFFF8h
-     90: mov     esi,8
-     95: call    ryo_h_Ret
-     9a: leave
-     9b: ret
+     44: mov     rdx,[rbp+20h]
+     48: mov     [rbp-48h],rdx
+     4c: movzx   esi,byte ptr [rbp+28h]
+     50: mov     [rbp-40h],sil
+     54: lea     rdi,[sym1]
+     5b: lea     rsi,[site2]
+     62: mov     edx,0FFFFFFD0h
+     67: call    ryo_h_CallExt
+     6c: test    rax,rax
+     6f: je      7Ch
+     71: call    rax
+     73: nop     [rcx-8]
+     7a: jmp     8Ch
+     7c: mov     rdi,rbp
+     7f: lea     rsi,[ro+4]
+     86: call    qword ptr [sym3]
+     8c: mov     edi,0FFFFFFF8h
+     91: mov     esi,8
+     96: call    ryo_h_Ret
+     9b: leave
+     9c: ret
 
 fn std::rt::lang_start::<()>::{closure#0}
       0: push    rbp

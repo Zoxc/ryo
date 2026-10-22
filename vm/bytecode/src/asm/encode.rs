@@ -301,30 +301,35 @@ fn cache(pieces: &mut [Piece], labels: &[usize]) {
         }
     }
     let mut c = super::inline::Cache::default();
-    // The next native item starts a sequence.
-    let mut first = true;
-    for (k, p) in pieces.iter_mut().enumerate() {
+    let mut items = Vec::new();
+    let mut k = 0;
+    while k < pieces.len() {
         if target[k] {
             c = Default::default();
         }
-        match p {
-            Piece::Native(item) => {
-                let start = first;
-                first = item.ends_inline();
-                match if start { c.rewrite(*item) } else { Some(*item) } {
-                    Some(it) => {
-                        c.update(&it);
-                        *item = it;
-                    }
-                    None => *p = Piece::Gone,
-                }
+        if !matches!(pieces[k], Piece::Native(_)) {
+            c = Default::default();
+            k += 1;
+            continue;
+        }
+        // One sequence: native items up to its write, or up to its branch.
+        let start = k;
+        items.clear();
+        while let Some(&Piece::Native(it)) = pieces.get(k) {
+            items.push(it);
+            k += 1;
+            if it.ends_inline() {
+                break;
             }
-            // The end of a compare-branch.
-            Piece::Branch { cond, .. } if *cond != Cond::Always && !first => first = true,
-            _ => {
-                c = Default::default();
-                first = true;
-            }
+        }
+        let out = c.emit(&items);
+        let dropped = items.len() - out.len();
+        for (j, p) in pieces[start..k].iter_mut().enumerate() {
+            *p = if j < dropped { Piece::Gone } else { Piece::Native(out[j - dropped]) };
+        }
+        // A compare-branch's branch keeps the cache.
+        if !items.last().is_some_and(Item::ends_inline) && matches!(pieces.get(k), Some(Piece::Branch { cond, .. }) if *cond != Cond::Always) {
+            k += 1;
         }
     }
 }

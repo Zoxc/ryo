@@ -203,7 +203,7 @@ fn inline_runs_match_handlers() {
     let mut runs = Vec::new();
     let mut w = ImageWriter::new(unique_scid());
     let mut fs = Vec::new();
-    for _ in 0..2000 {
+    for _ in 0..20000 {
         let mut a = Asm::new();
         a.i(Insn::Zero { d: Slot(RES), len: 32 });
         let mut run = Vec::new();

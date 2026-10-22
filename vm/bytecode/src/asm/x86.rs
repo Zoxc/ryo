@@ -20,6 +20,8 @@ pub enum Reg {
     Rdi = 7,
     R8 = 8,
     R9 = 9,
+    R10 = 10,
+    R11 = 11,
 }
 
 impl Reg {
@@ -34,6 +36,8 @@ impl Reg {
             7 => Reg::Rdi,
             8 => Reg::R8,
             9 => Reg::R9,
+            10 => Reg::R10,
+            11 => Reg::R11,
             _ => return None,
         })
     }
@@ -144,19 +148,6 @@ impl W {
         }
     }
 
-    /// The operand-size prefix: `66` (16 bits) or `REX.W` (64 bits).
-    fn prefix(self, out: &mut Vec<u8>) {
-        match self {
-            W::W => out.push(0x66),
-            W::Q => out.push(0x48),
-            W::B | W::D => {}
-        }
-    }
-
-    fn prefix_len(self) -> u32 {
-        matches!(self, W::W | W::Q) as u32
-    }
-
     /// A full-width immediate field (`Q`: 32 bits, sign-extended).
     fn imm(self, imm: i32, out: &mut Vec<u8>) {
         match self {
@@ -175,8 +166,9 @@ impl W {
     }
 }
 
-/// A memory operand `[base + disp]`, `base` `rbp` (a frame slot) or `rax` (a pointer).
-/// The displacement takes its shortest form: none for `[rax]`, then `disp8`, then `disp32`.
+/// A memory operand `[base + disp]`, `base` `rbp` (a frame slot) or a register holding a
+/// pointer (one whose ModRM encoding needs no SIB byte). The displacement takes its shortest
+/// form: none for a zero displacement off a pointer register, then `disp8`, then `disp32`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct M {
     pub base: Reg,
@@ -193,7 +185,7 @@ impl M {
     }
 
     fn len(self) -> u32 {
-        1 + if self.base == Reg::Rax && self.disp == 0 {
+        1 + if self.base != Reg::Rbp && self.disp == 0 {
             0
         } else if i8::try_from(self.disp).is_ok() {
             1
@@ -205,7 +197,7 @@ impl M {
     /// The ModRM byte (`reg` in its middle field) and the displacement.
     fn write(self, reg: u8, out: &mut Vec<u8>) {
         let rm = self.base.low();
-        if self.base == Reg::Rax && self.disp == 0 {
+        if self.base != Reg::Rbp && self.disp == 0 {
             out.push(reg << 3 | rm);
         } else if let Ok(d) = i8::try_from(self.disp) {
             out.extend_from_slice(&[0x40 | reg << 3 | rm, d as u8]);
@@ -332,7 +324,8 @@ pub enum Item {
     /// A jump table entry: the offset of `target` from the table start `base`.
     TableEntry { base: u32, target: u32 },
 
-    // The native instructions of inlined VM instructions (`rax`, `rcx` and `rdx` only).
+    // The native instructions of inlined VM instructions (on `rcx` and the cache's registers,
+    // `super::inline::POOL`).
     /// `mov dst, [m]` (32 or 64 bits), or for `B`/`W` `movzx` (`sx`: `movsx`) `dst32, [m]`.
     Ld { w: W, sx: bool, dst: Reg, m: M },
     /// `mov [m], src` at width `w`.
@@ -429,19 +422,89 @@ impl Item {
                 (_, true) => 6,
             },
             Item::Nop(n) => n as u32,
-            Item::Ld { w, m, .. } => (if w == W::D { 1 } else { 2 }) + m.len(),
-            Item::St { w, m, .. } => w.prefix_len() + 1 + m.len(),
-            Item::StImm { w, m, .. } => w.prefix_len() + 1 + m.len() + w.imm_len(),
-            Item::LeaM { m, .. } => 2 + m.len(),
-            Item::Alu { w, rm, .. } => w.prefix_len() + 1 + rm.len(),
-            Item::AluImm { w, rm, imm, .. } => {
-                w.prefix_len() + 1 + rm.len() + if w == W::B || imm8(imm) { 1 } else { w.imm_len() }
+            Item::Ld { w, m, .. } => self.prefix_len() + (if matches!(w, W::B | W::W) { 2 } else { 1 }) + m.len(),
+            Item::St { m, .. } => self.prefix_len() + 1 + m.len(),
+            Item::StImm { w, m, .. } => self.prefix_len() + 1 + m.len() + w.imm_len(),
+            Item::LeaM { m, .. } => self.prefix_len() + 1 + m.len(),
+            Item::Alu { rm, .. } => self.prefix_len() + 1 + rm.len(),
+            Item::AluImm { w, rm, imm, .. } => self.prefix_len() + 1 + rm.len() + if w == W::B || imm8(imm) { 1 } else { w.imm_len() },
+            Item::Imul { rm, .. } => self.prefix_len() + 2 + rm.len(),
+            Item::ImulImm { rm, imm, .. } => self.prefix_len() + 1 + rm.len() + if imm8(imm) { 1 } else { 4 },
+            Item::Shift { .. } => self.prefix_len() + 3,
+            Item::Setcc { m, .. } => self.prefix_len() + 2 + m.len(),
+            Item::TestM8(m) => self.prefix_len() + 2 + m.len(),
+        }
+    }
+
+    /// The REX prefix of a native item, if it needs one: `W` for 64 bits, `R` and `B` for
+    /// `r8`–`r11`, and a bare `0x40` for a byte operand in `sil` or `dil`.
+    fn rex(&self) -> Option<u8> {
+        let (w, reg, rm, byte) = match *self {
+            Item::Ld { w, dst, m, .. } => (w == W::Q, Some(dst), Rm::Mem(m), false),
+            Item::St { w, src, m } => (w == W::Q, Some(src), Rm::Mem(m), w == W::B),
+            Item::StImm { w, m, .. } => (w == W::Q, None, Rm::Mem(m), false),
+            Item::LeaM { dst, m } => (true, Some(dst), Rm::Mem(m), false),
+            Item::Alu { w, reg, rm, .. } => (w == W::Q, Some(reg), rm, w == W::B),
+            Item::AluImm { w, rm, .. } => (w == W::Q, None, rm, w == W::B),
+            Item::Imul { w, reg, rm } | Item::ImulImm { w, reg, rm, .. } => (w == W::Q, Some(reg), rm, false),
+            Item::Shift { w, reg, .. } => (w == W::Q, None, Rm::Reg(reg), false),
+            Item::Setcc { m, .. } | Item::TestM8(m) => (false, None, Rm::Mem(m), false),
+            _ => return None,
+        };
+        let sil = |r: Reg| byte && !r.ext() && r.low() >= 4;
+        let mut rex = 0x40 | (w as u8) << 3;
+        let mut need = false;
+        if let Some(r) = reg {
+            rex |= (r.ext() as u8) << 2;
+            need |= sil(r);
+        }
+        match rm {
+            Rm::Reg(r) => {
+                rex |= r.ext() as u8;
+                need |= sil(r);
             }
-            Item::Imul { w, rm, .. } => w.prefix_len() + 2 + rm.len(),
-            Item::ImulImm { w, rm, imm, .. } => w.prefix_len() + 1 + rm.len() + if imm8(imm) { 1 } else { 4 },
-            Item::Shift { w, .. } => w.prefix_len() + 3,
-            Item::Setcc { m, .. } => 2 + m.len(),
-            Item::TestM8(m) => 2 + m.len(),
+            Rm::Mem(m) => rex |= m.base.ext() as u8,
+        }
+        (rex != 0x40 || need).then_some(rex)
+    }
+
+    /// The length of a native item's prefixes: the operand-size prefix for 16 bits, and REX.
+    fn prefix_len(&self) -> u32 {
+        let w16 = matches!(self, Item::St { w: W::W, .. } | Item::StImm { w: W::W, .. } | Item::Alu { w: W::W, .. } | Item::AluImm { w: W::W, .. });
+        w16 as u32 + self.rex().is_some() as u32
+    }
+
+    /// Writes a native item's prefixes ([`Item::prefix_len`]).
+    fn prefixes(&self, out: &mut Vec<u8>) {
+        if matches!(self, Item::St { w: W::W, .. } | Item::StImm { w: W::W, .. } | Item::Alu { w: W::W, .. } | Item::AluImm { w: W::W, .. }) {
+            out.push(0x66);
+        }
+        if let Some(r) = self.rex() {
+            out.push(r);
+        }
+    }
+
+    /// The item with every register (operands and memory bases) mapped by `f`.
+    pub fn map_regs(self, f: impl Fn(Reg) -> Reg) -> Item {
+        let fm = |m: M| M { base: f(m.base), ..m };
+        let frm = |rm: Rm| match rm {
+            Rm::Reg(r) => Rm::Reg(f(r)),
+            Rm::Mem(m) => Rm::Mem(fm(m)),
+        };
+        match self {
+            Item::Ld { w, sx, dst, m } => Item::Ld { w, sx, dst: f(dst), m: fm(m) },
+            Item::St { w, src, m } => Item::St { w, src: f(src), m: fm(m) },
+            Item::StImm { w, m, imm } => Item::StImm { w, m: fm(m), imm },
+            Item::LeaM { dst, m } => Item::LeaM { dst: f(dst), m: fm(m) },
+            Item::Alu { op, w, reg, rm } => Item::Alu { op, w, reg: f(reg), rm: frm(rm) },
+            Item::AluImm { op, w, rm, imm } => Item::AluImm { op, w, rm: frm(rm), imm },
+            Item::Imul { w, reg, rm } => Item::Imul { w, reg: f(reg), rm: frm(rm) },
+            Item::ImulImm { w, reg, rm, imm } => Item::ImulImm { w, reg: f(reg), rm: frm(rm), imm },
+            Item::Shift { op, w, reg, amt } => Item::Shift { op, w, reg: f(reg), amt },
+            Item::Setcc { cond, m } => Item::Setcc { cond, m: fm(m) },
+            Item::TestM8(m) => Item::TestM8(fm(m)),
+            Item::SetReg(r, v) => Item::SetReg(f(r), v),
+            it => it,
         }
     }
 
@@ -466,7 +529,7 @@ impl Item {
                 | Item::Shift { .. }
                 | Item::Setcc { .. }
                 | Item::TestM8(_)
-                | Item::SetReg(Reg::Rax | Reg::Rcx, _)
+                | Item::SetReg(Reg::Rax | Reg::Rcx | Reg::Rdx | Reg::Rsi | Reg::Rdi | Reg::R8 | Reg::R9 | Reg::R10 | Reg::R11, _)
         )
     }
 
@@ -621,36 +684,37 @@ impl Item {
             Item::Int3 => out.push(0xcc),
             Item::TableEntry { base, target } => out.extend_from_slice(&(target.wrapping_sub(base) as i32).to_le_bytes()),
             Item::Ld { w, sx, dst, m } => {
+                self.prefixes(out);
                 match w {
                     W::B => out.extend_from_slice(&[0x0f, if sx { 0xbe } else { 0xb6 }]),
                     W::W => out.extend_from_slice(&[0x0f, if sx { 0xbf } else { 0xb7 }]),
-                    W::D => out.push(0x8b),
-                    W::Q => out.extend_from_slice(&[0x48, 0x8b]),
+                    W::D | W::Q => out.push(0x8b),
                 }
                 m.write(dst.low(), out);
             }
             Item::St { w, src, m } => {
-                w.prefix(out);
+                self.prefixes(out);
                 out.push(if w == W::B { 0x88 } else { 0x89 });
                 m.write(src.low(), out);
             }
             Item::StImm { w, m, imm } => {
-                w.prefix(out);
+                self.prefixes(out);
                 out.push(if w == W::B { 0xc6 } else { 0xc7 });
                 m.write(0, out);
                 w.imm(imm, out);
             }
             Item::LeaM { dst, m } => {
-                out.extend_from_slice(&[0x48, 0x8d]);
+                self.prefixes(out);
+                out.push(0x8d);
                 m.write(dst.low(), out);
             }
             Item::Alu { op, w, reg, rm } => {
-                w.prefix(out);
+                self.prefixes(out);
                 out.push((op as u8) << 3 | if w == W::B { 2 } else { 3 });
                 rm.write(reg.low(), out);
             }
             Item::AluImm { op, w, rm, imm } => {
-                w.prefix(out);
+                self.prefixes(out);
                 let short = w == W::B || imm8(imm);
                 out.push(if w == W::B { 0x80 } else if short { 0x83 } else { 0x81 });
                 rm.write(op as u8, out);
@@ -660,13 +724,13 @@ impl Item {
                     w.imm(imm, out);
                 }
             }
-            Item::Imul { w, reg, rm } => {
-                w.prefix(out);
+            Item::Imul { reg, rm, .. } => {
+                self.prefixes(out);
                 out.extend_from_slice(&[0x0f, 0xaf]);
                 rm.write(reg.low(), out);
             }
-            Item::ImulImm { w, reg, rm, imm } => {
-                w.prefix(out);
+            Item::ImulImm { reg, rm, imm, .. } => {
+                self.prefixes(out);
                 out.push(if imm8(imm) { 0x6b } else { 0x69 });
                 rm.write(reg.low(), out);
                 if imm8(imm) {
@@ -675,15 +739,17 @@ impl Item {
                     out.extend_from_slice(&imm.to_le_bytes());
                 }
             }
-            Item::Shift { op, w, reg, amt } => {
-                w.prefix(out);
+            Item::Shift { op, reg, amt, .. } => {
+                self.prefixes(out);
                 out.extend_from_slice(&[0xc1, 0xc0 | (op as u8) << 3 | reg.low(), amt]);
             }
             Item::Setcc { cond, m } => {
+                self.prefixes(out);
                 out.extend_from_slice(&[0x0f, 0x90 | cond.cc()]);
                 m.write(0, out);
             }
             Item::TestM8(m) => {
+                self.prefixes(out);
                 out.push(0xf6);
                 m.write(0, out);
                 out.push(0xff);
@@ -760,25 +826,37 @@ impl<'a> Cursor<'a> {
             let b = all.get(i..i + 4).ok_or(bad)?;
             Ok(i32::from_le_bytes([b[0], b[1], b[2], b[3]]))
         };
-        let (w, mut i) = match get(0)? {
-            0x66 => (W::W, 1),
-            0x48 => (W::Q, 1),
-            _ => (W::D, 0),
-        };
+        let usable = |r: Reg| !matches!(r, Reg::Rsp | Reg::Rbp);
+        let (mut w, mut i) = if get(0)? == 0x66 { (W::W, 1) } else { (W::D, 0) };
+        // REX: `W`, and the high bits of the ModRM `reg` and `r/m` fields.
+        let (mut rr, mut rb) = (0u8, 0u8);
+        if let rex @ 0x40..=0x4f = get(i)? {
+            if rex & 2 != 0 {
+                return Err(bad);
+            }
+            if rex & 8 != 0 {
+                if w == W::W {
+                    return Err(bad);
+                }
+                w = W::Q;
+            }
+            (rr, rb) = ((rex >> 2 & 1) << 3, (rex & 1) << 3);
+            i += 1;
+        }
         let op = get(i)?;
         i += 1;
         // The ModRM operand at `i`: the `reg` field, the `r/m` operand, and the next position.
         let modrm = |i: usize| -> Result<(u8, Rm, usize), BadItem> {
             let m = get(i)?;
-            let (md, reg, rm) = (m >> 6, m >> 3 & 7, m & 7);
+            let (md, reg, rm) = (m >> 6, m >> 3 & 7 | rr, m & 7);
             if md == 3 {
-                return Ok((reg, Rm::Reg(Reg::from_num(rm).ok_or(bad)?), i + 1));
+                return Ok((reg, Rm::Reg(Reg::from_num(rm | rb).ok_or(bad)?), i + 1));
             }
-            let base = match rm {
-                5 if md != 0 => Reg::Rbp,
-                0 => Reg::Rax,
-                _ => return Err(bad),
-            };
+            // No SIB and no RIP-relative forms: `rbp` (frame slots) or a pointer register.
+            if rm == 4 || (rm == 5 && md == 0) {
+                return Err(bad);
+            }
+            let base = Reg::from_num(rm | rb).filter(|&b| b == Reg::Rbp || usable(b)).ok_or(bad)?;
             let (disp, n) = match md {
                 0 => (0, 0),
                 1 => (get(i + 1)? as i8 as i32, 1),
@@ -790,7 +868,7 @@ impl<'a> Cursor<'a> {
             Rm::Mem(m) => Ok(m),
             Rm::Reg(_) => Err(bad),
         };
-        let reg = |n: u8| Reg::from_num(n).filter(|r| matches!(r, Reg::Rax | Reg::Rcx | Reg::Rdx)).ok_or(bad);
+        let reg = |n: u8| Reg::from_num(n).filter(|&r| usable(r)).ok_or(bad);
         let rm_reg = |rm: Rm| match rm {
             Rm::Reg(r) => reg(r as u8),
             Rm::Mem(_) => Err(bad),
