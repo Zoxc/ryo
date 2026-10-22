@@ -31,6 +31,7 @@ commands:
   test --cross T               cross-build and link (not run) the corpus for target T, e.g.
                                x86_64-pc-windows-msvc; needs `build --target T` first
   bench [--runs N]             compare LLVM -O0/-O3, Cranelift and ryo: compile and run time
+  bench codegen                dump ryo's code for each bench program to tests/bench/codegen/
 {CRATES}
   clean                        remove dist/ and target/
 ";
@@ -54,6 +55,7 @@ enum Cmd {
     /// `test --cross <target>`.
     CrossTest { target: String },
     Bench { runs: u32 },
+    BenchCodegen,
     BenchCrates(crates::Options),
     Clean,
     Help,
@@ -102,6 +104,7 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
             [arg, ..] => Err(format!("unexpected argument `{arg}`")),
         },
         "bench" => match rest.as_slice() {
+            ["codegen"] => Ok(Cmd::BenchCodegen),
             ["crates", opts @ ..] => crates::parse_options(opts).map(Cmd::BenchCrates),
             [] => Ok(Cmd::Bench { runs: bench::DEFAULT_RUNS }),
             ["--runs", n] => match n.parse() {
@@ -143,6 +146,7 @@ fn main() -> ExitCode {
         Cmd::Test { clif } => test::run(clif),
         Cmd::CrossTest { target } => cross::run(&target),
         Cmd::Bench { runs } => bench::run(runs),
+        Cmd::BenchCodegen => bench::codegen(),
         Cmd::BenchCrates(opts) => crates::run(opts),
         Cmd::Clean => dist::clean(),
     };
@@ -186,6 +190,7 @@ mod tests {
         assert_eq!(parse(&["bench"]), Ok(Cmd::Bench { runs: bench::DEFAULT_RUNS }));
         assert_eq!(parse(&["bench", "--runs", "3"]), Ok(Cmd::Bench { runs: 3 }));
         assert!(parse(&["bench", "--runs", "0"]).is_err());
+        assert_eq!(parse(&["bench", "codegen"]), Ok(Cmd::BenchCodegen));
         assert!(matches!(parse(&["bench", "crates", "--quick"]), Ok(Cmd::BenchCrates(o)) if o.run_samples == 1));
         assert!(parse(&["bench", "crates", "--frob"]).is_err());
         assert_eq!(parse(&["clean"]), Ok(Cmd::Clean));

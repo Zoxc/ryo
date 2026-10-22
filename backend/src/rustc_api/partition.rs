@@ -17,7 +17,7 @@ use rustc_middle::ty::{self, Instance, InstanceKind, Ty, TyCtxt, TypingEnv};
 use rustc_session::config::{CrateType, EntryFnType};
 use rustc_span::Symbol;
 use ryo_bytecode::image::{
-    AllocFixup, AllocReloc, AllocTarget, FunctionDef, ImageObject, ImageWriter, SYM_INDIRECT, portal_id,
+    AllocFixup, AllocReloc, AllocTarget, CATCH, CONTINUE, FunctionDef, ImageObject, ImageWriter, SYM_INDIRECT, portal_id,
 };
 use ryo_bytecode::asm::{self, Ref};
 use ryo_bytecode::insn::{Const, Data, Func, Site, Sym};
@@ -474,6 +474,50 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         }
     }
 
+    /// The `RYO_DUMP` text: each VM function, by path, decoded back to VM instructions, its
+    /// operands that name relocations (`fn`, `sym`, `site`, `k`, `data`) listed below it.
+    fn dump(&self, mode: asm::Mode) -> String {
+        use std::fmt::Write;
+        let tcx = self.tcx;
+        let mut fns: Vec<(String, &VmFn<'tcx>)> = self.vm.iter().map(|v| (path(v.instance), v)).collect();
+        fns.sort_by(|a, b| a.0.cmp(&b.0));
+        let mut out = String::new();
+        for (name, v) in fns {
+            let l = &v.lowered;
+            let c = &l.code;
+            writeln!(out, "fn {name} (frame {}, args {}, ret {})", l.frame_size, l.arg_size, l.ret_size).unwrap();
+            match asm::decode(&c.code, &c.relocs, &c.rodata, &c.call_sites, mode) {
+                Ok(d) => {
+                    write!(out, "{}", ryo_bytecode::insn::Disasm(&d.words)).unwrap();
+                    for e in &d.cleanup {
+                        let to = match e.target {
+                            CONTINUE => "continue".to_owned(),
+                            t if t & CATCH != 0 => format!("{} (catch)", t & !CATCH),
+                            t => t.to_string(),
+                        };
+                        writeln!(out, "  cleanup {} -> {to}", e.offset).unwrap();
+                    }
+                }
+                Err(e) => writeln!(out, "  undecodable: {e:?}").unwrap(),
+            }
+            for (i, r) in l.relocs.iter().enumerate() {
+                let what = match *r {
+                    CodeReloc::Call { callee } => format!("fn{i} = {}", path(callee)),
+                    CodeReloc::Symbol { target } => format!("sym{i} = {}", path(target)),
+                    CodeReloc::Static { def_id } => format!("sym{i} = static {}", tcx.def_path_str(def_id)),
+                    CodeReloc::Site => format!("site{i}"),
+                    CodeReloc::Const { offset, .. } => format!("k{i} = const allocation + {offset}"),
+                    CodeReloc::Bytes { ref bytes, align } => format!("k{i} = bytes {bytes:02x?} align {align}"),
+                    CodeReloc::Data { offset, .. } => format!("data{i} = allocation + {offset}"),
+                    CodeReloc::Island { template, args } => format!("sym{i} = island {template}{args:?}"),
+                };
+                writeln!(out, "  {what}").unwrap();
+            }
+            out.push('\n');
+        }
+        out
+    }
+
     fn portal_id(&self, index: u32) -> u64 {
         portal_id(ryo_bytecode::image::crate_hash(local_stable_crate_id(self.tcx)), index)
     }
@@ -730,6 +774,10 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         // The handlers the code calls, and whether it probes the stack.
         let mut handlers = vec![false; ryo_bytecode::insn::ALL_OPCODES.len()];
         let mut probe = false;
+        if let Some(path) = std::env::var_os("RYO_DUMP") {
+            let text = self.dump(mode);
+            std::fs::write(&path, text).unwrap_or_else(|e| tcx.dcx().fatal(format!("ryo: RYO_DUMP: {e}")));
+        }
         let merge_t = tcx.prof.generic_activity("ryo_merge");
         for (i, v) in self.vm.iter_mut().enumerate() {
             let l = &mut v.lowered;

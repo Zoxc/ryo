@@ -1,0 +1,190 @@
+fn <() as std::process::Termination>::report (frame 16, args 0, ret 1)
+     0: imm.w8 $-1, 0
+     3: ret $-1, 1
+
+fn <fn() as std::ops::FnOnce<()>>::call_once - shim(fn()) (frame 0, args 8, ret 0)
+     0: call.ind $0, $16, site0, sym1
+     5: ret $0, 0
+  cleanup 0 -> continue
+  site0
+  sym1 = island ryo_island_call_ptr0[()]
+
+fn <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::call_once - shim (frame 32, args 8, ret 4)
+     0: addr $-16, $16
+     3: mov.w64 $-32, $-16
+     6: call $-4, fn0
+     9: ret $-4, 4
+    12: resume $-24
+    14: lpad $-24
+    16: jmp @-4
+  cleanup 6 -> 14
+  cleanup 12 -> continue
+  fn0 = std::rt::lang_start::<()>::{closure#0}
+
+fn <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::call_once - shim(vtable) (frame 16, args 8, ret 4)
+     0: load.w64 $-16, [$16 + 0]
+     4: call $-4, fn0
+     7: ret $-4, 4
+  cleanup 4 -> continue
+  fn0 = <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::call_once - shim
+
+fn core::fmt::rt::Argument::<'_>::new_display::<u32> (frame 64, args 8, ret 16)
+     0: mov.w64 $-24, $16
+     3: mov.w64 $-48, $-24
+     6: addr.sym $-64, sym0
+     9: mov.w64 $-56, $-64
+    12: mov.w64 $-40, $-48
+    15: mov.w64 $-32, $-56
+    18: mov.w128 $-16, $-40
+    21: ret $-16, 16
+  sym0 = core::fmt::num::imp::<impl std::fmt::Display for u32>::fmt
+
+fn core::fmt::rt::Argument::<'_>::new_display::<u64> (frame 64, args 8, ret 16)
+     0: mov.w64 $-24, $16
+     3: mov.w64 $-48, $-24
+     6: addr.sym $-64, sym0
+     9: mov.w64 $-56, $-64
+    12: mov.w64 $-40, $-48
+    15: mov.w64 $-32, $-56
+    18: mov.w128 $-16, $-40
+    21: ret $-16, 16
+  sym0 = core::fmt::num::imp::<impl std::fmt::Display for u64>::fmt
+
+fn fib (frame 96, args 4, ret 8)
+     0: br.lt.u.imm.w32! $16, 2, @+10
+     5: zext.w32.w64 $-8, $16
+     8: jmp @+86
+    10: imm.w32 $-84, 1
+    13: sub.ovf.u.w32 $-36, $-32, $16, $-84
+    18: br! $-32, @+14
+    22: addr.abs $-96, k0
+    25: call.ext $-80, sym1, site2, sym3, $-88
+    31: unreachable
+    32: mov.w32 $-28, $-36
+    35: mov.w32 $-96, $-28
+    38: call $-24, fn4
+    41: imm.w32 $-84, 2
+    44: sub.ovf.u.w32 $-60, $-56, $16, $-84
+    49: br! $-56, @+14
+    53: addr.abs $-96, k5
+    56: call.ext $-80, sym6, site7, sym8, $-88
+    62: unreachable
+    63: mov.w32 $-52, $-60
+    66: mov.w32 $-96, $-52
+    69: call $-48, fn9
+    72: add.ovf.u.w64 $-80, $-72, $-24, $-48
+    77: br! $-72, @+14
+    81: addr.abs $-96, k10
+    84: call.ext $-80, sym11, site12, sym13, $-88
+    90: unreachable
+    91: mov.w64 $-8, $-80
+    94: ret $-8, 8
+  cleanup 25 -> continue
+  cleanup 38 -> continue
+  cleanup 56 -> continue
+  cleanup 69 -> continue
+  cleanup 84 -> continue
+  k0 = const allocation + 0
+  sym1 = core::panicking::panic_const::panic_const_sub_overflow
+  site2
+  sym3 = island ryo_island_call_ptr1[&'{erased} std::panic::Location<'{erased}>, !]
+  fn4 = fib
+  k5 = const allocation + 0
+  sym6 = core::panicking::panic_const::panic_const_sub_overflow
+  site7
+  sym8 = island ryo_island_call_ptr1[&'{erased} std::panic::Location<'{erased}>, !]
+  fn9 = fib
+  k10 = const allocation + 0
+  sym11 = core::panicking::panic_const::panic_const_add_overflow
+  site12
+  sym13 = island ryo_island_call_ptr1[&'{erased} std::panic::Location<'{erased}>, !]
+
+fn main (frame 192, args 0, ret 0)
+     0: imm.w32 $-192, 39
+     3: call $-4, fn0
+     6: mov.w32 $-192, $-4
+     9: call $-56, fn1
+    12: addr $-48, $-56
+    15: addr $-64, $-4
+    18: mov.w64 $-40, $-48
+    21: mov.w64 $-32, $-64
+    24: mov.w64 $-152, $-32
+    27: mov.w64 $-192, $-152
+    30: call $-112, fn2
+    33: mov.w64 $-160, $-40
+    36: mov.w64 $-192, $-160
+    39: call $-128, fn3
+    42: mov.w128 $-96, $-112
+    45: mov.w128 $-80, $-128
+    48: addr.abs $-136, k4
+    51: addr $-144, $-96
+    54: mov.w64 $-192, $-136
+    57: mov.w64 $-184, $-144
+    60: call $-24, fn5
+    63: mov.w128 $-192, $-24
+    66: call.ext $-4, sym6, site7, sym8, $-168
+    72: ret $0, 0
+  cleanup 3 -> continue
+  cleanup 9 -> continue
+  cleanup 30 -> continue
+  cleanup 39 -> continue
+  cleanup 60 -> continue
+  cleanup 66 -> continue
+  fn0 = std::hint::black_box::<u32>
+  fn1 = fib
+  fn2 = core::fmt::rt::Argument::<'_>::new_display::<u32>
+  fn3 = core::fmt::rt::Argument::<'_>::new_display::<u64>
+  k4 = const allocation + 0
+  fn5 = std::fmt::Arguments::<'_>::new::<15, 2>
+  sym6 = std::io::_print
+  site7
+  sym8 = island ryo_island_call_ptr1[std::fmt::Arguments<'{erased}>, ()]
+
+fn std::fmt::Arguments::<'_>::new::<15, 2> (frame 32, args 16, ret 16)
+     0: mov.w64 $-24, $16
+     3: mov.w64 $-32, $24
+     6: mov.w64 $-16, $-24
+     9: mov.w64 $-8, $-32
+    12: ret $-16, 16
+
+fn std::hint::black_box::<u32> (frame 16, args 4, ret 4)
+     0: mov.w32 $-4, $16
+     3: ret $-4, 4
+
+fn std::rt::lang_start::<()> (frame 96, args 32, ret 8)
+     0: mov.w64 $-40, $16
+     3: addr $-32, $-40
+     6: mov.w64 $-24, $-32
+     9: addr.abs $-16, k0
+    12: mov.w128 $-96, $-24
+    15: mov.w64 $-80, $24
+    18: mov.w64 $-72, $32
+    21: mov.w8 $-64, $40
+    24: call.ext $-8, sym1, site2, sym3, $-48
+    30: ret $-8, 8
+  cleanup 24 -> continue
+  k0 = const allocation + 0
+  sym1 = std::rt::lang_start_internal
+  site2
+  sym3 = island ryo_island_call_ptr4[&'{erased} dyn [Binder { value: Trait(std::ops::Fn<()>), bound_vars: [] }, Binder { value: Projection(ExistentialProjection { def_id: DefId(2:4658 ~ core[efd5]::ops::function::FnOnce::Output), args: [()], term: Term::Ty(i32), .. }), bound_vars: [] }, Binder { value: AutoTrait(DefId(2:53405 ~ core[efd5]::panic::unwind_safe::RefUnwindSafe)), bound_vars: [] }, Binder { value: AutoTrait(DefId(2:4385 ~ core[efd5]::marker::Sync)), bound_vars: [] }] + '{erased}, isize, *const *const u8, u8, isize]
+
+fn std::rt::lang_start::<()>::{closure#0} (frame 32, args 8, ret 4)
+     0: load.w64 $-16, [$16 + 0]
+     4: mov.w64 $-32, $-16
+     7: call $-4, fn0
+    10: call $-5, fn1
+    13: mov.w8 $-6, $-5
+    16: zext.w8.w32 $-4, $-6
+    19: ret $-4, 4
+  cleanup 7 -> continue
+  cleanup 10 -> continue
+  fn0 = std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  fn1 = <() as std::process::Termination>::report
+
+fn std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> (frame 16, args 8, ret 0)
+     0: mov.w64 $-16, $16
+     3: call $0, fn0
+     6: ret $0, 0
+  cleanup 3 -> continue
+  fn0 = <fn() as std::ops::FnOnce<()>>::call_once - shim(fn())
+

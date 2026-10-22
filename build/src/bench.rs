@@ -152,6 +152,31 @@ fn shell_quote(s: &str) -> String {
 }
 
 /// A cell of the tables.
+/// `y bench codegen` (design/build.md#test-and-bench): compiles each program with `rustc-ryo`
+/// and `RYO_DUMP`, writing what the backend generated to `tests/bench/codegen/<name>.txt`.
+pub fn codegen() -> Result<(), String> {
+    let root = root();
+    let rustc_ryo = root.join("dist").join("bin").join(exe_name("rustc-ryo"));
+    if !rustc_ryo.exists() {
+        return Err("dist/ is missing; run `./y.sh build` first".to_owned());
+    }
+    let dump_dir = root.join("tests").join("bench").join("codegen");
+    let out = root.join("target").join("bench-codegen");
+    for dir in [&dump_dir, &out] {
+        fs::create_dir_all(dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
+    }
+    for &program in PROGRAMS {
+        let src = root.join("tests").join("bench").join(format!("{program}.rs"));
+        let dump = dump_dir.join(format!("{program}.txt"));
+        let mut c = cmd(&rustc_ryo);
+        c.args(["--edition=2024", &path_str(&src)?, "-o", &path_str(&out.join(exe_name(program)))?]);
+        c.env("RYO_DUMP", &dump);
+        eprintln!("[y] bench codegen {program}: {}", dump.display());
+        crate::utils::run(&mut c)?;
+    }
+    Ok(())
+}
+
 /// `None` where building or running failed.
 struct Cell {
     compile: Option<Stats>,

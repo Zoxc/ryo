@@ -26,7 +26,7 @@ modeled on cg_clif's `build_system/`.
 - A zero-dependency bin crate (its own `Cargo.toml` and `Cargo.lock`, not a workspace member),
   run through `./y.sh <cmd>` (or `y.cmd`/`y.ps1` on Windows), which is
   `cargo run --manifest-path build/Cargo.toml -- <cmd>`.
-- Commands: `build [--sysroot llvm|ryo] [--target T]...`, `build-clif`, `test [--clif | --cross T]`, `bench [--runs N]`,
+- Commands: `build [--sysroot llvm|ryo] [--target T]...`, `build-clif`, `test [--clif | --cross T]`, `bench [--runs N]`, `bench codegen`,
   `bench crates [...]`, `clean`.
 - It sets `RUSTC_BOOTSTRAP=1` on everything it spawns.
 
@@ -180,6 +180,11 @@ This gives a third backend, built from the same toolchain, to compare against.
   a built-in timer does the same (one warmup, then `N` runs, default 5). The programs'
   output must agree across backends. `y bench` builds `dist/` and cg_clif first if they are
   missing; `y test --clif` builds cg_clif too.
+- `bench codegen`: compiles each program in `tests/bench/` with `rustc-ryo` and `RYO_DUMP`
+  ([backend.md](backend.md#debugging-switches)), writing the dump to
+  `tests/bench/codegen/<program>.txt`. The dumps are checked in, so `git diff` shows how a
+  backend change alters the generated code. It uses the backend in `dist/`: run `y build`
+  first.
 - `y test` also runs `vm/`'s cargo tests (`cargo test --workspace` in `vm/`): the encoder
   against the decoder, the image writer and reader, every handler against a reference
   model, the handlers' codegen, and hand-assembled functions run through `vm::enter`
