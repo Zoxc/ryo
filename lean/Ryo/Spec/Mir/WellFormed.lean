@@ -413,9 +413,14 @@ def checkRvalue (b : Body) (dest : Ty) : Rvalue → WfM Unit
       ensure (pt.pointee?.isSome && ptrMetaClass pt == tyMetaClass t)
         s!"Ref/RawPtr: a pointer to {tyKind t} assigned to a place of type {tyKind dest}"
     | _ => throw s!"Ref/RawPtr assigned to a place of type {tyKind dest}"
-  -- rustc: the rvalue's type is `ty` (a user ADT with one lifetime).
-  | .reborrow ty _ p => do
-    let _ ← placeTy b p
+  -- rustc: the rvalue's type is `ty` (a user ADT with one lifetime): the place's type for a
+  -- mutable reborrow, its `CoerceShared` target (same layout) for a shared one.
+  | .reborrow ty mutbl p => do
+    let t ← placeTy b p
+    if mutbl then expectShape "Reborrow" t ty
+    else
+      ensure (t.size == ty.size && t.align == ty.align)
+        s!"Reborrow: a {tyKind t} place coerced to {tyKind ty} of a different layout"
     expectShape "Reborrow" ty dest
   | .threadLocalRef _ =>
     ensure (isPtr dest) s!"ThreadLocalRef assigned to a place of type {tyKind dest}"

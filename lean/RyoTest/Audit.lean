@@ -1,7 +1,7 @@
 /-
 Tests for the fixes of the spec audit (docs/divergences.md R1–R8): negative int-to-pointer
 casts, the allocation bound, `powi`, `fmuladd`, `minimum_number_nsz` of zeros, `compare_bytes`,
-`realloc` in place, and `write` in the trace.
+`realloc` in place, and `write` in the trace; R23: `Reborrow` copies the place.
 -/
 import RyoTest.Harness
 
@@ -212,6 +212,33 @@ def writeTrace : Except String Unit := do
   check (r.events.toList == [.write 1 [104, 105]]) s!"write events: {repr r.events}"
   expectUb (writeProg true) "uninitialized"
 
+/-! ### R23: `Reborrow` copies the place's value -/
+
+/-- `s = (&mut x, 7)`; `t = Reborrow(s)`; `*t.0 = 42`; returns `x` (42) after checking `t.1`. -/
+def reborrowProg (mutbl : Bool) (ty : Ty) (f1 : Ty := i32) : Program := mainOnly (retTy := i32) do
+  let sTy := cTuple [refTo i32 true, i32]
+  let x ← newLocal i32
+  storageLive x
+  assignL x (.use (ci32 5))
+  let r ← tmp (refTo i32 true) (.ref true (place x))
+  let s ← newLocal sTy
+  storageLive s
+  assignL s (.aggregate .tuple [r, ci32 7])
+  let t ← newLocal ty
+  storageLive t
+  assignL t (.reborrow ty mutbl (place s))
+  assumeEq (copy ((place t).field 1 f1)) (cint f1 7)
+  assign (((place t).field 0 (refTo i32 true)).deref i32) (.use (ci32 42))
+  assignL 0 (.use (copyL x))
+  ret
+
+def reborrowCopies : Except String Unit := do
+  let sTy := cTuple [refTo i32 true, i32]
+  expectReturnValue (reborrowProg true sTy) (.int 42)
+  -- `CoerceShared` to a type of the same layout
+  expectReturnValue (reborrowProg false (cTuple [refTo i32 true, u32]) u32) (.int 42)
+  expectIllFormed (reborrowProg false (cTuple [refTo i32 true, u64, u64]) u64) "Reborrow"
+
 def tests : List TestCase := [
   ⟨"R1/neg_int_to_ptr", fun _ => expectReturn negIntToPtr⟩,
   ⟨"R2/addr_bound", fun _ => addrBound⟩,
@@ -221,7 +248,8 @@ def tests : List TestCase := [
   ⟨"R5/nsz_zero", fun _ => nszChoice⟩,
   ⟨"R6/compare_bytes", fun _ => compareBytesChoice⟩,
   ⟨"R7/realloc_in_place", fun _ => reallocInPlace⟩,
-  ⟨"R8/write_trace", fun _ => writeTrace⟩
+  ⟨"R8/write_trace", fun _ => writeTrace⟩,
+  ⟨"R23/reborrow_copies", fun _ => reborrowCopies⟩
 ]
 
 end RyoTest.Audit

@@ -51,7 +51,7 @@ documented semantics where codegen is more lenient).
 | R20 | `typed_swap_nonoverlapping` swaps raw bytes | `evalIntrinsic` | deliberate (less UB, matches ryo) |
 | R21 | Float details: NaN of the interpreter, `f*_algebraic`, `f16`/`f128` | Lang/Float.lean, `concreteOracle` | simplification / narrowing |
 | R22 | Evaluation order and minor UB-message differences | various | simplification |
-| R23 | `Rvalue::Reborrow` takes the place's address | `evalRvalue .reborrow` | bug (unstable feature) |
+| R23 | `Rvalue::Reborrow` took the place's address | `evalRvalue .reborrow` | bug (unstable feature), **fixed** |
 
 ## Bugs and narrowings
 
@@ -274,5 +274,7 @@ negative default NaN. Remaining differences:
 **R23. `Reborrow`.** rustc's `Rvalue::Reborrow(ty, mutbl, place)` (the unstable `Reborrow`
 traits experiment) reborrows a user type implementing `Reborrow`: a bitwise copy of the place
 at type `ty`, with `&mut` fields reborrowed. `evalRvalue .reborrow` treats it like `Ref` and
-produces the place's address. Only programs using the experiment are affected; `Wf` checks
-only that `ty` fits the destination. Fix: copy the place's value at `ty`.
+produced the place's address. Only programs using the experiment were affected. **Fixed**: it
+loads the place's value at `ty` (reborrowing `&mut` fields is a no-op without an aliasing
+model, D16). `Wf` requires the place's shape for a mutable reborrow and, for a shared one (the
+`CoerceShared` target), the same size and alignment. Test `R23/reborrow_copies`.

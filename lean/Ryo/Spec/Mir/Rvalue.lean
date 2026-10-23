@@ -13,8 +13,11 @@ Divergences:
 - D32: `Aggregate` builds the value (`Value.variant` for enums: fields then tag, by encoding;
   writing an uninhabited variant is UB as in Miri); `AggregateKind::RawPtr` builds a (wide)
   pointer from data pointer and metadata (MiniRust `ConstructWidePointer`).
-- `Ref`/`Reborrow` check the new reference's validity (MiniRust `AddrOf` does `check_value`);
-  `RawPtr` does not. No retagging (D16).
+- `Ref` checks the new reference's validity (MiniRust `AddrOf` does `check_value`); `RawPtr`
+  does not. No retagging (D16).
+- `Reborrow(ty, _, place)` (rustc's unstable `Reborrow`/`CoerceShared` traits) is a copy of
+  the place's value loaded at `ty` (the place's type, or its `CoerceShared` target of the same
+  layout): reborrowing its `&mut` fields is a no-op without an aliasing model (D16).
 - D22: `ThreadLocalRef` points to the (single) thread-local allocation.
 -/
 import Ryo.Spec.Mir.Cast
@@ -30,7 +33,7 @@ def addrOf (p : MPlace) (destTy : Ty) (check : Bool) : SemM Value := do
   if check then liftE (checkValue (← getMem) v destTy)
   pure v
 
--- [D28] [D31] [D32] [D22]
+-- [D28] [D31] [D32] [D22] [D16]
 def evalRvalue (rv : Rvalue) (destTy : Ty) : SemM Value := do
   match rv with
   | .use o => pure (← evalOperand o).1
@@ -38,7 +41,9 @@ def evalRvalue (rv : Rvalue) (destTy : Ty) : SemM Value := do
     let (v, _) ← evalOperand o
     pure (.tuple (List.replicate n v))
   | .ref _ p => addrOf p destTy true
-  | .reborrow _ _ p => addrOf p destTy true
+  | .reborrow ty _ p => do
+    let (pl, _) ← evalPlace p
+    placeLoad pl ty
   | .rawPtr _ p => addrOf p destTy false
   | .threadLocalRef g => do pure (.ptr (← globalPtr g).widen)
   | .cast k o ty => evalCast k (← evalOperand o) ty
