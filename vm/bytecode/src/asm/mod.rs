@@ -57,7 +57,7 @@ pub use encode::{
 #[cfg(feature = "alloc")]
 pub use inline::has_inline;
 #[cfg(feature = "alloc")]
-pub use reduced::{is_native, reduce};
+pub use reduced::{encode_reduced, is_native, reduce};
 
 use crate::full::{ElemKind, Opcode, OperandKind, Shape};
 

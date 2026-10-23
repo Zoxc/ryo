@@ -11,10 +11,12 @@ use alloc::collections::BTreeMap;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use super::reduced::Then;
 use super::x86::{ARGS, Cond, Item, M, Reg, Sh, W, island_args, padding};
 use super::{ArgReg, Layout, Loc, Mode, RetPart, layout, ret_parts};
 use crate::full::{Const, Data, DecodeError, ElemKind, Func, Opcode, OperandKind, Shape, Site, Sym, insn_len};
 use crate::image::{CATCH, CONTINUE, CleanupEntry};
+use crate::reduced::Arg;
 
 /// What a relocated 4-byte field of the code refers to. Every field is PC-relative: once
 /// linked, it holds `target - (field + 4)`.
@@ -154,6 +156,11 @@ pub enum EncodeError {
     BadReturn(u32),
     /// An `arg` after an instruction that isn't one (word offset).
     ArgNotFirst(u32),
+    /// A dropped store at an instruction that doesn't end in a register store to the frame
+    /// ([`super::encode_reduced`]; word offset).
+    BadDropped(u32),
+    /// A reduced `handler` whose targets don't fit its handler's shape (word offset).
+    BadHandler(u32),
 }
 
 /// An instruction operand, by kind. Branch targets are `T`: word offsets from the function
@@ -442,6 +449,14 @@ pub(super) fn case_size(e: ElemKind) -> usize {
         ElemKind::Case128 => 16,
         ElemKind::Target | ElemKind::Word | ElemKind::Arg => unreachable!("not a case list"),
     }
+}
+
+/// The element kind of `op`'s case list, if it has one.
+pub(super) fn case_elem(op: Opcode) -> Option<ElemKind> {
+    op.info().operands.iter().find_map(|o| match o.kind {
+        OperandKind::List(e @ (ElemKind::Case8 | ElemKind::Case16 | ElemKind::Case32 | ElemKind::Case64 | ElemKind::Case128)) => Some(e),
+        _ => None,
+    })
 }
 
 /// A branch target of [`Asm`]: a position in the code, bound with [`Asm::bind`].
@@ -786,6 +801,9 @@ pub struct Asm {
     /// `Target` operands: (label, the piece index of the instruction's start). The ones bound
     /// at or before their instruction are loop heads.
     targets: Vec<(Label, usize)>,
+    /// With [`Asm::drop_exactly`], the pieces of the stores to drop, instead of the ones
+    /// dead-store dropping finds.
+    drops: Option<Vec<usize>>,
 }
 
 /// The register an operand register value goes in: a constant, or the address of a [`Ref`].
@@ -808,7 +826,7 @@ pub(super) enum ArgVal {
 
 impl Asm {
     pub fn new(mode: Mode) -> Asm {
-        Asm { mode, pieces: Vec::new(), labels: Vec::new(), ro: Vec::new(), unwind: Vec::new(), targets: Vec::new() }
+        Asm { mode, pieces: Vec::new(), labels: Vec::new(), ro: Vec::new(), unwind: Vec::new(), targets: Vec::new(), drops: None }
     }
 
     /// A new, unbound label.
@@ -846,6 +864,26 @@ impl Asm {
         if size != 0 {
             self.pieces.push(Piece::Scope { slot, size, kind: ScopeKind::End });
         }
+    }
+
+    /// Drops exactly the stores [`Asm::drop_store`] names, rather than the dead ones: for
+    /// re-encoding decoded code, whose dead marks are gone but whose dropped stores are known.
+    pub fn drop_exactly(&mut self) {
+        self.drops.get_or_insert_with(Vec::new);
+    }
+
+    /// With [`Asm::drop_exactly`], drops the store that ends the last instruction, an inline
+    /// sequence that writes a frame slot from a register ([`Asm::can_drop_store`]).
+    pub fn drop_store(&mut self) {
+        debug_assert!(self.can_drop_store(), "not a register store");
+        let k = self.pieces.len() - 1;
+        self.drops.as_mut().expect("drop_exactly").push(k);
+    }
+
+    /// Whether the last instruction is an inline sequence that ends in a store of a register
+    /// the register cache may hold ([`Asm::drop_store`]).
+    pub fn can_drop_store(&self) -> bool {
+        matches!(self.pieces.last(), Some(Piece::Native(Item::St { src, m, .. })) if *src != Reg::Rcx && m.base == Reg::Rbp)
     }
 
     /// Sets where unwinding out of instruction `id` goes (once; only for instructions that
@@ -934,6 +972,49 @@ impl Asm {
         let n = items.len() as u32;
         self.pieces.extend(items.into_iter().map(Piece::Frame));
         n
+    }
+
+    /// Emits a reduced `handler` ([`crate::reduced`]): a call of `op`'s handler with the
+    /// argument registers `args` from `rdi` on, then `then`. An [`Arg::Ro`] argument is the
+    /// address of a new code constant of `case_values` (a sparse switch's values, aligned as
+    /// [`super::encode`] aligns them); its offset is ignored.
+    pub(super) fn handler(&mut self, op: Opcode, args: &[Arg], case_values: &[u8], then: Then<Label>) -> InsnId {
+        let id = InsnId(self.unwind.len() as u32);
+        self.unwind.push(None);
+        // As `insn` records `t` and a switch's `default`, the operands of their own.
+        match &then {
+            Then::Branch { target, .. } => self.targets.push((*target, self.pieces.len())),
+            Then::Table(ts) => self.targets.push((*ts.last().expect("a default"), self.pieces.len())),
+            Then::Next | Then::Trap => {}
+        }
+        for (&a, &reg) in args.iter().zip(&ARGS) {
+            match a {
+                Arg::Fp => self.pieces.push(Piece::Fp(reg)),
+                Arg::Exception => self.fixed(Item::Mov(reg, Reg::Rax)),
+                Arg::Imm(v) => self.fixed(Item::SetReg(reg, v)),
+                Arg::Const(k) => self.fixed(Item::Lea(reg, Ref::Const(k))),
+                Arg::Data(d) => self.fixed(Item::Lea(reg, Ref::Data(d))),
+                Arg::Sym(s) => self.fixed(Item::Lea(reg, Ref::Sym(s))),
+                Arg::Site(s) => self.fixed(Item::Lea(reg, Ref::Site(s))),
+                Arg::Ro(_) => {
+                    let size = case_elem(op).map_or(1, case_size);
+                    let ro = self.ro(RoReq::Bytes(case_values.to_vec(), size.max(4)));
+                    self.pieces.push(Piece::LeaRo { reg, ro });
+                }
+            }
+        }
+        let site = matches!(then, Then::Trap).then_some(id);
+        self.maybe_site(Item::Call(Ref::Handler(op)), site);
+        match then {
+            Then::Next => {}
+            Then::Branch { neg, target } => {
+                self.fixed(Item::TestAl);
+                self.pieces.push(Piece::Branch { cond: if neg { Cond::Z } else { Cond::Nz }, to: target });
+            }
+            Then::Table(ts) => self.table(ts),
+            Then::Trap => self.fixed(Item::Ud2),
+        }
+        id
     }
 
     /// Emits instruction `op` with operands `ops` (in the opcode's operand order).
@@ -1050,11 +1131,20 @@ impl Asm {
     /// Finishes the function in a frame of size `frame_size`: `fix` turns a raw slot into
     /// its frame offset. Every label a branch uses must be bound.
     pub fn finish(self, frame_size: u32, fix: impl Fn(u32) -> u32) -> Encoded {
-        let Asm { mode, mut pieces, labels, ro, unwind, targets } = self;
+        let Asm { mode, mut pieces, labels, ro, unwind, targets, drops } = self;
         debug_assert!(mode.valid(), "{mode:?}");
         let target = branch_targets(&pieces, &labels);
         cache(&mut pieces, &target);
-        drop_dead_stores(&mut pieces, &target);
+        match drops {
+            // The cache keeps a sequence's write its last piece.
+            Some(ks) => {
+                for k in ks {
+                    let Piece::Native(it) = pieces[k] else { unreachable!("a dropped store is native") };
+                    pieces[k] = Piece::Dropped(it);
+                }
+            }
+            None => drop_dead_stores(&mut pieces, &target),
+        }
         // Storage ends matter only for the bytes of escaped objects.
         let escapes: Vec<(u32, u32)> = pieces
             .iter()
@@ -1119,8 +1209,10 @@ impl Asm {
         let mut branches = Vec::new();
         let mut sites = Vec::new();
         // Pieces without code, which take the element after them (after its padding): a
-        // label there must not land before the padding of a loop head right after.
+        // label there must not land before the padding of a loop head right after. Scopes
+        // too, as they take effect before the next instruction.
         let mut empty = Vec::new();
+        let mut scopes = Vec::new();
         for (k, p) in pieces.into_iter().enumerate() {
             if head[k] {
                 out.push(Laid::Align);
@@ -1130,6 +1222,13 @@ impl Asm {
                 empty.push(k);
                 continue;
             }
+            if let Piece::Scope { slot, size, kind } = p {
+                remap.push(usize::MAX);
+                empty.push(k);
+                scopes.push(Laid::Scope(Scope { code_offset: 0, frame_offset: fix(slot) as i32, size, kind }));
+                continue;
+            }
+            out.append(&mut scopes);
             remap.push(out.len());
             for e in empty.drain(..) {
                 remap[e] = out.len();
@@ -1149,9 +1248,8 @@ impl Asm {
                     }
                 }
                 Piece::Frame(item) => Laid::Fixed { item: slot(item), site: None },
-                Piece::Gone | Piece::Dead { .. } => unreachable!(),
+                Piece::Gone | Piece::Dead { .. } | Piece::Scope { .. } => unreachable!(),
                 Piece::Dropped(item) => Laid::Dropped(item.map_frame(|s| fix(s as u32) as i32)),
-                Piece::Scope { slot, size, kind } => Laid::Scope(Scope { code_offset: 0, frame_offset: fix(slot) as i32, size, kind }),
                 Piece::Native(item) => Laid::Fixed { item: slot(item), site: None },
                 Piece::Fp(reg) => Laid::Fixed { item: fp_item(reg, frame_size, mode), site: None },
                 Piece::Epilogue => Laid::Fixed { item: epilogue, site: None },
@@ -1180,6 +1278,7 @@ impl Asm {
         if head.last() == Some(&true) {
             out.push(Laid::Align);
         }
+        out.append(&mut scopes);
         remap.push(out.len());
         for e in empty {
             remap[e] = out.len();

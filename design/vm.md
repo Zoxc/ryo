@@ -300,7 +300,7 @@ pad edges included, without an end. Everything else is accessed only at the widt
 the instructions give. Island operands aren't escapes: templates read and write each at
 its type during the call. `Asm::escape` and `Asm::storage_end` add pieces without code,
 which the register cache and dead-store dropping pass over, and layout records their
-positions. The decoder maps them to word offsets (`Decoded::scopes`, also through
+positions (an instruction's, so after a loop head's padding). The decoder maps them to word offsets (`Decoded::scopes`, also through
 `reduce` and `decode_reduced`), and `vm/bytecode/tests/asm.rs` round-trips them and checks
 that they don't change the code. `RYO_DUMP` shows them as `; escape …` and `; end …`
 lines.
@@ -339,10 +339,29 @@ format version.
   the image header's ranges, given the handlers' addresses, and takes the scopes, call sites
   and dropped stores from the image's tables (dropped stores aren't recoverable from the
   code: a `mov` whose reload hit the cache and whose store was dropped leaves no code).
+- **Encoding**: `asm::encode_reduced` is `decode_reduced`'s exact inverse: from the reduced
+  words, frame size, cleanup entries, scopes and dropped stores, and the code constants the
+  `handler` arguments address, it gives the machine code, relocations, code constants, call
+  sites, dropped stores and scopes `encode` gave. It drives `Asm`: native instructions go
+  through `Asm::insn`, a `handler` sets its argument registers as given, calls the handler
+  and ends in its shape's control flow (a sparse switch's values become a code constant again,
+  in the same order, so at the same offset).
+- **Dropped stores in the reduced form**: the dead marks (`Asm::dead`) that dropped a store
+  aren't in the code, and can't be recovered (a mark that only partly covers a pending store
+  keeps it, so marks from the dropped stores alone would drop others too). Instead
+  `Decoded::dropped` lists the word offsets of the instructions whose store was dropped (the
+  decoder reads them there anyway), `reduce` maps them like the scopes, and
+  `encode_reduced` drops exactly those (`Asm::drop_exactly`, `Asm::drop_store`) instead of
+  running dead-store dropping: the register cache runs first and keeps a sequence's write its
+  last item, so the store to drop is known before.
 - **Testing**: `vm/bytecode/tests/asm.rs` checks on every round trip that `decode_reduced`
   gives what `reduce` gives for the full decoder's output, and that `decode_linked` of the
   code linked at fake addresses gives the same, and `vm/bytecode/tests/reduced.rs` that the
-  reduced list is the full list's native instructions. `vm/bytecode/tests/image.rs` decodes
+  reduced list is the full list's native instructions. Every round trip also re-encodes
+  what `decode_reduced` and `decode_linked` give and compares it with the `Encoded`, also for
+  random runs built with `Asm` with dead-slot hints (there and in `vm/rt/tests/inline.rs`), and
+  `RYO_ASM_CHECK` ([backend.md](backend.md#debugging-switches)) does it for every function
+  the backend emits. `vm/bytecode/tests/image.rs` decodes
   a linked image's functions through `ImageResolver`.
 
 ## Instruction set

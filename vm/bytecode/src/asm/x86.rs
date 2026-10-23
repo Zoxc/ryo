@@ -1281,6 +1281,8 @@ impl<'a> Cursor<'a> {
             _ => return Err(bad),
         };
         let disp = match md {
+            // `[rsp]`, without a displacement.
+            0 if base == Reg::Rsp => 0,
             1 => get(d)? as i8 as i32,
             2 => self.i32_at(d)?,
             _ => return Err(bad),

@@ -286,6 +286,9 @@ Environment variables read by the backend (and `y test`):
   <target>` per relocated field, its target named as `RYO_DUMP` names operands (handlers as
   `ryo_h_<Opcode>`, code constants as `ro+<offset>`).
 - `RYO_NO_VM` keeps every function native.
+- `RYO_ASM_CHECK` reads every function's machine code back to the reduced set
+  (`asm::decode_reduced`), encodes it again (`asm::encode_reduced`) and panics unless it is
+  the same, with the same side data ([vm.md](vm.md#reduced-instructions)).
 - `RYO_ASM_ALIGN=0` turns off the 16-byte alignment of loop heads
   ([vm.md](vm.md#machine-code)).
 - `RYO_BACKEND_MARKER` prints `ryo backend: init` from `init` and `ryo backend: partition`

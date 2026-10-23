@@ -4,9 +4,12 @@
 use alloc::vec::Vec;
 
 use super::decode::Decoded;
-use super::encode::{ArgVal, EncodeError, Opnd, Ref, RoReq, Rodata, Scope, handler_args, operands, push_words, word_len};
+use super::encode::{
+    ArgVal, Asm, EncodeError, Encoded, Label, Opnd, Ref, RoReq, Rodata, Scope, ScopeKind, Unwind, case_elem, case_size, handler_args, operands,
+    push_words, word_len,
+};
 use super::{Mode, has_handler};
-use crate::full::{Opcode, Shape, insn_len};
+use crate::full::{Elem, Opcode, Shape, insn_len};
 use crate::image::{CATCH, CONTINUE, CleanupEntry};
 use crate::reduced::{self, Arg};
 
@@ -49,9 +52,15 @@ pub(super) fn addr_arg(r: Ref) -> Option<Arg> {
 }
 
 /// The reduced instruction words of `insns`, with cleanup entries (instruction, landing pad
-/// instruction or `None` to continue, catch) and scopes by instruction index (the count for
-/// the end).
-pub(super) fn words(insns: &[Insn], cleanup: &[(usize, Option<usize>, bool)], scopes: &[(usize, Scope)], frame_size: u32) -> Decoded {
+/// instruction or `None` to continue, catch), scopes by instruction index (the count for
+/// the end) and the instructions whose store was dropped.
+pub(super) fn words(
+    insns: &[Insn],
+    cleanup: &[(usize, Option<usize>, bool)],
+    scopes: &[(usize, Scope)],
+    dropped: &[usize],
+    frame_size: u32,
+) -> Decoded {
     let len = |i: &Insn| match i {
         Insn::Native(op, ops) => word_len(*op, ops),
         Insn::Handler(_, args, then) => {
@@ -100,14 +109,22 @@ pub(super) fn words(insns: &[Insn], cleanup: &[(usize, Option<usize>, bool)], sc
         .map(|&(i, pad, catch)| CleanupEntry { offset: wpos[i], target: pad.map_or(CONTINUE, |p| wpos[p] | if catch { CATCH } else { 0 }) })
         .collect();
     let scopes = scopes.iter().map(|&(i, sc)| Scope { code_offset: wpos[i], ..sc }).collect();
-    Decoded { words: out, frame_size, cleanup, scopes }
+    let dropped = dropped.iter().map(|&i| wpos[i]).collect();
+    Decoded { words: out, frame_size, cleanup, scopes, dropped }
 }
 
 /// The reduced form of a function given as full instruction words (slots already frame
-/// offsets), with its cleanup entries and scopes, as [`super::encode`] encodes it in `mode`:
-/// case value addresses are where its code constants put them. Returns the reduced words,
-/// cleanup entries and scopes.
-pub fn reduce(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], scopes: &[Scope], mode: Mode) -> Result<Decoded, EncodeError> {
+/// offsets), with its cleanup entries, scopes and the word offsets of the instructions whose
+/// store was dropped ([`Decoded::dropped`]), as [`super::encode`] encodes it in `mode`: case
+/// value addresses are where its code constants put them.
+pub fn reduce(
+    code: &[u32],
+    frame_size: u32,
+    cleanup: &[CleanupEntry],
+    scopes: &[Scope],
+    dropped: &[u32],
+    mode: Mode,
+) -> Result<Decoded, EncodeError> {
     let mut starts = Vec::new();
     let mut at = 0;
     while at < code.len() {
@@ -179,5 +196,145 @@ pub fn reduce(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], scopes: &
             Ok((i? as usize, *sc))
         })
         .collect::<Result<Vec<_>, EncodeError>>()?;
-    Ok(words(&insns, &out, &scopes, frame_size))
+    let dropped = dropped.iter().map(|&w| idx(w).map(|i| i as usize)).collect::<Result<Vec<_>, _>>()?;
+    Ok(words(&insns, &out, &scopes, &dropped, frame_size))
+}
+
+/// Encodes one function given in the reduced set (slots frame offsets), as
+/// [`super::decode_reduced`] gives it, the exact inverse: with its frame size, cleanup entries,
+/// scopes and dropped stores ([`Decoded`]), and the code constants its [`Arg::Ro`] arguments
+/// index (the `rodata` it was decoded with, or [`super::Resolver::code_consts`]), it gives the
+/// machine code, relocations, code constants, call sites, dropped stores and scopes
+/// [`super::encode`] gave. Native instructions go through [`Asm::insn`]; a `handler` sets its
+/// argument registers as given, calls the handler and ends in its shape's control flow. The
+/// dead marks that dropped stores aren't in the decoded code, so it drops exactly the stores
+/// of `dropped` ([`Asm::drop_exactly`]).
+pub fn encode_reduced(
+    code: &[u32],
+    frame_size: u32,
+    cleanup: &[CleanupEntry],
+    scopes: &[Scope],
+    dropped: &[u32],
+    code_consts: &[u8],
+    mode: Mode,
+) -> Result<Encoded, EncodeError> {
+    let mut starts = Vec::new();
+    let mut at = 0;
+    while at < code.len() {
+        reduced::Insn::decode(&code[at..]).map_err(EncodeError::Decode)?;
+        starts.push(at as u32);
+        at += reduced::insn_len(&code[at..]).map_err(EncodeError::Decode)?;
+    }
+    let idx = |w: u32| starts.binary_search(&w).map_err(|_| EncodeError::BadTarget(w));
+    let label = |at: u32, t: u32| idx(at.wrapping_add(t)).map(|i| Label(i as u32));
+    // The full opcode of each instruction (a handler's), for the unwind checks.
+    let full_op = |at: u32| {
+        let w = &code[at as usize..];
+        let op = reduced::Opcode::from_u16(w[0] as u16).expect("decoded");
+        op.full().unwrap_or_else(|| Opcode::from_u16(w[1] as u16).expect("decoded"))
+    };
+
+    let mut action: Vec<Option<Unwind>> = alloc::vec![None; starts.len()];
+    for e in cleanup {
+        let bad = EncodeError::BadCleanup(e.offset);
+        let i = idx(e.offset).map_err(|_| bad)?;
+        if !crate::image::op_may_unwind(full_op(e.offset)) || action[i].is_some() {
+            return Err(bad);
+        }
+        action[i] = Some(if e.target == CONTINUE {
+            Unwind::Continue
+        } else {
+            let p = idx(e.target & !CATCH).map_err(|_| bad)?;
+            if full_op(starts[p]) != Opcode::Lpad {
+                return Err(bad);
+            }
+            Unwind::Pad { pad: Label(p as u32), catch: e.target & CATCH != 0 }
+        });
+    }
+
+    let mut asm = Asm::new(mode);
+    asm.drop_exactly();
+    for _ in 0..starts.len() {
+        asm.label();
+    }
+    let mut scopes = scopes.iter().peekable();
+    let mut scopes_at = |asm: &mut Asm, at: u32| -> Result<(), EncodeError> {
+        while let Some(sc) = scopes.next_if(|sc| sc.code_offset <= at) {
+            if sc.code_offset != at {
+                return Err(EncodeError::BadTarget(sc.code_offset));
+            }
+            match sc.kind {
+                ScopeKind::Escape { align } => asm.escape(sc.frame_offset as u32, sc.size, align),
+                ScopeKind::End => asm.storage_end(sc.frame_offset as u32, sc.size),
+            }
+        }
+        Ok(())
+    };
+    let mut dropped = dropped.iter().peekable();
+    let mut full = Vec::new();
+    for (i, &at) in starts.iter().enumerate() {
+        asm.bind(Label(i as u32));
+        scopes_at(&mut asm, at)?;
+        let w = &code[at as usize..];
+        let op = reduced::Opcode::from_u16(w[0] as u16).expect("decoded");
+        let id = match op.full() {
+            Some(f) => {
+                // The full instruction's words, to read its operands.
+                full.clear();
+                full.extend_from_slice(&w[..reduced::insn_len(w).expect("decoded")]);
+                full[0] = f as u32;
+                if !super::return_ok(&full) {
+                    return Err(EncodeError::BadReturn(at));
+                }
+                if f == Opcode::Arg && starts[..i].iter().any(|&a| full_op(a) != Opcode::Arg) {
+                    return Err(EncodeError::ArgNotFirst(at));
+                }
+                let ops = operands(&full, 0).into_iter().map(|o| o.map_targets(|t| label(at, t))).collect::<Result<Vec<_>, _>>()?;
+                asm.insn(f, &ops)
+            }
+            None => {
+                let h = Opcode::from_u16(w[1] as u16).expect("decoded");
+                let n = w[2] as usize;
+                let args: Vec<Arg> = (0..n).map(|k| Arg::get(&w[3 + 3 * k..])).collect();
+                let p = 3 + 3 * n;
+                let neg = w[p] != 0;
+                let ts = w[p + 2..][..w[p + 1] as usize].iter().map(|&t| label(at, t)).collect::<Result<Vec<_>, _>>()?;
+                let bad = || EncodeError::BadHandler(at);
+                let then = match h.info().shape {
+                    Shape::Br if ts.len() == 1 => Then::Branch { neg, target: ts[0] },
+                    Shape::Switch if !ts.is_empty() && !neg => Then::Table(ts),
+                    Shape::Trap if ts.is_empty() && !neg => Then::Trap,
+                    Shape::Op | Shape::Lpad if ts.is_empty() && !neg => Then::Next,
+                    _ => return Err(bad()),
+                };
+                if args.len() > super::ARG_REGS {
+                    return Err(bad());
+                }
+                // A sparse switch's case values: as many as its cases, of its value size.
+                let mut values: &[u8] = &[];
+                if let Some(&Arg::Ro(off)) = args.iter().find(|a| matches!(a, Arg::Ro(_))) {
+                    let (Then::Table(ts), Some(size)) = (&then, case_elem(h).map(case_size)) else { return Err(bad()) };
+                    values = code_consts.get(off as usize..).and_then(|b| b.get(..(ts.len() - 1) * size)).ok_or_else(bad)?;
+                }
+                asm.handler(h, &args, values, then)
+            }
+        };
+        if let Some(a) = action[i] {
+            asm.set_unwind(id, a);
+        }
+        if dropped.next_if(|&&d| d == at).is_some() {
+            if !asm.can_drop_store() {
+                return Err(EncodeError::BadDropped(at));
+            }
+            asm.drop_store();
+        }
+    }
+    scopes_at(&mut asm, code.len() as u32)?;
+    if scopes.next().is_some() {
+        return Err(EncodeError::BadTarget(code.len() as u32));
+    }
+    if let Some(&d) = dropped.next() {
+        return Err(EncodeError::BadDropped(d));
+    }
+    Ok(asm.finish(frame_size, |s| s))
 }

@@ -431,6 +431,10 @@ fn dead_stores_match_handlers() {
         a.insn(Opcode::Ret, &[sret, rasm::Opnd::Imm(8)]);
         let enc = a.finish(80, |s| s);
         dropped += enc.dropped.len();
+        // Read back to the reduced set, it re-encodes exactly, dropped stores included.
+        let d = rasm::decode_reduced(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, ENC).expect("decodes");
+        let re = rasm::encode_reduced(&d.words, d.frame_size, &d.cleanup, &d.scopes, &d.dropped, &enc.rodata, ENC).expect("re-encodes");
+        assert_eq!(re, enc);
         encoded.push(enc);
         fs.push(w.add_function(func(Vec::new(), 80, 64, 32)));
         runs.push(run);

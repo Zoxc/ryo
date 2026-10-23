@@ -249,7 +249,7 @@ fn check(f: &Fn, frame_size: u32, mode: Mode, what: &str) -> asm::Encoded {
     // The reduced decoder reads the same function as the full one, reduced.
     let red = asm::decode_reduced(&enc.code, &enc.relocs, &enc.rodata, &sites, &enc.dropped, &enc.scopes, mode)
         .unwrap_or_else(|e| panic!("{what} {mode:?} (reduced): {e:?}\n{}", Disasm(&code)));
-    let want = asm::reduce(&dec.words, dec.frame_size, &dec.cleanup, &dec.scopes, mode).expect("reduces");
+    let want = asm::reduce(&dec.words, dec.frame_size, &dec.cleanup, &dec.scopes, &dec.dropped, mode).expect("reduces");
     for r in reduced::Decoder::new(&red.words) {
         r.unwrap_or_else(|e| panic!("{what} {mode:?} (reduced words): {e}"));
     }
@@ -263,7 +263,30 @@ fn check(f: &Fn, frame_size: u32, mode: Mode, what: &str) -> asm::Encoded {
     if lin != red {
         panic!("{what} {mode:?} (linked):\n{}\n---\n{}", reduced::Disasm(&red.words), reduced::Disasm(&lin.words));
     }
+    reencodes(&enc, mode, what);
     enc
+}
+
+/// `encode_reduced` of what `decode_reduced` and `decode_linked` read from `enc` gives `enc`
+/// back exactly: code, relocations, code constants, call sites, dropped stores and scopes.
+fn reencodes(enc: &asm::Encoded, mode: Mode, what: &str) {
+    let red = asm::decode_reduced(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, mode)
+        .unwrap_or_else(|e| panic!("{what} {mode:?} (reduced): {e:?}"));
+    let linked = Fake::link(enc);
+    let lin = asm::decode_linked(&linked, Fake::CODE, &Fake { ro: &enc.rodata }, &enc.call_sites, &enc.dropped, &enc.scopes, mode)
+        .unwrap_or_else(|e| panic!("{what} {mode:?} (linked): {e:?}"));
+    for (d, how) in [(&red, "reduced"), (&lin, "linked")] {
+        let re = asm::encode_reduced(&d.words, d.frame_size, &d.cleanup, &d.scopes, &d.dropped, &enc.rodata, mode)
+            .unwrap_or_else(|e| panic!("{what} {mode:?} (re-encoding {how}): {e:?}\n{}", reduced::Disasm(&d.words)));
+        if re != *enc {
+            panic!(
+                "{what} {mode:?} (re-encoding {how}):\n{}\n{:02x?}\n---\n{:02x?}\n{enc:?}\n---\n{re:?}",
+                reduced::Disasm(&d.words),
+                enc.code,
+                re.code
+            );
+        }
+    }
 }
 
 /// A fake address space for linking a function's code: the code at [`Fake::CODE`], and each
@@ -484,7 +507,7 @@ fn mov_w128_is_not_two_mov_w64() {
 }
 
 /// A label at a dead-slot hint (no code), right before a padded loop head, is the loop
-/// head's position, after the padding.
+/// head's position, after the padding, and so is a scope there.
 #[test]
 fn label_at_a_dead_hint_before_a_loop_head() {
     use asm::Opnd::{Imm, Neg, Slot, Target};
@@ -495,11 +518,78 @@ fn label_at_a_dead_hint_before_a_loop_head() {
     a.insn(Opcode::MovW64, &[Slot(-16), Slot(-8)]);
     a.bind(empty);
     a.dead(-16i32 as u32, 8);
+    // A scope there too: it takes effect at the loop head, after the padding.
+    a.escape(-16i32 as u32, 8, 8);
     a.bind(head);
     a.insn(Opcode::AddImmW64, &[Slot(-8), Slot(-8), Imm(1)]);
     a.insn(Opcode::Jmp, &[Target(head)]);
     let enc = a.finish(16, |s| s);
     asm::decode(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, mode).expect("decodes");
+    assert_eq!(enc.scopes[0].code_offset % 16, 0, "{:?}", enc.scopes);
+    reencodes(&enc, mode, "dead hint before a loop head");
+}
+
+/// Random runs of inline instructions on a few overlapping slots, with branches into them,
+/// handler calls, escapes and dead-slot hints (`Asm::dead`), built with `Asm` directly, so the
+/// encoder drops stores the code doesn't show: they re-encode exactly.
+#[test]
+fn dead_stores_reencode() {
+    use asm::Opnd;
+    let mut rng = Rng(0xd1ed);
+    let inline: Vec<Opcode> = ALL_OPCODES.iter().copied().filter(|&op| asm::has_inline(op)).collect();
+    const SLOTS: [i32; 6] = [-8, -16, -24, -12, -32, 16];
+    let mut dropped = 0;
+    for round in 0..2000 {
+        let mode = MODES[round % MODES.len()];
+        let n = 4 + rng.below(30) as usize;
+        let mut a = asm::Asm::new(mode);
+        let labels: Vec<asm::Label> = (0..=n).map(|_| a.label()).collect();
+        for (i, &l) in labels.iter().enumerate().take(n) {
+            a.bind(l);
+            let op = match rng.below(16) {
+                0 => Opcode::DivUW32,
+                1 => Opcode::Jmp,
+                _ => inline[rng.below(inline.len() as u64) as usize],
+            };
+            let mut words = vec![op as u32];
+            for o in op.info().operands {
+                match o.kind {
+                    OperandKind::Slot => words.push(SLOTS[rng.below(SLOTS.len() as u64) as usize] as u32),
+                    OperandKind::Mem => words.extend([SLOTS[rng.below(SLOTS.len() as u64) as usize] as u32, rng.below(64) as u32]),
+                    OperandKind::U8 => words.push(rng.below(8) as u32),
+                    OperandKind::U16 | OperandKind::U32 => words.push(rng.below(1 << 16) as u32),
+                    OperandKind::U64 | OperandKind::I64 => {
+                        let v = rng.imm();
+                        words.extend([v as u32, (v >> 32) as u32]);
+                    }
+                    OperandKind::Neg => words.push(rng.below(2) as u32),
+                    OperandKind::Target => words.push(0),
+                    k => panic!("{}: {k:?}", op.mnemonic()),
+                }
+            }
+            let ops: Vec<Opnd<asm::Label>> = asm::operands(&words, 0)
+                .into_iter()
+                .map(|o| o.map_targets(|_| Ok::<_, ()>(labels[rng.below(n as u64 + 1) as usize])).unwrap())
+                .collect();
+            if rng.below(8) == 0 {
+                a.escape(SLOTS[rng.below(SLOTS.len() as u64) as usize] as u32, 8, 8);
+            }
+            a.insn(op, &ops);
+            for _ in 0..rng.below(3) {
+                let lo = SLOTS[rng.below(SLOTS.len() as u64) as usize];
+                a.dead(lo as u32, [4, 8, 16, 24][rng.below(4) as usize]);
+            }
+            if i == n - 1 || rng.below(10) == 0 {
+                a.insn(Opcode::Abort, &[]);
+            }
+        }
+        a.bind(labels[n]);
+        a.insn(Opcode::Abort, &[]);
+        let enc = a.finish(48, |s| s);
+        dropped += enc.dropped.len();
+        reencodes(&enc, mode, "dead stores");
+    }
+    assert!(dropped > 500, "{dropped} stores dropped");
 }
 
 /// The register packing of the opcodes with more operands than registers.
@@ -675,4 +765,14 @@ fn templates_are_pinned_to_format_version() {
         }
     }
     assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (19, 0xd71363eb35d66868), "template hash {h:#x}");
+}
+
+/// Without a frame pointer, an SSE load or store of the slot at `rsp` has no displacement.
+#[test]
+fn sse_at_rsp() {
+    let k = asm::ret_kind(&[asm::RetPart { xmm: true, size: 8, off: 0 }]);
+    for mode in [MODES[8], MODES[9]] {
+        let f = Fn { insns: vec![vec![Opcode::Ret as u32, -16i32 as u32, k]], targets: Vec::new(), unwind: Vec::new() };
+        check(&f, 16, mode, "sse at rsp");
+    }
 }

@@ -337,6 +337,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     fn finish(mut self) -> Result<LoweredFn<'tcx>, NeedsNative> {
         let frame_size = self.frame.frame_size(self.max_outgoing)?;
         let code = std::mem::replace(&mut self.asm, Asm::new(self.cx.mode)).finish(frame_size, |s| frame::frame_offset(s, frame_size) as u32);
+        if std::env::var_os("RYO_ASM_CHECK").is_some() {
+            reencode_check(&code, self.cx.mode);
+        }
         let ret = self.frame.locals[rustc_middle::mir::RETURN_PLACE];
         Ok(LoweredFn {
             code,
@@ -566,4 +569,21 @@ where
         return v;
     }
     instance.instantiate_mir_and_normalize_erasing_regions(tcx, TypingEnv::fully_monomorphized(), ty::EarlyBinder::bind(tcx, v))
+}
+
+/// `RYO_ASM_CHECK`: the machine code read to the reduced set and encoded again must be the
+/// same, byte for byte, with the same side data.
+fn reencode_check(code: &asm::Encoded, mode: asm::Mode) {
+    let d = asm::decode_reduced(&code.code, &code.relocs, &code.rodata, &code.call_sites, &code.dropped, &code.scopes, mode)
+        .unwrap_or_else(|e| panic!("ryo: RYO_ASM_CHECK: decoding: {e:?}\n{code:?}"));
+    let re = asm::encode_reduced(&d.words, d.frame_size, &d.cleanup, &d.scopes, &d.dropped, &code.rodata, mode)
+        .unwrap_or_else(|e| panic!("ryo: RYO_ASM_CHECK: re-encoding: {e:?}"));
+    if re != *code {
+        let at = code.code.iter().zip(&re.code).position(|(a, b)| a != b).unwrap_or(code.code.len().min(re.code.len()));
+        panic!(
+            "ryo: RYO_ASM_CHECK: re-encoding differs (code from byte {at}: {}):\n{}\n{code:?}\n---\n{re:?}",
+            code.code == re.code,
+            ryo_bytecode::reduced::Disasm(&d.words)
+        );
+    }
 }

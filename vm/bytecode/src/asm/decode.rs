@@ -29,6 +29,9 @@ pub struct Decoded {
     pub cleanup: Vec<CleanupEntry>,
     /// Sorted, at word offsets ([`Scope`]).
     pub scopes: Vec<Scope>,
+    /// The word offsets of the inline instructions whose store the encoder dropped as dead
+    /// ([`super::Encoded::dropped`]), sorted: what [`super::encode_reduced`] drops again.
+    pub dropped: Vec<u32>,
 }
 
 /// Why machine code isn't the canonical form of any function: a description, and the byte
@@ -56,11 +59,13 @@ struct Proto {
     /// Position of the instruction (after padding).
     pos: u32,
     sites: Vec<(u32, u32)>,
+    /// An inline instruction whose store was dropped.
+    dropped: bool,
 }
 
 impl Proto {
     fn new(op: Opcode, ops: Vec<Opnd>, pos: u32, sites: Vec<(u32, u32)>) -> Proto {
-        Proto { op, ops, handler: None, pos, sites }
+        Proto { op, ops, handler: None, pos, sites, dropped: false }
     }
 
     /// The branch targets (byte positions).
@@ -127,7 +132,8 @@ pub fn decode(
     }
     wpos.push(w);
     let scopes = scopes.into_iter().map(|(i, sc)| Scope { code_offset: wpos[i], ..sc }).collect();
-    Ok(Decoded { words, frame_size, cleanup, scopes })
+    let dropped = protos.iter().zip(&wpos).filter(|(p, _)| p.dropped).map(|(_, &w)| w).collect();
+    Ok(Decoded { words, frame_size, cleanup, scopes, dropped })
 }
 
 /// Decodes one function's machine code, as [`decode`], to the reduced set
@@ -183,6 +189,7 @@ fn reduced_of(r: Read) -> Result<Decoded, AsmError> {
     let ipos: Vec<u32> = protos.iter().map(|p| p.pos).collect();
     let index = |at: u32, b: u32| ipos.binary_search(&b).map(|i| i as u32).map_err(|_| AsmError { at, what: "target isn't an instruction" });
     let cleanup: Vec<_> = actions.iter().enumerate().filter_map(|(i, a)| a.map(|(pad, catch)| (i, pad, catch))).collect();
+    let dropped: Vec<usize> = protos.iter().enumerate().filter(|(_, p)| p.dropped).map(|(i, _)| i).collect();
     let mut insns = Vec::with_capacity(protos.len());
     for p in protos {
         let at = p.pos;
@@ -202,7 +209,7 @@ fn reduced_of(r: Read) -> Result<Decoded, AsmError> {
             }
         });
     }
-    Ok(reduced::words(&insns, &cleanup, &scopes, frame_size))
+    Ok(reduced::words(&insns, &cleanup, &scopes, &dropped, frame_size))
 }
 
 /// Reads one function's machine code ([`decode`]), handler calls in the reduced form with
@@ -466,7 +473,7 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8]) -> Result<Proto, AsmError> {
                 Some(_) => return Err(err(pos, "case count")),
             };
             let then = then(c, op, n, hat, &mut sites)?;
-            Proto { op, ops: Vec::new(), handler: Some((args, then)), pos, sites }
+            Proto { op, ops: Vec::new(), handler: Some((args, then)), pos, sites, dropped: false }
         }
         Item::Call(Ref::Handler(op)) if has_handler(op) => {
             let mut ops = handler_operands(op, &setup, fr, ro, pos)?;
@@ -764,12 +771,14 @@ fn inline_insn(c: &mut Cursor<'_>, cache: &mut Cache, dropped: &mut &[DroppedSto
     let left = *dropped;
     let mut items = Vec::new();
     let mut branch = None;
+    let mut was_dropped = false;
     loop {
         // A dropped store ends the sequence where it would have been.
         if let Some(d) = dropped.first()
             && d.at == c.pos
         {
             items.push(d.item);
+            was_dropped = true;
             *dropped = &dropped[1..];
             break;
         }
@@ -809,7 +818,7 @@ fn inline_insn(c: &mut Cursor<'_>, cache: &mut Cache, dropped: &mut &[DroppedSto
             continue;
         }
         *cache = after;
-        return Some(Proto::new(op, ops, pos, Vec::new()));
+        return Some(Proto { dropped: was_dropped, ..Proto::new(op, ops, pos, Vec::new()) });
     }
     c.pos = pos;
     *dropped = left;
