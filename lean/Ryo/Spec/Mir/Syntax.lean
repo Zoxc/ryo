@@ -42,13 +42,13 @@ inductive ProjElem where
   | downcast (v : Nat)
   | opaqueCast (ty : Ty)
   | unwrapUnsafeBinder (ty : Ty)
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 /-- A MIR place: a local and projections. -/
 structure MPlace where
   base : Local
   proj : List ProjElem := []
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 -- [D6] [D24]
 /-- What a pointer in a constant points to (rustc `GlobalAlloc`). -/
@@ -59,7 +59,7 @@ inductive GlobalRef where
   | fn (i : InstanceId)
   /-- `GlobalAlloc::TypeId` (D24): no provenance, address = offset. -/
   | typeId
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 /-- A constant (rustc `ConstValue` after evaluation). -/
 inductive ConstOperand where
@@ -73,11 +73,11 @@ inductive ConstOperand where
   | slice (alloc : GlobalId) (len : Nat)
   /-- `ConstValue::Indirect`: the value stored in a constant allocation at an offset. -/
   | indirect (alloc : GlobalId) (offset : Nat)
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 inductive RuntimeCheck where
   | ubChecks | contractChecks | overflowChecks
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 inductive Operand where
   | copy (p : MPlace)
@@ -85,7 +85,7 @@ inductive Operand where
   | const (c : ConstOperand) (ty : Ty)
   /-- D23: the session's value of the check. -/
   | runtimeChecks (k : RuntimeCheck) (value : Bool)
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 /-- rustc `BinOp` (all 26). -/
 inductive BinOp where
@@ -98,11 +98,11 @@ inductive BinOp where
   | eq | lt | le | ne | ge | gt
   | cmp
   | offset
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 inductive UnOp where
   | not | neg | ptrMetadata
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 -- [D30]
 /-- D30: the metadata an `Unsize` coercion attaches to the (innermost) pointer. -/
@@ -114,7 +114,7 @@ inductive UnsizeMeta where
   /-- `dyn A` → `dyn B`: keep the vtable (`none`), or use the vtable pointer stored in word
   `k` of the old vtable (trait upcasting). -/
   | upcast (entry : Option Nat)
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 inductive PointerCoercion where
   | reifyFnPointer (i : InstanceId)
@@ -123,7 +123,7 @@ inductive PointerCoercion where
   | mutToConstPointer
   | arrayToPointer
   | unsize (m : UnsizeMeta)
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 /-- rustc `CastKind` (all 12). -/
 inductive CastKind where
@@ -134,7 +134,7 @@ inductive CastKind where
   | ptrToPtr | fnPtrToPtr
   | transmute | boxDerefTransmute
   | subtype
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 /-- rustc `AggregateKind` (coroutines are out of scope). The aggregate's type is the
 destination's. -/
@@ -146,7 +146,7 @@ inductive AggregateKind where
   | closure
   /-- `aggregate_raw_ptr`: data pointer and metadata. -/
   | rawPtr
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 /-- rustc `Rvalue` (all 13). -/
 inductive Rvalue where
@@ -163,7 +163,7 @@ inductive Rvalue where
   | copyForDeref (p : MPlace)
   | wrapUnsafeBinder (o : Operand) (ty : Ty)
   | reborrow (ty : Ty) (mutbl : Bool) (p : MPlace)
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 inductive Statement where
   | assign (p : MPlace) (rv : Rvalue)
@@ -178,7 +178,7 @@ inductive Statement where
   /-- `FakeRead`, `AscribeUserType`, `Coverage`, `ConstEvalCounter`, `Nop`,
   `BackwardIncompatibleDropHint`. -/
   | nop (what : String := "Nop")
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 -- [D14]
 /-- The `&'static Location` passed to `#[track_caller]` callees (D14). -/
@@ -187,7 +187,7 @@ inductive CallerLoc where
   | const (c : ConstOperand) (ty : Ty)
   /-- The location the current (itself `#[track_caller]`) function received. -/
   | inherit
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 inductive Callee where
   /-- A resolved instance: a body, an extern, or an intrinsic. -/
@@ -196,28 +196,28 @@ inductive Callee where
   | fnPtr (o : Operand)
   /-- D29: vtable slot `idx` of the first argument's vtable. -/
   | «virtual» (idx : Nat)
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 inductive TerminateReason where
   | abi | inCleanup
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 inductive UnwindAction where
   | «continue»
   | unreachable
   | terminate (r : TerminateReason)
   | cleanup (bb : BasicBlock)
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 /-- Calling conventions (rustc `ExternAbi` as far as calls care). -/
 inductive CallConv where
   | rust | rustCall | c | other (name : String)
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 /-- rustc `PassMode`, reduced to its kind. -/
 inductive PassModeKind where
   | ignore | direct | pair | cast | indirect | indirectUnsized
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 /-- How one argument (or the return value) is passed (rustc `ArgAbi`, summarized). -/
 structure ArgAbi where
@@ -227,14 +227,14 @@ structure ArgAbi where
   /-- Scalar classes etc. as the dumper renders them (`"i32"`, `"ptr"`, `"f64"`, ...);
   part of the compatibility check. -/
   detail : String := ""
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 /-- rustc `FnAbi`, summarized (D14). -/
 structure FnAbiSummary where
   conv : CallConv
   args : List ArgAbi
   ret : ArgAbi
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 -- [D19]
 /-- What a failed `Assert` calls (D19): the `AssertKind`'s panic lang item and operands. -/
@@ -242,7 +242,7 @@ structure AssertMessage where
   panicFn : InstanceId
   args : List Operand := []
   callerLocation : Option CallerLoc := none
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 inductive Terminator where
   | goto (bb : BasicBlock)
@@ -261,13 +261,13 @@ inductive Terminator where
       (abi : Option FnAbiSummary := none)
   | assert (cond : Operand) (expected : Bool) (msg : AssertMessage) (target : BasicBlock)
       (unwind : UnwindAction)
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 structure BlockData where
   stmts : List Statement := []
   term : Terminator
   isCleanup : Bool := false
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 structure Body where
   /-- `_0` first, then the arguments, then the other locals. -/
@@ -280,7 +280,7 @@ structure Body where
   /-- The callee's ABI (D14). `none`: only the structural checks apply. -/
   abi : Option FnAbiSummary := none
   blocks : Array BlockData
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 -- [D7] [D22] [D29]
 inductive GlobalKind where
@@ -293,7 +293,7 @@ inductive GlobalKind where
   | vtable (traitName : Option TraitName)
   /-- A `#[thread_local]` static (D22). -/
   | threadLocal
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 /-- A pointer stored in a global's bytes (rustc relocation / provenance entry). -/
 structure Relocation where
@@ -301,7 +301,7 @@ structure Relocation where
   target : GlobalRef
   /-- Offset into the target. -/
   addend : Nat := 0
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 structure Global where
   /-- `none` = uninitialized byte. Relocation positions are overwritten by the pointer. -/
@@ -309,7 +309,7 @@ structure Global where
   relocs : List Relocation := []
   align : Align
   kind : GlobalKind
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 inductive InstanceKind where
   /-- A function body in the program. -/
@@ -318,25 +318,25 @@ inductive InstanceKind where
   | ext
   /-- A rustc intrinsic handled by the spec (D20). -/
   | intrinsic (name : String)
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 structure Instance where
   symbol : String
   kind : InstanceKind
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 /-- Lang items the semantics calls on its own (D18). -/
 structure LangItems where
   panicCannotUnwind : Option InstanceId := none
   panicInCleanup : Option InstanceId := none
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 structure Program where
   instances : Array Instance
   globals : Array Global := #[]
   start : InstanceId
   langItems : LangItems := {}
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 namespace Program
 

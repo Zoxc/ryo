@@ -43,7 +43,7 @@ elab "#ryo_axioms" : command => do
 #print axioms Ryo.Spec.Theorems.decode_encode_int   -- [propext, Classical.choice, Quot.sound]
 ```
 
-Its output at this commit: the five `sorry` theorems of §1.1 and the nine opaque instances of
+Its output at this commit: the five `sorry` theorems of §1.1 and the seven opaque instances of
 §1.2, nothing else. Every proved theorem depends only on Lean's three standard axioms
 (`propext`, `Classical.choice`, `Quot.sound`).
 
@@ -71,7 +71,7 @@ untagged variant's valid range ([`Lang/WellFormed.lean`](../Ryo/Spec/Lang/WellFo
 
 | Where | What | Why | Effect / discharge |
 |---|---|---|---|
-| `instBEqTy.beq`, `instBEqValue.beq`, `instReprTy.repr`, `instReprValue.repr`, `instToJsonTy.toJson`, `instToJsonValue.toJson`, `instFromJsonTy.fromJson`, `instFromJsonValue.fromJson`, `instFromJsonLayoutStrategy.fromJson` (`deriving` on `Ty`, `Value`, `LayoutStrategy`) | Lean derives these for nested inductives as `partial` defs: an `opaque` constant run by compiled `unsafe` code | `Ty` and `Value` are nested inductives (`List (Offset × Ty)`, `VariantOf Ty`) | **The semantics calls `==` on `Ty` and `Value`**: `abiCompatible` (`caller == callee`, fallback `a == b`), `unsizeValue` (`st == dt`), `atomic_cxchg` (`x == y`). In proofs these are uninterpreted: nothing can be proved about ABI checks, struct unsizing or CAS without more. Discharge: hand-write a structural `BEq` (or `DecidableEq`) for `Ty`/`Value` with a `LawfulBEq` proof. The JSON instances only matter for the dump (§4) |
+| `instReprTy.repr`, `instReprValue.repr`, `instToJsonTy.toJson`, `instToJsonValue.toJson`, `instFromJsonTy.fromJson`, `instFromJsonValue.fromJson`, `instFromJsonLayoutStrategy.fromJson` (`deriving` on `Ty`, `Value`, `LayoutStrategy`) | Lean derives these for nested inductives as `partial` defs: an `opaque` constant run by compiled `unsafe` code | `Ty` and `Value` are nested inductives (`List (Offset × Ty)`, `VariantOf Ty`) | Only printing and the dump (§4) use them. Equality is no longer derived: `Ty.beq`/`Value.beq` are structural, `Ty.beq_iff`/`Value.beq_iff` prove they decide `=`, and `DecidableEq Ty`/`DecidableEq Value` are built from them, so the `==` that `abiCompatible`, `unsizeValue` and `atomic_cxchg` use is a `LawfulBEq`. Every other type the semantics compares (`VariantOf`, `Place`, the MIR syntax, `Choice`, `Event`, …) derives `DecidableEq` |
 | ~~`Float.pow`, `Float32.pow`~~ | `powi` used the host C library's `pow` | | **Removed**: `powi` is now compiler-rt's `__powidf2` loop over the exact `Float.mul`/`Float.div` (`Float.powi`, [divergences.md](divergences.md) R3) |
 | `Float.ofBits`/`toBits`, `Float32.ofBits`/`toBits`, `Float.sqrt`, `UInt*.ofNat/toNat`, `Nat.log2`, `Int.tdiv/tmod`, `Array.*` | `@[extern]` with Lean reference implementations | standard Lean runtime | Proofs use the reference definitions. Only the interpreter's results trust the runtime (GMP-backed `Nat`/`Int`, C arrays): the usual trusted base of compiled Lean. `Float.*` appear only in the test helpers `hwBinop64`/`hwBinop32`/`hwSqrt64` (and `RyoTest`) |
 

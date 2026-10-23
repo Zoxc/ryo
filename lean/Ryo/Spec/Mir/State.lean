@@ -73,7 +73,7 @@ deriving Repr, Inhabited
 inductive ExtResult where
   | ret (v : Value)
   | unwind (p : Payload)
-deriving Repr, BEq, Inhabited
+deriving Repr, DecidableEq, Inhabited
 
 /-- Observable events. -/
 inductive Event where
@@ -81,13 +81,13 @@ inductive Event where
   | extCall (callee : String) (args : List Value) (result : ExtResult)
   /-- `write(fd, buf, len)`: the bytes written (mir-spec §A.6). -/
   | write (fd : Int) (bytes : List UInt8)
-deriving Repr, BEq, Inhabited
+deriving Repr, DecidableEq, Inhabited
 
 /-- How a run ended normally. -/
 inductive Final where
   | returned (v : Value)
   | unwound (p : Payload)
-deriving Repr, BEq, Inhabited
+deriving Repr, DecidableEq, Inhabited
 
 structure State where
   prog : Program

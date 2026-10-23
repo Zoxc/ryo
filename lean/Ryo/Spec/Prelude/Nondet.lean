@@ -49,7 +49,7 @@ inductive Choice where
   /-- The result of `compare_bytes` (daemonic, `memcmp`): any `i32` with the sign of `diff`,
   the difference of the first differing bytes (0 if equal). -/
   | compareBytes (diff : Int)
-deriving Repr, BEq, Inhabited
+deriving Repr, DecidableEq, Inhabited
 
 def Choice.kind : Choice → ChoiceKind
   | .exposedProv _ => .angelic

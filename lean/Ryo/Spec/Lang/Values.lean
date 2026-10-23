@@ -30,7 +30,45 @@ inductive Value where
   | variant (idx : Nat) (data : Value)
   /-- Unions (and opaque bytes): the preserved chunks. -/
   | union (chunks : List (List AbstractByte))
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, Inhabited, ToJson, FromJson
+
+/-! ## Structural equality (as for `Ty`: `Value` is nested, so `deriving BEq` is opaque) -/
+
+mutual
+
+def Value.beq : Value → Value → Bool
+  | .int i, .int i' => i == i'
+  | .bool b, .bool b' => b == b'
+  | .float f b, .float f' b' => f == f' && b == b'
+  | .ptr p, .ptr p' => p == p'
+  | .tuple vs, .tuple vs' => Value.beqList vs vs'
+  | .variant i d, .variant i' d' => i == i' && Value.beq d d'
+  | .union cs, .union cs' => cs == cs'
+  | _, _ => false
+
+def Value.beqList : List Value → List Value → Bool
+  | [], [] => true
+  | v :: vs, v' :: vs' => Value.beq v v' && Value.beqList vs vs'
+  | _, _ => false
+
+end
+
+mutual
+
+theorem Value.beq_iff : (a b : Value) → Value.beq a b = true ↔ a = b
+  | .int _, b | .bool _, b | .float .., b | .ptr _, b | .union _, b => by
+    cases b <;> simp [Value.beq]
+  | .tuple vs, b => by cases b <;> simp [Value.beq, Value.beqList_iff vs]
+  | .variant _ d, b => by cases b <;> simp [Value.beq, Value.beq_iff d]
+
+theorem Value.beqList_iff : (a b : List Value) → Value.beqList a b = true ↔ a = b
+  | [], b => by cases b <;> simp [Value.beqList]
+  | v :: vs, b => by
+    cases b <;> simp [Value.beqList, Value.beq_iff v, Value.beqList_iff vs]
+
+end
+
+instance : DecidableEq Value := fun a b => decidable_of_iff _ (Value.beq_iff a b)
 
 def unitValue : Value := .tuple []
 
@@ -38,7 +76,7 @@ def unitValue : Value := .tuple []
 structure Place where
   ptr : Pointer
   aligned : Bool := true
-deriving Repr, BEq, Inhabited
+deriving Repr, DecidableEq, Inhabited
 
 /-- `le_defined` on values: equality except on pointers (provenance) and union bytes. -/
 def Value.leDefined : Value → Value → Bool

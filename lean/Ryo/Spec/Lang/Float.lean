@@ -27,7 +27,7 @@ open FloatTy
 inductive FRes where
   | ok (bits : Nat)
   | nan (candidates : List Nat)
-deriving Repr, BEq, Inhabited
+deriving Repr, DecidableEq, Inhabited
 
 def bias (f : FloatTy) : Nat := 2 ^ (f.expBits - 1) - 1
 def expMax (f : FloatTy) : Nat := 2 ^ f.expBits - 1

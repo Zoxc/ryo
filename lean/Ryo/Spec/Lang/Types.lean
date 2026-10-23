@@ -84,7 +84,7 @@ structure VariantOf (α : Type) where
   fields : α
   /-- Whether the variant is inhabited (rustc `is_variant_uninhabited` is the negation). -/
   inhabited : Bool := true
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 -- [D2] [D4] [D5] [D27]
 inductive Ty where
@@ -109,9 +109,92 @@ inductive Ty where
   | traitObject (t : TraitName)
   /-- Values that are only bytes (SIMD vectors, ...). -/
   | opaqueBytes (size : Size) (align : Align)
-deriving Repr, BEq, Inhabited, ToJson, FromJson
+deriving Repr, Inhabited, ToJson, FromJson
 
 abbrev Variant := VariantOf Ty
+
+/-! ## Structural equality
+
+`deriving BEq`/`DecidableEq` cannot handle the nested inductive `Ty` (Lean derives an opaque
+`partial` `BEq`, about which nothing can be proved). `Ty.beq` is structural, `Ty.beq_iff`
+proves it decides equality, and `DecidableEq Ty` is built from it, so `==` on `Ty` (through
+`instBEqOfDecidableEq`) is a `LawfulBEq`. -/
+
+mutual
+
+def Ty.beq : Ty → Ty → Bool
+  | .int t r, .int t' r' => t == t' && r == r'
+  | .bool, .bool => true
+  | .char, .char => true
+  | .float f, .float f' => f == f'
+  | .ptr p r, .ptr p' r' => p == p' && r == r'
+  | .fnDef i, .fnDef i' => i == i'
+  | .tuple fs h tl, .tuple fs' h' tl' => Ty.beqFields fs fs' && h == h' && Ty.beqOpt tl tl'
+  | .array e n, .array e' n' => Ty.beq e e' && n == n'
+  | .slice e, .slice e' => Ty.beq e e'
+  | .union fs cs sz al, .union fs' cs' sz' al' =>
+    Ty.beqFields fs fs' && cs == cs' && sz == sz' && al == al'
+  | .enum vs d r sz al, .enum vs' d' r' sz' al' =>
+    Ty.beqVariants vs vs' && d == d' && r == r' && sz == sz' && al == al'
+  | .traitObject n, .traitObject n' => n == n'
+  | .opaqueBytes sz al, .opaqueBytes sz' al' => sz == sz' && al == al'
+  | _, _ => false
+
+def Ty.beqFields : List (Offset × Ty) → List (Offset × Ty) → Bool
+  | [], [] => true
+  | (o, t) :: fs, (o', t') :: fs' => o == o' && Ty.beq t t' && Ty.beqFields fs fs'
+  | _, _ => false
+
+def Ty.beqOpt : Option Ty → Option Ty → Bool
+  | none, none => true
+  | some t, some t' => Ty.beq t t'
+  | _, _ => false
+
+def Ty.beqVariants : List (VariantOf Ty) → List (VariantOf Ty) → Bool
+  | [], [] => true
+  | ⟨d, t, i⟩ :: vs, ⟨d', t', i'⟩ :: vs' =>
+    d == d' && Ty.beq t t' && i == i' && Ty.beqVariants vs vs'
+  | _, _ => false
+
+end
+
+mutual
+
+theorem Ty.beq_iff : (a b : Ty) → Ty.beq a b = true ↔ a = b
+  | .int .., b | .bool, b | .char, b | .float _, b | .ptr .., b | .fnDef _, b
+  | .traitObject _, b | .opaqueBytes .., b => by cases b <;> simp [Ty.beq]
+  | .tuple fs _ tl, b => by
+    cases b <;> simp [Ty.beq, Ty.beqFields_iff fs, Ty.beqOpt_iff tl, and_assoc]
+  | .array e _, b => by cases b <;> simp [Ty.beq, Ty.beq_iff e]
+  | .slice e, b => by cases b <;> simp [Ty.beq, Ty.beq_iff e]
+  | .union fs .., b => by cases b <;> simp [Ty.beq, Ty.beqFields_iff fs, and_assoc]
+  | .enum vs .., b => by cases b <;> simp [Ty.beq, Ty.beqVariants_iff vs, and_assoc]
+
+theorem Ty.beqFields_iff : (a b : List (Offset × Ty)) → Ty.beqFields a b = true ↔ a = b
+  | [], b => by cases b <;> simp [Ty.beqFields]
+  | (_, t) :: fs, b => by
+    cases b with
+    | nil => simp [Ty.beqFields]
+    | cons p _ =>
+      obtain ⟨_, _⟩ := p
+      simp [Ty.beqFields, Ty.beq_iff t, Ty.beqFields_iff fs, and_assoc]
+
+theorem Ty.beqOpt_iff : (a b : Option Ty) → Ty.beqOpt a b = true ↔ a = b
+  | none, b => by cases b <;> simp [Ty.beqOpt]
+  | some t, b => by cases b <;> simp [Ty.beqOpt, Ty.beq_iff t]
+
+theorem Ty.beqVariants_iff : (a b : List (VariantOf Ty)) → Ty.beqVariants a b = true ↔ a = b
+  | [], b => by cases b <;> simp [Ty.beqVariants]
+  | ⟨_, t, _⟩ :: vs, b => by
+    cases b with
+    | nil => simp [Ty.beqVariants]
+    | cons p _ =>
+      obtain ⟨_, _, _⟩ := p
+      simp [Ty.beqVariants, Ty.beq_iff t, Ty.beqVariants_iff vs, VariantOf.mk.injEq, and_assoc]
+
+end
+
+instance : DecidableEq Ty := fun a b => decidable_of_iff _ (Ty.beq_iff a b)
 
 namespace Ty
 
