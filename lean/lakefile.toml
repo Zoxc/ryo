@@ -1,0 +1,23 @@
+name = "ryo"
+version = "0.1.0"
+defaultTargets = ["Ryo", "ryo-lean"]
+testDriver = "ryotest"
+
+[leanOptions]
+autoImplicit = false
+relaxedAutoImplicit = false
+
+[[lean_lib]]
+name = "Ryo"
+
+[[lean_lib]]
+name = "RyoTest"
+globs = ["RyoTest", "RyoTest.+"]
+
+[[lean_exe]]
+name = "ryo-lean"
+root = "Main"
+
+[[lean_exe]]
+name = "ryotest"
+root = "RyoTestMain"
