@@ -26,6 +26,7 @@ lake test                          # runs the ported MiniRust tests and divergen
 lake exe ryotest <substring>       # only the tests whose name contains <substring>
 lake exe ryo-lean example factorial fact.json
 lake exe ryo-lean run fact.json    # interpret a JSON program (`Program` or `{program, args}`)
+lake exe ryo-lean run p.json --stdout  # as the program: fd 1/2 bytes to stdout/stderr, its exit status
 ```
 
 `.lake/` is ignored (`.gitignore`).
