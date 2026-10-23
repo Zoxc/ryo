@@ -82,6 +82,7 @@ pub const fn mode_bits(mode: Mode) -> u32 {
 /// The writer sets `ctr` to [`JIT_THRESHOLD`], `entry` and `osr` to the runtime's
 /// `ryo_jit_trip_entry` and `ryo_jit_trip_osr`, `func` to the function's index and `header`
 /// to the image's header (relocated), the rest to 0.
+/// The runtime's JIT (`ryo_rt`, design/vm.md, "JIT") owns the record after that.
 #[repr(C, align(64))]
 #[derive(Debug)]
 pub struct JitRecord {
@@ -102,7 +103,10 @@ pub struct JitRecord {
     pub func: u32,
     /// The image's header.
     pub header: *const Header,
-    pub reserved: [u64; 2],
+    /// The runtime's: where the JIT put the function's code once it is [`JIT_DONE`] (its
+    /// first instruction), and its length. 0 in the image.
+    pub jit_code: *const u8,
+    pub jit_len: u64,
 }
 
 /// The counter a JIT record starts at ([`JitRecord::ctr`]): about 600 calls or 10 000 loop

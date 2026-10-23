@@ -3,7 +3,8 @@
 //! counter runs out, with `r11` the record, `eax` a loop head's index (`osr`), and the
 //! return address the continuation in the stub, which jumps back after the counter check.
 //!
-//! This is the no-op JIT: it sets the counter to `i64::MAX`, so that the function doesn't
+//! This is the no-op JIT, for builds without the `jit` feature (`--sysroot ryo`) and targets
+//! the JIT doesn't support (PE): it sets the counter to `i64::MAX`, so that the function doesn't
 //! trip again in practice, and returns. It clobbers only `rax` (and the flags), which the
 //! counter checks may: at the entry `rax` holds no argument (VM functions aren't variadic,
 //! so nothing passes `al`), and at a loop head nothing but `rsp` and `rbp` is live. The
@@ -24,3 +25,6 @@ pub unsafe extern "sysv64" fn trip_entry() {
 pub unsafe extern "sysv64" fn trip_osr() {
     core::arch::naked_asm!(".cfi_startproc", "mov rax, 0x7fffffffffffffff", "mov qword ptr [r11], rax", "ret", ".cfi_endproc",);
 }
+
+/// Called for every newly registered image: nothing to do without a JIT.
+pub(crate) fn registered(_: &ryo_bytecode::image::Image<'_>) {}

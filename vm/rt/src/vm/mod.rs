@@ -2,21 +2,26 @@
 //! design/vm.md.
 //!
 //! - [`ryo_vm_register`]: image registration, called by the registry object's constructor.
-//! - [`trip_entry`], [`trip_osr`]: where the JIT records' slots start (the no-op JIT).
+//! - [`trip_entry`], [`trip_osr`]: where the JIT records' slots start: the JIT's trips, or
+//!   the no-op JIT's without the `jit` feature and on PE.
 //!
 //! VM functions are native functions of their signatures (design/vm.md, "Calls and
 //! islands"): native code calls them directly, and there is no entry from portals.
 //!
 //! Everything reachable from these uses `core` and OS calls only (no std allocator, locks or
 //! TLS), so it never re-enters the VM (design/vm.md, "No re-entry into the VM from the
-//! runtime").
+//! runtime"), except the JIT (`jit`, with the `jit` feature), which uses the native std.
 
 mod interp;
+#[cfg_attr(all(feature = "jit", target_os = "linux"), path = "jit/mod.rs")]
+#[cfg_attr(not(all(feature = "jit", target_os = "linux")), path = "jit/noop.rs")]
 mod jit;
 mod registry;
 mod sys;
 
 pub use interp::{FP_ARG, MODE, h, handler, probe_stack};
+#[cfg(all(feature = "jit", target_os = "linux"))]
+pub use jit::{JIT_ENTRY_PREFIX, REDIRECT, configure_jit, jit_stats};
 pub use jit::{trip_entry, trip_osr};
 pub use registry::ImageRt;
 

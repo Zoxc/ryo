@@ -3,9 +3,14 @@
 
 #![feature(rustc_attrs, unboxed_closures, fn_traits, tuple_trait, core_intrinsics, f16, f128)]
 #![allow(internal_features)]
-// Only `core`: with `--sysroot ryo`, std and alloc are ryo-built and depend on `ryo_rt`
+// Only `core` (but for the JIT): with `--sysroot ryo`, std and alloc are ryo-built and depend on `ryo_rt`
 // (design/build.md), and the runtime must not enter the VM through them (design/vm.md).
 #![cfg_attr(not(test), no_std)]
+
+// The JIT, and only it, uses std (design/vm.md, "JIT"): `y build` enables it for the native
+// sysroot only.
+#[cfg(all(feature = "jit", not(test)))]
+extern crate std;
 
 pub mod entry;
 pub mod island;

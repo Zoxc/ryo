@@ -853,15 +853,36 @@ unsafe fn put<T: Copy>(buf: &mut [u8], off: u32, v: &[T]) {
 /// counter check before the prologue moves nothing, and the entry's counter stub at the end
 /// of the code runs before the prologue: there the CFA is `rsp + 8` again.
 fn unwind_elf(funcs: &[FuncCode], personality_slot: u64, mode: Mode, relocs: &mut Vec<Reloc>) -> Vec<(Section, Vec<u8>)> {
-    const PCREL_SDATA4: u8 = 0x1b;
     let pc = |section, offset, target, addend| Reloc { section, offset, target: RelocTarget::Section(target), addend, kind: RelocKind::Pc32 };
     let mut eh = Vec::new();
-    // CIE.
+    let p = eh_cie(&mut eh);
+    relocs.push(pc(Section::EhFrame, p as u64, Section::ReadOnly, personality_slot as i64));
+    let mut lsda = Vec::new();
+    for f in funcs {
+        let l = lsda.len() as u64;
+        lsda.extend_from_slice(&asm::lsda::write(&f.call_sites));
+        let fields = eh_fde(&mut eh, 0, &EhFunc { len: f.len, frame_size: f.frame_size, prologue: f.prologue, entry_stub: f.entry_stub }, mode);
+        relocs.push(pc(Section::EhFrame, fields.pc_begin as u64, Section::Text, f.start as i64));
+        relocs.push(pc(Section::EhFrame, fields.lsda as u64, Section::Lsda, l as i64));
+    }
+    vec![(Section::EhFrame, eh), (Section::Lsda, lsda)]
+}
+
+/// `DW_EH_PE_pcrel | DW_EH_PE_sdata4`: the encoding of every pointer [`eh_cie`] and
+/// [`eh_fde`] write (the personality's with `DW_EH_PE_indirect` too).
+const PCREL_SDATA4: u8 = 0x1b;
+
+/// Appends the CIE of VM code's `.eh_frame` to `eh`: augmentation `zPLR`, the personality
+/// through a pointer-sized slot (`DW_EH_PE_indirect`), the LSDA and FDE pointers PC-relative
+/// (32-bit), and the initial rules of a function entry (CFA `rsp + 8`, the return address at
+/// CFA − 8). Returns the position in `eh` of the personality field, which holds the slot's
+/// address less the field's own. The image writer and the JIT (`ryo_rt`) share it.
+pub fn eh_cie(eh: &mut Vec<u8>) -> usize {
     let mut cie = vec![0, 0, 0, 0, 1];
     cie.extend_from_slice(b"zPLR\0");
     cie.extend_from_slice(&[1, 0x78, 16]); // code align 1, data align -8, return address r16
     cie.extend_from_slice(&[7, 0x80 | PCREL_SDATA4]); // augmentation length, P encoding (indirect)
-    relocs.push(pc(Section::EhFrame, 4 + cie.len() as u64, Section::ReadOnly, personality_slot as i64));
+    let personality = eh.len() + 4 + cie.len();
     cie.extend_from_slice(&[0; 4]);
     cie.extend_from_slice(&[PCREL_SDATA4, PCREL_SDATA4]); // L, R encodings
     cie.extend_from_slice(&[0x0c, 7, 8, 0x90, 1]); // CFA = rsp + 8; return address at CFA - 8
@@ -870,48 +891,73 @@ fn unwind_elf(funcs: &[FuncCode], personality_slot: u64, mode: Mode, relocs: &mu
     }
     eh.extend_from_slice(&(cie.len() as u32).to_le_bytes());
     eh.extend_from_slice(&cie);
-    let mut lsda = Vec::new();
-    for f in funcs {
-        let l = lsda.len() as u64;
-        lsda.extend_from_slice(&asm::lsda::write(&f.call_sites));
-        let at = eh.len() as u64;
-        let mut fde = Vec::new();
-        fde.extend_from_slice(&((at + 4) as u32).to_le_bytes()); // back to the CIE
-        relocs.push(pc(Section::EhFrame, at + 8, Section::Text, f.start as i64));
-        fde.extend_from_slice(&[0; 4]);
-        fde.extend_from_slice(&f.len.to_le_bytes());
-        fde.push(4);
-        relocs.push(pc(Section::EhFrame, at + 4 + fde.len() as u64, Section::Lsda, l as i64));
-        fde.extend_from_slice(&[0; 4]);
-        let mut loc = 0;
-        if mode.frame_pointer {
-            // After `push rbp`: CFA = rsp + 16, rbp at CFA - 16; after `mov rbp, rsp`: CFA = rbp + 16.
-            advance(&mut fde, &mut loc, f.prologue + 1);
-            fde.extend_from_slice(&[0x0e, 16, 0x86, 2]);
-            advance(&mut fde, &mut loc, f.prologue + 4);
-            fde.extend_from_slice(&[0x0d, 6]);
-        } else {
-            // After the prologue: CFA = rsp + F + 16 (`DW_CFA_def_cfa_offset`).
-            advance(&mut fde, &mut loc, f.prologue + asm::prologue_len(f.frame_size, mode));
-            fde.push(0x0e);
-            asm::lsda::uleb(&mut fde, f.frame_size + 16);
-        }
-        if f.entry_stub < f.len {
-            // The entry's stub: CFA = rsp + 8 (`DW_CFA_def_cfa`), and `rbp` not saved yet
-            // (`DW_CFA_restore`).
-            advance(&mut fde, &mut loc, f.entry_stub);
-            fde.extend_from_slice(&[0x0c, 7, 8]);
-            if mode.frame_pointer {
-                fde.push(0xc6);
-            }
-        }
-        while (fde.len() + 4) % 8 != 0 {
-            fde.push(0);
-        }
-        eh.extend_from_slice(&(fde.len() as u32).to_le_bytes());
-        eh.extend_from_slice(&fde);
+    personality
+}
+
+/// What an FDE of [`eh_fde`] describes: a function's code length, frame size, and where its
+/// prologue and its entry's counter stub start ([`Encoded::prologue`],
+/// [`Encoded::entry_stub`]).
+#[derive(Clone, Copy, Debug)]
+pub struct EhFunc {
+    pub len: u32,
+    pub frame_size: u32,
+    pub prologue: u32,
+    pub entry_stub: u32,
+}
+
+/// The positions in `.eh_frame` of an FDE's PC-relative fields ([`eh_fde`]): its first
+/// address and its LSDA pointer, each the target's address less the field's own.
+#[derive(Clone, Copy, Debug)]
+pub struct EhFields {
+    pub pc_begin: usize,
+    pub lsda: usize,
+}
+
+/// Appends to `eh` the FDE of a function encoded in `mode`, for the CIE at position `cie` of
+/// `eh` ([`eh_cie`]). With a frame pointer, every function has the same rules (`push rbp;
+/// mov rbp, rsp`, after which the CFA is `rbp + 16`); without, the CFA is `rsp + F + 16`
+/// after the prologue's `sub rsp, F + 8`. Epilogues have no rules: they make no calls, so
+/// only asynchronous unwinding could stop there. The counter check before the prologue moves
+/// nothing, and the entry's counter stub at the end of the code runs before the prologue:
+/// there the CFA is `rsp + 8` again.
+pub fn eh_fde(eh: &mut Vec<u8>, cie: usize, f: &EhFunc, mode: Mode) -> EhFields {
+    let at = eh.len();
+    let mut fde = Vec::new();
+    fde.extend_from_slice(&((at + 4 - cie) as u32).to_le_bytes()); // back to the CIE
+    let pc_begin = at + 4 + fde.len();
+    fde.extend_from_slice(&[0; 4]);
+    fde.extend_from_slice(&f.len.to_le_bytes());
+    fde.push(4);
+    let lsda = at + 4 + fde.len();
+    fde.extend_from_slice(&[0; 4]);
+    let mut loc = 0;
+    if mode.frame_pointer {
+        // After `push rbp`: CFA = rsp + 16, rbp at CFA - 16; after `mov rbp, rsp`: CFA = rbp + 16.
+        advance(&mut fde, &mut loc, f.prologue + 1);
+        fde.extend_from_slice(&[0x0e, 16, 0x86, 2]);
+        advance(&mut fde, &mut loc, f.prologue + 4);
+        fde.extend_from_slice(&[0x0d, 6]);
+    } else {
+        // After the prologue: CFA = rsp + F + 16 (`DW_CFA_def_cfa_offset`).
+        advance(&mut fde, &mut loc, f.prologue + asm::prologue_len(f.frame_size, mode));
+        fde.push(0x0e);
+        asm::lsda::uleb(&mut fde, f.frame_size + 16);
     }
-    vec![(Section::EhFrame, eh), (Section::Lsda, lsda)]
+    if f.entry_stub < f.len {
+        // The entry's stub: CFA = rsp + 8 (`DW_CFA_def_cfa`), and `rbp` not saved yet
+        // (`DW_CFA_restore`).
+        advance(&mut fde, &mut loc, f.entry_stub);
+        fde.extend_from_slice(&[0x0c, 7, 8]);
+        if mode.frame_pointer {
+            fde.push(0xc6);
+        }
+    }
+    while (fde.len() + 4) % 8 != 0 {
+        fde.push(0);
+    }
+    eh.extend_from_slice(&(fde.len() as u32).to_le_bytes());
+    eh.extend_from_slice(&fde);
+    EhFields { pc_begin, lsda }
 }
 
 /// A CFA instruction moving the location from `*loc` to `to`, in the shortest of

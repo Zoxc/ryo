@@ -54,6 +54,7 @@ impl RyoBackend {
 type PartitionProvider = for<'tcx> fn(TyCtxt<'tcx>, ()) -> MonoItemPartitions<'tcx>;
 type SymbolNameProvider = for<'tcx> fn(TyCtxt<'tcx>, Instance<'tcx>) -> ty::SymbolName<'tcx>;
 type ExportedProvider = for<'tcx> fn(TyCtxt<'tcx>, LocalCrate) -> &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)];
+type UpstreamProvider = for<'tcx> fn(TyCtxt<'tcx>, ()) -> partition::UpstreamMonos<'tcx>;
 
 /// The default providers, saved in `provide`. Statics, because providers are plain fns.
 struct Originals {
@@ -61,6 +62,7 @@ struct Originals {
     symbol_name: SymbolNameProvider,
     exported_generic_symbols: ExportedProvider,
     exported_non_generic_symbols: ExportedProvider,
+    upstream_monomorphizations: UpstreamProvider,
 }
 
 static ORIGINALS: OnceLock<Originals> = OnceLock::new();
@@ -83,6 +85,10 @@ fn exported_generic_symbols<'tcx>(tcx: TyCtxt<'tcx>, krate: LocalCrate) -> &'tcx
 
 fn exported_non_generic_symbols<'tcx>(tcx: TyCtxt<'tcx>, krate: LocalCrate) -> &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)] {
     partition::exported_non_generic_symbols(tcx, (originals().exported_non_generic_symbols)(tcx, krate))
+}
+
+fn upstream_monomorphizations<'tcx>(tcx: TyCtxt<'tcx>, (): ()) -> partition::UpstreamMonos<'tcx> {
+    partition::upstream_monomorphizations(tcx, (originals().upstream_monomorphizations)(tcx, ()))
 }
 
 impl CodegenBackend for RyoBackend {
@@ -162,11 +168,13 @@ impl CodegenBackend for RyoBackend {
             symbol_name: q.symbol_name,
             exported_generic_symbols: q.exported_generic_symbols,
             exported_non_generic_symbols: q.exported_non_generic_symbols,
+            upstream_monomorphizations: q.upstream_monomorphizations,
         });
         q.collect_and_partition_mono_items = collect_and_partition_mono_items;
         q.symbol_name = symbol_name;
         q.exported_generic_symbols = exported_generic_symbols;
         q.exported_non_generic_symbols = exported_non_generic_symbols;
+        q.upstream_monomorphizations = upstream_monomorphizations;
     }
 
     fn target_cpu(&self, sess: &Session) -> String {

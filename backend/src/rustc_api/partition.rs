@@ -1174,6 +1174,26 @@ fn symbol_from_attrs<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> bool 
     rustc_symbol_mangling::symbol_name_from_attrs(tcx, instance.def).is_some()
 }
 
+/// The value of `upstream_monomorphizations`: per generic item, the upstream crate whose copy
+/// of each instance to link to.
+pub type UpstreamMonos<'tcx> = rustc_hir::def_id::DefIdMap<rustc_data_structures::unord::UnordMap<ty::GenericArgsRef<'tcx>, CrateNum>>;
+
+/// Our `upstream_monomorphizations` (design/backend.md#query-overrides): rustc's, without the
+/// copies in `ryo_rt` and `ryo_bytecode` of other crates' generics. The runtime's JIT
+/// instantiates std's (`Vec<u32>`, `[u32]`'s sorts), and rustc shares `#[inline(never)]`
+/// instances even without share-generics; linking to them would turn the program's own
+/// instances into the runtime's native code.
+pub fn upstream_monomorphizations<'tcx>(tcx: TyCtxt<'tcx>, map: UpstreamMonos<'tcx>) -> UpstreamMonos<'tcx> {
+    let runtime = |c: CrateNum| matches!(tcx.crate_name(c).as_str(), "ryo_rt" | "ryo_bytecode");
+    map.into_items()
+        .filter_map(|(def, args)| {
+            let args: rustc_data_structures::unord::UnordMap<_, _> =
+                if runtime(def.krate) { args } else { args.into_items().filter(|&(_, c)| !runtime(c)).collect() };
+            (!args.is_empty()).then_some((def, args))
+        })
+        .collect()
+}
+
 /// Our local `exported_generic_symbols` (design/backend.md#query-overrides): rustc lists the
 /// native CGU's generic items; the VM functions' symbols the image defines are added as
 /// rustc would list them if they were in the CGU (`exported_generic_symbols_provider_local`,

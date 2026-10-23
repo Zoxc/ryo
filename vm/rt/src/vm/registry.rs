@@ -87,6 +87,7 @@ pub unsafe fn register(headers: *const *const u8, n: usize) {
         if view.text_ptr().is_null() && hdr.text_size != 0 {
             fatal("ryo_vm_register: image is not linked");
         }
+        super::jit::registered(&view);
         let rt = ImageRt { view };
         let p = alloc_forever(&g, size_of::<ImageRt>(), align_of::<ImageRt>()).cast::<ImageRt>();
         // SAFETY: fresh allocation for one ImageRt; it is never freed, so `&'static` is valid.

@@ -1028,12 +1028,14 @@ fn concurrent_registration() {
     }
 }
 
-// ---- JIT counters and the no-op trip ----
+// ---- JIT counters and the no-op trip (without the `jit` feature; tests/jit.rs has the JIT) ----
 
 /// The record [`tick`] resets.
+#[cfg(not(feature = "jit"))]
 static TICK: AtomicUsize = AtomicUsize::new(0);
 
 /// Native: runs `TICK`'s counter out, so that the next counter check trips.
+#[cfg(not(feature = "jit"))]
 fn tick() {
     unsafe { (*(TICK.load(Ordering::Relaxed) as *mut JitRecord)).ctr = 0 };
 }
@@ -1042,6 +1044,7 @@ fn tick() {
 /// every kind (integer and SSE registers, the stack, an sret pointer) arrive intact, loops
 /// keep their state, and the counter ends at `i64::MAX`, minus what ran since.
 #[test]
+#[cfg(not(feature = "jit"))]
 fn jit_trips() {
     use ryo_bytecode::asm::{ArgReg, ENTRY_COUNT};
     let mut w = ImageWriter::new(unique_scid());
@@ -1136,6 +1139,7 @@ fn jit_trips() {
 /// Panics unwind through frames that tripped, at the entry and at a loop head, and their
 /// landing pads run.
 #[test]
+#[cfg(not(feature = "jit"))]
 fn jit_trips_unwind() {
     let mut w = ImageWriter::new(unique_scid());
     let s_boom = w.symbol("boom", 0);

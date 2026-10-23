@@ -65,6 +65,8 @@ modeled on cg_clif's `build_system/`.
        build scripts with plain rustc, and every other crate with `rustc-ryo`. `ryo_rt` can't
        be ryo-built: every ryo-built crate depends on it, so it and what it depends on (only
        `core`: `ryo_rt` is `#![no_std]`, [vm.md](vm.md#runtime-crate-ryo_rt)) stay LLVM-built.
+       It is built without its `jit` feature (which would need std): there the JIT records'
+       trips are the no-op JIT ([vm.md](vm.md#jit-records-and-counters)).
      - The copy adds `ryo_rt` and `ryo_bytecode` to the library workspace (manifests pointing
        at `vm/`'s sources, on the workspace's `core`), and a `ryo_rt` dependency to `alloc` and
        `rustc-std-workspace-core`, which every other crate depends on. That orders `ryo_rt`
@@ -82,8 +84,9 @@ modeled on cg_clif's `build_system/`.
      `-Copt-level=3 -Ccodegen-units=1 -Cpanic=unwind -Cembed-bitcode=yes` regardless of the
      user's profile (bitcode, like std's, so `-Clto` builds can include it), and
      installed next to std. There is no native library to link. Its cargo features are
-     those listed in `RYO_RT_FEATURES` (comma-separated, such as `fp-rbp`,
-     [vm.md](vm.md#handlers)), none by default.
+     `jit` ([vm.md](vm.md#jit): the JIT, which uses this native std and enables
+     `ryo_bytecode`'s `alloc`) and those listed in `RYO_RT_FEATURES` (comma-separated, such
+     as `fp-rbp`, [vm.md](vm.md#handlers)). The ryo sysroot's `ryo_rt` has no `jit`.
 3. **Wrappers** (like cg_clif's `scripts/rustc-clif.rs`, `cargo-clif.rs`): tiny Rust programs
    compiled with plain rustc. They locate `dist/` from `current_exe()`, set
    `RUSTC_BOOTSTRAP=1` and `RUSTUP_TOOLCHAIN` (baked in at build time), and add:
@@ -160,7 +163,9 @@ This gives a third backend, built from the same toolchain, to compare against.
 - `test` checks (`rt-core-only`) that every sysroot's `ryo_rt` rlib references no symbols
   outside `core`, `compiler_builtins`, `ryo_bytecode`, libc and the panic runtime's entry
   points, and that no call path from its code reaches core's panic machinery
-  ([vm.md](vm.md#runtime-crate-ryo_rt), "No re-entry into the VM from the runtime").
+  ([vm.md](vm.md#runtime-crate-ryo_rt), "No re-entry into the VM from the runtime"). For the
+  native sysroot's, built with the JIT, std's symbols are allowed, but no call path from
+  `ryo_rt`'s code outside `vm::jit` and the trips may reach them or the panic machinery.
 - With a ryo sysroot in `dist/`, `test` also builds the corpus against it (`--sysroot ryo`):
   variants `ryo-std`, `ryo-std-O3` (output only, like `ryo-O3`),
   `ryo-std-lto` (`-Clto=fat` on the last crate) and `ryo-std-abort` (`-Cpanic=abort`,
@@ -193,7 +198,12 @@ This gives a third backend, built from the same toolchain, to compare against.
   against the decoder, the image writer and reader, every handler against a reference
   model, the handlers' codegen, and hand-assembled functions called as native functions
   ([vm.md](vm.md#handlers)), then `ryo_rt`'s again with `--features fp-rbp`, which takes
-  the frame-pointer path.
+  the frame-pointer path, and its JIT tests (`--features jit --test jit`, with and without
+  `fp-rbp`, [vm.md](vm.md#jit)).
+- The corpus runs with the environment `y test` gets, so `RYO_JIT_THRESHOLD=0
+  RYO_JIT_SYNC=1 ./y.sh test` runs every VM function's JIT code from its first call
+  ([vm.md](vm.md#jit)); the `backtrace` check sets `RYO_JIT=off`, since JIT frames have
+  no symbols.
 
 ### `bench crates`
 

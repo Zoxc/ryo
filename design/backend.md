@@ -257,6 +257,12 @@ and `codegen_crate` reads them.
     skips hidden ones only when `need_visibility` is set (`symbol_export.rs:327, 375-387`).
   - `y test` builds the corpus with `-Clto=fat` and `-Clto=thin -Copt-level=3` on the last
     crate (as cargo passes it), and `y test --cross` links it with `-Clto=fat` on PE.
+- `upstream_monomorphizations` → rustc's, without the instances of other crates' generics
+  that `ryo_rt` and `ryo_bytecode` export. With the JIT ([vm.md](vm.md#jit)) they
+  instantiate std's generics (`Vec<u32>`, `[u32]`'s sorts), and rustc shares
+  `#[inline(never)]` instances even without share-generics (`symbol_export.rs:389-398`), so
+  every program would link to the runtime's native copies instead of compiling its own
+  instances (to VM code).
 - `symbol_name` → for `c_main`, the target's `entry_name`. For local `LocalCopy` instances without an
   attribute-given symbol, the default symbol plus `.ryo<StableCrateId as 16 hex digits>` (see
   Linkage). Everything else uses the
@@ -296,7 +302,8 @@ Environment variables read by the backend (and `y test`):
 - `RYO_BACKEND_MARKER` prints `ryo backend: init` from `init` and `ryo backend: partition`
   from the partition provider, so tests can tell that the backend and its override ran.
 
-`ryo_rt` reads no environment variables. `y build` reads `RYO_RT_FEATURES`, extra cargo features for the sysroot's `ryo_rt` (such as `fp-rbp`,
+`ryo_rt` reads only its JIT's (`RYO_JIT`, `RYO_JIT_THRESHOLD`, `RYO_JIT_SYNC`,
+`RYO_JIT_PERFMAP`, `RYO_JIT_LOG`, [vm.md](vm.md#jit)), at run time. `y build` reads `RYO_RT_FEATURES`, extra cargo features for the sysroot's `ryo_rt` (such as `fp-rbp`,
 [vm.md](vm.md#handlers)); the backend follows `ryo_rt`'s `FP_ARG`.
 
 No MIR is overridden or synthesized, and no DefIds are created. rustc freezes definitions

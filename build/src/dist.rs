@@ -132,9 +132,13 @@ fn build_runtime(root: &Path, target: &Path, dist: &Path, cross: Option<&str>) -
     // carry bitcode for `-Clto` builds against it.
     let rustflags = [&sysroot_flag, "-Ccodegen-units=1", "-Cpanic=unwind", "-Cembed-bitcode=yes"];
     let mut cargo = cmd("cargo");
-    // `RYO_RT_FEATURES` sets features, such as `fp-rbp` for measurements
-    // (design/build.md#test-and-bench).
-    let features = std::env::var("RYO_RT_FEATURES").unwrap_or_default();
+    // The JIT, which uses this (native) std (design/vm.md, "JIT"); `RYO_RT_FEATURES` adds
+    // features, such as `fp-rbp` for measurements (design/build.md#test-and-bench).
+    let mut features = String::from("jit");
+    for f in std::env::var("RYO_RT_FEATURES").unwrap_or_default().split([',', ' ']).filter(|f| !f.is_empty()) {
+        features.push(',');
+        features.push_str(f);
+    }
     cargo.args(["build", "--release", "-p", "ryo_rt", "--features", &features]);
     if let Some(t) = cross {
         cargo.args(["--target", t]);
