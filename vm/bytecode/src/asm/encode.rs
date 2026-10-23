@@ -38,6 +38,13 @@ pub enum Ref {
     Data(Data),
     /// An offset in the function's [`Encoded::rodata`].
     Ro(u32),
+    /// The function's own JIT record (`image::JitRecord`), which its counter stubs load
+    /// ([`Mode::counters`]).
+    Rec,
+    /// The counter of the function's JIT record from the field of `sub qword [rip + x],
+    /// imm8`, which the immediate follows: the field holds `record - (field + 5)`, so this
+    /// target is the record's address less one.
+    RecCtr,
 }
 
 /// A relocated field: the 4 bytes at `at`.
@@ -78,6 +85,13 @@ pub struct Encoded {
     /// [`Asm::storage_end`]), sorted by position. Like `dropped`, side data for the decoder:
     /// the machine code doesn't show them.
     pub scopes: Vec<Scope>,
+    /// Where the prologue starts: after the entry's counter check with
+    /// [`Mode::counters`], else 0.
+    pub prologue: u32,
+    /// Where the out-of-line stub of the entry's counter starts, the last element of the
+    /// code (its frame isn't set up yet, unlike everywhere else past the prologue); the
+    /// code's length without counters.
+    pub entry_stub: u32,
 }
 
 /// A change in which frame bytes may be reached through a pointer, at a code position. In
@@ -1183,7 +1197,7 @@ impl Asm {
 
         // Loop heads: labels bound before a branch to them.
         let mut head = vec![false; pieces.len() + 1];
-        if mode.align_loops {
+        if mode.align_loops || mode.counters {
             for (to, k) in targets {
                 let at = labels[to.0 as usize];
                 debug_assert_ne!(at, usize::MAX, "unbound label");
@@ -1197,6 +1211,18 @@ impl Asm {
         // constants resolved. `remap[k]` is the element of piece `k` (after its padding).
         let mut out: Vec<Laid> = Vec::with_capacity(pieces.len() + 8);
         let fixed = |out: &mut Vec<Laid>, item| out.push(Laid::Fixed { item, site: None });
+        // The counter checks' `js`s (element indices), the entry's first, each continuing at
+        // the element after it; their stubs follow the code.
+        let mut checks = Vec::new();
+        let check = |out: &mut Vec<Laid>, checks: &mut Vec<usize>, k: u8| {
+            fixed(out, Item::CtrSub(k));
+            checks.push(out.len());
+            out.push(Laid::Branch { cond: Cond::S, to: usize::MAX, long: false });
+        };
+        if mode.counters {
+            check(&mut out, &mut checks, super::ENTRY_COUNT);
+        }
+        let prologue_at = out.len();
         for item in prologue(frame_size, mode) {
             fixed(&mut out, item);
         }
@@ -1216,9 +1242,15 @@ impl Asm {
         // too, as they take effect before the next instruction.
         let mut empty = Vec::new();
         let mut scopes = Vec::new();
+        // A loop head's counter check comes before the instruction, after its padding and
+        // before the scopes there take effect, so every branch to the head passes it.
+        let mut head_check = false;
         for (k, p) in pieces.into_iter().enumerate() {
             if head[k] {
-                out.push(Laid::Align);
+                if mode.align_loops {
+                    out.push(Laid::Align);
+                }
+                head_check |= mode.counters;
             }
             if matches!(p, Piece::Gone | Piece::Dead { .. }) {
                 remap.push(usize::MAX);
@@ -1235,6 +1267,9 @@ impl Asm {
             remap.push(out.len());
             for e in empty.drain(..) {
                 remap[e] = out.len();
+            }
+            if core::mem::take(&mut head_check) {
+                check(&mut out, &mut checks, 1);
             }
             out.push(match p {
                 Piece::Fixed { item, site } => {
@@ -1278,13 +1313,35 @@ impl Asm {
                 }
             });
         }
-        if head.last() == Some(&true) {
+        if head.last() == Some(&true) && mode.align_loops {
             out.push(Laid::Align);
         }
+        debug_assert!(!head_check, "a loop head at the end");
         out.append(&mut scopes);
         remap.push(out.len());
         for e in empty {
             remap[e] = out.len();
+        }
+        // The counter stubs: the loop heads' in order, then the entry's. Each loads the
+        // record into `r11` (and a head its index into `eax`), calls through the record's
+        // slot, and on return jumps back after its check.
+        let mut entry_stub = out.len();
+        if mode.counters {
+            let (entry, heads) = checks.split_first().expect("the entry's check");
+            for (n, &js) in heads.iter().chain([entry]).enumerate() {
+                let stub = out.len();
+                let Laid::Branch { to, .. } = &mut out[js] else { unreachable!() };
+                *to = stub;
+                fixed(&mut out, Item::Lea(Reg::R11, Ref::Rec));
+                if js == *entry {
+                    entry_stub = stub;
+                    fixed(&mut out, Item::CallR11(crate::image::JIT_ENTRY_SLOT));
+                } else {
+                    fixed(&mut out, Item::SetReg(Reg::Rax, n as u64));
+                    fixed(&mut out, Item::CallR11(crate::image::JIT_OSR_SLOT));
+                }
+                out.push(Laid::Branch { cond: Cond::Always, to: js + 1, long: false });
+            }
         }
         // Piece indices to element indices.
         for &b in &branches {
@@ -1304,7 +1361,7 @@ impl Asm {
                 *p = Some(remap[pad]);
             }
         }
-        let mut e = layout_code(out);
+        let mut e = layout_code(out, [prologue_at, entry_stub]);
         e.rodata = rodata.bytes;
         e
     }
@@ -1362,7 +1419,7 @@ pub(super) fn fp_item(reg: Reg, frame_size: u32, mode: Mode) -> Item {
 /// time.
 fn layouts(fp_arg: bool) -> &'static [Layout] {
     const fn all(fp_arg: bool) -> [Layout; crate::full::ALL_OPCODES.len()] {
-        let mode = Mode { fp_arg, frame_pointer: true, align_loops: false, pe: false };
+        let mode = Mode { fp_arg, frame_pointer: true, align_loops: false, pe: false, counters: false };
         let mut out = [layout(Opcode::Jmp, mode); crate::full::ALL_OPCODES.len()];
         let mut i = 0;
         while i < out.len() {
@@ -1377,7 +1434,7 @@ fn layouts(fp_arg: bool) -> &'static [Layout] {
 }
 
 /// Lays out the elements (relaxing branches) and writes the code.
-fn layout_code(mut pieces: Vec<Laid>) -> Encoded {
+fn layout_code(mut pieces: Vec<Laid>, [prologue, entry_stub]: [usize; 2]) -> Encoded {
     const VAR: u32 = u32::MAX;
     let n = pieces.len();
     // Lengths that don't depend on the position (`VAR` for the others), and the short
@@ -1469,6 +1526,8 @@ fn layout_code(mut pieces: Vec<Laid>) -> Encoded {
         }
     }
     debug_assert_eq!(out.code.len(), pos[n] as usize);
+    out.prologue = pos[prologue];
+    out.entry_stub = pos[entry_stub];
     out
 }
 
@@ -1550,9 +1609,9 @@ mod tests {
         // Every opcode with a handler has a layout (const-evaluable for all of them).
         for &op in crate::full::ALL_OPCODES {
             if super::super::has_handler(op) {
-                let l = layout(op, Mode { fp_arg: false, frame_pointer: true, align_loops: true, pe: false });
+                let l = layout(op, Mode { fp_arg: false, frame_pointer: true, align_loops: true, pe: false, counters: true });
                 assert!(l.regs as usize <= super::super::ARG_REGS);
-                let l = layout(op, Mode { fp_arg: true, frame_pointer: false, align_loops: true, pe: false });
+                let l = layout(op, Mode { fp_arg: true, frame_pointer: false, align_loops: true, pe: false, counters: true });
                 assert!(l.regs as usize <= super::super::ARG_REGS);
             }
         }

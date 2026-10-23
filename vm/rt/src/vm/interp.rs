@@ -45,7 +45,8 @@ use super::sys::fatal;
 /// How the machine code passes `fp`: the backend reads this (through `FP_ARG`) and encodes
 /// to match. The handlers work with and without a frame pointer when they take `fp` in
 /// `rdi`; tests encode without one then. The other fields don't concern the handlers.
-pub const MODE: asm::Mode = asm::Mode { fp_arg: !cfg!(feature = "fp-rbp"), frame_pointer: cfg!(feature = "fp-rbp"), align_loops: false, pe: false };
+pub const MODE: asm::Mode =
+    asm::Mode { fp_arg: !cfg!(feature = "fp-rbp"), frame_pointer: cfg!(feature = "fp-rbp"), align_loops: false, pe: false, counters: false };
 
 /// Whether handlers take `fp` in `rdi`; the backend checks it agrees with its encoding.
 #[rustc_diagnostic_item = "ryo_rt_fp_arg"]

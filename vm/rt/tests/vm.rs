@@ -1027,3 +1027,147 @@ fn concurrent_registration() {
         h.join().unwrap();
     }
 }
+
+// ---- JIT counters and the no-op trip ----
+
+/// The record [`tick`] resets.
+static TICK: AtomicUsize = AtomicUsize::new(0);
+
+/// Native: runs `TICK`'s counter out, so that the next counter check trips.
+fn tick() {
+    unsafe { (*(TICK.load(Ordering::Relaxed) as *mut JitRecord)).ctr = 0 };
+}
+
+/// Functions run through the no-op JIT's trips, at the entry and at loop heads: arguments of
+/// every kind (integer and SSE registers, the stack, an sret pointer) arrive intact, loops
+/// keep their state, and the counter ends at `i64::MAX`, minus what ran since.
+#[test]
+fn jit_trips() {
+    use ryo_bytecode::asm::{ArgReg, ENTRY_COUNT};
+    let mut w = ImageWriter::new(unique_scid());
+    let s_tick = w.symbol("tick", 0);
+
+    // spill(p, a1..a5, x0..x7, s0, s1) = s0 + s1, storing a1..a5, x0..x7, s0, s1 at p[0..15].
+    let mut a = Asm::new();
+    for i in 0..6 {
+        a.i(arg(-8 - 8 * i as i32, i));
+    }
+    for i in 0..8 {
+        a.i(Insn::Arg { d: Slot(-56 - 8 * i as i32), r: ArgReg { xmm: true, size: 8, index: i }.word() });
+    }
+    let mut srcs: Vec<i32> = (1..6).map(|i| -8 - 8 * i).collect();
+    srcs.extend((0..8).map(|i| -56 - 8 * i));
+    srcs.extend([16, 24]);
+    for (k, &s) in srcs.iter().enumerate() {
+        a.i(Insn::StoreW64 { m: Mem { p: Slot(-8), k: 8 * k as i32 }, s: Slot(s) });
+    }
+    a.i(Insn::AddW64 { d: Slot(-128), a: Slot(16), b: Slot(24) });
+    a.ret(Slot(-128), 8);
+    let spill = w.add_function(func(a.done(), 128, 16, 8));
+
+    // triple(x) = [x, x + 1, x + 2], through the sret pointer.
+    let mut a = Asm::new();
+    a.sret(Slot(-48));
+    a.i(Insn::MovW64 { d: Slot(-32), s: Slot(16) });
+    a.i(Insn::AddImmW64 { d: Slot(-24), a: Slot(16), imm: 1 });
+    a.i(Insn::AddImmW64 { d: Slot(-16), a: Slot(16), imm: 2 });
+    a.ret(Slot(-32), 24);
+    let triple = w.add_function(func(a.done(), 48, 8, 24));
+
+    // nest(n, m) = n * m by two nested counting loops (two loop heads), the inner calling
+    // `tick` every iteration. n@16, m@24, i@-8, j@-16, acc@-24.
+    let mut a = Asm::new();
+    a.i(Insn::ImmW64 { d: Slot(-24), imm: 0 });
+    a.i(Insn::ImmW64 { d: Slot(-8), imm: 0 });
+    let outer = a.i(Insn::BrLtUW64 { a: Slot(-8), b: Slot(16), neg: F, t: Target(0) });
+    a.i(Insn::ImmW64 { d: Slot(-16), imm: 0 });
+    let inner = a.i(Insn::BrLtUW64 { a: Slot(-16), b: Slot(24), neg: F, t: Target(0) });
+    a.i(Insn::CallSym { d: Slot(0), sym: s_tick, k: 0, a: List::from_words(&[]) });
+    a.i(Insn::AddImmW64 { d: Slot(-24), a: Slot(-24), imm: 1 });
+    a.i(Insn::AddImmW64 { d: Slot(-16), a: Slot(-16), imm: 1 });
+    let back = a.i(Insn::Jmp { t: Target(0) });
+    a.patch(back, "t", inner);
+    let after = a.i(Insn::AddImmW64 { d: Slot(-8), a: Slot(-8), imm: 1 });
+    a.patch(inner, "t", after);
+    let back = a.i(Insn::Jmp { t: Target(0) });
+    a.patch(back, "t", outer);
+    let done = a.ret(Slot(-24), 8);
+    a.patch(outer, "t", done);
+    let nest = w.add_function(func(a.done(), 32, 16, 8));
+
+    let img = build(w, &[("tick", tick as *const () as usize)]);
+
+    type Spill = extern "C" fn(*mut u64, u64, u64, u64, u64, u64, f64, f64, f64, f64, f64, f64, f64, f64, u64, u64) -> u64;
+    let f: Spill = unsafe { std::mem::transmute(img.code(spill)) };
+    for start in [0, 5, JIT_THRESHOLD] {
+        img.set_counter(spill, start);
+        let mut out = [0u64; 15];
+        let xs: Vec<f64> = (0..8).map(|i| i as f64 + 0.5).collect();
+        let r = f(out.as_mut_ptr(), 1, 2, 3, 4, 5, xs[0], xs[1], xs[2], xs[3], xs[4], xs[5], xs[6], xs[7], 1 << 40, 7);
+        assert_eq!(r, (1 << 40) + 7);
+        let mut want: Vec<u64> = (1..6).collect();
+        want.extend(xs.iter().map(|x| x.to_bits()));
+        want.extend([1 << 40, 7]);
+        assert_eq!(out[..], want[..], "counter {start}");
+        // Tripped iff the counter ran out.
+        let tripped = start < ENTRY_COUNT as i64;
+        assert_eq!(img.counter(spill), if tripped { i64::MAX } else { start - ENTRY_COUNT as i64 });
+    }
+
+    img.set_counter(triple, 0);
+    assert_eq!(ok::<_, [u64; 3]>(img.id(triple), (5u64,)), [5, 6, 7]);
+    assert_eq!(img.counter(triple), i64::MAX);
+
+    // At the entry, then (`tick`) at every inner and outer loop head.
+    TICK.store(img.record(nest) as usize, Ordering::Relaxed);
+    for start in [0, ENTRY_COUNT as i64, JIT_THRESHOLD] {
+        img.set_counter(nest, start);
+        assert_eq!(ok::<_, u64>(img.id(nest), (3u64, 4u64)), 12);
+        // The last `tick`'s trip was at the inner head; one outer check since.
+        assert_eq!(img.counter(nest), i64::MAX - 1);
+    }
+    // Without `tick`: the outer head trips at its first check (the entry leaves the counter at
+    // 0); three more outer and three inner checks follow.
+    img.set_counter(nest, ENTRY_COUNT as i64);
+    assert_eq!(ok::<_, u64>(img.id(nest), (3u64, 0u64)), 0);
+    assert_eq!(img.counter(nest), i64::MAX - 6);
+}
+
+/// Panics unwind through frames that tripped, at the entry and at a loop head, and their
+/// landing pads run.
+#[test]
+fn jit_trips_unwind() {
+    let mut w = ImageWriter::new(unique_scid());
+    let s_boom = w.symbol("boom", 0);
+    // ub(x, log) loops i over 0..3 calling boom(x + i); landing pad: log[0] = 42, resume.
+    // x@16, log@24, i@-8, t@-16, r@-24, exception@-32, tmp@-40, the argument at -48.
+    let mut a = Asm::new();
+    a.i(Insn::ImmW64 { d: Slot(-8), imm: 0 });
+    let head = a.i(Insn::BrLtUImmW64 { a: Slot(-8), imm: 3, neg: F, t: Target(0) });
+    a.i(Insn::AddW64 { d: Slot(-16), a: Slot(16), b: Slot(-8) });
+    let site = a.i(Insn::CallSym { d: Slot(-24), sym: s_boom, k: 8, a: List::from_words(&regs(&[-16])) });
+    a.i(Insn::AddImmW64 { d: Slot(-8), a: Slot(-8), imm: 1 });
+    let back = a.i(Insn::Jmp { t: Target(0) });
+    a.patch(back, "t", head);
+    let done = a.ret(Slot(-24), 8);
+    a.patch(head, "t", done);
+    let c = a.i(Insn::Lpad { x: Slot(-32) });
+    a.i(Insn::ImmW64 { d: Slot(-40), imm: 42 });
+    a.i(Insn::StoreW64 { m: Mem { p: Slot(24), k: 0 }, s: Slot(-40) });
+    let r = a.i(Insn::Resume { x: Slot(-32) });
+    let mut f = func(a.done(), 48, 16, 8);
+    f.cleanup = vec![CleanupEntry { offset: site, target: c }, CleanupEntry { offset: r, target: CONTINUE }];
+    let ub = w.add_function(f);
+    let img = build(w, &[("boom", boom as *const () as usize)]);
+
+    for start in [0, ryo_bytecode::asm::ENTRY_COUNT as i64] {
+        let mut log = [0u64; 1];
+        img.set_counter(ub, start);
+        // boom(5), boom(6), boom(7) panics.
+        let e = call::<_, u64>(img.id(ub), (5u64, log.as_mut_ptr() as u64)).unwrap_err();
+        assert_eq!((payload(e), log), (Boom(7), [42]));
+        assert!(img.counter(ub) > i64::MAX - 8, "counter {start}: {}", img.counter(ub));
+        img.set_counter(ub, start);
+        assert_eq!(ok::<_, u64>(img.id(ub), (1u64, log.as_mut_ptr() as u64)), 3);
+    }
+}

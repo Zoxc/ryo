@@ -19,7 +19,8 @@
 //! | constants | the constant pool, aligned to its most aligned allocation |
 //!
 //! **Writable**: the site cache (`site_count` pointer-sized zeroed slots), then the fixup
-//! area at `Header::fixup_area` (constant allocations patched at registration, PE only).
+//! area at `Header::fixup_area` (constant allocations patched at registration, PE only),
+//! then with [`Mode::counters`] one [`JitRecord`] per function at `Header::jit_records`.
 //!
 //! The header's `data` field is a pointer to the writable section, filled by a relocation.
 //!
@@ -62,6 +63,7 @@ pub const MODE_FP_ARG: u32 = 1;
 pub const MODE_FRAME_POINTER: u32 = 2;
 pub const MODE_ALIGN_LOOPS: u32 = 4;
 pub const MODE_PE: u32 = 8;
+pub const MODE_COUNTERS: u32 = 16;
 
 /// `Header::mode` of `mode`.
 pub const fn mode_bits(mode: Mode) -> u32 {
@@ -69,7 +71,60 @@ pub const fn mode_bits(mode: Mode) -> u32 {
         | (mode.frame_pointer as u32) * MODE_FRAME_POINTER
         | (mode.align_loops as u32) * MODE_ALIGN_LOOPS
         | (mode.pe as u32) * MODE_PE
+        | (mode.counters as u32) * MODE_COUNTERS
 }
+
+/// A function's JIT record, in the writable section ([`Header::jit_records`], one per
+/// function in function order): its counter, which the code's counter checks count down
+/// ([`Mode::counters`]), the slots their stubs call through, and the JIT's state. One cache
+/// line each, so that the counters of hot functions don't share one.
+///
+/// The writer sets `ctr` to [`JIT_THRESHOLD`], `entry` and `osr` to the runtime's
+/// `ryo_jit_trip_entry` and `ryo_jit_trip_osr`, `func` to the function's index and `header`
+/// to the image's header (relocated), the rest to 0.
+#[repr(C, align(64))]
+#[derive(Debug)]
+pub struct JitRecord {
+    /// Counts down: a call subtracts [`crate::asm::ENTRY_COUNT`], a loop iteration 1, and
+    /// a negative result takes the stub. Racy and lossy across threads, by design.
+    pub ctr: i64,
+    /// What the entry's stub calls ([`JIT_ENTRY_SLOT`]), with `r11` the record and the
+    /// return address the continuation after the check, before the prologue.
+    pub entry: *const u8,
+    /// What a loop head's stub calls ([`JIT_OSR_SLOT`]), with `r11` the record, `eax` the
+    /// head's index and the return address the continuation after the head's check.
+    pub osr: *const u8,
+    /// The JIT queue's link.
+    pub next: *mut JitRecord,
+    /// [`JIT_COLD`], [`JIT_QUEUED`], [`JIT_DONE`] or [`JIT_FAILED`].
+    pub state: core::sync::atomic::AtomicU32,
+    /// The function's index in the image.
+    pub func: u32,
+    /// The image's header.
+    pub header: *const Header,
+    pub reserved: [u64; 2],
+}
+
+/// The counter a JIT record starts at ([`JitRecord::ctr`]): about 600 calls or 10 000 loop
+/// iterations.
+pub const JIT_THRESHOLD: i64 = 10_000;
+/// The offsets of [`JitRecord::entry`] and [`JitRecord::osr`], which the counter stubs call
+/// through (`call [r11 + slot]`).
+pub const JIT_ENTRY_SLOT: u8 = 8;
+pub const JIT_OSR_SLOT: u8 = 16;
+/// [`JitRecord::state`]s.
+pub const JIT_COLD: u32 = 0;
+pub const JIT_QUEUED: u32 = 1;
+pub const JIT_DONE: u32 = 2;
+pub const JIT_FAILED: u32 = 3;
+
+const _: () = {
+    assert!(mem::size_of::<JitRecord>() == 64);
+    assert!(mem::offset_of!(JitRecord, entry) == JIT_ENTRY_SLOT as usize);
+    assert!(mem::offset_of!(JitRecord, osr) == JIT_OSR_SLOT as usize);
+    assert!(mem::offset_of!(JitRecord, func) == 36);
+    assert!(mem::offset_of!(JitRecord, header) == 40);
+};
 
 /// The 32-bit crate hash the registry uses, folded from the crate's
 /// `StableCrateId` (its `u64` value).
@@ -129,6 +184,9 @@ pub struct Header {
     pub fixup_area: u32,
     /// The [`Mode`] the code was encoded in ([`mode_bits`]).
     pub mode: u32,
+    /// The [`JitRecord`]s: their byte offset in the writable section (64-aligned) and count
+    /// (the function count with [`Mode::counters`], else 0).
+    pub jit_records: Span,
 }
 
 /// A function table entry.
@@ -346,7 +404,7 @@ impl<'a> Image<'a> {
         cast::<ScopeEntry>(bytes, header.scopes, "scopes")?;
         cast::<CallSiteEntry>(bytes, header.call_sites, "call sites")?;
         cast::<DroppedEntry>(bytes, header.dropped, "dropped stores")?;
-        let mode = MODE_FP_ARG | MODE_FRAME_POINTER | MODE_ALIGN_LOOPS | MODE_PE;
+        let mode = MODE_FP_ARG | MODE_FRAME_POINTER | MODE_ALIGN_LOOPS | MODE_PE | MODE_COUNTERS;
         if header.mode & !mode != 0 || !Self::mode_of(header.mode).valid() {
             return Err(ImageError::BadMode);
         }
@@ -355,6 +413,11 @@ impl<'a> Image<'a> {
         }
         let sites_end = header.site_count as u64 * 8;
         if sites_end > header.fixup_area as u64 || header.fixup_area > header.data_size {
+            return Err(ImageError::BadData);
+        }
+        let r = header.jit_records;
+        let records = if img.mode().counters { header.functions.count } else { 0 };
+        if r.count != records || r.off % 64 != 0 || r.off as u64 + 64 * r.count as u64 > header.data_size as u64 {
             return Err(ImageError::BadData);
         }
         Ok(img)
@@ -480,6 +543,7 @@ impl<'a> Image<'a> {
             frame_pointer: m & MODE_FRAME_POINTER != 0,
             align_loops: m & MODE_ALIGN_LOOPS != 0,
             pe: m & MODE_PE != 0,
+            counters: m & MODE_COUNTERS != 0,
         }
     }
 
@@ -559,6 +623,11 @@ impl<'a> Image<'a> {
         self.data_ptr().cast()
     }
 
+    /// The JIT records, one per function ([`Header::jit_records`]; empty without counters).
+    pub fn jit_records(&self) -> *mut JitRecord {
+        self.data_ptr().wrapping_add(self.header.jit_records.off as usize).cast()
+    }
+
     /// The fixup area, base of [`Data`](crate::full::Data) offsets.
     pub fn fixup_area(&self) -> *mut u8 {
         self.data_ptr().wrapping_add(self.header.fixup_area as usize)
@@ -618,7 +687,8 @@ impl ImageResolver<'_> {
             .map(|d| crate::asm::DroppedStore::from_parts(d.code_offset, d.frame_offset, d.size, d.reg))
             .collect::<Option<Vec<_>>>()?;
         let addr = self.image.header().text.wrapping_add(f.code_off as u64);
-        Some(crate::asm::decode_linked(code, addr, self, &sites, &dropped, &scopes, self.image.mode()))
+        let record = self.image.jit_records().wrapping_add(func as usize) as u64;
+        Some(crate::asm::decode_linked(code, addr, record, self, &sites, &dropped, &scopes, self.image.mode()))
     }
 }
 
@@ -646,7 +716,9 @@ impl crate::asm::Resolver for ImageResolver<'_> {
         };
         let ro = self.image.bytes().as_ptr() as u64;
         let consts = (ro.wrapping_add(h.consts.off as u64), h.consts.count as u64);
-        let data = (h.data.wrapping_add(h.fixup_area as u64), h.data_size.saturating_sub(h.fixup_area) as u64);
+        // The fixup area ends where the JIT records start.
+        let data_end = if h.jit_records.count != 0 { h.jit_records.off } else { h.data_size };
+        let data = (h.data.wrapping_add(h.fixup_area as u64), data_end.saturating_sub(h.fixup_area) as u64);
         if let Some(o) = within(h.text, h.text_size as u64, false) {
             let fs = self.image.functions();
             return fs.binary_search_by_key(&o, |f| f.code_off).ok().map(|i| Ref::Func(Func(i as u32)));

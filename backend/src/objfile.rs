@@ -29,6 +29,11 @@ pub const REGISTER_SYMBOL: &str = "ryo_vm_register";
 /// The stack probe of large frames, in `ryo_rt` (before mangling).
 pub const PROBE_SYMBOL: &str = "ryo_probe_stack";
 
+/// The no-op JIT's trip entry points in `ryo_rt`, which the JIT records' slots start at
+/// (before mangling).
+pub const TRIP_ENTRY_SYMBOL: &str = "ryo_jit_trip_entry";
+pub const TRIP_OSR_SYMBOL: &str = "ryo_jit_trip_osr";
+
 /// The name of opcode `op`'s handler in `ryo_rt` (before mangling).
 pub fn handler_name(op: Opcode) -> String {
     format!("ryo_h_{op:?}")
@@ -420,6 +425,7 @@ pub fn write_image(
         .collect::<Result<Vec<SymbolId>, String>>()?;
     // Handler symbols, by opcode: most relocations are handler calls.
     let mut handlers: Vec<Option<SymbolId>> = vec![None; ryo_bytecode::full::ALL_OPCODES.len()];
+    let (mut trip_entry, mut trip_osr) = (None, None);
     for r in &image.relocs {
         let symbol = match r.target {
             RelocTarget::Symbol(s) => syms[s.0 as usize],
@@ -428,6 +434,8 @@ pub fn write_image(
                 *handlers[op as usize].get_or_insert_with(|| undefined(&mut obj, &rt_symbol(&handler_name(op)), SymbolKind::Text))
             }
             RelocTarget::Probe => undefined(&mut obj, &rt_symbol(PROBE_SYMBOL), SymbolKind::Text),
+            RelocTarget::TripEntry => *trip_entry.get_or_insert_with(|| undefined(&mut obj, &rt_symbol(TRIP_ENTRY_SYMBOL), SymbolKind::Text)),
+            RelocTarget::TripOsr => *trip_osr.get_or_insert_with(|| undefined(&mut obj, &rt_symbol(TRIP_OSR_SYMBOL), SymbolKind::Text)),
         };
         obj.add_relocation(section(r.section), Relocation { offset: r.offset, symbol, addend: r.addend, flags: fmt.reloc(r.kind) })
             .map_err(|e| format!("image relocation: {e}"))?;

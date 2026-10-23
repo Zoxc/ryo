@@ -32,6 +32,9 @@ pub struct Decoded {
     /// The word offsets of the inline instructions whose store the encoder dropped as dead
     /// ([`super::Encoded::dropped`]), sorted: what [`super::encode_reduced`] drops again.
     pub dropped: Vec<u32>,
+    /// The word offsets of the loop heads (the targets of backward branches), in order: with
+    /// [`Mode::counters`], loop head `n`'s counter stub passes `n` (the OSR entry it asks for).
+    pub heads: Vec<u32>,
 }
 
 /// Why machine code isn't the canonical form of any function: a description, and the byte
@@ -61,11 +64,14 @@ struct Proto {
     sites: Vec<(u32, u32)>,
     /// An inline instruction whose store was dropped.
     dropped: bool,
+    /// With counters, a loop head's counter check before it: its stub's position and the
+    /// position after the check, where the stub returns to.
+    counter: Option<(u32, u32)>,
 }
 
 impl Proto {
     fn new(op: Opcode, ops: Vec<Opnd>, pos: u32, sites: Vec<(u32, u32)>) -> Proto {
-        Proto { op, ops, handler: None, pos, sites, dropped: false }
+        Proto { op, ops, handler: None, pos, sites, dropped: false, counter: None }
     }
 
     /// The branch targets (byte positions).
@@ -89,6 +95,8 @@ struct Read {
     /// The scopes, each with the index of the instruction it comes before (the count for
     /// the end).
     scopes: Vec<(usize, Scope)>,
+    /// The loop heads' instruction indices, in order.
+    heads: Vec<usize>,
 }
 
 /// Decodes one function's machine code, with its relocations (sorted), rodata, call sites and
@@ -102,7 +110,7 @@ pub fn decode(
     scopes: &[Scope],
     mode: Mode,
 ) -> Result<Decoded, AsmError> {
-    let Read { protos, frame_size, actions, scopes } = read(code, Fields::Relocs(relocs), rodata, call_sites, dropped, scopes, mode, false)?;
+    let Read { protos, frame_size, actions, scopes, heads } = read(code, Fields::Relocs(relocs), rodata, call_sites, dropped, scopes, mode, false)?;
     let err = |at: u32, what: &'static str| AsmError { at, what };
     let ipos: Vec<u32> = protos.iter().map(|p| p.pos).collect();
     let index = |at: u32, b: u32| ipos.binary_search(&b).map_err(|_| err(at, "target isn't an instruction"));
@@ -133,7 +141,8 @@ pub fn decode(
     wpos.push(w);
     let scopes = scopes.into_iter().map(|(i, sc)| Scope { code_offset: wpos[i], ..sc }).collect();
     let dropped = protos.iter().zip(&wpos).filter(|(p, _)| p.dropped).map(|(_, &w)| w).collect();
-    Ok(Decoded { words, frame_size, cleanup, scopes, dropped })
+    let heads = heads.iter().map(|&i| wpos[i]).collect();
+    Ok(Decoded { words, frame_size, cleanup, scopes, dropped, heads })
 }
 
 /// Decodes one function's machine code, as [`decode`], to the reduced set
@@ -167,25 +176,28 @@ pub trait Resolver {
 /// Decodes one function's linked machine code at address `code_addr` to the reduced set, as
 /// [`decode_reduced`], with the references recovered from the resolved fields by `resolver`
 /// instead of a relocation list: a field whose target lies inside the function (past its
-/// first byte) is a branch or jump table within it, any other is the reference `resolver`
+/// first byte) is a branch or jump table within it, one to `record` is the function's JIT
+/// record ([`Ref::Rec`], with [`Mode::counters`]), any other is the reference `resolver`
 /// gives. The dropped stores aren't in the code: they come from the image's table
 /// ([`crate::image::ImageResolver::decode`]) or [`super::Encoded::dropped`].
+#[allow(clippy::too_many_arguments)]
 pub fn decode_linked(
     code: &[u8],
     code_addr: u64,
+    record: u64,
     resolver: &dyn Resolver,
     call_sites: &[CallSite],
     dropped: &[DroppedStore],
     scopes: &[Scope],
     mode: Mode,
 ) -> Result<Decoded, AsmError> {
-    let fields = Fields::Linked { addr: code_addr, resolver };
+    let fields = Fields::Linked { addr: code_addr, record, resolver };
     reduced_of(read(code, fields, resolver.code_consts(), call_sites, dropped, scopes, mode, true)?)
 }
 
 /// The reduced instruction words of a function read with handler calls in the reduced form.
 fn reduced_of(r: Read) -> Result<Decoded, AsmError> {
-    let Read { protos, frame_size, actions, scopes } = r;
+    let Read { protos, frame_size, actions, scopes, heads } = r;
     let ipos: Vec<u32> = protos.iter().map(|p| p.pos).collect();
     let index = |at: u32, b: u32| ipos.binary_search(&b).map(|i| i as u32).map_err(|_| AsmError { at, what: "target isn't an instruction" });
     let cleanup: Vec<_> = actions.iter().enumerate().filter_map(|(i, a)| a.map(|(pad, catch)| (i, pad, catch))).collect();
@@ -209,7 +221,9 @@ fn reduced_of(r: Read) -> Result<Decoded, AsmError> {
             }
         });
     }
-    Ok(reduced::words(&insns, &cleanup, &scopes, &dropped, frame_size))
+    let d = reduced::words(&insns, &cleanup, &scopes, &dropped, frame_size);
+    debug_assert_eq!(d.heads.len(), heads.len());
+    Ok(d)
 }
 
 /// Reads one function's machine code ([`decode`]), handler calls in the reduced form with
@@ -231,6 +245,17 @@ fn read(
     if !mode.valid() {
         return Err(err(0, "unsupported mode"));
     }
+    // With counters, the entry's check comes first: its stub's position, and where the stub
+    // returns to.
+    let entry = if mode.counters {
+        match (c.item(), c.item()) {
+            (Ok(Item::CtrSub(super::ENTRY_COUNT)), Ok(Item::Branch { cond: Cond::S, target, .. })) => Some((target, c.pos)),
+            _ => return Err(err(0, "no counter check at the entry")),
+        }
+    } else {
+        None
+    };
+    let start = c.pos;
     let mut alloc = 0;
     loop {
         match c.item() {
@@ -250,7 +275,7 @@ fn read(
     if frame_size % 16 != 0 {
         return Err(err(0, "frame size not a multiple of 16"));
     }
-    c.pos = 0;
+    c.pos = start;
     for want in prologue(frame_size, mode) {
         let at = c.pos;
         if c.item().ok() != Some(want) {
@@ -266,11 +291,12 @@ fn read(
     // whole function is read. The first pass only finds the instructions and targets; the
     // second decodes them, with the cache cleared at the targets of the first.
     let body = c.pos;
-    let (protos, _) = instructions(&mut c, &fr, rodata, dropped, None)?;
+    let stubs = entry.map(|e| e.0);
+    let (protos, _) = instructions(&mut c, &fr, rodata, dropped, None, stubs)?;
     let mut targets: Vec<u32> = protos.iter().flat_map(Proto::targets).collect();
     targets.sort_unstable();
     c.pos = body;
-    let (protos, padded) = instructions(&mut c, &fr, rodata, dropped, Some(&targets))?;
+    let (protos, padded) = instructions(&mut c, &fr, rodata, dropped, Some(&targets), stubs)?;
 
     // Instruction positions → indices.
     let ipos: Vec<u32> = protos.iter().map(|p| p.pos).collect();
@@ -299,6 +325,35 @@ fn read(
     for i in 0..protos.len() {
         if (padded[i] && !head[i]) || (mode.align_loops && head[i] && ipos[i] % 16 != 0) {
             return Err(err(ipos[i], "loop head padding"));
+        }
+        if protos[i].counter.is_some() != (mode.counters && head[i]) {
+            return Err(err(ipos[i], "counter check not at a loop head"));
+        }
+    }
+    let heads: Vec<usize> = (0..protos.len()).filter(|&i| head[i]).collect();
+    // The counter stubs after the code: the loop heads' in order, then the entry's.
+    if let Some((entry_stub, entry_back)) = entry {
+        let checks = heads.iter().map(|&i| protos[i].counter.unwrap());
+        for (n, (stub, back)) in checks.chain([(entry_stub, entry_back)]).enumerate() {
+            let at = c.pos;
+            let bad = err(at, "counter stub");
+            if at != stub || c.item()? != Item::Lea(Reg::R11, Ref::Rec) {
+                return Err(bad);
+            }
+            if n < heads.len() {
+                if c.item()? != Item::SetReg(Reg::Rax, n as u64) || c.item()? != Item::CallR11(crate::image::JIT_OSR_SLOT) {
+                    return Err(bad);
+                }
+            } else if c.item()? != Item::CallR11(crate::image::JIT_ENTRY_SLOT) {
+                return Err(bad);
+            }
+            match c.item()? {
+                Item::Branch { cond: Cond::Always, target, .. } if target == back => {}
+                _ => return Err(bad),
+            }
+        }
+        if !c.at_end() {
+            return Err(err(c.pos, "code after the counter stubs"));
         }
     }
 
@@ -347,7 +402,7 @@ fn read(
     }
     // Scopes: before the first instruction at or after their position.
     let scopes = scopes.iter().map(|sc| (ipos.partition_point(|&p| p < sc.code_offset), *sc)).collect();
-    Ok(Read { protos, frame_size, actions, scopes })
+    Ok(Read { protos, frame_size, actions, scopes, heads })
 }
 
 fn read_u32(ro: &[u8], at: u32) -> Option<u32> {
@@ -373,17 +428,21 @@ fn op_targets(o: &Opnd) -> Vec<u32> {
 /// The instructions from the cursor to the end, and whether each is padded. With `targets`
 /// (sorted), the register cache is cleared at them and every inline sequence must be exactly
 /// as the cache emits it; without, inline sequences are only delimited ([`inline_insn`]).
+/// With counters, the code ends at the counter stubs: at the first loop head's, or without
+/// loop heads at the entry's, `entry_stub`.
 fn instructions(
     c: &mut Cursor<'_>,
     fr: &Frame,
     ro: &[u8],
     mut dropped: &[DroppedStore],
     targets: Option<&[u32]>,
+    entry_stub: Option<u32>,
 ) -> Result<(Vec<Proto>, Vec<bool>), AsmError> {
     let mut protos: Vec<Proto> = Vec::new();
     let mut padded = Vec::new();
     let mut cache = Cache::default();
-    while !c.at_end() {
+    let mut end = entry_stub;
+    while !c.at_end() && Some(c.pos) != end {
         let pad = c.padding();
         if pad != 0 && (!fr.mode.align_loops || pad >= 16 || c.pos % 16 != 0) {
             return Err(AsmError { at: c.pos, what: "padding" });
@@ -392,26 +451,41 @@ fn instructions(
         if targets.is_some_and(|t| t.binary_search(&c.pos).is_ok()) {
             cache = Cache::default();
         }
-        // `arg`s come first.
-        if protos.iter().all(|p| p.op == Opcode::Arg)
-            && let Some(p) = arg(c, fr.mode)
-        {
-            protos.push(p);
-            continue;
+        // A loop head's counter check.
+        let pos = c.pos;
+        let mut counter = None;
+        if fr.mode.counters {
+            let at = c.pos;
+            match (c.item(), c.item()) {
+                (Ok(Item::CtrSub(1)), Ok(Item::Branch { cond: Cond::S, target, .. })) => {
+                    counter = Some((target, c.pos));
+                    if protos.iter().all(|p| p.counter.is_none()) {
+                        end = Some(target);
+                    }
+                }
+                _ => c.pos = at,
+            }
         }
-        if let Some(p) = call_insn(c, fr, dropped) {
-            cache = Cache::default();
-            protos.push(p);
-            continue;
-        }
-        let p = match inline_insn(c, &mut cache, &mut dropped, targets.is_some()) {
-            Some(p) => p,
-            None => {
+        let p = 'p: {
+            // `arg`s come first.
+            if protos.iter().all(|p| p.op == Opcode::Arg)
+                && let Some(p) = arg(c, fr.mode)
+            {
+                break 'p p;
+            }
+            if let Some(p) = call_insn(c, fr, dropped) {
                 cache = Cache::default();
-                insn(c, fr, ro)?
+                break 'p p;
+            }
+            match inline_insn(c, &mut cache, &mut dropped, targets.is_some()) {
+                Some(p) => p,
+                None => {
+                    cache = Cache::default();
+                    insn(c, fr, ro)?
+                }
             }
         };
-        protos.push(p);
+        protos.push(Proto { pos, counter, ..p });
     }
     if let Some(d) = dropped.first() {
         return Err(AsmError { at: d.at, what: "dropped store not at the end of a sequence" });
@@ -473,7 +547,7 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8]) -> Result<Proto, AsmError> {
                 Some(_) => return Err(err(pos, "case count")),
             };
             let then = then(c, op, n, hat, &mut sites)?;
-            Proto { op, ops: Vec::new(), handler: Some((args, then)), pos, sites, dropped: false }
+            Proto { op, ops: Vec::new(), handler: Some((args, then)), pos, sites, dropped: false, counter: None }
         }
         Item::Call(Ref::Handler(op)) if has_handler(op) => {
             let mut ops = handler_operands(op, &setup, fr, ro, pos)?;

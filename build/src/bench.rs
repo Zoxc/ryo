@@ -301,11 +301,16 @@ impl iced_x86::SymbolResolver for Relocs {
         _address_size: u32,
     ) -> Option<iced_x86::SymbolResult<'_>> {
         let (start, end) = (insn.ip() as u32, insn.next_ip() as u32);
-        if let Some((_, to)) = self.0.iter().find(|(at, _)| (start..end).contains(at)) {
-            return Some(iced_x86::SymbolResult::with_str(address, to.as_str()));
-        }
         let near =
             insn.op_kinds().any(|k| matches!(k, iced_x86::OpKind::NearBranch16 | iced_x86::OpKind::NearBranch32 | iced_x86::OpKind::NearBranch64));
+        // The relocated operand only, not an immediate of the same instruction.
+        let relocated =
+            (near && insn.near_branch_target() == address) || (insn.is_ip_rel_memory_operand() && insn.ip_rel_memory_address() == address);
+        if let Some((_, to)) = self.0.iter().find(|(at, _)| (start..end).contains(at))
+            && relocated
+        {
+            return Some(iced_x86::SymbolResult::with_str(address, to.as_str()));
+        }
         if (near && insn.near_branch_target() == address) || (insn.is_ip_rel_memory_operand() && insn.ip_rel_memory_address() == address) {
             return self.1.get(&address).map(|l| iced_x86::SymbolResult::with_str(address, l.as_str()));
         }

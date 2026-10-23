@@ -16,8 +16,9 @@ pub use ryo_bytecode::asm::Mode;
 pub use ryo_bytecode::full::*;
 pub use ryo_bytecode::image::*;
 
-/// The encoding mode: the runtime's, with loop alignment on.
-pub const ENC: Mode = Mode { align_loops: true, pe: false, ..ryo_rt::vm::MODE };
+/// The encoding mode: the runtime's, with loop alignment and counters on, as the backend
+/// encodes.
+pub const ENC: Mode = Mode { align_loops: true, pe: false, counters: true, ..ryo_rt::vm::MODE };
 
 /// A code buffer with patchable branch targets.
 #[derive(Default)]
@@ -236,6 +237,8 @@ pub fn link(obj: ImageObject, syms: &[(&str, usize)]) -> Linked {
             RelocTarget::Section(s) => base(s),
             RelocTarget::Handler(op) => ryo_rt::vm::handler(op).unwrap_or_else(|| panic!("no handler for {op:?}")) as usize,
             RelocTarget::Probe => ryo_rt::vm::probe_stack as *const () as usize,
+            RelocTarget::TripEntry => ryo_rt::vm::trip_entry as *const () as usize,
+            RelocTarget::TripOsr => ryo_rt::vm::trip_osr as *const () as usize,
         };
         let v = (target as u64).wrapping_add(r.addend as u64);
         let field = base(r.section) + r.offset as usize;
@@ -290,6 +293,17 @@ impl Linked {
     /// The machine code of function `f`.
     pub fn code(&self, f: Func) -> *const u8 {
         unsafe { self.text.add(self.functions[f.0 as usize].start as usize) }
+    }
+    /// The JIT record of function `f` ([`ENC`] has counters).
+    pub fn record(&self, f: Func) -> *mut JitRecord {
+        unsafe { Image::from_header(self.header) }.unwrap().jit_records().wrapping_add(f.0 as usize)
+    }
+    /// Sets function `f`'s counter, so that it trips once it runs out.
+    pub fn set_counter(&self, f: Func, v: i64) {
+        unsafe { (*self.record(f)).ctr = v };
+    }
+    pub fn counter(&self, f: Func) -> i64 {
+        unsafe { std::ptr::read_volatile(&(*self.record(f)).ctr) }
     }
 }
 

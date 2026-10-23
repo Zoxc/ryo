@@ -25,7 +25,7 @@ use crate::objfile;
 use super::lower::{self, CodeReloc, LowerCx, LoweredFn, NeedsNative};
 
 /// The `RYO_RT_ABI` the backend was written against (`vm/rt/src/lib.rs`).
-const EXPECTED_RT_ABI: u32 = 5;
+const EXPECTED_RT_ABI: u32 = 6;
 
 /// The `ryo_rt` items the backend instantiates or checks (design/stubs.md, Lookup).
 #[derive(Clone, Copy)]
@@ -175,6 +175,9 @@ pub fn asm_mode(tcx: TyCtxt<'_>, rt: RtItems) -> asm::Mode {
         frame_pointer: !fp_arg || pe || needs_frame_pointer(tcx.sess),
         align_loops: std::env::var_os("RYO_ASM_ALIGN").is_none_or(|v| v != "0"),
         pe,
+        // The JIT's trigger, in every build: one code shape (design/vm.md, "JIT records and
+        // counters").
+        counters: true,
     }
 }
 
@@ -502,6 +505,8 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                     Ref::Const(x) => x.to_string(),
                     Ref::Data(x) => x.to_string(),
                     Ref::Ro(off) => format!("ro+{off}"),
+                    Ref::Rec => "jit_record".to_owned(),
+                    Ref::RecCtr => "jit_record.ctr".to_owned(),
                 };
                 writeln!(out, "reloc {} {to}", r.at).unwrap();
             }
@@ -783,7 +788,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                         probe = true;
                         r.to
                     }
-                    Ref::Ro(_) => r.to,
+                    Ref::Ro(_) | Ref::Rec | Ref::RecCtr => r.to,
                 };
             }
             // A global symbol with the function's linkage; an internal function native code
@@ -817,6 +822,10 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         }
         if probe {
             pool.roots.text(&rt_symbol(tcx, objfile::PROBE_SYMBOL));
+        }
+        if mode.counters {
+            pool.roots.text(&rt_symbol(tcx, objfile::TRIP_ENTRY_SYMBOL));
+            pool.roots.text(&rt_symbol(tcx, objfile::TRIP_OSR_SYMBOL));
         }
         if !mode.pe {
             pool.roots.text(ryo_bytecode::image::PERSONALITY);

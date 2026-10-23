@@ -134,6 +134,10 @@ pub enum RelocTarget {
     Handler(Opcode),
     /// `ryo_probe_stack` in `ryo_rt`.
     Probe,
+    /// `ryo_jit_trip_entry` and `ryo_jit_trip_osr` in `ryo_rt`: what the JIT records' slots
+    /// start at.
+    TripEntry,
+    TripOsr,
 }
 
 /// How a relocated field is written.
@@ -169,6 +173,10 @@ pub struct FuncCode {
     pub frame_size: u32,
     /// Positions relative to `start`.
     pub call_sites: Vec<CallSite>,
+    /// Where the prologue starts and where the entry's counter stub does, relative to
+    /// `start` ([`Encoded::prologue`], [`Encoded::entry_stub`]).
+    pub prologue: u32,
+    pub entry_stub: u32,
 }
 
 /// A written image: section contents and relocations.
@@ -213,6 +221,8 @@ pub enum CodeError {
     BadReturn,
     /// An `arg` after an instruction that isn't one.
     ArgNotFirst,
+    /// A reference to the function's JIT record without [`Mode::counters`].
+    NoJitRecord,
 }
 
 /// Why [`ImageWriter::finish`] failed.
@@ -544,7 +554,7 @@ impl ImageWriter {
         let mut dropped: Vec<DroppedEntry> = Vec::new();
         let mut func_code = Vec::with_capacity(self.functions.len());
         // (text offset of the field, target): resolved once the layout is known.
-        let mut code_refs: Vec<(u32, Ref, u32)> = Vec::new();
+        let mut code_refs: Vec<(u32, Ref, u32, u32)> = Vec::new();
         for (i, f) in self.functions.iter_mut().enumerate() {
             let i = i as u32;
             let too_large = |_| WriteError::TooLarge;
@@ -560,7 +570,7 @@ impl ImageWriter {
             code_consts.extend_from_slice(&e.rodata);
             text.extend_from_slice(&e.code);
             for r in &e.relocs {
-                code_refs.push((start + r.at, r.to, ro_base));
+                code_refs.push((start + r.at, r.to, ro_base, i));
             }
             let run = |len: usize, n: usize| -> Result<Span, WriteError> {
                 Ok(Span { off: (len - n).try_into().map_err(too_large)?, count: n.try_into().map_err(too_large)? })
@@ -585,14 +595,30 @@ impl ImageWriter {
                 len: e.code.len() as u32,
                 frame_size: f.frame_size,
                 call_sites: e.call_sites.clone(),
+                prologue: e.prologue,
+                entry_stub: e.entry_stub,
             });
         }
 
-        // Writable section: site cache, then the fixup area.
-        let data_align = self.data_align.max(8) as usize;
+        // Writable section: site cache, then the fixup area, then the JIT records (past the
+        // fixup area's one-past-the-end address, which `addr.abs` may take).
+        let data_align = self.data_align.max(if mode.counters { 64 } else { 8 }) as usize;
         let fixup_area = align_to(self.sites as usize * 8, data_align);
         let mut data = vec![0u8; fixup_area];
         data.extend_from_slice(&self.data);
+        let jit_records = if mode.counters {
+            let off = align_to(data.len() + 1, 64);
+            data.resize(off, 0);
+            for i in 0..funcs.len() as u32 {
+                let mut r = [0u8; 64];
+                r[0..8].copy_from_slice(&JIT_THRESHOLD.to_le_bytes());
+                r[mem::offset_of!(JitRecord, func)..][..4].copy_from_slice(&i.to_le_bytes());
+                data.extend_from_slice(&r);
+            }
+            Span { off: off.try_into().map_err(|_| WriteError::TooLarge)?, count: funcs.len() as u32 }
+        } else {
+            Span::default()
+        };
         let fixup_offsets: alloc::collections::BTreeSet<u32> = self.fixups.iter().map(|x| x.offset).collect();
         if fixup_offsets.len() != self.fixups.len() || self.data_relocs.iter().any(|r| fixup_offsets.contains(&r.offset)) {
             return Err(WriteError::AllocReloc);
@@ -650,6 +676,7 @@ impl ImageWriter {
             site_count: self.sites,
             fixup_area: fixup_area as u32,
             mode: mode_bits(mode),
+            jit_records,
         };
 
         let mut ro = vec![0u8; size];
@@ -675,8 +702,14 @@ impl ImageWriter {
         for i in 0..nsyms {
             relocs.push(abs(Section::ReadOnly, symbols.off as u64 + i as u64 * 8, RelocTarget::Symbol(Sym(i)), 0));
         }
+        for i in 0..jit_records.count as u64 {
+            let rec = jit_records.off as u64 + 64 * i;
+            relocs.push(abs(Section::Writable, rec + mem::offset_of!(JitRecord, entry) as u64, RelocTarget::TripEntry, 0));
+            relocs.push(abs(Section::Writable, rec + mem::offset_of!(JitRecord, osr) as u64, RelocTarget::TripOsr, 0));
+            relocs.push(abs(Section::Writable, rec + mem::offset_of!(JitRecord, header) as u64, RelocTarget::Section(Section::ReadOnly), 0));
+        }
         // The code's fields. Calls between functions are resolved here.
-        for &(at, to, ro_base) in &code_refs {
+        for &(at, to, ro_base, func) in &code_refs {
             let pc = |target, off: u64| Reloc {
                 section: Section::Text,
                 offset: at as u64,
@@ -700,6 +733,11 @@ impl ImageWriter {
                 Ref::Const(Const(k)) if (k as usize) <= self.consts.len() => pc(Section::ReadOnly, consts.off as u64 + k as u64),
                 Ref::Data(Data(d)) if (d as usize) <= self.data.len() => pc(Section::Writable, (fixup_area + d as usize) as u64),
                 Ref::Ro(o) => pc(Section::ReadOnly, (consts_code.off + ro_base + o) as u64),
+                Ref::Rec | Ref::RecCtr if mode.counters => {
+                    let rec = jit_records.off as u64 + 64 * func as u64;
+                    pc(Section::Writable, if to == Ref::RecCtr { rec - 1 } else { rec })
+                }
+                Ref::Rec | Ref::RecCtr => return Err(bad(CodeError::NoJitRecord)),
                 Ref::Sym(_) => return Err(bad(CodeError::SymOutOfRange)),
                 Ref::Site(_) => return Err(bad(CodeError::SiteOutOfRange)),
                 Ref::Const(_) => return Err(bad(CodeError::ConstOutOfRange)),
@@ -811,7 +849,9 @@ unsafe fn put<T: Copy>(buf: &mut [u8], off: u32, v: &[T]) {
 /// function an FDE for its prologue and its LSDA ([`asm::lsda`]). With a frame pointer, every
 /// function has the same rules (`push rbp; mov rbp, rsp`, after which the CFA is `rbp + 16`);
 /// without, the CFA is `rsp + F + 16` after the prologue's `sub rsp, F + 8`. Epilogues have
-/// no rules: they make no calls, so only asynchronous unwinding could stop there.
+/// no rules: they make no calls, so only asynchronous unwinding could stop there. The
+/// counter check before the prologue moves nothing, and the entry's counter stub at the end
+/// of the code runs before the prologue: there the CFA is `rsp + 8` again.
 fn unwind_elf(funcs: &[FuncCode], personality_slot: u64, mode: Mode, relocs: &mut Vec<Reloc>) -> Vec<(Section, Vec<u8>)> {
     const PCREL_SDATA4: u8 = 0x1b;
     let pc = |section, offset, target, addend| Reloc { section, offset, target: RelocTarget::Section(target), addend, kind: RelocKind::Pc32 };
@@ -843,15 +883,27 @@ fn unwind_elf(funcs: &[FuncCode], personality_slot: u64, mode: Mode, relocs: &mu
         fde.push(4);
         relocs.push(pc(Section::EhFrame, at + 4 + fde.len() as u64, Section::Lsda, l as i64));
         fde.extend_from_slice(&[0; 4]);
+        let mut loc = 0;
         if mode.frame_pointer {
             // After `push rbp`: CFA = rsp + 16, rbp at CFA - 16; after `mov rbp, rsp`: CFA = rbp + 16.
-            fde.extend_from_slice(&[0x41, 0x0e, 16, 0x86, 2, 0x43, 0x0d, 6]);
+            advance(&mut fde, &mut loc, f.prologue + 1);
+            fde.extend_from_slice(&[0x0e, 16, 0x86, 2]);
+            advance(&mut fde, &mut loc, f.prologue + 4);
+            fde.extend_from_slice(&[0x0d, 6]);
         } else {
-            // After the prologue: CFA = rsp + F + 16 (`DW_CFA_advance_loc`, `DW_CFA_def_cfa_offset`).
-            let len = asm::prologue_len(f.frame_size, mode);
-            debug_assert!(len < 64);
-            fde.extend_from_slice(&[0x40 | len as u8, 0x0e]);
+            // After the prologue: CFA = rsp + F + 16 (`DW_CFA_def_cfa_offset`).
+            advance(&mut fde, &mut loc, f.prologue + asm::prologue_len(f.frame_size, mode));
+            fde.push(0x0e);
             asm::lsda::uleb(&mut fde, f.frame_size + 16);
+        }
+        if f.entry_stub < f.len {
+            // The entry's stub: CFA = rsp + 8 (`DW_CFA_def_cfa`), and `rbp` not saved yet
+            // (`DW_CFA_restore`).
+            advance(&mut fde, &mut loc, f.entry_stub);
+            fde.extend_from_slice(&[0x0c, 7, 8]);
+            if mode.frame_pointer {
+                fde.push(0xc6);
+            }
         }
         while (fde.len() + 4) % 8 != 0 {
             fde.push(0);
@@ -862,25 +914,50 @@ fn unwind_elf(funcs: &[FuncCode], personality_slot: u64, mode: Mode, relocs: &mu
     vec![(Section::EhFrame, eh), (Section::Lsda, lsda)]
 }
 
+/// A CFA instruction moving the location from `*loc` to `to`, in the shortest of
+/// `DW_CFA_advance_loc`, `advance_loc1`, `advance_loc2` and `advance_loc4`.
+fn advance(fde: &mut Vec<u8>, loc: &mut u32, to: u32) {
+    let d = to - *loc;
+    *loc = to;
+    if d < 64 {
+        fde.push(0x40 | d as u8);
+    } else if d < 1 << 8 {
+        fde.extend_from_slice(&[0x02, d as u8]);
+    } else if d < 1 << 16 {
+        fde.push(0x03);
+        fde.extend_from_slice(&(d as u16).to_le_bytes());
+    } else {
+        fde.push(0x04);
+        fde.extend_from_slice(&d.to_le_bytes());
+    }
+}
+
 /// `.pdata` and `.xdata`: per function, its range and unwind info for the shared prologue
 /// (`push rbp; push rdi; push rsi; lea rbp, [rsp + 16]; sub rsp, F - 16`, `rbp` the frame
 /// register at offset 16 from `rsp`). There is no exception handler: panics unwind through VM
-/// frames, but their landing pads don't run.
+/// frames, but their landing pads don't run. The counter check before the prologue counts as
+/// part of it (it moves nothing), and the entry's counter stub at the end of the code, which
+/// runs before the prologue, has an entry of its own without unwind codes, as a leaf.
 fn unwind_pe(funcs: &[FuncCode], relocs: &mut Vec<Reloc>) -> Vec<(Section, Vec<u8>)> {
     let rva = |section, offset, target, addend| Reloc { section, offset, target: RelocTarget::Section(target), addend, kind: RelocKind::Rva32 };
     let (mut pdata, mut xdata) = (Vec::new(), Vec::new());
-    for f in funcs {
-        let x = xdata.len() as i64;
+    let mut entry = |pdata: &mut Vec<u8>, start: u32, end: u32, x: i64| {
         let p = pdata.len() as u64;
-        relocs.push(rva(Section::Pdata, p, Section::Text, f.start as i64));
-        relocs.push(rva(Section::Pdata, p + 4, Section::Text, (f.start + f.len) as i64));
+        relocs.push(rva(Section::Pdata, p, Section::Text, start as i64));
+        relocs.push(rva(Section::Pdata, p + 4, Section::Text, end as i64));
         relocs.push(rva(Section::Pdata, p + 8, Section::Xdata, x));
         pdata.extend_from_slice(&[0; 12]);
+    };
+    for f in funcs {
+        let x = xdata.len() as i64;
+        entry(&mut pdata, f.start, f.start + f.entry_stub, x);
         // Prologue: push rbp (1), push rdi (1), push rsi (1), lea rbp, [rsp + 16] (5),
         // [mov eax, F - 16 (5); call probe (5)], sub (4 or 7).
         let alloc = f.frame_size - 16;
         let probe = if f.frame_size >= asm::PROBE_FROM { 10 } else { 0 };
-        let sub_end = 8
+        let p = f.prologue;
+        let sub_end = p
+            + 8
             + probe
             + if alloc == 0 {
                 0
@@ -902,16 +979,22 @@ fn unwind_pe(funcs: &[FuncCode], relocs: &mut Vec<Reloc>) -> Vec<(Section, Vec<u
                 codes.extend_from_slice(&alloc.to_le_bytes());
             }
         }
-        codes.extend_from_slice(&[8, 3]); // UWOP_SET_FPREG
-        codes.extend_from_slice(&[3, 0 | 6 << 4]); // UWOP_PUSH_NONVOL rsi
-        codes.extend_from_slice(&[2, 0 | 7 << 4]); // UWOP_PUSH_NONVOL rdi
-        codes.extend_from_slice(&[1, 0 | 5 << 4]); // UWOP_PUSH_NONVOL rbp
+        codes.extend_from_slice(&[p as u8 + 8, 3]); // UWOP_SET_FPREG
+        codes.extend_from_slice(&[p as u8 + 3, 0 | 6 << 4]); // UWOP_PUSH_NONVOL rsi
+        codes.extend_from_slice(&[p as u8 + 2, 0 | 7 << 4]); // UWOP_PUSH_NONVOL rdi
+        codes.extend_from_slice(&[p as u8 + 1, 0 | 5 << 4]); // UWOP_PUSH_NONVOL rbp
         let slots = codes.len() / 2;
+        debug_assert!(sub_end < 256);
         // Version 1; the frame register rbp, at rsp + 1 * 16.
         xdata.extend_from_slice(&[1, sub_end as u8, slots as u8, 5 | 1 << 4]);
         xdata.extend_from_slice(&codes);
         while xdata.len() % 4 != 0 {
             xdata.push(0);
+        }
+        if f.entry_stub < f.len {
+            // Version 1, no prologue, no codes: the return address at `rsp`.
+            entry(&mut pdata, f.start + f.entry_stub, f.start + f.len, xdata.len() as i64);
+            xdata.extend_from_slice(&[1, 0, 0, 0]);
         }
     }
     vec![(Section::Pdata, pdata), (Section::Xdata, xdata)]

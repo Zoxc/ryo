@@ -13,4 +13,4 @@ pub mod vm;
 
 /// The runtime ABI version. The backend checks it and errors on a mismatch.
 #[rustc_diagnostic_item = "ryo_rt_abi"]
-pub const RYO_RT_ABI: u32 = 5;
+pub const RYO_RT_ABI: u32 = 6;

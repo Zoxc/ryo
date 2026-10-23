@@ -35,6 +35,10 @@ native frames, and unwind natively ([Unwinding](#unwinding)). The runtime lives 
   ```
   and `add rsp, F + 8` undoes it before `ret` and tail jumps. Frame slots are addressed
   through `rsp`, `[rsp + F + off]`, and `rbp` is untouched.
+- **Counter check**: before the prologue, every function the backend emits counts its call
+  in its JIT record, `sub qword [rip + rec.ctr], 16; js .tier_entry`, which moves nothing
+  and touches only the flags ([JIT records and counters](#jit-records-and-counters)). So
+  the prologue starts at byte 10 (14 with a long `js`).
 - **Frame pointer**: the backend keeps one where rustc's LLVM backend would
   (`partition::asm_mode`, following `rustc_codegen_llvm::attributes::frame_pointer`): if
   the target's `frame_pointer` isn't `MayOmit`, with `-Cforce-frame-pointers` or
@@ -109,9 +113,10 @@ native frames, and unwind natively ([Unwinding](#unwinding)). The runtime lives 
   opcode enum, the operand table, the decoder, the encoder and the disassembler of
   instruction words, and the handler register layouts are all generated from it. Opcode
   values follow list order. Every change bumps `ryo_bytecode::FORMAT_VERSION`, as does every
-  change to an image table layout (`Header`, `FuncEntry`, `FixupEntry`) or to the machine
-  code of an instruction. Tests pin a hash of the opcode table, of the table entry sizes and
-  field offsets, and of every opcode's machine code in three modes to the version.
+  change to an image table layout (`Header`, `FuncEntry`, `FixupEntry`, `JitRecord`) or to
+  the machine code of an instruction. Tests pin a hash of the opcode table, of the table
+  entry sizes and field offsets, and of every opcode's machine code in eight modes (four
+  with counters) to the version.
 - Code positions in instruction words are word offsets from the function start. The
   cleanup entries (`CleanupEntry`: call-like instruction → `lpad` instruction or
   `CONTINUE`, with `CATCH` for a catch-all pad) are keyed by them. Images contain only the
@@ -188,7 +193,10 @@ The epilogue is `add rsp, F + 8`, `leave` with a frame pointer, or on PE
   Branches within the function start as `rel8` and grow to `rel32` where they don't reach,
   until nothing changes. Padding is the standard multi-byte `nop`s.
 - **Loop heads**: the targets of backward branches are padded to 16 bytes, unless
-  `RYO_ASM_ALIGN=0` ([backend.md](backend.md#debugging-switches)).
+  `RYO_ASM_ALIGN=0` ([backend.md](backend.md#debugging-switches)). After the padding they
+  start with their counter check, which every branch to them passes, and the counter
+  stubs follow the function's last instruction
+  ([JIT records and counters](#jit-records-and-counters)).
 - **Calls between image functions** (`call`, `tail_call`) are `rel32` fields that the
   image writer fills in itself. Handler and `ryo_probe_stack` calls are `Call32`
   relocations; everything else the code refers to is `Pc32` ([Image format](#image-format)).
@@ -363,6 +371,90 @@ format version.
   `RYO_ASM_CHECK` ([backend.md](backend.md#debugging-switches)) does it for every function
   the backend emits. `vm/bytecode/tests/image.rs` decodes
   a linked image's functions through `ImageResolver`.
+
+### JIT records and counters
+
+Every function counts its calls and loop iterations down in a *JIT record*, and leaves
+through an out-of-line stub into the runtime when the count runs out: the trigger of a JIT
+that recompiles hot functions, and later its way into the new code (a stub calls through
+the record, so redirecting the record redirects every entry and loop head without patching
+code). `asm::Mode::counters` turns the counters on; the backend always does, so every image
+has one code shape, and code the JIT encodes for itself has none.
+
+- **Records** (`image::JitRecord`, one per function in function order, in the writable
+  section at `Header::jit_records`): 64 bytes and 64-aligned, one cache line each, so hot
+  functions' counters don't share one.
+  ```
+  ctr: i64              counts down; negative: take the stub
+  entry: *const u8      what the entry's stub calls (offset 8, JIT_ENTRY_SLOT)
+  osr: *const u8        what a loop head's stub calls (offset 16, JIT_OSR_SLOT)
+  next: *mut JitRecord  the JIT queue's link
+  state: AtomicU32      Cold, Queued, Done, Failed
+  func: u32             the function's index
+  header: *const Header
+  ```
+  The writer sets `ctr` to `JIT_THRESHOLD` (10 000), `entry` and `osr` to `ryo_rt`'s
+  `ryo_jit_trip_entry` and `ryo_jit_trip_osr` and `header` to the image's header (`Abs64`
+  relocations), `func` to the index, the rest to 0.
+- **Checks**: at the entry before the prologue, and at every loop head (a target of a
+  backward branch, after its padding, before the head's instruction, so every branch to the
+  head passes it):
+  ```
+  f:      sub qword [rip + rec_f.ctr], 16   ; asm::ENTRY_COUNT
+          js  .tier_entry
+          <prologue> …
+  .head:  sub qword [rip + rec_f.ctr], 1
+          js  .tier_head_N                  ; N: the head's index, in code order
+          …
+  ; after the last instruction: the loop heads' stubs in order, then the entry's
+  .tier_head_N:  lea r11, [rip + rec_f]; mov eax, N; call [r11 + 16]; jmp .head + 10
+  .tier_entry:   lea r11, [rip + rec_f]; call [r11 + 8]; jmp f + 10
+  ```
+  The `js` and the `jmp` back relax like other branches (`f + 14`, `.head + 14` after a
+  long `js`). Counting is a plain `sub`, racy and lossy across threads, which a heuristic
+  tolerates. A call counts 16 and an iteration 1, so a long-running loop trips without
+  calls. The `sub`'s field is followed by its immediate, so it is relocated against
+  `Ref::RecCtr`, the record less one byte, and the `lea` against `Ref::Rec`, the record. Both
+  are the function's own, so the encoder needs no function index; the writer resolves them.
+- **Resuming**: the stubs `call` through the record's slot, so the return address is the
+  continuation in the stub, and whatever the slot points at returns there to continue the
+  AOT code, with no lookup. Code a slot is redirected to that doesn't return pops the return
+  address first. At the entry the `call` moves `rsp` before the prologue, which is fine: the
+  callee pops it again.
+- **Registers**: at the entry the argument registers (integer, `xmm0`–`xmm7`, the stack)
+  are live, but `rax` and `r11` aren't: VM functions aren't variadic (those stay native), so
+  nothing passes `al`, and no convention passes anything in `r11`. At a loop head nothing
+  but `rsp` and `rbp` is live: the register cache is cleared at branch targets. So the stubs
+  clobber only `r11`, `rax` and the flags, and the trip entry points may clobber those too.
+- **The no-op JIT** (`ryo_rt`, `vm/rt/src/vm/jit.rs`): `ryo_jit_trip_entry` and
+  `ryo_jit_trip_osr` are naked assembly, `mov rax, i64::MAX; mov [r11], rax; ret`: the
+  counter is set to `i64::MAX`, so the function never trips again in practice, and the stub
+  continues the AOT code. A store racing other threads' `sub`s may be lost; the counter
+  then runs out again later, harmlessly.
+- **Unwinding**: the checks move nothing and call nothing, so only the prologue's rules
+  move: the FDE's `advance_loc`s start at `Encoded::prologue`. The entry's stub, last in the
+  code, runs before the prologue: its FDE rows say CFA = `rsp + 8` (and with a frame pointer
+  `rbp` not saved) from `Encoded::entry_stub` on. The head stubs run in the set-up frame and
+  need no rows. On PE the check counts as part of the prologue (the unwind codes' offsets
+  and the prologue size include it), and the entry's stub has a `.pdata` entry of its own
+  with no unwind codes, as a leaf. Neither stub is a call site: unwinding out of a trip
+  entry point aborts.
+- **Decoding**: the checks and stubs are part of the canonical form. The decoder reads the
+  entry's check, ends the function's instructions at the first stub, reads each loop head's
+  check with the instruction it precedes (the instruction's position is the check's),
+  requires a check at every loop head and nowhere else, and exactly the stubs in order. They
+  decode to nothing, and `Decoded::heads` lists the loop heads' word offsets in order, so
+  the stub of loop head `N` is that of `heads[N]` (`heads` is there without counters too).
+  `asm::decode_linked` takes the record's address and resolves fields to it as `Ref::Rec`
+  (`ImageResolver` from `Header::jit_records`). `encode_reduced` emits them again as the
+  mode says, so the round trips stay byte-exact.
+- **Cost**: per call and per loop iteration a memory read-modify-write and a not-taken
+  branch, 10 bytes per check and 13 to 16 per stub, and 64 bytes of data per function.
+- **Testing**: `vm/bytecode/tests/asm.rs` round-trips everything with and without
+  counters, `vm/bytecode/tests/image.rs` checks the records, their relocations and the
+  unwind information, and `vm/rt/tests/vm.rs` runs functions through the trips, at the
+  entry and at loop heads, with arguments of every kind, and unwinds through frames that
+  tripped.
 
 ## Instruction set
 
@@ -570,7 +662,8 @@ panic runtime, as through native frames. The image carries the unwind informatio
   rules: after `push rbp` the CFA is `rsp + 16` with `rbp` saved at CFA − 16, after
   `mov rbp, rsp` the CFA is `rbp + 16`. Epilogues have no rules of their own: they call
   nothing, so only an asynchronous unwinder (a profiler's) could stop between them and the
-  `ret` or tail jump. The linker merges the section into the program's `.eh_frame` (and its
+  `ret` or tail jump. The rules start after the counter check, and the entry's counter stub
+  has the entry's ([JIT records and counters](#jit-records-and-counters)). The linker merges the section into the program's `.eh_frame` (and its
   `.eh_frame_hdr`).
 - **LSDA** (`asm::lsda`, in `.gcc_except_table.ryo_image`): per function, the call-site
   table `rust_eh_personality` reads (`uleb128` entries, landing pads relative to the
@@ -598,7 +691,8 @@ panic runtime, as through native frames. The image carries the unwind informatio
   (`y test`'s `backtrace` check, [build.md](build.md#test-and-bench)).
 - **PE**: VM code keeps the frame pointer ([Frames](#frames)), and `.pdata`/`.xdata`
   describe each function's prologue (`image/writer.rs`, `unwind_pe`: the pushes of `rbp`,
-  `rdi` and `rsi`, `rbp` as frame register at `rsp + 16`, the allocation), so
+  `rdi` and `rsi`, `rbp` as frame register at `rsp + 16`, the allocation, after the counter
+  check; the entry's counter stub has an entry of its own), so
   the system unwinder can walk through VM frames, but they register no exception handler:
   landing pads don't run on PE, and `resume` aborts. Like the rest of the PE column this is
   only cross-checked ([platforms.md](platforms.md)).
@@ -627,7 +721,9 @@ in `ryo_rt`, `ryo_h_<Opcode>`:
   list into the handler functions (`ryo_rt::vm::h`). A `const` check fails to compile if the
   list doesn't have exactly the opcodes with Rust handlers.
 - **Assembly**: `resume` (`ryo_h_Resume`) and `ryo_probe_stack` are naked functions: they
-  end in a jump or need the caller's `rsp`.
+  end in a jump or need the caller's `rsp`. So are the JIT's trip entry points
+  `ryo_jit_trip_entry` and `ryo_jit_trip_osr`, which must preserve every register but `rax`
+  and `r11` ([JIT records and counters](#jit-records-and-counters)).
 - **Safety model**: images are trusted. Slots are accessed unaligned through `fp + offset`,
   values that may be pointers or uninitialized move as `MaybeUninit` or bytes, memory
   operands dereference what the program computed, and nothing in a handler panics (offset
@@ -653,7 +749,8 @@ section and unwind sections, plus relocations. It defines the symbol
 ```
 header          magic, format version, crate hash, StableCrateId, pointers to the writable
                 and text sections (relocated), sizes, offset/count of every part below,
-                site count, fixup area offset, the `asm::Mode` the code was encoded in
+                site count, fixup area offset, the `asm::Mode` the code was encoded in,
+                the JIT records' offset and count
 functions       per function, sorted by code offset: code offset and length (bytes in the
                 text section), argument block size, return value size, return kind, and
                 its runs of the scope, call-site and dropped-store tables (first index,
@@ -693,6 +790,9 @@ relocation.
 site cache    site_count pointer-sized slots; no instruction uses them any more, so the
               backend leaves it empty
 fixups        PE only: constant allocations that point at DLL-imported data
+jit records   with counters, one `JitRecord` per function, 64-aligned, past the fixup
+              area's one-past-the-end address ([JIT records and
+              counters](#jit-records-and-counters))
 ```
 
 **Text** (`.text.ryo_image` / `.text$ryo_image`): every function's machine code, in function
@@ -706,10 +806,12 @@ calls it by name, local otherwise (backtraces, profilers) ([backend.md](backend.
   `addr.abs` data offsets are offsets from the start of the fixups area.
 - **Relocations** (`RelocKind`):
   - `Abs64` (`R_X86_64_64` / `IMAGE_REL_AMD64_ADDR64`): the header's `data` and `text`
-    pointers, one per symbol slot, and the pointers inside constant and fixup allocations
-    (against a symbol, or intra-image against either section).
+    pointers, one per symbol slot, the pointers inside constant and fixup allocations
+    (against a symbol, or intra-image against either section), and each JIT record's
+    `entry`, `osr` (against `ryo_jit_trip_entry` and `ryo_jit_trip_osr`) and `header`.
   - `Pc32` (`R_X86_64_PC32` / `REL32`): the code's RIP-relative fields (symbol slots,
-    constants, the data area, code constants), and the `.eh_frame` references.
+    constants, the data area, code constants, the function's JIT record), and the
+    `.eh_frame` references.
   - `Call32` (`R_X86_64_PLT32` / `REL32`): calls of the handlers and `ryo_probe_stack`.
   - `Rva32` (`IMAGE_REL_AMD64_ADDR32NB`): the `.pdata` entries.
 
@@ -789,8 +891,9 @@ templates and the `main` wrapper. It is a normal Rust dependency of every ryo-bu
 
 ### Modules
 
-- **`vm`**: the handlers (`vm::h`, generated, plus the assembly ones) and the registry.
-  Everything uses `core` only.
+- **`vm`**: the handlers (`vm::h`, generated, plus the assembly ones), the registry and the
+  JIT's trip entry points (`vm::trip_entry`, `vm::trip_osr`, the no-op JIT). Everything uses
+  `core` only.
   - `vm::register`: `#[no_mangle] extern "C-unwind" fn ryo_vm_register(images, n)`.
   - `vm::MODE` / `vm::FP_ARG` (diagnostic item `ryo_rt_fp_arg`): whether the handlers take
     `fp` in `rdi` (unless the `fp-rbp` cargo feature is on). The backend evaluates `FP_ARG`

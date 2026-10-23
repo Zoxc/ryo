@@ -31,16 +31,21 @@ impl Rng {
 }
 
 /// Every valid mode: the eight with a frame pointer, then the two without (which need
-/// `fp_arg` and not `pe`).
-const MODES: [Mode; 10] = {
-    let mut m = [Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false }; 10];
+/// `fp_arg` and not `pe`); then the same ten with counters.
+const MODES: [Mode; 20] = {
+    let mut m = [Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false, counters: false }; 20];
     let mut i = 0;
     while i < 8 {
-        m[i] = Mode { fp_arg: i & 1 != 0, frame_pointer: true, align_loops: i & 2 != 0, pe: i & 4 != 0 };
+        m[i] = Mode { fp_arg: i & 1 != 0, frame_pointer: true, align_loops: i & 2 != 0, pe: i & 4 != 0, counters: false };
         i += 1;
     }
-    m[8] = Mode { fp_arg: true, frame_pointer: false, align_loops: false, pe: false };
-    m[9] = Mode { fp_arg: true, frame_pointer: false, align_loops: true, pe: false };
+    m[8] = Mode { fp_arg: true, frame_pointer: false, align_loops: false, pe: false, counters: false };
+    m[9] = Mode { fp_arg: true, frame_pointer: false, align_loops: true, pe: false, counters: false };
+    i = 10;
+    while i < 20 {
+        m[i] = Mode { counters: true, ..m[i - 10] };
+        i += 1;
+    }
     m
 };
 
@@ -258,11 +263,25 @@ fn check(f: &Fn, frame_size: u32, mode: Mode, what: &str) -> asm::Encoded {
     }
     // The same from the linked code, its references recovered from the resolved fields.
     let linked = Fake::link(&enc);
-    let lin = asm::decode_linked(&linked, Fake::CODE, &Fake { ro: &enc.rodata }, &sites, &enc.dropped, &enc.scopes, mode)
+    let lin = asm::decode_linked(&linked, Fake::CODE, Fake::RECORD, &Fake { ro: &enc.rodata }, &sites, &enc.dropped, &enc.scopes, mode)
         .unwrap_or_else(|e| panic!("{what} {mode:?} (linked): {e:?}\n{}", Disasm(&code)));
     if lin != red {
         panic!("{what} {mode:?} (linked):\n{}\n---\n{}", reduced::Disasm(&red.words), reduced::Disasm(&lin.words));
     }
+    // With counters: a check at the entry and at each loop head, each with its stub after
+    // the code, the entry's last.
+    let ctrs = enc.relocs.iter().filter(|r| r.to == asm::Ref::RecCtr).count();
+    let recs = enc.relocs.iter().filter(|r| r.to == asm::Ref::Rec).count();
+    if mode.counters {
+        assert_eq!((ctrs, recs), (red.heads.len() + 1, red.heads.len() + 1), "{what} {mode:?}");
+        assert_eq!(enc.code[..3], [0x48, 0x83, 0x2d], "{what}");
+        assert_eq!(enc.code[enc.entry_stub as usize..][..3], [0x4c, 0x8d, 0x1d], "{what}");
+        // `lea r11`, `call [r11 + 8]`, `jmp` back (`rel8` or `rel32`).
+        assert!(matches!(enc.code.len() as u32 - enc.entry_stub, 13 | 16), "{what}");
+    } else {
+        assert_eq!((ctrs, recs, enc.prologue, enc.entry_stub as usize), (0, 0, 0, enc.code.len()), "{what}");
+    }
+    assert_eq!(dec.heads.len(), red.heads.len(), "{what}");
     reencodes(&enc, mode, what);
     enc
 }
@@ -273,7 +292,7 @@ fn reencodes(enc: &asm::Encoded, mode: Mode, what: &str) {
     let red = asm::decode_reduced(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, mode)
         .unwrap_or_else(|e| panic!("{what} {mode:?} (reduced): {e:?}"));
     let linked = Fake::link(enc);
-    let lin = asm::decode_linked(&linked, Fake::CODE, &Fake { ro: &enc.rodata }, &enc.call_sites, &enc.dropped, &enc.scopes, mode)
+    let lin = asm::decode_linked(&linked, Fake::CODE, Fake::RECORD, &Fake { ro: &enc.rodata }, &enc.call_sites, &enc.dropped, &enc.scopes, mode)
         .unwrap_or_else(|e| panic!("{what} {mode:?} (linked): {e:?}"));
     for (d, how) in [(&red, "reduced"), (&lin, "linked")] {
         let re = asm::encode_reduced(&d.words, d.frame_size, &d.cleanup, &d.scopes, &d.dropped, &enc.rodata, mode)
@@ -305,6 +324,7 @@ impl Fake<'_> {
     const CONSTS: u64 = 0x3200_0000;
     const DATA: u64 = 0x3300_0000;
     const RO: u64 = 0x3400_0000;
+    const RECORD: u64 = 0x3500_0000;
 
     fn addr(to: asm::Ref) -> u64 {
         use asm::Ref;
@@ -317,6 +337,8 @@ impl Fake<'_> {
             Ref::Const(k) => Self::CONSTS + k.0 as u64,
             Ref::Data(d) => Self::DATA + d.0 as u64,
             Ref::Ro(o) => Self::RO + o as u64,
+            Ref::Rec => Self::RECORD,
+            Ref::RecCtr => Self::RECORD - 1,
         }
     }
 
@@ -343,7 +365,7 @@ impl asm::Resolver for Fake<'_> {
             _ if (Self::SITES..Self::CONSTS).contains(&a) => Ref::Site(Site(((a - Self::SITES) / 8) as u32)),
             _ if (Self::CONSTS..Self::DATA).contains(&a) => Ref::Const(Const((a - Self::CONSTS) as u32)),
             _ if (Self::DATA..Self::RO).contains(&a) => Ref::Data(Data((a - Self::DATA) as u32)),
-            _ if (Self::RO..Self::CODE).contains(&a) => Ref::Ro((a - Self::RO) as u32),
+            _ if (Self::RO..Self::RECORD - 1).contains(&a) => Ref::Ro((a - Self::RO) as u32),
             _ => return None,
         };
         // Only what `addr` gives: a misread field must not resolve by accident.
@@ -361,8 +383,10 @@ const FRAMES: [u32; 6] = [0, 16, 112, 128, 4096, 1 << 20];
 fn every_opcode_round_trips() {
     let mut rng = Rng(0x9e3779b97f4a7c15);
     for &op in ALL_OPCODES {
-        for (round, mode) in MODES.iter().enumerate() {
+        for (round, mode) in MODES[..10].iter().enumerate() {
             for list_len in [0, 1, 3] {
+                // With and without counters, alternately (every mode gets both).
+                let mode = &Mode { counters: (op as usize + round + list_len) % 2 == 0, ..*mode };
                 // [abort], insn, filler…, lpad, jmp 0, abort.
                 let mut f = Fn { insns: vec![vec![Opcode::Abort as u32]], targets: Vec::new(), unwind: Vec::new() };
                 let fillers = [0, 2, 40][(round + list_len) % 3];
@@ -421,6 +445,9 @@ fn long_branches_and_loops() {
                 // The loop heads (instructions 0 and 1) start at multiples of 16.
                 assert!(enc.code.len() > 16);
             }
+            // Instructions 0 and 1 are the loop heads, in order.
+            let d = asm::decode(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, mode).unwrap();
+            assert_eq!(d.heads, [0, 4], "{mode:?}");
         }
     }
 }
@@ -510,8 +537,13 @@ fn mov_w128_is_not_two_mov_w64() {
 /// head's position, after the padding, and so is a scope there.
 #[test]
 fn label_at_a_dead_hint_before_a_loop_head() {
+    for counters in [false, true] {
+        label_at_a_dead_hint(Mode { fp_arg: false, frame_pointer: true, align_loops: true, pe: false, counters });
+    }
+}
+
+fn label_at_a_dead_hint(mode: Mode) {
     use asm::Opnd::{Imm, Neg, Slot, Target};
-    let mode = Mode { fp_arg: false, frame_pointer: true, align_loops: true, pe: false };
     let mut a = asm::Asm::new(mode);
     let (empty, head) = (a.label(), a.label());
     a.insn(Opcode::BrEqImmW64, &[Slot(-8), Imm(0), Neg(false), Target(empty)]);
@@ -526,6 +558,10 @@ fn label_at_a_dead_hint_before_a_loop_head() {
     let enc = a.finish(16, |s| s);
     asm::decode(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, mode).expect("decodes");
     assert_eq!(enc.scopes[0].code_offset % 16, 0, "{:?}", enc.scopes);
+    if mode.counters {
+        // Before the head's counter check, which the branches to the head pass.
+        assert_eq!(enc.code[enc.scopes[0].code_offset as usize..][..3], [0x48, 0x83, 0x2d]);
+    }
     reencodes(&enc, mode, "dead hint before a loop head");
 }
 
@@ -595,7 +631,7 @@ fn dead_stores_reencode() {
 /// The register packing of the opcodes with more operands than registers.
 #[test]
 fn packed_operands() {
-    let m = Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false };
+    let m = Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false, counters: false };
     let l = asm::layout(Opcode::DiscrNicheW128, m);
     // d, s, niche_start (2), variants_start, variants_end | untagged << 32.
     assert_eq!(l.regs, 6);
@@ -624,7 +660,8 @@ fn linked_fields_must_resolve() {
         unwind: Vec::new(),
     };
     let enc = check(&f, 16, m, "div; jmp");
-    let decode = |code: &[u8]| asm::decode_linked(code, Fake::CODE, &Fake { ro: &enc.rodata }, &enc.call_sites, &enc.dropped, &enc.scopes, m);
+    let decode =
+        |code: &[u8]| asm::decode_linked(code, Fake::CODE, Fake::RECORD, &Fake { ro: &enc.rodata }, &enc.call_sites, &enc.dropped, &enc.scopes, m);
     let linked = Fake::link(&enc);
     assert!(decode(&linked).is_ok());
     // The handler call one byte off.
@@ -637,7 +674,7 @@ fn linked_fields_must_resolve() {
 /// Machine code that isn't canonical is rejected.
 #[test]
 fn rejects_non_canonical_code() {
-    let m = Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false };
+    let m = Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false, counters: false };
     let f = Fn {
         // A shift by the width or more calls its handler.
         insns: vec![vec![Opcode::ShlImmW64 as u32, -8i32 as u32, -16i32 as u32, 70, 0], vec![Opcode::Ret as u32, -8i32 as u32, 8]],
@@ -715,7 +752,7 @@ fn inline_operand_forms() {
 /// call (same operands as `add.w32`) retargeted to `add.w32`'s handler.
 #[test]
 fn rejects_handler_calls_of_inlined_ops() {
-    let m = Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false };
+    let m = Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false, counters: false };
     let f = Fn {
         insns: vec![vec![Opcode::FaddF32 as u32, -8i32 as u32, -16i32 as u32, 16], vec![Opcode::Abort as u32]],
         targets: Vec::new(),
@@ -743,7 +780,7 @@ fn templates_are_pinned_to_format_version() {
     };
     let mut rng = Rng(7);
     for &op in ALL_OPCODES {
-        for mode in [MODES[0], MODES[1], MODES[6], MODES[8]] {
+        for mode in [MODES[0], MODES[1], MODES[6], MODES[8], MODES[10], MODES[11], MODES[16], MODES[18]] {
             let mut f = Fn { insns: vec![vec![Opcode::Lpad as u32, -8i32 as u32]], targets: Vec::new(), unwind: Vec::new() };
             let w = insn(op, &mut rng, 2, &mut f, &mut |_| 0);
             if op == Opcode::Arg {
@@ -764,7 +801,7 @@ fn templates_are_pinned_to_format_version() {
             eat(&lsda::write(&enc.call_sites));
         }
     }
-    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (19, 0xd71363eb35d66868), "template hash {h:#x}");
+    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (20, 0x11f435de12b78d4c), "template hash {h:#x}");
 }
 
 /// Without a frame pointer, an SSE load or store of the slot at `rsp` has no displacement.

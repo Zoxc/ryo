@@ -70,14 +70,15 @@ and `codegen_crate` reads them.
    relocation list ([lowering.md](lowering.md), [vm.md](vm.md#machine-code)), in the mode
    `asm_mode` gives: `fp` passing as `ryo_rt`'s `FP_ARG` says (the backend evaluates the
    const), a frame pointer only where rustc's LLVM backend would keep one, or `FP_ARG`
-   or PE require it ([vm.md](vm.md#frames)), loop alignment unless `RYO_ASM_ALIGN=0`, inline instructions, and the target's object
+   or PE require it ([vm.md](vm.md#frames)), loop alignment unless `RYO_ASM_ALIGN=0`, inline instructions, the JIT's counters
+   (always, [vm.md](vm.md#jit-records-and-counters)), and the target's object
    format. The
    results are merged in one pass at the end. An operation the VM doesn't support becomes an
    `island` instruction whose `isl` operand is an *island* relocation (template + generic
    args). The merge pass deduplicates islands (same template + args → one instance), assigns
    function indices and symbols, rewrites each function's relocation targets to them,
    and adds the function to the image writer under its own symbol. The handlers and `ryo_probe_stack` the code
-   calls, and `rust_eh_personality` on ELF, are added to the image's LTO roots
+   calls, the JIT records' `ryo_jit_trip_entry` and `ryo_jit_trip_osr`, and `rust_eh_personality` on ELF, are added to the image's LTO roots
    ([Query overrides](#query-overrides-provide)).
 4. **Build the native CGU.** This is a copy of the original CGU, with the VM functions removed
    and the stub instances (islands and `c_main`) added. Our override returns exactly this CGU,
@@ -225,8 +226,8 @@ and `codegen_crate` reads them.
     without a definition leaves downstream crates with an undefined reference.
   - Every symbol the image refers to (VM functions of other crates, callees, statics, islands, the targets of
     pointers in constants, upstream and foreign ones included, and `ryo_rt`'s handlers,
-    `ryo_probe_stack` and `rust_eh_personality`, which the machine code and the unwind
-    information reference) is added to the local
+    `ryo_probe_stack`, `ryo_jit_trip_*` and `rust_eh_personality`, which the machine code, the
+    JIT records and the unwind information reference) is added to the local
     `exported_non_generic_symbols` as `NoDefId`, `used`, at the `Rust` level, so `-Clto`
     doesn't internalize it: LTO keeps every `used` symbol whatever its threshold
     (`rustc_codegen_ssa/src/back/lto.rs:107`), and the image is an object LTO doesn't see.
@@ -284,7 +285,8 @@ Environment variables read by the backend (and `y test`):
 - `RYO_DUMP_CODE=<file>` writes the same functions' machine code, in the same order, for
   `y bench codegen` to disassemble: `fn <instance>`, `code <hex>`, and `reloc <offset>
   <target>` per relocated field, its target named as `RYO_DUMP` names operands (handlers as
-  `ryo_h_<Opcode>`, code constants as `ro+<offset>`).
+  `ryo_h_<Opcode>`, code constants as `ro+<offset>`, the function's JIT record as
+  `jit_record` and its counter as `jit_record.ctr`).
 - `RYO_NO_VM` keeps every function native.
 - `RYO_ASM_CHECK` reads every function's machine code back to the reduced set
   (`asm::decode_reduced`), encodes it again (`asm::encode_reduced`) and panics unless it is

@@ -2,6 +2,7 @@
 //! design/vm.md.
 //!
 //! - [`ryo_vm_register`]: image registration, called by the registry object's constructor.
+//! - [`trip_entry`], [`trip_osr`]: where the JIT records' slots start (the no-op JIT).
 //!
 //! VM functions are native functions of their signatures (design/vm.md, "Calls and
 //! islands"): native code calls them directly, and there is no entry from portals.
@@ -11,10 +12,12 @@
 //! runtime").
 
 mod interp;
+mod jit;
 mod registry;
 mod sys;
 
 pub use interp::{FP_ARG, MODE, h, handler, probe_stack};
+pub use jit::{trip_entry, trip_osr};
 pub use registry::ImageRt;
 
 /// Registers `n` images. `images[i]` is the address of an image header

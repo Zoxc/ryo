@@ -3,7 +3,9 @@ use ryo_bytecode::full::*;
 use ryo_bytecode::image::*;
 use ryo_bytecode::{FORMAT_VERSION, Insn};
 
-const ELF: Mode = Mode { fp_arg: false, frame_pointer: true, align_loops: true, pe: false };
+const ELF: Mode = Mode { fp_arg: false, frame_pointer: true, align_loops: true, pe: false, counters: false };
+/// As the backend encodes: with counters.
+const AOT: Mode = Mode { counters: true, ..ELF };
 
 fn code(insns: &[Insn<'_>]) -> Vec<u32> {
     let mut c = CodeBuf::new();
@@ -24,13 +26,16 @@ impl Buf {
     }
     /// Buffers in one allocation, so that `rel32` fields reach across them.
     fn several(parts: &[(&[u8], u64)]) -> Vec<Buf> {
-        let n: usize = parts.iter().map(|p| p.0.len().div_ceil(16) + 1).sum();
+        let n: usize = parts.iter().map(|p| p.0.len().div_ceil(16) + 1 + 4).sum();
         let mem: &mut [u128] = Vec::leak(vec![0u128; n]);
         let mut at = mem.as_mut_ptr();
         parts
             .iter()
             .map(|&(bytes, align)| {
-                assert!(align <= 16);
+                assert!(align <= 64);
+                while at as u64 % align != 0 {
+                    at = unsafe { at.add(1) };
+                }
                 let b = Buf { ptr: at.cast(), len: bytes.len() };
                 unsafe { std::slice::from_raw_parts_mut(b.ptr, b.len) }.copy_from_slice(bytes);
                 at = unsafe { at.add(bytes.len().div_ceil(16) + 1) };
@@ -76,6 +81,8 @@ fn link(obj: &ImageObject, resolve: impl Fn(&SymbolDef) -> u64) -> Linked {
             RelocTarget::Section(_) => continue,
             RelocTarget::Handler(op) => handler_addr(&l.text, op),
             RelocTarget::Probe => probe_addr(&l.text),
+            RelocTarget::TripEntry => trip_addr(&l.text, false),
+            RelocTarget::TripOsr => trip_addr(&l.text, true),
         };
         let v = target.wrapping_add(r.addend as u64);
         let buf = match r.section {
@@ -104,6 +111,11 @@ fn handler_addr(text: &Buf, op: Opcode) -> u64 {
 
 fn probe_addr(text: &Buf) -> u64 {
     text.addr() + 0x8_0000
+}
+
+/// Where [`link`] puts `ryo_jit_trip_entry` and (`osr`) `ryo_jit_trip_osr`.
+fn trip_addr(text: &Buf, osr: bool) -> u64 {
+    text.addr() + 0x9_0000 + 16 * osr as u64
 }
 
 /// The i32 at `off` in `b`.
@@ -564,7 +576,8 @@ fn scopes_and_call_sites_round_trip() {
         Scope { code_offset: s0[2], frame_offset: -32, size: 16, kind: ScopeKind::End },
     ];
     let cleanup = [CleanupEntry { offset: s0[1], target: s0[3] | CATCH }, CleanupEntry { offset: s0[4], target: CONTINUE }];
-    for mode in [ELF, Mode { fp_arg: true, frame_pointer: false, align_loops: false, ..ELF }, Mode { pe: true, ..ELF }] {
+    for mode in [ELF, Mode { fp_arg: true, frame_pointer: false, align_loops: false, ..ELF }, Mode { pe: true, ..ELF }, AOT, Mode { pe: true, ..AOT }]
+    {
         let enc = vec![asm::encode(&f0, 48, &cleanup, &scopes, mode).unwrap(), asm::encode(&f1, 16, &[], &[], mode).unwrap()];
         assert_eq!(enc[0].scopes.len(), 2);
         assert_eq!(enc[0].call_sites.len(), 2);
@@ -612,7 +625,10 @@ fn scopes_and_call_sites_round_trip() {
         );
         assert_eq!(validate_edited(&obj, |r, h| put32(r, cs(h, 1, 0), 0)), Err(ImageError::BadCallSite(1)));
         assert!(matches!(validate_edited(&obj, |r, _| put32(r, offset_of!(Header, mode), MODE_PE)), Err(ImageError::BadMode)));
-        assert!(matches!(validate_edited(&obj, |r, _| put32(r, offset_of!(Header, mode), 16)), Err(ImageError::BadMode)));
+        assert!(matches!(validate_edited(&obj, |r, _| put32(r, offset_of!(Header, mode), 32)), Err(ImageError::BadMode)));
+        // Counters need the JIT records, and the other way round.
+        let bits = mode_bits(mode) ^ MODE_COUNTERS;
+        assert!(matches!(validate_edited(&obj, |r, _| put32(r, offset_of!(Header, mode), bits)), Err(ImageError::BadData)));
     }
 }
 
@@ -640,7 +656,9 @@ fn dead_stores(mode: Mode) -> asm::Encoded {
 /// dropped stores included.
 #[test]
 fn linked_functions_decode() {
-    for mode in [ELF, Mode { fp_arg: true, frame_pointer: false, ..ELF }, Mode { pe: true, ..ELF }] {
+    for mode in
+        [ELF, Mode { fp_arg: true, frame_pointer: false, ..ELF }, Mode { pe: true, ..ELF }, AOT, Mode { fp_arg: true, frame_pointer: false, ..AOT }]
+    {
         let mut w = sample();
         let mut enc: Vec<asm::Encoded> = w.functions().iter().map(|f| asm::encode(&f.code, f.frame_size, &f.cleanup, &[], mode).unwrap()).collect();
         enc.push(dead_stores(mode));
@@ -679,7 +697,7 @@ fn linked_functions_decode() {
 /// `validate` checks them.
 #[test]
 fn dropped_stores_round_trip() {
-    for mode in [ELF, Mode { fp_arg: true, frame_pointer: false, ..ELF }] {
+    for mode in [ELF, Mode { fp_arg: true, frame_pointer: false, ..ELF }, AOT] {
         let enc = vec![asm::encode(&code(&[Insn::Abort {}]), 16, &[], &[], mode).unwrap(), dead_stores(mode)];
         let mut w = ImageWriter::new(SCID);
         w.add_function(FunctionDef { name: "f0".into(), frame_size: 16, ..Default::default() });
@@ -718,4 +736,62 @@ fn dropped_stores_round_trip() {
             Err(ImageError::BadDropped(1))
         );
     }
+}
+
+/// With counters, every function has a JIT record in the writable section, initialized and
+/// relocated, which its counter checks and stubs address; the unwind information describes
+/// the check before the prologue and the entry's stub after the code.
+#[test]
+fn jit_records() {
+    for mode in [AOT, Mode { fp_arg: true, frame_pointer: false, ..AOT }] {
+        let obj = sample().finish(mode).unwrap();
+        assert_eq!(obj.data_align, 64);
+        let l = link(&obj, |s| 0x1000 + s.name.len() as u64);
+        let img = unsafe { Image::from_header(l.ro.bytes().as_ptr()) }.unwrap();
+        img.validate().unwrap();
+        let h = img.header();
+        assert_eq!(h.mode & MODE_COUNTERS, MODE_COUNTERS);
+        assert_eq!((h.jit_records.count, h.jit_records.off % 64), (3, 0));
+        // Past the fixup area, even its one-past-the-end address.
+        assert!(h.jit_records.off > h.fixup_area + 16);
+        let t = l.text.bytes();
+        for (i, f) in obj.functions.iter().enumerate() {
+            let rec = img.jit_records().wrapping_add(i) as u64;
+            assert_eq!(rec, l.data.addr() + h.jit_records.off as u64 + 64 * i as u64);
+            let r = unsafe { &*(rec as *const JitRecord) };
+            assert_eq!((r.ctr, r.entry as u64, r.osr as u64, r.next as u64), (JIT_THRESHOLD, trip_addr(&l.text, false), trip_addr(&l.text, true), 0));
+            assert_eq!((r.state.load(std::sync::atomic::Ordering::Relaxed), r.func, r.header as u64), (JIT_COLD, i as u32, l.ro.addr()));
+            // `sub qword [rip + x], 16` reaches the counter, `js` the entry's stub, whose
+            // `lea r11, [rip + x]` the record.
+            let at = f.start as u64;
+            assert_eq!(t[at as usize..][..3], [0x48, 0x83, 0x2d]);
+            assert_eq!(t[at as usize + 7], asm::ENTRY_COUNT);
+            assert_eq!((l.text.addr() + at + 8).wrapping_add(i32_at(&l.text, at + 3) as i64 as u64), rec);
+            assert_eq!(t[at as usize + 8], 0x78); // `js rel8`
+            assert_eq!(at as i64 + 10 + t[at as usize + 9] as i8 as i64, (f.start + f.entry_stub) as i64);
+            assert_eq!(f.prologue, 10);
+            let stub = (f.start + f.entry_stub) as u64;
+            assert_eq!(t[stub as usize..][..3], [0x4c, 0x8d, 0x1d]);
+            assert_eq!((l.text.addr() + stub + 7).wrapping_add(i32_at(&l.text, stub + 3) as i64 as u64), rec);
+            assert_eq!(t[stub as usize + 7..][..4], [0x41, 0xff, 0x53, JIT_ENTRY_SLOT]);
+        }
+        // The FDEs: the prologue's rules after the check, and at the entry's stub CFA =
+        // rsp + 8 (with a frame pointer, `rbp` restored).
+        let eh = &obj.unwind[0].1;
+        let f0 = &obj.functions[0];
+        let tail: &[u8] = if mode.frame_pointer { &[0x0c, 7, 8, 0xc6] } else { &[0x0c, 7, 8] };
+        assert!(eh.windows(tail.len()).any(|w| w == tail), "{eh:02x?}");
+        if mode.frame_pointer {
+            assert!(eh.windows(7).any(|w| w == [0x40 | 11, 0x0e, 16, 0x86, 2, 0x40 | 3, 0x0d]), "{eh:02x?}");
+        } else {
+            assert!(eh.windows(3).any(|w| w == [0x40 | 14, 0x0e, 64]), "{eh:02x?}");
+        }
+        assert!(f0.entry_stub > f0.prologue);
+    }
+    // PE: the check is part of the prologue, and the entry's stub has an entry of its own.
+    let obj = sample().finish(Mode { pe: true, ..AOT }).unwrap();
+    assert_eq!(obj.unwind[0].1.len(), 2 * 3 * 12);
+    let x = &obj.unwind[1].1;
+    assert_eq!(&x[..14], [1, 22, 5, 5 | 1 << 4, 22, 2 | (32 / 8 - 1) << 4, 18, 3, 13, 6 << 4, 12, 7 << 4, 11, 5 << 4]);
+    assert_eq!(&x[16..20], [1, 0, 0, 0]);
 }

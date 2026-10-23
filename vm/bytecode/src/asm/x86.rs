@@ -77,6 +77,9 @@ pub enum Cond {
     Ae,
     Be,
     A,
+    /// `js`, `jns`: the result was negative (a counter ran out).
+    S,
+    Ns,
 }
 
 impl Cond {
@@ -90,6 +93,8 @@ impl Cond {
             Cond::Nz => 0x5,
             Cond::Be => 0x6,
             Cond::A => 0x7,
+            Cond::S => 0x8,
+            Cond::Ns => 0x9,
             Cond::L => 0xc,
             Cond::Ge => 0xd,
             Cond::Le => 0xe,
@@ -105,6 +110,8 @@ impl Cond {
             0x5 => Cond::Nz,
             0x6 => Cond::Be,
             0x7 => Cond::A,
+            0x8 => Cond::S,
+            0x9 => Cond::Ns,
             0xc => Cond::L,
             0xd => Cond::Ge,
             0xe => Cond::Le,
@@ -314,6 +321,11 @@ pub enum Item {
     CallMem(Ref),
     /// `call rax`
     CallRax,
+    /// `sub qword [rip + disp32], imm8`: the counter at the start of the function's JIT
+    /// record counts down by `imm8` (the field relocated against [`Ref::RecCtr`]).
+    CtrSub(u8),
+    /// `call [r11 + disp8]`: a counter stub's call through its JIT record's slot.
+    CallR11(u8),
     /// `mov rax, [rip + disp32]`: a symbol slot's value, the field relocated against the
     /// [`Ref`].
     LoadRip(Ref),
@@ -431,6 +443,8 @@ impl Item {
             Item::WinPrologue => 8,
             Item::WinEpilogue => 7,
             Item::TestAl | Item::CallRax | Item::JmpRax | Item::Ud2 | Item::CallMemRax => 2,
+            Item::CallR11(_) => 4,
+            Item::CtrSub(_) => 8,
             Item::TestRax | Item::Mov(..) | Item::AddRaxRcx => 3,
             Item::LoadTableEntry | Item::TableEntry { .. } => 4,
             Item::SubRsp(v) | Item::AddRsp(v) => {
@@ -725,6 +739,12 @@ impl Item {
                 reloc(out, relocs, to);
             }
             Item::CallRax => out.extend_from_slice(&[0xff, 0xd0]),
+            Item::CtrSub(k) => {
+                out.extend_from_slice(&[0x48, 0x83, 0x2d]);
+                reloc(out, relocs, Ref::RecCtr);
+                out.push(k);
+            }
+            Item::CallR11(d) => out.extend_from_slice(&[0x41, 0xff, 0x53, d]),
             Item::CallMemRax => out.extend_from_slice(&[0xff, 0x10]),
             Item::LoadRip(to) => {
                 out.extend_from_slice(&[0x48, 0x8b, 0x05]);
@@ -869,8 +889,9 @@ pub enum Fields<'a> {
     /// Linked code at address `addr`, its fields resolved: a field whose target lies inside
     /// the function, past its first byte, is a branch within it; any other target is
     /// classified by the resolver. (A function's first byte is its prologue, never a branch
-    /// target, so a field to it is a call or tail call of the function itself.)
-    Linked { addr: u64, resolver: &'a dyn Resolver },
+    /// target, so a field to it is a call or tail call of the function itself.) A field to
+    /// `record` is the function's JIT record ([`Ref::Rec`]).
+    Linked { addr: u64, record: u64, resolver: &'a dyn Resolver },
 }
 
 /// A `rel32` field: a branch within the function (its target position), or a reference.
@@ -921,10 +942,16 @@ impl<'a> Cursor<'a> {
                 Ok(i) => Field::Ref(relocs[i].to),
                 Err(_) => Field::Local(local),
             },
-            Fields::Linked { addr, resolver } => {
+            Fields::Linked { addr, record, resolver } => {
                 let to = addr.wrapping_add((self.pos + len) as u64).wrapping_add(d as i64 as u64);
                 let inside = to.wrapping_sub(addr).wrapping_sub(1) < (self.code.len() as u64).wrapping_sub(1);
-                if inside { Field::Local(local) } else { resolver.resolve(to).map_or(Field::Bad, Field::Ref) }
+                if inside {
+                    Field::Local(local)
+                } else if to == record {
+                    Field::Ref(Ref::Rec)
+                } else {
+                    resolver.resolve(to).map_or(Field::Bad, Field::Ref)
+                }
             }
         })
     }
@@ -1134,6 +1161,16 @@ impl<'a> Cursor<'a> {
         }
         let item = match (rex, op) {
             (0, 0x55) => Item::PushRbp,
+            // The counter's `sub`: its field is followed by the immediate, so unlinked it is
+            // relocated against the record less one byte (`Ref::RecCtr`), and linked it
+            // reaches the record itself.
+            (0x48, 0x83) if get(2)? == 0x2d => {
+                let k = get(7)?;
+                match (self.field(3, 8)?, self.fields) {
+                    (Field::Ref(Ref::RecCtr), Fields::Relocs(_)) | (Field::Ref(Ref::Rec), Fields::Linked { .. }) => Item::CtrSub(k),
+                    _ => return Err(bad),
+                }
+            }
             (0x48, 0x83 | 0x81) => {
                 let ext = get(2)?;
                 let (v, long) = if op == 0x83 { (get(3)? as u32, false) } else { (self.i32_at(3)? as u32, true) };
@@ -1206,6 +1243,7 @@ impl<'a> Cursor<'a> {
                 Item::Mov(dst, src)
             }
             (0, 0xe8) => Item::Call(self.field_ref(1, 5)?),
+            (0x41, 0xff) if get(2)? == 0x53 => Item::CallR11(get(3)?),
             (0x48, 0x8b) if get(2)? == 0x05 => Item::LoadRip(self.field_ref(3, 7)?),
             (0, 0xff) => match get(1)? {
                 0x15 => Item::CallMem(self.field_ref(2, 6)?),
@@ -1256,6 +1294,7 @@ impl<'a> Cursor<'a> {
             Item::Lea(..) | Item::LoadRip(_) => Some(3),
             Item::Call(_) | Item::Jmp(_) => Some(1),
             Item::CallMem(_) => Some(2),
+            Item::CtrSub(_) => Some(3),
             _ => None,
         };
         if self.relocs_in(self.pos, len).iter().any(|rl| Some(rl.at - self.pos) != own) {

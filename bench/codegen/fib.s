@@ -1,19 +1,36 @@
 fn <() as std::process::Termination>::report
+    sub     qword ptr [jit_record.ctr],10h
+    js      L1
+L0:
     sub     rsp,18h
     mov     byte ptr [rsp+0Fh],0
     movzx   eax,byte ptr [rsp+0Fh]
     add     rsp,18h
     ret
+L1:
+    lea     r11,[jit_record]
+    call    qword ptr [r11+8]
+    jmp     L0
 
 fn <fn() as std::ops::FnOnce<()>>::call_once - shim(fn())
+    sub     qword ptr [jit_record.ctr],10h
+    js      L1
+L0:
     sub     rsp,18h
     mov     [rsp+8],rdi
     mov     rax,[rsp+8]
     call    rax
     add     rsp,18h
     ret
+L1:
+    lea     r11,[jit_record]
+    call    qword ptr [r11+8]
+    jmp     L0
 
 fn <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::call_once - shim
+    sub     qword ptr [jit_record.ctr],10h
+    js      L4
+L0:
     sub     rsp,28h
     mov     [rsp+10h],rdi
     lea     rax,[rsp+10h]
@@ -25,7 +42,11 @@ fn <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::cal
     add     rsp,28h
     ret
     nop     [rax+rax]
-L0:
+    nop     [rax]
+L1:
+    sub     qword ptr [jit_record.ctr],1
+    js      L3
+L2:
     lea     rdi,[rsp+20h]
     mov     esi,0FFFFFFE0h
     call    ryo_h_Resume
@@ -34,9 +55,21 @@ L0:
     mov     rsi,rax
     mov     edx,0FFFFFFE0h
     call    ryo_h_Lpad
+    jmp     L1
+L3:
+    lea     r11,[jit_record]
+    xor     eax,eax
+    call    qword ptr [r11+10h]
+    jmp     L2
+L4:
+    lea     r11,[jit_record]
+    call    qword ptr [r11+8]
     jmp     L0
 
 fn <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::call_once - shim(vtable)
+    sub     qword ptr [jit_record.ctr],10h
+    js      L1
+L0:
     sub     rsp,28h
     mov     [rsp+10h],rdi
     mov     rax,[rsp+10h]
@@ -48,8 +81,15 @@ fn <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::cal
     mov     eax,[rsp+1Ch]
     add     rsp,28h
     ret
+L1:
+    lea     r11,[jit_record]
+    call    qword ptr [r11+8]
+    jmp     L0
 
 fn core::fmt::rt::Argument::<'_>::new_display::<u32>
+    sub     qword ptr [jit_record.ctr],10h
+    js      L1
+L0:
     sub     rsp,58h
     mov     [rsp+28h],rdi
     mov     [rsp+38h],rsi
@@ -74,8 +114,15 @@ fn core::fmt::rt::Argument::<'_>::new_display::<u32>
     mov     rax,[rsp+28h]
     add     rsp,58h
     ret
+L1:
+    lea     r11,[jit_record]
+    call    qword ptr [r11+8]
+    jmp     L0
 
 fn core::fmt::rt::Argument::<'_>::new_display::<u64>
+    sub     qword ptr [jit_record.ctr],10h
+    js      L1
+L0:
     sub     rsp,58h
     mov     [rsp+28h],rdi
     mov     [rsp+38h],rsi
@@ -100,18 +147,25 @@ fn core::fmt::rt::Argument::<'_>::new_display::<u64>
     mov     rax,[rsp+28h]
     add     rsp,58h
     ret
+L1:
+    lea     r11,[jit_record]
+    call    qword ptr [r11+8]
+    jmp     L0
 
 fn fib
+    sub     qword ptr [jit_record.ctr],10h
+    js      L6
+L0:
     sub     rsp,68h
     mov     [rsp+54h],edi
     cmp     dword ptr [rsp+54h],2
-    jae     L0
+    jae     L1
     lea     rdi,[rsp+60h]
     mov     esi,0FFFFFFF8h
     mov     edx,0FFFFFFF4h
     call    ryo_h_ZextW32W64
-    jmp     L4
-L0:
+    jmp     L5
+L1:
     mov     dword ptr [rsp+0Ch],1
     lea     rdi,[rsp+60h]
     mov     esi,0FFFFFFDCh
@@ -120,7 +174,7 @@ L0:
     mov     r8d,0FFFFFFACh
     call    ryo_h_SubOvfUW32
     test    byte ptr [rsp+40h],0FFh
-    je      L1
+    je      L2
     lea     rdi,[rsp+60h]
     mov     esi,0FFFFFFA8h
     lea     rdx,[k0]
@@ -130,7 +184,7 @@ L0:
     lea     rdi,[rsp+60h]
     call    ryo_h_Unreachable
     ud2
-L1:
+L2:
     mov     eax,[rsp+3Ch]
     mov     [rsp+44h],eax
     mov     edi,[rsp+44h]
@@ -144,7 +198,7 @@ L1:
     mov     r8d,0FFFFFFACh
     call    ryo_h_SubOvfUW32
     test    byte ptr [rsp+28h],0FFh
-    je      L2
+    je      L3
     lea     rdi,[rsp+60h]
     mov     esi,0FFFFFFA8h
     lea     rdx,[k3]
@@ -154,7 +208,7 @@ L1:
     lea     rdi,[rsp+60h]
     call    ryo_h_Unreachable
     ud2
-L2:
+L3:
     mov     eax,[rsp+24h]
     mov     [rsp+2Ch],eax
     mov     edi,[rsp+2Ch]
@@ -167,7 +221,7 @@ L2:
     mov     r8d,0FFFFFFD0h
     call    ryo_h_AddOvfUW64
     test    byte ptr [rsp+18h],0FFh
-    je      L3
+    je      L4
     lea     rdi,[rsp+60h]
     mov     esi,0FFFFFFA8h
     lea     rdx,[k6]
@@ -177,15 +231,22 @@ L2:
     lea     rdi,[rsp+60h]
     call    ryo_h_Unreachable
     ud2
-L3:
+L4:
     mov     rax,[rsp+10h]
     mov     [rsp+58h],rax
-L4:
+L5:
     mov     rax,[rsp+58h]
     add     rsp,68h
     ret
+L6:
+    lea     r11,[jit_record]
+    call    qword ptr [r11+8]
+    jmp     L0
 
 fn main
+    sub     qword ptr [jit_record.ctr],10h
+    js      L1
+L0:
     sub     rsp,0B8h
     mov     dword ptr [rsp+0Ch],27h
     mov     edi,[rsp+0Ch]
@@ -231,8 +292,15 @@ fn main
     call    qword ptr [sym6]
     add     rsp,0B8h
     ret
+L1:
+    lea     r11,[jit_record]
+    call    qword ptr [r11+8]
+    jmp     L0
 
 fn std::fmt::Arguments::<'_>::new::<15, 2>
+    sub     qword ptr [jit_record.ctr],10h
+    js      L1
+L0:
     sub     rsp,38h
     mov     [rsp+18h],rdi
     mov     [rsp+10h],rsi
@@ -244,8 +312,15 @@ fn std::fmt::Arguments::<'_>::new::<15, 2>
     mov     rdx,[rsp+28h]
     add     rsp,38h
     ret
+L1:
+    lea     r11,[jit_record]
+    call    qword ptr [r11+8]
+    jmp     L0
 
 fn std::hint::black_box::<u32>
+    sub     qword ptr [jit_record.ctr],10h
+    js      L1
+L0:
     sub     rsp,18h
     mov     [rsp+8],edi
     mov     eax,[rsp+8]
@@ -253,8 +328,15 @@ fn std::hint::black_box::<u32>
     mov     eax,[rsp+0Ch]
     add     rsp,18h
     ret
+L1:
+    lea     r11,[jit_record]
+    call    qword ptr [r11+8]
+    jmp     L0
 
 fn std::rt::lang_start::<()>
+    sub     qword ptr [jit_record.ctr],10h
+    js      L1
+L0:
     sub     rsp,58h
     mov     [rsp+40h],rdi
     mov     [rsp+38h],rsi
@@ -279,8 +361,15 @@ fn std::rt::lang_start::<()>
     mov     rax,[rsp+48h]
     add     rsp,58h
     ret
+L1:
+    lea     r11,[jit_record]
+    call    qword ptr [r11+8]
+    jmp     L0
 
 fn std::rt::lang_start::<()>::{closure#0}
+    sub     qword ptr [jit_record.ctr],10h
+    js      L1
+L0:
     sub     rsp,28h
     mov     [rsp+10h],rdi
     mov     rax,[rsp+10h]
@@ -299,12 +388,23 @@ fn std::rt::lang_start::<()>::{closure#0}
     mov     eax,[rsp+1Ch]
     add     rsp,28h
     ret
+L1:
+    lea     r11,[jit_record]
+    call    qword ptr [r11+8]
+    jmp     L0
 
 fn std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+    sub     qword ptr [jit_record.ctr],10h
+    js      L1
+L0:
     sub     rsp,18h
     mov     [rsp+8],rdi
     mov     rdi,[rsp+8]
     call    fn0
     add     rsp,18h
     ret
+L1:
+    lea     r11,[jit_record]
+    call    qword ptr [r11+8]
+    jmp     L0
 

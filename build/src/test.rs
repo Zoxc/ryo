@@ -829,9 +829,10 @@ fn same_exports(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> 
 }
 
 /// Whether `s` is one of `ryo_rt`'s own `#[rustc_std_internal_symbol]`s (mangled under the
-/// `__rustc` root): the handlers `ryo_h_*` and `ryo_probe_stack`.
+/// `__rustc` root): the handlers `ryo_h_*`, `ryo_probe_stack` and the JIT's trip entry points
+/// `ryo_jit_trip_*`.
 fn is_rt_internal(s: &str) -> bool {
-    s.starts_with("_R") && s.contains("7___rustc") && (s.contains("ryo_h_") || s.ends_with("15ryo_probe_stack"))
+    s.starts_with("_R") && s.contains("7___rustc") && (s.contains("ryo_h_") || s.ends_with("15ryo_probe_stack") || s.contains("ryo_jit_trip_"))
 }
 
 /// `ryo_rt` must use only `core`, its own crates, libc, and the panic runtime's two entry

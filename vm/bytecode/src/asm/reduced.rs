@@ -47,7 +47,7 @@ pub(super) fn addr_arg(r: Ref) -> Option<Arg> {
         Ref::Sym(s) => Arg::Sym(s),
         Ref::Site(s) => Arg::Site(s),
         Ref::Ro(o) => Arg::Ro(o),
-        Ref::Handler(_) | Ref::Probe | Ref::Func(_) => return None,
+        Ref::Handler(_) | Ref::Probe | Ref::Func(_) | Ref::Rec | Ref::RecCtr => return None,
     })
 }
 
@@ -110,7 +110,24 @@ pub(super) fn words(
         .collect();
     let scopes = scopes.iter().map(|&(i, sc)| Scope { code_offset: wpos[i], ..sc }).collect();
     let dropped = dropped.iter().map(|&i| wpos[i]).collect();
-    Decoded { words: out, frame_size, cleanup, scopes, dropped }
+    // Loop heads: the targets of branches at or after them (single targets: a switch's
+    // default, not its cases).
+    let mut head = alloc::vec![false; insns.len()];
+    for (k, i) in insns.iter().enumerate() {
+        let single: Vec<u32> = match i {
+            Insn::Native(_, ops) => ops.iter().filter_map(|o| if let Opnd::Target(t) = o { Some(*t) } else { None }).collect(),
+            Insn::Handler(_, _, Then::Branch { target, .. }) => alloc::vec![*target],
+            Insn::Handler(_, _, Then::Table(ts)) => ts.last().copied().into_iter().collect(),
+            Insn::Handler(..) => Vec::new(),
+        };
+        for t in single {
+            if t as usize <= k {
+                head[t as usize] = true;
+            }
+        }
+    }
+    let heads = (0..insns.len()).filter(|&i| head[i]).map(|i| wpos[i]).collect();
+    Decoded { words: out, frame_size, cleanup, scopes, dropped, heads }
 }
 
 /// The reduced form of a function given as full instruction words (slots already frame
