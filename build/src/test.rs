@@ -463,8 +463,9 @@ pub fn run(clif: bool) -> Result<(), String> {
         }
     }
     let hello = root.join("tests").join("hello.rs");
-    let checks: [(&str, Result<(), String>); 8] = [
+    let checks: [(&str, Result<(), String>); 9] = [
         ("rt-core-only", rt_core_only(&root)),
+        ("jit-sealed", jit_sealed(&root, &out)),
         ("reject-randomize-layout", reject_randomize_layout(&rustc_ryo, &hello, &out)),
         ("reject-codegen-units", reject_codegen_units(&rustc_ryo, &hello, &out)),
         ("reject-incremental", reject_incremental(&rustc_ryo, &hello, &out)),
@@ -841,15 +842,7 @@ fn same_exports(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> 
             // The runtime's own symbols, which every ryo output links: `ryo_vm_register`
             // (C level), and in a Rust dylib everything of `ryo_rt` and `ryo_bytecode`,
             // the handlers included.
-            // And the JIT's (`ryo_jit_start`, and `ryo_jit`'s Rust symbols).
-            let runtime = |s: &str| {
-                s == "ryo_vm_register"
-                    || s == "ryo_jit_start"
-                    || s.contains("6ryo_rt")
-                    || s.contains("12ryo_bytecode")
-                    || s.contains("7ryo_jit")
-                    || is_rt_internal(s)
-            };
+            let runtime = |s: &str| s == "ryo_vm_register" || s.contains("6ryo_rt") || s.contains("12ryo_bytecode") || is_rt_internal(s);
             let mut syms: Vec<String> = syms.lines().filter(|s| !runtime(s)).map(str::to_owned).collect();
             syms.sort();
             lists.push(syms);
@@ -885,8 +878,9 @@ fn outside(s: &str) -> bool {
 /// locks and TLS may be VM functions, which the runtime must not call while it switches VM
 /// state (design/vm.md, "No re-entry into the VM from the runtime"). Checked on the undefined
 /// symbols of every sysroot's `ryo_rt` rlib, by crate in their v0 mangled names. ELF only.
-/// The JIT's trips are part of it; the JIT thread, which uses std, is `ryo_jit`'s
-/// (design/vm.md#jit), which `ryo_rt` reaches only through `ryo_jit_start`.
+/// The JIT's trips are part of it; the JIT thread, which uses std, is the sealed object that
+/// the rlib bundles (design/vm.md#jit), which `ryo_rt` reaches only through `ryo_jit_start`
+/// and `jit-sealed` checks: this check skips it.
 fn rt_core_only(root: &Path) -> Result<(), String> {
     if cfg!(windows) {
         return Ok(());
@@ -911,10 +905,17 @@ fn rt_core_only(root: &Path) -> Result<(), String> {
     const PANIC_RUNTIME: [&str; 3] = ["18___rust_start_panic", "20___rust_panic_cleanup", "rust_eh_personality"];
     for lib in libs {
         let syms = output(cmd(&nm).args(["-u", "--no-demangle", "-j"]).arg(&lib))?;
+        // Per member, after a `<member>:` line.
+        let mut in_jit = false;
         let bad: Vec<&str> = syms
             .lines()
             .map(str::trim)
-            .filter(|s| !s.is_empty() && !s.ends_with(':'))
+            .filter(|s| {
+                if let Some(member) = s.strip_suffix(':') {
+                    in_jit = member == crate::jit::OBJECT;
+                }
+                !s.is_empty() && !s.ends_with(':') && !in_jit
+            })
             .filter(|s| !PANIC_RUNTIME.iter().any(|p| s.ends_with(p)))
             // Rust symbols must name only allowed crates, and no allocator shim (std's).
             .filter(|s| outside(s))
@@ -940,6 +941,49 @@ fn rt_core_only(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// The sealed JIT that the native sysroot's `ryo_rt` bundles (design/vm.md#jit) keeps its std
+/// to itself: its only global definition is `ryo_jit_start` (another linker could merge a
+/// global of the same name, such as `DW.ref.rust_eh_personality`'s COMDAT group, with the
+/// program's), it references no Rust symbol and no allocator shim (which would bind to the
+/// program's std), and it doesn't define the unwinder, which it must share with the program
+/// (`__register_frame` registers JIT code with the program's). ELF hosts with the JIT only.
+fn jit_sealed(root: &Path, out: &Path) -> Result<(), String> {
+    let info = crate::utils::RustcInfo::get()?;
+    if !crate::jit::supported(&info.host) {
+        return Ok(());
+    }
+    let lib = root.join("dist").join("lib").join("rustlib").join(&info.host).join("lib").join("libryo_rt.rlib");
+    let dir = out.join("jit-sealed");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let ar = crate::jit::llvm_tool(&info, "llvm-ar");
+    let nm = crate::jit::llvm_tool(&info, "llvm-nm");
+    crate::utils::run(cmd(&ar).arg("x").arg(&lib).arg(crate::jit::OBJECT).arg("--output").arg(&dir))
+        .map_err(|e| format!("no sealed JIT in {}: {e}", lib.display()))?;
+    let obj = dir.join(crate::jit::OBJECT);
+    let names = |args: &[&str]| -> Result<Vec<String>, String> {
+        Ok(output(cmd(&nm).args(args).args(["--no-demangle", "-j"]).arg(&obj))?
+            .lines()
+            .map(|l| l.trim().to_owned())
+            .filter(|l| !l.is_empty())
+            .collect())
+    };
+    let globals = names(&["--extern-only", "--defined-only"])?;
+    if globals != [crate::jit::START] {
+        return Err(format!("{} defines globals {globals:?}, not just {}", obj.display(), crate::jit::START));
+    }
+    let rust = |s: &str| s.starts_with("_R") || s.starts_with("_ZN") || s.starts_with("__rust") || s.starts_with("__rdl") || s.starts_with("__rg_");
+    let bad: Vec<String> = names(&["-u"])?.into_iter().filter(|s| rust(s)).collect();
+    if !bad.is_empty() {
+        return Err(format!("{} references Rust symbols {bad:?}", obj.display()));
+    }
+    let unwinder: Vec<String> = names(&["--defined-only"])?.into_iter().filter(|s| s.starts_with("_Unwind_") || s == "__register_frame").collect();
+    if !unwinder.is_empty() {
+        return Err(format!("{} defines the unwinder's {unwinder:?}", obj.display()));
+    }
+    Ok(())
+}
+
 /// A call path from `ryo_rt`'s own code to core's panic machinery, through `ryo_bytecode`, if
 /// there is one. Under `--sysroot ryo` the panic handler is std's (VM code), so a panic in the
 /// runtime would enter the VM while it switches state. Everything `ryo_rt`'s rlib defines
@@ -953,7 +997,17 @@ fn panic_path(objdump: &Path, rt: &Path, bytecode: &Path) -> Result<Option<Vec<S
     for (lib, is_rt) in [(rt, true), (bytecode, false)] {
         let dis = output(cmd(objdump).args(["-dr", "--no-show-raw-insn"]).arg(lib))?;
         let mut cur: Option<String> = None;
+        // In the sealed JIT, after a `<lib>(<member>):  file format …` line.
+        let mut in_jit = false;
         for line in dis.lines() {
+            if line.contains(":\tfile format ") || line.contains(": file format ") {
+                in_jit = line.contains(&format!("({}):", crate::jit::OBJECT));
+                cur = None;
+                continue;
+            }
+            if in_jit {
+                continue;
+            }
             if let Some((_, name)) = line.strip_suffix(">:").and_then(|l| l.split_once(" <")) {
                 let name = name.to_owned();
                 if is_rt {

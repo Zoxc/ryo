@@ -5,6 +5,7 @@ mod clif;
 mod crates;
 mod cross;
 mod dist;
+mod jit;
 mod sysroot;
 mod test;
 mod utils;

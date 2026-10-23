@@ -37,7 +37,8 @@ pub fn build(targets: &[String], ryo_std: bool) -> Result<(), String> {
         fs::create_dir_all(&target_lib).map_err(|e| format!("creating {}: {e}", target_lib.display()))?;
         install_llvm_sysroot(&info, &dist, triple)?;
         let cross = (*triple != info.host).then_some(triple.as_str());
-        for (krate, rlib) in build_runtime(&root, &target, &dist, triple, cross)? {
+        let jit = if crate::jit::supported(triple) { Some(crate::jit::build(&root, &target, &info, triple, cross)?) } else { None };
+        for (krate, rlib) in build_runtime(&root, &target, &dist, cross, jit.as_deref())? {
             copy(&rlib, &target_lib.join(format!("lib{krate}.rlib")))?;
         }
     }
@@ -122,16 +123,11 @@ fn is_std_lib(file_name: &str) -> bool {
     !rustc_dev && !file_name.contains("LLVM")
 }
 
-/// Whether `ryo_rt` has a JIT on `triple` (design/vm.md#jit): elsewhere its trips are the
-/// no-op JIT.
-fn has_jit(triple: &str) -> bool {
-    triple.starts_with("x86_64-") && triple.contains("-linux-")
-}
-
-/// Builds `ryo_rt` (and `ryo_bytecode`, and with the JIT `ryo_jit`) with the stock LLVM
-/// backend against `dist/`'s std, for `triple` (`cross` unless it is the host), and returns
-/// their crate names and rlibs.
-fn build_runtime(root: &Path, target: &Path, dist: &Path, triple: &str, cross: Option<&str>) -> Result<Vec<(&'static str, PathBuf)>, String> {
+/// Builds `ryo_rt` (and `ryo_bytecode`) with the stock LLVM backend against `dist/`'s std, for
+/// the host or the `cross` target, and returns their crate names and rlibs. With `jit`, the
+/// directory of the sealed JIT ([`crate::jit::build`]), `ryo_rt` gets its `jit` feature and
+/// bundles it.
+fn build_runtime(root: &Path, target: &Path, dist: &Path, cross: Option<&str>, jit: Option<&Path>) -> Result<Vec<(&'static str, PathBuf)>, String> {
     eprintln!("[y] runtime: ryo_rt{}", cross.map(|t| format!(" for {t}")).unwrap_or_default());
     let mut sysroot_flag = String::from("--sysroot=");
     sysroot_flag.push_str(dist.to_str().ok_or("dist/ path is not UTF-8")?);
@@ -139,10 +135,12 @@ fn build_runtime(root: &Path, target: &Path, dist: &Path, triple: &str, cross: O
     // carry bitcode for `-Clto` builds against it.
     let rustflags = [&sysroot_flag, "-Ccodegen-units=1", "-Cpanic=unwind", "-Cembed-bitcode=yes"];
     let mut cargo = cmd("cargo");
-    // The JIT, which uses this (native) std (design/vm.md, "JIT"); `RYO_RT_FEATURES` adds
-    // features, such as `fp-rbp` for measurements (design/build.md#test-and-bench).
-    let jit = has_jit(triple);
-    let mut features = String::from(if jit { "jit" } else { "" });
+    // The JIT (design/vm.md, "JIT"); `RYO_RT_FEATURES` adds features, such as `fp-rbp` for
+    // measurements (design/build.md#test-and-bench).
+    let mut features = String::from(if jit.is_some() { "jit" } else { "" });
+    if let Some(dir) = jit {
+        cargo.env("RYO_JIT_LIB_DIR", dir);
+    }
     for f in std::env::var("RYO_RT_FEATURES").unwrap_or_default().split([',', ' ']).filter(|f| !f.is_empty()) {
         if !features.is_empty() {
             features.push(',');
@@ -168,9 +166,8 @@ fn build_runtime(root: &Path, target: &Path, dist: &Path, triple: &str, cross: O
             .env("CARGO_ENCODED_RUSTFLAGS", rustflags.join("\x1f")),
     )?;
     let rlibs = artifact_rlibs(&out);
-    ["ryo_rt", "ryo_bytecode", "ryo_jit"][..if jit { 3 } else { 2 }]
-        .iter()
-        .copied()
+    ["ryo_rt", "ryo_bytecode"]
+        .into_iter()
         .map(|krate| match rlibs.iter().find(|p| rlib_crate(p) == Some(krate)) {
             Some(rlib) => Ok((krate, rlib.clone())),
             None => Err(format!("cargo did not report an rlib for {krate}")),

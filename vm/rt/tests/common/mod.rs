@@ -4,6 +4,10 @@
 
 #![allow(dead_code)]
 
+// The JIT's `ryo_jit_start`, which `ryo_rt`'s trips call with its `jit` feature (`y build`
+// bundles a sealed copy instead).
+extern crate ryo_jit;
+
 use std::any::Any;
 use std::collections::HashMap;
 use std::ffi::c_void;
