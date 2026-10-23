@@ -263,8 +263,8 @@ impl ObjectFormat for Coff {
 
     fn global_function(&self, obj: &mut Object<'static>, name: &str, section: object::write::SectionId, offset: u64, size: u64, _sym: FuncSymbol) {
         // PE has no symbol visibility: a DLL exports what its export list names (rustc's
-        // `/EXPORT` directives). A weak definition would need a comdat; VM functions with
-        // weak linkage get an ordinary one.
+        // `/EXPORT` directives). A weak definition would need a comdat; VM functions never
+        // have weak linkage (`vm_fn_sig` keeps functions with such a `#[linkage]` native).
         obj.add_symbol(Symbol {
             name: name.as_bytes().to_vec(),
             value: offset,

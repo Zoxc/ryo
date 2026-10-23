@@ -293,6 +293,14 @@ pub(crate) const CORPUS: &[Program] = &[
         vm: &["main", "calls"],
         ..PROGRAM
     },
+    // Functions with an interposable `#[linkage]` stay native, so a strong definition in
+    // another crate replaces a weak one for VM callers too.
+    Program {
+        name: "vm_linkage",
+        crates: &[krate("vlk", "vm_linkage/lib.rs", CrateKind::Rlib), krate("main", "vm_linkage/main.rs", CrateKind::Bin)],
+        vm: &["main", "callers", "pointers"],
+        ..PROGRAM
+    },
     Program {
         name: "vm_staticlib",
         crates: &[krate("vmc", "vm_c/lib.rs", CrateKind::Staticlib)],

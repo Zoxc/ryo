@@ -44,6 +44,9 @@ and `codegen_crate` reads them.
      - `#[naked]` functions
      - EII implementations (`#[<eii declaration>]`): cg_llvm defines the declaration's symbol
        as a forwarder while predefining the implementation (`add_function_aliases`)
+     - functions with a `#[linkage]` other than `external` or `internal`: another object's
+       definition may replace a weak or linkonce one, which the image's direct `call`s would
+       bypass; `available_externally` defines nothing; PE has no plain weak definitions
      - inline asm
      - calls to C-variadic functions
      - functions with non-Rust ABIs defined in Rust (`extern "C" fn`): VM code follows only
@@ -128,6 +131,10 @@ and `codegen_crate` reads them.
        so copies from several crates merge.
      - On PE, hidden visibility has no effect, and exports come only from the export list, so
        nothing leaks.
+     - **Linkonce items** (explicit `#[linkage = "linkonce[_odr]"]`, which keeps a function
+       native): LLVM drops a linkonce definition no native code uses, so an image-referenced
+       one gets the weak form of its linkage (`WeakAny`, `WeakODR`), which merges the same way
+       but is kept.
      - Aliases aren't an option: cg_llvm only creates them for foreign-item DefIds
        (`mono_item.rs:54-134`).
 5. **Emit the image** as one extra object with the `object` crate ([vm.md](vm.md#image-format)):

@@ -158,6 +158,13 @@ pub fn vm_fn_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> Result<Ab
     if !attrs.foreign_item_symbol_aliases.is_empty() {
         return native("EII implementation");
     }
+    // An explicit `#[linkage]` other than `external` or `internal`: a weak or linkonce
+    // definition may be replaced by another object's, which the image's direct `call`s would
+    // bypass, an `available_externally` one must not be defined at all, and PE has no weak
+    // definitions outside a comdat. cg_llvm handles all of them.
+    if attrs.linkage.is_some_and(|l| !matches!(l, rustc_hir::attrs::Linkage::External | rustc_hir::attrs::Linkage::Internal)) {
+        return native("#[linkage]");
+    }
     if !attrs.target_features.is_empty() {
         return native("#[target_feature]");
     }

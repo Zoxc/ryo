@@ -334,7 +334,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             tcx.symbol_name(main).name.to_owned()
         });
         self.walk_stub_neighbors();
-        let mut flips = FxHashSet::default();
+        let mut flips = FxHashMap::default();
         for item in image_refs {
             self.make_visible(item, &mut flips);
         }
@@ -355,9 +355,9 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             let is_vm = matches!(item, MonoItem::Fn(i) if self.index.contains_key(i));
             if !is_vm {
                 let mut data = *data;
-                if flips.contains(item) {
-                    data.linkage = Linkage::External;
-                    data.visibility = Visibility::Hidden;
+                if let Some(&(linkage, visibility)) = flips.get(item) {
+                    data.linkage = linkage;
+                    data.visibility = visibility;
                 }
                 items.insert(*item, data);
             }
@@ -389,9 +389,9 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         // Items made External + Hidden only for the image aren't exported
         // (design/backend.md#query-overrides).
         let mut hidden: Vec<Instance<'tcx>> = Vec::new();
-        hidden.extend(flips.iter().filter_map(|item| match *item {
-            MonoItem::Fn(i) => Some(i),
-            MonoItem::Static(_) | MonoItem::GlobalAsm(_) => None,
+        hidden.extend(flips.iter().filter_map(|(item, &(linkage, _))| match *item {
+            MonoItem::Fn(i) if linkage == Linkage::External => Some(i),
+            _ => None,
         }));
         hidden.extend(self.hidden_added.iter().copied());
         let results = Results {
@@ -653,9 +653,11 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
     }
 
     /// Makes a native item the image refers to by symbol linkable from the image's object: an
-    /// internal item becomes External + Hidden (design/backend.md, Linkage). Items that aren't
-    /// in the CGU yet but are codegened locally are added.
-    fn make_visible(&mut self, item: MonoItem<'tcx>, flips: &mut FxHashSet<MonoItem<'tcx>>) {
+    /// internal item becomes External + Hidden, and a linkonce one (`#[linkage]`), which LLVM
+    /// drops when no native code uses it, its weak form (design/backend.md, Linkage). `flips`
+    /// gets the changed CGU items' new linkage and visibility. Items that aren't in the CGU yet
+    /// but are codegened locally are added.
+    fn make_visible(&mut self, item: MonoItem<'tcx>, flips: &mut FxHashMap<MonoItem<'tcx>, (Linkage, Visibility)>) {
         let tcx = self.tcx;
         if let MonoItem::Fn(f) = item
             && self.index.contains_key(&f)
@@ -680,8 +682,14 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             return;
         }
         if let Some(data) = self.cgu.items().get(&item) {
-            if data.linkage == Linkage::Internal {
-                flips.insert(item);
+            let flip = match data.linkage {
+                Linkage::Internal => Some((Linkage::External, Visibility::Hidden)),
+                Linkage::LinkOnceAny => Some((Linkage::WeakAny, data.visibility)),
+                Linkage::LinkOnceODR => Some((Linkage::WeakODR, data.visibility)),
+                _ => None,
+            };
+            if let Some(flip) = flip {
+                flips.insert(item, flip);
             }
             return;
         }
