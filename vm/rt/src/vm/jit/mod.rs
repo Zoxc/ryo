@@ -33,18 +33,7 @@ use std::sync::OnceLock;
 
 use ryo_bytecode::image::{Image, JIT_COLD, JIT_DONE, JIT_FAILED, JIT_QUEUED, JIT_THRESHOLD, JitRecord};
 
-/// The counter of a compiled function ([`JitRecord::ctr`]): far enough below 0 that the
-/// counter checks' `sub`s keep it negative (every check takes its stub) for 2^58 calls. Not
-/// `i64::MIN`, from which the next `sub` would wrap to a large positive count.
-pub const REDIRECT: i64 = i64::MIN / 2;
-
-/// The bytes before a JIT function's first instruction that its record's `entry` points at:
-/// `lea r11, [rip + code]; mov [rsp], r11; ret`, which replaces the return address of the
-/// counter stub's `call [r11 + 8]` with the code and returns to it, so that the function
-/// starts with its caller's return address on top, as if called directly. Returning rather
-/// than dropping the address (`pop`) keeps the return stack buffer balanced: the `ret`
-/// mispredicts once, but the function's own `ret` and its callers' don't.
-pub const JIT_ENTRY_PREFIX: usize = 12;
+pub use ryo_bytecode::jit_abi::{JIT_ENTRY_PREFIX, REDIRECT};
 
 /// The settings, read once from the environment (or [`configure_jit`]).
 struct Config {

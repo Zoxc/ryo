@@ -10,6 +10,7 @@
 //!   instructions that run as native code, and one `handler` instruction for the rest.
 //! - [`image`]: the image format, its zero-copy reader, the writer (`alloc`), and the portal
 //!   `ID` helpers.
+//! - [`jit_abi`]: the interface between the runtime and the JIT ([`jit_abi::RtApi`]).
 //!
 //! The decoder and the image reader use `core` only. The encoder and the image writer need
 //! the `alloc` feature (on by default; `ryo_rt` disables it).
@@ -27,6 +28,7 @@ pub mod full;
 pub mod abi;
 pub mod asm;
 pub mod image;
+pub mod jit_abi;
 pub mod reduced;
 
 pub use full::{ALL_OPCODES, Insn, OP_INFO, OpInfo, Opcode};
