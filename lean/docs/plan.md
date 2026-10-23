@@ -11,6 +11,9 @@ and the others in `docs/` are its details:
 | [reduced.md](reduced.md) | §C0 and Part D: R, the reduced VM level with provenance, `opSem`, contracts |
 | [aot.md](aot.md) | §C1–C6: the lowering check and its certificate, the verified decoder, the object readers, the image checks, the AOT theorems, the trusted base |
 | [jit.md](jit.md) | Part E: today's JIT and the SSA tier: levels, the log, validation step by step, inlining |
+| [assumptions.md](assumptions.md) | audit of the Lean code: everything it assumes (`sorry`s, opaque code, fuel, oracle, environment, the dump), and how to regenerate the list |
+| [divergences.md](divergences.md) | audit of the Lean code: where L0 differs from what rustc, LLVM and ryo actually do, with the bugs found |
+| [minirust-divergences.md](minirust-divergences.md) | audit of the Lean code: D1–D36 checked against the code, and undocumented differences from MiniRust |
 
 References of the form §A.n are to mir-spec.md, §B.n to x86.md, §C0 and Part D to
 reduced.md, §C1–§C6 to aot.md, §E.n to jit.md, and §0–§6 to this document.

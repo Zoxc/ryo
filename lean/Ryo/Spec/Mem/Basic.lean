@@ -47,7 +47,9 @@ def containsAddr (a : Allocation) (addr : Nat) : Bool :=
 
 end Allocation
 
-/-- `BasicMemory`: allocations indexed by `AllocId`, assigned consecutively. -/
+-- [D16]
+/-- `BasicMemory`: allocations indexed by `AllocId`, assigned consecutively. No aliasing
+model (D16): provenance is only the `AllocId`. -/
 structure Memory where
   allocs : Array Allocation := #[]
 deriving Repr, Inhabited

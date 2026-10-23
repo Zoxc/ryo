@@ -11,6 +11,13 @@ The detailed plan is in [docs/](docs/plan.md): the strategy and milestones
 ([x86.md](docs/x86.md)), the reduced VM level R ([reduced.md](docs/reduced.md)), the AOT
 checks and theorems ([aot.md](docs/aot.md)) and the JIT's validation ([jit.md](docs/jit.md)).
 
+What the Lean code takes on trust is in [docs/assumptions.md](docs/assumptions.md) (`sorry`s,
+opaque code, fuel, oracle and environment contracts, the dump as trusted input, semantic
+choices, and how to regenerate the list). Where L0 differs from what rustc, LLVM and ryo
+actually do is in [docs/divergences.md](docs/divergences.md), and where it differs from
+MiniRust (with D1–D36 checked against the code) in
+[docs/minirust-divergences.md](docs/minirust-divergences.md).
+
 ## Build and test
 
 ```
