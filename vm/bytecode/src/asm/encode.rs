@@ -1136,11 +1136,14 @@ impl Asm {
         let target = branch_targets(&pieces, &labels);
         cache(&mut pieces, &target);
         match drops {
-            // The cache keeps a sequence's write its last piece.
+            // The cache drops at most a sequence's leading reload, so a store named is still
+            // its last piece.
             Some(ks) => {
                 for k in ks {
-                    let Piece::Native(it) = pieces[k] else { unreachable!("a dropped store is native") };
-                    pieces[k] = Piece::Dropped(it);
+                    match pieces[k] {
+                        Piece::Native(it @ Item::St { .. }) => pieces[k] = Piece::Dropped(it),
+                        _ => unreachable!("a dropped store is a store"),
+                    }
                 }
             }
             None => drop_dead_stores(&mut pieces, &target),
