@@ -11,6 +11,8 @@
   commit before with `scripts/compare-branches.py --worktree <base> --build head=. --metric
   cachegrind` (instruction counts: deterministic, so small differences are real), and report
   those counts alongside CPU-time numbers.
+- Lean effort. When delegating Lean work to subagents, use medium effort for writing specs
+  and low effort for proofs.
 
 # Project rules
 
