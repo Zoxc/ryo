@@ -75,7 +75,9 @@ code cites them inline as `-- [Dn]` at the definitions concerned, and cites sect
   set of behaviors and states `Refines` (with the D25 stack-overflow allowance).
 - Floats are exact: operations compute the exact rational result and round to nearest-even
   (`Lang/Float.lean`), cross-checked against hardware `Float`/`Float32` in the tests.
-- External calls are events; the interpreter has shims for `__rust_alloc` & co., `write`,
+- External calls are events. Symbols without a shim are run by the oracle's environment
+  (`Oracle.env`), which `Behaviors`/`Refines` restrict by an `ExtSpec`; the interpreter's
+  environment runs nothing. The shims cover `__rust_alloc` & co., `write`,
   `exit`, `abort`, `_Unwind_RaiseException` (starts unwinding) and `ryo_test_print`.
 
 ## Status

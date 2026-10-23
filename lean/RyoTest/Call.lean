@@ -2,7 +2,8 @@
 Ports of MiniRust `tooling/minitest/src/tests/{call, return_, unwinding, catch_unwind}.rs`,
 plus tests for the call-related divergences: D12 (in-place arguments and return place), D14
 (ABI compatibility, `#[track_caller]`, `rust-call`), D15 (validation at entry/return), D18
-(MIR unwinding), D19 (`Drop`, `Assert`), D25 (stack overflow), tail calls.
+(MIR unwinding), D19 (`Drop`, `Assert`), D25 (stack overflow), tail calls, and external calls
+run by the oracle's environment (mir-spec §A.6).
 
 Adaptations: unwinding is started by an external call to `_Unwind_RaiseException` (D18:
 unwinding starts only in callees); `print` is the `ryo_test_print` shim; MiniRust's
@@ -332,6 +333,41 @@ def catchUnwind (panics : Bool) : Program := program do
     printI r.pr (copyL 0)
     ret
 
+/-! ### The environment (mir-spec §A.6) -/
+
+/-- `frob(&raw mut x, 10)` for an unknown external `frob`; returns `x`, checks `frob`'s result. -/
+def envProg : Program := program do
+  let frob ← addExtern "frob"
+  addFn "main" <| body i32 [] do
+    let x ← newLocal i32
+    storageLive x
+    assignL x (.use (ci32 1))
+    let p ← tmp (rawTo i32 true) (rawOf x)
+    assumeEq (← callTmp frob i32 [p, ci32 10]) (ci32 99)
+    assignL 0 (.use (copyL x))
+    ret
+
+/-- An environment whose `frob(p, k)` stores `k + 1` at `p` and returns 99. -/
+def frobOracle : Oracle :=
+  { concreteOracle with
+    env := fun _ f args s => match f, args with
+      | "frob", [.ptr p, .int k] =>
+        match typedStore s.mem p.thin (.int (k + 1)) i32 .one with
+        | .ok m => some (m, .ret (.int 99))
+        | .error _ => none
+      | _, _ => none }
+
+def envCall : Except String Unit := do
+  let r := runWith frobOracle envProg
+  match r.result with
+  | .ok (.returned (.int 11)) => pure ()
+  | _ => throw s!"environment call: {describe r}"
+  match r.events.toList with
+  | [.extCall "frob" [.ptr _, .int 10] (.ret (.int 99))] => pure ()
+  | evs => throw s!"environment call events: {repr evs}"
+  -- the interpreter's environment runs nothing
+  expectIllFormed envProg "unknown external function `frob`"
+
 def tests : List TestCase := [
   ⟨"call/success", fun _ => expectReturn (callProg unit [unit] [cunit] unit)⟩,
   ⟨"call/arg_count", fun _ => expectUb (callProg unit [unit] [] unit)
@@ -387,7 +423,8 @@ def tests : List TestCase := [
   ⟨"catch_unwind/catch", fun _ =>
     expectPrinted (catchUnwind true) [1, 2, 3, 1] (fun r => r.result matches .ok (.returned _))⟩,
   ⟨"catch_unwind/no_unwind", fun _ =>
-    expectPrinted (catchUnwind false) [1, 2, 0] (fun r => r.result matches .ok (.returned _))⟩
+    expectPrinted (catchUnwind false) [1, 2, 0] (fun r => r.result matches .ok (.returned _))⟩,
+  ⟨"extcall/env (A.6)", fun _ => envCall⟩
 ]
 
 end RyoTest.Call

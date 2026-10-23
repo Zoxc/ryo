@@ -22,6 +22,8 @@ Differences:
 `SemM` is the semantics monad: exceptions are outcomes (the state survives an exception, so
 traces up to UB are kept), and the oracle answers choices (`MonadChoice`). It is mir-spec's
 `ExecM`; quantifying over the oracle gives the relational semantics (mir-spec §A.4).
+The oracle also plays the environment (`Oracle.env`, mir-spec §A.6): it runs the external
+calls the shims do not cover; `Ryo.Spec.Mir.Behavior` restricts it by an `ExtSpec`.
 -/
 import Ryo.Spec.Mir.Syntax
 import Ryo.Spec.Lang.Representation
@@ -104,15 +106,22 @@ structure State where
   /-- Which instance a function allocation belongs to. -/
   fnAllocs : Std.TreeMap AllocId InstanceId := {}
   events : Array Event := #[]
-  /-- Number of choices made so far (lets oracles depend on the history). -/
+  /-- Number of choices and environment calls made so far (lets oracles depend on the
+  history). -/
   choiceCount : Nat := 0
   final : Option Final := none
   /-- D25: the deepest stack the run may build; deeper calls overflow. -/
   maxDepth : Nat := 10000
 
-/-- An oracle answers choice number `n`, given the state. -/
+/-- An oracle answers choice number `n`, given the state, and plays the environment
+(mir-spec §A.6). -/
 structure Oracle where
   answer : Nat → (c : Choice) → State → c.Answer
+  /-- The environment's run of external call number `n` (counted with the choices) to
+  `callee` with `args`, from state `s`: the memory after the call and its result; `none` if
+  the environment does not run `callee`. Not consulted for the shims' symbols. -/
+  env : (n : Nat) → (callee : String) → (args : List Value) → (s : State) →
+    Option (Memory × ExtResult) := fun _ _ _ _ => none
 
 abbrev SemM := ExceptT Outcome (StateT State (ReaderT Oracle Id))
 

@@ -12,7 +12,9 @@ mir-spec §A.4:
 - `ptr_guaranteed_cmp` (D20): the exact answer;
 - `fmuladd`: unfused (what baseline x86-64 code computes); `minimum_number_nsz` of opposite
   zeros: the second operand (the fallback body); `compare_bytes`: the byte difference (glibc's
-  `memcmp`).
+  `memcmp`);
+- the environment (mir-spec §A.6): runs no symbol, so external calls other than the shims
+  (`Ryo.Spec.Mir.External`) are ill-formed.
 Any run this produces without UB is a behavior of the program (the oracle answers within
 every constraint); a reported UB can be spurious for programs that cast integers to pointers
 (as with Miri).
@@ -49,6 +51,7 @@ def concreteOracle : Oracle where
     | .fmulAddFused => false
     | .nszZero => true
     | .compareBytes diff => diff
+  env := fun _ _ _ _ => none
 
 structure RunResult where
   /-- `.ok final` for a normal end, `.error o` for UB, abort, exit, ill-formedness, ... -/

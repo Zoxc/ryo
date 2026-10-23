@@ -155,7 +155,7 @@ Modules (namespace `Ryo.Spec`), with the MiniRust source each one ports:
 | `Ryo/Spec/Mir/Unwind.lean` | `terminators.md` § unwinding (replaced) | D18: `UnwindAction` semantics, `UnwindResume`, `UnwindTerminate`, cleanup-block discipline, `catch_unwind` |
 | `Ryo/Spec/Mir/Terminator.lean` | `lang/step/terminators.md` | `Goto`, `SwitchInt`, `Return`, `Unreachable`, `Drop` (D19), `Assert` (D19), dispatch to Call/Unwind |
 | `Ryo/Spec/Mir/Intrinsics.lean` | `lang/step/intrinsics.md` | the D20 set, each with rustc's UB conditions |
-| `Ryo/Spec/Mir/External.lean` | none (MiniRust programs are closed) | the environment interface (§A.6): `ExtCall`, `ExtSpec`, built-in shims for the interpreter (`__rust_alloc`, `__rust_dealloc`, `__rust_realloc`, `write`, `exit`, `abort`) |
+| `Ryo/Spec/Mir/External.lean` | none (MiniRust programs are closed) | the environment interface (§A.6): `callExternal`, built-in shims (other symbols go to the oracle's environment) (`__rust_alloc`, `__rust_dealloc`, `__rust_realloc`, `write`, `exit`, `abort`) |
 | `Ryo/Spec/Mir/Step.lean` | `lang/machine.md` (`step`) | `step : Program → State → M (Option Event)` |
 | `Ryo/Spec/Mir/Behavior.lean` | none | traces, `Behavior` (`terminates`, `diverges`, `goesWrong (ub)`, `aborts`), `Refines` (with D25), angelic handling (§A.4) |
 | `Ryo/Spec/Mir/Interp.lean` | MiniRust's `minirun` | `run (fuel) (oracle) : Program → Except Outcome (List Event × Int)` |
@@ -338,9 +338,16 @@ properties do:
   (reachability: through pointer arguments, exposed provenance, globals)
 - deallocations only of reachable heap allocations
 - fresh allocations allowed
+- existing allocations keep address, kind, size, alignment and mutability; read-only ones
+  keep their contents
+
+Implemented as: the oracle plays the environment (`Oracle.env`): calls the shims don't cover
+ask it for the memory after the call and the result; `Behaviors spec` and `Refines spec`
+quantify only over oracles that respect `spec` (`Oracle.respects`), and the environment is not
+angelic (`sameDaemonic` oracles share it). `ExtSpec.none` gives the shim-only behaviors.
 
 The interpreter implements a few shims (the allocator symbols, `write` to fd 1/2, `exit`,
-`abort`) and fails on others. That is enough to run test programs whose `std` paths bottom
+`abort`) and its environment runs nothing else, so other symbols are ill-formed. That is enough to run test programs whose `std` paths bottom
 out in these, and to run single functions with given arguments.
 
 ### A.7 Divergences from MiniRust (follow rustc/LLVM)
@@ -467,7 +474,8 @@ text above is not rewritten to match.
   `Value.union [bytes]`.
 - **Refine/Behavior**: the value order lives in `Lang/Values.lean` (values come after memory).
   `Behaviors` runs sources with a stack limit above the fuel, so sources never overflow;
-  `ExtSpec` is stated but the semantics uses the interpreter's shims.
+  external calls beyond the shims are run by the oracle's environment, restricted by an
+  `ExtSpec`.
 - **Tests**: MiniRust's `print` is the `ryo_test_print` shim; MiniRust-specific
   ill-formedness tests (discriminator trees, `Validate`, threads) are not ported.
 - **Citations**: each module header lists its MiniRust source and D-IDs; definitions carry

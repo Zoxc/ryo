@@ -6,9 +6,12 @@ Ports: none (MiniRust programs are closed). Takes over MiniRust's `Allocate`/`De
 external symbols (D21: the heap is `__rust_alloc` & co.).
 
 A call to an instance without a body is an external call event (`Event.extCall`) with the
-callee's symbol, the argument values and the result. Relationally, the environment may do
-anything an `ExtSpec` allows (see `Ryo.Spec.Mir.Behavior`); the interpreter implements these
-shims and treats any other symbol as ill-formed (not runnable):
+callee's symbol, the argument values and the result. The shims below run their symbols; any
+other symbol is run by the oracle's environment (`Oracle.env`, mir-spec §A.6), which sets the
+memory and gives the result (`unwind` starts unwinding, as `_Unwind_RaiseException` does); if
+it does not run the symbol (the interpreter's `concreteOracle` runs none), the call is
+ill-formed (not runnable). `Ryo.Spec.Mir.Behavior` restricts the environment by an `ExtSpec`.
+The shims:
 - `__rust_alloc`, `__rust_alloc_zeroed`, `__rust_dealloc`, `__rust_realloc`: `heap`
   allocations (D21; `GlobalAlloc`'s preconditions are UB). `realloc` frees the old block
   before allocating the new one, so the (daemonic) new address may equal the old one;
@@ -41,8 +44,16 @@ def heapAlloc (size align : Int) (zeroed : Bool) : SemM Value := do
   if zeroed then memUpdate (·.store p (List.replicate size.toNat (.init 0 none)) .one)
   pure (.ptr p.widen)
 
+/-- Ask the oracle's environment to run `sym` (mir-spec §A.6); counted with the choices. -/
+def callEnv (sym : String) (args : List Value) : SemM ExtResult := do
+  let s ← get
+  let some (m', r) := (← read).env s.choiceCount sym args s
+    | throwIllFormed s!"call to unknown external function `{sym}`"
+  set { s with mem := m', choiceCount := s.choiceCount + 1 }
+  pure r
+
 -- [D21] [D18]
-/-- Run an external function. -/
+/-- Run an external function: a shim, or the environment. -/
 def callExternal (sym : String) (args : List Value) : SemM ExtResult := do
   let res ← match sym, args with
     | "__rust_alloc", [s, a] => do pure (.ret (← heapAlloc (← argInt s) (← argInt a) false))
@@ -77,7 +88,7 @@ def callExternal (sym : String) (args : List Value) : SemM ExtResult := do
       throw .abort
     | "_Unwind_RaiseException", [p] => do pure (.unwind (← argPtr p))
     | "ryo_test_print", _ => pure (.ret unitValue)
-    | _, _ => throwIllFormed s!"call to unknown external function `{sym}`"
+    | _, _ => callEnv sym args
   if sym != "write" then emit (.extCall sym args res)
   pure res
 

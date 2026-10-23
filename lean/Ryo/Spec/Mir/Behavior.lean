@@ -11,16 +11,59 @@ Ports: none (MiniRust leaves `Nondet` abstract). Implements mir-spec §A.4:
   after a prefix of the target's trace, or (D25) the target overflows its stack after a prefix
   of some source behavior's trace.
 
-The environment (mir-spec §A.6) is, for now, the interpreter's shims (`Ryo.Spec.Mir.External`); the
-relational `ExtSpec` below is stated but not yet plugged into the semantics.
+The environment (mir-spec §A.6): external calls not covered by the shims
+(`Ryo.Spec.Mir.External`) are run by the oracle (`Oracle.env`). Behaviors and refinement are
+relative to an `ExtSpec`, CompCert's `extcall` contract: only oracles whose environment
+`respects` it count. The environment is not angelic: `sameDaemonic` oracles share it.
+`ExtSpec.none` allows no environment call, leaving the shims only (the interpreter's view).
 -/
 import Ryo.Spec.Mir.Interp
 
 namespace Ryo.Spec
 
-/-- Two oracles that give the same daemonic answers (they may differ on angelic ones). -/
+/-- The environment's contract for an external call (mir-spec §A.6), as CompCert's `extcall`
+properties: memory the callee cannot reach is unchanged, it frees only reachable heap
+allocations, it may allocate, and existing allocations stay where and what they are. -/
+structure ExtSpec where
+  /-- `allowed callee args memBefore memAfter result`. -/
+  allowed : String → List Value → Memory → Memory → ExtResult → Prop
+  /-- Allocations reachable by the callee: through the pointer arguments, exposed
+  allocations, globals, transitively through memory. -/
+  reachable : List Value → Memory → AllocId → Prop
+  /-- Unreachable allocations keep their contents and liveness. -/
+  unreachableUnchanged : ∀ f args m m' r, allowed f args m m' r →
+    ∀ id, ¬ reachable args m id →
+      (m.get? id).map (fun a => (a.data.toList, a.live)) =
+        (m'.get? id).map (fun a => (a.data.toList, a.live))
+  /-- Only reachable heap allocations are freed. -/
+  freesOnlyReachableHeap : ∀ f args m m' r, allowed f args m m' r →
+    ∀ id a a', m.get? id = some a → m'.get? id = some a' → a.live → !a'.live →
+      reachable args m id ∧ a.kind = .heap
+  /-- Allocations are never removed (only marked dead; new ones are appended) and keep their
+  address, kind, size, alignment and mutability; read-only ones (D7: constants, vtables,
+  immutable statics) keep their contents. -/
+  keepsAllocs : ∀ f args m m' r, allowed f args m m' r →
+    ∀ id a, m.get? id = some a → ∃ a', m'.get? id = some a' ∧ a'.addr = a.addr ∧
+      a'.kind = a.kind ∧ a'.size = a.size ∧ a'.align = a.align ∧ a'.mutable = a.mutable ∧
+      (a.mutable = false → a'.data = a.data)
+
+/-- The environment that runs nothing: external calls are the shims' only, as in the
+interpreter (`concreteOracle`). -/
+def ExtSpec.none : ExtSpec where
+  allowed := fun _ _ _ _ _ => False
+  reachable := fun _ _ _ => False
+  unreachableUnchanged := fun _ _ _ _ _ h => h.elim
+  freesOnlyReachableHeap := fun _ _ _ _ _ h => h.elim
+  keepsAllocs := fun _ _ _ _ _ h => h.elim
+
+/-- Every environment answer of `o` is one `spec` allows. -/
+def Oracle.respects (spec : ExtSpec) (o : Oracle) : Prop :=
+  ∀ n f args s m' r, o.env n f args s = some (m', r) → spec.allowed f args s.mem m' r
+
+/-- Two oracles that give the same daemonic answers (they may differ on angelic ones) and
+have the same environment. -/
 def Oracle.sameDaemonic (o1 o2 : Oracle) : Prop :=
-  ∀ n c s, c.kind = .daemonic → o1.answer n c s = o2.answer n c s
+  (∀ n c s, c.kind = .daemonic → o1.answer n c s = o2.answer n c s) ∧ o1.env = o2.env
 
 inductive Behavior where
   | terminates (trace : List Event) (final : Final)
@@ -67,9 +110,10 @@ def Behavior.isGoesWrong : Behavior → Bool
   | .goesWrong .. => true
   | _ => false
 
-/-- The behaviors of a program (mir-spec §A.4): UB only counts if no angelic choice avoids it. -/
-def Behaviors (p : Program) (args : List (Value × Ty)) (b : Behavior) : Prop :=
-  ∃ o, RunsTo p args o b ∧
+/-- The behaviors of a program in environments allowed by `spec` (mir-spec §A.4, §A.6): UB
+only counts if no angelic choice avoids it. `Behaviors .none` are the shim-only behaviors. -/
+def Behaviors (spec : ExtSpec) (p : Program) (args : List (Value × Ty)) (b : Behavior) : Prop :=
+  ∃ o, o.respects spec ∧ RunsTo p args o b ∧
     (b.isGoesWrong → ∀ o', o'.sameDaemonic o → ∃ tr m, RunsTo p args o' (.goesWrong tr m))
 
 /-- `tr` is a prefix of the behavior's trace. -/
@@ -78,32 +122,12 @@ def Behavior.hasPrefix (tr : List Event) : Behavior → Prop
   | .diverges t => ∃ n, tr <+: t n
 
 -- [D25]
-/-- Refinement (mir-spec §A.4, D25). -/
-def Refines (tgt src : Program) (args : List (Value × Ty)) : Prop :=
-  ∀ b, Behaviors tgt args b →
-    Behaviors src args b ∨
-    (∃ tr m, Behaviors src args (.goesWrong tr m) ∧ b.hasPrefix tr) ∨
+/-- Refinement in environments allowed by `spec` (mir-spec §A.4, D25). -/
+def Refines (spec : ExtSpec) (tgt src : Program) (args : List (Value × Ty)) : Prop :=
+  ∀ b, Behaviors spec tgt args b →
+    Behaviors spec src args b ∨
+    (∃ tr m, Behaviors spec src args (.goesWrong tr m) ∧ b.hasPrefix tr) ∨
     (∃ tr, (match b with | .stackOverflow t => t = tr | _ => False) ∧
-      ∃ b', Behaviors src args b' ∧ b'.hasPrefix tr)
-
-/-- The environment's contract for an external call (mir-spec §A.6), as CompCert's `extcall`
-properties: memory the callee cannot reach is unchanged, it frees only reachable heap
-allocations, it may allocate. Stated for the dumper/checker milestones; the current
-semantics uses the interpreter's shims. -/
-structure ExtSpec where
-  /-- `allowed callee args memBefore memAfter result`. -/
-  allowed : String → List Value → Memory → Memory → ExtResult → Prop
-  /-- Allocations reachable by the callee: through the pointer arguments, exposed
-  allocations, globals, transitively through memory. -/
-  reachable : List Value → Memory → AllocId → Prop
-  /-- Unreachable allocations keep their contents and liveness. -/
-  unreachableUnchanged : ∀ f args m m' r, allowed f args m m' r →
-    ∀ id, ¬ reachable args m id →
-      (m.get? id).map (fun a => (a.data.toList, a.live)) =
-        (m'.get? id).map (fun a => (a.data.toList, a.live))
-  /-- Only reachable heap allocations are freed. -/
-  freesOnlyReachableHeap : ∀ f args m m' r, allowed f args m m' r →
-    ∀ id a a', m.get? id = some a → m'.get? id = some a' → a.live → !a'.live →
-      reachable args m id ∧ a.kind = .heap
+      ∃ b', Behaviors spec src args b' ∧ b'.hasPrefix tr)
 
 end Ryo.Spec
