@@ -30,7 +30,16 @@ structure Allocation where
   live : Bool := true
   /-- D7: writes are UB when `false`. -/
   mutable : Bool := true
-deriving Repr, Inhabited
+  /-- D7, D29: vtable allocations are always read-only (`store_load` relies on it: a value's
+  validity reads the vtable its metadata points to). -/
+  vtableRo : kind = .vtable → mutable = false
+
+instance : Inhabited Allocation :=
+  ⟨{ data := #[], addr := 0, align := default, kind := .heap, mutable := true,
+     vtableRo := by simp }⟩
+
+instance : Repr Allocation where
+  reprPrec a _ := s!"\{ data := {repr a.data}, addr := {a.addr}, align := {repr a.align}, kind := {repr a.kind}, live := {a.live}, mutable := {a.mutable} }"
 
 namespace Allocation
 
@@ -66,7 +75,8 @@ def addrOk (m : Memory) (addr : Nat) (size : Size) (align : Align) : Bool :=
     !(m.allocs.any fun a => a.live && a.overlaps addr size)
 
 -- [D8] [D26]
-/-- `allocate`: the address is a daemonic choice, checked against the constraint. -/
+/-- `allocate`: the address is a daemonic choice, checked against the constraint.
+D7: vtable allocations are created read-only, whatever `mutable` says. -/
 def allocate {mo : Type → Type} [Monad mo] [MonadExceptOf Outcome mo] [MonadChoice mo]
     (m : Memory) (kind : AllocationKind) (size : Size) (align : Align) (mutable := true) :
     mo (ThinPointer × Memory) := do
@@ -75,7 +85,8 @@ def allocate {mo : Type → Type} [Monad mo] [MonadExceptOf Outcome mo] [MonadCh
   if !m.addrOk addr size align then
     throwNoBehavior s!"allocation address {addr} violates the allocation constraints"
   let a : Allocation :=
-    { data := Array.replicate size .uninit, addr, align, kind, mutable }
+    { data := Array.replicate size .uninit, addr, align, kind,
+      mutable := mutable && kind != .vtable, vtableRo := by intro h; simp [h] }
   let id := m.allocs.size
   pure (⟨addr, some id⟩, { allocs := m.allocs.push a })
 
@@ -150,12 +161,6 @@ def writeInit (m : Memory) (p : ThinPointer) (bytes : List AbstractByte) : Memor
       let off := p.addr - a.addr
       let data := (bytes.zipIdx).foldl (fun d (b, i) => d.set! (off + i) b) a.data
       { allocs := m.allocs.set! id { a with data } }
-
-/-- Make an allocation read-only (D7). -/
-def freeze (m : Memory) (id : AllocId) : Memory :=
-  match m.get? id with
-  | none => m
-  | some a => { allocs := m.allocs.set! id { a with mutable := false } }
 
 /-- `deinit`: overwrite with `Uninit` (MiniRust `ConcurrentMemory::deinit`). -/
 def deinit (m : Memory) (p : ThinPointer) (len : Size) (align : Align) : Except Outcome Memory :=

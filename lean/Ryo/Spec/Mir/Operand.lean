@@ -101,6 +101,7 @@ def globalPtrF : Nat → GlobalId → SemM ThinPointer
     | some p => pure p
     | none => do
       let (p, mem) ← (← getMem).allocate (allocKindOf gl.kind) gl.bytes.length gl.align
+        (mutable := gl.kind.mutable)
       setMem mem
       match gl.kind with
       | .static _ | .threadLocal => recordStatic g p
@@ -114,8 +115,6 @@ def globalPtrF : Nat → GlobalId → SemM ThinPointer
           | .typeId => pure ThinPointer.null
         bytes := writeAt bytes r.offset (encodePtr (tgt.wrappingOffset r.addend))
       setMem ((← getMem).writeInit p bytes)
-      if !gl.kind.mutable then
-        if let some id := p.prov then setMem ((← getMem).freeze id)
       pure p
 
 def globalPtr (g : GlobalId) : SemM ThinPointer := do

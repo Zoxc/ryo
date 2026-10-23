@@ -6,8 +6,8 @@ Ports: MiniRust `lang/representation.md` § Generic properties, for `typed_store
 `typedLoad` re-runs `checkValue` in the memory *after* the store. A wide pointer's validity
 depends on the vtable its metadata points to (`vtableSizeAlign` reads the vtable's size and
 align words), so a store that overwrites a mutable `.vtable` allocation could invalidate the
-stored value itself. The theorems therefore assume vtable allocations are read-only (`hro`),
-which the semantics guarantees by freezing vtables after initializing them (Mir/Operand.lean).
+stored value itself. Vtable allocations are read-only by construction (the `Allocation.vtableRo`
+field, see `Memory.vtables_ro`), so the theorems hold for every memory, not only reachable ones.
 -/
 import Ryo.Spec.Theorems.Representation
 
@@ -159,9 +159,12 @@ def Agree (mem mem' : Memory) : Prop :=
       mem.allocs[i].live = mem'.allocs[i].live ∧ mem.allocs[i].size = mem'.allocs[i].size ∧
       (mem.allocs[i].kind = .vtable → mem.allocs[i] = mem'.allocs[i])
 
+theorem Memory.vtables_ro (mem : Memory) :
+    ∀ a ∈ mem.allocs.toList, a.kind = .vtable → a.mutable = false :=
+  fun a _ h => a.vtableRo h
+
 theorem Memory.store_agree {mem mem' : Memory} {p : ThinPointer} {bytes : List AbstractByte}
-    {al : Align} (hro : ∀ a ∈ mem.allocs.toList, a.kind = .vtable → a.mutable = false)
-    (h : mem.store p bytes al = .ok mem') : Agree mem mem' := by
+    {al : Align} (h : mem.store p bytes al = .ok mem') : Agree mem mem' := by
   rcases Memory.store_eq_ok h with ⟨_, _, rfl⟩ | ⟨id, hid, _, _, _, _, _, _, hm, rfl⟩
   · exact ⟨rfl, fun i _ _ => ⟨rfl, rfl, rfl, rfl, fun _ => rfl⟩⟩
   · refine ⟨by simp, fun i h h' => ?_⟩
@@ -170,7 +173,7 @@ theorem Memory.store_agree {mem mem' : Memory} {p : ThinPointer} {bytes : List A
       simp only [Array.getElem_set_self, Allocation.size]
       refine ⟨?_, ?_, ?_, ?_, fun hk => ?_⟩
       any_goals first | trivial | rfl | exact (foldl_set_size _ _ _ _).symm
-      have := hro _ (by simp) hk
+      have := Memory.vtables_ro mem _ (by simp) hk
       simp_all
     · simp [Array.getElem_set, hi]
 
@@ -297,7 +300,6 @@ theorem Value.leDefinedList_refl : (vs : List Value) → Value.leDefined.leDefin
 end
 
 theorem store_load_eq (mem mem' : Memory) (p : ThinPointer) (t : Ty) (v : Value) (al : Align)
-    (hro : ∀ a ∈ mem.allocs.toList, a.kind = .vtable → a.mutable = false)
     (hwf : t.wf = true) (hc : checkValue mem v t = .ok ())
     (hs : typedStore mem p v t al = .ok mem') :
     typedLoad mem' p t al = .ok v := by
@@ -305,7 +307,7 @@ theorem store_load_eq (mem mem' : Memory) (p : ThinPointer) (t : Ty) (v : Value)
   obtain ⟨bs, he, hd⟩ := decode_encode' mem t v hwf hsized hc
   have hlen := encode_length' t v bs hwf hsized he
   simp only [typedStore, he] at hs
-  have ha := Memory.store_agree hro hs
+  have ha := Memory.store_agree hs
   have hl := Memory.store_load_bytes hs
   have hc' : checkValue mem' v t = .ok () := by
     rw [← checkValue_congr (checkPtr_congr ha.dereferenceable ha.vtableSizeAlign)]; exact hc
@@ -315,10 +317,9 @@ theorem store_load_eq (mem mem' : Memory) (p : ThinPointer) (t : Ty) (v : Value)
 /-- A typed store followed by a typed load at the same type and pointer gives back the value
 (MiniRust's shape; here the loaded value is in fact equal, see `store_load_eq`). -/
 theorem store_load (mem mem' : Memory) (p : ThinPointer) (t : Ty) (v : Value) (al : Align)
-    (hro : ∀ a ∈ mem.allocs.toList, a.kind = .vtable → a.mutable = false)
     (hwf : t.wf = true) (hc : checkValue mem v t = .ok ())
     (hs : typedStore mem p v t al = .ok mem') :
     ∃ w, typedLoad mem' p t al = .ok w ∧ Value.leDefined w v = true :=
-  ⟨v, store_load_eq mem mem' p t v al hro hwf hc hs, Value.leDefined_refl v⟩
+  ⟨v, store_load_eq mem mem' p t v al hwf hc hs, Value.leDefined_refl v⟩
 
 end Ryo.Spec.Theorems

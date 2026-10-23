@@ -59,13 +59,15 @@ Its output at this commit: the seven opaque instances of §1.2, nothing else (no
 | `decode_encode` | Theorems/Representation.lean | `decode (encode v) = some v` for `checkValue`-valid values |
 | `encode_decode_le` | Theorems/Monotone.lean | re-encoding a decoded value is less defined than the bytes |
 | `decode_mono` | Theorems/Monotone.lean | more-defined bytes decode to a more-defined value |
-| `store_load` (`store_load_eq`) | Theorems/Memory.lean | `typedStore` then `typedLoad` gives back the value, **if vtable allocations are read-only** |
+| `store_load` (`store_load_eq`) | Theorems/Memory.lean | `typedStore` then `typedLoad` gives back the value, in every memory |
 
-`store_load` needed a hypothesis MiniRust's version does not have: `typedLoad` re-runs
-`checkValue` in the memory after the store, and a store into a *mutable* vtable allocation can
-change the size/alignment words a stored wide pointer's metadata refers to. The semantics
-freezes vtables after initializing them (`globalPtrF`), so the hypothesis holds of every
-reachable memory (not yet proved as an invariant).
+`store_load` relies on a fact MiniRust's version does not need: `typedLoad` re-runs
+`checkValue` in the memory after the store, and a store into a *mutable* vtable allocation
+could change the size/alignment words a stored wide pointer's metadata refers to. Vtable
+allocations are read-only by construction: `Allocation.vtableRo` is a proof field
+(`kind = .vtable → mutable = false`), `Memory.allocate` creates vtables read-only, and
+`globalPtrF` allocates every immutable global read-only and fills it with `writeInit`
+(`Memory.vtables_ro`). So the theorem has no hypothesis about the memory.
 
 Proving them showed what `Ty.wf` must check, and four spec gaps, all fixed with the proofs:
 - `Ty.wf` now checks that union chunks are disjoint, and for enums with a tag
