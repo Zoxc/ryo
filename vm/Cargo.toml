@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["bytecode", "rt"]
+members = ["bytecode", "jit", "rt"]
 
 [workspace.package]
 edition = "2024"

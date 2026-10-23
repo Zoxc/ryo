@@ -4,9 +4,10 @@
 //! the AOT code's, with arguments of every kind, through recursion that switches over midway,
 //! unwinding with landing pads, calls between JIT and AOT functions, and many threads.
 
-#![cfg(all(target_arch = "x86_64", target_os = "linux", feature = "jit"))]
+#![cfg(all(target_arch = "x86_64", target_os = "linux"))]
 #![feature(unboxed_closures)]
 
+#[path = "../../rt/tests/common/mod.rs"]
 mod common;
 use common::*;
 

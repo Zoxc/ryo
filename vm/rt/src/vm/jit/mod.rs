@@ -1,7 +1,7 @@
 //! The JIT (design/vm.md, "JIT"): recompiles hot functions on a background thread and
 //! switches their entry over to the new code. This module is the runtime's side of it; the
-//! JIT thread is `thread` and `install`, which see the runtime only through the
-//! [`RtApi`] that this side builds ([`ryo_bytecode::jit_abi`]).
+//! JIT thread is the `ryo_jit` crate's, which sees the runtime only through the [`RtApi`]
+//! that this side builds ([`ryo_bytecode::jit_abi`]), and starts with `ryo_jit_start`.
 //!
 //! - **Trips**: [`trip_entry`] and [`trip_osr`] are what a JIT record's `entry` and `osr`
 //!   slots start at; a function's counter stub calls them when its counter runs out
@@ -23,9 +23,6 @@
 //! the settings come from libc's `getenv`, and waiting is a futex. Nothing on the trips'
 //! path may unwind (the stubs aren't call sites); the Rust parts are `extern "C"`, which
 //! aborts if they did.
-
-mod install;
-mod thread;
 
 use core::cell::{Cell, UnsafeCell};
 use core::ffi::{CStr, c_char, c_long, c_void};
@@ -439,8 +436,12 @@ fn start() -> bool {
         handlers,
     };
     // SAFETY: only the first push gets here, once; the JIT reads it only after the start.
-    let api = unsafe { (*RT_API.0.get()).write(api) };
-    thread::start(api)
+    unsafe { ryo_jit_start((*RT_API.0.get()).write(api)) }
+}
+
+unsafe extern "C" {
+    /// The JIT's (`ryo_jit`): starts its thread, false if it can't.
+    fn ryo_jit_start(rt: &'static RtApi) -> bool;
 }
 
 /// [`RtApi::next_batch`]: the queue, in trip order, once it isn't empty.

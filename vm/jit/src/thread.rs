@@ -3,12 +3,11 @@
 
 use ryo_bytecode::jit_abi::{JIT_LOG, RtApi};
 
-use super::install::Jit;
+use crate::install::Jit;
 
 /// Starts the JIT thread. False if `rt` isn't of this JIT's version, or the thread didn't
-/// start. `extern "C"`, as `ryo_jit_start` will be: the trips that call it can't unwind.
-#[inline(never)]
-pub(super) extern "C" fn start(rt: &'static RtApi) -> bool {
+/// start.
+pub(crate) fn start(rt: &'static RtApi) -> bool {
     if !rt.compatible() {
         return false;
     }

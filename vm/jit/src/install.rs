@@ -103,7 +103,7 @@ struct ImageInfo {
     personality: Option<usize>,
 }
 
-pub(super) struct Jit {
+pub(crate) struct Jit {
     rt: &'static RtApi,
     /// The handlers' addresses and opcodes, sorted, for [`ImageResolver`].
     handlers: Vec<(usize, Opcode)>,
@@ -119,7 +119,7 @@ pub(super) struct Jit {
 }
 
 impl Jit {
-    pub(super) fn new(rt: &'static RtApi) -> Jit {
+    pub(crate) fn new(rt: &'static RtApi) -> Jit {
         let mut handlers: Vec<(usize, Opcode)> =
             rt.handlers.iter().zip(ryo_bytecode::ALL_OPCODES).filter(|(h, _)| !h.is_null()).map(|(&h, &op)| (h as usize, op)).collect();
         handlers.sort_unstable_by_key(|h| h.0);
@@ -192,7 +192,7 @@ impl Jit {
     }
 
     /// Compiles the function of `rec` and publishes its code.
-    pub(super) fn compile(&mut self, rec: *mut JitRecord) -> Result<(), &'static str> {
+    pub(crate) fn compile(&mut self, rec: *mut JitRecord) -> Result<(), &'static str> {
         // SAFETY: a record of a linked image, whose header it points at.
         let (func, img) = unsafe { ((*rec).func, Image::from_header((*rec).header.cast()).map_err(|_| "invalid image")?) };
         let h = img.header();
@@ -442,7 +442,7 @@ impl Jit {
     }
 
     /// A line on stderr about `rec` (`RYO_JIT_LOG`).
-    pub(super) fn log(&self, rec: *mut JitRecord, what: &str) {
+    pub(crate) fn log(&self, rec: *mut JitRecord, what: &str) {
         // SAFETY: a record of a linked image.
         let (func, header) = unsafe { ((*rec).func, (*rec).header) };
         // Straight to the file descriptor, not through std's `Stderr`, whose lock a program

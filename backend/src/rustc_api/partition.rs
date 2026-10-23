@@ -1187,12 +1187,12 @@ fn symbol_from_attrs<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> bool 
 pub type UpstreamMonos<'tcx> = rustc_hir::def_id::DefIdMap<rustc_data_structures::unord::UnordMap<ty::GenericArgsRef<'tcx>, CrateNum>>;
 
 /// Our `upstream_monomorphizations` (design/backend.md#query-overrides): rustc's, without the
-/// copies in `ryo_rt` and `ryo_bytecode` of other crates' generics. The runtime's JIT
-/// instantiates std's (`Vec<u32>`, `[u32]`'s sorts), and rustc shares `#[inline(never)]`
+/// copies in `ryo_rt`, `ryo_bytecode` and `ryo_jit` of other crates' generics. The runtime's
+/// JIT instantiates std's (`Vec<u32>`, `[u32]`'s sorts), and rustc shares `#[inline(never)]`
 /// instances even without share-generics; linking to them would turn the program's own
 /// instances into the runtime's native code.
 pub fn upstream_monomorphizations<'tcx>(tcx: TyCtxt<'tcx>, map: UpstreamMonos<'tcx>) -> UpstreamMonos<'tcx> {
-    let runtime = |c: CrateNum| matches!(tcx.crate_name(c).as_str(), "ryo_rt" | "ryo_bytecode");
+    let runtime = |c: CrateNum| matches!(tcx.crate_name(c).as_str(), "ryo_rt" | "ryo_bytecode" | "ryo_jit");
     map.into_items()
         .filter_map(|(def, args)| {
             let args: rustc_data_structures::unord::UnordMap<_, _> =

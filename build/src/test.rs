@@ -401,12 +401,13 @@ pub fn run(clif: bool) -> Result<(), String> {
     let mut failed = Vec::new();
     // The runtime once more with handlers that read `fp` from `rbp`, so VM code keeps the
     // frame pointer (design/vm.md#handlers).
-    // And the JIT's tests, which need its feature (design/vm.md#jit).
+    // And the JIT's tests, through the runtime's trips, also with `fp-rbp` (design/vm.md#jit);
+    // the other runtime tests run without the JIT.
     let vm_runs: [(&str, &[&str]); 4] = [
-        ("vm", &["test", "--workspace"]),
+        ("vm", &["test", "--workspace", "--exclude", "ryo_jit"]),
         ("vm fp-rbp", &["test", "-p", "ryo_rt", "--features", "fp-rbp"]),
-        ("vm jit", &["test", "-p", "ryo_rt", "--features", "jit", "--test", "jit"]),
-        ("vm jit fp-rbp", &["test", "-p", "ryo_rt", "--features", "jit fp-rbp", "--test", "jit"]),
+        ("vm jit", &["test", "-p", "ryo_jit"]),
+        ("vm jit fp-rbp", &["test", "-p", "ryo_jit", "--features", "ryo_rt/fp-rbp"]),
     ];
     for (name, args) in vm_runs {
         match crate::utils::run(cmd("cargo").current_dir(root.join("vm")).args(args)) {
@@ -840,7 +841,15 @@ fn same_exports(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> 
             // The runtime's own symbols, which every ryo output links: `ryo_vm_register`
             // (C level), and in a Rust dylib everything of `ryo_rt` and `ryo_bytecode`,
             // the handlers included.
-            let runtime = |s: &str| s == "ryo_vm_register" || s.contains("6ryo_rt") || s.contains("12ryo_bytecode") || is_rt_internal(s);
+            // And the JIT's (`ryo_jit_start`, and `ryo_jit`'s Rust symbols).
+            let runtime = |s: &str| {
+                s == "ryo_vm_register"
+                    || s == "ryo_jit_start"
+                    || s.contains("6ryo_rt")
+                    || s.contains("12ryo_bytecode")
+                    || s.contains("7ryo_jit")
+                    || is_rt_internal(s)
+            };
             let mut syms: Vec<String> = syms.lines().filter(|s| !runtime(s)).map(str::to_owned).collect();
             syms.sort();
             lists.push(syms);
@@ -871,21 +880,13 @@ fn outside(s: &str) -> bool {
     s.starts_with("_R") && !is_rt_internal(s) && crate_roots(s).iter().any(|c| !CRATES.contains(&c.as_str()))
 }
 
-/// Whether `s` belongs to the JIT thread: `ryo_rt::vm::jit::thread` and `::install`. The
-/// trips and the rest of `vm::jit` are the runtime's side, which uses `core` only.
-fn in_jit(s: &str) -> bool {
-    s.contains("2vm3jit6thread") || s.contains("2vm3jit7install")
-}
-
 /// `ryo_rt` must use only `core`, its own crates, libc, and the panic runtime's two entry
 /// points (native: a panic runtime is never VM code): with `--sysroot ryo`, std's allocator,
 /// locks and TLS may be VM functions, which the runtime must not call while it switches VM
 /// state (design/vm.md, "No re-entry into the VM from the runtime"). Checked on the undefined
 /// symbols of every sysroot's `ryo_rt` rlib, by crate in their v0 mangled names. ELF only.
-///
-/// The native sysroot's `ryo_rt` has the JIT thread (design/vm.md#jit), which uses std:
-/// there, std and core's panic path may be reached only through `vm::jit::thread` and
-/// `vm::jit::install`, never from the rest of the runtime (the trips included).
+/// The JIT's trips are part of it; the JIT thread, which uses std, is `ryo_jit`'s
+/// (design/vm.md#jit), which `ryo_rt` reaches only through `ryo_jit_start`.
 fn rt_core_only(root: &Path) -> Result<(), String> {
     if cfg!(windows) {
         return Ok(());
@@ -894,13 +895,13 @@ fn rt_core_only(root: &Path) -> Result<(), String> {
     let nm = info.sysroot.join("lib").join("rustlib").join(&info.host).join("bin").join("llvm-nm");
     let dist = root.join("dist");
     let mut libs = Vec::new();
-    for (sysroot, jit) in [(dist.clone(), true), (dist.join(crate::sysroot::SYSROOT_DIR), false)] {
+    for sysroot in [dist.clone(), dist.join(crate::sysroot::SYSROOT_DIR)] {
         let dir = sysroot.join("lib").join("rustlib").join(&info.host).join("lib");
         let Ok(entries) = fs::read_dir(&dir) else { continue };
         for e in entries.flatten() {
             let name = e.file_name().to_string_lossy().into_owned();
             if name.starts_with("libryo_rt") && name.ends_with(".rlib") {
-                libs.push((e.path(), jit));
+                libs.push(e.path());
             }
         }
     }
@@ -908,16 +909,15 @@ fn rt_core_only(root: &Path) -> Result<(), String> {
         return Err("no ryo_rt rlib in dist/".to_owned());
     }
     const PANIC_RUNTIME: [&str; 3] = ["18___rust_start_panic", "20___rust_panic_cleanup", "rust_eh_personality"];
-    for (lib, jit) in libs {
+    for lib in libs {
         let syms = output(cmd(&nm).args(["-u", "--no-demangle", "-j"]).arg(&lib))?;
         let bad: Vec<&str> = syms
             .lines()
             .map(str::trim)
             .filter(|s| !s.is_empty() && !s.ends_with(':'))
             .filter(|s| !PANIC_RUNTIME.iter().any(|p| s.ends_with(p)))
-            // Rust symbols must name only allowed crates, and no allocator shim (std's), but
-            // with the JIT, whose uses `panic_path` checks.
-            .filter(|s| !jit && outside(s))
+            // Rust symbols must name only allowed crates, and no allocator shim (std's).
+            .filter(|s| outside(s))
             .collect();
         if !bad.is_empty() {
             return Err(format!("{} uses symbols outside core: {bad:?}", lib.display()));
@@ -933,9 +933,8 @@ fn rt_core_only(root: &Path) -> Result<(), String> {
                 n.starts_with("libryo_bytecode") && n.ends_with(".rlib")
             })
             .ok_or_else(|| format!("no ryo_bytecode rlib in {}", dir.display()))?;
-        if let Some(path) = panic_path(&objdump, &lib, &bytecode, jit)? {
-            let what = if jit { "std or core's panic path outside the JIT" } else { "core's panic path" };
-            return Err(format!("{} reaches {what}: {}", lib.display(), path.join(" <- ")));
+        if let Some(path) = panic_path(&objdump, &lib, &bytecode)? {
+            return Err(format!("{} reaches core's panic path: {}", lib.display(), path.join(" <- ")));
         }
     }
     Ok(())
@@ -947,11 +946,7 @@ fn rt_core_only(root: &Path) -> Result<(), String> {
 /// counts as runtime: the templates are generic and instantiated in the program's crates,
 /// which may panic like any program code. The edges are the relocations in each function
 /// (`llvm-objdump -dr`), which cover calls and taken addresses.
-///
-/// With the JIT (`jit`), std is the native one and may be used, by the JIT alone: the roots
-/// are then `ryo_rt`'s own functions but the JIT's, the search doesn't enter the JIT, and
-/// reaching std counts too.
-fn panic_path(objdump: &Path, rt: &Path, bytecode: &Path, jit: bool) -> Result<Option<Vec<String>>, String> {
+fn panic_path(objdump: &Path, rt: &Path, bytecode: &Path) -> Result<Option<Vec<String>>, String> {
     use std::collections::HashMap;
     let mut edges: HashMap<String, Vec<String>> = HashMap::new();
     let mut roots = Vec::new();
@@ -961,8 +956,7 @@ fn panic_path(objdump: &Path, rt: &Path, bytecode: &Path, jit: bool) -> Result<O
         for line in dis.lines() {
             if let Some((_, name)) = line.strip_suffix(">:").and_then(|l| l.split_once(" <")) {
                 let name = name.to_owned();
-                let own = !name.starts_with("_R") || is_rt_internal(&name) || crate_roots(&name).first().is_some_and(|c| c == "6ryo_rt");
-                if is_rt && (!jit || (own && !in_jit(&name))) {
+                if is_rt {
                     roots.push(name.clone());
                 }
                 edges.entry(name.clone()).or_default();
@@ -987,15 +981,12 @@ fn panic_path(objdump: &Path, rt: &Path, bytecode: &Path, jit: bool) -> Result<O
             continue;
         }
         from.insert(f.clone(), parent);
-        if panics(&f) || (jit && outside(&f)) {
+        if panics(&f) {
             let mut path = vec![f.clone()];
             while let Some(Some(p)) = from.get(path.last().unwrap()) {
                 path.push(p.clone());
             }
             return Ok(Some(path));
-        }
-        if jit && in_jit(&f) {
-            continue;
         }
         for c in edges.get(&f).into_iter().flatten() {
             stack.push((c.clone(), Some(f.clone())));

@@ -7,8 +7,17 @@ name = "ryo_bytecode"
 version = "0.1.0"
 
 [[package]]
+name = "ryo_jit"
+version = "0.1.0"
+dependencies = [
+ "ryo_bytecode",
+ "ryo_rt",
+]
+
+[[package]]
 name = "ryo_rt"
 version = "0.1.0"
 dependencies = [
  "ryo_bytecode",
+ "ryo_jit",
 ]

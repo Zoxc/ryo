@@ -7,13 +7,13 @@ edition.workspace = true
 # Handlers read the frame pointer from `rbp` instead of taking it in `rdi` (design/vm.md,
 # "Handlers"), so VM code keeps it there; the backend reads `FP_ARG` and encodes to match.
 fp-rbp = []
-# The JIT (design/vm.md, "JIT"): a background thread that recompiles hot functions. Uses std
-# and `ryo_bytecode`'s encoder, so only for the native sysroot; without it the JIT records'
-# trips are the no-op JIT.
-jit = ["ryo_bytecode/alloc"]
+# The JIT (design/vm.md, "JIT"): the trips start `ryo_jit`'s compiler thread. `ryo_jit` uses
+# std, so only for the native sysroot; without it the JIT records' trips are the no-op JIT.
+jit = ["dep:ryo_jit"]
 
 [dependencies]
 ryo_bytecode = { path = "../bytecode", default-features = false }
+ryo_jit = { path = "../jit", optional = true }
 
 [dev-dependencies]
 ryo_bytecode = { path = "../bytecode" }
