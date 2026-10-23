@@ -21,7 +21,7 @@ mod sys;
 
 pub use interp::{FP_ARG, MODE, h, handler, probe_stack};
 #[cfg(all(feature = "jit", target_os = "linux"))]
-pub use jit::{JIT_ENTRY_PREFIX, REDIRECT, configure_jit, jit_stats};
+pub use jit::{JIT_ENTRY_PREFIX, REDIRECT, configure_jit, jit_shuffle_image, jit_stats};
 pub use jit::{trip_entry, trip_osr};
 pub use registry::ImageRt;
 

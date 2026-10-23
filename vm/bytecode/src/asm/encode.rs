@@ -1145,6 +1145,13 @@ impl Asm {
     /// Finishes the function in a frame of size `frame_size`: `fix` turns a raw slot into
     /// its frame offset. Every label a branch uses must be bound.
     pub fn finish(self, frame_size: u32, fix: impl Fn(u32) -> u32) -> Encoded {
+        self.finish_labels(frame_size, fix).0
+    }
+
+    /// [`Asm::finish`], and the position in the code of every label (in order; `u32::MAX` for
+    /// unbound ones): where the instruction after it starts, after a loop head's padding (the
+    /// JIT's OSR entries land there).
+    pub fn finish_labels(self, frame_size: u32, fix: impl Fn(u32) -> u32) -> (Encoded, Vec<u32>) {
         let Asm { mode, mut pieces, labels, ro, unwind, targets, drops } = self;
         debug_assert!(mode.valid(), "{mode:?}");
         let target = branch_targets(&pieces, &labels);
@@ -1361,9 +1368,10 @@ impl Asm {
                 *p = Some(remap[pad]);
             }
         }
-        let mut e = layout_code(out, [prologue_at, entry_stub]);
+        let marks: Vec<usize> = labels.iter().map(|&at| if at == usize::MAX { usize::MAX } else { remap[at] }).collect();
+        let (mut e, marks) = layout_code(out, [prologue_at, entry_stub], &marks);
         e.rodata = rodata.bytes;
-        e
+        (e, marks)
     }
 }
 
@@ -1434,7 +1442,7 @@ fn layouts(fp_arg: bool) -> &'static [Layout] {
 }
 
 /// Lays out the elements (relaxing branches) and writes the code.
-fn layout_code(mut pieces: Vec<Laid>, [prologue, entry_stub]: [usize; 2]) -> Encoded {
+fn layout_code(mut pieces: Vec<Laid>, [prologue, entry_stub]: [usize; 2], marks: &[usize]) -> (Encoded, Vec<u32>) {
     const VAR: u32 = u32::MAX;
     let n = pieces.len();
     // Lengths that don't depend on the position (`VAR` for the others), and the short
@@ -1528,7 +1536,8 @@ fn layout_code(mut pieces: Vec<Laid>, [prologue, entry_stub]: [usize; 2]) -> Enc
     debug_assert_eq!(out.code.len(), pos[n] as usize);
     out.prologue = pos[prologue];
     out.entry_stub = pos[entry_stub];
-    out
+    let marks = marks.iter().map(|&m| if m == usize::MAX { u32::MAX } else { pos[m] }).collect();
+    (out, marks)
 }
 
 /// Functions with frames of at least this size probe the stack in the prologue.

@@ -886,12 +886,13 @@ calls it by name, local otherwise (backtraces, profilers) ([backend.md](backend.
 
 With its `jit` feature (`y build` enables it for the native sysroot only,
 [build.md](build.md#build)), `ryo_rt` recompiles hot functions on a background thread and
-switches their entry over to the new code (`vm/rt/src/vm/jit/`). It is the only part of the
+switches their entry and loop heads over to the new code (`vm/rt/src/vm/jit/`). It is the only part of the
 runtime that uses std, the native one, so it never enters VM code ("No re-entry" above).
 The JIT code is the function decoded and encoded again, without counters and, for now,
-without optimizations; frames may differ from the AOT code's later, nothing relies on them
-matching. Only at the entry: a running AOT call stays in AOT code (no OSR yet). On PE the
-trips stay the no-op JIT's.
+without optimizations. Its frame may differ from the AOT code's (it does with
+`RYO_JIT_SHUFFLE`), and nothing relies on them matching: a call running the AOT code moves
+over at its next loop head through an OSR entry that converts the frame
+([OSR](#osr)). On PE the trips stay the no-op JIT's.
 
 - **Trips** (`ryo_jit_trip_entry`, `ryo_jit_trip_osr`, [JIT records and
   counters](#jit-records-and-counters)), lock-free:
@@ -900,13 +901,15 @@ trips stay the no-op JIT's.
     the AOT code.
   - `Queued`: the counter goes back to the threshold; `Failed`: to `i64::MAX`.
   - `Done`: the entry's trip stores the counter `REDIRECT` and continues in the JIT code;
-    a loop head's returns at once, in assembly, leaving the counter as it is. So a loop
-    that started in AOT code comes back to the trip on every iteration until the call
-    returns (OSR will replace that).
+    a loop head's jumps to the record's `osr` slot, the OSR dispatcher, in assembly,
+    leaving the counter negative. Only a stub that read the slot before the publication
+    gets there: the stubs call the dispatcher directly afterwards. A trip that waited for
+    the compile (`RYO_JIT_SYNC`) continues the same way.
   - `ryo_jit_trip_entry` saves the argument registers (`rdi`…`r9`, `xmm0`–`xmm7`) in a
     192-byte area, which keeps `rsp` 16-aligned for the Rust call (`rsp` is 16-aligned at the
     trip), and restores them; it returns to the stub, or jumps to the JIT entry, with the
-    stack as it found it. `ryo_jit_trip_osr` saves nothing: nothing is live at a head. The
+    stack as it found it. `ryo_jit_trip_osr` saves only `eax`, the head's index, for the
+    dispatcher: nothing else is live at a head. The
     Rust parts are `extern "C"` and can't panic (unwinding out of them would abort: the
     stubs aren't call sites). Counters are written with relaxed atomics, racing the AOT
     code's `sub`s; a reset that races the publication re-checks `state` and stores
@@ -914,11 +917,15 @@ trips stay the no-op JIT's.
 - **`REDIRECT`** = `i64::MIN / 2`: a compiled function's counter, negative enough that every
   check takes its stub for 2^58 calls. `i64::MIN` would wrap to a large positive count at
   the next `sub`.
-- **Entry redirection**: the stub `call`s through `entry`, so the JIT code must drop the
-  stub's return address. The JIT code starts with `pop r11` (2 bytes,
-  `JIT_ENTRY_PREFIX`), at which `entry` points, rather than having a separate thunk: no
-  extra jump, and nothing to allocate. Direct calls of the JIT code (between JIT
-  functions, and a function's calls of itself) target the instruction after it.
+- **Entry redirection**: the stub `call`s through `entry`, so the JIT code must get rid of
+  the stub's return address. The JIT code starts with `lea r11, [rip + code]; mov [rsp],
+  r11; ret` (12 bytes, `JIT_ENTRY_PREFIX`), at which `entry` points: the `ret` replaces the
+  return address with the code and returns to it. Unlike a `pop`, that keeps the return
+  stack buffer balanced: the `ret` mispredicts (it predicts the stub), but the function's
+  own `ret` and its callers' don't, which a dropped return address would make mispredict
+  one frame after the other (a native caller of a compiled function pays this per call: it
+  can't be re-linked). Direct calls of the JIT code (between JIT functions, and a
+  function's calls of itself) target the instruction after it.
 - **Queue**: a Treiber stack of records (`static QUEUE`, linked through `next`). Each
   record is pushed at most once (only the `Cold → Queued` winner pushes), and the one
   consumer takes the whole stack (`swap(null)`) and reverses it to compile in trip order, so
@@ -932,41 +939,52 @@ trips stay the no-op JIT's.
 - **Compiling** (`jit/install.rs`): `image::ImageResolver::decode` from the image alone (the
   handler table is every `ryo_h_*` handler's address with its opcode, from `vm::handler`,
   sorted, built once; the probe `ryo_probe_stack`), then `asm::encode_reduced` in the image's
-  mode without counters. A failure (decode, encode, reach, memory) or a panic (caught per
+  mode without counters (in another frame layout with `RYO_JIT_SHUFFLE`, [OSR](#osr)), and
+  the OSR entries. A failure (decode, encode, reach, memory) or a panic (caught per
   function) marks the record `Failed`, counter `i64::MAX`, and the thread goes on.
 - **Code memory**: mappings of 32 MiB, each within ±2 GiB of every image it serves (the
   image's three sections, and the handlers), so the code keeps every field `rel32`, as in
   AOT code. They are mapped read-write with `MAP_FIXED_NOREPLACE` at hints stepping away
   from the image (a result out of reach is unmapped and the next hint tried). A function
-  takes whole pages from a mapping's start: the `pop r11` at byte 14, the code at 16, then
-  its code constants (`Encoded::rodata`) 16-aligned, copied next to the code rather than
+  takes whole pages from a mapping's start: the entry prefix at byte 4, the code at 16, the
+  OSR code ([OSR](#osr)) 16-aligned, then its code constants (`Encoded::rodata`)
+  16-aligned, copied next to the code rather than
   pointing at the image's (they are equal for an exact re-encode, but needn't stay so). The
   pages turn read-execute once written and are never written again or reused, so no
-  cross-modifying code. Unwind information is taken from the mapping's end and stays
-  read-write.
+  cross-modifying code. Unwind information and call slots are taken from the mapping's end
+  and stay read-write.
 - **Relocation**: handlers and the probe by address; a function of the image to its JIT
-  code if it is `Done` at that moment (itself always), else its AOT start, whose counter
-  redirects once it is compiled; symbol slots, sites, constants and the data area in the
-  image, by the header's ranges, as the writer resolves them; code constants to the copy.
-  A field out of `rel32` reach fails the function.
+  code if it is `Done` at that moment (itself always), else (tail calls) its AOT start,
+  whose counter redirects once it is compiled; symbol slots, sites, constants and the data
+  area in the image, by the header's ranges, as the writer resolves them; code constants to
+  the copy. A field out of `rel32` reach fails the function.
+- **Call slots**: a `call` of a function of the image that isn't compiled yet becomes a
+  `call.sym` of a symbol past the image's, which relocates to a call slot: 8 bytes at the
+  mapping's end, one per mapping and callee, holding the callee's AOT entry (its JIT code
+  if it was compiled since), and its JIT code once it is published (an atomic store, no
+  code patching). So JIT code reaches functions compiled after it without their entry
+  stubs. Tail calls still go to the AOT entry.
 - **Unwinding**: per function an `.eh_frame` (`image::eh_cie` and `image::eh_fde`, shared with
   the image writer: the same CIE and rules), the zero terminator, and its LSDA
   (`asm::lsda::write` of the JIT code's call sites), all PC-relative, registered with
   libgcc's `__register_frame`. The personality is the image's `rust_eh_personality` slot,
   the symbol slot holding its address. So panics unwind through JIT frames and their landing
-  pads run. The `pop r11` before the FDE's range runs before the frame exists and calls
-  nothing.
-- **Publishing**: `jit_code` and `jit_len`, then `entry` (release), then `state = Done`,
-  then the counter `REDIRECT`. Every later call's check then takes its stub straight into the
-  JIT code, without the runtime.
+  pads run. The entry prefix before the FDE's range runs before the frame exists and calls
+  nothing; the OSR code has an FDE of its own ([OSR](#osr)).
+- **Publishing**: `jit_code` and `jit_len`, then `entry` and `osr` (release), then
+  `state = Done`, then the counter `REDIRECT`, then the function's call slots. Every later
+  call's and loop iteration's check then takes its stub straight into the JIT code, without
+  the runtime.
 - **Settings**, read once from the environment (`vm::configure_jit` sets them in tests):
   `RYO_JIT=off` (the no-op JIT; registration sets every counter to `i64::MAX`),
   `RYO_JIT_THRESHOLD=n` (registration sets every counter to `n`, and trips reset to it; 0:
   trip at the first call), `RYO_JIT_SYNC=1` (a trip that finds its record queued waits on a
   futex on `state` until it leaves `Queued`, then continues in the JIT code; nested trips
   on that thread and trips on the JIT thread never wait), `RYO_JIT_PERFMAP=1` (a line per
-  function in `/tmp/perf-<pid>.map`, named `ryo-jit:f<index>@<AOT address>`) and
-  `RYO_JIT_LOG=1` (a line on stderr per compiled or failed function).
+  function in `/tmp/perf-<pid>.map`, named `ryo-jit:f<index>@<AOT address>`),
+  `RYO_JIT_LOG=1` (a line on stderr per compiled or failed function, and per function whose
+  frame couldn't be shuffled) and `RYO_JIT_SHUFFLE=1` (JIT frames in another layout,
+  [OSR](#osr); `vm::jit_shuffle_image` asks for it per image in tests).
 - **Limits**: JIT frames have no symbols (backtraces show them unnamed; `y test`'s
   `backtrace` check runs with `RYO_JIT=off`). A child of `fork` has no JIT thread, so with
   `RYO_JIT_SYNC` its trips wait forever. The JIT thread allocates through the program's
@@ -974,15 +992,75 @@ trips stay the no-op JIT's.
   never wait), and with `RYO_JIT_SYNC` a thread that trips while holding that allocator's
   lock deadlocks. Its log lines go straight to fd 2, not through std's `Stderr` lock, which a
   waiting thread may hold. With `-Cpanic=abort` a panic in the compiler aborts instead of
-  failing the function. Calls into functions compiled later stay through
-  their AOT entries (no re-linking).
+  failing the function. Tail calls of functions compiled later stay through their AOT
+  entries.
 - **Testing**: `vm/rt/tests/jit.rs` (with the feature, `y test` runs it with and without
   `fp-rbp`): with threshold 0 and `RYO_JIT_SYNC`'s waiting, functions give the AOT code's
   results with arguments of every kind, in JIT code (checked by return addresses within
   `jit_code`), a recursion switches over midway, panics unwind through JIT frames with
-  their landing pads, JIT code calls JIT and AOT functions, a loop head's trip compiles
-  without OSR, and sixteen threads trip at once. `RYO_JIT_THRESHOLD=0 RYO_JIT_SYNC=1 y test`
-  runs the corpus with every function's JIT code from its first call.
+  their landing pads, JIT code calls JIT and AOT functions, and sixteen threads trip at
+  once. With and without shuffled frames, OSR at every head pass of a few loops keeps the
+  values live at the head (integers of every width, floats, `w128`, an escaped local read
+  through a pointer and directly), at the outer and inner heads of nested loops, a panic
+  after OSR runs the JIT frame's landing pad, `rsp` moves by the frames' difference, and a
+  thread spinning in an AOT loop and one deep in a self-recursion, both started before the
+  compile, reach JIT code without returning (a native callee checks its return address).
+  `RYO_JIT_THRESHOLD=0 RYO_JIT_SYNC=1 y test` runs the corpus with every function's JIT code
+  from its first call, and `RYO_JIT_THRESHOLD=16` instead enters it by OSR at the first
+  loop head pass of each function's first call (whose entry check leaves the counter at 0),
+  both also with `RYO_JIT_SHUFFLE=1`.
+
+### OSR
+
+A call that runs a function's AOT code when it is compiled moves to the JIT code at its next
+loop head (on-stack replacement), so entry into the JIT code is bounded: a call that never
+returns (a `main` in a loop) switches over too, and calls switch at their entry. At an AOT
+loop head the state is all in the AOT frame (the register cache is empty at branch targets,
+and dropped stores are flushed before them), so that is where frames convert. The JIT
+compiles the entries with the function (`asm::osr`, `asm::frame`).
+
+- **Dispatcher**: the record's `osr` slot points at it, after the JIT function's code. The
+  head's stub calls it with `eax` the head's index (`Decoded::heads`) and `rsp` at
+  `fp - F_aot - 8`: `lea r11, [rip + T]; movsxd rax, [r11 + rax*4]; add rax, r11; jmp rax`,
+  `T` a table of `i32` offsets of the entries.
+- **Entries**, one per head: `pop rcx` (the stub's return address), then, if the frames
+  differ, `rdx = fp` (`lea rdx, [rsp + F_aot]`, or `rbp` with a frame pointer), the probe
+  if the stack grows by 4096 or more, `rsp` to a scratch area below both frames, the live
+  bytes that move loaded from their AOT slots into it and then stored to their JIT ones (a
+  parallel move, in 8, 4, 2 and 1-byte pieces), `rsp = fp - F_jit`, and `jmp` to the head in
+  the JIT code (`encode_reduced_at` gives the instructions' positions). With equal frames
+  an entry is `pop rcx; jmp`. `fp` doesn't move, so the return address, the caller's frame
+  and the stack arguments stay. A head at an `arg` or an `lpad` (registers live that the
+  stub doesn't keep; the lowering emits neither) has no entry: its table entry is a `ret`,
+  back to the AOT code.
+- **Layouts**: `asm::frame::SlotMap` maps AOT frame offsets to JIT ones by ranges of
+  translated bytes (injective, so the parallel move never overwrites a byte it still
+  reads); bytes in no range keep their offset, as escaped objects must (pointers to them may
+  be anywhere) and the incoming arguments do. `remap_slots` renames every frame operand of
+  the reduced code: native instructions' slots and memory pointers, call argument lists,
+  island operand words, and handler arguments that hold slots (found through the handler's
+  layout, a 32-bit half for a shared register). Positions don't change, so targets, cleanup
+  entries, dropped stores and heads stay valid. Today the JIT keeps the AOT layout (the
+  identity map), so every entry is a jump.
+- **Shuffled layout** (`RYO_JIT_SHUFFLE`, `frame::shuffle_map`), to catch any reliance on
+  matching frames: every byte below `fp` that no escape covers moves down by `F + 64`, into a
+  frame of `2F + 64` (so the outgoing area is at `rsp` again, frames of 2016 bytes and more
+  probe, and the moved bytes land below all the old ones); escaped objects stay. An access
+  that would straddle an escaped object and moved bytes pins its bytes too, and an address
+  taken of bytes no escape covers keeps the function's AOT layout. Island operands are taken
+  to lie in one object each.
+- **Liveness** (`frame::head_liveness`): which frame bytes each head's entry must move, by a
+  backward pass over the reduced code with landing pad edges. It is conservative: inline
+  instructions, `ret`, `arg` and call results read and write exactly their widths, handlers
+  read 16 bytes per slot operand (or the lengths of `copy`, `const`, `zero`, `load.copy`,
+  `store.copy` and `fill`) and kill nothing, and calls and islands read every byte (the stack
+  arguments and the island operands' extents aren't in the code). Escaped bytes don't move,
+  so their liveness doesn't matter.
+- **Unwinding**: the OSR code has an FDE of its own, without an LSDA (nothing in it unwinds
+  but through the probe). With a frame pointer its rules are the body's (CFA = `rbp + 16`);
+  without, CFA = `rsp + F_aot + 24` while the stub's return address is on the stack,
+  `rsp + F_aot + 16` after the `pop`, and `rdx + 16` once `rdx` is `fp`, until the jump into
+  the body, whose FDE describes `F_jit`.
 
 ## Runtime crate: `ryo_rt`
 

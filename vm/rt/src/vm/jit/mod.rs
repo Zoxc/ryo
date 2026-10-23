@@ -4,15 +4,17 @@
 //! - **Trips**: [`trip_entry`] and [`trip_osr`] are what a JIT record's `entry` and `osr`
 //!   slots start at; a function's counter stub calls them when its counter runs out
 //!   (design/vm.md, "JIT records and counters"). They queue the record if it is cold, reset
-//!   the counter, and return into the AOT code; at the entry of a compiled function they
-//!   continue into its JIT code instead. Lock-free: a CAS on the record's state, a push onto
+//!   the counter, and return into the AOT code; in a compiled function they continue into
+//!   its JIT code instead (at a loop head through its OSR dispatcher). Lock-free: a CAS on the record's state, a push onto
 //!   [`QUEUE`], and a futex wake if the JIT thread sleeps. They never compile or allocate,
 //!   but the first push starts the JIT thread.
 //! - **The JIT thread** (`install`) takes the whole queue at once, decodes each function from
 //!   its image ([`ryo_bytecode::image::ImageResolver`]), encodes it again without counters,
 //!   installs the code near the image with its unwind information, and publishes it in the
-//!   record: `entry` (its [`JIT_ENTRY_PREFIX`]), then the state `Done`, then the counter
-//!   [`REDIRECT`], so that every later call's counter check takes the stub into the JIT code.
+//!   record: `entry` (its [`JIT_ENTRY_PREFIX`]) and `osr` (its OSR dispatcher), then the
+//!   state `Done`, then the counter [`REDIRECT`], so that every later call's and loop
+//!   iteration's counter check takes its stub into the JIT code, a loop head's through an OSR
+//!   entry that converts the AOT frame into the JIT one.
 //!
 //! This is the only module of `ryo_rt` that uses std: the native one (the `jit` feature is
 //! only on for the native sysroot), so it never enters VM code (design/vm.md, "No re-entry"),
@@ -37,9 +39,12 @@ use ryo_bytecode::image::{Image, JIT_COLD, JIT_DONE, JIT_FAILED, JIT_QUEUED, JIT
 pub const REDIRECT: i64 = i64::MIN / 2;
 
 /// The bytes before a JIT function's first instruction that its record's `entry` points at:
-/// `pop r11`, which drops the return address of the counter stub's `call [r11 + 8]`, so that
-/// the function starts with its caller's return address on top, as if called directly.
-pub const JIT_ENTRY_PREFIX: usize = 2;
+/// `lea r11, [rip + code]; mov [rsp], r11; ret`, which replaces the return address of the
+/// counter stub's `call [r11 + 8]` with the code and returns to it, so that the function
+/// starts with its caller's return address on top, as if called directly. Returning rather
+/// than dropping the address (`pop`) keeps the return stack buffer balanced: the `ret`
+/// mispredicts once, but the function's own `ret` and its callers' don't.
+pub const JIT_ENTRY_PREFIX: usize = 12;
 
 /// The settings, read once from the environment (or [`configure_jit`]).
 struct Config {
@@ -56,6 +61,9 @@ struct Config {
     perfmap: bool,
     /// `RYO_JIT_LOG=1`: a line on stderr per compiled or failed function.
     log: bool,
+    /// `RYO_JIT_SHUFFLE=1`: JIT code gets another frame layout than the AOT code's
+    /// (`asm::frame::shuffle_map`), so that OSR entries convert frames (tests).
+    shuffle: bool,
 }
 
 static CONFIG: OnceLock<Config> = OnceLock::new();
@@ -70,6 +78,7 @@ fn config() -> &'static Config {
             sync: flag("RYO_JIT_SYNC"),
             perfmap: flag("RYO_JIT_PERFMAP"),
             log: flag("RYO_JIT_LOG"),
+            shuffle: flag("RYO_JIT_SHUFFLE"),
         }
     })
 }
@@ -81,11 +90,27 @@ impl Config {
 }
 
 /// Sets the JIT's settings instead of the environment, before anything reads them (tests):
-/// on, with `sync` ([`Config::sync`]) and `threshold` (as `RYO_JIT_THRESHOLD`). False if they
-/// were read already.
+/// on, with `sync` ([`Config::sync`]) and `threshold` (as `RYO_JIT_THRESHOLD`), and
+/// `RYO_JIT_LOG` from the environment. False if they were read already.
 #[doc(hidden)]
 pub fn configure_jit(sync: bool, threshold: Option<i64>) -> bool {
-    CONFIG.set(Config { enabled: true, threshold, sync, perfmap: false, log: false }).is_ok()
+    CONFIG.set(Config { enabled: true, threshold, sync, perfmap: false, log: std::env::var_os("RYO_JIT_LOG").is_some(), shuffle: false }).is_ok()
+}
+
+/// The images whose functions the JIT compiles with another frame layout, as with
+/// `RYO_JIT_SHUFFLE` (tests), by header address.
+static SHUFFLED: std::sync::Mutex<std::vec::Vec<usize>> = std::sync::Mutex::new(std::vec::Vec::new());
+
+/// Compiles the functions of the image with header `header` with another frame layout than
+/// their AOT code's, as `RYO_JIT_SHUFFLE=1` does for all (tests).
+#[doc(hidden)]
+pub fn jit_shuffle_image(header: *const u8) {
+    SHUFFLED.lock().unwrap_or_else(|e| e.into_inner()).push(header as usize);
+}
+
+/// Whether the image with header `header` gets shuffled frames.
+fn shuffled(header: usize) -> bool {
+    config().shuffle || SHUFFLED.lock().unwrap_or_else(|e| e.into_inner()).contains(&header)
 }
 
 /// How many functions the JIT compiled, and how many it failed to (tests).
@@ -125,6 +150,10 @@ fn ctr(r: *mut JitRecord) -> &'static AtomicI64 {
 fn entry(r: *mut JitRecord) -> &'static AtomicPtr<u8> {
     // SAFETY: as for `ctr`.
     unsafe { AtomicPtr::from_ptr((&raw mut (*r).entry).cast::<*mut u8>()) }
+}
+fn osr_slot(r: *mut JitRecord) -> &'static AtomicPtr<u8> {
+    // SAFETY: as for `ctr`.
+    unsafe { AtomicPtr::from_ptr((&raw mut (*r).osr).cast::<*mut u8>()) }
 }
 fn state(r: *mut JitRecord) -> &'static AtomicU32 {
     // SAFETY: as for `ctr`.
@@ -188,9 +217,11 @@ pub unsafe extern "sysv64" fn trip_entry() {
 }
 
 /// The trip of a loop head: `r11` is the JIT record, `eax` the head's index, `rsp + 8`
-/// 16-aligned, nothing live but `rsp` and `rbp`. A compiled function's head returns at once:
-/// the counter must stay negative for the entry's redirection (there is no OSR yet, so
-/// each iteration of a loop that started in AOT code comes here). Else [`osr_trip`].
+/// 16-aligned, nothing live but `rsp` and `rbp`. A compiled function's head jumps to its OSR
+/// dispatcher, in the record's `osr` slot since before it was `Done` (the stubs call it
+/// directly then, so this is only for a stub that read the slot before). Else
+/// [`osr_trip`], keeping `eax`, and on to the dispatcher if that compiled it (`RYO_JIT_SYNC`),
+/// else back to the AOT code.
 #[unsafe(naked)]
 #[rustc_std_internal_symbol]
 #[unsafe(export_name = "ryo_jit_trip_osr")]
@@ -198,18 +229,25 @@ pub unsafe extern "sysv64" fn trip_osr() {
     core::arch::naked_asm!(
         ".cfi_startproc",
         "cmp dword ptr [r11 + {state}], {done}",
-        "je 2f",
-        "sub rsp, 8",
+        "jne 2f",
+        "jmp qword ptr [r11 + {osr}]",
+        "2:",
+        "push rax",
         ".cfi_adjust_cfa_offset 8",
         "mov rdi, r11",
         "call {trip}",
-        "add rsp, 8",
+        "mov r11, rax",
+        "pop rax",
         ".cfi_adjust_cfa_offset -8",
-        "2:",
+        "test r11, r11",
+        "jz 3f",
+        "jmp r11",
+        "3:",
         "ret",
         ".cfi_endproc",
         state = const core::mem::offset_of!(JitRecord, state),
         done = const JIT_DONE,
+        osr = const core::mem::offset_of!(JitRecord, osr),
         trip = sym osr_trip,
     );
 }
@@ -223,9 +261,12 @@ extern "C" fn entry_trip(rec: *mut JitRecord) -> *const u8 {
     ptr::null()
 }
 
-/// [`trip_osr`]'s work.
-extern "C" fn osr_trip(rec: *mut JitRecord) {
-    trip(rec);
+/// [`trip_osr`]'s work: the OSR dispatcher to continue at, or null to continue in AOT code.
+extern "C" fn osr_trip(rec: *mut JitRecord) -> *const u8 {
+    if trip(rec) == JIT_DONE {
+        return osr_slot(rec).load(Acquire);
+    }
+    ptr::null()
 }
 
 /// What both trips do: queues the record if it is cold, and resets its counter: to the

@@ -960,6 +960,35 @@ pub fn eh_fde(eh: &mut Vec<u8>, cie: usize, f: &EhFunc, mode: Mode) -> EhFields 
     EhFields { pc_begin, lsda }
 }
 
+/// Appends to `eh` an FDE for the CIE at `cie` ([`eh_cie`]) of `len` bytes of code whose
+/// rules are `rows`: at each code offset (ascending), call frame instructions on top of the
+/// CIE's initial `CFA = rsp + 8`. Its LSDA pointer is 0 (none): the code has no call sites.
+/// The JIT's OSR entries ([`crate::asm::osr`]) take one of their own.
+pub fn eh_fde_rows(eh: &mut Vec<u8>, cie: usize, len: u32, rows: &[(u32, Vec<u8>)]) -> EhFields {
+    let at = eh.len();
+    let mut fde = Vec::new();
+    fde.extend_from_slice(&((at + 4 - cie) as u32).to_le_bytes());
+    let pc_begin = at + 4 + fde.len();
+    fde.extend_from_slice(&[0; 4]);
+    fde.extend_from_slice(&len.to_le_bytes());
+    fde.push(4);
+    let lsda = at + 4 + fde.len();
+    fde.extend_from_slice(&[0; 4]);
+    let mut loc = 0;
+    for (to, insns) in rows {
+        if *to > loc {
+            advance(&mut fde, &mut loc, *to);
+        }
+        fde.extend_from_slice(insns);
+    }
+    while (fde.len() + 4) % 8 != 0 {
+        fde.push(0);
+    }
+    eh.extend_from_slice(&(fde.len() as u32).to_le_bytes());
+    eh.extend_from_slice(&fde);
+    EhFields { pc_begin, lsda }
+}
+
 /// A CFA instruction moving the location from `*loc` to `to`, in the shortest of
 /// `DW_CFA_advance_loc`, `advance_loc1`, `advance_loc2` and `advance_loc4`.
 fn advance(fde: &mut Vec<u8>, loc: &mut u32, to: u32) {

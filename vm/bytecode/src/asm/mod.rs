@@ -16,6 +16,8 @@
 //!   [`decode_reduced`] reads machine code back to, and [`decode_linked`] linked machine
 //!   code, through a [`Resolver`].
 //! - [`lsda`] (`alloc`): the call-site table of a function's LSDA.
+//! - [`frame`] (`alloc`): frame bytes of reduced code: accesses, liveness, renaming slots.
+//! - [`osr`] (`alloc`): the JIT's OSR entries from AOT loop heads into JIT code.
 //!
 //! # Operands and registers
 //!
@@ -39,9 +41,13 @@ mod decode;
 #[cfg(feature = "alloc")]
 mod encode;
 #[cfg(feature = "alloc")]
+pub mod frame;
+#[cfg(feature = "alloc")]
 mod inline;
 #[cfg(feature = "alloc")]
 pub mod lsda;
+#[cfg(feature = "alloc")]
+pub mod osr;
 #[cfg(feature = "alloc")]
 mod reduced;
 #[cfg(feature = "alloc")]
@@ -57,7 +63,7 @@ pub use encode::{
 #[cfg(feature = "alloc")]
 pub use inline::has_inline;
 #[cfg(feature = "alloc")]
-pub use reduced::{encode_reduced, is_native, reduce};
+pub use reduced::{encode_reduced, encode_reduced_at, is_native, reduce};
 
 use crate::full::{ElemKind, Opcode, OperandKind, Shape};
 

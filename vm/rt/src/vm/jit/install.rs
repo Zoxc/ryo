@@ -1,5 +1,6 @@
 //! The JIT thread's compiler: decodes a function from its image, encodes it again without
-//! counters, and installs the code near the image: code memory, relocation, unwind
+//! counters (in another frame layout with `RYO_JIT_SHUFFLE`), builds the OSR entries of its
+//! loop heads, and installs the code near the image: code memory, relocation, unwind
 //! information, the perf map, and the record's publication (design/vm.md, "JIT").
 
 use core::ffi::{c_int, c_void};
@@ -9,14 +10,16 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::vec::Vec;
 
-use ryo_bytecode::Opcode;
+use ryo_bytecode::asm::frame::{self, SlotMap};
+use ryo_bytecode::asm::osr::OsrEntry;
 use ryo_bytecode::asm::{self, Mode, Ref};
 use ryo_bytecode::full::{Const, Data, Func, Site, Sym};
-use ryo_bytecode::image::{EhFunc, Image, ImageResolver, JIT_DONE, JitRecord, eh_cie, eh_fde};
+use ryo_bytecode::image::{EhFunc, Image, ImageResolver, JIT_DONE, JitRecord, eh_cie, eh_fde, eh_fde_rows};
+use ryo_bytecode::{Opcode, reduced};
 
 use super::super::interp::{handler, probe_stack};
 use super::super::sys::PAGE;
-use super::{JIT_ENTRY_PREFIX, REDIRECT, ctr, entry, state};
+use super::{JIT_ENTRY_PREFIX, REDIRECT, ctr, entry, osr_slot, state};
 
 /// The size of a code region: one mapping that code (from the start, in pages, made
 /// executable once written) and unwind information (from the end, read-write) are taken from.
@@ -25,6 +28,7 @@ const REGION: usize = 32 << 20;
 const REACH: usize = (1 << 31) - (1 << 20);
 /// Where a function's code starts in its allocation: 16-aligned, after the entry prefix.
 const CODE_AT: usize = 16;
+const _: () = assert!(JIT_ENTRY_PREFIX <= CODE_AT);
 
 const PROT_READ: c_int = 1;
 const PROT_WRITE: c_int = 2;
@@ -89,6 +93,10 @@ pub(super) struct Jit {
     regions: Vec<Region>,
     images: HashMap<usize, ImageInfo>,
     perfmap: Option<std::fs::File>,
+    /// Call slots: JIT code calls a function of its image that wasn't compiled yet through an
+    /// 8-byte slot in its region's read-write end (`call [rip + slot]`), which holds the
+    /// function's AOT entry and then its JIT code. By (region start, image header, function).
+    slots: HashMap<(usize, usize, u32), usize>,
 }
 
 impl Jit {
@@ -105,7 +113,7 @@ impl Jit {
                 std::fs::OpenOptions::new().create(true).append(true).open(std::format!("/tmp/perf-{pid}.map")).ok()
             })
             .flatten();
-        Jit { handlers, rt: Span { lo, hi }, regions: Vec::new(), images: HashMap::new(), perfmap }
+        Jit { handlers, rt: Span { lo, hi }, regions: Vec::new(), images: HashMap::new(), perfmap, slots: HashMap::new() }
     }
 
     fn image(&mut self, img: &Image<'_>) -> ImageInfo {
@@ -178,26 +186,100 @@ impl Jit {
         let res = ImageResolver { image: img, handlers: &self.handlers, probe: probe_stack as *const () as usize };
         let d = res.decode(func, text).ok_or("no such function")?.map_err(|e| e.what)?;
         let mode = Mode { counters: false, ..img.mode() };
-        let enc = asm::encode_reduced(&d.words, d.frame_size, &d.cleanup, &d.scopes, &d.dropped, img.code_consts(), mode).map_err(|_| "encode")?;
 
-        // Unwind information: the CIE, the FDE, the terminator, then the LSDA.
+        // The JIT frame layout: the AOT one, or with `RYO_JIT_SHUFFLE` one that moves every
+        // slot it can (frame::shuffle_map), to catch reliance on matching frames.
+        let mut map = SlotMap::identity(d.frame_size);
+        let mut words = None;
+        if super::shuffled(h as *const _ as usize) {
+            match frame::shuffle_map(&d, mode).and_then(|m| Ok((frame::remap_slots(&d.words, mode, &m)?, m))) {
+                Ok((w, m)) => {
+                    words = Some(w);
+                    map = m;
+                }
+                Err(e) => {
+                    if super::config().log {
+                        self.log(rec, e.what);
+                    }
+                }
+            }
+        }
+        let mut words = words.unwrap_or_else(|| d.words.clone());
+        // Calls of functions of the image that aren't compiled yet go through call slots, as
+        // `call.sym`s of symbols past the image's, which hold their JIT code once they are:
+        // through their AOT entries, every call would pass the counter check and its stub,
+        // and mispredict the entry prefix's `ret`.
+        let nsyms = h.symbols.count;
+        let recs = img.jit_records();
+        let mut callees: Vec<u32> = Vec::new();
+        let mut at = 0;
+        while at < words.len() {
+            if words[at] == reduced::Opcode::Call as u32 {
+                let g = words[at + 2];
+                let done = g < h.jit_records.count && state(recs.wrapping_add(g as usize)).load(Acquire) == JIT_DONE;
+                if g != func && !done {
+                    let k = callees.iter().position(|&c| c == g).unwrap_or_else(|| {
+                        callees.push(g);
+                        callees.len() - 1
+                    });
+                    words[at] = reduced::Opcode::CallSym as u32;
+                    words[at + 2] = nsyms + k as u32;
+                }
+            }
+            at += reduced::insn_len(&words[at..]).map_err(|_| "reduced code")?;
+        }
+        let words = &words[..];
+        // Scopes keep their bytes' new offsets; an end over bytes that move apart only ends
+        // escapes, which stay, so it is dropped (scopes are side data, not code).
+        let scopes: Vec<asm::Scope> =
+            d.scopes.iter().filter_map(|sc| Some(asm::Scope { frame_offset: map.map_range(sc.frame_offset, sc.size)?, ..*sc })).collect();
+        let (enc, starts) =
+            asm::encode_reduced_at(words, map.frame_size, &d.cleanup, &scopes, &d.dropped, img.code_consts(), mode).map_err(|_| "encode")?;
+
+        // OSR entries, one per AOT loop head, landing at the head in the JIT code. Values
+        // move where the layouts differ and the head's liveness says they matter.
+        let live = if map.is_identity() { Vec::new() } else { frame::head_liveness(&d, mode).map_err(|e| e.what)? };
+        let mut entries = Vec::with_capacity(d.heads.len());
+        for (n, &hd) in d.heads.iter().enumerate() {
+            // An `arg` reads an argument register and an `lpad` the exception object in
+            // `rax`, which a head's stub doesn't keep: no entry there.
+            let w = &words[hd as usize..];
+            let enterable = match reduced::Opcode::from_u16(w[0] as u16) {
+                Some(reduced::Opcode::Arg) => false,
+                Some(reduced::Opcode::Handler) => w[1] != Opcode::Lpad as u32,
+                _ => true,
+            };
+            let landing = starts.binary_search_by_key(&hd, |s| s.0).map(|i| starts[i].1).map_err(|_| "loop head")?;
+            entries.push(enterable.then(|| OsrEntry { landing, moves: live.get(n).map(|l| frame::osr_moves(l, &map)).unwrap_or_default() }));
+        }
+        let osr_at = enc.code.len().next_multiple_of(16);
+        let osr = (!entries.is_empty()).then(|| asm::osr::osr_code(&entries, d.frame_size, map.frame_size, mode, osr_at as u32));
+        let osr_len = osr.as_ref().map_or(0, |o| o.code.len());
+
+        // Unwind information: the CIE, the FDE, the OSR code's FDE, the terminator, then the
+        // LSDA.
         let mut eh = Vec::new();
         let pers_field = eh_cie(&mut eh);
-        let ef = EhFunc { len: enc.code.len() as u32, frame_size: d.frame_size, prologue: enc.prologue, entry_stub: enc.entry_stub };
+        let ef = EhFunc { len: enc.code.len() as u32, frame_size: map.frame_size, prologue: enc.prologue, entry_stub: enc.entry_stub };
         let fields = eh_fde(&mut eh, 0, &ef, mode);
+        let osr_fields = osr.as_ref().map(|o| eh_fde_rows(&mut eh, 0, o.code.len() as u32, &o.cfi));
         eh.extend_from_slice(&[0; 4]);
         let lsda_at = eh.len();
         eh.extend_from_slice(&asm::lsda::write(&enc.call_sites));
 
-        // Code memory: the entry prefix, the code, then its code constants.
-        let ro_at = (CODE_AT + enc.code.len()).next_multiple_of(16);
+        // Code memory: the entry prefix, the code, the OSR code, then its code constants.
+        let ro_at = (CODE_AT + osr_at + osr_len).next_multiple_of(16);
         let size = (ro_at + enc.rodata.len()).next_multiple_of(PAGE);
         let eh_size = eh.len().next_multiple_of(16);
         if size + eh_size > REGION / 2 {
             return Err("too large");
         }
+        let header = h as *const _ as usize;
         let region = self.region(info.span).ok_or("no code memory near the image")?;
-        if region.code + size + eh_size > region.data {
+        let start = region.start;
+        let new_slots = callees.iter().filter(|&&g| !self.slots.contains_key(&(start, header, g))).count();
+        let region = self.regions.iter_mut().find(|r| r.start == start).expect("the region");
+        if region.code + size + eh_size + 8 * new_slots > region.data {
             // Full: retire it (it reaches nothing any more) and map another.
             region.data = region.code;
             region.start = usize::MAX;
@@ -208,15 +290,42 @@ impl Jit {
         region.code += size;
         region.data -= eh_size;
         let eh_base = region.data;
+        // The call slots, from the region's end too: the callee's JIT code if it was compiled
+        // meanwhile (publication is this thread's), else its AOT entry.
+        let fs = img.functions();
+        let mut slot_of = Vec::with_capacity(callees.len());
+        for &g in &callees {
+            let f = fs.get(g as usize).ok_or("function out of range")?;
+            let slot = *self.slots.entry((start, header, g)).or_insert_with(|| {
+                region.data -= 8;
+                let gr = recs.wrapping_add(g as usize);
+                let target = if g < h.jit_records.count && state(gr).load(Acquire) == JIT_DONE {
+                    // SAFETY: published before `Done`.
+                    unsafe { (*gr).jit_code as usize }
+                } else {
+                    h.text as usize + f.code_off as usize
+                };
+                // SAFETY: the region's read-write end, which nothing else uses.
+                unsafe { (region.data as *mut usize).write(target) };
+                region.data
+            });
+            slot_of.push(slot);
+        }
 
         let mut code = std::vec![0xccu8; size];
-        code[CODE_AT - JIT_ENTRY_PREFIX..CODE_AT].copy_from_slice(&[0x41, 0x5b]); // pop r11
+        // `lea r11, [rip + code]; mov [rsp], r11; ret` (JIT_ENTRY_PREFIX).
+        let lea = (JIT_ENTRY_PREFIX - 7) as i32;
+        let mut prefix = std::vec![0x4c, 0x8d, 0x1d];
+        prefix.extend(lea.to_le_bytes());
+        prefix.extend([0x4c, 0x89, 0x1c, 0x24, 0xc3]);
+        code[CODE_AT - JIT_ENTRY_PREFIX..CODE_AT].copy_from_slice(&prefix);
         code[CODE_AT..][..enc.code.len()].copy_from_slice(&enc.code);
+        if let Some(o) = &osr {
+            code[CODE_AT + osr_at..][..o.code.len()].copy_from_slice(&o.code);
+        }
         code[ro_at..][..enc.rodata.len()].copy_from_slice(&enc.rodata);
         let jit_f = base + CODE_AT;
         let ro = img.bytes().as_ptr() as usize;
-        let recs = img.jit_records();
-        let fs = img.functions();
         for r in &enc.relocs {
             let field = jit_f + r.at as usize;
             let target = match r.to {
@@ -235,6 +344,7 @@ impl Jit {
                         h.text as usize + f.code_off as usize
                     }
                 }
+                Ref::Sym(Sym(s)) if s >= nsyms => slot_of[(s - nsyms) as usize],
                 Ref::Sym(Sym(s)) => ro + h.symbols.off as usize + 8 * s as usize,
                 Ref::Site(Site(s)) => h.data as usize + 8 * s as usize,
                 Ref::Const(Const(k)) => ro + h.consts.off as usize + k as usize,
@@ -246,6 +356,14 @@ impl Jit {
             let d = i32::try_from((target as i64).wrapping_sub(field as i64 + 4)).map_err(|_| "out of reach")?;
             code[field - base..][..4].copy_from_slice(&d.to_le_bytes());
         }
+        if let Some(o) = &osr {
+            let probe = probe_stack as *const () as usize;
+            for &p in &o.probes {
+                let field = jit_f + osr_at + p as usize;
+                let d = i32::try_from((probe as i64).wrapping_sub(field as i64 + 4)).map_err(|_| "out of reach")?;
+                code[field - base..][..4].copy_from_slice(&d.to_le_bytes());
+            }
+        }
         let pc = |eh: &mut Vec<u8>, at: usize, target: usize| -> Result<(), &'static str> {
             let d = i32::try_from((target as i64).wrapping_sub((eh_base + at) as i64)).map_err(|_| "out of reach")?;
             eh[at..at + 4].copy_from_slice(&d.to_le_bytes());
@@ -254,6 +372,9 @@ impl Jit {
         pc(&mut eh, pers_field, personality)?;
         pc(&mut eh, fields.pc_begin, jit_f)?;
         pc(&mut eh, fields.lsda, eh_base + lsda_at)?;
+        if let Some(f) = osr_fields {
+            pc(&mut eh, f.pc_begin, jit_f + osr_at)?;
+        }
 
         // SAFETY: fresh read-write memory of the region, `size` and `eh.len()` bytes, which
         // nothing else uses; the code pages become executable only once written, and are
@@ -280,8 +401,20 @@ impl Jit {
             (*rec).jit_len = enc.code.len() as u64;
         }
         entry(rec).store((jit_f - JIT_ENTRY_PREFIX) as *mut u8, Release);
+        if osr.is_some() {
+            // The dispatcher, at the start of the OSR code: every head's stub calls it from now.
+            osr_slot(rec).store((jit_f + osr_at) as *mut u8, Release);
+        }
         state(rec).store(JIT_DONE, SeqCst);
         ctr(rec).store(REDIRECT, SeqCst);
+        // Calls of this function from JIT code compiled before it go straight to it now.
+        for (&(_, hd, g), &slot) in &self.slots {
+            if hd == header && g == func {
+                // SAFETY: a call slot, which JIT code reads with plain loads (an atomic store of
+                // its size).
+                unsafe { core::sync::atomic::AtomicUsize::from_ptr(slot as *mut usize).store(jit_f, Release) };
+            }
+        }
         if super::config().log {
             self.log(rec, "compiled");
         }

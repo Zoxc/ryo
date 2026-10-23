@@ -1,0 +1,536 @@
+//! Frame slots of reduced code ([`crate::reduced`], as [`super::Decoded`] gives it): which
+//! bytes each instruction reads and writes, a liveness pass over frame bytes, and renaming
+//! slots to another frame layout ([`SlotMap`], [`remap_slots`]), which the JIT's OSR entries
+//! convert between (design/vm.md, "JIT").
+//!
+//! Extents: inline instructions, calls, `ret` and `arg` access their operands at the widths
+//! the opcode or the return kind gives. A handler's slot operands are taken to reach 16
+//! bytes (the widest scalar, `w128`), or the length its `len` operands give (`copy`, `const`,
+//! `zero`, `load.copy`, `store.copy`, `fill`): an over-estimate, which liveness only reads
+//! and never kills. An island's operands have extents only their template knows, and a call
+//! may read the stack arguments in the outgoing area, which no operand names: both count as
+//! reading every byte.
+
+use alloc::vec::Vec;
+
+use super::{ARG_ADDR, Decoded, Mode, ScopeKind, layout, param_reg, ret_parts};
+use crate::full::Elem;
+use crate::full::{self, OperandKind, Shape};
+use crate::image::CONTINUE;
+use crate::reduced::{self, Arg};
+
+/// How an instruction uses one of its frame operands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Access {
+    /// Reads `n` bytes from the offset (exactly, or at most for a handler's operand).
+    Read(u32),
+    /// Writes exactly `n` bytes from the offset.
+    Write(u32),
+    /// Writes at most `n` bytes from the offset (a handler's operand; liveness doesn't kill).
+    Clobber(u32),
+    /// Takes the offset's address (`addr`, a call argument passed by address).
+    Addr,
+    /// An island's operand: an extent only its template knows.
+    Opaque,
+}
+
+/// A frame operand of an instruction: the word holding its offset (a signed 32-bit value)
+/// and how it is used.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FrameOpnd {
+    pub word: usize,
+    pub access: Access,
+}
+
+/// Why reduced code can't be walked or renamed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FrameError {
+    /// Word offset of the instruction.
+    pub at: u32,
+    pub what: &'static str,
+}
+
+/// One reduced instruction's frame effects and control flow.
+#[derive(Clone, Debug, Default)]
+pub struct InsnFrame {
+    /// Word offset and length.
+    pub at: u32,
+    pub len: u32,
+    pub opnds: Vec<FrameOpnd>,
+    /// It may read any frame byte (calls, islands).
+    pub reads_all: bool,
+    /// It falls through to the next instruction.
+    pub next: bool,
+    /// Branch targets, as word offsets.
+    pub targets: Vec<u32>,
+    /// The full opcode (a handler's for `handler`).
+    pub op: Option<full::Opcode>,
+}
+
+fn width(mnemonic: &str) -> Option<u32> {
+    mnemonic.split('.').find_map(|p| match p {
+        "w8" => Some(1),
+        "w16" => Some(2),
+        "w32" => Some(4),
+        "w64" => Some(8),
+        "w128" => Some(16),
+        _ => None,
+    })
+}
+
+/// Every instruction of `code` with its frame operands ([`InsnFrame`]), in order.
+pub fn insns(code: &[u32], mode: Mode) -> Result<Vec<InsnFrame>, FrameError> {
+    let mut out = Vec::new();
+    let mut at = 0usize;
+    while at < code.len() {
+        let bad = |what| FrameError { at: at as u32, what };
+        let len = reduced::insn_len(&code[at..]).map_err(|_| bad("not a reduced instruction"))?;
+        reduced::Insn::decode(&code[at..]).map_err(|_| bad("not a reduced instruction"))?;
+        let w = &code[at..at + len];
+        let op = reduced::Opcode::from_u16(w[0] as u16).ok_or(bad("opcode"))?;
+        let mut f = InsnFrame { at: at as u32, len: len as u32, next: true, ..Default::default() };
+        let rel = |t: u32| (at as u32).wrapping_add(t);
+        match op.full() {
+            Some(fop) => {
+                f.op = Some(fop);
+                native(fop, w, at, &mut f).map_err(bad)?;
+                let info = fop.info();
+                let mut pos = 1;
+                for o in info.operands {
+                    match o.kind {
+                        OperandKind::Target => f.targets.push(rel(w[pos])),
+                        OperandKind::List(e) => {
+                            pos += 1 + w[pos] as usize * e.words();
+                            continue;
+                        }
+                        _ => {}
+                    }
+                    pos += o.kind.words().expect("fixed");
+                }
+                f.next = !matches!(info.shape, Shape::Jmp | Shape::Ret | Shape::TailCall);
+                f.reads_all = matches!(info.shape, Shape::Call | Shape::TailCall | Shape::Island);
+            }
+            None => {
+                let h = full::Opcode::from_u16(w[1] as u16).ok_or(bad("handler"))?;
+                f.op = Some(h);
+                handler(h, w, at, mode, &mut f).map_err(bad)?;
+                let n = w[2] as usize;
+                let p = 3 + 3 * n;
+                let ts = &w[p + 2..][..w[p + 1] as usize];
+                f.targets.extend(ts.iter().map(|&t| rel(t)));
+                f.next = matches!(h.info().shape, Shape::Op | Shape::Br | Shape::Lpad);
+            }
+        }
+        out.push(f);
+        at += len;
+    }
+    Ok(out)
+}
+
+/// The frame operands of the native instruction `w` (opcode `op`) at word `at`.
+fn native(op: full::Opcode, w: &[u32], at: usize, f: &mut InsnFrame) -> Result<(), &'static str> {
+    let info = op.info();
+    let m = info.mnemonic;
+    let n = width(m).unwrap_or(8);
+    let first = m.split('.').next().unwrap_or("");
+    let compare = matches!(first, "eq" | "ne" | "lt" | "le" | "gt" | "ge");
+    let named = |name: &str| -> usize {
+        let mut pos = 1;
+        for o in info.operands {
+            if o.name == name {
+                return pos;
+            }
+            pos += o.kind.words().expect("fixed operands first");
+        }
+        unreachable!("operand {name}")
+    };
+    let mut push = |word: usize, access| f.opnds.push(FrameOpnd { word: at + word, access });
+    match info.shape {
+        Shape::Call | Shape::TailCall => {
+            if info.operand_index("p").is_some() {
+                push(named("p"), Access::Read(8));
+            }
+            if info.shape == Shape::Call {
+                let k = w[named("k")];
+                if k != 0 {
+                    // The result's stores: an exact write of the parts if they are
+                    // contiguous, else of the first.
+                    let n = match ret_parts(k, false).ok_or("return kind")? {
+                        [Some(a), Some(b)] if b.off == a.size => a.size + b.size,
+                        [Some(a), _] => a.size,
+                        _ => 0,
+                    };
+                    push(named("d"), Access::Write(n));
+                }
+            }
+            let a = named("a");
+            // A count of words, then (slot, register) pairs.
+            let cnt = w[a] as usize / 2;
+            for i in 0..cnt {
+                let (s, r) = (a + 1 + 2 * i, w[a + 2 + 2 * i]);
+                let reg = param_reg(r).ok_or("argument register")?;
+                push(s, if r & ARG_ADDR != 0 { Access::Addr } else { Access::Read(reg.size) });
+            }
+        }
+        Shape::Ret => {
+            let k = w[named("k")];
+            if k != 0 {
+                let parts = ret_parts(k, true).ok_or("return kind")?;
+                let hi = parts.into_iter().flatten().map(|p| p.off + p.size).max().unwrap_or(0);
+                push(named("s"), Access::Read(hi));
+            }
+        }
+        Shape::Arg => {
+            let reg = super::ArgReg::of(w[named("r")], true).ok_or("argument register")?;
+            push(named("d"), Access::Write(reg.size));
+        }
+        Shape::Island => {
+            let o = named("ops");
+            for i in 0..w[o] as usize {
+                push(o + 1 + i, Access::Opaque);
+            }
+        }
+        _ => {
+            let mut pos = 1;
+            for o in info.operands {
+                let access = match (o.kind, o.name) {
+                    (OperandKind::Slot, "d") if m == "addr" || first == "ptr" => Some(Access::Write(8)),
+                    (OperandKind::Slot, "d") => Some(Access::Write(if compare { 1 } else { n })),
+                    (OperandKind::Slot, "s") if m == "addr" => Some(Access::Addr),
+                    (OperandKind::Slot, "s") if m == "br" => Some(Access::Read(1)),
+                    (OperandKind::Slot, "p" | "i") => Some(Access::Read(8)),
+                    (OperandKind::Slot, _) => Some(Access::Read(n)),
+                    (OperandKind::Mem, _) => Some(Access::Read(8)),
+                    (OperandKind::List(_), _) => return Err("a list operand"),
+                    _ => None,
+                };
+                if let Some(a) = access {
+                    push(pos, a);
+                }
+                pos += o.kind.words().expect("fixed");
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The frame operands of the reduced `handler` `w` of the handler `h` at word `at`: its slot
+/// operands' register values, by `h`'s layout.
+fn handler(h: full::Opcode, w: &[u32], at: usize, mode: Mode, f: &mut InsnFrame) -> Result<(), &'static str> {
+    let l = layout(h, mode);
+    let info = h.info();
+    let n = w[2] as usize;
+    if n != l.regs as usize {
+        return Err("handler arguments");
+    }
+    let arg = |reg: u8| Arg::get(&w[3 + 3 * reg as usize..]);
+    let imm = |k: usize| -> Result<u64, &'static str> {
+        let loc = l.locs[k];
+        match arg(loc.reg) {
+            Arg::Imm(v) if loc.shared => Ok((v >> loc.shift) as u32 as u64),
+            Arg::Imm(v) => Ok(v),
+            _ => Err("handler argument"),
+        }
+    };
+    let index = |name: &str| info.operand_index(name);
+    // The extent of the slot operands: the lengths the opcode gives, else at most 16 bytes.
+    let mut ext = 16u64;
+    if let Some(k) = index("len") {
+        ext = ext.max(imm(k)?);
+    }
+    if let (Some(e), Some(c)) = (index("elem_size"), index("count")) {
+        ext = ext.max(imm(e)?.saturating_mul(imm(c)?));
+    }
+    // Past the frame either way.
+    let ext = u32::try_from(ext).unwrap_or(u32::MAX);
+    for (k, o) in info.operands.iter().enumerate() {
+        let loc = l.locs[k];
+        if loc.count == 0 || !matches!(o.kind, OperandKind::Slot | OperandKind::Mem) {
+            continue;
+        }
+        if !matches!(arg(loc.reg), Arg::Imm(_)) {
+            return Err("a slot operand that isn't an immediate");
+        }
+        // Each argument is three words, a tag and the value, low word first; a slot is the
+        // value's low half, or its high one in a shared register.
+        let word = at + 3 + 3 * loc.reg as usize + 1 + (loc.shift / 32) as usize;
+        let access = match (o.kind, o.name) {
+            (OperandKind::Mem, _) | (_, "p") => Access::Read(8),
+            (_, "d") => Access::Clobber(ext),
+            _ => Access::Read(ext),
+        };
+        f.opnds.push(FrameOpnd { word, access });
+    }
+    Ok(())
+}
+
+/// Where the slots of a function's frame go in another layout: AOT frame offsets to the new
+/// ones, byte by byte, as translations of ranges. Offsets in no range (the incoming
+/// arguments, the return address, and whatever stays) keep their offset. The map is
+/// injective, so a parallel move between the layouts never overwrites a byte it still reads.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SlotMap {
+    /// The new frame size.
+    pub frame_size: u32,
+    /// Disjoint ranges of old offsets `lo .. lo + len`, sorted, each moved by `delta`.
+    pub ranges: Vec<(i32, u32, i32)>,
+}
+
+impl SlotMap {
+    /// Every slot where it was, in a frame of `frame_size`.
+    pub fn identity(frame_size: u32) -> SlotMap {
+        SlotMap { frame_size, ranges: Vec::new() }
+    }
+
+    /// Whether the map moves nothing (the frame size aside).
+    pub fn is_identity(&self) -> bool {
+        self.ranges.iter().all(|r| r.2 == 0)
+    }
+
+    /// How far the byte at `off` moves.
+    pub fn delta(&self, off: i32) -> i32 {
+        let i = self.ranges.partition_point(|r| r.0 <= off);
+        match i.checked_sub(1).map(|i| self.ranges[i]) {
+            Some((lo, len, d)) if (off as i64) < lo as i64 + len as i64 => d,
+            _ => 0,
+        }
+    }
+
+    pub fn map(&self, off: i32) -> i32 {
+        off.wrapping_add(self.delta(off))
+    }
+
+    /// Where the bytes `off .. off + len` go, if they move together.
+    pub fn map_range(&self, off: i32, len: u32) -> Option<i32> {
+        let d = self.delta(off);
+        let mut o = off as i64;
+        let end = off as i64 + len as i64;
+        while o < end {
+            if self.delta(o as i32) != d {
+                return None;
+            }
+            o += 1;
+        }
+        Some(off.wrapping_add(d))
+    }
+}
+
+/// `code` (reduced) with every frame operand renamed by `map`: the slots and memory pointers
+/// of native instructions, call argument lists, island operands and the slot operands among
+/// handler arguments. Word positions don't change, so targets, cleanup entries, dropped
+/// stores and loop heads stay valid. Extents aren't checked: the map must move every access
+/// as a whole ([`shuffle_map`] makes sure).
+pub fn remap_slots(code: &[u32], mode: Mode, map: &SlotMap) -> Result<Vec<u32>, FrameError> {
+    let mut out = code.to_vec();
+    for i in insns(code, mode)? {
+        for o in &i.opnds {
+            out[o.word] = map.map(code[o.word] as i32) as u32;
+        }
+    }
+    Ok(out)
+}
+
+/// A test layout (`RYO_JIT_SHUFFLE`): every frame byte below `fp` that is never escaped moves
+/// down by `F + 64`, into a frame of `2F + 64`, and the escaped objects stay (as they must:
+/// pointers to them may be anywhere). So the moved bytes land below every old one, the
+/// outgoing area is at `rsp` again, and accesses keep their relative positions. An access
+/// that would straddle an escaped object and moved bytes pins its bytes too. Fails for an
+/// address taken of bytes no escape covers.
+pub fn shuffle_map(d: &Decoded, mode: Mode) -> Result<SlotMap, FrameError> {
+    let f = d.frame_size as i64;
+    let insns = insns(&d.words, mode)?;
+    let mut pinned = alloc::vec![false; f as usize];
+    let range = |o: i64, n: i64| (o.max(-f), (o + n).min(0));
+    for sc in &d.scopes {
+        if let ScopeKind::Escape { .. } = sc.kind {
+            let (lo, hi) = range(sc.frame_offset as i64, sc.size as i64);
+            for b in lo..hi {
+                pinned[(b + f) as usize] = true;
+            }
+        }
+    }
+    loop {
+        let mut changed = false;
+        for i in &insns {
+            for o in &i.opnds {
+                let off = d.words[o.word] as i32 as i64;
+                let n = match o.access {
+                    Access::Read(n) | Access::Write(n) | Access::Clobber(n) => n as i64,
+                    Access::Addr | Access::Opaque => 1,
+                };
+                if o.access == Access::Addr && off < 0 && !pinned.get((off + f) as usize).copied().unwrap_or(true) {
+                    return Err(FrameError { at: i.at, what: "an address of bytes that don't escape" });
+                }
+                let (lo, hi) = range(off, n);
+                if lo >= hi {
+                    continue;
+                }
+                let p = &mut pinned[(lo + f) as usize..(hi + f) as usize];
+                if p.iter().any(|&x| x) && !p.iter().all(|&x| x) {
+                    p.fill(true);
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    let delta = -(f as i32 + 64);
+    let mut ranges = Vec::new();
+    let mut b = 0;
+    while b < f as usize {
+        if pinned[b] {
+            b += 1;
+            continue;
+        }
+        let lo = b;
+        while b < f as usize && !pinned[b] {
+            b += 1;
+        }
+        ranges.push((lo as i32 - f as i32, (b - lo) as u32, delta));
+    }
+    Ok(SlotMap { frame_size: 2 * d.frame_size + 64, ranges })
+}
+
+/// A set of frame bytes `-F .. 0`, bit `F + off`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Bytes {
+    pub frame_size: u32,
+    bits: Vec<u64>,
+}
+
+impl Bytes {
+    fn new(frame_size: u32) -> Bytes {
+        Bytes { frame_size, bits: alloc::vec![0; (frame_size as usize).div_ceil(64)] }
+    }
+
+    fn range(&self, off: i32, n: u32) -> core::ops::Range<usize> {
+        let f = self.frame_size as i64;
+        let lo = (off as i64).clamp(-f, 0) + f;
+        let hi = (off as i64 + n as i64).clamp(-f, 0) + f;
+        lo as usize..hi.max(lo) as usize
+    }
+
+    fn set(&mut self, off: i32, n: u32, v: bool) {
+        for b in self.range(off, n) {
+            if v {
+                self.bits[b / 64] |= 1 << (b % 64);
+            } else {
+                self.bits[b / 64] &= !(1 << (b % 64));
+            }
+        }
+    }
+
+    fn all(&mut self) {
+        let f = self.frame_size;
+        self.set(-(f as i32), f, true);
+    }
+
+    /// Whether the byte at `off` is in the set.
+    pub fn contains(&self, off: i32) -> bool {
+        let r = self.range(off, 1);
+        r.start < r.end && self.bits[r.start / 64] >> (r.start % 64) & 1 != 0
+    }
+
+    fn union(&mut self, o: &Bytes) -> bool {
+        let mut changed = false;
+        for (a, b) in self.bits.iter_mut().zip(&o.bits) {
+            let n = *a | b;
+            changed |= n != *a;
+            *a = n;
+        }
+        changed
+    }
+}
+
+/// The frame bytes (`-F .. 0`) live at each loop head of `d` ([`Decoded::heads`], in order):
+/// those some path from the head may read before writing them, landing pads included. It
+/// is conservative: handlers kill nothing, calls and islands read everything, and escaped
+/// bytes are only as live as their accesses make them (the caller keeps them in place).
+pub fn head_liveness(d: &Decoded, mode: Mode) -> Result<Vec<Bytes>, FrameError> {
+    let insns = insns(&d.words, mode)?;
+    let index = |w: u32| insns.binary_search_by_key(&w, |i| i.at).ok();
+    let n = insns.len();
+    let mut succ: Vec<Vec<usize>> = alloc::vec![Vec::new(); n];
+    for (k, i) in insns.iter().enumerate() {
+        if i.next && k + 1 < n {
+            succ[k].push(k + 1);
+        }
+        for &t in &i.targets {
+            succ[k].push(index(t).ok_or(FrameError { at: i.at, what: "a branch target" })?);
+        }
+    }
+    // Unwinding edges: a call site to its landing pad, past nothing it writes.
+    let mut pad: Vec<Option<usize>> = alloc::vec![None; n];
+    for e in &d.cleanup {
+        if e.target != CONTINUE {
+            let at = index(e.offset).ok_or(FrameError { at: e.offset, what: "a cleanup entry" })?;
+            pad[at] = Some(index(e.target & !crate::image::CATCH).ok_or(FrameError { at: e.offset, what: "a landing pad" })?);
+        }
+    }
+    let f = d.frame_size;
+    // The bytes each instruction reads (`gen`) and writes for sure (`kill`).
+    let mut gen_ = Vec::with_capacity(n);
+    let mut kill = Vec::with_capacity(n);
+    for i in &insns {
+        let mut g = Bytes::new(f);
+        let mut k = Bytes::new(f);
+        if i.reads_all {
+            g.all();
+        }
+        for o in &i.opnds {
+            let off = d.words[o.word] as i32;
+            match o.access {
+                Access::Read(n) => g.set(off, n, true),
+                Access::Write(n) => k.set(off, n, true),
+                Access::Clobber(_) | Access::Addr => {}
+                Access::Opaque => g.all(),
+            }
+        }
+        // A byte read and written by the same instruction is read first.
+        for (kw, gw) in k.bits.iter_mut().zip(&g.bits) {
+            *kw &= !gw;
+        }
+        gen_.push(g);
+        kill.push(k);
+    }
+    let mut live_in: Vec<Bytes> = alloc::vec![Bytes::new(f); n];
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for k in (0..n).rev() {
+            let mut out = Bytes::new(f);
+            for &s in &succ[k] {
+                out.union(&live_in[s]);
+            }
+            for (o, kw) in out.bits.iter_mut().zip(&kill[k].bits) {
+                *o &= !kw;
+            }
+            out.union(&gen_[k]);
+            if let Some(p) = pad[k] {
+                out.union(&live_in[p]);
+            }
+            changed |= live_in[k].union(&out);
+        }
+    }
+    d.heads.iter().map(|&h| index(h).map(|i| live_in[i].clone()).ok_or(FrameError { at: h, what: "a loop head" })).collect()
+}
+
+/// The moves an OSR entry makes at a head from the AOT layout to `map`'s: the live bytes that
+/// `map` moves, as runs `(from, to, len)` of AOT and new offsets.
+pub fn osr_moves(live: &Bytes, map: &SlotMap) -> Vec<(i32, i32, u32)> {
+    let mut out: Vec<(i32, i32, u32)> = Vec::new();
+    let f = live.frame_size as i32;
+    for off in -f..0 {
+        let d = map.delta(off);
+        if d == 0 || !live.contains(off) {
+            continue;
+        }
+        match out.last_mut() {
+            Some((from, to, len)) if *from + *len as i32 == off && *to - *from == d => *len += 1,
+            _ => out.push((off, off + d, 1)),
+        }
+    }
+    out
+}

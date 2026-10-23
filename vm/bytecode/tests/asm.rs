@@ -294,6 +294,7 @@ fn reencodes(enc: &asm::Encoded, mode: Mode, what: &str) {
     let linked = Fake::link(enc);
     let lin = asm::decode_linked(&linked, Fake::CODE, Fake::RECORD, &Fake { ro: &enc.rodata }, &enc.call_sites, &enc.dropped, &enc.scopes, mode)
         .unwrap_or_else(|e| panic!("{what} {mode:?} (linked): {e:?}"));
+    shuffles(&red, &enc.rodata, mode, what);
     for (d, how) in [(&red, "reduced"), (&lin, "linked")] {
         let re = asm::encode_reduced(&d.words, d.frame_size, &d.cleanup, &d.scopes, &d.dropped, &enc.rodata, mode)
             .unwrap_or_else(|e| panic!("{what} {mode:?} (re-encoding {how}): {e:?}\n{}", reduced::Disasm(&d.words)));
@@ -306,6 +307,26 @@ fn reencodes(enc: &asm::Encoded, mode: Mode, what: &str) {
             );
         }
     }
+}
+
+/// The JIT's frame renaming (`asm::frame`) on decoded code `d`: the identity changes nothing,
+/// the liveness pass runs, and the shuffled layout's code (`RYO_JIT_SHUFFLE`) encodes and
+/// decodes back to the renamed words, in the new frame size.
+fn shuffles(d: &asm::Decoded, rodata: &[u8], mode: Mode, what: &str) {
+    use asm::frame;
+    let id = frame::remap_slots(&d.words, mode, &frame::SlotMap::identity(d.frame_size)).unwrap_or_else(|e| panic!("{what} {mode:?}: {e:?}"));
+    assert_eq!(id, d.words, "{what} {mode:?}");
+    let live = frame::head_liveness(d, mode).unwrap_or_else(|e| panic!("{what} {mode:?}: {e:?}"));
+    assert_eq!(live.len(), d.heads.len());
+    let Ok(map) = frame::shuffle_map(d, mode) else { return };
+    let words = frame::remap_slots(&d.words, mode, &map).unwrap();
+    let scopes: Vec<asm::Scope> =
+        d.scopes.iter().filter_map(|sc| Some(asm::Scope { frame_offset: map.map_range(sc.frame_offset, sc.size)?, ..*sc })).collect();
+    let (enc, _) = asm::encode_reduced_at(&words, map.frame_size, &d.cleanup, &scopes, &d.dropped, rodata, mode)
+        .unwrap_or_else(|e| panic!("{what} {mode:?} (shuffled): {e:?}\n{}", reduced::Disasm(&words)));
+    let back = asm::decode_reduced(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, mode)
+        .unwrap_or_else(|e| panic!("{what} {mode:?} (shuffled, decoding): {e:?}"));
+    assert_eq!((back.frame_size, &back.words), (map.frame_size, &words), "{what} {mode:?} (shuffled)\n{}", reduced::Disasm(&words));
 }
 
 /// A fake address space for linking a function's code: the code at [`Fake::CODE`], and each

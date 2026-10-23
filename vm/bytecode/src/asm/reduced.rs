@@ -235,6 +235,20 @@ pub fn encode_reduced(
     code_consts: &[u8],
     mode: Mode,
 ) -> Result<Encoded, EncodeError> {
+    encode_reduced_at(code, frame_size, cleanup, scopes, dropped, code_consts, mode).map(|(e, _)| e)
+}
+
+/// [`encode_reduced`], and where each instruction starts in the code, by word offset (sorted
+/// pairs): after a loop head's padding, where branches to it land.
+pub fn encode_reduced_at(
+    code: &[u32],
+    frame_size: u32,
+    cleanup: &[CleanupEntry],
+    scopes: &[Scope],
+    dropped: &[u32],
+    code_consts: &[u8],
+    mode: Mode,
+) -> Result<(Encoded, Vec<(u32, u32)>), EncodeError> {
     let mut starts = Vec::new();
     let mut at = 0;
     while at < code.len() {
@@ -382,5 +396,6 @@ pub fn encode_reduced(
     if let Some(&d) = dropped.next() {
         return Err(EncodeError::BadDropped(d));
     }
-    Ok(asm.finish(frame_size, |s| s))
+    let (e, at) = asm.finish_labels(frame_size, |s| s);
+    Ok((e, starts.into_iter().zip(at).collect()))
 }
