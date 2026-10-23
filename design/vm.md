@@ -420,7 +420,12 @@ has one code shape, and code the JIT encodes for itself has none.
   continuation in the stub, and whatever the slot points at returns there to continue the
   AOT code, with no lookup. Code a slot is redirected to that doesn't return pops the return
   address first. At the entry the `call` moves `rsp` before the prologue, which is fine: the
-  callee pops it again.
+  callee pops it again. But the stack is aligned differently at the two: an entry trip
+  starts with `rsp` a multiple of 16 (the caller's return address and the stub's are both
+  on it), a loop head trip with `rsp + 8` one, as a normal callee. The stack arguments are
+  at `rsp + 16` in an entry trip. A trip that calls into Rust must save the argument
+  registers and align `rsp` itself, and must read and write `ctr` as a relaxed atomic, as
+  the AOT code's `sub`s race with it.
 - **Registers**: at the entry the argument registers (integer, `xmm0`–`xmm7`, the stack)
   are live, but `rax` and `r11` aren't: VM functions aren't variadic (those stay native), so
   nothing passes `al`, and no convention passes anything in `r11`. At a loop head nothing
@@ -438,7 +443,9 @@ has one code shape, and code the JIT encodes for itself has none.
   need no rows. On PE the check counts as part of the prologue (the unwind codes' offsets
   and the prologue size include it), and the entry's stub has a `.pdata` entry of its own
   with no unwind codes, as a leaf. Neither stub is a call site: unwinding out of a trip
-  entry point aborts.
+  entry point aborts, so a trip that can panic needs call-site entries for the stubs
+  first. A landing pad that is also a loop head would land on its check, whose head stub
+  overwrites the exception object in `rax`; the lowering never branches to an `lpad`.
 - **Decoding**: the checks and stubs are part of the canonical form. The decoder reads the
   entry's check, ends the function's instructions at the first stub, reads each loop head's
   check with the instruction it precedes (the instruction's position is the check's),
