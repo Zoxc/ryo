@@ -72,8 +72,8 @@ untagged variant's valid range ([`Lang/WellFormed.lean`](../Ryo/Spec/Lang/WellFo
 | Where | What | Why | Effect / discharge |
 |---|---|---|---|
 | `instBEqTy.beq`, `instBEqValue.beq`, `instReprTy.repr`, `instReprValue.repr`, `instToJsonTy.toJson`, `instToJsonValue.toJson`, `instFromJsonTy.fromJson`, `instFromJsonValue.fromJson`, `instFromJsonLayoutStrategy.fromJson` (`deriving` on `Ty`, `Value`, `LayoutStrategy`) | Lean derives these for nested inductives as `partial` defs: an `opaque` constant run by compiled `unsafe` code | `Ty` and `Value` are nested inductives (`List (Offset × Ty)`, `VariantOf Ty`) | **The semantics calls `==` on `Ty` and `Value`**: `abiCompatible` (`caller == callee`, fallback `a == b`), `unsizeValue` (`st == dt`), `atomic_cxchg` (`x == y`). In proofs these are uninterpreted: nothing can be proved about ABI checks, struct unsizing or CAS without more. Discharge: hand-write a structural `BEq` (or `DecidableEq`) for `Ty`/`Value` with a `LawfulBEq` proof. The JSON instances only matter for the dump (§4) |
-| `Float.pow`, `Float32.pow` (Lean core, `@[extern "pow"]`/`"powf"` opaque) | `powi` in `evalIntrinsic` (Intrinsics.lean:315) runs the host C library's `pow` | exact `powi` was not written | Unprovable and host-dependent (glibc `pow` is correctly rounded on x86-64, other libms are not). It also disagrees with what compiled code computes ([divergences.md](divergences.md) R3). Discharge: define `powi` as compiler-rt's `__powidf2` loop over the exact `Float.mul`/`Float.div` |
-| `Float.ofBits`/`toBits`, `Float32.ofBits`/`toBits`, `Float.sqrt`, `UInt*.ofNat/toNat`, `Nat.log2`, `Int.tdiv/tmod`, `Array.*` | `@[extern]` with Lean reference implementations | standard Lean runtime | Proofs use the reference definitions. Only the interpreter's results trust the runtime (GMP-backed `Nat`/`Int`, C arrays): the usual trusted base of compiled Lean. `Float.*` appear only in `powi` and the test helpers `hwBinop64`/`hwBinop32`/`hwSqrt64` |
+| ~~`Float.pow`, `Float32.pow`~~ | `powi` used the host C library's `pow` | | **Removed**: `powi` is now compiler-rt's `__powidf2` loop over the exact `Float.mul`/`Float.div` (`Float.powi`, [divergences.md](divergences.md) R3) |
+| `Float.ofBits`/`toBits`, `Float32.ofBits`/`toBits`, `Float.sqrt`, `UInt*.ofNat/toNat`, `Nat.log2`, `Int.tdiv/tmod`, `Array.*` | `@[extern]` with Lean reference implementations | standard Lean runtime | Proofs use the reference definitions. Only the interpreter's results trust the runtime (GMP-backed `Nat`/`Int`, C arrays): the usual trusted base of compiled Lean. `Float.*` appear only in the test helpers `hwBinop64`/`hwBinop32`/`hwSqrt64` (and `RyoTest`) |
 
 There is no `axiom`, `native_decide`, hand-written `partial`/`unsafe`, `@[extern]` or
 `@[implemented_by]` in `Ryo`, and the spec's own termination is structural (or by the fuel
@@ -100,9 +100,9 @@ substitutes a default. Each use, and what keeps it from mattering:
 | `Program.symbol` | `"<instance i>"` | diagnostics only |
 | `Main.lean` (`n.toNat!`) | panic on a non-numeric `--fuel` | CLI only |
 
-`Int.toNat` clamps negative values to 0. Most uses are on values already known non-negative
-(`usize` operands, checked counts). One is not: the cast to pointer in `evalCast`
-(Cast.lean:100), which is a bug ([divergences.md](divergences.md) R1).
+`Int.toNat` clamps negative values to 0. The uses are on values already known non-negative
+(`usize` operands, checked counts). The one that was not, the cast to pointer in `evalCast`,
+now wraps with `IntType.usize.toBits` ([divergences.md](divergences.md) R1, fixed).
 
 ## 2. Fuel and cut-offs
 
@@ -130,18 +130,21 @@ concrete oracle (`concreteOracle`, Interp.lean:26) answers:
 
 | Choice | Kind | Constraint (checked by) | Bad answer | `concreteOracle` |
 |---|---|---|---|---|
-| `allocAddr size align` | daemonic | `Memory.addrOk`: non-zero, aligned, `addr + size ≤ 2^64`, no overlap with a live non-empty allocation (D8, D26) | `noBehavior` | bump allocator from `0x10000`, one byte gap |
+| `allocAddr size align` | daemonic | `Memory.addrOk`: non-zero, aligned, `addr + size < 2^64`, no overlap with a live non-empty allocation (D8, D26) | `noBehavior` | bump allocator from `0x10000`, one byte gap |
 | `exposedProv addr` | angelic | `none` or an exposed `AllocId` (`IntPtrCast.ptrFromInt`) | `noBehavior` | the live exposed allocation containing `addr`, preferring one where it is not one-past-the-end (Miri) |
 | `nanBits fmt cands` | daemonic | answer in `cands` (`resolveFloat`) | `noBehavior` | the first candidate: the positive canonical quiet NaN |
 | `constCopy g n` | daemonic | any `Nat` (`< n` reuses a copy, else a fresh copy) | none | `0` (first copy) |
 | `fnAddr i n` | daemonic | as `constCopy` | none | `0` |
 | `guaranteedCmp` | daemonic | any `Bool` (`true`: exact answer, `false`: 2) | none | `true` |
+| `fmulAddFused` | daemonic | any `Bool` (`fmuladd` fused or not) | none | `false` (unfused, as baseline x86-64) |
+| `nszZero` | daemonic | any `Bool` (which zero `minimum_number_nsz`/`maximum_number_nsz` return) | none | `true` (the second operand, as the fallback body) |
+| `compareBytes diff` | daemonic | an `i32` with the sign of `diff` (`evalIntrinsic "compare_bytes"`) | `noBehavior` | `diff` (glibc's `memcmp`) |
 
 Assumptions:
 
 - **The concrete oracle stays inside the constraints**, so every interpreter run that ends
   without UB is a behavior (README, "How it works"). This is unproved. The bump allocator
-  would break `addr + size ≤ 2^64` after 2^64 bytes of allocations (a `noBehavior` stop, not a
+  would break `addr + size < 2^64` after 2^64 bytes of allocations (a `noBehavior` stop, not a
   wrong answer). Discharge: a lemma `concreteOracle` answers satisfy `Memory.addrOk`
   (monotone top, alignment), plus the trivial cases.
 - **Reported UB can be spurious** for programs that cast integers to pointers: the concrete
@@ -186,7 +189,7 @@ checks of dumped layouts against `-Zprint-type-sizes`; later, C1' and the image 
 |---|---|---|---|
 | Environment = the shims | `callExternal` (External.lean:44) | external calls behave as the shims: `__rust_alloc`/`_zeroed`/`dealloc`/`realloc` (heap allocations, `GlobalAlloc` preconditions as UB, D21), `write` (returns `len`), `exit`, `abort`, `_Unwind_RaiseException` (starts unwinding), `ryo_test_print` (tests) | every other symbol is `illFormed`. Programs whose `std` paths reach other symbols (panic machinery, `__rust_alloc_error_handler`, I/O, …) cannot run yet |
 | `ExtSpec` | Behavior.lean:93 | the relational contract (unreachable memory unchanged, frees only reachable heap allocations, may allocate) | stated, **not used** by the semantics; plugging it in is M1/M1b work. Until then the behaviors of a program with external calls are those under the shims only |
-| Events | `Event.extCall` | the trace records callee, argument values and result | `write`'s bytes are not in the trace ([divergences.md](divergences.md) R8) |
+| Events | `Event.extCall`, `Event.write` | the trace records callee, argument values and result; for `write`, the fd and the bytes written | `write`'s bytes are in the trace (R8, fixed); other events still carry addresses (e.g. `__rust_alloc`'s result), so traces compare addresses that are daemonic choices |
 | Panic runtime | D18 | unwinding starts only in external code; the payload is the exception pointer | the panic runtime (`__rust_start_panic`, `__rust_panic_cleanup`, …) is not shimmed |
 | Terminate lang items | `callTerminate` (Unwind.lean:50) | `panic_cannot_unwind`/`panic_in_cleanup` never return; without a body in the program the run aborts | matches cg_ssa; the dump must provide them |
 
@@ -199,7 +202,7 @@ checks of dumped layouts against `-Zprint-type-sizes`; later, C1' and the image 
 | Layouts are rustc's, not recomputed | D2, §4 | "follow rustc" by construction, `-Zrandomize-layout` included | as §4 |
 | Single thread; atomics sequential; no data races | D17 | ryo's theorem is for single-threaded executions | out of scope (plan.md §4) |
 | No aliasing model | D16 | less UB makes the theorem stronger; ryo does not exploit aliasing | revisit if the JIT wants `noalias` |
-| Out-of-scope constructs are rejected (`illFormed`), not modeled: `InlineAsm`, coroutines, C-variadics, SIMD operations, `f16`/`f128` `powi`, intrinsics outside the implemented set, unknown externals, tail calls to non-bodies, unsized locals | `throwIllFormed` sites; mir-spec §A.1 | ryo keeps such functions native, so they never need an L0 meaning | coverage reports in M1b; `grep -n throwIllFormed` lists every rejection |
+| Out-of-scope constructs are rejected (`illFormed`), not modeled: `InlineAsm`, coroutines, C-variadics, SIMD operations, intrinsics outside the implemented set, unknown externals, tail calls to non-bodies, unsized locals | `throwIllFormed` sites; mir-spec §A.1 | ryo keeps such functions native, so they never need an L0 meaning | coverage reports in M1b; `grep -n throwIllFormed` lists every rejection |
 | The program is well-formed MIR: `Wf.checkProgram` passes, and beyond it the bodies are what rustc's MIR validator accepts | `runWith`; Mir/WellFormed.lean | the semantics uses `illFormed` for shapes rustc never produces | rvalue typing in `Wf` is still missing (plan.md M1) |
 | Runs start at `Program.start`, called with the given arguments by value; its return or unwinding ends the run (`Final.returned`/`Final.unwound`) | `Sem.start`, `doReturn`, `contUnwind .bottom` | lets single functions run; MiniRust requires `exit` | the real entry point is `lang_start` ([divergences.md](divergences.md) R11) |
 | `Refines` compares two L0 programs | Behavior.lean:82 | stated for later levels | the D25 stack-overflow clause cannot fire between L0 programs, since `runN` never overflows (§2). It needs a target semantics with a real stack bound |

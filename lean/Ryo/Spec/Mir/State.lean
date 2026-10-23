@@ -79,6 +79,8 @@ deriving Repr, BEq, Inhabited
 inductive Event where
   /-- An external call (mir-spec §A.6): callee symbol, arguments, result. -/
   | extCall (callee : String) (args : List Value) (result : ExtResult)
+  /-- `write(fd, buf, len)`: the bytes written (mir-spec §A.6). -/
+  | write (fd : Int) (bytes : List UInt8)
 deriving Repr, BEq, Inhabited
 
 /-- How a run ended normally. -/

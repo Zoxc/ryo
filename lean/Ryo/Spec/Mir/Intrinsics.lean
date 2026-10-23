@@ -18,10 +18,13 @@ flow and live in `Ryo.Spec.Mir.Terminator`): `assume`, `black_box`, `likely`, `u
 (plain accesses), the atomics (D17: plain accesses of size ≤ 8 with natural alignment,
 read-modify-write computed sequentially, orderings ignored, fences no-ops), `fabs`,
 `copysign*`, `minimum_number_nsz_*`/`maximum_number_nsz_*`, `minimum*`/`maximum*`, `sqrt*`,
-`fma*`, `fmuladd*` (fused), `powi*` (host `pow`, rustc leaves its precision unspecified),
+`fma*`, `fmuladd*` (fused or not, daemonic), `powi*` (compiler-rt's `__powidf2` loop;
+`f16` through `f32`),
 `float_to_int_unchecked`, `f*_fast` (UB on non-finite inputs or results), `f*_algebraic`
 (exact operation: a refinement of the allowed reassociations), `caller_location` (D14),
-`raw_eq`, `compare_bytes`, `prefetch_*` (no-ops).
+`raw_eq`, `compare_bytes` (any `i32` of the right sign, daemonic), `prefetch_*` (no-ops).
+`minimum_number_nsz_*`/`maximum_number_nsz_*` of zeros of different sign return either one
+(daemonic).
 
 Intrinsics that runtime MIR never calls (lowered by `LowerIntrinsics`, or const-evaluated:
 `transmute`, `size_of`, `discriminant_value`, `read_via_copy`, ...) and all others are
@@ -307,7 +310,9 @@ def evalIntrinsic (name : String) (args : List (Value × Ty)) (destTy : Ty) : Se
     | "minimum_number_nsz_" | "maximum_number_nsz_" => do
       let (f, x) ← floatArg a
       let (_, y) ← floatArg b
-      resolveFloat f (Float.minNum f (n.startsWith "max") x y)
+      -- the sign of a zero result is unspecified (`nsz`): a daemonic choice
+      let pickY ← if Float.oppositeZeros f x y then choose .nszZero else pure false
+      resolveFloat f (Float.minNum f (n.startsWith "max") x y pickY)
     | "minimum" | "maximum" => do
       let (f, x) ← floatArg a
       let (_, y) ← floatArg b
@@ -316,12 +321,8 @@ def evalIntrinsic (name : String) (args : List (Value × Ty)) (destTy : Ty) : Se
       let (f, x) ← floatArg a
       let (k, _) ← intArg b
       match f with
-      | .f64 =>
-        pure (.float f ((_root_.Float.ofBits (UInt64.ofNat x)).pow (_root_.Float.ofInt k)).toBits.toNat)
-      | .f32 =>
-        let r := (_root_.Float32.ofBits (UInt32.ofNat x)).pow (_root_.Float32.ofInt k)
-        pure (.float f r.toBits.toNat)
-      | _ => throwIllFormed "powi: unsupported format"
+      | .f16 => resolveFloat f (Float.powiF16 x k)
+      | _ => resolveFloat f (Float.powi f x k)
     | _ =>
       match n with
       | "fadd_fast" | "fsub_fast" | "fmul_fast" | "fdiv_fast" | "frem_fast"
@@ -370,11 +371,20 @@ def evalIntrinsic (name : String) (args : List (Value × Ty)) (destTy : Ty) : Se
       | _ => throwIllFormed s!"unsupported intrinsic `{n}` with 1 argument"
   | n, [a, b, c] =>
     match floatPrefix n with
-    | "fma" | "fmuladd" => do
+    | "fma" => do
       let (f, x) ← floatArg a
       let (_, y) ← floatArg b
       let (_, z) ← floatArg c
       resolveFloat f (Float.fma f x y z)
+    | "fmuladd" => do
+      -- fused or not is a daemonic choice (the fallback body and baseline x86-64 do not fuse)
+      let (f, x) ← floatArg a
+      let (_, y) ← floatArg b
+      let (_, z) ← floatArg c
+      if ← choose .fmulAddFused then resolveFloat f (Float.fma f x y z)
+      else
+        let .float _ p ← resolveFloat f (Float.mul f x y) | throwIllFormed "fmuladd"
+        resolveFloat f (Float.add f p z)
     | _ =>
       match n with
       | "compare_bytes" => do
@@ -386,9 +396,13 @@ def evalIntrinsic (name : String) (args : List (Value × Ty)) (destTy : Ty) : Se
           | throwUb "compare_bytes: uninitialized bytes"
         let some ys := (← liftE (mem.load q.thin len.toNat .one)).mapM (·.data)
           | throwUb "compare_bytes: uninitialized bytes"
-        let r : Int := match (xs.zip ys).find? (fun (x, y) => x != y) with
-          | some (x, y) => if x < y then -1 else 1
+        -- `memcmp`: only the sign is specified; the value is a daemonic choice
+        let diff : Int := match (xs.zip ys).find? (fun (x, y) => x != y) with
+          | some (x, y) => (x.toNat : Int) - y.toNat
           | none => 0
+        let r ← choose (.compareBytes diff)
+        if !(IntType.i32.canRepresent r && r.sign == diff.sign) then
+          throwNoBehavior "compare_bytes result with the wrong sign"
         pure (.int r)
       | _ => throwIllFormed s!"unsupported intrinsic `{n}` with 3 arguments"
   | "caller_location", [] => do

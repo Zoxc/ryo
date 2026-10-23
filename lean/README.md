@@ -63,7 +63,8 @@ code cites them inline as `-- [Dn]` at the definitions concerned, and cites sect
 
 - The semantics is written in `SemM := ExceptT Outcome (StateT State (ReaderT Oracle Id))`.
   Every non-deterministic choice (allocation addresses, exposed provenance, NaN payloads,
-  constant copies, function addresses, `ptr_guaranteed_cmp`) is a `Choice` asked through
+  constant copies, function addresses, `ptr_guaranteed_cmp`, `fmuladd` fusion, the zero of
+  `minimum_number_nsz`, `compare_bytes`'s value) is a `Choice` asked through
   `MonadChoice`; the semantics checks each answer (`noBehavior` when a daemonic answer breaks
   its constraint).
 - `Interp.lean`'s `concreteOracle` makes it an interpreter (bump allocator, Miri-like exposed

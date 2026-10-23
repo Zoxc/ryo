@@ -433,8 +433,8 @@ text above is not rewritten to match.
   written against it. `ExceptT` is outside `StateT` so the event trace survives UB.
   `constCopy`/`fnAddr` choices carry the number of existing copies (answer `< n` reuses one).
 - **Floats (D5)**: exact arithmetic on `Nat`/`Int` (exact result, then round to nearest even)
-  instead of opaque hardware functions; hardware `Float` is used only for `powi` and to
-  cross-check in tests. Works for every `FloatTy`.
+  instead of opaque hardware functions (`powi` is compiler-rt's `__powidf2` loop); hardware
+  `Float` is used only to cross-check in tests. Works for every `FloatTy`.
 - **Types (§A.5)**: `Ty` is a nested, non-mutual inductive (variants are `VariantOf Ty`) so
   that structural recursion works. Enums use `EnumRepr.{empty, single idx, multiple tag}`
   (rustc `Variants`) instead of `tag : Option TagInfo`. `PtrType.raw` carries pointee info

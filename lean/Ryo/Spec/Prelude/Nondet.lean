@@ -11,7 +11,9 @@ semantics *checks* each answer: a daemonic answer violating its constraint yield
 - a semantics, by quantifying over oracles (`Ryo.Spec.Mir.Behavior`).
 
 Choices added by divergences: NaN payloads (D5), copies of constant allocations (D7), function
-addresses (D6), `ptr_guaranteed_cmp` (D20).
+addresses (D6), `ptr_guaranteed_cmp` (D20); and where Rust leaves a result open: whether
+`fmuladd` fuses, the sign of a zero from `minimum_number_nsz`/`maximum_number_nsz`, the
+magnitude of `compare_bytes`.
 -/
 import Ryo.Spec.Prelude.Basic
 import Ryo.Spec.Prelude.Outcome
@@ -39,6 +41,14 @@ inductive Choice where
   | fnAddr (i : InstanceId) (existing : Nat)
   /-- `ptr_guaranteed_cmp` (D20, daemonic): `true` = answer exactly, `false` = answer 2. -/
   | guaranteedCmp
+  /-- `fmuladd` (daemonic): `true` = fused (one rounding), `false` = multiply then add. -/
+  | fmulAddFused
+  /-- `minimum_number_nsz`/`maximum_number_nsz` of two zeros of different sign (daemonic):
+  `false` = the first operand, `true` = the second. -/
+  | nszZero
+  /-- The result of `compare_bytes` (daemonic, `memcmp`): any `i32` with the sign of `diff`,
+  the difference of the first differing bytes (0 if equal). -/
+  | compareBytes (diff : Int)
 deriving Repr, BEq, Inhabited
 
 def Choice.kind : Choice → ChoiceKind
@@ -53,6 +63,9 @@ def Choice.kind : Choice → ChoiceKind
   | .constCopy .. => Nat
   | .fnAddr .. => Nat
   | .guaranteedCmp => Bool
+  | .fmulAddFused => Bool
+  | .nszZero => Bool
+  | .compareBytes _ => Int
 
 class MonadChoice (m : Type → Type) where
   choose : (c : Choice) → m c.Answer

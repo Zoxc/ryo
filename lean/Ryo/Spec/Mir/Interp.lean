@@ -9,7 +9,10 @@ mir-spec §A.4:
   Miri does (preferring one where the address is not one-past-the-end);
 - NaN payloads (D5): the preferred positive quiet NaN;
 - constant copies (D7) and function addresses (D6): always the first copy;
-- `ptr_guaranteed_cmp` (D20): the exact answer.
+- `ptr_guaranteed_cmp` (D20): the exact answer;
+- `fmuladd`: unfused (what baseline x86-64 code computes); `minimum_number_nsz` of opposite
+  zeros: the second operand (the fallback body); `compare_bytes`: the byte difference (glibc's
+  `memcmp`).
 Any run this produces without UB is a behavior of the program (the oracle answers within
 every constraint); a reported UB can be spurious for programs that cast integers to pointers
 (as with Miri).
@@ -43,6 +46,9 @@ def concreteOracle : Oracle where
     | .constCopy .. => (0 : Nat)
     | .fnAddr .. => (0 : Nat)
     | .guaranteedCmp => true
+    | .fmulAddFused => false
+    | .nszZero => true
+    | .compareBytes diff => diff
 
 structure RunResult where
   /-- `.ok final` for a normal end, `.error o` for UB, abort, exit, ill-formedness, ... -/

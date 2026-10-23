@@ -32,6 +32,8 @@ def runFile (path : String) (fuel : Nat) : IO UInt32 := do
         | .ret v => (toJson v).compress
         | .unwind p => s!"unwind {(toJson p).compress}"
       IO.println s!"event: {sym}({", ".intercalate (args.map fun a => (toJson a).compress)}) -> {resS}"
+    | .write fd bytes =>
+      IO.println s!"event: write({fd}, {repr (String.fromUTF8? ⟨bytes.toArray⟩)})"
   IO.println s!"{describeResult r} after {r.steps} steps"
   pure (match r.result with
     | .ok (.returned _) => 0

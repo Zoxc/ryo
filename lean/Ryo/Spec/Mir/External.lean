@@ -10,8 +10,10 @@ callee's symbol, the argument values and the result. Relationally, the environme
 anything an `ExtSpec` allows (see `Ryo.Spec.Mir.Behavior`); the interpreter implements these
 shims and treats any other symbol as ill-formed (not runnable):
 - `__rust_alloc`, `__rust_alloc_zeroed`, `__rust_dealloc`, `__rust_realloc`: `heap`
-  allocations (D21; `GlobalAlloc`'s preconditions are UB);
-- `write(fd, buf, len)`: records the bytes, returns `len`;
+  allocations (D21; `GlobalAlloc`'s preconditions are UB). `realloc` frees the old block
+  before allocating the new one, so the (daemonic) new address may equal the old one;
+- `write(fd, buf, len)`: records the bytes as an `Event.write` (not as an `extCall`: the
+  trace shows the data, not the buffer's address), returns `len`;
 - `exit(code)`, `abort()`;
 - `_Unwind_RaiseException(exc)`: starts unwinding with payload `exc` (D18: the panic runtime
   is external; tests use this to start unwinding);
@@ -55,13 +57,17 @@ def callExternal (sym : String) (args : List Value) : SemM ExtResult := do
       let newSize ← argInt ns
       let some al := Align.ofBytes? (← argInt a).toNat | throwUb "__rust_realloc: bad alignment"
       let bytes ← liftE ((← getMem).load old oldSize al)
+      -- free first, so that the new block may start at the old address (growing in place)
+      memUpdate (·.deallocate old .heap oldSize al)
       let .ptr np ← heapAlloc newSize al.bytes false | throwIllFormed "realloc"
       memUpdate (·.store np.thin (bytes.take newSize.toNat) .one)
-      memUpdate (·.deallocate old .heap oldSize al)
       pure (.ret (.ptr np))
-    | "write", [_, buf, len] => do
+    | "write", [fd, buf, len] => do
       let n := (← argInt len).toNat
-      let _ ← liftE ((← getMem).load (← argPtr buf) n .one)
+      let bytes ← liftE ((← getMem).load (← argPtr buf) n .one)
+      -- as Miri: the bytes must be initialized; their provenance is dropped
+      let some data := bytes.mapM (·.data) | throwUb "write: uninitialized bytes"
+      emit (.write (← argInt fd) data)
       pure (.ret (.int n))
     | "exit", [c] => do
       emit (.extCall sym args (.ret unitValue))
@@ -72,7 +78,7 @@ def callExternal (sym : String) (args : List Value) : SemM ExtResult := do
     | "_Unwind_RaiseException", [p] => do pure (.unwind (← argPtr p))
     | "ryo_test_print", _ => pure (.ret unitValue)
     | _, _ => throwIllFormed s!"call to unknown external function `{sym}`"
-  emit (.extCall sym args res)
+  if sym != "write" then emit (.extCall sym args res)
   pure res
 
 end Ryo.Spec.Sem

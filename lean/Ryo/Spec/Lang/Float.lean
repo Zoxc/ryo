@@ -240,15 +240,62 @@ def convert (src dst : FloatTy) (x : Nat) : FRes :=
     .ok (roundRat dst s m 1 e)
 
 /-- IEEE 754-2019 `minimumNumber`/`maximumNumber` (`minimum_number_nsz_*`): a NaN operand is
-ignored. With `nsz`, the sign of a zero result is unspecified; we return `x` (a refinement). -/
-def minNum (f : FloatTy) (isMax : Bool) (x y : Nat) : FRes :=
+ignored. With `nsz`, the sign of a zero result is unspecified: for two zeros of different
+sign the result is `y` if `pickY`, else `x` (the machine makes this a daemonic choice; the
+fallback body returns `y`, LLVM's `minnum` on x86 depends on operand order). Equal non-zero
+operands have equal bits. -/
+def minNum (f : FloatTy) (isMax : Bool) (x y : Nat) (pickY : Bool := false) : FRes :=
   if isNaN f x && isNaN f y then nanOf f [x, y]
   else if isNaN f x then .ok y
   else if isNaN f y then .ok x
   else match cmp f x y with
     | some .lt => .ok (if isMax then y else x)
     | some .gt => .ok (if isMax then x else y)
-    | _ => .ok x
+    | _ => .ok (if pickY then y else x)
+
+/-- Are `x` and `y` zeros of different sign (where `minNum`'s result is a choice)? -/
+def oppositeZeros (f : FloatTy) (x y : Nat) : Bool :=
+  isZero f x && isZero f y && sign f x != sign f y
+
+/-- `1.0`. -/
+def one (f : FloatTy) : Nat := mkBits f false (bias f) 0
+
+/-- The loop of compiler-rt's `__powidf2`: `r *= a` for each set bit of `b`, squaring `a` in
+between (`none` once a multiplication gives NaN). -/
+def powiLoop (f : FloatTy) (r a b : Nat) : Option Nat :=
+  if b = 0 then some r
+  else
+    let r' := if b % 2 = 1 then mul f r a else .ok r
+    match r' with
+    | .nan _ => none
+    | .ok r' =>
+      if b / 2 = 0 then some r'
+      else
+        match mul f a a with
+        | .nan _ => none
+        | .ok a' => powiLoop f r' a' (b / 2)
+termination_by b
+decreasing_by omega
+
+/-- `powi` as compiler-rt's `__powisf2`/`__powidf2`/`__powitf2` compute it (and LLVM's inline
+expansion for a constant exponent, which multiplies in the same order): repeated squaring
+with one rounding per multiplication, then `1 / r` for a negative exponent. `powi(x, 0)` is
+`1` even for NaN `x`. A NaN arising in the loop can only be (a quieted) `x` or a fresh NaN,
+so its candidates are `nanCandidates f [x]`. -/
+def powi (f : FloatTy) (x : Nat) (k : Int) : FRes :=
+  match powiLoop f (one f) x k.natAbs with
+  | none => nanOf f [x]
+  | some r => if k < 0 then div f (one f) r else .ok r
+
+/-- `powi` on `f16`: LLVM promotes `f16` to `f32` (exactly), calls `__powisf2` and rounds
+the result back. -/
+def powiF16 (x : Nat) (k : Int) : FRes :=
+  match convert .f16 .f32 x with
+  | .nan _ => if k = 0 then .ok (one .f16) else nanOf .f16 [x]
+  | .ok x32 =>
+    match powi .f32 x32 k with
+    | .nan _ => nanOf .f16 [x]
+    | .ok r => convert .f32 .f16 r
 
 /-- IEEE 754-2019 `minimum`/`maximum` (`minimumf*`): NaN-propagating, `-0 < +0`. -/
 def minimum (f : FloatTy) (isMax : Bool) (x y : Nat) : FRes :=

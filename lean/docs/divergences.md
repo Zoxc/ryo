@@ -29,14 +29,14 @@ documented semantics where codegen is more lenient).
 
 | # | Topic | Declaration | Class |
 |---|---|---|---|
-| R1 | Int-to-pointer cast of a negative signed integer gives address 0 | `evalCast` | bug |
-| R2 | An allocation may end exactly at 2^64, making in-bounds offsets to its end UB | `Memory.addrOk` | bug (more UB) |
-| R3 | `powi` uses the host `pow`, not compiler-rt's `__powidf2` | `evalIntrinsic` `"powi"` | bug / narrowing |
-| R4 | `fmuladd` always fused | `evalIntrinsic` `"fmuladd"` | narrowing |
-| R5 | `minimum_number_nsz`/`maximum_number_nsz` of equal zeros returns `x` | `Float.minNum` | narrowing |
-| R6 | `compare_bytes` returns exactly -1/0/1 | `evalIntrinsic` `"compare_bytes"` | narrowing |
-| R7 | `__rust_realloc` never returns the old address | `callExternal` | narrowing |
-| R8 | `write`'s bytes are not in the trace | `callExternal` | bug (trace too coarse) |
+| R1 | Int-to-pointer cast of a negative signed integer gives address 0 | `evalCast` | bug, **fixed** |
+| R2 | An allocation may end exactly at 2^64, making in-bounds offsets to its end UB | `Memory.addrOk` | bug (more UB), **fixed** |
+| R3 | `powi` uses the host `pow`, not compiler-rt's `__powidf2` | `Float.powi` | bug / narrowing, **fixed** |
+| R4 | `fmuladd` always fused | `evalIntrinsic` `"fmuladd"` | narrowing, **fixed** |
+| R5 | `minimum_number_nsz`/`maximum_number_nsz` of equal zeros returns `x` | `Float.minNum` | narrowing, **fixed** |
+| R6 | `compare_bytes` returns exactly -1/0/1 | `evalIntrinsic` `"compare_bytes"` | narrowing, **fixed** |
+| R7 | `__rust_realloc` never returns the old address | `callExternal` | narrowing, **fixed** |
+| R8 | `write`'s bytes are not in the trace | `callExternal` | bug (trace too coarse), **fixed** |
 | R9 | Heap allocation never fails | `heapAlloc` | simplification |
 | R10 | Atomic RMW on pointers unsupported; `cxchgweak` never fails spuriously | `evalIntrinsic` atomics | gap / narrowing (harmless on x86) |
 | R11 | Unwinding out of, or returning from, the start function | `contUnwind`, `doReturn` | simplification |
@@ -61,6 +61,7 @@ documented semantics where codegen is more lenient).
 evaluating the cast on `(.int (-1), isizeTy)` returns address 0. Fix:
 `IntType.usize.toBits i` (that is, `(i % 2^64).toNat`). Applies to every negative signed
 source.
+**Fixed:** the address is `IntType.usize.toBits i`; test `R1/neg_int_to_ptr`.
 
 **R2. Allocations ending at 2^64.** `Memory.addrOk` (Mem/Basic.lean:62) accepts
 `addr + size ≤ 2^64`. MiniRust requires `addr + size` to be a valid `usize` (`< 2^64`), and
@@ -70,6 +71,7 @@ overflowed"). Because the address is a daemonic choice, *every* program that off
 pointer to the end of an allocation has UB in some execution, so it has UB. That makes the spec
 far more UB than intended (e.g. `slice::iter`'s end pointer). The concrete oracle never picks
 such an address, so tests do not see it. Fix: `addr + size < Target.ADDR_LIMIT`.
+**Fixed** as proposed; test `R2/addr_bound`.
 
 **R3. `powi`.** `evalIntrinsic "powi"` (Mir/Intrinsics.lean:315) calls Lean's
 `Float.pow`/`Float32.pow`, which is the host libm's `pow` on a converted exponent. LLVM lowers
@@ -82,6 +84,15 @@ so refinement fails. NaN results also bypass RFC 3514's candidate set, `f16`/`f1
 Fix: define `powi` as the `__powidf2` loop over the exact `Float.mul`/`Float.div` (rustc
 leaves its precision unspecified, so a daemonic choice would also be valid, but then it must
 contain `__powidf2`'s result).
+**Fixed:** `Float.powi` is the `__powidf2` loop over the exact `Float.mul` (one rounding per
+multiplication, the same order as LLVM's inline expansion for constant exponents), then
+`Float.div 1 r` for a negative exponent; a NaN anywhere gives `nanCandidates [x]`. `f128` uses
+the same loop (`__powitf2`), `f16` is promoted to `f32` and rounded back (`Float.powiF16`, as
+LLVM legalizes `f16` on x86-64). No host float code is left in the semantics. Remaining
+difference: LLVM *constant-folds* `powi` with constant operands using the host `pow`, so a
+program whose `powi` operands are all compile-time constants may get the correctly rounded
+result instead. Tests `R3/powi_loop` (against the loop on hardware `Float`/`Float32`) and
+`R3/powi`.
 
 **R4. `fmuladd`.** `evalIntrinsic "fma" | "fmuladd"` (Mir/Intrinsics.lean:373) always
 computes the fused result. The intrinsic is documented as non-deterministically fused or
@@ -90,6 +101,8 @@ target feature) emits a separate multiply and add. ryo does not lower `fmuladd` 
 calls the native code or the fallback body, so it computes the unfused result, which the spec
 does not allow. Fix: a daemonic choice between `Float.fma` and `Float.mul` then `Float.add`
 (each NaN-resolved).
+**Fixed** as proposed (`Choice.fmulAddFused`; the concrete oracle does not fuse); test
+`R4/fmuladd`.
 
 **R5. `minimum_number_nsz_*` / `maximum_number_nsz_*` on equal operands.** `Float.minNum`
 (Lang/Float.lean:244) returns `x` when the operands compare equal, i.e. for `+0.0` vs `-0.0`.
@@ -99,6 +112,8 @@ the direction backwards: a deterministic source is *narrower*. The fallback body
 `FminF64`/`FmaxF64` handlers are `f64::min`/`max` compiled by LLVM (`minnum`/`maxnum`, whose
 zero sign depends on operand order on x86). Fix: a daemonic choice between `x` and `y` when
 both are zeros.
+**Fixed:** `Choice.nszZero` for zeros of different sign (equal non-zero operands have equal
+bits); the concrete oracle returns `y`. Test `R5/nsz_zero`.
 
 **R6. `compare_bytes`.** `evalIntrinsic "compare_bytes"` (Mir/Intrinsics.lean:380) returns
 -1, 0 or 1. The intrinsic only promises the sign ("negative if `left` is less"), and it
@@ -106,6 +121,9 @@ lowers to `memcmp`. ryo calls it through the `ryo_island_compare_bytes` wrapper,
 magnitude is glibc's (typically the byte difference). A program that inspects the value (not
 just its sign) shows a target behavior the spec lacks. Fix: a daemonic choice of the
 magnitude, or of any `i32` with the right sign.
+**Fixed:** `Choice.compareBytes diff` accepts any `i32` with the sign of the first byte
+difference; the concrete oracle answers the difference itself (glibc). Test
+`R6/compare_bytes`.
 
 **R7. `__rust_realloc` moves every time.** The shim (`callExternal`, Mir/External.lean:52)
 allocates the new block while the old one is live, then frees the old one. `Memory.addrOk`
@@ -113,6 +131,7 @@ forbids overlap with the live old block, so the new address always differs. Real
 often grows in place and returns the same address, which a program can observe (comparing
 the old address with the new one is defined). Fix: read the old bytes, deallocate, then
 allocate (the daemonic address may then coincide), then store.
+**Fixed** as proposed; test `R7/realloc_in_place`.
 
 **R8. `write` is invisible in traces.** The `write` shim (Mir/External.lean:62) checks that the
 buffer is readable and returns `len`. The event records only the argument values `(fd, ptr,
@@ -122,6 +141,9 @@ correct output from wrong output. The `ptr` is an address, so traces also differ
 irrelevant reasons. Fix: record the bytes (and the `fd`) in the event instead of the pointer.
 The same applies to `ryo_test_print`, which records its arguments as values (fine for
 scalars, wrong for pointers to data).
+**Fixed** for `write`: it emits `Event.write fd bytes` (instead of an `extCall` event) with
+the data bytes; uninitialized bytes are UB and provenance is dropped, as in Miri. Test
+`R8/write_trace`. `ryo_test_print` (tests only) still records values.
 
 **R9. Allocation never fails.** `heapAlloc` (Mir/External.lean:34) always succeeds or stops with
 `noBehavior` when no address fits. Real `__rust_alloc` returns null on failure (then

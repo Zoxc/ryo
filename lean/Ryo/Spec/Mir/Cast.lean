@@ -97,7 +97,8 @@ def evalCast (k : CastKind) (v : Value × Ty) (dst : Ty) : SemM Value := do
     | _ => throwIllFormed "PointerExposeProvenance of a non-pointer"
   | .pointerWithExposedProvenance => do
     let i ← intLike val
-    let p ← (← get).intptr.ptrFromInt (i.toNat % Target.ADDR_LIMIT)
+    -- cg_ssa: `intcast` to `usize` (sign-extending a signed source), then `inttoptr`
+    let p ← (← get).intptr.ptrFromInt (IntType.usize.toBits i)
     pure (.ptr p.widen)
   | .ptrToPtr | .fnPtrToPtr =>
     match val, dst with

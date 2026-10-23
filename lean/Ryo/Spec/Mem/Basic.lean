@@ -58,9 +58,11 @@ namespace Memory
 
 def get? (m : Memory) (id : AllocId) : Option Allocation := m.allocs[id]?
 
-/-- Is `addr` a legal base address for a new allocation (`allocate`'s `pick` constraint)? -/
+/-- Is `addr` a legal base address for a new allocation (`allocate`'s `pick` constraint)?
+As in MiniRust, the end address `addr + size` must itself be a valid `usize`, so that the
+one-past-the-end pointer is in bounds. -/
 def addrOk (m : Memory) (addr : Nat) (size : Size) (align : Align) : Bool :=
-  addr > 0 && align.isAligned addr && addr + size ≤ Target.ADDR_LIMIT &&
+  addr > 0 && align.isAligned addr && addr + size < Target.ADDR_LIMIT &&
     !(m.allocs.any fun a => a.live && a.overlaps addr size)
 
 -- [D8] [D26]
