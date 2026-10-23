@@ -285,6 +285,14 @@ pub(crate) const CORPUS: &[Program] = &[
             "<fn(u32) -> u32 {with_asm} as std::ops::FnMut<(u32,)>>::call_mut - shim(fn(u32) -> u32 {with_asm})"
         ]
     ),
+    // Externally implementable items: the implementations stay native (cg_llvm defines the
+    // declarations' symbols next to them); their callers are VM functions.
+    Program {
+        name: "vm_eii",
+        crates: &[krate("vme", "vm_eii/decl.rs", CrateKind::Rlib), krate("main", "vm_eii/main.rs", CrateKind::Bin)],
+        vm: &["main", "calls"],
+        ..PROGRAM
+    },
     Program {
         name: "vm_staticlib",
         crates: &[krate("vmc", "vm_c/lib.rs", CrateKind::Staticlib)],

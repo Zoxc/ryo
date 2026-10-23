@@ -152,6 +152,12 @@ pub fn vm_fn_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> Result<Ab
     if attrs.flags.contains(rustc_middle::middle::codegen_fn_attrs::CodegenFnAttrFlags::NAKED) {
         return native("#[naked]");
     }
+    // An EII implementation: cg_llvm defines the declaration's symbol as a forwarder to it
+    // when it predefines the function (`add_function_aliases`,
+    // `rustc_codegen_llvm/src/mono_item.rs`), which it doesn't do for a VM function.
+    if !attrs.foreign_item_symbol_aliases.is_empty() {
+        return native("EII implementation");
+    }
     if !attrs.target_features.is_empty() {
         return native("#[target_feature]");
     }

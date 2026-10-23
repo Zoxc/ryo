@@ -42,6 +42,8 @@ and `codegen_crate` reads them.
    - `Fn(instance)` → VM, unless something in it can't be expressed as a VM op or an island
      template. Those functions stay native as a whole:
      - `#[naked]` functions
+     - EII implementations (`#[<eii declaration>]`): cg_llvm defines the declaration's symbol
+       as a forwarder while predefining the implementation (`add_function_aliases`)
      - inline asm
      - calls to C-variadic functions
      - functions with non-Rust ABIs defined in Rust (`extern "C" fn`): VM code follows only
