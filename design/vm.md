@@ -927,7 +927,7 @@ trips stay the no-op JIT's.
   `futex_wait`s on the word's value it read, so no wake is lost.
 - **The thread** starts with the first push (a flag swapped once, `std::thread::Builder`),
   not at registration, which runs in constructors and under the loader lock. If it can't
-  start, the record fails and the trips act as the no-op JIT. It is detached; exiting
+  start, every queued record fails (its waiters woken) and the trips act as the no-op JIT. It is detached; exiting
   mid-compile is fine.
 - **Compiling** (`jit/install.rs`): `image::ImageResolver::decode` from the image alone (the
   handler table is every `ryo_h_*` handler's address with its opcode, from `vm::handler`,
@@ -969,7 +969,12 @@ trips stay the no-op JIT's.
   `RYO_JIT_LOG=1` (a line on stderr per compiled or failed function).
 - **Limits**: JIT frames have no symbols (backtraces show them unnamed; `y test`'s
   `backtrace` check runs with `RYO_JIT=off`). A child of `fork` has no JIT thread, so with
-  `RYO_JIT_SYNC` its trips wait forever. Calls into functions compiled later stay through
+  `RYO_JIT_SYNC` its trips wait forever. The JIT thread allocates through the program's
+  global allocator, so a `#[global_allocator]` compiled to VM code runs on it (its trips
+  never wait), and with `RYO_JIT_SYNC` a thread that trips while holding that allocator's
+  lock deadlocks. Its log lines go straight to fd 2, not through std's `Stderr` lock, which a
+  waiting thread may hold. With `-Cpanic=abort` a panic in the compiler aborts instead of
+  failing the function. Calls into functions compiled later stay through
   their AOT entries (no re-linking).
 - **Testing**: `vm/rt/tests/jit.rs` (with the feature, `y test` runs it with and without
   `fp-rbp`): with threshold 0 and `RYO_JIT_SYNC`'s waiting, functions give the AOT code's

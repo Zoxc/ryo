@@ -898,14 +898,9 @@ fn rt_core_only(root: &Path) -> Result<(), String> {
             .map(str::trim)
             .filter(|s| !s.is_empty() && !s.ends_with(':'))
             .filter(|s| !PANIC_RUNTIME.iter().any(|p| s.ends_with(p)))
-            .filter(|s| {
-                // Rust symbols must name only allowed crates; any `__rust_*`/`__rdl_*`/`__rg_*`
-                // allocator shim is std's.
-                if s.starts_with("__rust") || s.starts_with("__rdl") || s.starts_with("__rg_") {
-                    return true;
-                }
-                !jit && outside(s)
-            })
+            // Rust symbols must name only allowed crates, and no allocator shim (std's), but
+            // with the JIT, whose uses `panic_path` checks.
+            .filter(|s| !jit && outside(s))
             .collect();
         if !bad.is_empty() {
             return Err(format!("{} uses symbols outside core: {bad:?}", lib.display()));

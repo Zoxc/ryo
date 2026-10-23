@@ -40,6 +40,7 @@ unsafe extern "C" {
     fn munmap(addr: *mut c_void, len: usize) -> c_int;
     fn mprotect(addr: *mut c_void, len: usize, prot: c_int) -> c_int;
     fn getpid() -> c_int;
+    fn write(fd: c_int, buf: *const c_void, n: usize) -> isize;
     /// libgcc's: registers an `.eh_frame` (terminated by a zero word) with the unwinder.
     fn __register_frame(begin: *const u8);
     /// std's personality routine, which VM code's CIEs name through a symbol slot.
@@ -291,6 +292,10 @@ impl Jit {
     pub(super) fn log(&self, rec: *mut JitRecord, what: &str) {
         // SAFETY: a record of a linked image.
         let (func, header) = unsafe { ((*rec).func, (*rec).header) };
-        let _ = writeln!(std::io::stderr(), "ryo-jit: f{func} of image {header:p}: {what}");
+        // Straight to the file descriptor, not through std's `Stderr`, whose lock a program
+        // thread may hold while it waits for this one (`RYO_JIT_SYNC`).
+        let line = std::format!("ryo-jit: f{func} of image {header:p}: {what}\n");
+        // SAFETY: a write of a live buffer.
+        unsafe { write(2, line.as_ptr().cast(), line.len()) };
     }
 }

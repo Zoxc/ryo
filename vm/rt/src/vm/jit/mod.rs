@@ -15,7 +15,8 @@
 //!   [`REDIRECT`], so that every later call's counter check takes the stub into the JIT code.
 //!
 //! This is the only module of `ryo_rt` that uses std: the native one (the `jit` feature is
-//! only on for the native sysroot), so it never enters VM code (design/vm.md, "No re-entry").
+//! only on for the native sysroot), so it never enters VM code (design/vm.md, "No re-entry"),
+//! but for a program's global allocator compiled to VM code (design/vm.md, "JIT", Limits).
 //! Nothing on the trips' path may unwind (the stubs aren't call sites); the Rust parts are
 //! `extern "C"`, which aborts if they did, and the JIT thread catches its panics per function.
 
@@ -24,7 +25,7 @@ mod install;
 use core::cell::Cell;
 use core::ffi::{c_long, c_void};
 use core::ptr;
-use core::sync::atomic::Ordering::{AcqRel, Acquire, Relaxed, Release, SeqCst};
+use core::sync::atomic::Ordering::{AcqRel, Acquire, Relaxed, SeqCst};
 use core::sync::atomic::{AtomicBool, AtomicI64, AtomicPtr, AtomicU32, AtomicUsize};
 use std::sync::OnceLock;
 
@@ -248,7 +249,7 @@ fn trip(rec: *mut JitRecord) -> u32 {
     if st == JIT_QUEUED {
         ctr(rec).store(cfg.threshold(), SeqCst);
         if cfg.sync && outer {
-            while state(rec).load(Acquire) == JIT_QUEUED && !DISABLED.load(Acquire) {
+            while state(rec).load(SeqCst) == JIT_QUEUED && !DISABLED.load(SeqCst) {
                 futex_wait(state(rec), JIT_QUEUED);
             }
         }
@@ -283,8 +284,18 @@ fn push(rec: *mut JitRecord) {
     if !STARTED.load(Relaxed) && !STARTED.swap(true, AcqRel) {
         let spawned = std::thread::Builder::new().name("ryo-jit".into()).spawn(thread_main);
         if spawned.is_err() {
-            DISABLED.store(true, Release);
-            fail(rec);
+            // Fail everything queued so far, this record included, and wake its waiters
+            // (`RYO_JIT_SYNC`). A push racing this one either precedes the swap, or its
+            // pusher sees `DISABLED` before it would wait.
+            DISABLED.store(true, SeqCst);
+            let mut list = QUEUE.swap(ptr::null_mut(), SeqCst);
+            while !list.is_null() {
+                let r = list;
+                // SAFETY: popped records are this thread's, as the JIT thread's.
+                list = unsafe { (*r).next };
+                fail(r);
+                futex_wake(state(r), i32::MAX);
+            }
             return;
         }
     }
