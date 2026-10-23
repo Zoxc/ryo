@@ -1,39 +1,45 @@
 //! The JIT (design/vm.md, "JIT"): recompiles hot functions on a background thread and
-//! switches their entry over to the new code.
+//! switches their entry over to the new code. This module is the runtime's side of it; the
+//! JIT thread is `thread` and `install`, which see the runtime only through the
+//! [`RtApi`] that this side builds ([`ryo_bytecode::jit_abi`]).
 //!
 //! - **Trips**: [`trip_entry`] and [`trip_osr`] are what a JIT record's `entry` and `osr`
 //!   slots start at; a function's counter stub calls them when its counter runs out
 //!   (design/vm.md, "JIT records and counters"). They queue the record if it is cold, reset
 //!   the counter, and return into the AOT code; in a compiled function they continue into
-//!   its JIT code instead (at a loop head through its OSR dispatcher). Lock-free: a CAS on the record's state, a push onto
-//!   [`QUEUE`], and a futex wake if the JIT thread sleeps. They never compile or allocate,
-//!   but the first push starts the JIT thread.
-//! - **The JIT thread** (`install`) takes the whole queue at once, decodes each function from
-//!   its image ([`ryo_bytecode::image::ImageResolver`]), encodes it again without counters,
-//!   installs the code near the image with its unwind information, and publishes it in the
-//!   record: `entry` (its [`JIT_ENTRY_PREFIX`]) and `osr` (its OSR dispatcher), then the
-//!   state `Done`, then the counter [`REDIRECT`], so that every later call's and loop
-//!   iteration's counter check takes its stub into the JIT code, a loop head's through an OSR
-//!   entry that converts the AOT frame into the JIT one.
+//!   its JIT code instead (at a loop head through its OSR dispatcher). Lock-free: a CAS on
+//!   the record's state, a push onto [`QUEUE`], and a futex wake if the JIT thread sleeps.
+//!   They never compile or allocate, but the first push starts the JIT thread.
+//! - **The JIT thread** takes the whole queue at once ([`next_batch`]), decodes each
+//!   function from its image ([`ryo_bytecode::image::ImageResolver`]), encodes it again
+//!   without counters, installs the code near the image with its unwind information, and
+//!   publishes it in the record: `entry` (its [`JIT_ENTRY_PREFIX`]) and `osr` (its OSR
+//!   dispatcher), then the state `Done`, then the counter [`REDIRECT`], so that every later
+//!   call's and loop iteration's counter check takes its stub into the JIT code, a loop
+//!   head's through an OSR entry that converts the AOT frame into the JIT one. It reports
+//!   each record ([`done`]).
 //!
-//! This is the only module of `ryo_rt` that uses std: the native one (the `jit` feature is
-//! only on for the native sysroot), so it never enters VM code (design/vm.md, "No re-entry"),
-//! but for a program's global allocator compiled to VM code (design/vm.md, "JIT", Limits).
-//! Nothing on the trips' path may unwind (the stubs aren't call sites); the Rust parts are
-//! `extern "C"`, which aborts if they did, and the JIT thread catches its panics per function.
+//! This side uses `core` only, like the rest of the runtime (design/vm.md, "No re-entry"):
+//! the settings come from libc's `getenv`, and waiting is a futex. Nothing on the trips'
+//! path may unwind (the stubs aren't call sites); the Rust parts are `extern "C"`, which
+//! aborts if they did.
 
 mod install;
+mod thread;
 
-use core::cell::Cell;
-use core::ffi::{c_long, c_void};
+use core::cell::{Cell, UnsafeCell};
+use core::ffi::{CStr, c_char, c_long, c_void};
+use core::mem::MaybeUninit;
 use core::ptr;
-use core::sync::atomic::Ordering::{AcqRel, Acquire, Relaxed, SeqCst};
-use core::sync::atomic::{AtomicBool, AtomicI64, AtomicPtr, AtomicU32, AtomicUsize};
-use std::sync::OnceLock;
+use core::sync::atomic::Ordering::{AcqRel, Acquire, Relaxed, Release, SeqCst};
+use core::sync::atomic::{AtomicBool, AtomicI64, AtomicPtr, AtomicU8, AtomicU32, AtomicUsize};
 
 use ryo_bytecode::image::{Image, JIT_COLD, JIT_DONE, JIT_FAILED, JIT_QUEUED, JIT_THRESHOLD, JitRecord};
+use ryo_bytecode::jit_abi::{JIT_ABI_VERSION, JIT_LOG, JIT_PERFMAP, JIT_SYNC, RtApi};
 
 pub use ryo_bytecode::jit_abi::{JIT_ENTRY_PREFIX, REDIRECT};
+
+use super::sys::fatal;
 
 /// The settings, read once from the environment (or [`configure_jit`]).
 struct Config {
@@ -55,21 +61,92 @@ struct Config {
     shuffle: bool,
 }
 
-static CONFIG: OnceLock<Config> = OnceLock::new();
+/// A static written once, before [`READY`] is published.
+struct Once<T>(UnsafeCell<MaybeUninit<T>>);
+
+// SAFETY: written by one thread before a release store that every reader acquires.
+unsafe impl<T> Sync for Once<T> {}
+
+const UNINIT: u8 = 0;
+const BUSY: u8 = 1;
+const READY: u8 = 2;
+
+/// [`CONFIG`]'s state: [`UNINIT`], then [`BUSY`] while one thread writes it, then [`READY`].
+static CONFIG_STATE: AtomicU8 = AtomicU8::new(UNINIT);
+static CONFIG: Once<Config> = Once(UnsafeCell::new(MaybeUninit::uninit()));
 
 fn config() -> &'static Config {
-    CONFIG.get_or_init(|| {
-        let var = |name: &str| std::env::var_os(name);
-        let flag = |name: &str| var(name).is_some_and(|v| v == "1");
-        Config {
-            enabled: var("RYO_JIT").is_none_or(|v| v != "off"),
-            threshold: var("RYO_JIT_THRESHOLD").and_then(|v| v.to_str()?.parse::<i64>().ok()).map(|t| t.max(0)),
-            sync: flag("RYO_JIT_SYNC"),
-            perfmap: flag("RYO_JIT_PERFMAP"),
-            log: flag("RYO_JIT_LOG"),
-            shuffle: flag("RYO_JIT_SHUFFLE"),
+    loop {
+        match CONFIG_STATE.load(Acquire) {
+            // SAFETY: written before `READY` was published, never again.
+            READY => return unsafe { (*CONFIG.0.get()).assume_init_ref() },
+            UNINIT => {
+                set_config(from_env);
+            }
+            // Another thread reads the environment: a few `getenv`s.
+            _ => core::hint::spin_loop(),
         }
-    })
+    }
+}
+
+/// Sets the settings to `make()` unless something else set them first. False if it did.
+fn set_config(make: impl FnOnce() -> Config) -> bool {
+    if CONFIG_STATE.compare_exchange(UNINIT, BUSY, Acquire, Relaxed).is_err() {
+        return false;
+    }
+    // SAFETY: only the thread that moved the state to `BUSY` writes, and nothing reads until
+    // `READY`.
+    unsafe { (*CONFIG.0.get()).write(make()) };
+    CONFIG_STATE.store(READY, Release);
+    true
+}
+
+unsafe extern "C" {
+    fn getenv(name: *const c_char) -> *const c_char;
+}
+
+/// The environment variable `name`'s value, if it is set.
+fn var(name: &CStr) -> Option<&'static [u8]> {
+    // SAFETY: a NUL-terminated name; the value stays valid unless the program changes the
+    // environment, which it may not while other threads read it (as for std's `env::var`).
+    unsafe {
+        let v = getenv(name.as_ptr());
+        (!v.is_null()).then(|| CStr::from_ptr(v).to_bytes())
+    }
+}
+
+/// A decimal `i64`, with an optional sign; `None` if it isn't one or doesn't fit.
+fn parse_i64(s: &[u8]) -> Option<i64> {
+    let (neg, digits) = match s {
+        [b'-', rest @ ..] => (true, rest),
+        [b'+', rest @ ..] => (false, rest),
+        _ => (false, s),
+    };
+    if digits.is_empty() {
+        return None;
+    }
+    let mut n: i64 = 0;
+    for &d in digits {
+        if !d.is_ascii_digit() {
+            return None;
+        }
+        let d = (d - b'0') as i64;
+        n = n.checked_mul(10)?;
+        n = if neg { n.checked_sub(d)? } else { n.checked_add(d)? };
+    }
+    Some(n)
+}
+
+fn from_env() -> Config {
+    let flag = |name: &CStr| var(name) == Some(b"1");
+    Config {
+        enabled: var(c"RYO_JIT") != Some(b"off"),
+        threshold: var(c"RYO_JIT_THRESHOLD").and_then(parse_i64).map(|t| t.max(0)),
+        sync: flag(c"RYO_JIT_SYNC"),
+        perfmap: flag(c"RYO_JIT_PERFMAP"),
+        log: flag(c"RYO_JIT_LOG"),
+        shuffle: flag(c"RYO_JIT_SHUFFLE"),
+    }
 }
 
 impl Config {
@@ -83,23 +160,25 @@ impl Config {
 /// `RYO_JIT_LOG` from the environment. False if they were read already.
 #[doc(hidden)]
 pub fn configure_jit(sync: bool, threshold: Option<i64>) -> bool {
-    CONFIG.set(Config { enabled: true, threshold, sync, perfmap: false, log: std::env::var_os("RYO_JIT_LOG").is_some(), shuffle: false }).is_ok()
+    set_config(|| Config { enabled: true, threshold, sync, perfmap: false, log: var(c"RYO_JIT_LOG").is_some(), shuffle: false })
 }
 
 /// The images whose functions the JIT compiles with another frame layout, as with
-/// `RYO_JIT_SHUFFLE` (tests), by header address.
-static SHUFFLED: std::sync::Mutex<std::vec::Vec<usize>> = std::sync::Mutex::new(std::vec::Vec::new());
+/// `RYO_JIT_SHUFFLE` (tests), by header address; 0 for a free entry.
+static SHUFFLED: [AtomicUsize; 256] = [const { AtomicUsize::new(0) }; 256];
 
 /// Compiles the functions of the image with header `header` with another frame layout than
 /// their AOT code's, as `RYO_JIT_SHUFFLE=1` does for all (tests).
 #[doc(hidden)]
 pub fn jit_shuffle_image(header: *const u8) {
-    SHUFFLED.lock().unwrap_or_else(|e| e.into_inner()).push(header as usize);
+    if !SHUFFLED.iter().any(|s| s.compare_exchange(0, header as usize, SeqCst, SeqCst).is_ok()) {
+        fatal("jit_shuffle_image: too many images");
+    }
 }
 
-/// Whether the image with header `header` gets shuffled frames.
-fn shuffled(header: usize) -> bool {
-    config().shuffle || SHUFFLED.lock().unwrap_or_else(|e| e.into_inner()).contains(&header)
+/// [`RtApi::shuffled`]: whether the image with header `header` gets shuffled frames.
+extern "C" fn shuffled(header: *const u8) -> bool {
+    config().shuffle || SHUFFLED.iter().any(|s| s.load(SeqCst) == header as usize)
 }
 
 /// How many functions the JIT compiled, and how many it failed to (tests).
@@ -124,11 +203,10 @@ static STARTED: AtomicBool = AtomicBool::new(false);
 /// The JIT thread couldn't be started: the trips act as the no-op JIT.
 static DISABLED: AtomicBool = AtomicBool::new(false);
 
-std::thread_local! {
-    /// The thread is in a trip, or is the JIT thread: a nested trip (VM code that the trip's
-    /// own calls run, such as a VM global allocator under the thread spawn) never waits.
-    static NO_WAIT: Cell<bool> = const { Cell::new(false) };
-}
+/// The thread is in a trip, or is the JIT thread: a nested trip (VM code that the trip's
+/// own calls run, such as a VM global allocator under the thread spawn) never waits.
+#[thread_local]
+static NO_WAIT: Cell<bool> = Cell::new(false);
 
 // The record's fields the trips and the JIT thread share with the counter checks, which read
 // and write them with plain instructions: atomics of their size.
@@ -268,9 +346,8 @@ fn trip(rec: *mut JitRecord) -> u32 {
         ctr(rec).store(i64::MAX, Relaxed);
         return JIT_COLD;
     }
-    // Outside of any trip on this thread (an accessor failing in TLS teardown counts as
-    // inside).
-    let outer = NO_WAIT.try_with(|w| !w.replace(true)).unwrap_or(false);
+    // Outside of any trip on this thread.
+    let outer = !NO_WAIT.replace(true);
     let mut st = state(rec).load(Acquire);
     if st == JIT_COLD && state(rec).compare_exchange(JIT_COLD, JIT_QUEUED, AcqRel, Acquire).is_ok() {
         push(rec);
@@ -293,7 +370,7 @@ fn trip(rec: *mut JitRecord) -> u32 {
         ctr(rec).store(i64::MAX, Relaxed);
     }
     if outer {
-        let _ = NO_WAIT.try_with(|w| w.set(false));
+        NO_WAIT.set(false);
     }
     st
 }
@@ -311,23 +388,20 @@ fn push(rec: *mut JitRecord) {
             Err(h) => head = h,
         }
     }
-    if !STARTED.load(Relaxed) && !STARTED.swap(true, AcqRel) {
-        let spawned = std::thread::Builder::new().name("ryo-jit".into()).spawn(thread_main);
-        if spawned.is_err() {
-            // Fail everything queued so far, this record included, and wake its waiters
-            // (`RYO_JIT_SYNC`). A push racing this one either precedes the swap, or its
-            // pusher sees `DISABLED` before it would wait.
-            DISABLED.store(true, SeqCst);
-            let mut list = QUEUE.swap(ptr::null_mut(), SeqCst);
-            while !list.is_null() {
-                let r = list;
-                // SAFETY: popped records are this thread's, as the JIT thread's.
-                list = unsafe { (*r).next };
-                fail(r);
-                futex_wake(state(r), i32::MAX);
-            }
-            return;
+    if !STARTED.load(Relaxed) && !STARTED.swap(true, AcqRel) && !start() {
+        // Fail everything queued so far, this record included, and wake its waiters
+        // (`RYO_JIT_SYNC`). A push racing this one either precedes the swap, or its
+        // pusher sees `DISABLED` before it would wait.
+        DISABLED.store(true, SeqCst);
+        let mut list = QUEUE.swap(ptr::null_mut(), SeqCst);
+        while !list.is_null() {
+            let r = list;
+            // SAFETY: popped records are this thread's, as the JIT thread's.
+            list = unsafe { (*r).next };
+            fail(r);
+            futex_wake(state(r), i32::MAX);
         }
+        return;
     }
     WAKE.fetch_add(1, SeqCst);
     if SLEEPING.load(SeqCst) {
@@ -335,11 +409,44 @@ fn push(rec: *mut JitRecord) {
     }
 }
 
-/// The JIT thread: compiles what is queued, in trip order, and sleeps while nothing is.
-fn thread_main() {
-    let _ = NO_WAIT.try_with(|w| w.set(true));
+/// What the JIT gets: built by the first push, before the JIT starts.
+static RT_API: Once<RtApi> = Once(UnsafeCell::new(MaybeUninit::uninit()));
+
+unsafe extern "C" {
+    /// The program's personality routine, which VM code's CIEs name through a symbol slot.
+    fn rust_eh_personality();
+}
+
+/// Builds [`RT_API`] and starts the JIT thread. Called once, by the first push. False if the
+/// thread couldn't start.
+fn start() -> bool {
     let cfg = config();
-    let mut jit = install::Jit::new(cfg.perfmap);
+    let flags = (cfg.sync as u32) * JIT_SYNC | (cfg.log as u32) * JIT_LOG | (cfg.perfmap as u32) * JIT_PERFMAP;
+    let mut handlers = [ptr::null(); ryo_bytecode::Opcode::COUNT];
+    for (h, &op) in handlers.iter_mut().zip(ryo_bytecode::ALL_OPCODES.iter()) {
+        *h = super::interp::handler(op).unwrap_or(ptr::null());
+    }
+    let api = RtApi {
+        abi: JIT_ABI_VERSION,
+        format: ryo_bytecode::FORMAT_VERSION,
+        size: size_of::<RtApi>() as u32,
+        flags,
+        probe: super::interp::probe_stack as *const (),
+        personality: rust_eh_personality as *const (),
+        next_batch,
+        done,
+        shuffled,
+        handlers,
+    };
+    // SAFETY: only the first push gets here, once; the JIT reads it only after the start.
+    let api = unsafe { (*RT_API.0.get()).write(api) };
+    thread::start(api)
+}
+
+/// [`RtApi::next_batch`]: the queue, in trip order, once it isn't empty.
+extern "C" fn next_batch() -> *mut JitRecord {
+    // The JIT thread's trips (VM code it runs, such as a VM global allocator) never wait.
+    NO_WAIT.set(true);
     loop {
         let mut list = QUEUE.swap(ptr::null_mut(), Acquire);
         if list.is_null() {
@@ -355,7 +462,7 @@ fn thread_main() {
         }
         let mut order = ptr::null_mut();
         while !list.is_null() {
-            // SAFETY: popped records are this thread's until it publishes them.
+            // SAFETY: popped records are the JIT thread's until it reports them.
             unsafe {
                 let next = (*list).next;
                 (*list).next = order;
@@ -363,34 +470,19 @@ fn thread_main() {
                 list = next;
             }
         }
-        while !order.is_null() {
-            let rec = order;
-            // SAFETY: as above.
-            unsafe {
-                order = (*rec).next;
-                (*rec).next = ptr::null_mut();
-            }
-            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| jit.compile(rec)));
-            let why = match res {
-                Ok(Ok(())) => None,
-                Ok(Err(why)) => Some(why),
-                Err(_) => Some("panicked"),
-            };
-            match why {
-                None => {
-                    COMPILED.fetch_add(1, Relaxed);
-                }
-                Some(why) => {
-                    if cfg.log {
-                        jit.log(rec, why);
-                    }
-                    fail(rec);
-                }
-            }
-            if cfg.sync {
-                futex_wake(state(rec), i32::MAX);
-            }
-        }
+        return order;
+    }
+}
+
+/// [`RtApi::done`]: counts a compiled record, or fails it, and wakes its waiters.
+extern "C" fn done(rec: *mut JitRecord, ok: bool) {
+    if ok {
+        COMPILED.fetch_add(1, Relaxed);
+    } else {
+        fail(rec);
+    }
+    if config().sync {
+        futex_wake(state(rec), i32::MAX);
     }
 }
 

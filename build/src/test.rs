@@ -871,9 +871,10 @@ fn outside(s: &str) -> bool {
     s.starts_with("_R") && !is_rt_internal(s) && crate_roots(s).iter().any(|c| !CRATES.contains(&c.as_str()))
 }
 
-/// Whether `s` belongs to the JIT: `ryo_rt::vm::jit` and the trips.
+/// Whether `s` belongs to the JIT thread: `ryo_rt::vm::jit::thread` and `::install`. The
+/// trips and the rest of `vm::jit` are the runtime's side, which uses `core` only.
 fn in_jit(s: &str) -> bool {
-    s.contains("2vm3jit") || s.contains("ryo_jit_trip_")
+    s.contains("2vm3jit6thread") || s.contains("2vm3jit7install")
 }
 
 /// `ryo_rt` must use only `core`, its own crates, libc, and the panic runtime's two entry
@@ -882,9 +883,9 @@ fn in_jit(s: &str) -> bool {
 /// state (design/vm.md, "No re-entry into the VM from the runtime"). Checked on the undefined
 /// symbols of every sysroot's `ryo_rt` rlib, by crate in their v0 mangled names. ELF only.
 ///
-/// The native sysroot's `ryo_rt` has the JIT (design/vm.md#jit), which uses std: there, std
-/// and core's panic path may be reached only through the `vm::jit` module (and the trips),
-/// never from the rest of the runtime.
+/// The native sysroot's `ryo_rt` has the JIT thread (design/vm.md#jit), which uses std:
+/// there, std and core's panic path may be reached only through `vm::jit::thread` and
+/// `vm::jit::install`, never from the rest of the runtime (the trips included).
 fn rt_core_only(root: &Path) -> Result<(), String> {
     if cfg!(windows) {
         return Ok(());

@@ -6,6 +6,7 @@
 use core::ffi::{c_int, c_void};
 use core::ptr;
 use core::sync::atomic::Ordering::{Acquire, Release, SeqCst};
+use core::sync::atomic::{AtomicI64, AtomicPtr, AtomicU32};
 use std::collections::HashMap;
 use std::io::Write;
 use std::vec::Vec;
@@ -15,11 +16,11 @@ use ryo_bytecode::asm::osr::OsrEntry;
 use ryo_bytecode::asm::{self, Mode, Ref};
 use ryo_bytecode::full::{Const, Data, Func, Site, Sym};
 use ryo_bytecode::image::{EhFunc, Image, ImageResolver, JIT_DONE, JitRecord, eh_cie, eh_fde, eh_fde_rows};
+use ryo_bytecode::jit_abi::{JIT_ENTRY_PREFIX, JIT_LOG, REDIRECT, RtApi};
 use ryo_bytecode::{Opcode, reduced};
 
-use super::super::interp::{handler, probe_stack};
-use super::super::sys::PAGE;
-use super::{JIT_ENTRY_PREFIX, REDIRECT, ctr, entry, osr_slot, state};
+/// The page size (x86_64).
+const PAGE: usize = 4096;
 
 /// The size of a code region: one mapping that code (from the start, in pages, made
 /// executable once written) and unwind information (from the end, read-write) are taken from.
@@ -47,8 +48,25 @@ unsafe extern "C" {
     fn write(fd: c_int, buf: *const c_void, n: usize) -> isize;
     /// libgcc's: registers an `.eh_frame` (terminated by a zero word) with the unwinder.
     fn __register_frame(begin: *const u8);
-    /// std's personality routine, which VM code's CIEs name through a symbol slot.
-    fn rust_eh_personality();
+}
+
+// The record's fields the JIT shares with the trips and the counter checks, which read and
+// write them with plain instructions: atomics of their size.
+fn ctr(r: *mut JitRecord) -> &'static AtomicI64 {
+    // SAFETY: records live in images' writable sections forever; `ctr` is 8-aligned.
+    unsafe { AtomicI64::from_ptr(&raw mut (*r).ctr) }
+}
+fn entry(r: *mut JitRecord) -> &'static AtomicPtr<u8> {
+    // SAFETY: as for `ctr`.
+    unsafe { AtomicPtr::from_ptr((&raw mut (*r).entry).cast::<*mut u8>()) }
+}
+fn osr_slot(r: *mut JitRecord) -> &'static AtomicPtr<u8> {
+    // SAFETY: as for `ctr`.
+    unsafe { AtomicPtr::from_ptr((&raw mut (*r).osr).cast::<*mut u8>()) }
+}
+fn state(r: *mut JitRecord) -> &'static AtomicU32 {
+    // SAFETY: as for `ctr`.
+    unsafe { &(*r).state }
 }
 
 /// An address range `lo..hi` that code must reach with 32-bit PC-relative fields.
@@ -86,10 +104,11 @@ struct ImageInfo {
 }
 
 pub(super) struct Jit {
+    rt: &'static RtApi,
     /// The handlers' addresses and opcodes, sorted, for [`ImageResolver`].
     handlers: Vec<(usize, Opcode)>,
     /// The handlers' and the probe's range.
-    rt: Span,
+    rt_span: Span,
     regions: Vec<Region>,
     images: HashMap<usize, ImageInfo>,
     perfmap: Option<std::fs::File>,
@@ -100,31 +119,32 @@ pub(super) struct Jit {
 }
 
 impl Jit {
-    pub(super) fn new(perfmap: bool) -> Jit {
-        let mut handlers: Vec<(usize, Opcode)> = ryo_bytecode::ALL_OPCODES.iter().filter_map(|&op| Some((handler(op)? as usize, op))).collect();
+    pub(super) fn new(rt: &'static RtApi) -> Jit {
+        let mut handlers: Vec<(usize, Opcode)> =
+            rt.handlers.iter().zip(ryo_bytecode::ALL_OPCODES).filter(|(h, _)| !h.is_null()).map(|(&h, &op)| (h as usize, op)).collect();
         handlers.sort_unstable_by_key(|h| h.0);
-        let probe = probe_stack as *const () as usize;
+        let probe = rt.probe as usize;
         let lo = handlers.first().map_or(probe, |h| h.0).min(probe);
         let hi = handlers.last().map_or(probe, |h| h.0).max(probe) + PAGE;
-        let perfmap = perfmap
+        let perfmap = (rt.flags & ryo_bytecode::jit_abi::JIT_PERFMAP != 0)
             .then(|| {
                 // SAFETY: always safe to call.
                 let pid = unsafe { getpid() };
                 std::fs::OpenOptions::new().create(true).append(true).open(std::format!("/tmp/perf-{pid}.map")).ok()
             })
             .flatten();
-        Jit { handlers, rt: Span { lo, hi }, regions: Vec::new(), images: HashMap::new(), perfmap, slots: HashMap::new() }
+        Jit { rt, handlers, rt_span: Span { lo, hi }, regions: Vec::new(), images: HashMap::new(), perfmap, slots: HashMap::new() }
     }
 
     fn image(&mut self, img: &Image<'_>) -> ImageInfo {
-        let rt = self.rt;
+        let rt = self.rt_span;
+        let p = self.rt.personality as u64;
         *self.images.entry(img.header() as *const _ as usize).or_insert_with(|| {
             let h = img.header();
             let ro = img.bytes().as_ptr() as usize;
             let ends =
                 [(ro, h.size as usize), (h.data as usize, h.data_size as usize), (h.text as usize, h.text_size as usize), (rt.lo, rt.hi - rt.lo)];
             let span = Span { lo: ends.iter().map(|e| e.0).min().unwrap_or(0), hi: ends.iter().map(|e| e.0 + e.1).max().unwrap_or(0) };
-            let p = rust_eh_personality as *const () as u64;
             let personality = img.symbols().iter().position(|&s| s == p).map(|i| ro + h.symbols.off as usize + 8 * i);
             ImageInfo { span, personality }
         })
@@ -183,7 +203,7 @@ impl Jit {
         let personality = info.personality.ok_or("no personality slot")?;
         // SAFETY: a linked image's text section.
         let text = unsafe { core::slice::from_raw_parts(h.text as usize as *const u8, h.text_size as usize) };
-        let res = ImageResolver { image: img, handlers: &self.handlers, probe: probe_stack as *const () as usize };
+        let res = ImageResolver { image: img, handlers: &self.handlers, probe: self.rt.probe as usize };
         let d = res.decode(func, text).ok_or("no such function")?.map_err(|e| e.what)?;
         let mode = Mode { counters: false, ..img.mode() };
 
@@ -191,14 +211,14 @@ impl Jit {
         // slot it can (frame::shuffle_map), to catch reliance on matching frames.
         let mut map = SlotMap::identity(d.frame_size);
         let mut words = None;
-        if super::shuffled(h as *const _ as usize) {
+        if (self.rt.shuffled)(h as *const _ as *const u8) {
             match frame::shuffle_map(&d, mode).and_then(|m| Ok((frame::remap_slots(&d.words, mode, &m)?, m))) {
                 Ok((w, m)) => {
                     words = Some(w);
                     map = m;
                 }
                 Err(e) => {
-                    if super::config().log {
+                    if self.rt.flags & JIT_LOG != 0 {
                         self.log(rec, e.what);
                     }
                 }
@@ -329,8 +349,8 @@ impl Jit {
         for r in &enc.relocs {
             let field = jit_f + r.at as usize;
             let target = match r.to {
-                Ref::Handler(op) => handler(op).ok_or("no handler")? as usize,
-                Ref::Probe => probe_stack as *const () as usize,
+                Ref::Handler(op) => Some(self.rt.handlers[op as usize]).filter(|h| !h.is_null()).ok_or("no handler")? as usize,
+                Ref::Probe => self.rt.probe as usize,
                 Ref::Func(Func(g)) if g == func => jit_f,
                 Ref::Func(Func(g)) => {
                     let f = fs.get(g as usize).ok_or("function out of range")?;
@@ -357,7 +377,7 @@ impl Jit {
             code[field - base..][..4].copy_from_slice(&d.to_le_bytes());
         }
         if let Some(o) = &osr {
-            let probe = probe_stack as *const () as usize;
+            let probe = self.rt.probe as usize;
             for &p in &o.probes {
                 let field = jit_f + osr_at + p as usize;
                 let d = i32::try_from((probe as i64).wrapping_sub(field as i64 + 4)).map_err(|_| "out of reach")?;
@@ -415,7 +435,7 @@ impl Jit {
                 unsafe { core::sync::atomic::AtomicUsize::from_ptr(slot as *mut usize).store(jit_f, Release) };
             }
         }
-        if super::config().log {
+        if self.rt.flags & JIT_LOG != 0 {
             self.log(rec, "compiled");
         }
         Ok(())
