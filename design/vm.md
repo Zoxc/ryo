@@ -1047,11 +1047,13 @@ compiles the entries with the function (`asm::osr`, `asm::frame`).
   frame of `2F + 64` (so the outgoing area is at `rsp` again, frames of 2016 bytes and more
   probe, and the moved bytes land below all the old ones); escaped objects stay. An access
   that would straddle an escaped object and moved bytes pins its bytes too, and an address
-  taken of bytes no escape covers keeps the function's AOT layout. Island operands are taken
-  to lie in one object each.
+  taken of bytes no escape covers keeps the function's AOT layout. Island operands' extents
+  aren't known: each lies in one object, and a function with islands keeps its AOT layout
+  if that pinning went past the escapes (it may have split such an object).
 - **Liveness** (`frame::head_liveness`): which frame bytes each head's entry must move, by a
   backward pass over the reduced code with landing pad edges. It is conservative: inline
-  instructions, `ret`, `arg` and call results read and write exactly their widths, handlers
+  instructions, `ret`, `arg` and call results read and write exactly their widths (a
+  result in two parts with a gap between them clobbers its extent instead), handlers
   read 16 bytes per slot operand (or the lengths of `copy`, `const`, `zero`, `load.copy`,
   `store.copy` and `fill`) and kill nothing, and calls and islands read every byte (the stack
   arguments and the island operands' extents aren't in the code). Escaped bytes don't move,

@@ -154,13 +154,15 @@ fn native(op: full::Opcode, w: &[u32], at: usize, f: &mut InsnFrame) -> Result<(
                 let k = w[named("k")];
                 if k != 0 {
                     // The result's stores: an exact write of the parts if they are
-                    // contiguous, else of the first.
-                    let n = match ret_parts(k, false).ok_or("return kind")? {
-                        [Some(a), Some(b)] if b.off == a.size => a.size + b.size,
-                        [Some(a), _] => a.size,
-                        _ => 0,
+                    // contiguous, else a clobber of their whole extent (so that a layout moves
+                    // it as one; the call reads every byte anyway).
+                    let access = match ret_parts(k, false).ok_or("return kind")? {
+                        [Some(a), Some(b)] if b.off == a.size => Access::Write(a.size + b.size),
+                        [Some(_), Some(b)] => Access::Clobber(b.off + b.size),
+                        [Some(a), None] => Access::Write(a.size),
+                        _ => Access::Write(0),
                     };
-                    push(named("d"), Access::Write(n));
+                    push(named("d"), access);
                 }
             }
             let a = named("a");
@@ -335,7 +337,9 @@ pub fn remap_slots(code: &[u32], mode: Mode, map: &SlotMap) -> Result<Vec<u32>, 
 /// pointers to them may be anywhere). So the moved bytes land below every old one, the
 /// outgoing area is at `rsp` again, and accesses keep their relative positions. An access
 /// that would straddle an escaped object and moved bytes pins its bytes too. Fails for an
-/// address taken of bytes no escape covers.
+/// address taken of bytes no escape covers, and for a function with islands once that
+/// pinning went past the escapes (an island operand's extent isn't known, so its object
+/// might be split).
 pub fn shuffle_map(d: &Decoded, mode: Mode) -> Result<SlotMap, FrameError> {
     let f = d.frame_size as i64;
     let insns = insns(&d.words, mode)?;
@@ -349,6 +353,7 @@ pub fn shuffle_map(d: &Decoded, mode: Mode) -> Result<SlotMap, FrameError> {
             }
         }
     }
+    let escaped = pinned.clone();
     loop {
         let mut changed = false;
         for i in &insns {
@@ -374,6 +379,16 @@ pub fn shuffle_map(d: &Decoded, mode: Mode) -> Result<SlotMap, FrameError> {
         }
         if !changed {
             break;
+        }
+    }
+    // An island operand's extent is its template's: an object the pinning above split (a
+    // handler's operand taken at 16 bytes reaching an escaped neighbour, say) may be one,
+    // and would then be read half moved.
+    if pinned != escaped {
+        for i in &insns {
+            if i.opnds.iter().any(|o| o.access == Access::Opaque && (d.words[o.word] as i32) < 0) {
+                return Err(FrameError { at: i.at, what: "an island operand beside split bytes" });
+            }
         }
     }
     let delta = -(f as i32 + 64);

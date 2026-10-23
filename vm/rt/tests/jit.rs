@@ -438,18 +438,20 @@ fn jit_rsp_delta(f: u32, shuffle: bool) -> u64 {
 /// head intact: integers of every width, floats (in handlers), a 128-bit value, and a local
 /// whose address was taken before the loop, read and written through the pointer in the
 /// loop and read directly after it. With shuffled frames the values move (and `rsp`), the
-/// escaped local stays.
+/// escaped local stays. A frame of 4096 bytes makes the entry probe the stack it grows by.
 #[test]
 fn osr_values() {
     init();
     for shuffle in [false, true] {
-        for k in [0i64, 1, 3, 49] {
-            osr_values_at(shuffle, k);
+        for frame in [128, 4096] {
+            for k in [0i64, 1, 3, 49] {
+                osr_values_at(shuffle, frame, k);
+            }
         }
     }
 }
 
-fn osr_values_at(shuffle: bool, k: i64) {
+fn osr_values_at(shuffle: bool, frame: u32, k: i64) {
     let mut w = ImageWriter::new(unique_scid());
     let s_note = w.symbol("note", 0);
     let mut defs = Defs::default();
@@ -497,7 +499,7 @@ fn osr_values_at(shuffle: bool, k: i64) {
     a.i(Insn::StoreW64 { m: Mem { p: Slot(24), k: 48 }, s: Slot(-104) });
     note_call(&mut a, s_note, 32);
     a.ret(Slot(-8), 8);
-    let f = defs.add(&mut w, func(a.done(), 128, 24, 8), vec![escape(at_addr, -104, 8)]);
+    let f = defs.add(&mut w, func(a.done(), frame, 24, 8), vec![escape(at_addr, -104, 8)]);
     let img = defs.build(w, shuffle);
 
     let n = 50u64;
@@ -516,7 +518,7 @@ fn osr_values_at(shuffle: bool, k: i64) {
     img.set_counter(f, ENTRY_COUNT as i64 + k);
     let mut out = [0u64; 7];
     let obs = Obs::default();
-    let what = format!("shuffle {shuffle}, trip at head pass {}", k + 1);
+    let what = format!("shuffle {shuffle}, frame {frame}, trip at head pass {}", k + 1);
     assert_eq!(ok::<_, u64>(img.id(f), (n, out.as_mut_ptr() as u64, &raw const obs as u64)), n, "{what}");
     let b = |i: usize, o: usize, len: usize| -> u128 {
         let bytes: &[u8] = unsafe { std::slice::from_raw_parts(out.as_ptr().cast::<u8>().add(8 * i + o), len) };
@@ -533,7 +535,7 @@ fn osr_values_at(shuffle: bool, k: i64) {
     let o = |a: &AtomicU64| a.load(std::sync::atomic::Ordering::SeqCst);
     assert!(in_aot(&img, f, o(&obs.first)), "{what}: started at {:#x}", o(&obs.first));
     assert!(in_jit(&img, f, o(&obs.last)), "{what}: ended at {:#x}", o(&obs.last));
-    assert_eq!(o(&obs.first_sp) - o(&obs.last_sp), jit_rsp_delta(128, shuffle), "{what}: rsp");
+    assert_eq!(o(&obs.first_sp) - o(&obs.last_sp), jit_rsp_delta(frame, shuffle), "{what}: rsp");
 }
 
 /// Nested loops: OSR at the outer head (its first pass) or the inner one (later passes),
