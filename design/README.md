@@ -12,6 +12,8 @@ x86-64 calls of the VM's handlers, and uses
 - [vm.md](vm.md): the VM: execution model, frames, machine code, instruction set, handlers,
   unwinding, image format, runtime crate
 - [platforms.md](platforms.md): ELF and PE specifics
+- [verification.md](verification.md): the plan to verify the compiled code in Lean
+  (`lean/`): levels, what is proved, checked and trusted, the AOT and JIT theorems
 
 ## Goals
 

@@ -1,7 +1,7 @@
 # Part A. The MIR spec (L0)
 
 The semantics of the MIR ryo compiles, concrete enough to execute directly: the source level
-of every theorem about ryo's compiled code. Implemented in `Ryo/Spec` (milestone M1). The text
+of every theorem ([plan.md](plan.md)). Implemented in `Ryo/Spec` (milestone M1). The text
 below is the specification M1 implemented; the choices made while implementing it that differ
 from the text are in [Deviations during M1](#deviations-during-m1) at the end, and the text
 is not rewritten to match.

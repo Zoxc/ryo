@@ -1,11 +1,15 @@
 # ryo-lean: verifying ryo in Lean 4
 
-The Lean side of ryo's verification. So far it holds milestone M1: L0, an executable semantics of the runtime MIR ryo compiles,
+The Lean side of ryo's verification ([design/verification.md](../design/verification.md)).
+So far it holds milestone M1: L0, an executable semantics of the runtime MIR ryo compiles,
 built on MiniRust's semantic core ([github.com/minirust/minirust](https://github.com/minirust/minirust),
 commit `d821c6e3`) with rustc/LLVM behavior where they differ (divergences D1–D36,
 [docs/mir-spec.md](docs/mir-spec.md) §A.7).
 
-The MIR spec's design is [docs/mir-spec.md](docs/mir-spec.md).
+The detailed plan is in [docs/](docs/plan.md): the strategy and milestones
+([plan.md](docs/plan.md)), the MIR spec ([mir-spec.md](docs/mir-spec.md)), the x86 level
+([x86.md](docs/x86.md)), the reduced VM level R ([reduced.md](docs/reduced.md)), the AOT
+checks and theorems ([aot.md](docs/aot.md)) and the JIT's validation ([jit.md](docs/jit.md)).
 
 ## Build and test
 
@@ -41,7 +45,7 @@ Ryo/Spec/Mir/                      Syntax (MIR AST), WellFormed (static checks),
 Ryo/Spec/Theorems/Representation.lean   representation laws (proved parts + open goals)
 Ryo/Examples.lean                  example programs for `ryo-lean example`
 RyoTest/*.lean, RyoTest.lean       tests; RyoTestMain.lean is the test driver (exe `ryotest`)
-docs/                              design documents
+docs/                              the detailed plan
 ```
 
 Each module's header names the MiniRust file it ports and the divergences it applies; the
@@ -66,4 +70,5 @@ code cites them inline as `-- [Dn]` at the definitions concerned, and cites sect
 ## Status
 
 M1 is done: `lake build` succeeds with `sorry` only in `Ryo/Spec/Theorems` (the open
-representation theorems, listed there), and `lake test` passes.
+representation theorems, listed there), and `lake test` passes. What is left of M1 and the
+later milestones are in [docs/plan.md](docs/plan.md#3-milestones).

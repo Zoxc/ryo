@@ -1,0 +1,297 @@
+# Part C. MIR → x86 for AOT code
+
+How the machine code `rustc-ryo` emits is related to the MIR it came from: the lowering
+check C1' (L0 → R), the verified decoder (bytes → R), the image checks for every other byte
+of the image object, and the AOT theorems that compose them. R itself, with its provenance
+and frame layouts, is in [reduced.md](reduced.md). `Dn` are the divergences of L0 from
+MiniRust ([mir-spec.md](mir-spec.md) §A.7); milestones `Mn` are in [plan.md](plan.md#3-milestones).
+
+## C1. L0 → R: the lowering, by translation validation (C1')
+
+**Input**: the R program `P` that the verified Lean decoder read from the function's bytes in
+the image object (§C2), not a dump of the code, and not words. Together with the dumped MIR
+body and the certificate.
+
+**Certificate** (dumped by the backend, untrusted):
+
+- the frame map: local → slot offset, `F`, temporaries' range, exception slot, sret slot,
+  homes of ABI inputs and spread fields; the frame-object table of R
+  ([reduced.md](reduced.md) §C0.2)
+- per MIR statement and terminator, the range of R instructions it produced. One
+  `Asm::insn` gives exactly one R instruction (`reduce` maps each full instruction to one
+  native op or one `handler`), so `InsnId`s are R indices. Counters, stubs and padding are
+  dropped by the decoder and never appear in ranges. Per block its label.
+- the `ArgPlan` per call and for the function's own signature (`sig.rs`)
+- the resolved callee kind per call (VM `call`, `call.sym`, `call.ptr`, `virtual`, which
+  island template and `ops`)
+
+Relocation targets are not in the certificate: the checker reads them from the object and
+resolves names itself (§C4).
+
+**Relational spec** (`Ryo/Check/Lower/*.lean`): an inductive relation per syntactic class,
+mirroring [lowering.md](../../design/lowering.md), over the op view, so the lowering's tables (binop, cast, rvalue) are
+written in full-opcode terms:
+
+- `LowerPlace Γ place → PlaceCode` (slot `off_n + k`, `[slot_n + k]`, computed pointer via
+  `ptr.index`/`ptr.add` into a temporary, unsized tails)
+- `LowerOperand`, `LowerRvalue Γ dst rv insns` (the cases of the rvalue, cast and binop
+  tables)
+- `LowerStmt`, `LowerTerm` (fused compare-branches, switches, `Assert`, `Drop`, calls, tail
+  calls, unwind entries, landing pads, terminate stubs)
+- `LowerProlog` (`arg`s, stack pieces, `Indirect` copies)
+
+Rules leave freedom where the backend has it (which temporary, which equivalent instruction
+form), so backend refactors don't break the checker. A `view i = none` makes the checker
+reject (coverage reports it). The **checker** (`Ryo/Check/Lower/Decide.lean`) decides the
+relation using the certificate. `check_sound : check Γ body P = ok → LowersFn Γ body P`.
+
+**Simulation** (`Ryo/Proofs/LowerSim.lean`): `LowersFn Γ body P → FnSim conv body P`, a
+forward simulation L0 → R, made backward by determinism of R modulo the environment. The
+per-frame relation `R_Γ (s0 : L0 frame) (s1 : R frame)`:
+
+- **pc**: MIR `(bb, i)` ↔ the first instruction of statement `i`'s range.
+- **Locals**: the proof is for every valid layout `φ` of R's frame objects. Every
+  storage-live local `l` has address `φ(o_l) + (off_l - off_{o_l})` in L0. The simulation
+  picks it at `StorageLive` and frame entry, which is valid because the daemonic address
+  choice only needs alignment and no overlap with live allocations (the checker validates
+  that conflicting locals' slots are disjoint: the backend's storage-liveness dataflow,
+  recomputed in Lean), and `φ` is known from function entry.
+  - If `l` is escaped, its L0 allocation corresponds to the R allocation of its frame object
+    (the `AllocId` renaming `ι`), from the escape to the end. If it is not escaped, its L0
+    allocation is unreferenced: no provenance for it occurs in the L0 state, because the
+    checker validated that escapes cover every `addr` and by-address argument.
+  - If `l` is escaped or *semantically live* (read later before being overwritten; liveness
+    recomputed in Lean), then the L0 bytes `≤def` the R bytes of its slot, provenance mapped
+    through `ι`.
+  - Locals that are dead in that sense may differ. This covers the fused compare whose
+    `bool` is never stored, and `dead_after_read`.
+- **Temporaries**: unconstrained between statements.
+- **Memory outside frames**: the same allocations (environment allocations correspond to
+  themselves), L0 bytes `≤def` R bytes at the same addresses, provenance mapped through
+  `ι`. Both levels use `Ryo/Spec/Mem`, so this is MiniRust's "more defined" order up to a
+  renaming of `AllocId`s; its lemmas live next to `Ryo/Spec/Mem/Refine.lean`, and the JIT
+  part reuses them.
+- **Globals**:
+  - each L0 const allocation is mapped by `ι` to its pool copy's R allocation (D7 lets the
+    source choose the copy); the pool check (§C4) proves the copy holds the allocation
+  - vtables to their pool copies (D29), checked the same way
+  - statics and symbol slots to the linked addresses (the static's bytes are cg_llvm's)
+  - fn pointers to symbol addresses (D6)
+- **Calls**: the **ABI convention** `AbiConv plan (vals, mem0) (regs, stack, mem1)`. The
+  checker validates the call's argument list and outgoing-area stores against the plan, and
+  the convention lemma does the rest. `Indirect` args point at a temporary copy, which
+  refines D12's in-place passing. sret: the destination address in the first integer
+  register. Callees: `Sym s` must be the symbol of the callee the dump names
+  (`tcx.symbol_name`), `Func i` that callee's function-table entry.
+- **Unwinding**: L0 `unwind` from a callee ↔ R landing at the call's cleanup entry, `lpad x`
+  storing the exception object in slot `x`, `resume x` ↔ `UnwindResume`. Terminate pads ↔
+  D18's lang-item call. `UnwindAction::Unreachable` ↔ no call-site entry (L0 UB, so
+  anything goes).
+- **Islands**: each template family has a **contract** at R (`Ryo/Vm/R/Islands.lean`): which
+  slots it reads at which types, which it writes, and which L0 operation it performs.
+  - `call`: the FnOnce call of `F` with the argument tuple.
+  - `call_cN`: external C call through the fn-pointer slot.
+  - `drop_in_place`: call of the drop glue.
+  - intrinsic wrappers: the D20 intrinsic.
+  - `as_cast`, 128-bit arithmetic: the L0 op.
+  - `catch_unwind`: D18.
+
+  Trusted (§C6). The C1' rule checks that the `island` instruction's symbol is the template
+  instance the dump names, and that the `ops` array (read from the object's `.rodata`) is
+  what the contract requires.
+- **Escape/storage side data**: the checker verifies that `Scope` escapes cover every `addr`
+  and every by-address argument, and that ends match `StorageDead`. This is what makes R's
+  allocation lifetimes (escape to end) match L0's provenance, so frame privacy holds for the
+  R program, and it is what the JIT relies on ([jit.md](jit.md) §E.7).
+- **Composition**: VM→VM calls use the same convention as calls to native code, so each
+  function is verified on its own. The whole-program theorem composes them under the
+  convention (CompCertO-style vertical and horizontal composition), assuming native code
+  (LLVM-compiled MIR, libc) refines its own semantics under the same convention. There are
+  no portals ([stubs.md](../../design/stubs.md)), so native callers need no extra stage.
+
+**Incremental coverage**: the checker reports per function `validated | unsupported(rule) |
+rejected(reason)`, totalled like `RYO_STATS`. `rejected` is a bug in the backend or the
+checker. `y test` fails on `rejected` and prints coverage.
+
+## C2. Bytes → R: `decodeReduced` and `decode_sound` (proved once)
+
+Rather than relating the Rust encoder to anything, prove the **Lean decoder** correct:
+
+`decode_sound : decodeReduced mode code side relocs = some P → L2Sim (code @ addr) P`
+
+stated directly for `R(φ_AOT)`, with provenance erased (L2 memory is flat; R's provenance
+checks only add UB on the R side). The decoder reads the function's bytes from the object's text
+section (located by its symbol and `FuncEntry`), the `.rodata` parts the code reads (island
+`ops` arrays, sparse-switch values, jump tables), the image's side tables (call sites,
+scopes, dropped stores), the LSDA, and the relocation list. All from the object, not from
+`RYO_DUMP_CODE` and not from a Rust re-serialization (§C4 has the ELF reader). The proof
+follows the decoder's structure:
+
+- **Shapes**: for each shape (`op` handler call, `br`, `switch`, `trap`, `ret`, `arg`, `jmp`,
+  `call*`, `tail_call*`, `island`, `lpad`), a lemma: from a state related to the R state,
+  executing the canonical sequence reaches the related successor. Handler calls use `H h`.
+- **Inline sequences** (`asm::inline`): per opcode × width × operand pattern, the sequence's
+  effect equals `opSem op ops`. These are `BitVec` goals: `bv_decide` and `simp`, with most
+  cases generated by tactic. High value, low cost: the inline sequences are where encoding
+  bugs live.
+- **Register cache**: invariant `CacheInv c regs mem fp`: for each `(r, slot, width) ∈ c`,
+  `regs r = zext (mem[fp+slot, width])`. The decoder runs the same cache (as the Rust one
+  does). The lemmas show each sequence preserves it, and that targets, non-inline
+  instructions, overlapping writes and stores through pointers clear it as
+  [vm.md](../../design/vm.md#register-cache) describes.
+- **Dropped stores**: the relation lets the L2 frame differ from R on bytes whose store was
+  dropped, until overwritten. The Lean decoder **checks** each dropped store's deadness by a
+  backward liveness over the decoded code. Pointer accesses read all escaped bytes; calls,
+  islands and handlers read their operand extents, like `frame::head_liveness`. The Rust
+  decoder trusts the `dropped` list; the Lean one must not.
+- **Counters and stubs**: `sub [rip+ctr], k; js stub` followed by the stub
+  `lea r11,[rip+rec]; …; call [r11+8|16]; jmp back` refines a no-op, given the trip contract
+  ([jit.md](jit.md) §E.2). Counter memory is runtime-owned: excluded from the program's
+  memory relation.
+- **Prologue, epilogue, probe**: the `ryo_probe_stack` contract; the prologue establishes
+  `fp` and `F` as the FDE says (§C4 checks the FDE against it).
+- **Branch relaxation, padding, jump tables**: handled by the decoder (targets are positions),
+  so they need no proof of their own beyond `decodeItem`'s.
+- **Unwinding**: the LSDA call-site table (ported `asm::lsda::parse`) maps call sites to
+  landing pads, and must agree with the image's call-site table. The unwinder model restores
+  `rsp = fp - F` (and `rbp`) at the pad, as the function's FDE rows say; §C4 checks those
+  rows, so the remaining assumption is only that the unwinder interprets CFI per DWARF.
+
+Linked mode: the same decoder takes a `LinkMap` (handler addresses, image ranges, records),
+the resolver Rust's `decode_linked` has. It is what the JIT validator uses for the JIT's
+input ([jit.md](jit.md)), and what the linked-binary check uses (§C4).
+
+The **Rust** `asm::decode_reduced` is not needed for any guarantee: every pipeline that uses
+it is validated from bytes (AOT: C1' on the Lean decoding; JIT: Lean decodes the same logged
+bytes). Cross-check it differentially against the Lean decoder over the corpus to find bugs
+early. If the JIT's guarantee should ever hold at run time without validation, that is when
+to Aeneas-extract it ([jit.md](jit.md) §E.9).
+
+## C3. Readers: the ELF object and the image
+
+`Ryo/Obj/*.lean`, executable, small, tested against `object`/`readelf` over the corpus:
+
+- **ELF**: section headers, symbol table, `RELA` sections (`R_X86_64_64`, `PC32`, `PLT32`;
+  anything else rejects), section flags.
+- **Image**: the read-only section's header, function table, scope/call-site/dropped tables,
+  code constants, symbol slots and flags, constant pool; the writable section's JIT records.
+  A Lean port of `Image::parse`/`validate`'s bounds and alignment checks.
+- **Unwind**: `.eh_frame` (CIE, FDEs, the CFA instruction subset ryo emits) and
+  `.gcc_except_table` (a port of `asm::lsda::parse`).
+
+These are trusted only as far as "the parse matches the ELF/DWARF spec"; their outputs are
+compared against `readelf`/`llvm-dwarfdump` in tests.
+
+## C4. Image checks: the rest of the emitted object
+
+Everything the backend emits into an image or registry object, with what checks it. "C1'"
+and "decode" mean §C1/§C2; the rest are new checks in `Ryo/Check/Image/`, run with C1' at
+`y test` time, per object.
+
+| Emitted | Check | What remains trusted |
+|---|---|---|
+| VM function text: body, prologue/epilogue, landing-pad stubs, counter checks and stubs, alignment `nop`s | decode + C1' | the trip contract (stubs); inter-function padding is never executed (checked: no decoded target lands in it) |
+| `.rodata` parts read by code (island `ops` arrays, switch values, jump tables) | decode reads them from the object; C1' checks the `ops` against the island contract | — |
+| **Constant pool** (const allocations, promoted consts, `Bytes`) | for each `Const` the code (or another pool entry) references: the pool bytes at that offset equal the dumped rustc allocation's bytes, its relocations (the object's `R_X86_64_64` into the pool or against symbols) are exactly the allocation's provenance (target allocation at the same offset, or the symbol of the static/fn the dump names), its alignment holds, and it lies in the RELRO section (D7: consts are immutable; the JIT's devirtualization relies on it). Uninit bytes in the allocation may be anything | — (the backend's `Pool::intern` is no longer trusted) |
+| **Vtables** | the same check against the dumped `vtable_allocation` (D29: `[drop_in_place, size, align, entries…]`, entries as symbol relocations to the instances the dump names) | — |
+| **Function symbols and the function table** | each `FuncEntry` (`code_off`, `code_len`) covers exactly the code that was decoded, in table order; each function symbol (global or local) is at its entry's `code_off` with its `code_len`; the symbol name is the dump's `tcx.symbol_name` for that instance; `arg_size`, `ret_size`, `ret_kind` agree with the signature's `ArgPlan`; the scope/call-site/dropped spans are the ones decode used. The runtime and JIT read these, so check them, don't trust them | — |
+| **Relocations** of the text and the read-only section | every relocated field the decoder met has a relocation of the kind its form needs (`Call32` → `ryo_h_<h>` or `ryo_probe_stack`; `Pc32` → a symbol slot, pool offset, data/record offset, rodata; `Abs64` for the header's `text`/`data`, pool pointers, JIT-record initial values → the trip entry points); no relocation outside such fields; names resolve as C1' requires (`Sym s` slot ↔ the callee's symbol) | the linker applies them (see "Linked binary" below) |
+| **Symbol slots** (`[u64]`, RELRO) | each slot has exactly one `Abs64` relocation against the symbol `name(s)`, and `SYM_INDIRECT` flags are clear (ELF) | `ld.so` fills them and RELRO makes them read-only after loading |
+| **JIT records** (writable: `ctr`, `entry`/`osr`) | initial counter values, and `Abs64` relocations of `entry`/`osr` to `ryo_jit_trip_entry`/`_osr` | runtime-owned memory, outside the program's memory relation |
+| Image header | parsed by the Lean image reader; `text`/`data` relocations checked | `Image::validate` at registration is runtime code (it only rejects) |
+| **`.eh_frame` FDEs** (required) | each VM function has exactly one FDE covering `[code_off, +code_len)`, and its rows match what the decoded prologue/epilogue do in that mode (`image::eh_fde`: CFA and saved `rbp`/return address at each prologue position). A handful of fixed shapes per mode, so the check is cheap; it turns the CFI assumption into "the unwinder implements DWARF CFI" | the unwinder |
+| `.gcc_except_table` LSDAs | parsed in Lean, checked against the image's call-site table, the decoded `lpad` stubs and C1''s unwind actions | the personality routine |
+| **Registry object** (`write_registry`): the constructor `lea rdi,[rip+images]; mov esi,n; jmp ryo_vm_register` in `.text.ryo_registry`, its `.init_array.00000` entry, the image list, `__ryo_registry_anchor` | decode the 3 instructions with the L2 decoder (B.1 extra form); `PC32` → the list, `PLT32` → `ryo_vm_register`; the `.init_array` entry is an `Abs64` to the constructor; the list has one `Abs64` per image symbol of the link, each `__ryo_image_<id>`, no duplicates; `n` equals the list length. Each image's anchor slot references `__ryo_registry_anchor` | `ryo_vm_register` (runtime: trusted contract "registers the images before any VM code runs"); the C runtime runs `.init_array` in priority order |
+| **`__ryo_main` slot** | one `Abs64` against the symbol of the entry fn the dump names (`main`'s instance) | — |
+| **`c_main`** (`ryo_rt::entry::c_main`, cg_llvm-compiled) | — | native code: loads `__ryo_main` and calls the `start` lang item with it. Ten lines of Rust compiled by LLVM; verifying it means binary verification of LLVM output, which buys little over the native-code assumption every program already has |
+| Islands | C1' checks the template instance and `ops` | cg_llvm instances of `ryo_rt` templates: trusted contracts (§C6) |
+| Functions the backend leaves native (`NeedsNative`, template gaps), statics | — | LLVM code and data from MIR, under the convention |
+| PE (`.pdata`/`.xdata`, fixups, `__imp_` slots) | — | out of scope |
+
+**Linked binary vs the image object (recommendation).** Validate the **object** as the
+primary input: its relocations are *named*, which is what makes the C1'/§C4 resolution
+meaningful ("this field calls `ryo_h_add_w32`"), and it exists per crate, so it fits
+`y test`. Then add a **linked-equals-object check**, cheap and done once per test binary:
+read the final executable's symbol table, build a `LinkMap` from it, and check that for every
+image object linked into it, the image's sections in the executable equal the object's bytes
+with each relocation applied to the linked symbol address (PLT/GOT entries: the PLT stub or
+GOT slot whose dynamic relocation names the same symbol). Equivalently, decode the linked
+code with `decodeReduced` in linked mode and check it equals the object decode modulo
+resolution. This shrinks the linker in the trusted base to "the loader maps the file's
+segments and `ld.so` performs the dynamic relocations", which no test can avoid. It belongs
+in M6 (it is only needed for the program-level theorem); before then, the linker is trusted.
+
+**What stays trusted, and why:**
+
+- **Symbol slots filled by the loader.** Checking slot contents means running the program;
+  the static check already pins each slot's relocation to the right name. The assumption is
+  `ld.so` resolving names as the ELF spec says, which every native program also assumes.
+- **Islands compiled by LLVM.** They are 3–10-line Rust templates; their contracts are tested
+  by differential runs. Verifying them means binary verification of LLVM's `-O3` output, a
+  separate project (possible later with L2+).
+- **The linker**, until the linked-equals-object check exists; afterwards only the loader.
+- **`ryo_vm_register`, `c_main`, handlers, the trip entry points, `ryo_probe_stack`**:
+  runtime code, trusted contracts, tested.
+
+## C5. The AOT theorems
+
+```lean
+/-- Per function: the bytes the backend emitted for `f` implement `f`'s MIR. -/
+theorem aot_function_correct
+    (obj : Bytes) (img : Image) (d : Dump) (f : FuncId) (P : R.Program)
+    (hobj : readImage obj = .ok img)
+    (hdec : decodeReduced img.mode (img.code f) (img.side f) (img.relocs f) = some P)
+    (hlow : checkLowering (d.env f) (d.body f) (d.cert f) P = .ok)
+    (himg : checkImage img d = .ok)
+    (hc : Contracts) :
+    FnSim conv (L0 (d.body f)) (L2 (img.code f) @ img.addr f)
+```
+
+`Contracts` bundles `H h`, the island contracts, `ryo_probe_stack`, `ryo_h_Resume`, and the
+trip contract. The proof is the composition `L2(bytes_f) ⊑ R(P)` (`decode_sound`) `⊑ L0(f)`
+(`check_sound` + `LowerSim`), with `checkImage` supplying the global relation (pool and
+vtable copies hold the allocations, slots name the right symbols, FDE rows match).
+
+**Program-level:** if every VM function of every image is validated (`aot_function_correct`
+holds for each), `checkImage` passes for each object (and, for the strong version, the
+linked-equals-object check passes for the executable), the contracts hold, and native code
+refines its semantics under the convention, then the linked program's behaviors are
+behaviors of the MIR program, or a prefix of one followed by `stackOverflow` (D25).
+
+**Dependence on the JIT.** `decode_sound` treats the counter stubs as no-ops *given the trip
+contract*, which lets control go to JIT code that simulates the same function. So:
+- with `RYO_JIT=off` or the no-op JIT, the trip contract reduces to "returns with registers
+  preserved", and the theorem is unconditional on the JIT;
+- with the JIT on, the theorem for a run assumes **every JIT compilation in that run passed
+  validation** ([jit.md](jit.md)). The induction over run time is well founded: JIT code is entered
+  only after publication, and each published unit is validated against AOT code.
+
+Both versions are stated. **Unvalidated functions** (`unsupported`/`rejected`) get no
+theorem; the program-level theorem is then conditional on their correctness.
+
+## C6. What is trusted (whole AOT pipeline)
+
+- Lean's kernel, and the Lean statements of L0, R (including `opSem` and the *form* of the
+  contracts) and L2. L0 is validated by tests and differential runs (M1, M1b); L2 by
+  co-simulation ([x86.md](x86.md) §B.3); `opSem` by differential runs against the handlers.
+- **The dump**: the backend's serialization of MIR, layouts, resolved instances, const and
+  vtable allocations (M1b). Keep it a dumb serializer of rustc data structures, separate from
+  the lowering's own helpers, so a lowering bug can't hide itself.
+- **ABI**: that rustc's `PassMode` plan for each signature is what LLVM implements (checked by
+  `tests/vm_abi.rs`). The convention's L0 side is rustc's `fn_abi`.
+- **Native code**: LLVM-compiled functions and data (native functions, statics, islands,
+  `c_main`, allocator shims), libc, the panic runtime and unwinder honor their semantics under
+  the convention.
+- **Contracts**: `H h` per handler, `ryo_probe_stack`, `ryo_h_Resume`, island templates, trip
+  entry points, `ryo_vm_register`.
+- The loader and `ld.so` (segment mapping, dynamic relocations, symbol slots, RELRO); the
+  static linker until the linked-equals-object check exists.
+- The unwinder's and personality's interpretation of CFI and LSDA per DWARF (the tables
+  themselves are checked).
+- The ELF/DWARF readers' fidelity to the specs (tested against `readelf`).
+- The mode: ELF; `fp_arg` with or without frame pointer; `fp-rbp`; counters on (AOT) or off;
+  loop alignment on/off. PE is out of scope.
+
+Not trusted: the Rust lowering, encoder and decoders, the certificate, the scope, call-site
+and dropped-store tables, the constant pool, the function table and symbols, the relocation
+list, the FDEs and LSDAs, the registry object.
