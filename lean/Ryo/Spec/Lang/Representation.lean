@@ -227,6 +227,8 @@ def Ty.encode : Ty → Value → Option (List AbstractByte)
     pure parts.flatten
   | .union _ chunks size _, .union data => do
     if chunks.length != data.length then none
+    -- MiniRust: `assert!(data.len() == size)` per chunk
+    if !((chunks.zip data).all fun ((_, sz), d) => d.length == sz) then none
     let init := List.replicate size AbstractByte.uninit
     pure ((chunks.zip data).foldl (fun acc ((off, _), d) => writeAt acc off d) init)
   | .enum vs _ repr _ _, .variant idx data => do
@@ -286,7 +288,8 @@ def checkPtrMetadata (mem : Memory) (md : Option PointerMeta) (k : PointerMetaKi
   | none, .none => pure ()
   | some (.elementCount n), .elementCount =>
     ensureUb (n < 2 ^ 64) "Value::Ptr: invalid slice length"
-  | some (.vtablePointer vt), .vtablePointer _ =>
+  | some (.vtablePointer vt), .vtablePointer _ => do
+    ensureUb (vt.addr != 0 && vt.addr < Target.ADDR_LIMIT) "Value::Ptr: invalid vtable in metadata"
     ensureUb (vtableSizeAlign mem vt).isSome "Value::Ptr: invalid vtable in metadata"
   | _, _ => throwUb "Value::Ptr: invalid metadata"
 
@@ -325,7 +328,8 @@ def checkValue (mem : Memory) : Value → Ty → Except Outcome Unit
     ensureUb (valid.contains (t.toBits i)) "Value::Int: outside the valid range"
   | .int i, .char => ensureUb (0 ≤ i && isUnicodeScalar i.toNat) "invalid char"
   | .bool _, .bool => pure ()
-  | .float f _, .float g => if f == g then pure () else throwIllFormed "float format mismatch"
+  | .float f bits, .float g =>
+    if f == g && bits < 2 ^ g.bits then pure () else throwIllFormed "float value does not match its type"
   | .ptr p, .ptr pt valid => checkPtr mem p pt valid
   | .tuple [], .fnDef _ => pure ()
   | .tuple vs, .tuple fields _ none => checkFields mem vs fields
@@ -334,8 +338,8 @@ def checkValue (mem : Memory) : Value → Ty → Except Outcome Unit
     checkElems mem vs elem
   | .union data, .union _ chunks _ _ => do
     ensureUb (data.length == chunks.length) "Value::Union: invalid chunk size"
-    for (d, (_, sz)) in data.zip chunks do
-      ensureUb (d.length == sz) "Value::Union: invalid chunk data"
+    ensureUb ((data.zip chunks).all fun (d, (_, sz)) => d.length == sz)
+      "Value::Union: invalid chunk data"
   | .union [bs], .opaqueBytes size _ => ensureUb (bs.length == size) "invalid opaque bytes"
   | .variant idx data, .enum vs _ repr _ _ => do
     ensureUb (variantInhabited vs idx) "Value::Variant: uninhabited variant"

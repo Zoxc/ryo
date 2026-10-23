@@ -197,7 +197,28 @@ def variantSizeIllFormed : Program := mainOnly do
   storageLive e
   ret
 
+/-- `Ty.wf` checks the tag against the variants (`variantTagWf`): a tag overlapping a field of a
+tagged variant, a niche value the untagged variant can hold, and duplicate discriminants are
+ill-formed. -/
+def tagWf : Except String Unit := do
+  let overlap : Ty := .enum [variant 0 [(0, u8)] 4 2, variant 1 [(2, u16)] 4 2] IntType.u8
+    (.multiple ⟨0, IntType.u8, ⟨0, 1⟩, .direct⟩) 4 (Align.ofBytes 2)
+  let nicheClash : Ty := .enum [variant 0 [] 1 1, variant 1 [(0, .bool)] 1 1] IntType.isize
+    (.multiple ⟨0, IntType.u8, ⟨0, 2⟩, .niche 1 0 0 1⟩) 1 .one
+  let dupDiscr : Ty := .enum [variant 0 [] 1 1, variant 0 [] 1 1] IntType.u8
+    (.multiple ⟨0, IntType.u8, ⟨0, 0⟩, .direct⟩) 1 .one
+  let uncovered : Ty := .enum [variant 0 [] 1 1, variant 1 [(0, u8)] 1 1] IntType.isize
+    (.multiple ⟨0, IntType.u8, ⟨0, 255⟩, .niche 1 0 0 2⟩) 1 .one
+  for (name, t) in [("overlap", overlap), ("nicheClash", nicheClash), ("dupDiscr", dupDiscr),
+      ("uncovered", uncovered)] do
+    check (!t.wf) s!"{name} should be ill-formed"
+  for (name, t) in [("directEnum", directEnum), ("optBool", optBool),
+      ("nicheAroundUntagged", nicheAroundUntagged), ("negEnum", negEnum),
+      ("bigTagEnum", bigTagEnum), ("singleEnum", singleEnum)] do
+    check t.wf s!"{name} should be well-formed"
+
 def tests : List TestCase := [
+  ⟨"enum/tag_wf", fun _ => tagWf⟩,
   ⟨"enum/direct_works (D2, D28)", fun _ => expectReturn directWorks⟩,
   ⟨"enum/uninit_discriminant", fun _ => expectUb uninitDiscriminant "enum tag is uninitialized"⟩,
   ⟨"enum/invalid_discriminant", fun _ =>

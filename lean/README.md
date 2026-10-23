@@ -49,7 +49,8 @@ Ryo/Spec/Mir/                      Syntax (MIR AST), WellFormed (static checks),
                                    External (shims), Intrinsics, Terminator, Step, Interp
                                    (concrete oracle, run loop), Behavior (behaviors,
                                    refinement), Builder (DSL), Json
-Ryo/Spec/Theorems/Representation.lean   representation laws (proved parts + open goals)
+Ryo/Spec/Theorems/                 Bytes (byte-list, slice, pointer-byte lemmas), Representation
+                                   (the representation laws)
 Ryo/Examples.lean                  example programs for `ryo-lean example`
 RyoTest/*.lean, RyoTest.lean       tests; RyoTestMain.lean is the test driver (exe `ryotest`)
 docs/                              the detailed plan

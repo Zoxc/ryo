@@ -40,11 +40,11 @@ elab "#ryo_axioms" : command => do
     | .opaqueInfo _ => logInfo m!"opaque: {name}"
     | _ => pure ()
 #ryo_axioms
-#print axioms Ryo.Spec.Theorems.decode_encode_int   -- [propext, Classical.choice, Quot.sound]
+#print axioms Ryo.Spec.Theorems.decode_encode   -- [propext, Classical.choice, Quot.sound]
 ```
 
-Its output at this commit: the five `sorry` theorems of §1.1 and the seven opaque instances of
-§1.2, nothing else. Every proved theorem depends only on Lean's three standard axioms
+Its output at this commit: the `sorry` theorems of §1.1 still open and the seven opaque
+instances of §1.2, nothing else. Every proved theorem depends only on Lean's three standard axioms
 (`propext`, `Classical.choice`, `Quot.sound`).
 
 ## 1. Logical and implementation assumptions
@@ -54,18 +54,28 @@ Its output at this commit: the five `sorry` theorems of §1.1 and the seven opaq
 All in `Ryo/Spec/Theorems/Representation.lean`. Nothing else in `Ryo` uses `sorry`, and
 nothing uses these theorems yet, so they are open goals, not assumptions other proofs rely on.
 
-| Theorem | Line | States | Discharge |
-|---|---|---|---|
-| `encode_length` | 97 | `Ty.encode` of a well-formed value has the type's size | induction on `Ty`; the scalar cases are proved (`encode_length_int`, `encode_length_bool`) |
-| `decode_encode` | 102 | `decode (encode v) = some v` for `checkValue`-valid values | induction on `Ty`; needs `Ty.wf` facts (disjoint fields, tag inside the enum, niche values outside the untagged variant's valid range) |
-| `encode_decode_le` | 107 | re-encoding a decoded value is less defined than the bytes | induction; uses `decodePtr`'s provenance rule |
-| `decode_mono` | 112 | more-defined bytes decode to a more-defined value | induction; the enum case needs the tag bytes to be initialized on both sides |
-| `store_load` | 117 | `typedStore` then `typedLoad` gives back a less-defined value | from `encode_length`, `decode_encode` and the `Memory` load/store laws |
+| Theorem | States | Status |
+|---|---|---|
+| `encode_length` | `Ty.encode` at a well-formed sized type gives the type's size | **proved** (no value well-formedness needed) |
+| `decode_encode` | `decode (encode v) = some v` for `checkValue`-valid values | **proved** |
+| `encode_decode_le` | re-encoding a decoded value is less defined than the bytes | open |
+| `decode_mono` | more-defined bytes decode to a more-defined value | open |
+| `store_load` | `typedStore` then `typedLoad` gives back a less-defined value | open |
 
-They hold only if `Ty.wf` is strong enough. `Ty.wf` does not check field alignment, that
-variants' `discr` fit `discrTy`, or that a niche's `nicheStart` range lies outside the
-untagged variant's valid range ([`Lang/WellFormed.lean`](../Ryo/Spec/Lang/WellFormed.lean)
-`Ty.wf`). Proving `decode_encode` will show which of these must be added.
+Proving them showed what `Ty.wf` must check, and four spec gaps, all fixed with the proofs:
+- `Ty.wf` now checks that union chunks are disjoint, and for enums with a tag
+  (`variantTagWf`): each inhabited tagged variant's tag value is in range, valid, decodes back
+  to the variant and lies outside the variant's fields; the untagged variant of a niche
+  encoding stores, at the tag's place, a scalar (`Ty.scalarRange`) whose valid range is inside
+  the tag's and outside the niche values; a direct tag is no wider than the discriminant type;
+  the niche values fit the tag. rustc's layouts satisfy these by construction; field alignment
+  and the `discr` values themselves still are not checked (the theorems do not need them).
+- `checkValue` accepted float values whose bits do not fit the format (they did not
+  round-trip); it now requires `bits < 2^bits` (`illFormed` otherwise, as a format mismatch).
+- `checkPtrMetadata` accepted a vtable pointer at address 0 or beyond `2^64` if the memory had
+  a vtable allocation there; it now rejects both (UB), as no allocation can be there.
+- `Ty.encode` of a union did not check the chunk lengths (MiniRust panics), so the encoding
+  could be longer than the union; it now returns `none`.
 
 ### 1.2 Opaque code
 
@@ -169,7 +179,7 @@ sources, not a newer rustc checkout), in particular:
 | Dumped item | What must hold | Checked by Lean? |
 |---|---|---|
 | Statements, terminators, places, operands, rvalues | the body's MIR, with rustc's evaluation-relevant details (`Move` vs `Copy`, `UnwindAction`s, `is_cleanup`) | indices and projections type-check (`Wf.checkProgram`); rvalue typing against the destination is not checked |
-| `Ty` layouts: offsets, sizes, alignments, `ValidRange`s, `EnumRepr`, `TagInfo`, `Variant.discr`, `inhabited`, `TupleHeadLayout.packedAlign` | exactly `tcx.layout_of` (layouts are input, D2) | internal consistency only (`Ty.wf`); never recomputed |
+| `Ty` layouts: offsets, sizes, alignments, `ValidRange`s, `EnumRepr`, `TagInfo`, `Variant.discr`, `inhabited`, `TupleHeadLayout.packedAlign` | exactly `tcx.layout_of` (layouts are input, D2) | internal consistency only (`Ty.wf`: fields and chunks inside and disjoint, tags consistent with the variants, §1.1); never recomputed |
 | `ProjElem.deref pointee`, `field _ ty`, `opaqueCast ty` | the projected types rustc computes | `Wf.projTy` only checks the shape |
 | `InstanceKind` (`body` / `ext` / `intrinsic name`) | the resolved instance; intrinsics with a fallback body that the backend calls must be dumped as that body (the D20 fallback rule is not in Lean) | index ranges |
 | `drop` glue, `AssertMessage.panicFn` and `args`, `LangItems`, `CallerLoc`, `PointerCoercion` instances, `UnsizeMeta` | what cg_ssa would call or attach | index ranges |
