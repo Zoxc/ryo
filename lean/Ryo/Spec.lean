@@ -32,3 +32,5 @@ import Ryo.Spec.Mir.Builder
 import Ryo.Spec.Mir.Json
 import Ryo.Spec.Mir.Behavior
 import Ryo.Spec.Theorems.Representation
+import Ryo.Spec.Theorems.Monotone
+import Ryo.Spec.Theorems.Memory

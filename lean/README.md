@@ -50,7 +50,8 @@ Ryo/Spec/Mir/                      Syntax (MIR AST), WellFormed (static checks),
                                    (concrete oracle, run loop), Behavior (behaviors,
                                    refinement), Builder (DSL), Json
 Ryo/Spec/Theorems/                 Bytes (byte-list, slice, pointer-byte lemmas), Representation
-                                   (the representation laws)
+                                   (encode_length, decode_encode), Monotone (decode_mono,
+                                   encode_decode_le), Memory (store_load)
 Ryo/Examples.lean                  example programs for `ryo-lean example`
 RyoTest/*.lean, RyoTest.lean       tests; RyoTestMain.lean is the test driver (exe `ryotest`)
 docs/                              the detailed plan
@@ -78,6 +79,7 @@ code cites them inline as `-- [Dn]` at the definitions concerned, and cites sect
 
 ## Status
 
-M1 is done: `lake build` succeeds with `sorry` only in `Ryo/Spec/Theorems` (the open
-representation theorems, listed there), and `lake test` passes. What is left of M1 and the
-later milestones are in [docs/plan.md](docs/plan.md#3-milestones).
+M1 is done: `lake build` succeeds with no `sorry` (the five representation laws
+`encode_length`, `decode_encode`, `encode_decode_le`, `decode_mono` and `store_load` are proved in
+`Ryo/Spec/Theorems`), and `lake test` passes. What is left of M1 and the later milestones are
+in [docs/plan.md](docs/plan.md#3-milestones).

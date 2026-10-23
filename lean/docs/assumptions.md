@@ -43,24 +43,29 @@ elab "#ryo_axioms" : command => do
 #print axioms Ryo.Spec.Theorems.decode_encode   -- [propext, Classical.choice, Quot.sound]
 ```
 
-Its output at this commit: the `sorry` theorems of §1.1 still open and the seven opaque
-instances of §1.2, nothing else. Every proved theorem depends only on Lean's three standard axioms
+Its output at this commit: the seven opaque instances of §1.2, nothing else (no `sorry`). Every proved theorem depends only on Lean's three standard axioms
 (`propext`, `Classical.choice`, `Quot.sound`).
 
 ## 1. Logical and implementation assumptions
 
-### 1.1 `sorry`: the open representation theorems
+### 1.1 `sorry`: none (the representation theorems)
 
-All in `Ryo/Spec/Theorems/Representation.lean`. Nothing else in `Ryo` uses `sorry`, and
-nothing uses these theorems yet, so they are open goals, not assumptions other proofs rely on.
+`Ryo` has no `sorry`. The five representation laws of MiniRust's `representation.md`
+§ Generic properties are proved, depending only on Lean's standard axioms:
 
-| Theorem | States | Status |
+| Theorem | File | States |
 |---|---|---|
-| `encode_length` | `Ty.encode` at a well-formed sized type gives the type's size | **proved** (no value well-formedness needed) |
-| `decode_encode` | `decode (encode v) = some v` for `checkValue`-valid values | **proved** |
-| `encode_decode_le` | re-encoding a decoded value is less defined than the bytes | open |
-| `decode_mono` | more-defined bytes decode to a more-defined value | open |
-| `store_load` | `typedStore` then `typedLoad` gives back a less-defined value | open |
+| `encode_length` | Theorems/Representation.lean | `Ty.encode` at a well-formed sized type gives the type's size (no value well-formedness needed) |
+| `decode_encode` | Theorems/Representation.lean | `decode (encode v) = some v` for `checkValue`-valid values |
+| `encode_decode_le` | Theorems/Monotone.lean | re-encoding a decoded value is less defined than the bytes |
+| `decode_mono` | Theorems/Monotone.lean | more-defined bytes decode to a more-defined value |
+| `store_load` (`store_load_eq`) | Theorems/Memory.lean | `typedStore` then `typedLoad` gives back the value, **if vtable allocations are read-only** |
+
+`store_load` needed a hypothesis MiniRust's version does not have: `typedLoad` re-runs
+`checkValue` in the memory after the store, and a store into a *mutable* vtable allocation can
+change the size/alignment words a stored wide pointer's metadata refers to. The semantics
+freezes vtables after initializing them (`globalPtrF`), so the hypothesis holds of every
+reachable memory (not yet proved as an invariant).
 
 Proving them showed what `Ty.wf` must check, and four spec gaps, all fixed with the proofs:
 - `Ty.wf` now checks that union chunks are disjoint, and for enums with a tag

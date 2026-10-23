@@ -11,8 +11,8 @@ Proved:
   the enum case uses the niche lemma `encode_scalarRange` (the scalar a niche-encoded enum
   reads its tag from is initialized and inside its valid range).
 
-Open goals (stated with `sorry`; mir-spec §A.8 step 3 tracks them here): see the end of the
-file.
+The other laws are in `Theorems/Monotone.lean` (`decode_mono`, `encode_decode_le`) and
+`Theorems/Memory.lean` (`store_load`).
 -/
 import Ryo.Spec.Theorems.Bytes
 
@@ -1123,23 +1123,5 @@ theorem decode_encode_int (t : IntType) (r : ValidRange) (hwf : t.wf = true) (i 
 theorem decode_encode_bool (b : Bool) :
     (Ty.bool.encode (.bool b)).bind Ty.bool.decode = some (.bool b) := by
   cases b <;> rfl
-
-/-! ## Open goals -/
-
-theorem encode_decode_le (t : Ty) (bytes : List AbstractByte) (v : Value)
-    (_ : t.wf = true) (_ : bytes.length = t.size) (_ : t.decode bytes = some v) :
-    ∃ bs, t.encode v = some bs ∧ bytesLeDefined bs bytes = true := by
-  sorry
-
-theorem decode_mono (t : Ty) (b1 b2 : List AbstractByte) (_ : t.wf = true)
-    (_ : bytesLeDefined b1 b2 = true) :
-    Option.leDefinedBy Value.leDefined (t.decode b1) (t.decode b2) = true := by
-  sorry
-
-theorem store_load (mem mem' : Memory) (p : ThinPointer) (t : Ty) (v : Value) (al : Align)
-    (_ : t.wf = true) (_ : checkValue mem v t = .ok ())
-    (_ : typedStore mem p v t al = .ok mem') :
-    ∃ w, typedLoad mem' p t al = .ok w ∧ Value.leDefined w v = true := by
-  sorry
 
 end Ryo.Spec.Theorems
