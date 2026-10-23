@@ -50,7 +50,7 @@ during M1". Tests are in `RyoTest/` (`lake exe ryotest <name>`).
 | D29 vtables | `vtableSizeAlign`, `vtableWordPtr`, `splitReceiver`, `resolveCallee .virtual`, `TupleHeadLayout.tailOffset` | Unsized.lean | as documented; the vtable's trait is not checked (R19, §2) |
 | D30 unsizing | `unsizeValue`, `UnsizeMeta` | Unsized.lean | as documented |
 | D31 `Repeat` | `evalRvalue .repeat` | `D31_D32/repeat_union` | as documented |
-| D32 `Aggregate` | `evalRvalue .aggregate` | `D31_D32/repeat_union`, Enum.lean | as documented; the variant index of an `adt` aggregate is not range-checked by `Wf` |
+| D32 `Aggregate` | `evalRvalue .aggregate` | `D31_D32/repeat_union`, Enum.lean | as documented; `Wf` checks the variant index, field count and field shapes of an `adt` aggregate |
 | D33 `Transmute` | `transmute`, `evalCast .transmute` | `D33/transmute_size` | as documented (also `boxDerefTransmute`, `subtype`) |
 | D34 numeric `as` | `Float.toInt`, `Float.ofInt`, `Float.convert` | `D5/floats` | as documented |
 | D35 pointer casts | `evalCast` (`ptrToPtr`, `fnPtrToPtr`, coercions) | `D35/wide_to_thin` | as documented |

@@ -310,6 +310,58 @@ def packedIsNotAligned : Except String Unit :=
   | .error (.ub m) => check ((m.splitOn "unaligned safe pointer").length > 1) m
   | _ => .error s!"expected UB, got {describe r}"
 
+/-! ### Rvalue typing (not a MiniRust port): `Wf.checkRvalue` rejects ill-typed assignments -/
+
+/-- A program assigning `rv` to a fresh local of type `ty`. -/
+def assignTo (ty : Ty) (rv : Rvalue) : Program := mainOnly do
+  let _ ← tmp ty rv
+  ret
+
+def refArrayAsSlice : Program := mainOnly do
+  let a ← newLocal (array i32 2)
+  storageLive a
+  let _ ← tmp (refTo (slice i32)) (.ref false (place a))
+  ret
+
+def discriminantToBool : Program := mainOnly do
+  let e ← newLocal twoVariantEnum
+  storageLive e
+  let _ ← tmp .bool (.discriminant (place e))
+  ret
+
+def rvalueTypingTests : List TestCase := [
+  ⟨"wf_rvalue/use_wrong_int", fun _ => expectIllFormed (assignTo u8 (.use (ci32 1))) "Use"⟩,
+  ⟨"wf_rvalue/add_mixed_ints", fun _ =>
+    expectIllFormed (assignTo i32 (.binaryOp .add (ci32 1) (cint i64 1)))
+      "operands of different types"⟩,
+  ⟨"wf_rvalue/eq_to_int", fun _ =>
+    expectIllFormed (assignTo i32 (.binaryOp .eq (ci32 1) (ci32 1))) "expected bool"⟩,
+  ⟨"wf_rvalue/with_overflow_not_a_pair", fun _ =>
+    expectIllFormed (assignTo i32 (.binaryOp .addWithOverflow (ci32 1) (ci32 1)))
+      "AddWithOverflow"⟩,
+  ⟨"wf_rvalue/shl_float", fun _ =>
+    expectIllFormed (assignTo f64 (.binaryOp .shl (cf64 1.0) (ci32 1))) "expected an integer"⟩,
+  ⟨"wf_rvalue/neg_bool", fun _ =>
+    expectIllFormed (assignTo .bool (.unaryOp .neg (cbool true))) "Neg"⟩,
+  ⟨"wf_rvalue/int_to_int_float", fun _ =>
+    expectIllFormed (assignTo f64 (.cast .intToInt (ci32 1) f64)) "Cast IntToInt"⟩,
+  ⟨"wf_rvalue/cast_dest_mismatch", fun _ =>
+    expectIllFormed (assignTo i64 (.cast .intToInt (ci32 1) i32)) "Cast: a value of type i32"⟩,
+  ⟨"wf_rvalue/ref_meta_mismatch", fun _ => expectIllFormed refArrayAsSlice "Ref/RawPtr"⟩,
+  ⟨"wf_rvalue/discriminant_to_bool", fun _ => expectIllFormed discriminantToBool "Discriminant"⟩,
+  ⟨"wf_rvalue/variant_out_of_range", fun _ =>
+    expectIllFormed (assignTo twoVariantEnum (.aggregate (.adt 5 none) []))
+      "variant 5 out of range"⟩,
+  ⟨"wf_rvalue/tuple_field_count", fun _ =>
+    expectIllFormed (assignTo (cTuple [i32, i32]) (.aggregate .tuple [ci32 1]))
+      "1 operands for 2 fields"⟩,
+  ⟨"wf_rvalue/repeat_length", fun _ =>
+    expectIllFormed (assignTo (array i32 3) (.repeat (ci32 0) 2)) "Repeat: 2 copies"⟩,
+  -- MIR `Transmute` between sized types of different sizes is UB when run, not ill-formed.
+  ⟨"wf_rvalue/transmute_size_is_ub", fun _ =>
+    expectUb (assignTo i64 (.cast .transmute (ci32 1) i64)) "different size"⟩
+]
+
 def tests : List TestCase := [
   ⟨"bool/false_to_int", fun _ => expectReturn (boolToInt false 0)⟩,
   ⟨"bool/true_to_int", fun _ => expectReturn (boolToInt true 1)⟩,
@@ -357,6 +409,6 @@ def tests : List TestCase := [
     expectUb (derefDanglingPtr true) "Value::Ptr: non-dereferenceable safe pointer"⟩,
   ⟨"packed/works", fun _ => expectReturn packedWorks⟩,
   ⟨"packed/is_not_aligned (D36)", fun _ => packedIsNotAligned⟩
-]
+] ++ rvalueTypingTests
 
 end RyoTest.Basic

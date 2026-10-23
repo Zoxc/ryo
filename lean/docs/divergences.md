@@ -51,6 +51,7 @@ documented semantics where codegen is more lenient).
 | R20 | `typed_swap_nonoverlapping` swaps raw bytes | `evalIntrinsic` | deliberate (less UB, matches ryo) |
 | R21 | Float details: NaN of the interpreter, `f*_algebraic`, `f16`/`f128` | Lang/Float.lean, `concreteOracle` | simplification / narrowing |
 | R22 | Evaluation order and minor UB-message differences | various | simplification |
+| R23 | `Rvalue::Reborrow` takes the place's address | `evalRvalue .reborrow` | bug (unstable feature) |
 
 ## Bugs and narrowings
 
@@ -269,3 +270,9 @@ negative default NaN. Remaining differences:
   the extra UB is Rust's.
 - `ptr_guaranteed_cmp` may return 2 (daemonic). ryo and LLVM at run time always return the
   exact answer, which the spec includes.
+
+**R23. `Reborrow`.** rustc's `Rvalue::Reborrow(ty, mutbl, place)` (the unstable `Reborrow`
+traits experiment) reborrows a user type implementing `Reborrow`: a bitwise copy of the place
+at type `ty`, with `&mut` fields reborrowed. `evalRvalue .reborrow` treats it like `Ref` and
+produces the place's address. Only programs using the experiment are affected; `Wf` checks
+only that `ty` fits the destination. Fix: copy the place's value at `ty`.

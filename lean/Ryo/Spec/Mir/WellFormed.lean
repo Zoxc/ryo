@@ -15,9 +15,22 @@ Checked:
 - cleanup-block discipline: unwind edges go to cleanup blocks, normal edges stay within the
   same kind of block (cleanup → cleanup, normal → normal), `UnwindResume` only in cleanup
   blocks, and calls in cleanup blocks do not use `UnwindAction::{Continue, Cleanup}`;
+- rvalues against their destination (rustc `TypeChecker::visit_rvalue` and `Rvalue::ty`), up to
+  the type's *shape* (constructor, integer/float type, pointer metadata kind, size; see
+  `sameShape`): operand kinds of each `BinOp`/`UnOp` (homogeneous operands, comparisons to
+  `bool`, `*WithOverflow` to `(T, bool)`, `Offset` of a raw pointer by `isize`/`usize`), source
+  and target kinds of each `CastKind` (`Transmute`: only that both are sized; a size mismatch
+  is UB, D33), `Ref`/`RawPtr` to a pointer with the place's metadata kind, `Discriminant` to an
+  integer, `Repeat` to an array of that length, `ThreadLocalRef` to a pointer, `Aggregate`
+  field counts and field shapes, the variant index and the union's active field in range, and
+  `AggregateKind::RawPtr`/`PtrMetadata` metadata types;
 - D9 needs no check (`always_storage_live_locals` is computed from the body).
-Not (yet) checked: the full typing of rvalues against their destination (subtyping and
-layout-equivalent types make an equality check too strict).
+Not checked: exact `Ty` equality (rustc compares Rust types up to regions; our `Ty`s are
+layouts, and the dump of one Rust type need not agree on trait names, `ValidRange`s and
+reference/raw/box pointer kinds), nested field types beyond their shape, `Unsize` beyond the
+metadata kind (`unsizeValue` checks struct coercions when it runs), aggregates of ADTs that are
+neither structs, enums nor unions (out of scope), and call destinations against the callee's
+return type.
 -/
 import Ryo.Spec.Mir.Syntax
 import Ryo.Spec.Lang.WellFormed
@@ -86,22 +99,341 @@ def operandTy (b : Body) : Operand → WfM Ty
   | .const _ ty => pure ty
   | .runtimeChecks .. => pure .bool
 
-def checkRvalue (b : Body) : Rvalue → WfM Unit
-  | .use o | .repeat o _ | .cast _ o _ | .unaryOp _ o | .wrapUnsafeBinder o _ => do
-    let _ ← operandTy b o
-  | .ref _ p | .rawPtr _ p | .discriminant p | .copyForDeref p | .reborrow _ _ p => do
+/-! ## Rvalue typing
+
+rustc's validator (`TypeChecker::visit_rvalue`, `visit_statement` on `Assign`) requires the
+rvalue's type to equal the destination's (`mir_assign_valid_types`: equal up to regions and
+opaque types) and constrains operand kinds per operator and cast kind. Our `Ty` has layouts,
+not Rust types: two `Ty`s of the same Rust type agree, but distinct Rust types can share a
+`Ty` and the dump of one Rust type at two places may differ in details we do not want to trust
+(trait names of `dyn` types, `ValidRange`s, `ref`/`box`/`raw` pointer kinds). So we compare
+*shapes* (`sameShape`): the type constructor, the integer/float type, the pointer's
+metadata kind, and the size. Every check below follows from rustc's rvalue types
+(`Rvalue::ty`, `BinOp::ty`) and validator (equal Rust types have equal layouts), so the MIR
+rustc produces passes; where rustc's validator accepts a combination rustc never emits and
+the semantics cannot run (`IntToInt` to a float, ...), we require what the semantics runs.
+Where the semantics accepts more than rustc (three-way comparison of `bool`s and pointers,
+as in MiniRust), so do we. Ill-typed programs are rejected before they run. -/
+
+/-- rustc's name of a constructor (`Ryo.Spec.BinOp.addWithOverflow` → `AddWithOverflow`),
+from its `Repr`, for error messages. -/
+def ctorName {α : Type} [Repr α] (a : α) : String :=
+  let head := ((reprStr a).splitOn " ").headD ""
+  let last := (head.splitOn ".").getLastD head
+  last.capitalize
+
+/-- A short description of a type for error messages. -/
+def tyKind : Ty → String
+  | .int t _ => s!"{if t.signed then "i" else "u"}{t.bits}"
+  | .bool => "bool"
+  | .char => "char"
+  | .float f => s!"f{f.bits}"
+  | .ptr .fnPtr _ => "fn pointer"
+  | .ptr p _ => if p.isWide then "wide pointer" else "pointer"
+  | .fnDef _ => "fn item"
+  | .tuple .. => "struct/tuple"
+  | .array _ n => s!"array of length {n}"
+  | .slice _ => "slice"
+  | .union .. => "union"
+  | .enum .. => "enum"
+  | .traitObject _ => "dyn type"
+  | .opaqueBytes .. => "opaque bytes"
+
+/-- The metadata kind with the trait name erased: `dyn` names are not compared (rustc renders
+them with lifetimes and auto traits, and upcasts and `dyn A + Send → dyn A` keep the vtable
+kind). -/
+def metaClass : PointerMetaKind → Nat
+  | .none => 0
+  | .elementCount => 1
+  | .vtablePointer _ => 2
+
+/-- The metadata kind of a pointer *to* `t`. -/
+def tyMetaClass (t : Ty) : Nat := metaClass t.metaKind
+
+def ptrMetaClass (p : PtrType) : Nat := metaClass p.metaKind
+
+/-- The metadata kind a value of pointer type `t` carries (0 for non-pointers). -/
+def ptrTyMetaClass : Ty → Nat
+  | .ptr p _ => ptrMetaClass p
+  | _ => 0
+
+/-- Same shape: what any two `Ty`s of the same Rust type (up to regions) share. Fields are not
+compared recursively (sizes and the constructor suffice to catch shape errors, and nested
+`Ty`s may legitimately differ in the details listed above). -/
+def sameShape (a b : Ty) : Bool :=
+  a.size? == b.size? &&
+  match a, b with
+  | .int t _, .int t' _ => t == t'
+  | .bool, .bool | .char, .char => true
+  | .float f, .float f' => f == f'
+  | .ptr p _, .ptr p' _ => ptrMetaClass p == ptrMetaClass p'
+  | .fnDef _, .fnDef _ => true
+  | .tuple fs _ _, .tuple fs' _ _ => fs.length == fs'.length
+  | .array _ n, .array _ n' => n == n'
+  | .slice _, .slice _ | .union .., .union .. | .enum .., .enum .. => true
+  | .traitObject _, .traitObject _ | .opaqueBytes .., .opaqueBytes .. => true
+  | _, _ => false
+
+/-- `dest` (the assignment's destination type) has the shape of the rvalue's type `rv`. -/
+def expectShape (what : String) (rv dest : Ty) : WfM Unit :=
+  ensure (sameShape rv dest)
+    s!"{what}: a value of type {tyKind rv} assigned to a place of type {tyKind dest}"
+
+def isInt : Ty → Bool
+  | .int .. => true
+  | _ => false
+
+def isFloat : Ty → Bool
+  | .float _ => true
+  | _ => false
+
+def isPtr : Ty → Bool
+  | .ptr .. => true
+  | _ => false
+
+def isRawPtr : Ty → Bool
+  | .ptr (.raw ..) _ => true
+  | _ => false
+
+def isFnPtr : Ty → Bool
+  | .ptr .fnPtr _ => true
+  | _ => false
+
+def isFnDef : Ty → Bool
+  | .fnDef _ => true
+  | _ => false
+
+def isBool : Ty → Bool
+  | .bool => true
+  | _ => false
+
+/-- Integers, `bool` and `char` (rustc: `is_integral() || is_char() || is_bool()`). -/
+def isIntLike : Ty → Bool
+  | .int .. | .bool | .char => true
+  | _ => false
+
+/-- A zero-sized struct/tuple (the `()` that thin-pointer metadata is). -/
+def isUnitLike : Ty → Bool
+  | t@(.tuple ..) => t.size? == some 0
+  | _ => false
+
+/-- The destination of a pointer's metadata (`PtrMetadata`, `AggregateKind::RawPtr`): `()`,
+`usize`, or a vtable pointer. -/
+def checkMetaTy (what : String) (mk : PointerMetaKind) (t : Ty) : WfM Unit :=
+  match mk with
+  | .none => ensure (isUnitLike t) s!"{what}: thin-pointer metadata must be `()`, not {tyKind t}"
+  | .elementCount =>
+    ensure (t matches .int ⟨false, 8⟩ _) s!"{what}: slice metadata must be usize, not {tyKind t}"
+  | .vtablePointer _ =>
+    ensure (isPtr t) s!"{what}: vtable metadata must be a pointer, not {tyKind t}"
+
+-- rustc `BinOp::ty` and the `BinaryOp` arm of `visit_rvalue`.
+def checkBinOp (op : BinOp) (a b dest : Ty) : WfM Unit := do
+  let name := ctorName op
+  let homogeneous := match op with
+    | .offset | .shl | .shlUnchecked | .shr | .shrUnchecked => false
+    | _ => true
+  if homogeneous then
+    ensure (sameShape a b)
+      s!"BinaryOp {name}: operands of different types ({tyKind a}, {tyKind b})"
+  let both (ok : Ty → Bool) (kinds : String) : WfM Unit :=
+    for x in [a, b] do
+      ensure (ok x) s!"BinaryOp {name}: operand of type {tyKind x}, expected {kinds}"
+  match op with
+  | .offset => do
+    ensure (isRawPtr a) s!"BinaryOp Offset: {tyKind a} is not a raw pointer"
+    ensure (b matches .int ⟨_, 8⟩ _)
+      s!"BinaryOp Offset: offset of type {tyKind b}, expected isize or usize"
+    expectShape "BinaryOp Offset" a dest
+  | .eq | .ne | .lt | .le | .gt | .ge => do
+    both (fun x => isIntLike x || isFloat x || isRawPtr x || isFnPtr x)
+      "a bool, char, integer, float, raw pointer or fn pointer"
+    ensure (dest matches .bool)
+      s!"BinaryOp {name}: result assigned to a place of type {tyKind dest}, expected bool"
+  | .cmp => do
+    -- rustc: integers and `char`; MiniRust (and the semantics) also compare `bool` and
+    -- pointers three-way, so those are accepted too.
+    both (fun x => isIntLike x || isRawPtr x || isFnPtr x)
+      "a bool, char, integer, raw pointer or fn pointer"
+    -- `Ordering` (a fieldless `i8` enum); the semantics also accepts a plain integer.
+    ensure (isInt dest || dest matches .enum ..)
+      s!"BinaryOp Cmp: result assigned to a place of type {tyKind dest}, expected Ordering"
+  | .addWithOverflow | .subWithOverflow | .mulWithOverflow => do
+    both isInt "an integer"
+    match dest with
+    | .tuple [(_, r), (_, o)] _ none =>
+      ensure (sameShape a r && isBool o)
+        s!"BinaryOp {name}: result must be ({tyKind a}, bool)"
+    | _ => throw s!"BinaryOp {name}: result assigned to a place of type {tyKind dest}, \
+        expected ({tyKind a}, bool)"
+  | .addUnchecked | .subUnchecked | .mulUnchecked
+  | .shl | .shlUnchecked | .shr | .shrUnchecked => do
+    both isInt "an integer"
+    expectShape s!"BinaryOp {name}" a dest
+  | .bitAnd | .bitOr | .bitXor => do
+    both (fun x => isInt x || isBool x) "an integer or bool"
+    expectShape s!"BinaryOp {name}" a dest
+  | .add | .sub | .mul | .div | .rem => do
+    both (fun x => isInt x || isFloat x) "an integer or float"
+    expectShape s!"BinaryOp {name}" a dest
+
+def checkUnOp (op : UnOp) (a dest : Ty) : WfM Unit :=
+  match op with
+  | .neg => do
+    ensure (isInt a || isFloat a) s!"UnaryOp Neg on {tyKind a}"
+    expectShape "UnaryOp Neg" a dest
+  | .not => do
+    ensure (isInt a || isBool a) s!"UnaryOp Not on {tyKind a}"
+    expectShape "UnaryOp Not" a dest
+  | .ptrMetadata =>
+    match a with
+    | .ptr p _ => checkMetaTy "UnaryOp PtrMetadata" p.metaKind dest
+    | _ => throw s!"UnaryOp PtrMetadata on {tyKind a}"
+
+-- The `Cast` arm of `visit_rvalue`, with the destinations `evalCast` accepts.
+def checkCast (k : CastKind) (src dst : Ty) : WfM Unit := do
+  let expect (b : Bool) (msg : String) : WfM Unit :=
+    let name := match k with
+      | .pointerCoercion c => s!"PointerCoercion({ctorName c})"
+      | _ => ctorName k
+    ensure b s!"Cast {name}: {msg} (from {tyKind src} to {tyKind dst})"
+  match k with
+  | .intToInt =>
+    expect (isIntLike src && (isInt dst || dst == .char))
+      "expected an integer, bool or char to an integer or char"
+  | .intToFloat =>
+    expect (isIntLike src && isFloat dst) "expected an integer, bool or char to a float"
+  | .floatToInt => expect (isFloat src && isInt dst) "expected a float to an integer"
+  | .floatToFloat => expect (isFloat src && isFloat dst) "expected a float to a float"
+  | .pointerExposeProvenance => expect (isPtr src && isInt dst) "expected a pointer to an integer"
+  | .pointerWithExposedProvenance =>
+    expect (isIntLike src && isRawPtr dst) "expected an integer to a raw pointer"
+  | .ptrToPtr =>
+    -- A thin pointer cannot become a wide one; wide → wide keeps the metadata.
+    expect (isPtr src && isPtr dst &&
+        (ptrTyMetaClass dst == 0 || ptrTyMetaClass src == ptrTyMetaClass dst))
+      "expected a pointer to a pointer with no or the same metadata"
+  | .fnPtrToPtr =>
+    expect (isFnPtr src && isPtr dst && ptrTyMetaClass dst == 0)
+      "expected a fn pointer to a thin pointer"
+  | .transmute | .boxDerefTransmute => do
+    -- rustc: any two sized types (different sizes are UB when run, D33)
+    expect (src.isSized && dst.isSized) "both types must be sized"
+    if k == .boxDerefTransmute then expect (isPtr dst) "the target must be a pointer"
+  | .subtype => expect (sameShape src dst) "the types differ"
+  | .pointerCoercion c =>
+    match c with
+    | .reifyFnPointer _ =>
+      expect (isFnDef src && isFnPtr dst) "expected a fn item to a fn pointer"
+    | .closureFnPointer _ => expect (isFnPtr dst) "expected a fn pointer target"
+    | .unsafeFnPointer =>
+      expect (isFnPtr src && isFnPtr dst) "expected a fn pointer to a fn pointer"
+    -- (rustc disallows these two after borrowck; the semantics keeps the address)
+    | .mutToConstPointer =>
+      expect (isPtr src && sameShape src dst) "expected a pointer to a pointer"
+    | .arrayToPointer =>
+      expect (isPtr src && isPtr dst && ptrTyMetaClass dst == 0)
+        "expected a pointer to a thin pointer"
+    | .unsize m =>
+      -- rustc: `CoerceUnsized`. A pointer gets the metadata; a struct (`Box`, `Rc`, ...)
+      -- is coerced field by field (D30), which `unsizeValue` checks when it runs.
+      match src, dst with
+      | .ptr _ _, .ptr _ _ =>
+        let cls := match m with | .length _ => 1 | _ => 2
+        expect (ptrTyMetaClass dst == cls)
+          s!"the target pointer's metadata does not fit the {ctorName m} metadata"
+      | .tuple fs _ _, .tuple fs' _ _ => expect (fs.length == fs'.length) "the structs differ"
+      | _, _ => expect false "expected a pointer or a struct of pointers"
+
+-- The `Aggregate` arm of `visit_rvalue` (field counts and types), plus the variant index
+-- range rustc gets from `adt_def.variants()[idx]`.
+def checkAggregate (b : Body) (k : AggregateKind) (ops : List Operand) (dest : Ty) : WfM Unit := do
+  let tys ← ops.mapM (operandTy b)
+  let fieldsMatch (what : String) (fields : List (Offset × Ty)) : WfM Unit := do
+    ensure (fields.length == tys.length)
+      s!"Aggregate {what}: {tys.length} operands for {fields.length} fields"
+    for ((_, ft), t) in fields.zip tys do expectShape s!"Aggregate {what} field" t ft
+  match k, dest with
+  | .array, .array e n => do
+    ensure (n == tys.length) s!"Aggregate array: {tys.length} operands for an array of length {n}"
+    for t in tys do expectShape "Aggregate array element" t e
+  | .array, _ => throw s!"Aggregate array assigned to a place of type {tyKind dest}"
+  | .tuple, .tuple fs _ none => fieldsMatch "tuple" fs
+  | .tuple, _ => throw s!"Aggregate tuple assigned to a place of type {tyKind dest}"
+  | .closure, .tuple fs _ none => fieldsMatch "closure" fs
+  | .closure, _ => throw s!"Aggregate closure assigned to a place of type {tyKind dest}"
+  | .adt v active, .enum vs .. => do
+    ensure active.isNone "Aggregate: active field on an enum"
+    match vs[v]? with
+    | some var =>
+      match var.fields with
+      | .tuple fs _ none => fieldsMatch s!"variant {v}" fs
+      | _ => throw s!"Aggregate: variant {v} is not a sized struct"
+    | none => throw s!"Aggregate: variant {v} out of range"
+  | .adt v active, .union fs .. => do
+    ensure (v == 0) s!"Aggregate: variant {v} of a union"
+    let some f := active | throw "Aggregate: union without an active field"
+    let some (_, ft) := fs[f]? | throw s!"Aggregate: union field {f} out of range"
+    let [t] := tys | throw "Aggregate: unions take exactly one operand"
+    expectShape "Aggregate union field" t ft
+  | .adt v active, .tuple fs _ none => do
+    ensure (v == 0) s!"Aggregate: variant {v} of a struct"
+    ensure active.isNone "Aggregate: active field on a struct"
+    fieldsMatch "struct" fs
+  -- Other destinations (SIMD vectors as `opaqueBytes`, ...) are out of scope; the semantics
+  -- rejects them when they run (mir-spec §A.1).
+  | .adt .., _ => pure ()
+  | .rawPtr, .ptr pt _ => do
+    let [d, m] := tys | throw "Aggregate RawPtr: expected a data pointer and metadata"
+    ensure (isRawPtr d && ptrTyMetaClass d == 0)
+      s!"Aggregate RawPtr: the data pointer is a {tyKind d}, expected a thin raw pointer"
+    checkMetaTy "Aggregate RawPtr" pt.metaKind m
+  | .rawPtr, _ => throw s!"Aggregate RawPtr assigned to a place of type {tyKind dest}"
+
+/-- Rvalue typing against the destination type `dest`. -/
+def checkRvalue (b : Body) (dest : Ty) : Rvalue → WfM Unit
+  | .use o => do expectShape "Use" (← operandTy b o) dest
+  | .copyForDeref p => do expectShape "CopyForDeref" (← placeTy b p) dest
+  | .wrapUnsafeBinder o ty => do
+    let t ← operandTy b o
+    expectShape "WrapUnsafeBinder" t ty
+    expectShape "WrapUnsafeBinder" ty dest
+  | .repeat o n => do
+    let t ← operandTy b o
+    match dest with
+    | .array e n' => do
+      ensure (n == n') s!"Repeat: {n} copies assigned to an array of length {n'}"
+      expectShape "Repeat element" t e
+    | _ => throw s!"Repeat assigned to a place of type {tyKind dest}"
+  -- `&place`, `&raw place`: a pointer whose metadata kind is the place type's.
+  | .ref _ p | .rawPtr _ p => do
+    let t ← placeTy b p
+    match dest with
+    | .ptr pt _ =>
+      ensure (pt.pointee?.isSome && ptrMetaClass pt == tyMetaClass t)
+        s!"Ref/RawPtr: a pointer to {tyKind t} assigned to a place of type {tyKind dest}"
+    | _ => throw s!"Ref/RawPtr assigned to a place of type {tyKind dest}"
+  -- rustc: the rvalue's type is `ty` (a user ADT with one lifetime).
+  | .reborrow ty _ p => do
     let _ ← placeTy b p
-  | .threadLocalRef _ => pure ()
-  | .binaryOp _ x y => do
-    let _ ← operandTy b x
-    let _ ← operandTy b y
-  | .aggregate _ ops => ops.forM fun o => do let _ ← operandTy b o
+    expectShape "Reborrow" ty dest
+  | .threadLocalRef _ =>
+    ensure (isPtr dest) s!"ThreadLocalRef assigned to a place of type {tyKind dest}"
+  | .discriminant p => do
+    let _ ← placeTy b p
+    ensure (isInt dest) s!"Discriminant assigned to a place of type {tyKind dest}"
+  | .cast k o ty => do
+    checkCast k (← operandTy b o) ty
+    expectShape "Cast" ty dest
+  | .binaryOp op x y => do checkBinOp op (← operandTy b x) (← operandTy b y) dest
+  | .unaryOp op o => do checkUnOp op (← operandTy b o) dest
+  | .aggregate k ops => checkAggregate b k ops dest
 
 def checkStatement (b : Body) : Statement → WfM Unit
   | .assign p rv => do
     let t ← placeTy b p
     ensure t.isSized "Assign to an unsized place"
-    checkRvalue b rv
+    checkRvalue b t rv
   | .setDiscriminant p v => do
     match ← placeTy b p with
     | .enum vs .. => ensure (v < vs.length) "SetDiscriminant: variant out of range"

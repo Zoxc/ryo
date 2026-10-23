@@ -143,7 +143,7 @@ Modules (namespace `Ryo.Spec`), with the MiniRust source each one ports:
 | `Ryo/Spec/Lang/Representation.lean` | `lang/representation.md` | `Ty.decode`, `Ty.encode`, `checkValue` (well-formed values, incl. safe pointers dereferenceable and aligned), `typedLoad`, `typedStore`, `transmute`; enums decoded through rustc's tag algorithm (D2) |
 | `Ryo/Spec/Lang/WellFormed.lean` | `lang/well-formed.md` (types/layouts part) | `WfTy`, `WfValue` |
 | `Ryo/Spec/Mir/Syntax.lean` | `lang/syntax.md` (replaced), rustc `mir/syntax.rs` | the MIR AST (§A.5), `Body`, `Program`, `InstanceId`, `Global` (const and static allocations with relocations), `VTable` as an allocation (D29). `deriving Repr, BEq, Inhabited, Lean.FromJson, Lean.ToJson` (hand-write instances where deriving fails on nested/mutual types) |
-| `Ryo/Spec/Mir/WellFormed.lean` | `lang/well-formed.md` (expr/fn/program part) | local/block indices in range, operand types match, `SwitchInt` on integer/bool/char, unwind-action well-formedness (cleanup blocks only reached by unwinding), `always_storage_live_locals` |
+| `Ryo/Spec/Mir/WellFormed.lean` | `lang/well-formed.md` (expr/fn/program part) | local/block indices in range, operand types match, rvalues typed against their destination up to shape (rustc's `visit_rvalue`), `SwitchInt` on integer/bool/char, unwind-action well-formedness (cleanup blocks only reached by unwinding), `always_storage_live_locals` |
 | `Ryo/Spec/Mir/State.lean` | `lang/machine.md` | `Frame`, `State`, `Event`, `CallReturn` (`ret` / `unwind`), global address maps |
 | `Ryo/Spec/Mir/Place.lean` | `lang/step/expressions.md` § Place Expressions | `evalPlace` with every projection, including `Index` bounds UB, `Subslice`/`ConstantIndex from_end`, `Deref` of wide pointers, unsized-tail field offsets rounded up from the vtable's alignment (cg_ssa's `project_field`) |
 | `Ryo/Spec/Mir/Operand.lean` | `lang/step/expressions.md` § Constants, Load | `evalOperand` (`Copy`/`Move` = typed load, D12), `evalConst` (scalars, `ConstValue::Slice`/indirect, D7, D24), `RuntimeChecks` (D23) |
@@ -461,7 +461,9 @@ text above is not rewritten to match.
   by encoding their bytes and decoding at the operand type.
 - **Runs**: the start function is called with arguments and its return ends the run (MiniRust
   requires `exit`). MIR well-formedness (`Mir/WellFormed.lean`) is checked before running;
-  it does not yet type-check rvalues against destinations. `Value`s of `opaqueBytes` are
+  it type-checks rvalues against destinations up to *shape* (constructor, integer/float
+  type, pointer metadata kind, size), not by `Ty` equality, since `Ty`s are layouts and rustc
+  compares Rust types up to regions. `Value`s of `opaqueBytes` are
   `Value.union [bytes]`.
 - **Refine/Behavior**: the value order lives in `Lang/Values.lean` (values come after memory).
   `Behaviors` runs sources with a stack limit above the fuel, so sources never overflow;
