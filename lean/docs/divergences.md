@@ -58,7 +58,7 @@ documented semantics where codegen is more lenient).
 | R27 | `Drop` of a `dyn` place ran the `dyn` glue instead of the vtable's drop entry | `evalTerminator .drop` | bug, **fixed** (M1b) |
 | R28 | Direct enum tags wider than the discriminant type were ill-formed | `Ty.wf`, `tagToVariant` | bug, **fixed** (M1b) |
 | R29 | `is_val_statically_known` missing | `evalIntrinsic` | gap, **fixed** (M1b) |
-| R30 | `assert_inhabited`/`assert_zero_valid`/`assert_mem_uninitialized_valid` never panic | `evalIntrinsic` | narrowing, open |
+| R30 | `assert_inhabited`/`assert_zero_valid`/`assert_mem_uninitialized_valid` never panic | `callInstance`, `laxValid` | narrowing, **fixed** (M1b) |
 | R31 | `caller_location` in MIR-inlined `#[track_caller]` code | `callInstance` | bug (ill-formed), **fixed** (M1b) |
 
 ## Bugs and narrowings
@@ -326,11 +326,19 @@ tags with negative discriminants.
 **R29. `is_val_statically_known`** (used by `i32::pow`) is now an intrinsic answering `false`,
 which is always a correct answer.
 
-**R30. `assert_inhabited` & co.** (reached from `MaybeUninit`/`mem::zeroed`) are no-ops for
-now: the intrinsic instance does not carry its type arguments, so the spec cannot tell when
-they panic. Real code panics for uninhabited (or, for the other two, not zero-/uninit-valid)
-types, so the spec is narrower there. Fix: give `InstanceKind.intrinsic` the generic
-arguments (the dumper has `instance.args`) and panic as cg_ssa does.
+**R30. `assert_inhabited` & co.** (reached from `MaybeUninit::assume_init`, `mem::zeroed`,
+`mem::uninitialized`) were no-ops: the intrinsic instance did not carry its type argument,
+so the spec could not tell when they panic, and was narrower than real code there.
+**Fixed**: `InstanceKind.intrinsic` carries the instance's generic arguments (`TyArg`: the
+`Ty` and rustc's printed name), and the call is a no-op or a call of the `panic_nounwind`
+lang item (`LangItems.panicNounwind`) with rustc's message, as cg_ssa
+`codegen_panic_intrinsic` does. The decision is rustc_const_eval's
+`check_validity_requirement` without `-Zstrict-init-checks` (inhabitedness, and the *lax*
+zero / 0x01-fill checks), computed in Lean from the layouts in `Ty`; the one fact `Ty` lacks,
+Box-ness (`builtin_deref`), comes from dumping the type argument with `Box<T, A>` as
+`(PtrType.box, A)`. Checked against native runs on 72 type/intrinsic pairs (all agree on
+whether the program panics). Remaining narrowing: `-Zstrict-init-checks` (and the
+`ValidityRequirement::Uninit` it implies) is not modelled; the session never sets it.
 
 **R31. `caller_location` after MIR inlining.** Inlining a `#[track_caller]` function puts
 its `caller_location` call into a body that is not `#[track_caller]`; rustc then gives the

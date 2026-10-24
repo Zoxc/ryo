@@ -22,7 +22,10 @@ read-modify-write computed sequentially, orderings ignored, fences no-ops), `fab
 `f16` through `f32`),
 `float_to_int_unchecked`, `f*_fast` (UB on non-finite inputs or results), `f*_algebraic`
 (exact operation: a refinement of the allowed reassociations), `caller_location` (D14),
-`raw_eq`, `compare_bytes` (any `i32` of the right sign, daemonic), `prefetch_*` (no-ops).
+`raw_eq`, `compare_bytes` (any `i32` of the right sign, daemonic), `prefetch_*` (no-ops),
+`is_val_statically_known` (`false`). `assert_inhabited`, `assert_zero_valid`,
+`assert_mem_uninitialized_valid` (R30) decide here (`panicIntrinsicMessage`) and call
+`panic_nounwind` from `Ryo.Spec.Mir.Terminator`.
 `minimum_number_nsz_*`/`maximum_number_nsz_*` of zeros of different sign return either one
 (daemonic).
 
@@ -82,6 +85,146 @@ def floatPrefix (n : String) : String :=
 
 def isFinite (f : FloatTy) (b : Nat) : Bool := !Float.isNaN f b && !Float.isInf f b
 
+/-! ## `assert_inhabited`, `assert_zero_valid`, `assert_mem_uninitialized_valid` (R30)
+
+cg_ssa `codegen_panic_intrinsic` (rustc_codegen_ssa/src/mir/block.rs) turns these into a no-op
+or a call of `panic_nounwind`, as rustc_const_eval `check_validity_requirement`
+(src/util/check_validity_requirement.rs) decides from the type argument's layout. Without
+`-Zstrict-init-checks` the two init checks are the *lax* ones
+(`check_validity_requirement_lax`): they only rule out what could be LLVM UB. -/
+
+/-- rustc `ValidityRequirement` as `ValidityRequirement::from_intrinsic` picks it (`Uninit`
+only arises from `-Zstrict-init-checks`). -/
+inductive ValidityRequirement where
+  | inhabited
+  | zero
+  | uninitMitigated0x01Fill
+deriving DecidableEq, Repr
+
+def ValidityRequirement.ofIntrinsic? : String → Option ValidityRequirement
+  | "assert_inhabited" => some .inhabited
+  | "assert_zero_valid" => some .zero
+  | "assert_mem_uninitialized_valid" => some .uninitMitigated0x01Fill
+  | _ => none
+
+mutual
+
+/-- rustc `LayoutData::uninhabited` as the layout calculator sets it (rustc_abi
+src/layout.rs): structs if a field is (`univariant`), arrays if non-empty and the element is
+(`array_like`), enums if no variant is (`Variants::Empty`, or all variants), never unions,
+scalars or SIMD vectors. -/
+def _root_.Ryo.Spec.Ty.uninhabited : Ty → Bool
+  | .tuple fs _ tl => Ty.anyFieldUninhabited fs || Ty.optUninhabited tl
+  | .array e n => n != 0 && Ty.uninhabited e
+  | .enum vs _ r _ _ =>
+    match r with
+    | .empty => true
+    -- the variant's flag is `!for_variant(idx).is_uninhabited()`, the enum's own layout
+    | .single idx => !((vs[idx]?.map (·.inhabited)).getD false)
+    | .multiple _ => vs.all (!·.inhabited)
+  | _ => false
+
+def _root_.Ryo.Spec.Ty.anyFieldUninhabited : List (Offset × Ty) → Bool
+  | [] => false
+  | (_, t) :: fs => Ty.uninhabited t || Ty.anyFieldUninhabited fs
+
+def _root_.Ryo.Spec.Ty.optUninhabited : Option Ty → Bool
+  | none => false
+  | some t => Ty.uninhabited t
+
+end
+
+/-- rustc `layout_of(pointee)`'s size and alignment, from a pointer's `LayoutStrategy`
+(an unsized type's static layout: no elements, an empty vtable part). -/
+def _root_.Ryo.Spec.LayoutStrategy.staticSizeAlign : LayoutStrategy → Size × Align
+  | .sized s a => (s, a)
+  | .slice _ a => (0, a)
+  | .traitObject _ => (0, .one)
+  | .tuple h t => (alignTo (h.end + t.staticSizeAlign.1) h.align, h.align)
+
+/-- The 0x01-filled scalar of `size` bytes (`scalar_allows_raw_init`). -/
+def fill01 (size : Size) : Nat := (List.range size).foldl (fun acc _ => acc * 256 + 1) 0
+
+/-- `scalar_allows_raw_init`: may a scalar of `size` bytes with valid range `r` be zero /
+0x01-filled? -/
+def scalarAllowsRawInit (req : ValidityRequirement) (size : Size) (r : ValidRange) : Bool :=
+  match req with
+  | .inhabited => true
+  | .zero => r.contains 0
+  | .uninitMitigated0x01Fill => r.contains (fill01 size)
+
+mutual
+
+/-- `check_validity_requirement_lax` (rustc_const_eval) on the spec's types:
+- not uninhabited;
+- the scalars of the `backend_repr`: integers, `bool`, `char`, pointers, and an enum's tag (`Variants::Multiple`: the enum's `Scalar`/`ScalarPair`
+  has the tag and otherwise only full or `Scalar::Union` ranges, and the tag is its only
+  field). A struct's `Scalar`/`ScalarPair` comes from its fields, which are checked below
+  (there are no `rustc_layout_scalar_valid_range` structs left: `NonNull`, `NonZero` & co.
+  are pattern types, whose ranges are on the scalar leaves); unions' are `Scalar::Union`,
+  SIMD vectors' elements have full ranges;
+- references and boxes (`builtin_deref(false)`): a pointee alignment of 1 and size of 0;
+- the fields of `FieldsShape::Arbitrary` layouts: structs, tuples, closures, the variant of
+  a `Variants::Single` enum, wide pointers (see below); not arrays, not unions, not the
+  variants of a multi-variant enum. -/
+def laxValid (req : ValidityRequirement) : Ty → Bool
+  | .int t r => scalarAllowsRawInit req t.size r
+  | .bool => scalarAllowsRawInit req 1 ⟨0, 1⟩
+  | .char => scalarAllowsRawInit req 4 ⟨0, 0x10FFFF⟩
+  | .ptr p r =>
+    scalarAllowsRawInit req Target.PTR_SIZE r &&
+    -- a wide pointer's fields (rustc_middle `field_ty_or_layout` of `Ref`/`RawPtr`): the data
+    -- pointer, and the metadata: a `usize`, or for `dyn` metadata a `&'static [usize; n]`
+    -- (`mk_dyn_vtable`, n ≥ 3, "we rely on this layout information to trigger a panic in
+    -- `std::mem::uninitialized::<&dyn Trait>()`"), which is non-null with alignment 8: so a
+    -- `dyn` pointer (raw, reference or box) is never valid here
+    (match p.metaKind with
+      | .vtablePointer _ => false
+      | _ => true) &&
+    (match p.safePointee with
+      | some pi =>
+        let (size, align) := pi.layout.staticSizeAlign
+        align.bytes ≤ 1 && size == 0
+      | none => true)
+  | t@(.tuple fs _ _) => !t.uninhabited && laxValidFields req fs
+  | t@(.array ..) => !t.uninhabited
+  | t@(.enum vs _ r _ _) =>
+    !t.uninhabited &&
+    match r with
+    | .empty => false
+    | .single idx => laxValidVariant req idx vs
+    | .multiple tag => scalarAllowsRawInit req tag.tag.size tag.valid
+  -- floats, fn items, unions, SIMD vectors (`opaqueBytes`); unsized types are not arguments
+  | _ => true
+
+def laxValidFields (req : ValidityRequirement) : List (Offset × Ty) → Bool
+  | [] => true
+  | (_, t) :: fs => laxValid req t && laxValidFields req fs
+
+def laxValidVariant (req : ValidityRequirement) : Nat → List (VariantOf Ty) → Bool
+  | _, [] => false
+  | 0, v :: _ => laxValid req v.fields
+  | i + 1, _ :: vs => laxValidVariant req i vs
+
+end
+
+/-- `check_validity_requirement` (without `-Zstrict-init-checks`). -/
+def checkValidityRequirement (req : ValidityRequirement) (t : Ty) : Bool :=
+  match req with
+  | .inhabited => !t.uninhabited
+  | _ => laxValid req t
+
+/-- cg_ssa `codegen_panic_intrinsic`: `none` if the check passes, else the panic message. -/
+def panicIntrinsicMessage (req : ValidityRequirement) (arg : TyArg) : Option String :=
+  if checkValidityRequirement req arg.ty then none
+  else if arg.ty.uninhabited then
+    -- "Use this error even for the other intrinsics as it is more precise."
+    some s!"attempted to instantiate uninhabited type `{arg.name}`"
+  else if req == .zero then
+    some s!"attempted to zero-initialize type `{arg.name}`, which is invalid"
+  else
+    some s!"attempted to leave type `{arg.name}` uninitialized, which is invalid"
+
 -- [D20] [D17] [D5] [D14]
 /-- Value-returning intrinsics. -/
 def evalIntrinsic (name : String) (args : List (Value × Ty)) (destTy : Ty) : SemM Value := do
@@ -94,10 +237,6 @@ def evalIntrinsic (name : String) (args : List (Value × Ty)) (destTy : Ty) : Se
   | "cold_path", [] => pure unitValue
   -- `false` is always a correct answer: callers must behave the same either way
   | "is_val_statically_known", [_] => pure (.bool false)
-  -- PROVISIONAL (M1b): these panic when their type argument is uninhabited / not valid for
-  -- the zero or uninit bit pattern; the intrinsic instance does not carry the type yet
-  | "assert_inhabited", [] | "assert_zero_valid", [] | "assert_mem_uninitialized_valid", [] =>
-    pure unitValue
   | "select_unpredictable", [(.bool c, _), (a, _), (b, _)] => pure (if c then a else b)
   | "prefetch_read_data", _ | "prefetch_write_data", _ | "prefetch_read_instruction", _
   | "prefetch_write_instruction", _ => pure unitValue

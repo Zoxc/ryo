@@ -13,6 +13,8 @@ Divergences:
 - D19: `Drop` calls the drop-glue instance with a pointer to the place (wide for unsized
   places), or does nothing without glue. A failed `Assert` calls the assert kind's panic lang
   item with its operands (and caller location); the call must not return.
+- R30: `assert_inhabited` & co. are a no-op or a call of `panic_nounwind` with a fresh
+  read-only allocation holding the message (cg_ssa `codegen_panic_intrinsic`, `const_str`).
 - D29: `Callee.virtual idx` loads entry `idx` of the vtable of the first argument (the wide
   pointer found by descending into the non-1-ZST field of the receiver, as cg_ssa does) and
   calls it with the receiver's data pointer.
@@ -94,9 +96,33 @@ def callInstance (i : InstanceId) (args : List ArgVal) (retPlace : Option (Place
     match ← callExternal inst.symbol (args.map fun a => (a.val, a.ty)) with
     | .ret v => do storeRet v; contReturn cont
     | .unwind pl => contUnwind cont pl
-  | .intrinsic name =>
+  | .intrinsic name tyArgs =>
     match name, args with
     | "abort", _ => throw .abort
+    -- [R30] cg_ssa `codegen_panic_intrinsic`: a no-op, or a call of `panic_nounwind` with a
+    -- constant message (`const_str`), the call's target and unwind action
+    | "assert_inhabited", [] | "assert_zero_valid", [] | "assert_mem_uninitialized_valid", [] => do
+      let some req := ValidityRequirement.ofIntrinsic? name | throwIllFormed s!"`{name}`"
+      let some (some arg) := tyArgs.head? | throwIllFormed s!"`{name}` without a type argument"
+      match panicIntrinsicMessage req arg with
+      | none => do storeRet unitValue; contReturn cont
+      | some msg => do
+        let some pn := p.langItems.panicNounwind
+          | throwIllFormed s!"`{name}` panics, but there is no `panic_nounwind` lang item"
+        let bytes := msg.toUTF8.toList
+        let (ptr, mem) ← (← getMem).allocate .const bytes.length .one (mutable := false)
+        setMem (mem.writeInit ptr (bytes.map fun b => .init b none))
+        let strTy := refTy (.slice u8Ty)
+        let msgArg : ArgVal :=
+          ⟨.ptr (ptr.widen (some (.elementCount bytes.length))), strTy, none⟩
+        match p.instances[pn]? with
+        | some ⟨_, .body b⟩ =>
+          callBody pn b cont [{ msgArg with ty := b.locals[1]?.getD strTy }] none none none
+        | some ⟨sym, .ext⟩ => do
+          match ← callExternal sym [(msgArg.val, msgArg.ty)] with
+          | .ret _ => contReturn cont
+          | .unwind pl => contUnwind cont pl
+        | _ => throwIllFormed "`panic_nounwind` is not a function"
     | "unreachable", _ => throwUb "entering unreachable code"
     -- [D14] the call's caller location (cg_ssa `get_caller_location`: the frame's own one,
     -- or a constant where MIR inlining put the call into a non-`#[track_caller]` body)

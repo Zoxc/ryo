@@ -12,9 +12,10 @@
 //!
 //! Instances: every instance reachable from the user's `main` through calls, fn pointers
 //! (reify, closure coercions), drop glue, vtable entries, `Assert` panic lang items, the
-//! `UnwindTerminate` lang items and function pointers in constants. A body when MIR is
-//! available, `intrinsic name` for rustc intrinsics, `ext` otherwise (foreign items,
-//! upstream functions without MIR). Drop glue of `dyn Trait` is `ext` too: rustc's shim body
+//! `UnwindTerminate` lang items, `panic_nounwind` (called by `assert_inhabited` & co.) and
+//! function pointers in constants. A body when MIR is available, `intrinsic name tyArgs` for
+//! rustc intrinsics (the instance's generic args: types as `intrinsic_ty_arg`, other args as
+//! `null`), `ext` otherwise (foreign items, upstream functions without MIR). Drop glue of `dyn Trait` is `ext` too: rustc's shim body
 //! for it only drops `*self` again (codegen turns that into a call of the vtable's drop
 //! entry, skipped when it is null).
 //!
@@ -52,12 +53,20 @@ pub fn dump(tcx: TyCtxt<'_>) {
     let mut lang = |item| tcx.lang_items().get(item).map(|def_id| num(d.instance(Instance::mono(tcx, def_id))));
     let cannot_unwind = lang(LangItem::PanicCannotUnwind);
     let in_cleanup = lang(LangItem::PanicInCleanup);
+    let nounwind = lang(LangItem::PanicNounwind);
     d.run();
     let program = obj(vec![
         ("instances", J::Arr(d.instances.into_iter().map(|i| i.expect("instance not dumped")).collect())),
         ("globals", J::Arr(d.globals.into_iter().map(|g| g.expect("global not dumped")).collect())),
         ("start", num(start)),
-        ("langItems", obj(vec![("panicCannotUnwind", cannot_unwind.unwrap_or(J::Null)), ("panicInCleanup", in_cleanup.unwrap_or(J::Null))])),
+        (
+            "langItems",
+            obj(vec![
+                ("panicCannotUnwind", cannot_unwind.unwrap_or(J::Null)),
+                ("panicInCleanup", in_cleanup.unwrap_or(J::Null)),
+                ("panicNounwind", nounwind.unwrap_or(J::Null)),
+            ]),
+        ),
     ]);
     let mut out = String::new();
     program.write(&mut out);
@@ -223,7 +232,11 @@ struct Dumper<'tcx> {
     global_queue: VecDeque<(usize, GlobalKey)>,
     /// Kind and trait name of each global (a vtable may first be seen as a plain allocation).
     global_kinds: Vec<(GKind, Option<String>)>,
-    tys: FxHashMap<(Ty<'tcx>, Option<(u128, u128)>), Rc<str>>,
+    /// Memoized types, by type, valid range override and `box_ptrs`.
+    tys: FxHashMap<(Ty<'tcx>, Option<(u128, u128)>, bool), Rc<str>>,
+    /// Serializing an intrinsic's type argument: `Box<T, A>` becomes `(PtrType.box, A)`
+    /// (`intrinsic_ty_arg`).
+    box_ptrs: bool,
     pointees: FxHashMap<Ty<'tcx>, Rc<str>>,
 }
 
@@ -240,6 +253,7 @@ impl<'tcx> Dumper<'tcx> {
             global_queue: VecDeque::new(),
             global_kinds: Vec::new(),
             tys: Default::default(),
+            box_ptrs: false,
             pointees: Default::default(),
         }
     }
@@ -323,7 +337,10 @@ impl<'tcx> Dumper<'tcx> {
         };
         let symbol = self.symbol(i);
         let kind = match i.def {
-            InstanceKind::Intrinsic(def_id) => ctor("intrinsic", vec![("name", J::Str(self.tcx.item_name(def_id).to_string()))]),
+            InstanceKind::Intrinsic(def_id) => {
+                let ty_args = i.args.iter().map(|a| a.as_type().map_or(J::Null, |t| self.intrinsic_ty_arg(t))).collect();
+                ctor("intrinsic", vec![("name", J::Str(self.tcx.item_name(def_id).to_string())), ("tyArgs", J::Arr(ty_args))])
+            }
             InstanceKind::LlvmIntrinsic(_) | InstanceKind::Virtual(..) => tag("ext"),
             InstanceKind::Item(def_id) => {
                 let ctor_kind = matches!(self.tcx.def_kind(def_id), rustc_hir::def::DefKind::Ctor(..));
@@ -340,6 +357,18 @@ impl<'tcx> Dumper<'tcx> {
             InstanceKind::Shim(_) => ctor("body", vec![("b", self.body(i))]),
         };
         obj(vec![("symbol", J::Str(symbol)), ("kind", kind)])
+    }
+
+    /// A type argument of an intrinsic instance (`TyArg`): its `Ty`, except that `Box<T, A>`
+    /// (anywhere inside) is `(PtrType.box, A)`, since `assert_zero_valid` & co. read
+    /// Box-ness (`builtin_deref`, rustc_const_eval `check_validity_requirement_lax`); and its
+    /// name as cg_ssa's `codegen_panic_intrinsic` prints it into the panic message.
+    fn intrinsic_ty_arg(&mut self, t: Ty<'tcx>) -> J {
+        let outer = std::mem::replace(&mut self.box_ptrs, true);
+        let ty = self.ty(t);
+        self.box_ptrs = outer;
+        let name = rustc_middle::ty::print::with_no_visible_paths!(rustc_middle::ty::print::with_no_trimmed_paths!(t.to_string()));
+        obj(vec![("ty", ty), ("name", J::Str(name))])
     }
 
     /// The Rust-level ABI of an instance's signature (`rust-call` for closures).
@@ -529,7 +558,7 @@ impl<'tcx> Dumper<'tcx> {
 
     /// `t` as a `Ty`; `range` overrides the valid range of a scalar leaf (pattern types).
     fn ty_with(&mut self, t: Ty<'tcx>, range: Option<WrappingRange>) -> J {
-        let key = (t, range.map(|r| (r.start, r.end)));
+        let key = (t, range.map(|r| (r.start, r.end)), self.box_ptrs);
         if let Some(s) = self.tys.get(&key) {
             return J::Raw(s.clone());
         }
@@ -626,6 +655,16 @@ impl<'tcx> Dumper<'tcx> {
                 )
             }
             ty::Adt(adt, _) if adt.is_enum() => self.enum_ty(t, l, adt),
+            ty::Adt(adt, args) if adt.is_box() && self.box_ptrs && l.fields.count() > 0 => {
+                // `intrinsic_ty_arg`: field 0 (`Unique<T>`) as a box pointer with its range
+                let f0 = l.field(&self.cx, 0);
+                let ptr = ctor("box", vec![("pointee", self.pointee(args.type_at(0)))]);
+                let mut fields = vec![pair(num(0), ctor("ptr", vec![("p", ptr), ("valid", Self::range(self.leaf_range(f0, None)))]))];
+                for i in 1..l.fields.count() {
+                    fields.push(pair(num(l.fields.offset(i).bytes()), self.ty(l.field(&self.cx, i).ty)));
+                }
+                ctor("tuple", vec![("fields", J::Arr(fields)), ("head", Self::head(l.size.bytes(), l.align.abi.bytes(), None)), ("tail", J::Null)])
+            }
             ty::Adt(adt, _) => self.tuple_ty(l, adt.repr().pack.map(|a| a.bytes())),
             ty::Tuple(_) | ty::Closure(..) => self.tuple_ty(l, None),
             ty::Array(e, _) => {

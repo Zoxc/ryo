@@ -208,9 +208,9 @@ def addFn (symbol : String) (b : Body) : ProgB InstanceId := do
 
 def addExtern (symbol : String) : ProgB InstanceId := declareFn symbol
 
-def addIntrinsic (name : String) : ProgB InstanceId := do
+def addIntrinsic (name : String) (tyArgs : List (Option TyArg) := []) : ProgB InstanceId := do
   let s ← get
-  set { s with instances := s.instances.push ⟨name, .intrinsic name⟩ }
+  set { s with instances := s.instances.push ⟨name, .intrinsic name tyArgs⟩ }
   pure s.instances.size
 
 def addGlobal (g : Global) : ProgB GlobalId := do

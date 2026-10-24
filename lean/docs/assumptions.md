@@ -189,7 +189,7 @@ sources, not a newer rustc checkout), in particular:
 | Statements, terminators, places, operands, rvalues | the body's MIR, with rustc's evaluation-relevant details (`Move` vs `Copy`, `UnwindAction`s, `is_cleanup`) | indices and projections type-check, rvalues are typed against the destination up to shape (`Wf.checkProgram`); exact Rust types are not (our `Ty`s are layouts) |
 | `Ty` layouts: offsets, sizes, alignments, `ValidRange`s, `EnumRepr`, `TagInfo`, `Variant.discr`, `inhabited`, `TupleHeadLayout.packedAlign` | exactly `tcx.layout_of` (layouts are input, D2) | internal consistency only (`Ty.wf`: fields and chunks inside and disjoint, tags consistent with the variants, §1.1); never recomputed |
 | `ProjElem.deref pointee`, `field _ ty`, `opaqueCast ty` | the projected types rustc computes | `Wf.projTy` only checks the shape |
-| `InstanceKind` (`body` / `ext` / `intrinsic name`) | the resolved instance; intrinsics with a fallback body that the backend calls must be dumped as that body (the D20 fallback rule is not in Lean) | index ranges |
+| `InstanceKind` (`body` / `ext` / `intrinsic name tyArgs`) | the resolved instance; intrinsics with a fallback body that the backend calls must be dumped as that body (the D20 fallback rule is not in Lean); `tyArgs` are `Instance::args` (`none` for non-types), each `TyArg.ty` the type's layout as everywhere else except `Box<T, A>` as `(PtrType.box, A)`, `TyArg.name` printed as cg_ssa `codegen_panic_intrinsic` prints it | index ranges |
 | `drop` glue, `AssertMessage.panicFn` and `args`, `LangItems`, `CallerLoc`, `PointerCoercion` instances, `UnsizeMeta` | what cg_ssa would call or attach | index ranges |
 | `Global`s: bytes (`none` = uninit), relocations, alignment, `GlobalKind` (`static mutable` for `static mut` *and* interior mutability; `const`; `vtable`; `threadLocal`) | rustc's const-eval allocations and `vtable_allocation` | relocations inside the bytes and to existing targets |
 | `FnAbiSummary` (caller's per call, callee's per body), including the `detail` strings | the `fn_abi` rustc computes; both sides rendered the same way | compared for equality (D14) |
@@ -197,8 +197,8 @@ sources, not a newer rustc checkout), in particular:
 | `Statement.nop` | only the no-op statement kinds listed in mir-spec §A.1 | no |
 
 What the dumper can't express yet becomes a call of an `ext` instance named
-`ryo-dump: unsupported <what>` (inline asm, coroutines), so a run stops there; intrinsic
-instances lose their generic arguments (R30); foreign statics are dumped as zero bytes.
+`ryo-dump: unsupported <what>` (inline asm, coroutines), so a run stops there; foreign
+statics are dumped as zero bytes.
 
 How to check: differential runs (`scripts/lean-diff.py`, M1b; [divergences.md](divergences.md)
 lists what they found) of the Lean interpreter against native and ryo-compiled

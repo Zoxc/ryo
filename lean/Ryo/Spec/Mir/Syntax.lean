@@ -311,13 +311,25 @@ structure Global where
   kind : GlobalKind
 deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
+/-- A type argument of an intrinsic instance (R30). -/
+structure TyArg where
+  /-- The type, except that `Box<T, A>` (anywhere inside) is the tuple `(PtrType.box, A)`
+  (MiniRust's `Box`): `assert_zero_valid` & co. read Box-ness (rustc `builtin_deref`), which
+  the struct `Box` of place types does not show. Only the validity checks read it. -/
+  ty : Ty
+  /-- rustc's printed name (`with_no_visible_paths!(with_no_trimmed_paths!(..))`), which
+  cg_ssa `codegen_panic_intrinsic` puts into the panic message. -/
+  name : String
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
+
 inductive InstanceKind where
   /-- A function body in the program. -/
   | body (b : Body)
   /-- Not in the program: an external call (mir-spec §A.6). -/
   | ext
-  /-- A rustc intrinsic handled by the spec (D20). -/
-  | intrinsic (name : String)
+  /-- A rustc intrinsic handled by the spec (D20), with the instance's generic arguments
+  (rustc `Instance::args`): types, `none` for lifetimes and constants. -/
+  | intrinsic (name : String) (tyArgs : List (Option TyArg) := [])
 deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 structure Instance where
@@ -329,6 +341,8 @@ deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 structure LangItems where
   panicCannotUnwind : Option InstanceId := none
   panicInCleanup : Option InstanceId := none
+  /-- `panic_nounwind`, called by `assert_inhabited` & co. (R30). -/
+  panicNounwind : Option InstanceId := none
 deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 structure Program where
