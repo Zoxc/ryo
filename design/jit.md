@@ -297,7 +297,7 @@ including landing pad edges. `jit::build` is Braun et al.'s construction (CC 201
 the promoted variables: blocks are filled in layout order and sealed once their
 predecessors are; parameters get an operand row per predecessor while being built, trivial
 ones become aliases, and the edges' argument lists are written once at the end. Copies
-(`mov`), constants (`imm`) and trivial parameters disappear on the way. Then `jit::lvn`, local
+(`mov`), constants (`imm`) and trivial parameters disappear on the way. Then the passes of `jit::opt`: `opt::lvn`, local
 value numbering, one forward pass per block in reverse postorder: pure operations on
 constants fold, with algebraic identities (`x + 0`, `x * 1`, `x - x`, `p + i * s` with a
 constant `i`, `PtrAdd` chains); a pure operation repeated in its block is replaced by the
@@ -306,15 +306,15 @@ or store of the block left known is replaced by that value. Only what may write 
 them: a store through a pointer the other pointers' bytes and the escaped (or pinned)
 allocas, a store to an alloca its own bytes, a handler the allocas it names and, if it
 touches memory, what a pointer store does, a call also the outgoing area, an island
-everything. Then the folds
+everything. Then the folds (`opt::fold`)
 instruction selection relies on: a compare used only by the following branch becomes a
 `brcmp`, an overflow op (`add`/`sub`/`mul.ovf`) whose flag only the branch ending its block
 reads becomes a `br ovf` on the flags it leaves, and loads and stores through an `AllocaAddr` or a `PtrAdd` take its alloca or
-constant into their address. Last, `jit::dce` marks and sweeps: a value is live when an
+constant into their address. Last, `opt::dce` marks and sweeps: a value is live when an
 effect, a terminator or a live value reads it, and a parameter's edge arguments only when the
 parameter is live, so pure instructions without live results and dead parameters (dead
 loop-carried values included, but not the entry's) go with their arguments.
-After DCE, `jit::thread` threads jumps: an edge into an empty block that only jumps on (not an
+After DCE, `opt::thread` threads jumps: an edge into an empty block that only jumps on (not an
 AOT loop head, whose OSR entry lands there, and with parameters used by nothing but that
 jump) goes to the jump's target instead, a conditional edge only as far as it stays without
 arguments (one with arguments would need a stub for its moves), and the blocks left

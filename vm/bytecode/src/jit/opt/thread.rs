@@ -10,7 +10,7 @@
 //! dominate each of its predecessors too, so the threaded edge is well formed. Its parameters
 //! must have no other uses.
 
-use super::ir::*;
+use crate::jit::ir::*;
 use alloc::vec::Vec;
 
 /// The forwarding target of `b`, if it's an empty block that only jumps on and whose

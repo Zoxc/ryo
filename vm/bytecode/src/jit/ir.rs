@@ -125,6 +125,24 @@ impl Cc {
         }
     }
 
+    /// Whether `a self b` holds on the low `w` bytes.
+    pub fn holds(self, w: u8, a: u64, b: u64) -> bool {
+        let (ua, ub) = (mask(a, w), mask(b, w));
+        let (sa, sb) = (sext(ua, w), sext(ub, w));
+        match self {
+            Cc::Eq => ua == ub,
+            Cc::Ne => ua != ub,
+            Cc::LtU => ua < ub,
+            Cc::LeU => ua <= ub,
+            Cc::GtU => ua > ub,
+            Cc::GeU => ua >= ub,
+            Cc::LtS => sa < sb,
+            Cc::LeS => sa <= sb,
+            Cc::GtS => sa > sb,
+            Cc::GeS => sa >= sb,
+        }
+    }
+
     pub fn signed(self) -> bool {
         matches!(self, Cc::LtS | Cc::LeS | Cc::GtS | Cc::GeS)
     }
@@ -767,6 +785,17 @@ impl Func {
             }
         }
     }
+}
+
+/// `v`'s low `w` bytes.
+pub fn mask(v: u64, w: u8) -> u64 {
+    if w >= 8 { v } else { v & ((1u64 << (8 * w)) - 1) }
+}
+
+/// `v`'s low `w` bytes, sign-extended.
+pub fn sext(v: u64, w: u8) -> i64 {
+    let s = 64 - 8 * w as u32;
+    ((v << s) as i64) >> s
 }
 
 /// How many times each value is used (by instructions, terminators and edges).

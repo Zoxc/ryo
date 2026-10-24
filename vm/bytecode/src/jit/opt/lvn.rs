@@ -1,5 +1,5 @@
 //! Local value numbering (design/jit.md, "The SSA tier"): one forward pass per block, in
-//! reverse postorder, before the folds ([`super::build::fold`]). Copies and constants are
+//! reverse postorder, before the folds ([`super::fold`]). Copies and constants are
 //! already propagated by construction (a `mov` or an `imm` defines no value of its own); this
 //! pass adds:
 //! - **constant folding** of pure operations whose operands are all constants, and algebraic
@@ -22,7 +22,7 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-use super::ir::*;
+use crate::jit::ir::*;
 
 /// What a block's memory is known to hold: the bytes at an alloca offset, or at a pointer
 /// value plus an offset, with their width, and the value they hold.
@@ -34,15 +34,6 @@ enum Loc {
 
 /// At most this many remembered memory values per block, to keep the pass linear.
 const MAX_MEM: usize = 32;
-
-fn mask(v: u64, w: u8) -> u64 {
-    if w >= 8 { v } else { v & ((1u64 << (8 * w)) - 1) }
-}
-
-fn sext(v: u64, w: u8) -> i64 {
-    let s = 64 - 8 * w as u32;
-    ((v << s) as i64) >> s
-}
 
 fn eval_bin(op: BinOp, w: u8, a: u64, b: u64) -> u64 {
     let (a, b) = (mask(a, w), mask(b, w));
@@ -58,23 +49,6 @@ fn eval_bin(op: BinOp, w: u8, a: u64, b: u64) -> u64 {
         BinOp::ShrS => sext(a, w).wrapping_shr(b as u32) as u64,
     };
     mask(r, w)
-}
-
-fn eval_cmp(cc: Cc, w: u8, a: u64, b: u64) -> bool {
-    let (ua, ub) = (mask(a, w), mask(b, w));
-    let (sa, sb) = (sext(ua, w), sext(ub, w));
-    match cc {
-        Cc::Eq => ua == ub,
-        Cc::Ne => ua != ub,
-        Cc::LtU => ua < ub,
-        Cc::LeU => ua <= ub,
-        Cc::GtU => ua > ub,
-        Cc::GeU => ua >= ub,
-        Cc::LtS => sa < sb,
-        Cc::LeS => sa <= sb,
-        Cc::GtS => sa > sb,
-        Cc::GeS => sa >= sb,
-    }
 }
 
 /// A pure operation's key for common subexpressions: a tag, its immediates, its operands.
@@ -146,7 +120,7 @@ fn simplify(f: &mut Func, i: Inst) -> Simp {
         Op::Cmp(cc, w) => {
             let (a, b) = (args[0], args[1]);
             if let (Some(x), Some(y)) = (konst(f, a), konst(f, b)) {
-                return Simp::Const(eval_cmp(cc, w, x, y) as u64);
+                return Simp::Const(cc.holds(w, x, y) as u64);
             }
             if a == b && !matches!(f.def(a), ValueDef::Undef) {
                 return Simp::Const(matches!(cc, Cc::Eq | Cc::LeS | Cc::LeU | Cc::GeS | Cc::GeU) as u64);
@@ -256,7 +230,7 @@ pub fn lvn(f: &mut Func) {
                 kept.push(i);
                 continue;
             }
-            super::build::fold_addr(f, i);
+            super::fold::fold_addr(f, i);
             let op = f.insts[i.idx()].op.clone();
             let args = f.insts[i.idx()].args.clone();
             let lookup = |f: &Func, mem: &[(Loc, u8, Value)], l: Loc, w: u8| {
@@ -303,7 +277,7 @@ pub fn lvn(f: &mut Func) {
                     remember(&mut mem, Loc::P(p, off), w, args[1]);
                 }
                 Op::HCall(ref h) => {
-                    let memory = super::effects::effects(h.h).is_none_or(|e| e.memory);
+                    let memory = crate::jit::effects::effects(h.h).is_none_or(|e| e.memory);
                     let named: Vec<AllocaId> = h
                         .regs
                         .iter()

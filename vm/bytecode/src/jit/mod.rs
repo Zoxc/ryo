@@ -9,10 +9,9 @@
 //! - `alloca`: the frame as allocas: which are promoted, memory, the outgoing and incoming
 //!   areas, which are pinned at OSR entries, and the variable each access names.
 //! - `ir`: the IR, its printer and verifier.
-//! - `build`: SSA construction (Braun et al.) and the folds.
-//! - `lvn`: local value numbering: constant folding, common subexpressions, redundant loads
-//!   and store-to-load forwarding, per block.
-//! - `thread`: jump threading through empty blocks.
+//! - `build`: SSA construction (Braun et al.).
+//! - `opt`: the optimization passes on the IR: value numbering, the folds, DCE and jump
+//!   threading.
 //! - `regalloc`: register allocation (every value in a slot, or linear scan) and its checker.
 //! - `emit`: instruction selection, the frame, OSR entries, call sites and unwind rows.
 //! - `x86`: the x86-64 encoder, checked against `objdump` by `tests/jit_x86.rs`.
@@ -29,11 +28,9 @@ pub mod emit;
 #[cfg(feature = "alloc")]
 pub mod ir;
 #[cfg(feature = "alloc")]
-pub mod lvn;
+pub mod opt;
 #[cfg(feature = "alloc")]
 pub mod regalloc;
-#[cfg(feature = "alloc")]
-pub mod thread;
 #[cfg(feature = "alloc")]
 pub mod x86;
 
@@ -91,10 +88,7 @@ pub fn compile(d: &crate::asm::Decoded, code_consts: &[u8], mode: crate::asm::Mo
     let mut f = built(d, mode)?;
     // The IR as construction leaves it, before value numbering and the folds (`RYO_JIT_DUMP`).
     let built_ir = opts.dump.then(|| alloc::format!("{f}"));
-    lvn::lvn(&mut f);
-    build::fold(&mut f);
-    build::dce(&mut f);
-    thread::thread(&mut f);
+    opt::run(&mut f);
     if opts.check {
         f.verify().map_err(|e| Error::Check(alloc::format!("IR: {e}")))?;
     }
@@ -133,10 +127,7 @@ pub fn compile(d: &crate::asm::Decoded, code_consts: &[u8], mode: crate::asm::Mo
 #[cfg(feature = "alloc")]
 pub fn ir_of(d: &crate::asm::Decoded, mode: crate::asm::Mode) -> Result<ir::Func, Unsupported> {
     let mut f = built(d, mode)?;
-    lvn::lvn(&mut f);
-    build::fold(&mut f);
-    build::dce(&mut f);
-    thread::thread(&mut f);
+    opt::run(&mut f);
     Ok(f)
 }
 
