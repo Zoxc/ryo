@@ -1,4 +1,4 @@
-//! The interface between the runtime (`ryo_rt`) and the JIT (design/vm.md, "JIT"): what the
+//! The interface between the runtime (`ryo_rt`) and the JIT (design/jit.md): what the
 //! runtime gives the JIT when it starts it ([`RtApi`]), and the constants both sides use to
 //! switch a function over to its JIT code. `core` only, so that neither crate depends on the
 //! other.

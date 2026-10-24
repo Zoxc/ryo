@@ -82,7 +82,7 @@ pub fn run(target: &str) -> Result<(), String> {
     let link = Link { target, lld, stubs };
 
     let mut failed = Vec::new();
-    // The sealed JIT bundled into this target's `ryo_rt` (design/vm.md#jit), and its
+    // The sealed JIT bundled into this target's `ryo_rt` (design/jit.md#packaging), and its
     // undefined symbols, as lld names them.
     let mut jit_imports = BTreeSet::new();
     if crate::jit::supported(target) {

@@ -7,7 +7,7 @@ edition.workspace = true
 # Handlers read the frame pointer from `rbp` instead of taking it in `rdi` (design/vm.md,
 # "Handlers"), so VM code keeps it there; the backend reads `FP_ARG` and encodes to match.
 fp-rbp = []
-# The JIT (design/vm.md, "JIT"): the trips start `ryo_jit`'s compiler thread through
+# The JIT (design/jit.md): the trips start `ryo_jit`'s compiler thread through
 # `ryo_jit_start`. `build.rs` bundles the sealed library `y build` makes (`RYO_JIT_LIB_DIR`);
 # without it, something else must define `ryo_jit_start` (the `ryo_jit` rlib, in tests).
 # Without the feature the JIT records' trips are the no-op JIT.

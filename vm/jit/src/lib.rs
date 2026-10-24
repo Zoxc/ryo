@@ -1,4 +1,4 @@
-//! The JIT (design/vm.md, "JIT"): a background thread that recompiles hot VM functions and
+//! The JIT (design/jit.md): a background thread that recompiles hot VM functions and
 //! switches them over to the new code. The runtime (`ryo_rt`) starts it with the first
 //! function it queues, through the one symbol this crate exports, [`ryo_jit_start`], and
 //! the JIT sees the runtime only through the [`RtApi`] it gets there

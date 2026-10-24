@@ -1,4 +1,4 @@
-//! The JIT thread (design/vm.md, "JIT"): compiles what the runtime queued, in trip order,
+//! The JIT thread (design/jit.md): compiles what the runtime queued, in trip order,
 //! and reports each function. It sees the runtime only through the [`RtApi`] it starts with.
 
 use ryo_bytecode::jit_abi::{JIT_LOG, RtApi};

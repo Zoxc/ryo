@@ -82,7 +82,7 @@ pub const fn mode_bits(mode: Mode) -> u32 {
 /// The writer sets `ctr` to [`JIT_THRESHOLD`], `entry` and `osr` to the runtime's
 /// `ryo_jit_trip_entry` and `ryo_jit_trip_osr`, `func` to the function's index and `header`
 /// to the image's header (relocated), the rest to 0.
-/// The runtime's JIT (`ryo_rt`, design/vm.md, "JIT") owns the record after that.
+/// The runtime's JIT (`ryo_rt`, design/jit.md) owns the record after that.
 #[repr(C, align(64))]
 #[derive(Debug)]
 pub struct JitRecord {

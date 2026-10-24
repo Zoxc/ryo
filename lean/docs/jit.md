@@ -5,7 +5,7 @@ the Lean decoder reads from the AOT code it was compiled from. Composed with the
 ([aot.md](aot.md) §C5), validated JIT code refines L0. R, its provenance and its frame
 layouts are in [reduced.md](reduced.md).
 
-Two pipelines are covered: today's JIT ([vm.md](../../design/vm.md#jit): decode, re-encode in
+Two pipelines are covered: today's JIT ([jit.md](../../design/jit.md): decode, re-encode in
 the same or a shuffled frame layout, OSR entries), and the planned optimizing SSA tier
 (§E.3), which turns frame objects into allocas with provenance and emits register-allocated
 x86.

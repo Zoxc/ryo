@@ -1,7 +1,7 @@
 //! Frame slots of reduced code ([`crate::reduced`], as [`super::Decoded`] gives it): which
 //! bytes each instruction reads and writes, a liveness pass over frame bytes, and renaming
 //! slots to another frame layout ([`SlotMap`], [`remap_slots`]), which the JIT's OSR entries
-//! convert between (design/vm.md, "JIT").
+//! convert between (design/jit.md, "OSR").
 //!
 //! Extents: inline instructions, calls, `ret` and `arg` access their operands at the widths
 //! the opcode or the return kind gives. A handler's slot operands are taken to reach 16

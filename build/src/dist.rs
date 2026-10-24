@@ -139,7 +139,7 @@ fn build_runtime(root: &Path, target: &Path, dist: &Path, cross: Option<&str>, j
     // carry bitcode for `-Clto` builds against it.
     let rustflags = [&sysroot_flag, "-Ccodegen-units=1", "-Cpanic=unwind", "-Cembed-bitcode=yes"];
     let mut cargo = cmd("cargo");
-    // The JIT (design/vm.md, "JIT"); `RYO_RT_FEATURES` adds features, such as `fp-rbp` for
+    // The JIT (design/jit.md); `RYO_RT_FEATURES` adds features, such as `fp-rbp` for
     // measurements (design/build.md#test-and-bench).
     let mut features = String::from(if jit.is_some() { "jit" } else { "" });
     if let Some(dir) = jit {

@@ -1,7 +1,7 @@
 //! The JIT thread's compiler: decodes a function from its image, encodes it again without
 //! counters (in another frame layout with `RYO_JIT_SHUFFLE`), builds the OSR entries of its
 //! loop heads, and installs the code near the image: code memory, relocation, unwind
-//! information, the perf map, and the record's publication (design/vm.md, "JIT").
+//! information, the perf map, and the record's publication (design/jit.md, "Compiling and installing").
 
 use core::ffi::{c_int, c_void};
 use core::ptr;
@@ -416,7 +416,7 @@ impl Jit {
         }
 
         // Publish: the code's range, the entry, the state, then the counter that takes every
-        // entry's stub (design/vm.md, "JIT").
+        // entry's stub (design/jit.md, "Publishing").
         // SAFETY: the record is this thread's to write until `Done`; the AOT code reads
         // `entry` with plain loads (an atomic store of its size).
         unsafe {

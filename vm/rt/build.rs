@@ -1,5 +1,5 @@
 //! With the `jit` feature, bundles the sealed JIT (`libryo_jit.a`, or `ryo_jit.lib` on
-//! msvc) from `RYO_JIT_LIB_DIR` into the rlib (design/build.md#build, design/vm.md#jit):
+//! msvc) from `RYO_JIT_LIB_DIR` into the rlib (design/build.md#build, design/jit.md#packaging):
 //! `y build` builds and seals it first. Without `RYO_JIT_LIB_DIR` (`vm/`'s own tests) the
 //! `ryo_jit` crate must be linked as an rlib instead, for its `ryo_jit_start`.
 

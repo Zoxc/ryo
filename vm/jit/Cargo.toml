@@ -3,7 +3,7 @@ name = "ryo_jit"
 version = "0.1.0"
 edition.workspace = true
 
-# The JIT (design/vm.md, "JIT"): the compiler thread that `ryo_rt`'s trips start through
+# The JIT (design/jit.md): the compiler thread that `ryo_rt`'s trips start through
 # `ryo_jit_start`. It sees the runtime only through `ryo_bytecode::jit_abi::RtApi`.
 
 [dependencies]

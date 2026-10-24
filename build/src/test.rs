@@ -369,7 +369,7 @@ const VARIANTS: &[Variant] = &[
     Variant { name: "ryo-std-lto", final_flags: &["-Clto=fat"], ryo_std: true, ..VARIANT },
     Variant { name: "ryo-std-abort", flags: &["-Cpanic=abort"], ryo_std: true, abort: true, ..VARIANT },
     // Every VM function, std's included, runs its JIT code from its first call
-    // (design/vm.md#jit), also with frames the JIT lays out differently.
+    // (design/jit.md#testing), also with frames the JIT lays out differently.
     Variant { name: "ryo-std-jit", ryo_std: true, env: JIT_SYNC, ..VARIANT },
     Variant { name: "ryo-std-jit-shuffle", ryo_std: true, env: JIT_SHUFFLE, ..VARIANT },
 ];
@@ -413,7 +413,7 @@ pub fn run(clif: bool) -> Result<(), String> {
     let mut failed = Vec::new();
     // The runtime once more with handlers that read `fp` from `rbp`, so VM code keeps the
     // frame pointer (design/vm.md#handlers).
-    // And the JIT's tests, through the runtime's trips, also with `fp-rbp` (design/vm.md#jit);
+    // And the JIT's tests, through the runtime's trips, also with `fp-rbp` (design/jit.md#testing);
     // the other runtime tests run without the JIT.
     let vm_runs: [(&str, &[&str]); 4] = [
         ("vm", &["test", "--workspace", "--exclude", "ryo_jit"]),
@@ -906,7 +906,7 @@ fn outside(s: &str) -> bool {
 /// state (design/vm.md, "No re-entry into the VM from the runtime"). Checked on the undefined
 /// symbols of every sysroot's `ryo_rt` rlib, by crate in their v0 mangled names. ELF only.
 /// The JIT's trips are part of it; the JIT thread, which uses std, is the sealed object that
-/// the rlib bundles (design/vm.md#jit), which `ryo_rt` reaches only through `ryo_jit_start`
+/// the rlib bundles (design/jit.md#packaging), which `ryo_rt` reaches only through `ryo_jit_start`
 /// and `jit-sealed` checks: this check skips it.
 fn rt_core_only(root: &Path) -> Result<(), String> {
     if cfg!(windows) {
@@ -980,7 +980,7 @@ fn jit_sealed(root: &Path, out: &Path) -> Result<(), String> {
     crate::jit::check_sealed(&info, &lib, &out.join("jit-sealed"), &info.host)
 }
 
-/// The JIT's std is its own (design/vm.md#jit), so the program's can't get in its way:
+/// The JIT's std is its own (design/jit.md#packaging), so the program's can't get in its way:
 /// `tests/vm_jit_private.rs`, with every function compiled at its first call and waited for,
 /// has a VM global allocator that trips while it holds its lock (the JIT would deadlock
 /// allocating through it), and built with `-Cpanic=abort` and run with `RYO_JIT_TEST_PANIC`

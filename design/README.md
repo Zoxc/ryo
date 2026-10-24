@@ -11,6 +11,8 @@ x86-64 calls of the VM's handlers, and uses
 - [lowering.md](lowering.md): MIR → bytecode
 - [vm.md](vm.md): the VM: execution model, frames, machine code, instruction set, handlers,
   unwinding, image format, runtime crate
+- [jit.md](jit.md): the JIT: counters and trips, the JIT thread, re-encoding and
+  installing, OSR, packaging as a sealed object, settings
 - [platforms.md](platforms.md): ELF and PE specifics
 - [verification.md](verification.md): the plan to verify the compiled code in Lean
   (`lean/`): levels, what is proved, checked and trusted, the AOT and JIT theorems
@@ -30,8 +32,10 @@ x86-64 calls of the VM's handlers, and uses
   using the rustc parallel frontend (`-Zthreads=N`).
 - Fully optimized VM handlers, written in Rust (no C), called from the machine code of each
   VM function.
+- A JIT in the runtime that recompiles hot VM functions on a background thread and switches
+  running calls over to the new code ([jit.md](jit.md)).
 
-Non-goals: incremental compilation, debuginfo for VM code, JIT, targets other than x86_64,
+Non-goals: incremental compilation, debuginfo for VM code, targets other than x86_64,
 Mach-O. The backend rejects `-Cincremental`: VM functions' symbols and the image come from
 per-session state the query system doesn't track, so reused objects could carry stale
 symbols. `cargo-ryo` sets `CARGO_INCREMENTAL=0`, so cargo's dev profile works.
@@ -50,4 +54,5 @@ format-specific mechanism has an ELF and a PE variant ([platforms.md](platforms.
 | **Image** | A crate's VM code, constants, symbol table and unwind information, emitted as one object file. ([vm.md](vm.md#image-format)) |
 | **Registry object** | An object generated at each final link that registers every crate's image with the VM. ([backend.md](backend.md#pipeline)) |
 | **`ryo_rt`** | The runtime crate: handlers, registry, templates, the JIT's trips. A sysroot rlib. ([vm.md](vm.md#runtime-crate-ryo_rt)) |
-| **`ryo_jit`** | The JIT thread, sealed by `y build` into one object with a std of its own, which `ryo_rt` bundles; its only symbol is `ryo_jit_start`. ([vm.md](vm.md#packaging)) |
+| **JIT record** | A function's counter and the slots its counter stubs call through, in the image's writable section. ([vm.md](vm.md#jit-records-and-counters)) |
+| **`ryo_jit`** | The JIT thread, sealed by `y build` into one object with a std of its own, which `ryo_rt` bundles; its only symbol is `ryo_jit_start`. ([jit.md](jit.md#packaging)) |

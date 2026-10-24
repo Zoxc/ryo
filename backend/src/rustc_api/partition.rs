@@ -1190,7 +1190,7 @@ pub type UpstreamMonos<'tcx> = rustc_hir::def_id::DefIdMap<rustc_data_structures
 /// copies in `ryo_rt` and `ryo_bytecode` of other crates' generics. rustc shares
 /// `#[inline(never)]` instances even without share-generics; linking to them would turn the
 /// program's own instances into the runtime's native code. A guard: the runtime used to
-/// instantiate std's in its JIT, which is now a sealed object of its own (design/vm.md#jit).
+/// instantiate std's in its JIT, which is now a sealed object of its own (design/jit.md#packaging).
 pub fn upstream_monomorphizations<'tcx>(tcx: TyCtxt<'tcx>, map: UpstreamMonos<'tcx>) -> UpstreamMonos<'tcx> {
     let runtime = |c: CrateNum| matches!(tcx.crate_name(c).as_str(), "ryo_rt" | "ryo_bytecode");
     map.into_items()

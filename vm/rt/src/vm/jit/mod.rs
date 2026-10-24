@@ -1,4 +1,4 @@
-//! The JIT (design/vm.md, "JIT"): recompiles hot functions on a background thread and
+//! The JIT (design/jit.md): recompiles hot functions on a background thread and
 //! switches their entry over to the new code. This module is the runtime's side of it; the
 //! JIT thread is the `ryo_jit` crate's, which sees the runtime only through the [`RtApi`]
 //! that this side builds ([`ryo_bytecode::jit_abi`]), and starts with `ryo_jit_start`.

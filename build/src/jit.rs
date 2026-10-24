@@ -1,4 +1,4 @@
-//! The sealed JIT (design/build.md#build, design/vm.md#jit): `ryo_jit` built as a staticlib
+//! The sealed JIT (design/build.md#build, design/jit.md#packaging): `ryo_jit` built as a staticlib
 //! with its own std, reduced to one object whose only global symbol is `ryo_jit_start`, which
 //! `ryo_rt` bundles.
 
@@ -17,7 +17,7 @@ pub const OBJECT: &str = "ryo_jit.o";
 const COFF_PREFIX: &str = "__ryo_jit$";
 
 /// Whether `ryo_rt` gets the JIT on `triple`. On x86_64 Linux it is the real one; on
-/// windows-msvc, until the JIT is ported (design/vm.md#jit), a `ryo_jit_start` that fails,
+/// windows-msvc, until the JIT is ported (design/jit.md#packaging), a `ryo_jit_start` that fails,
 /// so that the trips act as the no-op JIT, but sealed and bundled the same way. Elsewhere
 /// `ryo_rt` has no `jit` feature, and its trips are the no-op JIT.
 pub fn supported(triple: &str) -> bool {

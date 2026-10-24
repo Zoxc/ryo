@@ -1,4 +1,4 @@
-// The JIT's std is its own (design/vm.md#jit): run by `y test`'s `jit-private-std` check with
+// The JIT's std is its own (design/jit.md#packaging): run by `y test`'s `jit-private-std` check with
 // every function compiled at its first call (`RYO_JIT_THRESHOLD=0 RYO_JIT_SYNC=1`).
 //
 // The global allocator below is VM code, and calls a VM function while it holds its lock,

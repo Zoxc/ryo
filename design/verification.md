@@ -161,7 +161,7 @@ certificates, and the JIT's bytes, OSR code and unwind tables. The Lean side dec
 bytes itself, so the JIT's own decoder is not trusted.
 
 - **Today's JIT** (decode, re-encode, optionally shuffle the frame, OSR entries,
-  [vm.md](vm.md#jit)) emits canonical code, so the same decoder reads its output. The checker
+  [jit.md](jit.md)) emits canonical code, so the same decoder reads its output. The checker
   verifies that the JIT program is the AOT program with its frame remapped, which in R is a
   change of layout, and that each OSR entry moves the bytes live at its head.
 - **The SSA tier** (planned): R → R-SSA (Braun's construction with promotion of non-escaped

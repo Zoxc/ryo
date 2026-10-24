@@ -67,7 +67,7 @@ modeled on cg_clif's `build_system/`.
        `core`: `ryo_rt` is `#![no_std]`, [vm.md](vm.md#runtime-crate-ryo_rt)) stay LLVM-built.
        It gets its `jit` feature and the same sealed JIT as `dist/`'s (`RYO_JIT_LIB_DIR` for
        its build script, which the generated manifest names): the JIT has a std of its own,
-       the native one, so it never enters this sysroot's VM code ([vm.md](vm.md#packaging)).
+       the native one, so it never enters this sysroot's VM code ([jit.md](jit.md#packaging)).
      - The copy adds `ryo_rt` and `ryo_bytecode` to the library workspace (manifests pointing
        at `vm/`'s sources, on the workspace's `core`), and a `ryo_rt` dependency to `alloc` and
        `rustc-std-workspace-core`, which every other crate depends on. That orders `ryo_rt`
@@ -81,7 +81,7 @@ modeled on cg_clif's `build_system/`.
    - `--target T` (repeatable): also install std (from the toolchain's rust-std for `T`)
      and `ryo_rt` for `T`, for cross-compiling with `rustc-ryo --target T`
      ([platforms.md](platforms.md), cross-checking PE on Linux).
-   - **The JIT** (`build/src/jit.rs`, [vm.md](vm.md#packaging)), for each target that has
+   - **The JIT** (`build/src/jit.rs`, [jit.md](jit.md#packaging)), for each target that has
      it (x86_64 Linux, and windows-msvc, where it is a stub for now): `cargo rustc --release
      -p ryo_jit --crate-type staticlib` in its own cargo invocation and target directory
      (`target/jit/`; with `ryo_rt`'s, `ryo_bytecode`'s `alloc` feature would be unified into
@@ -97,7 +97,7 @@ modeled on cg_clif's `build_system/`.
      user's profile (bitcode, like std's, so `-Clto` builds can include it), and
      installed next to std. Its cargo features are `jit` where the target has the JIT (its
      build script then bundles the sealed library from `RYO_JIT_LIB_DIR` into the rlib,
-     [vm.md](vm.md#jit)) and those listed in `RYO_RT_FEATURES` (comma-separated, such as
+     [jit.md](jit.md#packaging)) and those listed in `RYO_RT_FEATURES` (comma-separated, such as
      `fp-rbp`, [vm.md](vm.md#handlers)). `ryo_bytecode` is installed without its `alloc`
      feature.
 3. **Wrappers** (like cg_clif's `scripts/rustc-clif.rs`, `cargo-clif.rs`): tiny Rust programs
@@ -179,10 +179,10 @@ This gives a third backend, built from the same toolchain, to compare against.
   ([vm.md](vm.md#runtime-crate-ryo_rt), "No re-entry into the VM from the runtime"). It
   skips the bundled JIT object, which `jit-sealed` checks instead: one global definition,
   `ryo_jit_start`, no Rust symbol or allocator shim referenced, no unwinder defined
-  ([vm.md](vm.md#packaging)). `jit-private-std` runs `tests/vm_jit_private.rs` with every
+  ([jit.md](jit.md#packaging)). `jit-private-std` runs `tests/vm_jit_private.rs` with every
   function compiled at its first call: a VM global allocator that trips under its lock, and
   with `-Cpanic=abort` and `RYO_JIT_TEST_PANIC` a panic in every compile
-  ([vm.md](vm.md#jit)).
+  ([jit.md](jit.md#testing)).
 - With a ryo sysroot in `dist/`, `test` also builds the corpus against it (`--sysroot ryo`):
   variants `ryo-std`, `ryo-std-O3` (output only, like `ryo-O3`),
   `ryo-std-lto` (`-Clto=fat` on the last crate) and `ryo-std-abort` (`-Cpanic=abort`,
@@ -225,11 +225,11 @@ This gives a third backend, built from the same toolchain, to compare against.
   model, the handlers' codegen, and hand-assembled functions called as native functions
   ([vm.md](vm.md#handlers)), then `ryo_rt`'s again with `--features fp-rbp`, which takes
   the frame-pointer path, and `ryo_jit`'s tests (`-p ryo_jit`, with and without
-  `ryo_rt/fp-rbp`, [vm.md](vm.md#jit)), which link the JIT as an rlib; the first run
+  `ryo_rt/fp-rbp`, [jit.md](jit.md#testing)), which link the JIT as an rlib; the first run
   excludes `ryo_jit`, so `ryo_rt`'s other tests run without the JIT.
 - The corpus runs with the environment `y test` gets, so `RYO_JIT_THRESHOLD=0
   RYO_JIT_SYNC=1 ./y.sh test` runs every VM function's JIT code from its first call
-  ([vm.md](vm.md#jit)); the `backtrace` check sets `RYO_JIT=off`, since JIT frames have
+  ([jit.md](jit.md#settings)); the `backtrace` check sets `RYO_JIT=off`, since JIT frames have
   no symbols.
 
 ### `bench crates`

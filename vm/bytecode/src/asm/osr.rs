@@ -1,4 +1,4 @@
-//! OSR entries (design/vm.md, "JIT"): code that moves a call running a function's AOT code at
+//! OSR entries (design/jit.md, "OSR"): code that moves a call running a function's AOT code at
 //! one of its loop heads into the function's JIT code, converting the frame in place.
 //!
 //! A loop head's counter stub calls through its JIT record's `osr` slot with `eax` the

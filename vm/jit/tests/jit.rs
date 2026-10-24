@@ -1,4 +1,4 @@
-//! The JIT (design/vm.md, "JIT"): hand-assembled functions, linked in memory and registered
+//! The JIT (design/jit.md): hand-assembled functions, linked in memory and registered
 //! with every counter at 0 and `RYO_JIT_SYNC`'s waiting ([`ryo_rt::vm::configure_jit`]), so
 //! that their first call compiles them and continues in their JIT code. Their results match
 //! the AOT code's, with arguments of every kind, through recursion that switches over midway,

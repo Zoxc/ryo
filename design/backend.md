@@ -271,7 +271,7 @@ and `codegen_crate` reads them.
   without share-generics (`symbol_export.rs:389-398`), so a program would link to the
   runtime's native copies instead of compiling its own instances (to VM code). A guard:
   the JIT, which instantiated std's generics (`Vec<u32>`, `[u32]`'s sorts), is now a sealed
-  object with a std of its own ([vm.md](vm.md#packaging)), and the runtime is `core`-only.
+  object with a std of its own ([jit.md](jit.md#packaging)), and the runtime is `core`-only.
 - `symbol_name` → for `c_main`, the target's `entry_name`. For local `LocalCopy` instances without an
   attribute-given symbol, the default symbol plus `.ryo<StableCrateId as 16 hex digits>` (see
   Linkage). Everything else uses the
@@ -313,7 +313,7 @@ Environment variables read by the backend (and `y test`):
 
 `ryo_rt` reads only its JIT's (`RYO_JIT`, `RYO_JIT_THRESHOLD`, `RYO_JIT_SYNC`,
 `RYO_JIT_PERFMAP`, `RYO_JIT_LOG`, `RYO_JIT_SHUFFLE`, `RYO_JIT_TEST_PANIC`,
-[vm.md](vm.md#jit)), at run time; its build script reads `RYO_JIT_LIB_DIR`, the sealed JIT
+[jit.md](jit.md#settings)), at run time; its build script reads `RYO_JIT_LIB_DIR`, the sealed JIT
 `y build` bundles. `y build` reads `RYO_RT_FEATURES`, extra cargo features for the sysroot's `ryo_rt` (such as `fp-rbp`,
 [vm.md](vm.md#handlers)); the backend follows `ryo_rt`'s `FP_ARG`.
 
