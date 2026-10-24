@@ -954,3 +954,83 @@ fn addresses() {
         assert_eq!(get(fp, D), want as u128, "ptr.index {i} {stride}");
     }
 }
+
+/// The handlers' frame effects (`ryo_bytecode::jit::effects`, which the JIT's SSA tier
+/// promotes frame slots by) are exact: run on a frame filled with a pattern, each handler
+/// writes only the bytes its table entry says it writes, all of them, and what it writes
+/// (and returns) depends only on the bytes the entry says it reads. Handlers with memory
+/// effects, lengths given by their operands, or no return are left out.
+#[test]
+fn handler_effects_are_exact() {
+    use ryo_bytecode::full::{OperandKind, Shape};
+    use ryo_bytecode::jit::effects::{Effect, effects};
+    let mut checked = 0;
+    for &op in ALL_OPCODES {
+        let Some(e) = effects(op) else { continue };
+        let info = op.info();
+        let opaque = e.opnds.iter().any(|x| matches!(x, Some(Effect::Block | Effect::Addr)));
+        if e.memory || opaque || matches!(info.shape, Shape::Trap) || matches!(op, Opcode::AddrSym | Opcode::AddrSymInd) {
+            continue;
+        }
+        // Operand `i`'s slot at `-480 + 48 i`; immediates from the samples.
+        let off = |i: usize| -480 + 48 * i as i32;
+        let mn = op.mnemonic();
+        let divides = ["div.", "rem."].iter().any(|p| mn.starts_with(p));
+        let vals: Vec<u128> = info
+            .operands
+            .iter()
+            .enumerate()
+            .map(|(i, o)| match o.kind {
+                OperandKind::Slot | OperandKind::Mem => slot(off(i)),
+                // A sparse switch's cases: none.
+                OperandKind::List(_) => 0,
+                _ => SAMPLES[(i * 7 + mn.len()) % SAMPLES.len()],
+            })
+            .collect();
+        // The bytes each effect covers, by kind.
+        let mut reads = vec![false; 1024];
+        let mut writes = vec![false; 1024];
+        let idx = |o: i32| (512 + o) as usize;
+        for (i, x) in e.opnds.iter().enumerate() {
+            let (r, w) = match *x {
+                Some(Effect::Read(n)) => (n, 0),
+                Some(Effect::Write(n)) => (0, n),
+                Some(Effect::Update(n)) => (n, n),
+                None => continue,
+                Some(_) => unreachable!(),
+            };
+            (0..r).for_each(|b| reads[idx(off(i)) + b as usize] = true);
+            (0..w).for_each(|b| writes[idx(off(i)) + b as usize] = true);
+        }
+        // Two frames that agree on the bytes read and differ everywhere else. A divisor reads
+        // 1 (no division by zero, no overflow).
+        let mut p1 = pattern(1024, op as u8);
+        if divides {
+            let b = info.operand_index("b").unwrap();
+            let n = mn_width(mn) as usize / 8;
+            p1[idx(off(b))..][..n].fill(0);
+            p1[idx(off(b))] = 1;
+        }
+        let p2: Vec<u8> = p1.iter().zip(&reads).map(|(&b, &r)| if r { b } else { !b }).collect();
+        let mut runs = Vec::new();
+        for p in [&p1, &p2] {
+            let mut f = Frame::new();
+            f.0.copy_from_slice(p);
+            let fp = f.fp();
+            let ret = call(op, &vals, fp);
+            let ret = match info.shape {
+                Shape::Br => ret & 0xff,
+                Shape::Switch => ret,
+                _ => 0,
+            };
+            for (b, (&now, &was)) in f.0.iter().zip(p.iter()).enumerate() {
+                assert!(now == was || writes[b], "{mn}: wrote byte {} that its effects don't", b as i32 - 512);
+            }
+            let written: Vec<u8> = f.0.iter().zip(&writes).filter(|(_, w)| **w).map(|(&b, _)| b).collect();
+            runs.push((written, ret));
+        }
+        assert_eq!(runs[0], runs[1], "{mn}: the result depends on bytes its effects don't read, or not every byte it writes is written");
+        checked += 1;
+    }
+    assert!(checked > 400, "{checked} handlers checked");
+}
