@@ -21,8 +21,9 @@
 //!
 //! This side uses `core` only, like the rest of the runtime (design/vm.md, "No re-entry"):
 //! the settings come from libc's `getenv`, and waiting is a futex. Nothing on the trips'
-//! path may unwind (the stubs aren't call sites); the Rust parts are `extern "C"`, which
-//! aborts if they did.
+//! path may unwind (the stubs aren't call sites), and nothing there does: the Rust parts
+//! are `extern "C-unwind"` only so that the compiler adds no abort-on-unwind guard, which
+//! would reach core's panic path (as for `ryo_vm_register`).
 
 use core::cell::{Cell, UnsafeCell};
 use core::ffi::{CStr, c_char, c_long, c_void};
@@ -174,7 +175,7 @@ pub fn jit_shuffle_image(header: *const u8) {
 }
 
 /// [`RtApi::shuffled`]: whether the image with header `header` gets shuffled frames.
-extern "C" fn shuffled(header: *const u8) -> bool {
+extern "C-unwind" fn shuffled(header: *const u8) -> bool {
     config().shuffle || SHUFFLED.iter().any(|s| s.load(SeqCst) == header as usize)
 }
 
@@ -317,7 +318,7 @@ pub unsafe extern "sysv64" fn trip_osr() {
 }
 
 /// [`trip_entry`]'s work: the JIT entry to continue at, or null to continue in AOT code.
-extern "C" fn entry_trip(rec: *mut JitRecord) -> *const u8 {
+extern "C-unwind" fn entry_trip(rec: *mut JitRecord) -> *const u8 {
     if trip(rec) == JIT_DONE {
         ctr(rec).store(REDIRECT, Relaxed);
         return entry(rec).load(Acquire);
@@ -326,7 +327,7 @@ extern "C" fn entry_trip(rec: *mut JitRecord) -> *const u8 {
 }
 
 /// [`trip_osr`]'s work: the OSR dispatcher to continue at, or null to continue in AOT code.
-extern "C" fn osr_trip(rec: *mut JitRecord) -> *const u8 {
+extern "C-unwind" fn osr_trip(rec: *mut JitRecord) -> *const u8 {
     if trip(rec) == JIT_DONE {
         return osr_slot(rec).load(Acquire);
     }
@@ -445,7 +446,7 @@ unsafe extern "C" {
 }
 
 /// [`RtApi::next_batch`]: the queue, in trip order, once it isn't empty.
-extern "C" fn next_batch() -> *mut JitRecord {
+extern "C-unwind" fn next_batch() -> *mut JitRecord {
     // The JIT thread's trips (VM code it runs, such as a VM global allocator) never wait.
     NO_WAIT.set(true);
     loop {
@@ -476,7 +477,7 @@ extern "C" fn next_batch() -> *mut JitRecord {
 }
 
 /// [`RtApi::done`]: counts a compiled record, or fails it, and wakes its waiters.
-extern "C" fn done(rec: *mut JitRecord, ok: bool) {
+extern "C-unwind" fn done(rec: *mut JitRecord, ok: bool) {
     if ok {
         COMPILED.fetch_add(1, Relaxed);
     } else {

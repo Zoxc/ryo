@@ -83,13 +83,15 @@ fn is_ryo_crate(name: &str) -> bool {
 
 /// Builds std with the ryo backend for the host and installs it, with `ryo_rt`, into
 /// `dist/sysroot-ryo` (with the toolchain's `bin/`, for `rust-lld`). `dist/` must already hold
-/// the backend and `rustc-ryo`.
-pub fn build(info: &RustcInfo, dist: &Path) -> Result<(), String> {
+/// the backend and `rustc-ryo`. With `jit`, the sealed JIT's directory
+/// ([`crate::jit::build`]), `ryo_rt` gets its `jit` feature and bundles it, as in `dist/`: the
+/// JIT has a std of its own, the native one, so it never enters this sysroot's VM code.
+pub fn build(info: &RustcInfo, dist: &Path, jit: Option<&Path>) -> Result<(), String> {
     eprintln!("[y] sysroot: std with the ryo backend");
     let root = root();
     let work = root.join("target").join("sysroot-ryo");
     let lib_src = work.join("library");
-    prepare_sources(info, &root, &lib_src)?;
+    prepare_sources(info, &root, &lib_src, jit.is_some())?;
 
     let rustc_ryo = dist.join("bin").join(exe_name("rustc-ryo"));
     let me = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
@@ -118,7 +120,11 @@ pub fn build(info: &RustcInfo, dist: &Path) -> Result<(), String> {
         // Like the prebuilt std, for users' `-Clto`.
         "-Cembed-bitcode=yes",
     ];
-    run(cmd("cargo")
+    let mut cargo = cmd("cargo");
+    if let Some(dir) = jit {
+        cargo.env("RYO_JIT_LIB_DIR", dir);
+    }
+    run(cargo
         .current_dir(&lib_src)
         .args(["build", "--release", "--offline", "-p", "sysroot", "--features", "backtrace panic-unwind"])
         .args(["--target", &info.host])
@@ -227,8 +233,8 @@ fn percent(part: u64, whole: u64) -> f64 {
 }
 
 /// Copies `rust-src`'s `library/` to `dst` (once per toolchain, so cargo's fingerprints
-/// survive rebuilds), and adds `ryo_rt` to it.
-fn prepare_sources(info: &RustcInfo, root: &Path, dst: &Path) -> Result<(), String> {
+/// survive rebuilds), and adds `ryo_rt` to it, with its `jit` feature if `jit`.
+fn prepare_sources(info: &RustcInfo, root: &Path, dst: &Path, jit: bool) -> Result<(), String> {
     let src = info.sysroot.join("lib").join("rustlib").join("src").join("rust").join("library");
     if !src.is_dir() {
         return Err("no `rust-src` in the toolchain; run `rustup component add rust-src`".to_owned());
@@ -257,16 +263,17 @@ fn prepare_sources(info: &RustcInfo, root: &Path, dst: &Path) -> Result<(), Stri
     write_if_changed(
         &dst.join("ryo_rt").join("Cargo.toml"),
         &format!(
-            "[package]\nname = \"ryo_rt\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n\
+            "[package]\nname = \"ryo_rt\"\nversion = \"0.1.0\"\nedition = \"2024\"\nbuild = {}\n\n\
              [lib]\npath = {}\ntest = false\nbench = false\ndoc = false\n\n\
              [dependencies]\ncore = {{ path = \"../core\" }}\ncompiler_builtins = {{ path = \"../compiler-builtins/compiler-builtins\", features = [\"compiler-builtins\"] }}\n\
-             ryo_bytecode = {{ path = \"../ryo_bytecode\" }}\n",
+             ryo_bytecode = {{ path = \"../ryo_bytecode\" }}\n\n[features]\njit = []\n",
+            path(vm.join("rt").join("build.rs"))?,
             path(vm.join("rt").join("src").join("lib.rs"))?,
         ),
     )?;
     // The crates directly on `core` that the ryo backend builds depend on `ryo_rt` through
     // these two (everything else in the sysroot depends on one of them).
-    let dep = "ryo_rt = { path = \"../ryo_rt\" }\n";
+    let dep = if jit { "ryo_rt = { path = \"../ryo_rt\", features = [\"jit\"] }\n" } else { "ryo_rt = { path = \"../ryo_rt\" }\n" };
     for krate in ["alloc", "rustc-std-workspace-core"] {
         let manifest = dst.join(krate).join("Cargo.toml");
         let text = fs::read_to_string(src.join(krate).join("Cargo.toml")).map_err(|e| e.to_string())?;

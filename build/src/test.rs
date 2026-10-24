@@ -342,10 +342,12 @@ struct Variant {
     abort: bool,
     /// With `RYO_NO_VM`: every function stays native, so the `vm` lists aren't checked.
     no_vm: bool,
+    /// The environment the program runs with, such as the JIT's settings.
+    env: &'static [(&'static str, &'static str)],
 }
 
 const VARIANT: Variant =
-    Variant { name: "", compiler: Compiler::Ryo, flags: &[], final_flags: &[], vm_only: false, ryo_std: false, abort: false, no_vm: false };
+    Variant { name: "", compiler: Compiler::Ryo, flags: &[], final_flags: &[], vm_only: false, ryo_std: false, abort: false, no_vm: false, env: &[] };
 
 const REFERENCE: Variant = Variant { name: "rustc", compiler: Compiler::Rustc, ..VARIANT };
 
@@ -366,7 +368,17 @@ const VARIANTS: &[Variant] = &[
     Variant { name: "ryo-std-O3", flags: &["-Copt-level=3"], vm_only: true, ryo_std: true, ..VARIANT },
     Variant { name: "ryo-std-lto", final_flags: &["-Clto=fat"], ryo_std: true, ..VARIANT },
     Variant { name: "ryo-std-abort", flags: &["-Cpanic=abort"], ryo_std: true, abort: true, ..VARIANT },
+    // Every VM function, std's included, runs its JIT code from its first call
+    // (design/vm.md#jit), also with frames the JIT lays out differently.
+    Variant { name: "ryo-std-jit", ryo_std: true, env: JIT_SYNC, ..VARIANT },
+    Variant { name: "ryo-std-jit-shuffle", ryo_std: true, env: JIT_SHUFFLE, ..VARIANT },
 ];
+
+/// The JIT's settings for [`Variant::env`]: compile every function at its first call, and
+/// wait for it.
+const JIT_SYNC: &[(&str, &str)] = &[("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC", "1")];
+/// [`JIT_SYNC`], with shuffled JIT frames.
+const JIT_SHUFFLE: &[(&str, &str)] = &[("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC", "1"), ("RYO_JIT_SHUFFLE", "1")];
 
 /// Added by `test --clif`.
 const CLIF: Variant = Variant { name: "clif", compiler: Compiler::Clif, ..VARIANT };
@@ -648,6 +660,7 @@ impl Ctx {
     fn run(&self, dir: &Path, exe: &Path, variant: &Variant) -> Result<RunResult, String> {
         let mut run = Command::new(exe);
         run.env_remove("RUST_BACKTRACE").env_remove("RUST_LIB_BACKTRACE").current_dir(dir);
+        run.envs(variant.env.iter().copied());
         // Dylibs are found next to the binary, and std's in the sysroot that built it.
         let lib_path_var = if cfg!(windows) { "PATH" } else { "LD_LIBRARY_PATH" };
         let mut paths = vec![dir.to_path_buf(), self.target_libdir(variant)?];
@@ -689,7 +702,20 @@ mod tests {
     #[test]
     fn clif_variant_only_with_flag() {
         let names = |clif| super::variants(clif).iter().map(|v| v.name).collect::<Vec<_>>();
-        let all = ["ryo-novm", "ryo", "ryo-threads8", "ryo-O3", "ryo-lto", "ryo-thinlto-O3", "ryo-std", "ryo-std-O3", "ryo-std-lto", "ryo-std-abort"];
+        let all = [
+            "ryo-novm",
+            "ryo",
+            "ryo-threads8",
+            "ryo-O3",
+            "ryo-lto",
+            "ryo-thinlto-O3",
+            "ryo-std",
+            "ryo-std-O3",
+            "ryo-std-lto",
+            "ryo-std-abort",
+            "ryo-std-jit",
+            "ryo-std-jit-shuffle",
+        ];
         let ryo: Vec<&str> = all.into_iter().filter(|n| super::VM_RUNS || *n == "ryo-novm").collect();
         assert_eq!(names(false), ryo);
         assert_eq!(names(true), [&ryo[..], &["clif"]].concat());

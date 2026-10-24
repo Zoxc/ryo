@@ -8,8 +8,10 @@
 //! Everything else goes through the [`RtApi`]: the JIT reads the handlers' addresses from
 //! it, takes queued records with [`RtApi::next_batch`], and reports each with
 //! [`RtApi::done`]. Records, images and code are shared memory in the layout of
-//! [`crate::image`]. Nothing crosses the interface by unwinding: every function in it is
-//! `extern "C"`.
+//! [`crate::image`]. Nothing crosses the interface by unwinding: `ryo_jit_start` is
+//! `extern "C"`, and the runtime's callbacks never unwind. They are `extern "C-unwind"` only
+//! so that the compiler adds no abort-on-unwind guard to them, which would reference core's
+//! panic path from the runtime (design/vm.md, "No re-entry").
 
 use crate::Opcode;
 use crate::image::JitRecord;
@@ -60,13 +62,13 @@ pub struct RtApi {
     /// Takes the queued records, in the order they were queued, linked through
     /// [`JitRecord::next`], and sleeps while there are none: never null. The records are
     /// the JIT's until it reports them with [`RtApi::done`]. Only the JIT's thread calls it.
-    pub next_batch: extern "C" fn() -> *mut JitRecord,
+    pub next_batch: extern "C-unwind" fn() -> *mut JitRecord,
     /// Reports a record: compiled (`true`, after the JIT published it: `Done`) or not
     /// (`false`: the runtime marks it `Failed`). Wakes the threads waiting for it.
-    pub done: extern "C" fn(rec: *mut JitRecord, ok: bool),
+    pub done: extern "C-unwind" fn(rec: *mut JitRecord, ok: bool),
     /// Whether the functions of the image with this header get another frame layout than
     /// their AOT code's (`RYO_JIT_SHUFFLE`, or per image in tests).
-    pub shuffled: extern "C" fn(header: *const u8) -> bool,
+    pub shuffled: extern "C-unwind" fn(header: *const u8) -> bool,
     /// Every opcode's handler address by opcode, null for opcodes without a handler.
     pub handlers: [*const (); Opcode::COUNT],
 }

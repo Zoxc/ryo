@@ -32,6 +32,7 @@ pub fn build(targets: &[String], ryo_std: bool) -> Result<(), String> {
     copy(&backend, &dist_lib.join(dll_name("rustc_codegen_ryo")))?;
     let mut all = vec![info.host.clone()];
     all.extend(targets.iter().filter(|t| **t != info.host).cloned());
+    let mut host_jit = None;
     for triple in &all {
         let target_lib = dist_lib.join("rustlib").join(triple).join("lib");
         fs::create_dir_all(&target_lib).map_err(|e| format!("creating {}: {e}", target_lib.display()))?;
@@ -41,11 +42,14 @@ pub fn build(targets: &[String], ryo_std: bool) -> Result<(), String> {
         for (krate, rlib) in build_runtime(&root, &target, &dist, cross, jit.as_deref())? {
             copy(&rlib, &target_lib.join(format!("lib{krate}.rlib")))?;
         }
+        if cross.is_none() {
+            host_jit = jit;
+        }
     }
 
     build_wrappers(&root, &dist_bin, &info)?;
     if ryo_std {
-        crate::sysroot::build(&info, &dist)?;
+        crate::sysroot::build(&info, &dist, host_jit.as_deref())?;
     }
     eprintln!("[y] done: {}", dist.display());
     Ok(())
