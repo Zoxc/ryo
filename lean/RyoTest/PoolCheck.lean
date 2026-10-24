@@ -2,9 +2,9 @@
 Tests of the constant-pool and vtable check (`Ryo/Check/Image/Pool.lean`) on hand-built pools
 and dumps: matches (plain, through pool pointers, cycles, function and static pointers,
 uninitialized bytes, offsets into an allocation, vtables) and each kind of failure (byte
-mismatch, wrong relocation target, missing or extra relocation, misalignment, a static under
-two symbols), and the "not in dump" and byte-constant classifications. The check runs on real
-image objects in `scripts/lean-pool-check.py`.
+mismatch, wrong relocation target, missing or extra relocation, misalignment, a static
+pointer against the wrong symbol), and the "not in dump" and byte-constant classifications.
+The check runs on real image objects in `scripts/lean-pool-check.py`.
 -/
 import RyoTest.Harness
 
@@ -58,7 +58,7 @@ def positive : Except String Unit := do
   expect (Ryo.Check.Image.Pool.check (prog #[gf]) (pool z8 [(0, .sym "foo" 0)]) #[ref 0]) (matched := 1)
   -- A static pointer, against a symbol.
   let gs := glob z8 8 [{ offset := 0, target := .alloc 1, addend := 4 }]
-  let st := glob [0, 0, 0, 0] 4 (kind := .static false)
+  let st := { glob [0, 0, 0, 0] 4 (kind := .static false) with symbol := some "STATIC" }
   expect (Ryo.Check.Image.Pool.check (prog #[gs, st]) (pool z8 [(0, .sym "STATIC" 4)]) #[ref 0]) (matched := 1)
   -- Uninitialized bytes may be anything.
   let gu : Global := { bytes := [some 1, none, some 3], align := Align.ofBytes 1, kind := .const }
@@ -95,11 +95,13 @@ def negative : Except String Unit := do
   expect (Ryo.Check.Image.Pool.check (prog #[g0]) (pool [1, 2, 3, 4] (start := 2)) #[ref 0 (.copy 4)]) (mismatched := 1)
   -- A copy longer than the allocation.
   expect (Ryo.Check.Image.Pool.check (prog #[g0]) (pool [0, 0, 0, 0, 1, 2, 3, 4, 5]) #[ref 4 (.copy 5)]) (mismatched := 1)
-  -- One static under two symbols.
-  let gs (o : Nat) := glob (List.replicate (o + 8) 0) 8 [{ offset := o, target := .alloc 2 }]
-  let st := glob [0] 1 (kind := .static false)
-  expect (Ryo.Check.Image.Pool.check (prog #[gs 0, gs 8, st]) (pool (List.replicate 24 0) [(0, .sym "A" 0), (16, .sym "B" 0)]) #[ref 0 (.copy 8), ref 8 (.copy 16)])
-    (matched := 2) (errors := 1)
+  -- A static pointer against another symbol, or one the dump gives no symbol.
+  let gs := glob z8 8 [{ offset := 0, target := .alloc 1 }]
+  let st := { glob [0] 1 (kind := .static false) with symbol := some "A" }
+  expect (Ryo.Check.Image.Pool.check (prog #[gs, st]) (pool z8 [(0, .sym "A" 0)]) #[ref 0]) (matched := 1)
+  expect (Ryo.Check.Image.Pool.check (prog #[gs, st]) (pool z8 [(0, .sym "B" 0)]) #[ref 0]) (mismatched := 1)
+  expect (Ryo.Check.Image.Pool.check (prog #[gs, glob [0] 1 (kind := .static false)]) (pool z8 [(0, .sym "A" 0)]) #[ref 0])
+    (mismatched := 1)
   -- A vtable whose dumped align word isn't a power of two.
   let vt := glob (z8 ++ [8] ++ List.replicate 7 0 ++ [3] ++ List.replicate 7 0) 8 (kind := .vtable none)
   let vb := z8 ++ [8] ++ List.replicate 7 0 ++ [3] ++ List.replicate 7 0

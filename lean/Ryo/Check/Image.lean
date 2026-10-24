@@ -11,10 +11,11 @@ slots) and of the link's registry object, against the decoded code (`ryo-lean ch
 - `Ryo/Check/Image/Registry.lean`: the registry object, and the link-level checks;
 - `Ryo/Check/Image/Unwind.lean`: the CIE, each function's FDE rows against the frame rules its
   decoded prologue establishes, and its LSDA against the image's call sites;
-- `Ryo/Check/Image/Pool.lean` (separate): the constant pool against the dump.
+- `Ryo/Check/Image/Pool.lean` and `Ryo/Check/Image/Dump.lean` (separate, `ryo-lean
+  check-pool`): the constant pool, `__ryo_main` and the function symbols against the dump.
 
-`cli` is `ryo-lean check-image`. Not here: what needs the dump (symbol names vs `tcx.symbol_name`, `ArgPlan`s, which
-function `__ryo_main` must name).
+`cli` is `ryo-lean check-image`. Not here: what needs the dump (`Dump.lean`, and C1' for
+symbol names vs the instances' `tcx.symbol_name` and the `ArgPlan`s).
 -/
 import Ryo.Check.Image.Funcs
 import Ryo.Check.Image.Relocs

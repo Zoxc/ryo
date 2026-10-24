@@ -309,6 +309,10 @@ structure Global where
   relocs : List Relocation := []
   align : Align
   kind : GlobalKind
+  /-- A static's symbol (rustc `symbol_name` of its instance), which code and constants
+  pointing at it are relocated against; `none` for constants and vtables (and in dumps that
+  predate the field). Not used by the semantics. -/
+  symbol : Option String := none
 deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 /-- A type argument of an intrinsic instance (R30). -/

@@ -472,6 +472,9 @@ impl<'tcx> Dumper<'tcx> {
     fn global_json(&mut self, id: usize, key: GlobalKey) -> J {
         let tcx = self.tcx;
         let (kind, name) = self.global_kinds[id].clone();
+        // A static's symbol (`symbol_name` of its instance, as for every item); none for
+        // constants and vtables, which have no address of their own.
+        let mut symbol = None;
         let (alloc, kind_json): (Option<ConstAllocation<'tcx>>, J) = match key {
             GlobalKey::Alloc(a) => {
                 let GlobalAlloc::Memory(alloc) = tcx.global_alloc(a) else { unreachable!() };
@@ -482,6 +485,7 @@ impl<'tcx> Dumper<'tcx> {
                 (Some(alloc), k)
             }
             GlobalKey::Static(def_id) => {
+                symbol = Some(tcx.symbol_name(Instance::mono(tcx, def_id)).name.to_string());
                 let alloc = if tcx.is_foreign_item(def_id) { None } else { tcx.eval_static_initializer(def_id).ok() };
                 let k = if tcx.is_thread_local_static(def_id) {
                     tag("threadLocal")
@@ -495,7 +499,13 @@ impl<'tcx> Dumper<'tcx> {
         };
         let Some(alloc) = alloc else {
             // A foreign static: no bytes (any access is out of bounds in the interpreter).
-            return obj(vec![("bytes", J::Arr(vec![])), ("relocs", J::Arr(vec![])), ("align", num(1)), ("kind", kind_json)]);
+            return obj(vec![
+                ("bytes", J::Arr(vec![])),
+                ("relocs", J::Arr(vec![])),
+                ("align", num(1)),
+                ("kind", kind_json),
+                ("symbol", opt(symbol.map(J::Str))),
+            ]);
         };
         let a = alloc.inner();
         let size = a.size().bytes_usize();
@@ -526,7 +536,13 @@ impl<'tcx> Dumper<'tcx> {
                 obj(vec![("offset", num(o)), ("target", t), ("addend", num(u64::from_le_bytes(addend)))])
             })
             .collect();
-        obj(vec![("bytes", J::Arr(bytes)), ("relocs", J::Arr(relocs)), ("align", num(a.align.bytes())), ("kind", kind_json)])
+        obj(vec![
+            ("bytes", J::Arr(bytes)),
+            ("relocs", J::Arr(relocs)),
+            ("align", num(a.align.bytes())),
+            ("kind", kind_json),
+            ("symbol", opt(symbol.map(J::Str))),
+        ])
     }
 
     // -----------------------------------------------------------------------------------------

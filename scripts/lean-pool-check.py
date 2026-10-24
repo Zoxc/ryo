@@ -7,10 +7,13 @@ don't build alone, or have no `main` and so no dump, are skipped) is built with
 dist/bin/rustc-ryo, -Csave-temps (which keeps `<name>.<cgu>.ryo_image.rcgu.o`) and RYO_DUMP_LEAN
 (the MIR dump, `<dir>/<name>.json`), at -O0 and with --opt also at -O3. Then `ryo-lean
 check-pool <dump> <objects>` checks every pool reference of the objects' code against the
-dump's const and vtable allocations, and this tabulates per object: references, matched (of
-them vtables), placements reached through pool relocations, byte constants (`fill` operands),
-not in the dump (no referencing function is a dumped body) and mismatched, with each
-mismatch's details.
+dump's const and vtable allocations, and `__ryo_main` and the function symbols against the
+dump's instances (lean/Ryo/Check/Image/Dump.lean). This tabulates per object: references,
+matched (of them vtables), placements reached through pool relocations, byte constants (`fill`
+operands), not in the dump (no referencing function is a dumped body), mismatched and pool
+errors; then functions, those whose symbol is a dumped instance's, symbol slots, those naming
+a dumped instance or static, and the dump check's errors (`main`: the object has
+`__ryo_main`), with each mismatch's and error's details.
 
 Usage: scripts/lean-pool-check.py [names...] [--opt] [--keep DIR] [--ryo-lean PATH] [-j N] [-v]
 
@@ -39,6 +42,10 @@ LINE = re.compile(
     r"^pool-check (\S+): refs (\d+) matched (\d+) \(vtables (\d+)\) reached (\d+) bytes (\d+) not-in-dump (\d+) mismatched (\d+) errors (\d+)$"
 )
 FIELDS = ["refs", "matched", "vtables", "reached", "bytes", "not_in_dump", "mismatched", "errors"]
+DUMP_LINE = re.compile(
+    r"^dump-check (\S+): main (\S+) funcs (\d+) in-dump (\d+) slots (\d+) slot-instances (\d+) slot-statics (\d+) errors (\d+)$"
+)
+DUMP_FIELDS = ["funcs", "in_dump", "slots", "slot_instances", "slot_statics", "dump_errors"]
 
 
 def run(cmd, cwd=None, env=None, timeout=TIMEOUT):
@@ -87,6 +94,11 @@ def build_and_check(rustc_ryo, ryo_lean, label, src, flags, out_dir, verbose):
             obj = Path(m.group(1)).name
             cur = (label, obj, vals)
             rows.append(cur)
+            continue
+        m = DUMP_LINE.match(line)
+        if m and cur is not None:
+            cur[2].update(zip(DUMP_FIELDS, map(int, m.groups()[2:])))
+            cur[2]["main"] = m.group(2) != "-"
         elif line.startswith("pool-check "):
             rows.append((label, line.split(":", 1)[0].removeprefix("pool-check "), None))
             report.append(f"=== {label}: {line}")
@@ -132,7 +144,8 @@ def main():
     rows.sort(key=lambda r: (r[0], r[1]))
 
     w = max([len(r[0]) for r in rows] + [7])
-    cols = ["refs", "matched", "vtables", "reached", "bytes", "not_in_dump", "mismatched", "errors"]
+    cols = ["refs", "matched", "vtables", "reached", "bytes", "not_in_dump", "mismatched", "errors", "funcs", "in_dump", "slots",
+            "slot_instances", "slot_statics", "dump_errors"]
     print(f"{'program':<{w}}  " + "  ".join(f"{c:>11}" for c in cols))
     tot = dict.fromkeys(cols, 0)
     bad = 0
@@ -141,10 +154,10 @@ def main():
             print(f"{label:<{w}}  unreadable object {obj}")
             bad += 1
             continue
-        print(f"{label:<{w}}  " + "  ".join(f"{vals[c]:>11}" for c in cols))
+        print(f"{label:<{w}}  " + "  ".join(f"{vals.get(c, '-'):>11}" for c in cols) + ("  main" if vals.get("main") else ""))
         for c in cols:
-            tot[c] += vals[c]
-        if vals["mismatched"] or vals["errors"]:
+            tot[c] += vals.get(c, 0)
+        if vals["mismatched"] or vals["errors"] or vals.get("dump_errors", 1):
             bad += 1
     print(f"{'total':<{w}}  " + "  ".join(f"{tot[c]:>11}" for c in cols))
     for label, why in sorted(skipped):

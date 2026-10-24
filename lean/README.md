@@ -41,8 +41,8 @@ lake exe ryo-lean lsda x.ryo_image.rcgu.o  # per image function its FDE and LSDA
                                    # the object readers against Rust (scripts/lean-decode-ref)
                                    # and readelf on the corpus's image objects
 lake exe ryo-lean check-pool dump.json x.ryo_image.rcgu.o [-v]
-                                   # the constant-pool and vtable check of image objects
-                                   # against the RYO_DUMP_LEAN dump (Ryo/Check/Image/Pool.lean)
+                                   # image objects against the RYO_DUMP_LEAN dump: the constant
+                                   # pool and vtables, `__ryo_main` (Ryo/Check/Image/{Pool,Dump}.lean)
 ../scripts/lean-pool-check.py [--opt]  # check-pool on the corpus, tabulated
 lake exe ryo-lean check-image x.ryo_image.rcgu.o... [--registry r.ryo_registry.bin.rcgu.o]
                                    # the image checks that need no dump (docs/aot.md §C4) on
@@ -124,6 +124,7 @@ Ryo/Vm/DecodeObj.lean              `ryo-lean decode <obj>`: an image object's fu
                                    scripts/lean-decode-ref prints Rust's
 Ryo/Check/Image/Pool.lean          image checks (docs/aot.md §C4): the constant pool and
                                    vtables against the dump's allocations (`check-pool`)
+Ryo/Check/Image/Dump.lean          `__ryo_main` and function symbols against the dump
 Ryo/Check/Image.lean, Image/       `ryo-lean check-image` (aot.md §C4): function table and
                                    symbols (Funcs), relocations, JIT records, header, anchor
                                    and `__ryo_main` (Relocs), the registry object (Registry),

@@ -243,9 +243,13 @@ record where each allocation starts, so it matches: a placement "global `g` at p
 fixpoint over those demands (cycles are fine). Each code reference (`Ref.const k`, with its
 use from the decoded `const`/`addr.abs`) must be covered by a valid placement of a global its
 function's dumped body mentions; `fill` operands are byte constants (C1' checks them), and
-references from functions outside the dump are reported, not failed. Statics carry no symbol
-in the dump, so a static pointer is checked against "one symbol per static, distinct, no
-instance's" until the dump names them.
+references from functions outside the dump are reported, not failed. A static pointer's
+relocation names the static's symbol as the dump gives it (`Global.symbol`).
+`Ryo/Check/Image/Dump.lean` (also `check-pool`) checks the rest that the dump decides without
+the function ↔ instance map: `__ryo_main` exists iff an image function has the entry
+instance's symbol, and names it; no image function is a dumped intrinsic. That each
+function's and slot's symbol is the instance's the MIR names is C1''s (its certificate maps
+functions to instances).
 
 **Implemented: the structural part** (`Ryo/Check/Image/`, `ryo-lean check-image <image
 objects>... [--registry <registry object>]`, over the corpus with

@@ -34,13 +34,15 @@
                                            dropped store not shown dead), with a reader
                                            of each such store
   ryo-lean check-pool <dump.json> <image object>... [-v]
-                                           the constant-pool and vtable check
-                                           (`Ryo/Check/Image/Pool.lean`) of each object against
-                                           the MIR dump: per object a `pool-check` line with
-                                           the pool references matched, byte constants, not in
-                                           the dump and mismatched (each mismatch with details;
-                                           `-v` lists those not in the dump too); exit status 1
-                                           on a mismatch or an object-level error
+                                           the checks of each object against the MIR dump:
+                                           the constant pool and vtables
+                                           (`Ryo/Check/Image/Pool.lean`), a `pool-check` line
+                                           with the pool references matched, byte constants,
+                                           not in the dump and mismatched (each mismatch with
+                                           details; `-v` lists those not in the dump too), and
+                                           `__ryo_main` and the function symbols
+                                           (`Ryo/Check/Image/Dump.lean`), a `dump-check` line;
+                                           exit status 1 on a mismatch or an error
   ryo-lean check-image <image object>... [--registry <registry object>]
                                            the image checks that need no dump (aot.md §C4,
                                            `Ryo.Check.Image`) on a link's image objects and
@@ -138,7 +140,9 @@ def checkPool (dump : String) (objs : List String) (verbose : Bool) : IO UInt32 
     | .ok o =>
       let r := Ryo.Check.Image.Pool.checkObject p o
       for l in r.render path verbose do IO.println l
-      unless r.ok do status := 1
+      let d := Ryo.Check.Image.Dump.check p o
+      for l in d.render path do IO.println l
+      unless r.ok && d.ok do status := 1
     | .error e =>
       IO.println s!"pool-check {path}: error: {e}"
       status := 1

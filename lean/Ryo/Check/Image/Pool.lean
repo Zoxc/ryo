@@ -21,8 +21,8 @@ backend's MIR dump (`RYO_DUMP_LEAN`, `Ryo.Spec.Program`):
   each pointer's offset, against the pool at `b' + addend` for a pointer to the constant or
   vtable `g'` (which demands the placement `(g', b')`), against the symbol of the instance the
   dump names for a function pointer, with the dumped addend, or against a symbol for a
-  static's (the dump carries no static symbols: each static must map to one symbol, distinct
-  statics to distinct symbols, none an instance's). Type-id pointers carry no provenance in
+  static's, against the symbol the dump gives the static (`Global.symbol`; a dump without it
+  fails such pointers). Type-id pointers carry no provenance in
   the copy: their bytes are compared.
 - **Matching.** A placement is valid when every placement it demands, transitively, holds
   locally: the greatest fixpoint of the local check over the demand edges (which handles
@@ -112,6 +112,7 @@ structure G where
   relocs : HashMap Nat Relocation
   align : Nat
   kind : GlobalKind
+  symbol : Option String := none
   /-- The first initialized byte outside the pointers, a cheap first filter. -/
   probe : Option (Nat × UInt8) := none
   deriving Inhabited
@@ -141,8 +142,6 @@ structure Ctx where
   pool : PoolView
   /-- The dump's body instances by symbol, with the globals each body mentions. -/
   bodies : HashMap String (Array Nat)
-  /-- All instances' symbols. -/
-  symbols : HashSet String
 
 def Ctx.make (prog : Program) (pool : PoolView) : Ctx :=
   let globals := prog.globals.map fun g =>
@@ -153,19 +152,15 @@ def Ctx.make (prog : Program) (pool : PoolView) : Ctx :=
       | some v => if ptr j then none else some (j, v)
       | none => none
     { bytes, relocs := g.relocs.foldl (fun m r => m.insert r.offset r) {},
-      align := g.align.bytes, kind := g.kind, probe }
+      align := g.align.bytes, kind := g.kind, symbol := g.symbol, probe }
   let bodies := prog.instances.foldl (init := {}) fun s i =>
     match i.kind with
     | .body b => s.insert i.symbol (globalsIn (Lean.toJson b) #[])
     | _ => s
-  let symbols := prog.instances.foldl (init := {}) fun s i => s.insert i.symbol
-  { prog, globals, pool, bodies, symbols }
+  { prog, globals, pool, bodies }
 
 /-- A placement: global `g` at pool offset `b`. -/
 abbrev Node := Nat × Nat
-
-/-- A static pointer's symbol, to be checked for consistency. -/
-abbrev Binding := Nat × String
 
 private def hex2 (b : UInt8) : String :=
   let s := String.ofList (Nat.toDigits 16 b.toNat)
@@ -177,9 +172,8 @@ def kindName : GlobalKind → String
   | .static _ => "static"
   | .threadLocal => "thread local"
 
-/-- The local check of placement `(gi, b)`: the placements it demands and the static
-bindings it makes, or why it fails. -/
-def localCheck (c : Ctx) (n : Node) : Except String (Array Node × Array Binding) := do
+/-- The local check of placement `(gi, b)`: the placements it demands, or why it fails. -/
+def localCheck (c : Ctx) (n : Node) : Except String (Array Node) := do
   let (gi, b) := n
   let some g := c.globals[gi]? | throw s!"no global {gi}"
   unless g.pooled do throw s!"g{gi} is a {kindName g.kind}, not a pool allocation"
@@ -189,7 +183,6 @@ def localCheck (c : Ctx) (n : Node) : Except String (Array Node × Array Binding
     throw s!"misaligned: g{gi} needs align {g.align}; pool offset {b} is section offset {P.start + b}, section align {P.secAlign}"
   -- Pointer fields (with provenance in the copy): offset → relocation.
   let mut demands : Array Node := #[]
-  let mut binds : Array Binding := #[]
   let mut covered : HashSet Nat := {}
   for (off, r) in g.relocs.toList do
     if off + 8 > g.size then throw s!"g{gi}: pointer at {off} past its end"
@@ -212,8 +205,10 @@ def localCheck (c : Ctx) (n : Node) : Except String (Array Node × Array Binding
     | .alloc t, .sym name a =>
       let some tg := c.globals[t]? | throw s!"g{gi}: pointer to missing global {t}"
       if tg.pooled then throw s!"g{gi} at {b}: offset {off} relocated against {pr}, expected pool copy of {kindName tg.kind} g{t}"
-      unless a == r.addend do throw s!"g{gi} at {b}: offset {off} relocated against {pr}, expected addend {r.addend}"
-      binds := binds.push (t, name)
+      let some want := tg.symbol
+        | throw s!"g{gi} at {b}: offset {off} relocated against {pr}; the dump has no symbol for the {kindName tg.kind} g{t}"
+      unless name == want && a == r.addend do
+        throw s!"g{gi} at {b}: offset {off} relocated against {pr}, expected the {kindName tg.kind} g{t}'s `{want}` + {r.addend}"
     | t, pr => throw s!"g{gi} at {b}: offset {off} relocated as {pr}, expected a pointer to {repr t} + {r.addend}"
   -- No other relocation overlaps the copy (one starting up to 7 bytes before it would).
   for p in [b - (if g.size == 0 then 0 else min b 7) : b + g.size] do
@@ -226,12 +221,12 @@ def localCheck (c : Ctx) (n : Node) : Except String (Array Node × Array Binding
     if let some v := g.bytes[j] then
       let w := P.bytes[b + j]!
       if v != w then throw s!"g{gi} at {b}: byte {j} (pool {b + j}) is 0x{hex2 w}, expected 0x{hex2 v}"
-  return (demands, binds)
+  return demands
 
 /-! ## The fixpoint -/
 
 structure St where
-  local_ : HashMap Node (Except String (Array Node × Array Binding)) := {}
+  local_ : HashMap Node (Except String (Array Node)) := {}
   /-- Placements known valid (their whole demand closure holds locally). -/
   valid : HashSet Node := {}
   /-- Placements known invalid, with why. -/
@@ -239,21 +234,20 @@ structure St where
 
 abbrev M := StateM St
 
-def localOf (c : Ctx) (n : Node) : M (Except String (Array Node × Array Binding)) := do
+def localOf (c : Ctx) (n : Node) : M (Except String (Array Node)) := do
   if let some r := (← get).local_[n]? then return r
   let r := localCheck c n
   modify fun s => { s with local_ := s.local_.insert n r }
   return r
 
 /-- Whether placement `root` is valid: every placement reachable over demand edges holds
-locally. On success, the reachable placements and their static bindings. -/
+locally. On success, the reachable placements. -/
 def validate (c : Ctx) (root : Node) (fuel : Nat := 100000) :
-    M (Except String (Array Node × Array Binding)) := do
+    M (Except String (Array Node)) := do
   if let some e := (← get).invalid[root]? then return .error e
   let mut seen : HashSet Node := {}
   let mut work : Array (Node × List Node) := #[(root, [])]
   let mut nodes : Array Node := #[]
-  let mut binds : Array Binding := #[]
   let mut fuel := fuel
   while h : work.size > 0 do
     let (n, path) := work.back
@@ -272,15 +266,10 @@ def validate (c : Ctx) (root : Node) (fuel : Nat := 100000) :
       let msg := if via.isEmpty then e else s!"{e} (demanded via {" -> ".intercalate via})"
       modify fun s => { s with invalid := s.invalid.insert root msg }
       return .error msg
-    | .ok (ds, bs) =>
-      binds := binds ++ bs
+    | .ok ds =>
       for d in ds do work := work.push (d, n :: path)
-  -- Bindings of already-valid nodes reached: recollect them (cached locally).
-  let mut allBinds : Array Binding := #[]
-  for n in nodes do
-    if let .ok (_, bs) ← localOf c n then allBinds := allBinds ++ bs
   modify fun s => { s with valid := nodes.foldl (·.insert ·) s.valid }
-  return .ok (nodes, allBinds)
+  return .ok nodes
 
 /-! ## References -/
 
@@ -291,7 +280,7 @@ def covers (g : G) (b k : Nat) : Use → Bool
 
 /-- The verdict on one reference. -/
 inductive Verdict where
-  | matched (g b : Nat) (nodes : Array Node) (binds : Array Binding)
+  | matched (g b : Nat) (nodes : Array Node)
   | bytes
   | notInDump
   | mismatch (details : Array String)
@@ -338,14 +327,14 @@ def checkRef (c : Ctx) (r : CodeRef) : M Verdict := do
   let first (gs : Array Nat) : M (Option Verdict) := do
     for exact in [true, false] do
       for n in candidates c gs r.k r.use exact do
-        if let .ok (nodes, binds) ← validate c n then return some (.matched n.1 n.2 nodes binds)
+        if let .ok nodes ← validate c n then return some (.matched n.1 n.2 nodes)
     return none
   if let some v ← first gs then return v
   if inDump.isEmpty then return .notInDump
   -- Diagnose: the exact-offset placements of the mentioned globals covering the use, closest
   -- first, and any other global that would match.
   let mut details := #[]
-  if let some (.matched g b _ _) ← first all then
+  if let some (.matched g b _) ← first all then
     details := details.push s!"matches g{g} at {b}, which the referencing bodies don't mention (they mention {mentioned.toList.map (s!"g{·}")})"
   let mut cands : Array Node := #[]
   for gi in mentioned do
@@ -397,7 +386,7 @@ structure Report where
   reached : Nat := 0
   lines : Array String := #[]
   notInDumpLines : Array String := #[]
-  /-- Object-level problems (the section, static symbol bindings, vtable shapes). -/
+  /-- Object-level problems (the section, vtable shapes). -/
   errors : Array String := #[]
   deriving Inhabited
 
@@ -410,21 +399,19 @@ def check (prog : Program) (pool : PoolView) (refs : Array CodeRef) : Report := 
   let mut st : St := {}
   let mut roots : HashSet Node := {}
   let mut all : HashSet Node := {}
-  let mut binds : Array Binding := #[]
   let mut vtables : HashSet Nat := {}
   for r in refs do
     let (v, st') := (checkRef c r).run st
     st := st'
     let from_ := ", ".intercalate (r.funcs.toList.take 3) ++ (if r.funcs.size > 3 then s!", +{r.funcs.size - 3}" else "")
     match v with
-    | .matched g b nodes bs =>
+    | .matched g b nodes =>
       rep := { rep with matched := rep.matched + 1 }
       if c.globals[g]!.kind matches .vtable _ then rep := { rep with matchedVtables := rep.matchedVtables + 1 }
       roots := roots.insert (g, b)
       for n in nodes do
         all := all.insert n
         if c.globals[n.1]!.kind matches .vtable _ then vtables := vtables.insert n.1
-      binds := binds ++ bs
     | .bytes => rep := { rep with bytes := rep.bytes + 1 }
     | .notInDump =>
       rep := { rep with notInDump := rep.notInDump + 1,
@@ -433,17 +420,6 @@ def check (prog : Program) (pool : PoolView) (refs : Array CodeRef) : Report := 
       rep := { rep with mismatched := rep.mismatched + 1,
                         lines := rep.lines.push s!"mismatch: pool {r.k} ({r.use}) from {from_}" ++ ds.map ("  " ++ ·) }
   rep := { rep with reached := (all.toList.filter (!roots.contains ·)).length }
-  -- Statics: one symbol each, distinct, none an instance's.
-  let mut byG : HashMap Nat String := {}
-  let mut byName : HashMap String Nat := {}
-  for (g, n) in binds do
-    match byG[g]? with
-    | some n' => if n != n' then rep := { rep with errors := rep.errors.push s!"static g{g} relocated against both `{n'}` and `{n}`" }
-    | none => byG := byG.insert g n
-    match byName[n]? with
-    | some g' => if g != g' then rep := { rep with errors := rep.errors.push s!"statics g{g'} and g{g} both relocated against `{n}`" }
-    | none => byName := byName.insert n g
-    if c.symbols.contains n then rep := { rep with errors := rep.errors.push s!"static g{g} relocated against instance symbol `{n}`" }
   for g in vtables.toList do
     if let some e := vtableShape c g then rep := { rep with errors := rep.errors.push s!"vtable g{g}: not the D29 layout: {e}" }
   -- Dedup error lines.
