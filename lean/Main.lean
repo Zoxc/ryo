@@ -43,6 +43,17 @@
                                            `__ryo_main` and the function symbols
                                            (`Ryo/Check/Image/Dump.lean`), a `dump-check` line;
                                            exit status 1 on a mismatch or an error
+  ryo-lean check-cert <dump.json> <cert.json> <image object>... [-v]
+                                           the lowering certificate (`RYO_DUMP_LEAN`'s
+                                           `<crate>.cert.json`) against each object's decoded
+                                           code and the dump (`Ryo/Check/Lower/CertCheck.lean`):
+                                           a `cert-check` line (functions, certificates, calls
+                                           and how their plans were verified, islands), a
+                                           `dead-check` line (the dead-store check with the
+                                           certificate's facts) and the errors; then a
+                                           `cert-map` line (certificates without a function);
+                                           exit status 1 on an error. `-v` prints every error
+                                           (default: the first 50 per object)
   ryo-lean check-image <image object>... [--registry <registry object>]
                                            the image checks that need no dump (aot.md §C4,
                                            `Ryo.Check.Image`) on a link's image objects and
@@ -148,6 +159,29 @@ def checkPool (dump : String) (objs : List String) (verbose : Bool) : IO UInt32 
       status := 1
   pure status
 
+def checkCert (dump certPath : String) (objs : List String) (verbose : Bool) : IO UInt32 := do
+  let p : Program ← IO.ofExcept (Program.ofJsonString (← IO.FS.readFile dump))
+  let cert ← IO.ofExcept (Ryo.Check.Lower.Cert.ofJsonString (← IO.FS.readFile certPath))
+  let mut status : UInt32 := 0
+  let mut reps := #[]
+  for path in objs do
+    match Ryo.Obj.readImageObject (← IO.FS.readBinFile path) with
+    | .ok o =>
+      let r := Ryo.Check.Lower.checkObject p cert o
+      let ls := r.render path
+      for l in if verbose then ls else ls.extract 0 52 do IO.println l
+      if !verbose && ls.size > 52 then IO.println s!"error: ... and {ls.size - 52} more"
+      unless r.ok do status := 1
+      reps := reps.push r
+    | .error e =>
+      IO.println s!"cert-check {path}: error: {e}"
+      status := 1
+  let un := Ryo.Check.Lower.unmatched cert reps
+  IO.println s!"cert-map: certificates {cert.functions.size} unmatched {un.size}"
+  for e in un do IO.println s!"error: {e}"
+  unless un.isEmpty do status := 1
+  pure status
+
 def objFile (path : String) : IO UInt32 := do
   let bytes ← IO.FS.readBinFile path
   match Ryo.Obj.readImageObject bytes with
@@ -200,6 +234,8 @@ def main (args : List String) : IO UInt32 := do
   | ["dead", path] => deadObj path
   | "check-pool" :: dump :: objs@(_ :: _) =>
     checkPool dump (objs.filter (· != "-v")) (objs.contains "-v")
+  | "check-cert" :: dump :: cert :: objs@(_ :: _) =>
+    checkCert dump cert (objs.filter (· != "-v")) (objs.contains "-v")
   | ["ehframe", path] => ehframeFile path
   | ["lsda", path] => lsdaObj path
   | ["decode", path] => if path.endsWith ".json" then decodeFile path else decodeObj path
@@ -222,5 +258,5 @@ def main (args : List String) : IO UInt32 := do
   | ["exec-item"] => Ryo.X86.Cosim.main
   | ["opsem"] => Ryo.Vm.OpSem.Json.main
   | _ =>
-    IO.eprintln "usage: ryo-lean run <program.json> [--fuel N] [--stdout]\n       ryo-lean example <name> [out.json]\n       ryo-lean obj <file.o>\n       ryo-lean elf <file.o>\n       ryo-lean decode <inputs.json | file.o>\n       ryo-lean dead|ehframe|lsda <file.o>\n       ryo-lean check-pool <dump.json> <file.o>... [-v]\n       ryo-lean check-image <image.o>... [--registry <registry.o>]\n       ryo-lean opsem"
+    IO.eprintln "usage: ryo-lean run <program.json> [--fuel N] [--stdout]\n       ryo-lean example <name> [out.json]\n       ryo-lean obj <file.o>\n       ryo-lean elf <file.o>\n       ryo-lean decode <inputs.json | file.o>\n       ryo-lean dead|ehframe|lsda <file.o>\n       ryo-lean check-pool <dump.json> <file.o>... [-v]\n       ryo-lean check-cert <dump.json> <cert.json> <image.o>... [-v]\n       ryo-lean check-image <image.o>... [--registry <registry.o>]\n       ryo-lean opsem"
     pure 2

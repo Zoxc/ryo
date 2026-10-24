@@ -72,8 +72,8 @@ def noAllocShim : Program := program do
 
 /-! ### `fnAbiCompatible`/`createFrame`: `Ignore` arguments, `rust` vs `rust-call` -/
 
-def abiI32 : ArgAbi := ⟨.direct, 4, Align.ofBytes 4, "i32"⟩
-def abiIgnore : ArgAbi := ⟨.ignore, 0, .one, ""⟩
+def abiI32 : ArgAbi := { mode := .direct, size := 4, align := Align.ofBytes 4, detail := "i32" }
+def abiIgnore : ArgAbi := { mode := .ignore, size := 0, align := .one }
 
 /-- A closure's `FnOnce` shim: `rust-call`, a zero-sized environment (`Ignore`), then an `i32`;
 returns the argument + 1. With `spread`, the `i32` arrives in a `(i32,)` spread tuple. -/
@@ -102,7 +102,7 @@ def ignoreArgs : Except String Unit := do
   expectReturnValue (fnPtrToShim rustI32 (spread := true)) (.int 42)
   -- a different calling convention, and a different argument class, are still UB
   expectUb (fnPtrToShim ⟨.c, [abiI32], abiI32⟩) "function ABIs are not compatible"
-  expectUb (fnPtrToShim ⟨.rust, [⟨.direct, 4, Align.ofBytes 4, "f32"⟩], abiI32⟩)
+  expectUb (fnPtrToShim ⟨.rust, [{ mode := .direct, size := 4, align := Align.ofBytes 4, detail := "f32" }], abiI32⟩)
     "function ABIs are not compatible"
 
 /-! ### `Drop` of a `dyn Trait` place calls the vtable's drop entry -/

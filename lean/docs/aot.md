@@ -115,6 +115,37 @@ per-frame relation `R_Γ (s0 : L0 frame) (s1 : R frame)`:
 rejected(reason)`, totalled like `RYO_STATS`. `rejected` is a bug in the backend or the
 checker. `y test` fails on `rejected` and prints coverage.
 
+**Implemented: the certificate check** (`Ryo/Check/Lower/`, `ryo-lean check-cert <dump>
+<cert> <image objects>...`, over the corpus with `scripts/lean-cert-check.py`). The backend
+writes the certificate next to the dump (`RYO_DUMP_LEAN`, `<crate>.cert.json`: per VM function
+the frame map, its own `ArgPlan`, the ranges, and per call instruction its kind, return kind
+and size and the callee's `ArgPlan`; the islands' templates by symbol). The check, short of
+the relational spec: each image function has exactly one certificate (by symbol) and each
+certificate a function. Own signature: `argSize = plan.stackSize = FuncEntry.arg_size`,
+`ret_kind` the entry's, the frame size the decoded one, an sret slot iff `RET_SRET`, and the
+`arg` instructions are exactly the prologue's, the plan's register pieces in order; for a
+dumped body with an ABI, the return kind and plan recomputed from the dumped `FnAbiSummary`
+(`Plan.lean`, a port of `sig.rs`'s `arg_plan` and `ret_kind` for SysV and Win64, from each
+argument's `PassMode` and LLVM-level scalars, `ArgAbi.scalars`) are the certificate's and
+`ret_size` is the ABI's, and the locals, spread argument and caller location agree with the
+body. Ranges: prologue, blocks, stubs and pads are consecutive and cover the code, one block
+per MIR block with its statement count (the fused compare counted; blocks the dumper
+truncated are skipped). Calls: one entry per `call*`/`tail_call*` instruction, the kind fits
+the opcode, `k` is the return kind, and the argument list's register words (and the slots
+the certificate fixes, and one home per input) are what `pass_args` builds from the plan. A
+call's plan is then verified by the callee's `FuncEntry` (a `Ref.func` callee: `arg_size`,
+`ret_kind`, sret `ret_size`, and the callee's own certificate plan), or by the dump (the one
+call of a `call`/`tailCall` terminator with an ABI, of a `drop` of glue with a body, of an
+`assert` of a panic function with a body: plan, return kind and size recomputed from that
+ABI), or by neither; calls of `ext` lang items (assert panics, terminate stubs, whose ABI the
+dump doesn't give) and calls in functions outside the dump are the latter. Islands: each
+`island`'s symbol is in the islands table. The verified calls' stack-argument and sret sizes
+and the islands' templates are `Frame.Facts` for the dead-store check (§C2); they hold given
+what the rest of C1' checks (that each call lowers the terminator whose range it is in, and
+that each island symbol is the template instance the dump names). Remaining: the relational
+spec itself (`LowerPlace` … `LowerProlog`), the frame map against the body's locals and
+storage, the stack pieces and `Indirect` copies, unwind actions and landing pads.
+
 ## C2. Bytes → R: `decodeReduced` and `decode_sound` (proved once)
 
 Rather than relating the Rust encoder to anything, prove the **Lean decoder** correct:

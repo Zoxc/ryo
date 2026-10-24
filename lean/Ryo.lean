@@ -9,4 +9,5 @@ import Ryo.Vm.DecodeObj
 import Ryo.Check.Image.Pool
 import Ryo.Check.Image.Dump
 import Ryo.Check.Image
+import Ryo.Check.Lower.CertCheck
 import Ryo.Vm.OpSem

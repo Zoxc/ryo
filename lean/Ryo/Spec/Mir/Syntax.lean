@@ -219,6 +219,14 @@ inductive PassModeKind where
   | ignore | direct | pair | cast | indirect | indirectUnsized
 deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
+/-- One LLVM-level scalar of an argument: its class (float, or integer/pointer), size and
+offset in the value. -/
+structure AbiScalar where
+  float : Bool
+  size : Size
+  off : Size
+deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
+
 /-- How one argument (or the return value) is passed (rustc `ArgAbi`, summarized). -/
 structure ArgAbi where
   mode : PassModeKind
@@ -227,6 +235,11 @@ structure ArgAbi where
   /-- Scalar classes etc. as the dumper renders them (`"i32"`, `"ptr"`, `"f64"`, ...);
   part of the compatibility check. -/
   detail : String := ""
+  /-- The LLVM-level scalars of a `Direct` scalar, a `Pair` and an integer `Cast` without
+  prefix (the Rust ABI's small aggregates), which the lowering check assigns to registers
+  (`Ryo/Check/Lower/Plan.lean`); `none` for the other modes, and in dumps that predate the
+  field. Not used by the semantics. -/
+  scalars : Option (List AbiScalar) := none
 deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 /-- rustc `FnAbi`, summarized (D14). -/

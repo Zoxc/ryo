@@ -44,6 +44,12 @@ lake exe ryo-lean check-pool dump.json x.ryo_image.rcgu.o [-v]
                                    # image objects against the RYO_DUMP_LEAN dump: the constant
                                    # pool and vtables, `__ryo_main` (Ryo/Check/Image/{Pool,Dump}.lean)
 ../scripts/lean-pool-check.py [--opt]  # check-pool on the corpus, tabulated
+lake exe ryo-lean check-cert dump.json dump.cert.json x.ryo_image.rcgu.o [-v]
+                                   # the lowering certificate (RYO_DUMP_LEAN's <crate>.cert.json)
+                                   # against the objects' decoded code and the dump: function
+                                   # map, signatures and plans, ranges, calls, islands
+                                   # (docs/aot.md §C1, Ryo/Check/Lower/CertCheck.lean)
+../scripts/lean-cert-check.py [--opt] [--corpus DIR]  # check-cert on the corpus, tabulated
 lake exe ryo-lean check-image x.ryo_image.rcgu.o... [--registry r.ryo_registry.bin.rcgu.o]
                                    # the image checks that need no dump (docs/aot.md §C4) on
                                    # a link's objects: each mismatch, then a summary
@@ -74,7 +80,8 @@ lakefile.toml, lean-toolchain      Lean 4.35.0, no dependencies
 Main.lean                          exe `ryo-lean`: `run <program.json>`, `example <name>`,
                                    `obj <file.o>`, `elf <file.o>`, `decode`, `dead`,
                                    `ehframe <file.o>`, `lsda <file.o>`,
-                                   `check-pool <dump.json> <file.o>...`, `check-image`,
+                                   `check-pool <dump.json> <file.o>...`, `check-cert`,
+                                   `check-image`,
                                    `exec-item`, `opsem`
 Ryo.lean                           imports the spec, the generated tables, the x86 model,
                                    the object readers and the examples
@@ -129,6 +136,11 @@ Ryo/Check/Image.lean, Image/       `ryo-lean check-image` (aot.md §C4): functio
                                    symbols (Funcs), relocations, JIT records, header, anchor
                                    and `__ryo_main` (Relocs), the registry object (Registry),
                                    FDE rows and LSDAs against the decoded code (Unwind)
+Ryo/Check/Lower/                   the lowering check C1' (docs/aot.md §C1), so far its
+                                   certificate: Plan (`sig.rs`'s `arg_plan` and `ret_kind` from
+                                   the dumped ABI), Cert (the certificate and its JSON reader),
+                                   CertCheck (`ryo-lean check-cert`, and the facts it gives the
+                                   dead-store check)
 Ryo/Examples.lean                  example programs for `ryo-lean example`
 Ryo/X86/                           L2 (docs/x86.md Part B): Item (asm::x86's items), Encode,
                                    Decode (canonical, unlinked or linked), State, Exec (per
@@ -175,6 +187,6 @@ code cites them inline as `-- [Dn]` at the definitions concerned, and cites sect
 
 M1 is done: `lake build` succeeds with no `sorry` (the five representation laws
 `encode_length`, `decode_encode`, `encode_decode_le`, `decode_mono` and `store_load` are proved in
-`Ryo/Spec/Theorems`), and `lake test` passes. M1b's dumper and differential runs work (the
-certificate is still to come). What is left of M1 and the later milestones are
-in [docs/plan.md](docs/plan.md#3-milestones).
+`Ryo/Spec/Theorems`), and `lake test` passes. M1b's dumper and differential runs work, and the
+lowering certificate is written and checked against the code and the dump (`check-cert`). What
+is left of M1 and the later milestones are in [docs/plan.md](docs/plan.md#3-milestones).
