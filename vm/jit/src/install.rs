@@ -146,8 +146,9 @@ pub(crate) struct Jit {
     /// `RYO_JIT_DUMP`: the directory the SSA tier writes a description of each compilation
     /// to.
     dump: Option<String>,
-    /// `RYO_JIT_SSA_LIMIT`.
+    /// `RYO_JIT_SSA_LIMIT`, and how many functions went to the SSA tier so far.
     ssa_limit: Option<usize>,
+    ssa_tried: usize,
 }
 
 impl Jit {
@@ -167,7 +168,18 @@ impl Jit {
             .flatten();
         let dump = std::env::var("RYO_JIT_DUMP").ok().filter(|d| !d.is_empty());
         let ssa_limit = std::env::var("RYO_JIT_SSA_LIMIT").ok().and_then(|n| n.parse().ok());
-        Jit { rt, handlers, rt_span: Span { lo, hi }, regions: Vec::new(), images: HashMap::new(), perfmap, slots: HashMap::new(), dump, ssa_limit }
+        Jit {
+            rt,
+            handlers,
+            rt_span: Span { lo, hi },
+            regions: Vec::new(),
+            images: HashMap::new(),
+            perfmap,
+            slots: HashMap::new(),
+            dump,
+            ssa_limit,
+            ssa_tried: 0,
+        }
     }
 
     fn image(&mut self, img: &Image<'_>) -> ImageInfo {
@@ -290,8 +302,9 @@ impl Jit {
         let flags = self.rt.flags;
         // `RYO_JIT_SSA_LIMIT=n` (debugging: bisects a miscompile): only the first `n`
         // functions go through the SSA tier.
-        let within_limit = self.ssa_limit.is_none_or(|n| SSA_COMPILED.load(SeqCst) < n);
+        let within_limit = self.ssa_limit.is_none_or(|n| self.ssa_tried < n);
         if flags & (JIT_OPT_SSA | JIT_OPT_SSA_NAIVE) != 0 && within_limit {
+            self.ssa_tried += 1;
             let opts = jit::Options {
                 alloc: if flags & JIT_OPT_SSA != 0 { jit::Allocator::LinearScan } else { jit::Allocator::Naive },
                 stress: (self.rt.shuffled)(h as *const _ as *const u8),
@@ -338,10 +351,12 @@ impl Jit {
                         self.log(rec, &std::format!("ssa: {}", u.0));
                     }
                 }
-                // A checker found a bug: always on stderr, so that tests see it.
+                // A checker found a bug: always on stderr, so that tests see it, and the function
+                // stays in its AOT code (`Failed`), which tests that expect JIT code notice.
                 Err(jit::Error::Check(why)) => {
                     SSA_FALLBACK.fetch_add(1, SeqCst);
-                    self.log(rec, &std::format!("ssa: check failed: {why}"))
+                    self.log(rec, &std::format!("ssa: check failed: {why}"));
+                    return Err("the SSA tier's checkers failed");
                 }
             }
         }

@@ -101,9 +101,14 @@ impl<'a> B<'a> {
             match preds.len() {
                 0 => match self.f.blocks[b.idx()].kind {
                     BlockKind::Entry if self.fr.vars[var as usize].incoming() => {
+                        // At the entry's top: the first read may come after the entry ended
+                        // (in a call with a landing pad, say), and nothing writes these bytes.
                         let x = self.fr.vars[var as usize];
                         let off = x.off - self.f.allocas[x.alloca.idx()].aot_off;
                         let i = self.f.inst(b, Op::ALoad(x.alloca, off, w), Vec::new(), &[w]);
+                        let insts = &mut self.f.blocks[b.idx()].insts;
+                        insts.pop();
+                        insts.insert(0, i);
                         self.f.result(i)
                     }
                     BlockKind::Osr(_) => {

@@ -203,8 +203,8 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
                 ext(u.idx(), e, e);
             }
         }
-        // A tail call or return moves into fixed registers; a call in the terminator
-        // doesn't exist.
+        // A tail call clobbers like a call (the callee-saved registers are restored before
+        // it); a return only moves into its return registers after the last use.
         if matches!(bd.term, Term::TailCall { .. }) {
             calls.push(e);
         }

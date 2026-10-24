@@ -339,9 +339,10 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode) -> Result<(RInsn,
             let mut offs = Vec::new();
             for o in ops.iter() {
                 let off = o as i32;
-                // The operand's extent: its `Lend` scope.
-                let l = lends.iter().find(|l| l.off == off).ok_or(bad("an island operand without an extent"))?;
-                accs.push(acc(off, l.size, How::Block));
+                // The operand's extent: its `Lend` scope (the largest, should two operands
+                // share a slot).
+                let size = lends.iter().filter(|l| l.off == off).map(|l| l.size).max().ok_or(bad("an island operand without an extent"))?;
+                accs.push(acc(off, size, How::Block));
                 offs.push(off);
             }
             Kind::Island { isl, ops: offs }

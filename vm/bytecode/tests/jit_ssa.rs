@@ -11,6 +11,11 @@ const MODE: Mode = Mode { fp_arg: true, frame_pointer: false, align_loops: true,
 /// Encodes `insns` (targets as instruction indices, converted here) with frame `frame` and
 /// decodes the machine code back to the reduced set.
 fn decoded(insns: &[Insn<'_>], frame: u32, scopes: &[(usize, i32, u32, ScopeKind)]) -> Decoded {
+    decoded_with_pads(insns, frame, scopes, &[])
+}
+
+/// [`decoded`], with cleanup entries: (call, landing pad), instruction indices.
+fn decoded_with_pads(insns: &[Insn<'_>], frame: u32, scopes: &[(usize, i32, u32, ScopeKind)], pads: &[(usize, usize)]) -> Decoded {
     let mut words = Vec::new();
     let mut starts = Vec::new();
     for i in insns {
@@ -32,7 +37,9 @@ fn decoded(insns: &[Insn<'_>], frame: u32, scopes: &[(usize, i32, u32, ScopeKind
         .iter()
         .map(|&(i, off, size, kind)| Scope { code_offset: starts.get(i).copied().unwrap_or(words.len() as u32), frame_offset: off, size, kind })
         .collect();
-    let enc = asm::encode(&words, frame, &[], &scopes, MODE).expect("encodes");
+    let cleanup: Vec<ryo_bytecode::image::CleanupEntry> =
+        pads.iter().map(|&(c, p)| ryo_bytecode::image::CleanupEntry { offset: starts[c], target: starts[p] }).collect();
+    let enc = asm::encode(&words, frame, &cleanup, &scopes, MODE).expect("encodes");
     asm::decode_reduced(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, MODE).expect("decodes")
 }
 
@@ -164,4 +171,24 @@ fn handler_shared_register_slots() {
     assert_eq!((h.ins.len(), h.outs.len()), (1, 1), "{f}");
     let Term::Ret { parts, .. } = &f.blocks[0].term else { panic!("{f}") };
     assert_eq!(parts.len(), 1);
+}
+
+/// A stack argument read only after a call with a landing pad that ends the entry block,
+/// on both paths: its load is at the entry's top, before the call.
+#[test]
+fn incoming_loads_before_the_entry_call() {
+    let v = vec![
+        Insn::Call { d: Slot(-8), f: Func(0), k: 8, a: List::from_words(&[]) },
+        // 1: the normal path.
+        Insn::AddW64 { d: Slot(-8), a: Slot(-8), b: Slot(16) },
+        Insn::Ret { s: Slot(-8), k: 8 },
+        // 3: the landing pad.
+        Insn::Lpad { x: Slot(-16) },
+        Insn::StoreW64 { m: Mem { p: Slot(16), k: 0 }, s: Slot(-16) },
+        Insn::Resume { x: Slot(-16) },
+    ];
+    let f = ir(&decoded_with_pads(&v, 16, &[], &[(0, 3)]));
+    let entry = &f.blocks[0];
+    assert!(matches!(entry.term, Term::Invoke { .. }), "{f}");
+    assert!(matches!(f.insts[entry.insts[0].idx()].op, Op::ALoad(..)), "{f}");
 }

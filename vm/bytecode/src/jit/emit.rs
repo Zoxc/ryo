@@ -565,6 +565,12 @@ impl<'a> E<'a> {
             ms.push((Rm::R(R::Rax), self.src(c)));
         }
         self.moves(ms);
+        // Narrow integers zero-extended, as the AOT code loads them: native callees may rely
+        // on it (`zeroext`).
+        for r in regs.iter().filter(|r| !r.xmm && r.size < 8) {
+            let x = asm_int_arg(r.index);
+            self.a.x().movzx(x, r.size as u8, Rm::R(x));
+        }
     }
 
     /// After a call: the results from the return registers.
@@ -1039,6 +1045,15 @@ impl<'a> E<'a> {
                     }
                 }
                 self.moves(ms);
+                // Narrow integer parts zero-extended, as the AOT code loads them.
+                let mut g = 0;
+                for p in ps.iter().filter(|p| !p.xmm) {
+                    let r = [R::Rax, R::Rdx][g];
+                    if p.size < 8 {
+                        self.a.x().movzx(r, p.size as u8, Rm::R(r));
+                    }
+                    g += 1;
+                }
                 self.epilogue();
                 self.a.x().ret();
             }
