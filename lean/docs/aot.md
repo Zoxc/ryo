@@ -202,7 +202,7 @@ and "decode" mean §C1/§C2; the rest are new checks in `Ryo/Check/Image/`, run 
 | VM function text: body, prologue/epilogue, landing-pad stubs, counter checks and stubs, alignment `nop`s | decode + C1' | the trip contract (stubs); inter-function padding is never executed (checked: no decoded target lands in it) |
 | `.rodata` parts read by code (island `ops` arrays, switch values, jump tables) | decode reads them from the object; C1' checks the `ops` against the island contract | — |
 | **Constant pool** (const allocations, promoted consts, `Bytes`) | for each `Const` the code (or another pool entry) references: the pool bytes at that offset equal the dumped rustc allocation's bytes, its relocations (the object's `R_X86_64_64` into the pool or against symbols) are exactly the allocation's provenance (target allocation at the same offset, or the symbol of the static/fn the dump names), its alignment holds, and it lies in the RELRO section (D7: consts are immutable; the JIT's devirtualization relies on it). Uninit bytes in the allocation may be anything | — (the backend's `Pool::intern` is no longer trusted) |
-| **Vtables** | the same check against the dumped `vtable_allocation` (D29: `[drop_in_place, size, align, entries…]`, entries as symbol relocations to the instances the dump names) | — |
+| **Vtables** | the same check against the dumped `vtable_allocation` (D29: `[drop_in_place, size, align, entries…]`, entries as symbol relocations to the instances the dump names; `drop_in_place` null for types without drop glue, as rustc's `vtable_allocation` has it) | — |
 | **Function symbols and the function table** | each `FuncEntry` (`code_off`, `code_len`) covers exactly the code that was decoded, in table order; each function symbol (global or local) is at its entry's `code_off` with its `code_len`; the symbol name is the dump's `tcx.symbol_name` for that instance; `arg_size`, `ret_size`, `ret_kind` agree with the signature's `ArgPlan`; the scope/call-site/dropped spans are the ones decode used. The runtime and JIT read these, so check them, don't trust them | — |
 | **Relocations** of the text and the read-only section | every relocated field the decoder met has a relocation of the kind its form needs (`Call32` → `ryo_h_<h>` or `ryo_probe_stack`; `Pc32` → a symbol slot, pool offset, data/record offset, rodata; `Abs64` for the header's `text`/`data`, pool pointers, JIT-record initial values → the trip entry points); no relocation outside such fields; names resolve as C1' requires (`Sym s` slot ↔ the callee's symbol) | the linker applies them (see "Linked binary" below) |
 | **Symbol slots** (`[u64]`, RELRO) | each slot has exactly one `Abs64` relocation against the symbol `name(s)`, and `SYM_INDIRECT` flags are clear (ELF) | `ld.so` fills them and RELRO makes them read-only after loading |
@@ -216,6 +216,18 @@ and "decode" mean §C1/§C2; the rest are new checks in `Ryo/Check/Image/`, run 
 | Islands | C1' checks the template instance and `ops` | cg_llvm instances of `ryo_rt` templates: trusted contracts (§C6) |
 | Functions the backend leaves native (`NeedsNative`, template gaps), statics | — | LLVM code and data from MIR, under the convention |
 | PE (`.pdata`/`.xdata`, fixups, `__imp_` slots) | — | out of scope |
+
+**The pool check** (`Ryo/Check/Image/Pool.lean`, `ryo-lean check-pool`,
+`scripts/lean-pool-check.py` over the corpus) implements the two rows above. The pool doesn't
+record where each allocation starts, so it matches: a placement "global `g` at pool offset
+`b`" holds locally when bytes, alignment and the relocations in `[b, b + size)` agree with
+`g`, a pool pointer demanding the placement of its target; valid placements are the greatest
+fixpoint over those demands (cycles are fine). Each code reference (`Ref.const k`, with its
+use from the decoded `const`/`addr.abs`) must be covered by a valid placement of a global its
+function's dumped body mentions; `fill` operands are byte constants (C1' checks them), and
+references from functions outside the dump are reported, not failed. Statics carry no symbol
+in the dump, so a static pointer is checked against "one symbol per static, distinct, no
+instance's" until the dump names them.
 
 **Linked binary vs the image object (recommendation).** Validate the **object** as the
 primary input: its relocations are *named*, which is what makes the C1'/§C4 resolution

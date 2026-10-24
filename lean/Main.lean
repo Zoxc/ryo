@@ -27,6 +27,14 @@
                                            scripts/lean-decode-ref prints Rust's
   ryo-lean dead <image object>             the dead-store check on each function's dropped
                                            stores: those it can't show dead
+  ryo-lean check-pool <dump.json> <image object>... [-v]
+                                           the constant-pool and vtable check
+                                           (`Ryo/Check/Image/Pool.lean`) of each object against
+                                           the MIR dump: per object a `pool-check` line with
+                                           the pool references matched, byte constants, not in
+                                           the dump and mismatched (each mismatch with details;
+                                           `-v` lists those not in the dump too); exit status 1
+                                           on a mismatch or an object-level error
 -/
 import Ryo
 import Ryo.Examples
@@ -106,6 +114,21 @@ def deadObj (path : String) : IO UInt32 := do
     IO.println s!"error: {e}"
     pure 1
 
+def checkPool (dump : String) (objs : List String) (verbose : Bool) : IO UInt32 := do
+  let j ← IO.ofExcept (Json.parse (← IO.FS.readFile dump))
+  let p : Program ← IO.ofExcept (fromJson? j)
+  let mut status : UInt32 := 0
+  for path in objs do
+    match Ryo.Obj.readImageObject (← IO.FS.readBinFile path) with
+    | .ok o =>
+      let r := Ryo.Check.Image.Pool.checkObject p o
+      for l in r.render path verbose do IO.println l
+      unless r.ok do status := 1
+    | .error e =>
+      IO.println s!"pool-check {path}: error: {e}"
+      status := 1
+  pure status
+
 def objFile (path : String) : IO UInt32 := do
   let bytes ← IO.FS.readBinFile path
   match Ryo.Obj.readImageObject bytes with
@@ -131,6 +154,8 @@ def main (args : List String) : IO UInt32 := do
   | ["obj", path] => objFile path
   | ["elf", path] => elfFile path
   | ["dead", path] => deadObj path
+  | "check-pool" :: dump :: objs@(_ :: _) =>
+    checkPool dump (objs.filter (· != "-v")) (objs.contains "-v")
   | ["decode", path] => if path.endsWith ".json" then decodeFile path else decodeObj path
   | ["run", path] => runFile path 10000000
   | ["run", path, "--fuel", n] => runFile path n.toNat!
@@ -150,5 +175,5 @@ def main (args : List String) : IO UInt32 := do
       pure 2
   | ["exec-item"] => Ryo.X86.Cosim.main
   | _ =>
-    IO.eprintln "usage: ryo-lean run <program.json> [--fuel N] [--stdout]\n       ryo-lean example <name> [out.json]\n       ryo-lean obj <file.o>\n       ryo-lean elf <file.o>\n       ryo-lean decode <inputs.json | file.o>"
+    IO.eprintln "usage: ryo-lean run <program.json> [--fuel N] [--stdout]\n       ryo-lean example <name> [out.json]\n       ryo-lean obj <file.o>\n       ryo-lean elf <file.o>\n       ryo-lean decode <inputs.json | file.o>\n       ryo-lean dead <file.o>\n       ryo-lean check-pool <dump.json> <file.o>... [-v]"
     pure 2

@@ -37,6 +37,10 @@ lake exe ryo-lean elf x.o          # an ELF object's sections, symbols and reloc
 ../scripts/lean-decode-diff.py [--opt] [--readelf] [--decode]
                                    # the object readers against Rust (scripts/lean-decode-ref)
                                    # and readelf on the corpus's image objects
+lake exe ryo-lean check-pool dump.json x.ryo_image.rcgu.o [-v]
+                                   # the constant-pool and vtable check of image objects
+                                   # against the RYO_DUMP_LEAN dump (Ryo/Check/Image/Pool.lean)
+../scripts/lean-pool-check.py [--opt]  # check-pool on the corpus, tabulated
 lake exe ryo-lean exec-item         # run x86 items on states given as JSON lines (Ryo/X86/Cosim.lean)
 cargo run --release --manifest-path harness/Cargo.toml -- [--cases N] [--seed S]
                                    # co-simulation of Item.exec against the CPU (x86-64 Linux;
@@ -57,7 +61,8 @@ tables fail it. Don't edit them by hand.
 ```
 lakefile.toml, lean-toolchain      Lean 4.35.0, no dependencies
 Main.lean                          exe `ryo-lean`: `run <program.json>`, `example <name>`,
-                                   `obj <file.o>`, `elf <file.o>`, `exec-item`
+                                   `obj <file.o>`, `elf <file.o>`, `decode`, `dead`,
+                                   `check-pool <dump.json> <file.o>...`, `exec-item`
 Ryo.lean                           imports the spec, the generated tables, the x86 model,
                                    the object readers and the examples
 Ryo/Spec.lean                      imports every spec module
@@ -97,6 +102,8 @@ Ryo/Vm/Frame.lean                  frame accesses of R code, the dropped-store d
 Ryo/Vm/DecodeObj.lean              `ryo-lean decode <obj>`: an image object's functions decoded
                                    (Ryo/Obj's inputs, linked at made-up addresses), printed as
                                    scripts/lean-decode-ref prints Rust's
+Ryo/Check/Image/Pool.lean          image checks (docs/aot.md §C4): the constant pool and
+                                   vtables against the dump's allocations (`check-pool`)
 Ryo/Examples.lean                  example programs for `ryo-lean example`
 Ryo/X86/                           L2 (docs/x86.md Part B): Item (asm::x86's items), Encode,
                                    Decode (canonical, unlinked or linked), State, Exec (per
