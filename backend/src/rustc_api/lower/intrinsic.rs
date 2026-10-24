@@ -45,8 +45,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 // `rustc_nounwind`: a plain island (design/lowering.md#unwinding).
                 let [try_fn, data, catch_fn] = self.arg_slots::<3>(args)?;
                 let data_ty = callee.args.type_at(0);
+                let dn = cont.dest.map_or(0, |d| d.layout.size.bytes() as u32);
                 self.into_dest(&cont, |fx, d| {
-                    fx.island(super::island::templates::CATCH_UNWIND, &[data_ty.into()], &[try_fn, data, catch_fn, d], None);
+                    fx.island(super::island::templates::CATCH_UNWIND, &[data_ty.into()], &[(try_fn, 8), (data, 8), (catch_fn, 8), (d, dn)], None);
                     Ok(())
                 })?
             }
@@ -355,16 +356,22 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             }
             n if n.starts_with("atomic_") => self.atomic(n, callee, args, cont)?,
             "compare_bytes" => {
-                let ins = self.arg_slots::<3>(args)?;
+                if args.len() != 3 {
+                    return native("intrinsic argument count");
+                }
+                let ins = self.island_args(args)?;
                 self.wrapper(templates::COMPARE_BYTES, &[], &ins, cont)?
             }
             "raw_eq" => {
-                let ins = self.arg_slots::<2>(args)?;
+                if args.len() != 2 {
+                    return native("intrinsic argument count");
+                }
+                let ins = self.island_args(args)?;
                 self.wrapper(templates::RAW_EQ, &[ty0().into()], &ins, cont)?
             }
             n if n.starts_with("simd_") => {
                 let Some(arity) = templates::simd(n) else { return Ok(false) };
-                let ins = self.arg_slots_dyn(args)?;
+                let ins = self.island_args(args)?;
                 if ins.len() != arity {
                     return native("intrinsic argument count");
                 }
@@ -378,12 +385,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         })
     }
 
-    /// An intrinsic wrapper island: `ops` = the inputs, then the destination.
-    fn wrapper(&mut self, template: &str, generics: &[GenericArg<'tcx>], ins: &[u32], cont: &CallCont<'tcx>) -> Result<bool, NeedsNative> {
+    /// An intrinsic wrapper island: `ops` = the inputs, then the destination (each a slot and
+    /// its size).
+    fn wrapper(&mut self, template: &str, generics: &[GenericArg<'tcx>], ins: &[(u32, u32)], cont: &CallCont<'tcx>) -> Result<bool, NeedsNative> {
         let ins = ins.to_vec();
+        let dn = cont.dest.map_or(0, |d| d.layout.size.bytes() as u32);
         self.into_dest(cont, |fx, d| {
             let mut ops = ins;
-            ops.push(d);
+            ops.push((d, dn));
             fx.island(template, generics, &ops, None);
             Ok(())
         })
@@ -504,11 +513,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     }
 
     /// The arguments in frame slots, any number.
-    fn arg_slots_dyn(&mut self, args: &[ArgSrc<'_, 'tcx>]) -> Result<Vec<u32>, NeedsNative> {
+    /// The arguments in frame slots, each with its size, as island operands (a slot given as
+    /// one is a receiver's data pointer).
+    fn island_args(&mut self, args: &[ArgSrc<'_, 'tcx>]) -> Result<Vec<(u32, u32)>, NeedsNative> {
         args.iter()
             .map(|a| match *a {
-                ArgSrc::Operand(op) => Ok(self.operand_slot(op)?.0),
-                ArgSrc::Slot(s) => Ok(s),
+                ArgSrc::Operand(op) => self.operand_slot(op).map(|(s, l)| (s, l.size.bytes() as u32)),
+                ArgSrc::Slot(s) => Ok((s, 8)),
             })
             .collect()
     }

@@ -1306,6 +1306,7 @@ fn dump_labeled(out: &mut String, words: &[u32], cleanup: &[ryo_bytecode::image:
             let what = match sc.kind {
                 asm::ScopeKind::Escape { align } => format!("escape align {align}"),
                 asm::ScopeKind::End => "end".to_owned(),
+                asm::ScopeKind::Lend => "lend".to_owned(),
             };
             writeln!(out, "    ; {what} ${}, {} bytes", sc.frame_offset, sc.size).unwrap();
         }

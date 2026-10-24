@@ -251,6 +251,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let block = Self::out(0);
         let k = if sig.ret_kind == RET_SRET { 0 } else { sig.ret_kind };
         let rd = if k == 0 { 0 } else { d };
+        // The island calls' operands: the argument block, the result, and the callee.
+        let (bn, dn) = (sig.block_size, sig.output.size.bytes() as u32);
         let at = match target {
             Target::Vm(callee) => {
                 let a = self.pass_args(sig, homes, Some(d), false)?;
@@ -270,18 +272,18 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             }
             Target::Template(fty) => {
                 let args = [fty.into(), sig.args_tuple(tcx).into(), sig.output.ty.into()];
-                self.island(templates::CALL, &args, &[block, d], Some(cont.unwind));
+                self.island(templates::CALL, &args, &[(block, bn), (d, dn)], Some(cont.unwind));
                 None
             }
             Target::Sym(callee, conv) => {
                 let p = self.sym_addr(callee);
                 let (name, args) = self.ptr_island(sig, conv)?;
-                self.island(&name, &args, &[block, d, p], Some(cont.unwind));
+                self.island(&name, &args, &[(block, bn), (d, dn), (p, 8)], Some(cont.unwind));
                 None
             }
             Target::Ptr(p, CallConv::C) => {
                 let (name, args) = self.ptr_island(sig, CallConv::C)?;
-                self.island(&name, &args, &[block, d, p], Some(cont.unwind));
+                self.island(&name, &args, &[(block, bn), (d, dn), (p, 8)], Some(cont.unwind));
                 None
             }
         };
@@ -633,7 +635,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             let at = self.op(Opcode::Call, &[&[0, f, 0][..], &a].concat());
             self.unwind_entry(at, unwind);
         } else {
-            self.island(templates::DROP_IN_PLACE, &[ty.into()], &[ptr], Some(unwind));
+            self.island(templates::DROP_IN_PLACE, &[ty.into()], &[(ptr, if pv.meta.is_some() { 16 } else { 8 })], Some(unwind));
         }
         self.jump(target);
         Ok(())

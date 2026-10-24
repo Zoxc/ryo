@@ -35,4 +35,4 @@ pub use full::{ALL_OPCODES, Insn, OP_INFO, OpInfo, Opcode};
 
 /// Version of the bytecode and image format. Bumped on every incompatible change, including
 /// any change to the opcode list. Stored in each image header and checked at registration.
-pub const FORMAT_VERSION: u32 = 20;
+pub const FORMAT_VERSION: u32 = 21;

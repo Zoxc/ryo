@@ -155,7 +155,7 @@ so a MIR change in a toolchain bump is a compile error. The tables below follow 
 | `Intrinsic(CopyNonOverlapping)` | `memcpy` |
 | `Intrinsic(Assume)` | nothing |
 | `StorageLive` | nothing (slot allocation used it) |
-| `StorageDead` | no code: a storage end of the local's slot ([vm.md](vm.md#escapes-and-storage-ends)) |
+| `StorageDead` | no code: a storage end of the local's slot ([vm.md](vm.md#escapes-storage-ends-and-island-operands)) |
 | `FakeRead`, `PlaceMention`, `AscribeUserType`, `Coverage`, `ConstEvalCounter`, `Nop`, `BackwardIncompatibleDropHint` | nothing |
 
 ## Rvalues

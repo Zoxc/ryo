@@ -297,6 +297,7 @@ pub fn encode_reduced_at(
             match sc.kind {
                 ScopeKind::Escape { align } => asm.escape(sc.frame_offset as u32, sc.size, align),
                 ScopeKind::End => asm.storage_end(sc.frame_offset as u32, sc.size),
+                ScopeKind::Lend => asm.lend(sc.frame_offset as u32, sc.size),
             }
         }
         Ok(())

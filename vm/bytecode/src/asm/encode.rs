@@ -125,6 +125,11 @@ pub enum ScopeKind {
     /// statement). Pointers to it dangle afterwards, so earlier escapes of these bytes stop
     /// here, and other locals may reuse them.
     End,
+    /// An island operand: the island's template reads and writes the object, at its type,
+    /// during the call only (it keeps no pointer to it). Not an escape: liveness and the
+    /// escape dataflow ignore it. It gives the JIT the extent of the operand, which the code
+    /// doesn't show (an island's operand array holds only offsets).
+    Lend,
 }
 
 /// A store of an inline sequence the encoder dropped: the sequence ends at `at` without it.
@@ -780,6 +785,7 @@ pub fn encode(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], scopes: &
             match sc.kind {
                 ScopeKind::Escape { align } => asm.escape(sc.frame_offset as u32, sc.size, align),
                 ScopeKind::End => asm.storage_end(sc.frame_offset as u32, sc.size),
+                ScopeKind::Lend => asm.lend(sc.frame_offset as u32, sc.size),
             }
         }
         Ok(())
@@ -877,6 +883,14 @@ impl Asm {
     pub fn storage_end(&mut self, slot: u32, size: u32) {
         if size != 0 {
             self.pieces.push(Piece::Scope { slot, size, kind: ScopeKind::End });
+        }
+    }
+
+    /// Records that the next instruction, an island, takes the object at the raw slot `slot`,
+    /// of `size` bytes, as an operand ([`ScopeKind::Lend`]).
+    pub fn lend(&mut self, slot: u32, size: u32) {
+        if size != 0 {
+            self.pieces.push(Piece::Scope { slot, size, kind: ScopeKind::Lend });
         }
     }
 

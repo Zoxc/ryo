@@ -328,6 +328,7 @@ fn inputs_json(i: &Inputs) -> String {
             let a = match s.kind {
                 ScopeKind::Escape { align } => align.to_string(),
                 ScopeKind::End => "null".to_owned(),
+                ScopeKind::Lend => unreachable!("the vectors have no island operand scopes"),
             };
             format!("[{},{},{},{a}]", s.code_offset, s.frame_offset, s.size)
         })
@@ -358,6 +359,7 @@ fn text(d: &asm::Decoded) -> String {
         let k = match sc.kind {
             ScopeKind::Escape { align } => format!("escape {align}"),
             ScopeKind::End => "end".to_owned(),
+            ScopeKind::Lend => "lend".to_owned(),
         };
         writeln!(s, "scope {} {} {} {k}", sc.code_offset, sc.frame_offset, sc.size).unwrap();
     }

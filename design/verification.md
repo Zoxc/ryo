@@ -54,7 +54,7 @@ x86 bytes.
 
 - **Frame objects.** R is stated over the frame's objects (byte ranges no access crosses,
   delimited by the escape scopes and island operand extents the image records,
-  [vm.md](vm.md#escapes-and-storage-ends)), at a layout `φ` from objects to addresses. AOT
+  [vm.md](vm.md#escapes-storage-ends-and-island-operands)), at a layout `φ` from objects to addresses. AOT
   code is R at the AOT layout (`fp + offset`); JIT code is R at the layout the JIT chose.
 - **Escape = allocation.** An object's bytes are private to the frame (reachable only
   through frame operands) until it escapes. At its escape it becomes an allocation at `φ` of

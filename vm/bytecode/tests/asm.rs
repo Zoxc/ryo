@@ -205,7 +205,7 @@ fn random_kind(rng: &mut Rng, load: bool) -> u32 {
     }
 }
 
-/// A few escapes and storage ends of small overlapping objects, at instruction starts and the
+/// A few escapes, storage ends and island operands of small overlapping objects, at instruction starts and the
 /// end of `code`, sorted, from a seed of the code.
 fn random_scopes(code: &[u32]) -> Vec<Scope> {
     let mut rng = Rng(code.iter().fold(0x2545f4914f6cdd1d, |h, &w| (h ^ w as u64).wrapping_mul(0x100000001b3)) | 1);
@@ -214,7 +214,11 @@ fn random_scopes(code: &[u32]) -> Vec<Scope> {
     let mut out: Vec<Scope> = (0..rng.below(5))
         .map(|_| {
             let align = 1 << rng.below(5);
-            let kind = if rng.below(2) == 0 { ScopeKind::Escape { align } } else { ScopeKind::End };
+            let kind = match rng.below(3) {
+                0 => ScopeKind::Escape { align },
+                1 => ScopeKind::End,
+                _ => ScopeKind::Lend,
+            };
             Scope {
                 code_offset: starts[rng.below(starts.len() as u64) as usize],
                 frame_offset: -(align as i32) * (1 + rng.below(4) as i32),
@@ -822,7 +826,7 @@ fn templates_are_pinned_to_format_version() {
             eat(&lsda::write(&enc.call_sites));
         }
     }
-    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (20, 0x11f435de12b78d4c), "template hash {h:#x}");
+    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (21, 0x11f435de12b78d4c), "template hash {h:#x}");
 }
 
 /// Without a frame pointer, an SSE load or store of the slot at `rsp` has no displacement.

@@ -60,8 +60,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 if half_or_quad(src.ty) || half_or_quad(to) || pe_f2i128 {
                     // No VM instructions for `f16`/`f128`: the `as_cast` island.
                     let (s, _) = self.operand_slot(op)?;
+                    let (sn, dn) = (src.size.bytes() as u32, to_layout.size.bytes() as u32);
                     return self.with_place_slot(dst, |fx, d| {
-                        fx.island(AS_CAST, &[src.ty.into(), to.into()], &[s, d], None);
+                        fx.island(AS_CAST, &[src.ty.into(), to.into()], &[(s, sn), (d, dn)], None);
                         Ok(())
                     });
                 }

@@ -285,11 +285,11 @@ and handlers, calls, unwinding and the decoder's view of the frame don't change.
   runs against their handlers, also with dead-slot hints from a liveness pass, built with
   `Asm` directly.
 
-#### Escapes and storage ends
+#### Escapes, storage ends and island operands
 
 The decoded code addresses frame slots with exact widths, but not where its objects begin
 and end. An optimizer of decoded code needs that only for the objects whose address
-escapes, so `Encoded::scopes` (`asm::Scope`) records, as side data like `dropped`:
+escapes and for the islands' operands, so `Encoded::scopes` (`asm::Scope`) records, as side data like `dropped`:
 
 - **Escape**: a pointer to an object escapes before the instruction: an `addr` of the
   object or a part of it, or a call argument passed by address (an sret destination, an
@@ -303,15 +303,21 @@ escapes, so `Encoded::scopes` (`asm::Scope`) records, as side data like `dropped
   for LLVM's `lifetime.end`), so an escape of the bytes ends there, and slot sharing may
   give them to another local. `Asm::finish` keeps only the ends that overlap an escape.
 
+- **Lend**: an island takes the object as an operand: its template reads and writes it, at
+  its type, during the call only. Not an escape (the template keeps no pointer), but the
+  only record of the operand's extent, which the island's operand array (offsets only)
+  doesn't give: the JIT, which places frame objects itself, needs it
+  ([jit.md](jit.md)). The lowering passes each island operand's size
+  (`FnCx::island`).
+
 Bytes are escaped at an instruction if an escape of them reaches it on some path, landing
 pad edges included, without an end. Everything else is accessed only at the widths
-the instructions give. Island operands aren't escapes: templates read and write each at
-its type during the call. `Asm::escape` and `Asm::storage_end` add pieces without code,
+the instructions give. `Asm::escape`, `Asm::storage_end` and `Asm::lend` add pieces without code,
 which the register cache and dead-store dropping pass over, and layout records their
 positions (an instruction's, so after a loop head's padding). The decoder maps them to word offsets (`Decoded::scopes`, also through
 `reduce` and `decode_reduced`), and `vm/bytecode/tests/asm.rs` round-trips them and checks
-that they don't change the code. `RYO_DUMP` shows them as `; escape …` and `; end …`
-lines.
+that they don't change the code. `RYO_DUMP` shows them as `; escape …`, `; end …` and
+`; lend …` lines.
 
 ### Reduced instructions
 
@@ -775,9 +781,9 @@ symbol flags    one byte per symbol (bit 0: indirect, load through the slot; PE 
 symbols         pointer-sized slots, one per referenced native symbol (functions, statics,
                 islands, `rust_eh_personality` on ELF), filled in by the linker
 constants       constant pool: allocations, aligned
-scopes          per function, sorted by position: where a frame object escapes or its
-                storage ends (`asm::Scope`: code offset, frame offset, size, alignment or
-                0 for an end)
+scopes          per function, sorted by position: where a frame object escapes, its
+                storage ends or an island takes it as an operand (`asm::Scope`: code
+                offset, frame offset, size, alignment, 0 for an end or `SCOPE_LEND`)
 call sites      per function, sorted by position: code offset and length, landing pad
                 offset (with the catch bit) or none (`asm::CallSite`)
 dropped stores  per function, sorted by position: the stores of inline sequences dropped as

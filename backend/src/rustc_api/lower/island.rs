@@ -113,11 +113,16 @@ pub mod templates {
 
 impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// Emits an island with no successor list (it falls through), and requests its template
-    /// instance. An island whose operation can unwind has the unwind action `unwind`; one
-    /// without (`None`) can't unwind (design/lowering.md#unwinding).
-    pub fn island(&mut self, template: &str, args: &[GenericArg<'tcx>], ops: &[u32], unwind: Option<UnwindAction>) -> InsnId {
+    /// instance. `ops` are its operands' slots, each with the size the template accesses
+    /// there, which a [`ryo_bytecode::asm::ScopeKind::Lend`] scope records. An island whose
+    /// operation can unwind has the unwind action `unwind`; one without (`None`) can't unwind
+    /// (design/lowering.md#unwinding).
+    pub fn island(&mut self, template: &str, args: &[GenericArg<'tcx>], ops: &[(u32, u32)], unwind: Option<UnwindAction>) -> InsnId {
         let isl = self.reloc(CodeReloc::Island { template: Symbol::intern(template), args: self.tcx.mk_args(args) });
-        let at = self.emit(Opcode::Island, vec![Opnd::Sym(Sym(isl)), Opnd::Words(ops.to_vec())]);
+        for &(s, size) in ops {
+            self.asm.lend(s, size);
+        }
+        let at = self.emit(Opcode::Island, vec![Opnd::Sym(Sym(isl)), Opnd::Words(ops.iter().map(|o| o.0).collect())]);
         if let Some(u) = unwind {
             self.unwind_entry(at, u);
         }

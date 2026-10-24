@@ -574,12 +574,13 @@ fn scopes_and_call_sites_round_trip() {
     let scopes = [
         Scope { code_offset: s0[0], frame_offset: -32, size: 16, kind: ScopeKind::Escape { align: 8 } },
         Scope { code_offset: s0[2], frame_offset: -32, size: 16, kind: ScopeKind::End },
+        Scope { code_offset: s0[3], frame_offset: -48, size: 8, kind: ScopeKind::Lend },
     ];
     let cleanup = [CleanupEntry { offset: s0[1], target: s0[3] | CATCH }, CleanupEntry { offset: s0[4], target: CONTINUE }];
     for mode in [ELF, Mode { fp_arg: true, frame_pointer: false, align_loops: false, ..ELF }, Mode { pe: true, ..ELF }, AOT, Mode { pe: true, ..AOT }]
     {
         let enc = vec![asm::encode(&f0, 48, &cleanup, &scopes, mode).unwrap(), asm::encode(&f1, 16, &[], &[], mode).unwrap()];
-        assert_eq!(enc[0].scopes.len(), 2);
+        assert_eq!(enc[0].scopes.len(), 3);
         assert_eq!(enc[0].call_sites.len(), 2);
         assert!(enc[0].call_sites[0].catch);
         let mut w = ImageWriter::new(SCID);
@@ -599,6 +600,7 @@ fn scopes_and_call_sites_round_trip() {
         }
         assert_eq!(img.scopes(0)[0].align, 8);
         assert_eq!(img.scopes(0)[1].align, 0);
+        assert_eq!(img.scopes(0)[2].align, SCOPE_LEND);
         assert!(img.scopes(1).is_empty() && img.scopes(2).is_empty());
 
         // `validate` checks the runs and the entries.
@@ -606,7 +608,7 @@ fn scopes_and_call_sites_round_trip() {
         let fe = |h: &Header, i: usize, field: usize| h.functions.off as usize + i * size_of::<FuncEntry>() + field;
         let sc = |h: &Header, i: usize, field: usize| h.scopes.off as usize + i * size_of::<ScopeEntry>() + field;
         let cs = |h: &Header, i: usize, field: usize| h.call_sites.off as usize + i * size_of::<CallSiteEntry>() + field;
-        assert_eq!(validate_edited(&obj, |r, h| put32(r, fe(h, 1, offset_of!(FuncEntry, scopes)), 3)), Err(ImageError::BadFunction(1)));
+        assert_eq!(validate_edited(&obj, |r, h| put32(r, fe(h, 1, offset_of!(FuncEntry, scopes)), 4)), Err(ImageError::BadFunction(1)));
         assert_eq!(validate_edited(&obj, |r, h| put32(r, fe(h, 0, offset_of!(FuncEntry, call_sites) + 4), 3)), Err(ImageError::BadFunction(0)));
         assert_eq!(validate_edited(&obj, |r, h| put32(r, sc(h, 1, offset_of!(ScopeEntry, align)), 3)), Err(ImageError::BadScope(1)));
         assert_eq!(validate_edited(&obj, |r, h| put32(r, sc(h, 0, 0), 10_000)), Err(ImageError::BadScope(0)));

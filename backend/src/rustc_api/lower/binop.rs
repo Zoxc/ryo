@@ -54,13 +54,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     _ => "MulOvf",
                 };
                 let su = if signed { "S" } else { "U" };
-                let (sa, _) = self.operand_slot(a)?;
-                let (sb, _) = self.operand_slot(b)?;
+                let (sa, la) = self.operand_slot(a)?;
+                let (sb, lb) = self.operand_slot(b)?;
                 let Some(opc) = try_opcode(&format!("{family}{su}{}", w.suffix())) else {
                     // 128-bit `mul.ovf`: an island writing the whole pair.
                     let template = if signed { templates::MUL_OVF_S_W128 } else { templates::MUL_OVF_U_W128 };
+                    let n = dst.layout.size.bytes() as u32;
                     return self.with_place_slot(dst, |fx, d| {
-                        fx.island(template, &[], &[sa, sb, d], None);
+                        fx.island(template, &[], &[(sa, la.size.bytes() as u32), (sb, lb.size.bytes() as u32), (d, n)], None);
                         Ok(())
                     });
                 };
@@ -134,10 +135,11 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 (BinOp::Rem, true) => templates::REM_S_W128,
                 _ => templates::MUL_W128,
             };
-            let (sa, _) = self.operand_slot(a)?;
-            let (sb, _) = self.operand_slot(b)?;
+            let (sa, la) = self.operand_slot(a)?;
+            let (sb, lb) = self.operand_slot(b)?;
+            let n = dst.layout.size.bytes() as u32;
             return self.with_place_slot(dst, |fx, d| {
-                fx.island(template, &[], &[sa, sb, d], None);
+                fx.island(template, &[], &[(sa, la.size.bytes() as u32), (sb, lb.size.bytes() as u32), (d, n)], None);
                 Ok(())
             });
         }

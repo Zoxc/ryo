@@ -795,6 +795,7 @@ impl From<&Scope> for ScopeEntry {
         let align = match s.kind {
             ScopeKind::Escape { align } => align,
             ScopeKind::End => 0,
+            ScopeKind::Lend => SCOPE_LEND,
         };
         ScopeEntry { code_offset: s.code_offset, frame_offset: s.frame_offset, size: s.size, align }
     }
@@ -802,7 +803,11 @@ impl From<&Scope> for ScopeEntry {
 
 impl From<&ScopeEntry> for Scope {
     fn from(s: &ScopeEntry) -> Scope {
-        let kind = if s.align == 0 { ScopeKind::End } else { ScopeKind::Escape { align: s.align } };
+        let kind = match s.align {
+            0 => ScopeKind::End,
+            SCOPE_LEND => ScopeKind::Lend,
+            align => ScopeKind::Escape { align },
+        };
         Scope { code_offset: s.code_offset, frame_offset: s.frame_offset, size: s.size, kind }
     }
 }

@@ -243,8 +243,8 @@ impl DroppedEntry {
     }
 }
 
-/// A scope table entry: where a frame object escapes or its storage ends (`asm::Scope`, for
-/// the decoder; the machine code doesn't show them).
+/// A scope table entry: where a frame object escapes, its storage ends, or an island takes it
+/// as an operand (`asm::Scope`, for the decoder; the machine code doesn't show them).
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ScopeEntry {
@@ -254,9 +254,13 @@ pub struct ScopeEntry {
     pub frame_offset: i32,
     /// Size of the object in bytes.
     pub size: u32,
-    /// An escape: the object's alignment (a power of two, at most 16); 0 for a storage end.
+    /// An escape: the object's alignment (a power of two, at most 16); 0 for a storage end;
+    /// [`SCOPE_LEND`] for an island operand (`asm::ScopeKind::Lend`).
     pub align: u32,
 }
+
+/// [`ScopeEntry::align`] of an island operand's extent (`asm::ScopeKind::Lend`).
+pub const SCOPE_LEND: u32 = 1 << 31;
 
 /// A call-site table entry: a call-like instruction's range and what unwinding out of it
 /// does (`asm::CallSite`, the same as the LSDA's records).
@@ -468,7 +472,7 @@ impl<'a> Image<'a> {
             for (j, s) in self.scopes(i).iter().enumerate() {
                 let sorted = s.code_offset >= prev;
                 prev = s.code_offset;
-                if !sorted || s.code_offset > f.code_len || (s.align != 0 && (!s.align.is_power_of_two() || s.align > 16)) {
+                if !sorted || s.code_offset > f.code_len || (s.align != 0 && s.align != SCOPE_LEND && (!s.align.is_power_of_two() || s.align > 16)) {
                     return Err(ImageError::BadScope(f.scopes.off + j as u32));
                 }
             }
