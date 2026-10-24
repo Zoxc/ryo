@@ -262,8 +262,10 @@ footprint (op : Full.Opcode) : Option Footprint
 
 Out of scope: the opcodes without a Rust handler (`jmp`, the calls, `ret`, `arg`, `island`;
 `resume`, whose handler is assembly), which are R's own instructions (§C0.4); `view` and
-`unpack` (§C0.6); f16/f128 (islands). Not done yet: generating the JIT's Rust effect tables
-from the footprints, or checking them against it in `y test` ([jit.md](jit.md) §E.7).
+`unpack` (§C0.6); f16/f128 (islands). The JIT's Rust effect table (`jit/effects.rs`) is
+checked against the footprints (`RyoTest/Effects.lean`, on vectors from
+`vm/bytecode/tests/lean_effects.rs`; [jit.md](jit.md) §E.7): every opcode agrees, `resume`
+aside. Not done yet: generating the Rust table from the footprints.
 Reads are not checked for exactness (an over-approximated read only costs the JIT
 precision).
 
