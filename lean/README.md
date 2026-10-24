@@ -135,6 +135,7 @@ Ryo/Vm/OpSem/                      `opSem` (reduced.md Part D): Basic (operands,
                                    (integer and float operations), Sem (per handler kind),
                                    Lemmas (frame accesses only through the footprint), Json
                                    (`ryo-lean opsem`)
+Ryo/Proofs/Inline.lean, Inline/    inline sequences against `opSem` (aot.md §C2): Rel, OpSem, Exec, Shape, Basic, Move/Arith/Cmp
 Ryo/Vm/DecodeObj.lean              `ryo-lean decode <obj>`: an image object's functions decoded
                                    (Ryo/Obj's inputs, linked at made-up addresses), printed as
                                    scripts/lean-decode-ref prints Rust's

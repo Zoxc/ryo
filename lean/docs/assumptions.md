@@ -92,8 +92,8 @@ Proving them showed what `Ty.wf` must check, and four spec gaps, all fixed with 
 | ~~`Float.pow`, `Float32.pow`~~ | `powi` used the host C library's `pow` | | **Removed**: `powi` is now compiler-rt's `__powidf2` loop over the exact `Float.mul`/`Float.div` (`Float.powi`, [divergences.md](divergences.md) R3) |
 | `Float.ofBits`/`toBits`, `Float32.ofBits`/`toBits`, `Float.sqrt`, `UInt*.ofNat/toNat`, `Nat.log2`, `Int.tdiv/tmod`, `Array.*` | `@[extern]` with Lean reference implementations | standard Lean runtime | Proofs use the reference definitions. Only the interpreter's results trust the runtime (GMP-backed `Nat`/`Int`, C arrays): the usual trusted base of compiled Lean. `Float.*` appear only in the test helpers `hwBinop64`/`hwBinop32`/`hwSqrt64` (and `RyoTest`) |
 
-There is no `axiom`, `native_decide`, hand-written `partial`/`unsafe`, `@[extern]` or
-`@[implemented_by]` in `Ryo`, and the spec's own termination is structural (or by the fuel
+There is no `axiom` (other than `bv_decide`'s, §1.4), `native_decide`, hand-written
+`partial`/`unsafe`, `@[extern]` or `@[implemented_by]` in `Ryo`, and the spec's own termination is structural (or by the fuel
 parameters of §2).
 
 ### 1.3 Panicking accesses and default values
@@ -123,6 +123,21 @@ substitutes a default. Each use, and what keeps it from mattering:
 `Int.toNat` clamps negative values to 0. The uses are on values already known non-negative
 (`usize` operands, checked counts). The one that was not, the cast to pointer in `evalCast`,
 now wraps with `IntType.usize.toBits` ([divergences.md](divergences.md) R1, fixed).
+
+### 1.4 `bv_decide`'s certificates
+
+`bv_decide` (core `Std.Tactic.BVDecide`) proves a `BitVec` goal by bit-blasting it, running a
+SAT solver, and checking the solver's LRAT certificate with a checker evaluated by compiled
+code. Each call adds an axiom `<theorem>._native.bv_decide.ax_…` stating that the check
+succeeded, so the theorem trusts the Lean compiler and the verified LRAT checker's compiled
+form (as `native_decide` would), not only the kernel. Used in the inline-sequence proofs
+(aot.md §C2, `Ryo/Proofs/Inline/`): `inline_sound` depends on such axioms of `sound_binImm`,
+`sound_mul`, `sound_mulImm`, `sound_shiftImm`, `sound_imm`, `sound_ptrIndex`, `sound_cmp`,
+`sound_cmpImm`, `sound_brCmp`, `sound_brCmpImm`, `fpAddr_sub` and `write2_out`
+(`#print axioms Ryo.Proofs.Inline.inline_sound` lists them; the kernel view of §0 reports
+them as `axiom`s). Discharge: each goal is a fixed-width bit-vector identity, which could be
+reproved by kernel-checked lemmas (`BitVec` rewriting, `omega` on `toNat`) where the cost is
+acceptable.
 
 ## 2. Fuel and cut-offs
 
