@@ -12,10 +12,11 @@ import RyoTest.M1b
 import RyoTest.Generated
 import RyoTest.X86
 import RyoTest.Obj
+import RyoTest.DecodeReduced
 
 namespace RyoTest
 
 def allTests : List TestCase :=
-  Int.tests ++ Basic.tests ++ Ptr.tests ++ Call.tests ++ Enum.tests ++ Unsized.tests ++ Divergence.tests ++ Json.tests ++ Audit.tests ++ M1b.tests ++ Generated.tests ++ X86.tests ++ Obj.tests
+  Int.tests ++ Basic.tests ++ Ptr.tests ++ Call.tests ++ Enum.tests ++ Unsized.tests ++ Divergence.tests ++ Json.tests ++ Audit.tests ++ M1b.tests ++ Generated.tests ++ X86.tests ++ Obj.tests ++ DecodeReduced.tests
 
 end RyoTest

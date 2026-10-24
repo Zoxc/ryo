@@ -13,9 +13,8 @@ For each object it compares
     Rust reference: `object` + `ryo_bytecode::image`): header, validation, symbol slots,
     functions with their table sizes and their code's relocations, by `asm::Ref`;
   - with --decode: `ryo-lean decode <obj>` with `lean-decode-ref decode <obj>`, each VM
-    function decoded to the reduced set (Rust: `ImageResolver::decode`). `ryo-lean decode`
-    doesn't exist yet (it comes with Ryo/Vm/DecodeReduced.lean); until then --decode only
-    reports that;
+    function decoded to the reduced set (Rust: `ImageResolver::decode`; Lean:
+    `Ryo.Vm.decodeReduced` on `Ryo.Obj.funcInputs`, lean/Ryo/Vm/DecodeObj.lean);
   - with --readelf: `ryo-lean elf <obj>` with `readelf -W -S -s -r <obj>`: sections, symbols
     and relocations.
 
@@ -46,9 +45,8 @@ ROOT = Path(__file__).resolve().parent.parent
 REF_DIR = ROOT / "scripts" / "lean-decode-ref"
 TIMEOUT = 600
 
-# The per-function decode comparison. `ryo-lean decode <obj>` is to print, for each VM function,
-# what `lean-decode-ref decode <obj>` prints (see scripts/lean-decode-ref/src/main.rs). Until
-# lean/Ryo/Vm/DecodeReduced.lean and the subcommand exist, --decode reports it as missing.
+# The per-function decode comparison: `ryo-lean decode <obj>` prints, for each VM function, what
+# `lean-decode-ref decode <obj>` prints (see scripts/lean-decode-ref/src/main.rs).
 LEAN_DECODE = ["decode"]
 
 
@@ -198,12 +196,9 @@ def check(obj, args, ref, work):
         (obj.parent / (obj.name + ".rust.txt")).write_text("\n".join(rust_l) + "\n")
     if args.decode:
         code, ld, lerr = run([args.ryo_lean] + LEAN_DECODE + [str(obj)])
-        if code == 2 and b"usage" in lerr + ld:
-            results["decode"] = "ryo-lean has no `decode` yet"
-        else:
-            _, rd, _ = run([str(ref), "decode", str(obj)])
-            results["decode"] = compare(ld.decode(errors="replace").splitlines(), rd.decode(errors="replace").splitlines(), "ryo-lean decode",
-                                        "lean-decode-ref decode")
+        _, rd, _ = run([str(ref), "decode", str(obj)])
+        results["decode"] = compare(ld.decode(errors="replace").splitlines(), rd.decode(errors="replace").splitlines(), "ryo-lean decode",
+                                    "lean-decode-ref decode")
     if args.readelf:
         _, le, _ = run([args.ryo_lean, "elf", str(obj)])
         _, re_, _ = run(["readelf", "-W", "-S", "-s", "-r", str(obj)])
@@ -217,7 +212,7 @@ def main():
     ap.add_argument("--ryo-lean", default=str(ROOT / "lean" / ".lake" / "build" / "bin" / "ryo-lean"))
     ap.add_argument("--opt", action="store_true")
     ap.add_argument("--no-sysroot", action="store_true", help="skip the ryo sysroot's objects")
-    ap.add_argument("--decode", action="store_true", help="also compare the per-function decode (ryo-lean decode, to come)")
+    ap.add_argument("--decode", action="store_true", help="also compare the per-function decode (ryo-lean decode)")
     ap.add_argument("--readelf", action="store_true", help="also compare ryo-lean elf with readelf")
     ap.add_argument("--keep")
     ap.add_argument("-j", type=int, default=os.cpu_count() or 4)
