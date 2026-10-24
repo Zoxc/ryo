@@ -4,7 +4,9 @@
 //! - [`partition`]: pipeline steps 1–4 and the image contents
 //! - [`lower`]: MIR → bytecode
 //! - [`link`]: step 6, one `link_binary` per crate type with its registry object
+//! - [`dump_lean`]: `RYO_DUMP_LEAN`, the program as the Lean MIR spec's input (lean/)
 
+mod dump_lean;
 mod link;
 mod lower;
 mod partition;
@@ -209,6 +211,7 @@ impl CodegenBackend for RyoBackend {
             linked_roots: tcx.crate_types().iter().map(|&t| (t, partition::linked_roots(tcx, t))).collect(),
             binary_format: binary_format(&tcx.sess.target.binary_format),
         });
+        dump_lean::dump(tcx);
         // The native CGU (step 4), compiled by cg_llvm as usual.
         let llvm = self.llvm.codegen_crate(tcx);
         Box::new(RyoOngoingCodegen { llvm, image: (image_name, image_path) })
