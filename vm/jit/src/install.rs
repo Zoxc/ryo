@@ -16,7 +16,7 @@ use ryo_bytecode::asm::osr::OsrEntry;
 use ryo_bytecode::asm::{self, Mode, Ref};
 use ryo_bytecode::full::{Const, Data, Func, Site, Sym};
 use ryo_bytecode::image::{EhFunc, Image, ImageResolver, JIT_DONE, JitRecord, eh_cie, eh_fde, eh_fde_rows};
-use ryo_bytecode::jit_abi::{JIT_ENTRY_PREFIX, JIT_LOG, REDIRECT, RtApi};
+use ryo_bytecode::jit_abi::{JIT_ENTRY_PREFIX, JIT_LOG, JIT_TEST_PANIC, REDIRECT, RtApi};
 use ryo_bytecode::{Opcode, reduced};
 
 /// The page size (x86_64).
@@ -193,6 +193,9 @@ impl Jit {
 
     /// Compiles the function of `rec` and publishes its code.
     pub(crate) fn compile(&mut self, rec: *mut JitRecord) -> Result<(), &'static str> {
+        if self.rt.flags & JIT_TEST_PANIC != 0 {
+            panic!("RYO_JIT_TEST_PANIC");
+        }
         // SAFETY: a record of a linked image, whose header it points at.
         let (func, img) = unsafe { ((*rec).func, Image::from_header((*rec).header.cast()).map_err(|_| "invalid image")?) };
         let h = img.header();
@@ -445,10 +448,14 @@ impl Jit {
     pub(crate) fn log(&self, rec: *mut JitRecord, what: &str) {
         // SAFETY: a record of a linked image.
         let (func, header) = unsafe { ((*rec).func, (*rec).header) };
-        // Straight to the file descriptor, not through std's `Stderr`, whose lock a program
-        // thread may hold while it waits for this one (`RYO_JIT_SYNC`).
-        let line = std::format!("ryo-jit: f{func} of image {header:p}: {what}\n");
-        // SAFETY: a write of a live buffer.
-        unsafe { write(2, line.as_ptr().cast(), line.len()) };
+        log_line(&std::format!("ryo-jit: f{func} of image {header:p}: {what}\n"));
     }
+}
+
+/// Writes `line` to stderr, straight to the file descriptor rather than through std's
+/// `Stderr`: linked as an rlib (tests), the JIT shares the program's, whose lock a program
+/// thread may hold while it waits for this one (`RYO_JIT_SYNC`).
+pub(crate) fn log_line(line: &str) {
+    // SAFETY: a write of a live buffer.
+    unsafe { write(2, line.as_ptr().cast(), line.len()) };
 }

@@ -25,7 +25,7 @@
 //! are `extern "C-unwind"` only so that the compiler adds no abort-on-unwind guard, which
 //! would reach core's panic path (as for `ryo_vm_register`).
 
-use core::cell::{Cell, UnsafeCell};
+use core::cell::UnsafeCell;
 use core::ffi::{CStr, c_char, c_long, c_void};
 use core::mem::MaybeUninit;
 use core::ptr;
@@ -33,7 +33,7 @@ use core::sync::atomic::Ordering::{AcqRel, Acquire, Relaxed, Release, SeqCst};
 use core::sync::atomic::{AtomicBool, AtomicI64, AtomicPtr, AtomicU8, AtomicU32, AtomicUsize};
 
 use ryo_bytecode::image::{Image, JIT_COLD, JIT_DONE, JIT_FAILED, JIT_QUEUED, JIT_THRESHOLD, JitRecord};
-use ryo_bytecode::jit_abi::{JIT_ABI_VERSION, JIT_LOG, JIT_PERFMAP, JIT_SYNC, RtApi};
+use ryo_bytecode::jit_abi::{JIT_ABI_VERSION, JIT_LOG, JIT_PERFMAP, JIT_SYNC, JIT_TEST_PANIC, RtApi};
 
 pub use ryo_bytecode::jit_abi::{JIT_ENTRY_PREFIX, REDIRECT};
 
@@ -57,6 +57,9 @@ struct Config {
     /// `RYO_JIT_SHUFFLE=1`: JIT code gets another frame layout than the AOT code's
     /// (`asm::frame::shuffle_map`), so that OSR entries convert frames (tests).
     shuffle: bool,
+    /// `RYO_JIT_TEST_PANIC=1`: every compile panics (tests: the JIT catches its panics even in
+    /// a `-Cpanic=abort` program).
+    test_panic: bool,
 }
 
 /// A static written once, before [`READY`] is published.
@@ -144,6 +147,7 @@ fn from_env() -> Config {
         perfmap: flag(c"RYO_JIT_PERFMAP"),
         log: flag(c"RYO_JIT_LOG"),
         shuffle: flag(c"RYO_JIT_SHUFFLE"),
+        test_panic: flag(c"RYO_JIT_TEST_PANIC"),
     }
 }
 
@@ -158,7 +162,7 @@ impl Config {
 /// `RYO_JIT_LOG` from the environment. False if they were read already.
 #[doc(hidden)]
 pub fn configure_jit(sync: bool, threshold: Option<i64>) -> bool {
-    set_config(|| Config { enabled: true, threshold, sync, perfmap: false, log: var(c"RYO_JIT_LOG").is_some(), shuffle: false })
+    set_config(|| Config { enabled: true, threshold, sync, perfmap: false, log: var(c"RYO_JIT_LOG").is_some(), shuffle: false, test_panic: false })
 }
 
 /// The images whose functions the JIT compiles with another frame layout, as with
@@ -200,11 +204,6 @@ static SLEEPING: AtomicBool = AtomicBool::new(false);
 static STARTED: AtomicBool = AtomicBool::new(false);
 /// The JIT thread couldn't be started: the trips act as the no-op JIT.
 static DISABLED: AtomicBool = AtomicBool::new(false);
-
-/// The thread is in a trip, or is the JIT thread: a nested trip (VM code that the trip's
-/// own calls run, such as a VM global allocator under the thread spawn) never waits.
-#[thread_local]
-static NO_WAIT: Cell<bool> = Cell::new(false);
 
 // The record's fields the trips and the JIT thread share with the counter checks, which read
 // and write them with plain instructions: atomics of their size.
@@ -344,8 +343,6 @@ fn trip(rec: *mut JitRecord) -> u32 {
         ctr(rec).store(i64::MAX, Relaxed);
         return JIT_COLD;
     }
-    // Outside of any trip on this thread.
-    let outer = !NO_WAIT.replace(true);
     let mut st = state(rec).load(Acquire);
     if st == JIT_COLD && state(rec).compare_exchange(JIT_COLD, JIT_QUEUED, AcqRel, Acquire).is_ok() {
         push(rec);
@@ -353,7 +350,7 @@ fn trip(rec: *mut JitRecord) -> u32 {
     st = state(rec).load(SeqCst);
     if st == JIT_QUEUED {
         ctr(rec).store(cfg.threshold(), SeqCst);
-        if cfg.sync && outer {
+        if cfg.sync {
             while state(rec).load(SeqCst) == JIT_QUEUED && !DISABLED.load(SeqCst) {
                 futex_wait(state(rec), JIT_QUEUED);
             }
@@ -366,9 +363,6 @@ fn trip(rec: *mut JitRecord) -> u32 {
         }
     } else if st == JIT_FAILED {
         ctr(rec).store(i64::MAX, Relaxed);
-    }
-    if outer {
-        NO_WAIT.set(false);
     }
     st
 }
@@ -419,7 +413,8 @@ unsafe extern "C" {
 /// thread couldn't start.
 fn start() -> bool {
     let cfg = config();
-    let flags = (cfg.sync as u32) * JIT_SYNC | (cfg.log as u32) * JIT_LOG | (cfg.perfmap as u32) * JIT_PERFMAP;
+    let flags =
+        (cfg.sync as u32) * JIT_SYNC | (cfg.log as u32) * JIT_LOG | (cfg.perfmap as u32) * JIT_PERFMAP | (cfg.test_panic as u32) * JIT_TEST_PANIC;
     let mut handlers = [ptr::null(); ryo_bytecode::Opcode::COUNT];
     for (h, &op) in handlers.iter_mut().zip(ryo_bytecode::ALL_OPCODES.iter()) {
         *h = super::interp::handler(op).unwrap_or(ptr::null());
@@ -447,8 +442,6 @@ unsafe extern "C" {
 
 /// [`RtApi::next_batch`]: the queue, in trip order, once it isn't empty.
 extern "C-unwind" fn next_batch() -> *mut JitRecord {
-    // The JIT thread's trips (VM code it runs, such as a VM global allocator) never wait.
-    NO_WAIT.set(true);
     loop {
         let mut list = QUEUE.swap(ptr::null_mut(), Acquire);
         if list.is_null() {

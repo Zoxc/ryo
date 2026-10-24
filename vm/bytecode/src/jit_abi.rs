@@ -41,6 +41,9 @@ pub const JIT_LOG: u32 = 2;
 /// [`RtApi::flags`]: a line per compiled function in `/tmp/perf-<pid>.map`
 /// (`RYO_JIT_PERFMAP`).
 pub const JIT_PERFMAP: u32 = 4;
+/// [`RtApi::flags`]: every compile panics, which must fail the function and nothing else
+/// (`RYO_JIT_TEST_PANIC`, tests).
+pub const JIT_TEST_PANIC: u32 = 8;
 
 /// What the runtime gives the JIT: built once, before the JIT starts, and never changed.
 #[repr(C)]
@@ -51,7 +54,7 @@ pub struct RtApi {
     pub format: u32,
     /// `size_of::<RtApi>()`.
     pub size: u32,
-    /// [`JIT_SYNC`], [`JIT_LOG`], [`JIT_PERFMAP`].
+    /// [`JIT_SYNC`], [`JIT_LOG`], [`JIT_PERFMAP`], [`JIT_TEST_PANIC`].
     pub flags: u32,
     /// `ryo_probe_stack`'s address.
     pub probe: *const (),
