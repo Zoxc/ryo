@@ -310,7 +310,10 @@ everything. Then the folds
 instruction selection relies on: a compare used only by the following branch becomes a
 `brcmp`, an overflow op (`add`/`sub`/`mul.ovf`) whose flag only the branch ending its block
 reads becomes a `br ovf` on the flags it leaves, and loads and stores through an `AllocaAddr` or a `PtrAdd` take its alloca or
-constant into their address.
+constant into their address. Last, `jit::dce` marks and sweeps: a value is live when an
+effect, a terminator or a live value reads it, and a parameter's edge arguments only when the
+parameter is live, so pure instructions without live results and dead parameters (dead
+loop-carried values included, but not the entry's) go with their arguments.
 
 ### OSR
 
@@ -586,7 +589,7 @@ for shuffled frames per image, `RtApi::shuffled`):
 ## Future work
 
 The SSA tier doesn't optimize beyond promotion, copy and constant propagation, local value
-numbering and its folds: passes, inlining, more native handler operations, interval splitting and an OSR version
+numbering, its folds and DCE: passes, inlining, more native handler operations, interval splitting and an OSR version
 that pins nothing are the next steps, behind the same records, trips, OSR entries and
 packaging; [verification.md](verification.md#the-jit) describes how its output would be
 validated.

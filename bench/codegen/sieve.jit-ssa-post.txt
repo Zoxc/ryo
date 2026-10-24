@@ -567,7 +567,6 @@ b1(): ; Body
     AStore(AllocaId(5), 8, 8) (v5)
     v7:8 = Load(8, 16) (v0)
     AStore(AllocaId(5), 0, 8) (v7)
-    v10:1 = Cmp(LeU, 8) (v7, 0x7fffffffffffffff)
     v13:8 = PtrIndex(1) (v5, v7)
     v14:8 = PtrAdd(16) (v0)
     v15:8 = Load(8, 16) (v0)

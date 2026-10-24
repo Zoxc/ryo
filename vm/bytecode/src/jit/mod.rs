@@ -90,6 +90,7 @@ pub fn compile(d: &crate::asm::Decoded, code_consts: &[u8], mode: crate::asm::Mo
     let built_ir = opts.dump.then(|| alloc::format!("{f}"));
     lvn::lvn(&mut f);
     build::fold(&mut f);
+    build::dce(&mut f);
     if opts.check {
         f.verify().map_err(|e| Error::Check(alloc::format!("IR: {e}")))?;
     }
@@ -130,6 +131,7 @@ pub fn ir_of(d: &crate::asm::Decoded, mode: crate::asm::Mode) -> Result<ir::Func
     let mut f = built(d, mode)?;
     lvn::lvn(&mut f);
     build::fold(&mut f);
+    build::dce(&mut f);
     Ok(f)
 }
 
