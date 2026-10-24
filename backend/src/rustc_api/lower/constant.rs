@@ -144,7 +144,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             let sym = fx.reloc(r);
             // The shim only takes an address: it can't unwind (no cleanup entry).
             let k = ryo_bytecode::asm::ret_kind(&[ryo_bytecode::asm::RetPart { xmm: false, size: 8, off: 0 }]);
-            fx.op(op, &[d, sym, k]);
+            let at = fx.op(op, &[d, sym, k]);
+            let plan = super::sig::ArgPlan { locs: Vec::new(), stack_size: 0 };
+            fx.cert_call(at, super::cert::CallKind::ThreadLocal, Some(&plan), k, 8);
             Ok(())
         })
     }

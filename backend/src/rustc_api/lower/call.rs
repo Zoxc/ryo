@@ -27,11 +27,12 @@ use ryo_bytecode::abi::HEADER_SIZE;
 use ryo_bytecode::asm::{ARG_ADDR, ArgReg, RET_SRET, RetPart, ret_kind, ret_parts};
 use ryo_bytecode::full::Opcode;
 
+use super::cert::CallKind;
 use super::emit::opcode;
 use super::frame;
 use super::island::templates;
 use super::place::{Loc, PlaceVal};
-use super::sig::{AbiSig, ArgLoc, CallConv, abi_sig, fn_ptr_sig, tys_sig, virtual_sig};
+use super::sig::{AbiSig, ArgLoc, ArgPlan, CallConv, abi_sig, fn_ptr_sig, tys_sig, virtual_sig};
 use super::{CodeReloc, FnCx, NeedsNative, native, no_trim};
 
 /// Where an argument comes from.
@@ -257,18 +258,24 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             Target::Vm(callee) => {
                 let a = self.pass_args(sig, homes, Some(d), false)?;
                 let f = self.reloc(CodeReloc::Call { callee });
-                Some(self.op(Opcode::Call, &[&[rd, f, k][..], &a].concat()))
+                let at = self.op(Opcode::Call, &[&[rd, f, k][..], &a].concat());
+                self.cert_call(at, CallKind::Vm, sig.plan.as_ref(), sig.ret_kind, sig.output.size.bytes());
+                Some(at)
             }
             Target::Ext(callee) => {
                 let a = self.pass_args(sig, homes, Some(d), false)?;
                 let r = CodeReloc::Symbol { target: callee };
                 let op = if self.sym_indirect(&r) { Opcode::CallSymInd } else { Opcode::CallSym };
                 let sym = self.reloc(r);
-                Some(self.op(op, &[&[rd, sym, k][..], &a].concat()))
+                let at = self.op(op, &[&[rd, sym, k][..], &a].concat());
+                self.cert_call(at, CallKind::Sym, sig.plan.as_ref(), sig.ret_kind, sig.output.size.bytes());
+                Some(at)
             }
             Target::Ptr(p, CallConv::Rust) => {
                 let a = self.pass_args(sig, homes, Some(d), false)?;
-                Some(self.op(Opcode::CallPtr, &[&[rd, p, k][..], &a].concat()))
+                let at = self.op(Opcode::CallPtr, &[&[rd, p, k][..], &a].concat());
+                self.cert_call(at, CallKind::Ptr, sig.plan.as_ref(), sig.ret_kind, sig.output.size.bytes());
+                Some(at)
             }
             Target::Template(fty) => {
                 let args = [fty.into(), sig.args_tuple(tcx).into(), sig.output.ty.into()];
@@ -422,10 +429,12 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         match (target, p) {
             (Target::Vm(callee), _) => {
                 let f = self.reloc(CodeReloc::Call { callee });
-                self.op(Opcode::TailCall, &[&[f][..], &a].concat());
+                let at = self.op(Opcode::TailCall, &[&[f][..], &a].concat());
+                self.cert_call(at, CallKind::TailVm, sig.plan.as_ref(), sig.ret_kind, sig.output.size.bytes());
             }
             (_, Some(p)) => {
-                self.op(Opcode::TailCallPtr, &[&[p][..], &a].concat());
+                let at = self.op(Opcode::TailCallPtr, &[&[p][..], &a].concat());
+                self.cert_call(at, CallKind::TailPtr, sig.plan.as_ref(), sig.ret_kind, sig.output.size.bytes());
             }
             (_, None) => unreachable!(),
         }
@@ -633,6 +642,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             let a = self.pass_args(&sig, &homes, None, false)?;
             let f = self.reloc(CodeReloc::Call { callee: glue });
             let at = self.op(Opcode::Call, &[&[0, f, 0][..], &a].concat());
+            self.cert_call(at, CallKind::DropVm, sig.plan.as_ref(), sig.ret_kind, sig.output.size.bytes());
             self.unwind_entry(at, unwind);
         } else {
             self.island(templates::DROP_IN_PLACE, &[ty.into()], &[(ptr, if pv.meta.is_some() { 16 } else { 8 })], Some(unwind));
@@ -656,6 +666,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         // `unsafe fn(*mut ())`: the pointer in the first integer register.
         let a = [ptr, ArgReg { xmm: false, size: 8, index: 0 }.word()];
         let at = self.op(Opcode::CallPtr, &[&[0, f, 0][..], &a].concat());
+        let plan = ArgPlan { locs: vec![vec![ArgLoc::Reg { reg: ArgReg { xmm: false, size: 8, index: 0 }, off: 0 }]], stack_size: 0 };
+        self.cert_call(at, CallKind::VirtualDrop, Some(&plan), 0, 0);
         self.unwind_entry(at, unwind);
         self.jump(target);
         Ok(())

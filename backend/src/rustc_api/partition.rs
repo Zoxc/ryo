@@ -77,6 +77,12 @@ pub struct Results {
     pub image: ImageObject,
     /// The symbol `__ryo_main` points at: the entry fn's, for a VM `main`.
     pub main_symbol: Option<String>,
+    /// With `RYO_DUMP_LEAN`: each VM function's symbol and lowering certificate (JSON), in
+    /// image order (`lower/cert.rs`).
+    pub certs: Vec<(String, String)>,
+    /// With `RYO_DUMP_LEAN`: the symbol of each island instance the image calls, and its
+    /// template's diagnostic item name, sorted (for the certificate file).
+    pub islands: Vec<(String, String)>,
     /// For `exported_non_generic_symbols`: the Rust symbols the image refers to ([`Roots`]).
     lto_roots: Vec<(String, SymbolExportKind)>,
     /// For `exported_generic_symbols`: the VM functions with `External` linkage whose symbols
@@ -383,6 +389,9 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             self.print_coverage(&failed);
         }
 
+        let certs: Vec<(String, String)> =
+            self.vm.iter().filter_map(|v| Some((tcx.symbol_name(v.instance).name.to_owned(), v.lowered.cert.clone()?))).collect();
+        let islands = if certs.is_empty() { Vec::new() } else { self.island_names() };
         let (image, roots) = self.build_image();
         let vm_exports: Vec<(Instance<'tcx>, Visibility)> =
             self.vm.iter().filter(|v| v.global && v.data.linkage == Linkage::External).map(|v| (v.instance, v.data.visibility)).collect();
@@ -398,6 +407,8 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             cgu_name: native.name(),
             image,
             main_symbol,
+            certs,
+            islands,
             lto_roots: roots.0.into_iter().collect(),
             // SAFETY: as in `Results::vm_exports`.
             vm_exports: unsafe { std::mem::transmute::<Vec<(Instance<'tcx>, Visibility)>, Vec<(Instance<'static>, Visibility)>>(vm_exports) },
@@ -621,6 +632,25 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
     /// Instantiates the island templates the VM functions request (design/stubs.md):
     /// deduplicated, linked to an upstream copy where one is exported, otherwise added to the
     /// native CGU, visible to the image.
+    /// Each island instance the image calls: its symbol and its template's name.
+    fn island_names(&self) -> Vec<(String, String)> {
+        let tcx = self.tcx;
+        let templates = &tcx.diagnostic_items(self.rt.krate).name_to_id;
+        let mut out: Vec<(String, String)> = Vec::new();
+        for v in &self.vm {
+            for r in &v.lowered.relocs {
+                let CodeReloc::Island { template, args } = *r else { continue };
+                let Some(&def_id) = templates.get(&template) else { continue };
+                let island = Instance::new_raw(def_id, args);
+                let name = tcx.get_diagnostic_name(def_id).map_or(String::new(), |n| n.to_string());
+                out.push((tcx.symbol_name(island).name.to_owned(), name));
+            }
+        }
+        out.sort();
+        out.dedup();
+        out
+    }
+
     fn add_islands(&mut self) {
         let tcx = self.tcx;
         let templates = &tcx.diagnostic_items(self.rt.krate).name_to_id;
@@ -893,7 +923,7 @@ fn lower_all<'tcx>(
     let mut failed = Vec::new();
     let mut todo: Vec<Instance<'tcx>> = candidates.iter().map(|c| c.0).collect();
     while !todo.is_empty() {
-        let cx = LowerCx { vm: &vm, mode };
+        let cx = LowerCx { vm: &vm, mode, cert: std::env::var_os("RYO_DUMP_LEAN").is_some() };
         let out: Vec<_> = rustc_data_structures::sync::par_map(todo, |instance| (instance, lower::lower(tcx, &cx, instance)));
         let mut removed = false;
         for (instance, r) in out {

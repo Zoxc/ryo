@@ -23,6 +23,13 @@
 //! `ryo-dump: unsupported <what>`, which the interpreter rejects when it gets there.
 //!
 //! Only reads queries (all cached and side-effect free), and only when the variable is set.
+//!
+//! Next to it, `<dir>/<crate name>.cert.json`: the lowering's certificate for each VM function
+//! of the crate's image (`lower/cert.rs`), `{"functions": [{"symbol", "cert"}], "islands":
+//! [{"symbol", "template"}]}`, the functions in image order, and per island instance the image
+//! calls its symbol and its template's diagnostic item name (`tcx.symbol_name` of the
+//! instance, `get_diagnostic_name` of its def). Unlike the dump it is the lowering's own data,
+//! and untrusted (lean/docs/aot.md §C1), but for the island names, which rustc gives.
 
 use std::collections::VecDeque;
 use std::fmt::Write as _;
@@ -47,6 +54,8 @@ use rustc_target::callconv::{ArgAbi, FnAbi, PassMode};
 /// Writes the dump if `RYO_DUMP_LEAN` is set and the crate has an entry function.
 pub fn dump(tcx: TyCtxt<'_>) {
     let Some(dir) = std::env::var_os("RYO_DUMP_LEAN") else { return };
+    let dir = std::path::PathBuf::from(dir);
+    write_certs(tcx, &dir);
     let Some((main, _)) = tcx.entry_fn(()) else { return };
     let mut d = Dumper::new(tcx);
     let start = d.instance(Instance::mono(tcx, main));
@@ -70,9 +79,40 @@ pub fn dump(tcx: TyCtxt<'_>) {
     ]);
     let mut out = String::new();
     program.write(&mut out);
-    let dir = std::path::PathBuf::from(dir);
     let path = dir.join(format!("{}.json", tcx.crate_name(LOCAL_CRATE)));
     if let Err(e) = std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(&path, out)) {
+        tcx.dcx().fatal(format!("RYO_DUMP_LEAN: writing {}: {e}", path.display()));
+    }
+}
+
+/// Writes `<dir>/<crate name>.cert.json`, the certificates of the image's VM functions.
+fn write_certs(tcx: TyCtxt<'_>, dir: &std::path::Path) {
+    let Some(results) = super::partition::results(tcx) else { return };
+    let mut out = String::from("{\"functions\":[");
+    for (i, (symbol, cert)) in results.certs.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        out.push_str("{\"symbol\":");
+        write_str(&mut out, symbol);
+        out.push_str(",\"cert\":");
+        out.push_str(cert);
+        out.push('}');
+    }
+    out.push_str("],\"islands\":[");
+    for (i, (symbol, template)) in results.islands.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        out.push_str("{\"symbol\":");
+        write_str(&mut out, symbol);
+        out.push_str(",\"template\":");
+        write_str(&mut out, template);
+        out.push('}');
+    }
+    out.push_str("]}");
+    let path = dir.join(format!("{}.cert.json", tcx.crate_name(LOCAL_CRATE)));
+    if let Err(e) = std::fs::create_dir_all(dir).and_then(|()| std::fs::write(&path, out)) {
         tcx.dcx().fatal(format!("RYO_DUMP_LEAN: writing {}: {e}", path.display()));
     }
 }
@@ -439,7 +479,33 @@ impl<'tcx> Dumper<'tcx> {
             PassMode::Indirect { meta_attrs: None, on_stack, .. } => ("indirect", if *on_stack { "on_stack".to_owned() } else { String::new() }),
             PassMode::Indirect { meta_attrs: Some(_), .. } => ("indirectUnsized", String::new()),
         };
-        obj(vec![("mode", tag(mode)), ("size", num(a.layout.size.bytes())), ("align", num(a.layout.align.abi.bytes())), ("detail", J::Str(detail))])
+        // The LLVM-level scalars of a `Direct` scalar, a `Pair` and an integer `Cast` without
+        // prefix (the Rust ABI's small aggregates): class, size and offset in the value, which
+        // the Lean side assigns to registers and stack slots as the platform convention says.
+        let scalar = |s: &Scalar, off: u64| {
+            let float = matches!(s.primitive(), Primitive::Float(_));
+            obj(vec![("float", J::Bool(float)), ("size", num(s.size(&self.cx).bytes())), ("off", num(off))])
+        };
+        let scalars = match (&a.mode, a.layout.backend_repr) {
+            (PassMode::Direct(_), BackendRepr::Scalar(s)) => Some(vec![scalar(&s, 0)]),
+            (PassMode::Pair(..), BackendRepr::ScalarPair { a, b, b_offset }) => Some(vec![scalar(&a, 0), scalar(&b, b_offset.bytes())]),
+            (PassMode::Cast { cast, pad_i32: false }, _)
+                if cast.prefix.is_empty()
+                    && cast.rest_offset.is_none()
+                    && cast.rest.unit.kind == rustc_abi::RegKind::Integer
+                    && cast.rest.total == cast.rest.unit.size =>
+            {
+                Some(vec![obj(vec![("float", J::Bool(false)), ("size", num(cast.rest.total.bytes())), ("off", num(0))])])
+            }
+            _ => None,
+        };
+        obj(vec![
+            ("mode", tag(mode)),
+            ("size", num(a.layout.size.bytes())),
+            ("align", num(a.layout.align.abi.bytes())),
+            ("detail", J::Str(detail)),
+            ("scalars", opt(scalars.map(J::Arr))),
+        ])
     }
 
     // -----------------------------------------------------------------------------------------

@@ -67,7 +67,7 @@ pub struct Frame<'tcx> {
     temps: Vec<(u32, u32, u32)>,
     /// Where landing pads store the exception object (`lpad x`) for the cleanup code's
     /// `resume x`: an 8-byte slot of its own, in functions with cleanup or terminate actions.
-    exception: Option<u32>,
+    pub exception: Option<u32>,
     /// An sret function's slot for the return value's address, which it gets in the first
     /// argument register (`arg`, [`FnCx::prologue`]).
     pub sret: Option<u32>,
@@ -245,6 +245,12 @@ impl<'tcx> Frame<'tcx> {
             (Some(o), None) => Some(o),
             _ => None,
         }
+    }
+
+    /// Bytes below `fp` the locals take, and the locals with the most temporaries took (the
+    /// frame size without the outgoing block): the certificate's frame map (`cert.rs`).
+    pub fn extent(&self) -> (u32, u32) {
+        (self.locals_end, self.high)
     }
 
     /// The temporaries in use: their first slot and their size.

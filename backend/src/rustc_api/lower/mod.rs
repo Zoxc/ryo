@@ -33,6 +33,7 @@ mod adt;
 mod binop;
 mod call;
 mod cast;
+mod cert;
 mod constant;
 mod emit;
 mod frame;
@@ -68,6 +69,8 @@ pub struct LoweredFn<'tcx> {
     /// The frame size `F`: locals and the largest outgoing argument block.
     pub frame_size: u32,
     pub arg_size: u32,
+    /// The certificate for the Lean lowering check, as JSON, if [`LowerCx::cert`] (`cert.rs`).
+    pub cert: Option<String>,
     pub ret_size: u32,
     /// See [`ryo_bytecode::image::FuncEntry::ret_kind`].
     pub ret_kind: u32,
@@ -114,6 +117,8 @@ pub struct LowerCx<'a, 'tcx> {
     pub vm: &'a FxHashSet<Instance<'tcx>>,
     /// How the machine code is generated.
     pub mode: asm::Mode,
+    /// Whether to record the certificate for the Lean lowering check (`cert.rs`).
+    pub cert: bool,
 }
 
 /// Lowers `instance` to bytecode, or says why it must stay native.
@@ -122,8 +127,9 @@ pub fn lower<'tcx>(tcx: TyCtxt<'tcx>, cx: &LowerCx<'_, 'tcx>, instance: Instance
     let body = tcx.instance_mir(instance.def);
     let mut fx = FnCx::new(tcx, cx, instance, body, &sig)?;
     fx.prologue(&sig)?;
+    fx.cert_prologue();
     fx.blocks()?;
-    fx.finish()
+    fx.finish(&sig)
 }
 
 /// The signature of `instance` if it can be a VM function: a Rust-ABI function whose
@@ -215,6 +221,10 @@ pub struct FnCx<'a, 'tcx> {
     pub caller_location: Option<u32>,
     /// The current block's compare, fused into its terminator (`terminator::FusedCmp`).
     fused: Option<terminator::FusedCmp<'tcx>>,
+    /// The number of instructions emitted so far: the next one's `InsnId`.
+    insns: u32,
+    /// The certificate being recorded, if [`LowerCx::cert`].
+    cert: Option<Box<cert::Recorder>>,
     /// Label of each terminate stub.
     terminate_at: Vec<(rustc_middle::mir::UnwindTerminateReason, Label)>,
     /// Label of each landing pad, by where it goes.
@@ -252,6 +262,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             ret_kind: sig.ret_kind,
             next_block: None,
             fused: None,
+            insns: 0,
+            cert: cx.cert.then(Box::default),
             terminate_at: Vec::new(),
             pads: Vec::new(),
             caller_location,
@@ -270,10 +282,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             self.bind(self.block_labels[bb.as_usize()]);
             self.next_block = (bb.as_usize() + 1 < n).then(|| BasicBlock::from_usize(bb.as_usize() + 1));
             self.fused = self.fusable_compare(data, &uses);
+            self.cert_block(self.fused.is_some());
             let stmts = &data.statements[..data.statements.len() - usize::from(self.fused.is_some())];
             for (i, stmt) in stmts.iter().enumerate() {
                 self.reset_temps();
+                let start = self.insns;
                 self.statement(stmt)?;
+                self.cert_stmt(start);
                 let here = rustc_middle::mir::Location { block: bb, statement_index: i };
                 while let Some(&&(at, local)) = dead.peek()
                     && at <= here
@@ -285,7 +300,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 }
             }
             self.reset_temps();
+            let start = self.insns;
             self.terminator(data.terminator())?;
+            self.cert_term(start);
         }
         self.terminate_stubs()?;
         self.landing_pads();
@@ -305,7 +322,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 self.bind(at);
                 self.reset_temps();
                 self.next_block = None;
+                let start = self.insns;
                 self.terminate_call(reason, self.body.source_info(rustc_middle::mir::Location::START).clone())?;
+                self.cert_stub(reason, start);
                 self.terminate_at.push((reason, at));
             }
         }
@@ -325,6 +344,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             }
             let at = self.asm.label();
             self.bind(at);
+            let start = self.insns;
             self.op(Opcode::Lpad, &[self.frame.exception_slot()]);
             let target = match to {
                 UnwindTo::Block(bb) => self.block_labels[bb.as_usize()],
@@ -332,6 +352,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 UnwindTo::Continue => unreachable!(),
             };
             self.emit(Opcode::Jmp, vec![Opnd::Target(target)]);
+            self.cert_pad(start, if let UnwindTo::Block(bb) = to { Some(bb.as_u32()) } else { None });
             self.pads.push((to, at));
         }
         for &(id, to) in &self.cleanup {
@@ -347,8 +368,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     }
 
     /// Finishes the machine code, now that the frame size is known.
-    fn finish(mut self) -> Result<LoweredFn<'tcx>, NeedsNative> {
+    fn finish(mut self, sig: &AbiSig<'tcx>) -> Result<LoweredFn<'tcx>, NeedsNative> {
         let frame_size = self.frame.frame_size(self.max_outgoing)?;
+        let cert = self.cert_json(frame_size, sig.plan.as_ref());
         let code = std::mem::replace(&mut self.asm, Asm::new(self.cx.mode)).finish(frame_size, |s| frame::frame_offset(s, frame_size) as u32);
         if std::env::var_os("RYO_ASM_CHECK").is_some() {
             reencode_check(&code, self.cx.mode);
@@ -361,6 +383,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             arg_size: self.arg_size,
             ret_size: ret.layout.size.bytes() as u32,
             ret_kind: self.ret_kind,
+            cert,
         })
     }
 
@@ -368,6 +391,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
 
     /// Emits an instruction.
     pub fn emit(&mut self, op: Opcode, ops: Vec<Opnd<Label>>) -> InsnId {
+        self.insns += 1;
         self.asm.insn(op, &ops)
     }
 
@@ -382,6 +406,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     pub fn op(&mut self, op: Opcode, operands: &[u32]) -> InsnId {
         let mut ops = std::mem::take(&mut self.scratch);
         opnds(op, operands, &mut ops);
+        self.insns += 1;
         let id = self.asm.insn(op, &ops);
         self.scratch = ops;
         id
@@ -394,6 +419,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         opnds(op, operands, &mut ops);
         ops.push(Opnd::Neg(neg));
         ops.push(Opnd::Target(self.block_labels[bb.as_usize()]));
+        self.insns += 1;
         let id = self.asm.insn(op, &ops);
         self.scratch = ops;
         id
