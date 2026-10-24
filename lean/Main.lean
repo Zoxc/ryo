@@ -25,6 +25,8 @@
                                            or `error at <byte>: <what>` (exit status 1)
   ryo-lean decode <image object>           each function of the image decoded, as
                                            scripts/lean-decode-ref prints Rust's
+  ryo-lean dead <image object>             the dead-store check on each function's dropped
+                                           stores: those it can't show dead
 -/
 import Ryo
 import Ryo.Examples
@@ -95,6 +97,15 @@ def decodeObj (path : String) : IO UInt32 := do
     IO.println s!"error: {e}"
     pure 1
 
+def deadObj (path : String) : IO UInt32 := do
+  match Ryo.Obj.readImageObject (← IO.FS.readBinFile path) with
+  | .ok o =>
+    for l in Ryo.Vm.DecodeObj.deadLines o do IO.println l
+    pure 0
+  | .error e =>
+    IO.println s!"error: {e}"
+    pure 1
+
 def objFile (path : String) : IO UInt32 := do
   let bytes ← IO.FS.readBinFile path
   match Ryo.Obj.readImageObject bytes with
@@ -119,6 +130,7 @@ def main (args : List String) : IO UInt32 := do
   match args with
   | ["obj", path] => objFile path
   | ["elf", path] => elfFile path
+  | ["dead", path] => deadObj path
   | ["decode", path] => if path.endsWith ".json" then decodeFile path else decodeObj path
   | ["run", path] => runFile path 10000000
   | ["run", path, "--fuel", n] => runFile path n.toNat!

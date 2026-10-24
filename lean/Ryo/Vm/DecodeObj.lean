@@ -11,6 +11,7 @@ addresses of their references, one range per kind, and the `LinkMap` maps those 
 function starts to `Ref.func`.
 -/
 import Ryo.Vm.DecodeReduced
+import Ryo.Vm.Frame
 import Ryo.Obj
 
 namespace Ryo.Vm.DecodeObj
@@ -125,6 +126,29 @@ def objLines (o : Ryo.Obj.ImageObject) : Array String := Id.run do
       | .ok none => out := out.push "  error: malformed dropped store"
       | .ok (some (.error e)) => out := out.push s!"  error: {e.what} at {e.at_}"
       | .ok (some (.ok d)) => out := out ++ funcLines d
+  return out
+
+/-- `ryo-lean dead <obj>`'s lines: per function with dropped stores, how many the dead-store
+check (`Frame.droppedNotDead`) shows dead, and each one it doesn't, with the function's text. -/
+def deadLines (o : Ryo.Obj.ImageObject) : Array String := Id.run do
+  let mut out : Array String := #[]
+  let mut total := 0
+  let mut bad := 0
+  for h : i in [0:o.funcs.size] do
+    let f := o.funcs[i]
+    let .ok fi := o.funcInputs i | continue
+    let .ok (some (.ok d)) := decodeFunc fi | continue
+    if d.dropped.isEmpty then continue
+    total := total + d.dropped.size
+    match Frame.droppedNotDead d fi.mode with
+    | .error e => out := out.push s!"func {i} {o.funcName f.codeOff}: error {e}"; bad := bad + d.dropped.size
+    | .ok [] => pure ()
+    | .ok ks =>
+      bad := bad + ks.length
+      let wpos := d.wordPos
+      out := out.push s!"func {i} {o.funcName f.codeOff}: {ks.length}/{d.dropped.size} not shown dead: {ks.map (wpos[·]!)}"
+      out := out ++ funcLines d
+  out := out.push s!"total dropped {total}, not shown dead {bad}"
   return out
 
 end Ryo.Vm.DecodeObj
