@@ -301,6 +301,8 @@ struct E<'a> {
     /// Unwind rows: (mark, instructions).
     cfi: Vec<((u32, u32), Vec<u8>)>,
     uses: Vec<u32>,
+    /// The condition the flags hold an overflow in after the last [`Op::Ovf`].
+    ovf_cc: Option<X>,
 }
 
 impl<'a> E<'a> {
@@ -647,7 +649,9 @@ impl<'a> E<'a> {
     fn inst(&mut self, i: Inst, pad: Option<u32>) -> Result<(), Unsupported> {
         let id = &self.f.insts[i.idx()];
         let res: Vec<Value> = id.results().collect();
-        if id.op.pure() && res.iter().all(|r| self.uses[r.idx()] == 0) {
+        let bd = &self.f.blocks[id.block.idx()];
+        let fused = matches!(bd.term, Term::BrOvf { .. }) && bd.insts.last() == Some(&i);
+        if id.op.pure() && !fused && res.iter().all(|r| self.uses[r.idx()] == 0) {
             return Ok(());
         }
         let args = id.args.clone();
@@ -710,6 +714,23 @@ impl<'a> E<'a> {
                         let sw = if op == BinOp::ShrU && w < 4 { 4 } else { sw };
                         self.a.x().shift_imm(sh, sw, Rm::R(rd), n as u8);
                     }
+                }
+                self.put(x, rd);
+            }
+            Op::Ovf(op, signed, w) => {
+                let cc = self.ovf(op, signed, w, &args, res[0]);
+                self.ovf_cc = Some(cc);
+                if let Some(d) = self.dst(res[1]) {
+                    self.a.x().setcc(cc, d);
+                }
+            }
+            Op::Ext { from, to, sx } => {
+                let x = res[0];
+                let rd = self.work(x, &[]);
+                if to <= from {
+                    self.load(rd, args[0]);
+                } else {
+                    self.ext_into(rd, args[0], from, sx);
                 }
                 self.put(x, rd);
             }
@@ -881,6 +902,123 @@ impl<'a> E<'a> {
         Ok(())
     }
 
+    /// Loads `v`'s low `from` bytes into `r`, zero- or sign-extended (`sx`) to 64 bits.
+    fn ext_into(&mut self, r: R, v: Value, from: u8, sx: bool) {
+        let rm = match self.src(v) {
+            Src::R(x) => Rm::R(x),
+            Src::M(m) => Rm::M(m),
+            Src::Imm(c) => {
+                let c = if sx {
+                    sext(c, from) as u64
+                } else if from < 8 {
+                    c & ((1 << (8 * from)) - 1)
+                } else {
+                    c
+                };
+                return self.a.x().mov_imm(8, Rm::R(r), c);
+            }
+            Src::Undef => return,
+        };
+        match (from, sx) {
+            (8, _) => self.a.x().mov(8, Rm::R(r), rm),
+            (4, false) => self.a.x().mov(4, Rm::R(r), rm),
+            (_, false) => self.a.x().movzx(r, from, rm),
+            (_, true) => self.a.x().movsx(r, from, rm),
+        }
+    }
+
+    /// `x = a op b` at `w` bytes with overflow (`args`: `a`, `b`), stored to `x`'s location;
+    /// the condition the flags then hold the overflow in.
+    fn ovf(&mut self, op: BinOp, signed: bool, w: u8, args: &[Value], x: Value) -> X {
+        let (a, b) = (args[0], args[1]);
+        if op == BinOp::Mul && !signed && w == 8 {
+            return self.mul_u64(a, b, x);
+        }
+        let rd = self.work(x, &[b]);
+        let cc = match (op, signed, w) {
+            (BinOp::Add | BinOp::Sub, ..) => {
+                self.load(rd, a);
+                let alu = if op == BinOp::Add { Alu::Add } else { Alu::Sub };
+                match self.alu_src(b, w) {
+                    Ok(s) => self.a.x().alu(alu, w, Rm::R(rd), s),
+                    Err(imm) => self.a.x().alu_imm(alu, w, Rm::R(rd), imm),
+                }
+                if signed { X::O } else { X::B }
+            }
+            (_, true, 2 | 4 | 8) => {
+                self.load(rd, a);
+                let s = match self.alu_src(b, w) {
+                    Ok(s) => s,
+                    Err(imm) => {
+                        self.a.x().mov_imm(8, Rm::R(S2), imm as u64);
+                        Rm::R(S2)
+                    }
+                };
+                self.a.x().imul(w, rd, s);
+                X::O
+            }
+            // 8 and 16 bits: the exact product in 32 bits, out of the width's range.
+            (_, _, 1 | 2) => {
+                self.ext_into(rd, a, w, signed);
+                self.ext_into(S2, b, w, signed);
+                self.a.x().imul(4, rd, Rm::R(S2));
+                let max = if w == 1 { 0xff } else { 0xffff };
+                if signed {
+                    self.a.x().lea(S2, Mem::base(rd, max / 2 + 1));
+                    self.a.x().alu_imm(Alu::Cmp, 4, Rm::R(S2), max as i64);
+                } else {
+                    self.a.x().alu_imm(Alu::Cmp, 4, Rm::R(rd), max as i64);
+                }
+                X::A
+            }
+            // Unsigned 32 bits: the 64-bit product above `u32::MAX`.
+            _ => {
+                self.ext_into(rd, a, 4, false);
+                self.ext_into(S2, b, 4, false);
+                self.a.x().imul(8, rd, Rm::R(S2));
+                self.a.x().mov_imm(4, Rm::R(S2), u32::MAX as u64);
+                self.a.x().alu(Alu::Cmp, 8, Rm::R(rd), Rm::R(S2));
+                X::A
+            }
+        };
+        self.put(x, rd);
+        cc
+    }
+
+    /// `x = a * b` (unsigned 64 bits) with `mul`, which takes `rax` and `rdx`: both saved in
+    /// the scratch registers around it, and restored but where `x` goes.
+    fn mul_u64(&mut self, a: Value, b: Value, x: Value) -> X {
+        self.a.x().mov(8, Rm::R(S1), Rm::R(R::Rax));
+        self.a.x().mov(8, Rm::R(S2), Rm::R(R::Rdx));
+        self.load(R::Rax, a);
+        let s = match self.src(b) {
+            Src::R(R::Rax) => Rm::R(S1),
+            Src::R(r) => Rm::R(r),
+            Src::M(m) => Rm::M(m),
+            Src::Imm(c) => {
+                self.a.x().mov_imm(8, Rm::R(R::Rdx), c);
+                Rm::R(R::Rdx)
+            }
+            Src::Undef => Rm::R(R::Rdx),
+        };
+        self.a.x().mul(s);
+        match self.dst(x) {
+            Some(Rm::R(R::Rax)) => self.a.x().mov(8, Rm::R(R::Rdx), Rm::R(S2)),
+            Some(Rm::R(R::Rdx)) => {
+                self.a.x().mov(8, Rm::R(R::Rdx), Rm::R(R::Rax));
+                self.a.x().mov(8, Rm::R(R::Rax), Rm::R(S1));
+            }
+            d => {
+                if let Some(d) = d {
+                    self.a.x().mov(8, d, Rm::R(R::Rax));
+                }
+                self.a.x().mov(8, Rm::R(R::Rax), Rm::R(S1));
+                self.a.x().mov(8, Rm::R(R::Rdx), Rm::R(S2));
+            }
+        }
+        X::B
+    }
+
     /// Loads `w` bytes at `m` into `r`.
     fn load_mem(&mut self, r: R, w: u8, m: Mem) {
         match w {
@@ -1015,6 +1153,13 @@ impl<'a> E<'a> {
                 let nx = if stubs.is_empty() { next } else { None };
                 self.cond_br(X::Ne, lt, lf, nx);
             }
+            Term::BrOvf { t, f } => {
+                let lt = self.edge_label(t, &mut stubs);
+                let lf = self.edge_label(f, &mut stubs);
+                let cc = self.ovf_cc.take().ok_or(Unsupported("an overflow branch without its op"))?;
+                let nx = if stubs.is_empty() { next } else { None };
+                self.cond_br(cc, lt, lf, nx);
+            }
             Term::BrCmp { cc, w, a, b: bb, t, f } => {
                 let lt = self.edge_label(t, &mut stubs);
                 let lf = self.edge_label(f, &mut stubs);
@@ -1133,7 +1278,7 @@ fn asm_int_arg(i: u32) -> R {
 pub fn emit(f: &Func, al: &Alloc, mode: Mode, code_consts: &[u8], opts: Opts) -> Result<Output, Unsupported> {
     let fr = layout(f, al, opts);
     let uses = super::regalloc::use_counts(f);
-    let mut e = E { f, al, mode, fr, a: Asm::default(), rodata: Vec::new(), code_consts, sites: Vec::new(), cfi: Vec::new(), uses };
+    let mut e = E { f, al, mode, fr, a: Asm::default(), rodata: Vec::new(), code_consts, sites: Vec::new(), cfi: Vec::new(), uses, ovf_cc: None };
     e.a.nlabels = f.blocks.len() as u32;
     let order = &f.layout;
     for (k, &b) in order.iter().enumerate() {

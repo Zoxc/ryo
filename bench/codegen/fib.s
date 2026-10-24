@@ -160,19 +160,16 @@ L0:
     mov     [rsp+54h],edi
     cmp     dword ptr [rsp+54h],2
     jae     L1
-    lea     rdi,[rsp+60h]
-    mov     esi,0FFFFFFF8h
-    mov     edx,0FFFFFFF4h
-    call    ryo_h_ZextW32W64
+    mov     edx,[rsp+54h]
+    mov     [rsp+58h],rdx
     jmp     L5
 L1:
     mov     dword ptr [rsp+0Ch],1
-    lea     rdi,[rsp+60h]
-    mov     esi,0FFFFFFDCh
-    mov     edx,0FFFFFFE0h
-    mov     ecx,0FFFFFFF4h
-    mov     r8d,0FFFFFFACh
-    call    ryo_h_SubOvfUW32
+    mov     edx,[rsp+54h]
+    sub     edx,[rsp+0Ch]
+    setb    cl
+    mov     [rsp+40h],cl
+    mov     [rsp+3Ch],edx
     test    byte ptr [rsp+40h],0FFh
     je      L2
     lea     rdi,[rsp+60h]
@@ -191,12 +188,11 @@ L2:
     call    fn2
     mov     [rsp+48h],rax
     mov     dword ptr [rsp+0Ch],2
-    lea     rdi,[rsp+60h]
-    mov     esi,0FFFFFFC4h
-    mov     edx,0FFFFFFC8h
-    mov     ecx,0FFFFFFF4h
-    mov     r8d,0FFFFFFACh
-    call    ryo_h_SubOvfUW32
+    mov     edx,[rsp+54h]
+    sub     edx,[rsp+0Ch]
+    setb    cl
+    mov     [rsp+28h],cl
+    mov     [rsp+24h],edx
     test    byte ptr [rsp+28h],0FFh
     je      L3
     lea     rdi,[rsp+60h]
@@ -214,12 +210,11 @@ L3:
     mov     edi,[rsp+2Ch]
     call    fn5
     mov     [rsp+30h],rax
-    lea     rdi,[rsp+60h]
-    mov     esi,0FFFFFFB0h
-    mov     edx,0FFFFFFB8h
-    mov     ecx,0FFFFFFE8h
-    mov     r8d,0FFFFFFD0h
-    call    ryo_h_AddOvfUW64
+    mov     rax,[rsp+48h]
+    add     rax,[rsp+30h]
+    setb    cl
+    mov     [rsp+18h],cl
+    mov     [rsp+10h],rax
     test    byte ptr [rsp+18h],0FFh
     je      L4
     lea     rdi,[rsp+60h]
@@ -380,11 +375,7 @@ L0:
     call    fn1
     mov     [rsp+0Fh],al
     movzx   eax,byte ptr [rsp+0Fh]
-    mov     [rsp+0Eh],al
-    lea     rdi,[rsp+20h]
-    mov     esi,0FFFFFFFCh
-    mov     edx,0FFFFFFEEh
-    call    ryo_h_ZextW8W32
+    mov     [rsp+1Ch],eax
     mov     eax,[rsp+1Ch]
     add     rsp,28h
     ret

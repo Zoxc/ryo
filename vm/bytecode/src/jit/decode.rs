@@ -74,6 +74,15 @@ pub enum Kind {
     Bin(Bin, u8, Option<u64>),
     /// `d = a cc b` (or `cc imm`): `a`, [`b`], `d`.
     Cmp(super::ir::Cc, u8, Option<u64>),
+    /// `d, o = a op b` with overflow (`Add`, `Sub` or `Mul`), signed or not: `a`, `b`, `d`,
+    /// `o`.
+    Ovf(Bin, bool, u8),
+    /// `d = s` extended (zero or sign, `sx`) or truncated from `from` bytes to `to`: `s`, `d`.
+    Ext {
+        from: u8,
+        to: u8,
+        sx: bool,
+    },
     /// To the instruction (an index, as all the targets here).
     Jmp(u32),
     /// A branch on the byte `s`, or on `a cc b` (or `cc imm`): to `t` when it holds, but
@@ -457,6 +466,27 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode) -> Result<(RInsn,
                 "ptr" => {
                     accs.extend([acc(s("p"), 8, How::Read), acc(s("i"), 8, How::Read), acc(s("d"), 8, How::Write)]);
                     Kind::PtrIndex(im("stride") as u32)
+                }
+                "zext" | "sext" | "trunc" => {
+                    let mut ws = segs.iter().filter_map(|s| width(s));
+                    let (from, to) = (ws.next().ok_or(bad("a native instruction"))?, ws.next().ok_or(bad("a native instruction"))?);
+                    accs.extend([acc(s("s"), from as u32, How::Read), acc(s("d"), to as u32, How::Write)]);
+                    Kind::Ext { from, to, sx: first == "sext" }
+                }
+                _ if segs.get(1) == Some(&"ovf") => {
+                    let bin = match first {
+                        "add" => Bin::Add,
+                        "sub" => Bin::Sub,
+                        "mul" => Bin::Mul,
+                        _ => return Err(bad("a native instruction")),
+                    };
+                    accs.extend([
+                        acc(s("a"), wd as u32, How::Read),
+                        acc(s("b"), wd as u32, How::Read),
+                        acc(s("d"), wd as u32, How::Write),
+                        acc(s("o"), 1, How::Write),
+                    ]);
+                    Kind::Ovf(bin, segs[2] == "s", wd)
                 }
                 "br" => {
                     falls = true;

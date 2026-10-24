@@ -122,6 +122,8 @@ def Cond.eval (f : Flags) : Cond → Except Fault Bool
   | .a => do pure (!(← need "CF" f.cf) && !(← need "ZF" f.zf))
   | .s => need "SF" f.sf
   | .ns => (! ·) <$> need "SF" f.sf
+  | .o => need "OF" f.of
+  | .no => (! ·) <$> need "OF" f.of
   | .l => do pure ((← need "SF" f.sf) != (← need "OF" f.of))
   | .ge => do pure ((← need "SF" f.sf) == (← need "OF" f.of))
   | .le => do pure ((← need "ZF" f.zf) || (← need "SF" f.sf) != (← need "OF" f.of))
@@ -271,6 +273,14 @@ def Item.exec (ctx : Ctx) (i : Item) (s : State) : Except Fault State :=
     let b ← cond.eval s0.flags
     pure (s0.setMem (s0.ea m) 1 (if b then 1 else 0))
   | .testM8 m => pure (s0.setFlags (logicFlags (s0.memW .b (s0.ea m))))
+  | .setccCl cond => do
+    let b ← cond.eval s0.flags
+    pure (s0.setRegW .b .rcx (if b then 1 else 0))
+  | .mulQ rm =>
+    let p := (s0.reg .rax).toNat * (s0.rmW .q rm).toNat
+    let ovf := p ≥ 2 ^ 64
+    let s1 := (s0.setReg .rax (BitVec.ofNat 64 p)).setReg .rdx (BitVec.ofNat 64 (p / 2 ^ 64))
+    pure (s1.setFlags { cf := some ovf, of := some ovf, zf := none, sf := none })
   | .sse isSt size x m =>
     let a := s0.ea m
     let xi : Fin 16 := ⟨x % 16, Nat.mod_lt _ (by decide)⟩

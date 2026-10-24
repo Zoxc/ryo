@@ -443,6 +443,17 @@ fn instructions(
     let mut cache = Cache::default();
     let mut end = entry_stub;
     while !c.at_end() && Some(c.pos) != end {
+        // A sequence that left no code (its reload hit the cache, its store was dropped) ends
+        // the block before a loop head's padding and counter check: none can start at a
+        // target, where the cache is empty.
+        if dropped.first().is_some_and(|d| d.at == c.pos) {
+            let pos = c.pos;
+            if let Some(p) = inline_insn(c, &mut cache, &mut dropped, targets.is_some()) {
+                padded.push(false);
+                protos.push(Proto { pos, ..p });
+                continue;
+            }
+        }
         let pad = c.padding();
         if pad != 0 && (!fr.mode.align_loops || pad >= 16 || c.pos % 16 != 0) {
             return Err(AsmError { at: c.pos, what: "padding" });

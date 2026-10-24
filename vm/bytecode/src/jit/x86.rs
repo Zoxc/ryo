@@ -327,6 +327,11 @@ impl X86 {
         self.sized(w, 0xf6, 0, false, a, &b[..n]);
     }
 
+    /// `mul r/m64`: `rdx:rax = rax * src`.
+    pub fn mul(&mut self, src: Rm) {
+        self.insn(false, true, false, &[0xf7], 4, src, &[]);
+    }
+
     pub fn imul(&mut self, w: u8, dst: R, src: Rm) {
         assert!(matches!(w, 2 | 4 | 8), "bad imul width {w}");
         self.insn(w == 2, w == 8, false, &[0x0f, 0xaf], dst.num(), src, &[]);

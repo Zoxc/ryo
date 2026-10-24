@@ -103,6 +103,7 @@ def rex? (i : Item) : Option UInt8 :=
     | imul w reg rm | imulImm w reg rm _ => some (w == .q, some reg, rm, false)
     | shift _ w reg _ => some (w == .q, none, .reg reg, false)
     | setcc _ m | testM8 m => some (false, none, .mem m, false)
+    | mulQ rm => some (true, none, rm, false)
     | _ => none
   parts.bind fun (w, reg, rm, isByte) =>
     let sil (r : Reg) : Bool := isByte && !r.ext && r.low ≥ 4
@@ -212,6 +213,8 @@ def encode (i : Item) (pos : BitVec 32) : List UInt8 × List Reloc :=
     plain (i.prefixes ++ [0xc1, byte (0xc0 ||| op.num <<< 3 ||| reg.low), byte amt.toNat])
   | setcc cond m => plain (i.prefixes ++ [0x0f, byte (0x90 ||| cond.cc)] ++ m.write 0)
   | testM8 m => plain (i.prefixes ++ [0xf6] ++ m.write 0 ++ [0xff])
+  | setccCl cond => plain [0x0f, byte (0x90 ||| cond.cc), 0xc1]
+  | mulQ rm => plain (i.prefixes ++ [0xf7] ++ rm.write 4)
   | sse isSt size x m =>
     let pre : List UInt8 := if size == 4 then [0xf3] else if size == 8 then [0xf2] else []
     plain (pre ++ [0x0f, if isSt then 0x11 else 0x10] ++ m.write x)

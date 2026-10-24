@@ -161,6 +161,12 @@ def widthOfMnemonic (m : String) : Option Nat :=
     | "w8" => some 1 | "w16" => some 2 | "w32" => some 4 | "w64" => some 8 | "w128" => some 16
     | _ => none
 
+/-- The second width of a mnemonic (`zext.w8.w32`: 4). -/
+def secondWidth (m : String) : Option Nat :=
+  ((m.splitOn ".").filterMap fun
+    | "w8" => some 1 | "w16" => some 2 | "w32" => some 4 | "w64" => some 8 | "w128" => some 16
+    | _ => none)[1]?
+
 /-- A call's argument list: (slot, register) pairs, read at the register's size or
 address-taken. -/
 def argPairs : List (BitVec 32) → List (BitVec 32 × Access)
@@ -260,11 +266,17 @@ def native (op : Reduced.Opcode) (ops : List (Opnd Nat)) (pe : Bool := false)
   | _ =>
     let mut out : List (BitVec 32 × Access) := []
     let mut pointer := false
+    -- An extension or truncation writes its second width.
+    let ext := ["zext", "sext", "trunc"].contains first
+    let to := (secondWidth m).getD n
     for (o, v) in pairs do
       match o.kind, v with
       | .slot, .slot s =>
         let acc : Access :=
-          if o.name == "d" then (if m == "addr" || first == "ptr" then .write 8 else .write (if compare then 1 else n))
+          if o.name == "d" && ext then .write to
+          -- An overflow flag.
+          else if o.name == "o" then .write 1
+          else if o.name == "d" then (if m == "addr" || first == "ptr" then .write 8 else .write (if compare then 1 else n))
           else if o.name == "s" && m == "addr" then .addr
           else if o.name == "s" && m == "br" then .read 1
           else if o.name == "p" || o.name == "i" then .read 8
@@ -661,7 +673,7 @@ def droppedStore (d : Decoded) (k : Nat) : Option (BitVec 32 × Nat) :=
     | some (_, .slot s) =>
       let w := if op.info.mnemonic == "mov.w128" then 8
         else if op.info.mnemonic == "addr" || op.info.mnemonic.startsWith "ptr" then 8
-        else (widthOfMnemonic op.info.mnemonic).getD 8
+        else ((secondWidth op.info.mnemonic).orElse fun _ => widthOfMnemonic op.info.mnemonic).getD 8
       some (s, w)
     | _ => none
   | _ => none

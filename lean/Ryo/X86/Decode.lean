@@ -334,6 +334,8 @@ def nativeCandidate (c : Cursor) : Option Item := do
       if (op2 == 0xb6 || op2 == 0xb7 || op2 == 0xbe || op2 == 0xbf) && w == .d then
         pure (.ld (if op2 &&& 1 == 0 then .b else .w) (op2 &&& 8 != 0) (← reg r) (← mem rm))
       else if op2 == 0xaf then pure (.imul w (← reg r) rm)
+      else if 0x90 ≤ op2 && op2 ≤ 0x9f && w == .d && r == 0 && rm == .reg .rcx then
+        pure (.setccCl (← Cond.ofCc? (op2 &&& 0xf).toNat))
       else if 0x90 ≤ op2 && op2 ≤ 0x9f && w == .d && r == 0 then
         pure (.setcc (← Cond.ofCc? (op2 &&& 0xf).toNat) (← mem rm))
       else none
@@ -369,6 +371,11 @@ def nativeCandidate (c : Cursor) : Option Item := do
       if w != .d then none
       let (_, rm, _) ← modrm i
       pure (.testM8 (← mem rm))
+    | 0xf7 =>
+      if w != .q then none
+      let (r, rm, _) ← modrm i
+      if r != 4 then none
+      pure (.mulQ rm)
     | op =>
       if op < 0x40 && op &&& 6 == 2 then
         let w ← if op &&& 1 == 0 then byteW w else some w
@@ -377,7 +384,8 @@ def nativeCandidate (c : Cursor) : Option Item := do
       else none
   -- A register `r/m` operand must be usable too.
   match item with
-  | .alu _ _ _ (.reg r) | .aluImm _ _ (.reg r) _ | .imul _ _ (.reg r) | .imulImm _ _ (.reg r) _ =>
+  | .alu _ _ _ (.reg r) | .aluImm _ _ (.reg r) _ | .imul _ _ (.reg r) | .imulImm _ _ (.reg r) _
+  | .mulQ (.reg r) =>
     if !r.usable then none
   | _ => pure ()
   pure item

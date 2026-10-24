@@ -855,7 +855,7 @@ fn templates_are_pinned_to_format_version() {
             eat(&lsda::write(&enc.call_sites));
         }
     }
-    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (22, 0x5790b2aa31eb135e), "template hash {h:#x}");
+    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (23, 0xf3bbff3048414b77), "template hash {h:#x}");
 }
 
 /// Without a frame pointer, an SSE load or store of the slot at `rsp` has no displacement.

@@ -299,7 +299,8 @@ predecessors are; parameters get an operand row per predecessor while being buil
 ones become aliases, and the edges' argument lists are written once at the end. Copies
 (`mov`), constants (`imm`) and trivial parameters disappear on the way. Then the folds
 instruction selection relies on: a compare used only by the following branch becomes a
-`brcmp`, and loads and stores through an `AllocaAddr` or a `PtrAdd` take its alloca or
+`brcmp`, an overflow op (`add`/`sub`/`mul.ovf`) whose flag only the branch ending its block
+reads becomes a `br ovf` on the flags it leaves, and loads and stores through an `AllocaAddr` or a `PtrAdd` take its alloca or
 constant into their address.
 
 ### OSR
@@ -330,7 +331,10 @@ pointer, last of all), `rsp = fp - F_jit`, `jmp` to the head.
 - **Instruction selection**: per instruction over the allocated locations; two-address
   forms with a hint to reuse the first operand's register, immediates where they fit
   (`r10` takes the others), `[base + index*scale]` for `ptr.index` by 1, 2, 4 or 8,
-  `setcc`, compare-branches fused, fall-through layout. `r10` and `r11` are the emitter's
+  `setcc`, compare-branches fused, overflow ops as `add`/`sub`/`imul` (8 and 16-bit
+  multiplies, and unsigned 32-bit ones, in 32 or 64 bits with a range check; unsigned 64-bit
+  ones as `mul`, `rax` and `rdx` saved in `r10`/`r11` around it) with `seto`/`setb`/`seta`, or
+  their `jcc` for `br ovf`, extensions as `movzx`/`movsx`/`mov r32`, fall-through layout. `r10` and `r11` are the emitter's
   scratch registers and never allocated.
 - **Calls**: `hcall.reg` moves its `In` values into the first argument registers (a
   parallel move), sets the data registers after them, calls the register entry and moves
@@ -573,7 +577,7 @@ for shuffled frames per image, `RtApi::shuffled`):
 ## Future work
 
 The SSA tier doesn't optimize beyond promotion, copy and constant propagation, and its
-folds: passes, inlining, native handler operations, interval splitting and an OSR version
+folds: passes, inlining, more native handler operations, interval splitting and an OSR version
 that pins nothing are the next steps, behind the same records, trips, OSR entries and
 packaging; [verification.md](verification.md#the-jit) describes how its output would be
 validated.

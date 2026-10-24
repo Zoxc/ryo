@@ -213,8 +213,9 @@ The common instructions (`asm::has_inline`) are short native sequences instead o
 calls (`asm::inline`): `mov`, `imm`, `addr`, `ptr.add` (a 32-bit offset), `ptr.index` (a
 stride below 2^31), `load`, `store`, `add`, `sub`, `and`, `or`, `xor`, `mul` and their
 `.imm` forms, the shifts by an immediate below the width, the compares to a `bool` (`eq`
-… `ge.u.imm`), `br` and the compare-branches, all at `w8`–`w64`. Everything else, and
-these with other operands, keeps its handler call.
+… `ge.u.imm`), `br` and the compare-branches, the overflow ops `add.ovf`, `sub.ovf` and
+`mul.ovf`, and the extensions and truncations (`zext`, `sext`, `trunc`), all at `w8`–`w64`.
+Everything else, and these with other operands, keeps its handler call.
 
 - **Registers**: the sequences compute in one of the caller-saved registers but `rcx`, and
   use `rcx` as scratch, and the flags, all of which every handler call clobbers too. Only the
@@ -230,6 +231,14 @@ these with other operands, keeps its handler call.
   and `jcc t` (the condition inverted with `!`), which relaxes like the other branches.
   `w8`/`w16` arithmetic with an immediate computes in 32 bits; 64-bit immediates that
   aren't sign-extended 32-bit ones go through `rcx`.
+- **Overflow ops** compute the result in `rax` and write the flag before it, through `rcx`:
+  `setcc cl; mov [fp + o], cl` (`seto` signed, `setb` unsigned), then the result's store.
+  `add`/`sub` and signed `w32`/`w64` `imul` set the flag themselves; 8 and 16-bit multiplies
+  compute the exact product in 32 bits and compare it to the width's range (`seta`), unsigned
+  `w32` ones in 64 bits against `u32::MAX`, and unsigned `w64` ones are `mul [b]`, which the
+  register cache computes in `rax` (it clobbers `rdx`). Extensions are `movzx`/`movsx`/`mov`
+  and the store at the wider width (sign extensions to 64 bits as `shl` then `sar` by
+  `64 - n`), truncations a load at the wider width and the narrower store.
 - **Canonical form**: each instruction has one sequence per operand pattern, displacements
   and immediates in their shortest form, and no two instructions share a sequence; a handler
   call of an instruction that has an inline sequence isn't canonical. The

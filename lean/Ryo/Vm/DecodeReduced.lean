@@ -580,6 +580,16 @@ def instructions (fr : Frame) (ro : ByteArray) (dropped : List DroppedStore)
   let mut dr := dropped
   for _ in [0:(← fuel) + dropped.length] do
     if (← atEnd) || some (← pos) == endPos then break
+    -- A sequence that left no code (its reload hit the cache, its store was dropped) ends the
+    -- block before a loop head's padding and counter check: none starts at a target.
+    if dr.head?.any (·.at_ == (← pos)) then
+      let p ← pos
+      if let some (q, c, d) ← inlineInsn cache dr targets.isSome then
+        cache := c
+        dr := d
+        padded := padded.push false
+        protos := protos.push { q with pos := p }
+        continue
     let pad ← padding
     let p ← pos
     if pad != 0 && (!fr.mode.alignLoops || pad ≥ 16 || p % 16 != 0) then err p "padding"

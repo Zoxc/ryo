@@ -174,6 +174,12 @@ fn encoder_matches_objdump() {
                 c.add(format!("{n} {},0x5", reg(d, w)), |x| x.shift_imm(op, w, Rm::R(d), 5));
             }
             c.add(format!("neg {}", reg(d, w)), |x| x.neg(w, Rm::R(d)));
+            if w == 8 {
+                c.add(format!("mul {}", reg(d, 8)), |x| x.mul(Rm::R(d)));
+                for m in some_mems() {
+                    c.add(format!("mul {}", mem(m, 8)), |x| x.mul(Rm::M(m)));
+                }
+            }
             c.add(format!("not {}", reg(d, w)), |x| x.not(w, Rm::R(d)));
             if w != 1 {
                 for s in regs() {

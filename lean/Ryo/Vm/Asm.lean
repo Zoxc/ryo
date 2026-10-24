@@ -212,6 +212,7 @@ def mapRegs (f : Reg → Reg) : Item → Item
   | .setcc c m => .setcc c ⟨f m.base, m.disp⟩
   | .testM8 m => .testM8 ⟨f m.base, m.disp⟩
   | .setReg r v => .setReg (f r) v
+  | .mulQ rm => .mulQ (mapRm f rm)
   | it => it
 where
   mapRm (f : Reg → Reg) : Rm → Rm
@@ -227,7 +228,7 @@ def endsInline : Item → Bool
 /-- `Item::is_inline`. -/
 def isInline : Item → Bool
   | .ld .. | .st .. | .stImm .. | .leaM .. | .alu .. | .aluImm .. | .imul .. | .imulImm ..
-  | .shift .. | .setcc .. | .testM8 .. => true
+  | .shift .. | .setcc .. | .testM8 .. | .setccCl .. | .mulQ .. => true
   | .setReg r _ => r != .rsp && r != .rbp
   | _ => false
 
@@ -243,6 +244,7 @@ def frameRead : Item → Option (M × Nat)
   | .ld w _ _ m | .alu _ w _ (.mem m) | .aluImm _ w (.mem m) _ | .imul w _ (.mem m)
   | .imulImm w _ (.mem m) _ => if m.base == .rbp then some (m, w.bits / 8) else none
   | .testM8 m => if m.base == .rbp then some (m, 1) else none
+  | .mulQ (.mem m) => if m.base == .rbp then some (m, 8) else none
   | _ => none
 
 /-- `Item::frame_write`. -/
@@ -258,6 +260,12 @@ inductive Class
   | bin (op : Alu) (w : W) | binImm (op : Alu) (w : W) | mul (w : W) | mulImm (w : W)
   | shiftImm (sh : Sh) (w : W) | cmp (c : Cond) (w : W) | cmpImm (c : Cond) (w : W) | br
   | brCmp (c : Cond) (w : W) | brCmpImm (c : Cond) (w : W)
+  /-- `add.ovf`/`sub.ovf`, signed or not: the result and its overflow flag. -/
+  | ovf (op : Alu) (signed : Bool) (w : W)
+  /-- `mul.ovf`, signed or not. -/
+  | mulOvf (signed : Bool) (w : W)
+  /-- A zero or sign (`sx`) extension, or a truncation. -/
+  | ext (src dst : W) (sx : Bool)
 deriving DecidableEq, Repr, Inhabited
 
 /-- `Class::key`: the conditions dropped. -/
@@ -266,6 +274,8 @@ def Class.key : Class → Class
   | .cmpImm _ w => .cmpImm .z w
   | .brCmp _ w => .brCmp .z w
   | .brCmpImm _ w => .brCmpImm .z w
+  | .ovf op _ w => .ovf op false w
+  | .mulOvf _ w => .mulOvf false w
   | c => c
 
 def widthName : String → Option W
@@ -278,6 +288,18 @@ def aluName : String → Option Alu
 /-- `inline::class`, from the opcode's mnemonic. -/
 def classOfMnemonic (mn : String) : Option Class :=
   match mn.splitOn "." with
+  | ["add", "ovf", s, w] => .ovf .add (s == "s") <$> widthName w
+  | ["sub", "ovf", s, w] => .ovf .sub (s == "s") <$> widthName w
+  | ["mul", "ovf", s, w] => .mulOvf (s == "s") <$> widthName w
+  | ["zext", a, b] => do
+    let (a, b) := (← widthName a, ← widthName b)
+    if a.bits < b.bits then some (.ext a b false) else none
+  | ["sext", a, b] => do
+    let (a, b) := (← widthName a, ← widthName b)
+    if a.bits < b.bits then some (.ext a b true) else none
+  | ["trunc", a, b] => do
+    let (a, b) := (← widthName a, ← widthName b)
+    if a.bits > b.bits then some (.ext a b false) else none
   | ["mov", "w128"] => some .mov128
   | ["mov", w] => .mov <$> widthName w
   | ["imm", w] => .imm <$> widthName w
@@ -343,6 +365,9 @@ def C : Reg := .rcx
 def ld (w : W) (m : M) : Item := .ld w false R m
 def st (w : W) (m : M) : Item := .st w R m
 def Mrax (d : BitVec 32) : M := ⟨.rax, d⟩
+
+/-- `flag`: an overflow flag's store to `o`, `setcc cl; mov [o], cl`. -/
+def flagSeq (c : Cond) (o : M) : List Item := [.setccCl c, .st .b C o]
 
 def cmpImmSeq (w : W) (a : M) (x : BitVec 64) : List Item :=
   if w == .q && !fits x then [ld .q a, .setReg C x, .alu .cmp w R (.reg C)]
@@ -432,12 +457,47 @@ def sequence {T : Type} (c : Class) (ops : List (Opnd T)) : Option (List Item ×
   | .br => pure ([.testM8 (← slot 0)], some (← cond 1 .nz))
   | .brCmp c w => pure ([ld w (← slot 0), .alu .cmp w R (.mem (← slot 1))], some (← cond 2 c))
   | .brCmpImm c w => pure (cmpImmSeq w (← slot 0) (← imm 1), some (← cond 2 c))
+  -- `d, o, a, b`: the result in `rax`, the flag through `cl`, stored before the result.
+  | .ovf op signed w =>
+    let flag := flagSeq (if signed then .o else .b) (← slot 1)
+    pure ([ld w (← slot 2), .alu op w R (.mem (← slot 3))] ++ flag ++ [st w (← slot 0)], none)
+  | .mulOvf signed w =>
+    let a ← slot 2
+    let b ← slot 3
+    let (body, c) : List Item × Cond := match signed, w with
+      | true, .d | true, .q => ([ld w a, .imul w R (.mem b)], .o)
+      | false, .q => ([ld w a, .mulQ (.mem b)], .b)
+      | false, .d =>
+        ([ld w a, .ld w false C b, .imul .q R (.reg C), .setReg C 0xffff_ffff,
+          .alu .cmp .q R (.reg C)], .a)
+      | _, _ =>
+        let max : BitVec 32 := if w == .b then 0xff else 0xffff
+        let pre := [Item.ld w signed R a, .ld w signed C b, .imul .d R (.reg C)]
+        let chk : List Item := if signed
+          then [.leaM C (Mrax (max / 2 + 1)), .aluImm .cmp .d (.reg C) max]
+          else [.aluImm .cmp .d (.reg R) max]
+        (pre ++ chk, .a)
+    pure (body ++ flagSeq c (← slot 1) ++ [st w (← slot 0)], none)
+  | .ext src dst sx =>
+    let s ← slot 1
+    let body : List Item := if sx && dst == .q then
+        let n : BitVec 8 := BitVec.ofNat 8 (64 - src.bits)
+        [ld src s, .shift .shl .q R n, .shift .sar .q R n]
+      else [.ld src sx R s]
+    pure (body ++ [st dst (← slot 0)], none)
 
 /-- `inline::classify`: the class key of the items, ending in a branch if `br`. -/
 def classify (items : List Item) (br : Bool) : Option Class :=
   let z := Cond.z
   let frame (m : M) : Bool := m.base == .rbp
-  if br then
+  -- An overflow op: its flag, then the result's store.
+  if items.any (fun | .setccCl _ => true | _ => false) then
+    match items.getLast? with
+    | some (.st w ..) =>
+      if items.any (fun | .mulQ _ | .imul .. => true | _ => false) then some (.mulOvf false w)
+      else (items.findSome? fun | .alu op .. => some op | _ => none).map (.ovf · false w)
+    | _ => none
+  else if br then
     match items with
     | [.testM8 _] => some .br
     | [.ld w .., .alu .cmp _ _ (.mem _)] => some (.brCmp z w)
@@ -450,7 +510,9 @@ def classify (items : List Item) (br : Bool) : Option Class :=
       some (.cmpImm z w)
     | [.stImm w ..] => some (.imm w)
     | [.setReg .., .st ..] => some (.imm .q)
-    | [.ld w .., .st _ _ m] => if frame m then some (.mov w) else rest items
+    | [.ld w sx _ _, .st t _ m] =>
+      if frame m then (if !sx && w == t then some (.mov w) else some (.ext w t sx)) else rest items
+    | [.ld w .., .shift .shl .., .shift .sar .., .st t ..] => some (.ext w t true)
     | _ => rest items
 where
   rest (items : List Item) : Option Class :=
@@ -497,6 +559,10 @@ def decodeInline (items : List Item) (branch : Option (Cond × Nat)) :
       match o.kind with
       | .slot =>
         if o.name == "d" then ops := ops.push (.slot (← frame.getLast?))
+        -- An overflow flag, stored before the result.
+        else if o.name == "o" then
+          if frame.length < 2 then none
+          ops := ops.push (.slot (← frame[frame.length - 2]?))
         else
           let s ← f.head?
           f := f.tail
@@ -544,6 +610,7 @@ def overlaps (a : BitVec 32) (n : Nat) (b : BitVec 32) (m : Nat) : Bool :=
 def readOperand : Item → Option (M × W)
   | .alu _ w _ (.mem m) | .aluImm .cmp w (.mem m) _ | .imul w _ (.mem m) | .imulImm w _ (.mem m) _ =>
     if m.base == .rbp then some (m, w) else none
+  | .mulQ (.mem m) => if m.base == .rbp then some (m, .q) else none
   | _ => none
 
 /-- `with_rm`. -/
@@ -553,12 +620,13 @@ def withRm (it : Item) (rm : Rm) : Item :=
   | .aluImm op w _ i => .aluImm op w rm i
   | .imul w r _ => .imul w r rm
   | .imulImm w r _ i => .imulImm w r rm i
+  | .mulQ _ => .mulQ rm
   | it => it
 
 /-- `read_reg`. -/
 def readReg : Item → Option Reg
-  | .alu _ _ _ (.reg r) | .aluImm .cmp _ (.reg r) _ | .imul _ _ (.reg r) | .imulImm _ _ (.reg r) _ =>
-    some r
+  | .alu _ _ _ (.reg r) | .aluImm .cmp _ (.reg r) _ | .imul _ _ (.reg r) | .imulImm _ _ (.reg r) _
+  | .mulQ (.reg r) => some r
   | _ => none
 
 namespace Cache
@@ -600,7 +668,11 @@ def update (c : Cache) (item : Item) : Cache := Id.run do
     | .aluImm op w (.reg reg) _ => if op != .cmp then some (reg, none, wide w) else none
     | .imul w reg _ | .imulImm w reg _ _ | .shift _ w reg _ => some (reg, none, wide w)
     | .leaM dst _ | .setReg dst _ => some (dst, none, some .q)
+    | .mulQ _ => some (.rax, none, some .q)
     | _ => none
+  -- `mul` writes `rdx` too.
+  if item matches .mulQ _ then
+    c := c.setEntry 1 fun e => { e with slot := none, zx := none }
   match item with
   | .st w src m =>
     if let some i := poolIdx src then
@@ -621,12 +693,16 @@ def update (c : Cache) (item : Item) : Cache := Id.run do
 cache after it. -/
 def emit (c : Cache) (items : List Item) : List Item × Cache := Id.run do
   let mut c := { c with tick := c.tick + 1 }
+  -- A `mul` (`rdx:rax`) computes in `rax`, dropping the reload only if `rax` holds it.
+  let pinned := items.any fun | .mulQ _ => true | _ => false
   let (x, rest) := match items with
     | .ld w false .rax m :: tl =>
-      match c.find m w true with
+      if pinned then
+        (0, if m.base == Reg.rbp && c.regs[0]!.slot == some (m.disp, w) then tl else items)
+      else match c.find m w true with
       | some i => (i, tl)
       | none => (c.fresh, items)
-    | _ => (c.fresh, items)
+    | _ => (if pinned then 0 else c.fresh, items)
   c := c.setEntry x fun e => { e with used := c.tick }
   let xr := pool[x]!
   let mut out : Array Item := #[]

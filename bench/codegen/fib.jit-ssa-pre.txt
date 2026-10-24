@@ -15,10 +15,10 @@ a12: $-8, 8 bytes, Promoted
 b0(v0:4): ; Entry
     br LtU.w4 v0, 0x2 ? b1() : b2()
 b1(): ; Body
-    v2:8 = hcall.reg zext.w32.w64 [(Fp, [None, None]), (Imm(4294967288), [Some(Scratch(0)), None]), (Imm(4294967284), [Some(Scratch(8)), None])] outs 1 (v0)
+    v2:8 = Ext { from: 4, to: 8, sx: false } (v0)
     jmp b9(v2)
 b2(): ; Body
-    v4:4, v5:1 = hcall.reg sub.ovf.u.w32 [(Fp, [None, None]), (Imm(4294967260), [Some(Scratch(0)), None]), (Imm(4294967264), [Some(Scratch(8)), None]), (Imm(4294967284), [Some(Scratch(16)), None]), (Imm(4294967212), [Some(Scratch(24)), None])] outs 2 (v0, 0x1)
+    v4:4, v5:1 = Ovf(Sub, false, 4) (v0, 0x1)
     br v5 ? b3() : b4()
 b3(): ; Body
     v6:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967208), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
@@ -27,7 +27,7 @@ b3(): ; Body
     trap
 b4(): ; Body
     v7:8 = Call(Call { target: fn2, regs: [ArgReg { xmm: false, size: 4, index: 0 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Continue }) (v4)
-    v9:4, v10:1 = hcall.reg sub.ovf.u.w32 [(Fp, [None, None]), (Imm(4294967236), [Some(Scratch(0)), None]), (Imm(4294967240), [Some(Scratch(8)), None]), (Imm(4294967284), [Some(Scratch(16)), None]), (Imm(4294967212), [Some(Scratch(24)), None])] outs 2 (v0, 0x2)
+    v9:4, v10:1 = Ovf(Sub, false, 4) (v0, 0x2)
     br v10 ? b5() : b6()
 b5(): ; Body
     v11:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967208), [Some(Scratch(0)), None]), (k3, [None, None])] outs 1 ()
@@ -36,7 +36,7 @@ b5(): ; Body
     trap
 b6(): ; Body
     v12:8 = Call(Call { target: fn2, regs: [ArgReg { xmm: false, size: 4, index: 0 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Continue }) (v9)
-    v13:8, v14:1 = hcall.reg add.ovf.u.w64 [(Fp, [None, None]), (Imm(4294967216), [Some(Scratch(0)), None]), (Imm(4294967224), [Some(Scratch(8)), None]), (Imm(4294967272), [Some(Scratch(16)), None]), (Imm(4294967248), [Some(Scratch(24)), None])] outs 2 (v7, v12)
+    v13:8, v14:1 = Ovf(Add, false, 8) (v7, v12)
     br v14 ? b7() : b8()
 b7(): ; Body
     v15:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967208), [Some(Scratch(0)), None]), (k6, [None, None])] outs 1 ()

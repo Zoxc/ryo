@@ -207,6 +207,15 @@ pub enum Op {
     Bin(BinOp, u8),
     /// `a cc b`: a boolean.
     Cmp(Cc, u8),
+    /// `a op b` (`Add`, `Sub` or `Mul`) at `w` bytes, signed or not, and whether it
+    /// overflowed (a boolean).
+    Ovf(BinOp, bool, u8),
+    /// `a` (`from` bytes) zero- or sign-extended (`sx`), or truncated, to `to` bytes.
+    Ext {
+        from: u8,
+        to: u8,
+        sx: bool,
+    },
     /// `p + k`.
     PtrAdd(i64),
     /// `p + i * stride` (wrapping).
@@ -233,7 +242,10 @@ pub enum Op {
 impl Op {
     /// Whether it has no effect but its result: dropped when the result is unused.
     pub fn pure(&self) -> bool {
-        matches!(self, Op::Bin(..) | Op::Cmp(..) | Op::PtrAdd(_) | Op::PtrIndex(_) | Op::AllocaAddr(..) | Op::OsrLoad(..))
+        matches!(
+            self,
+            Op::Bin(..) | Op::Cmp(..) | Op::Ovf(..) | Op::Ext { .. } | Op::PtrAdd(_) | Op::PtrIndex(_) | Op::AllocaAddr(..) | Op::OsrLoad(..)
+        )
     }
 
     /// Whether it calls something: every caller-saved register is clobbered.
@@ -291,6 +303,12 @@ pub enum Term {
         t: Edge,
         f: Edge,
     },
+    /// To `t` if the block's last instruction, an [`Op::Ovf`], overflowed, else `f`: the
+    /// branch on its flag, fused.
+    BrOvf {
+        t: Edge,
+        f: Edge,
+    },
     /// To `t` if `a cc b` (at width `w`), else `f`.
     BrCmp {
         cc: Cc,
@@ -330,7 +348,7 @@ impl Term {
         match self {
             Term::None | Term::Ret { .. } | Term::TailCall { .. } | Term::Trap => Vec::new(),
             Term::Jmp(e) => alloc::vec![e],
-            Term::Br { t, f, .. } | Term::BrCmp { t, f, .. } => alloc::vec![t, f],
+            Term::Br { t, f, .. } | Term::BrCmp { t, f, .. } | Term::BrOvf { t, f } => alloc::vec![t, f],
             Term::Switch { targets, .. } => targets.iter().collect(),
             Term::Invoke { normal, pad } => normal.iter().chain([pad]).collect(),
         }
@@ -340,7 +358,7 @@ impl Term {
         match self {
             Term::None | Term::Ret { .. } | Term::TailCall { .. } | Term::Trap => Vec::new(),
             Term::Jmp(e) => alloc::vec![e],
-            Term::Br { t, f, .. } | Term::BrCmp { t, f, .. } => alloc::vec![t, f],
+            Term::Br { t, f, .. } | Term::BrCmp { t, f, .. } | Term::BrOvf { t, f } => alloc::vec![t, f],
             Term::Switch { targets, .. } => targets.iter_mut().collect(),
             Term::Invoke { normal, pad } => normal.iter_mut().chain([pad]).collect(),
         }
@@ -703,6 +721,11 @@ impl Func {
             for u in bd.term.uses() {
                 check(u, b, end, 1)?;
             }
+            if let Term::BrOvf { .. } = bd.term
+                && !matches!(bd.insts.last().map(|i| &self.insts[i.idx()].op), Some(Op::Ovf(..)))
+            {
+                return Err(format!("{b} branches on an overflow, but its last instruction isn't an overflow op"));
+            }
             if let Term::Invoke { .. } = bd.term {
                 let last = bd.insts.last().map(|i| self.insts[i.idx()].op.site());
                 if !matches!(last, Some(Site::Pad { .. })) {
@@ -725,7 +748,8 @@ impl Func {
     /// The widths an instruction reads its arguments at.
     pub fn arg_widths(&self, id: &InstData) -> Vec<u8> {
         match &id.op {
-            Op::Bin(_, w) | Op::Cmp(_, w) => alloc::vec![*w, *w],
+            Op::Bin(_, w) | Op::Cmp(_, w) | Op::Ovf(_, _, w) => alloc::vec![*w, *w],
+            Op::Ext { from, .. } => alloc::vec![*from],
             Op::PtrAdd(_) => alloc::vec![8],
             Op::PtrIndex(_) => alloc::vec![8, 8],
             Op::AllocaAddr(..) | Op::ALoad(..) | Op::OsrLoad(..) | Op::LandingPad | Op::Island(_) => Vec::new(),
@@ -819,6 +843,7 @@ impl fmt::Display for Func {
                 Term::None => writeln!(f, "    <none>")?,
                 Term::Jmp(e) => writeln!(f, "    jmp {}", edge(e))?,
                 Term::Br { cond, t, f: e } => writeln!(f, "    br {} ? {} : {}", v(*cond), edge(t), edge(e))?,
+                Term::BrOvf { t, f: e } => writeln!(f, "    br ovf ? {} : {}", edge(t), edge(e))?,
                 Term::BrCmp { cc, w, a, b, t, f: e } => writeln!(f, "    br {cc:?}.w{w} {}, {} ? {} : {}", v(*a), v(*b), edge(t), edge(e))?,
                 Term::Switch { idx, targets } => writeln!(f, "    switch {} [{}]", v(*idx), targets.iter().map(edge).collect::<Vec<_>>().join(", "))?,
                 Term::Ret { k, parts } => writeln!(f, "    ret {k:#x} ({})", list(parts))?,

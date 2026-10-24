@@ -421,6 +421,25 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
                     let v = s.f.result(l);
                     s.write(cur, i, ri.accs.len() - 1, v);
                 }
+                Kind::Ovf(op, signed, w) => {
+                    let a = s.read(cur, i, 0, *w);
+                    let b = s.read(cur, i, 1, *w);
+                    let op = match op {
+                        super::decode::Bin::Add => BinOp::Add,
+                        super::decode::Bin::Sub => BinOp::Sub,
+                        _ => BinOp::Mul,
+                    };
+                    let l = s.f.inst(cur, Op::Ovf(op, *signed, *w), alloc::vec![a, b], &[*w, 1]);
+                    let r = s.f.insts[l.idx()].res;
+                    s.write(cur, i, 2, Value(r));
+                    s.write(cur, i, 3, Value(r + 1));
+                }
+                Kind::Ext { from, to, sx } => {
+                    let a = s.read(cur, i, 0, *from);
+                    let l = s.f.inst(cur, Op::Ext { from: *from, to: *to, sx: *sx }, alloc::vec![a], &[*to]);
+                    let v = s.f.result(l);
+                    s.write(cur, i, 1, v);
+                }
                 Kind::Jmp(t) => term = Some(Term::Jmp(s.edge(*t))),
                 Kind::Br { cmp, neg, t } => {
                     let (tt, ff) = (s.edge(*t), s.edge(next()?));
@@ -704,6 +723,15 @@ pub fn fold(f: &mut Func) {
         {
             f.blocks[b].insts.pop();
             f.blocks[b].term = Term::BrCmp { cc, w, a: args[0], b: args[1], t, f: e };
+        }
+        // An overflow op, then a branch on its flag.
+        if let Term::Br { cond, t, f: e } = f.blocks[b].term.clone()
+            && uses[cond.idx()] == 1
+            && let ValueDef::Inst(i, 1) = f.def(cond)
+            && matches!(f.insts[i.idx()].op, Op::Ovf(..))
+            && f.blocks[b].insts.last() == Some(&i)
+        {
+            f.blocks[b].term = Term::BrOvf { t, f: e };
         }
         for k in 0..f.blocks[b].insts.len() {
             let i = f.blocks[b].insts[k];

@@ -9,8 +9,7 @@ fn <std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize::<&bool, {c
     mov     rbx,rax
     jmp     L2
 L0:
-    mov     rdi,rax
-    call    ryo_hr_ZextW8W64
+    movzx   eax,al
     mov     rbx,[rsp+10h]
     add     rsp,28h
     ret
@@ -308,12 +307,9 @@ fn <std::vec::Vec<bool> as std::ops::IndexMut<usize>>::index_mut
 fn <usize as std::iter::Sum>::sum::<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}
     sub     rsp,28h
     mov     [rsp+10h],rbx
-    mov     rdi,rsi
-    mov     rsi,rdx
-    call    ryo_hr_AddOvfUW64
-    mov     rbx,rax
-    test    dl,dl
-    je      L0
+    mov     rbx,rsi
+    add     rbx,rdx
+    jae     L0
     lea     rdi,[k0]
     call    ryo_hr_AddrAbs
     mov     rdi,rax
@@ -378,9 +374,9 @@ fn core::num::<impl usize>::unchecked_add::precondition_check
     mov     [rsp+20h],rbx
     mov     [rsp+10h],r12
     mov     rbx,rdx
-    call    ryo_hr_AddOvfUW64
-    test    dl,dl
-    je      L0
+    mov     r11,rdi
+    add     r11,rsi
+    jae     L0
     lea     rdi,[k0]
     call    ryo_hr_AddrAbs
     mov     r12,rax
@@ -422,12 +418,9 @@ fn sieve
     mov     [rsp+20h],rbp
     mov     rbx,rdi
     mov     r12,rsi
-    mov     rdi,r12
-    mov     esi,1
-    call    ryo_hr_AddOvfUW64
-    mov     r13,rax
-    test    dl,dl
-    je      L0
+    mov     r13,r12
+    add     r13,1
+    jae     L0
     lea     rdi,[k0]
     call    ryo_hr_AddrAbs
     mov     rdi,rax
@@ -471,12 +464,14 @@ L2:
     mov     r13,rbx
     mov     ebx,2
 L3:
-    mov     rdi,rbx
-    mov     rsi,rbx
-    call    ryo_hr_MulOvfUW64
+    mov     r11,rax
+    mov     r10,rdx
+    mov     rax,rbx
+    mul     rbx
     mov     r14,rax
-    test    dl,dl
-    je      L5
+    mov     rax,r11
+    mov     rdx,r10
+    jae     L5
     lea     rdi,[k7]
     call    ryo_hr_AddrAbs
     mov     rdi,rax
@@ -511,12 +506,14 @@ L7:
     mov     r14,r13
     jmp     L17
 L8:
-    mov     rdi,rbx
-    mov     rsi,rbx
-    call    ryo_hr_MulOvfUW64
+    mov     r11,rax
+    mov     r10,rdx
+    mov     rax,rbx
+    mul     rbx
     mov     r14,rax
-    test    dl,dl
-    je      L10
+    mov     rax,r11
+    mov     rdx,r10
+    jae     L10
     lea     rdi,[k11]
     call    ryo_hr_AddrAbs
     mov     rdi,rax
@@ -551,12 +548,8 @@ L13:
     jmp     L24
 L14:
     mov     byte ptr [rax],0
-    mov     rdi,r14
-    mov     rsi,rbx
-    call    ryo_hr_AddOvfUW64
-    mov     r14,rax
-    test    dl,dl
-    je      L16
+    add     r14,rbx
+    jae     L16
     lea     rdi,[k15]
     call    ryo_hr_AddrAbs
     mov     rdi,rax
@@ -571,12 +564,8 @@ L15:
 L16:
     jmp     L11
 L17:
-    mov     rdi,rbx
-    mov     esi,1
-    call    ryo_hr_AddOvfUW64
-    mov     rbx,rax
-    test    dl,dl
-    je      L19
+    add     rbx,1
+    jae     L19
     lea     rdi,[k17]
     call    ryo_hr_AddrAbs
     mov     rdi,rax

@@ -81,12 +81,9 @@ fn <std::iter::Enumerate<I> as std::iter::Iterator>::fold::enumerate::<&u32, u64
     call    qword ptr [fn0.slot]
     mov     r12,rax
     mov     rax,[rbx]
-    mov     rdi,rax
-    mov     esi,1
-    call    ryo_hr_AddOvfUW64
     mov     r13,rax
-    test    dl,dl
-    je      L1
+    add     r13,1
+    jae     L1
     lea     rdi,[k1]
     call    ryo_hr_AddrAbs
     mov     rdi,rax
@@ -1240,26 +1237,22 @@ L2:
     ret
 
 fn checksum::{closure#0}
-    sub     rsp,48h
-    mov     [rsp+30h],rbx
-    mov     [rsp+20h],r12
-    mov     [rsp+10h],r13
+    sub     rsp,38h
+    mov     [rsp+20h],rbx
+    mov     [rsp+10h],r12
     mov     rbx,rdx
     mov     r12d,[rcx]
     mov     rdi,rsi
     mov     esi,1Fh
     call    qword ptr [fn0.slot]
-    mov     r13,rax
-    mov     rdi,r12
-    call    ryo_hr_ZextW32W64
-    xor     rax,rbx
-    mov     rdi,r13
-    mov     rsi,rax
+    mov     r12d,r12d
+    xor     r12,rbx
+    mov     rdi,rax
+    mov     rsi,r12
     call    qword ptr [fn1.slot]
-    mov     rbx,[rsp+30h]
-    mov     r12,[rsp+20h]
-    mov     r13,[rsp+10h]
-    add     rsp,48h
+    mov     rbx,[rsp+20h]
+    mov     r12,[rsp+10h]
+    add     rsp,38h
     ret
 
 fn core::num::<impl u64>::wrapping_add
@@ -1281,9 +1274,9 @@ fn core::num::<impl usize>::unchecked_add::precondition_check
     mov     [rsp+20h],rbx
     mov     [rsp+10h],r12
     mov     rbx,rdx
-    call    ryo_hr_AddOvfUW64
-    test    dl,dl
-    je      L0
+    mov     r11,rdi
+    add     r11,rsi
+    jae     L0
     lea     rdi,[k0]
     call    ryo_hr_AddrAbs
     mov     r12,rax
@@ -2562,25 +2555,17 @@ L16:
     mov     rsi,rbx
     mov     rdx,rax
     call    ryo_hr_Memcpy
-    lea     rdi,[rsp+180h]
-    mov     esi,0FFFFFE80h
-    mov     edx,0FFFFFF56h
-    call    ryo_h_ZextW8W64
-    mov     rax,[rsp]
-    mov     r11,[rsp+18h]
-    lea     rbx,[r11+rax*4]
     movzx   eax,byte ptr [rsp+0D6h]
-    xor     eax,1
-    mov     [rsp+0D5h],al
-    lea     rdi,[rsp+180h]
-    mov     esi,0FFFFFE80h
-    mov     edx,0FFFFFF55h
-    call    ryo_h_ZextW8W64
-    mov     rax,[rsp]
-    mov     r11,[rsp+10h]
+    movzx   eax,al
+    mov     r11,[rsp+18h]
     lea     rax,[r11+rax*4]
-    mov     rcx,rax
-    mov     rax,rbx
+    movzx   ecx,byte ptr [rsp+0D6h]
+    xor     ecx,1
+    mov     [rsp+0D5h],cl
+    movzx   ecx,byte ptr [rsp+0D5h]
+    movzx   ecx,cl
+    mov     r11,[rsp+10h]
+    lea     rcx,[r11+rcx*4]
     jmp     L7
   ; OSR entries
     lea     r11,[L17]
@@ -3123,17 +3108,13 @@ L2:
     mov     rsi,rbx
     mov     rdx,rax
     call    ryo_hr_Memcpy
-    mov     rdi,rbp
-    call    ryo_hr_ZextW8W64
-    mov     r11d,0
-    sub     r11,rax
-    mov     rax,r11
+    movzx   ebp,bpl
+    mov     eax,0
+    sub     rax,rbp
     lea     r13,[r13+rax*4]
-    mov     rdi,r15
-    call    ryo_hr_ZextW8W64
-    mov     r11d,0
-    sub     r11,rax
-    mov     rax,r11
+    movzx   r15d,r15b
+    mov     eax,0
+    sub     rax,r15
     lea     r12,[r12+rax*4]
     jmp     L5
     jmp     L4
@@ -3219,12 +3200,10 @@ L2:
     mov     rsi,rbx
     mov     rdx,rax
     call    ryo_hr_Memcpy
-    mov     rdi,r15
-    call    ryo_hr_ZextW8W64
-    lea     r13,[r13+rax*4]
-    mov     rdi,rbp
-    call    ryo_hr_ZextW8W64
-    lea     r12,[r12+rax*4]
+    movzx   r15d,r15b
+    lea     r13,[r13+r15*4]
+    movzx   ebp,bpl
+    lea     r12,[r12+rbp*4]
     mov     r10d,1
     lea     r14,[r14+r10*4]
     mov     [rsp+18h],r12
@@ -4905,11 +4884,10 @@ L7:
     mov     rsi,r14
     mov     rdx,rax
     call    ryo_hr_Memcpy
-    mov     rdi,r12
-    call    ryo_hr_ZextW8W64
-    mov     rcx,[rbx+10h]
-    add     rcx,rax
-    mov     [rbx+10h],rcx
+    movzx   r12d,r12b
+    mov     rax,[rbx+10h]
+    add     rax,r12
+    mov     [rbx+10h],rax
     mov     rax,[rbx+8]
     mov     r10d,1
     lea     rax,[rax+r10*8]
@@ -5206,8 +5184,7 @@ L15:
     mov     edx,0
     mov     rcx,100000000h
     call    ryo_hr_DiscrNicheW64
-    mov     rdi,rax
-    call    ryo_hr_ZextW32W64
+    mov     eax,eax
     mov     rdi,rax
     mov     esi,0
     mov     edx,2
@@ -5217,8 +5194,6 @@ L15:
     movsxd  r10,[r11+r10*4]
     add     r10,r11
     jmp     r10
-    int3
-    int3
     int3
 L16:
     .long   L22
@@ -7108,11 +7083,10 @@ L6:
     call    ryo_hr_Memcpy
     mov     rax,[r12+10h]
     mov     [r12],rax
-    mov     rdi,r13
-    call    ryo_hr_ZextW8W64
-    mov     rcx,[r12+18h]
-    add     rcx,rax
-    mov     [r12+18h],rcx
+    movzx   r13d,r13b
+    mov     rax,[r12+18h]
+    add     rax,r13
+    mov     [r12+18h],rax
     mov     rax,[r12+10h]
     mov     r10d,1
     lea     rax,[rax+r10*4]
@@ -7191,8 +7165,7 @@ L4:
     mov     edx,0
     mov     rcx,100000000h
     call    ryo_hr_DiscrNicheW64
-    mov     rdi,rax
-    call    ryo_hr_ZextW32W64
+    mov     eax,eax
     mov     rdi,rax
     mov     esi,0
     mov     edx,2
@@ -7202,6 +7175,8 @@ L4:
     movsxd  r10,[r11+r10*4]
     add     r10,r11
     jmp     r10
+    int3
+    int3
 L5:
     .long   L9
     .long   L6
@@ -7456,12 +7431,14 @@ fn core::ub_checks::maybe_is_nonoverlapping::runtime
     mov     [rsp+10h],r13
     mov     rbx,rdi
     mov     r12,rsi
-    mov     rdi,rdx
-    mov     rsi,rcx
-    call    ryo_hr_MulOvfUW64
+    mov     r11,rax
+    mov     r10,rdx
+    mov     rax,rdx
+    mul     rcx
     mov     r13,rax
-    test    dl,dl
-    je      L0
+    mov     rax,r11
+    mov     rdx,r10
+    jae     L0
     lea     rdi,[k0]
     call    ryo_hr_AddrAbs
     mov     rdi,rax
@@ -7494,8 +7471,6 @@ fn main::{closure#0}
     mov     rax,[rdi]
     mov     rdi,rax
     call    qword ptr [fn0.slot]
-    mov     rdi,rax
-    call    ryo_hr_TruncW64W32
     mov     eax,eax
     add     rsp,18h
     ret
@@ -7584,12 +7559,9 @@ L2:
 L3:
     cmp     rbp,0
     jbe     L0
-    mov     rdi,rbp
-    mov     esi,1
-    call    ryo_hr_SubOvfUW64
-    mov     r13,rax
-    test    dl,dl
-    je      L4
+    mov     r13,rbp
+    sub     r13,1
+    jae     L4
     lea     rdi,[k2]
     call    ryo_hr_AddrAbs
     mov     rdi,rax
@@ -7628,12 +7600,9 @@ L6:
     mov     eax,[rax]
     cmp     eax,r13d
     jae     L0
-    mov     rdi,rbp
-    mov     esi,1
-    call    ryo_hr_SubOvfUW64
-    mov     r13,rax
-    test    dl,dl
-    je      L7
+    mov     r13,rbp
+    sub     r13,1
+    jae     L7
     lea     rdi,[k8]
     call    ryo_hr_AddrAbs
     mov     rdi,rax
@@ -7650,12 +7619,8 @@ L7:
     mov     rcx,rbp
     mov     r8,rax
     call    fn11
-    mov     rdi,rbp
-    mov     esi,1
-    call    ryo_hr_SubOvfUW64
-    mov     r13,rax
-    test    dl,dl
-    je      L8
+    sub     rbp,1
+    jae     L8
     lea     rdi,[k12]
     call    ryo_hr_AddrAbs
     mov     rdi,rax
@@ -7664,7 +7629,6 @@ L7:
     call    ryo_h_Unreachable
     ud2
 L8:
-    mov     rbp,r13
     jmp     L3
 L9:
     mov     r11d,2
@@ -7764,12 +7728,9 @@ L14:
     mov     rsi,rax
     mov     esi,esi
     call    fn29
-    mov     rdi,rbx
-    mov     esi,1
-    call    ryo_hr_AddOvfUW64
-    mov     r15,rax
-    test    dl,dl
-    je      L15
+    mov     r15,rbx
+    add     r15,1
+    jae     L15
     lea     rdi,[k30]
     call    ryo_hr_AddrAbs
     mov     rdi,rax
@@ -7799,12 +7760,9 @@ L17:
     mov     rsi,rax
     mov     esi,esi
     call    fn29
-    mov     rdi,r12
-    mov     esi,1
-    call    ryo_hr_AddOvfUW64
-    mov     r15,rax
-    test    dl,dl
-    je      L18
+    mov     r15,r12
+    add     r15,1
+    jae     L18
     lea     rdi,[k35]
     call    ryo_hr_AddrAbs
     mov     rdi,rax

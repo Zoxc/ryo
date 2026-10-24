@@ -193,10 +193,16 @@ fn native(op: full::Opcode, w: &[u32], at: usize, f: &mut InsnFrame) -> Result<(
             }
         }
         _ => {
+            // An extension or truncation writes its second width.
+            let ext = matches!(first, "zext" | "sext" | "trunc");
+            let to = m.split('.').filter_map(width).nth(1).unwrap_or(n);
             let mut pos = 1;
             for o in info.operands {
                 let access = match (o.kind, o.name) {
                     (OperandKind::Slot, "d") if m == "addr" || first == "ptr" => Some(Access::Write(8)),
+                    (OperandKind::Slot, "d") if ext => Some(Access::Write(to)),
+                    // An overflow flag.
+                    (OperandKind::Slot, "o") => Some(Access::Write(1)),
                     (OperandKind::Slot, "d") => Some(Access::Write(if compare { 1 } else { n })),
                     (OperandKind::Slot, "s") if m == "addr" => Some(Access::Addr),
                     (OperandKind::Slot, "s") if m == "br" => Some(Access::Read(1)),

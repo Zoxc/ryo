@@ -106,6 +106,18 @@ fn in_res(op: Opcode, s: u128) -> u128 {
     (if (RES..0).contains(&s) { s.min(top) } else { s }) as u32 as u128
 }
 
+/// An overflow op's flag moved to an argument slot if it overlaps the result: the lowering
+/// never overlaps them, and the inline form stores the flag first, the handler last.
+fn flag_apart(op: Opcode, vals: &mut [u128], rng: &mut Rng) {
+    let info = op.info();
+    if let (Some(d), Some(o)) = (info.operand_index("d"), info.operand_index("o")) {
+        let (d, f) = (vals[d] as u32 as i32, vals[o] as u32 as i32);
+        if (d..d + 8).contains(&f) {
+            vals[o] = ARGS[rng.below(7) as usize] as u32 as u128;
+        }
+    }
+}
+
 /// The sret pointer's slot.
 const SRET: i32 = -48;
 
@@ -119,6 +131,9 @@ fn function(op: Opcode, rng: &mut Rng, args: &[u64; 8]) -> (Vec<u32>, Vec<u128>)
     let info = op.info();
     for o in info.operands {
         vals.push(match o.kind {
+            // An overflow op's flag in the result area too, after its result.
+            OperandKind::Slot if o.name == "d" && info.operand_index("o").is_some() => (RES + rng.below(16) as i32) as u32 as u128,
+            OperandKind::Slot if o.name == "o" => (RES + 24 + rng.below(8) as i32) as u32 as u128,
             OperandKind::Slot if o.name == "d" => in_res(op, (RES + rng.below(24) as i32) as u32 as u128),
             OperandKind::Slot => ARGS[rng.below(7) as usize] as u32 as u128,
             OperandKind::Mem => (PTR as u32 as u128) | (rng.below(57) as u128) << 32,
@@ -267,6 +282,7 @@ fn inline_runs_match_handlers() {
                     *v = in_res(op, *v);
                 }
             }
+            flag_apart(op, &mut vals, &mut rng);
             a.raw(op, &vals);
             run.push((op, vals));
         }
@@ -381,6 +397,7 @@ fn dead_stores_match_handlers() {
                     k => panic!("{}: operand {k:?}", op.mnemonic()),
                 });
             }
+            flag_apart(op, &mut vals, &mut rng);
             if let Some(d) = op.info().operand_index("d") {
                 recent.push(vals[d] as u32 as i32);
             }

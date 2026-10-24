@@ -71,7 +71,8 @@ impl Rng {
 
 const REGS: [Reg; 11] = [Reg::Rax, Reg::Rcx, Reg::Rdx, Reg::Rsp, Reg::Rbp, Reg::Rsi, Reg::Rdi, Reg::R8, Reg::R9, Reg::R10, Reg::R11];
 const USABLE: [Reg; 9] = [Reg::Rax, Reg::Rcx, Reg::Rdx, Reg::Rsi, Reg::Rdi, Reg::R8, Reg::R9, Reg::R10, Reg::R11];
-const CONDS: [Cond; 12] = [Cond::Z, Cond::Nz, Cond::L, Cond::Ge, Cond::Le, Cond::G, Cond::B, Cond::Ae, Cond::Be, Cond::A, Cond::S, Cond::Ns];
+const CONDS: [Cond; 14] =
+    [Cond::Z, Cond::Nz, Cond::L, Cond::Ge, Cond::Le, Cond::G, Cond::B, Cond::Ae, Cond::Be, Cond::A, Cond::S, Cond::Ns, Cond::O, Cond::No];
 const WS: [W; 4] = [W::B, W::W, W::D, W::Q];
 const DQ: [W; 2] = [W::D, W::Q];
 const ALUS: [Alu; 6] = [Alu::Add, Alu::Or, Alu::And, Alu::Sub, Alu::Xor, Alu::Cmp];
@@ -252,6 +253,13 @@ fn gen_items(rng: &mut Rng) -> Vec<Item> {
     }
     for cond in CONDS {
         v.push(Item::Setcc { cond, m: gen_m(rng) });
+        v.push(Item::SetccCl(cond));
+    }
+    for _ in 0..6 {
+        v.push(Item::MulQ(gen_rm(rng)));
+    }
+    for r in USABLE {
+        v.push(Item::MulQ(Rm::Reg(r)));
     }
     for _ in 0..6 {
         v.push(Item::TestM8(gen_m(rng)));
@@ -412,6 +420,8 @@ fn item(i: &Item) -> String {
         Item::Shift { op, w: x, reg: r, amt } => c("shift", &[("op", sh(op)), ("w", w(x)), ("reg", reg(r)), ("amt", amt.to_string())]),
         Item::Setcc { cond: k, m: y } => c("setcc", &[("cond", cond(k)), ("m", m(y))]),
         Item::TestM8(y) => c("testM8", &[("m", m(y))]),
+        Item::SetccCl(k) => c("setccCl", &[("cond", cond(k))]),
+        Item::MulQ(y) => c("mulQ", &[("rm", rm(y))]),
         Item::Sse { st, size, x, m: y } => c("sse", &[("st", st.to_string()), ("size", size.to_string()), ("x", x.to_string()), ("m", m(y))]),
         Item::Movd { to_xmm, x, r } => c("movd", &[("toXmm", to_xmm.to_string()), ("x", x.to_string()), ("r", reg(r))]),
     }

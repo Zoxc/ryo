@@ -80,6 +80,9 @@ pub enum Cond {
     /// `js`, `jns`: the result was negative (a counter ran out).
     S,
     Ns,
+    /// `jo`, `jno`: signed overflow.
+    O,
+    No,
 }
 
 impl Cond {
@@ -87,6 +90,8 @@ impl Cond {
     fn cc(self) -> u8 {
         match self {
             Cond::Always => unreachable!("no condition code"),
+            Cond::O => 0x0,
+            Cond::No => 0x1,
             Cond::B => 0x2,
             Cond::Ae => 0x3,
             Cond::Z => 0x4,
@@ -104,6 +109,8 @@ impl Cond {
 
     fn from_cc(cc: u8) -> Option<Cond> {
         Some(match cc {
+            0x0 => Cond::O,
+            0x1 => Cond::No,
             0x2 => Cond::B,
             0x3 => Cond::Ae,
             0x4 => Cond::Z,
@@ -384,6 +391,10 @@ pub enum Item {
     Setcc { cond: Cond, m: M },
     /// `test byte [m], 0xff`.
     TestM8(M),
+    /// `setcc cl`: an overflow flag, before its store from `cl`.
+    SetccCl(Cond),
+    /// `mul r/m64`: `rdx:rax = rax * r/m`, the unsigned 64-bit multiply with overflow.
+    MulQ(Rm),
 
     // Return values and arguments in SSE registers (`xmm0`–`xmm7`).
     /// An SSE load (`st` false) or store of `xmm{x}` at the frame slot `[m]`: `movss` for 4
@@ -483,6 +494,8 @@ impl Item {
             Item::Shift { .. } => self.prefix_len() + 3,
             Item::Setcc { m, .. } => self.prefix_len() + 2 + m.len(),
             Item::TestM8(m) => self.prefix_len() + 2 + m.len(),
+            Item::SetccCl(_) => 3,
+            Item::MulQ(rm) => self.prefix_len() + 1 + rm.len(),
             Item::Sse { size, m, .. } => (size != 16) as u32 + 2 + m.len(),
             Item::Movd { r, .. } => 4 + r.ext() as u32,
         }
@@ -501,6 +514,7 @@ impl Item {
             Item::Imul { w, reg, rm } | Item::ImulImm { w, reg, rm, .. } => (w == W::Q, Some(reg), rm, false),
             Item::Shift { w, reg, .. } => (w == W::Q, None, Rm::Reg(reg), false),
             Item::Setcc { m, .. } | Item::TestM8(m) => (false, None, Rm::Mem(m), false),
+            Item::MulQ(rm) => (true, None, rm, false),
             _ => return None,
         };
         let sil = |r: Reg| byte && !r.ext() && r.low() >= 4;
@@ -555,6 +569,7 @@ impl Item {
             Item::Shift { op, w, reg, amt } => Item::Shift { op, w, reg: f(reg), amt },
             Item::Setcc { cond, m } => Item::Setcc { cond, m: fm(m) },
             Item::TestM8(m) => Item::TestM8(fm(m)),
+            Item::MulQ(rm) => Item::MulQ(frm(rm)),
             Item::SetReg(r, v) => Item::SetReg(f(r), v),
             it => it,
         }
@@ -585,6 +600,8 @@ impl Item {
                 | Item::Shift { .. }
                 | Item::Setcc { .. }
                 | Item::TestM8(_)
+                | Item::SetccCl(_)
+                | Item::MulQ(_)
                 | Item::SetReg(Reg::Rax | Reg::Rcx | Reg::Rdx | Reg::Rsi | Reg::Rdi | Reg::R8 | Reg::R9 | Reg::R10 | Reg::R11, _)
         )
     }
@@ -611,6 +628,7 @@ impl Item {
             Item::ImulImm { w, reg, rm, imm } => Item::ImulImm { w, reg, rm: frm(rm), imm },
             Item::Setcc { cond, m } => Item::Setcc { cond, m: f(m) },
             Item::TestM8(m) => Item::TestM8(f(m)),
+            Item::MulQ(rm) => Item::MulQ(frm(rm)),
             Item::Sse { st, size, x, m } => Item::Sse { st, size, x, m: f(m) },
             it => it,
         }
@@ -635,7 +653,8 @@ impl Item {
             Item::Alu { rm: Rm::Mem(m), .. }
             | Item::AluImm { rm: Rm::Mem(m), .. }
             | Item::Imul { rm: Rm::Mem(m), .. }
-            | Item::ImulImm { rm: Rm::Mem(m), .. } => Some(m),
+            | Item::ImulImm { rm: Rm::Mem(m), .. }
+            | Item::MulQ(Rm::Mem(m)) => Some(m),
             _ => None,
         }
     }
@@ -648,6 +667,7 @@ impl Item {
             | Item::AluImm { w, rm: Rm::Mem(m), .. }
             | Item::Imul { w, rm: Rm::Mem(m), .. }
             | Item::ImulImm { w, rm: Rm::Mem(m), .. } => (m, w),
+            Item::MulQ(Rm::Mem(m)) => (m, W::Q),
             Item::TestM8(m) => (m, W::B),
             _ => return None,
         };
@@ -859,6 +879,12 @@ impl Item {
                 m.write(0, out);
                 out.push(0xff);
             }
+            Item::SetccCl(cond) => out.extend_from_slice(&[0x0f, 0x90 | cond.cc(), 0xc1]),
+            Item::MulQ(rm) => {
+                self.prefixes(out);
+                out.push(0xf7);
+                rm.write(4, out);
+            }
             Item::Sse { st, size, x, m } => {
                 match size {
                     4 => out.push(0xf3),
@@ -1065,6 +1091,7 @@ impl<'a> Cursor<'a> {
                         Item::Ld { w: if op2 & 1 == 0 { W::B } else { W::W }, sx: op2 & 8 != 0, dst: reg(r)?, m: mem(rm)? }
                     }
                     0xaf => Item::Imul { w, reg: reg(r)?, rm },
+                    0x90..=0x9f if w == W::D && r == 0 && rm == Rm::Reg(Reg::Rcx) => Item::SetccCl(Cond::from_cc(op2 & 0xf).ok_or(bad)?),
                     0x90..=0x9f if w == W::D && r == 0 => Item::Setcc { cond: Cond::from_cc(op2 & 0xf).ok_or(bad)?, m: mem(rm)? },
                     _ => return Err(bad),
                 }
@@ -1117,12 +1144,20 @@ impl<'a> Cursor<'a> {
                 let (_, rm, _) = modrm(i)?;
                 Item::TestM8(mem(rm)?)
             }
+            (W::Q, 0xf7) => {
+                let (r, rm, _) = modrm(i)?;
+                if r != 4 {
+                    return Err(bad);
+                }
+                Item::MulQ(rm)
+            }
             _ => return Err(bad),
         };
         if let Item::Alu { rm: Rm::Reg(r), .. }
         | Item::AluImm { rm: Rm::Reg(r), .. }
         | Item::Imul { rm: Rm::Reg(r), .. }
-        | Item::ImulImm { rm: Rm::Reg(r), .. } = item
+        | Item::ImulImm { rm: Rm::Reg(r), .. }
+        | Item::MulQ(Rm::Reg(r)) = item
         {
             reg(r as u8)?;
         }

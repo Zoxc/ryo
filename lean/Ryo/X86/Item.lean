@@ -66,7 +66,7 @@ def argRegs : List Reg := [.rdi, .rsi, .rdx, .rcx, .r8, .r9]
 
 /-- A branch condition (`x86.rs` `Cond`). -/
 inductive Cond
-  | always | z | nz | l | ge | le | g | b | ae | be | a | s | ns
+  | always | z | nz | l | ge | le | g | b | ae | be | a | s | ns | o | no
 deriving DecidableEq, Repr, Inhabited, ToJson, FromJson
 
 namespace Cond
@@ -76,12 +76,12 @@ def cc? : Cond → Option Nat
   | always => none
   | b => some 0x2 | ae => some 0x3 | z => some 0x4 | nz => some 0x5 | be => some 0x6
   | a => some 0x7 | s => some 0x8 | ns => some 0x9 | l => some 0xc | ge => some 0xd
-  | le => some 0xe | g => some 0xf
+  | le => some 0xe | g => some 0xf | o => some 0x0 | no => some 0x1
 
 def cc (c : Cond) : Nat := c.cc?.getD 0
 
 def ofCc? : Nat → Option Cond
-  | 0x2 => some b | 0x3 => some ae | 0x4 => some z | 0x5 => some nz | 0x6 => some be
+  | 0x0 => some o | 0x1 => some no | 0x2 => some b | 0x3 => some ae | 0x4 => some z | 0x5 => some nz | 0x6 => some be
   | 0x7 => some a | 0x8 => some s | 0x9 => some ns | 0xc => some l | 0xd => some ge
   | 0xe => some le | 0xf => some g | _ => none
 
@@ -90,7 +90,7 @@ def not (c : Cond) : Cond := match c.cc? with
   | some n => (ofCc? (n ^^^ 1)).getD c
   | none => c
 
-def all : List Cond := [always, z, nz, l, ge, le, g, b, ae, be, a, s, ns]
+def all : List Cond := [always, z, nz, l, ge, le, g, b, ae, be, a, s, ns, o, no]
 
 end Cond
 
@@ -255,6 +255,10 @@ inductive Item
   | setcc (cond : Cond) (m : M)
   /-- `test byte [m], 0xff` -/
   | testM8 (m : M)
+  /-- `setcc cl`: an overflow flag, before its store from `cl`. -/
+  | setccCl (cond : Cond)
+  /-- `mul r/m64`: `rdx:rax = rax * r/m`. -/
+  | mulQ (rm : Rm)
   /-- An SSE load (`st` false) or store of `xmm{x}` at `[m]`: `movss` (4 bytes), `movsd` (8),
   `movups` (16). -/
   | sse (st : Bool) (size : Nat) (x : Nat) (m : M)
@@ -274,8 +278,8 @@ namespace Item
 /-- The item's memory operand (`Item::mem`). -/
 def mem? : Item → Option M
   | ld _ _ _ m | st _ _ m | stImm _ m _ | leaM _ m | setcc _ m | sse _ _ _ m | testM8 m => some m
-  | alu _ _ _ (.mem m) | aluImm _ _ (.mem m) _ | imul _ _ (.mem m) | imulImm _ _ (.mem m) _ =>
-    some m
+  | alu _ _ _ (.mem m) | aluImm _ _ (.mem m) _ | imul _ _ (.mem m) | imulImm _ _ (.mem m) _
+  | mulQ (.mem m) => some m
   | _ => none
 
 /-- The item with its memory operand mapped by `f` (`Item::map_mem`). -/
@@ -288,6 +292,7 @@ def mapMem (f : M → M) : Item → Item
   | aluImm o w (.mem m) i => aluImm o w (.mem (f m)) i
   | imul w r (.mem m) => imul w r (.mem (f m))
   | imulImm w r (.mem m) i => imulImm w r (.mem (f m)) i
+  | mulQ (.mem m) => mulQ (.mem (f m))
   | setcc c m => setcc c (f m)
   | testM8 m => testM8 (f m)
   | sse s z x m => sse s z x (f m)
@@ -327,6 +332,8 @@ def wf (pos : BitVec 32) : Item → Bool
   | shift _ w reg _ => (w == .d || w == .q) && reg.usable
   | setcc c m => c != .always && memWf m
   | testM8 m => memWf m
+  | setccCl c => c != .always
+  | mulQ rm => rmWf rm
   | sse _ size x m => (size == 4 || size == 8 || size == 16) && x < 8 && m.base == .rbp
   | movd _ x r => x < 8 && r.usable
   | _ => true

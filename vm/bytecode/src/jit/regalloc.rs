@@ -249,10 +249,13 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
         // parameter, or the fixed register the value comes in.
         let hint: Option<R> = match f.values[v].def {
             ValueDef::Inst(i, n) => match &f.insts[i.idx()].op {
-                Op::Bin(..) | Op::PtrAdd(_) | Op::PtrIndex(_) => match f.insts[i.idx()].args.first().map(|a| loc[a.idx()]) {
-                    Some(Loc::Reg(r)) => Some(r),
-                    _ => None,
-                },
+                Op::Ovf(..) if n != 0 => None,
+                Op::Bin(..) | Op::Ovf(..) | Op::Ext { .. } | Op::PtrAdd(_) | Op::PtrIndex(_) => {
+                    match f.insts[i.idx()].args.first().map(|a| loc[a.idx()]) {
+                        Some(Loc::Reg(r)) => Some(r),
+                        _ => None,
+                    }
+                }
                 Op::Call(_) => [R::Rax, R::Rdx].get(n as usize).copied(),
                 Op::LandingPad => Some(R::Rax),
                 Op::HCall(h) if h.reg => [R::Rax, R::Rdx].get(n as usize).copied(),

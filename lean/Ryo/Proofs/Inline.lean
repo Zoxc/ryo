@@ -24,7 +24,7 @@ yet. Reads may be of private or escaped bytes (`Rel` covers both).
 
 Classes: `mov`, `mov128`, `imm`, `addr`, `ptrAdd`, `ptrIndex`, `bin`, `binImm`, `mul`, `mulImm`,
 `shiftImm`, `cmp`, `cmpImm`, `br`, `brCmp`, `brCmpImm` (`load`, `store`: memory through a
-pointer, left; see aot.md §C2).
+pointer, left; see aot.md §C2; `ovf`, `mulOvf`, `ext`: not yet).
 -/
 import Ryo.Proofs.Inline.Cmp
 import Ryo.Proofs.Inline.Mem
@@ -36,9 +36,9 @@ namespace Ryo.Proofs.Inline
 open Ryo.Vm.Asm
 
 /-- The inline classes the theorems cover: all but `load` and `store`, whose memory operand
-goes through a pointer. -/
+goes through a pointer, and the overflow ops and extensions, not proved yet. -/
 def frameOnly : Class → Bool
-  | .load _ | .store _ => false
+  | .load _ | .store _ | .ovf .. | .mulOvf .. | .ext .. => false
   | _ => true
 
 /-- Each inline sequence implements `opSem` (see the module comment), for every class but
@@ -63,5 +63,8 @@ theorem inline_sound (c : Class) (hc : frameOnly c = true) : Sound c := by
   | br => exact sound_br
   | brCmp c w => exact sound_brCmp c w
   | brCmpImm c w => exact sound_brCmpImm c w
+  | ovf => simp [frameOnly] at hc
+  | mulOvf => simp [frameOnly] at hc
+  | ext => simp [frameOnly] at hc
 
 end Ryo.Proofs.Inline

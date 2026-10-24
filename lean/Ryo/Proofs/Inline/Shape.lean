@@ -83,10 +83,13 @@ def classHandler : Class → Handlers.HandlerKind × List String
   | .br => (.br, [])
   | .brCmp c w => (.br_cmp, cmpParams c w)
   | .brCmpImm c w => (.br_cmp_imm, cmpParams c w)
+  | .ovf op sg w => (.ovf, [tyName sg w, if op == .add then "overflowing_add" else "overflowing_sub"])
+  | .mulOvf sg w => (.ovf, [tyName sg w, "overflowing_mul"])
+  | .ext a b sx => (.cvt, [tyName sx a, tyName sx b])
 
 /-- The operands of the opcodes of a class. -/
 def classOperands : Class → List OperandInfo
-  | .mov _ | .mov128 | .addr => [⟨"d", .slot⟩, ⟨"s", .slot⟩]
+  | .mov _ | .mov128 | .addr | .ext .. => [⟨"d", .slot⟩, ⟨"s", .slot⟩]
   | .imm w => [⟨"d", .slot⟩, ⟨"imm", (immKind w)⟩]
   | .ptrAdd => [⟨"d", .slot⟩, ⟨"p", .slot⟩, ⟨"imm", .i64⟩]
   | .ptrIndex => [⟨"d", .slot⟩, ⟨"p", .slot⟩, ⟨"i", .slot⟩, ⟨"stride", .u32⟩]
@@ -98,6 +101,7 @@ def classOperands : Class → List OperandInfo
   | .br => [⟨"s", .slot⟩, ⟨"neg", .neg⟩, ⟨"t", .target⟩]
   | .brCmp .. => [⟨"a", .slot⟩, ⟨"b", .slot⟩, ⟨"neg", .neg⟩, ⟨"t", .target⟩]
   | .brCmpImm _ w => [⟨"a", .slot⟩, ⟨"imm", (immKind w)⟩, ⟨"neg", .neg⟩, ⟨"t", .target⟩]
+  | .ovf .. | .mulOvf .. => [⟨"d", .slot⟩, ⟨"o", .slot⟩, ⟨"a", .slot⟩, ⟨"b", .slot⟩]
 
 /-- `op` is of the shape the proofs of class `c` take. -/
 def shapeOk (op : Full.Opcode) (c : Class) : Bool :=

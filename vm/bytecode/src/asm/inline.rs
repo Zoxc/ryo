@@ -41,11 +41,21 @@ enum Class {
     /// A compare-branch, the condition to branch on without `neg`.
     BrCmp(Cond, W),
     BrCmpImm(Cond, W),
+    /// `add.ovf`/`sub.ovf`, signed or not: the result and its overflow flag.
+    Ovf(Alu, bool, W),
+    /// `mul.ovf`, signed or not.
+    MulOvf(bool, W),
+    /// A zero or sign extension (`sx`) or a truncation, from one width to another.
+    Ext {
+        from: W,
+        to: W,
+        sx: bool,
+    },
 }
 
 #[rustfmt::skip]
 fn class(op: Opcode) -> Option<Class> {
-    use Class::{Bin, BinImm, BrCmp, BrCmpImm, Cmp, CmpImm, Imm, Load, Mov, Mul, MulImm, ShiftImm, Store};
+    use Class::{Bin, BinImm, BrCmp, BrCmpImm, Cmp, CmpImm, Ext, Imm, Load, Mov, Mul, MulImm, MulOvf, Ovf, ShiftImm, Store};
     use Opcode::*;
     Some(match op {
         MovW8 => Mov(W::B), MovW16 => Mov(W::W), MovW32 => Mov(W::D), MovW64 => Mov(W::Q),
@@ -96,6 +106,18 @@ fn class(op: Opcode) -> Option<Class> {
         BrLtUImmW8 => BrCmpImm(Cond::B, W::B), BrLtUImmW16 => BrCmpImm(Cond::B, W::W), BrLtUImmW32 => BrCmpImm(Cond::B, W::D), BrLtUImmW64 => BrCmpImm(Cond::B, W::Q),
         BrGtSImmW8 => BrCmpImm(Cond::G, W::B), BrGtSImmW16 => BrCmpImm(Cond::G, W::W), BrGtSImmW32 => BrCmpImm(Cond::G, W::D), BrGtSImmW64 => BrCmpImm(Cond::G, W::Q),
         BrGtUImmW8 => BrCmpImm(Cond::A, W::B), BrGtUImmW16 => BrCmpImm(Cond::A, W::W), BrGtUImmW32 => BrCmpImm(Cond::A, W::D), BrGtUImmW64 => BrCmpImm(Cond::A, W::Q),
+        AddOvfSW8 => Ovf(Alu::Add, true, W::B), AddOvfSW16 => Ovf(Alu::Add, true, W::W), AddOvfSW32 => Ovf(Alu::Add, true, W::D), AddOvfSW64 => Ovf(Alu::Add, true, W::Q),
+        AddOvfUW8 => Ovf(Alu::Add, false, W::B), AddOvfUW16 => Ovf(Alu::Add, false, W::W), AddOvfUW32 => Ovf(Alu::Add, false, W::D), AddOvfUW64 => Ovf(Alu::Add, false, W::Q),
+        SubOvfSW8 => Ovf(Alu::Sub, true, W::B), SubOvfSW16 => Ovf(Alu::Sub, true, W::W), SubOvfSW32 => Ovf(Alu::Sub, true, W::D), SubOvfSW64 => Ovf(Alu::Sub, true, W::Q),
+        SubOvfUW8 => Ovf(Alu::Sub, false, W::B), SubOvfUW16 => Ovf(Alu::Sub, false, W::W), SubOvfUW32 => Ovf(Alu::Sub, false, W::D), SubOvfUW64 => Ovf(Alu::Sub, false, W::Q),
+        MulOvfSW8 => MulOvf(true, W::B), MulOvfSW16 => MulOvf(true, W::W), MulOvfSW32 => MulOvf(true, W::D), MulOvfSW64 => MulOvf(true, W::Q),
+        MulOvfUW8 => MulOvf(false, W::B), MulOvfUW16 => MulOvf(false, W::W), MulOvfUW32 => MulOvf(false, W::D), MulOvfUW64 => MulOvf(false, W::Q),
+        ZextW8W16 => Ext { from: W::B, to: W::W, sx: false }, ZextW8W32 => Ext { from: W::B, to: W::D, sx: false }, ZextW8W64 => Ext { from: W::B, to: W::Q, sx: false },
+        ZextW16W32 => Ext { from: W::W, to: W::D, sx: false }, ZextW16W64 => Ext { from: W::W, to: W::Q, sx: false }, ZextW32W64 => Ext { from: W::D, to: W::Q, sx: false },
+        SextW8W16 => Ext { from: W::B, to: W::W, sx: true }, SextW8W32 => Ext { from: W::B, to: W::D, sx: true }, SextW8W64 => Ext { from: W::B, to: W::Q, sx: true },
+        SextW16W32 => Ext { from: W::W, to: W::D, sx: true }, SextW16W64 => Ext { from: W::W, to: W::Q, sx: true }, SextW32W64 => Ext { from: W::D, to: W::Q, sx: true },
+        TruncW16W8 => Ext { from: W::W, to: W::B, sx: false }, TruncW32W8 => Ext { from: W::D, to: W::B, sx: false }, TruncW32W16 => Ext { from: W::D, to: W::W, sx: false },
+        TruncW64W8 => Ext { from: W::Q, to: W::B, sx: false }, TruncW64W16 => Ext { from: W::Q, to: W::W, sx: false }, TruncW64W32 => Ext { from: W::Q, to: W::D, sx: false },
         _ => return None,
     })
 }
@@ -120,6 +142,11 @@ fn ld(w: W, m: M) -> Item {
 
 fn st(w: W, m: M) -> Item {
     Item::St { w, src: R, m }
+}
+
+/// An overflow flag's store to `o`: `setcc cl; mov [o], cl`.
+fn flag(v: &mut Vec<Item>, c: Cond, o: M) {
+    v.extend([Item::SetccCl(c), Item::St { w: W::B, src: C, m: o }]);
 }
 
 /// `cmp [a], imm` at width `w`, through `rcx` for a 64-bit value that isn't a sign-extended
@@ -260,6 +287,67 @@ pub(super) fn sequence<T>(op: Opcode, ops: &[Opnd<T>]) -> Option<(Vec<Item>, Opt
             cmp_imm(&mut v, w, slot(0), imm(1));
             br = cond(2, c);
         }
+        // `d, o, a, b`: the result in `rax`, the flag through `cl`, stored before the result.
+        Class::Ovf(op, signed, w) => {
+            v.extend([ld(w, slot(2)), Item::Alu { op, w, reg: R, rm: Rm::Mem(slot(3)) }]);
+            flag(&mut v, if signed { Cond::O } else { Cond::B }, slot(1));
+            v.push(st(w, slot(0)));
+        }
+        Class::MulOvf(signed, w) => {
+            let (a, b) = (slot(2), slot(3));
+            let cond = match (signed, w) {
+                (true, W::D | W::Q) => {
+                    v.extend([ld(w, a), Item::Imul { w, reg: R, rm: Rm::Mem(b) }]);
+                    Cond::O
+                }
+                (false, W::Q) => {
+                    v.extend([ld(w, a), Item::MulQ(Rm::Mem(b))]);
+                    Cond::B
+                }
+                (false, W::D) => {
+                    // The 64-bit product of the zero-extended operands, above `u32::MAX`.
+                    v.extend([
+                        ld(w, a),
+                        Item::Ld { w, sx: false, dst: C, m: b },
+                        Item::Imul { w: W::Q, reg: R, rm: Rm::Reg(C) },
+                        Item::SetReg(C, u32::MAX as u64),
+                        Item::Alu { op: Alu::Cmp, w: W::Q, reg: R, rm: Rm::Reg(C) },
+                    ]);
+                    Cond::A
+                }
+                // 8 and 16 bits: the exact product in 32 bits, out of the width's range.
+                (_, _) => {
+                    let max = if w == W::B { 0xff } else { 0xffff };
+                    v.extend([
+                        Item::Ld { w, sx: signed, dst: R, m: a },
+                        Item::Ld { w, sx: signed, dst: C, m: b },
+                        Item::Imul { w: W::D, reg: R, rm: Rm::Reg(C) },
+                    ]);
+                    if signed {
+                        // `p + 2^(n-1)` above `2^n - 1` (as `u32`).
+                        v.extend([Item::LeaM { dst: C, m: M::rax(max / 2 + 1) }, Item::AluImm { op: Alu::Cmp, w: W::D, rm: Rm::Reg(C), imm: max }]);
+                    } else {
+                        v.push(Item::AluImm { op: Alu::Cmp, w: W::D, rm: Rm::Reg(R), imm: max });
+                    }
+                    Cond::A
+                }
+            };
+            flag(&mut v, cond, slot(1));
+            v.push(st(w, slot(0)));
+        }
+        Class::Ext { from, to, sx } => {
+            if sx && to == W::Q {
+                let n = 64 - from.bits() as u8;
+                v.extend([
+                    ld(from, slot(1)),
+                    Item::Shift { op: Sh::Shl, w: W::Q, reg: R, amt: n },
+                    Item::Shift { op: Sh::Sar, w: W::Q, reg: R, amt: n },
+                ]);
+            } else {
+                v.push(Item::Ld { w: from, sx, dst: R, m: slot(1) });
+            }
+            v.push(st(to, slot(0)));
+        }
     }
     Some((v, br))
 }
@@ -272,6 +360,8 @@ impl Class {
             Class::CmpImm(_, w) => Class::CmpImm(Cond::Z, w),
             Class::BrCmp(_, w) => Class::BrCmp(Cond::Z, w),
             Class::BrCmpImm(_, w) => Class::BrCmpImm(Cond::Z, w),
+            Class::Ovf(op, _, w) => Class::Ovf(op, false, w),
+            Class::MulOvf(_, w) => Class::MulOvf(false, w),
             c => c,
         }
     }
@@ -284,6 +374,19 @@ fn classify(items: &[Item], br: bool) -> Option<Class> {
     use Item::*;
     let z = Cond::Z;
     let frame = |m: &M| m.base == Reg::Rbp;
+    // An overflow op: its flag, then the result's store.
+    if items.iter().any(|it| matches!(it, SetccCl(_))) {
+        let [.., St { w, .. }] = items else { return None };
+        return Some(if items.iter().any(|it| matches!(it, MulQ(_) | Imul { .. })) {
+            Class::MulOvf(false, *w)
+        } else {
+            let op = items.iter().find_map(|it| match it {
+                Alu { op, .. } => Some(*op),
+                _ => None,
+            })?;
+            Class::Ovf(op, false, *w)
+        });
+    }
     Some(match (items, br) {
         ([TestM8(_)], true) => Class::Br,
         ([Ld { w, .. }, Alu { op: Op::Cmp, rm: Rm::Mem(_), .. }], true) => Class::BrCmp(z, *w),
@@ -295,7 +398,9 @@ fn classify(items: &[Item], br: bool) -> Option<Class> {
         }
         ([StImm { w, .. }], _) => Class::Imm(*w),
         ([SetReg(..), St { .. }], _) => Class::Imm(W::Q),
-        ([Ld { w, .. }, St { m, .. }], _) if frame(m) => Class::Mov(*w),
+        ([Ld { w, sx: false, .. }, St { w: t, m, .. }], _) if frame(m) && w == t => Class::Mov(*w),
+        ([Ld { w, sx, .. }, St { w: to, m, .. }], _) if frame(m) => Class::Ext { from: *w, to: *to, sx: *sx },
+        ([Ld { w, .. }, Shift { op: Sh::Shl, .. }, Shift { op: Sh::Sar, .. }, St { w: to, .. }], _) => Class::Ext { from: *w, to: *to, sx: true },
         ([Ld { .. }, Ld { dst: Reg::Rcx, m: a, .. }, St { src: Reg::Rcx, m: b, .. }, St { m, .. }], _) if frame(a) && frame(b) && frame(m) => {
             Class::Mov128
         }
@@ -334,6 +439,8 @@ pub(super) fn decode(items: &[Item], branch: Option<(Cond, u32)>) -> Option<(Opc
         for o in info.operands {
             ops.push(match o.kind {
                 OperandKind::Slot if o.name == "d" => Opnd::Slot(*frame.last()?),
+                // An overflow flag, stored before the result.
+                OperandKind::Slot if o.name == "o" => Opnd::Slot(*frame.get(frame.len().checked_sub(2)?)?),
                 OperandKind::Slot => Opnd::Slot(f.next()?),
                 OperandKind::Mem => Opnd::Mem(f.next()?, rax?),
                 OperandKind::U8 => Opnd::Imm(imm as u8 as u64),
@@ -408,6 +515,7 @@ fn read_operand(it: &Item) -> Option<(M, W)> {
     match *it {
         Item::Alu { w, rm: Rm::Mem(m), .. } | Item::AluImm { op: Alu::Cmp, w, rm: Rm::Mem(m), .. } => Some((m, w)),
         Item::Imul { w, rm: Rm::Mem(m), .. } | Item::ImulImm { w, rm: Rm::Mem(m), .. } => Some((m, w)),
+        Item::MulQ(Rm::Mem(m)) => Some((m, W::Q)),
         _ => None,
     }
     .filter(|(m, _)| m.base == Reg::Rbp)
@@ -420,6 +528,7 @@ fn with_rm(it: Item, rm: Rm) -> Item {
         Item::AluImm { op, w, imm, .. } => Item::AluImm { op, w, rm, imm },
         Item::Imul { w, reg, .. } => Item::Imul { w, reg, rm },
         Item::ImulImm { w, reg, imm, .. } => Item::ImulImm { w, reg, rm, imm },
+        Item::MulQ(_) => Item::MulQ(rm),
         it => it,
     }
 }
@@ -429,7 +538,7 @@ fn with_rm(it: Item, rm: Rm) -> Item {
 fn read_reg(it: &Item) -> Option<Reg> {
     match *it {
         Item::Alu { rm: Rm::Reg(r), .. } | Item::AluImm { op: Alu::Cmp, rm: Rm::Reg(r), .. } => Some(r),
-        Item::Imul { rm: Rm::Reg(r), .. } | Item::ImulImm { rm: Rm::Reg(r), .. } => Some(r),
+        Item::Imul { rm: Rm::Reg(r), .. } | Item::ImulImm { rm: Rm::Reg(r), .. } | Item::MulQ(Rm::Reg(r)) => Some(r),
         _ => None,
     }
 }
@@ -453,16 +562,25 @@ impl Cache {
     /// `items` (an inline sequence, on `rax`) as emitted with the cache, which is updated to
     /// after it. The sequence computes in the register that holds its first operand's slot,
     /// dropping the reload, or else in [`Cache::fresh`]; frame operands held in a register
-    /// are read from it. Only the first item can be dropped.
+    /// are read from it. Only the first item can be dropped. A `mul` (`rdx:rax`) computes in
+    /// `rax`, dropping the reload only if `rax` holds it.
     pub(super) fn emit(&mut self, items: &[Item]) -> Vec<Item> {
         self.tick += 1;
         let mut out = Vec::with_capacity(items.len());
         let mut rest = items;
+        let pinned = items.iter().any(|it| matches!(it, Item::MulQ(_)));
         let x = match items.first() {
+            Some(&Item::Ld { w, sx: false, dst: R, m }) if pinned => {
+                if self.regs[0].slot == Some((m.disp, w)) && m.base == Reg::Rbp {
+                    rest = &items[1..];
+                }
+                0
+            }
             Some(&Item::Ld { w, sx: false, dst: R, m }) if let Some(i) = self.find(m, w, true) => {
                 rest = &items[1..];
                 i
             }
+            _ if pinned => 0,
             _ => self.fresh(),
         };
         self.regs[x].used = self.tick;
@@ -573,6 +691,10 @@ impl Cache {
             Item::AluImm { op, w, rm: Rm::Reg(reg), .. } if op != Alu::Cmp => (reg, None, wide(w)),
             Item::Imul { w, reg, .. } | Item::ImulImm { w, reg, .. } | Item::Shift { w, reg, .. } => (reg, None, wide(w)),
             Item::LeaM { dst, .. } | Item::SetReg(dst, _) => (dst, None, Some(W::Q)),
+            Item::MulQ(_) => {
+                self.regs[pool(Reg::Rdx).unwrap()] = Entry { used: self.regs[pool(Reg::Rdx).unwrap()].used, ..Entry::default() };
+                (Reg::Rax, None, Some(W::Q))
+            }
             Item::St { w, src, m } => {
                 // The register is the zero-extension of the value stored when its known
                 // extension is no wider than the store.
