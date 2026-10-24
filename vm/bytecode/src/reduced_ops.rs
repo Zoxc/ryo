@@ -225,6 +225,7 @@ define_ops! {
     BrLtUImmW64 = "br.lt.u.imm.w64" br { a: Slot, imm: U64, neg: Neg, t: Target },
     BrGtSImmW64 = "br.gt.s.imm.w64" br { a: Slot, imm: U64, neg: Neg, t: Target },
     BrGtUImmW64 = "br.gt.u.imm.w64" br { a: Slot, imm: U64, neg: Neg, t: Target },
+    Unreachable = "unreachable" trap {  },
     Call = "call" call { d: Slot, f: Func, k: U32, a: Words },
     CallSym = "call.sym" call { d: Slot, sym: Sym, k: U32, a: Words },
     CallSymInd = "call.sym.ind" call { d: Slot, sym: Sym, k: U32, a: Words },

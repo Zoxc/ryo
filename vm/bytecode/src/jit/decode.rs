@@ -126,6 +126,8 @@ pub enum Kind {
     },
     /// `lpad x`: `x` write (the exception object).
     Lpad,
+    /// `unreachable`: a `ud2`.
+    Unreachable,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -277,6 +279,10 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode) -> Result<(RInsn,
     let op = reduced::Opcode::from_u16(w[0] as u16).expect("decoded");
     let acc = |off: i32, size: u32, how: How| Acc { off, size, how };
     let kind = match ri {
+        Insn::Unreachable {} => {
+            falls = false;
+            Kind::Unreachable
+        }
         Insn::Jmp { t } => {
             falls = false;
             succ.push(rel(t.0));

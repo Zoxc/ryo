@@ -467,8 +467,6 @@ L5:
     mov     rsi,[rsp+10h]
     mov     rdx,[rsp]
     call    qword ptr [sym4]
-    lea     rdi,[rsp+60h]
-    call    ryo_h_Unreachable
     ud2
 L6:
     mov     rax,[rsp+48h]
@@ -734,8 +732,6 @@ L0:
     call    ryo_h_AddrAbs
     mov     rdi,[rsp+10h]
     call    qword ptr [sym2]
-    lea     rdi,[rsp+90h]
-    call    ryo_h_Unreachable
     ud2
 L1:
     mov     rax,[rsp+80h]
@@ -746,6 +742,8 @@ L1:
     mov     rax,[rsp+88h]
     add     rsp,98h
     ret
+    nop     [rax+rax]
+    nop     [rax]
 L2:
     sub     qword ptr [jit_record.ctr],1
     js      L4
@@ -1246,18 +1244,13 @@ L13:
     je      L6
     jmp     L10
 L14:
-    lea     rdi,[rsp+80h]
-    call    ryo_h_Unreachable
     ud2
-    nop     [rax+rax]
-    nop
+    nop     [rax]
 L15:
     sub     qword ptr [jit_record.ctr],1
     js      L22
 L16:
     call    qword ptr [sym4]
-    lea     rdi,[rsp+80h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+80h]
     mov     rsi,rax
@@ -1427,8 +1420,6 @@ L1:
     movzx   edx,byte ptr [rsp+0Fh]
     mov     rcx,[rsp]
     call    qword ptr [sym2]
-    lea     rdi,[rsp+90h]
-    call    ryo_h_Unreachable
     ud2
 L2:
     lea     r11,[jit_record]
@@ -1482,8 +1473,6 @@ L4:
     mov     rdx,[rsp+58h]
     mov     rcx,[rsp]
     call    qword ptr [sym0]
-    lea     rdi,[rsp+0A0h]
-    call    ryo_h_Unreachable
     ud2
 L5:
     jmp     L3
@@ -1559,8 +1548,6 @@ L4:
     mov     rdx,[rsp+58h]
     mov     rcx,[rsp]
     call    qword ptr [sym0]
-    lea     rdi,[rsp+0A0h]
-    call    ryo_h_Unreachable
     ud2
 L5:
     jmp     L3
@@ -1611,8 +1598,6 @@ L0:
     mov     rdx,[rsp+48h]
     mov     rcx,[rsp]
     call    qword ptr [sym0]
-    lea     rdi,[rsp+80h]
-    call    ryo_h_Unreachable
     ud2
 L1:
     mov     rax,[rsp+48h]
@@ -1654,8 +1639,6 @@ L0:
     mov     rdx,[rsp+48h]
     mov     rcx,[rsp]
     call    qword ptr [sym0]
-    lea     rdi,[rsp+80h]
-    call    ryo_h_Unreachable
     ud2
 L1:
     mov     rax,[rsp+48h]
@@ -1951,8 +1934,6 @@ L28:
     mov     rsi,[rsp+10h]
     mov     rdx,[rsp]
     call    qword ptr [sym8]
-    lea     rdi,[rsp+0C0h]
-    call    ryo_h_Unreachable
     ud2
 L29:
     mov     qword ptr [rsp+10h],1
@@ -1980,8 +1961,6 @@ L31:
     js      L43
 L32:
     call    qword ptr [sym11]
-    lea     rdi,[rsp+0C0h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+0C0h]
     mov     rsi,rax
@@ -2251,8 +2230,6 @@ L27:
     mov     rsi,[rsp+18h]
     mov     rdx,[rsp+8]
     call    qword ptr [sym5]
-    lea     rdi,[rsp+0E0h]
-    call    ryo_h_Unreachable
     ud2
 L28:
     mov     qword ptr [rsp+18h],1
@@ -2541,8 +2518,6 @@ L8:
     mov     rsi,[rsp+10h]
     mov     rdx,[rsp]
     call    qword ptr [sym4]
-    lea     rdi,[rsp+80h]
-    call    ryo_h_Unreachable
     ud2
 L9:
     lea     r11,[jit_record]
@@ -2766,8 +2741,6 @@ L2:
     mov     rsi,[rsp+60h]
     mov     rdx,[rsp+8]
     call    qword ptr [sym4]
-    lea     rdi,[rsp+0E0h]
-    call    ryo_h_Unreachable
     ud2
 L3:
     mov     rax,[rsp+78h]
@@ -2784,7 +2757,7 @@ L3:
     mov     [rsp+40h],rax
     mov     [rsp+48h],rdx
     jmp     L14
-    nop     [rax+rax]
+    nop     [rax]
 L4:
     sub     qword ptr [jit_record.ctr],1
     js      L18
@@ -2857,18 +2830,14 @@ L14:
     call    fn8
     jmp     L4
 L15:
-    lea     rdi,[rsp+0E0h]
-    call    ryo_h_Unreachable
     ud2
     nop     [rax+rax]
-    nop     [rax+rax]
+    nop     [rax]
 L16:
     sub     qword ptr [jit_record.ctr],1
     js      L23
 L17:
     call    qword ptr [sym9]
-    lea     rdi,[rsp+0E0h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+0E0h]
     mov     rsi,rax
@@ -3259,8 +3228,6 @@ L2:
     mov     rsi,[rsp+78h]
     mov     rdx,[rsp+18h]
     call    qword ptr [sym4]
-    lea     rdi,[rsp+100h]
-    call    ryo_h_Unreachable
     ud2
 L3:
     mov     rax,[rsp+90h]
@@ -3277,7 +3244,7 @@ L3:
     mov     [rsp+58h],rax
     mov     [rsp+60h],rdx
     jmp     L14
-    nop     [rax+rax]
+    nop     [rax]
 L4:
     sub     qword ptr [jit_record.ctr],1
     js      L18
@@ -3355,16 +3322,14 @@ L14:
     call    fn8
     jmp     L4
 L15:
-    lea     rdi,[rsp+100h]
-    call    ryo_h_Unreachable
     ud2
+    nop     [rax+rax]
+    nop     [rax]
 L16:
     sub     qword ptr [jit_record.ctr],1
     js      L23
 L17:
     call    qword ptr [sym9]
-    lea     rdi,[rsp+100h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+100h]
     mov     rsi,rax
@@ -4010,8 +3975,6 @@ L0:
     mov     rsi,[rsp+18h]
     mov     rdx,[rsp]
     call    qword ptr [sym0]
-    lea     rdi,[rsp+40h]
-    call    ryo_h_Unreachable
     ud2
 L1:
     mov     rax,[rsp+20h]
@@ -4067,8 +4030,6 @@ L1:
     movzx   edx,byte ptr [rsp+17h]
     mov     rcx,[rsp+8]
     call    qword ptr [sym2]
-    lea     rdi,[rsp+90h]
-    call    ryo_h_Unreachable
     ud2
 L2:
     lea     r11,[jit_record]
@@ -4154,8 +4115,6 @@ L0:
     call    ryo_h_AddrAbs
     mov     rdi,[rsp+10h]
     call    qword ptr [sym1]
-    lea     rdi,[rsp+70h]
-    call    ryo_h_Unreachable
     ud2
 L1:
     mov     rax,[rsp+50h]
@@ -4181,8 +4140,6 @@ L1:
     call    ryo_h_AddrAbs
     mov     rdi,[rsp+10h]
     call    qword ptr [sym3]
-    lea     rdi,[rsp+70h]
-    call    ryo_h_Unreachable
     ud2
 L2:
     mov     rax,[rsp+38h]
@@ -4208,8 +4165,6 @@ L2:
     call    ryo_h_AddrAbs
     mov     rdi,[rsp+10h]
     call    qword ptr [sym5]
-    lea     rdi,[rsp+70h]
-    call    ryo_h_Unreachable
     ud2
 L3:
     mov     rax,[rsp+20h]
@@ -4286,15 +4241,11 @@ L2:
     mov     rdi,[rsp+20h]
     mov     rsi,[rsp+28h]
     call    qword ptr [sym2]
-    lea     rdi,[rsp+50h]
-    call    ryo_h_Unreachable
     ud2
 L3:
     add     rsp,58h
     ret
 L4:
-    lea     rdi,[rsp+50h]
-    call    ryo_h_Unreachable
     ud2
 L5:
     lea     r11,[jit_record]
@@ -4333,8 +4284,6 @@ L1:
     .long   L3
     .long   L2
 L2:
-    lea     rdi,[rsp+90h]
-    call    ryo_h_Unreachable
     ud2
 L3:
     mov     rax,[rsp+40h]
@@ -4344,8 +4293,6 @@ L3:
     mov     rdi,[rsp+28h]
     mov     rsi,[rsp+30h]
     call    qword ptr [sym1]
-    lea     rdi,[rsp+90h]
-    call    ryo_h_Unreachable
     ud2
 L4:
     mov     rax,[rsp+40h]
@@ -4357,8 +4304,7 @@ L4:
     cmp     rdx,0
     je      L7
     jmp     L8
-    nop     [rax+rax]
-    nop
+    nop     [rax]
 L5:
     sub     qword ptr [jit_record.ctr],1
     js      L11
@@ -4698,8 +4644,6 @@ L0:
     movzx   edx,byte ptr [rsp+17h]
     mov     rcx,[rsp+8]
     call    qword ptr [sym2]
-    lea     rdi,[rsp+90h]
-    call    ryo_h_Unreachable
     ud2
 L1:
     add     rsp,98h
@@ -4753,8 +4697,6 @@ L0:
     movzx   edx,byte ptr [rsp+17h]
     mov     rcx,[rsp+8]
     call    qword ptr [sym2]
-    lea     rdi,[rsp+90h]
-    call    ryo_h_Unreachable
     ud2
 L1:
     add     rsp,98h
@@ -4801,8 +4743,6 @@ L0:
     mov     r8,[rsp+38h]
     mov     r9,[rsp+58h]
     call    qword ptr [sym2]
-    lea     rdi,[rsp+80h]
-    call    ryo_h_Unreachable
     ud2
 L1:
     lea     r11,[jit_record]
@@ -5002,8 +4942,6 @@ L1:
     mov     rsi,[rsp+68h]
     mov     rdx,[rsp+8]
     call    qword ptr [sym4]
-    lea     rdi,[rsp+0D0h]
-    call    ryo_h_Unreachable
     ud2
 L2:
     lea     r11,[jit_record]
@@ -5165,8 +5103,6 @@ L2:
     mov     rsi,[rsp+88h]
     mov     rdx,[rsp+18h]
     call    qword ptr [sym5]
-    lea     rdi,[rsp+0C0h]
-    call    ryo_h_Unreachable
     ud2
 L3:
     mov     rax,[rsp+58h]
@@ -5190,8 +5126,6 @@ L3:
     mov     rsi,[rsp+70h]
     mov     rdx,[rsp+18h]
     call    qword ptr [sym7]
-    lea     rdi,[rsp+0C0h]
-    call    ryo_h_Unreachable
     ud2
 L4:
     mov     rax,[rsp+48h]
@@ -5299,8 +5233,6 @@ L2:
     mov     rsi,[rsp+88h]
     mov     rdx,[rsp+18h]
     call    qword ptr [sym5]
-    lea     rdi,[rsp+0C0h]
-    call    ryo_h_Unreachable
     ud2
 L3:
     mov     rax,[rsp+58h]
@@ -5324,8 +5256,6 @@ L3:
     mov     rsi,[rsp+70h]
     mov     rdx,[rsp+18h]
     call    qword ptr [sym7]
-    lea     rdi,[rsp+0C0h]
-    call    ryo_h_Unreachable
     ud2
 L4:
     mov     rax,[rsp+48h]
@@ -5412,8 +5342,6 @@ L1:
     movzx   edx,byte ptr [rsp+17h]
     mov     rcx,[rsp+8]
     call    qword ptr [sym2]
-    lea     rdi,[rsp+90h]
-    call    ryo_h_Unreachable
     ud2
 L2:
     lea     r11,[jit_record]
@@ -5465,8 +5393,6 @@ L1:
     movzx   edx,byte ptr [rsp+0Fh]
     mov     rcx,[rsp]
     call    qword ptr [sym2]
-    lea     rdi,[rsp+90h]
-    call    ryo_h_Unreachable
     ud2
 L2:
     lea     r11,[jit_record]
@@ -5732,8 +5658,6 @@ L1:
     mov     rsi,[rsp+68h]
     mov     rdx,[rsp+8]
     call    qword ptr [sym4]
-    lea     rdi,[rsp+0D0h]
-    call    ryo_h_Unreachable
     ud2
 L2:
     lea     r11,[jit_record]
@@ -5854,8 +5778,6 @@ L0:
     mov     rsi,[rsp+18h]
     mov     rdx,[rsp]
     call    qword ptr [sym0]
-    lea     rdi,[rsp+40h]
-    call    ryo_h_Unreachable
     ud2
 L1:
     mov     rax,[rsp+20h]
@@ -5867,8 +5789,6 @@ L1:
     mov     rsi,[rsp+18h]
     mov     rdx,[rsp]
     call    qword ptr [sym1]
-    lea     rdi,[rsp+40h]
-    call    ryo_h_Unreachable
     ud2
 L2:
     mov     rax,[rsp+8]
@@ -5951,8 +5871,6 @@ L0:
     mov     rsi,[rsp+60h]
     mov     rdx,[rsp+10h]
     call    qword ptr [sym0]
-    lea     rdi,[rsp+90h]
-    call    ryo_h_Unreachable
     ud2
 L1:
     mov     rax,[rsp+70h]
@@ -6777,11 +6695,9 @@ L9:
     mov     rsi,[rsp+18h]
     mov     rdx,[rsp+8]
     call    qword ptr [sym6]
-    lea     rdi,[rsp+0B0h]
-    call    ryo_h_Unreachable
     ud2
     nop     [rax+rax]
-    nop     [rax+rax]
+    nop     [rax]
 L10:
     sub     qword ptr [jit_record.ctr],1
     js      L19
@@ -6837,8 +6753,6 @@ L14:
     mov     rsi,[rsp+18h]
     mov     rdx,[rsp+8]
     call    qword ptr [sym11]
-    lea     rdi,[rsp+0B0h]
-    call    ryo_h_Unreachable
     ud2
 L15:
     lea     rdi,[rsp+0B0h]
@@ -7005,11 +6919,9 @@ L9:
     mov     rsi,[rsp+18h]
     mov     rdx,[rsp+8]
     call    qword ptr [sym6]
-    lea     rdi,[rsp+0B0h]
-    call    ryo_h_Unreachable
     ud2
     nop     [rax+rax]
-    nop     [rax+rax]
+    nop     [rax]
 L10:
     sub     qword ptr [jit_record.ctr],1
     js      L19
@@ -7065,8 +6977,6 @@ L14:
     mov     rsi,[rsp+18h]
     mov     rdx,[rsp+8]
     call    qword ptr [sym11]
-    lea     rdi,[rsp+0B0h]
-    call    ryo_h_Unreachable
     ud2
 L15:
     lea     rdi,[rsp+0B0h]
@@ -7549,8 +7459,6 @@ L13:
     je      L15
 L14:
     call    qword ptr [sym1]
-    lea     rdi,[rsp+0E0h]
-    call    ryo_h_Unreachable
     ud2
 L15:
     add     rsp,0E8h
@@ -7806,8 +7714,6 @@ L13:
     je      L15
 L14:
     call    qword ptr [sym1]
-    lea     rdi,[rsp+0E0h]
-    call    ryo_h_Unreachable
     ud2
 L15:
     add     rsp,0E8h
@@ -8122,8 +8028,6 @@ L26:
     js      L36
 L27:
     call    qword ptr [sym6]
-    lea     rdi,[rsp+0B0h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+0B0h]
     mov     rsi,rax
@@ -8371,8 +8275,6 @@ L26:
     js      L36
 L27:
     call    qword ptr [sym6]
-    lea     rdi,[rsp+0A0h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+0A0h]
     mov     rsi,rax
@@ -9233,8 +9135,6 @@ L9:
     sub     qword ptr [jit_record.ctr],1
     js      L46
 L10:
-    lea     rdi,[rsp+190h]
-    call    ryo_h_Unreachable
     ud2
 L11:
     mov     rax,[rsp+78h]
@@ -9269,7 +9169,6 @@ L15:
     mov     [rsp+130h],rax
     mov     rdx,[rsp+140h]
     mov     [rsp+138h],rdx
-    nop     [rax]
 L16:
     sub     qword ptr [jit_record.ctr],1
     js      L47
@@ -9536,8 +9435,6 @@ L42:
     js      L53
 L43:
     call    qword ptr [sym21]
-    lea     rdi,[rsp+190h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+190h]
     mov     rsi,rax
@@ -9779,8 +9676,6 @@ L9:
     sub     qword ptr [jit_record.ctr],1
     js      L46
 L10:
-    lea     rdi,[rsp+190h]
-    call    ryo_h_Unreachable
     ud2
 L11:
     mov     rax,[rsp+78h]
@@ -9815,7 +9710,6 @@ L15:
     mov     [rsp+130h],rax
     mov     rdx,[rsp+140h]
     mov     [rsp+138h],rdx
-    nop     [rax]
 L16:
     sub     qword ptr [jit_record.ctr],1
     js      L47
@@ -10082,8 +9976,6 @@ L42:
     js      L53
 L43:
     call    qword ptr [sym21]
-    lea     rdi,[rsp+190h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+190h]
     mov     rsi,rax
@@ -11801,8 +11693,6 @@ L0:
     call    ryo_h_AddrAbs
     mov     rdi,[rsp+18h]
     call    qword ptr [sym1]
-    lea     rdi,[rsp+80h]
-    call    ryo_h_Unreachable
     ud2
 L1:
     mov     qword ptr [rsp+18h],1000h
@@ -11947,8 +11837,6 @@ L9:
     mov     rdx,[rsp+60h]
     mov     rcx,[rsp+10h]
     call    qword ptr [sym5]
-    lea     rdi,[rsp+0B0h]
-    call    ryo_h_Unreachable
     ud2
 L10:
     mov     rax,[rsp+98h]
@@ -11964,7 +11852,6 @@ L11:
     cmp     qword ptr [rsp+58h],0
     jb      L16
     jmp     L17
-    nop     [rax]
 L12:
     sub     qword ptr [jit_record.ctr],1
     js      L22
@@ -12002,8 +11889,6 @@ L15:
     mov     rdx,[rsp+60h]
     mov     rcx,[rsp+10h]
     call    qword ptr [sym9]
-    lea     rdi,[rsp+0B0h]
-    call    ryo_h_Unreachable
     ud2
 L16:
     jmp     L14
@@ -12177,8 +12062,6 @@ L13:
     mov     rdx,[rsp+60h]
     mov     rcx,[rsp]
     call    qword ptr [sym3]
-    lea     rdi,[rsp+0C0h]
-    call    ryo_h_Unreachable
     ud2
 L14:
     jmp     L12
@@ -12197,8 +12080,6 @@ L16:
     mov     rdx,[rsp+60h]
     mov     rcx,[rsp+8]
     call    qword ptr [sym5]
-    lea     rdi,[rsp+0C0h]
-    call    ryo_h_Unreachable
     ud2
 L17:
     mov     rax,[rsp+60h]
@@ -12270,10 +12151,7 @@ L1:
     call    ryo_h_AddrAbs
     mov     rdi,[rsp+10h]
     call    qword ptr [sym1]
-    lea     rdi,[rsp+390h]
-    call    ryo_h_Unreachable
     ud2
-    nop     [rax]
 L2:
     sub     qword ptr [jit_record.ctr],1
     js      L33
@@ -12503,8 +12381,6 @@ L23:
     call    ryo_h_AddrAbs
     mov     rdi,[rsp+10h]
     call    qword ptr [sym8]
-    lea     rdi,[rsp+390h]
-    call    ryo_h_Unreachable
     ud2
 L24:
     mov     rax,4000000000000000h
@@ -12539,8 +12415,6 @@ L28:
     mov     rdx,[rsp+300h]
     mov     rcx,[rsp+10h]
     call    qword ptr [sym10]
-    lea     rdi,[rsp+390h]
-    call    ryo_h_Unreachable
     ud2
 L29:
     mov     rax,[rsp+300h]
@@ -12681,8 +12555,6 @@ L3:
     add     rsp,88h
     ret
 L4:
-    lea     rdi,[rsp+80h]
-    call    ryo_h_Unreachable
     ud2
 L5:
     lea     rdi,[rsp+80h]
@@ -12691,8 +12563,6 @@ L5:
     call    ryo_h_AddrAbs
     mov     rdi,[rsp+18h]
     call    qword ptr [sym1]
-    lea     rdi,[rsp+80h]
-    call    ryo_h_Unreachable
     ud2
 L6:
     mov     rax,[rsp+40h]
@@ -12753,8 +12623,6 @@ L0:
     call    ryo_h_AddrAbs
     mov     rdi,[rsp+10h]
     call    qword ptr [sym1]
-    lea     rdi,[rsp+2070h]
-    call    ryo_h_Unreachable
     ud2
 L1:
     mov     qword ptr [rsp+10h],7A1200h
@@ -12780,6 +12648,8 @@ L1:
     call    fn2
     mov     [rsp+2000h],rax
     jmp     L15
+    nop     [rax+rax]
+    nop     [rax]
 L2:
     sub     qword ptr [jit_record.ctr],1
     js      L18
@@ -13005,8 +12875,6 @@ L16:
     js      L23
 L17:
     call    qword ptr [sym13]
-    lea     rdi,[rsp+2070h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+2070h]
     mov     rsi,rax
@@ -13592,8 +13460,6 @@ L20:
     js      L27
 L21:
     call    qword ptr [sym7]
-    lea     rdi,[rsp+0E0h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+0E0h]
     mov     rsi,rax
@@ -13855,8 +13721,6 @@ L6:
     mov     rsi,[rsp+0D0h]
     mov     rdx,[rsp+10h]
     call    qword ptr [sym5]
-    lea     rdi,[rsp+120h]
-    call    ryo_h_Unreachable
     ud2
 L7:
     mov     rax,[rsp+110h]
@@ -13884,8 +13748,6 @@ L8:
     mov     rsi,[rsp+90h]
     mov     rdx,[rsp+10h]
     call    qword ptr [sym8]
-    lea     rdi,[rsp+120h]
-    call    ryo_h_Unreachable
     ud2
 L9:
     mov     rax,[rsp+110h]
@@ -13907,7 +13769,7 @@ L9:
     mov     [rsp+7Eh],sil
     test    byte ptr [rsp+7Eh],0FFh
     jne     L12
-    nop     [rax]
+    nop
 L10:
     sub     qword ptr [jit_record.ctr],1
     js      L26
@@ -14044,8 +13906,6 @@ L21:
     mov     rdx,[rsp+50h]
     mov     rcx,[rsp+10h]
     call    qword ptr [sym16]
-    lea     rdi,[rsp+120h]
-    call    ryo_h_Unreachable
     ud2
 L22:
     mov     rax,[rsp+50h]
@@ -14059,8 +13919,6 @@ L22:
     mov     qword ptr [rsp+0F0h],0
     jmp     L1
 L23:
-    lea     rdi,[rsp+120h]
-    call    ryo_h_Unreachable
     ud2
 L24:
     mov     qword ptr [rsp+80h],0
@@ -14998,7 +14856,7 @@ L4:
     mov     [rsp+98h],rax
     jmp     L7
     nop     [rax+rax]
-    xchg    ax,ax
+    nop     [rax+rax]
 L5:
     sub     qword ptr [jit_record.ctr],1
     js      L28
@@ -15018,8 +14876,6 @@ L6:
     mov     rsi,[rsp+70h]
     mov     rdx,[rsp+8]
     call    qword ptr [sym1]
-    lea     rdi,[rsp+0D0h]
-    call    ryo_h_Unreachable
     ud2
     nop     [rax+rax]
 L7:
@@ -15085,8 +14941,6 @@ L17:
     mov     rsi,[rsp+70h]
     mov     rdx,[rsp+10h]
     call    qword ptr [sym6]
-    lea     rdi,[rsp+0D0h]
-    call    ryo_h_Unreachable
     ud2
 L18:
     mov     qword ptr [rsp+10h],0
@@ -15137,8 +14991,6 @@ L23:
     mov     rdx,[rsp+70h]
     mov     rcx,[rsp+8]
     call    qword ptr [sym11]
-    lea     rdi,[rsp+0D0h]
-    call    ryo_h_Unreachable
     ud2
 L24:
     jmp     L22
@@ -15361,8 +15213,6 @@ L13:
     .long   L10
     .long   L14
 L14:
-    lea     rdi,[rsp+0B0h]
-    call    ryo_h_Unreachable
     ud2
 L15:
     lea     r11,[jit_record]
@@ -15444,8 +15294,6 @@ L5:
     add     rsp,78h
     ret
 L6:
-    lea     rdi,[rsp+70h]
-    call    ryo_h_Unreachable
     ud2
 L7:
     lea     rdi,[rsp+70h]
@@ -15454,8 +15302,6 @@ L7:
     call    ryo_h_AddrAbs
     mov     rdi,[rsp+8]
     call    qword ptr [sym3]
-    lea     rdi,[rsp+70h]
-    call    ryo_h_Unreachable
     ud2
 L8:
     mov     rax,[rsp+28h]
@@ -15561,8 +15407,6 @@ L2:
     mov     rsi,[rsp+60h]
     mov     rdx,[rsp]
     call    qword ptr [sym5]
-    lea     rdi,[rsp+90h]
-    call    ryo_h_Unreachable
     ud2
 L3:
     mov     rax,[rsp+40h]
@@ -15675,8 +15519,6 @@ L2:
     mov     rsi,[rsp+60h]
     mov     rdx,[rsp]
     call    qword ptr [sym5]
-    lea     rdi,[rsp+90h]
-    call    ryo_h_Unreachable
     ud2
 L3:
     mov     rax,[rsp+40h]
@@ -15885,8 +15727,6 @@ L17:
     js      L23
 L18:
     call    qword ptr [sym5]
-    lea     rdi,[rsp+0D0h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+0D0h]
     mov     rsi,rax
@@ -16241,8 +16081,6 @@ L17:
     js      L23
 L18:
     call    qword ptr [sym5]
-    lea     rdi,[rsp+0D0h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+0D0h]
     mov     rsi,rax
@@ -16526,8 +16364,6 @@ L8:
     mov     rsi,[rsp+98h]
     mov     rdx,[rsp+10h]
     call    qword ptr [sym5]
-    lea     rdi,[rsp+0E0h]
-    call    ryo_h_Unreachable
     ud2
 L9:
     mov     rax,[rsp+0D0h]
@@ -16637,8 +16473,6 @@ L11:
     mov     rsi,[rsp+80h]
     mov     rdx,[rsp+8]
     call    qword ptr [sym14]
-    lea     rdi,[rsp+0E0h]
-    call    ryo_h_Unreachable
     ud2
 L12:
     mov     rax,[rsp+38h]
@@ -16667,8 +16501,6 @@ L14:
     mov     rdx,[rsp+58h]
     mov     rcx,[rsp+10h]
     call    qword ptr [sym17]
-    lea     rdi,[rsp+0E0h]
-    call    ryo_h_Unreachable
     ud2
 L15:
     mov     rax,[rsp+58h]
@@ -16682,8 +16514,6 @@ L15:
     mov     qword ptr [rsp+0C8h],0
     jmp     L1
 L16:
-    lea     rdi,[rsp+0E0h]
-    call    ryo_h_Unreachable
     ud2
 L17:
     lea     r11,[jit_record]
@@ -16837,8 +16667,6 @@ L0:
     mov     rdi,[rsp+8]
     mov     rsi,[rsp+10h]
     call    qword ptr [sym1]
-    lea     rdi,[rsp+0A0h]
-    call    ryo_h_Unreachable
     ud2
 L1:
     mov     rax,[rsp+18h]
@@ -16967,8 +16795,6 @@ L1:
     mov     r8,[rsp+1E0h]
     mov     r9,[rsp+18h]
     call    fn14
-    lea     rdi,[rsp+310h]
-    call    ryo_h_Unreachable
     ud2
 L2:
     mov     rdi,[rsp+190h]
@@ -17034,8 +16860,6 @@ L2:
     call    ryo_h_AddrAbs
     mov     rdi,[rsp+18h]
     call    qword ptr [sym25]
-    lea     rdi,[rsp+310h]
-    call    ryo_h_Unreachable
     ud2
 L3:
     mov     rax,[rsp+0E0h]
@@ -17125,7 +16949,6 @@ L3:
     add     rsp,318h
     ret
     nop     [rax+rax]
-    xchg    ax,ax
 L4:
     sub     qword ptr [jit_record.ctr],1
     js      L16
@@ -17184,8 +17007,6 @@ L14:
     js      L21
 L15:
     call    qword ptr [sym44]
-    lea     rdi,[rsp+310h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+310h]
     mov     rsi,rax
@@ -17296,8 +17117,6 @@ L0:
     call    ryo_h_AddrAbs
     mov     rdi,[rsp]
     call    qword ptr [sym1]
-    lea     rdi,[rsp+30h]
-    call    ryo_h_Unreachable
     ud2
 L1:
     mov     dword ptr [rsp+8],3E8h
@@ -17390,13 +17209,12 @@ L3:
     .long   L5
     .long   L4
 L4:
-    lea     rdi,[rsp+370h]
-    call    ryo_h_Unreachable
     ud2
 L5:
     mov     rax,[rsp+2E8h]
     mov     [rsp+2C0h],rax
-    nop
+    nop     [rax+rax]
+    nop     [rax+rax]
 L6:
     sub     qword ptr [jit_record.ctr],1
     js      L27
@@ -17420,8 +17238,6 @@ L7:
     call    ryo_h_AddrAbs
     mov     rdi,[rsp]
     call    qword ptr [sym3]
-    lea     rdi,[rsp+370h]
-    call    ryo_h_Unreachable
     ud2
 L8:
     mov     rax,[rsp+288h]
@@ -17439,8 +17255,6 @@ L8:
     mov     rsi,[rsp+270h]
     mov     rdx,[rsp]
     call    qword ptr [sym5]
-    lea     rdi,[rsp+370h]
-    call    ryo_h_Unreachable
     ud2
 L9:
     mov     rax,[rsp+360h]
@@ -17463,8 +17277,6 @@ L9:
     mov     rsi,[rsp+248h]
     mov     rdx,[rsp]
     call    qword ptr [sym7]
-    lea     rdi,[rsp+370h]
-    call    ryo_h_Unreachable
     ud2
 L10:
     mov     rax,[rsp+360h]
@@ -17489,8 +17301,6 @@ L10:
     call    ryo_h_AddrAbs
     mov     rdi,[rsp]
     call    qword ptr [sym9]
-    lea     rdi,[rsp+370h]
-    call    ryo_h_Unreachable
     ud2
 L11:
     mov     rax,[rsp+220h]
@@ -17521,8 +17331,6 @@ L11:
     call    ryo_h_AddrAbs
     mov     rdi,[rsp]
     call    qword ptr [sym13]
-    lea     rdi,[rsp+370h]
-    call    ryo_h_Unreachable
     ud2
 L12:
     mov     rax,[rsp+208h]
@@ -17543,8 +17351,6 @@ L13:
     call    ryo_h_AddrAbs
     mov     rdi,[rsp]
     call    qword ptr [sym15]
-    lea     rdi,[rsp+370h]
-    call    ryo_h_Unreachable
     ud2
 L14:
     mov     qword ptr [rsp],2
@@ -17596,7 +17402,6 @@ L14:
     mov     [rsp+1A8h],rsi
     mov     [rsp+1A0h],rdx
     nop     [rax+rax]
-    nop
 L15:
     sub     qword ptr [jit_record.ctr],1
     js      L28
@@ -17627,8 +17432,6 @@ L16:
     mov     rsi,[rsp+130h]
     mov     rdx,[rsp]
     call    qword ptr [sym24]
-    lea     rdi,[rsp+370h]
-    call    ryo_h_Unreachable
     ud2
 L17:
     mov     rax,[rsp+360h]
@@ -17651,8 +17454,6 @@ L17:
     mov     rsi,[rsp+108h]
     mov     rdx,[rsp]
     call    qword ptr [sym26]
-    lea     rdi,[rsp+370h]
-    call    ryo_h_Unreachable
     ud2
 L18:
     mov     rax,[rsp+360h]
@@ -17677,8 +17478,6 @@ L18:
     mov     rsi,[rsp+0E0h]
     mov     rdx,[rsp]
     call    qword ptr [sym28]
-    lea     rdi,[rsp+370h]
-    call    ryo_h_Unreachable
     ud2
 L19:
     mov     rax,[rsp+360h]
@@ -17703,8 +17502,6 @@ L19:
     call    ryo_h_AddrAbs
     mov     rdi,[rsp]
     call    qword ptr [sym31]
-    lea     rdi,[rsp+370h]
-    call    ryo_h_Unreachable
     ud2
 L20:
     mov     rax,[rsp+0C8h]
@@ -17726,8 +17523,6 @@ L21:
     mov     rsi,[rsp+0A0h]
     mov     rdx,[rsp]
     call    qword ptr [sym33]
-    lea     rdi,[rsp+370h]
-    call    ryo_h_Unreachable
     ud2
 L22:
     mov     rax,[rsp+360h]
@@ -17752,8 +17547,6 @@ L22:
     call    ryo_h_AddrAbs
     mov     rdi,[rsp]
     call    qword ptr [sym36]
-    lea     rdi,[rsp+370h]
-    call    ryo_h_Unreachable
     ud2
 L23:
     mov     rax,[rsp+88h]
@@ -18085,8 +17878,6 @@ L3:
     .long   L5
     .long   L4
 L4:
-    lea     rdi,[rsp+90h]
-    call    ryo_h_Unreachable
     ud2
 L5:
     mov     rax,[rsp+38h]
@@ -18115,7 +17906,7 @@ L8:
     add     rsp,98h
     ret
     nop     [rax+rax]
-    nop     [rax]
+    nop
 L9:
     sub     qword ptr [jit_record.ctr],1
     js      L12
@@ -18185,8 +17976,6 @@ L0:
     movzx   edx,byte ptr [rsp+17h]
     mov     rcx,[rsp+8]
     call    qword ptr [sym2]
-    lea     rdi,[rsp+80h]
-    call    ryo_h_Unreachable
     ud2
 L1:
     add     rsp,88h
@@ -18307,8 +18096,6 @@ L9:
     js      L14
 L10:
     call    qword ptr [sym6]
-    lea     rdi,[rsp+0B0h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+0B0h]
     mov     rsi,rax
@@ -18440,8 +18227,6 @@ L9:
     js      L14
 L10:
     call    qword ptr [sym6]
-    lea     rdi,[rsp+0B0h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+0B0h]
     mov     rsi,rax
@@ -18573,8 +18358,6 @@ L9:
     js      L14
 L10:
     call    qword ptr [sym6]
-    lea     rdi,[rsp+0B0h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+0B0h]
     mov     rsi,rax
@@ -18798,8 +18581,6 @@ L1:
     js      L3
 L2:
     call    qword ptr [sym2]
-    lea     rdi,[rsp+30h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+30h]
     mov     rsi,rax
@@ -18841,8 +18622,6 @@ L1:
     js      L3
 L2:
     call    qword ptr [sym2]
-    lea     rdi,[rsp+30h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+30h]
     mov     rsi,rax
@@ -19186,8 +18965,6 @@ L4:
     mov     rsi,[rsp+58h]
     mov     rdx,[rsp]
     call    qword ptr [sym3]
-    lea     rdi,[rsp+80h]
-    call    ryo_h_Unreachable
     ud2
 L5:
     cmp     dword ptr [rsp+60h],1
@@ -19251,8 +19028,6 @@ L1:
     movzx   edx,byte ptr [rsp+17h]
     mov     rcx,[rsp+8]
     call    qword ptr [sym2]
-    lea     rdi,[rsp+90h]
-    call    ryo_h_Unreachable
     ud2
 L2:
     lea     r11,[jit_record]
@@ -19319,11 +19094,9 @@ L6:
     movzx   edx,byte ptr [rsp+0Fh]
     mov     rcx,[rsp]
     call    qword ptr [sym3]
-    lea     rdi,[rsp+0A0h]
-    call    ryo_h_Unreachable
     ud2
     nop     [rax+rax]
-    nop     [rax]
+    nop
 L7:
     sub     qword ptr [jit_record.ctr],1
     js      L27
@@ -19412,8 +19185,6 @@ L22:
     js      L32
 L23:
     call    qword ptr [sym6]
-    lea     rdi,[rsp+0A0h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+0A0h]
     mov     rsi,rax
@@ -19558,10 +19329,8 @@ L10:
     movzx   edx,byte ptr [rsp+17h]
     mov     rcx,[rsp+8]
     call    qword ptr [sym5]
-    lea     rdi,[rsp+0C0h]
-    call    ryo_h_Unreachable
     ud2
-    nop     [rax+rax]
+    xchg    ax,ax
 L11:
     sub     qword ptr [jit_record.ctr],1
     js      L34
@@ -19637,8 +19406,6 @@ L28:
     js      L39
 L29:
     call    qword ptr [sym6]
-    lea     rdi,[rsp+0C0h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+0C0h]
     mov     rsi,rax
@@ -19921,8 +19688,6 @@ L8:
     js      L13
 L9:
     call    qword ptr [sym3]
-    lea     rdi,[rsp+20h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+20h]
     mov     rsi,rax
@@ -20010,8 +19775,6 @@ L8:
     js      L13
 L9:
     call    qword ptr [sym3]
-    lea     rdi,[rsp+20h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+20h]
     mov     rsi,rax
@@ -20486,8 +20249,6 @@ L5:
     .long   L2
     .long   L6
 L6:
-    lea     rdi,[rsp+80h]
-    call    ryo_h_Unreachable
     ud2
 L7:
     lea     r11,[jit_record]
@@ -20575,8 +20336,6 @@ L5:
     .long   L2
     .long   L6
 L6:
-    lea     rdi,[rsp+80h]
-    call    ryo_h_Unreachable
     ud2
 L7:
     lea     r11,[jit_record]
@@ -20673,11 +20432,9 @@ L10:
     movzx   edx,byte ptr [rsp+0Fh]
     mov     rcx,[rsp]
     call    qword ptr [sym5]
-    lea     rdi,[rsp+0C0h]
-    call    ryo_h_Unreachable
     ud2
     nop     [rax+rax]
-    nop     [rax]
+    nop
 L11:
     sub     qword ptr [jit_record.ctr],1
     js      L34
@@ -20753,8 +20510,6 @@ L28:
     js      L39
 L29:
     call    qword ptr [sym6]
-    lea     rdi,[rsp+0C0h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+0C0h]
     mov     rsi,rax
@@ -20924,8 +20679,6 @@ L6:
     add     rsp,78h
     ret
 L7:
-    lea     rdi,[rsp+70h]
-    call    ryo_h_Unreachable
     ud2
 L8:
     lea     r11,[jit_record]
@@ -21474,8 +21227,6 @@ L8:
     mov     rsi,[rsp+10h]
     mov     rdx,[rsp]
     call    qword ptr [sym4]
-    lea     rdi,[rsp+80h]
-    call    ryo_h_Unreachable
     ud2
 L9:
     mov     rax,[rsp+60h]
@@ -21629,11 +21380,9 @@ L8:
     movzx   edx,byte ptr [rsp+0Fh]
     mov     rcx,[rsp]
     call    qword ptr [sym3]
-    lea     rdi,[rsp+0A0h]
-    call    ryo_h_Unreachable
     ud2
     nop     [rax+rax]
-    nop     [rax]
+    nop
 L9:
     sub     qword ptr [jit_record.ctr],1
     js      L23
@@ -21682,8 +21431,6 @@ L17:
     js      L25
 L18:
     call    qword ptr [sym4]
-    lea     rdi,[rsp+0A0h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+0A0h]
     mov     rsi,rax
@@ -21802,11 +21549,9 @@ L8:
     movzx   edx,byte ptr [rsp+0Fh]
     mov     rcx,[rsp]
     call    qword ptr [sym3]
-    lea     rdi,[rsp+0A0h]
-    call    ryo_h_Unreachable
     ud2
     nop     [rax+rax]
-    nop     [rax]
+    nop
 L9:
     sub     qword ptr [jit_record.ctr],1
     js      L23
@@ -21855,8 +21600,6 @@ L17:
     js      L25
 L18:
     call    qword ptr [sym4]
-    lea     rdi,[rsp+0A0h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+0A0h]
     mov     rsi,rax
@@ -22130,8 +21873,6 @@ L3:
     mov     rsi,[rsp+68h]
     mov     rdx,[rsp+10h]
     call    qword ptr [sym6]
-    lea     rdi,[rsp+100h]
-    call    ryo_h_Unreachable
     ud2
     nop     [rax+rax]
 L4:
@@ -22157,8 +21898,6 @@ L9:
     je      L4
     jmp     L6
 L10:
-    lea     rdi,[rsp+100h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+100h]
     mov     rsi,rax
@@ -22337,8 +22076,6 @@ L1:
     movzx   edx,byte ptr [rsp+17h]
     mov     rcx,[rsp+8]
     call    qword ptr [sym2]
-    lea     rdi,[rsp+90h]
-    call    ryo_h_Unreachable
     ud2
 L2:
     lea     r11,[jit_record]
@@ -22629,9 +22366,9 @@ L3:
     mov     rsi,[rsp+90h]
     mov     rdx,[rsp+30h]
     call    qword ptr [sym6]
-    lea     rdi,[rsp+130h]
-    call    ryo_h_Unreachable
     ud2
+    nop     [rax+rax]
+    nop     [rax]
 L4:
     sub     qword ptr [jit_record.ctr],1
     js      L11
@@ -22655,8 +22392,6 @@ L9:
     je      L4
     jmp     L6
 L10:
-    lea     rdi,[rsp+130h]
-    call    ryo_h_Unreachable
     ud2
     lea     rdi,[rsp+130h]
     mov     rsi,rax

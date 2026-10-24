@@ -83,7 +83,6 @@ b1(): ; Body
     Call(Call { target: sym2, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v14)
     invoke -> b6() unwind b7()
 b2(): ; Body
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b3(): ; Body
     Store(8, 0) (v0, v12)
@@ -160,11 +159,9 @@ b10(): ; Body head 4
 b11(): ; Body
     trap
 b12(): ; Body
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b13(): ; Body head 5
     Call(Call { target: sym4, regs: [], parts: [], site: None }) ()
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b14(v19:1, v23:8): ; Body
     jmp b10()
@@ -248,7 +245,6 @@ b2(): ; Body head 0
     ret 0x80808 (v8, v14)
 b3(): ; Body head 1
     Call(Call { target: sym0, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: Continue }) (v0, v1, v3, v4)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b4(): ; Body
     trap
@@ -288,7 +284,6 @@ b2(): ; Body head 0
     ret 0x80808 (v8, v14)
 b3(): ; Body head 1
     Call(Call { target: sym0, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: Continue }) (v0, v1, v3, v4)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b4(): ; Body
     trap
@@ -319,7 +314,6 @@ b0(v0:8, v1:8, v2:8, v3:8): ; Entry
     br LtU.w8 v2, v0 ? b1() : b2()
 b1(): ; Body
     Call(Call { target: sym0, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: Continue }) (v0, v2, v2, v3)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b2(): ; Body
     v4:8 = Bin(Sub, 8) (v2, v0)
@@ -347,7 +341,6 @@ b0(v0:8, v1:8, v2:8, v3:8): ; Entry
     br LtU.w8 v2, v0 ? b1() : b2()
 b1(): ; Body
     Call(Call { target: sym0, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: Continue }) (v0, v2, v2, v3)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b2(): ; Body
     v4:8 = Bin(Sub, 8) (v2, v0)
@@ -484,7 +477,6 @@ b35(): ; Body
     jmp b15(v20, v62, v64, v75)
 b36(): ; Body head 10
     Call(Call { target: sym11, regs: [], parts: [], site: None }) ()
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b37(): ; Body
     trap
@@ -796,7 +788,6 @@ b2(): ; Body
     v3:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
     v5:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967184), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
     Call(Call { target: sym2, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v3, 0x1ad, 0x0, v2)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 
 fn Rng::next
@@ -904,7 +895,6 @@ b1(): ; Body
     v5:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
     v7:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967184), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
     Call(Call { target: sym2, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v5, 0x175, 0x0, v2)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b2(): ; Body
     ret 0x0 ()
@@ -945,7 +935,6 @@ b2(): ; Body
     v11:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967112), [Some(Scratch(0)), None]), (k2, [None, None])] outs 1 ()
     AStore(AllocaId(8), 24, 8) (v9)
     Call(Call { target: sym4, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v9, 0x13, v4)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 
 fn core::slice::<impl [(u32, u32)]>::split_at_mut_unchecked
@@ -1027,7 +1016,6 @@ b2(): ; Body
     v3:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
     v5:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967184), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
     Call(Call { target: sym2, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v3, 0x1bb, 0x0, v2)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 
 fn core::slice::<impl [T]>::swap_unchecked::precondition_check
@@ -1058,7 +1046,6 @@ b3(): ; Body
     v4:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967256), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
     v6:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967176), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
     Call(Call { target: sym2, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v4, 0x1b5, 0x0, v3)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 
 fn core::slice::<impl [u32]>::copy_from_slice
@@ -1108,7 +1095,6 @@ b2(): ; Body
     v11:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967112), [Some(Scratch(0)), None]), (k2, [None, None])] outs 1 ()
     AStore(AllocaId(8), 24, 8) (v9)
     Call(Call { target: sym4, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v9, 0x13, v4)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 
 fn core::slice::<impl [u32]>::split_at_mut_unchecked
@@ -1177,13 +1163,11 @@ b0(v0:8, v1:8, v2:8, v3:8, v4:8): ; Entry
     br LtU.w8 v2, v1 ? b2() : b1()
 b1(): ; Body
     Call(Call { target: sym0, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v2, v1, v4)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b2(): ; Body
     br LtU.w8 v3, v1 ? b4() : b3()
 b3(): ; Body
     Call(Call { target: sym0, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v3, v1, v4)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b4(): ; Body
     Call(Call { target: fn2, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }, ArgReg { xmm: false, size: 8, index: 4 }], parts: [], site: Continue }) (v0, v1, v2, v3, v4)
@@ -1233,7 +1217,6 @@ b0(v0:8, v1:8, v2:8, v3:8, v4:8): ; Entry
     br Eq.w8 v1, v3 ? b3() : b1()
 b1(): ; Body
     Call(Call { target: sym0, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v1, v3, v4)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b2(): ; Body
     trap
@@ -1686,7 +1669,6 @@ b12(): ; Body
     br Eq.w8 v49, v50 ? b14() : b13()
 b13(): ; Body
     Call(Call { target: sym1, regs: [], parts: [], site: Continue }) ()
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b14(): ; Body
     ret 0x0 ()
@@ -1856,7 +1838,6 @@ b25(): ; Body
     jmp b22(v59, v62, v70)
 b26(): ; Body head 8
     Call(Call { target: sym6, regs: [], parts: [], site: None }) ()
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b27(): ; Body
     trap
@@ -2133,7 +2114,6 @@ b12(v127:8, v128:8, v129:8, v130:8, v131:8, v132:8, v207:8): ; Body head 1
 b13(): ; Body
     trap
 b14(): ; Body head 2
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b15(): ; Body
     v53:8 = ALoad(AllocaId(6), 24, 8) ()
@@ -2287,7 +2267,6 @@ b47(): ; Body
     trap
 b48(): ; Body head 9
     Call(Call { target: sym21, regs: [], parts: [], site: None }) ()
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b49(v254:8): ; Body
     jmp b28()
@@ -2799,7 +2778,6 @@ b7(): ; Body
 b8(): ; Body
     v29:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967024), [Some(Scratch(0)), None]), (k4, [None, None])] outs 1 ()
     Call(Call { target: sym5, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v26, v28, v29)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b9(): ; Body
     v30:8 = ALoad(AllocaId(27), 0, 8) ()
@@ -2818,7 +2796,6 @@ b10(): ; Body
 b11(): ; Body
     v40:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967024), [Some(Scratch(0)), None]), (k7, [None, None])] outs 1 ()
     Call(Call { target: sym5, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v108, v38, v40)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b12(): ; Body
     v41:8 = ALoad(AllocaId(27), 0, 8) ()
@@ -2899,7 +2876,6 @@ b24(): ; Body
     v125:8 = ALoad(AllocaId(5), 40, 8) ()
     v126:8 = ALoad(AllocaId(5), 32, 8) ()
     Call(Call { target: sym16, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: Continue }) (v125, v126, v126, v124)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b25(): ; Body
     v128:8 = ALoad(AllocaId(5), 32, 8) ()
@@ -2916,7 +2892,6 @@ b25(): ; Body
     AStore(AllocaId(27), 8, 8) (v130)
     jmp b1(v74, v76, v68, v92, 0x0)
 b26(): ; Body
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b27(): ; Body
     jmp b13(v109, v110, v111, v108, v112, v113, v104)
@@ -3460,7 +3435,6 @@ b4(): ; Body
 b5(): ; Body
     v19:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967152), [Some(Scratch(0)), None]), (k4, [None, None])] outs 1 ()
     Call(Call { target: sym5, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (0x0, v12, v19)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b6(): ; Body
     v20:8 = ALoad(AllocaId(4), 0, 8) ()
@@ -3609,7 +3583,6 @@ b21(): ; Body
     trap
 b22(): ; Body head 4
     Call(Call { target: sym5, regs: [], parts: [], site: None }) ()
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b23(v78:8): ; Body
     jmp b20()
@@ -3775,7 +3748,6 @@ b8(): ; Body
 b9(): ; Body
     v27:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967088), [Some(Scratch(0)), None]), (k4, [None, None])] outs 1 ()
     Call(Call { target: sym5, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v20, v26, v27)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b10(): ; Body
     v28:8 = ALoad(AllocaId(18), 0, 8) ()
@@ -3837,7 +3809,6 @@ b14(): ; Body
 b15(): ; Body
     v79:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967080), [Some(Scratch(0)), None]), (k13, [None, None])] outs 1 ()
     Call(Call { target: sym5, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (0x0, v72, v79)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b16(): ; Body
     v80:8 = ALoad(AllocaId(2), 32, 8) ()
@@ -3853,7 +3824,6 @@ b18(): ; Body
     v86:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967088), [Some(Scratch(0)), None]), (k16, [None, None])] outs 1 ()
     v87:8 = ALoad(AllocaId(3), 16, 8) ()
     Call(Call { target: sym17, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: Continue }) (v43, v87, v87, v86)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b19(): ; Body
     v89:8 = ALoad(AllocaId(3), 16, 8) ()
@@ -3872,7 +3842,6 @@ b19(): ; Body
     AStore(AllocaId(18), 8, 8) (v90)
     jmp b1(v10, v16, 0x0)
 b20(): ; Body
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b21(): ; Osr(0)
     v101:8 = OsrLoad(-40, 8) ()
@@ -3905,7 +3874,6 @@ b0(v0:8, v1:8, v2:8, v3:8): ; Entry
 b1(): ; Body
     v6:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967144), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
     Call(Call { target: sym1, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: None }) (v6, 0x3d)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b2(): ; Body
     br LtU.w8 v0, v1 ? b3() : b4()
@@ -4075,7 +4043,6 @@ b2(v38:8, v41:8): ; Body head 0
     v12:8 = hcall.reg switch.dense.w64 [(Fp, [None, None]), (Imm(4294967136), [Some(Scratch(0)), None]), (Imm(0), [None, None]), (Imm(2), [None, None])] outs 0 ret (v10)
     switch v12 [b39(), b4(), b3()]
 b3(): ; Body
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b4(): ; Body
     jmp b5(v11, v38, v41)
@@ -4087,14 +4054,12 @@ b6(): ; Body
 b7(): ; Body
     v18:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294966416), [Some(Scratch(0)), None]), (k2, [None, None])] outs 1 ()
     Call(Call { target: sym3, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v18)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b8(): ; Body
     br LtU.w8 v16, v20 ? b10() : b9()
 b9(): ; Body
     v21:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294966416), [Some(Scratch(0)), None]), (k4, [None, None])] outs 1 ()
     Call(Call { target: sym5, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v16, v20, v21)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b10(): ; Body
     v22:8 = PtrIndex(4) (v19, v16)
@@ -4103,7 +4068,6 @@ b10(): ; Body
 b11(): ; Body
     v24:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294966416), [Some(Scratch(0)), None]), (k6, [None, None])] outs 1 ()
     Call(Call { target: sym5, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v13, v20, v24)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b12(): ; Body
     v25:8 = PtrIndex(4) (v19, v13)
@@ -4115,7 +4079,6 @@ b13(): ; Body
 b14(): ; Body
     v30:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294966416), [Some(Scratch(0)), None]), (k8, [None, None])] outs 1 ()
     Call(Call { target: sym3, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v30)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b15(): ; Body
     v31:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294966416), [Some(Scratch(0)), None]), (k10, [None, None])] outs 1 ()
@@ -4125,7 +4088,6 @@ b15(): ; Body
 b16(): ; Body
     v35:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294966416), [Some(Scratch(0)), None]), (k12, [None, None])] outs 1 ()
     Call(Call { target: sym3, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v35)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b17(): ; Body
     jmp b5(v33, v19, v20)
@@ -4152,7 +4114,6 @@ b23(): ; Body
 b24(): ; Body
     v61:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294966416), [Some(Scratch(0)), None]), (k23, [None, None])] outs 1 ()
     Call(Call { target: sym5, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v56, v60, v61)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b25(): ; Body
     v62:8 = PtrIndex(4) (v59, v56)
@@ -4161,7 +4122,6 @@ b25(): ; Body
 b26(): ; Body
     v64:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294966416), [Some(Scratch(0)), None]), (k25, [None, None])] outs 1 ()
     Call(Call { target: sym5, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v58, v60, v64)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b27(): ; Body
     v65:8 = PtrIndex(4) (v59, v58)
@@ -4172,7 +4132,6 @@ b28(): ; Body
 b29(): ; Body
     v67:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294966416), [Some(Scratch(0)), None]), (k27, [None, None])] outs 1 ()
     Call(Call { target: sym5, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v56, v60, v67)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b30(): ; Body
     v68:8 = PtrIndex(4) (v59, v56)
@@ -4183,7 +4142,6 @@ b30(): ; Body
 b31(): ; Body
     v74:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294966416), [Some(Scratch(0)), None]), (k30, [None, None])] outs 1 ()
     Call(Call { target: sym31, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v74)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b32(): ; Body
     jmp b21(v72, v57, v58, v59, v60, v70)
@@ -4192,7 +4150,6 @@ b33(): ; Body
 b34(): ; Body
     v75:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294966416), [Some(Scratch(0)), None]), (k32, [None, None])] outs 1 ()
     Call(Call { target: sym5, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v58, v60, v75)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b35(): ; Body
     v76:8 = PtrIndex(4) (v59, v58)
@@ -4203,7 +4160,6 @@ b35(): ; Body
 b36(): ; Body
     v81:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294966416), [Some(Scratch(0)), None]), (k35, [None, None])] outs 1 ()
     Call(Call { target: sym31, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v81)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b37(): ; Body
     jmp b21(v56, v57, v79, v59, v60, v70)
@@ -4284,7 +4240,6 @@ b1(): ; Body
     v2:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967272), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
     v4:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967200), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
     Call(Call { target: sym2, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v2, 0x1bb, 0x0, v1)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b2(): ; Body
     ret 0x0 ()
@@ -4357,7 +4312,6 @@ b7(): ; Body
     ret 0x8 (v18)
 b8(): ; Body head 3
     Call(Call { target: sym6, regs: [], parts: [], site: None }) ()
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b9(): ; Body
     trap
@@ -4522,7 +4476,6 @@ b2(): ; Body head 1
     v12:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967176), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
     v18:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967168), [Some(Scratch(0)), None]), (k2, [None, None])] outs 1 ()
     Call(Call { target: sym3, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v10, 0x55, v18)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b3(): ; Body
     br Eq.w4 v2, 0x1 ? b1() : b2()
@@ -4554,7 +4507,6 @@ b2(): ; Body
     v3:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
     v5:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967184), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
     Call(Call { target: sym2, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v3, 0x193, 0x0, v2)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 
 fn std::ptr::copy::precondition_check
@@ -4594,7 +4546,6 @@ b4(): ; Body head 2
     v7:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967248), [Some(Scratch(0)), None]), (k1, [None, None])] outs 1 ()
     v9:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967160), [Some(Scratch(0)), None]), (k1, [None, None])] outs 1 ()
     Call(Call { target: sym3, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v7, 0x1bb, 0x0, v4)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b5(): ; Body head 3
     br v3 ? b8() : b10()
@@ -4636,7 +4587,6 @@ b22(): ; Body
     trap
 b23(): ; Body head 8
     Call(Call { target: sym6, regs: [], parts: [], site: None }) ()
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b24(): ; Body
     trap
@@ -4712,7 +4662,6 @@ b10(): ; Body head 3
     v25:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967224), [Some(Scratch(0)), None]), (k3, [None, None])] outs 1 ()
     v27:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967136), [Some(Scratch(0)), None]), (k3, [None, None])] outs 1 ()
     Call(Call { target: sym5, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v25, 0x237, 0x0, v5)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b11(): ; Body head 4
     ret 0x0 ()
@@ -4754,7 +4703,6 @@ b29(): ; Body
     trap
 b30(): ; Body head 9
     Call(Call { target: sym6, regs: [], parts: [], site: None }) ()
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b31(): ; Body
     trap
@@ -4975,7 +4923,6 @@ b6(): ; Body head 3
     v9:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967248), [Some(Scratch(0)), None]), (k1, [None, None])] outs 1 ()
     v11:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967160), [Some(Scratch(0)), None]), (k1, [None, None])] outs 1 ()
     Call(Call { target: sym3, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v9, 0x22f, 0x0, v4)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b7(): ; Body head 4
     br Eq.w8 v0, 0x0 ? b6() : b2()
@@ -4998,7 +4945,6 @@ b15(): ; Body
     trap
 b16(): ; Body head 6
     Call(Call { target: sym4, regs: [], parts: [], site: None }) ()
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b17(): ; Body
     trap
@@ -5048,7 +4994,6 @@ b6(): ; Body head 3
     v9:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967248), [Some(Scratch(0)), None]), (k1, [None, None])] outs 1 ()
     v11:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967160), [Some(Scratch(0)), None]), (k1, [None, None])] outs 1 ()
     Call(Call { target: sym3, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v9, 0x237, 0x0, v4)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b7(): ; Body head 4
     br Eq.w8 v0, 0x0 ? b6() : b2()
@@ -5071,7 +5016,6 @@ b15(): ; Body
     trap
 b16(): ; Body head 6
     Call(Call { target: sym4, regs: [], parts: [], site: None }) ()
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b17(): ; Body
     trap

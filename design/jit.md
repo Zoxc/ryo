@@ -249,9 +249,10 @@ baseline the tier refines.
   value is a result; or, `hcall.reg`, the same through the handler's [register
   entry](#register-entries)), `Call` and `Island`.
 - **Terminators**: `jmp`, `br` (on a boolean), `brcmp`, `switch` (a switch handler's
-  index), `ret`, `tail_call`, `trap`, and `invoke`: a call, island or `resume` with a
-  landing pad ends its block, with a normal edge (to a fresh single-predecessor block that
-  stores the results) and an edge to a *pad stub*, one per call site, which takes the
+  index), `ret`, `tail_call`, `trap` (a `ud2`: `unreachable`, or after a handler that
+  doesn't return), and `invoke`: a call, island or `resume` with a landing pad ends its
+  block, with a normal edge (to a fresh single-predecessor block that stores the
+  results) and an edge to a *pad stub*, one per call site, which takes the
   exception object and jumps to the code after the `lpad`. The call defines its results;
   only the normal edge's block uses them. No moves are ever needed on the exceptional edge.
 - Every edge, the switch's included, may carry arguments. `Func::verify` checks dominance,

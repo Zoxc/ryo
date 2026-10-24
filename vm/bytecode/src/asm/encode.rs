@@ -1102,6 +1102,7 @@ impl Asm {
                 ts.push(target("default"));
                 self.table(ts);
             }
+            Shape::Trap if op == Opcode::Unreachable => self.fixed(Item::Ud2),
             Shape::Trap => {
                 self.handler_call(op, ops, site);
                 self.fixed(Item::Ud2);

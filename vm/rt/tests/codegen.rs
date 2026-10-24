@@ -141,11 +141,11 @@ fn handlers_read_rbp_first_and_hot_ones_have_no_prologue() {
         let read = a.iter().position(|i| i.starts_with("movq\t%rbp, %"));
         // AT&T syntax: the destination is the last operand.
         let writes = a.iter().position(|i| i.ends_with("%rbp") && !i.starts_with("push") && !i.starts_with("cmp") && !i.starts_with("test"));
-        // Handlers that never return (`unreachable`, `abort`) needn't read it.
+        // A handler that never returns (`abort`) needn't read it.
         if let Some(r) = read {
             assert!(writes.is_none_or(|w| w > r), "{name}: writes rbp before reading it\n{}", dump());
         } else {
-            assert!(matches!(op, Opcode::Unreachable | Opcode::Abort), "{name}: doesn't read rbp\n{}", dump());
+            assert!(op == Opcode::Abort, "{name}: doesn't read rbp\n{}", dump());
         }
         checked += 1;
     }

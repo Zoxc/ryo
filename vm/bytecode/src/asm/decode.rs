@@ -593,6 +593,8 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8]) -> Result<Proto, AsmError> {
             let (s, k) = ret(c, fr)?;
             Proto::new(Opcode::Ret, vec![Opnd::Slot(s), Opnd::Imm(k as u64)], pos, sites)
         }
+        // A handler call's `ud2` is read with it (`then`): a bare one is `unreachable`.
+        Item::Ud2 if setup.is_empty() => Proto::new(Opcode::Unreachable, Vec::new(), pos, sites),
         Item::Branch { cond: Cond::Always, target, .. } if setup.is_empty() => Proto::new(Opcode::Jmp, vec![Opnd::Target(target)], pos, sites),
         Item::CallMem(_) | Item::SubRsp(32) => {
             // An island: `fp`, `ops`, (PE) shadow space, the call through the slot.

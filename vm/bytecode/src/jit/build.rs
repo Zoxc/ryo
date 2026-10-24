@@ -630,6 +630,7 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
                         }
                     }
                 }
+                Kind::Unreachable => term = Some(Term::Trap),
                 Kind::Lpad => return Err(Unsupported("an lpad in a block")),
             }
             if last && term.is_none() && extra.is_empty() && !matches!(s.f.blocks[cur.idx()].term, Term::Invoke { .. }) {

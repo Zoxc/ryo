@@ -164,7 +164,7 @@ ones, which are [inlined](#inline-instructions):
 | `op` | data movement, arithmetic, conversions, enums, atomics | operand registers, `call ryo_h_<Opcode>` |
 | `br` | `br`, `br.eq`, `br.lt`, `br.gt.imm`, … | handler call (returns a `bool`), `test al, al`, `jnz t` (`jz t` with `!`) |
 | `switch` | `switch.dense`, `switch.sparse` | handler call (returns the case index, `n` for the default), `lea rcx, [rip + T]; movsxd rax, [rcx + rax*4]; add rax, rcx; jmp rax`, then `int3`s to a multiple of 4 and the table `T` inline in the text: one `i32` offset from `T` per case, the default last |
-| `trap` | `unreachable`, `abort`, `resume` | handler call, `ud2` |
+| `trap` | `unreachable`, `abort`, `resume` | handler call, `ud2`; `unreachable` has no handler and is `ud2` alone |
 | `ret` | `ret` | the value's loads into the return registers, epilogue, `ret` |
 | `arg` | `arg` | the store of an argument register |
 | `jmp` | `jmp` | `jmp t` |
@@ -185,8 +185,8 @@ The epilogue is `add rsp, F + 8`, `leave` with a frame pointer, or on PE
   `rdi`; `lpad` takes the exception object before its operand. If an opcode has more operands than registers, adjacent 32-bit
   operands (slots, `U8`–`U32`) share one, `a | b << 32`, pairing from the last pair. A
   constant, symbol or data operand is passed as its address (`lea reg, [rip + …]`).
-  Branch and call targets and polarities aren't passed, and the call shapes have no
-  handler. `layout` is a `const fn` that fails to compile for an opcode whose
+  Branch and call targets and polarities aren't passed, and the call shapes and
+  `unreachable` have no handler. `layout` is a `const fn` that fails to compile for an opcode whose
   operands don't fit.
 - **Canonical form**: every element has exactly one encoding. Register values take the
   shortest of `xor r32, r32`, `mov r32, imm32`, `mov r64, simm32` and `mov r64, imm64`.
@@ -334,7 +334,8 @@ that they don't change the code. `RYO_DUMP` shows them as `; escape …`, `; end
 The instruction set below, the opcode list, is the *full* set (`ryo_bytecode::full`): the
 lowering emits it. The *reduced* set (`ryo_bytecode::reduced`) is what the machine code
 consists of: the instructions of the full set that run as native code, which are the inline
-instructions and the shapes without a handler (`jmp`, the calls, `ret`, `arg`, `island`), with
+instructions and the instructions without a handler (`jmp`, the calls, `ret`, `arg`, `island`,
+`unreachable`), with
 the same mnemonics, shapes and operands, plus `handler` for every handler call. Its list
 (`vm/bytecode/src/reduced_ops.rs`) goes through the same `define_ops!` as the full one, so it
 has its own `Opcode`, `Insn`, decoder, encoder and disassembly, in the same word encoding;

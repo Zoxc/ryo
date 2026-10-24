@@ -422,7 +422,7 @@ fn handlers_match_lean_opsem() {
     let mut never = Vec::new();
     let (mut ops, mut total) = (0, 0);
     for &op in ALL_OPCODES.iter() {
-        if handler(op).is_none() || matches!(op, Opcode::Resume | Opcode::Unreachable | Opcode::Abort) {
+        if handler(op).is_none() || matches!(op, Opcode::Resume | Opcode::Abort) {
             continue;
         }
         let ran = (0..iters).filter(|_| case(&mut lean, op, &mut rng)).count();

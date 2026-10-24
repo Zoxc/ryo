@@ -953,7 +953,7 @@ fn fatal_paths() {
     for (case, msg) in [
         ("overflow", Some("has overflowed its stack")),
         ("overflow_probe", Some("has overflowed its stack")),
-        ("unreachable", Some("ryo: entered unreachable code")),
+        ("unreachable", None),
         ("no_entry", Some("failed to initiate panic")),
         ("catch", Some("CATCH PAD RAN")),
         ("abort", None),

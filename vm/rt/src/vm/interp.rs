@@ -30,7 +30,7 @@
 //!   program's responsibility, exactly as in native code; loads and stores are unaligned
 //!   (packed fields), atomics are aligned (the lowering guarantees it).
 //! - Nothing in a handler may panic (they aren't expected to unwind). Arithmetic on offsets
-//!   is wrapping, indexing is unchecked, and errors go to [`fatal`] (abort).
+//!   is wrapping, indexing is unchecked, and errors go to [`fatal`](super::sys::fatal) (abort).
 
 use core::mem::MaybeUninit;
 use core::ops::Not;
@@ -40,8 +40,6 @@ use core::sync::atomic::{AtomicI8, AtomicI16, AtomicI32, AtomicI64, AtomicPtr, A
 use ryo_bytecode::asm::{self, ARG_REGS, Loc};
 use ryo_bytecode::full::{Opcode, OperandKind};
 use ryo_bytecode::jit::effects::RegEntry;
-
-use super::sys::fatal;
 
 /// How the machine code passes `fp`: the backend reads this (through `FP_ARG`) and encodes
 /// to match. The handlers work with and without a frame pointer when they take `fp` in
@@ -456,11 +454,6 @@ macro_rules! switch_sparse {
         sparse::<$t>(c as u64 as usize as *const $t, (c >> 64) as usize, get!($t, $a, $fp, $op, s))
     }};
 }
-macro_rules! trap {
-    ($a:ident, $fp:ident, $op:ident,) => {
-        fatal("entered unreachable code")
-    };
-}
 macro_rules! abort_now {
     ($a:ident, $fp:ident, $op:ident,) => {
         core::intrinsics::abort()
@@ -724,7 +717,7 @@ unsafe extern "C-unwind" {
 #[rustc_std_internal_symbol]
 #[unsafe(export_name = "ryo_h_Resume")]
 pub unsafe extern "sysv64-unwind" fn resume() -> ! {
-    fatal("resume: VM unwinding isn't supported on this target")
+    super::sys::fatal("resume: VM unwinding isn't supported on this target")
 }
 
 /// The stack probe of frames of 4096 bytes or more: touches every page of the `rax` bytes

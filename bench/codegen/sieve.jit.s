@@ -264,8 +264,6 @@ fn <usize as std::iter::Sum>::sum::<std::iter::Map<std::slice::Iter<'_, bool>, {
     call    ryo_hr_AddrAbs
     mov     rdi,rax
     call    qword ptr [sym1]
-    lea     rdi,[rsp+20h]
-    call    ryo_h_Unreachable
     ud2
 L0:
     mov     rax,rbx
@@ -285,8 +283,6 @@ fn <usize as std::slice::SliceIndex<[bool]>>::index
     mov     rsi,rdx
     mov     rdx,rcx
     call    qword ptr [sym0]
-    lea     rdi,[rsp+30h]
-    call    ryo_h_Unreachable
     ud2
 L0:
     lea     r12,[r12+rbx]
@@ -308,8 +304,6 @@ fn <usize as std::slice::SliceIndex<[bool]>>::index_mut
     mov     rsi,rdx
     mov     rdx,rcx
     call    qword ptr [sym0]
-    lea     rdi,[rsp+30h]
-    call    ryo_h_Unreachable
     ud2
 L0:
     lea     r12,[r12+rbx]
@@ -338,8 +332,6 @@ fn core::num::<impl usize>::unchecked_add::precondition_check
     mov     rcx,rbx
     movzx   edx,dl
     call    qword ptr [sym2]
-    lea     rdi,[rsp+30h]
-    call    ryo_h_Unreachable
     ud2
 L0:
     mov     rbx,[rsp+20h]
@@ -372,8 +364,6 @@ fn sieve
     call    ryo_hr_AddrAbs
     mov     rdi,rax
     call    qword ptr [sym1]
-    lea     rdi,[rsp+0B0h]
-    call    ryo_h_Unreachable
     ud2
 L0:
     lea     r14,[rsp+78h]
@@ -426,8 +416,6 @@ L3:
     mov     rbx,rax
     jmp     L24
 L4:
-    lea     rdi,[rsp+0B0h]
-    call    ryo_h_Unreachable
     ud2
 L5:
     cmp     r12,r14
@@ -468,8 +456,6 @@ L8:
     mov     rbx,rax
     jmp     L24
 L9:
-    lea     rdi,[rsp+0B0h]
-    call    ryo_h_Unreachable
     ud2
 L10:
     mov     r15,r13
@@ -504,8 +490,6 @@ L14:
     mov     rbx,rax
     jmp     L24
 L15:
-    lea     rdi,[rsp+0B0h]
-    call    ryo_h_Unreachable
     ud2
 L16:
     jmp     L11
@@ -520,8 +504,6 @@ L17:
     mov     rbx,rax
     jmp     L24
 L18:
-    lea     rdi,[rsp+0B0h]
-    call    ryo_h_Unreachable
     ud2
 L19:
     mov     r13,r14
@@ -562,8 +544,6 @@ L22:
     ud2
 L23:
     call    qword ptr [sym20]
-    lea     rdi,[rsp+0B0h]
-    call    ryo_h_Unreachable
     ud2
 L24:
     jmp     L21
@@ -844,8 +824,6 @@ L11:
     jmp     L6
 L12:
     call    qword ptr [sym7]
-    lea     rdi,[rsp+0A0h]
-    call    ryo_h_Unreachable
     ud2
   ; OSR entries
     lea     r11,[L13]

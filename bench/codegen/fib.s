@@ -178,8 +178,6 @@ L1:
     call    ryo_h_AddrAbs
     mov     rdi,[rsp+8]
     call    qword ptr [sym1]
-    lea     rdi,[rsp+60h]
-    call    ryo_h_Unreachable
     ud2
 L2:
     mov     eax,[rsp+3Ch]
@@ -201,8 +199,6 @@ L2:
     call    ryo_h_AddrAbs
     mov     rdi,[rsp+8]
     call    qword ptr [sym4]
-    lea     rdi,[rsp+60h]
-    call    ryo_h_Unreachable
     ud2
 L3:
     mov     eax,[rsp+24h]
@@ -223,8 +219,6 @@ L3:
     call    ryo_h_AddrAbs
     mov     rdi,[rsp+8]
     call    qword ptr [sym7]
-    lea     rdi,[rsp+60h]
-    call    ryo_h_Unreachable
     ud2
 L4:
     mov     rax,[rsp+10h]

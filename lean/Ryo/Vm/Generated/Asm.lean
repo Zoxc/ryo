@@ -985,7 +985,7 @@ def asmInfos : Array AsmInfo := #[
   AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 0 0 0 false, Loc.mk 1 0 2 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 0 0 0 false, Loc.mk 2 0 2 false] 1 4)), -- switch.sparse.w32
   AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 0 0 0 false, Loc.mk 1 0 2 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 0 0 0 false, Loc.mk 2 0 2 false] 1 4)), -- switch.sparse.w64
   AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 0 0 0 false, Loc.mk 1 0 2 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 0 0 0 false, Loc.mk 2 0 2 false] 1 4)), -- switch.sparse.w128
-  AsmInfo.mk true false (some (Layout.mk [] 0 0)) (some (Layout.mk [] 1 1)), -- unreachable
+  AsmInfo.mk false false none none, -- unreachable
   AsmInfo.mk true false (some (Layout.mk [] 0 0)) (some (Layout.mk [] 1 1)), -- abort
   AsmInfo.mk false false none none, -- call
   AsmInfo.mk false false none none, -- call.sym

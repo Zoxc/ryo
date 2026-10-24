@@ -176,9 +176,10 @@ const fn passed(shape: Shape, _name: &str) -> bool {
     }
 }
 
-/// Whether instructions of `op` call a handler.
+/// Whether instructions of `op` call a handler. `unreachable` is a bare `ud2`.
 pub const fn has_handler(op: Opcode) -> bool {
     !matches!(op.info().shape, Shape::Jmp | Shape::Call | Shape::TailCall | Shape::Ret | Shape::Island | Shape::Arg)
+        && !matches!(op, Opcode::Unreachable)
 }
 
 /// The register layout of `op`'s handler call (see the [module docs](self)). Fails to

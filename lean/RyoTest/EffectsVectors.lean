@@ -925,7 +925,7 @@ def effects : List (String × Option Effects) := [
   ("switch.sparse.w32", some { opnds := [some (.read 4), none, none], memory := false }),
   ("switch.sparse.w64", some { opnds := [some (.read 8), none, none], memory := false }),
   ("switch.sparse.w128", some { opnds := [some (.read 16), none, none], memory := false }),
-  ("unreachable", some { opnds := [], memory := false }),
+  ("unreachable", none),
   ("abort", some { opnds := [], memory := false }),
   ("call", none),
   ("call.sym", none),

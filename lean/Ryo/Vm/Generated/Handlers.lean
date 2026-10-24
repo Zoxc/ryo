@@ -69,7 +69,6 @@ inductive HandlerKind where
   | br_cmp_imm
   | switch_dense
   | switch_sparse
-  | trap
   | abort_now
   | lpad
   deriving Repr, DecidableEq, Inhabited
@@ -984,7 +983,7 @@ def handlers : Array (Option HandlerInfo) := #[
   some (HandlerInfo.mk HandlerKind.switch_sparse ["u32", "Case32"] (some "usize")), -- switch.sparse.w32
   some (HandlerInfo.mk HandlerKind.switch_sparse ["u64", "Case64"] (some "usize")), -- switch.sparse.w64
   some (HandlerInfo.mk HandlerKind.switch_sparse ["u128", "Case128"] (some "usize")), -- switch.sparse.w128
-  some (HandlerInfo.mk HandlerKind.trap [] (some "!")), -- unreachable
+  none, -- unreachable
   some (HandlerInfo.mk HandlerKind.abort_now [] (some "!")), -- abort
   none, -- call
   none, -- call.sym

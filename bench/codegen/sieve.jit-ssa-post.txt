@@ -208,7 +208,6 @@ b0(v0:8, v1:8, v2:8): ; Entry
 b1(): ; Body
     v5:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967240), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
     Call(Call { target: sym1, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v5)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b2(): ; Body
     ret 0x8 (v3)
@@ -225,7 +224,6 @@ b0(v0:8, v1:8, v2:8, v3:8): ; Entry
     br LtU.w8 v0, v2 ? b2() : b1()
 b1(): ; Body
     Call(Call { target: sym0, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v0, v2, v3)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b2(): ; Body
     v4:8 = PtrIndex(1) (v1, v0)
@@ -243,7 +241,6 @@ b0(v0:8, v1:8, v2:8, v3:8): ; Entry
     br LtU.w8 v0, v2 ? b2() : b1()
 b1(): ; Body
     Call(Call { target: sym0, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v0, v2, v3)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b2(): ; Body
     v4:8 = PtrIndex(1) (v1, v0)
@@ -274,7 +271,6 @@ b1(): ; Body
     v5:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
     v7:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967184), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
     Call(Call { target: sym2, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v5, 0x175, 0x0, v2)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b2(): ; Body
     ret 0x0 ()
@@ -334,7 +330,6 @@ b0(v0:8, v1:8): ; Entry
 b1(): ; Body
     v5:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294966952), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
     Call(Call { target: sym1, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v5)
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b2(): ; Body
     v7:8 = AllocaAddr(AllocaId(35), 0) ()
@@ -359,7 +354,6 @@ b6(): ; Body
     Call(Call { target: sym8, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v24)
     invoke -> b37() unwind b38()
 b7(): ; Body
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b8(): ; Body
     br LtU.w8 v26, v22 ? b25() : b9()
@@ -379,7 +373,6 @@ b12(): ; Body
     Call(Call { target: sym8, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v34)
     invoke -> b41() unwind b42()
 b13(): ; Body
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b14(): ; Body
     jmp b15(v32, v26, v21, v60)
@@ -399,7 +392,6 @@ b18(): ; Body
     Call(Call { target: sym1, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v46)
     invoke -> b45() unwind b46()
 b19(): ; Body
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b20(): ; Body
     jmp b15(v44, v37, v43, v63)
@@ -411,7 +403,6 @@ b22(): ; Body
     Call(Call { target: sym1, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v55)
     invoke -> b47() unwind b48()
 b23(): ; Body
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b24(): ; Body
     jmp b5(v53, v59, v62)
@@ -428,7 +419,6 @@ b27(): ; Body
     trap
 b28(): ; Body head 3
     Call(Call { target: sym20, regs: [], parts: [], site: None }) ()
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b29(v68:8): ; Body
     jmp b26()
@@ -643,7 +633,6 @@ b24(): ; Body
     trap
 b25(): ; Body head 9
     Call(Call { target: sym7, regs: [], parts: [], site: None }) ()
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b26(): ; Body
     trap

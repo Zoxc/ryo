@@ -8,7 +8,8 @@ This file says what each instruction does, where the lowering ([lowering.md](low
 uses it, and what machine code it becomes ([vm.md](vm.md#machine-code)). That is one of:
 
 - a short native sequence (*inline*, `asm::inline`);
-- a sequence of its own without a handler (`jmp`, the calls, `ret`, `arg`, `island`);
+- a sequence of its own without a handler (`jmp`, the calls, `ret`, `arg`, `island`,
+  `unreachable`);
 - a call of its handler `ryo_h_<Opcode>` in `ryo_rt` ([vm.md](vm.md#handlers)).
 
 The native ones are the *reduced* set (`vm/bytecode/src/reduced_ops.rs`,
@@ -740,11 +741,14 @@ T: dd t_0 - T, …, t_default - T
 
 #### `unreachable`
 
-`Unreachable` terminators and the missing return of a call that can't return: reports and
-aborts (only reachable through UB). Handler `ryo_h_Unreachable` (`trap`), then `ud2`:
+`Unreachable` terminators and the missing return of a call that can't return (only
+reachable through UB). No handler: a bare `ud2`, which kills the process with `SIGILL`.
+It has no call site, so it can't unwind. The decoder reads a `ud2` at the start of an
+instruction as `unreachable`; the `ud2` after a `trap`-shaped handler call is read with
+the call.
 
-```rust
-fatal("entered unreachable code");  // prints and aborts
+```
+ud2
 ```
 
 #### `abort`

@@ -914,7 +914,6 @@ macro_rules! for_each_handler {
         SwitchSparseW32 => switch_sparse(u32, Case32) -> usize;
         SwitchSparseW64 => switch_sparse(u64, Case64) -> usize;
         SwitchSparseW128 => switch_sparse(u128, Case128) -> usize;
-        Unreachable => trap() -> !;
         Abort => abort_now() -> !;
         Lpad => lpad();
     } };

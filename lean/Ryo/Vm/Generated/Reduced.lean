@@ -13,7 +13,7 @@ Rust's `Opcode::full` and `Opcode::of_full`.
 namespace Ryo.Vm.Reduced
 
 /-- The number of opcodes. -/
-def count : Nat := 230
+def count : Nat := 231
 
 /-- `reduced::OP_INFO`, by opcode value. -/
 def opInfos : Array OpInfo := #[
@@ -237,6 +237,7 @@ def opInfos : Array OpInfo := #[
   OpInfo.mk "BrLtUImmW64" "br.lt.u.imm.w64" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 6),
   OpInfo.mk "BrGtSImmW64" "br.gt.s.imm.w64" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 6),
   OpInfo.mk "BrGtUImmW64" "br.gt.u.imm.w64" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 6),
+  OpInfo.mk "Unreachable" "unreachable" Shape.trap [] (some 1),
   OpInfo.mk "Call" "call" Shape.call [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "f" OperandKind.func, OperandInfo.mk "k" OperandKind.u32, OperandInfo.mk "a" (OperandKind.list ElemKind.word)] (none),
   OpInfo.mk "CallSym" "call.sym" Shape.call [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "sym" OperandKind.sym, OperandInfo.mk "k" OperandKind.u32, OperandInfo.mk "a" (OperandKind.list ElemKind.word)] (none),
   OpInfo.mk "CallSymInd" "call.sym.ind" Shape.call [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "sym" OperandKind.sym, OperandInfo.mk "k" OperandKind.u32, OperandInfo.mk "a" (OperandKind.list ElemKind.word)] (none),
@@ -708,26 +709,28 @@ def brLtUImmW64 : Opcode := ⟨217⟩
 def brGtSImmW64 : Opcode := ⟨218⟩
 /-- `br.gt.u.imm.w64` -/
 def brGtUImmW64 : Opcode := ⟨219⟩
+/-- `unreachable` -/
+def unreachable : Opcode := ⟨220⟩
 /-- `call` -/
-def call : Opcode := ⟨220⟩
+def call : Opcode := ⟨221⟩
 /-- `call.sym` -/
-def callSym : Opcode := ⟨221⟩
+def callSym : Opcode := ⟨222⟩
 /-- `call.sym.ind` -/
-def callSymInd : Opcode := ⟨222⟩
+def callSymInd : Opcode := ⟨223⟩
 /-- `call.ptr` -/
-def callPtr : Opcode := ⟨223⟩
+def callPtr : Opcode := ⟨224⟩
 /-- `tail_call` -/
-def tailCall : Opcode := ⟨224⟩
+def tailCall : Opcode := ⟨225⟩
 /-- `tail_call.ptr` -/
-def tailCallPtr : Opcode := ⟨225⟩
+def tailCallPtr : Opcode := ⟨226⟩
 /-- `ret` -/
-def ret : Opcode := ⟨226⟩
+def ret : Opcode := ⟨227⟩
 /-- `arg` -/
-def arg : Opcode := ⟨227⟩
+def arg : Opcode := ⟨228⟩
 /-- `island` -/
-def island : Opcode := ⟨228⟩
+def island : Opcode := ⟨229⟩
 /-- `handler` -/
-def handler : Opcode := ⟨229⟩
+def handler : Opcode := ⟨230⟩
 
 end Opcode
 
@@ -773,9 +776,9 @@ def toFullTable : Array (Option Full.Opcode) := #[
   some ⟨862⟩, some ⟨863⟩, some ⟨864⟩, some ⟨865⟩, some ⟨866⟩, some ⟨867⟩,
   some ⟨868⟩, some ⟨869⟩, some ⟨870⟩, some ⟨871⟩, some ⟨872⟩, some ⟨873⟩,
   some ⟨874⟩, some ⟨875⟩, some ⟨876⟩, some ⟨877⟩, some ⟨878⟩, some ⟨879⟩,
-  some ⟨880⟩, some ⟨881⟩, some ⟨882⟩, some ⟨883⟩, some ⟨904⟩, some ⟨905⟩,
-  some ⟨906⟩, some ⟨907⟩, some ⟨908⟩, some ⟨909⟩, some ⟨910⟩, some ⟨911⟩,
-  some ⟨912⟩, none
+  some ⟨880⟩, some ⟨881⟩, some ⟨882⟩, some ⟨883⟩, some ⟨902⟩, some ⟨904⟩,
+  some ⟨905⟩, some ⟨906⟩, some ⟨907⟩, some ⟨908⟩, some ⟨909⟩, some ⟨910⟩,
+  some ⟨911⟩, some ⟨912⟩, none
 ]
 
 /-- `Opcode::of_full` by full opcode. -/
@@ -860,9 +863,9 @@ def ofFullTable : Array (Option Opcode) := #[
   some ⟨207⟩, some ⟨208⟩, some ⟨209⟩, some ⟨210⟩, some ⟨211⟩, some ⟨212⟩,
   some ⟨213⟩, some ⟨214⟩, some ⟨215⟩, some ⟨216⟩, some ⟨217⟩, some ⟨218⟩,
   some ⟨219⟩, none, none, none, none, none, none, none, none, none, none, none, none, none,
-  none, none, none, none, none, none, none, some ⟨220⟩, some ⟨221⟩, some ⟨222⟩,
+  none, none, none, none, none, some ⟨220⟩, none, some ⟨221⟩, some ⟨222⟩,
   some ⟨223⟩, some ⟨224⟩, some ⟨225⟩, some ⟨226⟩, some ⟨227⟩, some ⟨228⟩,
-  none, none
+  some ⟨229⟩, none, none
 ]
 
 def Opcode.full (op : Opcode) : Option Full.Opcode := toFullTable[op.val.toNat]!
