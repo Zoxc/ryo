@@ -5,7 +5,7 @@
 use alloc::vec::Vec;
 
 pub use super::ir::use_counts;
-use super::ir::{Func, Op, ValueDef};
+use super::ir::{Func, Op, Term, ValueDef};
 use super::x86::R;
 
 /// Where a value lives.
@@ -53,6 +53,26 @@ fn registers(frame_pointer: bool) -> (Vec<R>, Vec<R>) {
         callee.push(R::Rbp);
     }
     (caller, callee)
+}
+
+/// Linear positions: block `b` starts at `start[b]` (its parameters are defined there),
+/// instruction `k` of it is at `start[b] + 2 (k + 1)`, its terminator after the last one.
+pub struct Positions {
+    pub start: Vec<u32>,
+    pub end: Vec<u32>,
+}
+
+fn positions(f: &Func) -> Positions {
+    let mut start = alloc::vec![u32::MAX; f.blocks.len()];
+    let mut end = alloc::vec![u32::MAX; f.blocks.len()];
+    let mut p = 0;
+    for &b in &f.layout {
+        start[b.idx()] = p;
+        p += 2 * (f.blocks[b.idx()].insts.len() as u32 + 1);
+        end[b.idx()] = p;
+        p += 2;
+    }
+    Positions { start, end }
 }
 
 /// Live values at each block's entry (bit sets by value), by an iterative backward dataflow
@@ -109,6 +129,192 @@ fn live_in(f: &Func) -> Vec<Vec<u64>> {
         }
     }
     live
+}
+
+/// Linear scan on SSA without splitting (design/jit.md, "The SSA tier"): each value's
+/// interval runs from its definition to its last use in the linear block order (holes
+/// ignored), and lives in one register or one stack slot throughout. Intervals that cross a
+/// call (which clobbers every caller-saved register) get callee-saved registers; when none is
+/// free, the interval that ends last is spilled.
+pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
+    let pos = positions(f);
+    let live = live_in(f);
+    let nv = f.values.len();
+    let mut lo = alloc::vec![u32::MAX; nv];
+    let mut hi = alloc::vec![0u32; nv];
+    let mut ext = |v: usize, a: u32, b: u32| {
+        lo[v] = lo[v].min(a);
+        hi[v] = hi[v].max(b);
+    };
+    let tracked = |v: super::ir::Value| matches!(f.values[v.idx()].def, ValueDef::Inst(..) | ValueDef::Param(..));
+    let mut calls: Vec<u32> = Vec::new();
+    for &b in &f.layout {
+        let bd = &f.blocks[b.idx()];
+        let (s, e) = (pos.start[b.idx()], pos.end[b.idx()]);
+        // Live into the block: from its start.
+        for (w, &bits) in live[b.idx()].iter().enumerate() {
+            let mut x = bits;
+            while x != 0 {
+                let v = w * 64 + x.trailing_zeros() as usize;
+                x &= x - 1;
+                ext(v, s, s);
+            }
+        }
+        for &p in &bd.params {
+            ext(p.idx(), s, s);
+        }
+        let mut out = alloc::vec![0u64; live[b.idx()].len()];
+        for ed in bd.term.edges() {
+            for (w, x) in out.iter_mut().zip(&live[ed.to.idx()]) {
+                *w |= x;
+            }
+            for &a in &ed.args {
+                if tracked(a) {
+                    ext(a.idx(), e, e + 1);
+                }
+            }
+        }
+        // Live out: to the end (a value live out is live in, or defined here).
+        for (w, &bits) in out.iter().enumerate() {
+            let mut x = bits;
+            while x != 0 {
+                let v = w * 64 + x.trailing_zeros() as usize;
+                x &= x - 1;
+                ext(v, e + 1, e + 1);
+            }
+        }
+        for (k, &i) in bd.insts.iter().enumerate() {
+            let p = s + 2 * (k as u32 + 1);
+            let id = &f.insts[i.idx()];
+            if id.op.is_call() {
+                calls.push(p);
+            }
+            for &a in &id.args {
+                if tracked(a) {
+                    ext(a.idx(), p, p);
+                }
+            }
+            for r in id.results() {
+                ext(r.idx(), p, p);
+            }
+        }
+        for u in bd.term.uses() {
+            if tracked(u) {
+                ext(u.idx(), e, e);
+            }
+        }
+        // A tail call or return moves into fixed registers; a call in the terminator
+        // doesn't exist.
+        if matches!(bd.term, Term::TailCall { .. }) {
+            calls.push(e);
+        }
+    }
+    calls.sort_unstable();
+    let crosses = |a: u32, b: u32| {
+        let i = calls.partition_point(|&c| c <= a);
+        i < calls.len() && calls[i] < b
+    };
+    let mut order: Vec<usize> = (0..nv)
+        .filter(|&v| {
+            // Unused values need no location (their definitions write nowhere).
+            lo[v] != u32::MAX
+                && uses[v] > 0
+                && match f.values[v].def {
+                    ValueDef::Inst(i, _) => !matches!(f.insts[i.idx()].op, Op::OsrLoad(..)),
+                    ValueDef::Param(..) => true,
+                    _ => false,
+                }
+        })
+        .collect();
+    order.sort_by_key(|&v| (lo[v], v));
+    let (caller, callee) = registers(frame_pointer);
+    let mut loc = alloc::vec![Loc::None; nv];
+    let mut spills = 0u32;
+    // Active intervals: (end, value, register).
+    let mut active: Vec<(u32, usize, R)> = Vec::new();
+    let mut free = [true; 16];
+    let mut saved = Vec::new();
+    for v in order {
+        let (a, b) = (lo[v], hi[v]);
+        active.retain(|&(end, _, r)| {
+            if end <= a {
+                free[r.num() as usize] = true;
+                false
+            } else {
+                true
+            }
+        });
+        let cross = crosses(a, b);
+        // A hint: the register of the first operand (two-address forms), of an argument for a
+        // parameter, or the fixed register the value comes in.
+        let hint: Option<R> = match f.values[v].def {
+            ValueDef::Inst(i, n) => match &f.insts[i.idx()].op {
+                Op::Bin(..) | Op::PtrAdd(_) | Op::PtrIndex(_) => match f.insts[i.idx()].args.first().map(|a| loc[a.idx()]) {
+                    Some(Loc::Reg(r)) => Some(r),
+                    _ => None,
+                },
+                Op::Call(_) => [R::Rax, R::Rdx].get(n as usize).copied(),
+                Op::LandingPad => Some(R::Rax),
+                Op::HCall(h) if h.ret && n as usize == h.outs.len() => Some(R::Rax),
+                _ => None,
+            },
+            ValueDef::Param(blk, n) => {
+                if f.blocks[blk.idx()].kind == super::ir::BlockKind::Entry && (n as usize) < f.entry_regs.len() {
+                    let r = f.entry_regs[n as usize];
+                    (!r.xmm).then(|| [R::Rdi, R::Rsi, R::Rdx, R::Rcx, R::R8, R::R9][r.index as usize])
+                } else {
+                    f.blocks[blk.idx()].preds.iter().find_map(|&(p, k)| {
+                        let e = f.blocks[p.idx()].term.edges().into_iter().nth(k as usize)?.args.get(n as usize).copied()?;
+                        match loc[e.idx()] {
+                            Loc::Reg(r) => Some(r),
+                            _ => None,
+                        }
+                    })
+                }
+            }
+            _ => None,
+        };
+        let ok = |r: &R| free[r.num() as usize] && (!cross || callee.contains(r));
+        let pick = match hint.filter(|r| ok(r) && (caller.contains(r) || callee.contains(r))) {
+            Some(h) => Some(caller.iter().chain(&callee).find(|&&r| r == h).unwrap()),
+            None if cross => callee.iter().find(|r| free[r.num() as usize]),
+            None => caller.iter().chain(&callee).find(|r| free[r.num() as usize]),
+        };
+        match pick {
+            Some(&r) => {
+                free[r.num() as usize] = false;
+                active.push((b, v, r));
+                loc[v] = Loc::Reg(r);
+                if callee.contains(&r) && !saved.contains(&r) {
+                    saved.push(r);
+                }
+            }
+            None => {
+                // Spill the active interval (that this one may use) ending last, if it ends
+                // after this one.
+                let cand = active
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, (_, _, r))| !cross || callee.contains(r))
+                    .max_by_key(|(_, (end, _, _))| *end)
+                    .map(|(k, &x)| (k, x));
+                match cand {
+                    Some((k, (end, w, r))) if end > b => {
+                        loc[w] = Loc::Spill(spills);
+                        spills += 1;
+                        active.remove(k);
+                        active.push((b, v, r));
+                        loc[v] = Loc::Reg(r);
+                    }
+                    _ => {
+                        loc[v] = Loc::Spill(spills);
+                        spills += 1;
+                    }
+                }
+            }
+        }
+    }
+    Alloc { loc, spills, saved }
 }
 
 /// Checks an allocation (`RYO_JIT_CHECK`), independently of how it was made: walking each

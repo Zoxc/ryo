@@ -18,7 +18,7 @@ use ryo_bytecode::asm::{self, Mode, Ref};
 use ryo_bytecode::full::{Const, Data, Func, Site, Sym};
 use ryo_bytecode::image::{EhFunc, Image, ImageResolver, JIT_DONE, JitRecord, eh_cie, eh_fde, eh_fde_rows};
 use ryo_bytecode::jit;
-use ryo_bytecode::jit_abi::{JIT_CHECK, JIT_ENTRY_PREFIX, JIT_LOG, JIT_OPT_SSA_NAIVE, JIT_TEST_PANIC, REDIRECT, RtApi};
+use ryo_bytecode::jit_abi::{JIT_CHECK, JIT_ENTRY_PREFIX, JIT_LOG, JIT_OPT_SSA, JIT_OPT_SSA_NAIVE, JIT_TEST_PANIC, REDIRECT, RtApi};
 use ryo_bytecode::{Opcode, reduced};
 
 /// The page size (x86_64).
@@ -291,9 +291,9 @@ impl Jit {
         // `RYO_JIT_SSA_LIMIT=n` (debugging: bisects a miscompile): only the first `n`
         // functions go through the SSA tier.
         let within_limit = self.ssa_limit.is_none_or(|n| SSA_COMPILED.load(SeqCst) < n);
-        if flags & JIT_OPT_SSA_NAIVE != 0 && within_limit {
+        if flags & (JIT_OPT_SSA | JIT_OPT_SSA_NAIVE) != 0 && within_limit {
             let opts = jit::Options {
-                alloc: jit::Allocator::Naive,
+                alloc: if flags & JIT_OPT_SSA != 0 { jit::Allocator::LinearScan } else { jit::Allocator::Naive },
                 stress: (self.rt.shuffled)(h as *const _ as *const u8),
                 check: flags & JIT_CHECK != 0,
                 dump: self.dump.is_some(),

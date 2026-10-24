@@ -10,7 +10,7 @@
 //!   areas, which are pinned at OSR entries, and the variable each access names.
 //! - `ir`: the IR, its printer and verifier.
 //! - `build`: SSA construction (Braun et al.) and the folds.
-//! - `regalloc`: register allocation (every value in a slot, for now) and its checker.
+//! - `regalloc`: register allocation (every value in a slot, or linear scan) and its checker.
 //! - `emit`: instruction selection, the frame, OSR entries, call sites and unwind rows.
 //! - `x86`: the x86-64 encoder, checked against `objdump` by `tests/jit_x86.rs`.
 
@@ -43,6 +43,8 @@ pub use emit::Output;
 pub enum Allocator {
     /// Every value in a stack slot of its own (`RYO_JIT_OPT=ssa-naive`).
     Naive,
+    /// Linear scan (`RYO_JIT_OPT=ssa`).
+    LinearScan,
 }
 
 /// The SSA tier's settings.
@@ -86,6 +88,7 @@ pub fn compile(d: &crate::asm::Decoded, code_consts: &[u8], mode: crate::asm::Mo
     let uses = regalloc::use_counts(&f);
     let al = match opts.alloc {
         Allocator::Naive => regalloc::naive(&f, &uses),
+        Allocator::LinearScan => regalloc::linear_scan(&f, &uses, mode.frame_pointer),
     };
     if opts.check {
         regalloc::check(&f, &al, mode.frame_pointer).map_err(|e| Error::Check(alloc::format!("allocation: {e}")))?;

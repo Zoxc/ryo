@@ -34,7 +34,7 @@ use core::sync::atomic::Ordering::{AcqRel, Acquire, Relaxed, Release, SeqCst};
 use core::sync::atomic::{AtomicBool, AtomicI64, AtomicPtr, AtomicU8, AtomicU32, AtomicUsize};
 
 use ryo_bytecode::image::{Image, JIT_COLD, JIT_DONE, JIT_FAILED, JIT_QUEUED, JIT_THRESHOLD, JitRecord};
-use ryo_bytecode::jit_abi::{JIT_ABI_VERSION, JIT_CHECK, JIT_LOG, JIT_OPT_SSA_NAIVE, JIT_PERFMAP, JIT_SYNC, JIT_TEST_PANIC, RtApi};
+use ryo_bytecode::jit_abi::{JIT_ABI_VERSION, JIT_CHECK, JIT_LOG, JIT_OPT_SSA, JIT_OPT_SSA_NAIVE, JIT_PERFMAP, JIT_SYNC, JIT_TEST_PANIC, RtApi};
 
 pub use ryo_bytecode::jit_abi::{JIT_ENTRY_PREFIX, REDIRECT};
 
@@ -61,7 +61,7 @@ struct Config {
     /// `RYO_JIT_TEST_PANIC=1`: every compile panics (tests: the JIT catches its panics even in
     /// a `-Cpanic=abort` program).
     test_panic: bool,
-    /// `RYO_JIT_OPT`: `reencode` (the default) or `ssa-naive`: how the JIT compiles
+    /// `RYO_JIT_OPT`: `reencode` (the default), `ssa-naive` or `ssa`: how the JIT compiles
     /// (design/jit.md, "The SSA tier"), as [`RtApi::flags`] bits.
     opt: u32,
     /// `RYO_JIT_CHECK=1`: the SSA tier's checkers.
@@ -72,6 +72,7 @@ struct Config {
 fn opt_flags() -> u32 {
     match var(c"RYO_JIT_OPT") {
         Some(b"ssa-naive") => JIT_OPT_SSA_NAIVE,
+        Some(b"ssa") => JIT_OPT_SSA,
         _ => 0,
     }
 }

@@ -48,6 +48,9 @@ pub const JIT_TEST_PANIC: u32 = 8;
 /// [`RtApi::flags`]: compile through the SSA tier with every value in a stack slot
 /// (`RYO_JIT_OPT=ssa-naive`).
 pub const JIT_OPT_SSA_NAIVE: u32 = 16;
+/// [`RtApi::flags`]: compile through the SSA tier with its register allocator
+/// (`RYO_JIT_OPT=ssa`).
+pub const JIT_OPT_SSA: u32 = 32;
 /// [`RtApi::flags`]: run the SSA tier's checkers (`RYO_JIT_CHECK`).
 pub const JIT_CHECK: u32 = 64;
 
@@ -61,7 +64,7 @@ pub struct RtApi {
     /// `size_of::<RtApi>()`.
     pub size: u32,
     /// [`JIT_SYNC`], [`JIT_LOG`], [`JIT_PERFMAP`], [`JIT_TEST_PANIC`], [`JIT_OPT_SSA_NAIVE`],
-    /// [`JIT_CHECK`].
+    /// [`JIT_OPT_SSA`], [`JIT_CHECK`].
     pub flags: u32,
     /// `ryo_probe_stack`'s address.
     pub probe: *const (),
