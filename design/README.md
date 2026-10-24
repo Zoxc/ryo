@@ -9,8 +9,10 @@ x86-64 calls of the VM's handlers, and uses
 - [stubs.md](stubs.md): islands, the glue from VM code to native operations, and how VM
   functions are native functions
 - [lowering.md](lowering.md): MIR → bytecode
-- [vm.md](vm.md): the VM: execution model, frames, machine code, instruction set, handlers,
-  unwinding, image format, runtime crate
+- [vm.md](vm.md): the VM: execution model, frames, machine code, calling convention,
+  handlers, unwinding, image format, runtime crate
+- [instructions.md](instructions.md): the instruction set: each instruction's semantics,
+  its uses in the lowering, and its inline sequence or handler
 - [jit.md](jit.md): the JIT: counters and trips, the JIT thread, re-encoding and
   installing, OSR, packaging as a sealed object, settings
 - [platforms.md](platforms.md): ELF and PE specifics

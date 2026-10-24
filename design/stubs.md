@@ -161,7 +161,7 @@ link to it unchanged.
   visibility from the partition; an `Internal` one becomes hidden, since the image is a
   separate object. Otherwise it is local. `#[no_mangle]`/`#[export_name]` VM functions keep
   their `SymbolExportLevel::C` export through the exported-symbols queries
-  ([backend.md](backend.md#query-overrides)).
+  ([backend.md](backend.md#query-overrides-provide)).
 - **`#[track_caller]` functions** take their `Location` as the last ABI input, as natively
   (`rustc_ty_utils/src/abi.rs:600`). Their `Shim(Reify)` instance (fn pointers, vtables)
   has its own symbol and no `Location`.

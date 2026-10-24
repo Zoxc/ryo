@@ -240,7 +240,7 @@ macro_rules! bin {
 }
 macro_rules! bin_fn {
     ($a:ident, $fp:ident, $op:ident, $t:ty, $f:ident) => {
-        // MIR guarantees a non-zero divisor and no `MIN / -1` (design/vm.md).
+        // MIR guarantees a non-zero divisor and no `MIN / -1` (design/instructions.md).
         put!($a, $fp, $op, d, core::intrinsics::$f(get!($t, $a, $fp, $op, a), get!($t, $a, $fp, $op, b)))
     };
 }

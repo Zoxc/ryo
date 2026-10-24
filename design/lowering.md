@@ -2,7 +2,7 @@
 
 Each VM function is lowered on its own (in parallel, [backend.md](backend.md#pipeline))
 straight into machine code plus a relocation list. The lowering decides VM instructions
-([vm.md](vm.md#instruction-set)) and hands each to the assembler `asm::Asm` as an opcode and
+([instructions.md](instructions.md)) and hands each to the assembler `asm::Asm` as an opcode and
 typed operands, which appends its x86 sequence at once ([vm.md](vm.md#machine-code)); there
 are no instruction words in between. Branch targets are labels (one per block, landing pad
 and terminate stub), unwind actions are set on the call-like instructions, and when the
