@@ -30,9 +30,13 @@
                                            or `error at <byte>: <what>` (exit status 1)
   ryo-lean decode <image object>           each function of the image decoded, as
                                            scripts/lean-decode-ref prints Rust's
-  ryo-lean dead <image object>             the functions the checked decoding rejects (a
+  ryo-lean dead <image object> [<dump.json> <cert.json>]
+                                           the functions the checked decoding rejects (a
                                            dropped store not shown dead), with a reader
-                                           of each such store
+                                           of each such store; with the dump and the
+                                           certificate, also given the facts check-cert
+                                           verifies (calls' stack arguments and sret
+                                           destinations, islands' templates)
   ryo-lean check-pool <dump.json> <image object>... [-v]
                                            the checks of each object against the MIR dump:
                                            the constant pool and vtables
@@ -133,10 +137,17 @@ def decodeObj (path : String) : IO UInt32 := do
     IO.println s!"error: {e}"
     pure 1
 
-def deadObj (path : String) : IO UInt32 := do
+def deadObj (path : String) (dumpCert : Option (String × String) := none) : IO UInt32 := do
   match Ryo.Obj.readImageObject (← IO.FS.readBinFile path) with
   | .ok o =>
-    for l in Ryo.Vm.DecodeObj.deadLines o do IO.println l
+    let none_ : (Nat → Ryo.Vm.Frame.Facts) × (String → Option String) := (fun _ => {}, fun _ => none)
+    let (extra, islands) ← match dumpCert with
+      | none => pure none_
+      | some (dump, certPath) => do
+        let p : Program ← IO.ofExcept (Program.ofJsonString (← IO.FS.readFile dump))
+        let cert ← IO.ofExcept (Ryo.Check.Lower.Cert.ofJsonString (← IO.FS.readFile certPath))
+        pure (Ryo.Check.Lower.deadFacts p cert o)
+    for l in Ryo.Vm.DecodeObj.deadLines o extra islands do IO.println l
     pure 0
   | .error e =>
     IO.println s!"error: {e}"
@@ -232,6 +243,7 @@ def main (args : List String) : IO UInt32 := do
   | ["obj", path] => objFile path
   | ["elf", path] => elfFile path
   | ["dead", path] => deadObj path
+  | ["dead", path, dump, cert] => deadObj path (some (dump, cert))
   | "check-pool" :: dump :: objs@(_ :: _) =>
     checkPool dump (objs.filter (· != "-v")) (objs.contains "-v")
   | "check-cert" :: dump :: cert :: objs@(_ :: _) =>
@@ -258,5 +270,5 @@ def main (args : List String) : IO UInt32 := do
   | ["exec-item"] => Ryo.X86.Cosim.main
   | ["opsem"] => Ryo.Vm.OpSem.Json.main
   | _ =>
-    IO.eprintln "usage: ryo-lean run <program.json> [--fuel N] [--stdout]\n       ryo-lean example <name> [out.json]\n       ryo-lean obj <file.o>\n       ryo-lean elf <file.o>\n       ryo-lean decode <inputs.json | file.o>\n       ryo-lean dead|ehframe|lsda <file.o>\n       ryo-lean check-pool <dump.json> <file.o>... [-v]\n       ryo-lean check-cert <dump.json> <cert.json> <image.o>... [-v]\n       ryo-lean check-image <image.o>... [--registry <registry.o>]\n       ryo-lean opsem"
+    IO.eprintln "usage: ryo-lean run <program.json> [--fuel N] [--stdout]\n       ryo-lean example <name> [out.json]\n       ryo-lean obj <file.o>\n       ryo-lean elf <file.o>\n       ryo-lean decode <inputs.json | file.o>\n       ryo-lean dead <file.o> [<dump.json> <cert.json>]\n       ryo-lean ehframe|lsda <file.o>\n       ryo-lean check-pool <dump.json> <file.o>... [-v]\n       ryo-lean check-cert <dump.json> <cert.json> <image.o>... [-v]\n       ryo-lean check-image <image.o>... [--registry <registry.o>]\n       ryo-lean opsem"
     pure 2

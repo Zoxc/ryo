@@ -160,11 +160,14 @@ def argLists : Except String Unit := do
 def facts : Except String Unit := do
   let call (insn : Nat) (stack : Nat) (sret : Bool) (kind : CallKind := .vm) : CallCert :=
     { insn, kind, retKind := if sret then RET_SRET else 0, retSize := 40, plan := some ⟨[], stack⟩ }
+  -- Only calls the dump's ABI verified (calls of image functions get theirs from
+  -- `DecodeObj.imageFacts`).
   let r : FuncCheck := { calls := #[(call 1 16 true, .entry), (call 2 32 false, .abi), (call 3 48 true, .none),
-    (call 4 0 true .tailVm, .entry)], islands := #[(5, "drop_in_place")] }
+    (call 4 0 true .tailVm, .abi), (call 6 8 true .sym, .abi)], islands := #[(5, "drop_in_place")] }
   let f := Cert.facts r
-  check (f.stackArgs 1 == some 16 && f.stackArgs 2 == some 32 && f.stackArgs 3 == none && f.stackArgs 4 == some 0) "stack args"
-  check (f.sretSize 1 == some 40 && f.sretSize 2 == none && f.sretSize 3 == none && f.sretSize 4 == none) "sret sizes"
+  check (f.stackArgs 1 == none && f.stackArgs 2 == some 32 && f.stackArgs 3 == none && f.stackArgs 4 == some 0) "stack args"
+  check (f.sretSize 1 == none && f.sretSize 2 == none && f.sretSize 3 == none && f.sretSize 4 == none &&
+    f.sretSize 6 == some 40) "sret sizes"
   check (f.islandTemplate 5 == some "drop_in_place" && f.islandTemplate 1 == none) "islands"
 
 def tests : List TestCase :=

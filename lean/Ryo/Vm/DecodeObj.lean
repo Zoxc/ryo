@@ -124,9 +124,9 @@ def decodeAll (o : Ryo.Obj.ImageObject) : Array (Option (Ryo.Obj.FuncInputs × D
   it, tail calls included (`extents`, from `Frame.incomingExtents`). The callee's stack
   arguments are that area: what the call reads of the caller's frame besides the argument
   list is in its first `arg_size` bytes.
-- `sretSize`: `g`'s `ret_size` if `g` returns through an sret pointer (`ret_kind` =
-  `RET_SRET`). That `ret_size` is the size of the callee's return type is C1''s to check (no
-  image check reads it for an sret function).
+- no `sretSize`: an sret callee's `ret_size` isn't checked against its return type by any
+  image check (C1''s to do), and making more bytes `Uninit` than L0's destination has would be
+  unsound. The certificate check gives it for calls whose ABI the dump has.
 - `islandTemplate`: an island's template by its symbol slot's name, as `islands` maps it
   (the C1' certificate's islands; none by default). -/
 def imageFacts (o : Ryo.Obj.ImageObject) (extents : Array (Option Nat)) (d : Decoded)
@@ -139,9 +139,6 @@ def imageFacts (o : Ryo.Obj.ImageObject) (extents : Array (Option Nat)) (d : Dec
       let (g, c) ← callee k
       let b ← extents[g]?.join
       if b ≤ c.argSize then some c.argSize else none
-    sretSize := fun k => do
-      let (_, c) ← callee k
-      if c.retKind == retSret then some c.retSize else none
     islandTemplate := fun k => match d.insns[k]? with
       | some (.native op (.sym s :: _)) =>
         if op.info.shape == .island then (o.slotName s).toOption.bind islands else none

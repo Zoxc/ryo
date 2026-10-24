@@ -60,10 +60,10 @@ What each instruction reads (`gen`) and writes for sure (`kill`), and what that 
   runs, as L0 does (D12; reduced.md §C0.4). So those bytes are dead into the call but for
   what the call itself reads: its argument list and stack arguments stay live (read before),
   its pointer accesses don't read them (they read `Uninit`), and neither does anything after
-  the call or on its landing pad (`Flow.uninit`). For a `call` of an image function `g`
-  returning by sret, `sretSize` is `g`'s `ret_size`, which C1' must check is the return
-  type's size (no image check does: `Check.Image.Funcs` checks `ret_size` only for kinds
-  returned in registers); for `call.sym`/`call.ptr`, the certificate's.
+  the call or on its landing pad (`Flow.uninit`). The size must be the destination type's:
+  only the certificate check gives it, for calls whose ABI the dump has (the dumped return
+  size); not the image, since no image check ties an sret callee's `ret_size` to its return
+  type (`Check.Image.Funcs` checks `ret_size` only for kinds returned in registers).
 - **Islands** read the extents of the `Lend` scopes before them (`asm::ScopeKind::Lend`, one
   per operand of a nonzero size, recorded by the lowering with the size its template
   accesses there), may write them (no kill: they are clobbered), and make a pointer access

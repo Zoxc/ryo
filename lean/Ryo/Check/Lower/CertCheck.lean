@@ -39,10 +39,10 @@ Per object:
 Errors are rejections; gaps (no dumped body, no ABI) are counted.
 
 **Facts** (`Cert.facts`): what the dead-store check (`Frame.Facts`) may assume of a function:
-its calls' stack-argument sizes and sret sizes, only for calls verified by (i) or (ii), and the
-islands' templates. (i) is sound as it stands: the callee is the decoded `Ref.func`, and
-check-image bounds its incoming-area accesses by its `arg_size`. (ii) and the templates rely
-on what C1' checks later: that the call ↔ terminator map is right (the call instruction
+its calls' stack-argument sizes and sret sizes, only for calls verified by (ii), and the
+islands' templates; `check-cert`'s dead-store count merges them with `DecodeObj.imageFacts`,
+which bounds the calls of (i) by the callee's `arg_size` once the callee's own code is checked
+to stay within it. (ii) and the templates rely on what C1' checks later: that the call ↔ terminator map is right (the call instruction
 lowers that terminator, so its callee has that ABI), and that an island's symbol is the
 template instance the dump names (aot.md §C1, "Calls" and "Islands"). Until then these
 facts are as trusted as the certificate's ranges.
@@ -74,9 +74,13 @@ structure FuncCheck where
   islands : Array (Nat × String) := #[]
 
 /-- The facts the dead-store check may assume of the function `r` checked (the module
-header): stack-argument and sret sizes of the verified calls, the islands' templates. -/
+header): stack-argument and sret sizes of the calls verified by the dump's ABI, the islands'
+templates. Calls verified by the callee's `FuncEntry` get their stack-argument extent from
+`DecodeObj.imageFacts` instead, which also checks that the callee's code stays within its
+`arg_size` (check-image's bound alone doesn't cover access extents, escapes or tail calls),
+and no sret size: nothing checks an sret callee's `ret_size` against its return type yet. -/
 def Cert.facts (r : FuncCheck) : Frame.Facts :=
-  let ok := r.calls.filter (·.2 != .none)
+  let ok := r.calls.filter (·.2 == .abi)
   let stack : HashMap Nat Nat := ok.foldl (init := {}) fun m (c, _) =>
     match c.plan with
     | some p => m.insert c.insn p.stackSize
@@ -401,6 +405,7 @@ def checkObject (prog : Program) (cert : Cert) (o : ImageObject) : Report := Id.
   let c := Ctx.make prog cert o
   let count : HashMap String Nat := cert.functions.foldl (init := {}) fun m (s, _) => m.insert s (m.getD s 0 + 1)
   let decs := decodeAll o
+  let extents := Frame.incomingExtents (decs.map (·.decoded.toOption)) o.image.mode
   let mut rep : Report := { funcs := o.funcs.size }
   for h : i in [0:o.funcs.size] do
     let name := o.funcName o.funcs[i].codeOff
@@ -427,8 +432,22 @@ def checkObject (prog : Program) (cert : Cert) (o : ImageObject) : Report := Id.
     let bad (facts : Frame.Facts) : Nat := match Frame.droppedNotDead d fi.mode facts with
       | .ok ks => ks.length
       | .error _ => d.dropped.size
-    rep := { rep with notDead := rep.notDead + bad (Cert.facts fr), notDeadPlain := rep.notDeadPlain + bad {} }
+    let facts := (DecodeObj.imageFacts o extents d (c.islands[·]?)).merge (Cert.facts fr)
+    rep := { rep with notDead := rep.notDead + bad facts, notDeadPlain := rep.notDeadPlain + bad {} }
   return rep
+
+/-- For `ryo-lean dead` with a certificate: per function of `o` the facts its certificate
+check gives (`Cert.facts`; none for a function without a certificate or not decoded), and the
+islands' templates by symbol. -/
+def deadFacts (prog : Program) (cert : Cert) (o : ImageObject) :
+    (Nat → Frame.Facts) × (String → Option String) :=
+  let c := Ctx.make prog cert o
+  let decs := decodeAll o
+  let facts : Array Frame.Facts := (Array.range o.funcs.size).map fun i => Id.run do
+    let some fc := c.certs[o.funcName o.funcs[i]!.codeOff]? | return {}
+    let some (Except.ok d) := decs[i]?.map (·.decoded) | return {}
+    return Cert.facts (checkFunc c i d fc)
+  (fun i => facts[i]?.getD {}, (c.islands[·]?))
 
 /-- The lines `ryo-lean check-cert` prints for one object: the summary, the dead-store totals,
 then the errors. -/
