@@ -53,6 +53,8 @@ The native ones are the *reduced* set (`vm/bytecode/src/reduced_ops.rs`,
   operand `[p + k]` is `mem(p, k)` = `frame.read::<*mut u8>(p).wrapping_offset(k)`.
   Copies of values that may be pointers or uninitialized go through `MaybeUninit<T>`,
   which keeps provenance and uninit bytes. Handlers never panic; errors abort.
+  Instructions with an inline form show only that form; their handler fallback has the
+  same semantics.
 
 ## Data movement
 
@@ -73,12 +75,6 @@ mov [fp + d], rax
 `mov.w128` is two halves, the high one through `rcx`: `mov rax, [fp + s]; mov rcx,
 [fp + s + 8]; mov [fp + d + 8], rcx; mov [fp + d], rax`.
 
-Handler `ryo_h_MovW8` … (`mov`) when not inlined:
-
-```rust
-frame.write(d, frame.read::<MaybeUninit<T>>(s));
-```
-
 #### `copy d, s, len`
 
 Copies `len` bytes between non-overlapping frame slots: the lowering's `mov` for sizes
@@ -96,11 +92,7 @@ ptr::copy(frame.addr(s), frame.addr(d), len as usize);
 Inline at `w8`–`w64`: `mov byte/word/dword/qword [fp + d], imm` (a sign-extended `imm32`
 at `w64`), or `mov rax, imm64; mov [fp + d], rax` for a 64-bit value that isn't one.
 
-`imm.w128` calls `ryo_h_ImmW128` (`imm`):
-
-```rust
-frame.write(d, imm as T);
-```
+`imm.w128` is a handler call.
 
 #### `const d, k, len`
 
@@ -146,11 +138,7 @@ mov rax, [rax + k]
 mov [fp + d], rax
 ```
 
-`load.w128` calls `ryo_h_LoadW128` (`load`):
-
-```rust
-frame.write(d, mem(p, k).cast::<MaybeUninit<T>>().read_unaligned());
-```
+`load.w128` is a handler call.
 
 #### `store.wN [p + k], s`
 
@@ -164,11 +152,7 @@ mov rcx, [fp + s]
 mov [rax + k], rcx
 ```
 
-`store.w128` calls `ryo_h_StoreW128` (`store`):
-
-```rust
-mem(p, k).cast::<MaybeUninit<T>>().write_unaligned(frame.read::<MaybeUninit<T>>(s));
-```
+`store.w128` is a handler call.
 
 #### `load.copy d, [p + k], len` and `store.copy [p + k], s, len`
 
@@ -219,12 +203,6 @@ lea rax, [fp + s]
 mov [fp + d], rax
 ```
 
-Handler `ryo_h_Addr` (`addr`) when not inlined:
-
-```rust
-frame.write(d, frame.addr(s));
-```
-
 #### `addr.sym d, sym` and `addr.sym.ind d, sym`
 
 `addr.sym` writes the value of the symbol slot `sym`: the address of a function (native or
@@ -269,11 +247,7 @@ lea rax, [rax + imm]
 mov [fp + d], rax
 ```
 
-Otherwise handler `ryo_h_PtrAdd` (`ptr_add`):
-
-```rust
-frame.write(d, frame.read::<*mut u8>(p).wrapping_offset(imm as isize));
-```
+Otherwise a handler call.
 
 #### `ptr.index d, p, i, stride`
 
@@ -289,13 +263,7 @@ add rax, rcx
 mov [fp + d], rax
 ```
 
-Otherwise handler `ryo_h_PtrIndex` (`ptr_index`):
-
-```rust
-let p = frame.read::<*mut u8>(p);
-let i = frame.read::<usize>(i);
-frame.write(d, p.wrapping_add(i.wrapping_mul(stride as usize)));
-```
+Otherwise a handler call.
 
 ## Integer arithmetic
 
@@ -322,12 +290,7 @@ add rax, [fp + b]          ; sub / and / or / xor
 mov [fp + d], rax
 ```
 
-Handlers `ryo_h_AddW8` … (`bin`, `binop`) otherwise, and always at `w128`:
-
-```rust
-let (a, b) = (frame.read::<T>(a), frame.read::<T>(b));
-frame.write(d, a.wrapping_add(b));  // wrapping_sub; a & b, a | b, a ^ b
-```
+`w128` is a handler call.
 
 #### `mul.wN d, a, b`
 
@@ -336,12 +299,6 @@ frame.write(d, a.wrapping_add(b));  // wrapping_sub; a & b, a | b, a ^ b
 Inline: `mov eax, [fp + a]; imul eax, [fp + b]` at `w32`/`w64`; at `w8`/`w16` both
 operands loaded (`movzx eax`, `movzx ecx`) and `imul eax, ecx` (the low bits are the
 same); then the store.
-
-Handler `ryo_h_MulW8` … (`bin`):
-
-```rust
-frame.write(d, frame.read::<T>(a).wrapping_mul(frame.read::<T>(b)));
-```
 
 #### `div.s`, `div.u`, `rem.s`, `rem.u` `.wN d, a, b`
 
@@ -405,14 +362,7 @@ The multiplies:
   exact product, and `seta` compares it to the width's range (`cmp eax, max` unsigned;
   signed `lea ecx, [rax + 2^(n-1)]; cmp ecx, 2^n - 1`).
 
-Handlers `ryo_h_AddOvfSW8` … (`ovf`) otherwise; `add.ovf` and `sub.ovf` exist at `w128`
-as handlers. `I` for `.s`, `T` for `.u`:
-
-```rust
-let (v, o_) = frame.read::<I>(a).overflowing_add(frame.read::<I>(b));  // _sub, _mul
-frame.write(d, v);
-frame.write(o, o_);  // a bool
-```
+`add.ovf` and `sub.ovf` also exist at `w128`, as handler calls.
 
 #### `eq`, `ne`, `lt.s`, `lt.u`, `le.s`, `le.u` `.wN d, a, b`
 
@@ -426,12 +376,6 @@ Inline at `w8`–`w64`:
 mov rax, [fp + a]
 cmp rax, [fp + b]
 setcc byte [fp + d]        ; e, ne, l, b, le, be
-```
-
-Handlers `ryo_h_EqW8` … (`cmp`), `I` for `.s`:
-
-```rust
-frame.write(d, frame.read::<T>(a) == frame.read::<T>(b));  // !=, <, <=
 ```
 
 #### `cmp3.s`, `cmp3.u` `.wN d, a, b`
@@ -480,9 +424,7 @@ unsigned) have `.imm` forms that take an immediate of the width in place of `b`
 (`add.imm.w32 d, a, imm`). `gt` and `ge` exist only as `.imm`, since the register forms
 swap operands instead.
 
-The handlers are `ryo_h_AddImmW8` … (`bin_imm`, `binop_imm`, `shift_imm`, `cmp_imm`), and
-all `w128` `.imm` forms call them. They are the register forms' bodies with `imm as T` in
-place of `frame.read::<T>(b)`.
+All `w128` `.imm` forms are handler calls.
 
 #### `add`/`sub`/`and`/`or`/`xor .imm`
 
@@ -490,40 +432,24 @@ Inline: `mov rax, [fp + a]; add rax, imm; mov [fp + d], rax`. `w8` computes in `
 and `w32` in `eax` with an `imm32` (the store drops the high bits), `w64` in `rax` with a
 sign-extended `imm32`, or `mov rcx, imm64; add rax, rcx`.
 
-```rust
-frame.write(d, frame.read::<T>(a).wrapping_add(imm as T));  // wrapping_sub; &, |, ^
-```
-
 #### `mul.imm`
 
 Inline: `imul eax, [fp + a], imm` at `w32`/`w64` (`imul rax, …`); at `w8`/`w16` `movzx
 eax, [fp + a]; imul eax, eax, imm`; a 64-bit immediate that doesn't fit goes through
 `rcx`. No `w128` form.
 
-```rust
-frame.write(d, frame.read::<T>(a).wrapping_mul(imm as T));
-```
-
 #### `shl`/`shr.s`/`shr.u .imm`
 
 Inline only for an amount below the width: `mov eax, [fp + a]; shl eax, n; mov [fp + d],
 al…eax` (32-bit shifts below `w64`; `shr.s` at `w8`/`w16` loads with `movsx`).
 
-Larger amounts call the handler, which masks them:
-
-```rust
-frame.write(d, frame.read::<T>(a).wrapping_shl(imm as T as u32));  // wrapping_shr, I for .s
-```
+Larger amounts are handler calls, which mask the amount to the width.
 
 #### Compares `.imm`
 
 Inline: `cmp byte/word/dword/qword [fp + a], imm; setcc byte [fp + d]` (`g`, `a`, `ge`,
 `ae` for `gt`/`ge`), or for a 64-bit immediate that doesn't fit `mov rax, [fp + a]; mov
 rcx, imm64; cmp rax, rcx; setcc`.
-
-```rust
-frame.write(d, frame.read::<T>(a) > imm as T);  // ==, !=, <, <=, >=; I for .s
-```
 
 ## Floating point
 
@@ -581,11 +507,7 @@ mov [fp + d], rax          ; at the wider width
 Sign extensions to 64 bits are `mov` at the narrow width, then `shl rax, 64 - A; sar rax,
 64 - A`; truncations load at the wider width and store the narrower.
 
-To or from `w128`: handlers `ryo_h_ZextW8W128` … (`cvt`, an `as` cast):
-
-```rust
-frame.write(d, frame.read::<u64>(s) as u128);  // zext.w64.w128; i64 as i128 for sext
-```
+To or from `w128` they are handler calls.
 
 #### `cvt.f2i.sat.{s,u}.fN.wM`, `cvt.i2f.{s,u}.wM.fN`, `cvt.f2f.fA.fB` `d, s`
 
@@ -755,12 +677,6 @@ test byte [fp + s], 0xff
 jnz t                      ; jz with !
 ```
 
-Handler `ryo_h_Br` (`br`), then `test al, al; jnz/jz t`, when not inlined:
-
-```rust
-return frame.read::<u8>(s) != 0;
-```
-
 #### `br.eq`, `br.lt.s`, `br.lt.u` `.wN a, b, t`
 
 (and `!`.) A compare fused with the `SwitchInt` on its result, when the compare's `bool`
@@ -783,12 +699,7 @@ jcc t                      ; e, l, b; inverted with !
 Inline at `w8`–`w64`: `cmp [fp + a], imm; jcc t` (a 64-bit immediate that doesn't fit goes
 through `rcx`, as in the compares).
 
-Handlers of both compare-branch families: `ryo_h_BrEqW8` … (`br_cmp`, `br_cmp_imm`),
-returning the `bool`, then `test al, al; jnz/jz t`; always at `w128`. `I` for `.s`:
-
-```rust
-return frame.read::<T>(a) == frame.read::<T>(b);  // <; imm as T for .imm, also >
-```
+At `w128` both compare-branch families are handler calls.
 
 #### `switch.dense.wN` and `switch.sparse.wN`
 
