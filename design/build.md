@@ -65,8 +65,9 @@ modeled on cg_clif's `build_system/`.
        build scripts with plain rustc, and every other crate with `rustc-ryo`. `ryo_rt` can't
        be ryo-built: every ryo-built crate depends on it, so it and what it depends on (only
        `core`: `ryo_rt` is `#![no_std]`, [vm.md](vm.md#runtime-crate-ryo_rt)) stay LLVM-built.
-       It is built without its `jit` feature (which would need std): there the JIT records'
-       trips are the no-op JIT ([vm.md](vm.md#jit-records-and-counters)).
+       It gets its `jit` feature and the same sealed JIT as `dist/`'s (`RYO_JIT_LIB_DIR` for
+       its build script, which the generated manifest names): the JIT has a std of its own,
+       the native one, so it never enters this sysroot's VM code ([vm.md](vm.md#packaging)).
      - The copy adds `ryo_rt` and `ryo_bytecode` to the library workspace (manifests pointing
        at `vm/`'s sources, on the workspace's `core`), and a `ryo_rt` dependency to `alloc` and
        `rustc-std-workspace-core`, which every other crate depends on. That orders `ryo_rt`
@@ -80,13 +81,25 @@ modeled on cg_clif's `build_system/`.
    - `--target T` (repeatable): also install std (from the toolchain's rust-std for `T`)
      and `ryo_rt` for `T`, for cross-compiling with `rustc-ryo --target T`
      ([platforms.md](platforms.md), cross-checking PE on Linux).
+   - **The JIT** (`build/src/jit.rs`, [vm.md](vm.md#packaging)), for each target that has
+     it (x86_64 Linux, and windows-msvc, where it is a stub for now): `cargo rustc --release
+     -p ryo_jit --crate-type staticlib` in its own cargo invocation and target directory
+     (`target/jit/`; with `ryo_rt`'s, `ryo_bytecode`'s `alloc` feature would be unified into
+     `ryo_rt`'s copy), with fat LTO, `-Copt-level=3 -Ccodegen-units=1 -Cpanic=unwind`, no
+     debug information and no `RUSTFLAGS`, against the toolchain's std. Then it is sealed
+     with the toolchain's `llvm-ar` and `llvm-objcopy` (`llvm-tools`; no linker, so it works
+     for a cross target too): the one LTO object is extracted, every definition but
+     `ryo_jit_start` made local (ELF) or renamed (COFF), debug information stripped, and the
+     object archived alone (ELF) or with the staticlib's import members (COFF) into
+     `target/jit/sealed/<target>/libryo_jit.a` (`ryo_jit.lib`). About 35 s from clean.
    - `ryo_rt` is always built with the stock LLVM backend, against that std, with
      `-Copt-level=3 -Ccodegen-units=1 -Cpanic=unwind -Cembed-bitcode=yes` regardless of the
      user's profile (bitcode, like std's, so `-Clto` builds can include it), and
-     installed next to std. There is no native library to link. Its cargo features are
-     `jit` ([vm.md](vm.md#jit): the JIT, which uses this native std and enables
-     `ryo_bytecode`'s `alloc`) and those listed in `RYO_RT_FEATURES` (comma-separated, such
-     as `fp-rbp`, [vm.md](vm.md#handlers)). The ryo sysroot's `ryo_rt` has no `jit`.
+     installed next to std. Its cargo features are `jit` where the target has the JIT (its
+     build script then bundles the sealed library from `RYO_JIT_LIB_DIR` into the rlib,
+     [vm.md](vm.md#jit)) and those listed in `RYO_RT_FEATURES` (comma-separated, such as
+     `fp-rbp`, [vm.md](vm.md#handlers)). `ryo_bytecode` is installed without its `alloc`
+     feature.
 3. **Wrappers** (like cg_clif's `scripts/rustc-clif.rs`, `cargo-clif.rs`): tiny Rust programs
    compiled with plain rustc. They locate `dist/` from `current_exe()`, set
    `RUSTC_BOOTSTRAP=1` and `RUSTUP_TOOLCHAIN` (baked in at build time), and add:
@@ -163,17 +176,25 @@ This gives a third backend, built from the same toolchain, to compare against.
 - `test` checks (`rt-core-only`) that every sysroot's `ryo_rt` rlib references no symbols
   outside `core`, `compiler_builtins`, `ryo_bytecode`, libc and the panic runtime's entry
   points, and that no call path from its code reaches core's panic machinery
-  ([vm.md](vm.md#runtime-crate-ryo_rt), "No re-entry into the VM from the runtime"). For the
-  native sysroot's, built with the JIT, std's symbols are allowed, but no call path from
-  `ryo_rt`'s code outside `vm::jit` and the trips may reach them or the panic machinery.
+  ([vm.md](vm.md#runtime-crate-ryo_rt), "No re-entry into the VM from the runtime"). It
+  skips the bundled JIT object, which `jit-sealed` checks instead: one global definition,
+  `ryo_jit_start`, no Rust symbol or allocator shim referenced, no unwinder defined
+  ([vm.md](vm.md#packaging)). `jit-private-std` runs `tests/vm_jit_private.rs` with every
+  function compiled at its first call: a VM global allocator that trips under its lock, and
+  with `-Cpanic=abort` and `RYO_JIT_TEST_PANIC` a panic in every compile
+  ([vm.md](vm.md#jit)).
 - With a ryo sysroot in `dist/`, `test` also builds the corpus against it (`--sysroot ryo`):
   variants `ryo-std`, `ryo-std-O3` (output only, like `ryo-O3`),
   `ryo-std-lto` (`-Clto=fat` on the last crate) and `ryo-std-abort` (`-Cpanic=abort`,
-  compared with plain rustc's `-Cpanic=abort` build; programs with a Rust dylib are skipped).
-  Without one, they are skipped.
+  compared with plain rustc's `-Cpanic=abort` build; programs with a Rust dylib are skipped),
+  `ryo-std-jit` (run with `RYO_JIT_THRESHOLD=0 RYO_JIT_SYNC=1`: every VM function, std's
+  included, runs its JIT code from its first call) and `ryo-std-jit-shuffle` (also
+  `RYO_JIT_SHUFFLE=1`). Without one, they are skipped.
 - `test --cross T`: builds and links, without running, the corpus for target `T` (after
   `build --target T`), against stand-in import libraries ([platforms.md](platforms.md),
-  cross-checking). Skipped if the sysroot has no `rust-lld`.
+  cross-checking). Skipped if the sysroot has no `rust-lld`. It also checks the target's
+  bundled JIT object (`jit-sealed`, the COFF form: no `.drectve` or `.CRT$X*` either), and
+  allows the imports of its private std.
 - `test --clif`: also builds the corpus with `rustc-clif` and diffs its output too. That
   helps tell ryo bugs from test-corpus problems.
 - `bench [--runs N]`: hyperfine comparisons of each program in `bench/` (fib, sieve,
@@ -198,8 +219,9 @@ This gives a third backend, built from the same toolchain, to compare against.
   against the decoder, the image writer and reader, every handler against a reference
   model, the handlers' codegen, and hand-assembled functions called as native functions
   ([vm.md](vm.md#handlers)), then `ryo_rt`'s again with `--features fp-rbp`, which takes
-  the frame-pointer path, and its JIT tests (`--features jit --test jit`, with and without
-  `fp-rbp`, [vm.md](vm.md#jit)).
+  the frame-pointer path, and `ryo_jit`'s tests (`-p ryo_jit`, with and without
+  `ryo_rt/fp-rbp`, [vm.md](vm.md#jit)), which link the JIT as an rlib; the first run
+  excludes `ryo_jit`, so `ryo_rt`'s other tests run without the JIT.
 - The corpus runs with the environment `y test` gets, so `RYO_JIT_THRESHOLD=0
   RYO_JIT_SYNC=1 ./y.sh test` runs every VM function's JIT code from its first call
   ([vm.md](vm.md#jit)); the `backtrace` check sets `RYO_JIT=off`, since JIT frames have
@@ -295,7 +317,11 @@ vm/             cargo workspace for everything that ends up in the output progra
   bytecode/     rlib       ryo_bytecode        format: opcodes, machine code, image layout;
                                                used by the backend (writer) and the VM (reader)
   rt/           rlib       ryo_rt              the runtime: handlers, registry,
-                                               island templates, `main` wrapper
+                                               island templates, `main` wrapper, the JIT's
+                                               trips; bundles the sealed JIT
+  jit/          staticlib  ryo_jit             the JIT thread (compiler, installer), sealed
+                                               with its own std by `y build`; an rlib in
+                                               `vm/`'s tests
 tests/                                         test programs, driven by `y test`
   crates/                                      workloads for `y bench crates`
   bench/                                       benchmark programs, driven by `y bench`

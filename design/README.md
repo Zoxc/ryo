@@ -49,4 +49,5 @@ format-specific mechanism has an ELF and a PE variant ([platforms.md](platforms.
 | **Island** | A native template instance that performs one operation for the VM, run by the `island` instruction. ([stubs.md](stubs.md#islands-vm--native)) |
 | **Image** | A crate's VM code, constants, symbol table and unwind information, emitted as one object file. ([vm.md](vm.md#image-format)) |
 | **Registry object** | An object generated at each final link that registers every crate's image with the VM. ([backend.md](backend.md#pipeline)) |
-| **`ryo_rt`** | The runtime crate: handlers, registry, templates. A sysroot rlib. ([vm.md](vm.md#runtime-crate-ryo_rt)) |
+| **`ryo_rt`** | The runtime crate: handlers, registry, templates, the JIT's trips. A sysroot rlib. ([vm.md](vm.md#runtime-crate-ryo_rt)) |
+| **`ryo_jit`** | The JIT thread, sealed by `y build` into one object with a std of its own, which `ryo_rt` bundles; its only symbol is `ryo_jit_start`. ([vm.md](vm.md#packaging)) |

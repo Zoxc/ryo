@@ -434,8 +434,8 @@ has one code shape, and code the JIT encodes for itself has none.
   nothing passes `al`, and no convention passes anything in `r11`. At a loop head nothing
   but `rsp` and `rbp` is live: the register cache is cleared at branch targets. So the stubs
   clobber only `r11`, `rax` and the flags, and the trip entry points may clobber those too.
-- **The no-op JIT** (`ryo_rt` without its `jit` feature, and on PE,
-  `vm/rt/src/vm/jit/noop.rs`): `ryo_jit_trip_entry` and `ryo_jit_trip_osr` are naked
+- **The no-op JIT** (`ryo_rt` without its `jit` feature, which `y build` enables on
+  x86_64 Linux and windows-msvc, `vm/rt/src/vm/jit/noop.rs`): `ryo_jit_trip_entry` and `ryo_jit_trip_osr` are naked
   assembly, `mov rax, i64::MAX; mov [r11], rax; ret`: the counter is set to `i64::MAX`, so
   the function never trips again in practice, and the stub continues the AOT code. A store
   racing other threads' `sub`s may be lost; the counter then runs out again later,
@@ -747,8 +747,8 @@ in `ryo_rt`, `ryo_h_<Opcode>`:
   Rust reference model, and `vm/rt/tests/vm.rs` runs hand-assembled functions, encoded and
   linked in memory, and called as native functions from the tests and from native code, in `vm::MODE` (without a frame pointer,
   or with `fp-rbp` with one). `cargo test` covers the default; run it with
-  `--features fp-rbp` too after changing frames or handlers. `vm/rt/tests/jit.rs` (with the
-  `jit` feature) runs such functions through the [JIT](#jit).
+  `--features fp-rbp` too after changing frames or handlers. `vm/jit/tests/jit.rs` runs
+  such functions through the [JIT](#jit).
 
 ## Image format
 
@@ -861,11 +861,10 @@ calls it by name, local otherwise (backtraces, profilers) ([backend.md](backend.
   anything `ryo_rt`'s rlib defines, through `ryo_bytecode`, reaches `core::panicking::*`, a
   `*_fail` helper or `panic_on_ord_violation`. The templates are generic, so they are
   compiled in the program's crates, not in that rlib, and may panic like any program code.
-  The exception is the [JIT](#jit), which exists only with the native std: in the native
-  sysroot's rlib, std may be used and core's panic path reached only through `vm::jit` and
-  the trips. There the check takes as roots `ryo_rt`'s own functions but the JIT's, doesn't
-  follow calls into the JIT, and also fails on reaching any symbol of std (or its allocator
-  shim).
+  The [JIT](#jit)'s trips and queue are part of the runtime and checked like it. Its
+  thread, which uses std, is the sealed object the rlib bundles, with a std of its own
+  ([Packaging](#packaging)): the check skips that member (`jit-sealed` checks it), and the
+  runtime reaches it only through `ryo_jit_start`.
 - **Registry**: `ryo_vm_register(images, n)` is called by the registry object's constructor,
   and also when a shared object loads at run time (`dlopen`/`LoadLibrary`). It appends the
   images to a global list under `ryo_rt`'s lock, applies the PE fixups, and publishes the
@@ -884,15 +883,23 @@ calls it by name, local otherwise (backtraces, profilers) ([backend.md](backend.
 
 ## JIT
 
-With its `jit` feature (`y build` enables it for the native sysroot only,
-[build.md](build.md#build)), `ryo_rt` recompiles hot functions on a background thread and
-switches their entry and loop heads over to the new code (`vm/rt/src/vm/jit/`). It is the only part of the
-runtime that uses std, the native one, so it never enters VM code ("No re-entry" above).
+With its `jit` feature (`y build` enables it on x86_64 Linux and windows-msvc, in both
+sysroots, [build.md](build.md#build)), `ryo_rt` recompiles hot functions on a background
+thread and switches their entry and loop heads over to the new code. The work is split in
+two ([Packaging](#packaging)):
+- the **runtime side**, `ryo_rt`'s `vm::jit` (`vm/rt/src/vm/jit/mod.rs`): the trips, the
+  queue, the settings and the counters, `core` only like the rest of the runtime ("No
+  re-entry" above);
+- the **JIT thread**, the `ryo_jit` crate (`vm/jit/`): the compiler and installer, on a std
+  of its own. `ryo_rt` bundles it as one sealed object and starts it through its one
+  symbol, `ryo_jit_start`.
+
 The JIT code is the function decoded and encoded again, without counters and, for now,
 without optimizations. Its frame may differ from the AOT code's (it does with
 `RYO_JIT_SHUFFLE`), and nothing relies on them matching: a call running the AOT code moves
 over at its next loop head through an OSR entry that converts the frame
-([OSR](#osr)). On PE the trips stay the no-op JIT's.
+([OSR](#osr)). On PE, `ryo_jit_start` fails for now (the JIT isn't ported), so the trips act
+as the no-op JIT after the first.
 
 - **Trips** (`ryo_jit_trip_entry`, `ryo_jit_trip_osr`, [JIT records and
   counters](#jit-records-and-counters)), lock-free:
@@ -909,9 +916,12 @@ over at its next loop head through an OSR entry that converts the frame
     192-byte area, which keeps `rsp` 16-aligned for the Rust call (`rsp` is 16-aligned at the
     trip), and restores them; it returns to the stub, or jumps to the JIT entry, with the
     stack as it found it. `ryo_jit_trip_osr` saves only `eax`, the head's index, for the
-    dispatcher: nothing else is live at a head. The
-    Rust parts are `extern "C"` and can't panic (unwinding out of them would abort: the
-    stubs aren't call sites). Counters are written with relaxed atomics, racing the AOT
+    dispatcher: nothing else is live at a head. On PE they also save `xmm8`–`xmm15` (entry)
+    and `xmm6`–`xmm15` (loop head), callee-saved on Win64 but not for the `sysv64` Rust code
+    they call (`rdi` and `rsi` are saved at an entry, and by the prologue at a head). The
+    Rust parts can't panic: nothing may unwind out of them, since the stubs aren't call
+    sites. They are `sysv64-unwind`/`C-unwind` only so that the compiler adds no
+    abort-on-unwind guard, which would reach core's panic path ("No re-entry"). Counters are written with relaxed atomics, racing the AOT
     code's `sub`s; a reset that races the publication re-checks `state` and stores
     `REDIRECT` again.
 - **`REDIRECT`** = `i64::MIN / 2`: a compiled function's counter, negative enough that every
@@ -932,13 +942,17 @@ over at its next loop head through an OSR entry that converts the frame
   there is no ABA problem. The pusher bumps a wake word and `futex_wake`s it only if the JIT
   thread announced it sleeps; the thread re-checks the queue after announcing, then
   `futex_wait`s on the word's value it read, so no wake is lost.
-- **The thread** starts with the first push (a flag swapped once, `std::thread::Builder`),
-  not at registration, which runs in constructors and under the loader lock. If it can't
-  start, every queued record fails (its waiters woken) and the trips act as the no-op JIT. It is detached; exiting
-  mid-compile is fine.
-- **Compiling** (`jit/install.rs`): `image::ImageResolver::decode` from the image alone (the
-  handler table is every `ryo_h_*` handler's address with its opcode, from `vm::handler`,
-  sorted, built once; the probe `ryo_probe_stack`), then `asm::encode_reduced` in the image's
+- **The thread** starts with the first push (a flag swapped once), not at registration,
+  which runs in constructors and under the loader lock: the push builds the `RtApi` and
+  calls `ryo_jit_start`, which spawns the thread with the JIT's own std. If it can't start
+  (it returns false, as on PE for now, or on an `RtApi` version mismatch), every queued
+  record fails (its waiters woken) and the trips act as the no-op JIT. It takes the queue
+  with `RtApi::next_batch` (which sleeps on the futex while it is empty), and reports each
+  record with `RtApi::done` (counted, or `Failed`; the waiters woken). It is detached;
+  exiting mid-compile is fine.
+- **Compiling** (`vm/jit/src/install.rs`): `image::ImageResolver::decode` from the image
+  alone (the handler table is every `ryo_h_*` handler's address with its opcode, from
+  `RtApi::handlers`, sorted, built once; the probe `ryo_probe_stack`, `RtApi::probe`), then `asm::encode_reduced` in the image's
   mode without counters (in another frame layout with `RYO_JIT_SHUFFLE`, [OSR](#osr)), and
   the OSR entries. A failure (decode, encode, reach, memory) or a panic (caught per
   function) marks the record `Failed`, counter `i64::MAX`, and the thread goes on.
@@ -967,15 +981,18 @@ over at its next loop head through an OSR entry that converts the frame
 - **Unwinding**: per function an `.eh_frame` (`image::eh_cie` and `image::eh_fde`, shared with
   the image writer: the same CIE and rules), the zero terminator, and its LSDA
   (`asm::lsda::write` of the JIT code's call sites), all PC-relative, registered with
-  libgcc's `__register_frame`. The personality is the image's `rust_eh_personality` slot,
-  the symbol slot holding its address. So panics unwind through JIT frames and their landing
+  libgcc's `__register_frame`, which is the program's unwinder (the sealed object only
+  references it). The personality is the image's `rust_eh_personality` slot, the symbol
+  slot holding the program's personality's address, which the runtime passes in
+  (`RtApi::personality`): in the JIT that name is its own std's. So panics unwind through JIT frames and their landing
   pads run. The entry prefix before the FDE's range runs before the frame exists and calls
   nothing; the OSR code has an FDE of its own ([OSR](#osr)).
 - **Publishing**: `jit_code` and `jit_len`, then `entry` and `osr` (release), then
   `state = Done`, then the counter `REDIRECT`, then the function's call slots. Every later
   call's and loop iteration's check then takes its stub straight into the JIT code, without
   the runtime.
-- **Settings**, read once from the environment (`vm::configure_jit` sets them in tests):
+- **Settings**, read once by the runtime side, with the C runtime's `getenv`, and passed on
+  in `RtApi::flags` (`vm::configure_jit` sets them in tests):
   `RYO_JIT=off` (the no-op JIT; registration sets every counter to `i64::MAX`),
   `RYO_JIT_THRESHOLD=n` (registration sets every counter to `n`, and trips reset to it; 0:
   trip at the first call), `RYO_JIT_SYNC=1` (a trip that finds its record queued waits on a
@@ -984,18 +1001,22 @@ over at its next loop head through an OSR entry that converts the frame
   function in `/tmp/perf-<pid>.map`, named `ryo-jit:f<index>@<AOT address>`),
   `RYO_JIT_LOG=1` (a line on stderr per compiled or failed function, and per function whose
   frame couldn't be shuffled) and `RYO_JIT_SHUFFLE=1` (JIT frames in another layout,
-  [OSR](#osr); `vm::jit_shuffle_image` asks for it per image in tests).
+  [OSR](#osr); `vm::jit_shuffle_image` asks for it per image in tests, `RtApi::shuffled`),
+  and for tests `RYO_JIT_TEST_PANIC=1` (every compile panics). The JIT's panic hook keeps
+  its panics, which only fail a function, off stderr but with `RYO_JIT_LOG`.
 - **Limits**: JIT frames have no symbols (backtraces show them unnamed; `y test`'s
   `backtrace` check runs with `RYO_JIT=off`). A child of `fork` has no JIT thread, so with
-  `RYO_JIT_SYNC` its trips wait forever. The JIT thread allocates through the program's
-  global allocator, so a `#[global_allocator]` compiled to VM code runs on it (its trips
-  never wait), and with `RYO_JIT_SYNC` a thread that trips while holding that allocator's
-  lock deadlocks. Its log lines go straight to fd 2, not through std's `Stderr` lock, which a
-  waiting thread may hold. With `-Cpanic=abort` a panic in the compiler aborts instead of
-  failing the function. Tail calls of functions compiled later stay through their AOT
-  entries.
-- **Testing**: `vm/rt/tests/jit.rs` (with the feature, `y test` runs it with and without
-  `fp-rbp`): with threshold 0 and `RYO_JIT_SYNC`'s waiting, functions give the AOT code's
+  `RYO_JIT_SYNC` its trips wait forever. Tail calls of functions compiled later stay
+  through their AOT entries. The JIT allocates with its own std's allocator (`malloc`),
+  never the program's `#[global_allocator]`, and catches its panics even in a
+  `-Cpanic=abort` program, but a program that interposes `malloc` itself with Rust code
+  (which may call VM code) would still run that code on the JIT thread, and with
+  `RYO_JIT_SYNC` could deadlock. Each `ryo_rt` copy in a process (cdylibs, a staticlib per C
+  link) has its own JIT, thread, code regions and private std. The trips on PE have no SEH
+  unwind information: nothing unwinds through them, but a debugger's stack walk stops there.
+- **Testing**: `vm/jit/tests/jit.rs` (`y test` runs it with and without `ryo_rt`'s
+  `fp-rbp`; it links `ryo_jit` as an rlib, on the tests' std, so it tests the compiler and
+  the trips, not the sealing): with threshold 0 and `RYO_JIT_SYNC`'s waiting, functions give the AOT code's
   results with arguments of every kind, in JIT code (checked by return addresses within
   `jit_code`), a recursion switches over midway, panics unwind through JIT frames with
   their landing pads, JIT code calls JIT and AOT functions, and sixteen threads trip at
@@ -1008,7 +1029,58 @@ over at its next loop head through an OSR entry that converts the frame
   `RYO_JIT_THRESHOLD=0 RYO_JIT_SYNC=1 y test` runs the corpus with every function's JIT code
   from its first call, and `RYO_JIT_THRESHOLD=16` instead enters it by OSR at the first
   loop head pass of each function's first call (whose entry check leaves the counter at 0),
-  both also with `RYO_JIT_SHUFFLE=1`.
+  both also with `RYO_JIT_SHUFFLE=1`. With a ryo sysroot, `y test` runs the corpus that way
+  (`ryo-std-jit`, `ryo-std-jit-shuffle`), std's own VM functions included. `jit-sealed`
+  checks the bundled object ([Packaging](#packaging)), and `jit-private-std` runs
+  `tests/vm_jit_private.rs`, whose VM global allocator trips while it holds its lock (with
+  the program's allocator, the JIT would deadlock there), and the same program built with
+  `-Cpanic=abort` and run with `RYO_JIT_TEST_PANIC`, which must run as without the JIT.
+
+### Packaging
+
+The JIT thread is the `ryo_jit` crate, which `y build` turns into one object that `ryo_rt`'s
+rlib bundles (`build/src/jit.rs`, [build.md](build.md#build)):
+
+- **Interface** (`ryo_bytecode::jit_abi`, `core` only, so neither crate depends on the
+  other): `extern "C" fn ryo_jit_start(rt: &'static RtApi) -> bool`, the JIT's only symbol,
+  and `RtApi`, which the runtime builds once: `JIT_ABI_VERSION`, `FORMAT_VERSION` and its
+  size (checked: on a mismatch the start fails), the flags, the handlers' addresses by
+  opcode, `ryo_probe_stack`'s, the program's `rust_eh_personality`'s, and the callbacks
+  `next_batch`, `done` and `shuffled`. `REDIRECT` and `JIT_ENTRY_PREFIX` are there too.
+  Records, images and code are shared memory in `ryo_bytecode`'s layout; both sides build
+  their reader from the same source in one `y build`. Publishing (the release stores to the
+  record and the call slots) is the JIT's.
+- **A private std**: `ryo_jit` is built as a staticlib with fat LTO, against the native
+  std, whatever the sysroot. That leaves one object with the JIT and std; its definitions
+  but `ryo_jit_start` are then made local (ELF) or renamed to `__ryo_jit$<name>` (COFF,
+  where they can't be made local; LLVM's content-named constants `__xmm@…` keep their
+  names and merge by content), and its debug information is stripped. `compiler_builtins`
+  is left out: its functions bind to the program's copy, which every Rust link has, native
+  even under `--sysroot ryo`. Its undefined symbols are the C library's, the OS's and the
+  unwinder's, so it reaches nothing of the program's std, and the program nothing of its.
+  Unsealed, a second std in the program would clash (duplicate `rust_eh_personality`,
+  `std::panicking::EMPTY_PANIC`) or, worse, bind to the program's (VM-compiled under
+  `--sysroot ryo`). `jit-sealed` (`y test`, and `y test --cross` for PE) checks the
+  bundled object: only `ryo_jit_start` (and the renamed symbols and constants) defined
+  globally, no Rust symbol or allocator shim referenced, no unwinder defined, and on COFF
+  no `.drectve` or `.CRT$X*` section.
+- **Bundling**: `ryo_rt`'s build script links it (`-l static=ryo_jit` from
+  `RYO_JIT_LIB_DIR`), so rustc copies it into the rlib, and it goes wherever `ryo_rt` is
+  linked statically: the binary, a Rust dylib (where rustc's version script keeps
+  `ryo_jit_start` local), a cdylib, a staticlib (as a member). It is a native member, never
+  LTO input, so users' `-Clto` doesn't touch it. The backend and the image format don't
+  know about it. Without `RYO_JIT_LIB_DIR` (`vm/`'s own tests) the `ryo_jit` rlib provides
+  `ryo_jit_start` instead.
+- **Cost**: the sealed object is about 1.6 MB, and a binary's text is about 0.24 MB larger
+  than with the JIT on the program's std (a private std's threads, panics, formatting and
+  collections; on PE, with the stub, the file grows by about 50 KB). A proc macro carries
+  it too (0.25 MB): the linker doesn't drop it there.
+- **Limits**: two ryo staticlibs in one C link both define `ryo_jit_start`, a
+  duplicate-symbol error, like `ryo_vm_register` already is (one ryo staticlib per final C
+  link, [backend.md](backend.md#pipeline)). `#![no_std]` final artifacts don't link with
+  the native sysroot: the sealed object needs libc, libpthread and the unwinder, which std
+  brings.
+
 
 ### OSR
 
@@ -1077,10 +1149,10 @@ templates and the `main` wrapper. It is a normal Rust dependency of every ryo-bu
 - **std**: `ryo_rt` is `#![no_std]`: it uses only `core` (its tests use std). With
   `--sysroot ryo`, alloc and std are ryo-built and depend on `ryo_rt`
   ([build.md](build.md#build)), so it can't depend on them, and it must not call into them
-  anyway (see "No re-entry" above). Only the [JIT](#jit) (the `jit` feature, on for the
-  native sysroot) brings in std, the native one, and only its module uses it. So with the
-  native sysroot every ryo-built crate depends on std through `ryo_rt`: a `#![no_std]`
-  final artifact with its own `#[panic_handler]` doesn't link. Unwinding goes through the platform unwinder
+  anyway (see "No re-entry" above). The [JIT](#jit) thread has a std of its own, sealed in
+  an object the rlib bundles ([Packaging](#packaging)), so `ryo_rt` is `core`-only in both
+  sysroots; that object still needs libc and the unwinder, so a `#![no_std]` final artifact
+  doesn't link where `ryo_rt` has the JIT. Unwinding goes through the platform unwinder
   (`_Unwind_Resume`) and the program's personality and panic runtime. `y build` builds
   `ryo_rt` against each sysroot's `core`.
 - **Speed**:
@@ -1094,8 +1166,8 @@ templates and the `main` wrapper. It is a normal Rust dependency of every ryo-bu
 ### Modules
 
 - **`vm`**: the handlers (`vm::h`, generated, plus the assembly ones), the registry and the
-  JIT's trip entry points (`vm::trip_entry`, `vm::trip_osr`). Everything uses `core` only,
-  but the JIT (`vm::jit`, [JIT](#jit)).
+  JIT's trip entry points (`vm::trip_entry`, `vm::trip_osr`) and the rest of its runtime
+  side (`vm::jit`, [JIT](#jit)). Everything uses `core` only.
   - `vm::register`: `#[no_mangle] extern "C-unwind" fn ryo_vm_register(images, n)`.
   - `vm::MODE` / `vm::FP_ARG` (diagnostic item `ryo_rt_fp_arg`): whether the handlers take
     `fp` in `rdi` (unless the `fp-rbp` cargo feature is on). The backend evaluates `FP_ARG`
@@ -1107,10 +1179,12 @@ templates and the `main` wrapper. It is a normal Rust dependency of every ryo-bu
 
 - `ryo_rt` is always compiled by cg_llvm, and the backend treats every `ryo_rt` instance as
   native, including stub instances and their neighbors.
-- It depends on `core`/`std` and `ryo_bytecode` only, with no third-party crates.
-  `ryo_bytecode` is `#![no_std]`. Its reader and `asm::layout` need only `core`, and the
-  encoder, decoder and image writer sit behind its `alloc` feature, which only `ryo_rt`'s
-  `jit` feature enables. `y build` installs `libryo_bytecode.rlib` next to `libryo_rt.rlib`.
+- It depends on `core` and `ryo_bytecode` only, with no third-party crates, and bundles the
+  sealed JIT. `ryo_bytecode` is `#![no_std]`. Its reader and `asm::layout` need only
+  `core`, and the encoder, decoder and image writer sit behind its `alloc` feature, which
+  `ryo_rt` doesn't enable (`ryo_jit`, built separately, does). `y build` installs
+  `libryo_bytecode.rlib` next to `libryo_rt.rlib`. `ryo_jit` may take dependencies of its
+  own: they are sealed with it, and invisible to programs.
 - It carries a `RYO_RT_ABI` const (diagnostic item `ryo_rt_abi`), which the backend
   evaluates and checks, erroring on a mismatch.
 - **Panic strategy**: `ryo_rt` is built with `panic=unwind`, like std. It is valid in
