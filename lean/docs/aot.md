@@ -175,7 +175,16 @@ to Aeneas-extract it ([jit.md](jit.md) §E.9).
   anything else rejects), section flags.
 - **Image**: the read-only section's header, function table, scope/call-site/dropped tables,
   code constants, symbol slots and flags, constant pool; the writable section's JIT records.
-  A Lean port of `Image::parse`/`validate`'s bounds and alignment checks.
+  A Lean port of `Image::parse`/`validate`'s bounds and alignment checks. Per function, the
+  decoder's inputs (`Ryo/Obj/Reloc.lean`): the code, its relocations as `Ref`s (the inverse of
+  the writer's mapping), the code constants, call sites, scopes, dropped stores and the mode.
+  Calls between the image's functions carry no relocation (the writer resolves them), so the
+  decoder reads an unrelocated `rel32` field that leaves the function, or targets its first
+  byte, as `Ref.func` of the function starting there, as `decode_linked` does; and `Ref.ro`
+  offsets are the image's code-constant offsets, since the image doesn't record each
+  function's part. `scripts/lean-decode-diff.py` diffs the readers against
+  `scripts/lean-decode-ref` (Rust: `object`, `Image`, `ImageResolver::decode` on the object
+  linked in memory) and `readelf`.
 - **Unwind**: `.eh_frame` (CIE, FDEs, the CFA instruction subset ryo emits) and
   `.gcc_except_table` (a port of `asm::lsda::parse`).
 

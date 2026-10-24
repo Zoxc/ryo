@@ -1,5 +1,5 @@
 /-
-`ryo-lean`: run MIR programs with the L0 spec's interpreter.
+`ryo-lean`: run MIR programs with the L0 spec's interpreter; read image objects.
 
   ryo-lean run <program.json> [--fuel N] [--stdout]
                                            interpret a dumped program (`Program` JSON, or a
@@ -11,6 +11,12 @@
                                            returns, `c` for `exit(c)`, 134 for `abort`, 3 for
                                            UB, 4 for anything else (ill-formed, out of fuel, ..)
   ryo-lean example <name> [out.json]       write one of the built-in example programs
+  ryo-lean obj <file.o>                    print the image of an image object: header, symbol
+                                           slots, functions and their code's relocations
+                                           (`Ryo.Obj.ImageObject.summary`); exit status 1 if
+                                           it can't be read
+  ryo-lean elf <file.o>                    print an ELF object's sections, symbols and
+                                           relocations (`Ryo.Obj.Elf.dump`)
 -/
 import Ryo
 import Ryo.Examples
@@ -64,8 +70,30 @@ def runFile (path : String) (fuel : Nat) (stdout : Bool := false) : IO UInt32 :=
       | .error (.exit c) => UInt32.ofNat c.toNat
       | _ => 1)
 
+def objFile (path : String) : IO UInt32 := do
+  let bytes ← IO.FS.readBinFile path
+  match Ryo.Obj.readImageObject bytes with
+  | .ok o =>
+    for l in o.summary do IO.println l
+    pure 0
+  | .error e =>
+    IO.println s!"error: {e}"
+    pure 1
+
+def elfFile (path : String) : IO UInt32 := do
+  let bytes ← IO.FS.readBinFile path
+  match Ryo.Obj.readElf bytes with
+  | .ok e =>
+    for l in e.dump do IO.println l
+    pure 0
+  | .error e =>
+    IO.println s!"error: {e}"
+    pure 1
+
 def main (args : List String) : IO UInt32 := do
   match args with
+  | ["obj", path] => objFile path
+  | ["elf", path] => elfFile path
   | ["run", path] => runFile path 10000000
   | ["run", path, "--fuel", n] => runFile path n.toNat!
   | ["run", path, "--stdout"] => runFile path 10000000 true
@@ -83,5 +111,5 @@ def main (args : List String) : IO UInt32 := do
       IO.eprintln s!"unknown example `{name}`; known: {Ryo.Examples.names}"
       pure 2
   | _ =>
-    IO.eprintln "usage: ryo-lean run <program.json> [--fuel N] [--stdout]\n       ryo-lean example <name> [out.json]"
+    IO.eprintln "usage: ryo-lean run <program.json> [--fuel N] [--stdout]\n       ryo-lean example <name> [out.json]\n       ryo-lean obj <file.o>\n       ryo-lean elf <file.o>"
     pure 2

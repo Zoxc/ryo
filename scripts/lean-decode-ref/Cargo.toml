@@ -1,0 +1,13 @@
+[package]
+name = "lean-decode-ref"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Rust reference output for the Lean image reader and decoder (scripts/lean-decode-diff.py)"
+
+[dependencies]
+ryo_bytecode = { path = "../../vm/bytecode" }
+object = { version = "0.38.1", default-features = false, features = ["read_core", "elf", "std"] }
+
+# Not a member of any workspace.
+[workspace]

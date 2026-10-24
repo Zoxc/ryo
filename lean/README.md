@@ -29,6 +29,12 @@ lake exe ryo-lean run fact.json    # interpret a JSON program (`Program` or `{pr
 lake exe ryo-lean run p.json --stdout  # as the program: fd 1/2 bytes to stdout/stderr, its exit status
 ../scripts/lean-diff.py [--opt]    # differential runs: tests/lean/*.rs under rustc, ryo and
                                    # ryo-lean on the backend's RYO_DUMP_LEAN dump (./y.sh build first)
+lake exe ryo-lean obj x.ryo_image.rcgu.o   # an image object's image: header, symbol slots,
+                                   # functions and their code's relocations
+lake exe ryo-lean elf x.o          # an ELF object's sections, symbols and relocations
+../scripts/lean-decode-diff.py [--opt] [--readelf] [--decode]
+                                   # the object readers against Rust (scripts/lean-decode-ref)
+                                   # and readelf on the corpus's image objects
 ```
 
 `.lake/` is ignored (`.gitignore`).
@@ -44,9 +50,10 @@ tables fail it. Don't edit them by hand.
 
 ```
 lakefile.toml, lean-toolchain      Lean 4.35.0, no dependencies
-Main.lean                          exe `ryo-lean`: `run <program.json>`, `example <name>`
-Ryo.lean                           imports the spec, the generated tables, the x86 model and
-                                   the examples
+Main.lean                          exe `ryo-lean`: `run <program.json>`, `example <name>`,
+                                   `obj <file.o>`, `elf <file.o>`
+Ryo.lean                           imports the spec, the generated tables, the x86 model,
+                                   the object readers and the examples
 Ryo/Spec.lean                      imports every spec module
 Ryo/Spec/Prelude/                  Basic (Size, Align, IntType, FloatTy), Target (x86-64),
                                    Outcome, Nondet (Choice, MonadChoice)
@@ -67,6 +74,12 @@ Ryo/Vm/Generated/                  generated (`./y.sh lean gen`): Types, Full an
                                    (opcode lists, `Opcode.<name>` constants, full <-> reduced),
                                    Asm (`asm::layout`, `has_handler`, `has_inline`), Handlers
                                    (handlers.rs: kind, parameters, return type)
+Ryo/Obj/                           object readers (docs/aot.md §C3): Elf (ELF64 relocatable
+                                   objects: sections, symbols, RELA), Reloc (the decoder's
+                                   inputs: Mode, Ref, Reloc, CallSite, Scope, DroppedStore,
+                                   FuncInputs and its field classification), Image (locating the
+                                   image, `Image::parse`/`validate`, per-function inputs, the
+                                   `ryo-lean obj` summary)
 Ryo/Examples.lean                  example programs for `ryo-lean example`
 Ryo/X86/                           L2 (docs/x86.md Part B): Item (asm::x86's items), Encode,
                                    Decode (canonical, unlinked or linked), State, Exec (per
