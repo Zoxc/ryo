@@ -90,6 +90,21 @@ inductive Access
   | opaque
 deriving DecidableEq, Repr, Inhabited
 
+/-- What the dead-store check may assume of a function's calls and islands beyond what the
+decoded code says: facts checked elsewhere (against the callees' `FuncEntry`s, or the C1'
+certificate against the dump), each keyed by R instruction index. The default assumes nothing. -/
+structure Facts where
+  /-- A call's stack-argument area: the callee reads at most these many bytes from `fp - F` (the
+  outgoing area) besides its argument list. -/
+  stackArgs : Nat → Option Nat := fun _ => none
+  /-- A call with an sret destination (the argument list's first-integer-register entry, by
+  address): the return value's size. -/
+  sretSize : Nat → Option Nat := fun _ => none
+  /-- An island's template (its diagnostic item name), from its symbol. -/
+  islandTemplate : Nat → Option String := fun _ => none
+
+instance : Inhabited Facts := ⟨{}⟩
+
 /-- An instruction's frame operands (offset, access), whether it reads every byte, and whether
 it may access memory through a pointer. -/
 structure Effects where
@@ -366,7 +381,7 @@ structure Flow where
   /-- The bytes `End` scopes before it make `Uninit`. -/
   ends : Array (Array Bool)
 
-def Flow.of (d : Decoded) (mode : Mode) : Except String Flow := do
+def Flow.of (d : Decoded) (mode : Mode) (facts : Facts := {}) : Except String Flow := do
   let n := d.insns.size
   let f := d.frameSize
   let all := Array.replicate f true
@@ -447,10 +462,10 @@ def droppedStore (d : Decoded) (k : Nat) : Option (BitVec 32 × Nat) :=
   | _ => none
 
 /-- The dropped stores `droppedNotDead` can't show dead: their instruction indices. -/
-def droppedNotDead (d : Decoded) (mode : Mode) : Except String (List Nat) := do
+def droppedNotDead (d : Decoded) (mode : Mode) (facts : Facts := {}) : Except String (List Nat) := do
   if d.dropped.isEmpty then return []
   let f := d.frameSize
-  let fl ← Flow.of d mode
+  let fl ← Flow.of d mode facts
   let liveIn ← fl.liveIn f
   let mut bad : List Nat := []
   for k in d.dropped do
@@ -469,9 +484,10 @@ deriving DecidableEq, Repr
 
 /-- For a diagnosis: an instruction that reads a byte of the store `k` dropped, on a path from
 `k` that doesn't write it first, and how it reads it. -/
-def firstReader (d : Decoded) (mode : Mode) (k : Nat) : Except String (Option (Nat × ReadBy)) := do
+def firstReader (d : Decoded) (mode : Mode) (k : Nat) (facts : Facts := {}) :
+    Except String (Option (Nat × ReadBy)) := do
   let f := d.frameSize
-  let fl ← Flow.of d mode
+  let fl ← Flow.of d mode facts
   let some (s, w) := droppedStore d k | return none
   let start := setRange f (Array.replicate f false) s w
   let n := d.insns.size
@@ -508,8 +524,8 @@ def decodeChecked (code : ByteArray) (fields : Fields) (rodata : ByteArray)
 
 where
   /-- `d` if every dropped store is shown dead. -/
-  checkDropped (d : Decoded) (mode : Mode) : Except String Decoded := do
-    match ← droppedNotDead d mode with
+  checkDropped (d : Decoded) (mode : Mode) (facts : Facts := {}) : Except String Decoded := do
+    match ← droppedNotDead d mode facts with
     | [] => pure d
     | k :: rest =>
       throw s!"dropped store at {d.wordPos[k]!} not shown dead ({rest.length + 1} of {d.dropped.size})"
