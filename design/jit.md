@@ -297,7 +297,16 @@ including landing pad edges. `jit::build` is Braun et al.'s construction (CC 201
 the promoted variables: blocks are filled in layout order and sealed once their
 predecessors are; parameters get an operand row per predecessor while being built, trivial
 ones become aliases, and the edges' argument lists are written once at the end. Copies
-(`mov`), constants (`imm`) and trivial parameters disappear on the way. Then the folds
+(`mov`), constants (`imm`) and trivial parameters disappear on the way. Then `jit::lvn`, local
+value numbering, one forward pass per block in reverse postorder: pure operations on
+constants fold, with algebraic identities (`x + 0`, `x * 1`, `x - x`, `p + i * s` with a
+constant `i`, `PtrAdd` chains); a pure operation repeated in its block is replaced by the
+first; and a load of alloca bytes, or of a pointer value plus an offset, that an earlier load
+or store of the block left known is replaced by that value. Only what may write them forgets
+them: a store through a pointer the other pointers' bytes and the escaped (or pinned)
+allocas, a store to an alloca its own bytes, a handler the allocas it names and, if it
+touches memory, what a pointer store does, a call also the outgoing area, an island
+everything. Then the folds
 instruction selection relies on: a compare used only by the following branch becomes a
 `brcmp`, an overflow op (`add`/`sub`/`mul.ovf`) whose flag only the branch ending its block
 reads becomes a `br ovf` on the flags it leaves, and loads and stores through an `AllocaAddr` or a `PtrAdd` take its alloca or
@@ -509,7 +518,7 @@ for shuffled frames per image, `RtApi::shuffled`):
 | `RYO_JIT_TEST_PANIC=1` | tests: every compile panics, which must fail the function and nothing else |
 | `RYO_JIT_OPT=…` | `ssa` (the default), `ssa-naive` or `reencode`: how functions are compiled ([The SSA tier](#the-ssa-tier)); with `RYO_JIT_SHUFFLE` the SSA tier lays allocas out in reverse with gaps |
 | `RYO_JIT_CHECK=1` | the SSA tier's checkers: a failure is printed on stderr and the function falls back |
-| `RYO_JIT_DUMP=dir` | the SSA tier writes each function's reduced code, IR before and after the folds, locations and code (or, for one it doesn't handle, the reason and the reduced code) to `dir/f<index>-<image header address>.txt`, and every installed function's code with its relocations by name to `dir/f<index>-<image header address>.code` (for `y bench codegen`, [build.md](build.md#test-and-bench)); read by the JIT thread itself, not passed in `RtApi` |
+| `RYO_JIT_DUMP=dir` | the SSA tier writes each function's reduced code, IR before and after value numbering and the folds, locations and code (or, for one it doesn't handle, the reason and the reduced code) to `dir/f<index>-<image header address>.txt`, and every installed function's code with its relocations by name to `dir/f<index>-<image header address>.code` (for `y bench codegen`, [build.md](build.md#test-and-bench)); read by the JIT thread itself, not passed in `RtApi` |
 | `RYO_JIT_SSA_LIMIT=n` | debugging: only the first `n` functions the JIT compiles go to the SSA tier, the rest are re-encoded (bisects a miscompile; read by the JIT thread) |
 
 ## Limits
@@ -576,8 +585,8 @@ for shuffled frames per image, `RtApi::shuffled`):
 
 ## Future work
 
-The SSA tier doesn't optimize beyond promotion, copy and constant propagation, and its
-folds: passes, inlining, more native handler operations, interval splitting and an OSR version
+The SSA tier doesn't optimize beyond promotion, copy and constant propagation, local value
+numbering and its folds: passes, inlining, more native handler operations, interval splitting and an OSR version
 that pins nothing are the next steps, behind the same records, trips, OSR entries and
 packaging; [verification.md](verification.md#the-jit) describes how its output would be
 validated.

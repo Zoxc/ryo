@@ -301,7 +301,7 @@ fn jit_dumps(exe: &Path, dir: &Path, aot: &str) -> Result<Vec<(&'static str, Str
                 writeln!(code, "{line}").unwrap();
             }
         }
-        // The SSA tier's description: the IR before the folds, then after them.
+        // The SSA tier's description: the IR before value numbering and the folds, then after them.
         let desc = if dir.join(format!("{stem}.txt")).exists() { read(&format!("{stem}.txt"))? } else { String::new() };
         let section = |name: &str| -> Option<&str> {
             let start = desc
@@ -311,7 +311,7 @@ fn jit_dumps(exe: &Path, dir: &Path, aot: &str) -> Result<Vec<(&'static str, Str
             let rest = &desc[start..];
             Some(rest[..rest.find("\n; ").map_or(rest.len(), |k| k + 1)].trim_end())
         };
-        for (out, name) in [(&mut pre, "IR before the folds"), (&mut post, "IR")] {
+        for (out, name) in [(&mut pre, "IR before value numbering and the folds"), (&mut post, "IR")] {
             writeln!(out, "fn {path}").unwrap();
             match section(name) {
                 Some(ir) => writeln!(out, "{}", local_names(ir, &local)).unwrap(),

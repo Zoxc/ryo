@@ -79,11 +79,11 @@ L5:
     mov     r11,[rsp+10h]
     mov     [rsp+20h],r11
     mov     [rsp+28h],rax
-    jmp     L22
+    jmp     L23
 L6:
     jmp     L7
 L7:
-    jmp     L21
+    jmp     L22
 L8:
     mov     rax,[rsp+18h]
     jmp     L10
@@ -137,17 +137,13 @@ L18:
     mov     rsi,rbx
     mov     rdx,rax
     call    qword ptr [fn2.slot]
-    mov     r11d,0
-    cmp     r11,1
-    jae     L19
-    mov     r11d,1
-    mov     r10,7FFFFFFFFFFFFFFFh
-    cmp     r11,r10
-    ja      L19
+    jmp     L19
+L19:
+    jmp     L20
+L20:
     mov     rbp,r12
     sub     rbp,rbx
     jmp     L17
-L19:
     lea     rdi,[k3]
     call    ryo_hr_AddrAbs
     mov     rbx,rax
@@ -157,16 +153,16 @@ L19:
     mov     esi,49h
     mov     rdx,rax
     call    qword ptr [sym5]
-    jmp     L20
+    jmp     L21
     mov     qword ptr [rsp+30h],1
     mov     qword ptr [rsp+20h],0
     mov     [rsp+28h],rax
-    jmp     L22
-L20:
+    jmp     L23
+L21:
     lea     rdi,[rsp+0B0h]
     call    ryo_h_Unreachable
     ud2
-L21:
+L22:
     lea     rdi,[k6]
     call    ryo_hr_AddrAbs
     mov     rdi,r15
@@ -182,15 +178,14 @@ L21:
     mov     rsi,[rsp+38h]
     mov     rdi,[rsp+10h]
     jmp     L9
-L22:
+L23:
     jmp     L14
   ; OSR entries
-    lea     r11,[L23]
+    lea     r11,[L24]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L23:
-    .long   L24
+L24:
     .long   L25
     .long   L26
     .long   L27
@@ -199,7 +194,8 @@ L23:
     .long   L30
     .long   L31
     .long   L32
-L24:
+    .long   L33
+L25:
     pop     rcx
     lea     rdx,[rsp+0D0h]
     lea     rsp,[rdx-100h]
@@ -232,9 +228,9 @@ L24:
     mov     r15,[rsp+10h]
     lea     rsp,[rsp+50h]
     jmp     L5
-L25:
-    ret
 L26:
+    ret
+L27:
     pop     rcx
     lea     rdx,[rsp+0D0h]
     lea     rsp,[rdx-100h]
@@ -265,8 +261,6 @@ L26:
     mov     rdx,[rsp+10h]
     lea     rsp,[rsp+50h]
     jmp     L9
-L27:
-    ret
 L28:
     ret
 L29:
@@ -276,6 +270,8 @@ L30:
 L31:
     ret
 L32:
+    ret
+L33:
     ret
 
 fn <std::vec::Vec<bool> as std::ops::Index<usize>>::index
@@ -382,11 +378,8 @@ fn core::num::<impl usize>::unchecked_add::precondition_check
     mov     r12,rax
     lea     rdi,[k0]
     call    ryo_hr_AddrAbs
-    mov     eax,0BAh
-    shl     rax,1
-    or      rax,1
     mov     rdi,r12
-    mov     rsi,rax
+    mov     esi,175h
     mov     edx,0
     mov     rcx,rbx
     movzx   edx,dl
@@ -429,16 +422,15 @@ fn sieve
     call    ryo_h_Unreachable
     ud2
 L0:
-    lea     rax,[rsp+78h]
-    mov     rdi,rax
+    lea     r14,[rsp+78h]
+    mov     rdi,r14
     mov     esi,1
     mov     rdx,r13
     movzx   esi,sil
     call    qword ptr [fn2.slot]
-    lea     r13,[rsp+78h]
     lea     rdi,[k3]
     call    ryo_hr_AddrAbs
-    mov     rdi,r13
+    mov     rdi,r14
     mov     esi,0
     mov     rdx,rax
     call    fn4
@@ -794,13 +786,9 @@ fn std::vec::Vec::<bool>::extend_with
 L0:
     mov     rax,[rbx+8]
     mov     [rsp+18h],rax
-    mov     rax,[rsp+18h]
     mov     [rsp+20h],rax
-    mov     rax,[rbx+10h]
-    mov     [rsp+18h],rax
-    mov     rax,[rsp+18h]
-    mov     rax,[rsp+20h]
-    mov     rcx,[rsp+18h]
+    mov     rcx,[rbx+10h]
+    mov     [rsp+18h],rcx
     lea     rax,[rax+rcx]
     mov     rcx,rbx
     lea     rcx,[rcx+10h]
@@ -817,8 +805,7 @@ L1:
     jmp     L14
 L2:
     mov     [rax],cl
-    mov     r10d,1
-    lea     rdx,[rdx+r10]
+    lea     rdx,[rdx+1]
     mov     rax,[rsp+20h]
     add     rax,1
     mov     [rsp+20h],rax

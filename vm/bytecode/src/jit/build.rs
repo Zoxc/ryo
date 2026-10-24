@@ -735,28 +735,35 @@ pub fn fold(f: &mut Func) {
         }
         for k in 0..f.blocks[b].insts.len() {
             let i = f.blocks[b].insts[k];
-            let (op, args) = (f.insts[i.idx()].op.clone(), f.insts[i.idx()].args.clone());
-            let (Op::Load(w, off) | Op::Store(w, off)) = op else { continue };
-            let p = args[0];
-            match def_op(f, p) {
-                Some((_, Op::AllocaAddr(a, k2), _)) if f.allocas[a.idx()].kind != AllocaKind::Promoted => {
-                    let Some(o) = off.checked_add(k2) else { continue };
-                    let id = &mut f.insts[i.idx()];
-                    if matches!(op, Op::Load(..)) {
-                        id.op = Op::ALoad(a, o, w);
-                        id.args.clear();
-                    } else {
-                        id.op = Op::AStore(a, o, w);
-                        id.args.remove(0);
-                    }
-                }
-                Some((_, Op::PtrAdd(c), pa)) if i32::try_from(off as i64 + c).is_ok() => {
-                    let id = &mut f.insts[i.idx()];
-                    id.args[0] = pa[0];
-                    id.op = if matches!(op, Op::Load(..)) { Op::Load(w, off + c as i32) } else { Op::Store(w, off + c as i32) };
-                }
-                _ => {}
+            fold_addr(f, i);
+        }
+    }
+}
+
+/// A load or store through an `AllocaAddr` of a memory alloca becomes an access of the
+/// alloca, and one through a `PtrAdd` takes its constant into its offset.
+pub fn fold_addr(f: &mut Func, i: Inst) {
+    let (op, args) = (f.insts[i.idx()].op.clone(), f.insts[i.idx()].args.clone());
+    let (Op::Load(w, off) | Op::Store(w, off)) = op else { return };
+    let ValueDef::Inst(d, 0) = f.def(args[0]) else { return };
+    match f.insts[d.idx()].op {
+        Op::AllocaAddr(a, k2) if f.allocas[a.idx()].kind != AllocaKind::Promoted => {
+            let Some(o) = off.checked_add(k2) else { return };
+            let id = &mut f.insts[i.idx()];
+            if matches!(op, Op::Load(..)) {
+                id.op = Op::ALoad(a, o, w);
+                id.args.clear();
+            } else {
+                id.op = Op::AStore(a, o, w);
+                id.args.remove(0);
             }
         }
+        Op::PtrAdd(c) if i32::try_from(off as i64 + c).is_ok() => {
+            let pa = f.insts[d.idx()].args[0];
+            let id = &mut f.insts[i.idx()];
+            id.args[0] = pa;
+            id.op = if matches!(op, Op::Load(..)) { Op::Load(w, off + c as i32) } else { Op::Store(w, off + c as i32) };
+        }
+        _ => {}
     }
 }

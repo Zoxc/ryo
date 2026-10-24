@@ -193,3 +193,39 @@ fn incoming_loads_before_the_entry_call() {
     assert!(matches!(entry.term, Term::Invoke { .. }), "{f}");
     assert!(matches!(f.insts[entry.insts[0].idx()].op, Op::ALoad(..)), "{f}");
 }
+
+/// Local value numbering: arithmetic on constants folds, a second load of the same pointer
+/// is the first's value, a load after a store through the same pointer is the stored value,
+/// and a store through another pointer forgets both.
+#[test]
+fn value_numbering() {
+    let v = vec![
+        Insn::ImmW64 { d: Slot(-8), imm: 3 },
+        Insn::AddImmW64 { d: Slot(-8), a: Slot(-8), imm: 4 },
+        Insn::MulW64 { d: Slot(-8), a: Slot(-8), b: Slot(-8) },
+        Insn::Ret { s: Slot(-8), k: 8 },
+    ];
+    let f = ir(&decoded(&v, 16, &[]));
+    assert!(f.blocks.iter().all(|b| b.insts.is_empty()), "{f}");
+    let Term::Ret { parts, .. } = &f.blocks[0].term else { panic!("{f}") };
+    assert_eq!(f.def(parts[0]), ryo_bytecode::jit::ir::ValueDef::Const(49), "{f}");
+
+    let v = vec![
+        arg(-8, 0),
+        arg(-16, 1),
+        Insn::LoadW64 { d: Slot(-24), m: Mem { p: Slot(-8), k: 8 } },
+        Insn::LoadW64 { d: Slot(-32), m: Mem { p: Slot(-8), k: 8 } },
+        Insn::AddW64 { d: Slot(-24), a: Slot(-24), b: Slot(-32) },
+        Insn::StoreW64 { m: Mem { p: Slot(-8), k: 0 }, s: Slot(-24) },
+        Insn::LoadW64 { d: Slot(-32), m: Mem { p: Slot(-8), k: 0 } },
+        Insn::LoadW64 { d: Slot(-40), m: Mem { p: Slot(-8), k: 8 } },
+        Insn::StoreW64 { m: Mem { p: Slot(-16), k: 0 }, s: Slot(-32) },
+        Insn::LoadW64 { d: Slot(-48), m: Mem { p: Slot(-8), k: 8 } },
+        Insn::AddW64 { d: Slot(-32), a: Slot(-32), b: Slot(-40) },
+        Insn::AddW64 { d: Slot(-32), a: Slot(-32), b: Slot(-48) },
+        Insn::Ret { s: Slot(-32), k: 8 },
+    ];
+    let f = ir(&decoded(&v, 48, &[]));
+    let loads = f.blocks[0].insts.iter().filter(|i| matches!(f.insts[i.idx()].op, Op::Load(..))).count();
+    assert_eq!(loads, 2, "{f}");
+}

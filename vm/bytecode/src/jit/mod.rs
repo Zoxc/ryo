@@ -10,6 +10,8 @@
 //!   areas, which are pinned at OSR entries, and the variable each access names.
 //! - `ir`: the IR, its printer and verifier.
 //! - `build`: SSA construction (Braun et al.) and the folds.
+//! - `lvn`: local value numbering: constant folding, common subexpressions, redundant loads
+//!   and store-to-load forwarding, per block.
 //! - `regalloc`: register allocation (every value in a slot, or linear scan) and its checker.
 //! - `emit`: instruction selection, the frame, OSR entries, call sites and unwind rows.
 //! - `x86`: the x86-64 encoder, checked against `objdump` by `tests/jit_x86.rs`.
@@ -25,6 +27,8 @@ pub mod effects;
 pub mod emit;
 #[cfg(feature = "alloc")]
 pub mod ir;
+#[cfg(feature = "alloc")]
+pub mod lvn;
 #[cfg(feature = "alloc")]
 pub mod regalloc;
 #[cfg(feature = "alloc")]
@@ -82,8 +86,9 @@ impl From<Unsupported> for Error {
 #[cfg(feature = "alloc")]
 pub fn compile(d: &crate::asm::Decoded, code_consts: &[u8], mode: crate::asm::Mode, opts: &Options) -> Result<Output, Error> {
     let mut f = built(d, mode)?;
-    // The IR as construction leaves it, before the folds (`RYO_JIT_DUMP`).
+    // The IR as construction leaves it, before value numbering and the folds (`RYO_JIT_DUMP`).
     let built_ir = opts.dump.then(|| alloc::format!("{f}"));
+    lvn::lvn(&mut f);
     build::fold(&mut f);
     if opts.check {
         f.verify().map_err(|e| Error::Check(alloc::format!("IR: {e}")))?;
@@ -101,7 +106,7 @@ pub fn compile(d: &crate::asm::Decoded, code_consts: &[u8], mode: crate::asm::Mo
         use core::fmt::Write;
         let mut s = alloc::string::String::new();
         let _ = writeln!(s, "; reduced code (frame {})\n{}", d.frame_size, crate::reduced::Disasm(&d.words));
-        let _ = writeln!(s, "; IR before the folds\n{}", built_ir.unwrap_or_default());
+        let _ = writeln!(s, "; IR before value numbering and the folds\n{}", built_ir.unwrap_or_default());
         let _ = writeln!(s, "; IR\n{f}");
         let _ = writeln!(s, "; locations ({} spill slots, saved {:?})", al.spills, al.saved);
         for (v, l) in al.loc.iter().enumerate() {
@@ -123,6 +128,7 @@ pub fn compile(d: &crate::asm::Decoded, code_consts: &[u8], mode: crate::asm::Mo
 #[cfg(feature = "alloc")]
 pub fn ir_of(d: &crate::asm::Decoded, mode: crate::asm::Mode) -> Result<ir::Func, Unsupported> {
     let mut f = built(d, mode)?;
+    lvn::lvn(&mut f);
     build::fold(&mut f);
     Ok(f)
 }
