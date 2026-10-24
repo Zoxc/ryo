@@ -314,6 +314,12 @@ constant into their address. Last, `jit::dce` marks and sweeps: a value is live 
 effect, a terminator or a live value reads it, and a parameter's edge arguments only when the
 parameter is live, so pure instructions without live results and dead parameters (dead
 loop-carried values included, but not the entry's) go with their arguments.
+After DCE, `jit::thread` threads jumps: an edge into an empty block that only jumps on (not an
+AOT loop head, whose OSR entry lands there, and with parameters used by nothing but that
+jump) goes to the jump's target instead, a conditional edge only as far as it stays without
+arguments (one with arguments would need a stub for its moves), and the blocks left
+unreachable leave the layout. The emitter falls through to the next block in layout and
+inverts a branch whose true target is next.
 
 ### OSR
 
