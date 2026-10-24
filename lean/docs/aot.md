@@ -241,6 +241,28 @@ references from functions outside the dump are reported, not failed. Statics car
 in the dump, so a static pointer is checked against "one symbol per static, distinct, no
 instance's" until the dump names them.
 
+**Implemented: the structural part** (`Ryo/Check/Image/`, `ryo-lean check-image <image
+objects>... [--registry <registry object>]`, over the corpus with
+`scripts/lean-image-check.py`). Funcs: the function table (16-aligned, in order, covering the
+text with only `int3` padding between functions, which the decoder never reaches), the
+side-table runs (consecutive, covering their tables), one `STT_FUNC` symbol per entry at its
+`code_off` with its `code_len`, and the signature fields the code decides (`ret` kinds, sret
+`ret`s from the first argument register's slot, callers' result kinds and tail calls against
+the callee's entry, incoming-area accesses within `arg_size`). Relocs: each function decoded
+a second time from its unlinked bytes with the object's relocations (`Fields.relocs`, calls
+between functions added as `Ref.func` fields), which must succeed and agree with the linked
+decode, so every relocation is a field of the form that takes it; relocated fields 0; the
+read-only section's relocations only the header's `data`/`text`, one per symbol slot
+(`SYM_INDIRECT` clear) and 8-aligned pool pointers to the image's symbols, the pool or the
+data area; the JIT records (`ctr`, `func`, zeros, `entry`/`osr`/`header` relocations); the
+header (image symbol from `stable_crate_id`, `crate_hash`, section sizes, RELRO); the anchor;
+`__ryo_main` (one slot naming one of the image's functions or an undefined symbol).
+Registry: the constructor decoded with `decodeX` from its relocations, `.init_array.00000`,
+the list, and per link each image symbol listed once, at most one `__ryo_main`. Remaining:
+what needs the dump (symbol names, `ArgPlan`s, which function `__ryo_main` names; the pool
+and vtables are `Pool.lean`'s), and the FDE and LSDA checks (`unwindChecks`, waiting for the
+unwind readers).
+
 **Linked binary vs the image object (recommendation).** Validate the **object** as the
 primary input: its relocations are *named*, which is what makes the C1'/§C4 resolution
 meaningful ("this field calls `ryo_h_add_w32`"), and it exists per crate, so it fits

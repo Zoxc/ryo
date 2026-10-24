@@ -40,10 +40,16 @@
                                            the dump and mismatched (each mismatch with details;
                                            `-v` lists those not in the dump too); exit status 1
                                            on a mismatch or an object-level error
+  ryo-lean check-image <image object>... [--registry <registry object>]
+                                           the image checks that need no dump (aot.md §C4,
+                                           `Ryo.Check.Image`) on a link's image objects and
+                                           registry object: each mismatch, then a summary;
+                                           exit status 1 on any
 -/
 import Ryo
 import Ryo.Examples
 import Ryo.Vm.DecodeObj
+import Ryo.Check.Image
 
 open Ryo.Spec Lean
 
@@ -180,6 +186,7 @@ def lsdaObj (path : String) : IO UInt32 := do
 
 def main (args : List String) : IO UInt32 := do
   match args with
+  | "check-image" :: rest => Ryo.Check.Image.cli rest
   | ["obj", path] => objFile path
   | ["elf", path] => elfFile path
   | ["dead", path] => deadObj path
@@ -206,5 +213,5 @@ def main (args : List String) : IO UInt32 := do
       pure 2
   | ["exec-item"] => Ryo.X86.Cosim.main
   | _ =>
-    IO.eprintln "usage: ryo-lean run <program.json> [--fuel N] [--stdout]\n       ryo-lean example <name> [out.json]\n       ryo-lean obj <file.o>\n       ryo-lean elf <file.o>\n       ryo-lean decode <inputs.json | file.o>\n       ryo-lean dead|ehframe|lsda <file.o>\n       ryo-lean check-pool <dump.json> <file.o>... [-v]"
+    IO.eprintln "usage: ryo-lean run <program.json> [--fuel N] [--stdout]\n       ryo-lean example <name> [out.json]\n       ryo-lean obj <file.o>\n       ryo-lean elf <file.o>\n       ryo-lean decode <inputs.json | file.o>\n       ryo-lean dead|ehframe|lsda <file.o>\n       ryo-lean check-pool <dump.json> <file.o>... [-v]\n       ryo-lean check-image <image.o>... [--registry <registry.o>]"
     pure 2

@@ -7,3 +7,4 @@ import Ryo.Vm.DecodeReduced
 import Ryo.Vm.Frame
 import Ryo.Vm.DecodeObj
 import Ryo.Check.Image.Pool
+import Ryo.Check.Image
