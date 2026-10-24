@@ -1,6 +1,6 @@
-//! The JIT's SSA tier (`RYO_JIT_OPT=ssa…`): hand-assembled functions using switches, tail
-//! calls, SSE arguments and results, catching landing pads, large frames and escaped locals
-//! across OSR. Each test checks the results, that the code ran in the JIT code, and, in an SSA
+//! The JIT's SSA tier (the default, but for `RYO_JIT_OPT=reencode`): hand-assembled
+//! functions using switches, tail calls, SSE arguments and results, catching landing pads,
+//! large frames and escaped locals across OSR. Each test checks the results, that the code ran in the JIT code, and, in an SSA
 //! mode, that every function it compiled went through the tier ([`ryo_jit::ssa_stats`]; a
 //! separate test binary, so that the counters are this file's alone).
 
@@ -34,7 +34,7 @@ fn start() -> (MutexGuard<'static, ()>, (usize, usize)) {
 
 /// In an SSA mode: exactly `n` more functions compiled by the tier since `before`, none fell back.
 fn check_stats(before: (usize, usize), n: usize) {
-    if std::env::var("RYO_JIT_OPT").is_ok_and(|o| o.starts_with("ssa")) {
+    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
         let now = ryo_jit::ssa_stats();
         assert_eq!(now.0 - before.0, n, "functions the SSA tier compiled ({before:?} -> {now:?})");
         assert_eq!(now.1, before.1, "fallbacks to re-encoding ({before:?} -> {now:?})");

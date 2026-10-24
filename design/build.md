@@ -168,8 +168,9 @@ This gives a third backend, built from the same toolchain, to compare against.
   output is checked, since MIR inlining removes functions. The variants `ryo-jit-ssa` and
   `ryo-jit-ssa-osr` run the corpus through the JIT's SSA tier with its checkers, every VM
   function from its first call or entered by OSR at its first loop head pass
-  ([jit.md](jit.md#testing)); `test` also runs the JIT's own tests through the tier (`vm jit
-  ssa`, `vm jit ssa-naive`, each also with `fp-rbp`).
+  ([jit.md](jit.md#testing)); `test` runs the JIT's own tests through the tier (`vm jit`),
+  its naive allocator (`vm jit ssa-naive`) and the re-encoding pipeline (`vm jit reencode`),
+  each also with `fp-rbp`.
   Some programs are a staticlib or cdylib called from a
   C `main`, compiled with `cc`, or `cl` on windows-msvc hosts (skipped without one). The smoke tests check that `rustc-ryo`
   rejects `-Zrandomize-layout`, more than one codegen unit and `-Cincremental`, and that
@@ -194,7 +195,8 @@ This gives a third backend, built from the same toolchain, to compare against.
   compared with plain rustc's `-Cpanic=abort` build; programs with a Rust dylib are skipped),
   `ryo-std-jit` (run with `RYO_JIT_THRESHOLD=0 RYO_JIT_SYNC=1`: every VM function, std's
   included, runs its JIT code from its first call), `ryo-std-jit-shuffle` (also
-  `RYO_JIT_SHUFFLE=1`) and `ryo-std-jit-ssa` (through the SSA tier). Without one, they are skipped.
+  `RYO_JIT_SHUFFLE=1`) and `ryo-std-jit-reencode` (through the re-encoding pipeline instead
+  of the SSA tier). Without one, they are skipped.
 - `test --cross T`: builds and links, without running, the corpus for target `T` (after
   `build --target T`), against stand-in import libraries ([platforms.md](platforms.md),
   cross-checking). Skipped if the sysroot has no `rust-lld`. It also checks the target's

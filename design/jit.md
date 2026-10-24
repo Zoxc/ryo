@@ -6,9 +6,9 @@ thread and switches their entry and loop heads over to the new code. Every image
 for it: each function counts its calls and loop iterations in a *JIT record* and leaves
 through a stub into the runtime when the count runs out ([vm.md](vm.md#jit-records-and-counters)).
 
-The JIT code is the function decoded and encoded again, without counters, or, with
-`RYO_JIT_OPT=ssa`, compiled through an SSA tier with a register allocator ([The SSA
-tier](#the-ssa-tier)). Its frame may differ from the AOT code's (it does with
+The JIT code is the function compiled through an SSA tier with a register allocator ([The
+SSA tier](#the-ssa-tier)), or, where that tier doesn't handle it (or with
+`RYO_JIT_OPT=reencode`), decoded and encoded again without counters. Its frame may differ from the AOT code's (it does with
 `RYO_JIT_SHUFFLE`), and nothing relies on them matching: a call running the AOT code moves
 over at its next loop head through an OSR entry that converts the frame ([OSR](#osr)). On
 PE, `ryo_jit_start` fails for now (the JIT isn't ported), so the trips act as the no-op JIT
@@ -107,9 +107,10 @@ section; its fields and the counter checks and stubs that use it are in
   once; the probe `ryo_probe_stack`, `RtApi::probe`). The decoder reads the counters'
   checks and stubs as part of the canonical form and lists the loop heads
   (`Decoded::heads`, [vm.md](vm.md#jit-records-and-counters)).
-- **Encoding**: `asm::encode_reduced_at` in the image's mode without counters (in another
-  frame layout with `RYO_JIT_SHUFFLE`, [OSR](#osr)), which also gives the instructions'
-  positions for the OSR entries, then the OSR entries. A failure (decode, encode, reach,
+- **Encoding**: the SSA tier's `jit::compile` ([The SSA tier](#the-ssa-tier)), or, for a
+  function it doesn't handle, `asm::encode_reduced_at` in the image's mode without counters
+  (in another frame layout with `RYO_JIT_SHUFFLE`, [OSR](#osr)), which also gives the
+  instructions' positions for the OSR entries, then the OSR entries. A failure (decode, encode, reach,
   memory) or a panic marks the record `Failed`, counter `i64::MAX`, and the thread goes on.
 - **Entry redirection**: the stub `call`s through `entry`, so the JIT code must get rid of
   the stub's return address. The JIT code starts with `lea r11, [rip + code]; mov [rsp],
@@ -220,8 +221,8 @@ frames convert. The JIT compiles the entries with the function (`asm::osr`, `asm
 
 ## The SSA tier
 
-With `RYO_JIT_OPT=ssa` (or `ssa-naive`, [Settings](#settings)) the JIT compiles a function
-through an SSA tier instead of re-encoding it: decoded reduced code → an SSA IR whose frame
+By default (`RYO_JIT_OPT=ssa`; `ssa-naive` and `reencode`, [Settings](#settings)) the JIT
+compiles a function through an SSA tier instead of re-encoding it: decoded reduced code → an SSA IR whose frame
 slots are *allocas* with provenance, promoted to SSA values where no pointer can reach
 them → x86-64 with a register allocator. It lives in `ryo_bytecode::jit` (`alloc`), so
 that it is tested without the runtime; `install.rs` calls `jit::compile` in place of
@@ -455,7 +456,7 @@ for shuffled frames per image, `RtApi::shuffled`):
 | `RYO_JIT_LOG=1` | a line on stderr per compiled or failed function, and per function whose frame couldn't be shuffled, and the JIT thread's panics |
 | `RYO_JIT_SHUFFLE=1` | JIT frames in another layout ([OSR](#osr)) |
 | `RYO_JIT_TEST_PANIC=1` | tests: every compile panics, which must fail the function and nothing else |
-| `RYO_JIT_OPT=…` | `reencode` (the default), `ssa-naive` or `ssa`: how functions are compiled ([The SSA tier](#the-ssa-tier)); with `RYO_JIT_SHUFFLE` the SSA tier lays allocas out in reverse with gaps |
+| `RYO_JIT_OPT=…` | `ssa` (the default), `ssa-naive` or `reencode`: how functions are compiled ([The SSA tier](#the-ssa-tier)); with `RYO_JIT_SHUFFLE` the SSA tier lays allocas out in reverse with gaps |
 | `RYO_JIT_CHECK=1` | the SSA tier's checkers: a failure is printed on stderr and the function falls back |
 | `RYO_JIT_DUMP=dir` | the SSA tier writes each function's reduced code, IR, locations and code (or, for one it doesn't handle, the reason and the reduced code) to `dir/f<index>-<image header address>.txt` (read by the JIT thread itself, not passed in `RtApi`) |
 | `RYO_JIT_SSA_LIMIT=n` | debugging: only the first `n` functions the JIT compiles go to the SSA tier, the rest are re-encoded (bisects a miscompile; read by the JIT thread) |
@@ -495,9 +496,9 @@ for shuffled frames per image, `RtApi::shuffled`):
   at 0), both also with `RYO_JIT_SHUFFLE=1`. With a ryo sysroot, `y test` runs the corpus
   that way (`ryo-std-jit`, `ryo-std-jit-shuffle`), std's own VM functions included
   ([build.md](build.md#test-and-bench)).
-- **The SSA tier**: `y test` also runs `vm/jit/tests/jit.rs` with `RYO_JIT_OPT=ssa` and
-  `ssa-naive` and the checkers (with and without `fp-rbp`; there `rsp` moves by a multiple of
-  16 instead of the frames' difference), whose SSA-specific tests cover an alloca escaped only
+- **The SSA tier**: `y test` runs `vm/jit/tests/` through the tier with its checkers, then
+  with `RYO_JIT_OPT=ssa-naive` and with `reencode` (each with and without `fp-rbp`; through
+  the tier `rsp` moves by a multiple of 16 instead of the frames' difference), whose SSA-specific tests cover an alloca escaped only
   after the head (moved at OSR), an acyclic head (the trip returns into the AOT code), a slot
   reused at two widths, handler results feeding branches, a value live into a landing pad
   across a call, and sixteen values live across a call. `vm/jit/tests/ssa.rs` (a process of
@@ -506,7 +507,8 @@ for shuffled frames per image, `RtApi::shuffled`):
   a pointer, SSE arguments and results, a catching landing pad, probed 12 KiB frames entered
   by OSR, and an alloca pinned at the head. Then the corpus on its own VM
   functions through the tier (`ryo-jit-ssa`, threshold 0, and `ryo-jit-ssa-osr`, OSR at the
-  first head pass; `ryo-std-jit-ssa` with a ryo sysroot). `vm/bytecode/tests/jit_ssa.rs`
+  first head pass; with a ryo sysroot, `ryo-std-jit` and `ryo-std-jit-shuffle` go through
+  the tier too, and `ryo-std-jit-reencode` through the re-encoding pipeline). `vm/bytecode/tests/jit_ssa.rs`
   builds hand-written functions' IR (promotion, block parameters at a loop head and its OSR
   loads, reaching shapes, pinned and moved escaped locals, handler slots sharing a register),
   `tests/jit_x86.rs` checks the

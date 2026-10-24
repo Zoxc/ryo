@@ -372,7 +372,7 @@ const VARIANTS: &[Variant] = &[
     // (design/jit.md#testing), also with frames the JIT lays out differently.
     Variant { name: "ryo-std-jit", ryo_std: true, env: JIT_SYNC, ..VARIANT },
     Variant { name: "ryo-std-jit-shuffle", ryo_std: true, env: JIT_SHUFFLE, ..VARIANT },
-    Variant { name: "ryo-std-jit-ssa", ryo_std: true, env: JIT_SSA, ..VARIANT },
+    Variant { name: "ryo-std-jit-reencode", ryo_std: true, env: JIT_REENCODE, ..VARIANT },
     // The JIT's SSA tier (design/jit.md#the-ssa-tier), with its checkers, on the corpus's
     // own VM functions: from their first call, and entered by OSR at the first loop head.
     Variant { name: "ryo-jit-ssa", env: JIT_SSA, ..VARIANT },
@@ -384,6 +384,8 @@ const VARIANTS: &[Variant] = &[
 const JIT_SYNC: &[(&str, &str)] = &[("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC", "1")];
 /// [`JIT_SYNC`], with shuffled JIT frames.
 const JIT_SHUFFLE: &[(&str, &str)] = &[("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC", "1"), ("RYO_JIT_SHUFFLE", "1")];
+/// [`JIT_SYNC`], through the re-encoding pipeline instead of the SSA tier.
+const JIT_REENCODE: &[(&str, &str)] = &[("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC", "1"), ("RYO_JIT_OPT", "reencode")];
 /// [`JIT_SYNC`], through the SSA tier with its checkers.
 const JIT_SSA: &[(&str, &str)] = &[("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC", "1"), ("RYO_JIT_OPT", "ssa"), ("RYO_JIT_CHECK", "1")];
 /// The SSA tier entered by OSR at the first loop head pass of each function's first call
@@ -425,17 +427,18 @@ pub fn run(clif: bool) -> Result<(), String> {
     // frame pointer (design/vm.md#handlers).
     // And the JIT's tests, through the runtime's trips, also with `fp-rbp` (design/jit.md#testing);
     // the other runtime tests run without the JIT.
-    // And the JIT's tests through its SSA tier, both allocators, with its checkers.
-    let ssa = |opt| [("RYO_JIT_OPT", opt), ("RYO_JIT_CHECK", "1")];
+    // The JIT's tests run through its SSA tier (the default) with its checkers, through the
+    // naive allocator, and through the re-encoding pipeline.
+    let opt = |opt| [("RYO_JIT_OPT", opt), ("RYO_JIT_CHECK", "1")];
     let vm_runs: [(&str, &[&str], &[(&str, &str)]); 8] = [
         ("vm", &["test", "--workspace", "--exclude", "ryo_jit"], &[]),
         ("vm fp-rbp", &["test", "-p", "ryo_rt", "--features", "fp-rbp"], &[]),
-        ("vm jit", &["test", "-p", "ryo_jit"], &[]),
-        ("vm jit fp-rbp", &["test", "-p", "ryo_jit", "--features", "ryo_rt/fp-rbp"], &[]),
-        ("vm jit ssa", &["test", "-p", "ryo_jit"], &ssa("ssa")),
-        ("vm jit ssa fp-rbp", &["test", "-p", "ryo_jit", "--features", "ryo_rt/fp-rbp"], &ssa("ssa")),
-        ("vm jit ssa-naive", &["test", "-p", "ryo_jit"], &ssa("ssa-naive")),
-        ("vm jit ssa-naive fp-rbp", &["test", "-p", "ryo_jit", "--features", "ryo_rt/fp-rbp"], &ssa("ssa-naive")),
+        ("vm jit", &["test", "-p", "ryo_jit"], &opt("ssa")),
+        ("vm jit fp-rbp", &["test", "-p", "ryo_jit", "--features", "ryo_rt/fp-rbp"], &opt("ssa")),
+        ("vm jit reencode", &["test", "-p", "ryo_jit"], &opt("reencode")),
+        ("vm jit reencode fp-rbp", &["test", "-p", "ryo_jit", "--features", "ryo_rt/fp-rbp"], &opt("reencode")),
+        ("vm jit ssa-naive", &["test", "-p", "ryo_jit"], &opt("ssa-naive")),
+        ("vm jit ssa-naive fp-rbp", &["test", "-p", "ryo_jit", "--features", "ryo_rt/fp-rbp"], &opt("ssa-naive")),
     ];
     for (name, args, env) in vm_runs {
         match crate::utils::run(cmd("cargo").current_dir(root.join("vm")).args(args).envs(env.iter().copied())) {
@@ -732,7 +735,7 @@ mod tests {
             "ryo-std-abort",
             "ryo-std-jit",
             "ryo-std-jit-shuffle",
-            "ryo-std-jit-ssa",
+            "ryo-std-jit-reencode",
             "ryo-jit-ssa",
             "ryo-jit-ssa-osr",
         ];

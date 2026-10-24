@@ -61,19 +61,19 @@ struct Config {
     /// `RYO_JIT_TEST_PANIC=1`: every compile panics (tests: the JIT catches its panics even in
     /// a `-Cpanic=abort` program).
     test_panic: bool,
-    /// `RYO_JIT_OPT`: `reencode` (the default), `ssa-naive` or `ssa`: how the JIT compiles
+    /// `RYO_JIT_OPT`: `ssa` (the default), `ssa-naive` or `reencode`: how the JIT compiles
     /// (design/jit.md, "The SSA tier"), as [`RtApi::flags`] bits.
     opt: u32,
     /// `RYO_JIT_CHECK=1`: the SSA tier's checkers.
     check: bool,
 }
 
-/// `RYO_JIT_OPT`'s flag bits.
+/// `RYO_JIT_OPT`'s flag bits: the SSA tier unless `reencode`.
 fn opt_flags() -> u32 {
     match var(c"RYO_JIT_OPT") {
+        Some(b"reencode") => 0,
         Some(b"ssa-naive") => JIT_OPT_SSA_NAIVE,
-        Some(b"ssa") => JIT_OPT_SSA,
-        _ => 0,
+        _ => JIT_OPT_SSA,
     }
 }
 

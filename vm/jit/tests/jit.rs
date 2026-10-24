@@ -436,10 +436,10 @@ fn jit_rsp_delta(f: u32, shuffle: bool) -> u64 {
 }
 
 /// Checks how far `rsp` moved between the AOT code's `note` (`first`) and the JIT code's
-/// (`last`): by the frames' difference. The SSA tier (`RYO_JIT_OPT=ssa…`) lays out frames of
-/// its own, so there only by a multiple of 16.
+/// (`last`): by the frames' difference. The SSA tier (the default, but for
+/// `RYO_JIT_OPT=reencode`) lays out frames of its own, so there only by a multiple of 16.
 fn check_rsp(first: u64, last: u64, f: u32, shuffle: bool, what: &str) {
-    if std::env::var("RYO_JIT_OPT").is_ok_and(|o| o.starts_with("ssa")) {
+    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
         assert_eq!(first.wrapping_sub(last) % 16, 0, "{what}: rsp");
     } else {
         assert_eq!(first - last, jit_rsp_delta(f, shuffle), "{what}: rsp");
@@ -733,7 +733,7 @@ fn running_calls_switch_over() {
     }
 }
 
-// ---- SSA tier (`RYO_JIT_OPT=ssa…`) ----
+// ---- SSA tier (the default, but for `RYO_JIT_OPT=reencode`) ----
 
 fn o(a: &AtomicU64) -> u64 {
     a.load(std::sync::atomic::Ordering::SeqCst)
@@ -809,7 +809,7 @@ fn acyclic_head() {
     assert_eq!(ok::<_, u64>(img.id(f), (10u64, &raw const obs as u64)), 15);
     assert!(in_aot(&img, f, o(&obs.first)));
     // The old pipeline has OSR entries at every head, the SSA tier only at cyclic ones.
-    let ssa = std::env::var("RYO_JIT_OPT").is_ok_and(|o| o.starts_with("ssa"));
+    let ssa = std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode");
     let last = o(&obs.last);
     assert!(if ssa { in_aot(&img, f, last) } else { in_jit(&img, f, last) }, "finished at {last:#x}");
     for x in [0u64, 7, 1 << 40] {
