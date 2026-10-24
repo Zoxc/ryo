@@ -66,6 +66,8 @@
   ryo-lean opsem                           `opSem` on JSON lines on stdin, a result per line
                                            on stdout (`Ryo/Vm/OpSem/Json.lean`), for the
                                            differential test against the handlers
+  ryo-lean rrun <image object> <fn> [<int>...] [--fuel N] [--unwind <text>]
+                                           run an image function as R (`Ryo.Vm.R.cli`)
 -/
 import Ryo
 import Ryo.Examples
@@ -269,6 +271,7 @@ def main (args : List String) : IO UInt32 := do
       pure 2
   | ["exec-item"] => Ryo.X86.Cosim.main
   | ["opsem"] => Ryo.Vm.OpSem.Json.main
+  | "rrun" :: rest => Ryo.Vm.R.cli rest
   | _ =>
     IO.eprintln "usage: ryo-lean run <program.json> [--fuel N] [--stdout]\n       ryo-lean example <name> [out.json]\n       ryo-lean obj <file.o>\n       ryo-lean elf <file.o>\n       ryo-lean decode <inputs.json | file.o>\n       ryo-lean dead <file.o> [<dump.json> <cert.json>]\n       ryo-lean ehframe|lsda <file.o>\n       ryo-lean check-pool <dump.json> <file.o>... [-v]\n       ryo-lean check-cert <dump.json> <cert.json> <image.o>... [-v]\n       ryo-lean check-image <image.o>... [--registry <registry.o>]\n       ryo-lean opsem"
     pure 2

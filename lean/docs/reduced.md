@@ -135,6 +135,53 @@ stores are not ghost state: the Lean decoder re-checks them ([aot.md](aot.md) §
   footprint), not escapes.
 - `lpad`/`resume`: the exception object in a slot.
 
+**Implemented** (`Ryo/Vm/R/Sem.lean`, `Ryo/Vm/R/Run.lean`): an executable small-step
+semantics of one function body at `φ_AOT`, open at calls (CompCertO-style). The state is `pc`,
+`fp` (an address), `opSem`'s `State` and the incoming argument registers; the `Code` is the
+`Decoded` function with its mode, the placement `ρ` of the image's addressed things, its
+`arg_size`, and per call its stack-argument size, sret size and island template (facts from
+outside the function). `step : Code → RState → Except Stop Out` gives the next state, an
+outgoing event (`Query`: a call with its callee (`Func` index, symbol slot, the slot behind
+`call.sym.ind`, or a pointer), argument registers and the outgoing area's bytes at `sp = fp - F`;
+an island with its symbol, template, `fp`, operand slots and `Lend` extents) with the state
+waiting at it, or the end of the function (`Final`: a return with the return registers by kind
+and the incoming area's bytes, a tail call with its stack arguments at `fp + 16`, or
+unwinding out); `answer` continues a waiting state with the environment's `Answer` (return
+registers or an exception object, the new outgoing-area or `Lend` bytes, the new memory).
+Scopes before an instruction take effect before it (§C0.3: `Escape` an exposed allocation at
+`fp + off` with the current bytes, `End` deallocating what it covers whole and making the
+bytes `Uninit`, `Lend` nothing); every escaped object is deallocated at the end. A native
+instruction with a handler shape or a handler call is `opSem (view i)` plus `Then.succ`
+(`view = none` is `illFormed`); `resume` and an unwinding answer land at the instruction's
+cleanup entry (the landing pad, with the exception register set for `lpad`; out of the
+function for `continue`; UB with no entry), single-phase (`Code.catchesAt` gives the `catch`
+flag a search phase would ask). Calls build their registers from the argument list (by value
+at the register's size, zero-extended; `ARG_ADDR` as `addr`, UB on a non-escaped slot), make
+the sret destination `Uninit` after reading the arguments, and store the answer's parts by
+`k` at `d`. `Run.lean` runs programs: the environment answers a call of a program function by
+running its R code below the caller's frame (tail calls in the frame they take over), and
+`imageProgram` makes an image object such a program (its constant pool, data, symbol slots,
+site slots and code constants as allocations); `ryo-lean rrun <image.o> <fn> <ints>` runs one
+function. Tested (`RyoTest/RSem.lean`) on hand-built functions (recursive `fib`, branch
+polarity, escapes, partial ends, dangling and `Uninit` after an `End`, by-address and stack
+arguments, sret, unwinding to a pad and out, tail calls, islands, ill-formed instructions) and
+by hand on the corpus (`fib`, `ack`, `gcd`, `collatz`, `become`-recursive `count`/`even`
+return their Rust values, at `-O0` and `-O3`). Not modeled yet: layouts other than `φ_AOT` and
+the object table (an `Escape`'s range is its object; a partly overlapping escape is
+`illFormed`), the constraints the contracts put on answers (the convention for calls, the
+islands' contracts beyond their roles, handlers through pointers, `ryo_h_Resume`), the
+probe and trip contracts (counters and stubs are not R instructions), and the zero-sized
+objects below.
+
+Running every corpus function (on small integer arguments) stops nowhere as `illFormed`, but
+shows that the backend takes the address of zero-sized locals without an escape: 373 `addr`s
+of a local the certificate gives size 0 (a ZST, such as an allocator argument) and 20 one past
+the end of an escaped object, which under §C0.3 (and `opSem`'s `addr`) are UB. An
+escape of size 0 is never recorded, and `opSem`'s escaped-object lookup can't contain a
+zero-sized object anyway, so R needs a rule for them (a zero-sized allocation recorded by the
+encoder, or a pointer without provenance, valid for zero-sized accesses only) and C1''s
+"escapes cover every `addr`" must say which.
+
 ### C0.5 Handler contracts
 
 `H h`: reading its operands from `rdi…r9` as `unpack(layout h)` (`fp` from `rdi` or `rbp`),
@@ -171,8 +218,8 @@ shape's `Then` (a branch, the switch table with the default last, `next`, `trap`
 handler shapes, `none` for R's own instructions (§C0.4), whose targets and lists stay in the
 `Insn`; a handler's `Then` must be its shape's, a switch table one entry per case plus the
 default (`encode_reduced`'s check). `Then.succ` gives the next instruction from `opSem`'s
-`Control`, so `semR i = (opSem v.op v.ops, v.ctl.succ)` is the intended definition (no R step
-function yet). Checked against Rust's `asm::decode` (`RyoTest/View.lean`, vectors from
+`Control`, so `semR i = (opSem v.op v.ops, v.ctl.succ)`, which R's step function uses
+(§C0.4). Checked against Rust's `asm::decode` (`RyoTest/View.lean`, vectors from
 `vm/bytecode/tests/lean_view_vectors.rs`: every opcode with random operands, each handler in
 both `fp_arg` layouts, and inline runs; same opcode and operands, instruction for
 instruction), and `unpack` rejects mutated arguments. Not checked by `view`, as by
@@ -214,9 +261,9 @@ With one VM level, Part D is the library everything else stands on:
   operands read and written at their widths; whether it derefs pointer operands;
   `copy`/`fill` lengths). Lemmas: `opSem` only touches its footprint; the frame part is
   deterministic.
-- **`Ryo/Vm/R/`**: R syntax (`Syntax.lean`), `view` and `unpack` (`View.lean`, done), frame
-  objects and layouts, the step function (§C0), handler, island, `ryo_h_Resume`, probe and
-  trip contracts.
+- **`Ryo/Vm/R/`**: R syntax (`Syntax.lean`), `view` and `unpack` (`View.lean`, done), the
+  step function (`Sem.lean`, at `φ_AOT`, and `Run.lean`, done: §C0.4), frame objects and
+  layouts beyond `φ_AOT`, handler, island, `ryo_h_Resume`, probe and trip contracts.
 - **`Ryo/Vm/DecodeReduced.lean`**: the decoder, with `decode_sound` in `Ryo/Proofs/`.
 
 `opSem` is the single source of truth for: native R instructions; handler contracts; the
@@ -308,8 +355,9 @@ footprint (op : Full.Opcode) : Option Footprint
 
 Out of scope: the opcodes without a Rust handler (`jmp`, the calls, `ret`, `arg`, `island`;
 `resume`, whose handler is assembly), which are R's own instructions (§C0.4); f16/f128
-(islands). `view` and `unpack` are implemented (§C0.6, `Ryo/Vm/R/View.lean`); left in
-`Ryo/Vm/R/`: frame objects and layouts, the step function, and the contracts.
+(islands). `view` and `unpack` are implemented (§C0.6, `Ryo/Vm/R/View.lean`), and so is the
+step function (§C0.4, `Ryo/Vm/R/Sem.lean`); left in `Ryo/Vm/R/`: frame objects and layouts
+beyond `φ_AOT`, and the contracts.
 The JIT's Rust effect table (`jit/effects.rs`) is checked against the footprints
 (`RyoTest/Effects.lean`, on vectors from `vm/bytecode/tests/lean_effects.rs`; [jit.md](jit.md)
 §E.7): every opcode agrees, `resume` aside. Not done yet: generating the Rust table from the

@@ -21,10 +21,11 @@ import RyoTest.Frame
 import RyoTest.Effects
 import RyoTest.CertCheck
 import RyoTest.View
+import RyoTest.RSem
 
 namespace RyoTest
 
 def allTests : List TestCase :=
-  Int.tests ++ Basic.tests ++ Ptr.tests ++ Call.tests ++ Enum.tests ++ Unsized.tests ++ Divergence.tests ++ Json.tests ++ Audit.tests ++ M1b.tests ++ Generated.tests ++ X86.tests ++ Obj.tests ++ DecodeReduced.tests ++ PoolCheck.tests ++ Unwind.tests ++ ImageCheck.tests ++ OpSem.tests ++ Frame.tests ++ Effects.tests ++ CertCheck.tests ++ View.tests
+  Int.tests ++ Basic.tests ++ Ptr.tests ++ Call.tests ++ Enum.tests ++ Unsized.tests ++ Divergence.tests ++ Json.tests ++ Audit.tests ++ M1b.tests ++ Generated.tests ++ X86.tests ++ Obj.tests ++ DecodeReduced.tests ++ PoolCheck.tests ++ Unwind.tests ++ ImageCheck.tests ++ OpSem.tests ++ Frame.tests ++ Effects.tests ++ CertCheck.tests ++ View.tests ++ RSem.tests
 
 end RyoTest

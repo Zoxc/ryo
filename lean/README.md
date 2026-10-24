@@ -55,6 +55,7 @@ lake exe ryo-lean check-image x.ryo_image.rcgu.o... [--registry r.ryo_registry.b
                                    # a link's objects: each mismatch, then a summary
 ../scripts/lean-image-check.py [--opt] [--frame-pointer] [--corpus DIR]
                                    # check-image on the corpus, each program's objects as a link
+lake exe ryo-lean rrun x.ryo_image.rcgu.o fib 10   # an image function run as R (Ryo/Vm/R/Run.lean)
 lake exe ryo-lean exec-item         # run x86 items on states given as JSON lines (Ryo/X86/Cosim.lean)
 lake exe ryo-lean opsem            # opSem on JSON lines (Ryo/Vm/OpSem/Json.lean); from vm/:
                                    # `cargo test -p ryo_rt --test lean_opsem` runs it against
@@ -117,6 +118,7 @@ Ryo/Vm/R/Syntax.lean               R (reduced.md §C0.1): instructions, side dat
                                    and its text (`reduced::Disasm` and the side data)
 Ryo/Vm/R/Islands.lean              the island contracts' operand roles (read, only written,
                                    unused) by template and `ops` position (trusted)
+Ryo/Vm/R/Sem.lean, Run.lean        R's step function, open at calls (reduced.md §C0.4); runs of images
 Ryo/Vm/R/View.lean                 `unpack` (handler argument registers by `asm::layout`) and
                                    `view` (reduced.md §C0.6): R instructions as opcode, `Val`s
                                    and control, Rust's `asm::decode`

@@ -28,7 +28,7 @@ table with the default last, `trap`), for an instruction `opSem` gives the meani
 `tail_call*`, `ret`, `arg`, `island`), whose meaning is §C0.4's and whose targets, functions
 and lists stay in the native `Insn`.
 
-**The intended semantics of R** (no R step function exists yet): for an instruction `i` at
+**The semantics of R** (`Ryo.Vm.R.Sem`'s `step`, reduced.md §C0.4): for an instruction `i` at
 `pc` with `view i = some v`, `v.ctl = some t`,
 
 ```
