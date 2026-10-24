@@ -2,11 +2,11 @@
 Tests of the image checks (`Ryo/Check/Image`, aot.md §C4) on image and registry objects built
 here from bytes: a small ELF writer, an image of two VM functions in the counters mode (an
 entry counter check and its stub, a handler call taking a symbol slot's address, a call of the
-other function, which carries no relocation), with its JIT records, anchor and `__ryo_main`
-slots, and a registry object listing it. The objects pass every check; mutations of them (a
-function's length, a relocation dropped or added, a JIT record's counter, a registry entry
-listed twice) are rejected. The checks run on real objects in
-`scripts/lean-image-check.py`.
+other function, which carries no relocation and is a call site), with its JIT records, anchor
+and `__ryo_main` slots, `.eh_frame` and LSDAs, and a registry object listing it. The objects
+pass every check; mutations of them (a function's length, a relocation dropped or added, a JIT
+record's counter, a registry entry listed twice, an FDE's range, row or CFA offset, an LSDA's
+call sites) are rejected. The checks run on real objects in `scripts/lean-image-check.py`.
 -/
 import RyoTest.Harness
 import RyoTest.Obj
@@ -131,19 +131,53 @@ def funcCode (mk : Nat → Nat → List Item) : List UInt8 × List Ryo.X86.Reloc
   let stub := len (dummy.take (dummy.length - 3))
   encodeItems (mk back stub)
 
+/-- The position of function 0's `call` of function 1's field. -/
+def callField : Nat := ((funcCode f0Items).2.find? (·.to == Ryo.X86.Ref.func 1)).get!.pos
+
+/-- Function 0's one call site: the `call` of function 1, unwinding continuing in the caller. -/
+def site0 : CallSite := ⟨callField - 1, 5, none, false⟩
+
 -- Read-only layout (the writer's): header, 2 functions, code constants (none, at 240), fixups
--- (none), 1 symbol flag at 240, the slot at 248, then empty tables.
-def roSize : Nat := 256
+-- (none), 1 symbol flag at 240, the slot at 248, no scopes, the call-site table at 256 (one
+-- entry), no dropped stores.
+def roSize : Nat := 268
 def slotOff : Nat := 248
 def recOff : Nat := 64
 def dataSize : Nat := 64 + 2 * 64
 
+/-- `DW_CFA_advance_loc*` by `d`. -/
+def advance (d : Nat) : List UInt8 :=
+  if d < 64 then [(0x40 + d).toUInt8] else if d < 256 then [0x02, d.toUInt8] else 0x03 :: le 2 d
+
+def padTo8 (body : List UInt8) : List UInt8 := body ++ List.replicate ((8 - (body.length + 4) % 8) % 8) 0
+
+/-- `.eh_frame` as `unwind_elf` writes it for this mode (no frame pointer, counters): the CIE,
+then per function (`code_off`, `code_len`, frame size `F`, LSDA offset) an FDE whose rows
+change after the counter check and `sub rsp` (14 + 4 bytes in) to CFA `rsp + F + 16`, and at
+the entry stub (the last 16 bytes) back to `rsp + 8`; with its relocations (section 6, against symbols 3 the text, 1 the read-only
+section, 13 the LSDAs). -/
+def ehFrame (funcs : List (Nat × Nat × Nat × Nat)) : List UInt8 × Array Rel := Id.run do
+  let cie := padTo8 ([0, 0, 0, 0, 1] ++ "zPLR".toUTF8.toList ++ [0, 1, 0x78, 16, 7, 0x9b, 0, 0, 0, 0, 0x1b, 0x1b,
+    0x0c, 7, 8, 0x90, 1])
+  let mut eh := le 4 cie.length ++ cie
+  let mut rels : Array Rel := #[⟨6, 4 + 15, 1, Elf.R_X86_64_PC32, slotOff⟩]
+  for (off, len, f, l) in funcs do
+    let at_ := eh.length
+    let stub := len - 16  -- `lea r11, [rip + rec]; call [r11 + 8]; jmp rel32`
+    let fde := padTo8 (le 4 (at_ + 4) ++ le 4 0 ++ le 4 len ++ [4] ++ le 4 0 ++ advance 18 ++ [0x0e, (f + 16).toUInt8]
+      ++ advance (stub - 18) ++ [0x0c, 7, 8])
+    rels := rels.push ⟨6, at_ + 8, 3, Elf.R_X86_64_PC32, off⟩
+    rels := rels.push ⟨6, at_ + 17, 13, Elf.R_X86_64_PC32, l⟩
+    eh := eh ++ le 4 fde.length ++ fde
+  return (eh, rels)
+
 /-- The image object's parts. Sections: 1 read-only, 2 writable, 3 text, 4 anchor slot,
 5 `__ryo_main`. Symbols: 1–3 the first three's section symbols, 4–5 the functions, 6 the
-image, 7 the slot's `ext_fn`, 8 `ryo_h_AddrSym`, 9–10 the trip entry points, 11 the anchor,
-12 `__ryo_main`. With `resolve`, the call of function 1 holds its displacement, as the writer
+image, 7 the slot's `rust_eh_personality`, 8 `ryo_h_AddrSym`, 9–10 the trip entry points,
+11 the anchor, 12 `__ryo_main`, 13 the LSDA section's. Sections 6 and 7 are `.eh_frame` and
+the LSDAs, function 0's of the call sites `lsda0`. With `resolve`, the call of function 1 holds its displacement, as the writer
 resolves it; without, its field is 0. -/
-def imageParts (resolve : Bool := true) : Parts := Id.run do
+def imageParts (resolve : Bool := true) (lsda0 : Array CallSite := #[site0]) : Parts := Id.run do
   let (c0, r0) := funcCode f0Items
   let (c1, r1) := funcCode f1Items
   let f1Off := pad c0.length 16
@@ -153,13 +187,17 @@ def imageParts (resolve : Bool := true) : Parts := Id.run do
       let d := (BitVec.ofInt 32 ((f1Off : Int) - (r.pos + 4 : Nat))).toNat
       for k in [0:4] do code0 := code0.set! (r.pos + k) ((d >>> (8 * k)) % 256).toUInt8
   let text := code0.toList ++ List.replicate (f1Off - c0.length) 0xcc ++ c1
-  let entry (off len : Nat) : List UInt8 := le 4 off ++ le 4 len ++ List.replicate 12 0 ++ le 8 0 ++ le 8 0 ++ le 8 0
+  let entry (off len : Nat) (sites : Span) : List UInt8 :=
+    le 4 off ++ le 4 len ++ List.replicate 12 0 ++ le 8 0 ++ span sites ++ le 8 0
   let header := "RYOIMAGE".toUTF8.toList ++ le 4 formatVersion ++ le 4 (crateHash stableId) ++ le 8 stableId
     ++ le 8 0 ++ le 4 roSize ++ le 4 dataSize ++ span ⟨144, 2⟩ ++ le 8 0 ++ le 4 text.length
     ++ span ⟨240, 0⟩ ++ span ⟨240, 0⟩ ++ span ⟨240, 1⟩ ++ span ⟨slotOff, 1⟩ ++ span ⟨256, 0⟩
-    ++ span ⟨256, 0⟩ ++ span ⟨256, 0⟩ ++ span ⟨256, 0⟩ ++ le 4 0 ++ le 4 0 ++ le 4 21 ++ span ⟨recOff, 2⟩
-  let ro := header ++ entry 0 c0.length ++ entry f1Off c1.length ++ List.replicate 8 0 ++ [0]
-    ++ List.replicate 7 0 ++ le 8 0
+    ++ span ⟨256, 0⟩ ++ span ⟨256, 1⟩ ++ span ⟨268, 0⟩ ++ le 4 0 ++ le 4 0 ++ le 4 21 ++ span ⟨recOff, 2⟩
+  let ro := header ++ entry 0 c0.length ⟨0, 1⟩ ++ entry f1Off c1.length ⟨1, 0⟩ ++ List.replicate 8 0 ++ [0]
+    ++ List.replicate 7 0 ++ le 8 0 ++ le 4 site0.start ++ le 4 site0.len ++ le 4 CONTINUE
+  let lsda0 := (Lsda.write lsda0).toList
+  let lsda1 := (Lsda.write #[]).toList
+  let (eh, ehRels) := ehFrame [(0, c0.length, frameSize, 0), (f1Off, c1.length, 0, lsda0.length)]
   let record (i : Nat) : List UInt8 := le 8 jitThreshold ++ List.replicate 28 0 ++ le 4 i ++ List.replicate 24 0
   let data := List.replicate recOff 0 ++ record 0 ++ record 1
   let secs : Array Sec := #[
@@ -167,7 +205,9 @@ def imageParts (resolve : Bool := true) : Parts := Id.run do
     { name := ".data.ryo_image", flags := 3, data := data, align := 64 },
     { name := ".text.ryo_image", flags := 6, data := text, align := 16 },
     { name := ".data.rel.ro.ryo_anchor", flags := 3, data := List.replicate 8 0 },
-    { name := ".data.rel.ro.ryo_main", flags := 3, data := List.replicate 8 0 }]
+    { name := ".data.rel.ro.ryo_main", flags := 3, data := List.replicate 8 0 },
+    { name := ".eh_frame", type := 0x70000001, flags := 2, data := eh },
+    { name := ".gcc_except_table.ryo_image", flags := 2, data := lsda0 ++ lsda1, align := 4 }]
   let syms : Array Sym := #[
     { name := "", bind := 0, type := Elf.STT_SECTION, shndx := 1 },
     { name := "", bind := 0, type := Elf.STT_SECTION, shndx := 2 },
@@ -175,11 +215,12 @@ def imageParts (resolve : Bool := true) : Parts := Id.run do
     { name := "f0", bind := 0, type := Elf.STT_FUNC, shndx := 3, size := c0.length },
     { name := "f1", type := Elf.STT_FUNC, vis := 2, shndx := 3, value := f1Off, size := c1.length },
     { name := imageSymbolPrefix ++ hex16 stableId, type := Elf.STT_OBJECT, vis := 2, shndx := 1, size := roSize },
-    { name := "ext_fn" }, { name := "ryo_h_AddrSym" }, { name := tripEntryName }, { name := tripOsrName },
+    { name := "rust_eh_personality" }, { name := "ryo_h_AddrSym" }, { name := tripEntryName }, { name := tripOsrName },
     { name := anchorName },
-    { name := mainSlotName, type := Elf.STT_OBJECT, vis := 2, shndx := 5, size := 8 }]
+    { name := mainSlotName, type := Elf.STT_OBJECT, vis := 2, shndx := 5, size := 8 },
+    { name := "", bind := 0, type := Elf.STT_SECTION, shndx := 7 }]
   let abs := Elf.R_X86_64_64
-  let mut rels : Array Rel := #[⟨1, 24, 2, abs, 0⟩, ⟨1, 48, 3, abs, 0⟩, ⟨1, slotOff, 7, abs, 0⟩,
+  let mut rels : Array Rel := ehRels ++ #[⟨1, 24, 2, abs, 0⟩, ⟨1, 48, 3, abs, 0⟩, ⟨1, slotOff, 7, abs, 0⟩,
     ⟨4, 0, 11, abs, 0⟩, ⟨5, 0, 5, abs, 0⟩]
   for i in [0:2] do
     let r := recOff + 64 * i
@@ -195,8 +236,6 @@ def imageParts (resolve : Bool := true) : Parts := Id.run do
       | _ => pure ()
   return { secs, syms, rels }
 
-/-- The position of function 0's `call` of function 1's field. -/
-def callField : Nat := ((funcCode f0Items).2.find? (·.to == Ryo.X86.Ref.func 1)).get!.pos
 
 def readObj (p : Parts) : Except String ImageObject := readImageObject p.write
 
@@ -266,6 +305,30 @@ def imageNegative : Except String Unit := do
   expectMismatch (p.poke 1 k1 8) "ret of kind"
   expectMismatch (p.poke 1 k1 8) "collects kind"
 
+/-- Sets byte `off` of section `i`'s (from 1) data. -/
+def Parts.poke1 (p : Parts) (i off v : Nat) : Parts :=
+  let s := p.secs[i - 1]!
+  { p with secs := p.secs.set! (i - 1) { s with data := s.data.set off v.toUInt8 } }
+
+/-- Mutations of the unwind tables. Function 0's FDE is at 32 of `.eh_frame` (after the
+32-byte CIE): its range at 44, its instructions from 53 (`advance_loc 18`, then
+`def_cfa_offset` with its operand at 55). -/
+def unwindNegative : Except String Unit := do
+  let p := imageParts
+  let c0 := (p.syms[3]!).size
+  check ((p.secs[5]!).data[53]? == some 0x52 && (p.secs[5]!).data[55]? == some 32) "FDE layout"
+  expectMismatch (p.poke 6 44 (c0 + 1)) "FDE range"
+  expectMismatch (p.poke1 6 53 0x53) "FDE at 18"
+  expectMismatch (p.poke1 6 55 40) "FDE at 18: cfa r7+40"
+  -- The FDE of function 0 starting elsewhere.
+  let moved := { p with rels := p.rels.map fun r => if r.sec == 6 && r.off == 40 then { r with addend := 16 } else r }
+  expectMismatch moved "no FDE starts at the function"
+  -- LSDAs: a wrong landing pad, a missing call site.
+  expectMismatch (imageParts (lsda0 := #[{ site0 with pad := some 5 }])) "aren't the image's"
+  expectMismatch (imageParts (lsda0 := #[])) "aren't the image's"
+  -- The personality through a slot naming another symbol.
+  expectMismatch { p with syms := p.syms.set! 6 { p.syms[6]! with name := "ext_fn" } } "personality slot"
+
 /-! ## A registry object -/
 
 /-- A registry object listing `images`. Sections: 1 the anchor, 2 the list, 3 the
@@ -331,6 +394,7 @@ def tests : List TestCase := [
   ⟨"ImageCheck/names", fun _ => names⟩,
   ⟨"ImageCheck/image", fun _ => imagePositive⟩,
   ⟨"ImageCheck/image-mutations", fun _ => imageNegative⟩,
+  ⟨"ImageCheck/unwind-mutations", fun _ => unwindNegative⟩,
   ⟨"ImageCheck/registry", fun _ => registry⟩,
 ]
 

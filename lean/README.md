@@ -47,7 +47,7 @@ lake exe ryo-lean check-pool dump.json x.ryo_image.rcgu.o [-v]
 lake exe ryo-lean check-image x.ryo_image.rcgu.o... [--registry r.ryo_registry.bin.rcgu.o]
                                    # the image checks that need no dump (docs/aot.md §C4) on
                                    # a link's objects: each mismatch, then a summary
-../scripts/lean-image-check.py [--opt] [--corpus DIR]
+../scripts/lean-image-check.py [--opt] [--frame-pointer] [--corpus DIR]
                                    # check-image on the corpus, each program's objects as a link
 lake exe ryo-lean exec-item         # run x86 items on states given as JSON lines (Ryo/X86/Cosim.lean)
 lake exe ryo-lean opsem            # opSem on JSON lines (Ryo/Vm/OpSem/Json.lean); from vm/:
@@ -126,7 +126,8 @@ Ryo/Check/Image/Pool.lean          image checks (docs/aot.md §C4): the constant
                                    vtables against the dump's allocations (`check-pool`)
 Ryo/Check/Image.lean, Image/       `ryo-lean check-image` (aot.md §C4): function table and
                                    symbols (Funcs), relocations, JIT records, header, anchor
-                                   and `__ryo_main` (Relocs), the registry object (Registry)
+                                   and `__ryo_main` (Relocs), the registry object (Registry),
+                                   FDE rows and LSDAs against the decoded code (Unwind)
 Ryo/Examples.lean                  example programs for `ryo-lean example`
 Ryo/X86/                           L2 (docs/x86.md Part B): Item (asm::x86's items), Encode,
                                    Decode (canonical, unlinked or linked), State, Exec (per

@@ -258,10 +258,16 @@ data area; the JIT records (`ctr`, `func`, zeros, `entry`/`osr`/`header` relocat
 header (image symbol from `stable_crate_id`, `crate_hash`, section sizes, RELRO); the anchor;
 `__ryo_main` (one slot naming one of the image's functions or an undefined symbol).
 Registry: the constructor decoded with `decodeX` from its relocations, `.init_array.00000`,
-the list, and per link each image symbol listed once, at most one `__ryo_main`. Remaining:
-what needs the dump (symbol names, `ArgPlan`s, which function `__ryo_main` names; the pool
-and vtables are `Pool.lean`'s), and the FDE and LSDA checks (`unwindChecks`, waiting for the
-unwind readers).
+the list, and per link each image symbol listed once, at most one `__ryo_main`. Unwind: the
+CIE (`zPLR`, entry rules, the personality through the slot naming `rust_eh_personality`), one
+FDE per function of range `code_len`, whose row table equals at every offset the rules the
+code establishes, derived from the counter check and prologue items read from the bytes
+(`push rbp`, `mov rbp, rsp`, `sub rsp` applied to the entry rules; the body's rules up to the
+entry's counter stub, the entry rules there; epilogues have no rules by design: the decoder
+admits no call between the frame's release and `ret`), every call site and landing pad in the
+body, and the LSDAs in function order, each equal to the function's call-site run, which the
+decoder matched against the calls and `lpad`s. Remaining: what needs the dump (symbol names,
+`ArgPlan`s, which function `__ryo_main` names; the pool and vtables are `Pool.lean`'s).
 
 **Linked binary vs the image object (recommendation).** Validate the **object** as the
 primary input: its relocations are *named*, which is what makes the C1'/§C4 resolution

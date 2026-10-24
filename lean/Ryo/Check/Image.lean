@@ -9,25 +9,21 @@ slots) and of the link's registry object, against the decoded code (`ryo-lean ch
   relocations), the read-only and writable sections, the JIT records, the header, the anchor
   and `__ryo_main`;
 - `Ryo/Check/Image/Registry.lean`: the registry object, and the link-level checks;
+- `Ryo/Check/Image/Unwind.lean`: the CIE, each function's FDE rows against the frame rules its
+  decoded prologue establishes, and its LSDA against the image's call sites;
 - `Ryo/Check/Image/Pool.lean` (separate): the constant pool against the dump.
 
 `cli` is `ryo-lean check-image`. Not here: what needs the dump (symbol names vs `tcx.symbol_name`, `ArgPlan`s, which
-function `__ryo_main` must name), and the unwind tables (`unwindChecks`).
+function `__ryo_main` must name).
 -/
 import Ryo.Check.Image.Funcs
 import Ryo.Check.Image.Relocs
 import Ryo.Check.Image.Registry
+import Ryo.Check.Image.Unwind
 
 namespace Ryo.Check.Image
 
 open Ryo.Obj
-
-/-- Hook for the unwind-table checks of aot.md §C4, which need the `.eh_frame` and
-`.gcc_except_table` readers: each VM function has exactly one FDE covering
-`[code_off, +code_len)` whose rows match the decoded prologue in the image's mode
-(`image::eh_fde`), and its LSDA's call-site records equal the image's call-site run, with the
-landing pads the decoded `lpad`s. Not implemented yet: no mismatches. -/
-def unwindChecks (_o : ImageObject) (_ds : Array FuncDecoding) : Array String := #[]
 
 /-- What checking one image object found. -/
 structure ObjectResult where

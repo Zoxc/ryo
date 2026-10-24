@@ -10,12 +10,14 @@ objects (`<name>.<cgu>.ryo_image.rcgu.o`) and its registry object
 link. With a ryo sysroot (`./y.sh build --sysroot ryo`), the image object of each of its rlibs
 is checked alone (no registry object).
 
-Usage: scripts/lean-image-check.py [names...] [--opt] [--no-sysroot] [--corpus DIR]
+Usage: scripts/lean-image-check.py [names...] [--opt] [--frame-pointer] [--no-sysroot] [--corpus DIR]
                                    [--keep DIR] [--ryo-lean PATH] [-j N]
 
     names         programs (file stems, e.g. `ints`, `fib`) or sysroot crates (`std`); default:
                   all
     --opt         also build the programs with -Copt-level=3
+    --frame-pointer
+                  also build them with -Cforce-frame-pointers=yes (the frame-pointer mode)
     --corpus DIR  don't build: check DIR/<group>/ (each group's image and registry objects
                   together), as --keep leaves them
     --keep DIR    keep the objects and `check-image` outputs in DIR (default: a temporary
@@ -119,6 +121,7 @@ def main():
     ap.add_argument("names", nargs="*")
     ap.add_argument("--ryo-lean", default=str(ROOT / "lean" / ".lake" / "build" / "bin" / "ryo-lean"))
     ap.add_argument("--opt", action="store_true")
+    ap.add_argument("--frame-pointer", action="store_true", help="also build the programs with -Cforce-frame-pointers=yes")
     ap.add_argument("--no-sysroot", action="store_true", help="skip the ryo sysroot's objects")
     ap.add_argument("--corpus", help="check the groups of objects in this directory instead of building")
     ap.add_argument("--keep")
@@ -146,6 +149,8 @@ def main():
         work = Path(args.keep) if args.keep else Path(tempfile.mkdtemp(prefix="lean-image-check-"))
         work.mkdir(parents=True, exist_ok=True)
         variants = [("", [])] + ([("-O3", ["-Copt-level=3"])] if args.opt else [])
+        if args.frame_pointer:
+            variants += [(v + "-fp", f + ["-Cforce-frame-pointers=yes"]) for v, f in variants]
         with concurrent.futures.ThreadPoolExecutor(args.j) as pool:
             jobs = {}
             for label, src in programs(args.names):
