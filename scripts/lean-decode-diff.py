@@ -321,8 +321,9 @@ def check(obj, args, ref, work):
     if args.decode:
         code, ld, lerr = run([args.ryo_lean] + LEAN_DECODE + [str(obj)])
         _, rd, _ = run([str(ref), "decode", str(obj)])
-        results["decode"] = compare(ld.decode(errors="replace").splitlines(), rd.decode(errors="replace").splitlines(), "ryo-lean decode",
-                                    "lean-decode-ref decode")
+        # (An image without functions: the Rust reference prints an empty line, Lean nothing.)
+        results["decode"] = compare(ld.decode(errors="replace").strip().splitlines(), rd.decode(errors="replace").strip().splitlines(),
+                                    "ryo-lean decode", "lean-decode-ref decode")
     if args.readelf:
         _, le, _ = run([args.ryo_lean, "elf", str(obj)])
         _, re_, _ = run(["readelf", "-W", "-S", "-s", "-r", str(obj)])
