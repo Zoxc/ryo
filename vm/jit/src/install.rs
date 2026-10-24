@@ -11,12 +11,14 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::vec::Vec;
 
+use ryo_bytecode::asm::Decoded;
 use ryo_bytecode::asm::frame::{self, SlotMap};
 use ryo_bytecode::asm::osr::OsrEntry;
 use ryo_bytecode::asm::{self, Mode, Ref};
 use ryo_bytecode::full::{Const, Data, Func, Site, Sym};
 use ryo_bytecode::image::{EhFunc, Image, ImageResolver, JIT_DONE, JitRecord, eh_cie, eh_fde, eh_fde_rows};
-use ryo_bytecode::jit_abi::{JIT_ENTRY_PREFIX, JIT_LOG, JIT_TEST_PANIC, REDIRECT, RtApi};
+use ryo_bytecode::jit;
+use ryo_bytecode::jit_abi::{JIT_CHECK, JIT_ENTRY_PREFIX, JIT_LOG, JIT_OPT_SSA_NAIVE, JIT_TEST_PANIC, REDIRECT, RtApi};
 use ryo_bytecode::{Opcode, reduced};
 
 /// The page size (x86_64).
@@ -69,6 +71,31 @@ fn state(r: *mut JitRecord) -> &'static AtomicU32 {
     unsafe { &(*r).state }
 }
 
+/// How many functions the SSA tier compiled, and how many it left to the re-encoding
+/// pipeline ([`crate::ssa_stats`]).
+pub(crate) static SSA_COMPILED: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+pub(crate) static SSA_FALLBACK: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+
+/// A function's machine code, from either pipeline, before it is installed.
+struct Gen {
+    len: usize,
+    code: Vec<u8>,
+    relocs: Vec<asm::Reloc>,
+    rodata: Vec<u8>,
+    call_sites: Vec<asm::CallSite>,
+    body: Body,
+    osr: Option<asm::osr::OsrCode>,
+    osr_at: usize,
+}
+
+/// The unwind rules of a function's body.
+enum Body {
+    /// As the encoder lays out frames.
+    Aot(EhFunc),
+    /// The SSA tier's rows.
+    Rows(Vec<(u32, Vec<u8>)>),
+}
+
 /// An address range `lo..hi` that code must reach with 32-bit PC-relative fields.
 #[derive(Clone, Copy)]
 struct Span {
@@ -116,6 +143,11 @@ pub(crate) struct Jit {
     /// 8-byte slot in its region's read-write end (`call [rip + slot]`), which holds the
     /// function's AOT entry and then its JIT code. By (region start, image header, function).
     slots: HashMap<(usize, usize, u32), usize>,
+    /// `RYO_JIT_DUMP`: the directory the SSA tier writes a description of each compilation
+    /// to.
+    dump: Option<String>,
+    /// `RYO_JIT_SSA_LIMIT`.
+    ssa_limit: Option<usize>,
 }
 
 impl Jit {
@@ -133,7 +165,9 @@ impl Jit {
                 std::fs::OpenOptions::new().create(true).append(true).open(std::format!("/tmp/perf-{pid}.map")).ok()
             })
             .flatten();
-        Jit { rt, handlers, rt_span: Span { lo, hi }, regions: Vec::new(), images: HashMap::new(), perfmap, slots: HashMap::new() }
+        let dump = std::env::var("RYO_JIT_DUMP").ok().filter(|d| !d.is_empty());
+        let ssa_limit = std::env::var("RYO_JIT_SSA_LIMIT").ok().and_then(|n| n.parse().ok());
+        Jit { rt, handlers, rt_span: Span { lo, hi }, regions: Vec::new(), images: HashMap::new(), perfmap, slots: HashMap::new(), dump, ssa_limit }
     }
 
     fn image(&mut self, img: &Image<'_>) -> ImageInfo {
@@ -251,6 +285,66 @@ impl Jit {
             }
             at += reduced::insn_len(&words[at..]).map_err(|_| "reduced code")?;
         }
+        // The SSA tier (`RYO_JIT_OPT`), else, or where it doesn't compile the function, the
+        // re-encoding pipeline.
+        let flags = self.rt.flags;
+        // `RYO_JIT_SSA_LIMIT=n` (debugging: bisects a miscompile): only the first `n`
+        // functions go through the SSA tier.
+        let within_limit = self.ssa_limit.is_none_or(|n| SSA_COMPILED.load(SeqCst) < n);
+        if flags & JIT_OPT_SSA_NAIVE != 0 && within_limit {
+            let opts = jit::Options {
+                alloc: jit::Allocator::Naive,
+                stress: (self.rt.shuffled)(h as *const _ as *const u8),
+                check: flags & JIT_CHECK != 0,
+                dump: self.dump.is_some(),
+            };
+            // The AOT layout's words (the SSA tier lays out its own frame), with the calls
+            // through call slots as above.
+            let mut sw = d.words.clone();
+            let mut k = 0;
+            while k < sw.len() {
+                if sw[k] == reduced::Opcode::Call as u32 && words[k] == reduced::Opcode::CallSym as u32 {
+                    sw[k] = words[k];
+                    sw[k + 2] = words[k + 2];
+                }
+                k += reduced::insn_len(&sw[k..]).map_err(|_| "reduced code")?;
+            }
+            let ds = Decoded { words: sw, ..d.clone() };
+            match jit::compile(&ds, img.code_consts(), mode, &opts) {
+                Ok(mut o) => {
+                    if let (Some(dir), Some(text)) = (&self.dump, o.dump.take()) {
+                        let _ = std::fs::write(std::format!("{dir}/f{func}-{:x}.txt", h as *const _ as usize), text);
+                    }
+                    let out = Gen {
+                        len: o.code.len(),
+                        code: o.code,
+                        relocs: o.relocs,
+                        rodata: o.rodata,
+                        call_sites: o.call_sites,
+                        body: Body::Rows(o.cfi),
+                        osr: o.osr,
+                        osr_at: o.osr_at as usize,
+                    };
+                    SSA_COMPILED.fetch_add(1, SeqCst);
+                    return self.install(rec, func, &img, info, personality, &callees, out, "compiled (ssa)");
+                }
+                Err(jit::Error::Unsupported(u)) => {
+                    SSA_FALLBACK.fetch_add(1, SeqCst);
+                    if let Some(dir) = &self.dump {
+                        let text = std::format!("; unsupported: {}\n{}", u.0, reduced::Disasm(&ds.words));
+                        let _ = std::fs::write(std::format!("{dir}/f{func}-{:x}.txt", h as *const _ as usize), text);
+                    }
+                    if flags & JIT_LOG != 0 {
+                        self.log(rec, &std::format!("ssa: {}", u.0));
+                    }
+                }
+                // A checker found a bug: always on stderr, so that tests see it.
+                Err(jit::Error::Check(why)) => {
+                    SSA_FALLBACK.fetch_add(1, SeqCst);
+                    self.log(rec, &std::format!("ssa: check failed: {why}"))
+                }
+            }
+        }
         let words = &words[..];
         // Scopes keep their bytes' new offsets; an end over bytes that move apart only ends
         // escapes, which stay, so it is dropped (scopes are side data, not code).
@@ -277,22 +371,57 @@ impl Jit {
         }
         let osr_at = enc.code.len().next_multiple_of(16);
         let osr = (!entries.is_empty()).then(|| asm::osr::osr_code(&entries, d.frame_size, map.frame_size, mode, osr_at as u32));
+        let ef = EhFunc { len: enc.code.len() as u32, frame_size: map.frame_size, prologue: enc.prologue, entry_stub: enc.entry_stub };
+        let out = Gen {
+            len: enc.code.len(),
+            code: enc.code,
+            relocs: enc.relocs,
+            rodata: enc.rodata,
+            call_sites: enc.call_sites,
+            body: Body::Aot(ef),
+            osr,
+            osr_at,
+        };
+        self.install(rec, func, &img, info, personality, &callees, out, "compiled")
+    }
+
+    /// Installs the code `out` of the function `func` of `img` (record `rec`): code memory,
+    /// relocation, unwind information, the perf map and the publication.
+    #[allow(clippy::too_many_arguments)]
+    fn install(
+        &mut self,
+        rec: *mut JitRecord,
+        func: u32,
+        img: &Image<'_>,
+        info: ImageInfo,
+        personality: usize,
+        callees: &[u32],
+        out: Gen,
+        what: &str,
+    ) -> Result<(), &'static str> {
+        let h = img.header();
+        let mode = Mode { counters: false, ..img.mode() };
+        let nsyms = h.symbols.count;
+        let recs = img.jit_records();
+        let Gen { len: code_len, code: enc_code, relocs, rodata, call_sites, body, osr, osr_at } = out;
         let osr_len = osr.as_ref().map_or(0, |o| o.code.len());
 
         // Unwind information: the CIE, the FDE, the OSR code's FDE, the terminator, then the
         // LSDA.
         let mut eh = Vec::new();
         let pers_field = eh_cie(&mut eh);
-        let ef = EhFunc { len: enc.code.len() as u32, frame_size: map.frame_size, prologue: enc.prologue, entry_stub: enc.entry_stub };
-        let fields = eh_fde(&mut eh, 0, &ef, mode);
+        let fields = match &body {
+            Body::Aot(ef) => eh_fde(&mut eh, 0, ef, mode),
+            Body::Rows(rows) => eh_fde_rows(&mut eh, 0, code_len as u32, rows),
+        };
         let osr_fields = osr.as_ref().map(|o| eh_fde_rows(&mut eh, 0, o.code.len() as u32, &o.cfi));
         eh.extend_from_slice(&[0; 4]);
         let lsda_at = eh.len();
-        eh.extend_from_slice(&asm::lsda::write(&enc.call_sites));
+        eh.extend_from_slice(&asm::lsda::write(&call_sites));
 
         // Code memory: the entry prefix, the code, the OSR code, then its code constants.
         let ro_at = (CODE_AT + osr_at + osr_len).next_multiple_of(16);
-        let size = (ro_at + enc.rodata.len()).next_multiple_of(PAGE);
+        let size = (ro_at + rodata.len()).next_multiple_of(PAGE);
         let eh_size = eh.len().next_multiple_of(16);
         if size + eh_size > REGION / 2 {
             return Err("too large");
@@ -307,7 +436,8 @@ impl Jit {
             region.data = region.code;
             region.start = usize::MAX;
             region.end = usize::MAX;
-            return self.compile(rec);
+            let out = Gen { len: code_len, code: enc_code, relocs, rodata, call_sites, body, osr, osr_at };
+            return self.install(rec, func, img, info, personality, callees, out, what);
         }
         let base = region.code;
         region.code += size;
@@ -317,7 +447,7 @@ impl Jit {
         // meanwhile (publication is this thread's), else its AOT entry.
         let fs = img.functions();
         let mut slot_of = Vec::with_capacity(callees.len());
-        for &g in &callees {
+        for &g in callees {
             let f = fs.get(g as usize).ok_or("function out of range")?;
             let slot = *self.slots.entry((start, header, g)).or_insert_with(|| {
                 region.data -= 8;
@@ -342,14 +472,14 @@ impl Jit {
         prefix.extend(lea.to_le_bytes());
         prefix.extend([0x4c, 0x89, 0x1c, 0x24, 0xc3]);
         code[CODE_AT - JIT_ENTRY_PREFIX..CODE_AT].copy_from_slice(&prefix);
-        code[CODE_AT..][..enc.code.len()].copy_from_slice(&enc.code);
+        code[CODE_AT..][..code_len].copy_from_slice(&enc_code);
         if let Some(o) = &osr {
             code[CODE_AT + osr_at..][..o.code.len()].copy_from_slice(&o.code);
         }
-        code[ro_at..][..enc.rodata.len()].copy_from_slice(&enc.rodata);
+        code[ro_at..][..rodata.len()].copy_from_slice(&rodata);
         let jit_f = base + CODE_AT;
         let ro = img.bytes().as_ptr() as usize;
-        for r in &enc.relocs {
+        for r in &relocs {
             let field = jit_f + r.at as usize;
             let target = match r.to {
                 Ref::Handler(op) => Some(self.rt.handlers[op as usize]).filter(|h| !h.is_null()).ok_or("no handler")? as usize,
@@ -412,7 +542,7 @@ impl Jit {
         }
         if let Some(m) = &mut self.perfmap {
             let aot = h.text as usize + fs[func as usize].code_off as usize;
-            let _ = writeln!(m, "{jit_f:x} {:x} ryo-jit:f{func}@{aot:x}", enc.code.len());
+            let _ = writeln!(m, "{jit_f:x} {:x} ryo-jit:f{func}@{aot:x}", code_len);
         }
 
         // Publish: the code's range, the entry, the state, then the counter that takes every
@@ -421,7 +551,7 @@ impl Jit {
         // `entry` with plain loads (an atomic store of its size).
         unsafe {
             (*rec).jit_code = jit_f as *const u8;
-            (*rec).jit_len = enc.code.len() as u64;
+            (*rec).jit_len = code_len as u64;
         }
         entry(rec).store((jit_f - JIT_ENTRY_PREFIX) as *mut u8, Release);
         if osr.is_some() {
@@ -439,7 +569,7 @@ impl Jit {
             }
         }
         if self.rt.flags & JIT_LOG != 0 {
-            self.log(rec, "compiled");
+            self.log(rec, what);
         }
         Ok(())
     }

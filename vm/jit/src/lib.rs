@@ -29,6 +29,15 @@ pub extern "C" fn ryo_jit_start(rt: &'static RtApi) -> bool {
     thread::start(rt)
 }
 
+/// How many functions the SSA tier (`RYO_JIT_OPT=ssa…`) compiled, and how many went to the
+/// re-encoding pipeline instead (tests).
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[doc(hidden)]
+pub fn ssa_stats() -> (usize, usize) {
+    use core::sync::atomic::Ordering::SeqCst;
+    (install::SSA_COMPILED.load(SeqCst), install::SSA_FALLBACK.load(SeqCst))
+}
+
 /// Without a JIT for this target: fails, so the runtime acts as the no-op JIT.
 #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
 #[unsafe(no_mangle)]

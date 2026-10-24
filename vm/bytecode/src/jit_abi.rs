@@ -18,7 +18,7 @@ use crate::image::JitRecord;
 
 /// The version of [`RtApi`] and of the protocol around it. Bumped on every incompatible
 /// change; the JIT refuses to start on a mismatch ([`RtApi::compatible`]).
-pub const JIT_ABI_VERSION: u32 = 1;
+pub const JIT_ABI_VERSION: u32 = 2;
 
 /// The counter of a compiled function ([`JitRecord::ctr`]): far enough below 0 that the
 /// counter checks' `sub`s keep it negative (every check takes its stub) for 2^58 calls. Not
@@ -45,6 +45,12 @@ pub const JIT_PERFMAP: u32 = 4;
 /// (`RYO_JIT_TEST_PANIC`, tests).
 pub const JIT_TEST_PANIC: u32 = 8;
 
+/// [`RtApi::flags`]: compile through the SSA tier with every value in a stack slot
+/// (`RYO_JIT_OPT=ssa-naive`).
+pub const JIT_OPT_SSA_NAIVE: u32 = 16;
+/// [`RtApi::flags`]: run the SSA tier's checkers (`RYO_JIT_CHECK`).
+pub const JIT_CHECK: u32 = 64;
+
 /// What the runtime gives the JIT: built once, before the JIT starts, and never changed.
 #[repr(C)]
 pub struct RtApi {
@@ -54,7 +60,8 @@ pub struct RtApi {
     pub format: u32,
     /// `size_of::<RtApi>()`.
     pub size: u32,
-    /// [`JIT_SYNC`], [`JIT_LOG`], [`JIT_PERFMAP`], [`JIT_TEST_PANIC`].
+    /// [`JIT_SYNC`], [`JIT_LOG`], [`JIT_PERFMAP`], [`JIT_TEST_PANIC`], [`JIT_OPT_SSA_NAIVE`],
+    /// [`JIT_CHECK`].
     pub flags: u32,
     /// `ryo_probe_stack`'s address.
     pub probe: *const (),

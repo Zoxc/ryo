@@ -415,14 +415,18 @@ pub fn run(clif: bool) -> Result<(), String> {
     // frame pointer (design/vm.md#handlers).
     // And the JIT's tests, through the runtime's trips, also with `fp-rbp` (design/jit.md#testing);
     // the other runtime tests run without the JIT.
-    let vm_runs: [(&str, &[&str]); 4] = [
-        ("vm", &["test", "--workspace", "--exclude", "ryo_jit"]),
-        ("vm fp-rbp", &["test", "-p", "ryo_rt", "--features", "fp-rbp"]),
-        ("vm jit", &["test", "-p", "ryo_jit"]),
-        ("vm jit fp-rbp", &["test", "-p", "ryo_jit", "--features", "ryo_rt/fp-rbp"]),
+    // And the JIT's tests through its SSA tier, with its checkers.
+    let ssa = |opt| [("RYO_JIT_OPT", opt), ("RYO_JIT_CHECK", "1")];
+    let vm_runs: [(&str, &[&str], &[(&str, &str)]); 6] = [
+        ("vm", &["test", "--workspace", "--exclude", "ryo_jit"], &[]),
+        ("vm fp-rbp", &["test", "-p", "ryo_rt", "--features", "fp-rbp"], &[]),
+        ("vm jit", &["test", "-p", "ryo_jit"], &[]),
+        ("vm jit fp-rbp", &["test", "-p", "ryo_jit", "--features", "ryo_rt/fp-rbp"], &[]),
+        ("vm jit ssa-naive", &["test", "-p", "ryo_jit"], &ssa("ssa-naive")),
+        ("vm jit ssa-naive fp-rbp", &["test", "-p", "ryo_jit", "--features", "ryo_rt/fp-rbp"], &ssa("ssa-naive")),
     ];
-    for (name, args) in vm_runs {
-        match crate::utils::run(cmd("cargo").current_dir(root.join("vm")).args(args)) {
+    for (name, args, env) in vm_runs {
+        match crate::utils::run(cmd("cargo").current_dir(root.join("vm")).args(args).envs(env.iter().copied())) {
             Ok(()) => eprintln!("[y] test {name}: ok"),
             Err(msg) => {
                 eprintln!("[y] test {name}: FAILED: {msg}");

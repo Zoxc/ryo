@@ -435,6 +435,17 @@ fn jit_rsp_delta(f: u32, shuffle: bool) -> u64 {
     if shuffle { f as u64 + 64 } else { 0 }
 }
 
+/// Checks how far `rsp` moved between the AOT code's `note` (`first`) and the JIT code's
+/// (`last`): by the frames' difference. The SSA tier (`RYO_JIT_OPT=ssa…`) lays out frames of
+/// its own, so there only by a multiple of 16.
+fn check_rsp(first: u64, last: u64, f: u32, shuffle: bool, what: &str) {
+    if std::env::var("RYO_JIT_OPT").is_ok_and(|o| o.starts_with("ssa")) {
+        assert_eq!(first.wrapping_sub(last) % 16, 0, "{what}: rsp");
+    } else {
+        assert_eq!(first - last, jit_rsp_delta(f, shuffle), "{what}: rsp");
+    }
+}
+
 /// A loop moves into the JIT code at the head pass that trips, with every value live at the
 /// head intact: integers of every width, floats (in handlers), a 128-bit value, and a local
 /// whose address was taken before the loop, read and written through the pointer in the
@@ -536,7 +547,7 @@ fn osr_values_at(shuffle: bool, frame: u32, k: i64) {
     let o = |a: &AtomicU64| a.load(std::sync::atomic::Ordering::SeqCst);
     assert!(in_aot(&img, f, o(&obs.first)), "{what}: started at {:#x}", o(&obs.first));
     assert!(in_jit(&img, f, o(&obs.last)), "{what}: ended at {:#x}", o(&obs.last));
-    assert_eq!(o(&obs.first_sp) - o(&obs.last_sp), jit_rsp_delta(frame, shuffle), "{what}: rsp");
+    check_rsp(o(&obs.first_sp), o(&obs.last_sp), frame, shuffle, &what);
 }
 
 /// Nested loops: OSR at the outer head (its first pass) or the inner one (later passes),
@@ -583,7 +594,7 @@ fn osr_nested_loops() {
             let o = |a: &AtomicU64| a.load(std::sync::atomic::Ordering::SeqCst);
             assert!(in_aot(&img, f, o(&obs.first)), "{what}");
             assert!(in_jit(&img, f, o(&obs.last)), "{what}: ended at {:#x}", o(&obs.last));
-            assert_eq!(o(&obs.first_sp) - o(&obs.last_sp), jit_rsp_delta(32, shuffle), "{what}: rsp");
+            check_rsp(o(&obs.first_sp), o(&obs.last_sp), 32, shuffle, &what);
         }
     }
 }
@@ -634,7 +645,7 @@ fn osr_unwinding() {
             assert!(in_jit(&img, f, o(&obs.last)), "{what}: ran at {:#x}", o(&obs.last));
             if k > 0 {
                 assert!(in_aot(&img, f, o(&obs.first)), "{what}");
-                assert_eq!(o(&obs.first_sp) - o(&obs.last_sp), jit_rsp_delta(48, shuffle), "{what}: rsp");
+                check_rsp(o(&obs.first_sp), o(&obs.last_sp), 48, shuffle, &what);
             }
         }
     }
@@ -719,5 +730,257 @@ fn running_calls_switch_over() {
         assert_eq!(t.join().unwrap(), 5000);
         assert!(in_aot(&img, rec, o(&obs.first)));
         assert!(in_jit(&img, rec, o(&obs.last)), "the innermost call ran at {:#x}", o(&obs.last));
+    }
+}
+
+// ---- SSA tier (`RYO_JIT_OPT=ssa…`) ----
+
+fn o(a: &AtomicU64) -> u64 {
+    a.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// A local's address is taken only after the loop: the OSR entry mid-loop needs no escaped
+/// slot, and the read through the pointer after the loop sees the loop's value.
+#[test]
+fn osr_escaped_after_head() {
+    init();
+    for k in [0i64, 1, 3, 7] {
+        let mut w = ImageWriter::new(unique_scid());
+        let s_note = w.symbol("note", 0);
+        let mut defs = Defs::default();
+        // f(n, out, obs): e = 0; for i < n { e += i * 2 }; p = &e; out[0] = *p + 1.
+        // n@16, out@24, obs@32; i@-8, e@-16, p@-24, t@-32.
+        let mut a = Asm::new();
+        note_call(&mut a, s_note, 32);
+        a.i(Insn::ImmW64 { d: Slot(-8), imm: 0 });
+        a.i(Insn::ImmW64 { d: Slot(-16), imm: 0 });
+        let head = a.i(Insn::BrLtUW64 { a: Slot(-8), b: Slot(16), neg: F, t: Target(0) });
+        a.i(Insn::MulImmW64 { d: Slot(-32), a: Slot(-8), imm: 2 });
+        a.i(Insn::AddW64 { d: Slot(-16), a: Slot(-16), b: Slot(-32) });
+        a.i(Insn::AddImmW64 { d: Slot(-8), a: Slot(-8), imm: 1 });
+        let back = a.i(Insn::Jmp { t: Target(0) });
+        a.patch(back, "t", head);
+        let done = a.i(Insn::Addr { d: Slot(-24), s: Slot(-16) });
+        a.patch(head, "t", done);
+        a.i(Insn::LoadW64 { d: Slot(-32), m: Mem { p: Slot(-24), k: 0 } });
+        a.i(Insn::AddImmW64 { d: Slot(-32), a: Slot(-32), imm: 1 });
+        a.i(Insn::StoreW64 { m: Mem { p: Slot(24), k: 0 }, s: Slot(-32) });
+        note_call(&mut a, s_note, 32);
+        a.ret(Slot(-8), 8);
+        let f = defs.add(&mut w, func(a.done(), 32, 24, 8), vec![escape(done, -16, 8)]);
+        let img = defs.build(w, false);
+
+        let n = 20u64;
+        img.set_counter(f, ENTRY_COUNT as i64 + k);
+        let mut out = [0u64; 1];
+        let obs = Obs::default();
+        let what = format!("trip at head pass {}", k + 1);
+        assert_eq!(ok::<_, u64>(img.id(f), (n, out.as_mut_ptr() as u64, &raw const obs as u64)), n, "{what}");
+        assert_eq!(out[0], n * (n - 1) + 1, "{what}");
+        assert!(in_aot(&img, f, o(&obs.first)), "{what}");
+        assert!(in_jit(&img, f, o(&obs.last)), "{what}: ended at {:#x}", o(&obs.last));
+    }
+}
+
+/// A backward jump that is no loop: its target's counter check trips. The SSA tier has no OSR
+/// entry at a head on no cycle, so there the activation finishes in AOT code (the old pipeline
+/// moves into the JIT code); the next call runs the JIT code.
+#[test]
+fn acyclic_head() {
+    init();
+    let mut w = ImageWriter::new(unique_scid());
+    let s_note = w.symbol("note", 0);
+    // f(x, obs): note(obs); jmp B; C: note(obs); ret x; B: x += 5; jmp C. x@16, obs@24.
+    let mut a = Asm::new();
+    note_call(&mut a, s_note, 24);
+    let j = a.i(Insn::Jmp { t: Target(0) });
+    let c = note_call(&mut a, s_note, 24);
+    a.ret(Slot(16), 8);
+    let b = a.i(Insn::AddImmW64 { d: Slot(16), a: Slot(16), imm: 5 });
+    let back = a.i(Insn::Jmp { t: Target(0) });
+    a.patch(back, "t", c);
+    a.patch(j, "t", b);
+    let f = w.add_function(func(a.done(), 16, 16, 8));
+    let img = build(w, &syms());
+
+    // The entry's check leaves 0, the head's trips.
+    img.set_counter(f, ENTRY_COUNT as i64);
+    let obs = Obs::default();
+    assert_eq!(ok::<_, u64>(img.id(f), (10u64, &raw const obs as u64)), 15);
+    assert!(in_aot(&img, f, o(&obs.first)));
+    // The old pipeline has OSR entries at every head, the SSA tier only at cyclic ones.
+    let ssa = std::env::var("RYO_JIT_OPT").is_ok_and(|o| o.starts_with("ssa"));
+    let last = o(&obs.last);
+    assert!(if ssa { in_aot(&img, f, last) } else { in_jit(&img, f, last) }, "finished at {last:#x}");
+    for x in [0u64, 7, 1 << 40] {
+        let obs = Obs::default();
+        assert_eq!(ok::<_, u64>(img.id(f), (x, &raw const obs as u64)), x + 5);
+        assert!(in_jit(&img, f, o(&obs.first)), "started at {:#x}", o(&obs.first));
+        assert!(in_jit(&img, f, o(&obs.last)));
+    }
+}
+
+/// One slot holds a 64-bit value, then an 8-bit one, in each pass of a loop entered by OSR.
+#[test]
+fn slot_reuse_widths() {
+    init();
+    for k in [0i64, 1, 2, 9] {
+        let mut w = ImageWriter::new(unique_scid());
+        let s_note = w.symbol("note", 0);
+        // f(n, out, obs): for i < n { s = i * 3; acc += s; s8 = 7; s8 += i8; acc8 += s8 };
+        // out[0] = acc, out[1] = zext(acc8). n@16, out@24, obs@32; i@-8, s@-16, acc@-24,
+        // acc8@-25, t@-32.
+        let mut a = Asm::new();
+        note_call(&mut a, s_note, 32);
+        a.i(Insn::ImmW64 { d: Slot(-8), imm: 0 });
+        a.i(Insn::ImmW64 { d: Slot(-24), imm: 0 });
+        a.i(Insn::ImmW8 { d: Slot(-25), imm: 0 });
+        let head = a.i(Insn::BrLtUW64 { a: Slot(-8), b: Slot(16), neg: F, t: Target(0) });
+        a.i(Insn::MulImmW64 { d: Slot(-16), a: Slot(-8), imm: 3 });
+        a.i(Insn::AddW64 { d: Slot(-24), a: Slot(-24), b: Slot(-16) });
+        a.i(Insn::ImmW8 { d: Slot(-16), imm: 7 });
+        a.i(Insn::AddW8 { d: Slot(-16), a: Slot(-16), b: Slot(-8) });
+        a.i(Insn::AddW8 { d: Slot(-25), a: Slot(-25), b: Slot(-16) });
+        a.i(Insn::AddImmW64 { d: Slot(-8), a: Slot(-8), imm: 1 });
+        let back = a.i(Insn::Jmp { t: Target(0) });
+        a.patch(back, "t", head);
+        let done = a.i(Insn::StoreW64 { m: Mem { p: Slot(24), k: 0 }, s: Slot(-24) });
+        a.patch(head, "t", done);
+        a.i(Insn::ZextW8W64 { d: Slot(-32), s: Slot(-25) });
+        a.i(Insn::StoreW64 { m: Mem { p: Slot(24), k: 8 }, s: Slot(-32) });
+        note_call(&mut a, s_note, 32);
+        a.ret(Slot(-8), 8);
+        let f = w.add_function(func(a.done(), 32, 24, 8));
+        let img = build(w, &syms());
+
+        let n = 100u64;
+        let acc: u64 = (0..n).map(|i| i * 3).sum();
+        let acc8 = (0..n).fold(0u8, |s, i| s.wrapping_add(7u8.wrapping_add(i as u8)));
+        img.set_counter(f, ENTRY_COUNT as i64 + k);
+        let mut out = [0u64; 2];
+        let obs = Obs::default();
+        let what = format!("trip at head pass {}", k + 1);
+        assert_eq!(ok::<_, u64>(img.id(f), (n, out.as_mut_ptr() as u64, &raw const obs as u64)), n, "{what}");
+        assert_eq!(out, [acc, acc8 as u64], "{what}");
+        assert!(in_aot(&img, f, o(&obs.first)), "{what}");
+        assert!(in_jit(&img, f, o(&obs.last)), "{what}: ended at {:#x}", o(&obs.last));
+    }
+}
+
+/// Handler results feed branches: an `add.ovf`'s overflow flag a `br`, a `div`'s quotient a
+/// compare-branch.
+#[test]
+fn handler_results_feed_branches() {
+    init();
+    let mut w = ImageWriter::new(unique_scid());
+    let s_ret = w.symbol("ret_addr", 0);
+    // f(a, b, c, d, out): s, ov = a +ovf b (32 bits); if ov { ret zext(s) + 2^50 };
+    // q = c / d; if q < 10 { ret zext(s) + q } else { ret zext(s) + 2^40 }; out[0] = where
+    // it runs. a@16, b@24, c@32, d@40, out@48; s@-4, ov@-8, q@-16, z@-24, t@-32.
+    let mut a = Asm::new();
+    a.i(Insn::CallSym { d: Slot(-32), sym: s_ret, k: 8, a: List::from_words(&[]) });
+    a.i(Insn::StoreW64 { m: Mem { p: Slot(48), k: 0 }, s: Slot(-32) });
+    a.i(Insn::AddOvfUW32 { d: Slot(-4), o: Slot(-8), a: Slot(16), b: Slot(24) });
+    a.i(Insn::ZextW32W64 { d: Slot(-24), s: Slot(-4) });
+    let bo = a.i(Insn::Br { s: Slot(-8), neg: T, t: Target(0) });
+    a.i(Insn::DivUW64 { d: Slot(-16), a: Slot(32), b: Slot(40) });
+    let bq = a.i(Insn::BrLtUImmW64 { a: Slot(-16), imm: 10, neg: T, t: Target(0) });
+    a.i(Insn::AddImmW64 { d: Slot(-24), a: Slot(-24), imm: 1 << 40 });
+    a.ret(Slot(-24), 8);
+    let small = a.i(Insn::AddW64 { d: Slot(-24), a: Slot(-24), b: Slot(-16) });
+    a.patch(bq, "t", small);
+    a.ret(Slot(-24), 8);
+    let ovf = a.i(Insn::AddImmW64 { d: Slot(-24), a: Slot(-24), imm: 1 << 50 });
+    a.patch(bo, "t", ovf);
+    a.ret(Slot(-24), 8);
+    let f = w.add_function(func(a.done(), 32, 40, 8));
+    let img = build(w, &syms());
+
+    let want = |a: u32, b: u32, c: u64, d: u64| {
+        let (s, ov) = a.overflowing_add(b);
+        let q = c / d;
+        s as u64
+            + if ov {
+                1 << 50
+            } else if q < 10 {
+                q
+            } else {
+                1 << 40
+            }
+    };
+    for round in 0..2 {
+        for (x, y, c, d) in [(1u32, 2u32, 50u64, 7u64), (u32::MAX, 2, 5, 1), (7, 8, 1000, 3), (u32::MAX - 1, 1, 9, 1), (0, 0, 0, 1)] {
+            let mut out = [0u64; 1];
+            let r = ok::<_, u64>(img.id(f), (x as u64, y as u64, c, d, out.as_mut_ptr() as u64));
+            assert_eq!(r, want(x, y, c, d), "round {round}: {x} {y} {c} {d}");
+            assert!(in_jit(&img, f, out[0]), "ran at {:#x}", out[0]);
+        }
+    }
+}
+
+/// A value computed before a call that panics is live into the landing pad, which stores it.
+#[test]
+fn live_across_landing_pad() {
+    init();
+    let mut w = ImageWriter::new(unique_scid());
+    let s_boom = w.symbol("boom", 0);
+    let s_ret = w.symbol("ret_addr", 0);
+    // f(x, log): log[1] = where it runs; v = x * 3 + 1; r = boom(x); ret v + r; landing
+    // pad: log[0] = v, resume. x@16, log@24; v@-8, r@-16, exc@-24, tmp@-32.
+    let mut a = Asm::new();
+    a.i(Insn::CallSym { d: Slot(-32), sym: s_ret, k: 8, a: List::from_words(&[]) });
+    a.i(Insn::StoreW64 { m: Mem { p: Slot(24), k: 8 }, s: Slot(-32) });
+    a.i(Insn::MulImmW64 { d: Slot(-8), a: Slot(16), imm: 3 });
+    a.i(Insn::AddImmW64 { d: Slot(-8), a: Slot(-8), imm: 1 });
+    let site = a.i(Insn::CallSym { d: Slot(-16), sym: s_boom, k: 8, a: List::from_words(&regs(&[16])) });
+    a.i(Insn::AddW64 { d: Slot(-16), a: Slot(-16), b: Slot(-8) });
+    a.ret(Slot(-16), 8);
+    let c = a.i(Insn::Lpad { x: Slot(-24) });
+    a.i(Insn::StoreW64 { m: Mem { p: Slot(24), k: 0 }, s: Slot(-8) });
+    let r = a.i(Insn::Resume { x: Slot(-24) });
+    let mut fd = func(a.done(), 32, 16, 8);
+    fd.cleanup = vec![CleanupEntry { offset: site, target: c }, CleanupEntry { offset: r, target: CONTINUE }];
+    let f = w.add_function(fd);
+    let img = build(w, &syms());
+
+    for _ in 0..3 {
+        let mut log = [0u64; 2];
+        let e = call::<_, u64>(img.id(f), (7u64, log.as_mut_ptr() as u64)).unwrap_err();
+        assert_eq!(*e.downcast::<Boom>().unwrap(), Boom(7));
+        assert_eq!(log[0], 22);
+        assert!(in_jit(&img, f, log[1]), "ran at {:#x}", log[1]);
+        assert_eq!(ok::<_, u64>(img.id(f), (5u64, log.as_mut_ptr() as u64)), 21);
+    }
+}
+
+/// Sixteen values live across a call, more than the registers it preserves.
+#[test]
+fn many_live_across_call() {
+    init();
+    let mut w = ImageWriter::new(unique_scid());
+    let s_ret = w.symbol("ret_addr", 0);
+    // f(x, out): v_i = x * (i + 1) + i for i < 16; out[0] = ret_addr(); ret sum of v_i *
+    // (2i + 1). x@16, out@24; v_i@-8(i+1), r@-136, t@-144, acc@-152.
+    let mut a = Asm::new();
+    for i in 0..16i32 {
+        a.i(Insn::MulImmW64 { d: Slot(-8 * (i + 1)), a: Slot(16), imm: i as u64 + 1 });
+        a.i(Insn::AddImmW64 { d: Slot(-8 * (i + 1)), a: Slot(-8 * (i + 1)), imm: i as u64 });
+    }
+    a.i(Insn::CallSym { d: Slot(-136), sym: s_ret, k: 8, a: List::from_words(&[]) });
+    a.i(Insn::StoreW64 { m: Mem { p: Slot(24), k: 0 }, s: Slot(-136) });
+    a.i(Insn::ImmW64 { d: Slot(-152), imm: 0 });
+    for i in 0..16i32 {
+        a.i(Insn::MulImmW64 { d: Slot(-144), a: Slot(-8 * (i + 1)), imm: 2 * i as u64 + 1 });
+        a.i(Insn::AddW64 { d: Slot(-152), a: Slot(-152), b: Slot(-144) });
+    }
+    a.ret(Slot(-152), 8);
+    let f = w.add_function(func(a.done(), 160, 16, 8));
+    let img = build(w, &syms());
+
+    for x in [0u64, 1, 12345, 1 << 50] {
+        let want = (0..16u64).fold(0u64, |s, i| s.wrapping_add(x.wrapping_mul(i + 1).wrapping_add(i).wrapping_mul(2 * i + 1)));
+        let mut out = [0u64; 1];
+        assert_eq!(ok::<_, u64>(img.id(f), (x, out.as_mut_ptr() as u64)), want, "x = {x}");
+        assert!(in_jit(&img, f, out[0]), "ran at {:#x}", out[0]);
     }
 }
