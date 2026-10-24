@@ -6,8 +6,9 @@ thread and switches their entry and loop heads over to the new code. Every image
 for it: each function counts its calls and loop iterations in a *JIT record* and leaves
 through a stub into the runtime when the count runs out ([vm.md](vm.md#jit-records-and-counters)).
 
-The JIT code is the function decoded and encoded again, without counters and, for now,
-without optimizations. Its frame may differ from the AOT code's (it does with
+The JIT code is the function decoded and encoded again, without counters, or, with
+`RYO_JIT_OPT=ssa`, compiled through an SSA tier with a register allocator ([The SSA
+tier](#the-ssa-tier)). Its frame may differ from the AOT code's (it does with
 `RYO_JIT_SHUFFLE`), and nothing relies on them matching: a call running the AOT code moves
 over at its next loop head through an OSR entry that converts the frame ([OSR](#osr)). On
 PE, `ryo_jit_start` fails for now (the JIT isn't ported), so the trips act as the no-op JIT
@@ -217,6 +218,176 @@ frames convert. The JIT compiles the entries with the function (`asm::osr`, `asm
   `rsp + F_aot + 16` after the `pop`, and `rdx + 16` once `rdx` is `fp`, until the jump into
   the body, whose FDE describes `F_jit`.
 
+## The SSA tier
+
+With `RYO_JIT_OPT=ssa` (or `ssa-naive`, [Settings](#settings)) the JIT compiles a function
+through an SSA tier instead of re-encoding it: decoded reduced code → an SSA IR whose frame
+slots are *allocas* with provenance, promoted to SSA values where no pointer can reach
+them → x86-64 with a register allocator. It lives in `ryo_bytecode::jit` (`alloc`), so
+that it is tested without the runtime; `install.rs` calls `jit::compile` in place of
+`asm::encode_reduced_at`. A function it doesn't handle (`jit::Unsupported`, with the reason
+under `RYO_JIT_LOG`) goes through the re-encoding pipeline, which stays the fallback and the
+`reencode` mode: PE images, 16-byte SSE arguments and results, an island operand without a
+`Lend` scope, a frame access in the return address's 16 bytes or below the frame, more than
+about 65 000 slot shapes or 8 million variable × block definitions. In the corpus that is
+about one function in 500. Handlers stay calls, and nothing is speculated: the AOT code stays the
+baseline the tier refines.
+
+### IR
+
+`jit::ir`: blocks with parameters (no phis), instructions in an arena, `u32` ids.
+- **Values** are untyped bit vectors of 1, 2, 4 or 8 bytes: an operation of width `w` reads
+  the low `w` bytes of its operands, and the rest of a register or slot holding a value is
+  unspecified. Compares give 1-byte booleans. Constants and `undef` are values without a
+  definition.
+- **Instructions**: the native reduced instructions on values (`Bin`, `Cmp`, `PtrAdd`,
+  `PtrIndex`), `AllocaAddr`, `Load`/`Store` through a pointer, `ALoad`/`AStore` of a memory
+  alloca, `OsrLoad` (OSR entries only), `LandingPad` (the exception object, `rax`),
+  `HCall` (a handler call: its `In` values are stored to a scratch area whose offsets its
+  slot operands get, its `Out` values loaded back, and a `br`/`switch` handler's return
+  value is a result), `Call` and `Island`.
+- **Terminators**: `jmp`, `br` (on a boolean), `brcmp`, `switch` (a switch handler's
+  index), `ret`, `tail_call`, `trap`, and `invoke`: a call, island or `resume` with a
+  landing pad ends its block, with a normal edge (to a fresh single-predecessor block that
+  stores the results) and an edge to a *pad stub*, one per call site, which takes the
+  exception object and jumps to the code after the `lpad`. The call defines its results;
+  only the normal edge's block uses them. No moves are ever needed on the exceptional edge.
+- Every edge, the switch's included, may carry arguments. `Func::verify` checks dominance,
+  argument counts and widths (`RYO_JIT_CHECK`), and `Func` prints as text.
+
+### Frame and provenance
+
+`jit::alloca` cuts the AOT frame into allocas: byte ranges that no access crosses, by
+union-find over the bytes of every access (with the handlers' exact effects,
+`jit::effects`, checked against the handlers without memory effects or operand-given lengths
+by `vm/rt/tests/ops.rs`, and against the Lean `opSem` footprints by
+`vm/rt/tests/lean_opsem.rs`), every escaped
+object (`Escape` scopes), every island operand (`Lend` scopes,
+[vm.md](vm.md#escapes-storage-ends-and-island-operands)), and the lengths of block-copying
+handlers. Each is:
+- **promoted** when no escape covers it, no island or block handler touches it, and every
+  access is a 1, 2, 4 or 8-byte field: a reaching-shape dataflow (per byte, the
+  `(offset, width)` that last wrote it) gives each read the variable it reads, so a slot
+  reused at another width splits into variables; a read that two shapes reach keeps the
+  alloca in memory. Its fields are SSA variables: mem2reg and scalar replacement in one;
+- **memory**, placed by the JIT anywhere in its frame, at an offset congruent to its AOT
+  one modulo 16 (so every byte keeps its alignment);
+- **outgoing**: the longest run from the frame's bottom of bytes nothing reads and no
+  pointer reaches (the stack arguments the calls read, and island argument blocks), kept at
+  the JIT frame's bottom;
+- **incoming**: positive offsets, the caller's argument area, never moved. Its fields that
+  are only read (whole, not overlapping) are variables too, loaded at the entry.
+
+A read past the frame's top (`ret` and the calls load a 3, 5, 6 or 7-byte value as the next
+power of two) counts only for its bytes inside the frame; the rest don't matter. A
+zero-sized island operand accesses nothing (the lowering records its `Lend` too).
+
+Moving objects relies on the source's provenance (no access through a pointer to bytes
+that aren't escaped, no pointer from one object reaching another, addresses not
+observable before they escape); [verification.md](verification.md#the-jit) states the
+frame-layout-parametric semantics this needs.
+
+### Construction
+
+`jit::decode` classifies each instruction with its exact accesses and cuts blocks (leaders:
+targets, after branches, calls with a landing pad, landing pads, loop heads), with the CFG
+including landing pad edges. `jit::build` is Braun et al.'s construction (CC 2013) over
+the promoted variables: blocks are filled in layout order and sealed once their
+predecessors are; parameters get an operand row per predecessor while being built, trivial
+ones become aliases, and the edges' argument lists are written once at the end. Copies
+(`mov`), constants (`imm`) and trivial parameters disappear on the way. Then the folds
+instruction selection relies on: a compare used only by the following branch becomes a
+`brcmp`, and loads and stores through an `AllocaAddr` or a `PtrAdd` take its alloca or
+constant into their address.
+
+### OSR
+
+Only **cyclic** heads (on a cycle of the CFG, landing pad edges included) get OSR entries;
+the other heads are backward jumps of the block layout that an activation passes at most
+once, so entry stays bounded. Their AOT counter checks still trip once the function is
+compiled, and the dispatcher's entry for them is a `ret` back into the AOT code. Each
+cyclic head's entry is a block with no predecessors that jumps to the head: Braun's reads
+there find nothing and become `OsrLoad`s of the AOT frame, so exactly what something reads
+after the head is loaded. A forward dataflow of the escape scopes gives the memory allocas
+that may be escaped at a cyclic head: those are **pinned** at their AOT offsets (pointers
+to them may be anywhere); every other alloca moves. The entry code: `pop rcx`, `rsp` to a
+scratch area below both frames, every `OsrLoad`'s bytes and every moved memory alloca read
+from the AOT frame into it, the callee-saved registers saved (they still hold the caller's
+values: AOT code never touches them), the allocas copied to their JIT offsets, the head's
+parameters set from the scratch copies (registers last, `rdx`, the base without a frame
+pointer, last of all), `rsp = fp - F_jit`, `jmp` to the head.
+
+### Back end
+
+- **Frame** (`jit::emit`): `fp` is the address below the return address, as in AOT code.
+  Below the pinned allocas: the callee-saved registers' save slots (`mov`s, not pushes),
+  the moved allocas, the spill slots, the handler scratch area, and the outgoing area at
+  `rsp`. The prologue is `sub rsp, F + 8` (or `push rbp; mov rbp, rsp; sub rsp, F` with
+  `fp-rbp`), with the probe from `PROBE_FROM`; handler and island operands are `fp`
+  offsets either way.
+- **Instruction selection**: per instruction over the allocated locations; two-address
+  forms with a hint to reuse the first operand's register, immediates where they fit
+  (`r10` takes the others), `[base + index*scale]` for `ptr.index` by 1, 2, 4 or 8,
+  `setcc`, compare-branches fused, fall-through layout. `r10` and `r11` are the emitter's
+  scratch registers and never allocated.
+- **Calls**: `hcall` stores its `In` values to the scratch area, sets the argument
+  registers (the slot operands' offsets patched into them), calls the handler and loads
+  its `Out` values, each at its width (a wider load of what the handler just stored would
+  miss the store forwarding); VM and native calls move their arguments into the argument registers
+  as a parallel move (`xmm` ones by `movq`, or `movd` for 4 and 2-byte parts, which reads
+  the 8-byte slot a value lives in), the callee of `call.ptr` into `rax`; islands
+  get `fp` and an operand array of JIT offsets in the function's code constants. All of
+  them clobber every caller-saved register.
+- **Edges**: parallel moves, sequentialized with `r11` for memory-to-memory moves and
+  `r10` to break cycles; a conditional edge with moves goes through a stub after its block.
+- **Unwinding**: the body's FDE rows are the CFA after the prologue and a `DW_CFA_offset`
+  per saved register; the LSDA's call sites are the calls with a landing pad (to their
+  pad stub) or a `Continue` entry, as in AOT code. Values live into a pad live across the
+  call, so they are in callee-saved registers or the frame, which the unwinder restores.
+
+### Register allocation
+
+`jit::regalloc`:
+- **`ssa-naive`**: every value in a stack slot of its own: the correctness baseline, kept as
+  a stress mode.
+- **`ssa`**: linear scan on SSA without splitting. Exact block liveness (an iterative
+  dataflow), then each value's interval is the hull of its live positions in the linear
+  block order (holes are ignored), and it lives in one register or one slot throughout.
+  Intervals that cross a call or handler call take callee-saved registers (`rbx`,
+  `r12`–`r15`, `rbp` without a frame pointer); others prefer the caller-saved ones; hints
+  are the first operand's register, an incoming edge argument's for a parameter, the
+  argument register for an entry parameter, and `rax`/`rdx` for results. When no register
+  is free, the interval ending last is spilled.
+- **Checker** (`RYO_JIT_CHECK=1`): `regalloc::check` walks each block backward from its
+  exact live-out set and checks that no location holds two live values, that nothing lives
+  across a call in a caller-saved register, that `r10`, `r11` (and `rbp` with a frame
+  pointer) aren't allocated, and that every use has a location; with `Func::verify` before
+  it. A failure is printed on stderr and the function stays in its AOT code (`Failed`), so
+  that the corpus (which compares stderr) and the JIT tests (which check where code runs)
+  see it.
+
+### Choices
+
+- The tier lives in `ryo_bytecode::jit` (testable without the runtime, next to the
+  decoder).
+- Island operand extents come from `Lend` scopes in the image (`FORMAT_VERSION` 21); an
+  island operand without one makes the function `Unsupported`.
+- Allocas escaped at a cyclic head are pinned (one code version); a separate OSR version
+  that pins nothing is the follow-up.
+- The handler effect table is by family from the mnemonics, checked against the handlers.
+- An in-tree linear scan, no new dependencies.
+- Handlers stay calls; native handler operations (overflow arithmetic, extensions, …) are
+  the follow-up, as are splitting and rematerialization.
+- The re-encoding pipeline stays, as the fallback and the `reencode` mode.
+- Only 1, 2, 4 and 8-byte integer fields are promoted (`w128` values and floats stay in
+  memory; floats move through general-purpose registers at calls).
+- AOT code keeps its counter checks at acyclic heads, and the dispatcher returns into the
+  AOT code there.
+- Two scratch registers (`r10`, `r11`) rather than one: simpler instruction selection and
+  moves at the cost of one allocatable register.
+- Intervals without holes, and no allocation hint beyond the above: the first allocator
+  is simple; holes, splitting and a regalloc2 comparison are follow-ups.
+
 ## Packaging
 
 The JIT thread is the `ryo_jit` crate, which `y build` turns into one object that `ryo_rt`'s
@@ -228,7 +399,7 @@ rlib bundles (`build/src/jit.rs`, [build.md](build.md#build)):
   | Field | |
   |---|---|
   | `abi`, `format`, `size` | `JIT_ABI_VERSION`, `FORMAT_VERSION` and `size_of::<RtApi>()`, checked by `RtApi::compatible`: on a mismatch the start fails |
-  | `flags` | `JIT_SYNC`, `JIT_LOG`, `JIT_PERFMAP`, `JIT_TEST_PANIC` ([Settings](#settings)) |
+  | `flags` | `JIT_SYNC`, `JIT_LOG`, `JIT_PERFMAP`, `JIT_TEST_PANIC`, `JIT_OPT_SSA`, `JIT_OPT_SSA_NAIVE`, `JIT_CHECK` ([Settings](#settings)) |
   | `probe` | `ryo_probe_stack`'s address |
   | `personality` | the program's `rust_eh_personality`'s address, by which the JIT finds an image's personality slot |
   | `next_batch` | the queued records in trip order, sleeping while there are none (the JIT thread only) |
@@ -284,6 +455,10 @@ for shuffled frames per image, `RtApi::shuffled`):
 | `RYO_JIT_LOG=1` | a line on stderr per compiled or failed function, and per function whose frame couldn't be shuffled, and the JIT thread's panics |
 | `RYO_JIT_SHUFFLE=1` | JIT frames in another layout ([OSR](#osr)) |
 | `RYO_JIT_TEST_PANIC=1` | tests: every compile panics, which must fail the function and nothing else |
+| `RYO_JIT_OPT=…` | `reencode` (the default), `ssa-naive` or `ssa`: how functions are compiled ([The SSA tier](#the-ssa-tier)); with `RYO_JIT_SHUFFLE` the SSA tier lays allocas out in reverse with gaps |
+| `RYO_JIT_CHECK=1` | the SSA tier's checkers: a failure is printed on stderr and the function falls back |
+| `RYO_JIT_DUMP=dir` | the SSA tier writes each function's reduced code, IR, locations and code (or, for one it doesn't handle, the reason and the reduced code) to `dir/f<index>-<image header address>.txt` (read by the JIT thread itself, not passed in `RtApi`) |
+| `RYO_JIT_SSA_LIMIT=n` | debugging: only the first `n` functions the JIT compiles go to the SSA tier, the rest are re-encoded (bisects a miscompile; read by the JIT thread) |
 
 ## Limits
 
@@ -320,6 +495,22 @@ for shuffled frames per image, `RtApi::shuffled`):
   at 0), both also with `RYO_JIT_SHUFFLE=1`. With a ryo sysroot, `y test` runs the corpus
   that way (`ryo-std-jit`, `ryo-std-jit-shuffle`), std's own VM functions included
   ([build.md](build.md#test-and-bench)).
+- **The SSA tier**: `y test` also runs `vm/jit/tests/jit.rs` with `RYO_JIT_OPT=ssa` and
+  `ssa-naive` and the checkers (with and without `fp-rbp`; there `rsp` moves by a multiple of
+  16 instead of the frames' difference), whose SSA-specific tests cover an alloca escaped only
+  after the head (moved at OSR), an acyclic head (the trip returns into the AOT code), a slot
+  reused at two widths, handler results feeding branches, a value live into a landing pad
+  across a call, and sixteen values live across a call. `vm/jit/tests/ssa.rs` (a process of
+  its own) checks, by `ryo_jit::ssa_stats`, that its functions go through the tier: switch
+  tables with edge arguments, sparse switches, tail calls with stack arguments and through
+  a pointer, SSE arguments and results, a catching landing pad, probed 12 KiB frames entered
+  by OSR, and an alloca pinned at the head. Then the corpus on its own VM
+  functions through the tier (`ryo-jit-ssa`, threshold 0, and `ryo-jit-ssa-osr`, OSR at the
+  first head pass; `ryo-std-jit-ssa` with a ryo sysroot). `vm/bytecode/tests/jit_ssa.rs`
+  builds hand-written functions' IR (promotion, block parameters at a loop head and its OSR
+  loads, reaching shapes, pinned and moved escaped locals, handler slots sharing a register),
+  `tests/jit_x86.rs` checks the
+  encoder against `objdump`, and `vm/rt/tests/ops.rs` the handler effect table.
 - **Packaging**: `jit-sealed` (`y test`, and `y test --cross` for PE) checks the bundled
   object: only `ryo_jit_start` (and the renamed symbols and constants) defined globally, no
   Rust symbol or allocator shim referenced, no unwinder defined, and on COFF no `.drectve`
@@ -332,6 +523,8 @@ for shuffled frames per image, `RtApi::shuffled`):
 
 ## Future work
 
-The JIT doesn't optimize yet. An optimizing tier (SSA construction, passes, inlining,
-register allocation) would sit behind the same records, trips, OSR entries and packaging;
-[verification.md](verification.md#the-jit) describes how its output would be validated.
+The SSA tier doesn't optimize beyond promotion, copy and constant propagation, and its
+folds: passes, inlining, native handler operations, interval splitting and an OSR version
+that pins nothing are the next steps, behind the same records, trips, OSR entries and
+packaging; [verification.md](verification.md#the-jit) describes how its output would be
+validated.

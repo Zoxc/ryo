@@ -164,7 +164,8 @@ bytes itself, so the JIT's own decoder is not trusted.
   [jit.md](jit.md)) emits canonical code, so the same decoder reads its output. The checker
   verifies that the JIT program is the AOT program with its frame remapped, which in R is a
   change of layout, and that each OSR entry moves the bytes live at its head.
-- **The SSA tier** (planned): R → R-SSA (Braun's construction with promotion of non-escaped
+- **The SSA tier** (its first step is implemented, [jit.md](jit.md#the-ssa-tier), without
+  the offline log yet; `RYO_JIT_DUMP` writes the IR, locations and code): R → R-SSA (Braun's construction with promotion of non-escaped
   objects) → passes and inlining → register allocation → register-allocated x86. Each step
   has its own validator: symbolic execution against a construction certificate; proved
   rewrite rules or per-pass validators; inlining checked as substitution under recorded
