@@ -527,7 +527,36 @@ def flagsProperty : Except String Unit := do
         (a.toInt - b.toInt != r.toInt)
       expectEq s!"sub {a} {b}" f want
 
+/-- `ryo-lean exec-item` (`Cosim.handle`): a request by items and the same by their linked bytes
+give the same state; the response has the predicted values. -/
+def cosimRequest : Except String Unit := do
+  let state := "{\"regs\":[5,7,0,0,4104,0,0,0,0,0,0,0,0,0,0,0],\"rip\":4112," ++
+    "\"flags\":{\"cf\":true,\"zf\":false,\"sf\":false,\"of\":false},\"mem\":[[4096,\"0011223344556677\"]]}"
+  let refs := "[[{\"func\":{\"f\":3}},8192]]"
+  let items := "[{\"alu\":{\"op\":\"add\",\"w\":\"b\",\"reg\":\"rax\",\"rm\":{\"reg\":{\"r\":\"rcx\"}}}}," ++
+    "{\"call\":{\"to\":{\"func\":{\"f\":3}}}}]"
+  let req (what : String) : Except String Json :=
+    Json.parse s!"\{{what},\"pos\":16,\"base\":4096,\"refs\":{refs},\"state\":{state}}"
+  let r1 ← Cosim.handle (← req s!"\"items\":{items}")
+  let bytes : String ← get r1 "bytes"
+  expectEq "bytes" bytes "02c1e8e90f0000"
+  let r2 ← Cosim.handle (← req s!"\"bytes\":\"{String.join (List.replicate 16 "00")}{bytes}\"")
+  expectEq "same state" ((r2.getObjVal? "state").toOption.map Json.compress)
+    ((r1.getObjVal? "state").toOption.map Json.compress)
+  let st ← r1.getObjVal? "state"
+  let regs : List Nat ← get st "regs"
+  expectEq "rax, rsp" (regs[0]?, regs[4]?) (some 12, some 4096)
+  expectEq "rip" (← get st "rip" : Nat) 8192
+  -- The return address 4119 = 0x1017, pushed at 4096.
+  expectEq "mem" (← get st "mem" : Json).compress "[[4096,\"1710000000000000\"]]"
+  let flags ← st.getObjVal? "flags"
+  expectEq "flags" flags.compress "{\"cf\":false,\"of\":false,\"sf\":false,\"zf\":false}"
+  match Cosim.handle (← req "\"items\":[{\"shift\":{\"op\":\"shl\",\"w\":\"b\",\"reg\":\"rax\",\"amt\":1}}]") with
+  | .error e => expectEq "not wf" e "an item is not wf at its position"
+  | .ok r => throw s!"accepted a non-wf item: {r.compress}"
+
 def tests : List TestCase := [
+  ⟨"x86 exec-item: items and bytes requests", fun () => cosimRequest⟩,
   ⟨"x86 rust vectors: encode, link, decode", fun () => checkAll (ofKind "enc") checkEnc⟩,
   ⟨"x86 rust vectors: decoder agreement on mutations", fun () => checkAll (ofKind "dec") checkDec⟩,
   ⟨"x86 rust vectors: osr code", fun () => checkAll (ofKind "osr") checkOsr⟩,

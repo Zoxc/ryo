@@ -17,6 +17,8 @@
                                            it can't be read
   ryo-lean elf <file.o>                    print an ELF object's sections, symbols and
                                            relocations (`Ryo.Obj.Elf.dump`)
+  ryo-lean exec-item                       run x86 items on states, JSON lines on stdin and
+                                           stdout (`Ryo/X86/Cosim.lean`, x86.md §B.3)
 -/
 import Ryo
 import Ryo.Examples
@@ -110,6 +112,7 @@ def main (args : List String) : IO UInt32 := do
     | none =>
       IO.eprintln s!"unknown example `{name}`; known: {Ryo.Examples.names}"
       pure 2
+  | ["exec-item"] => Ryo.X86.Cosim.main
   | _ =>
     IO.eprintln "usage: ryo-lean run <program.json> [--fuel N] [--stdout]\n       ryo-lean example <name> [out.json]\n       ryo-lean obj <file.o>\n       ryo-lean elf <file.o>"
     pure 2

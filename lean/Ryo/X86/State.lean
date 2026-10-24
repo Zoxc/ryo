@@ -11,7 +11,8 @@ Ryo.X86.State — the x86-64 machine state of L2 (x86.md §B.2).
 - flat byte memory, total (no faults, no provenance), little-endian `read`/`write`.
 
 `State.View` is a finite, serializable view (registers, flags, `xmm`s, memory regions) for
-feeding states in and out (the planned `ryo-lean exec-item` co-simulation, x86.md §B.3).
+feeding states in and out (`ryo-lean exec-item`, `Ryo.X86.Cosim`, uses a compact variant:
+memory as hex strings, undefined flags as `null`).
 -/
 import Ryo.X86.Item
 

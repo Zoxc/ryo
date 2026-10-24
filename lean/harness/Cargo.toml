@@ -1,0 +1,14 @@
+[package]
+name = "ryo-lean-harness"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Co-simulates the Lean x86 model (ryo-lean exec-item) against the CPU (lean/docs/x86.md §B.3)"
+
+# Standalone: not part of the vm/ or build/ workspaces.
+[workspace]
+
+[dependencies]
+
+[profile.dev]
+opt-level = 1
