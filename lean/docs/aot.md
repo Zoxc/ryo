@@ -187,9 +187,11 @@ follows the decoder's structure:
   (`byteAt`: private or escaped) relates to the byte at `rbp + off` (initialized bytes equal,
   provenance erased, `Uninit` anything), and escaped objects are at `rbp + off`. Side
   condition: the written range is private (`Private`). Proofs are per handler kind for
-  `opSem` (`Inline/OpSem.lean`), then per width by `simp` and `bv_decide`. Left: `load` and
-  `store` (memory through a pointer: needs the memory part of the relation and frame/heap
-  disjointness), writes into escaped objects (`writeEscaped`), and the link
+  `opSem` (`Inline/OpSem.lean`), then per width by `simp` and `bv_decide`. `load` and `store`
+  (memory through a pointer) are `sound_load`/`sound_store` (`Inline/Mem.lean`), given the
+  memory part of the relation (`MemRel`: live allocations' bytes at their addresses), private
+  frame bytes outside every allocation (`FrameApart`) and, for `store`, allocations disjoint in
+  the address space (`MemDisjoint`). Left: writes into escaped objects (`writeEscaped`), and the link
   `(op, c) ∈ inlineOps → shapeOk op c`, tested (`RyoTest/Inline.lean`) but not proved
   (`classOf` uses `String.splitOn`, which the kernel doesn't reduce). No mismatch between the
   sequences and `opSem` was found. `bv_decide`'s proofs are axioms checked by compiled code
