@@ -52,6 +52,14 @@ documented semantics where codegen is more lenient).
 | R21 | Float details: NaN of the interpreter, `f*_algebraic`, `f16`/`f128` | Lang/Float.lean, `concreteOracle` | simplification / narrowing |
 | R22 | Evaluation order and minor UB-message differences | various | simplification |
 | R23 | `Rvalue::Reborrow` took the place's address | `evalRvalue .reborrow` | bug (unstable feature), **fixed** |
+| R24 | Allocator shims didn't match rustc's mangled `#[rustc_std_internal_symbol]` names | `callExternal`, `internalName` | gap, **fixed** (M1b) |
+| R25 | Shims required bare integers/pointers; std passes `Alignment`, `NonNull<u8>` | `argInt`, `argPtr`, `scalarOf` | gap, **fixed** (M1b) |
+| R26 | Closures called through fn pointers were ABI-incompatible (ZST `self`, `rust-call`) | `fnAbiCompatible`, `createFrame` | bug (more UB), **fixed** (M1b) |
+| R27 | `Drop` of a `dyn` place ran the `dyn` glue instead of the vtable's drop entry | `evalTerminator .drop` | bug, **fixed** (M1b) |
+| R28 | Direct enum tags wider than the discriminant type were ill-formed | `Ty.wf`, `tagToVariant` | bug, **fixed** (M1b) |
+| R29 | `is_val_statically_known` missing | `evalIntrinsic` | gap, **fixed** (M1b) |
+| R30 | `assert_inhabited`/`assert_zero_valid`/`assert_mem_uninitialized_valid` never panic | `evalIntrinsic` | narrowing, open |
+| R31 | `caller_location` in MIR-inlined `#[track_caller]` code | `callInstance` | bug (ill-formed), **fixed** (M1b) |
 
 ## Bugs and narrowings
 
@@ -278,3 +286,60 @@ produced the place's address. Only programs using the experiment were affected. 
 loads the place's value at `ty` (reborrowing `&mut` fields is a no-op without an aliasing
 model, D16). `Wf` requires the place's shape for a mutable reborrow and, for a shared one (the
 `CoerceShared` target), the same size and alignment. Test `R23/reborrow_copies`.
+
+## Found by the differential runs (M1b)
+
+`scripts/lean-diff.py` runs the programs in `tests/lean/` with plain rustc, with ryo, and
+with the Lean interpreter on the backend's `RYO_DUMP_LEAN` dump, at `-O0` and `-O3`, and
+compares output and exit status (tests `M1b/*` in RyoTest/M1b.lean pin each fix). Every
+disagreement so far was in the spec (none in ryo's
+lowering: ryo matched rustc on every program):
+
+**R24. Allocator symbols.** rustc mangles `#[rustc_std_internal_symbol]` items as
+`__rustc::<name>` (v0 `_R…7___rustc12___rust_alloc`), so `Vec` stopped at an unknown external.
+**Fixed**: `internalName` recovers the name before matching the shims, and
+`__rust_no_alloc_shim_is_unstable_v2` is a no-op shim.
+
+**R25. Shim arguments.** std passes the alignment as `Alignment` (a struct around a
+fieldless `repr(usize)` enum) and pointers as `NonNull<u8>`; the shims wanted bare scalars.
+**Fixed**: `callExternal` gets the argument types and `scalarOf` sees through single-field
+structs and fieldless enums.
+
+**R26. Closures through fn pointers.** A closure coerced to a fn pointer is called through
+its `FnOnce` shim, whose ABI has a leading zero-sized `self` (`PassMode::Ignore`) and the
+`rust-call` convention; the spec called the call ABI-incompatible (UB). **Fixed**: `rust` and
+`rust-call` are one convention (rustc `CanonAbi::Rust`), and `Ignore` arguments are skipped on
+both sides when both ABIs are known, as Miri's `pass_argument` does.
+
+**R27. `Drop` of `dyn Trait`.** rustc's drop glue for `dyn Trait` only drops `*self` again;
+codegen calls the vtable's drop entry (word 0) with the data pointer, skipping a null entry
+(cg_ssa `codegen_drop_terminator`). **Fixed** in the `Drop` terminator; the dumper emits the
+`dyn` glue as `ext`.
+
+**R28. Widened direct tags.** Without a `repr`, rustc widens an enum's tag to the variants'
+alignment (`Option<i128>` has a `u128` tag), which `Ty.wf` rejected (`tag ≤ discrTy`).
+**Fixed**: a direct tag is matched against each discriminant at the tag's width (on tags in
+the valid range this is cg_ssa's cast of the tag to the discriminant type); the constraint
+is gone, and `tagForVariant_of_tagToVariant` no longer needs it. Not yet exercised: widened
+tags with negative discriminants.
+
+**R29. `is_val_statically_known`** (used by `i32::pow`) is now an intrinsic answering `false`,
+which is always a correct answer.
+
+**R30. `assert_inhabited` & co.** (reached from `MaybeUninit`/`mem::zeroed`) are no-ops for
+now: the intrinsic instance does not carry its type arguments, so the spec cannot tell when
+they panic. Real code panics for uninhabited (or, for the other two, not zero-/uninit-valid)
+types, so the spec is narrower there. Fix: give `InstanceKind.intrinsic` the generic
+arguments (the dumper has `instance.args`) and panic as cg_ssa does.
+
+**R31. `caller_location` after MIR inlining.** Inlining a `#[track_caller]` function puts
+its `caller_location` call into a body that is not `#[track_caller]`; rustc then gives the
+call's own caller location (cg_ssa `get_caller_location`). The spec reported it ill-formed.
+**Fixed**: the intrinsic returns the call's `callerLocation` when it has one.
+
+Not divergences, but limits of the runs: non-generic std functions have no MIR in the
+sysroot's metadata, so they are external calls without shims and stop the run
+(`std::io::_print`, `alloc::fmt::format_inner`, `std::panicking::set_hook`, …), which is why
+the corpus prints through `write` and never panics; the dump starts at the user's `main`, not
+`lang_start`, so a `main` returning `Err` is not exit status 1; the interpreter's NaN is the
+positive quiet NaN where x86 arithmetic produces the negative one (both are allowed, D5).

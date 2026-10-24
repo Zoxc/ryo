@@ -160,7 +160,10 @@ def Ty.wf : Ty → Bool
       | .multiple tag =>
         tag.tag.wf && tag.offset + tag.tag.size ≤ size && tag.valid.wf tag.tag.size &&
           (match tag.encoding with
-           | .direct => tag.tag.size ≤ discrTy.size
+           -- the tag may be wider than the discriminant type: without an explicit `repr`,
+           -- rustc widens it to the variants' alignment (`layout_of_enum`, e.g. the `u128`
+           -- tag of `Option<i128>`), so it isn't compared with `discrTy`
+           | .direct => true
            | .niche u lo hi _ => u < vs.length && lo ≤ hi && hi < vs.length &&
                hi - lo < tag.tag.modulus) &&
           (List.range vs.length).all (variantTagWf vs discrTy tag)

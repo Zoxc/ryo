@@ -91,13 +91,22 @@ def callInstance (i : InstanceId) (args : List ArgVal) (retPlace : Option (Place
     let args ← if callerRustCall abi (some b) then untupleLast args else pure args
     callBody i b cont args retPlace callerLoc abi
   | .ext => do
-    match ← callExternal inst.symbol (args.map (·.val)) with
+    match ← callExternal inst.symbol (args.map fun a => (a.val, a.ty)) with
     | .ret v => do storeRet v; contReturn cont
     | .unwind pl => contUnwind cont pl
   | .intrinsic name =>
     match name, args with
     | "abort", _ => throw .abort
     | "unreachable", _ => throwUb "entering unreachable code"
+    -- [D14] the call's caller location (cg_ssa `get_caller_location`: the frame's own one,
+    -- or a constant where MIR inlining put the call into a non-`#[track_caller]` body)
+    | "caller_location", [] =>
+      match callerLoc with
+      | some v => do storeRet v; contReturn cont
+      | none => do
+        let destTy := (retPlace.map (·.2)).getD unitTy
+        storeRet (← evalIntrinsic name [] destTy)
+        contReturn cont
     | "catch_unwind", [tryFn, data, catchFn] => do
       let some (dest, destTy) := retPlace | throwIllFormed "catch_unwind without a destination"
       let (target, unwind) ← match cont with
@@ -151,6 +160,22 @@ def evalTerminator : Terminator → SemM Unit
   | .unreachable => throwUb "reached unreachable code"
   | .drop p glue target unwind => do
     let (pl, ty) ← evalPlace p
+    -- [D29] a `dyn Trait` place: the vtable's drop entry (word 0) with the data pointer,
+    -- nothing if the entry is null (cg_ssa `codegen_drop_terminator`); the glue instance of
+    -- `dyn Trait` only drops `*self` again
+    if let .traitObject _ := ty then
+      let some (.vtablePointer vt) := pl.ptr.metadata
+        | throwUb "drop of a `dyn` place without a vtable"
+      let fp ← vtableWordPtr vt 0
+      if fp.addr == 0 then jumpTo target
+      else
+        let i ← instOfFnPtr fp.widen
+        let argTy := match (← prog).body? i with
+          | some b => b.locals[1]?.getD bytePtrTy
+          | none => bytePtrTy
+        callInstance i [⟨.ptr pl.ptr.thin.widen, argTy, none⟩] none (.caller (some target) unwind [])
+          none none
+    else
     match glue with
     | none => jumpTo target
     | some i => do

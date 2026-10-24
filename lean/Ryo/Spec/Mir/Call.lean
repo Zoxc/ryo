@@ -83,9 +83,19 @@ def abiCompatible (caller callee : Ty) : Bool :=
 def argAbiCompatible (a b : ArgAbi) : Bool :=
   a.mode == b.mode && a.size == b.size && a.align == b.align && a.detail == b.detail
 
+/-- `Rust` and `rust-call` are the same calling convention (rustc `CanonAbi::Rust`); they only
+differ in how the caller's MIR arguments map to the ABI's. -/
+def _root_.Ryo.Spec.CallConv.canon : CallConv → CallConv
+  | .rustCall => .rust
+  | cc => cc
+
+/-- Ignored (`PassMode::Ignore`, zero-sized) arguments are not passed at all, so they don't
+take part (rustc's ABI-compatibility rules; Miri's `check_argument_compat` skips them). -/
 def fnAbiCompatible (a b : FnAbiSummary) : Bool :=
-  a.conv == b.conv && a.args.length == b.args.length && argAbiCompatible a.ret b.ret &&
-    (a.args.zip b.args).all fun (x, y) => argAbiCompatible x y
+  let live (as : List ArgAbi) := as.filter (·.mode != .ignore)
+  a.conv.canon == b.conv.canon && (live a.args).length == (live b.args).length &&
+    argAbiCompatible a.ret b.ret &&
+    ((live a.args).zip (live b.args)).all fun (x, y) => argAbiCompatible x y
 
 /-! ## Arguments -/
 
@@ -162,41 +172,56 @@ def createFrame (inst : InstanceId) (body : Body) (cont : Cont) (args : List Arg
     aliased := [0]
   | none =>
     locals := locals.set! 0 (some (← allocSlot retTy))
-  -- arguments (D14: spread for `rust-call` callees)
+  -- arguments (D14: spread for `rust-call` callees). When both sides' ABIs are known,
+  -- arguments passed as `PassMode::Ignore` (ZSTs) are skipped on either side, as Miri's
+  -- `pass_argument` does: a closure's environment is not passed through a fn pointer to its
+  -- `FnOnce` shim, for instance.
   let argLocals := (List.range body.argCount).map (· + 1)
-  let (direct, spread) : List ArgVal × List ArgVal :=
-    match body.spreadArg with
-    | some _ => (args.take (body.argCount - 1), args.drop (body.argCount - 1))
-    | none => (args, [])
-  if body.spreadArg.isNone && args.length != body.argCount then
+  let useIgnore := callerAbi.isSome && body.abi.isSome
+  let ignored (abi : Option FnAbiSummary) (k : Nat) : Bool :=
+    useIgnore && ((abi.bind (·.args[k]?)).map (·.mode == .ignore)).getD false
+  let args := (args.zipIdx.filter fun (_, k) => !ignored callerAbi k).map (·.1)
+  -- the callee's ABI inputs: argument locals, the spread tuple's fields in its place
+  let slots : List (Local × Option (Offset × Ty)) := argLocals.flatMap fun l =>
+    if body.spreadArg == some l then
+      match body.locals[l]! with
+      | .tuple fields _ none => fields.map fun f => (l, some f)
+      | _ => [(l, none)]
+    else [(l, none)]
+  let slotsIgn := slots.zipIdx.map fun (sl, k) => (sl, ignored body.abi k)
+  let fed := (slotsIgn.filter (!·.2)).map (·.1)
+  if fed.length != args.length then
     throwUb "call ABI violation: number of arguments does not agree"
-  if body.spreadArg.isSome && args.length + 1 < body.argCount then
-    throwUb "call ABI violation: number of arguments does not agree"
-  for (l, a) in argLocals.zip direct do
-    let lty := body.locals[l]!
-    if !abiCompatible a.ty lty then throwUb "call ABI violation: argument types are not compatible"
-    match a.inPlace with
-    | some pl =>
-      if !lty.align.isAligned pl.ptr.thin.addr then
-        throwUb "call: in-place argument is misaligned for the callee's type"
-      liftE ((← getMem).dereferenceable pl.ptr.thin lty.size)
-      locals := locals.set! l (some pl.ptr.thin)
-      aliased := l :: aliased
-    | none =>
-      let p ← allocSlot lty
-      memUpdate (typedStore · p a.val a.ty a.ty.align)
-      locals := locals.set! l (some p)
   if let some sl := body.spreadArg then
     let sty := body.locals[sl]!
-    let p ← allocSlot sty
-    let .tuple fields _ none := sty | throwIllFormed "spread_arg is not a tuple"
-    if fields.length != spread.length then
-      throwUb "call ABI violation: number of spread arguments does not agree"
-    for ((off, fty), a) in fields.zip spread do
+    let .tuple _ _ none := sty | throwIllFormed "spread_arg is not a tuple"
+    locals := locals.set! sl (some (← allocSlot sty))
+  for ((l, field), a) in fed.zip args do
+    match field with
+    | some (off, fty) =>
       if !abiCompatible a.ty fty then
         throwUb "call ABI violation: argument types are not compatible"
+      let some p := locals[l]! | throwIllFormed "spread_arg without a slot"
       memUpdate (typedStore · (p.wrappingOffset off) a.val a.ty .one)
-    locals := locals.set! sl (some p)
+    | none =>
+      let lty := body.locals[l]!
+      if !abiCompatible a.ty lty then
+        throwUb "call ABI violation: argument types are not compatible"
+      match a.inPlace with
+      | some pl =>
+        if !lty.align.isAligned pl.ptr.thin.addr then
+          throwUb "call: in-place argument is misaligned for the callee's type"
+        liftE ((← getMem).dereferenceable pl.ptr.thin lty.size)
+        locals := locals.set! l (some pl.ptr.thin)
+        aliased := l :: aliased
+      | none =>
+        let p ← allocSlot lty
+        memUpdate (typedStore · p a.val a.ty a.ty.align)
+        locals := locals.set! l (some p)
+  -- ignored (zero-sized) argument locals get a slot with nothing in it
+  for ((l, field), ign) in slotsIgn do
+    if ign && field.isNone then
+      locals := locals.set! l (some (← allocSlot body.locals[l]!))
   -- D9: always-live locals
   let storage := body.storageLocals
   for l in List.range n do

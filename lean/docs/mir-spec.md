@@ -155,7 +155,7 @@ Modules (namespace `Ryo.Spec`), with the MiniRust source each one ports:
 | `Ryo/Spec/Mir/Unwind.lean` | `terminators.md` § unwinding (replaced) | D18: `UnwindAction` semantics, `UnwindResume`, `UnwindTerminate`, cleanup-block discipline, `catch_unwind` |
 | `Ryo/Spec/Mir/Terminator.lean` | `lang/step/terminators.md` | `Goto`, `SwitchInt`, `Return`, `Unreachable`, `Drop` (D19), `Assert` (D19), dispatch to Call/Unwind |
 | `Ryo/Spec/Mir/Intrinsics.lean` | `lang/step/intrinsics.md` | the D20 set, each with rustc's UB conditions |
-| `Ryo/Spec/Mir/External.lean` | none (MiniRust programs are closed) | the environment interface (§A.6): `callExternal`, built-in shims (other symbols go to the oracle's environment) (`__rust_alloc`, `__rust_dealloc`, `__rust_realloc`, `write`, `exit`, `abort`) |
+| `Ryo/Spec/Mir/External.lean` | none (MiniRust programs are closed) | the environment interface (§A.6): `callExternal`: built-in shims (`__rust_alloc`, `__rust_dealloc`, `__rust_realloc`, `write`, `exit`, `abort`), other symbols go to the oracle's environment |
 | `Ryo/Spec/Mir/Step.lean` | `lang/machine.md` (`step`) | `step : Program → State → M (Option Event)` |
 | `Ryo/Spec/Mir/Behavior.lean` | none | traces, `Behavior` (`terminates`, `diverges`, `goesWrong (ub)`, `aborts`), `Refines` (with D25), angelic handling (§A.4) |
 | `Ryo/Spec/Mir/Interp.lean` | MiniRust's `minirun` | `run (fuel) (oracle) : Program → Except Outcome (List Event × Int)` |

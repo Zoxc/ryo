@@ -20,7 +20,11 @@ The shims:
 - `exit(code)`, `abort()`;
 - `_Unwind_RaiseException(exc)`: starts unwinding with payload `exc` (D18: the panic runtime
   is external; tests use this to start unwinding);
-- `ryo_test_print(..)`: records its arguments, returns `()` (tests).
+- `ryo_test_print(..)`: records its arguments, returns `()` (tests);
+- `__rust_no_alloc_shim_is_unstable_v2()`: a no-op.
+Symbols of `#[rustc_std_internal_symbol]` items are matched by their unmangled name
+(`internalName`), and the shims see integer and pointer arguments through single-field structs
+and fieldless enums (`scalarOf`: std passes `Alignment` and `NonNull<u8>`).
 -/
 import Ryo.Spec.Mir.Unwind
 
@@ -28,12 +32,26 @@ namespace Ryo.Spec.Sem
 
 open SemM
 
-def argInt : Value → SemM Int
-  | .int i => pure i
+/-- The scalar a value carries through ABI-transparent wrappers (std's allocator shims take
+`NonNull<u8>` and `Alignment`, a struct around a fieldless `repr(usize)` enum): structs with
+one non-1-ZST field, and fieldless enums as their discriminant. -/
+def scalarOf : Nat → Value → Ty → Option Value
+  | 0, _, _ => none
+  | fuel + 1, .tuple vs, .tuple fields _ none =>
+    match (vs.zip fields).filter (fun (_, (_, t)) => !t.is1Zst) with
+    | [(v, (_, t))] => scalarOf fuel v t
+    | _ => none
+  | _, .variant i (.tuple []), .enum vs .. => vs[i]?.map (fun var => .int var.discr)
+  | _, v, _ => some v
+
+def argInt (a : Value × Ty) : SemM Int :=
+  match scalarOf 16 a.1 a.2 with
+  | some (.int i) => pure i
   | _ => throwIllFormed "external call: expected an integer argument"
 
-def argPtr : Value → SemM ThinPointer
-  | .ptr p => pure p.thin
+def argPtr (a : Value × Ty) : SemM ThinPointer :=
+  match scalarOf 16 a.1 a.2 with
+  | some (.ptr p) => pure p.thin
   | _ => throwIllFormed "external call: expected a pointer argument"
 
 def heapAlloc (size align : Int) (zeroed : Bool) : SemM Value := do
@@ -52,10 +70,32 @@ def callEnv (sym : String) (args : List Value) : SemM ExtResult := do
   set { s with mem := m', choiceCount := s.choiceCount + 1 }
   pure r
 
+/-- The name of a `#[rustc_std_internal_symbol]` item: rustc mangles it as
+`__rustc::<name>` (v0: `_R...7___rustc<len>[_]<name>...`, `mangle_internal_symbol`), e.g.
+`_RNvCs5fGHjzWXRav_7___rustc12___rust_alloc` for `__rust_alloc`: the identifier's decimal
+length, a `_` separator if the identifier starts with `_` or a digit, then the identifier.
+Other symbols are unchanged. -/
+def internalName (sym : String) : String :=
+  match sym.splitOn "7___rustc" with
+  | [pre, rest] =>
+    if !pre.startsWith "_R" then sym else
+    let cs := rest.toList
+    let digits := cs.takeWhile Char.isDigit
+    let n := (String.ofList digits).toNat!
+    let cs := cs.drop digits.length
+    let cs := match cs with
+      | '_' :: c :: t => if c == '_' || c.isDigit then c :: t else '_' :: c :: t
+      | _ => cs
+    if digits.isEmpty || cs.length < n then sym else String.ofList (cs.take n)
+  | _ => sym
+
 -- [D21] [D18]
-/-- Run an external function: a shim, or the environment. -/
-def callExternal (sym : String) (args : List Value) : SemM ExtResult := do
-  let res ← match sym, args with
+/-- Run an external function: a shim, or the environment. Arguments come with their types,
+so that the shims can see through ABI-transparent wrappers (`scalarOf`). -/
+def callExternal (sym : String) (targs : List (Value × Ty)) : SemM ExtResult := do
+  let sym := internalName sym
+  let args := targs.map (·.1)
+  let res ← match sym, targs with
     | "__rust_alloc", [s, a] => do pure (.ret (← heapAlloc (← argInt s) (← argInt a) false))
     | "__rust_alloc_zeroed", [s, a] => do pure (.ret (← heapAlloc (← argInt s) (← argInt a) true))
     | "__rust_dealloc", [p, s, a] => do
@@ -88,6 +128,8 @@ def callExternal (sym : String) (args : List Value) : SemM ExtResult := do
       throw .abort
     | "_Unwind_RaiseException", [p] => do pure (.unwind (← argPtr p))
     | "ryo_test_print", _ => pure (.ret unitValue)
+    -- the allocator shim's marker that std's allocator is linked (`alloc::alloc`): a no-op
+    | "__rust_no_alloc_shim_is_unstable_v2", [] => pure (.ret unitValue)
     | _, _ => callEnv sym args
   if sym != "write" then emit (.extCall sym args res)
   pure res

@@ -176,8 +176,9 @@ Assumptions:
 ## 4. Trusted inputs: the dump
 
 The spec's input is a `Program` (Mir/Syntax.lean): MIR bodies, types with layouts, globals
-and instances. Today it comes from the `Builder` DSL in the tests. From M1b it comes from
-the backend's JSON dump (`RYO_DUMP_LEAN`), whose schema is the derived `FromJson` instances
+and instances. It comes from the `Builder` DSL in the tests and from the backend's JSON dump
+(`RYO_DUMP_LEAN=<dir>`, `backend/src/rustc_api/dump_lean.rs`, M1b: the program reachable
+from the crate's `main`), whose schema is the derived `FromJson` instances
 (Mir/Json.lean). **The dump is the one trusted input** (aot.md §C6). It must faithfully
 reflect rustc 1.99.1 (`MirPhase::Runtime(Optimized)`, after drop elaboration, monomorphized;
 the reference is `rustc_middle/src/mir/syntax.rs` of the pinned toolchain's `rustc-dev`
@@ -195,8 +196,13 @@ sources, not a newer rustc checkout), in particular:
 | `Operand.runtimeChecks` values | the session's `ub_checks`/`contract_checks`/`overflow_checks` | no |
 | `Statement.nop` | only the no-op statement kinds listed in mir-spec §A.1 | no |
 
-How to check: differential runs (M1b) of the Lean interpreter against native and ryo-compiled
-code on the corpus; a Rust-side round trip (dump, reload with `ryo-lean`, compare); spot
+What the dumper can't express yet becomes a call of an `ext` instance named
+`ryo-dump: unsupported <what>` (inline asm, coroutines), so a run stops there; intrinsic
+instances lose their generic arguments (R30); foreign statics are dumped as zero bytes.
+
+How to check: differential runs (`scripts/lean-diff.py`, M1b; [divergences.md](divergences.md)
+lists what they found) of the Lean interpreter against native and ryo-compiled
+code on the corpus `tests/lean/`; a Rust-side round trip (dump, reload with `ryo-lean`, compare); spot
 checks of dumped layouts against `-Zprint-type-sizes`; later, C1' and the image checks (aot.md
 §C4) cross-check the dump against the object it describes.
 

@@ -82,9 +82,11 @@ def tagToVariant (vs : List Variant) (discrTy : IntType) (tag : TagInfo) (bits :
   | .direct =>
     if !tag.valid.contains bits then .error s!"enum tag {bits} outside its valid range"
     else
-      -- cast the tag (at its own signedness) to the discriminant type
-      let d := discrTy.bringInBounds (tag.tag.ofBits bits)
-      match vs.zipIdx.find? (fun (v, _) => discrTy.bringInBounds v.discr == d) with
+      -- the tag is the discriminant at the tag's width. rustc may make the tag wider than
+      -- the discriminant type (`layout_of_enum` widens it to the variants' alignment when
+      -- there is no `repr`, e.g. the `u128` tag of `Option<i128>`); on tags in the valid
+      -- range this agrees with cg_ssa's cast of the tag to the discriminant type
+      match vs.zipIdx.find? (fun (v, _) => tag.tag.toBits v.discr == bits) with
       | some (_, i) => .ok i
       | none => .error s!"enum tag {bits} does not match any variant"
   | .niche untagged lo hi start =>

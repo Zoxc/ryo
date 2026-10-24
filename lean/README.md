@@ -27,6 +27,8 @@ lake exe ryotest <substring>       # only the tests whose name contains <substri
 lake exe ryo-lean example factorial fact.json
 lake exe ryo-lean run fact.json    # interpret a JSON program (`Program` or `{program, args}`)
 lake exe ryo-lean run p.json --stdout  # as the program: fd 1/2 bytes to stdout/stderr, its exit status
+../scripts/lean-diff.py [--opt]    # differential runs: tests/lean/*.rs under rustc, ryo and
+                                   # ryo-lean on the backend's RYO_DUMP_LEAN dump (./y.sh build first)
 ```
 
 `.lake/` is ignored (`.gitignore`).
@@ -84,5 +86,6 @@ code cites them inline as `-- [Dn]` at the definitions concerned, and cites sect
 
 M1 is done: `lake build` succeeds with no `sorry` (the five representation laws
 `encode_length`, `decode_encode`, `encode_decode_le`, `decode_mono` and `store_load` are proved in
-`Ryo/Spec/Theorems`), and `lake test` passes. What is left of M1 and the later milestones are
+`Ryo/Spec/Theorems`), and `lake test` passes. M1b's dumper and differential runs work (the
+certificate is still to come). What is left of M1 and the later milestones are
 in [docs/plan.md](docs/plan.md#3-milestones).

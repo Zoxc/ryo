@@ -498,8 +498,7 @@ theorem find?_zipIdx {α : Type} {p : α × Nat → Bool} {l : List α} {v : α}
 /-- A tag value that decodes to variant `idx` is the one `tagForVariant` writes for it (or the
 variant is the untagged one). -/
 theorem tagForVariant_of_tagToVariant {vs : List Variant} {dt : IntType} {tag : TagInfo}
-    {bits idx : Nat} (htv : tagToVariant vs dt tag bits = .ok idx) (hb : bits < tag.tag.modulus)
-    (hd : tag.encoding = .direct → tag.tag.size ≤ dt.size) :
+    {bits idx : Nat} (htv : tagToVariant vs dt tag bits = .ok idx) (hb : bits < tag.tag.modulus) :
     tagForVariant vs tag idx = some bits ∨ tagForVariant vs tag idx = none := by
   unfold tagToVariant at htv
   unfold tagForVariant
@@ -514,18 +513,7 @@ theorem tagForVariant_of_tagToVariant {vs : List Variant} {dt : IntType} {tag : 
         obtain ⟨hvi, hp⟩ := find?_zipIdx hfind
         simp only [beq_iff_eq] at hp
         left
-        simp only [hvi, Option.map_some, Option.getD_some, Option.some.injEq]
-        -- the discriminant and the tag agree modulo the discriminant's modulus, so modulo the
-        -- tag's
-        have h1 := congrArg (· % (dt.modulus : Int)) hp
-        simp only [IntType.bringInBounds_emod] at h1
-        have hdvd : (tag.tag.modulus : Int) ∣ (dt.modulus : Int) := by
-          have := hd henc
-          unfold IntType.modulus IntType.bits
-          exact Int.natCast_dvd_natCast.2 (Nat.pow_dvd_pow 2 (Nat.mul_le_mul_right 8 this))
-        have h2 : v.discr % (tag.tag.modulus : Int) = tag.tag.ofBits bits % tag.tag.modulus := by
-          rw [← Int.emod_emod_of_dvd v.discr hdvd, h1, Int.emod_emod_of_dvd _ hdvd]
-        rw [IntType.toBits_eq_of_emod _ h2, IntType.toBits_ofBits, Nat.mod_eq_of_lt hb]
+        simp only [hvi, Option.map_some, Option.getD_some, hp]
       · simp at htv
   · rename_i u lo hi start henc
     simp only at htv
@@ -874,8 +862,7 @@ theorem encode_decode_le' : (t : Ty) → (bytes : List AbstractByte) → (v : Va
                 have hbl : bits < tag.tag.modulus := by
                   have := decodeBits_slice_lt hbits
                   simpa [IntType.modulus, IntType.bits] using this
-                rcases tagForVariant_of_tagToVariant htv hbl (fun hd => by
-                    rw [hd] at henc; simpa using henc) with hs | hs
+                rcases tagForVariant_of_tagToVariant htv hbl with hs | hs
                 · refine ⟨writeAt b0 tag.offset (encodeBits tag.tag.size bits),
                     by simp [Ty.encode, hb0, hs], ?_⟩
                   apply bytesLeDefined_writeAt hle (by rw [encodeBits_length, hl0]; exact htb)

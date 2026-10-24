@@ -92,6 +92,12 @@ def evalIntrinsic (name : String) (args : List (Value × Ty)) (destTy : Ty) : Se
     if b then pure unitValue else throwUb "`assume` called on a condition that is false"
   | "black_box", [(v, _)] | "likely", [(v, _)] | "unlikely", [(v, _)] => pure v
   | "cold_path", [] => pure unitValue
+  -- `false` is always a correct answer: callers must behave the same either way
+  | "is_val_statically_known", [_] => pure (.bool false)
+  -- PROVISIONAL (M1b): these panic when their type argument is uninhabited / not valid for
+  -- the zero or uninit bit pattern; the intrinsic instance does not carry the type yet
+  | "assert_inhabited", [] | "assert_zero_valid", [] | "assert_mem_uninitialized_valid", [] =>
+    pure unitValue
   | "select_unpredictable", [(.bool c, _), (a, _), (b, _)] => pure (if c then a else b)
   | "prefetch_read_data", _ | "prefetch_write_data", _ | "prefetch_read_instruction", _
   | "prefetch_write_instruction", _ => pure unitValue
