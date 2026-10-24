@@ -112,6 +112,7 @@ any later use (a value-flow, not liveness, question).
 import Ryo.Vm.DecodeReduced
 import Ryo.Vm.OpSem.Footprint
 import Ryo.Vm.R.Islands
+import Std.Data.HashMap
 
 namespace Ryo.Vm.Frame
 
@@ -364,25 +365,40 @@ def effects (i : Insn) (items : List Item) (mode : Mode) (lends : List (BitVec 3
     else pure (native op ops mode.pe lends template)
   | .handler h args _ => handler h args mode
 
-/-! ### Liveness over frame bytes `-F .. 0` -/
+/-! ### Liveness over frame bytes `-F .. 0`
 
-/-- The byte indices (`F + off`) of `n` bytes at `off`, clamped to the frame. -/
-def range (f : Nat) (off : BitVec 32) (n : Nat) : List Nat :=
+A set of frame bytes is a bitset, a `Nat` whose bit `F + off` is the byte at `off` (GMP does the
+word-wise `|||`, `&&&`, `^^^`); an instruction's own sets, mostly one or a few ranges, are kept as
+`Ranges` and made bitsets where they are combined. So the memory is one bitset per instruction
+(the bytes live into it) and per set of escaped objects, not one per set and instruction. -/
+
+/-- The byte indices `lo .. hi` (`F + off`, `hi` excluded) of `n` bytes at `off`, clamped to the
+frame. -/
+def range (f : Nat) (off : BitVec 32) (n : Nat) : Nat × Nat :=
   let fi : Int := f
   let lo := max (min off.toInt 0) (-fi) + fi
   let hi := max (min (off.toInt + n) 0) (-fi) + fi
-  (List.range (hi - lo).toNat).map (· + lo.toNat)
+  (lo.toNat, hi.toNat)
 
-def orA (a b : Array Bool) : Array Bool := a.zipWith (· || ·) b
+/-- The bitset of the bytes `lo .. hi`. -/
+def bitsOf (lo hi : Nat) : Nat := ((1 <<< (hi - lo)) - 1) <<< lo
 
-def setRange (f : Nat) (a : Array Bool) (off : BitVec 32) (n : Nat) : Array Bool :=
-  (range f off n).foldl (fun a b => a.set! b true) a
+/-- `a`'s bits that aren't `b`'s. -/
+def diff (a b : Nat) : Nat := a ^^^ (a &&& b)
+
+/-- A set of bytes as the union of ranges (`range`'s, possibly overlapping). -/
+abbrev Ranges := List (Nat × Nat)
+
+def Ranges.bits (rs : Ranges) : Nat := rs.foldl (fun b (lo, hi) => b ||| bitsOf lo hi) 0
 
 /-- Each instruction's successors (fall-through and branch targets) and landing pads. -/
 def flow (d : Decoded) : Array (List Nat) × Array (List Nat) := Id.run do
   let n := d.insns.size
   let mut succ : Array (List Nat) := #[]
-  let mut pad : Array (List Nat) := #[]
+  let mut pad : Array (List Nat) := Array.replicate n []
+  for (c, p, _) in d.cleanup.toList.reverse do
+    if let some p := p then
+      if c < n && p < n then pad := pad.modify c (p :: ·)
   for h : k in [0:n] do
     let (next, ts) : Bool × List Nat := match d.insns[k] with
       | .native op ops =>
@@ -390,32 +406,36 @@ def flow (d : Decoded) : Array (List Nat) × Array (List Nat) := Id.run do
           ops.flatMap Opnd.targetsOf)
       | .handler h _ t =>
         (h.info.shape == .op || h.info.shape == .br || h.info.shape == .lpad, t.targets)
-    pad := pad.push (d.cleanup.toList.filterMap fun (c, p, _) => if c == k then p else none)
     succ := succ.push (((if next && k + 1 < n then [k + 1] else []) ++ ts).filter (· < n))
-  return (succ, pad.map (·.filter (· < n)))
+  return (succ, pad)
 
 /-- The frame objects that may be escaped at each instruction (after the scopes before it), as
-flags over `Escape` scopes (`d.scopes`' indices): a forward dataflow over `edges` (successors
+a bitset over `Escape` scopes (`d.scopes`' indices): a forward dataflow over `edges` (successors
 and landing pads) from nothing escaped at entry. An `Escape` adds its object; an `End` removes
 each object it covers whole; a `Lend` (not an escape) changes nothing. -/
-def escapedAt (d : Decoded) (edges : Array (List Nat)) : Array (Array Bool) := Id.run do
+def escapedAt (d : Decoded) (edges : Array (List Nat)) : Array Nat := Id.run do
   let n := d.insns.size
-  let m := d.scopes.size
-  let none_ := Array.replicate m false
-  if n == 0 || m == 0 then return Array.replicate n none_
-  let apply (k : Nat) (st : Array Bool) : Array Bool :=
-    (d.scopes.zipIdx.filter (·.1.1 == k)).foldl (fun st ((_, sc), j) =>
-      match sc.kind with
-      | .escape _ => st.set! j true
-      | .lend => st
-      | .end =>
-        let lo := sc.frameOffset.toInt
-        let hi := lo + sc.size
-        st.zipWith (fun e (_, o) => e && !(match o.kind with
-          | .escape _ => lo ≤ o.frameOffset.toInt && o.frameOffset.toInt + o.size ≤ hi
-          | _ => false)) d.scopes) st
-  let mut inS : Array (Array Bool) := Array.replicate n none_
-  let mut at_ : Array (Array Bool) := Array.replicate n none_
+  if n == 0 || d.scopes.isEmpty then return Array.replicate n 0
+  let escapes : Array (Int × Int × Nat) := d.scopes.zipIdx.filterMap fun ((_, sc), j) =>
+    match sc.kind with
+    | .escape _ => some (sc.frameOffset.toInt, sc.frameOffset.toInt + sc.size, j)
+    | _ => none
+  -- What the scopes before each instruction do, in order: add an object, or remove some.
+  let mut steps : Array (Array (Bool × Nat)) := Array.replicate n #[]
+  for ((k, sc), j) in d.scopes.zipIdx do
+    if k ≥ n then continue
+    match sc.kind with
+    | .escape _ => steps := steps.modify k (·.push (true, 1 <<< j))
+    | .lend => pure ()
+    | .end =>
+      let lo := sc.frameOffset.toInt
+      let hi := lo + sc.size
+      let covered := escapes.foldl (fun b (l, h, i) => if lo ≤ l && h ≤ hi then b ||| 1 <<< i else b) 0
+      steps := steps.modify k (·.push (false, covered))
+  let apply (k : Nat) (st : Nat) : Nat :=
+    steps[k]!.foldl (fun st (add, b) => if add then st ||| b else diff st b) st
+  let mut inS : Array Nat := Array.replicate n 0
+  let mut at_ : Array Nat := Array.replicate n 0
   let mut dirty := Array.replicate n true
   let mut more := true
   while more do
@@ -426,7 +446,7 @@ def escapedAt (d : Decoded) (edges : Array (List Nat)) : Array (Array Bool) := I
       let v := apply k inS[k]!
       at_ := at_.set! k v
       for s in edges[k]! do
-        let u := orA inS[s]! v
+        let u := inS[s]! ||| v
         if u != inS[s]! then
           inS := inS.set! s u
           dirty := dirty.set! s true
@@ -434,21 +454,37 @@ def escapedAt (d : Decoded) (edges : Array (List Nat)) : Array (Array Bool) := I
   return at_
 
 /-- What the liveness works on: each instruction's successors and landing pads, the frame
-bytes it reads (`gen`; `viaPointer` the part only its pointer accesses read, `viaStack` the
-part only its callee's stack arguments read), makes `Uninit` after its own operand reads
-(`uninit`: an sret destination) and writes for sure (`kill`). -/
+bytes it reads (`Flow.gen`: its operands', its callee's stack arguments' (`stack`) and its
+pointer accesses', which read the escaped objects (`pointer`) but for what it makes `Uninit`
+after its own operand reads (`uninit`: an sret destination)), and the bytes it writes for sure
+(`kill`). -/
 structure Flow where
   succ : Array (List Nat)
   pad : Array (List Nat)
-  gen : Array (Array Bool)
-  viaPointer : Array (Array Bool)
-  viaStack : Array (Array Bool)
-  uninit : Array (Array Bool)
-  kill : Array (Array Bool)
+  operand : Array Ranges
+  stack : Array Ranges
+  /-- The bytes of the objects escaped at it if it makes a pointer access (one bitset for each
+  set of escapes, shared), else none. -/
+  pointer : Array Nat
+  uninit : Array Ranges
+  kill : Array Ranges
   /-- It reads every byte. -/
   readsAll : Array Bool
   /-- The bytes `End` scopes before it make `Uninit`. -/
-  ends : Array (Array Bool)
+  ends : Array Ranges
+
+/-- The bytes instruction `k` reads by its operands and stack arguments. -/
+def Flow.direct (fl : Flow) (k : Nat) : Nat := (fl.operand[k]! ++ fl.stack[k]!).bits
+
+/-- The bytes instruction `k` reads. -/
+def Flow.gen (fl : Flow) (k : Nat) : Nat := fl.direct k ||| diff fl.pointer[k]! fl.uninit[k]!.bits
+
+/-- The part of `gen` only its pointer accesses read. -/
+def Flow.viaPointer (fl : Flow) (k : Nat) : Nat :=
+  diff (diff fl.pointer[k]! (fl.direct k)) fl.uninit[k]!.bits
+
+/-- The part of `gen` only its callee's stack arguments read. -/
+def Flow.viaStack (fl : Flow) (k : Nat) : Nat := diff fl.stack[k]!.bits fl.operand[k]!.bits
 
 /-- The sret destination of a call whose argument list is `ws`: the slot of its first entry,
 if that is the first integer register, by address (`pass_args` puts it first). -/
@@ -462,91 +498,120 @@ def sretDest (ws : List (BitVec 32)) : Option (BitVec 32) :=
 def callArgs (ops : List (Opnd Nat)) : List (BitVec 32) :=
   (ops.findSome? fun | .words ws => some ws | _ => none).getD []
 
+/-- A bitset as a hash map key. -/
+structure BitsKey where
+  bits : Nat
+deriving BEq
+
+instance : Hashable BitsKey := ⟨fun k => UInt64.ofNat (k.bits % 0xFFFFFFFFFFFFFFC5)⟩
+
+/-- The scopes before each instruction, with their indices in `d.scopes`, in order. -/
+def scopesAt (d : Decoded) : Array (List (Nat × Scope)) :=
+  d.scopes.zipIdx.foldr (fun ((k, sc), j) a => if k < a.size then a.modify k ((j, sc) :: ·) else a)
+    (Array.replicate d.insns.size [])
+
 def Flow.of (d : Decoded) (mode : Mode) (facts : Facts := {}) : Except String Flow := do
   let n := d.insns.size
   let f := d.frameSize
-  let all := Array.replicate f true
-  let none_ := Array.replicate f false
+  let all : Ranges := [(0, f)]
   let (succ, pad) := flow d
   let esc := escapedAt d ((succ.zip pad).map fun (s, p) => s ++ p)
-  let escBytes (k : Nat) : Array Bool :=
-    (esc[k]!.zip d.scopes).foldl (fun a (e, (_, sc)) => if e then setRange f a sc.frameOffset sc.size else a) none_
-  let mut gen : Array (Array Bool) := #[]
-  let mut viaPointer : Array (Array Bool) := #[]
-  let mut viaStack : Array (Array Bool) := #[]
-  let mut uninit : Array (Array Bool) := #[]
-  let mut kill : Array (Array Bool) := #[]
+  let scopes : Array (List (Nat × Scope)) := scopesAt d
+  -- The bytes of the objects escaped at `k`, computed once per set of escapes.
+  let mut escBytes : Std.HashMap BitsKey Nat := {}
+  let mut operand : Array Ranges := #[]
+  let mut stack : Array Ranges := #[]
+  let mut pointer : Array Nat := #[]
+  let mut uninit : Array Ranges := #[]
+  let mut kill : Array Ranges := #[]
   let mut readsAll : Array Bool := #[]
+  let mut ends : Array Ranges := #[]
   for h : k in [0:n] do
-    let i := d.insns[k]
-    let e ← effects i (d.items[k]?.getD []) mode (lendsAt d k) (facts.islandTemplate k)
-    let eb := if e.pointer || e.opnds.any (·.2 == .addr) then escBytes k else none_
-    let (isCall, call, ws) := match i with
+    let i : Insn := d.insns[k]
+    let lends := scopes[k]!.filterMap fun (_, sc) =>
+      if sc.kind == .lend then some (sc.frameOffset, sc.size) else none
+    let e ← effects i (d.items[k]?.getD []) mode lends (facts.islandTemplate k)
+    let mut eb := 0
+    if e.pointer || e.opnds.any (·.2 == .addr) then
+      let key : BitsKey := ⟨esc[k]!⟩
+      match escBytes[key]? with
+      | some b => eb := b
+      | none =>
+        let mut st := esc[k]!
+        while st != 0 do
+          let j := st.log2
+          st := st ^^^ (1 <<< j)
+          let sc := d.scopes[j]!.2
+          let (lo, hi) := range f sc.frameOffset sc.size
+          eb := eb ||| bitsOf lo hi
+        escBytes := escBytes.insert key eb
+    let (isCall, call, ws) : Bool × Bool × List (BitVec 32) := match i with
       | .native op ops => (op.info.shape == .call || op.info.shape == .tailCall,
           op.info.shape == .call, callArgs ops)
       | _ => (false, false, [])
     -- A call that may have stack arguments: the callee reads at most `stackArgs` bytes of the
     -- outgoing area, at `fp - F` (frame byte 0), if known; else any byte.
-    let gs := if !e.readsAll then none_ else match call, facts.stackArgs k with
-      | true, some m => setRange f none_ (BitVec.ofInt 32 (-(f : Int))) m
+    let gs : Ranges := if !e.readsAll then [] else match call, facts.stackArgs k with
+      | true, some m => [range f (BitVec.ofInt 32 (-(f : Int))) m]
       | _, _ => all
-    let mut g := none_
-    let mut kl := none_
+    let mut g : Ranges := []
+    let mut kl : Ranges := []
     for (off, acc) in e.opnds do
       match acc with
-      | .read m => g := setRange f g off m
-      | .write m => kl := setRange f kl off m
+      | .read m => g := range f off m :: g
+      | .write m => kl := range f off m :: kl
       | .opaque => g := all
       -- A by-address argument no escape covers: its object's extent is unknown.
-      | .addr => if isCall && (range f off 1).any (!eb[·]!) then g := all
+      | .addr =>
+        let (lo, hi) := range f off 1
+        if isCall && lo < hi && !eb.testBit lo then g := all
       | _ => pure ()
-    let vs := gs.zipWith (fun a b => a && !b) g
-    g := orA g gs
     -- An sret destination is `Uninit` once the call has read its arguments (reduced.md §C0.4):
     -- what the callee reads of it through pointers is that.
-    let un := match call, facts.sretSize k, sretDest ws with
-      | true, some m, some s => setRange f none_ s m
-      | _, _, _ => none_
-    let gp := if e.pointer then (eb.zipWith (fun a b => a && !b) g).zipWith (fun a b => a && !b) un
-      else none_
-    g := orA g gp
-    kl := kl.zipWith (fun a b => a && !b) g
-    gen := gen.push g
-    viaPointer := viaPointer.push gp
-    viaStack := viaStack.push vs
+    let un : Ranges := match call, facts.sretSize k, sretDest ws with
+      | true, some m, some s => [range f s m]
+      | _, _, _ => []
+    let gen := (g ++ gs).bits ||| (if e.pointer then diff eb un.bits else 0)
+    operand := operand.push g
+    stack := stack.push gs
+    pointer := pointer.push (if e.pointer then eb else 0)
     uninit := uninit.push un
+    -- What it writes and also reads is live into it all the same: `gen` is added after `kill`.
     kill := kill.push kl
-    readsAll := readsAll.push (g.all id)
-  let ends := (List.range n).toArray.map fun k =>
-    (d.scopes.filter fun (j, sc) => j == k && sc.kind == .end).foldl
-      (fun a (_, sc) => setRange f a sc.frameOffset sc.size) none_
-  return { succ, pad, gen, viaPointer, viaStack, uninit, kill, readsAll, ends }
+    readsAll := readsAll.push (gen == bitsOf 0 f)
+    ends := ends.push (scopes[k]!.filterMap fun (_, sc) =>
+      if sc.kind == .end then some (range f sc.frameOffset sc.size) else none)
+  return { succ, pad, operand, stack, pointer, uninit, kill, readsAll, ends }
 
 /-- The frame bytes live into each instruction: some path from it reads them before an
-instruction writes them for sure (unwinding to a landing pad past nothing it writes). -/
-def Flow.liveIn (fl : Flow) (f : Nat) : Except String (Array (Array Bool)) := do
-  let n := fl.gen.size
-  let none_ := Array.replicate f false
-  let mut liveIn : Array (Array Bool) := Array.replicate n none_
-  let mut changed := true
-  let mut rounds := 0
-  while changed && rounds < 10 * n + 10 do
-    changed := false
-    rounds := rounds + 1
+instruction writes them for sure (unwinding to a landing pad past nothing it writes). A
+worklist, in reverse order, from nothing live. -/
+def Flow.liveIn (fl : Flow) : Array Nat := Id.run do
+  let n := fl.succ.size
+  let mut preds : Array (List Nat) := Array.replicate n []
+  for k in [0:n] do
+    for s in fl.succ[k]! ++ fl.pad[k]! do
+      preds := preds.modify s (k :: ·)
+  let mut liveIn : Array Nat := Array.replicate n 0
+  let mut dirty := Array.replicate n true
+  let mut more := true
+  while more do
+    more := false
     for k' in [0:n] do
       let k := n - 1 - k'
-      let out := fl.succ[k]!.foldl (fun a s => orA a liveIn[s]!) none_
-      let v := out.zipWith (fun a b => a && !b) fl.kill[k]!
-      let v := fl.pad[k]!.foldl (fun a s => orA a liveIn[s]!) v
+      if !dirty[k]! then continue
+      dirty := dirty.set! k false
+      let out := fl.succ[k]!.foldl (fun a s => a ||| liveIn[s]!) 0
+      let v := diff out fl.kill[k]!.bits
+      let v := fl.pad[k]!.foldl (fun a s => a ||| liveIn[s]!) v
       -- What `k` makes `Uninit` after reading its operands is dead into it, but what it reads.
-      let v := orA (v.zipWith (fun a b => a && !b) fl.uninit[k]!) fl.gen[k]!
+      let v := diff v fl.uninit[k]!.bits ||| fl.gen k
       -- What R reads of the bytes an `End` before `k` covers is `Uninit`.
-      let v := v.zipWith (fun a b => a && !b) fl.ends[k]!
-      let v := orA v liveIn[k]!
+      let v := diff v fl.ends[k]!.bits ||| liveIn[k]!
       if v != liveIn[k]! then
         liveIn := liveIn.set! k v
-        changed := true
-  if changed then throw "liveness didn't converge"
+        for p in preds[k]! do dirty := dirty.set! p true
+        more := true
   return liveIn
 
 /-- The store instruction `k` dropped: its destination (`mov.w128`'s low half) and width. -/
@@ -567,12 +632,14 @@ def droppedNotDead (d : Decoded) (mode : Mode) (facts : Facts := {}) : Except St
   if d.dropped.isEmpty then return []
   let f := d.frameSize
   let fl ← Flow.of d mode facts
-  let liveIn ← fl.liveIn f
+  let liveIn := fl.liveIn
   let mut bad : List Nat := []
   for k in d.dropped do
-    let liveOut := fl.succ[k]!.foldl (fun a s => orA a liveIn[s]!) (Array.replicate f false)
+    let liveOut := fl.succ[k]!.foldl (fun a s => a ||| liveIn[s]!) 0
     match droppedStore d k with
-    | some (s, w) => if (range f s w).any (liveOut[·]!) then bad := bad ++ [k]
+    | some (s, w) =>
+      let (lo, hi) := range f s w
+      if liveOut &&& bitsOf lo hi != 0 then bad := bad ++ [k]
     | none => bad := bad ++ [k]
   return bad
 
@@ -591,28 +658,30 @@ def firstReader (d : Decoded) (mode : Mode) (k : Nat) (facts : Facts := {}) :
   let f := d.frameSize
   let fl ← Flow.of d mode facts
   let some (s, w) := droppedStore d k | return none
-  let start := setRange f (Array.replicate f false) s w
+  let (lo, hi) := range f s w
+  let start := bitsOf lo hi
   let n := d.insns.size
-  let mut seen : Array (Array Bool) := Array.replicate n (Array.replicate f false)
-  let mut work : List (Nat × Array Bool) := fl.succ[k]!.map (·, start)
+  let mut seen : Array Nat := Array.replicate n 0
+  let mut work : Std.Queue (Nat × Nat) := fl.succ[k]!.foldl (fun q s => q.enqueue (s, start)) .empty
   for _ in [0:8 * (n + 1) * (w + 1)] do
-    match work with
-    | [] => return none
-    | (j, st) :: rest =>
+    match work.dequeue? with
+    | none => return none
+    | some ((j, st), rest) =>
       work := rest
-      let st := (st.zipWith (fun a b => a && !b) seen[j]!).zipWith (fun a b => a && !b) fl.ends[j]!
-      if !st.any id then continue
-      seen := seen.set! j (orA seen[j]! st)
-      let hit := st.zipWith (· && ·) fl.gen[j]!
-      if hit.any id then
+      let st := diff (diff st seen[j]!) fl.ends[j]!.bits
+      if st == 0 then continue
+      seen := seen.set! j (seen[j]! ||| st)
+      let hit := st &&& fl.gen j
+      if hit != 0 then
         let by_ := if fl.readsAll[j]! then ReadBy.everything
-          else if (hit.zipWith (fun a b => a && !b) fl.viaPointer[j]!).all (!·) then .pointer
-          else if (hit.zipWith (fun a b => a && !b) fl.viaStack[j]!).all (!·) then .stack
+          else if diff hit (fl.viaPointer j) == 0 then .pointer
+          else if diff hit (fl.viaStack j) == 0 then .stack
           else .operand
         return some (j, by_)
-      let st := st.zipWith (fun a b => a && !b) fl.uninit[j]!
-      let after := st.zipWith (fun a b => a && !b) fl.kill[j]!
-      work := work ++ fl.succ[j]!.map (·, after) ++ fl.pad[j]!.map (·, st)
+      let st := diff st fl.uninit[j]!.bits
+      let after := diff st fl.kill[j]!.bits
+      work := fl.succ[j]!.foldl (fun q s => q.enqueue (s, after)) work
+      work := fl.pad[j]!.foldl (fun q s => q.enqueue (s, st)) work
   return none
 
 /-! ### What a function accesses of its incoming area -/
