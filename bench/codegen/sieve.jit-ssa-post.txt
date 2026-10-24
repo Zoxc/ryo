@@ -54,10 +54,9 @@ a23: $-16, 8 bytes, Promoted
 a24: $-8, 8 bytes, Promoted
 b0(v0:8, v1:8, v2:8): ; Entry
     AStore(AllocaId(21), 0, 8) (v2)
-    br 0x0 ? b1() : b2()
+    jmp b2()
 b1(): ; Body
-    v5:1 = Cmp(Eq, 8) (v1, 0x0)
-    jmp b3(v5)
+    trap
 b2(): ; Body
     v6:1 = Cmp(Eq, 8) (v0, v1)
     jmp b3(v6)
@@ -68,11 +67,11 @@ b4(): ; Body
     jmp b14(v9)
 b5(): ; Body
     v12:8 = ALoad(AllocaId(21), 0, 8) ()
-    br 0x0 ? b6() : b7()
+    jmp b7()
 b6(): ; Body
-    jmp b9(v12, v0, 0x0, v1, 0x0)
+    trap
 b7(): ; Body
-    br 0x1 ? b8() : b25()
+    jmp b8()
 b8(): ; Body
     jmp b24()
 b9(v20:8, v21:8, v22:8, v68:8, v81:1): ; Body head 0
@@ -81,7 +80,7 @@ b9(v20:8, v21:8, v22:8, v68:8, v81:1): ; Body head 0
     v24:8 = Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v18, v20, v23)
     invoke -> b36() unwind b37()
 b10(): ; Body
-    br 0x1 ? b11() : b31()
+    jmp b11()
 b11(): ; Body
     jmp b30()
 b12(): ; Body head 1
@@ -114,19 +113,15 @@ b24(): ; Body
     Call(Call { target: fn2.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: None }) (v1, v0, v45)
     jmp b25()
 b25(): ; Body
-    br 0x1 ? b26() : b28()
+    jmp b26()
 b26(): ; Body
-    br 0x1 ? b27() : b28()
+    jmp b27()
 b27(): ; Body
     v54:8 = Bin(Sub, 8) (v1, v0)
     jmp b23()
 b28(): ; Body
-    v58:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967096), [Some(Scratch(0)), None]), (k3, [None, None])] outs 1 ()
-    v60:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967088), [Some(Scratch(0)), None]), (k4, [None, None])] outs 1 ()
-    Call(Call { target: sym5, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: false } }) (v58, 0x49, v60)
-    invoke -> b38() unwind b39()
+    trap
 b29(): ; Body
-    hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b30(): ; Body
     v63:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967096), [Some(Scratch(0)), None]), (k6, [None, None])] outs 1 ()
@@ -159,10 +154,9 @@ b37(): ; Stub
     v25:8 = LandingPad ()
     jmp b33(0x0, v81, v25)
 b38(): ; Body
-    jmp b29()
+    trap
 b39(): ; Stub
-    v61:8 = LandingPad ()
-    jmp b33(0x1, 0x0, v61)
+    trap
 
 fn <std::vec::Vec<bool> as std::ops::Index<usize>>::index
 a0: $-88, 8 bytes, Promoted
@@ -628,7 +622,7 @@ b15(v46:1, v48:8): ; Body head 8
 b16(): ; Body
     jmp b14()
 b17(): ; Body
-    br 0x1 ? b18() : b22()
+    jmp b18()
 b18(): ; Body
     jmp b21()
 b19(): ; Body

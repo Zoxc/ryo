@@ -25,8 +25,6 @@ fn <core::slice::sort::shared::smallsort::CopyOnDrop<u32> as std::ops::Drop>::dr
     mov     rbx,[rdi]
     mov     r12,[rdi+8]
     mov     r13,[rdi+10h]
-    jmp     L0
-L0:
     lea     rdi,[k0]
     call    ryo_hr_AddrAbs
     mov     rdi,rbx
@@ -490,69 +488,52 @@ fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<(), {closure@std::
     mov     ecx,0
     mov     r8d,18h
     call    ryo_h_LoadCopy
-    jmp     L0
-    cmp     r12,0
-    sete    al
-    jmp     L1
-L0:
     cmp     rbx,r12
     sete    al
-L1:
     test    al,al
-    je      L3
+    je      L1
     lea     rax,[rsp+88h]
     mov     rdi,rax
     call    qword ptr [fn0.slot]
-    jmp     L2
+    jmp     L0
     mov     rcx,rax
     mov     eax,0
-    jmp     L27
+    jmp     L19
+L0:
+    jmp     L7
+L1:
+    jmp     L16
 L2:
-    jmp     L12
-L3:
-    jmp     L4
-    mov     r13,rbx
-    mov     r14d,0
-    mov     r15,r12
-    mov     qword ptr [rsp+20h],0
-    jmp     L6
-L4:
-    jmp     L5
-L5:
-    jmp     L21
-L6:
     lea     rax,[rsp+88h]
     lea     rcx,[r13+r14*4]
     mov     rdi,rax
     mov     rsi,rcx
     call    fn1
-    jmp     L7
+    jmp     L3
     mov     qword ptr [rsp+28h],0
     mov     r11,[rsp+20h]
     mov     [rsp+10h],r11
     mov     [rsp+18h],rax
-    jmp     L28
-L7:
-    jmp     L8
-L8:
-    jmp     L25
-L9:
+    jmp     L20
+L3:
+    jmp     L17
+L4:
     lea     rax,[rsp+88h]
     mov     rdi,rax
     call    qword ptr [fn0.slot]
-    jmp     L10
+    jmp     L5
     mov     rcx,rax
     mov     rax,[rsp+20h]
-    jmp     L27
-L10:
-    jmp     L12
-L11:
+    jmp     L19
+L5:
+    jmp     L7
+L6:
     mov     r13,rax
     mov     r14,rcx
     mov     r15,rdx
     mov     [rsp+20h],rsi
-    jmp     L6
-L12:
+    jmp     L2
+L7:
     mov     rbx,[rsp+80h]
     mov     r12,[rsp+70h]
     mov     r13,[rsp+60h]
@@ -561,76 +542,54 @@ L12:
     mov     rbp,[rsp+30h]
     add     rsp,0B8h
     ret
-L13:
+L8:
     lea     rax,[rsp+88h]
     mov     rdi,rax
     call    qword ptr [fn0.slot]
-    jmp     L14
-    jmp     L29
-L14:
+    jmp     L9
+    jmp     L21
+L9:
     mov     rax,[rsp+10h]
     mov     rbp,[rsp+18h]
-    jmp     L19
-L15:
+    jmp     L14
+L10:
     mov     [rsp],rbp
     lea     rdi,[rsp+0B0h]
     mov     esi,0FFFFFF50h
     call    ryo_h_Resume
     ud2
-L16:
-    jmp     L13
-L17:
+L11:
+    jmp     L8
+L12:
     cmp     byte ptr [rsp+28h],0
-    je      L13
-    jmp     L16
-L18:
-    jmp     L15
-L19:
+    je      L8
+    jmp     L11
+L13:
+    jmp     L10
+L14:
     test    al,al
-    je      L15
-    jmp     L18
-L20:
+    je      L10
+    jmp     L13
+L15:
     mov     r13,rbx
     mov     r14d,0
     mov     r15,rbp
     mov     qword ptr [rsp+20h],0
-    jmp     L6
-L21:
+    jmp     L2
+L16:
     lea     rdi,[k4]
     call    ryo_hr_AddrAbs
     mov     rdi,r12
     mov     rsi,rbx
     mov     rdx,rax
     call    fn5
-    jmp     L22
-L22:
-    jmp     L23
-L23:
     sub     r12,rbx
     mov     rdi,r12
     mov     esi,4
     call    ryo_hr_DivUW64
     mov     rbp,rax
-    jmp     L20
-    lea     rdi,[k6]
-    call    ryo_hr_AddrAbs
-    mov     rbx,rax
-    lea     rdi,[k7]
-    call    ryo_hr_AddrAbs
-    mov     rdi,rbx
-    mov     esi,49h
-    mov     rdx,rax
-    call    qword ptr [sym8]
-    jmp     L24
-    mov     qword ptr [rsp+28h],1
-    mov     qword ptr [rsp+10h],0
-    mov     [rsp+18h],rax
-    jmp     L28
-L24:
-    lea     rdi,[rsp+0B0h]
-    call    ryo_h_Unreachable
-    ud2
-L25:
+    jmp     L15
+L17:
     lea     rdi,[k9]
     call    ryo_hr_AddrAbs
     mov     rdi,r14
@@ -639,42 +598,42 @@ L25:
     call    fn10
     add     r14,1
     cmp     r14,r15
-    je      L9
+    je      L4
     mov     rax,r13
     mov     rcx,r14
     mov     rdx,r15
     mov     rsi,[rsp+20h]
-    jmp     L11
-L26:
+    jmp     L6
+L18:
     call    qword ptr [sym11]
     lea     rdi,[rsp+0B0h]
     call    ryo_h_Unreachable
     ud2
-L27:
+L19:
     mov     rbp,rcx
-    jmp     L19
-L28:
-    jmp     L17
-L29:
-    jmp     L26
+    jmp     L14
+L20:
+    jmp     L12
+L21:
+    jmp     L18
   ; OSR entries
-    lea     r11,[L30]
+    lea     r11,[L22]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L30:
+L22:
+    .long   L23
+    .long   L24
+    .long   L25
+    .long   L26
+    .long   L27
+    .long   L28
+    .long   L29
+    .long   L30
     .long   L31
     .long   L32
     .long   L33
-    .long   L34
-    .long   L35
-    .long   L36
-    .long   L37
-    .long   L38
-    .long   L39
-    .long   L40
-    .long   L41
-L31:
+L23:
     pop     rcx
     lea     rdx,[rsp+0C0h]
     lea     rsp,[rdx-0E0h]
@@ -698,10 +657,10 @@ L31:
     mov     r14,[rsp+8]
     mov     r15,[rsp+10h]
     lea     rsp,[rsp+30h]
-    jmp     L6
-L32:
+    jmp     L2
+L24:
     ret
-L33:
+L25:
     pop     rcx
     lea     rdx,[rsp+0C0h]
     lea     rsp,[rdx-0E0h]
@@ -724,22 +683,22 @@ L33:
     mov     rsi,[rsp+18h]
     mov     rdx,[rsp+10h]
     lea     rsp,[rsp+30h]
-    jmp     L11
-L34:
+    jmp     L6
+L26:
     ret
-L35:
+L27:
     ret
-L36:
+L28:
     ret
-L37:
+L29:
     ret
-L38:
+L30:
     ret
-L39:
+L31:
     ret
-L40:
+L32:
     ret
-L41:
+L33:
     ret
 
 fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<u64, {closure@<std::iter::Enumerate<I> as std::iter::Iterator>::fold::enumerate<&u32, u64, {closure@bench/sort.rs:46:37: 46:51}>::{closure#0}}>
@@ -754,57 +713,39 @@ fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<u64, {closure@<std
     mov     r12,rsi
     mov     r13,rdx
     mov     [rsp+98h],rcx
-    jmp     L0
-    cmp     r12,0
-    sete    al
-    jmp     L1
-L0:
     cmp     rbx,r12
     sete    al
-L1:
     test    al,al
-    je      L2
+    je      L0
     mov     rax,r13
-    jmp     L10
-L2:
-    jmp     L3
-    mov     rax,r13
-    mov     r14,rbx
-    mov     r15d,0
-    mov     [rsp+38h],r12
-    mov     qword ptr [rsp+10h],0
     jmp     L5
-L3:
-    jmp     L4
-L4:
-    jmp     L18
-L5:
+L0:
+    jmp     L13
+L1:
     lea     rcx,[rsp+98h]
     lea     rdx,[r14+r15*4]
     mov     rdi,rcx
     mov     rsi,rax
     call    fn0
     mov     [rsp+18h],rax
-    jmp     L6
+    jmp     L2
     mov     qword ptr [rsp+30h],0
     mov     r11,[rsp+10h]
     mov     [rsp+20h],r11
     mov     [rsp+28h],rax
-    jmp     L23
-L6:
-    jmp     L7
-L7:
-    jmp     L22
-L8:
+    jmp     L15
+L2:
+    jmp     L14
+L3:
     mov     rax,[rsp+18h]
-    jmp     L10
-L9:
+    jmp     L5
+L4:
     mov     r14,rcx
     mov     r15,rdx
     mov     [rsp+38h],rsi
     mov     [rsp+10h],rdi
-    jmp     L5
-L10:
+    jmp     L1
+L5:
     mov     rbx,[rsp+90h]
     mov     r12,[rsp+80h]
     mov     r13,[rsp+70h]
@@ -813,70 +754,48 @@ L10:
     mov     rbp,[rsp+40h]
     add     rsp,0C8h
     ret
-L11:
-    jmp     L16
-L12:
+L6:
+    jmp     L11
+L7:
     mov     r11,[rsp+28h]
     mov     [rsp],r11
     lea     rdi,[rsp+0C0h]
     mov     esi,0FFFFFF40h
     call    ryo_h_Resume
     ud2
-L13:
-    jmp     L11
-L14:
+L8:
+    jmp     L6
+L9:
     cmp     byte ptr [rsp+30h],0
-    je      L11
-    jmp     L13
-L15:
-    jmp     L12
-L16:
+    je      L6
+    jmp     L8
+L10:
+    jmp     L7
+L11:
     cmp     byte ptr [rsp+20h],0
-    je      L12
-    jmp     L15
-L17:
+    je      L7
+    jmp     L10
+L12:
     mov     rax,r13
     mov     r14,rbx
     mov     r15d,0
     mov     [rsp+38h],rbp
     mov     qword ptr [rsp+10h],0
-    jmp     L5
-L18:
+    jmp     L1
+L13:
     lea     rdi,[k1]
     call    ryo_hr_AddrAbs
     mov     rdi,r12
     mov     rsi,rbx
     mov     rdx,rax
     call    fn2
-    jmp     L19
-L19:
-    jmp     L20
-L20:
     sub     r12,rbx
     mov     rdi,r12
     mov     esi,4
     call    ryo_hr_DivUW64
     mov     rbp,rax
-    jmp     L17
-    lea     rdi,[k3]
-    call    ryo_hr_AddrAbs
-    mov     rbx,rax
-    lea     rdi,[k4]
-    call    ryo_hr_AddrAbs
-    mov     rdi,rbx
-    mov     esi,49h
-    mov     rdx,rax
-    call    qword ptr [sym5]
-    jmp     L21
-    mov     qword ptr [rsp+30h],1
-    mov     qword ptr [rsp+20h],0
-    mov     [rsp+28h],rax
-    jmp     L23
-L21:
-    lea     rdi,[rsp+0C0h]
-    call    ryo_h_Unreachable
-    ud2
-L22:
+    jmp     L12
+L14:
     lea     rdi,[k6]
     call    ryo_hr_AddrAbs
     mov     rdi,r15
@@ -885,31 +804,31 @@ L22:
     call    fn7
     add     r15,1
     cmp     r15,[rsp+38h]
-    je      L8
+    je      L3
     mov     rax,[rsp+18h]
     mov     rcx,r14
     mov     rdx,r15
     mov     rsi,[rsp+38h]
     mov     rdi,[rsp+10h]
+    jmp     L4
+L15:
     jmp     L9
-L23:
-    jmp     L14
   ; OSR entries
-    lea     r11,[L24]
+    lea     r11,[L16]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L24:
+L16:
+    .long   L17
+    .long   L18
+    .long   L19
+    .long   L20
+    .long   L21
+    .long   L22
+    .long   L23
+    .long   L24
     .long   L25
-    .long   L26
-    .long   L27
-    .long   L28
-    .long   L29
-    .long   L30
-    .long   L31
-    .long   L32
-    .long   L33
-L25:
+L17:
     pop     rcx
     lea     rdx,[rsp+0E0h]
     lea     rsp,[rdx-110h]
@@ -937,10 +856,10 @@ L25:
     mov     r14,[rsp+8]
     mov     r15,[rsp+10h]
     lea     rsp,[rsp+50h]
-    jmp     L5
-L26:
+    jmp     L1
+L18:
     ret
-L27:
+L19:
     pop     rcx
     lea     rdx,[rsp+0E0h]
     lea     rsp,[rdx-110h]
@@ -966,18 +885,18 @@ L27:
     mov     rdi,[rsp+20h]
     mov     rdx,[rsp+10h]
     lea     rsp,[rsp+50h]
-    jmp     L9
-L28:
+    jmp     L4
+L20:
     ret
-L29:
+L21:
     ret
-L30:
+L22:
     ret
-L31:
+L23:
     ret
-L32:
+L24:
     ret
-L33:
+L25:
     ret
 
 fn <std::vec::Vec<u32> as std::ops::Deref>::deref
@@ -1018,78 +937,23 @@ L3:
     ret
 
 fn <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortFreezeTypeImpl>::small_sort::<for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
-    sub     rsp,48h
-    mov     [rsp+30h],rbx
-    mov     [rsp+20h],r12
-    mov     [rsp+10h],r13
-    mov     rbx,rdi
-    mov     r12,rsi
-    mov     r13,rdx
-    jmp     L0
-L0:
-    mov     r11d,80h
-    cmp     r11,1000h
-    ja      L1
-    mov     rdi,rbx
-    mov     rsi,r12
-    mov     rdx,r13
+    sub     rsp,18h
     call    fn0
-    jmp     L3
-L1:
-    mov     r11d,0C0h
-    cmp     r11,1000h
-    ja      L2
-    mov     rdi,rbx
-    mov     rsi,r12
-    mov     rdx,r13
-    call    qword ptr [fn1.slot]
-    jmp     L3
-L2:
-    cmp     r12,2
-    jae     L4
-    jmp     L5
-L3:
-    mov     rbx,[rsp+30h]
-    mov     r12,[rsp+20h]
-    mov     r13,[rsp+10h]
-    add     rsp,48h
+    add     rsp,18h
     ret
-L4:
-    mov     rdi,rbx
-    mov     rsi,r12
-    mov     edx,1
-    mov     rcx,r13
-    call    fn2
-L5:
-    jmp     L3
   ; OSR entries
-    lea     r11,[L6]
+    lea     r11,[L0]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L6:
-    .long   L7
-L7:
+L0:
+    .long   L1
+L1:
     ret
 
 fn <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortFreezeTypeImpl>::small_sort_threshold
     sub     rsp,18h
-    jmp     L0
-L0:
-    mov     r11d,80h
-    cmp     r11,1000h
-    ja      L1
     mov     eax,20h
-    jmp     L3
-L1:
-    mov     r11d,0C0h
-    cmp     r11,1000h
-    ja      L2
-    mov     eax,20h
-    jmp     L3
-L2:
-    mov     eax,10h
-L3:
     add     rsp,18h
     ret
 
@@ -1111,8 +975,6 @@ fn <usize as std::iter::Step>::forward_unchecked
     mov     [rsp+10h],r12
     mov     rbx,rdi
     mov     r12,rsi
-    jmp     L0
-L0:
     lea     rdi,[k0]
     call    ryo_hr_AddrAbs
     mov     rdi,rbx
@@ -1154,59 +1016,22 @@ L0:
     ud2
 
 fn Rng::next
-    sub     rsp,38h
-    mov     [rsp+20h],rbx
-    mov     [rsp+10h],r12
-    mov     rbx,rdi
-    mov     r12,[rbx]
-    mov     r11d,0Dh
-    cmp     r11d,40h
-    jb      L0
-    lea     rdi,[k0]
-    call    ryo_hr_AddrAbs
-    mov     rdi,rax
-    call    qword ptr [sym1]
-    lea     rdi,[rsp+30h]
-    call    ryo_h_Unreachable
-    ud2
-L0:
-    shl     r12,0Dh
-    mov     rax,[rbx]
-    xor     r12,rax
-    mov     [rbx],r12
-    mov     r11d,7
-    cmp     r11d,40h
-    jb      L1
-    lea     rdi,[k2]
-    call    ryo_hr_AddrAbs
-    mov     rdi,rax
-    call    qword ptr [sym3]
-    lea     rdi,[rsp+30h]
-    call    ryo_h_Unreachable
-    ud2
-L1:
-    shr     r12,7
-    mov     rax,[rbx]
-    xor     r12,rax
-    mov     [rbx],r12
-    mov     r11d,11h
-    cmp     r11d,40h
-    jb      L2
-    lea     rdi,[k4]
-    call    ryo_hr_AddrAbs
-    mov     rdi,rax
-    call    qword ptr [sym1]
-    lea     rdi,[rsp+30h]
-    call    ryo_h_Unreachable
-    ud2
-L2:
-    shl     r12,11h
-    mov     rax,[rbx]
-    xor     rax,r12
-    mov     [rbx],rax
-    mov     rbx,[rsp+20h]
-    mov     r12,[rsp+10h]
-    add     rsp,38h
+    sub     rsp,18h
+    mov     rax,[rdi]
+    shl     rax,0Dh
+    mov     rcx,[rdi]
+    xor     rcx,rax
+    mov     [rdi],rcx
+    shr     rcx,7
+    mov     rax,[rdi]
+    xor     rax,rcx
+    mov     [rdi],rax
+    shl     rax,11h
+    mov     rcx,[rdi]
+    xor     rcx,rax
+    mov     [rdi],rcx
+    mov     rax,rcx
+    add     rsp,18h
     ret
 
 fn checksum::{closure#0}
@@ -1350,14 +1175,10 @@ fn core::slice::<impl [(u32, u32)]>::split_at_mut_unchecked
     mov     r13,rdx
     mov     r14,rcx
     mov     r15,r8
-    jmp     L0
-L0:
     mov     rdi,r14
     mov     rsi,r13
     mov     rdx,r15
     call    fn0
-    jmp     L1
-L1:
     mov     [rsp+48h],r12
     mov     rdi,r12
     mov     esi,8
@@ -1371,8 +1192,6 @@ L1:
     mov     [rsp+38h],r14
     lea     r12,[r12+r14*8]
     sub     r13,r14
-    jmp     L2
-L2:
     mov     rdi,r12
     mov     esi,8
     mov     edx,4
@@ -1545,14 +1364,10 @@ fn core::slice::<impl [u32]>::split_at_mut_unchecked
     mov     r13,rdx
     mov     r14,rcx
     mov     r15,r8
-    jmp     L0
-L0:
     mov     rdi,r14
     mov     rsi,r13
     mov     rdx,r15
     call    qword ptr [fn0.slot]
-    jmp     L1
-L1:
     mov     [rsp+48h],r12
     mov     rdi,r12
     mov     esi,4
@@ -1566,8 +1381,6 @@ L1:
     mov     [rsp+38h],r14
     lea     r12,[r12+r14*4]
     sub     r13,r14
-    jmp     L2
-L2:
     mov     rdi,r12
     mov     esi,4
     mov     edx,4
@@ -1652,8 +1465,6 @@ fn core::slice::<impl [u32]>::swap_unchecked
     mov     rbx,rdi
     mov     r12,rdx
     mov     r13,rcx
-    jmp     L0
-L0:
     mov     rdi,rsi
     mov     rsi,r12
     mov     rdx,r13
@@ -1688,8 +1499,6 @@ fn core::slice::copy_from_slice_impl::<u32>
     call    ryo_h_Unreachable
     ud2
 L0:
-    jmp     L1
-L1:
     lea     rdi,[k1]
     call    ryo_hr_AddrAbs
     mov     rdi,r13
@@ -1782,17 +1591,15 @@ L0:
     lea     rbp,[rbx+rax*8]
     mov     r11,[rsp+10h]
     cmp     r11,40h
-    jae     L2
+    jae     L1
     mov     rdi,rbx
     mov     rsi,r15
     mov     rdx,rbp
     mov     rcx,r13
     call    fn0
     mov     r12,rax
-    jmp     L1
+    jmp     L4
 L1:
-    jmp     L7
-L2:
     mov     rdi,rbx
     mov     rsi,r15
     mov     rdx,rbp
@@ -1800,80 +1607,44 @@ L2:
     mov     r8,r13
     call    fn1
     mov     r13,rax
-    jmp     L3
-L3:
-    jmp     L11
-L4:
+    jmp     L6
+L2:
     cmp     r14,[rsp+10h]
     setb    r15b
-    jmp     L5
-L5:
-    jmp     L14
-L6:
+    jmp     L7
+L3:
     mov     r14,rbp
-    jmp     L4
-L7:
+    jmp     L2
+L4:
     lea     rdi,[k2]
     call    ryo_hr_AddrAbs
     mov     rdi,r12
     mov     rsi,rbx
     mov     rdx,rax
     call    fn3
-    jmp     L8
-L8:
-    jmp     L9
-L9:
     sub     r12,rbx
     mov     rdi,r12
     mov     esi,8
     call    ryo_hr_DivUW64
     mov     rbp,rax
-    jmp     L6
-    lea     rdi,[k4]
-    call    ryo_hr_AddrAbs
-    mov     r12,rax
-    lea     rdi,[k5]
-    call    ryo_hr_AddrAbs
-    mov     rdi,r12
-    mov     esi,49h
-    mov     rdx,rax
-    call    qword ptr [sym6]
-    lea     rdi,[rsp+80h]
-    call    ryo_h_Unreachable
-    ud2
-L10:
+    jmp     L3
+L5:
     mov     r14,r12
-    jmp     L4
-L11:
+    jmp     L2
+L6:
     lea     rdi,[k7]
     call    ryo_hr_AddrAbs
     mov     rdi,r13
     mov     rsi,rbx
     mov     rdx,rax
     call    fn3
-    jmp     L12
-L12:
-    jmp     L13
-L13:
     sub     r13,rbx
     mov     rdi,r13
     mov     esi,8
     call    ryo_hr_DivUW64
     mov     r12,rax
-    jmp     L10
-    lea     rdi,[k4]
-    call    ryo_hr_AddrAbs
-    mov     rbx,rax
-    lea     rdi,[k10]
-    call    ryo_hr_AddrAbs
-    mov     rdi,rbx
-    mov     esi,49h
-    mov     rdx,rax
-    call    qword ptr [sym6]
-    lea     rdi,[rsp+80h]
-    call    ryo_h_Unreachable
-    ud2
-L14:
+    jmp     L5
+L7:
     lea     rdi,[k12]
     call    ryo_hr_AddrAbs
     mov     rdi,r15
@@ -1890,19 +1661,19 @@ L14:
     add     rsp,88h
     ret
   ; OSR entries
-    lea     r11,[L15]
+    lea     r11,[L8]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L15:
-    .long   L16
-    .long   L17
-    .long   L18
-L16:
+L8:
+    .long   L9
+    .long   L10
+    .long   L11
+L9:
     ret
-L17:
+L10:
     ret
-L18:
+L11:
     ret
 
 fn core::slice::sort::shared::pivot::choose_pivot::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
@@ -1935,17 +1706,15 @@ L0:
     lea     rbp,[rbx+rax*4]
     mov     r11,[rsp+10h]
     cmp     r11,40h
-    jae     L2
+    jae     L1
     mov     rdi,rbx
     mov     rsi,r15
     mov     rdx,rbp
     mov     rcx,r13
     call    fn0
     mov     r12,rax
-    jmp     L1
+    jmp     L4
 L1:
-    jmp     L7
-L2:
     mov     rdi,rbx
     mov     rsi,r15
     mov     rdx,rbp
@@ -1953,80 +1722,44 @@ L2:
     mov     r8,r13
     call    fn1
     mov     r13,rax
-    jmp     L3
-L3:
-    jmp     L11
-L4:
+    jmp     L6
+L2:
     cmp     r14,[rsp+10h]
     setb    r15b
-    jmp     L5
-L5:
-    jmp     L14
-L6:
+    jmp     L7
+L3:
     mov     r14,rbp
-    jmp     L4
-L7:
+    jmp     L2
+L4:
     lea     rdi,[k2]
     call    ryo_hr_AddrAbs
     mov     rdi,r12
     mov     rsi,rbx
     mov     rdx,rax
     call    qword ptr [fn3.slot]
-    jmp     L8
-L8:
-    jmp     L9
-L9:
     sub     r12,rbx
     mov     rdi,r12
     mov     esi,4
     call    ryo_hr_DivUW64
     mov     rbp,rax
-    jmp     L6
-    lea     rdi,[k4]
-    call    ryo_hr_AddrAbs
-    mov     r12,rax
-    lea     rdi,[k5]
-    call    ryo_hr_AddrAbs
-    mov     rdi,r12
-    mov     esi,49h
-    mov     rdx,rax
-    call    qword ptr [sym6]
-    lea     rdi,[rsp+80h]
-    call    ryo_h_Unreachable
-    ud2
-L10:
+    jmp     L3
+L5:
     mov     r14,r12
-    jmp     L4
-L11:
+    jmp     L2
+L6:
     lea     rdi,[k7]
     call    ryo_hr_AddrAbs
     mov     rdi,r13
     mov     rsi,rbx
     mov     rdx,rax
     call    qword ptr [fn3.slot]
-    jmp     L12
-L12:
-    jmp     L13
-L13:
     sub     r13,rbx
     mov     rdi,r13
     mov     esi,4
     call    ryo_hr_DivUW64
     mov     r12,rax
-    jmp     L10
-    lea     rdi,[k4]
-    call    ryo_hr_AddrAbs
-    mov     rbx,rax
-    lea     rdi,[k10]
-    call    ryo_hr_AddrAbs
-    mov     rdi,rbx
-    mov     esi,49h
-    mov     rdx,rax
-    call    qword ptr [sym6]
-    lea     rdi,[rsp+80h]
-    call    ryo_h_Unreachable
-    ud2
-L14:
+    jmp     L5
+L7:
     lea     rdi,[k12]
     call    ryo_hr_AddrAbs
     mov     rdi,r15
@@ -2043,19 +1776,19 @@ L14:
     add     rsp,88h
     ret
   ; OSR entries
-    lea     r11,[L15]
+    lea     r11,[L8]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L15:
-    .long   L16
-    .long   L17
-    .long   L18
-L16:
+L8:
+    .long   L9
+    .long   L10
+    .long   L11
+L9:
     ret
-L17:
+L10:
     ret
-L18:
+L11:
     ret
 
 fn core::slice::sort::shared::pivot::median3::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
@@ -2331,8 +2064,8 @@ L0:
     setb    al
     mov     [rsp+0E7h],al
     test    al,al
-    je      L13
-    jmp     L11
+    je      L11
+    jmp     L10
 L1:
     mov     r12,[rsp+0D0h]
     mov     rbx,[rsp+0D8h]
@@ -2364,7 +2097,7 @@ L1:
 L2:
     mov     rax,[rsp+18h]
     mov     rcx,[rsp+10h]
-    jmp     L7
+    jmp     L6
 L3:
     mov     rax,[rsp+0E0h]
     mov     r11,[rsp+18h]
@@ -2378,24 +2111,22 @@ L3:
 L4:
     mov     rbx,[rsp+10h]
 L5:
-    jmp     L6
+    jmp     L14
 L6:
-    jmp     L16
-L7:
     mov     rdx,[rsp+0E0h]
     cmp     rax,rdx
-    je      L8
-    jmp     L9
-L8:
+    je      L7
+    jmp     L8
+L7:
     mov     rax,[rsp+0D8h]
     cmp     rcx,rax
-    je      L10
-L9:
+    je      L9
+L8:
     call    qword ptr [sym1]
     lea     rdi,[rsp+180h]
     call    ryo_h_Unreachable
     ud2
-L10:
+L9:
     mov     rbx,[rsp+0C0h]
     mov     r12,[rsp+0B0h]
     mov     r13,[rsp+0A0h]
@@ -2404,18 +2135,16 @@ L10:
     mov     rbp,[rsp+70h]
     add     rsp,188h
     ret
-L11:
+L10:
     mov     r10,[rsp+58h]
     mov     [rsp+0D8h],r10
     jmp     L12
-L12:
-    jmp     L14
-L13:
+L11:
     mov     rax,[rsp+48h]
     lea     rax,[rax+4]
     mov     [rsp+0E0h],rax
-    jmp     L15
-L14:
+    jmp     L13
+L12:
     lea     rdi,[k2]
     call    ryo_hr_AddrAbs
     mov     rcx,[rsp+0D8h]
@@ -2442,7 +2171,7 @@ L14:
     mov     r15,[rsp+50h]
     mov     r13,[rsp+28h]
     jmp     L1
-L15:
+L13:
     mov     rax,[rsp+30h]
     lea     rax,[rax+4]
     mov     [rsp+0D8h],rax
@@ -2455,7 +2184,7 @@ L15:
     test    al,al
     je      L3
     jmp     L2
-L16:
+L14:
     lea     rdi,[k5]
     call    ryo_hr_AddrAbs
     mov     rdi,rbx
@@ -2481,19 +2210,19 @@ L16:
     mov     r10,rax
     mov     rax,rcx
     mov     rcx,r10
-    jmp     L7
+    jmp     L6
   ; OSR entries
-    lea     r11,[L17]
+    lea     r11,[L15]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L17:
+L15:
+    .long   L16
+    .long   L17
     .long   L18
     .long   L19
     .long   L20
-    .long   L21
-    .long   L22
-L18:
+L16:
     pop     rcx
     lea     rdx,[rsp+0E0h]
     lea     rsp,[rdx-1D0h]
@@ -2545,7 +2274,7 @@ L18:
     mov     [rdx-158h],r11
     lea     rsp,[rsp+50h]
     jmp     L0
-L19:
+L17:
     pop     rcx
     lea     rdx,[rsp+0E0h]
     lea     rsp,[rdx-1C0h]
@@ -2578,11 +2307,11 @@ L19:
     mov     rdx,[rsp+10h]
     lea     rsp,[rsp+40h]
     jmp     L1
+L18:
+    ret
+L19:
+    ret
 L20:
-    ret
-L21:
-    ret
-L22:
     ret
 
 fn core::slice::sort::shared::smallsort::insert_tail::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
@@ -2596,8 +2325,7 @@ fn core::slice::sort::shared::smallsort::insert_tail::<u32, for<'a, 'b> fn(&'a u
     mov     rbx,rdi
     mov     r12,rsi
     mov     r13,rdx
-    jmp     L13
-    jmp     L12
+    jmp     L11
 L0:
     movzx   eax,byte ptr [rsp+0BFh]
     test    al,al
@@ -2615,29 +2343,26 @@ L0:
     mov     [rsp+10h],r13
     jmp     L2
 L1:
-    jmp     L8
+    jmp     L7
 L2:
     mov     rbp,[rsp+48h]
-    jmp     L3
+    jmp     L12
 L3:
-    jmp     L14
+    jmp     L6
 L4:
-    jmp     L7
+    jmp     L15
 L5:
-    jmp     L18
-    jmp     L17
-L6:
     test    al,al
-    je      L7
+    je      L6
     mov     r15,rcx
     mov     [rsp+18h],rdx
     mov     [rsp+10h],rsi
     jmp     L2
-L7:
+L6:
     lea     rax,[rsp+40h]
     mov     rdi,rax
     call    qword ptr [fn0.slot]
-L8:
+L7:
     mov     rbx,[rsp+0B0h]
     mov     r12,[rsp+0A0h]
     mov     r13,[rsp+90h]
@@ -2646,20 +2371,20 @@ L8:
     mov     rbp,[rsp+60h]
     add     rsp,108h
     ret
-L9:
+L8:
     lea     rax,[rsp+40h]
     mov     rdi,rax
     call    qword ptr [fn0.slot]
-    jmp     L10
-    jmp     L20
-L10:
+    jmp     L9
+    jmp     L17
+L9:
     mov     r11,[rsp+38h]
     mov     [rsp],r11
     lea     rdi,[rsp+100h]
     mov     esi,0FFFFFF00h
     call    ryo_h_Resume
     ud2
-L11:
+L10:
     mov     [rsp+40h],r12
     mov     [rsp+48h],r12
     mov     [rsp+50h],r14
@@ -2669,15 +2394,12 @@ L11:
     call    fn2
     mov     [rsp+0BFh],al
     jmp     L0
-L12:
-    mov     r14,r12
-    jmp     L11
-L13:
+L11:
     mov     rax,r12
     lea     rax,[rax-4]
     mov     r14,rax
-    jmp     L11
-L14:
+    jmp     L10
+L12:
     lea     rdi,[k3]
     call    ryo_hr_AddrAbs
     mov     rdi,r15
@@ -2693,66 +2415,61 @@ L14:
     call    ryo_hr_Memcpy
     mov     [rsp+48h],r15
     cmp     r15,[rsp+18h]
-    je      L4
+    je      L3
     mov     [rsp+20h],r15
     mov     r11,[rsp+10h]
     mov     [rsp+28h],r11
     mov     r11,[rsp+18h]
     mov     [rsp+30h],r11
-    jmp     L5
-L15:
+    jmp     L4
+L13:
     lea     rax,[rsp+0BCh]
     mov     rdi,r12
     mov     rsi,rax
     mov     rdx,rbx
     call    fn2
-    jmp     L16
+    jmp     L14
     mov     [rsp+38h],rax
-    jmp     L21
-L16:
+    jmp     L18
+L14:
     mov     rcx,rbx
     mov     rdx,r13
     mov     rsi,r12
-    jmp     L6
-L17:
-    mov     rbx,[rsp+20h]
-    mov     r12,[rsp+28h]
-    mov     r13,[rsp+30h]
-    jmp     L15
-L18:
+    jmp     L5
+L15:
     mov     rax,[rsp+20h]
     lea     rax,[rax-4]
     mov     rbx,rax
     mov     r12,[rsp+28h]
     mov     r13,[rsp+30h]
-    jmp     L15
-L19:
+    jmp     L13
+L16:
     call    qword ptr [sym6]
     lea     rdi,[rsp+100h]
     call    ryo_h_Unreachable
     ud2
-L20:
-    jmp     L19
-L21:
-    jmp     L9
+L17:
+    jmp     L16
+L18:
+    jmp     L8
   ; OSR entries
-    lea     r11,[L22]
+    lea     r11,[L19]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L22:
+L19:
+    .long   L20
+    .long   L21
+    .long   L22
     .long   L23
     .long   L24
     .long   L25
     .long   L26
     .long   L27
     .long   L28
-    .long   L29
-    .long   L30
-    .long   L31
-L23:
+L20:
     ret
-L24:
+L21:
     pop     rcx
     lea     rdx,[rsp+0A0h]
     lea     rsp,[rdx-130h]
@@ -2787,9 +2504,9 @@ L24:
     mov     r15,[rsp]
     lea     rsp,[rsp+30h]
     jmp     L2
-L25:
+L22:
     ret
-L26:
+L23:
     pop     rcx
     lea     rdx,[rsp+0A0h]
     lea     rsp,[rdx-130h]
@@ -2824,8 +2541,8 @@ L26:
     mov     r11,[rsp+10h]
     mov     [rdx-0D0h],r11
     lea     rsp,[rsp+30h]
-    jmp     L5
-L27:
+    jmp     L4
+L24:
     pop     rcx
     lea     rdx,[rsp+0A0h]
     lea     rsp,[rdx-140h]
@@ -2860,12 +2577,12 @@ L27:
     mov     rsi,[rsp+18h]
     mov     rdx,[rsp+10h]
     lea     rsp,[rsp+40h]
-    jmp     L6
-L28:
+    jmp     L5
+L25:
     ret
-L29:
+L26:
     ret
-L30:
+L27:
     pop     rcx
     lea     rdx,[rsp+0A0h]
     lea     rsp,[rdx-130h]
@@ -2897,8 +2614,8 @@ L30:
     mov     r12,[rsp+8]
     mov     r13,[rsp+10h]
     lea     rsp,[rsp+30h]
-    jmp     L15
-L31:
+    jmp     L13
+L28:
     ret
 
 fn core::slice::sort::shared::smallsort::insertion_sort_shift_left::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
@@ -2990,15 +2707,13 @@ fn core::slice::sort::shared::smallsort::merge_down::<u32, for<'a, 'b> fn(&'a u3
     mov     r15,rax
     mov     rbp,r15
     xor     ebp,1
-    test    bpl,bpl
+    cmp     r15b,1
     je      L0
     mov     rbx,r13
     jmp     L1
 L0:
     mov     rbx,r12
 L1:
-    jmp     L2
-L2:
     lea     rdi,[k1]
     call    ryo_hr_AddrAbs
     mov     rdi,rbx
@@ -3020,9 +2735,8 @@ L2:
     mov     eax,0
     sub     rax,r15
     lea     r12,[r12+rax*4]
-    jmp     L5
-    jmp     L4
-L3:
+    jmp     L3
+L2:
     mov     [rsp+18h],r12
     mov     [rsp+20h],r13
     mov     [rsp+28h],rax
@@ -3043,21 +2757,18 @@ L3:
     mov     rbp,[rsp+30h]
     add     rsp,98h
     ret
-L4:
-    mov     rax,r14
-    jmp     L3
-L5:
+L3:
     lea     r14,[r14-4]
     mov     rax,r14
-    jmp     L3
+    jmp     L2
   ; OSR entries
-    lea     r11,[L6]
+    lea     r11,[L4]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L6:
-    .long   L7
-L7:
+L4:
+    .long   L5
+L5:
     ret
 
 fn core::slice::sort::shared::smallsort::merge_up::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
@@ -3079,15 +2790,13 @@ fn core::slice::sort::shared::smallsort::merge_up::<u32, for<'a, 'b> fn(&'a u32,
     mov     r15,rax
     mov     rbp,r15
     xor     ebp,1
-    test    bpl,bpl
+    cmp     r15b,1
     je      L0
     mov     rbx,r12
     jmp     L1
 L0:
     mov     rbx,r13
 L1:
-    jmp     L2
-L2:
     lea     rdi,[k1]
     call    ryo_hr_AddrAbs
     mov     rdi,rbx
@@ -3141,7 +2850,7 @@ fn core::slice::sort::shared::smallsort::small_sort_general_with_scratch::<(u32,
     mov     r14,r8
     cmp     r12,2
     jae     L0
-    jmp     L20
+    jmp     L17
 L0:
     mov     rax,r12
     add     rax,10h
@@ -3155,10 +2864,8 @@ L1:
     mov     esi,2
     call    ryo_hr_DivUW64
     mov     [rsp+90h],rax
-    jmp     L2
-L2:
     cmp     r12,10h
-    jb      L3
+    jb      L2
     lea     rax,[r13+r12*8]
     mov     [rsp+0C0h],rax
     mov     rdi,rbx
@@ -3182,10 +2889,10 @@ L2:
     mov     rcx,r14
     call    qword ptr [fn0.slot]
     mov     ebp,8
-    jmp     L6
-L3:
+    jmp     L4
+L2:
     cmp     r12,8
-    jb      L4
+    jb      L3
     mov     [rsp+0C0h],rbx
     mov     rdi,rbx
     mov     rsi,r13
@@ -3203,13 +2910,11 @@ L3:
     mov     rdx,r14
     call    qword ptr [fn2.slot]
     mov     ebp,4
-    jmp     L6
-L4:
+    jmp     L4
+L3:
     mov     [rsp+0C0h],rbx
-    jmp     L5
-L5:
-    jmp     L25
-L6:
+    jmp     L22
+L4:
     mov     qword ptr [rsp+1A0h],0
     mov     r10,[rsp+90h]
     mov     [rsp+1A8h],r10
@@ -3252,7 +2957,7 @@ L6:
     mov     [rsp+28h],r11
     mov     [rsp+30h],rbp
     mov     [rsp+38h],r14
-L7:
+L5:
     lea     rax,[rsp+190h]
     mov     [rsp+108h],rax
     mov     [rsp+0D0h],rax
@@ -3262,16 +2967,16 @@ L7:
     call    qword ptr [fn5.slot]
     mov     [rsp+0E0h],rax
     mov     [rsp+0E8h],rdx
-    jmp     L8
+    jmp     L6
     mov     [rsp+0A0h],rax
-    jmp     L38
-L8:
-    jmp     L27
-L9:
+    jmp     L32
+L6:
+    jmp     L23
+L7:
     lea     rdi,[rsp+2A0h]
     call    ryo_h_Unreachable
     ud2
-L10:
+L8:
     mov     rax,[rsp+0E8h]
     mov     [rsp+0D8h],rax
     mov     r11,[rsp+10h]
@@ -3281,20 +2986,20 @@ L10:
     lea     rcx,[r11+rax*8]
     mov     [rsp+108h],rcx
     cmp     rax,0
-    je      L12
-    jmp     L13
-L11:
+    je      L10
+    jmp     L11
+L9:
     lea     rax,[rsp+190h]
     mov     rdi,rax
     call    qword ptr [fn6.slot]
-    jmp     L17
-L12:
+    jmp     L15
+L10:
     mov     rax,[rsp+28h]
-    jmp     L14
-L13:
+    jmp     L12
+L11:
     mov     rax,[rsp+18h]
     sub     rax,[rsp+28h]
-L14:
+L12:
     mov     r10,[rsp+30h]
     mov     [rsp+100h],r10
     mov     r11,[rsp+30h]
@@ -3314,7 +3019,7 @@ L14:
     mov     [rsp+78h],r11
     mov     r11,[rsp+38h]
     mov     [rsp+80h],r11
-L15:
+L13:
     mov     r10,[rsp+40h]
     mov     [rsp+128h],r10
     mov     r10,[rsp+48h]
@@ -3324,9 +3029,9 @@ L15:
     setb    al
     mov     [rsp+0F7h],al
     test    al,al
-    je      L31
-    jmp     L29
-L16:
+    je      L26
+    jmp     L25
+L14:
     mov     [rsp+40h],rax
     mov     [rsp+48h],rcx
     mov     [rsp+50h],rdx
@@ -3336,8 +3041,8 @@ L16:
     mov     [rsp+70h],r9
     mov     [rsp+78h],rbp
     mov     [rsp+80h],r15
-    jmp     L15
-L17:
+    jmp     L13
+L15:
     mov     r10,[rsp+88h]
     mov     [rsp+0B0h],r10
     mov     r10,[rsp+88h]
@@ -3350,17 +3055,15 @@ L17:
     mov     [rsp+1A0h],r10
     mov     r10,[rsp+18h]
     mov     [rsp+198h],r10
-    jmp     L18
-L18:
-    jmp     L35
-L19:
+    jmp     L29
+L16:
     mov     rax,[rsp+0B8h]
     mov     [rsp+0B0h],rax
     mov     rax,[rsp+0C0h]
     mov     [rsp+1A8h],rax
     mov     rax,[rsp+0C8h]
     mov     [rsp+1A0h],rax
-L20:
+L17:
     mov     rbx,[rsp+180h]
     mov     r12,[rsp+170h]
     mov     r13,[rsp+160h]
@@ -3369,29 +3072,29 @@ L20:
     mov     rbp,[rsp+130h]
     add     rsp,2A8h
     ret
-L21:
+L18:
     lea     rax,[rsp+190h]
     mov     rdi,rax
     call    qword ptr [fn6.slot]
     mov     rax,[rsp+0A0h]
-    jmp     L22
-    jmp     L39
-L22:
+    jmp     L19
+    jmp     L33
+L19:
     mov     [rsp],rax
     lea     rdi,[rsp+2A0h]
     mov     esi,0FFFFFD60h
     call    ryo_h_Resume
     ud2
-L23:
+L20:
     lea     rax,[rsp+0B8h]
     mov     rdi,rax
     call    qword ptr [fn8.slot]
-    jmp     L24
-    jmp     L39
-L24:
+    jmp     L21
+    jmp     L33
+L21:
     mov     rax,[rsp+98h]
-    jmp     L22
-L25:
+    jmp     L19
+L22:
     mov     [rsp+0B8h],rbx
     mov     [rsp+0B0h],r13
     lea     rdi,[k9]
@@ -3416,8 +3119,6 @@ L25:
     mov     r10,[rsp+90h]
     lea     rax,[r13+r10*8]
     mov     [rsp+0B8h],rax
-    jmp     L26
-L26:
     mov     [rsp+0B0h],rbp
     mov     r15,[rsp+0B8h]
     mov     [rsp+1A8h],r15
@@ -3437,31 +3138,29 @@ L26:
     mov     ecx,0FFFFFD60h
     call    ryo_h_Memcpy
     mov     ebp,1
-    jmp     L6
-L27:
+    jmp     L4
+L23:
     mov     rax,[rsp+0E0h]
     mov     rdi,rax
     mov     esi,0
     mov     edx,2
     call    ryo_hr_SwitchDenseW64
     mov     r10,rax
-    lea     r11,[L28]
+    lea     r11,[L24]
     movsxd  r10,[r11+r10*4]
     add     r10,r11
     jmp     r10
     int3
     int3
-L28:
-    .long   L11
-    .long   L10
+L24:
     .long   L9
-L29:
+    .long   L8
+    .long   L7
+L25:
     mov     r10,[rsp+40h]
     mov     [rsp+128h],r10
-    jmp     L30
-L30:
-    jmp     L32
-L31:
+    jmp     L27
+L26:
     mov     r11,[rsp+50h]
     mov     [rsp+88h],r11
     mov     r11,[rsp+58h]
@@ -3476,8 +3175,8 @@ L31:
     mov     [rsp+30h],r11
     mov     r11,[rsp+80h]
     mov     [rsp+38h],r11
-    jmp     L7
-L32:
+    jmp     L5
+L27:
     lea     rdi,[k13]
     call    ryo_hr_AddrAbs
     mov     rcx,[rsp+128h]
@@ -3497,8 +3196,6 @@ L32:
     mov     [rsp+128h],r12
     mov     rcx,[rsp+108h]
     lea     r13,[rcx+rax*8]
-    jmp     L33
-L33:
     mov     [rsp+120h],r12
     mov     [rsp+118h],r13
     lea     rdi,[k15]
@@ -3522,10 +3219,10 @@ L33:
     mov     rsi,r13
     mov     rdx,[rsp+80h]
     call    qword ptr [fn17.slot]
-    jmp     L34
+    jmp     L28
     mov     [rsp+0A0h],rax
-    jmp     L38
-L34:
+    jmp     L32
+L28:
     mov     rax,rbx
     mov     rcx,[rsp+48h]
     mov     rdx,[rsp+50h]
@@ -3535,8 +3232,8 @@ L34:
     mov     r9,[rsp+70h]
     mov     rbp,[rsp+78h]
     mov     r15,[rsp+80h]
-    jmp     L16
-L35:
+    jmp     L14
+L29:
     mov     rbx,[rsp+1A0h]
     mov     [rsp+190h],rbx
     lea     rdi,[k18]
@@ -3559,41 +3256,41 @@ L35:
     mov     rsi,rcx
     mov     rcx,[rsp+38h]
     call    qword ptr [fn20.slot]
-    jmp     L36
+    jmp     L30
     mov     [rsp+98h],rax
-    jmp     L40
-L36:
-    jmp     L19
-L37:
+    jmp     L34
+L30:
+    jmp     L16
+L31:
     call    qword ptr [sym21]
     lea     rdi,[rsp+2A0h]
     call    ryo_h_Unreachable
     ud2
-L38:
-    jmp     L21
-L39:
-    jmp     L37
-L40:
-    jmp     L23
+L32:
+    jmp     L18
+L33:
+    jmp     L31
+L34:
+    jmp     L20
   ; OSR entries
-    lea     r11,[L41]
+    lea     r11,[L35]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L41:
+L35:
+    .long   L36
+    .long   L37
+    .long   L38
+    .long   L39
+    .long   L40
+    .long   L41
     .long   L42
     .long   L43
     .long   L44
     .long   L45
-    .long   L46
-    .long   L47
-    .long   L48
-    .long   L49
-    .long   L50
-    .long   L51
-L42:
+L36:
     ret
-L43:
+L37:
     pop     rcx
     lea     rdx,[rsp+190h]
     lea     rsp,[rdx-360h]
@@ -3696,10 +3393,10 @@ L43:
     mov     r11,[rsp+30h]
     mov     [rdx-268h],r11
     lea     rsp,[rsp+0C0h]
-    jmp     L7
-L44:
+    jmp     L5
+L38:
     ret
-L45:
+L39:
     pop     rcx
     lea     rdx,[rsp+190h]
     lea     rsp,[rdx-370h]
@@ -3810,8 +3507,8 @@ L45:
     mov     r11,[rsp+40h]
     mov     [rdx-220h],r11
     lea     rsp,[rsp+0D0h]
-    jmp     L15
-L46:
+    jmp     L13
+L40:
     pop     rcx
     lea     rdx,[rsp+190h]
     lea     rsp,[rdx-370h]
@@ -3913,16 +3610,16 @@ L46:
     mov     r15,[rsp+40h]
     mov     rdx,[rsp+10h]
     lea     rsp,[rsp+0D0h]
-    jmp     L16
-L47:
+    jmp     L14
+L41:
     ret
-L48:
+L42:
     ret
-L49:
+L43:
     ret
-L50:
+L44:
     ret
-L51:
+L45:
     ret
 
 fn core::slice::sort::shared::smallsort::small_sort_network::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
@@ -3938,7 +3635,7 @@ fn core::slice::sort::shared::smallsort::small_sort_network::<u32, for<'a, 'b> f
     mov     r13,rdx
     cmp     r12,2
     jae     L0
-    jmp     L15
+    jmp     L11
 L0:
     cmp     r12,20h
     jbe     L1
@@ -3959,16 +3656,14 @@ L1:
 L2:
     mov     rbp,r14
 L3:
-    jmp     L4
+    jmp     L12
 L4:
-    jmp     L16
-L5:
     mov     r11,[rsp+48h]
     mov     rax,[rsp+50h]
     mov     [rsp+0E0h],rax
     mov     [rsp+0E8h],rax
     cmp     rax,0Dh
-    jb      L6
+    jb      L5
     mov     rax,[rsp+48h]
     mov     [rsp+0E0h],rax
     mov     rcx,[rsp+50h]
@@ -3978,14 +3673,14 @@ L5:
     mov     rdx,[rsp+10h]
     call    qword ptr [fn0.slot]
     mov     eax,0Dh
-    jmp     L8
-L6:
+    jmp     L7
+L5:
     mov     r11,[rsp+48h]
     mov     rax,[rsp+50h]
     mov     [rsp+0E0h],rax
     mov     [rsp+0E8h],rax
     cmp     rax,9
-    jb      L7
+    jb      L6
     mov     rax,[rsp+48h]
     mov     [rsp+0E0h],rax
     mov     rcx,[rsp+50h]
@@ -3995,10 +3690,10 @@ L6:
     mov     rdx,[rsp+10h]
     call    qword ptr [fn1.slot]
     mov     eax,9
-    jmp     L8
-L7:
+    jmp     L7
+L6:
     mov     eax,1
-L8:
+L7:
     mov     rcx,[rsp+48h]
     mov     [rsp+0E0h],rcx
     mov     rdx,[rsp+50h]
@@ -4009,9 +3704,9 @@ L8:
     mov     rcx,[rsp+10h]
     call    fn2
     cmp     byte ptr [rsp+18h],0
-    je      L9
-    jmp     L15
-L9:
+    je      L8
+    jmp     L11
+L8:
     mov     rax,[rsp+48h]
     mov     rcx,[rsp+50h]
     mov     [rsp+0E0h],rcx
@@ -4019,13 +3714,11 @@ L9:
     mov     r10,[rsp+20h]
     mov     [rsp+0E0h],r10
     cmp     rax,[rsp+20h]
-    je      L11
+    je      L9
     lea     r11,[rsp+58h]
     mov     [rsp+40h],r11
-    jmp     L10
-L10:
-    jmp     L18
-L11:
+    jmp     L14
+L9:
     mov     r11,[rsp+28h]
     mov     r10,[rsp+30h]
     lea     rax,[r11+r10*4]
@@ -4033,16 +3726,12 @@ L11:
     mov     rax,[rsp+38h]
     sub     rax,[rsp+30h]
     mov     [rsp+0E0h],rax
-    jmp     L12
-L12:
-    jmp     L17
-L13:
+    jmp     L13
+L10:
     mov     r10,[rsp+40h]
     mov     [rsp+0E8h],r10
-    jmp     L14
-L14:
-    jmp     L19
-L15:
+    jmp     L15
+L11:
     mov     rbx,[rsp+140h]
     mov     r12,[rsp+130h]
     mov     r13,[rsp+120h]
@@ -4051,7 +3740,7 @@ L15:
     mov     rbp,[rsp+0F0h]
     add     rsp,158h
     ret
-L16:
+L12:
     mov     [rsp+0E8h],rbx
     lea     rdi,[k3]
     call    ryo_hr_AddrAbs
@@ -4071,8 +3760,8 @@ L16:
     mov     [rsp+28h],rbx
     mov     [rsp+30h],r14
     mov     [rsp+38h],r12
-    jmp     L5
-L17:
+    jmp     L4
+L13:
     mov     rbx,[rsp+0E8h]
     lea     rdi,[k5]
     call    ryo_hr_AddrAbs
@@ -4086,8 +3775,8 @@ L17:
     mov     rcx,[rsp+0E0h]
     mov     [rsp+48h],rax
     mov     [rsp+50h],rcx
-    jmp     L5
-L18:
+    jmp     L4
+L14:
     lea     rdi,[k7]
     call    ryo_hr_AddrAbs
     mov     rdi,[rsp+20h]
@@ -4105,8 +3794,8 @@ L18:
     mov     rdx,[rsp+40h]
     mov     rcx,[rsp+10h]
     call    fn9
-    jmp     L13
-L19:
+    jmp     L10
+L15:
     mov     r10,[rsp+40h]
     mov     [rsp+0E0h],r10
     lea     rdi,[k10]
@@ -4128,17 +3817,17 @@ L19:
     mov     edx,0FFFFFF98h
     mov     ecx,0FFFFFEB8h
     call    ryo_h_Memcpy
-    jmp     L15
+    jmp     L11
   ; OSR entries
-    lea     r11,[L20]
+    lea     r11,[L16]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L20:
-    .long   L21
-    .long   L22
-    .long   L23
-L21:
+L16:
+    .long   L17
+    .long   L18
+    .long   L19
+L17:
     pop     rcx
     lea     rdx,[rsp+150h]
     lea     rsp,[rdx-1A0h]
@@ -4189,10 +3878,10 @@ L21:
     mov     r11,[rsp+28h]
     mov     [rdx-118h],r11
     lea     rsp,[rsp+50h]
-    jmp     L5
-L22:
+    jmp     L4
+L18:
     ret
-L23:
+L19:
     ret
 
 fn core::slice::sort::shared::smallsort::sort13_optimal::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
@@ -4606,21 +4295,12 @@ fn core::slice::sort::shared::smallsort::swap_if_less::<u32, for<'a, 'b> fn(&'a 
     call    fn1
     mov     eax,[rax]
     mov     [rsp+10h],eax
-    jmp     L0
+    jmp     L1
 L0:
-    jmp     L3
-L1:
     lea     r13,[rsp+10h]
     jmp     L2
-L2:
-    jmp     L6
-L3:
-    jmp     L4
-    mov     r15d,1
-    jmp     L5
-L4:
+L1:
     mov     r15d,0
-L5:
     lea     rdi,[k3]
     call    ryo_hr_AddrAbs
     mov     rdi,r14
@@ -4634,8 +4314,8 @@ L5:
     mov     rsi,r14
     mov     edx,4
     call    ryo_hr_Memmove
-    jmp     L1
-L6:
+    jmp     L0
+L2:
     lea     rdi,[k5]
     call    ryo_hr_AddrAbs
     mov     rdi,r13
@@ -4657,13 +4337,13 @@ L6:
     add     rsp,78h
     ret
   ; OSR entries
-    lea     r11,[L7]
+    lea     r11,[L3]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L7:
-    .long   L8
-L8:
+L3:
+    .long   L4
+L4:
     ret
 
 fn core::slice::sort::stable::quicksort::PartitionState::<(u32, u32)>::partition_one
@@ -4675,8 +4355,7 @@ fn core::slice::sort::stable::quicksort::PartitionState::<(u32, u32)>::partition
     mov     rbx,rdi
     mov     r12,rsi
     mov     rax,[rbx+18h]
-    jmp     L6
-    jmp     L5
+    jmp     L4
 L0:
     mov     rcx,[rbx]
     jmp     L2
@@ -4686,22 +4365,17 @@ L2:
     mov     rdx,[rbx+10h]
     lea     r13,[rcx+rdx*8]
     mov     r14,[rbx+8]
-    jmp     L3
+    jmp     L5
 L3:
-    jmp     L7
-L4:
     mov     [rbx+18h],rcx
     test    r12b,r12b
     je      L1
     jmp     L0
-L5:
-    mov     rcx,rax
-    jmp     L4
-L6:
+L4:
     lea     rax,[rax-8]
     mov     rcx,rax
-    jmp     L4
-L7:
+    jmp     L3
+L5:
     lea     rdi,[k0]
     call    ryo_hr_AddrAbs
     mov     rdi,r14
@@ -4730,19 +4404,19 @@ L7:
     add     rsp,58h
     ret
   ; OSR entries
-    lea     r11,[L8]
+    lea     r11,[L6]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L8:
+L6:
+    .long   L7
+    .long   L8
     .long   L9
-    .long   L10
-    .long   L11
+L7:
+    ret
+L8:
+    ret
 L9:
-    ret
-L10:
-    ret
-L11:
     ret
 
 fn core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
@@ -4862,8 +4536,9 @@ L7:
     mov     rsi,rcx
     mov     rdx,rax
     call    fn9
-    xor     eax,1
-    test    al,al
+    mov     rcx,rax
+    xor     ecx,1
+    cmp     al,1
     jne     L8
     jmp     L9
 L8:
@@ -4910,10 +4585,9 @@ L10:
     mov     [rsp+0A0h],r13
     mov     [rsp+98h],rbx
     mov     rbx,rax
-    mov     rax,rcx
     mov     r13,[rsp+90h]
 L11:
-    test    al,al
+    test    cl,cl
     je      L12
     mov     rax,[rsp+0B0h]
     mov     [rsp+138h],rax
@@ -5007,7 +4681,6 @@ L15:
     movsxd  r10,[r11+r10*4]
     add     r10,r11
     jmp     r10
-    int3
     int3
     int3
 L16:
@@ -5273,40 +4946,26 @@ fn core::slice::sort::stable::quicksort::stable_partition::<(u32, u32), {closure
     mov     [rsp+78h],r11
     cmp     rcx,[rsp+98h]
     jae     L0
-    jmp     L15
+    jmp     L12
 L0:
     mov     r11,[rsp+98h]
     cmp     r11,[rsp+88h]
-    ja      L16
-    jmp     L15
+    ja      L13
+    jmp     L12
 L1:
-    jmp     L2
-    mov     r13,[rsp+20h]
-    mov     r12,[rsp+28h]
-    mov     r15,[rsp+30h]
-    mov     r14,[rsp+38h]
-    mov     rax,[rsp+40h]
-    mov     rcx,[rsp+48h]
-    mov     rdx,[rsp+50h]
-    mov     rsi,[rsp+58h]
-    mov     rdi,[rsp+60h]
-    mov     r8,[rsp+68h]
-    mov     r9,[rsp+70h]
-    jmp     L6
-L2:
     mov     r10,[rsp+20h]
     mov     [rsp],r10
     mov     qword ptr [rsp+8],3
     lea     rdi,[rsp+290h]
     lea     rsi,[ro+4]
     call    qword ptr [sym0]
-    jmp     L17
-L3:
+    jmp     L14
+L2:
     mov     rax,[rsp+198h]
     cmp     rax,rbp
-    jb      L5
-    jmp     L4
-L4:
+    jb      L4
+    jmp     L3
+L3:
     mov     rax,[rsp+0D8h]
     mov     rcx,[rsp+0A8h]
     mov     rdx,[rsp+0B0h]
@@ -5314,8 +4973,8 @@ L4:
     mov     rdi,[rsp+0C0h]
     mov     r8,[rsp+0C8h]
     mov     r9,[rsp+0D0h]
-    jmp     L6
-L5:
+    jmp     L5
+L4:
     lea     rbx,[rsp+190h]
     mov     rax,[rsp+198h]
     mov     rdi,r14
@@ -5357,8 +5016,8 @@ L5:
     mov     rsi,rax
     movzx   esi,sil
     call    fn2
-    jmp     L3
-L6:
+    jmp     L2
+L5:
     mov     [rsp+120h],r13
     lea     rbx,[r12+r13*8]
     mov     [rsp+0F8h],r15
@@ -5369,10 +5028,10 @@ L6:
     mov     [rsp+110h],rdi
     mov     [rsp+100h],r8
     mov     [rsp+108h],r9
-L7:
+L6:
     mov     rax,[rsp+198h]
     cmp     rax,rbx
-    jae     L8
+    jae     L7
     lea     r15,[rsp+190h]
     mov     rax,[rsp+198h]
     mov     rdi,r14
@@ -5384,14 +5043,14 @@ L7:
     mov     rsi,rax
     movzx   esi,sil
     call    fn2
-    jmp     L7
-L8:
+    jmp     L6
+L7:
     cmp     r13,[rsp+0E0h]
-    jne     L9
+    jne     L8
     call    qword ptr [fn11.slot]
     mov     rbx,rax
-    jmp     L18
-L9:
+    jmp     L15
+L8:
     lea     rax,[rsp+190h]
     mov     [rsp+120h],rax
     mov     rdi,rax
@@ -5417,26 +5076,22 @@ L9:
     mov     r11,[rsp+108h]
     mov     [rsp+70h],r11
     jmp     L1
+L9:
+    jmp     L16
 L10:
-    jmp     L11
-L11:
-    jmp     L19
-L12:
     mov     r10,[rsp+100h]
     mov     [rsp+120h],r10
     mov     r12,[rsp+1A0h]
-    jmp     L13
-L13:
-    jmp     L20
-L14:
+    jmp     L17
+L11:
     cmp     r13,r14
-    jae     L23
-    jmp     L21
-L15:
+    jae     L19
+    jmp     L18
+L12:
     lea     rdi,[rsp+290h]
     call    ryo_h_Abort
     ud2
-L16:
+L13:
     mov     r11,[rsp+0A0h]
     mov     r10,[rsp+88h]
     lea     rax,[r11+r10*8]
@@ -5470,7 +5125,7 @@ L16:
     mov     r11,[rsp+90h]
     mov     [rsp+70h],r11
     jmp     L1
-L17:
+L14:
     mov     rax,[rsp+120h]
     mov     r11,[rsp+28h]
     lea     rax,[r11+rax*8]
@@ -5493,13 +5148,12 @@ L17:
     mov     [rsp+0C8h],r11
     mov     r11,[rsp+70h]
     mov     [rsp+0D0h],r11
-    jmp     L3
-L18:
-    xor     ebx,1
-    test    bl,bl
-    je      L12
-    jmp     L10
-L19:
+    jmp     L2
+L15:
+    cmp     bl,1
+    je      L10
+    jmp     L9
+L16:
     mov     r10,[rsp+0F8h]
     mov     [rsp+120h],r10
     lea     rdi,[k13]
@@ -5515,8 +5169,8 @@ L19:
     mov     rsi,[rsp+0F8h]
     mov     edx,8
     call    ryo_hr_Memcpy
-    jmp     L12
-L20:
+    jmp     L10
+L17:
     lea     rdi,[k15]
     call    ryo_hr_AddrAbs
     mov     rdi,[rsp+100h]
@@ -5546,12 +5200,10 @@ L20:
     mov     rbp,[rsp+108h]
     mov     r11,[rsp+0F0h]
     mov     [rsp+118h],r11
-    jmp     L14
-L21:
-    jmp     L22
-L22:
-    jmp     L24
-L23:
+    jmp     L11
+L18:
+    jmp     L20
+L19:
     mov     rax,[rsp+1A0h]
     mov     rbx,[rsp+180h]
     mov     r12,[rsp+170h]
@@ -5561,7 +5213,7 @@ L23:
     mov     rbp,[rsp+130h]
     add     rsp,298h
     ret
-L24:
+L20:
     lea     rdi,[k17]
     call    ryo_hr_AddrAbs
     mov     rdi,r13
@@ -5579,8 +5231,6 @@ L24:
     add     rax,r13
     mov     r11,[rsp+118h]
     lea     r13,[r11+rax*8]
-    jmp     L25
-L25:
     lea     rdi,[k19]
     call    ryo_hr_AddrAbs
     mov     rdi,r12
@@ -5595,20 +5245,20 @@ L25:
     mov     edx,8
     call    ryo_hr_Memcpy
     mov     r13,rbx
-    jmp     L14
+    jmp     L11
   ; OSR entries
-    lea     r11,[L26]
+    lea     r11,[L21]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L26:
+L21:
+    .long   L22
+    .long   L23
+    .long   L24
+    .long   L25
+    .long   L26
     .long   L27
-    .long   L28
-    .long   L29
-    .long   L30
-    .long   L31
-    .long   L32
-L27:
+L22:
     pop     rcx
     lea     rdx,[rsp+170h]
     lea     rsp,[rdx-300h]
@@ -5676,7 +5326,7 @@ L27:
     mov     [rdx-220h],r11
     lea     rsp,[rsp+70h]
     jmp     L1
-L28:
+L23:
     pop     rcx
     lea     rdx,[rsp+170h]
     lea     rsp,[rdx-310h]
@@ -5742,8 +5392,8 @@ L28:
     mov     r13,[rsp+18h]
     mov     r12,[rsp+20h]
     lea     rsp,[rsp+80h]
-    jmp     L3
-L29:
+    jmp     L2
+L24:
     pop     rcx
     lea     rdx,[rsp+170h]
     lea     rsp,[rdx-310h]
@@ -5809,12 +5459,12 @@ L29:
     mov     rbp,[rsp+28h]
     mov     r12,[rsp+30h]
     lea     rsp,[rsp+80h]
-    jmp     L7
-L30:
+    jmp     L6
+L25:
     ret
-L31:
+L26:
     ret
-L32:
+L27:
     pop     rcx
     lea     rdx,[rsp+170h]
     lea     rsp,[rdx-2D0h]
@@ -5853,7 +5503,7 @@ L32:
     mov     r15,[rsp+10h]
     mov     rbp,[rsp+18h]
     lea     rsp,[rsp+40h]
-    jmp     L14
+    jmp     L11
 
 fn core::slice::sort::stable::quicksort::stable_partition::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
     sub     rsp,298h
@@ -5872,40 +5522,26 @@ fn core::slice::sort::stable::quicksort::stable_partition::<(u32, u32), {closure
     mov     [rsp+78h],r11
     cmp     rcx,[rsp+98h]
     jae     L0
-    jmp     L15
+    jmp     L12
 L0:
     mov     r11,[rsp+98h]
     cmp     r11,[rsp+88h]
-    ja      L16
-    jmp     L15
+    ja      L13
+    jmp     L12
 L1:
-    jmp     L2
-    mov     r13,[rsp+20h]
-    mov     r12,[rsp+28h]
-    mov     r15,[rsp+30h]
-    mov     r14,[rsp+38h]
-    mov     rax,[rsp+40h]
-    mov     rcx,[rsp+48h]
-    mov     rdx,[rsp+50h]
-    mov     rsi,[rsp+58h]
-    mov     rdi,[rsp+60h]
-    mov     r8,[rsp+68h]
-    mov     r9,[rsp+70h]
-    jmp     L6
-L2:
     mov     r10,[rsp+20h]
     mov     [rsp],r10
     mov     qword ptr [rsp+8],3
     lea     rdi,[rsp+290h]
     lea     rsi,[ro+4]
     call    qword ptr [sym0]
-    jmp     L17
-L3:
+    jmp     L14
+L2:
     mov     rax,[rsp+198h]
     cmp     rax,rbp
-    jb      L5
-    jmp     L4
-L4:
+    jb      L4
+    jmp     L3
+L3:
     mov     rax,[rsp+0D8h]
     mov     rcx,[rsp+0A8h]
     mov     rdx,[rsp+0B0h]
@@ -5913,8 +5549,8 @@ L4:
     mov     rdi,[rsp+0C0h]
     mov     r8,[rsp+0C8h]
     mov     r9,[rsp+0D0h]
-    jmp     L6
-L5:
+    jmp     L5
+L4:
     lea     rbx,[rsp+190h]
     mov     rax,[rsp+198h]
     mov     rdi,r14
@@ -5956,8 +5592,8 @@ L5:
     mov     rsi,rax
     movzx   esi,sil
     call    fn2
-    jmp     L3
-L6:
+    jmp     L2
+L5:
     mov     [rsp+120h],r13
     lea     rbx,[r12+r13*8]
     mov     [rsp+0F8h],r15
@@ -5968,10 +5604,10 @@ L6:
     mov     [rsp+110h],rdi
     mov     [rsp+100h],r8
     mov     [rsp+108h],r9
-L7:
+L6:
     mov     rax,[rsp+198h]
     cmp     rax,rbx
-    jae     L8
+    jae     L7
     lea     r15,[rsp+190h]
     mov     rax,[rsp+198h]
     mov     rdi,r14
@@ -5983,14 +5619,14 @@ L7:
     mov     rsi,rax
     movzx   esi,sil
     call    fn2
-    jmp     L7
-L8:
+    jmp     L6
+L7:
     cmp     r13,[rsp+0E0h]
-    jne     L9
+    jne     L8
     call    qword ptr [fn11.slot]
     mov     rbx,rax
-    jmp     L18
-L9:
+    jmp     L15
+L8:
     lea     rax,[rsp+190h]
     mov     [rsp+120h],rax
     mov     rdi,rax
@@ -6016,26 +5652,22 @@ L9:
     mov     r11,[rsp+108h]
     mov     [rsp+70h],r11
     jmp     L1
+L9:
+    jmp     L16
 L10:
-    jmp     L11
-L11:
-    jmp     L19
-L12:
     mov     r10,[rsp+100h]
     mov     [rsp+120h],r10
     mov     r12,[rsp+1A0h]
-    jmp     L13
-L13:
-    jmp     L20
-L14:
+    jmp     L17
+L11:
     cmp     r13,r14
-    jae     L23
-    jmp     L21
-L15:
+    jae     L19
+    jmp     L18
+L12:
     lea     rdi,[rsp+290h]
     call    ryo_h_Abort
     ud2
-L16:
+L13:
     mov     r11,[rsp+0A0h]
     mov     r10,[rsp+88h]
     lea     rax,[r11+r10*8]
@@ -6069,7 +5701,7 @@ L16:
     mov     r11,[rsp+90h]
     mov     [rsp+70h],r11
     jmp     L1
-L17:
+L14:
     mov     rax,[rsp+120h]
     mov     r11,[rsp+28h]
     lea     rax,[r11+rax*8]
@@ -6092,13 +5724,12 @@ L17:
     mov     [rsp+0C8h],r11
     mov     r11,[rsp+70h]
     mov     [rsp+0D0h],r11
-    jmp     L3
-L18:
-    xor     ebx,1
-    test    bl,bl
-    je      L12
-    jmp     L10
-L19:
+    jmp     L2
+L15:
+    cmp     bl,1
+    je      L10
+    jmp     L9
+L16:
     mov     r10,[rsp+0F8h]
     mov     [rsp+120h],r10
     lea     rdi,[k13]
@@ -6114,8 +5745,8 @@ L19:
     mov     rsi,[rsp+0F8h]
     mov     edx,8
     call    ryo_hr_Memcpy
-    jmp     L12
-L20:
+    jmp     L10
+L17:
     lea     rdi,[k15]
     call    ryo_hr_AddrAbs
     mov     rdi,[rsp+100h]
@@ -6145,12 +5776,10 @@ L20:
     mov     rbp,[rsp+108h]
     mov     r11,[rsp+0F0h]
     mov     [rsp+118h],r11
-    jmp     L14
-L21:
-    jmp     L22
-L22:
-    jmp     L24
-L23:
+    jmp     L11
+L18:
+    jmp     L20
+L19:
     mov     rax,[rsp+1A0h]
     mov     rbx,[rsp+180h]
     mov     r12,[rsp+170h]
@@ -6160,7 +5789,7 @@ L23:
     mov     rbp,[rsp+130h]
     add     rsp,298h
     ret
-L24:
+L20:
     lea     rdi,[k17]
     call    ryo_hr_AddrAbs
     mov     rdi,r13
@@ -6178,8 +5807,6 @@ L24:
     add     rax,r13
     mov     r11,[rsp+118h]
     lea     r13,[r11+rax*8]
-    jmp     L25
-L25:
     lea     rdi,[k19]
     call    ryo_hr_AddrAbs
     mov     rdi,r12
@@ -6194,20 +5821,20 @@ L25:
     mov     edx,8
     call    ryo_hr_Memcpy
     mov     r13,rbx
-    jmp     L14
+    jmp     L11
   ; OSR entries
-    lea     r11,[L26]
+    lea     r11,[L21]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L26:
+L21:
+    .long   L22
+    .long   L23
+    .long   L24
+    .long   L25
+    .long   L26
     .long   L27
-    .long   L28
-    .long   L29
-    .long   L30
-    .long   L31
-    .long   L32
-L27:
+L22:
     pop     rcx
     lea     rdx,[rsp+170h]
     lea     rsp,[rdx-300h]
@@ -6275,7 +5902,7 @@ L27:
     mov     [rdx-220h],r11
     lea     rsp,[rsp+70h]
     jmp     L1
-L28:
+L23:
     pop     rcx
     lea     rdx,[rsp+170h]
     lea     rsp,[rdx-310h]
@@ -6341,8 +5968,8 @@ L28:
     mov     r13,[rsp+18h]
     mov     r12,[rsp+20h]
     lea     rsp,[rsp+80h]
-    jmp     L3
-L29:
+    jmp     L2
+L24:
     pop     rcx
     lea     rdx,[rsp+170h]
     lea     rsp,[rdx-310h]
@@ -6408,12 +6035,12 @@ L29:
     mov     rbp,[rsp+28h]
     mov     r12,[rsp+30h]
     lea     rsp,[rsp+80h]
-    jmp     L7
-L30:
+    jmp     L6
+L25:
     ret
-L31:
+L26:
     ret
-L32:
+L27:
     pop     rcx
     lea     rdx,[rsp+170h]
     lea     rsp,[rdx-2D0h]
@@ -6452,7 +6079,7 @@ L32:
     mov     r15,[rsp+10h]
     mov     rbp,[rsp+18h]
     lea     rsp,[rsp+40h]
-    jmp     L14
+    jmp     L11
 
 fn core::slice::sort::unstable::quicksort::partition::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
     sub     rsp,98h
@@ -6556,7 +6183,7 @@ fn core::slice::sort::unstable::quicksort::partition_lomuto_branchless_cyclic::<
     cmp     rsi,0
     jne     L0
     mov     eax,0
-    jmp     L12
+    jmp     L10
 L0:
     lea     rax,[rsp+78h]
     mov     [rsp+58h],rax
@@ -6589,9 +6216,18 @@ L1:
     mov     rax,[rsp+48h]
     mov     [rsp+18h],rax
     cmp     rax,rbx
-    jae     L6
+    jae     L4
     mov     byte ptr [rsp+5Ah],1
+    lea     rax,[rsp+60h]
+    mov     [rsp+18h],rax
+    lea     rcx,[rsp+38h]
+    mov     [rsp+10h],rcx
+    mov     rdi,rax
+    mov     rsi,rcx
+    call    fn0
     jmp     L2
+    mov     rbx,rax
+    jmp     L15
 L2:
     lea     rax,[rsp+60h]
     mov     [rsp+18h],rax
@@ -6602,37 +6238,14 @@ L2:
     call    fn0
     jmp     L3
     mov     rbx,rax
-    jmp     L17
+    jmp     L15
 L3:
-    lea     rax,[rsp+60h]
-    mov     [rsp+18h],rax
-    lea     rcx,[rsp+38h]
-    mov     [rsp+10h],rcx
-    mov     rdi,rax
-    mov     rsi,rcx
-    call    fn0
-    jmp     L4
-    mov     rbx,rax
-    jmp     L17
-L4:
-    jmp     L5
-    lea     rax,[rsp+60h]
-    mov     [rsp+18h],rax
-    lea     rcx,[rsp+38h]
-    mov     [rsp+10h],rcx
-    mov     rdi,rax
-    mov     rsi,rcx
-    call    fn0
-    jmp     L5
-    mov     rbx,rax
-    jmp     L17
-L5:
     jmp     L1
-L6:
+L4:
     mov     rax,[rsp+78h]
     lea     rax,[rax+r12*4]
     mov     [rsp+18h],rax
-L7:
+L5:
     mov     rax,[rsp+48h]
     mov     [rsp+10h],rax
     mov     rcx,[rsp+18h]
@@ -6640,14 +6253,14 @@ L7:
     sete    al
     mov     [rsp+5Bh],al
     test    al,al
-    je      L8
+    je      L6
     mov     rax,[rsp+40h]
     mov     [rsp+10h],rax
-    jmp     L9
-L8:
+    jmp     L7
+L6:
     mov     rax,[rsp+48h]
     mov     [rsp+10h],rax
-L9:
+L7:
     mov     rax,[rsp+10h]
     mov     [rsp+48h],rax
     lea     rax,[rsp+60h]
@@ -6656,60 +6269,60 @@ L9:
     mov     rdi,rax
     mov     rsi,rcx
     call    fn0
-    jmp     L10
+    jmp     L8
     mov     rbx,rax
-    jmp     L17
-L10:
+    jmp     L15
+L8:
     movzx   eax,byte ptr [rsp+5Bh]
     test    al,al
-    je      L11
+    je      L9
     mov     rax,[rsp+38h]
     mov     [rsp+10h],rax
     mov     r11,[rsp+40h]
     mov     rax,[rsp+50h]
-    jmp     L12
-L11:
-    jmp     L7
-L12:
+    jmp     L10
+L9:
+    jmp     L5
+L10:
     mov     rbx,[rsp+30h]
     mov     r12,[rsp+20h]
     add     rsp,0D8h
     ret
-L13:
+L11:
     mov     [rsp],rbx
     lea     rdi,[rsp+0D0h]
     mov     esi,0FFFFFF30h
     call    ryo_h_Resume
     ud2
-L14:
+L12:
     lea     rax,[rsp+38h]
     mov     rdi,rax
     call    qword ptr [fn4.slot]
-    jmp     L15
-    jmp     L18
-L15:
     jmp     L13
-L16:
+    jmp     L16
+L13:
+    jmp     L11
+L14:
     call    qword ptr [sym5]
     lea     rdi,[rsp+0D0h]
     call    ryo_h_Unreachable
     ud2
-L17:
+L15:
+    jmp     L12
+L16:
     jmp     L14
-L18:
-    jmp     L16
   ; OSR entries
-    lea     r11,[L19]
+    lea     r11,[L17]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L19:
+L17:
+    .long   L18
+    .long   L19
     .long   L20
     .long   L21
     .long   L22
-    .long   L23
-    .long   L24
-L20:
+L18:
     pop     rcx
     lea     rdx,[rsp+0D0h]
     lea     rsp,[rdx-0F0h]
@@ -6731,7 +6344,7 @@ L20:
     mov     r12,[rsp+8]
     lea     rsp,[rsp+20h]
     jmp     L1
-L21:
+L19:
     pop     rcx
     lea     rdx,[rsp+0D0h]
     lea     rsp,[rdx-0E0h]
@@ -6746,12 +6359,12 @@ L21:
     mov     r11,[rsp+8]
     mov     [rdx-0B8h],r11
     lea     rsp,[rsp+10h]
-    jmp     L7
+    jmp     L5
+L20:
+    ret
+L21:
+    ret
 L22:
-    ret
-L23:
-    ret
-L24:
     ret
 
 fn core::slice::sort::unstable::quicksort::partition_lomuto_branchless_cyclic::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>::{closure#0}
@@ -6776,21 +6389,12 @@ fn core::slice::sort::unstable::quicksort::partition_lomuto_branchless_cyclic::<
     mov     rcx,[r12+18h]
     lea     rbx,[rax+rcx*4]
     mov     r14,[r12]
-    jmp     L0
+    jmp     L1
 L0:
-    jmp     L3
-L1:
     mov     r15,[r12+10h]
     jmp     L2
-L2:
-    jmp     L6
-L3:
-    jmp     L4
-    mov     ebp,1
-    jmp     L5
-L4:
+L1:
     mov     ebp,0
-L5:
     lea     rdi,[k1]
     call    ryo_hr_AddrAbs
     mov     rdi,rbx
@@ -6804,8 +6408,8 @@ L5:
     mov     rsi,rbx
     mov     edx,4
     call    ryo_hr_Memmove
-    jmp     L1
-L6:
+    jmp     L0
+L2:
     lea     rdi,[k3]
     call    ryo_hr_AddrAbs
     mov     rdi,r15
@@ -6836,13 +6440,13 @@ L6:
     add     rsp,78h
     ret
   ; OSR entries
-    lea     r11,[L7]
+    lea     r11,[L3]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L7:
-    .long   L8
-L8:
+L3:
+    .long   L4
+L4:
     ret
 
 fn core::slice::sort::unstable::quicksort::quicksort::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
@@ -7189,15 +6793,6 @@ fn main::{closure#1}
     sub     rsp,28h
     mov     [rsp+10h],rbx
     mov     ebx,[rsi]
-    jmp     L0
-    lea     rdi,[k0]
-    call    ryo_hr_AddrAbs
-    mov     rdi,rax
-    call    qword ptr [sym1]
-    lea     rdi,[rsp+20h]
-    call    ryo_h_Unreachable
-    ud2
-L0:
     mov     rdi,rbx
     mov     esi,3E8h
     call    ryo_hr_RemUW32
@@ -7253,7 +6848,7 @@ L0:
     jmp     r10
     int3
 L1:
-    .long   L20
+    .long   L19
     .long   L3
     .long   L2
 L2:
@@ -7335,15 +6930,6 @@ L7:
 L8:
     jmp     L3
 L9:
-    jmp     L10
-    lea     rdi,[k14]
-    call    ryo_hr_AddrAbs
-    mov     rdi,rax
-    call    qword ptr [sym15]
-    lea     rdi,[rsp+120h]
-    call    ryo_h_Unreachable
-    ud2
-L10:
     mov     rdi,r12
     mov     esi,2
     call    ryo_hr_DivUW64
@@ -7377,13 +6963,13 @@ L10:
     mov     [rsp+18h],r12
     mov     r12,r13
     mov     rbp,[rsp+10h]
-L11:
+L10:
     cmp     rbx,r13
-    jae     L19
+    jae     L18
     cmp     r12,[rsp+18h]
-    jae     L19
+    jae     L18
     cmp     rbx,[rsp+18h]
-    jb      L12
+    jb      L11
     lea     rdi,[k23]
     call    ryo_hr_AddrAbs
     mov     rdi,rbx
@@ -7393,11 +6979,11 @@ L11:
     lea     rdi,[rsp+120h]
     call    ryo_h_Unreachable
     ud2
-L12:
+L11:
     lea     rax,[r14+rbx*4]
     mov     r15d,[rax]
     cmp     r12,[rsp+18h]
-    jb      L13
+    jb      L12
     lea     rdi,[k25]
     call    ryo_hr_AddrAbs
     mov     rdi,r12
@@ -7407,13 +6993,13 @@ L12:
     lea     rdi,[rsp+120h]
     call    ryo_h_Unreachable
     ud2
-L13:
+L12:
     lea     rax,[r14+r12*4]
     mov     eax,[rax]
     cmp     eax,r15d
-    jb      L16
+    jb      L15
     cmp     rbx,[rsp+18h]
-    jb      L14
+    jb      L13
     lea     rdi,[k27]
     call    ryo_hr_AddrAbs
     mov     rdi,rbx
@@ -7423,7 +7009,7 @@ L13:
     lea     rdi,[rsp+120h]
     call    ryo_h_Unreachable
     ud2
-L14:
+L13:
     lea     rax,[r14+rbx*4]
     mov     eax,[rax]
     mov     rdi,rbp
@@ -7432,7 +7018,7 @@ L14:
     call    fn29
     mov     r15,rbx
     add     r15,1
-    jae     L15
+    jae     L14
     lea     rdi,[k30]
     call    ryo_hr_AddrAbs
     mov     rdi,rax
@@ -7440,12 +7026,12 @@ L14:
     lea     rdi,[rsp+120h]
     call    ryo_h_Unreachable
     ud2
-L15:
+L14:
     mov     rbx,r15
-    jmp     L11
-L16:
+    jmp     L10
+L15:
     cmp     r12,[rsp+18h]
-    jb      L17
+    jb      L16
     lea     rdi,[k32]
     call    ryo_hr_AddrAbs
     mov     rdi,r12
@@ -7455,7 +7041,7 @@ L16:
     lea     rdi,[rsp+120h]
     call    ryo_h_Unreachable
     ud2
-L17:
+L16:
     lea     rax,[r14+r12*4]
     mov     eax,[rax]
     mov     rdi,rbp
@@ -7464,7 +7050,7 @@ L17:
     call    fn29
     mov     r15,r12
     add     r15,1
-    jae     L18
+    jae     L17
     lea     rdi,[k35]
     call    ryo_hr_AddrAbs
     mov     rdi,rax
@@ -7472,10 +7058,10 @@ L17:
     lea     rdi,[rsp+120h]
     call    ryo_h_Unreachable
     ud2
-L18:
+L17:
     mov     r12,r15
-    jmp     L11
-L19:
+    jmp     L10
+L18:
     lea     rdi,[k37]
     call    ryo_hr_AddrAbs
     mov     rdi,r14
@@ -7509,7 +7095,7 @@ L19:
     mov     rcx,r12
     mov     r8,rax
     call    qword ptr [fn45.slot]
-L20:
+L19:
     mov     rbx,[rsp+90h]
     mov     r12,[rsp+80h]
     mov     r13,[rsp+70h]
@@ -7519,15 +7105,15 @@ L20:
     add     rsp,128h
     ret
   ; OSR entries
-    lea     r11,[L21]
+    lea     r11,[L20]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L21:
+L20:
+    .long   L21
     .long   L22
     .long   L23
-    .long   L24
-L22:
+L21:
     pop     rcx
     lea     rdx,[rsp+370h]
     lea     rsp,[rdx-390h]
@@ -7553,7 +7139,7 @@ L22:
     mov     r15,[rsp+8]
     lea     rsp,[rsp+270h]
     jmp     L0
-L23:
+L22:
     pop     rcx
     lea     rdx,[rsp+370h]
     lea     rsp,[rdx-3A0h]
@@ -7582,7 +7168,7 @@ L23:
     mov     r15,[rsp+10h]
     lea     rsp,[rsp+280h]
     jmp     L3
-L24:
+L23:
     pop     rcx
     lea     rdx,[rsp+370h]
     lea     rsp,[rdx-3B0h]
@@ -7620,7 +7206,7 @@ L24:
     mov     r14,[rsp+18h]
     mov     rbp,[rsp+28h]
     lea     rsp,[rsp+290h]
-    jmp     L11
+    jmp     L10
 
 fn std::cmp::impls::<impl std::cmp::PartialOrd for u32>::lt
     sub     rsp,18h
@@ -8061,9 +7647,6 @@ L6:
     jmp     L12
 L7:
     cmp     rbx,0
-    sete    cl
-    xor     ecx,1
-    test    cl,cl
     je      L2
     jmp     L13
 L8:
@@ -8076,9 +7659,6 @@ L10:
     jmp     L1
 L11:
     cmp     r12,0
-    sete    cl
-    xor     ecx,1
-    test    cl,cl
     je      L2
     jmp     L1
 L12:
@@ -8223,9 +7803,6 @@ L11:
     jmp     L3
 L12:
     cmp     rbx,0
-    sete    al
-    xor     eax,1
-    test    al,al
     je      L7
     jmp     L3
 L13:
@@ -8242,9 +7819,6 @@ L16:
     jmp     L5
 L17:
     cmp     r12,0
-    sete    al
-    xor     eax,1
-    test    al,al
     je      L7
     jmp     L5
 L18:
@@ -8314,8 +7888,6 @@ fn std::ptr::swap::<u32>
     mov     rbx,rdi
     mov     r12,rsi
     lea     r13,[rsp+0Ch]
-    jmp     L0
-L0:
     lea     rdi,[k0]
     call    ryo_hr_AddrAbs
     mov     rdi,rbx
@@ -8330,20 +7902,11 @@ L0:
     mov     edx,4
     call    ryo_hr_Memcpy
     jmp     L1
-L1:
-    jmp     L4
-L2:
+L0:
     lea     r13,[rsp+0Ch]
-    jmp     L3
-L3:
-    jmp     L7
-L4:
-    jmp     L5
-    mov     r14d,1
-    jmp     L6
-L5:
+    jmp     L2
+L1:
     mov     r14d,0
-L6:
     lea     rdi,[k2]
     call    ryo_hr_AddrAbs
     mov     rdi,r12
@@ -8357,8 +7920,8 @@ L6:
     mov     rsi,r12
     mov     edx,4
     call    ryo_hr_Memmove
-    jmp     L2
-L7:
+    jmp     L0
+L2:
     lea     rdi,[k4]
     call    ryo_hr_AddrAbs
     mov     rdi,r13
@@ -8379,13 +7942,13 @@ L7:
     add     rsp,58h
     ret
   ; OSR entries
-    lea     r11,[L8]
+    lea     r11,[L3]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L8:
-    .long   L9
-L9:
+L3:
+    .long   L4
+L4:
     ret
 
 fn std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
@@ -8453,53 +8016,28 @@ fn std::slice::Iter::<'_, u32>::make_slice
     mov     [rsp+20h],r14
     mov     [rsp+10h],r15
     mov     rbx,[rdi]
-    jmp     L0
-    mov     rax,[rdi+8]
-    mov     r14,rax
-    jmp     L2
-L0:
     mov     r12,[rdi+8]
     mov     r13,[rdi]
-    jmp     L1
-L1:
-    jmp     L5
-L2:
-    jmp     L3
-L3:
-    jmp     L8
-L4:
-    mov     r14,r15
     jmp     L2
-L5:
+L0:
+    jmp     L3
+L1:
+    mov     r14,r15
+    jmp     L0
+L2:
     lea     rdi,[k0]
     call    ryo_hr_AddrAbs
     mov     rdi,r12
     mov     rsi,r13
     mov     rdx,rax
     call    fn1
-    jmp     L6
-L6:
-    jmp     L7
-L7:
     sub     r12,r13
     mov     rdi,r12
     mov     esi,4
     call    ryo_hr_DivUW64
     mov     r15,rax
-    jmp     L4
-    lea     rdi,[k2]
-    call    ryo_hr_AddrAbs
-    mov     r12,rax
-    lea     rdi,[k3]
-    call    ryo_hr_AddrAbs
-    mov     rdi,r12
-    mov     esi,49h
-    mov     rdx,rax
-    call    qword ptr [sym4]
-    lea     rdi,[rsp+60h]
-    call    ryo_h_Unreachable
-    ud2
-L8:
+    jmp     L1
+L3:
     lea     rdi,[k5]
     call    ryo_hr_AddrAbs
     mov     rdi,rbx
@@ -8518,16 +8056,16 @@ L8:
     add     rsp,68h
     ret
   ; OSR entries
-    lea     r11,[L9]
+    lea     r11,[L4]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L9:
-    .long   L10
-    .long   L11
-L10:
+L4:
+    .long   L5
+    .long   L6
+L5:
     ret
-L11:
+L6:
     ret
 
 fn std::slice::from_raw_parts::precondition_check
@@ -8580,9 +8118,6 @@ L3:
     ud2
 L4:
     cmp     rbx,0
-    sete    al
-    xor     eax,1
-    test    al,al
     je      L3
     jmp     L1
 L5:
@@ -8687,9 +8222,6 @@ L3:
     ud2
 L4:
     cmp     rbx,0
-    sete    al
-    xor     eax,1
-    test    al,al
     je      L3
     jmp     L1
 L5:
@@ -8773,13 +8305,11 @@ fn std::vec::Vec::<u32>::append_elements
     call    fn0
     mov     rax,[rbx+10h]
     cmp     r13,0
-    jbe     L1
+    jbe     L0
     mov     rcx,[rbx+8]
     lea     r14,[rcx+rax*4]
-    jmp     L0
+    jmp     L1
 L0:
-    jmp     L2
-L1:
     mov     rax,[rbx+10h]
     add     rax,r13
     mov     [rbx+10h],rax
@@ -8789,7 +8319,7 @@ L1:
     mov     r14,[rsp+10h]
     add     rsp,58h
     ret
-L2:
+L1:
     lea     rdi,[k1]
     call    ryo_hr_AddrAbs
     mov     rdi,r12
@@ -8805,15 +8335,15 @@ L2:
     mov     rsi,r12
     mov     rdx,rax
     call    ryo_hr_Memcpy
-    jmp     L1
+    jmp     L0
   ; OSR entries
-    lea     r11,[L3]
+    lea     r11,[L2]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
+L2:
+    .long   L3
 L3:
-    .long   L4
-L4:
     ret
 
 fn std::vec::Vec::<u32>::clear
@@ -8836,29 +8366,25 @@ fn std::vec::Vec::<u32>::extend_from_slice
     mov     [rsp+18h],rsi
     mov     [rsp+20h],rdx
     mov     [rsp+28h],rsi
-    jmp     L2
     jmp     L1
 L0:
     add     rsp,38h
     ret
 L1:
-    jmp     L3
-L2:
     mov     [rsp+8],rsi
     lea     rax,[rsi+rdx*4]
     mov     [rsp+10h],rax
     mov     rdx,rax
-L3:
     call    qword ptr [fn0.slot]
     jmp     L0
   ; OSR entries
-    lea     r11,[L4]
+    lea     r11,[L2]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L4:
-    .long   L5
-L5:
+L2:
+    .long   L3
+L3:
     ret
 
 fn std::vec::Vec::<u32>::extend_trusted::<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}
@@ -8890,16 +8416,13 @@ fn std::vec::Vec::<u32>::push_mut
     mov     rbx,rdi
     mov     r12,rsi
     mov     r13,[rbx+10h]
-    mov     r11d,4
-    cmp     r11,0
-    je      L5
-    jmp     L6
+    jmp     L5
 L0:
     mov     rdi,rbx
     call    qword ptr [fn0.slot]
     jmp     L1
     mov     r14,rax
-    jmp     L7
+    jmp     L6
 L1:
     mov     rax,[rbx+8]
     lea     rax,[rax+r13*4]
@@ -8926,24 +8449,23 @@ L4:
     je      L0
     jmp     L1
 L5:
-    mov     rax,0FFFFFFFFFFFFFFFFh
-    jmp     L4
-L6:
     mov     rax,[rbx]
     jmp     L4
-L7:
+L6:
     jmp     L3
   ; OSR entries
-    lea     r11,[L8]
+    lea     r11,[L7]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L8:
+L7:
+    .long   L8
     .long   L9
     .long   L10
     .long   L11
     .long   L12
-    .long   L13
+L8:
+    ret
 L9:
     ret
 L10:
@@ -8951,8 +8473,6 @@ L10:
 L11:
     ret
 L12:
-    ret
-L13:
     ret
 
 fn std::vec::Vec::<u32>::reserve

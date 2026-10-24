@@ -42,58 +42,40 @@ fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::fold::<usize, {closure@s
     mov     rbx,rdi
     mov     r12,rsi
     mov     [rsp+40h],rdx
-    jmp     L0
-    cmp     r12,0
-    sete    al
-    jmp     L1
-L0:
     cmp     rbx,r12
     sete    al
-L1:
     test    al,al
-    je      L2
+    je      L0
     mov     rax,[rsp+40h]
-    jmp     L10
-L2:
-    mov     r13,[rsp+40h]
-    jmp     L3
-    mov     rax,r13
-    mov     r14,rbx
-    mov     r15d,0
-    mov     [rsp+38h],r12
-    mov     qword ptr [rsp+10h],0
     jmp     L5
-L3:
-    jmp     L4
-L4:
-    jmp     L18
-L5:
+L0:
+    mov     r13,[rsp+40h]
+    jmp     L13
+L1:
     lea     rcx,[rsp+40h]
     lea     rdx,[r14+r15]
     mov     rdi,rcx
     mov     rsi,rax
     call    fn0
     mov     [rsp+18h],rax
-    jmp     L6
+    jmp     L2
     mov     qword ptr [rsp+30h],0
     mov     r11,[rsp+10h]
     mov     [rsp+20h],r11
     mov     [rsp+28h],rax
-    jmp     L23
-L6:
-    jmp     L7
-L7:
-    jmp     L22
-L8:
+    jmp     L15
+L2:
+    jmp     L14
+L3:
     mov     rax,[rsp+18h]
-    jmp     L10
-L9:
+    jmp     L5
+L4:
     mov     r14,rcx
     mov     r15,rdx
     mov     [rsp+38h],rsi
     mov     [rsp+10h],rdi
-    jmp     L5
-L10:
+    jmp     L1
+L5:
     mov     rbx,[rsp+0A0h]
     mov     r12,[rsp+90h]
     mov     r13,[rsp+80h]
@@ -102,67 +84,45 @@ L10:
     mov     rbp,[rsp+50h]
     add     rsp,0B8h
     ret
-L11:
-    jmp     L16
-L12:
+L6:
+    jmp     L11
+L7:
     mov     r11,[rsp+28h]
     mov     [rsp],r11
     lea     rdi,[rsp+0B0h]
     mov     esi,0FFFFFF50h
     call    ryo_h_Resume
     ud2
-L13:
-    jmp     L11
-L14:
+L8:
+    jmp     L6
+L9:
     cmp     byte ptr [rsp+30h],0
-    je      L11
-    jmp     L13
-L15:
-    jmp     L12
-L16:
+    je      L6
+    jmp     L8
+L10:
+    jmp     L7
+L11:
     cmp     byte ptr [rsp+20h],0
-    je      L12
-    jmp     L15
-L17:
+    je      L7
+    jmp     L10
+L12:
     mov     rax,r13
     mov     r14,rbx
     mov     r15d,0
     mov     [rsp+38h],rbp
     mov     qword ptr [rsp+10h],0
-    jmp     L5
-L18:
+    jmp     L1
+L13:
     lea     rdi,[k1]
     call    ryo_hr_AddrAbs
     mov     rdi,r12
     mov     rsi,rbx
     mov     rdx,rax
     call    qword ptr [fn2.slot]
-    jmp     L19
-L19:
-    jmp     L20
-L20:
     mov     rbp,r12
     sub     rbp,rbx
-    jmp     L17
-    lea     rdi,[k3]
-    call    ryo_hr_AddrAbs
-    mov     rbx,rax
-    lea     rdi,[k4]
-    call    ryo_hr_AddrAbs
-    mov     rdi,rbx
-    mov     esi,49h
-    mov     rdx,rax
-    call    qword ptr [sym5]
-    jmp     L21
-    mov     qword ptr [rsp+30h],1
-    mov     qword ptr [rsp+20h],0
-    mov     [rsp+28h],rax
-    jmp     L23
-L21:
-    lea     rdi,[rsp+0B0h]
-    call    ryo_h_Unreachable
-    ud2
-L22:
+    jmp     L12
+L14:
     lea     rdi,[k6]
     call    ryo_hr_AddrAbs
     mov     rdi,r15
@@ -171,31 +131,31 @@ L22:
     call    fn7
     add     r15,1
     cmp     r15,[rsp+38h]
-    je      L8
+    je      L3
     mov     rax,[rsp+18h]
     mov     rcx,r14
     mov     rdx,r15
     mov     rsi,[rsp+38h]
     mov     rdi,[rsp+10h]
+    jmp     L4
+L15:
     jmp     L9
-L23:
-    jmp     L14
   ; OSR entries
-    lea     r11,[L24]
+    lea     r11,[L16]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L24:
+L16:
+    .long   L17
+    .long   L18
+    .long   L19
+    .long   L20
+    .long   L21
+    .long   L22
+    .long   L23
+    .long   L24
     .long   L25
-    .long   L26
-    .long   L27
-    .long   L28
-    .long   L29
-    .long   L30
-    .long   L31
-    .long   L32
-    .long   L33
-L25:
+L17:
     pop     rcx
     lea     rdx,[rsp+0D0h]
     lea     rsp,[rdx-100h]
@@ -227,10 +187,10 @@ L25:
     mov     r14,[rsp+8]
     mov     r15,[rsp+10h]
     lea     rsp,[rsp+50h]
-    jmp     L5
-L26:
+    jmp     L1
+L18:
     ret
-L27:
+L19:
     pop     rcx
     lea     rdx,[rsp+0D0h]
     lea     rsp,[rdx-100h]
@@ -260,18 +220,18 @@ L27:
     mov     rdi,[rsp+20h]
     mov     rdx,[rsp+10h]
     lea     rsp,[rsp+50h]
-    jmp     L9
-L28:
+    jmp     L4
+L20:
     ret
-L29:
+L21:
     ret
-L30:
+L22:
     ret
-L31:
+L23:
     ret
-L32:
+L24:
     ret
-L33:
+L25:
     ret
 
 fn <std::vec::Vec<bool> as std::ops::Index<usize>>::index
@@ -782,7 +742,7 @@ fn std::vec::Vec::<bool>::extend_with
     jmp     L0
     mov     rcx,rax
     mov     eax,1
-    jmp     L21
+    jmp     L20
 L0:
     mov     rax,[rbx+8]
     mov     [rsp+18h],rax
@@ -801,7 +761,7 @@ L0:
     mov     r15d,1
 L1:
     cmp     rbx,r12
-    jae     L16
+    jae     L15
     jmp     L14
 L2:
     mov     [rax],cl
@@ -827,9 +787,9 @@ L3:
     jmp     L4
     mov     rcx,rax
     mov     eax,0
-    jmp     L21
+    jmp     L20
 L4:
-    jmp     L19
+    jmp     L18
 L5:
     lea     rax,[rsp+18h]
     mov     rdi,rax
@@ -837,7 +797,7 @@ L5:
     jmp     L6
     mov     rcx,rax
     mov     rax,r15
-    jmp     L21
+    jmp     L20
 L6:
     test    r15b,r15b
     jne     L11
@@ -855,7 +815,7 @@ L8:
     mov     rdi,rax
     call    qword ptr [fn1.slot]
     jmp     L9
-    jmp     L22
+    jmp     L21
 L9:
     mov     rax,r15
     mov     rbp,[rsp+10h]
@@ -875,14 +835,12 @@ L13:
     je      L10
     jmp     L12
 L14:
-    jmp     L15
+    jmp     L16
 L15:
-    jmp     L17
-L16:
     cmp     r13,0
     ja      L3
     jmp     L5
-L17:
+L16:
     lea     rdi,[k4]
     call    ryo_hr_AddrAbs
     mov     rdi,rbx
@@ -893,10 +851,10 @@ L17:
     lea     rax,[rsp+8Fh]
     mov     rdi,rax
     call    fn6
-    jmp     L18
+    jmp     L17
     mov     [rsp+10h],rax
-    jmp     L23
-L18:
+    jmp     L22
+L17:
     mov     rcx,rax
     mov     rax,r14
     mov     rdx,r14
@@ -905,26 +863,27 @@ L18:
     mov     r8,r13
     mov     r9,r15
     jmp     L2
-L19:
+L18:
     jmp     L7
-L20:
+L19:
     call    qword ptr [sym7]
     lea     rdi,[rsp+0A0h]
     call    ryo_h_Unreachable
     ud2
-L21:
+L20:
     mov     rbp,rcx
     jmp     L13
+L21:
+    jmp     L19
 L22:
-    jmp     L20
-L23:
     jmp     L8
   ; OSR entries
-    lea     r11,[L24]
+    lea     r11,[L23]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L24:
+L23:
+    .long   L24
     .long   L25
     .long   L26
     .long   L27
@@ -934,8 +893,7 @@ L24:
     .long   L31
     .long   L32
     .long   L33
-    .long   L34
-L25:
+L24:
     pop     rcx
     lea     rdx,[rsp+0A0h]
     lea     rsp,[rdx-0E0h]
@@ -970,7 +928,7 @@ L25:
     mov     r15,[rsp+20h]
     lea     rsp,[rsp+40h]
     jmp     L1
-L26:
+L25:
     pop     rcx
     lea     rdx,[rsp+0A0h]
     lea     rsp,[rdx-0F0h]
@@ -1011,6 +969,8 @@ L26:
     mov     rdx,[rsp+10h]
     lea     rsp,[rsp+50h]
     jmp     L2
+L26:
+    ret
 L27:
     ret
 L28:
@@ -1024,7 +984,5 @@ L31:
 L32:
     ret
 L33:
-    ret
-L34:
     ret
 
