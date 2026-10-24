@@ -116,6 +116,9 @@ substitutes a default. Each use, and what keeps it from mattering:
 | `concreteOracle` (`nanBits` default `0`) | not a NaN | candidate lists are never empty (`nanCandidates` always contains the two canonical NaNs) |
 | `Program.symbol` | `"<instance i>"` | diagnostics only |
 | `Main.lean` (`n.toNat!`) | panic on a non-numeric `--fuel` | CLI only |
+| `Vm/OpSem/Basic.lean` `State.writeEscaped` (`allocs.set!`, `data.set!`), `State.writeFrame` (`bs.getD`), `(o - e.off).toNat` | out-of-range writes dropped; `Uninit`; clamping | the allocation id was just found by `get?`; `privateIn`/`escapedAt` put `o` in the range, so the offsets are non-negative and in bounds, if each escaped object's allocation is at least its size (an invariant of R's states; `byteAt` reports a smaller one as `illFormed`) |
+| `Vm/OpSem/Sem.lean` `sparseIndex` (`vals[mid]!`) | panic | `lo ≤ mid < hi ≤ vals.size` |
+| `Vm/OpSem/Json.lean` (`a[0]!`, `getD`) | panic / `Uninit` | sizes checked just before; frame bytes outside the given run are `Uninit` by definition. CLI only |
 
 `Int.toNat` clamps negative values to 0. The uses are on values already known non-negative
 (`usize` operands, checked counts). The one that was not, the cast to pointer in `evalCast`,
@@ -230,5 +233,6 @@ checks of dumped layouts against `-Zprint-type-sizes`; later, C1' and the image 
 | Runs start at `Program.start`, called with the given arguments by value; its return or unwinding ends the run (`Final.returned`/`Final.unwound`) | `Sem.start`, `doReturn`, `contUnwind .bottom` | lets single functions run; MiniRust requires `exit` | the real entry point is `lang_start` ([divergences.md](divergences.md) R11) |
 | `Refines` compares two L0 programs | Behavior.lean:82 | stated for later levels | the D25 stack-overflow clause cannot fire between L0 programs, since `runN` never overflows (§2). It needs a target semantics with a real stack bound |
 | A UB outcome counts only if no angelic answer avoids it | `Behaviors` | MiniRust's `predict` | — |
+| `opSem` is the meaning of the VM's opcodes: each handler `ryo_h_*` implements it with exactly its footprint (the handler contracts, reduced.md §C0.5) | Vm/OpSem | the handlers are Rust (raw pointers), not verified | `vm/rt/tests/lean_opsem.rs`: every handler against `ryo-lean opsem` on random canary frames (results, memory, and changed bytes inside the footprint); `opSem_frame_writes`/`opSem_reads_footprint` prove the Lean side touches the frame only through the footprint |
 | The exact float arithmetic is IEEE 754 round-to-nearest-even | Lang/Float.lean | rustc/LLVM default floating-point environment (no `fesetround`, no x87) | tested against hardware `Float`/`Float32` (`D5/matches_hardware`); a proof against an IEEE spec would need a formal IEEE model (none in core) |
 | `SemM := ExceptT Outcome (StateT State (ReaderT Oracle Id))`: the state survives an exception | State.lean:115 | the event trace up to UB is kept | — |

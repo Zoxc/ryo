@@ -45,6 +45,9 @@
                                            `Ryo.Check.Image`) on a link's image objects and
                                            registry object: each mismatch, then a summary;
                                            exit status 1 on any
+  ryo-lean opsem                           `opSem` on JSON lines on stdin, a result per line
+                                           on stdout (`Ryo/Vm/OpSem/Json.lean`), for the
+                                           differential test against the handlers
 -/
 import Ryo
 import Ryo.Examples
@@ -212,6 +215,7 @@ def main (args : List String) : IO UInt32 := do
       IO.eprintln s!"unknown example `{name}`; known: {Ryo.Examples.names}"
       pure 2
   | ["exec-item"] => Ryo.X86.Cosim.main
+  | ["opsem"] => Ryo.Vm.OpSem.Json.main
   | _ =>
-    IO.eprintln "usage: ryo-lean run <program.json> [--fuel N] [--stdout]\n       ryo-lean example <name> [out.json]\n       ryo-lean obj <file.o>\n       ryo-lean elf <file.o>\n       ryo-lean decode <inputs.json | file.o>\n       ryo-lean dead|ehframe|lsda <file.o>\n       ryo-lean check-pool <dump.json> <file.o>... [-v]\n       ryo-lean check-image <image.o>... [--registry <registry.o>]"
+    IO.eprintln "usage: ryo-lean run <program.json> [--fuel N] [--stdout]\n       ryo-lean example <name> [out.json]\n       ryo-lean obj <file.o>\n       ryo-lean elf <file.o>\n       ryo-lean decode <inputs.json | file.o>\n       ryo-lean dead|ehframe|lsda <file.o>\n       ryo-lean check-pool <dump.json> <file.o>... [-v]\n       ryo-lean check-image <image.o>... [--registry <registry.o>]\n       ryo-lean opsem"
     pure 2

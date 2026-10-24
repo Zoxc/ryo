@@ -50,6 +50,9 @@ lake exe ryo-lean check-image x.ryo_image.rcgu.o... [--registry r.ryo_registry.b
 ../scripts/lean-image-check.py [--opt] [--corpus DIR]
                                    # check-image on the corpus, each program's objects as a link
 lake exe ryo-lean exec-item         # run x86 items on states given as JSON lines (Ryo/X86/Cosim.lean)
+lake exe ryo-lean opsem            # opSem on JSON lines (Ryo/Vm/OpSem/Json.lean); from vm/:
+                                   # `cargo test -p ryo_rt --test lean_opsem` runs it against
+                                   # every handler (skipped without the binary)
 cargo run --release --manifest-path harness/Cargo.toml -- [--cases N] [--seed S]
                                    # co-simulation of Item.exec against the CPU (x86-64 Linux;
                                    # lake build first): random items and inline runs
@@ -72,7 +75,7 @@ Main.lean                          exe `ryo-lean`: `run <program.json>`, `exampl
                                    `obj <file.o>`, `elf <file.o>`, `decode`, `dead`,
                                    `ehframe <file.o>`, `lsda <file.o>`,
                                    `check-pool <dump.json> <file.o>...`, `check-image`,
-                                   `exec-item`
+                                   `exec-item`, `opsem`
 Ryo.lean                           imports the spec, the generated tables, the x86 model,
                                    the object readers and the examples
 Ryo/Spec.lean                      imports every spec module
@@ -111,6 +114,11 @@ Ryo/Vm/Asm.lean                    asm/ pieces the decoder shares with the encod
 Ryo/Vm/DecodeReduced.lean          `decodeReduced` (aot.md §C2), a port of Rust's
                                    `asm::decode_reduced`; its JSON inputs (`ryo-lean decode`)
 Ryo/Vm/Frame.lean                  frame accesses of R code, the dropped-store deadness check
+Ryo/Vm/OpSem/                      `opSem` (reduced.md Part D): Basic (operands, state, results),
+                                   Footprint (per opcode, from the handler table), Arith
+                                   (integer and float operations), Sem (per handler kind),
+                                   Lemmas (frame accesses only through the footprint), Json
+                                   (`ryo-lean opsem`)
 Ryo/Vm/DecodeObj.lean              `ryo-lean decode <obj>`: an image object's functions decoded
                                    (Ryo/Obj's inputs, linked at made-up addresses), printed as
                                    scripts/lean-decode-ref prints Rust's
