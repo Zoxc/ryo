@@ -81,8 +81,12 @@ per-frame relation `R_Γ (s0 : L0 frame) (s1 : R frame)`:
   checker validates the call's argument list and outgoing-area stores against the plan, and
   the convention lemma does the rest. `Indirect` args point at a temporary copy, which
   refines D12's in-place passing. sret: the destination address in the first integer
-  register. Callees: `Sym s` must be the symbol of the callee the dump names
-  (`tcx.symbol_name`), `Func i` that callee's function-table entry.
+  register; R makes the destination's `ret_size` bytes `Uninit` at the call
+  ([reduced.md](reduced.md) §C0.4), as D12 does L0's, which keeps `≤def` if `ret_size` is the
+  return type's size and the destination is disjoint from the call's by-address argument
+  copies and its outgoing area (what the callee reads after the call starts). Callees:
+  `Sym s` must be the symbol of the callee the dump names (`tcx.symbol_name`), `Func i` that
+  callee's function-table entry.
 - **Unwinding**: L0 `unwind` from a callee ↔ R landing at the call's cleanup entry, `lpad x`
   storing the exception object in slot `x`, `resume x` ↔ `UnwindResume`. Terminate pads ↔
   D18's lang-item call. `UnwindAction::Unreachable` ↔ no call-site entry (L0 UB, so
@@ -100,7 +104,9 @@ per-frame relation `R_Γ (s0 : L0 frame) (s1 : R frame)`:
   instance the dump names, that the `ops` array (read from the object's `.rodata`) is
   what the contract requires, and that each operand's `Lend` scope is the extent the
   contract accesses, an operand without one being zero-sized (the dead-store check, §C2,
-  relies on it).
+  relies on it). The file has the operand roles so far (per template and `ops` position: read,
+  only written, or unused), which the dead-store check uses; the types and L0 operations are
+  to come.
 - **Escape/storage side data**: the checker verifies that `Scope` escapes cover every `addr`
   and every by-address argument, and that ends match `StorageDead`. This is what makes R's
   allocation lifetimes (escape to end) match L0's provenance, so frame privacy holds for the
@@ -176,17 +182,34 @@ follows the decoder's structure:
   dropped, until overwritten. The Lean decoder **checks** each dropped store's deadness by a
   backward liveness over the decoded code (`Frame.decodeChecked`). Handlers read and write
   their operands at `opSem`'s footprints ([reduced.md](reduced.md) §C0.5); calls read their
-  argument list, and every byte only if the convention allows stack arguments (argument
-  registers ran out); islands read their operands' `Lend` extents (none for a zero-sized
+  argument list, and if the convention allows stack arguments (argument registers ran out)
+  the callee's stack-argument extent of the outgoing area, or every byte where it isn't
+  known; islands read their operands' `Lend` extents (none for a zero-sized
   operand, for which the encoder records no `Lend`) and, taking `fp` and calling anything,
   make a pointer access, assuming the island
   contract's operand footprint is the `Lend` extent (C1' checks it against the template,
   §C1 "Islands"; [reduced.md](reduced.md) §C0.1); pointer accesses read the objects that may be
   escaped there (an `Escape` scope reaching it without an `End`); an `End` makes its bytes
   `Uninit` (reduced.md §C0.3), so they are dead before it. The Rust decoder trusts the `dropped` list;
-  the Lean one must not. Known rejections, for want of data: calls that may have stack
-  arguments (needs the call's `ArgPlan` from the C1' certificate), sret destinations, island
-  destinations (written only, which the contract says, not the `Lend`), and stale bytes a whole-object copy moves but nothing uses.
+  the Lean one must not. Three refinements take facts from outside the function
+  (`Frame.Facts`):
+  - **Stack-argument extents.** For a `call` of an image function, its `arg_size`, once the
+    callee's own decoded code is shown to access its incoming area only within those bytes
+    (extents, escapes and tail calls included: `Frame.incomingExtents`); for `call.sym` and
+    `call.ptr`, the `ArgPlan`'s stack size from the certificate (C1').
+  - **sret destinations.** A call makes its sret destination `Uninit` once it has read its
+    arguments (reduced.md §C0.4), so a store there is dead unless the call passes those bytes
+    itself. The size is the callee's `ret_size` (an image function's `FuncEntry`; C1' must
+    check it against the signature) or the certificate's.
+  - **Island destinations.** With the island's template known (its symbol, from the
+    certificate), the contract's operand roles (`Ryo/Vm/R/Islands.lean`, trusted with the
+    rest of the contract, §C6): a `Lend` only unread operands sit at isn't read, and one only
+    destinations sit at is written whole on the fall-through.
+
+  Known rejections: `call.sym`/`call.ptr` calls that may have stack arguments, without the
+  certificate; stores into an object escaped at a later pointer access only along other
+  paths (the escape dataflow is path-insensitive); and stale bytes a whole-object copy moves
+  but nothing uses.
 - **Counters and stubs**: `sub [rip+ctr], k; js stub` followed by the stub
   `lea r11,[rip+rec]; …; call [r11+8|16]; jmp back` refines a no-op, given the trip contract
   ([jit.md](jit.md) §E.2). Counter memory is runtime-owned: excluded from the program's

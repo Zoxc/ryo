@@ -29,7 +29,11 @@ size, before the island, recorded by the lowering with the size the template acc
 (metadata the JIT also needs). The island contract's operand footprint is that extent (C1'
 checks it against the template, [aot.md](aot.md) §C1 "Islands"); the dead-store check
 relies on it (aot.md §C2). An operand without a `Lend` is zero-sized: `Asm::lend` skips
-only those (`asm/encode.rs`), and C1' checks that too.
+only those (`asm/encode.rs`), and C1' checks that too. The contract also says what the
+template does with each operand slot (`Ryo/Vm/R/Islands.lean`, by template and `ops`
+position): reads it, or only writes it, whole and when it returns (a destination: its bytes
+before the island are never observed), or neither. Which template an island is comes from
+its symbol (C1' checks it is the instance the dump names).
 
 ### C0.2 Frames are objects, at a layout
 
@@ -109,6 +113,23 @@ stores are not ghost state: the Lean decoder re-checks them ([aot.md](aot.md) §
   call's argument list and return kind `k` (these are already native R instructions). The
   callee is the environment or another R function, under the convention
   ([aot.md](aot.md) §C1, "Calls").
+- **sret destinations.** A call passing an sret destination (its argument list's first
+  entry: the first integer register, by address) reads its argument list, then makes the
+  `sretSize` bytes at the destination slot `Uninit`, then runs the callee. `sretSize` is the
+  size of the callee's return type; the dead-store check takes it from an image callee's
+  `ret_size` or from the call's certificate entry (`call.sym`/`call.ptr`), each of which C1'
+  must check against the return type. The convention has the
+  callee write its result through the pointer, never reading the old bytes, and L0 makes the
+  destination uninitialized at call start too (D12: `deinit` of the destination after the
+  arguments are evaluated, `Spec/Mir/Terminator.lean`), so the L0 ↔ R relation keeps
+  `≤def` there: L0's destination is `Uninit` while the call runs. What the callee reads
+  through other pointers to those bytes is then `Uninit` in both. For this to simulate L0,
+  the destination must not overlap what the callee reads as its arguments after the call
+  starts (the `Indirect` arguments' copies, the stack arguments): C1' checks it (the lowering
+  gives each `Indirect` argument a fresh temporary and stack arguments the outgoing area). An
+  escaped destination stays an allocation; only its bytes change. The dead-store check uses
+  this (aot.md §C2): a store into the destination is dead unless the call reads it as an
+  argument.
 - `island`: a call `isl(fp, &ops)` under the Rust ABI, meaning the island's contract; its
   operands are accesses during the call (like an LLVM `nocapture` argument with a known
   footprint), not escapes.

@@ -33,10 +33,37 @@ What each instruction reads (`gen`) and writes for sure (`kill`), and what that 
   SysV with all six integer registers taken (an `i128` with five), or all eight `xmm` ones;
   Win64 from argument position 4 on. So a call whose list uses no integer register from `r8`
   on and no `xmm7` (SysV), or no register of position 3 (Win64), has no stack arguments; any
-  other call reads every frame byte. This assumes the argument list is the callee's register
-  plan (the C1 call check validates it against the plan, aot.md §C1). A tail call's stack
-  arguments go to the incoming area, above `fp`. A call's result stores write each part
-  exactly, on the fall-through only.
+  other call reads every frame byte, or with `Facts.stackArgs` = `n` the `n` bytes from
+  `fp - F` (frame byte 0). This assumes the argument list is the callee's register plan (the
+  C1 call check validates it against the plan, aot.md §C1). A tail call's stack arguments go
+  to the incoming area, above `fp`. A call's result stores write each part exactly, on the
+  fall-through only.
+- **Stack-argument extents** (`Facts.stackArgs`). The callee's `fp + 16` is the caller's
+  `fp - F` (design/vm.md, "Frames"), so what the callee accesses of its incoming area is what
+  the call accesses of the caller's outgoing area. For a `call` of an image function `g`
+  (`DecodeObj.imageFacts`) the extent is `g`'s `arg_size` if `g`'s own decoded code accesses
+  its incoming area only within those bytes (`incomingUse`, joined over tail calls by
+  `incomingExtents`): every frame access at its extent, in both the item and the operand view
+  of an inline instruction (an inline `addr` is a `lea`, which no item reads), every `Escape`
+  and `Lend` scope's extent (accesses through pointers stay inside the escaped object), no
+  address taken there that no escape covers, and no tail call of a non-image function that
+  may pass stack arguments. That is a property of `g`'s R code, not of the `arg_size` field,
+  so it doesn't rest on `Check.Image.Funcs`, whose "incoming-area accesses within `arg_size`"
+  bounds only where accesses start (not their extents, escapes or addresses taken there).
+  For `call.sym`/`call.ptr` the extent is the call's `ArgPlan`'s stack size, which the
+  certificate gives and C1' checks: a callee reads the stack arguments its convention puts
+  there and no other byte of the outgoing area (the convention of aot.md §C1, "Calls"; for
+  native callees, under the assumption that native code keeps its convention).
+- **sret destinations** (`Facts.sretSize`). A call with an sret destination (its argument
+  list's first entry, the first integer register by address, `pass_args`) makes the
+  destination's `sretSize` bytes `Uninit` after reading its arguments and before the callee
+  runs, as L0 does (D12; reduced.md §C0.4). So those bytes are dead into the call but for
+  what the call itself reads: its argument list and stack arguments stay live (read before),
+  its pointer accesses don't read them (they read `Uninit`), and neither does anything after
+  the call or on its landing pad (`Flow.uninit`). For a `call` of an image function `g`
+  returning by sret, `sretSize` is `g`'s `ret_size`, which C1' must check is the return
+  type's size (no image check does: `Check.Image.Funcs` checks `ret_size` only for kinds
+  returned in registers); for `call.sym`/`call.ptr`, the certificate's.
 - **Islands** read the extents of the `Lend` scopes before them (`asm::ScopeKind::Lend`, one
   per operand of a nonzero size, recorded by the lowering with the size its template
   accesses there), may write them (no kill: they are clobbered), and make a pointer access
@@ -46,7 +73,14 @@ What each instruction reads (`gen`) and writes for sure (`kill`), and what that 
   (aot.md §C1, "Islands"; reduced.md §C0.1). An operand without a `Lend` has an empty
   extent: the encoder skips a `Lend` only for a zero-sized operand (`Asm::lend` in
   `asm/encode.rs`: `if size != 0`), and C1' checks every operand's extent, "no `Lend` means
-  size 0" included, against the contract.
+  size 0" included, against the contract. With the island's template known
+  (`Facts.islandTemplate`, from its symbol), the contract's operand roles
+  (`Ryo.Vm.R.Islands`, trusted like the extents) refine this per `Lend`: one that only
+  operands the template doesn't read sit at is not read, and if each of them is a
+  destination the template writes whole when it returns, it is written for sure on the
+  fall-through (not on the landing pad). A `Lend` is matched to the operands at its offset,
+  all of them, since the scope table doesn't say which one it is; one at no operand's offset
+  is read.
 - **Pointer accesses** (a native `[p + k]` operand, a handler's dereference, any call) read
   the bytes of every frame object that may be escaped at that instruction. Under R's memory
   model (reduced.md §C0.3) a frame object is an allocation only from an `Escape` scope to the
@@ -62,20 +96,22 @@ What each instruction reads (`gen`) and writes for sure (`kill`), and what that 
   in R (reduced.md §C0.3), so they are dead into it: what R reads there is `Uninit`, which
   any L2 byte refines. A partial end kills only the bytes it covers.
 
-Known remaining classes the check rejects, for lack of data in the image: calls that may
-have stack arguments (their extent needs the call's `ArgPlan`, from the C1' certificate);
-sret destinations, which a callee only writes but which count as read through the pointer;
-island destinations (a `Lend` doesn't say the template only writes it; the contract does,
-C1'); and
-stale bytes that a copy
-(`mov.w128`, `copy`, `store.copy`) moves without any later use (a value-flow, not liveness,
-question).
+`Facts` are keyed by R instruction index; `DecodeObj.deadLines` merges the image's
+(`imageFacts`) with ones checked against the C1' certificate.
+
+Known remaining classes the check rejects: `call.sym`/`call.ptr` calls that may have stack
+arguments, without the certificate's extent; stores into an object that may be escaped at a
+later pointer access only along other paths (the escape dataflow is path-insensitive: a
+temporary escaped by one statement and stored by another, reaching a landing pad that both
+unwind to); and stale bytes that a copy (`mov.w128`, `copy`, `store.copy`) moves without
+any later use (a value-flow, not liveness, question).
 
 `native`/`handler`/`effects` port `asm::frame::insns` with these refinements; Rust's
 `head_liveness` is coarser (calls read every byte, handlers kill nothing).
 -/
 import Ryo.Vm.DecodeReduced
 import Ryo.Vm.OpSem.Footprint
+import Ryo.Vm.R.Islands
 
 namespace Ryo.Vm.Frame
 
@@ -104,6 +140,12 @@ structure Facts where
   islandTemplate : Nat → Option String := fun _ => none
 
 instance : Inhabited Facts := ⟨{}⟩
+
+/-- `a`'s facts, and `b`'s where `a` has none. -/
+def Facts.merge (a b : Facts) : Facts where
+  stackArgs k := (a.stackArgs k).orElse fun _ => b.stackArgs k
+  sretSize k := (a.sretSize k).orElse fun _ => b.sretSize k
+  islandTemplate k := (a.islandTemplate k).orElse fun _ => b.islandTemplate k
 
 /-- An instruction's frame operands (offset, access), whether it reads every byte, and whether
 it may access memory through a pointer. -/
@@ -142,12 +184,31 @@ def mayHaveStackArgs (pe : Bool) (ws : List (BitVec 32)) : Bool :=
     | none => true
     | some r => if pe then r.index ≥ 3 else if r.xmm then r.index ≥ 7 else r.index ≥ 4
 
+/-- How an island of template `template` (if known), its operand slots being `ws`, accesses
+the `Lend` extent of `n` bytes at `off`. A `Lend` belongs to an operand at its offset (the
+lowering records one per operand of a nonzero size, at the operand's slot), but which one,
+when several share the offset, the scope table doesn't say; so the extent is read unless the
+contract (`Islands.role`) says no operand there is read, written for sure (on the
+fall-through) if it says each of them is written whole, and else clobbered. An extent at no
+operand's offset is read. -/
+def islandAccess (template : Option String) (ws : List (BitVec 32)) (off : BitVec 32) (n : Nat) :
+    Access :=
+  match template with
+  | none => .read n
+  | some t =>
+    let roles := (ws.zipIdx.filter (·.1 == off)).map fun (_, i) => Islands.role t ws.length i
+    if roles.isEmpty || roles.contains .read then .read n
+    else if roles.all (· == .write) then .write n
+    else .clobber n
+
 /-- `frame::native`: the frame operands of a native instruction. A call reads every byte if it
-may have stack arguments (`mayHaveStackArgs`). An island reads the extents `lends` (the `Lend`
-scopes before it: offset, size; an operand without one is zero-sized) and makes a pointer
-access. -/
+may have stack arguments (`mayHaveStackArgs`; `Flow.of` narrows that to the stack-argument
+area when it knows the callee's extent). An island reads the extents `lends` (the `Lend`
+scopes before it: offset, size; an operand without one is zero-sized) but those of operands
+its template's contract says it doesn't read, which it writes or clobbers (`islandAccess`),
+and makes a pointer access. -/
 def native (op : Reduced.Opcode) (ops : List (Opnd Nat)) (pe : Bool := false)
-    (lends : List (BitVec 32 × Nat) := []) : Effects := Id.run do
+    (lends : List (BitVec 32 × Nat) := []) (template : Option String := none) : Effects := Id.run do
   let info := op.info
   let m := info.mnemonic
   let n := (widthOfMnemonic m).getD 8
@@ -190,7 +251,11 @@ def native (op : Reduced.Opcode) (ops : List (Opnd Nat)) (pe : Bool := false)
   | .arg =>
     let size := (ArgReg.of? (immOf (named "r")) true).map (·.size) |>.getD 0
     return { opnds := (slotOf (named "d")).toList.map (·, .write size) }
-  | .island => return { opnds := lends.map fun (o, n) => (o, .read n), pointer := true }
+  | .island =>
+    let ws := match named "ops" with
+      | some (.words ws) => ws
+      | _ => []
+    return { opnds := lends.map (fun (o, n) => (o, islandAccess template ws o n)), pointer := true }
   | _ =>
     let mut out : List (BitVec 32 × Access) := []
     let mut pointer := false
@@ -290,12 +355,13 @@ def lendsAt (d : Decoded) (k : Nat) : List (BitVec 32 × Nat) :=
     if j == k && sc.kind == .lend then some (sc.frameOffset, sc.size) else none
 
 /-- Instruction `i`'s frame accesses: an inline one's by its machine `items`; an island's by
-the `Lend` extents `lends` before it. -/
-def effects (i : Insn) (items : List Item) (mode : Mode) (lends : List (BitVec 32 × Nat) := []) :
-    Except String Effects :=
+the `Lend` extents `lends` before it and its template's contract, if `template` is known. -/
+def effects (i : Insn) (items : List Item) (mode : Mode) (lends : List (BitVec 32 × Nat) := [])
+    (template : Option String := none) : Except String Effects :=
   match i with
   | .native op ops =>
-    if (op.full.bind classOf).isSome then pure (inlineEffects items) else pure (native op ops mode.pe lends)
+    if (op.full.bind classOf).isSome then pure (inlineEffects items)
+    else pure (native op ops mode.pe lends template)
   | .handler h args _ => handler h args mode
 
 /-! ### Liveness over frame bytes `-F .. 0` -/
@@ -368,18 +434,33 @@ def escapedAt (d : Decoded) (edges : Array (List Nat)) : Array (Array Bool) := I
   return at_
 
 /-- What the liveness works on: each instruction's successors and landing pads, the frame
-bytes it reads (`gen`; `viaPointer` the part only its pointer accesses read) and writes for
-sure (`kill`). -/
+bytes it reads (`gen`; `viaPointer` the part only its pointer accesses read, `viaStack` the
+part only its callee's stack arguments read), makes `Uninit` after its own operand reads
+(`uninit`: an sret destination) and writes for sure (`kill`). -/
 structure Flow where
   succ : Array (List Nat)
   pad : Array (List Nat)
   gen : Array (Array Bool)
   viaPointer : Array (Array Bool)
+  viaStack : Array (Array Bool)
+  uninit : Array (Array Bool)
   kill : Array (Array Bool)
   /-- It reads every byte. -/
   readsAll : Array Bool
   /-- The bytes `End` scopes before it make `Uninit`. -/
   ends : Array (Array Bool)
+
+/-- The sret destination of a call whose argument list is `ws`: the slot of its first entry,
+if that is the first integer register, by address (`pass_args` puts it first). -/
+def sretDest (ws : List (BitVec 32)) : Option (BitVec 32) :=
+  match ws with
+  | s :: r :: _ =>
+    if r.toNat == (ArgReg.mk false 8 0).word ||| Ryo.Vm.Asm.argAddr then some s else none
+  | _ => none
+
+/-- A call instruction's argument list. -/
+def callArgs (ops : List (Opnd Nat)) : List (BitVec 32) :=
+  (ops.findSome? fun | .words ws => some ws | _ => none).getD []
 
 def Flow.of (d : Decoded) (mode : Mode) (facts : Facts := {}) : Except String Flow := do
   let n := d.insns.size
@@ -392,16 +473,24 @@ def Flow.of (d : Decoded) (mode : Mode) (facts : Facts := {}) : Except String Fl
     (esc[k]!.zip d.scopes).foldl (fun a (e, (_, sc)) => if e then setRange f a sc.frameOffset sc.size else a) none_
   let mut gen : Array (Array Bool) := #[]
   let mut viaPointer : Array (Array Bool) := #[]
+  let mut viaStack : Array (Array Bool) := #[]
+  let mut uninit : Array (Array Bool) := #[]
   let mut kill : Array (Array Bool) := #[]
   let mut readsAll : Array Bool := #[]
   for h : k in [0:n] do
     let i := d.insns[k]
-    let e ← effects i (d.items[k]?.getD []) mode (lendsAt d k)
+    let e ← effects i (d.items[k]?.getD []) mode (lendsAt d k) (facts.islandTemplate k)
     let eb := if e.pointer || e.opnds.any (·.2 == .addr) then escBytes k else none_
-    let isCall := match i with
-      | .native op _ => op.info.shape == .call || op.info.shape == .tailCall
-      | _ => false
-    let mut g := if e.readsAll then all else none_
+    let (isCall, call, ws) := match i with
+      | .native op ops => (op.info.shape == .call || op.info.shape == .tailCall,
+          op.info.shape == .call, callArgs ops)
+      | _ => (false, false, [])
+    -- A call that may have stack arguments: the callee reads at most `stackArgs` bytes of the
+    -- outgoing area, at `fp - F` (frame byte 0), if known; else any byte.
+    let gs := if !e.readsAll then none_ else match call, facts.stackArgs k with
+      | true, some m => setRange f none_ (BitVec.ofInt 32 (-(f : Int))) m
+      | _, _ => all
+    let mut g := none_
     let mut kl := none_
     for (off, acc) in e.opnds do
       match acc with
@@ -411,17 +500,27 @@ def Flow.of (d : Decoded) (mode : Mode) (facts : Facts := {}) : Except String Fl
       -- A by-address argument no escape covers: its object's extent is unknown.
       | .addr => if isCall && (range f off 1).any (!eb[·]!) then g := all
       | _ => pure ()
-    let gp := if e.pointer then eb.zipWith (fun a b => a && !b) g else none_
+    let vs := gs.zipWith (fun a b => a && !b) g
+    g := orA g gs
+    -- An sret destination is `Uninit` once the call has read its arguments (reduced.md §C0.4):
+    -- what the callee reads of it through pointers is that.
+    let un := match call, facts.sretSize k, sretDest ws with
+      | true, some m, some s => setRange f none_ s m
+      | _, _, _ => none_
+    let gp := if e.pointer then (eb.zipWith (fun a b => a && !b) g).zipWith (fun a b => a && !b) un
+      else none_
     g := orA g gp
     kl := kl.zipWith (fun a b => a && !b) g
     gen := gen.push g
     viaPointer := viaPointer.push gp
+    viaStack := viaStack.push vs
+    uninit := uninit.push un
     kill := kill.push kl
     readsAll := readsAll.push (g.all id)
   let ends := (List.range n).toArray.map fun k =>
     (d.scopes.filter fun (j, sc) => j == k && sc.kind == .end).foldl
       (fun a (_, sc) => setRange f a sc.frameOffset sc.size) none_
-  return { succ, pad, gen, viaPointer, kill, readsAll, ends }
+  return { succ, pad, gen, viaPointer, viaStack, uninit, kill, readsAll, ends }
 
 /-- The frame bytes live into each instruction: some path from it reads them before an
 instruction writes them for sure (unwinding to a landing pad past nothing it writes). -/
@@ -437,8 +536,10 @@ def Flow.liveIn (fl : Flow) (f : Nat) : Except String (Array (Array Bool)) := do
     for k' in [0:n] do
       let k := n - 1 - k'
       let out := fl.succ[k]!.foldl (fun a s => orA a liveIn[s]!) none_
-      let v := orA (out.zipWith (fun a b => a && !b) fl.kill[k]!) fl.gen[k]!
+      let v := out.zipWith (fun a b => a && !b) fl.kill[k]!
       let v := fl.pad[k]!.foldl (fun a s => orA a liveIn[s]!) v
+      -- What `k` makes `Uninit` after reading its operands is dead into it, but what it reads.
+      let v := orA (v.zipWith (fun a b => a && !b) fl.uninit[k]!) fl.gen[k]!
       -- What R reads of the bytes an `End` before `k` covers is `Uninit`.
       let v := v.zipWith (fun a b => a && !b) fl.ends[k]!
       let v := orA v liveIn[k]!
@@ -479,6 +580,7 @@ def droppedNotDead (d : Decoded) (mode : Mode) (facts : Facts := {}) : Except St
 inductive ReadBy
   | operand
   | pointer
+  | stack
   | everything
 deriving DecidableEq, Repr
 
@@ -504,23 +606,83 @@ def firstReader (d : Decoded) (mode : Mode) (k : Nat) (facts : Facts := {}) :
       let hit := st.zipWith (· && ·) fl.gen[j]!
       if hit.any id then
         let by_ := if fl.readsAll[j]! then ReadBy.everything
-          else if (hit.zipWith (fun a b => a && !b) fl.viaPointer[j]!).all (!·) then .pointer else .operand
+          else if (hit.zipWith (fun a b => a && !b) fl.viaPointer[j]!).all (!·) then .pointer
+          else if (hit.zipWith (fun a b => a && !b) fl.viaStack[j]!).all (!·) then .stack
+          else .operand
         return some (j, by_)
+      let st := st.zipWith (fun a b => a && !b) fl.uninit[j]!
       let after := st.zipWith (fun a b => a && !b) fl.kill[j]!
       work := work ++ fl.succ[j]!.map (·, after) ++ fl.pad[j]!.map (·, st)
   return none
 
+/-! ### What a function accesses of its incoming area -/
+
+/-- The extent of its incoming area (the bytes from `fp + 16`, its caller's outgoing area)
+that function `d` may access itself, and the image functions it tail-calls (whose accesses
+of the same area count too); `none` if it isn't bounded. Every frame access counts (reads and
+writes, at their extents, as `effects` gives them and, for an inline instruction, as its
+operands do: `native`'s view), and every `Escape` and `Lend` scope's
+extent: an access through a pointer to an escaped object stays inside it (reduced.md §C0.3).
+Unbounded: an address taken in the area that no escape covers, an opaque access, and a tail
+call of something else than an image function that may pass stack arguments (its callee
+reads them from this area). The callee is decoded R code, so this holds of its R semantics:
+its accesses of the area are these. -/
+def incomingUse (d : Decoded) (mode : Mode) : Except String (Option (Nat × List Nat)) := do
+  let ext (off : Int) (m : Nat) : Nat := if off + m > 16 then (off + m - 16).toNat else 0
+  let escapes := d.scopes.toList.filterMap fun (_, sc) => match sc.kind with
+    | .escape _ => some (sc.frameOffset.toInt, sc.frameOffset.toInt + sc.size)
+    | _ => none
+  let mut hi := d.scopes.foldl (fun h (_, sc) => match sc.kind with
+    | .end => h
+    | _ => max h (ext sc.frameOffset.toInt sc.size)) 0
+  let mut tails : List Nat := []
+  for h : k in [0:d.insns.size] do
+    let i := d.insns[k]
+    let e ← effects i (d.items[k]?.getD []) mode (lendsAt d k)
+    -- An inline instruction's operands too: its items show no address it takes (a `lea`).
+    let opnds := match i with
+      | .native op ops => e.opnds ++ (native op ops mode.pe (lendsAt d k)).opnds
+      | _ => e.opnds
+    for (off, acc) in opnds do
+      let o := off.toInt
+      match acc with
+      | .read m | .write m | .clobber m => hi := max hi (ext o m)
+      | .addr => if o ≥ 16 && !escapes.any (fun (lo, up) => lo ≤ o && o < up) then return none
+      | .opaque => return none
+    if let .native op ops := i then
+      if op.info.shape == .tailCall then
+        match ops.findSome? (fun | .func g => some g | _ => none) with
+        | some g => tails := g :: tails
+        | none => if mayHaveStackArgs mode.pe (callArgs ops) then return none
+  return some (hi, tails)
+
+/-- The incoming-area extents of an image's functions (`decoded`, `none` where not decoded):
+`incomingUse`'s, joined over tail calls (the least fixpoint: an execution entering function
+`f` accesses the area only within `f`'s own extent and those of the functions it reaches by
+tail calls); `none` where unbounded. -/
+def incomingExtents (decoded : Array (Option Decoded)) (mode : Mode) : Array (Option Nat) :=
+    Id.run do
+  let uses := decoded.map fun d? => d?.bind fun d => (incomingUse d mode).toOption.join
+  let mut ext : Array (Option Nat) := uses.map (·.map (·.1))
+  for _ in [0:decoded.size + 1] do
+    let next := uses.map fun u => u.bind fun (b, tails) =>
+      tails.foldl (fun acc g => acc.bind fun a => (ext[g]?.join).map (max a)) (some b)
+    if next == ext then return ext
+    ext := next
+  return uses.map fun _ => none
+
 /-! ### The checked decoding -/
 
 /-- `decodeReducedWith`, accepting the code only if `droppedNotDead` shows every dropped store
-dead: the decoding, or an error naming the first store it doesn't (its word offset). -/
+dead (given `facts`): the decoding, or an error naming the first store it doesn't (its word
+offset). -/
 def decodeChecked (code : ByteArray) (fields : Fields) (rodata : ByteArray)
     (callSites : Array CallSite) (dropped : Array DroppedStore) (scopes : Array Scope)
-    (mode : Mode) : Except String Decoded := do
+    (mode : Mode) (facts : Facts := {}) : Except String Decoded := do
   let d ← match decodeReducedWith code fields rodata callSites dropped scopes mode with
     | .ok d => pure d
     | .error e => throw s!"{e.what} at {e.at_}"
-  checkDropped d mode
+  checkDropped d mode facts
 
 where
   /-- `d` if every dropped store is shown dead. -/

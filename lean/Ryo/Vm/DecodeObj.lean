@@ -103,10 +103,49 @@ def decodeFunc (f : Ryo.Obj.FuncInputs) : Except String (Option (Except AsmError
   let some (code, fields, dropped, scopes) ← funcArgs f | return none
   return some (decodeReducedWith code fields f.rodata f.callSites dropped scopes f.mode)
 
-/-- Function `f`'s checked decoding (`Frame.decodeChecked`); `none` as for `funcArgs`. -/
-def decodeFuncChecked (f : Ryo.Obj.FuncInputs) : Except String (Option (Except String Decoded)) := do
+/-- Function `f`'s checked decoding (`Frame.decodeChecked`, given `facts`); `none` as for
+`funcArgs`. -/
+def decodeFuncChecked (f : Ryo.Obj.FuncInputs) (facts : Frame.Facts := {}) :
+    Except String (Option (Except String Decoded)) := do
   let some (code, fields, dropped, scopes) ← funcArgs f | return none
-  return some (Frame.decodeChecked code fields f.rodata f.callSites dropped scopes f.mode)
+  return some (Frame.decodeChecked code fields f.rodata f.callSites dropped scopes f.mode facts)
+
+/-- Each function of the image decoded (`decodeFunc`), `none` where it isn't. -/
+def decodeAll (o : Ryo.Obj.ImageObject) : Array (Option (Ryo.Obj.FuncInputs × Decoded)) :=
+  (Array.range o.funcs.size).map fun i => do
+    let fi ← (o.funcInputs i).toOption
+    let .ok (some (.ok d)) := decodeFunc fi | none
+    pure (fi, d)
+
+/-- What the image itself says of decoded function `d`'s calls of image functions
+(`call` of `Ref.func g`), for the dead-store check (`Frame.Facts`):
+
+- `stackArgs`: `g`'s `arg_size`, if `g`'s own code accesses its incoming area only within
+  it, tail calls included (`extents`, from `Frame.incomingExtents`). The callee's stack
+  arguments are that area: what the call reads of the caller's frame besides the argument
+  list is in its first `arg_size` bytes.
+- `sretSize`: `g`'s `ret_size` if `g` returns through an sret pointer (`ret_kind` =
+  `RET_SRET`). That `ret_size` is the size of the callee's return type is C1''s to check (no
+  image check reads it for an sret function).
+- `islandTemplate`: an island's template by its symbol slot's name, as `islands` maps it
+  (the C1' certificate's islands; none by default). -/
+def imageFacts (o : Ryo.Obj.ImageObject) (extents : Array (Option Nat)) (d : Decoded)
+    (islands : String → Option String := fun _ => none) : Frame.Facts :=
+  let callee (k : Nat) : Option (Nat × Ryo.Obj.FuncEntry) := match d.insns[k]? with
+    | some (.native op (_ :: .func g :: _)) =>
+      if op.info.mnemonic == "call" then (o.funcs[g]?).map (g, ·) else none
+    | _ => none
+  { stackArgs := fun k => do
+      let (g, c) ← callee k
+      let b ← extents[g]?.join
+      if b ≤ c.argSize then some c.argSize else none
+    sretSize := fun k => do
+      let (_, c) ← callee k
+      if c.retKind == retSret then some c.retSize else none
+    islandTemplate := fun k => match d.insns[k]? with
+      | some (.native op (.sym s :: _)) =>
+        if op.info.shape == .island then (o.slotName s).toOption.bind islands else none
+      | _ => none }
 
 /-- One function's lines, as `lean-decode-ref decode` prints them. -/
 def funcLines (d : Decoded) : Array String := Id.run do
@@ -144,27 +183,33 @@ def objLines (o : Ryo.Obj.ImageObject) : Array String := Id.run do
 
 /-- `ryo-lean dead <obj>`'s lines: per function with dropped stores that the checked decoding
 (`Frame.decodeChecked`) rejects, its verdict, the stores `Frame.droppedNotDead` doesn't show
-dead, and the function's text; then the totals. -/
-def deadLines (o : Ryo.Obj.ImageObject) : Array String := Id.run do
+dead, and the function's text; then the totals. The check is given the image's facts
+(`imageFacts`, with the island templates `islands` maps symbol names to) merged with
+`extra i` for function `i` (facts checked elsewhere, e.g. against the C1' certificate). -/
+def deadLines (o : Ryo.Obj.ImageObject) (extra : Nat → Frame.Facts := fun _ => {})
+    (islands : String → Option String := fun _ => none) : Array String := Id.run do
   let mut out : Array String := #[]
   let mut total := 0
   let mut bad := 0
+  let decoded := decodeAll o
+  let extents := Frame.incomingExtents (decoded.map (·.map (·.2))) o.image.mode
   for h : i in [0:o.funcs.size] do
     let f := o.funcs[i]
-    let .ok fi := o.funcInputs i | continue
-    let .ok (some (.ok d)) := decodeFunc fi | continue
+    let some (fi, d) := decoded[i]! | continue
     if d.dropped.isEmpty then continue
     total := total + d.dropped.size
-    let .ok (some r) := decodeFuncChecked fi | continue
+    let facts := (imageFacts o extents d islands).merge (extra i)
+    let .ok (some r) := decodeFuncChecked fi facts | continue
     let .error e := r | continue
     let wpos := d.wordPos
-    match Frame.droppedNotDead d fi.mode with
+    match Frame.droppedNotDead d fi.mode facts with
     | .ok ks =>
       bad := bad + ks.length
-      let why := ks.map fun k => match Frame.firstReader d fi.mode k with
+      let why := ks.map fun k => match Frame.firstReader d fi.mode k facts with
         | .ok (some (j, by_)) => s!"{wpos[k]!} read at {wpos[j]!}" ++ match by_ with
           | .operand => ""
           | .pointer => " through a pointer"
+          | .stack => " (stack arguments)"
           | .everything => " (reads everything)"
         | _ => s!"{wpos[k]!}"
       out := out.push s!"func {i} {o.funcName f.codeOff}: {e}: {", ".intercalate why}"

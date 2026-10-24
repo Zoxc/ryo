@@ -115,12 +115,16 @@ Ryo/Obj/                           object readers (docs/aot.md §C3): Elf (ELF64
                                    function's FDE and LSDA)
 Ryo/Vm/R/Syntax.lean               R (reduced.md §C0.1): instructions, side data, `Decoded`
                                    and its text (`reduced::Disasm` and the side data)
+Ryo/Vm/R/Islands.lean              the island contracts' operand roles (read, only written,
+                                   unused) by template and `ops` position (trusted)
 Ryo/Vm/Asm.lean                    asm/ pieces the decoder shares with the encoder: modes,
                                    return kinds, fixed sequences, inline sequences, the
                                    register cache
 Ryo/Vm/DecodeReduced.lean          `decodeReduced` (aot.md §C2), a port of Rust's
                                    `asm::decode_reduced`; its JSON inputs (`ryo-lean decode`)
 Ryo/Vm/Frame.lean                  frame accesses of R code, the dropped-store deadness check
+                                   (with facts about callees' stack-argument extents, sret
+                                   destinations and island templates)
 Ryo/Vm/OpSem/                      `opSem` (reduced.md Part D): Basic (operands, state, results),
                                    Footprint (per opcode, from the handler table), Arith
                                    (integer and float operations), Sem (per handler kind),
