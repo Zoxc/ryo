@@ -219,9 +219,20 @@ This gives a third backend, built from the same toolchain, to compare against.
   `bench/codegen/<program>.s` (relocated operands by name, jump tables as `.long` entries).
   Neither prints offsets: branch targets, jump tables and their entries name labels `L<n>`,
   numbered per function by position, with `L<n>:` before each target, so inserting an
-  instruction only changes the lines around it. The dumps are checked in, so `git diff` shows how a
-  backend change alters the generated code. It uses the backend in `dist/`: run `y build`
-  first.
+  instruction only changes the lines around it. It then runs each program with the JIT
+  compiling synchronously at its default threshold (`RYO_JIT_SYNC=1`, `RYO_JIT_OPT=ssa`, other
+  `RYO_JIT_*` settings cleared), so that which functions it compiles, in which order, doesn't
+  depend on timing, and with `RYO_JIT_DUMP` ([jit.md](jit.md#settings)), and writes, per
+  function the JIT compiled, by path as in the AOT dumps: its code to
+  `bench/codegen/<program>.jit.s` (printed as `<program>.s`; a function the SSA tier
+  doesn't handle is marked `(reencode)`, and the OSR code follows `; OSR entries`), and the
+  SSA tier's IR to `<program>.jit-ssa-pre.txt` (as construction leaves it: Braun et al.'s
+  construction with its copy and constant propagation and trivial-parameter removal) and
+  `<program>.jit-ssa-post.txt` (after the folds, as register allocation gets it). Their
+  references to functions, symbols, constants and data are named as in the function's AOT
+  code (`fn2`, `sym1`, `k0`; `<program>.txt` lists them), a call slot as `fn2.slot`. The dumps
+  are checked in, so `git diff` shows how a backend or JIT change alters the generated code.
+  It uses the backend and JIT in `dist/`: run `y build` first.
 - `lean`: checks that the Lean tables generated from the opcode lists, `asm::layout` and the
   handler table (`lean/Ryo/Vm/Generated/`) are up to date (the test
   `vm/bytecode/tests/lean_tables.rs`, which `y test` runs too), then runs `lake build` and

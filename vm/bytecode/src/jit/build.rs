@@ -239,7 +239,7 @@ impl<'a> B<'a> {
     }
 }
 
-/// The IR of `code` with frame `fr`.
+/// The IR of `code` with frame `fr`, before the folds ([`fold`]).
 pub fn build(code: &Code, fr: &Frame, frame_size: u32) -> Result<Func, Unsupported> {
     let nb = code.blocks.len();
     if fr.vars.len().saturating_mul(nb) > 8 << 20 {
@@ -645,7 +645,6 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32) -> Result<Func, Unsupport
     s.f.resolve_aliases();
     s.f.scratch = s.scratch;
     s.f.layout = layout;
-    fold(&mut s.f);
     Ok(s.f)
 }
 

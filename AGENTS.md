@@ -4,7 +4,7 @@
 - Don't reference an uncommitted file from a committed one.
 - Commit messages. Keep the title brief -- a line, not a paragraph -- and put what needs
   saying under it, ideally in one short paragraph
-- Codegen dumps. After every change that can affect the generated code, run
+- Codegen dumps. After every change that can affect the generated code (AOT or JIT), run
   `./y.sh build && ./y.sh bench codegen` and commit the regenerated `bench/codegen/`
   with that change, so its diff shows the effect.
 - Optimizing. When a change is meant to make generated code faster, compare it against the

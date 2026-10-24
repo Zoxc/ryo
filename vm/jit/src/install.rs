@@ -532,6 +532,9 @@ impl Jit {
                 code[field - base..][..4].copy_from_slice(&d.to_le_bytes());
             }
         }
+        if let Some(dir) = &self.dump {
+            self.dump_code(dir, func, header, nsyms, callees, &enc_code, &relocs, osr.as_ref().map(|o| (osr_at, o)), what);
+        }
         let pc = |eh: &mut Vec<u8>, at: usize, target: usize| -> Result<(), &'static str> {
             let d = i32::try_from((target as i64).wrapping_sub((eh_base + at) as i64)).map_err(|_| "out of reach")?;
             eh[at..at + 4].copy_from_slice(&d.to_le_bytes());
@@ -587,6 +590,66 @@ impl Jit {
             self.log(rec, what);
         }
         Ok(())
+    }
+
+    /// `RYO_JIT_DUMP`: the installed code of `func` as `dir/f<func>-<header>.code`, for `y
+    /// bench codegen` to disassemble: `tier`, `code <hex>` (the body, then from `osr <offset>`
+    /// the OSR code) and a `reloc <offset> <target>` per relocated field, the targets by
+    /// image index as the backend's `RYO_DUMP_CODE` names them (`fn3`, `sym2`, `k16`,
+    /// `ryo_h_AddOvf`), a call slot as `slot fn3`, and per call slot `slot <symbol> <function>`:
+    /// the IR calls it as a symbol past the image's.
+    #[allow(clippy::too_many_arguments)]
+    fn dump_code(
+        &self,
+        dir: &str,
+        func: u32,
+        header: usize,
+        nsyms: u32,
+        callees: &[u32],
+        code: &[u8],
+        relocs: &[asm::Reloc],
+        osr: Option<(usize, &asm::osr::OsrCode)>,
+        what: &str,
+    ) {
+        use core::fmt::Write as _;
+        let mut s = std::format!("tier {}\ncode ", if what.contains("ssa") { "ssa" } else { "reencode" });
+        let hex = |s: &mut std::string::String, bytes: &[u8]| {
+            for b in bytes {
+                let _ = write!(s, "{b:02x}");
+            }
+            s.push('\n');
+        };
+        hex(&mut s, code);
+        if let Some((at, o)) = osr {
+            let _ = write!(s, "osr {at} ");
+            hex(&mut s, &o.code);
+        }
+        for r in relocs {
+            let to = match r.to {
+                Ref::Handler(op) => std::format!("ryo_h_{op:?}"),
+                Ref::Probe => "ryo_probe_stack".into(),
+                Ref::Func(g) => g.to_string(),
+                Ref::Sym(Sym(s)) if s >= nsyms => std::format!("slot {}", Func(callees[(s - nsyms) as usize])),
+                Ref::Sym(x) => x.to_string(),
+                Ref::Site(x) => x.to_string(),
+                Ref::Const(x) => x.to_string(),
+                Ref::Data(x) => x.to_string(),
+                Ref::Ro(o) => std::format!("ro+{o}"),
+                Ref::Rec => "jit_record".into(),
+                Ref::RecCtr => "jit_record.ctr".into(),
+            };
+            let _ = writeln!(s, "reloc {} {to}", r.at);
+        }
+        // The call slots' symbols, which the IR names.
+        for (k, &g) in callees.iter().enumerate() {
+            let _ = writeln!(s, "slot {} {}", Sym(nsyms + k as u32), Func(g));
+        }
+        if let Some((at, o)) = osr {
+            for &p in &o.probes {
+                let _ = writeln!(s, "reloc {} ryo_probe_stack", at + p as usize);
+            }
+        }
+        let _ = std::fs::write(std::format!("{dir}/f{func}-{header:x}.code"), s);
     }
 
     /// A line on stderr about `rec` (`RYO_JIT_LOG`).

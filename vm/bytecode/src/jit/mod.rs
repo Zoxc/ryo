@@ -81,7 +81,10 @@ impl From<Unsupported> for Error {
 /// without counters) through the SSA tier.
 #[cfg(feature = "alloc")]
 pub fn compile(d: &crate::asm::Decoded, code_consts: &[u8], mode: crate::asm::Mode, opts: &Options) -> Result<Output, Error> {
-    let f = ir_of(d, mode)?;
+    let mut f = built(d, mode)?;
+    // The IR as construction leaves it, before the folds (`RYO_JIT_DUMP`).
+    let built_ir = opts.dump.then(|| alloc::format!("{f}"));
+    build::fold(&mut f);
     if opts.check {
         f.verify().map_err(|e| Error::Check(alloc::format!("IR: {e}")))?;
     }
@@ -98,6 +101,7 @@ pub fn compile(d: &crate::asm::Decoded, code_consts: &[u8], mode: crate::asm::Mo
         use core::fmt::Write;
         let mut s = alloc::string::String::new();
         let _ = writeln!(s, "; reduced code (frame {})\n{}", d.frame_size, crate::reduced::Disasm(&d.words));
+        let _ = writeln!(s, "; IR before the folds\n{}", built_ir.unwrap_or_default());
         let _ = writeln!(s, "; IR\n{f}");
         let _ = writeln!(s, "; locations ({} spill slots, saved {:?})", al.spills, al.saved);
         for (v, l) in al.loc.iter().enumerate() {
@@ -115,9 +119,17 @@ pub fn compile(d: &crate::asm::Decoded, code_consts: &[u8], mode: crate::asm::Mo
     Ok(out)
 }
 
-/// The SSA IR of the decoded function `d`.
+/// The SSA IR of the decoded function `d`, as register allocation gets it.
 #[cfg(feature = "alloc")]
 pub fn ir_of(d: &crate::asm::Decoded, mode: crate::asm::Mode) -> Result<ir::Func, Unsupported> {
+    let mut f = built(d, mode)?;
+    build::fold(&mut f);
+    Ok(f)
+}
+
+/// The SSA IR of the decoded function `d` as construction leaves it, before the folds.
+#[cfg(feature = "alloc")]
+fn built(d: &crate::asm::Decoded, mode: crate::asm::Mode) -> Result<ir::Func, Unsupported> {
     if mode.pe || mode.counters || !mode.valid() {
         return Err(Unsupported("mode"));
     }

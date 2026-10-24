@@ -492,7 +492,10 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
 
     /// The `RYO_DUMP_CODE` text, for `y bench codegen` to disassemble: each VM function, by
     /// path, as `fn <path>`, then `code <hex>` and one `reloc <offset> <target>` per relocated
-    /// field, the targets named as the `RYO_DUMP` operands are.
+    /// field, the targets named as the `RYO_DUMP` operands are. The merge appends the image's
+    /// names (`build_image`): `image <index> <path>` per function, and `ref <index> <global>
+    /// <local>` per reference of its code, the image's name (`fn12`, `k96`) then the
+    /// function's (`fn0`, `k1`), with which the JIT's code (`RYO_JIT_DUMP`) is printed.
     fn dump_code(&self) -> String {
         use std::fmt::Write;
         let mut fns: Vec<(String, &VmFn<'tcx>)> = self.vm.iter().map(|v| (path(v.instance), v)).collect();
@@ -760,10 +763,14 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             let text = self.dump(mode);
             std::fs::write(&path, text).unwrap_or_else(|e| tcx.dcx().fatal(format!("ryo: RYO_DUMP: {e}")));
         }
-        if let Some(path) = std::env::var_os("RYO_DUMP_CODE") {
+        let dump_code = std::env::var_os("RYO_DUMP_CODE");
+        if let Some(path) = &dump_code {
             let text = self.dump_code();
-            std::fs::write(&path, text).unwrap_or_else(|e| tcx.dcx().fatal(format!("ryo: RYO_DUMP_CODE: {e}")));
+            std::fs::write(path, text).unwrap_or_else(|e| tcx.dcx().fatal(format!("ryo: RYO_DUMP_CODE: {e}")));
         }
+        // `RYO_DUMP_CODE`'s names of the image's functions and references, for the JIT's code
+        // (`dump_code`).
+        let mut names = String::new();
         let merge_t = tcx.prof.generic_activity("ryo_merge");
         for (i, v) in self.vm.iter_mut().enumerate() {
             let l = &mut v.lowered;
@@ -810,6 +817,21 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                 })
                 .collect();
             let mut code = std::mem::take(&mut l.code);
+            if dump_code.is_some() {
+                use std::fmt::Write;
+                writeln!(names, "image {i} {}", path(v.instance)).unwrap();
+                let v = |i: u32| vals[i as usize];
+                for r in &code.relocs {
+                    let _ = match r.to {
+                        Ref::Func(Func(k)) => writeln!(names, "ref {i} {} {}", Func(v(k)), Func(k)),
+                        Ref::Sym(Sym(k)) => writeln!(names, "ref {i} {} {}", Sym(v(k)), Sym(k)),
+                        Ref::Site(Site(k)) => writeln!(names, "ref {i} {} {}", Site(v(k)), Site(k)),
+                        Ref::Const(Const(k)) => writeln!(names, "ref {i} {} {}", Const(v(k)), Const(k)),
+                        Ref::Data(Data(k)) => writeln!(names, "ref {i} {} {}", Data(v(k)), Data(k)),
+                        _ => Ok(()),
+                    };
+                }
+            }
             for r in &mut code.relocs {
                 let v = |i: u32| vals[i as usize];
                 r.to = match r.to {
@@ -840,7 +862,6 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                 };
                 FuncSymbol { visibility, weak }
             });
-            let _ = i;
             w.add_function(FunctionDef {
                 name: tcx.symbol_name(v.instance).name.to_owned(),
                 code: Vec::new(),
@@ -854,6 +875,11 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             encoded.push(code);
         }
         drop(merge_t);
+        if let Some(path) = &dump_code {
+            use std::io::Write;
+            let res = std::fs::OpenOptions::new().append(true).open(path).and_then(|mut f| f.write_all(names.as_bytes()));
+            res.unwrap_or_else(|e| tcx.dcx().fatal(format!("ryo: RYO_DUMP_CODE: {e}")));
+        }
         let _t = tcx.prof.generic_activity("ryo_finish_image");
         for (i, _) in handlers.iter().enumerate().filter(|h| *h.1) {
             pool.roots.text(&rt_symbol(tcx, &objfile::handler_name(ryo_bytecode::full::ALL_OPCODES[i])));
