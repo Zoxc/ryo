@@ -135,7 +135,9 @@ form (as `native_decide` would), not only the kernel. Used in the inline-sequenc
 `sound_mul`, `sound_mulImm`, `sound_shiftImm`, `sound_imm`, `sound_ptrIndex`, `sound_cmp`,
 `sound_cmpImm`, `sound_brCmp`, `sound_brCmpImm`, `fpAddr_sub` and `write2_out`
 (`#print axioms Ryo.Proofs.Inline.inline_sound` lists them; the kernel view of §0 reports
-them as `axiom`s). Discharge: each goal is a fixed-width bit-vector identity, which could be
+them as `axiom`s). `inlineOps_shape` (library `RyoProofs`, `RyoProofs/InlineOps.lean`) uses
+neither `bv_decide` nor `native_decide`: it is `decide +kernel` and `rfl`, and depends only
+on `propext`, `Classical.choice` and `Quot.sound`. Discharge: each goal is a fixed-width bit-vector identity, which could be
 reproved by kernel-checked lemmas (`BitVec` rewriting, `omega` on `toNat`) where the cost is
 acceptable.
 

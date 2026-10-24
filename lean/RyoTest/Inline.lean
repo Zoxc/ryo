@@ -2,8 +2,8 @@
 RyoTest.Inline — the link between `Asm.inlineOps` and the inline-sequence theorems
 (`Ryo/Proofs/Inline.lean`): every opcode with an inline form has its class's shape
 (`shapeOk`: handler kind and parameters, operands), so the theorems, stated for every opcode
-of that shape, cover it. Not proved: `inlineOps` is computed with `String.splitOn`, which the
-kernel doesn't reduce.
+of that shape, cover it. Proved as `inlineOps_shape` in the slow library `RyoProofs`
+(`RyoProofs/InlineOps.lean`); this test checks it in the default `lake test`.
 -/
 import RyoTest.Harness
 import Ryo.Proofs.Inline.Shape

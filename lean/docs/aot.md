@@ -214,9 +214,14 @@ follows the decoder's structure:
   (memory through a pointer) are `sound_load`/`sound_store` (`Inline/Mem.lean`), given the
   memory part of the relation (`MemRel`: live allocations' bytes at their addresses), private
   frame bytes outside every allocation (`FrameApart`) and, for `store`, allocations disjoint in
-  the address space (`MemDisjoint`). Left: writes into escaped objects (`writeEscaped`), and the link
-  `(op, c) ∈ inlineOps → shapeOk op c`, tested (`RyoTest/Inline.lean`) but not proved
-  (`classOf` uses `String.splitOn`, which the kernel doesn't reduce). No mismatch between the
+  the address space (`MemDisjoint`). The link to the opcodes,
+  `(op, c) ∈ inlineOps → shapeOk op c`, is `inlineOps_shape` (`RyoProofs/InlineOps.lean`, in
+  its own library `RyoProofs`, outside the default build: about 3.5 minutes): `decide +kernel`
+  over the generated mnemonics as character lists (`Generated/Mnemonics.lean`), with
+  `String.splitOn` replaced by a fuelled split proved equal to it; it covers all 219 inline
+  opcodes, the native `ovf`, `mulOvf` and `ext` ones included, and uses no `bv_decide` or
+  `native_decide`. Left: writes into escaped objects (`writeEscaped`), and the sequences of
+  `ovf`, `mulOvf` and `ext`. No mismatch between the
   sequences and `opSem` was found. `bv_decide`'s proofs are axioms checked by compiled code
   ([assumptions.md](assumptions.md) §1.4).
 - **Register cache**: invariant `CacheInv c regs mem fp`: for each `(r, slot, width) ∈ c`,

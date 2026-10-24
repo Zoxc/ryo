@@ -3,9 +3,9 @@ Ryo.Proofs.Inline.Shape — the opcodes of each inline class, by their handler a
 
 `shapeOk op c`: `op`'s handler kind and parameters and its operand list are the ones the
 proofs of class `c` take (`classHandler`, `classOperands`). The proofs are over every opcode
-of that shape; that each opcode of `Asm.inlineOps` has its class's shape is a fact about the
-generated tables, checked by `RyoTest/Inline.lean` (proving it would mean evaluating
-`classOf`, whose `String.splitOn` is well-founded recursion the kernel doesn't reduce).
+of that shape; that each opcode of `Asm.inlineOps` has its class's shape is `inlineOps_shape`
+(`RyoProofs/InlineOps.lean`, outside the default build since it takes minutes), and is
+checked quickly by `RyoTest/Inline.lean`.
 -/
 import Ryo.Vm.Asm
 import Ryo.Vm.OpSem

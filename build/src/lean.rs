@@ -1,6 +1,7 @@
 //! `y lean`: the Lean verification project in `lean/` (lean/README.md). Checks that the
 //! generated tables (`lean/Ryo/Vm/Generated`) match the Rust ones, then runs `lake build` and
-//! `lake test`. `y lean gen` regenerates the tables. Both go through the generating tests
+//! `lake test`; `y lean --proofs` also builds the slow proofs (`lake build RyoProofs`).
+//! `y lean gen` regenerates the tables. Both go through the generating tests
 //! `vm/bytecode/tests/lean_*.rs` (the tables, the x86, decoder, view and unwind-table test vectors, the JIT's effect table), which `y test` also runs.
 
 use std::path::PathBuf;
@@ -46,11 +47,15 @@ pub fn generate() -> Result<(), String> {
     tables(true)
 }
 
-/// `y lean`.
-pub fn check() -> Result<(), String> {
+/// `y lean`, and with `proofs` `y lean --proofs`.
+pub fn check(proofs: bool) -> Result<(), String> {
     tables(false)?;
     let lake = lake();
     let dir = root().join("lean");
     run(cmd(&lake).current_dir(&dir).arg("build"))?;
-    run(cmd(&lake).current_dir(&dir).arg("test"))
+    run(cmd(&lake).current_dir(&dir).arg("test"))?;
+    if proofs {
+        run(cmd(&lake).current_dir(&dir).args(["build", "RyoProofs"]))?;
+    }
+    Ok(())
 }

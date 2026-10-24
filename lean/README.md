@@ -22,6 +22,8 @@ MiniRust (with D1–D36 checked against the code) in
 
 ```
 lake build                         # library Ryo + exe ryo-lean (Lean 4.35.0, core + Std only)
+lake build RyoProofs               # the proofs too slow for the default build (~3.5 min):
+                                   # inlineOps_shape (RyoProofs/InlineOps.lean)
 lake test                          # runs the ported MiniRust tests and divergence tests
 lake exe ryotest <substring>       # only the tests whose name contains <substring>
 lake exe ryo-lean example factorial fact.json
@@ -68,9 +70,10 @@ cargo run --release --manifest-path harness/Cargo.toml -- [--cases N] [--seed S]
 `.lake/` is ignored (`.gitignore`).
 
 From the repository root, `./y.sh lean` checks that the generated tables are up to date, then
-runs `lake build` and `lake test` here; `./y.sh lean gen` regenerates the tables.
+runs `lake build` and `lake test` here; `./y.sh lean --proofs` also runs `lake build
+RyoProofs`; `./y.sh lean gen` regenerates the tables.
 `Ryo/Vm/Generated/*.lean` (opcodes, shapes, operand kinds, the reduced set and its maps to the
-full one, `asm::layout`, the handler kinds) are generated from the Rust source by the test
+full one, `asm::layout`, the handler kinds, the mnemonics as character lists) are generated from the Rust source by the test
 `vm/bytecode/tests/lean_tables.rs`, pinned to `FORMAT_VERSION`; `./y.sh test` runs it, so stale
 tables fail it. Don't edit them by hand.
 
@@ -105,7 +108,8 @@ Ryo/Spec/Theorems/                 Bytes (byte-list, slice, pointer-byte lemmas)
 Ryo/Vm/Generated/                  generated (`./y.sh lean gen`): Types, Full and Reduced
                                    (opcode lists, `Opcode.<name>` constants, full <-> reduced),
                                    Asm (`asm::layout`, `has_handler`, `has_inline`), Handlers
-                                   (handlers.rs: kind, parameters, return type)
+                                   (handlers.rs: kind, parameters, return type), Mnemonics
+                                   (the full mnemonics as character lists, for RyoProofs)
 Ryo/Obj/                           object readers (docs/aot.md §C3): Elf (ELF64 relocatable
                                    objects: sections, symbols, RELA), Reloc (the decoder's
                                    inputs: Mode, Ref, Reloc, CallSite, Scope, DroppedStore,
@@ -136,6 +140,9 @@ Ryo/Vm/OpSem/                      `opSem` (reduced.md Part D): Basic (operands,
                                    Lemmas (frame accesses only through the footprint), Json
                                    (`ryo-lean opsem`)
 Ryo/Proofs/Inline.lean, Inline/    inline sequences against `opSem` (aot.md §C2): Rel, OpSem, Exec, Shape, Basic, Move/Arith/Cmp
+RyoProofs.lean, RyoProofs/         library RyoProofs, outside the default build (slow):
+                                   InlineOps (`inlineOps_shape`: every inline opcode is of its
+                                   class's shape)
 Ryo/Vm/DecodeObj.lean              `ryo-lean decode <obj>`: an image object's functions decoded
                                    (Ryo/Obj's inputs, linked at made-up addresses), printed as
                                    scripts/lean-decode-ref prints Rust's

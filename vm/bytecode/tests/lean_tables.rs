@@ -1,7 +1,8 @@
 //! The Lean tables (`lean/Ryo/Vm/Generated/*.lean`, lean/docs/plan.md §1.3): the opcode
-//! lists, the full <-> reduced maps, `asm::layout` and the handler table, generated from this
-//! crate and `ryo_rt`'s `handlers.rs`. The test fails if the checked-in files differ from
-//! what it generates; with `RYO_LEAN_GEN=1` (`./y.sh lean gen`) it rewrites them.
+//! lists, the full <-> reduced maps, `asm::layout`, the handler table and the mnemonics as
+//! character lists, generated from this crate and `ryo_rt`'s `handlers.rs`. The test fails if
+//! the checked-in files differ from what it generates; with `RYO_LEAN_GEN=1` (`./y.sh lean
+//! gen`) it rewrites them.
 
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
@@ -654,6 +655,39 @@ fn split_params(p: &str) -> Vec<String> {
     out
 }
 
+/// The full mnemonics as character lists, which the kernel reduces faster than strings
+/// (for proofs that evaluate `Asm.classOf` on every opcode; not imported by `Ryo`).
+fn mnemonics_file() -> String {
+    let mut s = String::from(HEADER);
+    s.push_str(
+        "
+/-!
+# The full opcodes' mnemonics as character lists
+
+`mnemonicChars` is `Full.all.map (·.mnemonic.toList)`, written out.
+-/
+
+namespace Ryo.Vm.Full
+
+set_option maxRecDepth 100000 in
+def mnemonicChars : List (List Char) := [
+",
+    );
+    for (i, info) in full::OP_INFO.iter().enumerate() {
+        let chars: Vec<String> = info
+            .mnemonic
+            .chars()
+            .map(|c| {
+                assert!(c.is_ascii_alphanumeric() || c == '.' || c == '_', "{c:?} in {}", info.mnemonic);
+                format!("'{c}'")
+            })
+            .collect();
+        writeln!(s, "  [{}]{}", chars.join(","), if i + 1 < full::OP_INFO.len() { "," } else { "" }).unwrap();
+    }
+    s.push_str("]\n\nend Ryo.Vm.Full\n");
+    s
+}
+
 fn files() -> Vec<(&'static str, String)> {
     vec![
         ("Types.lean", types()),
@@ -661,6 +695,7 @@ fn files() -> Vec<(&'static str, String)> {
         ("Reduced.lean", reduced_file()),
         ("Asm.lean", asm_file()),
         ("Handlers.lean", handlers_file()),
+        ("Mnemonics.lean", mnemonics_file()),
     ]
 }
 

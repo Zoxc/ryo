@@ -285,9 +285,8 @@ def aluName : String → Option Alu
   | "add" => some .add | "sub" => some .sub | "and" => some .and | "or" => some .or
   | "xor" => some .xor | _ => none
 
-/-- `inline::class`, from the opcode's mnemonic. -/
-def classOfMnemonic (mn : String) : Option Class :=
-  match mn.splitOn "." with
+/-- `inline::class`, from the opcode's mnemonic split at its dots. -/
+def classOfParts : List String → Option Class
   | ["add", "ovf", s, w] => .ovf .add (s == "s") <$> widthName w
   | ["sub", "ovf", s, w] => .ovf .sub (s == "s") <$> widthName w
   | ["mul", "ovf", s, w] => .mulOvf (s == "s") <$> widthName w
@@ -342,6 +341,9 @@ def classOfMnemonic (mn : String) : Option Class :=
     .cmp c <$> widthName w
   | [o, w] => do .bin (← aluName o) <$> widthName w
   | _ => none
+
+/-- `inline::class`, from the opcode's mnemonic. -/
+def classOfMnemonic (mn : String) : Option Class := classOfParts (mn.splitOn ".")
 
 def classOf (op : Full.Opcode) : Option Class := classOfMnemonic op.mnemonic
 

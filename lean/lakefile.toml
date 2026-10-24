@@ -10,6 +10,10 @@ relaxedAutoImplicit = false
 [[lean_lib]]
 name = "Ryo"
 
+# The proofs too slow for the default build: `lake build RyoProofs` (README.md).
+[[lean_lib]]
+name = "RyoProofs"
+
 [[lean_lib]]
 name = "RyoTest"
 globs = ["RyoTest", "RyoTest.+"]
