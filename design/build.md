@@ -27,7 +27,7 @@ modeled on cg_clif's `build_system/`.
   run through `./y.sh <cmd>` (or `y.cmd`/`y.ps1` on Windows), which is
   `cargo run --manifest-path build/Cargo.toml -- <cmd>`.
 - Commands: `build [--sysroot llvm|ryo] [--target T]...`, `build-clif`, `test [--clif | --cross T]`, `bench [--runs N]`, `bench codegen`,
-  `bench crates [...]`, `clean`.
+  `bench crates [...]`, `lean [gen]`, `clean`.
 - It sets `RUSTC_BOOTSTRAP=1` on everything it spawns.
 
 ### `build`
@@ -215,6 +215,11 @@ This gives a third backend, built from the same toolchain, to compare against.
   instruction only changes the lines around it. The dumps are checked in, so `git diff` shows how a
   backend change alters the generated code. It uses the backend in `dist/`: run `y build`
   first.
+- `lean`: checks that the Lean tables generated from the opcode lists, `asm::layout` and the
+  handler table (`lean/Ryo/Vm/Generated/`) are up to date (the test
+  `vm/bytecode/tests/lean_tables.rs`, which `y test` runs too), then runs `lake build` and
+  `lake test` in `lean/` (`lake` from `PATH` or `~/.elan/bin`). `lean gen` regenerates the
+  tables.
 - `y test` also runs `vm/`'s cargo tests (`cargo test --workspace` in `vm/`): the encoder
   against the decoder, the image writer and reader, every handler against a reference
   model, the handlers' codegen, and hand-assembled functions called as native functions

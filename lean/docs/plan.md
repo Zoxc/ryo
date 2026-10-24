@@ -155,8 +155,9 @@ plan validates offline: the guarantee covers every compilation the test corpus p
 
 - The checkers consume ryo's dumps and image objects, and the generated tables come from
   `ryo_bytecode`, so the Lean project must change with the Rust code in the same commits.
-- `y` can drive it later (`y lean build`, `y test` running the validators over the corpus
-  objects and dumps).
+- `y lean` checks the generated tables and runs `lake build` and `lake test`, and `y test`
+  fails on stale tables (M0). Later `y test` can run the validators over the corpus objects
+  and dumps.
 - MiniRust is not vendored. It is a reference
   ([github.com/minirust/minirust](https://github.com/minirust/minirust), pinned at commit
   `d821c6e3`), hand-ported module by module (§A.3). Each ported definition cites its MiniRust
@@ -212,7 +213,7 @@ Spec transcription parallelizes well across agents; the simulation proofs domina
 
 | # | Milestone | Delivers | Effort | Risk |
 |---|---|---|---|---|
-| M0 | Lake project (**done**), CI hook (`y lean`), table generator (Rust → `Ryo/Vm/Generated`) | build skeleton | 0.25 left | low |
+| M0 | Lake project, CI hook (`y lean`), table generator (Rust → `Ryo/Vm/Generated`, checked by `y test`). **Done** | build skeleton | — | low |
 | **M1** | **MIR spec (part A)** + interpreter + ported tests + representation theorems. **Done** (`lean/`, 205 tests). The representation theorems are proved (no hypotheses: vtables are read-only by construction); the semantics is stated against a relational environment (`ExtSpec`). Left: intrinsics outside D20, external/intrinsic tail calls, `f16`/`f128` tests | executable, citable semantics of what ryo compiles, with every divergence from MiniRust written down | 0.5–1 left | low |
 | M1b | Backend dumper `RYO_DUMP_LEAN` (MIR + layouts + resolved instances + const and vtable allocations + certificate, JSON) and differential runs: Lean interpreter vs native/ryo on corpus functions and programs. **Done except the certificate**: `backend/src/rustc_api/dump_lean.rs`, `scripts/lean-diff.py` over `tests/lean/` (20 programs agree three ways at `-O0` and `-O3`); the runs found spec mistakes R24–R31 ([divergences.md](divergences.md)), no lowering bugs. Left: the certificate (with C1'), std paths without MIR (`_print`, panics) | finds spec mistakes and lowering bugs before any proof; the dump C1' and the pool check need | 1 | low–medium (dump size, std paths needing more shims) |
 | **M2** | x86 `Item` encode/decode in Lean, ELF/image/LSDA/`.eh_frame` readers, `decodeReduced` from the object (no proofs yet), co-simulation harness | independent second decoder, diffed against the Rust one over all corpus objects; x86 model validated against hardware | 1.5–2 | low |

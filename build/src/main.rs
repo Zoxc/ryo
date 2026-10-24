@@ -6,6 +6,7 @@ mod crates;
 mod cross;
 mod dist;
 mod jit;
+mod lean;
 mod sysroot;
 mod test;
 mod utils;
@@ -33,6 +34,8 @@ commands:
                                x86_64-pc-windows-msvc; needs `build --target T` first
   bench [--runs N]             compare LLVM -O0/-O3, Cranelift and ryo: compile and run time
   bench codegen                dump ryo's code for each bench program to bench/codegen/
+  lean [gen]                   check the generated Lean tables, then `lake build` and
+                               `lake test` in lean/; `gen` regenerates the tables
 {CRATES}
   clean                        remove dist/ and target/
 ";
@@ -67,6 +70,10 @@ enum Cmd {
     },
     BenchCodegen,
     BenchCrates(crates::Options),
+    /// `lean`, or `lean gen` (`regen`).
+    Lean {
+        regen: bool,
+    },
     Clean,
     Help,
 }
@@ -123,6 +130,11 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
             },
             [arg, ..] => Err(format!("unexpected argument `{arg}`")),
         },
+        "lean" => match rest.as_slice() {
+            [] => Ok(Cmd::Lean { regen: false }),
+            ["gen"] => Ok(Cmd::Lean { regen: true }),
+            [arg, ..] => Err(format!("unexpected argument `{arg}`")),
+        },
         "clean" => no_args(Cmd::Clean),
         "help" | "-h" | "--help" => Ok(Cmd::Help),
         other => Err(format!("unknown command `{other}`")),
@@ -158,6 +170,8 @@ fn main() -> ExitCode {
         Cmd::Bench { runs } => bench::run(runs),
         Cmd::BenchCodegen => bench::codegen(),
         Cmd::BenchCrates(opts) => crates::run(opts),
+        Cmd::Lean { regen: false } => lean::check(),
+        Cmd::Lean { regen: true } => lean::generate(),
         Cmd::Clean => dist::clean(),
     };
     match result {
@@ -201,6 +215,9 @@ mod tests {
         assert_eq!(parse(&["bench", "codegen"]), Ok(Cmd::BenchCodegen));
         assert!(matches!(parse(&["bench", "crates", "--quick"]), Ok(Cmd::BenchCrates(o)) if o.run_samples == 1));
         assert!(parse(&["bench", "crates", "--frob"]).is_err());
+        assert_eq!(parse(&["lean"]), Ok(Cmd::Lean { regen: false }));
+        assert_eq!(parse(&["lean", "gen"]), Ok(Cmd::Lean { regen: true }));
+        assert!(parse(&["lean", "x"]).is_err());
         assert_eq!(parse(&["clean"]), Ok(Cmd::Clean));
         assert!(parse(&["clean", "x"]).is_err());
         assert!(parse(&["frobnicate"]).is_err());

@@ -33,12 +33,19 @@ lake exe ryo-lean run p.json --stdout  # as the program: fd 1/2 bytes to stdout/
 
 `.lake/` is ignored (`.gitignore`).
 
+From the repository root, `./y.sh lean` checks that the generated tables are up to date, then
+runs `lake build` and `lake test` here; `./y.sh lean gen` regenerates the tables.
+`Ryo/Vm/Generated/*.lean` (opcodes, shapes, operand kinds, the reduced set and its maps to the
+full one, `asm::layout`, the handler kinds) are generated from the Rust source by the test
+`vm/bytecode/tests/lean_tables.rs`, pinned to `FORMAT_VERSION`; `./y.sh test` runs it, so stale
+tables fail it. Don't edit them by hand.
+
 ## Layout
 
 ```
 lakefile.toml, lean-toolchain      Lean 4.35.0, no dependencies
 Main.lean                          exe `ryo-lean`: `run <program.json>`, `example <name>`
-Ryo.lean                           imports the spec and the examples
+Ryo.lean                           imports the spec, the generated tables and the examples
 Ryo/Spec.lean                      imports every spec module
 Ryo/Spec/Prelude/                  Basic (Size, Align, IntType, FloatTy), Target (x86-64),
                                    Outcome, Nondet (Choice, MonadChoice)
@@ -55,6 +62,10 @@ Ryo/Spec/Mir/                      Syntax (MIR AST), WellFormed (static checks),
 Ryo/Spec/Theorems/                 Bytes (byte-list, slice, pointer-byte lemmas), Representation
                                    (encode_length, decode_encode), Monotone (decode_mono,
                                    encode_decode_le), Memory (store_load)
+Ryo/Vm/Generated/                  generated (`./y.sh lean gen`): Types, Full and Reduced
+                                   (opcode lists, `Opcode.<name>` constants, full <-> reduced),
+                                   Asm (`asm::layout`, `has_handler`, `has_inline`), Handlers
+                                   (handlers.rs: kind, parameters, return type)
 Ryo/Examples.lean                  example programs for `ryo-lean example`
 RyoTest/*.lean, RyoTest.lean       tests; RyoTestMain.lean is the test driver (exe `ryotest`)
 docs/                              the detailed plan
