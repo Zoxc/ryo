@@ -424,6 +424,26 @@ def evalIntrinsic (name : String) (args : List (Value × Ty)) (destTy : Ty) : Se
   | "atomic_max", [a, (v, vt)] | "atomic_min", [a, (v, vt)] | "atomic_umax", [a, (v, vt)]
   | "atomic_umin", [a, (v, vt)] => do
     let (p, _) ← ptrArg a
+    -- R10: on a raw pointer `T` (the return type), the operand is a `usize`, the address
+    -- changes and the pointer in memory keeps its provenance (`AtomicPtr::fetch_byte_add`,
+    -- `fetch_or`, …).
+    if let .ptr (.raw ..) _ := destTy then
+      let al ← atomicAlign destTy
+      let old ← liftE (typedLoad (← getMem) p.thin destTy al)
+      let .ptr q := old | throwIllFormed "atomic RMW: expected a pointer in memory"
+      let (y, _) ← intArg (v, vt)
+      let x := BitVec.ofNat 64 q.thin.addr
+      let y := BitVec.ofInt 64 y
+      let r ← match name with
+        | "atomic_xadd" => pure (x + y)
+        | "atomic_xsub" => pure (x - y)
+        | "atomic_and" => pure (x &&& y)
+        | "atomic_nand" => pure (~~~(x &&& y))
+        | "atomic_or" => pure (x ||| y)
+        | "atomic_xor" => pure (x ^^^ y)
+        | _ => throwIllFormed s!"{name} on a pointer"
+      memUpdate (typedStore · p.thin (.ptr { q with thin := { q.thin with addr := r.toNat } }) destTy al)
+      return old
     let al ← atomicAlign vt
     let old ← liftE (typedLoad (← getMem) p.thin vt al)
     let (x, t) ← intArg (old, vt)

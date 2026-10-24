@@ -38,7 +38,7 @@ documented semantics where codegen is more lenient).
 | R7 | `__rust_realloc` never returns the old address | `callExternal` | narrowing, **fixed** |
 | R8 | `write`'s bytes are not in the trace | `callExternal` | bug (trace too coarse), **fixed** |
 | R9 | Heap allocation never fails | `heapAlloc` | simplification |
-| R10 | Atomic RMW on pointers unsupported; `cxchgweak` never fails spuriously | `evalIntrinsic` atomics | gap / narrowing (harmless on x86) |
+| R10 | `cxchgweak` never fails spuriously | `evalIntrinsic` atomics | narrowing (harmless on x86) |
 | R11 | Unwinding out of, or returning from, the start function | `contUnwind`, `doReturn` | simplification |
 | R12 | Stack overflow by frame count | `pushFrame`, `runN` | simplification |
 | R13 | Intrinsics and externals outside the modeled set | `evalIntrinsic`, `callExternal` | gap |
@@ -161,10 +161,10 @@ differential runs that exhaust memory will differ. Zero-size and non-power-of-tw
 requests are UB, as `GlobalAlloc` says.
 
 **R10. Atomics.** D17 makes atomics sequential, with orderings ignored and fences no-ops.
-That is exact for single-threaded programs. Two details: (a) the RMW intrinsics
-(`atomic_xadd`, …, Mir/Intrinsics.lean:274) require an integer type (`intArg`). On pointer
-types (`AtomicPtr::fetch_ptr_add`/`fetch_byte_add`/`fetch_or` on `*mut T`) they stop
-`illFormed` (gap). (b) `atomic_cxchgweak` never fails spuriously. Rust allows spurious failure,
+That is exact for single-threaded programs. The RMW intrinsics on a raw pointer type
+(`AtomicPtr::fetch_ptr_add`/`fetch_byte_add`/`fetch_or` on `*mut T`) take a `usize` and
+keep the provenance of the pointer in memory, as the intrinsics' docs say. One detail:
+`atomic_cxchgweak` never fails spuriously. Rust allows spurious failure,
 but x86's `lock cmpxchg` never fails spuriously, so this matches every target ryo has
 (narrowing that is harmless on x86-64).
 
