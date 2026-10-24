@@ -22,10 +22,14 @@ The reduced set (`reduced_ops.rs`, generated into Lean): native ops, and `handle
 t` where `args` are argument-register values: `Fp`, `Exception`, `Imm`, or the address of a
 `Const`/`Data`/`Sym`/`Site`/`Ro` (`reduced.rs`). Targets are instruction indices. Each
 function comes with its side data, read from the image object by the Lean decoder: the scope
-table (escapes and storage ends, [vm.md](../../design/vm.md#escapes-and-storage-ends)), the
-cleanup entries and LSDA, and the island operand extents (a `Lend` scope per island operand
-object, metadata the JIT also needs; until it exists, an island operand's extent is the
-width the island contract gives it).
+table (escapes and storage ends,
+[vm.md](../../design/vm.md#escapes-storage-ends-and-island-operands)), the cleanup entries
+and LSDA, and the island operand extents: a `Lend` scope per island operand of a nonzero
+size, before the island, recorded by the lowering with the size the template accesses there
+(metadata the JIT also needs). The island contract's operand footprint is that extent (C1'
+checks it against the template, [aot.md](aot.md) §C1 "Islands"); the dead-store check
+relies on it (aot.md §C2). An operand without a `Lend` is zero-sized: `Asm::lend` skips
+only those (`asm/encode.rs`), and C1' checks that too.
 
 ### C0.2 Frames are objects, at a layout
 

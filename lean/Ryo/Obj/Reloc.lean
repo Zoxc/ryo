@@ -119,9 +119,11 @@ structure CallSite where
 inductive ScopeKind where
   | escape (align : Nat)
   | «end»
+  | lend
   deriving Repr, DecidableEq, Inhabited
 
-/-- `asm::Scope`: where a frame object escapes or its storage ends. -/
+/-- `asm::Scope`: where a frame object escapes, its storage ends, or an island takes it as an
+operand. -/
 structure Scope where
   codeOffset : Nat
   frameOffset : Int

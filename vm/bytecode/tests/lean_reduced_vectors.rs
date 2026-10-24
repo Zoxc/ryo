@@ -1,10 +1,10 @@
 //! Test vectors for the Lean reduced decoder (`lean/Ryo/Vm/DecodeReduced.lean`): functions
 //! encoded with `asm::encode` and `asm::Asm` in every valid mode (the generators of `asm.rs`:
 //! every opcode, long branches and loops, the register cache, dropped stores, inline operand
-//! forms, `mov.w128`, a dead hint before a loop head, SSE at `rsp`, and shuffled frames
-//! re-encoded with `encode_reduced_at`), each with its decoder inputs and the text of what
-//! `asm::decode_reduced` makes of it; and mutations of them (bytes changed, the code cut
-//! short, call sites and dropped stores changed) with Rust's verdict. Written as
+//! forms, `mov.w128`, a dead hint before a loop head, SSE at `rsp`, island operand scopes, and
+//! shuffled frames re-encoded with `encode_reduced_at`), each with its decoder inputs and the
+//! text of what `asm::decode_reduced` makes of it; and mutations of them (bytes changed, the
+//! code cut short, call sites and dropped stores changed) with Rust's verdict. Written as
 //! `lean/RyoTest/DecodeReducedVectors.lean`, which the Lean tests check `decodeReduced` against,
 //! text for text. With `RYO_LEAN_GEN=1` the test rewrites that file, else it checks it is up to
 //! date.
@@ -328,7 +328,7 @@ fn inputs_json(i: &Inputs) -> String {
             let a = match s.kind {
                 ScopeKind::Escape { align } => align.to_string(),
                 ScopeKind::End => "null".to_owned(),
-                ScopeKind::Lend => unreachable!("the vectors have no island operand scopes"),
+                ScopeKind::Lend => "\"lend\"".to_owned(),
             };
             format!("[{},{},{},{a}]", s.code_offset, s.frame_offset, s.size)
         })
@@ -793,6 +793,18 @@ fn handwritten(rng: &mut Rng, out: &mut Out) {
     for mode in [MODES[8], MODES[9]] {
         let f = Fn { insns: vec![vec![Opcode::Ret as u32, -16i32 as u32, k]], targets: Vec::new(), unwind: Vec::new() };
         out.encoded(&encode_fn(&f, 16, mode), mode);
+        out.mutate(rng, 1);
+    }
+    // An island's operands' extents (`Lend` scopes), after a store to one of them.
+    for mode in [MODES[0], MODES[8]] {
+        use asm::Opnd::{Slot, Words};
+        let mut a = asm::Asm::new(mode);
+        a.insn(Opcode::MovW64, &[Slot(-16), Slot(-8)]);
+        a.lend(-16i32 as u32, 8);
+        a.lend(-40i32 as u32, 24);
+        a.insn(Opcode::Island, &[asm::Opnd::Sym(Sym(1)), Words(vec![-16i32 as u32, -40i32 as u32])]);
+        a.insn(Opcode::Abort, &[]);
+        out.encoded(&a.finish(48, |s| s), mode);
         out.mutate(rng, 1);
     }
 }

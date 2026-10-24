@@ -24,7 +24,7 @@
 //!   frame <frame size>
 //!   <reduced::Disasm lines: word offset, then the instruction>
 //!   cleanup <word offset> -> <landing pad word offset>[ catch] | continue
-//!   scope <word offset> <frame offset> <size> escape <align> | end
+//!   scope <word offset> <frame offset> <size> escape <align> | end | lend
 //!   dropped <word offset>
 //!   head <word offset>
 //! ```
@@ -420,6 +420,7 @@ impl<'d> Linked<'d> {
                         out.push(match s.kind {
                             ScopeKind::Escape { align } => format!("  scope {} {} {} escape {align}", s.code_offset, s.frame_offset, s.size),
                             ScopeKind::End => format!("  scope {} {} {} end", s.code_offset, s.frame_offset, s.size),
+                            ScopeKind::Lend => format!("  scope {} {} {} lend", s.code_offset, s.frame_offset, s.size),
                         });
                     }
                     out.extend(d.dropped.iter().map(|w| format!("  dropped {w}")));

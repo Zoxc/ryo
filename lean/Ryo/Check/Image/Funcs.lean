@@ -190,7 +190,7 @@ def checkSignature (o : ImageObject) (i : Nat) (d : Decoded) : Array String := I
         | _ => out := out.push s!"{l}: insn {k}: tail_call operands"
     | .handler .. => pure ()
     -- Accesses of the incoming argument area.
-    match Frame.effects insn (d.items[k]?.getD []) mode with
+    match Frame.effects insn (d.items[k]?.getD []) mode (Frame.lendsAt d k) with
     | .error e => out := out.push s!"{l}: insn {k}: frame effects: {e}"
     | .ok e =>
       for (off, _) in e.opnds do

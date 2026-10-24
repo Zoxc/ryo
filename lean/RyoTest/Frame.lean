@@ -2,7 +2,7 @@
 RyoTest.Frame — the dead-store check (`Ryo.Vm.Frame.droppedNotDead`, `decodeChecked`) on small
 hand-built functions: each precision rule accepts a store nothing reads, and a store that is
 read (by a call argument, by a call that may have stack arguments, by a pointer access while
-its object is escaped, by a handler operand, after an `End` of part of it) is rejected.
+its object is escaped, by a handler operand, by an island's `Lend` extent, after an `End` of part of it) is rejected.
 
 Every function starts with a dropped store, an inline `mov` whose items are empty (its load
 served by the register cache, its store dropped), and ends in `ret`. Other inline `mov`s have
@@ -48,6 +48,10 @@ def handler (m : String) (vals : List Int) : Insn := Id.run do
 
 def escape (at_ : Nat) (off : Int) (n : Nat) : Nat × Scope := (at_, ⟨0, s32 off, n, .escape 8⟩)
 def «end» (at_ : Nat) (off : Int) (n : Nat) : Nat × Scope := (at_, ⟨0, s32 off, n, .end⟩)
+def lend (at_ : Nat) (off : Int) (n : Nat) : Nat × Scope := (at_, ⟨0, s32 off, n, .lend⟩)
+
+/-- An island with the operands `ops`. -/
+def island (ops : List Int) : Insn := .native (red "island") [.sym 0, .words (ops.map s32)]
 
 /-- A function of `insns` (then `ret`) in a frame of 64, instruction 0's store dropped. -/
 def fn (insns : List Insn) (scopes : List (Nat × Scope) := []) (items : List (List Ryo.X86.Item) := []) :
@@ -101,7 +105,18 @@ def tests : List TestCase :=
    -- What R reads after an `End` is `Uninit`.
    accepts "a read after the storage's end" (fn [mov 64 (-8), call [(-8, reg 0)]] [«end» 1 (-8) 8]),
    rejects "a read after a partial end" (fn [mov 64 (-8), call [(-8, reg 0)]] [«end» 1 (-8) 4]),
-   -- Islands still read every byte.
-   rejects "an island" (fn [mov 64 (-8), .native (red "island") [.sym 0, .words [s32 (-32)]]])]
+   -- Islands read their operands' `Lend` extents, and escaped objects through pointers.
+   rejects "an island's lend over the store" (fn [mov 64 (-8), island [-16]] [lend 1 (-16) 16]),
+   accepts "a store outside an island's lends" (fn [mov 64 (-8), island [-32, -48]]
+     [lend 1 (-32) 8, lend 1 (-48) 16]),
+   accepts "an island's lend at another instruction" (fn [mov 64 (-8), island [-32], call []]
+     [lend 1 (-32) 8, lend 2 (-8) 8]),
+   rejects "an island while the object is escaped" (fn [mov 64 (-8), island [-32]]
+     [escape 0 (-8) 8, lend 1 (-32) 8]),
+   -- An operand without a lend is zero-sized: the island reads only escaped bytes there.
+   accepts "an island without lends" (fn [mov 64 (-8), island [-32]]),
+   accepts "an island with an operand no lend starts" (fn [mov 64 (-8), island [-8, -48]] [lend 1 (-48) 8]),
+   rejects "an island without lends while the object is escaped" (fn [mov 64 (-8), island [-32]]
+     [escape 0 (-8) 8])]
 
 end RyoTest.Frame

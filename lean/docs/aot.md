@@ -97,8 +97,10 @@ per-frame relation `R_Γ (s0 : L0 frame) (s1 : R frame)`:
   - `catch_unwind`: D18.
 
   Trusted (§C6). The C1' rule checks that the `island` instruction's symbol is the template
-  instance the dump names, and that the `ops` array (read from the object's `.rodata`) is
-  what the contract requires.
+  instance the dump names, that the `ops` array (read from the object's `.rodata`) is
+  what the contract requires, and that each operand's `Lend` scope is the extent the
+  contract accesses, an operand without one being zero-sized (the dead-store check, §C2,
+  relies on it).
 - **Escape/storage side data**: the checker verifies that `Scope` escapes cover every `addr`
   and every by-address argument, and that ends match `StorageDead`. This is what makes R's
   allocation lifetimes (escape to end) match L0's provenance, so frame privacy holds for the
@@ -144,12 +146,16 @@ follows the decoder's structure:
   backward liveness over the decoded code (`Frame.decodeChecked`). Handlers read and write
   their operands at `opSem`'s footprints ([reduced.md](reduced.md) §C0.5); calls read their
   argument list, and every byte only if the convention allows stack arguments (argument
-  registers ran out); islands read every byte; pointer accesses read the objects that may be
+  registers ran out); islands read their operands' `Lend` extents (none for a zero-sized
+  operand, for which the encoder records no `Lend`) and, taking `fp` and calling anything,
+  make a pointer access, assuming the island
+  contract's operand footprint is the `Lend` extent (C1' checks it against the template,
+  §C1 "Islands"; [reduced.md](reduced.md) §C0.1); pointer accesses read the objects that may be
   escaped there (an `Escape` scope reaching it without an `End`); an `End` makes its bytes
   `Uninit` (reduced.md §C0.3), so they are dead before it. The Rust decoder trusts the `dropped` list;
   the Lean one must not. Known rejections, for want of data: calls that may have stack
-  arguments (needs the call's `ArgPlan` from the C1' certificate), sret destinations, islands
-  (needs `Lend` scopes), and stale bytes a whole-object copy moves but nothing uses.
+  arguments (needs the call's `ArgPlan` from the C1' certificate), sret destinations, island
+  destinations (written only, which the contract says, not the `Lend`), and stale bytes a whole-object copy moves but nothing uses.
 - **Counters and stubs**: `sub [rip+ctr], k; js stub` followed by the stub
   `lea r11,[rip+rec]; …; call [r11+8|16]; jmp back` refines a no-op, given the trip contract
   ([jit.md](jit.md) §E.2). Counter memory is runtime-owned: excluded from the program's

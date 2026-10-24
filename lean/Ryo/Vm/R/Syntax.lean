@@ -128,9 +128,12 @@ deriving DecidableEq, Repr, Inhabited
 inductive ScopeKind
   | escape (align : Nat)
   | «end»
+  /-- An island operand's extent: the next instruction, an island, takes the object as an
+  operand (reads and writes it during the call; not an escape). -/
+  | lend
 deriving DecidableEq, Repr, Inhabited
 
-/-- An escape or a storage end (`asm::Scope`): `codeOffset` a byte offset in machine code, or a
+/-- An escape, a storage end or an island operand (`asm::Scope`): `codeOffset` a byte offset in machine code, or a
 word offset in decoded code; `frameOffset` the signed offset from `fp`. -/
 structure Scope where
   codeOffset : Nat
@@ -339,6 +342,7 @@ def pad6 (n : Nat) : String :=
 def ScopeKind.text : ScopeKind → String
   | .escape a => s!"escape {a}"
   | .end => "end"
+  | .lend => "lend"
 
 def natList (xs : List Nat) : String := listText (xs.map toString)
 

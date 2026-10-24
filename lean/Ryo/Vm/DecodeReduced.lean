@@ -45,7 +45,7 @@ test vectors:
                                          -- "const <off>", "data <off>", "ro <off>", "rec", "recctr"
   "call_sites": [[<start>, <len>, <pad or null>, <catches>], …],
   "dropped": [[<at>, <frame_offset>, <size>, <reg number>], …],   -- sorted by `at`
-  "scopes": [[<code_offset>, <frame_offset>, <size>, <align, or null for an end>], …] }
+  "scopes": [[<code_offset>, <frame_offset>, <size>, <align, null for an end, or "lend">], …] }
 ```
 -/
 import Ryo.Vm.Asm
@@ -876,10 +876,13 @@ def Inputs.ofJson (j : Json) : Except String Inputs := do
     let codeOffset ← (← r.getArrVal? 0).getNat?
     let frameOffset ← i32OfJson (← r.getArrVal? 1)
     let size ← (← r.getArrVal? 2).getNat?
-    let align : Option Nat ← fromJson? (← r.getArrVal? 3)
-    pure ({ codeOffset, frameOffset, size, kind := match align with
-      | some a => .escape a
-      | none => .end } : Scope)
+    let k ← r.getArrVal? 3
+    let kind ← if k == Json.str "lend" then pure ScopeKind.lend else do
+      let align : Option Nat ← fromJson? k
+      pure (match align with
+        | some a => .escape a
+        | none => .end)
+    pure ({ codeOffset, frameOffset, size, kind } : Scope)
   return { mode, code, relocs, rodata, callSites, dropped, scopes }
 
 def Inputs.decode (i : Inputs) : Except AsmError Decoded :=

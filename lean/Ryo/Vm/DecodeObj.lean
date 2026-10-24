@@ -90,6 +90,7 @@ def funcArgs (f : Ryo.Obj.FuncInputs) :
   let kind (k : Ryo.Obj.ScopeKind) : ScopeKind := match k with
     | .escape a => .escape a
     | .end => .end
+    | .lend => .lend
   let scopes := f.scopes.map fun s => Scope.mk s.codeOffset (BitVec.ofInt 32 s.frameOffset) s.size (kind s.kind)
   let some dropped := f.dropped.mapM fun d => DroppedStore.ofParts? d.pos (BitVec.ofInt 32 d.frameOffset) d.size d.reg
     | return none

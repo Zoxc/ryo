@@ -37,7 +37,16 @@ What each instruction reads (`gen`) and writes for sure (`kill`), and what that 
   plan (the C1 call check validates it against the plan, aot.md §C1). A tail call's stack
   arguments go to the incoming area, above `fp`. A call's result stores write each part
   exactly, on the fall-through only.
-- **Islands** read every byte (their operand extents are their templates').
+- **Islands** read the extents of the `Lend` scopes before them (`asm::ScopeKind::Lend`, one
+  per operand of a nonzero size, recorded by the lowering with the size its template
+  accesses there), may write them (no kill: they are clobbered), and make a pointer access
+  (they take `fp` and may call anything). This assumes the island contract: an island's
+  template accesses each operand only within its `Lend` extent, and other frame bytes only
+  through pointers to escaped objects; C1' checks the extents against the template
+  (aot.md §C1, "Islands"; reduced.md §C0.1). An operand without a `Lend` has an empty
+  extent: the encoder skips a `Lend` only for a zero-sized operand (`Asm::lend` in
+  `asm/encode.rs`: `if size != 0`), and C1' checks every operand's extent, "no `Lend` means
+  size 0" included, against the contract.
 - **Pointer accesses** (a native `[p + k]` operand, a handler's dereference, any call) read
   the bytes of every frame object that may be escaped at that instruction. Under R's memory
   model (reduced.md §C0.3) a frame object is an allocation only from an `Escape` scope to the
@@ -56,7 +65,9 @@ What each instruction reads (`gen`) and writes for sure (`kill`), and what that 
 Known remaining classes the check rejects, for lack of data in the image: calls that may
 have stack arguments (their extent needs the call's `ArgPlan`, from the C1' certificate);
 sret destinations, which a callee only writes but which count as read through the pointer;
-islands (their operand extents come with `Lend` scopes); and stale bytes that a copy
+island destinations (a `Lend` doesn't say the template only writes it; the contract does,
+C1'); and
+stale bytes that a copy
 (`mov.w128`, `copy`, `store.copy`) moves without any later use (a value-flow, not liveness,
 question).
 
@@ -117,8 +128,11 @@ def mayHaveStackArgs (pe : Bool) (ws : List (BitVec 32)) : Bool :=
     | some r => if pe then r.index ≥ 3 else if r.xmm then r.index ≥ 7 else r.index ≥ 4
 
 /-- `frame::native`: the frame operands of a native instruction. A call reads every byte if it
-may have stack arguments (`mayHaveStackArgs`). -/
-def native (op : Reduced.Opcode) (ops : List (Opnd Nat)) (pe : Bool := false) : Effects := Id.run do
+may have stack arguments (`mayHaveStackArgs`). An island reads the extents `lends` (the `Lend`
+scopes before it: offset, size; an operand without one is zero-sized) and makes a pointer
+access. -/
+def native (op : Reduced.Opcode) (ops : List (Opnd Nat)) (pe : Bool := false)
+    (lends : List (BitVec 32 × Nat) := []) : Effects := Id.run do
   let info := op.info
   let m := info.mnemonic
   let n := (widthOfMnemonic m).getD 8
@@ -161,11 +175,7 @@ def native (op : Reduced.Opcode) (ops : List (Opnd Nat)) (pe : Bool := false) : 
   | .arg =>
     let size := (ArgReg.of? (immOf (named "r")) true).map (·.size) |>.getD 0
     return { opnds := (slotOf (named "d")).toList.map (·, .write size) }
-  | .island =>
-    let ws := match named "ops" with
-      | some (.words ws) => ws
-      | _ => []
-    return { opnds := ws.map (·, .opaque), readsAll := true }
+  | .island => return { opnds := lends.map fun (o, n) => (o, .read n), pointer := true }
   | _ =>
     let mut out : List (BitVec 32 × Access) := []
     let mut pointer := false
@@ -259,10 +269,18 @@ def inlineEffects (items : List Item) : Effects :=
       (frameWrite it).toList.map (fun (m, n) => (m.disp, Access.write n)),
     pointer := items.any fun it => (it.mem?.any (·.base != .rbp)) }
 
-def effects (i : Insn) (items : List Item) (mode : Mode) : Except String Effects :=
+/-- The `Lend` scopes before instruction `k`: (frame offset, size). -/
+def lendsAt (d : Decoded) (k : Nat) : List (BitVec 32 × Nat) :=
+  d.scopes.toList.filterMap fun (j, sc) =>
+    if j == k && sc.kind == .lend then some (sc.frameOffset, sc.size) else none
+
+/-- Instruction `i`'s frame accesses: an inline one's by its machine `items`; an island's by
+the `Lend` extents `lends` before it. -/
+def effects (i : Insn) (items : List Item) (mode : Mode) (lends : List (BitVec 32 × Nat) := []) :
+    Except String Effects :=
   match i with
   | .native op ops =>
-    if (op.full.bind classOf).isSome then pure (inlineEffects items) else pure (native op ops mode.pe)
+    if (op.full.bind classOf).isSome then pure (inlineEffects items) else pure (native op ops mode.pe lends)
   | .handler h args _ => handler h args mode
 
 /-! ### Liveness over frame bytes `-F .. 0` -/
@@ -298,7 +316,7 @@ def flow (d : Decoded) : Array (List Nat) × Array (List Nat) := Id.run do
 /-- The frame objects that may be escaped at each instruction (after the scopes before it), as
 flags over `Escape` scopes (`d.scopes`' indices): a forward dataflow over `edges` (successors
 and landing pads) from nothing escaped at entry. An `Escape` adds its object; an `End` removes
-each object it covers whole. -/
+each object it covers whole; a `Lend` (not an escape) changes nothing. -/
 def escapedAt (d : Decoded) (edges : Array (List Nat)) : Array (Array Bool) := Id.run do
   let n := d.insns.size
   let m := d.scopes.size
@@ -308,12 +326,13 @@ def escapedAt (d : Decoded) (edges : Array (List Nat)) : Array (Array Bool) := I
     (d.scopes.zipIdx.filter (·.1.1 == k)).foldl (fun st ((_, sc), j) =>
       match sc.kind with
       | .escape _ => st.set! j true
+      | .lend => st
       | .end =>
         let lo := sc.frameOffset.toInt
         let hi := lo + sc.size
         st.zipWith (fun e (_, o) => e && !(match o.kind with
           | .escape _ => lo ≤ o.frameOffset.toInt && o.frameOffset.toInt + o.size ≤ hi
-          | .end => false)) d.scopes) st
+          | _ => false)) d.scopes) st
   let mut inS : Array (Array Bool) := Array.replicate n none_
   let mut at_ : Array (Array Bool) := Array.replicate n none_
   let mut dirty := Array.replicate n true
@@ -362,7 +381,7 @@ def Flow.of (d : Decoded) (mode : Mode) : Except String Flow := do
   let mut readsAll : Array Bool := #[]
   for h : k in [0:n] do
     let i := d.insns[k]
-    let e ← effects i (d.items[k]?.getD []) mode
+    let e ← effects i (d.items[k]?.getD []) mode (lendsAt d k)
     let eb := if e.pointer || e.opnds.any (·.2 == .addr) then escBytes k else none_
     let isCall := match i with
       | .native op _ => op.info.shape == .call || op.info.shape == .tailCall

@@ -84,6 +84,7 @@ def relocDecode (o : ImageObject) (i : Nat) (fi : FuncInputs) :
   let kind (k : Ryo.Obj.ScopeKind) : R.ScopeKind := match k with
     | .escape a => .escape a
     | .end => .end
+    | .lend => .lend
   let scopes := fi.scopes.map fun s => R.Scope.mk s.codeOffset (BitVec.ofInt 32 s.frameOffset) s.size (kind s.kind)
   let some dropped := fi.dropped.mapM fun d =>
       Asm.DroppedStore.ofParts? d.pos (BitVec.ofInt 32 d.frameOffset) d.size d.reg

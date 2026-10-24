@@ -29,6 +29,9 @@ def imageSymbolPrefix : String := "__ryo_image_"
 def CONTINUE : Nat := 0xffffffff
 def CATCH : Nat := 0x80000000
 
+/-- `image::SCOPE_LEND`: `ScopeEntry.align` of an island operand's extent (`asm::ScopeKind::Lend`). -/
+def SCOPE_LEND : Nat := 0x80000000
+
 /-- `image::SYM_INDIRECT`. -/
 def SYM_INDIRECT : Nat := 1
 
@@ -84,6 +87,7 @@ structure ScopeEntry where
   codeOffset : Nat
   frameOffset : Int
   size : Nat
+  /-- An escape's alignment, 0 for a storage end, `SCOPE_LEND` for an island operand. -/
   align : Nat
   deriving Repr, Inhabited
 
@@ -285,7 +289,7 @@ def validate (img : Image) : Except ImageError Unit := do
     for s in img.scopes f do
       let sorted := s.codeOffset ≥ prev
       prev := s.codeOffset
-      if !sorted || s.codeOffset > f.codeLen || (s.align != 0 && (!isPow2 s.align || s.align > 16)) then
+      if !sorted || s.codeOffset > f.codeLen || (s.align != 0 && s.align != SCOPE_LEND && (!isPow2 s.align || s.align > 16)) then
         throw (.badScope (f.scopes.off + j))
       j := j + 1
     prev := 0
@@ -535,7 +539,8 @@ def funcInputs (o : ImageObject) (i : Nat) : Except String FuncInputs := do
       else ⟨c.start, c.len, some (c.pad % CATCH), c.pad ≥ CATCH⟩,
     dropped,
     scopes := (img.scopes f).map fun s =>
-      ⟨s.codeOffset, s.frameOffset, s.size, if s.align == 0 then .end else .escape s.align⟩,
+      ⟨s.codeOffset, s.frameOffset, s.size,
+        if s.align == 0 then .end else if s.align == SCOPE_LEND then .lend else .escape s.align⟩,
     mode := img.mode,
     funcStarts := o.funcs.map (·.codeOff) }
 
