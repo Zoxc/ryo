@@ -27,6 +27,7 @@ Classes: `mov`, `mov128`, `imm`, `addr`, `ptrAdd`, `ptrIndex`, `bin`, `binImm`, 
 pointer, left; see aot.md §C2).
 -/
 import Ryo.Proofs.Inline.Cmp
+import Ryo.Proofs.Inline.Mem
 
 set_option linter.constructorNameAsVariable false
 
