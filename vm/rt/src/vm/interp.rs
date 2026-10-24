@@ -38,7 +38,8 @@ use core::ptr;
 use core::sync::atomic::{AtomicI8, AtomicI16, AtomicI32, AtomicI64, AtomicPtr, AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering};
 
 use ryo_bytecode::asm::{self, ARG_REGS, Loc};
-use ryo_bytecode::full::Opcode;
+use ryo_bytecode::full::{Opcode, OperandKind};
+use ryo_bytecode::jit::effects::RegEntry;
 
 use super::sys::fatal;
 
@@ -505,10 +506,115 @@ unsafe fn sparse<T: Copy + Ord>(vals: *const T, n: usize, v: T) -> usize {
     }
 }
 
+/// What a register entry returns: `rax`, `rdx` (`RegEntry`): what the entry doesn't return is undefined.
+#[repr(C)]
+pub struct RegRet(pub MaybeUninit<u64>, pub MaybeUninit<u64>);
+
+/// The register entry of `op` (`ryo_bytecode::jit::effects::RegEntry`), or `NONE`.
+const fn reg_entry(op: Opcode) -> RegEntry {
+    match ryo_bytecode::jit::effects::reg_entry(op, MODE) {
+        Some(e) => e,
+        None => RegEntry::NONE,
+    }
+}
+
+/// The argument registers a register entry gives the body of `op`, per register the bits
+/// it keeps of the entry's data register and the bits it sets: each frame operand's slot
+/// offset is its offset in the entry's buffer, `8 * index`.
+const fn reg_patch(op: Opcode) -> [(u64, u64); ARG_REGS] {
+    let info = op.info();
+    let l = asm::layout(op, MODE);
+    let mut p = [(0u64, 0u64); ARG_REGS];
+    let e = reg_entry(op);
+    let mut j = 0;
+    while j < e.ndata as usize {
+        p[e.data[j] as usize].0 = !0;
+        j += 1;
+    }
+    let mut k = 0;
+    while k < info.operands.len() {
+        let loc = l.locs[k];
+        if loc.count != 0 && matches!(info.operands[k].kind, OperandKind::Slot | OperandKind::Mem) {
+            let r = loc.reg as usize;
+            let (mask, at) = if loc.shared { (0xffff_ffffu64 << loc.shift, loc.shift) } else { (0xffff_ffff, 0) };
+            p[r].0 &= !mask;
+            p[r].1 |= (8 * k as u64) << at;
+        }
+        k += 1;
+    }
+    p
+}
+
+/// A register entry's return value from the body's (`()`, `bool`, `usize`).
+macro_rules! reg_ret {
+    ($v:ident,) => {{
+        let () = $v;
+        None::<u64>
+    }};
+    ($v:ident, $t:tt) => {
+        Some($v as u64)
+    };
+}
+
+/// The register entry of a handler (`RegEntry`): the body run on a buffer of the frame
+/// operands' values, which LLVM keeps in registers. `!` handlers have none.
+macro_rules! reg_handler {
+    ($name:ident, $kind:ident, ($($p:tt)*), !) => {};
+    ($name:ident, $kind:ident, ($($p:tt)*), $($ret:tt)?) => {
+        #[allow(non_snake_case, unused_variables, unused_unsafe, unused_mut, unused_assignments, clippy::unused_unit)]
+        pub unsafe extern "sysv64-unwind" fn $name(r0: u64, r1: u64, r2: u64, r3: u64, r4: u64, r5: u64) -> RegRet {
+            const E: RegEntry = reg_entry(Opcode::$name);
+            const P: [(u64, u64); ARG_REGS] = reg_patch(Opcode::$name);
+            let r = [r0, r1, r2, r3, r4, r5];
+            let mut buf = [0u64; asm::MAX_OPERANDS];
+            let mut k = 0;
+            while k < E.nin as usize {
+                buf[E.ins[k] as usize] = r[k];
+                k += 1;
+            }
+            let mut a = [0u64; ARG_REGS];
+            let mut j = 0;
+            while j < E.ndata as usize {
+                a[E.data[j] as usize] = r[E.nin as usize + j];
+                j += 1;
+            }
+            let mut g = 0;
+            while g < ARG_REGS {
+                a[g] = a[g] & P[g].0 | P[g].1;
+                g += 1;
+            }
+            let fp = buf.as_mut_ptr().cast::<u8>();
+            // SAFETY: see the module docs; the frame operands are `buf`'s words.
+            let v = unsafe { $kind!(a, fp, $name, $($p)*) };
+            let v = reg_ret!(v, $($ret)?);
+            let mut out = [MaybeUninit::<u64>::uninit(); 2];
+            let mut n = 0;
+            while n < E.nout as usize {
+                out[n] = MaybeUninit::new(buf[E.outs[n] as usize]);
+                n += 1;
+            }
+            if let Some(v) = v {
+                out[n] = MaybeUninit::new(v);
+            }
+            RegRet(out[0], out[1])
+        }
+    };
+}
+
+/// The address of a register entry, if `op` has one.
+macro_rules! reg_addr {
+    ($name:ident, !) => {
+        None
+    };
+    ($name:ident, $($ret:tt)?) => {
+        if const { ryo_bytecode::jit::effects::reg_entry(Opcode::$name, MODE).is_some() } { Some(hr::$name as *const ()) } else { None }
+    };
+}
+
 /// Generates the handlers from the handler list. Every opcode with a handler in `ops.rs`
 /// must have one entry (checked by `HANDLED`, below).
 macro_rules! handlers {
-    (() $($name:ident => $kind:ident ($($p:tt)*) $(-> $ret:ty)?;)*) => {
+    (() $($name:ident => $kind:ident ($($p:tt)*) $(-> $ret:tt)?;)*) => {
         /// The handlers, one per opcode (each `pub`, so tests can call them directly).
         pub mod h {
             #[allow(unused_imports)]
@@ -526,6 +632,15 @@ macro_rules! handlers {
             )*
         }
 
+        /// The register entries (`RegEntry`), for the JIT, which finds them by
+        /// [`reg_handler`]'s addresses: they have no symbols (`hr::<Opcode>`; the JIT's dumps
+        /// call them `ryo_hr_<Opcode>`).
+        mod hr {
+            #[allow(unused_imports)]
+            use super::*;
+            $(reg_handler!($name, $kind, ($($p)*), $($ret)?);)*
+        }
+
         /// Every opcode with a handler written in Rust, by value.
         const HANDLED: [bool; Opcode::COUNT] = {
             let mut t = [false; Opcode::COUNT];
@@ -539,6 +654,15 @@ macro_rules! handlers {
             match op {
                 $(Opcode::$name => Some(h::$name as *const ()),)*
                 Opcode::Resume => Some(resume as *const ()),
+                _ => None,
+            }
+        }
+
+        /// The address of opcode `op`'s register entry, if it has one (`RegEntry`).
+        #[doc(hidden)]
+        pub fn reg_handler(op: Opcode) -> Option<*const ()> {
+            match op {
+                $(Opcode::$name => reg_addr!($name, $($ret)?),)*
                 _ => None,
             }
         }

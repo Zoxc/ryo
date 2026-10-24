@@ -579,6 +579,10 @@ fn start() -> bool {
     for (h, &op) in handlers.iter_mut().zip(ryo_bytecode::ALL_OPCODES.iter()) {
         *h = super::interp::handler(op).unwrap_or(ptr::null());
     }
+    let mut reg_handlers = [ptr::null(); ryo_bytecode::Opcode::COUNT];
+    for (h, &op) in reg_handlers.iter_mut().zip(ryo_bytecode::ALL_OPCODES.iter()) {
+        *h = super::interp::reg_handler(op).unwrap_or(ptr::null());
+    }
     let api = RtApi {
         abi: JIT_ABI_VERSION,
         format: ryo_bytecode::FORMAT_VERSION,
@@ -590,6 +594,7 @@ fn start() -> bool {
         done,
         shuffled,
         handlers,
+        reg_handlers,
     };
     // SAFETY: only the first push gets here, once; the JIT reads it only after the start.
     unsafe { ryo_jit_start((*RT_API.0.get()).write(api)) }

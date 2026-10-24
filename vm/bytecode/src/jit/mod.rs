@@ -135,5 +135,5 @@ fn built(d: &crate::asm::Decoded, mode: crate::asm::Mode) -> Result<ir::Func, Un
     }
     let code = decode::decode(d, mode)?;
     let fr = alloca::analyze(&code, d.frame_size)?;
-    build::build(&code, &fr, d.frame_size)
+    build::build(&code, &fr, d.frame_size, mode)
 }

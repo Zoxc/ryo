@@ -40,6 +40,7 @@ struct B<'a> {
     /// The IR block of each R block (`None` for an `lpad`'s).
     ir: Vec<Option<Block>>,
     scratch: u32,
+    mode: crate::asm::Mode,
 }
 
 impl<'a> B<'a> {
@@ -240,7 +241,7 @@ impl<'a> B<'a> {
 }
 
 /// The IR of `code` with frame `fr`, before the folds ([`fold`]).
-pub fn build(code: &Code, fr: &Frame, frame_size: u32) -> Result<Func, Unsupported> {
+pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -> Result<Func, Unsupported> {
     let nb = code.blocks.len();
     if fr.vars.len().saturating_mul(nb) > 8 << 20 {
         return Err(Unsupported("too many variables and blocks"));
@@ -260,6 +261,7 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32) -> Result<Func, Unsupport
         undef: [None; 9],
         ir: alloc::vec![None; nb],
         scratch: 0,
+        mode,
     };
     let is_lpad = |b: usize| code.insns[code.blocks[b].start as usize].kind == Kind::Lpad;
     // The entry block: R block 0 itself unless something branches back to it.
@@ -542,6 +544,9 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32) -> Result<Func, Unsupport
                     // The outputs' accesses, in order.
                     let mut out_acc = Vec::new();
                     let mut sc = 0u32;
+                    // Through the register entry when it has one and every frame operand is
+                    // a variable: the values go in registers, and the scratch area isn't used.
+                    let reg = super::effects::reg_entry(*h, s.mode).is_some() && (0..slots.len()).all(|k| s.slot_ref(i, k).is_none());
                     for (k, &(reg, half)) in slots.iter().enumerate() {
                         let a = ri.accs[k];
                         let r = match s.slot_ref(i, k) {
@@ -563,7 +568,12 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32) -> Result<Func, Unsupport
                         };
                         regs[reg as usize].1[half as usize] = Some(r);
                     }
-                    s.scratch = s.scratch.max(sc);
+                    if reg {
+                        ins.clear();
+                        outs.clear();
+                    } else {
+                        s.scratch = s.scratch.max(sc);
+                    }
                     let ret = matches!(then, Then::Branch { .. } | Then::Table(_));
                     let mut ws = out_ws.clone();
                     match then {
@@ -571,7 +581,7 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32) -> Result<Func, Unsupport
                         Then::Table(_) => ws.push(8),
                         _ => {}
                     }
-                    let hc = HCall { h: *h, regs, ins, outs, ret, site };
+                    let hc = HCall { h: *h, regs, ins, outs, nout: out_ws.len() as u8, ret, reg, site };
                     let hi = s.f.inst(cur, Op::HCall(Box::new(hc)), in_vals, &ws);
                     let results: Vec<Value> = s.f.insts[hi.idx()].results().collect();
                     for (n, &k) in out_acc.iter().enumerate() {

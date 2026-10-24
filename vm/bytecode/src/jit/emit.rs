@@ -597,6 +597,53 @@ impl<'a> E<'a> {
         }
     }
 
+    /// Sets `r` to the handler call's argument register `k` (from `rdi`), with its slot
+    /// operands' offsets patched in.
+    fn hcall_arg(&mut self, h: &HCall, k: usize, r: R) -> Result<(), Unsupported> {
+        let (arg, patch) = &h.regs[k];
+        match *arg {
+            Arg::Fp => self.fp_into(r),
+            Arg::Exception => return Err(Unsupported("an exception argument")),
+            Arg::Imm(mut v) => {
+                for (half, p) in patch.iter().enumerate() {
+                    if let Some(p) = p {
+                        // A register entry ignores them: zero, for the shortest `mov`.
+                        let off = if h.reg { 0 } else { self.slot_off(*p) as u32 as u64 };
+                        v = if half == 0 { v & !0xffff_ffff | off } else { v & 0xffff_ffff | off << 32 };
+                    }
+                }
+                self.a.x().mov_imm(8, Rm::R(r), v);
+            }
+            Arg::Const(c) => self.a.x().lea(r, Mem::Rip(Ref::Const(c))),
+            Arg::Data(d) => self.a.x().lea(r, Mem::Rip(Ref::Data(d))),
+            Arg::Sym(s) => self.a.x().lea(r, Mem::Rip(Ref::Sym(s))),
+            Arg::Site(s) => self.a.x().lea(r, Mem::Rip(Ref::Site(s))),
+            Arg::Ro(off) => {
+                // A sparse switch's case values: as many as the next register says.
+                let size =
+                    h.h.info()
+                        .operands
+                        .iter()
+                        .find_map(|o| match o.kind {
+                            OperandKind::List(ElemKind::Case8) => Some(1),
+                            OperandKind::List(ElemKind::Case16) => Some(2),
+                            OperandKind::List(ElemKind::Case32) => Some(4),
+                            OperandKind::List(ElemKind::Case64) => Some(8),
+                            OperandKind::List(ElemKind::Case128) => Some(16),
+                            _ => None,
+                        })
+                        .ok_or(Unsupported("a code constant argument"))?;
+                let Some((Arg::Imm(n), _)) = h.regs.get(k + 1) else { return Err(Unsupported("case values")) };
+                let len = (*n as usize).checked_mul(size).ok_or(Unsupported("case values"))?;
+                let bytes = self.code_consts.get(off as usize..).and_then(|b| b.get(..len)).ok_or(Unsupported("case values"))?;
+                let bytes = bytes.to_vec();
+                let o = self.ro(&bytes, size.max(4));
+                self.a.x().lea(r, Mem::Rip(Ref::Ro(o)));
+            }
+        }
+        Ok(())
+    }
+
     fn inst(&mut self, i: Inst, pad: Option<u32>) -> Result<(), Unsupported> {
         let id = &self.f.insts[i.idx()];
         let res: Vec<Value> = id.results().collect();
@@ -759,57 +806,33 @@ impl<'a> E<'a> {
             Op::LandingPad => {
                 self.put(res[0], R::Rax);
             }
+            Op::HCall(h) if h.reg => {
+                let e = super::effects::reg_entry(h.h, self.mode).ok_or(Unsupported("a register entry"))?;
+                let nin = e.nin as usize;
+                // The `In` values into the first argument registers, then the data registers
+                // after them (which no `In` value's source is in any more).
+                let ms = args.iter().enumerate().map(|(k, &v)| (Rm::R(ARGS[k]), self.src(v))).collect();
+                self.moves(ms);
+                for j in 0..e.ndata as usize {
+                    self.hcall_arg(&h, e.data[j] as usize, ARGS[nin + j])?;
+                }
+                let hh = h.h;
+                self.call_with_site(h.site, pad, |x| x.call(Ref::RegHandler(hh)));
+                let ms = res.iter().enumerate().filter_map(|(k, &v)| Some((self.dst(v)?, Src::R([R::Rax, R::Rdx][k])))).collect();
+                self.moves(ms);
+            }
             Op::HCall(h) => {
                 for (k, &v) in args.iter().enumerate() {
                     let m = self.fp_mem(self.fr.scratch + h.ins[k] as i32);
                     let s = self.src(v);
                     self.mov(Rm::M(m), s);
                 }
-                for (k, (arg, patch)) in h.regs.iter().enumerate() {
-                    let r = ARGS[k];
-                    match *arg {
-                        Arg::Fp => self.fp_into(r),
-                        Arg::Exception => return Err(Unsupported("an exception argument")),
-                        Arg::Imm(mut v) => {
-                            for (half, p) in patch.iter().enumerate() {
-                                if let Some(p) = p {
-                                    let off = self.slot_off(*p) as u32 as u64;
-                                    v = if half == 0 { v & !0xffff_ffff | off } else { v & 0xffff_ffff | off << 32 };
-                                }
-                            }
-                            self.a.x().mov_imm(8, Rm::R(r), v);
-                        }
-                        Arg::Const(c) => self.a.x().lea(r, Mem::Rip(Ref::Const(c))),
-                        Arg::Data(d) => self.a.x().lea(r, Mem::Rip(Ref::Data(d))),
-                        Arg::Sym(s) => self.a.x().lea(r, Mem::Rip(Ref::Sym(s))),
-                        Arg::Site(s) => self.a.x().lea(r, Mem::Rip(Ref::Site(s))),
-                        Arg::Ro(off) => {
-                            // A sparse switch's case values: as many as the next register says.
-                            let size =
-                                h.h.info()
-                                    .operands
-                                    .iter()
-                                    .find_map(|o| match o.kind {
-                                        OperandKind::List(ElemKind::Case8) => Some(1),
-                                        OperandKind::List(ElemKind::Case16) => Some(2),
-                                        OperandKind::List(ElemKind::Case32) => Some(4),
-                                        OperandKind::List(ElemKind::Case64) => Some(8),
-                                        OperandKind::List(ElemKind::Case128) => Some(16),
-                                        _ => None,
-                                    })
-                                    .ok_or(Unsupported("a code constant argument"))?;
-                            let Some((Arg::Imm(n), _)) = h.regs.get(k + 1) else { return Err(Unsupported("case values")) };
-                            let len = (*n as usize).checked_mul(size).ok_or(Unsupported("case values"))?;
-                            let bytes = self.code_consts.get(off as usize..).and_then(|b| b.get(..len)).ok_or(Unsupported("case values"))?;
-                            let bytes = bytes.to_vec();
-                            let o = self.ro(&bytes, size.max(4));
-                            self.a.x().lea(r, Mem::Rip(Ref::Ro(o)));
-                        }
-                    }
+                for k in 0..h.regs.len() {
+                    self.hcall_arg(&h, k, ARGS[k])?;
                 }
                 let hh = h.h;
                 self.call_with_site(h.site, pad, |x| x.call(Ref::Handler(hh)));
-                let nout = h.outs.len();
+                let nout = h.nout as usize;
                 if h.ret {
                     self.put(res[nout], R::Rax);
                 }

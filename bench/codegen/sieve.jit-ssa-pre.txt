@@ -13,7 +13,7 @@ b0(v0:8, v1:8): ; Entry
     v3:1 = Call(Call { target: fn0.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Pad { catch: false } }) (v0, v2)
     invoke -> b4() unwind b5()
 b1(): ; Body
-    v5:8 = hcall zext.w8.w64 [(Fp, [None, None]), (Imm(4294967288), [Some(Scratch(0)), None]), (Imm(4294967263), [Some(Scratch(8)), None])] ins [8] outs [0] (v3)
+    v5:8 = hcall.reg zext.w8.w64 [(Fp, [None, None]), (Imm(4294967288), [Some(Scratch(0)), None]), (Imm(4294967263), [Some(Scratch(8)), None])] outs 1 (v3)
     ret 0x8 (v5)
 b2(): ; Body head 0
     hcall resume [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None])] ins [0] outs [] (v4)
@@ -110,7 +110,7 @@ b22(): ; Body
 b23(): ; Body head 8
     jmp b9(v12, v0, 0x0, v54, 0x0)
 b24(): ; Body
-    v45:8 = hcall addr.abs [(Fp, [None, None]), (Imm(4294967104), [Some(Scratch(0)), None]), (k1, [None, None])] ins [] outs [0] ()
+    v45:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967104), [Some(Scratch(0)), None]), (k1, [None, None])] outs 1 ()
     Call(Call { target: fn2.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: None }) (v1, v0, v45)
     jmp b25()
 b25(): ; Body
@@ -123,15 +123,15 @@ b27(): ; Body
     v54:8 = Bin(Sub, 8) (v1, v0)
     jmp b23()
 b28(): ; Body
-    v58:8 = hcall addr.abs [(Fp, [None, None]), (Imm(4294967096), [Some(Scratch(0)), None]), (k3, [None, None])] ins [] outs [0] ()
-    v60:8 = hcall addr.abs [(Fp, [None, None]), (Imm(4294967088), [Some(Scratch(0)), None]), (k4, [None, None])] ins [] outs [0] ()
+    v58:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967096), [Some(Scratch(0)), None]), (k3, [None, None])] outs 1 ()
+    v60:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967088), [Some(Scratch(0)), None]), (k4, [None, None])] outs 1 ()
     Call(Call { target: sym5, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: false } }) (v58, 0x49, v60)
     invoke -> b38() unwind b39()
 b29(): ; Body
     hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
 b30(): ; Body
-    v63:8 = hcall addr.abs [(Fp, [None, None]), (Imm(4294967096), [Some(Scratch(0)), None]), (k6, [None, None])] ins [] outs [0] ()
+    v63:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967096), [Some(Scratch(0)), None]), (k6, [None, None])] outs 1 ()
     Call(Call { target: fn7, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: None }) (v22, 0x1, v63)
     jmp b31()
 b31(): ; Body
@@ -211,10 +211,10 @@ a4: $-24, 8 bytes, Promoted
 a5: $-16, 8 bytes, Promoted
 a6: $-8, 8 bytes, Promoted
 b0(v0:8, v1:8, v2:8): ; Entry
-    v3:8, v4:1 = hcall add.ovf.u.w64 [(Fp, [None, None]), (Imm(4294967248), [Some(Scratch(0)), None]), (Imm(4294967256), [Some(Scratch(8)), None]), (Imm(4294967272), [Some(Scratch(16)), None]), (Imm(4294967264), [Some(Scratch(24)), None])] ins [16, 24] outs [0, 8] (v1, v2)
+    v3:8, v4:1 = hcall.reg add.ovf.u.w64 [(Fp, [None, None]), (Imm(4294967248), [Some(Scratch(0)), None]), (Imm(4294967256), [Some(Scratch(8)), None]), (Imm(4294967272), [Some(Scratch(16)), None]), (Imm(4294967264), [Some(Scratch(24)), None])] outs 2 (v1, v2)
     br v4 ? b1() : b2()
 b1(): ; Body
-    v5:8 = hcall addr.abs [(Fp, [None, None]), (Imm(4294967240), [Some(Scratch(0)), None]), (k0, [None, None])] ins [] outs [0] ()
+    v5:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967240), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
     Call(Call { target: sym1, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v5)
     hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
@@ -276,11 +276,11 @@ a14: $-24, 8 bytes, Promoted
 a15: $-16, 8 bytes, Promoted
 a16: $-8, 8 bytes, Promoted
 b0(v0:8, v1:8, v2:8): ; Entry
-    v3:8, v4:1 = hcall add.ovf.u.w64 [(Fp, [None, None]), (Imm(4294967240), [Some(Scratch(0)), None]), (Imm(4294967248), [Some(Scratch(8)), None]), (Imm(4294967232), [Some(Scratch(16)), None]), (Imm(4294967224), [Some(Scratch(24)), None])] ins [16, 24] outs [0, 8] (v0, v1)
+    v3:8, v4:1 = hcall.reg add.ovf.u.w64 [(Fp, [None, None]), (Imm(4294967240), [Some(Scratch(0)), None]), (Imm(4294967248), [Some(Scratch(8)), None]), (Imm(4294967232), [Some(Scratch(16)), None]), (Imm(4294967224), [Some(Scratch(24)), None])] outs 2 (v0, v1)
     br v4 ? b1() : b2()
 b1(): ; Body
-    v5:8 = hcall addr.abs [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None]), (k0, [None, None])] ins [] outs [0] ()
-    v7:8 = hcall addr.abs [(Fp, [None, None]), (Imm(4294967184), [Some(Scratch(0)), None]), (k0, [None, None])] ins [] outs [0] ()
+    v5:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
+    v7:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967184), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
     v10:8 = Bin(Shl, 8) (0xba, 0x1)
     v12:8 = Bin(Or, 8) (v10, 0x1)
     Call(Call { target: sym2, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v5, v12, 0x0, v2)
@@ -339,10 +339,10 @@ a35: $-56, 24 bytes, Memory, pinned, escaped
 a36: $-32, 8 bytes, Promoted
 a37: $-24, 24 bytes, Memory
 b0(v0:8, v1:8): ; Entry
-    v3:8, v4:1 = hcall add.ovf.u.w64 [(Fp, [None, None]), (Imm(4294967216), [Some(Scratch(0)), None]), (Imm(4294967224), [Some(Scratch(8)), None]), (Imm(4294967264), [Some(Scratch(16)), None]), (Imm(4294966952), [Some(Scratch(24)), None])] ins [16, 24] outs [0, 8] (v1, 0x1)
+    v3:8, v4:1 = hcall.reg add.ovf.u.w64 [(Fp, [None, None]), (Imm(4294967216), [Some(Scratch(0)), None]), (Imm(4294967224), [Some(Scratch(8)), None]), (Imm(4294967264), [Some(Scratch(16)), None]), (Imm(4294966952), [Some(Scratch(24)), None])] outs 2 (v1, 0x1)
     br v4 ? b1() : b2()
 b1(): ; Body
-    v5:8 = hcall addr.abs [(Fp, [None, None]), (Imm(4294966952), [Some(Scratch(0)), None]), (k0, [None, None])] ins [] outs [0] ()
+    v5:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294966952), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
     Call(Call { target: sym1, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v5)
     hcall unreachable [(Fp, [None, None])] ins [] outs [] ()
     trap
@@ -350,23 +350,23 @@ b2(): ; Body
     v7:8 = AllocaAddr(AllocaId(35), 0) ()
     Call(Call { target: fn2.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 1, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v7, 0x1, v3)
     v8:8 = AllocaAddr(AllocaId(35), 0) ()
-    v10:8 = hcall addr.abs [(Fp, [None, None]), (Imm(4294966944), [Some(Scratch(0)), None]), (k3, [None, None])] ins [] outs [0] ()
+    v10:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294966944), [Some(Scratch(0)), None]), (k3, [None, None])] outs 1 ()
     v11:8 = Call(Call { target: fn4, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v8, 0x0, v10)
     invoke -> b33() unwind b34()
 b3(): ; Body
     Store(1, 0) (v11, 0x0)
     v14:8 = AllocaAddr(AllocaId(35), 0) ()
-    v16:8 = hcall addr.abs [(Fp, [None, None]), (Imm(4294966944), [Some(Scratch(0)), None]), (k5, [None, None])] ins [] outs [0] ()
+    v16:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294966944), [Some(Scratch(0)), None]), (k5, [None, None])] outs 1 ()
     v17:8 = Call(Call { target: fn4, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v14, 0x1, v16)
     invoke -> b35() unwind b36()
 b4(): ; Body
     Store(1, 0) (v17, 0x0)
     jmp b5(0x2, v1, v0)
 b5(v21:8, v26:8, v60:8): ; Body head 0
-    v22:8, v23:1 = hcall mul.ovf.u.w64 [(Fp, [None, None]), (Imm(4294967128), [Some(Scratch(0)), None]), (Imm(4294967136), [Some(Scratch(8)), None]), (Imm(4294967152), [Some(Scratch(16)), None]), (Imm(4294967144), [Some(Scratch(24)), None])] ins [16, 24] outs [0, 8] (v21, v21)
+    v22:8, v23:1 = hcall.reg mul.ovf.u.w64 [(Fp, [None, None]), (Imm(4294967128), [Some(Scratch(0)), None]), (Imm(4294967136), [Some(Scratch(8)), None]), (Imm(4294967152), [Some(Scratch(16)), None]), (Imm(4294967144), [Some(Scratch(24)), None])] outs 2 (v21, v21)
     br v23 ? b6() : b8()
 b6(): ; Body
-    v24:8 = hcall addr.abs [(Fp, [None, None]), (Imm(4294966952), [Some(Scratch(0)), None]), (k7, [None, None])] ins [] outs [0] ()
+    v24:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294966952), [Some(Scratch(0)), None]), (k7, [None, None])] outs 1 ()
     Call(Call { target: sym8, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v24)
     invoke -> b37() unwind b38()
 b7(): ; Body
@@ -376,17 +376,17 @@ b8(): ; Body
     br LtU.w8 v26, v22 ? b25() : b9()
 b9(): ; Body
     v27:8 = AllocaAddr(AllocaId(35), 0) ()
-    v28:8 = hcall addr.abs [(Fp, [None, None]), (Imm(4294966952), [Some(Scratch(0)), None]), (k9, [None, None])] ins [] outs [0] ()
+    v28:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294966952), [Some(Scratch(0)), None]), (k9, [None, None])] outs 1 ()
     v29:8 = Call(Call { target: fn10.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v27, v21, v28)
     invoke -> b39() unwind b40()
 b10(): ; Body
     v31:1 = Load(1, 0) (v29)
     br v31 ? b11() : b21(v21, v26, v60)
 b11(): ; Body
-    v32:8, v33:1 = hcall mul.ovf.u.w64 [(Fp, [None, None]), (Imm(4294967056), [Some(Scratch(0)), None]), (Imm(4294967064), [Some(Scratch(8)), None]), (Imm(4294967080), [Some(Scratch(16)), None]), (Imm(4294967072), [Some(Scratch(24)), None])] ins [16, 24] outs [0, 8] (v21, v21)
+    v32:8, v33:1 = hcall.reg mul.ovf.u.w64 [(Fp, [None, None]), (Imm(4294967056), [Some(Scratch(0)), None]), (Imm(4294967064), [Some(Scratch(8)), None]), (Imm(4294967080), [Some(Scratch(16)), None]), (Imm(4294967072), [Some(Scratch(24)), None])] outs 2 (v21, v21)
     br v33 ? b12() : b14()
 b12(): ; Body
-    v34:8 = hcall addr.abs [(Fp, [None, None]), (Imm(4294966952), [Some(Scratch(0)), None]), (k11, [None, None])] ins [] outs [0] ()
+    v34:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294966952), [Some(Scratch(0)), None]), (k11, [None, None])] outs 1 ()
     Call(Call { target: sym8, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v34)
     invoke -> b41() unwind b42()
 b13(): ; Body
@@ -398,15 +398,15 @@ b15(v36:8, v37:8, v43:8, v63:8): ; Body head 1
     br LtU.w8 v37, v36 ? b21(v43, v37, v63) : b16()
 b16(): ; Body
     v38:8 = AllocaAddr(AllocaId(35), 0) ()
-    v39:8 = hcall addr.abs [(Fp, [None, None]), (Imm(4294966952), [Some(Scratch(0)), None]), (k13, [None, None])] ins [] outs [0] ()
+    v39:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294966952), [Some(Scratch(0)), None]), (k13, [None, None])] outs 1 ()
     v40:8 = Call(Call { target: fn4, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v38, v36, v39)
     invoke -> b43() unwind b44()
 b17(): ; Body
     Store(1, 0) (v40, 0x0)
-    v44:8, v45:1 = hcall add.ovf.u.w64 [(Fp, [None, None]), (Imm(4294966992), [Some(Scratch(0)), None]), (Imm(4294967000), [Some(Scratch(8)), None]), (Imm(4294967088), [Some(Scratch(16)), None]), (Imm(4294967008), [Some(Scratch(24)), None])] ins [16, 24] outs [0, 8] (v36, v43)
+    v44:8, v45:1 = hcall.reg add.ovf.u.w64 [(Fp, [None, None]), (Imm(4294966992), [Some(Scratch(0)), None]), (Imm(4294967000), [Some(Scratch(8)), None]), (Imm(4294967088), [Some(Scratch(16)), None]), (Imm(4294967008), [Some(Scratch(24)), None])] outs 2 (v36, v43)
     br v45 ? b18() : b20()
 b18(): ; Body
-    v46:8 = hcall addr.abs [(Fp, [None, None]), (Imm(4294966952), [Some(Scratch(0)), None]), (k15, [None, None])] ins [] outs [0] ()
+    v46:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294966952), [Some(Scratch(0)), None]), (k15, [None, None])] outs 1 ()
     Call(Call { target: sym1, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v46)
     invoke -> b45() unwind b46()
 b19(): ; Body
@@ -415,10 +415,10 @@ b19(): ; Body
 b20(): ; Body
     jmp b15(v44, v37, v43, v63)
 b21(v52:8, v59:8, v62:8): ; Body
-    v53:8, v54:1 = hcall add.ovf.u.w64 [(Fp, [None, None]), (Imm(4294966976), [Some(Scratch(0)), None]), (Imm(4294966984), [Some(Scratch(8)), None]), (Imm(4294967176), [Some(Scratch(16)), None]), (Imm(4294966952), [Some(Scratch(24)), None])] ins [16, 24] outs [0, 8] (v52, 0x1)
+    v53:8, v54:1 = hcall.reg add.ovf.u.w64 [(Fp, [None, None]), (Imm(4294966976), [Some(Scratch(0)), None]), (Imm(4294966984), [Some(Scratch(8)), None]), (Imm(4294967176), [Some(Scratch(16)), None]), (Imm(4294966952), [Some(Scratch(24)), None])] outs 2 (v52, 0x1)
     br v54 ? b22() : b24()
 b22(): ; Body
-    v55:8 = hcall addr.abs [(Fp, [None, None]), (Imm(4294966952), [Some(Scratch(0)), None]), (k17, [None, None])] ins [] outs [0] ()
+    v55:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294966952), [Some(Scratch(0)), None]), (k17, [None, None])] outs 1 ()
     Call(Call { target: sym1, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v55)
     invoke -> b47() unwind b48()
 b23(): ; Body
@@ -646,7 +646,7 @@ b19(): ; Body
 b20(): ; Body
     jmp b7()
 b21(): ; Body
-    v60:8 = hcall addr.abs [(Fp, [None, None]), (Imm(4294967136), [Some(Scratch(0)), None]), (k4, [None, None])] ins [] outs [0] ()
+    v60:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967136), [Some(Scratch(0)), None]), (k4, [None, None])] outs 1 ()
     Call(Call { target: fn5, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: None }) (v17, 0x1, v60)
     jmp b22()
 b22(): ; Body

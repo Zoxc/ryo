@@ -255,7 +255,8 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
                 },
                 Op::Call(_) => [R::Rax, R::Rdx].get(n as usize).copied(),
                 Op::LandingPad => Some(R::Rax),
-                Op::HCall(h) if h.ret && n as usize == h.outs.len() => Some(R::Rax),
+                Op::HCall(h) if h.reg => [R::Rax, R::Rdx].get(n as usize).copied(),
+                Op::HCall(h) if h.ret && n == h.nout => Some(R::Rax),
                 _ => None,
             },
             ValueDef::Param(blk, n) => {

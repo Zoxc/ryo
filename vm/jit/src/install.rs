@@ -498,6 +498,7 @@ impl Jit {
             let field = jit_f + r.at as usize;
             let target = match r.to {
                 Ref::Handler(op) => Some(self.rt.handlers[op as usize]).filter(|h| !h.is_null()).ok_or("no handler")? as usize,
+                Ref::RegHandler(op) => Some(self.rt.reg_handlers[op as usize]).filter(|h| !h.is_null()).ok_or("no register entry")? as usize,
                 Ref::Probe => self.rt.probe as usize,
                 Ref::Func(Func(g)) if g == func => jit_f,
                 Ref::Func(Func(g)) => {
@@ -627,6 +628,7 @@ impl Jit {
         for r in relocs {
             let to = match r.to {
                 Ref::Handler(op) => std::format!("ryo_h_{op:?}"),
+                Ref::RegHandler(op) => std::format!("ryo_hr_{op:?}"),
                 Ref::Probe => "ryo_probe_stack".into(),
                 Ref::Func(g) => g.to_string(),
                 Ref::Sym(Sym(s)) if s >= nsyms => std::format!("slot {}", Func(callees[(s - nsyms) as usize])),

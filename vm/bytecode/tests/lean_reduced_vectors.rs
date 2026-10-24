@@ -287,6 +287,7 @@ fn hex(b: &[u8]) -> String {
 fn ref_text(r: Ref) -> String {
     match r {
         Ref::Handler(op) => format!("handler {op:?}"),
+        Ref::RegHandler(op) => format!("reg handler {op:?}"),
         Ref::Probe => "probe".to_owned(),
         Ref::Func(f) => format!("func {}", f.0),
         Ref::Sym(s) => format!("sym {}", s.0),

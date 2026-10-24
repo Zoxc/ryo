@@ -152,8 +152,11 @@ pub enum Site {
 }
 
 /// A handler call. `args` are the `In` values, stored at `ins` (scratch offsets, 8 bytes
-/// each) before the call; the results are the `Out` values loaded from `outs` after it, then
-/// with `ret` the handler's return value (`al` for a `br` shape, `rax` for a `switch`).
+/// each) before the call; the results are the `nout` `Out` values loaded from `outs` after it,
+/// then with `ret` the handler's return value (`al` for a `br` shape, `rax` for a `switch`).
+/// With `reg`, it calls the handler's register entry (`effects::RegEntry`) instead: the `In`
+/// values go in the first argument registers, the `Out` values and the return value come back
+/// in `rax`, `rdx`, and `ins` and `outs` are empty.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HCall {
     pub h: Opcode,
@@ -162,7 +165,9 @@ pub struct HCall {
     pub regs: Vec<(Arg, [Option<SlotRef>; 2])>,
     pub ins: Vec<u32>,
     pub outs: Vec<u32>,
+    pub nout: u8,
     pub ret: bool,
+    pub reg: bool,
     pub site: Site,
 }
 
@@ -800,7 +805,11 @@ impl fmt::Display for Func {
                 }
                 match &id.op {
                     Op::HCall(h) => {
-                        write!(f, "hcall {} {:?} ins {:?} outs {:?}{}", h.h.mnemonic(), h.regs, h.ins, h.outs, if h.ret { " ret" } else { "" })?
+                        if h.reg {
+                            write!(f, "hcall.reg {} {:?} outs {}{}", h.h.mnemonic(), h.regs, h.nout, if h.ret { " ret" } else { "" })?
+                        } else {
+                            write!(f, "hcall {} {:?} ins {:?} outs {:?}{}", h.h.mnemonic(), h.regs, h.ins, h.outs, if h.ret { " ret" } else { "" })?
+                        }
                     }
                     op => write!(f, "{op:?}")?,
                 }

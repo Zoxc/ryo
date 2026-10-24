@@ -223,6 +223,8 @@ pub enum CodeError {
     ArgNotFirst,
     /// A reference to the function's JIT record without [`Mode::counters`].
     NoJitRecord,
+    /// A reference only JIT code makes (a handler's register entry, [`Ref::RegHandler`]).
+    JitOnly,
 }
 
 /// Why [`ImageWriter::finish`] failed.
@@ -738,6 +740,7 @@ impl ImageWriter {
                     pc(Section::Writable, if to == Ref::RecCtr { rec - 1 } else { rec })
                 }
                 Ref::Rec | Ref::RecCtr => return Err(bad(CodeError::NoJitRecord)),
+                Ref::RegHandler(_) => return Err(bad(CodeError::JitOnly)),
                 Ref::Sym(_) => return Err(bad(CodeError::SymOutOfRange)),
                 Ref::Site(_) => return Err(bad(CodeError::SiteOutOfRange)),
                 Ref::Const(_) => return Err(bad(CodeError::ConstOutOfRange)),

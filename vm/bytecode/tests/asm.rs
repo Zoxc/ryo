@@ -382,6 +382,7 @@ impl Fake<'_> {
             Ref::Ro(o) => Self::RO + o as u64,
             Ref::Rec => Self::RECORD,
             Ref::RecCtr => Self::RECORD - 1,
+            Ref::RegHandler(_) => unreachable!("JIT code only"),
         }
     }
 

@@ -160,7 +160,7 @@ fn escapes_pin_at_heads() {
 }
 
 /// A handler's slot operands sharing a register (two 32-bit halves): each is patched to
-/// its own scratch slot, and the promoted values pass through them.
+/// its own scratch slot, or (here) the call goes through the register entry.
 #[test]
 fn handler_shared_register_slots() {
     let v =
@@ -168,7 +168,8 @@ fn handler_shared_register_slots() {
     let f = ir(&decoded(&v, 32, &[]));
     assert!(f.allocas.iter().all(|a| a.kind == AllocaKind::Promoted), "{f}");
     let h = f.insts.iter().find_map(|i| if let Op::HCall(h) = &i.op { Some(h.clone()) } else { None }).expect("an hcall");
-    assert_eq!((h.ins.len(), h.outs.len()), (1, 1), "{f}");
+    // Through the register entry: no scratch slots.
+    assert!(h.reg && h.ins.is_empty() && h.outs.is_empty() && h.nout == 1, "{f}");
     let Term::Ret { parts, .. } = &f.blocks[0].term else { panic!("{f}") };
     assert_eq!(parts.len(), 1);
 }

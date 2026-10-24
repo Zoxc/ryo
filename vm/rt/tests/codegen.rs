@@ -1,5 +1,5 @@
 //! Codegen check of the handlers (design/vm.md, "Handlers"): builds `ryo_rt` as `y build`
-//! does (release, `-Ccodegen-units=1`, this test's `fp-rbp` feature) with `--emit=asm`, and
+//! does (release, `-Ccodegen-units=1`, `jit`, this test's `fp-rbp` feature) with `--emit=asm`, and
 //! checks that
 //! - every opcode with a handler has its `ryo_h_<Opcode>` function;
 //! - with `fp-rbp`, every handler written in Rust reads `rbp` (the VM function's fp) before
@@ -63,6 +63,8 @@ fn rt_asm(dir: &str, features: &[&str], target: Option<&str>) -> String {
         .arg(&manifest)
         .arg("--target-dir")
         .arg(&dir);
+    // With the JIT, whose interface references the register entries.
+    c.args(["--features", "jit"]);
     for f in features {
         c.args(["--features", f]);
     }
@@ -100,11 +102,15 @@ fn win64_handlers_preserve_xmm6_to_15() {
         if !has_handler(op) || avoided.contains(&op) {
             continue;
         }
-        let name = format!("ryo_h_{op:?}");
-        let a = asm_of(&asm, &name).unwrap_or_else(|| panic!("{name}: not in the assembly"));
-        // AT&T syntax: the destination is the last operand.
-        let bad = a.iter().find(|i| (6..16).any(|x| i.ends_with(&format!("%xmm{x}")) || i.ends_with(&format!("%ymm{x}"))));
-        assert!(bad.is_none(), "{name}: writes {:?}\n{}", bad, a.join("\n"));
+        // The register entries too (the JIT doesn't run on PE yet, but they are built).
+        let reg = ryo_bytecode::jit::effects::reg_entry(op, ryo_rt::vm::MODE).is_some();
+        for name in [format!("ryo_h_{op:?}"), hr_name(op)].into_iter().take(1 + reg as usize) {
+            // A register entry identical to another may be merged into it, without a name.
+            let Some(a) = asm_of(&asm, &name).or_else(|| (!name.starts_with("ryo_h_")).then(Vec::new)) else { panic!("{name}: not in the assembly") };
+            // AT&T syntax: the destination is the last operand.
+            let bad = a.iter().find(|i| (6..16).any(|x| i.ends_with(&format!("%xmm{x}")) || i.ends_with(&format!("%ymm{x}"))));
+            assert!(bad.is_none(), "{name}: writes {:?}\n{}", bad, a.join("\n"));
+        }
         checked += 1;
     }
     assert!(checked > 800, "{checked}");
@@ -163,4 +169,35 @@ fn handlers_read_rbp_first_and_hot_ones_have_no_prologue() {
         assert!(bad.is_none(), "{op:?}: has a prologue or a call\n{}", a.join("\n"));
     }
     eprintln!("AddW32:\n  {}", asm_of(&asm, "ryo_h_AddW32").unwrap().join("\n  "));
+
+    // The register entries: none touches the stack (their buffer of frame operands is kept
+    // in registers) but those that call or need a frame anyway. One identical to another may
+    // be merged into it, without a name of its own.
+    let mut checked = 0;
+    for &op in ALL_OPCODES {
+        if ryo_bytecode::jit::effects::reg_entry(op, ryo_rt::vm::MODE).is_none() {
+            continue;
+        }
+        let name = hr_name(op);
+        let Some(a) = asm_of(&asm, &name) else { continue };
+        let frame = a.iter().any(|i| i.starts_with("push") || i.starts_with("call") || i.starts_with("jmp\t") && !i.contains(".LBB"));
+        if !frame {
+            // (`lock or [rsp - 64], 0` is a fence.)
+            let bad = a.iter().find(|i| (i.contains("(%rsp)") && !i.starts_with("lock")) || (i.starts_with("sub") && i.ends_with("%rsp")));
+            assert!(bad.is_none(), "{name}: keeps its operands on the stack\n{}", a.join("\n"));
+        }
+        checked += 1;
+    }
+    assert!(checked > 300, "{checked}");
+    for op in [Opcode::AddOvfUW64, Opcode::SubOvfUW32, Opcode::ZextW32W64, Opcode::AddImmW32, Opcode::LoadW64, Opcode::StoreW64, Opcode::BrLtSW64] {
+        let Some(a) = asm_of(&asm, &hr_name(op)) else { continue };
+        assert!(a.len() <= 5, "{op:?}: register entry of {} instructions\n{}", a.len(), a.join("\n"));
+    }
+}
+
+/// The symbol suffix of `op`'s register entry, which has no symbol of its own: `hr::<Opcode>`
+/// mangled (v0).
+fn hr_name(op: Opcode) -> String {
+    let n = format!("{op:?}");
+    format!("2hr{}{n}", n.len())
 }

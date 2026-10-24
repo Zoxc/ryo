@@ -512,6 +512,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             for r in &c.relocs {
                 let to = match r.to {
                     Ref::Handler(op) => format!("ryo_h_{op:?}"),
+                    Ref::RegHandler(op) => format!("ryo_hr_{op:?}"),
                     Ref::Probe => "ryo_probe_stack".to_owned(),
                     Ref::Func(x) => x.to_string(),
                     Ref::Sym(x) => x.to_string(),
@@ -848,7 +849,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                         probe = true;
                         r.to
                     }
-                    Ref::Ro(_) | Ref::Rec | Ref::RecCtr => r.to,
+                    Ref::Ro(_) | Ref::Rec | Ref::RecCtr | Ref::RegHandler(_) => r.to,
                 };
             }
             // A global symbol with the function's linkage; an internal function native code

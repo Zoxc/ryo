@@ -18,7 +18,7 @@ use crate::image::JitRecord;
 
 /// The version of [`RtApi`] and of the protocol around it. Bumped on every incompatible
 /// change; the JIT refuses to start on a mismatch ([`RtApi::compatible`]).
-pub const JIT_ABI_VERSION: u32 = 2;
+pub const JIT_ABI_VERSION: u32 = 3;
 
 /// The counter of a compiled function ([`JitRecord::ctr`]): far enough below 0 that the
 /// counter checks' `sub`s keep it negative (every check takes its stub) for 2^58 calls. Not
@@ -84,6 +84,10 @@ pub struct RtApi {
     pub shuffled: extern "C-unwind" fn(header: *const u8) -> bool,
     /// Every opcode's handler address by opcode, null for opcodes without a handler.
     pub handlers: [*const (); Opcode::COUNT],
+    /// Every opcode's register entry (design/jit.md, "Register entries"), null for opcodes
+    /// without one: [`crate::jit::effects::reg_entry`] says which have one, and how they take
+    /// their operands.
+    pub reg_handlers: [*const (); Opcode::COUNT],
 }
 
 // SAFETY: immutable once built; the pointers are code addresses.

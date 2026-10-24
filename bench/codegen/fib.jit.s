@@ -1,38 +1,25 @@
 fn fib
-    sub     rsp,48h
-    mov     [rsp+30h],rbx
-    mov     [rsp+20h],r12
+    sub     rsp,38h
+    mov     [rsp+20h],rbx
+    mov     [rsp+10h],r12
     mov     rbx,rdi
     cmp     ebx,2
     jae     L0
-    mov     [rsp+8],rbx
-    lea     rdi,[rsp+40h]
-    mov     esi,0FFFFFFC0h
-    mov     edx,0FFFFFFC8h
-    call    ryo_h_ZextW32W64
-    mov     rax,[rsp]
+    mov     rdi,rbx
+    call    ryo_hr_ZextW32W64
     jmp     L4
 L0:
-    mov     [rsp+10h],rbx
-    mov     qword ptr [rsp+18h],1
-    lea     rdi,[rsp+40h]
-    mov     esi,0FFFFFFC0h
-    mov     edx,0FFFFFFC8h
-    mov     ecx,0FFFFFFD0h
-    mov     r8d,0FFFFFFD8h
-    call    ryo_h_SubOvfUW32
-    mov     r12d,[rsp]
-    movzx   eax,byte ptr [rsp+8]
-    test    al,al
+    mov     rdi,rbx
+    mov     esi,1
+    call    ryo_hr_SubOvfUW32
+    mov     r12,rax
+    test    dl,dl
     je      L1
-    lea     rdi,[rsp+40h]
-    mov     esi,0FFFFFFC0h
-    lea     rdx,[k0]
-    call    ryo_h_AddrAbs
-    mov     rax,[rsp]
+    lea     rdi,[k0]
+    call    ryo_hr_AddrAbs
     mov     rdi,rax
     call    qword ptr [sym1]
-    lea     rdi,[rsp+40h]
+    lea     rdi,[rsp+30h]
     call    ryo_h_Unreachable
     ud2
 L1:
@@ -40,59 +27,41 @@ L1:
     mov     edi,edi
     call    fn2
     mov     r12,rax
-    mov     [rsp+10h],rbx
-    mov     qword ptr [rsp+18h],2
-    lea     rdi,[rsp+40h]
-    mov     esi,0FFFFFFC0h
-    mov     edx,0FFFFFFC8h
-    mov     ecx,0FFFFFFD0h
-    mov     r8d,0FFFFFFD8h
-    call    ryo_h_SubOvfUW32
-    mov     ebx,[rsp]
-    movzx   eax,byte ptr [rsp+8]
-    test    al,al
+    mov     rdi,rbx
+    mov     esi,2
+    call    ryo_hr_SubOvfUW32
+    mov     rbx,rax
+    test    dl,dl
     je      L2
-    lea     rdi,[rsp+40h]
-    mov     esi,0FFFFFFC0h
-    lea     rdx,[k3]
-    call    ryo_h_AddrAbs
-    mov     rax,[rsp]
+    lea     rdi,[k3]
+    call    ryo_hr_AddrAbs
     mov     rdi,rax
     call    qword ptr [sym1]
-    lea     rdi,[rsp+40h]
+    lea     rdi,[rsp+30h]
     call    ryo_h_Unreachable
     ud2
 L2:
     mov     rdi,rbx
     mov     edi,edi
     call    fn2
-    mov     [rsp+10h],r12
-    mov     [rsp+18h],rax
-    lea     rdi,[rsp+40h]
-    mov     esi,0FFFFFFC0h
-    mov     edx,0FFFFFFC8h
-    mov     ecx,0FFFFFFD0h
-    mov     r8d,0FFFFFFD8h
-    call    ryo_h_AddOvfUW64
-    mov     rbx,[rsp]
-    movzx   eax,byte ptr [rsp+8]
-    test    al,al
+    mov     rdi,r12
+    mov     rsi,rax
+    call    ryo_hr_AddOvfUW64
+    mov     rbx,rax
+    test    dl,dl
     je      L3
-    lea     rdi,[rsp+40h]
-    mov     esi,0FFFFFFC0h
-    lea     rdx,[k6]
-    call    ryo_h_AddrAbs
-    mov     rax,[rsp]
+    lea     rdi,[k6]
+    call    ryo_hr_AddrAbs
     mov     rdi,rax
     call    qword ptr [sym7]
-    lea     rdi,[rsp+40h]
+    lea     rdi,[rsp+30h]
     call    ryo_h_Unreachable
     ud2
 L3:
     mov     rax,rbx
 L4:
-    mov     rbx,[rsp+30h]
-    mov     r12,[rsp+20h]
-    add     rsp,48h
+    mov     rbx,[rsp+20h]
+    mov     r12,[rsp+10h]
+    add     rsp,38h
     ret
 

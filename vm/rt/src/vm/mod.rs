@@ -20,7 +20,7 @@ mod jit;
 mod registry;
 mod sys;
 
-pub use interp::{FP_ARG, MODE, h, handler, probe_stack};
+pub use interp::{FP_ARG, MODE, RegRet, h, handler, probe_stack, reg_handler};
 #[cfg(feature = "jit")]
 pub use jit::{JIT_ENTRY_PREFIX, REDIRECT, configure_jit, jit_shuffle_image, jit_stats};
 pub use jit::{trip_entry, trip_osr};

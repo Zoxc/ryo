@@ -246,7 +246,8 @@ baseline the tier refines.
   alloca, `OsrLoad` (OSR entries only), `LandingPad` (the exception object, `rax`),
   `HCall` (a handler call: its `In` values are stored to a scratch area whose offsets its
   slot operands get, its `Out` values loaded back, and a `br`/`switch` handler's return
-  value is a result), `Call` and `Island`.
+  value is a result; or, `hcall.reg`, the same through the handler's [register
+  entry](#register-entries)), `Call` and `Island`.
 - **Terminators**: `jmp`, `br` (on a boolean), `brcmp`, `switch` (a switch handler's
   index), `ret`, `tail_call`, `trap`, and `invoke`: a call, island or `resume` with a
   landing pad ends its block, with a normal edge (to a fresh single-predecessor block that
@@ -331,7 +332,10 @@ pointer, last of all), `rsp = fp - F_jit`, `jmp` to the head.
   (`r10` takes the others), `[base + index*scale]` for `ptr.index` by 1, 2, 4 or 8,
   `setcc`, compare-branches fused, fall-through layout. `r10` and `r11` are the emitter's
   scratch registers and never allocated.
-- **Calls**: `hcall` stores its `In` values to the scratch area, sets the argument
+- **Calls**: `hcall.reg` moves its `In` values into the first argument registers (a
+  parallel move), sets the data registers after them, calls the register entry and moves
+  its results out of `rax` and `rdx` ([Register entries](#register-entries)). `hcall`
+  stores its `In` values to the scratch area, sets the argument
   registers (the slot operands' offsets patched into them), calls the handler and loads
   its `Out` values, each at its width (a wider load of what the handler just stored would
   miss the store forwarding); VM and native calls move their arguments into the argument registers
@@ -345,6 +349,47 @@ pointer, last of all), `rsp = fp - F_jit`, `jmp` to the head.
   per saved register; the LSDA's call sites are the calls with a landing pad (to their
   pad stub) or a `Continue` entry, as in AOT code. Values live into a pad live across the
   call, so they are in callee-saved registers or the frame, which the unwinder restores.
+
+### Register entries
+
+Every handler that returns and whose frame operands are all scalars has a second entry,
+`ryo_hr_<Opcode>`, that takes those operands' values in registers and returns its results in
+registers, for `hcall.reg`. The frame entry `ryo_h_<Opcode>` stays as it is (AOT code calls
+only it, and is unchanged).
+
+- **Which**: `jit::effects::reg_entry(op, mode)`, a `const fn` from the handler effect table
+  (`effects`, also `const`) and the register layout: `op`, `br` and `switch` shapes (not
+  `resume`, `lpad` or traps) whose frame operands are each read, written or updated at 1 to
+  8 bytes (no `addr`, no block operands, no `w128`), with at most six inputs and data
+  registers and at most two results: most handlers.
+- **Convention**: `extern "sysv64-unwind" fn(a0, …, a5: u64) -> (u64, u64)`. The arguments
+  are, in order from `rdi`: the values of the frame operands it reads (by operand order,
+  each in its register's low bytes, the rest ignored), then whole every argument register of
+  the frame entry's layout that holds anything but a slot offset (immediates, addresses,
+  case tables, a `Mem` operand's displacement; their slot-offset halves are ignored). No
+  `fp`. The results are the values of the frame operands it writes (by operand order; for an
+  update, the new value), then the `br`/`switch` return value, in `rax` then `rdx`, each in
+  the low bytes. It clobbers what any `sysv64` call does: the SSA tier keeps nothing in a
+  caller-saved register across it, as for every call. A `preserve_none`- or
+  `preserve_most`-like convention, which would let values stay in caller-saved registers,
+  isn't available to Rust functions without a naked wrapper; the entries are leaf functions
+  of a few instructions, so the cost is in the caller's register pressure, not in them.
+- **Generation**: `handlers!` (`ryo_rt`'s `interp.rs`) instantiates each handler body a
+  second time in `hr`, on a local buffer of eight 8-byte words as its frame (`fp`) with the
+  operand slot offsets replaced by constants (`8 × operand index`), the inputs stored to it
+  first and the outputs read from it last. Every offset is then constant, so LLVM keeps the
+  buffer in registers: `ryo_hr_AddOvfUW64` is `mov rax, rdi; xor edx, edx; add rax, rsi;
+  setb dl; ret` against the frame entry's nine instructions, `ryo_hr_ZextW32W64` is `mov eax,
+  edi; ret`. `vm/rt/tests/codegen.rs` checks that every entry exists and keeps nothing on
+  the stack, `vm/rt/tests/reg_entries.rs` runs every entry against its frame entry on random
+  operands.
+- **Interface**: `RtApi::reg_handlers` gives their addresses (null without one), the JIT
+  relocates `Ref::RegHandler` against it (`JIT_ABI_VERSION` 3), and `RYO_JIT_DUMP` names them
+  `ryo_hr_<Opcode>`.
+- **Use**: the builder makes a handler call `hcall.reg` when the handler has a register
+  entry and every frame operand is a promoted variable; otherwise (an operand in a memory
+  alloca, a handler without one) it calls the frame entry through the scratch area. The
+  register allocator hints the results to `rax`, `rdx`.
 
 ### Register allocation
 
@@ -377,8 +422,9 @@ pointer, last of all), `rsp = fp - F_jit`, `jmp` to the head.
   that pins nothing is the follow-up.
 - The handler effect table is by family from the mnemonics, checked against the handlers.
 - An in-tree linear scan, no new dependencies.
-- Handlers stay calls; native handler operations (overflow arithmetic, extensions, …) are
-  the follow-up, as are splitting and rematerialization.
+- Handlers stay calls, through their register entries where they have one; native handler
+  operations (overflow arithmetic, extensions, …) are the follow-up, as are splitting and
+  rematerialization.
 - The re-encoding pipeline stays, as the fallback and the `reencode` mode.
 - Only 1, 2, 4 and 8-byte integer fields are promoted (`w128` values and floats stay in
   memory; floats move through general-purpose registers at calls).
@@ -407,6 +453,7 @@ rlib bundles (`build/src/jit.rs`, [build.md](build.md#build)):
   | `done` | reports a record: compiled (after the JIT published it), or failed (the runtime marks it `Failed`); wakes its waiters |
   | `shuffled` | whether an image's functions get shuffled frames |
   | `handlers` | every opcode's handler address, null for opcodes without one |
+  | `reg_handlers` | every opcode's [register entry](#register-entries) address, null for opcodes without one |
 
   `REDIRECT` and `JIT_ENTRY_PREFIX` are there too. Nothing crosses the interface by
   unwinding: the callbacks are `C-unwind` only for the reason the trips are. Records,

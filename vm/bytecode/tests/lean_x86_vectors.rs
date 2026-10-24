@@ -95,6 +95,7 @@ fn addr_of(r: Ref) -> u64 {
         Ref::Ro(o) => 0x6800_0000 + o as u64,
         Ref::Rec => RECORD,
         Ref::RecCtr => RECORD - 1,
+        Ref::RegHandler(_) => unreachable!("JIT code only"),
     }
 }
 
@@ -359,6 +360,7 @@ fn rf(r: Ref) -> String {
         Ref::Ro(o) => format!("{{\"ro\":{{\"off\":{o}}}}}"),
         Ref::Rec => "\"record\"".into(),
         Ref::RecCtr => "\"recordCtr\"".into(),
+        Ref::RegHandler(_) => unreachable!("JIT code only"),
     }
 }
 

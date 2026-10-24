@@ -24,6 +24,8 @@ use crate::reduced::Arg;
 pub enum Ref {
     /// The handler `ryo_h_<op>`.
     Handler(Opcode),
+    /// The register entry `ryo_hr_<op>` (JIT code only, `jit::effects::RegEntry`).
+    RegHandler(Opcode),
     /// `ryo_probe_stack`.
     Probe,
     /// A function of the image (call and tail-call targets).

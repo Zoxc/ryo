@@ -743,6 +743,9 @@ in `ryo_rt`, `ryo_h_<Opcode>`:
   bool;`). Each kind is a body macro in `vm/rt/src/vm/interp.rs`, and `handlers!` expands the
   list into the handler functions (`ryo_rt::vm::h`). A `const` check fails to compile if the
   list doesn't have exactly the opcodes with Rust handlers.
+- **Register entries**: most handlers also have a second entry, `ryo_hr_<Opcode>`, with
+  their frame operands' values in registers, which only JIT code calls
+  ([jit.md](jit.md#register-entries)).
 - **Assembly**: `resume` (`ryo_h_Resume`) and `ryo_probe_stack` are naked functions: they
   end in a jump or need the caller's `rsp`. So are the JIT's trip entry points
   `ryo_jit_trip_entry` and `ryo_jit_trip_osr`, which must preserve every register but `rax`
