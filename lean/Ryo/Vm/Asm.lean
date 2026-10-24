@@ -9,8 +9,8 @@ Ryo.Vm.Asm — the pieces of `vm/bytecode/src/asm` the decoder shares with the e
   `classify`, `decodeInline`, `Cache` (`emit`, `unemit`, `update`).
 
 Rust's `u32`/`i32` arithmetic is kept: slots and displacements are `BitVec 32`, immediates
-`BitVec 64`, and `u32` sums wrap (as release builds do; see `DecodeReduced` for the inputs on
-which a debug build of the Rust decoder panics instead).
+`BitVec 64`, and sums wrap where Rust's wrap, and fail where Rust's are checked (`mov.w128`'s
+high halves).
 -/
 import Ryo.Vm.R.Syntax
 import Ryo.X86.Decode
@@ -366,6 +366,8 @@ def sequence {T : Type} (c : Class) (ops : List (Opnd T)) : Option (List Item ×
   | .mov128 =>
     let s1 ← slot 1
     let s0 ← slot 0
+    -- The high halves, 8 bytes up (none at the top of the `i32` range).
+    if s1.disp.toInt + 8 ≥ 2 ^ 31 || s0.disp.toInt + 8 ≥ 2 ^ 31 then none
     let hi (m : M) : M := M.frame (m.disp + 8)
     pure ([ld .q s1, .ld .q false C (hi s1), .st .q C (hi s0), st .q s0], none)
   | .imm w =>

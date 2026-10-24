@@ -3,8 +3,7 @@ RyoTest.DecodeReduced — `Ryo.Vm.decodeReduced` against Rust's `asm::decode_red
 vectors of `vm/bytecode/tests/lean_reduced_vectors.rs` (`RyoTest/DecodeReducedVectors.lean`):
 for every encoded function and every mutation of one, the same text (`Decoded.toText`: frame
 size, the code as `reduced::Disasm` prints it, cleanup entries, scopes, dropped stores, loop
-heads), or the same error at the same byte. Vectors where the Rust decoder panics (a debug
-build's overflow checks) are only counted.
+heads), or the same error at the same byte.
 
 Also: the inline classes (`classOf`) are exactly the generated `hasInline` opcodes; and the
 dead-store check (`Ryo.Vm.Frame.droppedNotDead`) accepts every dropped store of the functions
@@ -82,7 +81,6 @@ def checkRange (lo hi : Nat) : Except String Unit := do
   let vs ← vectors
   let mut bad : Array String := #[]
   for v in vs.extract lo hi do
-    if v.out == "panic\n" then continue
     let got := decodeText v.inputs.decode
     if got != v.out then
       bad := bad.push s!"{v.name}:\n--- rust\n{v.out}--- lean\n{got}"

@@ -155,11 +155,13 @@ pub(super) fn sequence<T>(op: Opcode, ops: &[Opnd<T>]) -> Option<(Vec<Item>, Opt
     match c {
         Class::Mov(w) => v.extend([ld(w, slot(1)), st(w, slot(0))]),
         Class::Mov128 => {
-            let hi = |m: M| M::frame(m.disp + 8);
+            // The high halves, 8 bytes up (none at the top of the `i32` range).
+            let hi = |m: M| m.disp.checked_add(8).map(M::frame);
+            let (src_hi, dst_hi) = (hi(slot(1))?, hi(slot(0))?);
             v.extend([
                 ld(W::Q, slot(1)),
-                Item::Ld { w: W::Q, sx: false, dst: C, m: hi(slot(1)) },
-                Item::St { w: W::Q, src: C, m: hi(slot(0)) },
+                Item::Ld { w: W::Q, sx: false, dst: C, m: src_hi },
+                Item::St { w: W::Q, src: C, m: dst_hi },
                 st(W::Q, slot(0)),
             ]);
         }

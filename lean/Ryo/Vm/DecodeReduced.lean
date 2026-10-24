@@ -23,8 +23,8 @@ registers set in order, and recovers every operand, the frame size and the unwin
   scopes, placed before the first instruction at or after their position.
 
 The functions mirror Rust's one for one, including their quirks (`arg`'s cursor after a
-failed `movd` pair; `binary_search`'s choice among equal positions; `u32` wrapping where a
-debug build of Rust would panic on overflow, see `vm/bytecode/tests/lean_reduced_vectors.rs`).
+failed `movd` pair; `binary_search`'s choice among equal positions; `u32` wrapping where Rust
+wraps, and its checked sums: the PE frame size, a result piece's offset).
 Loops that Rust runs until the code ends take fuel (the code's length, plus the dropped stores
 for the instruction loop), which they never exhaust: every element read is at least one byte
 (`decodeItem_pos`).
@@ -227,7 +227,7 @@ where
           let (o, b) ← off m base
           let parts := match parts.back? with
             | some p =>
-              if !p.xmm && last == some r && o == u32 (p.off + p.size) then
+              if !p.xmm && last == some r && o == p.off + p.size then
                 parts.pop.push { p with size := p.size + w.bits / 8 }
               else parts.push ⟨false, w.bits / 8, o⟩
             | none => parts.push ⟨false, w.bits / 8, o⟩
@@ -642,7 +642,8 @@ def read (ro : ByteArray) (callSites : Array CallSite) (dropped : List DroppedSt
     | some .pushRbp | some .winPrologue | some (.mov .rbp .rsp) | some (.setReg .rax _)
     | some (.call .probe) => continue
     | _ => break
-  let frameSize := if mode.pe then u32 (alloc + 16)
+  if mode.pe && alloc + 16 ≥ 2 ^ 32 then err 0 "frame size out of range"
+  let frameSize := if mode.pe then alloc + 16
     else if mode.framePointer then alloc else u32 (alloc + 2 ^ 32 - 8)
   if frameSize % 16 != 0 then err 0 "frame size not a multiple of 16"
   setPos start

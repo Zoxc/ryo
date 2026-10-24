@@ -890,8 +890,8 @@ pub enum Fields<'a> {
     /// the function, past its first byte, is a branch within it; any other target is
     /// classified by the resolver. (A function's first byte is its prologue, never a branch
     /// target, so a field to it is a call or tail call of the function itself.) A field to
-    /// `record` is the function's JIT record ([`Ref::Rec`]).
-    Linked { addr: u64, record: u64, resolver: &'a dyn Resolver },
+    /// `record` (with [`super::Mode::counters`]) is the function's JIT record ([`Ref::Rec`]).
+    Linked { addr: u64, record: Option<u64>, resolver: &'a dyn Resolver },
 }
 
 /// A `rel32` field: a branch within the function (its target position), or a reference.
@@ -947,7 +947,7 @@ impl<'a> Cursor<'a> {
                 let inside = to.wrapping_sub(addr).wrapping_sub(1) < (self.code.len() as u64).wrapping_sub(1);
                 if inside {
                     Field::Local(local)
-                } else if to == record {
+                } else if record == Some(to) {
                     Field::Ref(Ref::Rec)
                 } else {
                     resolver.resolve(to).map_or(Field::Bad, Field::Ref)

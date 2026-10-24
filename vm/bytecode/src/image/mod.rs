@@ -695,8 +695,10 @@ impl ImageResolver<'_> {
             .map(|d| crate::asm::DroppedStore::from_parts(d.code_offset, d.frame_offset, d.size, d.reg))
             .collect::<Option<Vec<_>>>()?;
         let addr = self.image.header().text.wrapping_add(f.code_off as u64);
-        let record = self.image.jit_records().wrapping_add(func as usize) as u64;
-        Some(crate::asm::decode_linked(code, addr, record, self, &sites, &dropped, &scopes, self.image.mode()))
+        // Only with counters has the function a JIT record.
+        let mode = self.image.mode();
+        let record = mode.counters.then(|| self.image.jit_records().wrapping_add(func as usize) as u64);
+        Some(crate::asm::decode_linked(code, addr, record, self, &sites, &dropped, &scopes, mode))
     }
 }
 

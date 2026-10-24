@@ -177,14 +177,14 @@ pub trait Resolver {
 /// [`decode_reduced`], with the references recovered from the resolved fields by `resolver`
 /// instead of a relocation list: a field whose target lies inside the function (past its
 /// first byte) is a branch or jump table within it, one to `record` is the function's JIT
-/// record ([`Ref::Rec`], with [`Mode::counters`]), any other is the reference `resolver`
-/// gives. The dropped stores aren't in the code: they come from the image's table
+/// record ([`Ref::Rec`]; `None` without [`Mode::counters`]), any other is the reference
+/// `resolver` gives. The dropped stores aren't in the code: they come from the image's table
 /// ([`crate::image::ImageResolver::decode`]) or [`super::Encoded::dropped`].
 #[allow(clippy::too_many_arguments)]
 pub fn decode_linked(
     code: &[u8],
     code_addr: u64,
-    record: u64,
+    record: Option<u64>,
     resolver: &dyn Resolver,
     call_sites: &[CallSite],
     dropped: &[DroppedStore],
@@ -266,7 +266,7 @@ fn read(
         break;
     }
     let frame_size = if mode.pe {
-        alloc + 16
+        alloc.checked_add(16).ok_or(err(0, "frame size out of range"))?
     } else if mode.frame_pointer {
         alloc
     } else {
@@ -413,7 +413,7 @@ fn read_u32(ro: &[u8], at: u32) -> Option<u32> {
 /// The operand array at `at` in the rodata (its count is the word before).
 fn ops_array(ro: &[u8], at: u32) -> Option<Vec<u32>> {
     let n = read_u32(ro, at.checked_sub(4)?)?;
-    (0..n).map(|i| read_u32(ro, at + 4 * i)).collect()
+    (0..n).map(|i| read_u32(ro, at.checked_add(i.checked_mul(4)?)?)).collect()
 }
 
 /// The branch targets of an operand (byte positions).
@@ -550,7 +550,7 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8]) -> Result<Proto, AsmError> {
             Proto { op, ops: Vec::new(), handler: Some((args, then)), pos, sites, dropped: false, counter: None }
         }
         Item::Call(Ref::Handler(op)) if has_handler(op) => {
-            let mut ops = handler_operands(op, &setup, fr, ro, pos)?;
+            let mut ops = handler_operands(op, &setup, fr, ro, c.code.len(), pos)?;
             let info = op.info();
             let set = |ops: &mut Vec<Opnd>, name: &str, v: Opnd| ops[info.operand_index(name).unwrap()] = v;
             let n = ops.iter().find_map(|o| match o {
@@ -633,7 +633,7 @@ fn parts_of(items: &[Item]) -> Option<(i32, Vec<RetPart>)> {
                 let o = off(m)?;
                 match parts.last_mut() {
                     // The next piece of the same register, after its shift.
-                    Some(p) if !p.xmm && last_int == Some(r) && o == p.off + p.size => p.size += w.bits() / 8,
+                    Some(p) if !p.xmm && last_int == Some(r) && p.off.checked_add(p.size) == Some(o) => p.size += w.bits() / 8,
                     _ => parts.push(RetPart { xmm: false, size: w.bits() / 8, off: o }),
                 }
                 last_int = Some(r);
@@ -986,8 +986,9 @@ fn handler_args(setup: &[(u32, Item)], fr: &Frame, pos: u32) -> Result<Vec<Arg>,
 }
 
 /// The operands of `op`'s handler call from the register setup before it (positions and
-/// items); operands handlers don't receive are left as placeholders.
-fn handler_operands(op: Opcode, setup: &[(u32, Item)], fr: &Frame, ro: &[u8], pos: u32) -> Result<Vec<Opnd>, AsmError> {
+/// items), in a function of `code_len` bytes; operands handlers don't receive are left as
+/// placeholders.
+fn handler_operands(op: Opcode, setup: &[(u32, Item)], fr: &Frame, ro: &[u8], code_len: usize, pos: u32) -> Result<Vec<Opnd>, AsmError> {
     let mode = fr.mode;
     let err = |what: &'static str| AsmError { at: pos, what };
     let l = layout(op, mode);
@@ -1070,12 +1071,17 @@ fn handler_operands(op: Opcode, setup: &[(u32, Item)], fr: &Frame, ro: &[u8], po
                 Ref::Site(s) => Opnd::Site(s),
                 _ => return Err(err("not a site")),
             },
-            OperandKind::List(ElemKind::Target) => Opnd::Targets(vec![0; imm(loc.reg)? as usize]),
+            // A table of `n` entries and the default, 4 bytes each, must fit in the code.
+            OperandKind::List(ElemKind::Target) => {
+                let n = usize::try_from(imm(loc.reg)?).ok().filter(|&n| n < code_len / 4).ok_or(err("case count"))?;
+                Opnd::Targets(vec![0; n])
+            }
             OperandKind::List(e @ (ElemKind::Case8 | ElemKind::Case16 | ElemKind::Case32 | ElemKind::Case64 | ElemKind::Case128)) => {
                 let Ref::Ro(at) = addr(loc.reg)? else { return Err(err("case values")) };
-                let n = imm(loc.reg + 1)? as usize;
+                let n = usize::try_from(imm(loc.reg + 1)?).map_err(|_| err("case values"))?;
                 let size = case_size(e);
-                let b = ro.get(at as usize..).and_then(|b| b.get(..n * size)).ok_or(err("case values"))?;
+                let len = n.checked_mul(size).ok_or(err("case values"))?;
+                let b = ro.get(at as usize..).and_then(|b| b.get(..len)).ok_or(err("case values"))?;
                 let vals = b.chunks(size).map(|c| c.iter().rev().fold(0u128, |v, &x| v << 8 | x as u128)).collect();
                 Opnd::Cases(vals, vec![0; n])
             }

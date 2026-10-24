@@ -300,7 +300,7 @@ fn place(item: &Item, pos: u32, len: u32) -> Placed {
 fn decode(code: &[u8], pos: u32, relocs: Option<&[Reloc]>, sp: Option<u32>) -> Option<(Item, u32)> {
     let fields = match relocs {
         Some(rs) => Fields::Relocs(rs),
-        None => Fields::Linked { addr: CODE, record: RECORD, resolver: &Link },
+        None => Fields::Linked { addr: CODE, record: Some(RECORD), resolver: &Link },
     };
     let mut c = Cursor::new(code, fields);
     c.pos = pos;

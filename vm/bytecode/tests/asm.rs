@@ -267,8 +267,17 @@ fn check(f: &Fn, frame_size: u32, mode: Mode, what: &str) -> asm::Encoded {
     }
     // The same from the linked code, its references recovered from the resolved fields.
     let linked = Fake::link(&enc);
-    let lin = asm::decode_linked(&linked, Fake::CODE, Fake::RECORD, &Fake { ro: &enc.rodata }, &sites, &enc.dropped, &enc.scopes, mode)
-        .unwrap_or_else(|e| panic!("{what} {mode:?} (linked): {e:?}\n{}", Disasm(&code)));
+    let lin = asm::decode_linked(
+        &linked,
+        Fake::CODE,
+        mode.counters.then_some(Fake::RECORD),
+        &Fake { ro: &enc.rodata },
+        &sites,
+        &enc.dropped,
+        &enc.scopes,
+        mode,
+    )
+    .unwrap_or_else(|e| panic!("{what} {mode:?} (linked): {e:?}\n{}", Disasm(&code)));
     if lin != red {
         panic!("{what} {mode:?} (linked):\n{}\n---\n{}", reduced::Disasm(&red.words), reduced::Disasm(&lin.words));
     }
@@ -296,8 +305,17 @@ fn reencodes(enc: &asm::Encoded, mode: Mode, what: &str) {
     let red = asm::decode_reduced(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, mode)
         .unwrap_or_else(|e| panic!("{what} {mode:?} (reduced): {e:?}"));
     let linked = Fake::link(enc);
-    let lin = asm::decode_linked(&linked, Fake::CODE, Fake::RECORD, &Fake { ro: &enc.rodata }, &enc.call_sites, &enc.dropped, &enc.scopes, mode)
-        .unwrap_or_else(|e| panic!("{what} {mode:?} (linked): {e:?}"));
+    let lin = asm::decode_linked(
+        &linked,
+        Fake::CODE,
+        mode.counters.then_some(Fake::RECORD),
+        &Fake { ro: &enc.rodata },
+        &enc.call_sites,
+        &enc.dropped,
+        &enc.scopes,
+        mode,
+    )
+    .unwrap_or_else(|e| panic!("{what} {mode:?} (linked): {e:?}"));
     shuffles(&red, &enc.rodata, mode, what);
     for (d, how) in [(&red, "reduced"), (&lin, "linked")] {
         let re = asm::encode_reduced(&d.words, d.frame_size, &d.cleanup, &d.scopes, &d.dropped, &enc.rodata, mode)
@@ -685,8 +703,18 @@ fn linked_fields_must_resolve() {
         unwind: Vec::new(),
     };
     let enc = check(&f, 16, m, "div; jmp");
-    let decode =
-        |code: &[u8]| asm::decode_linked(code, Fake::CODE, Fake::RECORD, &Fake { ro: &enc.rodata }, &enc.call_sites, &enc.dropped, &enc.scopes, m);
+    let decode = |code: &[u8]| {
+        asm::decode_linked(
+            code,
+            Fake::CODE,
+            m.counters.then_some(Fake::RECORD),
+            &Fake { ro: &enc.rodata },
+            &enc.call_sites,
+            &enc.dropped,
+            &enc.scopes,
+            m,
+        )
+    };
     let linked = Fake::link(&enc);
     assert!(decode(&linked).is_ok());
     // The handler call one byte off.
@@ -836,5 +864,100 @@ fn sse_at_rsp() {
     for mode in [MODES[8], MODES[9]] {
         let f = Fn { insns: vec![vec![Opcode::Ret as u32, -16i32 as u32, k]], targets: Vec::new(), unwind: Vec::new() };
         check(&f, 16, mode, "sse at rsp");
+    }
+}
+
+/// Fields that made the decoders overflow (a panic in a debug build): each a mutation of a
+/// function that decodes, which every decoder must reject. (The Lean vectors have them too.)
+#[test]
+fn rejects_overflowing_fields() {
+    let find = |code: &[u8], pat: &[u8]| code.windows(pat.len()).position(|w| w == pat).expect("pattern");
+    let rejects = |enc: &asm::Encoded, mode: Mode, at: usize, bytes: &[u8], what: &str| {
+        let mut code = enc.code.clone();
+        code[at..][..bytes.len()].copy_from_slice(bytes);
+        let mut linked = Fake::link(enc);
+        linked[at..][..bytes.len()].copy_from_slice(bytes);
+        let (sites, d, sc) = (&enc.call_sites, &enc.dropped, &enc.scopes);
+        assert!(asm::decode(&code, &enc.relocs, &enc.rodata, sites, d, sc, mode).is_err(), "{what}");
+        assert!(asm::decode_reduced(&code, &enc.relocs, &enc.rodata, sites, d, sc, mode).is_err(), "{what} (reduced)");
+        let rec = mode.counters.then_some(Fake::RECORD);
+        assert!(asm::decode_linked(&linked, Fake::CODE, rec, &Fake { ro: &enc.rodata }, sites, d, sc, mode).is_err(), "{what} (linked)");
+    };
+    // PE: `sub rsp, 0xfffffff0`, whose frame size `alloc + 16` doesn't fit in 32 bits.
+    let mode = MODES[4];
+    let f = Fn { insns: vec![vec![Opcode::Abort as u32]], targets: Vec::new(), unwind: Vec::new() };
+    let enc = check(&f, 1 << 20, mode, "abort");
+    rejects(&enc, mode, find(&enc.code, &[0x48, 0x81, 0xec]) + 3, &[0xf0, 0xff, 0xff, 0xff], "sub rsp");
+    // `mov.w128` from `[rbp + i32::MAX - 3]`: its high half would be 8 bytes up.
+    let mode = MODES[0];
+    let s: i32 = -(1 << 20) + 64;
+    let f = Fn {
+        insns: vec![vec![Opcode::MovW128 as u32, -(1i32 << 20) as u32, s as u32], vec![Opcode::Abort as u32]],
+        targets: Vec::new(),
+        unwind: Vec::new(),
+    };
+    let enc = check(&f, 32, mode, "mov.w128");
+    rejects(&enc, mode, find(&enc.code, &s.to_le_bytes()), &0x7fff_fffcu32.to_le_bytes(), "mov.w128");
+    // A call's 7-byte result stored in pieces, the second moved below the first: its offset
+    // from the first wraps.
+    let k = asm::ret_kind(&[asm::RetPart { xmm: false, size: 7, off: 0 }]);
+    let f =
+        Fn { insns: vec![vec![Opcode::Call as u32, -16i32 as u32, 0, k, 0], vec![Opcode::Abort as u32]], targets: Vec::new(), unwind: Vec::new() };
+    let enc = check(&f, 32, mode, "call");
+    rejects(&enc, mode, find(&enc.code, &[0x66, 0x89, 0x45, 0xf4]) + 3, &[0xee], "result piece");
+}
+
+/// The decoders never panic (a debug build checks for overflows) on mutations of every
+/// opcode's encoding, in every mode: fields set to values at the edges of their ranges, bytes
+/// changed, the code cut short, the code constants changed.
+#[test]
+fn decoders_survive_mutations() {
+    const EDGES: [u32; 10] = [0, 1, 8, 0x7fff_fff8, 0x7fff_fffc, 0x7fff_ffff, 0x8000_0000, 0x8000_0004, 0xffff_fff0, 0xffff_ffff];
+    let mut rng = Rng(0x0dec_0de5_0f_f00d);
+    for (k, &op) in ALL_OPCODES.iter().enumerate() {
+        let mode = MODES[k % MODES.len()];
+        let list_len = [0, 1, 3][k / MODES.len() % 3];
+        let mut f = Fn { insns: vec![vec![Opcode::Abort as u32]], targets: Vec::new(), unwind: Vec::new() };
+        let w = insn(op, &mut rng, list_len, &mut f, &mut |rng| rng.below(3) as usize);
+        if op == Opcode::Arg {
+            f.insns[0] = w;
+        } else {
+            f.insns.push(w);
+        }
+        f.insns.push(vec![Opcode::Abort as u32]);
+        let frame_size = FRAMES[k % FRAMES.len()];
+        let frame_size = if mode.pe { frame_size.max(16) } else { frame_size };
+        let (code, cleanup) = f.words();
+        let Ok(enc) = asm::encode(&code, frame_size, &cleanup, &random_scopes(&code), mode) else { continue };
+        let linked = Fake::link(&enc);
+        for _ in 0..200 {
+            let (mut code, mut lcode, mut ro) = (enc.code.clone(), linked.clone(), enc.rodata.clone());
+            match rng.below(4) {
+                0 if code.len() >= 4 => {
+                    let at = rng.below(code.len() as u64 - 3) as usize;
+                    let v = EDGES[rng.below(EDGES.len() as u64) as usize].wrapping_sub(rng.below(3) as u32).to_le_bytes();
+                    code[at..][..4].copy_from_slice(&v);
+                    lcode[at..][..4].copy_from_slice(&v);
+                }
+                1 if !code.is_empty() => {
+                    let at = rng.below(code.len() as u64) as usize;
+                    let v = [0x7f, 0x80, 0xff, rng.next() as u8][rng.below(4) as usize];
+                    (code[at], lcode[at]) = (v, v);
+                }
+                2 if ro.len() >= 4 => {
+                    let at = rng.below(ro.len() as u64 - 3) as usize;
+                    ro[at..][..4].copy_from_slice(&EDGES[rng.below(EDGES.len() as u64) as usize].to_le_bytes());
+                }
+                _ => {
+                    let n = rng.below(code.len() as u64 + 1) as usize;
+                    code.truncate(n);
+                    lcode.truncate(n);
+                }
+            }
+            let (sites, d, sc) = (&enc.call_sites, &enc.dropped, &enc.scopes);
+            let _ = asm::decode(&code, &enc.relocs, &ro, sites, d, sc, mode);
+            let _ = asm::decode_reduced(&code, &enc.relocs, &ro, sites, d, sc, mode);
+            let _ = asm::decode_linked(&lcode, Fake::CODE, mode.counters.then_some(Fake::RECORD), &Fake { ro: &ro }, sites, d, sc, mode);
+        }
     }
 }
