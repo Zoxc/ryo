@@ -31,9 +31,11 @@ UB: reading `Uninit` as an integer or pointer; division by zero and `MIN / -1`
 a live allocation (or a store into an immutable one); `addr` of a non-escaped object.
 Shifts and rotations mask the amount (`wrapping_sh*`), so they have no UB.
 
-Atomics are sequential (no concurrency: D17), at their natural alignment. Like the handler,
-which uses `AtomicUN`, they read and write integers: `atomic.load` of a pointer drops its
-provenance.
+Atomics are sequential (no concurrency: D17), at their natural alignment. The `.wN` forms,
+like their `AtomicUN` handlers, read and write integers; the `.ptr` forms (`AtomicPtr`, which
+the lowering uses for a raw pointer type) read and write pointers with their provenance. A
+`.ptr` read-modify-write other than `swap` changes the address by a `usize` operand and keeps
+the provenance of the pointer in memory; compare-exchange compares addresses.
 
 Kinds not implemented: none of the handler table's; f16/f128 operations are islands.
 -/
@@ -320,6 +322,42 @@ def kindSem (k : HandlerKind) (ps : List String) (e : Env) : M Out := do
     let ok := cur == expected && !e.ch.spurious
     let mem ← if ok then st.store st.mem p (intBytes n new) a else pure st.mem
     pure { mem, writes := [("d", intBytes n cur), ("o", boolByte ok)] }
+  | .aload_ptr =>
+    let v ← asPtr (← st.load (← e.ptr "p") 8 Target.PTR_ALIGN)
+    pure (out e [("d", encodePtr v)])
+  | .astore_ptr =>
+    let s ← e.ptr "s"
+    pure { mem := ← st.store st.mem (← e.ptr "p") (encodePtr s) Target.PTR_ALIGN }
+  | .armw_ptr =>
+    let some m := p0 | throw (.unsupported "atomic method")
+    let p ← e.ptr "p"
+    let old ← asPtr (← st.load p 8 Target.PTR_ALIGN)
+    let x := BitVec.ofNat 64 old.addr
+    -- `swap` stores the operand pointer; the others are on the address with a `usize`, and
+    -- keep the provenance of the pointer in memory (`AtomicPtr::fetch_byte_add`, `fetch_or`).
+    let new ← if m == "swap" then e.ptr "s" else do
+      let y ← e.bv "s" 8
+      let a ← match m with
+        | "fetch_byte_add" => pure (x + y)
+        | "fetch_byte_sub" => pure (x - y)
+        | "fetch_and" => pure (x &&& y)
+        | "fetch_or" => pure (x ||| y)
+        | "fetch_xor" => pure (x ^^^ y)
+        | _ => throw (.unsupported s!"atomic method {m}")
+      pure { old with addr := a.toNat }
+    let mem ← st.store st.mem p (encodePtr new) Target.PTR_ALIGN
+    pure { mem, writes := [("d", encodePtr old)] }
+  | .cxchg_ptr =>
+    let weak := p0 == some "compare_exchange_weak"
+    let p ← e.ptr "p"
+    let expected ← e.ptr "old"
+    let new ← e.ptr "new"
+    let cur ← asPtr (← st.load p 8 Target.PTR_ALIGN)
+    if e.ch.spurious && !weak then throw (.noBehavior "a strong compare-exchange failed spuriously")
+    -- Pointers compare by address, as the machine's `cmpxchg` does.
+    let ok := cur.addr == expected.addr && !e.ch.spurious
+    let mem ← if ok then st.store st.mem p (encodePtr new) Target.PTR_ALIGN else pure st.mem
+    pure { mem, writes := [("d", encodePtr cur), ("o", boolByte ok)] }
   | .fence | .compiler_fence => pure (out e [])
   | .br => pure (out e [] (.branch ((← e.int "s") != 0)))
   | .br_cmp =>

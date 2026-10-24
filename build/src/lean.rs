@@ -1,7 +1,7 @@
 //! `y lean`: the Lean verification project in `lean/` (lean/README.md). Checks that the
 //! generated tables (`lean/Ryo/Vm/Generated`) match the Rust ones, then runs `lake build` and
 //! `lake test`. `y lean gen` regenerates the tables. Both go through the generating tests
-//! `vm/bytecode/tests/lean_*.rs` (the tables, the x86, decoder and unwind-table test vectors, the JIT's effect table), which `y test` also runs.
+//! `vm/bytecode/tests/lean_*.rs` (the tables, the x86, decoder, view and unwind-table test vectors, the JIT's effect table), which `y test` also runs.
 
 use std::path::PathBuf;
 
@@ -24,6 +24,8 @@ fn tables(regen: bool) -> Result<(), String> {
         "lean_unwind_vectors",
         "--test",
         "lean_effects",
+        "--test",
+        "lean_view_vectors",
     ]);
     if regen {
         c.env("RYO_LEAN_GEN", "1");

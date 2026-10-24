@@ -59,6 +59,101 @@ fn atomics() {
     println!("threads {s} {}", Arc::strong_count(&arc));
 }
 
+/// `AtomicPtr`: the `.ptr` atomics. Each result is dereferenced, so its provenance matters.
+#[inline(never)]
+fn atomic_ptrs() {
+    let mut xs = [10u64, 11, 12, 13, 14, 15, 16, 17];
+    let base = xs.as_mut_ptr();
+    let p = AtomicPtr::new(base);
+    unsafe {
+        println!("load {}", *p.load(Acquire));
+        p.store(base.add(3), Release);
+        println!("store {}", *p.load(Relaxed));
+        let old = p.swap(base.add(5), AcqRel);
+        println!("swap {} {}", *old, *p.load(SeqCst));
+        let r = p.compare_exchange(base.add(5), base.add(1), SeqCst, Acquire);
+        println!("cxchg {:?} {}", r.map(|q| *q), *p.load(SeqCst));
+        let r = p.compare_exchange(base, base.add(2), Relaxed, Relaxed);
+        println!("cxchg {:?} {}", r.map_err(|q| *q), *p.load(SeqCst));
+        let mut cur = p.load(Relaxed);
+        while let Err(v) = p.compare_exchange_weak(cur, cur.add(1), Release, Relaxed) {
+            cur = v;
+        }
+        println!("weak {}", *p.load(Acquire));
+        println!("ptr_add {} {}", *p.fetch_ptr_add(3, AcqRel), *p.load(Relaxed));
+        println!("ptr_sub {} {}", *p.fetch_ptr_sub(2, SeqCst), *p.load(Relaxed));
+        println!("byte_add {} {}", *p.fetch_byte_add(8, Relaxed), *p.load(Relaxed));
+        println!("byte_sub {} {}", *p.fetch_byte_sub(16, Release), *p.load(Relaxed));
+        // A tag in the low bit, set and cleared: the pointer stays usable.
+        let untagged = p.fetch_or(1, SeqCst);
+        let tagged = p.load(Relaxed);
+        println!("or {} {}", *untagged, tagged.addr() & 1);
+        println!("and {} {}", p.fetch_and(!1, AcqRel).addr() & 1, *p.load(Acquire));
+        println!("xor {}", p.fetch_xor(1, Relaxed).addr() & 1);
+        println!("xor {} {}", p.fetch_xor(1, Acquire).addr() & 1, *p.load(SeqCst));
+        *p.load(Relaxed) += 100;
+    }
+    println!("xs {xs:?}");
+    // Strings behind the pointers: their heap allocations are reached through them.
+    let mut a = String::from("first");
+    let mut b = String::from("second");
+    let s = AtomicPtr::new(&mut a);
+    let prev = s.swap(&mut b, SeqCst);
+    unsafe {
+        (*prev).push('!');
+        (*s.load(SeqCst)).push('?');
+        println!("{} {}", *prev, *s.load(Relaxed));
+    }
+    let n: AtomicPtr<u8> = AtomicPtr::new(std::ptr::null_mut());
+    println!("null {} {}", n.load(SeqCst).is_null(), n.fetch_byte_add(4, SeqCst).is_null());
+    // A Treiber stack pushed to by four threads, then popped.
+    struct Node {
+        v: usize,
+        next: *mut Node,
+    }
+    struct Stack(AtomicPtr<Node>);
+    unsafe impl Sync for Stack {}
+    let st = Arc::new(Stack(AtomicPtr::new(std::ptr::null_mut())));
+    // Slots claimed by `fetch_ptr_add` and written through the claimed pointers.
+    let slots: Arc<Vec<AtomicUsize>> = Arc::new((0..4 * 500).map(|_| AtomicUsize::new(0)).collect());
+    let next = Arc::new(AtomicPtr::new(slots.as_ptr() as *mut AtomicUsize));
+    let hs: Vec<_> = (0..4)
+        .map(|t| {
+            let (st, next, slots) = (st.clone(), next.clone(), slots.clone());
+            std::thread::spawn(move || {
+                let _keep = slots;
+                for i in 0..500 {
+                    let node = Box::into_raw(Box::new(Node { v: t * 1000 + i, next: std::ptr::null_mut() }));
+                    let mut head = st.0.load(Relaxed);
+                    loop {
+                        unsafe { (*node).next = head };
+                        match st.0.compare_exchange_weak(head, node, Release, Relaxed) {
+                            Ok(_) => break,
+                            Err(h) => head = h,
+                        }
+                    }
+                    let slot = next.fetch_ptr_add(1, AcqRel);
+                    unsafe { (*slot).store(t * 1000 + i + 1, Relaxed) };
+                }
+            })
+        })
+        .collect();
+    for h in hs {
+        h.join().unwrap();
+    }
+    let (mut count, mut sum) = (0, 0);
+    let mut cur = st.0.swap(std::ptr::null_mut(), Acquire);
+    while !cur.is_null() {
+        let node = unsafe { Box::from_raw(cur) };
+        count += 1;
+        sum += node.v;
+        cur = node.next;
+    }
+    let filled = slots.iter().filter(|s| s.load(Relaxed) != 0).count();
+    let total: usize = slots.iter().map(|s| s.load(Relaxed)).sum();
+    println!("stack {count} {sum} slots {filled} {total}");
+}
+
 #[inline(never)]
 fn unwinding() {
     let r = panic::catch_unwind(|| 42);
@@ -239,6 +334,7 @@ fn contention() {
 
 fn main() {
     atomics();
+    atomic_ptrs();
     unwinding();
     misc();
     dst();

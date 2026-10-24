@@ -170,6 +170,16 @@ def footprintOf (k : HandlerKind) (ps : List String) : Option Footprint := do
     let n ← (ps.drop 1).head?.bind tySize
     pure { reads := [rd "p" 8, rd "old" n, rd "new" n], writes := [rd "d" n, rd "o" 1],
            derefs := [⟨.slot "p", .bytes n, .rmw, true⟩] }
+  | .aload_ptr =>
+    pure { reads := [rd "p" 8], writes := [rd "d" 8], derefs := [⟨.slot "p", .bytes 8, .read, true⟩] }
+  | .astore_ptr =>
+    pure { reads := [rd "p" 8, rd "s" 8], derefs := [⟨.slot "p", .bytes 8, .write, true⟩] }
+  | .armw_ptr =>
+    pure { reads := [rd "p" 8, rd "s" 8], writes := [rd "d" 8],
+           derefs := [⟨.slot "p", .bytes 8, .rmw, true⟩] }
+  | .cxchg_ptr =>
+    pure { reads := [rd "p" 8, rd "old" 8, rd "new" 8], writes := [rd "d" 8, rd "o" 1],
+           derefs := [⟨.slot "p", .bytes 8, .rmw, true⟩] }
   | .fence | .compiler_fence => pure {}
   | .br => pure { reads := [rd "s" 1], flow := .branch }
   | .br_cmp => let n ← w; pure { reads := [rd "a" n, rd "b" n], flow := .branch }

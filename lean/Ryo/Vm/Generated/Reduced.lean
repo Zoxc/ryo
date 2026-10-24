@@ -635,14 +635,14 @@ def toFullTable : Array (Option Full.Opcode) := #[
   some ⟨224⟩, some ⟨225⟩, some ⟨226⟩, some ⟨227⟩, some ⟨228⟩, some ⟨229⟩,
   some ⟨230⟩, some ⟨231⟩, some ⟨232⟩, some ⟨233⟩, some ⟨234⟩, some ⟨235⟩,
   some ⟨236⟩, some ⟨237⟩, some ⟨238⟩, some ⟨239⟩, some ⟨240⟩, some ⟨241⟩,
-  some ⟨784⟩, some ⟨785⟩, some ⟨786⟩, some ⟨787⟩, some ⟨788⟩, some ⟨789⟩,
-  some ⟨790⟩, some ⟨791⟩, some ⟨792⟩, some ⟨793⟩, some ⟨794⟩, some ⟨795⟩,
-  some ⟨796⟩, some ⟨797⟩, some ⟨798⟩, some ⟨799⟩, some ⟨800⟩, some ⟨801⟩,
-  some ⟨802⟩, some ⟨803⟩, some ⟨804⟩, some ⟨805⟩, some ⟨806⟩, some ⟨807⟩,
-  some ⟨808⟩, some ⟨809⟩, some ⟨810⟩, some ⟨811⟩, some ⟨812⟩, some ⟨813⟩,
-  some ⟨814⟩, some ⟨815⟩, some ⟨816⟩, some ⟨817⟩, some ⟨838⟩, some ⟨839⟩,
-  some ⟨840⟩, some ⟨841⟩, some ⟨842⟩, some ⟨843⟩, some ⟨844⟩, some ⟨845⟩,
-  some ⟨846⟩, none
+  some ⟨850⟩, some ⟨851⟩, some ⟨852⟩, some ⟨853⟩, some ⟨854⟩, some ⟨855⟩,
+  some ⟨856⟩, some ⟨857⟩, some ⟨858⟩, some ⟨859⟩, some ⟨860⟩, some ⟨861⟩,
+  some ⟨862⟩, some ⟨863⟩, some ⟨864⟩, some ⟨865⟩, some ⟨866⟩, some ⟨867⟩,
+  some ⟨868⟩, some ⟨869⟩, some ⟨870⟩, some ⟨871⟩, some ⟨872⟩, some ⟨873⟩,
+  some ⟨874⟩, some ⟨875⟩, some ⟨876⟩, some ⟨877⟩, some ⟨878⟩, some ⟨879⟩,
+  some ⟨880⟩, some ⟨881⟩, some ⟨882⟩, some ⟨883⟩, some ⟨904⟩, some ⟨905⟩,
+  some ⟨906⟩, some ⟨907⟩, some ⟨908⟩, some ⟨909⟩, some ⟨910⟩, some ⟨911⟩,
+  some ⟨912⟩, none
 ]
 
 /-- `Opcode::of_full` by full opcode. -/
@@ -711,7 +711,11 @@ def ofFullTable : Array (Option Opcode) := #[
   none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
   none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
   none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
-  none, none, none, none, none, none, none, none, none, none, none, none, none, none,
+  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
+  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
+  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
+  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
+  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
   some ⟨144⟩, some ⟨145⟩, some ⟨146⟩, some ⟨147⟩, some ⟨148⟩, some ⟨149⟩,
   some ⟨150⟩, some ⟨151⟩, some ⟨152⟩, some ⟨153⟩, some ⟨154⟩, some ⟨155⟩,
   some ⟨156⟩, some ⟨157⟩, some ⟨158⟩, some ⟨159⟩, some ⟨160⟩, some ⟨161⟩,

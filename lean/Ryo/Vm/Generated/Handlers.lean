@@ -58,6 +58,10 @@ inductive HandlerKind where
   | astore
   | armw
   | cxchg
+  | aload_ptr
+  | astore_ptr
+  | armw_ptr
+  | cxchg_ptr
   | fence
   | compiler_fence
   | br
@@ -854,6 +858,72 @@ def handlers : Array (Option HandlerInfo) := #[
   some (HandlerInfo.mk HandlerKind.cxchg ["AtomicU64", "u64", "compare_exchange_weak", "SeqCst", "Relaxed"] none), -- atomic.cxchg.weak.w64.seqcst.relaxed
   some (HandlerInfo.mk HandlerKind.cxchg ["AtomicU64", "u64", "compare_exchange_weak", "SeqCst", "Acquire"] none), -- atomic.cxchg.weak.w64.seqcst.acquire
   some (HandlerInfo.mk HandlerKind.cxchg ["AtomicU64", "u64", "compare_exchange_weak", "SeqCst", "SeqCst"] none), -- atomic.cxchg.weak.w64.seqcst.seqcst
+  some (HandlerInfo.mk HandlerKind.aload_ptr ["Relaxed"] none), -- atomic.load.ptr.relaxed
+  some (HandlerInfo.mk HandlerKind.aload_ptr ["Acquire"] none), -- atomic.load.ptr.acquire
+  some (HandlerInfo.mk HandlerKind.aload_ptr ["SeqCst"] none), -- atomic.load.ptr.seqcst
+  some (HandlerInfo.mk HandlerKind.astore_ptr ["Relaxed"] none), -- atomic.store.ptr.relaxed
+  some (HandlerInfo.mk HandlerKind.astore_ptr ["Release"] none), -- atomic.store.ptr.release
+  some (HandlerInfo.mk HandlerKind.astore_ptr ["SeqCst"] none), -- atomic.store.ptr.seqcst
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["swap", "Relaxed"] none), -- atomic.xchg.ptr.relaxed
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["swap", "Acquire"] none), -- atomic.xchg.ptr.acquire
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["swap", "Release"] none), -- atomic.xchg.ptr.release
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["swap", "AcqRel"] none), -- atomic.xchg.ptr.acqrel
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["swap", "SeqCst"] none), -- atomic.xchg.ptr.seqcst
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["fetch_byte_add", "Relaxed"] none), -- atomic.add.ptr.relaxed
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["fetch_byte_add", "Acquire"] none), -- atomic.add.ptr.acquire
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["fetch_byte_add", "Release"] none), -- atomic.add.ptr.release
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["fetch_byte_add", "AcqRel"] none), -- atomic.add.ptr.acqrel
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["fetch_byte_add", "SeqCst"] none), -- atomic.add.ptr.seqcst
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["fetch_byte_sub", "Relaxed"] none), -- atomic.sub.ptr.relaxed
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["fetch_byte_sub", "Acquire"] none), -- atomic.sub.ptr.acquire
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["fetch_byte_sub", "Release"] none), -- atomic.sub.ptr.release
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["fetch_byte_sub", "AcqRel"] none), -- atomic.sub.ptr.acqrel
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["fetch_byte_sub", "SeqCst"] none), -- atomic.sub.ptr.seqcst
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["fetch_and", "Relaxed"] none), -- atomic.and.ptr.relaxed
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["fetch_and", "Acquire"] none), -- atomic.and.ptr.acquire
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["fetch_and", "Release"] none), -- atomic.and.ptr.release
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["fetch_and", "AcqRel"] none), -- atomic.and.ptr.acqrel
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["fetch_and", "SeqCst"] none), -- atomic.and.ptr.seqcst
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["fetch_or", "Relaxed"] none), -- atomic.or.ptr.relaxed
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["fetch_or", "Acquire"] none), -- atomic.or.ptr.acquire
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["fetch_or", "Release"] none), -- atomic.or.ptr.release
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["fetch_or", "AcqRel"] none), -- atomic.or.ptr.acqrel
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["fetch_or", "SeqCst"] none), -- atomic.or.ptr.seqcst
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["fetch_xor", "Relaxed"] none), -- atomic.xor.ptr.relaxed
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["fetch_xor", "Acquire"] none), -- atomic.xor.ptr.acquire
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["fetch_xor", "Release"] none), -- atomic.xor.ptr.release
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["fetch_xor", "AcqRel"] none), -- atomic.xor.ptr.acqrel
+  some (HandlerInfo.mk HandlerKind.armw_ptr ["fetch_xor", "SeqCst"] none), -- atomic.xor.ptr.seqcst
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange", "Relaxed", "Relaxed"] none), -- atomic.cxchg.ptr.relaxed.relaxed
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange", "Relaxed", "Acquire"] none), -- atomic.cxchg.ptr.relaxed.acquire
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange", "Relaxed", "SeqCst"] none), -- atomic.cxchg.ptr.relaxed.seqcst
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange", "Acquire", "Relaxed"] none), -- atomic.cxchg.ptr.acquire.relaxed
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange", "Acquire", "Acquire"] none), -- atomic.cxchg.ptr.acquire.acquire
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange", "Acquire", "SeqCst"] none), -- atomic.cxchg.ptr.acquire.seqcst
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange", "Release", "Relaxed"] none), -- atomic.cxchg.ptr.release.relaxed
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange", "Release", "Acquire"] none), -- atomic.cxchg.ptr.release.acquire
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange", "Release", "SeqCst"] none), -- atomic.cxchg.ptr.release.seqcst
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange", "AcqRel", "Relaxed"] none), -- atomic.cxchg.ptr.acqrel.relaxed
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange", "AcqRel", "Acquire"] none), -- atomic.cxchg.ptr.acqrel.acquire
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange", "AcqRel", "SeqCst"] none), -- atomic.cxchg.ptr.acqrel.seqcst
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange", "SeqCst", "Relaxed"] none), -- atomic.cxchg.ptr.seqcst.relaxed
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange", "SeqCst", "Acquire"] none), -- atomic.cxchg.ptr.seqcst.acquire
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange", "SeqCst", "SeqCst"] none), -- atomic.cxchg.ptr.seqcst.seqcst
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange_weak", "Relaxed", "Relaxed"] none), -- atomic.cxchg.weak.ptr.relaxed.relaxed
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange_weak", "Relaxed", "Acquire"] none), -- atomic.cxchg.weak.ptr.relaxed.acquire
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange_weak", "Relaxed", "SeqCst"] none), -- atomic.cxchg.weak.ptr.relaxed.seqcst
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange_weak", "Acquire", "Relaxed"] none), -- atomic.cxchg.weak.ptr.acquire.relaxed
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange_weak", "Acquire", "Acquire"] none), -- atomic.cxchg.weak.ptr.acquire.acquire
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange_weak", "Acquire", "SeqCst"] none), -- atomic.cxchg.weak.ptr.acquire.seqcst
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange_weak", "Release", "Relaxed"] none), -- atomic.cxchg.weak.ptr.release.relaxed
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange_weak", "Release", "Acquire"] none), -- atomic.cxchg.weak.ptr.release.acquire
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange_weak", "Release", "SeqCst"] none), -- atomic.cxchg.weak.ptr.release.seqcst
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange_weak", "AcqRel", "Relaxed"] none), -- atomic.cxchg.weak.ptr.acqrel.relaxed
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange_weak", "AcqRel", "Acquire"] none), -- atomic.cxchg.weak.ptr.acqrel.acquire
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange_weak", "AcqRel", "SeqCst"] none), -- atomic.cxchg.weak.ptr.acqrel.seqcst
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange_weak", "SeqCst", "Relaxed"] none), -- atomic.cxchg.weak.ptr.seqcst.relaxed
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange_weak", "SeqCst", "Acquire"] none), -- atomic.cxchg.weak.ptr.seqcst.acquire
+  some (HandlerInfo.mk HandlerKind.cxchg_ptr ["compare_exchange_weak", "SeqCst", "SeqCst"] none), -- atomic.cxchg.weak.ptr.seqcst.seqcst
   some (HandlerInfo.mk HandlerKind.fence ["Acquire"] none), -- fence.acquire
   some (HandlerInfo.mk HandlerKind.fence ["Release"] none), -- fence.release
   some (HandlerInfo.mk HandlerKind.fence ["AcqRel"] none), -- fence.acqrel

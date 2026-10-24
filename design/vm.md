@@ -567,6 +567,14 @@ discriminant type. Direct-tagged enums use plain loads, stores and integer ops.
 - **Operands**: `atomic.load d, [p]`, `atomic.store [p], s`, `atomic.<rmw> d, [p], s` (`d`
   gets the old value), and `atomic.cxchg d, o, [p], old, new`, with the previous value at
   `d` and the success flag at `o`. `p` is a slot holding the pointer.
+- **Pointers**: `atomic.load/store/xchg/add/sub/and/or/xor.ptr.ord` and
+  `atomic.cxchg[.weak].ptr.ord_s.ord_f` are `AtomicPtr`'s operations, which the lowering
+  uses when the intrinsic's type is a thin raw pointer. On the machine they are the `.w64`
+  ones; the difference is the value's type, a pointer, so the reduced semantics keeps its
+  provenance (lean/docs/reduced.md §D.1). `add`/`sub` are `fetch_byte_add`/`_sub` and the
+  bitwise ones take a `usize` operand, keeping the provenance of the pointer in memory.
+  Pointers have no `nand`/`min`/`max`/`umin`/`umax` (core never emits them; such a call
+  keeps the function native).
 - **Width and alignment**: widths 8–64 run in the VM. 128-bit atomics are islands (they need
   `cmpxchg16b`, which core provides when the target supports it). Atomic operands are always
   aligned as the type requires.

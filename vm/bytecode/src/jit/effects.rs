@@ -37,9 +37,11 @@ pub struct Effects {
     pub memory: bool,
 }
 
-/// The bytes of a width segment of a mnemonic (`w8` … `w128`, `f32`, `f64`).
+/// The bytes of a width segment of a mnemonic (`w8` … `w128`, `f32`, `f64`, and the pointer
+/// atomics' `ptr`).
 fn bytes(seg: &str) -> Option<u8> {
     Some(match seg {
+        "ptr" => 8,
         "w8" => 1,
         "w16" => 2,
         "w32" => 4,

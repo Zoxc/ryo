@@ -453,11 +453,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             self.op(op, &[]);
             return Ok(true);
         }
-        let l = self.layout_of(callee.args.type_at(0))?;
+        let ty = callee.args.type_at(0);
+        let l = self.layout_of(ty)?;
         let Some(w) = Width::of_size(l.size.bytes()).filter(|&w| w != Width::W128) else {
             return native("128-bit atomic");
         };
-        let ws = w.suffix();
+        // A thin raw pointer uses the `ptr` forms, whose value is a pointer, not an integer
+        // (provenance kept, lean/docs/reduced.md §D.1); they have no `nand`, `min` or `max`.
+        let ws = if ty.is_raw_ptr() { "Ptr" } else { w.suffix() };
         let rmw = |op: &str| match op {
             "atomic_xchg" => Some(("Xchg", 1)),
             "atomic_xadd" => Some(("Add", 2)),

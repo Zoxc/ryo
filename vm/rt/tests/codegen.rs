@@ -24,6 +24,15 @@ use ryo_bytecode::{ALL_OPCODES, Opcode};
 /// The instructions of the function whose (mangled) name ends with `suffix`, without labels
 /// and directives.
 fn asm_of<'a>(asm: &'a str, suffix: &str) -> Option<Vec<&'a str>> {
+    // An identical function merged into another is an alias, `name = other` (the `.ptr`
+    // atomics and their `.w64` twins).
+    let alias = asm.lines().find_map(|l| {
+        let (name, to) = l.split_once(" = ")?;
+        (name.ends_with(suffix) && !l.starts_with(char::is_whitespace)).then(|| to.trim())
+    });
+    if let Some(to) = alias {
+        return asm_of(asm, to);
+    }
     let start = asm.lines().position(|l| l.ends_with(&format!("{suffix}:")) && !l.starts_with('.'))?;
     let mut out = Vec::new();
     for l in asm.lines().skip(start + 1) {

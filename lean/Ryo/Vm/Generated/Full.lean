@@ -11,7 +11,7 @@ import Ryo.Vm.Generated.Types
 namespace Ryo.Vm.Full
 
 /-- The number of opcodes. -/
-def count : Nat := 849
+def count : Nat := 915
 
 /-- `full::OP_INFO`, by opcode value. -/
 def opInfos : Array OpInfo := #[
@@ -791,6 +791,72 @@ def opInfos : Array OpInfo := #[
   OpInfo.mk "AtomicCxchgWeakW64SeqcstRelaxed" "atomic.cxchg.weak.w64.seqcst.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgWeakW64SeqcstAcquire" "atomic.cxchg.weak.w64.seqcst.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgWeakW64SeqcstSeqcst" "atomic.cxchg.weak.w64.seqcst.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicLoadPtrRelaxed" "atomic.load.ptr.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicLoadPtrAcquire" "atomic.load.ptr.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicLoadPtrSeqcst" "atomic.load.ptr.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicStorePtrRelaxed" "atomic.store.ptr.relaxed" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicStorePtrRelease" "atomic.store.ptr.release" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicStorePtrSeqcst" "atomic.store.ptr.seqcst" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicXchgPtrRelaxed" "atomic.xchg.ptr.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXchgPtrAcquire" "atomic.xchg.ptr.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXchgPtrRelease" "atomic.xchg.ptr.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXchgPtrAcqrel" "atomic.xchg.ptr.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXchgPtrSeqcst" "atomic.xchg.ptr.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAddPtrRelaxed" "atomic.add.ptr.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAddPtrAcquire" "atomic.add.ptr.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAddPtrRelease" "atomic.add.ptr.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAddPtrAcqrel" "atomic.add.ptr.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAddPtrSeqcst" "atomic.add.ptr.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicSubPtrRelaxed" "atomic.sub.ptr.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicSubPtrAcquire" "atomic.sub.ptr.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicSubPtrRelease" "atomic.sub.ptr.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicSubPtrAcqrel" "atomic.sub.ptr.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicSubPtrSeqcst" "atomic.sub.ptr.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAndPtrRelaxed" "atomic.and.ptr.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAndPtrAcquire" "atomic.and.ptr.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAndPtrRelease" "atomic.and.ptr.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAndPtrAcqrel" "atomic.and.ptr.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAndPtrSeqcst" "atomic.and.ptr.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicOrPtrRelaxed" "atomic.or.ptr.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicOrPtrAcquire" "atomic.or.ptr.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicOrPtrRelease" "atomic.or.ptr.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicOrPtrAcqrel" "atomic.or.ptr.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicOrPtrSeqcst" "atomic.or.ptr.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXorPtrRelaxed" "atomic.xor.ptr.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXorPtrAcquire" "atomic.xor.ptr.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXorPtrRelease" "atomic.xor.ptr.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXorPtrAcqrel" "atomic.xor.ptr.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXorPtrSeqcst" "atomic.xor.ptr.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicCxchgPtrRelaxedRelaxed" "atomic.cxchg.ptr.relaxed.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgPtrRelaxedAcquire" "atomic.cxchg.ptr.relaxed.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgPtrRelaxedSeqcst" "atomic.cxchg.ptr.relaxed.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgPtrAcquireRelaxed" "atomic.cxchg.ptr.acquire.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgPtrAcquireAcquire" "atomic.cxchg.ptr.acquire.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgPtrAcquireSeqcst" "atomic.cxchg.ptr.acquire.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgPtrReleaseRelaxed" "atomic.cxchg.ptr.release.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgPtrReleaseAcquire" "atomic.cxchg.ptr.release.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgPtrReleaseSeqcst" "atomic.cxchg.ptr.release.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgPtrAcqrelRelaxed" "atomic.cxchg.ptr.acqrel.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgPtrAcqrelAcquire" "atomic.cxchg.ptr.acqrel.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgPtrAcqrelSeqcst" "atomic.cxchg.ptr.acqrel.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgPtrSeqcstRelaxed" "atomic.cxchg.ptr.seqcst.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgPtrSeqcstAcquire" "atomic.cxchg.ptr.seqcst.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgPtrSeqcstSeqcst" "atomic.cxchg.ptr.seqcst.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakPtrRelaxedRelaxed" "atomic.cxchg.weak.ptr.relaxed.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakPtrRelaxedAcquire" "atomic.cxchg.weak.ptr.relaxed.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakPtrRelaxedSeqcst" "atomic.cxchg.weak.ptr.relaxed.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakPtrAcquireRelaxed" "atomic.cxchg.weak.ptr.acquire.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakPtrAcquireAcquire" "atomic.cxchg.weak.ptr.acquire.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakPtrAcquireSeqcst" "atomic.cxchg.weak.ptr.acquire.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakPtrReleaseRelaxed" "atomic.cxchg.weak.ptr.release.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakPtrReleaseAcquire" "atomic.cxchg.weak.ptr.release.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakPtrReleaseSeqcst" "atomic.cxchg.weak.ptr.release.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakPtrAcqrelRelaxed" "atomic.cxchg.weak.ptr.acqrel.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakPtrAcqrelAcquire" "atomic.cxchg.weak.ptr.acqrel.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakPtrAcqrelSeqcst" "atomic.cxchg.weak.ptr.acqrel.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakPtrSeqcstRelaxed" "atomic.cxchg.weak.ptr.seqcst.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakPtrSeqcstAcquire" "atomic.cxchg.weak.ptr.seqcst.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakPtrSeqcstSeqcst" "atomic.cxchg.weak.ptr.seqcst.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "FenceAcquire" "fence.acquire" Shape.op [] (some 1),
   OpInfo.mk "FenceRelease" "fence.release" Shape.op [] (some 1),
   OpInfo.mk "FenceAcqrel" "fence.acqrel" Shape.op [] (some 1),
@@ -2437,152 +2503,284 @@ def atomicCxchgWeakW64SeqcstRelaxed : Opcode := ⟨773⟩
 def atomicCxchgWeakW64SeqcstAcquire : Opcode := ⟨774⟩
 /-- `atomic.cxchg.weak.w64.seqcst.seqcst` -/
 def atomicCxchgWeakW64SeqcstSeqcst : Opcode := ⟨775⟩
+/-- `atomic.load.ptr.relaxed` -/
+def atomicLoadPtrRelaxed : Opcode := ⟨776⟩
+/-- `atomic.load.ptr.acquire` -/
+def atomicLoadPtrAcquire : Opcode := ⟨777⟩
+/-- `atomic.load.ptr.seqcst` -/
+def atomicLoadPtrSeqcst : Opcode := ⟨778⟩
+/-- `atomic.store.ptr.relaxed` -/
+def atomicStorePtrRelaxed : Opcode := ⟨779⟩
+/-- `atomic.store.ptr.release` -/
+def atomicStorePtrRelease : Opcode := ⟨780⟩
+/-- `atomic.store.ptr.seqcst` -/
+def atomicStorePtrSeqcst : Opcode := ⟨781⟩
+/-- `atomic.xchg.ptr.relaxed` -/
+def atomicXchgPtrRelaxed : Opcode := ⟨782⟩
+/-- `atomic.xchg.ptr.acquire` -/
+def atomicXchgPtrAcquire : Opcode := ⟨783⟩
+/-- `atomic.xchg.ptr.release` -/
+def atomicXchgPtrRelease : Opcode := ⟨784⟩
+/-- `atomic.xchg.ptr.acqrel` -/
+def atomicXchgPtrAcqrel : Opcode := ⟨785⟩
+/-- `atomic.xchg.ptr.seqcst` -/
+def atomicXchgPtrSeqcst : Opcode := ⟨786⟩
+/-- `atomic.add.ptr.relaxed` -/
+def atomicAddPtrRelaxed : Opcode := ⟨787⟩
+/-- `atomic.add.ptr.acquire` -/
+def atomicAddPtrAcquire : Opcode := ⟨788⟩
+/-- `atomic.add.ptr.release` -/
+def atomicAddPtrRelease : Opcode := ⟨789⟩
+/-- `atomic.add.ptr.acqrel` -/
+def atomicAddPtrAcqrel : Opcode := ⟨790⟩
+/-- `atomic.add.ptr.seqcst` -/
+def atomicAddPtrSeqcst : Opcode := ⟨791⟩
+/-- `atomic.sub.ptr.relaxed` -/
+def atomicSubPtrRelaxed : Opcode := ⟨792⟩
+/-- `atomic.sub.ptr.acquire` -/
+def atomicSubPtrAcquire : Opcode := ⟨793⟩
+/-- `atomic.sub.ptr.release` -/
+def atomicSubPtrRelease : Opcode := ⟨794⟩
+/-- `atomic.sub.ptr.acqrel` -/
+def atomicSubPtrAcqrel : Opcode := ⟨795⟩
+/-- `atomic.sub.ptr.seqcst` -/
+def atomicSubPtrSeqcst : Opcode := ⟨796⟩
+/-- `atomic.and.ptr.relaxed` -/
+def atomicAndPtrRelaxed : Opcode := ⟨797⟩
+/-- `atomic.and.ptr.acquire` -/
+def atomicAndPtrAcquire : Opcode := ⟨798⟩
+/-- `atomic.and.ptr.release` -/
+def atomicAndPtrRelease : Opcode := ⟨799⟩
+/-- `atomic.and.ptr.acqrel` -/
+def atomicAndPtrAcqrel : Opcode := ⟨800⟩
+/-- `atomic.and.ptr.seqcst` -/
+def atomicAndPtrSeqcst : Opcode := ⟨801⟩
+/-- `atomic.or.ptr.relaxed` -/
+def atomicOrPtrRelaxed : Opcode := ⟨802⟩
+/-- `atomic.or.ptr.acquire` -/
+def atomicOrPtrAcquire : Opcode := ⟨803⟩
+/-- `atomic.or.ptr.release` -/
+def atomicOrPtrRelease : Opcode := ⟨804⟩
+/-- `atomic.or.ptr.acqrel` -/
+def atomicOrPtrAcqrel : Opcode := ⟨805⟩
+/-- `atomic.or.ptr.seqcst` -/
+def atomicOrPtrSeqcst : Opcode := ⟨806⟩
+/-- `atomic.xor.ptr.relaxed` -/
+def atomicXorPtrRelaxed : Opcode := ⟨807⟩
+/-- `atomic.xor.ptr.acquire` -/
+def atomicXorPtrAcquire : Opcode := ⟨808⟩
+/-- `atomic.xor.ptr.release` -/
+def atomicXorPtrRelease : Opcode := ⟨809⟩
+/-- `atomic.xor.ptr.acqrel` -/
+def atomicXorPtrAcqrel : Opcode := ⟨810⟩
+/-- `atomic.xor.ptr.seqcst` -/
+def atomicXorPtrSeqcst : Opcode := ⟨811⟩
+/-- `atomic.cxchg.ptr.relaxed.relaxed` -/
+def atomicCxchgPtrRelaxedRelaxed : Opcode := ⟨812⟩
+/-- `atomic.cxchg.ptr.relaxed.acquire` -/
+def atomicCxchgPtrRelaxedAcquire : Opcode := ⟨813⟩
+/-- `atomic.cxchg.ptr.relaxed.seqcst` -/
+def atomicCxchgPtrRelaxedSeqcst : Opcode := ⟨814⟩
+/-- `atomic.cxchg.ptr.acquire.relaxed` -/
+def atomicCxchgPtrAcquireRelaxed : Opcode := ⟨815⟩
+/-- `atomic.cxchg.ptr.acquire.acquire` -/
+def atomicCxchgPtrAcquireAcquire : Opcode := ⟨816⟩
+/-- `atomic.cxchg.ptr.acquire.seqcst` -/
+def atomicCxchgPtrAcquireSeqcst : Opcode := ⟨817⟩
+/-- `atomic.cxchg.ptr.release.relaxed` -/
+def atomicCxchgPtrReleaseRelaxed : Opcode := ⟨818⟩
+/-- `atomic.cxchg.ptr.release.acquire` -/
+def atomicCxchgPtrReleaseAcquire : Opcode := ⟨819⟩
+/-- `atomic.cxchg.ptr.release.seqcst` -/
+def atomicCxchgPtrReleaseSeqcst : Opcode := ⟨820⟩
+/-- `atomic.cxchg.ptr.acqrel.relaxed` -/
+def atomicCxchgPtrAcqrelRelaxed : Opcode := ⟨821⟩
+/-- `atomic.cxchg.ptr.acqrel.acquire` -/
+def atomicCxchgPtrAcqrelAcquire : Opcode := ⟨822⟩
+/-- `atomic.cxchg.ptr.acqrel.seqcst` -/
+def atomicCxchgPtrAcqrelSeqcst : Opcode := ⟨823⟩
+/-- `atomic.cxchg.ptr.seqcst.relaxed` -/
+def atomicCxchgPtrSeqcstRelaxed : Opcode := ⟨824⟩
+/-- `atomic.cxchg.ptr.seqcst.acquire` -/
+def atomicCxchgPtrSeqcstAcquire : Opcode := ⟨825⟩
+/-- `atomic.cxchg.ptr.seqcst.seqcst` -/
+def atomicCxchgPtrSeqcstSeqcst : Opcode := ⟨826⟩
+/-- `atomic.cxchg.weak.ptr.relaxed.relaxed` -/
+def atomicCxchgWeakPtrRelaxedRelaxed : Opcode := ⟨827⟩
+/-- `atomic.cxchg.weak.ptr.relaxed.acquire` -/
+def atomicCxchgWeakPtrRelaxedAcquire : Opcode := ⟨828⟩
+/-- `atomic.cxchg.weak.ptr.relaxed.seqcst` -/
+def atomicCxchgWeakPtrRelaxedSeqcst : Opcode := ⟨829⟩
+/-- `atomic.cxchg.weak.ptr.acquire.relaxed` -/
+def atomicCxchgWeakPtrAcquireRelaxed : Opcode := ⟨830⟩
+/-- `atomic.cxchg.weak.ptr.acquire.acquire` -/
+def atomicCxchgWeakPtrAcquireAcquire : Opcode := ⟨831⟩
+/-- `atomic.cxchg.weak.ptr.acquire.seqcst` -/
+def atomicCxchgWeakPtrAcquireSeqcst : Opcode := ⟨832⟩
+/-- `atomic.cxchg.weak.ptr.release.relaxed` -/
+def atomicCxchgWeakPtrReleaseRelaxed : Opcode := ⟨833⟩
+/-- `atomic.cxchg.weak.ptr.release.acquire` -/
+def atomicCxchgWeakPtrReleaseAcquire : Opcode := ⟨834⟩
+/-- `atomic.cxchg.weak.ptr.release.seqcst` -/
+def atomicCxchgWeakPtrReleaseSeqcst : Opcode := ⟨835⟩
+/-- `atomic.cxchg.weak.ptr.acqrel.relaxed` -/
+def atomicCxchgWeakPtrAcqrelRelaxed : Opcode := ⟨836⟩
+/-- `atomic.cxchg.weak.ptr.acqrel.acquire` -/
+def atomicCxchgWeakPtrAcqrelAcquire : Opcode := ⟨837⟩
+/-- `atomic.cxchg.weak.ptr.acqrel.seqcst` -/
+def atomicCxchgWeakPtrAcqrelSeqcst : Opcode := ⟨838⟩
+/-- `atomic.cxchg.weak.ptr.seqcst.relaxed` -/
+def atomicCxchgWeakPtrSeqcstRelaxed : Opcode := ⟨839⟩
+/-- `atomic.cxchg.weak.ptr.seqcst.acquire` -/
+def atomicCxchgWeakPtrSeqcstAcquire : Opcode := ⟨840⟩
+/-- `atomic.cxchg.weak.ptr.seqcst.seqcst` -/
+def atomicCxchgWeakPtrSeqcstSeqcst : Opcode := ⟨841⟩
 /-- `fence.acquire` -/
-def fenceAcquire : Opcode := ⟨776⟩
+def fenceAcquire : Opcode := ⟨842⟩
 /-- `fence.release` -/
-def fenceRelease : Opcode := ⟨777⟩
+def fenceRelease : Opcode := ⟨843⟩
 /-- `fence.acqrel` -/
-def fenceAcqrel : Opcode := ⟨778⟩
+def fenceAcqrel : Opcode := ⟨844⟩
 /-- `fence.seqcst` -/
-def fenceSeqcst : Opcode := ⟨779⟩
+def fenceSeqcst : Opcode := ⟨845⟩
 /-- `compiler_fence.acquire` -/
-def compilerFenceAcquire : Opcode := ⟨780⟩
+def compilerFenceAcquire : Opcode := ⟨846⟩
 /-- `compiler_fence.release` -/
-def compilerFenceRelease : Opcode := ⟨781⟩
+def compilerFenceRelease : Opcode := ⟨847⟩
 /-- `compiler_fence.acqrel` -/
-def compilerFenceAcqrel : Opcode := ⟨782⟩
+def compilerFenceAcqrel : Opcode := ⟨848⟩
 /-- `compiler_fence.seqcst` -/
-def compilerFenceSeqcst : Opcode := ⟨783⟩
+def compilerFenceSeqcst : Opcode := ⟨849⟩
 /-- `jmp` -/
-def jmp : Opcode := ⟨784⟩
+def jmp : Opcode := ⟨850⟩
 /-- `br` -/
-def br : Opcode := ⟨785⟩
+def br : Opcode := ⟨851⟩
 /-- `br.eq.w8` -/
-def brEqW8 : Opcode := ⟨786⟩
+def brEqW8 : Opcode := ⟨852⟩
 /-- `br.lt.s.w8` -/
-def brLtSW8 : Opcode := ⟨787⟩
+def brLtSW8 : Opcode := ⟨853⟩
 /-- `br.lt.u.w8` -/
-def brLtUW8 : Opcode := ⟨788⟩
+def brLtUW8 : Opcode := ⟨854⟩
 /-- `br.eq.imm.w8` -/
-def brEqImmW8 : Opcode := ⟨789⟩
+def brEqImmW8 : Opcode := ⟨855⟩
 /-- `br.lt.s.imm.w8` -/
-def brLtSImmW8 : Opcode := ⟨790⟩
+def brLtSImmW8 : Opcode := ⟨856⟩
 /-- `br.lt.u.imm.w8` -/
-def brLtUImmW8 : Opcode := ⟨791⟩
+def brLtUImmW8 : Opcode := ⟨857⟩
 /-- `br.gt.s.imm.w8` -/
-def brGtSImmW8 : Opcode := ⟨792⟩
+def brGtSImmW8 : Opcode := ⟨858⟩
 /-- `br.gt.u.imm.w8` -/
-def brGtUImmW8 : Opcode := ⟨793⟩
+def brGtUImmW8 : Opcode := ⟨859⟩
 /-- `br.eq.w16` -/
-def brEqW16 : Opcode := ⟨794⟩
+def brEqW16 : Opcode := ⟨860⟩
 /-- `br.lt.s.w16` -/
-def brLtSW16 : Opcode := ⟨795⟩
+def brLtSW16 : Opcode := ⟨861⟩
 /-- `br.lt.u.w16` -/
-def brLtUW16 : Opcode := ⟨796⟩
+def brLtUW16 : Opcode := ⟨862⟩
 /-- `br.eq.imm.w16` -/
-def brEqImmW16 : Opcode := ⟨797⟩
+def brEqImmW16 : Opcode := ⟨863⟩
 /-- `br.lt.s.imm.w16` -/
-def brLtSImmW16 : Opcode := ⟨798⟩
+def brLtSImmW16 : Opcode := ⟨864⟩
 /-- `br.lt.u.imm.w16` -/
-def brLtUImmW16 : Opcode := ⟨799⟩
+def brLtUImmW16 : Opcode := ⟨865⟩
 /-- `br.gt.s.imm.w16` -/
-def brGtSImmW16 : Opcode := ⟨800⟩
+def brGtSImmW16 : Opcode := ⟨866⟩
 /-- `br.gt.u.imm.w16` -/
-def brGtUImmW16 : Opcode := ⟨801⟩
+def brGtUImmW16 : Opcode := ⟨867⟩
 /-- `br.eq.w32` -/
-def brEqW32 : Opcode := ⟨802⟩
+def brEqW32 : Opcode := ⟨868⟩
 /-- `br.lt.s.w32` -/
-def brLtSW32 : Opcode := ⟨803⟩
+def brLtSW32 : Opcode := ⟨869⟩
 /-- `br.lt.u.w32` -/
-def brLtUW32 : Opcode := ⟨804⟩
+def brLtUW32 : Opcode := ⟨870⟩
 /-- `br.eq.imm.w32` -/
-def brEqImmW32 : Opcode := ⟨805⟩
+def brEqImmW32 : Opcode := ⟨871⟩
 /-- `br.lt.s.imm.w32` -/
-def brLtSImmW32 : Opcode := ⟨806⟩
+def brLtSImmW32 : Opcode := ⟨872⟩
 /-- `br.lt.u.imm.w32` -/
-def brLtUImmW32 : Opcode := ⟨807⟩
+def brLtUImmW32 : Opcode := ⟨873⟩
 /-- `br.gt.s.imm.w32` -/
-def brGtSImmW32 : Opcode := ⟨808⟩
+def brGtSImmW32 : Opcode := ⟨874⟩
 /-- `br.gt.u.imm.w32` -/
-def brGtUImmW32 : Opcode := ⟨809⟩
+def brGtUImmW32 : Opcode := ⟨875⟩
 /-- `br.eq.w64` -/
-def brEqW64 : Opcode := ⟨810⟩
+def brEqW64 : Opcode := ⟨876⟩
 /-- `br.lt.s.w64` -/
-def brLtSW64 : Opcode := ⟨811⟩
+def brLtSW64 : Opcode := ⟨877⟩
 /-- `br.lt.u.w64` -/
-def brLtUW64 : Opcode := ⟨812⟩
+def brLtUW64 : Opcode := ⟨878⟩
 /-- `br.eq.imm.w64` -/
-def brEqImmW64 : Opcode := ⟨813⟩
+def brEqImmW64 : Opcode := ⟨879⟩
 /-- `br.lt.s.imm.w64` -/
-def brLtSImmW64 : Opcode := ⟨814⟩
+def brLtSImmW64 : Opcode := ⟨880⟩
 /-- `br.lt.u.imm.w64` -/
-def brLtUImmW64 : Opcode := ⟨815⟩
+def brLtUImmW64 : Opcode := ⟨881⟩
 /-- `br.gt.s.imm.w64` -/
-def brGtSImmW64 : Opcode := ⟨816⟩
+def brGtSImmW64 : Opcode := ⟨882⟩
 /-- `br.gt.u.imm.w64` -/
-def brGtUImmW64 : Opcode := ⟨817⟩
+def brGtUImmW64 : Opcode := ⟨883⟩
 /-- `br.eq.w128` -/
-def brEqW128 : Opcode := ⟨818⟩
+def brEqW128 : Opcode := ⟨884⟩
 /-- `br.lt.s.w128` -/
-def brLtSW128 : Opcode := ⟨819⟩
+def brLtSW128 : Opcode := ⟨885⟩
 /-- `br.lt.u.w128` -/
-def brLtUW128 : Opcode := ⟨820⟩
+def brLtUW128 : Opcode := ⟨886⟩
 /-- `br.eq.imm.w128` -/
-def brEqImmW128 : Opcode := ⟨821⟩
+def brEqImmW128 : Opcode := ⟨887⟩
 /-- `br.lt.s.imm.w128` -/
-def brLtSImmW128 : Opcode := ⟨822⟩
+def brLtSImmW128 : Opcode := ⟨888⟩
 /-- `br.lt.u.imm.w128` -/
-def brLtUImmW128 : Opcode := ⟨823⟩
+def brLtUImmW128 : Opcode := ⟨889⟩
 /-- `br.gt.s.imm.w128` -/
-def brGtSImmW128 : Opcode := ⟨824⟩
+def brGtSImmW128 : Opcode := ⟨890⟩
 /-- `br.gt.u.imm.w128` -/
-def brGtUImmW128 : Opcode := ⟨825⟩
+def brGtUImmW128 : Opcode := ⟨891⟩
 /-- `switch.dense.w8` -/
-def switchDenseW8 : Opcode := ⟨826⟩
+def switchDenseW8 : Opcode := ⟨892⟩
 /-- `switch.dense.w16` -/
-def switchDenseW16 : Opcode := ⟨827⟩
+def switchDenseW16 : Opcode := ⟨893⟩
 /-- `switch.dense.w32` -/
-def switchDenseW32 : Opcode := ⟨828⟩
+def switchDenseW32 : Opcode := ⟨894⟩
 /-- `switch.dense.w64` -/
-def switchDenseW64 : Opcode := ⟨829⟩
+def switchDenseW64 : Opcode := ⟨895⟩
 /-- `switch.dense.w128` -/
-def switchDenseW128 : Opcode := ⟨830⟩
+def switchDenseW128 : Opcode := ⟨896⟩
 /-- `switch.sparse.w8` -/
-def switchSparseW8 : Opcode := ⟨831⟩
+def switchSparseW8 : Opcode := ⟨897⟩
 /-- `switch.sparse.w16` -/
-def switchSparseW16 : Opcode := ⟨832⟩
+def switchSparseW16 : Opcode := ⟨898⟩
 /-- `switch.sparse.w32` -/
-def switchSparseW32 : Opcode := ⟨833⟩
+def switchSparseW32 : Opcode := ⟨899⟩
 /-- `switch.sparse.w64` -/
-def switchSparseW64 : Opcode := ⟨834⟩
+def switchSparseW64 : Opcode := ⟨900⟩
 /-- `switch.sparse.w128` -/
-def switchSparseW128 : Opcode := ⟨835⟩
+def switchSparseW128 : Opcode := ⟨901⟩
 /-- `unreachable` -/
-def unreachable : Opcode := ⟨836⟩
+def unreachable : Opcode := ⟨902⟩
 /-- `abort` -/
-def abort : Opcode := ⟨837⟩
+def abort : Opcode := ⟨903⟩
 /-- `call` -/
-def call : Opcode := ⟨838⟩
+def call : Opcode := ⟨904⟩
 /-- `call.sym` -/
-def callSym : Opcode := ⟨839⟩
+def callSym : Opcode := ⟨905⟩
 /-- `call.sym.ind` -/
-def callSymInd : Opcode := ⟨840⟩
+def callSymInd : Opcode := ⟨906⟩
 /-- `call.ptr` -/
-def callPtr : Opcode := ⟨841⟩
+def callPtr : Opcode := ⟨907⟩
 /-- `tail_call` -/
-def tailCall : Opcode := ⟨842⟩
+def tailCall : Opcode := ⟨908⟩
 /-- `tail_call.ptr` -/
-def tailCallPtr : Opcode := ⟨843⟩
+def tailCallPtr : Opcode := ⟨909⟩
 /-- `ret` -/
-def ret : Opcode := ⟨844⟩
+def ret : Opcode := ⟨910⟩
 /-- `arg` -/
-def arg : Opcode := ⟨845⟩
+def arg : Opcode := ⟨911⟩
 /-- `island` -/
-def island : Opcode := ⟨846⟩
+def island : Opcode := ⟨912⟩
 /-- `lpad` -/
-def lpad : Opcode := ⟨847⟩
+def lpad : Opcode := ⟨913⟩
 /-- `resume` -/
-def resume : Opcode := ⟨848⟩
+def resume : Opcode := ⟨914⟩
 
 end Opcode
 

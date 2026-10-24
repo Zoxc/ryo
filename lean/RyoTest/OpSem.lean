@@ -428,6 +428,37 @@ def atomics : Except String Unit := do
   match ← run "atomic.load.w64.seqcst" [S (-24), S (-8)] (stOf [(-8, prov 0 0x1000)] [mkAlloc 0x1000 (prov 1 0x2000)]) with
   | .ok (_, st') => check ((st'.readFrame (-24) 8).toOption == some (le 8 0x2000)) "atomic.load drops provenance"
   | .error e => .error s!"atomic.load.w64.seqcst: {e}"
+  -- The `.ptr` forms read and write pointers: provenance is kept.
+  let pm := [mkAlloc 0x1000 (prov 1 0x2000)]
+  let q := prov 2 0x3000
+  expectBytes "atomic.load.ptr.acquire" [S (-24), S (-8)] (stOf [(-8, prov 0 0x1000)] pm) (-24) (prov 1 0x2000)
+  let ptrAfter (m : String) (s : List AbstractByte) (new : List AbstractByte) : Except String Unit := do
+    match ← run m [S (-24), S (-8), S (-16)] (stOf [(-8, prov 0 0x1000), (-16, s)] pm) with
+    | .ok (_, st') =>
+      check (st'.mem.allocs[0]!.data.toList == new) s!"{m}: memory"
+      check ((st'.readFrame (-24) 8).toOption == some (prov 1 0x2000)) s!"{m}: old value"
+    | .error e => .error s!"{m}: {e}"
+  ptrAfter "atomic.xchg.ptr.seqcst" q q
+  -- The others change the address by an integer, keeping the provenance in memory.
+  ptrAfter "atomic.add.ptr.relaxed" (prov 2 8) (prov 1 0x2008)
+  ptrAfter "atomic.sub.ptr.release" (le 8 0x10) (prov 1 0x1ff0)
+  ptrAfter "atomic.or.ptr.seqcst" (le 8 1) (prov 1 0x2001)
+  ptrAfter "atomic.and.ptr.acqrel" (le 8 (2 ^ 64 - 0x1000)) (prov 1 0x2000)
+  ptrAfter "atomic.xor.ptr.acquire" (le 8 0x2000) (prov 1 0)
+  match ← run "atomic.store.ptr.release" [S (-8), S (-16)] (stOf [(-8, prov 0 0x1000), (-16, q)] pm) with
+  | .ok (_, st') => check (st'.mem.allocs[0]!.data.toList == q) "atomic.store.ptr keeps provenance"
+  | .error e => .error s!"atomic.store.ptr.release: {e}"
+  -- Compare-exchange compares addresses: an expected value without provenance matches.
+  let pcx (m : String) (expected : Nat) (ok : Nat) : Except String Unit := do
+    let s := stOf [(-8, prov 0 0x1000), (-16, le 8 expected), (-40, q)] pm
+    match ← run m [S (-24), S (-32), S (-8), S (-16), S (-40)] s with
+    | .ok (_, st') =>
+      check ((st'.readFrame (-24) 8).toOption == some (prov 1 0x2000)) s!"{m}: old value"
+      check ((st'.readFrame (-32) 1).toOption == some (le 1 ok)) s!"{m}: flag"
+      check (st'.mem.allocs[0]!.data.toList == if ok == 1 then q else prov 1 0x2000) s!"{m}: memory"
+    | .error e => .error s!"{m}: {e}"
+  pcx "atomic.cxchg.ptr.acqrel.acquire" 0x2000 1
+  pcx "atomic.cxchg.weak.ptr.seqcst.relaxed" 0x2001 0
 
 def f64 (x : Float) : Nat := x.toBits.toNat
 def f32 (x : Float32) : Nat := x.toBits.toNat

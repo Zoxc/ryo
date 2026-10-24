@@ -35,7 +35,7 @@
 use core::mem::MaybeUninit;
 use core::ops::Not;
 use core::ptr;
-use core::sync::atomic::{AtomicI8, AtomicI16, AtomicI32, AtomicI64, AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicI8, AtomicI16, AtomicI32, AtomicI64, AtomicPtr, AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering};
 
 use ryo_bytecode::asm::{self, ARG_REGS, Loc};
 use ryo_bytecode::full::Opcode;
@@ -379,6 +379,37 @@ macro_rules! cxchg {
         let p = get!(*mut $t, $a, $fp, $op, p);
         let (old, new) = (get!($t, $a, $fp, $op, old), get!($t, $a, $fp, $op, new));
         let (v, ok) = match $at::from_ptr(p).$m(old, new, Ordering::$os, Ordering::$of) {
+            Ok(v) => (v, true),
+            Err(v) => (v, false),
+        };
+        put!($a, $fp, $op, d, v);
+        put!($a, $fp, $op, o, ok)
+    }};
+}
+// `AtomicPtr`'s: the value is a `*mut u8`, a read-modify-write's operand a `usize`.
+macro_rules! aload_ptr {
+    ($a:ident, $fp:ident, $op:ident, $o:ident) => {
+        put!($a, $fp, $op, d, AtomicPtr::<u8>::from_ptr(get!(*mut *mut u8, $a, $fp, $op, p)).load(Ordering::$o))
+    };
+}
+macro_rules! astore_ptr {
+    ($a:ident, $fp:ident, $op:ident, $o:ident) => {
+        AtomicPtr::<u8>::from_ptr(get!(*mut *mut u8, $a, $fp, $op, p)).store(get!(*mut u8, $a, $fp, $op, s), Ordering::$o)
+    };
+}
+macro_rules! armw_ptr {
+    ($a:ident, $fp:ident, $op:ident, swap, $o:ident) => {
+        put!($a, $fp, $op, d, AtomicPtr::<u8>::from_ptr(get!(*mut *mut u8, $a, $fp, $op, p)).swap(get!(*mut u8, $a, $fp, $op, s), Ordering::$o))
+    };
+    ($a:ident, $fp:ident, $op:ident, $m:ident, $o:ident) => {
+        put!($a, $fp, $op, d, AtomicPtr::<u8>::from_ptr(get!(*mut *mut u8, $a, $fp, $op, p)).$m(get!(usize, $a, $fp, $op, s), Ordering::$o))
+    };
+}
+macro_rules! cxchg_ptr {
+    ($a:ident, $fp:ident, $op:ident, $m:ident, $os:ident, $of:ident) => {{
+        let p = get!(*mut *mut u8, $a, $fp, $op, p);
+        let (old, new) = (get!(*mut u8, $a, $fp, $op, old), get!(*mut u8, $a, $fp, $op, new));
+        let (v, ok) = match AtomicPtr::<u8>::from_ptr(p).$m(old, new, Ordering::$os, Ordering::$of) {
             Ok(v) => (v, true),
             Err(v) => (v, false),
         };

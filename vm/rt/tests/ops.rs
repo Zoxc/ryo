@@ -557,13 +557,18 @@ fn conversions() {
 #[test]
 fn atomics() {
     let ops = ops_where(|op| op.mnemonic().starts_with("atomic."));
-    assert_eq!(ops.len(), 4 * (3 + 3 + 11 * 5 + 2 * 15));
+    // Four integer widths, and the pointer forms (no `nand`, `min`, `max`, `umin`, `umax`).
+    assert_eq!(ops.len(), 4 * (3 + 3 + 11 * 5 + 2 * 15) + (3 + 3 + 6 * 5 + 2 * 15));
     let mut f = Frame::new();
     let fp = f.fp();
     for op in ops {
         let mn = op.mnemonic();
         let p: Vec<&str> = mn.split('.').collect();
-        let n = width(&p).unwrap();
+        // `ptr`: a 64-bit value; the arithmetic is on its address.
+        let n = width(&p).unwrap_or_else(|| {
+            assert!(p.contains(&"ptr"), "{mn}");
+            64
+        });
         let mask = mask(n);
         let sx = |v: u128| ((v << (128 - n)) as i128) >> (128 - n);
         for &(init, v, old) in &[(5u128, 9u128, 5u128), (0xff, 0x80, 1), (0x8000_0000_0000_0001, 3, 7), (u128::MAX, 1, u128::MAX)] {

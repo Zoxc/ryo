@@ -269,8 +269,12 @@ footprint (op : Full.Opcode) : Option Footprint
   write pointers with provenance. Integer arithmetic is `BitVec` at the opcode's width,
   named by the handler table's Rust method or operator; floats use L0's exact IEEE
   arithmetic (`Ryo/Spec/Lang/Float.lean`), `as` casts per D34. Atomics are sequential (D17)
-  at natural alignment and, like the `AtomicUN` handlers, integer-typed: an atomic load of
-  a pointer drops its provenance.
+  at natural alignment. The `.wN` forms are, like their `AtomicUN` handlers,
+  integer-typed (an atomic load of a pointer through them drops its provenance); the `.ptr`
+  forms, `AtomicPtr`'s, which the lowering selects for a raw pointer type, read and write
+  pointers with provenance: a read-modify-write other than `swap` changes the address by a
+  `usize` and keeps the provenance of the pointer in memory, and compare-exchange compares
+  addresses.
 - **UB**: `Uninit` read as an integer or pointer; a zero divisor and `MIN / -1`
   (`unchecked_div`/`_rem`); `memcpy` of overlapping ranges; an access outside a live
   allocation, or a store into an immutable one; a misaligned atomic or `addr.sym` slot;

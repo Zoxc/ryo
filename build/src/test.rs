@@ -175,7 +175,7 @@ pub(crate) const CORPUS: &[Program] = &[
     ),
     single!(
         "vm_intrinsics",
-        vm: &["main", "atomics", "unwinding", "misc", "dst", "direct", "contention"]
+        vm: &["main", "atomics", "atomic_ptrs", "unwinding", "misc", "dst", "direct", "contention"]
     ),
     // The ABI sweep (design/build.md#test-and-bench).
     single!(

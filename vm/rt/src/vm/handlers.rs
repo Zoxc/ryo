@@ -7,7 +7,9 @@
 // written in assembly (interp.rs). The list is checked against `ops.rs` when built.
 // Kinds: integer types select the width and signedness (`i*` for `.s` forms), float
 // types the format; `Atomic*` the atomic type; orderings are `core::sync::atomic::Ordering`
-// variants.
+// variants. The `*_ptr` atomic kinds are `AtomicPtr`'s: the same machine operations as the
+// 64-bit integer ones, but the value is a pointer (with provenance, in the Lean semantics),
+// and the read-modify-write ones take a `usize` operand (`fetch_byte_add`, `fetch_or`, ...).
 
 macro_rules! for_each_handler {
     ($m:ident!($($args:tt)*)) => { $m! { ($($args)*)
@@ -787,6 +789,72 @@ macro_rules! for_each_handler {
         AtomicCxchgWeakW64SeqcstRelaxed => cxchg(AtomicU64, u64, compare_exchange_weak, SeqCst, Relaxed);
         AtomicCxchgWeakW64SeqcstAcquire => cxchg(AtomicU64, u64, compare_exchange_weak, SeqCst, Acquire);
         AtomicCxchgWeakW64SeqcstSeqcst => cxchg(AtomicU64, u64, compare_exchange_weak, SeqCst, SeqCst);
+        AtomicLoadPtrRelaxed => aload_ptr(Relaxed);
+        AtomicLoadPtrAcquire => aload_ptr(Acquire);
+        AtomicLoadPtrSeqcst => aload_ptr(SeqCst);
+        AtomicStorePtrRelaxed => astore_ptr(Relaxed);
+        AtomicStorePtrRelease => astore_ptr(Release);
+        AtomicStorePtrSeqcst => astore_ptr(SeqCst);
+        AtomicXchgPtrRelaxed => armw_ptr(swap, Relaxed);
+        AtomicXchgPtrAcquire => armw_ptr(swap, Acquire);
+        AtomicXchgPtrRelease => armw_ptr(swap, Release);
+        AtomicXchgPtrAcqrel => armw_ptr(swap, AcqRel);
+        AtomicXchgPtrSeqcst => armw_ptr(swap, SeqCst);
+        AtomicAddPtrRelaxed => armw_ptr(fetch_byte_add, Relaxed);
+        AtomicAddPtrAcquire => armw_ptr(fetch_byte_add, Acquire);
+        AtomicAddPtrRelease => armw_ptr(fetch_byte_add, Release);
+        AtomicAddPtrAcqrel => armw_ptr(fetch_byte_add, AcqRel);
+        AtomicAddPtrSeqcst => armw_ptr(fetch_byte_add, SeqCst);
+        AtomicSubPtrRelaxed => armw_ptr(fetch_byte_sub, Relaxed);
+        AtomicSubPtrAcquire => armw_ptr(fetch_byte_sub, Acquire);
+        AtomicSubPtrRelease => armw_ptr(fetch_byte_sub, Release);
+        AtomicSubPtrAcqrel => armw_ptr(fetch_byte_sub, AcqRel);
+        AtomicSubPtrSeqcst => armw_ptr(fetch_byte_sub, SeqCst);
+        AtomicAndPtrRelaxed => armw_ptr(fetch_and, Relaxed);
+        AtomicAndPtrAcquire => armw_ptr(fetch_and, Acquire);
+        AtomicAndPtrRelease => armw_ptr(fetch_and, Release);
+        AtomicAndPtrAcqrel => armw_ptr(fetch_and, AcqRel);
+        AtomicAndPtrSeqcst => armw_ptr(fetch_and, SeqCst);
+        AtomicOrPtrRelaxed => armw_ptr(fetch_or, Relaxed);
+        AtomicOrPtrAcquire => armw_ptr(fetch_or, Acquire);
+        AtomicOrPtrRelease => armw_ptr(fetch_or, Release);
+        AtomicOrPtrAcqrel => armw_ptr(fetch_or, AcqRel);
+        AtomicOrPtrSeqcst => armw_ptr(fetch_or, SeqCst);
+        AtomicXorPtrRelaxed => armw_ptr(fetch_xor, Relaxed);
+        AtomicXorPtrAcquire => armw_ptr(fetch_xor, Acquire);
+        AtomicXorPtrRelease => armw_ptr(fetch_xor, Release);
+        AtomicXorPtrAcqrel => armw_ptr(fetch_xor, AcqRel);
+        AtomicXorPtrSeqcst => armw_ptr(fetch_xor, SeqCst);
+        AtomicCxchgPtrRelaxedRelaxed => cxchg_ptr(compare_exchange, Relaxed, Relaxed);
+        AtomicCxchgPtrRelaxedAcquire => cxchg_ptr(compare_exchange, Relaxed, Acquire);
+        AtomicCxchgPtrRelaxedSeqcst => cxchg_ptr(compare_exchange, Relaxed, SeqCst);
+        AtomicCxchgPtrAcquireRelaxed => cxchg_ptr(compare_exchange, Acquire, Relaxed);
+        AtomicCxchgPtrAcquireAcquire => cxchg_ptr(compare_exchange, Acquire, Acquire);
+        AtomicCxchgPtrAcquireSeqcst => cxchg_ptr(compare_exchange, Acquire, SeqCst);
+        AtomicCxchgPtrReleaseRelaxed => cxchg_ptr(compare_exchange, Release, Relaxed);
+        AtomicCxchgPtrReleaseAcquire => cxchg_ptr(compare_exchange, Release, Acquire);
+        AtomicCxchgPtrReleaseSeqcst => cxchg_ptr(compare_exchange, Release, SeqCst);
+        AtomicCxchgPtrAcqrelRelaxed => cxchg_ptr(compare_exchange, AcqRel, Relaxed);
+        AtomicCxchgPtrAcqrelAcquire => cxchg_ptr(compare_exchange, AcqRel, Acquire);
+        AtomicCxchgPtrAcqrelSeqcst => cxchg_ptr(compare_exchange, AcqRel, SeqCst);
+        AtomicCxchgPtrSeqcstRelaxed => cxchg_ptr(compare_exchange, SeqCst, Relaxed);
+        AtomicCxchgPtrSeqcstAcquire => cxchg_ptr(compare_exchange, SeqCst, Acquire);
+        AtomicCxchgPtrSeqcstSeqcst => cxchg_ptr(compare_exchange, SeqCst, SeqCst);
+        AtomicCxchgWeakPtrRelaxedRelaxed => cxchg_ptr(compare_exchange_weak, Relaxed, Relaxed);
+        AtomicCxchgWeakPtrRelaxedAcquire => cxchg_ptr(compare_exchange_weak, Relaxed, Acquire);
+        AtomicCxchgWeakPtrRelaxedSeqcst => cxchg_ptr(compare_exchange_weak, Relaxed, SeqCst);
+        AtomicCxchgWeakPtrAcquireRelaxed => cxchg_ptr(compare_exchange_weak, Acquire, Relaxed);
+        AtomicCxchgWeakPtrAcquireAcquire => cxchg_ptr(compare_exchange_weak, Acquire, Acquire);
+        AtomicCxchgWeakPtrAcquireSeqcst => cxchg_ptr(compare_exchange_weak, Acquire, SeqCst);
+        AtomicCxchgWeakPtrReleaseRelaxed => cxchg_ptr(compare_exchange_weak, Release, Relaxed);
+        AtomicCxchgWeakPtrReleaseAcquire => cxchg_ptr(compare_exchange_weak, Release, Acquire);
+        AtomicCxchgWeakPtrReleaseSeqcst => cxchg_ptr(compare_exchange_weak, Release, SeqCst);
+        AtomicCxchgWeakPtrAcqrelRelaxed => cxchg_ptr(compare_exchange_weak, AcqRel, Relaxed);
+        AtomicCxchgWeakPtrAcqrelAcquire => cxchg_ptr(compare_exchange_weak, AcqRel, Acquire);
+        AtomicCxchgWeakPtrAcqrelSeqcst => cxchg_ptr(compare_exchange_weak, AcqRel, SeqCst);
+        AtomicCxchgWeakPtrSeqcstRelaxed => cxchg_ptr(compare_exchange_weak, SeqCst, Relaxed);
+        AtomicCxchgWeakPtrSeqcstAcquire => cxchg_ptr(compare_exchange_weak, SeqCst, Acquire);
+        AtomicCxchgWeakPtrSeqcstSeqcst => cxchg_ptr(compare_exchange_weak, SeqCst, SeqCst);
         FenceAcquire => fence(Acquire);
         FenceRelease => fence(Release);
         FenceAcqrel => fence(AcqRel);
