@@ -29,11 +29,10 @@ Loops that Rust runs until the code ends take fuel (the code's length, plus the 
 for the instruction loop), which they never exhaust: every element read is at least one byte
 (`decodeItem_pos`).
 
-TODO (aot.md §C2, beyond Rust): the Rust decoder trusts the list of dropped stores. The check of
-their deadness by a backward liveness over the decoded code is `Ryo.Vm.Frame.droppedNotDead`,
-but it is not part of `decodeReduced`'s verdict yet: it shows dead only what the code itself
-does (overwritten stores, slots never read again), not stores the encoder dropped on the
-backend's dead-slot hints that later code (or an over-estimated handler extent) seems to read.
+Beyond Rust (aot.md §C2): the Rust decoder trusts the list of dropped stores; the Lean one
+checks their deadness by a backward liveness over the decoded code, `Ryo.Vm.Frame.decodeChecked`
+(`decodeReducedWith` and `Frame.droppedNotDead`). `decodeReduced` itself trusts the list, as
+Rust does, so that the two can be diffed.
 
 `Inputs` is the JSON form of one function's decoder inputs, read by `ryo-lean decode` and by the
 test vectors:

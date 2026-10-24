@@ -73,9 +73,11 @@ def resolve (funcStarts : Array Nat) (a : BitVec 64) : Option Ref :=
   else if a ≥ text then (funcStarts.findIdx? (· == a - text)).map .func
   else none
 
-/-- Function `f`'s decoding, its code linked at the made-up addresses; `none` for inputs the
-reference can't decode either (a malformed dropped store). -/
-def decodeFunc (f : Ryo.Obj.FuncInputs) : Except String (Option (Except AsmError Decoded)) := do
+/-- Function `f`'s decoder inputs, its code linked at the made-up addresses: the arguments of
+`decodeReducedWith` after the code; `none` for inputs the reference can't decode either (a
+malformed dropped store). -/
+def funcArgs (f : Ryo.Obj.FuncInputs) :
+    Except String (Option (ByteArray × Fields × Array DroppedStore × Array Scope)) := do
   let addr := text + f.codeOff
   let mut code := f.code
   for r in f.relocs do
@@ -92,7 +94,18 @@ def decodeFunc (f : Ryo.Obj.FuncInputs) : Except String (Option (Except AsmError
   let some dropped := f.dropped.mapM fun d => DroppedStore.ofParts? d.pos (BitVec.ofInt 32 d.frameOffset) d.size d.reg
     | return none
   let fields := Fields.linked (BitVec.ofNat 64 addr) (BitVec.ofNat 64 record) (resolve f.funcStarts)
+  return some (code, fields, dropped, scopes)
+
+/-- Function `f`'s decoding (`decodeReducedWith`, trusting the dropped stores as Rust does);
+`none` as for `funcArgs`. -/
+def decodeFunc (f : Ryo.Obj.FuncInputs) : Except String (Option (Except AsmError Decoded)) := do
+  let some (code, fields, dropped, scopes) ← funcArgs f | return none
   return some (decodeReducedWith code fields f.rodata f.callSites dropped scopes f.mode)
+
+/-- Function `f`'s checked decoding (`Frame.decodeChecked`); `none` as for `funcArgs`. -/
+def decodeFuncChecked (f : Ryo.Obj.FuncInputs) : Except String (Option (Except String Decoded)) := do
+  let some (code, fields, dropped, scopes) ← funcArgs f | return none
+  return some (Frame.decodeChecked code fields f.rodata f.callSites dropped scopes f.mode)
 
 /-- One function's lines, as `lean-decode-ref decode` prints them. -/
 def funcLines (d : Decoded) : Array String := Id.run do
@@ -128,8 +141,9 @@ def objLines (o : Ryo.Obj.ImageObject) : Array String := Id.run do
       | .ok (some (.ok d)) => out := out ++ funcLines d
   return out
 
-/-- `ryo-lean dead <obj>`'s lines: per function with dropped stores, how many the dead-store
-check (`Frame.droppedNotDead`) shows dead, and each one it doesn't, with the function's text. -/
+/-- `ryo-lean dead <obj>`'s lines: per function with dropped stores that the checked decoding
+(`Frame.decodeChecked`) rejects, its verdict, the stores `Frame.droppedNotDead` doesn't show
+dead, and the function's text; then the totals. -/
 def deadLines (o : Ryo.Obj.ImageObject) : Array String := Id.run do
   let mut out : Array String := #[]
   let mut total := 0
@@ -140,14 +154,23 @@ def deadLines (o : Ryo.Obj.ImageObject) : Array String := Id.run do
     let .ok (some (.ok d)) := decodeFunc fi | continue
     if d.dropped.isEmpty then continue
     total := total + d.dropped.size
+    let .ok (some r) := decodeFuncChecked fi | continue
+    let .error e := r | continue
+    let wpos := d.wordPos
     match Frame.droppedNotDead d fi.mode with
-    | .error e => out := out.push s!"func {i} {o.funcName f.codeOff}: error {e}"; bad := bad + d.dropped.size
-    | .ok [] => pure ()
     | .ok ks =>
       bad := bad + ks.length
-      let wpos := d.wordPos
-      out := out.push s!"func {i} {o.funcName f.codeOff}: {ks.length}/{d.dropped.size} not shown dead: {ks.map (wpos[·]!)}"
-      out := out ++ funcLines d
+      let why := ks.map fun k => match Frame.firstReader d fi.mode k with
+        | .ok (some (j, by_)) => s!"{wpos[k]!} read at {wpos[j]!}" ++ match by_ with
+          | .operand => ""
+          | .pointer => " through a pointer"
+          | .everything => " (reads everything)"
+        | _ => s!"{wpos[k]!}"
+      out := out.push s!"func {i} {o.funcName f.codeOff}: {e}: {", ".intercalate why}"
+    | .error _ =>
+      bad := bad + d.dropped.size
+      out := out.push s!"func {i} {o.funcName f.codeOff}: {e}"
+    out := out ++ funcLines d
   out := out.push s!"total dropped {total}, not shown dead {bad}"
   return out
 

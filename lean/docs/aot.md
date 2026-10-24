@@ -141,9 +141,15 @@ follows the decoder's structure:
   [vm.md](../../design/vm.md#register-cache) describes.
 - **Dropped stores**: the relation lets the L2 frame differ from R on bytes whose store was
   dropped, until overwritten. The Lean decoder **checks** each dropped store's deadness by a
-  backward liveness over the decoded code. Pointer accesses read all escaped bytes; calls,
-  islands and handlers read their operand extents, like `frame::head_liveness`. The Rust
-  decoder trusts the `dropped` list; the Lean one must not.
+  backward liveness over the decoded code (`Frame.decodeChecked`). Handlers read and write
+  their operands at `opSem`'s footprints ([reduced.md](reduced.md) §C0.5); calls read their
+  argument list, and every byte only if the convention allows stack arguments (argument
+  registers ran out); islands read every byte; pointer accesses read the objects that may be
+  escaped there (an `Escape` scope reaching it without an `End`); an `End` makes its bytes
+  `Uninit` (reduced.md §C0.3), so they are dead before it. The Rust decoder trusts the `dropped` list;
+  the Lean one must not. Known rejections, for want of data: calls that may have stack
+  arguments (needs the call's `ArgPlan` from the C1' certificate), sret destinations, islands
+  (needs `Lend` scopes), and stale bytes a whole-object copy moves but nothing uses.
 - **Counters and stubs**: `sub [rip+ctr], k; js stub` followed by the stub
   `lea r11,[rip+rec]; …; call [r11+8|16]; jmp back` refines a no-op, given the trip contract
   ([jit.md](jit.md) §E.2). Counter memory is runtime-owned: excluded from the program's

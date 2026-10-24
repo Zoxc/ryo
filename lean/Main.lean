@@ -30,8 +30,9 @@
                                            or `error at <byte>: <what>` (exit status 1)
   ryo-lean decode <image object>           each function of the image decoded, as
                                            scripts/lean-decode-ref prints Rust's
-  ryo-lean dead <image object>             the dead-store check on each function's dropped
-                                           stores: those it can't show dead
+  ryo-lean dead <image object>             the functions the checked decoding rejects (a
+                                           dropped store not shown dead), with a reader
+                                           of each such store
   ryo-lean check-pool <dump.json> <image object>... [-v]
                                            the constant-pool and vtable check
                                            (`Ryo/Check/Image/Pool.lean`) of each object against

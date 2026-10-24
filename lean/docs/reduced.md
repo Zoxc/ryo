@@ -56,8 +56,14 @@ operands, so they are layout-relative already.
   are reachable only through frame operands. At an `Escape` scope it becomes an
   **allocation** at `φ(o)`, with a fresh `AllocId`, holding its current bytes. At the
   matching `End` (a `StorageDead`, the temporaries' reset) or at return, the allocation is
-  deallocated and the bytes become private again. An object escaped twice without an end
-  in between stays one allocation.
+  deallocated. At an `End` the bytes it covers become private and `Uninit`, escaped or not.
+  This matches L0, where `StorageDead` then `StorageLive` gives uninitialized bytes, and
+  LLVM's `lifetime.end`; and the backend already treats those bytes as dead (`reset_temps`
+  marks the temporaries dead, `Asm::dead`, along with their `storage_end`, and a local isn't
+  read after its `StorageDead`). It keeps the L0 ↔ R relation ([aot.md](aot.md) §C1): an
+  object escaped again after an end holds `Uninit` in R where L0's bytes are uninitialized
+  after `StorageLive`, so `≤def` holds; temporaries are unconstrained between statements
+  anyway. An object escaped twice without an end in between stays one allocation.
 - **Values**:
   - `addr d, s` yields a pointer to `s` with the provenance of `s`'s object; it is UB if
     that object is not an allocation at that point (the lowering check rules this out:
@@ -81,7 +87,9 @@ What used to be separate rules of R are now consequences of the memory model:
   non-escaped objects to SSA values, drop their stores and move them.
 - **In bounds**: a pointer derived from object `A` cannot access object `B`, so objects can
   be placed independently (the layout parameter).
-- **Storage ends**: after an `End`, pointers to the object dangle (LLVM's `lifetime.end`).
+- **Storage ends**: after an `End`, pointers to the object dangle (LLVM's `lifetime.end`),
+  and its bytes are `Uninit`: a store before the `End` that nothing reads first is dead, which
+  the dead-store check uses ([aot.md](aot.md) §C2).
 
 The escape ghost state of the earlier design is the set of live frame allocations. Dropped
 stores are not ghost state: the Lean decoder re-checks them ([aot.md](aot.md) §C2).
