@@ -9759,6 +9759,8 @@ L5:
     lt.u.w64 $-121, $-88, $-136
     ptr.index $-176, $-56, $-88, 8
     mov.w64 $-120, $-176
+    ; lend $-192, 0 bytes
+    ; lend $-64, 0 bytes
     island sym5, [4294967104, 4294967232]
     mov.w64 $-128, $-120
     load.w64 $-96, [$-128 + 0]
@@ -9917,6 +9919,8 @@ L0:
     call.sym $0, sym2, 0, [4294967176, 8]
     jmp L5
 L1:
+    ; lend $-176, 0 bytes
+    ; lend $-56, 0 bytes
     island sym3, [4294967120, 4294967240]
     jmp L6
 L2:
@@ -9999,6 +10003,8 @@ L0:
     call.sym $0, sym2, 0, [4294967176, 8]
     jmp L5
 L1:
+    ; lend $-176, 0 bytes
+    ; lend $-56, 0 bytes
     island sym3, [4294967120, 4294967240]
     jmp L6
 L2:
@@ -10081,6 +10087,8 @@ L0:
     call.sym $0, sym2, 0, [4294967176, 8]
     jmp L5
 L1:
+    ; lend $-176, 0 bytes
+    ; lend $-56, 0 bytes
     island sym3, [4294967120, 4294967240]
     jmp L6
 L2:

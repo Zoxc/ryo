@@ -1,0 +1,710 @@
+//! Decoded reduced code ([`crate::asm::Decoded`]) as the SSA builder reads it: each
+//! instruction classified ([`Kind`]) with its exact frame accesses ([`Acc`]), its unwinding
+//! and its successors, then cut into blocks with their CFG, landing pad edges included, and
+//! the cyclic loop heads (design/jit.md, "The SSA tier").
+
+use alloc::vec::Vec;
+
+use super::Unsupported;
+use super::effects::{Effect, effects};
+use crate::asm::{self, ARG_ADDR, ArgReg, Decoded, Mode, RET_SRET, RetPart, ScopeKind};
+use crate::full::{self, Func as FuncIdx, OperandKind, Shape, Sym};
+use crate::image::{CATCH, CONTINUE};
+use crate::reduced::{self, Arg, Insn};
+
+/// How an instruction touches a frame byte range.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum How {
+    Read,
+    Write,
+    /// A read and a write (a handler's conditional write).
+    Update,
+    /// Its address is taken (an `addr`, an argument passed by address).
+    Addr,
+    /// Read or written as a block of bytes: never promoted (handlers with lengths,
+    /// `mov.w128`, island operands).
+    Block,
+    /// Only written as a block of bytes (a block copy's destination, a `w128` result): never
+    /// promoted, but not a read (the outgoing argument area is written this way).
+    BlockWrite,
+}
+
+/// A frame access: `size` bytes at `fp + off`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Acc {
+    pub off: i32,
+    pub size: u32,
+    pub how: How,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Bin {
+    Add,
+    Sub,
+    Mul,
+    And,
+    Or,
+    Xor,
+    Shl,
+    ShrS,
+    ShrU,
+}
+
+/// A native instruction, by what the builder makes of it. The accesses are in [`RInsn::accs`],
+/// in the order given.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Kind {
+    /// `d = s` (`w` up to 8): accesses `s` read, `d` write.
+    Mov(u8),
+    /// `mov.w128`: `s` block, `d` block.
+    Mov128,
+    /// `d = imm`: `d` write.
+    Imm(u8, u64),
+    /// `d = [p + k]`: `p` read, `d` write.
+    Load(u8, i32),
+    /// `[p + k] = s`: `p` read, `s` read.
+    Store(u8, i32),
+    /// `d = &s`: `s` addr, `d` write.
+    Addr,
+    /// `d = p + imm`: `p`, `d`.
+    PtrAdd(i64),
+    /// `d = p + i * stride`: `p`, `i`, `d`.
+    PtrIndex(u32),
+    /// `d = a op b` (or `op imm`): `a`, [`b`], `d`.
+    Bin(Bin, u8, Option<u64>),
+    /// `d = a cc b` (or `cc imm`): `a`, [`b`], `d`.
+    Cmp(super::ir::Cc, u8, Option<u64>),
+    /// To the instruction (an index, as all the targets here).
+    Jmp(u32),
+    /// A branch on the byte `s`, or on `a cc b` (or `cc imm`): to `t` when it holds, but
+    /// with `neg`. Accesses: `s`, or `a`, [`b`].
+    Br {
+        cmp: Option<(super::ir::Cc, u8, Option<u64>)>,
+        neg: bool,
+        t: u32,
+    },
+    /// A call: accesses the callee pointer (for `Ptr`), the arguments (by address: addr),
+    /// then the result's parts (writes).
+    Call {
+        target: super::ir::CallTarget,
+        regs: Vec<ArgReg>,
+        parts: Vec<RetPart>,
+        d: i32,
+    },
+    TailCall {
+        target: super::ir::CallTarget,
+        regs: Vec<ArgReg>,
+    },
+    /// `ret`: the parts' reads (load widths) at `s`.
+    Ret {
+        k: u32,
+        parts: Vec<RetPart>,
+    },
+    /// `arg d, r`: `d` write.
+    Arg(ArgReg),
+    /// The operands' extents (blocks), from the island's `Lend` scopes.
+    Island {
+        isl: Sym,
+        ops: Vec<i32>,
+    },
+    /// A handler call: its frame operands' accesses, in operand order (each with the
+    /// argument register and half it is in).
+    Handler {
+        h: full::Opcode,
+        args: Vec<Arg>,
+        slots: Vec<(u8, u8)>,
+        then: Then,
+    },
+    /// `lpad x`: `x` write (the exception object).
+    Lpad,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Then {
+    Next,
+    Branch { neg: bool, t: u32 },
+    Table(Vec<u32>),
+    Trap,
+}
+
+/// Where unwinding out of an instruction goes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Unwind {
+    /// It can't (no call site).
+    None,
+    Continue,
+    /// To the `lpad` at this instruction index.
+    Pad {
+        pad: u32,
+        catch: bool,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub struct RInsn {
+    /// Word offset.
+    pub at: u32,
+    pub kind: Kind,
+    pub accs: Vec<Acc>,
+    /// Instruction indices it may continue at (but for unwinding), the fall-through first.
+    pub succ: Vec<u32>,
+    pub falls: bool,
+    pub unwind: Unwind,
+}
+
+impl RInsn {
+    /// Whether it may unwind (calls, islands, handlers that don't return), so that it has
+    /// a call site.
+    pub fn may_unwind(&self) -> bool {
+        matches!(self.kind, Kind::Call { .. } | Kind::Island { .. } | Kind::Handler { then: Then::Trap, .. })
+    }
+}
+
+/// A scope change before instruction `at` (an index; the count for the end).
+#[derive(Clone, Copy, Debug)]
+pub struct ScopeAt {
+    pub at: u32,
+    pub off: i32,
+    pub size: u32,
+    pub kind: ScopeKind,
+}
+
+/// A block of instructions: `start .. end` (indices).
+#[derive(Clone, Debug)]
+pub struct RBlock {
+    pub start: u32,
+    pub end: u32,
+    /// Successor blocks, the pad last (if the last instruction unwinds to one).
+    pub succ: Vec<u32>,
+    pub pad: Option<u32>,
+    pub preds: Vec<u32>,
+    /// The AOT loop head (index into [`Decoded::heads`]) it starts at.
+    pub head: Option<u32>,
+}
+
+pub struct Code {
+    pub insns: Vec<RInsn>,
+    pub scopes: Vec<ScopeAt>,
+    pub blocks: Vec<RBlock>,
+    /// The block of each instruction.
+    pub block_of: Vec<u32>,
+    /// By loop head, whether it gets an OSR entry: it lies on a cycle, and isn't an `arg`
+    /// or an `lpad`.
+    pub enterable: Vec<bool>,
+}
+
+fn width(seg: &str) -> Option<u8> {
+    Some(match seg {
+        "w8" => 1,
+        "w16" => 2,
+        "w32" => 4,
+        "w64" => 8,
+        "w128" => 16,
+        _ => return None,
+    })
+}
+
+fn cc_of(segs: &[&str]) -> Option<super::ir::Cc> {
+    use super::ir::Cc::*;
+    let s = |i: usize| segs.get(i).copied().unwrap_or("");
+    Some(match (s(0), s(1)) {
+        ("eq", _) => Eq,
+        ("ne", _) => Ne,
+        ("lt", "s") => LtS,
+        ("lt", "u") => LtU,
+        ("le", "s") => LeS,
+        ("le", "u") => LeU,
+        ("gt", "s") => GtS,
+        ("gt", "u") => GtU,
+        ("ge", "s") => GeS,
+        ("ge", "u") => GeU,
+        _ => return None,
+    })
+}
+
+/// Reads the immediate operand `name` of the native instruction `w` (opcode `op`).
+fn imm(op: full::Opcode, w: &[u32], name: &str) -> u64 {
+    let info = op.info();
+    let i = info.operand_index(name).expect("operand");
+    let at = info.operand_offset(i).expect("fixed");
+    match info.operands[i].kind.words() {
+        Some(2) => w[at] as u64 | (w[at + 1] as u64) << 32,
+        _ => w[at] as u64,
+    }
+}
+
+fn slot(op: full::Opcode, w: &[u32], name: &str) -> i32 {
+    imm(op, w, name) as u32 as i32
+}
+
+fn bad(why: &'static str) -> Unsupported {
+    Unsupported(why)
+}
+
+/// The call argument list `a` (slot, register pairs): accesses and registers.
+fn arg_list(a: &[u32], accs: &mut Vec<Acc>, regs: &mut Vec<ArgReg>) -> Result<(), Unsupported> {
+    for p in a.chunks(2) {
+        let r = asm::param_reg(p[1]).ok_or(bad("argument register"))?;
+        if r.xmm && r.size > 8 {
+            return Err(bad("a 16-byte SSE argument"));
+        }
+        let how = if p[1] & ARG_ADDR != 0 { How::Addr } else { How::Read };
+        accs.push(Acc { off: p[0] as i32, size: if how == How::Addr { 1 } else { r.size }, how });
+        regs.push(ArgReg { size: if how == How::Addr { 8 } else { r.size }, ..r });
+    }
+    Ok(())
+}
+
+/// Classifies the instruction at word `at` of `d`.
+fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode) -> Result<(RInsn, usize), Unsupported> {
+    let words = &d.words[at..];
+    let len = reduced::insn_len(words).map_err(|_| bad("reduced code"))?;
+    let (ri, _) = Insn::decode(words).map_err(|_| bad("reduced code"))?;
+    let w = &words[..len];
+    let rel = |t: i32| (at as i64 + t as i64) as u32;
+    let mut accs = Vec::new();
+    let mut succ = Vec::new();
+    let mut falls = true;
+    let op = reduced::Opcode::from_u16(w[0] as u16).expect("decoded");
+    let acc = |off: i32, size: u32, how: How| Acc { off, size, how };
+    let kind = match ri {
+        Insn::Jmp { t } => {
+            falls = false;
+            succ.push(rel(t.0));
+            Kind::Jmp(rel(t.0))
+        }
+        Insn::Call { .. } | Insn::CallSym { .. } | Insn::CallSymInd { .. } | Insn::CallPtr { .. } => {
+            use super::ir::CallTarget as T;
+            let (d_, target, k, a, p) = match ri {
+                Insn::Call { d, f, k, a } => (d, T::Func(FuncIdx(f.0)), k, a, None),
+                Insn::CallSym { d, sym, k, a } => (d, T::Sym(sym), k, a, None),
+                Insn::CallSymInd { d, sym, k, a } => (d, T::SymInd(sym), k, a, None),
+                Insn::CallPtr { d, p, k, a } => (d, T::Ptr, k, a, Some(p)),
+                _ => unreachable!(),
+            };
+            if let Some(p) = p {
+                accs.push(acc(p.0, 8, How::Read));
+            }
+            let mut regs = Vec::new();
+            arg_list(a.words(), &mut accs, &mut regs)?;
+            if k == RET_SRET {
+                return Err(bad("return kind"));
+            }
+            let parts: Vec<RetPart> =
+                if k == 0 { Vec::new() } else { asm::ret_parts(k, false).ok_or(bad("return kind"))?.into_iter().flatten().collect() };
+            for p in &parts {
+                if p.xmm && p.size > 8 {
+                    return Err(bad("a 16-byte SSE result"));
+                }
+                accs.push(acc(d_.0.wrapping_add(p.off as i32), p.size, How::Write));
+            }
+            Kind::Call { target, regs, parts, d: d_.0 }
+        }
+        Insn::TailCall { .. } | Insn::TailCallPtr { .. } => {
+            use super::ir::CallTarget as T;
+            falls = false;
+            let (target, a, p) = match ri {
+                Insn::TailCall { f, a } => (T::Func(FuncIdx(f.0)), a, None),
+                Insn::TailCallPtr { p, a } => (T::Ptr, a, Some(p)),
+                _ => unreachable!(),
+            };
+            if let Some(p) = p {
+                accs.push(acc(p.0, 8, How::Read));
+            }
+            let mut regs = Vec::new();
+            arg_list(a.words(), &mut accs, &mut regs)?;
+            Kind::TailCall { target, regs }
+        }
+        Insn::Ret { s, k } => {
+            falls = false;
+            let parts: Vec<RetPart> =
+                if k == 0 { Vec::new() } else { asm::ret_parts(k, true).ok_or(bad("return kind"))?.into_iter().flatten().collect() };
+            for p in &parts {
+                if p.xmm && p.size > 8 {
+                    return Err(bad("a 16-byte SSE result"));
+                }
+                accs.push(acc(s.0.wrapping_add(p.off as i32), p.size, How::Read));
+            }
+            Kind::Ret { k, parts }
+        }
+        Insn::Arg { d, r } => {
+            let a = ArgReg::of(r, true).ok_or(bad("argument register"))?;
+            if a.xmm && a.size > 8 {
+                return Err(bad("a 16-byte SSE argument"));
+            }
+            accs.push(acc(d.0, a.size, How::Write));
+            Kind::Arg(a)
+        }
+        Insn::Island { isl, ops } => {
+            let mut offs = Vec::new();
+            for o in ops.iter() {
+                let off = o as i32;
+                // The operand's extent: its `Lend` scope.
+                let l = lends.iter().find(|l| l.off == off).ok_or(bad("an island operand without an extent"))?;
+                accs.push(acc(off, l.size, How::Block));
+                offs.push(off);
+            }
+            Kind::Island { isl, ops: offs }
+        }
+        Insn::Handler { h, args, neg, t } => {
+            let h = h.0;
+            let info = h.info();
+            let l = asm::layout(h, mode);
+            let args: Vec<Arg> = args.iter().collect();
+            if args.len() != l.regs as usize {
+                return Err(bad("handler arguments"));
+            }
+            let ts: Vec<u32> = t.iter().map(|t| rel(t.0)).collect();
+            let then = match info.shape {
+                Shape::Br => Then::Branch { neg: neg.0, t: ts[0] },
+                Shape::Switch => Then::Table(ts.clone()),
+                Shape::Trap => Then::Trap,
+                _ => Then::Next,
+            };
+            succ.extend(ts.iter().copied());
+            falls = matches!(info.shape, Shape::Op | Shape::Br | Shape::Lpad);
+            if info.shape == Shape::Lpad {
+                let x = info.operand_index("x").expect("x");
+                let loc = l.locs[x];
+                let Arg::Imm(v) = args[loc.reg as usize] else { return Err(bad("handler arguments")) };
+                let off = if loc.shared { (v >> loc.shift) as u32 } else { v as u32 } as i32;
+                accs.push(acc(off, 8, How::Write));
+                Kind::Lpad
+            } else {
+                let e = effects(h).ok_or(bad("handler"))?;
+                // The extent of block operands: the lengths the operands give.
+                let imm_of = |name: &str| -> Option<u64> {
+                    let k = info.operand_index(name)?;
+                    let loc = l.locs[k];
+                    match args[loc.reg as usize] {
+                        Arg::Imm(v) if loc.shared => Some((v >> loc.shift) as u32 as u64),
+                        Arg::Imm(v) => Some(v),
+                        _ => None,
+                    }
+                };
+                let block = imm_of("len").or_else(|| Some(imm_of("elem_size")?.saturating_mul(imm_of("count")?))).unwrap_or(16);
+                let block = u32::try_from(block).map_err(|_| bad("a block too large"))?;
+                let mut slots = Vec::new();
+                for (k, o) in info.operands.iter().enumerate() {
+                    let loc = l.locs[k];
+                    if loc.count == 0 || !matches!(o.kind, OperandKind::Slot | OperandKind::Mem) {
+                        continue;
+                    }
+                    let Arg::Imm(v) = args[loc.reg as usize] else { return Err(bad("a slot operand that isn't an immediate")) };
+                    let off = if loc.shared { (v >> loc.shift) as u32 } else { v as u32 } as i32;
+                    let (size, how) = match e.opnds[k] {
+                        Some(Effect::Read(n)) => (n as u32, How::Read),
+                        Some(Effect::Write(n)) => (n as u32, How::Write),
+                        Some(Effect::Update(n)) => (n as u32, How::Update),
+                        Some(Effect::Addr) => (1, How::Addr),
+                        Some(Effect::Block) if o.name == "d" => (block, How::BlockWrite),
+                        Some(Effect::Block) => (block, How::Block),
+                        None => return Err(bad("handler operand")),
+                    };
+                    // `w128` scalars aren't promoted: blocks.
+                    let how = match how {
+                        How::Write if size > 8 => How::BlockWrite,
+                        How::Read | How::Update if size > 8 => How::Block,
+                        how => how,
+                    };
+                    accs.push(acc(off, size, how));
+                    slots.push((loc.reg, loc.shift / 32));
+                }
+                Kind::Handler { h, args, slots, then }
+            }
+        }
+        _ => {
+            let fop = op.full().expect("native");
+            let m = fop.mnemonic();
+            let segs: Vec<&str> = m.split('.').collect();
+            let wd = segs.iter().find_map(|s| width(s)).unwrap_or(8);
+            let has_imm = segs.contains(&"imm");
+            let first = segs[0];
+            let s = |name: &str| slot(fop, w, name);
+            let im = |name: &str| imm(fop, w, name);
+            match first {
+                "mov" if wd == 16 => {
+                    accs.extend([acc(s("s"), 16, How::Block), acc(s("d"), 16, How::BlockWrite)]);
+                    Kind::Mov128
+                }
+                "mov" => {
+                    accs.extend([acc(s("s"), wd as u32, How::Read), acc(s("d"), wd as u32, How::Write)]);
+                    Kind::Mov(wd)
+                }
+                "imm" => {
+                    accs.push(acc(s("d"), wd as u32, How::Write));
+                    Kind::Imm(wd, im("imm"))
+                }
+                "load" => {
+                    let mem = full::Mem { p: full::Slot(s("m")), k: w[fop.info().operand_offset(1).unwrap() + 1] as i32 };
+                    accs.extend([acc(mem.p.0, 8, How::Read), acc(s("d"), wd as u32, How::Write)]);
+                    Kind::Load(wd, mem.k)
+                }
+                "store" => {
+                    let at_m = fop.info().operand_offset(0).unwrap();
+                    accs.extend([acc(w[at_m] as i32, 8, How::Read), acc(s("s"), wd as u32, How::Read)]);
+                    Kind::Store(wd, w[at_m + 1] as i32)
+                }
+                "addr" => {
+                    accs.extend([acc(s("s"), 1, How::Addr), acc(s("d"), 8, How::Write)]);
+                    Kind::Addr
+                }
+                "ptr" if segs[1] == "add" => {
+                    accs.extend([acc(s("p"), 8, How::Read), acc(s("d"), 8, How::Write)]);
+                    Kind::PtrAdd(im("imm") as i64)
+                }
+                "ptr" => {
+                    accs.extend([acc(s("p"), 8, How::Read), acc(s("i"), 8, How::Read), acc(s("d"), 8, How::Write)]);
+                    Kind::PtrIndex(im("stride") as u32)
+                }
+                "br" => {
+                    falls = true;
+                    let t = rel(slot(fop, w, "t"));
+                    succ.push(t);
+                    let neg = im("neg") != 0;
+                    if segs.len() == 1 {
+                        accs.push(acc(s("s"), 1, How::Read));
+                        Kind::Br { cmp: None, neg, t }
+                    } else {
+                        let cc = cc_of(&segs[1..]).ok_or(bad("branch"))?;
+                        accs.push(acc(s("a"), wd as u32, How::Read));
+                        let b = if has_imm { Some(im("imm")) } else { None };
+                        if b.is_none() {
+                            accs.push(acc(s("b"), wd as u32, How::Read));
+                        }
+                        Kind::Br { cmp: Some((cc, wd, b)), neg, t }
+                    }
+                }
+                _ => {
+                    accs.push(acc(s("a"), wd as u32, How::Read));
+                    let b = if has_imm { Some(im("imm")) } else { None };
+                    if b.is_none() {
+                        accs.push(acc(s("b"), wd as u32, How::Read));
+                    }
+                    if let Some(cc) = cc_of(&segs) {
+                        accs.push(acc(s("d"), 1, How::Write));
+                        Kind::Cmp(cc, wd, b)
+                    } else {
+                        let bin = match (first, segs.get(1).copied()) {
+                            ("add", _) => Bin::Add,
+                            ("sub", _) => Bin::Sub,
+                            ("mul", _) => Bin::Mul,
+                            ("and", _) => Bin::And,
+                            ("or", _) => Bin::Or,
+                            ("xor", _) => Bin::Xor,
+                            ("shl", _) => Bin::Shl,
+                            ("shr", Some("s")) => Bin::ShrS,
+                            ("shr", Some("u")) => Bin::ShrU,
+                            _ => return Err(bad("a native instruction")),
+                        };
+                        accs.push(acc(s("d"), wd as u32, How::Write));
+                        Kind::Bin(bin, wd, b)
+                    }
+                }
+            }
+        }
+    };
+    if let Some(fo) = op.full() {
+        let mut f = w.to_vec();
+        f[0] = fo as u32;
+        if !asm::return_ok(&f) {
+            return Err(bad("return kind"));
+        }
+    }
+    if falls {
+        succ.insert(0, (at + len) as u32);
+    }
+    // A read past the frame's top (`ret`'s and the calls' load widths read up to the next
+    // power of two past a 3, 5, 6 or 7-byte value) reads bytes that don't matter: only the
+    // frame's part counts.
+    for a in &mut accs {
+        if a.how == How::Read && a.off < 0 && a.off as i64 + a.size as i64 > 0 {
+            a.size = (-a.off) as u32;
+        }
+    }
+    Ok((RInsn { at: at as u32, kind, accs, succ, falls, unwind: Unwind::None }, len))
+}
+
+/// Decodes `d` into instructions and blocks.
+pub fn decode(d: &Decoded, mode: Mode) -> Result<Code, Unsupported> {
+    // Instruction starts first, for the scopes' positions.
+    let mut starts = Vec::new();
+    let mut at = 0;
+    while at < d.words.len() {
+        starts.push(at as u32);
+        at += reduced::insn_len(&d.words[at..]).map_err(|_| bad("reduced code"))?;
+    }
+    let n = starts.len();
+    let idx = |w: u32| starts.binary_search(&w).map(|i| i as u32).map_err(|_| bad("a branch target"));
+    let mut scopes = Vec::with_capacity(d.scopes.len());
+    for s in &d.scopes {
+        let at = if s.code_offset as usize == d.words.len() { n as u32 } else { idx(s.code_offset)? };
+        scopes.push(ScopeAt { at, off: s.frame_offset, size: s.size, kind: s.kind });
+    }
+    let mut insns = Vec::with_capacity(n);
+    let mut si = 0;
+    for (i, &w) in starts.iter().enumerate() {
+        while si < scopes.len() && (scopes[si].at as usize) < i {
+            si += 1;
+        }
+        let lends: Vec<ScopeAt> = scopes[si..].iter().take_while(|s| s.at as usize == i).filter(|s| s.kind == ScopeKind::Lend).copied().collect();
+        let (mut ri, _) = insn(d, w as usize, &lends, mode)?;
+        for s in ri.succ.iter_mut() {
+            *s = if *s as usize == d.words.len() { return Err(bad("falls off the end")) } else { idx(*s)? };
+        }
+        // The kinds' targets, to instruction indices too.
+        match &mut ri.kind {
+            Kind::Jmp(t) | Kind::Br { t, .. } | Kind::Handler { then: Then::Branch { t, .. }, .. } => *t = idx(*t)?,
+            Kind::Handler { then: Then::Table(ts), .. } => {
+                for t in ts.iter_mut() {
+                    *t = idx(*t)?;
+                }
+            }
+            _ => {}
+        }
+        insns.push(ri);
+    }
+    for e in &d.cleanup {
+        let i = idx(e.offset)? as usize;
+        if !insns[i].may_unwind() {
+            continue;
+        }
+        insns[i].unwind = if e.target == CONTINUE {
+            Unwind::Continue
+        } else {
+            let p = idx(e.target & !CATCH)?;
+            if insns[p as usize].kind != Kind::Lpad {
+                return Err(bad("a landing pad that isn't an lpad"));
+            }
+            Unwind::Pad { pad: p, catch: e.target & CATCH != 0 }
+        };
+    }
+    for (i, ri) in insns.iter().enumerate() {
+        if matches!(ri.kind, Kind::Arg(_)) && insns[..i].iter().any(|p| !matches!(p.kind, Kind::Arg(_))) {
+            return Err(bad("an arg after the start"));
+        }
+    }
+
+    // Leaders: the start, targets, after terminators, branches, calls with a landing pad,
+    // landing pads and the instruction after them, and loop heads.
+    let mut leader = alloc::vec![false; n + 1];
+    leader[0] = true;
+    for (i, ri) in insns.iter().enumerate() {
+        let ends = !ri.falls
+            || ri.succ.len() > 1
+            || matches!(ri.unwind, Unwind::Pad { .. })
+            || matches!(ri.kind, Kind::Handler { then: Then::Table(_), .. });
+        if ends {
+            leader[i + 1] = true;
+        }
+        for &s in &ri.succ {
+            if s as usize != i + 1 {
+                leader[s as usize] = true;
+            }
+        }
+        if let Unwind::Pad { pad, .. } = ri.unwind {
+            leader[pad as usize] = true;
+            leader[pad as usize + 1] = true;
+        }
+    }
+    for &h in &d.heads {
+        leader[idx(h)? as usize] = true;
+    }
+    let mut blocks: Vec<RBlock> = Vec::new();
+    let mut block_of = alloc::vec![0u32; n];
+    for i in 0..n {
+        if leader[i] {
+            blocks.push(RBlock { start: i as u32, end: i as u32, succ: Vec::new(), pad: None, preds: Vec::new(), head: None });
+        }
+        let b = blocks.len() - 1;
+        blocks[b].end = i as u32 + 1;
+        block_of[i] = b as u32;
+    }
+    for (k, &h) in d.heads.iter().enumerate() {
+        let b = block_of[idx(h)? as usize] as usize;
+        blocks[b].head = Some(k as u32);
+    }
+    for b in 0..blocks.len() {
+        let last = &insns[blocks[b].end as usize - 1];
+        let mut succ: Vec<u32> = last.succ.iter().map(|&s| block_of[s as usize]).collect();
+        if let Unwind::Pad { pad, .. } = last.unwind {
+            blocks[b].pad = Some(block_of[pad as usize]);
+            succ.push(block_of[pad as usize]);
+        }
+        for &s in &succ {
+            blocks[s as usize].preds.push(b as u32);
+        }
+        blocks[b].succ = succ;
+    }
+    // An `lpad` is reached only by unwinding.
+    for (b, bl) in blocks.iter().enumerate() {
+        if insns[bl.start as usize].kind == Kind::Lpad && bl.preds.iter().any(|&p| blocks[p as usize].pad != Some(b as u32)) {
+            return Err(bad("an lpad reached without unwinding"));
+        }
+    }
+
+    // Cyclic heads: in a strongly connected component of more than one block, or with a
+    // self edge (Tarjan, iteratively).
+    let nb = blocks.len();
+    let mut index = alloc::vec![u32::MAX; nb];
+    let mut low = alloc::vec![0u32; nb];
+    let mut on = alloc::vec![false; nb];
+    let mut comp = alloc::vec![u32::MAX; nb];
+    let mut comp_size: Vec<u32> = Vec::new();
+    let mut stack = Vec::new();
+    let mut next = 0;
+    for root in 0..nb {
+        if index[root] != u32::MAX {
+            continue;
+        }
+        let mut work: Vec<(usize, usize)> = alloc::vec![(root, 0)];
+        index[root] = next;
+        low[root] = next;
+        next += 1;
+        stack.push(root);
+        on[root] = true;
+        while let Some(&mut (v, ref mut k)) = work.last_mut() {
+            if *k < blocks[v].succ.len() {
+                let w = blocks[v].succ[*k] as usize;
+                *k += 1;
+                if index[w] == u32::MAX {
+                    index[w] = next;
+                    low[w] = next;
+                    next += 1;
+                    stack.push(w);
+                    on[w] = true;
+                    work.push((w, 0));
+                } else if on[w] {
+                    low[v] = low[v].min(index[w]);
+                }
+            } else {
+                work.pop();
+                if let Some(&(u, _)) = work.last() {
+                    low[u] = low[u].min(low[v]);
+                }
+                if low[v] == index[v] {
+                    let c = comp_size.len() as u32;
+                    let mut size = 0;
+                    loop {
+                        let w = stack.pop().expect("on the stack");
+                        on[w] = false;
+                        comp[w] = c;
+                        size += 1;
+                        if w == v {
+                            break;
+                        }
+                    }
+                    comp_size.push(size);
+                }
+            }
+        }
+    }
+    let mut enterable = alloc::vec![false; d.heads.len()];
+    for (b, bl) in blocks.iter().enumerate() {
+        let Some(h) = bl.head else { continue };
+        let cyclic = comp_size[comp[b] as usize] > 1 || bl.succ.contains(&(b as u32));
+        let first = &insns[bl.start as usize].kind;
+        enterable[h as usize] = cyclic && !matches!(first, Kind::Arg(_) | Kind::Lpad);
+    }
+    Ok(Code { insns, scopes, blocks, block_of, enterable })
+}

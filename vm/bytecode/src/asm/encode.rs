@@ -887,11 +887,10 @@ impl Asm {
     }
 
     /// Records that the next instruction, an island, takes the object at the raw slot `slot`,
-    /// of `size` bytes, as an operand ([`ScopeKind::Lend`]).
+    /// of `size` bytes, as an operand ([`ScopeKind::Lend`]); also of 0 bytes (a zero-sized
+    /// operand), so that every operand has one.
     pub fn lend(&mut self, slot: u32, size: u32) {
-        if size != 0 {
-            self.pieces.push(Piece::Scope { slot, size, kind: ScopeKind::Lend });
-        }
+        self.pieces.push(Piece::Scope { slot, size, kind: ScopeKind::Lend });
     }
 
     /// Drops exactly the stores [`Asm::drop_store`] names, rather than the dead ones: for
