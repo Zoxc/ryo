@@ -3,8 +3,9 @@
 //! `rust-lld` (lld-link flavor) against empty stand-in import libraries, with
 //! `/force:unresolved`. Nothing runs. The check: every symbol the ryo build leaves unresolved
 //! is also unresolved in plain rustc's build of the same program, or is one of the CRT/SDK
-//! symbols `ryo_rt` itself uses ([`RT_IMPORTS`]), i.e. comes from the missing
-//! CRT/SDK libraries. A missing ryo symbol (an image, a portal, an `__imp_` slot, the
+//! symbols `ryo_rt` itself uses ([`RT_IMPORTS`]) or its sealed JIT does (in a Rust dylib, which
+//! plain rustc links to std's DLL, the JIT's private std brings its own imports), i.e. comes
+//! from the missing CRT/SDK libraries. A missing ryo symbol (an image, a portal, an `__imp_` slot, the
 //! registry) shows up as a difference.
 
 use std::collections::BTreeSet;
@@ -49,6 +50,8 @@ const RT_IMPORTS: &[&str] = &[
     "memcpy",
     "memmove",
     "memset",
+    "getenv",
+    "strlen",
     "fmod",
     "fmodf",
     "_fltused",
@@ -79,6 +82,32 @@ pub fn run(target: &str) -> Result<(), String> {
     let link = Link { target, lld, stubs };
 
     let mut failed = Vec::new();
+    // The sealed JIT bundled into this target's `ryo_rt` (design/vm.md#jit), and its
+    // undefined symbols, as lld names them.
+    let mut jit_imports = BTreeSet::new();
+    if crate::jit::supported(target) {
+        let rlib = dist.join("lib").join("rustlib").join(target).join("lib").join("libryo_rt.rlib");
+        let dir = out.join("jit-sealed");
+        let res = crate::jit::check_sealed(&info, &rlib, &dir, target).and_then(|()| {
+            let nm = crate::jit::llvm_tool(&info, "llvm-nm");
+            let syms = crate::utils::output(cmd(nm).args(["-u", "-C", "-j"]).arg(dir.join(crate::jit::OBJECT)))?;
+            jit_imports = syms
+                .lines()
+                .map(|s| match s.trim().strip_prefix("__imp_") {
+                    Some(f) => format!("__declspec(dllimport) {f}"),
+                    None => s.trim().to_owned(),
+                })
+                .collect();
+            Ok(())
+        });
+        match res {
+            Ok(()) => eprintln!("[y] test --cross {target} jit-sealed: ok"),
+            Err(msg) => {
+                eprintln!("[y] test --cross {target} jit-sealed: FAILED: {msg}");
+                failed.push("jit-sealed");
+            }
+        }
+    }
     for program in CORPUS {
         let res = (|| {
             let reference = link.build(&cmd("rustc"), program, &out.join(program.name).join("rustc"), &[])?;
@@ -94,7 +123,7 @@ pub fn run(target: &str) -> Result<(), String> {
                 // resolves to the import thunk, so it is fine wherever the import itself is.
                 let extra: Vec<&String> = ryo
                     .difference(&reference)
-                    .filter(|s| !RT_IMPORTS.contains(&s.as_str()))
+                    .filter(|s| !RT_IMPORTS.contains(&s.as_str()) && !jit_imports.contains(*s))
                     .filter(|s| !reference.contains(&format!("__declspec(dllimport) {s}")))
                     // The other way round: the image loads a foreign function's address through
                     // `__imp_` where plain rustc calls it directly (`abs` from the CRT). An

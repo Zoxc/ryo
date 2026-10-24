@@ -20,13 +20,14 @@
 //!   each record ([`done`]).
 //!
 //! This side uses `core` only, like the rest of the runtime (design/vm.md, "No re-entry"):
-//! the settings come from libc's `getenv`, and waiting is a futex. Nothing on the trips'
+//! the settings come from the C runtime's `getenv`, and waiting is a futex (`WaitOnAddress`
+//! on PE). Nothing on the trips'
 //! path may unwind (the stubs aren't call sites), and nothing there does: the Rust parts
 //! are `extern "C-unwind"` only so that the compiler adds no abort-on-unwind guard, which
 //! would reach core's panic path (as for `ryo_vm_register`).
 
 use core::cell::UnsafeCell;
-use core::ffi::{CStr, c_char, c_long, c_void};
+use core::ffi::{CStr, c_char};
 use core::mem::MaybeUninit;
 use core::ptr;
 use core::sync::atomic::Ordering::{AcqRel, Acquire, Relaxed, Release, SeqCst};
@@ -228,7 +229,11 @@ fn state(r: *mut JitRecord) -> &'static AtomicU32 {
 /// and the stub's return addresses are on it), the argument registers live. Saves them,
 /// calls [`entry_trip`], restores them, and returns into the AOT code, or jumps to the JIT
 /// entry [`entry_trip`] gives, which drops the stub's return address
-/// ([`JIT_ENTRY_PREFIX`]). Clobbers `rax` and `r11`, which carry nothing at an entry.
+/// ([`JIT_ENTRY_PREFIX`]). Clobbers `rax` and `r11`, which carry nothing at an entry. On PE
+/// it also saves `xmm8`–`xmm15`, callee-saved on Win64 but not for the `sysv64` Rust code
+/// it calls (`rdi`, `rsi`, `xmm6` and `xmm7` are among the argument registers it saves
+/// anyway), in a 320-byte area instead of 192.
+#[cfg(not(windows))]
 #[unsafe(naked)]
 #[rustc_std_internal_symbol]
 #[unsafe(export_name = "ryo_jit_trip_entry")]
@@ -279,13 +284,83 @@ pub unsafe extern "sysv64" fn trip_entry() {
         trip = sym entry_trip,
     );
 }
+#[cfg(windows)]
+#[unsafe(naked)]
+#[rustc_std_internal_symbol]
+#[unsafe(export_name = "ryo_jit_trip_entry")]
+pub unsafe extern "sysv64" fn trip_entry() {
+    core::arch::naked_asm!(
+        ".cfi_startproc",
+        "sub rsp, 320",
+        ".cfi_adjust_cfa_offset 320",
+        "mov [rsp], rdi",
+        "mov [rsp + 8], rsi",
+        "mov [rsp + 16], rdx",
+        "mov [rsp + 24], rcx",
+        "mov [rsp + 32], r8",
+        "mov [rsp + 40], r9",
+        "movaps [rsp + 48], xmm0",
+        "movaps [rsp + 64], xmm1",
+        "movaps [rsp + 80], xmm2",
+        "movaps [rsp + 96], xmm3",
+        "movaps [rsp + 112], xmm4",
+        "movaps [rsp + 128], xmm5",
+        "movaps [rsp + 144], xmm6",
+        "movaps [rsp + 160], xmm7",
+        "movaps [rsp + 176], xmm8",
+        "movaps [rsp + 192], xmm9",
+        "movaps [rsp + 208], xmm10",
+        "movaps [rsp + 224], xmm11",
+        "movaps [rsp + 240], xmm12",
+        "movaps [rsp + 256], xmm13",
+        "movaps [rsp + 272], xmm14",
+        "movaps [rsp + 288], xmm15",
+        "mov rdi, r11",
+        "call {trip}",
+        "mov r11, rax",
+        "mov rdi, [rsp]",
+        "mov rsi, [rsp + 8]",
+        "mov rdx, [rsp + 16]",
+        "mov rcx, [rsp + 24]",
+        "mov r8, [rsp + 32]",
+        "mov r9, [rsp + 40]",
+        "movaps xmm0, [rsp + 48]",
+        "movaps xmm1, [rsp + 64]",
+        "movaps xmm2, [rsp + 80]",
+        "movaps xmm3, [rsp + 96]",
+        "movaps xmm4, [rsp + 112]",
+        "movaps xmm5, [rsp + 128]",
+        "movaps xmm6, [rsp + 144]",
+        "movaps xmm7, [rsp + 160]",
+        "movaps xmm8, [rsp + 176]",
+        "movaps xmm9, [rsp + 192]",
+        "movaps xmm10, [rsp + 208]",
+        "movaps xmm11, [rsp + 224]",
+        "movaps xmm12, [rsp + 240]",
+        "movaps xmm13, [rsp + 256]",
+        "movaps xmm14, [rsp + 272]",
+        "movaps xmm15, [rsp + 288]",
+        "add rsp, 320",
+        ".cfi_adjust_cfa_offset -320",
+        "test r11, r11",
+        "jz 2f",
+        "jmp r11",
+        "2:",
+        "ret",
+        ".cfi_endproc",
+        trip = sym entry_trip,
+    );
+}
 
 /// The trip of a loop head: `r11` is the JIT record, `eax` the head's index, `rsp + 8`
 /// 16-aligned, nothing live but `rsp` and `rbp`. A compiled function's head jumps to its OSR
 /// dispatcher, in the record's `osr` slot since before it was `Done` (the stubs call it
 /// directly then, so this is only for a stub that read the slot before). Else
 /// [`osr_trip`], keeping `eax`, and on to the dispatcher if that compiled it (`RYO_JIT_SYNC`),
-/// else back to the AOT code.
+/// else back to the AOT code. On PE it also saves `xmm6`–`xmm15`, which VM code leaves to its
+/// caller (design/platforms.md) and the `sysv64` Rust code may clobber; `rdi` and `rsi` the
+/// prologue saved.
+#[cfg(not(windows))]
 #[unsafe(naked)]
 #[rustc_std_internal_symbol]
 #[unsafe(export_name = "ryo_jit_trip_osr")]
@@ -315,9 +390,63 @@ pub unsafe extern "sysv64" fn trip_osr() {
         trip = sym osr_trip,
     );
 }
+#[cfg(windows)]
+#[unsafe(naked)]
+#[rustc_std_internal_symbol]
+#[unsafe(export_name = "ryo_jit_trip_osr")]
+pub unsafe extern "sysv64" fn trip_osr() {
+    core::arch::naked_asm!(
+        ".cfi_startproc",
+        "cmp dword ptr [r11 + {state}], {done}",
+        "jne 2f",
+        "jmp qword ptr [r11 + {osr}]",
+        "2:",
+        "push rax",
+        ".cfi_adjust_cfa_offset 8",
+        "sub rsp, 160",
+        ".cfi_adjust_cfa_offset 160",
+        "movaps [rsp + 0], xmm6",
+        "movaps [rsp + 16], xmm7",
+        "movaps [rsp + 32], xmm8",
+        "movaps [rsp + 48], xmm9",
+        "movaps [rsp + 64], xmm10",
+        "movaps [rsp + 80], xmm11",
+        "movaps [rsp + 96], xmm12",
+        "movaps [rsp + 112], xmm13",
+        "movaps [rsp + 128], xmm14",
+        "movaps [rsp + 144], xmm15",
+        "mov rdi, r11",
+        "call {trip}",
+        "mov r11, rax",
+        "movaps xmm6, [rsp + 0]",
+        "movaps xmm7, [rsp + 16]",
+        "movaps xmm8, [rsp + 32]",
+        "movaps xmm9, [rsp + 48]",
+        "movaps xmm10, [rsp + 64]",
+        "movaps xmm11, [rsp + 80]",
+        "movaps xmm12, [rsp + 96]",
+        "movaps xmm13, [rsp + 112]",
+        "movaps xmm14, [rsp + 128]",
+        "movaps xmm15, [rsp + 144]",
+        "add rsp, 160",
+        ".cfi_adjust_cfa_offset -160",
+        "pop rax",
+        ".cfi_adjust_cfa_offset -8",
+        "test r11, r11",
+        "jz 3f",
+        "jmp r11",
+        "3:",
+        "ret",
+        ".cfi_endproc",
+        state = const core::mem::offset_of!(JitRecord, state),
+        done = const JIT_DONE,
+        osr = const core::mem::offset_of!(JitRecord, osr),
+        trip = sym osr_trip,
+    );
+}
 
 /// [`trip_entry`]'s work: the JIT entry to continue at, or null to continue in AOT code.
-extern "C-unwind" fn entry_trip(rec: *mut JitRecord) -> *const u8 {
+extern "sysv64-unwind" fn entry_trip(rec: *mut JitRecord) -> *const u8 {
     if trip(rec) == JIT_DONE {
         ctr(rec).store(REDIRECT, Relaxed);
         return entry(rec).load(Acquire);
@@ -326,7 +455,7 @@ extern "C-unwind" fn entry_trip(rec: *mut JitRecord) -> *const u8 {
 }
 
 /// [`trip_osr`]'s work: the OSR dispatcher to continue at, or null to continue in AOT code.
-extern "C-unwind" fn osr_trip(rec: *mut JitRecord) -> *const u8 {
+extern "sysv64-unwind" fn osr_trip(rec: *mut JitRecord) -> *const u8 {
     if trip(rec) == JIT_DONE {
         return osr_slot(rec).load(Acquire);
     }
@@ -503,22 +632,57 @@ pub(crate) fn registered(img: &Image<'_>) {
     }
 }
 
-const SYS_FUTEX: c_long = 202;
-const FUTEX_WAIT_PRIVATE: i32 = 128;
-const FUTEX_WAKE_PRIVATE: i32 = 129;
+#[cfg(not(windows))]
+mod futex {
+    use core::ffi::{c_long, c_void};
+    use core::ptr;
+    use core::sync::atomic::AtomicU32;
 
-unsafe extern "C" {
-    fn syscall(n: c_long, ...) -> c_long;
+    const SYS_FUTEX: c_long = 202;
+    const FUTEX_WAIT_PRIVATE: i32 = 128;
+    const FUTEX_WAKE_PRIVATE: i32 = 129;
+
+    unsafe extern "C" {
+        fn syscall(n: c_long, ...) -> c_long;
+    }
+
+    /// Sleeps while `a` holds `v` (or until a wake; spurious returns are fine).
+    pub fn wait(a: &AtomicU32, v: u32) {
+        // SAFETY: a futex wait on a live atomic, without a timeout.
+        unsafe { syscall(SYS_FUTEX, a.as_ptr(), FUTEX_WAIT_PRIVATE, v, ptr::null::<c_void>()) };
+    }
+
+    /// Wakes up to `n` threads waiting on `a`.
+    pub fn wake(a: &AtomicU32, n: i32) {
+        // SAFETY: a futex wake on a live atomic.
+        unsafe { syscall(SYS_FUTEX, a.as_ptr(), FUTEX_WAKE_PRIVATE, n) };
+    }
 }
 
-/// Sleeps while `a` holds `v` (or until a wake; spurious returns are fine).
-fn futex_wait(a: &AtomicU32, v: u32) {
-    // SAFETY: a futex wait on a live atomic, without a timeout.
-    unsafe { syscall(SYS_FUTEX, a.as_ptr(), FUTEX_WAIT_PRIVATE, v, ptr::null::<c_void>()) };
+/// PE: `WaitOnAddress`, imported as std imports it (`raw-dylib`, no import library needed).
+#[cfg(windows)]
+mod futex {
+    use core::ffi::c_void;
+    use core::sync::atomic::AtomicU32;
+
+    #[link(name = "api-ms-win-core-synch-l1-2-0", kind = "raw-dylib")]
+    unsafe extern "system" {
+        fn WaitOnAddress(addr: *const c_void, compare: *const c_void, size: usize, ms: u32) -> i32;
+        fn WakeByAddressSingle(addr: *const c_void);
+        fn WakeByAddressAll(addr: *const c_void);
+    }
+
+    /// Sleeps while `a` holds `v` (or until a wake; spurious returns are fine).
+    pub fn wait(a: &AtomicU32, v: u32) {
+        // SAFETY: a wait on a live atomic of 4 bytes, compared with `v`, without a timeout.
+        unsafe { WaitOnAddress(a.as_ptr().cast(), (&raw const v).cast(), 4, u32::MAX) };
+    }
+
+    /// Wakes one thread waiting on `a`, or all of them.
+    pub fn wake(a: &AtomicU32, n: i32) {
+        // SAFETY: a wake on a live atomic.
+        unsafe { if n == 1 { WakeByAddressSingle(a.as_ptr().cast()) } else { WakeByAddressAll(a.as_ptr().cast()) } }
+    }
 }
 
-/// Wakes up to `n` threads waiting on `a`.
-fn futex_wake(a: &AtomicU32, n: i32) {
-    // SAFETY: a futex wake on a live atomic.
-    unsafe { syscall(SYS_FUTEX, a.as_ptr(), FUTEX_WAKE_PRIVATE, n) };
-}
+use futex::{wait as futex_wait, wake as futex_wake};

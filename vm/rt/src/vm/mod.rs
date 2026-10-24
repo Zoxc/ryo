@@ -13,14 +13,14 @@
 //! runtime"), except the JIT (`jit`, with the `jit` feature), which uses the native std.
 
 mod interp;
-#[cfg_attr(all(feature = "jit", target_os = "linux"), path = "jit/mod.rs")]
-#[cfg_attr(not(all(feature = "jit", target_os = "linux")), path = "jit/noop.rs")]
+#[cfg_attr(feature = "jit", path = "jit/mod.rs")]
+#[cfg_attr(not(feature = "jit"), path = "jit/noop.rs")]
 mod jit;
 mod registry;
 mod sys;
 
 pub use interp::{FP_ARG, MODE, h, handler, probe_stack};
-#[cfg(all(feature = "jit", target_os = "linux"))]
+#[cfg(feature = "jit")]
 pub use jit::{JIT_ENTRY_PREFIX, REDIRECT, configure_jit, jit_shuffle_image, jit_stats};
 pub use jit::{trip_entry, trip_osr};
 pub use registry::ImageRt;

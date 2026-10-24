@@ -9,14 +9,15 @@
 //! - `install`: the compiler: decodes a function from its image, encodes it again without
 //!   counters, builds its OSR entries, and installs the code near the image.
 //!
-//! Linux on x86_64 only; elsewhere the crate is empty, and the runtime has the no-op JIT.
+//! Linux on x86_64 only. Elsewhere (windows-msvc, until the JIT is ported) `ryo_jit_start`
+//! fails, so that the runtime's trips act as the no-op JIT, but `y build` seals and bundles
+//! it the same way.
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod install;
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod thread;
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 use ryo_bytecode::jit_abi::RtApi;
 
 /// Starts the JIT thread, which compiles what `rt` queues. False if `rt` isn't of this JIT's
@@ -26,4 +27,12 @@ use ryo_bytecode::jit_abi::RtApi;
 #[unsafe(no_mangle)]
 pub extern "C" fn ryo_jit_start(rt: &'static RtApi) -> bool {
     thread::start(rt)
+}
+
+/// Without a JIT for this target: fails, so the runtime acts as the no-op JIT.
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+#[unsafe(no_mangle)]
+pub extern "C" fn ryo_jit_start(rt: &'static RtApi) -> bool {
+    let _ = rt;
+    false
 }

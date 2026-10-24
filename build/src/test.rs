@@ -968,47 +968,16 @@ fn rt_core_only(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// The sealed JIT that the native sysroot's `ryo_rt` bundles (design/vm.md#jit) keeps its std
-/// to itself: its only global definition is `ryo_jit_start` (another linker could merge a
-/// global of the same name, such as `DW.ref.rust_eh_personality`'s COMDAT group, with the
-/// program's), it references no Rust symbol and no allocator shim (which would bind to the
-/// program's std), and it doesn't define the unwinder, which it must share with the program
-/// (`__register_frame` registers JIT code with the program's). ELF hosts with the JIT only.
+/// The sealed JIT that the native sysroot's `ryo_rt` bundles keeps its std to itself
+/// ([`crate::jit::check_sealed`]). Hosts with the JIT only; `test --cross` checks a cross
+/// target's.
 fn jit_sealed(root: &Path, out: &Path) -> Result<(), String> {
     let info = crate::utils::RustcInfo::get()?;
     if !crate::jit::supported(&info.host) {
         return Ok(());
     }
     let lib = root.join("dist").join("lib").join("rustlib").join(&info.host).join("lib").join("libryo_rt.rlib");
-    let dir = out.join("jit-sealed");
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let ar = crate::jit::llvm_tool(&info, "llvm-ar");
-    let nm = crate::jit::llvm_tool(&info, "llvm-nm");
-    crate::utils::run(cmd(&ar).arg("x").arg(&lib).arg(crate::jit::OBJECT).arg("--output").arg(&dir))
-        .map_err(|e| format!("no sealed JIT in {}: {e}", lib.display()))?;
-    let obj = dir.join(crate::jit::OBJECT);
-    let names = |args: &[&str]| -> Result<Vec<String>, String> {
-        Ok(output(cmd(&nm).args(args).args(["--no-demangle", "-j"]).arg(&obj))?
-            .lines()
-            .map(|l| l.trim().to_owned())
-            .filter(|l| !l.is_empty())
-            .collect())
-    };
-    let globals = names(&["--extern-only", "--defined-only"])?;
-    if globals != [crate::jit::START] {
-        return Err(format!("{} defines globals {globals:?}, not just {}", obj.display(), crate::jit::START));
-    }
-    let rust = |s: &str| s.starts_with("_R") || s.starts_with("_ZN") || s.starts_with("__rust") || s.starts_with("__rdl") || s.starts_with("__rg_");
-    let bad: Vec<String> = names(&["-u"])?.into_iter().filter(|s| rust(s)).collect();
-    if !bad.is_empty() {
-        return Err(format!("{} references Rust symbols {bad:?}", obj.display()));
-    }
-    let unwinder: Vec<String> = names(&["--defined-only"])?.into_iter().filter(|s| s.starts_with("_Unwind_") || s == "__register_frame").collect();
-    if !unwinder.is_empty() {
-        return Err(format!("{} defines the unwinder's {unwinder:?}", obj.display()));
-    }
-    Ok(())
+    crate::jit::check_sealed(&info, &lib, &out.join("jit-sealed"), &info.host)
 }
 
 /// The JIT's std is its own (design/vm.md#jit), so the program's can't get in its way:
