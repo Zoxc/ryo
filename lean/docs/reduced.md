@@ -158,6 +158,26 @@ slot is expected). By construction `semR i = opSem (view i)` plus the shape's co
 `view` is the Lean analogue of Rust's `asm::decode`, and the lowering check's rules are
 written over it.
 
+**Implemented** (`Ryo/Vm/R/View.lean`): `unpack ρ h fpArg args` reads each operand of `h` at
+its `asm::layout` location with `handler_operands`' checks (a 32-bit operand from its half of
+a shared register or from a register with no other bits set; `Mem` as the slot and a
+zero-extended `i32`; `U128` low then high; a case list as its values' `Ro` address and count;
+a target list as its count; `fp` first with `fp_arg`, `lpad`'s exception object before the
+operands, nowhere else). Addresses are `Val.addr` pointers: `ρ : Arg → Option ThinPointer`
+places the constants, data, symbol and site slots and code constants the arguments name
+(the image's allocations; tests take an injective symbolic `ρ`). `view mode ρ i` gives
+`{op, ops, ctl}`: targets, `neg`, functions and word lists are `Val.none`, and `ctl` is the
+shape's `Then` (a branch, the switch table with the default last, `next`, `trap`) for the
+handler shapes, `none` for R's own instructions (§C0.4), whose targets and lists stay in the
+`Insn`; a handler's `Then` must be its shape's, a switch table one entry per case plus the
+default (`encode_reduced`'s check). `Then.succ` gives the next instruction from `opSem`'s
+`Control`, so `semR i = (opSem v.op v.ops, v.ctl.succ)` is the intended definition (no R step
+function yet). Checked against Rust's `asm::decode` (`RyoTest/View.lean`, vectors from
+`vm/bytecode/tests/lean_view_vectors.rs`: every opcode with random operands, each handler in
+both `fp_arg` layouts, and inline runs; same opcode and operands, instruction for
+instruction), and `unpack` rejects mutated arguments. Not checked by `view`, as by
+`decode_reduced`: a handler call of operands the opcode inlines.
+
 ### C0.7 How R relates to its neighbors
 
 - **L0 ↔ R** ([aot.md](aot.md) §C1): identity on addresses under `φ` (L0 picks a local's
@@ -194,8 +214,9 @@ With one VM level, Part D is the library everything else stands on:
   operands read and written at their widths; whether it derefs pointer operands;
   `copy`/`fill` lengths). Lemmas: `opSem` only touches its footprint; the frame part is
   deterministic.
-- **`Ryo/Vm/R/`**: R syntax, frame objects and layouts, `view`, `unpack`, the step function
-  (§C0), handler, island, `ryo_h_Resume`, probe and trip contracts.
+- **`Ryo/Vm/R/`**: R syntax (`Syntax.lean`), `view` and `unpack` (`View.lean`, done), frame
+  objects and layouts, the step function (§C0), handler, island, `ryo_h_Resume`, probe and
+  trip contracts.
 - **`Ryo/Vm/DecodeReduced.lean`**: the decoder, with `decode_sound` in `Ryo/Proofs/`.
 
 `opSem` is the single source of truth for: native R instructions; handler contracts; the
@@ -282,11 +303,13 @@ footprint (op : Full.Opcode) : Option Footprint
   sign), and changed frame bytes must be in the footprint's writes.
 
 Out of scope: the opcodes without a Rust handler (`jmp`, the calls, `ret`, `arg`, `island`;
-`resume`, whose handler is assembly), which are R's own instructions (§C0.4); `view` and
-`unpack` (§C0.6); f16/f128 (islands). The JIT's Rust effect table (`jit/effects.rs`) is
-checked against the footprints (`RyoTest/Effects.lean`, on vectors from
-`vm/bytecode/tests/lean_effects.rs`; [jit.md](jit.md) §E.7): every opcode agrees, `resume`
-aside. Not done yet: generating the Rust table from the footprints.
+`resume`, whose handler is assembly), which are R's own instructions (§C0.4); f16/f128
+(islands). `view` and `unpack` are implemented (§C0.6, `Ryo/Vm/R/View.lean`); left in
+`Ryo/Vm/R/`: frame objects and layouts, the step function, and the contracts.
+The JIT's Rust effect table (`jit/effects.rs`) is checked against the footprints
+(`RyoTest/Effects.lean`, on vectors from `vm/bytecode/tests/lean_effects.rs`; [jit.md](jit.md)
+§E.7): every opcode agrees, `resume` aside. Not done yet: generating the Rust table from the
+footprints.
 Reads are not checked for exactness (an over-approximated read only costs the JIT
 precision).
 

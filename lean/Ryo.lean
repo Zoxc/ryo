@@ -11,3 +11,4 @@ import Ryo.Check.Image.Dump
 import Ryo.Check.Image
 import Ryo.Check.Lower.CertCheck
 import Ryo.Vm.OpSem
+import Ryo.Vm.R.View
