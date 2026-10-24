@@ -59,7 +59,18 @@ per-frame relation `R_Γ (s0 : L0 frame) (s1 : R frame)`:
   - If `l` is escaped, its L0 allocation corresponds to the R allocation of its frame object
     (the `AllocId` renaming `ι`), from the escape to the end. If it is not escaped, its L0
     allocation is unreferenced: no provenance for it occurs in the L0 state, because the
-    checker validated that escapes cover every `addr` and by-address argument.
+    checker validated that escapes cover every `addr` and by-address argument, but for the
+    two exceptions of R's `addr` ([reduced.md](reduced.md) §C0.3). A zero-sized local's L0
+    allocation is mapped by `ι` to *no* provenance (R's pointer to a zero-sized object has
+    none): an L0 pointer with that provenance relates to the R pointer with the same address
+    and no provenance, which MiniRust's `≤def` alone doesn't allow, so the relation adds it
+    for these allocations. That is sound because L0 can use that provenance only where it
+    doesn't matter: every access through it of non-zero size is out of bounds (UB), size-0
+    accesses need no provenance at either level, comparisons and casts to integers see the
+    address, an in-bounds `offset` from it moves by 0, and `offset_from` is integer arithmetic
+    in R (`sub`, `div`), with L0's same-allocation requirement only adding UB on the source
+    side. A pointer at an escaped local's end (a zero-sized field there) has the local's
+    provenance at both levels.
   - If `l` is escaped or *semantically live* (read later before being overwritten; liveness
     recomputed in Lean), then the L0 bytes `≤def` the R bytes of its slot, provenance mapped
     through `ι`.
@@ -108,7 +119,16 @@ per-frame relation `R_Γ (s0 : L0 frame) (s1 : R frame)`:
   only written, or unused), which the dead-store check uses; the types and L0 operations are
   to come.
 - **Escape/storage side data**: the checker verifies that `Scope` escapes cover every `addr`
-  and every by-address argument, and that ends match `StorageDead`. This is what makes R's
+  and every by-address argument, and that ends match `StorageDead`. Covered means: the slot
+  is in an object escaped on every path to the instruction, with exactly two exceptions,
+  which R's `addr` gives a meaning ([reduced.md](reduced.md) §C0.3): the slot is the end of
+  such an object (one past the end: the backend takes the address of a zero-sized last
+  field of an escaped local, `&l.f`), or it is a local the certificate gives size 0 (a
+  zero-sized local, which never escapes). The second relies on the frame map's sizes,
+  which C1' must check against the body's layouts; and for the first, the relational spec
+  must check that the place is the end of the escaped object's own local, and that no other
+  object escaped there starts at that address (R would give the pointer the other object's
+  provenance, and a step back from it would be UB in R but not in L0). This is what makes R's
   allocation lifetimes (escape to end) match L0's provenance, so frame privacy holds for the
   R program, and it is what the JIT relies on ([jit.md](jit.md) §E.7).
 - **Composition**: VM→VM calls use the same convention as calls to native code, so each
@@ -145,7 +165,10 @@ call of a `call`/`tailCall` terminator with an ABI, of a `drop` of glue with a b
 `assert` of a panic function with a body: plan, return kind and size recomputed from that
 ABI), or by neither; calls of `ext` lang items (assert panics, terminate stubs, whose ABI the
 dump doesn't give) and calls in functions outside the dump are the latter. Islands: each
-`island`'s symbol is in the islands table. The verified calls' stack-argument and sret sizes
+`island`'s symbol is in the islands table. Escape coverage: every address taken (an `addr`'s
+slot, each `ARG_ADDR` argument of a call) is in an object escaped on every path to it (a
+forward must-dataflow over the scopes, `Frame.mustEscapedAt`), at the end of one, or at a
+local of size 0, and nothing else (corpus: 14219, 26 and 383 of 14628, 0 uncovered). The verified calls' stack-argument and sret sizes
 and the islands' templates are `Frame.Facts` for the dead-store check (§C2); they hold given
 what the rest of C1' checks (that each call lowers the terminator whose range it is in, and
 that each island symbol is the template instance the dump names). Remaining: the relational

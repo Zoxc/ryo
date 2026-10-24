@@ -2,7 +2,8 @@
 RyoTest.RSem — R's semantics (`Ryo.Vm.R.Sem`, `Ryo.Vm.R.Run`) on small hand-built functions:
 recursive `fib` run as a program (calls answered by running the callee's R code), native and
 handler instructions and branch polarity, escapes and storage ends (pointers to escaped
-objects, `Uninit` and dangling after an `End`, `addr` of a private slot), calls (argument
+objects, `Uninit` and dangling after an `End`, `addr` of a private slot, of a zero-sized
+object (no provenance: zero-length accesses only) and at an escaped object's end), calls (argument
 registers by value and by address, the outgoing stack area, sret destinations, result
 stores), unwinding to a landing pad and out of a function, tail calls, islands and their
 `Lend` extents, and ill-formed instructions.
@@ -154,6 +155,55 @@ def partialEnd (k : Int) : Code :=
         nat "add.imm.w32" [sl (-8), sl (-8), im 0], ret (-8) 8]
     (scopes := [escape 1 (-16) 8, escape 2 (-16) 4, «end» 3 (-12) 4])
 
+/-! ### Zero-sized objects and escaped objects' ends -/
+
+/-- The state after `n` steps of `c` from entry (no events). -/
+def stepsFrom (c : Code) (n : Nat) : Except String RState := do
+  let mut s ← (entry c stackTop {} [] {}).mapError toString
+  for _ in [0:n] do
+    match step c s with
+    | .ok (.step s') => s := s'
+    | .ok _ => throw "an event or the end"
+    | .error e => throw (toString e)
+  return s
+
+/-- The pointer in slot `o`. -/
+def ptrAt (s : RState) (o : Int) : Except String ThinPointer :=
+  match s.st.readFrame o 8 with
+  | .ok bs => match decodePtr bs with
+    | some p => pure p
+    | none => throw "not a pointer"
+  | .error e => throw (toString e)
+
+/-- `p = &z` for a zero-sized `z` at `-16` (`Code.zeroSized`), then `body`. -/
+def zst (body : List Insn) : Code :=
+  { code ([nat "addr" [sl (-24), sl (-16)]] ++ body) with zeroSized := [-16] }
+
+/-- `addr` of a zero-sized object: a pointer without provenance at `fp + off`. -/
+def zstAddr : TestCase := ⟨"rsem/addr of a zero-sized object", fun _ => do
+  let p ← ptrAt (← stepsFrom (zst [ret 0 0]) 1) (-24)
+  if p.addr != stackTop - 16 || p.prov != none then throw s!"pointer {repr p}"⟩
+
+/-- A zero-length `memcpy` through the pointer (both ends), then return `n = 0`. -/
+def zstCopy : Code := zst [nat "imm.w64" [sl (-32), im 0], handler "memcpy" [-24, -24, -32], ret (-32) 8]
+
+/-- A non-zero load through it. -/
+def zstLoad : Code := zst [nat "load.w64" [sl (-8), mem0 (-24)], ret (-8) 8]
+
+/-- `x = 77` in an escaped `[-16, -8)`, `p = &x + 8` (`addr` of `-8`, the object's end, as of a
+zero-sized field at its end), `p - 8` loaded; with `endFirst` the object's `End` comes before
+the `addr`. -/
+def atEnd (endFirst : Bool := false) : Code :=
+  code [nat "imm.w64" [sl (-16), im 77], nat "addr" [sl (-24), sl (-8)],
+        nat "ptr.add" [sl (-24), sl (-24), .imm (BitVec.ofInt 64 (-8))],
+        nat "load.w64" [sl (-32), mem0 (-24)], ret (-32) 8]
+    (scopes := [escape 1 (-16) 8] ++ (if endFirst then [«end» 1 (-16) 8] else []))
+
+/-- The end pointer is the allocation's end with the object's provenance. -/
+def atEndPtr : TestCase := ⟨"rsem/addr at an escaped object's end", fun _ => do
+  let p ← ptrAt (← stepsFrom (atEnd) 2) (-24)
+  if p.addr != stackTop - 8 || p.prov != some 0 then throw s!"pointer {repr p}"⟩
+
 /-! ### Calls -/
 
 /-- Function 1: returns its argument plus the 8 bytes of its first stack argument. -/
@@ -188,7 +238,7 @@ def firstEvent (c : Code) (args : List Nat) (fuel : Nat := 100) : Except String 
       | .ok (.ext q s) => pure (q, s)
       | .ok (.done f) => throw s!"ended with {f.text}"
       | .error e => throw (toString e)
-  go fuel (← (entry stackTop (Regs.ofInts args) [] {}).mapError toString)
+  go fuel (← (entry c stackTop (Regs.ofInts args) [] {}).mapError toString)
 
 /-- The query of a call: the by-value register, the by-address pointer with the provenance of
 the escaped slot, the stack area at `sp = fp - F`; the answer's `rax` stored at `d`. -/
@@ -300,12 +350,18 @@ def tests : List TestCase := [
   returns "store through a pointer" [storeThrough] 0 [] 5,
   stops "uninit after end" [readAfterEnd] 0 [] "uninitialized",
   stops "dangling after end" [loadAfterEnd] 0 [] "dead allocation",
-  stops "addr of a private slot" [addrPrivate] 0 [] "not in an escaped object",
+  stops "addr of a private slot" [addrPrivate] 0 [] "neither in nor at the end of an escaped object",
+  zstAddr,
+  returns "zero-length copy through a zero-sized object's pointer" [zstCopy] 0 [] 0,
+  stops "load through a zero-sized object's pointer" [zstLoad] 0 [] "UB",
+  atEndPtr,
+  returns "load back from an escaped object's end" [atEnd] 0 [] 77,
+  stops "addr at an object's end after its End" [atEnd true] 0 [] "neither in nor at the end of an escaped object",
   returns "partial end" [partialEnd 0] 0 [] 0x05060708,
   stops "partial end uninit" [partialEnd 4] 0 [] "uninitialized",
   returns "stack arguments" [callStack, addStack] 0 [] 42,
   returns "by-address argument" [callByAddr true, deref] 0 [] 41,
-  stops "by-address argument not escaped" [callByAddr false, deref] 0 [] "not in an escaped object",
+  stops "by-address argument not escaped" [callByAddr false, deref] 0 [] "neither in nor at the end of an escaped object",
   stops "sret destination uninit" [sretCaller, deref] 0 [] "uninitialized",
   callQuery,
   badAnswer,

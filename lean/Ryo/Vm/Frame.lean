@@ -409,18 +409,16 @@ def flow (d : Decoded) : Array (List Nat) × Array (List Nat) := Id.run do
     succ := succ.push (((if next && k + 1 < n then [k + 1] else []) ++ ts).filter (· < n))
   return (succ, pad)
 
-/-- The frame objects that may be escaped at each instruction (after the scopes before it), as
-a bitset over `Escape` scopes (`d.scopes`' indices): a forward dataflow over `edges` (successors
-and landing pads) from nothing escaped at entry. An `Escape` adds its object; an `End` removes
-each object it covers whole; a `Lend` (not an escape) changes nothing. -/
-def escapedAt (d : Decoded) (edges : Array (List Nat)) : Array Nat := Id.run do
+/-- The `Escape` scopes (`d.scopes`' indices) as frame ranges `[lo, hi)`, and what the scopes
+before each instruction do to a set of them (a bitset over the indices), in order: an `Escape`
+adds its object (`true`), an `End` removes each object it covers whole (`false`), a `Lend` (not
+an escape) changes nothing. -/
+def escapeSteps (d : Decoded) : Array (Int × Int × Nat) × Array (Array (Bool × Nat)) := Id.run do
   let n := d.insns.size
-  if n == 0 || d.scopes.isEmpty then return Array.replicate n 0
   let escapes : Array (Int × Int × Nat) := d.scopes.zipIdx.filterMap fun ((_, sc), j) =>
     match sc.kind with
     | .escape _ => some (sc.frameOffset.toInt, sc.frameOffset.toInt + sc.size, j)
     | _ => none
-  -- What the scopes before each instruction do, in order: add an object, or remove some.
   let mut steps : Array (Array (Bool × Nat)) := Array.replicate n #[]
   for ((k, sc), j) in d.scopes.zipIdx do
     if k ≥ n then continue
@@ -432,8 +430,21 @@ def escapedAt (d : Decoded) (edges : Array (List Nat)) : Array Nat := Id.run do
       let hi := lo + sc.size
       let covered := escapes.foldl (fun b (l, h, i) => if lo ≤ l && h ≤ hi then b ||| 1 <<< i else b) 0
       steps := steps.modify k (·.push (false, covered))
-  let apply (k : Nat) (st : Nat) : Nat :=
-    steps[k]!.foldl (fun st (add, b) => if add then st ||| b else diff st b) st
+  return (escapes, steps)
+
+/-- `escapeSteps`' steps applied to `st`. -/
+def applySteps (steps : Array (Bool × Nat)) (st : Nat) : Nat :=
+  steps.foldl (fun st (add, b) => if add then st ||| b else diff st b) st
+
+/-- The frame objects that may be escaped at each instruction (after the scopes before it), as
+a bitset over `Escape` scopes (`d.scopes`' indices): a forward dataflow over `edges` (successors
+and landing pads) from nothing escaped at entry. An `Escape` adds its object; an `End` removes
+each object it covers whole; a `Lend` (not an escape) changes nothing. -/
+def escapedAt (d : Decoded) (edges : Array (List Nat)) : Array Nat := Id.run do
+  let n := d.insns.size
+  if n == 0 || d.scopes.isEmpty then return Array.replicate n 0
+  let (_, steps) := escapeSteps d
+  let apply (k : Nat) (st : Nat) : Nat := applySteps steps[k]! st
   let mut inS : Array Nat := Array.replicate n 0
   let mut at_ : Array Nat := Array.replicate n 0
   let mut dirty := Array.replicate n true
@@ -447,6 +458,34 @@ def escapedAt (d : Decoded) (edges : Array (List Nat)) : Array Nat := Id.run do
       at_ := at_.set! k v
       for s in edges[k]! do
         let u := inS[s]! ||| v
+        if u != inS[s]! then
+          inS := inS.set! s u
+          dirty := dirty.set! s true
+          more := true
+  return at_
+
+/-- The frame objects escaped on **every** path to each instruction (after the scopes before
+it), as a bitset over `Escape` scopes: `escapedAt`'s dataflow as a *must* analysis (the
+intersection over the predecessors along `edges`; nothing escaped at entry, instruction 0). An
+instruction no path reaches has every object (vacuously). -/
+def mustEscapedAt (d : Decoded) (edges : Array (List Nat)) : Array Nat := Id.run do
+  let n := d.insns.size
+  if n == 0 || d.scopes.isEmpty then return Array.replicate n 0
+  let (_, steps) := escapeSteps d
+  let top : Nat := (1 <<< d.scopes.size) - 1
+  let mut inS : Array Nat := (Array.replicate n top).set! 0 0
+  let mut at_ : Array Nat := Array.replicate n 0
+  let mut dirty := Array.replicate n true
+  let mut more := true
+  while more do
+    more := false
+    for k in [0:n] do
+      if !dirty[k]! then continue
+      dirty := dirty.set! k false
+      let v := applySteps steps[k]! inS[k]!
+      at_ := at_.set! k v
+      for s in edges[k]! do
+        let u := inS[s]! &&& v
         if u != inS[s]! then
           inS := inS.set! s u
           dirty := dirty.set! s true

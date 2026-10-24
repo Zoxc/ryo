@@ -3,7 +3,9 @@ RyoTest.CertCheck — the lowering certificate's reader (`Ryo/Check/Lower/Cert.l
 plan recomputation from a dumped ABI (`Ryo/Check/Lower/Plan.lean`, `sig.rs`'s `arg_plan` and
 `ret_kind`) on hand-made signatures, and the call checks' argument lists and facts
 (`Ryo/Check/Lower/CertCheck.lean`). The whole check runs on real image objects in
-`scripts/lean-cert-check.py`.
+`scripts/lean-cert-check.py`. The escape coverage of the addresses taken (`checkAddrs`) on
+hand-built code: zero-sized locals, inside and at the end of escaped objects, uncovered ones,
+an escape on one of two paths only, by-address call arguments.
 -/
 import RyoTest.Harness
 import Ryo.Check.Lower.CertCheck
@@ -170,9 +172,60 @@ def facts : Except String Unit := do
     f.sretSize 6 == some 40) "sret sizes"
   check (f.islandTemplate 5 == some "drop_in_place" && f.islandTemplate 1 == none) "islands"
 
+/-! ### Escape coverage (`checkAddrs`) -/
+
+section Addrs
+open Ryo.Vm.R
+
+def aMode : Ryo.Obj.Mode := { fpArg := true, framePointer := true, alignLoops := false, pe := false, counters := false }
+def red (m : String) : Ryo.Vm.Reduced.Opcode := (Ryo.Vm.Reduced.all.find? (·.info.mnemonic == m)).get!
+def s32 (o : Int) : BitVec 32 := BitVec.ofInt 32 o
+def sl (o : Int) : Opnd Nat := .slot (s32 o)
+def nat (m : String) (ops : List (Opnd Nat)) : Insn := .native (red m) ops
+def addrI (d s : Int) : Insn := nat "addr" [sl d, sl s]
+def retI : Insn := nat "ret" [sl 0, .imm 0]
+def esc (k : Nat) (off : Int) (n : Nat) : Nat × Scope := (k, ⟨0, s32 off, n, .escape 8⟩)
+def endS (k : Nat) (off : Int) (n : Nat) : Nat × Scope := (k, ⟨0, s32 off, n, .end⟩)
+def dec (insns : List Insn) (scopes : List (Nat × Scope) := []) : Decoded :=
+  { insns := insns.toArray, frameSize := 64, cleanup := #[], scopes := scopes.toArray, dropped := #[], heads := #[] }
+
+/-- (addrs, inside, at end, zero-sized, args, errors). -/
+def addrCounts (d : Decoded) (zs : List Int := []) : Nat × Nat × Nat × Nat × Nat × Nat :=
+  let (c, e) := checkAddrs d aMode zs
+  (c.addrs, c.inside, c.atEnd, c.zeroSized, c.args, e.size)
+
+def addrs : Except String Unit := do
+  -- A zero-sized local.
+  let z := addrCounts (dec [addrI (-24) (-16), retI]) [-16]
+  check (z == (1, 0, 0, 1, 0, 0)) s!"zero-sized {z}"
+  -- Inside an escaped object, and at its end.
+  let e := addrCounts (dec [addrI (-24) (-12), addrI (-24) (-8), retI] [esc 0 (-16) 8])
+  check (e == (2, 1, 1, 0, 0, 0)) s!"inside, at end {e}"
+  -- Uncovered: no escape, an offset next to a zero-sized local, the end after the `End`.
+  let u := addrCounts (dec [addrI (-24) (-16), retI]) [-12]
+  check (u == (1, 0, 0, 0, 0, 1)) s!"uncovered {u}"
+  let u := addrCounts (dec [addrI (-24) (-8), retI] [esc 0 (-16) 8, endS 0 (-16) 8])
+  check (u == (1, 0, 0, 0, 0, 1)) s!"after the end {u}"
+  -- Escaped on one of two paths only (0 → 2 skips the escape before 1), then on both.
+  let br := nat "br.lt.u.imm.w64" [sl (-8), .imm 2, .neg false, .target 2]
+  let two := [br, nat "imm.w64" [sl (-8), .imm 0], addrI (-24) (-16), retI]
+  let (c, errs) := checkAddrs (dec two [esc 1 (-16) 8]) aMode []
+  check (c.inside == 0 && errs.size == 1) s!"one path {errs}"
+  check (errs.all fun e => (e.splitOn "some path only").length > 1) s!"one path: {errs}"
+  let b := addrCounts (dec two [esc 0 (-16) 8, esc 1 (-16) 8])
+  check (b == (1, 1, 0, 0, 0, 0)) s!"both paths {b}"
+  -- A by-address call argument, covered; then one that isn't.
+  let callI (s : Int) : Insn := nat "call" [sl (-8), .func 0, .imm 0, .words [s32 s, BitVec.ofNat 32 (8 ||| argAddr)]]
+  let a := addrCounts (dec [callI (-16), retI] [esc 0 (-16) 8])
+  check (a == (1, 1, 0, 0, 1, 0)) s!"argument {a}"
+  let a := addrCounts (dec [callI (-32), retI] [esc 0 (-16) 8])
+  check (a == (1, 0, 0, 0, 1, 1)) s!"uncovered argument {a}"
+
+end Addrs
+
 def tests : List TestCase :=
   [⟨"cert: plan SysV", fun _ => sysv⟩, ⟨"cert: plan Win64", fun _ => win64⟩,
    ⟨"cert: JSON", fun _ => parse⟩, ⟨"cert: argument lists", fun _ => argLists⟩,
-   ⟨"cert: facts", fun _ => facts⟩]
+   ⟨"cert: facts", fun _ => facts⟩, ⟨"cert: escape coverage", fun _ => addrs⟩]
 
 end RyoTest.CertCheck

@@ -222,6 +222,12 @@ def addresses : Except String Unit := do
   expectUb "addr" [S (-8), S (-32)] (stOf [])
   let esc := stOf [] [mkAlloc 0x5000 (bytes [0, 0, 0, 0, 0, 0, 0, 0])] [⟨-32, 8, 0⟩]
   expectBytes "addr" [S (-8), S (-28)] esc (-8) (prov 0 0x5004)
+  -- At the object's end: the allocation's end, with its provenance; past it, UB.
+  expectBytes "addr" [S (-8), S (-24)] esc (-8) (prov 0 0x5008)
+  expectUb "addr" [S (-8), S (-20)] esc
+  -- A zero-sized object: its address, without provenance.
+  expectBytes "addr" [S (-8), S (-40)] { esc with zeroSized := [(-40, 0x7000)] } (-8) (le 8 0x7000)
+  expectUb "addr" [S (-8), S (-40)] esc
   -- A frame write into an escaped object writes its allocation, and is seen through it.
   match ← run "imm.w8" [S (-30), I 0x77] esc with
   | .ok (_, st') =>

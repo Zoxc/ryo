@@ -37,7 +37,8 @@ tier.
     `live(h) ∩ moved`. Covers the parallel move via scratch below both frames, `rsp`, the
     probe, and `fp` staying put. The change of layout mid-execution is the **relocation
     lemma** ([reduced.md](reduced.md) §C0.7): moved bytes are not escaped at `h`, so nothing
-    refers to them. This replaces a separate `remap_sound`.
+    refers to them (zero-sized objects, whose addresses `addr` may have taken without
+    provenance, stay put). This replaces a separate `remap_sound`.
   - `trip_sound`: the trip contract holds for the published code.
 
 ## E.2 Trip contract (used by C2, E.1 and E.5)

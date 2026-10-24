@@ -185,7 +185,8 @@ theorem rel_congr {st : OpSem.State} {x x' : Ryo.X86.State} (hr : Rel st x)
     (hb : x'.reg .rbp = x.reg .rbp) (hm : x'.mem = x.mem) : Rel st x' := by
   have hfp : ∀ o, fpAddr x' o = fpAddr x o := fun o => by simp [fpAddr, hb]
   exact ⟨fun o h1 h2 b hb' => by rw [hfp, hm]; exact hr.frame o h1 h2 b hb',
-    fun e he a ha => by rw [hfp]; exact hr.layout e he a ha⟩
+    fun e he a ha => by rw [hfp]; exact hr.layout e he a ha,
+    fun p hp => by rw [hfp]; exact hr.zeroSized p hp⟩
 
 /-- The end of a sequence that stores the `n` bytes of `V` into the frame at `d`, from a state
 `y` that only changed `rax`, `rcx`, the flags and `rip`. -/
@@ -204,9 +205,9 @@ theorem post_mem {op : Full.Opcode} {ops : List (R.Opnd Nat)} {vals : Operands}
       x.mem.write (fpAddr x d.toInt) bs.length V := by
     simp only [X86S.mem_setMem, X86S.mem_jump, hym, ea_frame, hlen]
     simp [fpAddr, hyb]
-  obtain ⟨hrel, h1, h2, h3, h4⟩ := rel_store hr hw (by rw [hlen]; exact private_range hp hwr)
+  obtain ⟨hrel, h1, h2, h3, h4, h5⟩ := rel_store hr hw (by rw [hlen]; exact private_range hp hwr)
     (by omega) (by omega) (by rw [hlen]; exact hx) (by simpa using hyb) hm
-  refine ⟨hrel, ⟨h2, h1, h3, h4⟩, fun i h0 h1 => ?_, ?_, ?_, fun a' ha => ?_, hctl⟩
+  refine ⟨hrel, ⟨h2, h1, h3, h4, h5⟩, fun i h0 h1 => ?_, ?_, ?_, fun a' ha => ?_, hctl⟩
   · simpa using hyr i h0 h1
   · simpa using hyx
   · simpa using hrip
@@ -225,7 +226,7 @@ theorem post_branch {op : Full.Opcode} {ops : List (R.Opnd Nat)} {vals : Operand
     (hctl : ∃ b, ctl = .branch b ∧
       ∀ neg t, R.nativeCtl op ops = some (.branch neg t) → cond.eval x'.flags = .ok (b != neg)) :
     Post op ops vals items (some cond) st st ctl x x' :=
-  ⟨rel_congr hr hyb hym, ⟨rfl, rfl, rfl, rfl⟩, hyr, hyx, hrip, fun a _ => by rw [hym], hctl⟩
+  ⟨rel_congr hr hyb hym, ⟨rfl, rfl, rfl, rfl, rfl⟩, hyr, hyx, hrip, fun a _ => by rw [hym], hctl⟩
 
 /-- Steps through the items of a sequence. -/
 macro "xrun" : tactic =>
@@ -308,7 +309,33 @@ theorem addrOf_rel {st : OpSem.State} {x : Ryo.X86.State} (hr : Rel st x) {s : I
     {p : ThinPointer} (h : st.addrOf s = .ok p) : BitVec.ofNat 64 p.addr = fpAddr x s := by
   unfold OpSem.State.addrOf at h
   cases he : st.escapedAt s with
-  | none => simp [he, ub, throw, throwThe, MonadExceptOf.throw] at h
+  | none =>
+    simp only [he] at h
+    cases hf : st.escaped.find? (fun e => e.size != 0 && e.off + e.size == s) with
+    | some e =>
+      simp only [hf] at h
+      cases ha : st.mem.get? e.id with
+      | none => simp [ha, illFormed, throw, throwThe, MonadExceptOf.throw] at h
+      | some a =>
+        simp only [ha, pure, Except.pure, Except.ok.injEq] at h
+        subst h
+        have hin := List.find?_some hf
+        simp only [bne_iff_ne, ne_eq, Bool.and_eq_true, beq_iff_eq] at hin
+        have hl := hr.layout e (List.mem_of_find?_eq_some hf) a ha
+        rw [BitVec.ofNat_add, hl, ← fpAddr_add, hin.2]
+    | none =>
+      simp only [hf] at h
+      cases hz : st.zeroSized.find? (·.1 == s) with
+      | none => simp [hz, ub, throw, throwThe, MonadExceptOf.throw] at h
+      | some q =>
+        obtain ⟨o, addr⟩ := q
+        simp only [hz, pure, Except.pure, Except.ok.injEq] at h
+        subst h
+        have hin := List.find?_some hz
+        simp only [beq_iff_eq] at hin
+        have := hr.zeroSized _ (List.mem_of_find?_eq_some hz)
+        simp only at this ⊢
+        rw [this, hin]
   | some e =>
     simp only [he] at h
     cases ha : st.mem.get? e.id with
@@ -423,13 +450,13 @@ theorem post_mov128 {op : Full.Opcode} {ops : List (R.Opnd Nat)} {vals : Operand
     simp only [y2, X86S.mem_setMem, X86S.mem_jump, hym, State.ea, X86S.reg_setMem, X86S.reg_jump,
       hyb, rbp_sext, hfa]
   have hxs : (leEncode 8 LO ++ leEncode 8 HI).length = 16 := by simp [leEncode_length]
-  obtain ⟨hrel, h1, h2, h3, h4⟩ := rel_writeFrame
+  obtain ⟨hrel, h1, h2, h3, h4, h5⟩ := rel_writeFrame
     (x' := (y2.jump a2).setMem ((y2.jump a2).ea ⟨.rbp, d⟩) 8 LO) hr hw
     (by rw [hlen]; exact private_range hp hwr) (by omega) (by omega) hx
     (by simpa [y2] using hyb)
     (fun i hi => by rw [hm]; exact write2_at _ _ _ _ _ (by rw [hxs] at hi; exact hi))
     (fun a ha => by rw [hm]; exact write2_out _ _ _ _ _ (by rw [hxs] at ha; exact ha))
-  refine ⟨hrel, ⟨h2, h1, h3, h4⟩, fun i h0 h1 => ?_, ?_, ?_, fun a' ha => ?_, hctl⟩
+  refine ⟨hrel, ⟨h2, h1, h3, h4, h5⟩, fun i h0 h1 => ?_, ?_, ?_, fun a' ha => ?_, hctl⟩
   · simpa [y2] using hyr i h0 h1
   · simpa [y2] using hyx
   · simpa [y2] using hrip

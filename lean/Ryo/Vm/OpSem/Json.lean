@@ -10,6 +10,7 @@ One request per line on stdin, one result per line on stdout:
  "frame": {"base": -64, "bytes": [0, 1, null, ...]},
  "allocs": [{"addr": 4096, "bytes": [...], "mutable": true}],
  "escaped": [{"off": -32, "size": 8, "alloc": 1}],
+ "zeroSized": [{"off": -8, "addr": 4096}],
  "exception": 0,
  "choice": {"nan": 2143289344, "pick_y": false, "spurious": false}}
 ```
@@ -24,6 +25,8 @@ One request per line on stdin, one result per line on stdout:
   without provenance accesses the one containing the range.
 - `escaped`: frame objects that are allocations (`alloc` indexes `allocs`; its bytes are the
   object's).
+- `zeroSized` (optional): the frame's zero-sized objects, by offset, with their addresses
+  (`State.zeroSized`: `addr` of one gives a pointer without provenance there).
 - `choice` (optional): `Choice`; each is checked against the allowed set.
 
 The result: `{"ok": {"control": "next" | {"branch": b} | {"index": i}, "frame": [...],
@@ -123,6 +126,10 @@ def parseRequest (j : Json) : Except String Request := do
         pure ({ off := ← getInt (← field o "off"), size := ← getNat (← field o "size"),
                 id := ← getNat (← field o "alloc") } : EscapedObj))
     | none => pure []
+  let zeroSized ← match optField j "zeroSized" with
+    | some z => do
+      ((← z.getArr?).toList.mapM fun o => do pure (← getInt (← field o "off"), ← getNat (← field o "addr")))
+    | none => pure []
   let exception ← match optField j "exception" with
     | some x => pure (⟨← getNat x, none⟩ : ThinPointer)
     | none => pure ThinPointer.null
@@ -140,7 +147,7 @@ def parseRequest (j : Json) : Except String Request := do
   let frame (o : Int) : AbstractByte :=
     if base ≤ o then farr.getD (o - base).toNat .uninit else .uninit
   pure { op, ops, base, frameLen := fbytes.length, ch,
-         st := { frame, escaped, mem := { allocs := allocs.toArray },
+         st := { frame, escaped, zeroSized, mem := { allocs := allocs.toArray },
                  exposed := List.range allocs.length, exception } }
 
 def rangesJson (rs : List (Int × Nat)) : Json :=

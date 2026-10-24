@@ -5,14 +5,22 @@ Ryo.Vm.OpSem.Basic — the state, operands and results of `opSem` (reduced.md Pa
   memory operand `[p + k]`, an immediate, an address (`Const`/`Abs`/`Sym`/`Site`, with
   provenance), a jump table's length or a case table's address and count.
 - `State`: the frame's **private bytes** by `fp` offset, the frame objects that escaped (each
-  an allocation of `mem`), L0's memory (`Ryo/Spec/Mem`), the exposed allocations, and the
-  exception register a landing pad stores.
+  an allocation of `mem`), the frame's zero-sized objects with their addresses, L0's memory
+  (`Ryo/Spec/Mem`), the exposed allocations, and the exception register a landing pad stores.
 - `Stop`: how an operation fails to produce a next state: UB, `abort`, `unreachable`, an
   unimplemented kind, ill-formed operands, or a choice outside its constraint.
 
 Frame bytes are abstract bytes (provenance fragments, `Uninit`). A frame access at offset `o`
 of an escaped object reads or writes its allocation's byte, so a frame object has one copy of
 its bytes at every point; private bytes are reachable only through frame operands.
+
+`addr` (`State.addrOf`) gives a pointer into an escaped object (with its provenance), one at an
+escaped object's end (one past its last byte, with its provenance), or, for a zero-sized frame
+object, a pointer without provenance at its address, which only zero-sized accesses may use
+(a non-zero access resolves among the exposed allocations, `State.resolve`). Zero-sized
+objects never escape (the encoder drops size-0 escapes), so their addresses are part of the
+state (`zeroSized`): the layout restricted to them, the one place `opSem` sees a frame address
+that isn't an allocation's.
 -/
 import Ryo.Spec
 import Ryo.Vm.Generated
@@ -70,6 +78,10 @@ structure State where
   /-- The private frame bytes, by `fp` offset (an escaped object's are in `mem`). -/
   frame : Int → AbstractByte := fun _ => .uninit
   escaped : List EscapedObj := []
+  /-- The frame's zero-sized objects: (`fp` offset, address). The layout restricted to them
+  (in R at `φ_AOT`, `fp + off`); `addrOf` of such an offset that isn't in or at the end of an
+  escaped object is a pointer without provenance at the address. -/
+  zeroSized : List (Int × Nat) := []
   mem : Memory := {}
   /-- The exposed allocations: a pointer without provenance accesses one of them (angelic,
   `IntPtrCast`; R counts every escaped object as exposed). -/
@@ -184,14 +196,31 @@ def writeFrame (st : State) (off : Int) (bs : List AbstractByte) : M State := do
     if st.privateIn off bs.length o then bs.getD (o - off).toNat .uninit else st.frame o
   pure { st with mem := mem, frame := frame }
 
-/-- The pointer to frame offset `s` (`addr`): it must be in an escaped object (§C0.3). -/
+/-- The pointer to frame offset `s` (`addr`, a by-address call argument), §C0.3, in this order:
+1. `s` in an escaped object `e`: into `e`'s allocation, with its provenance;
+2. `s = e.off + e.size` for an escaped object `e` of non-zero size: `e`'s allocation's end (one
+   past its last byte), with its provenance (a zero-sized field at the end of an object; `ptr.add`
+   back from it reaches the object's bytes);
+3. `s` the offset of a zero-sized object (`zeroSized`): its address, without provenance; only a
+   zero-sized access may use it (L0 accepts any pointer for length 0; a non-zero access resolves
+   among the exposed allocations, `resolve`, and is UB when none contains the range);
+4. else UB. -/
 def addrOf (st : State) (s : Int) : M ThinPointer :=
   match st.escapedAt s with
-  | none => ub s!"taking the address of frame offset {s}, which is not in an escaped object"
   | some e =>
     match st.mem.get? e.id with
     | some a => pure ⟨a.addr + (s - e.off).toNat, some e.id⟩
     | none => illFormed s!"escaped frame object at {e.off} has no allocation"
+  | none =>
+    match st.escaped.find? (fun e => e.size != 0 && e.off + e.size == s) with
+    | some e =>
+      match st.mem.get? e.id with
+      | some a => pure ⟨a.addr + e.size, some e.id⟩
+      | none => illFormed s!"escaped frame object at {e.off} has no allocation"
+    | none =>
+      match st.zeroSized.find? (·.1 == s) with
+      | some (_, addr) => pure ⟨addr, none⟩
+      | none => ub s!"taking the address of frame offset {s}, which is neither in nor at the end of an escaped object nor a zero-sized object"
 
 /-! ### Memory through pointers -/
 

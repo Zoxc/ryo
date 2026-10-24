@@ -35,6 +35,18 @@ Per object:
   `abi`, `drop` of glue with a body, `assert` of a panic function with a body) has the plan,
   return kind and return size recomputed from that ABI; or (iii) neither (counted).
 - **Islands.** Each `island` instruction's symbol (its slot's name) is in the islands table.
+- **Escape coverage** (§C1, "Escape/storage side data"; `checkAddrs`). Every frame address the
+  code takes, an `addr`'s `s` (native, or a handler's footprint `addrs`) and a by-address
+  (`ARG_ADDR`) argument's slot of a call or tail call, is one `State.addrOf` defines: (i) inside
+  an object escaped on every path to the instruction, or (ii) the end `e.off + e.size` of such
+  an object `e` of non-zero size, or (iii) the offset of a certificate local of size 0 (a
+  zero-sized object, which never escapes). "Escaped on every path" is `Frame.mustEscapedAt`: a
+  forward must-dataflow over successors and landing pads, nothing escaped at entry, the scopes
+  before each instruction applied as R's step does (`Escape` adds its range as an object, `End`
+  removes the objects it covers whole, `Lend` nothing). Anything else is an error. Counted per
+  address taken, by the first of (i)–(iii) that holds (`addrs`, `by-escape`, `at-end`,
+  `zero-sized`; `addr-args` of them are by-address arguments). (iii) trusts the certificate's
+  locals (offsets, sizes) as far as the checks above go (their count against the dump).
 
 Errors are rejections; gaps (no dumped body, no ABI) are counted.
 
@@ -61,6 +73,69 @@ inductive Verified
   | entry | abi | none
 deriving DecidableEq, Repr, Inhabited
 
+/-- The frame addresses a function takes (`checkAddrs`), by how each is covered. -/
+structure AddrCount where
+  addrs : Nat := 0
+  /-- Inside an object escaped on every path. -/
+  inside : Nat := 0
+  /-- At the end of such an object. -/
+  atEnd : Nat := 0
+  /-- A zero-sized local. -/
+  zeroSized : Nat := 0
+  /-- Of `addrs`, the by-address call arguments. -/
+  args : Nat := 0
+deriving Inhabited
+
+/-- The frame addresses instruction `i` takes: (slot, whether it is a by-address call
+argument). An `addr`'s `s` (an inline one's operand: its items, a `lea`, show none), a call's or
+tail call's `ARG_ADDR` entries, a handler's footprint `addrs`. -/
+def addrsTaken (i : Insn) (mode : Ryo.Obj.Mode) : Except String (List (Int × Bool)) := do
+  let (e, call) ← match i with
+    | .native op ops =>
+      pure (Frame.native op ops mode.pe, op.info.shape == .call || op.info.shape == .tailCall)
+    | .handler h args _ => pure (← Frame.handler h args mode, false)
+  pure (e.opnds.filterMap fun (o, a) => if a == .addr then some (o.toInt, call) else none)
+
+/-- How `State.addrOf` covers slot `s` given the escaped objects `objs` (`[lo, hi)`) and the
+zero-sized objects' offsets `zs`: inside an object (`0`), at an object's end (`1`), a zero-sized
+object (`2`), in that order; `none` if not. -/
+def coverOf (objs : List (Int × Int)) (zs : List Int) (s : Int) : Option Nat :=
+  if objs.any (fun (lo, hi) => lo ≤ s && s < hi) then some 0
+  else if objs.any (fun (lo, hi) => lo < hi && hi == s) then some 1
+  else if zs.contains s then some 2
+  else none
+
+/-- The escape coverage of decoded function `d` whose zero-sized objects are at the offsets `zs`
+(the module header): the counts and the errors (instruction, slot, why). -/
+def checkAddrs (d : Decoded) (mode : Ryo.Obj.Mode) (zs : List Int) : AddrCount × Array String := Id.run do
+  let (succ, pad) := Frame.flow d
+  let edges := (succ.zip pad).map fun (s, p) => s ++ p
+  let must := Frame.mustEscapedAt d edges
+  let may := Frame.escapedAt d edges
+  let (escapes, _) := Frame.escapeSteps d
+  let objs (bits : Nat) : List (Int × Int) :=
+    escapes.toList.filterMap fun (lo, hi, j) => if (bits >>> j) % 2 == 1 then some (lo, hi) else none
+  let mut c : AddrCount := {}
+  let mut errs : Array String := #[]
+  for h : k in [0:d.insns.size] do
+    match addrsTaken d.insns[k] mode with
+    | .error e => errs := errs.push s!"instruction {k}: its addresses taken: {e}"
+    | .ok ts =>
+      for (s, arg) in ts do
+        c := { c with addrs := c.addrs + 1, args := c.args + (if arg then 1 else 0) }
+        let what := if arg then "by-address argument" else "addr"
+        match coverOf (objs (must[k]?.getD 0)) zs s with
+        | some 0 => c := { c with inside := c.inside + 1 }
+        | some 1 => c := { c with atEnd := c.atEnd + 1 }
+        | some _ => c := { c with zeroSized := c.zeroSized + 1 }
+        | none =>
+          let some_ := match coverOf (objs (may[k]?.getD 0)) [] s with
+            | some 0 => " (inside an object escaped on some path only)"
+            | some _ => " (at the end of an object escaped on some path only)"
+            | none => ""
+          errs := errs.push s!"{what} at {k}: slot {s} is neither in nor at the end of an object escaped on every path, nor a zero-sized local{some_}"
+  return (c, errs)
+
 /-- One function's check: its errors and what it established. -/
 structure FuncCheck where
   errors : Array String := #[]
@@ -72,6 +147,8 @@ structure FuncCheck where
   calls : Array (CallCert × Verified) := #[]
   /-- Per island instruction its template. -/
   islands : Array (Nat × String) := #[]
+  /-- The escape coverage of the addresses taken (`checkAddrs`). -/
+  addrs : AddrCount := {}
 
 /-- The facts the dead-store check may assume of the function `r` checked (the module
 header): stack-argument and sret sizes of the calls verified by the dump's ABI, the islands'
@@ -368,6 +445,9 @@ def checkFunc (c : Ctx) (i : Nat) (d : Decoded) (fc : FuncCert) : FuncCheck := I
             byAbi := r.errors.size == n1
     let v := if r.errors.size != n0 then Verified.none else if byEntry then .entry else if byAbi then .abi else .none
     r := { r with calls := r.calls.push (cc, v) }
+  -- Escape coverage.
+  let (ac, aerrs) := checkAddrs d o.image.mode ((fc.locals.filter (·.size == 0)).toList.map (·.off))
+  r := { r with addrs := ac, errors := r.errors ++ aerrs }
   for cc in fc.calls do
     match d.insns[cc.insn]? with
     | some (.native op _) => unless op.info.shape == .call || op.info.shape == .tailCall do r := err r s!"call entry {cc.insn} is `{op.info.mnemonic}`"
@@ -389,6 +469,7 @@ structure Report where
   byAbi : Nat := 0
   unverified : Nat := 0
   islands : Nat := 0
+  addrs : AddrCount := {}
   dropped : Nat := 0
   notDead : Nat := 0
   /-- The dropped stores the facts-free check doesn't show dead (for comparison). -/
@@ -425,7 +506,10 @@ def checkObject (prog : Program) (cert : Cert) (o : ImageObject) : Report := Id.
       blocks := rep.blocks + fr.blocks, truncated := rep.truncated + fr.truncated,
       calls := rep.calls + fr.calls.size, byEntry := rep.byEntry + cnt .entry,
       byAbi := rep.byAbi + cnt .abi, unverified := rep.unverified + cnt .none,
-      islands := rep.islands + fr.islands.size }
+      islands := rep.islands + fr.islands.size,
+      addrs := { addrs := rep.addrs.addrs + fr.addrs.addrs, inside := rep.addrs.inside + fr.addrs.inside,
+                 atEnd := rep.addrs.atEnd + fr.addrs.atEnd, zeroSized := rep.addrs.zeroSized + fr.addrs.zeroSized,
+                 args := rep.addrs.args + fr.addrs.args } }
     -- The dead-store check with the facts.
     if d.dropped.isEmpty then continue
     rep := { rep with dropped := rep.dropped + d.dropped.size }
@@ -452,7 +536,7 @@ def deadFacts (prog : Program) (cert : Cert) (o : ImageObject) :
 /-- The lines `ryo-lean check-cert` prints for one object: the summary, the dead-store totals,
 then the errors. -/
 def Report.render (r : Report) (path : String) : Array String :=
-  #[s!"cert-check {path}: funcs {r.funcs} certs {r.certs} in-dump {r.inDump} undecoded {r.undecoded} sig-abi {r.sigAbi} blocks {r.blocks} truncated {r.truncated} calls {r.calls} by-entry {r.byEntry} by-abi {r.byAbi} unverified {r.unverified} islands {r.islands} errors {r.errors.size}",
+  #[s!"cert-check {path}: funcs {r.funcs} certs {r.certs} in-dump {r.inDump} undecoded {r.undecoded} sig-abi {r.sigAbi} blocks {r.blocks} truncated {r.truncated} calls {r.calls} by-entry {r.byEntry} by-abi {r.byAbi} unverified {r.unverified} islands {r.islands} addrs {r.addrs.addrs} by-escape {r.addrs.inside} at-end {r.addrs.atEnd} zero-sized {r.addrs.zeroSized} addr-args {r.addrs.args} errors {r.errors.size}",
     s!"dead-check {path}: dropped {r.dropped} not-shown-dead {r.notDead} (without facts {r.notDeadPlain})"]
     ++ r.errors.map ("error: " ++ ·)
 

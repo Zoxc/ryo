@@ -28,7 +28,8 @@ allocation's provenance, or an exposed allocation for a pointer without one.
 
 UB: reading `Uninit` as an integer or pointer; division by zero and `MIN / -1`
 (`unchecked_div`/`_rem`); `memcpy` of overlapping ranges; an access through a pointer outside
-a live allocation (or a store into an immutable one); `addr` of a non-escaped object.
+a live allocation (or a store into an immutable one); `addr` of a frame offset that is neither
+in nor at the end of an escaped object nor a zero-sized object (`State.addrOf`).
 Shifts and rotations mask the amount (`wrapping_sh*`), so they have no UB.
 
 Atomics are sequential (no concurrency: D17), at their natural alignment. The `.wN` forms,

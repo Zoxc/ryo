@@ -407,7 +407,8 @@ theorem post_store {st : OpSem.State} {mem' : Memory} {x x' : X86.State} {id : A
         have hoc : off + c < a.size := by simp only [Allocation.size]; omega
         exact he (hdis id' a' id a i (off + c) h0 hg hl' hlv hi hoc hhit).1
   have hfp : ∀ o, fpAddr x' o = fpAddr x o := fun o => by simp [fpAddr, hrbp]
-  refine ⟨hmr, ⟨fun o ho1 ho2 b hb => ?_, fun e he a' ha' => ?_⟩, hout⟩
+  refine ⟨hmr, ⟨fun o ho1 ho2 b hb => ?_, fun e he a' ha' => ?_,
+    fun p hp => by rw [hfp]; exact hr.zeroSized p hp⟩, hout⟩
   · rw [hfp]
     have hesc : ({ st with mem := mem' } : OpSem.State).escapedAt o = st.escapedAt o := rfl
     unfold OpSem.State.byteAt at hb

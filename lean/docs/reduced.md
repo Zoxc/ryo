@@ -73,9 +73,18 @@ operands, so they are layout-relative already.
   after `StorageLive`, so `≤def` holds; temporaries are unconstrained between statements
   anyway. An object escaped twice without an end in between stays one allocation.
 - **Values**:
-  - `addr d, s` yields a pointer to `s` with the provenance of `s`'s object; it is UB if
-    that object is not an allocation at that point (the lowering check rules this out:
-    escapes cover every `addr` and by-address argument);
+  - `addr d, s` (and a by-address call argument) yields a pointer to `s`: with the
+    provenance of `s`'s object if that object is escaped at that point; else, if `s` is the
+    **end of an object escaped there** (one past the end, which MIR's `offset` counts as in
+    bounds), a pointer at that allocation's end with its provenance, so code may step back
+    from it and read; else, if `s` is a **zero-sized object**, a pointer at `φ(o)` without
+    provenance, valid (like every pointer in Rust) for zero-sized accesses only; else UB.
+    The lowering check rules the last case out: escapes cover every `addr` and by-address
+    argument but for exactly these two exceptions ([aot.md](aot.md) §C1). A zero-sized
+    object has no bytes and never becomes an allocation (the encoder records no escape of
+    size 0), and its placement is free: the JIT may put it anywhere. The object containing
+    `s` takes priority, so an end that is also the start of another escaped object gets that
+    object's provenance (§C0.7 says why C1' must exclude that case);
   - moves, copies, loads, stores, handler copies and the register file preserve abstract
     bytes, provenance fragments included;
   - integer operations decode their operands as integers, dropping provenance as MiniRust's
@@ -92,9 +101,13 @@ What used to be separate rules of R are now consequences of the memory model:
 
 - **Frame privacy**: a pointer cannot reach bytes of a frame object that is not escaped at
   that point, because no provenance for them exists. This is what lets the JIT promote
-  non-escaped objects to SSA values, drop their stores and move them.
+  non-escaped objects to SSA values, drop their stores and move them. The two exceptions of
+  `addr` keep it: a zero-sized object has no bytes, and its pointer has no provenance, so
+  any non-zero access through it needs an exposed allocation, which private bytes never
+  are; an end pointer has the escaped object's provenance and reaches only its bytes.
 - **In bounds**: a pointer derived from object `A` cannot access object `B`, so objects can
-  be placed independently (the layout parameter).
+  be placed independently (the layout parameter). An end pointer of `A` at the start of `B`
+  still accesses only `A`.
 - **Storage ends**: after an `End`, pointers to the object dangle (LLVM's `lifetime.end`),
   and its bytes are `Uninit`: a store before the `End` that nothing reads first is dead, which
   the dead-store check uses ([aot.md](aot.md) §C2).
@@ -139,8 +152,9 @@ stores are not ghost state: the Lean decoder re-checks them ([aot.md](aot.md) §
 semantics of one function body at `φ_AOT`, open at calls (CompCertO-style). The state is `pc`,
 `fp` (an address), `opSem`'s `State` and the incoming argument registers; the `Code` is the
 `Decoded` function with its mode, the placement `ρ` of the image's addressed things, its
-`arg_size`, and per call its stack-argument size, sret size and island template (facts from
-outside the function). `step : Code → RState → Except Stop Out` gives the next state, an
+`arg_size`, its zero-sized frame objects (the certificate's locals of size 0), and per call
+its stack-argument size, sret size and island template (facts from outside the function).
+At entry the zero-sized objects are placed at `fp + off` (`OpSem.State.zeroSized`). `step : Code → RState → Except Stop Out` gives the next state, an
 outgoing event (`Query`: a call with its callee (`Func` index, symbol slot, the slot behind
 `call.sym.ind`, or a pointer), argument registers and the outgoing area's bytes at `sp = fp - F`;
 an island with its symbol, template, `fp`, operand slots and `Lend` extents) with the state
@@ -156,31 +170,33 @@ instruction with a handler shape or a handler call is `opSem (view i)` plus `The
 cleanup entry (the landing pad, with the exception register set for `lpad`; out of the
 function for `continue`; UB with no entry), single-phase (`Code.catchesAt` gives the `catch`
 flag a search phase would ask). Calls build their registers from the argument list (by value
-at the register's size, zero-extended; `ARG_ADDR` as `addr`, UB on a non-escaped slot), make
+at the register's size, zero-extended; `ARG_ADDR` as `addr`, with its two exceptions), make
 the sret destination `Uninit` after reading the arguments, and store the answer's parts by
 `k` at `d`. `Run.lean` runs programs: the environment answers a call of a program function by
 running its R code below the caller's frame (tail calls in the frame they take over), and
 `imageProgram` makes an image object such a program (its constant pool, data, symbol slots,
-site slots and code constants as allocations); `ryo-lean rrun <image.o> <fn> <ints>` runs one
-function. Tested (`RyoTest/RSem.lean`) on hand-built functions (recursive `fib`, branch
+site slots and code constants as allocations); `ryo-lean rrun <image.o> <fn> <ints> [--cert <cert.json>]` runs one
+function (or `--all`; the certificate gives the zero-sized locals). Tested (`RyoTest/RSem.lean`) on hand-built functions (recursive `fib`, branch
 polarity, escapes, partial ends, dangling and `Uninit` after an `End`, by-address and stack
-arguments, sret, unwinding to a pad and out, tail calls, islands, ill-formed instructions) and
+arguments, sret, unwinding to a pad and out, tail calls, islands, ill-formed instructions,
+`addr` of a zero-sized object with a zero-length and a non-zero access, `addr` at an escaped
+object's end and a load back from it, the same after the object's `End`) and
 by hand on the corpus (`fib`, `ack`, `gcd`, `collatz`, `become`-recursive `count`/`even`
 return their Rust values, at `-O0` and `-O3`). Not modeled yet: layouts other than `φ_AOT` and
 the object table (an `Escape`'s range is its object; a partly overlapping escape is
 `illFormed`), the constraints the contracts put on answers (the convention for calls, the
 islands' contracts beyond their roles, handlers through pointers, `ryo_h_Resume`), the
-probe and trip contracts (counters and stubs are not R instructions), and the zero-sized
-objects below.
+probe and trip contracts (counters and stubs are not R instructions).
 
-Running every corpus function (on small integer arguments) stops nowhere as `illFormed`, but
-shows that the backend takes the address of zero-sized locals without an escape: 373 `addr`s
-of a local the certificate gives size 0 (a ZST, such as an allocator argument) and 20 one past
-the end of an escaped object, which under §C0.3 (and `opSem`'s `addr`) are UB. An
-escape of size 0 is never recorded, and `opSem`'s escaped-object lookup can't contain a
-zero-sized object anyway, so R needs a rule for them (a zero-sized allocation recorded by the
-encoder, or a pointer without provenance, valid for zero-sized accesses only) and C1''s
-"escapes cover every `addr`" must say which.
+Running every corpus function (on small integer arguments) stops nowhere as `illFormed`. It
+showed that the backend takes `addr`s that the first version of §C0.3 made UB: of zero-sized
+locals (the encoder records no escape of size 0) and one past the end of an escaped local
+(`&l.f` or `&raw const l.f…` of a zero-sized last field, such as an allocator or a
+`PhantomData`, after the escape of `l`). §C0.3's two exceptions give both their MIR meaning,
+and the certificate check's escape coverage ([aot.md](aot.md) §C1) accepts exactly them: over
+the corpus (108 objects), of 14628 addresses taken (4847 by-address arguments), 14219 are in
+an object escaped on every path to them, 26 at such an object's end, 383 at a zero-sized
+local, and none is uncovered.
 
 ### C0.5 Handler contracts
 
@@ -234,7 +250,15 @@ instruction), and `unpack` rejects mutated arguments. Not checked by `view`, as 
   allocation, globals to their image copies, environment allocations to themselves. A
   non-escaped local's L0 allocation is unreferenced (no provenance for it exists in the L0
   state) and corresponds to private bytes. Bytes are related by MiniRust's "more defined"
-  order (`Ryo/Spec/Mem/Refine.lean`) through the renaming.
+  order (`Ryo/Spec/Mem/Refine.lean`) through the renaming, extended by one case: a
+  zero-sized local's L0 allocation is renamed to *no* provenance, so an L0 pointer into it
+  relates to R's provenance-less pointer at the same address. Nothing L0 does with that
+  provenance can tell: a non-zero access through it is out of bounds (UB), a zero-sized one
+  needs none, comparisons and integer casts see only the address, and `offset_from` is
+  integer arithmetic in R ([aot.md](aot.md) §C1, "Locals"). An end pointer is the escaped
+  local's L0 pointer at its end, a zero-sized field there, with the same provenance at both
+  levels; what C1' must exclude is an end that another escaped object starts at, where R's
+  priority gives the other object's provenance.
 - **R ↔ L2** ([aot.md](aot.md) §C2): provenance erased, private bytes and allocations both
   at their `φ` addresses, `Uninit` refined by any byte. R's provenance checks only add UB
   on the R side, which a refinement may ignore.
@@ -243,7 +267,10 @@ instruction), and `unpack` rejects mutated arguments. Not checked by `view`, as 
   dominance equation). Entering JIT code by OSR changes the layout mid-execution, which the
   **relocation lemma** justifies: two states that differ only in the addresses of objects
   that nothing refers to (no provenance fragment for them anywhere, never exposed) are
-  bisimilar. Because R has provenance, "not escaped at the loop head" already means
+  bisimilar. A zero-sized object's address is referred to without provenance once `addr`
+  has taken it, so it is not moved: it has no bytes to move, and keeping it at its
+  `φ_AOT` address keeps the pointers to it equal (L0 fixes a local's address while it is
+  live). Because R has provenance, "not escaped at the loop head" already means
   "unreferenced" in R, and the lemma is applied in R, not by going back to L0. It is proved
   once on `Ryo/Spec/Mem`, so it holds for L0 as well.
 
@@ -296,9 +323,11 @@ footprint (op : Full.Opcode) : Option Footprint
   a case list's values' address and count, or nothing (targets, `neg`).
 - **State**: the private frame bytes by `fp` offset (abstract bytes), the escaped frame
   objects (each an allocation of the memory, from its start), L0's `Memory`, the exposed
-  allocations, and the exception register `lpad` stores. A frame access to an escaped
-  object's byte is its allocation's byte, so there is one copy of each byte; `addr` of a
-  non-escaped object is UB, of an escaped one a pointer with its provenance. A pointer
+  allocations, the exception register `lpad` stores, and the frame's zero-sized objects
+  with their addresses (`zeroSized`, the layout restricted to them). A frame access to an
+  escaped object's byte is its allocation's byte, so there is one copy of each byte; `addr`
+  of an escaped object (or at its end) is a pointer with its provenance, of a zero-sized
+  object a pointer without provenance, of any other offset UB (§C0.3). A pointer
   without provenance accesses the exposed allocation containing the range (`IntPtrCast`'s
   angelic choice). Addresses of frame bytes appear only through allocations, so `opSem` is
   layout-independent.
@@ -325,7 +354,8 @@ footprint (op : Full.Opcode) : Option Footprint
 - **UB**: `Uninit` read as an integer or pointer; a zero divisor and `MIN / -1`
   (`unchecked_div`/`_rem`); `memcpy` of overlapping ranges; an access outside a live
   allocation, or a store into an immutable one; a misaligned atomic or `addr.sym` slot;
-  `addr` of a non-escaped object. Shift and rotation amounts are masked (`wrapping_sh*`,
+  `addr` of an offset that is neither in an escaped object, nor at its end, nor a zero-sized
+  object. Shift and rotation amounts are masked (`wrapping_sh*`,
   `rotate_*`): no UB.
 - **Footprint**: per opcode, from `HandlerKind` and its parameters, naming operands: the
   frame reads and writes at their exact extents (a width, `len`, `elem_size × count`,

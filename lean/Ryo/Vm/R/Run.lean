@@ -20,7 +20,10 @@ the callee's R code (`Program.invoke`), and an image object as such a program
   addresses of `DecodeObj`; pointers between them (the read-only and data sections'
   `R_X86_64_64` relocations into those parts) carry their allocation's provenance, others
   (to symbols) are left as the object has them. One allocation per part, not per constant
-  (D7's copies) or static: enough to run code, not the image check's model.
+  (D7's copies) or static: enough to run code, not the image check's model. Each function's
+  zero-sized frame objects (`Code.zeroSized`) come from outside, by symbol: `rrun --cert`
+  gives the certificate's locals of size 0 (`Main.lean`; without a certificate there are none,
+  and `addr` of a zero-sized local is UB).
 
 Fuel bounds both the steps of each function and the depth of calls, and running out is a halt,
 not a behavior.
@@ -87,7 +90,7 @@ def Program.invoke (p : Program) : Nat → Callee → Nat → Regs → List Abst
     match cal with
     | .func g =>
       let some (some c) := p.codes[g]? | throw (.stop (.unsupported s!"function {g} isn't decoded"))
-      let s ← liftM (entry (sp - 16) args stack w)
+      let s ← liftM (entry c (sp - 16) args stack w)
       let env (q : Query) : RM Answer := match q.ext with
         | .call (.func h) args' sp' stack' => do
           pure (← p.invoke fuel (.func h) sp' args' stack' q.world).toAnswer
@@ -199,11 +202,14 @@ def imageCallee (d : Decoded) (k : Nat) : Option Nat :=
 
 end Image
 
-/-- Image object `o` as a program (see the module comment), and its world. -/
-def imageProgram (o : Ryo.Obj.ImageObject) : Program × World :=
+/-- Image object `o` as a program (see the module comment), and its world; `zeroSized` gives
+each function's zero-sized frame objects by its symbol. -/
+def imageProgram (o : Ryo.Obj.ImageObject) (zeroSized : String → List Int := fun _ => []) :
+    Program × World :=
   let decoded := DecodeObj.decodeAll o
   let code (i : Nat) (fi : Ryo.Obj.FuncInputs) (d : Decoded) : Code :=
     { d, mode := fi.mode, ρ := Image.addrs, argSize := (o.funcs[i]?.map (·.argSize)).getD 0,
+      zeroSized := (o.funcs[i]?.map fun f => zeroSized (o.funcName f.codeOff)).getD [],
       stackSize := fun k => ((Image.imageCallee d k).bind (o.funcs[·]?)).map (·.argSize) |>.getD 0,
       sretSize := fun k => do
         let g ← Image.imageCallee d k
@@ -249,14 +255,17 @@ end Ryo.Vm.R
 
 namespace Ryo.Vm.R
 
-/-- `ryo-lean rrun <image.o> <function> [<int>...] [--fuel N]`: run an image function (by index,
+/-- `ryo-lean rrun <image.o> <function> [<int>...] [--fuel N] [--unwind <text>] [--cert
+<cert.json>]`: run an image function (by index,
 symbol name, or the first whose name contains the text) as R (`imageProgram`), its integer
 arguments in the first integer registers (8 bytes each, two's complement), and print how it
 ends: the return registers, unwinding, or why it halted (a `Stop`, an external call or island,
 out of fuel). Exit status 0 when it returns. With `--all` for the function, every function on
 those arguments, a line each. With `--unwind <text>`, a call of a symbol whose name contains
-the text is answered by unwinding (exception object `0xe0`): landing pads run. -/
-def cli (args : List String) : IO UInt32 := do
+the text is answered by unwinding (exception object `0xe0`): landing pads run. With `--cert`
+(which `Main.lean` reads, passing `zeroSized`), each function's zero-sized frame objects are its
+certificate's locals of size 0 (`Code.zeroSized`). -/
+def cli (args : List String) (zeroSized : String → List Int := fun _ => []) : IO UInt32 := do
   let (fuel, args) := match args.idxOf? "--fuel" with
     | some i => ((args[i + 1]?.bind String.toNat?).getD 100000, args.take i ++ args.drop (i + 2))
     | none => (100000, args)
@@ -264,13 +273,13 @@ def cli (args : List String) : IO UInt32 := do
     | some i => (args[i + 1]?, args.take i ++ args.drop (i + 2))
     | none => (none, args)
   let path :: fn :: ints := args
-    | IO.eprintln "usage: ryo-lean rrun <image.o> <function> [<int>...] [--fuel N]"; return 2
+    | IO.eprintln "usage: ryo-lean rrun <image.o> <function>|--all [<int>...] [--fuel N] [--unwind <text>] [--cert <cert.json>]"; return 2
   let o ← IO.ofExcept (Ryo.Obj.readImageObject (← IO.FS.readBinFile path))
   let names := o.funcs.map fun f => o.funcName f.codeOff
   if fn == "--all" then
     -- Every function, on the arguments given: one line each.
     let some vs := ints.mapM String.toInt? | IO.eprintln "arguments must be integers"; return 2
-    let (p, w) := imageProgram o
+    let (p, w) := imageProgram o zeroSized
     for h : f in [0:names.size] do
       let r := match p.run f (Regs.ofInts (vs.map fun v => (BitVec.ofInt 64 v).toNat)) w fuel with
         | .ok fin => fin.text
@@ -282,7 +291,7 @@ def cli (args : List String) : IO UInt32 := do
     | IO.eprintln s!"no function `{fn}`"; return 2
   let some vs := ints.mapM String.toInt?
     | IO.eprintln "arguments must be integers"; return 2
-  let (p, w) := imageProgram o
+  let (p, w) := imageProgram o zeroSized
   -- `--unwind <text>`: external calls of symbols whose name contains it unwind (exception 0xe0).
   let p := match unwind with
     | none => p

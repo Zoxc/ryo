@@ -8,11 +8,14 @@ dist/bin/rustc-ryo, -Csave-temps (which keeps `<name>.<cgu>.ryo_image.rcgu.o`) a
 (the MIR dump `<dir>/<name>.json` and the certificate `<dir>/<name>.cert.json`), at -O0 and with
 --opt also at -O3. Then `ryo-lean check-cert <dump> <cert> <objects>` checks the certificate
 against the objects' decoded code and the dump: the function map, each function's own
-signature, its instruction ranges, its calls and their plans, its islands. This tabulates per
-object: functions, those with a certificate, those whose symbol is a dumped body, functions
-not decoded, functions whose own plan the dump's ABI confirmed, blocks, blocks the dumper
-truncated, calls and how their plans were verified (by the callee's `FuncEntry`, by the dump's
-ABI, neither), islands, errors, and the dead-store check with the certificate's facts (dropped
+signature, its instruction ranges, its calls and their plans, its islands, the escape coverage
+of the frame addresses it takes. This tabulates per object: functions, those with a
+certificate, those whose symbol is a dumped body, functions not decoded, functions whose own
+plan the dump's ABI confirmed, blocks, blocks the dumper truncated, calls and how their plans
+were verified (by the callee's `FuncEntry`, by the dump's ABI, neither), islands, the frame
+addresses taken (`addr`s and by-address call arguments) and how each is covered (inside an
+object escaped on every path, at such an object's end, a zero-sized local; `addr_args` of them
+are call arguments), errors, and the dead-store check with the certificate's facts (dropped
 stores, those not shown dead); then the totals and each error.
 
 Usage: scripts/lean-cert-check.py [names...] [--opt] [--corpus DIR] [--keep DIR] [--ryo-lean PATH] [-j N] [-v]
@@ -41,10 +44,11 @@ ROOT = Path(__file__).resolve().parent.parent
 TIMEOUT = 1800
 LINE = re.compile(
     r"^cert-check (\S+): funcs (\d+) certs (\d+) in-dump (\d+) undecoded (\d+) sig-abi (\d+) blocks (\d+) truncated (\d+) "
-    r"calls (\d+) by-entry (\d+) by-abi (\d+) unverified (\d+) islands (\d+) errors (\d+)$"
+    r"calls (\d+) by-entry (\d+) by-abi (\d+) unverified (\d+) islands (\d+) "
+    r"addrs (\d+) by-escape (\d+) at-end (\d+) zero-sized (\d+) addr-args (\d+) errors (\d+)$"
 )
 FIELDS = ["funcs", "certs", "in_dump", "undecoded", "sig_abi", "blocks", "truncated", "calls", "by_entry", "by_abi", "unverified",
-          "islands", "errors"]
+          "islands", "addrs", "by_escape", "at_end", "zero_sized", "addr_args", "errors"]
 DEAD_LINE = re.compile(r"^dead-check (\S+): dropped (\d+) not-shown-dead (\d+) \(without facts (\d+)\)$")
 DEAD_FIELDS = ["dropped", "not_dead", "not_dead_plain"]
 MAP_LINE = re.compile(r"^cert-map: certificates (\d+) unmatched (\d+)$")
@@ -196,7 +200,9 @@ def main():
         for line in reports:
             print(line)
     print(f"\n{len(rows) - bad}/{len(rows)} objects check; {tot['calls']} calls: {tot['by_entry']} verified by the callee's entry, "
-          f"{tot['by_abi']} by the dump's ABI, {tot['unverified']} neither; {len(skipped)} programs skipped")
+          f"{tot['by_abi']} by the dump's ABI, {tot['unverified']} neither; {tot['addrs']} frame addresses taken: "
+          f"{tot['by_escape']} in an escaped object, {tot['at_end']} at one's end, {tot['zero_sized']} zero-sized; "
+          f"{len(skipped)} programs skipped")
     if work and not args.keep:
         shutil.rmtree(work, ignore_errors=True)
     sys.exit(1 if bad else 0)

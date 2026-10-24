@@ -218,6 +218,8 @@ structure Rel (st : OpSem.State) (x : X86.State) : Prop where
   /-- Escaped objects are allocations at their frame address. -/
   layout : ∀ e ∈ st.escaped, ∀ a, st.mem.get? e.id = some a →
     BitVec.ofNat 64 a.addr = fpAddr x e.off
+  /-- Zero-sized frame objects are at their frame address. -/
+  zeroSized : ∀ p ∈ st.zeroSized, BitVec.ofNat 64 p.2 = fpAddr x p.1
 
 theorem mapM_ok {α β ε : Type} {f : α → Except ε β} :
     ∀ {l : List α} {bs : List β}, l.mapM f = .ok bs →
@@ -320,14 +322,14 @@ theorem rel_writeFrame {st st' : OpSem.State} {x x' : X86.State} {d : Int} {bs :
     (hin : ∀ i (h : i < xs.length), x'.mem (fpAddr x d + BitVec.ofNat 64 i) = xs[i])
     (hout : ∀ a, xs.length ≤ (a - fpAddr x d).toNat → x'.mem a = x.mem a) :
     Rel st' x' ∧ st'.mem = st.mem ∧ st'.escaped = st.escaped ∧ st'.exposed = st.exposed ∧
-      st'.exception = st.exception := by
+      st'.exception = st.exception ∧ st'.zeroSized = st.zeroSized := by
   unfold OpSem.State.writeFrame at hw
   rw [writeEscaped_private hp] at hw
   simp only [bind, Except.bind, pure, Except.pure, Except.ok.injEq] at hw
   subst hw
   have hlen := hx.length
   have hfp : ∀ o, fpAddr x' o = fpAddr x o := fun o => by simp [fpAddr, hrbp]
-  refine ⟨⟨fun o ho1 ho2 b hb => ?_, fun e he a ha => ?_⟩, rfl, rfl, rfl, rfl⟩
+  refine ⟨⟨fun o ho1 ho2 b hb => ?_, fun e he a ha => ?_, fun p hp' => ?_⟩, rfl, rfl, rfl, rfl, rfl⟩
   · rw [hfp]
     rw [byteAt_with] at hb
     by_cases hin' : d ≤ o ∧ o < d + bs.length
@@ -355,5 +357,6 @@ theorem rel_writeFrame {st st' : OpSem.State} {x x' : X86.State} {d : Int} {bs :
         simp [OpSem.State.privateIn, hin', OpSem.State.byteAt, hf]
       | some e => simp
   · rw [hfp]; exact hr.layout e he a ha
+  · rw [hfp]; exact hr.zeroSized p hp'
 
 end Ryo.Proofs.Inline

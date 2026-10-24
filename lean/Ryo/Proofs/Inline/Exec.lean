@@ -86,7 +86,7 @@ theorem rel_store {st st' : OpSem.State} {x x' : X86.State} {d : Int} {bs : List
     (hdn : d + bs.length ≤ 2 ^ 63) (hx : BytesRel bs (leEncode bs.length V))
     (hrbp : x'.reg .rbp = x.reg .rbp) (hmem : x'.mem = x.mem.write (fpAddr x d) bs.length V) :
     Rel st' x' ∧ st'.mem = st.mem ∧ st'.escaped = st.escaped ∧ st'.exposed = st.exposed ∧
-      st'.exception = st.exception := by
+      st'.exception = st.exception ∧ st'.zeroSized = st.zeroSized := by
   have hn : bs.length ≤ 2 ^ 64 := by omega
   refine rel_writeFrame hr hw hp hd hdn hx hrbp (fun i hi => ?_) (fun a ha => ?_)
   · rw [hmem]

@@ -7,14 +7,21 @@ it (`Final`), as in CompCertO's open semantics.
 **Layout.** This is `R(φ_AOT)`: a frame object at frame offset `off` lives at `fp + off`, with
 `fp` (the frame pointer, an address) part of the state. The object table of §C0.2 is not
 modeled: an `Escape` scope's range is taken as its object. A layout parametric in `φ` replaces
-`fp + off` in `escape` (the only place a frame address is made) by `φ(o) + (off - off_o)`;
-`opSem` is layout-independent already (frame addresses appear only through allocations).
+`fp + off` in `escape` and `entry` (the only places a frame address is made) by
+`φ(o) + (off - off_o)`; `opSem` is layout-independent already (frame addresses appear only
+through allocations and its state's zero-sized objects' addresses, which `entry` sets).
 
 **State** (`RState`): the instruction index `pc`, `fp`, `opSem`'s `State` (the private frame
-bytes by offset, the escaped objects as allocations of the memory, L0's memory, the exposed
+bytes by offset, the escaped objects as allocations of the memory, the zero-sized objects with
+their addresses `fp + off` (`Code.zeroSized`, set at entry), L0's memory, the exposed
 allocations, the exception register), and the incoming argument registers `arg` reads. What
 doesn't change (the `Decoded` code and side data, the mode, the placement `ρ` of the image's
-addressed things, and the facts about calls) is the `Code`.
+addressed things, the zero-sized frame objects, and the facts about calls) is the `Code`.
+
+**Addresses of frame objects** (`State.addrOf`, for `addr` and by-address arguments): inside an
+escaped object, or at its end (one past its last byte), a pointer with its provenance; at a
+zero-sized object (which never escapes: the encoder drops size-0 escapes), a pointer without
+provenance at `fp + off`, good only for zero-sized accesses; anything else is UB.
 
 **A step** at `pc`:
 
@@ -35,8 +42,8 @@ addressed things, and the facts about calls) is the `Code`.
      stored at `d`.
    - `call`/`call.sym`/`call.sym.ind`/`call.ptr` `d, f, k, a`: the argument registers built
      from the list `a` of (slot, register) pairs (by value: the slot's bytes at the register's
-     size, zero-extended to the register; by address, `ARG_ADDR`: a pointer to the slot, UB
-     unless it is escaped), the outgoing stack area `[fp - F, fp - F + n)` for the call's
+     size, zero-extended to the register; by address, `ARG_ADDR`: a pointer to the slot as
+     `addr` makes it), the outgoing stack area `[fp - F, fp - F + n)` for the call's
      stack size `n` (`Code.stackSize`), then the sret destination (the list's first entry, the
      first integer register by address) made `Uninit` for `Code.sretSize` bytes (reduced.md
      §C0.4), then the `Query`. The answer returns or unwinds: a return stores its registers'
@@ -193,6 +200,9 @@ structure Code where
   /-- Per island, its template (the diagnostic item name `Ryo.Vm.R.Islands` knows), from its
   symbol. -/
   islandTemplate : Nat → Option String := fun _ => none
+  /-- The function's zero-sized frame objects, by offset (the certificate's locals of size 0):
+  `entry` puts them in the state at `fp + off`. -/
+  zeroSized : List Int := []
 
 instance : Inhabited Code := ⟨{ d := default, mode := default, ρ := fun _ => none }⟩
 
@@ -300,7 +310,8 @@ def zext (bs : List AbstractByte) (n : Nat) : List AbstractByte :=
 
 /-- The argument registers a call's list `ws` of (slot, register word) pairs builds: by value,
 the slot's bytes at the register's size; by address (`ARG_ADDR`, an integer register of 8
-bytes), a pointer to the slot, which must be escaped (`addrOf`). -/
+bytes), a pointer to the slot as `addr` makes it (`addrOf`: in or at the end of an escaped
+object, or a zero-sized object). -/
 def argRegs (st : OpSem.State) : List (BitVec 32) → M Regs
   | [] => pure {}
   | [_] => illFormed "an argument list of odd length"
@@ -433,10 +444,12 @@ def answer (c : Code) (s : RState) (a : Answer) : M Out := do
     | .ret _ => pure (.step { s with pc := s.pc + 1 })
   | _, _ => illFormed s!"no call at {s.pc}"
 
-/-- The state at entry: `fp`, the argument registers, the stack arguments at `fp + 16`, the
-world; every other frame byte `Uninit`. -/
-def entry (fp : Nat) (args : Regs) (stack : List AbstractByte) (w : World) : M RState := do
-  let st : OpSem.State := { mem := w.mem, exposed := w.exposed }
+/-- The state of function `c` at entry: `fp`, the argument registers, the stack arguments at
+`fp + 16`, the world, `c`'s zero-sized objects at `fp + off` (`frameAddr`: one below address 0
+is `illFormed`, as an escape there is); every other frame byte `Uninit`. -/
+def entry (c : Code) (fp : Nat) (args : Regs) (stack : List AbstractByte) (w : World) : M RState := do
+  let zeroSized ← c.zeroSized.mapM fun o => do pure (o, ← frameAddr fp o)
+  let st : OpSem.State := { mem := w.mem, exposed := w.exposed, zeroSized }
   pure ⟨0, fp, ← st.writeFrame 16 stack, args⟩
 
 end Ryo.Vm.R

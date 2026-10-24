@@ -128,7 +128,7 @@ theorem opSem_frame_writes {op : Full.Opcode} {ops : Operands} {st st' : State} 
 /-- Two states that differ at most in their private frame bytes. -/
 def State.SameButFrame (s1 s2 : State) : Prop :=
   s1.escaped = s2.escaped ∧ s1.mem = s2.mem ∧ s1.exposed = s2.exposed ∧
-    s1.exception = s2.exception
+    s1.exception = s2.exception ∧ s1.zeroSized = s2.zeroSized
 
 /-- Two outcomes that both fail the same way, or both succeed with related values. -/
 def ResultRel {α β : Type} (P : α → β → Prop) : M α → M β → Prop
@@ -186,7 +186,7 @@ def FrameRel (f1 f2 : Int → AbstractByte) (s1 s2 : State) : Prop :=
 theorem writeFrame_rel {f1 f2 : Int → AbstractByte} {s1 s2 : State} {off : Int}
     {bs : List AbstractByte} (hr : FrameRel f1 f2 s1 s2) :
     ResultRel (FrameRel f1 f2) (s1.writeFrame off bs) (s2.writeFrame off bs) := by
-  obtain ⟨⟨he, hm, hx, hc⟩, hfr⟩ := hr
+  obtain ⟨⟨he, hm, hx, hc, hz⟩, hfr⟩ := hr
   have hesc : s1.writeEscaped off bs = s2.writeEscaped off bs := by
     simp only [State.writeEscaped, State.escapedAt, he, hm]
   unfold State.writeFrame
@@ -195,7 +195,7 @@ theorem writeFrame_rel {f1 f2 : Int → AbstractByte} {s1 s2 : State} {off : Int
   | error e => simp [bind, Except.bind, ResultRel]
   | ok mem =>
     simp only [bind, Except.bind, pure, Except.pure, ResultRel]
-    refine ⟨⟨he, rfl, hx, hc⟩, fun o => ?_⟩
+    refine ⟨⟨he, rfl, hx, hc, hz⟩, fun o => ?_⟩
     simp only
     have hp : s1.privateIn off bs.length o = s2.privateIn off bs.length o := by
       simp only [State.privateIn, State.escapedAt, he]
@@ -259,7 +259,7 @@ theorem opSem_reads_footprint {op : Full.Opcode} {ops : Operands} {st1 st2 : Sta
     | ok reads =>
       simp only
       have henv : mkEnv reads (opndVal op.info ops) st1 ch = mkEnv reads (opndVal op.info ops) st2 ch := by
-        obtain ⟨he, hm, hx, hc⟩ := hs
+        obtain ⟨he, hm, hx, hc, hz⟩ := hs
         cases st1; cases st2
         simp_all [mkEnv]
       rw [henv]
@@ -268,8 +268,8 @@ theorem opSem_reads_footprint {op : Full.Opcode} {ops : Operands} {st1 st2 : Sta
       | ok o' =>
         simp only
         have h0 : FrameRel st1.frame st2.frame { st1 with mem := o'.mem } { st2 with mem := o'.mem } := by
-          obtain ⟨he, -, hx, hc⟩ := hs
-          exact ⟨⟨he, rfl, hx, hc⟩, fun o => Or.inr ⟨rfl, rfl⟩⟩
+          obtain ⟨he, -, hx, hc, hz⟩ := hs
+          exact ⟨⟨he, rfl, hx, hc, hz⟩, fun o => Or.inr ⟨rfl, rfl⟩⟩
         have h1 := commit_rel o'.writes _ _ h0 (fp := fp) (val := opndVal op.info ops)
         revert h1
         cases commit fp (opndVal op.info ops) { st1 with mem := o'.mem } o'.writes <;>

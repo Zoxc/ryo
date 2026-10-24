@@ -52,7 +52,8 @@
                                            `<crate>.cert.json`) against each object's decoded
                                            code and the dump (`Ryo/Check/Lower/CertCheck.lean`):
                                            a `cert-check` line (functions, certificates, calls
-                                           and how their plans were verified, islands), a
+                                           and how their plans were verified, islands, the
+                                           escape coverage of the addresses taken), a
                                            `dead-check` line (the dead-store check with the
                                            certificate's facts) and the errors; then a
                                            `cert-map` line (certificates without a function);
@@ -66,8 +67,12 @@
   ryo-lean opsem                           `opSem` on JSON lines on stdin, a result per line
                                            on stdout (`Ryo/Vm/OpSem/Json.lean`), for the
                                            differential test against the handlers
-  ryo-lean rrun <image object> <fn> [<int>...] [--fuel N] [--unwind <text>]
-                                           run an image function as R (`Ryo.Vm.R.cli`)
+  ryo-lean rrun <image object> <fn>|--all [<int>...] [--fuel N] [--unwind <text>] [--cert <cert.json>]
+                                           run an image function as R (`Ryo.Vm.R.cli`); with
+                                           `--cert`, each function's zero-sized frame objects
+                                           are its certificate's locals of size 0 (`addr` of
+                                           one is a pointer without provenance; without the
+                                           certificate it is UB)
 -/
 import Ryo
 import Ryo.Examples
@@ -239,6 +244,20 @@ def lsdaObj (path : String) : IO UInt32 := do
     IO.println s!"error: {e}"
     pure 1
 
+/-- `ryo-lean rrun`, with `--cert <cert.json>` read here (`Ryo.Vm.R` doesn't import the
+certificate): per function symbol, the offsets of its certificate's locals of size 0 as
+`Code.zeroSized` (the first certificate of a symbol, as `check-cert` takes it). -/
+def rrun (args : List String) : IO UInt32 := do
+  match args.idxOf? "--cert" with
+  | none => Ryo.Vm.R.cli args
+  | some i =>
+    let some path := args[i + 1]? | IO.eprintln "--cert needs a certificate file"; return 2
+    let cert ← IO.ofExcept (Ryo.Check.Lower.Cert.ofJsonString (← IO.FS.readFile path))
+    let zs : Std.HashMap String (List Int) := cert.functions.foldl (init := {}) fun m (sym, fc) =>
+      if m.contains sym then m
+      else m.insert sym ((fc.locals.filter (·.size == 0)).toList.map (·.off))
+    Ryo.Vm.R.cli (args.take i ++ args.drop (i + 2)) (fun sym => zs.getD sym [])
+
 def main (args : List String) : IO UInt32 := do
   match args with
   | "check-image" :: rest => Ryo.Check.Image.cli rest
@@ -271,7 +290,7 @@ def main (args : List String) : IO UInt32 := do
       pure 2
   | ["exec-item"] => Ryo.X86.Cosim.main
   | ["opsem"] => Ryo.Vm.OpSem.Json.main
-  | "rrun" :: rest => Ryo.Vm.R.cli rest
+  | "rrun" :: rest => rrun rest
   | _ =>
-    IO.eprintln "usage: ryo-lean run <program.json> [--fuel N] [--stdout]\n       ryo-lean example <name> [out.json]\n       ryo-lean obj <file.o>\n       ryo-lean elf <file.o>\n       ryo-lean decode <inputs.json | file.o>\n       ryo-lean dead <file.o> [<dump.json> <cert.json>]\n       ryo-lean ehframe|lsda <file.o>\n       ryo-lean check-pool <dump.json> <file.o>... [-v]\n       ryo-lean check-cert <dump.json> <cert.json> <image.o>... [-v]\n       ryo-lean check-image <image.o>... [--registry <registry.o>]\n       ryo-lean opsem"
+    IO.eprintln "usage: ryo-lean run <program.json> [--fuel N] [--stdout]\n       ryo-lean example <name> [out.json]\n       ryo-lean obj <file.o>\n       ryo-lean elf <file.o>\n       ryo-lean decode <inputs.json | file.o>\n       ryo-lean dead <file.o> [<dump.json> <cert.json>]\n       ryo-lean ehframe|lsda <file.o>\n       ryo-lean check-pool <dump.json> <file.o>... [-v]\n       ryo-lean check-cert <dump.json> <cert.json> <image.o>... [-v]\n       ryo-lean check-image <image.o>... [--registry <registry.o>]\n       ryo-lean opsem\n       ryo-lean rrun <image.o> <fn>|--all [<int>...] [--fuel N] [--unwind <text>] [--cert <cert.json>]"
     pure 2
