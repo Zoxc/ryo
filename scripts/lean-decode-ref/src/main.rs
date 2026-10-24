@@ -4,6 +4,7 @@
 //! ```text
 //! lean-decode-ref summary <image object>   the image summary, as `ryo-lean obj` prints it
 //! lean-decode-ref decode <image object>    each VM function decoded to the reduced set
+//! lean-decode-ref lsda <image object>      each VM function's FDE and LSDA call sites
 //! ```
 //!
 //! The object is read with the `object` crate (an ELF reader independent of the Lean one). The
@@ -31,12 +32,19 @@
 //! or `  error: <what> at <byte>` when the code isn't canonical, `  error: malformed dropped
 //! store` when the image's dropped-store entry isn't one. A file that isn't an image object
 //! prints one `error: ...` line and exits with 1.
+//!
+//! `lsda` prints what `ryo-lean lsda` does (`Ryo.Obj.ImageObject.lsdaLines`), found another
+//! way: not by parsing the CIE and FDEs' augmentation, but by walking `.eh_frame`'s entries by
+//! their lengths and taking each FDE's relocations, the one at its `pc_begin` (8 bytes in)
+//! against the text, and the other against the LSDA section; the call sites are
+//! `asm::lsda::parse` of the bytes up to the next LSDA (or the section's end), compared with
+//! the image's table (`CallSite::from(&CallSiteEntry)`).
 
 use std::process::ExitCode;
 
 use object::read::elf::ElfFile64;
 use object::{LittleEndian, Object, ObjectSection, ObjectSymbol, RelocationFlags, RelocationTarget, SectionIndex, SymbolKind, SymbolSection, elf};
-use ryo_bytecode::asm::{Ref, Resolver, ScopeKind};
+use ryo_bytecode::asm::{CallSite, Ref, Resolver, ScopeKind, lsda};
 use ryo_bytecode::full::Opcode;
 use ryo_bytecode::image::{CATCH, CONTINUE, Header, Image, ImageResolver};
 use ryo_bytecode::{ALL_OPCODES, reduced};
@@ -423,6 +431,79 @@ impl<'d> Linked<'d> {
     }
 }
 
+impl Linked<'_> {
+    /// The section and offset a relocation points at (`S + A`), if the symbol is defined.
+    fn target(&self, r: &Rel) -> Option<(SectionIndex, i64)> {
+        let s = self.file.symbol_by_index(r.sym).ok()?;
+        Some((s.section_index()?, s.address() as i64 + r.addend))
+    }
+
+    fn lsda(&self, out: &mut Vec<String>) -> Result<(), String> {
+        let img = self.image()?;
+        let eh = self.file.section_by_name(".eh_frame").ok_or("no .eh_frame section")?;
+        let data = eh.data().map_err(|e| e.to_string())?;
+        let rels = relocs(&self.file, eh.index())?;
+        let u32_at = |at: usize| data.get(at..at + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()));
+        // Per FDE: its offset, first address, range and LSDA.
+        let mut fdes = Vec::new();
+        let mut off = 0;
+        while let Some(len) = u32_at(off) {
+            if len == 0 {
+                break;
+            }
+            let end = off + 4 + len as usize;
+            if u32_at(off + 4).ok_or("truncated entry")? != 0 {
+                let pc = rels.iter().find(|r| r.offset == off as u64 + 8).and_then(|r| self.target(r));
+                let range = u32_at(off + 12).ok_or("truncated FDE")?;
+                let lsda = rels
+                    .iter()
+                    .filter(|r| r.offset > off as u64 + 8 && r.offset < end as u64)
+                    .find_map(|r| self.target(r).filter(|t| t.0 != self.text));
+                fdes.push((off, pc, range, lsda));
+            }
+            off = end;
+        }
+        out.push(format!("fdes {} functions {}", fdes.len(), img.functions().len()));
+        for (i, f) in img.functions().iter().enumerate() {
+            let name = self.func_name(f.code_off);
+            let start = Some((self.text, (self.text_base + f.code_off as u64) as i64));
+            let found: Vec<_> = fdes.iter().filter(|d| d.1 == start).collect();
+            let &&(fde, _, range, lsda_ptr) = match &found[..] {
+                [d] => d,
+                [] => {
+                    out.push(format!("func {i} {name} error: no FDE starts at the function"));
+                    continue;
+                }
+                ds => {
+                    out.push(format!("func {i} {name} error: {} FDEs start at the function", ds.len()));
+                    continue;
+                }
+            };
+            let Some((sec, at)) = lsda_ptr else {
+                out.push(format!("func {i} {name} error: the FDE has no LSDA pointer"));
+                continue;
+            };
+            let s = self.file.section_by_index(sec).map_err(|e| e.to_string())?;
+            let bytes = s.data().map_err(|e| e.to_string())?;
+            let next = fdes.iter().filter_map(|d| d.3).filter(|t| t.0 == sec && t.1 > at).map(|t| t.1 as usize).min().unwrap_or(bytes.len());
+            let l = &bytes[at as usize..next];
+            out.push(format!("func {i} {name} fde {fde} range {range} len {} lsda {} {at} {}", f.code_len, s.name().unwrap_or("?"), l.len()));
+            match lsda::parse(l) {
+                None => out.push("  lsda error".into()),
+                Some(sites) => {
+                    for c in &sites {
+                        let pad = c.pad.map_or("none".into(), |p| p.to_string());
+                        out.push(format!("  site {} {} pad {pad}{}", c.start, c.len, if c.catch { " catch" } else { "" }));
+                    }
+                    let image: Vec<CallSite> = img.call_sites(i as u32).iter().map(CallSite::from).collect();
+                    out.push(if sites == image { "  image equal" } else { "  image differs" }.into());
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 fn bytes_mut(buf: &mut [u64]) -> &mut [u8] {
     // SAFETY: plain bytes of the `u64` buffer.
     unsafe { std::slice::from_raw_parts_mut(buf.as_mut_ptr().cast(), buf.len() * 8) }
@@ -431,9 +512,9 @@ fn bytes_mut(buf: &mut [u64]) -> &mut [u8] {
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let (cmd, path) = match &args[..] {
-        [c, p] if c == "summary" || c == "decode" => (c.as_str(), p),
+        [c, p] if c == "summary" || c == "decode" || c == "lsda" => (c.as_str(), p),
         _ => {
-            eprintln!("usage: lean-decode-ref summary|decode <image object>");
+            eprintln!("usage: lean-decode-ref summary|decode|lsda <image object>");
             return ExitCode::from(2);
         }
     };
@@ -447,6 +528,7 @@ fn main() -> ExitCode {
     let mut out = Vec::new();
     let r = Linked::new(&bytes).and_then(|mut l| match cmd {
         "summary" => l.summary(&mut out),
+        "lsda" => l.lsda(&mut out),
         _ => l.link_text().and_then(|()| l.decode(&mut out)),
     });
     let code = match r {

@@ -17,6 +17,11 @@
                                            it can't be read
   ryo-lean elf <file.o>                    print an ELF object's sections, symbols and
                                            relocations (`Ryo.Obj.Elf.dump`)
+  ryo-lean ehframe <file.o>                an object's `.eh_frame`: CIEs, FDEs and each one's
+                                           row table (`Ryo.Obj.EhFrame.dump`)
+  ryo-lean lsda <image object>             per function of the image its FDE and LSDA call
+                                           sites, and whether they are the image's call-site
+                                           table (`Ryo.Obj.ImageObject.lsdaLines`)
   ryo-lean exec-item                       run x86 items on states, JSON lines on stdin and
                                            stdout (`Ryo/X86/Cosim.lean`, x86.md §B.3)
   ryo-lean decode <inputs.json>            decode one function's machine code to R
@@ -149,6 +154,30 @@ def elfFile (path : String) : IO UInt32 := do
     IO.println s!"error: {e}"
     pure 1
 
+def ehframeFile (path : String) : IO UInt32 := do
+  let bytes ← IO.FS.readBinFile path
+  let r : Except String (Array String) := do
+    let e ← Ryo.Obj.readElf bytes
+    let (_, eh) ← Ryo.Obj.EhFrame.readEhFrame e
+    pure (Ryo.Obj.EhFrame.dump e eh)
+  match r with
+  | .ok ls =>
+    for l in ls do IO.println l
+    pure 0
+  | .error e =>
+    IO.println s!"error: {e}"
+    pure 1
+
+def lsdaObj (path : String) : IO UInt32 := do
+  match Ryo.Obj.readImageObject (← IO.FS.readBinFile path) with
+  | .ok o =>
+    let ls := o.lsdaLines
+    for l in ls do IO.println l
+    pure (if ls.any (·.startsWith "error") then 1 else 0)
+  | .error e =>
+    IO.println s!"error: {e}"
+    pure 1
+
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["obj", path] => objFile path
@@ -156,6 +185,8 @@ def main (args : List String) : IO UInt32 := do
   | ["dead", path] => deadObj path
   | "check-pool" :: dump :: objs@(_ :: _) =>
     checkPool dump (objs.filter (· != "-v")) (objs.contains "-v")
+  | ["ehframe", path] => ehframeFile path
+  | ["lsda", path] => lsdaObj path
   | ["decode", path] => if path.endsWith ".json" then decodeFile path else decodeObj path
   | ["run", path] => runFile path 10000000
   | ["run", path, "--fuel", n] => runFile path n.toNat!
@@ -175,5 +206,5 @@ def main (args : List String) : IO UInt32 := do
       pure 2
   | ["exec-item"] => Ryo.X86.Cosim.main
   | _ =>
-    IO.eprintln "usage: ryo-lean run <program.json> [--fuel N] [--stdout]\n       ryo-lean example <name> [out.json]\n       ryo-lean obj <file.o>\n       ryo-lean elf <file.o>\n       ryo-lean decode <inputs.json | file.o>\n       ryo-lean dead <file.o>\n       ryo-lean check-pool <dump.json> <file.o>... [-v]"
+    IO.eprintln "usage: ryo-lean run <program.json> [--fuel N] [--stdout]\n       ryo-lean example <name> [out.json]\n       ryo-lean obj <file.o>\n       ryo-lean elf <file.o>\n       ryo-lean decode <inputs.json | file.o>\n       ryo-lean dead|ehframe|lsda <file.o>\n       ryo-lean check-pool <dump.json> <file.o>... [-v]"
     pure 2

@@ -185,11 +185,23 @@ to Aeneas-extract it ([jit.md](jit.md) §E.9).
   function's part. `scripts/lean-decode-diff.py` diffs the readers against
   `scripts/lean-decode-ref` (Rust: `object`, `Image`, `ImageResolver::decode` on the object
   linked in memory) and `readelf`.
-- **Unwind**: `.eh_frame` (CIE, FDEs, the CFA instruction subset ryo emits) and
-  `.gcc_except_table` (a port of `asm::lsda::parse`).
+- **Unwind** (`Ryo/Obj/EhFrame.lean`, `Lsda.lean`, `Unwind.lean`): `.eh_frame`'s CIEs
+  (version 1, `z` + `P`/`L`/`R`, pointers `pcrel|sdata4`, the personality also `indirect`) and
+  FDEs, with the CFA instructions ryo emits (`advance_loc*`, `def_cfa*`, `offset`, `restore`,
+  `nop`; anything else rejects) evaluated into row tables; pointer fields resolved through
+  their `R_X86_64_PC32` relocations to (section, offset). `.gcc_except_table`: `Lsda.parse`
+  and `write`, ports of `asm::lsda`'s with the same acceptance. Per image function, its FDE
+  (the one starting at its `code_off` in the text) and its LSDA (up to the next one), compared
+  with the image's call-site table. `ryo-lean ehframe` is diffed against `readelf
+  --debug-dump=frames` and `frames-interp` (header fields, augmentation data with the
+  relocated pointers, rows), and `ryo-lean lsda` against `lean-decode-ref lsda` (Rust's
+  `lsda::parse`, the FDEs found by walking `.eh_frame`'s lengths and relocations), with
+  `scripts/lean-decode-diff.py --unwind` (`--frame-pointer` adds the frame-pointer mode); the
+  FDE row tables of `image::eh_fde` in both modes are unit-tested against the rules it
+  documents (`RyoTest/Unwind.lean`, vectors from `vm/bytecode/tests/lean_unwind_vectors.rs`).
 
 These are trusted only as far as "the parse matches the ELF/DWARF spec"; their outputs are
-compared against `readelf`/`llvm-dwarfdump` in tests.
+compared against `readelf` (and Rust's readers) in tests.
 
 ## C4. Image checks: the rest of the emitted object
 

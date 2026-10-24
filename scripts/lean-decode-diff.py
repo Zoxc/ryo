@@ -16,14 +16,22 @@ For each object it compares
     function decoded to the reduced set (Rust: `ImageResolver::decode`; Lean:
     `Ryo.Vm.decodeReduced` on `Ryo.Obj.funcInputs`, lean/Ryo/Vm/DecodeObj.lean);
   - with --readelf: `ryo-lean elf <obj>` with `readelf -W -S -s -r <obj>`: sections, symbols
-    and relocations.
+    and relocations;
+  - with --unwind: `ryo-lean ehframe <obj>` with `readelf -W --debug-dump=frames` and
+    `--debug-dump=frames-interp <obj>` (CIE and FDE fields, augmentation data with the
+    relocated pointers, and each FDE's row table), and `ryo-lean lsda <obj>` with
+    `lean-decode-ref lsda <obj>` (each function's FDE and LSDA, parsed by `asm::lsda::parse`,
+    and whether it is the image's call-site table).
 
-Usage: scripts/lean-decode-diff.py [names...] [--opt] [--no-sysroot] [--decode] [--readelf]
+Usage: scripts/lean-decode-diff.py [names...] [--opt] [--frame-pointer] [--no-sysroot]
+                                   [--decode] [--readelf] [--unwind]
                                    [--keep DIR] [--ryo-lean PATH] [-j N]
 
     names         programs (file stems, e.g. `ints`, `fib`) or sysroot crates (`std`); default:
                   all
     --opt         also build the programs with -Copt-level=3
+    --frame-pointer
+                  also build them with -Cforce-frame-pointers=yes (the frame-pointer mode)
     --keep DIR    keep the objects and outputs in DIR (default: a temporary directory)
 
 Exits nonzero if any comparison differs. Run `./y.sh build` (with `--sysroot ryo` for the
@@ -172,6 +180,122 @@ def lean_elf_lines(text):
     return out
 
 
+# --- .eh_frame ------------------------------------------------------------------------------
+
+# DWARF register numbers of x86-64 by readelf's names; `ra` is the return address column.
+DWARF_REGS = {n: i for i, n in enumerate(["rax", "rdx", "rcx", "rbx", "rsi", "rdi", "rbp", "rsp"] + [f"r{i}" for i in range(8, 16)] + ["rip"])}
+ENTRY = re.compile(r"^([0-9a-f]{8}) ([0-9a-f]{16}) ([0-9a-f]{8}) (CIE|FDE)(.*)$")
+
+
+def readelf_unwind_lines(frames, interp):
+    """`readelf --debug-dump=frames` and `frames-interp` in the common form of `lean_unwind_lines`:
+
+        cie <off> len <length> version <v> aug <aug> cf <c> df <d> ra <r> augdata <hex bytes>
+          row 0 cfa r<reg>+<off> r<reg>=c<off>...
+        fde <off> len <length> cie <cie off> pc <start>..<end> augdata <hex bytes>
+          row <absolute loc> ...
+
+    (header fields and augmentation data from `frames`, rows from `frames-interp`; register
+    rules readelf shows as `u`, undefined, dropped)."""
+    heads, order = {}, []
+    cur = None
+    for line in frames.splitlines():
+        m = ENTRY.match(line)
+        if m:
+            off, length, _, kind, rest = m.groups()
+            cur = {"kind": kind, "off": int(off, 16), "len": int(length, 16), "augdata": ""}
+            if kind == "FDE":
+                f = re.search(r"cie=([0-9a-f]+) pc=([0-9a-f]+)\.\.([0-9a-f]+)", rest)
+                cur["cie"], cur["pc"] = int(f.group(1), 16), (int(f.group(2), 16), int(f.group(3), 16))
+            heads[cur["off"]] = cur
+            order.append(cur["off"])
+            continue
+        if cur is None:
+            continue
+        m = re.match(r"^\s+(Version|Augmentation|Code alignment factor|Data alignment factor|Return address column|Augmentation data):\s*(.*)$", line)
+        if m:
+            cur[m.group(1)] = m.group(2).strip().strip('"')
+    rows = {}
+    cur, cols = None, []
+    for line in interp.splitlines():
+        m = ENTRY.match(line)
+        if m:
+            cur = int(m.group(1), 16)
+            rows[cur] = []
+            continue
+        m = re.match(r"^\s+LOC\s+CFA\s*(.*)$", line)
+        if m:
+            cols = m.group(1).split()
+            continue
+        m = re.match(r"^([0-9a-f]{16}) (\S+)\s*(.*)$", line)
+        if m and cur is not None:
+            loc, cfa, cells = m.groups()
+            c = re.fullmatch(r"([a-z0-9]+)([+-]\d+)", cfa)
+            cfa = f"r{DWARF_REGS.get(c.group(1), c.group(1))}{'+' if int(c.group(2)) >= 0 else ''}{int(c.group(2))}" if c else cfa
+            regs = []
+            for name, cell in zip(cols, cells.split()):
+                if cell == "u":
+                    continue
+                r = heads[cur].get("Return address column", "16") if name == "ra" else DWARF_REGS.get(name, name)
+                regs.append((int(r), cell))
+            rows[cur].append(f"  row {int(loc, 16)} cfa {cfa}" + "".join(f" r{r}={v}" for r, v in sorted(regs)))
+    out = []
+    for off in order:
+        h = heads[off]
+        if h["kind"] == "CIE":
+            out.append(f"cie {off} len {h['len']} version {h.get('Version')} aug {h.get('Augmentation')} cf {h.get('Code alignment factor')} df {h.get('Data alignment factor')} ra {h.get('Return address column')} augdata {h['Augmentation data']}")
+        else:
+            out.append(f"fde {off} len {h['len']} cie {h['cie']} pc {h['pc'][0]}..{h['pc'][1]} augdata {h['Augmentation data']}")
+        out += rows.get(off, [])
+    return out
+
+
+def lean_unwind_lines(text):
+    """`ryo-lean ehframe`'s output in the common form (see `readelf_unwind_lines`): the pointer
+    fields as readelf shows them in an object whose sections are all at address 0 (the
+    relocation's `S + A`, and in the augmentation data `S + A - P`), rows at absolute
+    locations."""
+    def le32(v):
+        return " ".join(f"{b:02x}" for b in (v % 2**32).to_bytes(4, "little"))
+
+    def ptr(toks, i):
+        """(value, field position) of the pointer at toks[i:]: `<target> <off> @<pos>` or `none @<pos>`."""
+        if toks[i] == "none":
+            return None, int(toks[i + 1][1:]), i + 2
+        return int(toks[i + 1]), int(toks[i + 2][1:]), i + 3
+
+    out, base = [], 0
+    for line in text.splitlines():
+        toks = line.split()
+        if toks and toks[0] == "cie":
+            f = dict(zip(toks[2:14:2], toks[3:15:2]))
+            data = {}
+            i = toks.index("personality") if "personality" in toks else None
+            if i is not None:
+                v, pos, _ = ptr(toks, i + 2)
+                data["P"] = f"{int(toks[i + 1]):02x} " + le32((v or 0) - pos if v is not None else 0)
+            if "lsda_enc" in toks:
+                data["L"] = f"{int(toks[toks.index('lsda_enc') + 1]):02x}"
+            data["R"] = f"{int(toks[toks.index('fde_enc') + 1]):02x}"
+            aug = " ".join(data[c] for c in f["aug"][1:])
+            out.append(f"cie {toks[1]} len {f['len']} version {f['version']} aug {f['aug']} cf {f['cf']} df {f['df']} ra {f['ra']} augdata {aug}")
+            base = 0
+        elif toks and toks[0] == "fde":
+            pc, _, j = ptr(toks, toks.index("pc") + 1)
+            rng = int(toks[j + 1])
+            aug = ""
+            if "lsda" in toks:
+                v, pos, _ = ptr(toks, toks.index("lsda") + 1)
+                aug = le32(v - pos if v is not None else 0)
+            base = pc or 0
+            out.append(f"fde {toks[1]} len {toks[3]} cie {toks[5]} pc {base}..{base + rng} augdata {aug}")
+        elif toks and toks[0] == "row":
+            out.append(f"  row {int(toks[1]) + base} " + " ".join(toks[2:]))
+        else:
+            out.append(line)
+    return out
+
+
 # --- comparisons -----------------------------------------------------------------------------
 
 
@@ -203,6 +327,26 @@ def check(obj, args, ref, work):
         _, le, _ = run([args.ryo_lean, "elf", str(obj)])
         _, re_, _ = run(["readelf", "-W", "-S", "-s", "-r", str(obj)])
         results["readelf"] = compare(lean_elf_lines(le.decode(errors="replace")), readelf_lines(re_.decode(errors="replace")), "ryo-lean elf", "readelf")
+    if args.unwind:
+        _, le, _ = run([args.ryo_lean, "ehframe", str(obj)])
+        _, fr, _ = run(["readelf", "-W", "--debug-dump=frames", str(obj)])
+        _, fi, _ = run(["readelf", "-W", "--debug-dump=frames-interp", str(obj)])
+        dec = lambda b: b.decode(errors="replace")
+        results["ehframe"] = compare(lean_unwind_lines(dec(le)), readelf_unwind_lines(dec(fr), dec(fi)), "ryo-lean ehframe", "readelf")
+        _, ll, _ = run([args.ryo_lean, "lsda", str(obj)])
+        _, rl, _ = run([str(ref), "lsda", str(obj)])
+        ll, rl = dec(ll).splitlines(), dec(rl).splitlines()
+        results["lsda"] = compare(ll, rl, "ryo-lean lsda", "lean-decode-ref lsda")
+        # Both readers agreeing isn't enough: every function needs an LSDA equal to its image
+        # call-site table, and an FDE covering exactly its code.
+        def wrong(l):
+            m = re.search(r" range (\d+) len (\d+) ", l)
+            return l.strip() in ("image differs", "lsda error") or " error: " in l or (m and m.group(1) != m.group(2))
+        if results["lsda"] is None and any(wrong(l) for l in ll):
+            results["lsda"] = [l for l in ll if wrong(l)][:12]
+        if args.keep:
+            (obj.parent / (obj.name + ".ehframe.txt")).write_text(dec(le))
+            (obj.parent / (obj.name + ".lsda.txt")).write_text("\n".join(ll) + "\n")
     return funcs, results
 
 
@@ -214,6 +358,8 @@ def main():
     ap.add_argument("--no-sysroot", action="store_true", help="skip the ryo sysroot's objects")
     ap.add_argument("--decode", action="store_true", help="also compare the per-function decode (ryo-lean decode)")
     ap.add_argument("--readelf", action="store_true", help="also compare ryo-lean elf with readelf")
+    ap.add_argument("--unwind", action="store_true", help="also compare ryo-lean ehframe with readelf and ryo-lean lsda with lean-decode-ref lsda")
+    ap.add_argument("--frame-pointer", action="store_true", help="also build the programs with -Cforce-frame-pointers=yes")
     ap.add_argument("--keep")
     ap.add_argument("-j", type=int, default=os.cpu_count() or 4)
     args = ap.parse_args()
@@ -231,6 +377,8 @@ def main():
     work = Path(args.keep) if args.keep else Path(tempfile.mkdtemp(prefix="lean-decode-diff-"))
     work.mkdir(parents=True, exist_ok=True)
     variants = [("", [])] + ([("-O3", ["-Copt-level=3"])] if args.opt else [])
+    if args.frame_pointer:
+        variants += [(v + "-fp", f + ["-Cforce-frame-pointers=yes"]) for v, f in variants]
     objs, skipped = [], []
     with concurrent.futures.ThreadPoolExecutor(args.j) as pool:
         jobs = {}
