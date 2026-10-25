@@ -245,12 +245,14 @@ follows the decoder's structure:
   ones included, and uses no `bv_decide` or `native_decide`. The
   rip-relative addresses `addrConst`, `addrSym`, `addrSymInd` are `inline_sound_rip`
   (`Inline/Rip.lean`), given `Globals` (where constants, data and symbol slots are linked).
-  Left: writes into escaped objects (`writeEscaped`), and `ovf` and `mulOvf`. Their sequences
-  store the flag (`setcc cl; mov [o], cl`) before the result, while `opSem` commits the result
-  `d` then the flag `o`: the two differ when the flag byte lies in the result's range (e.g.
-  `d = o`), which nothing excludes, so `Sound` is false for them as stated. Their theorem needs
-  the two written ranges disjoint, a condition C1' must then check (or the backend could
-  store the result first). `bv_decide`'s proofs are axioms checked by compiled code
+  The overflow ops `add.ovf`, `sub.ovf`, `mul.ovf`
+  are `inline_sound_ovf` (`Inline/Ovf.lean`, `SoundD`), with two side conditions. Their
+  sequences store the flag (`setcc cl; mov [o], cl`) before the result, while `opSem` commits
+  the result `d` then the flag `o`, which differ when the ranges overlap (e.g. `d = o`):
+  `SoundD` assumes the write ranges disjoint (`RangesDisjoint`), which C1' must check (or the
+  backend could store the result first). And unsigned 64-bit `mul.ovf` (`mul`) also changes
+  `rdx` (`clobbers`, `PostC`; the register cache drops `rdx` after it). Left: writes into
+  escaped objects (`writeEscaped`). `bv_decide`'s proofs are axioms checked by compiled code
   ([assumptions.md](assumptions.md) §1.4).
 - **Register cache**: invariant `CacheInv c regs mem fp`: for each `(r, slot, width) ∈ c`,
   `regs r = zext (mem[fp+slot, width])`. The decoder runs the same cache (as the Rust one

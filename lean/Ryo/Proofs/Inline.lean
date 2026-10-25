@@ -27,12 +27,19 @@ Classes: `mov`, `mov128`, `imm`, `addr`, `ptrAdd`, `ptrIndex`, `bin`, `binImm`, 
 addresses `addrConst`, `addrSym`, `addrSymInd` (`inline_sound_rip`, `SoundG`: `Sound` given
 `Globals`, where the constants, data and symbol slots are linked and that out-of-frame loads
 read the x86 bytes; `Ryo/Proofs/Inline/Rip.lean`). Not yet: `load`, `store` (memory through a
-pointer; see aot.md §C2), and `ovf`, `mulOvf`: `opSem` writes the result `d`, then the flag
-`o`, but the sequence stores the flag first, so where the flag byte lies inside `d`'s range
-they disagree (`opSem` leaves the flag there, x86 the result's byte); `Sound` as stated is
-false for them without a hypothesis that the two written ranges are disjoint.
+pointer; see aot.md §C2).
+
+The overflow ops `ovf` (`add.ovf`/`sub.ovf`) and `mulOvf` hold in a weaker form,
+`inline_sound_ovf` (`SoundD`, `Ryo/Proofs/Inline/Ovf.lean`), under two side conditions:
+- the written ranges (`wranges`: the result `d`, the flag byte `o`) are pairwise disjoint
+  (`RangesDisjoint`): `opSem` writes `d`, then `o`, but the sequence stores the flag first, so
+  where the flag byte lies inside `d`'s range they disagree (`opSem` leaves the flag there, x86
+  the result's byte);
+- unsigned 64-bit `mul.ovf` (`mul`, `rdx:rax`) also changes `rdx` (`clobbers`), as the register
+  cache knows (`Cache.update` drops `rdx`'s entry after a `mul`).
+`Sound c → SoundD c` (`Sound.soundD`) carries the other classes over (`inline_soundD`).
 -/
-import Ryo.Proofs.Inline.Ext
+import Ryo.Proofs.Inline.Ovf
 import Ryo.Proofs.Inline.Mem
 import Ryo.Proofs.Inline.Rip
 
@@ -43,8 +50,8 @@ namespace Ryo.Proofs.Inline
 open Ryo.Vm.Asm
 
 /-- The inline classes the theorems cover: all but `load` and `store`, whose memory operand
-goes through a pointer, the overflow ops (their two writes are in the other order than
-`opSem`'s; see the module comment), and the rip-relative addresses (`inline_sound_rip`: they
+goes through a pointer, the overflow ops (`inline_sound_ovf`: their two writes are in the other
+order than `opSem`'s; see the module comment), and the rip-relative addresses (`inline_sound_rip`: they
 need `Globals`). -/
 def frameOnly : Class → Bool
   | .load _ | .store _ | .ovf .. | .mulOvf .. | .addrConst | .addrSym | .addrSymInd => false
@@ -94,5 +101,26 @@ theorem inline_sound_rip (c : Class) (hc : ripAddr c = true) : SoundG c := by
 /-- Both together: every class but `load`, `store`, `ovf` and `mulOvf`, given `Globals`. -/
 theorem inline_soundG (c : Class) (hc : frameOnly c = true ∨ ripAddr c = true) : SoundG c :=
   hc.elim (fun h => (inline_sound c h).soundG) (inline_sound_rip c)
+
+/-- The overflow classes: `add.ovf`/`sub.ovf` (the only `ovf` classes, `Class.ofName`) and
+`mul.ovf`. -/
+def ovfClass : Class → Bool
+  | .ovf .add .. | .ovf .sub .. | .mulOvf .. => true
+  | _ => false
+
+/-- Each overflow sequence implements `opSem`, given disjoint write ranges and with `rdx`
+clobbered by unsigned 64-bit `mul.ovf` (`SoundD`). -/
+theorem inline_sound_ovf (c : Class) (hc : ovfClass c = true) : SoundD c := by
+  cases c with
+  | ovf op sg w =>
+    cases op <;> simp [ovfClass] at hc
+    · exact sound_ovf .add (Or.inl rfl) sg w
+    · exact sound_ovf .sub (Or.inr rfl) sg w
+  | mulOvf sg w => exact sound_mulOvf sg w
+  | _ => simp [ovfClass] at hc
+
+/-- `SoundD` for every class but `load`, `store` and the rip-relative addresses. -/
+theorem inline_soundD (c : Class) (hc : frameOnly c = true ∨ ovfClass c = true) : SoundD c :=
+  hc.elim (fun h => (inline_sound c h).soundD) (inline_sound_ovf c)
 
 end Ryo.Proofs.Inline

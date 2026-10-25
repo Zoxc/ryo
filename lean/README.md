@@ -140,7 +140,7 @@ Ryo/Vm/OpSem/                      `opSem` (reduced.md Part D): Basic (operands,
                                    (integer and float operations), Sem (per handler kind),
                                    Lemmas (frame accesses only through the footprint), Json
                                    (`ryo-lean opsem`)
-Ryo/Proofs/Inline.lean, Inline/    inline sequences against `opSem` (aot.md §C2): Rel, OpSem, Exec, Shape, Basic, Move/Arith/Cmp/Ext
+Ryo/Proofs/Inline.lean, Inline/    inline sequences against `opSem` (aot.md §C2): Rel, OpSem, Exec, Shape, Basic, Move/Arith/Cmp/Ext/Ovf
 RyoProofs.lean, RyoProofs/         library RyoProofs, outside the default build (slow):
                                    InlineOps (`inlineOps_shape`: every inline opcode is of its
                                    class's shape)
