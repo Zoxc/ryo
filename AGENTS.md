@@ -15,6 +15,9 @@
   when a change affects what the Lean model or proofs describe, add an entry to
   `lean/PENDING.md` saying what changed (with the commit), for a later Lean session to apply.
   That session removes the entries it handles.
+- No compatibility concerns. The backend, VM and JIT are built and linked together, so image
+  formats, opcodes and ABIs between them can change freely: no versioning, migration or
+  backward compatibility needed.
 - Lean effort. When delegating Lean work to subagents, use medium effort for writing specs
   and low effort for proofs.
 
