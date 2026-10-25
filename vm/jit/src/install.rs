@@ -39,6 +39,40 @@ unsafe extern "C" {
     fn write(fd: c_int, buf: *const c_void, n: usize) -> isize;
     /// libgcc's: registers an `.eh_frame` (terminated by a zero word) with the unwinder.
     fn __register_frame(begin: *const u8);
+    fn atexit(f: extern "C" fn()) -> c_int;
+}
+
+/// Whether `__register_frame` may still be called: false once the process is exiting.
+/// libgcc's frame registry is a b-tree that a destructor of libgcc (`release_registered_frames`,
+/// run by `exit` after the `atexit` handlers) frees without taking its locks, so a
+/// registration still running on this thread then corrupts the heap or faults in
+/// `btree_destroy`. The lock is held across each registration and by the `atexit` handler
+/// [`close_frame_registry`] that ends them, so the registry is idle when it's torn down.
+static FRAMES_OPEN: std::sync::Mutex<bool> = std::sync::Mutex::new(true);
+
+/// Arranges for [`close_frame_registry`] to run at exit, before libgcc's teardown: `atexit`
+/// handlers registered after startup run before the shared objects' destructors.
+pub(crate) fn close_frame_registry_at_exit() {
+    // SAFETY: a plain function with no arguments.
+    unsafe { atexit(close_frame_registry) };
+}
+
+/// Ends JIT unwind registrations: waits for the one in progress, if any.
+extern "C" fn close_frame_registry() {
+    *FRAMES_OPEN.lock().unwrap_or_else(|e| e.into_inner()) = false;
+}
+
+/// Registers the `.eh_frame` at `eh` with the unwinder, unless the process is exiting.
+///
+/// # Safety
+/// `eh` is a complete `.eh_frame`, terminated by a zero word, that lives forever.
+unsafe fn register_frame(eh: *const u8) -> bool {
+    let open = FRAMES_OPEN.lock().unwrap_or_else(|e| e.into_inner());
+    if *open {
+        // SAFETY: as the caller promises; the registry isn't being torn down while `open`.
+        unsafe { __register_frame(eh) };
+    }
+    *open
 }
 
 // The record's fields the JIT shares with the trips and the counter checks, which read and
@@ -896,7 +930,11 @@ impl Jit {
             if !vmem::make_executable(base as *mut u8, size) {
                 return Err("make_executable");
             }
-            __register_frame(eh_base as *const u8);
+            // Unregistered, the code must not run: nothing could unwind through it. At exit
+            // it isn't needed.
+            if !register_frame(eh_base as *const u8) {
+                return Err("exiting");
+            }
         }
         if let Some(m) = &mut self.perfmap {
             let aot = h.text as usize + fs[func as usize].code_off as usize;
@@ -1018,4 +1056,15 @@ impl Jit {
 pub(crate) fn log_line(line: &str) {
     // SAFETY: a write of a live buffer.
     unsafe { write(2, line.as_ptr().cast(), line.len()) };
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn no_frame_registration_once_exiting() {
+        super::close_frame_registry();
+        // Not a valid `.eh_frame`: once closed, it must not reach libgcc.
+        assert!(!unsafe { super::register_frame(core::ptr::dangling()) });
+        *super::FRAMES_OPEN.lock().unwrap() = true;
+    }
 }
