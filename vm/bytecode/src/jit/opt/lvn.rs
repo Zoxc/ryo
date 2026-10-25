@@ -96,12 +96,25 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
         ValueDef::Const(c) => Some(c),
         _ => None,
     };
+    // The instruction defining `v`, its only result.
     let def_inst = |f: &Func, v: Value| match f.def(v) {
-        ValueDef::Inst(d, 0) => Some((f.insts[d.idx()].op.clone(), f.insts[d.idx()].args.clone())),
+        ValueDef::Inst(d, 0) => Some(d),
         _ => None,
     };
+    // The first two operands (the others take no more; a missing one is never read).
+    let args = {
+        let a = &f.insts[i.idx()].args;
+        [a.first().copied().unwrap_or(Value(u32::MAX)), a.get(1).copied().unwrap_or(Value(u32::MAX))]
+    };
+    if let Op::HCall(h) = &f.insts[i.idx()].op {
+        // `bit_count` checks there is exactly one operand.
+        return match bit_count(f, i, h).and_then(|g| Some(g(konst(f, args[0])?))) {
+            Some(c) => Simp::Const(c as u64),
+            None => Simp::Keep,
+        };
+    }
+    // Not a handler call: cloning it allocates nothing.
     let op = f.insts[i.idx()].op.clone();
-    let args = f.insts[i.idx()].args.clone();
     match op {
         Op::Bin(o, w) => {
             let (mut a, mut b) = (args[0], args[1]);
@@ -110,7 +123,7 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
             }
             if o.commutative() && konst(f, a).is_some() {
                 core::mem::swap(&mut a, &mut b);
-                f.insts[i.idx()].args = alloc::vec![a, b];
+                f.insts[i.idx()].args.swap(0, 1);
             }
             let all = mask(u64::MAX, w);
             match (o, konst(f, b).map(|c| mask(c, w))) {
@@ -140,7 +153,7 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
             }
             if konst(f, a).is_some() {
                 f.insts[i.idx()].op = Op::Cmp(cc.swap(), w);
-                f.insts[i.idx()].args = alloc::vec![b, a];
+                f.insts[i.idx()].args.swap(0, 1);
             }
             Simp::Keep
         }
@@ -161,16 +174,18 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
             if let Some(x) = konst(f, args[0]) {
                 return Simp::Const(x.wrapping_add(k as u64));
             }
-            match def_inst(f, args[0]) {
-                Some((Op::PtrAdd(j), pa)) => {
+            let d = def_inst(f, args[0]);
+            match d.map(|d| &f.insts[d.idx()].op) {
+                Some(&Op::PtrAdd(j)) => {
+                    let p = f.insts[d.unwrap().idx()].args[0];
                     let s = j.wrapping_add(k);
                     if s == 0 {
-                        return Simp::Value(pa[0]);
+                        return Simp::Value(p);
                     }
                     f.insts[i.idx()].op = Op::PtrAdd(s);
-                    f.insts[i.idx()].args = pa;
+                    f.insts[i.idx()].args[0] = p;
                 }
-                Some((Op::AllocaAddr(al, o), _)) => {
+                Some(&Op::AllocaAddr(al, o)) => {
                     let size = f.allocas[al.idx()].size as i64;
                     let n = o as i64 + k;
                     if (0..=size).contains(&n) {
@@ -195,10 +210,6 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
             }
             Simp::Keep
         }
-        Op::HCall(h) => match (bit_count(f, i, &h), args.first().and_then(|&a| konst(f, a))) {
-            (Some(g), Some(x)) => Simp::Const(g(x) as u64),
-            _ => Simp::Keep,
-        },
         _ => Simp::Keep,
     }
 }
@@ -276,17 +287,16 @@ pub fn lvn(f: &mut Func) {
             }
             let res = f.insts[i.idx()].res;
             let alias = |f: &mut Func, v: Value| f.values[res as usize].def = ValueDef::Alias(v);
-            let op = f.insts[i.idx()].op.clone();
+            let op = &f.insts[i.idx()].op;
+            let (bits, is_pure) = (matches!(op, Op::HCall(h) if bit_count(f, i, h).is_some()), op.pure());
             // A bit count of a constant folds; one of a run-time value stays a handler call.
-            if matches!(&op, Op::HCall(h) if bit_count(f, i, h).is_some())
-                && let Simp::Const(c) = simplify(f, i)
-            {
+            if bits && let Simp::Const(c) = simplify(f, i) {
                 let w = f.w(Value(res));
                 let c = f.konst(mask(c, w), w);
                 alias(f, c);
                 continue;
             }
-            if op.pure() {
+            if is_pure {
                 match simplify(f, i) {
                     Simp::Value(v) => {
                         alias(f, v);
@@ -316,8 +326,10 @@ pub fn lvn(f: &mut Func) {
                 continue;
             }
             super::fold::fold_addr(f, i);
-            let op = f.insts[i.idx()].op.clone();
-            let args = f.insts[i.idx()].args.clone();
+            let args = {
+                let a = &f.insts[i.idx()].args;
+                [a.first().copied().unwrap_or(Value(u32::MAX)), a.get(1).copied().unwrap_or(Value(u32::MAX))]
+            };
             let lookup = |f: &Func, mem: &[(Loc, u8, Value)], l: Loc, w: u8| {
                 mem.iter().rev().find(|e| e.0 == l && e.1 >= w).map(|e| e.2).filter(|&v| f.w(v) >= w)
             };
@@ -327,7 +339,7 @@ pub fn lvn(f: &mut Func) {
                 }
                 mem.push((l, w, v));
             };
-            match op {
+            match f.insts[i.idx()].op {
                 Op::ALoad(a, off, w) => {
                     if let Some(v) = lookup(f, &mem, Loc::A(a, off), w) {
                         alias(f, v);

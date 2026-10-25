@@ -13,28 +13,26 @@ use crate::jit::ir::*;
 pub fn fold(f: &mut Func) {
     fold_not(f);
     let uses = use_counts(f);
-    let def_op = |f: &Func, v: Value| -> Option<(Inst, Op, Vec<Value>)> {
-        match f.def(v) {
-            ValueDef::Inst(i, 0) => Some((i, f.insts[i.idx()].op.clone(), f.insts[i.idx()].args.clone())),
-            _ => None,
-        }
-    };
     for b in 0..f.blocks.len() {
         // Compare, then branch on it.
-        if let Term::Br { cond, t, f: e } = f.blocks[b].term.clone()
+        if let Term::Br { cond, .. } = f.blocks[b].term
             && uses[cond.idx()] == 1
-            && let Some((i, Op::Cmp(cc, w), args)) = def_op(f, cond)
+            && let ValueDef::Inst(i, 0) = f.def(cond)
+            && let Op::Cmp(cc, w) = f.insts[i.idx()].op
             && f.blocks[b].insts.last() == Some(&i)
+            && let Term::Br { t, f: e, .. } = core::mem::replace(&mut f.blocks[b].term, Term::None)
         {
             f.blocks[b].insts.pop();
+            let args = &f.insts[i.idx()].args;
             f.blocks[b].term = Term::BrCmp { cc, w, a: args[0], b: args[1], t, f: e };
         }
         // An overflow op, then a branch on its flag.
-        if let Term::Br { cond, t, f: e } = f.blocks[b].term.clone()
+        if let Term::Br { cond, .. } = f.blocks[b].term
             && uses[cond.idx()] == 1
             && let ValueDef::Inst(i, 1) = f.def(cond)
             && matches!(f.insts[i.idx()].op, Op::Ovf(..))
             && f.blocks[b].insts.last() == Some(&i)
+            && let Term::Br { t, f: e, .. } = core::mem::replace(&mut f.blocks[b].term, Term::None)
         {
             f.blocks[b].term = Term::BrOvf { t, f: e };
         }
@@ -63,10 +61,10 @@ pub(super) fn set_term(f: &mut Func, b: usize, t: Term) {
 fn fold_not(f: &mut Func) {
     let uses = use_counts(f);
     for b in 0..f.blocks.len() {
-        let Term::Br { cond, t, f: e } = f.blocks[b].term.clone() else { continue };
+        let Term::Br { cond, .. } = f.blocks[b].term else { continue };
         let ValueDef::Inst(i, 0) = f.def(cond) else { continue };
         let Op::Bin(BinOp::Xor, _) = f.insts[i.idx()].op else { continue };
-        let args = f.insts[i.idx()].args.clone();
+        let args = [f.insts[i.idx()].args[0], f.insts[i.idx()].args[1]];
         let (x, c) = match (f.def(args[0]), f.def(args[1])) {
             (_, ValueDef::Const(c)) => (args[0], c & 0xff),
             (ValueDef::Const(c), _) => (args[1], c & 0xff),
@@ -77,6 +75,7 @@ fn fold_not(f: &mut Func) {
             ValueDef::Inst(j, 1) => matches!(f.insts[j.idx()].op, Op::Ovf(..)),
             _ => false,
         };
+        let Term::Br { t, f: e, .. } = f.blocks[b].term.clone() else { unreachable!() };
         let t2 = if boolean && c == 1 {
             Term::Br { cond: x, t: e, f: t }
         } else {
@@ -97,19 +96,19 @@ fn fold_not(f: &mut Func) {
 fn fold_const_branches(f: &mut Func) {
     let mut changed = false;
     for b in 0..f.blocks.len() {
-        let e = match f.blocks[b].term.clone() {
-            Term::Br { cond, t, f: e } => match f.def(cond) {
+        let e = match &f.blocks[b].term {
+            Term::Br { cond, t, f: e } => match f.def(*cond) {
                 ValueDef::Const(c) => Some(if c & 0xff != 0 { t } else { e }),
                 ValueDef::Undef => Some(e),
                 _ => None,
             },
-            Term::BrCmp { cc, w, a, b: bb, t, f: e } => match (f.def(a), f.def(bb)) {
-                (ValueDef::Const(x), ValueDef::Const(y)) => Some(if cc.holds(w, x, y) { t } else { e }),
+            Term::BrCmp { cc, w, a, b: bb, t, f: e } => match (f.def(*a), f.def(*bb)) {
+                (ValueDef::Const(x), ValueDef::Const(y)) => Some(if cc.holds(*w, x, y) { t } else { e }),
                 _ => None,
             },
             _ => None,
         };
-        if let Some(e) = e {
+        if let Some(e) = e.cloned() {
             set_term(f, b, Term::Jmp(e));
             changed = true;
         }
@@ -122,14 +121,17 @@ fn fold_const_branches(f: &mut Func) {
 /// A load or store through an `AllocaAddr` of a memory alloca becomes an access of the
 /// alloca, and one through a `PtrAdd` takes its constant into its offset.
 pub fn fold_addr(f: &mut Func, i: Inst) {
-    let (op, args) = (f.insts[i.idx()].op.clone(), f.insts[i.idx()].args.clone());
-    let (Op::Load(w, off) | Op::Store(w, off)) = op else { return };
-    let ValueDef::Inst(d, 0) = f.def(args[0]) else { return };
+    let (load, w, off) = match f.insts[i.idx()].op {
+        Op::Load(w, off) => (true, w, off),
+        Op::Store(w, off) => (false, w, off),
+        _ => return,
+    };
+    let ValueDef::Inst(d, 0) = f.def(f.insts[i.idx()].args[0]) else { return };
     match f.insts[d.idx()].op {
         Op::AllocaAddr(a, k2) if f.allocas[a.idx()].kind != AllocaKind::Promoted => {
             let Some(o) = off.checked_add(k2) else { return };
             let id = &mut f.insts[i.idx()];
-            if matches!(op, Op::Load(..)) {
+            if load {
                 id.op = Op::ALoad(a, o, w);
                 id.args.clear();
             } else {
@@ -141,7 +143,7 @@ pub fn fold_addr(f: &mut Func, i: Inst) {
             let pa = f.insts[d.idx()].args[0];
             let id = &mut f.insts[i.idx()];
             id.args[0] = pa;
-            id.op = if matches!(op, Op::Load(..)) { Op::Load(w, off + c as i32) } else { Op::Store(w, off + c as i32) };
+            id.op = if load { Op::Load(w, off + c as i32) } else { Op::Store(w, off + c as i32) };
         }
         _ => {}
     }

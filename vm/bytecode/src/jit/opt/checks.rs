@@ -447,8 +447,9 @@ pub fn checks(f: &mut Func) {
 fn block(f: &mut Func, w: &mut Walk, b: Block) -> bool {
     for k in 0..f.blocks[b.idx()].insts.len() {
         let i = f.blocks[b.idx()].insts[k];
-        let (op, args) = (f.insts[i.idx()].op.clone(), f.insts[i.idx()].args.clone());
-        match op {
+        let args = &f.insts[i.idx()].args;
+        let args = [args.first().copied().unwrap_or(Value(u32::MAX)), args.get(1).copied().unwrap_or(Value(u32::MAX))];
+        match f.insts[i.idx()].op {
             Op::Ovf(o, signed, ow) if w.no_overflow(f, o, signed, ow, args[0], args[1]) => {
                 let flag = Value(f.insts[i.idx()].res + 1);
                 f.insts[i.idx()].op = Op::Bin(o, ow);
@@ -469,16 +470,16 @@ fn block(f: &mut Func, w: &mut Walk, b: Block) -> bool {
     f.blocks[b.idx()]
         .insts
         .retain(|&i| !(matches!(insts[i.idx()].op, Op::Cmp(..)) && matches!(values[insts[i.idx()].res as usize].def, ValueDef::Const(_))));
-    let to = match f.blocks[b.idx()].term.clone() {
+    let to = match &f.blocks[b.idx()].term {
         Term::BrOvf { f: e, .. } if !matches!(f.blocks[b.idx()].insts.last().map(|&i| &f.insts[i.idx()].op), Some(Op::Ovf(..))) => Some(e),
-        Term::BrCmp { cc, w: cw, a, b: bb, t, f: e } => w.decide(f, cc, cw, a, bb).map(|r| if r { t } else { e }),
-        Term::Br { cond, t, f: e } => match f.def(cond) {
+        Term::BrCmp { cc, w: cw, a, b: bb, t, f: e } => w.decide(f, *cc, *cw, *a, *bb).map(|r| if r { t } else { e }),
+        Term::Br { cond, t, f: e } => match f.def(*cond) {
             ValueDef::Const(c) => Some(if c & 0xff != 0 { t } else { e }),
             _ => None,
         },
         _ => None,
     };
-    match to {
+    match to.cloned() {
         Some(e) => {
             set_term(f, b.idx(), Term::Jmp(e));
             true
