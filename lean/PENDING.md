@@ -29,11 +29,11 @@ remove it once a Lean session has handled it.
 
 - Proofs to extend (left by the session that applied the entries above; no `sorry` was
   added, the theorems keep their scope):
-  - Niche discriminants (commit 844ffef, "Lower niche discriminants with plain ops, fuse them
-    into switches") lower to plain ops (`eq.imm`/`sub.imm`/`le.u.imm` and a blend), or are
-    fused into a `SwitchInt` testing the tag with `br.eq.imm` (`switch.dense` past 4 arms).
-    The cert check counts the fused `Discriminant` like a fused compare; nothing proves the
-    lowered decoding against `codegen_get_discr` (`Spec/Lang/Representation.lean`).
+  - Niche discriminants (commit 844ffef): the lowered plain-op decoding is proved against
+    `tagToVariant` (`Ryo/Proofs/NicheDiscr.lean`, `nicheDiscr_sound`, a model of
+    `FnCx::niche_discr`); the fused form (a `SwitchInt` testing the tag with `br.eq.imm`, or
+    `sub.imm` + `br.gt.u.imm` + `switch.dense` past 4 arms) is not proved, and nothing checks
+    the model against the emitted ops.
 
 - The SSA tier gains a check-elimination pass (`jit::opt::checks`, run after the folds): a
   dominator-tree walk with range and `a < b` facts from single-predecessor branch edges turns
