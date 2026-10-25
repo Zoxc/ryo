@@ -12619,14 +12619,17 @@ L17:
     mov     [rsp+180h],rax
     jmp     L20
 L18:
-    mov     dword ptr [rsp+2Ch],138Bh
-    lea     rdi,[rsp+560h]
-    mov     esi,0FFFFFCB4h
-    mov     edx,0FFFFFD44h
-    mov     ecx,0FFFFFACCh
-    call    ryo_h_RemUW32
-    lea     rax,[rsp+214h]
-    mov     [rsp+68h],rax
+    mov     eax,[rsp+2A4h]
+    mov     ecx,0D196E5F5h
+    imul    rax,rcx
+    shr     rax,2Ch
+    mov     [rsp+24h],eax
+    imul    edx,[rsp+24h],138Bh
+    mov     esi,[rsp+2A4h]
+    sub     esi,edx
+    mov     [rsp+214h],esi
+    lea     rdi,[rsp+214h]
+    mov     [rsp+68h],rdi
     lea     rdi,[rsp+1F0h]
     mov     rsi,[rsp+68h]
     call    fn31
@@ -12793,7 +12796,7 @@ L20:
     call    fn51
     add     rsp,568h
     ret
-    nop
+    nop     [rax+rax]
 L21:
     inc     qword ptr [jit_record.ctr_l]
     jns     L30

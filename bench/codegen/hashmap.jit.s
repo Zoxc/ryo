@@ -6473,9 +6473,11 @@ L3:
     jmp     L5
 L4:
     mov     rax,[rsp+640h]
-    mov     rcx,[rsp+648h]
+    mov     ecx,[rsp+648h]
+    mov     edx,[rsp+64Ch]
     mov     [rsp+1C8h],rax
-    mov     [rsp+1D0h],rcx
+    mov     [rsp+1D0h],ecx
+    mov     [rsp+1D4h],edx
     mov     rax,[rsp+650h]
     mov     [rsp+1D8h],rax
     mov     qword ptr [rsp+1C0h],0
@@ -6495,12 +6497,14 @@ L5:
     mov     rcx,[rsp+5C8h]
     mov     [rsp+1C0h],rax
     mov     [rsp+1C8h],rcx
-    mov     rax,[rsp+5D0h]
-    mov     ecx,[rsp+5D8h]
-    mov     edx,[rsp+5DCh]
-    mov     [rsp+1D0h],rax
-    mov     [rsp+1D8h],ecx
-    mov     [rsp+1DCh],edx
+    mov     eax,[rsp+5D0h]
+    mov     ecx,[rsp+5D4h]
+    mov     edx,[rsp+5D8h]
+    mov     esi,[rsp+5DCh]
+    mov     [rsp+1D0h],eax
+    mov     [rsp+1D4h],ecx
+    mov     [rsp+1D8h],edx
+    mov     [rsp+1DCh],esi
     lea     rax,[rsp+5E0h]
     lea     rcx,[rsp+1C0h]
     mov     rdi,rax
@@ -6601,9 +6605,11 @@ L15:
     mov     [rsp+1B8h],rax
     mov     [rsp+1C0h],rcx
     mov     rax,[rsp+4D0h]
-    mov     rcx,[rsp+4D8h]
+    mov     ecx,[rsp+4D8h]
+    mov     edx,[rsp+4DCh]
     mov     [rsp+1C8h],rax
-    mov     [rsp+1D0h],rcx
+    mov     [rsp+1D0h],ecx
+    mov     [rsp+1D4h],edx
     mov     rax,[rsp+4E0h]
     mov     [rsp+1D8h],rax
     lea     rax,[rsp+1B8h]
@@ -6635,13 +6641,18 @@ L18:
     je      L19
     lea     rbx,[rsp+488h]
     mov     dword ptr [rsp+1DCh],138Bh
-    mov     dword ptr [rsp+1DCh],138Bh
-    mov     [rsp],rcx
-    lea     rdi,[rsp+710h]
-    mov     esi,0FFFFFCB4h
-    mov     edx,0FFFFF8F0h
-    mov     ecx,0FFFFFACCh
-    call    ryo_h_RemUW32
+    mov     eax,ecx
+    mov     [rsp+1D8h],rax
+    mov     r10d,0D196E5F5h
+    imul    rax,r10
+    mov     [rsp+1D8h],rax
+    shr     rax,2Ch
+    mov     [rsp+1D8h],rax
+    mov     [rsp+1D4h],eax
+    imul    eax,138Bh
+    mov     [rsp+1D4h],eax
+    sub     ecx,eax
+    mov     [rsp+3C4h],ecx
     lea     rax,[rsp+3C4h]
     lea     rcx,[rsp+3A0h]
     mov     rdi,rcx
@@ -6677,9 +6688,11 @@ L20:
     mov     rdx,rcx
     call    qword ptr [fn34.slot]
     mov     rax,[rsp+3E8h]
-    mov     rcx,[rsp+3F0h]
+    mov     ecx,[rsp+3F0h]
+    mov     edx,[rsp+3F4h]
     mov     [rsp+1C8h],rax
-    mov     [rsp+1D0h],rcx
+    mov     [rsp+1D0h],ecx
+    mov     [rsp+1D4h],edx
     mov     rax,[rsp+3F8h]
     mov     [rsp+1D8h],rax
     lea     rax,[rsp+400h]
@@ -6688,9 +6701,11 @@ L20:
     mov     rsi,rcx
     call    qword ptr [fn35.slot]
     mov     rax,[rsp+400h]
-    mov     rcx,[rsp+408h]
+    mov     ecx,[rsp+408h]
+    mov     edx,[rsp+40Ch]
     mov     [rsp+1C8h],rax
-    mov     [rsp+1D0h],rcx
+    mov     [rsp+1D0h],ecx
+    mov     [rsp+1D4h],edx
     mov     rax,[rsp+410h]
     mov     [rsp+1D8h],rax
     lea     rax,[rsp+420h]
@@ -6704,9 +6719,11 @@ L20:
     mov     [rsp+1B8h],rax
     mov     [rsp+1C0h],rcx
     mov     rax,[rsp+430h]
-    mov     rcx,[rsp+438h]
+    mov     ecx,[rsp+438h]
+    mov     edx,[rsp+43Ch]
     mov     [rsp+1C8h],rax
-    mov     [rsp+1D0h],rcx
+    mov     [rsp+1D0h],ecx
+    mov     [rsp+1D4h],edx
     mov     rax,[rsp+440h]
     mov     [rsp+1D8h],rax
     lea     rax,[rsp+1B8h]

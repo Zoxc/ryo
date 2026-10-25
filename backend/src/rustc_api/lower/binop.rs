@@ -5,7 +5,7 @@ use rustc_middle::mir::{BinOp, ConstValue, Operand, UnOp};
 use rustc_middle::ty;
 
 use super::cast::ScalarKind;
-use super::emit::{FloatWidth, imm_words, opcode, opw, try_opcode};
+use super::emit::{FloatWidth, Width, imm_words, opcode, opw, try_opcode};
 use super::place::PlaceVal;
 use super::{FnCx, NeedsNative, native};
 
@@ -177,6 +177,33 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             return self.with_place_slot(dst, |fx, d| {
                 ops[0] = d;
                 fx.op(opc, &ops);
+                Ok(())
+            });
+        }
+        // Unsigned w8-w32 `x / b` and `x % b` by another constant: `q = (zext(x) * M) >> p`
+        // in 64 bits, `x - q * b` for the remainder.
+        if !signed
+            && matches!(op, BinOp::Div | BinOp::Rem)
+            && w.bits() <= 32
+            && let Some(v) = self.const_int(b)?
+            && let Some((m, p)) = udiv_magic(w.bits(), w.truncate(v))
+        {
+            let v = w.truncate(v);
+            let t = self.temp8();
+            self.int_cast(t, sa, w, Width::W64, false);
+            self.op_imm("Mul", Width::W64, t, t, m);
+            self.op_imm("ShrU", Width::W64, t, t, u128::from(p));
+            if op == BinOp::Div {
+                return self.with_place_slot(dst, |fx, d| {
+                    fx.int_cast(d, t, Width::W64, w, false);
+                    Ok(())
+                });
+            }
+            let q = self.frame.temp(u64::from(w.bytes()), u64::from(w.bytes()));
+            self.int_cast(q, t, Width::W64, w, false);
+            self.op_imm("Mul", w, q, q, v);
+            return self.with_place_slot(dst, |fx, d| {
+                fx.op(opw("Sub", w), &[d, sa, q]);
                 Ok(())
             });
         }
@@ -355,4 +382,19 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             ConstValue::Scalar(Scalar::Ptr(..)) | ConstValue::ZeroSized | ConstValue::Slice { .. } | ConstValue::Indirect { .. } => None,
         })
     }
+}
+
+/// For an `n`-bit (n <= 32) unsigned division by `b` (not 0, 1 or a power of two): `(M, p)`
+/// with `floor(x / b) = (x * M) >> p` for every `x < 2^n` and `x * M < 2^64`. With `M =
+/// ceil(2^p / b)` and `e = M * b - 2^p`, `x * M / 2^p = x / b + x * e / (b * 2^p)`, and
+/// `e <= 2^(p - n)` keeps the error term below `1 / b`, so the floor doesn't change.
+fn udiv_magic(n: u32, b: u128) -> Option<(u128, u32)> {
+    if b <= 1 || b.is_power_of_two() {
+        return None;
+    }
+    (n..64).find_map(|p| {
+        let m = (1u128 << p).div_ceil(b);
+        let e = m * b - (1u128 << p);
+        (m < 1u128 << (64 - n) && e <= 1u128 << (p - n)).then_some((m, p))
+    })
 }

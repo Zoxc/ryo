@@ -10385,18 +10385,17 @@ L6:
     ret
 
 fn std::iter::adapters::map::map_fold::<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}
-    push    rbx
-    push    r12
-    sub     rsp,8
-    mov     rbx,rdi
-    mov     r12d,[rsi]
-    mov     rdi,r12
-    mov     esi,3E8h
-    call    ryo_hr_RemUW32
+    sub     rsp,18h
+    mov     eax,[rsi]
+    mov     ecx,eax
+    mov     rdx,rcx
+    imul    rdx,10624DD3h
+    shr     rdx,26h
+    imul    edx,3E8h
+    sub     eax,edx
     mov     eax,eax
-    mov     r12d,r12d
-    shl     r12,20h
-    or      rax,r12
+    shl     rcx,20h
+    or      rax,rcx
     mov     rcx,rax
     shr     rcx,20h
     mov     eax,eax
@@ -10405,20 +10404,18 @@ fn std::iter::adapters::map::map_fold::<&u32, (u32, u32), (), {closure@bench/sor
     or      rax,rcx
     mov     rcx,rax
     shr     rcx,20h
-    mov     rdx,[rbx+10h]
-    mov     rsi,[rbx+8]
+    mov     rdx,[rdi+10h]
+    mov     rsi,[rdi+8]
     lea     rdx,[rdx+rsi*8]
     mov     eax,eax
     mov     ecx,ecx
     shl     rcx,20h
     or      rax,rcx
     mov     [rdx],rax
-    mov     rax,[rbx+8]
+    mov     rax,[rdi+8]
     add     rax,1
-    mov     [rbx+8],rax
-    add     rsp,8
-    pop     r12
-    pop     rbx
+    mov     [rdi+8],rax
+    add     rsp,18h
     ret
   ; OSR entries
     lea     r11,[L0]

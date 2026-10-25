@@ -96,3 +96,9 @@ remove it once a Lean session has handled it.
   `m * inv = 1 mod 2^N` checkable per site. Also `/ 1` -> `mov`, `% 1` and signed `% -1` ->
   `imm 0`, signed `/ -1` -> `mul.imm` all-ones (the `rem` forms drop the read of `x`, a
   refinement). Commit: "Lower exact division by constants to shifts and inverse multiplies".
+
+- Lowering: unsigned w8-w32 `/` and `%` by a constant `b` (not a power of two) lower to
+  `zext` to w64, `mul.imm M`, `shr.u.imm p`, `trunc` (and `x - q * b` for `%`) when
+  `M = ceil(2^p / b) < 2^(64-N)` and `M*b - 2^p <= 2^(p-N)` (both checkable per site;
+  otherwise the handler stays). A C1' rule with that side condition and one Nat lemma.
+  Commit: "Lower small unsigned division by constants to multiply-shift".

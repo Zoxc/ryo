@@ -16361,36 +16361,36 @@ fn main::{closure#1}
     inc     qword ptr [jit_record]
     jns     L2
 L0:
-    sub     rsp,38h
-    mov     [rsp+20h],rdi
-    mov     [rsp+18h],rsi
-    mov     rax,[rsp+18h]
+    sub     rsp,48h
+    mov     [rsp+30h],rdi
+    mov     [rsp+28h],rsi
+    mov     rax,[rsp+28h]
     mov     eax,[rax]
-    mov     [rsp+14h],eax
-    mov     dword ptr [rsp+8],3E8h
-    cmp     dword ptr [rsp+8],0
-    sete    [rsp+0Fh]
-    test    byte ptr [rsp+0Fh],0FFh
+    mov     [rsp+24h],eax
+    mov     dword ptr [rsp+18h],3E8h
+    cmp     dword ptr [rsp+18h],0
+    sete    [rsp+1Fh]
+    test    byte ptr [rsp+1Fh],0FFh
     je      L1
     lea     r8,[k0]
-    mov     [rsp],r8
-    mov     rdi,[rsp]
+    mov     [rsp+10h],r8
+    mov     rdi,[rsp+10h]
     call    qword ptr [sym1]
     ud2
 L1:
-    mov     dword ptr [rsp+8],3E8h
-    lea     rdi,[rsp+30h]
-    mov     esi,0FFFFFFE0h
-    mov     edx,0FFFFFFE4h
-    mov     ecx,0FFFFFFD8h
-    call    ryo_h_RemUW32
-    mov     eax,[rsp+10h]
-    mov     [rsp+28h],eax
-    mov     edx,[rsp+14h]
-    mov     [rsp+2Ch],edx
-    mov     eax,[rsp+28h]
-    mov     edx,[rsp+2Ch]
-    add     rsp,38h
+    mov     eax,[rsp+24h]
+    imul    rdx,rax,10624DD3h
+    shr     rdx,26h
+    mov     [rsp+0Ch],edx
+    imul    esi,[rsp+0Ch],3E8h
+    mov     edi,[rsp+24h]
+    sub     edi,esi
+    mov     [rsp+38h],edi
+    mov     r8d,[rsp+24h]
+    mov     [rsp+3Ch],r8d
+    mov     eax,[rsp+38h]
+    mov     edx,[rsp+3Ch]
+    add     rsp,48h
     ret
 L2:
     lea     r11,[jit_record]

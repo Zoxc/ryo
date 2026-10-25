@@ -21849,36 +21849,41 @@ a16: $-32, 8 bytes, Promoted, inlined
 a17: $-24, 8 bytes, Promoted, inlined
 a18: $-16, 8 bytes, Promoted, inlined
 a19: $-8, 8 bytes, Promoted, inlined
-a20: $-48, 8 bytes, Promoted, inlined
-a21: $-40, 4 bytes, Promoted, inlined
-a22: $-33, 1 bytes, Promoted, inlined
-a23: $-32, 4 bytes, Promoted, inlined
-a24: $-28, 4 bytes, Promoted, inlined
-a25: $-24, 8 bytes, Promoted, inlined
-a26: $-16, 8 bytes, Promoted, inlined
-a27: $-8, 4 bytes, Promoted, inlined
-a28: $-4, 4 bytes, Promoted, inlined
+a20: $-52, 4 bytes, Promoted, inlined
+a21: $-48, 8 bytes, Promoted, inlined
+a22: $-40, 4 bytes, Promoted, inlined
+a23: $-33, 1 bytes, Promoted, inlined
+a24: $-32, 4 bytes, Promoted, inlined
+a25: $-28, 4 bytes, Promoted, inlined
+a26: $-24, 8 bytes, Promoted, inlined
+a27: $-16, 8 bytes, Promoted, inlined
+a28: $-8, 4 bytes, Promoted, inlined
+a29: $-4, 4 bytes, Promoted, inlined
 b0(v0:8, v1:8): ; Entry
     v27:4 = Load(4, 0) (v1)
-    v28:4 = hcall.reg rem.u.w32 [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None]), (Imm(4294967268), [Some(Scratch(8)), None]), (Imm(4294967256), [Some(Scratch(16)), None])] outs 1 (v27, 0x3e8)
-    v31:8 = Ext { from: 4, to: 8, sx: false } (v28)
-    v33:8 = Ext { from: 4, to: 8, sx: false } (v27)
-    v35:8 = Bin(Shl, 8) (v33, 0x20)
-    v36:8 = Bin(Or, 8) (v31, v35)
-    v38:8 = Bin(ShrU, 8) (v36, 0x20)
-    v40:8 = Ext { from: 4, to: 8, sx: false } (v36)
-    v42:8 = Ext { from: 4, to: 8, sx: false } (v38)
-    v44:8 = Bin(Shl, 8) (v42, 0x20)
-    v45:8 = Bin(Or, 8) (v40, v44)
-    v47:8 = Bin(ShrU, 8) (v45, 0x20)
+    v28:8 = Ext { from: 4, to: 8, sx: false } (v27)
+    v29:8 = Bin(Mul, 8) (v28, 0x10624dd3)
+    v30:8 = Bin(ShrU, 8) (v29, 0x26)
+    v31:4 = Ext { from: 8, to: 4, sx: false } (v30)
+    v32:4 = Bin(Mul, 4) (v31, 0x3e8)
+    v33:4 = Bin(Sub, 4) (v27, v32)
+    v38:8 = Ext { from: 4, to: 8, sx: false } (v33)
+    v42:8 = Bin(Shl, 8) (v28, 0x20)
+    v43:8 = Bin(Or, 8) (v38, v42)
+    v45:8 = Bin(ShrU, 8) (v43, 0x20)
+    v47:8 = Ext { from: 4, to: 8, sx: false } (v43)
+    v49:8 = Ext { from: 4, to: 8, sx: false } (v45)
+    v51:8 = Bin(Shl, 8) (v49, 0x20)
+    v52:8 = Bin(Or, 8) (v47, v51)
+    v54:8 = Bin(ShrU, 8) (v52, 0x20)
     v20:8 = Load(8, 16) (v0)
     v21:8 = Load(8, 8) (v0)
     v22:8 = PtrIndex(8) (v20, v21)
-    v49:8 = Ext { from: 4, to: 8, sx: false } (v45)
-    v51:8 = Ext { from: 4, to: 8, sx: false } (v47)
-    v53:8 = Bin(Shl, 8) (v51, 0x20)
-    v54:8 = Bin(Or, 8) (v49, v53)
-    Store(8, 0) (v22, v54)
+    v56:8 = Ext { from: 4, to: 8, sx: false } (v52)
+    v58:8 = Ext { from: 4, to: 8, sx: false } (v54)
+    v60:8 = Bin(Shl, 8) (v58, 0x20)
+    v61:8 = Bin(Or, 8) (v56, v60)
+    Store(8, 0) (v22, v61)
     v24:8 = Load(8, 8) (v0)
     v25:8 = Bin(Add, 8) (v24, 0x1)
     Store(8, 8) (v0, v25)

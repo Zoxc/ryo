@@ -9402,7 +9402,7 @@ L0:
   cleanup L0 -> continue
   fn0 = Rng::next
 
-fn main::{closure#1} (frame 48, args 0, ret 8)
+fn main::{closure#1} (frame 64, args 0, ret 8)
     arg $-16, 8
     arg $-24, 264
     load.w32 $-28, [$-24 + 0]
@@ -9414,8 +9414,12 @@ L0:
     call.sym $0, sym1, 0, [4294967248, 8]
     unreachable
 L1:
-    imm.w32 $-40, 1000
-    rem.u.w32 $-32, $-28, $-40
+    zext.w32.w64 $-48, $-28
+    mul.imm.w64 $-48, $-48, 274877907
+    shr.u.imm.w64 $-48, $-48, 38
+    trunc.w64.w32 $-52, $-48
+    mul.imm.w32 $-52, $-52, 1000
+    sub.w32 $-32, $-28, $-52
     mov.w32 $-8, $-32
     mov.w32 $-4, $-28
     ret $-8, 263172
