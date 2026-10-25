@@ -200,6 +200,7 @@ fn gen_items(rng: &mut Rng) -> Vec<Item> {
         v.push(Item::SetReg(r, i32::MIN as i64 as u64));
         v.push(Item::SetReg(r, 1 << 32));
         v.push(Item::Lea(r, gen_ref(rng)));
+        v.push(Item::LoadRip(r, gen_ref(rng)));
         for d in REGS {
             if rng.below(3) == 0 {
                 v.push(Item::Mov(d, r));
@@ -209,7 +210,6 @@ fn gen_items(rng: &mut Rng) -> Vec<Item> {
     for _ in 0..12 {
         v.push(Item::Call(gen_ref(rng)));
         v.push(Item::CallMem(gen_ref(rng)));
-        v.push(Item::LoadRip(gen_ref(rng)));
         v.push(Item::Jmp(gen_ref(rng)));
         v.push(Item::LeaTable(pos_target(rng)));
     }
@@ -321,7 +321,7 @@ fn decode(code: &[u8], pos: u32, relocs: Option<&[Reloc]>, sp: Option<u32>) -> O
 fn linkable(item: &Item) -> bool {
     !matches!(
         item,
-        Item::Lea(_, Ref::RecCtr) | Item::Call(Ref::RecCtr) | Item::CallMem(Ref::RecCtr) | Item::LoadRip(Ref::RecCtr) | Item::Jmp(Ref::RecCtr)
+        Item::Lea(_, Ref::RecCtr) | Item::Call(Ref::RecCtr) | Item::CallMem(Ref::RecCtr) | Item::LoadRip(_, Ref::RecCtr) | Item::Jmp(Ref::RecCtr)
     )
 }
 
@@ -394,7 +394,7 @@ fn item(i: &Item) -> String {
         Item::CallRax => "\"callRax\"".into(),
         Item::CtrSub(k) => c("ctrSub", &[("k", k.to_string())]),
         Item::CallR11(d) => c("callR11", &[("d", d.to_string())]),
-        Item::LoadRip(to) => c("loadRip", &[("to", rf(to))]),
+        Item::LoadRip(r, to) => c("loadRip", &[("dst", reg(r)), ("to", rf(to))]),
         Item::CallMemRax => "\"callMemRax\"".into(),
         Item::JmpRax => "\"jmpRax\"".into(),
         Item::Jmp(to) => c("jmp", &[("to", rf(to))]),

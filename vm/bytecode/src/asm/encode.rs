@@ -1119,7 +1119,7 @@ impl Asm {
                 let (d, k) = (slot("d"), imm("k"));
                 // The callee's address, where it isn't the call's own operand.
                 match op {
-                    Opcode::CallSymInd => self.fixed(Item::LoadRip(Ref::Sym(sym("sym")))),
+                    Opcode::CallSymInd => self.fixed(Item::LoadRip(Reg::Rax, Ref::Sym(sym("sym")))),
                     Opcode::CallPtr => self.pieces.push(Piece::Frame(Item::Ld { w: W::Q, sx: false, dst: Reg::Rax, m: M::frame(slot("p") as i32) })),
                     _ => {}
                 }

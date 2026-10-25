@@ -333,9 +333,9 @@ pub enum Item {
     CtrSub(u8),
     /// `call [r11 + disp8]`: a counter stub's call through its JIT record's slot.
     CallR11(u8),
-    /// `mov rax, [rip + disp32]`: a symbol slot's value, the field relocated against the
+    /// `mov reg, [rip + disp32]`: a symbol slot's value, the field relocated against the
     /// [`Ref`].
-    LoadRip(Ref),
+    LoadRip(Reg, Ref),
     /// `call [rax]`: through an import slot whose address `rax` holds.
     CallMemRax,
     /// `jmp rax`
@@ -474,7 +474,7 @@ impl Item {
                     _ => 10,
                 }
             }
-            Item::Lea(..) | Item::LeaTable(_) | Item::LoadRip(_) => 7,
+            Item::Lea(..) | Item::LeaTable(_) | Item::LoadRip(..) => 7,
             Item::Call(_) | Item::Jmp(_) => 5,
             Item::CallMem(_) => 6,
             Item::Branch { cond, long, .. } => match (cond, long) {
@@ -571,6 +571,8 @@ impl Item {
             Item::TestM8(m) => Item::TestM8(fm(m)),
             Item::MulQ(rm) => Item::MulQ(frm(rm)),
             Item::SetReg(r, v) => Item::SetReg(f(r), v),
+            Item::Lea(r, to) => Item::Lea(f(r), to),
+            Item::LoadRip(r, to) => Item::LoadRip(f(r), to),
             it => it,
         }
     }
@@ -602,6 +604,8 @@ impl Item {
                 | Item::TestM8(_)
                 | Item::SetccCl(_)
                 | Item::MulQ(_)
+                | Item::Lea(..)
+                | Item::LoadRip(..)
                 | Item::SetReg(Reg::Rax | Reg::Rcx | Reg::Rdx | Reg::Rsi | Reg::Rdi | Reg::R8 | Reg::R9 | Reg::R10 | Reg::R11, _)
         )
     }
@@ -766,8 +770,8 @@ impl Item {
             }
             Item::CallR11(d) => out.extend_from_slice(&[0x41, 0xff, 0x53, d]),
             Item::CallMemRax => out.extend_from_slice(&[0xff, 0x10]),
-            Item::LoadRip(to) => {
-                out.extend_from_slice(&[0x48, 0x8b, 0x05]);
+            Item::LoadRip(r, to) => {
+                out.extend_from_slice(&[0x48 | (r.ext() as u8) << 2, 0x8b, 0x05 | r.low() << 3]);
                 reloc(out, relocs, to);
             }
             Item::JmpRax => out.extend_from_slice(&[0xff, 0xe0]),
@@ -1279,7 +1283,10 @@ impl<'a> Cursor<'a> {
             }
             (0, 0xe8) => Item::Call(self.field_ref(1, 5)?),
             (0x41, 0xff) if get(2)? == 0x53 => Item::CallR11(get(3)?),
-            (0x48, 0x8b) if get(2)? == 0x05 => Item::LoadRip(self.field_ref(3, 7)?),
+            (0x48 | 0x4c, 0x8b) if get(2)? & 0xc7 == 0x05 => {
+                let reg = Reg::from_num(get(2)? >> 3 & 7 | (r as u8) << 3).ok_or(bad)?;
+                Item::LoadRip(reg, self.field_ref(3, 7)?)
+            }
             (0, 0xff) => match get(1)? {
                 0x15 => Item::CallMem(self.field_ref(2, 6)?),
                 0xd0 => Item::CallRax,
@@ -1326,7 +1333,7 @@ impl<'a> Cursor<'a> {
         // A relocation must be the item's own field.
         let len = item.len();
         let own = match item {
-            Item::Lea(..) | Item::LoadRip(_) => Some(3),
+            Item::Lea(..) | Item::LoadRip(..) => Some(3),
             Item::Call(_) | Item::Jmp(_) => Some(1),
             Item::CallMem(_) => Some(2),
             Item::CtrSub(_) => Some(3),

@@ -762,7 +762,7 @@ fn call_insn(c: &mut Cursor<'_>, fr: &Frame, dropped: &[DroppedStore]) -> Option
     let pos = c.pos;
     let a = c.pos;
     let pre = match c.item() {
-        Ok(Item::LoadRip(Ref::Sym(s))) => Pre::Sym(s),
+        Ok(Item::LoadRip(Reg::Rax, Ref::Sym(s))) => Pre::Sym(s),
         Ok(Item::Ld { w: super::x86::W::Q, sx: false, dst: Reg::Rax, m }) if m.base == Reg::Rbp => Pre::Ptr(m.disp),
         _ => {
             c.pos = a;

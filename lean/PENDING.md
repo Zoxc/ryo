@@ -27,3 +27,8 @@ remove it once a Lean session has handled it.
   `ryo_h_AddrAbs` names in `RyoTest/Obj.lean`, the `"addr.abs"` mnemonic in
   `Ryo/Check/Image/Pool.lean` and `RyoTest/OpSem.lean`, and `lean/docs/aot.md`.
   Commit: "Rename addr.abs to addr.const".
+
+- `LoadRip` takes a register: `mov reg, [rip + disp32]` (REX.R for `r8`-`r15`), the item
+  `loadRip dst to` in the x86 vectors; `call.sym.ind` still loads `rax`. `Lea` and `LoadRip`
+  count as inline items (`Item.isInline`), not ending a sequence. Commit: "Let LoadRip load
+  any register and count rip items as inline".
