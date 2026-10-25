@@ -1,10 +1,4 @@
 fn <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as std::hash::Hasher>::finish
-    push    rbx
-    push    r12
-    push    r13
-    push    r14
-    push    r15
-    push    rbp
     sub     rsp,38h
     mov     rax,[rdi]
     mov     [rsp+10h],rax
@@ -18,62 +12,60 @@ fn <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as std::hash::Hasher>:
     and     r8,0FFh
     shl     r8,38h
     mov     rdi,[rdi+38h]
-    mov     rbx,r8
-    or      rbx,rdi
-    mov     r12,rsi
-    xor     r12,rbx
-    mov     [rsp+28h],r12
-    lea     r13,[rsp+10h]
-    mov     r14,rax
-    add     r14,rdx
-    mov     [rsp+10h],r14
-    mov     r15,rcx
-    add     r15,r12
-    mov     [rsp+18h],r15
-    mov     rdi,rdx
-    mov     esi,0Dh
-    call    ryo_hr_RotlW64
-    mov     [rsp+20h],rax
-    mov     rbp,rax
-    xor     rbp,r14
-    mov     [rsp+20h],rbp
-    mov     rdi,r12
-    mov     esi,10h
-    call    ryo_hr_RotlW64
-    mov     [rsp+28h],rax
-    mov     r12,rax
-    xor     r12,r15
-    mov     [rsp+28h],r12
-    mov     rdi,r14
-    mov     esi,20h
-    call    ryo_hr_RotlW64
+    or      r8,rdi
+    xor     rsi,r8
+    mov     [rsp+28h],rsi
+    lea     rdi,[rsp+10h]
+    add     rax,rdx
     mov     [rsp+10h],rax
-    add     r15,rbp
-    mov     [rsp+18h],r15
-    mov     r14,rax
-    add     r14,r12
-    mov     [rsp+10h],r14
-    mov     rdi,rbp
-    mov     esi,11h
-    call    ryo_hr_RotlW64
+    add     rcx,rsi
+    mov     [rsp+18h],rcx
+    mov     r9,rdx
+    shl     r9,0Dh
+    shr     rdx,33h
+    or      r9,rdx
+    mov     [rsp+20h],r9
+    xor     r9,rax
+    mov     [rsp+20h],r9
+    mov     rdx,rsi
+    shl     rdx,10h
+    shr     rsi,30h
+    or      rdx,rsi
+    mov     [rsp+28h],rdx
+    xor     rdx,rcx
+    mov     [rsp+28h],rdx
+    mov     rsi,rax
+    shl     rsi,20h
+    shr     rax,20h
+    or      rsi,rax
+    mov     [rsp+10h],rsi
+    add     rcx,r9
+    mov     [rsp+18h],rcx
+    add     rsi,rdx
+    mov     [rsp+10h],rsi
+    mov     rax,r9
+    shl     rax,11h
+    shr     r9,2Fh
+    or      rax,r9
     mov     [rsp+20h],rax
-    xor     rax,r15
+    xor     rax,rcx
     mov     [rsp+20h],rax
-    mov     rdi,r12
-    mov     esi,15h
-    call    ryo_hr_RotlW64
+    mov     rax,rdx
+    shl     rax,15h
+    shr     rdx,2Bh
+    or      rax,rdx
     mov     [rsp+28h],rax
-    xor     rax,r14
+    xor     rax,rsi
     mov     [rsp+28h],rax
-    mov     rdi,r15
-    mov     esi,20h
-    call    ryo_hr_RotlW64
+    mov     rax,rcx
+    shl     rax,20h
+    shr     rcx,20h
+    or      rax,rcx
     mov     [rsp+18h],rax
-    xor     r14,rbx
-    mov     [rsp+10h],r14
+    xor     rsi,r8
+    mov     [rsp+10h],rsi
     xor     rax,0FFh
     mov     [rsp+18h],rax
-    mov     rdi,r13
     call    qword ptr [fn1.slot]
     mov     rax,[rsp+10h]
     mov     rcx,[rsp+20h]
@@ -83,12 +75,6 @@ fn <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as std::hash::Hasher>:
     mov     rcx,[rsp+28h]
     xor     rax,rcx
     add     rsp,38h
-    pop     rbp
-    pop     r15
-    pop     r14
-    pop     r13
-    pop     r12
-    pop     rbx
     ret
 
 fn <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as std::hash::Hasher>::write
@@ -558,225 +544,205 @@ L40:
     jmp     L18
 
 fn <core::hash::sip::Sip13Rounds as core::hash::sip::Sip>::c_rounds
-    push    rbx
-    push    r12
-    push    r13
-    push    r14
-    push    r15
-    sub     rsp,10h
-    mov     rbx,rdi
-    mov     rax,[rbx]
-    mov     rcx,[rbx+10h]
-    mov     r12,rax
-    add     r12,rcx
-    mov     [rbx],r12
-    mov     rax,[rbx+8]
-    mov     r13,[rbx+18h]
-    mov     r14,rax
-    add     r14,r13
-    mov     [rbx+8],r14
-    mov     rdi,rcx
-    mov     esi,0Dh
-    call    ryo_hr_RotlW64
-    mov     [rbx+10h],rax
-    mov     r15,rax
-    xor     r15,r12
-    mov     [rbx+10h],r15
-    mov     rdi,r13
-    mov     esi,10h
-    call    ryo_hr_RotlW64
-    mov     [rbx+18h],rax
-    mov     r13,rax
-    xor     r13,r14
-    mov     [rbx+18h],r13
-    mov     rdi,r12
-    mov     esi,20h
-    call    ryo_hr_RotlW64
-    mov     [rbx],rax
-    add     r14,r15
-    mov     [rbx+8],r14
-    mov     r12,rax
-    add     r12,r13
-    mov     [rbx],r12
-    mov     rdi,r15
-    mov     esi,11h
-    call    ryo_hr_RotlW64
-    mov     [rbx+10h],rax
-    xor     rax,r14
-    mov     [rbx+10h],rax
-    mov     rdi,r13
-    mov     esi,15h
-    call    ryo_hr_RotlW64
-    mov     [rbx+18h],rax
-    xor     rax,r12
-    mov     [rbx+18h],rax
-    mov     rdi,r14
-    mov     esi,20h
-    call    ryo_hr_RotlW64
-    mov     [rbx+8],rax
-    add     rsp,10h
-    pop     r15
-    pop     r14
-    pop     r13
-    pop     r12
-    pop     rbx
+    sub     rsp,18h
+    mov     rax,[rdi]
+    mov     rcx,[rdi+10h]
+    add     rax,rcx
+    mov     [rdi],rax
+    mov     rdx,[rdi+8]
+    mov     rsi,[rdi+18h]
+    add     rdx,rsi
+    mov     [rdi+8],rdx
+    mov     r8,rcx
+    shl     r8,0Dh
+    shr     rcx,33h
+    or      r8,rcx
+    mov     [rdi+10h],r8
+    xor     r8,rax
+    mov     [rdi+10h],r8
+    mov     rcx,rsi
+    shl     rcx,10h
+    shr     rsi,30h
+    or      rcx,rsi
+    mov     [rdi+18h],rcx
+    xor     rcx,rdx
+    mov     [rdi+18h],rcx
+    mov     rsi,rax
+    shl     rsi,20h
+    shr     rax,20h
+    or      rsi,rax
+    mov     [rdi],rsi
+    add     rdx,r8
+    mov     [rdi+8],rdx
+    add     rsi,rcx
+    mov     [rdi],rsi
+    mov     rax,r8
+    shl     rax,11h
+    shr     r8,2Fh
+    or      rax,r8
+    mov     [rdi+10h],rax
+    xor     rax,rdx
+    mov     [rdi+10h],rax
+    mov     rax,rcx
+    shl     rax,15h
+    shr     rcx,2Bh
+    or      rax,rcx
+    mov     [rdi+18h],rax
+    xor     rax,rsi
+    mov     [rdi+18h],rax
+    mov     rax,rdx
+    shl     rax,20h
+    shr     rdx,20h
+    or      rax,rdx
+    mov     [rdi+8],rax
+    add     rsp,18h
     ret
 
 fn <core::hash::sip::Sip13Rounds as core::hash::sip::Sip>::d_rounds
-    push    rbx
-    push    r12
-    push    r13
-    push    r14
-    push    r15
-    sub     rsp,10h
-    mov     rbx,rdi
-    mov     rax,[rbx]
-    mov     rcx,[rbx+10h]
-    mov     r12,rax
-    add     r12,rcx
-    mov     [rbx],r12
-    mov     rax,[rbx+8]
-    mov     r13,[rbx+18h]
-    mov     r14,rax
-    add     r14,r13
-    mov     [rbx+8],r14
-    mov     rdi,rcx
-    mov     esi,0Dh
-    call    ryo_hr_RotlW64
-    mov     [rbx+10h],rax
-    mov     r15,rax
-    xor     r15,r12
-    mov     [rbx+10h],r15
-    mov     rdi,r13
-    mov     esi,10h
-    call    ryo_hr_RotlW64
-    mov     [rbx+18h],rax
-    mov     r13,rax
-    xor     r13,r14
-    mov     [rbx+18h],r13
-    mov     rdi,r12
-    mov     esi,20h
-    call    ryo_hr_RotlW64
-    mov     [rbx],rax
-    add     r14,r15
-    mov     [rbx+8],r14
-    mov     r12,rax
-    add     r12,r13
-    mov     [rbx],r12
-    mov     rdi,r15
-    mov     esi,11h
-    call    ryo_hr_RotlW64
-    mov     [rbx+10h],rax
-    mov     r15,rax
-    xor     r15,r14
-    mov     [rbx+10h],r15
-    mov     rdi,r13
-    mov     esi,15h
-    call    ryo_hr_RotlW64
-    mov     [rbx+18h],rax
-    mov     r13,rax
-    xor     r13,r12
-    mov     [rbx+18h],r13
-    mov     rdi,r14
-    mov     esi,20h
-    call    ryo_hr_RotlW64
-    mov     [rbx+8],rax
-    add     r12,r15
-    mov     [rbx],r12
-    mov     r14,rax
-    add     r14,r13
-    mov     [rbx+8],r14
-    mov     rdi,r15
-    mov     esi,0Dh
-    call    ryo_hr_RotlW64
-    mov     [rbx+10h],rax
-    mov     r15,rax
-    xor     r15,r12
-    mov     [rbx+10h],r15
-    mov     rdi,r13
-    mov     esi,10h
-    call    ryo_hr_RotlW64
-    mov     [rbx+18h],rax
-    mov     r13,rax
-    xor     r13,r14
-    mov     [rbx+18h],r13
-    mov     rdi,r12
-    mov     esi,20h
-    call    ryo_hr_RotlW64
-    mov     [rbx],rax
-    add     r14,r15
-    mov     [rbx+8],r14
-    mov     r12,rax
-    add     r12,r13
-    mov     [rbx],r12
-    mov     rdi,r15
-    mov     esi,11h
-    call    ryo_hr_RotlW64
-    mov     [rbx+10h],rax
-    mov     r15,rax
-    xor     r15,r14
-    mov     [rbx+10h],r15
-    mov     rdi,r13
-    mov     esi,15h
-    call    ryo_hr_RotlW64
-    mov     [rbx+18h],rax
-    mov     r13,rax
-    xor     r13,r12
-    mov     [rbx+18h],r13
-    mov     rdi,r14
-    mov     esi,20h
-    call    ryo_hr_RotlW64
-    mov     [rbx+8],rax
-    add     r12,r15
-    mov     [rbx],r12
-    mov     r14,rax
-    add     r14,r13
-    mov     [rbx+8],r14
-    mov     rdi,r15
-    mov     esi,0Dh
-    call    ryo_hr_RotlW64
-    mov     [rbx+10h],rax
-    mov     r15,rax
-    xor     r15,r12
-    mov     [rbx+10h],r15
-    mov     rdi,r13
-    mov     esi,10h
-    call    ryo_hr_RotlW64
-    mov     [rbx+18h],rax
-    mov     r13,rax
-    xor     r13,r14
-    mov     [rbx+18h],r13
-    mov     rdi,r12
-    mov     esi,20h
-    call    ryo_hr_RotlW64
-    mov     [rbx],rax
-    add     r14,r15
-    mov     [rbx+8],r14
-    mov     r12,rax
-    add     r12,r13
-    mov     [rbx],r12
-    mov     rdi,r15
-    mov     esi,11h
-    call    ryo_hr_RotlW64
-    mov     [rbx+10h],rax
-    xor     rax,r14
-    mov     [rbx+10h],rax
-    mov     rdi,r13
-    mov     esi,15h
-    call    ryo_hr_RotlW64
-    mov     [rbx+18h],rax
-    xor     rax,r12
-    mov     [rbx+18h],rax
-    mov     rdi,r14
-    mov     esi,20h
-    call    ryo_hr_RotlW64
-    mov     [rbx+8],rax
-    add     rsp,10h
-    pop     r15
-    pop     r14
-    pop     r13
-    pop     r12
-    pop     rbx
+    sub     rsp,18h
+    mov     rax,[rdi]
+    mov     rcx,[rdi+10h]
+    add     rax,rcx
+    mov     [rdi],rax
+    mov     rdx,[rdi+8]
+    mov     rsi,[rdi+18h]
+    add     rdx,rsi
+    mov     [rdi+8],rdx
+    mov     r8,rcx
+    shl     r8,0Dh
+    shr     rcx,33h
+    or      r8,rcx
+    mov     [rdi+10h],r8
+    xor     r8,rax
+    mov     [rdi+10h],r8
+    mov     rcx,rsi
+    shl     rcx,10h
+    shr     rsi,30h
+    or      rcx,rsi
+    mov     [rdi+18h],rcx
+    xor     rcx,rdx
+    mov     [rdi+18h],rcx
+    mov     rsi,rax
+    shl     rsi,20h
+    shr     rax,20h
+    or      rsi,rax
+    mov     [rdi],rsi
+    add     rdx,r8
+    mov     [rdi+8],rdx
+    add     rsi,rcx
+    mov     [rdi],rsi
+    mov     rax,r8
+    shl     rax,11h
+    shr     r8,2Fh
+    or      rax,r8
+    mov     [rdi+10h],rax
+    xor     rax,rdx
+    mov     [rdi+10h],rax
+    mov     r8,rcx
+    shl     r8,15h
+    shr     rcx,2Bh
+    or      r8,rcx
+    mov     [rdi+18h],r8
+    xor     r8,rsi
+    mov     [rdi+18h],r8
+    mov     rcx,rdx
+    shl     rcx,20h
+    shr     rdx,20h
+    or      rcx,rdx
+    mov     [rdi+8],rcx
+    add     rsi,rax
+    mov     [rdi],rsi
+    add     rcx,r8
+    mov     [rdi+8],rcx
+    mov     rdx,rax
+    shl     rdx,0Dh
+    shr     rax,33h
+    or      rdx,rax
+    mov     [rdi+10h],rdx
+    xor     rdx,rsi
+    mov     [rdi+10h],rdx
+    mov     rax,r8
+    shl     rax,10h
+    shr     r8,30h
+    or      rax,r8
+    mov     [rdi+18h],rax
+    xor     rax,rcx
+    mov     [rdi+18h],rax
+    mov     r8,rsi
+    shl     r8,20h
+    shr     rsi,20h
+    or      r8,rsi
+    mov     [rdi],r8
+    add     rcx,rdx
+    mov     [rdi+8],rcx
+    add     r8,rax
+    mov     [rdi],r8
+    mov     rsi,rdx
+    shl     rsi,11h
+    shr     rdx,2Fh
+    or      rsi,rdx
+    mov     [rdi+10h],rsi
+    xor     rsi,rcx
+    mov     [rdi+10h],rsi
+    mov     rdx,rax
+    shl     rdx,15h
+    shr     rax,2Bh
+    or      rdx,rax
+    mov     [rdi+18h],rdx
+    xor     rdx,r8
+    mov     [rdi+18h],rdx
+    mov     rax,rcx
+    shl     rax,20h
+    shr     rcx,20h
+    or      rax,rcx
+    mov     [rdi+8],rax
+    add     r8,rsi
+    mov     [rdi],r8
+    add     rax,rdx
+    mov     [rdi+8],rax
+    mov     rcx,rsi
+    shl     rcx,0Dh
+    shr     rsi,33h
+    or      rcx,rsi
+    mov     [rdi+10h],rcx
+    xor     rcx,r8
+    mov     [rdi+10h],rcx
+    mov     rsi,rdx
+    shl     rsi,10h
+    shr     rdx,30h
+    or      rsi,rdx
+    mov     [rdi+18h],rsi
+    xor     rsi,rax
+    mov     [rdi+18h],rsi
+    mov     rdx,r8
+    shl     rdx,20h
+    shr     r8,20h
+    or      rdx,r8
+    mov     [rdi],rdx
+    add     rax,rcx
+    mov     [rdi+8],rax
+    add     rdx,rsi
+    mov     [rdi],rdx
+    mov     r8,rcx
+    shl     r8,11h
+    shr     rcx,2Fh
+    or      r8,rcx
+    mov     [rdi+10h],r8
+    xor     r8,rax
+    mov     [rdi+10h],r8
+    mov     rcx,rsi
+    shl     rcx,15h
+    shr     rsi,2Bh
+    or      rcx,rsi
+    mov     [rdi+18h],rcx
+    xor     rcx,rdx
+    mov     [rdi+18h],rcx
+    mov     rcx,rax
+    shl     rcx,20h
+    shr     rax,20h
+    or      rcx,rax
+    mov     [rdi+8],rcx
+    add     rsp,18h
     ret
 
 fn <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:24:43: 24:50}>::{closure#0}}>::{closure#0}
@@ -811,12 +777,6 @@ L6:
     ret
 
 fn <std::hash::DefaultHasher as std::hash::Hasher>::finish
-    push    rbx
-    push    r12
-    push    r13
-    push    r14
-    push    r15
-    push    rbp
     sub     rsp,38h
     mov     rax,[rdi]
     mov     [rsp+10h],rax
@@ -830,62 +790,60 @@ fn <std::hash::DefaultHasher as std::hash::Hasher>::finish
     and     r8,0FFh
     shl     r8,38h
     mov     rdi,[rdi+38h]
-    mov     rbx,r8
-    or      rbx,rdi
-    mov     r12,rsi
-    xor     r12,rbx
-    mov     [rsp+28h],r12
-    lea     r13,[rsp+10h]
-    mov     r14,rax
-    add     r14,rdx
-    mov     [rsp+10h],r14
-    mov     r15,rcx
-    add     r15,r12
-    mov     [rsp+18h],r15
-    mov     rdi,rdx
-    mov     esi,0Dh
-    call    ryo_hr_RotlW64
-    mov     [rsp+20h],rax
-    mov     rbp,rax
-    xor     rbp,r14
-    mov     [rsp+20h],rbp
-    mov     rdi,r12
-    mov     esi,10h
-    call    ryo_hr_RotlW64
-    mov     [rsp+28h],rax
-    mov     r12,rax
-    xor     r12,r15
-    mov     [rsp+28h],r12
-    mov     rdi,r14
-    mov     esi,20h
-    call    ryo_hr_RotlW64
+    or      r8,rdi
+    xor     rsi,r8
+    mov     [rsp+28h],rsi
+    lea     rdi,[rsp+10h]
+    add     rax,rdx
     mov     [rsp+10h],rax
-    add     r15,rbp
-    mov     [rsp+18h],r15
-    mov     r14,rax
-    add     r14,r12
-    mov     [rsp+10h],r14
-    mov     rdi,rbp
-    mov     esi,11h
-    call    ryo_hr_RotlW64
+    add     rcx,rsi
+    mov     [rsp+18h],rcx
+    mov     r9,rdx
+    shl     r9,0Dh
+    shr     rdx,33h
+    or      r9,rdx
+    mov     [rsp+20h],r9
+    xor     r9,rax
+    mov     [rsp+20h],r9
+    mov     rdx,rsi
+    shl     rdx,10h
+    shr     rsi,30h
+    or      rdx,rsi
+    mov     [rsp+28h],rdx
+    xor     rdx,rcx
+    mov     [rsp+28h],rdx
+    mov     rsi,rax
+    shl     rsi,20h
+    shr     rax,20h
+    or      rsi,rax
+    mov     [rsp+10h],rsi
+    add     rcx,r9
+    mov     [rsp+18h],rcx
+    add     rsi,rdx
+    mov     [rsp+10h],rsi
+    mov     rax,r9
+    shl     rax,11h
+    shr     r9,2Fh
+    or      rax,r9
     mov     [rsp+20h],rax
-    xor     rax,r15
+    xor     rax,rcx
     mov     [rsp+20h],rax
-    mov     rdi,r12
-    mov     esi,15h
-    call    ryo_hr_RotlW64
+    mov     rax,rdx
+    shl     rax,15h
+    shr     rdx,2Bh
+    or      rax,rdx
     mov     [rsp+28h],rax
-    xor     rax,r14
+    xor     rax,rsi
     mov     [rsp+28h],rax
-    mov     rdi,r15
-    mov     esi,20h
-    call    ryo_hr_RotlW64
+    mov     rax,rcx
+    shl     rax,20h
+    shr     rcx,20h
+    or      rax,rcx
     mov     [rsp+18h],rax
-    xor     r14,rbx
-    mov     [rsp+10h],r14
+    xor     rsi,r8
+    mov     [rsp+10h],rsi
     xor     rax,0FFh
     mov     [rsp+18h],rax
-    mov     rdi,r13
     call    image.fn209
     mov     rax,[rsp+10h]
     mov     rcx,[rsp+20h]
@@ -895,12 +853,6 @@ fn <std::hash::DefaultHasher as std::hash::Hasher>::finish
     mov     rcx,[rsp+28h]
     xor     rax,rcx
     add     rsp,38h
-    pop     rbp
-    pop     r15
-    pop     r14
-    pop     r13
-    pop     r12
-    pop     rbx
     ret
 
 fn <std::hash::RandomState as std::hash::BuildHasher>::build_hasher
@@ -3483,11 +3435,7 @@ L9:
 fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::RandomState>::{closure#0}}>::{closure#0}
     push    rbx
     push    r12
-    push    r13
-    push    r14
-    push    r15
-    push    rbp
-    sub     rsp,98h
+    sub     rsp,68h
     mov     rax,[rdi]
     mov     rcx,[rsi]
     mov     r11d,0
@@ -3496,15 +3444,11 @@ fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{c
     mov     r11,rdx
     imul    r11,20h
     add     r11,rcx
-    mov     [rsp+10h],r11
+    mov     rbx,r11
     jmp     L2
 L0:
     mov     rax,rcx
-    add     rsp,98h
-    pop     rbp
-    pop     r15
-    pop     r14
-    pop     r13
+    add     rsp,68h
     pop     r12
     pop     rbx
     ret
@@ -3514,107 +3458,28 @@ L2:
     jmp     L1
 L3:
     mov     rdx,[rax]
-    lea     rsi,[rsp+48h]
+    lea     rsi,[rsp+18h]
     mov     rdi,rsi
     mov     rsi,rdx
     call    image.fn215
-    lea     r12,[rsp+48h]
-    mov     r11,[rsp+10h]
-    mov     rdx,[r11-18h]
-    mov     r11,[rsp+10h]
-    mov     rsi,[r11-10h]
+    lea     r12,[rsp+18h]
+    mov     rdx,[rbx-18h]
+    mov     rsi,[rbx-10h]
     mov     rdi,r12
     mov     r10,rsi
     mov     rsi,rdx
     mov     rdx,r10
     call    image.fn197
-    mov     byte ptr [rsp+1Fh],0FFh
-    lea     rdx,[rsp+1Fh]
+    mov     byte ptr [rsp+0Fh],0FFh
+    lea     rdx,[rsp+0Fh]
     mov     rdi,r12
     mov     rsi,rdx
     mov     edx,1
     call    image.fn197
-    mov     rdx,[rsp+48h]
-    mov     [rsp+20h],rdx
-    mov     rsi,[rsp+50h]
-    mov     [rsp+28h],rsi
-    mov     rdi,[rsp+58h]
-    mov     [rsp+30h],rdi
-    mov     r8,[rsp+60h]
-    mov     [rsp+38h],r8
-    mov     r9,[rsp+78h]
-    and     r9,0FFh
-    shl     r9,38h
-    mov     r12,[rsp+80h]
-    or      r12,r9
-    mov     r13,r8
-    xor     r13,r12
-    mov     [rsp+38h],r13
-    lea     r14,[rsp+20h]
-    mov     r15,rdx
-    add     r15,rdi
-    mov     [rsp+20h],r15
-    mov     rbp,rsi
-    add     rbp,r13
-    mov     [rsp+28h],rbp
-    mov     esi,0Dh
-    call    ryo_hr_RotlW64
-    mov     rdx,rax
-    mov     [rsp+30h],rdx
-    mov     rbx,rdx
-    xor     rbx,r15
-    mov     [rsp+30h],rbx
-    mov     rdi,r13
-    mov     esi,10h
-    call    ryo_hr_RotlW64
-    mov     rdx,rax
-    mov     [rsp+38h],rdx
-    mov     r13,rdx
-    xor     r13,rbp
-    mov     [rsp+38h],r13
-    mov     rdi,r15
-    mov     esi,20h
-    call    ryo_hr_RotlW64
-    mov     rdx,rax
-    mov     [rsp+20h],rdx
-    add     rbp,rbx
-    mov     [rsp+28h],rbp
-    mov     r15,rdx
-    add     r15,r13
-    mov     [rsp+20h],r15
-    mov     rdi,rbx
-    mov     esi,11h
-    call    ryo_hr_RotlW64
-    mov     rdx,rax
-    mov     [rsp+30h],rdx
-    xor     rdx,rbp
-    mov     [rsp+30h],rdx
-    mov     rdi,r13
-    mov     esi,15h
-    call    ryo_hr_RotlW64
-    mov     rdx,rax
-    mov     [rsp+38h],rdx
-    xor     rdx,r15
-    mov     [rsp+38h],rdx
-    mov     rdi,rbp
-    mov     esi,20h
-    call    ryo_hr_RotlW64
-    mov     rdx,rax
-    mov     [rsp+28h],rdx
-    xor     r15,r12
-    mov     [rsp+20h],r15
-    xor     rdx,0FFh
-    mov     [rsp+28h],rdx
-    mov     rdi,r14
-    call    image.fn209
-    mov     rdx,[rsp+20h]
-    mov     rsi,[rsp+30h]
-    xor     rdx,rsi
-    mov     rsi,[rsp+28h]
-    xor     rdx,rsi
-    mov     rsi,[rsp+38h]
-    mov     rcx,rdx
-    xor     rcx,rsi
+    lea     rdx,[rsp+18h]
+    mov     rdi,rdx
+    call    image.fn198
+    mov     rcx,rax
     jmp     L0
 L4:
     jmp     L3
@@ -3622,8 +3487,8 @@ L4:
     jmp     L5
 L5:
     mov     [rsp],rax
-    lea     rdi,[rsp+0C0h]
-    mov     esi,0FFFFFF40h
+    lea     rdi,[rsp+70h]
+    mov     esi,0FFFFFF90h
     call    ryo_h_Resume
     ud2
   ; OSR entries
@@ -4165,12 +4030,7 @@ L9:
 
 fn hashbrown::raw::RawTable::<(u64, u64)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::RandomState>::{closure#0}}>::{closure#0}
     push    rbx
-    push    r12
-    push    r13
-    push    r14
-    push    r15
-    push    rbp
-    sub     rsp,0A8h
+    sub     rsp,60h
     mov     rax,[rdi]
     mov     rcx,[rsi]
     mov     r11d,0
@@ -4179,16 +4039,11 @@ fn hashbrown::raw::RawTable::<(u64, u64)>::reserve_rehash::<{closure@hashbrown::
     mov     r11,rdx
     imul    r11,10h
     add     r11,rcx
-    mov     [rsp+10h],r11
+    mov     rbx,r11
     jmp     L2
 L0:
     mov     rax,rcx
-    add     rsp,0A8h
-    pop     rbp
-    pop     r15
-    pop     r14
-    pop     r13
-    pop     r12
+    add     rsp,60h
     pop     rbx
     ret
 L1:
@@ -4197,99 +4052,21 @@ L2:
     jmp     L1
 L3:
     mov     rdx,[rax]
-    lea     rsi,[rsp+58h]
+    lea     rsi,[rsp+18h]
     mov     rdi,rsi
     mov     rsi,rdx
     call    image.fn215
-    lea     rdx,[rsp+58h]
-    mov     r11,[rsp+10h]
-    mov     rsi,[r11-10h]
-    mov     [rsp+20h],rsi
-    lea     rsi,[rsp+20h]
+    lea     rdx,[rsp+18h]
+    mov     rsi,[rbx-10h]
+    mov     [rsp+10h],rsi
+    lea     rsi,[rsp+10h]
     mov     rdi,rdx
     mov     edx,8
     call    qword ptr [image.fn197.slot]
-    mov     rdx,[rsp+58h]
-    mov     [rsp+30h],rdx
-    mov     rsi,[rsp+60h]
-    mov     [rsp+38h],rsi
-    mov     rdi,[rsp+68h]
-    mov     [rsp+40h],rdi
-    mov     r8,[rsp+70h]
-    mov     [rsp+48h],r8
-    mov     r9,[rsp+88h]
-    and     r9,0FFh
-    shl     r9,38h
-    mov     r12,[rsp+90h]
-    or      r12,r9
-    mov     r13,r8
-    xor     r13,r12
-    mov     [rsp+48h],r13
-    lea     r14,[rsp+30h]
-    mov     r15,rdx
-    add     r15,rdi
-    mov     [rsp+30h],r15
-    mov     rbp,rsi
-    add     rbp,r13
-    mov     [rsp+38h],rbp
-    mov     esi,0Dh
-    call    ryo_hr_RotlW64
-    mov     rdx,rax
-    mov     [rsp+40h],rdx
-    mov     rbx,rdx
-    xor     rbx,r15
-    mov     [rsp+40h],rbx
-    mov     rdi,r13
-    mov     esi,10h
-    call    ryo_hr_RotlW64
-    mov     rdx,rax
-    mov     [rsp+48h],rdx
-    mov     r13,rdx
-    xor     r13,rbp
-    mov     [rsp+48h],r13
-    mov     rdi,r15
-    mov     esi,20h
-    call    ryo_hr_RotlW64
-    mov     rdx,rax
-    mov     [rsp+30h],rdx
-    add     rbp,rbx
-    mov     [rsp+38h],rbp
-    mov     r15,rdx
-    add     r15,r13
-    mov     [rsp+30h],r15
-    mov     rdi,rbx
-    mov     esi,11h
-    call    ryo_hr_RotlW64
-    mov     rdx,rax
-    mov     [rsp+40h],rdx
-    xor     rdx,rbp
-    mov     [rsp+40h],rdx
-    mov     rdi,r13
-    mov     esi,15h
-    call    ryo_hr_RotlW64
-    mov     rdx,rax
-    mov     [rsp+48h],rdx
-    xor     rdx,r15
-    mov     [rsp+48h],rdx
-    mov     rdi,rbp
-    mov     esi,20h
-    call    ryo_hr_RotlW64
-    mov     rdx,rax
-    mov     [rsp+38h],rdx
-    xor     r15,r12
-    mov     [rsp+30h],r15
-    xor     rdx,0FFh
-    mov     [rsp+38h],rdx
-    mov     rdi,r14
-    call    image.fn209
-    mov     rdx,[rsp+30h]
-    mov     rsi,[rsp+40h]
-    xor     rdx,rsi
-    mov     rsi,[rsp+38h]
-    xor     rdx,rsi
-    mov     rsi,[rsp+48h]
-    mov     rcx,rdx
-    xor     rcx,rsi
+    lea     rdx,[rsp+18h]
+    mov     rdi,rdx
+    call    image.fn198
+    mov     rcx,rax
     jmp     L0
 L4:
     jmp     L3
@@ -4297,8 +4074,8 @@ L4:
     jmp     L5
 L5:
     mov     [rsp],rax
-    lea     rdi,[rsp+0D0h]
-    mov     esi,0FFFFFF30h
+    lea     rdi,[rsp+60h]
+    mov     esi,0FFFFFFA0h
     call    ryo_h_Resume
     ud2
   ; OSR entries

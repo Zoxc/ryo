@@ -131,19 +131,49 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let [x] = self.arg_slots::<1>(args)?;
                 let family = if name.as_str() == "bswap" { "Bswap" } else { "Bitreverse" };
                 self.into_dest(&cont, |fx, d| {
-                    fx.op(opw(family, w), &[d, x]);
+                    if family == "Bswap" && w == Width::W8 {
+                        // One byte: the identity.
+                        fx.mov(d, x, 1);
+                    } else {
+                        fx.op(opw(family, w), &[d, x]);
+                    }
                     Ok(())
                 })?
             }
             "rotate_left" | "rotate_right" => {
                 let l = self.layout_of(callee.args.type_at(0))?;
                 let ScalarKind::Int { w, .. } = self.scalar_kind(l)? else { return native("rotate of a float") };
-                let [x, n] = self.arg_slots::<2>(args)?;
-                let family = if name.as_str() == "rotate_left" { "Rotl" } else { "Rotr" };
-                self.into_dest(&cont, |fx, d| {
-                    fx.op(opw(family, w), &[d, x, n]);
-                    Ok(())
-                })?
+                let left = name.as_str() == "rotate_left";
+                // By a constant (taken mod N): `shl.imm`, `shr.u.imm`, `or`.
+                if w != Width::W128
+                    && let [x, n] = args
+                    && let Some(n) = self.arg_const(n)?
+                {
+                    let x = self.arg_slot(x)?;
+                    let bits = w.bits();
+                    let c = (n as u32 % bits) as u128;
+                    let c = if left { c } else { (u128::from(bits) - c) % u128::from(bits) };
+                    let size = w.bytes();
+                    self.into_dest(&cont, |fx, d| {
+                        if c == 0 {
+                            fx.mov(d, x, size);
+                        } else {
+                            let t = fx.frame.temp(u64::from(size), u64::from(size));
+                            let u = fx.frame.temp(u64::from(size), u64::from(size));
+                            fx.op_imm("Shl", w, t, x, c);
+                            fx.op_imm("ShrU", w, u, x, u128::from(bits) - c);
+                            fx.op(opw("Or", w), &[d, t, u]);
+                        }
+                        Ok(())
+                    })?
+                } else {
+                    let [x, n] = self.arg_slots::<2>(args)?;
+                    let family = if left { "Rotl" } else { "Rotr" };
+                    self.into_dest(&cont, |fx, d| {
+                        fx.op(opw(family, w), &[d, x, n]);
+                        Ok(())
+                    })?
+                }
             }
             n => self.more_intrinsics(n, callee, args, &cont)?,
         };

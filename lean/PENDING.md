@@ -102,3 +102,9 @@ remove it once a Lean session has handled it.
   `M = ceil(2^p / b) < 2^(64-N)` and `M*b - 2^p <= 2^(p-N)` (both checkable per site;
   otherwise the handler stays). A C1' rule with that side condition and one Nat lemma.
   Commit: "Lower small unsigned division by constants to multiply-shift".
+
+- Lowering: `rotate_left`/`rotate_right` by a constant `n` (w8-w64) lower to
+  `shl.imm c`, `shr.u.imm N-c`, `or` with `c = n mod N` (`rotate_right` uses `N - c`), or a
+  `mov` for `c = 0`; `bswap.w8` lowers to `mov.w8` (a refinement: `mov` keeps uninit bytes
+  where `bswap` was UB). C1' rules; `BitVec.rotateLeft` unfolding lemma. Commit: "Lower
+  rotates by a constant to shifts and an or".
