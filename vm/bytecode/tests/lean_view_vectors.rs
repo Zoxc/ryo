@@ -232,7 +232,7 @@ fn ref_text(r: asm::Ref) -> String {
         Ref::Data(d) => format!("data {}", d.0),
         Ref::Ro(o) => format!("ro {o}"),
         Ref::Rec => "rec".to_owned(),
-        Ref::RecCtr => "recctr".to_owned(),
+        Ref::RecLoopCtr => "recloopctr".to_owned(),
     }
 }
 

@@ -389,8 +389,8 @@ const JIT_REENCODE: &[(&str, &str)] = &[("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SY
 /// [`JIT_SYNC`], through the SSA tier with its checkers.
 const JIT_SSA: &[(&str, &str)] = &[("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC", "1"), ("RYO_JIT_OPT", "ssa"), ("RYO_JIT_CHECK", "1")];
 /// The SSA tier entered by OSR at the first loop head pass of each function's first call
-/// (whose entry check leaves the counter at 0).
-const JIT_SSA_OSR: &[(&str, &str)] = &[("RYO_JIT_THRESHOLD", "16"), ("RYO_JIT_SYNC", "1"), ("RYO_JIT_OPT", "ssa"), ("RYO_JIT_CHECK", "1")];
+/// (whose entry check doesn't trip: the second call's does).
+const JIT_SSA_OSR: &[(&str, &str)] = &[("RYO_JIT_THRESHOLD", "2,0"), ("RYO_JIT_SYNC", "1"), ("RYO_JIT_OPT", "ssa"), ("RYO_JIT_CHECK", "1")];
 
 /// Added by `test --clif`.
 const CLIF: Variant = Variant { name: "clif", compiler: Compiler::Clif, ..VARIANT };

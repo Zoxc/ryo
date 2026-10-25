@@ -4,17 +4,17 @@
 //! that this side builds ([`ryo_bytecode::jit_abi`]), and starts with `ryo_jit_start`.
 //!
 //! - **Trips**: [`trip_entry`] and [`trip_osr`] are what a JIT record's `entry` and `osr`
-//!   slots start at; a function's counter stub calls them when its counter runs out
-//!   (design/vm.md, "JIT records and counters"). They queue the record if it is cold, reset
-//!   the counter, and return into the AOT code; in a compiled function they continue into
-//!   its JIT code instead (at a loop head through its OSR dispatcher). Lock-free: a CAS on
+//!   slots start at; a function's counter stub calls them when a counter of its stops being
+//!   negative (design/vm.md, "JIT records and counters"). They queue the record if it is
+//!   cold, bias its counters ([`JitRecord`]), and return into the AOT code; in a compiled
+//!   function they continue into its JIT code instead (at a loop head through its OSR dispatcher). Lock-free: a CAS on
 //!   the record's state, a push onto [`QUEUE`], and a futex wake if the JIT thread sleeps.
 //!   They never compile or allocate, but the first push starts the JIT thread.
 //! - **The JIT thread** takes the whole queue at once ([`next_batch`]), decodes each
 //!   function from its image ([`ryo_bytecode::image::ImageResolver`]), encodes it again
 //!   without counters, installs the code near the image with its unwind information, and
 //!   publishes it in the record: `entry` (its [`JIT_ENTRY_PREFIX`]) and `osr` (its OSR
-//!   dispatcher), then the state `Done`, then the counter [`REDIRECT`], so that every later
+//!   dispatcher), then the state `Done`, then the counters' `Done` bias, so that every later
 //!   call's and loop iteration's counter check takes its stub into the JIT code, a loop
 //!   head's through an OSR entry that converts the AOT frame into the JIT one. It reports
 //!   each record ([`done`]).
@@ -33,10 +33,10 @@ use core::ptr;
 use core::sync::atomic::Ordering::{AcqRel, Acquire, Relaxed, Release, SeqCst};
 use core::sync::atomic::{AtomicBool, AtomicI64, AtomicPtr, AtomicU8, AtomicU32, AtomicUsize};
 
-use ryo_bytecode::image::{Image, JIT_COLD, JIT_DONE, JIT_FAILED, JIT_QUEUED, JIT_THRESHOLD, JitRecord};
+use ryo_bytecode::image::{Image, JIT_BIAS, JIT_COLD, JIT_DONE, JIT_ENTRY_THRESHOLD, JIT_FAILED, JIT_QUEUED, JIT_THRESHOLD, JitRecord, jit_settle};
 use ryo_bytecode::jit_abi::{JIT_CHECK, JIT_LOG, JIT_OPT_SSA, JIT_OPT_SSA_NAIVE, JIT_PERFMAP, JIT_SYNC, JIT_TEST_PANIC, RtApi};
 
-pub use ryo_bytecode::jit_abi::{JIT_ENTRY_PREFIX, REDIRECT};
+pub use ryo_bytecode::jit_abi::JIT_ENTRY_PREFIX;
 
 use super::sys::fatal;
 
@@ -44,9 +44,10 @@ use super::sys::fatal;
 struct Config {
     /// `RYO_JIT=off` turns the JIT into the no-op JIT.
     enabled: bool,
-    /// `RYO_JIT_THRESHOLD`: what registration sets every counter to, and what a trip resets
-    /// it to (default: the image's, [`JIT_THRESHOLD`]).
-    threshold: Option<i64>,
+    /// `RYO_JIT_THRESHOLD`: the call and loop thresholds registration sets the counters
+    /// to (default: the image's, [`JIT_ENTRY_THRESHOLD`] and [`JIT_THRESHOLD`]): `L` for
+    /// `L / 16` calls and `L` loop iterations, or `E,L`.
+    threshold: Option<(i64, i64)>,
     /// `RYO_JIT_SYNC=1`: a trip that queues a function waits until it is compiled (or failed)
     /// and continues in its JIT code, so threshold 0 runs every function's JIT code from its
     /// first call (tests).
@@ -157,7 +158,7 @@ fn from_env() -> Config {
     let flag = |name: &CStr| var(name) == Some(b"1");
     Config {
         enabled: var(c"RYO_JIT") != Some(b"off"),
-        threshold: var(c"RYO_JIT_THRESHOLD").and_then(parse_i64).map(|t| t.max(0)),
+        threshold: var(c"RYO_JIT_THRESHOLD").and_then(parse_thresholds),
         sync: flag(c"RYO_JIT_SYNC"),
         perfmap: flag(c"RYO_JIT_PERFMAP"),
         log: flag(c"RYO_JIT_LOG"),
@@ -168,21 +169,32 @@ fn from_env() -> Config {
     }
 }
 
+/// `RYO_JIT_THRESHOLD`'s value: `L` or `E,L` ([`Config::threshold`]).
+fn parse_thresholds(s: &[u8]) -> Option<(i64, i64)> {
+    let lim = |t: i64| t.clamp(0, JIT_BIAS / 4);
+    match s.iter().position(|&c| c == b',') {
+        Some(k) => Some((lim(parse_i64(&s[..k])?), lim(parse_i64(&s[k + 1..])?))),
+        None => parse_i64(s).map(|t| (lim(t) / 16, lim(t))),
+    }
+}
+
 impl Config {
-    fn threshold(&self) -> i64 {
-        self.threshold.unwrap_or(JIT_THRESHOLD)
+    /// The call and loop thresholds.
+    fn thresholds(&self) -> [i64; 2] {
+        let (e, l) = self.threshold.unwrap_or((JIT_ENTRY_THRESHOLD, JIT_THRESHOLD));
+        [e, l]
     }
 }
 
 /// Sets the JIT's settings instead of the environment, before anything reads them (tests):
-/// on, with `sync` ([`Config::sync`]) and `threshold` (as `RYO_JIT_THRESHOLD`), and
+/// on, with `sync` ([`Config::sync`]) and `threshold` (as `RYO_JIT_THRESHOLD=threshold`), and
 /// `RYO_JIT_LOG`, `RYO_JIT_OPT` and `RYO_JIT_CHECK` from the environment. False if they were
 /// read already.
 #[doc(hidden)]
 pub fn configure_jit(sync: bool, threshold: Option<i64>) -> bool {
     set_config(|| Config {
         enabled: true,
-        threshold,
+        threshold: threshold.map(|t| t.clamp(0, JIT_BIAS / 4)).map(|t| (t / 16, t)),
         sync,
         perfmap: false,
         log: var(c"RYO_JIT_LOG").is_some(),
@@ -235,20 +247,24 @@ static DISABLED: AtomicBool = AtomicBool::new(false);
 
 // The record's fields the trips and the JIT thread share with the counter checks, which read
 // and write them with plain instructions: atomics of their size.
-fn ctr(r: *mut JitRecord) -> &'static AtomicI64 {
-    // SAFETY: records live in images' writable sections forever; `ctr` is 8-aligned.
-    unsafe { AtomicI64::from_ptr(&raw mut (*r).ctr) }
+fn ctr_e(r: *mut JitRecord) -> &'static AtomicI64 {
+    // SAFETY: records live in images' writable sections forever; the counters are 8-aligned.
+    unsafe { AtomicI64::from_ptr(&raw mut (*r).ctr_e) }
+}
+fn ctr_l(r: *mut JitRecord) -> &'static AtomicI64 {
+    // SAFETY: as for `ctr_e`.
+    unsafe { AtomicI64::from_ptr(&raw mut (*r).ctr_l) }
 }
 fn entry(r: *mut JitRecord) -> &'static AtomicPtr<u8> {
-    // SAFETY: as for `ctr`.
+    // SAFETY: as for `ctr_e`.
     unsafe { AtomicPtr::from_ptr((&raw mut (*r).entry).cast::<*mut u8>()) }
 }
 fn osr_slot(r: *mut JitRecord) -> &'static AtomicPtr<u8> {
-    // SAFETY: as for `ctr`.
+    // SAFETY: as for `ctr_e`.
     unsafe { AtomicPtr::from_ptr((&raw mut (*r).osr).cast::<*mut u8>()) }
 }
 fn state(r: *mut JitRecord) -> &'static AtomicU32 {
-    // SAFETY: as for `ctr`.
+    // SAFETY: as for `ctr_e`.
     unsafe { &(*r).state }
 }
 
@@ -475,7 +491,6 @@ pub unsafe extern "sysv64" fn trip_osr() {
 /// [`trip_entry`]'s work: the JIT entry to continue at, or null to continue in AOT code.
 extern "sysv64-unwind" fn entry_trip(rec: *mut JitRecord) -> *const u8 {
     if trip(rec) == JIT_DONE {
-        ctr(rec).store(REDIRECT, Relaxed);
         return entry(rec).load(Acquire);
     }
     ptr::null()
@@ -489,38 +504,45 @@ extern "sysv64-unwind" fn osr_trip(rec: *mut JitRecord) -> *const u8 {
     ptr::null()
 }
 
-/// What both trips do: queues the record if it is cold, and resets its counter: to the
-/// threshold while it is queued, out of reach (`i64::MAX`) once it failed or without a JIT,
-/// and not at all once it is compiled. With [`Config::sync`], waits for a queued record to
-/// be compiled. Returns the record's state.
+/// What both trips do: queues the record if it is cold, and biases its counters as its
+/// state says ([`settle`]): away from the trigger while it is queued, failed or without a
+/// JIT, towards every check's stub once it is compiled. With [`Config::sync`], waits for a
+/// queued record to be compiled. Returns the record's state.
 fn trip(rec: *mut JitRecord) -> u32 {
     let cfg = config();
     if !cfg.enabled || DISABLED.load(Relaxed) {
-        ctr(rec).store(i64::MAX, Relaxed);
+        for c in [ctr_e(rec), ctr_l(rec)] {
+            jit_settle(c, || JIT_FAILED);
+        }
         return JIT_COLD;
     }
-    let mut st = state(rec).load(Acquire);
+    let st = state(rec).load(Acquire);
     if st == JIT_COLD && state(rec).compare_exchange(JIT_COLD, JIT_QUEUED, AcqRel, Acquire).is_ok() {
         push(rec);
     }
-    st = state(rec).load(SeqCst);
-    if st == JIT_QUEUED {
-        ctr(rec).store(cfg.threshold(), SeqCst);
-        if cfg.sync {
-            while state(rec).load(SeqCst) == JIT_QUEUED && !DISABLED.load(SeqCst) {
-                futex_wait(state(rec), JIT_QUEUED);
-            }
-        }
-        // Compiled meanwhile: don't leave the reset counter, which would delay the entry's
-        // redirection by a threshold.
-        st = state(rec).load(SeqCst);
-        if st == JIT_DONE {
-            ctr(rec).store(REDIRECT, SeqCst);
-        }
-    } else if st == JIT_FAILED {
-        ctr(rec).store(i64::MAX, Relaxed);
+    // With `sync`, a queued record keeps its counters unbiased, so that every thread that
+    // trips meanwhile waits for the compile too, rather than running on in AOT code.
+    if !cfg.sync {
+        settle(rec);
     }
-    st
+    if cfg.sync && state(rec).load(SeqCst) == JIT_QUEUED {
+        while state(rec).load(SeqCst) == JIT_QUEUED && !DISABLED.load(SeqCst) {
+            futex_wait(state(rec), JIT_QUEUED);
+        }
+    }
+    if cfg.sync {
+        settle(rec);
+    }
+    state(rec).load(SeqCst)
+}
+
+/// Moves both counters of `rec` to the bias of its state ([`JitRecord`]), keeping their
+/// counts. Another thread changing the state meanwhile settles them too, after the change:
+/// whichever is last leaves the bias of the final state.
+fn settle(rec: *mut JitRecord) {
+    for c in [ctr_e(rec), ctr_l(rec)] {
+        jit_settle(c, || state(rec).load(SeqCst));
+    }
 }
 
 /// Pushes a record that just became `Queued`, starts the JIT thread with the first push, and
@@ -585,6 +607,7 @@ fn start() -> bool {
     }
     let api = RtApi {
         flags,
+        thresholds: cfg.thresholds(),
         probe: super::interp::probe_stack as *const (),
         personality: rust_eh_personality as *const (),
         next_batch,
@@ -602,11 +625,15 @@ unsafe extern "C" {
     fn ryo_jit_start(rt: &'static RtApi) -> bool;
 }
 
-/// [`RtApi::next_batch`]: the queue, in trip order, once it isn't empty.
-extern "C-unwind" fn next_batch() -> *mut JitRecord {
+/// [`RtApi::next_batch`]: the queue, in trip order, once it isn't empty (or at once without
+/// `wait`).
+extern "C-unwind" fn next_batch(wait: bool) -> *mut JitRecord {
     loop {
         let mut list = QUEUE.swap(ptr::null_mut(), Acquire);
         if list.is_null() {
+            if !wait {
+                return list;
+            }
             // Re-check after announcing the sleep: a push after that wakes us (or changes
             // `WAKE`, so that the wait returns at once).
             SLEEPING.store(true, SeqCst);
@@ -647,21 +674,25 @@ extern "C-unwind" fn done(rec: *mut JitRecord, ok: bool) {
 fn fail(rec: *mut JitRecord) {
     FAILED.fetch_add(1, Relaxed);
     state(rec).store(JIT_FAILED, SeqCst);
-    ctr(rec).store(i64::MAX, SeqCst);
+    settle(rec);
 }
 
-/// Called for every newly registered image: with `RYO_JIT_THRESHOLD`, sets its counters to
-/// it, and without a JIT (`RYO_JIT=off`) out of reach.
+/// Called for every newly registered image: with `RYO_JIT_THRESHOLD`, starts its counters
+/// at its thresholds, and without a JIT (`RYO_JIT=off`) biases them out of reach, as for a
+/// failed record.
 #[inline(never)]
 pub(crate) fn registered(img: &Image<'_>) {
     let cfg = config();
-    let v = match (cfg.enabled, cfg.threshold) {
-        (false, _) => i64::MAX,
-        (true, Some(t)) => t,
+    let [e, l] = cfg.thresholds();
+    let bias = match (cfg.enabled, cfg.threshold) {
+        (false, _) => -JIT_BIAS,
+        (true, Some(_)) => 0,
         (true, None) => return,
     };
     for i in 0..img.header().jit_records.count as usize {
-        ctr(img.jit_records().wrapping_add(i)).store(v, Relaxed);
+        let r = img.jit_records().wrapping_add(i);
+        ctr_e(r).store(bias - e, Relaxed);
+        ctr_l(r).store(bias - l, Relaxed);
     }
 }
 

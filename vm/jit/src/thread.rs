@@ -30,8 +30,21 @@ fn quiet_panics(log: bool) {
 
 fn main(rt: &'static RtApi) {
     let mut jit = Jit::new(rt);
+    // Records published lately, whose counters' bias a racing AOT increment may have erased
+    // (`JitRecord`): re-checked after each batch and, while there are any, after a pause
+    // without one, until they are seen settled twice.
+    let mut recheck: Vec<(*mut ryo_bytecode::image::JitRecord, u8)> = Vec::new();
     loop {
-        let mut list = (rt.next_batch)();
+        let mut list = (rt.next_batch)(recheck.is_empty());
+        if list.is_null() {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+            list = (rt.next_batch)(false);
+        }
+        recheck.retain_mut(|(rec, seen)| {
+            crate::install::settle(*rec);
+            *seen = if crate::install::settled(*rec) { *seen + 1 } else { 0 };
+            *seen < 2
+        });
         while !list.is_null() {
             let rec = list;
             // SAFETY: the records of a batch are this thread's until it reports them.
@@ -51,6 +64,9 @@ fn main(rt: &'static RtApi) {
                 jit.log(rec, why);
             }
             (rt.done)(rec, why.is_none());
+            if why.is_none() {
+                recheck.push((rec, 0));
+            }
         }
     }
 }

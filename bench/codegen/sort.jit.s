@@ -363,7 +363,7 @@ fn <std::ops::RangeTo<usize> as std::slice::SliceIndex<[u32]>>::index_mut
     mov     rdx,rsi
     mov     rsi,rdi
     mov     edi,0
-    call    fn0
+    call    qword ptr [fn0.slot]
     add     rsp,18h
     ret
 
@@ -776,7 +776,7 @@ fn <std::vec::Vec<u32> as std::vec::spec_extend::SpecExtend<&u32, std::slice::It
     mov     [rsp+10h],rdx
     lea     rax,[rsp+8]
     mov     rdi,rax
-    call    fn0
+    call    qword ptr [fn0.slot]
     jmp     L1
 L0:
     mov     rbx,[rsp+20h]
@@ -799,7 +799,7 @@ L3:
 
 fn <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortFreezeTypeImpl>::small_sort::<for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
     sub     rsp,18h
-    call    fn0
+    call    qword ptr [fn0.slot]
     add     rsp,18h
     ret
   ; OSR entries
@@ -820,7 +820,7 @@ fn <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortFreezeTypeImpl
 
 fn <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortTypeImpl>::small_sort::<for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
     sub     rsp,18h
-    call    fn0
+    call    qword ptr [fn0.slot]
     add     rsp,18h
     ret
 
@@ -1215,7 +1215,7 @@ fn core::slice::<impl [u32]>::swap_unchecked
     lea     rbx,[rbx+r13*4]
     mov     rdi,rax
     mov     rsi,rbx
-    call    fn1
+    call    qword ptr [fn1.slot]
     mov     rbx,[rsp+30h]
     mov     r12,[rsp+20h]
     mov     r13,[rsp+10h]
@@ -1266,7 +1266,7 @@ fn core::slice::index::<impl std::ops::Index<std::ops::Range<usize>> for [u32]>:
     mov     r10,rsi
     mov     rsi,rcx
     mov     rcx,r10
-    call    fn0
+    call    qword ptr [fn0.slot]
     add     rsp,18h
     ret
 
@@ -1477,7 +1477,7 @@ L6:
     mov     rdi,rax
     mov     rsi,rcx
     movzx   edi,dil
-    call    qword ptr [fn13.slot]
+    call    fn13
     mov     rax,r15
     mov     rbx,[rsp+50h]
     mov     r12,[rsp+40h]
@@ -7385,7 +7385,7 @@ L3:
     mov     edx,4
     mov     rcx,r14
     mov     r8,rax
-    call    fn6
+    call    qword ptr [fn6.slot]
     mov     rax,rbx
     mov     rdx,r14
     mov     rbx,[rsp+40h]
@@ -7706,7 +7706,7 @@ fn std::vec::Vec::<u32>::extend_trusted::<std::iter::Map<std::ops::Range<usize>,
 fn std::vec::Vec::<u32>::push
     sub     rsp,28h
     mov     esi,esi
-    call    fn0
+    call    qword ptr [fn0.slot]
     mov     [rsp+8],rax
     add     rsp,28h
     ret

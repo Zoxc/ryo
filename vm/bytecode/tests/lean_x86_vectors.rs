@@ -15,6 +15,7 @@ use std::fmt::Write as _;
 use ryo_bytecode::Opcode;
 use ryo_bytecode::asm::{Mode, Ref, osr};
 use ryo_bytecode::full::{Const, Data, Func, Site, Sym};
+use ryo_bytecode::image::JIT_LOOP_CTR;
 
 // What `x86.rs` takes from its parent module.
 const ARG_REGS: usize = 6;
@@ -95,7 +96,7 @@ fn addr_of(r: Ref) -> u64 {
         Ref::Data(Data(d)) => 0x5800_0000 + d as u64,
         Ref::Ro(o) => 0x6800_0000 + o as u64,
         Ref::Rec => RECORD,
-        Ref::RecCtr => RECORD - 1,
+        Ref::RecLoopCtr => RECORD + JIT_LOOP_CTR as u64,
         Ref::RegHandler(_) => unreachable!("JIT code only"),
     }
 }
@@ -134,7 +135,7 @@ fn gen_ref(rng: &mut Rng) -> Ref {
         6 => Ref::Data(Data(small(rng))),
         7 => Ref::Ro(small(rng)),
         8 => Ref::Rec,
-        _ => Ref::RecCtr,
+        _ => Ref::RecLoopCtr,
     }
 }
 
@@ -213,8 +214,9 @@ fn gen_items(rng: &mut Rng) -> Vec<Item> {
         v.push(Item::Jmp(gen_ref(rng)));
         v.push(Item::LeaTable(pos_target(rng)));
     }
+    v.push(Item::CtrInc(false));
+    v.push(Item::CtrInc(true));
     for k in [0u8, 1, 16, 127, 128, 255] {
-        v.push(Item::CtrSub(k));
         v.push(Item::CallR11(k));
     }
     for cond in [Cond::Always].into_iter().chain(CONDS) {
@@ -317,12 +319,9 @@ fn decode(code: &[u8], pos: u32, relocs: Option<&[Reloc]>, sp: Option<u32>) -> O
     c.item().ok().map(|i| (i, c.pos - pos))
 }
 
-/// The item's references all resolve back from their linked addresses.
-fn linkable(item: &Item) -> bool {
-    !matches!(
-        item,
-        Item::Lea(_, Ref::RecCtr) | Item::Call(Ref::RecCtr) | Item::CallMem(Ref::RecCtr) | Item::LoadRip(_, Ref::RecCtr) | Item::Jmp(Ref::RecCtr)
-    )
+/// The item's references all resolve back from their linked addresses (all do).
+fn linkable(_: &Item) -> bool {
+    true
 }
 
 // JSON in the form of the Lean types' derived `ToJson`/`FromJson`.
@@ -367,7 +366,7 @@ fn rf(r: Ref) -> String {
         Ref::Data(Data(d)) => format!("{{\"data\":{{\"d\":{d}}}}}"),
         Ref::Ro(o) => format!("{{\"ro\":{{\"off\":{o}}}}}"),
         Ref::Rec => "\"record\"".into(),
-        Ref::RecCtr => "\"recordCtr\"".into(),
+        Ref::RecLoopCtr => "\"recordLoopCtr\"".into(),
         Ref::RegHandler(_) => unreachable!("JIT code only"),
     }
 }
@@ -392,7 +391,7 @@ fn item(i: &Item) -> String {
         Item::Call(to) => c("call", &[("to", rf(to))]),
         Item::CallMem(to) => c("callMem", &[("to", rf(to))]),
         Item::CallRax => "\"callRax\"".into(),
-        Item::CtrSub(k) => c("ctrSub", &[("k", k.to_string())]),
+        Item::CtrInc(lp) => c("ctrInc", &[("loop", lp.to_string())]),
         Item::CallR11(d) => c("callR11", &[("d", d.to_string())]),
         Item::LoadRip(r, to) => c("loadRip", &[("dst", reg(r)), ("to", rf(to))]),
         Item::CallMemRax => "\"callMemRax\"".into(),

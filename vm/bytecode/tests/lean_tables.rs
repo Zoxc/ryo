@@ -481,7 +481,11 @@ namespace Ryo.Vm.Asm
     for (name, doc, v) in [
         ("argRegs", "`ARG_REGS`: handlers take `rdi, rsi, rdx, rcx, r8, r9`.", asm::ARG_REGS as u64),
         ("maxOperands", "`MAX_OPERANDS`.", asm::MAX_OPERANDS as u64),
-        ("entryCount", "`ENTRY_COUNT`: what a call subtracts from its function's counter.", asm::ENTRY_COUNT as u64),
+        (
+            "jitLoopCtr",
+            "`image::JIT_LOOP_CTR`: the offset of a JIT record's loop counter, which loop heads' checks count up.",
+            ryo_bytecode::image::JIT_LOOP_CTR as u64,
+        ),
         ("retSret", "`RET_SRET`: the return kind of memory the caller passes.", asm::RET_SRET as u64),
         ("argAddr", "`ARG_ADDR`: in a call's argument list, the slot's address.", asm::ARG_ADDR as u64),
         ("absData", "`full::ABS_DATA`: bit 31 of an `Abs` word, the data area.", full::ABS_DATA as u64),

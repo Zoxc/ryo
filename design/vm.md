@@ -36,9 +36,9 @@ native frames, and unwind natively ([Unwinding](#unwinding)). The runtime lives 
   and `add rsp, F + 8` undoes it before `ret` and tail jumps. Frame slots are addressed
   through `rsp`, `[rsp + F + off]`, and `rbp` is untouched.
 - **Counter check**: before the prologue, every function the backend emits counts its call
-  in its JIT record, `sub qword [rip + rec.ctr], 16; js .tier_entry`, which moves nothing
+  in its JIT record, `inc qword [rip + rec.ctr_e]; jns .tier_entry`, which moves nothing
   and touches only the flags ([JIT records and counters](#jit-records-and-counters)). So
-  the prologue starts at byte 10 (14 with a long `js`).
+  the prologue starts at byte 9 (13 with a long `jns`).
 - **Frame pointer**: the backend keeps one where rustc's LLVM backend would
   (`partition::asm_mode`, following `rustc_codegen_llvm::attributes::frame_pointer`): if
   the target's `frame_pointer` isn't `MayOmit`, with `-Cforce-frame-pointers` or
@@ -391,8 +391,9 @@ has its own `Opcode`, `Insn`, decoder, encoder and disassembly, in the same word
 
 ### JIT records and counters
 
-Every function counts its calls and loop iterations down in a *JIT record*, and leaves
-through an out-of-line stub into the runtime when the count runs out: the trigger of the [JIT](jit.md)
+Every function counts its calls and its loop iterations up in two counters of a *JIT
+record*, and leaves through an out-of-line stub into the runtime when one stops being
+negative: the trigger of the [JIT](jit.md)
 that recompiles hot functions, and later its way into the new code (a stub calls through
 the record, so redirecting the record redirects every entry and loop head without patching
 code). `asm::Mode::counters` turns the counters on; the backend always does, so every image
@@ -402,7 +403,7 @@ has one code shape, and code the JIT encodes for itself has none.
   section at `Header::jit_records`): 64 bytes and 64-aligned, one cache line each, so hot
   functions' counters don't share one.
   ```
-  ctr: i64              counts down; negative: take the stub
+  ctr_e: i64            the call counter; not negative: take the stub
   entry: *const u8      what the entry's stub calls (offset 8, JIT_ENTRY_SLOT)
   osr: *const u8        what a loop head's stub calls (offset 16, JIT_OSR_SLOT)
   next: *mut JitRecord  the JIT queue's link
@@ -410,9 +411,10 @@ has one code shape, and code the JIT encodes for itself has none.
   func: u32             the function's index
   header: *const Header
   jit_code: *const u8   the JIT code's first instruction once Done
-  jit_len: u64          and its length
+  ctr_l: i64            the loop counter (offset 56, JIT_LOOP_CTR)
   ```
-  The writer sets `ctr` to `JIT_THRESHOLD` (10 000), `entry` and `osr` to `ryo_rt`'s
+  The writer sets `ctr_e` to `-JIT_ENTRY_THRESHOLD` (625 calls), `ctr_l` to
+  `-JIT_THRESHOLD` (10 000 iterations), `entry` and `osr` to `ryo_rt`'s
   `ryo_jit_trip_entry` and `ryo_jit_trip_osr` and `header` to the image's header (`Abs64`
   relocations), `func` to the index, the rest to 0. From then on the runtime owns the record
   ([jit.md](jit.md#records-and-trips)).
@@ -420,22 +422,28 @@ has one code shape, and code the JIT encodes for itself has none.
   backward branch, after its padding, before the head's instruction, so every branch to the
   head passes it):
   ```
-  f:      sub qword [rip + rec_f.ctr], 16   ; asm::ENTRY_COUNT
-          js  .tier_entry
+  f:      inc qword [rip + rec_f.ctr_e]
+          jns .tier_entry
           <prologue> …
-  .head:  sub qword [rip + rec_f.ctr], 1
-          js  .tier_head_N                  ; N: the head's index, in code order
+  .head:  inc qword [rip + rec_f.ctr_l]
+          jns .tier_head_N                  ; N: the head's index, in code order
           …
   ; after the last instruction: the loop heads' stubs in order, then the entry's
-  .tier_head_N:  lea r11, [rip + rec_f]; mov eax, N; call [r11 + 16]; jmp .head + 10
-  .tier_entry:   lea r11, [rip + rec_f]; call [r11 + 8]; jmp f + 10
+  .tier_head_N:  lea r11, [rip + rec_f]; mov eax, N; call [r11 + 16]; jmp .head + 9
+  .tier_entry:   lea r11, [rip + rec_f]; call [r11 + 8]; jmp f + 9
   ```
-  The `js` and the `jmp` back relax like other branches (`f + 14`, `.head + 14` after a
-  long `js`). Counting is a plain `sub`, racy and lossy across threads, which a heuristic
-  tolerates. A call counts 16 and an iteration 1, so a long-running loop trips without
-  calls. The `sub`'s field is followed by its immediate, so it is relocated against
-  `Ref::RecCtr`, the record less one byte, and the `lea` against `Ref::Rec`, the record. Both
-  are the function's own, so the encoder needs no function index; the writer resolves them.
+  The `jns` and the `jmp` back relax like other branches (`f + 13`, `.head + 13` after a
+  long `jns`). Counting is a plain `inc`, racy and lossy across threads, which a heuristic
+  tolerates. Calls and iterations count separately, so a long-running loop trips without
+  calls. The entry's `inc` is relocated against `Ref::Rec`, the record, as the stubs' `lea`s
+  are, and the heads' against `Ref::RecLoopCtr`, the record plus 56. Both are the
+  function's own, so the encoder needs no function index; the writer resolves them.
+- **Biases**: a counter holds its count less its threshold, plus a bias the runtime moves
+  with the record's state: 0 while `Cold`, `-JIT_BIAS` (2^62) while `Queued` or `Failed`, so
+  no check trips again, and `+JIT_BIAS` once `Done`, so every check takes its stub. The AOT
+  code only increments, and the runtime moves a bias with a compare-exchange, so the count
+  is readable from the value alone (`image::jit_count`): the JIT reads exact call and
+  iteration counts from it.
 - **Resuming**: the stubs `call` through the record's slot, so the return address is the
   continuation in the stub, and whatever the slot points at returns there to continue the
   AOT code, with no lookup. Code a slot is redirected to that doesn't return pops the return
@@ -444,16 +452,16 @@ has one code shape, and code the JIT encodes for itself has none.
   starts with `rsp` a multiple of 16 (the caller's return address and the stub's are both
   on it), a loop head trip with `rsp + 8` one, as a normal callee. The stack arguments are
   at `rsp + 16` in an entry trip. A trip that calls into Rust must save the argument
-  registers and align `rsp` itself, and must read and write `ctr` as a relaxed atomic, as
-  the AOT code's `sub`s race with it.
+  registers and align `rsp` itself, and must read and write the counters as atomics, as
+  the AOT code's `inc`s race with it.
 - **Registers**: at the entry the argument registers (integer, `xmm0`–`xmm7`, the stack)
   are live, but `rax` and `r11` aren't: VM functions aren't variadic (those stay native), so
   nothing passes `al`, and no convention passes anything in `r11`. At a loop head nothing
   but `rsp` and `rbp` is live: the register cache is cleared at branch targets. So the stubs
   clobber only `r11`, `rax` and the flags, and the trip entry points may clobber those too.
 - **The no-op JIT** (`ryo_rt` without its `jit` feature, `vm/rt/src/vm/jit/noop.rs`): the
-  trip entry points set the counter to `i64::MAX`, so the function never trips again in
-  practice, and return to the stub, which continues the AOT code. With the feature, the
+  trip entry points set the counter that tripped to `-JIT_BIAS`, a failed record's bias, so
+  the function never trips again in practice, and return to the stub, which continues the AOT code. With the feature, the
   trips are the [JIT](jit.md#records-and-trips)'s.
 - **Unwinding**: the checks move nothing and call nothing, so only the prologue's rules
   move: the FDE's `advance_loc`s start at `Encoded::prologue`. The entry's stub, last in the

@@ -301,7 +301,7 @@ Environment variables read by the backend (and `y test`):
   `y bench codegen` to disassemble: `fn <instance>`, `code <hex>`, and `reloc <offset>
   <target>` per relocated field, its target named as `RYO_DUMP` names operands (handlers as
   `ryo_h_<Opcode>`, code constants as `ro+<offset>`, the function's JIT record as
-  `jit_record` and its counter as `jit_record.ctr`). Then the image's names, from the merge
+  `jit_record` and its loop counter as `jit_record.ctr_l`). Then the image's names, from the merge
   pass: `image <index> <instance>` per function, and `ref <index> <image's> <function's>` per
   reference of its code (`ref 8 k64 k0`), with which `y bench codegen` names the JIT's code
   and IR by the function's own operands.

@@ -367,7 +367,7 @@ a7: $-24, 8 bytes, Promoted
 a8: $-16, 8 bytes, Promoted
 a9: $-8, 8 bytes, Promoted
 b0(v0:8, v1:8, v2:8, v3:8): ; Entry
-    v5:8, v6:8 = Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }, ArgReg { xmm: false, size: 8, index: 4 }], parts: [RetPart { xmm: false, size: 8, off: 0 }, RetPart { xmm: false, size: 8, off: 8 }], site: Continue }) (0x0, v0, v1, v2, v3)
+    v5:8, v6:8 = Call(Call { target: fn0.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }, ArgReg { xmm: false, size: 8, index: 4 }], parts: [RetPart { xmm: false, size: 8, off: 0 }, RetPart { xmm: false, size: 8, off: 8 }], site: Continue }) (0x0, v0, v1, v2, v3)
     ret 0x80808 (v5, v6)
 
 fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<(), {closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}>
@@ -699,7 +699,7 @@ b0(v0:8, v1:8, v2:8): ; Entry
     AStore(AllocaId(4), 0, 8) (v1)
     AStore(AllocaId(4), 8, 8) (v2)
     v3:8 = AllocaAddr(AllocaId(4), 0) ()
-    v4:8, v5:8 = Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [RetPart { xmm: false, size: 8, off: 0 }, RetPart { xmm: false, size: 8, off: 8 }], site: Continue }) (v3)
+    v4:8, v5:8 = Call(Call { target: fn0.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [RetPart { xmm: false, size: 8, off: 0 }, RetPart { xmm: false, size: 8, off: 8 }], site: Continue }) (v3)
     jmp b2()
 b1(): ; Body head 0
     ret 0x0 ()
@@ -721,7 +721,7 @@ b1(): ; Body
     v8:8 = Bin(Mul, 8) (0x4, 0x20)
     br GtU.w8 v8, 0x1000 ? b3() : b2()
 b2(): ; Body
-    Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v0, v1, v2)
+    Call(Call { target: fn0.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v0, v1, v2)
     jmp b7()
 b3(): ; Body
     v12:8 = Bin(Mul, 8) (0x4, 0x30)
@@ -769,7 +769,7 @@ a0: $-24, 8 bytes, Promoted
 a1: $-16, 8 bytes, Promoted
 a2: $-8, 8 bytes, Promoted
 b0(v0:8, v1:8, v2:8): ; Entry
-    Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v0, v1, v2)
+    Call(Call { target: fn0.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v0, v1, v2)
     ret 0x0 ()
 
 fn <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortTypeImpl>::small_sort_threshold
@@ -1262,7 +1262,7 @@ b1(): ; Body
 b2(): ; Body
     v9:8 = PtrIndex(4) (v0, v2)
     v11:8 = PtrIndex(4) (v0, v3)
-    Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: Continue }) (v9, v11)
+    Call(Call { target: fn1.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: Continue }) (v9, v11)
     ret 0x0 ()
 
 fn core::slice::copy_from_slice_impl::<u32>
@@ -1310,7 +1310,7 @@ a5: $-24, 8 bytes, Promoted
 a6: $-16, 8 bytes, Promoted
 a7: $-8, 8 bytes, Promoted
 b0(v0:8, v1:8, v2:8, v3:8, v4:8): ; Entry
-    v5:8, v6:8 = Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }, ArgReg { xmm: false, size: 8, index: 4 }], parts: [RetPart { xmm: false, size: 8, off: 0 }, RetPart { xmm: false, size: 8, off: 8 }], site: Continue }) (v2, v3, v0, v1, v4)
+    v5:8, v6:8 = Call(Call { target: fn0.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }, ArgReg { xmm: false, size: 8, index: 4 }], parts: [RetPart { xmm: false, size: 8, off: 0 }, RetPart { xmm: false, size: 8, off: 8 }], site: Continue }) (v2, v3, v0, v1, v4)
     ret 0x80808 (v5, v6)
 
 fn core::slice::index::<impl std::ops::Index<std::ops::RangeFrom<usize>> for [u32]>::index
@@ -1540,7 +1540,7 @@ b20(): ; Body
     trap
 b21(): ; Body
     v55:8 = RefAddr(k12, false) ()
-    Call(Call { target: fn13.slot, regs: [ArgReg { xmm: false, size: 1, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: None }) (v19, v55)
+    Call(Call { target: fn13, regs: [ArgReg { xmm: false, size: 1, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: None }) (v19, v55)
     jmp b22()
 b22(): ; Body
     ret 0x8 (v17)
@@ -5231,7 +5231,7 @@ b11(): ; Body
     trap
 b12(): ; Body
     v27:8 = RefAddr(k5, false) ()
-    Call(Call { target: fn6, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }, ArgReg { xmm: false, size: 8, index: 4 }], parts: [], site: None }) (v1, 0x4, 0x4, v28, v27)
+    Call(Call { target: fn6.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }, ArgReg { xmm: false, size: 8, index: 4 }], parts: [], site: None }) (v1, 0x4, 0x4, v28, v27)
     jmp b13()
 b13(): ; Body
     ret 0x80808 (v1, v28)
@@ -5529,7 +5529,7 @@ a0: $-32, 16 bytes, Outgoing
 a1: $-12, 4 bytes, Promoted
 a2: $-8, 8 bytes, Promoted
 b0(v0:8, v1:4): ; Entry
-    v2:8 = Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 4, index: 1 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Continue }) (v0, v1)
+    v2:8 = Call(Call { target: fn0.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 4, index: 1 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Continue }) (v0, v1)
     AStore(AllocaId(0), 8, 8) (v2)
     ret 0x0 ()
 

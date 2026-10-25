@@ -613,7 +613,8 @@ impl ImageWriter {
             data.resize(off, 0);
             for i in 0..funcs.len() as u32 {
                 let mut r = [0u8; 64];
-                r[0..8].copy_from_slice(&JIT_THRESHOLD.to_le_bytes());
+                r[0..8].copy_from_slice(&(-JIT_ENTRY_THRESHOLD).to_le_bytes());
+                r[JIT_LOOP_CTR as usize..][..8].copy_from_slice(&(-JIT_THRESHOLD).to_le_bytes());
                 r[mem::offset_of!(JitRecord, func)..][..4].copy_from_slice(&i.to_le_bytes());
                 data.extend_from_slice(&r);
             }
@@ -734,11 +735,11 @@ impl ImageWriter {
                 Ref::Const(Const(k)) if (k as usize) <= self.consts.len() => pc(Section::ReadOnly, consts.off as u64 + k as u64),
                 Ref::Data(Data(d)) if (d as usize) <= self.data.len() => pc(Section::Writable, (fixup_area + d as usize) as u64),
                 Ref::Ro(o) => pc(Section::ReadOnly, (consts_code.off + ro_base + o) as u64),
-                Ref::Rec | Ref::RecCtr if mode.counters => {
+                Ref::Rec | Ref::RecLoopCtr if mode.counters => {
                     let rec = jit_records.off as u64 + 64 * func as u64;
-                    pc(Section::Writable, if to == Ref::RecCtr { rec - 1 } else { rec })
+                    pc(Section::Writable, if to == Ref::RecLoopCtr { rec + JIT_LOOP_CTR as u64 } else { rec })
                 }
-                Ref::Rec | Ref::RecCtr => return Err(bad(CodeError::NoJitRecord)),
+                Ref::Rec | Ref::RecLoopCtr => return Err(bad(CodeError::NoJitRecord)),
                 Ref::RegHandler(_) => return Err(bad(CodeError::JitOnly)),
                 Ref::Sym(_) => return Err(bad(CodeError::SymOutOfRange)),
                 Ref::Site(_) => return Err(bad(CodeError::SiteOutOfRange)),

@@ -1,6 +1,6 @@
 fn <() as std::process::Termination>::report
-    sub     qword ptr [jit_record.ctr],10h
-    js      L1
+    inc     qword ptr [jit_record]
+    jns     L1
 L0:
     sub     rsp,18h
     mov     byte ptr [rsp+0Fh],0
@@ -13,8 +13,8 @@ L1:
     jmp     L0
 
 fn <fn() as std::ops::FnOnce<()>>::call_once - shim(fn())
-    sub     qword ptr [jit_record.ctr],10h
-    js      L1
+    inc     qword ptr [jit_record]
+    jns     L1
 L0:
     sub     rsp,18h
     mov     [rsp+8],rdi
@@ -28,8 +28,8 @@ L1:
     jmp     L0
 
 fn <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::call_once - shim
-    sub     qword ptr [jit_record.ctr],10h
-    js      L4
+    inc     qword ptr [jit_record]
+    jns     L4
 L0:
     sub     rsp,28h
     mov     [rsp+10h],rdi
@@ -44,8 +44,8 @@ L0:
     nop     [rax+rax]
     nop     [rax]
 L1:
-    sub     qword ptr [jit_record.ctr],1
-    js      L3
+    inc     qword ptr [jit_record.ctr_l]
+    jns     L3
 L2:
     lea     rdi,[rsp+20h]
     mov     esi,0FFFFFFE0h
@@ -67,8 +67,8 @@ L4:
     jmp     L0
 
 fn <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::call_once - shim(vtable)
-    sub     qword ptr [jit_record.ctr],10h
-    js      L1
+    inc     qword ptr [jit_record]
+    jns     L1
 L0:
     sub     rsp,28h
     mov     [rsp+10h],rdi
@@ -87,8 +87,8 @@ L1:
     jmp     L0
 
 fn core::fmt::rt::Argument::<'_>::new_display::<u32>
-    sub     qword ptr [jit_record.ctr],10h
-    js      L1
+    inc     qword ptr [jit_record]
+    jns     L1
 L0:
     sub     rsp,58h
     mov     [rsp+28h],rdi
@@ -114,8 +114,8 @@ L1:
     jmp     L0
 
 fn core::fmt::rt::Argument::<'_>::new_display::<u64>
-    sub     qword ptr [jit_record.ctr],10h
-    js      L1
+    inc     qword ptr [jit_record]
+    jns     L1
 L0:
     sub     rsp,58h
     mov     [rsp+28h],rdi
@@ -141,8 +141,8 @@ L1:
     jmp     L0
 
 fn fib
-    sub     qword ptr [jit_record.ctr],10h
-    js      L6
+    inc     qword ptr [jit_record]
+    jns     L6
 L0:
     sub     rsp,68h
     mov     [rsp+54h],edi
@@ -215,8 +215,8 @@ L6:
     jmp     L0
 
 fn main
-    sub     qword ptr [jit_record.ctr],10h
-    js      L1
+    inc     qword ptr [jit_record]
+    jns     L1
 L0:
     sub     rsp,0B8h
     mov     dword ptr [rsp+0Ch],27h
@@ -267,8 +267,8 @@ L1:
     jmp     L0
 
 fn std::fmt::Arguments::<'_>::new::<15, 2>
-    sub     qword ptr [jit_record.ctr],10h
-    js      L1
+    inc     qword ptr [jit_record]
+    jns     L1
 L0:
     sub     rsp,38h
     mov     [rsp+18h],rdi
@@ -287,8 +287,8 @@ L1:
     jmp     L0
 
 fn std::hint::black_box::<u32>
-    sub     qword ptr [jit_record.ctr],10h
-    js      L1
+    inc     qword ptr [jit_record]
+    jns     L1
 L0:
     sub     rsp,18h
     mov     [rsp+8],edi
@@ -303,8 +303,8 @@ L1:
     jmp     L0
 
 fn std::rt::lang_start::<()>
-    sub     qword ptr [jit_record.ctr],10h
-    js      L1
+    inc     qword ptr [jit_record]
+    jns     L1
 L0:
     sub     rsp,58h
     mov     [rsp+40h],rdi
@@ -333,8 +333,8 @@ L1:
     jmp     L0
 
 fn std::rt::lang_start::<()>::{closure#0}
-    sub     qword ptr [jit_record.ctr],10h
-    js      L1
+    inc     qword ptr [jit_record]
+    jns     L1
 L0:
     sub     rsp,28h
     mov     [rsp+10h],rdi
@@ -356,8 +356,8 @@ L1:
     jmp     L0
 
 fn std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
-    sub     qword ptr [jit_record.ctr],10h
-    js      L1
+    inc     qword ptr [jit_record]
+    jns     L1
 L0:
     sub     rsp,18h
     mov     [rsp+8],rdi

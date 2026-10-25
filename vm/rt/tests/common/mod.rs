@@ -302,12 +302,28 @@ impl Linked {
     pub fn record(&self, f: Func) -> *mut JitRecord {
         unsafe { Image::from_header(self.header) }.unwrap().jit_records().wrapping_add(f.0 as usize)
     }
-    /// Sets function `f`'s counter, so that it trips once it runs out.
-    pub fn set_counter(&self, f: Func, v: i64) {
-        unsafe { (*self.record(f)).ctr = v };
+    /// Sets function `f`'s call and loop counters (`JitRecord::ctr_e`, `ctr_l`): a check
+    /// trips once its counter isn't negative after its increment.
+    pub fn set_counters(&self, f: Func, e: i64, l: i64) {
+        unsafe {
+            std::ptr::write_volatile(&raw mut (*self.record(f)).ctr_e, e);
+            std::ptr::write_volatile(&raw mut (*self.record(f)).ctr_l, l);
+        }
     }
-    pub fn counter(&self, f: Func) -> i64 {
-        unsafe { std::ptr::read_volatile(&(*self.record(f)).ctr) }
+    /// Sets function `f`'s counters so that its next `calls` calls and `iters` loop
+    /// iterations don't trip, and the one after does.
+    pub fn trip_after(&self, f: Func, calls: i64, iters: i64) {
+        self.set_counters(f, -calls - 1, -iters - 1);
+    }
+    /// Function `f`'s call and loop counters.
+    pub fn counters(&self, f: Func) -> (i64, i64) {
+        unsafe { (std::ptr::read_volatile(&(*self.record(f)).ctr_e), std::ptr::read_volatile(&(*self.record(f)).ctr_l)) }
+    }
+    /// Whether both of `f`'s counters have a compiled record's bias (every check takes its
+    /// stub).
+    pub fn redirected(&self, f: Func) -> bool {
+        let (e, l) = self.counters(f);
+        e > ryo_bytecode::image::JIT_BIAS / 2 && l > ryo_bytecode::image::JIT_BIAS / 2
     }
 }
 

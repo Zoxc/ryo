@@ -66,7 +66,7 @@ struct Obs {
 fn in_jit(img: &Linked, f: Func, addr: u64) -> bool {
     let r = unsafe { &*img.record(f) };
     let start = r.jit_code as u64;
-    start != 0 && (start..start + r.jit_len).contains(&addr)
+    start != 0 && (start..start + ryo_jit::code_len(r) as u64).contains(&addr)
 }
 
 /// Whether `addr` is in the AOT code of function `f`.
@@ -141,7 +141,7 @@ fn arguments_and_results() {
         assert_eq!(out[..15], want[..], "round {round}");
         assert!(in_jit(&img, spill, out[15]), "round {round}: spill ran at {:#x}", out[15]);
         assert_eq!(state(&img, spill), JIT_DONE);
-        assert!(img.counter(spill) < 0);
+        assert!(img.redirected(spill));
     }
     for _ in 0..3 {
         assert_eq!(ok::<_, [u64; 3]>(img.id(triple), (5u64,)), [5, 6, 7]);
@@ -173,7 +173,7 @@ fn recursion() {
     let img = build(w, &syms());
 
     // The first three calls count down in AOT code, the fourth trips.
-    img.set_counter(depth, 3 * ryo_bytecode::asm::ENTRY_COUNT as i64);
+    img.trip_after(depth, 3, 0);
     let at = ok::<_, u64>(img.id(depth), (10u64,));
     assert!(in_jit(&img, depth, at), "the innermost call ran at {at:#x}");
     // Through the AOT entry, redirected.
@@ -251,7 +251,7 @@ fn calls_between_jit_and_aot() {
     a.ret(Slot(0), 0);
     let both = w.add_function(func(a.done(), 16, 8, 0));
     let img = build(w, &syms());
-    img.set_counter(aot, i64::MAX);
+    img.set_counters(aot, -JIT_BIAS, -JIT_BIAS);
 
     // `leaf` first, so that `both`'s JIT code calls it directly.
     let at = ok::<_, u64>(img.id(leaf), ());
@@ -294,14 +294,14 @@ fn calls_of_functions_compiled_later() {
     ok::<_, ()>(img.id(caller), (out.as_mut_ptr() as u64,));
     assert!(in_jit(&img, caller, out[1]));
     assert!(in_jit(&img, leaf, out[0]), "leaf ran at {:#x}", out[0]);
-    let ctr = img.counter(leaf);
-    assert!(ctr < 0);
+    let ctr = img.counters(leaf);
+    assert!(img.redirected(leaf));
     for _ in 0..3 {
         ok::<_, ()>(img.id(caller), (out.as_mut_ptr() as u64,));
         assert!(in_jit(&img, leaf, out[0]), "leaf ran at {:#x}", out[0]);
     }
     // Not through the AOT entry, whose check would have counted.
-    assert_eq!(img.counter(leaf), ctr);
+    assert_eq!(img.counters(leaf), ctr);
 }
 
 /// A loop head trips first: the function compiles, and the call that is running the loop in
@@ -332,13 +332,13 @@ fn loop_head_trip() {
     let img = build(w, &syms());
 
     // The entry's check leaves 0, the first head's trips.
-    img.set_counter(sum, ryo_bytecode::asm::ENTRY_COUNT as i64);
+    img.trip_after(sum, 1, 0);
     let mut out = [0u64; 2];
     assert_eq!(ok::<_, u64>(img.id(sum), (1000u64, out.as_mut_ptr() as u64)), 499_500);
     assert!(in_aot(&img, sum, out[0]));
     assert!(in_jit(&img, sum, out[1]), "the loop ended at {:#x}", out[1]);
     assert_eq!(state(&img, sum), JIT_DONE);
-    assert!(img.counter(sum) < 0);
+    assert!(img.redirected(sum));
     assert_eq!(ok::<_, u64>(img.id(sum), (1000u64, out.as_mut_ptr() as u64)), 499_500);
     assert!(in_jit(&img, sum, out[0]));
 }
@@ -392,7 +392,7 @@ fn concurrent_trips() {
 
 // ---- OSR ----
 
-use ryo_bytecode::asm::{ENTRY_COUNT, Scope, ScopeKind};
+use ryo_bytecode::asm::{Scope, ScopeKind};
 
 /// Functions of an image being built, with their scopes (escapes), which [`ImageWriter::finish`]
 /// doesn't take.
@@ -527,7 +527,7 @@ fn osr_values_at(shuffle: bool, frame: u32, k: i64) {
         w128 = w128.wrapping_add((1 << 70) + 3);
         e = e.wrapping_add(i);
     }
-    img.set_counter(f, ENTRY_COUNT as i64 + k);
+    img.trip_after(f, 1, k as i64);
     let mut out = [0u64; 7];
     let obs = Obs::default();
     let what = format!("shuffle {shuffle}, frame {frame}, trip at head pass {}", k + 1);
@@ -587,7 +587,7 @@ fn osr_nested_loops() {
 
             let (n, m) = (4u64, 5u64);
             let want: u64 = (0..n).flat_map(|i| (0..m).map(move |j| i * j + 1)).sum();
-            img.set_counter(f, ENTRY_COUNT as i64 + k);
+            img.trip_after(f, 1, k as i64);
             let obs = Obs::default();
             let what = format!("shuffle {shuffle}, trip at head pass {}", k + 1);
             assert_eq!(ok::<_, u64>(img.id(f), (n, m, &raw const obs as u64)), want, "{what}");
@@ -634,7 +634,7 @@ fn osr_unwinding() {
             let f = defs.add(&mut w, fd, vec![]);
             let img = defs.build(w, shuffle);
 
-            img.set_counter(f, ENTRY_COUNT as i64 + k);
+            img.trip_after(f, 1, k as i64);
             let mut log = [0u64; 2];
             let obs = Obs::default();
             let what = format!("shuffle {shuffle}, trip at head pass {}", k + 1);
@@ -699,7 +699,7 @@ fn running_calls_switch_over() {
         let o = |a: &AtomicU64| a.load(std::sync::atomic::Ordering::SeqCst);
 
         // The loop: in AOT code until its counter is made to run out.
-        img.set_counter(spin, i64::MAX / 2);
+        img.set_counters(spin, -JIT_BIAS / 4, -JIT_BIAS / 4);
         let flag = std::sync::Arc::new(AtomicU64::new(0));
         let obs = std::sync::Arc::new(Obs::default());
         let t = {
@@ -712,16 +712,16 @@ fn running_calls_switch_over() {
         // The loop's `sub`s race with the store (counting is lossy): again until it trips.
         wait_for("the loop to reach the JIT code", || {
             if state(&img, spin) == JIT_COLD {
-                img.set_counter(spin, 0);
+                img.set_counters(spin, -JIT_BIAS / 4, 0);
             }
             in_jit(&img, spin, o(&obs.last))
         });
         flag.store(1, std::sync::atomic::Ordering::SeqCst);
         assert!(t.join().unwrap() > 1);
-        assert!(img.counter(spin) < 0);
+        assert!(img.redirected(spin));
 
         // The recursion: its 301st call trips at the entry.
-        img.set_counter(rec, 300 * ENTRY_COUNT as i64);
+        img.trip_after(rec, 300, 0);
         let obs = std::sync::Arc::new(Obs::default());
         let t = {
             let (img, obs) = (img.clone(), obs.clone());
@@ -771,7 +771,7 @@ fn osr_escaped_after_head() {
         let img = defs.build(w, false);
 
         let n = 20u64;
-        img.set_counter(f, ENTRY_COUNT as i64 + k);
+        img.trip_after(f, 1, k as i64);
         let mut out = [0u64; 1];
         let obs = Obs::default();
         let what = format!("trip at head pass {}", k + 1);
@@ -804,7 +804,7 @@ fn acyclic_head() {
     let img = build(w, &syms());
 
     // The entry's check leaves 0, the head's trips.
-    img.set_counter(f, ENTRY_COUNT as i64);
+    img.trip_after(f, 1, 0);
     let obs = Obs::default();
     assert_eq!(ok::<_, u64>(img.id(f), (10u64, &raw const obs as u64)), 15);
     assert!(in_aot(&img, f, o(&obs.first)));
@@ -856,7 +856,7 @@ fn slot_reuse_widths() {
         let n = 100u64;
         let acc: u64 = (0..n).map(|i| i * 3).sum();
         let acc8 = (0..n).fold(0u8, |s, i| s.wrapping_add(7u8.wrapping_add(i as u8)));
-        img.set_counter(f, ENTRY_COUNT as i64 + k);
+        img.trip_after(f, 1, k as i64);
         let mut out = [0u64; 2];
         let obs = Obs::default();
         let what = format!("trip at head pass {}", k + 1);

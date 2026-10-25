@@ -47,7 +47,7 @@ pub(super) fn addr_arg(r: Ref) -> Option<Arg> {
         Ref::Sym(s) => Arg::Sym(s),
         Ref::Site(s) => Arg::Site(s),
         Ref::Ro(o) => Arg::Ro(o),
-        Ref::Handler(_) | Ref::RegHandler(_) | Ref::Probe | Ref::Func(_) | Ref::Rec | Ref::RecCtr => return None,
+        Ref::Handler(_) | Ref::RegHandler(_) | Ref::Probe | Ref::Func(_) | Ref::Rec | Ref::RecLoopCtr => return None,
     })
 }
 

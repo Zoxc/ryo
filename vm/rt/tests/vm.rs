@@ -1034,19 +1034,20 @@ fn concurrent_registration() {
 #[cfg(not(feature = "jit"))]
 static TICK: AtomicUsize = AtomicUsize::new(0);
 
-/// Native: runs `TICK`'s counter out, so that the next counter check trips.
+/// Native: runs `TICK`'s loop counter out, so that the next loop head's check trips.
 #[cfg(not(feature = "jit"))]
 fn tick() {
-    unsafe { (*(TICK.load(Ordering::Relaxed) as *mut JitRecord)).ctr = 0 };
+    unsafe { (*(TICK.load(Ordering::Relaxed) as *mut JitRecord)).ctr_l = 0 };
 }
 
 /// Functions run through the no-op JIT's trips, at the entry and at loop heads: arguments of
 /// every kind (integer and SSE registers, the stack, an sret pointer) arrive intact, loops
-/// keep their state, and the counter ends at `i64::MAX`, minus what ran since.
+/// keep their state, and the counter that tripped ends at a failed record's bias
+/// (`-JIT_BIAS`), plus what ran since.
 #[test]
 #[cfg(not(feature = "jit"))]
 fn jit_trips() {
-    use ryo_bytecode::asm::{ArgReg, ENTRY_COUNT};
+    use ryo_bytecode::asm::ArgReg;
     let mut w = ImageWriter::new(unique_scid());
     let s_tick = w.symbol("tick", 0);
 
@@ -1102,8 +1103,8 @@ fn jit_trips() {
 
     type Spill = extern "C" fn(*mut u64, u64, u64, u64, u64, u64, f64, f64, f64, f64, f64, f64, f64, f64, u64, u64) -> u64;
     let f: Spill = unsafe { std::mem::transmute(img.code(spill)) };
-    for start in [0, 5, JIT_THRESHOLD] {
-        img.set_counter(spill, start);
+    for start in [0, -5, -JIT_ENTRY_THRESHOLD] {
+        img.set_counters(spill, start, -JIT_THRESHOLD);
         let mut out = [0u64; 15];
         let xs: Vec<f64> = (0..8).map(|i| i as f64 + 0.5).collect();
         let r = f(out.as_mut_ptr(), 1, 2, 3, 4, 5, xs[0], xs[1], xs[2], xs[3], xs[4], xs[5], xs[6], xs[7], 1 << 40, 7);
@@ -1112,28 +1113,28 @@ fn jit_trips() {
         want.extend(xs.iter().map(|x| x.to_bits()));
         want.extend([1 << 40, 7]);
         assert_eq!(out[..], want[..], "counter {start}");
-        // Tripped iff the counter ran out.
-        let tripped = start < ENTRY_COUNT as i64;
-        assert_eq!(img.counter(spill), if tripped { i64::MAX } else { start - ENTRY_COUNT as i64 });
+        // Tripped iff the call counter stopped being negative.
+        let tripped = start + 1 >= 0;
+        assert_eq!(img.counters(spill), (if tripped { -JIT_BIAS } else { start + 1 }, -JIT_THRESHOLD));
     }
 
-    img.set_counter(triple, 0);
+    img.set_counters(triple, 0, 0);
     assert_eq!(ok::<_, [u64; 3]>(img.id(triple), (5u64,)), [5, 6, 7]);
-    assert_eq!(img.counter(triple), i64::MAX);
+    assert_eq!(img.counters(triple), (-JIT_BIAS, 0));
 
     // At the entry, then (`tick`) at every inner and outer loop head.
     TICK.store(img.record(nest) as usize, Ordering::Relaxed);
-    for start in [0, ENTRY_COUNT as i64, JIT_THRESHOLD] {
-        img.set_counter(nest, start);
+    for start in [0, -2, -JIT_ENTRY_THRESHOLD] {
+        img.set_counters(nest, start, -JIT_THRESHOLD);
         assert_eq!(ok::<_, u64>(img.id(nest), (3u64, 4u64)), 12);
         // The last `tick`'s trip was at the inner head; one outer check since.
-        assert_eq!(img.counter(nest), i64::MAX - 1);
+        assert_eq!(img.counters(nest), (if start + 1 >= 0 { -JIT_BIAS } else { start + 1 }, -JIT_BIAS + 1));
     }
-    // Without `tick`: the outer head trips at its first check (the entry leaves the counter at
-    // 0); three more outer and three inner checks follow.
-    img.set_counter(nest, ENTRY_COUNT as i64);
+    // Without `tick`: the outer head trips at its first check; three more outer and three
+    // inner checks follow.
+    img.set_counters(nest, -2, -1);
     assert_eq!(ok::<_, u64>(img.id(nest), (3u64, 0u64)), 0);
-    assert_eq!(img.counter(nest), i64::MAX - 6);
+    assert_eq!(img.counters(nest), (-1, -JIT_BIAS + 6));
 }
 
 /// Panics unwind through frames that tripped, at the entry and at a loop head, and their
@@ -1164,14 +1165,16 @@ fn jit_trips_unwind() {
     let ub = w.add_function(f);
     let img = build(w, &[("boom", boom as *const () as usize)]);
 
-    for start in [0, ryo_bytecode::asm::ENTRY_COUNT as i64] {
+    // A trip at the entry, then at the loop head.
+    for start in [(0, -JIT_THRESHOLD), (-2, 0)] {
         let mut log = [0u64; 1];
-        img.set_counter(ub, start);
+        img.set_counters(ub, start.0, start.1);
         // boom(5), boom(6), boom(7) panics.
         let e = call::<_, u64>(img.id(ub), (5u64, log.as_mut_ptr() as u64)).unwrap_err();
         assert_eq!((payload(e), log), (Boom(7), [42]));
-        assert!(img.counter(ub) > i64::MAX - 8, "counter {start}: {}", img.counter(ub));
-        img.set_counter(ub, start);
+        let (e, l) = img.counters(ub);
+        assert!([e, l].iter().any(|v| (-JIT_BIAS..-JIT_BIAS + 8).contains(v)), "counters {start:?}: {e} {l}");
+        img.set_counters(ub, start.0, start.1);
         assert_eq!(ok::<_, u64>(img.id(ub), (1u64, log.as_mut_ptr() as u64)), 3);
     }
 }

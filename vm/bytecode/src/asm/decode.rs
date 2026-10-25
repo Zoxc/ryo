@@ -249,7 +249,7 @@ fn read(
     // returns to.
     let entry = if mode.counters {
         match (c.item(), c.item()) {
-            (Ok(Item::CtrSub(super::ENTRY_COUNT)), Ok(Item::Branch { cond: Cond::S, target, .. })) => Some((target, c.pos)),
+            (Ok(Item::CtrInc(false)), Ok(Item::Branch { cond: Cond::Ns, target, .. })) => Some((target, c.pos)),
             _ => return Err(err(0, "no counter check at the entry")),
         }
     } else {
@@ -468,7 +468,7 @@ fn instructions(
         if fr.mode.counters {
             let at = c.pos;
             match (c.item(), c.item()) {
-                (Ok(Item::CtrSub(1)), Ok(Item::Branch { cond: Cond::S, target, .. })) => {
+                (Ok(Item::CtrInc(true)), Ok(Item::Branch { cond: Cond::Ns, target, .. })) => {
                     counter = Some((target, c.pos));
                     if protos.iter().all(|p| p.counter.is_none()) {
                         end = Some(target);

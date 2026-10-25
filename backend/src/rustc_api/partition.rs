@@ -509,7 +509,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                     Ref::Data(x) => x.to_string(),
                     Ref::Ro(off) => format!("ro+{off}"),
                     Ref::Rec => "jit_record".to_owned(),
-                    Ref::RecCtr => "jit_record.ctr".to_owned(),
+                    Ref::RecLoopCtr => "jit_record.ctr_l".to_owned(),
                 };
                 writeln!(out, "reloc {} {to}", r.at).unwrap();
             }
@@ -837,7 +837,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                         probe = true;
                         r.to
                     }
-                    Ref::Ro(_) | Ref::Rec | Ref::RecCtr | Ref::RegHandler(_) => r.to,
+                    Ref::Ro(_) | Ref::Rec | Ref::RecLoopCtr | Ref::RegHandler(_) => r.to,
                 };
             }
             // A global symbol with the function's linkage; an internal function native code

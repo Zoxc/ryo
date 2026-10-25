@@ -103,7 +103,7 @@ fn render(r: Ref) -> String {
         Ref::Data(d) => format!("data {}", d.0),
         Ref::Ro(o) => format!("ro {o}"),
         Ref::Rec => "rec".into(),
-        Ref::RecCtr => "recctr".into(),
+        Ref::RecLoopCtr => "recloopctr".into(),
     }
 }
 

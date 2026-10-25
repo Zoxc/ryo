@@ -10,7 +10,7 @@
 mod common;
 use common::*;
 
-use ryo_bytecode::asm::{ArgReg, ENTRY_COUNT, RetPart, Scope, ScopeKind, ret_kind};
+use ryo_bytecode::asm::{ArgReg, RetPart, Scope, ScopeKind, ret_kind};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering::SeqCst};
 use std::sync::{Mutex, MutexGuard, Once};
 
@@ -141,7 +141,7 @@ fn syms() -> Vec<(&'static str, usize)> {
 fn in_jit(img: &Linked, f: Func, addr: u64) -> bool {
     let r = unsafe { &*img.record(f) };
     let start = r.jit_code as u64;
-    start != 0 && (start..start + r.jit_len).contains(&addr)
+    start != 0 && (start..start + ryo_jit::code_len(r) as u64).contains(&addr)
 }
 
 /// Whether `addr` is in the AOT code of function `f`.
@@ -496,7 +496,7 @@ fn large_frames_probe() {
             av = av.wrapping_mul(5).wrapping_add(i);
             bv = bv.wrapping_add(av);
         }
-        img.set_counter(f, ENTRY_COUNT as i64 + k);
+        img.trip_after(f, 1, k as i64);
         let mut out = [0u64; 2];
         let obs = Obs::default();
         let what = format!("trip at head pass {}", k + 1);
@@ -547,7 +547,7 @@ fn pinned_escaped_at_head() {
 
         let n = 30u64;
         let e = (0..n).fold(5u64, |e, i| e.wrapping_mul(3).wrapping_add(i));
-        img.set_counter(f, ENTRY_COUNT as i64 + k);
+        img.trip_after(f, 1, k as i64);
         let mut out = [0u64; 1];
         let obs = Obs::default();
         let what = format!("trip at head pass {}", k + 1);

@@ -283,11 +283,13 @@ fn check(f: &Fn, frame_size: u32, mode: Mode, what: &str) -> asm::Encoded {
     }
     // With counters: a check at the entry and at each loop head, each with its stub after
     // the code, the entry's last.
-    let ctrs = enc.relocs.iter().filter(|r| r.to == asm::Ref::RecCtr).count();
+    // The loop heads' checks reach the loop counter, the entry's and the stubs' `lea`s the
+    // record.
+    let ctrs = enc.relocs.iter().filter(|r| r.to == asm::Ref::RecLoopCtr).count();
     let recs = enc.relocs.iter().filter(|r| r.to == asm::Ref::Rec).count();
     if mode.counters {
-        assert_eq!((ctrs, recs), (red.heads.len() + 1, red.heads.len() + 1), "{what} {mode:?}");
-        assert_eq!(enc.code[..3], [0x48, 0x83, 0x2d], "{what}");
+        assert_eq!((ctrs, recs), (red.heads.len(), red.heads.len() + 2), "{what} {mode:?}");
+        assert_eq!(enc.code[..3], [0x48, 0xff, 0x05], "{what}");
         assert_eq!(enc.code[enc.entry_stub as usize..][..3], [0x4c, 0x8d, 0x1d], "{what}");
         // `lea r11`, `call [r11 + 8]`, `jmp` back (`rel8` or `rel32`).
         assert!(matches!(enc.code.len() as u32 - enc.entry_stub, 13 | 16), "{what}");
@@ -381,7 +383,7 @@ impl Fake<'_> {
             Ref::Data(d) => Self::DATA + d.0 as u64,
             Ref::Ro(o) => Self::RO + o as u64,
             Ref::Rec => Self::RECORD,
-            Ref::RecCtr => Self::RECORD - 1,
+            Ref::RecLoopCtr => Self::RECORD + ryo_bytecode::image::JIT_LOOP_CTR as u64,
             Ref::RegHandler(_) => unreachable!("JIT code only"),
         }
     }
@@ -604,7 +606,7 @@ fn label_at_a_dead_hint(mode: Mode) {
     assert_eq!(enc.scopes[0].code_offset % 16, 0, "{:?}", enc.scopes);
     if mode.counters {
         // Before the head's counter check, which the branches to the head pass.
-        assert_eq!(enc.code[enc.scopes[0].code_offset as usize..][..3], [0x48, 0x83, 0x2d]);
+        assert_eq!(enc.code[enc.scopes[0].code_offset as usize..][..3], [0x48, 0xff, 0x05]);
     }
     reencodes(&enc, mode, "dead hint before a loop head");
 }
@@ -859,7 +861,7 @@ fn templates_are_pinned() {
             eat(&lsda::write(&enc.call_sites));
         }
     }
-    assert_eq!(h, 0xc05e011cf9d4492a, "template hash {h:#x}");
+    assert_eq!(h, 0x79306fe69b9b0187, "template hash {h:#x}");
 }
 
 /// Without a frame pointer, an SSE load or store of the slot at `rsp` has no displacement.

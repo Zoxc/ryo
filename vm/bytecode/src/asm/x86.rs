@@ -59,6 +59,10 @@ pub const fn island_args(pe: bool) -> [Reg; 2] {
     if pe { [Reg::Rcx, Reg::Rdx] } else { [Reg::Rdi, Reg::Rsi] }
 }
 
+/// The offset of a JIT record's loop counter (`image::JIT_LOOP_CTR`), which [`Ref::RecLoopCtr`]
+/// names: a linked field that reaches the record plus this is that reference.
+pub const LOOP_CTR: u64 = 56;
+
 /// A branch condition, on the flags of the `test` or `cmp` before it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Cond {
@@ -328,9 +332,10 @@ pub enum Item {
     CallMem(Ref),
     /// `call rax`
     CallRax,
-    /// `sub qword [rip + disp32], imm8`: the counter at the start of the function's JIT
-    /// record counts down by `imm8` (the field relocated against [`Ref::RecCtr`]).
-    CtrSub(u8),
+    /// `inc qword [rip + disp32]`: one of the function's JIT record's counters counts up, the
+    /// call counter at the record's start (the field relocated against [`Ref::Rec`]), or with
+    /// `true` the loop counter ([`Ref::RecLoopCtr`]).
+    CtrInc(bool),
     /// `call [r11 + disp8]`: a counter stub's call through its JIT record's slot.
     CallR11(u8),
     /// `mov reg, [rip + disp32]`: a symbol slot's value, the field relocated against the
@@ -455,7 +460,7 @@ impl Item {
             Item::WinEpilogue => 7,
             Item::TestAl | Item::CallRax | Item::JmpRax | Item::Ud2 | Item::CallMemRax => 2,
             Item::CallR11(_) => 4,
-            Item::CtrSub(_) => 8,
+            Item::CtrInc(_) => 7,
             Item::TestRax | Item::Mov(..) | Item::AddRaxRcx => 3,
             Item::LoadTableEntry | Item::TableEntry { .. } => 4,
             Item::SubRsp(v) | Item::AddRsp(v) => {
@@ -763,10 +768,9 @@ impl Item {
                 reloc(out, relocs, to);
             }
             Item::CallRax => out.extend_from_slice(&[0xff, 0xd0]),
-            Item::CtrSub(k) => {
-                out.extend_from_slice(&[0x48, 0x83, 0x2d]);
-                reloc(out, relocs, Ref::RecCtr);
-                out.push(k);
+            Item::CtrInc(lp) => {
+                out.extend_from_slice(&[0x48, 0xff, 0x05]);
+                reloc(out, relocs, if lp { Ref::RecLoopCtr } else { Ref::Rec });
             }
             Item::CallR11(d) => out.extend_from_slice(&[0x41, 0xff, 0x53, d]),
             Item::CallMemRax => out.extend_from_slice(&[0xff, 0x10]),
@@ -979,6 +983,8 @@ impl<'a> Cursor<'a> {
                     Field::Local(local)
                 } else if record == Some(to) {
                     Field::Ref(Ref::Rec)
+                } else if record.map(|r| r + LOOP_CTR) == Some(to) {
+                    Field::Ref(Ref::RecLoopCtr)
                 } else {
                     resolver.resolve(to).map_or(Field::Bad, Field::Ref)
                 }
@@ -1200,16 +1206,12 @@ impl<'a> Cursor<'a> {
         }
         let item = match (rex, op) {
             (0, 0x55) => Item::PushRbp,
-            // The counter's `sub`: its field is followed by the immediate, so unlinked it is
-            // relocated against the record less one byte (`Ref::RecCtr`), and linked it
-            // reaches the record itself.
-            (0x48, 0x83) if get(2)? == 0x2d => {
-                let k = get(7)?;
-                match (self.field(3, 8)?, self.fields) {
-                    (Field::Ref(Ref::RecCtr), Fields::Relocs(_)) | (Field::Ref(Ref::Rec), Fields::Linked { .. }) => Item::CtrSub(k),
-                    _ => return Err(bad),
-                }
-            }
+            // A counter's `inc`: of the record's call counter or its loop counter.
+            (0x48, 0xff) if get(2)? == 0x05 => match self.field(3, 7)? {
+                Field::Ref(Ref::Rec) => Item::CtrInc(false),
+                Field::Ref(Ref::RecLoopCtr) => Item::CtrInc(true),
+                _ => return Err(bad),
+            },
             (0x48, 0x83 | 0x81) => {
                 let ext = get(2)?;
                 let (v, long) = if op == 0x83 { (get(3)? as u32, false) } else { (self.i32_at(3)? as u32, true) };
@@ -1336,7 +1338,7 @@ impl<'a> Cursor<'a> {
             Item::Lea(..) | Item::LoadRip(..) => Some(3),
             Item::Call(_) | Item::Jmp(_) => Some(1),
             Item::CallMem(_) => Some(2),
-            Item::CtrSub(_) => Some(3),
+            Item::CtrInc(_) => Some(3),
             _ => None,
         };
         if self.relocs_in(self.pos, len).iter().any(|rl| Some(rl.at - self.pos) != own) {

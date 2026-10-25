@@ -75,20 +75,27 @@ pub const fn mode_bits(mode: Mode) -> u32 {
 }
 
 /// A function's JIT record, in the writable section ([`Header::jit_records`], one per
-/// function in function order): its counter, which the code's counter checks count down
+/// function in function order): its two counters, which the code's counter checks count up
 /// ([`Mode::counters`]), the slots their stubs call through, and the JIT's state. One cache
 /// line each, so that the counters of hot functions don't share one.
 ///
-/// The writer sets `ctr` to [`JIT_THRESHOLD`], `entry` and `osr` to the runtime's
-/// `ryo_jit_trip_entry` and `ryo_jit_trip_osr`, `func` to the function's index and `header`
-/// to the image's header (relocated), the rest to 0.
+/// The writer sets `ctr_e` to `-`[`JIT_ENTRY_THRESHOLD`], `ctr_l` to `-`[`JIT_THRESHOLD`],
+/// `entry` and `osr` to the runtime's `ryo_jit_trip_entry` and `ryo_jit_trip_osr`, `func`
+/// to the function's index and `header` to the image's header (relocated), the rest to 0.
 /// The runtime's JIT (`ryo_rt`, design/jit.md) owns the record after that.
+///
+/// **Counters.** Each counter is the count of its events (calls, loop iterations) less its
+/// threshold, plus a bias the runtime moves with the record's state: none while it is
+/// [`JIT_COLD`], `-`[`JIT_BIAS`] while it is [`JIT_QUEUED`] or [`JIT_FAILED`] (so no check
+/// trips again), and `+`[`JIT_BIAS`] once it is [`JIT_DONE`] (so every check takes its stub
+/// into the JIT code). The count is therefore readable from the value alone
+/// ([`jit_count`]).
 #[repr(C, align(64))]
 #[derive(Debug)]
 pub struct JitRecord {
-    /// Counts down: a call subtracts [`crate::asm::ENTRY_COUNT`], a loop iteration 1, and
-    /// a negative result takes the stub. Racy and lossy across threads, by design.
-    pub ctr: i64,
+    /// The call counter: the entry's check increments it and takes the stub once it isn't
+    /// negative. Racy and lossy across threads, by design.
+    pub ctr_e: i64,
     /// What the entry's stub calls ([`JIT_ENTRY_SLOT`]), with `r11` the record and the
     /// return address the continuation after the check, before the prologue.
     pub entry: *const u8,
@@ -104,23 +111,78 @@ pub struct JitRecord {
     /// The image's header.
     pub header: *const Header,
     /// The runtime's: where the JIT put the function's code once it is [`JIT_DONE`] (its
-    /// first instruction), and its length. 0 in the image.
+    /// first instruction). 0 in the image.
     pub jit_code: *const u8,
-    pub jit_len: u64,
+    /// The loop counter ([`JIT_LOOP_CTR`]): every loop head's check increments it, as the
+    /// entry's does `ctr_e`.
+    pub ctr_l: i64,
 }
 
-/// The counter a JIT record starts at ([`JitRecord::ctr`]): about 600 calls or 10 000 loop
+/// The loop counter a JIT record starts at, negated ([`JitRecord::ctr_l`]): 10 000 loop
 /// iterations.
 pub const JIT_THRESHOLD: i64 = 10_000;
+/// The call counter a JIT record starts at, negated ([`JitRecord::ctr_e`]): 625 calls.
+pub const JIT_ENTRY_THRESHOLD: i64 = JIT_THRESHOLD / 16;
+/// The bias of a queued or failed record's counters (negative) and of a compiled one's
+/// (positive): 2^62.
+pub const JIT_BIAS: i64 = 1 << 62;
 /// The offsets of [`JitRecord::entry`] and [`JitRecord::osr`], which the counter stubs call
 /// through (`call [r11 + slot]`).
 pub const JIT_ENTRY_SLOT: u8 = 8;
 pub const JIT_OSR_SLOT: u8 = 16;
+/// The offset of [`JitRecord::ctr_l`].
+pub const JIT_LOOP_CTR: u8 = 56;
 /// [`JitRecord::state`]s.
 pub const JIT_COLD: u32 = 0;
 pub const JIT_QUEUED: u32 = 1;
 pub const JIT_DONE: u32 = 2;
 pub const JIT_FAILED: u32 = 3;
+
+/// The count of events a counter of a JIT record with threshold `threshold` holds as
+/// `value`, whatever its bias ([`JitRecord`]). Exact unless counts went past 2^61.
+pub const fn jit_count(value: i64, threshold: i64) -> i64 {
+    jit_unbiased(value) + threshold
+}
+
+/// `value` without its bias: the count less the threshold.
+pub const fn jit_unbiased(value: i64) -> i64 {
+    if value < -JIT_BIAS / 2 {
+        value.wrapping_add(JIT_BIAS)
+    } else if value > JIT_BIAS / 2 {
+        value.wrapping_sub(JIT_BIAS)
+    } else {
+        value
+    }
+}
+
+/// The bias of a record's counters in state `state`.
+pub const fn jit_bias(state: u32) -> i64 {
+    match state {
+        JIT_QUEUED | JIT_FAILED => -JIT_BIAS,
+        JIT_DONE => JIT_BIAS,
+        _ => 0,
+    }
+}
+
+/// Moves a counter of a record to the bias of the record's state, `state()` (read again
+/// after the change: another thread changing the state settles the counter too, after the
+/// change, so that whichever is last leaves the final state's bias), keeping its count.
+pub fn jit_settle(c: &core::sync::atomic::AtomicI64, state: impl Fn() -> u32) {
+    use core::sync::atomic::Ordering::{Relaxed, SeqCst};
+    loop {
+        let st = state();
+        let v = c.load(SeqCst);
+        let want = jit_unbiased(v).wrapping_add(jit_bias(st));
+        if v == want {
+            return;
+        }
+        // An AOT increment racing the exchange makes it fail; one racing it the other way
+        // erases the bias, as with any write (the JIT thread re-checks compiled records).
+        if c.compare_exchange(v, want, SeqCst, Relaxed).is_ok() && state() == st {
+            return;
+        }
+    }
+}
 
 const _: () = {
     assert!(mem::size_of::<JitRecord>() == 64);
@@ -128,7 +190,10 @@ const _: () = {
     assert!(mem::offset_of!(JitRecord, osr) == JIT_OSR_SLOT as usize);
     assert!(mem::offset_of!(JitRecord, func) == 36);
     assert!(mem::offset_of!(JitRecord, header) == 40);
+    assert!(mem::offset_of!(JitRecord, ctr_l) == JIT_LOOP_CTR as usize);
 };
+#[cfg(feature = "alloc")]
+const _: () = assert!(crate::asm::x86::LOOP_CTR == JIT_LOOP_CTR as u64);
 
 /// The 32-bit crate hash the registry uses, folded from the crate's
 /// `StableCrateId` (its `u64` value).

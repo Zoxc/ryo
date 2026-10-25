@@ -4,7 +4,7 @@ With its `jit` feature (`y build` enables it on x86_64 Linux and windows-msvc, i
 sysroots, [build.md](build.md#build)), `ryo_rt` recompiles hot VM functions on a background
 thread and switches their entry and loop heads over to the new code. Every image is built
 for it: each function counts its calls and loop iterations in a *JIT record* and leaves
-through a stub into the runtime when the count runs out ([vm.md](vm.md#jit-records-and-counters)).
+through a stub into the runtime when a counter stops being negative ([vm.md](vm.md#jit-records-and-counters)).
 
 The JIT code is the function compiled through an SSA tier with a register allocator ([The
 SSA tier](#the-ssa-tier)), or, where that tier doesn't handle it (or with
@@ -25,13 +25,14 @@ The work is split in two ([Packaging](#packaging)):
 
 A function's life:
 
-1. Its AOT code counts down its record's `ctr` (a call 16, a loop iteration 1, from
-   `JIT_THRESHOLD`, 10 000) and, when it goes negative, calls through the record's `entry`
-   or `osr` slot: a *trip* into the runtime.
+1. Its AOT code counts its calls and loop iterations up in its record's `ctr_e` and `ctr_l`
+   (from `-JIT_ENTRY_THRESHOLD`, 625, and `-JIT_THRESHOLD`, 10 000) and, when one stops
+   being negative, calls through the record's `entry` or `osr` slot: a *trip* into the
+   runtime.
 2. The first trip queues the record and wakes the JIT thread, which decodes the function
    from its image, encodes it again, installs the code near the image, and publishes it in
    the record.
-3. From then on the counter is `REDIRECT`, so every check takes its stub: an entry's
+3. From then on the counters have the `Done` bias, so every check takes its stub: an entry's
    straight into the JIT code, a loop head's into an OSR entry. The slots are redirected,
    no AOT code is patched.
 
@@ -41,17 +42,16 @@ The record (`image::JitRecord`, 64 bytes, one per function in the image's writab
 section; its fields and the counter checks and stubs that use it are in
 [vm.md](vm.md#jit-records-and-counters)) is the runtime's once the image is registered. Its
 `state` moves `Cold → Queued → Done` (or `Failed`), and only the JIT thread writes
-`jit_code`, `jit_len`, `entry` and `osr` after the writer.
+`jit_code`, `entry` and `osr` after the writer.
 
 - **Trips** (`ryo_jit_trip_entry`, `ryo_jit_trip_osr`, `vm::trip_entry` and
   `vm::trip_osr`), lock-free:
   - `Cold`: `state` CAS `Cold → Queued`; the winner pushes the record onto the queue and
-    wakes the JIT thread. The counter goes back to the threshold, and the stub continues
-    the AOT code.
-  - `Queued`: the counter goes back to the threshold; `Failed`: to `i64::MAX`.
-  - `Done`: the entry's trip stores the counter `REDIRECT` and continues in the JIT code;
-    a loop head's jumps to the record's `osr` slot, the OSR dispatcher, in assembly,
-    leaving the counter negative. Only a stub that read the slot before the publication
+    wakes the JIT thread. The counters get the `Queued` bias, and the stub continues the
+    AOT code.
+  - `Queued`, `Failed`: the counters get the bias (if a racing increment erased it).
+  - `Done`: the entry's trip continues in the JIT code; a loop head's jumps to the
+    record's `osr` slot, the OSR dispatcher, in assembly. Only a stub that read the slot before the publication
     gets there: the stubs call the dispatcher directly afterwards. A trip that waited for
     the compile (`RYO_JIT_SYNC`) continues the same way.
 - **Registers**: the trips may clobber only `rax`, `r11` and the flags (vm.md's counter
@@ -66,18 +66,26 @@ section; its fields and the counter checks and stubs that use it are in
 - **No unwinding**: the Rust parts can't panic: nothing may unwind out of them, since the
   stubs aren't call sites. They are `sysv64-unwind`/`C-unwind` only so that the compiler
   adds no abort-on-unwind guard, which would reach core's panic path ("No re-entry").
-- **Counters** are written with relaxed atomics, racing the AOT code's `sub`s; a reset that
-  races the publication re-checks `state` and stores `REDIRECT` again. Registration sets
-  every counter to `RYO_JIT_THRESHOLD` if it is set, and to `i64::MAX` with `RYO_JIT=off`
-  ([Settings](#settings)).
-- **`REDIRECT`** = `i64::MIN / 2`: a compiled function's counter, negative enough that every
-  check takes its stub for 2^58 calls. `i64::MIN` would wrap to a large positive count at
-  the next `sub`.
+- **Counters** count up from minus their thresholds, and the runtime moves a bias with the
+  record's state ([vm.md](vm.md#jit-records-and-counters)): none while `Cold`, `-JIT_BIAS`
+  (2^62) while `Queued` or `Failed`, `+JIT_BIAS` once `Done`. It changes a bias only by a
+  compare-exchange that keeps the count (`image::jit_settle`), and re-reads `state` after
+  it, so a trip racing the publication leaves the final state's bias. An AOT increment that
+  read the value before the exchange and writes after it erases the bias: a lost `Queued`
+  bias costs a spurious trip, which restores it; a lost `Done` bias would leave the
+  function in AOT code, so the JIT thread re-checks each record it published after its
+  next batches, or after a millisecond without one, until it has seen the bias twice.
+  Registration sets the counters from `RYO_JIT_THRESHOLD` if it is set, and to the
+  `Failed` bias with `RYO_JIT=off` ([Settings](#settings)).
+- **Counts**: the count is the value less its bias plus its threshold
+  (`image::jit_count`), so the JIT thread reads exact call and loop-iteration counts of the
+  AOT code with a plain load (`install::counts`; `RYO_JIT_LOG` prints them).
 - **The no-op JIT** (`ryo_rt` without its `jit` feature, `vm/rt/src/vm/jit/noop.rs`):
-  `ryo_jit_trip_entry` and `ryo_jit_trip_osr` are naked assembly, `mov rax, i64::MAX; mov
-  [r11], rax; ret`: the counter is set to `i64::MAX`, so the function never trips again in
-  practice, and the stub continues the AOT code. A store racing other threads' `sub`s may be
-  lost; the counter then runs out again later, harmlessly. With the feature, the runtime
+  `ryo_jit_trip_entry` and `ryo_jit_trip_osr` are naked assembly, `mov rax, -JIT_BIAS; mov
+  [r11 + c], rax; ret` (`c` the tripped counter's offset): the counter gets a failed
+  record's bias, so the function never trips again in practice, and the stub continues
+  the AOT code. A store racing other threads' `inc`s may be lost; the counter then trips
+  again later, harmlessly. With the feature, the runtime
   acts the same way when the JIT is off or couldn't start.
 
 ## Queue and thread
@@ -111,7 +119,7 @@ section; its fields and the counter checks and stubs that use it are in
   function it doesn't handle, `asm::encode_reduced_at` in the image's mode without counters
   (in another frame layout with `RYO_JIT_SHUFFLE`, [OSR](#osr)), which also gives the
   instructions' positions for the OSR entries, then the OSR entries. A failure (decode, encode, reach,
-  memory) or a panic marks the record `Failed`, counter `i64::MAX`, and the thread goes on.
+  memory) or a panic marks the record `Failed` (its counters get the `Failed` bias), and the thread goes on.
 - **Entry redirection**: the stub `call`s through `entry`, so the JIT code must get rid of
   the stub's return address. The JIT code starts with `lea r11, [rip + code]; mov [rsp],
   r11; ret` (12 bytes, `JIT_ENTRY_PREFIX`), at which `entry` points: the `ret` replaces the
@@ -136,7 +144,7 @@ section; its fields and the counter checks and stubs that use it are in
   code if it is `Done` at that moment (itself always), else (tail calls) its AOT start,
   whose counter redirects once it is compiled; symbol slots, sites, constants and the data
   area in the image, by the header's ranges, as the writer resolves them; code constants to
-  the copy; the record (`Ref::Rec`, `Ref::RecCtr`) to itself. A field out of `rel32` reach
+  the copy; the record (`Ref::Rec`, `Ref::RecLoopCtr`) to itself. A field out of `rel32` reach
   fails the function.
 - **Call slots**: a `call` of a function of the image that isn't compiled yet becomes a
   `call.sym` of a symbol past the image's, which relocates to a call slot: 8 bytes at the
@@ -144,8 +152,9 @@ section; its fields and the counter checks and stubs that use it are in
   if it was compiled since), and its JIT code once it is published (an atomic store, no
   code patching). So JIT code reaches functions compiled after it without their entry
   stubs. Tail calls still go to the AOT entry.
-- **Publishing**: `jit_code` and `jit_len`, then `entry` and `osr` (release), then
-  `state = Done`, then the counter `REDIRECT`, then the function's call slots. Every later
+- **Publishing**: `jit_code` (and the code's length in the JIT's own table), then `entry`
+  and `osr` (release), then `state = Done`, then the counters' `Done` bias, then the
+  function's call slots. Every later
   call's and loop iteration's check then takes its stub straight into the JIT code, without
   the runtime.
 
@@ -474,13 +483,14 @@ rlib bundles (`build/src/jit.rs`, [build.md](build.md#build)):
   | `flags` | `JIT_SYNC`, `JIT_LOG`, `JIT_PERFMAP`, `JIT_TEST_PANIC`, `JIT_OPT_SSA`, `JIT_OPT_SSA_NAIVE`, `JIT_CHECK` ([Settings](#settings)) |
   | `probe` | `ryo_probe_stack`'s address |
   | `personality` | the program's `rust_eh_personality`'s address, by which the JIT finds an image's personality slot |
-  | `next_batch` | the queued records in trip order, sleeping while there are none (the JIT thread only) |
+  | `thresholds` | the counters' thresholds (calls, loop iterations), for the counts |
+  | `next_batch` | the queued records in trip order, sleeping while there are none unless asked not to (the JIT thread only) |
   | `done` | reports a record: compiled (after the JIT published it), or failed (the runtime marks it `Failed`); wakes its waiters |
   | `shuffled` | whether an image's functions get shuffled frames |
   | `handlers` | every opcode's handler address, null for opcodes without one |
   | `reg_handlers` | every opcode's [register entry](#register-entries) address, null for opcodes without one |
 
-  `REDIRECT` and `JIT_ENTRY_PREFIX` are there too. Nothing crosses the interface by
+  `JIT_ENTRY_PREFIX` is there too. Nothing crosses the interface by
   unwinding: the callbacks are `C-unwind` only for the reason the trips are. Records,
   images and code are shared memory in `ryo_bytecode`'s layout; both sides build their
   reader from the same source in one `y build`. Publishing (the release stores to the
@@ -521,8 +531,8 @@ for shuffled frames per image, `RtApi::shuffled`):
 
 | Variable | Effect |
 |---|---|
-| `RYO_JIT=off` | the no-op JIT; registration sets every counter to `i64::MAX` |
-| `RYO_JIT_THRESHOLD=n` | registration sets every counter to `n`, and trips reset to it; 0: trip at the first call |
+| `RYO_JIT=off` | the no-op JIT; registration gives every counter the `Failed` bias |
+| `RYO_JIT_THRESHOLD=n` | registration starts the counters at `n / 16` calls and `n` loop iterations (`e,l`: `e` and `l`); 0: trip at the first call |
 | `RYO_JIT_SYNC=1` | a trip that finds its record queued waits on a futex on `state` until it leaves `Queued`, then continues in the JIT code; nested trips on that thread and trips on the JIT thread never wait |
 | `RYO_JIT_PERFMAP=1` | the [perf map](#unwinding-and-profiling) |
 | `RYO_JIT_LOG=1` | a line on stderr per compiled or failed function, and per function whose frame couldn't be shuffled, and the JIT thread's panics |
@@ -563,9 +573,9 @@ for shuffled frames per image, `RtApi::shuffled`):
   thread spinning in an AOT loop and one deep in a self-recursion, both started before the
   compile, reach JIT code without returning (a native callee checks its return address).
 - **The corpus**: `RYO_JIT_THRESHOLD=0 RYO_JIT_SYNC=1 y test` runs it with every function's
-  JIT code from its first call, and `RYO_JIT_THRESHOLD=16` instead enters it by OSR at the
-  first loop head pass of each function's first call (whose entry check leaves the counter
-  at 0), both also with `RYO_JIT_SHUFFLE=1`. With a ryo sysroot, `y test` runs the corpus
+  JIT code from its first call, and `RYO_JIT_THRESHOLD=2,0` instead enters it by OSR at the
+  first loop head pass of each function's first call (whose entry check doesn't trip),
+  both also with `RYO_JIT_SHUFFLE=1`. With a ryo sysroot, `y test` runs the corpus
   that way (`ryo-std-jit`, `ryo-std-jit-shuffle`), std's own VM functions included
   ([build.md](build.md#test-and-bench)).
 - **The SSA tier**: `y test` runs `vm/jit/tests/` through the tier with its checkers, then

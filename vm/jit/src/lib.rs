@@ -37,6 +37,14 @@ pub fn ssa_stats() -> (usize, usize) {
     (install::SSA_COMPILED.load(SeqCst), install::SSA_FALLBACK.load(SeqCst))
 }
 
+/// The length of the code the JIT installed for the record at `rec`, 0 if none (tests).
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[doc(hidden)]
+pub fn code_len(rec: *const ryo_bytecode::image::JitRecord) -> usize {
+    let lens = install::CODE_LEN.lock().unwrap_or_else(|e| e.into_inner());
+    lens.as_ref().and_then(|m| m.get(&(rec as usize)).copied()).unwrap_or(0)
+}
+
 /// Without a JIT for this target: fails, so the runtime acts as the no-op JIT.
 #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
 #[unsafe(no_mangle)]

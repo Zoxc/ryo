@@ -611,7 +611,7 @@ fn <std::hash::DefaultHasher as std::hash::Hasher>::finish
 
 fn <std::hash::DefaultHasher as std::hash::Hasher>::write
     sub     rsp,18h
-    call    fn0
+    call    qword ptr [fn0.slot]
     add     rsp,18h
     ret
 
@@ -754,7 +754,7 @@ L2:
 
 fn <std::iter::StepBy<std::ops::Range<u64>> as std::iter::Iterator>::next
     sub     rsp,18h
-    call    fn0
+    call    qword ptr [fn0.slot]
     add     rsp,18h
     ret
 
@@ -3408,7 +3408,7 @@ fn hashbrown::raw::RawTable::<(u64, u64)>::erase
     mov     [rsp+10h],rsi
     lea     rax,[rsp+10h]
     mov     rsi,rax
-    call    fn0
+    call    qword ptr [fn0.slot]
     jmp     L1
 L0:
     mov     rdi,rax
@@ -3648,7 +3648,7 @@ fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entr
     lea     rcx,[k0]
     mov     rdi,rbx
     mov     rdx,rax
-    call    fn1
+    call    qword ptr [fn1.slot]
     mov     r12,rdx
     mov     rdi,rax
     mov     esi,0
@@ -3659,7 +3659,6 @@ fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entr
     movsxd  r10,[r11+r10*4]
     add     r10,r11
     jmp     r10
-    int3
     int3
     int3
 L0:
@@ -4867,7 +4866,7 @@ L3:
     mov     [rsp+10h],rdi
     mov     rdx,rdi
     mov     rdi,rbx
-    call    qword ptr [fn1.slot]
+    call    fn1
     mov     rsi,rax
     mov     rdi,rdx
     mov     rax,rsi
@@ -7043,7 +7042,7 @@ fn std::collections::HashMap::<std::string::String, usize>::entry
     mov     rdi,rax
     mov     rsi,r12
     mov     rdx,rcx
-    call    fn0
+    call    qword ptr [fn0.slot]
     lea     rdi,[rsp+120h]
     mov     esi,0FFFFFFD4h
     mov     edx,0FFFFFF38h
@@ -7062,7 +7061,6 @@ fn std::collections::HashMap::<std::string::String, usize>::entry
     movsxd  r10,[r11+r10*4]
     add     r10,r11
     jmp     r10
-    int3
 L0:
     .long   L3
     .long   L2
@@ -7126,7 +7124,7 @@ fn std::collections::HashMap::<u64, u64>::entry
     mov     rbx,rdi
     lea     rax,[rsp+28h]
     mov     rdi,rax
-    call    fn0
+    call    qword ptr [fn0.slot]
     lea     rdi,[rsp+80h]
     mov     esi,0FFFFFF80h
     mov     edx,0FFFFFFA8h
@@ -7145,7 +7143,6 @@ fn std::collections::HashMap::<u64, u64>::entry
     movsxd  r10,[r11+r10*4]
     add     r10,r11
     jmp     r10
-    int3
 L0:
     .long   L3
     .long   L2
@@ -7204,7 +7201,7 @@ L6:
 
 fn std::collections::HashMap::<u64, u64>::get::<u64>
     sub     rsp,18h
-    call    fn0
+    call    qword ptr [fn0.slot]
     add     rsp,18h
     ret
 
@@ -7288,7 +7285,7 @@ L3:
     mov     rdi,r13
     mov     rsi,r12
     mov     rdx,rax
-    call    fn1
+    call    qword ptr [fn1.slot]
     jmp     L9
 L4:
     mov     rax,rcx
@@ -7442,7 +7439,7 @@ L1:
     mov     rsi,rax
     mov     rdx,rcx
     mov     rcx,rbx
-    call    fn0
+    call    qword ptr [fn0.slot]
     jmp     L6
 L2:
     mov     rcx,[rsp+18h]
@@ -8070,7 +8067,7 @@ fn std::ptr::drop_glue::<alloc::raw_vec::RawVec<u8>> - shim(Some(alloc::raw_vec:
 
 fn std::ptr::drop_glue::<std::string::String> - shim(Some(std::string::String))
     sub     rsp,18h
-    call    fn0
+    call    qword ptr [fn0.slot]
     add     rsp,18h
     ret
 

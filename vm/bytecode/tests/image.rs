@@ -759,17 +759,19 @@ fn jit_records() {
             let rec = img.jit_records().wrapping_add(i) as u64;
             assert_eq!(rec, l.data.addr() + h.jit_records.off as u64 + 64 * i as u64);
             let r = unsafe { &*(rec as *const JitRecord) };
-            assert_eq!((r.ctr, r.entry as u64, r.osr as u64, r.next as u64), (JIT_THRESHOLD, trip_addr(&l.text, false), trip_addr(&l.text, true), 0));
+            assert_eq!(
+                (r.ctr_e, r.ctr_l, r.entry as u64, r.osr as u64, r.next as u64),
+                (-JIT_ENTRY_THRESHOLD, -JIT_THRESHOLD, trip_addr(&l.text, false), trip_addr(&l.text, true), 0)
+            );
             assert_eq!((r.state.load(std::sync::atomic::Ordering::Relaxed), r.func, r.header as u64), (JIT_COLD, i as u32, l.ro.addr()));
-            // `sub qword [rip + x], 16` reaches the counter, `js` the entry's stub, whose
+            // `inc qword [rip + x]` reaches the call counter, `jns` the entry's stub, whose
             // `lea r11, [rip + x]` the record.
             let at = f.start as u64;
-            assert_eq!(t[at as usize..][..3], [0x48, 0x83, 0x2d]);
-            assert_eq!(t[at as usize + 7], asm::ENTRY_COUNT);
-            assert_eq!((l.text.addr() + at + 8).wrapping_add(i32_at(&l.text, at + 3) as i64 as u64), rec);
-            assert_eq!(t[at as usize + 8], 0x78); // `js rel8`
-            assert_eq!(at as i64 + 10 + t[at as usize + 9] as i8 as i64, (f.start + f.entry_stub) as i64);
-            assert_eq!(f.prologue, 10);
+            assert_eq!(t[at as usize..][..3], [0x48, 0xff, 0x05]);
+            assert_eq!((l.text.addr() + at + 7).wrapping_add(i32_at(&l.text, at + 3) as i64 as u64), rec);
+            assert_eq!(t[at as usize + 7], 0x79); // `jns rel8`
+            assert_eq!(at as i64 + 9 + t[at as usize + 8] as i8 as i64, (f.start + f.entry_stub) as i64);
+            assert_eq!(f.prologue, 9);
             let stub = (f.start + f.entry_stub) as u64;
             assert_eq!(t[stub as usize..][..3], [0x4c, 0x8d, 0x1d]);
             assert_eq!((l.text.addr() + stub + 7).wrapping_add(i32_at(&l.text, stub + 3) as i64 as u64), rec);
@@ -782,9 +784,9 @@ fn jit_records() {
         let tail: &[u8] = if mode.frame_pointer { &[0x0c, 7, 8, 0xc6] } else { &[0x0c, 7, 8] };
         assert!(eh.windows(tail.len()).any(|w| w == tail), "{eh:02x?}");
         if mode.frame_pointer {
-            assert!(eh.windows(7).any(|w| w == [0x40 | 11, 0x0e, 16, 0x86, 2, 0x40 | 3, 0x0d]), "{eh:02x?}");
+            assert!(eh.windows(7).any(|w| w == [0x40 | 10, 0x0e, 16, 0x86, 2, 0x40 | 3, 0x0d]), "{eh:02x?}");
         } else {
-            assert!(eh.windows(3).any(|w| w == [0x40 | 14, 0x0e, 64]), "{eh:02x?}");
+            assert!(eh.windows(3).any(|w| w == [0x40 | 13, 0x0e, 64]), "{eh:02x?}");
         }
         assert!(f0.entry_stub > f0.prologue);
     }
@@ -792,6 +794,6 @@ fn jit_records() {
     let obj = sample().finish(Mode { pe: true, ..AOT }).unwrap();
     assert_eq!(obj.unwind[0].1.len(), 2 * 3 * 12);
     let x = &obj.unwind[1].1;
-    assert_eq!(&x[..14], [1, 22, 5, 5 | 1 << 4, 22, 2 | (32 / 8 - 1) << 4, 18, 3, 13, 6 << 4, 12, 7 << 4, 11, 5 << 4]);
+    assert_eq!(&x[..14], [1, 21, 5, 5 | 1 << 4, 21, 2 | (32 / 8 - 1) << 4, 17, 3, 12, 6 << 4, 11, 7 << 4, 10, 5 << 4]);
     assert_eq!(&x[16..20], [1, 0, 0, 0]);
 }

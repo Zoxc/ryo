@@ -16,11 +16,6 @@
 use crate::Opcode;
 use crate::image::JitRecord;
 
-/// The counter of a compiled function ([`JitRecord::ctr`]): far enough below 0 that the
-/// counter checks' `sub`s keep it negative (every check takes its stub) for 2^58 calls. Not
-/// `i64::MIN`, from which the next `sub` would wrap to a large positive count.
-pub const REDIRECT: i64 = i64::MIN / 2;
-
 /// The bytes before a JIT function's first instruction that its record's `entry` points at:
 /// `lea r11, [rip + code]; mov [rsp], r11; ret`, which replaces the return address of the
 /// counter stub's `call [r11 + 8]` with the code and returns to it, so that the function
@@ -62,10 +57,15 @@ pub struct RtApi {
     /// its unwind information names, by this address. (The JIT's own `rust_eh_personality`,
     /// if it has a std of its own, is another function.)
     pub personality: *const (),
+    /// The thresholds the records' counters started at, as counts: calls
+    /// ([`JitRecord::ctr_e`]) and loop iterations ([`JitRecord::ctr_l`]), for
+    /// [`crate::image::jit_count`].
+    pub thresholds: [i64; 2],
     /// Takes the queued records, in the order they were queued, linked through
-    /// [`JitRecord::next`], and sleeps while there are none: never null. The records are
-    /// the JIT's until it reports them with [`RtApi::done`]. Only the JIT's thread calls it.
-    pub next_batch: extern "C-unwind" fn() -> *mut JitRecord,
+    /// [`JitRecord::next`]. With `wait`, sleeps while there are none and never returns
+    /// null; without, returns null if there are none. The records are the JIT's until it
+    /// reports them with [`RtApi::done`]. Only the JIT's thread calls it.
+    pub next_batch: extern "C-unwind" fn(wait: bool) -> *mut JitRecord,
     /// Reports a record: compiled (`true`, after the JIT published it: `Done`) or not
     /// (`false`: the runtime marks it `Failed`). Wakes the threads waiting for it.
     pub done: extern "C-unwind" fn(rec: *mut JitRecord, ok: bool),

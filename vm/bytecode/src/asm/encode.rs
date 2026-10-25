@@ -43,10 +43,9 @@ pub enum Ref {
     /// The function's own JIT record (`image::JitRecord`), which its counter stubs load
     /// ([`Mode::counters`]).
     Rec,
-    /// The counter of the function's JIT record from the field of `sub qword [rip + x],
-    /// imm8`, which the immediate follows: the field holds `record - (field + 5)`, so this
-    /// target is the record's address less one.
-    RecCtr,
+    /// The loop counter of the function's JIT record (`image::JitRecord::ctr_l`), which its
+    /// loop heads' counter checks count up.
+    RecLoopCtr,
 }
 
 /// A relocated field: the 4 bytes at `at`.
@@ -1237,13 +1236,13 @@ impl Asm {
         // The counter checks' `js`s (element indices), the entry's first, each continuing at
         // the element after it; their stubs follow the code.
         let mut checks = Vec::new();
-        let check = |out: &mut Vec<Laid>, checks: &mut Vec<usize>, k: u8| {
-            fixed(out, Item::CtrSub(k));
+        let check = |out: &mut Vec<Laid>, checks: &mut Vec<usize>, lp: bool| {
+            fixed(out, Item::CtrInc(lp));
             checks.push(out.len());
-            out.push(Laid::Branch { cond: Cond::S, to: usize::MAX, long: false });
+            out.push(Laid::Branch { cond: Cond::Ns, to: usize::MAX, long: false });
         };
         if mode.counters {
-            check(&mut out, &mut checks, super::ENTRY_COUNT);
+            check(&mut out, &mut checks, false);
         }
         let prologue_at = out.len();
         for item in prologue(frame_size, mode) {
@@ -1292,7 +1291,7 @@ impl Asm {
                 remap[e] = out.len();
             }
             if core::mem::take(&mut head_check) {
-                check(&mut out, &mut checks, 1);
+                check(&mut out, &mut checks, true);
             }
             out.push(match p {
                 Piece::Fixed { item, site } => {

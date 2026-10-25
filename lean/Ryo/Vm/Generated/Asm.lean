@@ -18,8 +18,8 @@ def argRegs : Nat := 6
 /-- `MAX_OPERANDS`. -/
 def maxOperands : Nat := 8
 
-/-- `ENTRY_COUNT`: what a call subtracts from its function's counter. -/
-def entryCount : Nat := 16
+/-- `image::JIT_LOOP_CTR`: the offset of a JIT record's loop counter, which loop heads' checks count up. -/
+def jitLoopCtr : Nat := 56
 
 /-- `RET_SRET`: the return kind of memory the caller passes. -/
 def retSret : Nat := 2147483648

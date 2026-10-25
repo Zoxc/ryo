@@ -16,9 +16,9 @@ use ryo_bytecode::asm::frame::{self, SlotMap};
 use ryo_bytecode::asm::osr::OsrEntry;
 use ryo_bytecode::asm::{self, Mode, Ref};
 use ryo_bytecode::full::{Const, Data, Func, Site, Sym};
-use ryo_bytecode::image::{EhFunc, Image, ImageResolver, JIT_DONE, JitRecord, eh_cie, eh_fde, eh_fde_rows};
+use ryo_bytecode::image::{EhFunc, Image, ImageResolver, JIT_DONE, JitRecord, eh_cie, eh_fde, eh_fde_rows, jit_count, jit_settle, jit_unbiased};
 use ryo_bytecode::jit;
-use ryo_bytecode::jit_abi::{JIT_CHECK, JIT_ENTRY_PREFIX, JIT_LOG, JIT_OPT_SSA, JIT_OPT_SSA_NAIVE, JIT_TEST_PANIC, REDIRECT, RtApi};
+use ryo_bytecode::jit_abi::{JIT_CHECK, JIT_ENTRY_PREFIX, JIT_LOG, JIT_OPT_SSA, JIT_OPT_SSA_NAIVE, JIT_TEST_PANIC, RtApi};
 use ryo_bytecode::{Opcode, reduced};
 
 /// The page size (x86_64).
@@ -54,21 +54,58 @@ unsafe extern "C" {
 
 // The record's fields the JIT shares with the trips and the counter checks, which read and
 // write them with plain instructions: atomics of their size.
-fn ctr(r: *mut JitRecord) -> &'static AtomicI64 {
-    // SAFETY: records live in images' writable sections forever; `ctr` is 8-aligned.
-    unsafe { AtomicI64::from_ptr(&raw mut (*r).ctr) }
+fn ctr_e(r: *mut JitRecord) -> &'static AtomicI64 {
+    // SAFETY: records live in images' writable sections forever; the counters are 8-aligned.
+    unsafe { AtomicI64::from_ptr(&raw mut (*r).ctr_e) }
+}
+fn ctr_l(r: *mut JitRecord) -> &'static AtomicI64 {
+    // SAFETY: as for `ctr_e`.
+    unsafe { AtomicI64::from_ptr(&raw mut (*r).ctr_l) }
 }
 fn entry(r: *mut JitRecord) -> &'static AtomicPtr<u8> {
-    // SAFETY: as for `ctr`.
+    // SAFETY: as for `ctr_e`.
     unsafe { AtomicPtr::from_ptr((&raw mut (*r).entry).cast::<*mut u8>()) }
 }
 fn osr_slot(r: *mut JitRecord) -> &'static AtomicPtr<u8> {
-    // SAFETY: as for `ctr`.
+    // SAFETY: as for `ctr_e`.
     unsafe { AtomicPtr::from_ptr((&raw mut (*r).osr).cast::<*mut u8>()) }
 }
 fn state(r: *mut JitRecord) -> &'static AtomicU32 {
-    // SAFETY: as for `ctr`.
+    // SAFETY: as for `ctr_e`.
     unsafe { &(*r).state }
+}
+
+/// The length of each installed function's code, by record address ([`crate::code_len`]).
+pub(crate) static CODE_LEN: std::sync::Mutex<Option<HashMap<usize, usize>>> = std::sync::Mutex::new(None);
+
+/// The profile of a function: how many times its AOT code was called, and how many loop
+/// iterations it ran, from its record's counters ([`JitRecord`]).
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct Counts {
+    pub(crate) calls: u64,
+    pub(crate) iters: u64,
+}
+
+/// [`Counts`] of `rec`, with `thresholds` the counters' ([`RtApi::thresholds`]).
+pub(crate) fn counts(rec: *mut JitRecord, thresholds: [i64; 2]) -> Counts {
+    let n = |v: i64, t: i64| jit_count(v, t).max(0) as u64;
+    Counts { calls: n(ctr_e(rec).load(Acquire), thresholds[0]), iters: n(ctr_l(rec).load(Acquire), thresholds[1]) }
+}
+
+/// Moves `rec`'s counters to its state's bias ([`jit_settle`]).
+pub(crate) fn settle(rec: *mut JitRecord) {
+    for c in [ctr_e(rec), ctr_l(rec)] {
+        jit_settle(c, || state(rec).load(SeqCst));
+    }
+}
+
+/// Whether a compiled record's counters both have its bias (a racing AOT increment can erase
+/// it: [`crate::thread`] re-checks).
+pub(crate) fn settled(rec: *mut JitRecord) -> bool {
+    [ctr_e(rec), ctr_l(rec)].iter().all(|c| {
+        let v = c.load(SeqCst);
+        v != jit_unbiased(v) && v > 0
+    })
 }
 
 /// How many functions the SSA tier compiled, and how many it left to the re-encoding
@@ -520,7 +557,7 @@ impl Jit {
                 Ref::Data(Data(k)) => h.data as usize + h.fixup_area as usize + k as usize,
                 Ref::Ro(o) => base + ro_at + o as usize,
                 Ref::Rec => rec as usize,
-                Ref::RecCtr => rec as usize - 1,
+                Ref::RecLoopCtr => rec as usize + ryo_bytecode::image::JIT_LOOP_CTR as usize,
             };
             let d = i32::try_from((target as i64).wrapping_sub(field as i64 + 4)).map_err(|_| "out of reach")?;
             code[field - base..][..4].copy_from_slice(&d.to_le_bytes());
@@ -564,21 +601,21 @@ impl Jit {
             let _ = writeln!(m, "{jit_f:x} {:x} ryo-jit:f{func}@{aot:x}", code_len);
         }
 
-        // Publish: the code's range, the entry, the state, then the counter that takes every
-        // entry's stub (design/jit.md, "Publishing").
+        // Publish: the code's range, the entry, the state, then the counters' bias that takes
+        // every check's stub (design/jit.md, "Publishing").
         // SAFETY: the record is this thread's to write until `Done`; the AOT code reads
         // `entry` with plain loads (an atomic store of its size).
         unsafe {
             (*rec).jit_code = jit_f as *const u8;
-            (*rec).jit_len = code_len as u64;
         }
+        CODE_LEN.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(rec as usize, code_len);
         entry(rec).store((jit_f - JIT_ENTRY_PREFIX) as *mut u8, Release);
         if osr.is_some() {
             // The dispatcher, at the start of the OSR code: every head's stub calls it from now.
             osr_slot(rec).store((jit_f + osr_at) as *mut u8, Release);
         }
         state(rec).store(JIT_DONE, SeqCst);
-        ctr(rec).store(REDIRECT, SeqCst);
+        settle(rec);
         // Calls of this function from JIT code compiled before it go straight to it now.
         for (&(_, hd, g), &slot) in &self.slots {
             if hd == header && g == func {
@@ -588,7 +625,8 @@ impl Jit {
             }
         }
         if self.rt.flags & JIT_LOG != 0 {
-            self.log(rec, what);
+            let c = counts(rec, self.rt.thresholds);
+            self.log(rec, &std::format!("{what} ({} calls, {} loop iterations)", c.calls, c.iters));
         }
         Ok(())
     }
@@ -638,7 +676,7 @@ impl Jit {
                 Ref::Data(x) => x.to_string(),
                 Ref::Ro(o) => std::format!("ro+{o}"),
                 Ref::Rec => "jit_record".into(),
-                Ref::RecCtr => "jit_record.ctr".into(),
+                Ref::RecLoopCtr => "jit_record.ctr_l".into(),
             };
             let _ = writeln!(s, "reloc {} {to}", r.at);
         }

@@ -51,7 +51,7 @@ pub mod osr;
 #[cfg(feature = "alloc")]
 mod reduced;
 #[cfg(feature = "alloc")]
-mod x86;
+pub(crate) mod x86;
 
 #[cfg(feature = "alloc")]
 pub use decode::{AsmError, Decoded, Resolver, decode, decode_linked, decode_reduced};
@@ -88,15 +88,12 @@ pub struct Mode {
     /// The target is PE/COFF: islands take the Win64 convention (`rcx`, `rdx`, 32 bytes of
     /// shadow space).
     pub pe: bool,
-    /// Every function counts its calls and loop iterations down in its JIT record, and
-    /// leaves through an out-of-line stub when the count runs out ([`ENTRY_COUNT`]): the
+    /// Every function counts its calls and its loop iterations up in two counters of its JIT
+    /// record, and leaves through an out-of-line stub when one isn't negative any more: the
     /// JIT's trigger (design/vm.md, "JIT records and counters"). The backend always emits
     /// them; code the JIT encodes has none.
     pub counters: bool,
 }
-
-/// What a call subtracts from its function's counter (a loop iteration subtracts 1).
-pub const ENTRY_COUNT: u8 = 16;
 
 /// Where a handler finds an operand: `count` argument registers from `reg` (0 is `rdi`),
 /// the first shifted right by `shift` (32 for the high half of a shared register). `count`
