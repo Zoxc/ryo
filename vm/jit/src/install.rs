@@ -11,7 +11,6 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::vec::Vec;
 
-use ryo_bytecode::asm::Decoded;
 use ryo_bytecode::asm::frame::{self, SlotMap};
 use ryo_bytecode::asm::osr::OsrEntry;
 use ryo_bytecode::asm::{self, Mode, Ref};
@@ -186,6 +185,62 @@ pub(crate) struct Jit {
     /// `RYO_JIT_SSA_LIMIT`, and how many functions went to the SSA tier so far.
     ssa_limit: Option<usize>,
     ssa_tried: usize,
+    /// The inliner's callee IR, by (image header, function) ([`InlineEnv`]).
+    ir_cache: IrCache,
+}
+
+/// Callee IR for the inliner, built once per function ([`jit::inline::Env::ir`]).
+type IrCache = HashMap<(usize, u32), Option<std::rc::Rc<jit::ir::Func>>>;
+
+/// At most this many functions' IR stay cached; the cache starts over past it.
+const IR_CACHE_MAX: usize = 4096;
+
+/// What the inliner gets for a compilation: the cache, the image's decoder, and the call
+/// slots the unit's calls go through (`callees`, symbols from `nsyms`).
+struct InlineEnv<'a, 'b> {
+    cache: &'a mut IrCache,
+    res: &'a ImageResolver<'b>,
+    text: &'a [u8],
+    mode: Mode,
+    header: usize,
+    root: u32,
+    recs: *mut JitRecord,
+    nrecs: u32,
+    nsyms: u32,
+    callees: Vec<u32>,
+}
+
+impl jit::inline::Env for InlineEnv<'_, '_> {
+    fn root(&self) -> Func {
+        Func(self.root)
+    }
+
+    fn ir(&mut self, g: Func) -> Option<std::rc::Rc<jit::ir::Func>> {
+        if let Some(f) = self.cache.get(&(self.header, g.0)) {
+            return f.clone();
+        }
+        if self.cache.len() >= IR_CACHE_MAX {
+            self.cache.clear();
+        }
+        let f = match self.res.decode(g.0, self.text) {
+            Some(Ok(d)) => jit::ir_of(&d, self.mode).ok().map(std::rc::Rc::new),
+            _ => None,
+        };
+        self.cache.insert((self.header, g.0), f.clone());
+        f
+    }
+
+    fn retarget(&mut self, g: Func) -> Option<Sym> {
+        let done = g.0 < self.nrecs && state(self.recs.wrapping_add(g.0 as usize)).load(Acquire) == JIT_DONE;
+        if done {
+            return None;
+        }
+        let k = self.callees.iter().position(|&c| c == g.0).unwrap_or_else(|| {
+            self.callees.push(g.0);
+            self.callees.len() - 1
+        });
+        Some(Sym(self.nsyms + k as u32))
+    }
 }
 
 impl Jit {
@@ -216,6 +271,7 @@ impl Jit {
             dump,
             ssa_limit,
             ssa_tried: 0,
+            ir_cache: HashMap::new(),
         }
     }
 
@@ -348,19 +404,25 @@ impl Jit {
                 check: flags & JIT_CHECK != 0,
                 dump: self.dump.is_some(),
             };
-            // The AOT layout's words (the SSA tier lays out its own frame), with the calls
-            // through call slots as above.
-            let mut sw = d.words.clone();
-            let mut k = 0;
-            while k < sw.len() {
-                if sw[k] == reduced::Opcode::Call as u32 && words[k] == reduced::Opcode::CallSym as u32 {
-                    sw[k] = words[k];
-                    sw[k + 2] = words[k + 2];
-                }
-                k += reduced::insn_len(&sw[k..]).map_err(|_| "reduced code")?;
-            }
-            let ds = Decoded { words: sw, ..d.clone() };
-            match jit::compile(&ds, img.code_consts(), mode, &opts) {
+            // The AOT layout's words (the SSA tier lays out its own frame); calls of functions
+            // not compiled yet go through call slots as above, retargeted after inlining.
+            let ds = &d;
+            let header = h as *const _ as usize;
+            let mut env = InlineEnv {
+                cache: &mut self.ir_cache,
+                res: &res,
+                text,
+                mode,
+                header,
+                root: func,
+                recs,
+                nrecs: h.jit_records.count,
+                nsyms,
+                callees: Vec::new(),
+            };
+            let r = jit::compile(ds, img.code_consts(), mode, &opts, Some(&mut env));
+            let ssa_callees = env.callees;
+            match r {
                 Ok(mut o) => {
                     if let (Some(dir), Some(text)) = (&self.dump, o.dump.take()) {
                         let _ = std::fs::write(std::format!("{dir}/f{func}-{:x}.txt", h as *const _ as usize), text);
@@ -376,7 +438,7 @@ impl Jit {
                         osr_at: o.osr_at as usize,
                     };
                     SSA_COMPILED.fetch_add(1, SeqCst);
-                    return self.install(rec, func, &img, info, personality, &callees, out, "compiled (ssa)");
+                    return self.install(rec, func, &img, info, personality, &ssa_callees, out, "compiled (ssa)");
                 }
                 Err(jit::Error::Unsupported(u)) => {
                     SSA_FALLBACK.fetch_add(1, SeqCst);

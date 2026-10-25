@@ -76,8 +76,9 @@ pub fn thread(f: &mut Func) {
     let n = f.blocks.len();
     let mut live = alloc::vec![false; n];
     let mut stack: Vec<usize> = (0..n).filter(|&b| matches!(f.blocks[b].kind, BlockKind::Entry | BlockKind::Osr(_))).collect();
-    // Landing pad stubs are reached through their invokes; keep any without one too.
-    stack.extend((0..n).filter(|&b| f.blocks[b].kind == BlockKind::Stub || f.blocks[b].head.is_some()));
+    // Landing pad stubs are reached through their invokes; keep any without one too. Loop
+    // heads with OSR entries are reached from those.
+    stack.extend((0..n).filter(|&b| f.blocks[b].kind == BlockKind::Stub));
     while let Some(b) = stack.pop() {
         if core::mem::replace(&mut live[b], true) {
             continue;

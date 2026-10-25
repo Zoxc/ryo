@@ -76,3 +76,10 @@ remove it once a Lean session has handled it.
   `call_sites` 104, `fixup_area` 116, `mode` 120, `jit_records` 124, header size 136;
   `FuncEntry` 36 bytes, `list` 20, `call_sites` 28. Commit: "Replace the scope and dropped-store
   tables with per-function instruction lists".
+
+- The JIT's SSA tier inlines direct calls of the image's functions (`jit::inline`: an
+  IR-to-IR splice with landing-pad action substitution, callee allocas appended as
+  `Alloca::inlined`, outgoing areas merged) and promotes memory allocas whose address no
+  longer escapes (`jit::opt::promote`). Only matters if the Lean model covers the SSA tier;
+  the splice and the promotion are the passes to prove or validate. Commit: "Inline
+  same-image calls in the JIT's SSA tier".

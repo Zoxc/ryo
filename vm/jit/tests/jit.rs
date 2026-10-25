@@ -224,6 +224,15 @@ fn unwinding() {
     }
 }
 
+/// A tail call of `f` (the function being built) that never runs (`ret_addr`'s result in
+/// slot -16 is never 0), so that the inliner leaves the function's calls alone.
+fn not_inlined(a: &mut Asm, f: Func) {
+    let b = a.i(Insn::BrEqImmW64 { a: Slot(-16), imm: 0, neg: F, t: Target(0) });
+    a.i(Insn::TailCall { f, a: List::from_words(&[]) });
+    let next = a.pos();
+    a.patch(b, "t", next);
+}
+
 /// JIT code calls compiled functions in their JIT code and others in their AOT code.
 #[test]
 fn calls_between_jit_and_aot() {
@@ -233,13 +242,17 @@ fn calls_between_jit_and_aot() {
     // leaf() = where it runs.
     let mut a = Asm::new();
     a.i(Insn::CallSym { d: Slot(-16), sym: s_ret, k: 8, a: List::from_words(&[]) });
+    not_inlined(&mut a, Func(0));
     a.ret(Slot(-16), 8);
     let leaf = w.add_function(func(a.done(), 16, 0, 8));
+    assert_eq!(leaf, Func(0));
     // aot() = where it runs (it never trips).
     let mut a = Asm::new();
     a.i(Insn::CallSym { d: Slot(-16), sym: s_ret, k: 8, a: List::from_words(&[]) });
+    not_inlined(&mut a, Func(1));
     a.ret(Slot(-16), 8);
     let aot = w.add_function(func(a.done(), 16, 0, 8));
+    assert_eq!(aot, Func(1));
     // both(out) = out[0] = leaf(), out[1] = aot(), out[2] = where it runs; out@16.
     let mut a = Asm::new();
     a.i(Insn::Call { d: Slot(-16), f: leaf, k: 8, a: List::from_words(&[]) });
@@ -277,8 +290,10 @@ fn calls_of_functions_compiled_later() {
     // leaf() = where it runs.
     let mut a = Asm::new();
     a.i(Insn::CallSym { d: Slot(-16), sym: s_ret, k: 8, a: List::from_words(&[]) });
+    not_inlined(&mut a, Func(0));
     a.ret(Slot(-16), 8);
     let leaf = w.add_function(func(a.done(), 16, 0, 8));
+    assert_eq!(leaf, Func(0));
     // caller(out) = out[0] = leaf(), out[1] = where it runs; out@16.
     let mut a = Asm::new();
     a.i(Insn::Call { d: Slot(-16), f: leaf, k: 8, a: List::from_words(&[]) });

@@ -446,6 +446,55 @@ only it, and is unchanged).
   that the corpus (which compares stderr) and the JIT tests (which check where code runs)
   see it.
 
+### Inlining
+
+`jit::inline` inlines direct calls of functions of the root's image into the unit, after
+the first round of passes (`jit::compile`: build, `opt::run`, inline, `opt::run`, promote,
+`opt::run`). Nothing is speculated: a direct call's target is fixed, so a unit is never
+rebuilt. The JIT thread caches each callee's IR (built and optimized, by image and
+function; `install.rs`'s `InlineEnv`), so that a function is decoded and built once for all
+the units that inline it.
+
+- **Exploration**: from the root, its direct calls heaviest first, each callee's IR from
+  the cache, down to depth 6, at most 6000 cost units of callee IR and 400 nodes. Not
+  inlined: recursion (a function already on the path), tail calls in the callee, stack
+  arguments (an incoming area), argument or result registers other than 1, 2, 4 or 8
+  bytes, arguments the call doesn't set, calls through symbols or pointers. A callee with
+  a `resume`, or with landing pads at a catching site, is inlined only where its calls that
+  unwind out wouldn't land on the site's landing pad (stage 4 of the inlining plan
+  handles those).
+- **Weights**: static: 1 per call site, 8 per loop level of the site's block (up to 4),
+  1/16 in a cold block (a landing pad stub, a trap, or only cold successors), multiplied
+  down the path.
+- **Cost and benefit**: the cost is the callee's instructions (a handler call through the
+  scratch area 4, through its register entry 2, a call 4, others 1; branches 1, cold
+  blocks a quarter); the benefit is the weight times the call protocol saved, `2 × args +
+  8 (+1 with a result)`.
+- **Clusters**: bottom-up, a node absorbs the child cluster with the best benefit per cost
+  while that raises its own ratio; a cluster is inlined whole or not at all. Clusters are
+  taken best ratio first: always at a cost of 12 or less, else not at a cold site, and only
+  at a ratio of at least 0.3 within a unit of 2000; the children of an accepted cluster it
+  didn't absorb become candidates. Inlined allocas may add at most 64 KiB of frame.
+- **Splice** (IR to IR): the callee's allocas, values and blocks are copied with fresh
+  ids (allocas marked `inlined`, never pinned; outgoing areas merge into one at the bottom
+  of the frame). Its entry parameters become the call's arguments (zero-extended past the
+  call's register size), its returns jumps to a continuation block whose parameters are
+  the call's results. A copied call that unwinds to its caller takes the site's action:
+  none, to the caller, or the site's landing pad, as an invoke to the site's stub (which
+  then has several invokes). The callee's own landing pads stay; its loop heads become
+  ordinary blocks, without OSR entries, and OSR entries convert only the root's allocas.
+- **Promotion** (`opt::promote`, on every unit): a memory alloca that isn't pinned, whose
+  address nothing takes any more, that no handler or island names, and whose accesses are
+  to equal or disjoint fields of 1, 2, 4 or 8 bytes becomes SSA values (Braun et al. on the
+  IR; OSR entries load the AOT frame's bytes). This is what removes the field round trips
+  of `&self` wrappers once their calls are inlined. A field that would need a parameter on
+  a landing pad stub keeps its alloca in memory: pad edges move nothing.
+- **Call slots** are assigned after inlining (`inline::retarget`), for the unit's
+  remaining calls of functions not compiled yet.
+- `RYO_JIT_DUMP` shows the decisions (each cluster with its benefit, cost and outcome, and
+  the calls not inlinable and why) and the IR after the splices; `RYO_JIT_CHECK` verifies
+  the IR after each splice and after promotion.
+
 ### Choices
 
 - The tier lives in `ryo_bytecode::jit` (testable without the runtime, next to the

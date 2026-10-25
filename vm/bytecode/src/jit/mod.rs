@@ -10,8 +10,9 @@
 //!   areas, which are pinned at OSR entries, and the variable each access names.
 //! - `ir`: the IR, its printer and verifier.
 //! - `build`: SSA construction (Braun et al.).
-//! - `opt`: the optimization passes on the IR: value numbering, the folds, DCE and jump
-//!   threading.
+//! - `opt`: the optimization passes on the IR: value numbering, the folds, DCE, jump
+//!   threading and the promotion of allocas.
+//! - `inline`: same-image inlining: the call tree, its clusters, and the IR splice.
 //! - `regalloc`: register allocation (every value in a slot, or linear scan) and its checker.
 //! - `emit`: instruction selection, the frame, OSR entries, call sites and unwind rows.
 //! - `x86`: the x86-64 encoder, checked against `objdump` by `tests/jit_x86.rs`.
@@ -25,6 +26,8 @@ pub mod decode;
 pub mod effects;
 #[cfg(feature = "alloc")]
 pub mod emit;
+#[cfg(feature = "alloc")]
+pub mod inline;
 #[cfg(feature = "alloc")]
 pub mod ir;
 #[cfg(feature = "alloc")]
@@ -82,13 +85,44 @@ impl From<Unsupported> for Error {
 }
 
 /// Compiles the decoded function `d` (its code constants `code_consts`, encoded in `mode`
-/// without counters) through the SSA tier.
+/// without counters) through the SSA tier, with `env` inlining the image's functions it
+/// calls ([`inline`]).
 #[cfg(feature = "alloc")]
-pub fn compile(d: &crate::asm::Decoded, code_consts: &[u8], mode: crate::asm::Mode, opts: &Options) -> Result<Output, Error> {
+pub fn compile(
+    d: &crate::asm::Decoded,
+    code_consts: &[u8],
+    mode: crate::asm::Mode,
+    opts: &Options,
+    mut env: Option<&mut dyn inline::Env>,
+) -> Result<Output, Error> {
     let mut f = built(d, mode)?;
     // The IR as construction leaves it, before value numbering and the folds (`RYO_JIT_DUMP`).
     let built_ir = opts.dump.then(|| alloc::format!("{f}"));
     opt::run(&mut f);
+    let mut decisions = opts.dump.then(alloc::string::String::new);
+    let mut inlined_ir = None;
+    if let Some(env) = env.as_deref_mut() {
+        if opts.check {
+            f.verify().map_err(|e| Error::Check(alloc::format!("IR before inlining: {e}")))?;
+        }
+        let n = inline::inline(&mut f, env, &inline::PARAMS, opts.check, decisions.as_mut()).map_err(Error::Check)?;
+        if n > 0 {
+            inlined_ir = opts.dump.then(|| alloc::format!("{f}"));
+            opt::run(&mut f);
+        }
+    }
+    let before = (opts.check && opts.dump).then(|| alloc::format!("{f}"));
+    if opt::promote::promote(&mut f) {
+        if opts.check {
+            // With `RYO_JIT_DUMP`, the IR before and after, for the log.
+            let ir = |f: &ir::Func| before.as_ref().map(|b| alloc::format!("\n; before\n{b}\n; after\n{f}")).unwrap_or_default();
+            f.verify().map_err(|e| Error::Check(alloc::format!("IR after promotion: {e}{}", ir(&f))))?;
+        }
+        opt::run(&mut f);
+    }
+    if let Some(env) = env {
+        inline::retarget(&mut f, env);
+    }
     if opts.check {
         f.verify().map_err(|e| Error::Check(alloc::format!("IR: {e}")))?;
     }
@@ -106,6 +140,12 @@ pub fn compile(d: &crate::asm::Decoded, code_consts: &[u8], mode: crate::asm::Mo
         let mut s = alloc::string::String::new();
         let _ = writeln!(s, "; reduced code (frame {})\n{}", d.frame_size, crate::reduced::Disasm(&d.words));
         let _ = writeln!(s, "; IR before value numbering and the folds\n{}", built_ir.unwrap_or_default());
+        if let Some(d) = decisions.filter(|d| !d.is_empty()) {
+            let _ = writeln!(s, "; inlining\n{d}");
+        }
+        if let Some(ir) = inlined_ir {
+            let _ = writeln!(s, "; IR after inlining\n{ir}");
+        }
         let _ = writeln!(s, "; IR\n{f}");
         let _ = writeln!(s, "; locations ({} spill slots, saved {:?})", al.spills, al.saved);
         for (v, l) in al.loc.iter().enumerate() {

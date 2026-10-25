@@ -7,11 +7,14 @@
 //! - `dce`: dead code elimination.
 //! - `thread`: jump threading through empty blocks.
 //! - `layout`: cold blocks last, and values crossing calls in them split off.
+//! - `promote`: promotion of memory allocas nothing takes the address of any more (after
+//!   inlining), run between two rounds of the others.
 
 pub mod dce;
 pub mod fold;
 pub mod layout;
 pub mod lvn;
+pub mod promote;
 pub mod thread;
 
 use super::ir::Func;

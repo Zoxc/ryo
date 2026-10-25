@@ -467,6 +467,9 @@ pub struct Alloca {
     pub pinned: bool,
     /// Some pointer reaches it (an escape covers it).
     pub escaped: bool,
+    /// It comes from an inlined callee's frame ([`super::inline`]): `aot_off` is an offset in
+    /// that frame, not in the AOT frame OSR entries convert.
+    pub inlined: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -847,12 +850,13 @@ impl fmt::Display for Func {
         for (k, a) in self.allocas.iter().enumerate() {
             writeln!(
                 f,
-                "a{k}: ${}, {} bytes, {:?}{}{}",
+                "a{k}: ${}, {} bytes, {:?}{}{}{}",
                 a.aot_off,
                 a.size,
                 a.kind,
                 if a.pinned { ", pinned" } else { "" },
-                if a.escaped { ", escaped" } else { "" }
+                if a.escaped { ", escaped" } else { "" },
+                if a.inlined { ", inlined" } else { "" }
             )?;
         }
         for (b, bd) in self.blocks.iter().enumerate() {

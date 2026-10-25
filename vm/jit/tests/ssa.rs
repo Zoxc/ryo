@@ -144,6 +144,10 @@ fn in_jit(img: &Linked, f: Func, addr: u64) -> bool {
     start != 0 && (start..start + ryo_jit::code_len(r) as u64).contains(&addr)
 }
 
+fn state(img: &Linked, f: Func) -> u32 {
+    unsafe { (*img.record(f)).state.load(SeqCst) }
+}
+
 /// Whether `addr` is in the AOT code of function `f`.
 fn in_aot(img: &Linked, f: Func, addr: u64) -> bool {
     let start = img.code(f) as u64;
@@ -612,5 +616,281 @@ fn cold_block_values_across_calls() {
             assert_eq!(DELETED.load(SeqCst), del + 1, "({x}, {y}, {z})");
         }
     }
+    // g, with f inlined: its cold path is g's.
+    check_stats(before, 1);
+}
+
+// ---- Inlining (design/jit.md, "Inlining") ----
+
+/// `bump(p, k)`: `*p = *p * 3 + k`, returns the old `*p`; register arguments, so that it can
+/// be inlined. p@-8, k@-16, old@-24, t@-32.
+fn bump() -> FunctionDef {
+    let mut a = Asm::new();
+    a.i(arg(-8, 0));
+    a.i(arg(-16, 1));
+    a.i(Insn::LoadW64 { d: Slot(-24), m: Mem { p: Slot(-8), k: 0 } });
+    a.i(Insn::MulImmW64 { d: Slot(-32), a: Slot(-24), imm: 3 });
+    a.i(Insn::AddW64 { d: Slot(-32), a: Slot(-32), b: Slot(-16) });
+    a.i(Insn::StoreW64 { m: Mem { p: Slot(-8), k: 0 }, s: Slot(-32) });
+    a.ret(Slot(-24), 8);
+    func(a.done(), 32, 0, 8)
+}
+
+/// A callee taking the address of the caller's local, inlined into a loop: the local's
+/// address only reaches loads and stores once the call is gone (post-inline promotion), and
+/// the callee isn't compiled on its own. Also entered by OSR at the loop head.
+#[test]
+fn inline_callee_with_caller_local() {
+    let (_g, before) = start();
+    for k in [None, Some(0i64), Some(3)] {
+        let mut w = ImageWriter::new(unique_scid());
+        let mut defs = Defs::default();
+        let s_ret = w.symbol("ret_addr", 0);
+        let b = defs.add(&mut w, bump(), vec![]);
+        // f(n, out): e = 5; s = 0; for i < n { s += bump(&e, i) }; out[0] = e; out[1] =
+        // where it runs; ret s. n@16, out@24 (copied to -8, -16); i@-24, e@-32, s@-40,
+        // p@-48, r@-56, tmp@-64.
+        let mut a = Asm::new();
+        a.i(Insn::MovW64 { d: Slot(-8), s: Slot(16) });
+        a.i(Insn::MovW64 { d: Slot(-16), s: Slot(24) });
+        a.i(Insn::ImmW64 { d: Slot(-24), imm: 0 });
+        a.i(Insn::ImmW64 { d: Slot(-32), imm: 5 });
+        a.i(Insn::ImmW64 { d: Slot(-40), imm: 0 });
+        let head = a.i(Insn::BrLtUW64 { a: Slot(-24), b: Slot(-8), neg: F, t: Target(0) });
+        let at_addr = a.i(Insn::Addr { d: Slot(-48), s: Slot(-32) });
+        a.i(Insn::Call { d: Slot(-56), f: b, k: 8, a: List::from_words(&regs(&[-48, -24])) });
+        a.i(Insn::AddW64 { d: Slot(-40), a: Slot(-40), b: Slot(-56) });
+        a.i(Insn::AddImmW64 { d: Slot(-24), a: Slot(-24), imm: 1 });
+        let back = a.i(Insn::Jmp { t: Target(0) });
+        a.patch(back, "t", head);
+        let done = a.i(Insn::StoreW64 { m: Mem { p: Slot(-16), k: 0 }, s: Slot(-32) });
+        a.patch(head, "t", done);
+        where_at(&mut a, s_ret, -64, -16, 1);
+        a.ret(Slot(-40), 8);
+        let f = defs.add(&mut w, func(a.done(), 64, 16, 8), vec![escape(at_addr, -32, 8)]);
+        let img = defs.build(w);
+        if let Some(k) = k {
+            img.trip_after(f, 1, k);
+        }
+        let n = 20u64;
+        let (mut e, mut s) = (5u64, 0u64);
+        for i in 0..n {
+            s = s.wrapping_add(e);
+            e = e.wrapping_mul(3).wrapping_add(i);
+        }
+        for round in 0..2 {
+            let mut out = [0u64; 2];
+            assert_eq!(ok::<_, u64>(img.id(f), (n, out.as_mut_ptr() as u64)), s, "{k:?} round {round}");
+            assert_eq!(out[0], e, "{k:?} round {round}");
+            assert!(in_jit(&img, f, out[1]), "{k:?}: ran at {:#x}", out[1]);
+        }
+        if k != Some(3) && std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
+            assert_eq!(state(&img, b), JIT_COLD, "{k:?}: bump was inlined, never called from AOT code");
+        }
+    }
+    // f each time, and bump once, called from the AOT loop before the OSR entry.
+    check_stats(before, 4);
+}
+
+/// A callee whose call of a native function may unwind, inlined at a call site with a
+/// catching landing pad: the copied call unwinds to the site's pad. And a callee with a
+/// cleanup pad that resumes, inlined at a site without one: the resume continues in the
+/// caller's caller.
+#[test]
+fn inline_landing_pads_and_resume() {
+    let (_g, before) = start();
+    let mut w = ImageWriter::new(unique_scid());
+    let s_ret = w.symbol("ret_addr", 0);
+    let s_throw = w.symbol("throw", 0);
+    let s_del = w.symbol("delete_exc", 0);
+    // g(x, log): r = throw(x) + 1; ret r; cleanup pad: log[0] += 1; resume. x@-8, log@-16,
+    // r@-24, exc@-32, t@-40.
+    let mut a = Asm::new();
+    a.i(arg(-8, 0));
+    a.i(arg(-16, 1));
+    let site = a.i(Insn::CallSym { d: Slot(-24), sym: s_throw, k: 8, a: List::from_words(&regs(&[-8])) });
+    a.i(Insn::AddImmW64 { d: Slot(-24), a: Slot(-24), imm: 1 });
+    a.ret(Slot(-24), 8);
+    let pad = a.i(Insn::Lpad { x: Slot(-32) });
+    a.i(Insn::LoadW64 { d: Slot(-40), m: Mem { p: Slot(-16), k: 0 } });
+    a.i(Insn::AddImmW64 { d: Slot(-40), a: Slot(-40), imm: 1 });
+    a.i(Insn::StoreW64 { m: Mem { p: Slot(-16), k: 0 }, s: Slot(-40) });
+    let r = a.i(Insn::Resume { x: Slot(-32) });
+    let mut gd = func(a.done(), 48, 0, 8);
+    gd.cleanup = vec![CleanupEntry { offset: site, target: pad }, CleanupEntry { offset: r, target: CONTINUE }];
+    let g = w.add_function(gd);
+    // h(x): ret throw(x + 1) * 2, no pad of its own. x@-8, r@-16.
+    let mut a = Asm::new();
+    a.i(arg(-8, 0));
+    a.i(Insn::AddImmW64 { d: Slot(-8), a: Slot(-8), imm: 1 });
+    let hs = a.i(Insn::CallSym { d: Slot(-16), sym: s_throw, k: 8, a: List::from_words(&regs(&[-8])) });
+    a.i(Insn::AddW64 { d: Slot(-16), a: Slot(-16), b: Slot(-16) });
+    a.ret(Slot(-16), 8);
+    let mut hd = func(a.done(), 16, 0, 8);
+    hd.cleanup = vec![CleanupEntry { offset: hs, target: CONTINUE }];
+    let h = w.add_function(hd);
+    // mid(x, log): ret g(x, log), no pad: g's resume continues to mid's caller. x@-8, log@-16, r@-24.
+    let mut a = Asm::new();
+    a.i(arg(-8, 0));
+    a.i(arg(-16, 1));
+    let ms = a.i(Insn::Call { d: Slot(-24), f: g, k: 8, a: List::from_words(&regs(&[-8, -16])) });
+    a.ret(Slot(-24), 8);
+    let mut md = func(a.done(), 32, 0, 8);
+    md.cleanup = vec![CleanupEntry { offset: ms, target: CONTINUE }];
+    let mid = w.add_function(md);
+    // f(x, log, out): out[0] = where it runs; v = h(x); w = mid(x, log); ret v + w; catching
+    // pad around both: delete; ret 1000. x@-8, log@-16, out@-24, v@-32, w@-40, exc@-48,
+    // tmp@-56.
+    let mut a = Asm::new();
+    a.i(Insn::MovW64 { d: Slot(-8), s: Slot(16) });
+    a.i(Insn::MovW64 { d: Slot(-16), s: Slot(24) });
+    a.i(Insn::MovW64 { d: Slot(-24), s: Slot(32) });
+    where_at(&mut a, s_ret, -56, -24, 0);
+    let s1 = a.i(Insn::Call { d: Slot(-32), f: h, k: 8, a: List::from_words(&regs(&[-8])) });
+    let s2 = a.i(Insn::Call { d: Slot(-40), f: mid, k: 8, a: List::from_words(&regs(&[-8, -16])) });
+    a.i(Insn::AddW64 { d: Slot(-40), a: Slot(-40), b: Slot(-32) });
+    a.ret(Slot(-40), 8);
+    let pad = a.i(Insn::Lpad { x: Slot(-48) });
+    a.i(Insn::CallSym { d: Slot(0), sym: s_del, k: 0, a: List::from_words(&regs(&[-48])) });
+    a.i(Insn::ImmW64 { d: Slot(-40), imm: 1000 });
+    a.ret(Slot(-40), 8);
+    let mut fd = func(a.done(), 64, 24, 8);
+    fd.cleanup = vec![CleanupEntry { offset: s1, target: pad | CATCH }, CleanupEntry { offset: s2, target: pad | CATCH }];
+    let f = w.add_function(fd);
+    let img = build(w, &syms());
+
+    // Through the catching pad: h's throw (x = 6), and g's (x = 7) after g's cleanup and
+    // resume, which continue through mid's frame (inlined into f, or compiled on its own).
+    for round in 0..3 {
+        let mut log = [0u64; 1];
+        let mut out = [0u64; 1];
+        let mut run = |x: u64, log: &mut [u64; 1]| ok::<_, u64>(img.id(f), (x, log.as_mut_ptr() as u64, out.as_mut_ptr() as u64));
+        let del = DELETED.load(SeqCst);
+        assert_eq!(run(5, &mut log), 12 + 6, "round {round}");
+        assert_eq!(run(6, &mut log), 1000, "round {round}");
+        assert_eq!((log[0], DELETED.load(SeqCst)), (0, del + 1), "round {round}");
+        assert_eq!(run(7, &mut log), 1000, "round {round}");
+        assert_eq!((log[0], DELETED.load(SeqCst)), (1, del + 2), "round {round}");
+        assert!(in_jit(&img, f, out[0]), "ran at {:#x}", out[0]);
+    }
+    // f, and g, which has a resume and so isn't inlined where it would unwind to f's pad.
     check_stats(before, 2);
+}
+
+/// Recursion and nested callees with allocas of their own: `rec` calls itself (never inlined
+/// into itself) and `sq`, which passes its own local's address to `bump`, both inlined into
+/// `rec`, so that `sq`'s alloca is promoted inside `rec`'s unit; and `rec` entered both from
+/// its entry and in the middle of a recursion that started in AOT code.
+#[test]
+fn inline_recursion_and_callee_allocas() {
+    let (_g, before) = start();
+    let mut w = ImageWriter::new(unique_scid());
+    let mut defs = Defs::default();
+    let s_ret = w.symbol("ret_addr", 0);
+    let b = defs.add(&mut w, bump(), vec![]);
+    // sq(x) = { l = x; bump(&l, x); l } = x * 3 + x. x@-8, l@-16, p@-24, r@-32.
+    let mut a = Asm::new();
+    a.i(arg(-8, 0));
+    a.i(Insn::MovW64 { d: Slot(-16), s: Slot(-8) });
+    let at_addr = a.i(Insn::Addr { d: Slot(-24), s: Slot(-16) });
+    a.i(Insn::Call { d: Slot(-32), f: b, k: 8, a: List::from_words(&regs(&[-24, -8])) });
+    a.ret(Slot(-16), 8);
+    let sq = defs.add(&mut w, func(a.done(), 32, 0, 8), vec![escape(at_addr, -16, 8)]);
+    // rec(n, out) = n == 0 ? (out[0] = where it runs; 0) : sq(n) + rec(n - 1, out).
+    // n@-8, out@-16, s@-24, m@-32, r@-40, tmp@-48.
+    let rec_idx = Func(2);
+    let mut a = Asm::new();
+    a.i(arg(-8, 0));
+    a.i(arg(-16, 1));
+    let z = a.i(Insn::BrEqImmW64 { a: Slot(-8), imm: 0, neg: Neg(false), t: Target(0) });
+    a.i(Insn::Call { d: Slot(-24), f: sq, k: 8, a: List::from_words(&regs(&[-8])) });
+    a.i(Insn::SubImmW64 { d: Slot(-32), a: Slot(-8), imm: 1 });
+    a.i(Insn::Call { d: Slot(-40), f: rec_idx, k: 8, a: List::from_words(&regs(&[-32, -16])) });
+    a.i(Insn::AddW64 { d: Slot(-40), a: Slot(-40), b: Slot(-24) });
+    a.ret(Slot(-40), 8);
+    let base = a.pos();
+    where_at(&mut a, s_ret, -48, -16, 0);
+    a.i(Insn::ImmW64 { d: Slot(-40), imm: 0 });
+    a.ret(Slot(-40), 8);
+    a.patch(z, "t", base);
+    let rec = defs.add(&mut w, func(a.done(), 48, 0, 8), vec![]);
+    assert_eq!(rec, rec_idx);
+    // top(n, out) = rec(n, out), with stack arguments for the harness. n@16, out@24; r@-8,
+    // n'@-16, out'@-24.
+    let mut a = Asm::new();
+    a.i(Insn::MovW64 { d: Slot(-16), s: Slot(16) });
+    a.i(Insn::MovW64 { d: Slot(-24), s: Slot(24) });
+    a.i(Insn::Call { d: Slot(-8), f: rec, k: 8, a: List::from_words(&regs(&[-16, -24])) });
+    a.ret(Slot(-8), 8);
+    let top = defs.add(&mut w, func(a.done(), 32, 16, 8), vec![]);
+    let img = defs.build(w);
+
+    let want = |n: u64| (1..=n).map(|x| x * 4).sum::<u64>();
+    // The first three calls of rec run in AOT code, the fourth trips and compiles it.
+    img.trip_after(rec, 3, 0);
+    for n in [10u64, 0, 1, 25] {
+        let mut out = [0u64; 1];
+        assert_eq!(ok::<_, u64>(img.id(top), (n, out.as_mut_ptr() as u64)), want(n), "n = {n}");
+        assert!(in_jit(&img, rec, out[0]) || in_jit(&img, top, out[0]), "n = {n}: the base case ran at {:#x}", out[0]);
+    }
+    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
+        assert_eq!(state(&img, b), JIT_COLD, "bump inlined");
+    }
+    // top, rec, and sq, called from rec's AOT code before rec tripped (bump inlined into
+    // both).
+    check_stats(before, 3);
+}
+
+/// A callee with two calls that may unwind, inlined at a site with a catching landing pad,
+/// so that the pad's stub has two invokes, and a caller local written by the callee between
+/// them and read in the pad: it can't become a stub parameter, so it stays in memory.
+#[test]
+fn inline_two_unwinding_calls_into_one_pad() {
+    let (_g, before) = start();
+    let mut w = ImageWriter::new(unique_scid());
+    let mut defs = Defs::default();
+    let s_throw = w.symbol("throw", 0);
+    let s_del = w.symbol("delete_exc", 0);
+    // g(p, x): *p = 1; throw(x); *p = 2; throw(x + 1); ret 0. p@-8, x@-16, one@-24, r@-32.
+    let mut a = Asm::new();
+    a.i(arg(-8, 0));
+    a.i(arg(-16, 1));
+    a.i(Insn::ImmW64 { d: Slot(-24), imm: 1 });
+    a.i(Insn::StoreW64 { m: Mem { p: Slot(-8), k: 0 }, s: Slot(-24) });
+    let c1 = a.i(Insn::CallSym { d: Slot(-32), sym: s_throw, k: 8, a: List::from_words(&regs(&[-16])) });
+    a.i(Insn::ImmW64 { d: Slot(-24), imm: 2 });
+    a.i(Insn::StoreW64 { m: Mem { p: Slot(-8), k: 0 }, s: Slot(-24) });
+    a.i(Insn::AddImmW64 { d: Slot(-16), a: Slot(-16), imm: 1 });
+    let c2 = a.i(Insn::CallSym { d: Slot(-32), sym: s_throw, k: 8, a: List::from_words(&regs(&[-16])) });
+    a.i(Insn::ImmW64 { d: Slot(-32), imm: 0 });
+    a.ret(Slot(-32), 8);
+    let mut gd = func(a.done(), 32, 0, 8);
+    gd.cleanup = vec![CleanupEntry { offset: c1, target: CONTINUE }, CleanupEntry { offset: c2, target: CONTINUE }];
+    let g = defs.add(&mut w, gd, vec![]);
+    // f(x): e = 0; g(&e, x); ret e; catching pad: delete; ret e + 1000. x@16; x'@-8, e@-16,
+    // p@-24, r@-32, exc@-40.
+    let mut a = Asm::new();
+    a.i(Insn::MovW64 { d: Slot(-8), s: Slot(16) });
+    a.i(Insn::ImmW64 { d: Slot(-16), imm: 0 });
+    let at_addr = a.i(Insn::Addr { d: Slot(-24), s: Slot(-16) });
+    let site = a.i(Insn::Call { d: Slot(-32), f: g, k: 8, a: List::from_words(&regs(&[-24, -8])) });
+    a.ret(Slot(-16), 8);
+    let pad = a.i(Insn::Lpad { x: Slot(-40) });
+    a.i(Insn::CallSym { d: Slot(0), sym: s_del, k: 0, a: List::from_words(&regs(&[-40])) });
+    a.i(Insn::AddImmW64 { d: Slot(-32), a: Slot(-16), imm: 1000 });
+    a.ret(Slot(-32), 8);
+    let mut fd = func(a.done(), 48, 8, 8);
+    fd.cleanup = vec![CleanupEntry { offset: site, target: pad | CATCH }];
+    let f = defs.add(&mut w, fd, vec![escape(at_addr, -16, 8)]);
+    let img = defs.build(w);
+
+    for round in 0..3 {
+        assert_eq!(ok::<_, u64>(img.id(f), (0u64,)), 2, "round {round}");
+        assert_eq!(ok::<_, u64>(img.id(f), (7u64,)), 1001, "round {round}");
+        assert_eq!(ok::<_, u64>(img.id(f), (6u64,)), 1002, "round {round}");
+    }
+    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
+        assert_eq!(state(&img, g), JIT_COLD, "g inlined");
+    }
+    check_stats(before, 1);
 }

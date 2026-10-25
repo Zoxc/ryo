@@ -192,7 +192,7 @@ pub fn analyze(code: &Code, frame_size: u32) -> Result<Frame, Unsupported> {
         }
         if root_alloca[r] == u32::MAX {
             root_alloca[r] = allocas.len() as u32;
-            allocas.push(Alloca { aot_off: off as i32, size: 0, kind: AllocaKind::Promoted, pinned: false, escaped: false });
+            allocas.push(Alloca { aot_off: off as i32, size: 0, kind: AllocaKind::Promoted, pinned: false, escaped: false, inlined: false });
         }
         let a = root_alloca[r];
         of[b] = a;

@@ -264,8 +264,9 @@ fn layout(f: &Func, al: &Alloc, opts: Opts) -> Frame {
         alloca[k] = match a.kind {
             AllocaKind::Promoted => 0,
             AllocaKind::Incoming => a.aot_off,
+            // Inlined callees' outgoing areas share the bottom of the frame.
             AllocaKind::Outgoing => {
-                out_size = a.size;
+                out_size = out_size.max(a.size);
                 0
             }
             AllocaKind::Memory if a.pinned => a.aot_off,
@@ -1410,7 +1411,7 @@ fn osr_code(f: &Func, al: &Alloc, mode: Mode, fr: &Frame, lab: &[u32], at: u32) 
         }
         let mut copies: Vec<(i32, i32, u32, i32)> = Vec::new();
         for (a, al_) in f.allocas.iter().enumerate() {
-            if matches!(al_.kind, AllocaKind::Memory | AllocaKind::Outgoing) && fr.alloca[a] != al_.aot_off {
+            if matches!(al_.kind, AllocaKind::Memory | AllocaKind::Outgoing) && !al_.inlined && fr.alloca[a] != al_.aot_off {
                 copies.push((al_.aot_off, fr.alloca[a], al_.size, k));
                 k += al_.size.next_multiple_of(8) as i32;
             }
