@@ -7,12 +7,15 @@
 //!   folding, parameter aliasing and block merging.
 //! - `osr`: the OSR-transparent loop facts the forward analyses share: OSR edges left out.
 //! - `fold`: the folds instruction selection relies on.
+//! - `checks`: check elimination: overflow checks and compares the dominating branches
+//!   and value ranges decide.
 //! - `dce`: dead code elimination, effect-free handler calls included.
 //! - `thread`: jump threading through empty blocks.
 //! - `layout`: cold blocks last, and values crossing calls in them split off.
 //! - `promote`: promotion of memory allocas nothing takes the address of any more (after
 //!   inlining), run between two rounds of the others.
 
+pub mod checks;
 pub mod dce;
 pub mod fold;
 pub mod layout;
@@ -31,6 +34,7 @@ pub fn run(f: &mut Func) {
     lvn::lvn(f);
     simplify::simplify(f);
     fold::fold(f);
+    checks::checks(f);
     dce::dce(f);
     thread::thread(f);
     layout::layout(f);

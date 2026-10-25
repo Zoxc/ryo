@@ -10,18 +10,16 @@ fn fib
 L0:
     mov     rax,rbx
     sub     eax,1
-    jb      L2
     mov     rdi,rax
     mov     edi,edi
     call    fn2
     mov     r12,rax
     sub     ebx,2
-    jb      L3
     mov     rdi,rbx
     mov     edi,edi
     call    fn2
     add     r12,rax
-    jb      L4
+    jb      L2
     mov     rax,r12
 L1:
     mov     rbx,[rsp+20h]
@@ -29,16 +27,6 @@ L1:
     add     rsp,38h
     ret
 L2:
-    lea     rax,[k0]
-    mov     rdi,rax
-    call    sym1
-    ud2
-L3:
-    lea     rax,[k3]
-    mov     rdi,rax
-    call    sym1
-    ud2
-L4:
     lea     rax,[k6]
     mov     rdi,rax
     call    sym7

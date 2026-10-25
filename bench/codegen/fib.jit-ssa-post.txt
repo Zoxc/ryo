@@ -18,19 +18,15 @@ b1(): ; Body
     v2:8 = Ext { from: 4, to: 8, sx: false } (v0)
     jmp b9(v2)
 b2(): ; Body
-    v4:4, v5:1 = Ovf(Sub, false, 4) (v0, 0x1)
-    br ovf ? b3() : b4()
-b3(): ; Body cold
-    v6:8 = RefAddr(k0, false) ()
-    Call(Call { target: sym1, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v6)
+    v4:4 = Bin(Sub, 4) (v0, 0x1)
+    jmp b4()
+b3(): ; Body
     trap
 b4(): ; Body
     v7:8 = Call(Call { target: fn2, regs: [ArgReg { xmm: false, size: 4, index: 0 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Continue }) (v4)
-    v9:4, v10:1 = Ovf(Sub, false, 4) (v0, 0x2)
-    br ovf ? b5() : b6()
-b5(): ; Body cold
-    v11:8 = RefAddr(k3, false) ()
-    Call(Call { target: sym1, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v11)
+    v9:4 = Bin(Sub, 4) (v0, 0x2)
+    jmp b6()
+b5(): ; Body
     trap
 b6(): ; Body
     v12:8 = Call(Call { target: fn2, regs: [ArgReg { xmm: false, size: 4, index: 0 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Continue }) (v9)

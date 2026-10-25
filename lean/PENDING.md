@@ -62,3 +62,10 @@ remove it once a Lean session has handled it.
     fused into a `SwitchInt` testing the tag with `br.eq.imm` (`switch.dense` past 4 arms).
     The cert check counts the fused `Discriminant` like a fused compare; nothing proves the
     lowered decoding against `codegen_get_discr` (`Spec/Lang/Representation.lean`).
+
+- The SSA tier gains a check-elimination pass (`jit::opt::checks`, run after the folds): a
+  dominator-tree walk with range and `a < b` facts from single-predecessor branch edges turns
+  `Ovf` ops that can't overflow into `Bin` (flag constant 0, `BrOvf` a jump) and folds the
+  compares and compare-branches the facts decide. Only matters if the Lean model covers the
+  SSA tier; each fold is a proof obligation. Commit: "JIT: eliminate checks dominating
+  branches decide".

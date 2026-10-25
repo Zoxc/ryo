@@ -232,9 +232,7 @@ L11:
     lea     rax,[image.k3320]
     cmp     rbp,[rsp+18h]
     jae     L38
-    cmp     rbp,[rsp+18h]
-    setb    cl
-    mov     [rsp+75h],cl
+    mov     byte ptr [rsp+75h],1
     mov     r11,[rsp+20h]
     lea     rcx,[r11+rbp]
     movzx   ecx,byte ptr [rcx]
@@ -474,9 +472,7 @@ L27:
     lea     rcx,[image.k3320]
     cmp     r14,r15
     jae     L51
-    cmp     r14,r15
-    setb    dl
-    mov     [rsp+85h],dl
+    mov     byte ptr [rsp+85h],1
     mov     r11,[rsp+58h]
     lea     rdx,[r11+r14]
     movzx   edx,byte ptr [rdx]
@@ -1938,9 +1934,7 @@ L7:
     lea     rax,[k4]
     cmp     r13,[rsp+20h]
     jae     L17
-    cmp     r13,[rsp+20h]
-    setb    cl
-    mov     [rsp+35h],cl
+    mov     byte ptr [rsp+35h],1
     mov     r11,[rsp+18h]
     lea     rcx,[r11+r13]
     movzx   ecx,byte ptr [rcx]
@@ -8295,23 +8289,17 @@ L2:
     test    r15b,r15b
     je      L7
 L3:
-    mov     r11,rax
-    mov     r10,rdx
-    mov     eax,1
-    mul     r13
-    mov     rdx,r10
-    jb      L10
     cmp     rbx,r12
     jae     L4
-    mov     rcx,r12
-    sub     rcx,rbx
+    mov     rax,r12
+    sub     rax,rbx
     jmp     L5
 L4:
-    mov     rcx,rbx
-    sub     rcx,r12
+    mov     rax,rbx
+    sub     rax,r12
 L5:
-    cmp     rax,rcx
-    ja      L11
+    cmp     r13,rax
+    ja      L10
     mov     rdi,r12
     mov     rsi,rbx
     mov     rdx,r13
@@ -8325,11 +8313,11 @@ L5:
     ret
 L6:
     cmp     rbx,0
-    je      L11
+    je      L10
     jmp     L2
 L7:
     cmp     r12,0
-    je      L11
+    je      L10
     jmp     L3
 L8:
     lea     rax,[image.k1979]
@@ -8347,15 +8335,9 @@ L9:
     mov     rdx,rcx
     call    image.sym39
     ud2
+    jmp     L11
+    jmp     L11
 L10:
-    lea     rax,[image.k5722]
-    mov     rdi,rax
-    mov     esi,3Dh
-    call    image.sym64
-    ud2
-    jmp     L12
-    jmp     L12
-L11:
     lea     rax,[image.k4515]
     mov     rdi,rax
     mov     esi,237h
@@ -8364,7 +8346,7 @@ L11:
     movzx   edx,dl
     call    image.sym63
     ud2
-L12:
+L11:
     call    image.sym30
     ud2
 
