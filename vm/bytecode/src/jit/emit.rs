@@ -224,7 +224,12 @@ struct Frame {
     alloca: Vec<i32>,
     spill0: i32,
     scratch: i32,
+    /// The callee-saved registers the code uses, each by its save's offset.
     saves: Vec<(R, i32)>,
+    /// Whether the saves are pushed and popped: they sit at the frame's top (nothing pinned
+    /// above them), right below `rbp`'s save or, without a frame pointer, from the slot
+    /// that is the alignment padding below the return address.
+    pushed: bool,
 }
 
 /// Options of the back end.
@@ -234,7 +239,7 @@ pub struct Opts {
     pub stress: bool,
 }
 
-fn layout(f: &Func, al: &Alloc, opts: Opts) -> Frame {
+fn layout(f: &Func, al: &Alloc, mode: Mode, opts: Opts) -> Frame {
     let mut top = 0i32;
     for a in &f.allocas {
         if a.pinned && a.kind != AllocaKind::Incoming {
@@ -248,11 +253,19 @@ fn layout(f: &Func, al: &Alloc, opts: Opts) -> Frame {
         *cur = o;
         o
     };
+    // The saves, packed at the top: pushed when nothing is pinned above them. Each is
+    // 8-aligned: `DW_CFA_offset` counts in 8 bytes (a pinned alloca may end `top` anywhere).
+    let pushed = top == 0;
+    if pushed && !mode.frame_pointer {
+        cur = 8;
+    }
+    cur -= cur.rem_euclid(8);
     let mut saves = Vec::new();
     for &r in &al.saved {
-        let o = place(&mut cur, 8, 0);
-        saves.push((r, o));
+        cur -= 8;
+        saves.push((r, cur));
     }
+    cur = cur.min(0);
     let mut alloca = alloc::vec![0i32; f.allocas.len()];
     let mut order: Vec<usize> = (0..f.allocas.len()).collect();
     if opts.stress {
@@ -286,7 +299,7 @@ fn layout(f: &Func, al: &Alloc, opts: Opts) -> Frame {
             alloca[k] = -(size as i32);
         }
     }
-    Frame { size, alloca, spill0, scratch, saves }
+    Frame { size, alloca, spill0, scratch, saves, pushed }
 }
 
 struct E<'a> {
@@ -494,10 +507,13 @@ impl<'a> E<'a> {
         self.site(m, len, site, pad);
     }
 
-    /// The prologue: frame, saves, and the entry's arguments into their locations.
+    /// The prologue: frame, saves, and the entry's arguments into their locations. Pushed
+    /// saves ([`Frame::pushed`]) come right after the frame pointer's, before the stack
+    /// probe and the `sub` of the rest of the frame.
     fn prologue(&mut self) {
         let size = self.fr.size;
-        if self.mode.frame_pointer {
+        let fp = self.mode.frame_pointer;
+        if fp {
             self.a.x().push(R::Rbp);
             let m = self.a.mark();
             self.cfi.push((m, alloc::vec![0x0e, 16, 0x86, 2]));
@@ -505,7 +521,21 @@ impl<'a> E<'a> {
             let m = self.a.mark();
             self.cfi.push((m, alloc::vec![0x0d, 6]));
         }
-        let alloc_ = if self.mode.frame_pointer { size } else { size + 8 };
+        let mut alloc_ = if fp { size } else { size + 8 };
+        if self.fr.pushed {
+            for (k, (r, o)) in self.fr.saves.clone().into_iter().enumerate() {
+                self.a.x().push(r);
+                let m = self.a.mark();
+                let mut v = Vec::new();
+                if !fp {
+                    v.push(0x0e);
+                    uleb(&mut v, 16 + 8 * k as u32);
+                }
+                save_rule(&mut v, r, o);
+                self.cfi.push((m, v));
+            }
+            alloc_ -= 8 * self.fr.saves.len() as u32;
+        }
         if size >= PROBE_FROM {
             self.a.x().mov_imm(4, Rm::R(R::Rax), alloc_ as u64);
             let far = self.mode.far_rt;
@@ -514,33 +544,52 @@ impl<'a> E<'a> {
         if alloc_ != 0 {
             self.a.x().alu_imm(Alu::Sub, 8, Rm::R(R::Rsp), alloc_ as i64);
         }
-        if !self.mode.frame_pointer {
+        if !fp && (alloc_ != 0 || !self.fr.pushed) {
             let m = self.a.mark();
             let mut v = alloc::vec![0x0e];
             uleb(&mut v, size + 16);
             self.cfi.push((m, v));
         }
-        for (r, o) in self.fr.saves.clone() {
-            let m = self.fp_mem(o);
-            self.a.x().mov(8, Rm::M(m), Rm::R(r));
-            let mk = self.a.mark();
-            let mut v = alloc::vec![0x80 | dw(r)];
-            uleb(&mut v, ((16 - o) / 8) as u32);
-            self.cfi.push((mk, v));
+        if !self.fr.pushed {
+            for (r, o) in self.fr.saves.clone() {
+                let m = self.fp_mem(o);
+                self.a.x().mov(8, Rm::M(m), Rm::R(r));
+                let mk = self.a.mark();
+                let mut v = Vec::new();
+                save_rule(&mut v, r, o);
+                self.cfi.push((mk, v));
+            }
         }
     }
 
     /// The epilogue before `ret` or a tail jump.
     fn epilogue(&mut self) {
-        for (r, o) in self.fr.saves.clone() {
-            let m = self.fp_mem(o);
-            self.a.x().mov(8, Rm::R(r), Rm::M(m));
+        let fp = self.mode.frame_pointer;
+        if !self.fr.pushed {
+            for (r, o) in self.fr.saves.clone() {
+                let m = self.fp_mem(o);
+                self.a.x().mov(8, Rm::R(r), Rm::M(m));
+            }
         }
-        if self.mode.frame_pointer {
+        let n = if self.fr.pushed { self.fr.saves.len() as u32 } else { 0 };
+        if fp && n == 0 {
             self.a.x().bytes(&[0xc9]);
-        } else {
-            let n = self.fr.size + 8;
-            self.a.x().alu_imm(Alu::Add, 8, Rm::R(R::Rsp), n as i64);
+            return;
+        }
+        // The frame below the pushed saves: from `rbp`, or popped by an `add`.
+        let rest = if fp { self.fr.size } else { self.fr.size + 8 } - 8 * n;
+        if rest != 0 {
+            if fp {
+                self.a.x().lea(R::Rsp, Mem::base(R::Rbp, -8 * n as i32));
+            } else {
+                self.a.x().alu_imm(Alu::Add, 8, Rm::R(R::Rsp), rest as i64);
+            }
+        }
+        for (r, _) in self.fr.saves.clone().into_iter().rev().take(n as usize) {
+            self.a.x().pop(r);
+        }
+        if fp {
+            self.a.x().pop(R::Rbp);
         }
     }
 
@@ -1301,7 +1350,7 @@ fn asm_int_arg(i: u32) -> R {
 
 /// Generates `f` with allocation `al`.
 pub fn emit(f: &Func, al: &Alloc, mode: Mode, code_consts: &[u8], opts: Opts) -> Result<Output, Unsupported> {
-    let fr = layout(f, al, opts);
+    let fr = layout(f, al, mode, opts);
     let uses = super::regalloc::use_counts(f);
     let mut e = E {
         f,
@@ -1335,6 +1384,14 @@ pub fn emit(f: &Func, al: &Alloc, mode: Mode, code_consts: &[u8], opts: Opts) ->
     let osr_at = (code.len() as u32).next_multiple_of(16);
     let osr = if !f.osr.is_empty() { Some(osr_code(f, al, mode, &fr, &lab, osr_at)?) } else { None };
     Ok(Output { code, relocs, rodata, call_sites, cfi, osr, osr_at, frame_size: fr.size, dump: None })
+}
+
+/// `DW_CFA_offset r`: `r` saved at `fp + o`, which is `CFA - 16 + o`. The offset counts in
+/// the CIE's data alignment, 8 bytes, so the slot must be 8-aligned.
+fn save_rule(v: &mut Vec<u8>, r: R, o: i32) {
+    assert!(o % 8 == 0 && o <= 0, "a save slot at fp{o:+}");
+    v.push(0x80 | dw(r));
+    uleb(v, ((16 - o) / 8) as u32);
 }
 
 /// `DW_CFA_def_cfa reg, off`.

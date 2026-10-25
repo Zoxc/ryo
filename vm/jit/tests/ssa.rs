@@ -461,6 +461,114 @@ fn catching_landing_pad() {
     check_stats(before, 1);
 }
 
+/// `n` values `v[k] = v[k - 1] * 5 + k` from `v[0]` at slot `from` into the slots `to`,
+/// `to - 8`, ..., and their sum into `sum` (all live until then).
+fn chain(a: &mut Asm, from: i32, to: i32, n: i32, sum: i32) {
+    for k in 0..n {
+        let prev = if k == 0 { from } else { to + 8 - 8 * k };
+        a.i(Insn::MulImmW64 { d: Slot(to - 8 * k), a: Slot(prev), imm: 5 });
+        a.i(Insn::AddImmW64 { d: Slot(to - 8 * k), a: Slot(to - 8 * k), imm: k as u64 + 1 });
+    }
+    a.i(Insn::ImmW64 { d: Slot(sum), imm: 0 });
+    for k in 0..n {
+        a.i(Insn::AddW64 { d: Slot(sum), a: Slot(sum), b: Slot(to - 8 * k) });
+    }
+}
+
+fn chain_sum(x: u64, n: u64) -> u64 {
+    let mut v = x;
+    (0..n)
+        .map(|k| {
+            v = v.wrapping_mul(5).wrapping_add(k + 1);
+            v
+        })
+        .fold(0, u64::wrapping_add)
+}
+
+/// The callee-saved registers' saves, pushed (a callee with nothing pinned) or stored (one
+/// with a 4-byte local pinned at the frame's top, which leaves the saves below an offset
+/// that isn't 8-aligned), restored by `pop`/`mov` on return and by the unwinder from the
+/// FDE's rules on a throw: the caller, catching it, keeps its values in the same registers
+/// across the call. The callee's cleanup pad resumes, so that it isn't inlined there (and
+/// so it is compiled: the stats count it).
+#[test]
+fn callee_saved_across_unwinding() {
+    let (_g, before) = start();
+    const N: i32 = 7;
+    for pinned in [false, true] {
+        let mut w = ImageWriter::new(unique_scid());
+        let s_throw = w.symbol("throw", 0);
+        let s_del = w.symbol("delete_exc", 0);
+        let mut defs = Defs::default();
+        // g(x): v = chain(x) (live across the call, the sum unused); [pinned: e@-4 = 1;
+        // p = &e; for i < 2 { *p += 1 }]; r = throw(x); ret r + sum(v); cleanup pad:
+        // resume. x@-72; v@-16.., sum@-80, r@-88, p@-96, i@-104, exc@-112, e@-4.
+        let mut a = Asm::new();
+        let mut scopes = Vec::new();
+        a.i(arg(-72, 0));
+        chain(&mut a, -72, -16, N, -80);
+        if pinned {
+            a.i(Insn::ImmW32 { d: Slot(-4), imm: 1 });
+            let at = a.i(Insn::Addr { d: Slot(-96), s: Slot(-4) });
+            a.i(Insn::ImmW64 { d: Slot(-104), imm: 0 });
+            let head = a.i(Insn::BrLtUImmW64 { a: Slot(-104), imm: 2, neg: F, t: Target(0) });
+            a.i(Insn::LoadW32 { d: Slot(-88), m: Mem { p: Slot(-96), k: 0 } });
+            a.i(Insn::AddImmW32 { d: Slot(-88), a: Slot(-88), imm: 1 });
+            a.i(Insn::StoreW32 { m: Mem { p: Slot(-96), k: 0 }, s: Slot(-88) });
+            a.i(Insn::AddImmW64 { d: Slot(-104), a: Slot(-104), imm: 1 });
+            let back = a.i(Insn::Jmp { t: Target(0) });
+            a.patch(back, "t", head);
+            let done = a.pos();
+            a.patch(head, "t", done);
+            scopes.push(escape(at, -4, 4));
+        }
+        let site = a.i(Insn::CallSym { d: Slot(-88), sym: s_throw, k: 8, a: List::from_words(&regs(&[-72])) });
+        for k in 0..N {
+            a.i(Insn::AddW64 { d: Slot(-88), a: Slot(-88), b: Slot(-16 - 8 * k) });
+        }
+        a.ret(Slot(-88), 8);
+        let pad = a.i(Insn::Lpad { x: Slot(-112) });
+        let resume = a.i(Insn::Resume { x: Slot(-112) });
+        let mut gd = func(a.done(), 128, 0, 8);
+        gd.cleanup = vec![CleanupEntry { offset: site, target: pad }, CleanupEntry { offset: resume, target: CONTINUE }];
+        let g = defs.add(&mut w, gd, scopes);
+        // f(x): u = chain(x + 1) (live across the call); r = g(x); ret r + sum(u); catching
+        // pad: delete the exception, ret 2 sum(u) + 1000. x@16; u@-8.., sum@-72, r@-80,
+        // exc@-88, t@-96.
+        let mut a = Asm::new();
+        a.i(Insn::AddImmW64 { d: Slot(-96), a: Slot(16), imm: 1 });
+        chain(&mut a, -96, -8, N, -72);
+        let site = a.i(Insn::Call { d: Slot(-80), f: g, k: 8, a: List::from_words(&regs(&[16])) });
+        for k in 0..N {
+            a.i(Insn::AddW64 { d: Slot(-80), a: Slot(-80), b: Slot(-8 - 8 * k) });
+        }
+        a.ret(Slot(-80), 8);
+        let pad = a.i(Insn::Lpad { x: Slot(-88) });
+        a.i(Insn::CallSym { d: Slot(0), sym: s_del, k: 0, a: List::from_words(&regs(&[-88])) });
+        for k in 0..N {
+            a.i(Insn::AddW64 { d: Slot(-72), a: Slot(-72), b: Slot(-8 - 8 * k) });
+        }
+        a.i(Insn::AddImmW64 { d: Slot(-80), a: Slot(-72), imm: 1000 });
+        a.ret(Slot(-80), 8);
+        let mut fd = func(a.done(), 112, 8, 8);
+        fd.cleanup = vec![CleanupEntry { offset: site, target: pad | CATCH }];
+        let f = defs.add(&mut w, fd, vec![]);
+        let img = defs.build(w);
+
+        for round in 0..3 {
+            let what = format!("pinned {pinned}, round {round}");
+            let x = 5u64;
+            assert_eq!(ok::<_, u64>(img.id(f), (x,)), x + chain_sum(x, N as u64) + chain_sum(x + 1, N as u64), "{what}");
+            let del = DELETED.load(SeqCst);
+            // The pad adds the chain to its sum a second time.
+            let u = chain_sum(8, N as u64);
+            assert_eq!(ok::<_, u64>(img.id(f), (7u64,)), 2 * u + 1000, "{what}: thrown");
+            assert_eq!(DELETED.load(SeqCst), del + 1, "{what}: the exception deleted");
+        }
+    }
+    check_stats(before, 4);
+}
+
 /// A frame of 12 KiB (the prologue probes it), entered by OSR mid-loop: the OSR entry's probe
 /// runs, and the loop's values, one at the frame's far end, stay right.
 #[test]

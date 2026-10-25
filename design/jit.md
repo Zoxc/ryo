@@ -429,11 +429,16 @@ the same bytes at the head, and the entry's `OsrLoad` of the second goes. OSR he
 ### Back end
 
 - **Frame** (`jit::emit`): `fp` is the address below the return address, as in AOT code.
-  Below the pinned allocas: the callee-saved registers' save slots (`mov`s, not pushes),
-  the moved allocas, the spill slots, the handler scratch area, and the outgoing area at
-  `rsp`. The prologue is `sub rsp, F + 8` (or `push rbp; mov rbp, rsp; sub rsp, F` with
-  `fp-rbp`), with the probe from `PROBE_FROM`; handler and island operands are `fp`
-  offsets either way.
+  Below the pinned allocas: the callee-saved registers' save slots (8 bytes each, packed
+  and 8-aligned: `DW_CFA_offset` counts in 8 bytes), the moved allocas, the spill slots,
+  the handler scratch area, and the outgoing area at `rsp`. With nothing pinned the saves
+  are pushed, from `fp + 0` (the padding below the return address) or with `fp-rbp` from
+  `fp - 8`, and the prologue is the pushes then `sub rsp` of the rest (`F + 8` or `F` less
+  8 per push), the epilogue `add rsp` (with `fp-rbp` `lea rsp, [rbp - 8n]`, or `leave`
+  for no saves) and the pops; with pinned allocas the prologue is `sub rsp, F + 8` (or
+  `push rbp; mov rbp, rsp; sub rsp, F` with `fp-rbp`) then a `mov` per save. The probe from
+  `PROBE_FROM` comes before the `sub`; handler and island operands are `fp` offsets either
+  way; OSR entries store the saves at their slots, which the epilogue reads either way.
 - **Instruction selection**: per instruction over the allocated locations; two-address
   forms with a hint to reuse the first operand's register, immediates where they fit
   (`r10` takes the others), `[base + index*scale]` for `ptr.index` by 1, 2, 4 or 8,
@@ -455,8 +460,8 @@ the same bytes at the head, and the entry's `OsrLoad` of the second goes. OSR he
   them clobber every caller-saved register.
 - **Edges**: parallel moves, sequentialized with `r11` for memory-to-memory moves and
   `r10` to break cycles; a conditional edge with moves goes through a stub after its block.
-- **Unwinding**: the body's FDE rows are the CFA after the prologue and a `DW_CFA_offset`
-  per saved register; the LSDA's call sites are the calls with a landing pad (to their
+- **Unwinding**: the body's FDE rows are the CFA after the prologue (and without a frame
+  pointer after each push) and a `DW_CFA_offset` per saved register; the LSDA's call sites are the calls with a landing pad (to their
   pad stub) or a `Continue` entry, as in AOT code. Values live into a pad live across the
   call, so they are in callee-saved registers or the frame, which the unwinder restores.
 

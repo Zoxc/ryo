@@ -1,7 +1,7 @@
 fn fib
-    sub     rsp,38h
-    mov     [rsp+20h],rbx
-    mov     [rsp+10h],r12
+    push    rbx
+    push    r12
+    sub     rsp,8
     mov     rbx,rdi
     cmp     ebx,2
     jae     L0
@@ -22,9 +22,9 @@ L0:
     jb      L2
     mov     rax,r12
 L1:
-    mov     rbx,[rsp+20h]
-    mov     r12,[rsp+10h]
-    add     rsp,38h
+    add     rsp,8
+    pop     r12
+    pop     rbx
     ret
 L2:
     lea     rax,[k6]

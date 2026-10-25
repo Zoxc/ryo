@@ -83,3 +83,9 @@ remove it once a Lean session has handled it.
   start). Slot-to-slot only when the ranges don't overlap; `load` only when the pieces don't
   overwrite the pointer slot. A C1' rule: an aggregate assignment of `n` bytes = the pieces.
   Commit: "Lower small block copies and zeroing to scalar pieces".
+
+- The JIT's SSA tier packs the callee-saved registers' save slots (8 bytes each, 8-aligned,
+  at the frame's top) and, when no alloca is pinned above them, pushes and pops them (the
+  FDE rows: `DW_CFA_def_cfa_offset` after each push without a frame pointer, then
+  `DW_CFA_offset` per register). Only matters if the Lean model covers the SSA tier's
+  frames or unwind rows. Commit: "JIT SSA: push and pop callee-saved registers".
