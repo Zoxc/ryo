@@ -87,6 +87,8 @@ pub struct FunctionDef {
     pub cleanup: Vec<CleanupEntry>,
     /// The function's symbol is global: native code calls it by name.
     pub symbol: Option<FuncSymbol>,
+    /// [`FUNC_INLINE_ALWAYS`] etc.: the source attributes the JIT's inliner reads.
+    pub flags: u8,
 }
 
 /// How a function's symbol is defined in the image object, if it is global ([`FunctionDef`]).
@@ -648,6 +650,7 @@ impl ImageWriter {
         let consts_code = span(code_consts.len(), 1, 16)?;
         let fixups_span = span(fixups.len(), mem::size_of::<FixupEntry>(), 8)?;
         let sym_flags = span(self.symbols.len(), 1, 1)?;
+        let func_flags = span(funcs.len(), 1, 1)?;
         let symbols = span(self.symbols.len(), 8, 8)?;
         let consts = span(self.consts.len(), 1, self.const_align as usize)?;
         let call_sites_span = span(call_sites.len(), mem::size_of::<CallSiteEntry>(), 4)?;
@@ -667,6 +670,7 @@ impl ImageWriter {
             code_consts: consts_code,
             fixups: fixups_span,
             sym_flags,
+            func_flags,
             symbols,
             consts,
             lists: lists_span,
@@ -679,6 +683,7 @@ impl ImageWriter {
 
         let mut ro = vec![0u8; size];
         let flags: Vec<u8> = self.symbols.iter().map(|s| s.flags).collect();
+        let fflags: Vec<u8> = self.functions.iter().map(|f| f.flags).collect();
         // SAFETY: all of these are padding-free plain-data types.
         unsafe {
             put(&mut ro, 0, slice::from_ref(&header));
@@ -686,6 +691,7 @@ impl ImageWriter {
             put(&mut ro, consts_code.off, &code_consts);
             put(&mut ro, fixups_span.off, &fixups);
             put(&mut ro, sym_flags.off, &flags);
+            put(&mut ro, func_flags.off, &fflags);
             put(&mut ro, consts.off, &self.consts);
             put(&mut ro, call_sites_span.off, &call_sites);
             put(&mut ro, lists_span.off, &lists);

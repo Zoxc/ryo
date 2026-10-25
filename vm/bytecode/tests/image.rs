@@ -168,6 +168,7 @@ fn sample() -> ImageWriter {
         ret_kind: 8,
         cleanup: vec![CleanupEntry { offset: 0, target: 8 }, CleanupEntry { offset: 12, target: CONTINUE }],
         symbol: None,
+        flags: FUNC_INLINE_ALWAYS | FUNC_COLD,
     });
     let ops = [16u32, -24i32 as u32];
     let f1 = code(&[
@@ -185,7 +186,13 @@ fn sample() -> ImageWriter {
         symbol: Some(FuncSymbol { visibility: SymVisibility::Default, weak: false }),
         ..Default::default()
     });
-    w.add_function(FunctionDef { name: String::new(), code: code(&[Insn::Abort {}]), frame_size: 16, ..Default::default() });
+    w.add_function(FunctionDef {
+        name: String::new(),
+        code: code(&[Insn::Abort {}]),
+        frame_size: 16,
+        flags: FUNC_INLINE_NEVER,
+        ..Default::default()
+    });
     w
 }
 
@@ -231,6 +238,7 @@ fn image_round_trip() {
     assert_eq!(img.symbols()[3], 0x2000 + "_ZN4test3fooE".len() as u64);
     assert_eq!(img.symbols()[0], 0x1000);
     assert_eq!(img.symbol_flags(), &[0, SYM_INDIRECT, 0, 0, 0]);
+    assert_eq!(img.func_flags(), &[FUNC_INLINE_ALWAYS | FUNC_COLD, 0, FUNC_INLINE_NEVER]);
     assert_eq!(obj.functions[1].symbol, Some(FuncSymbol { visibility: SymVisibility::Default, weak: false }));
     assert_eq!(obj.functions.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), ["f0", "f1", ""]);
     assert_eq!(obj.functions[0].frame_size, 48);
@@ -511,6 +519,8 @@ fn validate_rejects_bad_tables() {
     assert_eq!(validate_edited(&obj, |r, h| put32(r, fx(h) + 4, 5)), Err(ImageError::BadFixup(0)));
     // Unknown symbol flag bits.
     assert_eq!(validate_edited(&obj, |r, h| r[h.sym_flags.off as usize + 2] = 0x80), Err(ImageError::BadSymbolFlags(2)));
+    // Unknown function flag bits.
+    assert_eq!(validate_edited(&obj, |r, h| r[h.func_flags.off as usize + 1] = 0x10), Err(ImageError::BadFuncFlags(1)));
     assert_eq!(validate_edited(&obj, |_, _| ()), Ok(()));
 }
 

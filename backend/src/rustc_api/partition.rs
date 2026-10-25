@@ -457,7 +457,8 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         for (name, v) in fns {
             let l = &v.lowered;
             let c = &l.code;
-            writeln!(out, "fn {name} (frame {}, args {}, ret {})", l.frame_size, l.arg_size, l.ret_size).unwrap();
+            let flags = super::func_flags_suffix(super::func_flags(tcx, v.instance));
+            writeln!(out, "fn {name} (frame {}, args {}, ret {}){flags}", l.frame_size, l.arg_size, l.ret_size).unwrap();
             match asm::decode(&c.code, &c.relocs, &c.rodata, &c.call_sites, &c.dropped, &c.scopes, mode) {
                 Ok(d) => dump_labeled(&mut out, &d.words, &d.cleanup, &d.scopes),
                 Err(e) => writeln!(out, "  undecodable: {e:?}").unwrap(),
@@ -492,7 +493,8 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         let mut out = String::new();
         for (name, v) in fns {
             let c = &v.lowered.code;
-            writeln!(out, "fn {name}").unwrap();
+            let flags = super::func_flags_suffix(super::func_flags(self.tcx, v.instance));
+            writeln!(out, "fn {name}{flags}").unwrap();
             out.push_str("code ");
             for b in &c.code {
                 write!(out, "{b:02x}").unwrap();
@@ -861,6 +863,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                 ret_kind: l.ret_kind,
                 cleanup: Vec::new(),
                 symbol,
+                flags: super::func_flags(tcx, v.instance),
             });
             encoded.push(code);
         }

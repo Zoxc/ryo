@@ -1,4 +1,4 @@
-fn <() as std::process::Termination>::report (frame 16, args 0, ret 1)
+fn <() as std::process::Termination>::report (frame 16, args 0, ret 1) [hint]
     imm.w8 $-1, 0
     ret $-1, 1
 
@@ -13,13 +13,13 @@ L0:
   k0 = const allocation + 0
   sym1 = alloc::raw_vec::RawVecInner::deallocate
 
-fn <bool as std::vec::is_zero::IsZero>::is_zero (frame 32, args 0, ret 1)
+fn <bool as std::vec::is_zero::IsZero>::is_zero (frame 32, args 0, ret 1) [hint]
     arg $-16, 8
     load.w8 $-17, [$-16 + 0]
     xor.imm.w8 $-1, $-17, 1
     ret $-1, 1
 
-fn <bool as std::vec::spec_from_elem::SpecFromElem>::from_elem::<std::alloc::Global> (frame 176, args 0, ret 24)
+fn <bool as std::vec::spec_from_elem::SpecFromElem>::from_elem::<std::alloc::Global> (frame 176, args 0, ret 24) [hint]
     arg $-64, 8
     arg $-25, 257
     arg $-40, 520
@@ -158,7 +158,7 @@ L2:
   cleanup L1 -> continue
   fn0 = main::{closure#0}
 
-fn <std::iter::Filter<std::slice::Iter<'_, bool>, {closure@bench/sieve.rs:24:37: 24:42}> as std::iter::Iterator>::count (frame 112, args 0, ret 8)
+fn <std::iter::Filter<std::slice::Iter<'_, bool>, {closure@bench/sieve.rs:24:37: 24:42}> as std::iter::Iterator>::count (frame 112, args 0, ret 8) [hint]
     arg $-24, 8
     arg $-16, 264
     imm.w8 $-33, 1
@@ -223,7 +223,7 @@ L13:
   fn2 = <std::slice::Iter<'_, bool> as std::iter::Iterator>::map::<usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>
   fn3 = <std::slice::Iter<'_, bool> as std::iter::adapters::filter::SpecAssumeCount>::assume_count_le_upper_bound
 
-fn <std::iter::Rev<std::ops::RangeInclusive<usize>> as std::iter::Iterator>::find::<{closure@bench/sieve.rs:25:39: 25:43}> (frame 48, args 0, ret 16)
+fn <std::iter::Rev<std::ops::RangeInclusive<usize>> as std::iter::Iterator>::find::<{closure@bench/sieve.rs:25:39: 25:43}> (frame 48, args 0, ret 16) [hint]
     arg $-24, 8
     arg $-32, 264
     mov.w64 $-40, $-24
@@ -233,7 +233,7 @@ L0:
   cleanup L0 -> continue
   fn0 = <std::ops::RangeInclusive<usize> as std::iter::DoubleEndedIterator>::rfind::<{closure@bench/sieve.rs:25:39: 25:43}>
 
-fn <std::ops::ControlFlow<usize> as std::ops::FromResidual<std::ops::ControlFlow<usize, std::convert::Infallible>>>::from_residual (frame 48, args 0, ret 16)
+fn <std::ops::ControlFlow<usize> as std::ops::FromResidual<std::ops::ControlFlow<usize, std::convert::Infallible>>>::from_residual (frame 48, args 0, ret 16) [hint]
     arg $-24, 8
     imm.w64 $-32, 1
     eq.imm.w64 $-33, $-32, 1
@@ -242,7 +242,7 @@ fn <std::ops::ControlFlow<usize> as std::ops::FromResidual<std::ops::ControlFlow
     imm.w64 $-16, 1
     ret $-16, 526344
 
-fn <std::ops::ControlFlow<usize> as std::ops::Try>::branch (frame 64, args 0, ret 16)
+fn <std::ops::ControlFlow<usize> as std::ops::Try>::branch (frame 64, args 0, ret 16) [hint]
     arg $-32, 8
     arg $-24, 264
     mov.w64 $-40, $-32
@@ -260,11 +260,11 @@ L1:
 L2:
     ret $-16, 526344
 
-fn <std::ops::ControlFlow<usize> as std::ops::Try>::from_output (frame 16, args 0, ret 16)
+fn <std::ops::ControlFlow<usize> as std::ops::Try>::from_output (frame 16, args 0, ret 16) [hint]
     imm.w64 $-16, 0
     ret $-16, 526344
 
-fn <std::ops::RangeInclusive<usize> as std::iter::DoubleEndedIterator>::rfind::<{closure@bench/sieve.rs:25:39: 25:43}> (frame 80, args 0, ret 16)
+fn <std::ops::RangeInclusive<usize> as std::iter::DoubleEndedIterator>::rfind::<{closure@bench/sieve.rs:25:39: 25:43}> (frame 80, args 0, ret 16) [hint]
     arg $-24, 8
     arg $-32, 264
     mov.w64 $-56, $-32
@@ -293,7 +293,7 @@ L5:
   cleanup L0 -> continue
   fn0 = std::iter::range::<impl std::iter::DoubleEndedIterator for std::ops::RangeInclusive<usize>>::try_rfold::<(), {closure@std::iter::DoubleEndedIterator::rfind::check<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0}}, std::ops::ControlFlow<usize>>
 
-fn <std::ops::RangeInclusive<usize> as std::iter::Iterator>::rev (frame 64, args 0, ret 24)
+fn <std::ops::RangeInclusive<usize> as std::iter::Iterator>::rev (frame 64, args 0, ret 24) [hint]
     arg $-56, 8
     arg $-64, 264
     load.copy $-48, [$-64 + 0], 24
@@ -303,7 +303,7 @@ fn <std::ops::RangeInclusive<usize> as std::iter::Iterator>::rev (frame 64, args
     store.copy [$-56 + 0], $-24, 24
     ret $-56, 8
 
-fn <std::ops::RangeInclusive<usize> as std::iter::range::RangeInclusiveIteratorImpl>::spec_try_rfold::<(), {closure@std::iter::DoubleEndedIterator::rfind::check<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0}}, std::ops::ControlFlow<usize>> (frame 160, args 0, ret 16)
+fn <std::ops::RangeInclusive<usize> as std::iter::range::RangeInclusiveIteratorImpl>::spec_try_rfold::<(), {closure@std::iter::DoubleEndedIterator::rfind::check<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0}}, std::ops::ControlFlow<usize>> (frame 160, args 0, ret 16) [hint]
     arg $-24, 8
     arg $-32, 264
     imm.w8 $-58, 1
@@ -440,13 +440,13 @@ L31:
   fn10 = <std::ops::ControlFlow<usize> as std::ops::Try>::from_output
   fn11 = std::cmp::impls::<impl std::cmp::PartialOrd for usize>::le
 
-fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::filter::<{closure@bench/sieve.rs:24:37: 24:42}> (frame 32, args 0, ret 16)
+fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::filter::<{closure@bench/sieve.rs:24:37: 24:42}> (frame 32, args 0, ret 16) [hint]
     arg $-32, 8
     arg $-24, 264
     mov.w128 $-16, $-32
     ret $-16, 526344
 
-fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::fold::<usize, {closure@std::iter::adapters::map::map_fold<&bool, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}}>::{closure#0}}> (frame 208, args 0, ret 8)
+fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::fold::<usize, {closure@std::iter::adapters::map::map_fold<&bool, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}}>::{closure#0}}> (frame 208, args 0, ret 8) [hint]
     arg $-24, 8
     arg $-16, 264
     arg $-32, 520
@@ -577,13 +577,13 @@ L22:
   k6 = const allocation + 0
   fn7 = core::num::<impl usize>::unchecked_add::precondition_check
 
-fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::map::<usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}> (frame 32, args 0, ret 16)
+fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::map::<usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}> (frame 32, args 0, ret 16) [hint]
     arg $-32, 8
     arg $-24, 264
     mov.w128 $-16, $-32
     ret $-16, 526344
 
-fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::size_hint (frame 128, args 0, ret 24)
+fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::size_hint (frame 128, args 0, ret 24) [hint]
     arg $-48, 8
     arg $-32, 264
     imm.w8 $-105, 0
@@ -639,7 +639,7 @@ L6:
   k3 = const allocation + 0
   sym4 = core::panicking::panic
 
-fn <std::slice::Iter<'_, bool> as std::iter::adapters::filter::SpecAssumeCount>::assume_count_le_upper_bound (frame 32, args 0, ret 0)
+fn <std::slice::Iter<'_, bool> as std::iter::adapters::filter::SpecAssumeCount>::assume_count_le_upper_bound (frame 32, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     le.u.w64 $-17, $-8, $-16
@@ -652,7 +652,7 @@ L0:
   k0 = const allocation + 0
   fn1 = std::hint::assert_unchecked::precondition_check
 
-fn <std::vec::Vec<bool> as std::ops::Deref>::deref (frame 64, args 0, ret 16)
+fn <std::vec::Vec<bool> as std::ops::Deref>::deref (frame 64, args 0, ret 16) [hint]
     arg $-24, 8
     load.w64 $-56, [$-24 + 8]
     mov.w64 $-48, $-56
@@ -678,7 +678,7 @@ L0:
   cleanup L0 -> continue
   sym0 = std::ptr::drop_glue::<[bool]> - shim(None)
 
-fn <std::vec::Vec<bool> as std::ops::Index<usize>>::index (frame 96, args 0, ret 8)
+fn <std::vec::Vec<bool> as std::ops::Index<usize>>::index (frame 96, args 0, ret 8) [hint]
     arg $-16, 8
     arg $-24, 264
     arg $-80, 520
@@ -696,7 +696,7 @@ L0:
   cleanup L0 -> continue
   fn0 = <usize as std::slice::SliceIndex<[bool]>>::index
 
-fn <std::vec::Vec<bool> as std::ops::IndexMut<usize>>::index_mut (frame 96, args 0, ret 8)
+fn <std::vec::Vec<bool> as std::ops::IndexMut<usize>>::index_mut (frame 96, args 0, ret 8) [hint]
     arg $-16, 8
     arg $-24, 264
     arg $-80, 520
@@ -714,14 +714,14 @@ L0:
   cleanup L0 -> continue
   fn0 = <usize as std::slice::SliceIndex<[bool]>>::index_mut
 
-fn <std::vec::set_len_on_drop::SetLenOnDrop<'_> as std::ops::Drop>::drop (frame 32, args 0, ret 0)
+fn <std::vec::set_len_on_drop::SetLenOnDrop<'_> as std::ops::Drop>::drop (frame 32, args 0, ret 0) [hint]
     arg $-8, 8
     load.w64 $-24, [$-8 + 8]
     load.w64 $-16, [$-8 + 0]
     store.w64 [$-16 + 0], $-24
     ret $0, 0
 
-fn <usize as std::iter::Step>::backward_unchecked (frame 32, args 0, ret 8)
+fn <usize as std::iter::Step>::backward_unchecked (frame 32, args 0, ret 8) [hint]
     arg $-16, 8
     arg $-24, 264
     imm.w8 $-25, 1
@@ -751,7 +751,7 @@ L1:
   k0 = const allocation + 0
   sym1 = core::panicking::panic_const::panic_const_add_overflow
 
-fn <usize as std::slice::SliceIndex<[bool]>>::index (frame 64, args 0, ret 8)
+fn <usize as std::slice::SliceIndex<[bool]>>::index (frame 64, args 0, ret 8) [hint]
     arg $-16, 8
     arg $-32, 264
     arg $-24, 520
@@ -769,7 +769,7 @@ L1:
   cleanup L0 -> continue
   sym0 = core::panicking::panic_bounds_check
 
-fn <usize as std::slice::SliceIndex<[bool]>>::index_mut (frame 64, args 0, ret 8)
+fn <usize as std::slice::SliceIndex<[bool]>>::index_mut (frame 64, args 0, ret 8) [hint]
     arg $-16, 8
     arg $-32, 264
     arg $-24, 520
@@ -812,7 +812,7 @@ L0:
   cleanup L0 -> continue
   fn0 = <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::call_once - shim
 
-fn alloc::raw_vec::RawVecInner::with_capacity_in (frame 144, args 0, ret 16)
+fn alloc::raw_vec::RawVecInner::with_capacity_in (frame 144, args 0, ret 16) [hint]
     arg $-24, 8
     arg $-40, 264
     arg $-32, 520
@@ -861,7 +861,7 @@ L8:
   k2 = const allocation + 0
   fn3 = std::hint::assert_unchecked::precondition_check
 
-fn core::fmt::rt::Argument::<'_>::new_display::<usize> (frame 80, args 0, ret 16)
+fn core::fmt::rt::Argument::<'_>::new_display::<usize> (frame 80, args 0, ret 16) [hint]
     arg $-40, 8
     arg $-24, 264
     mov.w64 $-32, $-24
@@ -875,7 +875,7 @@ fn core::fmt::rt::Argument::<'_>::new_display::<usize> (frame 80, args 0, ret 16
     ret $-40, 8
   sym0 = core::fmt::num::imp::<impl std::fmt::Display for usize>::fmt
 
-fn core::num::<impl usize>::unchecked_add::precondition_check (frame 144, args 0, ret 0)
+fn core::num::<impl usize>::unchecked_add::precondition_check (frame 144, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     arg $-120, 520
@@ -908,7 +908,7 @@ L0:
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
 
-fn core::num::<impl usize>::unchecked_sub::precondition_check (frame 144, args 0, ret 0)
+fn core::num::<impl usize>::unchecked_sub::precondition_check (frame 144, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     arg $-120, 520
@@ -941,7 +941,7 @@ L0:
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
 
-fn core::slice::<impl [bool]>::iter (frame 32, args 0, ret 16)
+fn core::slice::<impl [bool]>::iter (frame 32, args 0, ret 16) [hint]
     arg $-32, 8
     arg $-24, 264
 L0:
@@ -1256,12 +1256,12 @@ L24:
   fn19 = std::ptr::drop_glue::<std::vec::Vec<bool>> - shim(Some(std::vec::Vec<bool>))
   sym20 = core::panicking::panic_in_cleanup
 
-fn std::clone::impls::<impl std::clone::Clone for bool>::clone (frame 16, args 0, ret 1)
+fn std::clone::impls::<impl std::clone::Clone for bool>::clone (frame 16, args 0, ret 1) [always]
     arg $-16, 8
     load.w8 $-1, [$-16 + 0]
     ret $-1, 1
 
-fn std::cmp::impls::<impl std::cmp::PartialEq for usize>::eq (frame 48, args 0, ret 1)
+fn std::cmp::impls::<impl std::cmp::PartialEq for usize>::eq (frame 48, args 0, ret 1) [hint]
     arg $-16, 8
     arg $-24, 264
     load.w64 $-32, [$-16 + 0]
@@ -1269,7 +1269,7 @@ fn std::cmp::impls::<impl std::cmp::PartialEq for usize>::eq (frame 48, args 0, 
     eq.w64 $-1, $-32, $-40
     ret $-1, 1
 
-fn std::cmp::impls::<impl std::cmp::PartialOrd for usize>::le (frame 48, args 0, ret 1)
+fn std::cmp::impls::<impl std::cmp::PartialOrd for usize>::le (frame 48, args 0, ret 1) [always]
     arg $-16, 8
     arg $-24, 264
     load.w64 $-32, [$-16 + 0]
@@ -1277,7 +1277,7 @@ fn std::cmp::impls::<impl std::cmp::PartialOrd for usize>::le (frame 48, args 0,
     le.u.w64 $-1, $-32, $-40
     ret $-1, 1
 
-fn std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt (frame 48, args 0, ret 1)
+fn std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt (frame 48, args 0, ret 1) [always]
     arg $-16, 8
     arg $-24, 264
     load.w64 $-32, [$-16 + 0]
@@ -1285,7 +1285,7 @@ fn std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt (frame 48, args 0,
     lt.u.w64 $-1, $-32, $-40
     ret $-1, 1
 
-fn std::fmt::Arguments::<'_>::new::<39, 3> (frame 48, args 0, ret 16)
+fn std::fmt::Arguments::<'_>::new::<39, 3> (frame 48, args 0, ret 16) [hint]
     arg $-24, 8
     arg $-32, 264
     mov.w64 $-40, $-24
@@ -1294,7 +1294,7 @@ fn std::fmt::Arguments::<'_>::new::<39, 3> (frame 48, args 0, ret 16)
     mov.w64 $-8, $-48
     ret $-16, 526344
 
-fn std::hint::assert_unchecked::precondition_check (frame 128, args 0, ret 0)
+fn std::hint::assert_unchecked::precondition_check (frame 128, args 0, ret 0) [hint]
     arg $-1, 1
     arg $-104, 264
     br $-1, L0
@@ -1322,7 +1322,7 @@ L0:
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
 
-fn std::hint::black_box::<usize> (frame 16, args 0, ret 8)
+fn std::hint::black_box::<usize> (frame 16, args 0, ret 8) [hint]
     arg $-16, 8
     mov.w64 $-8, $-16
     ret $-8, 8
@@ -1387,7 +1387,7 @@ L5:
   fn0 = <std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize::<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}
   fn1 = <usize as std::iter::Sum>::sum::<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}
 
-fn std::iter::range::<impl std::iter::DoubleEndedIterator for std::ops::RangeInclusive<usize>>::try_rfold::<(), {closure@std::iter::DoubleEndedIterator::rfind::check<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0}}, std::ops::ControlFlow<usize>> (frame 32, args 0, ret 16)
+fn std::iter::range::<impl std::iter::DoubleEndedIterator for std::ops::RangeInclusive<usize>>::try_rfold::<(), {closure@std::iter::DoubleEndedIterator::rfind::check<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0}}, std::ops::ControlFlow<usize>> (frame 32, args 0, ret 16) [hint]
     arg $-24, 8
     arg $-32, 264
 L0:
@@ -1396,7 +1396,7 @@ L0:
   cleanup L0 -> continue
   fn0 = <std::ops::RangeInclusive<usize> as std::iter::range::RangeInclusiveIteratorImpl>::spec_try_rfold::<(), {closure@std::iter::DoubleEndedIterator::rfind::check<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0}}, std::ops::ControlFlow<usize>>
 
-fn std::ops::RangeInclusive::<usize>::new (frame 48, args 0, ret 24)
+fn std::ops::RangeInclusive::<usize>::new (frame 48, args 0, ret 24) [hint]
     arg $-48, 8
     arg $-32, 264
     arg $-40, 520
@@ -1406,7 +1406,7 @@ fn std::ops::RangeInclusive::<usize>::new (frame 48, args 0, ret 24)
     store.copy [$-48 + 0], $-24, 24
     ret $-48, 8
 
-fn std::option::Option::<usize>::unwrap (frame 48, args 0, ret 8)
+fn std::option::Option::<usize>::unwrap (frame 48, args 0, ret 8) [always]
     arg $-24, 8
     arg $-16, 264
     arg $-40, 520
@@ -1425,7 +1425,7 @@ L2:
   cleanup L1 -> continue
   sym0 = std::option::unwrap_failed
 
-fn std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_check (frame 144, args 0, ret 0)
+fn std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_check (frame 144, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     arg $-120, 520
@@ -1543,7 +1543,7 @@ L1:
   fn0 = std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
   fn1 = <() as std::process::Termination>::report
 
-fn std::slice::Iter::<'_, bool>::new (frame 112, args 0, ret 16)
+fn std::slice::Iter::<'_, bool>::new (frame 112, args 0, ret 16) [hint]
     arg $-32, 8
     arg $-24, 264
     mov.w64 $-48, $-24
@@ -1566,7 +1566,7 @@ L1:
     mov.w64 $-8, $-40
     ret $-16, 526344
 
-fn std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> (frame 16, args 0, ret 0)
+fn std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> (frame 16, args 0, ret 0) [never]
     arg $-8, 8
 L0:
     call $0, fn0, 0, [4294967288, 8]

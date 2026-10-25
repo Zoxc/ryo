@@ -290,6 +290,33 @@ pub(crate) fn symbol_flags<'tcx>(tcx: TyCtxt<'tcx>, target: Instance<'tcx>, role
     if pe && role == SymRole::Target && !tcx.should_codegen_locally(target) { ryo_bytecode::image::SYM_INDIRECT } else { 0 }
 }
 
+/// The image's function flags for `instance` ([`FUNC_INLINE_ALWAYS`] etc., read by the JIT's
+/// inliner): its `#[inline(..)]` and `#[cold]` attributes, through
+/// `codegen_instance_attrs`, so shims get their item's.
+///
+/// [`FUNC_INLINE_ALWAYS`]: ryo_bytecode::image::FUNC_INLINE_ALWAYS
+pub(crate) fn func_flags<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> u8 {
+    use rustc_hir::attrs::InlineAttr;
+    use rustc_middle::middle::codegen_fn_attrs::CodegenFnAttrFlags;
+    use ryo_bytecode::image::*;
+    let attrs = tcx.codegen_instance_attrs(instance.def);
+    let inline = match attrs.inline {
+        InlineAttr::Always | InlineAttr::Force { .. } => FUNC_INLINE_ALWAYS,
+        InlineAttr::Never => FUNC_INLINE_NEVER,
+        InlineAttr::Hint => FUNC_INLINE_HINT,
+        InlineAttr::None => 0,
+    };
+    inline | if attrs.flags.contains(CodegenFnAttrFlags::COLD) { FUNC_COLD } else { 0 }
+}
+
+/// The names of [`func_flags`]' bits, as the dumps print them (` [always, cold]`, or empty).
+pub(crate) fn func_flags_suffix(flags: u8) -> String {
+    use ryo_bytecode::image::*;
+    let names = [(FUNC_INLINE_ALWAYS, "always"), (FUNC_INLINE_NEVER, "never"), (FUNC_COLD, "cold"), (FUNC_INLINE_HINT, "hint")];
+    let set: Vec<&str> = names.iter().filter(|n| flags & n.0 != 0).map(|n| n.1).collect();
+    if set.is_empty() { String::new() } else { format!(" [{}]", set.join(", ")) }
+}
+
 /// [`symbol_flags`] for a static used as an address: on PE, statics of upstream crates and
 /// foreign statics are imports.
 pub(crate) fn static_symbol_flags(tcx: TyCtxt<'_>, def_id: rustc_hir::def_id::DefId) -> u8 {

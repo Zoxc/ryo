@@ -1,4 +1,4 @@
-fn <() as std::process::Termination>::report
+fn <() as std::process::Termination>::report [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -86,7 +86,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::fmt::rt::Argument::<'_>::new_display::<u32>
+fn core::fmt::rt::Argument::<'_>::new_display::<u32> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -113,7 +113,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::fmt::rt::Argument::<'_>::new_display::<u64>
+fn core::fmt::rt::Argument::<'_>::new_display::<u64> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -266,7 +266,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::fmt::Arguments::<'_>::new::<15, 2>
+fn std::fmt::Arguments::<'_>::new::<15, 2> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -286,7 +286,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::hint::black_box::<u32>
+fn std::hint::black_box::<u32> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -355,7 +355,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+fn std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> [never]
     inc     qword ptr [jit_record]
     jns     L1
 L0:

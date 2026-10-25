@@ -42,7 +42,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <() as std::process::Termination>::report
+fn <() as std::process::Termination>::report [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -56,7 +56,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <(u32, u32) as core::slice::sort::shared::smallsort::StableSmallSortTypeImpl>::small_sort::<{closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+fn <(u32, u32) as core::slice::sort::shared::smallsort::StableSmallSortTypeImpl>::small_sort::<{closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> [always]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -79,7 +79,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <(u32, u32) as core::slice::sort::shared::smallsort::StableSmallSortTypeImpl>::small_sort_threshold
+fn <(u32, u32) as core::slice::sort::shared::smallsort::StableSmallSortTypeImpl>::small_sort_threshold [always]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -561,7 +561,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::alloc::Global as std::clone::Clone>::clone
+fn <std::alloc::Global as std::clone::Clone>::clone [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -574,7 +574,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::array::IntoIter<usize, 2> as std::ops::Drop>::drop
+fn <std::array::IntoIter<usize, 2> as std::ops::Drop>::drop [hint]
     inc     qword ptr [jit_record]
     jns     L5
 L0:
@@ -736,7 +736,7 @@ L5:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::iter::Enumerate<std::slice::Iter<'_, u32>> as std::iter::Iterator>::fold::<u64, {closure@bench/sort.rs:46:37: 46:51}>
+fn <std::iter::Enumerate<std::slice::Iter<'_, u32>> as std::iter::Iterator>::fold::<u64, {closure@bench/sort.rs:46:37: 46:51}> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -769,7 +769,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::IntoIterator>::into_iter
+fn <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::IntoIterator>::into_iter [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -802,7 +802,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::collect::<std::vec::Vec<u32>>
+fn <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::collect::<std::vec::Vec<u32>> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -886,7 +886,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::for_each::<{closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>
+fn <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::for_each::<{closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -931,7 +931,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::size_hint
+fn <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::size_hint [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -958,7 +958,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::IntoIterator>::into_iter
+fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::IntoIterator>::into_iter [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -978,7 +978,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::collect::<std::vec::Vec<(u32, u32)>>
+fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::collect::<std::vec::Vec<(u32, u32)>> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -1043,7 +1043,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::for_each::<{closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>
+fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::for_each::<{closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -1078,7 +1078,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::size_hint
+fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::size_hint [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -1104,7 +1104,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::ops::Range<usize> as std::iter::IntoIterator>::into_iter
+fn <std::ops::Range<usize> as std::iter::IntoIterator>::into_iter [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -1124,7 +1124,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::ops::Range<usize> as std::iter::Iterator>::fold::<(), {closure@std::iter::adapters::map::map_fold<usize, u32, (), {closure@bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0}}>
+fn <std::ops::Range<usize> as std::iter::Iterator>::fold::<(), {closure@std::iter::adapters::map::map_fold<usize, u32, (), {closure@bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> [hint]
     inc     qword ptr [jit_record]
     jns     L20
 L0:
@@ -1263,7 +1263,7 @@ L20:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::ops::Range<usize> as std::iter::Iterator>::map::<u32, {closure@bench/sort.rs:52:37: 52:40}>
+fn <std::ops::Range<usize> as std::iter::Iterator>::map::<u32, {closure@bench/sort.rs:52:37: 52:40}> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -1292,7 +1292,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::ops::Range<usize> as std::iter::range::RangeIteratorImpl>::spec_next
+fn <std::ops::Range<usize> as std::iter::range::RangeIteratorImpl>::spec_next [hint]
     inc     qword ptr [jit_record]
     jns     L3
 L0:
@@ -1336,7 +1336,7 @@ L3:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::ops::Range<usize> as std::slice::SliceIndex<[T]>>::get_unchecked_mut::precondition_check
+fn <std::ops::Range<usize> as std::slice::SliceIndex<[T]>>::get_unchecked_mut::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -1378,7 +1378,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::ops::Range<usize> as std::slice::SliceIndex<[u32]>>::index
+fn <std::ops::Range<usize> as std::slice::SliceIndex<[u32]>>::index [always]
     inc     qword ptr [jit_record]
     jns     L9
 L0:
@@ -1453,7 +1453,7 @@ L9:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::ops::Range<usize> as std::slice::SliceIndex<[u32]>>::index_mut
+fn <std::ops::Range<usize> as std::slice::SliceIndex<[u32]>>::index_mut [hint]
     inc     qword ptr [jit_record]
     jns     L9
 L0:
@@ -1528,7 +1528,7 @@ L9:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::ops::RangeFrom<usize> as std::slice::SliceIndex<[u32]>>::index
+fn <std::ops::RangeFrom<usize> as std::slice::SliceIndex<[u32]>>::index [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -1569,7 +1569,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::ops::RangeFrom<usize> as std::slice::SliceIndex<[u32]>>::index_mut
+fn <std::ops::RangeFrom<usize> as std::slice::SliceIndex<[u32]>>::index_mut [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -1610,7 +1610,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::ops::RangeTo<usize> as std::slice::SliceIndex<[u32]>>::index_mut
+fn <std::ops::RangeTo<usize> as std::slice::SliceIndex<[u32]>>::index_mut [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -1641,7 +1641,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::slice::Iter<'_, u32> as std::iter::IntoIterator>::into_iter
+fn <std::slice::Iter<'_, u32> as std::iter::IntoIterator>::into_iter [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -1661,7 +1661,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::enumerate
+fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::enumerate [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -1688,7 +1688,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<(), {closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}>
+fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<(), {closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> [hint]
     inc     qword ptr [jit_record]
     jns     L44
 L0:
@@ -1982,7 +1982,7 @@ L44:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<u64, {closure@<std::iter::Enumerate<I> as std::iter::Iterator>::fold::enumerate<&u32, u64, {closure@bench/sort.rs:46:37: 46:51}>::{closure#0}}>
+fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<u64, {closure@<std::iter::Enumerate<I> as std::iter::Iterator>::fold::enumerate<&u32, u64, {closure@bench/sort.rs:46:37: 46:51}>::{closure#0}}> [hint]
     inc     qword ptr [jit_record]
     jns     L39
 L0:
@@ -2238,7 +2238,7 @@ L39:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::map::<(u32, u32), {closure@bench/sort.rs:59:50: 59:54}>
+fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::map::<(u32, u32), {closure@bench/sort.rs:59:50: 59:54}> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -2258,7 +2258,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::next
+fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::next [hint]
     inc     qword ptr [jit_record]
     jns     L10
 L0:
@@ -2340,7 +2340,7 @@ L10:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::size_hint
+fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::size_hint [hint]
     inc     qword ptr [jit_record]
     jns     L11
 L0:
@@ -2453,7 +2453,7 @@ L11:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::vec::Vec<(u32, u32)> as std::iter::FromIterator<(u32, u32)>>::from_iter::<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>
+fn <std::vec::Vec<(u32, u32)> as std::iter::FromIterator<(u32, u32)>>::from_iter::<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -2484,7 +2484,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::vec::Vec<(u32, u32)> as std::ops::DerefMut>::deref_mut
+fn <std::vec::Vec<(u32, u32)> as std::ops::DerefMut>::deref_mut [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -2527,7 +2527,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::vec::Vec<(u32, u32)> as std::ops::Index<usize>>::index
+fn <std::vec::Vec<(u32, u32)> as std::ops::Index<usize>>::index [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -2850,7 +2850,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::vec::Vec<u32> as std::iter::FromIterator<u32>>::from_iter::<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>
+fn <std::vec::Vec<u32> as std::iter::FromIterator<u32>>::from_iter::<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -2895,7 +2895,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::vec::Vec<u32> as std::ops::Deref>::deref
+fn <std::vec::Vec<u32> as std::ops::Deref>::deref [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -2916,7 +2916,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::vec::Vec<u32> as std::ops::DerefMut>::deref_mut
+fn <std::vec::Vec<u32> as std::ops::DerefMut>::deref_mut [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -3261,7 +3261,7 @@ L22:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::vec::set_len_on_drop::SetLenOnDrop<'_> as std::ops::Drop>::drop
+fn <std::vec::set_len_on_drop::SetLenOnDrop<'_> as std::ops::Drop>::drop [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -3281,7 +3281,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <u32 as core::slice::cmp::SlicePartialEq<u32>>::equal_same_length
+fn <u32 as core::slice::cmp::SlicePartialEq<u32>>::equal_same_length [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -3308,7 +3308,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortFreezeTypeImpl>::small_sort::<for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
+fn <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortFreezeTypeImpl>::small_sort::<for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> [always]
     inc     qword ptr [jit_record]
     jns     L8
 L0:
@@ -3375,7 +3375,7 @@ L8:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortFreezeTypeImpl>::small_sort_threshold
+fn <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortFreezeTypeImpl>::small_sort_threshold [always]
     inc     qword ptr [jit_record]
     jns     L4
 L0:
@@ -3411,7 +3411,7 @@ L4:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortTypeImpl>::small_sort::<for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
+fn <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortTypeImpl>::small_sort::<for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> [always]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -3430,7 +3430,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortTypeImpl>::small_sort_threshold
+fn <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortTypeImpl>::small_sort_threshold [always]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -3445,7 +3445,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <u32 as std::slice::<impl [T]>::to_vec_in::ConvertVec>::to_vec::<std::alloc::Global>
+fn <u32 as std::slice::<impl [T]>::to_vec_in::ConvertVec>::to_vec::<std::alloc::Global> [hint]
     inc     qword ptr [jit_record]
     jns     L18
 L0:
@@ -3590,7 +3590,7 @@ L18:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <usize as std::cmp::Ord>::max
+fn <usize as std::cmp::Ord>::max [hint]
     inc     qword ptr [jit_record]
     jns     L13
 L0:
@@ -3670,7 +3670,7 @@ L13:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <usize as std::cmp::Ord>::min
+fn <usize as std::cmp::Ord>::min [hint]
     inc     qword ptr [jit_record]
     jns     L13
 L0:
@@ -3750,7 +3750,7 @@ L13:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <usize as std::iter::Step>::forward_unchecked
+fn <usize as std::iter::Step>::forward_unchecked [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -3778,7 +3778,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <usize as std::iter::Step>::steps_between
+fn <usize as std::iter::Step>::steps_between [hint]
     inc     qword ptr [jit_record]
     jns     L3
 L0:
@@ -3827,7 +3827,7 @@ L3:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <usize as std::slice::SliceIndex<[(u32, u32)]>>::index
+fn <usize as std::slice::SliceIndex<[(u32, u32)]>>::index [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -3861,7 +3861,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <usize as std::slice::SliceIndex<[T]>>::get_unchecked::precondition_check
+fn <usize as std::slice::SliceIndex<[T]>>::get_unchecked::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -4044,7 +4044,7 @@ L4:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn alloc::raw_vec::RawVec::<u32>::grow_one
+fn alloc::raw_vec::RawVec::<u32>::grow_one [never]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -4087,7 +4087,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn alloc::raw_vec::RawVecInner::with_capacity_in
+fn alloc::raw_vec::RawVecInner::with_capacity_in [hint]
     inc     qword ptr [jit_record]
     jns     L10
 L0:
@@ -4241,7 +4241,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::fmt::num::<impl std::fmt::Debug for u32>::fmt
+fn core::fmt::num::<impl std::fmt::Debug for u32>::fmt [hint]
     inc     qword ptr [jit_record]
     jns     L4
 L0:
@@ -4287,7 +4287,7 @@ L4:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::fmt::rt::Argument::<'_>::new_debug::<(u32, u32)>
+fn core::fmt::rt::Argument::<'_>::new_debug::<(u32, u32)> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -4314,7 +4314,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::fmt::rt::Argument::<'_>::new_display::<usize>
+fn core::fmt::rt::Argument::<'_>::new_display::<usize> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -4341,7 +4341,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::fmt::rt::Argument::<'_>::new_lower_hex::<u64>
+fn core::fmt::rt::Argument::<'_>::new_lower_hex::<u64> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -4368,7 +4368,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::num::<impl u64>::wrapping_add
+fn core::num::<impl u64>::wrapping_add [always]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -4386,7 +4386,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::num::<impl u64>::wrapping_mul
+fn core::num::<impl u64>::wrapping_mul [always]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -4404,7 +4404,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::num::<impl usize>::unchecked_add::precondition_check
+fn core::num::<impl usize>::unchecked_add::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -4448,7 +4448,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::num::<impl usize>::unchecked_sub::precondition_check
+fn core::num::<impl usize>::unchecked_sub::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -4492,7 +4492,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::panicking::assert_failed::<std::vec::Vec<u32>, std::vec::Vec<u32>>
+fn core::panicking::assert_failed::<std::vec::Vec<u32>, std::vec::Vec<u32>> [never, cold]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -4529,7 +4529,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::<impl [(u32, u32)]>::reverse
+fn core::slice::<impl [(u32, u32)]>::reverse [hint]
     inc     qword ptr [jit_record]
     jns     L13
 L0:
@@ -4645,7 +4645,7 @@ L13:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::<impl [(u32, u32)]>::split_at_mut
+fn core::slice::<impl [(u32, u32)]>::split_at_mut [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -4707,7 +4707,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::<impl [(u32, u32)]>::split_at_mut_unchecked
+fn core::slice::<impl [(u32, u32)]>::split_at_mut_unchecked [hint]
     inc     qword ptr [jit_record]
     jns     L4
 L0:
@@ -4800,7 +4800,7 @@ L4:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::<impl [T]>::reverse::revswap::<(u32, u32)>
+fn core::slice::<impl [T]>::reverse::revswap::<(u32, u32)> [hint]
     inc     qword ptr [jit_record]
     jns     L8
 L0:
@@ -4927,7 +4927,7 @@ L8:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::<impl [T]>::reverse::revswap::<u32>
+fn core::slice::<impl [T]>::reverse::revswap::<u32> [hint]
     inc     qword ptr [jit_record]
     jns     L8
 L0:
@@ -5042,7 +5042,7 @@ L8:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::<impl [T]>::split_at_mut_unchecked::precondition_check
+fn core::slice::<impl [T]>::split_at_mut_unchecked::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -5080,7 +5080,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::<impl [T]>::swap_unchecked::precondition_check
+fn core::slice::<impl [T]>::swap_unchecked::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -5122,7 +5122,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::<impl [u32]>::copy_from_slice
+fn core::slice::<impl [u32]>::copy_from_slice [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -5147,7 +5147,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::<impl [u32]>::iter
+fn core::slice::<impl [u32]>::iter [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -5168,7 +5168,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::<impl [u32]>::reverse
+fn core::slice::<impl [u32]>::reverse [hint]
     inc     qword ptr [jit_record]
     jns     L13
 L0:
@@ -5284,7 +5284,7 @@ L13:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::<impl [u32]>::sort_unstable
+fn core::slice::<impl [u32]>::sort_unstable [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -5304,7 +5304,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::<impl [u32]>::split_at_mut
+fn core::slice::<impl [u32]>::split_at_mut [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -5366,7 +5366,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::<impl [u32]>::split_at_mut_unchecked
+fn core::slice::<impl [u32]>::split_at_mut_unchecked [hint]
     inc     qword ptr [jit_record]
     jns     L4
 L0:
@@ -5459,7 +5459,7 @@ L4:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::<impl [u32]>::swap
+fn core::slice::<impl [u32]>::swap [hint]
     inc     qword ptr [jit_record]
     jns     L3
 L0:
@@ -5618,7 +5618,7 @@ L3:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::index::<impl std::ops::Index<std::ops::Range<usize>> for [u32]>::index
+fn core::slice::index::<impl std::ops::Index<std::ops::Range<usize>> for [u32]>::index [always]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -5647,7 +5647,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::index::<impl std::ops::Index<std::ops::RangeFrom<usize>> for [u32]>::index
+fn core::slice::index::<impl std::ops::Index<std::ops::RangeFrom<usize>> for [u32]>::index [always]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -5674,7 +5674,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::index::<impl std::ops::IndexMut<std::ops::RangeFrom<usize>> for [u32]>::index_mut
+fn core::slice::index::<impl std::ops::IndexMut<std::ops::RangeFrom<usize>> for [u32]>::index_mut [always]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -5701,7 +5701,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::index::<impl std::ops::IndexMut<std::ops::RangeTo<usize>> for [u32]>::index_mut
+fn core::slice::index::<impl std::ops::IndexMut<std::ops::RangeTo<usize>> for [u32]>::index_mut [always]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -5728,7 +5728,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::sort::shared::find_existing_run::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+fn core::slice::sort::shared::find_existing_run::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> [always]
     inc     qword ptr [jit_record]
     jns     L31
 L0:
@@ -5981,7 +5981,7 @@ L31:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::sort::shared::find_existing_run::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
+fn core::slice::sort::shared::find_existing_run::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> [always]
     inc     qword ptr [jit_record]
     jns     L31
 L0:
@@ -6234,7 +6234,7 @@ L31:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::sort::shared::pivot::choose_pivot::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+fn core::slice::sort::shared::pivot::choose_pivot::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> [hint]
     inc     qword ptr [jit_record]
     jns     L20
 L0:
@@ -6430,7 +6430,7 @@ L20:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::sort::shared::pivot::choose_pivot::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
+fn core::slice::sort::shared::pivot::choose_pivot::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> [hint]
     inc     qword ptr [jit_record]
     jns     L20
 L0:
@@ -6626,7 +6626,7 @@ L20:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::sort::shared::pivot::median3::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+fn core::slice::sort::shared::pivot::median3::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> [always]
     inc     qword ptr [jit_record]
     jns     L5
 L0:
@@ -6690,7 +6690,7 @@ L5:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::sort::shared::pivot::median3::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
+fn core::slice::sort::shared::pivot::median3::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> [always]
     inc     qword ptr [jit_record]
     jns     L5
 L0:
@@ -8049,7 +8049,7 @@ L7:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::sort::shared::smallsort::merge_down::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+fn core::slice::sort::shared::smallsort::merge_down::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> [always]
     inc     qword ptr [jit_record]
     jns     L9
 L0:
@@ -8177,7 +8177,7 @@ L9:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::sort::shared::smallsort::merge_down::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
+fn core::slice::sort::shared::smallsort::merge_down::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> [always]
     inc     qword ptr [jit_record]
     jns     L9
 L0:
@@ -8299,7 +8299,7 @@ L9:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::sort::shared::smallsort::merge_up::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+fn core::slice::sort::shared::smallsort::merge_up::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> [always]
     inc     qword ptr [jit_record]
     jns     L4
 L0:
@@ -8395,7 +8395,7 @@ L4:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::sort::shared::smallsort::merge_up::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
+fn core::slice::sort::shared::smallsort::merge_up::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> [always]
     inc     qword ptr [jit_record]
     jns     L4
 L0:
@@ -11411,7 +11411,7 @@ L24:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::sort::stable::drift::logical_merge::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+fn core::slice::sort::stable::drift::logical_merge::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> [always]
     inc     qword ptr [jit_record]
     jns     L22
 L0:
@@ -12046,7 +12046,7 @@ L6:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::sort::stable::driftsort_main::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}, std::vec::Vec<(u32, u32)>>
+fn core::slice::sort::stable::driftsort_main::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}, std::vec::Vec<(u32, u32)>> [never]
     inc     qword ptr [jit_record]
     jns     L24
 L0:
@@ -13081,7 +13081,7 @@ L15:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+fn core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> [never]
     inc     qword ptr [jit_record]
     jns     L28
 L0:
@@ -14226,7 +14226,7 @@ L36:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::sort::unstable::heapsort::heapsort::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
+fn core::slice::sort::unstable::heapsort::heapsort::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> [never]
     inc     qword ptr [jit_record]
     jns     L34
 L0:
@@ -14446,7 +14446,7 @@ L34:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::sort::unstable::heapsort::sift_down::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
+fn core::slice::sort::unstable::heapsort::sift_down::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> [always]
     inc     qword ptr [jit_record]
     jns     L18
 L0:
@@ -14618,7 +14618,7 @@ L18:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::sort::unstable::ipnsort::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
+fn core::slice::sort::unstable::ipnsort::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> [never]
     inc     qword ptr [jit_record]
     jns     L8
 L0:
@@ -15858,7 +15858,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::sort::unstable::sort::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
+fn core::slice::sort::unstable::sort::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> [always]
     inc     qword ptr [jit_record]
     jns     L13
 L0:
@@ -15935,7 +15935,7 @@ L13:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::ub_checks::maybe_is_nonoverlapping::runtime
+fn core::ub_checks::maybe_is_nonoverlapping::runtime [hint]
     inc     qword ptr [jit_record]
     jns     L4
 L0:
@@ -16877,7 +16877,7 @@ L27:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::array::iter::iter_inner::PolymorphicIter::<[std::mem::MaybeUninit<usize>]>::next
+fn std::array::iter::iter_inner::PolymorphicIter::<[std::mem::MaybeUninit<usize>]>::next [hint]
     inc     qword ptr [jit_record]
     jns     L9
 L0:
@@ -16999,7 +16999,7 @@ L9:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::cmp::impls::<impl std::cmp::PartialOrd for u32>::lt
+fn std::cmp::impls::<impl std::cmp::PartialOrd for u32>::lt [always]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -17020,7 +17020,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt
+fn std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt [always]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -17041,7 +17041,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::fmt::Arguments::<'_>::new::<22, 4>
+fn std::fmt::Arguments::<'_>::new::<22, 4> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -17151,7 +17151,7 @@ L11:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::hint::assert_unchecked::precondition_check
+fn std::hint::assert_unchecked::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -17187,7 +17187,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::hint::black_box::<usize>
+fn std::hint::black_box::<usize> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -17203,7 +17203,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::hint::select_unpredictable::<*const (u32, u32)>
+fn std::hint::select_unpredictable::<*const (u32, u32)> [always]
     inc     qword ptr [jit_record]
     jns     L15
 L0:
@@ -17334,7 +17334,7 @@ L15:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::hint::select_unpredictable::<*const u32>
+fn std::hint::select_unpredictable::<*const u32> [always]
     inc     qword ptr [jit_record]
     jns     L15
 L0:
@@ -17465,7 +17465,7 @@ L15:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::hint::select_unpredictable::<*mut u32>
+fn std::hint::select_unpredictable::<*mut u32> [always]
     inc     qword ptr [jit_record]
     jns     L15
 L0:
@@ -17596,7 +17596,7 @@ L15:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::intrinsics::cold_path
+fn std::intrinsics::cold_path [cold]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -17608,7 +17608,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::intrinsics::select_unpredictable::<*mut *const (u32, u32)>
+fn std::intrinsics::select_unpredictable::<*mut *const (u32, u32)> [hint]
     inc     qword ptr [jit_record]
     jns     L3
 L0:
@@ -17633,7 +17633,7 @@ L3:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::intrinsics::select_unpredictable::<*mut *const u32>
+fn std::intrinsics::select_unpredictable::<*mut *const u32> [hint]
     inc     qword ptr [jit_record]
     jns     L3
 L0:
@@ -17658,7 +17658,7 @@ L3:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::intrinsics::select_unpredictable::<*mut *mut u32>
+fn std::intrinsics::select_unpredictable::<*mut *mut u32> [hint]
     inc     qword ptr [jit_record]
     jns     L3
 L0:
@@ -17683,7 +17683,7 @@ L3:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::intrinsics::select_unpredictable::<std::mem::MaybeUninit<*const (u32, u32)>>
+fn std::intrinsics::select_unpredictable::<std::mem::MaybeUninit<*const (u32, u32)>> [hint]
     inc     qword ptr [jit_record]
     jns     L3
 L0:
@@ -17708,7 +17708,7 @@ L3:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::intrinsics::select_unpredictable::<std::mem::MaybeUninit<*const u32>>
+fn std::intrinsics::select_unpredictable::<std::mem::MaybeUninit<*const u32>> [hint]
     inc     qword ptr [jit_record]
     jns     L3
 L0:
@@ -17733,7 +17733,7 @@ L3:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::intrinsics::select_unpredictable::<std::mem::MaybeUninit<*mut u32>>
+fn std::intrinsics::select_unpredictable::<std::mem::MaybeUninit<*mut u32>> [hint]
     inc     qword ptr [jit_record]
     jns     L3
 L0:
@@ -17758,7 +17758,7 @@ L3:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::intrinsics::typed_swap_nonoverlapping::<(u32, u32)>
+fn std::intrinsics::typed_swap_nonoverlapping::<(u32, u32)> [hint]
     inc     qword ptr [jit_record]
     jns     L4
 L0:
@@ -17797,7 +17797,7 @@ L4:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::intrinsics::typed_swap_nonoverlapping::<u32>
+fn std::intrinsics::typed_swap_nonoverlapping::<u32> [hint]
     inc     qword ptr [jit_record]
     jns     L4
 L0:
@@ -18033,7 +18033,7 @@ L10:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::iter::range::<impl std::iter::Iterator for std::ops::Range<usize>>::next
+fn std::iter::range::<impl std::iter::Iterator for std::ops::Range<usize>>::next [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -18052,7 +18052,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::iter::range::<impl std::iter::Iterator for std::ops::Range<usize>>::size_hint
+fn std::iter::range::<impl std::iter::Iterator for std::ops::Range<usize>>::size_hint [hint]
     inc     qword ptr [jit_record]
     jns     L3
 L0:
@@ -18102,7 +18102,7 @@ L3:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::const_ptr::<impl *const ()>::is_aligned_to
+fn std::ptr::const_ptr::<impl *const ()>::is_aligned_to [hint]
     inc     qword ptr [jit_record]
     jns     L8
 L0:
@@ -18175,7 +18175,7 @@ L8:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_check
+fn std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -18213,7 +18213,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::copy::precondition_check
+fn std::ptr::copy::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L33
 L0:
@@ -18413,7 +18413,7 @@ L33:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::copy_nonoverlapping::precondition_check
+fn std::ptr::copy_nonoverlapping::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L40
 L0:
@@ -19097,7 +19097,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::swap::<u32>
+fn std::ptr::swap::<u32> [always]
     inc     qword ptr [jit_record]
     jns     L11
 L0:
@@ -19220,7 +19220,7 @@ L11:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::swap_chunk::<1>
+fn std::ptr::swap_chunk::<1> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -19246,7 +19246,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::swap_chunk::<2>
+fn std::ptr::swap_chunk::<2> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -19272,7 +19272,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::swap_chunk::<4>
+fn std::ptr::swap_chunk::<4> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -19298,7 +19298,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::swap_chunk::<8>
+fn std::ptr::swap_chunk::<8> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -19324,7 +19324,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::swap_nonoverlapping::<(u32, u32)>
+fn std::ptr::swap_nonoverlapping::<(u32, u32)> [hint]
     inc     qword ptr [jit_record]
     jns     L9
 L0:
@@ -19407,7 +19407,7 @@ L9:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::swap_nonoverlapping::<u32>
+fn std::ptr::swap_nonoverlapping::<u32> [hint]
     inc     qword ptr [jit_record]
     jns     L9
 L0:
@@ -19490,7 +19490,7 @@ L9:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::swap_nonoverlapping::precondition_check
+fn std::ptr::swap_nonoverlapping::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L40
 L0:
@@ -19714,7 +19714,7 @@ L40:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::swap_nonoverlapping_bytes
+fn std::ptr::swap_nonoverlapping_bytes [hint]
     inc     qword ptr [jit_record]
     jns     L3
 L0:
@@ -19853,7 +19853,7 @@ L11:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::swap_nonoverlapping_bytes::swap_nonoverlapping_short
+fn std::ptr::swap_nonoverlapping_bytes::swap_nonoverlapping_short [hint]
     inc     qword ptr [jit_record]
     jns     L4
 L0:
@@ -19992,7 +19992,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>
+fn std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}> [hint]
     inc     qword ptr [jit_record]
     jns     L4
 L0:
@@ -20209,7 +20209,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::slice::Iter::<'_, u32>::make_slice
+fn std::slice::Iter::<'_, u32>::make_slice [always]
     inc     qword ptr [jit_record]
     jns     L13
 L0:
@@ -20334,7 +20334,7 @@ L13:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::slice::Iter::<'_, u32>::new
+fn std::slice::Iter::<'_, u32>::new [hint]
     inc     qword ptr [jit_record]
     jns     L3
 L0:
@@ -20375,7 +20375,7 @@ L3:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::slice::from_raw_parts::precondition_check
+fn std::slice::from_raw_parts::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L26
 L0:
@@ -20536,7 +20536,7 @@ L26:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::slice::from_raw_parts_mut::precondition_check
+fn std::slice::from_raw_parts_mut::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L26
 L0:
@@ -20697,7 +20697,7 @@ L26:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::slice::stable_sort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
+fn std::slice::stable_sort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> [hint]
     inc     qword ptr [jit_record]
     jns     L21
 L0:
@@ -20811,7 +20811,7 @@ L21:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+fn std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> [never]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -21058,7 +21058,7 @@ L12:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::vec::Vec::<T, A>::set_len::precondition_check
+fn std::vec::Vec::<T, A>::set_len::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -21096,7 +21096,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::vec::Vec::<u32>::append_elements
+fn std::vec::Vec::<u32>::append_elements [hint]
     inc     qword ptr [jit_record]
     jns     L6
 L0:
@@ -21178,7 +21178,7 @@ L6:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::vec::Vec::<u32>::clear
+fn std::vec::Vec::<u32>::clear [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -21426,7 +21426,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::vec::Vec::<u32>::push
+fn std::vec::Vec::<u32>::push [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -21444,7 +21444,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::vec::Vec::<u32>::push_mut
+fn std::vec::Vec::<u32>::push_mut [hint]
     inc     qword ptr [jit_record]
     jns     L18
 L0:
@@ -21638,7 +21638,7 @@ L12:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::vec::Vec::<u32>::with_capacity
+fn std::vec::Vec::<u32>::with_capacity [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -21677,7 +21677,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::vec::partial_eq::<impl std::cmp::PartialEq for std::vec::Vec<u32>>::eq
+fn std::vec::partial_eq::<impl std::cmp::PartialEq for std::vec::Vec<u32>>::eq [hint]
     inc     qword ptr [jit_record]
     jns     L3
 L0:

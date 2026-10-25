@@ -14,6 +14,7 @@
 //! | code constants | what the machine code refers to: island operand arrays, switch values |
 //! | fixups | `[FixupEntry]` (PE only, otherwise empty) |
 //! | symbol flags | `[u8]`, one per symbol ([`SYM_INDIRECT`]) |
+//! | function flags | `[u8]`, one per function ([`FUNC_INLINE_ALWAYS`] etc.) |
 //! | symbols | `[u64]`: one pointer slot per symbol, filled by the linker |
 //! | constants | the constant pool, aligned to its most aligned allocation |
 //!
@@ -47,6 +48,17 @@ pub const MAGIC: [u8; 8] = *b"RYOIMAGE";
 /// Symbol flag: the slot holds the address of an import slot (`__imp_<sym>`, PE), and the
 /// real address is loaded through it.
 pub const SYM_INDIRECT: u8 = 1;
+
+/// Function flag: `#[inline(always)]` (or `#[rustc_force_inline]`).
+pub const FUNC_INLINE_ALWAYS: u8 = 1;
+/// Function flag: `#[inline(never)]`.
+pub const FUNC_INLINE_NEVER: u8 = 2;
+/// Function flag: `#[cold]`.
+pub const FUNC_COLD: u8 = 4;
+/// Function flag: `#[inline]`.
+pub const FUNC_INLINE_HINT: u8 = 8;
+/// Every defined function flag bit.
+pub const FUNC_FLAGS: u8 = FUNC_INLINE_ALWAYS | FUNC_INLINE_NEVER | FUNC_COLD | FUNC_INLINE_HINT;
 
 /// `CleanupEntry::target` of a call whose unwinding continues in the caller (in the
 /// writer's function definitions; images carry LSDAs instead).
@@ -234,6 +246,8 @@ pub struct Header {
     pub fixups: Span,
     /// `[u8]` symbol flags (same count as `symbols`).
     pub sym_flags: Span,
+    /// `[u8]` function flags (same count as `functions`; [`FUNC_INLINE_ALWAYS`] etc.).
+    pub func_flags: Span,
     /// `[u64]` symbol slots.
     pub symbols: Span,
     /// Constant pool bytes.
@@ -353,6 +367,8 @@ pub enum ImageError {
     BadFixup(u32),
     /// A symbol flag byte has unknown bits.
     BadSymbolFlags(u32),
+    /// A function flag byte (function index) has unknown bits.
+    BadFuncFlags(u32),
     /// `Header::mode` has unknown bits or a combination the encoder doesn't support.
     BadMode,
     /// A function's instruction list (function index) is malformed.
@@ -413,6 +429,7 @@ impl<'a> Image<'a> {
         cast::<u8>(bytes, header.code_consts, "code constants")?;
         cast::<FixupEntry>(bytes, header.fixups, "fixups")?;
         cast::<u8>(bytes, header.sym_flags, "symbol flags")?;
+        cast::<u8>(bytes, header.func_flags, "function flags")?;
         cast::<u64>(bytes, header.symbols, "symbols")?;
         cast::<u8>(bytes, header.consts, "constants")?;
         cast::<u8>(bytes, header.lists, "instruction lists")?;
@@ -423,6 +440,9 @@ impl<'a> Image<'a> {
         }
         if header.sym_flags.count != header.symbols.count {
             return Err(ImageError::OutOfBounds("symbol flags"));
+        }
+        if header.func_flags.count != header.functions.count {
+            return Err(ImageError::OutOfBounds("function flags"));
         }
         let sites_end = header.site_count as u64 * 8;
         if sites_end > header.fixup_area as u64 || header.fixup_area > header.data_size {
@@ -455,7 +475,7 @@ impl<'a> Image<'a> {
     }
 
     /// Full consistency check of the function table (with each function's scopes and call
-    /// sites), fixups and symbol flags.
+    /// sites), fixups, symbol and function flags.
     pub fn validate(&self) -> Result<(), ImageError> {
         let text = self.header.text_size as u64;
         let mut prev_end = 0u64;
@@ -499,6 +519,11 @@ impl<'a> Image<'a> {
         for (i, &fl) in self.symbol_flags().iter().enumerate() {
             if fl & !SYM_INDIRECT != 0 {
                 return Err(ImageError::BadSymbolFlags(i as u32));
+            }
+        }
+        for (i, &fl) in self.func_flags().iter().enumerate() {
+            if fl & !FUNC_FLAGS != 0 {
+                return Err(ImageError::BadFuncFlags(i as u32));
             }
         }
         Ok(())
@@ -589,6 +614,11 @@ impl<'a> Image<'a> {
 
     pub fn symbol_flags(&self) -> &'a [u8] {
         self.part(self.header.sym_flags)
+    }
+
+    /// One flag byte per function ([`FUNC_INLINE_ALWAYS`] etc.).
+    pub fn func_flags(&self) -> &'a [u8] {
+        self.part(self.header.func_flags)
     }
 
     /// The symbol slots, as a raw pointer (what the VM keeps as `syms`).

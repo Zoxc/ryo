@@ -18,11 +18,11 @@ L0:
   cleanup L0 -> continue
   fn0 = core::fmt::num::<impl std::fmt::Debug for u32>::fmt
 
-fn <() as std::process::Termination>::report (frame 16, args 0, ret 1)
+fn <() as std::process::Termination>::report (frame 16, args 0, ret 1) [hint]
     imm.w8 $-1, 0
     ret $-1, 1
 
-fn <(u32, u32) as core::slice::sort::shared::smallsort::StableSmallSortTypeImpl>::small_sort::<{closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 48, args 0, ret 0)
+fn <(u32, u32) as core::slice::sort::shared::smallsort::StableSmallSortTypeImpl>::small_sort::<{closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 48, args 0, ret 0) [always]
     arg $-16, 8
     arg $-8, 264
     arg $-32, 520
@@ -34,7 +34,7 @@ L0:
   cleanup L0 -> continue
   fn0 = core::slice::sort::shared::smallsort::small_sort_general_with_scratch::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
 
-fn <(u32, u32) as core::slice::sort::shared::smallsort::StableSmallSortTypeImpl>::small_sort_threshold (frame 16, args 0, ret 8)
+fn <(u32, u32) as core::slice::sort::shared::smallsort::StableSmallSortTypeImpl>::small_sort_threshold (frame 16, args 0, ret 8) [always]
     imm.w64 $-8, 32
     ret $-8, 8
 
@@ -289,11 +289,11 @@ L0:
   cleanup L0 -> continue
   fn0 = std::cmp::impls::<impl std::cmp::PartialOrd for u32>::lt
 
-fn <std::alloc::Global as std::clone::Clone>::clone (frame 16, args 0, ret 0)
+fn <std::alloc::Global as std::clone::Clone>::clone (frame 16, args 0, ret 0) [hint]
     arg $-8, 8
     ret $0, 0
 
-fn <std::array::IntoIter<usize, 2> as std::ops::Drop>::drop (frame 48, args 0, ret 0)
+fn <std::array::IntoIter<usize, 2> as std::ops::Drop>::drop (frame 48, args 0, ret 0) [hint]
     arg $-8, 8
     imm.w8 $-41, 0
     br! $-41, L1
@@ -374,7 +374,7 @@ L4:
   k1 = const allocation + 0
   sym2 = core::panicking::panic_const::panic_const_add_overflow
 
-fn <std::iter::Enumerate<std::slice::Iter<'_, u32>> as std::iter::Iterator>::fold::<u64, {closure@bench/sort.rs:46:37: 46:51}> (frame 80, args 0, ret 8)
+fn <std::iter::Enumerate<std::slice::Iter<'_, u32>> as std::iter::Iterator>::fold::<u64, {closure@bench/sort.rs:46:37: 46:51}> (frame 80, args 0, ret 8) [hint]
     arg $-80, 8
     arg $-40, 264
     load.copy $-32, [$-80 + 0], 24
@@ -387,7 +387,7 @@ L0:
   cleanup L0 -> continue
   fn0 = <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<u64, {closure@<std::iter::Enumerate<I> as std::iter::Iterator>::fold::enumerate<&u32, u64, {closure@bench/sort.rs:46:37: 46:51}>::{closure#0}}>
 
-fn <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::IntoIterator>::into_iter (frame 64, args 0, ret 24)
+fn <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::IntoIterator>::into_iter (frame 64, args 0, ret 24) [hint]
     arg $-56, 8
     arg $-64, 264
     load.copy $-48, [$-64 + 0], 24
@@ -397,7 +397,7 @@ fn <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>
     store.copy [$-56 + 0], $-24, 24
     ret $-56, 8
 
-fn <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::collect::<std::vec::Vec<u32>> (frame 208, args 0, ret 24)
+fn <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::collect::<std::vec::Vec<u32>> (frame 208, args 0, ret 24) [hint]
     arg $-176, 8
     arg $-184, 264
     load.copy $-48, [$-184 + 0], 24
@@ -434,7 +434,7 @@ L0:
   cleanup L0 -> continue
   fn0 = <std::ops::Range<usize> as std::iter::Iterator>::fold::<(), {closure@std::iter::adapters::map::map_fold<usize, u32, (), {closure@bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0}}>
 
-fn <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::for_each::<{closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}> (frame 144, args 0, ret 0)
+fn <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::for_each::<{closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}> (frame 144, args 0, ret 0) [hint]
     arg $-80, 8
     arg $-88, 264
     load.copy $-24, [$-80 + 0], 24
@@ -455,7 +455,7 @@ L0:
   cleanup L0 -> continue
   fn0 = <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::fold::<(), {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>
 
-fn <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::size_hint (frame 48, args 0, ret 24)
+fn <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::size_hint (frame 48, args 0, ret 24) [hint]
     arg $-40, 8
     arg $-32, 264
     ptr.add $-48, $-32, 8
@@ -467,13 +467,13 @@ L0:
   cleanup L0 -> continue
   fn0 = std::iter::range::<impl std::iter::Iterator for std::ops::Range<usize>>::size_hint
 
-fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::IntoIterator>::into_iter (frame 32, args 0, ret 16)
+fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::IntoIterator>::into_iter (frame 32, args 0, ret 16) [hint]
     arg $-32, 8
     arg $-24, 264
     mov.w128 $-16, $-32
     ret $-16, 526344
 
-fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::collect::<std::vec::Vec<(u32, u32)>> (frame 176, args 0, ret 24)
+fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::collect::<std::vec::Vec<(u32, u32)>> (frame 176, args 0, ret 24) [hint]
     arg $-168, 8
     arg $-40, 264
     arg $-32, 520
@@ -504,7 +504,7 @@ L0:
   cleanup L0 -> continue
   fn0 = <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<(), {closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}>
 
-fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::for_each::<{closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}> (frame 96, args 0, ret 0)
+fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::for_each::<{closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}> (frame 96, args 0, ret 0) [hint]
     arg $-16, 8
     arg $-8, 264
     arg $-72, 520
@@ -522,7 +522,7 @@ L0:
   cleanup L0 -> continue
   fn0 = <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::fold::<(), {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>
 
-fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::size_hint (frame 48, args 0, ret 24)
+fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::size_hint (frame 48, args 0, ret 24) [hint]
     arg $-40, 8
     arg $-32, 264
     mov.w64 $-48, $-32
@@ -534,13 +534,13 @@ L0:
   cleanup L0 -> continue
   fn0 = <std::slice::Iter<'_, u32> as std::iter::Iterator>::size_hint
 
-fn <std::ops::Range<usize> as std::iter::IntoIterator>::into_iter (frame 32, args 0, ret 16)
+fn <std::ops::Range<usize> as std::iter::IntoIterator>::into_iter (frame 32, args 0, ret 16) [hint]
     arg $-32, 8
     arg $-24, 264
     mov.w128 $-16, $-32
     ret $-16, 526344
 
-fn <std::ops::Range<usize> as std::iter::Iterator>::fold::<(), {closure@std::iter::adapters::map::map_fold<usize, u32, (), {closure@bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> (frame 128, args 0, ret 0)
+fn <std::ops::Range<usize> as std::iter::Iterator>::fold::<(), {closure@std::iter::adapters::map::map_fold<usize, u32, (), {closure@bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> (frame 128, args 0, ret 0) [hint]
     arg $-16, 8
     arg $-8, 264
     arg $-120, 520
@@ -604,7 +604,7 @@ L13:
   fn3 = std::ptr::drop_glue::<{closure@std::iter::adapters::map::map_fold<usize, u32, (), {closure@bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::adapters::map::map_fold<usize, u32, (), {closure@bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0}}))
   sym4 = core::panicking::panic_in_cleanup
 
-fn <std::ops::Range<usize> as std::iter::Iterator>::map::<u32, {closure@bench/sort.rs:52:37: 52:40}> (frame 64, args 0, ret 24)
+fn <std::ops::Range<usize> as std::iter::Iterator>::map::<u32, {closure@bench/sort.rs:52:37: 52:40}> (frame 64, args 0, ret 24) [hint]
     arg $-56, 8
     arg $-40, 264
     arg $-32, 520
@@ -614,7 +614,7 @@ fn <std::ops::Range<usize> as std::iter::Iterator>::map::<u32, {closure@bench/so
     store.copy [$-56 + 0], $-24, 24
     ret $-56, 8
 
-fn <std::ops::Range<usize> as std::iter::range::RangeIteratorImpl>::spec_next (frame 64, args 0, ret 16)
+fn <std::ops::Range<usize> as std::iter::range::RangeIteratorImpl>::spec_next (frame 64, args 0, ret 16) [hint]
     arg $-24, 8
     mov.w64 $-40, $-24
     ptr.add $-48, $-24, 8
@@ -638,7 +638,7 @@ L3:
   fn0 = std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt
   fn1 = <usize as std::iter::Step>::forward_unchecked
 
-fn <std::ops::Range<usize> as std::slice::SliceIndex<[T]>>::get_unchecked_mut::precondition_check (frame 144, args 0, ret 0)
+fn <std::ops::Range<usize> as std::slice::SliceIndex<[T]>>::get_unchecked_mut::precondition_check (frame 144, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     arg $-24, 520
@@ -669,7 +669,7 @@ L0:
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
 
-fn <std::ops::Range<usize> as std::slice::SliceIndex<[u32]>>::index (frame 160, args 0, ret 16)
+fn <std::ops::Range<usize> as std::slice::SliceIndex<[u32]>>::index (frame 160, args 0, ret 16) [always]
     arg $-32, 8
     arg $-24, 264
     arg $-48, 520
@@ -708,7 +708,7 @@ L4:
   cleanup L2 -> continue
   sym0 = core::slice::index::slice_index_fail
 
-fn <std::ops::Range<usize> as std::slice::SliceIndex<[u32]>>::index_mut (frame 160, args 0, ret 16)
+fn <std::ops::Range<usize> as std::slice::SliceIndex<[u32]>>::index_mut (frame 160, args 0, ret 16) [hint]
     arg $-32, 8
     arg $-24, 264
     arg $-48, 520
@@ -747,7 +747,7 @@ L4:
   cleanup L2 -> continue
   sym0 = core::slice::index::slice_index_fail
 
-fn <std::ops::RangeFrom<usize> as std::slice::SliceIndex<[u32]>>::index (frame 128, args 0, ret 16)
+fn <std::ops::RangeFrom<usize> as std::slice::SliceIndex<[u32]>>::index (frame 128, args 0, ret 16) [hint]
     arg $-24, 8
     arg $-40, 264
     arg $-32, 520
@@ -773,7 +773,7 @@ L1:
   cleanup L0 -> continue
   sym0 = core::slice::index::slice_index_fail
 
-fn <std::ops::RangeFrom<usize> as std::slice::SliceIndex<[u32]>>::index_mut (frame 128, args 0, ret 16)
+fn <std::ops::RangeFrom<usize> as std::slice::SliceIndex<[u32]>>::index_mut (frame 128, args 0, ret 16) [hint]
     arg $-24, 8
     arg $-40, 264
     arg $-32, 520
@@ -799,7 +799,7 @@ L1:
   cleanup L0 -> continue
   sym0 = core::slice::index::slice_index_fail
 
-fn <std::ops::RangeTo<usize> as std::slice::SliceIndex<[u32]>>::index_mut (frame 80, args 0, ret 16)
+fn <std::ops::RangeTo<usize> as std::slice::SliceIndex<[u32]>>::index_mut (frame 80, args 0, ret 16) [hint]
     arg $-24, 8
     arg $-40, 264
     arg $-32, 520
@@ -814,13 +814,13 @@ L0:
   cleanup L0 -> continue
   fn0 = <std::ops::Range<usize> as std::slice::SliceIndex<[u32]>>::index_mut
 
-fn <std::slice::Iter<'_, u32> as std::iter::IntoIterator>::into_iter (frame 32, args 0, ret 16)
+fn <std::slice::Iter<'_, u32> as std::iter::IntoIterator>::into_iter (frame 32, args 0, ret 16) [hint]
     arg $-32, 8
     arg $-24, 264
     mov.w128 $-16, $-32
     ret $-16, 526344
 
-fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::enumerate (frame 48, args 0, ret 24)
+fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::enumerate (frame 48, args 0, ret 24) [hint]
     arg $-48, 8
     arg $-40, 264
     arg $-32, 520
@@ -829,7 +829,7 @@ fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::enumerate (frame 48, args
     store.copy [$-48 + 0], $-24, 24
     ret $-48, 8
 
-fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<(), {closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> (frame 192, args 0, ret 0)
+fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<(), {closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> (frame 192, args 0, ret 0) [hint]
     arg $-16, 8
     arg $-8, 264
     arg $-168, 520
@@ -985,7 +985,7 @@ L28:
   fn10 = core::num::<impl usize>::unchecked_add::precondition_check
   sym11 = core::panicking::panic_in_cleanup
 
-fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<u64, {closure@<std::iter::Enumerate<I> as std::iter::Iterator>::fold::enumerate<&u32, u64, {closure@bench/sort.rs:46:37: 46:51}>::{closure#0}}> (frame 224, args 0, ret 8)
+fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<u64, {closure@<std::iter::Enumerate<I> as std::iter::Iterator>::fold::enumerate<&u32, u64, {closure@bench/sort.rs:46:37: 46:51}>::{closure#0}}> (frame 224, args 0, ret 8) [hint]
     arg $-24, 8
     arg $-16, 264
     arg $-32, 520
@@ -1119,13 +1119,13 @@ L22:
   k6 = const allocation + 0
   fn7 = core::num::<impl usize>::unchecked_add::precondition_check
 
-fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::map::<(u32, u32), {closure@bench/sort.rs:59:50: 59:54}> (frame 32, args 0, ret 16)
+fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::map::<(u32, u32), {closure@bench/sort.rs:59:50: 59:54}> (frame 32, args 0, ret 16) [hint]
     arg $-32, 8
     arg $-24, 264
     mov.w128 $-16, $-32
     ret $-16, 526344
 
-fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::next (frame 112, args 0, ret 8)
+fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::next (frame 112, args 0, ret 8) [hint]
     arg $-16, 8
     load.w64 $-64, [$-16 + 0]
     load.w64 $-72, [$-16 + 8]
@@ -1170,7 +1170,7 @@ L6:
   k0 = const allocation + 0
   fn1 = core::num::<impl usize>::unchecked_sub::precondition_check
 
-fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::size_hint (frame 128, args 0, ret 24)
+fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::size_hint (frame 128, args 0, ret 24) [hint]
     arg $-48, 8
     arg $-32, 264
     imm.w8 $-105, 0
@@ -1227,7 +1227,7 @@ L6:
   k3 = const allocation + 0
   sym4 = core::panicking::panic
 
-fn <std::vec::Vec<(u32, u32)> as std::iter::FromIterator<(u32, u32)>>::from_iter::<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>> (frame 64, args 0, ret 24)
+fn <std::vec::Vec<(u32, u32)> as std::iter::FromIterator<(u32, u32)>>::from_iter::<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>> (frame 64, args 0, ret 24) [hint]
     arg $-48, 8
     arg $-40, 264
     arg $-32, 520
@@ -1243,7 +1243,7 @@ L1:
   fn0 = <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::IntoIterator>::into_iter
   fn1 = <std::vec::Vec<(u32, u32)> as std::vec::spec_from_iter::SpecFromIter<(u32, u32), std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>>::from_iter
 
-fn <std::vec::Vec<(u32, u32)> as std::ops::DerefMut>::deref_mut (frame 64, args 0, ret 16)
+fn <std::vec::Vec<(u32, u32)> as std::ops::DerefMut>::deref_mut (frame 64, args 0, ret 16) [hint]
     arg $-24, 8
     load.w64 $-56, [$-24 + 8]
     mov.w64 $-48, $-56
@@ -1269,7 +1269,7 @@ L0:
   cleanup L0 -> continue
   sym0 = std::ptr::drop_glue::<[(u32, u32)]> - shim(None)
 
-fn <std::vec::Vec<(u32, u32)> as std::ops::Index<usize>>::index (frame 96, args 0, ret 8)
+fn <std::vec::Vec<(u32, u32)> as std::ops::Index<usize>>::index (frame 96, args 0, ret 8) [hint]
     arg $-16, 8
     arg $-24, 264
     arg $-80, 520
@@ -1450,7 +1450,7 @@ L0:
   cleanup L0 -> continue
   fn0 = <[u32] as std::fmt::Debug>::fmt
 
-fn <std::vec::Vec<u32> as std::iter::FromIterator<u32>>::from_iter::<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>> (frame 112, args 0, ret 24)
+fn <std::vec::Vec<u32> as std::iter::FromIterator<u32>>::from_iter::<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>> (frame 112, args 0, ret 24) [hint]
     arg $-56, 8
     arg $-88, 264
     load.copy $-48, [$-88 + 0], 24
@@ -1476,7 +1476,7 @@ L1:
   fn0 = <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::IntoIterator>::into_iter
   fn1 = <std::vec::Vec<u32> as std::vec::spec_from_iter::SpecFromIter<u32, std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>>::from_iter
 
-fn <std::vec::Vec<u32> as std::ops::Deref>::deref (frame 64, args 0, ret 16)
+fn <std::vec::Vec<u32> as std::ops::Deref>::deref (frame 64, args 0, ret 16) [hint]
     arg $-24, 8
     load.w64 $-56, [$-24 + 8]
     mov.w64 $-48, $-56
@@ -1487,7 +1487,7 @@ fn <std::vec::Vec<u32> as std::ops::Deref>::deref (frame 64, args 0, ret 16)
     mov.w64 $-8, $-32
     ret $-16, 526344
 
-fn <std::vec::Vec<u32> as std::ops::DerefMut>::deref_mut (frame 64, args 0, ret 16)
+fn <std::vec::Vec<u32> as std::ops::DerefMut>::deref_mut (frame 64, args 0, ret 16) [hint]
     arg $-24, 8
     load.w64 $-56, [$-24 + 8]
     mov.w64 $-48, $-56
@@ -1676,14 +1676,14 @@ L16:
   fn8 = <std::vec::Vec<u32> as std::vec::spec_extend::SpecExtend<u32, std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>>::spec_extend
   sym9 = core::panicking::panic_in_cleanup
 
-fn <std::vec::set_len_on_drop::SetLenOnDrop<'_> as std::ops::Drop>::drop (frame 32, args 0, ret 0)
+fn <std::vec::set_len_on_drop::SetLenOnDrop<'_> as std::ops::Drop>::drop (frame 32, args 0, ret 0) [hint]
     arg $-8, 8
     load.w64 $-24, [$-8 + 8]
     load.w64 $-16, [$-8 + 0]
     store.w64 [$-16 + 0], $-24
     ret $0, 0
 
-fn <u32 as core::slice::cmp::SlicePartialEq<u32>>::equal_same_length (frame 64, args 0, ret 1)
+fn <u32 as core::slice::cmp::SlicePartialEq<u32>>::equal_same_length (frame 64, args 0, ret 1) [hint]
     arg $-16, 8
     arg $-24, 264
     arg $-32, 520
@@ -1699,7 +1699,7 @@ fn <u32 as core::slice::cmp::SlicePartialEq<u32>>::equal_same_length (frame 64, 
     ret $-1, 1
   sym0 = island ryo_island_compare_bytes[]
 
-fn <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortFreezeTypeImpl>::small_sort::<for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 48, args 0, ret 0)
+fn <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortFreezeTypeImpl>::small_sort::<for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 48, args 0, ret 0) [always]
     arg $-16, 8
     arg $-8, 264
     arg $-24, 520
@@ -1739,7 +1739,7 @@ L7:
   fn1 = core::slice::sort::shared::smallsort::small_sort_general::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
   fn2 = core::slice::sort::shared::smallsort::insertion_sort_shift_left::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
 
-fn <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortFreezeTypeImpl>::small_sort_threshold (frame 32, args 0, ret 8)
+fn <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortFreezeTypeImpl>::small_sort_threshold (frame 32, args 0, ret 8) [always]
     imm.w64 $-32, 4
     le.u.imm.w64 $-9, $-32, 8
     br! $-9, L0
@@ -1759,7 +1759,7 @@ L1:
 L2:
     ret $-8, 8
 
-fn <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortTypeImpl>::small_sort::<for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 32, args 0, ret 0)
+fn <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortTypeImpl>::small_sort::<for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 32, args 0, ret 0) [always]
     arg $-16, 8
     arg $-8, 264
     arg $-24, 520
@@ -1769,14 +1769,14 @@ L0:
   cleanup L0 -> continue
   fn0 = <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortFreezeTypeImpl>::small_sort::<for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
 
-fn <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortTypeImpl>::small_sort_threshold (frame 16, args 0, ret 8)
+fn <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortTypeImpl>::small_sort_threshold (frame 16, args 0, ret 8) [always]
 L0:
     call $-8, fn0, 8, []
     ret $-8, 8
   cleanup L0 -> continue
   fn0 = <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortFreezeTypeImpl>::small_sort_threshold
 
-fn <u32 as std::slice::<impl [T]>::to_vec_in::ConvertVec>::to_vec::<std::alloc::Global> (frame 176, args 0, ret 24)
+fn <u32 as std::slice::<impl [T]>::to_vec_in::ConvertVec>::to_vec::<std::alloc::Global> (frame 176, args 0, ret 24) [hint]
     arg $-104, 8
     arg $-40, 264
     arg $-32, 520
@@ -1840,7 +1840,7 @@ L9:
   k4 = const allocation + 0
   fn5 = std::vec::Vec::<T, A>::set_len::precondition_check
 
-fn <usize as std::cmp::Ord>::max (frame 64, args 0, ret 8)
+fn <usize as std::cmp::Ord>::max (frame 64, args 0, ret 8) [hint]
     arg $-16, 8
     arg $-24, 264
     imm.w8 $-25, 1
@@ -1874,7 +1874,7 @@ L7:
   cleanup L4 -> continue
   fn0 = std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt
 
-fn <usize as std::cmp::Ord>::min (frame 64, args 0, ret 8)
+fn <usize as std::cmp::Ord>::min (frame 64, args 0, ret 8) [hint]
     arg $-16, 8
     arg $-24, 264
     imm.w8 $-25, 1
@@ -1908,7 +1908,7 @@ L7:
   cleanup L4 -> continue
   fn0 = std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt
 
-fn <usize as std::iter::Step>::forward_unchecked (frame 32, args 0, ret 8)
+fn <usize as std::iter::Step>::forward_unchecked (frame 32, args 0, ret 8) [hint]
     arg $-16, 8
     arg $-24, 264
     imm.w8 $-25, 1
@@ -1921,7 +1921,7 @@ L0:
   k0 = const allocation + 0
   fn1 = core::num::<impl usize>::unchecked_add::precondition_check
 
-fn <usize as std::iter::Step>::steps_between (frame 96, args 0, ret 24)
+fn <usize as std::iter::Step>::steps_between (frame 96, args 0, ret 24) [hint]
     arg $-64, 8
     arg $-32, 264
     arg $-40, 520
@@ -1942,7 +1942,7 @@ L1:
     ret $-64, 8
   k0 = const allocation + 0
 
-fn <usize as std::slice::SliceIndex<[(u32, u32)]>>::index (frame 64, args 0, ret 8)
+fn <usize as std::slice::SliceIndex<[(u32, u32)]>>::index (frame 64, args 0, ret 8) [hint]
     arg $-16, 8
     arg $-32, 264
     arg $-24, 520
@@ -1960,7 +1960,7 @@ L1:
   cleanup L0 -> continue
   sym0 = core::panicking::panic_bounds_check
 
-fn <usize as std::slice::SliceIndex<[T]>>::get_unchecked::precondition_check (frame 144, args 0, ret 0)
+fn <usize as std::slice::SliceIndex<[T]>>::get_unchecked::precondition_check (frame 144, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     arg $-120, 520
@@ -2067,7 +2067,7 @@ L5:
   k4 = const allocation + 0
   sym5 = core::panicking::panic_const::panic_const_shl_overflow
 
-fn alloc::raw_vec::RawVec::<u32>::grow_one (frame 80, args 0, ret 0)
+fn alloc::raw_vec::RawVec::<u32>::grow_one (frame 80, args 0, ret 0) [never]
     arg $-8, 8
     mov.w64 $-16, $-8
     load.w64 $-48, [$-16 + 0]
@@ -2090,7 +2090,7 @@ L2:
   sym1 = alloc::raw_vec::RawVecInner::grow_amortized
   sym2 = alloc::raw_vec::handle_error
 
-fn alloc::raw_vec::RawVecInner::with_capacity_in (frame 144, args 0, ret 16)
+fn alloc::raw_vec::RawVecInner::with_capacity_in (frame 144, args 0, ret 16) [hint]
     arg $-24, 8
     arg $-40, 264
     arg $-32, 520
@@ -2184,7 +2184,7 @@ L1:
   fn0 = core::num::<impl u64>::wrapping_mul
   fn1 = core::num::<impl u64>::wrapping_add
 
-fn core::fmt::num::<impl std::fmt::Debug for u32>::fmt (frame 48, args 0, ret 1)
+fn core::fmt::num::<impl std::fmt::Debug for u32>::fmt (frame 48, args 0, ret 1) [hint]
     arg $-16, 8
     arg $-24, 264
     load.w32 $-36, [$-24 + 16]
@@ -2213,7 +2213,7 @@ L4:
   sym1 = core::fmt::num::<impl std::fmt::UpperHex for u32>::fmt
   sym2 = core::fmt::num::imp::<impl std::fmt::Display for u32>::fmt
 
-fn core::fmt::rt::Argument::<'_>::new_debug::<(u32, u32)> (frame 80, args 0, ret 16)
+fn core::fmt::rt::Argument::<'_>::new_debug::<(u32, u32)> (frame 80, args 0, ret 16) [hint]
     arg $-40, 8
     arg $-24, 264
     mov.w64 $-32, $-24
@@ -2227,7 +2227,7 @@ fn core::fmt::rt::Argument::<'_>::new_debug::<(u32, u32)> (frame 80, args 0, ret
     ret $-40, 8
   sym0 = <(u32, u32) as std::fmt::Debug>::fmt
 
-fn core::fmt::rt::Argument::<'_>::new_display::<usize> (frame 80, args 0, ret 16)
+fn core::fmt::rt::Argument::<'_>::new_display::<usize> (frame 80, args 0, ret 16) [hint]
     arg $-40, 8
     arg $-24, 264
     mov.w64 $-32, $-24
@@ -2241,7 +2241,7 @@ fn core::fmt::rt::Argument::<'_>::new_display::<usize> (frame 80, args 0, ret 16
     ret $-40, 8
   sym0 = core::fmt::num::imp::<impl std::fmt::Display for usize>::fmt
 
-fn core::fmt::rt::Argument::<'_>::new_lower_hex::<u64> (frame 80, args 0, ret 16)
+fn core::fmt::rt::Argument::<'_>::new_lower_hex::<u64> (frame 80, args 0, ret 16) [hint]
     arg $-40, 8
     arg $-24, 264
     mov.w64 $-32, $-24
@@ -2255,19 +2255,19 @@ fn core::fmt::rt::Argument::<'_>::new_lower_hex::<u64> (frame 80, args 0, ret 16
     ret $-40, 8
   sym0 = core::fmt::num::<impl std::fmt::LowerHex for u64>::fmt
 
-fn core::num::<impl u64>::wrapping_add (frame 32, args 0, ret 8)
+fn core::num::<impl u64>::wrapping_add (frame 32, args 0, ret 8) [always]
     arg $-16, 8
     arg $-24, 264
     add.w64 $-8, $-16, $-24
     ret $-8, 8
 
-fn core::num::<impl u64>::wrapping_mul (frame 32, args 0, ret 8)
+fn core::num::<impl u64>::wrapping_mul (frame 32, args 0, ret 8) [always]
     arg $-16, 8
     arg $-24, 264
     mul.w64 $-8, $-16, $-24
     ret $-8, 8
 
-fn core::num::<impl usize>::unchecked_add::precondition_check (frame 144, args 0, ret 0)
+fn core::num::<impl usize>::unchecked_add::precondition_check (frame 144, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     arg $-120, 520
@@ -2300,7 +2300,7 @@ L0:
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
 
-fn core::num::<impl usize>::unchecked_sub::precondition_check (frame 144, args 0, ret 0)
+fn core::num::<impl usize>::unchecked_sub::precondition_check (frame 144, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     arg $-120, 520
@@ -2333,7 +2333,7 @@ L0:
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
 
-fn core::panicking::assert_failed::<std::vec::Vec<u32>, std::vec::Vec<u32>> (frame 128, args 0, ret 0)
+fn core::panicking::assert_failed::<std::vec::Vec<u32>, std::vec::Vec<u32>> (frame 128, args 0, ret 0) [never, cold]
     arg $-1, 1
     arg $-16, 264
     arg $-24, 520
@@ -2359,7 +2359,7 @@ L0:
   k1 = const allocation + 0
   sym2 = core::panicking::assert_failed_inner
 
-fn core::slice::<impl [(u32, u32)]>::reverse (frame 144, args 0, ret 0)
+fn core::slice::<impl [(u32, u32)]>::reverse (frame 144, args 0, ret 0) [hint]
     arg $-16, 8
     arg $-8, 264
     mov.w64 $-24, $-8
@@ -2421,7 +2421,7 @@ L8:
   fn3 = std::slice::from_raw_parts_mut::precondition_check
   fn4 = core::slice::<impl [T]>::reverse::revswap::<(u32, u32)>
 
-fn core::slice::<impl [(u32, u32)]>::split_at_mut (frame 208, args 0, ret 32)
+fn core::slice::<impl [(u32, u32)]>::split_at_mut (frame 208, args 0, ret 32) [hint]
     arg $-64, 8
     arg $-48, 264
     arg $-40, 520
@@ -2475,7 +2475,7 @@ L2:
   k3 = const allocation + 0
   sym4 = std::rt::panic_fmt
 
-fn core::slice::<impl [(u32, u32)]>::split_at_mut_unchecked (frame 192, args 0, ret 32)
+fn core::slice::<impl [(u32, u32)]>::split_at_mut_unchecked (frame 192, args 0, ret 32) [hint]
     arg $-80, 8
     arg $-48, 264
     arg $-40, 520
@@ -2524,7 +2524,7 @@ L2:
   fn1 = std::slice::from_raw_parts_mut::precondition_check
   fn2 = std::slice::from_raw_parts_mut::precondition_check
 
-fn core::slice::<impl [T]>::reverse::revswap::<(u32, u32)> (frame 192, args 0, ret 0)
+fn core::slice::<impl [T]>::reverse::revswap::<(u32, u32)> (frame 192, args 0, ret 0) [hint]
     arg $-16, 8
     arg $-8, 264
     arg $-32, 520
@@ -2605,7 +2605,7 @@ L8:
   k6 = const allocation + 0
   sym7 = core::panicking::panic_bounds_check
 
-fn core::slice::<impl [T]>::reverse::revswap::<u32> (frame 192, args 0, ret 0)
+fn core::slice::<impl [T]>::reverse::revswap::<u32> (frame 192, args 0, ret 0) [hint]
     arg $-16, 8
     arg $-8, 264
     arg $-32, 520
@@ -2682,7 +2682,7 @@ L8:
   k6 = const allocation + 0
   sym7 = core::panicking::panic_bounds_check
 
-fn core::slice::<impl [T]>::split_at_mut_unchecked::precondition_check (frame 144, args 0, ret 0)
+fn core::slice::<impl [T]>::split_at_mut_unchecked::precondition_check (frame 144, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     arg $-120, 520
@@ -2711,7 +2711,7 @@ L0:
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
 
-fn core::slice::<impl [T]>::swap_unchecked::precondition_check (frame 144, args 0, ret 0)
+fn core::slice::<impl [T]>::swap_unchecked::precondition_check (frame 144, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     arg $-24, 520
@@ -2742,7 +2742,7 @@ L0:
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
 
-fn core::slice::<impl [u32]>::copy_from_slice (frame 48, args 0, ret 0)
+fn core::slice::<impl [u32]>::copy_from_slice (frame 48, args 0, ret 0) [hint]
     arg $-16, 8
     arg $-8, 264
     arg $-32, 520
@@ -2755,7 +2755,7 @@ L0:
   cleanup L0 -> continue
   fn0 = core::slice::copy_from_slice_impl::<u32>
 
-fn core::slice::<impl [u32]>::iter (frame 32, args 0, ret 16)
+fn core::slice::<impl [u32]>::iter (frame 32, args 0, ret 16) [hint]
     arg $-32, 8
     arg $-24, 264
 L0:
@@ -2764,7 +2764,7 @@ L0:
   cleanup L0 -> continue
   fn0 = std::slice::Iter::<'_, u32>::new
 
-fn core::slice::<impl [u32]>::reverse (frame 144, args 0, ret 0)
+fn core::slice::<impl [u32]>::reverse (frame 144, args 0, ret 0) [hint]
     arg $-16, 8
     arg $-8, 264
     mov.w64 $-24, $-8
@@ -2826,7 +2826,7 @@ L8:
   fn3 = std::slice::from_raw_parts_mut::precondition_check
   fn4 = core::slice::<impl [T]>::reverse::revswap::<u32>
 
-fn core::slice::<impl [u32]>::sort_unstable (frame 32, args 0, ret 0)
+fn core::slice::<impl [u32]>::sort_unstable (frame 32, args 0, ret 0) [hint]
     arg $-16, 8
     arg $-8, 264
     addr $-24, $-16
@@ -2836,7 +2836,7 @@ L0:
   cleanup L0 -> continue
   fn0 = core::slice::sort::unstable::sort::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
 
-fn core::slice::<impl [u32]>::split_at_mut (frame 208, args 0, ret 32)
+fn core::slice::<impl [u32]>::split_at_mut (frame 208, args 0, ret 32) [hint]
     arg $-64, 8
     arg $-48, 264
     arg $-40, 520
@@ -2890,7 +2890,7 @@ L2:
   k3 = const allocation + 0
   sym4 = std::rt::panic_fmt
 
-fn core::slice::<impl [u32]>::split_at_mut_unchecked (frame 192, args 0, ret 32)
+fn core::slice::<impl [u32]>::split_at_mut_unchecked (frame 192, args 0, ret 32) [hint]
     arg $-80, 8
     arg $-48, 264
     arg $-40, 520
@@ -2939,7 +2939,7 @@ L2:
   fn1 = std::slice::from_raw_parts_mut::precondition_check
   fn2 = std::slice::from_raw_parts_mut::precondition_check
 
-fn core::slice::<impl [u32]>::swap (frame 64, args 0, ret 0)
+fn core::slice::<impl [u32]>::swap (frame 64, args 0, ret 0) [hint]
     arg $-16, 8
     arg $-8, 264
     arg $-24, 520
@@ -3030,7 +3030,7 @@ L2:
   k1 = const allocation + 0
   fn2 = std::ptr::copy_nonoverlapping::precondition_check
 
-fn core::slice::index::<impl std::ops::Index<std::ops::Range<usize>> for [u32]>::index (frame 64, args 0, ret 16)
+fn core::slice::index::<impl std::ops::Index<std::ops::Range<usize>> for [u32]>::index (frame 64, args 0, ret 16) [always]
     arg $-32, 8
     arg $-24, 264
     arg $-48, 520
@@ -3043,7 +3043,7 @@ L0:
   cleanup L0 -> continue
   fn0 = <std::ops::Range<usize> as std::slice::SliceIndex<[u32]>>::index
 
-fn core::slice::index::<impl std::ops::Index<std::ops::RangeFrom<usize>> for [u32]>::index (frame 64, args 0, ret 16)
+fn core::slice::index::<impl std::ops::Index<std::ops::RangeFrom<usize>> for [u32]>::index (frame 64, args 0, ret 16) [always]
     arg $-32, 8
     arg $-24, 264
     arg $-40, 520
@@ -3055,7 +3055,7 @@ L0:
   cleanup L0 -> continue
   fn0 = <std::ops::RangeFrom<usize> as std::slice::SliceIndex<[u32]>>::index
 
-fn core::slice::index::<impl std::ops::IndexMut<std::ops::RangeFrom<usize>> for [u32]>::index_mut (frame 64, args 0, ret 16)
+fn core::slice::index::<impl std::ops::IndexMut<std::ops::RangeFrom<usize>> for [u32]>::index_mut (frame 64, args 0, ret 16) [always]
     arg $-32, 8
     arg $-24, 264
     arg $-40, 520
@@ -3067,7 +3067,7 @@ L0:
   cleanup L0 -> continue
   fn0 = <std::ops::RangeFrom<usize> as std::slice::SliceIndex<[u32]>>::index_mut
 
-fn core::slice::index::<impl std::ops::IndexMut<std::ops::RangeTo<usize>> for [u32]>::index_mut (frame 64, args 0, ret 16)
+fn core::slice::index::<impl std::ops::IndexMut<std::ops::RangeTo<usize>> for [u32]>::index_mut (frame 64, args 0, ret 16) [always]
     arg $-32, 8
     arg $-24, 264
     arg $-40, 520
@@ -3079,7 +3079,7 @@ L0:
   cleanup L0 -> continue
   fn0 = <std::ops::RangeTo<usize> as std::slice::SliceIndex<[u32]>>::index_mut
 
-fn core::slice::sort::shared::find_existing_run::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 128, args 0, ret 16)
+fn core::slice::sort::shared::find_existing_run::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 128, args 0, ret 16) [always]
     arg $-32, 8
     arg $-24, 264
     arg $-40, 520
@@ -3219,7 +3219,7 @@ L22:
   fn13 = <usize as std::slice::SliceIndex<[T]>>::get_unchecked::precondition_check
   fn14 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
 
-fn core::slice::sort::shared::find_existing_run::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 128, args 0, ret 16)
+fn core::slice::sort::shared::find_existing_run::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 128, args 0, ret 16) [always]
     arg $-32, 8
     arg $-24, 264
     arg $-40, 520
@@ -3359,7 +3359,7 @@ L22:
   fn13 = <usize as std::slice::SliceIndex<[T]>>::get_unchecked::precondition_check
   fn14 = <for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt} as std::ops::FnMut<(&u32, &u32)>>::call_mut - shim(for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt})
 
-fn core::slice::sort::shared::pivot::choose_pivot::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 176, args 0, ret 8)
+fn core::slice::sort::shared::pivot::choose_pivot::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 176, args 0, ret 8) [hint]
     arg $-24, 8
     arg $-16, 264
     arg $-32, 520
@@ -3467,7 +3467,7 @@ L15:
   k12 = const allocation + 0
   fn13 = std::hint::assert_unchecked::precondition_check
 
-fn core::slice::sort::shared::pivot::choose_pivot::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 176, args 0, ret 8)
+fn core::slice::sort::shared::pivot::choose_pivot::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 176, args 0, ret 8) [hint]
     arg $-24, 8
     arg $-16, 264
     arg $-32, 520
@@ -3575,7 +3575,7 @@ L15:
   k12 = const allocation + 0
   fn13 = std::hint::assert_unchecked::precondition_check
 
-fn core::slice::sort::shared::pivot::median3::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 64, args 0, ret 8)
+fn core::slice::sort::shared::pivot::median3::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 64, args 0, ret 8) [always]
     arg $-16, 8
     arg $-24, 264
     arg $-32, 520
@@ -3612,7 +3612,7 @@ L6:
   fn1 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
   fn2 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
 
-fn core::slice::sort::shared::pivot::median3::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 64, args 0, ret 8)
+fn core::slice::sort::shared::pivot::median3::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 64, args 0, ret 8) [always]
     arg $-16, 8
     arg $-24, 264
     arg $-32, 520
@@ -4346,7 +4346,7 @@ L4:
   cleanup L3 -> continue
   fn0 = core::slice::sort::shared::smallsort::insert_tail::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
 
-fn core::slice::sort::shared::smallsort::merge_down::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 160, args 0, ret 24)
+fn core::slice::sort::shared::smallsort::merge_down::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 160, args 0, ret 24) [always]
     arg $-80, 8
     arg $-32, 264
     arg $-40, 520
@@ -4414,7 +4414,7 @@ L6:
   k1 = const allocation + 0
   fn2 = std::ptr::copy_nonoverlapping::precondition_check
 
-fn core::slice::sort::shared::smallsort::merge_down::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 160, args 0, ret 24)
+fn core::slice::sort::shared::smallsort::merge_down::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 160, args 0, ret 24) [always]
     arg $-80, 8
     arg $-32, 264
     arg $-40, 520
@@ -4480,7 +4480,7 @@ L6:
   k1 = const allocation + 0
   fn2 = std::ptr::copy_nonoverlapping::precondition_check
 
-fn core::slice::sort::shared::smallsort::merge_up::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 160, args 0, ret 24)
+fn core::slice::sort::shared::smallsort::merge_up::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 160, args 0, ret 24) [always]
     arg $-80, 8
     arg $-32, 264
     arg $-40, 520
@@ -4533,7 +4533,7 @@ L3:
   k1 = const allocation + 0
   fn2 = std::ptr::copy_nonoverlapping::precondition_check
 
-fn core::slice::sort::shared::smallsort::merge_up::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 160, args 0, ret 24)
+fn core::slice::sort::shared::smallsort::merge_up::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 160, args 0, ret 24) [always]
     arg $-80, 8
     arg $-32, 264
     arg $-40, 520
@@ -6455,7 +6455,7 @@ L19:
   k8 = const allocation + 0
   sym9 = core::slice::index::slice_index_fail
 
-fn core::slice::sort::stable::drift::logical_merge::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 192, args 16, ret 8)
+fn core::slice::sort::stable::drift::logical_merge::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 192, args 16, ret 8) [always]
     arg $-24, 8
     arg $-16, 264
     arg $-40, 520
@@ -6823,7 +6823,7 @@ L4:
   sym1 = core::num::imp::int_log10::panic_for_nonpositive_argument
   fn2 = core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
 
-fn core::slice::sort::stable::driftsort_main::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}, std::vec::Vec<(u32, u32)>> (frame 8304, args 0, ret 0)
+fn core::slice::sort::stable::driftsort_main::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}, std::vec::Vec<(u32, u32)>> (frame 8304, args 0, ret 0) [never]
     arg $-16, 8
     arg $-8, 264
     arg $-24, 520
@@ -7323,7 +7323,7 @@ L7:
   k0 = const allocation + 0
   fn1 = std::ptr::copy_nonoverlapping::precondition_check
 
-fn core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 288, args 16, ret 0)
+fn core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 288, args 16, ret 0) [never]
     arg $-16, 8
     arg $-8, 264
     arg $-32, 520
@@ -8035,7 +8035,7 @@ L34:
   k19 = const allocation + 0
   fn20 = std::ptr::copy_nonoverlapping::precondition_check
 
-fn core::slice::sort::unstable::heapsort::heapsort::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 208, args 0, ret 0)
+fn core::slice::sort::unstable::heapsort::heapsort::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 208, args 0, ret 0) [never]
     arg $-16, 8
     arg $-8, 264
     arg $-24, 520
@@ -8147,7 +8147,7 @@ L21:
   k10 = const allocation + 0
   sym11 = core::slice::index::slice_index_fail
 
-fn core::slice::sort::unstable::heapsort::sift_down::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 176, args 0, ret 0)
+fn core::slice::sort::unstable::heapsort::sift_down::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 176, args 0, ret 0) [always]
     arg $-16, 8
     arg $-8, 264
     arg $-24, 520
@@ -8245,7 +8245,7 @@ L13:
   fn3 = std::ptr::swap_nonoverlapping::precondition_check
   fn4 = std::ptr::swap_nonoverlapping_bytes
 
-fn core::slice::sort::unstable::ipnsort::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 112, args 0, ret 0)
+fn core::slice::sort::unstable::ipnsort::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 112, args 0, ret 0) [never]
     arg $-16, 8
     arg $-8, 264
     arg $-24, 520
@@ -9013,7 +9013,7 @@ L0:
   cleanup L0 -> continue
   fn0 = <for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt} as std::ops::FnMut<(&u32, &u32)>>::call_mut - shim(for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt})
 
-fn core::slice::sort::unstable::sort::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 48, args 0, ret 0)
+fn core::slice::sort::unstable::sort::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}> (frame 48, args 0, ret 0) [always]
     arg $-16, 8
     arg $-8, 264
     arg $-24, 520
@@ -9046,7 +9046,7 @@ L6:
   fn0 = core::slice::sort::shared::smallsort::insertion_sort_shift_left::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
   fn1 = core::slice::sort::unstable::ipnsort::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
 
-fn core::ub_checks::maybe_is_nonoverlapping::runtime (frame 160, args 0, ret 1)
+fn core::ub_checks::maybe_is_nonoverlapping::runtime (frame 160, args 0, ret 1) [hint]
     arg $-16, 8
     arg $-24, 264
     arg $-32, 520
@@ -9742,7 +9742,7 @@ L47:
   k44 = const allocation + 0
   fn45 = core::slice::<impl [u32]>::copy_from_slice
 
-fn std::array::iter::iter_inner::PolymorphicIter::<[std::mem::MaybeUninit<usize>]>::next (frame 192, args 0, ret 16)
+fn std::array::iter::iter_inner::PolymorphicIter::<[std::mem::MaybeUninit<usize>]>::next (frame 192, args 0, ret 16) [hint]
     arg $-32, 8
     arg $-24, 264
     load.w64 $-104, [$-32 + 8]
@@ -9804,7 +9804,7 @@ L5:
   fn4 = <usize as std::slice::SliceIndex<[T]>>::get_unchecked::precondition_check
   sym5 = island ryo_island_call[FnDef(DefId(2:2127 ~ core[efd5]::intrinsics::assert_inhabited), Binder { value: [usize], bound_vars: [] }), (), ()]
 
-fn std::cmp::impls::<impl std::cmp::PartialOrd for u32>::lt (frame 32, args 0, ret 1)
+fn std::cmp::impls::<impl std::cmp::PartialOrd for u32>::lt (frame 32, args 0, ret 1) [always]
     arg $-16, 8
     arg $-24, 264
     load.w32 $-28, [$-16 + 0]
@@ -9812,7 +9812,7 @@ fn std::cmp::impls::<impl std::cmp::PartialOrd for u32>::lt (frame 32, args 0, r
     lt.u.w32 $-1, $-28, $-32
     ret $-1, 1
 
-fn std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt (frame 48, args 0, ret 1)
+fn std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt (frame 48, args 0, ret 1) [always]
     arg $-16, 8
     arg $-24, 264
     load.w64 $-32, [$-16 + 0]
@@ -9820,7 +9820,7 @@ fn std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt (frame 48, args 0,
     lt.u.w64 $-1, $-32, $-40
     ret $-1, 1
 
-fn std::fmt::Arguments::<'_>::new::<22, 4> (frame 48, args 0, ret 16)
+fn std::fmt::Arguments::<'_>::new::<22, 4> (frame 48, args 0, ret 16) [hint]
     arg $-24, 8
     arg $-32, 264
     mov.w64 $-40, $-24
@@ -9879,7 +9879,7 @@ L10:
   k2 = const allocation + 0
   sym3 = std::fmt::DebugList::<'_, '_>::entry
 
-fn std::hint::assert_unchecked::precondition_check (frame 128, args 0, ret 0)
+fn std::hint::assert_unchecked::precondition_check (frame 128, args 0, ret 0) [hint]
     arg $-1, 1
     arg $-104, 264
     br $-1, L0
@@ -9907,12 +9907,12 @@ L0:
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
 
-fn std::hint::black_box::<usize> (frame 16, args 0, ret 8)
+fn std::hint::black_box::<usize> (frame 16, args 0, ret 8) [hint]
     arg $-16, 8
     mov.w64 $-8, $-16
     ret $-8, 8
 
-fn std::hint::select_unpredictable::<*const (u32, u32)> (frame 176, args 0, ret 8)
+fn std::hint::select_unpredictable::<*const (u32, u32)> (frame 176, args 0, ret 8) [always]
     arg $-9, 1
     arg $-24, 264
     arg $-32, 520
@@ -9996,7 +9996,7 @@ L9:
   sym5 = island ryo_island_call[FnDef(DefId(2:38987 ~ core[efd5]::intrinsics::select_unpredictable), Binder { value: [std::mem::MaybeUninit<*const (u32, u32)>], bound_vars: [] }), (bool, std::mem::MaybeUninit<*const (u32, u32)>, std::mem::MaybeUninit<*const (u32, u32)>), std::mem::MaybeUninit<*const (u32, u32)>]
   sym6 = core::panicking::panic_in_cleanup
 
-fn std::hint::select_unpredictable::<*const u32> (frame 176, args 0, ret 8)
+fn std::hint::select_unpredictable::<*const u32> (frame 176, args 0, ret 8) [always]
     arg $-9, 1
     arg $-24, 264
     arg $-32, 520
@@ -10080,7 +10080,7 @@ L9:
   sym5 = island ryo_island_call[FnDef(DefId(2:38987 ~ core[efd5]::intrinsics::select_unpredictable), Binder { value: [std::mem::MaybeUninit<*const u32>], bound_vars: [] }), (bool, std::mem::MaybeUninit<*const u32>, std::mem::MaybeUninit<*const u32>), std::mem::MaybeUninit<*const u32>]
   sym6 = core::panicking::panic_in_cleanup
 
-fn std::hint::select_unpredictable::<*mut u32> (frame 176, args 0, ret 8)
+fn std::hint::select_unpredictable::<*mut u32> (frame 176, args 0, ret 8) [always]
     arg $-9, 1
     arg $-24, 264
     arg $-32, 520
@@ -10164,10 +10164,10 @@ L9:
   sym5 = island ryo_island_call[FnDef(DefId(2:38987 ~ core[efd5]::intrinsics::select_unpredictable), Binder { value: [std::mem::MaybeUninit<*mut u32>], bound_vars: [] }), (bool, std::mem::MaybeUninit<*mut u32>, std::mem::MaybeUninit<*mut u32>), std::mem::MaybeUninit<*mut u32>]
   sym6 = core::panicking::panic_in_cleanup
 
-fn std::intrinsics::cold_path (frame 0, args 0, ret 0)
+fn std::intrinsics::cold_path (frame 0, args 0, ret 0) [cold]
     ret $0, 0
 
-fn std::intrinsics::select_unpredictable::<*mut *const (u32, u32)> (frame 32, args 0, ret 8)
+fn std::intrinsics::select_unpredictable::<*mut *const (u32, u32)> (frame 32, args 0, ret 8) [hint]
     arg $-9, 1
     arg $-24, 264
     arg $-32, 520
@@ -10179,7 +10179,7 @@ L0:
 L1:
     ret $-8, 8
 
-fn std::intrinsics::select_unpredictable::<*mut *const u32> (frame 32, args 0, ret 8)
+fn std::intrinsics::select_unpredictable::<*mut *const u32> (frame 32, args 0, ret 8) [hint]
     arg $-9, 1
     arg $-24, 264
     arg $-32, 520
@@ -10191,7 +10191,7 @@ L0:
 L1:
     ret $-8, 8
 
-fn std::intrinsics::select_unpredictable::<*mut *mut u32> (frame 32, args 0, ret 8)
+fn std::intrinsics::select_unpredictable::<*mut *mut u32> (frame 32, args 0, ret 8) [hint]
     arg $-9, 1
     arg $-24, 264
     arg $-32, 520
@@ -10203,7 +10203,7 @@ L0:
 L1:
     ret $-8, 8
 
-fn std::intrinsics::select_unpredictable::<std::mem::MaybeUninit<*const (u32, u32)>> (frame 32, args 0, ret 8)
+fn std::intrinsics::select_unpredictable::<std::mem::MaybeUninit<*const (u32, u32)>> (frame 32, args 0, ret 8) [hint]
     arg $-9, 1
     arg $-24, 264
     arg $-32, 520
@@ -10215,7 +10215,7 @@ L0:
 L1:
     ret $-8, 8
 
-fn std::intrinsics::select_unpredictable::<std::mem::MaybeUninit<*const u32>> (frame 32, args 0, ret 8)
+fn std::intrinsics::select_unpredictable::<std::mem::MaybeUninit<*const u32>> (frame 32, args 0, ret 8) [hint]
     arg $-9, 1
     arg $-24, 264
     arg $-32, 520
@@ -10227,7 +10227,7 @@ L0:
 L1:
     ret $-8, 8
 
-fn std::intrinsics::select_unpredictable::<std::mem::MaybeUninit<*mut u32>> (frame 32, args 0, ret 8)
+fn std::intrinsics::select_unpredictable::<std::mem::MaybeUninit<*mut u32>> (frame 32, args 0, ret 8) [hint]
     arg $-9, 1
     arg $-24, 264
     arg $-32, 520
@@ -10239,7 +10239,7 @@ L0:
 L1:
     ret $-8, 8
 
-fn std::intrinsics::typed_swap_nonoverlapping::<(u32, u32)> (frame 48, args 0, ret 0)
+fn std::intrinsics::typed_swap_nonoverlapping::<(u32, u32)> (frame 48, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     imm.w64 $-32, 1
@@ -10258,7 +10258,7 @@ L2:
   fn1 = std::ptr::swap_nonoverlapping::<(u32, u32)>
   sym2 = core::panicking::panic_cannot_unwind
 
-fn std::intrinsics::typed_swap_nonoverlapping::<u32> (frame 48, args 0, ret 0)
+fn std::intrinsics::typed_swap_nonoverlapping::<u32> (frame 48, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     imm.w64 $-32, 1
@@ -10360,7 +10360,7 @@ L5:
   fn0 = main::{closure#0}
   fn1 = std::iter::Iterator::for_each::call::<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}
 
-fn std::iter::range::<impl std::iter::Iterator for std::ops::Range<usize>>::next (frame 32, args 0, ret 16)
+fn std::iter::range::<impl std::iter::Iterator for std::ops::Range<usize>>::next (frame 32, args 0, ret 16) [hint]
     arg $-24, 8
 L0:
     call $-16, fn0, 526344, [4294967272, 8]
@@ -10368,7 +10368,7 @@ L0:
   cleanup L0 -> continue
   fn0 = <std::ops::Range<usize> as std::iter::range::RangeIteratorImpl>::spec_next
 
-fn std::iter::range::<impl std::iter::Iterator for std::ops::Range<usize>>::size_hint (frame 64, args 0, ret 24)
+fn std::iter::range::<impl std::iter::Iterator for std::ops::Range<usize>>::size_hint (frame 64, args 0, ret 24) [hint]
     arg $-40, 8
     arg $-32, 264
     mov.w64 $-56, $-32
@@ -10394,7 +10394,7 @@ L3:
   fn1 = <usize as std::iter::Step>::steps_between
   k2 = const allocation + 0
 
-fn std::ptr::const_ptr::<impl *const ()>::is_aligned_to (frame 128, args 0, ret 1)
+fn std::ptr::const_ptr::<impl *const ()>::is_aligned_to (frame 128, args 0, ret 1) [hint]
     arg $-16, 8
     arg $-24, 264
     ctpop.w64 $-124, $-24
@@ -10436,7 +10436,7 @@ L3:
   k2 = const allocation + 0
   sym3 = std::rt::panic_fmt
 
-fn std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_check (frame 144, args 0, ret 0)
+fn std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_check (frame 144, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     arg $-120, 520
@@ -10465,7 +10465,7 @@ L0:
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
 
-fn std::ptr::copy::precondition_check (frame 160, args 0, ret 0)
+fn std::ptr::copy::precondition_check (frame 160, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     arg $-24, 520
@@ -10554,7 +10554,7 @@ L17:
   fn5 = std::ptr::const_ptr::<impl *const ()>::is_aligned_to
   sym6 = core::panicking::panic_cannot_unwind
 
-fn std::ptr::copy_nonoverlapping::precondition_check (frame 192, args 0, ret 0)
+fn std::ptr::copy_nonoverlapping::precondition_check (frame 192, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     arg $-24, 520
@@ -10883,7 +10883,7 @@ L0:
   cleanup L0 -> continue
   fn0 = std::ptr::drop_glue::<std::vec::set_len_on_drop::SetLenOnDrop<'_>> - shim(Some(std::vec::set_len_on_drop::SetLenOnDrop<'_>))
 
-fn std::ptr::swap::<u32> (frame 128, args 0, ret 0)
+fn std::ptr::swap::<u32> (frame 128, args 0, ret 0) [always]
     arg $-8, 8
     arg $-16, 264
     mov.w64 $-64, $-8
@@ -10950,7 +10950,7 @@ L7:
   k4 = const allocation + 0
   fn5 = std::ptr::copy_nonoverlapping::precondition_check
 
-fn std::ptr::swap_chunk::<1> (frame 32, args 0, ret 0)
+fn std::ptr::swap_chunk::<1> (frame 32, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     load.w8 $-17, [$-8 + 0]
@@ -10959,7 +10959,7 @@ fn std::ptr::swap_chunk::<1> (frame 32, args 0, ret 0)
     store.w8 [$-16 + 0], $-17
     ret $0, 0
 
-fn std::ptr::swap_chunk::<2> (frame 32, args 0, ret 0)
+fn std::ptr::swap_chunk::<2> (frame 32, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     load.w16 $-18, [$-8 + 0]
@@ -10968,7 +10968,7 @@ fn std::ptr::swap_chunk::<2> (frame 32, args 0, ret 0)
     store.w16 [$-16 + 0], $-18
     ret $0, 0
 
-fn std::ptr::swap_chunk::<4> (frame 32, args 0, ret 0)
+fn std::ptr::swap_chunk::<4> (frame 32, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     load.w32 $-20, [$-8 + 0]
@@ -10977,7 +10977,7 @@ fn std::ptr::swap_chunk::<4> (frame 32, args 0, ret 0)
     store.w32 [$-16 + 0], $-20
     ret $0, 0
 
-fn std::ptr::swap_chunk::<8> (frame 32, args 0, ret 0)
+fn std::ptr::swap_chunk::<8> (frame 32, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     load.w64 $-24, [$-8 + 0]
@@ -10986,7 +10986,7 @@ fn std::ptr::swap_chunk::<8> (frame 32, args 0, ret 0)
     store.w64 [$-16 + 0], $-24
     ret $0, 0
 
-fn std::ptr::swap_nonoverlapping::<(u32, u32)> (frame 128, args 0, ret 0)
+fn std::ptr::swap_nonoverlapping::<(u32, u32)> (frame 128, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     arg $-24, 520
@@ -11023,7 +11023,7 @@ L4:
   fn0 = std::ptr::swap_nonoverlapping::precondition_check
   fn1 = std::ptr::swap_nonoverlapping_bytes
 
-fn std::ptr::swap_nonoverlapping::<u32> (frame 128, args 0, ret 0)
+fn std::ptr::swap_nonoverlapping::<u32> (frame 128, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     arg $-24, 520
@@ -11060,7 +11060,7 @@ L4:
   fn0 = std::ptr::swap_nonoverlapping::precondition_check
   fn1 = std::ptr::swap_nonoverlapping_bytes
 
-fn std::ptr::swap_nonoverlapping::precondition_check (frame 192, args 0, ret 0)
+fn std::ptr::swap_nonoverlapping::precondition_check (frame 192, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     arg $-24, 520
@@ -11161,7 +11161,7 @@ L21:
   sym5 = core::panicking::panic_nounwind_fmt
   sym6 = core::panicking::panic_cannot_unwind
 
-fn std::ptr::swap_nonoverlapping_bytes (frame 112, args 0, ret 0)
+fn std::ptr::swap_nonoverlapping_bytes (frame 112, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     arg $-24, 520
@@ -11238,7 +11238,7 @@ L6:
   fn1 = core::num::<impl usize>::unchecked_add::precondition_check
   fn2 = std::ptr::swap_chunk::<8>
 
-fn std::ptr::swap_nonoverlapping_bytes::swap_nonoverlapping_short (frame 112, args 0, ret 0)
+fn std::ptr::swap_nonoverlapping_bytes::swap_nonoverlapping_short (frame 112, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     arg $-24, 520
@@ -11330,7 +11330,7 @@ L1:
   fn0 = std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
   fn1 = <() as std::process::Termination>::report
 
-fn std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}> (frame 48, args 0, ret 0)
+fn std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}> (frame 48, args 0, ret 0) [hint]
     arg $-16, 8
     arg $-8, 264
     addr $-40, $-16
@@ -11437,7 +11437,7 @@ L0:
   k0 = const allocation + 0
   fn1 = alloc::raw_vec::RawVecInner::with_capacity_in
 
-fn std::slice::Iter::<'_, u32>::make_slice (frame 128, args 0, ret 16)
+fn std::slice::Iter::<'_, u32>::make_slice (frame 128, args 0, ret 16) [always]
     arg $-24, 8
     load.w64 $-32, [$-24 + 0]
     mov.w64 $-48, $-32
@@ -11505,7 +11505,7 @@ L8:
   k5 = const allocation + 0
   fn6 = std::slice::from_raw_parts::precondition_check
 
-fn std::slice::Iter::<'_, u32>::new (frame 112, args 0, ret 16)
+fn std::slice::Iter::<'_, u32>::new (frame 112, args 0, ret 16) [hint]
     arg $-32, 8
     arg $-24, 264
     mov.w64 $-48, $-24
@@ -11528,7 +11528,7 @@ L1:
     mov.w64 $-8, $-40
     ret $-16, 526344
 
-fn std::slice::from_raw_parts::precondition_check (frame 160, args 0, ret 0)
+fn std::slice::from_raw_parts::precondition_check (frame 160, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     arg $-24, 520
@@ -11598,7 +11598,7 @@ L12:
   sym3 = core::panicking::panic_nounwind_fmt
   sym4 = core::panicking::panic_cannot_unwind
 
-fn std::slice::from_raw_parts_mut::precondition_check (frame 160, args 0, ret 0)
+fn std::slice::from_raw_parts_mut::precondition_check (frame 160, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     arg $-24, 520
@@ -11668,7 +11668,7 @@ L12:
   sym3 = core::panicking::panic_nounwind_fmt
   sym4 = core::panicking::panic_cannot_unwind
 
-fn std::slice::stable_sort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 64, args 0, ret 0)
+fn std::slice::stable_sort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}> (frame 64, args 0, ret 0) [hint]
     arg $-16, 8
     arg $-8, 264
     arg $-24, 520
@@ -11715,7 +11715,7 @@ L11:
   fn0 = core::slice::sort::shared::smallsort::insertion_sort_shift_left::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
   fn1 = core::slice::sort::stable::driftsort_main::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}, std::vec::Vec<(u32, u32)>>
 
-fn std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> (frame 16, args 0, ret 0)
+fn std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> (frame 16, args 0, ret 0) [never]
     arg $-8, 8
 L0:
     call $0, fn0, 0, [4294967288, 8]
@@ -11849,7 +11849,7 @@ L4:
   k0 = const allocation + 0
   sym1 = alloc::raw_vec::RawVecInner::<A>::reserve::do_reserve_and_handle::<std::alloc::Global>
 
-fn std::vec::Vec::<T, A>::set_len::precondition_check (frame 144, args 0, ret 0)
+fn std::vec::Vec::<T, A>::set_len::precondition_check (frame 144, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-16, 264
     arg $-120, 520
@@ -11878,7 +11878,7 @@ L0:
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
 
-fn std::vec::Vec::<u32>::append_elements (frame 112, args 0, ret 0)
+fn std::vec::Vec::<u32>::append_elements (frame 112, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-24, 264
     arg $-16, 520
@@ -11916,7 +11916,7 @@ L3:
   k1 = const allocation + 0
   fn2 = std::ptr::copy_nonoverlapping::precondition_check
 
-fn std::vec::Vec::<u32>::clear (frame 48, args 0, ret 0)
+fn std::vec::Vec::<u32>::clear (frame 48, args 0, ret 0) [hint]
     arg $-8, 8
     load.w64 $-40, [$-8 + 8]
     mov.w64 $-32, $-40
@@ -12066,7 +12066,7 @@ fn std::vec::Vec::<u32>::extend_trusted::<std::iter::Map<std::ops::Range<usize>,
     store.w64 [$-8 + 8], $-64
     ret $0, 0
 
-fn std::vec::Vec::<u32>::push (frame 32, args 0, ret 0)
+fn std::vec::Vec::<u32>::push (frame 32, args 0, ret 0) [hint]
     arg $-8, 8
     arg $-12, 260
 L0:
@@ -12075,7 +12075,7 @@ L0:
   cleanup L0 -> continue
   fn0 = std::vec::Vec::<u32>::push_mut
 
-fn std::vec::Vec::<u32>::push_mut (frame 96, args 0, ret 8)
+fn std::vec::Vec::<u32>::push_mut (frame 96, args 0, ret 8) [hint]
     arg $-16, 8
     arg $-20, 260
     load.w64 $-64, [$-16 + 16]
@@ -12147,7 +12147,7 @@ L4:
   k0 = const allocation + 0
   sym1 = alloc::raw_vec::RawVecInner::<A>::reserve::do_reserve_and_handle::<std::alloc::Global>
 
-fn std::vec::Vec::<u32>::with_capacity (frame 96, args 0, ret 24)
+fn std::vec::Vec::<u32>::with_capacity (frame 96, args 0, ret 24) [hint]
     arg $-40, 8
     arg $-32, 264
     const $-88, k0, 16
@@ -12162,7 +12162,7 @@ L0:
   k0 = const allocation + 0
   fn1 = alloc::raw_vec::RawVecInner::with_capacity_in
 
-fn std::vec::partial_eq::<impl std::cmp::PartialEq for std::vec::Vec<u32>>::eq (frame 112, args 0, ret 1)
+fn std::vec::partial_eq::<impl std::cmp::PartialEq for std::vec::Vec<u32>>::eq (frame 112, args 0, ret 1) [hint]
     arg $-16, 8
     arg $-24, 264
     load.w64 $-88, [$-16 + 8]

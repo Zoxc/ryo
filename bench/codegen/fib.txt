@@ -1,4 +1,4 @@
-fn <() as std::process::Termination>::report (frame 16, args 0, ret 1)
+fn <() as std::process::Termination>::report (frame 16, args 0, ret 1) [hint]
     imm.w8 $-1, 0
     ret $-1, 1
 
@@ -34,7 +34,7 @@ L0:
   cleanup L0 -> continue
   fn0 = <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::call_once - shim
 
-fn core::fmt::rt::Argument::<'_>::new_display::<u32> (frame 80, args 0, ret 16)
+fn core::fmt::rt::Argument::<'_>::new_display::<u32> (frame 80, args 0, ret 16) [hint]
     arg $-40, 8
     arg $-24, 264
     mov.w64 $-32, $-24
@@ -48,7 +48,7 @@ fn core::fmt::rt::Argument::<'_>::new_display::<u32> (frame 80, args 0, ret 16)
     ret $-40, 8
   sym0 = core::fmt::num::imp::<impl std::fmt::Display for u32>::fmt
 
-fn core::fmt::rt::Argument::<'_>::new_display::<u64> (frame 80, args 0, ret 16)
+fn core::fmt::rt::Argument::<'_>::new_display::<u64> (frame 80, args 0, ret 16) [hint]
     arg $-40, 8
     arg $-24, 264
     mov.w64 $-32, $-24
@@ -158,7 +158,7 @@ L5:
   fn5 = std::fmt::Arguments::<'_>::new::<15, 2>
   sym6 = std::io::_print
 
-fn std::fmt::Arguments::<'_>::new::<15, 2> (frame 48, args 0, ret 16)
+fn std::fmt::Arguments::<'_>::new::<15, 2> (frame 48, args 0, ret 16) [hint]
     arg $-24, 8
     arg $-32, 264
     mov.w64 $-40, $-24
@@ -167,7 +167,7 @@ fn std::fmt::Arguments::<'_>::new::<15, 2> (frame 48, args 0, ret 16)
     mov.w64 $-8, $-48
     ret $-16, 526344
 
-fn std::hint::black_box::<u32> (frame 16, args 0, ret 4)
+fn std::hint::black_box::<u32> (frame 16, args 0, ret 4) [hint]
     arg $-8, 4
     mov.w32 $-4, $-8
     ret $-4, 4
@@ -205,7 +205,7 @@ L1:
   fn0 = std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
   fn1 = <() as std::process::Termination>::report
 
-fn std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> (frame 16, args 0, ret 0)
+fn std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> (frame 16, args 0, ret 0) [never]
     arg $-8, 8
 L0:
     call $0, fn0, 0, [4294967288, 8]

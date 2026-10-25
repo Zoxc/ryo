@@ -1,4 +1,4 @@
-fn <() as std::process::Termination>::report
+fn <() as std::process::Termination>::report [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -36,7 +36,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <bool as std::vec::is_zero::IsZero>::is_zero
+fn <bool as std::vec::is_zero::IsZero>::is_zero [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -54,7 +54,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <bool as std::vec::spec_from_elem::SpecFromElem>::from_elem::<std::alloc::Global>
+fn <bool as std::vec::spec_from_elem::SpecFromElem>::from_elem::<std::alloc::Global> [hint]
     inc     qword ptr [jit_record]
     jns     L31
 L0:
@@ -342,7 +342,7 @@ L4:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::iter::Filter<std::slice::Iter<'_, bool>, {closure@bench/sieve.rs:24:37: 24:42}> as std::iter::Iterator>::count
+fn <std::iter::Filter<std::slice::Iter<'_, bool>, {closure@bench/sieve.rs:24:37: 24:42}> as std::iter::Iterator>::count [hint]
     inc     qword ptr [jit_record]
     jns     L25
 L0:
@@ -497,7 +497,7 @@ L25:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::iter::Rev<std::ops::RangeInclusive<usize>> as std::iter::Iterator>::find::<{closure@bench/sieve.rs:25:39: 25:43}>
+fn <std::iter::Rev<std::ops::RangeInclusive<usize>> as std::iter::Iterator>::find::<{closure@bench/sieve.rs:25:39: 25:43}> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -520,7 +520,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::ops::ControlFlow<usize> as std::ops::FromResidual<std::ops::ControlFlow<usize, std::convert::Infallible>>>::from_residual
+fn <std::ops::ControlFlow<usize> as std::ops::FromResidual<std::ops::ControlFlow<usize, std::convert::Infallible>>>::from_residual [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -541,7 +541,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::ops::ControlFlow<usize> as std::ops::Try>::branch
+fn <std::ops::ControlFlow<usize> as std::ops::Try>::branch [hint]
     inc     qword ptr [jit_record]
     jns     L4
 L0:
@@ -571,7 +571,7 @@ L4:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::ops::ControlFlow<usize> as std::ops::Try>::from_output
+fn <std::ops::ControlFlow<usize> as std::ops::Try>::from_output [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -586,7 +586,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::ops::RangeInclusive<usize> as std::iter::DoubleEndedIterator>::rfind::<{closure@bench/sieve.rs:25:39: 25:43}>
+fn <std::ops::RangeInclusive<usize> as std::iter::DoubleEndedIterator>::rfind::<{closure@bench/sieve.rs:25:39: 25:43}> [hint]
     inc     qword ptr [jit_record]
     jns     L10
 L0:
@@ -651,7 +651,7 @@ L10:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::ops::RangeInclusive<usize> as std::iter::Iterator>::rev
+fn <std::ops::RangeInclusive<usize> as std::iter::Iterator>::rev [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -684,7 +684,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::ops::RangeInclusive<usize> as std::iter::range::RangeInclusiveIteratorImpl>::spec_try_rfold::<(), {closure@std::iter::DoubleEndedIterator::rfind::check<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0}}, std::ops::ControlFlow<usize>>
+fn <std::ops::RangeInclusive<usize> as std::iter::range::RangeInclusiveIteratorImpl>::spec_try_rfold::<(), {closure@std::iter::DoubleEndedIterator::rfind::check<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0}}, std::ops::ControlFlow<usize>> [hint]
     inc     qword ptr [jit_record]
     jns     L35
 L0:
@@ -949,7 +949,7 @@ L35:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::filter::<{closure@bench/sieve.rs:24:37: 24:42}>
+fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::filter::<{closure@bench/sieve.rs:24:37: 24:42}> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -969,7 +969,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::fold::<usize, {closure@std::iter::adapters::map::map_fold<&bool, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}}>::{closure#0}}>
+fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::fold::<usize, {closure@std::iter::adapters::map::map_fold<&bool, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}}>::{closure#0}}> [hint]
     inc     qword ptr [jit_record]
     jns     L39
 L0:
@@ -1224,7 +1224,7 @@ L39:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::map::<usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>
+fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::map::<usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -1244,7 +1244,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::size_hint
+fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::size_hint [hint]
     inc     qword ptr [jit_record]
     jns     L11
 L0:
@@ -1356,7 +1356,7 @@ L11:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::slice::Iter<'_, bool> as std::iter::adapters::filter::SpecAssumeCount>::assume_count_le_upper_bound
+fn <std::slice::Iter<'_, bool> as std::iter::adapters::filter::SpecAssumeCount>::assume_count_le_upper_bound [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -1382,7 +1382,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::vec::Vec<bool> as std::ops::Deref>::deref
+fn <std::vec::Vec<bool> as std::ops::Deref>::deref [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -1425,7 +1425,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::vec::Vec<bool> as std::ops::Index<usize>>::index
+fn <std::vec::Vec<bool> as std::ops::Index<usize>>::index [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -1455,7 +1455,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::vec::Vec<bool> as std::ops::IndexMut<usize>>::index_mut
+fn <std::vec::Vec<bool> as std::ops::IndexMut<usize>>::index_mut [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -1485,7 +1485,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::vec::set_len_on_drop::SetLenOnDrop<'_> as std::ops::Drop>::drop
+fn <std::vec::set_len_on_drop::SetLenOnDrop<'_> as std::ops::Drop>::drop [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -1505,7 +1505,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <usize as std::iter::Step>::backward_unchecked
+fn <usize as std::iter::Step>::backward_unchecked [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -1564,7 +1564,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <usize as std::slice::SliceIndex<[bool]>>::index
+fn <usize as std::slice::SliceIndex<[bool]>>::index [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -1598,7 +1598,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <usize as std::slice::SliceIndex<[bool]>>::index_mut
+fn <usize as std::slice::SliceIndex<[bool]>>::index_mut [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -1691,7 +1691,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn alloc::raw_vec::RawVecInner::with_capacity_in
+fn alloc::raw_vec::RawVecInner::with_capacity_in [hint]
     inc     qword ptr [jit_record]
     jns     L10
 L0:
@@ -1775,7 +1775,7 @@ L10:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::fmt::rt::Argument::<'_>::new_display::<usize>
+fn core::fmt::rt::Argument::<'_>::new_display::<usize> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -1802,7 +1802,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::num::<impl usize>::unchecked_add::precondition_check
+fn core::num::<impl usize>::unchecked_add::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -1846,7 +1846,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::num::<impl usize>::unchecked_sub::precondition_check
+fn core::num::<impl usize>::unchecked_sub::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -1890,7 +1890,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::slice::<impl [bool]>::iter
+fn core::slice::<impl [bool]>::iter [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -2369,7 +2369,7 @@ L20:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::clone::impls::<impl std::clone::Clone for bool>::clone
+fn std::clone::impls::<impl std::clone::Clone for bool>::clone [always]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -2386,7 +2386,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::cmp::impls::<impl std::cmp::PartialEq for usize>::eq
+fn std::cmp::impls::<impl std::cmp::PartialEq for usize>::eq [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -2407,7 +2407,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::cmp::impls::<impl std::cmp::PartialOrd for usize>::le
+fn std::cmp::impls::<impl std::cmp::PartialOrd for usize>::le [always]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -2428,7 +2428,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt
+fn std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt [always]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -2449,7 +2449,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::fmt::Arguments::<'_>::new::<39, 3>
+fn std::fmt::Arguments::<'_>::new::<39, 3> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -2469,7 +2469,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::hint::assert_unchecked::precondition_check
+fn std::hint::assert_unchecked::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -2505,7 +2505,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::hint::black_box::<usize>
+fn std::hint::black_box::<usize> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -2656,7 +2656,7 @@ L10:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::iter::range::<impl std::iter::DoubleEndedIterator for std::ops::RangeInclusive<usize>>::try_rfold::<(), {closure@std::iter::DoubleEndedIterator::rfind::check<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0}}, std::ops::ControlFlow<usize>>
+fn std::iter::range::<impl std::iter::DoubleEndedIterator for std::ops::RangeInclusive<usize>>::try_rfold::<(), {closure@std::iter::DoubleEndedIterator::rfind::check<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0}}, std::ops::ControlFlow<usize>> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -2677,7 +2677,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ops::RangeInclusive::<usize>::new
+fn std::ops::RangeInclusive::<usize>::new [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -2704,7 +2704,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::option::Option::<usize>::unwrap
+fn std::option::Option::<usize>::unwrap [always]
     inc     qword ptr [jit_record]
     jns     L3
 L0:
@@ -2735,7 +2735,7 @@ L3:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_check
+fn std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -2947,7 +2947,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::slice::Iter::<'_, bool>::new
+fn std::slice::Iter::<'_, bool>::new [hint]
     inc     qword ptr [jit_record]
     jns     L3
 L0:
@@ -2988,7 +2988,7 @@ L3:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+fn std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> [never]
     inc     qword ptr [jit_record]
     jns     L1
 L0:

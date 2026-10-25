@@ -11,7 +11,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <&mut core::io::write::default_write_fmt::Adapter<'_, std::sys::stdio::unix::Stderr> as std::fmt::Write::write_fmt::SpecWriteFmt>::spec_write_fmt
+fn <&mut core::io::write::default_write_fmt::Adapter<'_, std::sys::stdio::unix::Stderr> as std::fmt::Write::write_fmt::SpecWriteFmt>::spec_write_fmt [hint]
     inc     qword ptr [jit_record]
     jns     L3
 L0:
@@ -58,7 +58,7 @@ L3:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <&u64 as std::ops::Rem<u64>>::rem
+fn <&u64 as std::ops::Rem<u64>>::rem [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -90,7 +90,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <() as std::process::Termination>::report
+fn <() as std::process::Termination>::report [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -104,7 +104,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as std::hash::Hasher>::finish
+fn <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as std::hash::Hasher>::finish [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -162,7 +162,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as std::hash::Hasher>::write
+fn <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as std::hash::Hasher>::write [hint]
     inc     qword ptr [jit_record]
     jns     L17
 L0:
@@ -395,7 +395,7 @@ L17:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as std::hash::Hasher>::write_str
+fn <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as std::hash::Hasher>::write_str [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -426,7 +426,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <core::hash::sip::Sip13Rounds as core::hash::sip::Sip>::c_rounds
+fn <core::hash::sip::Sip13Rounds as core::hash::sip::Sip>::c_rounds [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -577,7 +577,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <core::hash::sip::Sip13Rounds as core::hash::sip::Sip>::d_rounds
+fn <core::hash::sip::Sip13Rounds as core::hash::sip::Sip>::d_rounds [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -1004,7 +1004,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <core::io::error::repr::Repr as std::ops::Drop>::drop
+fn <core::io::error::repr::Repr as std::ops::Drop>::drop [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -1488,7 +1488,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <hashbrown::scopeguard::ScopeGuard<&mut hashbrown::raw::RawTableInner, {closure@hashbrown::raw::RawTableInner::rehash_in_place::{closure#0}}> as std::ops::Drop>::drop
+fn <hashbrown::scopeguard::ScopeGuard<&mut hashbrown::raw::RawTableInner, {closure@hashbrown::raw::RawTableInner::rehash_in_place::{closure#0}}> as std::ops::Drop>::drop [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -1509,7 +1509,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <hashbrown::scopeguard::ScopeGuard<hashbrown::raw::RawTableInner, {closure@hashbrown::raw::RawTableInner::prepare_resize<std::alloc::Global>::{closure#0}}> as std::ops::Drop>::drop
+fn <hashbrown::scopeguard::ScopeGuard<hashbrown::raw::RawTableInner, {closure@hashbrown::raw::RawTableInner::prepare_resize<std::alloc::Global>::{closure#0}}> as std::ops::Drop>::drop [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -1530,7 +1530,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::alloc::Global as std::alloc::Allocator>::allocate
+fn <std::alloc::Global as std::alloc::Allocator>::allocate [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -1554,7 +1554,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::alloc::Global as std::alloc::Allocator>::deallocate
+fn <std::alloc::Global as std::alloc::Allocator>::deallocate [hint]
     inc     qword ptr [jit_record]
     jns     L5
 L0:
@@ -1594,7 +1594,7 @@ L5:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@bench/hashmap.rs:24:43: 24:50}>
+fn <std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@bench/hashmap.rs:24:43: 24:50}> [hint]
     inc     qword ptr [jit_record]
     jns     L8
 L0:
@@ -1700,7 +1700,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::hash::DefaultHasher as std::hash::Hasher>::finish
+fn <std::hash::DefaultHasher as std::hash::Hasher>::finish [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -1719,7 +1719,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::hash::DefaultHasher as std::hash::Hasher>::write
+fn <std::hash::DefaultHasher as std::hash::Hasher>::write [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -1740,7 +1740,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::hash::DefaultHasher as std::hash::Hasher>::write_str
+fn <std::hash::DefaultHasher as std::hash::Hasher>::write_str [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -1761,7 +1761,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::hash::DefaultHasher as std::hash::Hasher>::write_u64
+fn <std::hash::DefaultHasher as std::hash::Hasher>::write_u64 [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -1784,7 +1784,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::hash::RandomState as std::hash::BuildHasher>::build_hasher
+fn <std::hash::RandomState as std::hash::BuildHasher>::build_hasher [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -1955,7 +1955,7 @@ L4:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::iter::StepBy<std::ops::Range<u64>> as std::iter::IntoIterator>::into_iter
+fn <std::iter::StepBy<std::ops::Range<u64>> as std::iter::IntoIterator>::into_iter [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -1990,7 +1990,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::iter::StepBy<std::ops::Range<u64>> as std::iter::Iterator>::next
+fn <std::iter::StepBy<std::ops::Range<u64>> as std::iter::Iterator>::next [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -2009,7 +2009,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::ops::Range<u32> as std::iter::IntoIterator>::into_iter
+fn <std::ops::Range<u32> as std::iter::IntoIterator>::into_iter [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -2027,7 +2027,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::ops::Range<u32> as std::iter::range::RangeIteratorImpl>::spec_next
+fn <std::ops::Range<u32> as std::iter::range::RangeIteratorImpl>::spec_next [hint]
     inc     qword ptr [jit_record]
     jns     L3
 L0:
@@ -2071,7 +2071,7 @@ L3:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::ops::Range<u64> as std::iter::IntoIterator>::into_iter
+fn <std::ops::Range<u64> as std::iter::IntoIterator>::into_iter [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -2091,7 +2091,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::ops::Range<u64> as std::iter::Iterator>::step_by
+fn <std::ops::Range<u64> as std::iter::Iterator>::step_by [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -2119,7 +2119,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::ops::Range<u64> as std::iter::range::RangeIteratorImpl>::spec_next
+fn <std::ops::Range<u64> as std::iter::range::RangeIteratorImpl>::spec_next [hint]
     inc     qword ptr [jit_record]
     jns     L3
 L0:
@@ -2163,7 +2163,7 @@ L3:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::string::String as std::cmp::PartialEq>::eq
+fn <std::string::String as std::cmp::PartialEq>::eq [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -2186,7 +2186,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <std::string::String as std::hash::Hash>::hash::<std::hash::DefaultHasher>
+fn <std::string::String as std::hash::Hash>::hash::<std::hash::DefaultHasher> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -2470,7 +2470,7 @@ L3:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <u32 as std::iter::Step>::forward_unchecked
+fn <u32 as std::iter::Step>::forward_unchecked [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -2538,7 +2538,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <u64 as std::iter::Step>::forward_unchecked
+fn <u64 as std::iter::Step>::forward_unchecked [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -2568,7 +2568,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <u8 as core::slice::cmp::SlicePartialEq<u8>>::equal_same_length
+fn <u8 as core::slice::cmp::SlicePartialEq<u8>>::equal_same_length [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -2595,7 +2595,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <u8 as std::slice::<impl [T]>::to_vec_in::ConvertVec>::to_vec::<std::alloc::Global>
+fn <u8 as std::slice::<impl [T]>::to_vec_in::ConvertVec>::to_vec::<std::alloc::Global> [hint]
     inc     qword ptr [jit_record]
     jns     L18
 L0:
@@ -2740,7 +2740,7 @@ L18:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <usize as std::cmp::Ord>::max
+fn <usize as std::cmp::Ord>::max [hint]
     inc     qword ptr [jit_record]
     jns     L13
 L0:
@@ -2820,7 +2820,7 @@ L13:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <usize as std::cmp::Ord>::min
+fn <usize as std::cmp::Ord>::min [hint]
     inc     qword ptr [jit_record]
     jns     L13
 L0:
@@ -2900,7 +2900,7 @@ L13:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <usize as std::default::Default>::default
+fn <usize as std::default::Default>::default [always]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -2914,7 +2914,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn <usize as std::slice::SliceIndex<[T]>>::get_unchecked::precondition_check
+fn <usize as std::slice::SliceIndex<[T]>>::get_unchecked::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -3416,7 +3416,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn alloc::raw_vec::RawVecInner::with_capacity_in
+fn alloc::raw_vec::RawVecInner::with_capacity_in [hint]
     inc     qword ptr [jit_record]
     jns     L10
 L0:
@@ -3500,7 +3500,7 @@ L10:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::core_arch::simd::Simd::<i8, 16>::splat
+fn core::core_arch::simd::Simd::<i8, 16>::splat [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -3524,7 +3524,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::core_arch::x86::<impl core::core_arch::simd::Simd<i8, 16>>::as_m128i
+fn core::core_arch::x86::<impl core::core_arch::simd::Simd<i8, 16>>::as_m128i [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -3555,7 +3555,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::fmt::rt::Argument::<'_>::new_display::<u32>
+fn core::fmt::rt::Argument::<'_>::new_display::<u32> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -3582,7 +3582,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::fmt::rt::Argument::<'_>::new_display::<u64>
+fn core::fmt::rt::Argument::<'_>::new_display::<u64> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -3609,7 +3609,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::fmt::rt::Argument::<'_>::new_display::<usize>
+fn core::fmt::rt::Argument::<'_>::new_display::<usize> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -3636,7 +3636,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::hash::impls::<impl std::hash::Hash for &std::string::String>::hash::<std::hash::DefaultHasher>
+fn core::hash::impls::<impl std::hash::Hash for &std::string::String>::hash::<std::hash::DefaultHasher> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -3656,7 +3656,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::hash::impls::<impl std::hash::Hash for &u64>::hash::<std::hash::DefaultHasher>
+fn core::hash::impls::<impl std::hash::Hash for &u64>::hash::<std::hash::DefaultHasher> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -3676,7 +3676,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::hash::impls::<impl std::hash::Hash for u64>::hash::<std::hash::DefaultHasher>
+fn core::hash::impls::<impl std::hash::Hash for u64>::hash::<std::hash::DefaultHasher> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -3696,7 +3696,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::hash::sip::Hasher::<core::hash::sip::Sip13Rounds>::reset
+fn core::hash::sip::Hasher::<core::hash::sip::Sip13Rounds>::reset [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -3749,7 +3749,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::hash::sip::u8to64_le
+fn core::hash::sip::u8to64_le [hint]
     inc     qword ptr [jit_record]
     jns     L16
 L0:
@@ -3973,7 +3973,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::io::error::repr::decode_repr::<&core::io::error::Custom, {closure@core::io::error::repr::Repr::data::{closure#0}}>
+fn core::io::error::repr::decode_repr::<&core::io::error::Custom, {closure@core::io::error::repr::Repr::data::{closure#0}}> [hint]
     inc     qword ptr [jit_record]
     jns     L30
 L0:
@@ -4170,7 +4170,7 @@ L30:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::io::error::repr::decode_repr::<core::io::error::CustomOwner, {closure@<core::io::error::repr::Repr as std::ops::Drop>::drop::{closure#0}}>
+fn core::io::error::repr::decode_repr::<core::io::error::CustomOwner, {closure@<core::io::error::repr::Repr as std::ops::Drop>::drop::{closure#0}}> [hint]
     inc     qword ptr [jit_record]
     jns     L30
 L0:
@@ -4485,7 +4485,7 @@ L12:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::num::<impl u32>::unchecked_add::precondition_check
+fn core::num::<impl u32>::unchecked_add::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -4528,7 +4528,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::num::<impl u64>::unchecked_add::precondition_check
+fn core::num::<impl u64>::unchecked_add::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -4571,7 +4571,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::num::<impl u64>::wrapping_add
+fn core::num::<impl u64>::wrapping_add [always]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -4589,7 +4589,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::num::<impl u64>::wrapping_mul
+fn core::num::<impl u64>::wrapping_mul [always]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -4607,7 +4607,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::num::<impl usize>::unchecked_add::precondition_check
+fn core::num::<impl usize>::unchecked_add::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -4651,7 +4651,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn core::ub_checks::maybe_is_nonoverlapping::runtime
+fn core::ub_checks::maybe_is_nonoverlapping::runtime [hint]
     inc     qword ptr [jit_record]
     jns     L4
 L0:
@@ -4711,7 +4711,7 @@ L4:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn hashbrown::control::group::sse2::Group::convert_special_to_empty_and_full_to_deleted
+fn hashbrown::control::group::sse2::Group::convert_special_to_empty_and_full_to_deleted [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -4775,7 +4775,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn hashbrown::map::HashMap::<u64, u64, std::hash::RandomState>::get::<u64>
+fn hashbrown::map::HashMap::<u64, u64, std::hash::RandomState>::get::<u64> [hint]
     inc     qword ptr [jit_record]
     jns     L17
 L0:
@@ -5254,7 +5254,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn hashbrown::raw::FullBucketsIndices::next_impl
+fn hashbrown::raw::FullBucketsIndices::next_impl [always]
     inc     qword ptr [jit_record]
     jns     L8
 L0:
@@ -6326,7 +6326,7 @@ L35:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>>::rustc_entry::{closure#0}}>
+fn hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>>::rustc_entry::{closure#0}}> [hint]
     inc     qword ptr [jit_record]
     jns     L19
 L0:
@@ -6966,7 +6966,7 @@ L18:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::RandomState>::{closure#0}}>
+fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::RandomState>::{closure#0}}> [never, cold]
     inc     qword ptr [jit_record]
     jns     L6
 L0:
@@ -7379,7 +7379,7 @@ L14:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::map::equivalent_key<u64, u64, u64>::{closure#0}}>
+fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::map::equivalent_key<u64, u64, u64>::{closure#0}}> [hint]
     inc     qword ptr [jit_record]
     jns     L19
 L0:
@@ -7653,7 +7653,7 @@ L24:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::RandomState>>::rustc_entry::{closure#0}}>
+fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::RandomState>>::rustc_entry::{closure#0}}> [hint]
     inc     qword ptr [jit_record]
     jns     L19
 L0:
@@ -8254,7 +8254,7 @@ L18:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn hashbrown::raw::RawTable::<(u64, u64)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::RandomState>::{closure#0}}>
+fn hashbrown::raw::RawTable::<(u64, u64)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::RandomState>::{closure#0}}> [never, cold]
     inc     qword ptr [jit_record]
     jns     L6
 L0:
@@ -9002,7 +9002,7 @@ L8:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn hashbrown::raw::RawTableInner::erase
+fn hashbrown::raw::RawTableInner::erase [hint]
     inc     qword ptr [jit_record]
     jns     L9
 L0:
@@ -9172,7 +9172,7 @@ L9:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn hashbrown::raw::RawTableInner::fallible_with_capacity::<std::alloc::Global>
+fn hashbrown::raw::RawTableInner::fallible_with_capacity::<std::alloc::Global> [hint]
     inc     qword ptr [jit_record]
     jns     L16
 L0:
@@ -9350,7 +9350,7 @@ L16:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn hashbrown::raw::RawTableInner::find_inner
+fn hashbrown::raw::RawTableInner::find_inner [always]
     inc     qword ptr [jit_record]
     jns     L22
 L0:
@@ -9576,7 +9576,7 @@ L22:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn hashbrown::raw::RawTableInner::find_insert_index
+fn hashbrown::raw::RawTableInner::find_insert_index [hint]
     inc     qword ptr [jit_record]
     jns     L13
 L0:
@@ -9687,7 +9687,7 @@ L13:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn hashbrown::raw::RawTableInner::find_insert_index_in_group
+fn hashbrown::raw::RawTableInner::find_insert_index_in_group [hint]
     inc     qword ptr [jit_record]
     jns     L8
 L0:
@@ -9778,7 +9778,7 @@ L8:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn hashbrown::raw::RawTableInner::fix_insert_index
+fn hashbrown::raw::RawTableInner::fix_insert_index [hint]
     inc     qword ptr [jit_record]
     jns     L13
 L0:
@@ -10133,7 +10133,7 @@ L27:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn hashbrown::raw::RawTableInner::prepare_rehash_in_place
+fn hashbrown::raw::RawTableInner::prepare_rehash_in_place [hint]
     inc     qword ptr [jit_record]
     jns     L19
 L0:
@@ -10412,7 +10412,7 @@ L8:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn hashbrown::raw::RawTableInner::rehash_in_place
+fn hashbrown::raw::RawTableInner::rehash_in_place [hint]
     inc     qword ptr [jit_record]
     jns     L45
 L0:
@@ -10997,7 +10997,7 @@ L15:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn hashbrown::raw::RawTableInner::reserve_rehash_inner::<std::alloc::Global>
+fn hashbrown::raw::RawTableInner::reserve_rehash_inner::<std::alloc::Global> [always]
     inc     qword ptr [jit_record]
     jns     L15
 L0:
@@ -11134,7 +11134,7 @@ L15:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn hashbrown::raw::RawTableInner::resize_inner::<std::alloc::Global>
+fn hashbrown::raw::RawTableInner::resize_inner::<std::alloc::Global> [always]
     inc     qword ptr [jit_record]
     jns     L26
 L0:
@@ -11558,7 +11558,7 @@ L26:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn hashbrown::raw::TableLayout::calculate_layout_for
+fn hashbrown::raw::TableLayout::calculate_layout_for [hint]
     inc     qword ptr [jit_record]
     jns     L17
 L0:
@@ -11733,7 +11733,7 @@ L17:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn hashbrown::raw::capacity_to_buckets
+fn hashbrown::raw::capacity_to_buckets [hint]
     inc     qword ptr [jit_record]
     jns     L42
 L0:
@@ -12926,7 +12926,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::alloc::Global::alloc_impl_runtime
+fn std::alloc::Global::alloc_impl_runtime [hint]
     inc     qword ptr [jit_record]
     jns     L18
 L0:
@@ -13073,7 +13073,7 @@ L18:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::arch::x86_64::__m128i::as_i8x16
+fn std::arch::x86_64::__m128i::as_i8x16 [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -13104,7 +13104,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::char::encode_utf8_raw
+fn std::char::encode_utf8_raw [hint]
     inc     qword ptr [jit_record]
     jns     L16
 L0:
@@ -13221,7 +13221,7 @@ L16:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::char::encode_utf8_raw::do_panic::runtime
+fn std::char::encode_utf8_raw::do_panic::runtime [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -13270,7 +13270,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::char::encode_utf8_raw_unchecked
+fn std::char::encode_utf8_raw_unchecked [hint]
     inc     qword ptr [jit_record]
     jns     L16
 L0:
@@ -13429,7 +13429,7 @@ L16:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::cmp::impls::<impl std::cmp::PartialEq for u64>::eq
+fn std::cmp::impls::<impl std::cmp::PartialEq for u64>::eq [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -13450,7 +13450,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::cmp::impls::<impl std::cmp::PartialOrd for u32>::lt
+fn std::cmp::impls::<impl std::cmp::PartialOrd for u32>::lt [always]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -13471,7 +13471,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::cmp::impls::<impl std::cmp::PartialOrd for u64>::lt
+fn std::cmp::impls::<impl std::cmp::PartialOrd for u64>::lt [always]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -13492,7 +13492,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt
+fn std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt [always]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -13513,7 +13513,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::collections::HashMap::<std::string::String, usize>::entry
+fn std::collections::HashMap::<std::string::String, usize>::entry [hint]
     inc     qword ptr [jit_record]
     jns     L6
 L0:
@@ -13607,7 +13607,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::collections::HashMap::<std::string::String, usize>::new
+fn std::collections::HashMap::<std::string::String, usize>::new [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -13652,7 +13652,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::collections::HashMap::<u64, u64>::entry
+fn std::collections::HashMap::<u64, u64>::entry [hint]
     inc     qword ptr [jit_record]
     jns     L6
 L0:
@@ -13713,7 +13713,7 @@ L6:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::collections::HashMap::<u64, u64>::get::<u64>
+fn std::collections::HashMap::<u64, u64>::get::<u64> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -13751,7 +13751,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::collections::HashMap::<u64, u64>::new
+fn std::collections::HashMap::<u64, u64>::new [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -13796,7 +13796,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::collections::HashMap::<u64, u64>::retain::<{closure@bench/hashmap.rs:23:16: 23:22}>
+fn std::collections::HashMap::<u64, u64>::retain::<{closure@bench/hashmap.rs:23:16: 23:22}> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -13849,7 +13849,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::collections::hash_map::Entry::<'_, std::string::String, usize>::or_default
+fn std::collections::hash_map::Entry::<'_, std::string::String, usize>::or_default [hint]
     inc     qword ptr [jit_record]
     jns     L40
 L0:
@@ -14100,7 +14100,7 @@ L40:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::collections::hash_map::Entry::<'_, u64, u64>::or_insert
+fn std::collections::hash_map::Entry::<'_, u64, u64>::or_insert [hint]
     inc     qword ptr [jit_record]
     jns     L36
 L0:
@@ -14305,7 +14305,7 @@ L36:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::fmt::Arguments::<'_>::as_statically_known_str
+fn std::fmt::Arguments::<'_>::as_statically_known_str [hint]
     inc     qword ptr [jit_record]
     jns     L13
 L0:
@@ -14410,7 +14410,7 @@ L13:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::fmt::Arguments::<'_>::new::<4, 1>
+fn std::fmt::Arguments::<'_>::new::<4, 1> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -14430,7 +14430,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::fmt::Arguments::<'_>::new::<59, 6>
+fn std::fmt::Arguments::<'_>::new::<59, 6> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -14450,7 +14450,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::fmt::format
+fn std::fmt::format [hint]
     inc     qword ptr [jit_record]
     jns     L11
 L0:
@@ -14579,7 +14579,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::hash::RandomState::new::KEYS::__rust_std_internal_init_fn
+fn std::hash::RandomState::new::KEYS::__rust_std_internal_init_fn [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -14659,7 +14659,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::hint::assert_unchecked::precondition_check
+fn std::hint::assert_unchecked::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -14695,7 +14695,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::hint::black_box::<u64>
+fn std::hint::black_box::<u64> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -14711,7 +14711,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::hint::must_use::<std::string::String>
+fn std::hint::must_use::<std::string::String> [always]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -14744,7 +14744,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::hint::unreachable_unchecked::precondition_check
+fn std::hint::unreachable_unchecked::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -14774,7 +14774,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::intrinsics::cold_path
+fn std::intrinsics::cold_path [cold]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -14874,7 +14874,7 @@ L5:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::intrinsics::typed_swap_nonoverlapping::<hashbrown::raw::RawTableInner>
+fn std::intrinsics::typed_swap_nonoverlapping::<hashbrown::raw::RawTableInner> [hint]
     inc     qword ptr [jit_record]
     jns     L4
 L0:
@@ -14913,7 +14913,7 @@ L4:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::io::Error::is_interrupted
+fn std::io::Error::is_interrupted [hint]
     inc     qword ptr [jit_record]
     jns     L14
 L0:
@@ -15008,7 +15008,7 @@ L14:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::io::ErrorKind::from_prim
+fn std::io::ErrorKind::from_prim [hint]
     inc     qword ptr [jit_record]
     jns     L46
 L0:
@@ -15244,7 +15244,7 @@ L46:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::iter::StepBy::<std::ops::Range<u64>>::new
+fn std::iter::StepBy::<std::ops::Range<u64>>::new [hint]
     inc     qword ptr [jit_record]
     jns     L12
 L0:
@@ -15345,7 +15345,7 @@ L12:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::iter::StepBy::<std::ops::Range<usize>>::new
+fn std::iter::StepBy::<std::ops::Range<usize>>::new [hint]
     inc     qword ptr [jit_record]
     jns     L12
 L0:
@@ -15446,7 +15446,7 @@ L12:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::iter::adapters::step_by::step_by_spec::<impl std::iter::adapters::step_by::SpecRangeSetup<std::ops::Range<u64>> for std::ops::Range<u64>>::setup
+fn std::iter::adapters::step_by::step_by_spec::<impl std::iter::adapters::step_by::SpecRangeSetup<std::ops::Range<u64>> for std::ops::Range<u64>>::setup [hint]
     inc     qword ptr [jit_record]
     jns     L12
 L0:
@@ -15540,7 +15540,7 @@ L12:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::iter::adapters::step_by::step_by_spec::<impl std::iter::adapters::step_by::SpecRangeSetup<std::ops::Range<usize>> for std::ops::Range<usize>>::setup
+fn std::iter::adapters::step_by::step_by_spec::<impl std::iter::adapters::step_by::SpecRangeSetup<std::ops::Range<usize>> for std::ops::Range<usize>>::setup [hint]
     inc     qword ptr [jit_record]
     jns     L12
 L0:
@@ -15634,7 +15634,7 @@ L12:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::iter::adapters::step_by::step_by_spec::<impl std::iter::adapters::step_by::StepByImpl<std::ops::Range<u64>> for std::iter::StepBy<std::ops::Range<u64>>>::spec_next
+fn std::iter::adapters::step_by::step_by_spec::<impl std::iter::adapters::step_by::StepByImpl<std::ops::Range<u64>> for std::iter::StepBy<std::ops::Range<u64>>>::spec_next [hint]
     inc     qword ptr [jit_record]
     jns     L13
 L0:
@@ -15727,7 +15727,7 @@ L13:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::iter::range::<impl std::iter::Iterator for std::ops::Range<u32>>::next
+fn std::iter::range::<impl std::iter::Iterator for std::ops::Range<u32>>::next [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -15746,7 +15746,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::iter::range::<impl std::iter::Iterator for std::ops::Range<u64>>::next
+fn std::iter::range::<impl std::iter::Iterator for std::ops::Range<u64>>::next [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -15765,7 +15765,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::mem::size_of::<std::arch::x86_64::__m128i>
+fn std::mem::size_of::<std::arch::x86_64::__m128i> [always]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -15779,7 +15779,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::num::NonZero::<T>::new_unchecked::precondition_check
+fn std::num::NonZero::<T>::new_unchecked::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -15809,7 +15809,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::option::Option::<&str>::map_or_else::<std::string::String, {closure@std::fmt::format::{closure#0}}, for<'a> fn(&'a str) -> <str as std::borrow::ToOwned>::Owned {<str as std::borrow::ToOwned>::to_owned}>
+fn std::option::Option::<&str>::map_or_else::<std::string::String, {closure@std::fmt::format::{closure#0}}, for<'a> fn(&'a str) -> <str as std::borrow::ToOwned>::Owned {<str as std::borrow::ToOwned>::to_owned}> [hint]
     inc     qword ptr [jit_record]
     jns     L17
 L0:
@@ -15916,7 +15916,7 @@ L17:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::NonNull::<T>::new_unchecked::precondition_check
+fn std::ptr::NonNull::<T>::new_unchecked::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -15955,7 +15955,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::const_ptr::<impl *const ()>::is_aligned_to
+fn std::ptr::const_ptr::<impl *const ()>::is_aligned_to [hint]
     inc     qword ptr [jit_record]
     jns     L8
 L0:
@@ -16028,7 +16028,7 @@ L8:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::copy_nonoverlapping::<u8>
+fn std::ptr::copy_nonoverlapping::<u8> [always]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -16069,7 +16069,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::copy_nonoverlapping::precondition_check
+fn std::ptr::copy_nonoverlapping::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L40
 L0:
@@ -16752,7 +16752,7 @@ L14:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::replace::precondition_check
+fn std::ptr::replace::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L19
 L0:
@@ -16870,7 +16870,7 @@ L19:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::swap_chunk::<1>
+fn std::ptr::swap_chunk::<1> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -16896,7 +16896,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::swap_chunk::<2>
+fn std::ptr::swap_chunk::<2> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -16922,7 +16922,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::swap_chunk::<4>
+fn std::ptr::swap_chunk::<4> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -16948,7 +16948,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::swap_chunk::<8>
+fn std::ptr::swap_chunk::<8> [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -16974,7 +16974,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::swap_nonoverlapping::<hashbrown::raw::RawTableInner>
+fn std::ptr::swap_nonoverlapping::<hashbrown::raw::RawTableInner> [hint]
     inc     qword ptr [jit_record]
     jns     L9
 L0:
@@ -17057,7 +17057,7 @@ L9:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::swap_nonoverlapping::precondition_check
+fn std::ptr::swap_nonoverlapping::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L40
 L0:
@@ -17281,7 +17281,7 @@ L40:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::swap_nonoverlapping_bytes
+fn std::ptr::swap_nonoverlapping_bytes [hint]
     inc     qword ptr [jit_record]
     jns     L3
 L0:
@@ -17420,7 +17420,7 @@ L11:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::ptr::swap_nonoverlapping_bytes::swap_nonoverlapping_short
+fn std::ptr::swap_nonoverlapping_bytes::swap_nonoverlapping_short [hint]
     inc     qword ptr [jit_record]
     jns     L4
 L0:
@@ -17559,7 +17559,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::slice::from_raw_parts::precondition_check
+fn std::slice::from_raw_parts::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L26
 L0:
@@ -17720,7 +17720,7 @@ L26:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::slice::from_raw_parts_mut::precondition_check
+fn std::slice::from_raw_parts_mut::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L26
 L0:
@@ -17881,7 +17881,7 @@ L26:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::str::<impl std::borrow::ToOwned for str>::to_owned
+fn std::str::<impl std::borrow::ToOwned for str>::to_owned [hint]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -17917,7 +17917,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+fn std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> [never]
     inc     qword ptr [jit_record]
     jns     L1
 L0:
@@ -17932,7 +17932,7 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::thread::LocalKey::<std::cell::Cell<(u64, u64)>>::try_with::<{closure@std::hash::RandomState::new::{closure#0}}, std::hash::RandomState>
+fn std::thread::LocalKey::<std::cell::Cell<(u64, u64)>>::try_with::<{closure@std::hash::RandomState::new::{closure#0}}, std::hash::RandomState> [hint]
     inc     qword ptr [jit_record]
     jns     L18
 L0:
@@ -18090,7 +18090,7 @@ L3:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::thread::local_impl::LazyStorage::<std::cell::Cell<(u64, u64)>, !>::get_or_init::<fn() -> std::cell::Cell<(u64, u64)> {std::hash::RandomState::new::KEYS::__rust_std_internal_init_fn}>
+fn std::thread::local_impl::LazyStorage::<std::cell::Cell<(u64, u64)>, !>::get_or_init::<fn() -> std::cell::Cell<(u64, u64)> {std::hash::RandomState::new::KEYS::__rust_std_internal_init_fn}> [hint]
     inc     qword ptr [jit_record]
     jns     L12
 L0:
@@ -18166,7 +18166,7 @@ L12:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::thread::local_impl::LazyStorage::<std::cell::Cell<(u64, u64)>, !>::get_or_init_slow::<fn() -> std::cell::Cell<(u64, u64)> {std::hash::RandomState::new::KEYS::__rust_std_internal_init_fn}>
+fn std::thread::local_impl::LazyStorage::<std::cell::Cell<(u64, u64)>, !>::get_or_init_slow::<fn() -> std::cell::Cell<(u64, u64)> {std::hash::RandomState::new::KEYS::__rust_std_internal_init_fn}> [cold]
     inc     qword ptr [jit_record]
     jns     L32
 L0:
@@ -18418,7 +18418,7 @@ L32:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::vec::Vec::<T, A>::set_len::precondition_check
+fn std::vec::Vec::<T, A>::set_len::precondition_check [hint]
     inc     qword ptr [jit_record]
     jns     L2
 L0:
@@ -18456,7 +18456,7 @@ L2:
     call    qword ptr [r11+8]
     jmp     L0
 
-fn std::vec::partial_eq::<impl std::cmp::PartialEq for std::vec::Vec<u8>>::eq
+fn std::vec::partial_eq::<impl std::cmp::PartialEq for std::vec::Vec<u8>>::eq [hint]
     inc     qword ptr [jit_record]
     jns     L3
 L0:
