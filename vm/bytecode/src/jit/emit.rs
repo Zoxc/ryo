@@ -508,7 +508,8 @@ impl<'a> E<'a> {
         let alloc_ = if self.mode.frame_pointer { size } else { size + 8 };
         if size >= PROBE_FROM {
             self.a.x().mov_imm(4, Rm::R(R::Rax), alloc_ as u64);
-            self.a.x().call(Ref::Probe);
+            let far = self.mode.far_rt;
+            self.a.x().call_rt(Ref::Probe, far);
         }
         if alloc_ != 0 {
             self.a.x().alu_imm(Alu::Sub, 8, Rm::R(R::Rsp), alloc_ as i64);
@@ -855,7 +856,8 @@ impl<'a> E<'a> {
                     self.hcall_arg(&h, e.data[j] as usize, ARGS[nin + j])?;
                 }
                 let hh = h.h;
-                self.call_with_site(h.site, pad, |x| x.call(Ref::RegHandler(hh)));
+                let far = self.mode.far_rt;
+                self.call_with_site(h.site, pad, |x| x.call_rt(Ref::RegHandler(hh), far));
                 let ms = res.iter().enumerate().filter_map(|(k, &v)| Some((self.dst(v)?, Src::R([R::Rax, R::Rdx][k])))).collect();
                 self.moves(ms);
             }
@@ -869,7 +871,8 @@ impl<'a> E<'a> {
                     self.hcall_arg(&h, k, ARGS[k])?;
                 }
                 let hh = h.h;
-                self.call_with_site(h.site, pad, |x| x.call(Ref::Handler(hh)));
+                let far = self.mode.far_rt;
+                self.call_with_site(h.site, pad, |x| x.call_rt(Ref::Handler(hh), far));
                 let nout = h.nout as usize;
                 if h.ret {
                     self.put(res[nout], R::Rax);
@@ -893,7 +896,7 @@ impl<'a> E<'a> {
                 let (callee, rest) = if c.target == CallTarget::Ptr { (Some(args[0]), &args[1..]) } else { (None, &args[..]) };
                 self.call_args(&c.regs, rest, callee);
                 match c.target {
-                    CallTarget::Func(g) => self.call_with_site(c.site, pad, |x| x.call(Ref::Func(g))),
+                    CallTarget::Func(g) => self.call_with_site(c.site, pad, |x| x.call_func(g)),
                     CallTarget::Sym(s) => self.call_with_site(c.site, pad, |x| x.call_mem(Mem::Rip(Ref::Sym(s)))),
                     CallTarget::SymInd(s) => {
                         self.a.x().mov(8, Rm::R(S1), Rm::M(Mem::Rip(Ref::Sym(s))));
@@ -1252,7 +1255,7 @@ impl<'a> E<'a> {
                 self.call_args(&call.regs, rest, callee);
                 self.epilogue();
                 match call.target {
-                    CallTarget::Func(g) => self.a.x().jmp(Ref::Func(g)),
+                    CallTarget::Func(g) => self.a.x().jmp_func(g),
                     CallTarget::Ptr => self.a.x().jmp_r(R::Rax),
                     _ => return Err(Unsupported("a tail call through a symbol")),
                 }

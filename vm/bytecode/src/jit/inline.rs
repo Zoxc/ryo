@@ -24,7 +24,7 @@ use alloc::vec::Vec;
 use core::fmt::Write;
 
 use super::ir::*;
-use crate::full::{Func as FuncIdx, Opcode, Sym};
+use crate::full::{Func as FuncIdx, Opcode};
 
 /// What the inliner needs from the JIT.
 pub trait Env {
@@ -33,9 +33,10 @@ pub trait Env {
     /// Function `g` of the root's image as [`super::ir_of`] gives it, or `None` if it can't
     /// be built (the JIT caches them).
     fn ir(&mut self, g: FuncIdx) -> Option<Rc<Func>>;
-    /// The symbol to call function `g` through instead of directly, if any (the JIT's call
-    /// slots, for functions not compiled yet).
-    fn retarget(&mut self, g: FuncIdx) -> Option<Sym>;
+    /// The target to call `t` (a function of the image or a symbol) by instead, if any: the
+    /// JIT's call forms (a function operand with an [`crate::asm::FUNC_KINDS`] bit, through a
+    /// call slot, directly, or through `r11`). Not asked for the root's calls of itself.
+    fn retarget(&mut self, t: CallTarget) -> Option<CallTarget>;
     /// How many times function `g`'s AOT code was called and how many loop iterations it
     /// ran (its JIT record's counters), if known.
     fn counts(&self, g: FuncIdx) -> Option<(u64, u64)>;
@@ -944,19 +945,28 @@ pub fn rebuild_preds(f: &mut Func) {
     }
 }
 
-/// Calls of functions `env` says to call through a symbol go through it.
+/// Calls and tail calls of functions and symbols get the targets `env` gives them
+/// ([`Env::retarget`]).
 pub fn retarget(f: &mut Func, env: &mut dyn Env) {
     let root = env.root();
+    let mut new = |t: CallTarget| match t {
+        CallTarget::Func(g) if g == root => None,
+        CallTarget::Func(_) | CallTarget::Sym(_) => env.retarget(t),
+        _ => None,
+    };
     for b in live_blocks(f) {
         for k in 0..f.blocks[b.idx()].insts.len() {
             let i = f.blocks[b.idx()].insts[k];
             if let Op::Call(c) = &mut f.insts[i.idx()].op
-                && let CallTarget::Func(g) = c.target
-                && g != root
-                && let Some(s) = env.retarget(g)
+                && let Some(t) = new(c.target)
             {
-                c.target = CallTarget::Sym(s);
+                c.target = t;
             }
+        }
+        if let Term::TailCall { call, .. } = &mut f.blocks[b.idx()].term
+            && let Some(t) = new(call.target)
+        {
+            call.target = t;
         }
     }
 }

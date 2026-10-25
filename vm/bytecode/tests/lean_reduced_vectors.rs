@@ -47,14 +47,14 @@ impl Rng {
 /// Every valid mode (as in `asm.rs`): the eight with a frame pointer, the two without, then
 /// the same ten with counters.
 const MODES: [Mode; 20] = {
-    let mut m = [Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false, counters: false }; 20];
+    let mut m = [Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false, counters: false, far_rt: false }; 20];
     let mut i = 0;
     while i < 8 {
-        m[i] = Mode { fp_arg: i & 1 != 0, frame_pointer: true, align_loops: i & 2 != 0, pe: i & 4 != 0, counters: false };
+        m[i] = Mode { fp_arg: i & 1 != 0, frame_pointer: true, align_loops: i & 2 != 0, pe: i & 4 != 0, counters: false, far_rt: false };
         i += 1;
     }
-    m[8] = Mode { fp_arg: true, frame_pointer: false, align_loops: false, pe: false, counters: false };
-    m[9] = Mode { fp_arg: true, frame_pointer: false, align_loops: true, pe: false, counters: false };
+    m[8] = Mode { fp_arg: true, frame_pointer: false, align_loops: false, pe: false, counters: false, far_rt: false };
+    m[9] = Mode { fp_arg: true, frame_pointer: false, align_loops: true, pe: false, counters: false, far_rt: false };
     i = 10;
     while i < 20 {
         m[i] = Mode { counters: true, ..m[i - 10] };
@@ -779,7 +779,7 @@ fn handwritten(rng: &mut Rng, out: &mut Out) {
     // A dead hint before a padded loop head, and a scope there.
     for counters in [false, true] {
         use asm::Opnd::{Imm, Neg, Slot, Target};
-        let mode = Mode { fp_arg: false, frame_pointer: true, align_loops: true, pe: false, counters };
+        let mode = Mode { fp_arg: false, frame_pointer: true, align_loops: true, pe: false, counters, far_rt: false };
         let mut a = asm::Asm::new(mode);
         let (empty, head) = (a.label(), a.label());
         a.insn(Opcode::BrEqImmW64, &[Slot(-8), Imm(0), Neg(false), Target(empty)]);

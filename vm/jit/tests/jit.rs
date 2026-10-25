@@ -186,6 +186,50 @@ fn recursion() {
 /// Panics unwind through JIT frames, and their landing pads run.
 #[test]
 fn unwinding() {
+    unwinding_with(&syms());
+}
+
+/// As [`unwinding`], with `boom` and `ret_addr` far from the JIT code (beyond `rel32` reach):
+/// the JIT code calls them through `r11`, and the panic unwinds through the far call.
+#[test]
+fn unwinding_through_far_calls() {
+    unwinding_with(&far_syms());
+}
+
+/// Native code more than 2 GiB from everything else, so that JIT code can't call it with a
+/// `rel32`: `ret_addr`'s code, and `boom` and `note` through `movabs rax, f; jmp rax`.
+fn far_syms() -> Vec<(&'static str, usize)> {
+    static FAR: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    let p = *FAR.get_or_init(|| {
+        unsafe extern "C" {
+            fn mmap(addr: *mut core::ffi::c_void, len: usize, prot: i32, flags: i32, fd: i32, off: i64) -> *mut core::ffi::c_void;
+        }
+        let near = ret_addr as *const () as usize;
+        for k in 1..64usize {
+            for hint in [near.wrapping_add(k << 33), near.wrapping_sub(k << 33)] {
+                let hint = hint & !0xfff;
+                // RWX, private, at `hint` (MAP_FIXED_NOREPLACE).
+                let p = unsafe { mmap(hint as *mut _, 4096, 7, 0x22 | 0x10_0000, -1, 0) };
+                if p as usize == hint {
+                    return hint;
+                }
+            }
+        }
+        panic!("no far address");
+    });
+    let code: &mut [u8] = unsafe { std::slice::from_raw_parts_mut(p as *mut u8, 64) };
+    // ret_addr at 0: `mov rax, [rsp]; ret`.
+    code[..5].copy_from_slice(&[0x48, 0x8b, 0x04, 0x24, 0xc3]);
+    // boom at 16 and note at 32: `movabs rax, f; jmp rax`.
+    for (at, f) in [(16, boom as *const () as usize), (32, note as *const () as usize)] {
+        code[at..at + 2].copy_from_slice(&[0x48, 0xb8]);
+        code[at + 2..at + 10].copy_from_slice(&(f as u64).to_le_bytes());
+        code[at + 10..at + 12].copy_from_slice(&[0xff, 0xe0]);
+    }
+    vec![("ret_addr", p), ("boom", p + 16), ("note", p + 32)]
+}
+
+fn unwinding_with(syms: &[(&str, usize)]) {
     init();
     let mut w = ImageWriter::new(unique_scid());
     let s_boom = w.symbol("boom", 0);
@@ -211,7 +255,7 @@ fn unwinding() {
     let mut f = func(a.done(), 48, 16, 8);
     f.cleanup = vec![CleanupEntry { offset: site, target: c }, CleanupEntry { offset: r, target: CONTINUE }];
     let ub = w.add_function(f);
-    let img = build(w, &syms());
+    let img = build(w, syms);
 
     for _ in 0..3 {
         let mut log = [0u64; 2];
@@ -317,6 +361,133 @@ fn calls_of_functions_compiled_later() {
     }
     // Not through the AOT entry, whose check would have counted.
     assert_eq!(img.counters(leaf), ctr);
+}
+
+/// `leaf() = where it runs`, through `ret_addr`.
+fn add_leaf(w: &mut ImageWriter, s_ret: Sym) -> Func {
+    let mut a = Asm::new();
+    a.i(Insn::CallSym { d: Slot(-16), sym: s_ret, k: 8, a: List::from_words(&[]) });
+    a.ret(Slot(-16), 8);
+    w.add_function(func(a.done(), 16, 0, 8))
+}
+
+/// `caller(out) = out[0] = leaf(), out[1] = where it runs` (out@16), `leaf` through the
+/// symbol `s_leaf`.
+fn add_sym_caller(w: &mut ImageWriter, s_leaf: Sym, s_ret: Sym) -> Func {
+    let mut a = Asm::new();
+    a.i(Insn::CallSym { d: Slot(-16), sym: s_leaf, k: 8, a: List::from_words(&[]) });
+    a.i(Insn::StoreW64 { m: Mem { p: Slot(16), k: 0 }, s: Slot(-16) });
+    a.i(Insn::CallSym { d: Slot(-16), sym: s_ret, k: 8, a: List::from_words(&[]) });
+    a.i(Insn::StoreW64 { m: Mem { p: Slot(16), k: 8 }, s: Slot(-16) });
+    a.ret(Slot(0), 0);
+    w.add_function(func(a.done(), 16, 8, 0))
+}
+
+/// Calls of another image's VM function: before it is compiled through its AOT entry (a call
+/// slot), after that in its JIT code, past its counter check, from code compiled before it
+/// (the slot, updated) and after it (directly). Three images.
+#[test]
+fn calls_across_images() {
+    init();
+    let mut w = ImageWriter::new(unique_scid());
+    let s_ret = w.symbol("ret_addr", 0);
+    let leaf = add_leaf(&mut w, s_ret);
+    let callee = build(w, &syms());
+    callee.trip_after(leaf, 1 << 40, 1 << 40);
+    let mut syms_b = syms();
+    syms_b.push(("leaf", callee.code(leaf) as usize));
+    let caller_img = |syms: &[(&str, usize)]| {
+        let mut w = ImageWriter::new(unique_scid());
+        let s_ret = w.symbol("ret_addr", 0);
+        let s_leaf = w.symbol("leaf", 0);
+        let f = add_sym_caller(&mut w, s_leaf, s_ret);
+        (build(w, syms), f)
+    };
+
+    // The caller compiles first: `leaf` runs in its AOT code, which counts.
+    let (a, f) = caller_img(&syms_b);
+    let mut out = [0u64; 2];
+    for _ in 0..3 {
+        ok::<_, ()>(a.id(f), (out.as_mut_ptr() as u64,));
+        assert!(in_jit(&a, f, out[1]), "caller ran at {:#x}", out[1]);
+        assert!(in_aot(&callee, leaf, out[0]), "leaf ran at {:#x}", out[0]);
+    }
+    assert!(callee.counters(leaf).0 > -(1 << 40) - 1, "leaf's AOT entry counts");
+    assert_eq!(state(&callee, leaf), JIT_COLD);
+
+    // `leaf` compiles: the caller's slot now holds its JIT code.
+    callee.trip_after(leaf, 0, 0);
+    let at = ok::<_, u64>(callee.id(leaf), ());
+    assert!(in_jit(&callee, leaf, at));
+    let ctr = callee.counters(leaf);
+    for _ in 0..3 {
+        ok::<_, ()>(a.id(f), (out.as_mut_ptr() as u64,));
+        assert!(in_jit(&callee, leaf, out[0]), "leaf ran at {:#x}", out[0]);
+    }
+
+    // A caller compiled after `leaf` calls its JIT code directly.
+    let (c, g) = caller_img(&syms_b);
+    for _ in 0..3 {
+        ok::<_, ()>(c.id(g), (out.as_mut_ptr() as u64,));
+        assert!(in_jit(&c, g, out[1]));
+        assert!(in_jit(&callee, leaf, out[0]), "leaf ran at {:#x}", out[0]);
+    }
+    // Neither through the AOT entry, whose check would have counted.
+    assert_eq!(callee.counters(leaf), ctr);
+}
+
+/// Tail calls of a function not compiled yet go through a call slot: its AOT code first,
+/// then its JIT code once it is published, past its counter check; a tail call compiled
+/// after it jumps to it directly.
+#[test]
+fn tail_calls_of_functions_compiled_later() {
+    init();
+    let mut w = ImageWriter::new(unique_scid());
+    let s_ret = w.symbol("ret_addr", 0);
+    let leaf = add_leaf(&mut w, s_ret);
+    // t1() = t2() = become leaf().
+    let mut tails = Vec::new();
+    for _ in 0..2 {
+        let mut a = Asm::new();
+        a.i(Insn::TailCall { f: leaf, a: List::from_words(&[]) });
+        tails.push(w.add_function(func(a.done(), 16, 0, 8)));
+    }
+    let img = build(w, &syms());
+    img.trip_after(leaf, 1 << 40, 1 << 40);
+    img.trip_after(tails[1], 1 << 40, 1 << 40);
+
+    for _ in 0..3 {
+        let at = ok::<_, u64>(img.id(tails[0]), ());
+        assert!(in_aot(&img, leaf, at), "leaf ran at {at:#x}");
+    }
+    assert_eq!(state(&img, tails[0]), JIT_DONE);
+    img.trip_after(leaf, 0, 0);
+    assert!(in_jit(&img, leaf, ok::<_, u64>(img.id(leaf), ())));
+    let ctr = img.counters(leaf);
+    img.trip_after(tails[1], 0, 0);
+    for &t in &tails {
+        for _ in 0..3 {
+            let at = ok::<_, u64>(img.id(t), ());
+            assert!(in_jit(&img, leaf, at), "leaf ran at {at:#x}");
+        }
+        assert_eq!(state(&img, t), JIT_DONE);
+    }
+    assert_eq!(img.counters(leaf), ctr);
+}
+
+/// Native code beyond `rel32` reach of the JIT code: called through `r11`, with the right
+/// return address.
+#[test]
+fn far_native_calls() {
+    init();
+    let mut w = ImageWriter::new(unique_scid());
+    let s_ret = w.symbol("ret_addr", 0);
+    let f = add_leaf(&mut w, s_ret);
+    let img = build(w, &far_syms());
+    for _ in 0..3 {
+        let at = ok::<_, u64>(img.id(f), ());
+        assert!(in_jit(&img, f, at), "returned to {at:#x}");
+    }
 }
 
 /// A loop head trips first: the function compiles, and the call that is running the loop in

@@ -51,7 +51,7 @@ fn vectors() -> String {
     s.push_str("def fdes : List Fde := [\n");
     let mut first = true;
     for fp in [false, true] {
-        let mode = Mode { fp_arg: true, frame_pointer: fp, align_loops: false, pe: false, counters: true };
+        let mode = Mode { fp_arg: true, frame_pointer: fp, align_loops: false, pe: false, counters: true, far_rt: false };
         for frame_size in [0u32, 8, 104, 112, 200, 4080, 4096, 70000] {
             for prologue in [0u32, 7] {
                 for (len, stub) in [(60u32, None), (300, Some(250)), (70000, Some(69990)), (40, Some(30))] {

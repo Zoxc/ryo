@@ -268,12 +268,24 @@ fn jit_dumps(exe: &Path, dir: &Path, aot: &str) -> Result<Vec<(&'static str, Str
     for (path, f, stem) in &funcs {
         let text = read(&format!("{stem}.code"))?;
         let local_ref = |g: &str| refs.get(&(f.to_string(), g.to_owned())).cloned().unwrap_or_else(|| format!("image.{g}"));
-        // The call slots, as the symbols the IR calls them by.
-        let slots: HashMap<&str, String> =
-            text.lines().filter_map(|l| l.strip_prefix("slot ")?.split_once(' ')).map(|(s, g)| (s, format!("{}.slot", local_ref(g)))).collect();
-        let local = |g: &str| slots.get(g).cloned().unwrap_or_else(|| local_ref(g));
+        // The retargeted callees, by the function operands the code and the IR call them by:
+        // the caller's name, `.slot` through a call slot and `.far` through `r11`.
+        let exts: HashMap<&str, String> = text
+            .lines()
+            .filter_map(|l| {
+                let mut w = l.strip_prefix("ext ")?.split(' ');
+                let (op, form, name) = (w.next()?, w.next()?, w.next()?);
+                let suffix = match form {
+                    "slot" => ".slot",
+                    "far" => ".far",
+                    _ => "",
+                };
+                Some((op, format!("{}{suffix}", local_ref(name))))
+            })
+            .collect();
+        let local = |g: &str| exts.get(g).cloned().unwrap_or_else(|| local_ref(g));
         for line in text.lines() {
-            if line.starts_with("slot ") {
+            if line.starts_with("ext ") {
                 continue;
             }
             if let Some(tier) = line.strip_prefix("tier ") {
@@ -285,17 +297,12 @@ fn jit_dumps(exe: &Path, dir: &Path, aot: &str) -> Result<Vec<(&'static str, Str
                 }
             } else if let Some(r) = line.strip_prefix("reloc ") {
                 let (at, to) = r.split_once(' ').ok_or("RYO_JIT_DUMP: bad reloc")?;
-                let to = match to.strip_prefix("slot ") {
-                    Some(g) => format!("{}.slot", local(g)),
-                    // The image's functions, symbols, sites, constants and data.
-                    None if ["fn", "sym", "site", "k", "data"]
-                        .iter()
-                        .any(|p| to.strip_prefix(p).is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))) =>
-                    {
-                        local(to)
-                    }
-                    None => to.to_owned(),
-                };
+                // The image's functions (and retargeted callees), symbols, sites, constants and
+                // data.
+                let image_ref = ["fn", "sym", "site", "k", "data"]
+                    .iter()
+                    .any(|p| to.strip_prefix(p).is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())));
+                let to = if image_ref { local(to) } else { to.to_owned() };
                 writeln!(code, "reloc {at} {to}").unwrap();
             } else {
                 writeln!(code, "{line}").unwrap();
@@ -464,7 +471,8 @@ fn disassemble(dump: &str) -> Result<String, String> {
 }
 
 /// Names the relocated operands of one function's instructions: each relocated field is a
-/// 4-byte branch or RIP-relative displacement within its instruction.
+/// 4-byte branch or RIP-relative displacement within its instruction, or the `imm64` of a
+/// call through `r11`.
 /// Other operands that name a position in the function (branch targets, a jump table) are
 /// named by its label.
 struct Relocs(Vec<(u32, String)>, HashMap<u64, String>);
@@ -482,8 +490,10 @@ impl iced_x86::SymbolResolver for Relocs {
         let near =
             insn.op_kinds().any(|k| matches!(k, iced_x86::OpKind::NearBranch16 | iced_x86::OpKind::NearBranch32 | iced_x86::OpKind::NearBranch64));
         // The relocated operand only, not an immediate of the same instruction.
+        // (Or the `imm64` of a `mov r11, imm64` before a call through `r11`.)
+        let imm64 = insn.op_kinds().any(|k| k == iced_x86::OpKind::Immediate64) && insn.immediate64() == address;
         let relocated =
-            (near && insn.near_branch_target() == address) || (insn.is_ip_rel_memory_operand() && insn.ip_rel_memory_address() == address);
+            (near && insn.near_branch_target() == address) || (insn.is_ip_rel_memory_operand() && insn.ip_rel_memory_address() == address) || imm64;
         if let Some((_, to)) = self.0.iter().find(|(at, _)| (start..end).contains(at))
             && relocated
         {

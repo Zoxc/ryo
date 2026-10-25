@@ -970,7 +970,7 @@ impl Asm {
                 ArgVal::Ro(ro) => self.pieces.push(Piece::LeaRo { reg: ARGS[reg], ro }),
             }
         }
-        self.maybe_site(Item::Call(Ref::Handler(op)), site);
+        self.maybe_site(rt_call(Ref::Handler(op), self.mode), site);
     }
 
     /// The direct island call `island(fp, ops)` through the symbol slot `isl`, `ops` the
@@ -1054,7 +1054,7 @@ impl Asm {
             }
         }
         let site = matches!(then, Then::Trap).then_some(id);
-        self.maybe_site(Item::Call(Ref::Handler(op)), site);
+        self.maybe_site(rt_call(Ref::Handler(op), self.mode), site);
         match then {
             Then::Next => {}
             Then::Branch { neg, target } => {
@@ -1149,7 +1149,7 @@ impl Asm {
                 let call = match op {
                     Opcode::Call => {
                         let Opnd::Func(f) = named("f") else { unreachable!() };
-                        Item::Call(Ref::Func(*f))
+                        func_call(*f, false)
                     }
                     Opcode::CallSym => Item::CallMem(Ref::Sym(sym("sym"))),
                     Opcode::CallSymInd => Item::CallMemRax,
@@ -1166,7 +1166,7 @@ impl Asm {
                 self.pieces.push(Piece::Epilogue);
                 if op == Opcode::TailCall {
                     let Opnd::Func(f) = named("f") else { unreachable!() };
-                    self.fixed(Item::Jmp(Ref::Func(*f)));
+                    self.fixed(func_call(*f, true));
                 } else {
                     self.fixed(Item::JmpRax);
                 }
@@ -1449,6 +1449,26 @@ impl Asm {
 /// of the frame hold `rdi` and `rsi` ([`Item::WinPrologue`], so `F` is at least 16), and the
 /// `sub` is of `F - 16`. A stack probe of the `sub`'s size comes before it for `F` from
 /// [`PROBE_FROM`].
+/// A call of a handler or the probe (`to`): `call rel32`, or with [`Mode::far_rt`] through
+/// `r11`.
+fn rt_call(to: Ref, mode: Mode) -> Item {
+    if mode.far_rt { Item::CallAbs(to) } else { Item::Call(to) }
+}
+
+/// The call (or with `tail` the jump) of the function operand `f`, which the JIT may mark
+/// with a [`super::FUNC_KINDS`] bit.
+fn func_call(f: Func, tail: bool) -> Item {
+    let to = Ref::Func(f);
+    match (f.0 & super::FUNC_KINDS, tail) {
+        (super::FUNC_SLOT, false) => Item::CallMem(to),
+        (super::FUNC_SLOT, true) => Item::JmpMem(to),
+        (super::FUNC_FAR, false) => Item::CallAbs(to),
+        (super::FUNC_FAR, true) => Item::JmpAbs(to),
+        (_, false) => Item::Call(to),
+        (_, true) => Item::Jmp(to),
+    }
+}
+
 pub(super) fn prologue(frame_size: u32, mode: Mode) -> Vec<Item> {
     let mut out = Vec::with_capacity(4);
     let alloc = if mode.pe {
@@ -1462,7 +1482,7 @@ pub(super) fn prologue(frame_size: u32, mode: Mode) -> Vec<Item> {
         frame_size + 8
     };
     if frame_size >= PROBE_FROM {
-        out.extend([Item::SetReg(Reg::Rax, alloc as u64), Item::Call(Ref::Probe)]);
+        out.extend([Item::SetReg(Reg::Rax, alloc as u64), rt_call(Ref::Probe, mode)]);
     }
     if alloc != 0 {
         out.push(Item::SubRsp(alloc));
@@ -1496,7 +1516,7 @@ pub(super) fn fp_item(reg: Reg, frame_size: u32, mode: Mode) -> Item {
 /// time.
 fn layouts(fp_arg: bool) -> &'static [Layout] {
     const fn all(fp_arg: bool) -> [Layout; crate::full::ALL_OPCODES.len()] {
-        let mode = Mode { fp_arg, frame_pointer: true, align_loops: false, pe: false, counters: false };
+        let mode = Mode { fp_arg, frame_pointer: true, align_loops: false, pe: false, counters: false, far_rt: false };
         let mut out = [layout(Opcode::Jmp, mode); crate::full::ALL_OPCODES.len()];
         let mut i = 0;
         while i < out.len() {
@@ -1687,9 +1707,9 @@ mod tests {
         // Every opcode with a handler has a layout (const-evaluable for all of them).
         for &op in crate::full::ALL_OPCODES {
             if super::super::has_handler(op) {
-                let l = layout(op, Mode { fp_arg: false, frame_pointer: true, align_loops: true, pe: false, counters: true });
+                let l = layout(op, Mode { fp_arg: false, frame_pointer: true, align_loops: true, pe: false, counters: true, far_rt: false });
                 assert!(l.regs as usize <= super::super::ARG_REGS);
-                let l = layout(op, Mode { fp_arg: true, frame_pointer: false, align_loops: true, pe: false, counters: true });
+                let l = layout(op, Mode { fp_arg: true, frame_pointer: false, align_loops: true, pe: false, counters: true, far_rt: false });
                 assert!(l.regs as usize <= super::super::ARG_REGS);
             }
         }

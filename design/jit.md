@@ -130,8 +130,14 @@ section; its fields and the counter checks and stubs that use it are in
   can't be re-linked). Direct calls of the JIT code (between JIT functions, and a
   function's calls of itself) target the instruction after it.
 - **Code memory**: mappings of 32 MiB, each within ±2 GiB of every image it serves (the
-  image's three sections, and the handlers), so the code keeps every field `rel32`, as in
-  AOT code. They are mapped read-write with `MAP_FIXED_NOREPLACE` at hints stepping away
+  image's three sections, and the handlers if it can), so the code keeps its image's fields
+  `rel32`, as in AOT code. A mapping that reaches the image and the handlers is preferred;
+  an image more than about 2 GiB from them (an executable whose `ryo_rt` is in a shared
+  std, `-Cprefer-dynamic`) gets one that reaches the image only, and its code calls the
+  handlers and the probe as `mov r11, imm64; call r11` (`Mode::far_rt`; `r11` is free at
+  every call: no argument, never allocated, the emitters' scratch). One mapping serves every
+  image it reaches, so images loaded close together (an executable's, or a library's) share
+  one, and images far apart get their own. They are mapped read-write with `MAP_FIXED_NOREPLACE` at hints stepping away
   from the image (a result out of reach is unmapped and the next hint tried). A function
   takes whole pages from a mapping's start: the entry prefix at byte 4, the code at 16, the
   OSR code ([OSR](#osr)) 16-aligned, then its code constants (`Encoded::rodata`)
@@ -140,21 +146,37 @@ section; its fields and the counter checks and stubs that use it are in
   and are never written again or reused, so no cross-modifying code. Unwind information and
   call slots are taken from the mapping's end and stay read-write. A full mapping is
   retired and another mapped; a function of more than half a mapping fails.
-- **Relocation**: handlers and the probe by address; a function of the image to its JIT
-  code if it is `Done` at that moment (itself always), else (tail calls) its AOT start,
-  whose counter redirects once it is compiled; symbol slots, sites, constants and the data
-  area in the image, by the header's ranges, as the writer resolves them; code constants to
-  the copy; the record (`Ref::Rec`, `Ref::RecLoopCtr`) to itself. A field out of `rel32` reach
-  fails the function.
-- **Call slots**: a `call` of a function of the image that isn't compiled yet becomes a
-  `call.sym` of a symbol past the image's, which relocates to a call slot: 8 bytes at the
-  mapping's end, one per mapping and callee, holding the callee's AOT entry (its JIT code
-  if it was compiled since), and its JIT code once it is published (an atomic store, no
-  code patching). So JIT code reaches functions compiled after it without their entry
-  stubs. Tail calls still go to the AOT entry.
+- **Calls**: the mapping is chosen before encoding, and every `call`, `call.sym` and
+  `tail_call` but a self-call gets its form for it. The callee is a VM function with a JIT
+  record (a function of the image, or the function of any registered image whose AOT entry
+  a `call.sym`'s symbol slot holds, found by `RtApi::image_at`), or a fixed address (native
+  code, a VM function without a record). A known target (a compiled callee's JIT code, a
+  fixed address) is called directly, `call rel32`/`jmp rel32`, if the whole mapping reaches
+  it, else as `mov r11, imm64; call r11`/`jmp r11`. A VM function not compiled yet goes
+  through a *call slot*, `call [rip + slot]`/`jmp [rip + slot]`: 8 bytes at the mapping's
+  end, one per mapping and callee, holding the callee's AOT entry and then, once it is
+  published, its JIT code (an aligned atomic store, no code patching). So calls and tail
+  calls of another image's functions, and of functions compiled later, run their JIT code
+  without the entry's counter check and stub once it exists. The reduced code carries the
+  forms as function operands with a `FUNC_SLOT`, `FUNC_NEAR` or `FUNC_FAR` bit
+  (`asm::FUNC_KINDS`) and the callee's index in the compile's list; both encoders emit them.
+  A `call.sym` whose slot holds 0 (a weak symbol) stays through the image's symbol slot, as
+  do `call.sym.ind` (PE) and island calls. Function pointers are untouched: `addr.sym` and
+  native callers still get the AOT entry.
+- **Relocation**: handlers and the probe by address (`imm64` with `far_rt`); the callees as
+  above; symbol slots, sites, constants and the data area in the image, by the header's
+  ranges, as the writer resolves them; code constants to the copy; the record (`Ref::Rec`,
+  `Ref::RecLoopCtr`) to itself. Every one of these is in reach by the mapping's choice. If the
+  mapping fills up before the function is installed, it is retired and the function is
+  compiled again for another (its calls' forms depend on the mapping).
+- **Decoding through PLTs**: code linked against a shared `ryo_rt` calls the handlers and
+  the probe through PLT stubs. The resolver reads a call target outside the image as a
+  stub (`jmp [rip + got]`, with `endbr64` and `bnd` in `.plt.sec`) and resolves the GOT
+  slot's value, which `BIND_NOW` (Rust's default) has filled.
 - **Publishing**: `jit_code` (and the code's length in the JIT's own table), then `entry`
   and `osr` (release), then `state = Done`, then the counters' `Done` bias, then the
-  function's call slots. Every later
+  function's call slots, of every mapping and image (kept by callee, so publishing visits
+  only its own). Every later
   call's and loop iteration's check then takes its stub straight into the JIT code, without
   the runtime.
 
@@ -499,8 +521,10 @@ the units that inline it.
   IR; OSR entries load the AOT frame's bytes). This is what removes the field round trips
   of `&self` wrappers once their calls are inlined. A field that would need a parameter on
   a landing pad stub keeps its alloca in memory: pad edges move nothing.
-- **Call slots** are assigned after inlining (`inline::retarget`), for the unit's
-  remaining calls of functions not compiled yet.
+- **Call forms** are assigned after inlining (`inline::retarget`, through
+  `Env::retarget`): the unit's remaining calls and tail calls of functions and symbols get
+  their forms as in [Compiling and installing](#compiling-and-installing) (slot, `rel32`
+  or `imm64`).
 - `RYO_JIT_DUMP` shows the decisions (each cluster with its benefit, cost and outcome, and
   the calls not inlinable and why) and the IR after the splices; `RYO_JIT_CHECK` verifies
   the IR after each splice and after promotion.
@@ -546,6 +570,7 @@ rlib bundles (`build/src/jit.rs`, [build.md](build.md#build)):
   | `next_batch` | the queued records in trip order, sleeping while there are none unless asked not to (the JIT thread only) |
   | `done` | reports a record: compiled (after the JIT published it), or failed (the runtime marks it `Failed`); wakes its waiters |
   | `shuffled` | whether an image's functions get shuffled frames |
+  | `image_at` | the header of the registered image whose text holds an address, or null (cross-image calls) |
   | `handlers` | every opcode's handler address, null for opcodes without one |
   | `reg_handlers` | every opcode's [register entry](#register-entries) address, null for opcodes without one |
 
@@ -605,7 +630,12 @@ for shuffled frames per image, `RtApi::shuffled`):
 ## Limits
 
 - A child of `fork` has no JIT thread, so with `RYO_JIT_SYNC` its trips wait forever.
-- Tail calls of functions compiled later stay through their AOT entries.
+- The JIT is Linux-only (the mapping and `__register_frame`). Windows needs
+  `VirtualAlloc2` with an address window and `RtlInstallFunctionTableCallback` per mapping;
+  macOS a hint-and-verify mapping, `MAP_JIT`, and a separate read-write mapping for the call
+  slots and unwind data.
+- Island calls and `call.sym.ind` stay through the image's symbol slots. A callee's slot is
+  never replaced by a direct call: a caller compiled before its callee keeps the slot.
 - A program that interposes `malloc` itself with Rust code (which may call VM code) would
   run that code on the JIT thread, and with `RYO_JIT_SYNC` could deadlock.
 - Each `ryo_rt` copy in a process (cdylibs, a staticlib per C link) has its own JIT,
@@ -625,7 +655,10 @@ for shuffled frames per image, `RtApi::shuffled`):
   results with arguments of every kind, in JIT code (checked by return addresses within
   `jit_code`), a recursion switches over midway, panics unwind through JIT frames with
   their landing pads, JIT code calls JIT and AOT functions, and sixteen threads trip at
-  once. With and without shuffled frames, OSR at every head pass of a few loops keeps the
+  once. Calls of another image's function and tail calls go through a call slot before the
+  callee is compiled and to its JIT code after (from callers compiled before it and after
+  it, past its counter, three images), and native code mapped more than 2 GiB away is
+  called through `r11`, also with a panic unwinding through the far call. With and without shuffled frames, OSR at every head pass of a few loops keeps the
   values live at the head (integers of every width, floats, `w128`, an escaped local read
   through a pointer and directly), at the outer and inner heads of nested loops, a panic
   after OSR runs the JIT frame's landing pad, `rsp` moves by the frames' difference, and a

@@ -72,6 +72,10 @@ pub struct RtApi {
     /// Whether the functions of the image with this header get another frame layout than
     /// their AOT code's (`RYO_JIT_SHUFFLE`, or per image in tests).
     pub shuffled: extern "C-unwind" fn(header: *const u8) -> bool,
+    /// The header of the registered image whose text section holds `addr`, or null: the JIT
+    /// calls a VM function of another image at its JIT code once it is compiled, rather than
+    /// through its AOT entry, and finds it by the address its caller's symbol slot holds.
+    pub image_at: extern "C-unwind" fn(addr: usize) -> *const u8,
     /// Every opcode's handler address by opcode, null for opcodes without a handler.
     pub handlers: [*const (); Opcode::COUNT],
     /// Every opcode's register entry (design/jit.md, "Register entries"), null for opcodes

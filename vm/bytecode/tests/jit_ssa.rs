@@ -6,7 +6,7 @@ use ryo_bytecode::asm::{self, ArgReg, Decoded, Mode, Scope, ScopeKind};
 use ryo_bytecode::full::*;
 use ryo_bytecode::jit::ir::{AllocaKind, BlockKind, Op, Term};
 
-const MODE: Mode = Mode { fp_arg: true, frame_pointer: false, align_loops: true, pe: false, counters: true };
+const MODE: Mode = Mode { fp_arg: true, frame_pointer: false, align_loops: true, pe: false, counters: true, far_rt: false };
 
 /// Encodes `insns` (targets as instruction indices, converted here) with frame `frame` and
 /// decodes the machine code back to the reduced set.

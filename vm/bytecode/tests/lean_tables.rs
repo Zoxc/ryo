@@ -446,7 +446,7 @@ fn push_wrapped(s: &mut String, items: &[String]) {
 }
 
 fn mode(fp_arg: bool) -> Mode {
-    Mode { fp_arg, frame_pointer: true, align_loops: false, pe: false, counters: false }
+    Mode { fp_arg, frame_pointer: true, align_loops: false, pe: false, counters: false, far_rt: false }
 }
 
 fn layout_term(op: full::Opcode, l: &Layout) -> String {
@@ -716,7 +716,7 @@ fn check_assumptions() {
     // The layout depends only on `fp_arg`.
     for bits in 0..32u32 {
         let b = |i: u32| bits >> i & 1 != 0;
-        let m = Mode { fp_arg: b(0), frame_pointer: b(1), align_loops: b(2), pe: b(3), counters: b(4) };
+        let m = Mode { fp_arg: b(0), frame_pointer: b(1), align_loops: b(2), pe: b(3), counters: b(4), far_rt: false };
         if !m.valid() {
             continue;
         }

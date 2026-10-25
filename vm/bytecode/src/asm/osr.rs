@@ -28,7 +28,8 @@ pub struct OsrEntry {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct OsrCode {
     pub code: Vec<u8>,
-    /// The `rel32` fields of `call ryo_probe_stack`s (offsets in `code`).
+    /// The `rel32` fields of `call ryo_probe_stack`s (offsets in `code`), the `imm64` ones
+    /// with [`Mode::far_rt`].
     pub probes: Vec<u32>,
     /// The CFA rules: at each offset in `code`, the DWARF call frame instructions that take
     /// effect there (after the CIE's initial `CFA = rsp + 8`), in order.
@@ -160,12 +161,20 @@ pub fn osr_code(entries: &[Option<OsrEntry>], f_aot: u32, f_jit: u32, mode: Mode
             let low = f_aot.max(f_jit) + scratch;
             let grow = low - f_aot;
             if grow >= PROBE_FROM {
-                // `mov eax, grow; call ryo_probe_stack`: touches the pages below `rsp`.
+                // `mov eax, grow; call ryo_probe_stack`: touches the pages below `rsp`. With
+                // `far_rt`, `mov r11, imm64; call r11` (the field is the `imm64`).
                 c.push(0xb8);
                 c.extend(grow.to_le_bytes());
-                c.push(0xe8);
-                probes.push(c.len() as u32);
-                c.extend([0; 4]);
+                if mode.far_rt {
+                    c.extend([0x49, 0xbb]);
+                    probes.push(c.len() as u32);
+                    c.extend([0; 8]);
+                    c.extend([0x41, 0xff, 0xd3]);
+                } else {
+                    c.push(0xe8);
+                    probes.push(c.len() as u32);
+                    c.extend([0; 4]);
+                }
             }
             if low != f_aot {
                 lea(&mut c, 4, base, -(low as i32));

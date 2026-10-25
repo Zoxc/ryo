@@ -120,7 +120,7 @@ L17:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L18:
     lea     rax,[image.k6432]
@@ -128,13 +128,13 @@ L18:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L19:
     lea     rax,[image.k9346]
     mov     rdi,rax
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L21
     jmp     L21
@@ -145,10 +145,10 @@ L20:
     mov     edx,0
     mov     rcx,r14
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L21:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 
 fn <for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt} as std::ops::FnMut<(&u32, &u32)>>::call_mut - shim(for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt})
@@ -179,7 +179,7 @@ fn <std::iter::Enumerate<I> as std::iter::Iterator>::fold::enumerate::<&u32, u64
 L0:
     lea     rax,[k1]
     mov     rdi,rax
-    call    qword ptr [sym2]
+    call    sym2
     jmp     L1
     jmp     L2
 L1:
@@ -265,7 +265,7 @@ L6:
     mov     esi,175h
     mov     edx,0
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
     mov     rbx,rax
     mov     eax,0
@@ -292,7 +292,7 @@ L10:
 L11:
     ud2
 L12:
-    call    qword ptr [sym4]
+    call    sym4
     ud2
 L13:
     jmp     L10
@@ -412,7 +412,7 @@ L7:
     mov     esi,193h
     mov     edx,0
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L8:
     lea     rcx,[image.k7768]
@@ -421,7 +421,7 @@ L8:
     mov     edx,0
     mov     rcx,rax
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
     mov     ecx,0
     mov     rbx,rax
@@ -453,7 +453,7 @@ L14:
     jne     L13
     jmp     L10
 L15:
-    call    qword ptr [sym11]
+    call    sym11
     ud2
 L16:
     jmp     L12
@@ -623,7 +623,7 @@ L7:
     mov     rcx,rdx
     mov     edx,0
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L8:
     lea     rax,[image.k7768]
@@ -631,7 +631,7 @@ L8:
     mov     esi,175h
     mov     edx,0
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
     mov     ecx,0
     jmp     L15
@@ -760,7 +760,7 @@ L0:
     mov     rcx,rdx
     mov     edx,0
     movzx   edx,dl
-    call    qword ptr [sym2]
+    call    sym2
     ud2
 
 fn core::num::<impl usize>::unchecked_add::precondition_check
@@ -777,7 +777,7 @@ L0:
     mov     rcx,rdx
     mov     edx,0
     movzx   edx,dl
-    call    qword ptr [sym2]
+    call    sym2
     ud2
 
 fn core::slice::<impl [(u32, u32)]>::split_at_mut
@@ -821,7 +821,7 @@ L0:
     mov     rdi,rax
     mov     esi,13h
     mov     rdx,r8
-    call    qword ptr [sym4]
+    call    sym4
     ud2
 
 fn core::slice::<impl [(u32, u32)]>::split_at_mut_unchecked
@@ -926,7 +926,7 @@ L12:
     mov     edx,0
     mov     rcx,r15
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L13:
     lea     rax,[image.k6432]
@@ -934,7 +934,7 @@ L13:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
     jmp     L15
 L14:
@@ -944,10 +944,10 @@ L14:
     mov     edx,0
     mov     rcx,r15
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L15:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L16:
     lea     rax,[image.k6432]
@@ -955,7 +955,7 @@ L16:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
     jmp     L18
 L17:
@@ -965,10 +965,10 @@ L17:
     mov     edx,0
     mov     rcx,r15
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L18:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 
 fn core::slice::<impl [T]>::split_at_mut_unchecked::precondition_check
@@ -984,7 +984,7 @@ L0:
     mov     rcx,rdx
     mov     edx,0
     movzx   edx,dl
-    call    qword ptr [sym2]
+    call    sym2
     ud2
 
 fn core::slice::<impl [u32]>::split_at_mut
@@ -1028,7 +1028,7 @@ L0:
     mov     rdi,rax
     mov     esi,13h
     mov     rdx,r8
-    call    qword ptr [sym4]
+    call    sym4
     ud2
 
 fn core::slice::<impl [u32]>::split_at_mut_unchecked
@@ -1133,7 +1133,7 @@ L12:
     mov     edx,0
     mov     rcx,r15
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L13:
     lea     rax,[image.k6432]
@@ -1141,7 +1141,7 @@ L13:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
     jmp     L15
 L14:
@@ -1151,10 +1151,10 @@ L14:
     mov     edx,0
     mov     rcx,r15
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L15:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L16:
     lea     rax,[image.k6432]
@@ -1162,7 +1162,7 @@ L16:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
     jmp     L18
 L17:
@@ -1172,10 +1172,10 @@ L17:
     mov     edx,0
     mov     rcx,r15
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L18:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 
 fn core::slice::<impl [u32]>::swap
@@ -1454,7 +1454,7 @@ L49:
     mov     edx,0
     mov     rcx,[rsp+10h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L50:
     lea     rax,[image.k6432]
@@ -1462,7 +1462,7 @@ L50:
     mov     esi,55h
     mov     rdx,rdi
     mov     rdi,rax
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L51:
     lea     rax,[image.k6432]
@@ -1470,13 +1470,13 @@ L51:
     mov     esi,55h
     mov     rdx,rdi
     mov     rdi,rax
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L52:
     lea     rax,[image.k9346]
     mov     rdi,rax
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L54
     jmp     L54
@@ -1487,10 +1487,10 @@ L53:
     mov     edx,0
     mov     rcx,r14
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L54:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L55:
     lea     rax,[image.k6432]
@@ -1498,7 +1498,7 @@ L55:
     mov     esi,55h
     mov     rdx,rdi
     mov     rdi,rax
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L56:
     lea     rax,[image.k6432]
@@ -1506,7 +1506,7 @@ L56:
     mov     esi,55h
     mov     rdx,rdi
     mov     rdi,rax
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L57:
     lea     rax,[image.k6432]
@@ -1514,7 +1514,7 @@ L57:
     mov     esi,55h
     mov     rdx,rdi
     mov     rdi,rax
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
     jmp     L59
 L58:
@@ -1524,11 +1524,11 @@ L58:
     mov     edx,0
     mov     rcx,rbp
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
     jmp     L59
 L59:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L60:
     lea     rax,[image.k6432]
@@ -1536,7 +1536,7 @@ L60:
     mov     esi,55h
     mov     rdx,rdi
     mov     rdi,rax
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L61:
     lea     rax,[image.k6432]
@@ -1544,13 +1544,13 @@ L61:
     mov     esi,55h
     mov     rdx,rdi
     mov     rdi,rax
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L62:
     lea     rax,[image.k9346]
     mov     rdi,rax
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L64
     jmp     L64
@@ -1561,20 +1561,20 @@ L63:
     mov     edx,0
     mov     rcx,rbx
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L64:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L65:
     mov     rdi,rdx
     mov     rdx,[rsp+10h]
-    call    qword ptr [sym0]
+    call    sym0
     ud2
 L66:
     mov     rdi,rcx
     mov     rdx,[rsp+10h]
-    call    qword ptr [sym0]
+    call    sym0
     ud2
 
 fn core::slice::<impl [u32]>::swap_unchecked
@@ -1848,7 +1848,7 @@ L49:
     mov     edx,0
     mov     rcx,r8
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L50:
     lea     rax,[image.k6432]
@@ -1856,7 +1856,7 @@ L50:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L51:
     lea     rax,[image.k6432]
@@ -1864,13 +1864,13 @@ L51:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L52:
     lea     rax,[image.k9346]
     mov     rdi,rax
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L54
     jmp     L54
@@ -1881,10 +1881,10 @@ L53:
     mov     edx,0
     mov     rcx,r14
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L54:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L55:
     lea     rax,[image.k6432]
@@ -1892,7 +1892,7 @@ L55:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L56:
     lea     rax,[image.k6432]
@@ -1900,7 +1900,7 @@ L56:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L57:
     lea     rax,[image.k6432]
@@ -1908,7 +1908,7 @@ L57:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
     jmp     L59
 L58:
@@ -1918,11 +1918,11 @@ L58:
     mov     edx,0
     mov     rcx,rbp
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
     jmp     L59
 L59:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L60:
     lea     rax,[image.k6432]
@@ -1930,7 +1930,7 @@ L60:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L61:
     lea     rax,[image.k6432]
@@ -1938,13 +1938,13 @@ L61:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L62:
     lea     rax,[image.k9346]
     mov     rdi,rax
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L64
     jmp     L64
@@ -1955,10 +1955,10 @@ L63:
     mov     edx,0
     mov     rcx,rbx
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L64:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 
 fn core::slice::sort::shared::pivot::choose_pivot::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
@@ -2160,7 +2160,7 @@ L16:
     mov     rcx,rdi
     mov     rdi,rax
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L17:
     lea     rax,[image.k7567]
@@ -2169,7 +2169,7 @@ L17:
     mov     rcx,rsi
     mov     esi,193h
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L18:
     lea     rax,[image.k9125]
@@ -2177,7 +2177,7 @@ L18:
     mov     esi,1BBh
     mov     edx,0
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L19:
     lea     rdi,[rsp+90h]
@@ -2674,7 +2674,7 @@ L27:
     mov     edx,0
     mov     rcx,rax
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L28:
     lea     rax,[image.k6432]
@@ -2682,7 +2682,7 @@ L28:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L29:
     lea     rax,[image.k6432]
@@ -2690,13 +2690,13 @@ L29:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L30:
     lea     rax,[image.k9346]
     mov     rdi,rax
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L32
     jmp     L32
@@ -2707,13 +2707,13 @@ L31:
     mov     edx,0
     mov     rcx,r12
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L32:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L33:
-    call    qword ptr [sym1]
+    call    sym1
     ud2
   ; OSR entries
     lea     r11,[L34]
@@ -3079,7 +3079,7 @@ L44:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L45:
     lea     rax,[image.k6432]
@@ -3087,13 +3087,13 @@ L45:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L46:
     lea     rax,[image.k9346]
     mov     rdi,rax
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L48
     jmp     L48
@@ -3104,10 +3104,10 @@ L47:
     mov     edx,0
     mov     rcx,[rsp+10h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L48:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L49:
     lea     rax,[image.k6432]
@@ -3115,7 +3115,7 @@ L49:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L50:
     lea     rax,[image.k6432]
@@ -3123,13 +3123,13 @@ L50:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L51:
     lea     rax,[image.k9346]
     mov     rdi,rax
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L53
     jmp     L53
@@ -3140,10 +3140,10 @@ L52:
     mov     edx,0
     mov     rcx,r12
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L53:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
   ; OSR entries
     lea     r11,[L54]
@@ -3445,7 +3445,7 @@ L19:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L20:
     lea     rax,[image.k6432]
@@ -3453,13 +3453,13 @@ L20:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L21:
     lea     rax,[image.k9346]
     mov     rdi,rax
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L23
     jmp     L23
@@ -3470,10 +3470,10 @@ L22:
     mov     edx,0
     mov     rcx,[rsp+18h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L23:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
   ; OSR entries
     lea     r11,[L24]
@@ -3625,7 +3625,7 @@ L17:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L18:
     lea     rax,[image.k6432]
@@ -3633,13 +3633,13 @@ L18:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L19:
     lea     rax,[image.k9346]
     mov     rdi,rax
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L21
     jmp     L21
@@ -3650,10 +3650,10 @@ L20:
     mov     edx,0
     mov     rcx,[rsp+18h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L21:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 
 fn core::slice::sort::shared::smallsort::small_sort_general_with_scratch::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
@@ -4688,20 +4688,20 @@ L88:
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L89:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L90:
     lea     rcx,[image.k9346]
     mov     rdi,rcx
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L92
     jmp     L92
@@ -4712,30 +4712,30 @@ L91:
     mov     edx,0
     mov     rcx,[rsp+78h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L92:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L93:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L94:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L95:
     lea     rcx,[image.k9346]
     mov     rdi,rcx
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L97
     jmp     L97
@@ -4746,30 +4746,30 @@ L96:
     mov     edx,0
     mov     rcx,[rsp+70h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L97:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L98:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L99:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L100:
     lea     rcx,[image.k9346]
     mov     rdi,rcx
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L102
     jmp     L102
@@ -4780,30 +4780,30 @@ L101:
     mov     edx,0
     mov     rcx,[rsp+68h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L102:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L103:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L104:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L105:
     lea     rcx,[image.k9346]
     mov     rdi,rcx
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L107
     jmp     L107
@@ -4814,10 +4814,10 @@ L106:
     mov     edx,0
     mov     rcx,[rsp+60h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L107:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L108:
     lea     rcx,[image.k7768]
@@ -4826,7 +4826,7 @@ L108:
     mov     edx,0
     mov     rcx,[rsp+0D0h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L109:
     lea     rcx,[image.k9969]
@@ -4835,7 +4835,7 @@ L109:
     mov     edx,0
     mov     rcx,[rsp+0C8h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L110:
     lea     rcx,[image.k7768]
@@ -4844,7 +4844,7 @@ L110:
     mov     edx,0
     mov     rcx,rax
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L111:
     lea     rax,[image.k6432]
@@ -4852,7 +4852,7 @@ L111:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
     jmp     L113
 L112:
@@ -4862,10 +4862,10 @@ L112:
     mov     edx,0
     mov     rcx,r12
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L113:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L114:
     lea     rdi,[rsp+2F0h]
@@ -4898,7 +4898,7 @@ L118:
     mov     r12,rax
     jmp     L118
 L119:
-    call    qword ptr [sym21]
+    call    sym21
     ud2
 L120:
     jmp     L116
@@ -8090,7 +8090,7 @@ L34:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L35:
     lea     rax,[image.k6432]
@@ -8098,7 +8098,7 @@ L35:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L36:
     lea     rax,[image.k6432]
@@ -8106,7 +8106,7 @@ L36:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
     jmp     L38
 L37:
@@ -8116,11 +8116,11 @@ L37:
     mov     edx,0
     mov     rcx,rbp
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
     jmp     L38
 L38:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L39:
     lea     rax,[image.k6432]
@@ -8128,7 +8128,7 @@ L39:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L40:
     lea     rax,[image.k6432]
@@ -8136,13 +8136,13 @@ L40:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L41:
     lea     rax,[image.k9346]
     mov     rdi,rax
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L43
     jmp     L43
@@ -8153,10 +8153,10 @@ L42:
     mov     edx,0
     mov     rcx,rbx
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L43:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
   ; OSR entries
     lea     r11,[L44]
@@ -8302,7 +8302,7 @@ L21:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L22:
     lea     rax,[image.k6432]
@@ -8310,13 +8310,13 @@ L22:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L23:
     lea     rax,[image.k9346]
     mov     rdi,rax
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L25
     jmp     L25
@@ -8327,10 +8327,10 @@ L24:
     mov     edx,0
     mov     rcx,r15
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L25:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
   ; OSR entries
     lea     r11,[L26]
@@ -8833,7 +8833,7 @@ L31:
     mov     rcx,rsi
     mov     esi,193h
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L32:
     lea     rdx,[image.k7567]
@@ -8841,7 +8841,7 @@ L32:
     mov     esi,193h
     mov     edx,0
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L33:
     lea     rcx,[image.k9125]
@@ -8851,7 +8851,7 @@ L33:
     mov     rdi,rcx
     mov     rcx,r10
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L34:
     lea     rdi,[rsp+230h]
@@ -8862,14 +8862,14 @@ L35:
     mov     rdi,rax
     mov     rsi,[rsp+20h]
     mov     rdx,rcx
-    call    qword ptr [sym5]
+    call    sym5
     ud2
 L36:
     lea     rax,[k7]
     mov     rdi,[rsp+58h]
     mov     rsi,[rsp+68h]
     mov     rdx,rax
-    call    qword ptr [sym5]
+    call    sym5
     ud2
 L37:
     lea     rax,[k15]
@@ -8878,7 +8878,7 @@ L37:
     mov     rdi,rcx
     mov     rsi,rdx
     mov     rcx,rax
-    call    qword ptr [sym16]
+    call    sym16
     ud2
 L38:
     ud2
@@ -10243,20 +10243,20 @@ L191:
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L192:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L193:
     lea     rcx,[image.k9346]
     mov     rdi,rcx
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L195
     jmp     L195
@@ -10267,30 +10267,30 @@ L194:
     mov     edx,0
     mov     rcx,[rsp+0C0h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L195:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L196:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L197:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L198:
     lea     rcx,[image.k9346]
     mov     rdi,rcx
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L200
     jmp     L200
@@ -10301,30 +10301,30 @@ L199:
     mov     edx,0
     mov     rcx,[rsp+0D8h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L200:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L201:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L202:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L203:
     lea     rcx,[image.k9346]
     mov     rdi,rcx
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L205
     jmp     L205
@@ -10335,30 +10335,30 @@ L204:
     mov     edx,0
     mov     rcx,[rsp+0E0h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L205:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L206:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L207:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L208:
     lea     rcx,[image.k9346]
     mov     rdi,rcx
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L210
     jmp     L210
@@ -10369,30 +10369,30 @@ L209:
     mov     edx,0
     mov     rcx,[rsp+0E8h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L210:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L211:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L212:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L213:
     lea     rcx,[image.k9346]
     mov     rdi,rcx
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L215
     jmp     L215
@@ -10403,30 +10403,30 @@ L214:
     mov     edx,0
     mov     rcx,[rsp+138h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L215:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L216:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L217:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L218:
     lea     rcx,[image.k9346]
     mov     rdi,rcx
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L220
     jmp     L220
@@ -10437,30 +10437,30 @@ L219:
     mov     edx,0
     mov     rcx,[rsp+150h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L220:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L221:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L222:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L223:
     lea     rcx,[image.k9346]
     mov     rdi,rcx
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L225
     jmp     L225
@@ -10471,30 +10471,30 @@ L224:
     mov     edx,0
     mov     rcx,[rsp+148h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L225:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L226:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L227:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L228:
     lea     rcx,[image.k9346]
     mov     rdi,rcx
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L230
     jmp     L230
@@ -10505,10 +10505,10 @@ L229:
     mov     edx,0
     mov     rcx,[rsp+158h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L230:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L231:
     lea     rcx,[image.k7768]
@@ -10517,7 +10517,7 @@ L231:
     mov     edx,0
     mov     rcx,rax
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L232:
     lea     rax,[image.k6432]
@@ -10525,7 +10525,7 @@ L232:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L233:
     lea     rax,[image.k6432]
@@ -10533,13 +10533,13 @@ L233:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L234:
     lea     rax,[image.k9346]
     mov     rdi,rax
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L236
     jmp     L236
@@ -10550,10 +10550,10 @@ L235:
     mov     edx,0
     mov     rcx,[rsp+168h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L236:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L237:
     lea     rdi,[rsp+2F0h]
@@ -12003,20 +12003,20 @@ L191:
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L192:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L193:
     lea     rcx,[image.k9346]
     mov     rdi,rcx
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L195
     jmp     L195
@@ -12027,30 +12027,30 @@ L194:
     mov     edx,0
     mov     rcx,[rsp+0C0h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L195:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L196:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L197:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L198:
     lea     rcx,[image.k9346]
     mov     rdi,rcx
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L200
     jmp     L200
@@ -12061,30 +12061,30 @@ L199:
     mov     edx,0
     mov     rcx,[rsp+0D8h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L200:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L201:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L202:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L203:
     lea     rcx,[image.k9346]
     mov     rdi,rcx
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L205
     jmp     L205
@@ -12095,30 +12095,30 @@ L204:
     mov     edx,0
     mov     rcx,[rsp+0E0h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L205:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L206:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L207:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L208:
     lea     rcx,[image.k9346]
     mov     rdi,rcx
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L210
     jmp     L210
@@ -12129,30 +12129,30 @@ L209:
     mov     edx,0
     mov     rcx,[rsp+0E8h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L210:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L211:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L212:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L213:
     lea     rcx,[image.k9346]
     mov     rdi,rcx
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L215
     jmp     L215
@@ -12163,30 +12163,30 @@ L214:
     mov     edx,0
     mov     rcx,[rsp+138h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L215:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L216:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L217:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L218:
     lea     rcx,[image.k9346]
     mov     rdi,rcx
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L220
     jmp     L220
@@ -12197,30 +12197,30 @@ L219:
     mov     edx,0
     mov     rcx,[rsp+150h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L220:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L221:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L222:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L223:
     lea     rcx,[image.k9346]
     mov     rdi,rcx
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L225
     jmp     L225
@@ -12231,30 +12231,30 @@ L224:
     mov     edx,0
     mov     rcx,[rsp+148h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L225:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L226:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L227:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L228:
     lea     rcx,[image.k9346]
     mov     rdi,rcx
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L230
     jmp     L230
@@ -12265,10 +12265,10 @@ L229:
     mov     edx,0
     mov     rcx,[rsp+158h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L230:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L231:
     lea     rcx,[image.k7768]
@@ -12277,7 +12277,7 @@ L231:
     mov     edx,0
     mov     rcx,rax
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L232:
     lea     rax,[image.k6432]
@@ -12285,7 +12285,7 @@ L232:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L233:
     lea     rax,[image.k6432]
@@ -12293,13 +12293,13 @@ L233:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L234:
     lea     rax,[image.k9346]
     mov     rdi,rax
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L236
     jmp     L236
@@ -12310,10 +12310,10 @@ L235:
     mov     edx,0
     mov     rcx,[rsp+168h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L236:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L237:
     lea     rdi,[rsp+2F0h]
@@ -12778,7 +12778,7 @@ L34:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L35:
     lea     rax,[image.k6432]
@@ -12786,7 +12786,7 @@ L35:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L36:
     lea     rax,[image.k6432]
@@ -12794,7 +12794,7 @@ L36:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
     jmp     L38
 L37:
@@ -12804,11 +12804,11 @@ L37:
     mov     edx,0
     mov     rcx,[rsp+10h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
     jmp     L38
 L38:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L39:
     lea     rax,[image.k6432]
@@ -12816,7 +12816,7 @@ L39:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L40:
     lea     rax,[image.k6432]
@@ -12824,13 +12824,13 @@ L40:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L41:
     lea     rax,[image.k9346]
     mov     rdi,rax
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L43
     jmp     L43
@@ -12841,10 +12841,10 @@ L42:
     mov     edx,0
     mov     rcx,r14
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L43:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
   ; OSR entries
     lea     r11,[L44]
@@ -14636,10 +14636,10 @@ L260:
     mov     edx,0
     mov     rcx,[rsp+90h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L261:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L262:
     lea     r8,[rsp+140h]
@@ -14656,7 +14656,7 @@ L263:
     mov     rbx,rax
     jmp     L262
 L264:
-    call    qword ptr [image.sym11]
+    call    image.sym11
     ud2
 L265:
     lea     rdi,[rsp+390h]
@@ -14668,7 +14668,7 @@ L266:
     mov     rdi,r8
     mov     esi,55h
     mov     rdx,r9
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
     jmp     L268
 L267:
@@ -14678,10 +14678,10 @@ L267:
     mov     edx,0
     mov     rcx,[rsp+98h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L268:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L269:
     lea     rdi,[rsp+390h]
@@ -14694,7 +14694,7 @@ L270:
     mov     rcx,rsi
     mov     esi,193h
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L271:
     lea     rsi,[image.k7567]
@@ -14702,7 +14702,7 @@ L271:
     mov     esi,193h
     mov     edx,0
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L272:
     lea     rcx,[image.k9125]
@@ -14712,7 +14712,7 @@ L272:
     mov     rdi,rcx
     mov     rcx,r10
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L273:
     lea     rdi,[rsp+390h]
@@ -14725,7 +14725,7 @@ L274:
     mov     edx,0
     mov     rcx,rax
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L275:
     lea     rax,[image.k6432]
@@ -14733,7 +14733,7 @@ L275:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L276:
     lea     rax,[image.k6432]
@@ -14741,13 +14741,13 @@ L276:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L277:
     lea     rax,[image.k9346]
     mov     rdi,rax
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L279
     jmp     L279
@@ -14758,10 +14758,10 @@ L278:
     mov     edx,0
     mov     rcx,r15
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L279:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L280:
     lea     rax,[image.k6432]
@@ -14769,7 +14769,7 @@ L280:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L281:
     lea     rax,[image.k6432]
@@ -14777,7 +14777,7 @@ L281:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L282:
     lea     rax,[image.k6432]
@@ -14785,7 +14785,7 @@ L282:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
     jmp     L284
 L283:
@@ -14795,11 +14795,11 @@ L283:
     mov     edx,0
     mov     rcx,[rsp+0B8h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
     jmp     L284
 L284:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L285:
     lea     rax,[image.k6432]
@@ -14807,7 +14807,7 @@ L285:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L286:
     lea     rax,[image.k6432]
@@ -14815,13 +14815,13 @@ L286:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L287:
     lea     rax,[image.k9346]
     mov     rdi,rax
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L289
     jmp     L289
@@ -14832,10 +14832,10 @@ L288:
     mov     edx,0
     mov     rcx,[rsp+0B0h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L289:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L290:
     lea     rax,[image.k7128]
@@ -14844,7 +14844,7 @@ L290:
     mov     edx,0
     mov     rcx,[rsp+0D0h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L291:
     lea     rax,[image.k6432]
@@ -14852,7 +14852,7 @@ L291:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L292:
     lea     rax,[image.k6432]
@@ -14860,13 +14860,13 @@ L292:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L293:
     lea     rax,[image.k9346]
     mov     rdi,rax
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L295
     jmp     L295
@@ -14877,10 +14877,10 @@ L294:
     mov     edx,0
     mov     rcx,[rsp+0C8h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L295:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L296:
     lea     rax,[image.k6432]
@@ -14888,7 +14888,7 @@ L296:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L297:
     lea     rax,[image.k6432]
@@ -14896,7 +14896,7 @@ L297:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L298:
     lea     rax,[image.k6432]
@@ -14904,7 +14904,7 @@ L298:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
     jmp     L300
 L299:
@@ -14914,11 +14914,11 @@ L299:
     mov     edx,0
     mov     rcx,[rsp+0E0h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
     jmp     L300
 L300:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L301:
     lea     rax,[image.k6432]
@@ -14926,7 +14926,7 @@ L301:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L302:
     lea     rax,[image.k6432]
@@ -14934,13 +14934,13 @@ L302:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L303:
     lea     rax,[image.k9346]
     mov     rdi,rax
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L305
     jmp     L305
@@ -14951,10 +14951,10 @@ L304:
     mov     edx,0
     mov     rcx,[rsp+0D8h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L305:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L306:
     lea     rdi,[rsp+390h]
@@ -14965,7 +14965,7 @@ L307:
     mov     edi,0
     mov     rsi,[rsp+0C0h]
     mov     rdx,rax
-    call    qword ptr [sym5]
+    call    sym5
     ud2
 L308:
     lea     rdi,[rsp+390h]
@@ -14978,7 +14978,7 @@ L309:
     mov     edx,0
     mov     rcx,[rsp+120h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L310:
     lea     rax,[image.k6432]
@@ -14986,7 +14986,7 @@ L310:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L311:
     lea     rax,[image.k6432]
@@ -14994,13 +14994,13 @@ L311:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L312:
     lea     rax,[image.k9346]
     mov     rdi,rax
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L314
     jmp     L314
@@ -15011,10 +15011,10 @@ L313:
     mov     edx,0
     mov     rcx,[rsp+0F0h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L314:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L315:
     lea     rax,[image.k6432]
@@ -15022,7 +15022,7 @@ L315:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L316:
     lea     rax,[image.k6432]
@@ -15030,7 +15030,7 @@ L316:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L317:
     lea     rax,[image.k6432]
@@ -15038,7 +15038,7 @@ L317:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
     jmp     L319
 L318:
@@ -15048,11 +15048,11 @@ L318:
     mov     edx,0
     mov     rcx,[rsp+100h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
     jmp     L319
 L319:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L320:
     lea     rax,[image.k6432]
@@ -15060,7 +15060,7 @@ L320:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L321:
     lea     rax,[image.k6432]
@@ -15068,13 +15068,13 @@ L321:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L322:
     lea     rax,[image.k9346]
     mov     rdi,rax
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L324
     jmp     L324
@@ -15085,10 +15085,10 @@ L323:
     mov     edx,0
     mov     rcx,[rsp+0F8h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L324:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L325:
     lea     rax,[image.k7128]
@@ -15097,7 +15097,7 @@ L325:
     mov     edx,0
     mov     rcx,[rsp+118h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L326:
     lea     rax,[image.k6432]
@@ -15105,7 +15105,7 @@ L326:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L327:
     lea     rax,[image.k6432]
@@ -15113,13 +15113,13 @@ L327:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L328:
     lea     rax,[image.k9346]
     mov     rdi,rax
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L330
     jmp     L330
@@ -15130,10 +15130,10 @@ L329:
     mov     edx,0
     mov     rcx,[rsp+110h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L330:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L331:
     lea     rax,[image.k6432]
@@ -15141,7 +15141,7 @@ L331:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L332:
     lea     rax,[image.k6432]
@@ -15149,7 +15149,7 @@ L332:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L333:
     lea     rax,[image.k6432]
@@ -15157,7 +15157,7 @@ L333:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
     jmp     L335
 L334:
@@ -15167,11 +15167,11 @@ L334:
     mov     edx,0
     mov     rcx,[rsp+130h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
     jmp     L335
 L335:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L336:
     lea     rax,[image.k6432]
@@ -15179,7 +15179,7 @@ L336:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L337:
     lea     rax,[image.k6432]
@@ -15187,13 +15187,13 @@ L337:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L338:
     lea     rax,[image.k9346]
     mov     rdi,rax
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L340
     jmp     L340
@@ -15204,10 +15204,10 @@ L339:
     mov     edx,0
     mov     rcx,[rsp+128h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L340:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L341:
     lea     rdi,[rsp+390h]
@@ -15218,7 +15218,7 @@ L342:
     mov     edi,0
     mov     rsi,[rsp+108h]
     mov     rdx,rax
-    call    qword ptr [sym5]
+    call    sym5
     ud2
 L343:
     lea     rdi,[rsp+390h]
@@ -15229,14 +15229,14 @@ L344:
     mov     rdi,[rsp+0A8h]
     mov     rsi,[rsp+10h]
     mov     rdx,rax
-    call    qword ptr [sym5]
+    call    sym5
     ud2
 L345:
     lea     rax,[k13]
     mov     edi,0
     mov     rsi,rdx
     mov     rdx,rax
-    call    qword ptr [sym5]
+    call    sym5
     ud2
 L346:
     lea     rax,[k16]
@@ -15244,7 +15244,7 @@ L346:
     mov     rsi,[rsp+10h]
     mov     rdx,[rsp+10h]
     mov     rcx,rax
-    call    qword ptr [sym17]
+    call    sym17
     ud2
 L347:
     ud2
@@ -15314,7 +15314,7 @@ L2:
     lea     rax,[k0]
     mov     rdi,rax
     mov     esi,3Dh
-    call    qword ptr [sym1]
+    call    sym1
     ud2
 
 fn main::{closure#2}
@@ -15730,7 +15730,7 @@ L62:
     mov     qword ptr [r11+10h],0
     mov     rdi,r8
     mov     rsi,r9
-    call    qword ptr [image.sym48]
+    call    image.sym48
     mov     qword ptr [rsp+68h],0
     mov     r11,[rsp+78h]
     mov     [rsp+70h],r11
@@ -15783,7 +15783,7 @@ L64:
     mov     edx,1
     mov     rcx,r8
     mov     r8,r9
-    call    qword ptr [image.sym43]
+    call    image.sym43
     mov     r8,rax
     mov     r9,rdx
     mov     [rsp+0E0h],r8
@@ -15807,6 +15807,8 @@ L64:
     movsxd  r10,[r11+r10*4]
     add     r10,r11
     jmp     r10
+    int3
+    int3
     int3
 L65:
     .long   L66
@@ -15857,7 +15859,7 @@ L71:
     mov     edx,1
     mov     rcx,r8
     mov     r8,r9
-    call    qword ptr [image.sym43]
+    call    image.sym43
     mov     r8,rax
     mov     r9,rdx
     mov     [rsp+100h],r8
@@ -15881,9 +15883,6 @@ L71:
     movsxd  r10,[r11+r10*4]
     add     r10,r11
     jmp     r10
-    int3
-    int3
-    int3
 L72:
     .long   L73
     .long   L184
@@ -16378,7 +16377,7 @@ L161:
     mov     esi,175h
     mov     edx,0
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L162:
     lea     rcx,[image.k7128]
@@ -16387,7 +16386,7 @@ L162:
     mov     rcx,rsi
     mov     esi,1B5h
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L163:
     lea     rcx,[image.k6432]
@@ -16395,7 +16394,7 @@ L163:
     mov     rdi,rcx
     mov     esi,55h
     mov     rdx,r8
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L164:
     lea     rcx,[image.k6432]
@@ -16403,13 +16402,13 @@ L164:
     mov     rdi,rcx
     mov     esi,55h
     mov     rdx,r8
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L165:
     lea     rcx,[image.k9346]
     mov     rdi,rcx
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L167
     jmp     L167
@@ -16420,10 +16419,10 @@ L166:
     mov     edx,0
     mov     rcx,[rsp+38h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L167:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L168:
     lea     rcx,[image.k6432]
@@ -16431,7 +16430,7 @@ L168:
     mov     rdi,rcx
     mov     esi,55h
     mov     rdx,r8
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L169:
     lea     rcx,[image.k6432]
@@ -16439,7 +16438,7 @@ L169:
     mov     rdi,rcx
     mov     esi,55h
     mov     rdx,r8
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L170:
     lea     rcx,[image.k6432]
@@ -16447,7 +16446,7 @@ L170:
     mov     rdi,rcx
     mov     esi,55h
     mov     rdx,r8
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
     jmp     L172
 L171:
@@ -16457,11 +16456,11 @@ L171:
     mov     edx,0
     mov     rcx,[rsp+50h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
     jmp     L172
 L172:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L173:
     lea     rcx,[image.k6432]
@@ -16469,7 +16468,7 @@ L173:
     mov     rdi,rcx
     mov     esi,55h
     mov     rdx,r8
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L174:
     lea     rcx,[image.k6432]
@@ -16477,13 +16476,13 @@ L174:
     mov     rdi,rcx
     mov     esi,55h
     mov     rdx,r8
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L175:
     lea     rcx,[image.k9346]
     mov     rdi,rcx
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L177
     jmp     L177
@@ -16494,43 +16493,43 @@ L176:
     mov     edx,0
     mov     rcx,[rsp+98h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L177:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L178:
     mov     rdi,rdx
     mov     rdx,rsi
     mov     rsi,[rsp+20h]
-    call    qword ptr [sym5]
+    call    sym5
     ud2
 L179:
     mov     rdi,[rsp+28h]
     mov     rdx,rsi
     mov     rsi,[rsp+20h]
-    call    qword ptr [sym5]
+    call    sym5
     ud2
 L180:
     mov     edi,0
     mov     rsi,[rsp+78h]
     mov     rdx,[rsp+30h]
     mov     rcx,[rsp+0B0h]
-    call    qword ptr [image.sym31]
+    call    image.sym31
     ud2
 L181:
     mov     rdi,[rsp+78h]
     mov     rsi,[rsp+30h]
     mov     rdx,[rsp+30h]
     mov     rcx,[rsp+0A8h]
-    call    qword ptr [image.sym31]
+    call    image.sym31
     ud2
 L182:
     mov     rcx,[rsp+0E0h]
     mov     rdx,[rsp+0E8h]
     mov     rdi,rcx
     mov     rsi,rdx
-    call    qword ptr [image.sym44]
+    call    image.sym44
     ud2
 L183:
     ud2
@@ -16545,7 +16544,7 @@ L184:
     mov     rdx,[rsp+108h]
     mov     rdi,rcx
     mov     rsi,rdx
-    call    qword ptr [image.sym44]
+    call    image.sym44
     ud2
 L185:
     ud2
@@ -16560,7 +16559,7 @@ L186:
     mov     rsi,[rsp+70h]
     mov     rdx,[rsp+58h]
     mov     rcx,[rsp+0A0h]
-    call    qword ptr [image.sym31]
+    call    image.sym31
     ud2
 L187:
     lea     rcx,[image.k7567]
@@ -16569,14 +16568,14 @@ L187:
     mov     edx,0
     mov     rcx,[rsp+88h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L188:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
     jmp     L190
 L189:
@@ -16586,30 +16585,30 @@ L189:
     mov     edx,0
     mov     rcx,[rsp+80h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L190:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L191:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L192:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L193:
     lea     rcx,[image.k9346]
     mov     rdi,rcx
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L195
     jmp     L195
@@ -16620,17 +16619,17 @@ L194:
     mov     edx,0
     mov     rcx,[rsp+90h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L195:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L196:
     mov     rdi,[rsp+60h]
     mov     rsi,[rsp+58h]
     mov     rdx,[rsp+58h]
     mov     rcx,[rsp+0D0h]
-    call    qword ptr [image.sym31]
+    call    image.sym31
     ud2
 L197:
     lea     rcx,[image.k7567]
@@ -16639,14 +16638,14 @@ L197:
     mov     edx,0
     mov     rcx,[rsp+0C8h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L198:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
     jmp     L200
 L199:
@@ -16656,30 +16655,30 @@ L199:
     mov     edx,0
     mov     rcx,[rsp+0C0h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L200:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L201:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L202:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L203:
     lea     rcx,[image.k9346]
     mov     rdi,rcx
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L205
     jmp     L205
@@ -16690,30 +16689,30 @@ L204:
     mov     edx,0
     mov     rcx,[rsp+0B8h]
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L205:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L206:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L207:
     lea     rcx,[image.k6432]
     lea     rdx,[image.k6560]
     mov     rdi,rcx
     mov     esi,55h
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L208:
     lea     rcx,[image.k9346]
     mov     rdi,rcx
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L210
     jmp     L210
@@ -16724,85 +16723,85 @@ L209:
     mov     edx,0
     mov     rcx,r12
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 L210:
-    call    qword ptr [image.sym10]
+    call    image.sym10
     ud2
 L211:
     mov     rsi,rdi
     mov     rdi,[rsp+58h]
     mov     rdx,rax
-    call    qword ptr [image.sym24]
+    call    image.sym24
     ud2
 L212:
     ud2
 L213:
     lea     rax,[k2]
     mov     rdi,rax
-    call    qword ptr [sym3]
+    call    sym3
     ud2
 L214:
     lea     rax,[k4]
     mov     rdi,[rsp+48h]
     mov     rsi,[rsp+20h]
     mov     rdx,rax
-    call    qword ptr [sym5]
+    call    sym5
     ud2
 L215:
     lea     rax,[k6]
     mov     rdi,[rsp+28h]
     mov     rsi,[rsp+20h]
     mov     rdx,rax
-    call    qword ptr [sym5]
+    call    sym5
     ud2
 L216:
     lea     rax,[k8]
     mov     rdi,rax
-    call    qword ptr [sym3]
+    call    sym3
     ud2
 L217:
     lea     rax,[k12]
     mov     rdi,rax
-    call    qword ptr [sym3]
+    call    sym3
     ud2
 L218:
     lea     rax,[k23]
     mov     rdi,[rsp+68h]
     mov     rsi,[rsp+58h]
     mov     rdx,rax
-    call    qword ptr [sym5]
+    call    sym5
     ud2
 L219:
     lea     rax,[k25]
     mov     rdi,[rsp+60h]
     mov     rsi,[rsp+58h]
     mov     rdx,rax
-    call    qword ptr [sym5]
+    call    sym5
     ud2
 L220:
     lea     rax,[k27]
     mov     rdi,[rsp+68h]
     mov     rsi,[rsp+58h]
     mov     rdx,rax
-    call    qword ptr [sym5]
+    call    sym5
     ud2
 L221:
     lea     rax,[k30]
     mov     rdi,rax
-    call    qword ptr [sym31]
+    call    sym31
     ud2
 L222:
     lea     rax,[k32]
     mov     rdi,[rsp+60h]
     mov     rsi,[rsp+58h]
     mov     rdx,rax
-    call    qword ptr [sym5]
+    call    sym5
     ud2
 L223:
     lea     rax,[k35]
     mov     rdi,rax
-    call    qword ptr [sym31]
+    call    sym31
     ud2
   ; OSR entries
     lea     r11,[L224]
@@ -16922,7 +16921,7 @@ L0:
     mov     rcx,rsi
     mov     esi,1BBh
     movzx   edx,dl
-    call    qword ptr [sym2]
+    call    sym2
     ud2
 
 fn std::hint::select_unpredictable::<*mut u32>
@@ -16953,7 +16952,7 @@ fn std::hint::select_unpredictable::<*mut u32>
     mov     rax,[rsp+28h]
     mov     [rsp+58h],rax
     mov     rdi,rax
-    call    qword ptr [sym2]
+    call    sym2
     jmp     L1
 L0:
     lea     rdi,[rsp+90h]
@@ -16988,9 +16987,9 @@ L3:
     ud2
 L4:
     mov     rdi,r12
-    call    qword ptr [sym2]
+    call    sym2
     jmp     L3
-    call    qword ptr [sym6]
+    call    sym6
     ud2
   ; OSR entries
     lea     r11,[L5]
@@ -17131,7 +17130,7 @@ L2:
     mov     esi,175h
     mov     edx,0
     movzx   edx,dl
-    call    qword ptr [image.sym49]
+    call    image.sym49
     ud2
 
 fn std::ptr::const_ptr::<impl *const ()>::is_aligned_to
@@ -17163,7 +17162,7 @@ L1:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [sym3]
+    call    sym3
     ud2
   ; OSR entries
     lea     r11,[L2]
@@ -17191,7 +17190,7 @@ L0:
     mov     rcx,rdx
     mov     edx,0
     movzx   edx,dl
-    call    qword ptr [sym2]
+    call    sym2
     ud2
 
 fn std::ptr::copy::precondition_check
@@ -17292,7 +17291,7 @@ L17:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L18:
     lea     rax,[image.k6432]
@@ -17300,7 +17299,7 @@ L18:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L19:
     lea     rax,[image.k6432]
@@ -17308,7 +17307,7 @@ L19:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
     jmp     L23
 L20:
@@ -17318,7 +17317,7 @@ L20:
     mov     edx,0
     mov     rcx,r15
     movzx   edx,dl
-    call    qword ptr [sym3]
+    call    sym3
     ud2
 L21:
     jmp     L20
@@ -17326,7 +17325,7 @@ L21:
 L22:
     jmp     L20
 L23:
-    call    qword ptr [sym6]
+    call    sym6
     ud2
   ; OSR entries
     lea     r11,[L24]
@@ -17476,7 +17475,7 @@ L18:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L19:
     lea     rax,[image.k6432]
@@ -17484,13 +17483,13 @@ L19:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
 L20:
     lea     rax,[image.k9346]
     mov     rdi,rax
     mov     esi,3Dh
-    call    qword ptr [image.sym50]
+    call    image.sym50
     ud2
     jmp     L24
     jmp     L24
@@ -17501,14 +17500,14 @@ L21:
     mov     edx,0
     mov     rcx,[rsp+10h]
     movzx   edx,dl
-    call    qword ptr [sym5]
+    call    sym5
     ud2
 L22:
     jmp     L21
 L23:
     jmp     L21
 L24:
-    call    qword ptr [sym6]
+    call    sym6
     ud2
   ; OSR entries
     lea     r11,[L25]
@@ -17633,7 +17632,7 @@ L10:
     mov     rdi,rax
     mov     esi,55h
     mov     rdx,rcx
-    call    qword ptr [image.sym6]
+    call    image.sym6
     ud2
     jmp     L13
 L11:
@@ -17643,12 +17642,12 @@ L11:
     mov     edx,0
     mov     rcx,r15
     movzx   edx,dl
-    call    qword ptr [sym3]
+    call    sym3
     ud2
 L12:
     jmp     L11
 L13:
-    call    qword ptr [sym4]
+    call    sym4
     ud2
   ; OSR entries
     lea     r11,[L14]
@@ -17702,7 +17701,7 @@ L0:
     mov     edx,1
     mov     r8,rcx
     mov     rcx,rax
-    call    qword ptr [image.sym43]
+    call    image.sym43
     mov     [rsp+20h],rax
     mov     [rsp+28h],rdx
     lea     rdi,[rsp+80h]
@@ -17723,6 +17722,7 @@ L0:
     movsxd  r10,[r11+r10*4]
     add     r10,r11
     jmp     r10
+    int3
 L1:
     .long   L2
     .long   L6
@@ -17755,7 +17755,7 @@ L6:
     mov     rcx,[rsp+28h]
     mov     rdi,rax
     mov     rsi,rcx
-    call    qword ptr [image.sym44]
+    call    image.sym44
     ud2
 L7:
     ud2
@@ -17790,7 +17790,7 @@ L0:
     mov     rdx,r12
     mov     r8,rcx
     mov     rcx,rax
-    call    qword ptr [sym1]
+    call    sym1
 L1:
     mov     rbx,[rsp+40h]
     mov     r12,[rsp+30h]

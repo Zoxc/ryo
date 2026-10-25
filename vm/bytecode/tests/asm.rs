@@ -33,14 +33,14 @@ impl Rng {
 /// Every valid mode: the eight with a frame pointer, then the two without (which need
 /// `fp_arg` and not `pe`); then the same ten with counters.
 const MODES: [Mode; 20] = {
-    let mut m = [Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false, counters: false }; 20];
+    let mut m = [Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false, counters: false, far_rt: false }; 20];
     let mut i = 0;
     while i < 8 {
-        m[i] = Mode { fp_arg: i & 1 != 0, frame_pointer: true, align_loops: i & 2 != 0, pe: i & 4 != 0, counters: false };
+        m[i] = Mode { fp_arg: i & 1 != 0, frame_pointer: true, align_loops: i & 2 != 0, pe: i & 4 != 0, counters: false, far_rt: false };
         i += 1;
     }
-    m[8] = Mode { fp_arg: true, frame_pointer: false, align_loops: false, pe: false, counters: false };
-    m[9] = Mode { fp_arg: true, frame_pointer: false, align_loops: true, pe: false, counters: false };
+    m[8] = Mode { fp_arg: true, frame_pointer: false, align_loops: false, pe: false, counters: false, far_rt: false };
+    m[9] = Mode { fp_arg: true, frame_pointer: false, align_loops: true, pe: false, counters: false, far_rt: false };
     i = 10;
     while i < 20 {
         m[i] = Mode { counters: true, ..m[i - 10] };
@@ -571,7 +571,7 @@ fn mov_w128_is_not_two_mov_w64() {
 #[test]
 fn label_at_a_dead_hint_before_a_loop_head() {
     for counters in [false, true] {
-        label_at_a_dead_hint(Mode { fp_arg: false, frame_pointer: true, align_loops: true, pe: false, counters });
+        label_at_a_dead_hint(Mode { fp_arg: false, frame_pointer: true, align_loops: true, pe: false, counters, far_rt: false });
     }
 }
 
@@ -666,7 +666,7 @@ fn dead_stores_reencode() {
 /// The register packing of the opcodes with more operands than registers.
 #[test]
 fn packed_operands() {
-    let m = Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false, counters: false };
+    let m = Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false, counters: false, far_rt: false };
     let l = asm::layout(Opcode::DiscrNicheW128, m);
     // d, s, niche_start (2), variants_start, variants_end | untagged << 32.
     assert_eq!(l.regs, 6);
@@ -710,7 +710,7 @@ fn linked_fields_must_resolve() {
 /// Machine code that isn't canonical is rejected.
 #[test]
 fn rejects_non_canonical_code() {
-    let m = Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false, counters: false };
+    let m = Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false, counters: false, far_rt: false };
     let f = Fn {
         // A shift by the width or more calls its handler.
         insns: vec![vec![Opcode::ShlImmW64 as u32, -8i32 as u32, -16i32 as u32, 70, 0], vec![Opcode::Ret as u32, -8i32 as u32, 8]],
@@ -790,7 +790,7 @@ fn inline_operand_forms() {
 /// call (same operands as `add.w32`) retargeted to `add.w32`'s handler.
 #[test]
 fn rejects_handler_calls_of_inlined_ops() {
-    let m = Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false, counters: false };
+    let m = Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false, counters: false, far_rt: false };
     let f = Fn {
         insns: vec![vec![Opcode::FaddF32 as u32, -8i32 as u32, -16i32 as u32, 16], vec![Opcode::Abort as u32]],
         targets: Vec::new(),

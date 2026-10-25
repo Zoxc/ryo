@@ -3,7 +3,7 @@ use ryo_bytecode::asm::{self, CallSite, InsnList, Mode, Scope, ScopeKind};
 use ryo_bytecode::full::*;
 use ryo_bytecode::image::*;
 
-const ELF: Mode = Mode { fp_arg: false, frame_pointer: true, align_loops: true, pe: false, counters: false };
+const ELF: Mode = Mode { fp_arg: false, frame_pointer: true, align_loops: true, pe: false, counters: false, far_rt: false };
 /// As the backend encodes: with counters.
 const AOT: Mode = Mode { counters: true, ..ELF };
 

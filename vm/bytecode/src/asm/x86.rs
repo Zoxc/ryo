@@ -347,6 +347,13 @@ pub enum Item {
     JmpRax,
     /// `jmp rel32` to another function (a tail call).
     Jmp(Ref),
+    /// JIT code only, never decoded: `mov r11, imm64; call r11`, a call of a target out of
+    /// `rel32` reach (the `imm64` relocated against the [`Ref`], 8 bytes).
+    CallAbs(Ref),
+    /// JIT code only: `mov r11, imm64; jmp r11`, a tail call out of reach.
+    JmpAbs(Ref),
+    /// JIT code only: `jmp [rip + disp32]`, a tail call through a call slot.
+    JmpMem(Ref),
     /// A jump within the function: `jmp`, `jz` or `jnz`, `rel8` or (`long`) `rel32`.
     Branch { cond: Cond, target: u32, long: bool },
     /// `test al, al`
@@ -481,7 +488,8 @@ impl Item {
             }
             Item::Lea(..) | Item::LeaTable(_) | Item::LoadRip(..) => 7,
             Item::Call(_) | Item::Jmp(_) => 5,
-            Item::CallMem(_) => 6,
+            Item::CallMem(_) | Item::JmpMem(_) => 6,
+            Item::CallAbs(_) | Item::JmpAbs(_) => 13,
             Item::Branch { cond, long, .. } => match (cond, long) {
                 (_, false) => 2,
                 (Cond::Always, true) => 5,
@@ -782,6 +790,16 @@ impl Item {
             Item::Jmp(to) => {
                 out.push(0xe9);
                 reloc(out, relocs, to);
+            }
+            Item::JmpMem(to) => {
+                out.extend_from_slice(&[0xff, 0x25]);
+                reloc(out, relocs, to);
+            }
+            Item::CallAbs(to) | Item::JmpAbs(to) => {
+                out.extend_from_slice(&[0x49, 0xbb]);
+                relocs.push(Reloc { at: pos + (out.len() - start) as u32, to });
+                out.extend_from_slice(&[0; 8]);
+                out.extend_from_slice(&[0x41, 0xff, if matches!(self, Item::CallAbs(_)) { 0xd3 } else { 0xe3 }]);
             }
             Item::Branch { cond, target, long } => {
                 if long {

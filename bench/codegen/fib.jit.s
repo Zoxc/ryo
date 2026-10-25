@@ -31,16 +31,16 @@ L1:
 L2:
     lea     rax,[k0]
     mov     rdi,rax
-    call    qword ptr [sym1]
+    call    sym1
     ud2
 L3:
     lea     rax,[k3]
     mov     rdi,rax
-    call    qword ptr [sym1]
+    call    sym1
     ud2
 L4:
     lea     rax,[k6]
     mov     rdi,rax
-    call    qword ptr [sym7]
+    call    sym7
     ud2
 

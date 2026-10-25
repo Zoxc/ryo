@@ -394,6 +394,51 @@ impl X86 {
         self.rel32(0xe8, to);
     }
 
+    /// `mov r11, imm64` with the `imm64` relocated against `to` (8 bytes).
+    fn mov_r11_abs(&mut self, to: Ref) {
+        self.code.extend_from_slice(&[0x49, 0xbb]);
+        let at = self.pos();
+        self.relocs.push(Reloc { at, to });
+        self.code.extend_from_slice(&[0; 8]);
+    }
+
+    /// `mov r11, imm64; call r11`: a call of a target out of `rel32` reach.
+    pub fn call_abs(&mut self, to: Ref) {
+        self.mov_r11_abs(to);
+        self.code.extend_from_slice(&[0x41, 0xff, 0xd3]);
+    }
+
+    /// `mov r11, imm64; jmp r11`.
+    pub fn jmp_abs(&mut self, to: Ref) {
+        self.mov_r11_abs(to);
+        self.code.extend_from_slice(&[0x41, 0xff, 0xe3]);
+    }
+
+    /// A call of a handler or the probe: `call rel32`, or `far` ([`crate::asm::Mode::far_rt`])
+    /// through `r11`.
+    pub fn call_rt(&mut self, to: Ref, far: bool) {
+        if far { self.call_abs(to) } else { self.call(to) }
+    }
+
+    /// A call of the function operand `g`, which the JIT may mark with a
+    /// [`crate::asm::FUNC_KINDS`] bit.
+    pub fn call_func(&mut self, g: crate::full::Func) {
+        match g.0 & crate::asm::FUNC_KINDS {
+            crate::asm::FUNC_SLOT => self.call_mem(Mem::Rip(Ref::Func(g))),
+            crate::asm::FUNC_FAR => self.call_abs(Ref::Func(g)),
+            _ => self.call(Ref::Func(g)),
+        }
+    }
+
+    /// A tail call (after the epilogue) of the function operand `g`, as [`Self::call_func`].
+    pub fn jmp_func(&mut self, g: crate::full::Func) {
+        match g.0 & crate::asm::FUNC_KINDS {
+            crate::asm::FUNC_SLOT => self.jmp_mem(Mem::Rip(Ref::Func(g))),
+            crate::asm::FUNC_FAR => self.jmp_abs(Ref::Func(g)),
+            _ => self.jmp(Ref::Func(g)),
+        }
+    }
+
     pub fn jmp(&mut self, to: Ref) {
         self.rel32(0xe9, to);
     }

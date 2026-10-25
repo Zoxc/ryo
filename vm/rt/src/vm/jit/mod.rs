@@ -224,6 +224,11 @@ extern "C-unwind" fn shuffled(header: *const u8) -> bool {
     config().shuffle || SHUFFLED.iter().any(|s| s.load(SeqCst) == header as usize)
 }
 
+/// [`RtApi::image_at`].
+extern "C-unwind" fn image_at(addr: usize) -> *const u8 {
+    super::registry::image_at(addr)
+}
+
 /// How many functions the JIT compiled, and how many it failed to (tests).
 #[doc(hidden)]
 pub fn jit_stats() -> (usize, usize) {
@@ -614,6 +619,7 @@ fn start() -> bool {
         next_batch,
         done,
         shuffled,
+        image_at,
         handlers,
         reg_handlers,
     };

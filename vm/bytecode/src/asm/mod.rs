@@ -97,7 +97,23 @@ pub struct Mode {
     /// JIT's trigger (design/vm.md, "JIT records and counters"). The backend always emits
     /// them; code the JIT encodes has none.
     pub counters: bool,
+    /// JIT code only (never an image's mode): the handlers and the probe are out of `rel32`
+    /// reach of the code, which calls them as `mov r11, imm64; call r11` (design/jit.md,
+    /// "Calls"). That is JIT code of an image far from a shared `ryo_rt`.
+    pub far_rt: bool,
 }
+
+/// JIT call targets (design/jit.md, "Calls"): the JIT gives a `call` or `tail_call` whose
+/// callee it doesn't reach as a function of the image a function operand with one of these
+/// bits, and the rest of the operand numbers the target in the JIT's list. The encoders emit
+/// it through the call slot: `call [rip + slot]` or `jmp [rip + slot]`.
+pub const FUNC_SLOT: u32 = 1 << 31;
+/// At a known address within `rel32` reach: `call rel32` or `jmp rel32`.
+pub const FUNC_NEAR: u32 = 1 << 30;
+/// At a known address out of reach: `mov r11, imm64; call r11` or `jmp r11`.
+pub const FUNC_FAR: u32 = 1 << 29;
+/// The bits of [`FUNC_SLOT`], [`FUNC_NEAR`] and [`FUNC_FAR`].
+pub const FUNC_KINDS: u32 = FUNC_SLOT | FUNC_NEAR | FUNC_FAR;
 
 /// Where a handler finds an operand: `count` argument registers from `reg` (0 is `rdi`),
 /// the first shifted right by `shift` (32 for the high half of a shared register). `count`

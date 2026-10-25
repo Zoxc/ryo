@@ -110,6 +110,23 @@ pub unsafe fn register(headers: *const *const u8, n: usize) {
     SNAPSHOT.store(snap, Ordering::Release);
 }
 
+/// The header of the registered image whose text section holds `addr`, or null: the JIT
+/// finds the VM function another image's code calls by its address ([`RtApi::image_at`]).
+/// Lock-free, like every reader.
+///
+/// [`RtApi::image_at`]: ryo_bytecode::jit_abi::RtApi::image_at
+#[cfg_attr(not(feature = "jit"), allow(dead_code))]
+pub fn image_at(addr: usize) -> *const u8 {
+    let Some(s) = snapshot() else { return ptr::null() };
+    for im in images(s, s.by_hash) {
+        let text = im.view.text_ptr() as usize;
+        if addr.wrapping_sub(text) < im.view.header().text_size as usize {
+            return (im.view.header() as *const ryo_bytecode::image::Header).cast();
+        }
+    }
+    ptr::null()
+}
+
 /// An insertion sort: core's sorts reference its panic path (`panic_on_ord_violation`), which
 /// the runtime must not reach (design/vm.md, "No re-entry"). Lists are short (one entry per
 /// image).

@@ -397,6 +397,7 @@ fn item(i: &Item) -> String {
         Item::CallMemRax => "\"callMemRax\"".into(),
         Item::JmpRax => "\"jmpRax\"".into(),
         Item::Jmp(to) => c("jmp", &[("to", rf(to))]),
+        Item::CallAbs(_) | Item::JmpAbs(_) | Item::JmpMem(_) => unreachable!("JIT code only"),
         Item::Branch { cond: k, target, long } => c("branch", &[("cond", cond(k)), ("target", target.to_string()), ("long", long.to_string())]),
         Item::TestAl => "\"testAl\"".into(),
         Item::TestRax => "\"testRax\"".into(),
@@ -559,7 +560,7 @@ fn osr_vectors(rng: &mut Rng, out: &mut Vec<String>) {
         let f_aot = rng.pick(&[0, 16, 32, 64, 4096, 8192]) + 16 * rng.below(8) as u32;
         let f_jit = if rng.bool() { f_aot } else { rng.pick(&[0, 16, 48, 128, 6000]) + 16 * rng.below(8) as u32 };
         let fp = rng.bool();
-        let mode = Mode { fp_arg: true, frame_pointer: fp, align_loops: false, pe: false, counters: false };
+        let mode = Mode { fp_arg: true, frame_pointer: fp, align_loops: false, pe: false, counters: false, far_rt: false };
         let at = rng.below(10000) as u32;
         let code = osr::osr_code(&entries, f_aot, f_jit, mode, at);
         let es: Vec<String> = entries

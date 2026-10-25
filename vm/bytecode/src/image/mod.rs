@@ -541,6 +541,7 @@ impl<'a> Image<'a> {
             align_loops: m & MODE_ALIGN_LOOPS != 0,
             pe: m & MODE_PE != 0,
             counters: m & MODE_COUNTERS != 0,
+            far_rt: false,
         }
     }
 

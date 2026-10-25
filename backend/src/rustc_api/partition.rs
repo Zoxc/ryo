@@ -172,6 +172,7 @@ pub fn asm_mode(tcx: TyCtxt<'_>, rt: RtItems) -> asm::Mode {
         // The JIT's trigger, in every build: one code shape (design/vm.md, "JIT records and
         // counters").
         counters: true,
+        far_rt: false,
     }
 }
 

@@ -97,7 +97,7 @@ L8:
     mov     edx,0
     mov     rcx,r8
     movzx   edx,dl
-    call    qword ptr [image.sym14]
+    call    image.sym14
     ud2
 L9:
     lea     rcx,[image.k1233]
@@ -106,7 +106,7 @@ L9:
     mov     edx,0
     mov     rcx,rax
     movzx   edx,dl
-    call    qword ptr [image.sym14]
+    call    image.sym14
     ud2
     mov     ecx,0
     jmp     L16
@@ -236,7 +236,7 @@ fn <std::vec::Vec<bool> as std::ops::IndexMut<usize>>::index_mut
 L0:
     mov     rdi,rsi
     mov     rsi,rcx
-    call    qword ptr [image.sym15]
+    call    image.sym15
     ud2
 
 fn core::num::<impl usize>::unchecked_add::precondition_check
@@ -253,7 +253,7 @@ L0:
     mov     rcx,rdx
     mov     edx,0
     movzx   edx,dl
-    call    qword ptr [sym2]
+    call    sym2
     ud2
 
 fn sieve
@@ -385,30 +385,30 @@ L8:
     mov     edi,0
     mov     rsi,rdx
     mov     rdx,rax
-    call    qword ptr [image.sym15]
+    call    image.sym15
     ud2
 L9:
     mov     rsi,rdi
     mov     edi,1
     mov     rdx,rcx
-    call    qword ptr [image.sym15]
+    call    image.sym15
     ud2
 L10:
     mov     rdi,rsi
     mov     rsi,r13
     mov     rdx,r8
-    call    qword ptr [image.sym15]
+    call    image.sym15
     ud2
 L11:
     mov     rdi,r9
     mov     rsi,[rsp+18h]
     mov     rdx,[rsp+10h]
-    call    qword ptr [image.sym15]
+    call    image.sym15
     ud2
 L12:
     lea     rax,[k0]
     mov     rdi,rax
-    call    qword ptr [sym1]
+    call    sym1
     ud2
     mov     rbx,rax
     jmp     L24
@@ -417,7 +417,7 @@ L12:
 L13:
     lea     rax,[k7]
     mov     rdi,rax
-    call    qword ptr [sym8]
+    call    sym8
     jmp     L14
     mov     rbx,rax
     jmp     L24
@@ -428,7 +428,7 @@ L14:
 L15:
     lea     rax,[k11]
     mov     rdi,rax
-    call    qword ptr [sym8]
+    call    sym8
     jmp     L16
     mov     rbx,rax
     jmp     L24
@@ -439,7 +439,7 @@ L16:
 L17:
     lea     rax,[k15]
     mov     rdi,rax
-    call    qword ptr [sym1]
+    call    sym1
     jmp     L18
     mov     rbx,rax
     jmp     L24
@@ -448,7 +448,7 @@ L18:
 L19:
     lea     rax,[k17]
     mov     rdi,rax
-    call    qword ptr [sym1]
+    call    sym1
     jmp     L20
     mov     rbx,rax
     jmp     L24
@@ -467,7 +467,7 @@ L22:
     call    ryo_h_Resume
     ud2
 L23:
-    call    qword ptr [sym20]
+    call    sym20
     ud2
 L24:
     jmp     L21
@@ -577,7 +577,7 @@ fn std::iter::adapters::map::map_fold::<&bool, usize, usize, {closure@<std::iter
 L0:
     lea     rax,[image.k472]
     mov     rdi,rax
-    call    qword ptr [image.sym9]
+    call    image.sym9
     ud2
     mov     ecx,1
     jmp     L4
