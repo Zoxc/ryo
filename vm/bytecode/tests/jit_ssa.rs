@@ -418,3 +418,34 @@ fn constant_around_a_loop() {
     );
     assert_eq!(f.blocks[b1.idx()].params.len(), 1, "{f}");
 }
+
+/// Two parameters of a head with an OSR entry, equal on every normal edge, are one: the OSR
+/// entry's loads differ, but the AOT frame holds the same value in both slots there.
+#[test]
+fn osr_transparent_duplicate_parameters() {
+    use ryo_bytecode::jit::ir::{BinOp, Cc};
+    let mut f = IrFunc::default();
+    let (b0, b1, b2, b3) = (f.block(BlockKind::Entry), f.block(BlockKind::Body), f.block(BlockKind::Body), f.block(BlockKind::Body));
+    let bo = f.block(BlockKind::Osr(0));
+    f.blocks[b1.idx()].head = Some(0);
+    f.osr = vec![Some(bo)];
+    let a = f.param(b0, 8);
+    let (x, y) = (f.param(b1, 8), f.param(b1, 8));
+    f.terminate(b0, Term::Jmp(Edge { to: b1, args: vec![a, a] }));
+    let l1 = f.inst(bo, Op::OsrLoad(-8, 8), vec![], &[8]);
+    let l2 = f.inst(bo, Op::OsrLoad(-16, 8), vec![], &[8]);
+    let (l1, l2) = (f.result(l1), f.result(l2));
+    f.terminate(bo, Term::Jmp(Edge { to: b1, args: vec![l1, l2] }));
+    let s = f.inst(b1, Op::Bin(BinOp::Sub, 8), vec![x, y], &[8]);
+    let s = f.result(s);
+    let hundred = f.konst(100, 8);
+    let c = f.inst(b1, Op::Cmp(Cc::LtU, 8), vec![s, hundred], &[1]);
+    let c = f.result(c);
+    f.terminate(b1, Term::Br { cond: c, t: Edge::to(b2), f: Edge::to(b3) });
+    f.terminate(b2, Term::Jmp(Edge { to: b1, args: vec![x, y] }));
+    f.terminate(b3, Term::Ret { k: 8, parts: vec![s] });
+    f.layout = vec![b0, b1, b2, b3];
+    let f = opt(f);
+    assert_eq!(f.blocks[b1.idx()].params.len(), 1, "{f}");
+    assert_eq!(f.blocks[bo.idx()].insts.len(), 1, "{f}");
+}

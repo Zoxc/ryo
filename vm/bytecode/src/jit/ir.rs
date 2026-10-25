@@ -632,6 +632,11 @@ impl Func {
     /// The immediate dominators (Cooper, Harvey, Kennedy), with a virtual root above the
     /// entry and the OSR entries: `None` for those and for unreachable blocks.
     pub fn idoms(&self, rpo: &[Block]) -> Vec<Option<Block>> {
+        self.idoms_by(rpo, |_| true)
+    }
+
+    /// [`Func::idoms`] counting only the edges from the predecessors `keep` accepts.
+    pub fn idoms_by(&self, rpo: &[Block], keep: impl Fn(Block) -> bool) -> Vec<Option<Block>> {
         let n = self.blocks.len();
         const ROOT: u32 = u32::MAX;
         let mut order = alloc::vec![u32::MAX; n];
@@ -673,7 +678,7 @@ impl Func {
                 }
                 let mut new = u32::MAX - 1;
                 for &(p, _) in &self.blocks[b.idx()].preds {
-                    if idom[p.idx()] == u32::MAX - 1 {
+                    if idom[p.idx()] == u32::MAX - 1 || !keep(p) {
                         continue;
                     }
                     new = if new == u32::MAX - 1 { p.0 } else { intersect(&idom, new, p.0) };

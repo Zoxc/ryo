@@ -7,7 +7,8 @@
 //!   constants");
 //! - the algebraic identities of [`super::lvn`], again, on what the constants reach;
 //! - **parameter aliasing**: a parameter whose arguments are all one value (or itself) is
-//!   that value;
+//!   that value; at a head with an OSR entry, a parameter equal to another on every normal
+//!   edge is that one ([`super::osr`]);
 //! - **block merging**: a block that only jumps to a block with no other predecessor takes
 //!   that block's instructions and terminator.
 //!
@@ -17,6 +18,7 @@
 use alloc::vec::Vec;
 
 use super::lvn::{Simp, eval_bin, simplify as simplify_inst};
+use super::osr::{osr_edge, same_params};
 use crate::jit::ir::*;
 
 /// At most this many rounds of propagation, to keep compile time bounded.
@@ -265,7 +267,7 @@ impl Sccp {
                         if !self.edge[self.base[pb.idx()] + k as usize] {
                             continue;
                         }
-                        if matches!(f.blocks[pb.idx()].kind, BlockKind::Osr(_)) {
+                        if osr_edge(f, pb) {
                             osr = true;
                             continue;
                         }
@@ -330,8 +332,7 @@ fn sccp(f: &mut Func) -> bool {
                 if !s.exec[b.idx()] || s.osr_only[b.idx()] || bd.params.is_empty() || matches!(bd.kind, BlockKind::Entry | BlockKind::Osr(_)) {
                     continue;
                 }
-                let normal =
-                    bd.preds.iter().any(|&(p, k)| s.edge[s.base[p.idx()] + k as usize] && !matches!(f.blocks[p.idx()].kind, BlockKind::Osr(_)));
+                let normal = bd.preds.iter().any(|&(p, k)| s.edge[s.base[p.idx()] + k as usize] && !osr_edge(f, p));
                 if !normal {
                     s.osr_only[b.idx()] = true;
                     s.changed = true;
@@ -423,8 +424,8 @@ fn sccp(f: &mut Func) -> bool {
 
 /// Replaces each block parameter whose arguments are all one value, but for the parameter
 /// itself, by that value: the value then dominates every predecessor, so the block too. Not
-/// at heads with an OSR entry.
-/// Whether any was.
+/// at heads with an OSR entry: there, a parameter equal to an earlier one on every normal
+/// edge ([`same_params`]) is that one instead, OSR-transparently. Whether any was.
 fn alias_params(f: &mut Func) -> bool {
     let mut any = false;
     let mut changed = true;
@@ -432,12 +433,26 @@ fn alias_params(f: &mut Func) -> bool {
         changed = false;
         for b in 0..f.blocks.len() {
             let bd = &f.blocks[b];
+            if bd.kind == BlockKind::Entry || bd.preds.is_empty() {
+                continue;
+            }
             // A head's OSR entry sets its parameters from the AOT frame, and nothing else
-            // may stand for them there (the entry's loads have no locations of their own).
-            if bd.kind == BlockKind::Entry
-                || bd.preds.is_empty()
-                || bd.preds.iter().any(|&(p, _)| matches!(f.blocks[p.idx()].kind, BlockKind::Osr(_)))
-            {
+            // may stand for them there (the entry's loads have no locations of their own),
+            // but another of its parameters.
+            if bd.preds.iter().any(|&(p, _)| osr_edge(f, p)) {
+                let blk = Block(b as u32);
+                for m in 1..f.blocks[b].params.len() {
+                    let pm = f.blocks[b].params[m];
+                    if matches!(f.def(pm), ValueDef::Alias(_)) {
+                        continue;
+                    }
+                    let n = (0..m).find(|&n| !matches!(f.def(f.blocks[b].params[n]), ValueDef::Alias(_)) && same_params(f, blk, n, m));
+                    if let Some(n) = n {
+                        f.values[pm.idx()].def = ValueDef::Alias(f.blocks[b].params[n]);
+                        changed = true;
+                        any = true;
+                    }
+                }
                 continue;
             }
             for (n, &p) in bd.params.iter().enumerate() {

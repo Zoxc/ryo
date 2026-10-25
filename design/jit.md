@@ -348,7 +348,7 @@ become constants, the branches, overflow branches and switches it decides become
 blocks left unreachable go, and `opt::lvn`'s identities run again on what the constants
 reach. A parameter whose arguments are all one value (but for itself, as around a self-loop)
 becomes that value (not at a head with an OSR entry), which then dominates every predecessor,
-so the block. A block that ends in a jump to a block with no other predecessor takes its
+so the block; at such a head, a parameter equal to an earlier one on every normal edge becomes that one. A block that ends in a jump to a block with no other predecessor takes its
 instructions and terminator (not
 into a landing pad stub, and never an AOT loop head or an entry). It repeats while the
 identities find new constants, at most three rounds. Then the folds (`opt::fold`)
@@ -410,10 +410,17 @@ also when the head is entered by OSR, and the entry's `OsrLoad` of it goes. Why 
 - If no normal edge into a head is executable, propagation counts its OSR edge (whose
   `OsrLoad`s vary): the entry is then never taken, but the code stays well formed.
 
-Only constants use this: a parameter whose normal arguments are one non-constant value
-still needs that value at the OSR entry, which doesn't have it, so parameter aliasing leaves
-heads with an OSR entry alone (the entry sets their parameters from the AOT frame: even with
-the normal edges gone, its `OsrLoad`s can't stand for them). OSR heads and their entries are never removed or merged.
+The same argument holds for any fact about values both runs compute, and `opt::osr` gives
+the passes its helpers: the OSR edges, a head parameter's one normal value (`invariant`),
+two parameters equal on every normal edge (`same_params`), and dominators without the OSR
+edges (`normal_idoms`), under which facts established before a loop reach its head through
+the parameters' normal arguments. A parameter whose normal arguments are one non-constant
+value still needs that value at the OSR entry, which doesn't have it, so parameter aliasing
+doesn't make it that value (the entry sets the head's parameters from the AOT frame: even with
+the normal edges gone, its `OsrLoad`s can't stand for them). But a parameter equal to an
+earlier one of the same head on every normal edge (each edge passing them one value that
+isn't `undef`, or each its own parameter) becomes that one: the AOT frame's two slots hold
+the same bytes at the head, and the entry's `OsrLoad` of the second goes. OSR heads and their entries are never removed or merged.
 
 ### Back end
 

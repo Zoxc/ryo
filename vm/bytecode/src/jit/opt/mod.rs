@@ -5,6 +5,7 @@
 //!   and store-to-load forwarding, per block.
 //! - `simplify`: global simplification: constant propagation over block parameters, branch
 //!   folding, parameter aliasing and block merging.
+//! - `osr`: the OSR-transparent loop facts the forward analyses share: OSR edges left out.
 //! - `fold`: the folds instruction selection relies on.
 //! - `dce`: dead code elimination, effect-free handler calls included.
 //! - `thread`: jump threading through empty blocks.
@@ -16,6 +17,7 @@ pub mod dce;
 pub mod fold;
 pub mod layout;
 pub mod lvn;
+pub mod osr;
 pub mod promote;
 pub mod simplify;
 pub mod thread;
