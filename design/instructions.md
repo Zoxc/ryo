@@ -212,15 +212,12 @@ VM) or a static, for fn pointers, `ReifyFnPointer` and pointers into statics.
 `addr.sym.ind` loads once more through the slot, for an indirect slot (PE `__imp_` data,
 [platforms.md](platforms.md)).
 
-Handlers `ryo_h_AddrSym` and `ryo_h_AddrSymInd` (`addr_sym`), the slot passed as its
-address:
+Inline, the slot read rip-relative (`r` a register the register cache picks):
 
-```rust
-let mut v = *sym.cast::<*const ()>();
-if ind {
-    v = *v.cast::<*const ()>();
-}
-frame.write(d, v);
+```
+mov r, [rip + sym]
+mov r, [r]          ; addr.sym.ind only
+mov [fp + d], r
 ```
 
 #### `addr.const d, a`
@@ -229,10 +226,12 @@ Writes the address of a constant pool allocation, or with bit 31 of `a` of one i
 writable fixup area (PE allocations that point at imports): pointers to constant memory,
 vtables and constants copied out of the fixup area.
 
-Handler `ryo_h_AddrConst` (`addr_const`), `a` passed as the resolved address:
+Inline, the allocation's address rip-relative (the fixup area is patched at registration,
+before any VM code runs):
 
-```rust
-frame.write(d, a);
+```
+lea r, [rip + a]
+mov [fp + d], r
 ```
 
 #### `ptr.add d, p, imm`

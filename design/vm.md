@@ -210,7 +210,8 @@ The epilogue is `add rsp, F + 8`, `leave` with a frame pointer, or on PE
 #### Inline instructions
 
 The common instructions (`asm::has_inline`) are short native sequences instead of handler
-calls (`asm::inline`): `mov`, `imm`, `addr`, `ptr.add` (a 32-bit offset), `ptr.index` (a
+calls (`asm::inline`): `mov`, `imm`, `addr`, `addr.const`, `addr.sym` and `addr.sym.ind`
+(rip-relative: a `lea` of the allocation, a load of the symbol slot), `ptr.add` (a 32-bit offset), `ptr.index` (a
 stride below 2^31), `load`, `store`, `add`, `sub`, `and`, `or`, `xor`, `mul` and their
 `.imm` forms, the shifts by an immediate below the width, the compares to a `bool` (`eq`
 … `ge.u.imm`), `br` and the compare-branches, the overflow ops `add.ovf`, `sub.ovf` and
