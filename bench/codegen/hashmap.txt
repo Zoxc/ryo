@@ -5161,8 +5161,7 @@ L16:
     jmp L18
 L17:
     add.imm.w64 $-272, $-136, 1
-    imm.w64 $-296, 8
-    div.u.w64 $-264, $-272, $-296
+    shr.u.imm.w64 $-264, $-272, 3
     mul.imm.w64 $-136, $-264, 7
 L18:
     ; end $-264, 8 bytes
@@ -5417,13 +5416,11 @@ L6:
     sub.w64 $-472, $-408, $-464
     load.w64 $-480, [$-280 + 8]
     and.w64 $-456, $-472, $-480
-    imm.w64 $-504, 16
-    div.u.w64 $-448, $-456, $-504
+    shr.u.imm.w64 $-448, $-456, 4
     sub.w64 $-480, $-432, $-464
     load.w64 $-488, [$-280 + 8]
     and.w64 $-472, $-480, $-488
-    imm.w64 $-504, 16
-    div.u.w64 $-456, $-472, $-504
+    shr.u.imm.w64 $-456, $-472, 4
     eq.w64 $-433, $-448, $-456
     br! $-433, L16
     jmp L15
@@ -5561,8 +5558,7 @@ L21:
     jmp L23
 L22:
     add.imm.w64 $-408, $-208, 1
-    imm.w64 $-504, 8
-    div.u.w64 $-400, $-408, $-504
+    shr.u.imm.w64 $-400, $-408, 3
     mul.imm.w64 $-208, $-400, 7
 L23:
     mov.w64 $-328, $-384
@@ -5675,8 +5671,7 @@ L6:
     jmp L8
 L7:
     add.imm.w64 $-176, $-64, 1
-    imm.w64 $-256, 8
-    div.u.w64 $-168, $-176, $-256
+    shr.u.imm.w64 $-168, $-176, 3
     mul.imm.w64 $-64, $-168, 7
 L8:
     load.w64 $-128, [$-16 + 0]
@@ -5687,7 +5682,7 @@ L8:
     ret $0, 0
   cleanup L2 -> continue
 
-fn hashbrown::raw::RawTableInner::reserve_rehash_inner::<std::alloc::Global> (frame 176, args 32, ret 16)
+fn hashbrown::raw::RawTableInner::reserve_rehash_inner::<std::alloc::Global> (frame 160, args 32, ret 16)
     arg $-24, 8
     arg $-32, 264
     arg $-40, 520
@@ -5715,8 +5710,8 @@ L3:
     add.imm.w64 $-128, $-96, 1
 L4:
     call $-120, fn2, 8, [4294967192, 8, 4294967168, 264]
-    mov.w64 $-176, $-80
-    mov.w64 $-168, $-72
+    mov.w64 $-160, $-80
+    mov.w64 $-152, $-72
 L5:
     call $-16, fn3, 526344, [4294967272, 8, 4294967264, 264, 4294967176, 520, 4294967240, 776, 4294967248, 1032, 4294967239, 1281]
 L6:
@@ -5734,13 +5729,11 @@ L8:
     jmp L10
 L9:
     add.imm.w64 $-128, $-96, 1
-    imm.w64 $-152, 8
-    div.u.w64 $-120, $-128, $-152
+    shr.u.imm.w64 $-120, $-128, 3
     mul.imm.w64 $-96, $-120, 7
 L10:
     mov.w64 $-128, $-96
-    imm.w64 $-152, 2
-    div.u.w64 $-120, $-128, $-152
+    shr.u.imm.w64 $-120, $-128, 1
     br.lt.u.w64! $-120, $-104, L1
     jmp L3
   cleanup L2 -> continue
@@ -9014,10 +9007,8 @@ fn std::ptr::swap_nonoverlapping_bytes (frame 112, args 0, ret 0)
     arg $-16, 264
     arg $-24, 520
     mov.w64 $-48, $-24
-    imm.w64 $-112, 8
-    div.u.w64 $-56, $-48, $-112
-    imm.w64 $-112, 8
-    rem.u.w64 $-64, $-48, $-112
+    shr.u.imm.w64 $-56, $-48, 3
+    and.imm.w64 $-64, $-48, 7
     mov.w64 $-72, $-56
     br.eq.imm.w64 $-72, 0, L1
     mov.w64 $-80, $-72

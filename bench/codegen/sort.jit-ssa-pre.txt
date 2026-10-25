@@ -864,7 +864,7 @@ b1(): ; Body
     hcall abort [(Fp, [None, None])] ins [] outs [] ()
     trap
 b2(): ; Body
-    v5:8 = hcall.reg div.u.w64 [(Fp, [None, None]), (Imm(4294967224), [Some(Scratch(0)), None]), (Imm(4294967232), [Some(Scratch(8)), None]), (Imm(4294967144), [Some(Scratch(16)), None])] outs 1 (v1, 0x8)
+    v5:8 = Bin(ShrU, 8) (v1, 0x3)
     v7:8 = Bin(Mul, 8) (v5, 0x4)
     v8:8 = PtrIndex(8) (v0, v7)
     v10:8 = Bin(Mul, 8) (v5, 0x7)
@@ -966,25 +966,24 @@ b6(v8:8): ; Body
     ret 0x8 (v8)
 
 fn core::slice::sort::shared::pivot::median3_rec::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
-a0: $-112, 8 bytes, Promoted
-a1: $-104, 8 bytes, Promoted
-a2: $-96, 8 bytes, Promoted
-a3: $-88, 8 bytes, Promoted
-a4: $-80, 8 bytes, Promoted
-a5: $-72, 8 bytes, Promoted
-a6: $-64, 8 bytes, Promoted
-a7: $-56, 8 bytes, Promoted
-a8: $-48, 8 bytes, Promoted
-a9: $-40, 8 bytes, Promoted
-a10: $-32, 8 bytes, Promoted
-a11: $-24, 8 bytes, Promoted
-a12: $-16, 8 bytes, Promoted
-a13: $-8, 8 bytes, Promoted
+a0: $-104, 8 bytes, Promoted
+a1: $-96, 8 bytes, Promoted
+a2: $-88, 8 bytes, Promoted
+a3: $-80, 8 bytes, Promoted
+a4: $-72, 8 bytes, Promoted
+a5: $-64, 8 bytes, Promoted
+a6: $-56, 8 bytes, Promoted
+a7: $-48, 8 bytes, Promoted
+a8: $-40, 8 bytes, Promoted
+a9: $-32, 8 bytes, Promoted
+a10: $-24, 8 bytes, Promoted
+a11: $-16, 8 bytes, Promoted
+a12: $-8, 8 bytes, Promoted
 b0(v0:8, v1:8, v2:8, v3:8, v4:8): ; Entry
     v6:8 = Bin(Mul, 8) (v3, 0x8)
     br LtU.w8 v6, 0x40 ? b2(v0, v1, v2) : b1()
 b1(): ; Body
-    v9:8 = hcall.reg div.u.w64 [(Fp, [None, None]), (Imm(4294967216), [Some(Scratch(0)), None]), (Imm(4294967256), [Some(Scratch(8)), None]), (Imm(4294967184), [Some(Scratch(16)), None])] outs 1 (v3, 0x8)
+    v9:8 = Bin(ShrU, 8) (v3, 0x3)
     v11:8 = Bin(Mul, 8) (v9, 0x4)
     v12:8 = PtrIndex(8) (v0, v11)
     v14:8 = Bin(Mul, 8) (v9, 0x7)
@@ -1002,25 +1001,24 @@ b2(v23:8, v24:8, v25:8): ; Body
     ret 0x8 (v27)
 
 fn core::slice::sort::shared::pivot::median3_rec::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
-a0: $-112, 8 bytes, Promoted
-a1: $-104, 8 bytes, Promoted
-a2: $-96, 8 bytes, Promoted
-a3: $-88, 8 bytes, Promoted
-a4: $-80, 8 bytes, Promoted
-a5: $-72, 8 bytes, Promoted
-a6: $-64, 8 bytes, Promoted
-a7: $-56, 8 bytes, Promoted
-a8: $-48, 8 bytes, Promoted
-a9: $-40, 8 bytes, Promoted
-a10: $-32, 8 bytes, Promoted
-a11: $-24, 8 bytes, Promoted
-a12: $-16, 8 bytes, Promoted
-a13: $-8, 8 bytes, Promoted
+a0: $-104, 8 bytes, Promoted
+a1: $-96, 8 bytes, Promoted
+a2: $-88, 8 bytes, Promoted
+a3: $-80, 8 bytes, Promoted
+a4: $-72, 8 bytes, Promoted
+a5: $-64, 8 bytes, Promoted
+a6: $-56, 8 bytes, Promoted
+a7: $-48, 8 bytes, Promoted
+a8: $-40, 8 bytes, Promoted
+a9: $-32, 8 bytes, Promoted
+a10: $-24, 8 bytes, Promoted
+a11: $-16, 8 bytes, Promoted
+a12: $-8, 8 bytes, Promoted
 b0(v0:8, v1:8, v2:8, v3:8, v4:8): ; Entry
     v6:8 = Bin(Mul, 8) (v3, 0x8)
     br LtU.w8 v6, 0x40 ? b2(v0, v1, v2) : b1()
 b1(): ; Body
-    v9:8 = hcall.reg div.u.w64 [(Fp, [None, None]), (Imm(4294967216), [Some(Scratch(0)), None]), (Imm(4294967256), [Some(Scratch(8)), None]), (Imm(4294967184), [Some(Scratch(16)), None])] outs 1 (v3, 0x8)
+    v9:8 = Bin(ShrU, 8) (v3, 0x3)
     v11:8 = Bin(Mul, 8) (v9, 0x4)
     v12:8 = PtrIndex(4) (v0, v11)
     v14:8 = Bin(Mul, 8) (v9, 0x7)
@@ -1064,7 +1062,7 @@ a22: $-8, 8 bytes, Promoted
 b0(v0:8, v1:8, v2:8, v3:8): ; Entry
     AStore(AllocaId(6), 16, 8) (v0)
     v4:8 = ALoad(AllocaId(6), 16, 8) ()
-    v6:8 = hcall.reg div.u.w64 [(Fp, [None, None]), (Imm(4294967144), [Some(Scratch(0)), None]), (Imm(4294967160), [Some(Scratch(8)), None]), (Imm(4294967096), [Some(Scratch(16)), None])] outs 1 (v1, 0x2)
+    v6:8 = Bin(ShrU, 8) (v1, 0x1)
     v8:1 = Cmp(Ne, 8) (v6, 0x0)
     AStore(AllocaId(6), 23, 1) (v8)
     v9:8 = PtrIndex(4) (v4, v6)
@@ -1078,7 +1076,7 @@ b0(v0:8, v1:8, v2:8, v3:8): ; Entry
     v17:8 = ALoad(AllocaId(6), 16, 8) ()
     v18:8 = PtrIndex(4) (v17, v15)
     jmp b1(0x0, v6, v13, v4, v9, v2, v3, v16, v18, v1)
-b1(v20:8, v21:8, v53:8, v65:8, v68:8, v71:8, v74:8, v80:8, v84:8, v93:8): ; Body head 0
+b1(v20:8, v21:8, v53:8, v65:8, v68:8, v71:8, v74:8, v80:8, v84:8, v92:8): ; Body head 0
     AStore(AllocaId(6), 8, 8) (v20)
     AStore(AllocaId(6), 0, 8) (v21)
     v22:8 = ALoad(AllocaId(6), 8, 8) ()
@@ -1089,7 +1087,7 @@ b1(v20:8, v21:8, v53:8, v65:8, v68:8, v71:8, v74:8, v80:8, v84:8, v93:8): ; Body
     br v25 ? b2() : b17()
 b2(): ; Body
     jmp b15()
-b3(v30:8, v31:8, v32:8, v33:8, v38:8, v40:8, v95:8): ; Body head 1
+b3(v30:8, v31:8, v32:8, v33:8, v38:8, v40:8, v94:8): ; Body head 1
     v26:8 = ALoad(AllocaId(6), 0, 8) ()
     v27:8 = ALoad(AllocaId(6), 8, 8) ()
     v28:8 = ALoad(AllocaId(6), 16, 8) ()
@@ -1098,7 +1096,7 @@ b3(v30:8, v31:8, v32:8, v33:8, v38:8, v40:8, v95:8): ; Body head 1
     v34:8 = ALoad(AllocaId(6), 0, 8) ()
     v35:8 = ALoad(AllocaId(6), 8, 8) ()
     v36:8 = ALoad(AllocaId(6), 16, 8) ()
-    jmp b1(v38, v40, v34, v26, v27, v28, v33, v35, v36, v95)
+    jmp b1(v38, v40, v34, v26, v27, v28, v33, v35, v36, v94)
 b4(): ; Body head 2
     jmp b10(v65, v68)
 b5(): ; Body head 3
@@ -1149,11 +1147,11 @@ b19(): ; Body
     v62:8 = ALoad(AllocaId(6), 0, 8) ()
     v63:8 = AllocaAddr(AllocaId(6), 0) ()
     Call(Call { target: fn4, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }, ArgReg { xmm: false, size: 8, index: 4 }], parts: [], site: Continue }) (v63, v65, v68, v71, v74)
-    jmp b3(v53, v80, v84, v74, v62, v21, v93)
+    jmp b3(v53, v80, v84, v74, v62, v21, v92)
 b20(): ; Body
     v91:8 = PtrIndex(4) (v80, 0x1)
     AStore(AllocaId(6), 8, 8) (v91)
-    v98:8 = hcall.reg rem.u.w64 [(Fp, [None, None]), (Imm(4294967112), [Some(Scratch(0)), None]), (Imm(4294967160), [Some(Scratch(8)), None]), (Imm(4294967096), [Some(Scratch(16)), None])] outs 1 (v93, 0x2)
+    v98:8 = Bin(And, 8) (v92, 0x1)
     v100:1 = Cmp(Eq, 8) (v98, 0x0)
     AStore(AllocaId(6), 7, 1) (v100)
     v101:1 = ALoad(AllocaId(6), 7, 1) ()
@@ -1187,8 +1185,8 @@ b24(): ; Osr(0)
     v75:8 = OsrLoad(-32, 8) ()
     v81:8 = OsrLoad(-96, 8) ()
     v85:8 = OsrLoad(-104, 8) ()
-    v94:8 = OsrLoad(-136, 8) ()
-    jmp b1(v37, v39, v54, v66, v69, v72, v75, v81, v85, v94)
+    v93:8 = OsrLoad(-136, 8) ()
+    jmp b1(v37, v39, v54, v66, v69, v72, v75, v81, v85, v93)
 b25(): ; Osr(1)
     v76:8 = OsrLoad(-88, 8) ()
     v78:8 = OsrLoad(-96, 8) ()
@@ -1196,8 +1194,8 @@ b25(): ; Osr(1)
     v86:8 = OsrLoad(-32, 8) ()
     v87:8 = OsrLoad(-56, 8) ()
     v88:8 = OsrLoad(-48, 8) ()
-    v96:8 = OsrLoad(-136, 8) ()
-    jmp b3(v76, v78, v82, v86, v87, v88, v96)
+    v95:8 = OsrLoad(-136, 8) ()
+    jmp b3(v76, v78, v82, v86, v87, v88, v95)
 
 fn core::slice::sort::shared::smallsort::insert_tail::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
 a0: $-160, 8 bytes, Promoted
@@ -1501,7 +1499,7 @@ b3(): ; Body
     hcall abort [(Fp, [None, None])] ins [] outs [] ()
     trap
 b4(): ; Body
-    v9:8 = hcall.reg div.u.w64 [(Fp, [None, None]), (Imm(4294967096), [Some(Scratch(0)), None]), (Imm(4294967112), [Some(Scratch(8)), None]), (Imm(4294966920), [Some(Scratch(16)), None])] outs 1 (v1, 0x2)
+    v9:8 = Bin(ShrU, 8) (v1, 0x1)
     br 0x1 ? b5() : b7()
 b5(): ; Body
     br LtU.w8 v1, 0x10 ? b7() : b6()
@@ -3083,7 +3081,7 @@ b19(): ; Body
     Call(Call { target: sym15, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v44)
     trap
 b20(): ; Body
-    v46:8 = hcall.reg div.u.w64 [(Fp, [None, None]), (Imm(4294966928), [Some(Scratch(0)), None]), (Imm(4294966920), [Some(Scratch(8)), None]), (Imm(4294966416), [Some(Scratch(16)), None])] outs 1 (v1, 0x2)
+    v46:8 = Bin(ShrU, 8) (v1, 0x1)
     v47:8 = RefAddr(k16, false) ()
     v48:8, v49:8 = Call(Call { target: fn17, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [RetPart { xmm: false, size: 8, off: 0 }, RetPart { xmm: false, size: 8, off: 8 }], site: Continue }) (v0, v1, v46, v47)
     Call(Call { target: fn18, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v48, v49, v2)

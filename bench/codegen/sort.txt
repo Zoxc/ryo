@@ -2342,8 +2342,7 @@ fn core::slice::<impl [(u32, u32)]>::reverse (frame 144, args 0, ret 0)
     arg $-16, 8
     arg $-8, 264
     mov.w64 $-24, $-8
-    imm.w64 $-128, 2
-    div.u.w64 $-96, $-24, $-128
+    shr.u.imm.w64 $-96, $-24, 1
     mov.w64 $-88, $-16
     mov.w64 $-80, $-8
     mov.w64 $-64, $-88
@@ -2738,8 +2737,7 @@ fn core::slice::<impl [u32]>::reverse (frame 144, args 0, ret 0)
     arg $-16, 8
     arg $-8, 264
     mov.w64 $-24, $-8
-    imm.w64 $-128, 2
-    div.u.w64 $-96, $-24, $-128
+    shr.u.imm.w64 $-96, $-24, 1
     mov.w64 $-88, $-16
     mov.w64 $-80, $-8
     mov.w64 $-64, $-88
@@ -3335,8 +3333,7 @@ L0:
     mov.w64 $-56, $-24
     mov.w64 $-48, $-16
     mov.w64 $-40, $-56
-    imm.w64 $-152, 8
-    div.u.w64 $-72, $-64, $-152
+    shr.u.imm.w64 $-72, $-64, 3
     mul.imm.w64 $-88, $-72, 4
     ptr.index $-80, $-40, $-88, 8
     mul.imm.w64 $-96, $-72, 7
@@ -3446,8 +3443,7 @@ L0:
     mov.w64 $-56, $-24
     mov.w64 $-48, $-16
     mov.w64 $-40, $-56
-    imm.w64 $-152, 8
-    div.u.w64 $-72, $-64, $-152
+    shr.u.imm.w64 $-72, $-64, 3
     mul.imm.w64 $-88, $-72, 4
     ptr.index $-80, $-40, $-88, 4
     mul.imm.w64 $-96, $-72, 7
@@ -3628,8 +3624,7 @@ fn core::slice::sort::shared::pivot::median3_rec::<(u32, u32), {closure@std::sli
     arg $-48, 1032
     mul.imm.w64 $-80, $-40, 8
     br.lt.u.imm.w64 $-80, 64, L3
-    imm.w64 $-112, 8
-    div.u.w64 $-80, $-40, $-112
+    shr.u.imm.w64 $-80, $-40, 3
     mov.w64 $-88, $-16
     mov.w64 $-104, $-16
     mul.imm.w64 $-56, $-80, 4
@@ -3675,8 +3670,7 @@ fn core::slice::sort::shared::pivot::median3_rec::<u32, for<'a, 'b> fn(&'a u32, 
     arg $-48, 1032
     mul.imm.w64 $-80, $-40, 8
     br.lt.u.imm.w64 $-80, 64, L3
-    imm.w64 $-112, 8
-    div.u.w64 $-80, $-40, $-112
+    shr.u.imm.w64 $-80, $-40, 3
     mov.w64 $-88, $-16
     mov.w64 $-104, $-16
     mul.imm.w64 $-56, $-80, 4
@@ -3724,8 +3718,7 @@ fn core::slice::sort::shared::smallsort::bidirectional_merge::<(u32, u32), {clos
     mov.w64 $-152, $-8
     mov.w64 $-144, $-160
     ; end $-160, 16 bytes
-    imm.w64 $-200, 2
-    div.u.w64 $-152, $-136, $-200
+    shr.u.imm.w64 $-152, $-136, 1
     ne.imm.w64 $-153, $-152, 0
     ; end $-153, 1 bytes
     mov.w64 $-72, $-144
@@ -3817,8 +3810,7 @@ L15:
 L16:
     imm.w64 $-200, 1
     ptr.index $-168, $-96, $-200, 8
-    imm.w64 $-200, 2
-    rem.u.w64 $-184, $-136, $-200
+    and.imm.w64 $-184, $-136, 1
     eq.imm.w64 $-169, $-184, 0
     br! $-169, L4
     jmp L3
@@ -3865,8 +3857,7 @@ fn core::slice::sort::shared::smallsort::bidirectional_merge::<u32, for<'a, 'b> 
     mov.w64 $-152, $-8
     mov.w64 $-144, $-160
     ; end $-160, 16 bytes
-    imm.w64 $-200, 2
-    div.u.w64 $-152, $-136, $-200
+    shr.u.imm.w64 $-152, $-136, 1
     ne.imm.w64 $-153, $-152, 0
     ; end $-153, 1 bytes
     mov.w64 $-72, $-144
@@ -3958,8 +3949,7 @@ L15:
 L16:
     imm.w64 $-200, 1
     ptr.index $-168, $-96, $-200, 4
-    imm.w64 $-200, 2
-    rem.u.w64 $-184, $-136, $-200
+    and.imm.w64 $-184, $-136, 1
     eq.imm.w64 $-169, $-184, 0
     br! $-169, L4
     jmp L3
@@ -4612,8 +4602,7 @@ L1:
     mov.w64 $-136, $-16
     mov.w64 $-128, $-8
     mov.w64 $-192, $-136
-    imm.w64 $-376, 2
-    div.u.w64 $-200, $-184, $-376
+    shr.u.imm.w64 $-200, $-184, 1
     mov.w64 $-152, $-32
     mov.w64 $-144, $-24
     mov.w64 $-48, $-152
@@ -4902,8 +4891,7 @@ L1:
     mov.w64 $-136, $-16
     mov.w64 $-128, $-8
     mov.w64 $-192, $-136
-    imm.w64 $-376, 2
-    div.u.w64 $-200, $-184, $-376
+    shr.u.imm.w64 $-200, $-184, 1
     mov.w64 $-152, $-32
     mov.w64 $-144, $-24
     mov.w64 $-48, $-152
@@ -5188,8 +5176,7 @@ L0:
     abort
 L1:
     ; end $-121, 1 bytes
-    imm.w64 $-320, 2
-    div.u.w64 $-256, $-120, $-320
+    shr.u.imm.w64 $-256, $-120, 1
     lt.u.imm.w64 $-257, $-120, 18
     mov.w64 $-88, $-16
     mov.w64 $-80, $-8
@@ -6275,8 +6262,7 @@ L0:
     unreachable
 L1:
     imm.w64 $-104, 4096
-    imm.w64 $-112, 8
-    div.u.w64 $-56, $-104, $-112
+    shr.u.imm.w64 $-56, $-104, 3
     mov.w64 $-96, $-24
     mov.w64 $-88, $-96
     imm.w64 $-80, 4096
@@ -6539,8 +6525,7 @@ L1:
     call.sym $0, sym1, 0, [4294966400, 8]
     unreachable
 L2:
-    imm.w64 $-896, 2
-    div.u.w64 $-184, $-144, $-896
+    shr.u.imm.w64 $-184, $-144, 1
     sub.w64 $-176, $-144, $-184
     ; end $-184, 8 bytes
     imm.w64 $-896, 64
@@ -6797,11 +6782,9 @@ L0:
     unreachable
 L1:
     imm.w64 $-8288, 8000000
-    imm.w64 $-8296, 8
-    div.u.w64 $-72, $-8288, $-8296
+    shr.u.imm.w64 $-72, $-8288, 3
     mov.w64 $-80, $-8
-    imm.w64 $-8288, 2
-    div.u.w64 $-112, $-80, $-8288
+    shr.u.imm.w64 $-112, $-80, 1
     sub.w64 $-104, $-80, $-112
 L2:
     ; end $-112, 8 bytes
@@ -7993,8 +7976,7 @@ fn core::slice::sort::unstable::heapsort::heapsort::<u32, for<'a, 'b> fn(&'a u32
     arg $-8, 264
     arg $-24, 520
     mov.w64 $-96, $-8
-    imm.w64 $-192, 2
-    div.u.w64 $-128, $-96, $-192
+    shr.u.imm.w64 $-128, $-96, 1
     add.w64 $-120, $-96, $-128
     imm.w64 $-112, 0
     mov.w64 $-104, $-120
@@ -9491,8 +9473,7 @@ L18:
     call.sym $0, sym15, 0, [4294966416, 8]
     unreachable
 L19:
-    imm.w64 $-880, 2
-    div.u.w64 $-368, $-376, $-880
+    shr.u.imm.w64 $-368, $-376, 1
     mov.w64 $-424, $-368
     addr.const $-880, k16
 L20:
@@ -11123,10 +11104,8 @@ fn std::ptr::swap_nonoverlapping_bytes (frame 112, args 0, ret 0)
     arg $-16, 264
     arg $-24, 520
     mov.w64 $-48, $-24
-    imm.w64 $-112, 8
-    div.u.w64 $-56, $-48, $-112
-    imm.w64 $-112, 8
-    rem.u.w64 $-64, $-48, $-112
+    shr.u.imm.w64 $-56, $-48, 3
+    and.imm.w64 $-64, $-48, 7
     mov.w64 $-72, $-56
     br.eq.imm.w64 $-72, 0, L1
     mov.w64 $-80, $-72

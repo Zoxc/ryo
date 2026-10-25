@@ -66,3 +66,8 @@ remove it once a Lean session has handled it.
   (`ctlz`/`cttz` of 0 is the width), so `is_power_of_two` checks of constant alignments fold
   away. Only matters if the Lean model covers the SSA tier. Commit: "JIT SSA: fold bit counts
   of constants".
+
+- Lowering: unsigned `/` and `%` by a constant power of two `2^k` lower to `shr.u.imm x, k`
+  and `and.imm x, 2^k - 1` instead of `div.u`/`rem.u` with an `imm` divisor. A C1' lowering
+  rule to add when the checker covers binary operations. Commit: "Lower unsigned div/rem by
+  a power of two to shifts and masks".

@@ -145,6 +145,23 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         }
         let shift = matches!(op, BinOp::Shl | BinOp::ShlUnchecked | BinOp::Shr | BinOp::ShrUnchecked);
         let (sa, _) = self.operand_slot(a)?;
+        // Unsigned `x / 2^k` and `x % 2^k`: `shr.u.imm x, k` and `and.imm x, 2^k - 1`.
+        if !signed
+            && matches!(op, BinOp::Div | BinOp::Rem)
+            && let Some(v) = self.const_int(b)?
+            && w.truncate(v).is_power_of_two()
+        {
+            let v = w.truncate(v);
+            let (fam, imm) = if op == BinOp::Div { ("ShrUImm", u128::from(v.trailing_zeros())) } else { ("AndImm", v - 1) };
+            let mut ops = vec![0, sa];
+            ops.extend(imm_words(w, imm));
+            let opc = opw(fam, w);
+            return self.with_place_slot(dst, |fx, d| {
+                ops[0] = d;
+                fx.op(opc, &ops);
+                Ok(())
+            });
+        }
         // `x op constant`: the `.imm` form.
         if let Some(v) = self.const_int(b)?
             && let Some(opc) = try_opcode(&format!("{family}Imm{}", w.suffix()))
