@@ -179,9 +179,10 @@ folded into a unit of image A, check that "each `Ref` carries its image" suffice
 - **Frame privacy comes from the lowering check.** Promotion of non-escaped objects, DCE of
   their stores, free placement of allocas and moving them at OSR are sound only if no
   pointer reaches non-escaped frame bytes. In R that is a consequence of provenance, but only
-  because R's allocations are delimited by the image's scope table: C1' establishes that the
+  because R's allocations are delimited by the image's scopes (in each function's instruction
+  list): C1' establishes that the
   scopes match MIR ([aot.md](aot.md) §C1). For a function whose lowering is *not* validated,
-  the JIT theorem is **conditional on "the image's scope tables are correct"**. State it that
+  the JIT theorem is **conditional on "the image's scopes are correct"**. State it that
   way, and report it in the coverage (validated / conditional / failed).
 - **The exact effect tables** are each handler's footprint. **Generate the Rust table from
   the Lean footprints** (`Ryo/Vm/OpSem`), or check equality in `y test`. Otherwise an

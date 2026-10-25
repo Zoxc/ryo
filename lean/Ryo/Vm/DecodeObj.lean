@@ -8,7 +8,11 @@ between the image's functions carry no relocation (the writer resolves them), so
 code is decoded as linked code (`Fields.linked`, Rust's `decode_linked`, which the reference
 uses too): the code is placed at a made-up address, its relocated fields pointed at made-up
 addresses of their references, one range per kind, and the `LinkMap` maps those back, and
-function starts to `Ref.func`.
+function starts to `Ref.func`. The side data comes from the function's instruction list
+(`Ryo.Obj.List`): its dropped stores and scopes. Rust's `decode_linked` also takes the list's
+branch targets and instruction entries as an index, read in one pass and checked against the
+code; the Lean decoder reads the code in two passes as `decode_reduced` does, without them,
+which gives the same result on a list that passes Rust's checks.
 -/
 import Ryo.Vm.DecodeReduced
 import Ryo.Vm.Frame
@@ -75,7 +79,7 @@ def resolve (funcStarts : Array Nat) (a : BitVec 64) : Option Ref :=
 
 /-- Function `f`'s decoder inputs, its code linked at the made-up addresses: the arguments of
 `decodeReducedWith` after the code; `none` for inputs the reference can't decode either (a
-malformed dropped store). -/
+malformed instruction list). -/
 def funcArgs (f : Ryo.Obj.FuncInputs) :
     Except String (Option (ByteArray × Fields × Array DroppedStore × Array Scope)) := do
   let addr := text + f.codeOff
@@ -168,12 +172,12 @@ def objLines (o : Ryo.Obj.ImageObject) : Array String := Id.run do
     out := out.push s!"func {i} {o.funcName f.codeOff}"
     match o.funcInputs i with
     | .error e =>
-      out := out.push (if (e.splitOn "malformed dropped store").length > 1 then "  error: malformed dropped store"
+      out := out.push (if (e.splitOn "malformed instruction list").length > 1 then "  error: malformed instruction list"
         else s!"  error: {e}")
     | .ok fi =>
       match decodeFunc fi with
       | .error e => out := out.push s!"  error: {e}"
-      | .ok none => out := out.push "  error: malformed dropped store"
+      | .ok none => out := out.push "  error: malformed instruction list"
       | .ok (some (.error e)) => out := out.push s!"  error: {e.what} at {e.at_}"
       | .ok (some (.ok d)) => out := out ++ funcLines d
   return out

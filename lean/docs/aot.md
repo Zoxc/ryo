@@ -184,8 +184,8 @@ Rather than relating the Rust encoder to anything, prove the **Lean decoder** co
 stated directly for `R(φ_AOT)`, with provenance erased (L2 memory is flat; R's provenance
 checks only add UB on the R side). The decoder reads the function's bytes from the object's text
 section (located by its symbol and `FuncEntry`), the `.rodata` parts the code reads (island
-`ops` arrays, sparse-switch values, jump tables), the image's side tables (call sites,
-scopes, dropped stores), the LSDA, and the relocation list. All from the object, not from
+`ops` arrays, sparse-switch values, jump tables), the image's side data (call sites, and
+the function's instruction list: scopes, dropped stores, branch targets), the LSDA, and the relocation list. All from the object, not from
 `RYO_DUMP_CODE` and not from a Rust re-serialization (§C4 has the ELF reader). The proof
 follows the decoder's structure:
 
@@ -294,8 +294,8 @@ to Aeneas-extract it ([jit.md](jit.md) §E.9).
 
 - **ELF**: section headers, symbol table, `RELA` sections (`R_X86_64_64`, `PC32`, `PLT32`;
   anything else rejects), section flags.
-- **Image**: the read-only section's header, function table, scope/call-site/dropped tables,
-  code constants, symbol slots and flags, constant pool; the writable section's JIT records.
+- **Image**: the read-only section's header, function table, instruction lists
+  (`Ryo/Obj/List.lean`, `asm::list`) and call-site table, code constants, symbol slots and flags, constant pool; the writable section's JIT records.
   A Lean port of `Image::parse`/`validate`'s bounds and alignment checks. Per function, the
   decoder's inputs (`Ryo/Obj/Reloc.lean`): the code, its relocations as `Ref`s (the inverse of
   the writer's mapping), the code constants, call sites, scopes, dropped stores and the mode.
@@ -336,7 +336,7 @@ and "decode" mean §C1/§C2; the rest are new checks in `Ryo/Check/Image/`, run 
 | `.rodata` parts read by code (island `ops` arrays, switch values, jump tables) | decode reads them from the object; C1' checks the `ops` against the island contract | — |
 | **Constant pool** (const allocations, promoted consts, `Bytes`) | for each `Const` the code (or another pool entry) references: the pool bytes at that offset equal the dumped rustc allocation's bytes, its relocations (the object's `R_X86_64_64` into the pool or against symbols) are exactly the allocation's provenance (target allocation at the same offset, or the symbol of the static/fn the dump names), its alignment holds, and it lies in the RELRO section (D7: consts are immutable; the JIT's devirtualization relies on it). Uninit bytes in the allocation may be anything | — (the backend's `Pool::intern` is no longer trusted) |
 | **Vtables** | the same check against the dumped `vtable_allocation` (D29: `[drop_in_place, size, align, entries…]`, entries as symbol relocations to the instances the dump names; `drop_in_place` null for types without drop glue, as rustc's `vtable_allocation` has it) | — |
-| **Function symbols and the function table** | each `FuncEntry` (`code_off`, `code_len`) covers exactly the code that was decoded, in table order; each function symbol (global or local) is at its entry's `code_off` with its `code_len`; the symbol name is the dump's `tcx.symbol_name` for that instance; `arg_size`, `ret_size`, `ret_kind` agree with the signature's `ArgPlan`; the scope/call-site/dropped spans are the ones decode used. The runtime and JIT read these, so check them, don't trust them | — |
+| **Function symbols and the function table** | each `FuncEntry` (`code_off`, `code_len`) covers exactly the code that was decoded, in table order; each function symbol (global or local) is at its entry's `code_off` with its `code_len`; the symbol name is the dump's `tcx.symbol_name` for that instance; `arg_size`, `ret_size`, `ret_kind` agree with the signature's `ArgPlan`; the instruction-list and call-site spans are the ones decode used. The runtime and JIT read these, so check them, don't trust them | — |
 | **Relocations** of the text and the read-only section | every relocated field the decoder met has a relocation of the kind its form needs (`Call32` → `ryo_h_<h>` or `ryo_probe_stack`; `Pc32` → a symbol slot, pool offset, data/record offset, rodata; `Abs64` for the header's `text`/`data`, pool pointers, JIT-record initial values → the trip entry points); no relocation outside such fields; names resolve as C1' requires (`Sym s` slot ↔ the callee's symbol) | the linker applies them (see "Linked binary" below) |
 | **Symbol slots** (`[u64]`, RELRO) | each slot has exactly one `Abs64` relocation against the symbol `name(s)`, and `SYM_INDIRECT` flags are clear (ELF) | `ld.so` fills them and RELRO makes them read-only after loading |
 | **JIT records** (writable: `ctr`, `entry`/`osr`) | initial counter values, and `Abs64` relocations of `entry`/`osr` to `ryo_jit_trip_entry`/`_osr` | runtime-owned memory, outside the program's memory relation |
@@ -478,6 +478,6 @@ theorem; the program-level theorem is then conditional on their correctness.
 - The mode: ELF; `fp_arg` with or without frame pointer; `fp-rbp`; counters on (AOT) or off;
   loop alignment on/off. PE is out of scope.
 
-Not trusted: the Rust lowering, encoder and decoders, the certificate, the scope, call-site
-and dropped-store tables, the constant pool, the function table and symbols, the relocation
+Not trusted: the Rust lowering, encoder and decoders, the certificate, the instruction lists
+and the call-site table, the constant pool, the function table and symbols, the relocation
 list, the FDEs and LSDAs, the registry object.

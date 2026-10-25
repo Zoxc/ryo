@@ -274,7 +274,7 @@ its log and IR are designed with the validators in mind.
 - There is no full-VM level: R, the meaning of decoded machine code, is the only VM level,
   and the opcode list is a vocabulary for `opSem` (§0).
 - R carries provenance (L0's memory model), is parametric in the frame layout, and frame
-  privacy is a consequence of its allocations, which the scope table delimits (§C0).
+  privacy is a consequence of its allocations, which the scopes delimit (§C0).
 - Validate the image object plus a linked-equals-object check (§C4); check every AOT FDE
   (§C4, cheap, rather than proving the generator).
 - Handler contracts have exact frame footprints, and their pointer accesses are memory

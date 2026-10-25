@@ -8,12 +8,14 @@ text sections its header's `data` and `text` fields are relocated against. Ports
 (`vm/bytecode/src/image/mod.rs`) over the object's bytes, and gathers each function's inputs
 to `asm::decode_reduced` (`Ryo.Obj.FuncInputs`).
 
-Layouts are `repr(C)` (`Header` 144 bytes, `FuncEntry` 44, `ScopeEntry` 16,
-`CallSiteEntry` 12, `DroppedEntry` 12, `FixupEntry` 16).
+Layouts are `repr(C)` (`Header` 136 bytes, `FuncEntry` 36, `CallSiteEntry` 12,
+`FixupEntry` 16). Each function's scopes, dropped stores and branch targets are in its
+instruction list (`Ryo.Obj.List`), a run of the instruction-list bytes.
 -/
 import Std.Data.HashMap
 import Ryo.Obj.Elf
 import Ryo.Obj.Reloc
+import Ryo.Obj.List
 
 namespace Ryo.Obj
 
@@ -29,13 +31,10 @@ def imageSymbolPrefix : String := "__ryo_image_"
 def CONTINUE : Nat := 0xffffffff
 def CATCH : Nat := 0x80000000
 
-/-- `image::SCOPE_LEND`: `ScopeEntry.align` of an island operand's extent (`asm::ScopeKind::Lend`). -/
-def SCOPE_LEND : Nat := 0x80000000
-
 /-- `image::SYM_INDIRECT`. -/
 def SYM_INDIRECT : Nat := 1
 
-def headerSize : Nat := 144
+def headerSize : Nat := 136
 
 /-- `image::Span`: offset and element count. -/
 structure Span where
@@ -60,9 +59,9 @@ structure Header where
   symFlags : Span
   symbols : Span
   consts : Span
-  scopes : Span
+  /-- The functions' instruction lists (bytes). -/
+  lists : Span
   callSites : Span
-  dropped : Span
   siteCount : Nat
   fixupArea : Nat
   mode : Nat
@@ -76,18 +75,9 @@ structure FuncEntry where
   argSize : Nat
   retSize : Nat
   retKind : Nat
-  scopes : Span
+  /-- The function's instruction list: a run of the instruction-list bytes. -/
+  list : Span
   callSites : Span
-  dropped : Span
-  deriving Repr, Inhabited
-
-/-- `image::ScopeEntry`. -/
-structure ScopeEntry where
-  codeOffset : Nat
-  frameOffset : Int
-  size : Nat
-  /-- An escape's alignment, 0 for a storage end, `SCOPE_LEND` for an island operand. -/
-  align : Nat
   deriving Repr, Inhabited
 
 /-- `image::CallSiteEntry`. -/
@@ -95,15 +85,6 @@ structure CallSiteEntry where
   start : Nat
   len : Nat
   pad : Nat
-  deriving Repr, Inhabited
-
-/-- `image::DroppedEntry`. -/
-structure DroppedEntry where
-  codeOffset : Nat
-  frameOffset : Int
-  size : Nat
-  reg : Nat
-  reserved : Nat
   deriving Repr, Inhabited
 
 /-- `image::FixupEntry`. -/
@@ -123,9 +104,9 @@ inductive ImageError where
   | badFixup (i : Nat)
   | badSymbolFlags (i : Nat)
   | badMode
-  | badScope (i : Nat)
+  /-- A function's instruction list (function index) is malformed. -/
+  | badList (i : Nat)
   | badCallSite (i : Nat)
-  | badDropped (i : Nat)
   | badData
   deriving Repr, DecidableEq, Inhabited
 
@@ -139,9 +120,8 @@ instance : ToString ImageError where
     | .badFixup i => s!"BadFixup({i})"
     | .badSymbolFlags i => s!"BadSymbolFlags({i})"
     | .badMode => "BadMode"
-    | .badScope i => s!"BadScope({i})"
+    | .badList i => s!"BadList({i})"
     | .badCallSite i => s!"BadCallSite({i})"
-    | .badDropped i => s!"BadDropped({i})"
     | .badData => "BadData"
 
 /-- A parsed read-only section: its bytes (`Header::size` of them) and header. -/
@@ -161,9 +141,9 @@ def readHeader (b : ByteArray) : Header :=
   { crateHash := u32! b 8, size := u32! b 12, stableCrateId := u64! b 16, data := u64! b 24,
     dataSize := u32! b 32, textSize := u32! b 36, text := u64! b 40, functions := span! b 48,
     codeConsts := span! b 56, fixups := span! b 64, symFlags := span! b 72,
-    symbols := span! b 80, consts := span! b 88, scopes := span! b 96,
-    callSites := span! b 104, dropped := span! b 112, siteCount := u32! b 120,
-    fixupArea := u32! b 124, mode := u32! b 128, jitRecords := span! b 132 }
+    symbols := span! b 80, consts := span! b 88, lists := span! b 96,
+    callSites := span! b 104, siteCount := u32! b 112, fixupArea := u32! b 116,
+    mode := u32! b 120, jitRecords := span! b 124 }
 
 /-- `cast`'s checks: `span.count` elements of `size` bytes at `span.off` lie in `len` bytes,
 and `span.off` is a multiple of `align` (the section start is 8-aligned). -/
@@ -182,15 +162,14 @@ def Image.parse (bytes : ByteArray) (aligned : Bool := true) : Except ImageError
   if h.size > bytes.size then throw .truncated
   let bytes := bytes.extract 0 h.size
   let n := bytes.size
-  checkPart n h.functions 44 4 "functions"
+  checkPart n h.functions 36 4 "functions"
   checkPart n h.codeConsts 1 1 "code constants"
   checkPart n h.fixups 16 8 "fixups"
   checkPart n h.symFlags 1 1 "symbol flags"
   checkPart n h.symbols 8 8 "symbols"
   checkPart n h.consts 1 1 "constants"
-  checkPart n h.scopes 16 4 "scopes"
+  checkPart n h.lists 1 1 "instruction lists"
   checkPart n h.callSites 12 4 "call sites"
-  checkPart n h.dropped 12 4 "dropped stores"
   let all := MODE_FP_ARG ||| MODE_FRAME_POINTER ||| MODE_ALIGN_LOOPS ||| MODE_PE ||| MODE_COUNTERS
   if h.mode &&& (2 ^ 32 - 1 - all) != 0 || !(Mode.ofBits h.mode).valid then throw .badMode
   if h.symFlags.count != h.symbols.count then throw (.outOfBounds "symbol flags")
@@ -208,10 +187,10 @@ def mode (img : Image) : Mode := Mode.ofBits img.header.mode
 def function? (img : Image) (i : Nat) : Option FuncEntry :=
   if i < img.header.functions.count then
     let b := img.bytes
-    let o := img.header.functions.off + i * 44
+    let o := img.header.functions.off + i * 36
     some { codeOff := u32! b o, codeLen := u32! b (o + 4), argSize := u32! b (o + 8),
-           retSize := u32! b (o + 12), retKind := u32! b (o + 16), scopes := span! b (o + 20),
-           callSites := span! b (o + 28), dropped := span! b (o + 36) }
+           retSize := u32! b (o + 12), retKind := u32! b (o + 16), list := span! b (o + 20),
+           callSites := span! b (o + 28) }
   else none
 
 def functions (img : Image) : Array FuncEntry :=
@@ -224,30 +203,19 @@ private def run {α} (table run : Span) (size : Nat) (get : Nat → α) : Array 
     (Array.range run.count).map fun j => get (table.off + (run.off + j) * size)
   else #[]
 
-private def i32! (b : ByteArray) (o : Nat) : Int := toSigned 32 (u32! b o)
-
-def scopeAt (img : Image) (o : Nat) : ScopeEntry :=
-  let b := img.bytes
-  { codeOffset := u32! b o, frameOffset := i32! b (o + 4), size := u32! b (o + 8),
-    align := u32! b (o + 12) }
-
 def callSiteAt (img : Image) (o : Nat) : CallSiteEntry :=
   let b := img.bytes
   { start := u32! b o, len := u32! b (o + 4), pad := u32! b (o + 8) }
 
-def droppedAt (img : Image) (o : Nat) : DroppedEntry :=
-  let b := img.bytes
-  { codeOffset := u32! b o, frameOffset := i32! b (o + 4), size := (readU8 b (o + 8)).toOption.getD 0,
-    reg := (readU8 b (o + 9)).toOption.getD 0, reserved := (readU16 b (o + 10)).toOption.getD 0 }
-
-def scopes (img : Image) (f : FuncEntry) : Array ScopeEntry :=
-  run img.header.scopes f.scopes 16 img.scopeAt
+/-- Function `f`'s instruction list bytes (`Image::list`; empty if out of range). -/
+def list (img : Image) (f : FuncEntry) : ByteArray :=
+  let t := img.header.lists
+  if f.list.off + f.list.count ≤ t.count then
+    img.bytes.extract (t.off + f.list.off) (t.off + f.list.off + f.list.count)
+  else .empty
 
 def callSites (img : Image) (f : FuncEntry) : Array CallSiteEntry :=
   run img.header.callSites f.callSites 12 img.callSiteAt
-
-def dropped (img : Image) (f : FuncEntry) : Array DroppedEntry :=
-  run img.header.dropped f.dropped 12 img.droppedAt
 
 def fixups (img : Image) : Array FixupEntry :=
   let b := img.bytes
@@ -264,10 +232,9 @@ def codeConsts (img : Image) : ByteArray :=
 
 /-! ## `Image::validate` -/
 
-private def isPow2 (n : Nat) : Bool := n != 0 && n &&& (n - 1) == 0
-
-/-- `Image::validate`: the function table (sorted, in the text), each function's scope,
-call-site and dropped-store runs, the fixups and the symbol flags. -/
+/-- `Image::validate`: the function table (sorted, in the text), each function's
+instruction list (well formed, `walkList`) and call-site run, the fixups and the symbol
+flags. -/
 def validate (img : Image) : Except ImageError Unit := do
   let h := img.header
   let mut prevEnd := 0
@@ -277,34 +244,17 @@ def validate (img : Image) : Except ImageError Unit := do
     if f.codeOff < prevEnd || e > h.textSize then throw (.badFunction i)
     prevEnd := e
     let runOk (s : Span) (n : Nat) := s.off + s.count ≤ n
-    if !runOk f.scopes h.scopes.count || !runOk f.callSites h.callSites.count
-        || !runOk f.dropped h.dropped.count then
+    if !runOk f.list h.lists.count || !runOk f.callSites h.callSites.count then
       throw (.badFunction i)
+    if (walkList (img.list f) f.codeLen).isNone then throw (.badList i)
     let mut prev := 0
     let mut j := 0
-    for s in img.scopes f do
-      let sorted := s.codeOffset ≥ prev
-      prev := s.codeOffset
-      if !sorted || s.codeOffset > f.codeLen || (s.align != 0 && s.align != SCOPE_LEND && (!isPow2 s.align || s.align > 16)) then
-        throw (.badScope (f.scopes.off + j))
-      j := j + 1
-    prev := 0
-    j := 0
     for c in img.callSites f do
       let padOk := c.pad == CONTINUE || c.pad % CATCH < f.codeLen
       let cEnd := c.start + c.len
       let sorted := c.start ≥ prev
       prev := cEnd
       if !sorted || cEnd > f.codeLen || !padOk then throw (.badCallSite (f.callSites.off + j))
-      j := j + 1
-    prev := 0
-    j := 0
-    for d in img.dropped f do
-      let sorted := d.codeOffset ≥ prev
-      prev := d.codeOffset
-      let valid := d.codeOffset ≤ f.codeLen && [1, 2, 4, 8].contains d.size
-        && [0, 2, 6, 7, 8, 9, 10, 11].contains d.reg && d.reserved == 0
-      if !sorted || !valid then throw (.badDropped (f.dropped.off + j))
       j := j + 1
   let mut i := 0
   for x in img.fixups do
@@ -523,9 +473,8 @@ def funcInputs (o : ImageObject) (i : Nat) : Except String FuncInputs := do
   if f.codeOff + f.codeLen > o.textBytes.size then throw s!"function {i}'s code past the text"
   let relocs ← (o.textRelocsIn f.codeOff f.codeLen).mapM fun r => do
     pure ({ pos := r.offset - o.textBase - f.codeOff, to := ← o.refOf i r } : Reloc)
-  let dropped ← (img.dropped f).mapM fun d => do
-    let ds : DroppedStore := ⟨d.codeOffset, d.frameOffset, d.size, d.reg⟩
-    if ds.valid then pure ds else throw s!"function {i}: malformed dropped store"
+  let some list := InsnList.read (img.list f) f.codeLen
+    | throw s!"function {i}: malformed instruction list"
   pure {
     index := i, name := o.funcName f.codeOff, codeOff := f.codeOff,
     code := o.textBytes.extract f.codeOff (f.codeOff + f.codeLen), relocs,
@@ -533,10 +482,8 @@ def funcInputs (o : ImageObject) (i : Nat) : Except String FuncInputs := do
     callSites := (img.callSites f).map fun c =>
       if c.pad == CONTINUE then ⟨c.start, c.len, none, false⟩
       else ⟨c.start, c.len, some (c.pad % CATCH), c.pad ≥ CATCH⟩,
-    dropped,
-    scopes := (img.scopes f).map fun s =>
-      ⟨s.codeOffset, s.frameOffset, s.size,
-        if s.align == 0 then .end else if s.align == SCOPE_LEND then .lend else .escape s.align⟩,
+    dropped := list.dropped,
+    scopes := list.scopes,
     mode := img.mode,
     funcStarts := o.funcs.map (·.codeOff) }
 
@@ -553,10 +500,10 @@ private def hex (n : Nat) : String :=
 image <symbol>
 crate_hash <hex> stable_crate_id <hex> mode <bits> <Mode>
 sizes ro <size> data <data_size> text <text_size> sites <site_count> fixup_area <off> jit_records <off>+<count>
-parts functions <off>+<n> code_consts .. fixups .. sym_flags .. symbols .. consts .. scopes .. call_sites .. dropped ..
+parts functions <off>+<n> code_consts .. fixups .. sym_flags .. symbols .. consts .. lists .. call_sites ..
 validate ok | validate error: <ImageError>
 sym <i> flags <f> <name>
-func <i> off <code_off> len <code_len> arg <arg_size> ret <ret_size> kind <ret_kind> scopes <n> call_sites <n> dropped <n> relocs <n> <name>
+func <i> off <code_off> len <code_len> arg <arg_size> ret <ret_size> kind <ret_kind> list <bytes> call_sites <n> relocs <n> <name>
   reloc <at> <ref>
 ```
 
@@ -568,7 +515,7 @@ def summary (o : ImageObject) : Array String := Id.run do
   let mut out := #[s!"image {o.symbol}",
     s!"crate_hash {hex h.crateHash} stable_crate_id {hex h.stableCrateId} mode {h.mode} {img.mode}",
     s!"sizes ro {h.size} data {h.dataSize} text {h.textSize} sites {h.siteCount} fixup_area {h.fixupArea} jit_records {h.jitRecords}",
-    s!"parts functions {h.functions} code_consts {h.codeConsts} fixups {h.fixups} sym_flags {h.symFlags} symbols {h.symbols} consts {h.consts} scopes {h.scopes} call_sites {h.callSites} dropped {h.dropped}"]
+    s!"parts functions {h.functions} code_consts {h.codeConsts} fixups {h.fixups} sym_flags {h.symFlags} symbols {h.symbols} consts {h.consts} lists {h.lists} call_sites {h.callSites}"]
   out := out.push (match img.validate with
     | .ok () => "validate ok"
     | .error e => s!"validate error: {e}")
@@ -582,7 +529,7 @@ def summary (o : ImageObject) : Array String := Id.run do
   for i in [0:fs.size] do
     let f := fs[i]!
     let rs := o.textRelocsIn f.codeOff f.codeLen
-    out := out.push s!"func {i} off {f.codeOff} len {f.codeLen} arg {f.argSize} ret {f.retSize} kind {f.retKind} scopes {(img.scopes f).size} call_sites {(img.callSites f).size} dropped {(img.dropped f).size} relocs {rs.size} {o.funcName f.codeOff}"
+    out := out.push s!"func {i} off {f.codeOff} len {f.codeLen} arg {f.argSize} ret {f.retSize} kind {f.retKind} list {(img.list f).size} call_sites {(img.callSites f).size} relocs {rs.size} {o.funcName f.codeOff}"
     for r in rs do
       let pos := r.offset - o.textBase - f.codeOff
       out := out.push (match o.refOf i r with

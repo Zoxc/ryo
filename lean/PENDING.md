@@ -22,23 +22,6 @@ remove it once a Lean session has handled it.
   `RyoTest/ImageCheck.lean`) and `lean/docs/aot.md`. Commit: "Split the JIT counters into
   up-counting call and loop counters".
 
-- The image's scope and dropped-store tables are gone: each function has an instruction list
-  instead (`asm::list`, design/vm.md "Instruction list"), a byte stream of delta-encoded
-  entries holding its branch targets, scopes, dropped stores and the inline sequences the
-  register cache emitted non-plainly (opcode and cache selector). `Header` has `lists`
-  (bytes) in place of `scopes` and no `dropped`; `FuncEntry` has `list` (byte offset,
-  length) in place of `scopes` and no `dropped`; `ScopeEntry`, `DroppedEntry` and
-  `SCOPE_LEND` are gone, `ImageError::BadList(func)` replaces `BadScope`/`BadDropped`.
-  `decode_linked` takes the list and reads the code in one pass, the cache cleared at the
-  list's targets (checked to be exactly the branch targets afterwards), a listed sequence
-  inverted directly (`Cache::invert`); `decode`/`decode_reduced` are unchanged (two passes,
-  the vectors too). The Lean image reader (`Ryo/Obj/Image.lean`, `Ryo/Check/Image/Funcs.lean`,
-  `Ryo/Vm/DecodeObj.lean`, `RyoTest/Obj.lean`) and `lean-decode-ref`'s summary lines
-  (`lists`, `list <bytes>`) need to follow. Layout after the version removal: `lists` 96,
-  `call_sites` 104, `fixup_area` 116, `mode` 120, `jit_records` 124, header size 136;
-  `FuncEntry` 36 bytes, `list` 20, `call_sites` 28. Commit: "Replace the scope and dropped-store
-  tables with per-function instruction lists".
-
 - The JIT's SSA tier inlines direct calls of the image's functions (`jit::inline`: an
   IR-to-IR splice with landing-pad action substitution, callee allocas appended as
   `Alloca::inlined`, outgoing areas merged) and promotes memory allocas whose address no

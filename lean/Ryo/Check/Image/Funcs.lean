@@ -13,10 +13,13 @@ decoded code:
   never a decoded branch target: a `rel32` field the decoder reads as a branch lies inside the
   function, and one leaving it must be a function's first byte (`Fields.linked`, `Ref.func`),
   or the decode fails.
-- **Side-table runs.** Each function's scope, call-site and dropped-store runs lie inside
-  their tables (`Image.validate`) and follow each other in function order, covering the whole
+- **Side-table runs.** Each function's instruction list (a run of the instruction-list
+  bytes) and call-site run lie inside their tables (`Image.validate`, which also checks that
+  each list is well formed) and follow each other in function order, covering the whole
   table, so every entry belongs to the function the decoder was given it for. The decoder
-  uses every call site (`call site outside every call`), dropped store and scope it is given.
+  uses every call site (`call site outside every call`), dropped store and scope it is given
+  (the list's branch targets and instruction entries aren't checked against the code: the
+  Lean decoder reads the code in two passes without them).
 - **Symbols.** Each `STT_FUNC` symbol (global or local) of the text is at an entry's
   `code_off` with `st_size = code_len`, each entry has exactly one, and the text has no other
   symbols but its section symbol. Whether the name is the dump's `tcx.symbol_name` of the
@@ -72,8 +75,7 @@ def checkTable (o : ImageObject) : Array String := Id.run do
     out := out.push s!"text: section `{o.text.name}` has {o.text.size} bytes, the image's text ends at {o.textBase + h.textSize}"
   -- The runs, in function order, covering each table.
   let runs : List (String × (FuncEntry → Span) × Span) :=
-    [("scope", (·.scopes), h.scopes), ("call-site", (·.callSites), h.callSites),
-     ("dropped-store", (·.dropped), h.dropped)]
+    [("instruction-list", (·.list), h.lists), ("call-site", (·.callSites), h.callSites)]
   for (what, get, table) in runs do
     let mut next := 0
     for hi : i in [0:o.funcs.size] do

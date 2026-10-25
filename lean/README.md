@@ -113,7 +113,8 @@ Ryo/Vm/Generated/                  generated (`./y.sh lean gen`): Types, Full an
 Ryo/Obj/                           object readers (docs/aot.md §C3): Elf (ELF64 relocatable
                                    objects: sections, symbols, RELA), Reloc (the decoder's
                                    inputs: Mode, Ref, Reloc, CallSite, Scope, DroppedStore,
-                                   FuncInputs and its field classification), Image (locating the
+                                   FuncInputs and its field classification), List (a function's
+                                   instruction list, `asm::list`), Image (locating the
                                    image, `Image::parse`/`validate`, per-function inputs, the
                                    `ryo-lean obj` summary), Lsda (`asm::lsda`'s parse and
                                    write), EhFrame (CIEs, FDEs, row tables), Unwind (each

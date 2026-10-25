@@ -88,7 +88,7 @@ def relocDecode (o : ImageObject) (i : Nat) (fi : FuncInputs) :
   let scopes := fi.scopes.map fun s => R.Scope.mk s.codeOffset (BitVec.ofInt 32 s.frameOffset) s.size (kind s.kind)
   let some dropped := fi.dropped.mapM fun d =>
       Asm.DroppedStore.ofParts? d.pos (BitVec.ofInt 32 d.frameOffset) d.size d.reg
-    | return (out, .error "malformed dropped store")
+    | return (out, .error "malformed instruction list")
   let r := decodeReduced code sorted fi.rodata fi.callSites dropped scopes fi.mode
   return (out, match r with
     | .ok d => .ok d

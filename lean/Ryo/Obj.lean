@@ -4,6 +4,7 @@ image object, each VM function's decoder inputs, and the unwind tables (`.eh_fra
 -/
 import Ryo.Obj.Elf
 import Ryo.Obj.Reloc
+import Ryo.Obj.List
 import Ryo.Obj.Image
 import Ryo.Obj.Lsda
 import Ryo.Obj.EhFrame

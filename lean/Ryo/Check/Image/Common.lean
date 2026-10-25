@@ -65,7 +65,7 @@ def decodeAll (o : ImageObject) : Array FuncDecoding :=
       | .error e => .error e
       | .ok fi => match DecodeObj.decodeFunc fi with
         | .error e => .error e
-        | .ok none => .error "malformed dropped store"
+        | .ok none => .error "malformed instruction list"
         | .ok (some (.error e)) => .error s!"{e.what} at {e.at_}"
         | .ok (some (.ok d)) => .ok d
     { inputs, decoded }
