@@ -145,6 +145,24 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         }
         let shift = matches!(op, BinOp::Shl | BinOp::ShlUnchecked | BinOp::Shr | BinOp::ShrUnchecked);
         let (sa, _) = self.operand_slot(a)?;
+        // `x / 1` and `x % 1`, signed `x / -1` and `x % -1`: a `mov`, `mul.imm` by all-ones
+        // (`MIN / -1` is UB and asserted by MIR), `imm 0`.
+        if matches!(op, BinOp::Div | BinOp::Rem)
+            && let Some(v) = self.const_int(b)?
+            && let v = w.truncate(v)
+            && let minus_one = signed
+            && v == w.truncate(u128::MAX)
+            && (v == 1 || minus_one)
+        {
+            return self.with_place_slot(dst, |fx, d| {
+                match (op, minus_one) {
+                    (BinOp::Rem, _) => fx.imm(w, d, 0),
+                    (_, false) => fx.mov(d, sa, w.bytes()),
+                    (_, true) => fx.op_imm("Mul", w, d, sa, v),
+                }
+                Ok(())
+            });
+        }
         // Unsigned `x / 2^k` and `x % 2^k`: `shr.u.imm x, k` and `and.imm x, 2^k - 1`.
         if !signed
             && matches!(op, BinOp::Div | BinOp::Rem)

@@ -89,3 +89,10 @@ remove it once a Lean session has handled it.
   FDE rows: `DW_CFA_def_cfa_offset` after each push without a frame pointer, then
   `DW_CFA_offset` per register). Only matters if the Lean model covers the SSA tier's
   frames or unwind rows. Commit: "JIT SSA: push and pop callee-saved registers".
+- Lowering: `ptr_offset_from(_unsigned)` and `exact_div` by a constant `v = ±2^k * m`
+  (`m` odd, w8-w64) lower to `shr.s/u.imm k` and `mul.imm` by the inverse of `m` mod 2^N
+  (negated for negative `v`) instead of `div.s/u`. Only equal to the division on exact
+  multiples: a C1' rule against the intrinsics' semantics (inexact is UB), with
+  `m * inv = 1 mod 2^N` checkable per site. Also `/ 1` -> `mov`, `% 1` and signed `% -1` ->
+  `imm 0`, signed `/ -1` -> `mul.imm` all-ones (the `rem` forms drop the read of `x`, a
+  refinement). Commit: "Lower exact division by constants to shifts and inverse multiplies".

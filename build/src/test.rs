@@ -180,6 +180,10 @@ pub(crate) const CORPUS: &[Program] = &[
         "vm_intrinsics",
         vm: &["main", "atomics", "atomic_ptrs", "unwinding", "misc", "dst", "direct", "contention"]
     ),
+    single!(
+        "vm_lowerings",
+        vm: &["main", "offsets", "by_one", "small_div", "rotates", "copies"]
+    ),
     // The ABI sweep (design/build.md#test-and-bench).
     single!(
         "vm_abi",
@@ -429,6 +433,7 @@ const FAST: &[(&str, &[&str])] = &[
     ("vm_tail", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle"]),
     ("vm_cross", &["ryo", "ryo-jit-ssa"]),
     ("vm_intrinsics", &["ryo"]),
+    ("vm_lowerings", &["ryo", "ryo-jit-ssa"]),
     ("vm_unwind", &["ryo", "ryo-jit-ssa"]),
     ("vm_aggregates", &["ryo", "ryo-jit-ssa"]),
     ("vm_statics_cross", &["ryo", "ryo-jit-ssa"]),

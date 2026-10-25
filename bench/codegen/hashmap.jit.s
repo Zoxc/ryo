@@ -1853,10 +1853,7 @@ L4:
 L5:
     mov     rcx,[r14]
     sub     rcx,r13
-    mov     rdi,rcx
-    mov     esi,10h
-    call    ryo_hr_DivSW64
-    mov     rcx,rax
+    sar     rcx,4
     mov     rdi,r14
     mov     rsi,rcx
     call    image.fn146
@@ -3653,25 +3650,19 @@ L11:
 
 fn hashbrown::raw::RawTable::<(u64, u64)>::erase
     push    rbx
-    push    r12
-    sub     rsp,8
-    mov     rbx,rdi
-    mov     r12,rsi
-    mov     rax,[rbx]
-    sub     rax,r12
-    mov     rdi,rax
-    mov     esi,10h
-    call    ryo_hr_DivSW64
-    mov     rdi,rbx
+    sub     rsp,10h
+    mov     rbx,rsi
+    mov     rax,[rdi]
+    sub     rax,rbx
+    sar     rax,4
     mov     rsi,rax
     call    qword ptr [image.fn146.slot]
-    lea     r12,[r12-10h]
+    lea     rbx,[rbx-10h]
     jmp     L1
 L0:
-    mov     rdi,r12
+    mov     rdi,rbx
     call    sym1
-    add     rsp,8
-    pop     r12
+    add     rsp,10h
     pop     rbx
     ret
 L1:

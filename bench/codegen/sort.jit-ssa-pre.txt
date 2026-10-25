@@ -283,7 +283,7 @@ b29(): ; Body
     br v49 ? b30() : b31()
 b30(): ; Body
     v52:8 = Bin(Sub, 8) (v1, v0)
-    v54:8 = hcall.reg div.u.w64 [(Fp, [None, None]), (Imm(4294967224), [Some(Scratch(0)), None]), (Imm(4294967224), [Some(Scratch(8)), None]), (Imm(4294967120), [Some(Scratch(16)), None])] outs 1 (v52, 0x4)
+    v54:8 = Bin(ShrU, 8) (v52, 0x2)
     jmp b26()
 b31(): ; Body
     v57:8 = RefAddr(k6, false) ()
@@ -442,7 +442,7 @@ b26(): ; Body
     br v51 ? b27() : b28()
 b27(): ; Body
     v54:8 = Bin(Sub, 8) (v1, v0)
-    v56:8 = hcall.reg div.u.w64 [(Fp, [None, None]), (Imm(4294967224), [Some(Scratch(0)), None]), (Imm(4294967224), [Some(Scratch(8)), None]), (Imm(4294967096), [Some(Scratch(16)), None])] outs 1 (v54, 0x4)
+    v56:8 = Bin(ShrU, 8) (v54, 0x2)
     jmp b23()
 b28(): ; Body
     v60:8 = RefAddr(k3, false) ()
@@ -898,7 +898,7 @@ b12(): ; Body
     br v27 ? b13() : b14()
 b13(): ; Body
     v30:8 = Bin(Sub, 8) (v13, v0)
-    v32:8 = hcall.reg div.u.w64 [(Fp, [None, None]), (Imm(4294967288), [Some(Scratch(0)), None]), (Imm(4294967288), [Some(Scratch(8)), None]), (Imm(4294967144), [Some(Scratch(16)), None])] outs 1 (v30, 0x8)
+    v32:8 = Bin(ShrU, 8) (v30, 0x3)
     jmp b9()
 b14(): ; Body
     v33:8 = RefAddr(k4, false) ()
@@ -919,7 +919,7 @@ b18(): ; Body
     br v45 ? b19() : b20()
 b19(): ; Body
     v48:8 = Bin(Sub, 8) (v15, v0)
-    v50:8 = hcall.reg div.u.w64 [(Fp, [None, None]), (Imm(4294967288), [Some(Scratch(0)), None]), (Imm(4294967288), [Some(Scratch(8)), None]), (Imm(4294967144), [Some(Scratch(16)), None])] outs 1 (v48, 0x8)
+    v50:8 = Bin(ShrU, 8) (v48, 0x3)
     jmp b15()
 b20(): ; Body
     v52:8 = RefAddr(k4, false) ()

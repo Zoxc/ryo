@@ -533,6 +533,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         self.op(opw("Imm", w), &ops);
     }
 
+    /// `family.imm.w d, a, v`, `v` truncated to the width.
+    pub fn op_imm(&mut self, family: &str, w: Width, d: u32, a: u32, v: u128) {
+        let mut ops = vec![d, a];
+        ops.extend(emit::imm_words(w, w.truncate(v)));
+        self.op(opw(&format!("{family}Imm"), w), &ops);
+    }
+
     /// The outgoing argument block's field at `off`: the slot at `fp - F + off`, once the
     /// frame size `F` is known (`frame.rs`).
     pub fn out(off: u32) -> u32 {

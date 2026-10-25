@@ -62,10 +62,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 self.into_dest(&cont, |fx, d| {
                     fx.op(opw("Sub", Width::W64), &[d, a, b]);
                     if size > 1 {
-                        let t = fx.temp8();
-                        fx.imm(Width::W64, t, u128::from(size));
-                        let div = if signed { "DivS" } else { "DivU" };
-                        fx.op(opw(div, Width::W64), &[d, d, t]);
+                        // The distance is a multiple of `size` (UB otherwise).
+                        fx.exact_div_const(Width::W64, signed, d, d, u128::from(size));
                     }
                     Ok(())
                 })?
@@ -284,6 +282,17 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let ScalarKind::Int { w, signed } = self.scalar_kind(l)? else { return native("float exact_div") };
                 if name == "exact_div" && w == Width::W128 {
                     return native("128-bit mul/div/rem (island)");
+                }
+                if name == "exact_div"
+                    && let [a, b] = args
+                    && let Some(v) = self.arg_const(b)?
+                    && w.truncate(v) != 0
+                {
+                    let a = self.arg_slot(a)?;
+                    return self.into_dest(cont, |fx, d| {
+                        fx.exact_div_const(w, signed, d, a, v);
+                        Ok(())
+                    });
                 }
                 let [a, b] = self.arg_slots::<2>(args)?;
                 let family = match (name, signed) {
@@ -534,12 +543,52 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         }
         let mut out = [0; N];
         for (o, a) in out.iter_mut().zip(args) {
-            *o = match *a {
-                ArgSrc::Operand(op) => self.operand_slot(op)?.0,
-                ArgSrc::Slot(s) => s,
-            };
+            *o = self.arg_slot(a)?;
         }
         Ok(out)
+    }
+
+    /// An argument in a frame slot.
+    fn arg_slot(&mut self, a: &ArgSrc<'_, 'tcx>) -> Result<u32, NeedsNative> {
+        Ok(match *a {
+            ArgSrc::Operand(op) => self.operand_slot(op)?.0,
+            ArgSrc::Slot(s) => s,
+        })
+    }
+
+    /// The value of an argument if it is an integer constant.
+    fn arg_const(&self, a: &ArgSrc<'_, 'tcx>) -> Result<Option<u128>, NeedsNative> {
+        match *a {
+            ArgSrc::Operand(op) => self.const_int(op),
+            ArgSrc::Slot(_) => Ok(None),
+        }
+    }
+
+    /// `d = a / v` for a nonzero constant `v` (w8-w64) that divides `a` exactly
+    /// (`exact_div`, `ptr_offset_from`; UB otherwise): with `|v| = 2^k * m`, `m` odd, a shift
+    /// by `k` and a multiply by the inverse of `m` mod 2^N (negated for a negative `v`).
+    fn exact_div_const(&mut self, w: Width, signed: bool, d: u32, a: u32, v: u128) {
+        let v = w.truncate(v);
+        let neg = signed && v >> (w.bits() - 1) & 1 == 1;
+        let mag = if neg { w.truncate(v.wrapping_neg()) } else { v };
+        let k = mag.trailing_zeros();
+        let m = mag >> k;
+        // Newton's iteration doubles the correct low bits; `m` is its own inverse mod 8.
+        let mut inv = m;
+        for _ in 0..6 {
+            inv = inv.wrapping_mul(2u128.wrapping_sub(m.wrapping_mul(inv)));
+        }
+        let c = w.truncate(if neg { inv.wrapping_neg() } else { inv });
+        let mut src = a;
+        if k > 0 {
+            self.op_imm(if signed { "ShrS" } else { "ShrU" }, w, d, a, u128::from(k));
+            src = d;
+        }
+        if c != 1 {
+            self.op_imm("Mul", w, d, src, c);
+        } else {
+            self.mov(d, src, w.bytes());
+        }
     }
 
     fn dest_width(&self, cont: &CallCont<'tcx>) -> Result<Width, NeedsNative> {

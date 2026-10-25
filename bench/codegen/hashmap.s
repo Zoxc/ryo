@@ -7375,13 +7375,8 @@ L9:
     je      L10
     mov     rdi,[rsp+30h]
     sub     rdi,[rsp+28h]
+    sar     rdi,4
     mov     [rsp+20h],rdi
-    mov     qword ptr [rsp+10h],10h
-    lea     rdi,[rsp+60h]
-    mov     esi,0FFFFFFC0h
-    mov     edx,0FFFFFFC0h
-    mov     ecx,0FFFFFFB0h
-    call    ryo_h_DivSW64
     jmp     L7
 L10:
     lea     rax,[k1]

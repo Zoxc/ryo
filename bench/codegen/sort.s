@@ -431,13 +431,8 @@ L4:
     je      L5
     mov     r10,[rsp+28h]
     sub     r10,[rsp+30h]
+    shr     r10,3
     mov     [rsp+40h],r10
-    mov     qword ptr [rsp+10h],8
-    lea     rdi,[rsp+60h]
-    mov     esi,0FFFFFFE0h
-    mov     edx,0FFFFFFE0h
-    mov     ecx,0FFFFFFB0h
-    call    ryo_h_DivUW64
     jmp     L1
 L5:
     lea     rax,[k2]
@@ -1874,13 +1869,8 @@ L27:
     je      L28
     mov     r10,[rsp+38h]
     sub     r10,[rsp+40h]
+    shr     r10,2
     mov     [rsp+78h],r10
-    mov     qword ptr [rsp+10h],4
-    lea     rdi,[rsp+0C0h]
-    mov     esi,0FFFFFFB8h
-    mov     edx,0FFFFFFB8h
-    mov     ecx,0FFFFFF50h
-    call    ryo_h_DivUW64
     jmp     L24
 L28:
     lea     rax,[k6]
@@ -2163,13 +2153,8 @@ L26:
     je      L27
     mov     r10,[rsp+50h]
     sub     r10,[rsp+58h]
+    shr     r10,2
     mov     [rsp+98h],r10
-    mov     qword ptr [rsp+18h],4
-    lea     rdi,[rsp+0E0h]
-    mov     esi,0FFFFFFB8h
-    mov     edx,0FFFFFFB8h
-    mov     ecx,0FFFFFF38h
-    call    ryo_h_DivUW64
     jmp     L23
 L27:
     lea     rax,[k3]
@@ -2441,13 +2426,8 @@ L7:
     je      L8
     mov     r10,[rsp+28h]
     sub     r10,[rsp+30h]
+    shr     r10,2
     mov     [rsp+58h],r10
-    mov     qword ptr [rsp+10h],4
-    lea     rdi,[rsp+80h]
-    mov     esi,0FFFFFFD8h
-    mov     edx,0FFFFFFD8h
-    mov     ecx,0FFFFFF90h
-    call    ryo_h_DivUW64
     jmp     L4
 L8:
     lea     rax,[k2]
@@ -6366,13 +6346,8 @@ L8:
     je      L9
     mov     r10,[rsp+48h]
     sub     r10,[rsp+88h]
+    shr     r10,3
     mov     [rsp+0A8h],r10
-    mov     qword ptr [rsp+18h],8
-    lea     rdi,[rsp+0B0h]
-    mov     esi,0FFFFFFF8h
-    mov     edx,0FFFFFFF8h
-    mov     ecx,0FFFFFF68h
-    call    ryo_h_DivUW64
     jmp     L5
 L9:
     lea     rax,[k4]
@@ -6385,7 +6360,7 @@ L9:
     mov     rdx,[rsp+8]
     call    qword ptr [sym6]
     ud2
-    nop     [rax]
+    nop     [rax+rax]
 L10:
     inc     qword ptr [jit_record.ctr_l]
     jns     L19
@@ -6417,13 +6392,8 @@ L13:
     je      L14
     mov     r10,[rsp+48h]
     sub     r10,[rsp+88h]
+    shr     r10,3
     mov     [rsp+0A8h],r10
-    mov     qword ptr [rsp+18h],8
-    lea     rdi,[rsp+0B0h]
-    mov     esi,0FFFFFFF8h
-    mov     edx,0FFFFFFF8h
-    mov     ecx,0FFFFFF68h
-    call    ryo_h_DivUW64
     jmp     L10
 L14:
     lea     rax,[k9]
@@ -6572,13 +6542,8 @@ L8:
     je      L9
     mov     r10,[rsp+48h]
     sub     r10,[rsp+88h]
+    shr     r10,2
     mov     [rsp+0A8h],r10
-    mov     qword ptr [rsp+18h],4
-    lea     rdi,[rsp+0B0h]
-    mov     esi,0FFFFFFF8h
-    mov     edx,0FFFFFFF8h
-    mov     ecx,0FFFFFF68h
-    call    ryo_h_DivUW64
     jmp     L5
 L9:
     lea     rax,[k4]
@@ -6591,7 +6556,7 @@ L9:
     mov     rdx,[rsp+8]
     call    qword ptr [sym6]
     ud2
-    nop     [rax]
+    nop     [rax+rax]
 L10:
     inc     qword ptr [jit_record.ctr_l]
     jns     L19
@@ -6623,13 +6588,8 @@ L13:
     je      L14
     mov     r10,[rsp+48h]
     sub     r10,[rsp+88h]
+    shr     r10,2
     mov     [rsp+0A8h],r10
-    mov     qword ptr [rsp+18h],4
-    lea     rdi,[rsp+0B0h]
-    mov     esi,0FFFFFFF8h
-    mov     edx,0FFFFFFF8h
-    mov     ecx,0FFFFFF68h
-    call    ryo_h_DivUW64
     jmp     L10
 L14:
     lea     rax,[k9]
@@ -20296,13 +20256,8 @@ L7:
     je      L8
     mov     r10,[rsp+28h]
     sub     r10,[rsp+30h]
+    shr     r10,2
     mov     [rsp+58h],r10
-    mov     qword ptr [rsp+10h],4
-    lea     rdi,[rsp+80h]
-    mov     esi,0FFFFFFD8h
-    mov     edx,0FFFFFFD8h
-    mov     ecx,0FFFFFF90h
-    call    ryo_h_DivUW64
     jmp     L4
 L8:
     lea     rax,[k2]

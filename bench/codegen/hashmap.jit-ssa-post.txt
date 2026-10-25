@@ -2774,7 +2774,7 @@ b9(): ; Body
 b10(): ; Body
     v67:8 = Load(8, 0) (v74)
     v69:8 = Bin(Sub, 8) (v67, v10)
-    v70:8 = hcall.reg div.s.w64 [(Fp, [None, None]), (Imm(4294967232), [Some(Scratch(0)), None]), (Imm(4294967232), [Some(Scratch(8)), None]), (Imm(4294967216), [Some(Scratch(16)), None])] outs 1 (v69, 0x10)
+    v70:8 = Bin(ShrS, 8) (v69, 0x4)
     Call(Call { target: image.fn146, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: Pad { catch: false } }) (v74, v70)
     invoke -> b58() unwind b38()
 b11(): ; Body
@@ -4238,7 +4238,7 @@ a19: $-8, 8 bytes, Promoted, inlined
 b0(v0:8, v1:8): ; Entry
     v11:8 = Load(8, 0) (v0)
     v13:8 = Bin(Sub, 8) (v11, v1)
-    v14:8 = hcall.reg div.s.w64 [(Fp, [None, None]), (Imm(4294967232), [Some(Scratch(0)), None]), (Imm(4294967232), [Some(Scratch(8)), None]), (Imm(4294967216), [Some(Scratch(16)), None])] outs 1 (v13, 0x10)
+    v14:8 = Bin(ShrS, 8) (v13, 0x4)
     Call(Call { target: image.fn146.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: Continue }) (v0, v14)
     v10:8 = PtrAdd(-16) (v1)
     jmp b6()
