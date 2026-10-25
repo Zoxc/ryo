@@ -206,10 +206,10 @@ def imageValidate : Except String Unit := do
 /-! ## Names and fields -/
 
 def names : Except String Unit := do
-  check (ImageObject.handlerOf? "_RNvCs5fGHjzWXRav_7___rustc13ryo_h_AddrAbs" == some Full.Opcode.addrAbs)
+  check (ImageObject.handlerOf? "_RNvCs5fGHjzWXRav_7___rustc15ryo_h_AddrConst" == some Full.Opcode.addrConst)
     "mangled handler"
   check (ImageObject.handlerOf? "ryo_h_AddW32" == some Full.Opcode.addW32) "bare handler"
-  check (ImageObject.handlerOf? "_RNvCs5fGHjzWXRav_7___rustc12ryo_h_AddrAbs" == none) "wrong length"
+  check (ImageObject.handlerOf? "_RNvCs5fGHjzWXRav_7___rustc14ryo_h_AddrConst" == none) "wrong length"
   check (ImageObject.handlerOf? "ryo_h_NotAnOpcode" == none) "unknown opcode"
   -- `island` has no handler.
   check (ImageObject.handlerOf? "ryo_h_Island" == none) "opcode without a handler"

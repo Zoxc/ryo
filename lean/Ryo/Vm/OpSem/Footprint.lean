@@ -136,7 +136,7 @@ def footprintOf (k : HandlerKind) (ps : List String) : Option Footprint := do
     pure { writes := [rd "d" 8],
            derefs := [⟨.addr "sym", .bytes 8, .read, true⟩] ++
              (if ind then [⟨.loaded "sym", .bytes 8, .read, true⟩] else []) }
-  | .addr_abs => pure { writes := [rd "d" 8] }
+  | .addr_const => pure { writes := [rd "d" 8] }
   | .ptr_add => pure { reads := [rd "p" 8], writes := [rd "d" 8] }
   | .ptr_index => pure { reads := [rd "p" 8, rd "i" 8], writes := [rd "d" 8] }
   | .bin | .bin_fn | .binop | .shift | .fbin | .fmeth =>

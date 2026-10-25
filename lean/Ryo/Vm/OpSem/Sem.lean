@@ -190,7 +190,7 @@ def kindSem (k : HandlerKind) (ps : List String) (e : Env) : M Out := do
     let v ← asPtr (← st.load (← e.addr "sym") 8 Target.PTR_ALIGN)
     let v ← if p0 == some "true" then do asPtr (← st.load v 8 Target.PTR_ALIGN) else pure v
     pure (out e [("d", encodePtr v)])
-  | .addr_abs => pure (out e [("d", encodePtr (← e.addr "a"))])
+  | .addr_const => pure (out e [("d", encodePtr (← e.addr "a"))])
   | .ptr_add =>
     let p ← e.ptr "p"
     let imm ← e.imm "imm"

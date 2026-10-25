@@ -352,7 +352,7 @@ record where each allocation starts, so it matches: a placement "global `g` at p
 `b`" holds locally when bytes, alignment and the relocations in `[b, b + size)` agree with
 `g`, a pool pointer demanding the placement of its target; valid placements are the greatest
 fixpoint over those demands (cycles are fine). Each code reference (`Ref.const k`, with its
-use from the decoded `const`/`addr.abs`) must be covered by a valid placement of a global its
+use from the decoded `const`/`addr.const`) must be covered by a valid placement of a global its
 function's dumped body mentions; `fill` operands are byte constants (C1' checks them), and
 references from functions outside the dump are reported, not failed. A static pointer's
 relocation names the static's symbol as the dump gives it (`Global.symbol`).

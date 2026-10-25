@@ -10,7 +10,7 @@ backend's MIR dump (`RYO_DUMP_LEAN`, `Ryo.Spec.Program`):
 
 - **References.** Every pool offset `k` the code references: the `Ref.const k` fields of each
   function's code, with their use from the decoded instruction (`const d, k, len` copies
-  `[k, k + len)`, `addr.abs d, k` takes the address `k`, `fill d, k, n, _` reads an `n`-byte
+  `[k, k + len)`, `addr.const d, k` takes the address `k`, `fill d, k, n, _` reads an `n`-byte
   element). `fill` operands are byte constants, not allocations (C1' checks them against the
   `Repeat` operand), so they are counted, not matched.
 - **Placements.** A placement `(g, b)` says "pool offset `b` holds a copy of dumped global
@@ -82,7 +82,7 @@ structure PoolView where
 inductive Use where
   /-- `const`: copies `len` bytes. -/
   | copy (len : Nat)
-  /-- `addr.abs`: takes the address. -/
+  /-- `addr.const`: takes the address. -/
   | addr
   /-- `fill`: an `n`-byte element (a byte constant). -/
   | fill (n : Nat)
@@ -93,7 +93,7 @@ inductive Use where
 instance : ToString Use where
   toString
     | .copy n => s!"const {n}"
-    | .addr => "addr.abs"
+    | .addr => "addr.const"
     | .fill n => s!"fill {n}"
     | .unknown => "unknown use"
 
@@ -479,7 +479,7 @@ def codeRefs (o : ImageObject) : Array CodeRef := Id.run do
               let next := match rest with | .imm v :: _ => some v.toNat | _ => none
               let u := if mn == "const" then (next.map Use.copy).getD .unknown
                 else if mn == "fill" then (next.map Use.fill).getD .unknown
-                else if mn == "addr.abs" then .addr else .unknown
+                else if mn == "addr.const" then .addr else .unknown
               scan rest (acc.push (k, u))
             | _ :: rest, acc => scan rest acc
             | [], acc => acc
@@ -491,7 +491,7 @@ def codeRefs (o : ImageObject) : Array CodeRef := Id.run do
               let next := match rest with | .imm v :: _ => some v.toNat | _ => none
               let u := if mn == "const" then (next.map Use.copy).getD .unknown
                 else if mn == "fill" then (next.map Use.fill).getD .unknown
-                else if mn == "addr.abs" then .addr else .unknown
+                else if mn == "addr.const" then .addr else .unknown
               scanN rest (acc.push (k, u))
             | _ :: rest, acc => scanN rest acc
             | [], acc => acc

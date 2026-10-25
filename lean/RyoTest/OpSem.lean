@@ -235,7 +235,7 @@ def addresses : Except String Unit := do
     check (st'.frame (-30) == .uninit) "escaped bytes aren't private"
   | .error e => .error s!"imm.w8: {e}"
   let p := prov 3 0x1000
-  expectBytes "addr.abs" [S (-8), .addr ⟨0x1000, some 3⟩] (stOf []) (-8) p
+  expectBytes "addr.const" [S (-8), .addr ⟨0x1000, some 3⟩] (stOf []) (-8) p
   -- `addr.sym` reads the symbol slot; `.ind` once more through it.
   let syms := [mkAlloc 0x2000 (prov 1 0x3000), mkAlloc 0x3000 (prov 2 0x4000), mkAlloc 0x4000 []]
   expectBytes "addr.sym" [S (-8), .addr ⟨0x2000, some 0⟩] (stOf [] syms) (-8) (prov 1 0x3000)

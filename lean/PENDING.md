@@ -13,14 +13,6 @@ remove it once a Lean session has handled it.
   `version` in the header dump line; update lean/README.md and lean/docs (plan.md, reduced.md),
   which say the tables are pinned to `FORMAT_VERSION`.
 
-- `addr.abs` is renamed `addr.const` (opcode `AddrConst`, handler `ryo_h_AddrConst`, kind
-  `addr_const`; same opcode number, operand kind `Abs` and bit-31 encoding). The generated
-  tables and vectors are regenerated, so `lake build` fails until the hand-written Lean follows:
-  `.addr_abs` in `Ryo/Vm/OpSem/Sem.lean` and `Footprint.lean`, `Full.Opcode.addrAbs` and the
-  `ryo_h_AddrAbs` names in `RyoTest/Obj.lean`, the `"addr.abs"` mnemonic in
-  `Ryo/Check/Image/Pool.lean` and `RyoTest/OpSem.lean`, and `lean/docs/aot.md`.
-  Commit: "Rename addr.abs to addr.const".
-
 - `LoadRip` takes a register: `mov reg, [rip + disp32]` (REX.R for `r8`-`r15`), the item
   `loadRip dst to` in the x86 vectors; `call.sym.ind` still loads `rax`. `Lea` and `LoadRip`
   count as inline items (`Item.isInline`), not ending a sequence. Commit: "Let LoadRip load
