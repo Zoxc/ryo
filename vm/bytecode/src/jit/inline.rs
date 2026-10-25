@@ -16,7 +16,15 @@
 //!   to its caller takes the call site's action (its landing pad, or none); its loop heads
 //!   are ordinary blocks, without OSR entries.
 //!
-//! Weights are static: 1 per call site, 8 per loop level, 1/16 in cold blocks.
+//! Weights are static: 1 per call site, 8 per loop level, 1/16 in cold blocks and for
+//! `#[cold]` callees.
+//!
+//! The source attributes ([`Env::flags`]): an `#[inline(never)]` callee isn't inlined; a
+//! `#[cold]` one is weighted as a cold block's call, and the profile doesn't raise it; an
+//! `#[inline(always)]` one (not at a cold site) is selected ahead of the others and without
+//! the ratio bar, still under the unit's cap and frame limit, and its edge doesn't count
+//! toward [`Params::max_depth`] (up to [`Params::always_depth`] more). `#[inline]` is carried
+//! but unused.
 
 use alloc::collections::BTreeMap;
 use alloc::rc::Rc;
@@ -27,6 +35,7 @@ use core::fmt::Write;
 use super::ir::*;
 use crate::asm::Ref;
 use crate::full::{Func as FuncIdx, Opcode, Sym};
+use crate::image::{FUNC_COLD, FUNC_INLINE_ALWAYS, FUNC_INLINE_NEVER};
 use crate::reduced::Arg;
 
 /// An image, by its header's address: opaque to the inliner.
@@ -73,6 +82,9 @@ pub trait Env {
     /// How many times function `g`'s AOT code was called and how many loop iterations it
     /// ran (its JIT record's counters), if known.
     fn counts(&self, g: VmFunc) -> Option<(u64, u64)>;
+    /// Function `g`'s flags ([`crate::image::FUNC_INLINE_ALWAYS`] etc.: its source
+    /// attributes).
+    fn flags(&self, g: VmFunc) -> u8;
 }
 
 /// `c`, a function of image `img`, in the terms of the root's image (design/jit.md,
@@ -140,6 +152,9 @@ pub fn rebase(c: &Func, img: ImageId, env: &mut dyn Env) -> Result<Func, &'stati
 pub struct Params {
     /// How deep the exploration goes.
     pub max_depth: u32,
+    /// How much deeper than `max_depth` `#[inline(always)]` edges, which don't count toward
+    /// it, may take the exploration.
+    pub always_depth: u32,
     /// The most IR (by cost) the exploration builds, all callees together.
     pub expand: f64,
     /// The largest unit, by cost.
@@ -169,6 +184,7 @@ pub struct Params {
 
 pub const PARAMS: Params = Params {
     max_depth: 6,
+    always_depth: 4,
     expand: 6000.0,
     cap: 2000.0,
     always: 12.0,
@@ -505,11 +521,15 @@ struct Node {
     site: Inst,
     parent: usize,
     depth: u32,
+    /// The depth without `#[inline(always)]` edges.
+    soft_depth: u32,
+    /// The callee's [`Env::flags`].
+    flags: u8,
     /// The site's frequency relative to the root's entry.
     weight: f64,
     cost: f64,
     benefit: f64,
-    /// The site is in a cold block of its caller.
+    /// The site is in a cold block of its caller, or the callee is `#[cold]`.
     cold: bool,
     /// What unwinding out of a call in the callee that continues to its caller does once
     /// inlined: the site's action, or its ancestors' if it continues there too.
@@ -648,6 +668,8 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
         site: Inst(u32::MAX),
         parent: usize::MAX,
         depth: 0,
+        soft_depth: 0,
+        flags: 0,
         weight: 1.0,
         cost: root_cost,
         benefit: 0.0,
@@ -671,8 +693,15 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
     let mut trials: Vec<((VmFunc, Vec<Option<(u64, u8)>>), Rc<Func>)> = Vec::new();
     while !pending.is_empty() && nodes.len() < p.nodes {
         let at = (0..pending.len()).max_by(|&a, &b| pending[a].0.total_cmp(&pending[b].0)).unwrap();
-        let (weight, parent, site, g, cold) = pending.swap_remove(at);
+        let (mut weight, parent, site, g, mut cold) = pending.swap_remove(at);
+        let flags = env.flags(g);
+        let always = flags & FUNC_INLINE_ALWAYS != 0;
         let depth = nodes[parent].depth + 1;
+        let soft_depth = nodes[parent].soft_depth + !always as u32;
+        if flags & FUNC_COLD != 0 && !cold {
+            weight /= 16.0;
+            cold = true;
+        }
         let pf: &Func = match &nodes[parent].ir {
             Some(ir) => ir,
             None => f,
@@ -691,7 +720,10 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
             }
             anc = nodes[anc].parent;
         }
-        if depth > p.max_depth {
+        if flags & FUNC_INLINE_NEVER != 0 {
+            why = why.or(Some("inline(never)"));
+        }
+        if soft_depth > p.max_depth || depth > p.max_depth + p.always_depth {
             why = why.or(Some("too deep"));
         }
         let unwind = match call.site {
@@ -725,7 +757,8 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
             }
             (w, _) => {
                 if let Some(d) = dump.as_deref_mut() {
-                    let _ = writeln!(d, ";   {} at {site} (depth {depth}): not inlinable: {}", name(g, root), w.unwrap_or("?"));
+                    let a = if always { " [always]" } else { "" };
+                    let _ = writeln!(d, ";   {}{a} at {site} (depth {depth}): not inlinable: {}", name(g, root), w.unwrap_or("?"));
                 }
                 continue;
             }
@@ -789,6 +822,8 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
             site,
             parent,
             depth,
+            soft_depth,
+            flags,
             weight,
             cost: k_cost,
             benefit: weight * (protocol(&call) + folded + promoted),
@@ -811,6 +846,9 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
             *sites.entry(n.func.key()).or_default() += n.weight;
         }
         for k in 1..nodes.len() {
+            if nodes[k].flags & FUNC_COLD != 0 {
+                continue;
+            }
             let Some((gc, _)) = env.counts(nodes[k].func) else { continue };
             let w = nodes[k].weight;
             let prof = gc as f64 / rc as f64 * w / sites[&nodes[k].func.key()];
@@ -858,23 +896,34 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
     let mut queue: Vec<usize> = nodes[0].children.clone();
     let mut unit = root_cost;
     let mut frame = 0u32;
+    // A cluster headed by an `#[inline(always)]` callee, not at a cold site: first, and
+    // without the bar.
+    let forced = |k: usize| nodes[k].flags & FUNC_INLINE_ALWAYS != 0 && !nodes[k].cold;
     while !queue.is_empty() {
-        let at = (0..queue.len()).max_by(|&a, &b| clusters[queue[a]].ratio().total_cmp(&clusters[queue[b]].ratio())).unwrap();
+        let key = |k: usize| (forced(k), clusters[k].ratio());
+        let at = (0..queue.len())
+            .max_by(|&a, &b| {
+                let (x, y) = (key(queue[a]), key(queue[b]));
+                x.0.cmp(&y.0).then(x.1.total_cmp(&y.1))
+            })
+            .unwrap();
         let k = queue.swap_remove(at);
         let cl = &clusters[k];
-        let always = cl.cost <= p.always;
+        let small = cl.cost <= p.always;
         let bar = p.t1 * libm_exp2((unit + cl.cost) / p.scale);
-        let ok = frame + cl.frame <= p.frame && (always || (!nodes[k].cold && cl.ratio() >= bar && unit + cl.cost <= cap));
+        let fits = unit + cl.cost <= cap;
+        let ok = frame + cl.frame <= p.frame && (small || (forced(k) && fits) || (!nodes[k].cold && cl.ratio() >= bar && fits));
         if let Some(d) = dump.as_deref_mut() {
             let names: Vec<String> = cl.members.iter().map(|&m| alloc::format!("{}@{}", name(nodes[m].func, root), nodes[m].site)).collect();
             let _ = writeln!(
                 d,
-                ";   cluster [{}]: benefit {:.1}, cost {:.1}, ratio {:.2}{}: {}",
+                ";   cluster [{}]: benefit {:.1}, cost {:.1}, ratio {:.2}{}{}: {}",
                 names.join(" "),
                 cl.benefit,
                 cl.cost,
                 cl.ratio(),
                 if nodes[k].cold { ", cold" } else { "" },
+                if forced(k) { ", always" } else { "" },
                 if ok { "inlined" } else { "not inlined" }
             );
         }

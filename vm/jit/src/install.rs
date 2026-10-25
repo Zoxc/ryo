@@ -334,6 +334,10 @@ impl jit::inline::Env for InlineEnv<'_> {
         f
     }
 
+    fn flags(&self, g: VmFunc) -> u8 {
+        image_of(g.img).func_flags().get(g.func.0 as usize).copied().unwrap_or(0)
+    }
+
     fn counts(&self, g: VmFunc) -> Option<(u64, u64)> {
         let img = image_of(g.img);
         (g.func.0 < img.header().jit_records.count).then(|| {

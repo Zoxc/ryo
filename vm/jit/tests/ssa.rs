@@ -11,6 +11,7 @@ mod common;
 use common::*;
 
 use ryo_bytecode::asm::{ArgReg, RetPart, Scope, ScopeKind, ret_kind};
+use ryo_bytecode::image::{FUNC_COLD, FUNC_INLINE_ALWAYS, FUNC_INLINE_NEVER};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering::SeqCst};
 use std::sync::{Mutex, MutexGuard, Once};
 
@@ -1054,6 +1055,92 @@ fn inline_constant_trials() {
         assert_eq!(state(&img, pick), JIT_COLD, "pick inlined");
     }
     check_stats(before, 1);
+}
+
+/// `rounds(x)`: `n` rounds of `x = x * 3 + 1` with `x` the first argument, so its IR cost
+/// grows with `n`. x@-8.
+fn rounds(n: usize, flags: u8) -> FunctionDef {
+    let mut a = Asm::new();
+    a.i(arg(-8, 0));
+    for _ in 0..n {
+        a.i(Insn::MulImmW64 { d: Slot(-8), a: Slot(-8), imm: 3 });
+        a.i(Insn::AddImmW64 { d: Slot(-8), a: Slot(-8), imm: 1 });
+    }
+    a.ret(Slot(-8), 8);
+    FunctionDef { flags, ..func(a.done(), 16, 0, 8) }
+}
+
+fn rounds_value(n: usize, mut x: u64) -> u64 {
+    for _ in 0..n {
+        x = x.wrapping_mul(3).wrapping_add(1);
+    }
+    x
+}
+
+/// The source attributes ([`ryo_bytecode::image::FUNC_INLINE_ALWAYS`] etc.): `f(x)` calls
+/// `g(x)` `reps` times in a loop of `iters`, and `g` is inlined or not as its flags say.
+/// Returns whether `g` was inlined (it never ran its own AOT code, so never tripped).
+fn inlined_with_flags(n: usize, flags: u8, iters: u64) -> bool {
+    let (_g, before) = start();
+    let mut w = ImageWriter::new(unique_scid());
+    let g = w.add_function(rounds(n, flags));
+    // f(x, iters): s = 0; for i < iters { s += g(x + i) }; ret s. x@16, iters@24; x'@-8,
+    // iters'@-16, i@-24, s@-32, t@-40, r@-48.
+    let mut a = Asm::new();
+    a.i(Insn::MovW64 { d: Slot(-8), s: Slot(16) });
+    a.i(Insn::MovW64 { d: Slot(-16), s: Slot(24) });
+    a.i(Insn::ImmW64 { d: Slot(-24), imm: 0 });
+    a.i(Insn::ImmW64 { d: Slot(-32), imm: 0 });
+    let head = a.i(Insn::BrLtUW64 { a: Slot(-24), b: Slot(-16), neg: F, t: Target(0) });
+    a.i(Insn::AddW64 { d: Slot(-40), a: Slot(-8), b: Slot(-24) });
+    a.i(Insn::Call { d: Slot(-48), f: g, k: 8, a: List::from_words(&regs(&[-40])) });
+    a.i(Insn::AddW64 { d: Slot(-32), a: Slot(-32), b: Slot(-48) });
+    a.i(Insn::AddImmW64 { d: Slot(-24), a: Slot(-24), imm: 1 });
+    let back = a.i(Insn::Jmp { t: Target(0) });
+    a.patch(back, "t", head);
+    let done = a.i(Insn::Ret { s: Slot(-32), k: 8 });
+    a.patch(head, "t", done);
+    let f = w.add_function(func(a.done(), 48, 16, 8));
+    let img = build(w, &syms());
+    let mut s = 0u64;
+    for i in 0..iters {
+        s = s.wrapping_add(rounds_value(n, 5 + i));
+    }
+    assert_eq!(ok::<_, u64>(img.id(f), (5u64, iters)), s, "f with g flags {flags}");
+    let inlined = state(&img, g) == JIT_COLD;
+    check_stats(before, if inlined { 1 } else { 2 });
+    inlined
+}
+
+/// `#[inline(always)]` lifts a callee far over the ratio bar; without it, it isn't inlined.
+#[test]
+fn inline_always_over_the_bar() {
+    if std::env::var("RYO_JIT_OPT").is_ok_and(|o| o == "reencode") {
+        return;
+    }
+    assert!(!inlined_with_flags(150, 0, 1), "a large callee without the attribute");
+    assert!(inlined_with_flags(150, FUNC_INLINE_ALWAYS, 1), "an inline(always) callee");
+}
+
+/// `#[inline(never)]` keeps even a callee small enough to always be inlined out of line.
+#[test]
+fn inline_never_under_the_always_cost() {
+    if std::env::var("RYO_JIT_OPT").is_ok_and(|o| o == "reencode") {
+        return;
+    }
+    assert!(inlined_with_flags(1, 0, 3), "a tiny callee");
+    assert!(!inlined_with_flags(1, FUNC_INLINE_NEVER, 3), "an inline(never) callee");
+}
+
+/// A `#[cold]` callee is weighted as a cold block's call (and the profile doesn't raise it):
+/// a callee inlined in a loop isn't once it is cold.
+#[test]
+fn inline_cold_callee_in_a_loop() {
+    if std::env::var("RYO_JIT_OPT").is_ok_and(|o| o == "reencode") {
+        return;
+    }
+    assert!(inlined_with_flags(12, 0, 50), "a medium callee in a loop");
+    assert!(!inlined_with_flags(12, FUNC_COLD, 50), "a cold callee in a loop");
 }
 
 /// A call between the caller's stores of stack arguments and their call: `r` stores `h`'s
