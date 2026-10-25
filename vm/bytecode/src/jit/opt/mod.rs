@@ -6,6 +6,8 @@
 //! - `dse`: dead stores to allocas no pointer reaches, per block.
 //! - `simplify`: global simplification: constant propagation over block parameters, branch
 //!   folding, parameter aliasing and block merging.
+//! - `copies`: `memcpy`, `memmove` and `memset` calls of small constant lengths as loads
+//!   and stores (value numbered again).
 //! - `osr`: the OSR-transparent loop facts the forward analyses share: OSR edges left out.
 //! - `fold`: the folds instruction selection relies on.
 //! - `checks`: check elimination: overflow checks and compares the dominating branches
@@ -17,6 +19,7 @@
 //!   inlining), run between two rounds of the others.
 
 pub mod checks;
+pub mod copies;
 pub mod dce;
 pub mod dse;
 pub mod fold;
@@ -36,6 +39,9 @@ pub fn run(f: &mut Func) {
     lvn::lvn(f);
     dse::dse(f);
     simplify::simplify(f);
+    if copies::copies(f) {
+        lvn::lvn(f);
+    }
     fold::fold(f);
     checks::checks(f);
     dce::dce(f);

@@ -164,11 +164,9 @@ L6:
 L7:
     cmp     rax,4
     jb      L32
-    mov     rdi,rbp
-    mov     rsi,[rsp+20h]
-    mov     edx,4
-    call    ryo_hr_Memcpy
-    mov     eax,[rsp+80h]
+    mov     r11,[rsp+20h]
+    mov     eax,[r11]
+    mov     [rsp+80h],eax
     mov     eax,eax
     mov     ebp,4
     mov     r13,rax
@@ -206,11 +204,8 @@ L9:
 L10:
     cmp     rax,2
     jb      L36
-    mov     rdi,rbx
-    mov     rsi,r12
-    mov     edx,2
-    call    ryo_hr_Memcpy
-    movzx   eax,word ptr [rsp+74h]
+    movzx   eax,word ptr [r12]
+    mov     [rsp+74h],ax
     movzx   eax,ax
     mov     rcx,rbp
     imul    rcx,8
@@ -325,11 +320,8 @@ L16:
 L17:
     cmp     rcx,8
     jb      L41
-    mov     rdi,r12
-    mov     rsi,rbp
-    mov     edx,8
-    call    ryo_hr_Memcpy
-    mov     r12,[rsp+0A0h]
+    mov     r12,[rbp]
+    mov     [rsp+0A0h],r12
     mov     r11,[rsp+38h]
     mov     rcx,[r11+18h]
     xor     rcx,r12
@@ -396,11 +388,8 @@ L22:
 L23:
     cmp     rcx,4
     jb      L45
-    mov     rdi,r12
-    mov     rsi,rbx
-    mov     edx,4
-    call    ryo_hr_Memcpy
-    mov     ecx,[rsp+90h]
+    mov     ecx,[rbx]
+    mov     [rsp+90h],ecx
     mov     ecx,ecx
     mov     ebx,4
     mov     r12,rcx
@@ -442,11 +431,8 @@ L25:
 L26:
     cmp     rcx,2
     jb      L49
-    mov     rdi,r13
-    mov     rsi,rbp
-    mov     edx,2
-    call    ryo_hr_Memcpy
-    movzx   ecx,word ptr [rsp+84h]
+    movzx   ecx,word ptr [rbp]
+    mov     [rsp+84h],cx
     movzx   ecx,cx
     mov     rdx,rbx
     imul    rdx,8
@@ -1247,11 +1233,8 @@ L6:
     call    image.fn171
     test    al,al
     je      L24
-    mov     rdi,rbp
-    mov     rsi,r12
-    mov     edx,8
-    call    ryo_hr_Memcpy
-    mov     r14,[rsp+40h]
+    mov     r14,[r12]
+    mov     [rsp+40h],r14
     mov     rax,[rsp+80h]
     xor     rax,r14
     mov     [rsp+80h],rax
@@ -1375,11 +1358,8 @@ L18:
     call    image.fn171
     test    al,al
     je      L26
-    mov     rdi,rbp
-    mov     rsi,r15
-    mov     edx,8
-    call    ryo_hr_Memcpy
-    mov     r14,[rsp+50h]
+    mov     r14,[r15]
+    mov     [rsp+50h],r14
     mov     rax,[rsp+80h]
     xor     rax,r14
     mov     [rsp+80h],rax
@@ -1486,8 +1466,7 @@ fn <std::hash::RandomState as std::hash::BuildHasher>::hash_one::<&u64>
     mov     rsi,rdi
     mov     rdi,rax
     call    qword ptr [fn0.slot]
-    lea     r11,[rsp+68h]
-    mov     [rsp+18h],r11
+    lea     r12,[rsp+68h]
     mov     rax,[rbx]
     mov     [rsp+60h],rax
     lea     r11,[rsp+60h]
@@ -1520,20 +1499,17 @@ L2:
     jmp     L4
 L3:
     mov     dword ptr [rsp+40h],0
-    lea     r15,[rsp+40h]
-    lea     rax,[image.k3192]
+    lea     rax,[rsp+40h]
+    lea     rcx,[image.k3192]
     mov     rdi,[rsp+10h]
-    mov     rsi,r15
+    mov     rsi,rax
     mov     edx,1
-    mov     ecx,1
     mov     r8d,4
-    mov     r9,rax
+    mov     r9,rcx
+    mov     ecx,1
     call    image.fn165
-    mov     rdi,r15
-    mov     rsi,[rsp+10h]
-    mov     edx,4
-    call    ryo_hr_Memcpy
-    mov     eax,[rsp+40h]
+    mov     eax,[rsp+60h]
+    mov     [rsp+40h],eax
     mov     eax,eax
     mov     r15d,4
     mov     rbp,rax
@@ -1545,20 +1521,17 @@ L4:
     mov     word ptr [rsp+34h],0
     mov     r11,[rsp+10h]
     lea     rbx,[r11+r15]
-    lea     r12,[rsp+34h]
-    lea     rax,[image.k3216]
+    lea     rax,[rsp+34h]
+    lea     rcx,[image.k3216]
     mov     rdi,rbx
-    mov     rsi,r12
+    mov     rsi,rax
     mov     edx,1
-    mov     ecx,1
     mov     r8d,2
-    mov     r9,rax
+    mov     r9,rcx
+    mov     ecx,1
     call    image.fn165
-    mov     rdi,r12
-    mov     rsi,rbx
-    mov     edx,2
-    call    ryo_hr_Memcpy
-    movzx   eax,word ptr [rsp+34h]
+    movzx   eax,word ptr [rbx]
+    mov     [rsp+34h],ax
     movzx   eax,ax
     mov     rcx,r15
     imul    rcx,8
@@ -1608,7 +1581,7 @@ L7:
     mov     rax,[rsp+80h]
     xor     rax,rcx
     mov     [rsp+80h],rax
-    mov     rdi,[rsp+18h]
+    mov     rdi,r12
     call    image.fn208
     mov     rax,[rsp+0A0h]
     mov     rcx,[rsp+68h]
@@ -1618,65 +1591,62 @@ L7:
 L8:
     mov     ebx,8
     sub     rbx,r13
-    mov     r12,rbx
-    and     r12,7
+    mov     r11,rbx
+    and     r11,7
+    mov     [rsp+20h],r11
 L9:
     mov     [rsp+50h],r13
     mov     rax,rbx
-    sub     rax,r12
+    sub     rax,[rsp+20h]
     cmp     r13,rax
     jae     L15
     mov     qword ptr [rsp+50h],0
     mov     r11,[rsp+10h]
-    lea     r14,[r11+r13]
-    lea     r15,[rsp+50h]
+    lea     r15,[r11+r13]
+    lea     rbp,[rsp+50h]
     lea     r11,[image.k6632]
-    mov     [rsp+20h],r11
-    mov     rdi,r14
+    mov     [rsp+18h],r11
+    mov     rdi,r15
     mov     esi,1
     call    image.fn112
     test    al,al
     jne     L12
     jmp     L17
 L10:
-    mov     rdi,r15
+    mov     rdi,rbp
     mov     esi,1
     call    image.fn112
     test    al,al
     jne     L13
     jmp     L17
 L11:
-    mov     rdi,r14
-    mov     rsi,r15
+    mov     rdi,r15
+    mov     rsi,rbp
     mov     edx,1
     mov     ecx,8
     call    qword ptr [image.fn171.slot]
     test    al,al
     je      L17
-    mov     rdi,r15
-    mov     rsi,r14
-    mov     edx,8
-    call    ryo_hr_Memcpy
-    mov     rbp,[rsp+50h]
+    mov     r14,[r15]
+    mov     [rsp+50h],r14
     mov     rax,[rsp+80h]
-    xor     rax,rbp
+    xor     rax,r14
     mov     [rsp+80h],rax
-    mov     r10,[rsp+18h]
-    mov     [rsp+50h],r10
-    mov     rdi,[rsp+18h]
+    mov     [rsp+50h],r12
+    mov     rdi,r12
     call    image.fn208
     jmp     L14
 L12:
-    cmp     r14,0
+    cmp     r15,0
     je      L17
     jmp     L10
 L13:
-    cmp     r15,0
+    cmp     rbp,0
     je      L17
     jmp     L11
 L14:
     mov     rax,[rsp+68h]
-    xor     rax,rbp
+    xor     rax,r14
     mov     [rsp+68h],rax
     mov     rax,r13
     add     rax,8
@@ -1686,10 +1656,11 @@ L15:
     mov     rdi,[rsp+10h]
     mov     esi,8
     mov     rdx,r13
-    mov     rcx,r12
+    mov     rcx,[rsp+20h]
     call    qword ptr [image.fn158.slot]
     mov     [rsp+0A0h],rax
-    mov     [rsp+0A8h],r12
+    mov     r10,[rsp+20h]
+    mov     [rsp+0A8h],r10
 L16:
     lea     rax,[rsp+68h]
     mov     rdi,rax
@@ -1710,7 +1681,7 @@ L17:
     mov     rdi,rax
     mov     esi,237h
     mov     edx,0
-    mov     rcx,[rsp+20h]
+    mov     rcx,[rsp+18h]
     movzx   edx,dl
     call    image.sym63
     ud2
@@ -1848,11 +1819,8 @@ L2:
 L3:
     cmp     rax,4
     jb      L11
-    mov     rdi,rbp
-    mov     rsi,r15
-    mov     edx,4
-    call    ryo_hr_Memcpy
-    mov     eax,[rsp+40h]
+    mov     eax,[r15]
+    mov     [rsp+40h],eax
     mov     eax,eax
     mov     r15d,4
     mov     rbp,rax
@@ -1892,11 +1860,8 @@ L5:
 L6:
     cmp     rax,2
     jb      L15
-    mov     rdi,r12
-    mov     rsi,rbx
-    mov     edx,2
-    call    ryo_hr_Memcpy
-    movzx   eax,word ptr [rsp+34h]
+    movzx   eax,word ptr [rbx]
+    mov     [rsp+34h],ax
     movzx   eax,ax
     mov     rcx,r15
     imul    rcx,8

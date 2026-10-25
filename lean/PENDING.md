@@ -14,6 +14,12 @@ remove it once a Lean session has handled it.
   handler calls, so copied aggregates promote. Only matters if the Lean model covers the SSA
   tier. Commit: "JIT SSA tier: small block copies as loads and stores".
 
+- The JIT's SSA tier rewrites `memcpy`/`memmove`/`memset` handler calls whose length is a
+  constant of 1 to 64 bytes after `simplify` (operands all values, no unwinding) into plain
+  loads then stores (`memset`: the byte times `0x0101…`), then reruns LVN
+  (`jit::opt::copies`). Only matters if the Lean model covers the SSA tier. Commit: "JIT
+  SSA: constant-length memcpy/memmove/memset as loads and stores".
+
 - The JIT's SSA tier inlines direct calls of the image's functions (`jit::inline`: an
   IR-to-IR splice with landing-pad action substitution, callee allocas appended as
   `Alloca::inlined`, outgoing areas merged) and promotes memory allocas whose address no

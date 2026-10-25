@@ -78,6 +78,24 @@ fn repeat(v: u64, dst: &mut [u16; 6], big: &mut [u32; 9]) -> [u64; 5] {
     [v; 5]
 }
 
+/// Small `memcpy`, `memmove` and `memset` calls of constant lengths (the JIT's SSA tier does
+/// them as loads and stores): overlapping both ways, odd lengths, through a local.
+#[inline(never)]
+fn small_copies(a: &mut [u8; 40], b: u8) -> ([u8; 40], u64) {
+    let mut local = [0u8; 24];
+    unsafe {
+        let p = a.as_mut_ptr();
+        std::ptr::copy(p, p.add(3), 13);
+        std::ptr::copy(p.add(20), p.add(17), 19);
+        std::ptr::copy_nonoverlapping(p, local.as_mut_ptr(), 24);
+        std::ptr::write_bytes(p.add(1), b, 7);
+        std::ptr::write_bytes(p.add(30), b ^ 0x5a, 10);
+    }
+    let mut w = [0u32; 3];
+    unsafe { std::ptr::copy_nonoverlapping(local.as_ptr().add(5), w.as_mut_ptr() as *mut u8, 11) };
+    (*a, w[0] as u64 + ((w[1] as u64) << 32) + w[2] as u64 + local[23] as u64)
+}
+
 #[inline(never)]
 fn wide_cmp(a: *const [u8], b: *const [u8]) -> (bool, bool, bool, bool) {
     (a < b, a <= b, a > b, a >= b)
@@ -140,6 +158,11 @@ fn main() {
     let (mut dst, mut big) = ([0u16; 6], [0u32; 9]);
     println!("{:?}", repeat(bb(11), &mut dst, &mut big));
     println!("{dst:x?} {big:?}");
+    let mut bytes = [0u8; 40];
+    for (k, x) in bytes.iter_mut().enumerate() {
+        *x = (k as u8).wrapping_mul(7) + 1;
+    }
+    println!("{:?}", small_copies(bb(&mut bytes), bb(0xc3)));
 
     let arr = [1u8, 2, 3, 4];
     let (a, b, c) = (&arr[..2] as *const [u8], &arr[..3] as *const [u8], &arr[1..3] as *const [u8]);

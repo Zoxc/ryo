@@ -519,3 +519,68 @@ fn dominator_value_numbering_and_dead_stores() {
     let stores = f.blocks[b2.idx()].insts.iter().filter(|i| matches!(f.insts[i.idx()].op, Op::AStore(..))).count();
     assert_eq!(stores, 1, "{f}");
 }
+
+fn live_ops(f: &IrFunc) -> Vec<Op> {
+    f.layout.iter().flat_map(|b| f.blocks[b.idx()].insts.iter()).map(|i| f.insts[i.idx()].op.clone()).collect()
+}
+
+/// A `memmove` whose length the folds make 12 becomes loads (8 and 4 bytes), all before the
+/// stores; one of a length only known at run time stays a handler call.
+#[test]
+fn constant_memmove_as_loads_and_stores() {
+    let v = vec![
+        arg(-8, 0),
+        arg(-16, 1),
+        arg(-24, 2),
+        Insn::ImmW64 { d: Slot(-32), imm: 12 },
+        Insn::MulImmW64 { d: Slot(-40), a: Slot(-32), imm: 1 },
+        Insn::Memmove { dp: Slot(-8), sp: Slot(-16), n: Slot(-40) },
+        Insn::Memcpy { dp: Slot(-8), sp: Slot(-16), n: Slot(-24) },
+        Insn::Ret { s: Slot(-8), k: 8 },
+    ];
+    let f = ir(&decoded(&v, 48, &[]));
+    let ops = live_ops(&f);
+    let hcalls = ops.iter().filter(|o| matches!(o, Op::HCall(_))).count();
+    assert_eq!(hcalls, 1, "{f}");
+    let mem: Vec<&Op> = ops.iter().filter(|o| matches!(o, Op::Load(..) | Op::Store(..))).collect();
+    assert_eq!(mem, [&Op::Load(8, 0), &Op::Load(4, 8), &Op::Store(8, 0), &Op::Store(4, 8)], "{f}");
+}
+
+/// A 3-byte `memset` becomes stores of the byte spread over a word.
+#[test]
+fn constant_memset_as_stores() {
+    let v = vec![
+        arg(-8, 0),
+        arg(-16, 1),
+        Insn::ImmW64 { d: Slot(-24), imm: 3 },
+        Insn::Memset { dp: Slot(-8), b: Slot(-16), n: Slot(-24) },
+        Insn::Ret { s: Slot(-8), k: 8 },
+    ];
+    let f = ir(&decoded(&v, 32, &[]));
+    let ops = live_ops(&f);
+    assert!(!ops.iter().any(|o| matches!(o, Op::HCall(_))), "{f}");
+    let st: Vec<&Op> = ops.iter().filter(|o| matches!(o, Op::Store(..))).collect();
+    assert_eq!(st, [&Op::Store(2, 0), &Op::Store(1, 2)], "{f}");
+}
+
+/// A `memcpy` out of a local through its address: the loads become alloca accesses, the
+/// address goes, and the local promotes.
+#[test]
+fn constant_memcpy_from_a_local_promotes() {
+    let v = vec![
+        arg(-8, 0),
+        Insn::ImmW64 { d: Slot(-32), imm: 1 },
+        Insn::ImmW64 { d: Slot(-24), imm: 2 },
+        Insn::Addr { d: Slot(-40), s: Slot(-32) },
+        Insn::ImmW64 { d: Slot(-48), imm: 16 },
+        Insn::Memcpy { dp: Slot(-8), sp: Slot(-40), n: Slot(-48) },
+        Insn::Ret { s: Slot(-8), k: 8 },
+    ];
+    let d = decoded(&v, 48, &[(3, -32, 16, ScopeKind::Escape { align: 8 })]);
+    let mut f = ir(&d);
+    assert!(ryo_bytecode::jit::opt::promote::promote(&mut f), "{f}");
+    let f = opt(f);
+    let ops = live_ops(&f);
+    assert!(!ops.iter().any(|o| matches!(o, Op::HCall(_) | Op::ALoad(..) | Op::AStore(..) | Op::AllocaAddr(..))), "{f}");
+    assert_eq!(ops.iter().filter(|o| matches!(o, Op::Store(8, _))).count(), 2, "{f}");
+}
