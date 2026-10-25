@@ -151,7 +151,7 @@ so a MIR change in a toolchain bump is a compile error. The tables below follow 
 | `StatementKind` | Bytecode |
 |---|---|
 | `Assign(place, rvalue)` | see Rvalues |
-| `SetDiscriminant` | a plain store of the tag value, computed at lowering time (also for niches; `set_discr.niche` is unused so far) |
+| `SetDiscriminant` | a plain store of the tag value, computed at lowering time (also for niches) |
 | `Intrinsic(CopyNonOverlapping)` | `memcpy` |
 | `Intrinsic(Assume)` | nothing |
 | `StorageLive` | nothing (slot allocation used it) |
@@ -178,7 +178,7 @@ a temporary slot up to 256 bytes, and uses `memmove` above that.
 | `UnaryOp(Not, a)` | `not.wN` (`bool`: `xor` with 1) |
 | `UnaryOp(Neg, a)` | `neg.wN`, `fneg.fN` |
 | `UnaryOp(PtrMetadata, p)` | load of the metadata word (none for thin pointers) |
-| `Discriminant(place)` | tag load, decoded per the layout: `TagEncoding::Direct` (load + zext/sext) or `Niche` (`discr.niche`) |
+| `Discriminant(place)` | tag load, decoded per the layout: `TagEncoding::Direct` (load + zext/sext) or `Niche`, as cg_ssa's `codegen_get_discr` with integer ops: one niche variant `eq.imm`/`ne.imm` on the tag (+ zext, `add.imm` or a `neg`/`and`/`xor` blend), else `sub.imm` + `le.u.imm` + cast/`add.imm` and the blend. When only a `SwitchInt` reads it (the block's last statement), the switch tests the tag instead (see Terminators) |
 | `Aggregate(kind, ops)` | field-wise stores into the destination plus the discriminant write. `RawPtr` aggregates build a (wide) pointer from data + metadata |
 | `WrapUnsafeBinder(op, _)` | same as `Use(op)` |
 
@@ -222,7 +222,7 @@ the VM. Wide pointer orderings are lexicographic: `a < b` is `a.data < b.data ||
 | `TerminatorKind` | Bytecode |
 |---|---|
 | `Goto` | `jmp`, or fall-through |
-| `SwitchInt(d, targets)` | If `d` is a `bool` local defined by an integer, `char`, `bool` or thin-pointer compare as the block's last statement, and used nowhere else, a compare branch on the compare's operands (`br.eq`, `br.lt`, their `.imm` forms or `br.gt.imm`, with the polarity and operand order that give the compare), and the compare isn't emitted. Otherwise `br`/`br!` for `bool`, `br.eq.imm` for a single case, `switch.dense` for dense value sets, and `switch.sparse` otherwise |
+| `SwitchInt(d, targets)` | If `d` is a `bool` local defined by an integer, `char`, `bool` or thin-pointer compare as the block's last statement, and used nowhere else, a compare branch on the compare's operands (`br.eq`, `br.lt`, their `.imm` forms or `br.gt.imm`, with the polarity and operand order that give the compare), and the compare isn't emitted. If `d` is a local only this switch reads, defined as the block's last statement by `Discriminant(p)` of a niche-encoded enum, the switch tests the tag of `p`: each niche variant's arm is `br.eq.imm` on its tag value and the untagged variant is the fall-through (more than 4 tested arms: `sub.imm` of `niche_start`, `br.gt.u.imm` of the niche range to the untagged arm, `switch.dense`); arms that go where the untagged variant goes, or to an unreachable `otherwise`, aren't tested. Otherwise `br`/`br!` for `bool`, `br.eq.imm` for a single case, `switch.dense` for dense value sets, and `switch.sparse` otherwise |
 | `Return` | `ret`; for sret, after `store.copy` of `_0` to the address saved by the prologue's `arg` |
 | `Unreachable` | `unreachable` |
 | `Call` | see Calls |
@@ -425,8 +425,9 @@ islands (`call` for safe intrinsics without a symbol, `call_cN` for `extern "C"`
 shim kind with a body, plus the intrinsics listed in Calls.
 `#[track_caller]` functions are VM functions, and caller locations follow cg_ssa, including a
 `#[track_caller]` function's own incoming location and the `caller_location` intrinsic.
-`SwitchInt` and `Assert` fuse with the compare that feeds them (compare branches). Locals with storage
-markers share slots; there is no copy propagation yet.
+`SwitchInt` and `Assert` fuse with the compare that feeds them (compare branches), and
+`SwitchInt` with a niche discriminant read. Locals with storage markers share slots; there is
+no copy propagation yet.
 Still `NeedsNative`, with the reason in `RYO_STATS=2`: argument and return `PassMode`s the
 VM doesn't place (on Win64 also `i128`, `f16` and `f128`), `ThreadLocalRef` of foreign thread locals, `f16`/`f128` arithmetic and
 compares, unsafe intrinsics without a VM lowering, wrapper or fallback body (128-bit atomics,

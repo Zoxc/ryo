@@ -495,7 +495,7 @@ frame.write(d, frame.read::<F>(a).min(frame.read::<F>(b)));  // max, copysign
 #### `zext.wA.wB`, `sext.wA.wB`, `trunc.wA.wB` `d, s`
 
 `zext`/`sext` with A < B, `trunc` with A > B: integer `as` casts between widths, and the
-lowering's widening of results (`u32` counts, the `discr.niche` variant, `bool` masks).
+lowering's widening of results (`u32` counts, `bool` masks).
 
 Inline when both widths are at most `w64`:
 
@@ -528,45 +528,10 @@ Bit-preserving casts (transmutes, pointer casts) are `mov` or `copy`.
 
 ## Enums
 
-Direct-tagged enums use plain loads, stores, `imm` and integer casts.
-
-#### `discr.niche.wN d, s, niche_start, variants_start, variants_end, untagged`
-
-Decodes a niche-encoded tag (`TagEncoding::Niche`) at width N into a `u32` variant index,
-as cg_ssa's `codegen_get_discr`. With `rel = s - niche_start` (wrapping), the variant is
-`variants_start + rel` if `rel <= variants_end - variants_start` (`variants_end`
-inclusive), else `untagged`.
-
-`niche_start` is an immediate of the tag width, the others `u32`s. The lowering's
-`Rvalue::Discriminant` writes it to a temporary and converts it to the discriminant type.
-
-Handlers `ryo_h_DiscrNicheW8` … (`discr`):
-
-```rust
-let rel = frame.read::<T>(s).wrapping_sub(niche_start as T);
-let v = if rel as u128 <= variants_end.wrapping_sub(variants_start) as u128 {
-    variants_start.wrapping_add(rel as u32)
-} else {
-    untagged
-};
-frame.write(d, v);  // u32
-```
-
-#### `set_discr.niche.wN d, variant, niche_start, variants_start, untagged`
-
-Stores the niche value of `variant`, and nothing for the untagged one.
-
-The lowering doesn't emit it: the variant is known when lowering `SetDiscriminant`, so it
-stores the niche value with `imm.wN`.
-
-Handlers `ryo_h_SetDiscrNicheW8` … (`set_discr`):
-
-```rust
-if variant != untagged {
-    let rel = variant.wrapping_sub(variants_start) as T;
-    frame.write(d, rel.wrapping_add(niche_start as T));
-}
-```
+There are no enum instructions. Direct-tagged enums use plain loads, stores, `imm` and
+integer casts. Niche-encoded tags (`TagEncoding::Niche`) are decoded with integer ops, as
+cg_ssa's `codegen_get_discr`, and stored with `imm.wN` (the variant is known when lowering);
+see [lowering.md](lowering.md#rvalues).
 
 ## Atomics
 

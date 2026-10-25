@@ -663,22 +663,19 @@ fn dead_stores_reencode() {
     assert!(dropped > 500, "{dropped} stores dropped");
 }
 
-/// The register packing of the opcodes with more operands than registers.
+/// The handler-call register layout of an opcode's operands. No opcode has more operands
+/// than registers since `discr.niche` was removed, so none is packed.
 #[test]
-fn packed_operands() {
+fn operand_registers() {
     let m = Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false, counters: false, far_rt: false };
-    let l = asm::layout(Opcode::DiscrNicheW128, m);
-    // d, s, niche_start (2), variants_start, variants_end | untagged << 32.
-    assert_eq!(l.regs, 6);
-    let ve = l.loc(Opcode::DiscrNicheW128, "variants_end");
-    let un = l.loc(Opcode::DiscrNicheW128, "untagged");
-    assert_eq!((ve.reg, ve.shift, un.reg, un.shift), (5, 0, 5, 32));
+    let l = asm::layout(Opcode::AtomicCxchgW8SeqcstSeqcst, m);
+    assert_eq!(l.regs, 5);
     let fp = Mode { fp_arg: true, ..m };
-    let l = asm::layout(Opcode::DiscrNicheW128, fp);
-    let d = l.loc(Opcode::DiscrNicheW128, "d");
-    let s = l.loc(Opcode::DiscrNicheW128, "s");
-    assert_eq!((l.first, l.regs, d.reg, s.reg, s.shift), (1, 6, 1, 1, 32));
-    // Most opcodes need no packing.
+    let l = asm::layout(Opcode::AtomicCxchgW8SeqcstSeqcst, fp);
+    assert_eq!((l.first, l.regs), (1, 6));
+    for &op in ryo_bytecode::full::ALL_OPCODES {
+        assert!(!asm::layout(op, fp).locs.iter().any(|l| l.shared), "{}", op.mnemonic());
+    }
     let l = asm::layout(Opcode::AddW32, m);
     assert_eq!((l.regs, l.loc(Opcode::AddW32, "b").reg), (3, 2));
     // `lpad` takes the exception object first.
@@ -839,7 +836,7 @@ fn templates_are_pinned() {
             eat(&lsda::write(&enc.call_sites));
         }
     }
-    assert_eq!(h, 0x79306fe69b9b0187, "template hash {h:#x}");
+    assert_eq!(h, 0x35a7d55f07ce39fb, "template hash {h:#x}");
 }
 
 /// Without a frame pointer, an SSE load or store of the slot at `rsp` has no displacement.

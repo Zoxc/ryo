@@ -157,7 +157,6 @@ fn widths_complete() {
             "br.gt.u.imm",
             "switch.dense",
             "switch.sparse",
-            "discr.niche",
         ] {
             assert!(has(&format!("{o}.w{w}")), "{o}.w{w}");
         }
@@ -270,7 +269,7 @@ fn opcode_table_is_pinned() {
             eat(&format!("{:?}", o.kind));
         }
     }
-    assert_eq!(h, 0x7f6fd4091435e49f, "opcode table hash {h:#x}");
+    assert_eq!(h, 0xeb61baa47ad0bac, "opcode table hash {h:#x}");
 }
 
 /// Pins the image table layouts: any change to a table entry's size or field offsets fails

@@ -125,8 +125,8 @@ native frames, and unwind natively ([Unwinding](#unwinding)). The runtime lives 
   followed by the elements. `switch.*` and `island` are the only variable-length
   instructions.
 - Immediates have the instruction's width: one word for `w8`–`w32` (upper bits 0), two for
-  `w64`, four for `w128`, low word first. The `switch.sparse` case values and the
-  `discr.niche` niche start follow the same rule.
+  `w64`, four for `w128`, low word first. The `switch.sparse` case values follow the
+  same rule.
 
 | Operand | Words | Meaning |
 |---|---|---|

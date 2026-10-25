@@ -746,61 +746,6 @@ fn switches() {
     }
 }
 
-#[test]
-fn niche_discriminants() {
-    let mut f = Frame::new();
-    let fp = f.fp();
-    let ranges: &[(u32, u32, u32)] = &[(3, 7, 1), (0, 0, 9), (1, 254, 0), (0xffff_fff0, 0xffff_fff5, 2)];
-    let discr = ops_where(|op| op.mnemonic().starts_with("discr.niche."));
-    let set = ops_where(|op| op.mnemonic().starts_with("set_discr.niche."));
-    assert_eq!((discr.len(), set.len()), (5, 5));
-    for (op, set_op) in discr.into_iter().zip(set) {
-        let n = mn_width(op.mnemonic());
-        let m = mask(n);
-        for &ns in SAMPLES {
-            let ns = ns & m;
-            for &(vs, ve, untagged) in ranges {
-                let tags = SAMPLES.iter().map(|&t| t & m).chain((0..300).map(|k| ns.wrapping_add(k) & m));
-                for tag in tags {
-                    let rel = tag.wrapping_sub(ns) & m;
-                    let want = if rel <= ve.wrapping_sub(vs) as u128 { vs.wrapping_add(rel as u32) } else { untagged };
-                    put(fp, A, tag | !m);
-                    put(fp, D, 0);
-                    run(op, fp, |name| match name {
-                        "d" => slot(D),
-                        "s" => slot(A),
-                        "niche_start" => ns,
-                        "variants_start" => vs as u128,
-                        "variants_end" => ve as u128,
-                        "untagged" => untagged as u128,
-                        _ => unreachable!(),
-                    });
-                    assert_eq!(get(fp, D), want as u128, "{} tag {tag:#x} ns {ns:#x} {vs}..={ve}", op.mnemonic());
-                }
-                for variant in (vs..=vs.wrapping_add(4)).chain([untagged]) {
-                    const FILL: u128 = 0xa5a5_a5a5_a5a5_a5a5_a5a5_a5a5_a5a5_a5a5;
-                    put(fp, D, FILL);
-                    run(set_op, fp, |name| match name {
-                        "d" => slot(D),
-                        "variant" => variant as u128,
-                        "niche_start" => ns,
-                        "variants_start" => vs as u128,
-                        "untagged" => untagged as u128,
-                        _ => unreachable!(),
-                    });
-                    let want = if variant == untagged {
-                        FILL
-                    } else {
-                        let tag = (variant.wrapping_sub(vs) as u128 & m).wrapping_add(ns) & m;
-                        FILL & !m | tag
-                    };
-                    assert_eq!(get(fp, D), want, "{} variant {variant} ns {ns:#x} vs {vs}", set_op.mnemonic());
-                }
-            }
-        }
-    }
-}
-
 const PAT: u128 = 0x0f1e_2d3c_4b5a_6978_8796_a5b4_c3d2_e1f0;
 
 fn pattern(n: usize, seed: u8) -> Vec<u8> {

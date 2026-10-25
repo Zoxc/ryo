@@ -19,8 +19,8 @@ pub enum Effect {
     Read(u8),
     /// Writes exactly `n` bytes at the slot, whatever was there.
     Write(u8),
-    /// May write `n` bytes at the slot, or leave them (`set_discr` of the untagged variant):
-    /// a read and a write.
+    /// May write `n` bytes at the slot, or leave them: a read and a write. No handler has
+    /// this effect at the moment.
     Update(u8),
     /// Takes the slot's address (`addr`): the object escapes.
     Addr,
@@ -136,10 +136,8 @@ pub const fn effects(op: Opcode) -> Option<Effects> {
             Read(8)
         } else if str_eq(f, "br") && str_eq(name, "s") {
             Read(1)
-        } else if any(f, &["ctpop", "ctlz", "cttz", "discr"]) && str_eq(name, "d") {
+        } else if any(f, &["ctpop", "ctlz", "cttz"]) && str_eq(name, "d") {
             Write(4)
-        } else if str_eq(f, "set_discr") && str_eq(name, "d") {
-            Update(n)
         } else if any(f, &["rotl", "rotr"]) && str_eq(name, "b") {
             Read(4)
         } else if ext && str_eq(name, "s") {

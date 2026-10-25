@@ -52,8 +52,6 @@ inductive HandlerKind where
   | fneg
   | «fun»
   | cvt
-  | discr
-  | set_discr
   | aload
   | astore
   | armw
@@ -483,16 +481,6 @@ def handlers : Array (Option HandlerInfo) := #[
   some (HandlerInfo.mk HandlerKind.cvt ["u128", "f64"] none), -- cvt.i2f.u.w128.f64
   some (HandlerInfo.mk HandlerKind.cvt ["f32", "f64"] none), -- cvt.f2f.f32.f64
   some (HandlerInfo.mk HandlerKind.cvt ["f64", "f32"] none), -- cvt.f2f.f64.f32
-  some (HandlerInfo.mk HandlerKind.discr ["u8"] none), -- discr.niche.w8
-  some (HandlerInfo.mk HandlerKind.discr ["u16"] none), -- discr.niche.w16
-  some (HandlerInfo.mk HandlerKind.discr ["u32"] none), -- discr.niche.w32
-  some (HandlerInfo.mk HandlerKind.discr ["u64"] none), -- discr.niche.w64
-  some (HandlerInfo.mk HandlerKind.discr ["u128"] none), -- discr.niche.w128
-  some (HandlerInfo.mk HandlerKind.set_discr ["u8"] none), -- set_discr.niche.w8
-  some (HandlerInfo.mk HandlerKind.set_discr ["u16"] none), -- set_discr.niche.w16
-  some (HandlerInfo.mk HandlerKind.set_discr ["u32"] none), -- set_discr.niche.w32
-  some (HandlerInfo.mk HandlerKind.set_discr ["u64"] none), -- set_discr.niche.w64
-  some (HandlerInfo.mk HandlerKind.set_discr ["u128"] none), -- set_discr.niche.w128
   some (HandlerInfo.mk HandlerKind.aload ["AtomicU8", "u8", "Relaxed"] none), -- atomic.load.w8.relaxed
   some (HandlerInfo.mk HandlerKind.aload ["AtomicU8", "u8", "Acquire"] none), -- atomic.load.w8.acquire
   some (HandlerInfo.mk HandlerKind.aload ["AtomicU8", "u8", "SeqCst"] none), -- atomic.load.w8.seqcst

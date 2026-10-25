@@ -420,17 +420,6 @@ define_ops! {
     CvtF2fF32F64 = "cvt.f2f.f32.f64" op { d: Slot, s: Slot },
     CvtF2fF64F32 = "cvt.f2f.f64.f32" op { d: Slot, s: Slot },
 
-    // ---- enums ----
-    DiscrNicheW8 = "discr.niche.w8" op { d: Slot, s: Slot, niche_start: U8, variants_start: U32, variants_end: U32, untagged: U32 },
-    DiscrNicheW16 = "discr.niche.w16" op { d: Slot, s: Slot, niche_start: U16, variants_start: U32, variants_end: U32, untagged: U32 },
-    DiscrNicheW32 = "discr.niche.w32" op { d: Slot, s: Slot, niche_start: U32, variants_start: U32, variants_end: U32, untagged: U32 },
-    DiscrNicheW64 = "discr.niche.w64" op { d: Slot, s: Slot, niche_start: U64, variants_start: U32, variants_end: U32, untagged: U32 },
-    DiscrNicheW128 = "discr.niche.w128" op { d: Slot, s: Slot, niche_start: U128, variants_start: U32, variants_end: U32, untagged: U32 },
-    SetDiscrNicheW8 = "set_discr.niche.w8" op { d: Slot, variant: U32, niche_start: U8, variants_start: U32, untagged: U32 },
-    SetDiscrNicheW16 = "set_discr.niche.w16" op { d: Slot, variant: U32, niche_start: U16, variants_start: U32, untagged: U32 },
-    SetDiscrNicheW32 = "set_discr.niche.w32" op { d: Slot, variant: U32, niche_start: U32, variants_start: U32, untagged: U32 },
-    SetDiscrNicheW64 = "set_discr.niche.w64" op { d: Slot, variant: U32, niche_start: U64, variants_start: U32, untagged: U32 },
-    SetDiscrNicheW128 = "set_discr.niche.w128" op { d: Slot, variant: U32, niche_start: U128, variants_start: U32, untagged: U32 },
 
     // ---- atomics ----
     AtomicLoadW8Relaxed = "atomic.load.w8.relaxed" op { d: Slot, p: Slot },

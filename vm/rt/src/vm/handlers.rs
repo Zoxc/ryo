@@ -415,16 +415,6 @@ macro_rules! for_each_handler {
         CvtI2fUW128F64 => cvt(u128, f64);
         CvtF2fF32F64 => cvt(f32, f64);
         CvtF2fF64F32 => cvt(f64, f32);
-        DiscrNicheW8 => discr(u8);
-        DiscrNicheW16 => discr(u16);
-        DiscrNicheW32 => discr(u32);
-        DiscrNicheW64 => discr(u64);
-        DiscrNicheW128 => discr(u128);
-        SetDiscrNicheW8 => set_discr(u8);
-        SetDiscrNicheW16 => set_discr(u16);
-        SetDiscrNicheW32 => set_discr(u32);
-        SetDiscrNicheW64 => set_discr(u64);
-        SetDiscrNicheW128 => set_discr(u128);
         AtomicLoadW8Relaxed => aload(AtomicU8, u8, Relaxed);
         AtomicLoadW8Acquire => aload(AtomicU8, u8, Acquire);
         AtomicLoadW8Seqcst => aload(AtomicU8, u8, SeqCst);

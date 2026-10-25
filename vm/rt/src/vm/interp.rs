@@ -343,27 +343,6 @@ macro_rules! cvt {
         put!($a, $fp, $op, d, get!($x, $a, $fp, $op, s) as $y)
     };
 }
-macro_rules! discr {
-    ($a:ident, $fp:ident, $op:ident, $t:ty) => {{
-        // As cg_ssa's niche decoding: `relative = tag - niche_start`; a niche variant iff
-        // `relative <= variants_end - variants_start` (inclusive range).
-        let tag = get!($t, $a, $fp, $op, s);
-        let rel = tag.wrapping_sub(imm_of!($t, $a, $op, niche_start));
-        let vs = word!($a, $op, variants_start);
-        let ve = word!($a, $op, variants_end);
-        let v = if rel as u128 <= ve.wrapping_sub(vs) as u128 { vs.wrapping_add(rel as u32) } else { word!($a, $op, untagged) };
-        put!($a, $fp, $op, d, v)
-    }};
-}
-macro_rules! set_discr {
-    ($a:ident, $fp:ident, $op:ident, $t:ty) => {{
-        let v = word!($a, $op, variant);
-        if v != word!($a, $op, untagged) {
-            let rel = v.wrapping_sub(word!($a, $op, variants_start)) as $t;
-            put!($a, $fp, $op, d, rel.wrapping_add(imm_of!($t, $a, $op, niche_start)));
-        }
-    }};
-}
 macro_rules! aload {
     ($a:ident, $fp:ident, $op:ident, $at:ident, $t:ty, $o:ident) => {
         put!($a, $fp, $op, d, $at::from_ptr(get!(*mut $t, $a, $fp, $op, p)).load(Ordering::$o))

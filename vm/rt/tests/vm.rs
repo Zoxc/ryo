@@ -175,54 +175,6 @@ fn addresses_and_fixups() {
 }
 
 #[test]
-fn enums_niche() {
-    // Variants 3..=5 are niche-encoded starting at `ns`; variant 1 is untagged.
-    let mut w = ImageWriter::new(unique_scid());
-    let mut fns = vec![];
-    let d = op(-16) as u128;
-    for (dop, sop, n) in [
-        (Opcode::DiscrNicheW8, Opcode::SetDiscrNicheW8, 8u32),
-        (Opcode::DiscrNicheW16, Opcode::SetDiscrNicheW16, 16),
-        (Opcode::DiscrNicheW32, Opcode::SetDiscrNicheW32, 32),
-        (Opcode::DiscrNicheW64, Opcode::SetDiscrNicheW64, 64),
-        (Opcode::DiscrNicheW128, Opcode::SetDiscrNicheW128, 128),
-    ] {
-        let mask = if n == 128 { u128::MAX } else { (1u128 << n) - 1 };
-        let ns = mask - 1; // wraps: niches are mask-1, mask, 0
-        // discr: tag@16 → u32 variant@-16. set_discr takes the variant as an immediate, so
-        // there is one function per variant (the untagged one and each niche variant).
-        let mut a = Asm::new();
-        a.i(Insn::Zero { d: Slot(-16), len: 16 });
-        a.raw(dop, &[d, 16, ns, 3, 5, 1]);
-        a.ret(Slot(-16), 4);
-        let fd = w.add_function(func(a.done(), 16, 16, 4));
-        let mut fs = vec![];
-        for v in [1u128, 3, 4, 5] {
-            let mut a = Asm::new();
-            a.i(Insn::MovW128 { d: Slot(-16), s: Slot(16) });
-            a.raw(sop, &[d, v, ns, 3, 1]);
-            a.ret(Slot(-16), 16);
-            fs.push(w.add_function(func(a.done(), 16, 16, 16)));
-        }
-        fns.push((n, mask, ns, fd, fs));
-    }
-    let img = build(w, &[]);
-    for (n, mask, ns, fd, fs) in fns {
-        for tag in [ns.wrapping_sub(1) & mask, ns, ns.wrapping_add(1) & mask, ns.wrapping_add(2) & mask, 3, 1, mask >> 1] {
-            let rel = tag.wrapping_sub(ns) & mask;
-            let want = if rel <= 2 { 3 + rel as u32 } else { 1 };
-            assert_eq!(ok::<_, u32>(img.id(fd), (tag,)), want, "w{n} tag {tag:#x}");
-        }
-        for (&v, f) in [1usize, 3, 4, 5].iter().zip(&fs) {
-            let init = 0x4242u128 & mask;
-            let got: u128 = ok(img.id(*f), (init,));
-            let want = if v == 1 { init } else { ((v as u128).wrapping_sub(3).wrapping_add(ns)) & mask };
-            assert_eq!(got, want, "w{n} set variant {v}");
-        }
-    }
-}
-
-#[test]
 fn control_flow() {
     let mut w = ImageWriter::new(unique_scid());
     // sum(n) = 1 + … + n: n@16, s@-8, i@-16. A loop: its head is a backward branch target.

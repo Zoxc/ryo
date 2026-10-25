@@ -51,3 +51,19 @@ remove it once a Lean session has handled it.
     (one more `mov r, [r]`), each then `mov [fp + d], r`. `frameOnly` excludes them, as it
     does `ovf`, `mulOvf` and `ext`. Proving them needs `Rel` to say where the constant pool,
     the data area and the symbol slots are (and that a slot holds the symbol's address).
+
+- Niche discriminants no longer use VM instructions. Commit 844ffef ("Lower niche
+  discriminants with plain ops, fuse them into switches"): `Rvalue::Discriminant` of a
+  niche-encoded enum lowers to `eq.imm`/`ne.imm` (+ zext/`add.imm`, or a `neg`/`and.imm`/
+  `xor.imm` blend) for one niche variant, else `sub.imm` + `le.u.imm` + cast + `add.imm` +
+  blend; a `SwitchInt` whose discriminant local only it reads is fused (the cert's `fused`
+  flag is now also set for it, the skipped statement being `Discriminant`, not a compare) and
+  tests the tag with `br.eq.imm` per niche arm (or `sub.imm` + `br.gt.u.imm` + `switch.dense`
+  past 4 arms). The lowering check needs the fused-discriminant case and the niche decoding
+  proved against `codegen_get_discr` (`Spec/Lang/Representation.lean`). Commit "Remove
+  discr.niche and set_discr.niche": the ten opcodes are gone and the generated files
+  (`Ryo/Vm/Generated/*.lean`, `RyoTest/*Vectors.lean`) are regenerated, so `lake build`
+  fails until the `.discr`/`.set_discr` cases in `Vm/OpSem/Sem.lean` and `Footprint.lean`
+  (`Footprint.lean:157`: unknown `HandlerKind.discr`) are deleted; also drop the mentions in
+  `docs/mir-spec.md` (D2) and `docs/reduced.md`. No opcode packs operands into a shared
+  register any more.
