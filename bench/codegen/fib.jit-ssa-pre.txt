@@ -21,7 +21,7 @@ b2(): ; Body
     v4:4, v5:1 = Ovf(Sub, false, 4) (v0, 0x1)
     br v5 ? b3() : b4()
 b3(): ; Body
-    v6:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967208), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
+    v6:8 = hcall.reg addr.const [(Fp, [None, None]), (Imm(4294967208), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
     Call(Call { target: sym1, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v6)
     trap
 b4(): ; Body
@@ -29,7 +29,7 @@ b4(): ; Body
     v9:4, v10:1 = Ovf(Sub, false, 4) (v0, 0x2)
     br v10 ? b5() : b6()
 b5(): ; Body
-    v11:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967208), [Some(Scratch(0)), None]), (k3, [None, None])] outs 1 ()
+    v11:8 = hcall.reg addr.const [(Fp, [None, None]), (Imm(4294967208), [Some(Scratch(0)), None]), (k3, [None, None])] outs 1 ()
     Call(Call { target: sym1, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v11)
     trap
 b6(): ; Body
@@ -37,7 +37,7 @@ b6(): ; Body
     v13:8, v14:1 = Ovf(Add, false, 8) (v7, v12)
     br v14 ? b7() : b8()
 b7(): ; Body
-    v15:8 = hcall.reg addr.abs [(Fp, [None, None]), (Imm(4294967208), [Some(Scratch(0)), None]), (k6, [None, None])] outs 1 ()
+    v15:8 = hcall.reg addr.const [(Fp, [None, None]), (Imm(4294967208), [Some(Scratch(0)), None]), (k6, [None, None])] outs 1 ()
     Call(Call { target: sym7, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v15)
     trap
 b8(): ; Body

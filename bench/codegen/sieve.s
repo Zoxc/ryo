@@ -1201,7 +1201,7 @@ L25:
     lea     rdi,[rsp+0D0h]
     mov     esi,0FFFFFF40h
     lea     rdx,[k1]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     rdi,[rsp+40h]
     mov     rsi,[rsp+38h]
     mov     rdx,[rsp+10h]
@@ -1227,12 +1227,12 @@ L27:
     lea     rdi,[rsp+0D0h]
     mov     esi,0FFFFFF38h
     lea     rdx,[k3]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     qword ptr [rsp+10h],49h
     lea     rdi,[rsp+0D0h]
     mov     esi,0FFFFFF30h
     lea     rdx,[k4]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     rdi,[rsp+8]
     mov     rsi,[rsp+10h]
     mov     rdx,[rsp]
@@ -1243,7 +1243,7 @@ L28:
     lea     rdi,[rsp+0D0h]
     mov     esi,0FFFFFF38h
     lea     rdx,[k6]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     rdi,[rsp+98h]
     mov     rsi,[rsp+10h]
     mov     rdx,[rsp+8]
@@ -1399,7 +1399,7 @@ L6:
     lea     rdi,[rsp+80h]
     mov     esi,0FFFFFF90h
     lea     rdx,[k0]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     rdi,[rsp+20h]
     mov     rsi,[rsp+18h]
     mov     rdx,[rsp+10h]
@@ -1425,12 +1425,12 @@ L8:
     lea     rdi,[rsp+80h]
     mov     esi,0FFFFFF88h
     lea     rdx,[k2]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     qword ptr [rsp+10h],49h
     lea     rdi,[rsp+80h]
     mov     esi,0FFFFFF80h
     lea     rdx,[k3]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     rdi,[rsp+8]
     mov     rsi,[rsp+10h]
     mov     rdx,[rsp]
@@ -1467,7 +1467,7 @@ L0:
     lea     rdi,[rsp+20h]
     mov     esi,0FFFFFFE0h
     lea     rdx,[k0]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     movzx   edi,byte ptr [rsp+0Fh]
     mov     rsi,[rsp]
     call    fn1
@@ -1615,7 +1615,7 @@ L0:
     lea     rdi,[rsp+20h]
     mov     esi,0FFFFFFE0h
     lea     rdx,[k0]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     rdi,[rsp+10h]
     mov     rsi,[rsp+8]
     mov     rdx,[rsp]
@@ -1650,7 +1650,7 @@ L0:
     lea     rdi,[rsp+40h]
     mov     esi,0FFFFFFC8h
     lea     rdx,[k0]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     rdi,[rsp+8]
     call    qword ptr [sym1]
     ud2
@@ -1871,7 +1871,7 @@ L9:
     lea     rdi,[rsp+90h]
     mov     esi,0FFFFFF78h
     lea     rdx,[k2]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     movzx   edi,byte ptr [rsp+37h]
     mov     rsi,[rsp+8]
     call    fn3
@@ -1943,7 +1943,7 @@ L0:
     lea     rdi,[rsp+90h]
     mov     esi,0FFFFFFE0h
     lea     rdx,[k0]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     qword ptr [rsp+78h],0BAh
     mov     rdx,[rsp+70h]
     mov     rsi,[rsp+78h]
@@ -1951,7 +1951,7 @@ L0:
     lea     rdi,[rsp+90h]
     mov     esi,0FFFFFF90h
     lea     rdx,[k1]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     qword ptr [rsp+28h],0BAh
     mov     rdx,[rsp+28h]
     shl     rdx,1
@@ -1996,7 +1996,7 @@ L0:
     lea     rdi,[rsp+90h]
     mov     esi,0FFFFFFE0h
     lea     rdx,[k0]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     qword ptr [rsp+78h],0BAh
     mov     rdx,[rsp+70h]
     mov     rsi,[rsp+78h]
@@ -2004,7 +2004,7 @@ L0:
     lea     rdi,[rsp+90h]
     mov     esi,0FFFFFF90h
     lea     rdx,[k1]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     qword ptr [rsp+28h],0BAh
     mov     rdx,[rsp+28h]
     shl     rdx,1
@@ -2107,7 +2107,7 @@ L0:
     lea     rdi,[rsp+1B0h]
     mov     esi,0FFFFFE68h
     lea     rdx,[k9]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     rdi,[rsp+138h]
     mov     rsi,[rsp+140h]
     mov     rdx,[rsp+18h]
@@ -2148,7 +2148,7 @@ L0:
     lea     rdi,[rsp+1B0h]
     mov     esi,0FFFFFE98h
     lea     rdx,[k14]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     lea     rax,[rsp+80h]
     mov     [rsp+40h],rax
     mov     rdi,[rsp+48h]
@@ -2246,7 +2246,7 @@ L0:
     lea     rdi,[rsp+40h]
     mov     esi,0FFFFFFC8h
     lea     rdx,[k0]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     rdi,[rsp+10h]
     mov     rsi,[rsp+20h]
     mov     rdx,[rsp+8]
@@ -2281,7 +2281,7 @@ L0:
     lea     rdi,[rsp+160h]
     mov     esi,0FFFFFEA8h
     lea     rdx,[k0]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     rdi,[rsp+8]
     call    qword ptr [sym1]
     ud2
@@ -2299,7 +2299,7 @@ L1:
     lea     rdi,[rsp+160h]
     mov     esi,0FFFFFEA0h
     lea     rdx,[k3]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     rdi,[rsp+100h]
     mov     rsi,[rsp+8]
     mov     rdx,[rsp]
@@ -2315,7 +2315,7 @@ L1:
     lea     rdi,[rsp+160h]
     mov     esi,0FFFFFEA0h
     lea     rdx,[k5]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     rdi,[rsp+0F0h]
     mov     rsi,[rsp+8]
     mov     rdx,[rsp]
@@ -2344,7 +2344,7 @@ L3:
     lea     rdi,[rsp+160h]
     mov     esi,0FFFFFEA8h
     lea     rdx,[k7]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     rdi,[rsp+8]
     call    qword ptr [sym8]
     ud2
@@ -2361,7 +2361,7 @@ L4:
     lea     rdi,[rsp+160h]
     mov     esi,0FFFFFEA8h
     lea     rdx,[k9]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     rdi,[rsp+0A0h]
     mov     rsi,[rsp+98h]
     mov     rdx,[rsp+8]
@@ -2386,7 +2386,7 @@ L4:
     lea     rdi,[rsp+160h]
     mov     esi,0FFFFFEA8h
     lea     rdx,[k11]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     rdi,[rsp+8]
     call    qword ptr [sym12]
     ud2
@@ -2409,7 +2409,7 @@ L7:
     lea     rdi,[rsp+160h]
     mov     esi,0FFFFFEA8h
     lea     rdx,[k13]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     rdi,[rsp+50h]
     mov     rsi,[rsp+48h]
     mov     rdx,[rsp+8]
@@ -2431,7 +2431,7 @@ L7:
     lea     rdi,[rsp+160h]
     mov     esi,0FFFFFEA8h
     lea     rdx,[k15]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     rdi,[rsp+8]
     call    qword ptr [sym16]
     ud2
@@ -2451,7 +2451,7 @@ L9:
     lea     rdi,[rsp+160h]
     mov     esi,0FFFFFEA8h
     lea     rdx,[k17]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     rdi,[rsp+8]
     call    qword ptr [sym18]
     ud2
@@ -2642,7 +2642,7 @@ L0:
     lea     rdi,[rsp+80h]
     mov     esi,0FFFFFFE8h
     lea     rdx,[k0]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     qword ptr [rsp+70h],0DDh
     mov     rdx,[rsp+68h]
     mov     rsi,[rsp+70h]
@@ -2650,7 +2650,7 @@ L0:
     lea     rdi,[rsp+80h]
     mov     esi,0FFFFFFA0h
     lea     rdx,[k1]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     qword ptr [rsp+28h],0DDh
     mov     rdx,[rsp+28h]
     shl     rdx,1
@@ -2935,7 +2935,7 @@ L1:
     lea     rdi,[rsp+90h]
     mov     esi,0FFFFFFE0h
     lea     rdx,[k0]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     qword ptr [rsp+78h],0C9h
     mov     rdx,[rsp+70h]
     mov     rsi,[rsp+78h]
@@ -2943,7 +2943,7 @@ L1:
     lea     rdi,[rsp+90h]
     mov     esi,0FFFFFF90h
     lea     rdx,[k1]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     qword ptr [rsp+28h],0C9h
     mov     rdx,[rsp+28h]
     shl     rdx,1
@@ -3103,7 +3103,7 @@ L0:
     lea     rdi,[rsp+50h]
     mov     esi,0FFFFFFD0h
     lea     rdx,[k0]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     rdi,[rsp+18h]
     mov     rsi,[rsp+20h]
     mov     rdx,[rsp+38h]
@@ -3350,7 +3350,7 @@ L22:
     lea     rdi,[rsp+0A0h]
     mov     esi,0FFFFFF60h
     lea     rdx,[k4]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     rdi,[rsp+18h]
     mov     rsi,[rsp+8]
     mov     rdx,[rsp]

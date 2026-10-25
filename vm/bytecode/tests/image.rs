@@ -173,8 +173,8 @@ fn sample() -> ImageWriter {
     let f1 = code(&[
         Insn::CallSym { d: Slot(-8), sym: puts, k: 8, a: List::from_words(&[]) },
         Insn::Island { isl: island, ops: List::from_words(&ops) },
-        Insn::AddrAbs { d: Slot(-8), a: Abs::Const(vt) },
-        Insn::AddrAbs { d: Slot(-16), a: Abs::Data(fx) },
+        Insn::AddrConst { d: Slot(-8), a: Abs::Const(vt) },
+        Insn::AddrConst { d: Slot(-16), a: Abs::Data(fx) },
         Insn::Ret { s: Slot(-8), k: 8 },
     ]);
     w.add_function(FunctionDef {

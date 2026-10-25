@@ -115,7 +115,7 @@ def asmInfos : Array AsmInfo := #[
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- addr
   AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- addr.sym
   AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- addr.sym.ind
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- addr.abs
+  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- addr.const
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- ptr.add
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 0 4)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false, Loc.mk 4 0 1 false] 1 5)), -- ptr.index
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- add.w8

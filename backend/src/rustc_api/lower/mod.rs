@@ -89,11 +89,11 @@ pub enum CodeReloc<'tcx> {
     Symbol { target: Instance<'tcx> },
     /// A `sym` operand: the static `def_id` (made visible to the image if it is internal).
     Static { def_id: rustc_hir::def_id::DefId },
-    /// A `k` (or `addr.abs`) operand: `offset` bytes into the constant-pool copy of `alloc`.
+    /// A `k` (or `addr.const`) operand: `offset` bytes into the constant-pool copy of `alloc`.
     Const { alloc: AllocId, offset: u32 },
     /// A `k` operand: a constant-pool allocation of these bytes.
     Bytes { bytes: Vec<u8>, align: u32 },
-    /// An `addr.abs` operand: `offset` bytes into the fixup-area copy of `alloc` (PE: an
+    /// An `addr.const` operand: `offset` bytes into the fixup-area copy of `alloc` (PE: an
     /// allocation pointing at imports, `constant::needs_fixup`).
     Data { alloc: AllocId, offset: u32 },
     /// An `isl` operand: an island the code calls, the template (by diagnostic item name) and

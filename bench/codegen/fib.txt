@@ -71,7 +71,7 @@ L0:
     imm.w32 $-84, 1
     sub.ovf.u.w32 $-36, $-32, $-12, $-84
     br! $-32, L2
-    addr.abs $-88, k0
+    addr.const $-88, k0
 L1:
     call.sym $0, sym1, 0, [4294967208, 8]
     unreachable
@@ -82,7 +82,7 @@ L3:
     imm.w32 $-84, 2
     sub.ovf.u.w32 $-60, $-56, $-12, $-84
     br! $-56, L5
-    addr.abs $-88, k3
+    addr.const $-88, k3
 L4:
     call.sym $0, sym4, 0, [4294967208, 8]
     unreachable
@@ -92,7 +92,7 @@ L6:
     call $-48, fn5, 8, [4294967244, 4]
     add.ovf.u.w64 $-80, $-72, $-24, $-48
     br! $-72, L8
-    addr.abs $-88, k6
+    addr.const $-88, k6
 L7:
     call.sym $0, sym7, 0, [4294967208, 8]
     unreachable
@@ -136,7 +136,7 @@ L3:
     call $0, fn3, 0, [4294967168, 72, 4294967136, 264]
     mov.w128 $-96, $-112
     mov.w128 $-80, $-128
-    addr.abs $-136, k4
+    addr.const $-136, k4
     ; escape align 8 $-96, 32 bytes
     addr $-144, $-96
 L4:
@@ -181,7 +181,7 @@ fn std::rt::lang_start::<()> (frame 80, args 0, ret 8)
     ; escape align 8 $-72, 8 bytes
     addr $-64, $-72
     mov.w64 $-56, $-64
-    addr.abs $-48, k0
+    addr.const $-48, k0
 L0:
     call.sym $-8, sym1, 8, [4294967240, 8, 4294967248, 264, 4294967272, 520, 4294967264, 776, 4294967263, 1025]
     ; end $-72, 8 bytes

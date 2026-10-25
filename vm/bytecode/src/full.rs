@@ -121,7 +121,7 @@ impl fmt::Display for Data {
     }
 }
 
-/// The address `addr.abs` writes: a constant pool allocation, or one in the writable data
+/// The address `addr.const` writes: a constant pool allocation, or one in the writable data
 /// area (PE). One word: the offset, with bit 31 set for the data area.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Abs {

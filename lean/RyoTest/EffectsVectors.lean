@@ -55,7 +55,7 @@ def effects : List (String × Option Effects) := [
   ("addr", some { opnds := [some (.write 8), some .addr], memory := false }),
   ("addr.sym", some { opnds := [some (.write 8), none], memory := false }),
   ("addr.sym.ind", some { opnds := [some (.write 8), none], memory := false }),
-  ("addr.abs", some { opnds := [some (.write 8), none], memory := false }),
+  ("addr.const", some { opnds := [some (.write 8), none], memory := false }),
   ("ptr.add", some { opnds := [some (.write 8), some (.read 8), none], memory := false }),
   ("ptr.index", some { opnds := [some (.write 8), some (.read 8), some (.read 8), none], memory := false }),
   ("add.w8", some { opnds := [some (.write 1), some (.read 1), some (.read 1)], memory := false }),

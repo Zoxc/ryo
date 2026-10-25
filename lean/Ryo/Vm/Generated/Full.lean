@@ -47,7 +47,7 @@ def opInfos : Array OpInfo := #[
   OpInfo.mk "Addr" "addr" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "AddrSym" "addr.sym" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "sym" OperandKind.sym] (some 3),
   OpInfo.mk "AddrSymInd" "addr.sym.ind" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "sym" OperandKind.sym] (some 3),
-  OpInfo.mk "AddrAbs" "addr.abs" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.abs] (some 3),
+  OpInfo.mk "AddrConst" "addr.const" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.abs] (some 3),
   OpInfo.mk "PtrAdd" "ptr.add" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "imm" OperandKind.i64] (some 5),
   OpInfo.mk "PtrIndex" "ptr.index" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "i" OperandKind.slot, OperandInfo.mk "stride" OperandKind.u32] (some 5),
   OpInfo.mk "AddW8" "add.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
@@ -1015,8 +1015,8 @@ def addr : Opcode := ⟨29⟩
 def addrSym : Opcode := ⟨30⟩
 /-- `addr.sym.ind` -/
 def addrSymInd : Opcode := ⟨31⟩
-/-- `addr.abs` -/
-def addrAbs : Opcode := ⟨32⟩
+/-- `addr.const` -/
+def addrConst : Opcode := ⟨32⟩
 /-- `ptr.add` -/
 def ptrAdd : Opcode := ⟨33⟩
 /-- `ptr.index` -/

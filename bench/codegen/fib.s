@@ -175,7 +175,7 @@ L1:
     lea     rdi,[rsp+60h]
     mov     esi,0FFFFFFA8h
     lea     rdx,[k0]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     rdi,[rsp+8]
     call    qword ptr [sym1]
     ud2
@@ -196,7 +196,7 @@ L2:
     lea     rdi,[rsp+60h]
     mov     esi,0FFFFFFA8h
     lea     rdx,[k3]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     rdi,[rsp+8]
     call    qword ptr [sym4]
     ud2
@@ -216,7 +216,7 @@ L3:
     lea     rdi,[rsp+60h]
     mov     esi,0FFFFFFA8h
     lea     rdx,[k6]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     rdi,[rsp+8]
     call    qword ptr [sym7]
     ud2
@@ -268,7 +268,7 @@ L0:
     lea     rdi,[rsp+0B0h]
     mov     esi,0FFFFFF78h
     lea     rdx,[k4]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     lea     rax,[rsp+50h]
     mov     [rsp+20h],rax
     mov     rdi,[rsp+28h]
@@ -339,7 +339,7 @@ L0:
     lea     rdi,[rsp+50h]
     mov     esi,0FFFFFFD0h
     lea     rdx,[k0]
-    call    ryo_h_AddrAbs
+    call    ryo_h_AddrConst
     mov     rdi,[rsp+18h]
     mov     rsi,[rsp+20h]
     mov     rdx,[rsp+38h]

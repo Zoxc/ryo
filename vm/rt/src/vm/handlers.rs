@@ -45,7 +45,7 @@ macro_rules! for_each_handler {
         Addr => addr();
         AddrSym => addr_sym(false);
         AddrSymInd => addr_sym(true);
-        AddrAbs => addr_abs();
+        AddrConst => addr_const();
         PtrAdd => ptr_add();
         PtrIndex => ptr_index();
         AddW8 => bin(u8, wrapping_add);

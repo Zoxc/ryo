@@ -29,7 +29,7 @@ inductive HandlerKind where
   | fill
   | addr
   | addr_sym
-  | addr_abs
+  | addr_const
   | ptr_add
   | ptr_index
   | bin
@@ -113,7 +113,7 @@ def handlers : Array (Option HandlerInfo) := #[
   some (HandlerInfo.mk HandlerKind.addr [] none), -- addr
   some (HandlerInfo.mk HandlerKind.addr_sym ["false"] none), -- addr.sym
   some (HandlerInfo.mk HandlerKind.addr_sym ["true"] none), -- addr.sym.ind
-  some (HandlerInfo.mk HandlerKind.addr_abs [] none), -- addr.abs
+  some (HandlerInfo.mk HandlerKind.addr_const [] none), -- addr.const
   some (HandlerInfo.mk HandlerKind.ptr_add [] none), -- ptr.add
   some (HandlerInfo.mk HandlerKind.ptr_index [] none), -- ptr.index
   some (HandlerInfo.mk HandlerKind.bin ["u8", "wrapping_add"] none), -- add.w8

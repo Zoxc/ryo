@@ -527,7 +527,7 @@ L15:
 L16:
     mov.w64 $-144, $-104
     mov.w64 $-152, $-112
-    addr.abs $-192, k1
+    addr.const $-192, k1
     call $0, fn2, 0, [4294967152, 8, 4294967144, 264, 4294967104, 520]
 L17:
     imm.w64 $-192, 0
@@ -539,15 +539,15 @@ L17:
     sub.w64 $-64, $-136, $-128
     jmp L15
 L18:
-    addr.abs $-200, k3
+    addr.const $-200, k3
     imm.w64 $-192, 73
-    addr.abs $-208, k4
+    addr.const $-208, k4
 L19:
     call.sym $0, sym5, 0, [4294967096, 8, 4294967104, 264, 4294967088, 520]
     unreachable
 L20:
     imm.w64 $-192, 1
-    addr.abs $-200, k6
+    addr.const $-200, k6
     call $0, fn7, 0, [4294967240, 8, 4294967104, 264, 4294967096, 520]
 L21:
     add.imm.w64 $-104, $-56, 1
@@ -608,7 +608,7 @@ L2:
 L3:
     mov.w64 $-96, $-56
     mov.w64 $-104, $-64
-    addr.abs $-112, k0
+    addr.const $-112, k0
     call $0, fn1, 0, [4294967200, 8, 4294967192, 264, 4294967184, 520]
 L4:
     imm.w64 $-112, 0
@@ -620,9 +620,9 @@ L4:
     sub.w64 $-40, $-88, $-80
     jmp L2
 L5:
-    addr.abs $-120, k2
+    addr.const $-120, k2
     imm.w64 $-112, 73
-    addr.abs $-128, k3
+    addr.const $-128, k3
 L6:
     call.sym $0, sym4, 0, [4294967176, 8, 4294967184, 264, 4294967168, 520]
     unreachable
@@ -639,7 +639,7 @@ fn <std::slice::Iter<'_, bool> as std::iter::adapters::filter::SpecAssumeCount>:
     le.u.w64 $-17, $-8, $-16
     imm.w8 $-18, 1
     br! $-18, L0
-    addr.abs $-32, k0
+    addr.const $-32, k0
     call $0, fn1, 0, [4294967279, 1, 4294967264, 264]
 L0:
     ret $0, 0
@@ -720,7 +720,7 @@ fn <usize as std::iter::Step>::backward_unchecked (frame 32, args 0, ret 8)
     arg $-24, 264
     imm.w8 $-25, 1
     br! $-25, L0
-    addr.abs $-32, k0
+    addr.const $-32, k0
     call $0, fn1, 0, [4294967280, 8, 4294967272, 264, 4294967264, 520]
 L0:
     sub.w64 $-8, $-16, $-24
@@ -734,7 +734,7 @@ fn <usize as std::iter::Sum>::sum::<std::iter::Map<std::slice::Iter<'_, bool>, {
     arg $-32, 520
     add.ovf.u.w64 $-48, $-40, $-24, $-32
     br! $-40, L1
-    addr.abs $-56, k0
+    addr.const $-56, k0
 L0:
     call.sym $0, sym1, 0, [4294967240, 8]
     unreachable
@@ -843,7 +843,7 @@ L7:
     mov.w64 $-112, $-128
     jmp L5
 L8:
-    addr.abs $-136, k2
+    addr.const $-136, k2
     call $0, fn3, 0, [4294967207, 1, 4294967160, 264]
 L9:
     ; end $-88, 24 bytes
@@ -878,13 +878,13 @@ fn core::num::<impl usize>::unchecked_add::precondition_check (frame 144, args 0
     add.ovf.u.w64 $-56, $-48, $-64, $-72
     mov.w8 $-33, $-48
     br! $-33, L0
-    addr.abs $-32, k0
+    addr.const $-32, k0
     imm.w64 $-24, 186
     mov.w64 $-88, $-32
     mov.w64 $-80, $-24
     mov.w64 $-72, $-88
     mov.w64 $-64, $-72
-    addr.abs $-112, k1
+    addr.const $-112, k1
     imm.w64 $-104, 186
     mov.w64 $-96, $-104
     shl.imm.w64 $-88, $-96, 1
@@ -911,13 +911,13 @@ fn core::num::<impl usize>::unchecked_sub::precondition_check (frame 144, args 0
     sub.ovf.u.w64 $-56, $-48, $-64, $-72
     mov.w8 $-33, $-48
     br! $-33, L0
-    addr.abs $-32, k0
+    addr.const $-32, k0
     imm.w64 $-24, 186
     mov.w64 $-88, $-32
     mov.w64 $-80, $-24
     mov.w64 $-72, $-88
     mov.w64 $-64, $-72
-    addr.abs $-112, k1
+    addr.const $-112, k1
     imm.w64 $-104, 186
     mov.w64 $-96, $-104
     shl.imm.w64 $-88, $-96, 1
@@ -980,7 +980,7 @@ L7:
     mov.w64 $-184, $-192
 L8:
     call $-120, fn8, 526344, [4294967168, 8, 4294967112, 264]
-    addr.abs $-408, k9
+    addr.const $-408, k9
 L9:
     call $-104, fn10, 8, [4294967176, 8, 4294967184, 264, 4294966888, 520]
     ; end $-408, 8 bytes
@@ -1008,7 +1008,7 @@ L12:
     mov.w128 $-304, $-320
     mov.w128 $-288, $-336
     mov.w128 $-272, $-352
-    addr.abs $-360, k14
+    addr.const $-360, k14
     ; escape align 8 $-304, 48 bytes
     addr $-368, $-304
 L13:
@@ -1089,7 +1089,7 @@ fn main::{closure#1} (frame 64, args 0, ret 1)
     arg $-24, 264
     load.w64 $-32, [$-24 + 0]
     load.w64 $-48, [$-16 + 0]
-    addr.abs $-56, k0
+    addr.const $-56, k0
 L0:
     call $-40, fn1, 8, [4294967248, 8, 4294967264, 264, 4294967240, 520]
     load.w8 $-1, [$-40 + 0]
@@ -1104,7 +1104,7 @@ fn sieve (frame 352, args 0, ret 24)
     imm.w64 $-344, 1
     add.ovf.u.w64 $-80, $-72, $-32, $-344
     br! $-72, L1
-    addr.abs $-344, k0
+    addr.const $-344, k0
 L0:
     call.sym $0, sym1, 0, [4294966952, 8]
     unreachable
@@ -1117,7 +1117,7 @@ L2:
     ; escape align 8 $-56, 24 bytes
     addr $-96, $-56
     imm.w64 $-344, 0
-    addr.abs $-352, k3
+    addr.const $-352, k3
 L3:
     call $-88, fn4, 8, [4294967200, 8, 4294966952, 264, 4294966944, 520]
     imm.w8 $-352, 0
@@ -1125,7 +1125,7 @@ L3:
     ; escape align 8 $-56, 24 bytes
     addr $-112, $-56
     imm.w64 $-344, 1
-    addr.abs $-352, k5
+    addr.const $-352, k5
 L4:
     call $-104, fn6, 8, [4294967184, 8, 4294966952, 264, 4294966944, 520]
     imm.w8 $-352, 0
@@ -1136,7 +1136,7 @@ L5:
     mov.w64 $-152, $-120
     mul.ovf.u.w64 $-168, $-160, $-144, $-152
     br! $-160, L7
-    addr.abs $-344, k7
+    addr.const $-344, k7
 L6:
     call.sym $0, sym8, 0, [4294966952, 8]
     unreachable
@@ -1146,7 +1146,7 @@ L7:
     ; escape align 8 $-56, 24 bytes
     addr $-192, $-56
     mov.w64 $-200, $-120
-    addr.abs $-344, k9
+    addr.const $-344, k9
 L8:
     call $-184, fn10, 8, [4294967104, 8, 4294967096, 264, 4294966952, 520]
     load.w8 $-169, [$-184 + 0]
@@ -1155,7 +1155,7 @@ L8:
     mov.w64 $-224, $-120
     mul.ovf.u.w64 $-240, $-232, $-216, $-224
     br! $-232, L10
-    addr.abs $-344, k11
+    addr.const $-344, k11
 L9:
     call.sym $0, sym12, 0, [4294966952, 8]
     unreachable
@@ -1167,7 +1167,7 @@ L11:
     ; escape align 8 $-56, 24 bytes
     addr $-272, $-56
     mov.w64 $-280, $-208
-    addr.abs $-344, k13
+    addr.const $-344, k13
 L12:
     call $-264, fn14, 8, [4294967024, 8, 4294967016, 264, 4294966952, 520]
     imm.w8 $-352, 0
@@ -1175,7 +1175,7 @@ L12:
     mov.w64 $-288, $-120
     add.ovf.u.w64 $-304, $-296, $-208, $-288
     br! $-296, L14
-    addr.abs $-344, k15
+    addr.const $-344, k15
 L13:
     call.sym $0, sym16, 0, [4294966952, 8]
     unreachable
@@ -1186,7 +1186,7 @@ L15:
     imm.w64 $-344, 1
     add.ovf.u.w64 $-320, $-312, $-120, $-344
     br! $-312, L17
-    addr.abs $-344, k17
+    addr.const $-344, k17
 L16:
     call.sym $0, sym18, 0, [4294966952, 8]
     unreachable
@@ -1289,13 +1289,13 @@ fn std::hint::assert_unchecked::precondition_check (frame 128, args 0, ret 0)
     arg $-1, 1
     arg $-104, 264
     br $-1, L0
-    addr.abs $-24, k0
+    addr.const $-24, k0
     imm.w64 $-16, 221
     mov.w64 $-72, $-24
     mov.w64 $-64, $-16
     mov.w64 $-56, $-72
     mov.w64 $-48, $-56
-    addr.abs $-96, k1
+    addr.const $-96, k1
     imm.w64 $-88, 221
     mov.w64 $-80, $-88
     shl.imm.w64 $-72, $-80, 1
@@ -1423,13 +1423,13 @@ fn std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_chec
     br.lt.u.w64 $-8, $-16, L0
     ret $0, 0
 L0:
-    addr.abs $-32, k0
+    addr.const $-32, k0
     imm.w64 $-24, 201
     mov.w64 $-88, $-32
     mov.w64 $-80, $-24
     mov.w64 $-72, $-88
     mov.w64 $-64, $-72
-    addr.abs $-112, k1
+    addr.const $-112, k1
     imm.w64 $-104, 201
     mov.w64 $-96, $-104
     shl.imm.w64 $-88, $-96, 1
@@ -1510,7 +1510,7 @@ fn std::rt::lang_start::<()> (frame 80, args 0, ret 8)
     ; escape align 8 $-72, 8 bytes
     addr $-64, $-72
     mov.w64 $-56, $-64
-    addr.abs $-48, k0
+    addr.const $-48, k0
 L0:
     call.sym $-8, sym1, 8, [4294967240, 8, 4294967248, 264, 4294967272, 520, 4294967264, 776, 4294967263, 1025]
     ; end $-72, 8 bytes
@@ -1643,7 +1643,7 @@ L15:
     jmp L5
 L16:
     imm.w64 $-152, 1
-    addr.abs $-160, k4
+    addr.const $-160, k4
     call $0, fn5, 0, [4294967160, 8, 4294967144, 264, 4294967136, 520]
 L17:
     add.imm.w64 $-144, $-136, 1

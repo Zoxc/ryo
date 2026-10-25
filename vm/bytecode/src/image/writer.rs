@@ -603,7 +603,7 @@ impl ImageWriter {
         }
 
         // Writable section: site cache, then the fixup area, then the JIT records (past the
-        // fixup area's one-past-the-end address, which `addr.abs` may take).
+        // fixup area's one-past-the-end address, which `addr.const` may take).
         let data_align = self.data_align.max(if mode.counters { 64 } else { 8 }) as usize;
         let fixup_area = align_to(self.sites as usize * 8, data_align);
         let mut data = vec![0u8; fixup_area];

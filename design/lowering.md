@@ -195,7 +195,7 @@ a temporary slot up to 256 bytes, and uses `memmove` above that.
 | `PointerCoercion(ReifyFnPointer)` | `addr.sym` of the target instance's symbol (VM functions included) |
 | `PointerCoercion(ClosureFnPointer)` | `addr.sym` of the closure's `FnOnce` shim |
 | `PointerCoercion(UnsafeFnPointer, MutToConstPointer, ArrayToPointer)` | `mov` |
-| `PointerCoercion(Unsize)` | as cg_ssa's `coerce_unsized_into`: a pointer becomes the wide pointer, data pointer plus metadata (a constant length, `addr.abs` of the vtable in the constant pool, or for trait upcasts the old vtable or its supertrait entry). A struct (`Box`, `Rc`, `Ref<'_, T>`, `Pin<Box<T>>`, …) is coerced field by field: non-ZST fields of unchanged type are copied, the others coerced recursively |
+| `PointerCoercion(Unsize)` | as cg_ssa's `coerce_unsized_into`: a pointer becomes the wide pointer, data pointer plus metadata (a constant length, `addr.const` of the vtable in the constant pool, or for trait upcasts the old vtable or its supertrait entry). A struct (`Box`, `Rc`, `Ref<'_, T>`, `Pin<Box<T>>`, …) is coerced field by field: non-ZST fields of unchanged type are copied, the others coerced recursively |
 
 ### Binary operations
 
@@ -405,7 +405,7 @@ by its code offset, which the encoder turns into the function's LSDA call-site t
   the image's writable `fixups` area instead of the pool, with one fixup per such pointer
   (against an indirect slot; functions and foreign statics of static libraries also get a
   direct slot, as for code references), and registration patches them once. Their address
-  is `addr.abs` of the data area, and an `Indirect` constant is copied out of them with a load. Allocations
+  is `addr.const` of the data area, and an `Indirect` constant is copied out of them with a load. Allocations
   that only point at such allocations stay in the pool, with intra-image relocations into
   the writable section. This is the only load-time fixup.
 

@@ -191,7 +191,7 @@ fn typed_encoding_and_display() {
         Insn::ImmW128 { d: Slot(-16), imm: u128::MAX - 1 },
         Insn::BrLtSW32 { a: Slot(-4), b: Slot(-8), neg: Neg(true), t: Target(-3) },
         Insn::Br { s: Slot(-1), neg: Neg(false), t: Target(2) },
-        Insn::AddrAbs { d: Slot(-8), a: Abs::Data(Data(24)) },
+        Insn::AddrConst { d: Slot(-8), a: Abs::Data(Data(24)) },
         Insn::Resume { x: Slot(-64) },
     ];
     let text = [
@@ -205,7 +205,7 @@ fn typed_encoding_and_display() {
         "imm.w128 $-16, 340282366920938463463374607431768211454",
         "br.lt.s.w32! $-4, $-8, @-3",
         "br $-1, @+2",
-        "addr.abs $-8, data24",
+        "addr.const $-8, data24",
         "resume $-64",
     ];
     let mut code = Vec::new();
@@ -222,7 +222,7 @@ fn typed_encoding_and_display() {
     assert_eq!(w, [Opcode::Island as u32, 2, 2, 16, -24i32 as u32]);
     w.clear();
     insns[10].encode(&mut w);
-    assert_eq!(w, [Opcode::AddrAbs as u32, -8i32 as u32, 24 | ABS_DATA]);
+    assert_eq!(w, [Opcode::AddrConst as u32, -8i32 as u32, 24 | ABS_DATA]);
 
     let decoded: Vec<_> = Decoder::new(&code).map(|r| r.unwrap().1).collect();
     assert_eq!(decoded, insns);
@@ -270,7 +270,7 @@ fn opcode_table_is_pinned() {
             eat(&format!("{:?}", o.kind));
         }
     }
-    assert_eq!(h, 0xa6664a8ac814a950, "opcode table hash {h:#x}");
+    assert_eq!(h, 0x7f6fd4091435e49f, "opcode table hash {h:#x}");
 }
 
 /// Pins the image table layouts: any change to a table entry's size or field offsets fails

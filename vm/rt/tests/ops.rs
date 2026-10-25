@@ -936,7 +936,7 @@ fn addresses() {
     put(fp, D, 0);
     call(Opcode::Addr, &[slot(D), slot(-200)], fp);
     assert_eq!(get(fp, D), unsafe { fp.offset(-200) } as u128);
-    call(Opcode::AddrAbs, &[slot(D), 0x1234_5678_9abc], fp);
+    call(Opcode::AddrConst, &[slot(D), 0x1234_5678_9abc], fp);
     assert_eq!(get(fp, D), 0x1234_5678_9abc);
     // `sym` is the address of a cell holding the symbol's address; `.ind` loads through it.
     let target = 0xdead_beef_usize;

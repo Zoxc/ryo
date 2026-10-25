@@ -43,7 +43,7 @@ define_ops! {
     Addr = "addr" op { d: Slot, s: Slot },
     AddrSym = "addr.sym" op { d: Slot, sym: Sym },
     AddrSymInd = "addr.sym.ind" op { d: Slot, sym: Sym },
-    AddrAbs = "addr.abs" op { d: Slot, a: Abs },
+    AddrConst = "addr.const" op { d: Slot, a: Abs },
     PtrAdd = "ptr.add" op { d: Slot, p: Slot, imm: I64 },
     PtrIndex = "ptr.index" op { d: Slot, p: Slot, i: Slot, stride: U32 },
 

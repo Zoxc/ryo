@@ -146,12 +146,12 @@ fn addresses_and_fixups() {
     a.sret(Slot(-80));
     a.i(Insn::AddrSym { d: Slot(-64), sym: s_static });
     a.i(Insn::AddrSymInd { d: Slot(-56), sym: s_imp });
-    a.i(Insn::AddrAbs { d: Slot(-48), a: Abs::Const(k) });
-    a.i(Insn::AddrAbs { d: Slot(-40), a: Abs::Data(data) });
+    a.i(Insn::AddrConst { d: Slot(-48), a: Abs::Const(k) });
+    a.i(Insn::AddrConst { d: Slot(-40), a: Abs::Data(data) });
     a.i(Insn::Addr { d: Slot(-32), s: Slot(-24) });
     a.i(Insn::ImmW64 { d: Slot(-24), imm: 0x99 });
     a.i(Insn::LoadW64 { d: Slot(-16), m: Mem { p: Slot(-32), k: 0 } });
-    a.i(Insn::AddrAbs { d: Slot(-8), a: Abs::Const(kp) });
+    a.i(Insn::AddrConst { d: Slot(-8), a: Abs::Const(kp) });
     a.ret(Slot(-64), 64);
     let f = w.add_function(func(a.done(), 80, 0, 64));
     let img = build(w, &[("static", addr(&raw const STATIC_VAL)), ("imp", addr(&raw const IMP_STATIC))]);

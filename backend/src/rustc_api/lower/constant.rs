@@ -73,7 +73,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     // Copied out of the fixup area through its address.
                     let p = self.temp8();
                     let a = self.reloc(CodeReloc::Data { alloc: alloc_id, offset }) | ABS_DATA;
-                    self.op(Opcode::AddrAbs, &[p, a]);
+                    self.op(Opcode::AddrConst, &[p, a]);
                     return self.copy_val(dst, Loc::Mem { p, k: 0 }, size);
                 }
                 self.with_slot(dst, size, |fx, d| {
@@ -123,7 +123,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         } else {
             self.reloc(CodeReloc::Const { alloc: id, offset })
         };
-        self.op(Opcode::AddrAbs, &[d, a]);
+        self.op(Opcode::AddrConst, &[d, a]);
         Ok(())
     }
 

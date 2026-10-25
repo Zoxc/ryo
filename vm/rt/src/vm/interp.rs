@@ -205,7 +205,7 @@ macro_rules! addr {
         put!($a, $fp, $op, d, slot!($a, $fp, $op, s))
     };
 }
-macro_rules! addr_abs {
+macro_rules! addr_const {
     ($a:ident, $fp:ident, $op:ident,) => {
         put!($a, $fp, $op, d, addr_of!($a, $op, a))
     };

@@ -134,7 +134,7 @@ native frames, and unwind natively ([Unwinding](#unwinding)). The runtime lives 
 | `[p + k]` | 2 | memory: load the pointer at `fp + p`, add the signed constant `k` |
 | `imm` | 1 / 2 / 4 | immediate of the instruction's width |
 | `k` | 1 | constant pool offset |
-| `a` | 1 | `addr.abs`: a constant pool offset, or (bit 31) a data area offset |
+| `a` | 1 | `addr.const`: a constant pool offset, or (bit 31) a data area offset |
 | `sym` | 1 | symbol table index |
 | `fn` | 1 | function table index (a VM function in the same image) |
 | `a` (calls) | 1 + 2n | argument list: a count, then (slot, register) pairs ([Calls and islands](#calls-and-islands)) |
@@ -704,7 +704,7 @@ calls it by name, local otherwise (backtraces, profilers) ([backend.md](backend.
 
 - `ryo_bytecode::image` defines the exact layout (`Header`, `FuncEntry`, `FixupEntry`,
   `ScopeEntry`, `CallSiteEntry`, `DroppedEntry`).
-  `addr.abs` data offsets are offsets from the start of the fixups area.
+  `addr.const` data offsets are offsets from the start of the fixups area.
 - **Relocations** (`RelocKind`):
   - `Abs64` (`R_X86_64_64` / `IMAGE_REL_AMD64_ADDR64`): the header's `data` and `text`
     pointers, one per symbol slot, the pointers inside constant and fixup allocations

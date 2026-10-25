@@ -108,7 +108,7 @@ L11:
     jmp     L1
 L12:
     lea     rdi,[k1]
-    call    ryo_hr_AddrAbs
+    call    ryo_hr_AddrConst
     mov     rdi,r12
     mov     rsi,rbx
     mov     rdx,rax
@@ -118,7 +118,7 @@ L12:
     jmp     L11
 L13:
     lea     rdi,[k6]
-    call    ryo_hr_AddrAbs
+    call    ryo_hr_AddrConst
     mov     rdi,r15
     mov     esi,1
     mov     rdx,rax
@@ -261,7 +261,7 @@ fn <usize as std::iter::Sum>::sum::<std::iter::Map<std::slice::Iter<'_, bool>, {
     add     rbx,rdx
     jae     L0
     lea     rdi,[k0]
-    call    ryo_hr_AddrAbs
+    call    ryo_hr_AddrConst
     mov     rdi,rax
     call    qword ptr [sym1]
     ud2
@@ -322,10 +322,10 @@ fn core::num::<impl usize>::unchecked_add::precondition_check
     add     r11,rsi
     jae     L0
     lea     rdi,[k0]
-    call    ryo_hr_AddrAbs
+    call    ryo_hr_AddrConst
     mov     r12,rax
     lea     rdi,[k0]
-    call    ryo_hr_AddrAbs
+    call    ryo_hr_AddrConst
     mov     rdi,r12
     mov     esi,175h
     mov     edx,0
@@ -361,7 +361,7 @@ fn sieve
     add     r13,1
     jae     L0
     lea     rdi,[k0]
-    call    ryo_hr_AddrAbs
+    call    ryo_hr_AddrConst
     mov     rdi,rax
     call    qword ptr [sym1]
     ud2
@@ -373,7 +373,7 @@ L0:
     movzx   esi,sil
     call    qword ptr [fn2.slot]
     lea     rdi,[k3]
-    call    ryo_hr_AddrAbs
+    call    ryo_hr_AddrConst
     mov     rdi,r14
     mov     esi,0
     mov     rdx,rax
@@ -386,7 +386,7 @@ L1:
     mov     byte ptr [rax],0
     lea     r13,[rsp+78h]
     lea     rdi,[k5]
-    call    ryo_hr_AddrAbs
+    call    ryo_hr_AddrConst
     mov     rdi,r13
     mov     esi,1
     mov     rdx,rax
@@ -409,7 +409,7 @@ L3:
     mov     rdx,r10
     jae     L5
     lea     rdi,[k7]
-    call    ryo_hr_AddrAbs
+    call    ryo_hr_AddrConst
     mov     rdi,rax
     call    qword ptr [sym8]
     jmp     L4
@@ -422,7 +422,7 @@ L5:
     jb      L20
     lea     r14,[rsp+78h]
     lea     rdi,[k9]
-    call    ryo_hr_AddrAbs
+    call    ryo_hr_AddrConst
     mov     rdi,r14
     mov     rsi,rbx
     mov     rdx,rax
@@ -449,7 +449,7 @@ L8:
     mov     rdx,r10
     jae     L10
     lea     rdi,[k11]
-    call    ryo_hr_AddrAbs
+    call    ryo_hr_AddrConst
     mov     rdi,rax
     call    qword ptr [sym8]
     jmp     L9
@@ -469,7 +469,7 @@ L12:
 L13:
     lea     rbp,[rsp+78h]
     lea     rdi,[k13]
-    call    ryo_hr_AddrAbs
+    call    ryo_hr_AddrConst
     mov     rdi,rbp
     mov     rsi,r14
     mov     rdx,rax
@@ -483,7 +483,7 @@ L14:
     add     r14,rbx
     jae     L16
     lea     rdi,[k15]
-    call    ryo_hr_AddrAbs
+    call    ryo_hr_AddrConst
     mov     rdi,rax
     call    qword ptr [sym1]
     jmp     L15
@@ -497,7 +497,7 @@ L17:
     add     rbx,1
     jae     L19
     lea     rdi,[k17]
-    call    ryo_hr_AddrAbs
+    call    ryo_hr_AddrConst
     mov     rdi,rax
     call    qword ptr [sym1]
     jmp     L18
@@ -803,7 +803,7 @@ L10:
     jmp     L4
 L11:
     lea     rdi,[k4]
-    call    ryo_hr_AddrAbs
+    call    ryo_hr_AddrConst
     mov     rdi,rbx
     mov     esi,1
     mov     rdx,rax

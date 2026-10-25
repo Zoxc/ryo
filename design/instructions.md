@@ -223,13 +223,13 @@ if ind {
 frame.write(d, v);
 ```
 
-#### `addr.abs d, a`
+#### `addr.const d, a`
 
 Writes the address of a constant pool allocation, or with bit 31 of `a` of one in the
 writable fixup area (PE allocations that point at imports): pointers to constant memory,
 vtables and constants copied out of the fixup area.
 
-Handler `ryo_h_AddrAbs` (`addr_abs`), `a` passed as the resolved address:
+Handler `ryo_h_AddrConst` (`addr_const`), `a` passed as the resolved address:
 
 ```rust
 frame.write(d, a);

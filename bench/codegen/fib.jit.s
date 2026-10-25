@@ -12,7 +12,7 @@ L0:
     sub     r12d,1
     jae     L1
     lea     rdi,[k0]
-    call    ryo_hr_AddrAbs
+    call    ryo_hr_AddrConst
     mov     rdi,rax
     call    qword ptr [sym1]
     ud2
@@ -24,7 +24,7 @@ L1:
     sub     ebx,2
     jae     L2
     lea     rdi,[k3]
-    call    ryo_hr_AddrAbs
+    call    ryo_hr_AddrConst
     mov     rdi,rax
     call    qword ptr [sym1]
     ud2
@@ -35,7 +35,7 @@ L2:
     add     r12,rax
     jae     L3
     lea     rdi,[k6]
-    call    ryo_hr_AddrAbs
+    call    ryo_hr_AddrConst
     mov     rdi,rax
     call    qword ptr [sym7]
     ud2
