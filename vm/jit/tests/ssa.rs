@@ -1098,6 +1098,40 @@ fn inline_not_between_stack_arguments_and_their_call() {
     check_stats(before, 3);
 }
 
+/// A callee that returns its result pointer (like an sret function) at a call site that
+/// doesn't use it: the extra return part is dropped and the callee is still inlined.
+#[test]
+fn inline_callee_returning_unused_part() {
+    let (_g, before) = start();
+    let mut w = ImageWriter::new(unique_scid());
+    let mut defs = Defs::default();
+    // init(p, x): *p = 3x; ret p. p@-8, x@-16, t@-24.
+    let mut a = Asm::new();
+    a.i(arg(-8, 0));
+    a.i(arg(-16, 1));
+    a.i(Insn::MulImmW64 { d: Slot(-24), a: Slot(-16), imm: 3 });
+    a.i(Insn::StoreW64 { m: Mem { p: Slot(-8), k: 0 }, s: Slot(-24) });
+    a.ret(Slot(-8), 8);
+    let init = defs.add(&mut w, func(a.done(), 32, 0, 8), vec![]);
+    // f(x): init(&e, x) with no result; ret e + 1. x@16; x'@-8, e@-16, p@-24, r@-32.
+    let mut a = Asm::new();
+    a.i(Insn::MovW64 { d: Slot(-8), s: Slot(16) });
+    let at_addr = a.i(Insn::Addr { d: Slot(-24), s: Slot(-16) });
+    a.i(Insn::Call { d: Slot(0), f: init, k: 0, a: List::from_words(&regs(&[-24, -8])) });
+    a.i(Insn::AddImmW64 { d: Slot(-32), a: Slot(-16), imm: 1 });
+    a.ret(Slot(-32), 8);
+    let f = defs.add(&mut w, func(a.done(), 32, 8, 8), vec![escape(at_addr, -16, 8)]);
+    let img = defs.build(w);
+
+    for x in [1u64, 5, 1 << 40, u64::MAX] {
+        assert_eq!(ok::<_, u64>(img.id(f), (x,)), x.wrapping_mul(3).wrapping_add(1), "f({x})");
+    }
+    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
+        assert_eq!(state(&img, init), JIT_COLD, "init inlined");
+    }
+    check_stats(before, 1);
+}
+
 static B_STATIC: AtomicU64 = AtomicU64::new(0);
 
 /// Inlining across images: `f` of image A calls `g` of image B through a symbol slot. `g`,

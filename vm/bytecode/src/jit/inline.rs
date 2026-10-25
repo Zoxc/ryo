@@ -388,7 +388,9 @@ fn blocker(c: &Func, call: &Call, unwind: Site) -> Option<&'static str> {
         let bd = &c.blocks[b.idx()];
         match &bd.term {
             Term::TailCall { .. } => return Some("a tail call"),
-            Term::Ret { parts, .. } if parts.len() != call.parts.len() => return Some("return parts"),
+            // Parts past the call's are dropped (a callee returning its sret pointer to a site
+            // that doesn't use it).
+            Term::Ret { parts, .. } if parts.len() < call.parts.len() => return Some("return parts"),
             _ => {}
         }
         if let Site::Pad { catch } = unwind {
@@ -978,8 +980,8 @@ pub fn splice(f: &mut Func, call: Inst, c: &Func) {
                 Term::Switch { idx, targets: targets.iter().map(|e| edge(&mut vmap, f, e)).collect() }
             }
             Term::Ret { parts, .. } => {
-                let mut args = Vec::with_capacity(parts.len());
-                for (n, &v) in parts.iter().enumerate() {
+                let mut args = Vec::with_capacity(results.len());
+                for (n, &v) in parts.iter().take(results.len()).enumerate() {
                     let v = map(&mut vmap, f, v);
                     let w = f.w(results[n]);
                     args.push(if f.w(v) < w && !matches!(f.def(v), ValueDef::Const(_) | ValueDef::Undef) {

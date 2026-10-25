@@ -224,34 +224,38 @@ L0:
     ud2
 
 fn sieve
-    sub     rsp,98h
-    mov     [rsp+50h],rbx
-    mov     [rsp+48h],r12
-    mov     [rsp+40h],r13
-    mov     [rsp+38h],r14
-    mov     [rsp+30h],r15
-    mov     [rsp+28h],rbp
+    sub     rsp,0B8h
+    mov     [rsp+70h],rbx
+    mov     [rsp+68h],r12
+    mov     [rsp+60h],r13
+    mov     [rsp+58h],r14
+    mov     [rsp+50h],r15
+    mov     [rsp+48h],rbp
     mov     rbx,rdi
     mov     r12,rsi
     mov     rax,r12
     add     rax,1
     jb      L10
-    lea     rcx,[rsp+58h]
+    lea     rcx,[rsp+28h]
     mov     rdi,rcx
     mov     esi,1
     mov     rdx,rax
     movzx   esi,sil
-    call    qword ptr [fn2.slot]
+    call    qword ptr [image.fn10.slot]
+    mov     rax,[rsp+28h]
+    mov     rcx,[rsp+30h]
+    mov     rdx,[rsp+38h]
+    mov     [rsp+78h],rax
+    mov     [rsp+80h],rcx
+    mov     [rsp+88h],rdx
     lea     rax,[k3]
-    mov     rcx,[rsp+60h]
-    mov     rdx,[rsp+68h]
     mov     r11d,0
     cmp     r11,rdx
     jae     L6
     mov     byte ptr [rcx],0
     lea     rcx,[k5]
-    mov     rsi,[rsp+60h]
-    mov     rdi,[rsp+68h]
+    mov     rsi,[rsp+80h]
+    mov     rdi,[rsp+88h]
     mov     r11d,1
     cmp     r11,rdi
     jae     L7
@@ -269,8 +273,8 @@ L0:
     cmp     r12,r8
     jb      L5
     lea     r8,[k9]
-    mov     r9,[rsp+60h]
-    mov     r13,[rsp+68h]
+    mov     r9,[rsp+80h]
+    mov     r13,[rsp+88h]
     cmp     rsi,r13
     jae     L8
     lea     r9,[r9+rsi]
@@ -298,8 +302,8 @@ L3:
     jb      L4
     lea     r11,[k13]
     mov     [rsp+10h],r11
-    mov     rbp,[rsp+60h]
-    mov     r11,[rsp+68h]
+    mov     rbp,[rsp+80h]
+    mov     r11,[rsp+88h]
     mov     [rsp+18h],r11
     cmp     r9,[rsp+18h]
     jae     L9
@@ -317,20 +321,20 @@ L4:
     mov     rbx,r15
     jmp     L0
 L5:
-    mov     r12,[rsp+58h]
-    mov     r14,[rsp+60h]
-    mov     r15,[rsp+68h]
+    mov     r12,[rsp+78h]
+    mov     r14,[rsp+80h]
+    mov     r15,[rsp+88h]
     mov     [rbx],r12
     mov     [rbx+8],r14
     mov     [rbx+10h],r15
     mov     rax,rbx
-    mov     rbx,[rsp+50h]
-    mov     r12,[rsp+48h]
-    mov     r13,[rsp+40h]
-    mov     r14,[rsp+38h]
-    mov     r15,[rsp+30h]
-    mov     rbp,[rsp+28h]
-    add     rsp,98h
+    mov     rbx,[rsp+70h]
+    mov     r12,[rsp+68h]
+    mov     r13,[rsp+60h]
+    mov     r14,[rsp+58h]
+    mov     r15,[rsp+50h]
+    mov     rbp,[rsp+48h]
+    add     rsp,0B8h
     ret
 L6:
     mov     edi,0
@@ -398,12 +402,12 @@ L14:
     mov     rbx,rax
     jmp     L16
 L15:
-    lea     rax,[rsp+58h]
+    lea     rax,[rsp+78h]
     mov     rdi,rax
     call    qword ptr [fn19.slot]
     mov     [rsp],rbx
-    lea     rdi,[rsp+90h]
-    mov     esi,0FFFFFF70h
+    lea     rdi,[rsp+0B0h]
+    mov     esi,0FFFFFF50h
     call    ryo_h_Resume
     ud2
     call    sym20
@@ -439,7 +443,7 @@ L18:
     mov     rsi,[rsp]
     mov     r12,[rsp+8]
     mov     rbx,[rsp+10h]
-    lea     rsp,[rsp+0F0h]
+    lea     rsp,[rsp+0D0h]
     jmp     L0
 L19:
     pop     rcx
@@ -463,7 +467,7 @@ L19:
     mov     r12,[rsp+8]
     mov     r14,[rsp+10h]
     mov     r15,[rsp+18h]
-    lea     rsp,[rsp+0F0h]
+    lea     rsp,[rsp+0D0h]
     jmp     L3
 L20:
     ret
