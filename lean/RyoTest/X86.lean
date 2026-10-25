@@ -183,10 +183,11 @@ def checkOsr (j : Json) : Except String Unit := do
   let fAot : Nat ← get j "fAot"
   let fJit : Nat ← get j "fJit"
   let fp : Bool ← get j "fp"
+  let farRt : Bool ← get j "farRt"
   let at_ : Nat ← get j "at"
   let code ← (unhex (← get j "code")).elim (throw "bad hex") pure
   let probes : List Nat ← get j "probes"
-  let xs := osrCode entries fAot fJit fp at_
+  let xs := osrCode entries fAot fJit fp farRt at_
   if !xs.all (·.wf 0) then throw "not wf"
   let (bs, rs) := encodeXItems xs at_
   expectEq "bytes" (hex bs) (hex code)
@@ -282,6 +283,21 @@ def jitPrefix : Except String Unit := do
     let (b, m) ← decodeX { code, pos := n, fields := .relocs #[] }
     let (c, _) ← decodeX { code, pos := n + m, fields := .relocs #[] }
     pure [a, b, c]) (some jitEntryPrefix)
+
+/-- `Item::CallAbs` (`mov r11, imm64; call r11`): its bytes and field, decoded from its
+relocation and, linked, from the address its `imm64` holds. -/
+def callAbs : Except String Unit := do
+  let x := XItem.callAbs (.ref .probe)
+  let (bs, rs) := encodeXItems [x] 7
+  expectEq "bytes" (hex bs) "49bb000000000000000041ffd3"
+  expectEq "relocs" rs [⟨9, .ref .probe⟩]
+  let code := (List.replicate 7 (0 : UInt8) ++ bs).toArray
+  expectEq "decode" (decodeX { code, pos := 7, fields := .relocs rs.toArray }) (some (x, 13))
+  expectEq "no reloc" (decodeX { code, pos := 7, fields := .relocs #[] }) none
+  let probeAt : BitVec 64 := 0x7f0012345678
+  let linked := (List.replicate 7 (0 : UInt8) ++ [0x49, 0xbb] ++ leBytes probeAt 8 ++ [0x41, 0xff, 0xd3]).toArray
+  let resolve := fun a => if a == probeAt then some (XRef.ref .probe) else none
+  expectEq "linked" (decodeX { code := linked, pos := 7, fields := .linked 0x1000 resolve }) (some (x, 13))
 
 /-- `objfile.rs`: the ELF and PE registry constructors' bytes and relocations. -/
 def registry : Except String Unit := do
@@ -565,6 +581,7 @@ def tests : List TestCase := [
   ⟨"x86 round trip: generated items without a frame pointer", fun () => roundTrip (some 136)⟩,
   ⟨"x86 non-wf items don't round trip", fun () => nonWfRejected⟩,
   ⟨"x86 extra: jit entry prefix", fun () => jitPrefix⟩,
+  ⟨"x86 extra: callAbs", fun () => callAbs⟩,
   ⟨"x86 extra: registry constructor", fun () => registry⟩,
   ⟨"x86 extra: counter stubs", fun () => stubs⟩,
   ⟨"x86 exec: add/sub flags vs integers", fun () => flagsProperty⟩

@@ -40,7 +40,7 @@ BITS = {"b": 8, "w": 16, "d": 32, "q": 64}
 PTR = {8: "BYTE", 16: "WORD", 32: "DWORD", 64: "QWORD", 128: "XMMWORD"}
 CC = {
     "z": "e", "nz": "ne", "l": "l", "ge": "ge", "le": "le", "g": "g",
-    "b": "b", "ae": "ae", "be": "be", "a": "a", "s": "s", "ns": "ns",
+    "b": "b", "ae": "ae", "be": "be", "a": "a", "s": "s", "ns": "ns", "o": "o", "no": "no",
 }
 NOPS = {
     1: "nop", 2: "xchg ax,ax", 3: "nop DWORD PTR [rax]", 4: "nop DWORD PTR [rax+0x0]",
@@ -132,12 +132,12 @@ def render(item, pos, off, length, sp):
         return [f"{name} {off + 5:#x}"]
     if name == "callMem":
         return ["call QWORD PTR [rip+0x0]"]
-    if name == "ctrSub":
-        return [f"sub QWORD PTR [rip+0x0],{sx(f['k'], 8) & ((1 << 64) - 1):#x}"]
+    if name == "ctrInc":
+        return ["inc QWORD PTR [rip+0x0]"]
     if name == "callR11":
         return [f"call QWORD PTR [r11{disp(sx(f['d'], 8))}]"]
     if name == "loadRip":
-        return ["mov rax,QWORD PTR [rip+0x0]"]
+        return [f"mov {reg(f['dst'])},QWORD PTR [rip+0x0]"]
     if name == "branch":
         op = "jmp" if f["cond"] == "always" else "j" + CC[f["cond"]]
         return [f"{op} {here(f['target'])}"]
@@ -173,6 +173,10 @@ def render(item, pos, off, length, sp):
         return [f"{f['op']} {reg(f['reg'], b)},{f['amt']:#x}"]
     if name == "setcc":
         return [f"set{CC[f['cond']]} {mem(f['m'], 8)}"]
+    if name == "setccCl":
+        return [f"set{CC[f['cond']]} cl"]
+    if name == "mulQ":
+        return [f"mul {rm(f['rm'], 64)}"]
     if name == "testM8":
         return [f"test {mem(f['m'], 8)},0xff"]
     if name == "sse":
@@ -246,7 +250,8 @@ def main():
         r"|int3|ret|pop rcx|lea (rsp|rdx),\[(rbp|rdx|rsp)[+-]0x[0-9a-f]+\]"
         r"|mov (al|ax|eax|rax),(BYTE|WORD|DWORD|QWORD) PTR \[(rbp|rdx|rsp)[+-]0x[0-9a-f]+\]"
         r"|mov (BYTE|WORD|DWORD|QWORD) PTR \[(rbp|rdx|rsp)[+-]0x[0-9a-f]+\],(al|ax|eax|rax)"
-        r"|mov eax,0x[0-9a-f]+|call 0x[0-9a-f]+|jmp 0x[0-9a-f]+)$")
+        r"|mov eax,0x[0-9a-f]+|call 0x[0-9a-f]+|jmp 0x[0-9a-f]+"
+        r"|movabs r11,0x0|call r11)$")
     osr = [v for v in vectors if v["k"] == "osr"]
     for v in osr:
         code = bytes.fromhex(v["code"])

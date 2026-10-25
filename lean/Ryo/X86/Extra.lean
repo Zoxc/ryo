@@ -6,8 +6,9 @@ forms with encode, decode and semantics:
   (`lea r11, [rip + table]; movsxd rax, [r11 + rax*4]; add rax, r11; jmp rax`, `int3` padding,
   the table of `i32` offsets), and per loop head `ret` (not enterable) or `pop rcx`, loads and
   stores of 1/2/4/8 bytes between `rax` and `[rdx|rbp|rsp + disp32]`, `lea rdx|rsp, [_ + disp32]`,
-  `mov eax, grow; call ryo_probe_stack`, `jmp rel32` to the head in the JIT code. `osrCode`
-  ports `osr_code` itself, so its output can be compared with Rust's byte for byte;
+  `mov eax, grow; call ryo_probe_stack` (with `far_rt`, `call` as `mov r11, imm64; call r11`),
+  `jmp rel32` to the head in the JIT code. `osrCode` ports `osr_code` itself, so its output can
+  be compared with Rust's byte for byte;
 - the JIT entry prefix (`vm/jit/src/install.rs`, `JIT_ENTRY_PREFIX`):
   `lea r11, [rip + code]; mov [rsp], r11; ret`;
 - the registry constructor (`backend/src/objfile.rs`, `add_registry_ctor`): ELF
@@ -78,6 +79,10 @@ inductive XItem
   | jmpX (to : XRef)
   /-- `jmp [rip + disp32]`, relocated. -/
   | jmpMemX (to : XRef)
+  /-- `mov r11, imm64; call r11` (`49 bb imm64; 41 ff d3`): the JIT's call of a handler or the
+  probe out of `rel32` reach (`Item::CallAbs`, `Mode::far_rt`). The relocated field is the
+  8-byte `imm64` at +2, the reference's absolute address. -/
+  | callAbs (to : XRef)
 deriving DecidableEq, Repr, Inhabited, ToJson, FromJson
 
 namespace XItem
@@ -120,6 +125,13 @@ def encode (x : XItem) (pos : BitVec 32) : List UInt8 × List XReloc :=
     reloc [byte (0x48 ||| (if r.ext then 4 else 0)), 0x8d, byte (0x05 ||| r.low <<< 3)] to
   | jmpX to => reloc [0xe9] to
   | jmpMemX to => reloc [0xff, 0x25] to
+  | callAbs to =>
+    ([0x49, 0xbb] ++ List.replicate 8 0 ++ [0x41, 0xff, 0xd3], [⟨pos.toNat + 2, to⟩])
+
+/-- The width of `x`'s relocated fields: the `imm64` of `callAbs`, else `rel32`s. -/
+def fieldWidth : XItem → Nat
+  | callAbs _ => 8
+  | _ => 4
 
 end XItem
 
@@ -176,10 +188,18 @@ def field (c : XCursor) (off len : Nat) : Option (XRef ⊕ BitVec 32) := do
     | some r => pure (.inl r)
     | none => pure (.inr ((to - addr).setWidth 32))
 
+/-- The absolute 8-byte field `off` bytes into an item: its reference (relocated, or in linked
+code the address it holds resolved), or none. -/
+def field64 (c : XCursor) (off : Nat) : Option XRef := do
+  let b ← c.toCursor.bytes (off + 8)
+  match c.fields with
+  | .relocs rs => (rs.toList.find? (·.pos == c.pos + off)).map (·.to)
+  | .linked _ resolve => resolve (BitVec.ofNat 64 (ofLeBytes (b.drop off)))
+
 def matchesX (c : XCursor) (x : XItem) : Option Nat := do
   let (bs, rs) := x.encode (BitVec.ofNat 32 c.pos)
   let here ← c.toCursor.bytes bs.length
-  let inField (j : Nat) : Bool := rs.any fun r => r.pos ≤ c.pos + j && c.pos + j < r.pos + 4
+  let inField (j : Nat) : Bool := rs.any fun r => r.pos ≤ c.pos + j && c.pos + j < r.pos + x.fieldWidth
   let same := (List.range bs.length).all fun j => inField j || here.getD j 0 == bs.getD j 0
   let relocsOk := match c.fields with
     | .relocs _ => c.relocsHere bs.length == rs
@@ -216,7 +236,9 @@ def candidate (c : XCursor) : Option XItem := do
     else if (← c.toCursor.bytes 4) == [0x4c, 0x89, 0x1c, 0x24] then pure .movRspR11
     else none
   else if b0 == 0x49 then
-    if (← c.toCursor.bytes 4) == [0x49, 0x63, 0x04, 0x83] then pure .movsxdR11 else none
+    if (← c.toCursor.bytes 4) == [0x49, 0x63, 0x04, 0x83] then pure .movsxdR11
+    else if (← g 1) == 0xbb then pure (.callAbs (← c.field64 2))
+    else none
   else if b0 == 0xe9 then do
     match ← c.field 1 5 with
     | .inl to => pure (.jmpX to)
@@ -274,7 +296,7 @@ def nextMultiple (n k : Nat) : Nat := (n + k - 1) / k * k
 def probeFrom : Nat := 4096
 
 /-- One OSR entry's code (`osr_code`'s loop body), position-independent. -/
-def osrEntryCode (fAot fJit : Nat) (fp : Bool) : Option OsrEntry → List XItem
+def osrEntryCode (fAot fJit : Nat) (fp farRt : Bool) : Option OsrEntry → List XItem
   | none => [.item .ret]
   | some e =>
     let d32 (i : Int) : BitVec 32 := BitVec.ofInt 32 i
@@ -286,7 +308,9 @@ def osrEntryCode (fAot fJit : Nat) (fp : Bool) : Option OsrEntry → List XItem
       let low := max fAot fJit + scratch
       let grow := low - fAot
       let probe : List XItem :=
-        if grow ≥ probeFrom then [.movImm32 .rax (BitVec.ofNat 32 grow), .item (.call .probe)] else []
+        if grow ≥ probeFrom then
+          [.movImm32 .rax (BitVec.ofNat 32 grow), if farRt then .callAbs (.ref .probe) else .item (.call .probe)]
+        else []
       let lower : List XItem := if low != fAot then [.leaD32 .rsp base (d32 (-(low : Int)))] else []
       -- Moves of 8, 4, 2, 1 bytes: loads into the scratch area, then stores to the new homes.
       let chunks (len : Nat) : List (Nat × Nat) :=
@@ -314,14 +338,15 @@ where
 def xitemsLen (xs : List XItem) : Nat := xs.foldl (fun n x => n + (x.encode 0).1.length) 0
 
 /-- The dispatcher and entries of one function (`osr_code`), placed `at_` bytes into its JIT
-code: the forms, from position `at_`. -/
-def osrCode (entries : List (Option OsrEntry)) (fAot fJit : Nat) (fp : Bool) (at_ : Nat) :
+code: the forms, from position `at_`. `farRt` is `Mode::far_rt` (the probe called through
+`r11`). -/
+def osrCode (entries : List (Option OsrEntry)) (fAot fJit : Nat) (fp farRt : Bool) (at_ : Nat) :
     List XItem :=
   let dispatch : List XItem := [.leaR11 0, .movsxdR11, .addRaxR11, .item .jmpRax]
   let dlen := xitemsLen dispatch
   let pad := (4 - dlen % 4) % 4
   let table := dlen + pad
-  let codes := entries.map (osrEntryCode fAot fJit fp)
+  let codes := entries.map (osrEntryCode fAot fJit fp farRt)
   let starts := (codes.foldl (fun (acc, p) c => (acc ++ [p], p + xitemsLen c))
     (([] : List Nat), table + 4 * entries.length)).1
   let pos (n : Nat) : BitVec 32 := BitVec.ofNat 32 (at_ + n)
@@ -416,5 +441,8 @@ def XItem.exec (ctx : XCtx) (x : XItem) (s : State) : Except Fault State :=
   | .leaX r to => pure (s0.setReg r (ctx.addrOf to))
   | .jmpX to => pure (s0.jump (ctx.addrOf to))
   | .jmpMemX to => pure (s0.jump (s0.mem.read64 (ctx.addrOf to)))
+  | .callAbs to =>
+    let s1 := s0.setReg .r11 (ctx.addrOf to)
+    pure ((s1.push next).jump (ctx.addrOf to))
 
 end Ryo.X86

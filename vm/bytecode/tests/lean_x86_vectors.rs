@@ -545,7 +545,8 @@ fn mutate(rng: &mut Rng, out: &mut Vec<String>, p: &Placed, sp: Option<u32>, lin
 }
 
 fn osr_vectors(rng: &mut Rng, out: &mut Vec<String>) {
-    for k in 0..40 {
+    // The last 16 with `far_rt` (the probe called through `r11`).
+    for k in 0..56 {
         let n = rng.below(4) as usize + (k == 0) as usize;
         let entries: Vec<Option<osr::OsrEntry>> = (0..n)
             .map(|_| {
@@ -558,9 +559,17 @@ fn osr_vectors(rng: &mut Rng, out: &mut Vec<String>) {
             })
             .collect();
         let f_aot = rng.pick(&[0, 16, 32, 64, 4096, 8192]) + 16 * rng.below(8) as u32;
-        let f_jit = if rng.bool() { f_aot } else { rng.pick(&[0, 16, 48, 128, 6000]) + 16 * rng.below(8) as u32 };
+        let far_rt = k >= 40;
+        let f_jit = if far_rt && k % 2 == 0 {
+            // Past the probe threshold, so that the probe call is there.
+            f_aot + 6000
+        } else if rng.bool() {
+            f_aot
+        } else {
+            rng.pick(&[0, 16, 48, 128, 6000]) + 16 * rng.below(8) as u32
+        };
         let fp = rng.bool();
-        let mode = Mode { fp_arg: true, frame_pointer: fp, align_loops: false, pe: false, counters: false, far_rt: false };
+        let mode = Mode { fp_arg: true, frame_pointer: fp, align_loops: false, pe: false, counters: false, far_rt };
         let at = rng.below(10000) as u32;
         let code = osr::osr_code(&entries, f_aot, f_jit, mode, at);
         let es: Vec<String> = entries
@@ -575,7 +584,7 @@ fn osr_vectors(rng: &mut Rng, out: &mut Vec<String>) {
             .collect();
         let probes: Vec<String> = code.probes.iter().map(|p| p.to_string()).collect();
         out.push(format!(
-            "{{\"k\":\"osr\",\"entries\":[{}],\"fAot\":{f_aot},\"fJit\":{f_jit},\"fp\":{fp},\"at\":{at},\"code\":\"{}\",\"probes\":[{}]}}",
+            "{{\"k\":\"osr\",\"entries\":[{}],\"fAot\":{f_aot},\"fJit\":{f_jit},\"fp\":{fp},\"farRt\":{far_rt},\"at\":{at},\"code\":\"{}\",\"probes\":[{}]}}",
             es.join(","),
             hex(&code.code),
             probes.join(",")

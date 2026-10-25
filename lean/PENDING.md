@@ -27,18 +27,6 @@ remove it once a Lean session has handled it.
   covers the SSA tier. Commit: "Weigh inlining by the counters and specialize callees to
   constants".
 
-- JIT call forms (commit "Give JIT calls their callee's form: slot, rel32 or imm64"). The x86
-  items gain three JIT-only forms, never decoded: `CallAbs to` (`49 bb imm64; 41 ff d3`,
-  `mov r11, imm64; call r11`, 13 bytes, the 8-byte field at +2), `JmpAbs to` (the same with
-  `41 ff e3`) and `JmpMem to` (`ff 25 rel32`, 6 bytes, field at +2). `Mode` gains `far_rt`
-  (JIT only, never set from an image's mode bits): handler and probe calls become `CallAbs`,
-  including the OSR code's probe. The encoder's `call`/`tail_call` emit a function operand
-  with a `FUNC_SLOT` (bit 31: `CallMem`/`JmpMem`), `FUNC_NEAR` (bit 30: `Call`/`Jmp`) or
-  `FUNC_FAR` (bit 29: `CallAbs`/`JmpAbs`) bit in another form (`asm::FUNC_KINDS`). Images
-  never contain these bits, so the AOT model is unchanged. Only `Ryo/X86/Item.lean`,
-  `Encode.lean` and the `Mode` structure would need the new cases if the Lean encoder is to
-  cover JIT code.
-
 - Proofs to extend (left by the session that applied the entries above; no `sorry` was
   added, the theorems keep their scope):
   - `inline_sound` (`Ryo/Proofs/Inline.lean`) covers no rip-relative address class:
