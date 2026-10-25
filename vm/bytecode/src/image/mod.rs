@@ -681,21 +681,47 @@ impl ImageResolver<'_> {
 }
 
 #[cfg(feature = "alloc")]
+impl ImageResolver<'_> {
+    /// `addr` as a handler or the probe: `Some(None)` for a handler address shared by several
+    /// opcodes (folded handlers), which is ambiguous.
+    fn runtime(&self, addr: u64) -> Option<Option<crate::asm::Ref>> {
+        let lo = self.handlers.partition_point(|h| (h.0 as u64) < addr);
+        let hi = self.handlers.partition_point(|h| (h.0 as u64) <= addr);
+        if hi - lo == 1 {
+            return Some(Some(crate::asm::Ref::Handler(self.handlers[lo].1)));
+        }
+        if hi > lo {
+            return Some(None);
+        }
+        (addr == self.probe as u64).then_some(Some(crate::asm::Ref::Probe))
+    }
+}
+
+/// The GOT slot the PLT stub at `addr` jumps through, if `addr` holds one: `jmp [rip +
+/// disp32]`, after an `endbr64` and with a `bnd` prefix in `.plt.sec`.
+///
+/// # Safety
+/// `addr` must be the address of at least 11 readable bytes.
+#[cfg(feature = "alloc")]
+unsafe fn plt_slot(addr: u64) -> Option<u64> {
+    // SAFETY: per the caller.
+    let b = unsafe { core::slice::from_raw_parts(addr as *const u8, 11) };
+    let at = if b.starts_with(&[0xf3, 0x0f, 0x1e, 0xfa]) { 4 } else { 0 };
+    let at = if b[at] == 0xf2 { at + 1 } else { at };
+    if b[at..at + 2] != [0xff, 0x25] {
+        return None;
+    }
+    let d = i32::from_le_bytes(b[at + 2..at + 6].try_into().ok()?);
+    Some(addr.wrapping_add((at + 6) as u64).wrapping_add(d as i64 as u64))
+}
+
+#[cfg(feature = "alloc")]
 impl crate::asm::Resolver for ImageResolver<'_> {
     fn resolve(&self, addr: u64) -> Option<crate::asm::Ref> {
         use crate::asm::Ref;
         use crate::full::{Const, Data, Func, Site, Sym};
-        // A handler address shared by several opcodes (folded handlers) is ambiguous.
-        let lo = self.handlers.partition_point(|h| (h.0 as u64) < addr);
-        let hi = self.handlers.partition_point(|h| (h.0 as u64) <= addr);
-        if hi - lo == 1 {
-            return Some(Ref::Handler(self.handlers[lo].1));
-        }
-        if hi > lo {
-            return None;
-        }
-        if addr == self.probe as u64 {
-            return Some(Ref::Probe);
+        if let Some(r) = self.runtime(addr) {
+            return r;
         }
         let h = self.image.header();
         // The offset of `addr` in the `len` bytes at `base` (one past the end with `end`).
@@ -731,7 +757,19 @@ impl crate::asm::Resolver for ImageResolver<'_> {
         if let Some(o) = within(consts.0, consts.1, true) {
             return Some(Ref::Const(Const(o)));
         }
-        within(data.0, data.1, true).map(|o| Ref::Data(Data(o)))
+        if let Some(o) = within(data.0, data.1, true) {
+            return Some(Ref::Data(Data(o)));
+        }
+        // A call of a handler or the probe through a PLT stub, as code linked against a shared
+        // `ryo_rt` (an executable or library with `-Cprefer-dynamic`) has them.
+        // SAFETY: no range of the image holds `addr`, so a canonical image only calls it, and
+        // a call's target is mapped code. (Bytes of a non-canonical image's target that
+        // aren't mapped would fault; the decoder rejects such code later anyway.)
+        let slot = unsafe { plt_slot(addr) }?;
+        // SAFETY: a PLT stub's GOT slot, which the dynamic linker filled (`BIND_NOW`: a
+        // lazily bound slot still points into the PLT, which resolves to nothing).
+        let to = unsafe { (slot as *const u64).read_unaligned() };
+        self.runtime(to).flatten()
     }
 
     fn code_consts(&self) -> &[u8] {
