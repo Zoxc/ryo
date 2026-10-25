@@ -88,7 +88,8 @@ def footprintKnown : Except String Unit := do
   check ((fp "cvt.i2f.u.w16.f64").map (·.writes) == some [⟨"d", .bytes 8⟩]) "cvt writes"
   check ((fp "memcpy").map (·.derefs.length) == some 2) "memcpy derefs"
   check ((fp "br.lt.u.imm.w8").map (·.flow) == some .branch) "br flow"
-  check ((fp "unreachable").map (·.flow) == some .trap) "trap flow"
+  check ((fp "abort").map (·.flow) == some .trap) "trap flow"
+  check (fp "unreachable" == none) "unreachable is a bare ud2, without a footprint"
   check ((fp "addr").map (·.addrs) == some ["s"]) "addr takes s's address"
 
 /-! ### States and runs -/
@@ -393,7 +394,6 @@ def control : Except String Unit := do
   sparse 6 6
   sparse 9 2 (n := 3)
   sparse 200 3 (n := 3)
-  expectStop "unreachable" [] (stOf []) (· == .unreachable) "unreachable"
   expectStop "abort" [] (stOf []) (· == .abort) "abort"
   expectControl "fence.seqcst" [] (stOf []) .next
 
@@ -547,10 +547,10 @@ def writtenNames (op : Full.Opcode) : Option (List String) :=
 
 def exactWrites : Except String Unit := do
   let ran := withHandler.filter fun op => (writtenNames op).isSome
-  -- Everything runs on the generic operands but the traps, `addr` (of a private object) and
+  -- Everything runs on the generic operands but `abort`, `addr` (of a private object) and
   -- the `mem*` (whose length slot holds a pointer, out of bounds); the unit tests run those.
   let failed := (withHandler.filter fun op => (writtenNames op).isNone).map (·.mnemonic)
-  check (failed == ["memcpy", "memmove", "memset", "addr", "unreachable", "abort"])
+  check (failed == ["memcpy", "memmove", "memset", "addr", "abort"])
     s!"opcodes that fail on generic operands: {failed}"
   forAll ran (fun op => writtenNames op == (footprint op).map (·.writes.map (·.opnd)))
     "the writes differ from the footprint's"

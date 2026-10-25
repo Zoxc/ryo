@@ -374,6 +374,7 @@ def tests : List TestCase := [
   twoParts,
   stops "no view" [noView] 0 [] "no view",
   stops "wrong control flow" [wrongThen] 0 [] "no view",
-  stops "fall off the end" [code [nat "imm.w64" [sl (-8), im 0]]] 0 [] "no instruction 1"]
+  stops "fall off the end" [code [nat "imm.w64" [sl (-8), im 0]]] 0 [] "no instruction 1",
+  stops "unreachable" [code [nat "unreachable" []]] 0 [] "unreachable"]
 
 end RyoTest.RSem
