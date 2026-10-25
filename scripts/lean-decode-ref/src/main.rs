@@ -46,7 +46,7 @@ use object::read::elf::ElfFile64;
 use object::{LittleEndian, Object, ObjectSection, ObjectSymbol, RelocationFlags, RelocationTarget, SectionIndex, SymbolKind, SymbolSection, elf};
 use ryo_bytecode::asm::{CallSite, Ref, Resolver, ScopeKind, lsda};
 use ryo_bytecode::full::Opcode;
-use ryo_bytecode::image::{CATCH, CONTINUE, Header, Image, ImageResolver};
+use ryo_bytecode::image::{CATCH, CONTINUE, Header, Image, ImageResolver, JIT_LOOP_CTR};
 use ryo_bytecode::{ALL_OPCODES, reduced};
 
 const IMAGE_PREFIX: &str = "__ryo_image_";
@@ -168,14 +168,14 @@ impl<'d> Linked<'d> {
             Ok((i, (s.address() as i64 + r.addend) as u64))
         };
         let (data, data_base) = pointer(ro_base + 24, "data")?;
-        let (text, text_base) = pointer(ro_base + 48, "text")?;
+        let (text, text_base) = pointer(ro_base + 40, "text")?;
         let text_relocs = relocs(&file, text)?;
         let sec = |i| file.section_by_index(i).and_then(|s| s.data()).map_err(|e| e.to_string());
         let ro_bytes = &sec(ro)?[ro_base as usize..];
         let data_bytes = &sec(data)?[data_base as usize..];
         let text_bytes = &sec(text)?[text_base as usize..];
         let header_u32 = |at: usize| u32::from_le_bytes(ro_bytes.get(at..at + 4).unwrap_or(&[0; 4]).try_into().unwrap()) as usize;
-        let (data_len, text_len) = (header_u32(36).min(data_bytes.len()), header_u32(56).min(text_bytes.len()));
+        let (data_len, text_len) = (header_u32(32).min(data_bytes.len()), header_u32(36).min(text_bytes.len()));
         let up = |n: usize| n.div_ceil(64) * 64;
         let (data_at, text_at) = (up(ro_bytes.len()), up(ro_bytes.len()) + up(data_len));
         let mut buf = vec![0u64; (text_at + up(text_len)) / 8];
@@ -212,7 +212,7 @@ impl<'d> Linked<'d> {
             let (d, t) = (l.addr(data_at) as u64, l.addr(text_at) as u64);
             let b = bytes_mut(&mut l.buf);
             b[24..32].copy_from_slice(&d.to_le_bytes());
-            b[48..56].copy_from_slice(&t.to_le_bytes());
+            b[40..48].copy_from_slice(&t.to_le_bytes());
         }
         Ok(l)
     }
@@ -380,7 +380,7 @@ impl<'d> Linked<'d> {
                 let counters = h.jit_records.count != 0;
                 let line = match to {
                     Some(to) if counters && to == record => "rec".into(),
-                    Some(to) if counters && to + 1 == record => "recctr".into(),
+                    Some(to) if counters && to == record + JIT_LOOP_CTR as u64 => "recloopctr".into(),
                     Some(to) => res.resolve(to).map_or_else(|| "error: unresolved".into(), render),
                     None => format!("error: against `{}`", self.sym_name(r.sym)),
                 };
