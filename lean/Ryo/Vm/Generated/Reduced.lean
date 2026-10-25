@@ -13,7 +13,7 @@ Rust's `Opcode::full` and `Opcode::of_full`.
 namespace Ryo.Vm.Reduced
 
 /-- The number of opcodes. -/
-def count : Nat := 231
+def count : Nat := 234
 
 /-- `reduced::OP_INFO`, by opcode value. -/
 def opInfos : Array OpInfo := #[
@@ -35,6 +35,9 @@ def opInfos : Array OpInfo := #[
   OpInfo.mk "StoreW32" "store.w32" Shape.op [OperandInfo.mk "m" OperandKind.mem, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "StoreW64" "store.w64" Shape.op [OperandInfo.mk "m" OperandKind.mem, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "Addr" "addr" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
+  OpInfo.mk "AddrSym" "addr.sym" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "sym" OperandKind.sym] (some 3),
+  OpInfo.mk "AddrSymInd" "addr.sym.ind" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "sym" OperandKind.sym] (some 3),
+  OpInfo.mk "AddrConst" "addr.const" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.abs] (some 3),
   OpInfo.mk "PtrAdd" "ptr.add" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "imm" OperandKind.i64] (some 5),
   OpInfo.mk "PtrIndex" "ptr.index" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "i" OperandKind.slot, OperandInfo.mk "stride" OperandKind.u32] (some 5),
   OpInfo.mk "AddW8" "add.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
@@ -305,432 +308,438 @@ def storeW32 : Opcode := ⟨15⟩
 def storeW64 : Opcode := ⟨16⟩
 /-- `addr` -/
 def addr : Opcode := ⟨17⟩
+/-- `addr.sym` -/
+def addrSym : Opcode := ⟨18⟩
+/-- `addr.sym.ind` -/
+def addrSymInd : Opcode := ⟨19⟩
+/-- `addr.const` -/
+def addrConst : Opcode := ⟨20⟩
 /-- `ptr.add` -/
-def ptrAdd : Opcode := ⟨18⟩
+def ptrAdd : Opcode := ⟨21⟩
 /-- `ptr.index` -/
-def ptrIndex : Opcode := ⟨19⟩
+def ptrIndex : Opcode := ⟨22⟩
 /-- `add.w8` -/
-def addW8 : Opcode := ⟨20⟩
+def addW8 : Opcode := ⟨23⟩
 /-- `sub.w8` -/
-def subW8 : Opcode := ⟨21⟩
+def subW8 : Opcode := ⟨24⟩
 /-- `mul.w8` -/
-def mulW8 : Opcode := ⟨22⟩
+def mulW8 : Opcode := ⟨25⟩
 /-- `and.w8` -/
-def andW8 : Opcode := ⟨23⟩
+def andW8 : Opcode := ⟨26⟩
 /-- `or.w8` -/
-def orW8 : Opcode := ⟨24⟩
+def orW8 : Opcode := ⟨27⟩
 /-- `xor.w8` -/
-def xorW8 : Opcode := ⟨25⟩
+def xorW8 : Opcode := ⟨28⟩
 /-- `eq.w8` -/
-def eqW8 : Opcode := ⟨26⟩
+def eqW8 : Opcode := ⟨29⟩
 /-- `ne.w8` -/
-def neW8 : Opcode := ⟨27⟩
+def neW8 : Opcode := ⟨30⟩
 /-- `lt.s.w8` -/
-def ltSW8 : Opcode := ⟨28⟩
+def ltSW8 : Opcode := ⟨31⟩
 /-- `lt.u.w8` -/
-def ltUW8 : Opcode := ⟨29⟩
+def ltUW8 : Opcode := ⟨32⟩
 /-- `le.s.w8` -/
-def leSW8 : Opcode := ⟨30⟩
+def leSW8 : Opcode := ⟨33⟩
 /-- `le.u.w8` -/
-def leUW8 : Opcode := ⟨31⟩
+def leUW8 : Opcode := ⟨34⟩
 /-- `add.imm.w8` -/
-def addImmW8 : Opcode := ⟨32⟩
+def addImmW8 : Opcode := ⟨35⟩
 /-- `sub.imm.w8` -/
-def subImmW8 : Opcode := ⟨33⟩
+def subImmW8 : Opcode := ⟨36⟩
 /-- `mul.imm.w8` -/
-def mulImmW8 : Opcode := ⟨34⟩
+def mulImmW8 : Opcode := ⟨37⟩
 /-- `and.imm.w8` -/
-def andImmW8 : Opcode := ⟨35⟩
+def andImmW8 : Opcode := ⟨38⟩
 /-- `or.imm.w8` -/
-def orImmW8 : Opcode := ⟨36⟩
+def orImmW8 : Opcode := ⟨39⟩
 /-- `xor.imm.w8` -/
-def xorImmW8 : Opcode := ⟨37⟩
+def xorImmW8 : Opcode := ⟨40⟩
 /-- `shl.imm.w8` -/
-def shlImmW8 : Opcode := ⟨38⟩
+def shlImmW8 : Opcode := ⟨41⟩
 /-- `shr.s.imm.w8` -/
-def shrSImmW8 : Opcode := ⟨39⟩
+def shrSImmW8 : Opcode := ⟨42⟩
 /-- `shr.u.imm.w8` -/
-def shrUImmW8 : Opcode := ⟨40⟩
+def shrUImmW8 : Opcode := ⟨43⟩
 /-- `eq.imm.w8` -/
-def eqImmW8 : Opcode := ⟨41⟩
+def eqImmW8 : Opcode := ⟨44⟩
 /-- `ne.imm.w8` -/
-def neImmW8 : Opcode := ⟨42⟩
+def neImmW8 : Opcode := ⟨45⟩
 /-- `lt.s.imm.w8` -/
-def ltSImmW8 : Opcode := ⟨43⟩
+def ltSImmW8 : Opcode := ⟨46⟩
 /-- `lt.u.imm.w8` -/
-def ltUImmW8 : Opcode := ⟨44⟩
+def ltUImmW8 : Opcode := ⟨47⟩
 /-- `le.s.imm.w8` -/
-def leSImmW8 : Opcode := ⟨45⟩
+def leSImmW8 : Opcode := ⟨48⟩
 /-- `le.u.imm.w8` -/
-def leUImmW8 : Opcode := ⟨46⟩
+def leUImmW8 : Opcode := ⟨49⟩
 /-- `gt.s.imm.w8` -/
-def gtSImmW8 : Opcode := ⟨47⟩
+def gtSImmW8 : Opcode := ⟨50⟩
 /-- `gt.u.imm.w8` -/
-def gtUImmW8 : Opcode := ⟨48⟩
+def gtUImmW8 : Opcode := ⟨51⟩
 /-- `ge.s.imm.w8` -/
-def geSImmW8 : Opcode := ⟨49⟩
+def geSImmW8 : Opcode := ⟨52⟩
 /-- `ge.u.imm.w8` -/
-def geUImmW8 : Opcode := ⟨50⟩
+def geUImmW8 : Opcode := ⟨53⟩
 /-- `add.ovf.s.w8` -/
-def addOvfSW8 : Opcode := ⟨51⟩
+def addOvfSW8 : Opcode := ⟨54⟩
 /-- `add.ovf.u.w8` -/
-def addOvfUW8 : Opcode := ⟨52⟩
+def addOvfUW8 : Opcode := ⟨55⟩
 /-- `sub.ovf.s.w8` -/
-def subOvfSW8 : Opcode := ⟨53⟩
+def subOvfSW8 : Opcode := ⟨56⟩
 /-- `sub.ovf.u.w8` -/
-def subOvfUW8 : Opcode := ⟨54⟩
+def subOvfUW8 : Opcode := ⟨57⟩
 /-- `mul.ovf.s.w8` -/
-def mulOvfSW8 : Opcode := ⟨55⟩
+def mulOvfSW8 : Opcode := ⟨58⟩
 /-- `mul.ovf.u.w8` -/
-def mulOvfUW8 : Opcode := ⟨56⟩
+def mulOvfUW8 : Opcode := ⟨59⟩
 /-- `add.w16` -/
-def addW16 : Opcode := ⟨57⟩
+def addW16 : Opcode := ⟨60⟩
 /-- `sub.w16` -/
-def subW16 : Opcode := ⟨58⟩
+def subW16 : Opcode := ⟨61⟩
 /-- `mul.w16` -/
-def mulW16 : Opcode := ⟨59⟩
+def mulW16 : Opcode := ⟨62⟩
 /-- `and.w16` -/
-def andW16 : Opcode := ⟨60⟩
+def andW16 : Opcode := ⟨63⟩
 /-- `or.w16` -/
-def orW16 : Opcode := ⟨61⟩
+def orW16 : Opcode := ⟨64⟩
 /-- `xor.w16` -/
-def xorW16 : Opcode := ⟨62⟩
+def xorW16 : Opcode := ⟨65⟩
 /-- `eq.w16` -/
-def eqW16 : Opcode := ⟨63⟩
+def eqW16 : Opcode := ⟨66⟩
 /-- `ne.w16` -/
-def neW16 : Opcode := ⟨64⟩
+def neW16 : Opcode := ⟨67⟩
 /-- `lt.s.w16` -/
-def ltSW16 : Opcode := ⟨65⟩
+def ltSW16 : Opcode := ⟨68⟩
 /-- `lt.u.w16` -/
-def ltUW16 : Opcode := ⟨66⟩
+def ltUW16 : Opcode := ⟨69⟩
 /-- `le.s.w16` -/
-def leSW16 : Opcode := ⟨67⟩
+def leSW16 : Opcode := ⟨70⟩
 /-- `le.u.w16` -/
-def leUW16 : Opcode := ⟨68⟩
+def leUW16 : Opcode := ⟨71⟩
 /-- `add.imm.w16` -/
-def addImmW16 : Opcode := ⟨69⟩
+def addImmW16 : Opcode := ⟨72⟩
 /-- `sub.imm.w16` -/
-def subImmW16 : Opcode := ⟨70⟩
+def subImmW16 : Opcode := ⟨73⟩
 /-- `mul.imm.w16` -/
-def mulImmW16 : Opcode := ⟨71⟩
+def mulImmW16 : Opcode := ⟨74⟩
 /-- `and.imm.w16` -/
-def andImmW16 : Opcode := ⟨72⟩
+def andImmW16 : Opcode := ⟨75⟩
 /-- `or.imm.w16` -/
-def orImmW16 : Opcode := ⟨73⟩
+def orImmW16 : Opcode := ⟨76⟩
 /-- `xor.imm.w16` -/
-def xorImmW16 : Opcode := ⟨74⟩
+def xorImmW16 : Opcode := ⟨77⟩
 /-- `shl.imm.w16` -/
-def shlImmW16 : Opcode := ⟨75⟩
+def shlImmW16 : Opcode := ⟨78⟩
 /-- `shr.s.imm.w16` -/
-def shrSImmW16 : Opcode := ⟨76⟩
+def shrSImmW16 : Opcode := ⟨79⟩
 /-- `shr.u.imm.w16` -/
-def shrUImmW16 : Opcode := ⟨77⟩
+def shrUImmW16 : Opcode := ⟨80⟩
 /-- `eq.imm.w16` -/
-def eqImmW16 : Opcode := ⟨78⟩
+def eqImmW16 : Opcode := ⟨81⟩
 /-- `ne.imm.w16` -/
-def neImmW16 : Opcode := ⟨79⟩
+def neImmW16 : Opcode := ⟨82⟩
 /-- `lt.s.imm.w16` -/
-def ltSImmW16 : Opcode := ⟨80⟩
+def ltSImmW16 : Opcode := ⟨83⟩
 /-- `lt.u.imm.w16` -/
-def ltUImmW16 : Opcode := ⟨81⟩
+def ltUImmW16 : Opcode := ⟨84⟩
 /-- `le.s.imm.w16` -/
-def leSImmW16 : Opcode := ⟨82⟩
+def leSImmW16 : Opcode := ⟨85⟩
 /-- `le.u.imm.w16` -/
-def leUImmW16 : Opcode := ⟨83⟩
+def leUImmW16 : Opcode := ⟨86⟩
 /-- `gt.s.imm.w16` -/
-def gtSImmW16 : Opcode := ⟨84⟩
+def gtSImmW16 : Opcode := ⟨87⟩
 /-- `gt.u.imm.w16` -/
-def gtUImmW16 : Opcode := ⟨85⟩
+def gtUImmW16 : Opcode := ⟨88⟩
 /-- `ge.s.imm.w16` -/
-def geSImmW16 : Opcode := ⟨86⟩
+def geSImmW16 : Opcode := ⟨89⟩
 /-- `ge.u.imm.w16` -/
-def geUImmW16 : Opcode := ⟨87⟩
+def geUImmW16 : Opcode := ⟨90⟩
 /-- `add.ovf.s.w16` -/
-def addOvfSW16 : Opcode := ⟨88⟩
+def addOvfSW16 : Opcode := ⟨91⟩
 /-- `add.ovf.u.w16` -/
-def addOvfUW16 : Opcode := ⟨89⟩
+def addOvfUW16 : Opcode := ⟨92⟩
 /-- `sub.ovf.s.w16` -/
-def subOvfSW16 : Opcode := ⟨90⟩
+def subOvfSW16 : Opcode := ⟨93⟩
 /-- `sub.ovf.u.w16` -/
-def subOvfUW16 : Opcode := ⟨91⟩
+def subOvfUW16 : Opcode := ⟨94⟩
 /-- `mul.ovf.s.w16` -/
-def mulOvfSW16 : Opcode := ⟨92⟩
+def mulOvfSW16 : Opcode := ⟨95⟩
 /-- `mul.ovf.u.w16` -/
-def mulOvfUW16 : Opcode := ⟨93⟩
+def mulOvfUW16 : Opcode := ⟨96⟩
 /-- `add.w32` -/
-def addW32 : Opcode := ⟨94⟩
+def addW32 : Opcode := ⟨97⟩
 /-- `sub.w32` -/
-def subW32 : Opcode := ⟨95⟩
+def subW32 : Opcode := ⟨98⟩
 /-- `mul.w32` -/
-def mulW32 : Opcode := ⟨96⟩
+def mulW32 : Opcode := ⟨99⟩
 /-- `and.w32` -/
-def andW32 : Opcode := ⟨97⟩
+def andW32 : Opcode := ⟨100⟩
 /-- `or.w32` -/
-def orW32 : Opcode := ⟨98⟩
+def orW32 : Opcode := ⟨101⟩
 /-- `xor.w32` -/
-def xorW32 : Opcode := ⟨99⟩
+def xorW32 : Opcode := ⟨102⟩
 /-- `eq.w32` -/
-def eqW32 : Opcode := ⟨100⟩
+def eqW32 : Opcode := ⟨103⟩
 /-- `ne.w32` -/
-def neW32 : Opcode := ⟨101⟩
+def neW32 : Opcode := ⟨104⟩
 /-- `lt.s.w32` -/
-def ltSW32 : Opcode := ⟨102⟩
+def ltSW32 : Opcode := ⟨105⟩
 /-- `lt.u.w32` -/
-def ltUW32 : Opcode := ⟨103⟩
+def ltUW32 : Opcode := ⟨106⟩
 /-- `le.s.w32` -/
-def leSW32 : Opcode := ⟨104⟩
+def leSW32 : Opcode := ⟨107⟩
 /-- `le.u.w32` -/
-def leUW32 : Opcode := ⟨105⟩
+def leUW32 : Opcode := ⟨108⟩
 /-- `add.imm.w32` -/
-def addImmW32 : Opcode := ⟨106⟩
+def addImmW32 : Opcode := ⟨109⟩
 /-- `sub.imm.w32` -/
-def subImmW32 : Opcode := ⟨107⟩
+def subImmW32 : Opcode := ⟨110⟩
 /-- `mul.imm.w32` -/
-def mulImmW32 : Opcode := ⟨108⟩
+def mulImmW32 : Opcode := ⟨111⟩
 /-- `and.imm.w32` -/
-def andImmW32 : Opcode := ⟨109⟩
+def andImmW32 : Opcode := ⟨112⟩
 /-- `or.imm.w32` -/
-def orImmW32 : Opcode := ⟨110⟩
+def orImmW32 : Opcode := ⟨113⟩
 /-- `xor.imm.w32` -/
-def xorImmW32 : Opcode := ⟨111⟩
+def xorImmW32 : Opcode := ⟨114⟩
 /-- `shl.imm.w32` -/
-def shlImmW32 : Opcode := ⟨112⟩
+def shlImmW32 : Opcode := ⟨115⟩
 /-- `shr.s.imm.w32` -/
-def shrSImmW32 : Opcode := ⟨113⟩
+def shrSImmW32 : Opcode := ⟨116⟩
 /-- `shr.u.imm.w32` -/
-def shrUImmW32 : Opcode := ⟨114⟩
+def shrUImmW32 : Opcode := ⟨117⟩
 /-- `eq.imm.w32` -/
-def eqImmW32 : Opcode := ⟨115⟩
+def eqImmW32 : Opcode := ⟨118⟩
 /-- `ne.imm.w32` -/
-def neImmW32 : Opcode := ⟨116⟩
+def neImmW32 : Opcode := ⟨119⟩
 /-- `lt.s.imm.w32` -/
-def ltSImmW32 : Opcode := ⟨117⟩
+def ltSImmW32 : Opcode := ⟨120⟩
 /-- `lt.u.imm.w32` -/
-def ltUImmW32 : Opcode := ⟨118⟩
+def ltUImmW32 : Opcode := ⟨121⟩
 /-- `le.s.imm.w32` -/
-def leSImmW32 : Opcode := ⟨119⟩
+def leSImmW32 : Opcode := ⟨122⟩
 /-- `le.u.imm.w32` -/
-def leUImmW32 : Opcode := ⟨120⟩
+def leUImmW32 : Opcode := ⟨123⟩
 /-- `gt.s.imm.w32` -/
-def gtSImmW32 : Opcode := ⟨121⟩
+def gtSImmW32 : Opcode := ⟨124⟩
 /-- `gt.u.imm.w32` -/
-def gtUImmW32 : Opcode := ⟨122⟩
+def gtUImmW32 : Opcode := ⟨125⟩
 /-- `ge.s.imm.w32` -/
-def geSImmW32 : Opcode := ⟨123⟩
+def geSImmW32 : Opcode := ⟨126⟩
 /-- `ge.u.imm.w32` -/
-def geUImmW32 : Opcode := ⟨124⟩
+def geUImmW32 : Opcode := ⟨127⟩
 /-- `add.ovf.s.w32` -/
-def addOvfSW32 : Opcode := ⟨125⟩
+def addOvfSW32 : Opcode := ⟨128⟩
 /-- `add.ovf.u.w32` -/
-def addOvfUW32 : Opcode := ⟨126⟩
+def addOvfUW32 : Opcode := ⟨129⟩
 /-- `sub.ovf.s.w32` -/
-def subOvfSW32 : Opcode := ⟨127⟩
+def subOvfSW32 : Opcode := ⟨130⟩
 /-- `sub.ovf.u.w32` -/
-def subOvfUW32 : Opcode := ⟨128⟩
+def subOvfUW32 : Opcode := ⟨131⟩
 /-- `mul.ovf.s.w32` -/
-def mulOvfSW32 : Opcode := ⟨129⟩
+def mulOvfSW32 : Opcode := ⟨132⟩
 /-- `mul.ovf.u.w32` -/
-def mulOvfUW32 : Opcode := ⟨130⟩
+def mulOvfUW32 : Opcode := ⟨133⟩
 /-- `add.w64` -/
-def addW64 : Opcode := ⟨131⟩
+def addW64 : Opcode := ⟨134⟩
 /-- `sub.w64` -/
-def subW64 : Opcode := ⟨132⟩
+def subW64 : Opcode := ⟨135⟩
 /-- `mul.w64` -/
-def mulW64 : Opcode := ⟨133⟩
+def mulW64 : Opcode := ⟨136⟩
 /-- `and.w64` -/
-def andW64 : Opcode := ⟨134⟩
+def andW64 : Opcode := ⟨137⟩
 /-- `or.w64` -/
-def orW64 : Opcode := ⟨135⟩
+def orW64 : Opcode := ⟨138⟩
 /-- `xor.w64` -/
-def xorW64 : Opcode := ⟨136⟩
+def xorW64 : Opcode := ⟨139⟩
 /-- `eq.w64` -/
-def eqW64 : Opcode := ⟨137⟩
+def eqW64 : Opcode := ⟨140⟩
 /-- `ne.w64` -/
-def neW64 : Opcode := ⟨138⟩
+def neW64 : Opcode := ⟨141⟩
 /-- `lt.s.w64` -/
-def ltSW64 : Opcode := ⟨139⟩
+def ltSW64 : Opcode := ⟨142⟩
 /-- `lt.u.w64` -/
-def ltUW64 : Opcode := ⟨140⟩
+def ltUW64 : Opcode := ⟨143⟩
 /-- `le.s.w64` -/
-def leSW64 : Opcode := ⟨141⟩
+def leSW64 : Opcode := ⟨144⟩
 /-- `le.u.w64` -/
-def leUW64 : Opcode := ⟨142⟩
+def leUW64 : Opcode := ⟨145⟩
 /-- `add.imm.w64` -/
-def addImmW64 : Opcode := ⟨143⟩
+def addImmW64 : Opcode := ⟨146⟩
 /-- `sub.imm.w64` -/
-def subImmW64 : Opcode := ⟨144⟩
+def subImmW64 : Opcode := ⟨147⟩
 /-- `mul.imm.w64` -/
-def mulImmW64 : Opcode := ⟨145⟩
+def mulImmW64 : Opcode := ⟨148⟩
 /-- `and.imm.w64` -/
-def andImmW64 : Opcode := ⟨146⟩
+def andImmW64 : Opcode := ⟨149⟩
 /-- `or.imm.w64` -/
-def orImmW64 : Opcode := ⟨147⟩
+def orImmW64 : Opcode := ⟨150⟩
 /-- `xor.imm.w64` -/
-def xorImmW64 : Opcode := ⟨148⟩
+def xorImmW64 : Opcode := ⟨151⟩
 /-- `shl.imm.w64` -/
-def shlImmW64 : Opcode := ⟨149⟩
+def shlImmW64 : Opcode := ⟨152⟩
 /-- `shr.s.imm.w64` -/
-def shrSImmW64 : Opcode := ⟨150⟩
+def shrSImmW64 : Opcode := ⟨153⟩
 /-- `shr.u.imm.w64` -/
-def shrUImmW64 : Opcode := ⟨151⟩
+def shrUImmW64 : Opcode := ⟨154⟩
 /-- `eq.imm.w64` -/
-def eqImmW64 : Opcode := ⟨152⟩
+def eqImmW64 : Opcode := ⟨155⟩
 /-- `ne.imm.w64` -/
-def neImmW64 : Opcode := ⟨153⟩
+def neImmW64 : Opcode := ⟨156⟩
 /-- `lt.s.imm.w64` -/
-def ltSImmW64 : Opcode := ⟨154⟩
+def ltSImmW64 : Opcode := ⟨157⟩
 /-- `lt.u.imm.w64` -/
-def ltUImmW64 : Opcode := ⟨155⟩
+def ltUImmW64 : Opcode := ⟨158⟩
 /-- `le.s.imm.w64` -/
-def leSImmW64 : Opcode := ⟨156⟩
+def leSImmW64 : Opcode := ⟨159⟩
 /-- `le.u.imm.w64` -/
-def leUImmW64 : Opcode := ⟨157⟩
+def leUImmW64 : Opcode := ⟨160⟩
 /-- `gt.s.imm.w64` -/
-def gtSImmW64 : Opcode := ⟨158⟩
+def gtSImmW64 : Opcode := ⟨161⟩
 /-- `gt.u.imm.w64` -/
-def gtUImmW64 : Opcode := ⟨159⟩
+def gtUImmW64 : Opcode := ⟨162⟩
 /-- `ge.s.imm.w64` -/
-def geSImmW64 : Opcode := ⟨160⟩
+def geSImmW64 : Opcode := ⟨163⟩
 /-- `ge.u.imm.w64` -/
-def geUImmW64 : Opcode := ⟨161⟩
+def geUImmW64 : Opcode := ⟨164⟩
 /-- `add.ovf.s.w64` -/
-def addOvfSW64 : Opcode := ⟨162⟩
+def addOvfSW64 : Opcode := ⟨165⟩
 /-- `add.ovf.u.w64` -/
-def addOvfUW64 : Opcode := ⟨163⟩
+def addOvfUW64 : Opcode := ⟨166⟩
 /-- `sub.ovf.s.w64` -/
-def subOvfSW64 : Opcode := ⟨164⟩
+def subOvfSW64 : Opcode := ⟨167⟩
 /-- `sub.ovf.u.w64` -/
-def subOvfUW64 : Opcode := ⟨165⟩
+def subOvfUW64 : Opcode := ⟨168⟩
 /-- `mul.ovf.s.w64` -/
-def mulOvfSW64 : Opcode := ⟨166⟩
+def mulOvfSW64 : Opcode := ⟨169⟩
 /-- `mul.ovf.u.w64` -/
-def mulOvfUW64 : Opcode := ⟨167⟩
+def mulOvfUW64 : Opcode := ⟨170⟩
 /-- `zext.w8.w16` -/
-def zextW8W16 : Opcode := ⟨168⟩
+def zextW8W16 : Opcode := ⟨171⟩
 /-- `sext.w8.w16` -/
-def sextW8W16 : Opcode := ⟨169⟩
+def sextW8W16 : Opcode := ⟨172⟩
 /-- `zext.w8.w32` -/
-def zextW8W32 : Opcode := ⟨170⟩
+def zextW8W32 : Opcode := ⟨173⟩
 /-- `sext.w8.w32` -/
-def sextW8W32 : Opcode := ⟨171⟩
+def sextW8W32 : Opcode := ⟨174⟩
 /-- `zext.w8.w64` -/
-def zextW8W64 : Opcode := ⟨172⟩
+def zextW8W64 : Opcode := ⟨175⟩
 /-- `sext.w8.w64` -/
-def sextW8W64 : Opcode := ⟨173⟩
+def sextW8W64 : Opcode := ⟨176⟩
 /-- `zext.w16.w32` -/
-def zextW16W32 : Opcode := ⟨174⟩
+def zextW16W32 : Opcode := ⟨177⟩
 /-- `sext.w16.w32` -/
-def sextW16W32 : Opcode := ⟨175⟩
+def sextW16W32 : Opcode := ⟨178⟩
 /-- `zext.w16.w64` -/
-def zextW16W64 : Opcode := ⟨176⟩
+def zextW16W64 : Opcode := ⟨179⟩
 /-- `sext.w16.w64` -/
-def sextW16W64 : Opcode := ⟨177⟩
+def sextW16W64 : Opcode := ⟨180⟩
 /-- `zext.w32.w64` -/
-def zextW32W64 : Opcode := ⟨178⟩
+def zextW32W64 : Opcode := ⟨181⟩
 /-- `sext.w32.w64` -/
-def sextW32W64 : Opcode := ⟨179⟩
+def sextW32W64 : Opcode := ⟨182⟩
 /-- `trunc.w16.w8` -/
-def truncW16W8 : Opcode := ⟨180⟩
+def truncW16W8 : Opcode := ⟨183⟩
 /-- `trunc.w32.w8` -/
-def truncW32W8 : Opcode := ⟨181⟩
+def truncW32W8 : Opcode := ⟨184⟩
 /-- `trunc.w32.w16` -/
-def truncW32W16 : Opcode := ⟨182⟩
+def truncW32W16 : Opcode := ⟨185⟩
 /-- `trunc.w64.w8` -/
-def truncW64W8 : Opcode := ⟨183⟩
+def truncW64W8 : Opcode := ⟨186⟩
 /-- `trunc.w64.w16` -/
-def truncW64W16 : Opcode := ⟨184⟩
+def truncW64W16 : Opcode := ⟨187⟩
 /-- `trunc.w64.w32` -/
-def truncW64W32 : Opcode := ⟨185⟩
+def truncW64W32 : Opcode := ⟨188⟩
 /-- `jmp` -/
-def jmp : Opcode := ⟨186⟩
+def jmp : Opcode := ⟨189⟩
 /-- `br` -/
-def br : Opcode := ⟨187⟩
+def br : Opcode := ⟨190⟩
 /-- `br.eq.w8` -/
-def brEqW8 : Opcode := ⟨188⟩
+def brEqW8 : Opcode := ⟨191⟩
 /-- `br.lt.s.w8` -/
-def brLtSW8 : Opcode := ⟨189⟩
+def brLtSW8 : Opcode := ⟨192⟩
 /-- `br.lt.u.w8` -/
-def brLtUW8 : Opcode := ⟨190⟩
+def brLtUW8 : Opcode := ⟨193⟩
 /-- `br.eq.imm.w8` -/
-def brEqImmW8 : Opcode := ⟨191⟩
+def brEqImmW8 : Opcode := ⟨194⟩
 /-- `br.lt.s.imm.w8` -/
-def brLtSImmW8 : Opcode := ⟨192⟩
+def brLtSImmW8 : Opcode := ⟨195⟩
 /-- `br.lt.u.imm.w8` -/
-def brLtUImmW8 : Opcode := ⟨193⟩
+def brLtUImmW8 : Opcode := ⟨196⟩
 /-- `br.gt.s.imm.w8` -/
-def brGtSImmW8 : Opcode := ⟨194⟩
+def brGtSImmW8 : Opcode := ⟨197⟩
 /-- `br.gt.u.imm.w8` -/
-def brGtUImmW8 : Opcode := ⟨195⟩
+def brGtUImmW8 : Opcode := ⟨198⟩
 /-- `br.eq.w16` -/
-def brEqW16 : Opcode := ⟨196⟩
+def brEqW16 : Opcode := ⟨199⟩
 /-- `br.lt.s.w16` -/
-def brLtSW16 : Opcode := ⟨197⟩
+def brLtSW16 : Opcode := ⟨200⟩
 /-- `br.lt.u.w16` -/
-def brLtUW16 : Opcode := ⟨198⟩
+def brLtUW16 : Opcode := ⟨201⟩
 /-- `br.eq.imm.w16` -/
-def brEqImmW16 : Opcode := ⟨199⟩
+def brEqImmW16 : Opcode := ⟨202⟩
 /-- `br.lt.s.imm.w16` -/
-def brLtSImmW16 : Opcode := ⟨200⟩
+def brLtSImmW16 : Opcode := ⟨203⟩
 /-- `br.lt.u.imm.w16` -/
-def brLtUImmW16 : Opcode := ⟨201⟩
+def brLtUImmW16 : Opcode := ⟨204⟩
 /-- `br.gt.s.imm.w16` -/
-def brGtSImmW16 : Opcode := ⟨202⟩
+def brGtSImmW16 : Opcode := ⟨205⟩
 /-- `br.gt.u.imm.w16` -/
-def brGtUImmW16 : Opcode := ⟨203⟩
+def brGtUImmW16 : Opcode := ⟨206⟩
 /-- `br.eq.w32` -/
-def brEqW32 : Opcode := ⟨204⟩
+def brEqW32 : Opcode := ⟨207⟩
 /-- `br.lt.s.w32` -/
-def brLtSW32 : Opcode := ⟨205⟩
+def brLtSW32 : Opcode := ⟨208⟩
 /-- `br.lt.u.w32` -/
-def brLtUW32 : Opcode := ⟨206⟩
+def brLtUW32 : Opcode := ⟨209⟩
 /-- `br.eq.imm.w32` -/
-def brEqImmW32 : Opcode := ⟨207⟩
+def brEqImmW32 : Opcode := ⟨210⟩
 /-- `br.lt.s.imm.w32` -/
-def brLtSImmW32 : Opcode := ⟨208⟩
+def brLtSImmW32 : Opcode := ⟨211⟩
 /-- `br.lt.u.imm.w32` -/
-def brLtUImmW32 : Opcode := ⟨209⟩
+def brLtUImmW32 : Opcode := ⟨212⟩
 /-- `br.gt.s.imm.w32` -/
-def brGtSImmW32 : Opcode := ⟨210⟩
+def brGtSImmW32 : Opcode := ⟨213⟩
 /-- `br.gt.u.imm.w32` -/
-def brGtUImmW32 : Opcode := ⟨211⟩
+def brGtUImmW32 : Opcode := ⟨214⟩
 /-- `br.eq.w64` -/
-def brEqW64 : Opcode := ⟨212⟩
+def brEqW64 : Opcode := ⟨215⟩
 /-- `br.lt.s.w64` -/
-def brLtSW64 : Opcode := ⟨213⟩
+def brLtSW64 : Opcode := ⟨216⟩
 /-- `br.lt.u.w64` -/
-def brLtUW64 : Opcode := ⟨214⟩
+def brLtUW64 : Opcode := ⟨217⟩
 /-- `br.eq.imm.w64` -/
-def brEqImmW64 : Opcode := ⟨215⟩
+def brEqImmW64 : Opcode := ⟨218⟩
 /-- `br.lt.s.imm.w64` -/
-def brLtSImmW64 : Opcode := ⟨216⟩
+def brLtSImmW64 : Opcode := ⟨219⟩
 /-- `br.lt.u.imm.w64` -/
-def brLtUImmW64 : Opcode := ⟨217⟩
+def brLtUImmW64 : Opcode := ⟨220⟩
 /-- `br.gt.s.imm.w64` -/
-def brGtSImmW64 : Opcode := ⟨218⟩
+def brGtSImmW64 : Opcode := ⟨221⟩
 /-- `br.gt.u.imm.w64` -/
-def brGtUImmW64 : Opcode := ⟨219⟩
+def brGtUImmW64 : Opcode := ⟨222⟩
 /-- `unreachable` -/
-def unreachable : Opcode := ⟨220⟩
+def unreachable : Opcode := ⟨223⟩
 /-- `call` -/
-def call : Opcode := ⟨221⟩
+def call : Opcode := ⟨224⟩
 /-- `call.sym` -/
-def callSym : Opcode := ⟨222⟩
+def callSym : Opcode := ⟨225⟩
 /-- `call.sym.ind` -/
-def callSymInd : Opcode := ⟨223⟩
+def callSymInd : Opcode := ⟨226⟩
 /-- `call.ptr` -/
-def callPtr : Opcode := ⟨224⟩
+def callPtr : Opcode := ⟨227⟩
 /-- `tail_call` -/
-def tailCall : Opcode := ⟨225⟩
+def tailCall : Opcode := ⟨228⟩
 /-- `tail_call.ptr` -/
-def tailCallPtr : Opcode := ⟨226⟩
+def tailCallPtr : Opcode := ⟨229⟩
 /-- `ret` -/
-def ret : Opcode := ⟨227⟩
+def ret : Opcode := ⟨230⟩
 /-- `arg` -/
-def arg : Opcode := ⟨228⟩
+def arg : Opcode := ⟨231⟩
 /-- `island` -/
-def island : Opcode := ⟨229⟩
+def island : Opcode := ⟨232⟩
 /-- `handler` -/
-def handler : Opcode := ⟨230⟩
+def handler : Opcode := ⟨233⟩
 
 end Opcode
 
@@ -743,42 +752,42 @@ def toFullTable : Array (Option Full.Opcode) := #[
   some ⟨0⟩, some ⟨1⟩, some ⟨2⟩, some ⟨3⟩, some ⟨4⟩, some ⟨6⟩,
   some ⟨7⟩, some ⟨8⟩, some ⟨9⟩, some ⟨13⟩, some ⟨14⟩, some ⟨15⟩,
   some ⟨16⟩, some ⟨18⟩, some ⟨19⟩, some ⟨20⟩, some ⟨21⟩, some ⟨29⟩,
-  some ⟨33⟩, some ⟨34⟩, some ⟨35⟩, some ⟨36⟩, some ⟨37⟩, some ⟨42⟩,
-  some ⟨43⟩, some ⟨44⟩, some ⟨48⟩, some ⟨49⟩, some ⟨50⟩, some ⟨51⟩,
-  some ⟨52⟩, some ⟨53⟩, some ⟨58⟩, some ⟨59⟩, some ⟨60⟩, some ⟨61⟩,
-  some ⟨62⟩, some ⟨63⟩, some ⟨64⟩, some ⟨65⟩, some ⟨66⟩, some ⟨67⟩,
-  some ⟨68⟩, some ⟨69⟩, some ⟨70⟩, some ⟨71⟩, some ⟨72⟩, some ⟨73⟩,
-  some ⟨74⟩, some ⟨75⟩, some ⟨76⟩, some ⟨84⟩, some ⟨85⟩, some ⟨86⟩,
-  some ⟨87⟩, some ⟨88⟩, some ⟨89⟩, some ⟨90⟩, some ⟨91⟩, some ⟨92⟩,
-  some ⟨97⟩, some ⟨98⟩, some ⟨99⟩, some ⟨103⟩, some ⟨104⟩, some ⟨105⟩,
-  some ⟨106⟩, some ⟨107⟩, some ⟨108⟩, some ⟨113⟩, some ⟨114⟩, some ⟨115⟩,
-  some ⟨116⟩, some ⟨117⟩, some ⟨118⟩, some ⟨119⟩, some ⟨120⟩, some ⟨121⟩,
-  some ⟨122⟩, some ⟨123⟩, some ⟨124⟩, some ⟨125⟩, some ⟨126⟩, some ⟨127⟩,
-  some ⟨128⟩, some ⟨129⟩, some ⟨130⟩, some ⟨131⟩, some ⟨139⟩, some ⟨140⟩,
-  some ⟨141⟩, some ⟨142⟩, some ⟨143⟩, some ⟨144⟩, some ⟨145⟩, some ⟨146⟩,
-  some ⟨147⟩, some ⟨152⟩, some ⟨153⟩, some ⟨154⟩, some ⟨158⟩, some ⟨159⟩,
-  some ⟨160⟩, some ⟨161⟩, some ⟨162⟩, some ⟨163⟩, some ⟨168⟩, some ⟨169⟩,
-  some ⟨170⟩, some ⟨171⟩, some ⟨172⟩, some ⟨173⟩, some ⟨174⟩, some ⟨175⟩,
-  some ⟨176⟩, some ⟨177⟩, some ⟨178⟩, some ⟨179⟩, some ⟨180⟩, some ⟨181⟩,
-  some ⟨182⟩, some ⟨183⟩, some ⟨184⟩, some ⟨185⟩, some ⟨186⟩, some ⟨194⟩,
-  some ⟨195⟩, some ⟨196⟩, some ⟨197⟩, some ⟨198⟩, some ⟨199⟩, some ⟨200⟩,
-  some ⟨201⟩, some ⟨202⟩, some ⟨207⟩, some ⟨208⟩, some ⟨209⟩, some ⟨213⟩,
-  some ⟨214⟩, some ⟨215⟩, some ⟨216⟩, some ⟨217⟩, some ⟨218⟩, some ⟨223⟩,
-  some ⟨224⟩, some ⟨225⟩, some ⟨226⟩, some ⟨227⟩, some ⟨228⟩, some ⟨229⟩,
-  some ⟨230⟩, some ⟨231⟩, some ⟨232⟩, some ⟨233⟩, some ⟨234⟩, some ⟨235⟩,
-  some ⟨236⟩, some ⟨237⟩, some ⟨238⟩, some ⟨239⟩, some ⟨240⟩, some ⟨241⟩,
-  some ⟨249⟩, some ⟨250⟩, some ⟨251⟩, some ⟨252⟩, some ⟨253⟩, some ⟨254⟩,
-  some ⟨330⟩, some ⟨331⟩, some ⟨332⟩, some ⟨333⟩, some ⟨334⟩, some ⟨335⟩,
-  some ⟨338⟩, some ⟨339⟩, some ⟨340⟩, some ⟨341⟩, some ⟨344⟩, some ⟨345⟩,
-  some ⟨350⟩, some ⟨351⟩, some ⟨352⟩, some ⟨353⟩, some ⟨354⟩, some ⟨355⟩,
-  some ⟨850⟩, some ⟨851⟩, some ⟨852⟩, some ⟨853⟩, some ⟨854⟩, some ⟨855⟩,
-  some ⟨856⟩, some ⟨857⟩, some ⟨858⟩, some ⟨859⟩, some ⟨860⟩, some ⟨861⟩,
-  some ⟨862⟩, some ⟨863⟩, some ⟨864⟩, some ⟨865⟩, some ⟨866⟩, some ⟨867⟩,
-  some ⟨868⟩, some ⟨869⟩, some ⟨870⟩, some ⟨871⟩, some ⟨872⟩, some ⟨873⟩,
-  some ⟨874⟩, some ⟨875⟩, some ⟨876⟩, some ⟨877⟩, some ⟨878⟩, some ⟨879⟩,
-  some ⟨880⟩, some ⟨881⟩, some ⟨882⟩, some ⟨883⟩, some ⟨902⟩, some ⟨904⟩,
-  some ⟨905⟩, some ⟨906⟩, some ⟨907⟩, some ⟨908⟩, some ⟨909⟩, some ⟨910⟩,
-  some ⟨911⟩, some ⟨912⟩, none
+  some ⟨30⟩, some ⟨31⟩, some ⟨32⟩, some ⟨33⟩, some ⟨34⟩, some ⟨35⟩,
+  some ⟨36⟩, some ⟨37⟩, some ⟨42⟩, some ⟨43⟩, some ⟨44⟩, some ⟨48⟩,
+  some ⟨49⟩, some ⟨50⟩, some ⟨51⟩, some ⟨52⟩, some ⟨53⟩, some ⟨58⟩,
+  some ⟨59⟩, some ⟨60⟩, some ⟨61⟩, some ⟨62⟩, some ⟨63⟩, some ⟨64⟩,
+  some ⟨65⟩, some ⟨66⟩, some ⟨67⟩, some ⟨68⟩, some ⟨69⟩, some ⟨70⟩,
+  some ⟨71⟩, some ⟨72⟩, some ⟨73⟩, some ⟨74⟩, some ⟨75⟩, some ⟨76⟩,
+  some ⟨84⟩, some ⟨85⟩, some ⟨86⟩, some ⟨87⟩, some ⟨88⟩, some ⟨89⟩,
+  some ⟨90⟩, some ⟨91⟩, some ⟨92⟩, some ⟨97⟩, some ⟨98⟩, some ⟨99⟩,
+  some ⟨103⟩, some ⟨104⟩, some ⟨105⟩, some ⟨106⟩, some ⟨107⟩, some ⟨108⟩,
+  some ⟨113⟩, some ⟨114⟩, some ⟨115⟩, some ⟨116⟩, some ⟨117⟩, some ⟨118⟩,
+  some ⟨119⟩, some ⟨120⟩, some ⟨121⟩, some ⟨122⟩, some ⟨123⟩, some ⟨124⟩,
+  some ⟨125⟩, some ⟨126⟩, some ⟨127⟩, some ⟨128⟩, some ⟨129⟩, some ⟨130⟩,
+  some ⟨131⟩, some ⟨139⟩, some ⟨140⟩, some ⟨141⟩, some ⟨142⟩, some ⟨143⟩,
+  some ⟨144⟩, some ⟨145⟩, some ⟨146⟩, some ⟨147⟩, some ⟨152⟩, some ⟨153⟩,
+  some ⟨154⟩, some ⟨158⟩, some ⟨159⟩, some ⟨160⟩, some ⟨161⟩, some ⟨162⟩,
+  some ⟨163⟩, some ⟨168⟩, some ⟨169⟩, some ⟨170⟩, some ⟨171⟩, some ⟨172⟩,
+  some ⟨173⟩, some ⟨174⟩, some ⟨175⟩, some ⟨176⟩, some ⟨177⟩, some ⟨178⟩,
+  some ⟨179⟩, some ⟨180⟩, some ⟨181⟩, some ⟨182⟩, some ⟨183⟩, some ⟨184⟩,
+  some ⟨185⟩, some ⟨186⟩, some ⟨194⟩, some ⟨195⟩, some ⟨196⟩, some ⟨197⟩,
+  some ⟨198⟩, some ⟨199⟩, some ⟨200⟩, some ⟨201⟩, some ⟨202⟩, some ⟨207⟩,
+  some ⟨208⟩, some ⟨209⟩, some ⟨213⟩, some ⟨214⟩, some ⟨215⟩, some ⟨216⟩,
+  some ⟨217⟩, some ⟨218⟩, some ⟨223⟩, some ⟨224⟩, some ⟨225⟩, some ⟨226⟩,
+  some ⟨227⟩, some ⟨228⟩, some ⟨229⟩, some ⟨230⟩, some ⟨231⟩, some ⟨232⟩,
+  some ⟨233⟩, some ⟨234⟩, some ⟨235⟩, some ⟨236⟩, some ⟨237⟩, some ⟨238⟩,
+  some ⟨239⟩, some ⟨240⟩, some ⟨241⟩, some ⟨249⟩, some ⟨250⟩, some ⟨251⟩,
+  some ⟨252⟩, some ⟨253⟩, some ⟨254⟩, some ⟨330⟩, some ⟨331⟩, some ⟨332⟩,
+  some ⟨333⟩, some ⟨334⟩, some ⟨335⟩, some ⟨338⟩, some ⟨339⟩, some ⟨340⟩,
+  some ⟨341⟩, some ⟨344⟩, some ⟨345⟩, some ⟨350⟩, some ⟨351⟩, some ⟨352⟩,
+  some ⟨353⟩, some ⟨354⟩, some ⟨355⟩, some ⟨850⟩, some ⟨851⟩, some ⟨852⟩,
+  some ⟨853⟩, some ⟨854⟩, some ⟨855⟩, some ⟨856⟩, some ⟨857⟩, some ⟨858⟩,
+  some ⟨859⟩, some ⟨860⟩, some ⟨861⟩, some ⟨862⟩, some ⟨863⟩, some ⟨864⟩,
+  some ⟨865⟩, some ⟨866⟩, some ⟨867⟩, some ⟨868⟩, some ⟨869⟩, some ⟨870⟩,
+  some ⟨871⟩, some ⟨872⟩, some ⟨873⟩, some ⟨874⟩, some ⟨875⟩, some ⟨876⟩,
+  some ⟨877⟩, some ⟨878⟩, some ⟨879⟩, some ⟨880⟩, some ⟨881⟩, some ⟨882⟩,
+  some ⟨883⟩, some ⟨902⟩, some ⟨904⟩, some ⟨905⟩, some ⟨906⟩, some ⟨907⟩,
+  some ⟨908⟩, some ⟨909⟩, some ⟨910⟩, some ⟨911⟩, some ⟨912⟩, none
 ]
 
 /-- `Opcode::of_full` by full opcode. -/
@@ -786,51 +795,46 @@ def ofFullTable : Array (Option Opcode) := #[
   some ⟨0⟩, some ⟨1⟩, some ⟨2⟩, some ⟨3⟩, some ⟨4⟩, none, some ⟨5⟩,
   some ⟨6⟩, some ⟨7⟩, some ⟨8⟩, none, none, none, some ⟨9⟩, some ⟨10⟩,
   some ⟨11⟩, some ⟨12⟩, none, some ⟨13⟩, some ⟨14⟩, some ⟨15⟩, some ⟨16⟩,
-  none, none, none, none, none, none, none, some ⟨17⟩, none, none, none, some ⟨18⟩,
-  some ⟨19⟩, some ⟨20⟩, some ⟨21⟩, some ⟨22⟩, none, none, none, none,
-  some ⟨23⟩, some ⟨24⟩, some ⟨25⟩, none, none, none, some ⟨26⟩, some ⟨27⟩,
-  some ⟨28⟩, some ⟨29⟩, some ⟨30⟩, some ⟨31⟩, none, none, none, none,
-  some ⟨32⟩, some ⟨33⟩, some ⟨34⟩, some ⟨35⟩, some ⟨36⟩, some ⟨37⟩,
-  some ⟨38⟩, some ⟨39⟩, some ⟨40⟩, some ⟨41⟩, some ⟨42⟩, some ⟨43⟩,
-  some ⟨44⟩, some ⟨45⟩, some ⟨46⟩, some ⟨47⟩, some ⟨48⟩, some ⟨49⟩,
-  some ⟨50⟩, none, none, none, none, none, none, none, some ⟨51⟩, some ⟨52⟩,
-  some ⟨53⟩, some ⟨54⟩, some ⟨55⟩, some ⟨56⟩, some ⟨57⟩, some ⟨58⟩,
-  some ⟨59⟩, none, none, none, none, some ⟨60⟩, some ⟨61⟩, some ⟨62⟩, none, none,
-  none, some ⟨63⟩, some ⟨64⟩, some ⟨65⟩, some ⟨66⟩, some ⟨67⟩, some ⟨68⟩,
-  none, none, none, none, some ⟨69⟩, some ⟨70⟩, some ⟨71⟩, some ⟨72⟩,
-  some ⟨73⟩, some ⟨74⟩, some ⟨75⟩, some ⟨76⟩, some ⟨77⟩, some ⟨78⟩,
-  some ⟨79⟩, some ⟨80⟩, some ⟨81⟩, some ⟨82⟩, some ⟨83⟩, some ⟨84⟩,
-  some ⟨85⟩, some ⟨86⟩, some ⟨87⟩, none, none, none, none, none, none, none,
-  some ⟨88⟩, some ⟨89⟩, some ⟨90⟩, some ⟨91⟩, some ⟨92⟩, some ⟨93⟩,
-  some ⟨94⟩, some ⟨95⟩, some ⟨96⟩, none, none, none, none, some ⟨97⟩,
-  some ⟨98⟩, some ⟨99⟩, none, none, none, some ⟨100⟩, some ⟨101⟩, some ⟨102⟩,
-  some ⟨103⟩, some ⟨104⟩, some ⟨105⟩, none, none, none, none, some ⟨106⟩,
-  some ⟨107⟩, some ⟨108⟩, some ⟨109⟩, some ⟨110⟩, some ⟨111⟩, some ⟨112⟩,
-  some ⟨113⟩, some ⟨114⟩, some ⟨115⟩, some ⟨116⟩, some ⟨117⟩, some ⟨118⟩,
-  some ⟨119⟩, some ⟨120⟩, some ⟨121⟩, some ⟨122⟩, some ⟨123⟩, some ⟨124⟩,
-  none, none, none, none, none, none, none, some ⟨125⟩, some ⟨126⟩, some ⟨127⟩,
-  some ⟨128⟩, some ⟨129⟩, some ⟨130⟩, some ⟨131⟩, some ⟨132⟩, some ⟨133⟩,
-  none, none, none, none, some ⟨134⟩, some ⟨135⟩, some ⟨136⟩, none, none, none,
-  some ⟨137⟩, some ⟨138⟩, some ⟨139⟩, some ⟨140⟩, some ⟨141⟩, some ⟨142⟩,
-  none, none, none, none, some ⟨143⟩, some ⟨144⟩, some ⟨145⟩, some ⟨146⟩,
-  some ⟨147⟩, some ⟨148⟩, some ⟨149⟩, some ⟨150⟩, some ⟨151⟩, some ⟨152⟩,
-  some ⟨153⟩, some ⟨154⟩, some ⟨155⟩, some ⟨156⟩, some ⟨157⟩, some ⟨158⟩,
-  some ⟨159⟩, some ⟨160⟩, some ⟨161⟩, none, none, none, none, none, none, none,
-  some ⟨162⟩, some ⟨163⟩, some ⟨164⟩, some ⟨165⟩, some ⟨166⟩, some ⟨167⟩,
+  none, none, none, none, none, none, none, some ⟨17⟩, some ⟨18⟩, some ⟨19⟩,
+  some ⟨20⟩, some ⟨21⟩, some ⟨22⟩, some ⟨23⟩, some ⟨24⟩, some ⟨25⟩, none,
+  none, none, none, some ⟨26⟩, some ⟨27⟩, some ⟨28⟩, none, none, none, some ⟨29⟩,
+  some ⟨30⟩, some ⟨31⟩, some ⟨32⟩, some ⟨33⟩, some ⟨34⟩, none, none, none,
+  none, some ⟨35⟩, some ⟨36⟩, some ⟨37⟩, some ⟨38⟩, some ⟨39⟩, some ⟨40⟩,
+  some ⟨41⟩, some ⟨42⟩, some ⟨43⟩, some ⟨44⟩, some ⟨45⟩, some ⟨46⟩,
+  some ⟨47⟩, some ⟨48⟩, some ⟨49⟩, some ⟨50⟩, some ⟨51⟩, some ⟨52⟩,
+  some ⟨53⟩, none, none, none, none, none, none, none, some ⟨54⟩, some ⟨55⟩,
+  some ⟨56⟩, some ⟨57⟩, some ⟨58⟩, some ⟨59⟩, some ⟨60⟩, some ⟨61⟩,
+  some ⟨62⟩, none, none, none, none, some ⟨63⟩, some ⟨64⟩, some ⟨65⟩, none, none,
+  none, some ⟨66⟩, some ⟨67⟩, some ⟨68⟩, some ⟨69⟩, some ⟨70⟩, some ⟨71⟩,
+  none, none, none, none, some ⟨72⟩, some ⟨73⟩, some ⟨74⟩, some ⟨75⟩,
+  some ⟨76⟩, some ⟨77⟩, some ⟨78⟩, some ⟨79⟩, some ⟨80⟩, some ⟨81⟩,
+  some ⟨82⟩, some ⟨83⟩, some ⟨84⟩, some ⟨85⟩, some ⟨86⟩, some ⟨87⟩,
+  some ⟨88⟩, some ⟨89⟩, some ⟨90⟩, none, none, none, none, none, none, none,
+  some ⟨91⟩, some ⟨92⟩, some ⟨93⟩, some ⟨94⟩, some ⟨95⟩, some ⟨96⟩,
+  some ⟨97⟩, some ⟨98⟩, some ⟨99⟩, none, none, none, none, some ⟨100⟩,
+  some ⟨101⟩, some ⟨102⟩, none, none, none, some ⟨103⟩, some ⟨104⟩,
+  some ⟨105⟩, some ⟨106⟩, some ⟨107⟩, some ⟨108⟩, none, none, none, none,
+  some ⟨109⟩, some ⟨110⟩, some ⟨111⟩, some ⟨112⟩, some ⟨113⟩, some ⟨114⟩,
+  some ⟨115⟩, some ⟨116⟩, some ⟨117⟩, some ⟨118⟩, some ⟨119⟩, some ⟨120⟩,
+  some ⟨121⟩, some ⟨122⟩, some ⟨123⟩, some ⟨124⟩, some ⟨125⟩, some ⟨126⟩,
+  some ⟨127⟩, none, none, none, none, none, none, none, some ⟨128⟩, some ⟨129⟩,
+  some ⟨130⟩, some ⟨131⟩, some ⟨132⟩, some ⟨133⟩, some ⟨134⟩, some ⟨135⟩,
+  some ⟨136⟩, none, none, none, none, some ⟨137⟩, some ⟨138⟩, some ⟨139⟩, none,
+  none, none, some ⟨140⟩, some ⟨141⟩, some ⟨142⟩, some ⟨143⟩, some ⟨144⟩,
+  some ⟨145⟩, none, none, none, none, some ⟨146⟩, some ⟨147⟩, some ⟨148⟩,
+  some ⟨149⟩, some ⟨150⟩, some ⟨151⟩, some ⟨152⟩, some ⟨153⟩, some ⟨154⟩,
+  some ⟨155⟩, some ⟨156⟩, some ⟨157⟩, some ⟨158⟩, some ⟨159⟩, some ⟨160⟩,
+  some ⟨161⟩, some ⟨162⟩, some ⟨163⟩, some ⟨164⟩, none, none, none, none, none,
+  none, none, some ⟨165⟩, some ⟨166⟩, some ⟨167⟩, some ⟨168⟩, some ⟨169⟩,
+  some ⟨170⟩, none, none, none, none, none, none, none, none, none, none, none, none, none,
   none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
   none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
   none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
-  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
-  none, none, none, none, none, none, none, none, none, none, none, some ⟨168⟩,
-  some ⟨169⟩, some ⟨170⟩, some ⟨171⟩, some ⟨172⟩, some ⟨173⟩, none, none,
-  some ⟨174⟩, some ⟨175⟩, some ⟨176⟩, some ⟨177⟩, none, none, some ⟨178⟩,
-  some ⟨179⟩, none, none, none, none, some ⟨180⟩, some ⟨181⟩, some ⟨182⟩,
-  some ⟨183⟩, some ⟨184⟩, some ⟨185⟩, none, none, none, none, none, none, none, none,
-  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
-  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
-  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
-  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
-  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
+  none, none, none, none, none, none, none, none, none, none, none, none, none, none,
+  some ⟨171⟩, some ⟨172⟩, some ⟨173⟩, some ⟨174⟩, some ⟨175⟩, some ⟨176⟩,
+  none, none, some ⟨177⟩, some ⟨178⟩, some ⟨179⟩, some ⟨180⟩, none, none,
+  some ⟨181⟩, some ⟨182⟩, none, none, none, none, some ⟨183⟩, some ⟨184⟩,
+  some ⟨185⟩, some ⟨186⟩, some ⟨187⟩, some ⟨188⟩, none, none, none, none, none,
   none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
   none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
   none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
@@ -856,16 +860,21 @@ def ofFullTable : Array (Option Opcode) := #[
   none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
   none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
   none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
-  none, none, none, none, none, none, some ⟨186⟩, some ⟨187⟩, some ⟨188⟩,
-  some ⟨189⟩, some ⟨190⟩, some ⟨191⟩, some ⟨192⟩, some ⟨193⟩, some ⟨194⟩,
-  some ⟨195⟩, some ⟨196⟩, some ⟨197⟩, some ⟨198⟩, some ⟨199⟩, some ⟨200⟩,
-  some ⟨201⟩, some ⟨202⟩, some ⟨203⟩, some ⟨204⟩, some ⟨205⟩, some ⟨206⟩,
-  some ⟨207⟩, some ⟨208⟩, some ⟨209⟩, some ⟨210⟩, some ⟨211⟩, some ⟨212⟩,
-  some ⟨213⟩, some ⟨214⟩, some ⟨215⟩, some ⟨216⟩, some ⟨217⟩, some ⟨218⟩,
-  some ⟨219⟩, none, none, none, none, none, none, none, none, none, none, none, none, none,
-  none, none, none, none, none, some ⟨220⟩, none, some ⟨221⟩, some ⟨222⟩,
-  some ⟨223⟩, some ⟨224⟩, some ⟨225⟩, some ⟨226⟩, some ⟨227⟩, some ⟨228⟩,
-  some ⟨229⟩, none, none
+  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
+  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
+  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
+  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
+  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
+  none, none, none, none, none, none, none, none, none, some ⟨189⟩, some ⟨190⟩,
+  some ⟨191⟩, some ⟨192⟩, some ⟨193⟩, some ⟨194⟩, some ⟨195⟩, some ⟨196⟩,
+  some ⟨197⟩, some ⟨198⟩, some ⟨199⟩, some ⟨200⟩, some ⟨201⟩, some ⟨202⟩,
+  some ⟨203⟩, some ⟨204⟩, some ⟨205⟩, some ⟨206⟩, some ⟨207⟩, some ⟨208⟩,
+  some ⟨209⟩, some ⟨210⟩, some ⟨211⟩, some ⟨212⟩, some ⟨213⟩, some ⟨214⟩,
+  some ⟨215⟩, some ⟨216⟩, some ⟨217⟩, some ⟨218⟩, some ⟨219⟩, some ⟨220⟩,
+  some ⟨221⟩, some ⟨222⟩, none, none, none, none, none, none, none, none, none, none,
+  none, none, none, none, none, none, none, none, some ⟨223⟩, none, some ⟨224⟩,
+  some ⟨225⟩, some ⟨226⟩, some ⟨227⟩, some ⟨228⟩, some ⟨229⟩, some ⟨230⟩,
+  some ⟨231⟩, some ⟨232⟩, none, none
 ]
 
 def Opcode.full (op : Opcode) : Option Full.Opcode := toFullTable[op.val.toNat]!

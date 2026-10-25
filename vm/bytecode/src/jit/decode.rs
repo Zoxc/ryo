@@ -272,6 +272,31 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode) -> Result<(RInsn,
     let len = reduced::insn_len(words).map_err(|_| bad("reduced code"))?;
     let (ri, _) = Insn::decode(words).map_err(|_| bad("reduced code"))?;
     let w = &words[..len];
+    // The inline address instructions as their handler calls, for now.
+    let (aw, tw): (Vec<u32>, Vec<u32>);
+    let ri = match ri {
+        Insn::AddrConst { d, .. } | Insn::AddrSym { d, .. } | Insn::AddrSymInd { d, .. } => {
+            let (h, a) = match ri {
+                Insn::AddrConst { a: full::Abs::Const(k), .. } => (full::Opcode::AddrConst, Arg::Const(k)),
+                Insn::AddrConst { a: full::Abs::Data(x), .. } => (full::Opcode::AddrConst, Arg::Data(x)),
+                Insn::AddrSym { sym, .. } => (full::Opcode::AddrSym, Arg::Sym(sym)),
+                Insn::AddrSymInd { sym, .. } => (full::Opcode::AddrSymInd, Arg::Sym(sym)),
+                _ => unreachable!(),
+            };
+            let l = asm::layout(h, mode);
+            let mut args = alloc::vec![Arg::Imm(0); l.regs as usize];
+            if mode.fp_arg {
+                args[0] = Arg::Fp;
+            }
+            let (ld, la) = (l.locs[0], l.locs[1]);
+            args[ld.reg as usize] = Arg::Imm(if ld.shared { (d.0 as u32 as u64) << ld.shift } else { d.0 as u32 as u64 });
+            args[la.reg as usize] = a;
+            aw = full::list_words(args);
+            tw = full::list_words::<full::Target>([]);
+            Insn::Handler { h: reduced::Handler(h), args: full::List::from_words(&aw), neg: full::Neg(false), t: full::List::from_words(&tw) }
+        }
+        ri => ri,
+    };
     let rel = |t: i32| (at as i64 + t as i64) as u32;
     let mut accs = Vec::new();
     let mut succ = Vec::new();

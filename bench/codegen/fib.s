@@ -94,17 +94,11 @@ L0:
     mov     [rsp+28h],rdi
     mov     [rsp+38h],rsi
     mov     rax,[rsp+38h]
-    mov     [rsp+10h],rax
-    lea     rdi,[rsp+50h]
-    mov     esi,0FFFFFFB0h
-    lea     rdx,[sym0]
-    call    ryo_h_AddrSym
-    mov     rax,[rsp]
-    mov     rdx,[rsp+10h]
-    mov     [rsp+20h],rax
+    mov     rdx,[sym0]
+    mov     [rsp+20h],rdx
     mov     rcx,[rsp+20h]
     mov     [rsp+48h],rcx
-    mov     [rsp+40h],rdx
+    mov     [rsp+40h],rax
     lea     rdi,[rsp+50h]
     mov     esi,0FFFFFFD8h
     xor     edx,edx
@@ -127,17 +121,11 @@ L0:
     mov     [rsp+28h],rdi
     mov     [rsp+38h],rsi
     mov     rax,[rsp+38h]
-    mov     [rsp+10h],rax
-    lea     rdi,[rsp+50h]
-    mov     esi,0FFFFFFB0h
-    lea     rdx,[sym0]
-    call    ryo_h_AddrSym
-    mov     rax,[rsp]
-    mov     rdx,[rsp+10h]
-    mov     [rsp+20h],rax
+    mov     rdx,[sym0]
+    mov     [rsp+20h],rdx
     mov     rcx,[rsp+20h]
     mov     [rsp+48h],rcx
-    mov     [rsp+40h],rdx
+    mov     [rsp+40h],rax
     lea     rdi,[rsp+50h]
     mov     esi,0FFFFFFD8h
     xor     edx,edx
@@ -172,10 +160,8 @@ L1:
     mov     [rsp+3Ch],edx
     test    byte ptr [rsp+40h],0FFh
     je      L2
-    lea     rdi,[rsp+60h]
-    mov     esi,0FFFFFFA8h
-    lea     rdx,[k0]
-    call    ryo_h_AddrConst
+    lea     rdi,[k0]
+    mov     [rsp+8],rdi
     mov     rdi,[rsp+8]
     call    qword ptr [sym1]
     ud2
@@ -193,10 +179,8 @@ L2:
     mov     [rsp+24h],edx
     test    byte ptr [rsp+28h],0FFh
     je      L3
-    lea     rdi,[rsp+60h]
-    mov     esi,0FFFFFFA8h
-    lea     rdx,[k3]
-    call    ryo_h_AddrConst
+    lea     rdi,[k3]
+    mov     [rsp+8],rdi
     mov     rdi,[rsp+8]
     call    qword ptr [sym4]
     ud2
@@ -213,10 +197,8 @@ L3:
     mov     [rsp+10h],rax
     test    byte ptr [rsp+18h],0FFh
     je      L4
-    lea     rdi,[rsp+60h]
-    mov     esi,0FFFFFFA8h
-    lea     rdx,[k6]
-    call    ryo_h_AddrConst
+    lea     rsi,[k6]
+    mov     [rsp+8],rsi
     mov     rdi,[rsp+8]
     call    qword ptr [sym7]
     ud2
@@ -265,12 +247,10 @@ L0:
     mov     rcx,[rsp+38h]
     mov     [rsp+68h],rcx
     mov     [rsp+60h],rdx
-    lea     rdi,[rsp+0B0h]
-    mov     esi,0FFFFFF78h
-    lea     rdx,[k4]
-    call    ryo_h_AddrConst
-    lea     rax,[rsp+50h]
-    mov     [rsp+20h],rax
+    lea     rsi,[k4]
+    mov     [rsp+28h],rsi
+    lea     rdi,[rsp+50h]
+    mov     [rsp+20h],rdi
     mov     rdi,[rsp+28h]
     mov     rsi,[rsp+20h]
     call    fn5
@@ -334,12 +314,9 @@ L0:
     mov     rax,[rsp+40h]
     mov     [rsp+8],rax
     lea     rdx,[rsp+8]
-    mov     [rsp+10h],rdx
     mov     [rsp+18h],rdx
-    lea     rdi,[rsp+50h]
-    mov     esi,0FFFFFFD0h
-    lea     rdx,[k0]
-    call    ryo_h_AddrConst
+    lea     rsi,[k0]
+    mov     [rsp+20h],rsi
     mov     rdi,[rsp+18h]
     mov     rsi,[rsp+20h]
     mov     rdx,[rsp+38h]

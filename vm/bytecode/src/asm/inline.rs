@@ -1,5 +1,5 @@
 //! The inline form of the common VM instructions (design/vm.md, "Inline instructions"):
-//! moves, immediates, address arithmetic, loads and stores, integer add/sub/logic/multiply,
+//! moves, immediates, addresses (of slots, constants and symbols), address arithmetic, loads and stores, integer add/sub/logic/multiply,
 //! shifts by an immediate, compares and compare-branches, at widths up to 64 bits (and
 //! 128-bit moves, as two 64-bit halves). They
 //! are short native sequences on `rax` and `rcx` instead of handler calls; the register cache
@@ -13,7 +13,7 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
-use super::encode::Opnd;
+use super::encode::{Opnd, Ref};
 use super::x86::{Alu, Cond, Item, M, Reg, Rm, Sh, W};
 use crate::full::{ALL_OPCODES, Opcode, OperandKind};
 
@@ -25,6 +25,12 @@ enum Class {
     Mov128,
     Imm(W),
     Addr,
+    /// `addr.const`: `lea` of the constant (or data area) address.
+    AddrConst,
+    /// `addr.sym`: the symbol slot's value, loaded rip-relative.
+    AddrSym,
+    /// `addr.sym.ind`: the slot's value, then the import slot it points to.
+    AddrSymInd,
     PtrAdd,
     PtrIndex,
     Load(W),
@@ -64,6 +70,7 @@ fn class(op: Opcode) -> Option<Class> {
         LoadW8 => Load(W::B), LoadW16 => Load(W::W), LoadW32 => Load(W::D), LoadW64 => Load(W::Q),
         StoreW8 => Store(W::B), StoreW16 => Store(W::W), StoreW32 => Store(W::D), StoreW64 => Store(W::Q),
         Addr => Class::Addr,
+        AddrConst => Class::AddrConst, AddrSym => Class::AddrSym, AddrSymInd => Class::AddrSymInd,
         PtrAdd => Class::PtrAdd,
         PtrIndex => Class::PtrIndex,
         AddW8 => Bin(Alu::Add, W::B), AddW16 => Bin(Alu::Add, W::W), AddW32 => Bin(Alu::Add, W::D), AddW64 => Bin(Alu::Add, W::Q),
@@ -201,6 +208,22 @@ pub(super) fn sequence<T>(op: Opcode, ops: &[Opnd<T>]) -> Option<(Vec<Item>, Opt
             }
         }
         Class::Addr => v.extend([Item::LeaM { dst: R, m: slot(1) }, st(W::Q, slot(0))]),
+        Class::AddrConst => {
+            let to = match ops[1] {
+                Opnd::Const(k) => Ref::Const(k),
+                Opnd::Data(d) => Ref::Data(d),
+                _ => unreachable!("not a constant address"),
+            };
+            v.extend([Item::Lea(R, to), st(W::Q, slot(0))]);
+        }
+        Class::AddrSym | Class::AddrSymInd => {
+            let Opnd::Sym(s) = ops[1] else { unreachable!("not a symbol") };
+            v.push(Item::LoadRip(R, Ref::Sym(s)));
+            if c == Class::AddrSymInd {
+                v.push(ld(W::Q, M::rax(0)));
+            }
+            v.push(st(W::Q, slot(0)));
+        }
         Class::PtrAdd => {
             let x = imm(2);
             if !fits(x) {
@@ -405,6 +428,9 @@ fn classify(items: &[Item], br: bool) -> Option<Class> {
             Class::Mov128
         }
         ([LeaM { .. }, St { .. }], _) => Class::Addr,
+        ([Lea(_, Ref::Const(_) | Ref::Data(_)), St { .. }], _) => Class::AddrConst,
+        ([LoadRip(_, Ref::Sym(_)), St { .. }], _) => Class::AddrSym,
+        ([LoadRip(_, Ref::Sym(_)), Ld { .. }, St { .. }], _) => Class::AddrSymInd,
         ([Ld { .. }, LeaM { .. }, St { .. }], _) => Class::PtrAdd,
         ([Ld { .. }, ImulImm { .. }, Alu { .. }, St { .. }], _) => Class::PtrIndex,
         ([Ld { .. }, Ld { .. }, St { w, m, .. }], _) if !frame(m) => Class::Store(*w),
@@ -423,12 +449,17 @@ fn classify(items: &[Item], br: bool) -> Option<Class> {
 /// The instruction an inline sequence encodes: its items, and its final branch (condition and
 /// target) for a branch. The operands come from the sequence's fields: frame displacements in
 /// order (`d`, where there is one, last), the `rax` displacement (a memory operand's offset,
-/// or `ptr.add`'s), and the immediate; the result must re-encode to the same sequence.
+/// or `ptr.add`'s), the immediate, and the rip item's [`Ref`]; the result must re-encode to
+/// the same sequence.
 pub(super) fn decode(items: &[Item], branch: Option<(Cond, u32)>) -> Option<(Opcode, Vec<Opnd>)> {
     let key = classify(items, branch.is_some())?;
     let frame: Vec<i32> = items.iter().filter_map(Item::mem).filter(|m| m.base == Reg::Rbp).map(|m| m.disp).collect();
     let rax = items.iter().filter_map(Item::mem).find(|m| m.base == Reg::Rax).map(|m| m.disp);
     let imm = items.iter().find_map(Item::imm).or(rax.map(|k| k as i64 as u64)).unwrap_or(0);
+    let rip = items.iter().find_map(|it| match *it {
+        Item::Lea(_, to) | Item::LoadRip(_, to) => Some(to),
+        _ => None,
+    });
     for &op in ALL_OPCODES {
         if class(op).map(Class::key) != Some(key) {
             continue;
@@ -449,6 +480,15 @@ pub(super) fn decode(items: &[Item], branch: Option<(Cond, u32)>) -> Option<(Opc
                 OperandKind::U64 | OperandKind::I64 => Opnd::Imm(imm),
                 OperandKind::Neg => Opnd::Neg(false),
                 OperandKind::Target => Opnd::Target(branch?.1),
+                OperandKind::Abs => match rip? {
+                    Ref::Const(k) => Opnd::Const(k),
+                    Ref::Data(d) => Opnd::Data(d),
+                    _ => return None,
+                },
+                OperandKind::Sym => match rip? {
+                    Ref::Sym(s) => Opnd::Sym(s),
+                    _ => return None,
+                },
                 _ => unreachable!("not an inline operand"),
             });
         }
@@ -690,7 +730,7 @@ impl Cache {
             Item::Alu { op, w, reg, .. } if op != Alu::Cmp => (reg, None, wide(w)),
             Item::AluImm { op, w, rm: Rm::Reg(reg), .. } if op != Alu::Cmp => (reg, None, wide(w)),
             Item::Imul { w, reg, .. } | Item::ImulImm { w, reg, .. } | Item::Shift { w, reg, .. } => (reg, None, wide(w)),
-            Item::LeaM { dst, .. } | Item::SetReg(dst, _) => (dst, None, Some(W::Q)),
+            Item::LeaM { dst, .. } | Item::SetReg(dst, _) | Item::Lea(dst, _) | Item::LoadRip(dst, _) => (dst, None, Some(W::Q)),
             Item::MulQ(_) => {
                 self.regs[pool(Reg::Rdx).unwrap()] = Entry { used: self.regs[pool(Reg::Rdx).unwrap()].used, ..Entry::default() };
                 (Reg::Rax, None, Some(W::Q))

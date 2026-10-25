@@ -118,12 +118,74 @@ fn flag_apart(op: Opcode, vals: &mut [u128], rng: &mut Rng) {
     }
 }
 
+/// What `addr.sym` reads through its slot, and what `addr.sym.ind`'s import slot points to.
+static REF_VAL: u64 = 0x1122_3344_5566_7788;
+struct SyncPtr(#[allow(dead_code)] *const ());
+unsafe impl Sync for SyncPtr {}
+/// Plays an `__imp_` import slot.
+static REF_IMP: SyncPtr = SyncPtr((&raw const REF_VAL).cast());
+
+/// The operands of `addr.const`, `addr.sym` and `addr.sym.ind`: a constant, a data area
+/// allocation, a symbol and an indirect one.
+struct Refs {
+    k: Const,
+    d: Data,
+    s: Sym,
+    si: Sym,
+}
+
+impl Refs {
+    fn new(w: &mut ImageWriter) -> Refs {
+        Refs {
+            k: w.add_const(&0x0102_0304_0506_0708u64.to_le_bytes(), 8, &[]),
+            d: w.add_data(&[0x5a; 16], 8, &[], &[]),
+            s: w.symbol("inline_ref_val", 0),
+            si: w.symbol("inline_ref_imp", SYM_INDIRECT),
+        }
+    }
+
+    /// The symbols to link the image with.
+    fn syms() -> [(&'static str, usize); 2] {
+        [("inline_ref_val", addr(&raw const REF_VAL)), ("inline_ref_imp", addr(&raw const REF_IMP))]
+    }
+
+    /// A random operand of kind `k` (`Abs` or `Sym`) of `op`.
+    fn val(&self, op: Opcode, k: OperandKind, rng: &mut Rng) -> u128 {
+        match k {
+            OperandKind::Abs if rng.below(2) == 0 => self.k.0 as u128,
+            OperandKind::Abs => (self.d.0 | ABS_DATA) as u128,
+            OperandKind::Sym if op == Opcode::AddrSymInd => self.si.0 as u128,
+            OperandKind::Sym => self.s.0 as u128,
+            k => panic!("{}: operand {k:?}", op.mnemonic()),
+        }
+    }
+}
+
+/// `vals` of `op` as its handler takes them: `Abs` and `Sym` operands as the addresses of
+/// the allocation and the slot in `img`.
+fn resolve(op: Opcode, vals: &[u128], img: &Linked) -> Vec<u128> {
+    let im = unsafe { Image::from_header(img.header) }.unwrap();
+    op.info()
+        .operands
+        .iter()
+        .zip(vals)
+        .map(|(o, &v)| match o.kind {
+            OperandKind::Abs => match Abs::from_word(v as u32) {
+                Abs::Const(k) => im.consts().as_ptr() as u128 + k.0 as u128,
+                Abs::Data(d) => im.fixup_area() as u128 + d.0 as u128,
+            },
+            OperandKind::Sym => (unsafe { im.symbols_ptr().add(v as usize) }) as u128,
+            _ => v,
+        })
+        .collect()
+}
+
 /// The sret pointer's slot.
 const SRET: i32 = -48;
 
 /// An instruction of `op` on random operands, followed by `ret` (branches: setting the
 /// result to 1 or 2, by the path taken), and the operand values.
-fn function(op: Opcode, rng: &mut Rng, args: &[u64; 8]) -> (Vec<u32>, Vec<u128>) {
+fn function(op: Opcode, rng: &mut Rng, args: &[u64; 8], refs: &Refs) -> (Vec<u32>, Vec<u128>) {
     let mut a = Asm::new();
     a.sret(Slot(SRET));
     a.i(Insn::Zero { d: Slot(RES), len: 32 });
@@ -155,7 +217,7 @@ fn function(op: Opcode, rng: &mut Rng, args: &[u64; 8]) -> (Vec<u32>, Vec<u128>)
             }
             OperandKind::Neg => rng.below(2) as u128,
             OperandKind::Target => 0,
-            k => panic!("{}: operand {k:?}", op.mnemonic()),
+            k => refs.val(op, k, rng),
         });
     }
     let at = a.raw(op, &vals);
@@ -183,19 +245,20 @@ fn inline_matches_handlers() {
         let mut code = Vec::new();
         let mut operands = Vec::new();
         let mut inputs = Vec::new();
+        let mut w = ImageWriter::new(unique_scid());
+        let refs = Refs::new(&mut w);
         for _ in 0..32 {
             let mut args: [u64; 8] = std::array::from_fn(|_| rng.value());
             if rng.below(3) == 0 {
                 args[1] = args[0];
             }
-            let (c, vals) = function(op, &mut rng, &args);
+            let (c, vals) = function(op, &mut rng, &args, &refs);
             code.push(c);
             operands.push(vals);
             inputs.push(args);
         }
-        let mut w = ImageWriter::new(unique_scid());
         let fs: Vec<Func> = code.iter().map(|c| w.add_function(func(c.clone(), 48, 64, 32))).collect();
-        let img = link(w.finish(ENC).expect("image"), &[]);
+        let img = link(w.finish(ENC).expect("image"), &Refs::syms());
         register(&[&img]);
         for (i, args) in inputs.iter().enumerate() {
             for (j, a) in fresh.iter_mut().enumerate() {
@@ -207,7 +270,7 @@ fn inline_matches_handlers() {
             let r_on: [u8; 32] = ok(img.id(fs[i]), args);
             let m_on = unsafe { buf.read() };
             unsafe { buf.write(fresh) };
-            let r_off = by_handler(op, &operands[i], &args);
+            let r_off = by_handler(op, &resolve(op, &operands[i], &img), &args);
             let m_off = unsafe { buf.read() };
             let what = || format!("{}\n{}", op.mnemonic(), Disasm(&code[i]));
             assert_eq!(r_on, r_off, "result: {}\nargs {args:x?}", what());
@@ -228,6 +291,7 @@ fn inline_runs_match_handlers() {
         ALL_OPCODES.iter().copied().filter(|&op| has_inline(op) && op != Opcode::Addr && op.info().operand_index("t").is_none()).collect();
     let mut runs = Vec::new();
     let mut w = ImageWriter::new(unique_scid());
+    let refs = Refs::new(&mut w);
     let mut fs = Vec::new();
     for _ in 0..20000 {
         let mut a = Asm::new();
@@ -274,7 +338,7 @@ fn inline_runs_match_handlers() {
                         0 => rng.below(16) as u128,
                         _ => rng.value() as u128,
                     },
-                    k => panic!("{}: operand {k:?}", op.mnemonic()),
+                    k => refs.val(op, k, &mut rng),
                 });
             }
             for (o, v) in op.info().operands.iter().zip(&mut vals) {
@@ -291,7 +355,7 @@ fn inline_runs_match_handlers() {
         fs.push(w.add_function(func(code.clone(), 48, 64, 32)));
         runs.push((code, run));
     }
-    let img = link(w.finish(ENC).expect("image"), &[]);
+    let img = link(w.finish(ENC).expect("image"), &Refs::syms());
     register(&[&img]);
     for (i, (code, run)) in runs.iter().enumerate() {
         let mut args: [u64; 8] = std::array::from_fn(|_| rng.value());
@@ -301,7 +365,8 @@ fn inline_runs_match_handlers() {
         let r_vm: [u8; 32] = ok(img.id(fs[i]), args);
         let m_vm = unsafe { buf.read() };
         unsafe { buf.write(fresh) };
-        let (r_h, m_h) = by_handlers(run, &args, buf);
+        let run: Vec<(Opcode, Vec<u128>)> = run.iter().map(|(op, v)| (*op, resolve(*op, v, &img))).collect();
+        let (r_h, m_h) = by_handlers(&run, &args, buf);
         let what = || Disasm(code).to_string();
         assert_eq!(r_vm, r_h, "result:\n{}\nargs {args:x?}", what());
         assert_eq!(m_vm, m_h, "memory:\n{}", what());
@@ -372,6 +437,7 @@ fn dead_stores_match_handlers() {
     let ops: Vec<Opcode> =
         ALL_OPCODES.iter().copied().filter(|&op| has_inline(op) && op != Opcode::Addr && op.info().operand_index("t").is_none()).collect();
     let mut w = ImageWriter::new(unique_scid());
+    let refs = Refs::new(&mut w);
     w.prepare(ENC);
     let (mut runs, mut encoded, mut fs) = (Vec::new(), Vec::new(), Vec::new());
     let mut dropped = 0;
@@ -394,7 +460,7 @@ fn dead_stores_match_handlers() {
                     OperandKind::U8 => rng.below(8) as u128,
                     OperandKind::U16 | OperandKind::U32 => rng.below(16) as u128,
                     OperandKind::U64 | OperandKind::I64 => rng.value() as u128,
-                    k => panic!("{}: operand {k:?}", op.mnemonic()),
+                    k => refs.val(op, k, &mut rng),
                 });
             }
             flag_apart(op, &mut vals, &mut rng);
@@ -457,7 +523,7 @@ fn dead_stores_match_handlers() {
         runs.push(run);
     }
     assert!(dropped > 1000, "{dropped} stores dropped");
-    let img = link(w.finish_encoded(encoded).expect("image"), &[]);
+    let img = link(w.finish_encoded(encoded).expect("image"), &Refs::syms());
     register(&[&img]);
     for (i, run) in runs.iter().enumerate() {
         let mut args: [u64; 8] = std::array::from_fn(|_| rng.value());
@@ -467,7 +533,8 @@ fn dead_stores_match_handlers() {
         let r_vm: [u8; 32] = ok(img.id(fs[i]), args);
         let m_vm = unsafe { buf.read() };
         unsafe { buf.write(fresh) };
-        let (r_h, m_h) = by_handlers(run, &args, buf);
+        let run: Vec<(Opcode, Vec<u128>)> = run.iter().map(|(op, v)| (*op, resolve(*op, v, &img))).collect();
+        let (r_h, m_h) = by_handlers(&run, &args, buf);
         let what = || run.iter().map(|(op, v)| format!("{} {v:x?}", op.mnemonic())).collect::<Vec<_>>().join("\n");
         assert_eq!(r_vm, r_h, "result:\n{}\nargs {args:x?}", what());
         assert_eq!(m_vm, m_h, "memory:\n{}", what());

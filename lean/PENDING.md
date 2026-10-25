@@ -32,3 +32,11 @@ remove it once a Lean session has handled it.
   `loadRip dst to` in the x86 vectors; `call.sym.ind` still loads `rax`. `Lea` and `LoadRip`
   count as inline items (`Item.isInline`), not ending a sequence. Commit: "Let LoadRip load
   any register and count rip items as inline".
+
+- `addr.const`, `addr.sym` and `addr.sym.ind` are inline (`has_inline`, so the reduced set
+  gains them): `lea r, [rip + k]` (`Const`/`Data`), `mov r, [rip + slot]` (`Sym`) with an
+  extra `mov r, [r]` for `.ind`, then `mov [fp + d], r`. The Lean `Asm` model needs the three
+  classes in `classify`/`sequence`/`decodeInline` (the `Abs`/`Sym` operand from the rip
+  item's ref), and the cache `update` rule that `lea`/`loadRip` write the full register (no
+  slot, zero-extended from 64 bits). Sem is unchanged. Tables and vectors regenerated.
+  Commit: "Inline addr.const, addr.sym and addr.sym.ind".

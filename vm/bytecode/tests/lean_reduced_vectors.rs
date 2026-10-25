@@ -618,6 +618,8 @@ fn dead_stores(rng: &mut Rng, out: &mut Out) {
                     }
                     OperandKind::Neg => words.push(rng.below(2) as u32),
                     OperandKind::Target => words.push(0),
+                    OperandKind::Sym => words.push(rng.below(1 << 20) as u32),
+                    OperandKind::Abs => words.push(rng.below(1 << 20) as u32 | if rng.below(2) == 0 { ABS_DATA } else { 0 }),
                     k => panic!("{}: {k:?}", op.mnemonic()),
                 }
             }
@@ -723,6 +725,8 @@ fn inline_forms(rng: &mut Rng, out: &mut Out) {
                         f.targets.push((1, w.len(), [0, 1, 2, 3][rng.below(4) as usize]));
                         w.push(0);
                     }
+                    OperandKind::Sym => w.push(rng.below(1 << 20) as u32),
+                    OperandKind::Abs => w.push(rng.below(1 << 20) as u32 | if rng.below(2) == 0 { ABS_DATA } else { 0 }),
                     k => panic!("{}: operand kind {k:?}", op.mnemonic()),
                 }
             }
