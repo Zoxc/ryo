@@ -44,6 +44,7 @@ mod encode;
 pub mod frame;
 #[cfg(feature = "alloc")]
 mod inline;
+pub mod list;
 #[cfg(feature = "alloc")]
 pub mod lsda;
 #[cfg(feature = "alloc")]
@@ -54,7 +55,7 @@ mod reduced;
 pub(crate) mod x86;
 
 #[cfg(feature = "alloc")]
-pub use decode::{AsmError, Decoded, Resolver, decode, decode_linked, decode_reduced};
+pub use decode::{AsmError, Decoded, Resolver, decode, decode_linked, decode_reduced, decode_reduced_indexed};
 #[cfg(feature = "alloc")]
 pub use encode::{
     Asm, CallSite, DroppedStore, EncodeError, Encoded, InsnId, Label, Opnd, PROBE_FROM, Ref, Reloc, Scope, ScopeKind, Unwind, encode, operands,
@@ -62,6 +63,9 @@ pub use encode::{
 };
 #[cfg(feature = "alloc")]
 pub use inline::has_inline;
+pub use list::Hint;
+#[cfg(feature = "alloc")]
+pub use list::InsnList;
 #[cfg(feature = "alloc")]
 pub use reduced::{encode_reduced, encode_reduced_at, is_native, reduce};
 

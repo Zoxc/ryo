@@ -284,13 +284,20 @@ and handlers, calls, unwinding and the decoder's view of the frame don't change.
   Pointer registers address without a displacement when it is 0.
 - **Decoding**: the decoder runs the same cache. Dropped stores aren't in the code, so
   `Encoded::dropped` lists them (the item and where it would have been; images store them
-  too), and the decoder
-  reads each where it would have been; it doesn't check that the store was dead. Branch targets are only known once a
-  function is read, so it reads it twice: first only delimiting the inline sequences, to
-  find the targets, then decoding them with the cache cleared at the targets. It tries each
-  sequence on `rax`, the register renamed back, with register operands that may have been
-  frame operands and the dropped reload put back, and keeps the one the cache emits as the
-  code is.
+  in the [instruction list](#instruction-list)), and the decoder
+  reads each where it would have been; it doesn't check that the store was dead. The cache
+  is cleared at branch targets. With the instruction list (`decode_reduced_indexed`,
+  `decode_linked`), the targets are known up front and the function is read once, the
+  targets checked against the branches afterwards; without (`decode`, `decode_reduced`), they
+  are only known once a function is read, so it reads it twice: first only delimiting the
+  inline sequences, to find the targets, then decoding them with the cache cleared at the
+  targets. A sequence the cache emitted non-plainly has an instruction list entry, its opcode
+  and the cache's selector (`Cache::emit_sel`: the register computed in, whether the reload
+  was dropped, which register operands were frame operands), which `Cache::invert` turns
+  back into the one sequence on `rax`, checked by emitting it again. Without an entry, it
+  tries each sequence on `rax`, the register renamed back, with register operands that may
+  have been frame operands and the dropped reload put back, and keeps the one the cache
+  emits as the code is.
 - **Testing**: `vm/bytecode/tests/asm.rs` round-trips random runs of inline instructions on
   a few overlapping slots, with branches into them, and `vm/rt/tests/inline.rs` runs such
   runs against their handlers, also with dead-slot hints from a liveness pass, built with
@@ -361,9 +368,10 @@ has its own `Opcode`, `Insn`, decoder, encoder and disassembly, in the same word
   or jump table, and any other target is classified by an `asm::Resolver` (a handler, a
   function of the image, a symbol slot, …), which also gives the code constants' bytes. The
   decoder shares everything else with `decode_reduced`. `image::ImageResolver` classifies by
-  the image header's ranges, given the handlers' addresses, and takes the scopes, call sites
-  and dropped stores from the image's tables (dropped stores aren't recoverable from the
-  code: a `mov` whose reload hit the cache and whose store was dropped leaves no code).
+  the image header's ranges, given the handlers' addresses, and takes the call sites from the
+  image's table and the scopes, dropped stores and branch targets from the function's
+  instruction list (dropped stores aren't recoverable from the code: a `mov` whose reload
+  hit the cache and whose store was dropped leaves no code).
 - **Encoding**: `asm::encode_reduced` is `decode_reduced`'s exact inverse: from the reduced
   words, frame size, cleanup entries, scopes and dropped stores, and the code constants the
   `handler` arguments address, it gives the machine code, relocations, code constants, call
@@ -663,8 +671,8 @@ header          magic, crate hash, StableCrateId, pointers to the writable
                 the JIT records' offset and count
 functions       per function, sorted by code offset: code offset and length (bytes in the
                 text section), argument block size, return value size, return kind, and
-                its runs of the scope, call-site and dropped-store tables (first index,
-                count)
+                its instruction list (byte offset and length) and its run of the
+                call-site table (first index, count)
 code constants  what the machine code refers to: island operand arrays (a count, then the
                 words), sparse switch values
 fixups          PE only: (writable offset, symbol index, addend)
@@ -675,14 +683,30 @@ symbol flags    one byte per symbol (bit 0: indirect, load through the slot; PE 
 symbols         pointer-sized slots, one per referenced native symbol (functions, statics,
                 islands, `rust_eh_personality` on ELF), filled in by the linker
 constants       constant pool: allocations, aligned
-scopes          per function, sorted by position: where a frame object escapes, its
-                storage ends or an island takes it as an operand (`asm::Scope`: code
-                offset, frame offset, size, alignment, 0 for an end or `SCOPE_LEND`)
 call sites      per function, sorted by position: code offset and length, landing pad
                 offset (with the catch bit) or none (`asm::CallSite`)
-dropped stores  per function, sorted by position: the stores of inline sequences dropped as
-                dead (`asm::DroppedStore`: code offset, frame offset, size, register)
+insn lists      bytes, per function: its instruction list
 ```
+
+#### Instruction list
+
+A function's instruction list (`asm::list`, `asm::InsnList`) is one sparse stream of entries
+at byte positions in its code, only where they tell the decoder what the code doesn't show
+or would take a search to find. Each entry starts with a LEB128 `v`: the position advances
+by `v >> 1` from the previous entry's, and `v & 1` says what follows:
+
+- `0`, an instruction: the opcode and the register cache selector of an inline sequence the
+  cache emitted non-plainly ([Register cache](#register-cache)).
+- `1`, a modifier: its kind, then its fields: a branch target (`0`, where the cache is
+  cleared), a dropped store (`1`: frame offset, then `log2(size) << 4 | register`), an
+  escape, a storage end or an island operand (`2`, `3`, `4`, `asm::Scope`: frame offset,
+  size, and an escape's alignment). Frame offsets are zigzag-encoded.
+
+At one position, entries come in the order target, scopes, dropped store, instruction. The
+list is an index the decoder checks, never trusted over the bytes: the targets must be
+exactly where the branches go, an instruction entry must re-emit to the bytes there, and
+anything else fails the decode (the JIT then leaves the function in its AOT code). A
+sequence without an entry is still found by the search.
 
 Scopes, call sites and dropped stores are for decoding a linked function's code at run time
 (`asm::decode_linked`), which the code alone doesn't allow: scopes and dropped stores aren't
@@ -712,7 +736,7 @@ calls it by name, local otherwise (backtraces, profilers) ([backend.md](backend.
 `.gcc_except_table.ryo_image` (ELF), `.pdata` and `.xdata` (PE) ([Unwinding](#unwinding)).
 
 - `ryo_bytecode::image` defines the exact layout (`Header`, `FuncEntry`, `FixupEntry`,
-  `ScopeEntry`, `CallSiteEntry`, `DroppedEntry`).
+  `CallSiteEntry`), `ryo_bytecode::asm::list` the instruction lists'.
   `addr.const` data offsets are offsets from the start of the fixups area.
 - **Relocations** (`RelocKind`):
   - `Abs64` (`R_X86_64_64` / `IMAGE_REL_AMD64_ADDR64`): the header's `data` and `text`

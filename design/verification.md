@@ -104,8 +104,8 @@ compilation, proved sound; "trusted" is assumed and tested.
 | JIT | per-step checker soundness, rewrite rules, the inlining splice lemma, instruction-selection templates, the OSR entry and relocation lemmas | every step from the JIT's log (below) | publication ordering, code memory, `cpuid`, the logging path |
 | Native code | — | — | LLVM's code (native functions, islands, `c_main`), libc, the allocator, the panic runtime, under the calling convention |
 
-Not trusted: the Rust lowering, encoder and decoders, the certificates, the scope, call-site
-and dropped-store tables, the constant pool, the function table, the relocations, the FDEs
+Not trusted: the Rust lowering, encoder and decoders, the certificates, the instruction lists
+(scopes, dropped stores, branch targets, inline sequence entries) and call-site tables, the constant pool, the function table, the relocations, the FDEs
 and LSDAs, the registry object, and the JIT's passes and heuristics.
 
 ## The AOT theorem

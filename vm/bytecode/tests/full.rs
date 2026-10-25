@@ -287,22 +287,12 @@ fn image_layouts_are_pinned() {
             offset_of!(FuncEntry, arg_size),
             offset_of!(FuncEntry, ret_size),
             offset_of!(FuncEntry, ret_kind),
-            offset_of!(FuncEntry, scopes),
+            offset_of!(FuncEntry, list),
             offset_of!(FuncEntry, call_sites),
-            offset_of!(FuncEntry, dropped),
         ),
         (size_of::<CleanupEntry>(), size_of::<FixupEntry>(), size_of::<Span>()),
-        (size_of::<ScopeEntry>(), offset_of!(ScopeEntry, frame_offset), offset_of!(ScopeEntry, size), offset_of!(ScopeEntry, align)),
         (size_of::<CallSiteEntry>(), offset_of!(CallSiteEntry, len), offset_of!(CallSiteEntry, pad)),
-        (offset_of!(Header, scopes), offset_of!(Header, call_sites), offset_of!(Header, mode)),
-        (
-            size_of::<DroppedEntry>(),
-            offset_of!(DroppedEntry, frame_offset),
-            offset_of!(DroppedEntry, size),
-            offset_of!(DroppedEntry, reg),
-            offset_of!(DroppedEntry, reserved),
-            offset_of!(Header, dropped),
-        ),
+        (offset_of!(Header, lists), offset_of!(Header, call_sites), offset_of!(Header, mode)),
         (
             offset_of!(Header, jit_records),
             size_of::<JitRecord>(),
@@ -316,16 +306,7 @@ fn image_layouts_are_pinned() {
     );
     assert_eq!(
         layout,
-        (
-            (144, 24, 48, 40, 124),
-            (44, 4, 8, 12, 16, 20, 28, 36),
-            (8, 16, 8),
-            (16, 4, 8, 12),
-            (12, 4, 8),
-            (96, 104, 128),
-            (12, 4, 8, 9, 10, 112),
-            (132, 64, 8, 16, 24, 32, 36, 40)
-        ),
+        ((136, 24, 48, 40, 116), (36, 4, 8, 12, 16, 20, 28), (8, 16, 8), (12, 4, 8), (96, 104, 120), (124, 64, 8, 16, 24, 32, 36, 40)),
         "{layout:?}"
     );
 }

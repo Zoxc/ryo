@@ -441,6 +441,7 @@ fn dead_stores_match_handlers() {
     w.prepare(ENC);
     let (mut runs, mut encoded, mut fs) = (Vec::new(), Vec::new(), Vec::new());
     let mut dropped = 0;
+    let mut hints = 0;
     for _ in 0..5000 {
         let mut run: Vec<(Opcode, Vec<u128>)> = Vec::new();
         let mut recent: Vec<i32> = Vec::new();
@@ -514,15 +515,20 @@ fn dead_stores_match_handlers() {
         a.insn(Opcode::Ret, &[sret, rasm::Opnd::Imm(8)]);
         let enc = a.finish(80, |s| s);
         dropped += enc.dropped.len();
+        hints += enc.hints.len();
         // Read back to the reduced set, it re-encodes exactly, dropped stores included.
         let d = rasm::decode_reduced(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, ENC).expect("decodes");
         let re = rasm::encode_reduced(&d.words, d.frame_size, &d.cleanup, &d.scopes, &d.dropped, &enc.rodata, ENC).expect("re-encodes");
         assert_eq!(re, enc);
+        // The same in one pass, with the instruction list.
+        let l = rasm::decode_reduced_indexed(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.list(), ENC).expect("decodes indexed");
+        assert_eq!(l, d);
         encoded.push(enc);
         fs.push(w.add_function(func(Vec::new(), 80, 64, 32)));
         runs.push(run);
     }
     assert!(dropped > 1000, "{dropped} stores dropped");
+    assert!(hints > 1000, "{hints} instruction entries");
     let img = link(w.finish_encoded(encoded).expect("image"), &Refs::syms());
     register(&[&img]);
     for (i, run) in runs.iter().enumerate() {

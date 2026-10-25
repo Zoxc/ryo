@@ -265,19 +265,14 @@ fn check(f: &Fn, frame_size: u32, mode: Mode, what: &str) -> asm::Encoded {
     if red != want {
         panic!("{what} {mode:?} (reduced):\n{}\n---\n{}", reduced::Disasm(&want.words), reduced::Disasm(&red.words));
     }
+    // The same in one pass, with the instruction list.
+    let ind = asm::decode_reduced_indexed(&enc.code, &enc.relocs, &enc.rodata, &sites, &enc.list(), mode)
+        .unwrap_or_else(|e| panic!("{what} {mode:?} (indexed): {e:?}\n{}", Disasm(&code)));
+    assert_eq!(ind, red, "{what} {mode:?} (indexed)");
     // The same from the linked code, its references recovered from the resolved fields.
     let linked = Fake::link(&enc);
-    let lin = asm::decode_linked(
-        &linked,
-        Fake::CODE,
-        mode.counters.then_some(Fake::RECORD),
-        &Fake { ro: &enc.rodata },
-        &sites,
-        &enc.dropped,
-        &enc.scopes,
-        mode,
-    )
-    .unwrap_or_else(|e| panic!("{what} {mode:?} (linked): {e:?}\n{}", Disasm(&code)));
+    let lin = asm::decode_linked(&linked, Fake::CODE, mode.counters.then_some(Fake::RECORD), &Fake { ro: &enc.rodata }, &sites, &enc.list(), mode)
+        .unwrap_or_else(|e| panic!("{what} {mode:?} (linked): {e:?}\n{}", Disasm(&code)));
     if lin != red {
         panic!("{what} {mode:?} (linked):\n{}\n---\n{}", reduced::Disasm(&red.words), reduced::Disasm(&lin.words));
     }
@@ -307,17 +302,9 @@ fn reencodes(enc: &asm::Encoded, mode: Mode, what: &str) {
     let red = asm::decode_reduced(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, mode)
         .unwrap_or_else(|e| panic!("{what} {mode:?} (reduced): {e:?}"));
     let linked = Fake::link(enc);
-    let lin = asm::decode_linked(
-        &linked,
-        Fake::CODE,
-        mode.counters.then_some(Fake::RECORD),
-        &Fake { ro: &enc.rodata },
-        &enc.call_sites,
-        &enc.dropped,
-        &enc.scopes,
-        mode,
-    )
-    .unwrap_or_else(|e| panic!("{what} {mode:?} (linked): {e:?}"));
+    let lin =
+        asm::decode_linked(&linked, Fake::CODE, mode.counters.then_some(Fake::RECORD), &Fake { ro: &enc.rodata }, &enc.call_sites, &enc.list(), mode)
+            .unwrap_or_else(|e| panic!("{what} {mode:?} (linked): {e:?}"));
     shuffles(&red, &enc.rodata, mode, what);
     for (d, how) in [(&red, "reduced"), (&lin, "linked")] {
         let re = asm::encode_reduced(&d.words, d.frame_size, &d.cleanup, &d.scopes, &d.dropped, &enc.rodata, mode)
@@ -709,16 +696,7 @@ fn linked_fields_must_resolve() {
     };
     let enc = check(&f, 16, m, "div; jmp");
     let decode = |code: &[u8]| {
-        asm::decode_linked(
-            code,
-            Fake::CODE,
-            m.counters.then_some(Fake::RECORD),
-            &Fake { ro: &enc.rodata },
-            &enc.call_sites,
-            &enc.dropped,
-            &enc.scopes,
-            m,
-        )
+        asm::decode_linked(code, Fake::CODE, m.counters.then_some(Fake::RECORD), &Fake { ro: &enc.rodata }, &enc.call_sites, &enc.list(), m)
     };
     let linked = Fake::link(&enc);
     assert!(decode(&linked).is_ok());
@@ -888,7 +866,7 @@ fn rejects_overflowing_fields() {
         assert!(asm::decode(&code, &enc.relocs, &enc.rodata, sites, d, sc, mode).is_err(), "{what}");
         assert!(asm::decode_reduced(&code, &enc.relocs, &enc.rodata, sites, d, sc, mode).is_err(), "{what} (reduced)");
         let rec = mode.counters.then_some(Fake::RECORD);
-        assert!(asm::decode_linked(&linked, Fake::CODE, rec, &Fake { ro: &enc.rodata }, sites, d, sc, mode).is_err(), "{what} (linked)");
+        assert!(asm::decode_linked(&linked, Fake::CODE, rec, &Fake { ro: &enc.rodata }, sites, &enc.list(), mode).is_err(), "{what} (linked)");
     };
     // PE: `sub rsp, 0xfffffff0`, whose frame size `alloc + 16` doesn't fit in 32 bits.
     let mode = MODES[4];
@@ -964,7 +942,7 @@ fn decoders_survive_mutations() {
             let (sites, d, sc) = (&enc.call_sites, &enc.dropped, &enc.scopes);
             let _ = asm::decode(&code, &enc.relocs, &ro, sites, d, sc, mode);
             let _ = asm::decode_reduced(&code, &enc.relocs, &ro, sites, d, sc, mode);
-            let _ = asm::decode_linked(&lcode, Fake::CODE, mode.counters.then_some(Fake::RECORD), &Fake { ro: &ro }, sites, d, sc, mode);
+            let _ = asm::decode_linked(&lcode, Fake::CODE, mode.counters.then_some(Fake::RECORD), &Fake { ro: &ro }, sites, &enc.list(), mode);
         }
     }
 }

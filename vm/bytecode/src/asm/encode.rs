@@ -11,6 +11,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use super::list::Hint;
 use super::reduced::Then;
 use super::x86::{ARGS, Cond, Item, M, Reg, Sh, W, island_args, padding};
 use super::{ArgReg, Layout, Loc, Mode, RetPart, layout, ret_parts};
@@ -86,6 +87,12 @@ pub struct Encoded {
     /// [`Asm::storage_end`]), sorted by position. Like `dropped`, side data for the decoder:
     /// the machine code doesn't show them.
     pub scopes: Vec<Scope>,
+    /// The branch targets, sorted: where the register cache is cleared. Side data for the
+    /// decoder like `dropped` ([`super::InsnList`]).
+    pub targets: Vec<u32>,
+    /// The inline sequences the register cache emitted non-plainly, sorted by position
+    /// ([`super::InsnList`]).
+    pub hints: Vec<Hint>,
     /// Where the prologue starts: after the entry's counter check with
     /// [`Mode::counters`], else 0.
     pub prologue: u32,
@@ -138,6 +145,13 @@ pub enum ScopeKind {
 pub struct DroppedStore {
     pub at: u32,
     pub(super) item: Item,
+}
+
+impl Encoded {
+    /// The side data for the decoder, as the function's instruction list.
+    pub fn list(&self) -> super::InsnList {
+        super::InsnList { targets: self.targets.clone(), hints: self.hints.clone(), dropped: self.dropped.clone(), scopes: self.scopes.clone() }
+    }
 }
 
 impl DroppedStore {
@@ -627,7 +641,9 @@ fn drop_dead_stores(pieces: &mut [Piece], target: &[bool]) {
 
 /// Runs the register cache ([`super::inline::Cache`]) over the inline sequences: from the
 /// start of the code, and cleared at every branch target and by every other instruction.
-fn cache(pieces: &mut [Piece], target: &[bool]) {
+/// Returns the first piece and the selector of each sequence it emitted non-plainly.
+fn cache(pieces: &mut [Piece], target: &[bool]) -> Vec<(usize, u32)> {
+    let mut sels = Vec::new();
     let mut c = super::inline::Cache::default();
     let mut items = Vec::new();
     let mut k = 0;
@@ -652,7 +668,10 @@ fn cache(pieces: &mut [Piece], target: &[bool]) {
                 break;
             }
         }
-        let out = c.emit(&items);
+        let (out, sel) = c.emit_sel(&items);
+        if let Some(sel) = sel {
+            sels.push((start, sel));
+        }
         let dropped = items.len() - out.len();
         for (j, p) in pieces[start..k].iter_mut().enumerate() {
             *p = if j < dropped { Piece::Gone } else { Piece::Native(out[j - dropped]) };
@@ -662,6 +681,7 @@ fn cache(pieces: &mut [Piece], target: &[bool]) {
             k += 1;
         }
     }
+    sels
 }
 
 /// An element of a function's code at layout: targets are element indices.
@@ -825,6 +845,8 @@ pub struct Asm {
     /// With [`Asm::drop_exactly`], the pieces of the stores to drop, instead of the ones
     /// dead-store dropping finds.
     drops: Option<Vec<usize>>,
+    /// The inline sequences: their first piece and opcode.
+    seqs: Vec<(usize, Opcode)>,
 }
 
 /// The register an operand register value goes in: a constant, or the address of a [`Ref`].
@@ -847,7 +869,7 @@ pub(super) enum ArgVal {
 
 impl Asm {
     pub fn new(mode: Mode) -> Asm {
-        Asm { mode, pieces: Vec::new(), labels: Vec::new(), ro: Vec::new(), unwind: Vec::new(), targets: Vec::new(), drops: None }
+        Asm { mode, pieces: Vec::new(), labels: Vec::new(), ro: Vec::new(), unwind: Vec::new(), targets: Vec::new(), drops: None, seqs: Vec::new() }
     }
 
     /// A new, unbound label.
@@ -1057,6 +1079,7 @@ impl Asm {
             }
         }
         if let Some((items, br)) = super::inline::sequence(op, ops) {
+            self.seqs.push((self.pieces.len(), op));
             self.pieces.extend(items.into_iter().map(Piece::Native));
             if let Some(cond) = br {
                 let Some(Opnd::Target(t)) = ops.last() else { unreachable!("a branch's target is last") };
@@ -1167,10 +1190,10 @@ impl Asm {
     /// unbound ones): where the instruction after it starts, after a loop head's padding (the
     /// JIT's OSR entries land there).
     pub fn finish_labels(self, frame_size: u32, fix: impl Fn(u32) -> u32) -> (Encoded, Vec<u32>) {
-        let Asm { mode, mut pieces, labels, ro, unwind, targets, drops } = self;
+        let Asm { mode, mut pieces, labels, ro, unwind, targets, drops, seqs } = self;
         debug_assert!(mode.valid(), "{mode:?}");
         let target = branch_targets(&pieces, &labels);
-        cache(&mut pieces, &target);
+        let sels = cache(&mut pieces, &target);
         match drops {
             // The cache drops at most a sequence's leading reload, so a store named is still
             // its last piece.
@@ -1267,6 +1290,8 @@ impl Asm {
         // A loop head's counter check comes before the instruction, after its padding and
         // before the scopes there take effect, so every branch to the head passes it.
         let mut head_check = false;
+        // The elements where loop heads' counter checks start.
+        let mut head_checks = Vec::new();
         for (k, p) in pieces.into_iter().enumerate() {
             if head[k] {
                 if mode.align_loops {
@@ -1291,6 +1316,7 @@ impl Asm {
                 remap[e] = out.len();
             }
             if core::mem::take(&mut head_check) {
+                head_checks.push(out.len());
                 check(&mut out, &mut checks, true);
             }
             out.push(match p {
@@ -1383,9 +1409,37 @@ impl Asm {
                 *p = Some(remap[pad]);
             }
         }
-        let marks: Vec<usize> = labels.iter().map(|&at| if at == usize::MAX { usize::MAX } else { remap[at] }).collect();
-        let (mut e, marks) = layout_code(out, [prologue_at, entry_stub], &marks);
+        let mut marks: Vec<usize> = labels.iter().map(|&at| if at == usize::MAX { usize::MAX } else { remap[at] }).collect();
+        // The instruction list's targets and instruction entries, positioned with the labels.
+        let nlabels = marks.len();
+        let mut target_elems: Vec<usize> = Vec::new();
+        for &b in &branches {
+            if let Laid::Branch { to, .. } = out[b] {
+                target_elems.push(to);
+            }
+        }
+        for &t in &tables {
+            if let Laid::Table(ts) = &out[t] {
+                target_elems.extend(ts);
+            }
+        }
+        marks.extend(&target_elems);
+        let hint_ops: Vec<(Opcode, u32)> = sels
+            .iter()
+            .map(|&(k, sel)| {
+                // A sequence at a loop head starts after its counter check.
+                let e = remap[k];
+                marks.push(if head_checks.binary_search(&e).is_ok() { e + 2 } else { e });
+                (seqs[seqs.binary_search_by_key(&k, |s| s.0).expect("a sequence's start")].1, sel)
+            })
+            .collect();
+        let (mut e, mut marks) = layout_code(out, [prologue_at, entry_stub], &marks);
         e.rodata = rodata.bytes;
+        e.hints = marks[nlabels + target_elems.len()..].iter().zip(hint_ops).map(|(&at, (op, sel))| Hint { at, op, sel }).collect();
+        e.targets = marks[nlabels..nlabels + target_elems.len()].to_vec();
+        e.targets.sort_unstable();
+        e.targets.dedup();
+        marks.truncate(nlabels);
         (e, marks)
     }
 }

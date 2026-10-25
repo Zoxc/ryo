@@ -13,6 +13,7 @@ use super::encode::{
     ret_loads, word_len,
 };
 use super::inline::Cache;
+use super::list::{Hint, InsnList};
 use super::reduced::{self, Then, addr_arg};
 use super::x86::{ARGS, BadItem, Cond, Cursor, Fields, Item, M, Reg, island_args};
 use super::{ARG_ADDR, ArgReg, Mode, RetPart, has_handler, layout, ret_kind};
@@ -110,7 +111,8 @@ pub fn decode(
     scopes: &[Scope],
     mode: Mode,
 ) -> Result<Decoded, AsmError> {
-    let Read { protos, frame_size, actions, scopes, heads } = read(code, Fields::Relocs(relocs), rodata, call_sites, dropped, scopes, mode, false)?;
+    let Read { protos, frame_size, actions, scopes, heads } =
+        read(code, Fields::Relocs(relocs), rodata, call_sites, dropped, scopes, None, mode, false)?;
     let err = |at: u32, what: &'static str| AsmError { at, what };
     let ipos: Vec<u32> = protos.iter().map(|p| p.pos).collect();
     let index = |at: u32, b: u32| ipos.binary_search(&b).map_err(|_| err(at, "target isn't an instruction"));
@@ -157,7 +159,22 @@ pub fn decode_reduced(
     scopes: &[Scope],
     mode: Mode,
 ) -> Result<Decoded, AsmError> {
-    reduced_of(read(code, Fields::Relocs(relocs), rodata, call_sites, dropped, scopes, mode, true)?)
+    reduced_of(read(code, Fields::Relocs(relocs), rodata, call_sites, dropped, scopes, None, mode, true)?)
+}
+
+/// [`decode_reduced`] with the side data from the function's instruction list
+/// ([`InsnList`]), which it reads in one pass, using the list's targets and instruction
+/// entries as an index that it checks against the code.
+pub fn decode_reduced_indexed(
+    code: &[u8],
+    relocs: &[Reloc],
+    rodata: &[u8],
+    call_sites: &[CallSite],
+    list: &InsnList,
+    mode: Mode,
+) -> Result<Decoded, AsmError> {
+    let index = Some((&list.targets[..], &list.hints[..]));
+    reduced_of(read(code, Fields::Relocs(relocs), rodata, call_sites, &list.dropped, &list.scopes, index, mode, true)?)
 }
 
 /// What the `rel32` fields of linked code point at, for [`decode_linked`].
@@ -178,21 +195,21 @@ pub trait Resolver {
 /// instead of a relocation list: a field whose target lies inside the function (past its
 /// first byte) is a branch or jump table within it, one to `record` is the function's JIT
 /// record ([`Ref::Rec`]; `None` without [`Mode::counters`]), any other is the reference
-/// `resolver` gives. The dropped stores aren't in the code: they come from the image's table
-/// ([`crate::image::ImageResolver::decode`]) or [`super::Encoded::dropped`].
-#[allow(clippy::too_many_arguments)]
+/// `resolver` gives. The dropped stores, scopes and branch targets aren't in the code: they
+/// come from the function's instruction list ([`InsnList`], in the image), read as
+/// [`decode_reduced_indexed`] does.
 pub fn decode_linked(
     code: &[u8],
     code_addr: u64,
     record: Option<u64>,
     resolver: &dyn Resolver,
     call_sites: &[CallSite],
-    dropped: &[DroppedStore],
-    scopes: &[Scope],
+    list: &InsnList,
     mode: Mode,
 ) -> Result<Decoded, AsmError> {
     let fields = Fields::Linked { addr: code_addr, record, resolver };
-    reduced_of(read(code, fields, resolver.code_consts(), call_sites, dropped, scopes, mode, true)?)
+    let index = Some((&list.targets[..], &list.hints[..]));
+    reduced_of(read(code, fields, resolver.code_consts(), call_sites, &list.dropped, &list.scopes, index, mode, true)?)
 }
 
 /// The reduced instruction words of a function read with handler calls in the reduced form.
@@ -227,7 +244,9 @@ fn reduced_of(r: Read) -> Result<Decoded, AsmError> {
 }
 
 /// Reads one function's machine code ([`decode`]), handler calls in the reduced form with
-/// `reduced`.
+/// `reduced`. With `index`, the instruction list's branch targets (sorted) and instruction
+/// entries, in one pass.
+#[allow(clippy::too_many_arguments)]
 fn read(
     code: &[u8],
     fields: Fields<'_>,
@@ -235,6 +254,7 @@ fn read(
     call_sites: &[CallSite],
     dropped: &[DroppedStore],
     scopes: &[Scope],
+    index: Option<(&[u32], &[Hint])>,
     mode: Mode,
     reduced: bool,
 ) -> Result<Read, AsmError> {
@@ -287,16 +307,33 @@ fn read(
     }
     let fr = Frame { size: frame_size, mode, reduced };
 
-    // Twice: the register cache is cleared at branch targets, which are only known once the
-    // whole function is read. The first pass only finds the instructions and targets; the
-    // second decodes them, with the cache cleared at the targets of the first.
+    // The register cache is cleared at branch targets. With the instruction list, they are
+    // known up front, and checked once the function is read. Without, they are only known
+    // once the whole function is read, so twice: the first pass only finds the instructions
+    // and targets; the second decodes them, with the cache cleared at the targets of the
+    // first.
     let body = c.pos;
     let stubs = entry.map(|e| e.0);
-    let (protos, _) = instructions(&mut c, &fr, rodata, dropped, None, stubs)?;
-    let mut targets: Vec<u32> = protos.iter().flat_map(Proto::targets).collect();
-    targets.sort_unstable();
-    c.pos = body;
-    let (protos, padded) = instructions(&mut c, &fr, rodata, dropped, Some(&targets), stubs)?;
+    let (protos, padded) = match index {
+        Some((targets, hints)) => {
+            let (protos, padded) = instructions(&mut c, &fr, rodata, dropped, Some(targets), hints, stubs)?;
+            let mut actual: Vec<u32> = protos.iter().flat_map(Proto::targets).collect();
+            actual.sort_unstable();
+            actual.dedup();
+            if actual != targets {
+                let at = actual.iter().zip(targets).find(|(a, t)| a != t).map_or(body, |(&a, &t)| a.min(t));
+                return Err(err(at, "branch targets aren't the instruction list's"));
+            }
+            (protos, padded)
+        }
+        None => {
+            let (protos, _) = instructions(&mut c, &fr, rodata, dropped, None, &[], stubs)?;
+            let mut targets: Vec<u32> = protos.iter().flat_map(Proto::targets).collect();
+            targets.sort_unstable();
+            c.pos = body;
+            instructions(&mut c, &fr, rodata, dropped, Some(&targets), &[], stubs)?
+        }
+    };
 
     // Instruction positions → indices.
     let ipos: Vec<u32> = protos.iter().map(|p| p.pos).collect();
@@ -429,13 +466,15 @@ fn op_targets(o: &Opnd) -> Vec<u32> {
 /// (sorted), the register cache is cleared at them and every inline sequence must be exactly
 /// as the cache emits it; without, inline sequences are only delimited ([`inline_insn`]).
 /// With counters, the code ends at the counter stubs: at the first loop head's, or without
-/// loop heads at the entry's, `entry_stub`.
+/// loop heads at the entry's, `entry_stub`. `hints` are the instruction list's instruction
+/// entries, each of which must be taken by an inline sequence.
 fn instructions(
     c: &mut Cursor<'_>,
     fr: &Frame,
     ro: &[u8],
     mut dropped: &[DroppedStore],
     targets: Option<&[u32]>,
+    mut hints: &[Hint],
     entry_stub: Option<u32>,
 ) -> Result<(Vec<Proto>, Vec<bool>), AsmError> {
     let mut protos: Vec<Proto> = Vec::new();
@@ -448,7 +487,7 @@ fn instructions(
         // target, where the cache is empty.
         if dropped.first().is_some_and(|d| d.at == c.pos) {
             let pos = c.pos;
-            if let Some(p) = inline_insn(c, &mut cache, &mut dropped, targets.is_some()) {
+            if let Some(p) = inline_insn(c, &mut cache, &mut dropped, &mut hints, targets.is_some()) {
                 padded.push(false);
                 protos.push(Proto { pos, ..p });
                 continue;
@@ -488,7 +527,7 @@ fn instructions(
                 cache = Cache::default();
                 break 'p p;
             }
-            match inline_insn(c, &mut cache, &mut dropped, targets.is_some()) {
+            match inline_insn(c, &mut cache, &mut dropped, &mut hints, targets.is_some()) {
                 Some(p) => p,
                 None => {
                     cache = Cache::default();
@@ -500,6 +539,9 @@ fn instructions(
     }
     if let Some(d) = dropped.first() {
         return Err(AsmError { at: d.at, what: "dropped store not at the end of a sequence" });
+    }
+    if let Some(h) = hints.first() {
+        return Err(AsmError { at: h.at, what: "instruction list entry not at its inline sequence" });
     }
     Ok((protos, padded))
 }
@@ -852,8 +894,9 @@ fn arg(c: &mut Cursor<'_>, mode: Mode) -> Option<Proto> {
 /// items up to the one that writes the result (or its dropped store, taken from `dropped`),
 /// or up to a conditional branch, which must be the sequence as the register cache `cache`
 /// emits it (updated to after it). Unless `exact`, they are only read for their extent and
-/// branch target, as a `jmp` or an `abort`.
-fn inline_insn(c: &mut Cursor<'_>, cache: &mut Cache, dropped: &mut &[DroppedStore], exact: bool) -> Option<Proto> {
+/// branch target, as a `jmp` or an `abort`. An instruction list entry at the sequence
+/// (the first of `hints`, which it takes) names its instruction and how the cache emitted it.
+fn inline_insn(c: &mut Cursor<'_>, cache: &mut Cache, dropped: &mut &[DroppedStore], hints: &mut &[Hint], exact: bool) -> Option<Proto> {
     let pos = c.pos;
     let left = *dropped;
     let mut items = Vec::new();
@@ -894,6 +937,21 @@ fn inline_insn(c: &mut Cursor<'_>, cache: &mut Cache, dropped: &mut &[DroppedSto
             None => (Opcode::Abort, Vec::new()),
         };
         return Some(Proto::new(op, ops, pos, Vec::new()));
+    }
+    // The sequence the instruction list names, and only it.
+    if let Some(h) = hints.first().filter(|h| h.at == pos) {
+        let cand = cache.invert(&items, h.sel).and_then(|cand| Some((super::inline::decode_op(h.op, &cand, branch)?, cand)));
+        if let Some(((op, ops), cand)) = cand {
+            let mut after = *cache;
+            if after.emit(&cand) == items {
+                *cache = after;
+                *hints = &hints[1..];
+                return Some(Proto { dropped: was_dropped, ..Proto::new(op, ops, pos, Vec::new()) });
+            }
+        }
+        c.pos = pos;
+        *dropped = left;
+        return None;
     }
     // As emitted with an empty cache, the common case, else the sequences the cache may
     // have emitted this from.

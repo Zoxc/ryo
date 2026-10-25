@@ -1,5 +1,5 @@
 use ryo_bytecode::Insn;
-use ryo_bytecode::asm::{self, CallSite, Mode, Scope, ScopeKind};
+use ryo_bytecode::asm::{self, CallSite, InsnList, Mode, Scope, ScopeKind};
 use ryo_bytecode::full::*;
 use ryo_bytecode::image::*;
 
@@ -592,37 +592,24 @@ fn scopes_and_call_sites_round_trip() {
         img.validate().unwrap();
         assert_eq!(img.mode(), mode);
         for (i, e) in enc.iter().enumerate() {
-            let scopes: Vec<Scope> = img.scopes(i as u32).iter().map(Scope::from).collect();
+            let list = InsnList::read(img.list(i as u32), e.code.len() as u32).unwrap();
             let sites: Vec<CallSite> = img.call_sites(i as u32).iter().map(CallSite::from).collect();
-            assert_eq!((scopes, sites), (e.scopes.clone(), e.call_sites.clone()), "{mode:?}");
+            assert_eq!((list, sites), (e.list(), e.call_sites.clone()), "{mode:?}");
         }
-        assert_eq!(img.scopes(0)[0].align, 8);
-        assert_eq!(img.scopes(0)[1].align, 0);
-        assert_eq!(img.scopes(0)[2].align, SCOPE_LEND);
-        assert!(img.scopes(1).is_empty() && img.scopes(2).is_empty());
+        assert!(img.list(1).is_empty() && img.list(2).is_empty());
 
         // `validate` checks the runs and the entries.
         use std::mem::{offset_of, size_of};
         let fe = |h: &Header, i: usize, field: usize| h.functions.off as usize + i * size_of::<FuncEntry>() + field;
-        let sc = |h: &Header, i: usize, field: usize| h.scopes.off as usize + i * size_of::<ScopeEntry>() + field;
         let cs = |h: &Header, i: usize, field: usize| h.call_sites.off as usize + i * size_of::<CallSiteEntry>() + field;
-        assert_eq!(validate_edited(&obj, |r, h| put32(r, fe(h, 1, offset_of!(FuncEntry, scopes)), 4)), Err(ImageError::BadFunction(1)));
+        let n = img.list(0).len() as u32;
+        assert_eq!(validate_edited(&obj, |r, h| put32(r, fe(h, 1, offset_of!(FuncEntry, list)), n + 1)), Err(ImageError::BadFunction(1)));
         assert_eq!(validate_edited(&obj, |r, h| put32(r, fe(h, 0, offset_of!(FuncEntry, call_sites) + 4), 3)), Err(ImageError::BadFunction(0)));
-        assert_eq!(validate_edited(&obj, |r, h| put32(r, sc(h, 1, offset_of!(ScopeEntry, align)), 3)), Err(ImageError::BadScope(1)));
-        assert_eq!(validate_edited(&obj, |r, h| put32(r, sc(h, 0, 0), 10_000)), Err(ImageError::BadScope(0)));
+        // An entry past the code, and one cut short.
+        assert_eq!(validate_edited(&obj, |r, h| r[h.lists.off as usize] = 0xfe), Err(ImageError::BadList(0)));
+        assert_eq!(validate_edited(&obj, |r, h| put32(r, fe(h, 0, offset_of!(FuncEntry, list) + 4), n - 1)), Err(ImageError::BadList(0)));
         assert_eq!(validate_edited(&obj, |r, h| put32(r, cs(h, 1, offset_of!(CallSiteEntry, len)), 10_000)), Err(ImageError::BadCallSite(1)));
         assert_eq!(validate_edited(&obj, |r, h| put32(r, cs(h, 0, offset_of!(CallSiteEntry, pad)), 10_000)), Err(ImageError::BadCallSite(0)));
-        let len0 = |r: &[u8], h: &Header| {
-            let at = fe(h, 0, offset_of!(FuncEntry, code_len));
-            u32::from_le_bytes(r[at..at + 4].try_into().unwrap())
-        };
-        assert_eq!(
-            validate_edited(&obj, |r, h| {
-                let n = len0(r, h);
-                put32(r, sc(h, 0, 0), n)
-            }),
-            Err(ImageError::BadScope(1))
-        );
         assert_eq!(validate_edited(&obj, |r, h| put32(r, cs(h, 1, 0), 0)), Err(ImageError::BadCallSite(1)));
         assert!(matches!(validate_edited(&obj, |r, _| put32(r, offset_of!(Header, mode), MODE_PE)), Err(ImageError::BadMode)));
         assert!(matches!(validate_edited(&obj, |r, _| put32(r, offset_of!(Header, mode), 32)), Err(ImageError::BadMode)));
@@ -693,8 +680,7 @@ fn linked_functions_decode() {
     }
 }
 
-/// The dropped stores of `finish_encoded`'s `Encoded`s are read back unchanged, and
-/// `validate` checks them.
+/// The dropped stores of `finish_encoded`'s `Encoded`s are read back unchanged.
 #[test]
 fn dropped_stores_round_trip() {
     for mode in [ELF, Mode { fp_arg: true, frame_pointer: false, ..ELF }, AOT] {
@@ -708,34 +694,46 @@ fn dropped_stores_round_trip() {
         let img = Image::parse(b.bytes()).unwrap();
         img.validate().unwrap();
         for (i, e) in enc.iter().enumerate() {
-            let read: Vec<asm::DroppedStore> =
-                img.dropped(i as u32).iter().map(|d| asm::DroppedStore::from_parts(d.code_offset, d.frame_offset, d.size, d.reg).unwrap()).collect();
-            assert_eq!(read, e.dropped, "{mode:?}");
+            let read = InsnList::read(img.list(i as u32), e.code.len() as u32).unwrap();
+            assert_eq!(read.dropped, e.dropped, "{mode:?}");
         }
-        assert!(img.dropped(0).is_empty() && img.dropped(2).is_empty());
-        let n = enc[1].dropped.len();
-        assert!(n >= 2);
-        assert_eq!((img.dropped(1)[0].frame_offset, img.dropped(1)[0].size), (-56, 8));
-
-        use std::mem::{offset_of, size_of};
-        let fe = |h: &Header, i: usize, field: usize| h.functions.off as usize + i * size_of::<FuncEntry>() + field;
-        let dr = |h: &Header, i: usize, field: usize| h.dropped.off as usize + i * size_of::<DroppedEntry>() + field;
-        assert_eq!(
-            validate_edited(&obj, |r, h| put32(r, fe(h, 1, offset_of!(FuncEntry, dropped) + 4), n as u32 + 1)),
-            Err(ImageError::BadFunction(1))
-        );
-        assert_eq!(validate_edited(&obj, |r, h| put32(r, dr(h, 0, 0), 10_000)), Err(ImageError::BadDropped(0)));
-        assert_eq!(validate_edited(&obj, |r, h| r[dr(h, 1, offset_of!(DroppedEntry, size))] = 3), Err(ImageError::BadDropped(1)));
-        assert_eq!(validate_edited(&obj, |r, h| r[dr(h, 0, offset_of!(DroppedEntry, reg))] = 1), Err(ImageError::BadDropped(0)));
-        // Out of order: the second before the first.
-        assert_eq!(
-            validate_edited(&obj, |r, h| {
-                let first = u32::from_le_bytes(r[dr(h, 0, 0)..][..4].try_into().unwrap());
-                put32(r, dr(h, 1, 0), first.wrapping_sub(1))
-            }),
-            Err(ImageError::BadDropped(1))
-        );
+        assert!(enc[1].dropped.len() >= 2);
+        assert_eq!(enc[1].dropped[0].parts().0, -56);
     }
+}
+
+/// Instruction lists: written and read back, and malformed ones rejected.
+#[test]
+fn insn_lists() {
+    use asm::{Hint, InsnList};
+    let e = dead_stores(AOT);
+    let l = e.list();
+    assert!(!l.targets.is_empty() || !l.hints.is_empty() || !l.dropped.is_empty());
+    let b = l.write();
+    assert_eq!(InsnList::read(&b, e.code.len() as u32), Some(l.clone()));
+    // Every prefix that cuts an entry short, and every position past the code, fails.
+    for n in 0..b.len() {
+        if let Some(p) = InsnList::read(&b[..n], e.code.len() as u32) {
+            assert!(
+                p.targets.len() + p.hints.len() + p.dropped.len() + p.scopes.len()
+                    < l.targets.len() + l.hints.len() + l.dropped.len() + l.scopes.len()
+            );
+        }
+    }
+    let last = [l.targets.last(), l.dropped.last().map(|d| &d.at), l.hints.last().map(|h| &h.at)].into_iter().flatten().max().copied().unwrap();
+    assert_eq!(InsnList::read(&b, last - 1), None);
+    let one = |x: InsnList| InsnList::read(&x.write(), 100);
+    let s = |kind| Scope { code_offset: 3, frame_offset: -8, size: 8, kind };
+    let sc = InsnList { scopes: vec![s(ScopeKind::Escape { align: 16 }), s(ScopeKind::End), s(ScopeKind::Lend)], ..Default::default() };
+    assert_eq!(one(sc.clone()), Some(sc));
+    let h = InsnList { hints: vec![Hint { at: 7, op: Opcode::AddW64, sel: 0x35 }], targets: vec![0, 7], ..Default::default() };
+    assert_eq!(one(h.clone()), Some(h));
+    // A target twice at one position; entries out of order; a bad alignment; an unknown kind.
+    assert_eq!(InsnList::read(&[1, 0, 1, 0], 10), None);
+    assert_eq!(InsnList::read(&[1, 1, 0, 0x30, 1, 0], 10), None);
+    assert_eq!(InsnList::read(&[1, 2, 0, 8, 3], 10), None);
+    assert_eq!(InsnList::read(&[1, 9], 10), None);
+    assert_eq!(InsnList::read(&[1, 0, 1, 1, 0, 0x30], 10).map(|l| l.dropped.len()), Some(1));
 }
 
 /// With counters, every function has a JIT record in the writable section, initialized and

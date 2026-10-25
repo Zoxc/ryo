@@ -29,8 +29,8 @@
 //!   head <word offset>
 //! ```
 //!
-//! or `  error: <what> at <byte>` when the code isn't canonical, `  error: malformed dropped
-//! store` when the image's dropped-store entry isn't one. A file that isn't an image object
+//! or `  error: <what> at <byte>` when the code isn't canonical, `  error: malformed
+//! instruction list` when the function's instruction list isn't well formed. A file that isn't an image object
 //! prints one `error: ...` line and exits with 1.
 //!
 //! `lsda` prints what `ryo-lean lsda` does (`Ryo.Obj.ImageObject.lsdaLines`), found another
@@ -337,16 +337,15 @@ impl<'d> Linked<'d> {
             span(h.jit_records)
         ));
         out.push(format!(
-            "parts functions {} code_consts {} fixups {} sym_flags {} symbols {} consts {} scopes {} call_sites {} dropped {}",
+            "parts functions {} code_consts {} fixups {} sym_flags {} symbols {} consts {} lists {} call_sites {}",
             span(h.functions),
             span(h.code_consts),
             span(h.fixups),
             span(h.sym_flags),
             span(h.symbols),
             span(h.consts),
-            span(h.scopes),
-            span(h.call_sites),
-            span(h.dropped)
+            span(h.lists),
+            span(h.call_sites)
         ));
         out.push(match img.validate() {
             Ok(()) => "validate ok".into(),
@@ -369,15 +368,14 @@ impl<'d> Linked<'d> {
         for (i, f) in img.functions().iter().enumerate() {
             let rs = self.text_relocs_in(f.code_off, f.code_len);
             out.push(format!(
-                "func {i} off {} len {} arg {} ret {} kind {} scopes {} call_sites {} dropped {} relocs {} {}",
+                "func {i} off {} len {} arg {} ret {} kind {} list {} call_sites {} relocs {} {}",
                 f.code_off,
                 f.code_len,
                 f.arg_size,
                 f.ret_size,
                 f.ret_kind,
-                img.scopes(i as u32).len(),
+                img.list(i as u32).len(),
                 img.call_sites(i as u32).len(),
-                img.dropped(i as u32).len(),
                 rs.len(),
                 self.func_name(f.code_off)
             ));
@@ -405,7 +403,7 @@ impl<'d> Linked<'d> {
         for (i, f) in img.functions().iter().enumerate() {
             out.push(format!("func {i} {}", self.func_name(f.code_off)));
             match res.decode(i as u32, self.text()) {
-                None => out.push("  error: malformed dropped store".into()),
+                None => out.push("  error: malformed instruction list".into()),
                 Some(Err(e)) => out.push(format!("  error: {} at {}", e.what, e.at)),
                 Some(Ok(d)) => {
                     out.push(format!("  frame {}", d.frame_size));

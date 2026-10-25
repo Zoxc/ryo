@@ -453,6 +453,21 @@ fn classify(items: &[Item], br: bool) -> Option<Class> {
 /// the same sequence.
 pub(super) fn decode(items: &[Item], branch: Option<(Cond, u32)>) -> Option<(Opcode, Vec<Opnd>)> {
     let key = classify(items, branch.is_some())?;
+    ALL_OPCODES.iter().filter(|&&op| class(op).map(Class::key) == Some(key)).find_map(|&op| decode_as(op, items, branch))
+}
+
+/// [`decode`] as the instruction `op` only (an instruction list entry names it).
+pub(super) fn decode_op(op: Opcode, items: &[Item], branch: Option<(Cond, u32)>) -> Option<(Opcode, Vec<Opnd>)> {
+    let key = classify(items, branch.is_some())?;
+    if class(op).map(Class::key) != Some(key) {
+        return None;
+    }
+    decode_as(op, items, branch)
+}
+
+/// The operands of `items` (and `branch`) read as `op`, if they re-encode to the same
+/// sequence.
+fn decode_as(op: Opcode, items: &[Item], branch: Option<(Cond, u32)>) -> Option<(Opcode, Vec<Opnd>)> {
     let frame: Vec<i32> = items.iter().filter_map(Item::mem).filter(|m| m.base == Reg::Rbp).map(|m| m.disp).collect();
     let rax = items.iter().filter_map(Item::mem).find(|m| m.base == Reg::Rax).map(|m| m.disp);
     let imm = items.iter().find_map(Item::imm).or(rax.map(|k| k as i64 as u64)).unwrap_or(0);
@@ -460,10 +475,7 @@ pub(super) fn decode(items: &[Item], branch: Option<(Cond, u32)>) -> Option<(Opc
         Item::Lea(_, to) | Item::LoadRip(_, to) => Some(to),
         _ => None,
     });
-    for &op in ALL_OPCODES {
-        if class(op).map(Class::key) != Some(key) {
-            continue;
-        }
+    {
         let info = op.info();
         let mut f = frame.iter().copied();
         let mut ops = Vec::with_capacity(info.operands.len());
@@ -605,6 +617,14 @@ impl Cache {
     /// are read from it. Only the first item can be dropped. A `mul` (`rdx:rax`) computes in
     /// `rax`, dropping the reload only if `rax` holds it.
     pub(super) fn emit(&mut self, items: &[Item]) -> Vec<Item> {
+        self.emit_sel(items).0
+    }
+
+    /// [`Cache::emit`], and the selector by which [`Cache::invert`] recovers `items` from what
+    /// it emitted, or `None` if it emitted `items` unchanged (plainly): the register computed
+    /// in (bits 0-2), whether its reload was dropped (bit 3), and from bit 4 on, by emitted
+    /// item, the ones whose register operand, the computing register, was a frame operand.
+    pub(super) fn emit_sel(&mut self, items: &[Item]) -> (Vec<Item>, Option<u32>) {
         self.tick += 1;
         let mut out = Vec::with_capacity(items.len());
         let mut rest = items;
@@ -625,6 +645,7 @@ impl Cache {
         };
         self.regs[x].used = self.tick;
         let xr = POOL[x];
+        let mut sel = x as u32 | ((rest.len() != items.len()) as u32) << 3;
         for &it in rest {
             let mut it = it.map_regs(|r| if r == R { xr } else { r });
             if let Some((m, w)) = read_operand(&it)
@@ -632,11 +653,53 @@ impl Cache {
             {
                 it = with_rm(it, Rm::Reg(POOL[i]));
                 self.regs[i].used = self.tick;
+                if i == x {
+                    sel |= 1 << (4 + out.len());
+                }
             }
             self.update(&it);
             out.push(it);
         }
-        out
+        let plain = out == items;
+        (out, (!plain).then_some(sel))
+    }
+
+    /// The sequence on `rax` that [`Cache::emit`] turned into `items` with the selector `sel`
+    /// ([`Cache::emit_sel`]), or `None` if `sel` doesn't fit them. The decoder checks it by
+    /// emitting it again. The inverse of the one [`Cache::unemit`] candidate `sel` names.
+    pub(super) fn invert(&self, items: &[Item], sel: u32) -> Option<Vec<Item>> {
+        let x = (sel & 7) as usize;
+        let xr = POOL[x];
+        let back = |r: Reg| {
+            if r == xr {
+                R
+            } else if r == R {
+                xr
+            } else {
+                r
+            }
+        };
+        let mut c = *self;
+        let mut out = Vec::with_capacity(items.len() + 1);
+        if sel & 8 != 0 {
+            let (s, w) = c.regs[x].slot?;
+            out.push(Item::Ld { w, sx: false, dst: R, m: M::frame(s) });
+        }
+        for (j, &it) in items.iter().enumerate() {
+            // Another register than the computing one is always a cached slot.
+            let bit = sel >> (4 + j) & 1 != 0;
+            let frame = match read_reg(&it).and_then(pool).map(|i| (i, c.regs[i].slot)) {
+                Some((i, Some((s, _)))) if i != x || bit => Some(Rm::Mem(M::frame(s))),
+                _ if bit => return None,
+                _ => None,
+            };
+            out.push(match frame {
+                Some(m) => with_rm(it, m).map_regs(back),
+                None => it.map_regs(back),
+            });
+            c.update(&it);
+        }
+        (sel >> (4 + items.len()) == 0).then_some(out)
     }
 
     /// The sequences on `rax` that [`Cache::emit`] may have turned into `items`, for the
