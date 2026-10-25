@@ -102,7 +102,6 @@ def elfRead : Except String Unit := do
 /-! ## The image -/
 
 structure H where
-  version : Nat := formatVersion
   size : Option Nat := none
   dataSize : Nat := 0
   functions : Span := ⟨144, 0⟩
@@ -125,11 +124,11 @@ def span (s : Span) : List UInt8 := le 4 s.off ++ le 4 s.count
 /-- An image: the header `h`, then `rest`. -/
 def mkImage (h : H) (rest : List UInt8 := []) (magic : String := "RYOIMAGE") : ByteArray :=
   let size := h.size.getD (144 + rest.length)
-  bytes (magic.toUTF8.toList ++ le 4 h.version ++ le 4 0 ++ le 8 0 ++ le 8 0 ++ le 4 size
-    ++ le 4 h.dataSize ++ span h.functions ++ le 8 0 ++ le 4 h.textSize ++ span h.codeConsts
+  bytes (magic.toUTF8.toList ++ le 4 0 ++ le 4 size ++ le 8 0 ++ le 8 0 ++ le 4 h.dataSize
+    ++ le 4 h.textSize ++ le 8 0 ++ span h.functions ++ span h.codeConsts
     ++ span h.fixups ++ span h.symFlags ++ span h.symbols ++ span h.consts ++ span h.scopes
     ++ span h.callSites ++ span h.dropped ++ le 4 h.siteCount ++ le 4 h.fixupArea ++ le 4 h.mode
-    ++ span h.jitRecords ++ rest)
+    ++ span h.jitRecords ++ le 4 0 ++ rest)
 
 def funcEntry (off len : Nat) (scopes callSites dropped : Span := ⟨0, 0⟩) : List UInt8 :=
   le 4 off ++ le 4 len ++ le 4 0 ++ le 4 0 ++ le 4 0 ++ span scopes ++ span callSites ++ span dropped
@@ -151,7 +150,6 @@ def imageParse : Except String Unit := do
   expectParse (bytes (List.replicate 100 0)) .truncated
   expectParse (mkImage {}) .misaligned (aligned := false)
   expectParse (mkImage {} (magic := "RYOIMAGX")) .badMagic
-  expectParse (mkImage { version := 999 }) (.version 999)
   expectParse (mkImage { size := some 200 }) .truncated
   expectParse (mkImage { functions := ⟨144, 1⟩ }) (.outOfBounds "functions")
   expectParse (mkImage { symbols := ⟨148, 0⟩, symFlags := ⟨148, 0⟩ } (List.replicate 8 0)) .misaligned

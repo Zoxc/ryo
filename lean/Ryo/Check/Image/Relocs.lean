@@ -172,7 +172,7 @@ def checkRoRelocs (o : ImageObject) : Array String := Id.run do
       out := out.push s!"read-only: {t} isn't R_X86_64_64"; continue
     if !allBytes roBytes r.offset 8 0 then
       out := out.push s!"read-only: the field of {t} isn't zero"
-    if off == 24 || off == 48 then
+    if off == 24 || off == 40 then
       let (want, what) := if off == 24 then (o.data, "data") else (o.text, "text")
       if !(isSection && sym.any (·.shndx == want.index) && r.addend == 0) then
         out := out.push s!"header `{what}`: {t}, not the start of `{want.name}`"

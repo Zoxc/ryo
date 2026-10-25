@@ -14,7 +14,7 @@ import RyoTest.Obj
 namespace RyoTest.ImageCheck
 
 open Ryo.Obj Ryo.X86 Ryo.Check.Image RyoTest.Obj
-open Ryo.Vm (Full.all formatVersion)
+open Ryo.Vm (Full.all)
 
 /-! ## A small ELF writer -/
 
@@ -189,10 +189,10 @@ def imageParts (resolve : Bool := true) (lsda0 : Array CallSite := #[site0]) : P
   let text := code0.toList ++ List.replicate (f1Off - c0.length) 0xcc ++ c1
   let entry (off len : Nat) (sites : Span) : List UInt8 :=
     le 4 off ++ le 4 len ++ List.replicate 12 0 ++ le 8 0 ++ span sites ++ le 8 0
-  let header := "RYOIMAGE".toUTF8.toList ++ le 4 formatVersion ++ le 4 (crateHash stableId) ++ le 8 stableId
-    ++ le 8 0 ++ le 4 roSize ++ le 4 dataSize ++ span ⟨144, 2⟩ ++ le 8 0 ++ le 4 text.length
+  let header := "RYOIMAGE".toUTF8.toList ++ le 4 (crateHash stableId) ++ le 4 roSize ++ le 8 stableId
+    ++ le 8 0 ++ le 4 dataSize ++ le 4 text.length ++ le 8 0 ++ span ⟨144, 2⟩
     ++ span ⟨240, 0⟩ ++ span ⟨240, 0⟩ ++ span ⟨240, 1⟩ ++ span ⟨slotOff, 1⟩ ++ span ⟨256, 0⟩
-    ++ span ⟨256, 0⟩ ++ span ⟨256, 1⟩ ++ span ⟨268, 0⟩ ++ le 4 0 ++ le 4 0 ++ le 4 21 ++ span ⟨recOff, 2⟩
+    ++ span ⟨256, 0⟩ ++ span ⟨256, 1⟩ ++ span ⟨268, 0⟩ ++ le 4 0 ++ le 4 0 ++ le 4 21 ++ span ⟨recOff, 2⟩ ++ le 4 0
   let ro := header ++ entry 0 c0.length ⟨0, 1⟩ ++ entry f1Off c1.length ⟨1, 0⟩ ++ List.replicate 8 0 ++ [0]
     ++ List.replicate 7 0 ++ le 8 0 ++ le 4 site0.start ++ le 4 site0.len ++ le 4 CONTINUE
   let lsda0 := (Lsda.write lsda0).toList
@@ -220,7 +220,7 @@ def imageParts (resolve : Bool := true) (lsda0 : Array CallSite := #[site0]) : P
     { name := mainSlotName, type := Elf.STT_OBJECT, vis := 2, shndx := 5, size := 8 },
     { name := "", bind := 0, type := Elf.STT_SECTION, shndx := 7 }]
   let abs := Elf.R_X86_64_64
-  let mut rels : Array Rel := ehRels ++ #[⟨1, 24, 2, abs, 0⟩, ⟨1, 48, 3, abs, 0⟩, ⟨1, slotOff, 7, abs, 0⟩,
+  let mut rels : Array Rel := ehRels ++ #[⟨1, 24, 2, abs, 0⟩, ⟨1, 40, 3, abs, 0⟩, ⟨1, slotOff, 7, abs, 0⟩,
     ⟨4, 0, 11, abs, 0⟩, ⟨5, 0, 5, abs, 0⟩]
   for i in [0:2] do
     let r := recOff + 64 * i
@@ -277,7 +277,7 @@ def imageNegative : Except String Unit := do
   -- The handler call's relocation dropped.
   let noCall := { p with rels := p.rels.filter (·.type != Elf.R_X86_64_PLT32) }
   expectMismatch noCall "func 0"
-  -- A relocation of the header's version field.
+  -- A relocation of the header's `crate_hash` field.
   expectMismatch { p with rels := p.rels.push ⟨1, 8, 7, Elf.R_X86_64_64, 0⟩ } "read-only"
   -- A relocation in the padding between the functions.
   expectMismatch { p with rels := p.rels.push ⟨3, c0, 8, Elf.R_X86_64_PLT32, -4⟩ } "outside every function"

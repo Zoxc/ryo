@@ -74,7 +74,7 @@ runs `lake build` and `lake test` here; `./y.sh lean --proofs` also runs `lake b
 RyoProofs`; `./y.sh lean gen` regenerates the tables.
 `Ryo/Vm/Generated/*.lean` (opcodes, shapes, operand kinds, the reduced set and its maps to the
 full one, `asm::layout`, the handler kinds, the mnemonics as character lists) are generated from the Rust source by the test
-`vm/bytecode/tests/lean_tables.rs`, pinned to `FORMAT_VERSION`; `./y.sh test` runs it, so stale
+`vm/bytecode/tests/lean_tables.rs`; `./y.sh test` runs it, so stale
 tables fail it. Don't edit them by hand.
 
 ## Layout

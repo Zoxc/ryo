@@ -22,7 +22,6 @@ def sizes : Except String Unit := do
   check (Asm.asmInfos.size == Full.count) "Asm.asmInfos size"
   check (Handlers.handlers.size == Full.count) "Handlers.handlers size"
   check (Full.count > 800 && Reduced.count > 100 && Reduced.count < Full.count) "opcode counts"
-  check (formatVersion > 0) "formatVersion"
 
 def known : Except String Unit := do
   let add := Full.Opcode.addW32.info

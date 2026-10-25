@@ -47,15 +47,14 @@ instance : ToString Span := ⟨fun s => s!"{s.off}+{s.count}"⟩
 
 /-- `image::Header`. -/
 structure Header where
-  version : Nat
   crateHash : Nat
+  size : Nat
   stableCrateId : Nat
   data : Nat
-  size : Nat
   dataSize : Nat
-  functions : Span
-  text : Nat
   textSize : Nat
+  text : Nat
+  functions : Span
   codeConsts : Span
   fixups : Span
   symFlags : Span
@@ -119,7 +118,6 @@ inductive ImageError where
   | truncated
   | misaligned
   | badMagic
-  | version (v : Nat)
   | outOfBounds (what : String)
   | badFunction (i : Nat)
   | badFixup (i : Nat)
@@ -136,7 +134,6 @@ instance : ToString ImageError where
     | .truncated => "Truncated"
     | .misaligned => "Misaligned"
     | .badMagic => "BadMagic"
-    | .version v => s!"Version({v})"
     | .outOfBounds w => s!"OutOfBounds(\"{w}\")"
     | .badFunction i => s!"BadFunction({i})"
     | .badFixup i => s!"BadFixup({i})"
@@ -161,12 +158,12 @@ private def span! (b : ByteArray) (o : Nat) : Span := ⟨u32! b o, u32! b (o + 4
 
 /-- Reads the header at the start of `b` (which must hold `headerSize` bytes). -/
 def readHeader (b : ByteArray) : Header :=
-  { version := u32! b 8, crateHash := u32! b 12, stableCrateId := u64! b 16, data := u64! b 24,
-    size := u32! b 32, dataSize := u32! b 36, functions := span! b 40, text := u64! b 48,
-    textSize := u32! b 56, codeConsts := span! b 60, fixups := span! b 68,
-    symFlags := span! b 76, symbols := span! b 84, consts := span! b 92, scopes := span! b 100,
-    callSites := span! b 108, dropped := span! b 116, siteCount := u32! b 124,
-    fixupArea := u32! b 128, mode := u32! b 132, jitRecords := span! b 136 }
+  { crateHash := u32! b 8, size := u32! b 12, stableCrateId := u64! b 16, data := u64! b 24,
+    dataSize := u32! b 32, textSize := u32! b 36, text := u64! b 40, functions := span! b 48,
+    codeConsts := span! b 56, fixups := span! b 64, symFlags := span! b 72,
+    symbols := span! b 80, consts := span! b 88, scopes := span! b 96,
+    callSites := span! b 104, dropped := span! b 112, siteCount := u32! b 120,
+    fixupArea := u32! b 124, mode := u32! b 128, jitRecords := span! b 132 }
 
 /-- `cast`'s checks: `span.count` elements of `size` bytes at `span.off` lie in `len` bytes,
 and `span.off` is a multiple of `align` (the section start is 8-aligned). -/
@@ -182,7 +179,6 @@ def Image.parse (bytes : ByteArray) (aligned : Bool := true) : Except ImageError
   if !aligned then throw .misaligned
   if (bytes.extract 0 8).toList != imageMagic then throw .badMagic
   let h := readHeader bytes
-  if h.version != formatVersion then throw (.version h.version)
   if h.size > bytes.size then throw .truncated
   let bytes := bytes.extract 0 h.size
   let n := bytes.size
@@ -411,9 +407,9 @@ def readImageObject (bytes : ByteArray) : Except String ImageObject := do
     | .ok i => pure i
     | .error e => throw s!"image: {e}"
   let roRelocs := sortRelas (elf.relocsOf ro.index)
-  -- Header fields `data` (offset 24) and `text` (48).
+  -- Header fields `data` (offset 24) and `text` (40).
   let (data, dataBase) ← headerPointer elf roRelocs (sym.value + 24) "data"
-  let (text, textBase) ← headerPointer elf roRelocs (sym.value + 48) "text"
+  let (text, textBase) ← headerPointer elf roRelocs (sym.value + 40) "text"
   if dataBase + image.header.dataSize > data.size then throw "the writable section is shorter than `data_size`"
   if textBase + image.header.textSize > text.size then throw "the text section is shorter than `text_size`"
   unless text.flags &&& Elf.SHF_EXECINSTR != 0 do throw s!"`text` points at non-executable `{text.name}`"
@@ -555,7 +551,7 @@ private def hex (n : Nat) : String :=
 
 ```
 image <symbol>
-version <v> crate_hash <hex> stable_crate_id <hex> mode <bits> <Mode>
+crate_hash <hex> stable_crate_id <hex> mode <bits> <Mode>
 sizes ro <size> data <data_size> text <text_size> sites <site_count> fixup_area <off> jit_records <off>+<count>
 parts functions <off>+<n> code_consts .. fixups .. sym_flags .. symbols .. consts .. scopes .. call_sites .. dropped ..
 validate ok | validate error: <ImageError>
@@ -570,7 +566,7 @@ def summary (o : ImageObject) : Array String := Id.run do
   let img := o.image
   let h := img.header
   let mut out := #[s!"image {o.symbol}",
-    s!"version {h.version} crate_hash {hex h.crateHash} stable_crate_id {hex h.stableCrateId} mode {h.mode} {img.mode}",
+    s!"crate_hash {hex h.crateHash} stable_crate_id {hex h.stableCrateId} mode {h.mode} {img.mode}",
     s!"sizes ro {h.size} data {h.dataSize} text {h.textSize} sites {h.siteCount} fixup_area {h.fixupArea} jit_records {h.jitRecords}",
     s!"parts functions {h.functions} code_consts {h.codeConsts} fixups {h.fixups} sym_flags {h.symFlags} symbols {h.symbols} consts {h.consts} scopes {h.scopes} call_sites {h.callSites} dropped {h.dropped}"]
   out := out.push (match img.validate with

@@ -142,8 +142,8 @@ plan validates offline: the guarantee covers every compilation the test corpus p
   matters because `is_native(op, ops)` depends on the operands.
 - **Generated tables.** The opcode list (`ops.rs`, `reduced_ops.rs`), shapes, operand kinds,
   `asm::layout`, handler kinds (`handlers.rs`) and the `Item` byte forms are generated into
-  Lean (`lean/Ryo/Vm/Generated/*.lean`) by a small Rust program in the workspace, pinned to
-  `FORMAT_VERSION`, so Lean and Rust can't drift.
+  Lean (`lean/Ryo/Vm/Generated/*.lean`) by a small Rust program in the workspace, which
+  fails when they are stale, so Lean and Rust can't drift.
 
 ---
 
@@ -247,8 +247,8 @@ its log and IR are designed with the validators in mind.
   memory-model proof (a permutation argument on `BasicMemory`; Kang et al.'s quasi-concrete
   model is a precedent for "an address is fixed only once observed").
 - **Backend churn breaking the checker**: permissive relational rules, coverage reporting
-  instead of hard failure for `unsupported`, and the generated tables pinned to
-  `FORMAT_VERSION`.
+  instead of hard failure for `unsupported`, and the generated tables checked against the
+  Rust source.
 - **Trusted contracts too strong or wrong** (handlers, islands): differential tests of each
   contract (`opSem` vs `ryo_h_*` called directly, with footprints checked by canaries).
 - **JIT churn**: the SSA tier is being designed now. Agree the log format and the L2+ form
