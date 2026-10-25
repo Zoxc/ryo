@@ -22,6 +22,7 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
+use crate::asm::Ref;
 use crate::jit::ir::*;
 
 /// What a block's memory is known to hold: the bytes at an alloca offset, or at a pointer
@@ -63,6 +64,15 @@ fn key(op: &Op, args: &[Value]) -> Option<Key> {
         Op::PtrAdd(k) => (3, k as u64, 0, a(0), u32::MAX),
         Op::PtrIndex(s) => (4, s as u64, 0, a(0), a(1)),
         Op::AllocaAddr(al, k) => (5, al.0 as u64, k as u32 as u64, u32::MAX, u32::MAX),
+        Op::RefAddr(to, ind) => {
+            let (kind, x) = match to {
+                Ref::Const(k) => (0, k.0),
+                Ref::Data(d) => (1, d.0),
+                Ref::Sym(s) => (2, s.0),
+                _ => return None,
+            };
+            (6, kind | (ind as u64) << 8, x as u64, u32::MAX, u32::MAX)
+        }
         _ => return None,
     })
 }

@@ -777,6 +777,20 @@ impl<'a> E<'a> {
                     self.put(x, S1);
                 }
             }
+            Op::RefAddr(to, ind) => {
+                let x = res[0];
+                let rd = self.work(x, &[]);
+                match to {
+                    Ref::Sym(_) => {
+                        self.a.x().mov(8, Rm::R(rd), Rm::M(Mem::Rip(to)));
+                        if ind {
+                            self.a.x().mov(8, Rm::R(rd), Rm::M(Mem::base(rd, 0)));
+                        }
+                    }
+                    _ => self.a.x().lea(rd, Mem::Rip(to)),
+                }
+                self.put(x, rd);
+            }
             Op::AllocaAddr(a, k) => {
                 let x = res[0];
                 let rd = self.work(x, &[]);

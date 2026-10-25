@@ -242,7 +242,9 @@ baseline the tier refines.
   unspecified. Compares give 1-byte booleans. Constants and `undef` are values without a
   definition.
 - **Instructions**: the native reduced instructions on values (`Bin`, `Cmp`, `PtrAdd`,
-  `PtrIndex`), `AllocaAddr`, `Load`/`Store` through a pointer, `ALoad`/`AStore` of a memory
+  `PtrIndex`), `AllocaAddr`, `RefAddr` (`addr.const`, `addr.sym`, `addr.sym.ind`: a
+  pure rip-relative `lea` of the constant, or a load of the symbol slot and for `.ind` once
+  more through it; JIT code is always within reach of the image), `Load`/`Store` through a pointer, `ALoad`/`AStore` of a memory
   alloca, `OsrLoad` (OSR entries only), `LandingPad` (the exception object, `rax`),
   `HCall` (a handler call: its `In` values are stored to a scratch area whose offsets its
   slot operands get, its `Out` values loaded back, and a `br`/`switch` handler's return

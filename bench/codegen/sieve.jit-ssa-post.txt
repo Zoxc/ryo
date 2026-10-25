@@ -109,7 +109,7 @@ b22(): ; Body
 b23(): ; Body head 8
     jmp b9(v12, v0, 0x0, v54, 0x0)
 b24(): ; Body
-    v45:8 = hcall.reg addr.const [(Fp, [None, None]), (Imm(4294967104), [Some(Scratch(0)), None]), (k1, [None, None])] outs 1 ()
+    v45:8 = RefAddr(k1, false) ()
     Call(Call { target: fn2.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: None }) (v1, v0, v45)
     jmp b27()
 b25(): ; Body
@@ -124,7 +124,7 @@ b28(): ; Body
 b29(): ; Body
     trap
 b30(): ; Body
-    v63:8 = hcall.reg addr.const [(Fp, [None, None]), (Imm(4294967096), [Some(Scratch(0)), None]), (k6, [None, None])] outs 1 ()
+    v63:8 = RefAddr(k6, false) ()
     Call(Call { target: fn7, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: None }) (v22, 0x1, v63)
     jmp b31()
 b31(): ; Body
@@ -206,7 +206,7 @@ b0(v0:8, v1:8, v2:8): ; Entry
     v3:8, v4:1 = Ovf(Add, false, 8) (v1, v2)
     br ovf ? b1() : b2()
 b1(): ; Body
-    v5:8 = hcall.reg addr.const [(Fp, [None, None]), (Imm(4294967240), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
+    v5:8 = RefAddr(k0, false) ()
     Call(Call { target: sym1, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v5)
     trap
 b2(): ; Body
@@ -268,8 +268,7 @@ b0(v0:8, v1:8, v2:8): ; Entry
     v3:8, v4:1 = Ovf(Add, false, 8) (v0, v1)
     br ovf ? b1() : b2()
 b1(): ; Body
-    v5:8 = hcall.reg addr.const [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
-    v7:8 = hcall.reg addr.const [(Fp, [None, None]), (Imm(4294967184), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
+    v5:8 = RefAddr(k0, false) ()
     Call(Call { target: sym2, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v5, 0x175, 0x0, v2)
     trap
 b2(): ; Body
@@ -328,19 +327,19 @@ b0(v0:8, v1:8): ; Entry
     v3:8, v4:1 = Ovf(Add, false, 8) (v1, 0x1)
     br ovf ? b1() : b2()
 b1(): ; Body
-    v5:8 = hcall.reg addr.const [(Fp, [None, None]), (Imm(4294966952), [Some(Scratch(0)), None]), (k0, [None, None])] outs 1 ()
+    v5:8 = RefAddr(k0, false) ()
     Call(Call { target: sym1, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v5)
     trap
 b2(): ; Body
     v7:8 = AllocaAddr(AllocaId(35), 0) ()
     Call(Call { target: fn2.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 1, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v7, 0x1, v3)
-    v10:8 = hcall.reg addr.const [(Fp, [None, None]), (Imm(4294966944), [Some(Scratch(0)), None]), (k3, [None, None])] outs 1 ()
+    v10:8 = RefAddr(k3, false) ()
     v11:8 = Call(Call { target: fn4, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v7, 0x0, v10)
     invoke -> b33() unwind b34()
 b3(): ; Body
     Store(1, 0) (v11, 0x0)
     v14:8 = AllocaAddr(AllocaId(35), 0) ()
-    v16:8 = hcall.reg addr.const [(Fp, [None, None]), (Imm(4294966944), [Some(Scratch(0)), None]), (k5, [None, None])] outs 1 ()
+    v16:8 = RefAddr(k5, false) ()
     v17:8 = Call(Call { target: fn4, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v14, 0x1, v16)
     invoke -> b35() unwind b36()
 b4(): ; Body
@@ -350,7 +349,7 @@ b5(v21:8, v26:8, v60:8): ; Body head 0
     v22:8, v23:1 = Ovf(Mul, false, 8) (v21, v21)
     br ovf ? b6() : b8()
 b6(): ; Body
-    v24:8 = hcall.reg addr.const [(Fp, [None, None]), (Imm(4294966952), [Some(Scratch(0)), None]), (k7, [None, None])] outs 1 ()
+    v24:8 = RefAddr(k7, false) ()
     Call(Call { target: sym8, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v24)
     invoke -> b37() unwind b38()
 b7(): ; Body
@@ -359,7 +358,7 @@ b8(): ; Body
     br LtU.w8 v26, v22 ? b25() : b9()
 b9(): ; Body
     v27:8 = AllocaAddr(AllocaId(35), 0) ()
-    v28:8 = hcall.reg addr.const [(Fp, [None, None]), (Imm(4294966952), [Some(Scratch(0)), None]), (k9, [None, None])] outs 1 ()
+    v28:8 = RefAddr(k9, false) ()
     v29:8 = Call(Call { target: fn10.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v27, v21, v28)
     invoke -> b39() unwind b40()
 b10(): ; Body
@@ -369,7 +368,7 @@ b11(): ; Body
     v32:8, v33:1 = Ovf(Mul, false, 8) (v21, v21)
     br ovf ? b12() : b14()
 b12(): ; Body
-    v34:8 = hcall.reg addr.const [(Fp, [None, None]), (Imm(4294966952), [Some(Scratch(0)), None]), (k11, [None, None])] outs 1 ()
+    v34:8 = RefAddr(k11, false) ()
     Call(Call { target: sym8, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v34)
     invoke -> b41() unwind b42()
 b13(): ; Body
@@ -380,7 +379,7 @@ b15(v36:8, v37:8, v43:8, v63:8): ; Body head 1
     br LtU.w8 v37, v36 ? b21(v43, v37, v63) : b16()
 b16(): ; Body
     v38:8 = AllocaAddr(AllocaId(35), 0) ()
-    v39:8 = hcall.reg addr.const [(Fp, [None, None]), (Imm(4294966952), [Some(Scratch(0)), None]), (k13, [None, None])] outs 1 ()
+    v39:8 = RefAddr(k13, false) ()
     v40:8 = Call(Call { target: fn4, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v38, v36, v39)
     invoke -> b43() unwind b44()
 b17(): ; Body
@@ -388,7 +387,7 @@ b17(): ; Body
     v44:8, v45:1 = Ovf(Add, false, 8) (v36, v43)
     br ovf ? b18() : b20()
 b18(): ; Body
-    v46:8 = hcall.reg addr.const [(Fp, [None, None]), (Imm(4294966952), [Some(Scratch(0)), None]), (k15, [None, None])] outs 1 ()
+    v46:8 = RefAddr(k15, false) ()
     Call(Call { target: sym1, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v46)
     invoke -> b45() unwind b46()
 b19(): ; Body
@@ -399,7 +398,7 @@ b21(v52:8, v59:8, v62:8): ; Body
     v53:8, v54:1 = Ovf(Add, false, 8) (v52, 0x1)
     br ovf ? b22() : b24()
 b22(): ; Body
-    v55:8 = hcall.reg addr.const [(Fp, [None, None]), (Imm(4294966952), [Some(Scratch(0)), None]), (k17, [None, None])] outs 1 ()
+    v55:8 = RefAddr(k17, false) ()
     Call(Call { target: sym1, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v55)
     invoke -> b47() unwind b48()
 b23(): ; Body
@@ -619,7 +618,7 @@ b19(): ; Body
 b20(): ; Body
     trap
 b21(): ; Body
-    v60:8 = hcall.reg addr.const [(Fp, [None, None]), (Imm(4294967136), [Some(Scratch(0)), None]), (k4, [None, None])] outs 1 ()
+    v60:8 = RefAddr(k4, false) ()
     Call(Call { target: fn5, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: None }) (v17, 0x1, v60)
     jmp b22()
 b22(): ; Body

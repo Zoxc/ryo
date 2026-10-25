@@ -11,7 +11,7 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt;
 
-use crate::asm::{ArgReg, RetPart};
+use crate::asm::{ArgReg, Ref, RetPart};
 use crate::full::{Func as FuncIdx, Opcode, Sym};
 use crate::reduced::Arg;
 
@@ -238,6 +238,10 @@ pub enum Op {
     PtrAdd(i64),
     /// `p + i * stride` (wrapping).
     PtrIndex(u32),
+    /// A rip-relative address: of a constant or data area allocation (`lea`), or the value of
+    /// a symbol slot (`mov [rip + slot]`), and with `ind` the pointer that one points at. The
+    /// slots are filled before any VM code runs, so it is pure.
+    RefAddr(Ref, bool),
     /// The address of byte `k` of the alloca (its provenance).
     AllocaAddr(AllocaId, i32),
     /// `w` bytes at `[p + k]`.
@@ -262,7 +266,15 @@ impl Op {
     pub fn pure(&self) -> bool {
         matches!(
             self,
-            Op::Bin(..) | Op::Cmp(..) | Op::Ovf(..) | Op::Ext { .. } | Op::PtrAdd(_) | Op::PtrIndex(_) | Op::AllocaAddr(..) | Op::OsrLoad(..)
+            Op::Bin(..)
+                | Op::Cmp(..)
+                | Op::Ovf(..)
+                | Op::Ext { .. }
+                | Op::PtrAdd(_)
+                | Op::PtrIndex(_)
+                | Op::AllocaAddr(..)
+                | Op::RefAddr(..)
+                | Op::OsrLoad(..)
         )
     }
 
@@ -770,7 +782,7 @@ impl Func {
             Op::Ext { from, .. } => alloc::vec![*from],
             Op::PtrAdd(_) => alloc::vec![8],
             Op::PtrIndex(_) => alloc::vec![8, 8],
-            Op::AllocaAddr(..) | Op::ALoad(..) | Op::OsrLoad(..) | Op::LandingPad | Op::Island(_) => Vec::new(),
+            Op::AllocaAddr(..) | Op::RefAddr(..) | Op::ALoad(..) | Op::OsrLoad(..) | Op::LandingPad | Op::Island(_) => Vec::new(),
             Op::Load(..) => alloc::vec![8],
             Op::Store(w, _) => alloc::vec![8, *w],
             Op::AStore(_, _, n) => alloc::vec![if n.is_power_of_two() { *n } else { 8 }],

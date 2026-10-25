@@ -374,6 +374,11 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
                     let v = s.f.result(l);
                     s.write(cur, i, 1, v);
                 }
+                Kind::RefAddr { to, ind } => {
+                    let l = s.f.inst(cur, Op::RefAddr(*to, *ind), Vec::new(), &[8]);
+                    let v = s.f.result(l);
+                    s.write(cur, i, 0, v);
+                }
                 Kind::PtrAdd(imm) => {
                     let p = s.read(cur, i, 0, 8);
                     let l = s.f.inst(cur, Op::PtrAdd(*imm), alloc::vec![p], &[8]);

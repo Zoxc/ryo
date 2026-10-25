@@ -40,3 +40,8 @@ remove it once a Lean session has handled it.
   item's ref), and the cache `update` rule that `lea`/`loadRip` write the full register (no
   slot, zero-extended from 64 bits). Sem is unchanged. Tables and vectors regenerated.
   Commit: "Inline addr.const, addr.sym and addr.sym.ind".
+
+- The JIT's SSA tier decodes the three inline address instructions as `Kind::RefAddr` and
+  builds a pure `Op::RefAddr(ref, ind)` (rip-relative `lea`, or the slot load and with `ind`
+  one more load) instead of `hcall.reg`; LVN keys it. Only matters if the Lean model covers
+  the SSA tier. Commit: "Give the JIT SSA tier a pure op for rip-relative addresses".
