@@ -219,8 +219,8 @@ pub struct FnCx<'a, 'tcx> {
     /// For a `#[track_caller]` function: the slot of its incoming `&'static Location` (the
     /// last field of the argument block, design/lowering.md#caller-location).
     pub caller_location: Option<u32>,
-    /// The current block's compare, fused into its terminator (`terminator::FusedCmp`).
-    fused: Option<terminator::FusedCmp<'tcx>>,
+    /// The current block's last statement, fused into its terminator (`terminator::Fused`).
+    fused: Option<terminator::Fused<'tcx>>,
     /// The number of instructions emitted so far: the next one's `InsnId`.
     insns: u32,
     /// The certificate being recorded, if [`LowerCx::cert`].
@@ -281,7 +281,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         for (bb, data) in body.basic_blocks.iter_enumerated() {
             self.bind(self.block_labels[bb.as_usize()]);
             self.next_block = (bb.as_usize() + 1 < n).then(|| BasicBlock::from_usize(bb.as_usize() + 1));
-            self.fused = self.fusable_compare(data, &uses);
+            self.fused = self.fusable(data, &uses);
             self.cert_block(self.fused.is_some());
             let stmts = &data.statements[..data.statements.len() - usize::from(self.fused.is_some())];
             for (i, stmt) in stmts.iter().enumerate() {

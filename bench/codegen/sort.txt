@@ -2056,20 +2056,16 @@ fn alloc::raw_vec::RawVec::<u32>::grow_one (frame 80, args 0, ret 0)
     const $-80, k0, 16
 L0:
     call.sym $-32, sym1, 526344, [4294967280, 8, 4294967256, 264, 4294967232, 520, 4294967216, 776, 4294967224, 1032]
-    discr.niche.w64 $-60, $-32, 18446744073709551615, 0, 0, 1
-    zext.w32.w64 $-56, $-60
-    switch.dense.w64 $-56, 0, L4, [L3, L1]
-L1:
+    br.eq.imm.w64 $-32, 18446744073709551615, L2
     mov.w128 $-48, $-32
-L2:
+L1:
     call.sym $0, sym2, 0, [4294967248, 8, 4294967256, 264]
     unreachable
-L3:
+L2:
     ret $0, 0
-L4:
     unreachable
   cleanup L0 -> continue
-  cleanup L2 -> continue
+  cleanup L1 -> continue
   k0 = const allocation + 0
   sym1 = alloc::raw_vec::RawVecInner::grow_amortized
   sym2 = alloc::raw_vec::handle_error
@@ -6757,19 +6753,17 @@ fn core::slice::sort::stable::drift::stable_quicksort::<(u32, u32), {closure@std
     mov.w64 $-64, $-8
     or.imm.w64 $-56, $-64, 1
     mov.w64 $-64, $-56
-    discr.niche.w64 $-100, $-64, 0, 0, 0, 1
-    zext.w32.w64 $-72, $-100
-    switch.dense.w64 $-72, 0, L1, [L2, L4]
+    br.eq.imm.w64 $-64, 0, L1
+    jmp L3
 L0:
     ret $0, 0
-L1:
     unreachable
-L2:
+L1:
     addr.const $-104, k0
-L3:
+L2:
     call.sym $0, sym1, 0, [4294967192, 8]
     unreachable
-L4:
+L3:
     mov.w64 $-80, $-64
     mov.w64 $-96, $-80
     ctlz.w64 $-100, $-96
@@ -6780,11 +6774,11 @@ L4:
     mul.w32 $-48, $-100, $-44
     imm.w64 $-104, 0
     mov.w64 $-128, $-40
-L5:
+L4:
     call $0, fn2, 0, [4294967280, 8, 4294967288, 264, 4294967264, 520, 4294967272, 776, 4294967248, 1028, 4294967192, 1288]
     jmp L0
-  cleanup L3 -> continue
-  cleanup L5 -> continue
+  cleanup L2 -> continue
+  cleanup L4 -> continue
   k0 = const allocation + 0
   sym1 = core::num::imp::int_log10::panic_for_nonpositive_argument
   fn2 = core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
@@ -7412,9 +7406,8 @@ L24:
     jmp L26
 L25:
     imm.w8 $-105, 0
-    discr.niche.w64 $-268, $-48, 0, 0, 0, 1
-    zext.w32.w64 $-120, $-268
-    switch.dense.w64 $-120, 0, L31, [L32, L12]
+    br.eq.imm.w64 $-48, 0, L31
+    jmp L12
 L26:
     mov.w64 $-96, $-200
     jmp L25
@@ -7442,9 +7435,8 @@ L30:
     imm.w64 $-48, 0
     ; end $-192, 8 bytes
     jmp L0
-L31:
     unreachable
-L32:
+L31:
     imm.w64 $-160, 0
     jmp L16
   cleanup L1 -> continue
@@ -8195,10 +8187,8 @@ L12:
     jmp L0
 L13:
     mov.w64 $-104, $-96
-    discr.niche.w64 $-140, $-104, 0, 0, 0, 1
-    zext.w32.w64 $-120, $-140
-    switch.dense.w64 $-120, 0, L14, [L12, L10]
-L14:
+    br.eq.imm.w64 $-104, 0, L12
+    jmp L10
     unreachable
   cleanup L2 -> continue
   cleanup L6 -> continue
@@ -8230,19 +8220,17 @@ L2:
 L3:
     or.imm.w64 $-64, $-40, 1
     mov.w64 $-72, $-64
-    discr.niche.w64 $-100, $-72, 0, 0, 0, 1
-    zext.w32.w64 $-80, $-100
-    switch.dense.w64 $-80, 0, L5, [L6, L8]
+    br.eq.imm.w64 $-72, 0, L5
+    jmp L7
 L4:
     ret $0, 0
-L5:
     unreachable
-L6:
+L5:
     addr.const $-104, k2
-L7:
+L6:
     call.sym $0, sym3, 0, [4294967192, 8]
     unreachable
-L8:
+L7:
     mov.w64 $-88, $-72
     mov.w64 $-96, $-88
     ctlz.w64 $-100, $-96
@@ -8252,13 +8240,13 @@ L8:
     imm.w32 $-100, 2
     mul.w32 $-52, $-100, $-28
     imm.w64 $-104, 0
-L9:
+L8:
     call $0, fn4, 0, [4294967280, 8, 4294967288, 264, 4294967192, 520, 4294967244, 772, 4294967272, 1032]
     jmp L4
   cleanup L0 -> continue
   cleanup L1 -> continue
-  cleanup L7 -> continue
-  cleanup L9 -> continue
+  cleanup L6 -> continue
+  cleanup L8 -> continue
   fn0 = core::slice::sort::shared::find_existing_run::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
   fn1 = core::slice::<impl [u32]>::reverse
   k2 = const allocation + 0
@@ -8824,7 +8812,7 @@ L1:
     br.lt.u.w64 $-120, $-112, L3
 L2:
     call $0, fn1, 0, [4294967280, 8, 4294967288, 264, 4294967256, 520]
-    jmp L22
+    jmp L21
 L3:
     mov.w32 $-104, $-28
     br.eq.imm.w32! $-104, 0, L5
@@ -8839,52 +8827,49 @@ L6:
     call $-112, fn3, 8, [4294967168, 8, 4294967176, 264, 4294967256, 520]
     jmp L8
 L7:
-    jmp L22
+    jmp L21
 L8:
-    discr.niche.w64 $-204, $-24, 0, 0, 0, 1
-    zext.w32.w64 $-48, $-204
-    switch.dense.w64 $-48, 0, L26, [L15, L9]
-L9:
+    br.eq.imm.w64 $-24, 0, L14
     mov.w64 $-120, $-24
     mov.w64 $-64, $-16
     mov.w64 $-56, $-8
     mov.w64 $-72, $-56
-    br.lt.u.w64 $-112, $-72, L11
+    br.lt.u.w64 $-112, $-72, L10
     addr.const $-208, k4
-L10:
+L9:
     call.sym $0, sym5, 0, [4294967184, 8, 4294967224, 264, 4294967088, 520]
     unreachable
-L11:
+L10:
     ptr.index $-208, $-16, $-112, 4
     mov.w64 $-144, $-208
     mov.w64 $-136, $-120
     mov.w64 $-128, $-144
-L12:
+L11:
     call $-98, fn6, 1, [4294967256, 8, 4294967160, 264, 4294967168, 520]
-    br! $-98, L13
-    jmp L15
-L13:
+    br! $-98, L12
+    jmp L14
+L12:
     mov.w128 $-144, $-16
     mov.w64 $-160, $-40
     ; escape align 8 $-160, 8 bytes
     addr $-152, $-160
-L14:
+L13:
     call $-128, fn7, 8, [4294967152, 8, 4294967160, 264, 4294967184, 520, 4294967144, 776]
     ; end $-160, 8 bytes
     add.imm.w64 $-88, $-128, 1
     mov.w64 $-136, $-8
-    br.lt.u.w64 $-136, $-88, L23
-    jmp L25
-L15:
+    br.lt.u.w64 $-136, $-88, L22
+    jmp L24
+L14:
     mov.w128 $-136, $-16
-L16:
+L15:
     call $-120, fn8, 8, [4294967160, 8, 4294967168, 264, 4294967184, 520, 4294967256, 776]
     mov.w64 $-144, $-16
     mov.w64 $-136, $-8
     mov.w64 $-128, $-136
     lt.u.w64 $-98, $-120, $-128
     addr.const $-208, k9
-L17:
+L16:
     ; escape align 8 $-184, 32 bytes
     call $0, fn10, 0, [4294967112, 72, 4294967280, 264, 4294967288, 520, 4294967176, 776, 4294967088, 1032]
     mov.w128 $-136, $-184
@@ -8892,7 +8877,7 @@ L17:
     ; end $-184, 32 bytes
     imm.w64 $-208, 1
     addr.const $-216, k11
-L18:
+L17:
     ; escape align 8 $-200, 32 bytes
     call $0, fn12, 0, [4294967096, 72, 4294967144, 264, 4294967152, 520, 4294967088, 776, 4294967080, 1032]
     mov.w128 $-168, $-200
@@ -8901,29 +8886,29 @@ L18:
     mov.w64 $-96, $-160
     imm.w64 $-208, 0
     lt.u.w64 $-97, $-208, $-96
-    br $-97, L20
+    br $-97, L19
     imm.w64 $-208, 0
     addr.const $-216, k13
-L19:
+L18:
     call.sym $0, sym14, 0, [4294967088, 8, 4294967200, 264, 4294967080, 520]
     unreachable
-L20:
+L19:
     mov.w64 $-176, $-168
     mov.w32 $-104, $-28
-L21:
+L20:
     call $0, fn15, 0, [4294967160, 8, 4294967168, 264, 4294967272, 520, 4294967192, 772, 4294967256, 1032]
     mov.w64 $-24, $-176
     ; end $-176, 8 bytes
     ; end $-168, 16 bytes
     jmp L0
-L22:
+L21:
     ret $0, 0
-L23:
+L22:
     addr.const $-208, k16
-L24:
+L23:
     call.sym $0, sym17, 0, [4294967208, 8, 4294967160, 264, 4294967160, 520, 4294967088, 776]
     unreachable
-L25:
+L24:
     sub.w64 $-144, $-136, $-88
     mov.w64 $-176, $-16
     mov.w64 $-168, $-8
@@ -8939,21 +8924,20 @@ L25:
     ; end $-160, 16 bytes
     imm.w64 $-24, 0
     jmp L0
-L26:
     unreachable
   cleanup L1 -> continue
   cleanup L2 -> continue
   cleanup L4 -> continue
   cleanup L6 -> continue
-  cleanup L10 -> continue
-  cleanup L12 -> continue
-  cleanup L14 -> continue
+  cleanup L9 -> continue
+  cleanup L11 -> continue
+  cleanup L13 -> continue
+  cleanup L15 -> continue
   cleanup L16 -> continue
   cleanup L17 -> continue
   cleanup L18 -> continue
-  cleanup L19 -> continue
-  cleanup L21 -> continue
-  cleanup L24 -> continue
+  cleanup L20 -> continue
+  cleanup L23 -> continue
   fn0 = <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortTypeImpl>::small_sort_threshold
   fn1 = <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortTypeImpl>::small_sort::<for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
   fn2 = core::slice::sort::unstable::heapsort::heapsort::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
@@ -9811,41 +9795,39 @@ L1:
     addr $-96, $-80
 L2:
     call $-88, fn1, 8, [4294967200, 8]
-    discr.niche.w64 $-140, $-88, 0, 0, 0, 1
-    zext.w32.w64 $-40, $-140
-    switch.dense.w64 $-40, 0, L3, [L6, L4]
-L3:
+    br.eq.imm.w64 $-88, 0, L5
+    jmp L3
     unreachable
-L4:
+L3:
     mov.w64 $-104, $-88
     ; escape align 8 $-104, 8 bytes
     addr $-136, $-104
     mov.w64 $-128, $-136
     addr.const $-120, k2
-L5:
+L4:
     call.sym $-112, sym3, 8, [4294967280, 8, 4294967168, 264, 4294967176, 520]
+    jmp L6
+L5:
     jmp L7
 L6:
-    jmp L8
-L7:
     ; end $-104, 8 bytes
     jmp L1
-L8:
+L7:
     ; end $-80, 16 bytes
     mov.w64 $-8, $-16
     ret $-8, 8
-L9:
+L8:
     resume $-48
+L9:
+    lpad $-48
+    jmp L8
 L10:
     lpad $-48
-    jmp L9
-L11:
-    lpad $-48
-    jmp L9
+    jmp L8
   cleanup L0 -> continue
-  cleanup L2 -> L10
-  cleanup L5 -> L11
-  cleanup L9 -> continue
+  cleanup L2 -> L9
+  cleanup L4 -> L10
+  cleanup L8 -> continue
   fn0 = <std::slice::Iter<'_, u32> as std::iter::IntoIterator>::into_iter
   fn1 = <std::slice::Iter<'_, u32> as std::iter::Iterator>::next
   k2 = const allocation + 0
@@ -10991,10 +10973,8 @@ L3:
     ret $0, 0
 L4:
     mov.w64 $-56, $-48
-    discr.niche.w64 $-100, $-56, 0, 0, 0, 1
-    zext.w32.w64 $-72, $-100
-    switch.dense.w64 $-72, 0, L5, [L3, L1]
-L5:
+    br.eq.imm.w64 $-56, 0, L3
+    jmp L1
     unreachable
   cleanup L2 -> continue
   fn0 = std::ptr::swap_nonoverlapping::precondition_check
@@ -11030,10 +11010,8 @@ L3:
     ret $0, 0
 L4:
     mov.w64 $-56, $-48
-    discr.niche.w64 $-100, $-56, 0, 0, 0, 1
-    zext.w32.w64 $-72, $-100
-    switch.dense.w64 $-72, 0, L5, [L3, L1]
-L5:
+    br.eq.imm.w64 $-56, 0, L3
+    jmp L1
     unreachable
   cleanup L2 -> continue
   fn0 = std::ptr::swap_nonoverlapping::precondition_check
@@ -11150,35 +11128,28 @@ fn std::ptr::swap_nonoverlapping_bytes (frame 112, args 0, ret 0)
     imm.w64 $-112, 8
     rem.u.w64 $-64, $-48, $-112
     mov.w64 $-72, $-56
-    discr.niche.w64 $-108, $-72, 0, 0, 0, 1
-    zext.w32.w64 $-32, $-108
-    switch.dense.w64 $-32, 0, L6, [L2, L0]
-L0:
+    br.eq.imm.w64 $-72, 0, L1
     mov.w64 $-80, $-72
     mov.w64 $-88, $-8
     mov.w64 $-96, $-16
-L1:
+L0:
     call $0, fn0, 0, [4294967208, 8, 4294967200, 264, 4294967216, 520]
-    jmp L2
-L2:
+    jmp L1
+L1:
     mov.w64 $-72, $-64
-    discr.niche.w64 $-108, $-72, 0, 0, 0, 1
-    zext.w32.w64 $-40, $-108
-    switch.dense.w64 $-40, 0, L6, [L5, L3]
-L3:
+    br.eq.imm.w64 $-72, 0, L3
     mov.w64 $-80, $-72
     mul.imm.w64 $-88, $-56, 8
     ptr.index $-96, $-8, $-88, 1
     ptr.index $-104, $-16, $-88, 1
-L4:
+L2:
     call $0, fn1, 0, [4294967200, 8, 4294967192, 264, 4294967216, 520]
-    jmp L5
-L5:
+    jmp L3
+L3:
     ret $0, 0
-L6:
     unreachable
-  cleanup L1 -> continue
-  cleanup L4 -> continue
+  cleanup L0 -> continue
+  cleanup L2 -> continue
   fn0 = std::ptr::swap_nonoverlapping_bytes::swap_nonoverlapping_chunks::<8>
   fn1 = std::ptr::swap_nonoverlapping_bytes::swap_nonoverlapping_short
 

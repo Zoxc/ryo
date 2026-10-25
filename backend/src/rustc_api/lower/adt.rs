@@ -11,6 +11,18 @@ use super::emit::{Width, imm_words, opw};
 use super::place::{Loc, PlaceVal};
 use super::{FnCx, NeedsNative, native};
 
+/// A niche-encoded tag (`TagEncoding::Niche`): its slot and width, the untagged variant,
+/// the niche variants `start..=end` and the tag value of `start` (truncated to `tw`).
+#[derive(Clone, Copy)]
+pub struct NicheTag {
+    pub slot: u32,
+    pub tw: Width,
+    pub untagged: u32,
+    pub start: u32,
+    pub end: u32,
+    pub niche_start: u128,
+}
+
 impl<'a, 'tcx> FnCx<'a, 'tcx> {
     pub fn aggregate(
         &mut self,
@@ -88,19 +100,107 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                         })
                     }
                     TagEncoding::Niche { untagged_variant, ref niche_variants, niche_start } => {
-                        let v = self.frame.temp(4, 4);
-                        let mut ops = vec![v, t];
-                        ops.extend(imm_words(tw, niche_start));
-                        ops.extend([niche_variants.start.as_u32(), niche_variants.last.as_u32(), untagged_variant.as_u32()]);
-                        self.op(opw("DiscrNiche", tw), &ops);
+                        let n = NicheTag {
+                            slot: t,
+                            tw,
+                            untagged: untagged_variant.as_u32(),
+                            start: niche_variants.start.as_u32(),
+                            end: niche_variants.last.as_u32(),
+                            niche_start: tw.truncate(niche_start),
+                        };
                         self.with_place_slot(dst, |fx, d| {
-                            fx.int_cast(d, v, Width::W32, dw, false);
+                            fx.niche_discr(d, dw, n);
                             Ok(())
                         })
                     }
                 }
             }
         }
+    }
+
+    /// The niche-encoded tag of the enum at `pv`, if its layout has one.
+    pub fn niche_tag(&mut self, pv: PlaceVal<'tcx>) -> Result<Option<NicheTag>, NeedsNative> {
+        let layout = pv.layout;
+        let Variants::Multiple { tag_encoding: TagEncoding::Niche { untagged_variant, ref niche_variants, niche_start }, tag_field, .. } =
+            layout.variants
+        else {
+            return Ok(None);
+        };
+        let tag_layout = layout.field(&self.lcx(), tag_field.as_usize());
+        let tag_loc = pv.loc.offset(layout.fields.offset(tag_field.as_usize()).bytes())?;
+        let Some(tw) = Width::of_size(tag_layout.size.bytes()) else { return native("tag width") };
+        let slot = self.loc_slot(tag_loc, tag_layout)?;
+        Ok(Some(NicheTag {
+            slot,
+            tw,
+            untagged: untagged_variant.as_u32(),
+            start: niche_variants.start.as_u32(),
+            end: niche_variants.last.as_u32(),
+            niche_start: tw.truncate(niche_start),
+        }))
+    }
+
+    /// `d` (width `dw`) = the variant index the niche tag `n` encodes, with plain integer ops
+    /// (cg_ssa's `codegen_get_discr`): `is_niche = (tag - niche_start) <=u relative_max`, the
+    /// value `start + (tag - niche_start)` if so, else `untagged`.
+    fn niche_discr(&mut self, d: u32, dw: Width, n: NicheTag) {
+        let NicheTag { slot: t, tw, untagged, start, end, niche_start } = n;
+        let (u, s) = (u128::from(untagged), u128::from(start));
+        let imm = |w: Width, v: u128| imm_words(w, w.truncate(v));
+        let b = self.frame.temp(1, 1);
+        if start == end {
+            // One niche variant: `is_niche = tag == niche_start`, the value `start`.
+            let (cmp, lo) = if u == s + 1 { ("NeImm", s) } else { ("EqImm", u) };
+            let mut ops = vec![b, t];
+            ops.extend(imm(tw, niche_start));
+            self.op(opw(cmp, tw), &ops);
+            self.int_cast(d, b, Width::W8, dw, false);
+            if s.abs_diff(u) == 1 {
+                // `d = lo + b`.
+                if lo != 0 {
+                    self.add_imm(d, dw, lo);
+                }
+                return;
+            }
+            // `d = ((start ^ untagged) & -b) ^ untagged`.
+            self.op(opw("Neg", dw), &[d, d]);
+            let mut ops = vec![d, d];
+            ops.extend(imm(dw, s ^ u));
+            self.op(opw("AndImm", dw), &ops);
+            self.xor_imm(d, dw, u);
+            return;
+        }
+        // `r = tag - niche_start`, `b = r <=u relative_max`, `d = start + r` blended with
+        // `untagged` by `b`.
+        let r = self.frame.temp(u64::from(tw.bytes()), u64::from(tw.bytes()));
+        let mut ops = vec![r, t];
+        ops.extend(imm(tw, niche_start));
+        self.op(opw("SubImm", tw), &ops);
+        let mut ops = vec![b, r];
+        ops.extend(imm(tw, u128::from(end - start)));
+        self.op(opw("LeUImm", tw), &ops);
+        self.int_cast(d, r, tw, dw, false);
+        if s != 0 {
+            self.add_imm(d, dw, s);
+        }
+        let m = self.frame.temp(u64::from(dw.bytes()), u64::from(dw.bytes()));
+        self.int_cast(m, b, Width::W8, dw, false);
+        self.op(opw("Neg", dw), &[m, m]);
+        self.xor_imm(d, dw, u);
+        self.op(opw("And", dw), &[d, d, m]);
+        self.xor_imm(d, dw, u);
+    }
+
+    fn add_imm(&mut self, d: u32, w: Width, v: u128) {
+        let mut ops = vec![d, d];
+        ops.extend(imm_words(w, w.truncate(v)));
+        self.op(opw("AddImm", w), &ops);
+    }
+
+    fn xor_imm(&mut self, d: u32, w: Width, v: u128) {
+        let mut ops = vec![d, d];
+        ops.extend(imm_words(w, w.truncate(v)));
+        self.op(opw("XorImm", w), &ops);
     }
 
     /// Writes the tag of `variant` (cg_ssa's `codegen_set_discr`).

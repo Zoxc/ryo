@@ -6,12 +6,13 @@
 //! ([`FusedCmp`]). Each compare is one of those with a polarity and maybe swapped operands
 //! ([`branch_form`]).
 
+use rustc_abi::{TagEncoding, Variants};
 use rustc_hir::attrs::lang_items::LangItem;
 use rustc_index::IndexVec;
 use rustc_middle::mir::visit::{PlaceContext, Visitor};
 use rustc_middle::mir::{
-    AssertKind, BasicBlock, BasicBlockData, BinOp, Body, Local, Location, Operand, Rvalue, SourceInfo, StatementKind, SwitchTargets, Terminator,
-    TerminatorKind, UnwindAction, UnwindTerminateReason,
+    AssertKind, BasicBlock, BasicBlockData, BinOp, Body, Local, Location, Operand, Place, Rvalue, SourceInfo, StatementKind, SwitchTargets,
+    Terminator, TerminatorKind, UnwindAction, UnwindTerminateReason,
 };
 use rustc_middle::ty::{self, Instance, Ty};
 use ryo_bytecode::asm::Opnd;
@@ -48,6 +49,16 @@ pub struct FusedCmp<'tcx> {
     b: &'tcx Operand<'tcx>,
 }
 
+/// What the block's last statement fuses into its terminator, which then lowers it.
+#[derive(Clone, Copy)]
+pub enum Fused<'tcx> {
+    /// A compare feeding a `SwitchInt` or `Assert` ([`FusedCmp`]).
+    Cmp(FusedCmp<'tcx>),
+    /// `_d = discriminant(p)` of a niche-encoded enum, `_d` only feeding the `SwitchInt`: the
+    /// switch tests the tag of `p` directly ([`FnCx::switch_niche`]).
+    Discr(Place<'tcx>),
+}
+
 /// How often each local is used (defined, read, borrowed), not counting storage markers and
 /// debug info.
 pub fn local_uses(body: &Body<'_>) -> IndexVec<Local, u32> {
@@ -63,6 +74,9 @@ pub fn local_uses(body: &Body<'_>) -> IndexVec<Local, u32> {
     c.visit_body(body);
     c.0
 }
+
+/// A niche switch with at most this many tested arms branches on the tag with `br.eq.imm`.
+const NICHE_TESTS_MAX: usize = 4;
 
 /// A switch over at most this many values per case uses a jump table (`switch.dense`).
 const DENSE_MAX_SPAN: u128 = 1024;
@@ -107,8 +121,29 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         }
     }
 
+    /// The last statement of `data` that its terminator can lower together with ([`Fused`]).
+    pub fn fusable(&self, data: &'tcx BasicBlockData<'tcx>, uses: &IndexVec<Local, u32>) -> Option<Fused<'tcx>> {
+        if let Some(c) = self.fusable_compare(data, uses) {
+            return Some(Fused::Cmp(c));
+        }
+        self.fusable_discr(data, uses).map(Fused::Discr)
+    }
+
+    /// The place whose niche-encoded discriminant only the `SwitchInt` of `data` reads.
+    fn fusable_discr(&self, data: &'tcx BasicBlockData<'tcx>, uses: &IndexVec<Local, u32>) -> Option<Place<'tcx>> {
+        let TerminatorKind::SwitchInt { discr: Operand::Move(d), .. } = &data.terminator().kind else { return None };
+        let local = d.as_local()?;
+        let StatementKind::Assign(assign) = &data.statements.last()?.kind else { return None };
+        let (dst, Rvalue::Discriminant(p)) = &**assign else { return None };
+        if dst.as_local() != Some(local) || uses[local] != 2 {
+            return None;
+        }
+        let layout = self.layout_of(self.mono(p.ty(self.body, self.tcx).ty)).ok()?;
+        matches!(layout.variants, Variants::Multiple { tag_encoding: TagEncoding::Niche { .. }, .. }).then_some(*p)
+    }
+
     /// The compare that the terminator of `data` can fuse with ([`FusedCmp`]).
-    pub fn fusable_compare(&self, data: &'tcx BasicBlockData<'tcx>, uses: &IndexVec<Local, u32>) -> Option<FusedCmp<'tcx>> {
+    fn fusable_compare(&self, data: &'tcx BasicBlockData<'tcx>, uses: &IndexVec<Local, u32>) -> Option<FusedCmp<'tcx>> {
         let cond = match &data.terminator().kind {
             TerminatorKind::SwitchInt { discr, targets } if targets.iter().len() == 1 => discr,
             TerminatorKind::Assert { cond, .. } => cond,
@@ -178,7 +213,11 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     }
 
     fn switch_int(&mut self, discr: &Operand<'tcx>, targets: &SwitchTargets) -> Result<(), NeedsNative> {
-        if let Some(c) = self.fused.take() {
+        if let Some(Fused::Discr(p)) = self.fused {
+            self.fused = None;
+            return self.switch_niche(p, targets);
+        }
+        if let Some(Fused::Cmp(c)) = self.fused.take() {
             // A `bool`: one case, 0 or 1 (`fusable_compare`).
             let (v, bb) = targets.iter().next().expect("one case");
             let (t, f) = if v == 0 { (targets.otherwise(), bb) } else { (bb, targets.otherwise()) };
@@ -238,6 +277,57 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         Ok(())
     }
 
+    /// A `SwitchInt` on the discriminant of `p`, a niche-encoded enum, that tests the tag
+    /// instead of decoding it (cg_ssa's `codegen_get_discr` folded into the switch). The
+    /// switch values are variant indices; niche variant `i` has tag `niche_start + (i -
+    /// start)` (wrapping at the tag width), and the untagged variant is "no niche variant
+    /// matched". Up to [`NICHE_TESTS_MAX`] tested arms are `br.eq.imm` on the tag, more a
+    /// `switch.dense` on `tag - niche_start` after a range check.
+    fn switch_niche(&mut self, p: Place<'tcx>, targets: &SwitchTargets) -> Result<(), NeedsNative> {
+        let pv = self.place(p)?;
+        let Some(n) = self.niche_tag(pv)? else { unreachable!("fusable_discr checked the layout") };
+        let tw = n.tw;
+        let target = |v: u32| targets.iter().find(|&(c, _)| c == u128::from(v)).map_or(targets.otherwise(), |(_, bb)| bb);
+        let untagged_bb = target(n.untagged);
+        // `otherwise` covers the variant indices the switch doesn't list; when it is
+        // unreachable, those arms aren't tested.
+        let dead = |bb: BasicBlock| bb == targets.otherwise() && self.body[bb].is_empty_unreachable();
+        let tag_of = |i: u32| tw.truncate(n.niche_start.wrapping_add(u128::from(i - n.start)));
+        let arms: Vec<(u128, BasicBlock)> = (n.start..=n.end)
+            .filter(|&i| i != n.untagged)
+            .map(|i| (tag_of(i), target(i)))
+            .filter(|&(_, bb)| bb != untagged_bb && !dead(bb))
+            .collect();
+        if arms.len() <= NICHE_TESTS_MAX {
+            for (k, &(v, bb)) in arms.iter().enumerate() {
+                let mut ops = vec![n.slot];
+                ops.extend(imm_words(tw, v));
+                if k + 1 == arms.len() && Some(bb) == self.next_block && Some(untagged_bb) != self.next_block {
+                    // The last arm falls through: branch away when the tag differs.
+                    self.op_branch(opw("BrEqImm", tw), &ops, true, untagged_bb);
+                    return Ok(());
+                }
+                self.op_branch(opw("BrEqImm", tw), &ops, false, bb);
+            }
+            self.jump(untagged_bb);
+            return Ok(());
+        }
+        // `r = tag - niche_start`; `r >u relative_max` is the untagged variant, otherwise `r`
+        // is the niche variant `start + r`.
+        let r = self.frame.temp(u64::from(tw.bytes()), u64::from(tw.bytes()));
+        let mut ops = vec![r, n.slot];
+        ops.extend(imm_words(tw, n.niche_start));
+        self.op(opw("SubImm", tw), &ops);
+        let mut ops = vec![r];
+        ops.extend(imm_words(tw, u128::from(n.end - n.start)));
+        self.op_branch(opw("BrGtUImm", tw), &ops, false, untagged_bb);
+        let labels = (n.start..=n.end).map(|i| self.block_label(target(i))).collect();
+        let base = if tw == Width::W128 { Opnd::Imm128(0) } else { Opnd::Imm(0) };
+        let default = self.block_label(untagged_bb);
+        self.emit(opw("SwitchDense", tw), vec![Opnd::Slot(r as i32), base, Opnd::Target(default), Opnd::Targets(labels)]);
+        Ok(())
+    }
+
     /// A call of the lang item for `reason` (`panic_cannot_unwind`, `panic_in_cleanup`), which
     /// reports the panic and aborts, as cg_ssa's `codegen_terminate_terminator`.
     pub fn terminate_call(&mut self, reason: UnwindTerminateReason, source_info: SourceInfo) -> Result<(), NeedsNative> {
@@ -268,7 +358,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             self.jump(target);
             return Ok(());
         }
-        if let Some(c) = self.fused.take() {
+        if let Some(Fused::Cmp(c)) = self.fused.take() {
             self.branch_cmp(c, expected, target)?;
         } else if known.is_none() {
             let (c, _) = self.operand_slot(cond)?;
