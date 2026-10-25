@@ -26,7 +26,7 @@ modeled on cg_clif's `build_system/`.
 - A zero-dependency bin crate (its own `Cargo.toml` and `Cargo.lock`, not a workspace member),
   run through `./y.sh <cmd>` (or `y.cmd`/`y.ps1` on Windows), which is
   `cargo run --manifest-path build/Cargo.toml -- <cmd>`.
-- Commands: `build [--sysroot llvm|ryo] [--target T]...`, `build-clif`, `test [--clif | --cross T]`, `bench [--runs N]`, `bench codegen`,
+- Commands: `build [--sysroot llvm|ryo] [--target T]...`, `build-clif`, `test [--clif | --cross T]`, `bench [--runs N] [--llvm L] [--clif] [--ryo M] [--metric time|cachegrind]`, `bench codegen`,
   `bench crates [...]`, `lean [gen]`, `clean`.
 - It sets `RUSTC_BOOTSTRAP=1` on everything it spawns.
 
@@ -213,6 +213,12 @@ This gives a third backend, built from the same toolchain, to compare against.
   a built-in timer does the same (one warmup, then `N` runs, default 5). The programs'
   output must agree across backends. `y bench` builds `dist/` and cg_clif first if they are
   missing; `y test --clif` builds cg_clif too.
+  `--llvm O0,O2d,..`, `--clif` and `--ryo aot,jit` pick the columns instead (`d`: with
+  `-Cdebug-assertions=on`, which turns on overflow checks too, as `O0` and ryo have them;
+  ryo `aot` runs with `RYO_JIT=off`, `jit` with `RYO_JIT_OPT=ssa`); the first column is the
+  output reference. `--metric cachegrind` builds once and reports one run's instructions
+  (cachegrind `I refs`, children included) and their ratios to the first column instead of
+  times.
 - `bench codegen`: compiles each program in `bench/` with `rustc-ryo`, `RYO_DUMP` and
   `RYO_DUMP_CODE` ([backend.md](backend.md#debugging-switches)), writing the VM instructions
   to `bench/codegen/<program>.txt` and the x86 code, disassembled with iced-x86, to

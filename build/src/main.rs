@@ -37,7 +37,9 @@ commands:
                                entries; `--no-changed` only the fixed fast set
   test --cross T               cross-build and link (not run) the corpus for target T, e.g.
                                x86_64-pc-windows-msvc; needs `build --target T` first
-  bench [--runs N]             compare LLVM -O0/-O3, Cranelift and ryo: compile and run time
+  bench [--runs N] [--llvm O0,O2d,..] [--clif] [--ryo aot,jit] [--metric time|cachegrind]
+                               compare LLVM -O0/-O3, Cranelift and ryo: compile and run time
+                               (or run Ir); the options pick the columns (`d`: debug assertions)
   bench codegen                dump ryo's code for each bench program to bench/codegen/
   lean [gen | --proofs]        check the generated Lean tables, then `lake build` and
                                `lake test` in lean/; `gen` regenerates the tables;
@@ -69,9 +71,7 @@ enum Cmd {
     CrossTest {
         target: String,
     },
-    Bench {
-        runs: u32,
-    },
+    Bench(bench::Options),
     BenchCodegen,
     BenchCrates(crates::Options),
     /// `lean`, `lean gen` (`regen`) or `lean --proofs` (`proofs`).
@@ -126,12 +126,7 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
         "bench" => match rest.as_slice() {
             ["codegen"] => Ok(Cmd::BenchCodegen),
             ["crates", opts @ ..] => crates::parse_options(opts).map(Cmd::BenchCrates),
-            [] => Ok(Cmd::Bench { runs: bench::DEFAULT_RUNS }),
-            ["--runs", n] => match n.parse() {
-                Ok(runs) if runs > 0 => Ok(Cmd::Bench { runs }),
-                _ => Err(format!("bad run count `{n}`")),
-            },
-            [arg, ..] => Err(format!("unexpected argument `{arg}`")),
+            opts => bench::parse_options(opts).map(Cmd::Bench),
         },
         "lean" => match rest.as_slice() {
             [] => Ok(Cmd::Lean { regen: false, proofs: false }),
@@ -197,7 +192,7 @@ fn main() -> ExitCode {
         Cmd::BuildClif => clif::build(),
         Cmd::Test(opts) => test::run(&opts),
         Cmd::CrossTest { target } => cross::run(&target),
-        Cmd::Bench { runs } => bench::run(runs),
+        Cmd::Bench(opts) => bench::run(&opts),
         Cmd::BenchCodegen => bench::codegen(),
         Cmd::BenchCrates(opts) => crates::run(opts),
         Cmd::Lean { regen: false, proofs } => lean::check(proofs),
@@ -248,8 +243,8 @@ mod tests {
         let cross = || Ok(Cmd::CrossTest { target: "x86_64-pc-windows-msvc".into() });
         assert_eq!(parse(&["test", "--cross", "x86_64-pc-windows-msvc"]), cross());
         assert_eq!(parse(&["test", "--cross=x86_64-pc-windows-msvc"]), cross());
-        assert_eq!(parse(&["bench"]), Ok(Cmd::Bench { runs: bench::DEFAULT_RUNS }));
-        assert_eq!(parse(&["bench", "--runs", "3"]), Ok(Cmd::Bench { runs: 3 }));
+        assert_eq!(parse(&["bench"]), Ok(Cmd::Bench(bench::Options::default())));
+        assert_eq!(parse(&["bench", "--runs", "3"]), Ok(Cmd::Bench(bench::Options { runs: 3, ..Default::default() })));
         assert!(parse(&["bench", "--runs", "0"]).is_err());
         assert_eq!(parse(&["bench", "codegen"]), Ok(Cmd::BenchCodegen));
         assert!(matches!(parse(&["bench", "crates", "--quick"]), Ok(Cmd::BenchCrates(o)) if o.run_samples == 1));
