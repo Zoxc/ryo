@@ -4,8 +4,9 @@
 //! accesses of the alloca ([`super::fold::fold_addr`]), its address may have no use left. An
 //! alloca is promoted when it isn't pinned, nothing takes its address (no
 //! [`Op::AllocaAddr`] of it is left), no handler or island names it, and its accesses
-//! ([`Op::ALoad`], [`Op::AStore`]) are at power-of-two widths to fields that are equal or
-//! disjoint. Its fields become SSA values (Braun et al. again, on the IR): a load is replaced
+//! ([`Op::ALoad`], [`Op::AStore`]) cut it into pieces of power-of-two widths (scalar
+//! replacement: an access covering several pieces is split into one per piece, a `u64` read
+//! of two `u32` stores becomes two field reads put together). Its fields become SSA values (Braun et al. again, on the IR): a load is replaced
 //! by the value the last store to its field on each path left, through new block parameters
 //! where paths meet; a field nothing stored is undefined, but at an OSR entry, where a field
 //! of the AOT frame's alloca is loaded from it ([`Op::OsrLoad`]).
@@ -108,7 +109,7 @@ fn try_promote(f: &mut Func, mut ok: Vec<bool>) -> Result<bool, AllocaId> {
             match &f.insts[i.idx()].op {
                 Op::AllocaAddr(a, _) => ok[a.idx()] = false,
                 Op::ALoad(a, o, w) | Op::AStore(a, o, w) => {
-                    if w.is_power_of_two() && *w <= 8 && *o >= 0 && (*o as u32 + *w as u32) <= f.allocas[a.idx()].size {
+                    if (1..=8).contains(w) && *o >= 0 && (*o as u32 + *w as u32) <= f.allocas[a.idx()].size {
                         acc[a.idx()].push((*o, *w));
                     } else {
                         ok[a.idx()] = false;
@@ -134,9 +135,11 @@ fn try_promote(f: &mut Func, mut ok: Vec<bool>) -> Result<bool, AllocaId> {
             }
         }
     }
-    // Fields: equal or disjoint.
+    // Fields: the pieces the accesses' bounds cut each alloca into (scalar replacement), at
+    // power-of-two widths. An access covering several is split into one per piece.
     let mut fields: Vec<Field> = Vec::new();
     let mut field_of: BTreeMap<(u32, i32, u8), u32> = BTreeMap::new();
+    let mut split = alloc::vec![false; na];
     for a in 0..na {
         if !ok[a] {
             continue;
@@ -144,11 +147,17 @@ fn try_promote(f: &mut Func, mut ok: Vec<bool>) -> Result<bool, AllocaId> {
         let mut fs = core::mem::take(&mut acc[a]);
         fs.sort_unstable();
         fs.dedup();
-        if fs.windows(2).any(|p| p[0].0 + p[0].1 as i32 > p[1].0) {
+        let mut cuts: Vec<i32> = fs.iter().flat_map(|&(o, w)| [o, o + w as i32]).collect();
+        cuts.sort_unstable();
+        cuts.dedup();
+        let pieces: Vec<(i32, u8)> =
+            cuts.windows(2).filter(|c| fs.iter().any(|&(o, w)| o <= c[0] && c[1] <= o + w as i32)).map(|c| (c[0], (c[1] - c[0]) as u8)).collect();
+        if pieces.iter().any(|p| !p.1.is_power_of_two()) {
             ok[a] = false;
             continue;
         }
-        for (o, w) in fs {
+        split[a] = fs.iter().any(|x| pieces.binary_search(x).is_err());
+        for (o, w) in pieces {
             field_of.insert((a as u32, o, w), fields.len() as u32);
             fields.push((AllocaId(a as u32), o, w));
         }
@@ -156,6 +165,7 @@ fn try_promote(f: &mut Func, mut ok: Vec<bool>) -> Result<bool, AllocaId> {
     if !ok.iter().any(|&x| x) {
         return Ok(false);
     }
+    let exts = if split.iter().any(|&x| x) { split_accesses(f, &live, &split, &fields) } else { Vec::new() };
     // Invoke edges move no arguments: give a normal successor that would need parameters a
     // block of its own.
     for &b in &live.clone() {
@@ -274,10 +284,87 @@ fn try_promote(f: &mut Func, mut ok: Vec<bool>) -> Result<bool, AllocaId> {
         f.blocks[b.idx()].insts.retain(|&x| x != i);
     }
     f.resolve_aliases();
+    // A split load's field nothing stored is undefined, but its other fields' bits aren't:
+    // its extension (which would leave a register's garbage, all 64 bits) reads a zero.
+    for (i, w) in exts {
+        let v = f.insts[i.idx()].args[0];
+        if matches!(f.def(v), ValueDef::Undef) {
+            f.insts[i.idx()].args[0] = f.konst(0, w);
+        }
+    }
     for a in 0..na {
         if ok[a] {
             f.allocas[a].kind = AllocaKind::Promoted;
         }
     }
     Ok(true)
+}
+
+/// Splits the accesses of the allocas `split` marks that cover several of their `fields`
+/// into one access per field: a store stores each field's bytes of its value (shifted down),
+/// a load loads each field and puts the value together (zero-extended, shifted up, or'ed).
+/// The extensions, with their fields' widths.
+fn split_accesses(f: &mut Func, live: &[Block], split: &[bool], fields: &[Field]) -> Vec<(Inst, u8)> {
+    let mut exts = Vec::new();
+    for &b in live {
+        let insts = core::mem::take(&mut f.blocks[b.idx()].insts);
+        let mut out: Vec<Inst> = Vec::with_capacity(insts.len());
+        for i in insts {
+            let (a, o, w, store) = match f.insts[i.idx()].op {
+                Op::ALoad(a, o, w) => (a, o, w, false),
+                Op::AStore(a, o, w) => (a, o, w, true),
+                _ => {
+                    out.push(i);
+                    continue;
+                }
+            };
+            let end = o + w as i32;
+            let mine: Vec<(i32, u8)> = fields.iter().filter(|x| x.0 == a && o <= x.1 && x.1 + x.2 as i32 <= end).map(|x| (x.1, x.2)).collect();
+            if !split[a.idx()] || mine == [(o, w)] {
+                out.push(i);
+                continue;
+            }
+            let mut emit = |f: &mut Func, op: Op, args: Vec<Value>, ws: &[u8]| -> Option<Value> {
+                let k = f.inst(b, op, args, ws);
+                f.blocks[b.idx()].insts.pop();
+                out.push(k);
+                (!ws.is_empty()).then(|| f.result(k))
+            };
+            if store {
+                let v = f.insts[i.idx()].args[0];
+                // The width the store reads its value at.
+                let vw = if w.is_power_of_two() { w } else { 8 };
+                for (po, pw) in mine {
+                    let piece = if po == o {
+                        v
+                    } else {
+                        let sh = f.konst(8 * (po - o) as u64, vw);
+                        emit(f, Op::Bin(BinOp::ShrU, vw), alloc::vec![v, sh], &[vw]).unwrap()
+                    };
+                    emit(f, Op::AStore(a, po, pw), alloc::vec![piece], &[]);
+                }
+            } else {
+                let mut acc: Option<Value> = None;
+                for (po, pw) in mine {
+                    let x = emit(f, Op::ALoad(a, po, pw), Vec::new(), &[pw]).unwrap();
+                    let mut x = emit(f, Op::Ext { from: pw, to: w, sx: false }, alloc::vec![x], &[w]).unwrap();
+                    if let ValueDef::Inst(e, _) = f.def(x) {
+                        exts.push((e, pw));
+                    }
+                    if po != o {
+                        let sh = f.konst(8 * (po - o) as u64, w);
+                        x = emit(f, Op::Bin(BinOp::Shl, w), alloc::vec![x, sh], &[w]).unwrap();
+                    }
+                    acc = Some(match acc {
+                        None => x,
+                        Some(y) => emit(f, Op::Bin(BinOp::Or, w), alloc::vec![y, x], &[w]).unwrap(),
+                    });
+                }
+                let r = f.result(i);
+                f.values[r.idx()].def = ValueDef::Alias(acc.unwrap());
+            }
+        }
+        f.blocks[b.idx()].insts = out;
+    }
+    exts
 }

@@ -3879,7 +3879,7 @@ a4: $-128, 8 bytes, Promoted
 a5: $-120, 8 bytes, Promoted
 a6: $-112, 8 bytes, Promoted
 a7: $-104, 8 bytes, Promoted
-a8: $-96, 24 bytes, Memory, escaped
+a8: $-96, 24 bytes, Promoted, escaped
 a9: $-72, 4 bytes, Promoted
 a10: $-68, 4 bytes, Memory, pinned, escaped
 a11: $-64, 8 bytes, Promoted
@@ -4080,41 +4080,33 @@ b2(): ; Body head 0
     v4:1 = ALoad(AllocaId(10), 3, 1) ()
     br v4 ? b3() : b13()
 b3(): ; Body
-    AStore(AllocaId(8), 16, 8) (v1)
     v7:4 = Load(4, 0) (v1)
-    AStore(AllocaId(8), 20, 4) (v7)
     AStore(AllocaId(10), 0, 4) (v7)
     v9:8 = AllocaAddr(AllocaId(10), 0) ()
-    AStore(AllocaId(8), 0, 8) (v9)
-    AStore(AllocaId(8), 8, 8) (v1)
-    AStore(AllocaId(8), 16, 8) (0x1)
-    jmp b5(v31, v0)
+    jmp b5(v31, v0, v1, v9)
 b4(): ; Body
     trap
-b5(v11:8, v43:8): ; Body head 1
-    v12:8 = ALoad(AllocaId(8), 8, 8) ()
+b5(v11:8, v43:8, v178:8, v188:8): ; Body head 1
     v35:8 = RefAddr(k3, false) ()
     v130:4 = hcall.reg ctpop.w64 [(Fp, [None, None]), (Imm(4294967172), [Some(Scratch(0)), None]), (Imm(4294967272), [Some(Scratch(8)), None])] outs 1 (0x4)
     br Eq.w4 v130, 0x1 ? b89() : b90()
 b6(): ; Body
     trap
 b7(): ; Body head 2
-    jmp b12()
-b8(v56:8, v70:8): ; Body head 3
+    jmp b12(v188, v11)
+b8(v56:8, v70:8, v191:8): ; Body head 3
     v59:8 = PtrAdd(-4) (v56)
-    jmp b22(v59, v70)
+    jmp b22(v59, v70, v56, v191)
 b9(): ; Body
     trap
-b10(v15:1, v18:8, v46:8): ; Body head 4
-    br v15 ? b11() : b12()
+b10(v15:1, v18:8, v46:8, v179:8, v189:8): ; Body head 4
+    br v15 ? b11() : b12(v189, v179)
 b11(): ; Body
-    jmp b5(v18, v46)
-b12(): ; Body
-    v81:8 = ALoad(AllocaId(8), 0, 8) ()
-    v82:8 = ALoad(AllocaId(8), 8, 8) ()
-    v83:8 = ALoad(AllocaId(8), 16, 8) ()
+    jmp b5(v18, v46, v179, v189)
+b12(v186:8, v196:8): ; Body
     v84:8 = RefAddr(image.k10520, false) ()
-    br Eq.w8 v83, 0x0 ? b49() : b50()
+    v86:4 = hcall.reg ctpop.w64 [(Fp, [None, None]), (Imm(4294967172), [Some(Scratch(0)), None]), (Imm(4294967272), [Some(Scratch(8)), None])] outs 1 (0x4)
+    br Eq.w4 v86, 0x1 ? b53() : b54()
 b13(): ; Body
     ret 0x0 ()
 b14(): ; Body head 5 cold
@@ -4122,9 +4114,6 @@ b14(): ; Body head 5 cold
 b15(): ; Body
     trap
 b16(): ; Body head 6
-    AStore(AllocaId(8), 0, 8) (v1)
-    AStore(AllocaId(8), 8, 8) (v1)
-    AStore(AllocaId(8), 16, 8) (v31)
     v77:4 = Load(4, 0) (v1)
     v78:4 = Load(4, -4) (v1)
     v79:1 = Cmp(LtU, 4) (v77, v78)
@@ -4139,12 +4128,12 @@ b19(): ; Body
 b20(): ; Body
     trap
 b21(): ; Body
-    jmp b8(v11, v43)
-b22(v47:8, v55:8): ; Body head 7
+    jmp b8(v11, v43, v188)
+b22(v47:8, v55:8, v180:8, v190:8): ; Body head 7
     v73:4 = ALoad(AllocaId(10), 0, 4) ()
     v74:4 = Load(4, 0) (v47)
     v75:1 = Cmp(LtU, 4) (v73, v74)
-    jmp b10(v75, v47, v55)
+    jmp b10(v75, v47, v55, v180, v190)
 b23(): ; Body
     trap
 b24(): ; Body
@@ -4160,20 +4149,27 @@ b28(): ; Body
 b29(): ; Osr(1)
     v16:8 = OsrLoad(-32, 8) ()
     v44:8 = OsrLoad(-8, 8) ()
-    jmp b5(v16, v44)
+    v220:8 = OsrLoad(-88, 8) ()
+    v224:8 = OsrLoad(-96, 8) ()
+    jmp b5(v16, v44, v220, v224)
 b30(): ; Osr(3)
     v57:8 = OsrLoad(-32, 8) ()
     v71:8 = OsrLoad(-8, 8) ()
-    jmp b8(v57, v71)
+    v221:8 = OsrLoad(-96, 8) ()
+    jmp b8(v57, v71, v221)
 b31(): ; Osr(4)
     v52:1 = OsrLoad(-69, 1) ()
     v53:8 = OsrLoad(-32, 8) ()
     v54:8 = OsrLoad(-8, 8) ()
-    jmp b10(v52, v53, v54)
+    v219:8 = OsrLoad(-88, 8) ()
+    v223:8 = OsrLoad(-96, 8) ()
+    jmp b10(v52, v53, v54, v219, v223)
 b32(): ; Osr(7)
     v60:8 = OsrLoad(-104, 8) ()
     v69:8 = OsrLoad(-8, 8) ()
-    jmp b22(v60, v69)
+    v218:8 = OsrLoad(-88, 8) ()
+    v222:8 = OsrLoad(-96, 8) ()
+    jmp b22(v60, v69, v218, v222)
 b33(): ; Body cold
     trap
 b34(): ; Body cold
@@ -4207,16 +4203,15 @@ b47(): ; Body
 b48(): ; Body
     trap
 b49(): ; Body
-    jmp b51(0x1)
+    trap
 b50(): ; Body
-    jmp b51(0x0)
-b51(v85:1): ; Body
-    v86:4 = hcall.reg ctpop.w64 [(Fp, [None, None]), (Imm(4294967172), [Some(Scratch(0)), None]), (Imm(4294967272), [Some(Scratch(8)), None])] outs 1 (0x4)
-    br Eq.w4 v86, 0x1 ? b53() : b54()
+    trap
+b51(): ; Body
+    trap
 b52(): ; Body
     trap
 b53(): ; Body
-    v87:8 = Bin(And, 8) (v81, 0x3)
+    v87:8 = Bin(And, 8) (v186, 0x3)
     br Eq.w8 v87, 0x0 ? b73() : b80()
 b54(): ; Body cold
     v89:8 = RefAddr(image.k6432, false) ()
@@ -4233,7 +4228,7 @@ b57(): ; Body
 b58(): ; Body
     trap
 b59(): ; Body
-    v93:8 = Bin(And, 8) (v82, 0x3)
+    v93:8 = Bin(And, 8) (v196, 0x3)
     br Eq.w8 v93, 0x0 ? b75() : b80()
 b60(): ; Body cold
     v95:8 = RefAddr(image.k6432, false) ()
@@ -4245,40 +4240,36 @@ b61(): ; Body
 b62(): ; Body
     trap
 b63(): ; Body
-    v98:8, v99:1 = Ovf(Mul, false, 8) (0x4, v83)
-    br ovf ? b69() : b65()
+    br LtU.w8 v186, v196 ? b66() : b67()
 b64(): ; Body
     trap
 b65(): ; Body
-    br LtU.w8 v81, v82 ? b66() : b67()
+    trap
 b66(): ; Body
-    v100:8 = Bin(Sub, 8) (v82, v81)
+    v100:8 = Bin(Sub, 8) (v196, v186)
     jmp b68(v100)
 b67(): ; Body
-    v101:8 = Bin(Sub, 8) (v81, v82)
+    v101:8 = Bin(Sub, 8) (v186, v196)
     jmp b68(v101)
 b68(v102:8): ; Body
-    br LeU.w8 v98, v102 ? b72() : b80()
+    br LeU.w8 0x4, v102 ? b72() : b80()
 b69(): ; Body cold
-    v104:8 = RefAddr(image.k9346, false) ()
-    Call(Call { target: image.sym50, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: None }) (v104, 0x3d)
     trap
 b70(): ; Body
     trap
 b71(): ; Body
     trap
 b72(): ; Body
-    v109:8 = Bin(Mul, 8) (v83, 0x4)
-    hcall.reg memcpy [(Fp, [None, None]), (Imm(4294967272), [Some(Scratch(0)), None]), (Imm(4294967280), [Some(Scratch(8)), None]), (Imm(4294967240), [Some(Scratch(16)), None])] outs 0 (v82, v81, v109)
+    hcall.reg memcpy [(Fp, [None, None]), (Imm(4294967272), [Some(Scratch(0)), None]), (Imm(4294967280), [Some(Scratch(8)), None]), (Imm(4294967240), [Some(Scratch(16)), None])] outs 0 (v196, v186, 0x4)
     jmp b13()
 b73(): ; Body
-    br v85 ? b57() : b74()
+    br Eq.w8 v186, 0x0 ? b80() : b57()
 b74(): ; Body
-    br Eq.w8 v81, 0x0 ? b80() : b57()
+    trap
 b75(): ; Body
-    br v85 ? b63() : b76()
+    br Eq.w8 v196, 0x0 ? b80() : b63()
 b76(): ; Body
-    br Eq.w8 v82, 0x0 ? b80() : b63()
+    trap
 b77(): ; Stub cold
     v106:8 = LandingPad ()
     jmp b83()
@@ -4326,7 +4317,7 @@ b93(): ; Body
 b94(): ; Body
     trap
 b95(): ; Body
-    v137:8 = Bin(And, 8) (v12, 0x3)
+    v137:8 = Bin(And, 8) (v178, 0x3)
     br Eq.w8 v137, 0x0 ? b108() : b112()
 b96(): ; Body cold
     v139:8 = RefAddr(image.k6432, false) ()
@@ -4338,14 +4329,14 @@ b97(): ; Body
 b98(): ; Body
     trap
 b99(): ; Body
-    br LtU.w8 v11, v12 ? b101() : b102()
+    br LtU.w8 v11, v178 ? b101() : b102()
 b100(): ; Body
     trap
 b101(): ; Body
-    v142:8 = Bin(Sub, 8) (v12, v11)
+    v142:8 = Bin(Sub, 8) (v178, v11)
     jmp b103(v142)
 b102(): ; Body
-    v143:8 = Bin(Sub, 8) (v11, v12)
+    v143:8 = Bin(Sub, 8) (v11, v178)
     jmp b103(v143)
 b103(v144:8): ; Body
     br GeU.w8 v144, 0x4 ? b106() : b112()
@@ -4354,13 +4345,12 @@ b104(): ; Body
 b105(): ; Body
     trap
 b106(): ; Body
-    hcall.reg memcpy [(Fp, [None, None]), (Imm(4294967184), [Some(Scratch(0)), None]), (Imm(4294967192), [Some(Scratch(8)), None]), (Imm(4294967152), [Some(Scratch(16)), None])] outs 0 (v12, v11, 0x4)
-    AStore(AllocaId(8), 8, 8) (v11)
+    hcall.reg memcpy [(Fp, [None, None]), (Imm(4294967184), [Some(Scratch(0)), None]), (Imm(4294967192), [Some(Scratch(8)), None]), (Imm(4294967152), [Some(Scratch(16)), None])] outs 0 (v178, v11, 0x4)
     br Eq.w8 v11, v43 ? b7() : b21()
 b107(): ; Body
     br Eq.w8 v11, 0x0 ? b112() : b93()
 b108(): ; Body
-    br Eq.w8 v12, 0x0 ? b112() : b99()
+    br Eq.w8 v178, 0x0 ? b112() : b99()
 b109(): ; Stub cold
     v147:8 = LandingPad ()
     jmp b115()
@@ -21249,23 +21239,23 @@ b19(): ; Body cold
 fn std::iter::adapters::map::map_fold::<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}
 a0: $-72, 8 bytes, Promoted
 a1: $-64, 8 bytes, Promoted
-a2: $-56, 8 bytes, Memory
-a3: $-48, 8 bytes, Memory
+a2: $-56, 8 bytes, Promoted
+a3: $-48, 8 bytes, Promoted
 a4: $-40, 8 bytes, Promoted
 a5: $-32, 8 bytes, Promoted
 a6: $-17, 1 bytes, Promoted
 a7: $-16, 8 bytes, Promoted
 a8: $-8, 8 bytes, Promoted
-a9: $-32, 8 bytes, Memory, inlined
+a9: $-32, 8 bytes, Promoted, inlined
 a10: $-24, 8 bytes, Promoted, inlined
-a11: $-16, 8 bytes, Memory, inlined
+a11: $-16, 8 bytes, Promoted, inlined
 a12: $-8, 8 bytes, Promoted, inlined
 a13: $-64, 8 bytes, Promoted, inlined
 a14: $-48, 8 bytes, Promoted, inlined
 a15: $-40, 8 bytes, Promoted, inlined
 a16: $-32, 8 bytes, Promoted, inlined
 a17: $-24, 8 bytes, Promoted, inlined
-a18: $-16, 8 bytes, Memory, inlined
+a18: $-16, 8 bytes, Promoted, inlined
 a19: $-8, 8 bytes, Promoted, inlined
 a20: $-48, 8 bytes, Promoted, inlined
 a21: $-40, 4 bytes, Promoted, inlined
@@ -21279,23 +21269,24 @@ a28: $-4, 4 bytes, Promoted, inlined
 b0(v0:8, v1:8): ; Entry
     v27:4 = Load(4, 0) (v1)
     v28:4 = hcall.reg rem.u.w32 [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None]), (Imm(4294967268), [Some(Scratch(8)), None]), (Imm(4294967256), [Some(Scratch(16)), None])] outs 1 (v27, 0x3e8)
-    AStore(AllocaId(2), 0, 4) (v28)
-    AStore(AllocaId(2), 4, 4) (v27)
-    v8:8 = ALoad(AllocaId(2), 0, 8) ()
-    AStore(AllocaId(3), 0, 8) (v8)
-    v10:4 = ALoad(AllocaId(3), 4, 4) ()
-    AStore(AllocaId(11), 0, 4) (v8)
-    AStore(AllocaId(11), 4, 4) (v10)
-    v18:8 = ALoad(AllocaId(11), 0, 8) ()
-    AStore(AllocaId(9), 0, 8) (v18)
-    v19:4 = ALoad(AllocaId(9), 4, 4) ()
-    AStore(AllocaId(18), 0, 4) (v18)
-    AStore(AllocaId(18), 4, 4) (v19)
+    v31:8 = Ext { from: 4, to: 8, sx: false } (v28)
+    v33:8 = Ext { from: 4, to: 8, sx: false } (v27)
+    v35:8 = Bin(Shl, 8) (v33, 0x20)
+    v36:8 = Bin(Or, 8) (v31, v35)
+    v38:8 = Bin(ShrU, 8) (v36, 0x20)
+    v40:8 = Ext { from: 4, to: 8, sx: false } (v36)
+    v42:8 = Ext { from: 4, to: 8, sx: false } (v38)
+    v44:8 = Bin(Shl, 8) (v42, 0x20)
+    v45:8 = Bin(Or, 8) (v40, v44)
+    v47:8 = Bin(ShrU, 8) (v45, 0x20)
     v20:8 = Load(8, 16) (v0)
     v21:8 = Load(8, 8) (v0)
     v22:8 = PtrIndex(8) (v20, v21)
-    v23:8 = ALoad(AllocaId(18), 0, 8) ()
-    Store(8, 0) (v22, v23)
+    v49:8 = Ext { from: 4, to: 8, sx: false } (v45)
+    v51:8 = Ext { from: 4, to: 8, sx: false } (v47)
+    v53:8 = Bin(Shl, 8) (v51, 0x20)
+    v54:8 = Bin(Or, 8) (v49, v53)
+    Store(8, 0) (v22, v54)
     v24:8 = Load(8, 8) (v0)
     v25:8 = Bin(Add, 8) (v24, 0x1)
     Store(8, 8) (v0, v25)

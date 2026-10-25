@@ -449,3 +449,33 @@ fn osr_transparent_duplicate_parameters() {
     assert_eq!(f.blocks[b1.idx()].params.len(), 1, "{f}");
     assert_eq!(f.blocks[bo.idx()].insts.len(), 1, "{f}");
 }
+
+/// Scalar replacement: an alloca written as two `u32`s and read as a `u64` (then written as
+/// a `u64` and its high half read) is promoted, its accesses split into the two fields.
+#[test]
+fn mixed_width_alloca_promoted() {
+    use ryo_bytecode::jit::ir::{Alloca, AllocaId, BinOp};
+    let mut f = IrFunc::default();
+    f.allocas.push(Alloca { aot_off: -8, size: 8, kind: AllocaKind::Memory, pinned: false, escaped: true, inlined: false });
+    let a = AllocaId(0);
+    let b0 = f.block(BlockKind::Entry);
+    let (p, q) = (f.param(b0, 8), f.param(b0, 8));
+    f.inst(b0, Op::AStore(a, 0, 4), vec![p], &[]);
+    f.inst(b0, Op::AStore(a, 4, 4), vec![q], &[]);
+    let x = f.inst(b0, Op::ALoad(a, 0, 8), vec![], &[8]);
+    let x = f.result(x);
+    let s = f.inst(b0, Op::Bin(BinOp::Add, 8), vec![x, p], &[8]);
+    let s = f.result(s);
+    f.inst(b0, Op::AStore(a, 0, 8), vec![s], &[]);
+    let y = f.inst(b0, Op::ALoad(a, 4, 4), vec![], &[4]);
+    let y = f.result(y);
+    let r = f.inst(b0, Op::Ext { from: 4, to: 8, sx: false }, vec![y], &[8]);
+    let r = f.result(r);
+    f.terminate(b0, Term::Ret { k: 8, parts: vec![r] });
+    f.layout = vec![b0];
+    let mut f = opt(f);
+    assert!(ryo_bytecode::jit::opt::promote::promote(&mut f), "{f}");
+    let f = opt(f);
+    assert_eq!(f.allocas[0].kind, AllocaKind::Promoted, "{f}");
+    assert!(f.blocks[0].insts.iter().all(|&i| !matches!(f.insts[i.idx()].op, Op::ALoad(..) | Op::AStore(..))), "{f}");
+}

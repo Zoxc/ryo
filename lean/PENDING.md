@@ -69,3 +69,10 @@ remove it once a Lean session has handled it.
   compares and compare-branches the facts decide. Only matters if the Lean model covers the
   SSA tier; each fold is a proof obligation. Commit: "JIT: eliminate checks dominating
   branches decide".
+
+- The SSA tier's alloca promotion (`jit::opt::promote`) also takes allocas accessed at
+  overlapping widths: their fields are the pieces the accesses' bounds cut them into (power
+  of two widths), a store covering several stores each piece (shifted down), a load covering
+  several loads each and puts them together (zero-extended, shifted, or'ed; an undefined
+  piece reads zero). Only matters if the Lean model covers the SSA tier. Commit: "JIT SSA:
+  scalar replacement of mixed-width allocas".
