@@ -1,5 +1,5 @@
-//! Local value numbering (design/jit.md, "The SSA tier"): one forward pass per block, in
-//! reverse postorder, before the folds ([`super::fold`]). Copies and constants are
+//! Value numbering (design/jit.md, "The SSA tier"): one forward pass per block, in a preorder
+//! walk of the dominator tree, before the folds ([`super::fold`]). Copies and constants are
 //! already propagated by construction (a `mov` or an `imm` defines no value of its own); this
 //! pass adds:
 //! - **constant folding** of pure operations whose operands are all constants, and algebraic
@@ -7,11 +7,13 @@
 //!   `p + i * s` with a constant `i`, `PtrAdd` chains, `PtrAdd` of an `AllocaAddr`), with a
 //!   commutative operation's constant put second;
 //! - **common subexpressions**: a pure operation with the same operands as an earlier one in
-//!   the block is replaced by it;
+//!   the block or a dominating block is replaced by it (addresses only within a block: they
+//!   are cheaper to recompute than to keep live);
 //! - **redundant load elimination and store-to-load forwarding**: a load from the same alloca
 //!   bytes, or the same pointer value and offset, as an earlier load or store in the block,
 //!   with nothing in between that may write them, is replaced by the value loaded or stored
-//!   (at least as wide: values are read by their low bytes).
+//!   (at least as wide: values are read by their low bytes). A block with a single
+//!   predecessor starts from what that one's end knows (extended basic blocks).
 //!
 //! What may write what: a store through a pointer may write any other pointer's bytes and
 //! the escaped (or pinned) allocas, never the others; a store to an alloca only its own
@@ -196,14 +198,47 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
     }
 }
 
-/// Runs local value numbering on every reachable block of `f`.
+/// Runs value numbering on every reachable block of `f`, walking the dominator tree.
 pub fn lvn(f: &mut Func) {
     let aliasable: Vec<bool> = f.allocas.iter().map(|a| a.escaped || a.pinned).collect();
-    let mut pure: BTreeMap<Key, Value> = BTreeMap::new();
+    let rpo = f.rpo();
+    let idom = f.idoms(&rpo);
+    let mut kids: Vec<Vec<Block>> = alloc::vec![Vec::new(); f.blocks.len()];
+    for &b in &rpo {
+        if let Some(d) = idom[b.idx()] {
+            kids[d.idx()].push(b);
+        }
+    }
+    // The pure operations of the dominating blocks, with their block, and an undo log.
+    let mut pure: BTreeMap<Key, (Value, Block)> = BTreeMap::new();
+    let mut undo: Vec<(Key, Option<(Value, Block)>)> = Vec::new();
+    // Per block, its memory at its end, while a successor with no other predecessor may
+    // start from it.
+    let mut end: Vec<Option<Vec<(Loc, u8, Value)>>> = alloc::vec![None; f.blocks.len()];
     let mut mem: Vec<(Loc, u8, Value)> = Vec::new();
-    for b in f.rpo() {
-        pure.clear();
+    // Preorder over the dominator tree: `Some(b)` enters `b`, `None` leaves the last entered.
+    let mut stack: Vec<Option<Block>> = rpo.iter().rev().filter(|b| idom[b.idx()].is_none()).map(|&b| Some(b)).collect();
+    let mut marks: Vec<usize> = Vec::new();
+    while let Some(e) = stack.pop() {
+        let Some(b) = e else {
+            let m = marks.pop().expect("a mark");
+            for (k, old) in undo.drain(m..).rev() {
+                match old {
+                    Some(o) => pure.insert(k, o),
+                    None => pure.remove(&k),
+                };
+            }
+            continue;
+        };
+        marks.push(undo.len());
+        stack.push(None);
+        stack.extend(kids[b.idx()].iter().rev().map(|&k| Some(k)));
         mem.clear();
+        if let [(p, _)] = f.blocks[b.idx()].preds[..]
+            && let Some(m) = &end[p.idx()]
+        {
+            mem.extend_from_slice(m);
+        }
         let insts = core::mem::take(&mut f.blocks[b.idx()].insts);
         let mut kept = Vec::with_capacity(insts.len());
         for i in insts {
@@ -229,13 +264,15 @@ pub fn lvn(f: &mut Func) {
                 }
                 let id = &f.insts[i.idx()];
                 if let Some(k) = key(&id.op, &id.args) {
-                    if let Some(&v) = pure.get(&k)
+                    // Addresses are cheaper to recompute than to keep live across blocks.
+                    if let Some(&(v, db)) = pure.get(&k)
                         && f.w(v) >= f.w(Value(res))
+                        && (db == b || !matches!(k.0, 5 | 6))
                     {
                         alias(f, v);
                         continue;
                     }
-                    pure.insert(k, Value(res));
+                    undo.push((k, pure.insert(k, (Value(res), b))));
                 }
                 kept.push(i);
                 continue;
@@ -312,6 +349,9 @@ pub fn lvn(f: &mut Func) {
             kept.push(i);
         }
         f.blocks[b.idx()].insts = kept;
+        if f.blocks[b.idx()].term.edges().iter().any(|e| f.blocks[e.to.idx()].preds.len() == 1) {
+            end[b.idx()] = Some(mem.clone());
+        }
     }
     f.resolve_aliases();
 }

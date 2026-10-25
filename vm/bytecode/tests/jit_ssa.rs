@@ -479,3 +479,43 @@ fn mixed_width_alloca_promoted() {
     assert_eq!(f.allocas[0].kind, AllocaKind::Promoted, "{f}");
     assert!(f.blocks[0].insts.iter().all(|&i| !matches!(f.insts[i.idx()].op, Op::ALoad(..) | Op::AStore(..))), "{f}");
 }
+
+/// Value numbering over the dominator tree: a block with a single predecessor reuses the
+/// load and the sum its dominator computed; and a store to a memory alloca that the next
+/// store overwrites goes.
+#[test]
+fn dominator_value_numbering_and_dead_stores() {
+    use ryo_bytecode::jit::ir::{Alloca, AllocaId, BinOp};
+    let mut f = IrFunc::default();
+    let (b0, b1, b2) = (f.block(BlockKind::Entry), f.block(BlockKind::Body), f.block(BlockKind::Body));
+    let p = f.param(b0, 8);
+    let c = f.param(b0, 1);
+    let i = f.inst(b0, Op::Load(8, 0), vec![p], &[8]);
+    let x = f.result(i);
+    let i = f.inst(b0, Op::Bin(BinOp::Add, 8), vec![x, p], &[8]);
+    let s = f.result(i);
+    f.terminate(b0, Term::Br { cond: c, t: Edge::to(b1), f: Edge { to: b2, args: vec![] } });
+    let i = f.inst(b1, Op::Load(8, 0), vec![p], &[8]);
+    let x1 = f.result(i);
+    let i = f.inst(b1, Op::Bin(BinOp::Add, 8), vec![x1, p], &[8]);
+    let s1 = f.result(i);
+    f.terminate(b1, Term::Ret { k: 8, parts: vec![s1] });
+    f.allocas.push(Alloca { aot_off: -8, size: 8, kind: AllocaKind::Memory, pinned: false, escaped: false, inlined: false });
+    let a = AllocaId(0);
+    f.inst(b2, Op::AStore(a, 0, 8), vec![s], &[]);
+    f.inst(b2, Op::AStore(a, 0, 8), vec![x], &[]);
+    let i = f.inst(b2, Op::ALoad(a, 0, 8), vec![], &[8]);
+    let r = f.result(i);
+    f.terminate(b2, Term::Ret { k: 8, parts: vec![r] });
+    f.layout = vec![b0, b1, b2];
+    ryo_bytecode::jit::opt::lvn::lvn(&mut f);
+    ryo_bytecode::jit::opt::dse::dse(&mut f);
+    f.verify().unwrap_or_else(|e| panic!("{e}\n{f}"));
+    assert!(f.blocks[b1.idx()].insts.is_empty(), "{f}");
+    let Term::Ret { parts, .. } = &f.blocks[b1.idx()].term else { panic!("{f}") };
+    assert_eq!(parts, &vec![s], "{f}");
+    let Term::Ret { parts, .. } = &f.blocks[b2.idx()].term else { panic!("{f}") };
+    assert_eq!(parts, &vec![x], "{f}");
+    let stores = f.blocks[b2.idx()].insts.iter().filter(|i| matches!(f.insts[i.idx()].op, Op::AStore(..))).count();
+    assert_eq!(stores, 1, "{f}");
+}

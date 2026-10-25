@@ -99,10 +99,8 @@ b2(): ; Body
 b3(): ; Body
     trap
 b4(): ; Body
-    v9:8 = ALoad(AllocaId(21), 0, 8) ()
-    jmp b14(v9)
+    jmp b14(v2)
 b5(): ; Body
-    v12:8 = ALoad(AllocaId(21), 0, 8) ()
     v45:8 = RefAddr(k1, false) ()
     br LtU.w8 v1, v0 ? b47() : b46()
 b6(): ; Body
@@ -144,7 +142,7 @@ b21(): ; Body
 b22(): ; Body
     trap
 b23(): ; Body head 8
-    jmp b9(v12, v0, 0x0, v54)
+    jmp b9(v2, v0, 0x0, v54)
 b24(): ; Body
     trap
 b25(): ; Body

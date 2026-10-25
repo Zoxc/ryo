@@ -25,12 +25,10 @@ fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::fold::<usize, {closure@s
     mov     [rsp+10h],rdx
     cmp     rdi,rsi
     jne     L0
-    mov     rax,[rsp+10h]
-    mov     r9,rax
+    mov     r9,rdx
     jmp     L3
 L0:
-    mov     rax,[rsp+10h]
-    lea     rcx,[k1]
+    lea     rax,[k1]
     cmp     rsi,rdi
     jb      L6
     sub     rsi,rdi
@@ -39,10 +37,10 @@ L1:
     lea     r8,[rsp+10h]
     lea     r9,[rbx+r12]
     mov     rdi,r8
-    mov     rsi,rdx
+    mov     rsi,rcx
     mov     rdx,r9
     call    fn0
-    mov     rdx,rax
+    mov     rcx,rax
     lea     r8,[k6]
     mov     r11,r12
     add     r11,1
@@ -50,10 +48,10 @@ L1:
     add     r12,1
     cmp     r12,r13
     jne     L5
-    mov     r9,rdx
+    mov     r9,rcx
     jmp     L3
 L2:
-    mov     rdx,r9
+    mov     rcx,r9
     mov     rbx,r14
     mov     r12,r15
     mov     r13,rbp
@@ -69,22 +67,23 @@ L3:
     add     rsp,88h
     ret
 L4:
-    mov     rdx,rax
+    mov     rcx,rdx
     mov     rbx,rdi
     mov     r12d,0
     mov     r13,rsi
     jmp     L1
 L5:
-    mov     r9,rdx
+    mov     r9,rcx
     mov     r14,rbx
     mov     r15,r12
     mov     rbp,r13
     jmp     L2
 L6:
-    lea     rax,[image.k1032]
-    mov     rdi,rax
+    lea     rcx,[image.k1032]
+    mov     rdi,rcx
     mov     esi,193h
     mov     edx,0
+    mov     rcx,rax
     movzx   edx,dl
     call    image.sym14
     ud2
@@ -143,10 +142,10 @@ L11:
     mov     [rdx-60h],rbp
     mov     r11,[rsp+20h]
     mov     [rdx-70h],r11
+    mov     rcx,[rsp]
     mov     rbx,[rsp+8]
     mov     r12,[rsp+10h]
     mov     r13,[rsp+18h]
-    mov     rdx,[rsp]
     lea     rsp,[rsp+80h]
     jmp     L1
 L12:

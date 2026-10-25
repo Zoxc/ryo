@@ -1,8 +1,9 @@
 //! The SSA tier's optimization passes (design/jit.md, "The SSA tier"), run on the IR as
 //! construction ([`super::build`]) leaves it, before register allocation.
 //!
-//! - `lvn`: local value numbering: constant folding, common subexpressions, redundant loads
-//!   and store-to-load forwarding, per block.
+//! - `lvn`: value numbering: constant folding, common subexpressions over the dominator
+//!   tree, redundant loads and store-to-load forwarding over extended basic blocks.
+//! - `dse`: dead stores to allocas no pointer reaches, per block.
 //! - `simplify`: global simplification: constant propagation over block parameters, branch
 //!   folding, parameter aliasing and block merging.
 //! - `osr`: the OSR-transparent loop facts the forward analyses share: OSR edges left out.
@@ -17,6 +18,7 @@
 
 pub mod checks;
 pub mod dce;
+pub mod dse;
 pub mod fold;
 pub mod layout;
 pub mod lvn;
@@ -32,6 +34,7 @@ use super::ir::*;
 /// Runs the passes on `f`, in order.
 pub fn run(f: &mut Func) {
     lvn::lvn(f);
+    dse::dse(f);
     simplify::simplify(f);
     fold::fold(f);
     checks::checks(f);

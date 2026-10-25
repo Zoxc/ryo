@@ -331,16 +331,20 @@ including landing pad edges. `jit::build` is Braun et al.'s construction (CC 201
 the promoted variables: blocks are filled in layout order and sealed once their
 predecessors are; parameters get an operand row per predecessor while being built, trivial
 ones become aliases, and the edges' argument lists are written once at the end. Copies
-(`mov`), constants (`imm`) and trivial parameters disappear on the way. Then the passes of `jit::opt`: `opt::lvn`, local
-value numbering, one forward pass per block in reverse postorder: pure operations on
-constants fold, with algebraic identities (`x + 0`, `x * 1`, `x - x`, `p + i * s` with a
-constant `i`, `PtrAdd` chains); a pure operation repeated in its block is replaced by the
-first; and a load of alloca bytes, or of a pointer value plus an offset, that an earlier load
-or store of the block left known is replaced by that value. Only what may write them forgets
-them: a store through a pointer the other pointers' bytes and the escaped (or pinned)
-allocas, a store to an alloca its own bytes, a handler the allocas it names and, if it
-touches memory, what a pointer store does, a call also the outgoing area, an island
-everything. Then `opt::simplify`, the global simplifications: sparse conditional constant
+(`mov`), constants (`imm`) and trivial parameters disappear on the way. Then the passes of `jit::opt`: `opt::lvn`,
+value numbering, one forward pass per block in a preorder walk of the dominator tree: pure
+operations on constants fold, with algebraic identities (`x + 0`, `x * 1`, `x - x`,
+`p + i * s` with a constant `i`, `PtrAdd` chains); a pure operation repeated in its block or
+a block it dominates is replaced by the first (addresses only within a block, being cheaper
+to recompute than to keep live); and a load of alloca bytes, or of a pointer value plus an
+offset, that an earlier load or store left known is replaced by that value, within a block
+and into a successor it is the only predecessor of (extended basic blocks). Only what may
+write them forgets them: a store through a pointer the other pointers' bytes and the escaped
+(or pinned) allocas, a store to an alloca its own bytes, a handler the allocas it names and,
+if it touches memory, what a pointer store does, a call also the outgoing area, an island
+everything. Then `opt::dse` drops a store to a memory alloca no pointer reaches when later
+stores of its block overwrite its bytes before its loads, a handler or island naming it, or
+the block's end may read them. Then `opt::simplify`, the global simplifications: sparse conditional constant
 propagation (Wegman and Zadeck) over the block parameters, with executable edges, where
 `undef` counts as varying and edges from OSR entries don't count for a head's parameters
 ([OSR-transparent constants](#osr-transparent-constants)); the values it proves constant
