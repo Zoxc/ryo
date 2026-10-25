@@ -27,6 +27,88 @@ const NATIVE_CRATES: &[&str] = &["core", "compiler_builtins", "rustc_std_workspa
 /// The sysroot directory inside `dist/` (`rustc-ryo --sysroot ryo` selects it).
 pub const SYSROOT_DIR: &str = "sysroot-ryo";
 
+/// The stamp of `dist/sysroot-ryo`'s inputs, next to it in `dist/` ([`ryo_sysroot_status`]).
+pub const STAMP_FILE: &str = "sysroot-ryo.stamp";
+
+/// Whether `dist/sysroot-ryo` is there and built from the current inputs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SysrootStatus {
+    Missing,
+    /// Built from other inputs; the reason names the first one that differs.
+    Stale(String),
+    Current,
+}
+
+/// Checks `dist/sysroot-ryo` against its stamp: the backend in `dist/`, the `vm/` sources
+/// (`ryo_rt`, `ryo_bytecode` and the bundled JIT), the `rust-src` it is built from and how it
+/// is patched, and the rustc version. Doesn't check that `dist/`'s backend is current.
+pub fn ryo_sysroot_status(info: &RustcInfo, dist: &Path) -> SysrootStatus {
+    if !dist.join(SYSROOT_DIR).is_dir() {
+        return SysrootStatus::Missing;
+    }
+    let Ok(have) = fs::read_to_string(dist.join(STAMP_FILE)) else {
+        return SysrootStatus::Stale(format!("no {STAMP_FILE}"));
+    };
+    let want = match stamp(info, &root(), dist, crate::jit::supported(&info.host)) {
+        Ok(s) => s,
+        Err(e) => return SysrootStatus::Stale(e),
+    };
+    for line in want.lines() {
+        let key = line.split_once('=').map_or(line, |(k, _)| k);
+        if !have.lines().any(|l| l == line) {
+            return SysrootStatus::Stale(format!("{key} changed"));
+        }
+    }
+    if have.lines().count() != want.lines().count() { SysrootStatus::Stale("stamp format changed".to_owned()) } else { SysrootStatus::Current }
+}
+
+/// The inputs of the ryo sysroot, a `key=value` line each. `jit`: whether `ryo_rt` bundles
+/// the JIT (as [`build`] gets it).
+fn stamp(info: &RustcInfo, root: &Path, dist: &Path, jit: bool) -> Result<String, String> {
+    use std::hash::Hasher;
+    let rustc = crate::utils::output(cmd("rustc").arg("-vV"))?;
+    let mut vm = std::hash::DefaultHasher::new();
+    hash_tree(&root.join("vm"), Path::new(""), &mut vm)?;
+    // `prepare_sources` (how the library is patched) and the build's flags are in this file.
+    let mut y = std::hash::DefaultHasher::new();
+    y.write(include_str!("sysroot.rs").as_bytes());
+    let src = info.sysroot.join("lib").join("rustlib").join("src").join("rust").join("library");
+    Ok(format!(
+        "rustc={:x}\nrust-src={}\nbackend={:x}\nvm={:x}\ny={:x}\njit={jit}\n",
+        {
+            let mut h = std::hash::DefaultHasher::new();
+            h.write(rustc.as_bytes());
+            h.finish()
+        },
+        src.display(),
+        backend_stamp(dist)?,
+        vm.finish(),
+        y.finish(),
+    ))
+}
+
+/// Hashes the paths and contents of the files under `dir`, in a fixed order.
+fn hash_tree(dir: &Path, rel: &Path, h: &mut std::hash::DefaultHasher) -> Result<(), String> {
+    use std::hash::Hasher;
+    let mut entries: Vec<_> = fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?.flatten().collect();
+    entries.sort_by_key(|e| e.file_name());
+    for entry in entries {
+        let name = entry.file_name();
+        let path = entry.path();
+        let rel = rel.join(&name);
+        if entry.file_type().map_err(|e| e.to_string())?.is_dir() {
+            if name != "target" {
+                hash_tree(&path, &rel, h)?;
+            }
+        } else {
+            h.write(rel.to_string_lossy().as_bytes());
+            h.write_u8(0);
+            h.write(&fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?);
+        }
+    }
+    Ok(())
+}
+
 /// Where the shim leaves each ryo-built crate's `RYO_STATS` summary (`<crate>.txt`).
 pub const STATS_DIR_VAR: &str = "RYO_Y_SYSROOT_STATS";
 
@@ -91,6 +173,7 @@ pub fn build(info: &RustcInfo, dist: &Path, jit: Option<&Path>) -> Result<(), St
     let root = root();
     let work = root.join("target").join("sysroot-ryo");
     let lib_src = work.join("library");
+    let inputs = stamp(info, &root, dist, jit.is_some())?;
     prepare_sources(info, &root, &lib_src, jit.is_some())?;
 
     let rustc_ryo = dist.join("bin").join(exe_name("rustc-ryo"));
@@ -144,6 +227,9 @@ pub fn build(info: &RustcInfo, dist: &Path, jit: Option<&Path>) -> Result<(), St
     fs::write(&stamp_file, stamp.to_string()).map_err(|e| e.to_string())?;
 
     let sysroot = dist.join(SYSROOT_DIR);
+    // No stamp while the sysroot is replaced; `inputs` was taken before the build, so input
+    // changes during it leave the result stale.
+    let _ = fs::remove_file(dist.join(STAMP_FILE));
     if sysroot.exists() {
         fs::remove_dir_all(&sysroot).map_err(|e| format!("removing {}: {e}", sysroot.display()))?;
     }
@@ -165,6 +251,7 @@ pub fn build(info: &RustcInfo, dist: &Path, jit: Option<&Path>) -> Result<(), St
     if src_bin.is_dir() {
         copy_dir(&src_bin, &sysroot.join(&rel).join("bin"))?;
     }
+    fs::write(dist.join(STAMP_FILE), &inputs).map_err(|e| e.to_string())?;
     eprintln!("[y] sysroot: {n} files in {}", sysroot.display());
     print_coverage(&stats_dir)
 }

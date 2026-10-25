@@ -21,8 +21,19 @@ pub fn build(targets: &[String], ryo_std: bool) -> Result<(), String> {
     let backend = build_backend(&root, &target, &info)?;
 
     eprintln!("[y] sysroot: dist/");
+    // Everything but the ryo sysroot and its stamp, which `y test` checks for staleness
+    // ([`crate::sysroot::ryo_sysroot_status`]) instead of losing a slow build to each `y build`.
     if dist.exists() {
-        fs::remove_dir_all(&dist).map_err(|e| format!("removing {}: {e}", dist.display()))?;
+        for entry in fs::read_dir(&dist).map_err(|e| format!("{}: {e}", dist.display()))? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let name = entry.file_name();
+            if name == crate::sysroot::SYSROOT_DIR || name == crate::sysroot::STAMP_FILE {
+                continue;
+            }
+            let path = entry.path();
+            let r = if entry.file_type().map_err(|e| e.to_string())?.is_dir() { fs::remove_dir_all(&path) } else { fs::remove_file(&path) };
+            r.map_err(|e| format!("removing {}: {e}", path.display()))?;
+        }
     }
     let dist_lib = dist.join("lib");
     let dist_bin = dist.join("bin");
