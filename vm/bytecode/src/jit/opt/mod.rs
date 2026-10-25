@@ -6,9 +6,11 @@
 //! - `fold`: the folds instruction selection relies on.
 //! - `dce`: dead code elimination.
 //! - `thread`: jump threading through empty blocks.
+//! - `layout`: cold blocks last, and values crossing calls in them split off.
 
 pub mod dce;
 pub mod fold;
+pub mod layout;
 pub mod lvn;
 pub mod thread;
 
@@ -20,4 +22,5 @@ pub fn run(f: &mut Func) {
     fold::fold(f);
     dce::dce(f);
     thread::thread(f);
+    layout::layout(f);
 }

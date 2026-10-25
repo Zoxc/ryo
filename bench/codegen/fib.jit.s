@@ -6,41 +6,41 @@ fn fib
     cmp     ebx,2
     jae     L0
     mov     eax,ebx
-    jmp     L4
+    jmp     L1
 L0:
-    mov     r12,rbx
-    sub     r12d,1
-    jae     L1
-    lea     rax,[k0]
+    mov     rax,rbx
+    sub     eax,1
+    jb      L2
     mov     rdi,rax
-    call    qword ptr [sym1]
-    ud2
-L1:
-    mov     rdi,r12
     mov     edi,edi
     call    fn2
     mov     r12,rax
     sub     ebx,2
-    jae     L2
-    lea     rax,[k3]
-    mov     rdi,rax
-    call    qword ptr [sym1]
-    ud2
-L2:
+    jb      L3
     mov     rdi,rbx
     mov     edi,edi
     call    fn2
     add     r12,rax
-    jae     L3
-    lea     rax,[k6]
-    mov     rdi,rax
-    call    qword ptr [sym7]
-    ud2
-L3:
+    jb      L4
     mov     rax,r12
-L4:
+L1:
     mov     rbx,[rsp+20h]
     mov     r12,[rsp+10h]
     add     rsp,38h
     ret
+L2:
+    lea     rax,[k0]
+    mov     rdi,rax
+    call    qword ptr [sym1]
+    ud2
+L3:
+    lea     rax,[k3]
+    mov     rdi,rax
+    call    qword ptr [sym1]
+    ud2
+L4:
+    lea     rax,[k6]
+    mov     rdi,rax
+    call    qword ptr [sym7]
+    ud2
 

@@ -229,3 +229,40 @@ fn value_numbering() {
     let loads = f.blocks[0].insts.iter().filter(|i| matches!(f.insts[i.idx()].op, Op::Load(..))).count();
     assert_eq!(loads, 2, "{f}");
 }
+
+/// A block that ends in `unreachable` after calls is cold: laid out after the hot ones, and
+/// the hot values it uses across its calls come in as its parameters, so that the linear
+/// scan keeps them in caller-saved registers and saves no callee-saved one.
+#[test]
+fn cold_blocks_last() {
+    let r = |s: i32| [s as u32, ArgReg { xmm: false, size: 8, index: 0 }.word()];
+    let (a1, a2) = (r(-8), r(-40));
+    let v = vec![
+        arg(-8, 0),
+        arg(-16, 1),
+        arg(-24, 2),
+        Insn::BrLtUW64 { a: Slot(-8), b: Slot(-16), neg: F, t: Target(7) },
+        // 4: the hot path.
+        Insn::AddW64 { d: Slot(-32), a: Slot(-8), b: Slot(-24) },
+        Insn::Ret { s: Slot(-32), k: 8 },
+        Insn::Ret { s: Slot(-32), k: 8 },
+        // 7: cold.
+        Insn::Call { d: Slot(-40), f: Func(0), k: 8, a: List::from_words(&a1) },
+        Insn::AddW64 { d: Slot(-40), a: Slot(-40), b: Slot(-16) },
+        Insn::AddW64 { d: Slot(-40), a: Slot(-40), b: Slot(-24) },
+        Insn::Call { d: Slot(-48), f: Func(0), k: 8, a: List::from_words(&a2) },
+        Insn::Unreachable {},
+    ];
+    let f = ir(&decoded(&v, 48, &[]));
+    let last = *f.layout.last().unwrap();
+    let lb = &f.blocks[last.idx()];
+    assert!(lb.cold && matches!(lb.term, Term::Trap), "{f}");
+    assert_eq!(f.layout[0].idx(), 0, "{f}");
+    assert!(f.layout.iter().filter(|b| f.blocks[b.idx()].cold).count() == 1, "{f}");
+    // y and z cross the first call.
+    assert_eq!(lb.params.len(), 2, "{f}");
+    let uses = ryo_bytecode::jit::regalloc::use_counts(&f);
+    let al = ryo_bytecode::jit::regalloc::linear_scan(&f, &uses, false);
+    ryo_bytecode::jit::regalloc::check(&f, &al, false).unwrap();
+    assert!(al.saved.is_empty(), "{al:?}\n{f}");
+}

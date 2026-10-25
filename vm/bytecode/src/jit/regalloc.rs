@@ -5,7 +5,7 @@
 use alloc::vec::Vec;
 
 pub use super::ir::use_counts;
-use super::ir::{Func, Op, Term, ValueDef};
+use super::ir::{Func, Op, ValueDef};
 use super::x86::R;
 
 /// Where a value lives.
@@ -131,11 +131,68 @@ fn live_in(f: &Func) -> Vec<Vec<u64>> {
     live
 }
 
+/// Whether each value is live across a call: live after it (but for its results) by the exact
+/// liveness, walking each block backward from its live-out set. A tail call needs nothing live
+/// after it, and a return only moves into its return registers after the last use.
+fn crossing(f: &Func, live: &[Vec<u64>]) -> Vec<bool> {
+    let words = f.values.len().div_ceil(64);
+    let mut cross = alloc::vec![false; f.values.len()];
+    let tracked = |v: super::ir::Value| matches!(f.values[v.idx()].def, ValueDef::Inst(..) | ValueDef::Param(..));
+    let mut cur = alloc::vec![0u64; words];
+    for &b in &f.layout {
+        let bd = &f.blocks[b.idx()];
+        if !bd.insts.iter().any(|i| f.insts[i.idx()].op.is_call()) {
+            continue;
+        }
+        cur.fill(0);
+        for e in bd.term.edges() {
+            for (w, x) in cur.iter_mut().zip(&live[e.to.idx()]) {
+                *w |= x;
+            }
+            for &p in &f.blocks[e.to.idx()].params {
+                cur[p.idx() / 64] &= !(1 << (p.idx() % 64));
+            }
+            for &a in &e.args {
+                if tracked(a) {
+                    cur[a.idx() / 64] |= 1 << (a.idx() % 64);
+                }
+            }
+        }
+        for u in bd.term.uses() {
+            if tracked(u) {
+                cur[u.idx() / 64] |= 1 << (u.idx() % 64);
+            }
+        }
+        for &i in bd.insts.iter().rev() {
+            let id = &f.insts[i.idx()];
+            for r in id.results() {
+                cur[r.idx() / 64] &= !(1 << (r.idx() % 64));
+            }
+            if id.op.is_call() {
+                for (w, &bits) in cur.iter().enumerate() {
+                    let mut x = bits;
+                    while x != 0 {
+                        cross[w * 64 + x.trailing_zeros() as usize] = true;
+                        x &= x - 1;
+                    }
+                }
+            }
+            for &a in &id.args {
+                if tracked(a) {
+                    cur[a.idx() / 64] |= 1 << (a.idx() % 64);
+                }
+            }
+        }
+    }
+    cross
+}
+
 /// Linear scan on SSA without splitting (design/jit.md, "The SSA tier"): each value's
 /// interval runs from its definition to its last use in the linear block order (holes
-/// ignored), and lives in one register or one stack slot throughout. Intervals that cross a
-/// call (which clobbers every caller-saved register) get callee-saved registers; when none is
-/// free, the interval that ends last is spilled.
+/// ignored), and lives in one register or one stack slot throughout. Values live across a call
+/// (which clobbers every caller-saved register; [`crossing`], by the exact liveness, so a call
+/// in a hole of the interval doesn't count) get callee-saved registers; when none is free, the
+/// interval that ends last is spilled.
 pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
     let pos = positions(f);
     let live = live_in(f);
@@ -147,7 +204,7 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
         hi[v] = hi[v].max(b);
     };
     let tracked = |v: super::ir::Value| matches!(f.values[v.idx()].def, ValueDef::Inst(..) | ValueDef::Param(..));
-    let mut calls: Vec<u32> = Vec::new();
+    let cross = crossing(f, &live);
     for &b in &f.layout {
         let bd = &f.blocks[b.idx()];
         let (s, e) = (pos.start[b.idx()], pos.end[b.idx()]);
@@ -186,9 +243,6 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
         for (k, &i) in bd.insts.iter().enumerate() {
             let p = s + 2 * (k as u32 + 1);
             let id = &f.insts[i.idx()];
-            if id.op.is_call() {
-                calls.push(p);
-            }
             for &a in &id.args {
                 if tracked(a) {
                     ext(a.idx(), p, p);
@@ -203,17 +257,7 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
                 ext(u.idx(), e, e);
             }
         }
-        // A tail call clobbers like a call (the callee-saved registers are restored before
-        // it); a return only moves into its return registers after the last use.
-        if matches!(bd.term, Term::TailCall { .. }) {
-            calls.push(e);
-        }
     }
-    calls.sort_unstable();
-    let crosses = |a: u32, b: u32| {
-        let i = calls.partition_point(|&c| c <= a);
-        i < calls.len() && calls[i] < b
-    };
     let mut order: Vec<usize> = (0..nv)
         .filter(|&v| {
             // Unused values need no location (their definitions write nowhere).
@@ -228,6 +272,11 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
         .collect();
     order.sort_by_key(|&v| (lo[v], v));
     let (caller, callee) = registers(frame_pointer);
+    let def_cold = |v: usize| match f.values[v].def {
+        ValueDef::Inst(i, _) => f.blocks[f.insts[i.idx()].block.idx()].cold,
+        ValueDef::Param(b, _) => f.blocks[b.idx()].cold,
+        _ => false,
+    };
     let mut loc = alloc::vec![Loc::None; nv];
     let mut spills = 0u32;
     // Active intervals: (end, value, register).
@@ -244,7 +293,7 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
                 true
             }
         });
-        let cross = crosses(a, b);
+        let cross = cross[v];
         // A hint: the register of the first operand (two-address forms), of an argument for a
         // parameter, or the fixed register the value comes in.
         let hint: Option<R> = match f.values[v].def {
@@ -278,9 +327,12 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
             }
             _ => None,
         };
-        let ok = |r: &R| free[r.num() as usize] && (!cross || callee.contains(r));
+        let ok = |r: &R| free[r.num() as usize] && (!cross || (callee.contains(r) && (!def_cold(v) || saved.contains(r))));
         let pick = match hint.filter(|r| ok(r) && (caller.contains(r) || callee.contains(r))) {
             Some(h) => Some(caller.iter().chain(&callee).find(|&&r| r == h).unwrap()),
+            // A value of cold code crossing a call takes a callee-saved register only if the
+            // prologue saves it anyway: otherwise a spill slot, off the hot path.
+            None if cross && def_cold(v) => callee.iter().find(|r| free[r.num() as usize] && saved.contains(*r)),
             None if cross => callee.iter().find(|r| free[r.num() as usize]),
             None => caller.iter().chain(&callee).find(|r| free[r.num() as usize]),
         };
@@ -303,7 +355,7 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
                     .max_by_key(|(_, (end, _, _))| *end)
                     .map(|(k, &x)| (k, x));
                 match cand {
-                    Some((k, (end, w, r))) if end > b => {
+                    Some((k, (end, w, r))) if end > b && !(cross && def_cold(v) && !saved.contains(&r)) => {
                         loc[w] = Loc::Spill(spills);
                         spills += 1;
                         active.remove(k);

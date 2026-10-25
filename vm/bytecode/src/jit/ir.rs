@@ -439,6 +439,8 @@ pub struct BlockData {
     pub kind: BlockKind,
     /// The AOT loop head this block starts at, if any.
     pub head: Option<u32>,
+    /// Off the hot path ([`super::opt::layout`]): laid out after the hot blocks.
+    pub cold: bool,
 }
 
 /// What an alloca is.
@@ -497,7 +499,7 @@ impl Func {
     }
 
     pub fn block(&mut self, kind: BlockKind) -> Block {
-        self.blocks.push(BlockData { params: Vec::new(), insts: Vec::new(), term: Term::None, preds: Vec::new(), kind, head: None });
+        self.blocks.push(BlockData { params: Vec::new(), insts: Vec::new(), term: Term::None, preds: Vec::new(), kind, head: None, cold: false });
         Block(self.blocks.len() as u32 - 1)
     }
 
@@ -858,6 +860,9 @@ impl fmt::Display for Func {
             write!(f, "b{b}({}): ; {:?}", ps.join(", "), bd.kind)?;
             if let Some(h) = bd.head {
                 write!(f, " head {h}")?;
+            }
+            if bd.cold {
+                write!(f, " cold")?;
             }
             writeln!(f)?;
             for &i in &bd.insts {

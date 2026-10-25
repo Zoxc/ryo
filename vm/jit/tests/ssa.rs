@@ -111,6 +111,16 @@ extern "C-unwind" fn throw(x: u64) -> u64 {
     x
 }
 
+static THROWN: AtomicU64 = AtomicU64::new(0);
+
+/// Native: `throw_all(x)` records `x` and raises a foreign exception.
+extern "C-unwind" fn throw_all(x: u64) -> u64 {
+    THROWN.store(x, SeqCst);
+    let e = Box::into_raw(Box::new(Exc { class: u64::from_be_bytes(*b"TESTEXC\0"), cleanup: exc_cleanup, private: [0; 2] }));
+    unsafe { _Unwind_RaiseException(e) };
+    panic!("_Unwind_RaiseException returned");
+}
+
 extern "C" fn delete_exc(e: *mut Exc) {
     unsafe { _Unwind_DeleteException(e) }
 }
@@ -123,6 +133,7 @@ fn syms() -> Vec<(&'static str, usize)> {
         ("mix", mix as *const () as usize),
         ("throw", throw as *const () as usize),
         ("delete_exc", delete_exc as *const () as usize),
+        ("throw_all", throw_all as *const () as usize),
     ]
 }
 
@@ -546,4 +557,60 @@ fn pinned_escaped_at_head() {
         assert!(in_jit(&img, f, o(&obs.last)), "{what}: ended at {:#x}", o(&obs.last));
     }
     check_stats(before, ks.len());
+}
+
+/// A cold block (it ends in `unreachable` after a call that unwinds) between the check and
+/// the hot path, using values of the hot path after calls of its own: laid out last, with
+/// those values passed to it as parameters, and the exception caught by the caller.
+#[test]
+fn cold_block_values_across_calls() {
+    let (_g, before) = start();
+    let mut w = ImageWriter::new(unique_scid());
+    let s_mul3 = w.symbol("mul3", 0);
+    let s_throw = w.symbol("throw_all", 0);
+    let s_del = w.symbol("delete_exc", 0);
+    // f(x, y, z): if x < y { ret x + z }; throw_all(mul3(x) + mul3(z) + y); unreachable.
+    // x@-8, y@-16, z@-24, r@-32, m1@-40, m2@-48.
+    let mut a = Asm::new();
+    a.i(arg(-8, 0));
+    a.i(arg(-16, 1));
+    a.i(arg(-24, 2));
+    let br = a.i(Insn::BrLtUW64 { a: Slot(-8), b: Slot(-16), neg: F, t: Target(0) });
+    a.i(Insn::AddW64 { d: Slot(-32), a: Slot(-8), b: Slot(-24) });
+    a.ret(Slot(-32), 8);
+    let cold = a.i(Insn::CallSym { d: Slot(-40), sym: s_mul3, k: 8, a: List::from_words(&regs(&[-8])) });
+    a.i(Insn::CallSym { d: Slot(-48), sym: s_mul3, k: 8, a: List::from_words(&regs(&[-24])) });
+    a.i(Insn::AddW64 { d: Slot(-40), a: Slot(-40), b: Slot(-48) });
+    a.i(Insn::AddW64 { d: Slot(-40), a: Slot(-40), b: Slot(-16) });
+    let throw = a.i(Insn::CallSym { d: Slot(-48), sym: s_throw, k: 8, a: List::from_words(&regs(&[-40])) });
+    a.i(Insn::Unreachable {});
+    a.patch(br, "t", cold);
+    let mut fd = func(a.done(), 48, 0, 8);
+    fd.cleanup = vec![CleanupEntry { offset: throw, target: ryo_bytecode::image::CONTINUE }];
+    let f = w.add_function(fd);
+    // g(x, y, z) = f(x, y, z), or 1000 if it unwinds. x@16, y@24, z@32; r@-8, exc@-16.
+    let mut a = Asm::new();
+    let site = a.i(Insn::Call { d: Slot(-8), f, k: 8, a: List::from_words(&regs(&[16, 24, 32])) });
+    a.ret(Slot(-8), 8);
+    let pad = a.i(Insn::Lpad { x: Slot(-16) });
+    a.i(Insn::CallSym { d: Slot(0), sym: s_del, k: 0, a: List::from_words(&regs(&[-16])) });
+    a.i(Insn::ImmW64 { d: Slot(-8), imm: 1000 });
+    a.ret(Slot(-8), 8);
+    let mut fd = func(a.done(), 16, 24, 8);
+    fd.cleanup = vec![CleanupEntry { offset: site, target: pad | CATCH }];
+    let g = w.add_function(fd);
+    let img = build(w, &syms());
+
+    for (x, y, z) in [(1u64, 2u64, 40u64), (5, 3, 11), (7, 7, 1 << 40), (0, u64::MAX, 9)] {
+        let del = DELETED.load(SeqCst);
+        let r = ok::<_, u64>(img.id(g), (x, y, z));
+        if x < y {
+            assert_eq!(r, x.wrapping_add(z), "({x}, {y}, {z})");
+        } else {
+            assert_eq!(r, 1000, "({x}, {y}, {z})");
+            assert_eq!(THROWN.load(SeqCst), (x * 3).wrapping_add(z.wrapping_mul(3)).wrapping_add(y), "({x}, {y}, {z})");
+            assert_eq!(DELETED.load(SeqCst), del + 1, "({x}, {y}, {z})");
+        }
+    }
+    check_stats(before, 2);
 }

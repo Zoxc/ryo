@@ -303,6 +303,8 @@ struct E<'a> {
     uses: Vec<u32>,
     /// The condition the flags hold an overflow in after the last [`Op::Ovf`].
     ovf_cc: Option<X>,
+    /// The move stubs of edges into cold blocks: emitted after the last block.
+    cold_stubs: Vec<(u32, Edge)>,
 }
 
 impl<'a> E<'a> {
@@ -1094,11 +1096,16 @@ impl<'a> E<'a> {
         })
     }
 
-    /// A label to branch to for `e`: its target's, or a stub doing its moves (emitted later).
+    /// A label to branch to for `e`: its target's, or a stub doing its moves (emitted after
+    /// the block, or after the last block for a cold target).
     fn edge_label(&mut self, e: &Edge, stubs: &mut Vec<(u32, Edge)>) -> u32 {
         if self.edge_has_moves(e) {
             let l = self.a.label();
-            stubs.push((l, e.clone()));
+            if self.f.blocks[e.to.idx()].cold {
+                self.cold_stubs.push((l, e.clone()));
+            } else {
+                stubs.push((l, e.clone()));
+            }
             l
         } else {
             e.to.0
@@ -1292,12 +1299,27 @@ fn asm_int_arg(i: u32) -> R {
 pub fn emit(f: &Func, al: &Alloc, mode: Mode, code_consts: &[u8], opts: Opts) -> Result<Output, Unsupported> {
     let fr = layout(f, al, opts);
     let uses = super::regalloc::use_counts(f);
-    let mut e = E { f, al, mode, fr, a: Asm::default(), rodata: Vec::new(), code_consts, sites: Vec::new(), cfi: Vec::new(), uses, ovf_cc: None };
+    let mut e = E {
+        f,
+        al,
+        mode,
+        fr,
+        a: Asm::default(),
+        rodata: Vec::new(),
+        code_consts,
+        sites: Vec::new(),
+        cfi: Vec::new(),
+        uses,
+        ovf_cc: None,
+        cold_stubs: Vec::new(),
+    };
     e.a.nlabels = f.blocks.len() as u32;
     let order = &f.layout;
     for (k, &b) in order.iter().enumerate() {
         e.block(b, order.get(k + 1).copied())?;
     }
+    let cold_stubs = core::mem::take(&mut e.cold_stubs);
+    e.emit_stubs(cold_stubs);
     let E { a, rodata, sites, cfi, fr, .. } = e;
     // The marks' pieces, to positions.
     let (code, relocs, lab, pos) = a.finish();
