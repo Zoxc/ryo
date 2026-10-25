@@ -195,7 +195,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     let fs = src.offset(sl.fields.offset(i).bytes())?;
                     let fd = dst.offset(dl.fields.offset(i).bytes())?;
                     if sf.ty == df.ty {
-                        self.copy_val(fd, fs, sf.size.bytes() as u32)?;
+                        self.with_cuts(sf, |fx| fx.copy_val(fd, fs, sf.size.bytes() as u32))?;
                     } else {
                         self.coerce_unsized_into(fd, df, fs, sf)?;
                     }

@@ -393,7 +393,9 @@ fn <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>
     arg $-56, 8
     arg $-64, 264
     load.copy $-48, [$-64 + 0], 24
-    copy $-24, $-48, 24
+    mov.w64 $-24, $-48
+    mov.w64 $-16, $-40
+    mov.w64 $-8, $-32
     store.copy [$-56 + 0], $-24, 24
     ret $-56, 8
 
@@ -401,7 +403,8 @@ fn <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>
     arg $-176, 8
     arg $-184, 264
     load.copy $-48, [$-184 + 0], 24
-    copy $-208, $-48, 24
+    mov.w128 $-208, $-48
+    mov.w64 $-192, $-32
 L0:
     ; escape align 8 $-24, 24 bytes
     ; escape align 8 $-208, 24 bytes
@@ -419,9 +422,12 @@ fn <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>
     load.copy $-48, [$-120 + 0], 24
     mov.w128 $-64, $-16
     mov.w64 $-104, $-24
-    copy $-96, $-48, 24
+    mov.w64 $-96, $-48
+    mov.w64 $-88, $-40
+    mov.w64 $-80, $-32
     mov.w64 $-72, $-104
-    copy $-152, $-96, 32
+    mov.w128 $-152, $-96
+    mov.w128 $-136, $-80
 L0:
     ; escape align 8 $-152, 32 bytes
     call $0, fn0, 0, [4294967232, 8, 4294967240, 264, 4294967144, 584]
@@ -435,9 +441,13 @@ fn <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>
     arg $-88, 264
     load.copy $-24, [$-80 + 0], 24
     load.copy $-48, [$-88 + 0], 24
-    copy $-72, $-48, 24
-    copy $-112, $-24, 24
-    copy $-136, $-72, 24
+    mov.w64 $-72, $-48
+    mov.w64 $-64, $-40
+    mov.w64 $-56, $-32
+    mov.w128 $-112, $-24
+    mov.w64 $-96, $-8
+    mov.w128 $-136, $-72
+    mov.w64 $-120, $-56
 L0:
     ; escape align 8 $-112, 24 bytes
     ; escape align 8 $-136, 24 bytes
@@ -483,8 +493,11 @@ fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:5
     arg $-88, 520
     load.copy $-40, [$-88 + 0], 24
     mov.w128 $-56, $-16
-    copy $-80, $-40, 24
-    copy $-112, $-80, 24
+    mov.w64 $-80, $-40
+    mov.w64 $-72, $-32
+    mov.w64 $-64, $-24
+    mov.w128 $-112, $-80
+    mov.w64 $-96, $-64
 L0:
     ; escape align 8 $-112, 24 bytes
     call $0, fn0, 0, [4294967240, 8, 4294967248, 264, 4294967184, 584]
@@ -498,8 +511,11 @@ fn <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:5
     arg $-8, 264
     arg $-72, 520
     load.copy $-40, [$-72 + 0], 24
-    copy $-64, $-40, 24
-    copy $-96, $-64, 24
+    mov.w64 $-64, $-40
+    mov.w64 $-56, $-32
+    mov.w64 $-48, $-24
+    mov.w128 $-96, $-64
+    mov.w64 $-80, $-48
 L0:
     ; escape align 8 $-96, 24 bytes
     call $0, fn0, 0, [4294967280, 8, 4294967288, 264, 4294967200, 584]
@@ -1339,7 +1355,9 @@ L4:
 L5:
     ; end $-120, 16 bytes
     ; end $-104, 8 bytes
-    copy $-24, $-96, 24
+    mov.w64 $-24, $-96
+    mov.w64 $-16, $-88
+    mov.w64 $-8, $-80
     ; end $-96, 24 bytes
     store.copy [$-72 + 0], $-24, 24
     ret $-72, 8
@@ -1441,13 +1459,15 @@ fn <std::vec::Vec<u32> as std::iter::FromIterator<u32>>::from_iter::<std::iter::
     arg $-56, 8
     arg $-88, 264
     load.copy $-48, [$-88 + 0], 24
-    copy $-112, $-48, 24
+    mov.w128 $-112, $-48
+    mov.w64 $-96, $-32
 L0:
     ; escape align 8 $-80, 24 bytes
     ; escape align 8 $-112, 24 bytes
     call $0, fn0, 0, [4294967216, 72, 4294967184, 328]
     ; end $-112, 24 bytes
-    copy $-112, $-80, 24
+    mov.w128 $-112, $-80
+    mov.w64 $-96, $-64
 L1:
     ; escape align 8 $-24, 24 bytes
     ; escape align 8 $-112, 24 bytes
@@ -1524,7 +1544,8 @@ fn <std::vec::Vec<u32> as std::vec::spec_extend::SpecExtend<u32, std::iter::Map<
     arg $-8, 8
     arg $-40, 264
     load.copy $-32, [$-40 + 0], 24
-    copy $-64, $-32, 24
+    mov.w128 $-64, $-32
+    mov.w64 $-48, $-16
 L0:
     ; escape align 8 $-64, 24 bytes
     call $0, fn0, 0, [4294967288, 8, 4294967232, 328]
@@ -1537,7 +1558,8 @@ fn <std::vec::Vec<u32> as std::vec::spec_from_iter::SpecFromIter<u32, std::iter:
     arg $-56, 8
     arg $-64, 264
     load.copy $-48, [$-64 + 0], 24
-    copy $-88, $-48, 24
+    mov.w128 $-88, $-48
+    mov.w64 $-72, $-32
 L0:
     ; escape align 8 $-24, 24 bytes
     ; escape align 8 $-88, 24 bytes
@@ -1591,7 +1613,9 @@ L5:
     ; end $-240, 16 bytes
     ; end $-136, 24 bytes
     ; end $-112, 8 bytes
-    copy $-24, $-104, 24
+    mov.w64 $-24, $-104
+    mov.w64 $-16, $-96
+    mov.w64 $-8, $-88
     ; end $-104, 24 bytes
     store.copy [$-80 + 0], $-24, 24
     ret $-80, 8
@@ -1617,8 +1641,11 @@ L11:
     ; escape align 8 $-104, 24 bytes
     addr $-112, $-104
     imm.w8 $-57, 0
-    copy $-136, $-48, 24
-    copy $-248, $-136, 24
+    mov.w64 $-136, $-48
+    mov.w64 $-128, $-40
+    mov.w64 $-120, $-32
+    mov.w128 $-248, $-136
+    mov.w64 $-232, $-120
 L12:
     ; escape align 8 $-248, 24 bytes
     call $0, fn8, 0, [4294967184, 8, 4294967048, 328]
@@ -2125,7 +2152,8 @@ L0:
 L1:
     ; escape align 8 $-48, 24 bytes
     call $0, fn1, 0, [4294967248, 72, 4294967232, 264, 4294967240, 520]
-    copy $-88, $-48, 24
+    mov.w128 $-88, $-48
+    mov.w64 $-72, $-32
     imm.w64 $-96, 0
 L2:
     ; escape align 8 $-88, 24 bytes
@@ -2411,9 +2439,15 @@ fn core::slice::<impl [(u32, u32)]>::split_at_mut (frame 208, args 0, ret 32)
 L0:
     ; escape align 8 $-136, 32 bytes
     call $0, fn1, 0, [4294967160, 72, 4294967248, 264, 4294967256, 520, 4294967240, 776, 4294967096, 1032]
-    copy $-96, $-136, 32
+    mov.w64 $-96, $-136
+    mov.w64 $-88, $-128
+    mov.w64 $-80, $-120
+    mov.w64 $-72, $-112
     ; end $-136, 32 bytes
-    copy $-32, $-96, 32
+    mov.w64 $-32, $-96
+    mov.w64 $-24, $-88
+    mov.w64 $-16, $-80
+    mov.w64 $-8, $-72
     store.copy [$-64 + 0], $-32, 32
     ret $-64, 8
 L1:
@@ -2816,9 +2850,15 @@ fn core::slice::<impl [u32]>::split_at_mut (frame 208, args 0, ret 32)
 L0:
     ; escape align 8 $-136, 32 bytes
     call $0, fn1, 0, [4294967160, 72, 4294967248, 264, 4294967256, 520, 4294967240, 776, 4294967096, 1032]
-    copy $-96, $-136, 32
+    mov.w64 $-96, $-136
+    mov.w64 $-88, $-128
+    mov.w64 $-80, $-120
+    mov.w64 $-72, $-112
     ; end $-136, 32 bytes
-    copy $-32, $-96, 32
+    mov.w64 $-32, $-96
+    mov.w64 $-24, $-88
+    mov.w64 $-16, $-80
+    mov.w64 $-8, $-72
     store.copy [$-64 + 0], $-32, 32
     ret $-64, 8
 L1:
@@ -4651,12 +4691,24 @@ L8:
     mov.w128 $-272, $-256
     const $-304, k4, 16
     mov.w128 $-288, $-272
-    copy $-368, $-304, 32
-    copy $-336, $-368, 32
-    copy $-240, $-336, 32
+    mov.w64 $-368, $-304
+    mov.w64 $-360, $-296
+    mov.w64 $-352, $-288
+    mov.w64 $-344, $-280
     ; end $-272, 16 bytes
     ; end $-256, 16 bytes
-    copy $-272, $-240, 32
+    mov.w64 $-336, $-368
+    mov.w64 $-328, $-360
+    mov.w64 $-320, $-352
+    mov.w64 $-312, $-344
+    mov.w64 $-240, $-336
+    mov.w64 $-232, $-328
+    mov.w64 $-224, $-320
+    mov.w64 $-216, $-312
+    mov.w64 $-272, $-240
+    mov.w64 $-264, $-232
+    mov.w64 $-256, $-224
+    mov.w64 $-248, $-216
 L9:
     ; escape align 8 $-272, 32 bytes
     addr $-312, $-272
@@ -4940,12 +4992,24 @@ L8:
     mov.w128 $-272, $-256
     const $-304, k4, 16
     mov.w128 $-288, $-272
-    copy $-368, $-304, 32
-    copy $-336, $-368, 32
-    copy $-240, $-336, 32
+    mov.w64 $-368, $-304
+    mov.w64 $-360, $-296
+    mov.w64 $-352, $-288
+    mov.w64 $-344, $-280
     ; end $-272, 16 bytes
     ; end $-256, 16 bytes
-    copy $-272, $-240, 32
+    mov.w64 $-336, $-368
+    mov.w64 $-328, $-360
+    mov.w64 $-320, $-352
+    mov.w64 $-312, $-344
+    mov.w64 $-240, $-336
+    mov.w64 $-232, $-328
+    mov.w64 $-224, $-320
+    mov.w64 $-216, $-312
+    mov.w64 $-272, $-240
+    mov.w64 $-264, $-232
+    mov.w64 $-256, $-224
+    mov.w64 $-248, $-216
 L9:
     ; escape align 8 $-272, 32 bytes
     addr $-312, $-272
@@ -6799,7 +6863,9 @@ L4:
     ; escape align 8 $-4240, 24 bytes
     call $0, fn3, 0, [4294963056, 72, 4294967208, 264]
     imm.w8 $-49, 1
-    copy $-4208, $-4240, 24
+    mov.w64 $-4208, $-4240
+    mov.w64 $-4200, $-4232
+    mov.w64 $-4192, $-4224
     ; end $-4240, 24 bytes
     ; escape align 8 $-4208, 24 bytes
     addr $-4224, $-4208
@@ -9031,7 +9097,8 @@ L0:
 L1:
     ; escape align 8 $-64, 24 bytes
     call $0, fn1, 0, [4294967232, 72, 4294967216, 264, 4294967224, 520, 4294967208, 776]
-    copy $-776, $-64, 24
+    mov.w128 $-776, $-64
+    mov.w64 $-760, $-48
 L2:
     ; escape align 8 $-40, 24 bytes
     ; escape align 8 $-776, 24 bytes
@@ -11689,7 +11756,8 @@ L1:
     mov.w128 $-192, $-24
     mov.w64 $-200, $-160
     mov.w128 $-216, $-176
-    copy $-256, $-216, 24
+    mov.w128 $-256, $-216
+    mov.w64 $-240, $-200
 L2:
     ; escape align 8 $-256, 24 bytes
     call $0, fn2, 0, [4294967104, 8, 4294967112, 264, 4294967040, 584]
@@ -11920,18 +11988,22 @@ L0:
 L1:
     call $0, fn1, 0, [4294967288, 8, 4294967136, 264]
     load.w64 $-176, [$-8 + 8]
-    mov.w64 $-168, $-176
     ; end $-176, 8 bytes
+    mov.w64 $-168, $-176
     ptr.add $-192, $-8, 16
     load.w64 $-200, [$-192 + 0]
     mov.w64 $-184, $-192
     mov.w64 $-176, $-200
     imm.w8 $-105, 0
-    copy $-208, $-32, 24
+    mov.w64 $-208, $-32
+    mov.w64 $-200, $-24
+    mov.w64 $-192, $-16
     mov.w64 $-216, $-168
     mov.w128 $-232, $-184
-    copy $-272, $-208, 24
-    copy $-296, $-232, 24
+    mov.w128 $-272, $-208
+    mov.w64 $-256, $-192
+    mov.w128 $-296, $-232
+    mov.w64 $-280, $-216
 L2:
     ; escape align 8 $-272, 24 bytes
     ; escape align 8 $-296, 24 bytes

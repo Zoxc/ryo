@@ -51,8 +51,18 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     return;
                 }
                 match Width::of_size(u64::from(size)) {
-                    Some(w) => self.op(opw("Load", w), &[d, p, k as u32]),
-                    None => self.op(Opcode::LoadCopy, &[d, p, k as u32, size]),
+                    Some(w) => {
+                        self.op(opw("Load", w), &[d, p, k as u32]);
+                    }
+                    // Split unless a piece would overwrite the pointer `p`.
+                    None if size <= super::SPLIT_MAX && (p + 8 <= d || p >= d + size) => {
+                        for (o, w) in super::pieces(size, Width::W64, &self.cuts) {
+                            self.op(opw("Load", w), &[d + o, p, (k + o as i32) as u32]);
+                        }
+                    }
+                    None => {
+                        self.op(Opcode::LoadCopy, &[d, p, k as u32, size]);
+                    }
                 };
             }
         }
@@ -67,8 +77,17 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     return;
                 }
                 match Width::of_size(u64::from(size)) {
-                    Some(w) => self.op(opw("Store", w), &[p, k as u32, s]),
-                    None => self.op(Opcode::StoreCopy, &[p, k as u32, s, size]),
+                    Some(w) => {
+                        self.op(opw("Store", w), &[p, k as u32, s]);
+                    }
+                    None if size <= super::SPLIT_MAX => {
+                        for (o, w) in super::pieces(size, Width::W64, &self.cuts) {
+                            self.op(opw("Store", w), &[p, (k + o as i32) as u32, s + o]);
+                        }
+                    }
+                    None => {
+                        self.op(Opcode::StoreCopy, &[p, k as u32, s, size]);
+                    }
                 };
             }
         }
@@ -88,7 +107,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 if pv.meta.is_some() {
                     return native("unsized operand");
                 }
-                self.copy_val(dst, pv.loc, pv.layout.size.bytes() as u32)
+                self.with_cuts(pv.layout, |fx| fx.copy_val(dst, pv.loc, pv.layout.size.bytes() as u32))
             }
             Operand::Constant(c) => self.const_into(c, dst),
             Operand::RuntimeChecks(rc) => {
@@ -125,7 +144,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             Loc::Slot(s) => s,
             Loc::Mem { .. } => {
                 let t = self.temp_for(layout);
-                self.load(t, loc, layout.size.bytes() as u32);
+                self.with_cuts(layout, |fx| fx.load(t, loc, layout.size.bytes() as u32));
                 t
             }
         })

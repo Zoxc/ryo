@@ -102,7 +102,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             let bytes = i.to_bits(i.size()).to_le_bytes()[..e as usize].to_vec();
             match dst.loc {
                 Loc::Slot(d) if bytes.iter().all(|&b| b == 0) => {
-                    self.op(Opcode::Zero, &[d, total as u32]);
+                    self.zero(d, total as u32);
                     return Ok(());
                 }
                 Loc::Slot(d) => {

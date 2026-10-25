@@ -76,3 +76,10 @@ remove it once a Lean session has handled it.
   second omitted when `otherwise` is an empty unreachable block, or negated to fall through)
   plus a `jmp`, instead of `switch.dense`. A C1' terminator rule. Commit: "Lower two-case
   switches to compare-and-branch".
+
+- Lowering: block copies and zeroing of at most 48 bytes (`copy`, `load.copy`, `store.copy`,
+  `zero` that aren't a scalar width) lower to `mov.wN`/`load.wN`/`store.wN`/`imm.wN 0` pieces,
+  cut at the value's scalar field offsets (widest piece that fits and straddles no field
+  start). Slot-to-slot only when the ranges don't overlap; `load` only when the pieces don't
+  overwrite the pointer slot. A C1' rule: an aggregate assignment of `n` bytes = the pieces.
+  Commit: "Lower small block copies and zeroing to scalar pieces".

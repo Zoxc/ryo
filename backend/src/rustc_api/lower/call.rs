@@ -609,7 +609,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// target (or traps if the call diverges).
     fn finish_call(&mut self, cont: CallCont<'tcx>, d: u32, store: bool) -> Result<(), NeedsNative> {
         if store && let Some(dest) = cont.dest {
-            self.store(dest.loc, d, dest.layout.size.bytes() as u32);
+            self.with_cuts(dest.layout, |fx| fx.store(dest.loc, d, dest.layout.size.bytes() as u32));
         }
         match cont.target {
             Some(bb) => self.jump(bb),

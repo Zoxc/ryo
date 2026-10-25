@@ -211,6 +211,9 @@ pub struct FnCx<'a, 'tcx> {
     scratch: Vec<Opnd<Label>>,
     /// Largest outgoing argument block of the calls made so far.
     pub max_outgoing: u32,
+    /// Field offsets the pieces of a split block copy may not straddle ([`pieces`]), set
+    /// by [`FnCx::with_cuts`] for the copy of a value of known layout.
+    pub cuts: Vec<u32>,
     arg_size: u32,
     /// How the function returns ([`ryo_bytecode::asm::RET_SRET`]).
     pub ret_kind: u32,
@@ -258,6 +261,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             block_labels,
             scratch: Vec::new(),
             max_outgoing: 0,
+            cuts: Vec::new(),
             arg_size: sig.plan.as_ref().map_or(0, |p| p.stack_size),
             ret_kind: sig.ret_kind,
             next_block: None,
@@ -483,9 +487,43 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             return;
         }
         match Width::of_size(u64::from(size)) {
-            Some(w) => self.op(opw("Mov", w), &[d, s]),
-            None => self.op(Opcode::Copy, &[d, s, size]),
+            Some(w) => {
+                self.op(opw("Mov", w), &[d, s]);
+            }
+            None if size <= SPLIT_MAX && (d + size <= s || s + size <= d) => {
+                for (o, w) in pieces(size, Width::W128, &self.cuts) {
+                    self.op(opw("Mov", w), &[d + o, s + o]);
+                }
+            }
+            None => {
+                self.op(Opcode::Copy, &[d, s, size]);
+            }
         };
+    }
+
+    /// Zeroes `size` bytes of slots at `d`: `imm 0` pieces up to [`SPLIT_MAX`] bytes, else
+    /// `zero`.
+    pub fn zero(&mut self, d: u32, size: u32) {
+        if size > SPLIT_MAX {
+            self.op(Opcode::Zero, &[d, size]);
+            return;
+        }
+        for (o, w) in pieces(size, Width::W64, &self.cuts) {
+            self.imm(w, d + o, 0);
+        }
+    }
+
+    /// Runs `f` (a copy of a value of `layout`) with [`FnCx::cuts`] at the layout's field
+    /// offsets.
+    pub fn with_cuts<R>(&mut self, layout: TyAndLayout<'tcx>, f: impl FnOnce(&mut Self) -> R) -> R {
+        let mut cuts = Vec::new();
+        if layout.size.bytes() <= u64::from(SPLIT_MAX) {
+            field_cuts(&self.lcx(), layout, 0, SPLIT_MAX, &mut cuts);
+        }
+        let old = std::mem::replace(&mut self.cuts, cuts);
+        let r = f(self);
+        self.cuts = old;
+        r
     }
 
     /// Stores an immediate of width `w` into slot `d`.
@@ -524,6 +562,51 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
 
 pub fn layout_of<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Result<TyAndLayout<'tcx>, NeedsNative> {
     tcx.layout_of(TypingEnv::fully_monomorphized().as_query_input(ty)).map_err(layout_error)
+}
+
+/// Block copies and zeroing of at most this many bytes are split into scalar pieces
+/// (`mov`/`load`/`store`/`imm`), which are inline, instead of the `copy`, `load.copy`,
+/// `store.copy` and `zero` handler calls. Valid since MIR assignments never partially overlap.
+pub const SPLIT_MAX: u32 = 48;
+
+/// The `(offset, width)` pieces of a `size`-byte block: at each offset the widest width up
+/// to `max` that fits and doesn't straddle one of the field offsets `cuts`, so the pieces
+/// match the accesses the rest of the code makes to the fields.
+pub fn pieces(size: u32, max: Width, cuts: &[u32]) -> Vec<(u32, Width)> {
+    let mut v = Vec::new();
+    let mut o = 0;
+    while o < size {
+        let w = [Width::W128, Width::W64, Width::W32, Width::W16, Width::W8]
+            .into_iter()
+            .find(|w| w.bytes() <= max.bytes() && o + w.bytes() <= size && !cuts.iter().any(|&c| o < c && c < o + w.bytes()))
+            .expect("w8 always fits");
+        v.push((o, w));
+        o += w.bytes();
+    }
+    v
+}
+
+/// The offsets of the scalar leaves of `layout` (of every variant), up to `limit` bytes.
+fn field_cuts<'tcx>(cx: &LayoutCx<'tcx>, layout: TyAndLayout<'tcx>, base: u32, limit: u32, out: &mut Vec<u32>) {
+    if layout.size.bytes() > u64::from(limit) {
+        return;
+    }
+    out.push(base);
+    if let rustc_abi::BackendRepr::ScalarPair { b_offset, .. } = layout.backend_repr {
+        out.push(base + b_offset.bytes() as u32);
+        return;
+    }
+    if let rustc_abi::Variants::Multiple { ref variants, .. } = layout.variants {
+        for v in variants.indices() {
+            let vl = layout.for_variant(cx, v);
+            for i in 0..vl.fields.count() {
+                field_cuts(cx, vl.field(cx, i), base + vl.fields.offset(i).bytes() as u32, limit, out);
+            }
+        }
+    }
+    for i in 0..layout.fields.count() {
+        field_cuts(cx, layout.field(cx, i), base + layout.fields.offset(i).bytes() as u32, limit, out);
+    }
 }
 
 /// `layout.field(cx, i)` and `for_variant` need a layout context: the `TyCtxt` plus a

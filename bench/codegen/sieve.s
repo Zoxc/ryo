@@ -104,11 +104,13 @@ L2:
     inc     qword ptr [jit_record.ctr_l]
     jns     L23
 L3:
-    lea     rdi,[rsp+0B0h]
-    mov     esi,0FFFFFFE8h
-    mov     edx,0FFFFFFA8h
-    mov     ecx,18h
-    call    ryo_h_Copy
+    mov     rax,[rsp+58h]
+    mov     [rsp+98h],rax
+    mov     rdx,[rsp+60h]
+    mov     [rsp+0A0h],rdx
+    mov     rsi,[rsp+68h]
+    mov     [rsp+0A8h],rsi
+    nop     [rax+rax]
     nop     [rax]
 L4:
     inc     qword ptr [jit_record.ctr_l]
@@ -662,11 +664,12 @@ L0:
     xor     ecx,ecx
     mov     r8d,18h
     call    ryo_h_LoadCopy
-    lea     rdi,[rsp+40h]
-    mov     esi,0FFFFFFE8h
-    mov     edx,0FFFFFFD0h
-    mov     ecx,18h
-    call    ryo_h_Copy
+    mov     rax,[rsp+10h]
+    mov     [rsp+28h],rax
+    mov     rdx,[rsp+18h]
+    mov     [rsp+30h],rdx
+    mov     rsi,[rsp+20h]
+    mov     [rsp+38h],rsi
     lea     rdi,[rsp+40h]
     mov     esi,0FFFFFFC8h
     xor     edx,edx
@@ -1945,11 +1948,12 @@ L0:
     mov     rsi,[rsp+18h]
     mov     rdx,[rsp+1A8h]
     call    fn6
-    lea     rdi,[rsp+1B0h]
-    mov     esi,0FFFFFE58h
-    mov     edx,0FFFFFF50h
-    mov     ecx,18h
-    call    ryo_h_Copy
+    mov     rax,[rsp+100h]
+    mov     rcx,[rsp+108h]
+    mov     [rsp+10h],rcx
+    mov     [rsp+8],rax
+    mov     rdx,[rsp+110h]
+    mov     [rsp+18h],rdx
     lea     rdi,[rsp+118h]
     lea     rsi,[rsp+8]
     call    fn7
@@ -2019,8 +2023,7 @@ L0:
     call    fn17
     add     rsp,1B8h
     ret
-    nop     [rax+rax]
-    nop     [rax]
+    xchg    ax,ax
 L1:
     inc     qword ptr [jit_record.ctr_l]
     jns     L5
@@ -2296,11 +2299,12 @@ L10:
     mov     [rsp+0E8h],rax
     jmp     L2
 L11:
-    lea     rdi,[rsp+160h]
-    mov     esi,0FFFFFFE8h
-    mov     edx,0FFFFFFC8h
-    mov     ecx,18h
-    call    ryo_h_Copy
+    mov     rax,[rsp+128h]
+    mov     [rsp+148h],rax
+    mov     rdx,[rsp+130h]
+    mov     [rsp+150h],rdx
+    mov     rsi,[rsp+138h]
+    mov     [rsp+158h],rsi
     lea     rdi,[rsp+160h]
     mov     esi,0FFFFFEB0h
     xor     edx,edx
@@ -2310,7 +2314,7 @@ L11:
     mov     rax,[rsp+10h]
     add     rsp,168h
     ret
-    nop     [rax+rax]
+    nop
 L12:
     inc     qword ptr [jit_record.ctr_l]
     jns     L18
