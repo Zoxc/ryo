@@ -127,6 +127,46 @@ the checkers never trust the JIT's view of its input:
 entry) simulates the R programs that the Lean decoder read from the AOT code of the root and
 of every inlined callee. Composed with the AOT theorem, the JIT code refines L0.
 
+**The SSA tier's passes so far** (none modelled in Lean yet; each is an obligation for steps
+3 and 4 when M7 starts, with the commit that added it):
+
+- **Address ops**: `Op::RefAddr(ref, ind)` for the three inline address instructions (a
+  rip-relative `lea`, or the slot load and with `ind` one more load), pure and keyed by LVN.
+  Its rule is the R ones' (`inline_sound_rip`). ("Give the JIT SSA tier a pure op for
+  rip-relative addresses".)
+- **Small copies**: `copy`, `zero`, `load.copy`, `store.copy` of at most 64 bytes and
+  `mov.w128`, `load.w128`, `store.w128` decode as `Kind::Copy`, pieces cut at the other
+  scalar accesses' boundaries, all reads before all writes; and after `simplify`,
+  `memcpy`/`memmove`/`memset` handler calls of constant length 1 to 64 (operands all values,
+  no unwinding) become loads then stores (`memset`: the byte times `0x0101…`), then LVN again
+  (`jit::opt::copies`). Rule: the pieces equal the handler's footprint effect. ("JIT SSA tier:
+  small block copies as loads and stores"; "JIT SSA: constant-length memcpy/memmove/memset as
+  loads and stores".)
+- **Inlining** (`jit::inline`, step 4): an IR-to-IR splice with landing-pad action
+  substitution, callee allocas appended as `Alloca::inlined`, outgoing areas merged; sites
+  weighed by the JIT records' counts; small callees specialized to constant arguments first
+  (`specialize`: the entry parameters' uses replaced by constants, then the passes); across
+  images (`rebase`: the callee's `RefAddr`s and handler address arguments become 64-bit
+  constants or a load through a symbol's value, its calls the JIT's call forms) and through
+  symbols holding a VM function's entry. The splice lemma (§E.6) plus a rule for the
+  specialization and for `rebase` (the pool-identity question, §E.6). ("Inline same-image
+  calls in the JIT's SSA tier"; "Weigh inlining by the counters and specialize callees to
+  constants"; "Inline across images in the JIT's SSA tier".)
+- **Promotion** (`jit::opt::promote`): allocas whose address no longer escapes, also when
+  accessed at overlapping widths: fields are the pieces the accesses' bounds cut (power-of-two
+  widths); a store covering several pieces stores each (shifted down), a load covering several
+  combines them (zero-extended, shifted, or'ed; an undefined piece reads zero). Step 2's
+  dominance relation, per piece; the zero for an undefined piece refines `Uninit`. ("Inline
+  same-image calls…"; "JIT SSA: scalar replacement of mixed-width allocas".)
+- **Check elimination** (`jit::opt::checks`, after the folds): a dominator-tree walk with
+  range and `a < b` facts from single-predecessor branch edges turns `Ovf` ops that can't
+  overflow into `Bin` (flag constant 0, `BrOvf` a jump) and folds the compares and
+  compare-branches the facts decide. A validator per fold: the fact holds on the edge, and
+  implies the fold (`bv_decide`). ("JIT: eliminate checks dominating branches decide".)
+- **Bit-count folds** (LVN): a register-entry `ctpop`/`ctlz`/`cttz` handler call (W8 to W64,
+  no site) of a constant folds to the handler's count (`ctlz`/`cttz` of 0 the width): a
+  rewrite rule against `opSem`'s bit counts. ("JIT SSA: fold bit counts of constants".)
+
 **`cpuid`.** The theorem is relative to the CPU having the logged features: the generic
 decoder accepts a form only if its feature is in the set, and L2+ faults on a form whose
 feature is absent. Validate per feature set the corpus runs on (at least: baseline x86-64

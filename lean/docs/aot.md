@@ -137,6 +137,28 @@ per-frame relation `R_Γ (s0 : L0 frame) (s1 : R frame)`:
   (LLVM-compiled MIR, libc) refines its own semantics under the same convention. There are
   no portals ([stubs.md](../../design/stubs.md)), so native callers need no extra stage.
 
+**Lowering forms the rules must cover** (beyond the obvious one per MIR construct; added as
+the backend gained them):
+
+- Unsigned `/` and `%` by a constant `2^k`: `shr.u.imm x, k` and `and.imm x, 2^k - 1`, not
+  `div.u`/`rem.u` (binary operations). ("Lower unsigned div/rem by a power of two to shifts
+  and masks".)
+- A `SwitchInt` with exactly two values: a `br.eq.imm` per value plus a `jmp` (the second
+  test omitted when `otherwise` is an empty unreachable block, or negated to fall through),
+  not `switch.dense` (terminators). ("Lower two-case switches to compare-and-branch".)
+- Block copies and zeroing of at most 48 bytes that aren't one scalar width (`copy`,
+  `load.copy`, `store.copy`, `zero`): `mov.wN`/`load.wN`/`store.wN`/`imm.wN 0` pieces cut at
+  the value's scalar field offsets (the widest piece that fits and straddles no field start);
+  slot to slot only when the ranges don't overlap, `load` only when no piece overwrites the
+  pointer slot. Rule: an aggregate assignment of `n` bytes equals its pieces, given those two
+  side conditions (piecewise copying of overlapping ranges or through the overwritten pointer
+  would differ). ("Lower small block copies and zeroing to scalar pieces".)
+- Niche discriminants (`FnCx::niche_discr`): the plain-op decoding is proved against
+  `tagToVariant` (`Ryo/Proofs/NicheDiscr.lean`, `nicheDiscr_sound`, on a model of the
+  lowering); the fused form (a `SwitchInt` testing the tag with `br.eq.imm`, or `sub.imm` +
+  `br.gt.u.imm` + `switch.dense` past 4 arms) is not, and nothing checks the model against
+  the emitted ops.
+
 **Incremental coverage**: the checker reports per function `validated | unsupported(rule) |
 rejected(reason)`, totalled like `RYO_STATS`. `rejected` is a bug in the backend or the
 checker. `y test` fails on `rejected` and prints coverage.
