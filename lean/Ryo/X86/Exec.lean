@@ -19,8 +19,8 @@ Flags (SDM Vol. 2, per instruction; `none` = undefined, see `Ryo.X86.State`):
   defined only for a count of 1 (`shl`: `MSB(result) xor CF`, `shr`: the operand's `MSB`,
   `sar`: 0), undefined for larger counts.
 - `xor r32, r32` (`setReg r 0`) sets `ZF` and clears `CF OF SF`; the `mov` forms of `setReg`
-  leave the flags alone. `sub rsp`/`add rsp` (`subRsp`/`addRsp`) and `ctrSub` set them as
-  `sub`/`add` do.
+  leave the flags alone. `sub rsp`/`add rsp` (`subRsp`/`addRsp`) set them as `sub`/`add`
+  do; `inc` (`ctrInc`) as `add` of 1, but `CF`, which it keeps.
 - `lea`, `mov`, `movzx`/`movsx`, `setcc`, `push`/`pop`, `call`/`ret`, `leave`, `jmp`/`jcc`,
   SSE moves: no flags.
 
@@ -206,11 +206,10 @@ def Item.exec (ctx : Ctx) (i : Item) (s : State) : Except Fault State :=
     let target := s0.mem.read64 (ctx.addrOf to)
     pure ((s0.push next).jump target)
   | .callRax => pure ((s0.push next).jump (s0.reg .rax))
-  | .ctrSub k =>
-    -- The field is followed by the immediate: it reaches `recordCtr + 1`, the record.
-    let a := ctx.addrOf .recordCtr + 1
-    let (r, f) := subF (s0.mem.read64 a) (k.signExtend 64)
-    pure ((s0.setMem a 8 r.toNat).setFlags f)
+  | .ctrInc lp =>
+    let a := ctx.addrOf (if lp then .recordLoopCtr else .record)
+    let (r, f) := addF (s0.mem.read64 a) 1
+    pure ((s0.setMem a 8 r.toNat).setFlags { f with cf := s0.flags.cf })
   | .callR11 d =>
     let target := s0.mem.read64 (s0.reg .r11 + d.signExtend 64)
     pure ((s0.push next).jump target)

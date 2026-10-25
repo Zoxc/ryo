@@ -45,7 +45,7 @@ def toRef : Ryo.Obj.Ref → Ref
   | .data o => .data o
   | .ro o => .ro o
   | .record => .record
-  | .recordCtr => .recordCtr
+  | .recordLoopCtr => .recordLoopCtr
 
 /-- The made-up address of a reference, if it fits its range. -/
 def addrOf (funcStarts : Array Nat) : Ref → Option Nat
@@ -58,7 +58,7 @@ def addrOf (funcStarts : Array Nat) : Ref → Option Nat
   | .data d => if d < span then some (datas + d) else none
   | .ro o => if o < span then some (ros + o) else none
   | .record => some record
-  | .recordCtr => some (record - 1)
+  | .recordLoopCtr => some (record + loopCtr)
 
 /-- The inverse of `addrOf`. -/
 def resolve (funcStarts : Array Nat) (a : BitVec 64) : Option Ref :=

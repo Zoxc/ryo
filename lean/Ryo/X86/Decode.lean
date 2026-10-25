@@ -9,7 +9,7 @@ Mirrors `Cursor` in `vm/bytecode/src/asm/x86.rs` (`item`, `base_item`, `native`,
   anywhere else in an item makes it invalid.
 - `Fields.linked`: linked code at a known address. A field whose target lies inside the
   function, past its first byte, is a branch within it; one at the function's JIT record is
-  `Ref.record`; any other is resolved by the `LinkMap` (`Resolver::resolve`), which may fail.
+  `Ref.record`, one at its loop counter (`loopCtr` bytes in) `Ref.recordLoopCtr`; any other is resolved by the `LinkMap` (`Resolver::resolve`), which may fail.
 
 The decoder accepts only canonical encodings. After parsing a candidate item as Rust does, it
 re-encodes it and compares every byte outside the item's own relocated fields (whose bytes are
@@ -105,6 +105,7 @@ def field (c : Cursor) (off len : Nat) : Option Field := do
     let inside := (to - addr - 1).toNat < (BitVec.ofNat 64 c.code.size - 1).toNat
     if inside then pure (.local loc)
     else if to == record then pure (.ref .record)
+    else if to == record + BitVec.ofNat 64 loopCtr then pure (.ref .recordLoopCtr)
     else pure ((resolve to).elim .bad .ref)
 
 def fieldRef (c : Cursor) (off len : Nat) : Option Ref := do
@@ -154,19 +155,20 @@ def baseCandidate (c : Cursor) : Option Item := do
   let op ← g at_
   match rex, op with
   | 0, 0x55 => pure .pushRbp
+  -- A counter's `inc`: of the record's call counter or its loop counter.
+  | 0x48, 0xff =>
+    if (← g 2) != 0x05 then none
+    match ← c.field 3 7 with
+    | .ref .record => pure (.ctrInc false)
+    | .ref .recordLoopCtr => pure (.ctrInc true)
+    | _ => none
   | 0x48, 0x83 =>
-    if (← g 2) == 0x2d then
-      let k ← g 7
-      match ← c.field 3 8, c.fields with
-      | .ref .recordCtr, .relocs _ | .ref .record, .linked .. => pure (.ctrSub (BitVec.ofNat 8 k.toNat))
-      | _, _ => none
-    else
-      let e ← g 2
-      let v ← g 3
-      if v.toNat ≥ 128 then none
-      if e == 0xec then pure (.subRsp (BitVec.ofNat 32 v.toNat))
-      else if e == 0xc4 then pure (.addRsp (BitVec.ofNat 32 v.toNat))
-      else none
+    let e ← g 2
+    let v ← g 3
+    if v.toNat ≥ 128 then none
+    if e == 0xec then pure (.subRsp (BitVec.ofNat 32 v.toNat))
+    else if e == 0xc4 then pure (.addRsp (BitVec.ofNat 32 v.toNat))
+    else none
   | 0x48, 0x81 =>
     let e ← g 2
     let v ← c.i32At 3

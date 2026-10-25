@@ -225,7 +225,7 @@ def names : Except String Unit := do
   check (ImageObject.handlerOf? "ryo_h_Island" == none) "opcode without a handler"
   check (ImageObject.isProbe "_RNvCs5fGHjzWXRav_7___rustc15ryo_probe_stack") "probe"
   check (!ImageObject.isProbe "_RNvCs5fGHjzWXRav_7___rustc14ryo_probe_stack") "probe, wrong length"
-  check (Ref.render (.handler Full.Opcode.addW32) == "handler AddW32" && Ref.render .recordCtr == "recctr")
+  check (Ref.render (.handler Full.Opcode.addW32) == "handler AddW32" && Ref.render .recordLoopCtr == "recloopctr")
     "Ref.render"
 
 def fields : Except String Unit := do

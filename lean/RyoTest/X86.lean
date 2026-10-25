@@ -60,7 +60,7 @@ def addrOf : RefAddr
   | .data d => 0x5800_0000 + BitVec.ofNat 64 d
   | .ro o => 0x6800_0000 + BitVec.ofNat 64 o
   | .record => record0
-  | .recordCtr => record0 - 1
+  | .recordLoopCtr => record0 + BitVec.ofNat 64 loopCtr
 
 /-- Its inverse (`Link::resolve`); handlers below the opcode count the vectors use. -/
 def resolve : LinkMap := fun a =>
@@ -213,7 +213,7 @@ def generated : List Item :=
   let fixed : List Item := [.pushRbp, .winPrologue, .winEpilogue, .callRax, .callMemRax, .jmpRax,
     .testAl, .testRax, .leave, .ret, .ud2, .loadTableEntry, .addRaxRcx]
   let refs : List Ref := [.handler 7, .probe, .func 3, .sym 9, .site 2, .const 64, .data 8,
-    .ro 32, .record, .recordCtr]
+    .ro 32, .record, .recordLoopCtr]
   let vals : List (BitVec 64) := [0, 1, 0xffffffff, 0x100000000, 0xffffffff80000000,
     0xffffffff7fffffff, 0x8000000000000000, 0xffffffffffffffff]
   fixed ++
@@ -221,7 +221,7 @@ def generated : List Item :=
   Reg.all.flatMap (fun r => vals.map (.setReg r) ++ refs.map (.lea r) ++ Reg.all.map (.mov r)) ++
   refs.flatMap (fun t => [.call t, .callMem t, .jmp t]) ++
   Reg.all.flatMap (fun r => refs.map (.loadRip r ·)) ++
-  [0, 1, 127, 128, 255].flatMap (fun k => [.ctrSub k, .callR11 k]) ++
+  [.ctrInc false, .ctrInc true] ++ [0, 1, 127, 128, 255].map (.callR11 ·) ++
   W.all.flatMap (fun w =>
     usableRegs.flatMap (fun r =>
       [true, false].flatMap (fun sx => mems.map (.ld w sx r)) ++
@@ -462,12 +462,12 @@ def execTests : List TestCase := [
     let s ← run [.testRax, .branch .nz 0x40 false] (setup [(.rax, 0)])
     expectEq "not taken" s.rip (code0 + 0x100 + 3 + 2)⟩,
   ⟨"x86 exec counter check", fun () => do
-    let s0 := st0.setMem record0 8 16
-    let s ← run [.ctrSub 16, .branch .s 0x80 false] s0
+    let s0 := st0.setMem record0 8 0xfffffffffffffffe
+    let s ← run [.ctrInc false, .branch .ns 0x80 false] s0
+    expectEq "counter" (s.mem.read64 record0) 0xffffffffffffffff
+    expectEq "not taken" s.rip (code0 + 0x100 + 7 + 2)
+    let s ← run [.ctrInc false, .branch .ns 0x80 false] s
     expectEq "counter" (s.mem.read64 record0) 0
-    expectEq "not taken" s.rip (code0 + 0x100 + 8 + 2)
-    let s ← run [.ctrSub 16, .branch .s 0x80 false] s
-    expectEq "counter" (s.mem.read64 record0) 0xfffffffffffffff0
     expectEq "taken" s.rip (code0 + 0x80)⟩,
   ⟨"x86 exec jump table", fun () => do
     -- `lea rcx, [table]; movsxd rax, [rcx + rax*4]; add rax, rcx; jmp rax`.

@@ -162,7 +162,7 @@ def encode (i : Item) (pos : BitVec 32) : List UInt8 × List Reloc :=
   | call to => reloc [0xe8] to
   | callMem to => reloc [0xff, 0x15] to
   | callRax => plain [0xff, 0xd0]
-  | ctrSub k => reloc [0x48, 0x83, 0x2d] .recordCtr [byte k.toNat]
+  | ctrInc lp => reloc [0x48, 0xff, 0x05] (if lp then .recordLoopCtr else .record)
   | callR11 d => plain [0x41, 0xff, 0x53, byte d.toNat]
   | callMemRax => plain [0xff, 0x10]
   | loadRip r to =>
@@ -233,7 +233,7 @@ def len (i : Item) : Nat := (i.encode 0).1.length
 end Item
 
 /-- Where the relocated fields of a function's code point once linked: the address of each
-`Ref` (`Ref.recordCtr`: the record's address less one, as Rust's linker resolves it). -/
+`Ref` (`Ref.recordLoopCtr`: the record's address plus `loopCtr`). -/
 abbrev RefAddr := Ref → BitVec 64
 
 /-- Patches the relocated fields of `code`, which starts at address `addr`: each field holds

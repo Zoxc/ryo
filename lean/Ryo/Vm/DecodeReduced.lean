@@ -8,7 +8,8 @@ registers set in order, and recovers every operand, the frame size and the unwin
 - the prologue and epilogue of the frame size (`push rbp; mov rbp, rsp; sub rsp, F`, or
   `sub rsp, F + 8` without a frame pointer, or the PE forms; a stack probe from 4096 bytes);
 - with `Mode.counters`, the entry's and each loop head's counter check
-  (`sub [rip + ctr], k; js stub`) and the stubs after the code, in order;
+  (`inc qword [rip + rec]; jns stub`, a loop head's on the loop counter, `rec + 56`) and the
+  stubs after the code, in order;
 - the `arg`s at the start, calls and tail calls (argument loads, call, result stores),
   islands, `ret`, `jmp`, and every handler call as `handler h args then`, its argument
   registers read from `rdi` on (`fp`, the exception object, an immediate or an address), then
@@ -43,7 +44,7 @@ test vectors:
   "code": "<hex>", "rodata": "<hex>",
   "relocs": [[<at>, "<ref>"], …],        -- sorted by `at`; <ref>: "handler <Name or number>",
                                          -- "probe", "func <i>", "sym <i>", "site <i>",
-                                         -- "const <off>", "data <off>", "ro <off>", "rec", "recctr"
+                                         -- "const <off>", "data <off>", "ro <off>", "rec", "recloopctr"
   "call_sites": [[<start>, <len>, <pad or null>, <catches>], …],
   "dropped": [[<at>, <frame_offset>, <size>, <reg number>], …],   -- sorted by `at`
   "scopes": [[<code_offset>, <frame_offset>, <size>, <align, null for an end, or "lend">], …] }
@@ -603,7 +604,7 @@ def instructions (fr : Frame) (ro : ByteArray) (dropped : List DroppedStore)
     let mut counter : Option (Nat × Nat) := none
     if fr.mode.counters then
       match ← tryItem, ← tryItem with
-      | some (.ctrSub 1), some (.branch .s t _) =>
+      | some (.ctrInc true), some (.branch .ns t _) =>
         counter := some (t.toNat, ← pos)
         if protos.all (·.counter.isNone) then endPos := some t.toNat
       | _, _ => setPos p
@@ -645,7 +646,7 @@ def read (ro : ByteArray) (callSites : Array CallSite) (dropped : List DroppedSt
   let entry : Option (Nat × Nat) ← (do
     if mode.counters then
       match ← tryItem, ← tryItem with
-      | some (.ctrSub 16), some (.branch .s t _) => return some (t.toNat, ← pos)
+      | some (.ctrInc false), some (.branch .ns t _) => return some (t.toNat, ← pos)
       | _, _ => err 0 "no counter check at the entry"
     else return none)
   let start ← pos
@@ -826,7 +827,7 @@ def unhex (s : String) : Except String ByteArray := do
     out := out.push (UInt8.ofNat (16 * a + b))
   return out
 
-/-- A reference's text form (`handler <Name>`, `probe`, `func <i>`, …, `rec`, `recctr`). -/
+/-- A reference's text form (`handler <Name>`, `probe`, `func <i>`, …, `rec`, `recloopctr`). -/
 def refOfString (s : String) : Except String Ref := do
   let num (x : String) : Except String Nat := match x.toNat? with
     | some n => pure n
@@ -846,7 +847,7 @@ def refOfString (s : String) : Except String Ref := do
   | ["data", x] => .data <$> num x
   | ["ro", x] => .ro <$> num x
   | ["rec"] => pure .record
-  | ["recctr"] => pure .recordCtr
+  | ["recloopctr"] => pure .recordLoopCtr
   | _ => throw s!"bad reference `{s}`"
 
 def i32OfJson (j : Json) : Except String (BitVec 32) := do

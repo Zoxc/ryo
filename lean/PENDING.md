@@ -8,19 +8,16 @@ remove it once a Lean session has handled it.
   one more load) instead of `hcall.reg`; LVN keys it. Only matters if the Lean model covers
   the SSA tier. Commit: "Give the JIT SSA tier a pure op for rip-relative addresses".
 
-- Split up-counting JIT counters: a JIT record has a call counter `ctr_e` at offset 0 and
-  a loop counter `ctr_l` at offset 56 (`jit_len` is gone; `JIT_LOOP_CTR`), which the writer
-  starts at `-JIT_ENTRY_THRESHOLD` (625) and `-JIT_THRESHOLD` (10 000). The entry's check is
-  `inc qword [rip + rec]; jns stub` (`Item::CtrInc(false)`, relocated against `Ref::Rec`),
-  a loop head's `inc qword [rip + rec + 56]; jns stub` (`Item::CtrInc(true)`,
-  `Ref::RecLoopCtr`), replacing `sub qword [rip + ctr], k; js` (`CtrSub`, `Ref::RecCtr`,
-  `ENTRY_COUNT` are gone); the prologue starts at byte 9. The runtime biases the counters
-  by the record's state (`±JIT_BIAS`). The generated tables and vectors are regenerated
-  (`entryCount` became `jitLoopCtr`, `ctrSub` became `ctrInc`, `recordCtr`
-  `recordLoopCtr`), so `lake build` fails until the model follows: the x86 model and
-  decoder (`Ryo/Vm/DecodeReduced.lean`), the image check (`Ryo/Check/Image/Relocs.lean`,
-  `RyoTest/ImageCheck.lean`) and `lean/docs/aot.md`. Commit: "Split the JIT counters into
-  up-counting call and loop counters".
+- Split up-counting JIT counters (commit "Split the JIT counters into up-counting call and
+  loop counters"), partly applied: the x86 model (`ctrInc`, `Ref.recordLoopCtr` at
+  `loopCtr` = 56, linked fields), `decodeReduced`, the image reader's refs, the unwind check
+  and the tests follow. Left: `Ryo/Check/Image/Relocs.lean` still checks a JIT record's
+  initial values as the old layout (`ctr` = `JIT_THRESHOLD` at 0, zero elsewhere); it should
+  check `ctr_e` = -625 (`-JIT_ENTRY_THRESHOLD`) at 0, `ctr_l` = -10000 at 56 (and
+  `RyoTest/ImageCheck.lean`'s record bytes with it); the co-simulation harness
+  (`harness/src/cases.rs`, case 16) still emits `ctrSub`/`recordCtr` and should emit
+  `{"ctrInc":{"loop":b}}` against `record`/`recordLoopCtr`; `docs/x86.md` ("Counters:
+  CtrSub") and `docs/aot.md` still describe `sub; js`.
 
 - The JIT's SSA tier inlines direct calls of the image's functions (`jit::inline`: an
   IR-to-IR splice with landing-pad action substitution, callee allocas appended as

@@ -416,8 +416,7 @@ def refOf (o : ImageObject) (func : Nat) (r : Rela) : Except String Ref := do
     | some op => pure (.handler op)
     | none => if isProbe n then pure .probe else throw s!"call relocation at {r.offset} against `{n}`"
   | .pc32, .sect i off =>
-    -- The field's target: `S + A + 4` (the field is the item's last 4 bytes; the counter's
-    -- `sub` is followed by its immediate, hence `recctr`).
+    -- The field's target: `S + A + 4` (the field is the item's last 4 bytes).
     let to := off + 4
     let within (base len : Nat) (end_ : Bool) : Option Nat :=
       let d := to - base
@@ -441,7 +440,8 @@ def refOf (o : ImageObject) (func : Nat) (r : Rela) : Except String Ref := do
       let rec_ := h.jitRecords.off + 64 * func
       let dataEnd := if h.jitRecords.count != 0 then h.jitRecords.off else h.dataSize
       if h.jitRecords.count != 0 && to == ((base + rec_ : Nat) : Int) then pure .record
-      else if h.jitRecords.count != 0 && to + 1 == ((base + rec_ : Nat) : Int) then pure .recordCtr
+      else if h.jitRecords.count != 0 && to == ((base + rec_ + Asm.jitLoopCtr : Nat) : Int) then
+        pure .recordLoopCtr
       else if let some d := within base (h.siteCount * 8) false then
         if d % 8 == 0 then pure (.site (d / 8)) else throw s!"field at {r.offset} points inside a site slot"
       else if let some d := within (base + h.fixupArea) (dataEnd - h.fixupArea) true then pure (.data d)

@@ -76,16 +76,15 @@ inductive Ref where
   | data (off : Nat)
   /-- A code-constant offset (see the module comment for its base). -/
   | ro (off : Nat)
-  /-- The function's own JIT record. -/
+  /-- The function's own JIT record (its call counter is at its start). -/
   | record
-  /-- The counter of the function's JIT record, from the field of `sub qword [rip + x],
-  imm8`, which the immediate follows: the target is the record's address less one. -/
-  | recordCtr
+  /-- The loop counter of the function's JIT record (`JIT_LOOP_CTR` bytes into it). -/
+  | recordLoopCtr
   deriving Repr, DecidableEq, Inhabited
 
 /-- The stable text form shared with the Rust reference printer
 (`scripts/lean-decode-ref`): `handler <Name>`, `probe`, `func <i>`, `sym <i>`, `site <i>`,
-`const <off>`, `data <off>`, `ro <off>`, `rec`, `recctr`. -/
+`const <off>`, `data <off>`, `ro <off>`, `rec`, `recloopctr`. -/
 def Ref.render : Ref → String
   | .handler op => s!"handler {op.info.name}"
   | .probe => "probe"
@@ -96,7 +95,7 @@ def Ref.render : Ref → String
   | .data o => s!"data {o}"
   | .ro o => s!"ro {o}"
   | .record => "rec"
-  | .recordCtr => "recctr"
+  | .recordLoopCtr => "recloopctr"
 
 instance : ToString Ref := ⟨Ref.render⟩
 

@@ -62,7 +62,7 @@ def itemEffect (s : State) : Item → Option State
     else none
   | .mov .rbp .rsp => if s.cfaReg == dwRsp then some { s with cfaReg := dwRbp } else none
   | .subRsp n => if s.cfaReg == dwRsp then some { s with cfaOff := s.cfaOff + n.toNat } else some s
-  | .setReg .rax _ | .call .probe | .ctrSub _ | .branch .s _ _ => some s
+  | .setReg .rax _ | .call .probe | .ctrInc _ | .branch .ns _ _ => some s
   | _ => none
 
 /-- The rules the code establishes, as rows (byte offset, state), and the body's extent
@@ -85,7 +85,7 @@ def derivedRows (fi : FuncInputs) (d : R.Decoded) : Except String (Array Row × 
     let (i1, n1) ← item 0
     let (i2, n2) ← item n1
     match i1, i2 with
-    | .ctrSub _, .branch .s t _ => stub := t.toNat; stubState := s; pos := n1 + n2
+    | .ctrInc false, .branch .ns t _ => stub := t.toNat; stubState := s; pos := n1 + n2
     | _, _ => throw "no counter check at the entry"
   for want in Asm.prologue d.frameSize mode do
     let (it, n) ← item pos

@@ -111,14 +111,14 @@ def bv32 (n : Nat) : BitVec 32 := BitVec.ofNat 32 n
 `[fp - 16]` (the frame is addressed from `rsp`: `fp` is `rsp + 16`), a call of function 1,
 `ret`, the entry's stub. -/
 def f0Items (back stub : Nat) : List Item :=
-  [.ctrSub 16, .branch .s (bv32 stub) true] ++ Ryo.Vm.Asm.prologue frameSize mode ++
+  [.ctrInc false, .branch .ns (bv32 stub) true] ++ Ryo.Vm.Asm.prologue frameSize mode ++
   [.leaM .rdi ⟨.rsp, bv32 frameSize⟩, .setReg .rsi (BitVec.ofNat 64 0xfffffff0), .lea .rdx (.sym 0),
    .call (.handler addrSym), .call (.func 1)] ++
   [Ryo.Vm.Asm.epilogue frameSize mode, .ret] ++ entryStub (bv32 back) true
 
 /-- Function 1: the counter check, a frame of 0, `ret`, the stub. -/
 def f1Items (back stub : Nat) : List Item :=
-  [.ctrSub 16, .branch .s (bv32 stub) true] ++ Ryo.Vm.Asm.prologue 0 mode ++
+  [.ctrInc false, .branch .ns (bv32 stub) true] ++ Ryo.Vm.Asm.prologue 0 mode ++
   [Ryo.Vm.Asm.epilogue 0 mode, .ret] ++ entryStub (bv32 back) true
 
 def len (items : List Item) : Nat := (encodeItems items).1.length
@@ -152,7 +152,7 @@ def padTo8 (body : List UInt8) : List UInt8 := body ++ List.replicate ((8 - (bod
 
 /-- `.eh_frame` as `unwind_elf` writes it for this mode (no frame pointer, counters): the CIE,
 then per function (`code_off`, `code_len`, frame size `F`, LSDA offset) an FDE whose rows
-change after the counter check and `sub rsp` (14 + 4 bytes in) to CFA `rsp + F + 16`, and at
+change after the counter check and `sub rsp` (13 + 4 bytes in) to CFA `rsp + F + 16`, and at
 the entry stub (the last 16 bytes) back to `rsp + 8`; with its relocations (section 6, against symbols 3 the text, 1 the read-only
 section, 13 the LSDAs). -/
 def ehFrame (funcs : List (Nat × Nat × Nat × Nat)) : List UInt8 × Array Rel := Id.run do
@@ -163,8 +163,8 @@ def ehFrame (funcs : List (Nat × Nat × Nat × Nat)) : List UInt8 × Array Rel 
   for (off, len, f, l) in funcs do
     let at_ := eh.length
     let stub := len - 16  -- `lea r11, [rip + rec]; call [r11 + 8]; jmp rel32`
-    let fde := padTo8 (le 4 (at_ + 4) ++ le 4 0 ++ le 4 len ++ [4] ++ le 4 0 ++ advance 18 ++ [0x0e, (f + 16).toUInt8]
-      ++ advance (stub - 18) ++ [0x0c, 7, 8])
+    let fde := padTo8 (le 4 (at_ + 4) ++ le 4 0 ++ le 4 len ++ [4] ++ le 4 0 ++ advance 17 ++ [0x0e, (f + 16).toUInt8]
+      ++ advance (stub - 17) ++ [0x0c, 7, 8])
     rels := rels.push ⟨6, at_ + 8, 3, Elf.R_X86_64_PC32, off⟩
     rels := rels.push ⟨6, at_ + 17, 13, Elf.R_X86_64_PC32, l⟩
     eh := eh ++ le 4 fde.length ++ fde
@@ -230,7 +230,7 @@ def imageParts (resolve : Bool := true) (lsda0 : Array CallSite := #[site0]) : P
       match (r.to : Ryo.X86.Ref) with
       | .handler _ => rels := rels.push ⟨3, base + r.pos, 8, Elf.R_X86_64_PLT32, -4⟩
       | .sym s => rels := rels.push ⟨3, base + r.pos, 1, Elf.R_X86_64_PC32, (slotOff + 8 * s : Nat) - 4⟩
-      | .recordCtr => rels := rels.push ⟨3, base + r.pos, 2, Elf.R_X86_64_PC32, rec_ - 5⟩
+      | .recordLoopCtr => rels := rels.push ⟨3, base + r.pos, 2, Elf.R_X86_64_PC32, rec_ + 56 - 4⟩
       | .record => rels := rels.push ⟨3, base + r.pos, 2, Elf.R_X86_64_PC32, rec_ - 4⟩
       | _ => pure ()
   return { secs, syms, rels }
@@ -310,15 +310,15 @@ def Parts.poke1 (p : Parts) (i off v : Nat) : Parts :=
   { p with secs := p.secs.set! (i - 1) { s with data := s.data.set off v.toUInt8 } }
 
 /-- Mutations of the unwind tables. Function 0's FDE is at 32 of `.eh_frame` (after the
-32-byte CIE): its range at 44, its instructions from 53 (`advance_loc 18`, then
+32-byte CIE): its range at 44, its instructions from 53 (`advance_loc 17`, then
 `def_cfa_offset` with its operand at 55). -/
 def unwindNegative : Except String Unit := do
   let p := imageParts
   let c0 := (p.syms[3]!).size
-  check ((p.secs[5]!).data[53]? == some 0x52 && (p.secs[5]!).data[55]? == some 32) "FDE layout"
+  check ((p.secs[5]!).data[53]? == some 0x51 && (p.secs[5]!).data[55]? == some 32) "FDE layout"
   expectMismatch (p.poke 6 44 (c0 + 1)) "FDE range"
-  expectMismatch (p.poke1 6 53 0x53) "FDE at 18"
-  expectMismatch (p.poke1 6 55 40) "FDE at 18: cfa r7+40"
+  expectMismatch (p.poke1 6 53 0x52) "FDE at 17"
+  expectMismatch (p.poke1 6 55 40) "FDE at 17: cfa r7+40"
   -- The FDE of function 0 starting elsewhere.
   let moved := { p with rels := p.rels.map fun r => if r.sec == 6 && r.off == 40 then { r with addend := 16 } else r }
   expectMismatch moved "no FDE starts at the function"

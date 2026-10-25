@@ -163,12 +163,16 @@ inductive Ref
   | const (k : Nat)
   | data (d : Nat)
   | ro (off : Nat)
-  /-- The function's own JIT record. -/
+  /-- The function's own JIT record (its call counter is at its start). -/
   | record
-  /-- The counter of the function's JIT record from the field of `sub qword [rip + x], imm8`:
-  the target is the record's address less one (the immediate follows the field). -/
-  | recordCtr
+  /-- The loop counter of the function's JIT record (`image::JitRecord::ctr_l`), `loopCtr`
+  bytes into it. -/
+  | recordLoopCtr
 deriving DecidableEq, Repr, Inhabited, ToJson, FromJson, Hashable
+
+/-- The offset of a JIT record's loop counter (`x86::LOOP_CTR`, `image::JIT_LOOP_CTR`), which
+`Ref.recordLoopCtr` names: a linked field that reaches the record plus this is that reference. -/
+def loopCtr : Nat := 56
 
 /-- A relocated field: the 4 bytes at `pos` (`encode.rs` `Reloc`, whose field is `at`). -/
 structure Reloc where
@@ -203,8 +207,10 @@ inductive Item
   | callMem (to : Ref)
   /-- `call rax` -/
   | callRax
-  /-- `sub qword [rip + disp32], imm8`, the field relocated against `Ref.recordCtr`. -/
-  | ctrSub (k : BitVec 8)
+  /-- `inc qword [rip + disp32]`: one of the JIT record's counters counts up, the call counter
+  at the record's start (the field relocated against `Ref.record`), or with `loop` the loop
+  counter (`Ref.recordLoopCtr`). -/
+  | ctrInc («loop» : Bool)
   /-- `call [r11 + disp8]` -/
   | callR11 (d : BitVec 8)
   /-- `mov dst, [rip + disp32]`: a symbol slot's value (any register, REX.R for `r8`–`r11`). -/
