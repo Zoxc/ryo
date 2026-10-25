@@ -157,7 +157,7 @@ pub enum Side {
 }
 
 /// The longest block copy done as loads and stores; longer ones call their handler.
-pub const MAX_COPY: u32 = 64;
+pub const MAX_COPY: u32 = 128;
 
 /// The most pieces a copy is cut into along the other accesses' boundaries; past it, it is
 /// cut into 8-byte pieces.

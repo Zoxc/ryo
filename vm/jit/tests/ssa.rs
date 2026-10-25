@@ -1132,6 +1132,38 @@ fn inline_callee_returning_unused_part() {
     check_stats(before, 1);
 }
 
+/// Block copies past 64 bytes (a 72-byte struct moved through temporaries, as
+/// `build_hasher` does): done as loads and stores up to `MAX_COPY` (128), through the
+/// handler past it. f(x, out): a[i] = x + i; b = a; [out] = b; ret b[8].
+#[test]
+fn large_block_copies() {
+    let (_g, before) = start();
+    for len in [72u32, 128, 136] {
+        let mut w = ImageWriter::new(unique_scid());
+        let words = len as i32 / 8;
+        // x@16, out@24; x'@-8, out'@-16, a@-16-len, b@-16-2len.
+        let (a_at, b_at) = (-16 - len as i32, -16 - 2 * len as i32);
+        let mut a = Asm::new();
+        a.i(Insn::MovW64 { d: Slot(-8), s: Slot(16) });
+        a.i(Insn::MovW64 { d: Slot(-16), s: Slot(24) });
+        for i in 0..words {
+            a.i(Insn::AddImmW64 { d: Slot(a_at + 8 * i), a: Slot(-8), imm: i as _ });
+        }
+        a.i(Insn::Copy { d: Slot(b_at), s: Slot(a_at), len });
+        a.i(Insn::StoreCopy { m: Mem { p: Slot(-16), k: 0 }, s: Slot(b_at), len });
+        a.ret(Slot(b_at + 64), 8);
+        let frame = (16 + 2 * len).next_multiple_of(16);
+        let f = w.add_function(func(a.done(), frame, 16, 8));
+        let img = build(w, &syms());
+        for x in [3u64, 1 << 40] {
+            let mut out = vec![0u64; words as usize];
+            assert_eq!(ok::<_, u64>(img.id(f), (x, out.as_mut_ptr() as u64)), x + 8, "len {len}");
+            assert_eq!(out, (0..words as u64).map(|i| x + i).collect::<Vec<_>>(), "len {len}");
+        }
+    }
+    check_stats(before, 3);
+}
+
 static B_STATIC: AtomicU64 = AtomicU64::new(0);
 
 /// Inlining across images: `f` of image A calls `g` of image B through a symbol slot. `g`,
