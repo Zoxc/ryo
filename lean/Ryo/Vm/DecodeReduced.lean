@@ -309,7 +309,7 @@ def callInsn (fr : Frame) (dropped : List DroppedStore) : DM (Option Proto) := d
   let p0 ← pos
   let pre ← (do
     match ← tryItem with
-    | some (.loadRip (.sym s)) => return Pre.sym s
+    | some (.loadRip .rax (.sym s)) => return Pre.sym s
     | some (.ld .q false .rax m) => if m.base == .rbp then return Pre.ptr m.disp else setPos p0; return Pre.none
     | _ => setPos p0; return Pre.none)
   let ps ← params fr.mode

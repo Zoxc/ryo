@@ -165,7 +165,9 @@ def encode (i : Item) (pos : BitVec 32) : List UInt8 × List Reloc :=
   | ctrSub k => reloc [0x48, 0x83, 0x2d] .recordCtr [byte k.toNat]
   | callR11 d => plain [0x41, 0xff, 0x53, byte d.toNat]
   | callMemRax => plain [0xff, 0x10]
-  | loadRip to => reloc [0x48, 0x8b, 0x05] to
+  | loadRip r to =>
+    let b := fun (c : Bool) => if c then 1 else 0
+    reloc [byte (0x48 ||| b r.ext <<< 2), 0x8b, byte (0x05 ||| r.low <<< 3)] to
   | jmpRax => plain [0xff, 0xe0]
   | jmp to => reloc [0xe9] to
   | branch cond target long =>

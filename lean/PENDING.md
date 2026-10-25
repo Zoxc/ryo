@@ -3,11 +3,6 @@
 Rust-side changes that the Lean model or proofs don't reflect yet. Add an entry per change;
 remove it once a Lean session has handled it.
 
-- `LoadRip` takes a register: `mov reg, [rip + disp32]` (REX.R for `r8`-`r15`), the item
-  `loadRip dst to` in the x86 vectors; `call.sym.ind` still loads `rax`. `Lea` and `LoadRip`
-  count as inline items (`Item.isInline`), not ending a sequence. Commit: "Let LoadRip load
-  any register and count rip items as inline".
-
 - `addr.const`, `addr.sym` and `addr.sym.ind` are inline (`has_inline`, so the reduced set
   gains them): `lea r, [rip + k]` (`Const`/`Data`), `mov r, [rip + slot]` (`Sym`) with an
   extra `mov r, [r]` for `.ind`, then `mov [fp + d], r`. The Lean `Asm` model needs the three

@@ -490,10 +490,10 @@ impl Gen<'_> {
                 "callMemRax".into()
             }
             15 => {
-                let to = self.data_ref();
+                let (r, to) = (*self.rng.pick(&REGS), self.data_ref());
                 let off = self.off(8);
                 self.c.refs.push((to.clone(), self.data + off as u64));
-                self.item(format!(r#"{{"loadRip":{{"to":{to}}}}}"#));
+                self.item(format!(r#"{{"loadRip":{{"dst":"{r}","to":{to}}}}}"#));
                 "loadRip".into()
             }
             16 => {

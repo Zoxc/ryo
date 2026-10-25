@@ -214,7 +214,7 @@ def Item.exec (ctx : Ctx) (i : Item) (s : State) : Except Fault State :=
   | .callR11 d =>
     let target := s0.mem.read64 (s0.reg .r11 + d.signExtend 64)
     pure ((s0.push next).jump target)
-  | .loadRip to => pure (s0.setReg .rax (s0.mem.read64 (ctx.addrOf to)))
+  | .loadRip r to => pure (s0.setReg r (s0.mem.read64 (ctx.addrOf to)))
   | .callMemRax =>
     let target := s0.mem.read64 (s0.reg .rax)
     pure ((s0.push next).jump target)

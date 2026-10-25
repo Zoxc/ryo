@@ -207,8 +207,8 @@ inductive Item
   | ctrSub (k : BitVec 8)
   /-- `call [r11 + disp8]` -/
   | callR11 (d : BitVec 8)
-  /-- `mov rax, [rip + disp32]` -/
-  | loadRip (to : Ref)
+  /-- `mov dst, [rip + disp32]`: a symbol slot's value (any register, REX.R for `r8`–`r11`). -/
+  | loadRip (dst : Reg) (to : Ref)
   /-- `call [rax]` -/
   | callMemRax
   /-- `jmp rax` -/

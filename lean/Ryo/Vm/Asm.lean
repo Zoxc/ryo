@@ -213,6 +213,8 @@ def mapRegs (f : Reg → Reg) : Item → Item
   | .testM8 m => .testM8 ⟨f m.base, m.disp⟩
   | .setReg r v => .setReg (f r) v
   | .mulQ rm => .mulQ (mapRm f rm)
+  | .lea r to => .lea (f r) to
+  | .loadRip r to => .loadRip (f r) to
   | it => it
 where
   mapRm (f : Reg → Reg) : Rm → Rm
@@ -228,7 +230,7 @@ def endsInline : Item → Bool
 /-- `Item::is_inline`. -/
 def isInline : Item → Bool
   | .ld .. | .st .. | .stImm .. | .leaM .. | .alu .. | .aluImm .. | .imul .. | .imulImm ..
-  | .shift .. | .setcc .. | .testM8 .. | .setccCl .. | .mulQ .. => true
+  | .shift .. | .setcc .. | .testM8 .. | .setccCl .. | .mulQ .. | .lea .. | .loadRip .. => true
   | .setReg r _ => r != .rsp && r != .rbp
   | _ => false
 

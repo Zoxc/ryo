@@ -219,7 +219,8 @@ def generated : List Item :=
   fixed ++
   imms.flatMap (fun v => [.subRsp v, .addRsp v]) ++
   Reg.all.flatMap (fun r => vals.map (.setReg r) ++ refs.map (.lea r) ++ Reg.all.map (.mov r)) ++
-  refs.flatMap (fun t => [.call t, .callMem t, .loadRip t, .jmp t]) ++
+  refs.flatMap (fun t => [.call t, .callMem t, .jmp t]) ++
+  Reg.all.flatMap (fun r => refs.map (.loadRip r ·)) ++
   [0, 1, 127, 128, 255].flatMap (fun k => [.ctrSub k, .callR11 k]) ++
   W.all.flatMap (fun w =>
     usableRegs.flatMap (fun r =>

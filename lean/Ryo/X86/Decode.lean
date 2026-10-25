@@ -202,8 +202,11 @@ def baseCandidate (c : Cursor) : Option Item := do
     | .ref to => pure (.lea r to)
     | .local t => if r == .rcx then pure (.leaTable t) else none
     | .bad => none
-  | 0x48, 0x8b =>
-    if (← g 2) == 0x05 then pure (.loadRip (← c.fieldRef 3 7)) else none
+  | 0x48, 0x8b | 0x4c, 0x8b =>
+    let m ← g 2
+    if m &&& 0xc7 != 0x05 then none
+    let r ← Reg.ofNum? ((m >>> 3 &&& 7).toNat + ext rr)
+    pure (.loadRip r (← c.fieldRef 3 7))
   | 0x48, 0x85 => if (← g 2) == 0xc0 then pure .testRax else none
   | 0x48, 0x63 => if (← c.bytes 4) == [0x48, 0x63, 0x04, 0x81] then pure .loadTableEntry else none
   | 0x48, 0x01 => if (← g 2) == 0xc8 then pure .addRaxRcx else none
