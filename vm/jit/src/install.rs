@@ -19,10 +19,10 @@ use ryo_bytecode::image::{EhFunc, Image, ImageResolver, JIT_DONE, JitRecord, eh_
 use ryo_bytecode::jit;
 use ryo_bytecode::jit::ir::CallTarget;
 use ryo_bytecode::jit_abi::{JIT_CHECK, JIT_ENTRY_PREFIX, JIT_LOG, JIT_OPT_SSA, JIT_OPT_SSA_NAIVE, JIT_TEST_PANIC, RtApi};
-use ryo_bytecode::{Opcode, reduced};
+use ryo_bytecode::{Opcode, reduced, vmem};
 
-/// The page size (x86_64).
-const PAGE: usize = 4096;
+/// The page size.
+const PAGE: usize = vmem::PAGE;
 
 /// The size of a code region: one mapping that code (from the start, in pages, made
 /// executable once written) and unwind information (from the end, read-write) are taken from.
@@ -33,19 +33,7 @@ const REACH: usize = (1 << 31) - (1 << 20);
 const CODE_AT: usize = 16;
 const _: () = assert!(JIT_ENTRY_PREFIX <= CODE_AT);
 
-const PROT_READ: c_int = 1;
-const PROT_WRITE: c_int = 2;
-const PROT_EXEC: c_int = 4;
-const MAP_PRIVATE: c_int = 0x02;
-const MAP_ANONYMOUS: c_int = 0x20;
-const MAP_NORESERVE: c_int = 0x4000;
-const MAP_FIXED_NOREPLACE: c_int = 0x10_0000;
-const MAP_FAILED: *mut c_void = !0usize as *mut c_void;
-
 unsafe extern "C" {
-    fn mmap(addr: *mut c_void, len: usize, prot: c_int, flags: c_int, fd: c_int, off: i64) -> *mut c_void;
-    fn munmap(addr: *mut c_void, len: usize) -> c_int;
-    fn mprotect(addr: *mut c_void, len: usize, prot: c_int) -> c_int;
     fn getpid() -> c_int;
     fn write(fd: c_int, buf: *const c_void, n: usize) -> isize;
     /// libgcc's: registers an `.eh_frame` (terminated by a zero word) with the unwinder.
@@ -438,25 +426,13 @@ impl Jit {
                 if !reaches(hint, hint + REGION, s) {
                     continue;
                 }
-                // SAFETY: a new private mapping, never over an existing one (`NOREPLACE`).
-                let p = unsafe {
-                    mmap(
-                        hint as *mut c_void,
-                        REGION,
-                        PROT_READ | PROT_WRITE,
-                        MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE,
-                        -1,
-                        0,
-                    )
-                };
-                if p == MAP_FAILED {
-                    continue;
-                }
+                let Some(p) = vmem::reserve_code(hint, REGION) else { continue };
                 let p = p as usize;
-                // A kernel without `MAP_FIXED_NOREPLACE` takes the address as a hint only.
+                // Linux before 4.17 (no `MAP_FIXED_NOREPLACE`) and Apple take the address as a
+                // hint only.
                 if !reaches(p, p + REGION, s) {
                     // SAFETY: the mapping just made.
-                    unsafe { munmap(p as *mut c_void, REGION) };
+                    unsafe { vmem::release(p as *mut u8, REGION) };
                     continue;
                 }
                 self.regions.push(Region { start: p, end: p + REGION, code: p, data: p + REGION });
@@ -841,8 +817,8 @@ impl Jit {
         unsafe {
             ptr::copy_nonoverlapping(code.as_ptr(), base as *mut u8, size);
             ptr::copy_nonoverlapping(eh.as_ptr(), eh_base as *mut u8, eh.len());
-            if mprotect(base as *mut c_void, size, PROT_READ | PROT_EXEC) != 0 {
-                return Err("mprotect");
+            if !vmem::make_executable(base as *mut u8, size) {
+                return Err("make_executable");
             }
             __register_frame(eh_base as *const u8);
         }

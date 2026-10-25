@@ -703,7 +703,7 @@ pub(crate) fn registered(img: &Image<'_>) {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 mod futex {
     use core::ffi::{c_long, c_void};
     use core::ptr;
@@ -727,6 +727,36 @@ mod futex {
     pub fn wake(a: &AtomicU32, n: i32) {
         // SAFETY: a futex wake on a live atomic.
         unsafe { syscall(SYS_FUTEX, a.as_ptr(), FUTEX_WAKE_PRIVATE, n) };
+    }
+}
+
+/// Apple: `__ulock_wait`/`__ulock_wake` (libSystem; what libc++'s and std's waits use
+/// before macOS 14.4's `os_sync_wait_on_address`).
+#[cfg(target_vendor = "apple")]
+mod futex {
+    use core::ffi::{c_int, c_void};
+    use core::sync::atomic::AtomicU32;
+
+    const UL_COMPARE_AND_WAIT: u32 = 1;
+    const ULF_WAKE_ALL: u32 = 0x100;
+    const ULF_NO_ERRNO: u32 = 0x0100_0000;
+
+    unsafe extern "C" {
+        fn __ulock_wait(op: u32, addr: *mut c_void, value: u64, timeout_us: u32) -> c_int;
+        fn __ulock_wake(op: u32, addr: *mut c_void, wake_value: u64) -> c_int;
+    }
+
+    /// Sleeps while `a` holds `v` (or until a wake; spurious returns are fine).
+    pub fn wait(a: &AtomicU32, v: u32) {
+        // SAFETY: a wait on a live atomic of 4 bytes, compared with `v`, without a timeout.
+        unsafe { __ulock_wait(UL_COMPARE_AND_WAIT | ULF_NO_ERRNO, a.as_ptr().cast(), v as u64, 0) };
+    }
+
+    /// Wakes one thread waiting on `a`, or all of them.
+    pub fn wake(a: &AtomicU32, n: i32) {
+        let all = if n == 1 { 0 } else { ULF_WAKE_ALL };
+        // SAFETY: a wake on a live atomic.
+        unsafe { __ulock_wake(UL_COMPARE_AND_WAIT | ULF_NO_ERRNO | all, a.as_ptr().cast(), 0) };
     }
 }
 

@@ -10,10 +10,11 @@ extern crate ryo_jit;
 
 use std::any::Any;
 use std::collections::HashMap;
-use std::ffi::c_void;
 use std::mem::{ManuallyDrop, MaybeUninit};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
+
+use ryo_bytecode::vmem::{self, PAGE};
 
 pub use ryo_bytecode::Opcode;
 pub use ryo_bytecode::asm::Mode;
@@ -125,22 +126,12 @@ pub fn unique_scid() -> u64 {
 // ---- memory ----
 
 unsafe extern "C" {
-    fn mmap(addr: *mut c_void, len: usize, prot: i32, flags: i32, fd: i32, off: i64) -> *mut c_void;
-    fn mprotect(addr: *mut c_void, len: usize, prot: i32) -> i32;
     /// libgcc's: registers an `.eh_frame` (terminated by a zero word) with the unwinder.
     fn __register_frame(begin: *const u8);
     /// std's personality routine, which the CIE names.
     fn rust_eh_personality();
 }
 
-const PROT_READ: i32 = 1;
-const PROT_WRITE: i32 = 2;
-const PROT_EXEC: i32 = 4;
-const MAP_PRIVATE: i32 = 0x02;
-const MAP_ANONYMOUS: i32 = 0x20;
-const MAP_NORESERVE: i32 = 0x4000;
-const MAP_FIXED_NOREPLACE: i32 = 0x10_0000;
-const PAGE: usize = 4096;
 const ARENA: usize = 256 << 20;
 
 /// A bump allocator over one mapping within ±2 GiB of `ryo_rt`'s code, so that the
@@ -157,12 +148,7 @@ fn new_arena() -> Arena {
     for k in 1..8isize {
         for sign in [1isize, -1] {
             let hint = (near as isize + sign * k * (128 << 20)) as usize & !(PAGE - 1);
-            let p = unsafe {
-                mmap(hint as *mut c_void, ARENA, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0)
-            };
-            if p as isize == -1 {
-                continue;
-            }
+            let Some(p) = vmem::reserve_code(hint, ARENA) else { continue };
             assert_eq!(p as usize, hint, "kernel without MAP_FIXED_NOREPLACE");
             return Arena { cur: p as usize, end: p as usize + ARENA };
         }
@@ -256,7 +242,7 @@ pub fn link(obj: ImageObject, syms: &[(&str, usize)]) -> Linked {
             RelocKind::Rva32 => panic!("PE relocation on ELF"),
         }
     }
-    assert_eq!(unsafe { mprotect(text.cast(), text_len, PROT_READ | PROT_EXEC) }, 0, "mprotect");
+    assert!(unsafe { vmem::make_executable(text, text_len) }, "make_executable");
     unsafe { __register_frame(eh) };
     let crate_hash = unsafe { Image::from_header(ro) }.unwrap().crate_hash();
     Linked { header: ro, data, text, crate_hash, symbols: obj.symbols.iter().map(|s| s.name.clone()).collect(), functions: obj.functions }

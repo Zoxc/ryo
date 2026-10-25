@@ -1,4 +1,5 @@
-//! OS services for the VM: page mappings, fatal errors, the runtime lock, and a bump allocator.
+//! OS services for the VM: page mappings (through `ryo_bytecode::vmem`), fatal errors, the
+//! runtime lock, and a bump allocator.
 //!
 //! Everything here uses `core` and direct OS calls only (libc on ELF, kernel32 on PE). Under
 //! `--sysroot ryo`, std's allocator, `Mutex` and I/O may be VM functions, so the runtime must
@@ -8,24 +9,16 @@
 use core::ptr;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-/// Page size assumed for guard pages and mapping granularity (x86_64 ELF and PE).
-pub const PAGE: usize = 4096;
+use ryo_bytecode::vmem;
+
+/// Page size for guard pages and mapping granularity ([`vmem::PAGE`]).
+pub const PAGE: usize = vmem::PAGE;
 
 #[cfg(unix)]
 mod os {
     use core::ffi::{c_int, c_void};
 
-    pub const PROT_NONE: c_int = 0;
-    pub const PROT_READ: c_int = 1;
-    pub const PROT_WRITE: c_int = 2;
-    pub const MAP_PRIVATE: c_int = 0x02;
-    pub const MAP_ANONYMOUS: c_int = 0x20;
-    pub const MAP_NORESERVE: c_int = 0x4000;
-    pub const MAP_FAILED: *mut c_void = !0usize as *mut c_void;
-
     unsafe extern "C" {
-        pub fn mmap(addr: *mut c_void, len: usize, prot: c_int, flags: c_int, fd: c_int, off: i64) -> *mut c_void;
-        pub fn mprotect(addr: *mut c_void, len: usize, prot: c_int) -> c_int;
         pub fn write(fd: c_int, buf: *const c_void, n: usize) -> isize;
         pub fn abort() -> !;
     }
@@ -35,16 +28,10 @@ mod os {
 mod os {
     use core::ffi::c_void;
 
-    pub const MEM_COMMIT: u32 = 0x1000;
-    pub const MEM_RESERVE: u32 = 0x2000;
-    pub const PAGE_NOACCESS: u32 = 0x01;
-    pub const PAGE_READWRITE: u32 = 0x04;
     pub const STD_ERROR_HANDLE: u32 = -12i32 as u32;
 
     #[link(name = "kernel32")]
     unsafe extern "system" {
-        pub fn VirtualAlloc(addr: *mut c_void, size: usize, ty: u32, protect: u32) -> *mut c_void;
-        pub fn VirtualProtect(addr: *mut c_void, size: usize, protect: u32, old: *mut u32) -> i32;
         pub fn GetStdHandle(which: u32) -> *mut c_void;
         pub fn WriteFile(h: *mut c_void, buf: *const u8, n: u32, written: *mut u32, ov: *mut c_void) -> i32;
     }
@@ -89,33 +76,12 @@ fn abort() -> ! {
 /// last `guard` bytes (a multiple of [`PAGE`]) are made inaccessible. Aborts on failure.
 pub fn map(len: usize, guard: usize) -> *mut u8 {
     debug_assert!(len % PAGE == 0 && guard % PAGE == 0 && guard < len);
-    #[cfg(unix)]
-    // SAFETY: an anonymous private mapping at a kernel-chosen address touches no existing
-    // memory. `mprotect` only covers the end of the new mapping.
-    unsafe {
-        let p = os::mmap(ptr::null_mut(), len, os::PROT_READ | os::PROT_WRITE, os::MAP_PRIVATE | os::MAP_ANONYMOUS | os::MAP_NORESERVE, -1, 0);
-        if p == os::MAP_FAILED {
-            fatal("out of memory mapping VM memory");
-        }
-        if guard != 0 && os::mprotect(p.cast::<u8>().add(len - guard).cast(), guard, os::PROT_NONE) != 0 {
-            fatal("mprotect failed");
-        }
-        p.cast()
+    let Some(p) = vmem::reserve(0, len) else { fatal("out of memory mapping VM memory") };
+    // SAFETY: the guard covers only the end of the new mapping, which nothing uses yet.
+    if guard != 0 && !unsafe { vmem::guard(p.add(len - guard), guard) } {
+        fatal("protecting a guard page failed");
     }
-    #[cfg(windows)]
-    // SAFETY: a fresh allocation at a system-chosen address; `VirtualProtect` only covers its
-    // end.
-    unsafe {
-        let p = os::VirtualAlloc(ptr::null_mut(), len, os::MEM_RESERVE | os::MEM_COMMIT, os::PAGE_READWRITE);
-        if p.is_null() {
-            fatal("out of memory mapping VM memory");
-        }
-        let mut old = 0;
-        if guard != 0 && os::VirtualProtect(p.cast::<u8>().add(len - guard).cast(), guard, os::PAGE_NOACCESS, &mut old) == 0 {
-            fatal("VirtualProtect failed");
-        }
-        p.cast()
-    }
+    p
 }
 
 /// The runtime's lock: a spin lock on one `AtomicBool`. It is only taken on cold paths

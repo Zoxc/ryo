@@ -15,6 +15,8 @@ use std::panic::resume_unwind;
 use std::sync::Once;
 use std::sync::atomic::AtomicU64;
 
+use ryo_bytecode::vmem;
+
 const T: Neg = Neg(false);
 const F: Neg = Neg(true);
 
@@ -201,31 +203,30 @@ fn unwinding_through_far_calls() {
 fn far_syms() -> Vec<(&'static str, usize)> {
     static FAR: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
     let p = *FAR.get_or_init(|| {
-        unsafe extern "C" {
-            fn mmap(addr: *mut core::ffi::c_void, len: usize, prot: i32, flags: i32, fd: i32, off: i64) -> *mut core::ffi::c_void;
-        }
         let near = ret_addr as *const () as usize;
         for k in 1..64usize {
             for hint in [near.wrapping_add(k << 33), near.wrapping_sub(k << 33)] {
-                let hint = hint & !0xfff;
-                // RWX, private, at `hint` (MAP_FIXED_NOREPLACE).
-                let p = unsafe { mmap(hint as *mut _, 4096, 7, 0x22 | 0x10_0000, -1, 0) };
-                if p as usize == hint {
-                    return hint;
+                let hint = hint & !(vmem::PAGE - 1);
+                let Some(p) = vmem::reserve_code(hint, vmem::PAGE) else { continue };
+                if p as usize != hint {
+                    unsafe { vmem::release(p, vmem::PAGE) };
+                    continue;
                 }
+                let code: &mut [u8] = unsafe { std::slice::from_raw_parts_mut(p, 64) };
+                // ret_addr at 0: `mov rax, [rsp]; ret`.
+                code[..5].copy_from_slice(&[0x48, 0x8b, 0x04, 0x24, 0xc3]);
+                // boom at 16 and note at 32: `movabs rax, f; jmp rax`.
+                for (at, f) in [(16, boom as *const () as usize), (32, note as *const () as usize)] {
+                    code[at..at + 2].copy_from_slice(&[0x48, 0xb8]);
+                    code[at + 2..at + 10].copy_from_slice(&(f as u64).to_le_bytes());
+                    code[at + 10..at + 12].copy_from_slice(&[0xff, 0xe0]);
+                }
+                assert!(unsafe { vmem::make_executable(p, vmem::PAGE) });
+                return hint;
             }
         }
         panic!("no far address");
     });
-    let code: &mut [u8] = unsafe { std::slice::from_raw_parts_mut(p as *mut u8, 64) };
-    // ret_addr at 0: `mov rax, [rsp]; ret`.
-    code[..5].copy_from_slice(&[0x48, 0x8b, 0x04, 0x24, 0xc3]);
-    // boom at 16 and note at 32: `movabs rax, f; jmp rax`.
-    for (at, f) in [(16, boom as *const () as usize), (32, note as *const () as usize)] {
-        code[at..at + 2].copy_from_slice(&[0x48, 0xb8]);
-        code[at + 2..at + 10].copy_from_slice(&(f as u64).to_le_bytes());
-        code[at + 10..at + 12].copy_from_slice(&[0xff, 0xe0]);
-    }
     vec![("ret_addr", p), ("boom", p + 16), ("note", p + 32)]
 }
 

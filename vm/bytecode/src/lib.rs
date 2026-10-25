@@ -13,6 +13,7 @@
 //! - [`jit`]: the JIT's SSA tier: the handlers' frame effects, and (`alloc`) the SSA IR, its
 //!   construction from decoded code and its code generation.
 //! - [`jit_abi`]: the interface between the runtime and the JIT ([`jit_abi::RtApi`]).
+//! - [`vmem`]: virtual memory and code memory for the VM and the JIT, per OS.
 //!
 //! The decoder and the image reader use `core` only. The encoder and the image writer need
 //! the `alloc` feature (on by default; `ryo_rt` disables it).
@@ -33,5 +34,6 @@ pub mod image;
 pub mod jit;
 pub mod jit_abi;
 pub mod reduced;
+pub mod vmem;
 
 pub use full::{ALL_OPCODES, Insn, OP_INFO, OpInfo, Opcode};
