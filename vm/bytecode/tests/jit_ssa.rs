@@ -4,7 +4,7 @@
 
 use ryo_bytecode::asm::{self, ArgReg, Decoded, Mode, Scope, ScopeKind};
 use ryo_bytecode::full::*;
-use ryo_bytecode::jit::ir::{AllocaKind, BlockKind, Op, Term};
+use ryo_bytecode::jit::ir::{AllocaKind, BlockKind, Edge, Func as IrFunc, Op, Term, ValueDef};
 
 const MODE: Mode = Mode { fp_arg: true, frame_pointer: false, align_loops: true, pe: false, counters: true, far_rt: false };
 
@@ -208,7 +208,7 @@ fn value_numbering() {
     let f = ir(&decoded(&v, 16, &[]));
     assert!(f.blocks.iter().all(|b| b.insts.is_empty()), "{f}");
     let Term::Ret { parts, .. } = &f.blocks[0].term else { panic!("{f}") };
-    assert_eq!(f.def(parts[0]), ryo_bytecode::jit::ir::ValueDef::Const(49), "{f}");
+    assert_eq!(f.def(parts[0]), ValueDef::Const(49), "{f}");
 
     let v = vec![
         arg(-8, 0),
@@ -265,4 +265,156 @@ fn cold_blocks_last() {
     let al = ryo_bytecode::jit::regalloc::linear_scan(&f, &uses, false);
     ryo_bytecode::jit::regalloc::check(&f, &al, false).unwrap();
     assert!(al.saved.is_empty(), "{al:?}\n{f}");
+}
+
+/// Constant propagation over a loop head's parameters, ignoring the OSR entry's: `k` is 5
+/// on every normal path into the head, so the branch on it folds, the code it skips goes, and
+/// the OSR entry stops loading it.
+#[test]
+fn osr_transparent_constants() {
+    let v = vec![
+        arg(-24, 0),
+        Insn::ImmW64 { d: Slot(-8), imm: 0 },
+        Insn::ImmW64 { d: Slot(-32), imm: 5 },
+        // 3: the head.
+        Insn::BrLtUW64 { a: Slot(-8), b: Slot(-24), neg: F, t: Target(9) },
+        Insn::BrEqImmW64 { a: Slot(-32), imm: 5, neg: T, t: Target(6) },
+        Insn::AddImmW64 { d: Slot(-8), a: Slot(-8), imm: 100 },
+        // 6:
+        Insn::ImmW64 { d: Slot(-32), imm: 5 },
+        Insn::AddImmW64 { d: Slot(-8), a: Slot(-8), imm: 1 },
+        Insn::Jmp { t: Target(3) },
+        Insn::Ret { s: Slot(-8), k: 8 },
+    ];
+    let f = ir(&decoded(&v, 32, &[]));
+    let o = f.osr.iter().flatten().next().copied().expect("an OSR entry");
+    assert_eq!(f.blocks[o.idx()].insts.len(), 2, "{f}");
+    let live = |b: &ryo_bytecode::jit::ir::Block| f.blocks[b.idx()].insts.iter().map(|i| f.insts[i.idx()].op.clone()).collect::<Vec<_>>();
+    let ops: Vec<Op> = f.layout.iter().flat_map(live).collect();
+    assert_eq!(ops.iter().filter(|o| matches!(o, Op::Bin(..))).count(), 1, "{f}");
+    let branches = f.layout.iter().filter(|b| matches!(f.blocks[b.idx()].term, Term::Br { .. } | Term::BrCmp { .. })).count();
+    assert_eq!(branches, 1, "{f}");
+}
+
+/// The same after another loop, whose exit edge propagation finds executable only on a later
+/// pass: the second head's parameters wait for it instead of taking the OSR entry's loads.
+#[test]
+fn osr_transparent_constants_after_a_loop() {
+    let v = vec![
+        arg(-24, 0),
+        Insn::ImmW64 { d: Slot(-8), imm: 0 },
+        // 2: a first loop, counting to 10.
+        Insn::BrLtUImmW64 { a: Slot(-8), imm: 10, neg: F, t: Target(5) },
+        Insn::AddImmW64 { d: Slot(-8), a: Slot(-8), imm: 1 },
+        Insn::Jmp { t: Target(2) },
+        // 5:
+        Insn::ImmW64 { d: Slot(-32), imm: 5 },
+        // 6: the second head.
+        Insn::BrLtUW64 { a: Slot(-8), b: Slot(-24), neg: F, t: Target(12) },
+        Insn::BrEqImmW64 { a: Slot(-32), imm: 5, neg: T, t: Target(9) },
+        Insn::AddImmW64 { d: Slot(-8), a: Slot(-8), imm: 100 },
+        // 9:
+        Insn::ImmW64 { d: Slot(-32), imm: 5 },
+        Insn::AddImmW64 { d: Slot(-8), a: Slot(-8), imm: 1 },
+        Insn::Jmp { t: Target(6) },
+        Insn::Ret { s: Slot(-8), k: 8 },
+    ];
+    let f = ir(&decoded(&v, 32, &[]));
+    let adds = f.layout.iter().flat_map(|b| f.blocks[b.idx()].insts.iter()).filter(|i| matches!(f.insts[i.idx()].op, Op::Bin(..))).count();
+    assert_eq!(adds, 2, "{f}");
+}
+
+/// A handler call through its register entry whose result only dead code reads goes.
+#[test]
+fn dead_handler_call() {
+    let v = vec![
+        arg(-16, 0),
+        Insn::CtpopW64 { d: Slot(-20), a: Slot(-16) },
+        Insn::AddW32 { d: Slot(-20), a: Slot(-20), b: Slot(-20) },
+        Insn::Ret { s: Slot(-16), k: 8 },
+    ];
+    let f = ir(&decoded(&v, 32, &[]));
+    assert!(
+        f.insts.iter().enumerate().all(|(k, i)| !matches!(i.op, Op::HCall(_)) || !f.blocks[i.block.idx()].insts.iter().any(|j| j.idx() == k)),
+        "{f}"
+    );
+}
+
+fn opt(mut f: IrFunc) -> IrFunc {
+    f.verify().unwrap_or_else(|e| panic!("{e}\n{f}"));
+    ryo_bytecode::jit::opt::run(&mut f);
+    f.verify().unwrap_or_else(|e| panic!("{e}\n{f}"));
+    f
+}
+
+/// A switch on a constant becomes a jump, and its target, left with one predecessor, merges
+/// into the entry.
+#[test]
+fn switch_on_constant() {
+    let mut f = IrFunc::default();
+    let (b0, b1, b2) = (f.block(BlockKind::Entry), f.block(BlockKind::Body), f.block(BlockKind::Body));
+    let p = f.param(b0, 8);
+    let q = f.param(b2, 8);
+    let one = f.konst(1, 8);
+    f.terminate(b0, Term::Switch { idx: one, targets: vec![Edge::to(b1), Edge { to: b2, args: vec![p] }] });
+    let z = f.konst(0, 8);
+    f.terminate(b1, Term::Ret { k: 8, parts: vec![z] });
+    f.terminate(b2, Term::Ret { k: 8, parts: vec![q] });
+    f.layout = vec![b0, b1, b2];
+    let f = opt(f);
+    assert_eq!(f.layout, vec![b0], "{f}");
+    let Term::Ret { parts, .. } = &f.blocks[0].term else { panic!("{f}") };
+    assert_eq!(parts, &vec![p], "{f}");
+}
+
+/// A loop parameter whose arguments are one value and itself is that value; then the
+/// constant condition folds and the exit merges.
+#[test]
+fn self_loop_parameter_aliases() {
+    let mut f = IrFunc::default();
+    let (b0, b1, b2) = (f.block(BlockKind::Entry), f.block(BlockKind::Body), f.block(BlockKind::Body));
+    let a = f.param(b0, 8);
+    let c = f.param(b0, 1);
+    let x = f.param(b1, 8);
+    f.terminate(b0, Term::Jmp(Edge { to: b1, args: vec![a] }));
+    f.terminate(b1, Term::Br { cond: c, t: Edge { to: b1, args: vec![x] }, f: Edge::to(b2) });
+    f.terminate(b2, Term::Ret { k: 8, parts: vec![x] });
+    f.layout = vec![b0, b1, b2];
+    let f = opt(f);
+    assert!(f.blocks[b1.idx()].params.is_empty(), "{f}");
+    let Term::Ret { parts, .. } = &f.blocks[b2.idx()].term else { panic!("{f}") };
+    assert_eq!(parts, &vec![a], "{f}");
+}
+
+/// Propagation through a loop: `x` stays 0 around it (`x * 1`, `x + 0`), so the exit test
+/// on it is decided and the loop never exits by it.
+#[test]
+fn constant_around_a_loop() {
+    let mut f = IrFunc::default();
+    let (b0, b1, b2, b3) = (f.block(BlockKind::Entry), f.block(BlockKind::Body), f.block(BlockKind::Body), f.block(BlockKind::Body));
+    let n = f.param(b0, 8);
+    let x = f.param(b1, 8);
+    let i = f.param(b1, 8);
+    let (z, one) = (f.konst(0, 8), f.konst(1, 8));
+    f.terminate(b0, Term::Jmp(Edge { to: b1, args: vec![z, z] }));
+    let m = f.inst(b1, Op::Bin(ryo_bytecode::jit::ir::BinOp::Mul, 8), vec![x, one], &[8]);
+    let m = f.result(m);
+    let c = f.inst(b1, Op::Cmp(ryo_bytecode::jit::ir::Cc::Eq, 8), vec![m, z], &[1]);
+    let c = f.result(c);
+    f.terminate(b1, Term::Br { cond: c, t: Edge::to(b2), f: Edge::to(b3) });
+    let i2 = f.inst(b2, Op::Bin(ryo_bytecode::jit::ir::BinOp::Add, 8), vec![i, one], &[8]);
+    let i2 = f.result(i2);
+    let c2 = f.inst(b2, Op::Cmp(ryo_bytecode::jit::ir::Cc::LtU, 8), vec![i2, n], &[1]);
+    let c2 = f.result(c2);
+    f.terminate(b2, Term::Br { cond: c2, t: Edge { to: b1, args: vec![m, i2] }, f: Edge::to(b3) });
+    f.terminate(b3, Term::Ret { k: 8, parts: vec![i] });
+    f.layout = vec![b0, b1, b2, b3];
+    let f = opt(f);
+    assert!(
+        f.layout
+            .iter()
+            .all(|b| f.blocks[b.idx()].insts.iter().all(|i| !matches!(f.insts[i.idx()].op, Op::Bin(ryo_bytecode::jit::ir::BinOp::Mul, _)))),
+        "{f}"
+    );
+    assert_eq!(f.blocks[b1.idx()].params.len(), 1, "{f}");
 }

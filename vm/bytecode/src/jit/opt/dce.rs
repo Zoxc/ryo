@@ -1,12 +1,24 @@
 use alloc::vec::Vec;
 
+use crate::full::Opcode;
 use crate::jit::ir::*;
+
+/// Whether `op` has no effect but its results: a pure operation, or a call of a handler's
+/// register entry ([`crate::jit::effects::RegEntry`]) that touches no memory and can't unwind:
+/// its frame operands are values then, and it only computes.
+fn removable(op: &Op) -> bool {
+    match op {
+        Op::HCall(h) => h.reg && h.site == Site::None && h.h != Opcode::Lpad && crate::jit::effects::effects(h.h).is_some_and(|e| !e.memory),
+        op => op.pure(),
+    }
+}
 
 /// Dead code elimination by mark and sweep (design/jit.md, "The SSA tier"): a value is live
 /// if an effect, a terminator, or a live value's definition reads it; a block parameter's
 /// arguments are read only when the parameter is live. Pure instructions with no live result
-/// are dropped, and so are dead block parameters (but the entry's, which are its argument
-/// registers) with their edges' arguments, which removes dead loop-carried values too.
+/// (and effect-free handler calls, [`removable`]) are dropped, and so are dead block
+/// parameters (but the entry's, which are its argument registers) with their edges'
+/// arguments, which removes dead loop-carried values too.
 pub fn dce(f: &mut Func) {
     let mut live = alloc::vec![false; f.values.len()];
     let mut work: Vec<Value> = Vec::new();
@@ -20,7 +32,7 @@ pub fn dce(f: &mut Func) {
         let fused = matches!(bd.term, Term::BrOvf { .. }).then(|| bd.insts.last().copied()).flatten();
         for &i in &bd.insts {
             let id = &f.insts[i.idx()];
-            if !id.op.pure() || Some(i) == fused {
+            if !removable(&id.op) || Some(i) == fused {
                 for &a in &id.args {
                     mark(a, &mut live, &mut work);
                 }
@@ -57,7 +69,8 @@ pub fn dce(f: &mut Func) {
     }
     for b in 0..f.blocks.len() {
         let insts = core::mem::take(&mut f.blocks[b].insts);
-        f.blocks[b].insts = insts.into_iter().filter(|&i| f.insts[i.idx()].results().any(|r| live[r.idx()]) || !f.insts[i.idx()].op.pure()).collect();
+        f.blocks[b].insts =
+            insts.into_iter().filter(|&i| f.insts[i.idx()].results().any(|r| live[r.idx()]) || !removable(&f.insts[i.idx()].op)).collect();
     }
     for b in 0..f.blocks.len() {
         let keep: Vec<bool> = f.blocks[b].params.iter().map(|&p| live[p.idx()]).collect();

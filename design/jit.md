@@ -340,14 +340,27 @@ or store of the block left known is replaced by that value. Only what may write 
 them: a store through a pointer the other pointers' bytes and the escaped (or pinned)
 allocas, a store to an alloca its own bytes, a handler the allocas it names and, if it
 touches memory, what a pointer store does, a call also the outgoing area, an island
-everything. Then the folds (`opt::fold`)
+everything. Then `opt::simplify`, the global simplifications: sparse conditional constant
+propagation (Wegman and Zadeck) over the block parameters, with executable edges, where
+`undef` counts as varying and edges from OSR entries don't count for a head's parameters
+([OSR-transparent constants](#osr-transparent-constants)); the values it proves constant
+become constants, the branches, overflow branches and switches it decides become jumps, the
+blocks left unreachable go, and `opt::lvn`'s identities run again on what the constants
+reach. A parameter whose arguments are all one value (but for itself, as around a self-loop)
+becomes that value (not at a head with an OSR entry), which then dominates every predecessor,
+so the block. A block that ends in a jump to a block with no other predecessor takes its
+instructions and terminator (not
+into a landing pad stub, and never an AOT loop head or an entry). It repeats while the
+identities find new constants, at most three rounds. Then the folds (`opt::fold`)
 instruction selection relies on: a compare used only by the following branch becomes a
 `brcmp`, an overflow op (`add`/`sub`/`mul.ovf`) whose flag only the branch ending its block
 reads becomes a `br ovf` on the flags it leaves, and loads and stores through an `AllocaAddr` or a `PtrAdd` take its alloca or
 constant into their address. Last, `opt::dce` marks and sweeps: a value is live when an
 effect, a terminator or a live value reads it, and a parameter's edge arguments only when the
 parameter is live, so pure instructions without live results and dead parameters (dead
-loop-carried values included, but not the entry's) go with their arguments.
+loop-carried values included, but not the entry's) go with their arguments. A handler call
+through its register entry whose handler touches no memory (`effects`) and that can't unwind
+counts as pure: its frame operands are values, so it only computes its results.
 After DCE, `opt::thread` threads jumps: an edge into an empty block that only jumps on (not an
 AOT loop head, whose OSR entry lands there, and with parameters used by nothing but that
 jump) goes to the jump's target instead, a conditional edge only as far as it stays without
@@ -371,6 +384,36 @@ from the AOT frame into it, the callee-saved registers saved (they still hold th
 values: AOT code never touches them), the allocas copied to their JIT offsets, the head's
 parameters set from the scratch copies (registers last, `rdx`, the base without a frame
 pointer, last of all), `rsp = fp - F_jit`, `jmp` to the head.
+
+### OSR-transparent constants
+
+Every cyclic head has its OSR entry as an extra predecessor, whose arguments are `OsrLoad`s,
+so no head parameter would ever be constant. Constant propagation leaves those edges out: a
+head parameter whose arguments on the executable normal edges are all the constant `c` is `c`,
+also when the head is entered by OSR, and the entry's `OsrLoad` of it goes. Why that holds:
+
+- An OSR entry is taken only from an AOT activation at the head, that is from a state the
+  same function reached by running from its entry: the AOT code and the IR are the same
+  program (the IR is built from the decoded AOT code, and the passes before preserve its
+  meaning for every run from the entry), and both start from the function's entry.
+- Propagation is sound for every run from the entry whatever the loads, calls and handlers
+  return (their results count as varying), so in any such run the variable the parameter
+  stands for holds `c` (its low bytes, which are all the parameter defines) whenever control
+  reaches the head along a normal edge, and control reaches the head only along those. The
+  AOT frame holds that variable's value at the head, so its slot holds `c` too, and loading
+  it would give `c`.
+- What both runs needn't agree on is excluded: `undef` counts as varying, not as any value
+  (the AOT slot holds whatever bytes were there, not the constant the IR may pick for it;
+  construction shares one `undef` per width, so `opt::lvn`'s identities don't fold `x - x`
+  of it either),
+  and frame addresses (`AllocaAddr`, which differ for moved allocas) are never constants.
+- If no normal edge into a head is executable, propagation counts its OSR edge (whose
+  `OsrLoad`s vary): the entry is then never taken, but the code stays well formed.
+
+Only constants use this: a parameter whose normal arguments are one non-constant value
+still needs that value at the OSR entry, which doesn't have it, so parameter aliasing leaves
+heads with an OSR entry alone (the entry sets their parameters from the AOT frame: even with
+the normal edges gone, its `OsrLoad`s can't stand for them). OSR heads and their entries are never removed or merged.
 
 ### Back end
 
@@ -684,7 +727,9 @@ for shuffled frames per image, `RtApi::shuffled`):
   first head pass; with a ryo sysroot, `ryo-std-jit` and `ryo-std-jit-shuffle` go through
   the tier too, and `ryo-std-jit-reencode` through the re-encoding pipeline). `vm/bytecode/tests/jit_ssa.rs`
   builds hand-written functions' IR (promotion, block parameters at a loop head and its OSR
-  loads, reaching shapes, pinned and moved escaped locals, handler slots sharing a register),
+  loads, reaching shapes, pinned and moved escaped locals, handler slots sharing a register)
+and checks the passes on it and on hand-built IR (value numbering, constants through a loop
+and past its OSR entry, a switch on a constant, a self-loop parameter, a dead handler call),
   `tests/jit_x86.rs` checks the
   encoder against `objdump`, and `vm/rt/tests/ops.rs` the handler effect table.
 - **Packaging**: `jit-sealed` (`y test`, and `y test --cross` for PE) checks the bundled
@@ -700,7 +745,7 @@ for shuffled frames per image, `RtApi::shuffled`):
 ## Future work
 
 The SSA tier doesn't optimize beyond promotion, copy and constant propagation, local value
-numbering, its folds and DCE: passes, inlining, more native handler operations, interval splitting and an OSR version
+numbering, global constant propagation and CFG simplification, its folds and DCE: passes, inlining, more native handler operations, interval splitting and an OSR version
 that pins nothing are the next steps, behind the same records, trips, OSR entries and
 packaging; [verification.md](verification.md#the-jit) describes how its output would be
 validated.

@@ -36,7 +36,7 @@ enum Loc {
 /// At most this many remembered memory values per block, to keep the pass linear.
 const MAX_MEM: usize = 32;
 
-fn eval_bin(op: BinOp, w: u8, a: u64, b: u64) -> u64 {
+pub(super) fn eval_bin(op: BinOp, w: u8, a: u64, b: u64) -> u64 {
     let (a, b) = (mask(a, w), mask(b, w));
     let r = match op {
         BinOp::Add => a.wrapping_add(b),
@@ -78,7 +78,7 @@ fn key(op: &Op, args: &[Value]) -> Option<Key> {
 }
 
 /// What [`simplify`] makes of an instruction.
-enum Simp {
+pub(super) enum Simp {
     /// Its result is this value.
     Value(Value),
     /// Its result is this constant.
@@ -88,7 +88,7 @@ enum Simp {
 }
 
 /// Folds or rewrites the pure instruction `i` in place.
-fn simplify(f: &mut Func, i: Inst) -> Simp {
+pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
     let konst = |f: &Func, v: Value| match f.def(v) {
         ValueDef::Const(c) => Some(c),
         _ => None,
@@ -118,7 +118,7 @@ fn simplify(f: &mut Func, i: Inst) -> Simp {
                 (BinOp::Or, Some(c)) if c == all => return Simp::Const(all),
                 _ => {}
             }
-            if a == b {
+            if a == b && !matches!(f.def(a), ValueDef::Undef) {
                 match o {
                     BinOp::Sub | BinOp::Xor => return Simp::Const(0),
                     BinOp::And | BinOp::Or => return Simp::Value(a),

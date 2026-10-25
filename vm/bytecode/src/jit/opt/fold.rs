@@ -47,7 +47,7 @@ pub fn fold(f: &mut Func) {
 }
 
 /// Replaces the terminator of `b` by `t`, keeping its successors' predecessor lists right.
-fn set_term(f: &mut Func, b: usize, t: Term) {
+pub(super) fn set_term(f: &mut Func, b: usize, t: Term) {
     let blk = Block(b as u32);
     for e in f.blocks[b].term.edges().iter().map(|e| e.to).collect::<Vec<_>>() {
         f.blocks[e.idx()].preds.retain(|&(p, _)| p != blk);
@@ -114,31 +114,9 @@ fn fold_const_branches(f: &mut Func) {
             changed = true;
         }
     }
-    if !changed {
-        return;
+    if changed {
+        super::prune(f);
     }
-    let n = f.blocks.len();
-    let mut seen = alloc::vec![false; n];
-    let mut stack: Vec<usize> = (0..n).filter(|&b| matches!(f.blocks[b].kind, BlockKind::Entry | BlockKind::Osr(_))).collect();
-    for &b in &stack {
-        seen[b] = true;
-    }
-    while let Some(b) = stack.pop() {
-        for e in f.blocks[b].term.edges() {
-            if !seen[e.to.idx()] {
-                seen[e.to.idx()] = true;
-                stack.push(e.to.idx());
-            }
-        }
-    }
-    for b in 0..n {
-        if !seen[b] {
-            set_term(f, b, Term::Trap);
-            f.blocks[b].insts.clear();
-            f.blocks[b].preds.clear();
-        }
-    }
-    f.layout.retain(|b| seen[b.idx()]);
 }
 
 /// A load or store through an `AllocaAddr` of a memory alloca becomes an access of the
