@@ -49,7 +49,7 @@ pub fn fold(f: &mut Func) {
 /// Replaces the terminator of `b` by `t`, keeping its successors' predecessor lists right.
 pub(super) fn set_term(f: &mut Func, b: usize, t: Term) {
     let blk = Block(b as u32);
-    for e in f.blocks[b].term.edges().iter().map(|e| e.to).collect::<Vec<_>>() {
+    for e in f.blocks[b].term.edges().map(|e| e.to).collect::<Vec<_>>() {
         f.blocks[e.idx()].preds.retain(|&(p, _)| p != blk);
     }
     f.blocks[b].term = Term::None;

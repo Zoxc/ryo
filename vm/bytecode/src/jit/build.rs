@@ -190,7 +190,7 @@ impl<'a> B<'a> {
 
     /// Ends `b` with `t`, and seals the successors whose predecessors are all filled.
     fn finish_block(&mut self, b: Block, t: Term) {
-        let succ: Vec<Block> = t.edges().iter().map(|e| e.to).collect();
+        let succ: Vec<Block> = t.edges().map(|e| e.to).collect();
         self.f.terminate(b, t);
         for s in succ {
             self.filled[s.idx()] += 1;
@@ -696,7 +696,7 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
                 })
                 .collect();
             let mut t = core::mem::replace(&mut s.f.blocks[p.idx()].term, Term::None);
-            t.edges_mut()[k as usize].args = args;
+            t.edges_mut().nth(k as usize).unwrap().args = args;
             s.f.blocks[p.idx()].term = t;
         }
     }

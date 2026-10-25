@@ -374,24 +374,27 @@ pub enum Term {
 }
 
 impl Term {
-    pub fn edges(&self) -> Vec<&Edge> {
-        match self {
-            Term::None | Term::Ret { .. } | Term::TailCall { .. } | Term::Trap => Vec::new(),
-            Term::Jmp(e) => alloc::vec![e],
-            Term::Br { t, f, .. } | Term::BrCmp { t, f, .. } | Term::BrOvf { t, f } => alloc::vec![t, f],
-            Term::Switch { targets, .. } => targets.iter().collect(),
-            Term::Invoke { normal, pad } => normal.iter().chain([pad]).collect(),
-        }
+    /// Its edges, in order (without allocating).
+    pub fn edges(&self) -> Edges<'_> {
+        let (two, rest): ([Option<&Edge>; 2], &[Edge]) = match self {
+            Term::None | Term::Ret { .. } | Term::TailCall { .. } | Term::Trap => ([None, None], &[]),
+            Term::Jmp(e) => ([Some(e), None], &[]),
+            Term::Br { t, f, .. } | Term::BrCmp { t, f, .. } | Term::BrOvf { t, f } => ([Some(t), Some(f)], &[]),
+            Term::Switch { targets, .. } => ([None, None], targets),
+            Term::Invoke { normal, pad } => ([normal.as_ref(), Some(pad)], &[]),
+        };
+        Edges { two: two.into_iter().flatten(), rest: rest.iter() }
     }
 
-    pub fn edges_mut(&mut self) -> Vec<&mut Edge> {
-        match self {
-            Term::None | Term::Ret { .. } | Term::TailCall { .. } | Term::Trap => Vec::new(),
-            Term::Jmp(e) => alloc::vec![e],
-            Term::Br { t, f, .. } | Term::BrCmp { t, f, .. } | Term::BrOvf { t, f } => alloc::vec![t, f],
-            Term::Switch { targets, .. } => targets.iter_mut().collect(),
-            Term::Invoke { normal, pad } => normal.iter_mut().chain([pad]).collect(),
-        }
+    pub fn edges_mut(&mut self) -> EdgesMut<'_> {
+        let (two, rest): ([Option<&mut Edge>; 2], &mut [Edge]) = match self {
+            Term::None | Term::Ret { .. } | Term::TailCall { .. } | Term::Trap => ([None, None], &mut []),
+            Term::Jmp(e) => ([Some(e), None], &mut []),
+            Term::Br { t, f, .. } | Term::BrCmp { t, f, .. } | Term::BrOvf { t, f } => ([Some(t), Some(f)], &mut []),
+            Term::Switch { targets, .. } => ([None, None], targets),
+            Term::Invoke { normal, pad } => ([normal.as_mut(), Some(pad)], &mut []),
+        };
+        EdgesMut { two: two.into_iter().flatten(), rest: rest.iter_mut() }
     }
 
     /// The values it reads, but for its edges' arguments.
@@ -415,6 +418,45 @@ impl Term {
             Term::TailCall { args, .. } => args.iter_mut().collect(),
             _ => Vec::new(),
         }
+    }
+}
+
+/// [`Term::edges`]: up to two edges held directly, then a switch's table.
+#[derive(Clone)]
+pub struct Edges<'a> {
+    two: core::iter::Flatten<core::array::IntoIter<Option<&'a Edge>, 2>>,
+    rest: core::slice::Iter<'a, Edge>,
+}
+
+impl<'a> Iterator for Edges<'a> {
+    type Item = &'a Edge;
+    fn next(&mut self) -> Option<&'a Edge> {
+        self.two.next().or_else(|| self.rest.next())
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let n = self.clone().two.count() + self.rest.len();
+        (n, Some(n))
+    }
+}
+
+impl ExactSizeIterator for Edges<'_> {}
+
+impl Edges<'_> {
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+/// [`Term::edges_mut`].
+pub struct EdgesMut<'a> {
+    two: core::iter::Flatten<core::array::IntoIter<Option<&'a mut Edge>, 2>>,
+    rest: core::slice::IterMut<'a, Edge>,
+}
+
+impl<'a> Iterator for EdgesMut<'a> {
+    type Item = &'a mut Edge;
+    fn next(&mut self) -> Option<&'a mut Edge> {
+        self.two.next().or_else(|| self.rest.next())
     }
 }
 
@@ -549,7 +591,7 @@ impl Func {
 
     /// Sets the terminator of `b` and records it as its successors' predecessor.
     pub fn terminate(&mut self, b: Block, t: Term) {
-        for (k, e) in t.edges().iter().enumerate() {
+        for (k, e) in t.edges().enumerate() {
             self.blocks[e.to.idx()].preds.push((b, k as u16));
         }
         self.blocks[b.idx()].term = t;
@@ -611,9 +653,8 @@ impl Func {
             seen[r] = true;
             let mut stack: Vec<(usize, usize)> = alloc::vec![(r, 0)];
             while let Some(&mut (b, ref mut k)) = stack.last_mut() {
-                let es = self.blocks[b].term.edges();
-                if *k < es.len() {
-                    let s = es[*k].to.idx();
+                if let Some(e) = self.blocks[b].term.edges().nth(*k) {
+                    let s = e.to.idx();
                     *k += 1;
                     if !seen[s] {
                         seen[s] = true;

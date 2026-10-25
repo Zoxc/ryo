@@ -387,7 +387,7 @@ pub fn lvn(f: &mut Func) {
             kept.push(i);
         }
         f.blocks[b.idx()].insts = kept;
-        if f.blocks[b.idx()].term.edges().iter().any(|e| f.blocks[e.to.idx()].preds.len() == 1) {
+        if f.blocks[b.idx()].term.edges().any(|e| f.blocks[e.to.idx()].preds.len() == 1) {
             end[b.idx()] = Some(mem.clone());
         }
     }

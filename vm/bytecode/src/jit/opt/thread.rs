@@ -83,7 +83,7 @@ pub fn thread(f: &mut Func) {
         if core::mem::replace(&mut live[b], true) {
             continue;
         }
-        stack.extend(f.blocks[b].term.edges().iter().map(|e| e.to.idx()));
+        stack.extend(f.blocks[b].term.edges().map(|e| e.to.idx()));
     }
     for b in 0..n {
         if !live[b] {
@@ -93,7 +93,7 @@ pub fn thread(f: &mut Func) {
             f.blocks[b].params.clear();
             continue;
         }
-        let tos: Vec<usize> = f.blocks[b].term.edges().iter().map(|e| e.to.idx()).collect();
+        let tos: Vec<usize> = f.blocks[b].term.edges().map(|e| e.to.idx()).collect();
         for (k, to) in tos.into_iter().enumerate() {
             f.blocks[to].preds.push((Block(b as u32), k as u16));
         }

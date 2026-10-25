@@ -60,7 +60,7 @@ pub fn dce(f: &mut Func) {
             }
             ValueDef::Param(b, n) => {
                 for &(p, k) in &f.blocks[b.idx()].preds {
-                    let e = f.blocks[p.idx()].term.edges()[k as usize];
+                    let e = f.blocks[p.idx()].term.edges().nth(k as usize).unwrap();
                     mark(e.args[n as usize], &mut live, &mut work);
                 }
             }

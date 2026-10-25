@@ -236,7 +236,7 @@ fn live_blocks(f: &Func) -> Vec<Block> {
 fn normal_succs(t: &Term) -> Vec<Block> {
     match t {
         Term::Invoke { normal, .. } => normal.iter().map(|e| e.to).collect(),
-        t => t.edges().iter().map(|e| e.to).collect(),
+        t => t.edges().map(|e| e.to).collect(),
     }
 }
 
@@ -1031,7 +1031,7 @@ fn prune(f: &mut Func) {
         if core::mem::replace(&mut seen[b.idx()], true) {
             continue;
         }
-        stack.extend(f.blocks[b.idx()].term.edges().iter().map(|e| e.to));
+        stack.extend(f.blocks[b.idx()].term.edges().map(|e| e.to));
     }
     for b in 0..n {
         if !seen[b] {
@@ -1051,7 +1051,7 @@ pub fn rebuild_preds(f: &mut Func) {
         bd.preds.clear();
     }
     for b in live_blocks(f) {
-        let tos: Vec<Block> = f.blocks[b.idx()].term.edges().iter().map(|e| e.to).collect();
+        let tos: Vec<Block> = f.blocks[b.idx()].term.edges().map(|e| e.to).collect();
         for (k, to) in tos.into_iter().enumerate() {
             f.blocks[to.idx()].preds.push((b, k as u16));
         }

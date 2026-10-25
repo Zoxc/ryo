@@ -40,7 +40,7 @@ pub fn layout(f: &mut Func) {
                 BlockKind::Stub => true,
                 BlockKind::Body => {
                     matches!(bd.term, Term::Trap | Term::Invoke { normal: None, .. })
-                        || (!edges.is_empty() && edges.iter().all(|e| cold[e.to.idx()]))
+                        || (!edges.is_empty() && edges.clone().all(|e| cold[e.to.idx()]))
                         // OSR entries (not in the layout) count as hot predecessors.
                         || (bd.head.is_none() && !preds[b.idx()].is_empty() && preds[b.idx()].iter().all(|p| cold[p.idx()]))
                 }

@@ -32,7 +32,7 @@ pub fn normal_preds(f: &Func, b: Block) -> impl Iterator<Item = (Block, u16)> + 
 
 /// The argument edge `k` of `p` passes for parameter `n` of its target, resolved.
 pub fn edge_arg(f: &Func, p: Block, k: u16, n: usize) -> Value {
-    f.resolve(f.blocks[p.idx()].term.edges()[k as usize].args[n])
+    f.resolve(f.blocks[p.idx()].term.edges().nth(k as usize).unwrap().args[n])
 }
 
 /// The value parameter `n` of `b` has on every normal edge (those passing the parameter
