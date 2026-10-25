@@ -36,3 +36,12 @@ remove it once a Lean session has handled it.
   `memcpy`/`memmove`/`memset`. A C1' rule for the intrinsic statement (whole-range
   dereferenceability becomes per piece: a refinement of UB). Commit: "Lower constant-length
   copy and set intrinsics to load/store pieces".
+
+- The SSA tier's inliner splices callees whose `ret` has more parts than the call site
+  reads (an sret callee returning its pointer to a site with no results): the extra parts
+  are dropped. Only matters if the Lean model covers the SSA tier. Commit: "JIT inliner:
+  allow a callee to return parts the call doesn't use" (431f12e).
+
+- The SSA tier's small block copies (`Kind::Copy` decoding and `jit::opt::copies`) now go
+  up to 128 bytes (`MAX_COPY`), not 64. Only matters if the Lean model covers the SSA tier.
+  Commit: "JIT: do block copies of up to 128 bytes as loads and stores" (2c86394).
