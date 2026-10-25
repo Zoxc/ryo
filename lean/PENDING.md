@@ -83,3 +83,9 @@ remove it once a Lean session has handled it.
   longer escapes (`jit::opt::promote`). Only matters if the Lean model covers the SSA tier;
   the splice and the promotion are the passes to prove or validate. Commit: "Inline
   same-image calls in the JIT's SSA tier".
+
+- The SSA tier's inliner specializes small callees to constant arguments before splicing
+  them (`jit::inline::specialize`: the entry parameters' uses replaced by constants, then
+  the passes), and weighs sites by the JIT records' counts. Only matters if the Lean model
+  covers the SSA tier. Commit: "Weigh inlining by the counters and specialize callees to
+  constants".

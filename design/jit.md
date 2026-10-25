@@ -466,14 +466,24 @@ the units that inline it.
 - **Weights**: static: 1 per call site, 8 per loop level of the site's block (up to 4),
   1/16 in a cold block (a landing pad stub, a trap, or only cold successors), multiplied
   down the path.
+- **Profile**: once the root's AOT code was called at least 4 times, its records' exact
+  counts raise weights: a callee's calls over the root's, split over the unit's sites of
+  it by their static weights (there are no samples of call sites), at most 16 times the
+  static weight. The counts cover every AOT caller of the callee, so this overestimates
+  for callees hot elsewhere; the cap bounds it. Tiny leaves aren't deferred to callers.
 - **Cost and benefit**: the cost is the callee's instructions (a handler call through the
   scratch area 4, through its register entry 2, a call 4, others 1; branches 1, cold
   blocks a quarter); the benefit is the weight times the call protocol saved, `2 × args +
-  8 (+1 with a result)`.
+  8 (+1 with a result)`, plus what a trial folded.
+- **Trials**: a callee of cost 60 or less called with constant arguments is specialized
+  to them (its entry parameters' uses replaced, then `opt::run`), memoized per function
+  and constants, at most 16 per unit; the cost is the specialized IR's, and the splice uses
+  it.
 - **Clusters**: bottom-up, a node absorbs the child cluster with the best benefit per cost
   while that raises its own ratio; a cluster is inlined whole or not at all. Clusters are
   taken best ratio first: always at a cost of 12 or less, else not at a cold site, and only
-  at a ratio of at least 0.3 within a unit of 2000; the children of an accepted cluster it
+  at a ratio of at least `0.303 × 2^((unit + cluster) / 400)` (the bar rises as the unit
+  grows) within a unit of 2000, or 3000 for roots running 100 loop iterations per call; the children of an accepted cluster it
   didn't absorb become candidates. Inlined allocas may add at most 64 KiB of frame.
 - **Splice** (IR to IR): the callee's allocas, values and blocks are copied with fresh
   ids (allocas marked `inlined`, never pinned; outgoing areas merge into one at the bottom

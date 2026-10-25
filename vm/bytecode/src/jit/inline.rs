@@ -36,6 +36,9 @@ pub trait Env {
     /// The symbol to call function `g` through instead of directly, if any (the JIT's call
     /// slots, for functions not compiled yet).
     fn retarget(&mut self, g: FuncIdx) -> Option<Sym>;
+    /// How many times function `g`'s AOT code was called and how many loop iterations it
+    /// ran (its JIT record's counters), if known.
+    fn counts(&self, g: FuncIdx) -> Option<(u64, u64)>;
 }
 
 /// The limits and constants of the heuristic.
@@ -49,15 +52,76 @@ pub struct Params {
     pub cap: f64,
     /// Always inlined at or below this cost.
     pub always: f64,
-    /// The benefit per cost a cluster needs.
+    /// The benefit per cost a cluster needs in an empty unit; it doubles every `scale` of
+    /// unit size (the adaptive budget, Graal's incremental inliner, retuned).
     pub t1: f64,
+    pub scale: f64,
+    /// The largest unit of a root whose loops run at least `loopy` iterations per call.
+    pub cap_loopy: f64,
+    pub loopy: f64,
+    /// Constant-specialized trials: for callees of at most this cost, at most `trials` per
+    /// unit.
+    pub trial_cost: f64,
+    pub trials: usize,
+    /// Root calls below which the profile isn't used.
+    pub min_calls: u64,
+    /// How far the profile may raise a site's weight above its static weight.
+    pub raise: f64,
     /// The most frame bytes inlined allocas may add.
     pub frame: u32,
     /// The most nodes the exploration makes.
     pub nodes: usize,
 }
 
-pub const PARAMS: Params = Params { max_depth: 6, expand: 6000.0, cap: 2000.0, always: 12.0, t1: 0.3, frame: 64 << 10, nodes: 400 };
+pub const PARAMS: Params = Params {
+    max_depth: 6,
+    expand: 6000.0,
+    cap: 2000.0,
+    always: 12.0,
+    t1: 0.303,
+    scale: 400.0,
+    cap_loopy: 3000.0,
+    loopy: 100.0,
+    trial_cost: 60.0,
+    trials: 16,
+    min_calls: 4,
+    raise: 16.0,
+    frame: 64 << 10,
+    nodes: 400,
+};
+
+/// `c` with its entry parameters given constants (`None`: unknown) replaced by them, after
+/// [`super::opt::run`]: the trial of §5. The parameters stay, unused.
+pub fn specialize(c: &Func, consts: &[Option<(u64, u8)>]) -> Func {
+    let mut g = c.clone();
+    let Some(entry) = g.blocks.iter().position(|b| b.kind == BlockKind::Entry) else { return g };
+    let params = g.blocks[entry].params.clone();
+    let mut to: Vec<Option<Value>> = alloc::vec![None; g.values.len()];
+    for (n, &p) in params.iter().enumerate() {
+        if let Some(Some((bits, _))) = consts.get(n) {
+            let w = g.w(p);
+            to[p.idx()] = Some(g.konst(mask(*bits, w), w));
+        }
+    }
+    let sub = |v: &mut Value| {
+        if let Some(Some(x)) = to.get(v.idx()) {
+            *v = *x;
+        }
+    };
+    for id in g.insts.iter_mut() {
+        id.args.iter_mut().for_each(sub);
+    }
+    for bd in g.blocks.iter_mut() {
+        let mut t = core::mem::replace(&mut bd.term, Term::None);
+        t.uses_mut().into_iter().for_each(sub);
+        for e in t.edges_mut() {
+            e.args.iter_mut().for_each(sub);
+        }
+        bd.term = t;
+    }
+    super::opt::run(&mut g);
+    g
+}
 
 /// A block's static frequency relative to the function's entry: 8 per loop level (counted
 /// up to 4 levels), 1/16 in cold blocks: landing pad stubs, blocks that trap, and blocks all
@@ -306,6 +370,7 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
     };
     push_sites(&mut pending, &nodes, 0, f, &root_shape);
     let mut expanded = 0.0;
+    let mut trials: Vec<((FuncIdx, Vec<Option<(u64, u8)>>), Rc<Func>)> = Vec::new();
     while !pending.is_empty() && nodes.len() < p.nodes {
         let at = (0..pending.len()).max_by(|&a, &b| pending[a].0.total_cmp(&pending[b].0)).unwrap();
         let (weight, parent, site, g, cold) = pending.swap_remove(at);
@@ -354,7 +419,49 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
                 continue;
             }
         };
-        let k_cost = cost(&c, &sh);
+        let mut k_cost = cost(&c, &sh);
+        // A trial: the callee specialized to the call's constant arguments, memoized.
+        let mut folded = 0.0;
+        let (c, sh) = {
+            let consts: Vec<Option<(u64, u8)>> = c
+                .entry_regs
+                .iter()
+                .map(|r| {
+                    let ai = call.regs.iter().position(|x| x.xmm == r.xmm && x.index == r.index)?;
+                    let v = pf.insts[site.idx()].args[ai];
+                    // The call zero-extends past its register's size and the value's width.
+                    let w = pf.w(v).min((call.regs[ai].size as u8).min(8));
+                    match pf.def(v) {
+                        ValueDef::Const(bits) => Some((mask(bits, w), w)),
+                        _ => None,
+                    }
+                })
+                .collect();
+            if k_cost <= p.trial_cost && consts.iter().any(|x| x.is_some()) {
+                let key = (g, consts.clone());
+                let spec = match trials.iter().find(|t| t.0 == key) {
+                    Some(t) => Some(t.1.clone()),
+                    None if trials.len() < p.trials => {
+                        let s = Rc::new(specialize(&c, &consts));
+                        trials.push((key, s.clone()));
+                        Some(s)
+                    }
+                    None => None,
+                };
+                match spec {
+                    Some(s) => {
+                        let ssh = shape(&s);
+                        let sc = cost(&s, &ssh);
+                        folded = (k_cost - sc).max(0.0);
+                        k_cost = sc;
+                        (s, ssh)
+                    }
+                    None => (c, sh),
+                }
+            } else {
+                (c, sh)
+            }
+        };
         if expanded + k_cost > p.expand {
             if let Some(d) = dump.as_deref_mut() {
                 let _ = writeln!(d, ";   {g} at {site} (depth {depth}): over the exploration budget");
@@ -372,7 +479,7 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
             depth,
             weight,
             cost: k_cost,
-            benefit: weight * protocol(&call),
+            benefit: weight * (protocol(&call) + folded),
             cold,
             unwind,
             frame,
@@ -381,6 +488,30 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
         nodes[parent].children.push(k);
         push_sites(&mut pending, &nodes, k, &c, &sh);
     }
+
+    // The profile raises weights (§2): a callee's share of the root's calls, split over
+    // the unit's sites of it by their static weights (there are no samples of call sites).
+    let root_counts = env.counts(env.root());
+    if let Some((rc, _)) = root_counts.filter(|c| c.0 >= p.min_calls) {
+        let mut sites: BTreeMap<u32, f64> = BTreeMap::new();
+        for n in &nodes[1..] {
+            *sites.entry(n.func.0).or_default() += n.weight;
+        }
+        for k in 1..nodes.len() {
+            let Some((gc, _)) = env.counts(nodes[k].func) else { continue };
+            let w = nodes[k].weight;
+            let prof = gc as f64 / rc as f64 * w / sites[&nodes[k].func.0];
+            let raised = prof.min(w * p.raise);
+            if raised > w {
+                nodes[k].benefit *= raised / w;
+                nodes[k].weight = raised;
+            }
+        }
+    }
+    let cap = match root_counts {
+        Some((c, i)) if i as f64 >= p.loopy * c.max(1) as f64 => p.cap_loopy,
+        _ => p.cap,
+    };
 
     // Clusters, bottom-up: children have larger indices than their parents.
     let mut clusters: Vec<Cluster> = nodes
@@ -419,7 +550,8 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
         let k = queue.swap_remove(at);
         let cl = &clusters[k];
         let always = cl.cost <= p.always;
-        let ok = frame + cl.frame <= p.frame && (always || (!nodes[k].cold && cl.ratio() >= p.t1 && unit + cl.cost <= p.cap));
+        let bar = p.t1 * libm_exp2((unit + cl.cost) / p.scale);
+        let ok = frame + cl.frame <= p.frame && (always || (!nodes[k].cold && cl.ratio() >= bar && unit + cl.cost <= cap));
         if let Some(d) = dump.as_deref_mut() {
             let names: Vec<String> = cl.members.iter().map(|&m| alloc::format!("{}@{}", nodes[m].func, nodes[m].site)).collect();
             let _ = writeln!(
@@ -453,7 +585,12 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
                 splice(&mut g, nodes[ch].site, &sub);
                 if check {
                     g.verify().map_err(|e| {
-                        alloc::format!("IR after inlining {} into {}: {e}\n{}\n; after\n{g}", nodes[ch].func, nodes[k].func, before.unwrap_or_default())
+                        alloc::format!(
+                            "IR after inlining {} into {}: {e}\n{}\n; after\n{g}",
+                            nodes[ch].func,
+                            nodes[k].func,
+                            before.unwrap_or_default()
+                        )
                     })?;
                 }
             }
@@ -467,8 +604,9 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
             let before = check.then(|| alloc::format!("; callee\n{sub}\n; caller\n{f}"));
             splice(f, nodes[ch].site, &sub);
             if check {
-                f.verify()
-                    .map_err(|e| alloc::format!("IR after inlining {} into the root: {e}\n{}\n; after\n{f}", nodes[ch].func, before.unwrap_or_default()))?;
+                f.verify().map_err(|e| {
+                    alloc::format!("IR after inlining {} into the root: {e}\n{}\n; after\n{f}", nodes[ch].func, before.unwrap_or_default())
+                })?;
             }
         }
     }
@@ -778,4 +916,17 @@ pub fn retarget(f: &mut Func, env: &mut dyn Env) {
             }
         }
     }
+}
+
+/// `2^x` for the budget, without `std` (`x` between 0 and about 10).
+fn libm_exp2(x: f64) -> f64 {
+    let n = x as i32;
+    let f = x - n as f64;
+    // 2^f on [0, 1), a truncated series, to within 2e-3: enough for a threshold.
+    let e = 1.0 + f * (0.693147 + f * (0.240227 + f * (0.0555041 + f * 0.0096181)));
+    let mut r = e;
+    for _ in 0..n.clamp(0, 60) {
+        r *= 2.0;
+    }
+    r
 }

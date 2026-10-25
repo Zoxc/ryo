@@ -894,3 +894,56 @@ fn inline_two_unwinding_calls_into_one_pad() {
     }
     check_stats(before, 1);
 }
+
+/// Constant-specialized trials: `pick(mode, x)` branches on `mode`, which its two callers in
+/// one unit pass as different constants, and a third passes unknown: each splice uses the
+/// IR specialized to its constants (or the general one), and all give `pick`'s results.
+#[test]
+fn inline_constant_trials() {
+    let (_g, before) = start();
+    let mut w = ImageWriter::new(unique_scid());
+    let s_mul3 = w.symbol("mul3", 0);
+    // pick(mode, x) = mode == 0 ? x + 1 : mode == 1 ? mul3(x) : x * x. mode@-8, x@-16, r@-24.
+    let mut a = Asm::new();
+    a.i(arg(-8, 0));
+    a.i(arg(-16, 1));
+    let b0 = a.i(Insn::BrEqImmW64 { a: Slot(-8), imm: 0, neg: Neg(false), t: Target(0) });
+    let b1 = a.i(Insn::BrEqImmW64 { a: Slot(-8), imm: 1, neg: Neg(false), t: Target(0) });
+    a.i(Insn::MulW64 { d: Slot(-24), a: Slot(-16), b: Slot(-16) });
+    a.ret(Slot(-24), 8);
+    let l0 = a.i(Insn::AddImmW64 { d: Slot(-24), a: Slot(-16), imm: 1 });
+    a.ret(Slot(-24), 8);
+    let l1 = a.i(Insn::CallSym { d: Slot(-24), sym: s_mul3, k: 8, a: List::from_words(&regs(&[-16])) });
+    a.ret(Slot(-24), 8);
+    a.patch(b0, "t", l0);
+    a.patch(b1, "t", l1);
+    let pick = w.add_function(func(a.done(), 32, 0, 8));
+    // f(x, m) = pick(0, x) + pick(1, x) + pick(m, x). x@16, m@24; x'@-8, zero@-16, one@-24,
+    // m'@-32, r@-40, t@-48.
+    let mut a = Asm::new();
+    a.i(Insn::MovW64 { d: Slot(-8), s: Slot(16) });
+    a.i(Insn::MovW64 { d: Slot(-32), s: Slot(24) });
+    a.i(Insn::ImmW64 { d: Slot(-16), imm: 0 });
+    a.i(Insn::ImmW64 { d: Slot(-24), imm: 1 });
+    a.i(Insn::Call { d: Slot(-40), f: pick, k: 8, a: List::from_words(&regs(&[-16, -8])) });
+    a.i(Insn::Call { d: Slot(-48), f: pick, k: 8, a: List::from_words(&regs(&[-24, -8])) });
+    a.i(Insn::AddW64 { d: Slot(-40), a: Slot(-40), b: Slot(-48) });
+    a.i(Insn::Call { d: Slot(-48), f: pick, k: 8, a: List::from_words(&regs(&[-32, -8])) });
+    a.i(Insn::AddW64 { d: Slot(-40), a: Slot(-40), b: Slot(-48) });
+    a.ret(Slot(-40), 8);
+    let f = w.add_function(func(a.done(), 48, 16, 8));
+    let img = build(w, &syms());
+
+    let p = |m: u64, x: u64| match m {
+        0 => x.wrapping_add(1),
+        1 => x.wrapping_mul(3),
+        _ => x.wrapping_mul(x),
+    };
+    for (x, m) in [(5u64, 0u64), (7, 1), (9, 2), (u64::MAX, 7)] {
+        assert_eq!(ok::<_, u64>(img.id(f), (x, m)), p(0, x).wrapping_add(p(1, x)).wrapping_add(p(m, x)), "f({x}, {m})");
+    }
+    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
+        assert_eq!(state(&img, pick), JIT_COLD, "pick inlined");
+    }
+    check_stats(before, 1);
+}

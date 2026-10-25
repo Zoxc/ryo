@@ -210,8 +210,8 @@ b45(): ; Body
 b46(): ; Body
     trap
 b47(): ; Body cold
-    v96:8 = RefAddr(image.k1032, false) ()
-    Call(Call { target: image.sym14, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v96, 0x193, 0x0, v45)
+    v97:8 = RefAddr(image.k1032, false) ()
+    Call(Call { target: image.sym14, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v97, 0x193, 0x0, v45)
     trap
 
 fn <std::vec::Vec<bool> as std::ops::IndexMut<usize>>::index_mut
@@ -587,15 +587,15 @@ b68(): ; Body
 b69(v11:8): ; Body
     jmp b3()
 b70(): ; Body
-    v81:8 = ALoad(AllocaId(35), 8, 8) ()
-    v82:8 = ALoad(AllocaId(35), 16, 8) ()
+    v82:8 = ALoad(AllocaId(35), 8, 8) ()
+    v83:8 = ALoad(AllocaId(35), 16, 8) ()
     jmp b71()
 b71(): ; Body
-    br LtU.w8 0x0, v82 ? b72() : b73()
+    br LtU.w8 0x0, v83 ? b72() : b73()
 b72(): ; Body
-    jmp b69(v81)
+    jmp b69(v82)
 b73(): ; Body cold
-    Call(Call { target: image.sym15, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: false } }) (0x0, v82, v10)
+    Call(Call { target: image.sym15, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: false } }) (0x0, v83, v10)
     invoke -> - unwind b34()
 b74(): ; Body
     trap

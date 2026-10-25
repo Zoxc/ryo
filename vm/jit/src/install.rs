@@ -208,6 +208,7 @@ struct InlineEnv<'a, 'b> {
     nrecs: u32,
     nsyms: u32,
     callees: Vec<u32>,
+    thresholds: [i64; 2],
 }
 
 impl jit::inline::Env for InlineEnv<'_, '_> {
@@ -228,6 +229,13 @@ impl jit::inline::Env for InlineEnv<'_, '_> {
         };
         self.cache.insert((self.header, g.0), f.clone());
         f
+    }
+
+    fn counts(&self, g: Func) -> Option<(u64, u64)> {
+        (g.0 < self.nrecs).then(|| {
+            let c = counts(self.recs.wrapping_add(g.0 as usize), self.thresholds);
+            (c.calls, c.iters)
+        })
     }
 
     fn retarget(&mut self, g: Func) -> Option<Sym> {
@@ -419,6 +427,7 @@ impl Jit {
                 nrecs: h.jit_records.count,
                 nsyms,
                 callees: Vec::new(),
+                thresholds: self.rt.thresholds,
             };
             let r = jit::compile(ds, img.code_consts(), mode, &opts, Some(&mut env));
             let ssa_callees = env.callees;
