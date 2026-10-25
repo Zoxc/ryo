@@ -5,7 +5,8 @@
 //! - **constant folding** of pure operations whose operands are all constants, and algebraic
 //!   identities (`x + 0`, `x * 1`, `x & -1`, `x - x`, a compare of a value with itself,
 //!   `p + i * s` with a constant `i`, `PtrAdd` chains, `PtrAdd` of an `AllocaAddr`), with a
-//!   commutative operation's constant put second;
+//!   commutative operation's constant put second, and of the `ctpop`/`ctlz`/`cttz` handler
+//!   calls of a constant;
 //! - **common subexpressions**: a pure operation with the same operands as an earlier one in
 //!   the block or a dominating block is replaced by it (addresses only within a block: they
 //!   are cheaper to recompute than to keep live);
@@ -194,8 +195,36 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
             }
             Simp::Keep
         }
+        Op::HCall(h) => match (bit_count(f, i, &h), args.first().and_then(|&a| konst(f, a))) {
+            (Some(g), Some(x)) => Simp::Const(g(x) as u64),
+            _ => Simp::Keep,
+        },
         _ => Simp::Keep,
     }
+}
+
+/// For a register-entry `ctpop`, `ctlz` or `cttz` handler call (W8 to W64) with no site and
+/// one operand value: its count, as the handler computes it (`ctlz`/`cttz` of 0 is the width).
+fn bit_count(f: &Func, i: Inst, h: &HCall) -> Option<fn(u64) -> u32> {
+    use crate::full::Opcode::*;
+    if !h.reg || h.site != Site::None || h.ret || h.nout != 1 || f.insts[i.idx()].args.len() != 1 {
+        return None;
+    }
+    Some(match h.h {
+        CtpopW8 => |x| (x as u8).count_ones(),
+        CtlzW8 => |x| (x as u8).leading_zeros(),
+        CttzW8 => |x| (x as u8).trailing_zeros(),
+        CtpopW16 => |x| (x as u16).count_ones(),
+        CtlzW16 => |x| (x as u16).leading_zeros(),
+        CttzW16 => |x| (x as u16).trailing_zeros(),
+        CtpopW32 => |x| (x as u32).count_ones(),
+        CtlzW32 => |x| (x as u32).leading_zeros(),
+        CttzW32 => |x| (x as u32).trailing_zeros(),
+        CtpopW64 => |x| x.count_ones(),
+        CtlzW64 => |x| x.leading_zeros(),
+        CttzW64 => |x| x.trailing_zeros(),
+        _ => return None,
+    })
 }
 
 /// Runs value numbering on every reachable block of `f`, walking the dominator tree.
@@ -248,6 +277,15 @@ pub fn lvn(f: &mut Func) {
             let res = f.insts[i.idx()].res;
             let alias = |f: &mut Func, v: Value| f.values[res as usize].def = ValueDef::Alias(v);
             let op = f.insts[i.idx()].op.clone();
+            // A bit count of a constant folds; one of a run-time value stays a handler call.
+            if matches!(&op, Op::HCall(h) if bit_count(f, i, h).is_some())
+                && let Simp::Const(c) = simplify(f, i)
+            {
+                let w = f.w(Value(res));
+                let c = f.konst(mask(c, w), w);
+                alias(f, c);
+                continue;
+            }
             if op.pure() {
                 match simplify(f, i) {
                     Simp::Value(v) => {

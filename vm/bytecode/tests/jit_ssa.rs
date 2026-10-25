@@ -584,3 +584,53 @@ fn constant_memcpy_from_a_local_promotes() {
     assert!(!ops.iter().any(|o| matches!(o, Op::HCall(_) | Op::ALoad(..) | Op::AStore(..) | Op::AllocaAddr(..))), "{f}");
     assert_eq!(ops.iter().filter(|o| matches!(o, Op::Store(8, _))).count(), 2, "{f}");
 }
+
+/// `ctpop`, `ctlz` and `cttz` of a constant fold to the handler's count at every width (of 0,
+/// `ctlz`/`cttz` give the width); of a run-time value they stay handler calls.
+#[test]
+fn bit_counts_of_constants_fold() {
+    type Mk = fn(Slot, Slot) -> Insn<'static>;
+    let ops: [(u32, [Mk; 3]); 4] = [
+        (8, [|d, a| Insn::CtpopW8 { d, a }, |d, a| Insn::CtlzW8 { d, a }, |d, a| Insn::CttzW8 { d, a }]),
+        (16, [|d, a| Insn::CtpopW16 { d, a }, |d, a| Insn::CtlzW16 { d, a }, |d, a| Insn::CttzW16 { d, a }]),
+        (32, [|d, a| Insn::CtpopW32 { d, a }, |d, a| Insn::CtlzW32 { d, a }, |d, a| Insn::CttzW32 { d, a }]),
+        (64, [|d, a| Insn::CtpopW64 { d, a }, |d, a| Insn::CtlzW64 { d, a }, |d, a| Insn::CttzW64 { d, a }]),
+    ];
+    for (bits, mk) in ops {
+        let all = u64::MAX >> (64 - bits);
+        // The bits above the width are ignored.
+        for x in [0, all, 1, 4, 0x50, 1 << (bits - 1), all ^ 1, 0xff00_0000_0000_0010] {
+            let lo = x & all;
+            let want = [lo.count_ones(), lo.leading_zeros() - (64 - bits), if lo == 0 { bits } else { lo.trailing_zeros() }];
+            for (k, mk) in mk.iter().enumerate() {
+                let v = vec![Insn::ImmW64 { d: Slot(-8), imm: x }, mk(Slot(-16), Slot(-8)), Insn::Ret { s: Slot(-16), k: 4 }];
+                let f = ir(&decoded(&v, 16, &[]));
+                assert!(!live_ops(&f).iter().any(|o| matches!(o, Op::HCall(_))), "{bits} {k} {x:#x}\n{f}");
+                let Term::Ret { parts, .. } = &f.blocks[0].term else { panic!("{f}") };
+                assert_eq!(f.def(parts[0]), ValueDef::Const(want[k] as u64), "{bits} {k} {x:#x}\n{f}");
+            }
+        }
+        for mk in mk {
+            let v = vec![arg(-8, 0), mk(Slot(-16), Slot(-8)), Insn::Ret { s: Slot(-16), k: 4 }];
+            let f = ir(&decoded(&v, 16, &[]));
+            assert_eq!(live_ops(&f).iter().filter(|o| matches!(o, Op::HCall(_))).count(), 1, "{f}");
+        }
+    }
+}
+
+/// `count_ones() == 1` of a constant alignment (`is_aligned_to`'s check): the count, the
+/// compare and the branch fold, and the panic path goes.
+#[test]
+fn power_of_two_check_folds() {
+    let v = vec![
+        arg(-8, 0),
+        Insn::ImmW64 { d: Slot(-16), imm: 4 },
+        Insn::CtpopW64 { d: Slot(-24), a: Slot(-16) },
+        Insn::BrEqImmW32 { a: Slot(-24), imm: 1, neg: T, t: Target(5) },
+        Insn::Unreachable {},
+        Insn::Ret { s: Slot(-8), k: 8 },
+    ];
+    let f = opt(ir(&decoded(&v, 32, &[])));
+    assert!(live_ops(&f).is_empty(), "{f}");
+    assert!(f.layout.iter().all(|b| !matches!(f.blocks[b.idx()].term, Term::Trap)), "{f}");
+}

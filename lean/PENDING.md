@@ -60,3 +60,9 @@ remove it once a Lean session has handled it.
   several loads each and puts them together (zero-extended, shifted, or'ed; an undefined
   piece reads zero). Only matters if the Lean model covers the SSA tier. Commit: "JIT SSA:
   scalar replacement of mixed-width allocas".
+
+- The SSA tier's value numbering (`jit::opt::lvn`) folds a register-entry `ctpop`/`ctlz`/`cttz`
+  handler call (W8 to W64, no site) of a constant into the constant count the handler gives
+  (`ctlz`/`cttz` of 0 is the width), so `is_power_of_two` checks of constant alignments fold
+  away. Only matters if the Lean model covers the SSA tier. Commit: "JIT SSA: fold bit counts
+  of constants".
