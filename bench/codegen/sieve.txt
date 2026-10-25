@@ -45,7 +45,7 @@ L2:
     const $-168, k3, 16
 L3:
     call $-120, fn4, 526344, [4294967256, 8, 4294967128, 264, 4294967136, 520]
-    jmp L18
+    jmp L17
 L4:
     copy $-24, $-88, 24
 L5:
@@ -71,15 +71,15 @@ L12:
     jmp L9
 L13:
     mov.w64 $-136, $-128
-    switch.dense.w64 $-136, 0, L14, [L17, L15]
-L14:
+    br.eq.imm.w64 $-136, 0, L16
+    jmp L14
     unreachable
-L15:
+L14:
     mov.w128 $-152, $-120
-L16:
+L15:
     call.sym $0, sym6, 0, [4294967144, 8, 4294967152, 264]
     unreachable
-L17:
+L16:
     mov.w128 $-104, $-120
     ; end $-128, 24 bytes
     mov.w128 $-88, $-104
@@ -88,7 +88,7 @@ L17:
     ; end $-88, 16 bytes
     ; end $-65, 1 bytes
     jmp L5
-L18:
+L17:
     mov.w128 $-104, $-120
     ; end $-120, 16 bytes
     mov.w128 $-88, $-104
@@ -97,28 +97,28 @@ L18:
     addr $-96, $-88
     imm.w8 $-42, 0
     mov.w8 $-97, $-25
-L19:
+L18:
     call $0, fn7, 0, [4294967200, 8, 4294967256, 264, 4294967199, 513]
     jmp L4
-L20:
+L19:
     call.sym $0, sym8, 0, []
     unreachable
-L21:
+L20:
     lpad $-56
     jmp L11
+L21:
+    lpad $-56
+    jmp L19
 L22:
     lpad $-56
-    jmp L20
-L23:
-    lpad $-56
     jmp L6
-  cleanup L0 -> L21
-  cleanup L1 -> L21
-  cleanup L3 -> L21
-  cleanup L7 -> L22 (catch)
+  cleanup L0 -> L20
+  cleanup L1 -> L20
+  cleanup L3 -> L20
+  cleanup L7 -> L21 (catch)
   cleanup L9 -> continue
-  cleanup L16 -> L21
-  cleanup L19 -> L23
+  cleanup L15 -> L20
+  cleanup L18 -> L22
   fn0 = <bool as std::vec::is_zero::IsZero>::is_zero
   k1 = const allocation + 0
   sym2 = alloc::raw_vec::RawVecInner::try_allocate_in
@@ -168,14 +168,15 @@ L0:
     call $0, fn0, 0, [4294967208, 72, 4294967200, 264]
     mov.w128 $-64, $-80
     mov.w64 $-96, $-64
-    switch.dense.w64 $-96, 0, L10, [L11, L12]
+    br.eq.imm.w64 $-96, 0, L10
+    jmp L11
 L1:
     ; end $-80, 16 bytes
     mov.w128 $-80, $-64
     imm.w64 $-104, 0
 L2:
     call $-8, fn1, 8, [4294967216, 8, 4294967224, 264, 4294967192, 520]
-    jmp L13
+    jmp L12
 L3:
     ret $-8, 8
 L4:
@@ -196,26 +197,25 @@ L8:
 L9:
     call $-64, fn2, 526344, [4294967216, 8, 4294967224, 264]
     jmp L1
-L10:
     unreachable
-L11:
+L10:
     imm.w64 $-32, 18446744073709551615
     jmp L8
-L12:
+L11:
     mov.w64 $-32, $-56
     jmp L8
-L13:
+L12:
     ; end $-80, 16 bytes
     call $0, fn3, 0, [4294967288, 8, 4294967264, 264]
     jmp L3
-L14:
+L13:
     lpad $-48
     jmp L7
-  cleanup L0 -> L14
-  cleanup L2 -> L14
+  cleanup L0 -> L13
+  cleanup L2 -> L13
   cleanup L4 -> continue
-  cleanup L9 -> L14
-  cleanup L13 -> L14
+  cleanup L9 -> L13
+  cleanup L12 -> L13
   fn0 = <std::slice::Iter<'_, bool> as std::iter::Iterator>::size_hint
   fn1 = <std::slice::Iter<'_, bool> as std::iter::Iterator>::fold::<usize, {closure@std::iter::adapters::map::map_fold<&bool, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}}>::{closure#0}}>
   fn2 = <std::slice::Iter<'_, bool> as std::iter::Iterator>::map::<usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>
@@ -244,18 +244,18 @@ fn <std::ops::ControlFlow<usize> as std::ops::Try>::branch (frame 64, args 0, re
     arg $-32, 8
     arg $-24, 264
     mov.w64 $-40, $-32
-    switch.dense.w64 $-40, 0, L0, [L2, L1]
-L0:
+    br.eq.imm.w64 $-40, 0, L1
+    jmp L0
     unreachable
-L1:
+L0:
     mov.w64 $-48, $-24
     mov.w64 $-56, $-48
     mov.w64 $-8, $-56
     imm.w64 $-16, 1
-    jmp L3
-L2:
+    jmp L2
+L1:
     imm.w64 $-16, 0
-L3:
+L2:
     ret $-16, 526344
 
 fn <std::ops::ControlFlow<usize> as std::ops::Try>::from_output (frame 16, args 0, ret 16)
@@ -269,24 +269,25 @@ fn <std::ops::RangeInclusive<usize> as std::iter::DoubleEndedIterator>::rfind::<
 L0:
     call $-48, fn0, 526344, [4294967272, 8, 4294967240, 264]
     mov.w64 $-56, $-48
-    switch.dense.w64 $-56, 0, L1, [L3, L2]
-L1:
+    br.eq.imm.w64 $-56, 0, L2
+    jmp L1
     unreachable
-L2:
+L1:
     mov.w64 $-64, $-40
     mov.w64 $-8, $-64
     imm.w64 $-16, 1
-    jmp L6
-L3:
+    jmp L5
+L2:
     imm.w64 $-16, 0
-    jmp L6
-L4:
+    jmp L5
+L3:
     ret $-16, 526344
+L4:
+    jmp L3
 L5:
-    jmp L4
-L6:
     mov.w64 $-72, $-48
-    switch.dense.w64 $-72, 0, L1, [L5, L4]
+    br.eq.imm.w64 $-72, 0, L4
+    jmp L3
   cleanup L0 -> continue
   fn0 = std::iter::range::<impl std::iter::DoubleEndedIterator for std::ops::RangeInclusive<usize>>::try_rfold::<(), {closure@std::iter::DoubleEndedIterator::rfind::check<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0}}, std::ops::ControlFlow<usize>>
 
@@ -303,13 +304,13 @@ fn <std::ops::RangeInclusive<usize> as std::iter::range::RangeInclusiveIteratorI
     arg $-32, 264
     imm.w8 $-58, 1
     load.w8 $-74, [$-24 + 16]
-    br! $-74, L29
-    jmp L28
+    br! $-74, L28
+    jmp L27
 L0:
     imm.w8 $-58, 0
 L1:
     call $-16, fn0, 526344, []
-    jmp L21
+    jmp L20
 L2:
     imm.w8 $-58, 0
     imm.w8 $-57, 1
@@ -318,7 +319,7 @@ L3:
     ptr.add $-96, $-24, 8
 L4:
     call $-73, fn1, 1, [4294967208, 8, 4294967200, 264]
-    br! $-73, L12
+    br! $-73, L11
     load.w64 $-96, [$-24 + 8]
     imm.w64 $-152, 1
 L5:
@@ -334,93 +335,94 @@ L6:
 L7:
     call $-112, fn4, 526344, [4294967168, 8, 4294967176, 264]
     mov.w64 $-48, $-112
-    switch.dense.w64 $-48, 0, L8, [L9, L10]
-L8:
+    br.eq.imm.w64 $-48, 0, L8
+    jmp L9
     unreachable
-L9:
+L8:
     imm.w8 $-57, 1
     jmp L3
-L10:
+L9:
     mov.w64 $-120, $-104
-L11:
+L10:
     call $-16, fn5, 526344, [4294967176, 8]
-    jmp L21
-L12:
+    jmp L20
+L11:
     imm.w8 $-160, 1
     store.w8 [$-24 + 16], $-160
     mov.w64 $-88, $-24
     ptr.add $-96, $-24, 8
-L13:
+L12:
     call $-73, fn6, 1, [4294967208, 8, 4294967200, 264]
-    br! $-73, L19
+    br! $-73, L18
     ; escape align 8 $-32, 8 bytes
     addr $-120, $-32
     imm.w8 $-57, 0
     load.w64 $-136, [$-24 + 0]
     mov.w64 $-128, $-136
-L14:
+L13:
     call $-112, fn7, 526344, [4294967176, 8, 4294967168, 264]
-L15:
+L14:
     call $-96, fn8, 526344, [4294967184, 8, 4294967192, 264]
     mov.w64 $-56, $-96
-    switch.dense.w64 $-56, 0, L8, [L16, L17]
+    br.eq.imm.w64 $-56, 0, L15
+    jmp L16
+L15:
+    jmp L18
 L16:
-    jmp L19
-L17:
     mov.w64 $-104, $-88
-L18:
+L17:
     call $-16, fn9, 526344, [4294967192, 8]
-    jmp L21
-L19:
+    jmp L20
+L18:
     imm.w8 $-57, 0
-L20:
+L19:
     call $-16, fn10, 526344, []
-    jmp L21
-L21:
+    jmp L20
+L20:
     ret $-16, 526344
-L22:
-    jmp L27
-L23:
-    resume $-72
-L24:
-    jmp L22
-L25:
-    br! $-57, L22
-    jmp L24
-L26:
-    jmp L23
-L27:
-    br! $-58, L23
+L21:
     jmp L26
-L28:
+L22:
+    resume $-72
+L23:
+    jmp L21
+L24:
+    br! $-57, L21
+    jmp L23
+L25:
+    jmp L22
+L26:
+    br! $-58, L22
+    jmp L25
+L27:
     jmp L0
-L29:
+L28:
     mov.w64 $-88, $-24
     ptr.add $-96, $-24, 8
-L30:
+L29:
     call $-75, fn11, 1, [4294967208, 8, 4294967200, 264]
     xor.imm.w8 $-73, $-75, 1
     br! $-73, L2
     jmp L0
+L30:
+    lpad $-72
+    jmp L21
 L31:
     lpad $-72
-    jmp L22
-L32:
-    lpad $-72
-    jmp L25
-  cleanup L1 -> L31
-  cleanup L4 -> L32
-  cleanup L5 -> L32
-  cleanup L6 -> L32
-  cleanup L7 -> L32
-  cleanup L11 -> L32
-  cleanup L13 -> L32
-  cleanup L14 -> L32
-  cleanup L15 -> L32
-  cleanup L18 -> L32
-  cleanup L20 -> L32
-  cleanup L23 -> continue
-  cleanup L30 -> L31
+    jmp L24
+  cleanup L1 -> L30
+  cleanup L4 -> L31
+  cleanup L5 -> L31
+  cleanup L6 -> L31
+  cleanup L7 -> L31
+  cleanup L10 -> L31
+  cleanup L12 -> L31
+  cleanup L13 -> L31
+  cleanup L14 -> L31
+  cleanup L17 -> L31
+  cleanup L19 -> L31
+  cleanup L22 -> continue
+  cleanup L29 -> L30
   fn0 = <std::ops::ControlFlow<usize> as std::ops::Try>::from_output
   fn1 = std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt
   fn2 = <usize as std::iter::Step>::backward_unchecked
@@ -815,41 +817,41 @@ L0:
     ; escape align 8 $-88, 24 bytes
     call.sym $0, sym0, 0, [4294967208, 72, 4294967272, 264, 4294967167, 513, 4294967256, 776, 4294967264, 1032]
     mov.w64 $-48, $-88
-    switch.dense.w64 $-48, 0, L1, [L4, L2]
-L1:
+    br.eq.imm.w64 $-48, 0, L3
+    jmp L1
     unreachable
-L2:
+L1:
     mov.w128 $-104, $-80
-L3:
+L2:
     call.sym $0, sym1, 0, [4294967192, 8, 4294967200, 264]
     unreachable
-L4:
+L3:
     mov.w128 $-16, $-80
     mov.w64 $-120, $-32
-    br.eq.imm.w64 $-120, 0, L6
-    jmp L7
-L5:
+    br.eq.imm.w64 $-120, 0, L5
+    jmp L6
+L4:
     sub.imm.w64 $-104, $-112, 0
     lt.u.w64 $-90, $-104, $-24
     xor.imm.w8 $-89, $-90, 1
     imm.w8 $-129, 1
-    br! $-129, L9
-    jmp L8
-L6:
+    br! $-129, L8
+    jmp L7
+L5:
     imm.w64 $-112, 18446744073709551615
-    jmp L5
-L7:
+    jmp L4
+L6:
     mov.w64 $-128, $-16
     mov.w64 $-112, $-128
-    jmp L5
-L8:
+    jmp L4
+L7:
     addr.const $-136, k2
     call $0, fn3, 0, [4294967207, 1, 4294967160, 264]
-L9:
+L8:
     ; end $-88, 24 bytes
     ret $-16, 526344
   cleanup L0 -> continue
-  cleanup L3 -> continue
+  cleanup L2 -> continue
   sym0 = alloc::raw_vec::RawVecInner::try_allocate_in
   sym1 = alloc::raw_vec::handle_error
   k2 = const allocation + 0
@@ -1402,18 +1404,18 @@ fn std::option::Option::<usize>::unwrap (frame 48, args 0, ret 8)
     arg $-16, 264
     arg $-40, 520
     mov.w64 $-32, $-24
-    switch.dense.w64 $-32, 0, L0, [L1, L3]
-L0:
+    br.eq.imm.w64 $-32, 0, L0
+    jmp L2
     unreachable
-L1:
+L0:
     mov.w64 $-48, $-40
-L2:
+L1:
     call.sym $0, sym0, 0, [4294967248, 8]
     unreachable
-L3:
+L2:
     mov.w64 $-8, $-16
     ret $-8, 8
-  cleanup L2 -> continue
+  cleanup L1 -> continue
   sym0 = std::option::unwrap_failed
 
 fn std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_check (frame 144, args 0, ret 0)

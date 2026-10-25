@@ -71,3 +71,8 @@ remove it once a Lean session has handled it.
   and `and.imm x, 2^k - 1` instead of `div.u`/`rem.u` with an `imm` divisor. A C1' lowering
   rule to add when the checker covers binary operations. Commit: "Lower unsigned div/rem by
   a power of two to shifts and masks".
+
+- Lowering: a `SwitchInt` with exactly two values lowers to `br.eq.imm` per value (the
+  second omitted when `otherwise` is an empty unreachable block, or negated to fall through)
+  plus a `jmp`, instead of `switch.dense`. A C1' terminator rule. Commit: "Lower two-case
+  switches to compare-and-branch".

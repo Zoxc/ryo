@@ -251,6 +251,27 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             _ => {}
         }
         cases.sort_by_key(|&(v, _)| v);
+        if let [(v0, bb0), (v1, bb1)] = cases[..]
+            && w != Width::W128
+        {
+            // Two values: compare-and-branch on each instead of a `switch.dense` table. An
+            // unreachable `otherwise` makes the second test unnecessary.
+            let test = |fx: &mut Self, v: u128, ne: bool, bb: BasicBlock| {
+                let mut ops = vec![s];
+                ops.extend(imm_words(w, v));
+                fx.op_branch(opw("BrEqImm", w), &ops, ne, bb);
+            };
+            test(self, v0, false, bb0);
+            if self.body[otherwise].is_empty_unreachable() {
+                self.jump(bb1);
+            } else if Some(bb1) == self.next_block && Some(otherwise) != self.next_block {
+                test(self, v1, true, otherwise);
+            } else {
+                test(self, v1, false, bb1);
+                self.jump(otherwise);
+            }
+            return Ok(());
+        }
         let (lo, hi) = (cases[0].0, cases[cases.len() - 1].0);
         let span = (hi - lo).saturating_add(1);
         let base = |v: u128| if w == Width::W128 { Opnd::Imm128(v) } else { Opnd::Imm(v as u64) };

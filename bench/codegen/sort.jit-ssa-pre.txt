@@ -116,8 +116,7 @@ b1(v24:1): ; Body head 0
     v9:8, v10:8 = Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [RetPart { xmm: false, size: 8, off: 0 }, RetPart { xmm: false, size: 8, off: 8 }], site: Pad { catch: false } }) (v8)
     invoke -> b18() unwind b19()
 b2(): ; Body
-    v12:8 = hcall.reg switch.dense.w64 [(Fp, [None, None]), (Imm(4294967240), [Some(Scratch(0)), None]), (Imm(0), [None, None]), (Imm(2), [None, None])] outs 0 ret (v9)
-    switch v12 [b5(), b3(), b12()]
+    br Eq.w8 v9, 0x0 ? b5() : b3()
 b3(): ; Body
     v13:8 = AllocaAddr(AllocaId(10), 0) ()
     Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: Pad { catch: false } }) (v13, v10)
@@ -1541,7 +1540,7 @@ b9(): ; Body
     br 0x1 ? b10() : b33()
 b10(): ; Body
     jmp b32()
-b11(v177:8): ; Body head 0
+b11(v185:8): ; Body head 0
     AStore(AllocaId(18), 16, 8) (0x0)
     AStore(AllocaId(18), 24, 8) (v9)
     v40:4 = ALoad(AllocaId(18), 16, 4) ()
@@ -1587,48 +1586,48 @@ b11(v177:8): ; Body head 0
     AStore(AllocaId(18), 22, 1) (v58)
     AStore(AllocaId(18), 23, 1) (v59)
     AStore(AllocaId(18), 24, 8) (v60)
-    jmp b12(v2, v0, v1, v2, v9, v177, v4)
-b12(v134:8, v135:8, v136:8, v137:8, v138:8, v139:8, v211:8): ; Body head 1
+    jmp b12(v2, v0, v1, v2, v9, v185, v4)
+b12(v134:8, v135:8, v136:8, v140:8, v142:8, v145:8, v221:8): ; Body head 1
     v61:8 = AllocaAddr(AllocaId(18), 0) ()
     AStore(AllocaId(15), 0, 8) (v61)
     AStore(AllocaId(15), 8, 8) (0x2)
     v63:8 = ALoad(AllocaId(15), 0, 8) ()
     v64:8 = ALoad(AllocaId(15), 8, 8) ()
     v65:8, v66:8 = Call(Call { target: fn5, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 8, off: 0 }, RetPart { xmm: false, size: 8, off: 8 }], site: Pad { catch: false } }) (v63, v64)
-    invoke -> b55() unwind b56()
+    invoke -> b57() unwind b58()
 b13(): ; Body
     jmp b36()
-b14(): ; Body head 2
+b14(): ; Body
     trap
-b15(): ; Body
-    AStore(AllocaId(15), 8, 8) (v66)
+b15(v68:8, v69:8, v72:8, v78:8, v79:8, v82:8, v154:8, v219:8): ; Body head 2
+    AStore(AllocaId(15), 8, 8) (v68)
     v70:8 = ALoad(AllocaId(15), 8, 8) ()
-    v71:8 = PtrIndex(8) (v135, v70)
+    v71:8 = PtrIndex(8) (v69, v70)
     AStore(AllocaId(15), 0, 8) (v71)
     v73:8 = ALoad(AllocaId(15), 8, 8) ()
-    v74:8 = PtrIndex(8) (v137, v73)
+    v74:8 = PtrIndex(8) (v72, v73)
     v75:8 = ALoad(AllocaId(15), 8, 8) ()
     br Eq.w8 v75, 0x0 ? b18() : b16()
 b16(): ; Body
     jmp b19()
-b17(): ; Body
+b17(): ; Body head 3
     v77:8 = AllocaAddr(AllocaId(18), 0) ()
     Call(Call { target: fn6, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v77)
     jmp b24()
 b18(): ; Body
-    jmp b20(v138)
+    jmp b20(v78)
 b19(): ; Body
-    v80:8 = Bin(Sub, 8) (v136, v138)
+    v80:8 = Bin(Sub, 8) (v79, v78)
     jmp b20(v80)
 b20(v83:8): ; Body
-    jmp b21(v139, v83, v134, v135, v136, v137, v138, v139, v74, v211)
-b21(v84:8, v85:8, v145:8, v152:8, v160:8, v167:8, v172:8, v178:8, v190:8, v208:8): ; Body head 3
+    jmp b21(v82, v83, v154, v69, v79, v72, v78, v82, v74, v219)
+b21(v84:8, v85:8, v151:8, v160:8, v168:8, v175:8, v180:8, v186:8, v198:8, v216:8): ; Body head 4
     v86:1 = Cmp(LtU, 8) (v84, v85)
-    br v86 ? b22() : b39()
+    br v86 ? b22() : b40()
 b22(): ; Body
-    jmp b37()
-b23(v88:8, v90:8, v148:8, v155:8, v163:8, v170:8, v175:8, v180:8, v193:8, v216:8): ; Body head 4
-    jmp b21(v88, v90, v148, v155, v163, v170, v175, v180, v193, v216)
+    jmp b38()
+b23(v88:8, v90:8, v156:8, v163:8, v171:8, v178:8, v183:8, v188:8, v201:8, v226:8): ; Body head 5
+    jmp b21(v88, v90, v156, v163, v171, v178, v183, v188, v201, v226)
 b24(): ; Body
     AStore(AllocaId(20), 0, 8) (v134)
     AStore(AllocaId(20), 8, 8) (v135)
@@ -1637,10 +1636,10 @@ b24(): ; Body
     AStore(AllocaId(18), 16, 8) (v94)
     v95:8 = ALoad(AllocaId(20), 16, 8) ()
     AStore(AllocaId(18), 8, 8) (v95)
-    br 0x1 ? b25() : b46()
+    br 0x1 ? b25() : b47()
 b25(): ; Body
-    jmp b45()
-b26(): ; Body head 5
+    jmp b46()
+b26(): ; Body head 6
     v97:8 = ALoad(AllocaId(20), 0, 8) ()
     v98:8 = ALoad(AllocaId(20), 8, 8) ()
     AStore(AllocaId(18), 24, 8) (v98)
@@ -1649,19 +1648,19 @@ b26(): ; Body head 5
     jmp b27()
 b27(): ; Body
     ret 0x0 ()
-b28(): ; Body head 6
+b28(): ; Body head 7
     v100:8 = AllocaAddr(AllocaId(18), 0) ()
     Call(Call { target: fn6, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: true } }) (v100)
-    invoke -> b57() unwind b58()
-b29(v102:8): ; Body head 7
+    invoke -> b59() unwind b60()
+b29(v102:8): ; Body head 8
     hcall resume [(Fp, [None, None]), (Imm(4294967120), [Some(Scratch(0)), None])] ins [0] outs [] (v102)
     trap
-b30(): ; Body head 8
+b30(): ; Body head 9
     v103:8 = AllocaAddr(AllocaId(20), 0) ()
     Call(Call { target: fn8, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: true } }) (v103)
-    invoke -> b59() unwind b60()
+    invoke -> b61() unwind b62()
 b31(): ; Body
-    jmp b29(v256)
+    jmp b29(v266)
 b32(): ; Body
     AStore(AllocaId(20), 0, 8) (v0)
     v111:8 = RefAddr(k9, false) ()
@@ -1688,124 +1687,135 @@ b35(): ; Body
     hcall memcpy [(Fp, [None, None]), (Imm(4294967064), [Some(Alloca(AllocaId(20), 0)), None]), (Imm(4294967072), [Some(Alloca(AllocaId(20), 8)), None]), (Imm(4294966912), [Some(Scratch(0)), None])] ins [0] outs [] (v130)
     jmp b11(0x1)
 b36(): ; Body
-    v133:8 = hcall.reg switch.dense.w64 [(Fp, [None, None]), (Imm(4294967224), [Some(Scratch(0)), None]), (Imm(0), [None, None]), (Imm(2), [None, None])] outs 0 ret (v65)
-    switch v133 [b17(), b15(), b14()]
+    br Eq.w8 v65, 0x0 ? b17() : b37()
 b37(): ; Body
-    br 0x1 ? b38() : b41()
+    jmp b15(v66, v135, v140, v142, v136, v145, v134, v221)
 b38(): ; Body
-    jmp b40()
+    br 0x1 ? b39() : b42()
 b39(): ; Body
-    jmp b12(v145, v152, v160, v167, v172, v178, v208)
-b40(): ; Body
-    v182:8 = RefAddr(k13, false) ()
-    Call(Call { target: fn14, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: None }) (v84, 0x1, v182)
     jmp b41()
+b40(): ; Body
+    jmp b12(v151, v160, v168, v175, v180, v186, v216)
 b41(): ; Body
-    v185:8 = Bin(Add, 8) (v84, 0x1)
-    v187:8 = ALoad(AllocaId(15), 0, 8) ()
-    v188:8 = PtrIndex(8) (v187, v84)
-    v194:8 = PtrIndex(8) (v190, v84)
-    br 0x1 ? b42() : b43()
+    v190:8 = RefAddr(k13, false) ()
+    Call(Call { target: fn14, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: None }) (v84, 0x1, v190)
+    jmp b42()
 b42(): ; Body
-    v199:8 = RefAddr(k15, false) ()
-    Call(Call { target: fn10, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }, ArgReg { xmm: false, size: 8, index: 4 }, ArgReg { xmm: false, size: 8, index: 5 }], parts: [], site: None }) (v188, v194, 0x8, 0x4, 0x1, v199)
-    jmp b43()
+    v193:8 = Bin(Add, 8) (v84, 0x1)
+    v195:8 = ALoad(AllocaId(15), 0, 8) ()
+    v196:8 = PtrIndex(8) (v195, v84)
+    v202:8 = PtrIndex(8) (v198, v84)
+    br 0x1 ? b43() : b44()
 b43(): ; Body
-    v202:8 = Bin(Mul, 8) (0x1, 0x8)
-    hcall.reg memcpy [(Fp, [None, None]), (Imm(4294967176), [Some(Scratch(0)), None]), (Imm(4294966952), [Some(Scratch(8)), None]), (Imm(4294966912), [Some(Scratch(16)), None])] outs 0 (v194, v188, v202)
-    Call(Call { target: fn17, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: false } }) (v190, v194, v208)
-    invoke -> b61() unwind b62()
+    v207:8 = RefAddr(k15, false) ()
+    Call(Call { target: fn10, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }, ArgReg { xmm: false, size: 8, index: 4 }, ArgReg { xmm: false, size: 8, index: 5 }], parts: [], site: None }) (v196, v202, 0x8, 0x4, 0x1, v207)
+    jmp b44()
 b44(): ; Body
-    jmp b23(v185, v85, v145, v152, v160, v167, v172, v178, v190, v208)
-b45(): ; Body
-    v243:8 = ALoad(AllocaId(18), 16, 8) ()
-    AStore(AllocaId(18), 0, 8) (v243)
-    v246:8 = RefAddr(k18, false) ()
-    v247:8 = ALoad(AllocaId(18), 0, 8) ()
-    v248:8 = ALoad(AllocaId(18), 8, 8) ()
-    Call(Call { target: fn19, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }, ArgReg { xmm: false, size: 8, index: 4 }], parts: [], site: None }) (v247, 0x8, 0x4, v248, v246)
-    jmp b46()
-b46(): ; Body
-    v249:8 = ALoad(AllocaId(18), 16, 8) ()
-    v250:8 = ALoad(AllocaId(18), 8, 8) ()
-    AStore(AllocaId(18), 0, 8) (v250)
-    AStore(AllocaId(18), 24, 8) (v249)
-    v251:8 = ALoad(AllocaId(18), 0, 8) ()
-    v252:8 = ALoad(AllocaId(20), 8, 8) ()
-    AStore(AllocaId(18), 16, 8) (v252)
-    v253:8 = ALoad(AllocaId(18), 24, 8) ()
-    v254:8 = ALoad(AllocaId(18), 16, 8) ()
-    Call(Call { target: fn20, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: Pad { catch: false } }) (v253, v251, v254, v211)
+    v210:8 = Bin(Mul, 8) (0x1, 0x8)
+    hcall.reg memcpy [(Fp, [None, None]), (Imm(4294967176), [Some(Scratch(0)), None]), (Imm(4294966952), [Some(Scratch(8)), None]), (Imm(4294966912), [Some(Scratch(16)), None])] outs 0 (v202, v196, v210)
+    Call(Call { target: fn17, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: false } }) (v198, v202, v216)
     invoke -> b63() unwind b64()
+b45(): ; Body
+    jmp b23(v193, v85, v151, v160, v168, v175, v180, v186, v198, v216)
+b46(): ; Body
+    v253:8 = ALoad(AllocaId(18), 16, 8) ()
+    AStore(AllocaId(18), 0, 8) (v253)
+    v256:8 = RefAddr(k18, false) ()
+    v257:8 = ALoad(AllocaId(18), 0, 8) ()
+    v258:8 = ALoad(AllocaId(18), 8, 8) ()
+    Call(Call { target: fn19, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }, ArgReg { xmm: false, size: 8, index: 4 }], parts: [], site: None }) (v257, 0x8, 0x4, v258, v256)
+    jmp b47()
 b47(): ; Body
+    v259:8 = ALoad(AllocaId(18), 16, 8) ()
+    v260:8 = ALoad(AllocaId(18), 8, 8) ()
+    AStore(AllocaId(18), 0, 8) (v260)
+    AStore(AllocaId(18), 24, 8) (v259)
+    v261:8 = ALoad(AllocaId(18), 0, 8) ()
+    v262:8 = ALoad(AllocaId(20), 8, 8) ()
+    AStore(AllocaId(18), 16, 8) (v262)
+    v263:8 = ALoad(AllocaId(18), 24, 8) ()
+    v264:8 = ALoad(AllocaId(18), 16, 8) ()
+    Call(Call { target: fn20, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: Pad { catch: false } }) (v263, v261, v264, v221)
+    invoke -> b65() unwind b66()
+b48(): ; Body
     jmp b26()
-b48(): ; Body head 9
+b49(): ; Body head 10
     Call(Call { target: sym21, regs: [], parts: [], site: None }) ()
     trap
-b49(v257:8): ; Body
+b50(v267:8): ; Body
     jmp b28()
-b50(): ; Body
-    jmp b48()
 b51(): ; Body
+    jmp b49()
+b52(): ; Body
     jmp b30()
-b52(): ; Osr(1)
-    v141:8 = OsrLoad(-152, 8) ()
-    v149:8 = OsrLoad(-192, 8) ()
-    v156:8 = OsrLoad(-184, 8) ()
-    v164:8 = OsrLoad(-48, 8) ()
-    v171:8 = OsrLoad(-200, 8) ()
-    v176:8 = OsrLoad(-208, 8) ()
-    v212:8 = OsrLoad(-40, 8) ()
-    jmp b12(v141, v149, v156, v164, v171, v176, v212)
-b53(): ; Osr(3)
+b53(): ; Osr(1)
+    v147:8 = OsrLoad(-152, 8) ()
+    v157:8 = OsrLoad(-192, 8) ()
+    v164:8 = OsrLoad(-184, 8) ()
+    v172:8 = OsrLoad(-48, 8) ()
+    v179:8 = OsrLoad(-200, 8) ()
+    v184:8 = OsrLoad(-208, 8) ()
+    v222:8 = OsrLoad(-40, 8) ()
+    jmp b12(v147, v157, v164, v172, v179, v184, v222)
+b54(): ; Osr(2)
+    v137:8 = OsrLoad(-280, 8) ()
+    v138:8 = OsrLoad(-192, 8) ()
+    v139:8 = OsrLoad(-48, 8) ()
+    v141:8 = OsrLoad(-200, 8) ()
+    v143:8 = OsrLoad(-184, 8) ()
+    v144:8 = OsrLoad(-208, 8) ()
+    v155:8 = OsrLoad(-152, 8) ()
+    v220:8 = OsrLoad(-40, 8) ()
+    jmp b15(v137, v138, v139, v141, v143, v144, v155, v220)
+b55(): ; Osr(4)
     v87:8 = OsrLoad(-96, 8) ()
     v89:8 = OsrLoad(-88, 8) ()
-    v146:8 = OsrLoad(-152, 8) ()
-    v153:8 = OsrLoad(-192, 8) ()
-    v161:8 = OsrLoad(-184, 8) ()
-    v168:8 = OsrLoad(-48, 8) ()
-    v173:8 = OsrLoad(-200, 8) ()
-    v179:8 = OsrLoad(-208, 8) ()
-    v191:8 = OsrLoad(-312, 8) ()
-    v209:8 = OsrLoad(-40, 8) ()
-    jmp b21(v87, v89, v146, v153, v161, v168, v173, v179, v191, v209)
-b54(): ; Osr(4)
-    v218:8 = OsrLoad(-96, 8) ()
-    v220:8 = OsrLoad(-88, 8) ()
-    v223:8 = OsrLoad(-152, 8) ()
-    v226:8 = OsrLoad(-192, 8) ()
-    v229:8 = OsrLoad(-184, 8) ()
-    v232:8 = OsrLoad(-48, 8) ()
-    v235:8 = OsrLoad(-200, 8) ()
-    v238:8 = OsrLoad(-208, 8) ()
-    v241:8 = OsrLoad(-312, 8) ()
-    v242:8 = OsrLoad(-40, 8) ()
-    jmp b23(v218, v220, v223, v226, v229, v232, v235, v238, v241, v242)
-b55(): ; Body
-    jmp b13()
-b56(): ; Stub
-    v67:8 = LandingPad ()
-    jmp b49(v67)
+    v152:8 = OsrLoad(-152, 8) ()
+    v161:8 = OsrLoad(-192, 8) ()
+    v169:8 = OsrLoad(-184, 8) ()
+    v176:8 = OsrLoad(-48, 8) ()
+    v181:8 = OsrLoad(-200, 8) ()
+    v187:8 = OsrLoad(-208, 8) ()
+    v199:8 = OsrLoad(-312, 8) ()
+    v217:8 = OsrLoad(-40, 8) ()
+    jmp b21(v87, v89, v152, v161, v169, v176, v181, v187, v199, v217)
+b56(): ; Osr(5)
+    v228:8 = OsrLoad(-96, 8) ()
+    v230:8 = OsrLoad(-88, 8) ()
+    v233:8 = OsrLoad(-152, 8) ()
+    v236:8 = OsrLoad(-192, 8) ()
+    v239:8 = OsrLoad(-184, 8) ()
+    v242:8 = OsrLoad(-48, 8) ()
+    v245:8 = OsrLoad(-200, 8) ()
+    v248:8 = OsrLoad(-208, 8) ()
+    v251:8 = OsrLoad(-312, 8) ()
+    v252:8 = OsrLoad(-40, 8) ()
+    jmp b23(v228, v230, v233, v236, v239, v242, v245, v248, v251, v252)
 b57(): ; Body
-    jmp b29(v257)
+    jmp b13()
 b58(): ; Stub
-    v101:8 = LandingPad ()
-    jmp b50()
+    v67:8 = LandingPad ()
+    jmp b50(v67)
 b59(): ; Body
-    jmp b31()
+    jmp b29(v267)
 b60(): ; Stub
-    v104:8 = LandingPad ()
-    jmp b50()
-b61(): ; Body
-    jmp b44()
-b62(): ; Stub
-    v217:8 = LandingPad ()
-    jmp b49(v217)
-b63(): ; Body
-    jmp b47()
-b64(): ; Stub
-    v256:8 = LandingPad ()
+    v101:8 = LandingPad ()
     jmp b51()
+b61(): ; Body
+    jmp b31()
+b62(): ; Stub
+    v104:8 = LandingPad ()
+    jmp b51()
+b63(): ; Body
+    jmp b45()
+b64(): ; Stub
+    v227:8 = LandingPad ()
+    jmp b50(v227)
+b65(): ; Body
+    jmp b48()
+b66(): ; Stub
+    v266:8 = LandingPad ()
+    jmp b52()
 
 fn core::slice::sort::shared::smallsort::sort9_optimal::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
 a0: $-64, 8 bytes, Promoted
@@ -3013,7 +3023,7 @@ a99: $-24, 8 bytes, Promoted
 a100: $-16, 8 bytes, Promoted
 a101: $-8, 8 bytes, Promoted
 b0(v0:8, v1:8, v2:8): ; Entry
-    br GtU.w8 v1, 0x10 ? b18() : b1()
+    br GtU.w8 v1, 0x10 ? b19() : b1()
 b1(): ; Body
     v5:8, v6:8 = Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 8, off: 0 }, RetPart { xmm: false, size: 8, off: 8 }], site: Continue }) (0x1, v1)
     AStore(AllocaId(88), 0, 8) (v5)
@@ -3022,65 +3032,66 @@ b1(): ; Body
 b2(v36:8, v39:8): ; Body head 0
     v7:8 = AllocaAddr(AllocaId(88), 0) ()
     v8:8, v9:8 = Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [RetPart { xmm: false, size: 8, off: 0 }, RetPart { xmm: false, size: 8, off: 8 }], site: Continue }) (v7)
-    v10:8 = hcall.reg switch.dense.w64 [(Fp, [None, None]), (Imm(4294967136), [Some(Scratch(0)), None]), (Imm(0), [None, None]), (Imm(2), [None, None])] outs 0 ret (v8)
-    switch v10 [b39(), b4(), b3()]
+    br Eq.w8 v8, 0x0 ? b40() : b3()
 b3(): ; Body
-    trap
+    jmp b5()
 b4(): ; Body
-    jmp b5(v9, v36, v39)
-b5(v11:8, v17:8, v18:8): ; Body head 1
-    br GtU.w8 v11, 0x0 ? b6() : b2(v17, v18)
-b6(): ; Body
-    v14:8, v15:1 = Ovf(Sub, false, 8) (v11, 0x1)
-    br v15 ? b7() : b8()
+    trap
+b5(): ; Body
+    jmp b6(v9, v36, v39)
+b6(v11:8, v17:8, v18:8): ; Body head 1
+    br GtU.w8 v11, 0x0 ? b7() : b2(v17, v18)
 b7(): ; Body
+    v14:8, v15:1 = Ovf(Sub, false, 8) (v11, 0x1)
+    br v15 ? b8() : b9()
+b8(): ; Body
     v16:8 = RefAddr(k2, false) ()
     Call(Call { target: sym3, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v16)
     trap
-b8(): ; Body
-    br LtU.w8 v14, v18 ? b10() : b9()
 b9(): ; Body
+    br LtU.w8 v14, v18 ? b11() : b10()
+b10(): ; Body
     v19:8 = RefAddr(k4, false) ()
     Call(Call { target: sym5, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v14, v18, v19)
     trap
-b10(): ; Body
+b11(): ; Body
     v20:8 = PtrIndex(4) (v17, v14)
     v21:4 = Load(4, 0) (v20)
-    br LtU.w8 v11, v18 ? b12() : b11()
-b11(): ; Body
+    br LtU.w8 v11, v18 ? b13() : b12()
+b12(): ; Body
     v22:8 = RefAddr(k6, false) ()
     Call(Call { target: sym5, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v11, v18, v22)
     trap
-b12(): ; Body
+b13(): ; Body
     v23:8 = PtrIndex(4) (v17, v11)
     v24:4 = Load(4, 0) (v23)
-    br LtU.w4 v24, v21 ? b13() : b2(v17, v18)
-b13(): ; Body
-    v26:8, v27:1 = Ovf(Sub, false, 8) (v11, 0x1)
-    br v27 ? b14() : b15()
+    br LtU.w4 v24, v21 ? b14() : b2(v17, v18)
 b14(): ; Body
+    v26:8, v27:1 = Ovf(Sub, false, 8) (v11, 0x1)
+    br v27 ? b15() : b16()
+b15(): ; Body
     v28:8 = RefAddr(k8, false) ()
     Call(Call { target: sym3, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v28)
     trap
-b15(): ; Body
+b16(): ; Body
     v29:8 = RefAddr(k10, false) ()
     Call(Call { target: fn11, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }, ArgReg { xmm: false, size: 8, index: 4 }], parts: [], site: Continue }) (v17, v18, v26, v11, v29)
     v31:8, v32:1 = Ovf(Sub, false, 8) (v11, 0x1)
-    br v32 ? b16() : b17()
-b16(): ; Body
+    br v32 ? b17() : b18()
+b17(): ; Body
     v33:8 = RefAddr(k12, false) ()
     Call(Call { target: sym3, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v33)
     trap
-b17(): ; Body
-    jmp b5(v31, v17, v18)
 b18(): ; Body
-    v43:1 = Cmp(Eq, 8) (0x2, 0x0)
-    br v43 ? b19() : b20()
+    jmp b6(v31, v17, v18)
 b19(): ; Body
+    v43:1 = Cmp(Eq, 8) (0x2, 0x0)
+    br v43 ? b20() : b21()
+b20(): ; Body
     v44:8 = RefAddr(k14, false) ()
     Call(Call { target: sym15, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v44)
     trap
-b20(): ; Body
+b21(): ; Body
     v46:8 = Bin(ShrU, 8) (v1, 0x1)
     v47:8 = RefAddr(k16, false) ()
     v48:8, v49:8 = Call(Call { target: fn17, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [RetPart { xmm: false, size: 8, off: 0 }, RetPart { xmm: false, size: 8, off: 8 }], site: Continue }) (v0, v1, v46, v47)
@@ -3089,66 +3100,66 @@ b20(): ; Body
     v51:8, v52:8 = Call(Call { target: fn20, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [RetPart { xmm: false, size: 8, off: 0 }, RetPart { xmm: false, size: 8, off: 8 }], site: Continue }) (v0, v1, v46, v50)
     Call(Call { target: fn18, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v51, v52, v2)
     Call(Call { target: fn22, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v2)
-    jmp b21(0x0, v46, v46, v0, v1, v2)
-b21(v54:8, v55:8, v56:8, v57:8, v58:8, v68:8): ; Body head 2
-    br LtU.w8 v54, v55 ? b22() : b38()
-b22(): ; Body
-    br LtU.w8 v56, v58 ? b23() : b38()
+    jmp b22(0x0, v46, v46, v0, v1, v2)
+b22(v54:8, v55:8, v56:8, v57:8, v58:8, v68:8): ; Body head 2
+    br LtU.w8 v54, v55 ? b23() : b39()
 b23(): ; Body
-    br LtU.w8 v54, v58 ? b25() : b24()
+    br LtU.w8 v56, v58 ? b24() : b39()
 b24(): ; Body
+    br LtU.w8 v54, v58 ? b26() : b25()
+b25(): ; Body
     v59:8 = RefAddr(k23, false) ()
     Call(Call { target: sym5, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v54, v58, v59)
     trap
-b25(): ; Body
+b26(): ; Body
     v60:8 = PtrIndex(4) (v57, v54)
     v61:4 = Load(4, 0) (v60)
-    br LtU.w8 v56, v58 ? b27() : b26()
-b26(): ; Body
+    br LtU.w8 v56, v58 ? b28() : b27()
+b27(): ; Body
     v62:8 = RefAddr(k25, false) ()
     Call(Call { target: sym5, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v56, v58, v62)
     trap
-b27(): ; Body
+b28(): ; Body
     v63:8 = PtrIndex(4) (v57, v56)
     v64:4 = Load(4, 0) (v63)
-    br LtU.w4 v64, v61 ? b33() : b28()
-b28(): ; Body
-    br LtU.w8 v54, v58 ? b30() : b29()
+    br LtU.w4 v64, v61 ? b34() : b29()
 b29(): ; Body
+    br LtU.w8 v54, v58 ? b31() : b30()
+b30(): ; Body
     v65:8 = RefAddr(k27, false) ()
     Call(Call { target: sym5, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v54, v58, v65)
     trap
-b30(): ; Body
+b31(): ; Body
     v66:8 = PtrIndex(4) (v57, v54)
     v67:4 = Load(4, 0) (v66)
     Call(Call { target: fn29, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 4, index: 1 }], parts: [], site: Continue }) (v68, v67)
     v70:8, v71:1 = Ovf(Add, false, 8) (v54, 0x1)
-    br v71 ? b31() : b32()
-b31(): ; Body
+    br v71 ? b32() : b33()
+b32(): ; Body
     v72:8 = RefAddr(k30, false) ()
     Call(Call { target: sym31, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v72)
     trap
-b32(): ; Body
-    jmp b21(v70, v55, v56, v57, v58, v68)
 b33(): ; Body
-    br LtU.w8 v56, v58 ? b35() : b34()
+    jmp b22(v70, v55, v56, v57, v58, v68)
 b34(): ; Body
+    br LtU.w8 v56, v58 ? b36() : b35()
+b35(): ; Body
     v73:8 = RefAddr(k32, false) ()
     Call(Call { target: sym5, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v56, v58, v73)
     trap
-b35(): ; Body
+b36(): ; Body
     v74:8 = PtrIndex(4) (v57, v56)
     v75:4 = Load(4, 0) (v74)
     Call(Call { target: fn29, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 4, index: 1 }], parts: [], site: Continue }) (v68, v75)
     v77:8, v78:1 = Ovf(Add, false, 8) (v56, 0x1)
-    br v78 ? b36() : b37()
-b36(): ; Body
+    br v78 ? b37() : b38()
+b37(): ; Body
     v79:8 = RefAddr(k35, false) ()
     Call(Call { target: sym31, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v79)
     trap
-b37(): ; Body
-    jmp b21(v54, v55, v77, v57, v58, v68)
 b38(): ; Body
+    jmp b22(v54, v55, v77, v57, v58, v68)
+b39(): ; Body
     v90:8 = RefAddr(k37, false) ()
     v91:8, v92:8 = Call(Call { target: fn38, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }, ArgReg { xmm: false, size: 8, index: 4 }], parts: [RetPart { xmm: false, size: 8, off: 0 }, RetPart { xmm: false, size: 8, off: 8 }], site: Continue }) (v57, v58, v54, v55, v90)
     Call(Call { target: fn39, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Continue }) (v68, v91, v92)
@@ -3158,26 +3169,26 @@ b38(): ; Body
     v98:8, v99:8 = Call(Call { target: fn43, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [RetPart { xmm: false, size: 8, off: 0 }, RetPart { xmm: false, size: 8, off: 8 }], site: Continue }) (v68)
     v100:8 = RefAddr(k44, false) ()
     Call(Call { target: fn45, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }, ArgReg { xmm: false, size: 8, index: 4 }], parts: [], site: Continue }) (v57, v58, v98, v99, v100)
-    jmp b39()
-b39(): ; Body
+    jmp b40()
+b40(): ; Body
     ret 0x0 ()
-b40(): ; Osr(0)
+b41(): ; Osr(0)
     v37:8 = OsrLoad(-16, 8) ()
     v40:8 = OsrLoad(-8, 8) ()
     jmp b2(v37, v40)
-b41(): ; Osr(1)
+b42(): ; Osr(1)
     v34:8 = OsrLoad(-176, 8) ()
     v35:8 = OsrLoad(-16, 8) ()
     v38:8 = OsrLoad(-8, 8) ()
-    jmp b5(v34, v35, v38)
-b42(): ; Osr(2)
+    jmp b6(v34, v35, v38)
+b43(): ; Osr(2)
     v80:8 = OsrLoad(-456, 8) ()
     v81:8 = OsrLoad(-368, 8) ()
     v82:8 = OsrLoad(-464, 8) ()
     v83:8 = OsrLoad(-16, 8) ()
     v84:8 = OsrLoad(-8, 8) ()
     v85:8 = OsrLoad(-24, 8) ()
-    jmp b21(v80, v81, v82, v83, v84, v85)
+    jmp b22(v80, v81, v82, v83, v84, v85)
 
 fn std::cmp::impls::<impl std::cmp::PartialOrd for u32>::lt
 a0: $-32, 4 bytes, Promoted
