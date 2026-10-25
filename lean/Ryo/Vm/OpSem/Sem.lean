@@ -381,7 +381,6 @@ def kindSem (k : HandlerKind) (ps : List String) (e : Env) : M Out := do
     let bs ← st.load p (cnt * n)
     let vals ← (List.range cnt).mapM fun i => asNat ((bs.drop (i * n)).take n)
     pure (out e [] (.index (sparseIndex vals.toArray v)))
-  | .trap => throw .unreachable
   | .abort_now => throw .abort
   | .lpad => pure (out e [("x", encodePtr st.exception)])
 

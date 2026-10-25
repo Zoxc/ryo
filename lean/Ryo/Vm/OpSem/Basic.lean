@@ -96,8 +96,8 @@ inductive Stop where
   | ub (msg : String)
   /-- `abort` (`core::intrinsics::abort`). -/
   | abort
-  /-- `unreachable`: the handler reports and aborts; the lowering only emits it where MIR
-  has UB, so R may take it as UB. -/
+  /-- `unreachable`: a bare `ud2` (no handler); the lowering only emits it where MIR has UB,
+  so R may take it as UB. -/
   | unreachable
   /-- A handler kind this library doesn't define (yet). -/
   | unsupported (what : String)

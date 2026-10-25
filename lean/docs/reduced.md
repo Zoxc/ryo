@@ -333,8 +333,9 @@ footprint (op : Full.Opcode) : Option Footprint
   layout-independent.
 - **Results**: the control effect (`next`, `branch b` before the polarity, `index i` with the
   table's length for the default) and the next state, or a `Stop`: `ub`, `abort`,
-  `unreachable` (the handler reports and aborts; R may read it as UB, since the lowering
-  emits it only where MIR has UB), `unsupported`, `illFormed` (operands that don't fit the
+  `unreachable` (R's `unreachable`, a bare `ud2` without a handler, which `step` stops
+  with rather than calling `opSem`; R may read it as UB, since the lowering emits it only
+  where MIR has UB), `unsupported`, `illFormed` (operands that don't fit the
   opcode), `noBehavior` (a choice outside its set).
 - **Choices** (`Choice`, each checked): a NaN result's bits (default the first RFC 3514
   candidate), `fmin`/`fmax` of zeros of opposite sign, and a weak compare-exchange's

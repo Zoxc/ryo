@@ -12,7 +12,8 @@ registers set in order, and recovers every operand, the frame size and the unwin
 - the `arg`s at the start, calls and tail calls (argument loads, call, result stores),
   islands, `ret`, `jmp`, and every handler call as `handler h args then`, its argument
   registers read from `rdi` on (`fp`, the exception object, an immediate or an address), then
-  its shape's control flow (a branch on `al`, a jump table, `ud2`);
+  its shape's control flow (a branch on `al`, a jump table, `ud2`); `unreachable`, a bare
+  `ud2`;
 - inline sequences, as the register cache (`Ryo.Vm.Asm.Cache`) emits them: the decoder runs
   the same cache, cleared at branch targets (known after a first pass) and by every
   instruction that isn't inline, and accepts a sequence only if emitting its instruction
@@ -554,6 +555,10 @@ def insn (fr : Frame) (ro : ByteArray) : DM Proto := do
       setPos p0
       let (s, k) ← retSeq fr
       return { op := .ret, ops := [.slot s, .imm (BitVec.ofNat 64 k)], pos := p0 }
+    else err hat "not an instruction"
+  -- A handler call's `ud2` is read with it (`thenSeq`): a bare one is `unreachable`.
+  | .ud2 =>
+    if setup.isEmpty then return { op := .unreachable, pos := p0 }
     else err hat "not an instruction"
   | .branch .always t _ =>
     if setup.isEmpty then return { op := .jmp, ops := [.target t.toNat], pos := p0 }

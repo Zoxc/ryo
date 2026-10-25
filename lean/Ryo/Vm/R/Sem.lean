@@ -36,7 +36,8 @@ provenance at `fp + off`, good only for zero-sized accesses; anything else is UB
      `lpad`) or a handler call: `view`, then `opSem` and the shape's control flow
      (`Then.succ`): `semR i = opSem (view i)` plus control. `view = none` is `illFormed`.
      `resume` (no `opSem`: its handler is assembly) unwinds from `pc` with the exception
-     object in its slot.
+     object in its slot; `unreachable` (no `opSem`: a bare `ud2`, no handler) stops with
+     `Stop.unreachable`.
    - `jmp t`: to `t`.
    - `arg d, r`: register `r` of the incoming argument registers, its `r.size` low bytes
      stored at `d`.
@@ -368,6 +369,7 @@ def stepView (c : Code) (s : RState) (i : Insn) (ch : OpSem.Choice) : M Out := d
   if v.op == .resume then
     let [.slot x] := v.ops | illFormed "resume's operands"
     return ← unwindAt c s (← asPtr (← s.st.readFrame x 8))
+  if v.op == .unreachable then throw .unreachable
   let (ctl, st) ← opSem v.op v.ops s.st ch
   let some pc := t.succ s.pc ctl | illFormed s!"{v.op.mnemonic}'s control flow"
   pure (.step { s with pc, st })

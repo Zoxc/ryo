@@ -189,11 +189,12 @@ def footprintOf (k : HandlerKind) (ps : List String) : Option Footprint := do
     let n ← w
     pure { reads := [rd "s" n], derefs := [⟨.addr "cases", .cases "cases" n, .read, false⟩],
            flow := .table }
-  | .trap | .abort_now => pure { flow := .trap }
+  | .abort_now => pure { flow := .trap }
   | .lpad => pure { writes := [rd "x" 8] }
 
 /-- The footprint of a full opcode with a handler written in Rust (`none` for the others:
-the calls, `ret`, `arg`, `jmp`, `island`, and `resume`, whose handler is assembly). -/
+the calls, `ret`, `arg`, `jmp`, `island`, `unreachable` (a bare `ud2`), and `resume`, whose
+handler is assembly). -/
 def footprint (op : Full.Opcode) : Option Footprint :=
   op.handler?.bind fun h => footprintOf h.kind h.params
 
