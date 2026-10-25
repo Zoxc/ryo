@@ -98,8 +98,7 @@ impl<'a> B<'a> {
             self.incomplete[b.idx()].push((var, p));
             p
         } else {
-            let preds = self.f.blocks[b.idx()].preds.clone();
-            match preds.len() {
+            match self.f.blocks[b.idx()].preds.len() {
                 0 => match self.f.blocks[b.idx()].kind {
                     BlockKind::Entry if self.fr.vars[var as usize].incoming() => {
                         // At the entry's top: the first read may come after the entry ended
@@ -119,7 +118,7 @@ impl<'a> B<'a> {
                     }
                     _ => self.undef(w),
                 },
-                1 => self.read_var(var, preds[0].0),
+                1 => self.read_var(var, self.f.blocks[b.idx()].preds[0].0),
                 _ => {
                     let p = self.new_param(b, var);
                     self.write_var(var, b, p);
@@ -133,10 +132,11 @@ impl<'a> B<'a> {
 
     fn add_operands(&mut self, var: u32, p: Value) -> Value {
         let ValueDef::Param(b, _) = self.f.def(p) else { unreachable!() };
-        let preds = self.f.blocks[b.idx()].preds.clone();
-        let mut row = Vec::with_capacity(preds.len());
-        for (q, _) in preds {
-            let v = self.read_var(var, q);
+        // `b` is sealed: its predecessors stay as they are.
+        let n = self.f.blocks[b.idx()].preds.len();
+        let mut row = Vec::with_capacity(n);
+        for k in 0..n {
+            let v = self.read_var(var, self.f.blocks[b.idx()].preds[k].0);
             row.push(v);
         }
         for &v in &row {
