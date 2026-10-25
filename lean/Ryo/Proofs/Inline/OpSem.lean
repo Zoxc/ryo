@@ -401,4 +401,28 @@ theorem opSem_brCmpImm {op : Full.Opcode} {r : Option String} {ty o' : String} {
   obtain ⟨va, hva, res, hres, rfl⟩ := hk
   exact ⟨ba, va, res, hra', hva, hres, rfl, commit_nil hc⟩
 
+theorem fp_cvt {tx ty : String} {nx ny : Nat} (hx : tySize tx = some nx) (hy : tySize ty = some ny) :
+    footprintOf .cvt [tx, ty] = some { reads := [rdA "s" nx], writes := [rdA "d" ny] } := by
+  simp only [footprintOf, List.head?, Option.bind_some, hx, List.drop_one, List.tail_cons, hy]
+  rfl
+
+/-- `cvt` between integer types: the source as an integer (sign-extended if signed), wrapped
+to the destination's width. -/
+theorem opSem_ext {op : Full.Opcode} {r : Option String} {tx ty : String} {nx ny : Nat}
+    {sx sy : Bool} {d s : Int} {st st' : OpSem.State} {ch : OpSem.Choice} {c : Control}
+    (hh : op.handler? = some ⟨.cvt, [tx, ty], r⟩) (htx : Ty.parse tx = some (.int nx sx))
+    (hty : Ty.parse ty = some (.int ny sy))
+    (ho : op.info.operands = [⟨"d", .slot⟩, ⟨"s", .slot⟩])
+    (hsem : opSem op [.slot d, .slot s] st ch = .ok (c, st')) :
+    ∃ bs v, st.readFrame s nx = .ok bs ∧ asNat bs = .ok v ∧
+      st.writeFrame d (intBytes ny (BitVec.ofInt (8 * ny)
+        (if sx then (BitVec.ofNat (8 * nx) v).toInt else (v : Int))).toNat) = .ok st' ∧
+      c = .next := by
+  oinv hsem, hh, fp_cvt (tySize_of_parse htx) (tySize_of_parse hty)
+  osimp [ho] at hra
+  obtain ⟨bs, hr, rfl⟩ := hra
+  osimp [ho, parseTy, htx, hty, convert, OpSem.Ty.size] at hk
+  obtain ⟨v, hv, rfl⟩ := hk
+  exact ⟨bs, v, hr, hv, (commit_one (off := d) rfl (by simp [opndVal, ho]) hc).2, rfl⟩
+
 end Ryo.Proofs.Inline

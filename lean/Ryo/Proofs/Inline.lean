@@ -23,13 +23,16 @@ object writes its allocation in `opSem` (`writeEscaped`), which these theorems d
 yet. Reads may be of private or escaped bytes (`Rel` covers both).
 
 Classes: `mov`, `mov128`, `imm`, `addr`, `ptrAdd`, `ptrIndex`, `bin`, `binImm`, `mul`, `mulImm`,
-`shiftImm`, `cmp`, `cmpImm`, `br`, `brCmp`, `brCmpImm` (`inline_sound`), and the rip-relative
+`shiftImm`, `cmp`, `cmpImm`, `br`, `brCmp`, `brCmpImm`, `ext` (`inline_sound`), and the rip-relative
 addresses `addrConst`, `addrSym`, `addrSymInd` (`inline_sound_rip`, `SoundG`: `Sound` given
 `Globals`, where the constants, data and symbol slots are linked and that out-of-frame loads
 read the x86 bytes; `Ryo/Proofs/Inline/Rip.lean`). Not yet: `load`, `store` (memory through a
-pointer; see aot.md §C2), `ovf`, `mulOvf`, `ext`.
+pointer; see aot.md §C2), and `ovf`, `mulOvf`: `opSem` writes the result `d`, then the flag
+`o`, but the sequence stores the flag first, so where the flag byte lies inside `d`'s range
+they disagree (`opSem` leaves the flag there, x86 the result's byte); `Sound` as stated is
+false for them without a hypothesis that the two written ranges are disjoint.
 -/
-import Ryo.Proofs.Inline.Cmp
+import Ryo.Proofs.Inline.Ext
 import Ryo.Proofs.Inline.Mem
 import Ryo.Proofs.Inline.Rip
 
@@ -40,14 +43,15 @@ namespace Ryo.Proofs.Inline
 open Ryo.Vm.Asm
 
 /-- The inline classes the theorems cover: all but `load` and `store`, whose memory operand
-goes through a pointer, the overflow ops and extensions (not proved yet), and the rip-relative
-addresses (`inline_sound_rip`: they need `Globals`). -/
+goes through a pointer, the overflow ops (their two writes are in the other order than
+`opSem`'s; see the module comment), and the rip-relative addresses (`inline_sound_rip`: they
+need `Globals`). -/
 def frameOnly : Class → Bool
-  | .load _ | .store _ | .ovf .. | .mulOvf .. | .ext .. | .addrConst | .addrSym | .addrSymInd => false
+  | .load _ | .store _ | .ovf .. | .mulOvf .. | .addrConst | .addrSym | .addrSymInd => false
   | _ => true
 
-/-- Each inline sequence implements `opSem` (see the module comment), for every class but
-`load` and `store`. -/
+/-- Each inline sequence implements `opSem` (see the module comment), for every class of
+`frameOnly`. -/
 theorem inline_sound (c : Class) (hc : frameOnly c = true) : Sound c := by
   cases c with
   | mov w => exact sound_mov w
@@ -73,7 +77,7 @@ theorem inline_sound (c : Class) (hc : frameOnly c = true) : Sound c := by
   | brCmpImm c w => exact sound_brCmpImm c w
   | ovf => simp [frameOnly] at hc
   | mulOvf => simp [frameOnly] at hc
-  | ext => simp [frameOnly] at hc
+  | ext src dst sx => exact sound_ext src dst sx
 
 /-- The rip-relative address classes. -/
 def ripAddr : Class → Bool
@@ -87,7 +91,7 @@ theorem inline_sound_rip (c : Class) (hc : ripAddr c = true) : SoundG c := by
   · exact sound_addrSym
   · exact sound_addrSymInd
 
-/-- Both together: every class but `load`, `store`, `ovf`, `mulOvf` and `ext`, given `Globals`. -/
+/-- Both together: every class but `load`, `store`, `ovf` and `mulOvf`, given `Globals`. -/
 theorem inline_soundG (c : Class) (hc : frameOnly c = true ∨ ripAddr c = true) : SoundG c :=
   hc.elim (fun h => (inline_sound c h).soundG) (inline_sound_rip c)
 

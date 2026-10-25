@@ -221,7 +221,7 @@ follows the decoder's structure:
 
   **Implemented** (`Ryo/Proofs/Inline.lean`, `inline_sound`): for every class but `load` and
   `store`, at every width and condition (`mov`, `mov128`, `imm`, `addr`, `ptrAdd`, `ptrIndex`,
-  `bin`, `binImm`, `mul`, `mulImm`, `shiftImm`, `cmp`, `cmpImm`, `br`, `brCmp`, `brCmpImm`;
+  `bin`, `binImm`, `mul`, `mulImm`, `shiftImm`, `cmp`, `cmpImm`, `br`, `brCmp`, `brCmpImm`, `ext` (`Inline/Ext.lean`, every source and destination width, zero and sign);
   both immediate forms where `fits` decides), and every opcode of the class's handler shape
   (`shapeOk`): if `sequence c ops = some (items, br)`, `opSem op vals st` succeeds (`vals` the
   operand values `view` gives) and `Rel st x`, then `execItems items x` succeeds with `x'` and
@@ -242,13 +242,15 @@ follows the decoder's structure:
   over the generated mnemonics as character lists (`Generated/Mnemonics.lean`), with
   `String.splitOn` replaced by a fuelled split proved equal to it; it covers all 222 inline
   opcodes, the native `ovf`, `mulOvf`, `ext`, `addr.const`, `addr.sym` and `addr.sym.ind`
-  ones included, and uses no `bv_decide` or `native_decide`. Left: writes into escaped
-  objects (`writeEscaped`), and the sequences of `ovf`, `mulOvf` and `ext`, and of the
-  rip-relative addresses `addrConst` (`lea r, [rip + k]`), `addrSym` (`mov r, [rip + slot]`)
-  and `addrSymInd` (one more `mov r, [r]`), each then `mov [fp + d], r`, which need the
-  relation to say where constants, data and symbol slots are (lean/PENDING.md, "proofs to
-  extend"). No mismatch between the
-  sequences and `opSem` was found. `bv_decide`'s proofs are axioms checked by compiled code
+  ones included, and uses no `bv_decide` or `native_decide`. The
+  rip-relative addresses `addrConst`, `addrSym`, `addrSymInd` are `inline_sound_rip`
+  (`Inline/Rip.lean`), given `Globals` (where constants, data and symbol slots are linked).
+  Left: writes into escaped objects (`writeEscaped`), and `ovf` and `mulOvf`. Their sequences
+  store the flag (`setcc cl; mov [o], cl`) before the result, while `opSem` commits the result
+  `d` then the flag `o`: the two differ when the flag byte lies in the result's range (e.g.
+  `d = o`), which nothing excludes, so `Sound` is false for them as stated. Their theorem needs
+  the two written ranges disjoint, a condition C1' must then check (or the backend could
+  store the result first). `bv_decide`'s proofs are axioms checked by compiled code
   ([assumptions.md](assumptions.md) §1.4).
 - **Register cache**: invariant `CacheInv c regs mem fp`: for each `(r, slot, width) ∈ c`,
   `regs r = zext (mem[fp+slot, width])`. The decoder runs the same cache (as the Rust one
