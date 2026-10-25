@@ -258,7 +258,14 @@ def frameWrite : Item → Option (M × Nat)
 /-! ### Inline sequences (`asm/inline.rs`) -/
 
 inductive Class
-  | mov (w : W) | mov128 | imm (w : W) | addr | ptrAdd | ptrIndex | load (w : W) | store (w : W)
+  | mov (w : W) | mov128 | imm (w : W) | addr
+  /-- `addr.const`: `lea` of the constant (or data area) address. -/
+  | addrConst
+  /-- `addr.sym`: the symbol slot's value, loaded rip-relative. -/
+  | addrSym
+  /-- `addr.sym.ind`: the slot's value, then the import slot it points to. -/
+  | addrSymInd
+  | ptrAdd | ptrIndex | load (w : W) | store (w : W)
   | bin (op : Alu) (w : W) | binImm (op : Alu) (w : W) | mul (w : W) | mulImm (w : W)
   | shiftImm (sh : Sh) (w : W) | cmp (c : Cond) (w : W) | cmpImm (c : Cond) (w : W) | br
   | brCmp (c : Cond) (w : W) | brCmpImm (c : Cond) (w : W)
@@ -307,6 +314,9 @@ def classOfParts : List String → Option Class
   | ["load", w] => .load <$> widthName w
   | ["store", w] => .store <$> widthName w
   | ["addr"] => some .addr
+  | ["addr", "const"] => some .addrConst
+  | ["addr", "sym"] => some .addrSym
+  | ["addr", "sym", "ind"] => some .addrSymInd
   | ["ptr", "add"] => some .ptrAdd
   | ["ptr", "index"] => some .ptrIndex
   | ["br"] => some .br
@@ -405,6 +415,18 @@ def sequence {T : Type} (c : Class) (ops : List (Opnd T)) : Option (List Item ×
     if w != .q || fits x then pure ([.stImm w s0 (sextI32 w x)], none)
     else pure ([.setReg R x, st .q s0], none)
   | .addr => pure ([.leaM R (← slot 1), st .q (← slot 0)], none)
+  | .addrConst =>
+    let to ← match (ops[1]? : Option (Opnd T)) with
+      | some (.const k) => some (Ref.const k)
+      | some (.data d) => some (Ref.data d)
+      | _ => none
+    pure ([.lea R to, st .q (← slot 0)], none)
+  | .addrSym | .addrSymInd =>
+    let s ← match (ops[1]? : Option (Opnd T)) with
+      | some (.sym s) => some s
+      | _ => none
+    let ind : List Item := if c == .addrSymInd then [ld .q (Mrax 0)] else []
+    pure ([.loadRip R (.sym s)] ++ ind ++ [st .q (← slot 0)], none)
   | .ptrAdd =>
     let x ← imm 2
     if !fits x then none
@@ -529,6 +551,9 @@ where
     let frame (m : M) : Bool := m.base == .rbp
     match items with
     | [.leaM .., .st ..] => some .addr
+    | [.lea _ (.const _), .st ..] | [.lea _ (.data _), .st ..] => some .addrConst
+    | [.loadRip _ (.sym _), .st ..] => some .addrSym
+    | [.loadRip _ (.sym _), .ld .., .st ..] => some .addrSymInd
     | [.ld .., .leaM .., .st ..] => some .ptrAdd
     | [.ld .., .imulImm .., .alu .., .st ..] => some .ptrIndex
     | [.ld .., .ld _ _ _ m1, .st w _ m] =>
@@ -545,7 +570,9 @@ where
     | [.ld .., .shift op .., .st w ..] => some (.shiftImm op w)
     | _ => none
 
-/-- `inline::decode`: the instruction an inline sequence encodes, targets byte positions. -/
+/-- `inline::decode`: the instruction an inline sequence encodes, targets byte positions. The
+operands come from the frame displacements in order (`d` last), the `rax` displacement, the
+immediate, and the rip item's `Ref` (`addr.const`'s `Abs`, `addr.sym`'s `Sym`). -/
 def decodeInline (items : List Item) (branch : Option (Cond × Nat)) :
     Option (Full.Opcode × List (Opnd Nat)) := do
   let key ← classify items branch.isSome
@@ -554,6 +581,9 @@ def decodeInline (items : List Item) (branch : Option (Cond × Nat)) :
   let rax : Option (BitVec 32) :=
     (items.filterMap fun it => it.mem?).find? (·.base == .rax) |>.map (·.disp)
   let imm : BitVec 64 := ((items.findSome? itemImm) <|> (rax.map (·.signExtend 64))).getD 0
+  let rip : Option Ref := items.findSome? fun
+    | .lea _ to | .loadRip _ to => some to
+    | _ => none
   for (op, cls) in inlineOps do
     if cls.key != key then continue
     let info := op.info
@@ -581,6 +611,15 @@ def decodeInline (items : List Item) (branch : Option (Cond × Nat)) :
       | .u64 | .i64 => ops := ops.push (.imm imm)
       | .neg => ops := ops.push (.neg false)
       | .target => ops := ops.push (.target (← branch).2)
+      | .abs =>
+        match ← rip with
+        | .const k => ops := ops.push (.const k)
+        | .data d => ops := ops.push (.data d)
+        | _ => none
+      | .sym =>
+        match ← rip with
+        | .sym s => ops := ops.push (.sym s)
+        | _ => none
       | _ => none
     let negAt := info.operands.findIdx? (·.name == "neg")
     for neg in [false, true] do
@@ -671,7 +710,7 @@ def update (c : Cache) (item : Item) : Cache := Id.run do
     | .alu op w reg _ => if op != .cmp then some (reg, none, wide w) else none
     | .aluImm op w (.reg reg) _ => if op != .cmp then some (reg, none, wide w) else none
     | .imul w reg _ | .imulImm w reg _ _ | .shift _ w reg _ => some (reg, none, wide w)
-    | .leaM dst _ | .setReg dst _ => some (dst, none, some .q)
+    | .leaM dst _ | .setReg dst _ | .lea dst _ | .loadRip dst _ => some (dst, none, some .q)
     | .mulQ _ => some (.rax, none, some .q)
     | _ => none
   -- `mul` writes `rdx` too.

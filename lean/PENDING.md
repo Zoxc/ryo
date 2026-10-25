@@ -3,14 +3,6 @@
 Rust-side changes that the Lean model or proofs don't reflect yet. Add an entry per change;
 remove it once a Lean session has handled it.
 
-- `addr.const`, `addr.sym` and `addr.sym.ind` are inline (`has_inline`, so the reduced set
-  gains them): `lea r, [rip + k]` (`Const`/`Data`), `mov r, [rip + slot]` (`Sym`) with an
-  extra `mov r, [r]` for `.ind`, then `mov [fp + d], r`. The Lean `Asm` model needs the three
-  classes in `classify`/`sequence`/`decodeInline` (the `Abs`/`Sym` operand from the rip
-  item's ref), and the cache `update` rule that `lea`/`loadRip` write the full register (no
-  slot, zero-extended from 64 bits). Sem is unchanged. Tables and vectors regenerated.
-  Commit: "Inline addr.const, addr.sym and addr.sym.ind".
-
 - The JIT's SSA tier decodes the three inline address instructions as `Kind::RefAddr` and
   builds a pure `Op::RefAddr(ref, ind)` (rip-relative `lea`, or the slot load and with `ind`
   one more load) instead of `hcall.reg`; LVN keys it. Only matters if the Lean model covers
@@ -71,3 +63,11 @@ remove it once a Lean session has handled it.
   never contain these bits, so the AOT model is unchanged. Only `Ryo/X86/Item.lean`,
   `Encode.lean` and the `Mode` structure would need the new cases if the Lean encoder is to
   cover JIT code.
+
+- Proofs to extend (left by the session that applied the entries above; no `sorry` was
+  added, the theorems keep their scope):
+  - `inline_sound` (`Ryo/Proofs/Inline.lean`) covers no rip-relative address class:
+    `addrConst` (`lea r, [rip + k]`), `addrSym` (`mov r, [rip + slot]`) and `addrSymInd`
+    (one more `mov r, [r]`), each then `mov [fp + d], r`. `frameOnly` excludes them, as it
+    does `ovf`, `mulOvf` and `ext`. Proving them needs `Rel` to say where the constant pool,
+    the data area and the symbol slots are (and that a slot holds the symbol's address).

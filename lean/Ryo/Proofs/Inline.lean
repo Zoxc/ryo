@@ -24,7 +24,9 @@ yet. Reads may be of private or escaped bytes (`Rel` covers both).
 
 Classes: `mov`, `mov128`, `imm`, `addr`, `ptrAdd`, `ptrIndex`, `bin`, `binImm`, `mul`, `mulImm`,
 `shiftImm`, `cmp`, `cmpImm`, `br`, `brCmp`, `brCmpImm` (`load`, `store`: memory through a
-pointer, left; see aot.md §C2; `ovf`, `mulOvf`, `ext`: not yet).
+pointer, left; see aot.md §C2; `ovf`, `mulOvf`, `ext`, and `addrConst`, `addrSym`,
+`addrSymInd` (rip-relative addresses, inline since "Inline addr.const, addr.sym and
+addr.sym.ind"): not yet, lean/PENDING.md "proofs to extend").
 -/
 import Ryo.Proofs.Inline.Cmp
 import Ryo.Proofs.Inline.Mem
@@ -36,9 +38,10 @@ namespace Ryo.Proofs.Inline
 open Ryo.Vm.Asm
 
 /-- The inline classes the theorems cover: all but `load` and `store`, whose memory operand
-goes through a pointer, and the overflow ops and extensions, not proved yet. -/
+goes through a pointer, and the overflow ops, extensions and rip-relative addresses, not
+proved yet. -/
 def frameOnly : Class → Bool
-  | .load _ | .store _ | .ovf .. | .mulOvf .. | .ext .. => false
+  | .load _ | .store _ | .ovf .. | .mulOvf .. | .ext .. | .addrConst | .addrSym | .addrSymInd => false
   | _ => true
 
 /-- Each inline sequence implements `opSem` (see the module comment), for every class but
@@ -49,6 +52,9 @@ theorem inline_sound (c : Class) (hc : frameOnly c = true) : Sound c := by
   | mov128 => exact sound_mov128
   | imm w => exact sound_imm w
   | addr => exact sound_addr
+  | addrConst => simp [frameOnly] at hc
+  | addrSym => simp [frameOnly] at hc
+  | addrSymInd => simp [frameOnly] at hc
   | ptrAdd => exact sound_ptrAdd
   | ptrIndex => exact sound_ptrIndex
   | load w => simp [frameOnly] at hc

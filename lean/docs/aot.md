@@ -218,10 +218,14 @@ follows the decoder's structure:
   `(op, c) ∈ inlineOps → shapeOk op c`, is `inlineOps_shape` (`RyoProofs/InlineOps.lean`, in
   its own library `RyoProofs`, outside the default build: about 3.5 minutes): `decide +kernel`
   over the generated mnemonics as character lists (`Generated/Mnemonics.lean`), with
-  `String.splitOn` replaced by a fuelled split proved equal to it; it covers all 219 inline
-  opcodes, the native `ovf`, `mulOvf` and `ext` ones included, and uses no `bv_decide` or
-  `native_decide`. Left: writes into escaped objects (`writeEscaped`), and the sequences of
-  `ovf`, `mulOvf` and `ext`. No mismatch between the
+  `String.splitOn` replaced by a fuelled split proved equal to it; it covers all 222 inline
+  opcodes, the native `ovf`, `mulOvf`, `ext`, `addr.const`, `addr.sym` and `addr.sym.ind`
+  ones included, and uses no `bv_decide` or `native_decide`. Left: writes into escaped
+  objects (`writeEscaped`), and the sequences of `ovf`, `mulOvf` and `ext`, and of the
+  rip-relative addresses `addrConst` (`lea r, [rip + k]`), `addrSym` (`mov r, [rip + slot]`)
+  and `addrSymInd` (one more `mov r, [r]`), each then `mov [fp + d], r`, which need the
+  relation to say where constants, data and symbol slots are (lean/PENDING.md, "proofs to
+  extend"). No mismatch between the
   sequences and `opSem` was found. `bv_decide`'s proofs are axioms checked by compiled code
   ([assumptions.md](assumptions.md) §1.4).
 - **Register cache**: invariant `CacheInv c regs mem fp`: for each `(r, slot, width) ∈ c`,

@@ -69,6 +69,9 @@ def classHandler : Class → Handlers.HandlerKind × List String
   | .mov128 => (.mov, ["u128"])
   | .imm w => (.imm, [tyName false w])
   | .addr => (.addr, [])
+  | .addrConst => (.addr_const, [])
+  | .addrSym => (.addr_sym, ["false"])
+  | .addrSymInd => (.addr_sym, ["true"])
   | .ptrAdd => (.ptr_add, [])
   | .ptrIndex => (.ptr_index, [])
   | .load w => (.load, [tyName false w])
@@ -90,6 +93,8 @@ def classHandler : Class → Handlers.HandlerKind × List String
 /-- The operands of the opcodes of a class. -/
 def classOperands : Class → List OperandInfo
   | .mov _ | .mov128 | .addr | .ext .. => [⟨"d", .slot⟩, ⟨"s", .slot⟩]
+  | .addrConst => [⟨"d", .slot⟩, ⟨"a", .abs⟩]
+  | .addrSym | .addrSymInd => [⟨"d", .slot⟩, ⟨"sym", .sym⟩]
   | .imm w => [⟨"d", .slot⟩, ⟨"imm", (immKind w)⟩]
   | .ptrAdd => [⟨"d", .slot⟩, ⟨"p", .slot⟩, ⟨"imm", .i64⟩]
   | .ptrIndex => [⟨"d", .slot⟩, ⟨"p", .slot⟩, ⟨"i", .slot⟩, ⟨"stride", .u32⟩]
