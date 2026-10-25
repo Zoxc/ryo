@@ -1,48 +1,3 @@
-fn <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as std::hash::Hasher>::finish
-a0: $-88, 8 bytes, Promoted
-a1: $-80, 8 bytes, Promoted
-a2: $-72, 8 bytes, Promoted
-a3: $-64, 8 bytes, Promoted
-a4: $-56, 8 bytes, Promoted
-a5: $-48, 32 bytes, Memory, escaped
-a6: $-16, 8 bytes, Promoted
-a7: $-8, 8 bytes, Promoted
-b0(v0:8): ; Entry
-    v1:8 = Load(8, 0) (v0)
-    AStore(AllocaId(5), 0, 8) (v1)
-    v2:8 = Load(8, 8) (v0)
-    AStore(AllocaId(5), 8, 8) (v2)
-    v3:8 = Load(8, 16) (v0)
-    AStore(AllocaId(5), 16, 8) (v3)
-    v4:8 = Load(8, 24) (v0)
-    AStore(AllocaId(5), 24, 8) (v4)
-    v5:8 = Load(8, 48) (v0)
-    v7:8 = Bin(And, 8) (v5, 0xff)
-    v9:8 = Bin(Shl, 8) (v7, 0x38)
-    v10:8 = Load(8, 56) (v0)
-    v11:8 = Bin(Or, 8) (v9, v10)
-    v12:8 = ALoad(AllocaId(5), 24, 8) ()
-    v13:8 = Bin(Xor, 8) (v12, v11)
-    AStore(AllocaId(5), 24, 8) (v13)
-    v14:8 = AllocaAddr(AllocaId(5), 0) ()
-    Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v14)
-    v15:8 = ALoad(AllocaId(5), 0, 8) ()
-    v16:8 = Bin(Xor, 8) (v15, v11)
-    AStore(AllocaId(5), 0, 8) (v16)
-    v17:8 = ALoad(AllocaId(5), 8, 8) ()
-    v19:8 = Bin(Xor, 8) (v17, 0xff)
-    AStore(AllocaId(5), 8, 8) (v19)
-    v20:8 = AllocaAddr(AllocaId(5), 0) ()
-    Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v20)
-    v21:8 = ALoad(AllocaId(5), 0, 8) ()
-    v22:8 = ALoad(AllocaId(5), 16, 8) ()
-    v23:8 = Bin(Xor, 8) (v21, v22)
-    v24:8 = ALoad(AllocaId(5), 8, 8) ()
-    v25:8 = Bin(Xor, 8) (v23, v24)
-    v26:8 = ALoad(AllocaId(5), 24, 8) ()
-    v27:8 = Bin(Xor, 8) (v25, v26)
-    ret 0x8 (v27)
-
 fn <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as std::hash::Hasher>::write
 a0: $-152, 8 bytes, Promoted
 a1: $-144, 8 bytes, Promoted
@@ -692,35 +647,6 @@ b11(): ; Body
 b12(): ; Stub
     v6:8 = LandingPad ()
     jmp b10()
-
-fn <usize as std::slice::SliceIndex<[T]>>::get_unchecked::precondition_check
-a0: $-136, 8 bytes, Promoted
-a1: $-121, 1 bytes, Promoted
-a2: $-120, 8 bytes, Promoted
-a3: $-112, 8 bytes, Promoted
-a4: $-104, 8 bytes, Promoted
-a5: $-96, 8 bytes, Promoted
-a6: $-88, 8 bytes, Promoted
-a7: $-80, 8 bytes, Promoted
-a8: $-72, 8 bytes, Promoted
-a9: $-64, 8 bytes, Promoted
-a10: $-56, 8 bytes, Promoted
-a11: $-48, 8 bytes, Promoted
-a12: $-32, 8 bytes, Promoted
-a13: $-24, 8 bytes, Promoted
-a14: $-16, 8 bytes, Promoted
-a15: $-8, 8 bytes, Promoted
-b0(v0:8, v1:8, v2:8): ; Entry
-    br LtU.w8 v0, v1 ? b1() : b2()
-b1(): ; Body
-    ret 0x0 ()
-b2(): ; Body
-    v3:8 = RefAddr(k0, false) ()
-    v5:8 = RefAddr(k0, false) ()
-    v8:8 = Bin(Shl, 8) (0xd6, 0x1)
-    v10:8 = Bin(Or, 8) (v8, 0x1)
-    Call(Call { target: sym2, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v3, v10, 0x0, v2)
-    trap
 
 fn core::core_arch::simd::Simd::<i8, 16>::splat
 a0: $-32, 8 bytes, Promoted

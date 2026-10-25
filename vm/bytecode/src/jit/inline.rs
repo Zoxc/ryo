@@ -341,6 +341,162 @@ fn protocol(c: &Call) -> f64 {
     2.0 * c.regs.len() as f64 + 8.0 + if c.parts.is_empty() { 0.0 } else { 1.0 }
 }
 
+/// The values of `g` derived from the pointers `roots` by constant or indexed offsets.
+fn derived(g: &Func, roots: &[Value]) -> Vec<bool> {
+    let mut d = alloc::vec![false; g.values.len()];
+    for &r in roots {
+        d[g.resolve(r).idx()] = true;
+    }
+    loop {
+        let mut changed = false;
+        for &b in &g.layout {
+            for &i in &g.blocks[b.idx()].insts {
+                let id = &g.insts[i.idx()];
+                if matches!(id.op, Op::PtrAdd(_) | Op::PtrIndex(_)) && d[g.resolve(id.args[0]).idx()] {
+                    let r = g.result(i);
+                    if !d[r.idx()] {
+                        d[r.idx()] = true;
+                        changed = true;
+                    }
+                }
+            }
+        }
+        if !changed {
+            return d;
+        }
+    }
+}
+
+/// The accesses through the pointers `d` ([`derived`]) in `g`, by block weight, if nothing
+/// but loads, stores (as their address) and VM calls uses them: then promotion could make
+/// them values once the memory they point at is the caller's and the calls are inlined.
+/// `None` if they escape any other way.
+fn promotable_accesses(g: &Func, sh: Option<&Shape>, d: &[bool]) -> Option<f64> {
+    let is = |v: Value| d[g.resolve(v).idx()];
+    let mut n = 0.0;
+    for &b in &g.layout {
+        let bd = &g.blocks[b.idx()];
+        for &i in &bd.insts {
+            let id = &g.insts[i.idx()];
+            match &id.op {
+                Op::Load(..) | Op::Store(..) if is(id.args[0]) => {
+                    if id.args[1..].iter().any(|&v| is(v)) {
+                        return None;
+                    }
+                    n += sh.map_or(1.0, |s| s.weight[b.idx()]);
+                }
+                Op::PtrAdd(_) | Op::PtrIndex(_) if is(id.args[0]) => {
+                    if id.args[1..].iter().any(|&v| is(v)) {
+                        return None;
+                    }
+                }
+                Op::Call(_) => {}
+                _ if id.args.iter().any(|&v| is(v)) => return None,
+                _ => {}
+            }
+        }
+        let in_term = match &bd.term {
+            Term::Br { cond, .. } => is(*cond),
+            Term::BrCmp { a, b, .. } => is(*a) || is(*b),
+            Term::Switch { idx, .. } => is(*idx),
+            Term::Ret { parts, .. } => parts.iter().any(|&v| is(v)),
+            Term::TailCall { args, .. } => args.iter().any(|&v| is(v)),
+            _ => false,
+        };
+        if in_term || bd.term.edges().any(|e| e.args.iter().any(|&v| is(v))) {
+            return None;
+        }
+    }
+    Some(n)
+}
+
+/// Whether the pointer `v` of node `k`'s IR `g` points into a memory alloca of the root or
+/// an inlined ancestor that only loads, stores and VM calls reach ([`promotable_accesses`]),
+/// following entry parameters up to the call sites that pass them.
+fn local_alloca(nodes: &[Node], root: &Func, memo: &mut BTreeMap<(usize, u32), bool>, mut k: usize, mut v: Value) -> bool {
+    loop {
+        let g: &Func = nodes[k].ir.as_deref().unwrap_or(root);
+        v = g.resolve(v);
+        let mut p = v;
+        while let ValueDef::Inst(i, 0) = g.def(p) {
+            match g.insts[i.idx()].op {
+                Op::PtrAdd(_) | Op::PtrIndex(_) => p = g.resolve(g.insts[i.idx()].args[0]),
+                Op::AllocaAddr(a, _) => {
+                    if let Some(&m) = memo.get(&(k, a.0)) {
+                        return m;
+                    }
+                    let al = &g.allocas[a.idx()];
+                    let ok = al.kind == AllocaKind::Memory && !al.pinned && !named(g, a) && {
+                        let addrs: Vec<Value> = (0..g.insts.len())
+                            .filter(|&j| matches!(g.insts[j].op, Op::AllocaAddr(b, _) if b == a) && g.insts[j].nres == 1)
+                            .map(|j| g.result(Inst(j as u32)))
+                            .collect();
+                        promotable_accesses(g, None, &derived(g, &addrs)).is_some()
+                    };
+                    memo.insert((k, a.0), ok);
+                    return ok;
+                }
+                _ => return false,
+            }
+        }
+        let ValueDef::Param(b, n) = g.def(p) else { return false };
+        if k == 0 || g.blocks[b.idx()].kind != BlockKind::Entry {
+            return false;
+        }
+        // The argument the call site passes in this parameter's register.
+        let r = g.entry_regs[n as usize];
+        let parent = nodes[k].parent;
+        let pf: &Func = nodes[parent].ir.as_deref().unwrap_or(root);
+        let site = &pf.insts[nodes[k].site.idx()];
+        let Op::Call(call) = &site.op else { return false };
+        let Some(ai) = call.regs.iter().position(|x| x.xmm == r.xmm && x.index == r.index) else { return false };
+        v = site.args[ai];
+        k = parent;
+    }
+}
+
+/// Whether a handler call or an island of `g` names the alloca `a`: promotion can't take it.
+fn named(g: &Func, a: AllocaId) -> bool {
+    let is = |s: &SlotRef| matches!(s, SlotRef::Alloca(b, _) if *b == a);
+    g.insts.iter().any(|id| match &id.op {
+        Op::HCall(h) => h.regs.iter().flat_map(|r| r.1.iter().flatten()).any(is),
+        Op::Island(x) => x.ops.iter().any(is),
+        _ => false,
+    })
+}
+
+/// The promotion benefit of inlining `c` at the call `site` of node `parent` (design/jit.md,
+/// "Inlining"): a pointer argument into a caller's memory alloca that only loads, stores and calls
+/// reach ([`local_alloca`]) leaves the callee's accesses through it (by block weight) to
+/// promotion once inlined, each a memory access saved. Callee parameters that escape any
+/// other way (a handler, a store of the pointer, a return) get nothing.
+fn promotion(
+    nodes: &[Node],
+    root: &Func,
+    memo: &mut BTreeMap<(usize, u32), bool>,
+    parent: usize,
+    site: Inst,
+    call: &Call,
+    c: &Func,
+    sh: &Shape,
+) -> f64 {
+    let Some(entry) = c.blocks.iter().position(|b| b.kind == BlockKind::Entry) else { return 0.0 };
+    let pf: &Func = nodes[parent].ir.as_deref().unwrap_or(root);
+    let mut total = 0.0;
+    for (n, r) in c.entry_regs.iter().enumerate() {
+        if r.xmm || r.size != 8 {
+            continue;
+        }
+        let Some(ai) = call.regs.iter().position(|x| x.xmm == r.xmm && x.index == r.index) else { continue };
+        if !local_alloca(nodes, root, memo, parent, pf.insts[site.idx()].args[ai]) {
+            continue;
+        }
+        let param = c.blocks[entry].params[n];
+        total += promotable_accesses(c, Some(sh), &derived(c, &[param])).unwrap_or(0.0);
+    }
+    total
+}
+
 /// A node of the call tree: a call site and its callee.
 struct Node {
     func: VmFunc,
@@ -511,6 +667,7 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
     };
     push_sites(&mut pending, env, &nodes, 0, f, &root_shape);
     let mut expanded = 0.0;
+    let mut promo_memo = BTreeMap::new();
     let mut trials: Vec<((VmFunc, Vec<Option<(u64, u8)>>), Rc<Func>)> = Vec::new();
     while !pending.is_empty() && nodes.len() < p.nodes {
         let at = (0..pending.len()).max_by(|&a, &b| pending[a].0.total_cmp(&pending[b].0)).unwrap();
@@ -616,6 +773,7 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
                 (c, sh)
             }
         };
+        let promoted = promotion(&nodes, f, &mut promo_memo, parent, site, &call, &c, &sh);
         if expanded + k_cost > p.expand {
             if let Some(d) = dump.as_deref_mut() {
                 let _ = writeln!(d, ";   {} at {site} (depth {depth}): over the exploration budget", name(g, root));
@@ -633,7 +791,7 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
             depth,
             weight,
             cost: k_cost,
-            benefit: weight * (protocol(&call) + folded),
+            benefit: weight * (protocol(&call) + folded + promoted),
             cold,
             unwind,
             pending: waiting,

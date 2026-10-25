@@ -558,7 +558,11 @@ the units that inline it.
 - **Cost and benefit**: the cost is the callee's instructions (a handler call through the
   scratch area 4, through its register entry 2, a call 4, others 1; branches 1, cold
   blocks a quarter); the benefit is the weight times the call protocol saved, `2 × args +
-  8 (+1 with a result)`, plus what a trial folded.
+  8 (+1 with a result)`, plus what a trial folded, plus the promotion the splice enables:
+  for each pointer argument into a memory alloca of the root (or an inlined ancestor, through
+  the parameters that pass it) that nothing but loads, stores and VM calls reach, the
+  callee's loads and stores through that parameter, by block weight, if the callee doesn't
+  let it escape otherwise.
 - **Trials**: a callee of cost 60 or less called with constant arguments is specialized
   to them (its entry parameters' uses replaced, then `opt::run`), memoized per function
   and constants, at most 16 per unit; the cost is the specialized IR's, and the splice uses

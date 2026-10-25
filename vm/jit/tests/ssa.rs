@@ -1164,6 +1164,59 @@ fn large_block_copies() {
     check_stats(before, 3);
 }
 
+/// A callee that only works on its caller's local through a pointer (like SipHash's
+/// `c_rounds` on the hasher): too big for its call protocol alone, it is inlined for the
+/// promotion it enables, the local's loads and stores becoming values.
+/// rounds(p): four times, p[j] = p[j] * 3 + j for j < 4. p@-8, t@-16.
+/// f(x): s[j] = x + j; rounds(&s); ret s[0] + s[3]. x@16; x'@-8, s@-48, p@-56.
+#[test]
+fn inline_for_promotion() {
+    let (_g, before) = start();
+    let mut w = ImageWriter::new(unique_scid());
+    let mut defs = Defs::default();
+    let mut a = Asm::new();
+    a.i(arg(-8, 0));
+    for _ in 0..4 {
+        for j in 0..4 {
+            a.i(Insn::LoadW64 { d: Slot(-16), m: Mem { p: Slot(-8), k: 8 * j } });
+            a.i(Insn::MulImmW64 { d: Slot(-16), a: Slot(-16), imm: 3 });
+            a.i(Insn::AddImmW64 { d: Slot(-16), a: Slot(-16), imm: j as _ });
+            a.i(Insn::StoreW64 { m: Mem { p: Slot(-8), k: 8 * j }, s: Slot(-16) });
+        }
+    }
+    a.i(Insn::ImmW64 { d: Slot(-16), imm: 0 });
+    a.ret(Slot(-16), 8);
+    let rounds = defs.add(&mut w, func(a.done(), 16, 0, 8), vec![]);
+    let mut a = Asm::new();
+    a.i(Insn::MovW64 { d: Slot(-8), s: Slot(16) });
+    for j in 0..4 {
+        a.i(Insn::AddImmW64 { d: Slot(-48 + 8 * j), a: Slot(-8), imm: j as _ });
+    }
+    let at_addr = a.i(Insn::Addr { d: Slot(-56), s: Slot(-48) });
+    a.i(Insn::Call { d: Slot(0), f: rounds, k: 0, a: List::from_words(&regs(&[-56])) });
+    a.i(Insn::AddW64 { d: Slot(-8), a: Slot(-48), b: Slot(-24) });
+    a.ret(Slot(-8), 8);
+    let f = defs.add(&mut w, func(a.done(), 64, 8, 8), vec![escape(at_addr, -48, 32)]);
+    let img = defs.build(w);
+
+    let model = |x: u64| {
+        let mut s: [u64; 4] = core::array::from_fn(|j| x.wrapping_add(j as u64));
+        for _ in 0..4 {
+            for (j, v) in s.iter_mut().enumerate() {
+                *v = v.wrapping_mul(3).wrapping_add(j as u64);
+            }
+        }
+        s[0].wrapping_add(s[3])
+    };
+    for x in [1u64, 5, 1 << 40, u64::MAX] {
+        assert_eq!(ok::<_, u64>(img.id(f), (x,)), model(x), "f({x})");
+    }
+    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
+        assert_eq!(state(&img, rounds), JIT_COLD, "rounds inlined");
+    }
+    check_stats(before, 1);
+}
+
 static B_STATIC: AtomicU64 = AtomicU64::new(0);
 
 /// Inlining across images: `f` of image A calls `g` of image B through a symbol slot. `g`,
