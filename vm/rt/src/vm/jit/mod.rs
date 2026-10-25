@@ -158,7 +158,8 @@ fn from_env() -> Config {
     let flag = |name: &CStr| var(name) == Some(b"1");
     Config {
         enabled: var(c"RYO_JIT") != Some(b"off"),
-        threshold: var(c"RYO_JIT_THRESHOLD").and_then(parse_thresholds),
+        threshold: var(c"RYO_JIT_THRESHOLD")
+            .map(|s| parse_thresholds(s).unwrap_or_else(|| fatal("RYO_JIT_THRESHOLD: expected `L` or `E,L` with decimal thresholds"))),
         sync: flag(c"RYO_JIT_SYNC"),
         perfmap: flag(c"RYO_JIT_PERFMAP"),
         log: flag(c"RYO_JIT_LOG"),
@@ -169,7 +170,7 @@ fn from_env() -> Config {
     }
 }
 
-/// `RYO_JIT_THRESHOLD`'s value: `L` or `E,L` ([`Config::threshold`]).
+/// `RYO_JIT_THRESHOLD`'s value: `L` or `E,L` ([`Config::threshold`]); `None` if malformed.
 fn parse_thresholds(s: &[u8]) -> Option<(i64, i64)> {
     let lim = |t: i64| t.clamp(0, JIT_BIAS / 4);
     match s.iter().position(|&c| c == b',') {
@@ -750,3 +751,18 @@ mod futex {
 }
 
 use futex::{wait as futex_wait, wake as futex_wake};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn thresholds() {
+        assert_eq!(parse_thresholds(b"32"), Some((2, 32)));
+        assert_eq!(parse_thresholds(b"2,0"), Some((2, 0)));
+        assert_eq!(parse_thresholds(b"-5,+7"), Some((0, 7)));
+        for bad in [&b""[..], b",", b",0", b"5,", b"x", b"1,2,3", b"1 ", b"99999999999999999999"] {
+            assert_eq!(parse_thresholds(bad), None, "{:?}", core::str::from_utf8(bad));
+        }
+    }
+}
