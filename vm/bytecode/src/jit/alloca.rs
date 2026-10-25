@@ -283,11 +283,11 @@ pub fn analyze(code: &Code, frame_size: u32) -> Result<Frame, Unsupported> {
         let mut queued = alloc::vec![false; nb];
         queued[0] = true;
         // Runs block `b` from its entry state: the state at the end, and before the last
-        // instruction's writes (for its landing pad).
-        let run = |b: usize, st: &mut Vec<u16>, res: Option<&mut Vec<Vec<Res>>>, demote: &mut Vec<bool>| -> Vec<u16> {
+        // instruction's writes (for its landing pad; only when it has one, and not while
+        // resolving).
+        let run = |b: usize, st: &mut Vec<u16>, before_last: &mut Vec<u16>, res: Option<&mut Vec<Vec<Res>>>, demote: &mut Vec<bool>| {
             let bl = &code.blocks[b];
             let mut res = res;
-            let mut before_last = Vec::new();
             for i in bl.start..bl.end {
                 let ri = &code.insns[i as usize];
                 for (k, a) in ri.accs.iter().enumerate() {
@@ -314,8 +314,8 @@ pub fn analyze(code: &Code, frame_size: u32) -> Result<Frame, Unsupported> {
                         }
                     }
                 }
-                if i + 1 == bl.end {
-                    before_last = st.clone();
+                if i + 1 == bl.end && bl.pad.is_some() && res.is_none() {
+                    before_last.clone_from(st);
                 }
                 for (k, a) in ri.accs.iter().enumerate() {
                     let s = wshape[i as usize][k];
@@ -333,12 +333,12 @@ pub fn analyze(code: &Code, frame_size: u32) -> Result<Frame, Unsupported> {
                     }
                 }
             }
-            before_last
         };
+        let (mut st, mut before) = (Vec::new(), Vec::new());
         while let Some(b) = work.pop() {
             queued[b] = false;
-            let mut st = inn[b].clone().unwrap();
-            let before = run(b, &mut st, None, &mut demote);
+            st.clone_from(inn[b].as_ref().unwrap());
+            run(b, &mut st, &mut before, None, &mut demote);
             let bl = &code.blocks[b];
             for &s in &bl.succ {
                 let from = if Some(s) == bl.pad { &before } else { &st };
@@ -358,8 +358,8 @@ pub fn analyze(code: &Code, frame_size: u32) -> Result<Frame, Unsupported> {
         }
         // The resolutions, from the fixed point.
         for b in 0..nb {
-            if let Some(mut st) = inn[b].clone() {
-                run(b, &mut st, Some(&mut res), &mut demote);
+            if let Some(mut st) = inn[b].take() {
+                run(b, &mut st, &mut before, Some(&mut res), &mut demote);
             }
         }
     }
