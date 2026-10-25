@@ -76,14 +76,13 @@ impl Proto {
     }
 
     /// The branch targets (byte positions).
-    fn targets(&self) -> Vec<u32> {
-        let mut out: Vec<u32> = self.ops.iter().flat_map(op_targets).collect();
-        match &self.handler {
-            Some((_, Then::Branch { target, .. })) => out.push(*target),
-            Some((_, Then::Table(ts))) => out.extend(ts),
-            _ => {}
-        }
-        out
+    fn targets(&self) -> impl Iterator<Item = u32> + '_ {
+        let handler: &[u32] = match &self.handler {
+            Some((_, Then::Branch { target, .. })) => core::slice::from_ref(target),
+            Some((_, Then::Table(ts))) => ts,
+            _ => &[],
+        };
+        self.ops.iter().flat_map(op_targets).chain(handler).copied()
     }
 }
 
@@ -454,11 +453,11 @@ fn ops_array(ro: &[u8], at: u32) -> Option<Vec<u32>> {
 }
 
 /// The branch targets of an operand (byte positions).
-fn op_targets(o: &Opnd) -> Vec<u32> {
+fn op_targets(o: &Opnd) -> &[u32] {
     match o {
-        Opnd::Target(t) => vec![*t],
-        Opnd::Targets(ts) | Opnd::Cases(_, ts) => ts.clone(),
-        _ => Vec::new(),
+        Opnd::Target(t) => core::slice::from_ref(t),
+        Opnd::Targets(ts) | Opnd::Cases(_, ts) => ts,
+        _ => &[],
     }
 }
 
@@ -481,6 +480,8 @@ fn instructions(
     let mut padded = Vec::new();
     let mut cache = Cache::default();
     let mut end = entry_stub;
+    // Whether a loop head's counter check was read.
+    let mut counted = false;
     while !c.at_end() && Some(c.pos) != end {
         // A sequence that left no code (its reload hit the cache, its store was dropped) ends
         // the block before a loop head's padding and counter check: none can start at a
@@ -509,8 +510,9 @@ fn instructions(
             match (c.item(), c.item()) {
                 (Ok(Item::CtrInc(true)), Ok(Item::Branch { cond: Cond::Ns, target, .. })) => {
                     counter = Some((target, c.pos));
-                    if protos.iter().all(|p| p.counter.is_none()) {
+                    if !counted {
                         end = Some(target);
+                        counted = true;
                     }
                 }
                 _ => c.pos = at,
@@ -955,11 +957,12 @@ fn inline_insn(c: &mut Cursor<'_>, cache: &mut Cache, dropped: &mut &[DroppedSto
     }
     // As emitted with an empty cache, the common case, else the sequences the cache may
     // have emitted this from.
-    let plain = super::inline::decode(&items, branch).map(|d| (d, items.clone()));
-    let cands = plain.into_iter().chain(cache.unemit(&items).into_iter().filter_map(|c| Some((super::inline::decode(&c, branch)?, c))));
+    // (`None`: `items` itself.)
+    let plain = super::inline::decode(&items, branch).map(|d| (d, None));
+    let cands = plain.into_iter().chain(cache.unemit(&items).into_iter().filter_map(|c| Some((super::inline::decode(&c, branch)?, Some(c)))));
     for ((op, ops), cand) in cands {
         let mut after = *cache;
-        if after.emit(&cand) != items {
+        if after.emit(cand.as_deref().unwrap_or(&items)) != items {
             continue;
         }
         *cache = after;
