@@ -16,7 +16,7 @@ use super::cast::ScalarKind;
 use super::emit::{FloatWidth, Width, imm_words, opcode, opw, try_opcode};
 use super::island::templates;
 use super::place::Loc;
-use super::{FnCx, NeedsNative, native};
+use super::{FnCx, NeedsNative, SPLIT_MAX, native};
 
 /// The suffix of an atomic opcode for an ordering.
 fn ord_name(o: ty::AtomicOrdering) -> &'static str {
@@ -78,11 +78,33 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 })?
             }
             "copy" | "write_bytes" => {
-                let size = self.layout_of(callee.args.type_at(0))?.size.bytes();
+                let el = self.layout_of(callee.args.type_at(0))?;
+                let size = el.size.bytes();
+                let copy = name.as_str() == "copy";
+                // A constant count: inline pieces.
+                if let [x, y, count] = args
+                    && let Some(count) = self.arg_const(count)?
+                    && let Some(n) = count.checked_mul(u128::from(size))
+                    && n <= u128::from(SPLIT_MAX)
+                {
+                    let (x, n) = (self.arg_slot(x)?, n as u32);
+                    if copy {
+                        let y = self.arg_slot(y)?;
+                        let f = |fx: &mut Self| fx.mem_copy_pieces(y, x, n);
+                        if count == 1 { self.with_cuts(el, f) } else { f(self) }
+                    } else {
+                        let byte = match self.arg_const(y)? {
+                            Some(b) => Ok(b as u8),
+                            None => Err(self.arg_slot(y)?),
+                        };
+                        self.mem_set_pieces(x, byte, n);
+                    }
+                    return self.intrinsic_next(&cont);
+                }
                 let [x, y, count] = self.arg_slots::<3>(args)?;
                 let n = self.temp8();
                 self.op(opw("MulImm", Width::W64), &[n, count, size as u32, (size >> 32) as u32]);
-                if name.as_str() == "copy" {
+                if copy {
                     // copy(src, dst, count)
                     self.op(Opcode::Memmove, &[y, x, n]);
                 } else {
@@ -92,9 +114,20 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 true
             }
             "typed_swap_nonoverlapping" => {
-                let size = self.layout_of(callee.args.type_at(0))?.size.bytes();
+                let el = self.layout_of(callee.args.type_at(0))?;
+                let size = el.size.bytes();
                 let [x, y] = self.arg_slots::<2>(args)?;
                 let t = self.frame.temp(size, 16);
+                if size <= u64::from(SPLIT_MAX) {
+                    // Inline pieces: `x` into `t`, `y` into `x`, `t` into `y`.
+                    let n = size as u32;
+                    self.with_cuts(el, |fx| {
+                        fx.load_pieces(t, x, n);
+                        fx.mem_copy_pieces(x, y, n);
+                        fx.store_pieces(y, t, n);
+                    });
+                    return self.intrinsic_next(&cont);
+                }
                 let n = self.temp8();
                 self.imm(Width::W64, n, u128::from(size));
                 self.op(Opcode::LoadCopy, &[t, x, 0, size as u32]);
@@ -197,6 +230,11 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             }
             return self.direct_call(fty, callee, args, cont, source_info);
         }
+        self.intrinsic_next(&cont)
+    }
+
+    /// Continues after a lowered intrinsic: to the call's target block.
+    fn intrinsic_next(&mut self, cont: &CallCont<'tcx>) -> Result<(), NeedsNative> {
         match cont.target {
             Some(bb) => self.jump(bb),
             None => {

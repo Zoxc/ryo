@@ -186,9 +186,8 @@ L11:
     addr.const $-152, k4
     call $0, fn5, 0, [4294967184, 8, 4294967176, 264, 4294967168, 520, 4294967160, 776, 4294967152, 1032, 4294967144, 1288]
 L12:
-    imm.w64 $-128, 8
-    mul.imm.w64 $-136, $-128, 1
-    memcpy $-96, $-88, $-136
+    load.w64 $-128, [$-88 + 0]
+    store.w64 [$-96 + 0], $-128
     mov.w64 $-40, $-80
     ; end $-80, 8 bytes
     load.w64 $-128, [$-8 + 24]
@@ -1864,9 +1863,8 @@ L3:
     addr.const $-184, k0
     call $0, fn1, 0, [4294967168, 8, 4294967160, 264, 4294967136, 520, 4294967128, 776, 4294967120, 1032, 4294967112, 1288]
 L4:
-    imm.w64 $-160, 4
-    mul.imm.w64 $-168, $-160, 1
-    memcpy $-112, $-104, $-168
+    load.w32 $-160, [$-104 + 0]
+    store.w32 [$-112 + 0], $-160
     mov.w32 $-44, $-96
     ; end $-96, 4 bytes
     zext.w32.w64 $-8, $-44
@@ -1881,9 +1879,8 @@ L5:
     addr.const $-184, k2
     call $0, fn3, 0, [4294967152, 8, 4294967144, 264, 4294967136, 520, 4294967128, 776, 4294967120, 1032, 4294967112, 1288]
 L6:
-    imm.w64 $-160, 2
-    mul.imm.w64 $-168, $-160, 1
-    memcpy $-128, $-120, $-168
+    load.w16 $-160, [$-120 + 0]
+    store.w16 [$-128 + 0], $-160
     mov.w16 $-46, $-92
     ; end $-92, 2 bytes
     zext.w16.w64 $-112, $-46
@@ -5392,9 +5389,10 @@ L13:
     ptr.index $-176, $-184, $-168, 1
     mov.w64 $-160, $-176
     mov.w64 $-168, $-136
-    imm.w64 $-248, 16
-    mul.imm.w64 $-256, $-248, 1
-    memmove $-160, $-168, $-256
+    load.w64 $-256, [$-168 + 0]
+    load.w64 $-248, [$-168 + 8]
+    store.w64 [$-160 + 0], $-256
+    store.w64 [$-160 + 8], $-248
     jmp L15
 L14:
     ; end $-256, 16 bytes
@@ -5838,7 +5836,7 @@ L10:
   fn3 = hashbrown::raw::RawTableInner::resize_inner::<std::alloc::Global>
   sym4 = hashbrown::raw::Fallibility::capacity_overflow
 
-fn hashbrown::raw::RawTableInner::resize_inner::<std::alloc::Global> (frame 608, args 16, ret 16)
+fn hashbrown::raw::RawTableInner::resize_inner::<std::alloc::Global> (frame 624, args 16, ret 16)
     arg $-24, 8
     arg $-32, 264
     arg $-40, 520
@@ -5878,13 +5876,25 @@ L4:
     mov.w64 $-312, $-24
     ; escape align 8 $-304, 56 bytes
     addr $-320, $-280
-    imm.w64 $-600, 32
-    load.copy $-592, [$-312 + 0], 32
-    memcpy $-312, $-320, $-600
-    store.copy [$-320 + 0], $-592, 32
+    load.w64 $-592, [$-312 + 0]
+    load.w64 $-584, [$-312 + 8]
+    load.w64 $-576, [$-312 + 16]
+    load.w64 $-568, [$-312 + 24]
+    load.w64 $-624, [$-320 + 0]
+    load.w64 $-616, [$-320 + 8]
+    load.w64 $-608, [$-320 + 16]
+    load.w64 $-600, [$-320 + 24]
+    store.w64 [$-312 + 0], $-624
+    store.w64 [$-312 + 8], $-616
+    store.w64 [$-312 + 16], $-608
+    store.w64 [$-312 + 24], $-600
+    store.w64 [$-320 + 0], $-592
+    store.w64 [$-320 + 8], $-584
+    store.w64 [$-320 + 16], $-576
+    store.w64 [$-320 + 24], $-568
     jmp L18
 L5:
-    ; end $-600, 48 bytes
+    ; end $-624, 72 bytes
     ; escape align 8 $-304, 56 bytes
     addr $-384, $-280
 L6:

@@ -6,7 +6,7 @@ use ryo_bytecode::full::Opcode;
 
 use super::emit::{Width, opw};
 use super::place::{Loc, PlaceVal};
-use super::{CodeReloc, FnCx, NeedsNative, native};
+use super::{CodeReloc, FnCx, NeedsNative, SPLIT_MAX, native};
 
 impl<'a, 'tcx> FnCx<'a, 'tcx> {
     pub fn statement(&mut self, stmt: &Statement<'tcx>) -> Result<(), NeedsNative> {
@@ -24,9 +24,23 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 NonDivergingIntrinsic::CopyNonOverlapping(c) => {
                     let (src, src_layout) = self.operand_slot(&c.src)?;
                     let (dst, _) = self.operand_slot(&c.dst)?;
-                    let (count, _) = self.operand_slot(&c.count)?;
                     let elem = src_layout.ty.builtin_deref(true).ok_or_else(|| NeedsNative("copy of a non-pointer".into()))?;
-                    let size = self.layout_of(elem)?.size.bytes();
+                    let el = self.layout_of(elem)?;
+                    let size = el.size.bytes();
+                    // A constant count: inline pieces.
+                    if let Some(count) = self.const_int(&c.count)?
+                        && let Some(n) = count.checked_mul(u128::from(size))
+                        && n <= u128::from(SPLIT_MAX)
+                    {
+                        let copy = |fx: &mut Self| fx.mem_copy_pieces(dst, src, n as u32);
+                        if count == 1 {
+                            self.with_cuts(el, copy)
+                        } else {
+                            copy(self)
+                        }
+                        return Ok(());
+                    }
+                    let (count, _) = self.operand_slot(&c.count)?;
                     let n = self.temp8();
                     self.op(opw("MulImm", Width::W64), &[n, count, size as u32, (size >> 32) as u32]);
                     self.op(Opcode::Memcpy, &[dst, src, n]);
@@ -112,6 +126,10 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 }
                 Loc::Mem { .. } if bytes.iter().all(|&b| b == bytes[0]) => {
                     let dp = self.place_addr(dst.loc, dst.base)?;
+                    if total <= u64::from(SPLIT_MAX) {
+                        self.mem_set_pieces(dp, Ok(bytes[0]), total as u32);
+                        return Ok(());
+                    }
                     let (b, len) = (self.frame.temp(1, 1), self.temp8());
                     self.imm(Width::W8, b, u128::from(bytes[0]));
                     self.imm(Width::W64, len, u128::from(total));

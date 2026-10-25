@@ -108,3 +108,12 @@ remove it once a Lean session has handled it.
   `mov` for `c = 0`; `bswap.w8` lowers to `mov.w8` (a refinement: `mov` keeps uninit bytes
   where `bswap` was UB). C1' rules; `BitVec.rotateLeft` unfolding lemma. Commit: "Lower
   rotates by a constant to shifts and an or".
+
+- Lowering: `copy_nonoverlapping`, `copy` and `write_bytes` with a constant count, of at
+  most 48 bytes in total, and `typed_swap_nonoverlapping` of a type of at most 48 bytes, and
+  an all-equal-bytes `Repeat` of at most 48 bytes into memory, lower to `load`/`store` pieces
+  (all loads into a frame temp before the stores, so `copy`'s overlap is exact) or `store`
+  pieces of a byte pattern (`imm`, or `zext.w8.w64` + `mul.imm 0x0101..01`) instead of
+  `memcpy`/`memmove`/`memset`. A C1' rule for the intrinsic statement (whole-range
+  dereferenceability becomes per piece: a refinement of UB). Commit: "Lower constant-length
+  copy and set intrinsics to load/store pieces".

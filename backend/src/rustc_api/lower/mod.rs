@@ -540,6 +540,54 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         self.op(opw(&format!("{family}Imm"), w), &ops);
     }
 
+    /// Copies `n <= SPLIT_MAX` bytes from the memory at `src` to the memory at `dst` as
+    /// `load`/`store` pieces (cut at [`FnCx::cuts`]) through a temporary: every piece is loaded
+    /// before the first store, so overlapping ranges copy as `memmove` does.
+    pub fn mem_copy_pieces(&mut self, dst: u32, src: u32, n: u32) {
+        debug_assert!(n <= SPLIT_MAX);
+        if n == 0 {
+            return;
+        }
+        let t = self.frame.temp(u64::from(n), 16);
+        self.load_pieces(t, src, n);
+        self.store_pieces(dst, t, n);
+    }
+
+    /// `load.wK d+i, [p+i]` pieces (`K` <= 64) for `n` bytes.
+    pub fn load_pieces(&mut self, d: u32, p: u32, n: u32) {
+        for (o, w) in pieces(n, Width::W64, &self.cuts) {
+            self.op(opw("Load", w), &[d + o, p, o]);
+        }
+    }
+
+    /// `store.wK [p+i], s+i` pieces (`K` <= 64) for `n` bytes.
+    pub fn store_pieces(&mut self, p: u32, s: u32, n: u32) {
+        for (o, w) in pieces(n, Width::W64, &self.cuts) {
+            self.op(opw("Store", w), &[p, o, s + o]);
+        }
+    }
+
+    /// Sets `n <= SPLIT_MAX` bytes of the memory at `dst` to a byte (a constant, or the `u8`
+    /// in a slot) as `store` pieces of a 64-bit pattern.
+    pub fn mem_set_pieces(&mut self, dst: u32, byte: Result<u8, u32>, n: u32) {
+        debug_assert!(n <= SPLIT_MAX);
+        if n == 0 {
+            return;
+        }
+        let ones = 0x0101_0101_0101_0101u128;
+        let t = self.temp8();
+        match byte {
+            Ok(b) => self.imm(Width::W64, t, u128::from(b) * ones),
+            Err(s) => {
+                self.int_cast(t, s, Width::W8, Width::W64, false);
+                self.op_imm("Mul", Width::W64, t, t, ones);
+            }
+        }
+        for (o, w) in pieces(n, Width::W64, &[]) {
+            self.op(opw("Store", w), &[dst, o, t]);
+        }
+    }
+
     /// The outgoing argument block's field at `off`: the slot at `fp - F + off`, once the
     /// frame size `F` is known (`frame.rs`).
     pub fn out(off: u32) -> u32 {
