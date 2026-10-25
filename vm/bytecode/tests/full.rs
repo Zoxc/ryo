@@ -253,9 +253,9 @@ fn code_buf_patches_targets() {
 }
 
 /// Pins the encoding: any change to the opcode list (order, mnemonics, operand names or
-/// kinds) changes this hash. When it fails, bump `FORMAT_VERSION` and update both values.
+/// kinds) changes this hash. When it fails, update the pinned hash.
 #[test]
-fn opcode_table_is_pinned_to_format_version() {
+fn opcode_table_is_pinned() {
     let mut h: u64 = 0xcbf29ce484222325; // FNV-1a
     let mut eat = |s: &str| {
         for b in s.bytes().chain([0]) {
@@ -270,13 +270,13 @@ fn opcode_table_is_pinned_to_format_version() {
             eat(&format!("{:?}", o.kind));
         }
     }
-    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (23, 0xa6664a8ac814a950), "opcode table hash {h:#x}");
+    assert_eq!(h, 0xa6664a8ac814a950, "opcode table hash {h:#x}");
 }
 
-/// Pins the image table layouts to the format version: any change to a table entry's size or
-/// field offsets fails here. When it fails, bump `FORMAT_VERSION` and update the values.
+/// Pins the image table layouts: any change to a table entry's size or field offsets fails
+/// here. When it fails, update the pinned values.
 #[test]
-fn image_layouts_are_pinned_to_format_version() {
+fn image_layouts_are_pinned() {
     use ryo_bytecode::image::*;
     use std::mem::{offset_of, size_of};
     let layout = (
@@ -314,18 +314,17 @@ fn image_layouts_are_pinned_to_format_version() {
             offset_of!(JitRecord, header),
         ),
     );
-    assert_eq!(ryo_bytecode::FORMAT_VERSION, 23);
     assert_eq!(
         layout,
         (
-            (144, 24, 40, 48, 128),
+            (144, 24, 48, 40, 124),
             (44, 4, 8, 12, 16, 20, 28, 36),
             (8, 16, 8),
             (16, 4, 8, 12),
             (12, 4, 8),
-            (100, 108, 132),
-            (12, 4, 8, 9, 10, 116),
-            (136, 64, 8, 16, 24, 32, 36, 40)
+            (96, 104, 128),
+            (12, 4, 8, 9, 10, 112),
+            (132, 64, 8, 16, 24, 32, 36, 40)
         ),
         "{layout:?}"
     );

@@ -183,11 +183,6 @@ fn call_island_unwinds() {
     assert_eq!(err.downcast_ref::<u32>(), Some(&11));
 }
 
-#[test]
-fn abi_version() {
-    assert_eq!(ryo_rt::RYO_RT_ABI, 6);
-}
-
 thread_local!(static DROPS: Cell<u32> = const { Cell::new(0) });
 
 /// The `call` island of the fn item `F`.

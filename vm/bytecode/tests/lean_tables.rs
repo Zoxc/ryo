@@ -8,9 +8,9 @@ use std::fmt::Write;
 use std::path::{Path, PathBuf};
 
 use ryo_bytecode::asm::{self, Layout, Mode};
+use ryo_bytecode::full::list_words;
 use ryo_bytecode::full::{self, ElemKind, OpInfo, OperandKind, Shape};
 use ryo_bytecode::reduced::{self, Arg};
-use ryo_bytecode::{FORMAT_VERSION, full::list_words};
 
 include!("../../rt/src/vm/handlers.rs");
 
@@ -241,7 +241,6 @@ namespace Ryo.Vm
 
 ",
     );
-    writeln!(s, "/-- `ryo_bytecode::FORMAT_VERSION`, which the tables were generated at. -/\ndef formatVersion : Nat := {FORMAT_VERSION}\n").unwrap();
     s.push_str("/-- `full::ElemKind`: the element of a list operand. -/\ninductive ElemKind where\n");
     for e in ELEM_KINDS {
         writeln!(s, "  | {}", elem_name(e)).unwrap();

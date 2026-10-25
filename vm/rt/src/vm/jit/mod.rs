@@ -34,7 +34,7 @@ use core::sync::atomic::Ordering::{AcqRel, Acquire, Relaxed, Release, SeqCst};
 use core::sync::atomic::{AtomicBool, AtomicI64, AtomicPtr, AtomicU8, AtomicU32, AtomicUsize};
 
 use ryo_bytecode::image::{Image, JIT_COLD, JIT_DONE, JIT_FAILED, JIT_QUEUED, JIT_THRESHOLD, JitRecord};
-use ryo_bytecode::jit_abi::{JIT_ABI_VERSION, JIT_CHECK, JIT_LOG, JIT_OPT_SSA, JIT_OPT_SSA_NAIVE, JIT_PERFMAP, JIT_SYNC, JIT_TEST_PANIC, RtApi};
+use ryo_bytecode::jit_abi::{JIT_CHECK, JIT_LOG, JIT_OPT_SSA, JIT_OPT_SSA_NAIVE, JIT_PERFMAP, JIT_SYNC, JIT_TEST_PANIC, RtApi};
 
 pub use ryo_bytecode::jit_abi::{JIT_ENTRY_PREFIX, REDIRECT};
 
@@ -584,9 +584,6 @@ fn start() -> bool {
         *h = super::interp::reg_handler(op).unwrap_or(ptr::null());
     }
     let api = RtApi {
-        abi: JIT_ABI_VERSION,
-        format: ryo_bytecode::FORMAT_VERSION,
-        size: size_of::<RtApi>() as u32,
         flags,
         probe: super::interp::probe_stack as *const (),
         personality: rust_eh_personality as *const (),

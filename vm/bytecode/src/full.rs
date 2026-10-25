@@ -766,8 +766,7 @@ macro_rules! define_ops {
     ($($name:ident = $mn:literal $shape:ident { $($field:ident : $kind:ident),* $(,)? },)*) => {
         /// An opcode: the low 16 bits of an instruction's word 0.
         ///
-        /// Variants are numbered in list order; any change to the list changes the encoding
-        /// and requires bumping [`FORMAT_VERSION`](crate::FORMAT_VERSION).
+        /// Variants are numbered in list order; any change to the list changes the encoding.
         #[repr(u16)]
         #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub enum Opcode {

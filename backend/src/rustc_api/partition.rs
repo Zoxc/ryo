@@ -24,15 +24,11 @@ use crate::objfile;
 
 use super::lower::{self, CodeReloc, LowerCx, LoweredFn, NeedsNative};
 
-/// The `RYO_RT_ABI` the backend was written against (`vm/rt/src/lib.rs`).
-const EXPECTED_RT_ABI: u32 = 6;
-
 /// The `ryo_rt` items the backend instantiates or checks (design/stubs.md, Lookup).
 #[derive(Clone, Copy)]
 pub struct RtItems {
     pub krate: CrateNum,
     pub c_main: DefId,
-    pub abi: DefId,
     /// `ryo_rt::vm::FP_ARG`: whether its handlers take `fp` in `rdi`.
     pub fp_arg: DefId,
 }
@@ -60,7 +56,7 @@ pub fn rt_items(tcx: TyCtxt<'_>) -> Option<RtItems> {
             let krate = *tcx.crates(()).iter().find(|&&c| tcx.crate_name(c).as_str() == "ryo_rt")?;
             let items = tcx.diagnostic_items(krate);
             let get = |name: &str| items.name_to_id.get(&Symbol::intern(name)).copied();
-            Some(RtItems { krate, c_main: get("ryo_c_main")?, abi: get("ryo_rt_abi")?, fp_arg: get("ryo_rt_fp_arg")? })
+            Some(RtItems { krate, c_main: get("ryo_c_main")?, fp_arg: get("ryo_rt_fp_arg")? })
         };
         (session_key(tcx), find())
     });
@@ -144,7 +140,6 @@ pub fn collect_and_partition_mono_items<'tcx>(tcx: TyCtxt<'tcx>, original: super
         tcx.dcx().fatal(format!("the ryo backend expected one codegen unit, got {}", partitions.codegen_units.len()));
     };
     let Some(rt) = rt_items(tcx) else { tcx.dcx().fatal("the ryo backend needs `ryo_rt` (`--extern force:ryo_rt`); run it through `rustc-ryo`") };
-    check_rt_abi(tcx, rt);
 
     let (native, results) = {
         let _t = tcx.prof.generic_activity("ryo_partition");
@@ -158,13 +153,6 @@ pub fn collect_and_partition_mono_items<'tcx>(tcx: TyCtxt<'tcx>, original: super
         codegen_units: tcx.arena.alloc_from_iter([native]),
         // Keeps every original DefId, VM functions included (design/backend.md#query-overrides).
         all_mono_items: partitions.all_mono_items,
-    }
-}
-
-fn check_rt_abi(tcx: TyCtxt<'_>, rt: RtItems) {
-    let abi = tcx.const_eval_poly(rt.abi).ok().and_then(|v| v.try_to_scalar_int()).map(|i| i.to_u32());
-    if abi != Some(EXPECTED_RT_ABI) {
-        tcx.dcx().fatal(format!("ryo_rt's RYO_RT_ABI is {abi:?}, but this backend expects {EXPECTED_RT_ABI}; rebuild with `./y.sh build`"));
     }
 }
 

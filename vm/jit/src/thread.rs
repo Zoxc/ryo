@@ -8,12 +8,8 @@ const NAME: &str = "ryo-jit";
 
 use crate::install::Jit;
 
-/// Starts the JIT thread. False if `rt` isn't of this JIT's version, or the thread didn't
-/// start.
+/// Starts the JIT thread. False if the thread didn't start.
 pub(crate) fn start(rt: &'static RtApi) -> bool {
-    if !rt.compatible() {
-        return false;
-    }
     quiet_panics(rt.flags & JIT_LOG != 0);
     std::thread::Builder::new().name(NAME.into()).spawn(move || main(rt)).is_ok()
 }

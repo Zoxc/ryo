@@ -112,11 +112,11 @@ native frames, and unwind natively ([Unwinding](#unwinding)). The runtime lives 
   with its mnemonic, its *shape* ([Machine code](#machine-code)) and its operands. The
   opcode enum, the operand table, the decoder, the encoder and the disassembler of
   instruction words, and the handler register layouts are all generated from it. Opcode
-  values follow list order. Every change bumps `ryo_bytecode::FORMAT_VERSION`, as does every
-  change to an image table layout (`Header`, `FuncEntry`, `FixupEntry`, `JitRecord`) or to
-  the machine code of an instruction. Tests pin a hash of the opcode table, of the table
-  entry sizes and field offsets, and of every opcode's machine code in eight modes (four
-  with counters) to the version.
+  values follow list order. Tests pin a hash of the opcode table, of the image table entry
+  sizes and field offsets (`Header`, `FuncEntry`, `FixupEntry`, `JitRecord`, ...), and of
+  every opcode's machine code in eight modes (four with counters), so that a change to any
+  of them is deliberate: it updates the pinned values. Nothing is versioned
+  ([Image format](#image-format)).
 - Code positions in instruction words are word offsets from the function start. The
   cleanup entries (`CleanupEntry`: call-like instruction → `lpad` instruction or
   `CONTINUE`, with `CATCH` for a catch-all pad) are keyed by them. Images contain only the
@@ -339,8 +339,7 @@ instructions and the instructions without a handler (`jmp`, the calls, `ret`, `a
 the same mnemonics, shapes and operands, plus `handler` for every handler call. Its list
 (`vm/bytecode/src/reduced_ops.rs`) goes through the same `define_ops!` as the full one, so it
 has its own `Opcode`, `Insn`, decoder, encoder and disassembly, in the same word encoding;
-`Opcode::full` and `Opcode::of_full` map between the two. Nothing stores it, so it has no
-format version.
+`Opcode::full` and `Opcode::of_full` map between the two. Nothing stores it.
 
 - **`handler h, args, t`** (`!` with `neg`): a call of the handler of the full opcode `h`
   with the argument registers `args` from `rdi` on (each three words: `fp`, the exception
@@ -637,6 +636,11 @@ in `ryo_rt`, `ryo_h_<Opcode>`:
 
 ## Image format
 
+**Version-matched.** The backend, `ryo_rt` and the JIT are built together from one source
+(`y build`), so the image format, the JIT interface (`RtApi`) and the runtime's interface to
+the backend carry no version numbers and no compatibility checks: a reader assumes images of
+its own build. The header's magic only tells an image from other bytes.
+
 Each crate's image is one object file with a read-only section, a writable section, a text
 section and unwind sections, plus relocations. It defines the symbol
 `__ryo_image_<StableCrateId>`, which points at the header.
@@ -644,7 +648,7 @@ section and unwind sections, plus relocations. It defines the symbol
 **Read-only** (`.data.rel.ro.ryo_image` / `.rdata$ryo_image`):
 
 ```
-header          magic, format version, crate hash, StableCrateId, pointers to the writable
+header          magic, crate hash, StableCrateId, pointers to the writable
                 and text sections (relocated), sizes, offset/count of every part below,
                 site count, fixup area offset, the `asm::Mode` the code was encoded in,
                 the JIT records' offset and count
@@ -826,8 +830,8 @@ templates and the `main` wrapper. It is a normal Rust dependency of every ryo-bu
   `ryo_rt` doesn't enable (`ryo_jit`, built separately, does). `y build` installs
   `libryo_bytecode.rlib` next to `libryo_rt.rlib`. `ryo_jit` may take dependencies of its
   own: they are sealed with it, and invisible to programs.
-- It carries a `RYO_RT_ABI` const (diagnostic item `ryo_rt_abi`), which the backend
-  evaluates and checks, erroring on a mismatch.
+- It is built with the backend, so it carries no ABI version
+  ([version-matched](#image-format)).
 - **Panic strategy**: `ryo_rt` is built with `panic=unwind`, like std. It is valid in
   `panic=abort` programs (`verify_ok` in `rustc_metadata/src/dependency_format.rs:404-500`) as
   long as it makes no `C-unwind` calls (`ffi_unwind_calls.rs:132`): `_Unwind_Resume` is only

@@ -20,9 +20,8 @@ mod thread;
 
 use ryo_bytecode::jit_abi::RtApi;
 
-/// Starts the JIT thread, which compiles what `rt` queues. False if `rt` isn't of this JIT's
-/// version ([`RtApi::compatible`]), or the thread didn't start; the runtime then acts as the
-/// no-op JIT. Called once per runtime.
+/// Starts the JIT thread, which compiles what `rt` queues. False if the thread didn't start;
+/// the runtime then acts as the no-op JIT. Called once per runtime.
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 #[unsafe(no_mangle)]
 pub extern "C" fn ryo_jit_start(rt: &'static RtApi) -> bool {

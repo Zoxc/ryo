@@ -658,7 +658,6 @@ impl ImageWriter {
 
         let header = Header {
             magic: MAGIC,
-            version: crate::FORMAT_VERSION,
             crate_hash: crate_hash(self.stable_crate_id),
             stable_crate_id: self.stable_crate_id,
             data: 0,

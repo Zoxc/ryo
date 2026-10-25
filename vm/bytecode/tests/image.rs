@@ -1,7 +1,7 @@
+use ryo_bytecode::Insn;
 use ryo_bytecode::asm::{self, CallSite, Mode, Scope, ScopeKind};
 use ryo_bytecode::full::*;
 use ryo_bytecode::image::*;
-use ryo_bytecode::{FORMAT_VERSION, Insn};
 
 const ELF: Mode = Mode { fp_arg: false, frame_pointer: true, align_loops: true, pe: false, counters: false };
 /// As the backend encodes: with counters.
@@ -214,7 +214,6 @@ fn image_round_trip() {
     img.validate().unwrap();
     let h = img.header();
     assert_eq!(h.magic, MAGIC);
-    assert_eq!(h.version, FORMAT_VERSION);
     assert_eq!(h.stable_crate_id, SCID);
     assert_eq!(img.crate_hash(), crate_hash(SCID));
     assert_eq!(img.data_ptr() as u64, l.data.addr());
@@ -347,7 +346,6 @@ fn reader_rejects_bad_images() {
         Buf::new(&r, 8)
     };
     assert_eq!(Image::parse(patch(0, b"X").bytes()).unwrap_err(), ImageError::BadMagic);
-    assert_eq!(Image::parse(patch(8, &99u32.to_le_bytes()).bytes()).unwrap_err(), ImageError::Version(99));
     let b = Buf::new(&obj.rodata, 8);
     assert_eq!(Image::parse(&b.bytes()[..50]).unwrap_err(), ImageError::Truncated);
     assert_eq!(Image::parse(&b.bytes()[..b.len - 1]).unwrap_err(), ImageError::Truncated);

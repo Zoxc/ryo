@@ -823,9 +823,9 @@ fn rejects_handler_calls_of_inlined_ops() {
 }
 
 /// Pins the canonical sequences: any change to how an opcode is encoded changes this hash.
-/// When it fails, bump `FORMAT_VERSION` and update both values.
+/// When it fails, update the pinned hash.
 #[test]
-fn templates_are_pinned_to_format_version() {
+fn templates_are_pinned() {
     let mut h: u64 = 0xcbf29ce484222325; // FNV-1a
     let mut eat = |b: &[u8]| {
         for &x in b {
@@ -855,7 +855,7 @@ fn templates_are_pinned_to_format_version() {
             eat(&lsda::write(&enc.call_sites));
         }
     }
-    assert_eq!((ryo_bytecode::FORMAT_VERSION, h), (23, 0xfde3737efbe8a384), "template hash {h:#x}");
+    assert_eq!(h, 0xfde3737efbe8a384, "template hash {h:#x}");
 }
 
 /// Without a frame pointer, an SSE load or store of the slot at `rsp` has no displacement.

@@ -4,7 +4,7 @@
 //! other.
 //!
 //! The JIT defines one C symbol, `ryo_jit_start(rt: &'static RtApi) -> bool`, which starts
-//! its thread (false if it can't: [`RtApi::compatible`] fails, or the thread doesn't start).
+//! its thread (false if the thread doesn't start).
 //! Everything else goes through the [`RtApi`]: the JIT reads the handlers' addresses from
 //! it, takes queued records with [`RtApi::next_batch`], and reports each with
 //! [`RtApi::done`]. Records, images and code are shared memory in the layout of
@@ -15,10 +15,6 @@
 
 use crate::Opcode;
 use crate::image::JitRecord;
-
-/// The version of [`RtApi`] and of the protocol around it. Bumped on every incompatible
-/// change; the JIT refuses to start on a mismatch ([`RtApi::compatible`]).
-pub const JIT_ABI_VERSION: u32 = 3;
 
 /// The counter of a compiled function ([`JitRecord::ctr`]): far enough below 0 that the
 /// counter checks' `sub`s keep it negative (every check takes its stub) for 2^58 calls. Not
@@ -57,12 +53,6 @@ pub const JIT_CHECK: u32 = 64;
 /// What the runtime gives the JIT: built once, before the JIT starts, and never changed.
 #[repr(C)]
 pub struct RtApi {
-    /// [`JIT_ABI_VERSION`].
-    pub abi: u32,
-    /// [`crate::FORMAT_VERSION`]: both sides read images with their own copy of this crate.
-    pub format: u32,
-    /// `size_of::<RtApi>()`.
-    pub size: u32,
     /// [`JIT_SYNC`], [`JIT_LOG`], [`JIT_PERFMAP`], [`JIT_TEST_PANIC`], [`JIT_OPT_SSA_NAIVE`],
     /// [`JIT_OPT_SSA`], [`JIT_CHECK`].
     pub flags: u32,
@@ -92,14 +82,6 @@ pub struct RtApi {
 
 // SAFETY: immutable once built; the pointers are code addresses.
 unsafe impl Sync for RtApi {}
-
-impl RtApi {
-    /// Whether this side can use `self`: the same interface and format versions. Reads only
-    /// the first three fields, which every version keeps.
-    pub fn compatible(&self) -> bool {
-        self.abi == JIT_ABI_VERSION && self.format == crate::FORMAT_VERSION && self.size as usize == core::mem::size_of::<RtApi>()
-    }
-}
 
 /// The name of the JIT's one exported symbol.
 pub const START_SYMBOL: &str = "ryo_jit_start";

@@ -63,7 +63,7 @@ pub unsafe fn register(headers: *const *const u8, n: usize) {
         // SAFETY: per the caller, `h` is a linked image's header, valid forever.
         let view = match unsafe { Image::from_header(h) } {
             Ok(v) => v,
-            Err(_) => fatal("ryo_vm_register: invalid image (corrupt, or built by another ryo version)"),
+            Err(_) => fatal("ryo_vm_register: invalid image"),
         };
         let hdr = view.header();
         if let Some(o) = done(len).iter().find(|im| im.view.crate_hash() == view.crate_hash()) {

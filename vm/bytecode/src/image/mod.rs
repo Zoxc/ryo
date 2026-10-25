@@ -149,23 +149,21 @@ pub struct Span {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Header {
     pub magic: [u8; 8],
-    /// [`FORMAT_VERSION`](crate::FORMAT_VERSION).
-    pub version: u32,
     /// [`crate_hash`] of `stable_crate_id`.
     pub crate_hash: u32,
+    /// Size of the read-only section in bytes.
+    pub size: u32,
     pub stable_crate_id: u64,
     /// Address of the writable section (relocated; 0 in the unlinked bytes).
     pub data: u64,
-    /// Size of the read-only section in bytes.
-    pub size: u32,
     /// Size of the writable section in bytes.
     pub data_size: u32,
-    /// `[FuncEntry]`.
-    pub functions: Span,
-    /// Address of the text section (relocated; 0 in the unlinked bytes).
-    pub text: u64,
     /// Size of the text section in bytes.
     pub text_size: u32,
+    /// Address of the text section (relocated; 0 in the unlinked bytes).
+    pub text: u64,
+    /// `[FuncEntry]`.
+    pub functions: Span,
     /// The code constants (bytes).
     pub code_consts: Span,
     /// `[FixupEntry]`.
@@ -330,8 +328,6 @@ pub enum ImageError {
     /// The image or one of its parts is misaligned.
     Misaligned,
     BadMagic,
-    /// The image was written for another format version.
-    Version(u32),
     /// A part lies outside the read-only section.
     OutOfBounds(&'static str),
     /// The function table isn't sorted, or a function's code is out of range.
@@ -394,9 +390,6 @@ impl<'a> Image<'a> {
         let header = unsafe { &*bytes.as_ptr().cast::<Header>() };
         if header.magic != MAGIC {
             return Err(ImageError::BadMagic);
-        }
-        if header.version != crate::FORMAT_VERSION {
-            return Err(ImageError::Version(header.version));
         }
         if (header.size as usize) > bytes.len() {
             return Err(ImageError::Truncated);

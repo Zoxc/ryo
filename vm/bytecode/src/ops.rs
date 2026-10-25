@@ -1,7 +1,7 @@
 // The opcode list: the single source of truth for the instruction set (design/instructions.md).
 // Each entry: `Variant = "mnemonic" shape { operand: Kind, ... }`, operands in order. Kinds
 // and shapes are documented in full.rs. Opcode values are assigned in list order, so any
-// edit here changes the encoding: bump `FORMAT_VERSION` in lib.rs.
+// edit here changes the encoding.
 //
 // Conventions: `d` destination slot, `s`/`a`/`b` source slots, `m` memory operand, `p` a
 // slot holding a pointer, `o` the flag slot of overflow ops and compare-exchange, `t` branch

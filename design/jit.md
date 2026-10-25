@@ -92,7 +92,7 @@ section; its fields and the counter checks and stubs that use it are in
 - **The thread** starts with the first push (a flag swapped once), not at registration,
   which runs in constructors and under the loader lock: the push builds the `RtApi` and
   calls `ryo_jit_start`, which spawns the thread (`ryo-jit`) with the JIT's own std. If it
-  can't start (it returns false, as on PE for now, or on an `RtApi` version mismatch),
+  can't start (it returns false, as on PE for now, or if the thread doesn't spawn),
   every queued record fails (its waiters woken) and the trips act as the no-op JIT. It
   takes the queue with `RtApi::next_batch` (which sleeps on the futex while it is empty),
   compiles each record, catching its panics, and reports it with `RtApi::done` (counted, or
@@ -407,7 +407,7 @@ only it, and is unchanged).
   the stack, `vm/rt/tests/reg_entries.rs` runs every entry against its frame entry on random
   operands.
 - **Interface**: `RtApi::reg_handlers` gives their addresses (null without one), the JIT
-  relocates `Ref::RegHandler` against it (`JIT_ABI_VERSION` 3), and `RYO_JIT_DUMP` names them
+  relocates `Ref::RegHandler` against it, and `RYO_JIT_DUMP` names them
   `ryo_hr_<Opcode>`.
 - **Use**: the builder makes a handler call `hcall.reg` when the handler has a register
   entry and every frame operand is a promoted variable; otherwise (an operand in a memory
@@ -439,7 +439,7 @@ only it, and is unchanged).
 
 - The tier lives in `ryo_bytecode::jit` (testable without the runtime, next to the
   decoder).
-- Island operand extents come from `Lend` scopes in the image (`FORMAT_VERSION` 21); an
+- Island operand extents come from `Lend` scopes in the image; an
   island operand without one makes the function `Unsupported`.
 - Allocas escaped at a cyclic head are pinned (one code version); a separate OSR version
   that pins nothing is the follow-up.
@@ -465,10 +465,10 @@ rlib bundles (`build/src/jit.rs`, [build.md](build.md#build)):
 
 - **Interface** (`ryo_bytecode::jit_abi`, `core` only, so neither crate depends on the
   other): `extern "C" fn ryo_jit_start(rt: &'static RtApi) -> bool`, the JIT's only symbol,
-  and `RtApi`, which the runtime builds once, at the first push:
+  and `RtApi`, which the runtime builds once, at the first push. Neither carries a version:
+  the JIT is built with the runtime ([version-matched](vm.md#image-format)).
   | Field | |
   |---|---|
-  | `abi`, `format`, `size` | `JIT_ABI_VERSION`, `FORMAT_VERSION` and `size_of::<RtApi>()`, checked by `RtApi::compatible`: on a mismatch the start fails |
   | `flags` | `JIT_SYNC`, `JIT_LOG`, `JIT_PERFMAP`, `JIT_TEST_PANIC`, `JIT_OPT_SSA`, `JIT_OPT_SSA_NAIVE`, `JIT_CHECK` ([Settings](#settings)) |
   | `probe` | `ryo_probe_stack`'s address |
   | `personality` | the program's `rust_eh_personality`'s address, by which the JIT finds an image's personality slot |

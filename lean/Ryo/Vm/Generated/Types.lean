@@ -11,9 +11,6 @@ indexed by them.
 
 namespace Ryo.Vm
 
-/-- `ryo_bytecode::FORMAT_VERSION`, which the tables were generated at. -/
-def formatVersion : Nat := 23
-
 /-- `full::ElemKind`: the element of a list operand. -/
 inductive ElemKind where
   | target
