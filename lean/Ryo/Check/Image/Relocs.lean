@@ -16,7 +16,7 @@ whose unrelocated displacement leaves the function for a function's first byte. 
 `Fields.relocs` `decodeItem` accepts an item only if the relocations starting in its bytes are
 exactly its own fields' (`Cursor.encodedAt`), padding and jump table entries only without
 any, and the R decoder only takes each form's references (handlers and the probe for `call`,
-addresses for `lea`, a slot for `call [rip + x]`, the record's counter for `sub`). So if this
+addresses for `lea`, a slot for `call [rip + x]`, the record's counters for `inc`). So if this
 decode succeeds and gives the same R code as the linked one, every relocation starting inside
 an item is that item's field, of a kind its form takes. What the items don't cover (the
 `int3`s before a jump table) is covered by the field bytes check: a relocated field's bytes
@@ -30,8 +30,9 @@ pool offsets, against one of the image's symbols, or into the pool or the data a
 else. That a pool pointer is the allocation's provenance is the pool check
 (`Ryo/Check/Image/Pool.lean`).
 
-**Writable section**: the JIT records (with counters, one per function): `ctr` =
-`JIT_THRESHOLD`, `func` its index, every other byte 0; `entry` and `osr` relocated
+**Writable section**: the JIT records (with counters, one per function): `ctr_e` =
+`-JIT_ENTRY_THRESHOLD` (at 0), `ctr_l` = `-JIT_THRESHOLD` (at `JIT_LOOP_CTR`), `func` its
+index, every other byte 0; `entry` and `osr` relocated
 (`R_X86_64_64` + 0) against `ryo_jit_trip_entry` and `ryo_jit_trip_osr`, `header` against the
 image's header; data-area pointers as the pool's; nothing in the site cache.
 
@@ -245,14 +246,15 @@ def checkDataRelocs (o : ImageObject) : Array String := Id.run do
     for fld in [jitEntrySlot, jitOsrSlot, jitHeaderOff] do
       let n := seen.getD (k, fld) 0
       if n != 1 then out := out.push s!"JIT record {k}: {n} relocations at record offset {fld}"
-    match readI64 db base with
-    | .ok c => if c != jitThreshold then out := out.push s!"JIT record {k}: ctr {c}, not {jitThreshold}"
-    | .error e => out := out.push s!"JIT record {k}: {e}"
+    for (name, off, want) in [("ctr_e", 0, -(jitEntryThreshold : Int)), ("ctr_l", jitLoopCtrOff, -(jitThreshold : Int))] do
+      match readI64 db (base + off) with
+      | .ok c => if c != want then out := out.push s!"JIT record {k}: {name} {c}, not {want}"
+      | .error e => out := out.push s!"JIT record {k}: {e}"
     match readU32 db (base + jitFuncOff) with
     | .ok v => if v != k then out := out.push s!"JIT record {k}: func {v}"
     | .error e => out := out.push s!"JIT record {k}: {e}"
-    if !allBytes db (base + 8) (jitFuncOff - 8) 0 || !allBytes db (base + jitHeaderOff) 24 0 then
-      out := out.push s!"JIT record {k}: nonzero bytes besides ctr and func"
+    if !allBytes db (base + 8) (jitFuncOff - 8) 0 || !allBytes db (base + jitHeaderOff) (jitLoopCtrOff - jitHeaderOff) 0 then
+      out := out.push s!"JIT record {k}: nonzero bytes besides the counters and func"
   return out
 
 /-! ## Header, sections, the anchor, `__ryo_main` -/

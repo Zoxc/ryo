@@ -265,7 +265,7 @@ follows the decoder's structure:
   certificate; stores into an object escaped at a later pointer access only along other
   paths (the escape dataflow is path-insensitive); and stale bytes a whole-object copy moves
   but nothing uses.
-- **Counters and stubs**: `sub [rip+ctr], k; js stub` followed by the stub
+- **Counters and stubs**: `inc [rip+ctr_e|ctr_l]; jns stub` followed by the stub
   `lea r11,[rip+rec]; …; call [r11+8|16]; jmp back` refines a no-op, given the trip contract
   ([jit.md](jit.md) §E.2). Counter memory is runtime-owned: excluded from the program's
   memory relation.
@@ -339,7 +339,7 @@ and "decode" mean §C1/§C2; the rest are new checks in `Ryo/Check/Image/`, run 
 | **Function symbols and the function table** | each `FuncEntry` (`code_off`, `code_len`) covers exactly the code that was decoded, in table order; each function symbol (global or local) is at its entry's `code_off` with its `code_len`; the symbol name is the dump's `tcx.symbol_name` for that instance; `arg_size`, `ret_size`, `ret_kind` agree with the signature's `ArgPlan`; the instruction-list and call-site spans are the ones decode used. The runtime and JIT read these, so check them, don't trust them | — |
 | **Relocations** of the text and the read-only section | every relocated field the decoder met has a relocation of the kind its form needs (`Call32` → `ryo_h_<h>` or `ryo_probe_stack`; `Pc32` → a symbol slot, pool offset, data/record offset, rodata; `Abs64` for the header's `text`/`data`, pool pointers, JIT-record initial values → the trip entry points); no relocation outside such fields; names resolve as C1' requires (`Sym s` slot ↔ the callee's symbol) | the linker applies them (see "Linked binary" below) |
 | **Symbol slots** (`[u64]`, RELRO) | each slot has exactly one `Abs64` relocation against the symbol `name(s)`, and `SYM_INDIRECT` flags are clear (ELF) | `ld.so` fills them and RELRO makes them read-only after loading |
-| **JIT records** (writable: `ctr`, `entry`/`osr`) | initial counter values, and `Abs64` relocations of `entry`/`osr` to `ryo_jit_trip_entry`/`_osr` | runtime-owned memory, outside the program's memory relation |
+| **JIT records** (writable: `ctr_e`/`ctr_l`, `entry`/`osr`) | initial counter values, and `Abs64` relocations of `entry`/`osr` to `ryo_jit_trip_entry`/`_osr` | runtime-owned memory, outside the program's memory relation |
 | Image header | parsed by the Lean image reader; `text`/`data` relocations checked | `Image::validate` at registration is runtime code (it only rejects) |
 | **`.eh_frame` FDEs** (required) | each VM function has exactly one FDE covering `[code_off, +code_len)`, and its rows match what the decoded prologue/epilogue do in that mode (`image::eh_fde`: CFA and saved `rbp`/return address at each prologue position). A handful of fixed shapes per mode, so the check is cheap; it turns the CFI assumption into "the unwinder implements DWARF CFI" | the unwinder |
 | `.gcc_except_table` LSDAs | parsed in Lean, checked against the image's call-site table, the decoded `lpad` stubs and C1''s unwind actions | the personality routine |
@@ -379,9 +379,9 @@ between functions added as `Ref.func` fields), which must succeed and agree with
 decode, so every relocation is a field of the form that takes it; relocated fields 0; the
 read-only section's relocations only the header's `data`/`text`, one per symbol slot
 (`SYM_INDIRECT` clear) and 8-aligned pool pointers to the image's symbols, the pool or the
-data area; the JIT records (`ctr`, `func`, zeros, `entry`/`osr`/`header` relocations); the
-header (image symbol from `stable_crate_id`, `crate_hash`, section sizes, RELRO); the anchor;
-`__ryo_main` (one slot naming one of the image's functions or an undefined symbol).
+data area; the JIT records (`ctr_e` = −625, `ctr_l` = −10000, `func`, zeros,
+`entry`/`osr`/`header` relocations); the header (image symbol from `stable_crate_id`,
+`crate_hash`, section sizes, RELRO); the anchor; `__ryo_main` (one slot naming one of the image's functions or an undefined symbol).
 Registry: the constructor decoded with `decodeX` from its relocations, `.init_array.00000`,
 the list, and per link each image symbol listed once, at most one `__ryo_main`. Unwind: the
 CIE (`zPLR`, entry rules, the personality through the slot naming `rust_eh_personality`), one

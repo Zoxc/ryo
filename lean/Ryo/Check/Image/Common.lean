@@ -25,13 +25,16 @@ def registerName : String := "ryo_vm_register"
 def isRtSymbol (base name : String) : Bool :=
   name == base || name.endsWith (toString base.length ++ base)
 
-/-- `image::JIT_THRESHOLD`, `JIT_ENTRY_SLOT`, `JIT_OSR_SLOT`, and the offsets of
-`JitRecord::func` and `JitRecord::header`. -/
+/-- `image::JIT_THRESHOLD` (the loop counter `ctr_l` starts at its negation),
+`JIT_ENTRY_THRESHOLD` (likewise the call counter `ctr_e`), `JIT_ENTRY_SLOT`, `JIT_OSR_SLOT`,
+the offsets of `JitRecord::func` and `JitRecord::header`, and `JIT_LOOP_CTR` (`ctr_l`'s). -/
 def jitThreshold : Nat := 10000
+def jitEntryThreshold : Nat := jitThreshold / 16
 def jitEntrySlot : Nat := 8
 def jitOsrSlot : Nat := 16
 def jitFuncOff : Nat := 36
 def jitHeaderOff : Nat := 40
+def jitLoopCtrOff : Nat := 56
 
 /-- `asm::RET_SRET`. -/
 def RET_SRET : Nat := 2 ^ 31

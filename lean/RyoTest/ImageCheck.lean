@@ -197,7 +197,9 @@ def imageParts (resolve : Bool := true) (lsda0 : Array CallSite := #[site0]) : P
   let lsda0 := (Lsda.write lsda0).toList
   let lsda1 := (Lsda.write #[]).toList
   let (eh, ehRels) := ehFrame [(0, c0.length, frameSize, 0), (f1Off, c1.length, 0, lsda0.length)]
-  let record (i : Nat) : List UInt8 := le 8 jitThreshold ++ List.replicate 28 0 ++ le 4 i ++ List.replicate 24 0
+  let record (i : Nat) : List UInt8 :=
+    le 8 (2 ^ 64 - jitEntryThreshold) ++ List.replicate 28 0 ++ le 4 i ++ List.replicate 16 0 ++
+      le 8 (2 ^ 64 - jitThreshold)
   let data := List.replicate recOff 0 ++ record 0 ++ record 1
   let secs : Array Sec := #[
     { name := ".data.rel.ro.ryo_image", flags := 3, data := ro, align := 16 },
@@ -286,7 +288,8 @@ def imageNegative : Except String Unit := do
   expectMismatch { p2 with rels := p2.rels.push ⟨3, callField, 3, Elf.R_X86_64_PC32, (f1Off : Int) - 4⟩ }
     "calls between functions carry none"
   -- A JIT record's counter, the trip entry's relocation.
-  expectMismatch (p.poke 2 recOff 5) "ctr 5"
+  expectMismatch (p.poke 2 recOff 5) "ctr_e"
+  expectMismatch (p.poke 2 (recOff + 56) 5) "ctr_l"
   expectMismatch { p with rels := p.rels.filter (fun r => !(r.sec == 2 && r.off == recOff + 8)) } "JIT record 0"
   -- The symbol slot's relocation, twice; its flag set.
   expectMismatch { p with rels := p.rels.push ⟨1, slotOff, 7, Elf.R_X86_64_64, 0⟩ } "symbol slot 0: 2 relocations"

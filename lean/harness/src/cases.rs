@@ -502,10 +502,17 @@ impl Gen<'_> {
                     let v = self.val();
                     self.put64(off, v);
                 }
-                let k = self.imm32() as i8;
-                self.c.refs.push((r#""recordCtr""#.into(), (self.data + off as u64).wrapping_sub(1)));
-                self.item(format!(r#"{{"ctrSub":{{"k":{k}}}}}"#));
-                "ctrSub".into()
+                // `inc qword [rip + record]` or `[rip + record + 56]` (the loop counter).
+                let lp = self.rng.chance(1, 2);
+                let a = self.data + off as u64;
+                if lp {
+                    self.c.refs.push((r#""record""#.into(), a.wrapping_sub(56)));
+                    self.c.refs.push((r#""recordLoopCtr""#.into(), a));
+                } else {
+                    self.c.refs.push((r#""record""#.into(), a));
+                }
+                self.item(format!(r#"{{"ctrInc":{{"loop":{lp}}}}}"#));
+                format!("ctrInc.{}", if lp { "loop" } else { "entry" })
             }
             17 => {
                 let p = self.pad();
