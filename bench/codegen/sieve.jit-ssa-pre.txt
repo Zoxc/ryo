@@ -252,7 +252,9 @@ a33: $-72, 1 bytes, Promoted
 a34: $-64, 8 bytes, Promoted
 a35: $-56, 24 bytes, Memory, pinned, escaped
 a36: $-32, 8 bytes, Promoted
-a37: $-24, 24 bytes, Memory
+a37: $-24, 8 bytes, Promoted
+a38: $-16, 8 bytes, Promoted
+a39: $-8, 8 bytes, Promoted
 b0(v0:8, v1:8): ; Entry
     v3:8, v4:1 = Ovf(Add, false, 8) (v1, 0x1)
     br v4 ? b1() : b2()
@@ -276,7 +278,7 @@ b3(): ; Body
 b4(): ; Body
     Store(1, 0) (v17, 0x0)
     jmp b5(0x2, v1, v0)
-b5(v21:8, v26:8, v60:8): ; Body head 0
+b5(v21:8, v26:8, v63:8): ; Body head 0
     v22:8, v23:1 = Ovf(Mul, false, 8) (v21, v21)
     br v23 ? b6() : b8()
 b6(): ; Body
@@ -294,7 +296,7 @@ b9(): ; Body
     invoke -> b39() unwind b40()
 b10(): ; Body
     v31:1 = Load(1, 0) (v29)
-    br v31 ? b11() : b21(v21, v26, v60)
+    br v31 ? b11() : b21(v21, v26, v63)
 b11(): ; Body
     v32:8, v33:1 = Ovf(Mul, false, 8) (v21, v21)
     br v33 ? b12() : b14()
@@ -305,9 +307,9 @@ b12(): ; Body
 b13(): ; Body
     trap
 b14(): ; Body
-    jmp b15(v32, v26, v21, v60)
-b15(v36:8, v37:8, v43:8, v63:8): ; Body head 1
-    br LtU.w8 v37, v36 ? b21(v43, v37, v63) : b16()
+    jmp b15(v32, v26, v21, v63)
+b15(v36:8, v37:8, v43:8, v66:8): ; Body head 1
+    br LtU.w8 v37, v36 ? b21(v43, v37, v66) : b16()
 b16(): ; Body
     v38:8 = AllocaAddr(AllocaId(35), 0) ()
     v39:8 = RefAddr(k13, false) ()
@@ -324,8 +326,8 @@ b18(): ; Body
 b19(): ; Body
     trap
 b20(): ; Body
-    jmp b15(v44, v37, v43, v63)
-b21(v52:8, v59:8, v62:8): ; Body
+    jmp b15(v44, v37, v43, v66)
+b21(v52:8, v59:8, v65:8): ; Body
     v53:8, v54:1 = Ovf(Add, false, 8) (v52, 0x1)
     br v54 ? b22() : b24()
 b22(): ; Body
@@ -335,36 +337,40 @@ b22(): ; Body
 b23(): ; Body
     trap
 b24(): ; Body
-    jmp b5(v53, v59, v62)
+    jmp b5(v53, v59, v65)
 b25(): ; Body
-    hcall copy [(Fp, [None, None]), (Imm(4294967272), [Some(Alloca(AllocaId(37), 0)), None]), (Imm(4294967240), [Some(Alloca(AllocaId(35), 0)), None]), (Imm(24), [None, None])] ins [] outs [] ()
-    hcall store.copy [(Fp, [None, None]), (Imm(4294966960), [Some(Scratch(0)), None]), (Imm(0), [None, None]), (Imm(4294967272), [Some(Alloca(AllocaId(37), 0)), None]), (Imm(24), [None, None])] ins [0] outs [] (v60)
-    ret 0x8 (v60)
+    v60:8 = ALoad(AllocaId(35), 0, 8) ()
+    v61:8 = ALoad(AllocaId(35), 8, 8) ()
+    v62:8 = ALoad(AllocaId(35), 16, 8) ()
+    Store(8, 0) (v63, v60)
+    Store(8, 8) (v63, v61)
+    Store(8, 16) (v63, v62)
+    ret 0x8 (v63)
 b26(): ; Body head 2
-    v65:8 = AllocaAddr(AllocaId(35), 0) ()
-    Call(Call { target: fn19, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: true } }) (v65)
+    v68:8 = AllocaAddr(AllocaId(35), 0) ()
+    Call(Call { target: fn19, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: true } }) (v68)
     invoke -> b49() unwind b50()
 b27(): ; Body
-    hcall resume [(Fp, [None, None]), (Imm(4294966968), [Some(Scratch(0)), None])] ins [0] outs [] (v68)
+    hcall resume [(Fp, [None, None]), (Imm(4294966968), [Some(Scratch(0)), None])] ins [0] outs [] (v71)
     trap
 b28(): ; Body head 3
     Call(Call { target: sym20, regs: [], parts: [], site: None }) ()
     trap
-b29(v68:8): ; Body
+b29(v71:8): ; Body
     jmp b26()
 b30(): ; Body
     jmp b28()
 b31(): ; Osr(0)
     v57:8 = OsrLoad(-120, 8) ()
     v58:8 = OsrLoad(-32, 8) ()
-    v61:8 = OsrLoad(-336, 8) ()
-    jmp b5(v57, v58, v61)
+    v64:8 = OsrLoad(-336, 8) ()
+    jmp b5(v57, v58, v64)
 b32(): ; Osr(1)
     v48:8 = OsrLoad(-208, 8) ()
     v49:8 = OsrLoad(-32, 8) ()
     v50:8 = OsrLoad(-120, 8) ()
-    v64:8 = OsrLoad(-336, 8) ()
-    jmp b15(v48, v49, v50, v64)
+    v67:8 = OsrLoad(-336, 8) ()
+    jmp b15(v48, v49, v50, v67)
 b33(): ; Body
     jmp b3()
 b34(): ; Stub
@@ -408,7 +414,7 @@ b48(): ; Stub
 b49(): ; Body
     jmp b27()
 b50(): ; Stub
-    v66:8 = LandingPad ()
+    v69:8 = LandingPad ()
     jmp b30()
 
 fn std::clone::impls::<impl std::clone::Clone for bool>::clone

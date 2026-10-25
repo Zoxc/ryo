@@ -56,8 +56,17 @@ pub enum Bin {
 pub enum Kind {
     /// `d = s` (`w` up to 8): accesses `s` read, `d` write.
     Mov(u8),
-    /// `mov.w128`: `s` block, `d` block.
-    Mov128,
+    /// A small block copy (`copy`, `zero`, `load.copy`, `store.copy`, `mov.w128`,
+    /// `load.w128`, `store.w128` of up to [`MAX_COPY`] bytes), done as `pieces` (offsets in
+    /// the block, widths) of plain loads and stores: every piece is read before any is
+    /// written, so overlap is exact. Accesses: the pointer slot (with a `Mem` side) read,
+    /// then a frame source's pieces read, then a frame destination's pieces written.
+    Copy {
+        len: u32,
+        dst: Side,
+        src: Side,
+        pieces: Vec<(u32, u8)>,
+    },
     /// `d = imm`: `d` write.
     Imm(u8, u64),
     /// `d = [p + k]`: `p` read, `d` write.
@@ -135,6 +144,24 @@ pub enum Kind {
     /// `unreachable`: a `ud2`.
     Unreachable,
 }
+
+/// One side of a [`Kind::Copy`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Side {
+    /// The frame bytes at this offset.
+    Frame(i32),
+    /// Memory at the pointer slot's value plus this displacement.
+    Mem(i32),
+    /// Zeros (a source only).
+    Zero,
+}
+
+/// The longest block copy done as loads and stores; longer ones call their handler.
+pub const MAX_COPY: u32 = 64;
+
+/// The most pieces a copy is cut into along the other accesses' boundaries; past it, it is
+/// cut into 8-byte pieces.
+const MAX_PIECES: usize = 16;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Then {
@@ -272,6 +299,117 @@ fn arg_list(a: &[u32], accs: &mut Vec<Acc>, regs: &mut Vec<ArgReg>) -> Result<()
     Ok(())
 }
 
+/// A handler call that is a small block copy: its length, destination, source and the
+/// pointer slot of its `Mem` side. Frame sides must stay clear of the return address.
+fn small_copy(h: full::Opcode, args: &[Arg], l: &asm::Layout) -> Option<(u32, Side, Side, Option<i32>)> {
+    let info = h.info();
+    let m = info.mnemonic;
+    let reg = |name: &str, part: u8| -> Option<u64> {
+        let loc = l.locs[info.operand_index(name)?];
+        let Arg::Imm(v) = *args.get((loc.reg + part) as usize)? else { return None };
+        Some(if loc.shared { (v >> loc.shift) as u32 as u64 } else { v })
+    };
+    let slot = |name: &str| Some(reg(name, 0)? as u32 as i32);
+    let disp = || Some(reg("m", 1)? as u32 as i32);
+    let (len, dst, src, p) = match m {
+        "copy" => (reg("len", 0)? as u32, Side::Frame(slot("d")?), Side::Frame(slot("s")?), None),
+        "zero" => (reg("len", 0)? as u32, Side::Frame(slot("d")?), Side::Zero, None),
+        "load.copy" => (reg("len", 0)? as u32, Side::Frame(slot("d")?), Side::Mem(disp()?), Some(slot("m")?)),
+        "store.copy" => (reg("len", 0)? as u32, Side::Mem(disp()?), Side::Frame(slot("s")?), Some(slot("m")?)),
+        "load.w128" => (16, Side::Frame(slot("d")?), Side::Mem(disp()?), Some(slot("m")?)),
+        "store.w128" => (16, Side::Mem(disp()?), Side::Frame(slot("s")?), Some(slot("m")?)),
+        _ => return None,
+    };
+    let clear = |s: Side| match s {
+        Side::Frame(o) => !((o as i64) < 16 && o as i64 + len as i64 > 0),
+        _ => true,
+    };
+    (len != 0 && len <= MAX_COPY && clear(dst) && clear(src)).then_some((len, dst, src, p))
+}
+
+/// Cuts the small copies into pieces and gives them their frame accesses. The cuts follow
+/// the boundaries of the other scalar accesses of the same frame bytes, carried across
+/// frame-to-frame copies, so that a copied aggregate's fields stay the variables the rest of
+/// the code reads and writes (and promote).
+fn cut_copies(insns: &mut [RInsn]) {
+    use alloc::collections::BTreeSet;
+    let mut cuts: BTreeSet<i32> = BTreeSet::new();
+    let mut copies = Vec::new();
+    for (i, ri) in insns.iter().enumerate() {
+        if let Kind::Copy { .. } = ri.kind {
+            copies.push(i);
+            continue;
+        }
+        for a in &ri.accs {
+            if matches!(a.how, How::Read | How::Write | How::Update) && matches!(a.size, 1 | 2 | 4 | 8) {
+                cuts.insert(a.off);
+                cuts.insert(a.off + a.size as i32);
+            }
+        }
+    }
+    let frames = |k: &Kind| -> ([Option<i32>; 2], u32) {
+        let Kind::Copy { len, dst, src, .. } = k else { unreachable!() };
+        let f = |s: &Side| if let Side::Frame(o) = s { Some(*o) } else { None };
+        ([f(dst), f(src)], *len)
+    };
+    let rel = |cuts: &BTreeSet<i32>, bases: [Option<i32>; 2], len: u32| -> BTreeSet<u32> {
+        let mut r: BTreeSet<u32> = [0, len].into_iter().collect();
+        for b in bases.into_iter().flatten() {
+            r.extend(cuts.range(b + 1..b + len as i32).map(|&c| (c - b) as u32));
+        }
+        r
+    };
+    // Carry the cuts across frame-to-frame copies, a few rounds (chains of copies).
+    for _ in 0..4 {
+        let mut changed = false;
+        for &i in &copies {
+            let (bases, len) = frames(&insns[i].kind);
+            if bases[0].is_none() || bases[1].is_none() {
+                continue;
+            }
+            let r = rel(&cuts, bases, len);
+            for b in bases.into_iter().flatten() {
+                for &c in &r {
+                    changed |= cuts.insert(b + c as i32);
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    for &i in &copies {
+        let (bases, len) = frames(&insns[i].kind);
+        let r: Vec<u32> = rel(&cuts, bases, len).into_iter().collect();
+        let split = |r: &[u32]| {
+            let mut ps = Vec::new();
+            for w in r.windows(2) {
+                let mut at = w[0];
+                while at < w[1] {
+                    let n = (w[1] - at).min(8);
+                    let n = 1 << (31 - n.leading_zeros());
+                    ps.push((at, n as u8));
+                    at += n;
+                }
+            }
+            ps
+        };
+        let mut pieces = split(&r);
+        if pieces.len() > MAX_PIECES {
+            let r: Vec<u32> = (0..len).step_by(8).chain([len]).collect();
+            pieces = split(&r);
+        }
+        let ri = &mut insns[i];
+        let Kind::Copy { src, dst, pieces: ps, .. } = &mut ri.kind else { unreachable!() };
+        for (s, how) in [(*src, How::Read), (*dst, How::Write)] {
+            if let Side::Frame(o) = s {
+                ri.accs.extend(pieces.iter().map(|&(k, n)| Acc { off: o + k as i32, size: n as u32, how }));
+            }
+        }
+        *ps = pieces;
+    }
+}
+
 /// Classifies the instruction at word `at` of `d`.
 fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode) -> Result<(RInsn, usize), Unsupported> {
     let words = &d.words[at..];
@@ -404,6 +542,11 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode) -> Result<(RInsn,
                 let off = if loc.shared { (v >> loc.shift) as u32 } else { v as u32 } as i32;
                 accs.push(acc(off, 8, How::Write));
                 Kind::Lpad
+            } else if let Some((len, dst, src, p)) = small_copy(h, &args, &l) {
+                if let Some(p) = p {
+                    accs.push(acc(p, 8, How::Read));
+                }
+                Kind::Copy { len, dst, src, pieces: Vec::new() }
             } else {
                 let e = effects(h).ok_or(bad("handler"))?;
                 // The extent of block operands: the lengths the operands give.
@@ -457,10 +600,7 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode) -> Result<(RInsn,
             let s = |name: &str| slot(fop, w, name);
             let im = |name: &str| imm(fop, w, name);
             match first {
-                "mov" if wd == 16 => {
-                    accs.extend([acc(s("s"), 16, How::Block), acc(s("d"), 16, How::BlockWrite)]);
-                    Kind::Mov128
-                }
+                "mov" if wd == 16 => Kind::Copy { len: 16, dst: Side::Frame(s("d")), src: Side::Frame(s("s")), pieces: Vec::new() },
                 "mov" => {
                     accs.extend([acc(s("s"), wd as u32, How::Read), acc(s("d"), wd as u32, How::Write)]);
                     Kind::Mov(wd)
@@ -619,6 +759,7 @@ pub fn decode(d: &Decoded, mode: Mode) -> Result<Code, Unsupported> {
         }
         insns.push(ri);
     }
+    cut_copies(&mut insns);
     for e in &d.cleanup {
         let i = idx(e.offset)? as usize;
         if !insns[i].may_unwind() {

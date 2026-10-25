@@ -8,6 +8,12 @@ remove it once a Lean session has handled it.
   one more load) instead of `hcall.reg`; LVN keys it. Only matters if the Lean model covers
   the SSA tier. Commit: "Give the JIT SSA tier a pure op for rip-relative addresses".
 
+- The JIT's SSA tier decodes `copy`, `zero`, `load.copy`, `store.copy` of up to 64 bytes and
+  `mov.w128`, `load.w128`, `store.w128` as `Kind::Copy`: pieces cut along the other scalar
+  accesses' boundaries, built as plain loads/stores (all reads before all writes) instead of
+  handler calls, so copied aggregates promote. Only matters if the Lean model covers the SSA
+  tier. Commit: "JIT SSA tier: small block copies as loads and stores".
+
 - Split up-counting JIT counters (commit "Split the JIT counters into up-counting call and
   loop counters"), partly applied: the x86 model (`ctrInc`, `Ref.recordLoopCtr` at
   `loopCtr` = 56, linked fields), `decodeReduced`, the image reader's refs, the unwind check

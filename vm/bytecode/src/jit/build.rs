@@ -343,14 +343,37 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
                     let v = s.read(cur, i, 0, *w);
                     s.write(cur, i, 1, v);
                 }
-                Kind::Mov128 => {
-                    let (Res::Mem(sa, so), Res::Mem(da, dof)) = (fr.res[i][0], fr.res[i][1]) else {
-                        return Err(Unsupported("mov.w128 of promoted bytes"));
-                    };
-                    for h in [0, 8] {
-                        let l = s.f.inst(cur, Op::ALoad(sa, so + h, 8), Vec::new(), &[8]);
-                        let v = s.f.result(l);
-                        s.f.inst(cur, Op::AStore(da, dof + h, 8), alloc::vec![v], &[]);
+                Kind::Copy { dst, src, pieces, .. } => {
+                    use super::decode::Side;
+                    let mem = matches!(dst, Side::Mem(_)) || matches!(src, Side::Mem(_));
+                    let p = if mem { Some(s.read(cur, i, 0, 8)) } else { None };
+                    let mut k = mem as usize;
+                    // Every piece read first, then written: exact when the two overlap.
+                    let mut vals = Vec::with_capacity(pieces.len());
+                    for &(off, w) in pieces {
+                        vals.push(match src {
+                            Side::Frame(_) => {
+                                k += 1;
+                                s.read(cur, i, k - 1, w)
+                            }
+                            Side::Mem(d) => {
+                                let l = s.f.inst(cur, Op::Load(w, d + off as i32), alloc::vec![p.unwrap()], &[w]);
+                                s.f.result(l)
+                            }
+                            Side::Zero => s.f.konst(0, w),
+                        });
+                    }
+                    for (&(off, w), v) in pieces.iter().zip(vals) {
+                        match dst {
+                            Side::Frame(_) => {
+                                s.write(cur, i, k, v);
+                                k += 1;
+                            }
+                            Side::Mem(d) => {
+                                s.f.inst(cur, Op::Store(w, d + off as i32), alloc::vec![p.unwrap(), v], &[]);
+                            }
+                            Side::Zero => unreachable!("a zero destination"),
+                        }
                     }
                 }
                 Kind::Imm(w, v) => {
