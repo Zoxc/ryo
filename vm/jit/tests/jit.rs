@@ -364,12 +364,14 @@ fn calls_of_functions_compiled_later() {
     assert_eq!(img.counters(leaf), ctr);
 }
 
-/// `leaf() = where it runs`, through `ret_addr`.
+/// `leaf() = where it runs`, through `ret_addr`. It reads a stack argument (unused), so that
+/// the SSA tier doesn't inline it into its callers: these tests are about calls.
 fn add_leaf(w: &mut ImageWriter, s_ret: Sym) -> Func {
     let mut a = Asm::new();
+    a.i(Insn::MovW64 { d: Slot(-8), s: Slot(16) });
     a.i(Insn::CallSym { d: Slot(-16), sym: s_ret, k: 8, a: List::from_words(&[]) });
     a.ret(Slot(-16), 8);
-    w.add_function(func(a.done(), 16, 0, 8))
+    w.add_function(func(a.done(), 16, 8, 8))
 }
 
 /// `caller(out) = out[0] = leaf(), out[1] = where it runs` (out@16), `leaf` through the

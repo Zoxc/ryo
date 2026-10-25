@@ -1,6 +1,7 @@
-//! Same-image inlining in the SSA tier (design/jit.md, "Inlining"): direct calls of
-//! functions of the root's image are replaced by copies of their IR, so that one JIT unit
-//! runs the root and the callees it decides on in one frame.
+//! Inlining in the SSA tier (design/jit.md, "Inlining"): calls of VM functions (of the
+//! root's image directly, of any image through a symbol) are replaced by copies of their IR,
+//! so that one JIT unit runs the root and the callees it decides on in one frame. Another
+//! image's callee is first put in the root's image's terms ([`rebase`]).
 //!
 //! - **Exploration**: from the root, its direct calls by weight, each callee's optimized IR
 //!   from the JIT's cache ([`Env::ir`]), to a depth and an IR budget, skipping what can't be
@@ -24,22 +25,114 @@ use alloc::vec::Vec;
 use core::fmt::Write;
 
 use super::ir::*;
-use crate::full::{Func as FuncIdx, Opcode};
+use crate::asm::Ref;
+use crate::full::{Func as FuncIdx, Opcode, Sym};
+use crate::reduced::Arg;
+
+/// An image, by its header's address: opaque to the inliner.
+pub type ImageId = usize;
+
+/// A VM function: its image and its index there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct VmFunc {
+    pub img: ImageId,
+    pub func: FuncIdx,
+}
+
+impl VmFunc {
+    fn key(self) -> (usize, u32) {
+        (self.img, self.func.0)
+    }
+}
 
 /// What the inliner needs from the JIT.
+///
+/// The unit's IR names functions, symbols, constants, data and site caches of the root's
+/// image (or the JIT's call forms, [`Env::retarget`]); a callee of another image is
+/// [`rebase`]d into those terms before it is explored.
 pub trait Env {
-    /// The root's index in its image.
-    fn root(&self) -> FuncIdx;
-    /// Function `g` of the root's image as [`super::ir_of`] gives it, or `None` if it can't
-    /// be built (the JIT caches them).
-    fn ir(&mut self, g: FuncIdx) -> Option<Rc<Func>>;
-    /// The target to call `t` (a function of the image or a symbol) by instead, if any: the
-    /// JIT's call forms (a function operand with an [`crate::asm::FUNC_KINDS`] bit, through a
-    /// call slot, directly, or through `r11`). Not asked for the root's calls of itself.
-    fn retarget(&mut self, t: CallTarget) -> Option<CallTarget>;
+    /// The root.
+    fn root(&self) -> VmFunc;
+    /// Function `g` as [`super::ir_of`] gives it in its image's terms, or `None` if it can't
+    /// be built or its image's mode isn't the root's (the JIT caches them per image).
+    fn ir(&mut self, g: VmFunc) -> Option<Rc<Func>>;
+    /// The VM function a call of the unit with target `t` calls, if known: a function of the
+    /// root's image, a symbol whose slot holds a VM function's entry (of any image), or a
+    /// call form [`Env::retarget`] gave.
+    fn callee(&mut self, t: CallTarget) -> Option<VmFunc>;
+    /// The target to call `t` (a function of image `img` or one of its symbols) by in the
+    /// unit: the JIT's call forms (a function operand with an [`crate::asm::FUNC_KINDS`] bit,
+    /// through a call slot, directly, or through `r11`), or a call of the root itself. For
+    /// the root's image, `None` keeps `t`, as for the root's calls of itself.
+    fn retarget(&mut self, img: ImageId, t: CallTarget) -> Option<CallTarget>;
+    /// The address of `r` (a constant, data area offset, symbol slot or site cache slot) of
+    /// image `img`, and for a symbol the value its slot holds (filled before any VM code
+    /// runs, and never again).
+    fn addr(&self, img: ImageId, r: Ref) -> Option<u64>;
+    fn sym_value(&self, img: ImageId, s: Sym) -> Option<u64>;
     /// How many times function `g`'s AOT code was called and how many loop iterations it
     /// ran (its JIT record's counters), if known.
-    fn counts(&self, g: FuncIdx) -> Option<(u64, u64)>;
+    fn counts(&self, g: VmFunc) -> Option<(u64, u64)>;
+}
+
+/// `c`, a function of image `img`, in the terms of the root's image (design/jit.md,
+/// "Inlining", across images): its constants', data's and site caches' addresses become constants, its
+/// symbols' values constants (loaded through for an indirect one), its calls the JIT's call
+/// forms. An error with what it can't express: islands, calls through a symbol's pointer, code
+/// constant arguments, tail calls.
+pub fn rebase(c: &Func, img: ImageId, env: &mut dyn Env) -> Result<Func, &'static str> {
+    let mut g = c.clone();
+    for b in live_blocks(c) {
+        if matches!(g.blocks[b.idx()].term, Term::TailCall { .. }) {
+            return Err("a tail call");
+        }
+        for k in 0..g.blocks[b.idx()].insts.len() {
+            let i = g.blocks[b.idx()].insts[k];
+            let op = g.insts[i.idx()].op.clone();
+            match op {
+                Op::RefAddr(Ref::Sym(s), ind) => {
+                    let v = env.sym_value(img, s).ok_or("a symbol")?;
+                    let k = g.konst(v, 8);
+                    let id = &mut g.insts[i.idx()];
+                    id.op = if ind { Op::Load(8, 0) } else { Op::PtrAdd(0) };
+                    id.args = alloc::vec![k];
+                }
+                Op::RefAddr(r, _) => {
+                    let a = env.addr(img, r).ok_or("an address")?;
+                    let k = g.konst(a, 8);
+                    let id = &mut g.insts[i.idx()];
+                    id.op = Op::PtrAdd(0);
+                    id.args = alloc::vec![k];
+                }
+                Op::HCall(mut h) => {
+                    for (a, patch) in h.regs.iter_mut() {
+                        let r = match *a {
+                            Arg::Const(x) => Ref::Const(x),
+                            Arg::Data(x) => Ref::Data(x),
+                            Arg::Sym(x) => Ref::Sym(x),
+                            Arg::Site(x) => Ref::Site(x),
+                            Arg::Ro(_) => return Err("a code constant argument"),
+                            _ => continue,
+                        };
+                        *a = Arg::Imm(env.addr(img, r).ok_or("an address")?);
+                        *patch = [None, None];
+                    }
+                    g.insts[i.idx()].op = Op::HCall(h);
+                }
+                Op::Call(mut x) => {
+                    match x.target {
+                        CallTarget::Func(_) | CallTarget::Sym(_) => x.target = env.retarget(img, x.target).ok_or("a call")?,
+                        CallTarget::SymInd(_) => return Err("a call through a symbol's pointer"),
+                        CallTarget::Ptr => {}
+                    }
+                    g.insts[i.idx()].op = Op::Call(x);
+                }
+                Op::Island(_) => return Err("an island"),
+                _ => {}
+            }
+        }
+    }
+    Ok(g)
 }
 
 /// The limits and constants of the heuristic.
@@ -250,7 +343,7 @@ fn protocol(c: &Call) -> f64 {
 
 /// A node of the call tree: a call site and its callee.
 struct Node {
-    func: FuncIdx,
+    func: VmFunc,
     ir: Option<Rc<Func>>,
     /// The call, in the parent's IR.
     site: Inst,
@@ -347,19 +440,25 @@ fn outgoing_pending(f: &Func, site: Inst) -> bool {
     at_site
 }
 
-/// The direct calls of functions of the image in `f`: the call, its callee, its block.
-fn calls(f: &Func) -> Vec<(Inst, FuncIdx, Block)> {
+/// The calls of VM functions in `f` (in the root's image's terms): the call, its callee, its
+/// block.
+fn calls(f: &Func, env: &mut dyn Env) -> Vec<(Inst, VmFunc, Block)> {
     let mut v = Vec::new();
     for &b in &f.layout {
         for &i in &f.blocks[b.idx()].insts {
             if let Op::Call(c) = &f.insts[i.idx()].op
-                && let CallTarget::Func(g) = c.target
+                && let Some(g) = env.callee(c.target)
             {
                 v.push((i, g, b));
             }
         }
     }
     v
+}
+
+/// How the dump names `g`: its index, and its image's for another image's.
+fn name(g: VmFunc, root: VmFunc) -> String {
+    if g.img == root.img { alloc::format!("{}", g.func) } else { alloc::format!("{}@{:x}", g.func, g.img) }
 }
 
 /// A cluster: nodes inlined together.
@@ -401,15 +500,16 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
         children: Vec::new(),
     }];
     // Exploration: the pending sites by weight, heaviest first.
-    let mut pending: Vec<(f64, usize, Inst, FuncIdx, bool)> = Vec::new();
-    let push_sites = |pending: &mut Vec<(f64, usize, Inst, FuncIdx, bool)>, nodes: &[Node], k: usize, g: &Func, sh: &Shape| {
-        for (i, callee, b) in calls(g) {
+    let root = env.root();
+    let mut pending: Vec<(f64, usize, Inst, VmFunc, bool)> = Vec::new();
+    let push_sites = |pending: &mut Vec<(f64, usize, Inst, VmFunc, bool)>, env: &mut dyn Env, nodes: &[Node], k: usize, g: &Func, sh: &Shape| {
+        for (i, callee, b) in calls(g, env) {
             pending.push((nodes[k].weight * sh.weight[b.idx()], k, i, callee, sh.cold[b.idx()]));
         }
     };
-    push_sites(&mut pending, &nodes, 0, f, &root_shape);
+    push_sites(&mut pending, env, &nodes, 0, f, &root_shape);
     let mut expanded = 0.0;
-    let mut trials: Vec<((FuncIdx, Vec<Option<(u64, u8)>>), Rc<Func>)> = Vec::new();
+    let mut trials: Vec<((VmFunc, Vec<Option<(u64, u8)>>), Rc<Func>)> = Vec::new();
     while !pending.is_empty() && nodes.len() < p.nodes {
         let at = (0..pending.len()).max_by(|&a, &b| pending[a].0.total_cmp(&pending[b].0)).unwrap();
         let (weight, parent, site, g, cold) = pending.swap_remove(at);
@@ -440,9 +540,18 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
             s => s,
         };
         let waiting = nodes[parent].pending || outgoing_pending(pf, site);
-        let ir = if why.is_none() { env.ir(g) } else { None };
+        let mut ir = if why.is_none() { env.ir(g) } else { None };
         if why.is_none() && ir.is_none() {
             why = Some("no IR");
+        }
+        // Another image's callee, in the root's image's terms.
+        if let (None, Some(c)) = (why, &ir)
+            && g.img != root.img
+        {
+            match rebase(c, g.img, env) {
+                Ok(r) => ir = Some(Rc::new(r)),
+                Err(w) => why = Some(w),
+            }
         }
         if let (None, Some(c)) = (why, &ir) {
             why = blocker(c, &call, unwind);
@@ -457,7 +566,7 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
             }
             (w, _) => {
                 if let Some(d) = dump.as_deref_mut() {
-                    let _ = writeln!(d, ";   {g} at {site} (depth {depth}): not inlinable: {}", w.unwrap_or("?"));
+                    let _ = writeln!(d, ";   {} at {site} (depth {depth}): not inlinable: {}", name(g, root), w.unwrap_or("?"));
                 }
                 continue;
             }
@@ -507,7 +616,7 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
         };
         if expanded + k_cost > p.expand {
             if let Some(d) = dump.as_deref_mut() {
-                let _ = writeln!(d, ";   {g} at {site} (depth {depth}): over the exploration budget");
+                let _ = writeln!(d, ";   {} at {site} (depth {depth}): over the exploration budget", name(g, root));
             }
             continue;
         }
@@ -530,21 +639,21 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
             children: Vec::new(),
         });
         nodes[parent].children.push(k);
-        push_sites(&mut pending, &nodes, k, &c, &sh);
+        push_sites(&mut pending, env, &nodes, k, &c, &sh);
     }
 
     // The profile raises weights (§2): a callee's share of the root's calls, split over
     // the unit's sites of it by their static weights (there are no samples of call sites).
     let root_counts = env.counts(env.root());
     if let Some((rc, _)) = root_counts.filter(|c| c.0 >= p.min_calls) {
-        let mut sites: BTreeMap<u32, f64> = BTreeMap::new();
+        let mut sites: BTreeMap<(usize, u32), f64> = BTreeMap::new();
         for n in &nodes[1..] {
-            *sites.entry(n.func.0).or_default() += n.weight;
+            *sites.entry(n.func.key()).or_default() += n.weight;
         }
         for k in 1..nodes.len() {
             let Some((gc, _)) = env.counts(nodes[k].func) else { continue };
             let w = nodes[k].weight;
-            let prof = gc as f64 / rc as f64 * w / sites[&nodes[k].func.0];
+            let prof = gc as f64 / rc as f64 * w / sites[&nodes[k].func.key()];
             let raised = prof.min(w * p.raise);
             if raised > w {
                 nodes[k].benefit *= raised / w;
@@ -597,7 +706,7 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
         let bar = p.t1 * libm_exp2((unit + cl.cost) / p.scale);
         let ok = frame + cl.frame <= p.frame && (always || (!nodes[k].cold && cl.ratio() >= bar && unit + cl.cost <= cap));
         if let Some(d) = dump.as_deref_mut() {
-            let names: Vec<String> = cl.members.iter().map(|&m| alloc::format!("{}@{}", nodes[m].func, nodes[m].site)).collect();
+            let names: Vec<String> = cl.members.iter().map(|&m| alloc::format!("{}@{}", name(nodes[m].func, root), nodes[m].site)).collect();
             let _ = writeln!(
                 d,
                 ";   cluster [{}]: benefit {:.1}, cost {:.1}, ratio {:.2}{}: {}",
@@ -631,8 +740,8 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
                     g.verify().map_err(|e| {
                         alloc::format!(
                             "IR after inlining {} into {}: {e}\n{}\n; after\n{g}",
-                            nodes[ch].func,
-                            nodes[k].func,
+                            name(nodes[ch].func, nodes[0].func),
+                            name(nodes[k].func, nodes[0].func),
                             before.unwrap_or_default()
                         )
                     })?;
@@ -649,7 +758,11 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
             splice(f, nodes[ch].site, &sub);
             if check {
                 f.verify().map_err(|e| {
-                    alloc::format!("IR after inlining {} into the root: {e}\n{}\n; after\n{f}", nodes[ch].func, before.unwrap_or_default())
+                    alloc::format!(
+                        "IR after inlining {} into the root: {e}\n{}\n; after\n{f}",
+                        name(nodes[ch].func, root),
+                        before.unwrap_or_default()
+                    )
                 })?;
             }
         }
@@ -950,8 +1063,8 @@ pub fn rebuild_preds(f: &mut Func) {
 pub fn retarget(f: &mut Func, env: &mut dyn Env) {
     let root = env.root();
     let mut new = |t: CallTarget| match t {
-        CallTarget::Func(g) if g == root => None,
-        CallTarget::Func(_) | CallTarget::Sym(_) => env.retarget(t),
+        CallTarget::Func(g) if g == root.func => None,
+        CallTarget::Func(_) | CallTarget::Sym(_) => env.retarget(root.img, t),
         _ => None,
     };
     for b in live_blocks(f) {

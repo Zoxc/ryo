@@ -989,3 +989,74 @@ fn inline_not_between_stack_arguments_and_their_call() {
     let _ = h;
     check_stats(before, 3);
 }
+
+static B_STATIC: AtomicU64 = AtomicU64::new(0);
+
+/// Inlining across images: `f` of image A calls `g` of image B through a symbol slot. `g`,
+/// inlined, keeps naming B's things: its data area, its constant, its symbols (a static, and
+/// `mul3`) and its function `h`, all in B's terms ([`ryo_bytecode::jit::inline::rebase`]).
+#[test]
+fn inline_across_images() {
+    let (_g, before) = start();
+    // Image B. h(x) = 2x. x@-8.
+    let mut w = ImageWriter::new(unique_scid());
+    let s_mul3 = w.symbol("mul3", 0);
+    let s_static = w.symbol("b_static", 0);
+    let k = w.add_const(&1000u64.to_le_bytes(), 8, &[]);
+    let data = w.add_data(&[0; 8], 8, &[], &[]);
+    let mut a = Asm::new();
+    a.i(arg(-8, 0));
+    a.i(Insn::AddW64 { d: Slot(-8), a: Slot(-8), b: Slot(-8) });
+    a.ret(Slot(-8), 8);
+    let h = w.add_function(func(a.done(), 16, 0, 8));
+    // g(x): *data += x; *b_static += 1; ret *k + mul3(x) + h(x) + *data. x@-8, p@-16, t@-24,
+    // r@-32.
+    let mut a = Asm::new();
+    a.i(arg(-8, 0));
+    a.i(Insn::AddrConst { d: Slot(-16), a: Abs::Data(data) });
+    a.i(Insn::LoadW64 { d: Slot(-24), m: Mem { p: Slot(-16), k: 0 } });
+    a.i(Insn::AddW64 { d: Slot(-24), a: Slot(-24), b: Slot(-8) });
+    a.i(Insn::StoreW64 { m: Mem { p: Slot(-16), k: 0 }, s: Slot(-24) });
+    a.i(Insn::AddrSym { d: Slot(-16), sym: s_static });
+    a.i(Insn::LoadW64 { d: Slot(-24), m: Mem { p: Slot(-16), k: 0 } });
+    a.i(Insn::AddImmW64 { d: Slot(-24), a: Slot(-24), imm: 1 });
+    a.i(Insn::StoreW64 { m: Mem { p: Slot(-16), k: 0 }, s: Slot(-24) });
+    a.i(Insn::AddrConst { d: Slot(-16), a: Abs::Const(k) });
+    a.i(Insn::LoadW64 { d: Slot(-32), m: Mem { p: Slot(-16), k: 0 } });
+    a.i(Insn::CallSym { d: Slot(-24), sym: s_mul3, k: 8, a: List::from_words(&regs(&[-8])) });
+    a.i(Insn::AddW64 { d: Slot(-32), a: Slot(-32), b: Slot(-24) });
+    a.i(Insn::Call { d: Slot(-24), f: h, k: 8, a: List::from_words(&regs(&[-8])) });
+    a.i(Insn::AddW64 { d: Slot(-32), a: Slot(-32), b: Slot(-24) });
+    a.i(Insn::AddrConst { d: Slot(-16), a: Abs::Data(data) });
+    a.i(Insn::LoadW64 { d: Slot(-24), m: Mem { p: Slot(-16), k: 0 } });
+    a.i(Insn::AddW64 { d: Slot(-32), a: Slot(-32), b: Slot(-24) });
+    a.ret(Slot(-32), 8);
+    let g = w.add_function(func(a.done(), 32, 0, 8));
+    let mut sy = syms();
+    sy.push(("b_static", &raw const B_STATIC as usize));
+    let img_b = build(w, &sy);
+
+    // Image A. f(x) = g(x) + 1, g through a symbol. x@16; x'@-8, r@-16.
+    let mut w = ImageWriter::new(unique_scid());
+    let s_g = w.symbol("g", 0);
+    let mut a = Asm::new();
+    a.i(Insn::MovW64 { d: Slot(-8), s: Slot(16) });
+    a.i(Insn::CallSym { d: Slot(-16), sym: s_g, k: 8, a: List::from_words(&regs(&[-8])) });
+    a.i(Insn::AddImmW64 { d: Slot(-16), a: Slot(-16), imm: 1 });
+    a.ret(Slot(-16), 8);
+    let f = w.add_function(func(a.done(), 16, 8, 8));
+    let img_a = build(w, &[("g", img_b.code(g) as usize)]);
+
+    let mut acc = 0u64;
+    for (n, x) in [3u64, 10, 1 << 33].into_iter().enumerate() {
+        acc = acc.wrapping_add(x);
+        let want = 1000u64.wrapping_add(x.wrapping_mul(3)).wrapping_add(x.wrapping_mul(2)).wrapping_add(acc).wrapping_add(1);
+        assert_eq!(ok::<_, u64>(img_a.id(f), (x,)), want, "f({x})");
+        assert_eq!(B_STATIC.load(SeqCst), n as u64 + 1, "f({x}): b_static");
+    }
+    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
+        assert_eq!(state(&img_b, g), JIT_COLD, "g inlined into f");
+        assert_eq!(state(&img_b, h), JIT_COLD, "h inlined into f");
+    }
+    check_stats(before, 1);
+}

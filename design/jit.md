@@ -524,7 +524,9 @@ only it, and is unchanged).
 
 ### Inlining
 
-`jit::inline` inlines direct calls of functions of the root's image into the unit, after
+`jit::inline` inlines calls of VM functions into the unit (direct calls of the root's
+image's functions, and calls through symbols whose slots hold a VM function's entry, of
+any image; see "Across images" below), after
 the first round of passes (`jit::compile`: build, `opt::run`, inline, `opt::run`, promote,
 `opt::run`). Nothing is speculated: a direct call's target is fixed, so a unit is never
 rebuilt. The JIT thread caches each callee's IR (built and optimized, by image and
@@ -535,7 +537,8 @@ the units that inline it.
   the cache, down to depth 6, at most 6000 cost units of callee IR and 400 nodes. Not
   inlined: recursion (a function already on the path), tail calls in the callee, stack
   arguments (an incoming area), argument or result registers other than 1, 2, 4 or 8
-  bytes, arguments the call doesn't set, calls through symbols or pointers. A callee with
+  bytes, arguments the call doesn't set, calls through pointers or through symbols that
+  don't hold a VM function's entry. A callee with
   a `resume`, or with landing pads at a catching site, is inlined only where its calls that
   unwind out wouldn't land on the site's landing pad (stage 4 of the inlining plan
   handles those).
@@ -579,6 +582,21 @@ the units that inline it.
   `Env::retarget`): the unit's remaining calls and tail calls of functions and symbols get
   their forms as in [Compiling and installing](#compiling-and-installing) (slot, `rel32`
   or `imm64`).
+- **Across images**: a callee of another image (a dylib's, an rlib's own image, std's) is
+  inlined if its image's mode is the root's (but for counters). Its IR is cached by its
+  image's header and function, and `inline::rebase` puts it in the root's image's terms
+  before it is explored: addresses of its constants, data and site caches (`RefAddr`,
+  handler arguments) become 64-bit constants, a symbol's `RefAddr` the value its slot held
+  when compiling (slots are filled before VM code runs and never again; an indirect one
+  loads through it at run time), its calls of its functions and symbols the JIT's call
+  forms (or a direct call of the root). Callees with islands, calls through a symbol's
+  pointer, code constant arguments (sparse switches) or tail calls aren't inlined across
+  images. Its counters are its own image's records. Unwinding needs nothing more: every
+  image's unwind information names the program's `rust_eh_personality`, which the unit's
+  uses too. Images are never unregistered, so the inlined addresses stay valid; a symbol
+  bound to another image's function is resolved when compiling, as the call forms already
+  are, so interposition after that isn't seen (it isn't supported anywhere in the VM).
+  Call slots are allocated only for the call forms the installed code uses.
 - `RYO_JIT_DUMP` shows the decisions (each cluster with its benefit, cost and outcome, and
   the calls not inlinable and why) and the IR after the splices; `RYO_JIT_CHECK` verifies
   the IR after each splice and after promotion.

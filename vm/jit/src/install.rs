@@ -17,6 +17,7 @@ use ryo_bytecode::asm::{self, FUNC_FAR, FUNC_KINDS, FUNC_NEAR, FUNC_SLOT, Mode, 
 use ryo_bytecode::full::{Const, Data, Func, Site, Sym};
 use ryo_bytecode::image::{EhFunc, Image, ImageResolver, JIT_DONE, JitRecord, eh_cie, eh_fde, eh_fde_rows, jit_count, jit_settle, jit_unbiased};
 use ryo_bytecode::jit;
+use ryo_bytecode::jit::inline::VmFunc;
 use ryo_bytecode::jit::ir::CallTarget;
 use ryo_bytecode::jit_abi::{JIT_CHECK, JIT_ENTRY_PREFIX, JIT_LOG, JIT_OPT_SSA, JIT_OPT_SSA_NAIVE, JIT_TEST_PANIC, RtApi};
 use ryo_bytecode::{Opcode, reduced, vmem};
@@ -200,6 +201,9 @@ struct Ext {
 enum Name {
     Func(u32),
     Sym(u32),
+    /// Another image's function or symbol (inlined code calls it).
+    Other(u32),
+    OtherSym(u32),
 }
 
 /// A callee by what decides how it is called: a VM function with a JIT record (header,
@@ -242,69 +246,131 @@ type IrCache = HashMap<(usize, u32), Option<std::rc::Rc<jit::ir::Func>>>;
 /// At most this many functions' IR stay cached; the cache starts over past it.
 const IR_CACHE_MAX: usize = 4096;
 
-/// What the inliner gets for a compilation: the cache, the image's decoder, and what
+/// What the inliner gets for a compilation: the cache, what decodes functions of any
+/// registered image (images are never unregistered, so their headers stay valid), and what
 /// retargets the unit's calls after inlining ([`callee`]): the region, and the callees.
-struct InlineEnv<'a, 'b> {
+struct InlineEnv<'a> {
     cache: &'a mut IrCache,
-    res: &'a ImageResolver<'b>,
-    text: &'a [u8],
+    handlers: &'a [(usize, Opcode)],
+    probe: usize,
     mode: Mode,
     header: usize,
     root: u32,
-    recs: *mut JitRecord,
-    nrecs: u32,
     thresholds: [i64; 2],
     rt: &'static RtApi,
     place: Place,
-    syms: &'a [u64],
-    nfuncs: u32,
     ext: Vec<Ext>,
     memo: HashMap<Callee, u32>,
+    /// The VM function (image header, function) of each call form `kind | k` given.
+    ext_vm: HashMap<u32, (usize, u32)>,
 }
 
-impl jit::inline::Env for InlineEnv<'_, '_> {
-    fn root(&self) -> Func {
-        Func(self.root)
+/// The registered image whose header is at `header`.
+fn image_of(header: usize) -> Image<'static> {
+    // SAFETY: a registered image's header: registered images stay forever.
+    unsafe { Image::from_header(header as *const u8) }.expect("a registered image")
+}
+
+impl jit::inline::Env for InlineEnv<'_> {
+    fn root(&self) -> VmFunc {
+        VmFunc { img: self.header, func: Func(self.root) }
     }
 
-    fn ir(&mut self, g: Func) -> Option<std::rc::Rc<jit::ir::Func>> {
-        if let Some(f) = self.cache.get(&(self.header, g.0)) {
+    fn ir(&mut self, g: VmFunc) -> Option<std::rc::Rc<jit::ir::Func>> {
+        let img = image_of(g.img);
+        // Another image's code is inlined only if it was encoded as the root's.
+        if (Mode { counters: false, far_rt: self.mode.far_rt, ..img.mode() }) != self.mode {
+            return None;
+        }
+        if let Some(f) = self.cache.get(&(g.img, g.func.0)) {
             return f.clone();
         }
         if self.cache.len() >= IR_CACHE_MAX {
             self.cache.clear();
         }
-        let f = match self.res.decode(g.0, self.text) {
+        let h = img.header();
+        // SAFETY: a registered image's text section.
+        let text = unsafe { core::slice::from_raw_parts(h.text as usize as *const u8, h.text_size as usize) };
+        let res = ImageResolver { image: img, handlers: self.handlers, probe: self.probe };
+        let f = match res.decode(g.func.0, text) {
             Some(Ok(d)) => jit::ir_of(&d, self.mode).ok().map(std::rc::Rc::new),
             _ => None,
         };
-        self.cache.insert((self.header, g.0), f.clone());
+        self.cache.insert((g.img, g.func.0), f.clone());
         f
     }
 
-    fn counts(&self, g: Func) -> Option<(u64, u64)> {
-        (g.0 < self.nrecs).then(|| {
-            let c = counts(self.recs.wrapping_add(g.0 as usize), self.thresholds);
+    fn counts(&self, g: VmFunc) -> Option<(u64, u64)> {
+        let img = image_of(g.img);
+        (g.func.0 < img.header().jit_records.count).then(|| {
+            let c = counts(img.jit_records().wrapping_add(g.func.0 as usize), self.thresholds);
             (c.calls, c.iters)
         })
     }
 
-    fn retarget(&mut self, t: CallTarget) -> Option<CallTarget> {
-        let (c, name) = match t {
-            CallTarget::Func(g) if g.0 < self.nfuncs => (Callee::Vm(self.header, g.0), Name::Func(g.0)),
+    fn callee(&mut self, t: CallTarget) -> Option<VmFunc> {
+        let c = match t {
+            CallTarget::Func(g) if g.0 & FUNC_KINDS != 0 => {
+                let &(h, g) = self.ext_vm.get(&g.0)?;
+                Callee::Vm(h, g)
+            }
+            CallTarget::Func(g) => Callee::Vm(self.header, g.0),
             CallTarget::Sym(Sym(s)) => {
-                let a = self.syms.get(s as usize).copied().unwrap_or(0) as usize;
+                let a = image_of(self.header).symbols().get(s as usize).copied().unwrap_or(0) as usize;
                 if a == 0 {
                     return None;
                 }
-                (vm_callee(self.rt, a).unwrap_or(Callee::Addr(a)), Name::Sym(s))
+                vm_callee(self.rt, a)?
+            }
+            _ => return None,
+        };
+        let Callee::Vm(h, g) = c else { return None };
+        (g < image_of(h).functions().len() as u32).then_some(VmFunc { img: h, func: Func(g) })
+    }
+
+    fn retarget(&mut self, img: usize, t: CallTarget) -> Option<CallTarget> {
+        let im = image_of(img);
+        let (c, name) = match t {
+            CallTarget::Func(g) if g.0 < im.functions().len() as u32 => {
+                (Callee::Vm(img, g.0), if img == self.header { Name::Func(g.0) } else { Name::Other(g.0) })
+            }
+            CallTarget::Sym(Sym(s)) => {
+                let a = im.symbols().get(s as usize).copied().unwrap_or(0) as usize;
+                if a == 0 {
+                    return None;
+                }
+                (vm_callee(self.rt, a).unwrap_or(Callee::Addr(a)), if img == self.header { Name::Sym(s) } else { Name::OtherSym(s) })
             }
             _ => return None,
         };
         if c == Callee::Vm(self.header, self.root) {
-            return None;
+            // The root's own calls of itself stay; another image's become direct ones.
+            return (img != self.header).then_some(CallTarget::Func(Func(self.root)));
         }
-        Some(CallTarget::Func(Func(callee(self.place, c, name, &mut self.ext, &mut self.memo))))
+        let op = callee(self.place, c, name, &mut self.ext, &mut self.memo);
+        if let Callee::Vm(h, g) = c {
+            self.ext_vm.insert(op, (h, g));
+        }
+        Some(CallTarget::Func(Func(op)))
+    }
+
+    fn addr(&self, img: usize, r: Ref) -> Option<u64> {
+        // As `Jit::install` relocates them.
+        let im = image_of(img);
+        let h = im.header();
+        let ro = im.bytes().as_ptr() as usize;
+        let a = match r {
+            Ref::Sym(Sym(s)) if (s as usize) < im.symbols().len() => ro + h.symbols.off as usize + 8 * s as usize,
+            Ref::Site(Site(s)) => h.data as usize + 8 * s as usize,
+            Ref::Const(Const(k)) => ro + h.consts.off as usize + k as usize,
+            Ref::Data(Data(k)) => h.data as usize + h.fixup_area as usize + k as usize,
+            _ => return None,
+        };
+        Some(a as u64)
+    }
+
+    fn sym_value(&self, img: usize, s: Sym) -> Option<u64> {
+        image_of(img).symbols().get(s.0 as usize).copied()
     }
 }
 
@@ -486,8 +552,9 @@ impl Jit {
             };
             let is_self = c == Callee::Vm(header, func);
             if field != 0 && !is_self {
-                if let Callee::Vm(_, g) = c
-                    && g >= img.functions().len() as u32
+                // Of the callee's image: a symbol may name another image's function.
+                if let Callee::Vm(hd, g) = c
+                    && g >= image_of(hd).functions().len() as u32
                 {
                     return Err("function out of range");
                 }
@@ -563,20 +630,17 @@ impl Jit {
             let header = h as *const _ as usize;
             let mut env = InlineEnv {
                 cache: &mut self.ir_cache,
-                res: &res,
-                text,
+                handlers: &self.handlers,
+                probe: self.rt.probe as usize,
                 mode,
                 header,
                 root: func,
-                recs: img.jit_records(),
-                nrecs: h.jit_records.count,
                 thresholds: self.rt.thresholds,
                 rt: self.rt,
                 place,
-                syms: img.symbols(),
-                nfuncs: img.functions().len() as u32,
                 ext: Vec::new(),
                 memo: HashMap::new(),
+                ext_vm: HashMap::new(),
             };
             let r = jit::compile(ds, img.code_consts(), mode, &opts, Some(&mut env));
             let ssa_ext = env.ext;
@@ -699,7 +763,19 @@ impl Jit {
         }
         let header = h as *const _ as usize;
         let start = place.start;
-        let new_slots = ext.iter().filter_map(|e| e.vm).filter(|&(hd, g)| !self.slots.contains_key(&(start, hd, g))).count();
+        // The callees the code calls: the inliner may have given call forms to calls it then
+        // inlined, or of callees it explored only.
+        let mut used = std::vec![false; ext.len()];
+        for r in &relocs {
+            if let Ref::Func(Func(g)) = r.to
+                && g & FUNC_KINDS != 0
+                && let Some(u) = used.get_mut((g & !FUNC_KINDS) as usize)
+            {
+                *u = true;
+            }
+        }
+        let new_slots =
+            ext.iter().zip(&used).filter_map(|(e, &u)| e.vm.filter(|_| u)).filter(|&(hd, g)| !self.slots.contains_key(&(start, hd, g))).count();
         let region = self.regions.iter_mut().find(|r| r.start == start).ok_or(RETRY)?;
         if region.code + size + eh_size + 8 * new_slots > region.data {
             // Full: retire it (it reaches nothing any more), and compile again for another.
@@ -716,7 +792,7 @@ impl Jit {
         // meanwhile (publication is this thread's), else its AOT entry.
         let mut slot_of = std::vec![0; ext.len()];
         for (k, e) in ext.iter().enumerate() {
-            let Some((hd, g)) = e.vm else { continue };
+            let Some((hd, g)) = e.vm.filter(|_| used[k]) else { continue };
             slot_of[k] = *self.slots.entry((start, hd, g)).or_insert_with(|| {
                 region.data -= 8;
                 debug_assert!(region.data % 8 == 0, "call slots are 8-aligned (atomic stores)");
@@ -915,6 +991,8 @@ impl Jit {
             let name = match e.name {
                 Name::Func(g) => Func(g).to_string(),
                 Name::Sym(x) => Sym(x).to_string(),
+                Name::Other(g) => std::format!("{}@other", Func(g)),
+                Name::OtherSym(x) => std::format!("{}@other", Sym(x)),
             };
             let _ = writeln!(s, "ext {} {form} {name}", Func(e.kind | k as u32));
         }

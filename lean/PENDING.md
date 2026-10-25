@@ -27,6 +27,12 @@ remove it once a Lean session has handled it.
   covers the SSA tier. Commit: "Weigh inlining by the counters and specialize callees to
   constants".
 
+- The SSA tier's inliner inlines across images (`jit::inline::rebase`: another image's
+  callee's `RefAddr`s and handler address arguments become 64-bit constants or a load
+  through a symbol's value, its calls the JIT's call forms) and through symbols that hold a
+  VM function's entry. Only matters if the Lean model covers the SSA tier. Commit: "Inline
+  across images in the JIT's SSA tier".
+
 - Proofs to extend (left by the session that applied the entries above; no `sorry` was
   added, the theorems keep their scope):
   - Niche discriminants (commit 844ffef): the lowered plain-op decoding is proved against
