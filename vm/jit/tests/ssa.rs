@@ -947,3 +947,45 @@ fn inline_constant_trials() {
     }
     check_stats(before, 1);
 }
+
+/// A call between the caller's stores of stack arguments and their call: `r` stores `h`'s
+/// stack argument, then calls `g`, whose own call of `h` stores to its outgoing area. Inlined,
+/// `g`'s outgoing area would be `r`'s, so `g` is not inlined there (inline.rs
+/// `outgoing_pending`): `r(x)` stays `g(x) + h(x)`, `3x + 200`.
+#[test]
+fn inline_not_between_stack_arguments_and_their_call() {
+    let (_g, before) = start();
+    let mut w = ImageWriter::new(unique_scid());
+    // h(x) = x + 100, x a stack argument. r@-8.
+    let mut a = Asm::new();
+    a.i(Insn::AddImmW64 { d: Slot(-8), a: Slot(16), imm: 100 });
+    a.ret(Slot(-8), 8);
+    let h = w.add_function(func(a.done(), 16, 8, 8));
+    // g(y) = h(2y). y@-8, h's argument@-16.
+    let mut a = Asm::new();
+    a.i(arg(-8, 0));
+    a.i(Insn::AddW64 { d: Slot(-16), a: Slot(-8), b: Slot(-8) });
+    a.i(Insn::Call { d: Slot(-8), f: h, k: 8, a: List::from_words(&[]) });
+    a.ret(Slot(-8), 8);
+    let g = w.add_function(func(a.done(), 16, 0, 8));
+    // r(x) = g(x) + h(x), h's argument stored before g's call. x@16; x'@-8, g's result@-16,
+    // h's@-24, h's argument@-32.
+    let mut a = Asm::new();
+    a.i(Insn::MovW64 { d: Slot(-8), s: Slot(16) });
+    a.i(Insn::MovW64 { d: Slot(-32), s: Slot(-8) });
+    a.i(Insn::Call { d: Slot(-16), f: g, k: 8, a: List::from_words(&regs(&[-8])) });
+    a.i(Insn::Call { d: Slot(-24), f: h, k: 8, a: List::from_words(&[]) });
+    a.i(Insn::AddW64 { d: Slot(-16), a: Slot(-16), b: Slot(-24) });
+    a.ret(Slot(-16), 8);
+    let r = w.add_function(func(a.done(), 32, 8, 8));
+    let img = build(w, &syms());
+
+    for x in [1u64, 5, 1 << 40] {
+        assert_eq!(ok::<_, u64>(img.id(r), (x,)), 3 * x + 200, "r({x})");
+    }
+    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
+        assert_ne!(state(&img, g), JIT_COLD, "g not inlined into r");
+    }
+    let _ = h;
+    check_stats(before, 3);
+}

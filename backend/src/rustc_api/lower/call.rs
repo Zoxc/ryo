@@ -306,6 +306,10 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// `Indirect` input is passed as its home's address, or for a tail call copied over the
     /// function's own incoming value, whose address is passed on (as rustc does). For an
     /// sret callee, the destination `d`'s address, or for a tail call the function's own.
+    /// The stack pieces must be stored right before the call, with no other call in between:
+    /// the JIT's inlining merges callees' outgoing areas into the caller's on that basis, and
+    /// refuses to inline where it doesn't hold (vm/bytecode/src/jit/inline.rs
+    /// `outgoing_pending`).
     fn pass_args(&mut self, sig: &AbiSig<'tcx>, homes: &[u32], d: Option<u32>, tail: bool) -> Result<Vec<u32>, NeedsNative> {
         let Some(plan) = sig.plan.clone() else { return native("a call without a calling convention") };
         let mut a = Vec::new();

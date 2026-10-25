@@ -264,6 +264,10 @@ struct Node {
     /// What unwinding out of a call in the callee that continues to its caller does once
     /// inlined: the site's action, or its ancestors' if it continues there too.
     unwind: Site,
+    /// Stores to the root's outgoing area (or an ancestor's merged into it) may wait for
+    /// their call at the site or an ancestor's ([`outgoing_pending`]): the callee and its
+    /// descendants mustn't write theirs.
+    pending: bool,
     frame: u32,
     children: Vec<usize>,
 }
@@ -307,6 +311,39 @@ fn blocker(c: &Func, call: &Call, unwind: Site) -> Option<&'static str> {
         }
     }
     None
+}
+
+/// Whether stores to `f`'s outgoing area may still wait for their call at the call `site`.
+///
+/// A callee's outgoing area is merged into its caller's (§7). That is safe only because the
+/// backend stores a call's stack arguments right before it (lower/call.rs `pass_args`), so no
+/// other call runs between them: an inlined callee can't clobber stack arguments still waiting
+/// for their call. This checks that `f` keeps to that, so that a backend or pass that moved
+/// the stores can't silently miscompile: an outgoing store is taken to wait until the next
+/// call in its block, and one left at the end of a block to wait anywhere in `f`.
+fn outgoing_pending(f: &Func, site: Inst) -> bool {
+    let out = |i: Inst| match f.insts[i.idx()].op {
+        Op::AStore(a, ..) => f.allocas[a.idx()].kind == AllocaKind::Outgoing,
+        _ => false,
+    };
+    let mut at_site = false;
+    for &b in &f.layout {
+        let mut waiting = false;
+        for &i in &f.blocks[b.idx()].insts {
+            if i == site {
+                at_site = waiting;
+            }
+            if f.insts[i.idx()].op.is_call() {
+                waiting = false;
+            } else if out(i) {
+                waiting = true;
+            }
+        }
+        if waiting {
+            return true;
+        }
+    }
+    at_site
 }
 
 /// The direct calls of functions of the image in `f`: the call, its callee, its block.
@@ -358,6 +395,7 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
         benefit: 0.0,
         cold: false,
         unwind: Site::Continue,
+        pending: false,
         frame: 0,
         children: Vec::new(),
     }];
@@ -400,12 +438,16 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
             Site::Continue => nodes[parent].unwind,
             s => s,
         };
+        let waiting = nodes[parent].pending || outgoing_pending(pf, site);
         let ir = if why.is_none() { env.ir(g) } else { None };
         if why.is_none() && ir.is_none() {
             why = Some("no IR");
         }
         if let (None, Some(c)) = (why, &ir) {
             why = blocker(c, &call, unwind);
+            if why.is_none() && waiting && c.allocas.iter().any(|a| a.kind == AllocaKind::Outgoing) {
+                why = Some("an outgoing area while the caller's stack arguments wait for their call");
+            }
         }
         let (c, sh) = match (why, ir) {
             (None, Some(c)) => {
@@ -482,6 +524,7 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
             benefit: weight * (protocol(&call) + folded),
             cold,
             unwind,
+            pending: waiting,
             frame,
             children: Vec::new(),
         });
