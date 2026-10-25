@@ -29,11 +29,6 @@ remove it once a Lean session has handled it.
 
 - Proofs to extend (left by the session that applied the entries above; no `sorry` was
   added, the theorems keep their scope):
-  - `inline_sound` (`Ryo/Proofs/Inline.lean`) covers no rip-relative address class:
-    `addrConst` (`lea r, [rip + k]`), `addrSym` (`mov r, [rip + slot]`) and `addrSymInd`
-    (one more `mov r, [r]`), each then `mov [fp + d], r`. `frameOnly` excludes them, as it
-    does `ovf`, `mulOvf` and `ext`. Proving them needs `Rel` to say where the constant pool,
-    the data area and the symbol slots are (and that a slot holds the symbol's address).
   - Niche discriminants (commit 844ffef, "Lower niche discriminants with plain ops, fuse them
     into switches") lower to plain ops (`eq.imm`/`sub.imm`/`le.u.imm` and a blend), or are
     fused into a `SwitchInt` testing the tag with `br.eq.imm` (`switch.dense` past 4 arms).
