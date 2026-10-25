@@ -48,7 +48,6 @@ def extentOk (op : Full.Opcode) (mem : Bool) : Extent → Bool
   | .bytes n => n > 0
   | .opnd a => isImm (kindOf op a)
   | .mul a b => isImm (kindOf op a) && isImm (kindOf op b)
-  | .unlessEq _ a b => isImm (kindOf op a) && isImm (kindOf op b)
   | .slotVal a => mem && kindOf op a == some .slot
   | .cases c _ => mem && isAddr (kindOf op c)
 
@@ -346,27 +345,6 @@ def conversions : Except String Unit := do
   cvt "trunc.w64.w8" 8 0x1234 1 0x34
   cvt "trunc.w128.w64" 16 (2 ^ 64 + 5) 8 5
 
-def enums : Except String Unit := do
-  -- `Option<bool>`: tag values 0/1 are `Some` (untagged, variant 1), 2 is `None` (variant 0).
-  let discr (tag v : Nat) :=
-    expectInt "discr.niche.w8" [S (-16), S (-32), I 2, I 0, I 0, I 1] (stOf [(-32, le 1 tag)]) (-16) 4 v
-  discr 2 0
-  discr 0 1
-  discr 1 1
-  discr 255 1
-  -- A niche range wrapping at the tag width: niche start 254, variants 3..5.
-  let discr2 (tag v : Nat) :=
-    expectInt "discr.niche.w8" [S (-16), S (-32), I 254, I 3, I 5, I 0] (stOf [(-32, le 1 tag)]) (-16) 4 v
-  discr2 254 3
-  discr2 255 4
-  discr2 0 5
-  discr2 1 0
-  expectInt "set_discr.niche.w8" [S (-16), I 0, I 2, I 0, I 1] (stOf []) (-16) 1 2
-  -- The untagged variant writes nothing.
-  expectBytes "set_discr.niche.w8" [S (-16), I 1, I 2, I 0, I 1] (stOf [(-16, bytes [9])]) (-16) (bytes [9])
-  expectInt "set_discr.niche.w128" [S (-16), I 4, I (2 ^ 128 - 1), I 3, I 0] (stOf []) (-16) 16 0
-  expectUb "discr.niche.w8" [S (-16), S (-32), I 2, I 0, I 0, I 1] (stOf [])
-
 def control : Except String Unit := do
   expectControl "br" [S (-8), .none, .none] (stOf [(-8, bytes [2])]) (.branch true)
   expectControl "br" [S (-8), .none, .none] (stOf [(-8, bytes [0])]) (.branch false)
@@ -567,7 +545,6 @@ def tests : List TestCase := [
   ⟨"OpSem/integers", fun _ => integers⟩,
   ⟨"OpSem/overflow", fun _ => overflow⟩,
   ⟨"OpSem/conversions", fun _ => conversions⟩,
-  ⟨"OpSem/enums", fun _ => enums⟩,
   ⟨"OpSem/control", fun _ => control⟩,
   ⟨"OpSem/atomics", fun _ => atomics⟩,
   ⟨"OpSem/floats", fun _ => floats⟩,

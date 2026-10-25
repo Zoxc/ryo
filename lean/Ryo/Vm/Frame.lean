@@ -17,9 +17,8 @@ What each instruction reads (`gen`) and writes for sure (`kill`), and what that 
   the items are what the cache emits for the instruction.
 - **Handlers** access their frame operands as `opSem`'s footprint says (`OpSem.footprint`,
   validated against the handlers by `vm/rt/tests/lean_opsem.rs`), its extents evaluated on
-  the operands unpacked through the layout: exact widths, `len`, `elem_size × count`,
-  `set_discr`'s write unless `variant = untagged`. This is the handler contract of
-  reduced.md §C0.5. A handler dereferencing a pointer from a slot, a memory operand or an
+  the operands unpacked through the layout: exact widths, `len`, `elem_size × count`. This
+  is the handler contract of reduced.md §C0.5. A handler dereferencing a pointer from a slot, a memory operand or an
   address operand's contents makes a pointer access (an address operand itself is a
   constant, symbol or site, never a frame object). `resume` (assembly, no footprint) reads
   its slot and leaves the function as a return does. Where the operands don't give an

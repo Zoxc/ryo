@@ -41,7 +41,8 @@ structure LocalSlot where
 deriving Repr, Inhabited, FromJson
 
 /-- One block's ranges: per statement lowered on its own, the terminator; `fused` if the
-block's last statement is a compare lowered with the terminator. -/
+block's last statement (a compare, or a niche enum's `Discriminant`) is lowered with the
+terminator. -/
 structure BlockCert where
   stmts : Array Range
   term : Range

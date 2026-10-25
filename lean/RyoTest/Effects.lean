@@ -8,8 +8,6 @@ The mapping, per `Slot`/`Mem` operand (in `OpInfo.operands` order; other operand
 - address taken (`addrs`) → `addr`;
 - read at a fixed width `n` (a `Mem` operand's pointer slot: 8) → `read n`; written at `n` →
   `write n`;
-- written at `n` unless two immediates are equal (`set_discr`'s `unlessEq`): a conditional
-  write, which leaves the old bytes otherwise → `update n`;
 - accessed at a length the operands give (`opnd`, `mul`: `copy`, `const`, `zero`, `fill`,
   `load.copy`, `store.copy`) → `block`;
 - not named → none.
@@ -50,7 +48,6 @@ def opndEffect (fp : Footprint) (name : String) : Except String (Option Effect) 
   | [], [] => return none
   | [.bytes n], [] => return some (.read n)
   | [], [.bytes n] => return some (.write n)
-  | [], [.unlessEq n _ _] => return some (.update n)
   | _, _ =>
     if (rs ++ ws).all lengthDep then return some .block
     throw s!"{name}: no JIT effect for reads {repr rs}, writes {repr ws}"
@@ -109,7 +106,6 @@ def mapping : Except String Unit := do
     jitEffects op fp
   check ((← e "add.w32") == { opnds := [some (.write 4), some (.read 4), some (.read 4)], memory := false })
     "add.w32"
-  check ((← e "set_discr.niche.w16").opnds.head? == some (some (.update 2))) "set_discr updates"
   check ((← e "addr").opnds.contains (some .addr)) "addr"
   check ((← e "copy").opnds.contains (some .block)) "copy is a block"
   check (← e "load.w32").memory "load touches memory"

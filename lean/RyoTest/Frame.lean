@@ -130,9 +130,6 @@ def tests : List TestCase :=
    accepts "a copy's length" (fn [mov 64 (-8), handler "copy" [-32, -24, 16]]),
    rejects "a copy over the store" (fn [mov 64 (-8), handler "copy" [-32, -24, 17]]),
    accepts "a handler's write" (fn [mov 64 (-8), handler "copy" [-8, -24, 8], call [(-8, reg 0)]]),
-   accepts "set_discr's write" (fn [mov 8 (-8), handler "set_discr.niche.w8" [-8, 0, 0, 0, 1], call [(-8, reg 0)]]),
-   rejects "set_discr of the untagged variant" (fn [mov 8 (-8), handler "set_discr.niche.w8" [-8, 1, 0, 0, 1],
-     call [(-8, reg 0)]]),
    -- What R reads after an `End` is `Uninit`.
    accepts "a read after the storage's end" (fn [mov 64 (-8), call [(-8, reg 0)]] [«end» 1 (-8) 8]),
    rejects "a read after a partial end" (fn [mov 64 (-8), call [(-8, reg 0)]] [«end» 1 (-8) 4]),

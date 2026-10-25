@@ -4,9 +4,9 @@ RyoTest.View — `Ryo.Vm.R.view` against Rust's `asm::decode`, over the vectors 
 decoded with `decodeReduced`, each instruction viewed (addresses placed by an injective
 symbolic `ρ`), and printed in the vectors' common form (opcode, operands, targets as
 instruction indices, case values read from the code constants), which must be Rust's full
-instruction line for line. The vectors must exercise every register packing (shared 32-bit
-pairs, `Mem`, `U128`, case lists, target lists, `lpad`'s exception object, both `fp_arg`
-layouts).
+instruction line for line. The vectors must exercise every register packing in use (`Mem`,
+`U128`, case lists, target lists, `lpad`'s exception object, both `fp_arg` layouts; no opcode
+shares a register between two 32-bit operands any more).
 
 Also: `unpack` rejects arguments that don't fit (a register too many or too few, an address
 where a value belongs and the reverse, nonzero bits outside an operand, a missing `fp` or
@@ -104,7 +104,6 @@ def vectors : Except String (Array Vector) := do
 
 /-- What the vectors' handler calls exercise. -/
 structure Coverage where
-  shared : Nat := 0
   mem : Nat := 0
   u128 : Nat := 0
   cases : Nat := 0
@@ -120,12 +119,11 @@ def Coverage.add (c : Coverage) (i : Insn) (fpArg : Bool) : Coverage :=
   | .native .. => { c with natives := c.natives + 1 }
   | .handler h _ _ => match h.layout fpArg with
   | none => c
-  | some l =>
+  | some _ =>
     let kinds := h.info.operands.map (·.kind)
     let has (p : OperandKind → Bool) : Nat := if kinds.any p then 1 else 0
     { c with
       handlers := c.handlers + 1
-      shared := c.shared + (if l.locs.any (·.shared) then 1 else 0)
       mem := c.mem + has (· == .mem)
       u128 := c.u128 + has (· == .u128)
       cases := c.cases + has (fun | .list .target | .list .word | .list .arg => false | .list _ => true | _ => false)
@@ -204,7 +202,7 @@ def rejects : Except String Unit := do
 def tests : List TestCase :=
   [⟨"view/vectors", fun _ => do
       let c ← check
-      let need := [("shared", c.shared), ("mem", c.mem), ("u128", c.u128), ("cases", c.cases),
+      let need := [("mem", c.mem), ("u128", c.u128), ("cases", c.cases),
         ("targets", c.targets), ("lpad", c.lpad), ("fp_arg", c.fpArg), ("rbp", c.rbp),
         ("natives", c.natives)]
       for (what, k) in need do

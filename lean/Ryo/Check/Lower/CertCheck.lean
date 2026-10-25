@@ -19,7 +19,7 @@ Per object:
   location agree with the body.
 - **Ranges.** Prologue, blocks (statements, terminator), stubs and pads, in that order, are
   consecutive and cover the instructions; as many blocks as the dumped body, each with its
-  statement count (the fused compare counted), except blocks the dumper truncated (their
+  statement count (the fused statement counted), except blocks the dumper truncated (their
   terminator calls an `ext` instance `ryo-dump: unsupported …`).
 - **Calls.** Each decoded `call*` / `tail_call*` instruction has exactly one call entry and vice
   versa; the kind fits the opcode; `k` is the return kind (0 for sret); the argument list's
@@ -369,7 +369,7 @@ def checkFunc (c : Ctx) (i : Nat) (d : Decoded) (fc : FuncCert) : FuncCheck := I
         if truncated c.prog db.term then
           r := { r with truncated := r.truncated + 1 }
         else if blk.stmts.size + (if blk.fused then 1 else 0) != db.stmts.length then
-          r := err r s!"bb{bi}: {blk.stmts.size} statements{if blk.fused then " + a fused compare" else ""}, the body {db.stmts.length}"
+          r := err r s!"bb{bi}: {blk.stmts.size} statements{if blk.fused then " + a fused statement" else ""}, the body {db.stmts.length}"
   -- Calls.
   let mut certAt : HashMap Nat CallCert := {}
   for cc in fc.calls do

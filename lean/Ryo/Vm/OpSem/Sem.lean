@@ -263,24 +263,6 @@ def kindSem (k : HandlerKind) (ps : List String) (e : Env) : M Out := do
     let x ← parseTy p0
     let y ← parseTy p1
     pure (out e [("d", intBytes y.size (← convert e.ch x y (← e.int "s")))])
-  | .discr =>
-    let (n, _) ← intTy p0
-    let tag ← e.bv "s" n
-    let rel := tag - (← e.immBv "niche_start" n)
-    let vs ← e.imm "variants_start"
-    let ve ← e.imm "variants_end"
-    let range := (BitVec.ofNat 32 ve - BitVec.ofNat 32 vs).toNat
-    let v ← if rel.toNat ≤ range then pure (BitVec.ofNat 32 vs + BitVec.ofNat 32 rel.toNat).toNat
-      else e.imm "untagged"
-    pure (out e [("d", intBytes 4 v)])
-  | .set_discr =>
-    let (n, _) ← intTy p0
-    let v ← e.imm "variant"
-    if v == (← e.imm "untagged") then pure (out e [("d", [])])
-    else
-      let rel := (BitVec.ofNat 32 v - BitVec.ofNat 32 (← e.imm "variants_start")).toNat
-      let r := BitVec.ofNat (8 * n) rel + (← e.immBv "niche_start" n)
-      pure (out e [("d", intBytes n r.toNat)])
   | .aload =>
     let (n, _) ← intTy p1
     let a := Align.ofBytes n

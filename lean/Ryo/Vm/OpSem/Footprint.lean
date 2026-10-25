@@ -6,9 +6,8 @@ A footprint names operands of the opcode (`Full.Opcode.info`), so it is per opco
 symbolic in the operand values:
 
 - `reads`, `writes`: the frame operands read and written, each at its exact extent (a fixed
-  width, a `U32` operand such as `copy`'s `len`, `fill`'s `elem_size × count`, or
-  `set_discr`'s width unless `variant = untagged`). A `Mem` operand `[p + k]` reads the 8
-  bytes of its slot `p`. Writes are in the handler's order (`ovf`: `d`, then `o`).
+  width, a `U32` operand such as `copy`'s `len`, or `fill`'s `elem_size × count`). A `Mem`
+  operand `[p + k]` reads the 8 bytes of its slot `p`. Writes are in the handler's order (`ovf`: `d`, then `o`).
 - `addrs`: the slot operands whose address is taken (`addr`).
 - `derefs`: the accesses through pointers (L0 memory accesses with provenance): through a
   pointer in a slot, a memory operand, an address operand, or the pointer an address operand
@@ -34,8 +33,6 @@ inductive Extent where
   | opnd (name : String)
   /-- The product of two immediate operands (`fill`'s `elem_size × count`). -/
   | mul (a b : String)
-  /-- `n` bytes, or none when the immediates `a` and `b` are equal (`set_discr`). -/
-  | unlessEq (n : Nat) (a b : String)
   /-- The `usize` in the frame slot `name` (`memcpy`'s `n`); memory accesses only. -/
   | slotVal (name : String)
   /-- `size ×` the count of the case list `name` (`switch.sparse`); memory accesses only. -/
@@ -154,8 +151,6 @@ def footprintOf (k : HandlerKind) (ps : List String) : Option Footprint := do
     let x ← w
     let y ← (ps.drop 1).head?.bind tySize
     pure { reads := [rd "s" x], writes := [rd "d" y] }
-  | .discr => let n ← w; pure { reads := [rd "s" n], writes := [rd "d" 4] }
-  | .set_discr => let n ← w; pure { writes := [⟨"d", .unlessEq n "variant" "untagged"⟩] }
   | .aload =>
     let n ← (ps.drop 1).head?.bind tySize
     pure { reads := [rd "p" 8], writes := [rd "d" n], derefs := [⟨.slot "p", .bytes n, .read, true⟩] }
@@ -212,9 +207,6 @@ def Extent.eval (val : String → Option Val) : Extent → Option Nat
     | _ => Option.none
   | .mul a b => match val a, val b with
     | some (.imm x), some (.imm y) => some (x * y)
-    | _, _ => none
-  | .unlessEq n a b => match val a, val b with
-    | some (.imm x), some (.imm y) => some (if x == y then 0 else n)
     | _, _ => none
   | .slotVal _ => none
   | .cases c n => match val c with
