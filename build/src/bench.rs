@@ -54,7 +54,7 @@ pub struct Options {
     /// assertions (and with them overflow checks, as at `O0`).
     pub llvm: Vec<String>,
     pub clif: bool,
-    /// `aot` (`RYO_JIT=off`) and `jit` (`RYO_JIT_OPT=ssa`).
+    /// `aot` (`RYO_JIT=off`) and `jit` (`RYO_JIT_OPT=ssa`, plus `RYO_JIT_SYNC=1` under cachegrind).
     pub ryo: Vec<String>,
     pub metric: Metric,
 }
@@ -136,7 +136,11 @@ fn backends(o: &Options) -> Vec<Backend> {
         v.push(clif());
     }
     for m in &o.ryo {
-        let env = if m == "aot" { vec![("RYO_JIT", "off")] } else { vec![("RYO_JIT_OPT", "ssa")] };
+        let mut env = if m == "aot" { vec![("RYO_JIT", "off")] } else { vec![("RYO_JIT_OPT", "ssa")] };
+        // Under cachegrind the counts depend on when a background JIT thread finishes.
+        if m != "aot" && o.metric == Metric::Cachegrind {
+            env.push(("RYO_JIT_SYNC", "1"));
+        }
         v.push(Backend { name: format!("ryo {m}"), compiler: Compiler::Ryo, flags: Vec::new(), env });
     }
     v

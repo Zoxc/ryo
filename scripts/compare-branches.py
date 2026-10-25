@@ -35,6 +35,8 @@ MAD (median absolute deviation).
 with its cache simulation (children traced, their counts summed). Compiles report millions
 of instructions executed; runs also report instruction-cache (I1) misses, data reads and
 writes, and first-level (D1) and last-level (LL) data cache misses, each in its own table.
+Runs get `RYO_JIT_SYNC=1` and `RYO_JIT_OPT=ssa` unless they are set: without a synchronous
+JIT the counts depend on when the JIT thread finishes. Set `RYO_JIT=off` to count AOT code.
 The counts don't depend on the machine's load, so one sample is taken (`--samples 1
 --warmup 0`) and small differences are real. Valgrind's caches are a simple model, not the
 machine's, so take the misses as a guide; and nothing sees branch mispredictions or
@@ -502,8 +504,11 @@ def main():
             sys.exit("--metric cachegrind doesn't apply to --crates")
         if not shutil.which("valgrind"):
             sys.exit("--metric cachegrind needs valgrind")
-        # Instruction counts are deterministic.
+        # Instruction counts are deterministic, once the JIT compiles on the running thread
+        # (with a background JIT thread they depend on when it finishes).
         args.samples, args.warmup = 1, 0
+        os.environ.setdefault("RYO_JIT_SYNC", "1")
+        os.environ.setdefault("RYO_JIT_OPT", "ssa")
     if args.samples < 1:
         sys.exit("--samples must be at least 1")
 
