@@ -29,7 +29,12 @@ commands:
                                build the backend, the sysroot and the wrappers into dist/;
                                also install std and ryo_rt for each target T
   build-clif                   build cg_clif from the toolchain's rustc-dev sources
-  test [--clif]                build the test corpus with rustc-ryo and plain rustc, diff outputs
+  test [--clif] [--full | --only jit|backend|lean|std|rt | --no-changed]
+       [--program NAME]... [--variant NAME]...
+                               the fast suite plus the tests the changed paths select
+                               (notes/fast-tests.md); `--full` runs everything and needs the
+                               ryo sysroot; `--program`/`--variant` run only those corpus
+                               entries; `--no-changed` only the fixed fast set
   test --cross T               cross-build and link (not run) the corpus for target T, e.g.
                                x86_64-pc-windows-msvc; needs `build --target T` first
   bench [--runs N]             compare LLVM -O0/-O3, Cranelift and ryo: compile and run time
@@ -59,9 +64,7 @@ enum Cmd {
         targets: Vec<String>,
     },
     BuildClif,
-    Test {
-        clif: bool,
-    },
+    Test(test::Options),
     /// `test --cross <target>`.
     CrossTest {
         target: String,
@@ -116,11 +119,9 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
         }
         "build-clif" => no_args(Cmd::BuildClif),
         "test" => match rest.as_slice() {
-            [] => Ok(Cmd::Test { clif: false }),
-            ["--clif"] => Ok(Cmd::Test { clif: true }),
             ["--cross", t] => Ok(Cmd::CrossTest { target: t.to_string() }),
             [a] if a.starts_with("--cross=") => Ok(Cmd::CrossTest { target: a["--cross=".len()..].to_owned() }),
-            [arg, ..] => Err(format!("unexpected argument `{arg}`")),
+            _ => parse_test(&rest).map(Cmd::Test),
         },
         "bench" => match rest.as_slice() {
             ["codegen"] => Ok(Cmd::BenchCodegen),
@@ -142,6 +143,32 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
         "help" | "-h" | "--help" => Ok(Cmd::Help),
         other => Err(format!("unknown command `{other}`")),
     }
+}
+
+fn parse_test(rest: &[&str]) -> Result<test::Options, String> {
+    let mut opts = test::Options::default();
+    let mut args = rest.iter().copied();
+    while let Some(arg) = args.next() {
+        let (flag, value) = match arg.split_once('=') {
+            Some((f, v)) if f.starts_with("--") => (f, Some(v)),
+            _ => (arg, None),
+        };
+        let mut value = || value.or_else(|| args.next()).ok_or(format!("`{flag}` needs a value"));
+        match flag {
+            "--clif" => opts.clif = true,
+            "--full" => opts.full = true,
+            "--no-changed" => opts.no_changed = true,
+            "--only" => opts.only = Some(test::Area::parse(value()?)?),
+            "--program" => opts.programs.push(value()?.to_owned()),
+            "--variant" => opts.variants.push(value()?.to_owned()),
+            _ => return Err(format!("unexpected argument `{arg}`")),
+        }
+    }
+    let modes = [opts.full, opts.only.is_some(), opts.no_changed, !opts.programs.is_empty() || !opts.variants.is_empty()];
+    if modes.iter().filter(|m| **m).count() > 1 {
+        return Err("`--full`, `--only`, `--no-changed` and `--program`/`--variant` exclude each other".to_owned());
+    }
+    Ok(opts)
 }
 
 fn main() -> ExitCode {
@@ -168,7 +195,7 @@ fn main() -> ExitCode {
         }
         Cmd::Build { sysroot, targets } => dist::build(&targets, sysroot == Sysroot::Ryo),
         Cmd::BuildClif => clif::build(),
-        Cmd::Test { clif } => test::run(clif),
+        Cmd::Test(opts) => test::run(&opts),
         Cmd::CrossTest { target } => cross::run(&target),
         Cmd::Bench { runs } => bench::run(runs),
         Cmd::BenchCodegen => bench::codegen(),
@@ -208,7 +235,16 @@ mod tests {
         assert!(parse(&["build", "--sysroot", "gcc"]).is_err());
         assert!(parse(&["build", "--target"]).is_err());
         assert!(parse(&["build", "x"]).is_err());
-        assert_eq!(parse(&["test", "--clif"]), Ok(Cmd::Test { clif: true }));
+        assert_eq!(parse(&["test", "--clif"]), Ok(Cmd::Test(test::Options { clif: true, ..Default::default() })));
+        assert_eq!(parse(&["test"]), Ok(Cmd::Test(test::Options::default())));
+        assert_eq!(parse(&["test", "--full"]), Ok(Cmd::Test(test::Options { full: true, ..Default::default() })));
+        assert_eq!(parse(&["test", "--only=jit"]), Ok(Cmd::Test(test::Options { only: Some(test::Area::Jit), ..Default::default() })));
+        assert_eq!(
+            parse(&["test", "--program", "hello", "--variant=ryo"]),
+            Ok(Cmd::Test(test::Options { programs: vec!["hello".into()], variants: vec!["ryo".into()], ..Default::default() }))
+        );
+        assert!(parse(&["test", "--only", "x"]).is_err());
+        assert!(parse(&["test", "--full", "--no-changed"]).is_err());
         let cross = || Ok(Cmd::CrossTest { target: "x86_64-pc-windows-msvc".into() });
         assert_eq!(parse(&["test", "--cross", "x86_64-pc-windows-msvc"]), cross());
         assert_eq!(parse(&["test", "--cross=x86_64-pc-windows-msvc"]), cross());

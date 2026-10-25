@@ -42,6 +42,11 @@ fn lake() -> PathBuf {
     on_path.or_else(|| home.map(|h| PathBuf::from(h).join(".elan").join("bin").join(&name))).unwrap_or_else(|| name.into())
 }
 
+/// Whether `lake` is installed.
+pub fn have_lake() -> bool {
+    cmd(lake()).arg("--version").output().is_ok_and(|o| o.status.success())
+}
+
 /// `y lean gen`.
 pub fn generate() -> Result<(), String> {
     tables(true)
