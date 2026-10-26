@@ -67,6 +67,9 @@
   ryo-lean opsem                           `opSem` on JSON lines on stdin, a result per line
                                            on stdout (`Ryo/Vm/OpSem/Json.lean`), for the
                                            differential test against the handlers
+  ryo-lean effects [<out.rs>]              the JIT's handler effect table, generated from the
+                                           footprints (`Ryo/Vm/OpSem/JitEffects.lean`), as
+                                           `vm/bytecode/src/jit/effects_table.rs`
   ryo-lean rrun <image object> <fn>|--all [<int>...] [--fuel N] [--unwind <text>] [--cert <cert.json>]
                                            run an image function as R (`Ryo.Vm.R.cli`); with
                                            `--cert`, each function's zero-sized frame objects
@@ -290,7 +293,8 @@ def main (args : List String) : IO UInt32 := do
       pure 2
   | ["exec-item"] => Ryo.X86.Cosim.main
   | ["opsem"] => Ryo.Vm.OpSem.Json.main
+  | "effects" :: rest => Ryo.Vm.OpSem.JitEffects.main rest
   | "rrun" :: rest => rrun rest
   | _ =>
-    IO.eprintln "usage: ryo-lean run <program.json> [--fuel N] [--stdout]\n       ryo-lean example <name> [out.json]\n       ryo-lean obj <file.o>\n       ryo-lean elf <file.o>\n       ryo-lean decode <inputs.json | file.o>\n       ryo-lean dead <file.o> [<dump.json> <cert.json>]\n       ryo-lean ehframe|lsda <file.o>\n       ryo-lean check-pool <dump.json> <file.o>... [-v]\n       ryo-lean check-cert <dump.json> <cert.json> <image.o>... [-v]\n       ryo-lean check-image <image.o>... [--registry <registry.o>]\n       ryo-lean opsem\n       ryo-lean rrun <image.o> <fn>|--all [<int>...] [--fuel N] [--unwind <text>] [--cert <cert.json>]"
+    IO.eprintln "usage: ryo-lean run <program.json> [--fuel N] [--stdout]\n       ryo-lean example <name> [out.json]\n       ryo-lean obj <file.o>\n       ryo-lean elf <file.o>\n       ryo-lean decode <inputs.json | file.o>\n       ryo-lean dead <file.o> [<dump.json> <cert.json>]\n       ryo-lean ehframe|lsda <file.o>\n       ryo-lean check-pool <dump.json> <file.o>... [-v]\n       ryo-lean check-cert <dump.json> <cert.json> <image.o>... [-v]\n       ryo-lean check-image <image.o>... [--registry <registry.o>]\n       ryo-lean opsem\n       ryo-lean effects [<out.rs>]\n       ryo-lean rrun <image.o> <fn>|--all [<int>...] [--fuel N] [--unwind <text>] [--cert <cert.json>]"
     pure 2
