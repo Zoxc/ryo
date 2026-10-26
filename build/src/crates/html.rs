@@ -466,7 +466,7 @@ fn coverage_section(r: &Report) -> String {
     let mut all: Vec<&Unit> = Vec::new();
     for c in &r.crates {
         let cell = &c.cells[ryo];
-        let [build, tests, ..] = cell.warmup.as_slice() else {
+        let Some(super::BuildSteps { lib: build, tests }) = &cell.warmup else {
             let _ = write!(s, "<tr><td>{}</td><td colspan=5 class=\"bad\">no data</td></tr>", c.krate.name);
             continue;
         };
@@ -659,7 +659,8 @@ pub fn text_summary(r: &Report) -> String {
         }
     }
     if let Some(ryo) = r.backends.iter().position(|&b| b == Backend::Ryo) {
-        let all: Vec<&Unit> = r.crates.iter().flat_map(|c| c.cells[ryo].warmup.iter().take(2)).flat_map(|s| &s.units).collect();
+        let all: Vec<&Unit> =
+            r.crates.iter().flat_map(|c| c.cells[ryo].warmup.iter()).flat_map(|w| [&w.lib, &w.tests]).flat_map(|s| &s.units).collect();
         let cov = coverage(all.iter().copied());
         let _ =
             writeln!(out, "\nryo coverage: {} VM, {} native functions ({:.1}% VM), {} islands", cov.vm, cov.native, cov.vm_percent(), cov.islands);
@@ -679,7 +680,7 @@ pub fn text_summary(r: &Report) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crates::{CRATES, CellError, CrateResult, TestOutcome};
+    use crate::crates::{BuildSteps, CRATES, CellError, CrateResult, TestOutcome};
 
     fn step(wall: f64) -> Step {
         let u = |name: &str, primary| Unit {
@@ -701,7 +702,7 @@ mod tests {
         let cell = |f: f64, failed: bool| Cell {
             build: vec![step(1.0 * f), step(1.1 * f)],
             test_build: vec![step(2.0 * f)],
-            warmup: vec![step(1.0), step(1.0), step(1.0)],
+            warmup: Some(BuildSteps { lib: step(1.0), tests: step(1.0) }),
             test_run: vec![0.5 * f, 0.6 * f],
             workload: vec![0.1 * f],
             tests: Some(TestOutcome {

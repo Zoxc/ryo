@@ -232,6 +232,15 @@ pub struct Step {
     pub units: Vec<Unit>,
 }
 
+/// One build sample's steps.
+#[derive(Clone, Debug)]
+pub struct BuildSteps {
+    /// `cargo build --lib` (`cargo build --workspace` for a local workspace).
+    pub lib: Step,
+    /// `cargo build --tests`.
+    pub tests: Step,
+}
+
 /// `cargo test` results of one backend, from its warm-up run.
 #[derive(Clone, Debug, Default)]
 pub struct TestOutcome {
@@ -293,8 +302,8 @@ pub struct Cell {
     pub build: Vec<Step>,
     /// `cargo build --tests`, after `build` in the same target directory.
     pub test_build: Vec<Step>,
-    /// The warm-up's steps (ryo's ran with `RYO_STATS=1`): build, test build, example.
-    pub warmup: Vec<Step>,
+    /// The warm-up's steps (ryo's ran with `RYO_STATS=1`).
+    pub warmup: Option<BuildSteps>,
     /// Sum over the test binaries, per sample.
     pub test_run: Vec<f64>,
     pub workload: Vec<f64>,
@@ -416,13 +425,12 @@ pub fn run(opts: Options) -> Result<(), String> {
                         cell.test_exes = sample.test_exes;
                         cell.example = sample.example;
                         if i == 0 {
-                            cell.warmup = sample.steps.to_vec();
+                            cell.warmup = Some(sample.steps);
                         } else if clean {
-                            cell.dep_build.push(sample.steps[0].clone());
+                            cell.dep_build.push(sample.steps.lib);
                         } else {
-                            let mut steps = sample.steps.into_iter();
-                            cell.build.extend(steps.next());
-                            cell.test_build.extend(steps.next());
+                            cell.build.push(sample.steps.lib);
+                            cell.test_build.push(sample.steps.tests);
                         }
                     }
                     Err(e) => {
@@ -632,9 +640,7 @@ impl Env<'_> {
 }
 
 struct BuildSample {
-    /// `cargo build --lib`, `cargo build --tests`, `cargo build --example ryo_bench` (not for
-    /// a local workspace, whose first step is `cargo build --workspace`).
-    steps: Vec<Step>,
+    steps: BuildSteps,
     test_exes: Vec<PathBuf>,
     example: Option<PathBuf>,
 }
@@ -673,19 +679,17 @@ fn build_sample(env: &Env, krate: &Crate, members: &[String], logs: &Path, clean
         Ok((Step { wall, units: timing::read_units(logs)? }, String::from_utf8_lossy(&out.stdout).into_owned()))
     };
     let local = krate.local.is_some();
-    let (build, _) = step(if local { &["--workspace"] } else { &["--lib"] })?;
+    let (lib, _) = step(if local { &["--workspace"] } else { &["--lib"] })?;
     let test_args: &[&str] = &["--workspace", "--tests", "--message-format=json-render-diagnostics"];
     let (tests, json) = step(if local { test_args } else { &test_args[1..] })?;
-    let mut steps = vec![build, tests];
-    if !local {
-        steps.push(step(&["--example", "ryo_bench"])?.0);
-    }
-    if !clean && let Some(u) = steps.iter().flat_map(|s| &s.units).find(|u| !u.primary) {
+    // Built for the workload; its timing isn't reported.
+    let example = if local { None } else { Some(step(&["--example", "ryo_bench"])?.0) };
+    if !clean && let Some(u) = [&lib, &tests].into_iter().chain(&example).flat_map(|s| &s.units).find(|u| !u.primary) {
         return Err(format!("dependency `{}` was rebuilt in a sample", u.krate));
     }
     let test_exes = test_executables(&json);
-    let example = (!local).then(|| env.target.join("debug").join("examples").join(exe_name("ryo_bench")));
-    Ok(BuildSample { steps, test_exes, example })
+    let example_exe = (!local).then(|| env.target.join("debug").join("examples").join(exe_name("ryo_bench")));
+    Ok(BuildSample { steps: BuildSteps { lib, tests }, test_exes, example: example_exe })
 }
 
 /// The test binaries in cargo's `--message-format=json` output: `compiler-artifact` messages
