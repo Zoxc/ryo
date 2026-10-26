@@ -851,7 +851,7 @@ impl Ctx {
         let exe = exe.ok_or_else(|| format!("{}: no binary crate", program.name))?;
         let result = self.run(&dir, &exe, variant)?;
         if variant.compiler == Compiler::Ryo && !variant.no_vm && !program.vm.is_empty() {
-            program.check_vm(&vm_fns, MSVC, !variant.vm_only)?;
+            program.check_vm(&vm_fns, !variant.vm_only)?;
         }
         Ok(result)
     }

@@ -226,13 +226,16 @@ fn ret_kind<'tcx>(tcx: TyCtxt<'tcx>, ret: &ArgAbi<'tcx, Ty<'tcx>>) -> Result<u32
         return native(format!("return passed as {:?} ({:?})", ret.mode, ret.layout.backend_repr));
     };
     let pe = crate::rustc_api::symbols::is_pe(tcx);
+    if pe && pieces.iter().any(|p| p.float && p.size == 16) {
+        // Win64: LLVM returns an `f128` in memory the caller passes the address of, like an
+        // sret (`i128` comes back in `rax:rdx` as on SysV, `f16` in `xmm0`).
+        if pieces.len() > 1 {
+            return native("f128 in a returned pair on Win64");
+        }
+        return Ok(RET_SRET);
+    }
     let mut parts = Vec::new();
     for Piece { float, size, off } in pieces {
-        if pe && (size == 16 || size == 2 && float) {
-            // Win64 returns `i128` in `xmm0` (LLVM 19); its `f16` and `f128` returns are
-            // unchecked (guess).
-            return native("i128, f16 or f128 return on Win64");
-        }
         if !float && size == 16 {
             parts.extend([RetPart { xmm: false, size: 8, off }, RetPart { xmm: false, size: 8, off: off + 8 }]);
         } else {
@@ -252,8 +255,9 @@ fn ret_kind<'tcx>(tcx: TyCtxt<'tcx>, ret: &ArgAbi<'tcx, Ty<'tcx>>) -> Result<u32
 /// `rdi rsi rdx rcx r8 r9` (`i128` two at once, or the stack if fewer are left, the rest staying
 /// free), a float the next of `xmm0`–`xmm7`, and the rest go on the stack in 8-byte slots
 /// (16-aligned for 16-byte values). On Win64 each argument takes the next position: `rcx rdx
-/// r8 r9` or `xmm0`–`xmm3` by class, then 8-byte stack slots after the shadow space. An sret
-/// return takes the first integer register.
+/// r8 r9` or `xmm0`–`xmm3` by class, then 8-byte stack slots after the shadow space; an `i128`
+/// takes two positions, an `f128` is passed by reference (as LLVM 23 lowers them for the Rust
+/// ABI on x86_64-pc-windows-msvc). An sret return takes the first integer register.
 fn arg_plan<'tcx>(tcx: TyCtxt<'tcx>, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, sret: bool) -> Result<ArgPlan, NeedsNative> {
     let pe = crate::rustc_api::symbols::is_pe(tcx);
     struct State {
@@ -271,12 +275,14 @@ fn arg_plan<'tcx>(tcx: TyCtxt<'tcx>, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, sret: bool)
             self.stack = at + size.next_multiple_of(8);
             at
         }
-        /// An integer of `size` bytes (1 to 8, or 16 for `i128` on SysV) at `off`.
+        /// An integer of `size` bytes (1 to 8, or 16 for `i128`) at `off`.
         fn int(&mut self, size: u32, off: u32, out: &mut Vec<ArgLoc>) -> Result<(), NeedsNative> {
-            if self.pe {
-                if size > 8 {
-                    return native("i128 argument on Win64");
-                }
+            if self.pe && size == 16 {
+                // Win64 (Rust ABI): an `i128` is two 8-byte arguments, low half first, each
+                // taking the next position, so it can straddle `r9` and the stack.
+                self.int(8, off, out)?;
+                self.int(8, off + 8, out)?;
+            } else if self.pe {
                 if self.pos < 4 {
                     out.push(ArgLoc::Reg { reg: ArgReg { xmm: false, size, index: self.pos }, off });
                 } else {
@@ -306,8 +312,11 @@ fn arg_plan<'tcx>(tcx: TyCtxt<'tcx>, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, sret: bool)
         /// A float of `size` bytes at `off`.
         fn float(&mut self, size: u32, off: u32, out: &mut Vec<ArgLoc>) -> Result<(), NeedsNative> {
             if self.pe {
-                if !matches!(size, 4 | 8) {
-                    return native("f16 or f128 argument on Win64");
+                // An `f16` goes in the low 2 bytes of its `xmm` or its 8-byte stack slot; the
+                // caller passes an `f128` by reference (`Direct` ones only: see `arg_plan`).
+                if size == 16 {
+                    self.ptr(out);
+                    return Ok(());
                 }
                 if self.pos < 4 {
                     out.push(ArgLoc::Reg { reg: ArgReg { xmm: true, size, index: self.pos }, off });
@@ -357,6 +366,10 @@ fn arg_plan<'tcx>(tcx: TyCtxt<'tcx>, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, sret: bool)
                 let Some(pieces) = reg_pieces(tcx, arg) else {
                     return native(format!("argument passed as {:?} ({:?})", arg.mode, arg.layout.backend_repr));
                 };
+                // A pointer to one half of the input isn't an `ArgLoc`.
+                if pe && pieces.len() > 1 && pieces.iter().any(|p| p.float && p.size == 16) {
+                    return native("f128 in a pair argument on Win64");
+                }
                 for Piece { float, size, off } in pieces {
                     if float { st.float(size, off, &mut out)? } else { st.int(size, off, &mut out)? }
                 }

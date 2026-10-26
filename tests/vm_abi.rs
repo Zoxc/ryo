@@ -138,6 +138,14 @@ case!(enums(a: E = E::B(3, 4.5), b: E = E::C([7; 20])) -> E {
 case!(zsts(a: () = (), b: u32 = 5, c: PhantomData<u8> = PhantomData, d: u64 = 9) -> (u64, (), PhantomData<u8>) { (b as u64 * d, a, c) });
 case!(f16s(a: f16 = 1.5, b: f16 = 2.0, c: f32 = 3.0) -> (f16, f32) { (f16::from_bits(a.to_bits() ^ b.to_bits() >> 3), c * 2.0) });
 case!(f128s(a: f128 = 1.25, b: u8 = 3) -> f128 { f128::from_bits(a.to_bits().wrapping_add(b as u128)) });
+// Win64: an `i128` split between `r9` and the stack; `f16`s in an `xmm` and on the stack, an
+// `f128` by reference from the stack, and the sret of the `f128` return shifting them all.
+case!(wide_split(a: u8 = 1, b: u16 = 2, c: u32 = 3, d: u128 = u128::MAX / 5, e: u64 = 9) -> u128 {
+    d.rotate_left(a as u32 + b as u32) ^ (c as u128) << 64 ^ e as u128
+});
+case!(floats_late(a: u64 = 1, b: f16 = 0.5, c: f128 = -3.5, d: u64 = 4, e: f16 = 2.5, f: f128 = 7.0, g: u8 = 6) -> f128 {
+    f128::from_bits(c.to_bits() ^ f.to_bits() >> 2 ^ (a + d + g as u64) as u128 ^ (b.to_bits() as u128) << 16 ^ (e.to_bits() as u128) << 32)
+});
 
 /// `#[track_caller]`: the location is an extra last argument.
 #[track_caller]
@@ -259,6 +267,8 @@ fn main() {
     zsts::run();
     f16s::run();
     f128s::run();
+    wide_split::run();
+    floats_late::run();
     println!("track_caller: {:?} {:?}", track_caller_vm(), track_caller_native());
     let (v, n) = (VmShape(5), NativeShape(6));
     let s: [&dyn Shape; 2] = [&v, &n];

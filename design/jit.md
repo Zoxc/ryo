@@ -843,7 +843,10 @@ for shuffled frames per image, `RtApi::shuffled`):
   dropped; the JIT registers nothing for PE code off Windows): compiled at the entry and by
   OSR, with and without shuffled frames, with a probed frame, its results are the AOT
   code's, the JIT prologue is the one `pe_unwind_info` describes, and every callee-saved
-  register of both conventions, `rdi` and `rsi` included, survives. `vm/bytecode/tests/
+  register of both conventions, `rdi` and `rsi` included, survives. `pe_numeric_args` calls
+  a PE function through `extern "win64"` with the pieces `i128`, `f16` and `f128` lower to
+  (an `i128` straddling `r9` and the stack, `f16`s in an `xmm` and a stack slot, an `f128`
+  pointer, an `f16` return in `xmm0`), in AOT code and then JIT code. `vm/bytecode/tests/
   image.rs` checks `pe_unwind_info` byte for byte (decoded once with `llvm-readobj
   --unwind` from a hand-made COFF object). Through the SSA tier, `ssa.rs`'s `pe_frames`
   runs a loop with values live across a five-argument Win64 native (its fifth argument past

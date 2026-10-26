@@ -55,7 +55,7 @@ and `codegen_crate` reads them.
      - functions with non-Rust ABIs defined in Rust (`extern "C" fn`): VM code follows only
        the Rust ABI's convention
      - signatures whose arguments or return the VM can't place as LLVM does (other
-       `PassMode`s, and on Win64 `i128`, `f16` and `f128`, [vm.md](vm.md#calls-and-islands))
+       `PassMode`s, and on Win64 an `f128` in a `Pair`, [vm.md](vm.md#calls-and-islands))
      - functions with unsized parameters
      - calls to `C-unwind` functions and LLVM intrinsics
      - the other template gaps ([stubs.md](stubs.md#template-gaps))

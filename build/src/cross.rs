@@ -9,7 +9,7 @@
 //! (in a Rust dylib, which plain rustc links to std's DLL, the JIT's private std brings its own
 //! imports), i.e. comes from the missing system libraries. A missing ryo symbol (an image, a
 //! portal, an `__imp_` slot, the registry) shows up as a difference. The ryo builds must also compile the functions each
-//! program lists to bytecode (`Program::check_vm`, with the PE exceptions; windows-msvc only).
+//! program lists to bytecode (`Program::check_vm`; windows-msvc only).
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -186,7 +186,7 @@ pub fn run(target: &str) -> Result<(), String> {
             for (name, final_flags) in builds {
                 let (ryo, vm_fns) = link.build(&cmd(&rustc_ryo), program, &out.join(program.name).join(name), final_flags)?;
                 if !macho {
-                    program.check_vm(&vm_fns, true, true).map_err(|e| format!("{name}: {e}"))?;
+                    program.check_vm(&vm_fns, true).map_err(|e| format!("{name}: {e}"))?;
                 }
                 // The image refers to a DLL function both through its `__imp_` slot and directly
                 // (design/platforms.md); with the real import library the direct reference

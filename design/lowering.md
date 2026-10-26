@@ -461,7 +461,7 @@ shim kind with a body, plus the intrinsics listed in Calls.
 `SwitchInt` with a niche discriminant read. Locals with storage markers share slots; there is
 no copy propagation yet.
 Still `NeedsNative`, with the reason in `RYO_STATS=2`: argument and return `PassMode`s the
-VM doesn't place (on Win64 also `i128`, `f16` and `f128`), `ThreadLocalRef` of foreign thread locals, `f16`/`f128` arithmetic and
+VM doesn't place (on Win64 also an `f128` in a `Pair`), `ThreadLocalRef` of foreign thread locals, `f16`/`f128` arithmetic and
 compares, unsafe intrinsics without a VM lowering, wrapper or fallback body (128-bit atomics,
 SIMD intrinsics with constant operands, …), coroutines, extern-type tails, by-value
 unsized arguments (`unsized_fn_params`) and references to

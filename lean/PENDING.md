@@ -3,6 +3,16 @@
 Rust-side changes that the Lean model or proofs don't reflect yet. Add an entry per change;
 remove it once a Lean session has handled it.
 
+- Win64 argument plans and returns (`lower/sig.rs`, `arg_plan`/`ret_kind`; Lean
+  `Check/Lower/Plan.lean`, `RyoTest/CertCheck.lean`'s `win64`) no longer reject `i128`,
+  `f16` and `f128`: on PE an `i128` integer piece is two 8-byte pieces (low half first),
+  each taking the next position (register `pos < 4` or an 8-byte stack slot); an `f16`
+  float piece is placed like `f32`/`f64` (`xmm` of its position, size 2, or an 8-byte slot);
+  a `Direct` `f128` argument is placed like an `Indirect` one (`ptrReg`/`ptrStack`); a
+  `Direct` `f128` return is `RET_SRET`; an `f128` in a `Pair` argument or return is still
+  rejected. `i128` returns are `rax:rdx` and `f16` returns `xmm0` as on SysV. Commit: "Win64:
+  pass i128, f16 and f128 as LLVM does".
+
 - The SSA tier's frame cut (`jit/alloca.rs`) joins an `addr` at an escaped object's end
   (the object escaping at that `addr`, unless one escaping there starts at that address;
   with none escaping there, any escaped object ending there) to the object's alloca, so

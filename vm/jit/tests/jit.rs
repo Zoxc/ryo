@@ -1426,3 +1426,54 @@ fn pe_code_at(shuffle: bool, frame: u32, k: Option<i64>) {
         }
     }
 }
+
+/// Win64 arguments of the kinds `i128`, `f16` and `f128` lower to (design/platforms.md): an
+/// `i128` as two positional 8-byte arguments, here straddling `r9` and the stack; an `f16` in
+/// the low 2 bytes of the `xmm` of its position or of its stack slot; an `f128` as a pointer;
+/// an `f16` return in `xmm0`. The AOT code's results, then the JIT code's.
+#[test]
+fn pe_numeric_args() {
+    use ryo_bytecode::asm::{ArgReg, RetPart, ret_kind};
+    init();
+    let mut w = ImageWriter::new(unique_scid());
+    // g(p, x: f16, q: *const u128, lo, hi, y: f16) stores x, *q's halves, lo, hi and y at
+    // p[0..6] and returns x.
+    let mut a = Asm::new();
+    a.i(arg(-8, 0));
+    a.i(Insn::Arg { d: Slot(-16), r: ArgReg { xmm: true, size: 2, index: 1 }.word() });
+    a.i(arg(-24, 2));
+    a.i(arg(-32, 3));
+    let hi = Slot(48);
+    let y = Slot(56);
+    let p = Slot(-8);
+    a.i(Insn::StoreW16 { m: Mem { p, k: 0 }, s: Slot(-16) });
+    a.i(Insn::LoadW64 { d: Slot(-40), m: Mem { p: Slot(-24), k: 0 } });
+    a.i(Insn::StoreW64 { m: Mem { p, k: 8 }, s: Slot(-40) });
+    a.i(Insn::LoadW64 { d: Slot(-40), m: Mem { p: Slot(-24), k: 8 } });
+    a.i(Insn::StoreW64 { m: Mem { p, k: 16 }, s: Slot(-40) });
+    a.i(Insn::StoreW64 { m: Mem { p, k: 24 }, s: Slot(-32) });
+    a.i(Insn::StoreW64 { m: Mem { p, k: 32 }, s: hi });
+    a.i(Insn::StoreW16 { m: Mem { p, k: 40 }, s: y });
+    a.i(Insn::Ret { s: Slot(-16), k: ret_kind(&[RetPart { xmm: true, size: 2, off: 0 }]) });
+    let g = w.add_function(func(a.done(), 48, 0, 2));
+    let mut obj = w.finish(PE).unwrap();
+    obj.relocs.retain(|r| r.kind != RelocKind::Rva32);
+    obj.unwind.clear();
+    let img = link(obj, &[]);
+    register(&[&img]);
+    img.trip_after(g, 1, 0);
+
+    // `f32` stands in for `f16`: the same registers and slots; the callee reads 2 bytes.
+    type G = extern "win64" fn(*mut u64, f32, *const u128, u64, u64, f32) -> f32;
+    let f: G = unsafe { std::mem::transmute(img.code(g)) };
+    for round in 0..3u64 {
+        let mut out = [!0u64; 6];
+        let q: u128 = 0x0123_4567_89ab_cdef_fedc_ba98_7654_3210 + u128::from(round);
+        let (x, y) = (f32::from_bits(0xdead_3c00 + round as u32), f32::from_bits(0xbeef_4000));
+        let r = f(out.as_mut_ptr(), x, &q, 0x1111 + round, 0x2222, y);
+        assert_eq!(r.to_bits() & 0xffff, 0x3c00 + round as u32, "round {round}: the f16 return");
+        let want = [0xffff_ffff_ffff_3c00 + round, q as u64, (q >> 64) as u64, 0x1111 + round, 0x2222, 0xffff_ffff_ffff_4000];
+        assert_eq!(out, want, "round {round}");
+        assert_eq!(state(&img, g) == JIT_DONE, round > 0, "round {round}");
+    }
+}

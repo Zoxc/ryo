@@ -522,7 +522,11 @@ The calls (`call`, `call.sym`, `call.sym.ind`, `call.ptr`), `tail_call`, `ret`, 
   argument area. An `i128` takes two integer registers if two are left, else a 16-aligned
   stack slot. On Win64 the four registers are positional (`rcx, rdx, r8, r9` or
   `xmm0`–`xmm3` by argument position), the stack area starts after 32 bytes of shadow
-  space, and `i128`, `f16` and `f128` arguments and returns keep the function native.
+  space; there (Rust ABI, as LLVM lowers it) an `i128` is two 8-byte arguments, each taking
+  the next position (so it can straddle `r9` and the stack), an `f16` takes the low 2 bytes
+  of its position's `xmm` or stack slot, and an `f128` is passed by reference like an
+  `Indirect` input and returned through an sret pointer (an `i128` returns in `rax:rdx`, an
+  `f16` in `xmm0`). An `f128` in a `Pair` keeps the function native.
   `Indirect` inputs are passed as a pointer to the value, like an integer. An sret
   function's destination pointer takes the first integer register.
 - **Call sequence**: the caller stores the stack pieces into its outgoing area at `rsp` with
