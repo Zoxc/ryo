@@ -5,7 +5,7 @@
 use alloc::vec::Vec;
 
 pub use super::ir::use_counts;
-use super::ir::{Func, Op, ValueDef};
+use super::ir::{Block, Func, Op, Value, ValueDef};
 use super::x86::R;
 
 /// Where a value lives.
@@ -75,53 +75,105 @@ fn positions(f: &Func) -> Positions {
     Positions { start, end }
 }
 
-/// Live values at each block's entry (bit sets by value), by an iterative backward dataflow
-/// over the blocks in layout (block parameters are defined at their block's start, edge
-/// arguments used at the predecessor's end).
-fn live_in(f: &Func) -> Vec<Vec<u64>> {
-    let nv = f.values.len();
-    let words = nv.div_ceil(64);
-    let nb = f.blocks.len();
-    let mut live = alloc::vec![alloc::vec![0u64; words]; nb];
-    let tracked = |v: super::ir::Value| matches!(f.values[v.idx()].def, ValueDef::Inst(..) | ValueDef::Param(..));
+/// A set of values, one bit each.
+#[derive(Clone, PartialEq, Eq)]
+struct BitSet(Vec<u64>);
+
+impl BitSet {
+    fn new(f: &Func) -> Self {
+        BitSet(alloc::vec![0; f.values.len().div_ceil(64)])
+    }
+    fn insert(&mut self, v: Value) {
+        self.0[v.idx() / 64] |= 1 << (v.idx() % 64);
+    }
+    fn remove(&mut self, v: Value) {
+        self.0[v.idx() / 64] &= !(1 << (v.idx() % 64));
+    }
+    fn contains(&self, v: Value) -> bool {
+        self.0[v.idx() / 64] >> (v.idx() % 64) & 1 != 0
+    }
+    fn union_with(&mut self, o: &BitSet) {
+        for (w, x) in self.0.iter_mut().zip(&o.0) {
+            *w |= x;
+        }
+    }
+    fn iter(&self) -> impl Iterator<Item = Value> + '_ {
+        self.0.iter().enumerate().flat_map(|(w, &bits)| {
+            let mut x = bits;
+            core::iter::from_fn(move || {
+                (x != 0).then(|| {
+                    let v = Value((w * 64) as u32 + x.trailing_zeros());
+                    x &= x - 1;
+                    v
+                })
+            })
+        })
+    }
+}
+
+/// Whether liveness tracks `v`: an instruction result or a block parameter (constants and
+/// undefined values need no location).
+fn tracked(f: &Func, v: Value) -> bool {
+    matches!(f.values[v.idx()].def, ValueDef::Inst(..) | ValueDef::Param(..))
+}
+
+/// Block `b`'s live-out set given each block's live-in set: its successors' live-ins (minus
+/// their parameters) plus the edge arguments, plus its terminator's uses.
+fn live_out(f: &Func, live: &[BitSet], b: Block) -> BitSet {
+    let bd = &f.blocks[b.idx()];
+    let mut cur = BitSet::new(f);
+    for e in bd.term.edges() {
+        cur.union_with(&live[e.to.idx()]);
+        for &p in &f.blocks[e.to.idx()].params {
+            cur.remove(p);
+        }
+        for &a in &e.args {
+            if tracked(f, a) {
+                cur.insert(a);
+            }
+        }
+    }
+    for u in bd.term.uses() {
+        if tracked(f, u) {
+            cur.insert(u);
+        }
+    }
+    cur
+}
+
+/// Walks block `b`'s instructions backward from its live-out set `cur`, which ends as its
+/// live-in set: each instruction kills its results, then `at` sees it with what is live
+/// after it (but for its results), then it gens its arguments.
+fn walk_back(f: &Func, b: Block, cur: &mut BitSet, mut at: impl FnMut(&super::ir::InstData, &BitSet)) {
+    let bd = &f.blocks[b.idx()];
+    for &i in bd.insts.iter().rev() {
+        let id = &f.insts[i.idx()];
+        for r in id.results() {
+            cur.remove(r);
+        }
+        at(id, cur);
+        for &a in &id.args {
+            if tracked(f, a) {
+                cur.insert(a);
+            }
+        }
+    }
+    for &p in &bd.params {
+        cur.remove(p);
+    }
+}
+
+/// Live values at each block's entry, by an iterative backward dataflow over the blocks in
+/// layout (block parameters are defined at their block's start, edge arguments used at the
+/// predecessor's end).
+fn live_in(f: &Func) -> Vec<BitSet> {
+    let mut live = alloc::vec![BitSet::new(f); f.blocks.len()];
     let mut changed = true;
     while changed {
         changed = false;
         for &b in f.layout.iter().rev() {
-            let bd = &f.blocks[b.idx()];
-            let mut cur = alloc::vec![0u64; words];
-            for e in bd.term.edges() {
-                for (w, x) in cur.iter_mut().zip(&live[e.to.idx()]) {
-                    *w |= x;
-                }
-                for &p in &f.blocks[e.to.idx()].params {
-                    cur[p.idx() / 64] &= !(1 << (p.idx() % 64));
-                }
-                for &a in &e.args {
-                    if tracked(a) {
-                        cur[a.idx() / 64] |= 1 << (a.idx() % 64);
-                    }
-                }
-            }
-            for u in bd.term.uses() {
-                if tracked(u) {
-                    cur[u.idx() / 64] |= 1 << (u.idx() % 64);
-                }
-            }
-            for &i in bd.insts.iter().rev() {
-                let id = &f.insts[i.idx()];
-                for r in id.results() {
-                    cur[r.idx() / 64] &= !(1 << (r.idx() % 64));
-                }
-                for &a in &id.args {
-                    if tracked(a) {
-                        cur[a.idx() / 64] |= 1 << (a.idx() % 64);
-                    }
-                }
-            }
-            for &p in &bd.params {
-                cur[p.idx() / 64] &= !(1 << (p.idx() % 64));
-            }
+            let mut cur = live_out(f, &live, b);
+            walk_back(f, b, &mut cur, |_, _| {});
             if cur != live[b.idx()] {
                 live[b.idx()] = cur;
                 changed = true;
@@ -152,56 +204,19 @@ pub fn clobbers(f: &Func, id: &super::ir::InstData) -> u32 {
 /// its results) by the exact liveness, walking each block backward from its live-out set. A
 /// tail call needs nothing live after it, and a return only moves into its return registers
 /// after the last use.
-fn crossing(f: &Func, live: &[Vec<u64>]) -> Vec<u32> {
-    let words = f.values.len().div_ceil(64);
+fn crossing(f: &Func, live: &[BitSet]) -> Vec<u32> {
     let mut cross = alloc::vec![0u32; f.values.len()];
-    let tracked = |v: super::ir::Value| matches!(f.values[v.idx()].def, ValueDef::Inst(..) | ValueDef::Param(..));
-    let mut cur = alloc::vec![0u64; words];
     for &b in &f.layout {
-        let bd = &f.blocks[b.idx()];
-        if !bd.insts.iter().any(|i| clobbers(f, &f.insts[i.idx()]) != 0) {
+        if !f.blocks[b.idx()].insts.iter().any(|i| clobbers(f, &f.insts[i.idx()]) != 0) {
             continue;
         }
-        cur.fill(0);
-        for e in bd.term.edges() {
-            for (w, x) in cur.iter_mut().zip(&live[e.to.idx()]) {
-                *w |= x;
-            }
-            for &p in &f.blocks[e.to.idx()].params {
-                cur[p.idx() / 64] &= !(1 << (p.idx() % 64));
-            }
-            for &a in &e.args {
-                if tracked(a) {
-                    cur[a.idx() / 64] |= 1 << (a.idx() % 64);
-                }
-            }
-        }
-        for u in bd.term.uses() {
-            if tracked(u) {
-                cur[u.idx() / 64] |= 1 << (u.idx() % 64);
-            }
-        }
-        for &i in bd.insts.iter().rev() {
-            let id = &f.insts[i.idx()];
-            for r in id.results() {
-                cur[r.idx() / 64] &= !(1 << (r.idx() % 64));
-            }
+        let mut cur = live_out(f, live, b);
+        walk_back(f, b, &mut cur, |id, cur| {
             let m = clobbers(f, id);
             if m != 0 {
-                for (w, &bits) in cur.iter().enumerate() {
-                    let mut x = bits;
-                    while x != 0 {
-                        cross[w * 64 + x.trailing_zeros() as usize] |= m;
-                        x &= x - 1;
-                    }
-                }
+                cur.iter().for_each(|v| cross[v.idx()] |= m);
             }
-            for &a in &id.args {
-                if tracked(a) {
-                    cur[a.idx() / 64] |= 1 << (a.idx() % 64);
-                }
-            }
-        }
+        });
     }
     cross
 }
@@ -214,16 +229,16 @@ fn crossing(f: &Func, live: &[Vec<u64>]) -> Vec<u32> {
 pub fn remat(f: &mut Func) {
     let live = live_in(f);
     let cross = crossing(f, &live);
-    let cand = |f: &Func, v: super::ir::Value| {
+    let cand = |f: &Func, v: Value| {
         cross.get(v.idx()).is_some_and(|c| c & CALL != 0)
             && matches!(f.values[v.idx()].def, ValueDef::Inst(i, _) if matches!(f.insts[i.idx()].op, Op::AllocaAddr(..) | Op::RefAddr(_, false)))
     };
-    if !(0..f.values.len()).any(|v| cand(f, super::ir::Value(v as u32))) {
+    if !(0..f.values.len()).any(|v| cand(f, Value(v as u32))) {
         return;
     }
     // Per block: the clone of each candidate valid since the last call.
-    let mut cur: Vec<(super::ir::Value, super::ir::Value)> = Vec::new();
-    let clone = |f: &mut Func, b: super::ir::Block, at: usize, v: super::ir::Value| -> super::ir::Value {
+    let mut cur: Vec<(Value, Value)> = Vec::new();
+    let clone = |f: &mut Func, b: Block, at: usize, v: Value| -> Value {
         let ValueDef::Inst(i, _) = f.values[v.idx()].def else { unreachable!() };
         let op = f.insts[i.idx()].op.clone();
         let w = f.w(v);
@@ -271,11 +286,11 @@ pub fn remat(f: &mut Func) {
         }
         let fused = matches!(f.blocks[b.idx()].term, super::ir::Term::BrOvf { .. });
         let mut term = core::mem::replace(&mut f.blocks[b.idx()].term, super::ir::Term::None);
-        let mut us: Vec<super::ir::Value> = term.uses();
+        let mut us: Vec<Value> = term.uses();
         for e in term.edges() {
             us.extend(&e.args);
         }
-        let mut subst: Vec<(super::ir::Value, super::ir::Value)> = Vec::new();
+        let mut subst: Vec<(Value, Value)> = Vec::new();
         for u in &mut us {
             if !cand(f, *u) {
                 continue;
@@ -291,7 +306,7 @@ pub fn remat(f: &mut Func) {
             };
             subst.push((*u, c));
         }
-        let sub = |v: &mut super::ir::Value| {
+        let sub = |v: &mut Value| {
             if let Some(&(_, c)) = subst.iter().find(|(o, _)| o == v) {
                 *v = c;
             }
@@ -376,28 +391,21 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
         lo[v] = lo[v].min(a);
         hi[v] = hi[v].max(b);
     };
-    let tracked = |v: super::ir::Value| matches!(f.values[v.idx()].def, ValueDef::Inst(..) | ValueDef::Param(..));
+    let tracked = |v: Value| tracked(f, v);
     let cross = crossing(f, &live);
     for &b in &f.layout {
         let bd = &f.blocks[b.idx()];
         let (s, e) = (pos.start[b.idx()], pos.end[b.idx()]);
         // Live into the block: from its start.
-        for (w, &bits) in live[b.idx()].iter().enumerate() {
-            let mut x = bits;
-            while x != 0 {
-                let v = w * 64 + x.trailing_zeros() as usize;
-                x &= x - 1;
-                ext(v, s, s);
-            }
+        for v in live[b.idx()].iter() {
+            ext(v.idx(), s, s);
         }
         for &p in &bd.params {
             ext(p.idx(), s, s);
         }
-        let mut out = alloc::vec![0u64; live[b.idx()].len()];
+        let mut out = BitSet::new(f);
         for ed in bd.term.edges() {
-            for (w, x) in out.iter_mut().zip(&live[ed.to.idx()]) {
-                *w |= x;
-            }
+            out.union_with(&live[ed.to.idx()]);
             for &a in &ed.args {
                 if tracked(a) {
                     ext(a.idx(), e, e + 1);
@@ -405,13 +413,8 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
             }
         }
         // Live out: to the end (a value live out is live in, or defined here).
-        for (w, &bits) in out.iter().enumerate() {
-            let mut x = bits;
-            while x != 0 {
-                let v = w * 64 + x.trailing_zeros() as usize;
-                x &= x - 1;
-                ext(v, e + 1, e + 1);
-            }
+        for v in out.iter() {
+            ext(v.idx(), e + 1, e + 1);
         }
         for (k, &i) in bd.insts.iter().enumerate() {
             let p = s + 2 * (k as u32 + 1);
@@ -639,13 +642,12 @@ pub fn check(f: &Func, al: &Alloc, frame_pointer: bool) -> Result<(), alloc::str
             Loc::Spill(n) => Some(16 + n as usize),
         }
     };
-    let tracked = |v: super::ir::Value| matches!(f.values[v.idx()].def, ValueDef::Inst(..) | ValueDef::Param(..));
     let n = 16 + al.spills as usize;
     for &b in &f.layout {
         let bd = &f.blocks[b.idx()];
         let mut owner: Vec<Option<u32>> = alloc::vec![None; n];
-        let claim = |owner: &mut Vec<Option<u32>>, v: super::ir::Value| -> Result<(), alloc::string::String> {
-            if !tracked(v) {
+        let claim = |owner: &mut Vec<Option<u32>>, v: Value| -> Result<(), alloc::string::String> {
+            if !tracked(f, v) {
                 return Ok(());
             }
             let l = al.loc[v.idx()];
@@ -664,7 +666,7 @@ pub fn check(f: &Func, al: &Alloc, frame_pointer: bool) -> Result<(), alloc::str
                 }
             }
         };
-        let release = |owner: &mut Vec<Option<u32>>, v: super::ir::Value| -> Result<(), alloc::string::String> {
+        let release = |owner: &mut Vec<Option<u32>>, v: Value| -> Result<(), alloc::string::String> {
             if let Some(s) = slot(al.loc[v.idx()]) {
                 match owner[s] {
                     Some(w) if w != v.0 => return Err(format!("{v}'s definition in {b} overwrites v{w}")),
@@ -673,22 +675,8 @@ pub fn check(f: &Func, al: &Alloc, frame_pointer: bool) -> Result<(), alloc::str
             }
             Ok(())
         };
-        // Live out.
-        for e in bd.term.edges() {
-            for (w, &bits) in live[e.to.idx()].iter().enumerate() {
-                let mut x = bits;
-                while x != 0 {
-                    let v = super::ir::Value((w * 64) as u32 + x.trailing_zeros());
-                    x &= x - 1;
-                    claim(&mut owner, v)?;
-                }
-            }
-            for &a in &e.args {
-                claim(&mut owner, a)?;
-            }
-        }
-        for u in bd.term.uses() {
-            claim(&mut owner, u)?;
+        for v in live_out(f, &live, b).iter() {
+            claim(&mut owner, v)?;
         }
         for &i in bd.insts.iter().rev() {
             let id = &f.insts[i.idx()];
@@ -711,7 +699,7 @@ pub fn check(f: &Func, al: &Alloc, frame_pointer: bool) -> Result<(), alloc::str
         // What is left must be live in.
         for (s, o) in owner.iter().enumerate() {
             if let Some(v) = o
-                && live[b.idx()][*v as usize / 64] >> (*v % 64) & 1 == 0
+                && !live[b.idx()].contains(Value(*v))
             {
                 return Err(format!("v{v} in location {s} at the start of {b} isn't live in"));
             }
