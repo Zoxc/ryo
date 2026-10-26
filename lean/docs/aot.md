@@ -241,7 +241,7 @@ follows the decoder's structure:
 - **Inline steps**: R's `step` of a native instruction of a `Sound` class (scopes, `view`,
   `opSem`, `Then.succ`) is simulated by the class's sequence: `RRel` after, `rip` past the
   items, and the next instruction the fall-through or, for a branch class, the target exactly
-  when the sequence's condition holds (`Ryo/Proofs/Step.lean`, `inline_step`). The opcode
+  when the sequence's condition holds (`Ryo/Proofs/Step.lean`, `inline_step`; `inline_stepD` for the overflow ops, with their disjointness as one hypothesis to drop once they store the result first). The opcode
   facts it takes (`InlineOk`: `shapeOk`, an `opSem` shape, not `resume`/`unreachable`) are
   hypotheses; `inlineOps_shape` proves the first.
 - **Shapes**: for each shape (`op` handler call, `br`, `switch`, `trap`, `ret`, `arg`, `jmp`,
