@@ -5,7 +5,7 @@ use rustc_middle::mir::{BinOp, ConstValue, Operand, UnOp};
 use rustc_middle::ty;
 
 use super::cast::ScalarKind;
-use super::emit::{FloatWidth, Width, imm_words, opcode, opw, try_opcode};
+use super::emit::{FloatWidth, Width, opcode, opw, try_opcode};
 use super::place::PlaceVal;
 use super::{FnCx, NeedsNative, native};
 
@@ -169,13 +169,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             && w.truncate(v).is_power_of_two()
         {
             let v = w.truncate(v);
-            let (fam, imm) = if op == BinOp::Div { ("ShrUImm", u128::from(v.trailing_zeros())) } else { ("AndImm", v - 1) };
-            let mut ops = vec![0, sa];
-            ops.extend(imm_words(w, imm));
-            let opc = opw(fam, w);
+            let (fam, imm) = if op == BinOp::Div { ("ShrU", u128::from(v.trailing_zeros())) } else { ("And", v - 1) };
             return self.with_place_slot(dst, |fx, d| {
-                ops[0] = d;
-                fx.op(opc, &ops);
+                fx.op_imm(fam, w, d, sa, imm);
                 Ok(())
             });
         }
@@ -208,13 +204,10 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         }
         // `x op constant`: the `.imm` form.
         if let Some(v) = self.const_int(b)?
-            && let Some(opc) = try_opcode(&format!("{family}Imm{}", w.suffix()))
+            && try_opcode(&format!("{family}Imm{}", w.suffix())).is_some()
         {
-            let mut ops = vec![0, sa];
-            ops.extend(imm_words(w, w.truncate(v)));
             return self.with_place_slot(dst, |fx, d| {
-                ops[0] = d;
-                fx.op(opc, &ops);
+                fx.op_imm(&family, w, d, sa, v);
                 Ok(())
             });
         }
@@ -285,12 +278,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             Cmp::Ge => format!("Ge{su}"),
         };
         if let Some(v) = self.const_int(b)? {
-            let opc = opcode(&format!("{}Imm{}", name(cmp), w.suffix()));
-            let mut ops = vec![0, sa];
-            ops.extend(imm_words(w, w.truncate(v)));
+            let family = name(cmp);
             return self.with_place_slot(dst, |fx, d| {
-                ops[0] = d;
-                fx.op(opc, &ops);
+                fx.op_imm(&family, w, d, sa, v);
                 Ok(())
             });
         }
