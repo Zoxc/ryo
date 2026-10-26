@@ -213,7 +213,8 @@ This gives a third backend, built from the same toolchain, to compare against.
   the Mach-O form no initializers or `LC_LINKER_OPTION`), and allows the imports of its
   private std. On Mach-O it also runs `rt-core-only` on the target's `ryo_rt` (Mach-O
   relocations, `_`-prefixed names; calls within one object's `__text` have no relocation,
-  so it sees fewer edges than on ELF, where every function has its own section).
+  so it sees fewer edges than on ELF, where every function has its own section) and `registry-first`: in the linked `vm_sysroot`, the first `__mod_init_func` entry is
+  the registry constructor (it jumps to `_ryo_vm_register`), ahead of the program's.
 - `test --clif`: also builds the corpus with `rustc-clif` and diffs its output too. That
   helps tell ryo bugs from test-corpus problems.
 - `bench [--runs N]`: hyperfine comparisons of each program in `bench/` (fib, sieve,

@@ -86,6 +86,8 @@ const RT_IMPORTS_MACHO: &[&str] = &[
     "_mprotect",
     "_munmap",
     "_atexit",
+    "_fmod",
+    "_fmodf",
 ];
 
 pub fn run(target: &str) -> Result<(), String> {
@@ -199,8 +201,45 @@ pub fn run(target: &str) -> Result<(), String> {
             }
         }
     }
+    // Mach-O has no constructor priorities: the registry's must come first in input order.
+    if macho && !failed.contains(&"vm_sysroot") {
+        let exe = out.join("vm_sysroot").join("ryo").join("vm_sysroot");
+        match registry_first(&info, &exe) {
+            Ok(()) => eprintln!("[y] test --cross {target} registry-first: ok"),
+            Err(msg) => {
+                eprintln!("[y] test --cross {target} registry-first: FAILED: {msg}");
+                failed.push("registry-first");
+            }
+        }
+    }
     if !failed.is_empty() {
         return Err(format!("failed cross tests: {}", failed.join(", ")));
+    }
+    Ok(())
+}
+
+/// The first entry of the linked Mach-O program `exe`'s `__mod_init_func` is the registry
+/// constructor (it jumps to `_ryo_vm_register`), and another one, the program's own
+/// (`tests/vm_sysroot.rs`'s, which enters the VM), follows it (design/platforms.md).
+fn registry_first(info: &RustcInfo, exe: &Path) -> Result<(), String> {
+    let objdump = crate::jit::llvm_tool(info, "llvm-objdump");
+    let dump = crate::utils::output(cmd(&objdump).args(["-s", "-j", "__mod_init_func"]).arg(exe))?;
+    // ` <address> <word> <word> <word> <word>  <ascii>` lines: little-endian 8-byte pointers.
+    let hex: String = dump
+        .lines()
+        .filter(|l| l.starts_with(' '))
+        .flat_map(|l| l.split_whitespace().skip(1).take(4).filter(|w| w.len() == 8 && w.chars().all(|c| c.is_ascii_hexdigit())))
+        .collect();
+    let bytes: Vec<u8> = (0..hex.len() / 2).map(|i| u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).unwrap()).collect();
+    let ptrs: Vec<u64> = bytes.chunks_exact(8).map(|c| u64::from_le_bytes(c.try_into().unwrap())).collect();
+    let [first, _, ..] = ptrs[..] else {
+        return Err(format!("{} has {} initializers, expected the registry's and the program's", exe.display(), ptrs.len()));
+    };
+    let dis = crate::utils::output(
+        cmd(&objdump).arg("-d").arg(format!("--start-address={first:#x}")).arg(format!("--stop-address={:#x}", first + 18)).arg(exe),
+    )?;
+    if !dis.contains("<_ryo_vm_register>") {
+        return Err(format!("the first initializer of {} (at {first:#x}) isn't the registry's:\n{dis}", exe.display()));
     }
     Ok(())
 }
