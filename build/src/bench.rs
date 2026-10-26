@@ -161,14 +161,44 @@ impl Job {
     }
 }
 
+/// How a benchmark is measured: timed (hyperfine or the built-in timer), or one run's
+/// instructions counted (`Metric::Cachegrind`, compilation untimed).
 enum Timer {
     Hyperfine { json: PathBuf },
     Builtin,
+    Cachegrind,
 }
 
 impl Timer {
+    /// Compiles with `job`, filling `cell.compile` if timed.
+    fn compile(&self, job: &Job, runs: u32, cell: &mut Cell) -> Result<(), String> {
+        match self {
+            Timer::Cachegrind => crate::utils::run(&mut job.command()),
+            _ => {
+                cell.compile = Some(self.measure(job, runs)?);
+                Ok(())
+            }
+        }
+    }
+
+    /// Runs the program with `job`, filling `cell.run` or `cell.ir`. Errors are prefixed by
+    /// what failed.
+    fn run(&self, job: &Job, runs: u32, cell: &mut Cell) -> Result<(), String> {
+        match self {
+            Timer::Cachegrind => {
+                cell.ir = Some(cachegrind(job).map_err(|e| format!("cachegrind: {e}"))?);
+                Ok(())
+            }
+            _ => {
+                cell.run = Some(self.measure(job, runs).map_err(|e| format!("run: {e}"))?);
+                Ok(())
+            }
+        }
+    }
+
     fn measure(&self, job: &Job, runs: u32) -> Result<Stats, String> {
         match self {
+            Timer::Cachegrind => unreachable!("cachegrind doesn't time"),
             Timer::Builtin => {
                 let mut times = Vec::new();
                 for i in 0..=runs {
@@ -254,16 +284,16 @@ pub fn run(opts: &Options) -> Result<(), String> {
     fs::create_dir_all(&out).map_err(|e| format!("creating {}: {e}", out.display()))?;
     let timer = if opts.metric == Metric::Cachegrind {
         eprintln!("[y] bench: counting instructions of one run with cachegrind");
-        None
+        Timer::Cachegrind
     } else if Command::new("hyperfine").arg("--version").output().is_ok_and(|o| o.status.success()) {
         eprintln!("[y] bench: timing with hyperfine, {runs} runs after 1 warmup");
-        Some(Timer::Hyperfine { json: out.join("hyperfine.json") })
+        Timer::Hyperfine { json: out.join("hyperfine.json") }
     } else {
         eprintln!(
             "[y] bench: hyperfine is not installed; timing with the built-in timer \
              ({runs} runs after 1 warmup, mean and standard deviation of wall time)"
         );
-        Some(Timer::Builtin)
+        Timer::Builtin
     };
 
     let mut rows = Vec::new();
@@ -287,13 +317,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
             let mut failed = |what: &str, e: String| failures.push(format!("{name}: {what}: {e}"));
             let compile_job = Job { program: compiler, args, env: Vec::new() };
             let mut cell = Cell::default();
-            let built = match &timer {
-                Some(timer) => {
-                    cell.compile = timer.measure(&compile_job, runs).map_err(|e| failed("compile", e)).ok();
-                    cell.compile.is_some()
-                }
-                None => crate::utils::run(&mut compile_job.command()).map_err(|e| failed("compile", e)).is_ok(),
-            };
+            let built = timer.compile(&compile_job, runs, &mut cell).map_err(|e| failed("compile", e)).is_ok();
             let output = if built { run_once(&exe, &backend.env).map_err(|e| failed("run", e)).ok() } else { None };
             if let Some(output) = output {
                 match &reference {
@@ -302,9 +326,8 @@ pub fn run(opts: &Options) -> Result<(), String> {
                     Some(_) => {}
                 }
                 let job = Job { program: exe, args: Vec::new(), env: backend.env.clone() };
-                match &timer {
-                    Some(timer) => cell.run = timer.measure(&job, runs).map_err(|e| failures.push(format!("{name}: run: {e}"))).ok(),
-                    None => cell.ir = cachegrind(&job).map_err(|e| failures.push(format!("{name}: cachegrind: {e}"))).ok(),
+                if let Err(e) = timer.run(&job, runs, &mut cell) {
+                    failures.push(format!("{name}: {e}"));
                 }
             }
             cells.push(cell);
@@ -315,12 +338,12 @@ pub fn run(opts: &Options) -> Result<(), String> {
     let header: Vec<&str> = backends.iter().map(|b| b.name.as_str()).collect();
     println!();
     match timer {
-        Some(_) => {
+        Timer::Hyperfine { .. } | Timer::Builtin => {
             print!("{}", table("compile time (ms, mean ± stddev)", &header, &rows, |c| c.compile.map(ms)));
             println!();
             print!("{}", table("run time (ms, mean ± stddev)", &header, &rows, |c| c.run.map(ms)));
         }
-        None => {
+        Timer::Cachegrind => {
             print!("{}", table("run instructions (cachegrind Ir, millions)", &header, &rows, |c| c.ir.map(|n| format!("{:.1}", n as f64 / 1e6))));
             println!();
             let title = format!("run instructions relative to {}", header[0]);
