@@ -42,7 +42,7 @@ fn main(rt: &'static RtApi) {
             list = (rt.next_batch)(false);
         }
         recheck.retain_mut(|(rec, seen)| {
-            crate::install::settle(*rec);
+            ryo_bytecode::image::JitRecord::settle(*rec);
             *seen = if crate::install::settled(*rec) { *seen + 1 } else { 0 };
             *seen < 2
         });

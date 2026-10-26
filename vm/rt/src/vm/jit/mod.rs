@@ -31,7 +31,7 @@ use core::ffi::{CStr, c_char};
 use core::mem::MaybeUninit;
 use core::ptr;
 use core::sync::atomic::Ordering::{AcqRel, Acquire, Relaxed, Release, SeqCst};
-use core::sync::atomic::{AtomicBool, AtomicI64, AtomicPtr, AtomicU8, AtomicU32, AtomicUsize};
+use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU8, AtomicU32, AtomicUsize};
 
 use ryo_bytecode::image::{Image, JIT_BIAS, JIT_COLD, JIT_DONE, JIT_ENTRY_THRESHOLD, JIT_FAILED, JIT_QUEUED, JIT_THRESHOLD, JitRecord, jit_settle};
 use ryo_bytecode::jit_abi::{JIT_CHECK, JIT_LOG, JIT_OPT_SSA, JIT_OPT_SSA_NAIVE, JIT_PERFMAP, JIT_SYNC, JIT_TEST_PANIC, RtApi};
@@ -250,29 +250,6 @@ static SLEEPING: AtomicBool = AtomicBool::new(false);
 static STARTED: AtomicBool = AtomicBool::new(false);
 /// The JIT thread couldn't be started: the trips act as the no-op JIT.
 static DISABLED: AtomicBool = AtomicBool::new(false);
-
-// The record's fields the trips and the JIT thread share with the counter checks, which read
-// and write them with plain instructions: atomics of their size.
-fn ctr_e(r: *mut JitRecord) -> &'static AtomicI64 {
-    // SAFETY: records live in images' writable sections forever; the counters are 8-aligned.
-    unsafe { AtomicI64::from_ptr(&raw mut (*r).ctr_e) }
-}
-fn ctr_l(r: *mut JitRecord) -> &'static AtomicI64 {
-    // SAFETY: as for `ctr_e`.
-    unsafe { AtomicI64::from_ptr(&raw mut (*r).ctr_l) }
-}
-fn entry(r: *mut JitRecord) -> &'static AtomicPtr<u8> {
-    // SAFETY: as for `ctr_e`.
-    unsafe { AtomicPtr::from_ptr((&raw mut (*r).entry).cast::<*mut u8>()) }
-}
-fn osr_slot(r: *mut JitRecord) -> &'static AtomicPtr<u8> {
-    // SAFETY: as for `ctr_e`.
-    unsafe { AtomicPtr::from_ptr((&raw mut (*r).osr).cast::<*mut u8>()) }
-}
-fn state(r: *mut JitRecord) -> &'static AtomicU32 {
-    // SAFETY: as for `ctr_e`.
-    unsafe { &(*r).state }
-}
 
 /// The trip of a function's entry: `r11` is its JIT record, `rsp` 16-aligned (the caller's
 /// and the stub's return addresses are on it), the argument registers live. Saves them,
@@ -497,7 +474,7 @@ pub unsafe extern "sysv64" fn trip_osr() {
 /// [`trip_entry`]'s work: the JIT entry to continue at, or null to continue in AOT code.
 extern "sysv64-unwind" fn entry_trip(rec: *mut JitRecord) -> *const u8 {
     if trip(rec) == JIT_DONE {
-        return entry(rec).load(Acquire);
+        return JitRecord::entry_slot(rec).load(Acquire);
     }
     ptr::null()
 }
@@ -505,7 +482,7 @@ extern "sysv64-unwind" fn entry_trip(rec: *mut JitRecord) -> *const u8 {
 /// [`trip_osr`]'s work: the OSR dispatcher to continue at, or null to continue in AOT code.
 extern "sysv64-unwind" fn osr_trip(rec: *mut JitRecord) -> *const u8 {
     if trip(rec) == JIT_DONE {
-        return osr_slot(rec).load(Acquire);
+        return JitRecord::osr_slot(rec).load(Acquire);
     }
     ptr::null()
 }
@@ -517,38 +494,29 @@ extern "sysv64-unwind" fn osr_trip(rec: *mut JitRecord) -> *const u8 {
 fn trip(rec: *mut JitRecord) -> u32 {
     let cfg = config();
     if !cfg.enabled || DISABLED.load(Relaxed) {
-        for c in [ctr_e(rec), ctr_l(rec)] {
+        for c in [JitRecord::ctr_e(rec), JitRecord::ctr_l(rec)] {
             jit_settle(c, || JIT_FAILED);
         }
         return JIT_COLD;
     }
-    let st = state(rec).load(Acquire);
-    if st == JIT_COLD && state(rec).compare_exchange(JIT_COLD, JIT_QUEUED, AcqRel, Acquire).is_ok() {
+    let st = JitRecord::state(rec).load(Acquire);
+    if st == JIT_COLD && JitRecord::state(rec).compare_exchange(JIT_COLD, JIT_QUEUED, AcqRel, Acquire).is_ok() {
         push(rec);
     }
     // With `sync`, a queued record keeps its counters unbiased, so that every thread that
     // trips meanwhile waits for the compile too, rather than running on in AOT code.
     if !cfg.sync {
-        settle(rec);
+        JitRecord::settle(rec);
     }
-    if cfg.sync && state(rec).load(SeqCst) == JIT_QUEUED {
-        while state(rec).load(SeqCst) == JIT_QUEUED && !DISABLED.load(SeqCst) {
-            futex_wait(state(rec), JIT_QUEUED);
+    if cfg.sync && JitRecord::state(rec).load(SeqCst) == JIT_QUEUED {
+        while JitRecord::state(rec).load(SeqCst) == JIT_QUEUED && !DISABLED.load(SeqCst) {
+            futex_wait(JitRecord::state(rec), JIT_QUEUED);
         }
     }
     if cfg.sync {
-        settle(rec);
+        JitRecord::settle(rec);
     }
-    state(rec).load(SeqCst)
-}
-
-/// Moves both counters of `rec` to the bias of its state ([`JitRecord`]), keeping their
-/// counts. Another thread changing the state meanwhile settles them too, after the change:
-/// whichever is last leaves the bias of the final state.
-fn settle(rec: *mut JitRecord) {
-    for c in [ctr_e(rec), ctr_l(rec)] {
-        jit_settle(c, || state(rec).load(SeqCst));
-    }
+    JitRecord::state(rec).load(SeqCst)
 }
 
 /// Pushes a record that just became `Queued`, starts the JIT thread with the first push, and
@@ -575,7 +543,7 @@ fn push(rec: *mut JitRecord) {
             // SAFETY: popped records are this thread's, as the JIT thread's.
             list = unsafe { (*r).next };
             fail(r);
-            futex_wake(state(r), i32::MAX);
+            futex_wake(JitRecord::state(r), i32::MAX);
         }
         return;
     }
@@ -673,15 +641,14 @@ extern "C-unwind" fn done(rec: *mut JitRecord, ok: bool) {
         fail(rec);
     }
     if config().sync {
-        futex_wake(state(rec), i32::MAX);
+        futex_wake(JitRecord::state(rec), i32::MAX);
     }
 }
 
 /// Leaves a record in AOT code for good.
 fn fail(rec: *mut JitRecord) {
     FAILED.fetch_add(1, Relaxed);
-    state(rec).store(JIT_FAILED, SeqCst);
-    settle(rec);
+    JitRecord::fail(rec);
 }
 
 /// Called for every newly registered image: with `RYO_JIT_THRESHOLD`, starts its counters
@@ -698,8 +665,8 @@ pub(crate) fn registered(img: &Image<'_>) {
     };
     for i in 0..img.header().jit_records.count as usize {
         let r = img.jit_records().wrapping_add(i);
-        ctr_e(r).store(bias - e, Relaxed);
-        ctr_l(r).store(bias - l, Relaxed);
+        JitRecord::ctr_e(r).store(bias - e, Relaxed);
+        JitRecord::ctr_l(r).store(bias - l, Relaxed);
     }
 }
 

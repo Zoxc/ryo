@@ -4,8 +4,8 @@
 //! information, the perf map, and the record's publication (design/jit.md, "Compiling and installing").
 
 use core::ptr;
+use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering::{Acquire, Release, SeqCst};
-use core::sync::atomic::{AtomicI64, AtomicPtr, AtomicU32, AtomicUsize};
 use std::collections::HashMap;
 use std::io::Write;
 use std::vec::Vec;
@@ -14,9 +14,7 @@ use ryo_bytecode::asm::frame::{self, SlotMap};
 use ryo_bytecode::asm::osr::OsrEntry;
 use ryo_bytecode::asm::{self, FUNC_FAR, FUNC_KINDS, FUNC_NEAR, FUNC_SLOT, Mode, Ref};
 use ryo_bytecode::full::{Const, Data, Func, Site, Sym};
-use ryo_bytecode::image::{
-    EhFunc, Image, ImageResolver, JIT_DONE, JitRecord, eh_cie, eh_fde, eh_fde_rows, jit_count, jit_settle, jit_unbiased, pe_unwind_info,
-};
+use ryo_bytecode::image::{EhFunc, Image, ImageResolver, JIT_DONE, JitRecord, eh_cie, eh_fde, eh_fde_rows, jit_count, jit_unbiased, pe_unwind_info};
 use ryo_bytecode::jit;
 use ryo_bytecode::jit::inline::VmFunc;
 use ryo_bytecode::jit::ir::CallTarget;
@@ -35,29 +33,6 @@ const REACH: usize = (1 << 31) - (1 << 20);
 const CODE_AT: usize = 16;
 const _: () = assert!(JIT_ENTRY_PREFIX <= CODE_AT);
 
-// The record's fields the JIT shares with the trips and the counter checks, which read and
-// write them with plain instructions: atomics of their size.
-fn ctr_e(r: *mut JitRecord) -> &'static AtomicI64 {
-    // SAFETY: records live in images' writable sections forever; the counters are 8-aligned.
-    unsafe { AtomicI64::from_ptr(&raw mut (*r).ctr_e) }
-}
-fn ctr_l(r: *mut JitRecord) -> &'static AtomicI64 {
-    // SAFETY: as for `ctr_e`.
-    unsafe { AtomicI64::from_ptr(&raw mut (*r).ctr_l) }
-}
-fn entry(r: *mut JitRecord) -> &'static AtomicPtr<u8> {
-    // SAFETY: as for `ctr_e`.
-    unsafe { AtomicPtr::from_ptr((&raw mut (*r).entry).cast::<*mut u8>()) }
-}
-fn osr_slot(r: *mut JitRecord) -> &'static AtomicPtr<u8> {
-    // SAFETY: as for `ctr_e`.
-    unsafe { AtomicPtr::from_ptr((&raw mut (*r).osr).cast::<*mut u8>()) }
-}
-fn state(r: *mut JitRecord) -> &'static AtomicU32 {
-    // SAFETY: as for `ctr_e`.
-    unsafe { &(*r).state }
-}
-
 /// The length of each installed function's code, by record address ([`crate::code_len`]).
 pub(crate) static CODE_LEN: std::sync::Mutex<Option<HashMap<usize, usize>>> = std::sync::Mutex::new(None);
 
@@ -72,20 +47,13 @@ pub(crate) struct Counts {
 /// [`Counts`] of `rec`, with `thresholds` the counters' ([`RtApi::thresholds`]).
 pub(crate) fn counts(rec: *mut JitRecord, thresholds: [i64; 2]) -> Counts {
     let n = |v: i64, t: i64| jit_count(v, t).max(0) as u64;
-    Counts { calls: n(ctr_e(rec).load(Acquire), thresholds[0]), iters: n(ctr_l(rec).load(Acquire), thresholds[1]) }
-}
-
-/// Moves `rec`'s counters to its state's bias ([`jit_settle`]).
-pub(crate) fn settle(rec: *mut JitRecord) {
-    for c in [ctr_e(rec), ctr_l(rec)] {
-        jit_settle(c, || state(rec).load(SeqCst));
-    }
+    Counts { calls: n(JitRecord::ctr_e(rec).load(Acquire), thresholds[0]), iters: n(JitRecord::ctr_l(rec).load(Acquire), thresholds[1]) }
 }
 
 /// Whether a compiled record's counters both have its bias (a racing AOT increment can erase
 /// it: [`crate::thread`] re-checks).
 pub(crate) fn settled(rec: *mut JitRecord) -> bool {
-    [ctr_e(rec), ctr_l(rec)].iter().all(|c| {
+    [JitRecord::ctr_e(rec), JitRecord::ctr_l(rec)].iter().all(|c| {
         let v = c.load(SeqCst);
         v != jit_unbiased(v) && v > 0
     })
@@ -399,7 +367,7 @@ fn callee(place: Place, c: Callee, name: Name, ext: &mut Vec<Ext>, memo: &mut Ha
             // SAFETY: a registered image's header (`Callee::Vm` has a record).
             let img = unsafe { Image::from_header(header as *const u8) }.expect("a registered image");
             let r = img.jit_records().wrapping_add(g as usize);
-            if state(r).load(Acquire) == JIT_DONE {
+            if JitRecord::state(r).load(Acquire) == JIT_DONE {
                 // SAFETY: published before `Done`.
                 let code = unsafe { (*r).jit_code as usize };
                 Ext { kind: if place.reaches(code) { FUNC_NEAR } else { FUNC_FAR }, vm: None, addr: code, name }
@@ -820,7 +788,7 @@ impl Jit {
                 debug_assert!(region.data % 8 == 0, "call slots are 8-aligned (atomic stores)");
                 // SAFETY: `Ext::vm` names a registered image's function with a record.
                 let gr = unsafe { Image::from_header(hd as *const u8) }.expect("a registered image").jit_records().wrapping_add(g as usize);
-                let target = if state(gr).load(Acquire) == JIT_DONE {
+                let target = if JitRecord::state(gr).load(Acquire) == JIT_DONE {
                     // SAFETY: published before `Done`.
                     unsafe { (*gr).jit_code as usize }
                 } else {
@@ -946,21 +914,11 @@ impl Jit {
             let _ = writeln!(m, "{jit_f:x} {:x} ryo-jit:f{func}@{aot:x}", code_len);
         }
 
-        // Publish: the code's range, the entry, the state, then the counters' bias that takes
-        // every check's stub (design/jit.md, "Publishing").
-        // SAFETY: the record is this thread's to write until `Done`; the AOT code reads
-        // `entry` with plain loads (an atomic store of its size).
-        unsafe {
-            (*rec).jit_code = jit_f as *const u8;
-        }
         CODE_LEN.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(rec as usize, code_len);
-        entry(rec).store((jit_f - JIT_ENTRY_PREFIX) as *mut u8, Release);
-        if osr.is_some() {
-            // The dispatcher, at the start of the OSR code: every head's stub calls it from now.
-            osr_slot(rec).store((jit_f + osr_at) as *mut u8, Release);
-        }
-        state(rec).store(JIT_DONE, SeqCst);
-        settle(rec);
+        // The dispatcher, at the start of the OSR code: every head's stub calls it from now.
+        let osr_entry = osr.as_ref().map(|_| (jit_f + osr_at) as *mut u8);
+        // SAFETY: the record is this thread's until `Done`.
+        unsafe { JitRecord::publish(rec, jit_f as *const u8, (jit_f - JIT_ENTRY_PREFIX) as *mut u8, osr_entry) };
         // Calls of this function from JIT code compiled before it, of any image, go straight
         // to it now.
         for &slot in self.slots_of.get(&(header, func)).map_or(&[][..], |v| &v[..]) {

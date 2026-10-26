@@ -129,6 +129,64 @@ pub struct JitRecord {
     pub ctr_l: i64,
 }
 
+// The record's fields the trips, the JIT thread and the counter checks share; the checks read
+// and write them with plain instructions: atomics of their size. Records live in images'
+// writable sections forever, so each view is `'static`.
+impl JitRecord {
+    pub fn ctr_e(r: *mut Self) -> &'static core::sync::atomic::AtomicI64 {
+        // SAFETY: records live forever; the counters are 8-aligned.
+        unsafe { core::sync::atomic::AtomicI64::from_ptr(&raw mut (*r).ctr_e) }
+    }
+    pub fn ctr_l(r: *mut Self) -> &'static core::sync::atomic::AtomicI64 {
+        // SAFETY: as for `ctr_e`.
+        unsafe { core::sync::atomic::AtomicI64::from_ptr(&raw mut (*r).ctr_l) }
+    }
+    pub fn entry_slot(r: *mut Self) -> &'static core::sync::atomic::AtomicPtr<u8> {
+        // SAFETY: as for `ctr_e`.
+        unsafe { core::sync::atomic::AtomicPtr::from_ptr((&raw mut (*r).entry).cast::<*mut u8>()) }
+    }
+    pub fn osr_slot(r: *mut Self) -> &'static core::sync::atomic::AtomicPtr<u8> {
+        // SAFETY: as for `ctr_e`.
+        unsafe { core::sync::atomic::AtomicPtr::from_ptr((&raw mut (*r).osr).cast::<*mut u8>()) }
+    }
+    pub fn state(r: *mut Self) -> &'static core::sync::atomic::AtomicU32 {
+        // SAFETY: as for `ctr_e`.
+        unsafe { &(*r).state }
+    }
+
+    /// Moves both counters of `r` to the bias of its state ([`jit_settle`]), keeping their
+    /// counts.
+    pub fn settle(r: *mut Self) {
+        for c in [Self::ctr_e(r), Self::ctr_l(r)] {
+            jit_settle(c, || Self::state(r).load(core::sync::atomic::Ordering::SeqCst));
+        }
+    }
+
+    /// Leaves `r` in AOT code for good: [`JIT_FAILED`], then its counters' bias.
+    pub fn fail(r: *mut Self) {
+        Self::state(r).store(JIT_FAILED, core::sync::atomic::Ordering::SeqCst);
+        Self::settle(r);
+    }
+
+    /// Publishes `r`'s JIT code (design/jit.md, "Publishing"): the code's start, the entry
+    /// its stub calls, the OSR dispatcher if any, the state [`JIT_DONE`], then the counters'
+    /// bias that takes every check's stub.
+    ///
+    /// # Safety
+    /// The caller is the JIT thread that owns `r` (it is [`JIT_QUEUED`]).
+    pub unsafe fn publish(r: *mut Self, code: *const u8, entry: *mut u8, osr: Option<*mut u8>) {
+        use core::sync::atomic::Ordering::{Release, SeqCst};
+        // SAFETY: the record is the caller's to write until `Done`.
+        unsafe { (*r).jit_code = code };
+        Self::entry_slot(r).store(entry, Release);
+        if let Some(osr) = osr {
+            Self::osr_slot(r).store(osr, Release);
+        }
+        Self::state(r).store(JIT_DONE, SeqCst);
+        Self::settle(r);
+    }
+}
+
 /// The loop counter a JIT record starts at, negated ([`JitRecord::ctr_l`]): 10 000 loop
 /// iterations.
 pub const JIT_THRESHOLD: i64 = 10_000;
