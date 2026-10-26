@@ -33,35 +33,52 @@ pub struct RtItems {
     pub fp_arg: DefId,
 }
 
-/// The values below are computed once per session and kept in statics (providers are plain
-/// fns). They are keyed on the session's `GlobalCtxt` address, so a second session in the same
-/// process is detected instead of reading stale values.
-fn session_key(tcx: TyCtxt<'_>) -> usize {
-    std::ptr::from_ref::<rustc_middle::ty::GlobalCtxt<'_>>(*tcx) as usize
-}
+/// A value computed once per session and kept in a static (providers are plain fns). It is
+/// keyed on the session's `GlobalCtxt` address, so a second session in the same process is a
+/// fatal error instead of reading stale values.
+struct SessionCell<T>(OnceLock<(usize, T)>);
 
-fn check_session(tcx: TyCtxt<'_>, key: usize) {
-    if key != session_key(tcx) {
-        tcx.dcx().fatal("the ryo backend supports one compilation session per process");
+impl<T> SessionCell<T> {
+    const fn new() -> Self {
+        SessionCell(OnceLock::new())
+    }
+
+    fn key(tcx: TyCtxt<'_>) -> usize {
+        std::ptr::from_ref::<rustc_middle::ty::GlobalCtxt<'_>>(*tcx) as usize
+    }
+
+    fn check<'a>(tcx: TyCtxt<'_>, (key, v): &'a (usize, T)) -> &'a T {
+        if *key != Self::key(tcx) {
+            tcx.dcx().fatal("the ryo backend supports one compilation session per process");
+        }
+        v
+    }
+
+    fn get_or_init(&self, tcx: TyCtxt<'_>, f: impl FnOnce() -> T) -> &T {
+        Self::check(tcx, self.0.get_or_init(|| (Self::key(tcx), f())))
+    }
+
+    /// Fails if a value was already set.
+    fn set(&self, tcx: TyCtxt<'_>, v: T) -> Result<(), ()> {
+        self.0.set((Self::key(tcx), v)).map_err(|_| ())
+    }
+
+    fn get(&self, tcx: TyCtxt<'_>) -> Option<&T> {
+        Some(Self::check(tcx, self.0.get()?))
     }
 }
 
-static RT_ITEMS: OnceLock<(usize, Option<RtItems>)> = OnceLock::new();
+static RT_ITEMS: SessionCell<Option<RtItems>> = SessionCell::new();
 
 /// `ryo_rt`'s crate and template items, found through its diagnostic items. `None` if
 /// `ryo_rt` isn't loaded (rustc wasn't run through `rustc-ryo`).
 pub fn rt_items(tcx: TyCtxt<'_>) -> Option<RtItems> {
-    let (key, items) = *RT_ITEMS.get_or_init(|| {
-        let find = || {
-            let krate = *tcx.crates(()).iter().find(|&&c| tcx.crate_name(c).as_str() == "ryo_rt")?;
-            let items = tcx.diagnostic_items(krate);
-            let get = |name: &str| items.name_to_id.get(&Symbol::intern(name)).copied();
-            Some(RtItems { krate, c_main: get("ryo_c_main")?, fp_arg: get("ryo_rt_fp_arg")? })
-        };
-        (session_key(tcx), find())
-    });
-    check_session(tcx, key);
-    items
+    *RT_ITEMS.get_or_init(tcx, || {
+        let krate = *tcx.crates(()).iter().find(|&&c| tcx.crate_name(c).as_str() == "ryo_rt")?;
+        let items = tcx.diagnostic_items(krate);
+        let get = |name: &str| items.name_to_id.get(&Symbol::intern(name)).copied();
+        Some(RtItems { krate, c_main: get("ryo_c_main")?, fp_arg: get("ryo_rt_fp_arg")? })
+    })
 }
 
 /// What the partition provider hands to the other providers and to `codegen_crate`. Set once:
@@ -81,34 +98,45 @@ pub struct Results {
     pub islands: Vec<(String, String)>,
     /// For `exported_non_generic_symbols`: the Rust symbols the image refers to ([`Roots`]).
     lto_roots: Vec<(String, SymbolExportKind)>,
-    /// For `exported_generic_symbols`: the VM functions with `External` linkage whose symbols
-    /// the image defines, with their visibility; lifetime-erased.
-    vm_exports: Vec<(Instance<'static>, Visibility)>,
-    /// Native items made `External` + `Hidden` only because the image references them.
-    hidden_for_image: Vec<Instance<'static>>,
-    /// `session_key` of the session that computed this.
-    key: usize,
+    /// The interned data, lifetime-erased ([`Results::exports`]).
+    exports: Exports<'static>,
 }
 
-static RESULTS: OnceLock<Results> = OnceLock::new();
+/// The part of [`Results`] that holds this session's interned data.
+struct Exports<'tcx> {
+    /// For `exported_generic_symbols`: the VM functions with `External` linkage whose symbols
+    /// the image defines, with their visibility.
+    vm: Vec<(Instance<'tcx>, Visibility)>,
+    /// Native items made `External` + `Hidden` only because the image references them.
+    hidden_for_image: Vec<Instance<'tcx>>,
+}
+
+static RESULTS: SessionCell<Results> = SessionCell::new();
 
 pub fn results(tcx: TyCtxt<'_>) -> Option<&'static Results> {
-    let r = RESULTS.get()?;
-    check_session(tcx, r.key);
-    Some(r)
+    RESULTS.get(tcx)
 }
 
 impl Results {
-    fn vm_exports<'tcx>(&self, _tcx: TyCtxt<'tcx>) -> &[(Instance<'tcx>, Visibility)] {
-        // SAFETY: the instances were interned by this session's `TyCtxt`, which outlives every
-        // query provider call, and a process runs one session (`RyoBackend::provide`). Only
-        // the lifetime parameter changes.
-        unsafe { std::mem::transmute::<&[(Instance<'static>, Visibility)], &[(Instance<'tcx>, Visibility)]>(&self.vm_exports) }
+    fn new<'tcx>(
+        cgu_name: Symbol,
+        image: ImageObject,
+        main_symbol: Option<String>,
+        certs: Vec<(String, String)>,
+        islands: Vec<(String, String)>,
+        lto_roots: Vec<(String, SymbolExportKind)>,
+        exports: Exports<'tcx>,
+    ) -> Self {
+        // SAFETY: only the lifetime parameter changes; `exports` restores it (see there).
+        let exports = unsafe { std::mem::transmute::<Exports<'tcx>, Exports<'static>>(exports) };
+        Results { cgu_name, image, main_symbol, certs, islands, lto_roots, exports }
     }
 
-    fn hidden_for_image<'tcx>(&self, _tcx: TyCtxt<'tcx>) -> &[Instance<'tcx>] {
-        // SAFETY: as for `vm_exports`.
-        unsafe { std::mem::transmute::<&[Instance<'static>], &[Instance<'tcx>]>(&self.hidden_for_image) }
+    fn exports<'tcx>(&self, _tcx: TyCtxt<'tcx>) -> &Exports<'tcx> {
+        // SAFETY: the instances were interned by this session's `TyCtxt`, which outlives every
+        // query provider call, and a process runs one session (`RESULTS` checks it). Only the
+        // lifetime parameter changes.
+        unsafe { std::mem::transmute::<&Exports<'static>, &Exports<'tcx>>(&self.exports) }
     }
 }
 
@@ -141,7 +169,7 @@ pub fn collect_and_partition_mono_items<'tcx>(tcx: TyCtxt<'tcx>, original: super
         let _t = tcx.prof.generic_activity("ryo_partition");
         Partitioner::new(tcx, rt, cgu).run()
     };
-    if RESULTS.set(results).is_err() {
+    if RESULTS.set(tcx, results).is_err() {
         tcx.dcx().fatal("collect_and_partition_mono_items ran twice in one process");
     }
     MonoItemPartitions {
@@ -388,19 +416,15 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             _ => None,
         }));
         hidden.extend(self.hidden_added.iter().copied());
-        let results = Results {
-            cgu_name: native.name(),
+        let results = Results::new(
+            native.name(),
             image,
             main_symbol,
             certs,
             islands,
-            lto_roots: roots.0.into_iter().collect(),
-            // SAFETY: as in `Results::vm_exports`.
-            vm_exports: unsafe { std::mem::transmute::<Vec<(Instance<'tcx>, Visibility)>, Vec<(Instance<'static>, Visibility)>>(vm_exports) },
-            // SAFETY: as in `erase`.
-            hidden_for_image: unsafe { std::mem::transmute::<Vec<Instance<'tcx>>, Vec<Instance<'static>>>(hidden) },
-            key: session_key(tcx),
-        };
+            roots.0.into_iter().collect(),
+            Exports { vm: vm_exports, hidden_for_image: hidden },
+        );
         (native, results)
     }
 
@@ -1262,7 +1286,7 @@ pub fn exported_generic_symbols<'tcx>(
     list: &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)],
 ) -> &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)] {
     let Some(r) = results(tcx) else { return list };
-    let hidden: FxHashSet<Instance<'tcx>> = r.hidden_for_image(tcx).iter().copied().collect();
+    let hidden: FxHashSet<Instance<'tcx>> = r.exports(tcx).hidden_for_image.iter().copied().collect();
     let mut out: Vec<_> = list
         .iter()
         .copied()
@@ -1278,7 +1302,7 @@ pub fn exported_generic_symbols<'tcx>(
             };
             root.as_local().is_some_and(|d| !reachable.contains(&d))
         };
-        for &(instance, vis) in r.vm_exports(tcx) {
+        for &(instance, vis) in &r.exports(tcx).vm {
             let InstanceKind::Item(def) = instance.def else { continue };
             if need_visibility && vis == Visibility::Hidden {
                 continue;
