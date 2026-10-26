@@ -646,21 +646,15 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         }
     }
 
-    /// Instantiates the island templates the VM functions request (design/stubs.md):
-    /// deduplicated, linked to an upstream copy where one is exported, otherwise added to the
-    /// native CGU, visible to the image.
     /// Each island instance the image calls: its symbol and its template's name.
     fn island_names(&self) -> Vec<(String, String)> {
         let tcx = self.tcx;
-        let templates = &tcx.diagnostic_items(self.rt.krate).name_to_id;
         let mut out: Vec<(String, String)> = Vec::new();
         for v in &self.vm {
             for r in &v.lowered.relocs {
                 let CodeReloc::Island { template, args } = *r else { continue };
-                let Some(&def_id) = templates.get(&template) else { continue };
-                let island = Instance::new_raw(def_id, args);
-                let name = tcx.get_diagnostic_name(def_id).map_or(String::new(), |n| n.to_string());
-                out.push((tcx.symbol_name(island).name.to_owned(), name));
+                let island = island_instance(tcx, self.rt.krate, template, args);
+                out.push((tcx.symbol_name(island).name.to_owned(), template.to_string()));
             }
         }
         out.sort();
@@ -668,17 +662,16 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         out
     }
 
+    /// Instantiates the island templates the VM functions request (design/stubs.md):
+    /// deduplicated, linked to an upstream copy where one is exported, otherwise added to the
+    /// native CGU, visible to the image.
     fn add_islands(&mut self) {
         let tcx = self.tcx;
-        let templates = &tcx.diagnostic_items(self.rt.krate).name_to_id;
         let mut new = Vec::new();
         for v in &self.vm {
             for r in &v.lowered.relocs {
                 let CodeReloc::Island { template, args } = *r else { continue };
-                let Some(&def_id) = templates.get(&template) else {
-                    tcx.dcx().fatal(format!("ryo_rt has no island template `{template}`; rebuild with `./y.sh build`"))
-                };
-                new.push(Instance::new_raw(def_id, args));
+                new.push(island_instance(tcx, self.rt.krate, template, args));
             }
         }
         for island in new {
@@ -765,7 +758,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
     fn build_image(&mut self) -> (ImageObject, Roots) {
         let tcx = self.tcx;
         let mut w = ImageWriter::new(local_stable_crate_id(tcx));
-        let templates = &tcx.diagnostic_items(self.rt.krate).name_to_id;
+        let rt_krate = self.rt.krate;
         let mut pool = Pool::default();
         let mode = asm_mode(tcx, self.rt);
         w.prepare(mode);
@@ -827,7 +820,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                     CodeReloc::Bytes { ref bytes, align } => pool.bytes(&mut w, bytes, align).0,
                     CodeReloc::Data { alloc, offset } => pool.data(tcx, &mut w, alloc).0 + offset,
                     CodeReloc::Island { template, args } => {
-                        let island = Instance::new_raw(templates[&template], args);
+                        let island = island_instance(tcx, rt_krate, template, args);
                         pool.roots.function(tcx, island);
                         let flags = super::symbol_flags(tcx, island, super::SymRole::Island);
                         w.symbol(tcx.symbol_name(island).name, flags).0
@@ -921,6 +914,14 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
 }
 
 /// `instance` for stats output: untrimmed paths, since trimming needs a diagnostic.
+/// The instance of `ryo_rt`'s island template `template` for `args`.
+fn island_instance<'tcx>(tcx: TyCtxt<'tcx>, rt: CrateNum, template: Symbol, args: ty::GenericArgsRef<'tcx>) -> Instance<'tcx> {
+    let Some(&def_id) = tcx.diagnostic_items(rt).name_to_id.get(&template) else {
+        tcx.dcx().fatal(format!("ryo_rt has no island template `{template}`; rebuild with `./y.sh build`"))
+    };
+    Instance::new_raw(def_id, args)
+}
+
 fn path(instance: Instance<'_>) -> String {
     rustc_middle::ty::print::with_no_trimmed_paths!(instance.to_string())
 }
