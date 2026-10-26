@@ -1576,67 +1576,6 @@ b18(): ; Stub
     v8:8 = LandingPad ()
     jmp b16()
 
-fn hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>>::rustc_entry::{closure#0}}>::{closure#0}
-a0: $-160, 8 bytes, Promoted
-a1: $-152, 8 bytes, Promoted
-a2: $-144, 8 bytes, Promoted
-a3: $-136, 8 bytes, Promoted
-a4: $-128, 8 bytes, Promoted
-a5: $-120, 8 bytes, Promoted
-a6: $-112, 8 bytes, Promoted
-a7: $-104, 8 bytes, Promoted
-a8: $-96, 8 bytes, Promoted
-a9: $-88, 8 bytes, Promoted
-a10: $-48, 8 bytes, Promoted
-a11: $-40, 8 bytes, Promoted
-a12: $-24, 8 bytes, Promoted
-a13: $-16, 8 bytes, Promoted
-a14: $-1, 1 bytes, Promoted
-b0(v0:8, v1:8): ; Entry
-    v2:8 = Load(8, 0) (v0)
-    v3:8 = Load(8, 8) (v0)
-    v4:8 = Load(8, 0) (v3)
-    br 0x0 ? b1() : b4()
-b1(): ; Body
-    jmp b3()
-b2(): ; Body head 0
-    ret 0x1 (v18)
-b3(): ; Body
-    v8:8 = Bin(Add, 8) (v1, 0x1)
-    jmp b6(v8)
-b4(): ; Body
-    br 0x0 ? b5() : b10()
-b5(): ; Body
-    jmp b9()
-b6(v10:8): ; Body head 1
-    br 0x0 ? b7() : b13()
-b7(): ; Body
-    jmp b12()
-b8(v12:8): ; Body head 2
-    jmp b6(v12)
-b9(): ; Body
-    jmp b8(v4)
-b10(): ; Body
-    v14:8 = Bin(Sub, 8) (0x0, v1)
-    v15:8 = PtrIndex(32) (v4, v14)
-    jmp b8(v15)
-b11(v16:8): ; Body head 3
-    v18:1 = Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Continue }) (v2, v16)
-    jmp b2()
-b12(): ; Body
-    jmp b11(0x8)
-b13(): ; Body
-    br 0x0 ? b14() : b17()
-b14(): ; Body
-    jmp b16()
-b15(v21:8): ; Body head 4
-    jmp b11(v21)
-b16(): ; Body
-    jmp b15(v10)
-b17(): ; Body
-    v26:8 = PtrIndex(32) (v10, 0xffffffffffffffff)
-    jmp b15(v26)
-
 fn hashbrown::raw::RawTable::<(std::string::String, usize)>::insert_no_grow
 a0: $-224, 8 bytes, Promoted
 a1: $-208, 8 bytes, Promoted
@@ -1953,67 +1892,6 @@ b18(): ; Stub
     v8:8 = LandingPad ()
     jmp b16()
 
-fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::map::equivalent_key<u64, u64, u64>::{closure#0}}>::{closure#0}
-a0: $-160, 8 bytes, Promoted
-a1: $-152, 8 bytes, Promoted
-a2: $-144, 8 bytes, Promoted
-a3: $-136, 8 bytes, Promoted
-a4: $-128, 8 bytes, Promoted
-a5: $-120, 8 bytes, Promoted
-a6: $-112, 8 bytes, Promoted
-a7: $-104, 8 bytes, Promoted
-a8: $-96, 8 bytes, Promoted
-a9: $-88, 8 bytes, Promoted
-a10: $-48, 8 bytes, Promoted
-a11: $-40, 8 bytes, Promoted
-a12: $-24, 8 bytes, Promoted
-a13: $-16, 8 bytes, Promoted
-a14: $-1, 1 bytes, Promoted
-b0(v0:8, v1:8): ; Entry
-    v2:8 = Load(8, 0) (v0)
-    v3:8 = Load(8, 8) (v0)
-    v4:8 = Load(8, 0) (v3)
-    br 0x0 ? b1() : b4()
-b1(): ; Body
-    jmp b3()
-b2(): ; Body head 0
-    ret 0x1 (v18)
-b3(): ; Body
-    v8:8 = Bin(Add, 8) (v1, 0x1)
-    jmp b6(v8)
-b4(): ; Body
-    br 0x0 ? b5() : b10()
-b5(): ; Body
-    jmp b9()
-b6(v10:8): ; Body head 1
-    br 0x0 ? b7() : b13()
-b7(): ; Body
-    jmp b12()
-b8(v12:8): ; Body head 2
-    jmp b6(v12)
-b9(): ; Body
-    jmp b8(v4)
-b10(): ; Body
-    v14:8 = Bin(Sub, 8) (0x0, v1)
-    v15:8 = PtrIndex(16) (v4, v14)
-    jmp b8(v15)
-b11(v16:8): ; Body head 3
-    v18:1 = Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Continue }) (v2, v16)
-    jmp b2()
-b12(): ; Body
-    jmp b11(0x8)
-b13(): ; Body
-    br 0x0 ? b14() : b17()
-b14(): ; Body
-    jmp b16()
-b15(v21:8): ; Body head 4
-    jmp b11(v21)
-b16(): ; Body
-    jmp b15(v10)
-b17(): ; Body
-    v26:8 = PtrIndex(16) (v10, 0xffffffffffffffff)
-    jmp b15(v26)
-
 fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::RandomState>>::rustc_entry::{closure#0}}>
 a0: $-168, 8 bytes, Promoted
 a1: $-160, 8 bytes, Promoted
@@ -2093,67 +1971,6 @@ b17(): ; Body
 b18(): ; Stub
     v8:8 = LandingPad ()
     jmp b16()
-
-fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::RandomState>>::rustc_entry::{closure#0}}>::{closure#0}
-a0: $-160, 8 bytes, Promoted
-a1: $-152, 8 bytes, Promoted
-a2: $-144, 8 bytes, Promoted
-a3: $-136, 8 bytes, Promoted
-a4: $-128, 8 bytes, Promoted
-a5: $-120, 8 bytes, Promoted
-a6: $-112, 8 bytes, Promoted
-a7: $-104, 8 bytes, Promoted
-a8: $-96, 8 bytes, Promoted
-a9: $-88, 8 bytes, Promoted
-a10: $-48, 8 bytes, Promoted
-a11: $-40, 8 bytes, Promoted
-a12: $-24, 8 bytes, Promoted
-a13: $-16, 8 bytes, Promoted
-a14: $-1, 1 bytes, Promoted
-b0(v0:8, v1:8): ; Entry
-    v2:8 = Load(8, 0) (v0)
-    v3:8 = Load(8, 8) (v0)
-    v4:8 = Load(8, 0) (v3)
-    br 0x0 ? b1() : b4()
-b1(): ; Body
-    jmp b3()
-b2(): ; Body head 0
-    ret 0x1 (v18)
-b3(): ; Body
-    v8:8 = Bin(Add, 8) (v1, 0x1)
-    jmp b6(v8)
-b4(): ; Body
-    br 0x0 ? b5() : b10()
-b5(): ; Body
-    jmp b9()
-b6(v10:8): ; Body head 1
-    br 0x0 ? b7() : b13()
-b7(): ; Body
-    jmp b12()
-b8(v12:8): ; Body head 2
-    jmp b6(v12)
-b9(): ; Body
-    jmp b8(v4)
-b10(): ; Body
-    v14:8 = Bin(Sub, 8) (0x0, v1)
-    v15:8 = PtrIndex(16) (v4, v14)
-    jmp b8(v15)
-b11(v16:8): ; Body head 3
-    v18:1 = Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Continue }) (v2, v16)
-    jmp b2()
-b12(): ; Body
-    jmp b11(0x8)
-b13(): ; Body
-    br 0x0 ? b14() : b17()
-b14(): ; Body
-    jmp b16()
-b15(v21:8): ; Body head 4
-    jmp b11(v21)
-b16(): ; Body
-    jmp b15(v10)
-b17(): ; Body
-    v26:8 = PtrIndex(16) (v10, 0xffffffffffffffff)
-    jmp b15(v26)
 
 fn hashbrown::raw::RawTable::<(u64, u64)>::insert_no_grow
 a0: $-192, 8 bytes, Promoted
@@ -4487,18 +4304,6 @@ b0(v0:8, v1:8): ; Entry
     Store(8, 0) (v0, v2)
     Store(8, 8) (v0, v3)
     ret 0x8 (v0)
-
-fn std::cmp::impls::<impl std::cmp::PartialEq for u64>::eq
-a0: $-40, 8 bytes, Promoted
-a1: $-32, 8 bytes, Promoted
-a2: $-24, 8 bytes, Promoted
-a3: $-16, 8 bytes, Promoted
-a4: $-1, 1 bytes, Promoted
-b0(v0:8, v1:8): ; Entry
-    v2:8 = Load(8, 0) (v0)
-    v3:8 = Load(8, 0) (v1)
-    v4:1 = Cmp(Eq, 8) (v2, v3)
-    ret 0x1 (v4)
 
 fn std::collections::HashMap::<u64, u64>::entry
 a0: $-128, 8 bytes, Promoted

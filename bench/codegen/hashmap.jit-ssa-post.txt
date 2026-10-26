@@ -3529,7 +3529,7 @@ fn hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@has
 a0: $-168, 8 bytes, Promoted
 a1: $-160, 8 bytes, Promoted
 a2: $-152, 8 bytes, Promoted
-a3: $-144, 16 bytes, Memory, escaped
+a3: $-144, 16 bytes, Promoted, escaped
 a4: $-128, 8 bytes, Promoted
 a5: $-120, 8 bytes, Promoted
 a6: $-112, 8 bytes, Promoted
@@ -3568,12 +3568,54 @@ a38: $-32, 8 bytes, Promoted, inlined
 a39: $-24, 8 bytes, Promoted, inlined
 a40: $-16, 8 bytes, Promoted, inlined
 a41: $-8, 8 bytes, Promoted, inlined
+a42: $-160, 8 bytes, Promoted, inlined
+a43: $-152, 8 bytes, Promoted, inlined
+a44: $-144, 8 bytes, Promoted, inlined
+a45: $-136, 8 bytes, Promoted, inlined
+a46: $-128, 8 bytes, Promoted, inlined
+a47: $-120, 8 bytes, Promoted, inlined
+a48: $-112, 8 bytes, Promoted, inlined
+a49: $-104, 8 bytes, Promoted, inlined
+a50: $-96, 8 bytes, Promoted, inlined
+a51: $-88, 8 bytes, Promoted, inlined
+a52: $-48, 8 bytes, Promoted, inlined
+a53: $-40, 8 bytes, Promoted, inlined
+a54: $-24, 8 bytes, Promoted, inlined
+a55: $-16, 8 bytes, Promoted, inlined
+a56: $-1, 1 bytes, Promoted, inlined
+a57: $-40, 8 bytes, Promoted, inlined
+a58: $-32, 8 bytes, Promoted, inlined
+a59: $-24, 8 bytes, Promoted, inlined
+a60: $-16, 8 bytes, Promoted, inlined
+a61: $-1, 1 bytes, Promoted, inlined
+a62: $-40, 8 bytes, Promoted, inlined
+a63: $-32, 8 bytes, Promoted, inlined
+a64: $-24, 8 bytes, Promoted, inlined
+a65: $-16, 8 bytes, Promoted, inlined
+a66: $-1, 1 bytes, Promoted, inlined
+a67: $-112, 8 bytes, Promoted, inlined
+a68: $-104, 8 bytes, Promoted, inlined
+a69: $-96, 8 bytes, Promoted, inlined
+a70: $-88, 8 bytes, Promoted, inlined
+a71: $-80, 8 bytes, Promoted, inlined
+a72: $-72, 8 bytes, Promoted, inlined
+a73: $-64, 8 bytes, Promoted, inlined
+a74: $-56, 8 bytes, Promoted, inlined
+a75: $-48, 8 bytes, Promoted, inlined
+a76: $-40, 8 bytes, Promoted, inlined
+a77: $-32, 8 bytes, Promoted, inlined
+a78: $-24, 8 bytes, Promoted, inlined
+a79: $-16, 8 bytes, Promoted, inlined
+a80: $-1, 1 bytes, Promoted, inlined
+a81: $-64, 16 bytes, Outgoing, inlined
+a82: $-44, 4 bytes, Memory, inlined
+a83: $-40, 8 bytes, Memory, inlined
+a84: $-32, 8 bytes, Promoted, inlined
+a85: $-24, 8 bytes, Promoted, inlined
+a86: $-16, 8 bytes, Promoted, inlined
+a87: $-1, 1 bytes, Promoted, inlined
 b0(v0:8, v1:8, v2:8): ; Entry
     AStore(AllocaId(12), 0, 8) (v2)
-    v3:8 = AllocaAddr(AllocaId(12), 0) ()
-    AStore(AllocaId(3), 0, 8) (v3)
-    AStore(AllocaId(3), 8, 8) (v0)
-    v4:8 = AllocaAddr(AllocaId(3), 0) ()
     v26:8 = Bin(ShrU, 8) (v1, 0x39)
     v27:8 = Bin(And, 8) (v26, 0x7f)
     v28:1 = Ext { from: 8, to: 1, sx: false } (v27)
@@ -3587,10 +3629,8 @@ b1(): ; Body
     trap
 b2(): ; Body
     v11:8 = Load(8, 0) (v0)
-    AStore(AllocaId(3), 0, 8) (v11)
     v23:8 = Bin(Sub, 8) (0x0, v80)
     v25:8 = PtrIndex(32) (v11, v23)
-    AStore(AllocaId(3), 8, 8) (v25)
     jmp b13()
 b3(): ; Body
     trap
@@ -3603,7 +3643,6 @@ b6(): ; Body
 b7(v13:8): ; Body head 0
     ret 0x8 (v13)
 b8(): ; Body head 1 cold
-    hcall resume [(Fp, [None, None]), (Imm(4294967216), [Some(Scratch(0)), None])] ins [0] outs [] (v8)
     trap
 b9(): ; Body
     trap
@@ -3612,7 +3651,6 @@ b10(): ; Body
 b11(): ; Body
     trap
 b12(): ; Body head 2
-    AStore(AllocaId(3), 0, 8) (v25)
     jmp b7(v25)
 b13(): ; Body head 3
     jmp b12()
@@ -3624,9 +3662,8 @@ b16(): ; Body
     trap
 b17(): ; Body
     trap
-b18(): ; Stub cold
-    v8:8 = LandingPad ()
-    jmp b8()
+b18(): ; Body cold
+    trap
 b19(): ; Body
     trap
 b20(): ; Body
@@ -3659,9 +3696,15 @@ b23(): ; Body
     v66:8 = Load(8, 8) (v0)
     v67:8 = Bin(And, 8) (v65, v66)
     AStore(AllocaId(24), 0, 8) (v67)
-    v119:8 = AllocaAddr(AllocaId(3), 0) ()
-    v69:1 = Call(Call { target: image.fn82.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Pad { catch: false } }) (v119, v67)
-    invoke -> b35() unwind b18()
+    v120:8 = Load(8, 0) (v0)
+    v121:8 = Bin(Sub, 8) (0x0, v67)
+    v122:8 = PtrIndex(32) (v120, v121)
+    v124:8 = ALoad(AllocaId(12), 0, 8) ()
+    v125:8 = Load(8, -24) (v122)
+    v126:8 = Load(8, -16) (v122)
+    v127:8 = Load(8, 8) (v124)
+    v128:8 = Load(8, 16) (v124)
+    br Eq.w8 v126, v128 ? b48() : b51()
 b24(): ; Body
     trap
 b25(): ; Body
@@ -3717,15 +3760,15 @@ b33(): ; Body
     v51:8 = ALoad(AllocaId(25), 8, 8) ()
     AStore(AllocaId(17), 0, 8) (v50)
     AStore(AllocaId(17), 8, 8) (v51)
-    v118:8 = AllocaAddr(AllocaId(17), 0) ()
-    v52:4 = Call(Call { target: image.sym20, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [RetPart { xmm: false, size: 4, off: 0 }], site: Pad { catch: false } }) (v118)
+    v145:8 = AllocaAddr(AllocaId(17), 0) ()
+    v52:4 = Call(Call { target: image.sym20, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [RetPart { xmm: false, size: 4, off: 0 }], site: Pad { catch: false } }) (v145)
     invoke -> b34() unwind b18()
 b34(): ; Body
     AStore(AllocaId(24), 12, 4) (v52)
     v53:2 = Ext { from: 4, to: 2, sx: false } (v52)
     jmp b22(v53)
 b35(): ; Body
-    br v69 ? b25() : b29()
+    trap
 b36(): ; Body
     v82:8 = ALoad(AllocaId(32), 0, 8) ()
     v83:8 = ALoad(AllocaId(32), 8, 8) ()
@@ -3749,133 +3792,53 @@ b37(): ; Body
     v92:8 = ALoad(AllocaId(25), 8, 8) ()
     AStore(AllocaId(17), 0, 8) (v91)
     AStore(AllocaId(17), 8, 8) (v92)
-    v120:8 = AllocaAddr(AllocaId(17), 0) ()
-    v93:4 = Call(Call { target: image.sym20, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [RetPart { xmm: false, size: 4, off: 0 }], site: Pad { catch: false } }) (v120)
+    v146:8 = AllocaAddr(AllocaId(17), 0) ()
+    v93:4 = Call(Call { target: image.sym20, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [RetPart { xmm: false, size: 4, off: 0 }], site: Pad { catch: false } }) (v146)
     invoke -> b38() unwind b18()
 b38(): ; Body
     v94:2 = Ext { from: 4, to: 2, sx: false } (v93)
     br Eq.w2 v94, 0x0 ? b30() : b28()
-
-fn hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>>::rustc_entry::{closure#0}}>::{closure#0}
-a0: $-160, 8 bytes, Promoted
-a1: $-152, 8 bytes, Promoted
-a2: $-144, 8 bytes, Promoted
-a3: $-136, 8 bytes, Promoted
-a4: $-128, 8 bytes, Promoted
-a5: $-120, 8 bytes, Promoted
-a6: $-112, 8 bytes, Promoted
-a7: $-104, 8 bytes, Promoted
-a8: $-96, 8 bytes, Promoted
-a9: $-88, 8 bytes, Promoted
-a10: $-48, 8 bytes, Promoted
-a11: $-40, 8 bytes, Promoted
-a12: $-24, 8 bytes, Promoted
-a13: $-16, 8 bytes, Promoted
-a14: $-1, 1 bytes, Promoted
-a15: $-40, 8 bytes, Promoted, inlined
-a16: $-32, 8 bytes, Promoted, inlined
-a17: $-24, 8 bytes, Promoted, inlined
-a18: $-16, 8 bytes, Promoted, inlined
-a19: $-1, 1 bytes, Promoted, inlined
-a20: $-40, 8 bytes, Promoted, inlined
-a21: $-32, 8 bytes, Promoted, inlined
-a22: $-24, 8 bytes, Promoted, inlined
-a23: $-16, 8 bytes, Promoted, inlined
-a24: $-1, 1 bytes, Promoted, inlined
-a25: $-112, 8 bytes, Promoted, inlined
-a26: $-104, 8 bytes, Promoted, inlined
-a27: $-96, 8 bytes, Promoted, inlined
-a28: $-88, 8 bytes, Promoted, inlined
-a29: $-80, 8 bytes, Promoted, inlined
-a30: $-72, 8 bytes, Promoted, inlined
-a31: $-64, 8 bytes, Promoted, inlined
-a32: $-56, 8 bytes, Promoted, inlined
-a33: $-48, 8 bytes, Promoted, inlined
-a34: $-40, 8 bytes, Promoted, inlined
-a35: $-32, 8 bytes, Promoted, inlined
-a36: $-24, 8 bytes, Promoted, inlined
-a37: $-16, 8 bytes, Promoted, inlined
-a38: $-1, 1 bytes, Promoted, inlined
-a39: $-64, 16 bytes, Outgoing, inlined
-a40: $-44, 4 bytes, Memory, inlined
-a41: $-40, 8 bytes, Memory, inlined
-a42: $-32, 8 bytes, Promoted, inlined
-a43: $-24, 8 bytes, Promoted, inlined
-a44: $-16, 8 bytes, Promoted, inlined
-a45: $-1, 1 bytes, Promoted, inlined
-b0(v0:8, v1:8): ; Entry
-    v2:8 = Load(8, 0) (v0)
-    v3:8 = Load(8, 8) (v0)
-    v4:8 = Load(8, 0) (v3)
-    v14:8 = Bin(Sub, 8) (0x0, v1)
-    v15:8 = PtrIndex(32) (v4, v14)
-    jmp b8()
-b1(): ; Body
+b39(): ; Body
     trap
-b2(): ; Body head 0
-    ret 0x1 (v35)
-b3(): ; Body
+b40(): ; Body
     trap
-b4(): ; Body
+b41(): ; Body
     trap
-b5(): ; Body
+b42(): ; Body
     trap
-b6(): ; Body head 1
-    jmp b15()
-b7(): ; Body
+b43(): ; Body
     trap
-b8(): ; Body head 2
-    jmp b6()
-b9(): ; Body
+b44(): ; Body
     trap
-b10(): ; Body
+b45(): ; Body
     trap
-b11(): ; Body head 3
-    v27:8 = Load(8, 0) (v2)
-    v28:8 = Load(8, -24) (v15)
-    v29:8 = Load(8, -16) (v15)
-    v30:8 = Load(8, 8) (v27)
-    v31:8 = Load(8, 16) (v27)
-    br Eq.w8 v29, v31 ? b22() : b25()
-b12(): ; Body
+b46(): ; Body
     trap
-b13(): ; Body
+b47(): ; Body
     trap
-b14(): ; Body
+b48(): ; Body
+    AStore(AllocaId(83), 0, 8) (v126)
+    AStore(AllocaId(81), 8, 8) (v125)
+    AStore(AllocaId(81), 0, 8) (v127)
+    Island(Island { isl: Sym(68), ops: [Alloca(AllocaId(81), 8), Alloca(AllocaId(81), 0), Alloca(AllocaId(83), 0), Alloca(AllocaId(82), 0)], site: None }) ()
+    v129:4 = ALoad(AllocaId(82), 0, 4) ()
+    v130:1 = Cmp(Eq, 4) (v129, 0x0)
+    jmp b52(v130)
+b49(): ; Body
     trap
-b15(): ; Body head 4
-    jmp b11()
-b16(): ; Body
+b50(): ; Body
     trap
-b17(): ; Body
+b51(): ; Body
+    jmp b52(0x0)
+b52(v132:1): ; Body
+    br v132 ? b25() : b29()
+b53(): ; Body
     trap
-b18(): ; Body
+b54(): ; Body
     trap
-b19(): ; Body
+b55(): ; Body
     trap
-b20(): ; Body
-    trap
-b21(): ; Body
-    trap
-b22(): ; Body
-    AStore(AllocaId(41), 0, 8) (v29)
-    AStore(AllocaId(39), 8, 8) (v28)
-    AStore(AllocaId(39), 0, 8) (v30)
-    Island(Island { isl: Sym(68), ops: [Alloca(AllocaId(39), 8), Alloca(AllocaId(39), 0), Alloca(AllocaId(41), 0), Alloca(AllocaId(40), 0)], site: None }) ()
-    v32:4 = ALoad(AllocaId(40), 0, 4) ()
-    v33:1 = Cmp(Eq, 4) (v32, 0x0)
-    jmp b26(v33)
-b23(): ; Body
-    trap
-b24(): ; Body
-    trap
-b25(): ; Body
-    jmp b26(0x0)
-b26(v35:1): ; Body
-    jmp b2()
-b27(): ; Body
-    trap
-b28(): ; Body
+b56(): ; Body
     trap
 
 fn hashbrown::raw::RawTable::<(std::string::String, usize)>::insert_no_grow
@@ -4521,7 +4484,7 @@ fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::map::equiv
 a0: $-168, 8 bytes, Promoted
 a1: $-160, 8 bytes, Promoted
 a2: $-152, 8 bytes, Promoted
-a3: $-144, 16 bytes, Memory, escaped
+a3: $-144, 16 bytes, Promoted, escaped
 a4: $-128, 8 bytes, Promoted
 a5: $-120, 8 bytes, Promoted
 a6: $-112, 8 bytes, Promoted
@@ -4560,12 +4523,39 @@ a38: $-32, 8 bytes, Promoted, inlined
 a39: $-24, 8 bytes, Promoted, inlined
 a40: $-16, 8 bytes, Promoted, inlined
 a41: $-8, 8 bytes, Promoted, inlined
+a42: $-160, 8 bytes, Promoted, inlined
+a43: $-152, 8 bytes, Promoted, inlined
+a44: $-144, 8 bytes, Promoted, inlined
+a45: $-136, 8 bytes, Promoted, inlined
+a46: $-128, 8 bytes, Promoted, inlined
+a47: $-120, 8 bytes, Promoted, inlined
+a48: $-112, 8 bytes, Promoted, inlined
+a49: $-104, 8 bytes, Promoted, inlined
+a50: $-96, 8 bytes, Promoted, inlined
+a51: $-88, 8 bytes, Promoted, inlined
+a52: $-48, 8 bytes, Promoted, inlined
+a53: $-40, 8 bytes, Promoted, inlined
+a54: $-24, 8 bytes, Promoted, inlined
+a55: $-16, 8 bytes, Promoted, inlined
+a56: $-1, 1 bytes, Promoted, inlined
+a57: $-40, 8 bytes, Promoted, inlined
+a58: $-32, 8 bytes, Promoted, inlined
+a59: $-24, 8 bytes, Promoted, inlined
+a60: $-16, 8 bytes, Promoted, inlined
+a61: $-1, 1 bytes, Promoted, inlined
+a62: $-48, 8 bytes, Promoted, inlined
+a63: $-24, 8 bytes, Promoted, inlined
+a64: $-16, 8 bytes, Promoted, inlined
+a65: $-1, 1 bytes, Promoted, inlined
+a66: $-40, 8 bytes, Promoted, inlined
+a67: $-32, 8 bytes, Promoted, inlined
+a68: $-24, 8 bytes, Promoted, inlined
+a69: $-16, 8 bytes, Promoted, inlined
+a70: $-1, 1 bytes, Promoted, inlined
+a71: $-16, 8 bytes, Promoted, inlined
+a72: $-8, 8 bytes, Promoted, inlined
 b0(v0:8, v1:8, v2:8): ; Entry
     AStore(AllocaId(12), 0, 8) (v2)
-    v3:8 = AllocaAddr(AllocaId(12), 0) ()
-    AStore(AllocaId(3), 0, 8) (v3)
-    AStore(AllocaId(3), 8, 8) (v0)
-    v4:8 = AllocaAddr(AllocaId(3), 0) ()
     v26:8 = Bin(ShrU, 8) (v1, 0x39)
     v27:8 = Bin(And, 8) (v26, 0x7f)
     v28:1 = Ext { from: 8, to: 1, sx: false } (v27)
@@ -4579,10 +4569,8 @@ b1(): ; Body
     trap
 b2(): ; Body
     v11:8 = Load(8, 0) (v0)
-    AStore(AllocaId(3), 0, 8) (v11)
     v23:8 = Bin(Sub, 8) (0x0, v80)
     v25:8 = PtrIndex(16) (v11, v23)
-    AStore(AllocaId(3), 8, 8) (v25)
     jmp b13()
 b3(): ; Body
     trap
@@ -4595,7 +4583,6 @@ b6(): ; Body
 b7(v13:8): ; Body head 0
     ret 0x8 (v13)
 b8(): ; Body head 1 cold
-    hcall resume [(Fp, [None, None]), (Imm(4294967216), [Some(Scratch(0)), None])] ins [0] outs [] (v8)
     trap
 b9(): ; Body
     trap
@@ -4604,7 +4591,6 @@ b10(): ; Body
 b11(): ; Body
     trap
 b12(): ; Body head 2
-    AStore(AllocaId(3), 0, 8) (v25)
     jmp b7(v25)
 b13(): ; Body head 3
     jmp b12()
@@ -4616,9 +4602,8 @@ b16(): ; Body
     trap
 b17(): ; Body
     trap
-b18(): ; Stub cold
-    v8:8 = LandingPad ()
-    jmp b8()
+b18(): ; Body cold
+    trap
 b19(): ; Body
     trap
 b20(): ; Body
@@ -4651,14 +4636,17 @@ b23(): ; Body
     v66:8 = Load(8, 8) (v0)
     v67:8 = Bin(And, 8) (v65, v66)
     AStore(AllocaId(24), 0, 8) (v67)
-    v119:8 = AllocaAddr(AllocaId(3), 0) ()
-    v69:1 = Call(Call { target: image.fn84.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Pad { catch: false } }) (v119, v67)
-    invoke -> b35() unwind b18()
+    v120:8 = Load(8, 0) (v0)
+    v121:8 = Bin(Sub, 8) (0x0, v67)
+    v122:8 = PtrIndex(16) (v120, v121)
+    v124:8 = ALoad(AllocaId(12), 0, 8) ()
+    v126:8 = Load(8, 0) (v124)
+    v127:8 = Load(8, -16) (v122)
+    br Eq.w8 v126, v127 ? b25() : b29()
 b24(): ; Body
     trap
 b25(): ; Body
-    v78:8 = ALoad(AllocaId(24), 0, 8) ()
-    jmp b26(0x1, v78)
+    jmp b26(0x1, v67)
 b26(v79:8, v80:8): ; Body
     br Eq.w8 v79, 0x0 ? b4() : b2()
 b27(): ; Body
@@ -4709,15 +4697,15 @@ b33(): ; Body
     v51:8 = ALoad(AllocaId(25), 8, 8) ()
     AStore(AllocaId(17), 0, 8) (v50)
     AStore(AllocaId(17), 8, 8) (v51)
-    v118:8 = AllocaAddr(AllocaId(17), 0) ()
-    v52:4 = Call(Call { target: image.sym20, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [RetPart { xmm: false, size: 4, off: 0 }], site: Pad { catch: false } }) (v118)
+    v137:8 = AllocaAddr(AllocaId(17), 0) ()
+    v52:4 = Call(Call { target: image.sym20, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [RetPart { xmm: false, size: 4, off: 0 }], site: Pad { catch: false } }) (v137)
     invoke -> b34() unwind b18()
 b34(): ; Body
     AStore(AllocaId(24), 12, 4) (v52)
     v53:2 = Ext { from: 4, to: 2, sx: false } (v52)
     jmp b22(v53)
 b35(): ; Body
-    br v69 ? b25() : b29()
+    trap
 b36(): ; Body
     v82:8 = ALoad(AllocaId(32), 0, 8) ()
     v83:8 = ALoad(AllocaId(32), 8, 8) ()
@@ -4741,112 +4729,48 @@ b37(): ; Body
     v92:8 = ALoad(AllocaId(25), 8, 8) ()
     AStore(AllocaId(17), 0, 8) (v91)
     AStore(AllocaId(17), 8, 8) (v92)
-    v120:8 = AllocaAddr(AllocaId(17), 0) ()
-    v93:4 = Call(Call { target: image.sym20, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [RetPart { xmm: false, size: 4, off: 0 }], site: Pad { catch: false } }) (v120)
+    v138:8 = AllocaAddr(AllocaId(17), 0) ()
+    v93:4 = Call(Call { target: image.sym20, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [RetPart { xmm: false, size: 4, off: 0 }], site: Pad { catch: false } }) (v138)
     invoke -> b38() unwind b18()
 b38(): ; Body
     v94:2 = Ext { from: 4, to: 2, sx: false } (v93)
     br Eq.w2 v94, 0x0 ? b30() : b28()
-
-fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::map::equivalent_key<u64, u64, u64>::{closure#0}}>::{closure#0}
-a0: $-160, 8 bytes, Promoted
-a1: $-152, 8 bytes, Promoted
-a2: $-144, 8 bytes, Promoted
-a3: $-136, 8 bytes, Promoted
-a4: $-128, 8 bytes, Promoted
-a5: $-120, 8 bytes, Promoted
-a6: $-112, 8 bytes, Promoted
-a7: $-104, 8 bytes, Promoted
-a8: $-96, 8 bytes, Promoted
-a9: $-88, 8 bytes, Promoted
-a10: $-48, 8 bytes, Promoted
-a11: $-40, 8 bytes, Promoted
-a12: $-24, 8 bytes, Promoted
-a13: $-16, 8 bytes, Promoted
-a14: $-1, 1 bytes, Promoted
-a15: $-40, 8 bytes, Promoted, inlined
-a16: $-32, 8 bytes, Promoted, inlined
-a17: $-24, 8 bytes, Promoted, inlined
-a18: $-16, 8 bytes, Promoted, inlined
-a19: $-1, 1 bytes, Promoted, inlined
-a20: $-48, 8 bytes, Promoted, inlined
-a21: $-24, 8 bytes, Promoted, inlined
-a22: $-16, 8 bytes, Promoted, inlined
-a23: $-1, 1 bytes, Promoted, inlined
-a24: $-40, 8 bytes, Promoted, inlined
-a25: $-32, 8 bytes, Promoted, inlined
-a26: $-24, 8 bytes, Promoted, inlined
-a27: $-16, 8 bytes, Promoted, inlined
-a28: $-1, 1 bytes, Promoted, inlined
-a29: $-16, 8 bytes, Promoted, inlined
-a30: $-8, 8 bytes, Promoted, inlined
-b0(v0:8, v1:8): ; Entry
-    v2:8 = Load(8, 0) (v0)
-    v3:8 = Load(8, 8) (v0)
-    v4:8 = Load(8, 0) (v3)
-    v14:8 = Bin(Sub, 8) (0x0, v1)
-    v15:8 = PtrIndex(16) (v4, v14)
-    jmp b8()
-b1(): ; Body
+b39(): ; Body
     trap
-b2(): ; Body head 0
-    ret 0x1 (v31)
-b3(): ; Body
+b40(): ; Body
     trap
-b4(): ; Body
+b41(): ; Body
     trap
-b5(): ; Body
+b42(): ; Body
     trap
-b6(): ; Body head 1
-    jmp b15()
-b7(): ; Body
+b43(): ; Body
     trap
-b8(): ; Body head 2
-    jmp b6()
-b9(): ; Body
+b44(): ; Body
     trap
-b10(): ; Body
+b45(): ; Body
     trap
-b11(): ; Body head 3
-    v27:8 = Load(8, 0) (v2)
-    v29:8 = Load(8, 0) (v27)
-    v30:8 = Load(8, -16) (v15)
-    v31:1 = Cmp(Eq, 8) (v29, v30)
-    jmp b2()
-b12(): ; Body
+b46(): ; Body
     trap
-b13(): ; Body
+b47(): ; Body
     trap
-b14(): ; Body
+b48(): ; Body
     trap
-b15(): ; Body head 4
-    jmp b11()
-b16(): ; Body
+b49(): ; Body
     trap
-b17(): ; Body
+b50(): ; Body
     trap
-b18(): ; Body
+b51(): ; Body
     trap
-b19(): ; Body
+b52(): ; Body
     trap
-b20(): ; Body
-    trap
-b21(): ; Body
-    trap
-b22(): ; Body
-    trap
-b23(): ; Body
-    trap
-b24(): ; Body
-    trap
-b25(): ; Body
+b53(): ; Body
     trap
 
 fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::RandomState>>::rustc_entry::{closure#0}}>
 a0: $-168, 8 bytes, Promoted
 a1: $-160, 8 bytes, Promoted
 a2: $-152, 8 bytes, Promoted
-a3: $-144, 16 bytes, Memory, escaped
+a3: $-144, 16 bytes, Promoted, escaped
 a4: $-128, 8 bytes, Promoted
 a5: $-120, 8 bytes, Promoted
 a6: $-112, 8 bytes, Promoted
@@ -4885,12 +4809,33 @@ a38: $-32, 8 bytes, Promoted, inlined
 a39: $-24, 8 bytes, Promoted, inlined
 a40: $-16, 8 bytes, Promoted, inlined
 a41: $-8, 8 bytes, Promoted, inlined
+a42: $-160, 8 bytes, Promoted, inlined
+a43: $-152, 8 bytes, Promoted, inlined
+a44: $-144, 8 bytes, Promoted, inlined
+a45: $-136, 8 bytes, Promoted, inlined
+a46: $-128, 8 bytes, Promoted, inlined
+a47: $-120, 8 bytes, Promoted, inlined
+a48: $-112, 8 bytes, Promoted, inlined
+a49: $-104, 8 bytes, Promoted, inlined
+a50: $-96, 8 bytes, Promoted, inlined
+a51: $-88, 8 bytes, Promoted, inlined
+a52: $-48, 8 bytes, Promoted, inlined
+a53: $-40, 8 bytes, Promoted, inlined
+a54: $-24, 8 bytes, Promoted, inlined
+a55: $-16, 8 bytes, Promoted, inlined
+a56: $-1, 1 bytes, Promoted, inlined
+a57: $-40, 8 bytes, Promoted, inlined
+a58: $-32, 8 bytes, Promoted, inlined
+a59: $-24, 8 bytes, Promoted, inlined
+a60: $-16, 8 bytes, Promoted, inlined
+a61: $-1, 1 bytes, Promoted, inlined
+a62: $-40, 8 bytes, Promoted, inlined
+a63: $-32, 8 bytes, Promoted, inlined
+a64: $-24, 8 bytes, Promoted, inlined
+a65: $-16, 8 bytes, Promoted, inlined
+a66: $-1, 1 bytes, Promoted, inlined
 b0(v0:8, v1:8, v2:8): ; Entry
     AStore(AllocaId(12), 0, 8) (v2)
-    v3:8 = AllocaAddr(AllocaId(12), 0) ()
-    AStore(AllocaId(3), 0, 8) (v3)
-    AStore(AllocaId(3), 8, 8) (v0)
-    v4:8 = AllocaAddr(AllocaId(3), 0) ()
     v26:8 = Bin(ShrU, 8) (v1, 0x39)
     v27:8 = Bin(And, 8) (v26, 0x7f)
     v28:1 = Ext { from: 8, to: 1, sx: false } (v27)
@@ -4904,10 +4849,8 @@ b1(): ; Body
     trap
 b2(): ; Body
     v11:8 = Load(8, 0) (v0)
-    AStore(AllocaId(3), 0, 8) (v11)
     v23:8 = Bin(Sub, 8) (0x0, v80)
     v25:8 = PtrIndex(16) (v11, v23)
-    AStore(AllocaId(3), 8, 8) (v25)
     jmp b13()
 b3(): ; Body
     trap
@@ -4920,7 +4863,6 @@ b6(): ; Body
 b7(v13:8): ; Body head 0
     ret 0x8 (v13)
 b8(): ; Body head 1 cold
-    hcall resume [(Fp, [None, None]), (Imm(4294967216), [Some(Scratch(0)), None])] ins [0] outs [] (v8)
     trap
 b9(): ; Body
     trap
@@ -4929,7 +4871,6 @@ b10(): ; Body
 b11(): ; Body
     trap
 b12(): ; Body head 2
-    AStore(AllocaId(3), 0, 8) (v25)
     jmp b7(v25)
 b13(): ; Body head 3
     jmp b12()
@@ -4941,9 +4882,8 @@ b16(): ; Body
     trap
 b17(): ; Body
     trap
-b18(): ; Stub cold
-    v8:8 = LandingPad ()
-    jmp b8()
+b18(): ; Body cold
+    trap
 b19(): ; Body
     trap
 b20(): ; Body
@@ -4976,14 +4916,17 @@ b23(): ; Body
     v66:8 = Load(8, 8) (v0)
     v67:8 = Bin(And, 8) (v65, v66)
     AStore(AllocaId(24), 0, 8) (v67)
-    v119:8 = AllocaAddr(AllocaId(3), 0) ()
-    v69:1 = Call(Call { target: image.fn85.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Pad { catch: false } }) (v119, v67)
-    invoke -> b35() unwind b18()
+    v120:8 = Load(8, 0) (v0)
+    v121:8 = Bin(Sub, 8) (0x0, v67)
+    v122:8 = PtrIndex(16) (v120, v121)
+    v124:8 = ALoad(AllocaId(12), 0, 8) ()
+    v125:8 = Load(8, -16) (v122)
+    v126:8 = Load(8, 0) (v124)
+    br Eq.w8 v125, v126 ? b25() : b29()
 b24(): ; Body
     trap
 b25(): ; Body
-    v78:8 = ALoad(AllocaId(24), 0, 8) ()
-    jmp b26(0x1, v78)
+    jmp b26(0x1, v67)
 b26(v79:8, v80:8): ; Body
     br Eq.w8 v79, 0x0 ? b4() : b2()
 b27(): ; Body
@@ -5034,15 +4977,15 @@ b33(): ; Body
     v51:8 = ALoad(AllocaId(25), 8, 8) ()
     AStore(AllocaId(17), 0, 8) (v50)
     AStore(AllocaId(17), 8, 8) (v51)
-    v118:8 = AllocaAddr(AllocaId(17), 0) ()
-    v52:4 = Call(Call { target: image.sym20, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [RetPart { xmm: false, size: 4, off: 0 }], site: Pad { catch: false } }) (v118)
+    v135:8 = AllocaAddr(AllocaId(17), 0) ()
+    v52:4 = Call(Call { target: image.sym20, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [RetPart { xmm: false, size: 4, off: 0 }], site: Pad { catch: false } }) (v135)
     invoke -> b34() unwind b18()
 b34(): ; Body
     AStore(AllocaId(24), 12, 4) (v52)
     v53:2 = Ext { from: 4, to: 2, sx: false } (v52)
     jmp b22(v53)
 b35(): ; Body
-    br v69 ? b25() : b29()
+    trap
 b36(): ; Body
     v82:8 = ALoad(AllocaId(32), 0, 8) ()
     v83:8 = ALoad(AllocaId(32), 8, 8) ()
@@ -5066,91 +5009,33 @@ b37(): ; Body
     v92:8 = ALoad(AllocaId(25), 8, 8) ()
     AStore(AllocaId(17), 0, 8) (v91)
     AStore(AllocaId(17), 8, 8) (v92)
-    v120:8 = AllocaAddr(AllocaId(17), 0) ()
-    v93:4 = Call(Call { target: image.sym20, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [RetPart { xmm: false, size: 4, off: 0 }], site: Pad { catch: false } }) (v120)
+    v136:8 = AllocaAddr(AllocaId(17), 0) ()
+    v93:4 = Call(Call { target: image.sym20, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [RetPart { xmm: false, size: 4, off: 0 }], site: Pad { catch: false } }) (v136)
     invoke -> b38() unwind b18()
 b38(): ; Body
     v94:2 = Ext { from: 4, to: 2, sx: false } (v93)
     br Eq.w2 v94, 0x0 ? b30() : b28()
-
-fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::RandomState>>::rustc_entry::{closure#0}}>::{closure#0}
-a0: $-160, 8 bytes, Promoted
-a1: $-152, 8 bytes, Promoted
-a2: $-144, 8 bytes, Promoted
-a3: $-136, 8 bytes, Promoted
-a4: $-128, 8 bytes, Promoted
-a5: $-120, 8 bytes, Promoted
-a6: $-112, 8 bytes, Promoted
-a7: $-104, 8 bytes, Promoted
-a8: $-96, 8 bytes, Promoted
-a9: $-88, 8 bytes, Promoted
-a10: $-48, 8 bytes, Promoted
-a11: $-40, 8 bytes, Promoted
-a12: $-24, 8 bytes, Promoted
-a13: $-16, 8 bytes, Promoted
-a14: $-1, 1 bytes, Promoted
-a15: $-40, 8 bytes, Promoted, inlined
-a16: $-32, 8 bytes, Promoted, inlined
-a17: $-24, 8 bytes, Promoted, inlined
-a18: $-16, 8 bytes, Promoted, inlined
-a19: $-1, 1 bytes, Promoted, inlined
-a20: $-40, 8 bytes, Promoted, inlined
-a21: $-32, 8 bytes, Promoted, inlined
-a22: $-24, 8 bytes, Promoted, inlined
-a23: $-16, 8 bytes, Promoted, inlined
-a24: $-1, 1 bytes, Promoted, inlined
-b0(v0:8, v1:8): ; Entry
-    v2:8 = Load(8, 0) (v0)
-    v3:8 = Load(8, 8) (v0)
-    v4:8 = Load(8, 0) (v3)
-    v14:8 = Bin(Sub, 8) (0x0, v1)
-    v15:8 = PtrIndex(16) (v4, v14)
-    jmp b8()
-b1(): ; Body
+b39(): ; Body
     trap
-b2(): ; Body head 0
-    ret 0x1 (v30)
-b3(): ; Body
+b40(): ; Body
     trap
-b4(): ; Body
+b41(): ; Body
     trap
-b5(): ; Body
+b42(): ; Body
     trap
-b6(): ; Body head 1
-    jmp b15()
-b7(): ; Body
+b43(): ; Body
     trap
-b8(): ; Body head 2
-    jmp b6()
-b9(): ; Body
+b44(): ; Body
     trap
-b10(): ; Body
+b45(): ; Body
     trap
-b11(): ; Body head 3
-    v27:8 = Load(8, 0) (v2)
-    v28:8 = Load(8, -16) (v15)
-    v29:8 = Load(8, 0) (v27)
-    v30:1 = Cmp(Eq, 8) (v28, v29)
-    jmp b2()
-b12(): ; Body
+b46(): ; Body
     trap
-b13(): ; Body
+b47(): ; Body
     trap
-b14(): ; Body
+b48(): ; Body
     trap
-b15(): ; Body head 4
-    jmp b11()
-b16(): ; Body
-    trap
-b17(): ; Body
-    trap
-b18(): ; Body
-    trap
-b19(): ; Body
-    trap
-b20(): ; Body
-    trap
-b21(): ; Body
+b49(): ; Body
     trap
 
 fn hashbrown::raw::RawTable::<(u64, u64)>::insert_no_grow
@@ -9022,18 +8907,6 @@ b0(v0:8, v1:8): ; Entry
     Store(8, 0) (v0, v2)
     Store(8, 8) (v0, v3)
     ret 0x8 (v0)
-
-fn std::cmp::impls::<impl std::cmp::PartialEq for u64>::eq
-a0: $-40, 8 bytes, Promoted
-a1: $-32, 8 bytes, Promoted
-a2: $-24, 8 bytes, Promoted
-a3: $-16, 8 bytes, Promoted
-a4: $-1, 1 bytes, Promoted
-b0(v0:8, v1:8): ; Entry
-    v2:8 = Load(8, 0) (v0)
-    v3:8 = Load(8, 0) (v1)
-    v4:1 = Cmp(Eq, 8) (v2, v3)
-    ret 0x1 (v4)
 
 fn std::collections::HashMap::<u64, u64>::entry
 a0: $-128, 8 bytes, Promoted

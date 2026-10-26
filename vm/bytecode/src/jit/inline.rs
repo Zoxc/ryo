@@ -262,6 +262,9 @@ pub struct Params {
     pub frame: u32,
     /// The most nodes the exploration makes.
     pub nodes: usize,
+    /// How many inlining rounds [`super::compile`] runs: each after the first explores only
+    /// from the calls the round before made direct ([`devirt`]), against the unit as it is.
+    pub rounds: u8,
 }
 
 pub const PARAMS: Params = Params {
@@ -280,6 +283,7 @@ pub const PARAMS: Params = Params {
     raise: 16.0,
     frame: 64 << 10,
     nodes: 400,
+    rounds: 2,
 };
 
 /// `c` with its entry parameters given constants (`None`: unknown) replaced by them, after
@@ -731,14 +735,15 @@ impl Cluster {
     }
 }
 
-/// Inlines into `f` (its IR after [`super::opt::run`]) what the heuristic decides, and
-/// with `check` verifies the IR after each splice. Notes the decisions in `dump`. Returns
-/// how many calls it inlined.
+/// Inlines into `f` (its IR after [`super::opt::run`]) what the heuristic decides, from
+/// its calls `only` or all of them, and with `check` verifies the IR after each splice.
+/// Notes the decisions in `dump`. Returns how many calls it inlined.
 pub fn inline(
     f: &mut Func,
     env: &mut dyn Env,
     mem: Option<&dyn super::opt::ConstMem>,
     p: &Params,
+    only: Option<&[Inst]>,
     check: bool,
     mut dump: Option<&mut String>,
 ) -> Result<usize, String> {
@@ -770,6 +775,9 @@ pub fn inline(
         }
     };
     push_sites(&mut pending, env, &nodes, 0, f, &root_shape);
+    if let Some(only) = only {
+        pending.retain(|s| only.contains(&s.2));
+    }
     let mut expanded = 0.0;
     let mut promo_memo = BTreeMap::new();
     let mut trials: Vec<((VmFunc, Vec<Option<(u64, u8)>>), Rc<Func>)> = Vec::new();

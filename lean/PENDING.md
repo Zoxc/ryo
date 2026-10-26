@@ -73,3 +73,9 @@ remove it once a Lean session has handled it.
   equals a call of `f` (the entry dispatches to the JIT code; arguments, results and
   unwinding unchanged); a symbol slot is filled once, before VM code runs. Commit: "JIT: call
   constant function pointers directly".
+
+- After the first inlining round and the devirtualization that follows it, `jit::compile`
+  runs one more `inline` restricted to the calls that devirtualization made direct
+  (`Params::rounds = 2`, `inline`'s `only`), charged against the unit as it is; calls made
+  direct after that stay calls. Add to lean/docs/jit.md §E.3's pass list. Commit: "JIT:
+  inline calls that devirtualization made direct".

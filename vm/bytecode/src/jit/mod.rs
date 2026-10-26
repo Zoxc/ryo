@@ -104,25 +104,37 @@ pub fn compile(
     let mut decisions = opts.dump.then(alloc::string::String::new);
     let mut inlined_ir = None;
     // Calls through constant pointers become direct before and after inlining (the inlined
-    // code's constants can be the callers').
+    // code's constants can be the callers'). Each round after the first inlines only from
+    // the calls the one before made direct.
     let mut devirt = 0;
     if let Some(env) = env.as_deref_mut() {
         let (calls, tails) = inline::devirt(&mut f, env);
-        let first = calls.len() + tails;
-        devirt += first;
-        if opts.check {
-            f.verify().map_err(|e| Error::Check(alloc::format!("IR before inlining: {e}")))?;
+        devirt += calls.len() + tails;
+        let mut dirty = devirt > 0;
+        let mut only: Option<alloc::vec::Vec<ir::Inst>> = None;
+        for round in 0..inline::PARAMS.rounds {
+            if opts.check {
+                f.verify().map_err(|e| Error::Check(alloc::format!("IR before inlining: {e}")))?;
+            }
+            if let (Some(d), true) = (decisions.as_mut(), round > 0) {
+                d.push_str(&alloc::format!(";   round {}\n", round + 1));
+            }
+            let n = inline::inline(&mut f, env, mem, &inline::PARAMS, only.as_deref(), opts.check, decisions.as_mut()).map_err(Error::Check)?;
+            if n > 0 {
+                inlined_ir = opts.dump.then(|| alloc::format!("{f}"));
+            }
+            if n > 0 || dirty {
+                opt::run(&mut f, mem);
+            }
+            let (calls, tails) = inline::devirt(&mut f, env);
+            devirt += calls.len() + tails;
+            dirty = calls.len() + tails > 0;
+            if calls.is_empty() {
+                break;
+            }
+            only = Some(calls);
         }
-        let n = inline::inline(&mut f, env, mem, &inline::PARAMS, opts.check, decisions.as_mut()).map_err(Error::Check)?;
-        if n > 0 {
-            inlined_ir = opts.dump.then(|| alloc::format!("{f}"));
-        }
-        if n > 0 || first > 0 {
-            opt::run(&mut f, mem);
-        }
-        let (new, tails) = inline::devirt(&mut f, env);
-        devirt += new.len() + tails;
-        if devirt > first {
+        if dirty {
             opt::run(&mut f, mem);
         }
     }

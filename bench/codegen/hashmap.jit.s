@@ -2575,141 +2575,162 @@ fn hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@has
     push    r13
     push    r14
     push    r15
-    sub     rsp,80h
+    sub     rsp,90h
     mov     rbx,rdi
-    mov     [rsp+60h],rdx
-    lea     rax,[rsp+60h]
-    mov     [rsp+70h],rax
-    mov     [rsp+78h],rbx
+    mov     [rsp+80h],rdx
     mov     rax,rsi
     shr     rax,39h
     and     rax,7Fh
     mov     r12,rax
-    mov     [rsp+20h],rsi
+    mov     [rsp+40h],rsi
     mov     rax,[rbx+8]
-    mov     [rsp+38h],rax
+    mov     [rsp+58h],rax
     and     rsi,rax
-    mov     [rsp+28h],rsi
+    mov     [rsp+48h],rsi
     mov     r13,rsi
     mov     r14d,0
 L0:
-    mov     [rsp+20h],r13
+    mov     [rsp+40h],r13
     mov     rax,[rbx]
-    mov     [rsp+30h],rax
-    mov     [rsp+38h],rax
+    mov     [rsp+50h],rax
+    mov     [rsp+58h],rax
     lea     rsi,[rax+r13]
-    mov     [rsp+28h],rsi
-    mov     [rsp+20h],rsi
-    lea     rdi,[rsp+10h]
-    call    image.sym59
+    mov     [rsp+48h],rsi
+    mov     [rsp+40h],rsi
     lea     rdi,[rsp+30h]
+    call    image.sym59
+    lea     rdi,[rsp+50h]
     mov     rsi,r12
     movzx   esi,sil
     call    image.sym49
-    mov     rax,[rsp+10h]
-    mov     rcx,[rsp+18h]
-    mov     [rsp+40h],rax
-    mov     [rsp+48h],rcx
     mov     rax,[rsp+30h]
-    mov     ecx,[rsp+38h]
-    movzx   edx,word ptr [rsp+3Ch]
-    movzx   esi,word ptr [rsp+3Eh]
-    mov     [rsp+50h],rax
-    mov     [rsp+58h],ecx
-    mov     [rsp+5Ch],dx
-    mov     [rsp+5Eh],si
-    lea     rdi,[rsp+20h]
-    lea     rsi,[rsp+40h]
-    lea     rdx,[rsp+50h]
-    call    image.sym60
-    mov     rax,[rsp+20h]
-    mov     rcx,[rsp+28h]
-    mov     [rsp+40h],rax
-    mov     [rsp+48h],rcx
+    mov     rcx,[rsp+38h]
+    mov     [rsp+60h],rax
+    mov     [rsp+68h],rcx
+    mov     rax,[rsp+50h]
+    mov     ecx,[rsp+58h]
+    movzx   edx,word ptr [rsp+5Ch]
+    movzx   esi,word ptr [rsp+5Eh]
+    mov     [rsp+70h],rax
+    mov     [rsp+78h],ecx
+    mov     [rsp+7Ch],dx
+    mov     [rsp+7Eh],si
     lea     rdi,[rsp+40h]
+    lea     rsi,[rsp+60h]
+    lea     rdx,[rsp+70h]
+    call    image.sym60
+    mov     rax,[rsp+40h]
+    mov     rcx,[rsp+48h]
+    mov     [rsp+60h],rax
+    mov     [rsp+68h],rcx
+    lea     rdi,[rsp+60h]
     call    image.sym20
-    mov     [rsp+3Ch],eax
+    mov     [rsp+5Ch],eax
     mov     r15,rax
 L1:
     test    r15w,r15w
-    je      L3
+    je      L5
     mov     rdi,r15
     call    ryo_hr_CttzW16
     mov     eax,eax
-    mov     [rsp+38h],rax
-    mov     qword ptr [rsp+30h],1
-    mov     [rsp+3Eh],r15w
+    mov     [rsp+58h],rax
+    mov     qword ptr [rsp+50h],1
+    mov     [rsp+5Eh],r15w
     lea     ecx,[r15-1]
     and     r15d,ecx
-    mov     [rsp+28h],rax
-    mov     qword ptr [rsp+20h],1
-    mov     [rsp+38h],rax
+    mov     [rsp+48h],rax
+    mov     qword ptr [rsp+40h],1
+    mov     [rsp+58h],rax
     add     rax,r13
     mov     rcx,[rbx+8]
-    mov     rsi,rax
-    and     rsi,rcx
-    mov     [rsp+30h],rsi
-    lea     rdi,[rsp+70h]
-    call    qword ptr [image.fn82.slot]
+    and     rax,rcx
+    mov     [rsp+50h],rax
+    mov     rcx,[rbx]
+    mov     r11d,0
+    sub     r11,rax
+    mov     rax,r11
+    mov     r11,rax
+    imul    r11,20h
+    add     r11,rcx
+    mov     rcx,r11
+    mov     rax,[rsp+80h]
+    mov     rdx,[rcx-18h]
+    mov     rcx,[rcx-10h]
+    mov     rsi,[rax+8]
+    mov     rax,[rax+10h]
+    cmp     rcx,rax
+    jne     L2
+    mov     [rsp+18h],rcx
+    mov     [rsp+8],rdx
+    mov     [rsp],rsi
+    lea     rdi,[rsp+0B0h]
+    lea     rsi,[ro+4]
+    call    qword ptr [image.sym68]
+    mov     eax,[rsp+24h]
+    test    eax,eax
+    sete    al
+    jmp     L3
+L2:
+    mov     eax,0
+L3:
     test    al,al
-    je      L4
-    mov     rax,[rsp+30h]
+    je      L6
+    mov     rax,[rsp+50h]
     mov     rcx,rax
     mov     eax,1
-L2:
+L4:
     test    rax,rax
-    je      L7
-    jmp     L6
-L3:
-    mov     qword ptr [rsp+30h],0
-    mov     dword ptr [rsp+38h],0
-    mov     word ptr [rsp+3Ch],0
-    mov     word ptr [rsp+3Eh],0
-    mov     qword ptr [rsp+38h],0
-    lea     rdi,[rsp+30h]
+    je      L9
+    jmp     L8
+L5:
+    mov     qword ptr [rsp+50h],0
+    mov     dword ptr [rsp+58h],0
+    mov     word ptr [rsp+5Ch],0
+    mov     word ptr [rsp+5Eh],0
+    mov     qword ptr [rsp+58h],0
+    lea     rdi,[rsp+50h]
     mov     esi,0FFh
     movzx   esi,sil
     call    image.sym49
-    mov     rax,[rsp+10h]
-    mov     rdx,[rsp+18h]
-    mov     [rsp+40h],rax
-    mov     [rsp+48h],rdx
     mov     rax,[rsp+30h]
-    mov     edx,[rsp+38h]
-    movzx   esi,word ptr [rsp+3Ch]
-    movzx   edi,word ptr [rsp+3Eh]
-    mov     [rsp+50h],rax
-    mov     [rsp+58h],edx
-    mov     [rsp+5Ch],si
-    mov     [rsp+5Eh],di
-    lea     rdi,[rsp+20h]
-    lea     rsi,[rsp+40h]
-    lea     rdx,[rsp+50h]
-    call    image.sym60
-    mov     rax,[rsp+20h]
-    mov     rdx,[rsp+28h]
-    mov     [rsp+40h],rax
-    mov     [rsp+48h],rdx
+    mov     rdx,[rsp+38h]
+    mov     [rsp+60h],rax
+    mov     [rsp+68h],rdx
+    mov     rax,[rsp+50h]
+    mov     edx,[rsp+58h]
+    movzx   esi,word ptr [rsp+5Ch]
+    movzx   edi,word ptr [rsp+5Eh]
+    mov     [rsp+70h],rax
+    mov     [rsp+78h],edx
+    mov     [rsp+7Ch],si
+    mov     [rsp+7Eh],di
     lea     rdi,[rsp+40h]
+    lea     rsi,[rsp+60h]
+    lea     rdx,[rsp+70h]
+    call    image.sym60
+    mov     rax,[rsp+40h]
+    mov     rdx,[rsp+48h]
+    mov     [rsp+60h],rax
+    mov     [rsp+68h],rdx
+    lea     rdi,[rsp+60h]
     call    image.sym20
     test    ax,ax
-    je      L5
+    je      L7
     mov     eax,0
     mov     ecx,0
-    jmp     L2
-L4:
+    jmp     L4
+L6:
     jmp     L1
-L5:
+L7:
     mov     rax,[rbx+8]
-    mov     [rsp+28h],rax
+    mov     [rsp+48h],rax
     add     r14,10h
-    mov     [rsp+20h],r14
+    mov     [rsp+40h],r14
     add     r13,r14
     and     r13,rax
     jmp     L0
-L6:
+L8:
     mov     rax,[rbx]
-    mov     [rsp+70h],rax
     mov     r11d,0
     sub     r11,rcx
     mov     rcx,r11
@@ -2717,115 +2738,40 @@ L6:
     imul    r11,20h
     add     r11,rax
     mov     rax,r11
-    mov     [rsp+78h],rax
-    jmp     L10
-L7:
+    jmp     L12
+L9:
     mov     ecx,0
-L8:
+L10:
     mov     rax,rcx
-    add     rsp,80h
+    add     rsp,90h
     pop     r15
     pop     r14
     pop     r13
     pop     r12
     pop     rbx
     ret
-L9:
-    mov     [rsp+70h],rax
+L11:
     mov     rcx,rax
-    jmp     L8
-L10:
-    jmp     L9
-    mov     [rsp],rax
-    lea     rdi,[rsp+0A0h]
-    mov     esi,0FFFFFF60h
-    call    ryo_h_Resume
-    ud2
+    jmp     L10
+L12:
+    jmp     L11
   ; OSR entries
-    lea     r11,[L11]
+    lea     r11,[L13]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L11:
-    .long   L12
-    .long   L13
+L13:
     .long   L14
     .long   L15
-L12:
-    ret
-L13:
-    ret
+    .long   L16
+    .long   L17
 L14:
     ret
 L15:
     ret
-
-fn hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>>::rustc_entry::{closure#0}}>::{closure#0}
-    sub     rsp,38h
-    mov     rax,[rdi]
-    mov     rcx,[rdi+8]
-    mov     rcx,[rcx]
-    mov     edx,0
-    sub     rdx,rsi
-    mov     r11,rdx
-    imul    r11,20h
-    add     r11,rcx
-    mov     rcx,r11
-    jmp     L2
-L0:
-    mov     rax,rdx
-    movzx   eax,al
-    add     rsp,38h
+L16:
     ret
-L1:
-    jmp     L6
-L2:
-    jmp     L1
-L3:
-    mov     rsi,[rax]
-    mov     rdi,[rcx-18h]
-    mov     r8,[rcx-10h]
-    mov     r9,[rsi+8]
-    mov     rsi,[rsi+10h]
-    cmp     r8,rsi
-    jne     L4
-    mov     [rsp+18h],r8
-    mov     [rsp+8],rdi
-    mov     [rsp],r9
-    lea     rdi,[rsp+30h]
-    lea     rsi,[ro+4]
-    call    qword ptr [image.sym68]
-    mov     esi,[rsp+24h]
-    test    esi,esi
-    sete    sil
-    mov     rdx,rsi
-    jmp     L5
-L4:
-    mov     edx,0
-L5:
-    jmp     L0
-L6:
-    jmp     L3
-  ; OSR entries
-    lea     r11,[L7]
-    movsxd  rax,[r11+rax*4]
-    add     rax,r11
-    jmp     rax
-L7:
-    .long   L8
-    .long   L9
-    .long   L10
-    .long   L11
-    .long   L12
-L8:
-    ret
-L9:
-    ret
-L10:
-    ret
-L11:
-    ret
-L12:
+L17:
     ret
 
 fn hashbrown::raw::RawTable::<(std::string::String, usize)>::insert_no_grow
@@ -3258,12 +3204,9 @@ fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::map::equiv
     push    r13
     push    r14
     push    r15
-    sub     rsp,80h
+    sub     rsp,70h
     mov     rbx,rdi
     mov     [rsp+60h],rdx
-    lea     rax,[rsp+60h]
-    mov     [rsp+70h],rax
-    mov     [rsp+78h],rbx
     mov     rax,rsi
     shr     rax,39h
     and     rax,7Fh
@@ -3329,14 +3272,20 @@ L1:
     mov     [rsp+38h],rax
     add     rax,r13
     mov     rcx,[rbx+8]
-    mov     rsi,rax
-    and     rsi,rcx
-    mov     [rsp+30h],rsi
-    lea     rdi,[rsp+70h]
-    call    qword ptr [image.fn84.slot]
-    test    al,al
-    je      L4
-    mov     rax,[rsp+30h]
+    and     rax,rcx
+    mov     [rsp+30h],rax
+    mov     rcx,[rbx]
+    mov     edx,0
+    sub     rdx,rax
+    mov     r11,rdx
+    imul    r11,10h
+    add     r11,rcx
+    mov     rcx,r11
+    mov     rdx,[rsp+60h]
+    mov     rdx,[rdx]
+    mov     rcx,[rcx-10h]
+    cmp     rdx,rcx
+    jne     L4
     mov     rcx,rax
     mov     eax,1
 L2:
@@ -3392,7 +3341,6 @@ L5:
     jmp     L0
 L6:
     mov     rax,[rbx]
-    mov     [rsp+70h],rax
     mov     r11d,0
     sub     r11,rcx
     mov     rcx,r11
@@ -3400,13 +3348,12 @@ L6:
     imul    r11,10h
     add     r11,rax
     mov     rax,r11
-    mov     [rsp+78h],rax
     jmp     L10
 L7:
     mov     ecx,0
 L8:
     mov     rax,rcx
-    add     rsp,80h
+    add     rsp,70h
     pop     r15
     pop     r14
     pop     r13
@@ -3414,16 +3361,10 @@ L8:
     pop     rbx
     ret
 L9:
-    mov     [rsp+70h],rax
     mov     rcx,rax
     jmp     L8
 L10:
     jmp     L9
-    mov     [rsp],rax
-    lea     rdi,[rsp+0A0h]
-    mov     esi,0FFFFFF60h
-    call    ryo_h_Resume
-    ud2
   ; OSR entries
     lea     r11,[L11]
     movsxd  rax,[r11+rax*4]
@@ -3441,58 +3382,6 @@ L13:
 L14:
     ret
 L15:
-    ret
-
-fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::map::equivalent_key<u64, u64, u64>::{closure#0}}>::{closure#0}
-    sub     rsp,18h
-    mov     rax,[rdi]
-    mov     rcx,[rdi+8]
-    mov     rcx,[rcx]
-    mov     edx,0
-    sub     rdx,rsi
-    mov     r11,rdx
-    imul    r11,10h
-    add     r11,rcx
-    mov     rcx,r11
-    jmp     L2
-L0:
-    mov     rax,rdx
-    movzx   eax,al
-    add     rsp,18h
-    ret
-L1:
-    jmp     L4
-L2:
-    jmp     L1
-L3:
-    mov     rsi,[rax]
-    mov     rsi,[rsi]
-    mov     rdi,[rcx-10h]
-    cmp     rsi,rdi
-    sete    dl
-    jmp     L0
-L4:
-    jmp     L3
-  ; OSR entries
-    lea     r11,[L5]
-    movsxd  rax,[r11+rax*4]
-    add     rax,r11
-    jmp     rax
-L5:
-    .long   L6
-    .long   L7
-    .long   L8
-    .long   L9
-    .long   L10
-L6:
-    ret
-L7:
-    ret
-L8:
-    ret
-L9:
-    ret
-L10:
     ret
 
 fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::RandomState>>::rustc_entry::{closure#0}}>
@@ -3501,12 +3390,9 @@ fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entr
     push    r13
     push    r14
     push    r15
-    sub     rsp,80h
+    sub     rsp,70h
     mov     rbx,rdi
     mov     [rsp+60h],rdx
-    lea     rax,[rsp+60h]
-    mov     [rsp+70h],rax
-    mov     [rsp+78h],rbx
     mov     rax,rsi
     shr     rax,39h
     and     rax,7Fh
@@ -3572,14 +3458,20 @@ L1:
     mov     [rsp+38h],rax
     add     rax,r13
     mov     rcx,[rbx+8]
-    mov     rsi,rax
-    and     rsi,rcx
-    mov     [rsp+30h],rsi
-    lea     rdi,[rsp+70h]
-    call    qword ptr [image.fn85.slot]
-    test    al,al
-    je      L4
-    mov     rax,[rsp+30h]
+    and     rax,rcx
+    mov     [rsp+30h],rax
+    mov     rcx,[rbx]
+    mov     edx,0
+    sub     rdx,rax
+    mov     r11,rdx
+    imul    r11,10h
+    add     r11,rcx
+    mov     rcx,r11
+    mov     rdx,[rsp+60h]
+    mov     rcx,[rcx-10h]
+    mov     rdx,[rdx]
+    cmp     rcx,rdx
+    jne     L4
     mov     rcx,rax
     mov     eax,1
 L2:
@@ -3635,7 +3527,6 @@ L5:
     jmp     L0
 L6:
     mov     rax,[rbx]
-    mov     [rsp+70h],rax
     mov     r11d,0
     sub     r11,rcx
     mov     rcx,r11
@@ -3643,13 +3534,12 @@ L6:
     imul    r11,10h
     add     r11,rax
     mov     rax,r11
-    mov     [rsp+78h],rax
     jmp     L10
 L7:
     mov     ecx,0
 L8:
     mov     rax,rcx
-    add     rsp,80h
+    add     rsp,70h
     pop     r15
     pop     r14
     pop     r13
@@ -3657,16 +3547,10 @@ L8:
     pop     rbx
     ret
 L9:
-    mov     [rsp+70h],rax
     mov     rcx,rax
     jmp     L8
 L10:
     jmp     L9
-    mov     [rsp],rax
-    lea     rdi,[rsp+0A0h]
-    mov     esi,0FFFFFF60h
-    call    ryo_h_Resume
-    ud2
   ; OSR entries
     lea     r11,[L11]
     movsxd  rax,[r11+rax*4]
@@ -3684,58 +3568,6 @@ L13:
 L14:
     ret
 L15:
-    ret
-
-fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::RandomState>>::rustc_entry::{closure#0}}>::{closure#0}
-    sub     rsp,18h
-    mov     rax,[rdi]
-    mov     rcx,[rdi+8]
-    mov     rcx,[rcx]
-    mov     edx,0
-    sub     rdx,rsi
-    mov     r11,rdx
-    imul    r11,10h
-    add     r11,rcx
-    mov     rcx,r11
-    jmp     L2
-L0:
-    mov     rax,rdx
-    movzx   eax,al
-    add     rsp,18h
-    ret
-L1:
-    jmp     L4
-L2:
-    jmp     L1
-L3:
-    mov     rsi,[rax]
-    mov     rdi,[rcx-10h]
-    mov     rsi,[rsi]
-    cmp     rdi,rsi
-    sete    dl
-    jmp     L0
-L4:
-    jmp     L3
-  ; OSR entries
-    lea     r11,[L5]
-    movsxd  rax,[r11+rax*4]
-    add     rax,r11
-    jmp     rax
-L5:
-    .long   L6
-    .long   L7
-    .long   L8
-    .long   L9
-    .long   L10
-L6:
-    ret
-L7:
-    ret
-L8:
-    ret
-L9:
-    ret
-L10:
     ret
 
 fn hashbrown::raw::RawTable::<(u64, u64)>::insert_no_grow
@@ -6793,14 +6625,6 @@ fn std::arch::x86_64::__m128i::as_i8x16
     mov     [rdi],rax
     mov     [rdi+8],rcx
     mov     rax,rdi
-    ret
-
-fn std::cmp::impls::<impl std::cmp::PartialEq for u64>::eq
-    mov     rax,[rdi]
-    mov     rcx,[rsi]
-    cmp     rax,rcx
-    sete    al
-    movzx   eax,al
     ret
 
 fn std::collections::HashMap::<u64, u64>::entry

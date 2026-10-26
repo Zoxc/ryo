@@ -1985,3 +1985,74 @@ fn devirt_per_image_and_cache() {
     // A1's f, A2's f, u, k.
     check_stats(before, 4);
 }
+
+/// `v(p, x) = (*(p + at))(p?, x) + 1`, register arguments: a callee taking the vtable as a
+/// parameter (hashmap's `find_inner`), passing it on as the first argument if `pass`. p@-8,
+/// x@-16, q@-24, r@-32.
+fn through_param(at: i32, pass: bool) -> FunctionDef {
+    let mut a = Asm::new();
+    a.i(arg(-8, 0));
+    a.i(arg(-16, 1));
+    a.i(Insn::LoadW64 { d: Slot(-24), m: Mem { p: Slot(-8), k: at } });
+    let args: &[i32] = if pass { &[-8, -16] } else { &[-16] };
+    a.i(Insn::CallPtr { d: Slot(-32), p: Slot(-24), k: 8, a: List::from_words(&regs(args)) });
+    a.i(Insn::AddImmW64 { d: Slot(-32), a: Slot(-32), imm: 1 });
+    a.ret(Slot(-32), 8);
+    func(a.done(), 32, 0, 8)
+}
+
+/// The second inlining round: the vtable reaches the call through it only once its callee
+/// is inlined (hashmap's `find::<C>`), so the call becomes direct after the first round and
+/// the second one inlines its target. A call the second round exposes becomes direct but
+/// isn't inlined: there is no third round.
+#[test]
+fn devirt_second_round() {
+    let (_g, before) = start();
+    let d0 = ryo_jit::ssa_devirt();
+    let mut w = ImageWriter::new(unique_scid());
+    // g(x) = 3x + 1; g2(x) = (3x + 1) * 3 + 1; g3(p, x) = g2 through p[40] + 1.
+    let gd = rounds(1, 0);
+    let s_g = w.symbol(&gd.name.clone(), 0);
+    let g = w.add_function(gd);
+    let g2d = rounds(2, 0);
+    let s_g2 = w.symbol(&g2d.name.clone(), 0);
+    let g2 = w.add_function(g2d);
+    let g3d = through_param(40, false);
+    let s_g3 = w.symbol(&g3d.name.clone(), 0);
+    let g3 = w.add_function(g3d);
+    let sym = |s: Sym, offset: u32| AllocReloc { offset, target: AllocTarget::Symbol(s), addend: 0 };
+    let vt = w.add_const(&[0; 56], 8, &[sym(s_g, 32), sym(s_g2, 40), sym(s_g3, 48)]);
+    let inner = w.add_function(through_param(32, false));
+    let inner3 = w.add_function(through_param(48, true));
+    // f(x) = v(vt, x) + 1. x@16; p@-8, x'@-16, r@-24.
+    let root = |v: Func| {
+        let mut a = Asm::new();
+        a.i(Insn::AddrConst { d: Slot(-8), a: Abs::Const(vt) });
+        a.i(Insn::MovW64 { d: Slot(-16), s: Slot(16) });
+        a.i(Insn::Call { d: Slot(-24), f: v, k: 8, a: List::from_words(&regs(&[-8, -16])) });
+        a.i(Insn::AddImmW64 { d: Slot(-24), a: Slot(-24), imm: 1 });
+        a.ret(Slot(-24), 8);
+        func(a.done(), 32, 8, 8)
+    };
+    let f = w.add_function(root(inner));
+    let f3 = w.add_function(root(inner3));
+    let img = build(w, &syms());
+    for x in [1u64, 5, 1 << 40] {
+        assert_eq!(ok::<_, u64>(img.id(f), (x,)), rounds_value(1, x) + 2, "f({x})");
+    }
+    if ssa() {
+        assert_eq!(state(&img, inner), JIT_COLD, "inner inlined");
+        assert_eq!(state(&img, g), JIT_COLD, "g inlined in the second round");
+        assert_eq!(devirt_since(d0), 1, "f's call made direct");
+    }
+    for x in [1u64, 5, 1 << 40] {
+        assert_eq!(ok::<_, u64>(img.id(f3), (x,)), rounds_value(2, x) + 3, "f3({x})");
+    }
+    if ssa() {
+        assert_eq!(state(&img, g3), JIT_COLD, "g3 inlined in the second round");
+        assert_ne!(state(&img, g2), JIT_COLD, "g2 called: no third round");
+        assert_eq!(devirt_since(d0), 3, "f3's two calls made direct");
+    }
+    // f, f3, g2.
+    check_stats(before, 3);
+}
