@@ -189,10 +189,7 @@ impl CodegenBackend for RyoBackend {
         let partitions = tcx.collect_and_partition_mono_items(());
         let results = partition::results(tcx).expect("collect_and_partition_mono_items didn't run our provider");
         assert_eq!(partitions.codegen_units[0].name(), results.cgu_name);
-        let fmt = match objfile::format_for(binary_format(&tcx.sess.target.binary_format)) {
-            Ok(f) => f,
-            Err(e) => tcx.dcx().fatal(e),
-        };
+        let fmt = object_format(tcx.sess);
         let scid = partition::local_stable_crate_id(tcx);
         // Step 5: the image object (design/backend.md#pipeline).
         let image_name = format!("{}.ryo_image", results.cgu_name);
@@ -209,7 +206,6 @@ impl CodegenBackend for RyoBackend {
             local_image: objfile::image_symbol(scid),
             image_module: image_name.clone(),
             linked_roots: tcx.crate_types().iter().map(|&t| (t, partition::linked_roots(tcx, t))).collect(),
-            binary_format: binary_format(&tcx.sess.target.binary_format),
         });
         dump_lean::dump(tcx);
         // The native CGU (step 4), compiled by cg_llvm as usual.
@@ -333,6 +329,21 @@ pub(crate) fn static_needs_direct_slot(tcx: TyCtxt<'_>, def_id: rustc_hir::def_i
 /// Whether the target uses PE/COFF objects.
 pub(crate) fn is_pe(tcx: TyCtxt<'_>) -> bool {
     matches!(tcx.sess.target.binary_format, rustc_target::spec::BinaryFormat::Coff)
+}
+
+/// The image and registry objects' format for the session's target (design/platforms.md).
+/// Mach-O only for macOS, with its deployment target.
+pub(crate) fn object_format(sess: &Session) -> Box<dyn objfile::ObjectFormat> {
+    let target = &sess.target;
+    let mut macos_min = 0;
+    if target.binary_format == rustc_target::spec::BinaryFormat::MachO {
+        if target.os != rustc_target::spec::Os::MacOs {
+            sess.dcx().fatal(format!("the ryo backend supports Mach-O for macOS only, not {}", target.llvm_target));
+        }
+        let v = sess.apple_deployment_target();
+        macos_min = (u32::from(v.major) << 16) | (u32::from(v.minor) << 8) | u32::from(v.patch);
+    }
+    objfile::format_for(binary_format(&target.binary_format), macos_min).unwrap_or_else(|e| sess.dcx().fatal(e))
 }
 
 fn binary_format(f: &rustc_target::spec::BinaryFormat) -> object::BinaryFormat {

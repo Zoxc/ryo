@@ -749,6 +749,10 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         let mut pool = Pool::default();
         let mode = asm_mode(tcx, self.rt);
         w.prepare(mode);
+        if tcx.sess.target.binary_format == rustc_target::spec::BinaryFormat::MachO {
+            // As LLVM writes `__eh_frame` (design/platforms.md).
+            w.set_eh_pointers(ryo_bytecode::image::EhPointers::Abs8);
+        }
         let mut encoded = Vec::with_capacity(self.vm.len());
         // The handlers the code calls, and whether it probes the stack.
         let mut handlers = vec![false; ryo_bytecode::full::ALL_OPCODES.len()];

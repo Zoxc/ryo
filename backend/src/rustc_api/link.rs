@@ -26,7 +26,6 @@ pub struct LinkInfo {
     /// Per crate type, the image symbols that only LTO needs, as entries of its
     /// `linked_symbols` and of its `exported_symbols` (`partition::linked_roots`).
     pub linked_roots: Vec<(CrateType, (Vec<String>, Vec<String>))>,
-    pub binary_format: object::BinaryFormat,
 }
 
 pub fn link(
@@ -40,7 +39,7 @@ pub fn link(
 ) {
     // No codegen ran (e.g. `--emit=metadata`): nothing of ours to link.
     let Some(info) = info else { return llvm.link(sess, modules, crate_info, metadata, outputs) };
-    let fmt = objfile::format_for(info.binary_format).unwrap_or_else(|e| sess.dcx().fatal(e));
+    let fmt = super::object_format(sess);
     let types = crate_info.crate_types.clone();
     let n = types.len();
 
@@ -69,7 +68,7 @@ pub fn link(
         // Without linking (`--emit=obj` etc.) a registry object would only be left behind.
         if crate_type != CrateType::Rlib && sess.opts.output_types.should_link() {
             let registry_t = sess.prof.generic_activity("ryo_registry_images");
-            let images = registry_images(sess, info, &crate_info, crate_type);
+            let images = registry_images(sess, &*fmt, info, &crate_info, crate_type);
             let import = register_is_imported(&crate_info, crate_type);
             let bytes = objfile::write_registry(&*fmt, &images, import).unwrap_or_else(|e| sess.dcx().fatal(e));
             let name = format!("{}.ryo_registry.{}", crate_info.local_crate_name, crate_type);
@@ -160,7 +159,7 @@ fn append_to_rlib(sess: &Session, rlib: &Path, object: &Path) {
 /// the upstream crates linked into it statically. Crates linked into an upstream dylib are
 /// registered by that dylib's registry. Upstream rlibs are recognized as ryo-built by an image
 /// symbol in their archive symbol table.
-fn registry_images(sess: &Session, info: &LinkInfo, crate_info: &CrateInfo, crate_type: CrateType) -> Vec<String> {
+fn registry_images(sess: &Session, fmt: &dyn objfile::ObjectFormat, info: &LinkInfo, crate_info: &CrateInfo, crate_type: CrateType) -> Vec<String> {
     let mut images = vec![info.local_image.clone()];
     let Some(deps) = crate_info.dependency_formats.get(&crate_type) else { return images };
     for (cnum, linkage) in deps.iter_enumerated() {
@@ -171,7 +170,7 @@ fn registry_images(sess: &Session, info: &LinkInfo, crate_info: &CrateInfo, crat
         // Only the archive's symbol table is read, not the whole rlib.
         let file = fs::File::open(&rlib).unwrap_or_else(|e| sess.dcx().fatal(format!("reading {}: {e}", rlib.display())));
         let cache = object::ReadCache::new(file);
-        match objfile::archive_image_symbols(&cache) {
+        match objfile::archive_image_symbols(fmt, &cache) {
             Ok(syms) => images.extend(syms),
             Err(e) => sess.dcx().fatal(format!("reading the symbol table of {}: {e}", rlib.display())),
         }
