@@ -586,7 +586,7 @@ b19(): ; Body
     AStore(AllocaId(30), 0, 4) (0x0)
     v99:8 = PtrIndex(1) (v44, v38)
     v100:8 = AllocaAddr(AllocaId(30), 0) ()
-    v101:8 = RefAddr(image.k3192, false) ()
+    v101:8 = RefAddr(image.k2240, false) ()
     br Eq.w8 v99, 0x0 ? b41() : b25()
 b20(): ; Body
     trap
@@ -636,8 +636,8 @@ b39(): ; Body
 b40(): ; Body
     trap
 b41(): ; Body cold
-    v109:8 = RefAddr(image.k4563, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v109, 0x237, 0x0, v101)
+    v109:8 = RefAddr(image.k3619, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v109, 0x237, 0x0, v101)
     trap
 b42(): ; Body
     trap
@@ -653,7 +653,7 @@ b46(): ; Body
     v115:8 = Bin(Add, 8) (v38, v112)
     v116:8 = PtrIndex(1) (v44, v115)
     v117:8 = AllocaAddr(AllocaId(31), 0) ()
-    v118:8 = RefAddr(image.k3216, false) ()
+    v118:8 = RefAddr(image.k2264, false) ()
     br Eq.w8 v116, 0x0 ? b68() : b52()
 b47(): ; Body
     trap
@@ -707,8 +707,8 @@ b66(): ; Body
 b67(): ; Body
     trap
 b68(): ; Body cold
-    v126:8 = RefAddr(image.k4563, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v126, 0x237, 0x0, v118)
+    v126:8 = RefAddr(image.k3619, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v126, 0x237, 0x0, v118)
     trap
 b69(): ; Body
     trap
@@ -720,7 +720,7 @@ b72(v133:8, v134:8): ; Body
     br LtU.w8 v133, v40 ? b73() : b78(v134)
 b73(): ; Body
     v135:8 = Bin(Add, 8) (v38, v133)
-    v136:8 = RefAddr(image.k3320, false) ()
+    v136:8 = RefAddr(image.k2368, false) ()
     br LtU.w8 v135, v45 ? b75() : b76()
 b74(): ; Body
     trap
@@ -734,8 +734,8 @@ b75(): ; Body
     v144:8 = Bin(Or, 8) (v134, v143)
     jmp b78(v144)
 b76(): ; Body cold
-    v137:8 = RefAddr(image.k6464, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v137, 0x1ad, 0x0, v136)
+    v137:8 = RefAddr(image.k4746, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v137, 0x1ad, 0x0, v136)
     trap
 b77(): ; Body
     trap
@@ -797,8 +797,8 @@ b99(): ; Body
 b100(): ; Body
     trap
 b101(): ; Body cold
-    v179:8 = RefAddr(image.k4563, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v179, 0x237, 0x0, v78)
+    v179:8 = RefAddr(image.k3619, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v179, 0x237, 0x0, v78)
     trap
 b102(): ; Body
     trap
@@ -811,7 +811,7 @@ b105(): ; Body
 b106(): ; Body
     AStore(AllocaId(300), 0, 4) (0x0)
     v187:8 = AllocaAddr(AllocaId(300), 0) ()
-    v188:8 = RefAddr(image.k3192, false) ()
+    v188:8 = RefAddr(image.k2240, false) ()
     br Eq.w8 v1, 0x0 ? b128() : b112()
 b107(): ; Body
     trap
@@ -861,8 +861,8 @@ b126(): ; Body
 b127(): ; Body
     trap
 b128(): ; Body cold
-    v196:8 = RefAddr(image.k4563, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v196, 0x237, 0x0, v188)
+    v196:8 = RefAddr(image.k3619, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v196, 0x237, 0x0, v188)
     trap
 b129(): ; Body
     trap
@@ -877,7 +877,7 @@ b133(): ; Body
     AStore(AllocaId(301), 0, 2) (0x0)
     v202:8 = PtrIndex(1) (v1, v199)
     v203:8 = AllocaAddr(AllocaId(301), 0) ()
-    v204:8 = RefAddr(image.k3216, false) ()
+    v204:8 = RefAddr(image.k2264, false) ()
     br Eq.w8 v202, 0x0 ? b155() : b139()
 b134(): ; Body
     trap
@@ -931,8 +931,8 @@ b153(): ; Body
 b154(): ; Body
     trap
 b155(): ; Body cold
-    v212:8 = RefAddr(image.k4563, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v212, 0x237, 0x0, v204)
+    v212:8 = RefAddr(image.k3619, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v212, 0x237, 0x0, v204)
     trap
 b156(): ; Body
     trap
@@ -943,7 +943,7 @@ b158(): ; Body
 b159(v219:8, v220:8): ; Body
     br LtU.w8 v219, v265 ? b160() : b165(v220)
 b160(): ; Body
-    v221:8 = RefAddr(image.k3320, false) ()
+    v221:8 = RefAddr(image.k2368, false) ()
     br LtU.w8 v219, v2 ? b162() : b163()
 b161(): ; Body
     trap
@@ -957,8 +957,8 @@ b162(): ; Body
     v229:8 = Bin(Or, 8) (v220, v228)
     jmp b165(v229)
 b163(): ; Body cold
-    v222:8 = RefAddr(image.k6464, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v222, 0x1ad, 0x0, v221)
+    v222:8 = RefAddr(image.k4746, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v222, 0x1ad, 0x0, v221)
     trap
 b164(): ; Body
     trap
@@ -1169,7 +1169,7 @@ b0(v0:8): ; Entry
     Store(8, 8) (v0, v180)
     ret 0x0 ()
 
-fn <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:24:43: 24:50}>::{closure#0}}>::{closure#0}
+fn <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:28:43: 28:50}>::{closure#0}}>::{closure#0}
 a0: $-112, 8 bytes, Promoted
 a1: $-104, 8 bytes, Promoted
 a2: $-96, 8 bytes, Promoted
@@ -1235,6 +1235,864 @@ b13(): ; Body
 b14(): ; Body
     trap
 b15(): ; Body
+    trap
+
+fn <std::hash::BuildHasherDefault<std::hash::DefaultHasher> as std::hash::BuildHasher>::build_hasher
+a0: $-88, 8 bytes, Promoted
+a1: $-80, 8 bytes, Promoted
+a2: $-72, 72 bytes, Promoted, escaped
+a3: $-328, 8 bytes, Promoted, inlined
+a4: $-320, 8 bytes, Promoted, inlined
+a5: $-312, 8 bytes, Promoted, inlined
+a6: $-304, 8 bytes, Promoted, inlined
+a7: $-296, 72 bytes, Promoted, escaped, inlined
+a8: $-224, 8 bytes, Promoted, inlined
+a9: $-216, 8 bytes, Promoted, inlined
+a10: $-208, 8 bytes, Promoted, inlined
+a11: $-200, 8 bytes, Promoted, inlined
+a12: $-192, 8 bytes, Promoted, inlined
+a13: $-184, 8 bytes, Promoted, inlined
+a14: $-176, 8 bytes, Promoted, inlined
+a15: $-168, 8 bytes, Promoted, inlined
+a16: $-160, 8 bytes, Promoted, inlined
+a17: $-152, 8 bytes, Promoted, inlined
+a18: $-144, 8 bytes, Promoted, inlined
+a19: $-136, 8 bytes, Promoted, inlined
+a20: $-128, 8 bytes, Promoted, inlined
+a21: $-120, 8 bytes, Promoted, inlined
+a22: $-112, 8 bytes, Promoted, inlined
+a23: $-104, 8 bytes, Promoted, inlined
+a24: $-96, 8 bytes, Promoted, inlined
+a25: $-88, 8 bytes, Promoted, inlined
+a26: $-80, 8 bytes, Promoted, inlined
+a27: $-72, 8 bytes, Promoted, inlined
+a28: $-64, 8 bytes, Promoted, inlined
+a29: $-56, 8 bytes, Promoted, inlined
+a30: $-48, 8 bytes, Promoted, inlined
+a31: $-40, 8 bytes, Promoted, inlined
+a32: $-32, 8 bytes, Promoted, inlined
+a33: $-24, 8 bytes, Promoted, inlined
+a34: $-16, 8 bytes, Promoted, inlined
+a35: $-8, 8 bytes, Promoted, inlined
+a36: $-32, 8 bytes, Promoted, inlined
+a37: $-16, 8 bytes, Promoted, inlined
+a38: $-8, 8 bytes, Promoted, inlined
+b0(v0:8, v1:8): ; Entry
+    Store(8, 0) (v0, 0x736f6d6570736575)
+    Store(8, 8) (v0, 0x6c7967656e657261)
+    Store(8, 16) (v0, 0x646f72616e646f6d)
+    Store(8, 24) (v0, 0x7465646279746573)
+    Store(8, 32) (v0, 0x0)
+    Store(8, 40) (v0, 0x0)
+    Store(8, 48) (v0, 0x0)
+    Store(8, 56) (v0, 0x0)
+    Store(8, 64) (v0, 0x0)
+    ret 0x8 (v0)
+b1(): ; Body
+    trap
+b2(): ; Body
+    trap
+b3(): ; Body
+    trap
+b4(): ; Body
+    trap
+
+fn <std::hash::BuildHasherDefault<std::hash::DefaultHasher> as std::hash::BuildHasher>::hash_one::<&std::string::String>
+a0: $-120, 8 bytes, Promoted
+a1: $-112, 8 bytes, Promoted
+a2: $-104, 72 bytes, Memory, escaped
+a3: $-32, 8 bytes, Promoted
+a4: $-24, 8 bytes, Promoted, escaped
+a5: $-16, 8 bytes, Promoted
+a6: $-8, 8 bytes, Promoted
+a7: $-32, 8 bytes, Promoted, inlined
+a8: $-16, 8 bytes, Promoted, inlined
+a9: $-8, 8 bytes, Promoted, inlined
+a10: $-88, 8 bytes, Promoted, inlined
+a11: $-80, 8 bytes, Promoted, inlined
+a12: $-72, 8 bytes, Promoted, inlined
+a13: $-64, 8 bytes, Promoted, inlined
+a14: $-56, 8 bytes, Promoted, inlined
+a15: $-48, 32 bytes, Memory, escaped, inlined
+a16: $-16, 8 bytes, Promoted, inlined
+a17: $-8, 8 bytes, Promoted, inlined
+a18: $-48, 8 bytes, Promoted, inlined
+a19: $-40, 8 bytes, Promoted, inlined
+a20: $-32, 8 bytes, Promoted, inlined
+a21: $-24, 8 bytes, Promoted, inlined
+a22: $-16, 8 bytes, Promoted, inlined
+a23: $-8, 8 bytes, Promoted, inlined
+a24: $-24, 8 bytes, Promoted, inlined
+a25: $-16, 8 bytes, Promoted, inlined
+a26: $-8, 8 bytes, Promoted, inlined
+a27: $-80, 8 bytes, Promoted, inlined
+a28: $-72, 8 bytes, Promoted, inlined
+a29: $-64, 8 bytes, Promoted, inlined
+a30: $-56, 8 bytes, Promoted, inlined
+a31: $-48, 8 bytes, Promoted, inlined
+a32: $-40, 8 bytes, Promoted, inlined
+a33: $-32, 8 bytes, Promoted, inlined
+a34: $-24, 8 bytes, Promoted, inlined
+a35: $-16, 8 bytes, Promoted, inlined
+a36: $-8, 8 bytes, Promoted, inlined
+a37: $-40, 8 bytes, Promoted, inlined
+a38: $-24, 8 bytes, Promoted, inlined
+a39: $-16, 8 bytes, Promoted, inlined
+a40: $-8, 8 bytes, Promoted, inlined
+a41: $-49, 1 bytes, Memory, escaped, inlined
+a42: $-48, 8 bytes, Promoted, inlined
+a43: $-40, 8 bytes, Promoted, inlined
+a44: $-32, 8 bytes, Promoted, inlined
+a45: $-24, 8 bytes, Promoted, inlined
+a46: $-16, 8 bytes, Promoted, inlined
+a47: $-8, 8 bytes, Promoted, inlined
+a48: $-152, 8 bytes, Promoted, inlined
+a49: $-144, 8 bytes, Promoted, inlined
+a50: $-136, 8 bytes, Promoted, inlined
+a51: $-128, 8 bytes, Promoted, inlined
+a52: $-120, 8 bytes, Promoted, inlined
+a53: $-112, 8 bytes, Promoted, inlined
+a54: $-104, 8 bytes, Promoted, inlined
+a55: $-96, 8 bytes, Promoted, inlined
+a56: $-88, 8 bytes, Promoted, inlined
+a57: $-80, 8 bytes, Memory, escaped, inlined
+a58: $-72, 8 bytes, Promoted, inlined
+a59: $-64, 8 bytes, Promoted, inlined
+a60: $-56, 8 bytes, Promoted, inlined
+a61: $-48, 8 bytes, Promoted, inlined
+a62: $-40, 8 bytes, Promoted, inlined
+a63: $-32, 8 bytes, Promoted, inlined
+a64: $-24, 8 bytes, Promoted, inlined
+a65: $-16, 8 bytes, Promoted, inlined
+a66: $-8, 8 bytes, Promoted, inlined
+a67: $-184, 8 bytes, Promoted, inlined
+a68: $-169, 1 bytes, Promoted, inlined
+a69: $-168, 8 bytes, Promoted, inlined
+a70: $-160, 8 bytes, Promoted, inlined
+a71: $-152, 8 bytes, Promoted, inlined
+a72: $-144, 8 bytes, Promoted, inlined
+a73: $-136, 8 bytes, Promoted, inlined
+a74: $-128, 8 bytes, Promoted, inlined
+a75: $-120, 8 bytes, Promoted, inlined
+a76: $-112, 8 bytes, Promoted, inlined
+a77: $-104, 8 bytes, Promoted, inlined
+a78: $-96, 8 bytes, Promoted, inlined
+a79: $-85, 1 bytes, Promoted, inlined
+a80: $-84, 1 bytes, Promoted, inlined
+a81: $-83, 1 bytes, Promoted, inlined
+a82: $-82, 1 bytes, Promoted, inlined
+a83: $-81, 1 bytes, Promoted, inlined
+a84: $-80, 8 bytes, Promoted, inlined
+a85: $-72, 8 bytes, Promoted, inlined
+a86: $-64, 8 bytes, Promoted, inlined
+a87: $-56, 8 bytes, Promoted, inlined
+a88: $-41, 1 bytes, Promoted, inlined
+a89: $-40, 8 bytes, Promoted, inlined
+a90: $-32, 8 bytes, Promoted, inlined
+a91: $-24, 8 bytes, Promoted, inlined
+a92: $-16, 8 bytes, Promoted, inlined
+a93: $-8, 8 bytes, Promoted, inlined
+a94: $-48, 8 bytes, Promoted, inlined
+a95: $-40, 8 bytes, Promoted, inlined
+a96: $-32, 8 bytes, Promoted, inlined
+a97: $-24, 8 bytes, Promoted, inlined
+a98: $-16, 8 bytes, Promoted, inlined
+a99: $-8, 8 bytes, Promoted, inlined
+a100: $-88, 8 bytes, Promoted, inlined
+a101: $-80, 8 bytes, Promoted, inlined
+a102: $-72, 72 bytes, Promoted, escaped, inlined
+a103: $-328, 8 bytes, Promoted, inlined
+a104: $-320, 8 bytes, Promoted, inlined
+a105: $-312, 8 bytes, Promoted, inlined
+a106: $-304, 8 bytes, Promoted, inlined
+a107: $-296, 72 bytes, Promoted, escaped, inlined
+a108: $-224, 8 bytes, Promoted, inlined
+a109: $-216, 8 bytes, Promoted, inlined
+a110: $-208, 8 bytes, Promoted, inlined
+a111: $-200, 8 bytes, Promoted, inlined
+a112: $-192, 8 bytes, Promoted, inlined
+a113: $-184, 8 bytes, Promoted, inlined
+a114: $-176, 8 bytes, Promoted, inlined
+a115: $-168, 8 bytes, Promoted, inlined
+a116: $-160, 8 bytes, Promoted, inlined
+a117: $-152, 8 bytes, Promoted, inlined
+a118: $-144, 8 bytes, Promoted, inlined
+a119: $-136, 8 bytes, Promoted, inlined
+a120: $-128, 8 bytes, Promoted, inlined
+a121: $-120, 8 bytes, Promoted, inlined
+a122: $-112, 8 bytes, Promoted, inlined
+a123: $-104, 8 bytes, Promoted, inlined
+a124: $-96, 8 bytes, Promoted, inlined
+a125: $-88, 8 bytes, Promoted, inlined
+a126: $-80, 8 bytes, Promoted, inlined
+a127: $-72, 8 bytes, Promoted, inlined
+a128: $-64, 8 bytes, Promoted, inlined
+a129: $-56, 8 bytes, Promoted, inlined
+a130: $-48, 8 bytes, Promoted, inlined
+a131: $-40, 8 bytes, Promoted, inlined
+a132: $-32, 8 bytes, Promoted, inlined
+a133: $-24, 8 bytes, Promoted, inlined
+a134: $-16, 8 bytes, Promoted, inlined
+a135: $-8, 8 bytes, Promoted, inlined
+a136: $-32, 8 bytes, Promoted, inlined
+a137: $-16, 8 bytes, Promoted, inlined
+a138: $-8, 8 bytes, Promoted, inlined
+b0(v0:8, v1:8): ; Entry
+    AStore(AllocaId(2), 0, 8) (0x736f6d6570736575)
+    AStore(AllocaId(2), 8, 8) (0x6c7967656e657261)
+    AStore(AllocaId(2), 16, 8) (0x646f72616e646f6d)
+    AStore(AllocaId(2), 24, 8) (0x7465646279746573)
+    AStore(AllocaId(2), 32, 8) (0x0)
+    AStore(AllocaId(2), 40, 8) (0x0)
+    AStore(AllocaId(2), 48, 8) (0x0)
+    AStore(AllocaId(2), 56, 8) (0x0)
+    AStore(AllocaId(2), 64, 8) (0x0)
+    v5:8 = AllocaAddr(AllocaId(2), 0) ()
+    v81:8 = Load(8, 8) (v1)
+    v82:8 = Load(8, 16) (v1)
+    AStore(AllocaId(2), 48, 8) (v82)
+    v133:8 = Bin(And, 8) (v82, 0x7)
+    jmp b33(0x0)
+b1(): ; Body
+    trap
+b2(): ; Body
+    trap
+b3(): ; Body
+    trap
+b4(v10:8): ; Body head 0 cold
+    hcall resume [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None])] ins [0] outs [] (v10)
+    trap
+b5(): ; Body
+    trap
+b6(): ; Body
+    trap
+b7(): ; Body
+    trap
+b8(): ; Body cold
+    trap
+b9(): ; Body
+    trap
+b10(): ; Stub cold
+    v6:8 = LandingPad ()
+    jmp b4(v6)
+b11(): ; Body
+    trap
+b12(): ; Stub cold
+    v9:8 = LandingPad ()
+    jmp b4(v9)
+b13(): ; Body
+    trap
+b14(): ; Body
+    trap
+b15(): ; Body
+    trap
+b16(): ; Body
+    trap
+b17(): ; Body
+    trap
+b18(): ; Body
+    trap
+b19(): ; Body
+    v57:8 = ALoad(AllocaId(15), 0, 8) ()
+    v58:8 = ALoad(AllocaId(15), 16, 8) ()
+    v59:8 = Bin(Xor, 8) (v57, v58)
+    v60:8 = ALoad(AllocaId(15), 8, 8) ()
+    v61:8 = Bin(Xor, 8) (v59, v60)
+    v62:8 = ALoad(AllocaId(15), 24, 8) ()
+    v63:8 = Bin(Xor, 8) (v61, v62)
+    ret 0x8 (v63)
+b20(): ; Body
+    trap
+b21(): ; Body
+    trap
+b22(): ; Body
+    trap
+b23(): ; Body
+    trap
+b24(): ; Body
+    trap
+b25(): ; Body
+    trap
+b26(): ; Body
+    trap
+b27(): ; Body
+    trap
+b28(): ; Body
+    trap
+b29(): ; Body
+    trap
+b30(): ; Body
+    trap
+b31(): ; Body
+    trap
+b32(): ; Body
+    trap
+b33(v134:8): ; Body
+    AStore(AllocaId(57), 0, 8) (v134)
+    v140:8 = Bin(Sub, 8) (v82, v133)
+    br LtU.w8 v134, v140 ? b34() : b54()
+b34(): ; Body
+    AStore(AllocaId(57), 0, 8) (0x0)
+    v141:8 = PtrIndex(1) (v81, v134)
+    v142:8 = AllocaAddr(AllocaId(57), 0) ()
+    v143:8 = RefAddr(image.k4960, false) ()
+    v144:1 = Call(Call { target: image.fn93, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Pad { catch: true } }) (v141, 0x1)
+    invoke -> b36() unwind b44()
+b35(): ; Body
+    trap
+b36(): ; Body
+    br v144 ? b42() : b48()
+b37(): ; Body
+    v243:8 = AllocaAddr(AllocaId(57), 0) ()
+    v145:1 = Call(Call { target: image.fn93, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Pad { catch: true } }) (v243, 0x1)
+    invoke -> b38() unwind b45()
+b38(): ; Body
+    br v145 ? b43() : b48()
+b39(): ; Body
+    v244:8 = AllocaAddr(AllocaId(57), 0) ()
+    v146:1 = Call(Call { target: image.fn152, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Pad { catch: true } }) (v141, v244, 0x1, 0x8)
+    invoke -> b40() unwind b46()
+b40(): ; Body
+    br v146 ? b41() : b48()
+b41(): ; Body
+    v151:8 = Load(8, 0) (v141)
+    AStore(AllocaId(57), 0, 8) (v151)
+    v152:8 = ALoad(AllocaId(2), 24, 8) ()
+    v153:8 = Bin(Xor, 8) (v152, v151)
+    AStore(AllocaId(2), 24, 8) (v153)
+    v245:8 = AllocaAddr(AllocaId(2), 0) ()
+    AStore(AllocaId(57), 0, 8) (v245)
+    Call(Call { target: image.fn187, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v245)
+    invoke -> b62() unwind b10()
+b42(): ; Body
+    br Eq.w8 v141, 0x0 ? b48() : b37()
+b43(): ; Body
+    v246:8 = AllocaAddr(AllocaId(57), 0) ()
+    br Eq.w8 v246, 0x0 ? b48() : b39()
+b44(): ; Stub cold
+    v147:8 = LandingPad ()
+    jmp b51()
+b45(): ; Stub cold
+    v148:8 = LandingPad ()
+    jmp b51()
+b46(): ; Stub cold
+    v149:8 = LandingPad ()
+    jmp b51()
+b47(): ; Body
+    trap
+b48(): ; Body cold
+    v150:8 = RefAddr(image.k3619, false) ()
+    v248:8 = RefAddr(image.k4960, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v150, 0x237, 0x0, v248)
+    trap
+b49(): ; Body
+    trap
+b50(): ; Body
+    trap
+b51(): ; Body cold
+    Call(Call { target: image.sym25, regs: [], parts: [], site: None }) ()
+    trap
+b52(): ; Body
+    trap
+b53(): ; Body
+    trap
+b54(): ; Body
+    v164:8 = Call(Call { target: image.fn132, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v81, v82, v134, v133)
+    invoke -> b63() unwind b10()
+b55(): ; Body
+    trap
+b56(): ; Body
+    trap
+b57(): ; Body
+    trap
+b58(): ; Body
+    trap
+b59(): ; Body
+    trap
+b60(): ; Body
+    trap
+b61(): ; Body
+    trap
+b62(): ; Body
+    v161:8 = ALoad(AllocaId(2), 0, 8) ()
+    v162:8 = Bin(Xor, 8) (v161, v151)
+    AStore(AllocaId(2), 0, 8) (v162)
+    v163:8 = Bin(Add, 8) (v134, 0x8)
+    jmp b33(v163)
+b63(): ; Body
+    AStore(AllocaId(2), 56, 8) (v164)
+    AStore(AllocaId(2), 64, 8) (v133)
+    AStore(AllocaId(41), 0, 1) (0xff)
+    v165:8 = AllocaAddr(AllocaId(41), 0) ()
+    v247:8 = AllocaAddr(AllocaId(2), 0) ()
+    Call(Call { target: image.fn176, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: false } }) (v247, v165, 0x1)
+    invoke -> b64() unwind b10()
+b64(): ; Body
+    v12:8 = ALoad(AllocaId(2), 0, 8) ()
+    AStore(AllocaId(15), 0, 8) (v12)
+    v13:8 = ALoad(AllocaId(2), 8, 8) ()
+    AStore(AllocaId(15), 8, 8) (v13)
+    v14:8 = ALoad(AllocaId(2), 16, 8) ()
+    AStore(AllocaId(15), 16, 8) (v14)
+    v15:8 = ALoad(AllocaId(2), 24, 8) ()
+    AStore(AllocaId(15), 24, 8) (v15)
+    v16:8 = ALoad(AllocaId(2), 48, 8) ()
+    v17:8 = Bin(And, 8) (v16, 0xff)
+    v18:8 = Bin(Shl, 8) (v17, 0x38)
+    v19:8 = ALoad(AllocaId(2), 56, 8) ()
+    v20:8 = Bin(Or, 8) (v18, v19)
+    v21:8 = Bin(Xor, 8) (v15, v20)
+    AStore(AllocaId(15), 24, 8) (v21)
+    v22:8 = AllocaAddr(AllocaId(15), 0) ()
+    v25:8 = Bin(Add, 8) (v12, v14)
+    AStore(AllocaId(15), 0, 8) (v25)
+    v28:8 = Bin(Add, 8) (v13, v21)
+    AStore(AllocaId(15), 8, 8) (v28)
+    v29:8 = Bin(Shl, 8) (v14, 0xd)
+    v30:8 = Bin(ShrU, 8) (v14, 0x33)
+    v31:8 = Bin(Or, 8) (v29, v30)
+    AStore(AllocaId(15), 16, 8) (v31)
+    v32:8 = Bin(Xor, 8) (v31, v25)
+    AStore(AllocaId(15), 16, 8) (v32)
+    v33:8 = Bin(Shl, 8) (v21, 0x10)
+    v34:8 = Bin(ShrU, 8) (v21, 0x30)
+    v35:8 = Bin(Or, 8) (v33, v34)
+    AStore(AllocaId(15), 24, 8) (v35)
+    v36:8 = Bin(Xor, 8) (v35, v28)
+    AStore(AllocaId(15), 24, 8) (v36)
+    v37:8 = Bin(Shl, 8) (v25, 0x20)
+    v38:8 = Bin(ShrU, 8) (v25, 0x20)
+    v39:8 = Bin(Or, 8) (v37, v38)
+    AStore(AllocaId(15), 0, 8) (v39)
+    v40:8 = Bin(Add, 8) (v28, v32)
+    AStore(AllocaId(15), 8, 8) (v40)
+    v41:8 = Bin(Add, 8) (v39, v36)
+    AStore(AllocaId(15), 0, 8) (v41)
+    v42:8 = Bin(Shl, 8) (v32, 0x11)
+    v43:8 = Bin(ShrU, 8) (v32, 0x2f)
+    v44:8 = Bin(Or, 8) (v42, v43)
+    AStore(AllocaId(15), 16, 8) (v44)
+    v45:8 = Bin(Xor, 8) (v44, v40)
+    AStore(AllocaId(15), 16, 8) (v45)
+    v46:8 = Bin(Shl, 8) (v36, 0x15)
+    v47:8 = Bin(ShrU, 8) (v36, 0x2b)
+    v48:8 = Bin(Or, 8) (v46, v47)
+    AStore(AllocaId(15), 24, 8) (v48)
+    v49:8 = Bin(Xor, 8) (v48, v41)
+    AStore(AllocaId(15), 24, 8) (v49)
+    v50:8 = Bin(Shl, 8) (v40, 0x20)
+    v51:8 = Bin(ShrU, 8) (v40, 0x20)
+    v52:8 = Bin(Or, 8) (v50, v51)
+    AStore(AllocaId(15), 8, 8) (v52)
+    v54:8 = Bin(Xor, 8) (v41, v20)
+    AStore(AllocaId(15), 0, 8) (v54)
+    v56:8 = Bin(Xor, 8) (v52, 0xff)
+    AStore(AllocaId(15), 8, 8) (v56)
+    Call(Call { target: image.fn188, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v22)
+    invoke -> b19() unwind b12()
+b65(): ; Body
+    trap
+b66(): ; Body
+    trap
+b67(): ; Body
+    trap
+b68(): ; Body
+    trap
+b69(): ; Body
+    trap
+b70(): ; Body
+    trap
+
+fn <std::hash::BuildHasherDefault<std::hash::DefaultHasher> as std::hash::BuildHasher>::hash_one::<&u64>
+a0: $-120, 8 bytes, Promoted
+a1: $-112, 8 bytes, Promoted
+a2: $-104, 72 bytes, Memory, escaped
+a3: $-32, 8 bytes, Promoted
+a4: $-24, 8 bytes, Promoted, escaped
+a5: $-16, 8 bytes, Promoted
+a6: $-8, 8 bytes, Promoted
+a7: $-32, 8 bytes, Promoted, inlined
+a8: $-16, 8 bytes, Promoted, inlined
+a9: $-8, 8 bytes, Promoted, inlined
+a10: $-88, 8 bytes, Promoted, inlined
+a11: $-80, 8 bytes, Promoted, inlined
+a12: $-72, 8 bytes, Promoted, inlined
+a13: $-64, 8 bytes, Promoted, inlined
+a14: $-56, 8 bytes, Promoted, inlined
+a15: $-48, 32 bytes, Memory, escaped, inlined
+a16: $-16, 8 bytes, Promoted, inlined
+a17: $-8, 8 bytes, Promoted, inlined
+a18: $-48, 8 bytes, Promoted, inlined
+a19: $-40, 8 bytes, Promoted, inlined
+a20: $-32, 8 bytes, Promoted, inlined
+a21: $-24, 8 bytes, Promoted, inlined
+a22: $-16, 8 bytes, Promoted, inlined
+a23: $-8, 8 bytes, Promoted, inlined
+a24: $-24, 8 bytes, Promoted, inlined
+a25: $-16, 8 bytes, Promoted, inlined
+a26: $-8, 8 bytes, Promoted, inlined
+a27: $-24, 8 bytes, Promoted, inlined
+a28: $-16, 8 bytes, Promoted, inlined
+a29: $-8, 8 bytes, Promoted, inlined
+a30: $-48, 8 bytes, Memory, escaped, inlined
+a31: $-40, 8 bytes, Promoted, inlined
+a32: $-32, 8 bytes, Promoted, inlined
+a33: $-24, 8 bytes, Promoted, inlined
+a34: $-16, 8 bytes, Promoted, inlined
+a35: $-8, 8 bytes, Promoted, inlined
+a36: $-40, 8 bytes, Promoted, inlined
+a37: $-24, 8 bytes, Promoted, inlined
+a38: $-16, 8 bytes, Promoted, inlined
+a39: $-8, 8 bytes, Promoted, inlined
+a40: $-152, 8 bytes, Promoted, inlined
+a41: $-144, 8 bytes, Promoted, inlined
+a42: $-136, 8 bytes, Promoted, inlined
+a43: $-128, 8 bytes, Promoted, inlined
+a44: $-120, 8 bytes, Promoted, inlined
+a45: $-112, 8 bytes, Promoted, inlined
+a46: $-104, 8 bytes, Promoted, inlined
+a47: $-96, 8 bytes, Promoted, inlined
+a48: $-88, 8 bytes, Promoted, inlined
+a49: $-80, 8 bytes, Memory, escaped, inlined
+a50: $-72, 8 bytes, Promoted, inlined
+a51: $-64, 8 bytes, Promoted, inlined
+a52: $-56, 8 bytes, Promoted, inlined
+a53: $-48, 8 bytes, Promoted, inlined
+a54: $-40, 8 bytes, Promoted, inlined
+a55: $-32, 8 bytes, Promoted, inlined
+a56: $-24, 8 bytes, Promoted, inlined
+a57: $-16, 8 bytes, Promoted, inlined
+a58: $-8, 8 bytes, Promoted, inlined
+a59: $-184, 8 bytes, Promoted, inlined
+a60: $-169, 1 bytes, Promoted, inlined
+a61: $-168, 8 bytes, Promoted, inlined
+a62: $-160, 8 bytes, Promoted, inlined
+a63: $-152, 8 bytes, Promoted, inlined
+a64: $-144, 8 bytes, Promoted, inlined
+a65: $-136, 8 bytes, Promoted, inlined
+a66: $-128, 8 bytes, Promoted, inlined
+a67: $-120, 8 bytes, Promoted, inlined
+a68: $-112, 8 bytes, Promoted, inlined
+a69: $-104, 8 bytes, Promoted, inlined
+a70: $-96, 8 bytes, Promoted, inlined
+a71: $-85, 1 bytes, Promoted, inlined
+a72: $-84, 1 bytes, Promoted, inlined
+a73: $-83, 1 bytes, Promoted, inlined
+a74: $-82, 1 bytes, Promoted, inlined
+a75: $-81, 1 bytes, Promoted, inlined
+a76: $-80, 8 bytes, Promoted, inlined
+a77: $-72, 8 bytes, Promoted, inlined
+a78: $-64, 8 bytes, Promoted, inlined
+a79: $-56, 8 bytes, Promoted, inlined
+a80: $-41, 1 bytes, Promoted, inlined
+a81: $-40, 8 bytes, Promoted, inlined
+a82: $-32, 8 bytes, Promoted, inlined
+a83: $-24, 8 bytes, Promoted, inlined
+a84: $-16, 8 bytes, Promoted, inlined
+a85: $-8, 8 bytes, Promoted, inlined
+a86: $-48, 8 bytes, Promoted, inlined
+a87: $-40, 8 bytes, Promoted, inlined
+a88: $-32, 8 bytes, Promoted, inlined
+a89: $-24, 8 bytes, Promoted, inlined
+a90: $-16, 8 bytes, Promoted, inlined
+a91: $-8, 8 bytes, Promoted, inlined
+a92: $-88, 8 bytes, Promoted, inlined
+a93: $-80, 8 bytes, Promoted, inlined
+a94: $-72, 72 bytes, Promoted, escaped, inlined
+a95: $-328, 8 bytes, Promoted, inlined
+a96: $-320, 8 bytes, Promoted, inlined
+a97: $-312, 8 bytes, Promoted, inlined
+a98: $-304, 8 bytes, Promoted, inlined
+a99: $-296, 72 bytes, Promoted, escaped, inlined
+a100: $-224, 8 bytes, Promoted, inlined
+a101: $-216, 8 bytes, Promoted, inlined
+a102: $-208, 8 bytes, Promoted, inlined
+a103: $-200, 8 bytes, Promoted, inlined
+a104: $-192, 8 bytes, Promoted, inlined
+a105: $-184, 8 bytes, Promoted, inlined
+a106: $-176, 8 bytes, Promoted, inlined
+a107: $-168, 8 bytes, Promoted, inlined
+a108: $-160, 8 bytes, Promoted, inlined
+a109: $-152, 8 bytes, Promoted, inlined
+a110: $-144, 8 bytes, Promoted, inlined
+a111: $-136, 8 bytes, Promoted, inlined
+a112: $-128, 8 bytes, Promoted, inlined
+a113: $-120, 8 bytes, Promoted, inlined
+a114: $-112, 8 bytes, Promoted, inlined
+a115: $-104, 8 bytes, Promoted, inlined
+a116: $-96, 8 bytes, Promoted, inlined
+a117: $-88, 8 bytes, Promoted, inlined
+a118: $-80, 8 bytes, Promoted, inlined
+a119: $-72, 8 bytes, Promoted, inlined
+a120: $-64, 8 bytes, Promoted, inlined
+a121: $-56, 8 bytes, Promoted, inlined
+a122: $-48, 8 bytes, Promoted, inlined
+a123: $-40, 8 bytes, Promoted, inlined
+a124: $-32, 8 bytes, Promoted, inlined
+a125: $-24, 8 bytes, Promoted, inlined
+a126: $-16, 8 bytes, Promoted, inlined
+a127: $-8, 8 bytes, Promoted, inlined
+a128: $-32, 8 bytes, Promoted, inlined
+a129: $-16, 8 bytes, Promoted, inlined
+a130: $-8, 8 bytes, Promoted, inlined
+b0(v0:8, v1:8): ; Entry
+    AStore(AllocaId(2), 0, 8) (0x736f6d6570736575)
+    AStore(AllocaId(2), 8, 8) (0x6c7967656e657261)
+    AStore(AllocaId(2), 16, 8) (0x646f72616e646f6d)
+    AStore(AllocaId(2), 24, 8) (0x7465646279746573)
+    AStore(AllocaId(2), 32, 8) (0x0)
+    AStore(AllocaId(2), 40, 8) (0x0)
+    AStore(AllocaId(2), 48, 8) (0x0)
+    AStore(AllocaId(2), 56, 8) (0x0)
+    AStore(AllocaId(2), 64, 8) (0x0)
+    v5:8 = AllocaAddr(AllocaId(2), 0) ()
+    v81:8 = Load(8, 0) (v1)
+    AStore(AllocaId(30), 0, 8) (v81)
+    v82:8 = AllocaAddr(AllocaId(30), 0) ()
+    AStore(AllocaId(2), 48, 8) (0x8)
+    jmp b33(0x0)
+b1(): ; Body
+    trap
+b2(): ; Body
+    trap
+b3(): ; Body
+    trap
+b4(v10:8): ; Body head 0 cold
+    hcall resume [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None])] ins [0] outs [] (v10)
+    trap
+b5(): ; Body
+    trap
+b6(): ; Body
+    trap
+b7(): ; Body
+    trap
+b8(): ; Body cold
+    trap
+b9(): ; Body
+    trap
+b10(): ; Stub cold
+    v6:8 = LandingPad ()
+    jmp b4(v6)
+b11(): ; Body
+    trap
+b12(): ; Stub cold
+    v9:8 = LandingPad ()
+    jmp b4(v9)
+b13(): ; Body
+    trap
+b14(): ; Body
+    trap
+b15(): ; Body
+    trap
+b16(): ; Body
+    trap
+b17(): ; Body
+    trap
+b18(): ; Body
+    trap
+b19(): ; Body
+    v57:8 = ALoad(AllocaId(15), 0, 8) ()
+    v58:8 = ALoad(AllocaId(15), 16, 8) ()
+    v59:8 = Bin(Xor, 8) (v57, v58)
+    v60:8 = ALoad(AllocaId(15), 8, 8) ()
+    v61:8 = Bin(Xor, 8) (v59, v60)
+    v62:8 = ALoad(AllocaId(15), 24, 8) ()
+    v63:8 = Bin(Xor, 8) (v61, v62)
+    ret 0x8 (v63)
+b20(): ; Body
+    trap
+b21(): ; Body
+    trap
+b22(): ; Body
+    trap
+b23(): ; Body
+    trap
+b24(): ; Body
+    trap
+b25(): ; Body
+    trap
+b26(): ; Body
+    trap
+b27(): ; Body
+    trap
+b28(): ; Body
+    trap
+b29(): ; Body
+    trap
+b30(): ; Body
+    trap
+b31(): ; Body
+    trap
+b32(): ; Body
+    trap
+b33(v134:8): ; Body
+    AStore(AllocaId(49), 0, 8) (v134)
+    br LtU.w8 v134, 0x8 ? b34() : b54()
+b34(): ; Body
+    AStore(AllocaId(49), 0, 8) (0x0)
+    v251:8 = AllocaAddr(AllocaId(30), 0) ()
+    v141:8 = PtrIndex(1) (v251, v134)
+    v142:8 = AllocaAddr(AllocaId(49), 0) ()
+    v143:8 = RefAddr(image.k4960, false) ()
+    v144:1 = Call(Call { target: image.fn93, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Pad { catch: true } }) (v141, 0x1)
+    invoke -> b36() unwind b44()
+b35(): ; Body
+    trap
+b36(): ; Body
+    br v144 ? b42() : b48()
+b37(): ; Body
+    v252:8 = AllocaAddr(AllocaId(49), 0) ()
+    v145:1 = Call(Call { target: image.fn93, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Pad { catch: true } }) (v252, 0x1)
+    invoke -> b38() unwind b45()
+b38(): ; Body
+    br v145 ? b43() : b48()
+b39(): ; Body
+    v253:8 = AllocaAddr(AllocaId(49), 0) ()
+    v146:1 = Call(Call { target: image.fn152.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Pad { catch: true } }) (v141, v253, 0x1, 0x8)
+    invoke -> b40() unwind b46()
+b40(): ; Body
+    br v146 ? b41() : b48()
+b41(): ; Body
+    v151:8 = Load(8, 0) (v141)
+    AStore(AllocaId(49), 0, 8) (v151)
+    v152:8 = ALoad(AllocaId(2), 24, 8) ()
+    v153:8 = Bin(Xor, 8) (v152, v151)
+    AStore(AllocaId(2), 24, 8) (v153)
+    v254:8 = AllocaAddr(AllocaId(2), 0) ()
+    AStore(AllocaId(49), 0, 8) (v254)
+    Call(Call { target: image.fn187, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v254)
+    invoke -> b62() unwind b10()
+b42(): ; Body
+    br Eq.w8 v141, 0x0 ? b48() : b37()
+b43(): ; Body
+    v255:8 = AllocaAddr(AllocaId(49), 0) ()
+    br Eq.w8 v255, 0x0 ? b48() : b39()
+b44(): ; Stub cold
+    v147:8 = LandingPad ()
+    jmp b51()
+b45(): ; Stub cold
+    v148:8 = LandingPad ()
+    jmp b51()
+b46(): ; Stub cold
+    v149:8 = LandingPad ()
+    jmp b51()
+b47(): ; Body
+    trap
+b48(): ; Body cold
+    v150:8 = RefAddr(image.k3619, false) ()
+    v257:8 = RefAddr(image.k4960, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v150, 0x237, 0x0, v257)
+    trap
+b49(): ; Body
+    trap
+b50(): ; Body
+    trap
+b51(): ; Body cold
+    Call(Call { target: image.sym25, regs: [], parts: [], site: None }) ()
+    trap
+b52(): ; Body
+    trap
+b53(): ; Body
+    trap
+b54(): ; Body
+    v256:8 = AllocaAddr(AllocaId(30), 0) ()
+    v164:8 = Call(Call { target: image.fn132.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v256, 0x8, v134, 0x0)
+    invoke -> b63() unwind b10()
+b55(): ; Body
+    trap
+b56(): ; Body
+    trap
+b57(): ; Body
+    trap
+b58(): ; Body
+    trap
+b59(): ; Body
+    trap
+b60(): ; Body
+    trap
+b61(): ; Body
+    trap
+b62(): ; Body
+    v161:8 = ALoad(AllocaId(2), 0, 8) ()
+    v162:8 = Bin(Xor, 8) (v161, v151)
+    AStore(AllocaId(2), 0, 8) (v162)
+    v163:8 = Bin(Add, 8) (v134, 0x8)
+    jmp b33(v163)
+b63(): ; Body
+    AStore(AllocaId(2), 56, 8) (v164)
+    AStore(AllocaId(2), 64, 8) (0x0)
+    v12:8 = ALoad(AllocaId(2), 0, 8) ()
+    AStore(AllocaId(15), 0, 8) (v12)
+    v13:8 = ALoad(AllocaId(2), 8, 8) ()
+    AStore(AllocaId(15), 8, 8) (v13)
+    v14:8 = ALoad(AllocaId(2), 16, 8) ()
+    AStore(AllocaId(15), 16, 8) (v14)
+    v15:8 = ALoad(AllocaId(2), 24, 8) ()
+    AStore(AllocaId(15), 24, 8) (v15)
+    v16:8 = ALoad(AllocaId(2), 48, 8) ()
+    v17:8 = Bin(And, 8) (v16, 0xff)
+    v18:8 = Bin(Shl, 8) (v17, 0x38)
+    v20:8 = Bin(Or, 8) (v18, v164)
+    v21:8 = Bin(Xor, 8) (v15, v20)
+    AStore(AllocaId(15), 24, 8) (v21)
+    v22:8 = AllocaAddr(AllocaId(15), 0) ()
+    v25:8 = Bin(Add, 8) (v12, v14)
+    AStore(AllocaId(15), 0, 8) (v25)
+    v28:8 = Bin(Add, 8) (v13, v21)
+    AStore(AllocaId(15), 8, 8) (v28)
+    v29:8 = Bin(Shl, 8) (v14, 0xd)
+    v30:8 = Bin(ShrU, 8) (v14, 0x33)
+    v31:8 = Bin(Or, 8) (v29, v30)
+    AStore(AllocaId(15), 16, 8) (v31)
+    v32:8 = Bin(Xor, 8) (v31, v25)
+    AStore(AllocaId(15), 16, 8) (v32)
+    v33:8 = Bin(Shl, 8) (v21, 0x10)
+    v34:8 = Bin(ShrU, 8) (v21, 0x30)
+    v35:8 = Bin(Or, 8) (v33, v34)
+    AStore(AllocaId(15), 24, 8) (v35)
+    v36:8 = Bin(Xor, 8) (v35, v28)
+    AStore(AllocaId(15), 24, 8) (v36)
+    v37:8 = Bin(Shl, 8) (v25, 0x20)
+    v38:8 = Bin(ShrU, 8) (v25, 0x20)
+    v39:8 = Bin(Or, 8) (v37, v38)
+    AStore(AllocaId(15), 0, 8) (v39)
+    v40:8 = Bin(Add, 8) (v28, v32)
+    AStore(AllocaId(15), 8, 8) (v40)
+    v41:8 = Bin(Add, 8) (v39, v36)
+    AStore(AllocaId(15), 0, 8) (v41)
+    v42:8 = Bin(Shl, 8) (v32, 0x11)
+    v43:8 = Bin(ShrU, 8) (v32, 0x2f)
+    v44:8 = Bin(Or, 8) (v42, v43)
+    AStore(AllocaId(15), 16, 8) (v44)
+    v45:8 = Bin(Xor, 8) (v44, v40)
+    AStore(AllocaId(15), 16, 8) (v45)
+    v46:8 = Bin(Shl, 8) (v36, 0x15)
+    v47:8 = Bin(ShrU, 8) (v36, 0x2b)
+    v48:8 = Bin(Or, 8) (v46, v47)
+    AStore(AllocaId(15), 24, 8) (v48)
+    v49:8 = Bin(Xor, 8) (v48, v41)
+    AStore(AllocaId(15), 24, 8) (v49)
+    v50:8 = Bin(Shl, 8) (v40, 0x20)
+    v51:8 = Bin(ShrU, 8) (v40, 0x20)
+    v52:8 = Bin(Or, 8) (v50, v51)
+    AStore(AllocaId(15), 8, 8) (v52)
+    v54:8 = Bin(Xor, 8) (v41, v20)
+    AStore(AllocaId(15), 0, 8) (v54)
+    v56:8 = Bin(Xor, 8) (v52, 0xff)
+    AStore(AllocaId(15), 8, 8) (v56)
+    Call(Call { target: image.fn188.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v22)
+    invoke -> b19() unwind b12()
+b64(): ; Body
+    trap
+b65(): ; Body
+    trap
+b66(): ; Body
+    trap
+b67(): ; Body
+    trap
+b68(): ; Body
+    trap
+b69(): ; Body
     trap
 
 fn <std::hash::DefaultHasher as std::hash::Hasher>::finish
@@ -1393,870 +2251,6 @@ b4(): ; Body
 b5(): ; Body
     trap
 b6(): ; Body
-    trap
-
-fn <std::hash::RandomState as std::hash::BuildHasher>::build_hasher
-a0: $-352, 8 bytes, Promoted
-a1: $-344, 8 bytes, Promoted
-a2: $-336, 8 bytes, Promoted
-a3: $-328, 8 bytes, Promoted
-a4: $-320, 72 bytes, Promoted, escaped
-a5: $-248, 8 bytes, Promoted
-a6: $-240, 8 bytes, Promoted
-a7: $-232, 8 bytes, Promoted
-a8: $-224, 8 bytes, Promoted
-a9: $-216, 8 bytes, Promoted
-a10: $-208, 8 bytes, Promoted
-a11: $-200, 8 bytes, Promoted
-a12: $-192, 8 bytes, Promoted
-a13: $-184, 8 bytes, Promoted
-a14: $-176, 8 bytes, Promoted
-a15: $-168, 8 bytes, Promoted
-a16: $-160, 8 bytes, Promoted
-a17: $-152, 8 bytes, Promoted
-a18: $-144, 8 bytes, Promoted
-a19: $-136, 8 bytes, Promoted
-a20: $-128, 8 bytes, Promoted
-a21: $-120, 8 bytes, Promoted
-a22: $-112, 8 bytes, Promoted
-a23: $-104, 8 bytes, Promoted
-a24: $-96, 8 bytes, Promoted
-a25: $-88, 8 bytes, Promoted
-a26: $-80, 8 bytes, Promoted
-a27: $-72, 8 bytes, Promoted
-a28: $-64, 8 bytes, Promoted
-a29: $-56, 8 bytes, Promoted
-a30: $-48, 8 bytes, Promoted
-a31: $-40, 8 bytes, Promoted
-a32: $-32, 8 bytes, Promoted
-a33: $-24, 8 bytes, Promoted
-a34: $-16, 8 bytes, Promoted
-a35: $-8, 8 bytes, Promoted
-a36: $-32, 8 bytes, Promoted, inlined
-a37: $-16, 8 bytes, Promoted, inlined
-a38: $-8, 8 bytes, Promoted, inlined
-b0(v0:8, v1:8): ; Entry
-    v2:8 = Load(8, 0) (v1)
-    v3:8 = Load(8, 8) (v1)
-    v22:8 = Bin(Xor, 8) (v2, 0x736f6d6570736575)
-    v24:8 = Bin(Xor, 8) (v3, 0x646f72616e646f6d)
-    v25:8 = Bin(Xor, 8) (v2, 0x6c7967656e657261)
-    v26:8 = Bin(Xor, 8) (v3, 0x7465646279746573)
-    Store(8, 0) (v0, v22)
-    Store(8, 8) (v0, v25)
-    Store(8, 16) (v0, v24)
-    Store(8, 24) (v0, v26)
-    Store(8, 32) (v0, v2)
-    Store(8, 40) (v0, v3)
-    Store(8, 48) (v0, 0x0)
-    Store(8, 56) (v0, 0x0)
-    Store(8, 64) (v0, 0x0)
-    ret 0x8 (v0)
-b1(): ; Body
-    trap
-b2(): ; Body
-    trap
-
-fn <std::hash::RandomState as std::hash::BuildHasher>::hash_one::<&std::string::String>
-a0: $-120, 8 bytes, Promoted
-a1: $-112, 8 bytes, Promoted
-a2: $-104, 72 bytes, Memory, escaped
-a3: $-32, 8 bytes, Promoted
-a4: $-24, 8 bytes, Promoted, escaped
-a5: $-16, 8 bytes, Promoted
-a6: $-8, 8 bytes, Promoted
-a7: $-32, 8 bytes, Promoted, inlined
-a8: $-16, 8 bytes, Promoted, inlined
-a9: $-8, 8 bytes, Promoted, inlined
-a10: $-88, 8 bytes, Promoted, inlined
-a11: $-80, 8 bytes, Promoted, inlined
-a12: $-72, 8 bytes, Promoted, inlined
-a13: $-64, 8 bytes, Promoted, inlined
-a14: $-56, 8 bytes, Promoted, inlined
-a15: $-48, 32 bytes, Memory, escaped, inlined
-a16: $-16, 8 bytes, Promoted, inlined
-a17: $-8, 8 bytes, Promoted, inlined
-a18: $-48, 8 bytes, Promoted, inlined
-a19: $-40, 8 bytes, Promoted, inlined
-a20: $-32, 8 bytes, Promoted, inlined
-a21: $-24, 8 bytes, Promoted, inlined
-a22: $-16, 8 bytes, Promoted, inlined
-a23: $-8, 8 bytes, Promoted, inlined
-a24: $-24, 8 bytes, Promoted, inlined
-a25: $-16, 8 bytes, Promoted, inlined
-a26: $-8, 8 bytes, Promoted, inlined
-a27: $-80, 8 bytes, Promoted, inlined
-a28: $-72, 8 bytes, Promoted, inlined
-a29: $-64, 8 bytes, Promoted, inlined
-a30: $-56, 8 bytes, Promoted, inlined
-a31: $-48, 8 bytes, Promoted, inlined
-a32: $-40, 8 bytes, Promoted, inlined
-a33: $-32, 8 bytes, Promoted, inlined
-a34: $-24, 8 bytes, Promoted, inlined
-a35: $-16, 8 bytes, Promoted, inlined
-a36: $-8, 8 bytes, Promoted, inlined
-a37: $-40, 8 bytes, Promoted, inlined
-a38: $-24, 8 bytes, Promoted, inlined
-a39: $-16, 8 bytes, Promoted, inlined
-a40: $-8, 8 bytes, Promoted, inlined
-a41: $-49, 1 bytes, Memory, escaped, inlined
-a42: $-48, 8 bytes, Promoted, inlined
-a43: $-40, 8 bytes, Promoted, inlined
-a44: $-32, 8 bytes, Promoted, inlined
-a45: $-24, 8 bytes, Promoted, inlined
-a46: $-16, 8 bytes, Promoted, inlined
-a47: $-8, 8 bytes, Promoted, inlined
-a48: $-152, 8 bytes, Promoted, inlined
-a49: $-144, 8 bytes, Promoted, inlined
-a50: $-136, 8 bytes, Promoted, inlined
-a51: $-128, 8 bytes, Promoted, inlined
-a52: $-120, 8 bytes, Promoted, inlined
-a53: $-112, 8 bytes, Promoted, inlined
-a54: $-104, 8 bytes, Promoted, inlined
-a55: $-96, 8 bytes, Promoted, inlined
-a56: $-88, 8 bytes, Promoted, inlined
-a57: $-80, 8 bytes, Memory, escaped, inlined
-a58: $-72, 8 bytes, Promoted, inlined
-a59: $-64, 8 bytes, Promoted, inlined
-a60: $-56, 8 bytes, Promoted, inlined
-a61: $-48, 8 bytes, Promoted, inlined
-a62: $-40, 8 bytes, Promoted, inlined
-a63: $-32, 8 bytes, Promoted, inlined
-a64: $-24, 8 bytes, Promoted, inlined
-a65: $-16, 8 bytes, Promoted, inlined
-a66: $-8, 8 bytes, Promoted, inlined
-a67: $-184, 8 bytes, Promoted, inlined
-a68: $-169, 1 bytes, Promoted, inlined
-a69: $-168, 8 bytes, Promoted, inlined
-a70: $-160, 8 bytes, Promoted, inlined
-a71: $-152, 8 bytes, Promoted, inlined
-a72: $-144, 8 bytes, Promoted, inlined
-a73: $-136, 8 bytes, Promoted, inlined
-a74: $-128, 8 bytes, Promoted, inlined
-a75: $-120, 8 bytes, Promoted, inlined
-a76: $-112, 8 bytes, Promoted, inlined
-a77: $-104, 8 bytes, Promoted, inlined
-a78: $-96, 8 bytes, Promoted, inlined
-a79: $-85, 1 bytes, Promoted, inlined
-a80: $-84, 1 bytes, Promoted, inlined
-a81: $-83, 1 bytes, Promoted, inlined
-a82: $-82, 1 bytes, Promoted, inlined
-a83: $-81, 1 bytes, Promoted, inlined
-a84: $-80, 8 bytes, Promoted, inlined
-a85: $-72, 8 bytes, Promoted, inlined
-a86: $-64, 8 bytes, Promoted, inlined
-a87: $-56, 8 bytes, Promoted, inlined
-a88: $-41, 1 bytes, Promoted, inlined
-a89: $-40, 8 bytes, Promoted, inlined
-a90: $-32, 8 bytes, Promoted, inlined
-a91: $-24, 8 bytes, Promoted, inlined
-a92: $-16, 8 bytes, Promoted, inlined
-a93: $-8, 8 bytes, Promoted, inlined
-a94: $-48, 8 bytes, Promoted, inlined
-a95: $-40, 8 bytes, Promoted, inlined
-a96: $-32, 8 bytes, Promoted, inlined
-a97: $-24, 8 bytes, Promoted, inlined
-a98: $-16, 8 bytes, Promoted, inlined
-a99: $-8, 8 bytes, Promoted, inlined
-a100: $-352, 8 bytes, Promoted, inlined
-a101: $-344, 8 bytes, Promoted, inlined
-a102: $-336, 8 bytes, Promoted, inlined
-a103: $-328, 8 bytes, Promoted, inlined
-a104: $-320, 72 bytes, Promoted, escaped, inlined
-a105: $-248, 8 bytes, Promoted, inlined
-a106: $-240, 8 bytes, Promoted, inlined
-a107: $-232, 8 bytes, Promoted, inlined
-a108: $-224, 8 bytes, Promoted, inlined
-a109: $-216, 8 bytes, Promoted, inlined
-a110: $-208, 8 bytes, Promoted, inlined
-a111: $-200, 8 bytes, Promoted, inlined
-a112: $-192, 8 bytes, Promoted, inlined
-a113: $-184, 8 bytes, Promoted, inlined
-a114: $-176, 8 bytes, Promoted, inlined
-a115: $-168, 8 bytes, Promoted, inlined
-a116: $-160, 8 bytes, Promoted, inlined
-a117: $-152, 8 bytes, Promoted, inlined
-a118: $-144, 8 bytes, Promoted, inlined
-a119: $-136, 8 bytes, Promoted, inlined
-a120: $-128, 8 bytes, Promoted, inlined
-a121: $-120, 8 bytes, Promoted, inlined
-a122: $-112, 8 bytes, Promoted, inlined
-a123: $-104, 8 bytes, Promoted, inlined
-a124: $-96, 8 bytes, Promoted, inlined
-a125: $-88, 8 bytes, Promoted, inlined
-a126: $-80, 8 bytes, Promoted, inlined
-a127: $-72, 8 bytes, Promoted, inlined
-a128: $-64, 8 bytes, Promoted, inlined
-a129: $-56, 8 bytes, Promoted, inlined
-a130: $-48, 8 bytes, Promoted, inlined
-a131: $-40, 8 bytes, Promoted, inlined
-a132: $-32, 8 bytes, Promoted, inlined
-a133: $-24, 8 bytes, Promoted, inlined
-a134: $-16, 8 bytes, Promoted, inlined
-a135: $-8, 8 bytes, Promoted, inlined
-a136: $-32, 8 bytes, Promoted, inlined
-a137: $-16, 8 bytes, Promoted, inlined
-a138: $-8, 8 bytes, Promoted, inlined
-b0(v0:8, v1:8): ; Entry
-    v196:8 = Load(8, 0) (v0)
-    v197:8 = Load(8, 8) (v0)
-    v200:8 = Bin(Xor, 8) (v196, 0x736f6d6570736575)
-    v202:8 = Bin(Xor, 8) (v197, 0x646f72616e646f6d)
-    v203:8 = Bin(Xor, 8) (v196, 0x6c7967656e657261)
-    v204:8 = Bin(Xor, 8) (v197, 0x7465646279746573)
-    AStore(AllocaId(2), 0, 8) (v200)
-    AStore(AllocaId(2), 8, 8) (v203)
-    AStore(AllocaId(2), 16, 8) (v202)
-    AStore(AllocaId(2), 24, 8) (v204)
-    AStore(AllocaId(2), 32, 8) (v196)
-    AStore(AllocaId(2), 40, 8) (v197)
-    AStore(AllocaId(2), 48, 8) (0x0)
-    AStore(AllocaId(2), 56, 8) (0x0)
-    AStore(AllocaId(2), 64, 8) (0x0)
-    v5:8 = AllocaAddr(AllocaId(2), 0) ()
-    v81:8 = Load(8, 8) (v1)
-    v82:8 = Load(8, 16) (v1)
-    AStore(AllocaId(2), 48, 8) (v82)
-    v133:8 = Bin(And, 8) (v82, 0x7)
-    jmp b33(0x0)
-b1(): ; Body
-    trap
-b2(): ; Body
-    trap
-b3(): ; Body
-    trap
-b4(v10:8): ; Body head 0 cold
-    hcall resume [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None])] ins [0] outs [] (v10)
-    trap
-b5(): ; Body
-    trap
-b6(): ; Body
-    trap
-b7(): ; Body
-    trap
-b8(): ; Body cold
-    trap
-b9(): ; Body
-    trap
-b10(): ; Stub cold
-    v6:8 = LandingPad ()
-    jmp b4(v6)
-b11(): ; Body
-    trap
-b12(): ; Stub cold
-    v9:8 = LandingPad ()
-    jmp b4(v9)
-b13(): ; Body
-    trap
-b14(): ; Body
-    trap
-b15(): ; Body
-    trap
-b16(): ; Body
-    trap
-b17(): ; Body
-    trap
-b18(): ; Body
-    trap
-b19(): ; Body
-    v57:8 = ALoad(AllocaId(15), 0, 8) ()
-    v58:8 = ALoad(AllocaId(15), 16, 8) ()
-    v59:8 = Bin(Xor, 8) (v57, v58)
-    v60:8 = ALoad(AllocaId(15), 8, 8) ()
-    v61:8 = Bin(Xor, 8) (v59, v60)
-    v62:8 = ALoad(AllocaId(15), 24, 8) ()
-    v63:8 = Bin(Xor, 8) (v61, v62)
-    ret 0x8 (v63)
-b20(): ; Body
-    trap
-b21(): ; Body
-    trap
-b22(): ; Body
-    trap
-b23(): ; Body
-    trap
-b24(): ; Body
-    trap
-b25(): ; Body
-    trap
-b26(): ; Body
-    trap
-b27(): ; Body
-    trap
-b28(): ; Body
-    trap
-b29(): ; Body
-    trap
-b30(): ; Body
-    trap
-b31(): ; Body
-    trap
-b32(): ; Body
-    trap
-b33(v134:8): ; Body
-    AStore(AllocaId(57), 0, 8) (v134)
-    v140:8 = Bin(Sub, 8) (v82, v133)
-    br LtU.w8 v134, v140 ? b34() : b54()
-b34(): ; Body
-    AStore(AllocaId(57), 0, 8) (0x0)
-    v141:8 = PtrIndex(1) (v81, v134)
-    v142:8 = AllocaAddr(AllocaId(57), 0) ()
-    v143:8 = RefAddr(image.k6680, false) ()
-    v144:1 = Call(Call { target: image.fn112, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Pad { catch: true } }) (v141, 0x1)
-    invoke -> b36() unwind b44()
-b35(): ; Body
-    trap
-b36(): ; Body
-    br v144 ? b42() : b48()
-b37(): ; Body
-    v229:8 = AllocaAddr(AllocaId(57), 0) ()
-    v145:1 = Call(Call { target: image.fn112, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Pad { catch: true } }) (v229, 0x1)
-    invoke -> b38() unwind b45()
-b38(): ; Body
-    br v145 ? b43() : b48()
-b39(): ; Body
-    v230:8 = AllocaAddr(AllocaId(57), 0) ()
-    v146:1 = Call(Call { target: image.fn180, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Pad { catch: true } }) (v141, v230, 0x1, 0x8)
-    invoke -> b40() unwind b46()
-b40(): ; Body
-    br v146 ? b41() : b48()
-b41(): ; Body
-    v151:8 = Load(8, 0) (v141)
-    AStore(AllocaId(57), 0, 8) (v151)
-    v152:8 = ALoad(AllocaId(2), 24, 8) ()
-    v153:8 = Bin(Xor, 8) (v152, v151)
-    AStore(AllocaId(2), 24, 8) (v153)
-    v231:8 = AllocaAddr(AllocaId(2), 0) ()
-    AStore(AllocaId(57), 0, 8) (v231)
-    Call(Call { target: image.fn217, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v231)
-    invoke -> b62() unwind b10()
-b42(): ; Body
-    br Eq.w8 v141, 0x0 ? b48() : b37()
-b43(): ; Body
-    v232:8 = AllocaAddr(AllocaId(57), 0) ()
-    br Eq.w8 v232, 0x0 ? b48() : b39()
-b44(): ; Stub cold
-    v147:8 = LandingPad ()
-    jmp b51()
-b45(): ; Stub cold
-    v148:8 = LandingPad ()
-    jmp b51()
-b46(): ; Stub cold
-    v149:8 = LandingPad ()
-    jmp b51()
-b47(): ; Body
-    trap
-b48(): ; Body cold
-    v150:8 = RefAddr(image.k4563, false) ()
-    v234:8 = RefAddr(image.k6680, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v150, 0x237, 0x0, v234)
-    trap
-b49(): ; Body
-    trap
-b50(): ; Body
-    trap
-b51(): ; Body cold
-    Call(Call { target: image.sym28, regs: [], parts: [], site: None }) ()
-    trap
-b52(): ; Body
-    trap
-b53(): ; Body
-    trap
-b54(): ; Body
-    v164:8 = Call(Call { target: image.fn158, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v81, v82, v134, v133)
-    invoke -> b63() unwind b10()
-b55(): ; Body
-    trap
-b56(): ; Body
-    trap
-b57(): ; Body
-    trap
-b58(): ; Body
-    trap
-b59(): ; Body
-    trap
-b60(): ; Body
-    trap
-b61(): ; Body
-    trap
-b62(): ; Body
-    v161:8 = ALoad(AllocaId(2), 0, 8) ()
-    v162:8 = Bin(Xor, 8) (v161, v151)
-    AStore(AllocaId(2), 0, 8) (v162)
-    v163:8 = Bin(Add, 8) (v134, 0x8)
-    jmp b33(v163)
-b63(): ; Body
-    AStore(AllocaId(2), 56, 8) (v164)
-    AStore(AllocaId(2), 64, 8) (v133)
-    AStore(AllocaId(41), 0, 1) (0xff)
-    v165:8 = AllocaAddr(AllocaId(41), 0) ()
-    v233:8 = AllocaAddr(AllocaId(2), 0) ()
-    Call(Call { target: image.fn206, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: false } }) (v233, v165, 0x1)
-    invoke -> b64() unwind b10()
-b64(): ; Body
-    v12:8 = ALoad(AllocaId(2), 0, 8) ()
-    AStore(AllocaId(15), 0, 8) (v12)
-    v13:8 = ALoad(AllocaId(2), 8, 8) ()
-    AStore(AllocaId(15), 8, 8) (v13)
-    v14:8 = ALoad(AllocaId(2), 16, 8) ()
-    AStore(AllocaId(15), 16, 8) (v14)
-    v15:8 = ALoad(AllocaId(2), 24, 8) ()
-    AStore(AllocaId(15), 24, 8) (v15)
-    v16:8 = ALoad(AllocaId(2), 48, 8) ()
-    v17:8 = Bin(And, 8) (v16, 0xff)
-    v18:8 = Bin(Shl, 8) (v17, 0x38)
-    v19:8 = ALoad(AllocaId(2), 56, 8) ()
-    v20:8 = Bin(Or, 8) (v18, v19)
-    v21:8 = Bin(Xor, 8) (v15, v20)
-    AStore(AllocaId(15), 24, 8) (v21)
-    v22:8 = AllocaAddr(AllocaId(15), 0) ()
-    v25:8 = Bin(Add, 8) (v12, v14)
-    AStore(AllocaId(15), 0, 8) (v25)
-    v28:8 = Bin(Add, 8) (v13, v21)
-    AStore(AllocaId(15), 8, 8) (v28)
-    v29:8 = Bin(Shl, 8) (v14, 0xd)
-    v30:8 = Bin(ShrU, 8) (v14, 0x33)
-    v31:8 = Bin(Or, 8) (v29, v30)
-    AStore(AllocaId(15), 16, 8) (v31)
-    v32:8 = Bin(Xor, 8) (v31, v25)
-    AStore(AllocaId(15), 16, 8) (v32)
-    v33:8 = Bin(Shl, 8) (v21, 0x10)
-    v34:8 = Bin(ShrU, 8) (v21, 0x30)
-    v35:8 = Bin(Or, 8) (v33, v34)
-    AStore(AllocaId(15), 24, 8) (v35)
-    v36:8 = Bin(Xor, 8) (v35, v28)
-    AStore(AllocaId(15), 24, 8) (v36)
-    v37:8 = Bin(Shl, 8) (v25, 0x20)
-    v38:8 = Bin(ShrU, 8) (v25, 0x20)
-    v39:8 = Bin(Or, 8) (v37, v38)
-    AStore(AllocaId(15), 0, 8) (v39)
-    v40:8 = Bin(Add, 8) (v28, v32)
-    AStore(AllocaId(15), 8, 8) (v40)
-    v41:8 = Bin(Add, 8) (v39, v36)
-    AStore(AllocaId(15), 0, 8) (v41)
-    v42:8 = Bin(Shl, 8) (v32, 0x11)
-    v43:8 = Bin(ShrU, 8) (v32, 0x2f)
-    v44:8 = Bin(Or, 8) (v42, v43)
-    AStore(AllocaId(15), 16, 8) (v44)
-    v45:8 = Bin(Xor, 8) (v44, v40)
-    AStore(AllocaId(15), 16, 8) (v45)
-    v46:8 = Bin(Shl, 8) (v36, 0x15)
-    v47:8 = Bin(ShrU, 8) (v36, 0x2b)
-    v48:8 = Bin(Or, 8) (v46, v47)
-    AStore(AllocaId(15), 24, 8) (v48)
-    v49:8 = Bin(Xor, 8) (v48, v41)
-    AStore(AllocaId(15), 24, 8) (v49)
-    v50:8 = Bin(Shl, 8) (v40, 0x20)
-    v51:8 = Bin(ShrU, 8) (v40, 0x20)
-    v52:8 = Bin(Or, 8) (v50, v51)
-    AStore(AllocaId(15), 8, 8) (v52)
-    v54:8 = Bin(Xor, 8) (v41, v20)
-    AStore(AllocaId(15), 0, 8) (v54)
-    v56:8 = Bin(Xor, 8) (v52, 0xff)
-    AStore(AllocaId(15), 8, 8) (v56)
-    Call(Call { target: image.fn218, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v22)
-    invoke -> b19() unwind b12()
-b65(): ; Body
-    trap
-b66(): ; Body
-    trap
-b67(): ; Body
-    trap
-b68(): ; Body
-    trap
-
-fn <std::hash::RandomState as std::hash::BuildHasher>::hash_one::<&u64>
-a0: $-120, 8 bytes, Promoted
-a1: $-112, 8 bytes, Promoted
-a2: $-104, 72 bytes, Memory, escaped
-a3: $-32, 8 bytes, Promoted
-a4: $-24, 8 bytes, Promoted, escaped
-a5: $-16, 8 bytes, Promoted
-a6: $-8, 8 bytes, Promoted
-a7: $-32, 8 bytes, Promoted, inlined
-a8: $-16, 8 bytes, Promoted, inlined
-a9: $-8, 8 bytes, Promoted, inlined
-a10: $-88, 8 bytes, Promoted, inlined
-a11: $-80, 8 bytes, Promoted, inlined
-a12: $-72, 8 bytes, Promoted, inlined
-a13: $-64, 8 bytes, Promoted, inlined
-a14: $-56, 8 bytes, Promoted, inlined
-a15: $-48, 32 bytes, Memory, escaped, inlined
-a16: $-16, 8 bytes, Promoted, inlined
-a17: $-8, 8 bytes, Promoted, inlined
-a18: $-48, 8 bytes, Promoted, inlined
-a19: $-40, 8 bytes, Promoted, inlined
-a20: $-32, 8 bytes, Promoted, inlined
-a21: $-24, 8 bytes, Promoted, inlined
-a22: $-16, 8 bytes, Promoted, inlined
-a23: $-8, 8 bytes, Promoted, inlined
-a24: $-24, 8 bytes, Promoted, inlined
-a25: $-16, 8 bytes, Promoted, inlined
-a26: $-8, 8 bytes, Promoted, inlined
-a27: $-24, 8 bytes, Promoted, inlined
-a28: $-16, 8 bytes, Promoted, inlined
-a29: $-8, 8 bytes, Promoted, inlined
-a30: $-48, 8 bytes, Memory, escaped, inlined
-a31: $-40, 8 bytes, Promoted, inlined
-a32: $-32, 8 bytes, Promoted, inlined
-a33: $-24, 8 bytes, Promoted, inlined
-a34: $-16, 8 bytes, Promoted, inlined
-a35: $-8, 8 bytes, Promoted, inlined
-a36: $-40, 8 bytes, Promoted, inlined
-a37: $-24, 8 bytes, Promoted, inlined
-a38: $-16, 8 bytes, Promoted, inlined
-a39: $-8, 8 bytes, Promoted, inlined
-a40: $-152, 8 bytes, Promoted, inlined
-a41: $-144, 8 bytes, Promoted, inlined
-a42: $-136, 8 bytes, Promoted, inlined
-a43: $-128, 8 bytes, Promoted, inlined
-a44: $-120, 8 bytes, Promoted, inlined
-a45: $-112, 8 bytes, Promoted, inlined
-a46: $-104, 8 bytes, Promoted, inlined
-a47: $-96, 8 bytes, Promoted, inlined
-a48: $-88, 8 bytes, Promoted, inlined
-a49: $-80, 8 bytes, Memory, escaped, inlined
-a50: $-72, 8 bytes, Promoted, inlined
-a51: $-64, 8 bytes, Promoted, inlined
-a52: $-56, 8 bytes, Promoted, inlined
-a53: $-48, 8 bytes, Promoted, inlined
-a54: $-40, 8 bytes, Promoted, inlined
-a55: $-32, 8 bytes, Promoted, inlined
-a56: $-24, 8 bytes, Promoted, inlined
-a57: $-16, 8 bytes, Promoted, inlined
-a58: $-8, 8 bytes, Promoted, inlined
-a59: $-184, 8 bytes, Promoted, inlined
-a60: $-169, 1 bytes, Promoted, inlined
-a61: $-168, 8 bytes, Promoted, inlined
-a62: $-160, 8 bytes, Promoted, inlined
-a63: $-152, 8 bytes, Promoted, inlined
-a64: $-144, 8 bytes, Promoted, inlined
-a65: $-136, 8 bytes, Promoted, inlined
-a66: $-128, 8 bytes, Promoted, inlined
-a67: $-120, 8 bytes, Promoted, inlined
-a68: $-112, 8 bytes, Promoted, inlined
-a69: $-104, 8 bytes, Promoted, inlined
-a70: $-96, 8 bytes, Promoted, inlined
-a71: $-85, 1 bytes, Promoted, inlined
-a72: $-84, 1 bytes, Promoted, inlined
-a73: $-83, 1 bytes, Promoted, inlined
-a74: $-82, 1 bytes, Promoted, inlined
-a75: $-81, 1 bytes, Promoted, inlined
-a76: $-80, 8 bytes, Promoted, inlined
-a77: $-72, 8 bytes, Promoted, inlined
-a78: $-64, 8 bytes, Promoted, inlined
-a79: $-56, 8 bytes, Promoted, inlined
-a80: $-41, 1 bytes, Promoted, inlined
-a81: $-40, 8 bytes, Promoted, inlined
-a82: $-32, 8 bytes, Promoted, inlined
-a83: $-24, 8 bytes, Promoted, inlined
-a84: $-16, 8 bytes, Promoted, inlined
-a85: $-8, 8 bytes, Promoted, inlined
-a86: $-48, 8 bytes, Promoted, inlined
-a87: $-40, 8 bytes, Promoted, inlined
-a88: $-32, 8 bytes, Promoted, inlined
-a89: $-24, 8 bytes, Promoted, inlined
-a90: $-16, 8 bytes, Promoted, inlined
-a91: $-8, 8 bytes, Promoted, inlined
-a92: $-352, 8 bytes, Promoted, inlined
-a93: $-344, 8 bytes, Promoted, inlined
-a94: $-336, 8 bytes, Promoted, inlined
-a95: $-328, 8 bytes, Promoted, inlined
-a96: $-320, 72 bytes, Promoted, escaped, inlined
-a97: $-248, 8 bytes, Promoted, inlined
-a98: $-240, 8 bytes, Promoted, inlined
-a99: $-232, 8 bytes, Promoted, inlined
-a100: $-224, 8 bytes, Promoted, inlined
-a101: $-216, 8 bytes, Promoted, inlined
-a102: $-208, 8 bytes, Promoted, inlined
-a103: $-200, 8 bytes, Promoted, inlined
-a104: $-192, 8 bytes, Promoted, inlined
-a105: $-184, 8 bytes, Promoted, inlined
-a106: $-176, 8 bytes, Promoted, inlined
-a107: $-168, 8 bytes, Promoted, inlined
-a108: $-160, 8 bytes, Promoted, inlined
-a109: $-152, 8 bytes, Promoted, inlined
-a110: $-144, 8 bytes, Promoted, inlined
-a111: $-136, 8 bytes, Promoted, inlined
-a112: $-128, 8 bytes, Promoted, inlined
-a113: $-120, 8 bytes, Promoted, inlined
-a114: $-112, 8 bytes, Promoted, inlined
-a115: $-104, 8 bytes, Promoted, inlined
-a116: $-96, 8 bytes, Promoted, inlined
-a117: $-88, 8 bytes, Promoted, inlined
-a118: $-80, 8 bytes, Promoted, inlined
-a119: $-72, 8 bytes, Promoted, inlined
-a120: $-64, 8 bytes, Promoted, inlined
-a121: $-56, 8 bytes, Promoted, inlined
-a122: $-48, 8 bytes, Promoted, inlined
-a123: $-40, 8 bytes, Promoted, inlined
-a124: $-32, 8 bytes, Promoted, inlined
-a125: $-24, 8 bytes, Promoted, inlined
-a126: $-16, 8 bytes, Promoted, inlined
-a127: $-8, 8 bytes, Promoted, inlined
-a128: $-32, 8 bytes, Promoted, inlined
-a129: $-16, 8 bytes, Promoted, inlined
-a130: $-8, 8 bytes, Promoted, inlined
-b0(v0:8, v1:8): ; Entry
-    v194:8 = Load(8, 0) (v0)
-    v195:8 = Load(8, 8) (v0)
-    v198:8 = Bin(Xor, 8) (v194, 0x736f6d6570736575)
-    v200:8 = Bin(Xor, 8) (v195, 0x646f72616e646f6d)
-    v201:8 = Bin(Xor, 8) (v194, 0x6c7967656e657261)
-    v202:8 = Bin(Xor, 8) (v195, 0x7465646279746573)
-    AStore(AllocaId(2), 0, 8) (v198)
-    AStore(AllocaId(2), 8, 8) (v201)
-    AStore(AllocaId(2), 16, 8) (v200)
-    AStore(AllocaId(2), 24, 8) (v202)
-    AStore(AllocaId(2), 32, 8) (v194)
-    AStore(AllocaId(2), 40, 8) (v195)
-    AStore(AllocaId(2), 48, 8) (0x0)
-    AStore(AllocaId(2), 56, 8) (0x0)
-    AStore(AllocaId(2), 64, 8) (0x0)
-    v5:8 = AllocaAddr(AllocaId(2), 0) ()
-    v81:8 = Load(8, 0) (v1)
-    AStore(AllocaId(30), 0, 8) (v81)
-    v82:8 = AllocaAddr(AllocaId(30), 0) ()
-    AStore(AllocaId(2), 48, 8) (0x8)
-    jmp b33(0x0)
-b1(): ; Body
-    trap
-b2(): ; Body
-    trap
-b3(): ; Body
-    trap
-b4(v10:8): ; Body head 0 cold
-    hcall resume [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None])] ins [0] outs [] (v10)
-    trap
-b5(): ; Body
-    trap
-b6(): ; Body
-    trap
-b7(): ; Body
-    trap
-b8(): ; Body cold
-    trap
-b9(): ; Body
-    trap
-b10(): ; Stub cold
-    v6:8 = LandingPad ()
-    jmp b4(v6)
-b11(): ; Body
-    trap
-b12(): ; Stub cold
-    v9:8 = LandingPad ()
-    jmp b4(v9)
-b13(): ; Body
-    trap
-b14(): ; Body
-    trap
-b15(): ; Body
-    trap
-b16(): ; Body
-    trap
-b17(): ; Body
-    trap
-b18(): ; Body
-    trap
-b19(): ; Body
-    v57:8 = ALoad(AllocaId(15), 0, 8) ()
-    v58:8 = ALoad(AllocaId(15), 16, 8) ()
-    v59:8 = Bin(Xor, 8) (v57, v58)
-    v60:8 = ALoad(AllocaId(15), 8, 8) ()
-    v61:8 = Bin(Xor, 8) (v59, v60)
-    v62:8 = ALoad(AllocaId(15), 24, 8) ()
-    v63:8 = Bin(Xor, 8) (v61, v62)
-    ret 0x8 (v63)
-b20(): ; Body
-    trap
-b21(): ; Body
-    trap
-b22(): ; Body
-    trap
-b23(): ; Body
-    trap
-b24(): ; Body
-    trap
-b25(): ; Body
-    trap
-b26(): ; Body
-    trap
-b27(): ; Body
-    trap
-b28(): ; Body
-    trap
-b29(): ; Body
-    trap
-b30(): ; Body
-    trap
-b31(): ; Body
-    trap
-b32(): ; Body
-    trap
-b33(v134:8): ; Body
-    AStore(AllocaId(49), 0, 8) (v134)
-    br LtU.w8 v134, 0x8 ? b34() : b54()
-b34(): ; Body
-    AStore(AllocaId(49), 0, 8) (0x0)
-    v237:8 = AllocaAddr(AllocaId(30), 0) ()
-    v141:8 = PtrIndex(1) (v237, v134)
-    v142:8 = AllocaAddr(AllocaId(49), 0) ()
-    v143:8 = RefAddr(image.k6680, false) ()
-    v144:1 = Call(Call { target: image.fn112, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Pad { catch: true } }) (v141, 0x1)
-    invoke -> b36() unwind b44()
-b35(): ; Body
-    trap
-b36(): ; Body
-    br v144 ? b42() : b48()
-b37(): ; Body
-    v238:8 = AllocaAddr(AllocaId(49), 0) ()
-    v145:1 = Call(Call { target: image.fn112, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Pad { catch: true } }) (v238, 0x1)
-    invoke -> b38() unwind b45()
-b38(): ; Body
-    br v145 ? b43() : b48()
-b39(): ; Body
-    v239:8 = AllocaAddr(AllocaId(49), 0) ()
-    v146:1 = Call(Call { target: image.fn180.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Pad { catch: true } }) (v141, v239, 0x1, 0x8)
-    invoke -> b40() unwind b46()
-b40(): ; Body
-    br v146 ? b41() : b48()
-b41(): ; Body
-    v151:8 = Load(8, 0) (v141)
-    AStore(AllocaId(49), 0, 8) (v151)
-    v152:8 = ALoad(AllocaId(2), 24, 8) ()
-    v153:8 = Bin(Xor, 8) (v152, v151)
-    AStore(AllocaId(2), 24, 8) (v153)
-    v240:8 = AllocaAddr(AllocaId(2), 0) ()
-    AStore(AllocaId(49), 0, 8) (v240)
-    Call(Call { target: image.fn217, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v240)
-    invoke -> b62() unwind b10()
-b42(): ; Body
-    br Eq.w8 v141, 0x0 ? b48() : b37()
-b43(): ; Body
-    v241:8 = AllocaAddr(AllocaId(49), 0) ()
-    br Eq.w8 v241, 0x0 ? b48() : b39()
-b44(): ; Stub cold
-    v147:8 = LandingPad ()
-    jmp b51()
-b45(): ; Stub cold
-    v148:8 = LandingPad ()
-    jmp b51()
-b46(): ; Stub cold
-    v149:8 = LandingPad ()
-    jmp b51()
-b47(): ; Body
-    trap
-b48(): ; Body cold
-    v150:8 = RefAddr(image.k4563, false) ()
-    v243:8 = RefAddr(image.k6680, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v150, 0x237, 0x0, v243)
-    trap
-b49(): ; Body
-    trap
-b50(): ; Body
-    trap
-b51(): ; Body cold
-    Call(Call { target: image.sym28, regs: [], parts: [], site: None }) ()
-    trap
-b52(): ; Body
-    trap
-b53(): ; Body
-    trap
-b54(): ; Body
-    v242:8 = AllocaAddr(AllocaId(30), 0) ()
-    v164:8 = Call(Call { target: image.fn158.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v242, 0x8, v134, 0x0)
-    invoke -> b63() unwind b10()
-b55(): ; Body
-    trap
-b56(): ; Body
-    trap
-b57(): ; Body
-    trap
-b58(): ; Body
-    trap
-b59(): ; Body
-    trap
-b60(): ; Body
-    trap
-b61(): ; Body
-    trap
-b62(): ; Body
-    v161:8 = ALoad(AllocaId(2), 0, 8) ()
-    v162:8 = Bin(Xor, 8) (v161, v151)
-    AStore(AllocaId(2), 0, 8) (v162)
-    v163:8 = Bin(Add, 8) (v134, 0x8)
-    jmp b33(v163)
-b63(): ; Body
-    AStore(AllocaId(2), 56, 8) (v164)
-    AStore(AllocaId(2), 64, 8) (0x0)
-    v12:8 = ALoad(AllocaId(2), 0, 8) ()
-    AStore(AllocaId(15), 0, 8) (v12)
-    v13:8 = ALoad(AllocaId(2), 8, 8) ()
-    AStore(AllocaId(15), 8, 8) (v13)
-    v14:8 = ALoad(AllocaId(2), 16, 8) ()
-    AStore(AllocaId(15), 16, 8) (v14)
-    v15:8 = ALoad(AllocaId(2), 24, 8) ()
-    AStore(AllocaId(15), 24, 8) (v15)
-    v16:8 = ALoad(AllocaId(2), 48, 8) ()
-    v17:8 = Bin(And, 8) (v16, 0xff)
-    v18:8 = Bin(Shl, 8) (v17, 0x38)
-    v20:8 = Bin(Or, 8) (v18, v164)
-    v21:8 = Bin(Xor, 8) (v15, v20)
-    AStore(AllocaId(15), 24, 8) (v21)
-    v22:8 = AllocaAddr(AllocaId(15), 0) ()
-    v25:8 = Bin(Add, 8) (v12, v14)
-    AStore(AllocaId(15), 0, 8) (v25)
-    v28:8 = Bin(Add, 8) (v13, v21)
-    AStore(AllocaId(15), 8, 8) (v28)
-    v29:8 = Bin(Shl, 8) (v14, 0xd)
-    v30:8 = Bin(ShrU, 8) (v14, 0x33)
-    v31:8 = Bin(Or, 8) (v29, v30)
-    AStore(AllocaId(15), 16, 8) (v31)
-    v32:8 = Bin(Xor, 8) (v31, v25)
-    AStore(AllocaId(15), 16, 8) (v32)
-    v33:8 = Bin(Shl, 8) (v21, 0x10)
-    v34:8 = Bin(ShrU, 8) (v21, 0x30)
-    v35:8 = Bin(Or, 8) (v33, v34)
-    AStore(AllocaId(15), 24, 8) (v35)
-    v36:8 = Bin(Xor, 8) (v35, v28)
-    AStore(AllocaId(15), 24, 8) (v36)
-    v37:8 = Bin(Shl, 8) (v25, 0x20)
-    v38:8 = Bin(ShrU, 8) (v25, 0x20)
-    v39:8 = Bin(Or, 8) (v37, v38)
-    AStore(AllocaId(15), 0, 8) (v39)
-    v40:8 = Bin(Add, 8) (v28, v32)
-    AStore(AllocaId(15), 8, 8) (v40)
-    v41:8 = Bin(Add, 8) (v39, v36)
-    AStore(AllocaId(15), 0, 8) (v41)
-    v42:8 = Bin(Shl, 8) (v32, 0x11)
-    v43:8 = Bin(ShrU, 8) (v32, 0x2f)
-    v44:8 = Bin(Or, 8) (v42, v43)
-    AStore(AllocaId(15), 16, 8) (v44)
-    v45:8 = Bin(Xor, 8) (v44, v40)
-    AStore(AllocaId(15), 16, 8) (v45)
-    v46:8 = Bin(Shl, 8) (v36, 0x15)
-    v47:8 = Bin(ShrU, 8) (v36, 0x2b)
-    v48:8 = Bin(Or, 8) (v46, v47)
-    AStore(AllocaId(15), 24, 8) (v48)
-    v49:8 = Bin(Xor, 8) (v48, v41)
-    AStore(AllocaId(15), 24, 8) (v49)
-    v50:8 = Bin(Shl, 8) (v40, 0x20)
-    v51:8 = Bin(ShrU, 8) (v40, 0x20)
-    v52:8 = Bin(Or, 8) (v50, v51)
-    AStore(AllocaId(15), 8, 8) (v52)
-    v54:8 = Bin(Xor, 8) (v41, v20)
-    AStore(AllocaId(15), 0, 8) (v54)
-    v56:8 = Bin(Xor, 8) (v52, 0xff)
-    AStore(AllocaId(15), 8, 8) (v56)
-    Call(Call { target: image.fn218.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v22)
-    invoke -> b19() unwind b12()
-b64(): ; Body
-    trap
-b65(): ; Body
-    trap
-b66(): ; Body
-    trap
-b67(): ; Body
     trap
 
 fn core::hash::sip::u8to64_le
@@ -2511,8 +2505,8 @@ b18(): ; Body
     v85:8 = Bin(Or, 8) (v84, v82)
     jmp b9(v85)
 b19(): ; Body cold
-    v90:8 = RefAddr(image.k6464, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v90, 0x1ad, 0x0, v69)
+    v90:8 = RefAddr(image.k4746, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v90, 0x1ad, 0x0, v69)
     trap
 b20(): ; Body
     trap
@@ -2568,8 +2562,8 @@ b40(): ; Body
 b41(): ; Body
     trap
 b42(): ; Body cold
-    v100:8 = RefAddr(image.k4563, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v100, 0x237, 0x0, v50)
+    v100:8 = RefAddr(image.k3619, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v100, 0x237, 0x0, v50)
     trap
 b43(): ; Body
     trap
@@ -2625,8 +2619,8 @@ b65(): ; Body
 b66(): ; Body
     trap
 b67(): ; Body cold
-    v115:8 = RefAddr(image.k4563, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v115, 0x237, 0x0, v34)
+    v115:8 = RefAddr(image.k3619, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v115, 0x237, 0x0, v34)
     trap
 b68(): ; Body
     trap
@@ -2687,7 +2681,7 @@ b5(v12:8): ; Body
     v13:1 = Cmp(LeU, 8) (v4, v12)
     ret 0x1 (v13)
 
-fn hashbrown::map::HashMap::<u64, u64, std::hash::RandomState>::retain::<{closure@bench/hashmap.rs:23:16: 23:22}>
+fn hashbrown::map::HashMap::<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::retain::<{closure@bench/hashmap.rs:27:16: 27:22}>
 a0: $-216, 8 bytes, Promoted
 a1: $-208, 8 bytes, Promoted
 a2: $-200, 8 bytes, Promoted
@@ -3145,7 +3139,7 @@ b10(): ; Body
     AStore(AllocaId(267), 0, 8) (0x0)
     AStore(AllocaId(267), 8, 8) (0x0)
     v77:8 = AllocaAddr(AllocaId(267), 0) ()
-    v79:8 = RefAddr(image.k952, false) ()
+    v79:8 = RefAddr(image.k696, false) ()
     br Eq.w8 v75, 0x0 ? b86() : b67()
 b11(): ; Body
     trap
@@ -3357,7 +3351,7 @@ b80(): ; Body
     AStore(AllocaId(121), 0, 8) (0x0)
     AStore(AllocaId(121), 8, 8) (0x0)
     v141:8 = AllocaAddr(AllocaId(121), 0) ()
-    v143:8 = RefAddr(image.k952, false) ()
+    v143:8 = RefAddr(image.k696, false) ()
     br Eq.w8 v139, 0x0 ? b139() : b120()
 b81(): ; Body
     trap
@@ -3370,8 +3364,8 @@ b84(): ; Body
 b85(): ; Body
     trap
 b86(): ; Body cold
-    v89:8 = RefAddr(image.k4563, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v89, 0x237, 0x0, v79)
+    v89:8 = RefAddr(image.k3619, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v89, 0x237, 0x0, v79)
     trap
 b87(): ; Body
     trap
@@ -3521,8 +3515,8 @@ b137(): ; Body
 b138(): ; Body
     trap
 b139(): ; Body cold
-    v153:8 = RefAddr(image.k4563, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v153, 0x237, 0x0, v143)
+    v153:8 = RefAddr(image.k3619, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v153, 0x237, 0x0, v143)
     trap
 b140(): ; Body
     trap
@@ -3588,7 +3582,7 @@ b163(v205:1): ; Body
     v216:8 = Bin(Sub, 8) (v215, 0x1)
     Store(8, 24) (v350, v216)
     v218:8 = PtrAdd(-16) (v10)
-    Call(Call { target: image.sym20, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v218)
+    Call(Call { target: image.sym17, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v218)
     invoke -> b169() unwind b38()
 b164(): ; Body
     trap
@@ -3871,7 +3865,7 @@ b36(): ; Body
 b37(): ; Body
     trap
 
-fn hashbrown::raw::RawIterRange::<(u64, u64)>::fold_impl::<{closure@<hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:24:43: 24:50}>::{closure#0}}>::{closure#0}}, u64>
+fn hashbrown::raw::RawIterRange::<(u64, u64)>::fold_impl::<{closure@<hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:28:43: 28:50}>::{closure#0}}>::{closure#0}}, u64>
 a0: $-288, 16 bytes, Promoted, escaped
 a1: $-272, 8 bytes, Promoted
 a2: $-264, 8 bytes, Promoted
@@ -4306,7 +4300,7 @@ b36(): ; Body
 b37(): ; Body
     trap
 
-fn hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>>::rustc_entry::{closure#0}}>
+fn hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0}}>
 a0: $-168, 8 bytes, Promoted
 a1: $-160, 8 bytes, Promoted
 a2: $-152, 8 bytes, Promoted
@@ -4650,7 +4644,7 @@ b21(v31:8, v36:8): ; Body
     AStore(AllocaId(149), 0, 8) (0x0)
     AStore(AllocaId(149), 8, 8) (0x0)
     v40:8 = AllocaAddr(AllocaId(149), 0) ()
-    v42:8 = RefAddr(image.k952, false) ()
+    v42:8 = RefAddr(image.k696, false) ()
     br Eq.w8 v38, 0x0 ? b53() : b34()
 b22(): ; Body
     trap
@@ -4752,8 +4746,8 @@ b51(): ; Body
 b52(): ; Body
     trap
 b53(): ; Body cold
-    v52:8 = RefAddr(image.k4563, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v52, 0x237, 0x0, v42)
+    v52:8 = RefAddr(image.k3619, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v52, 0x237, 0x0, v42)
     trap
 b54(): ; Body
     trap
@@ -4921,7 +4915,7 @@ b110(): ; Body
     AStore(AllocaId(281), 0, 8) (v228)
     AStore(AllocaId(279), 8, 8) (v227)
     AStore(AllocaId(279), 0, 8) (v229)
-    Island(Island { isl: Sym(58), ops: [Alloca(AllocaId(279), 8), Alloca(AllocaId(279), 0), Alloca(AllocaId(281), 0), Alloca(AllocaId(280), 0)], site: None }) ()
+    Island(Island { isl: Sym(43), ops: [Alloca(AllocaId(279), 8), Alloca(AllocaId(279), 0), Alloca(AllocaId(281), 0), Alloca(AllocaId(280), 0)], site: None }) ()
     v231:4 = ALoad(AllocaId(280), 0, 4) ()
     v232:1 = Cmp(Eq, 4) (v231, 0x0)
     jmp b114(v232)
@@ -4942,7 +4936,7 @@ b117(): ; Body
 b118(): ; Body
     trap
 
-fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::RandomState>::{closure#0}}>
+fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>
 a0: $-89, 1 bytes, Promoted
 a1: $-88, 8 bytes, Promoted
 a2: $-80, 8 bytes, Promoted
@@ -4986,7 +4980,7 @@ b13(): ; Stub cold
     v19:8 = LandingPad ()
     jmp b6()
 
-fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::RandomState>::{closure#0}}>::{closure#0}
+fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#0}
 a0: $-160, 8 bytes, Promoted
 a1: $-152, 8 bytes, Promoted
 a2: $-144, 8 bytes, Promoted
@@ -5055,14 +5049,14 @@ a64: $-32, 8 bytes, Promoted, inlined
 a65: $-24, 8 bytes, Promoted, inlined
 a66: $-16, 8 bytes, Promoted, inlined
 a67: $-8, 8 bytes, Promoted, inlined
-a68: $-352, 8 bytes, Promoted, inlined
-a69: $-344, 8 bytes, Promoted, inlined
-a70: $-336, 8 bytes, Promoted, inlined
+a68: $-88, 8 bytes, Promoted, inlined
+a69: $-80, 8 bytes, Promoted, inlined
+a70: $-72, 72 bytes, Promoted, escaped, inlined
 a71: $-328, 8 bytes, Promoted, inlined
-a72: $-320, 72 bytes, Promoted, escaped, inlined
-a73: $-248, 8 bytes, Promoted, inlined
-a74: $-240, 8 bytes, Promoted, inlined
-a75: $-232, 8 bytes, Promoted, inlined
+a72: $-320, 8 bytes, Promoted, inlined
+a73: $-312, 8 bytes, Promoted, inlined
+a74: $-304, 8 bytes, Promoted, inlined
+a75: $-296, 72 bytes, Promoted, escaped, inlined
 a76: $-224, 8 bytes, Promoted, inlined
 a77: $-216, 8 bytes, Promoted, inlined
 a78: $-208, 8 bytes, Promoted, inlined
@@ -5103,7 +5097,7 @@ b0(v0:8, v1:8, v2:8): ; Entry
 b1(): ; Body
     trap
 b2(): ; Body head 0
-    ret 0x8 (v105)
+    ret 0x8 (v113)
 b3(): ; Body
     trap
 b4(): ; Body
@@ -5122,26 +5116,20 @@ b10(): ; Body
     trap
 b11(): ; Body head 3
     v27:8 = Load(8, 0) (v3)
-    v29:8 = Load(8, 0) (v27)
-    v30:8 = Load(8, 8) (v27)
-    v33:8 = Bin(Xor, 8) (v29, 0x736f6d6570736575)
-    v35:8 = Bin(Xor, 8) (v30, 0x646f72616e646f6d)
-    v36:8 = Bin(Xor, 8) (v29, 0x6c7967656e657261)
-    v37:8 = Bin(Xor, 8) (v30, 0x7465646279746573)
-    AStore(AllocaId(22), 0, 8) (v33)
-    AStore(AllocaId(22), 8, 8) (v36)
-    AStore(AllocaId(22), 16, 8) (v35)
-    AStore(AllocaId(22), 24, 8) (v37)
-    AStore(AllocaId(22), 32, 8) (v29)
-    AStore(AllocaId(22), 40, 8) (v30)
+    AStore(AllocaId(22), 0, 8) (0x736f6d6570736575)
+    AStore(AllocaId(22), 8, 8) (0x6c7967656e657261)
+    AStore(AllocaId(22), 16, 8) (0x646f72616e646f6d)
+    AStore(AllocaId(22), 24, 8) (0x7465646279746573)
+    AStore(AllocaId(22), 32, 8) (0x0)
+    AStore(AllocaId(22), 40, 8) (0x0)
     AStore(AllocaId(22), 48, 8) (0x0)
     AStore(AllocaId(22), 56, 8) (0x0)
     AStore(AllocaId(22), 64, 8) (0x0)
-    v48:8 = AllocaAddr(AllocaId(22), 0) ()
-    v50:8 = Load(8, -24) (v15)
-    v51:8 = Load(8, -16) (v15)
-    Call(Call { target: image.fn206, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: false } }) (v48, v50, v51)
-    invoke -> b30() unwind b45()
+    v56:8 = AllocaAddr(AllocaId(22), 0) ()
+    v58:8 = Load(8, -24) (v15)
+    v59:8 = Load(8, -16) (v15)
+    Call(Call { target: image.fn176, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: false } }) (v56, v58, v59)
+    invoke -> b32() unwind b47()
 b12(): ; Body
     trap
 b13(): ; Body
@@ -5179,78 +5167,78 @@ b28(): ; Body
 b29(): ; Body
     trap
 b30(): ; Body
-    AStore(AllocaId(61), 0, 1) (0xff)
-    v52:8 = AllocaAddr(AllocaId(61), 0) ()
-    v142:8 = AllocaAddr(AllocaId(22), 0) ()
-    Call(Call { target: image.fn206, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: false } }) (v142, v52, 0x1)
-    invoke -> b31() unwind b45()
+    trap
 b31(): ; Body
-    v54:8 = ALoad(AllocaId(22), 0, 8) ()
-    AStore(AllocaId(35), 0, 8) (v54)
-    v55:8 = ALoad(AllocaId(22), 8, 8) ()
-    AStore(AllocaId(35), 8, 8) (v55)
-    v56:8 = ALoad(AllocaId(22), 16, 8) ()
-    AStore(AllocaId(35), 16, 8) (v56)
-    v57:8 = ALoad(AllocaId(22), 24, 8) ()
-    AStore(AllocaId(35), 24, 8) (v57)
-    v58:8 = ALoad(AllocaId(22), 48, 8) ()
-    v59:8 = Bin(And, 8) (v58, 0xff)
-    v60:8 = Bin(Shl, 8) (v59, 0x38)
-    v61:8 = ALoad(AllocaId(22), 56, 8) ()
-    v62:8 = Bin(Or, 8) (v60, v61)
-    v63:8 = Bin(Xor, 8) (v57, v62)
-    AStore(AllocaId(35), 24, 8) (v63)
-    v64:8 = AllocaAddr(AllocaId(35), 0) ()
-    v67:8 = Bin(Add, 8) (v54, v56)
-    AStore(AllocaId(35), 0, 8) (v67)
-    v70:8 = Bin(Add, 8) (v55, v63)
-    AStore(AllocaId(35), 8, 8) (v70)
-    v71:8 = Bin(Shl, 8) (v56, 0xd)
-    v72:8 = Bin(ShrU, 8) (v56, 0x33)
-    v73:8 = Bin(Or, 8) (v71, v72)
-    AStore(AllocaId(35), 16, 8) (v73)
-    v74:8 = Bin(Xor, 8) (v73, v67)
-    AStore(AllocaId(35), 16, 8) (v74)
-    v75:8 = Bin(Shl, 8) (v63, 0x10)
-    v76:8 = Bin(ShrU, 8) (v63, 0x30)
-    v77:8 = Bin(Or, 8) (v75, v76)
-    AStore(AllocaId(35), 24, 8) (v77)
-    v78:8 = Bin(Xor, 8) (v77, v70)
-    AStore(AllocaId(35), 24, 8) (v78)
-    v79:8 = Bin(Shl, 8) (v67, 0x20)
-    v80:8 = Bin(ShrU, 8) (v67, 0x20)
-    v81:8 = Bin(Or, 8) (v79, v80)
-    AStore(AllocaId(35), 0, 8) (v81)
-    v82:8 = Bin(Add, 8) (v70, v74)
-    AStore(AllocaId(35), 8, 8) (v82)
-    v83:8 = Bin(Add, 8) (v81, v78)
-    AStore(AllocaId(35), 0, 8) (v83)
-    v84:8 = Bin(Shl, 8) (v74, 0x11)
-    v85:8 = Bin(ShrU, 8) (v74, 0x2f)
-    v86:8 = Bin(Or, 8) (v84, v85)
-    AStore(AllocaId(35), 16, 8) (v86)
-    v87:8 = Bin(Xor, 8) (v86, v82)
-    AStore(AllocaId(35), 16, 8) (v87)
-    v88:8 = Bin(Shl, 8) (v78, 0x15)
-    v89:8 = Bin(ShrU, 8) (v78, 0x2b)
-    v90:8 = Bin(Or, 8) (v88, v89)
-    AStore(AllocaId(35), 24, 8) (v90)
-    v91:8 = Bin(Xor, 8) (v90, v83)
-    AStore(AllocaId(35), 24, 8) (v91)
-    v92:8 = Bin(Shl, 8) (v82, 0x20)
-    v93:8 = Bin(ShrU, 8) (v82, 0x20)
-    v94:8 = Bin(Or, 8) (v92, v93)
-    AStore(AllocaId(35), 8, 8) (v94)
-    v96:8 = Bin(Xor, 8) (v83, v62)
-    AStore(AllocaId(35), 0, 8) (v96)
-    v98:8 = Bin(Xor, 8) (v94, 0xff)
-    AStore(AllocaId(35), 8, 8) (v98)
-    Call(Call { target: image.fn218, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v64)
-    invoke -> b41() unwind b46()
+    trap
 b32(): ; Body
-    trap
+    AStore(AllocaId(61), 0, 1) (0xff)
+    v60:8 = AllocaAddr(AllocaId(61), 0) ()
+    v156:8 = AllocaAddr(AllocaId(22), 0) ()
+    Call(Call { target: image.fn176, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: false } }) (v156, v60, 0x1)
+    invoke -> b33() unwind b47()
 b33(): ; Body
-    trap
+    v62:8 = ALoad(AllocaId(22), 0, 8) ()
+    AStore(AllocaId(35), 0, 8) (v62)
+    v63:8 = ALoad(AllocaId(22), 8, 8) ()
+    AStore(AllocaId(35), 8, 8) (v63)
+    v64:8 = ALoad(AllocaId(22), 16, 8) ()
+    AStore(AllocaId(35), 16, 8) (v64)
+    v65:8 = ALoad(AllocaId(22), 24, 8) ()
+    AStore(AllocaId(35), 24, 8) (v65)
+    v66:8 = ALoad(AllocaId(22), 48, 8) ()
+    v67:8 = Bin(And, 8) (v66, 0xff)
+    v68:8 = Bin(Shl, 8) (v67, 0x38)
+    v69:8 = ALoad(AllocaId(22), 56, 8) ()
+    v70:8 = Bin(Or, 8) (v68, v69)
+    v71:8 = Bin(Xor, 8) (v65, v70)
+    AStore(AllocaId(35), 24, 8) (v71)
+    v72:8 = AllocaAddr(AllocaId(35), 0) ()
+    v75:8 = Bin(Add, 8) (v62, v64)
+    AStore(AllocaId(35), 0, 8) (v75)
+    v78:8 = Bin(Add, 8) (v63, v71)
+    AStore(AllocaId(35), 8, 8) (v78)
+    v79:8 = Bin(Shl, 8) (v64, 0xd)
+    v80:8 = Bin(ShrU, 8) (v64, 0x33)
+    v81:8 = Bin(Or, 8) (v79, v80)
+    AStore(AllocaId(35), 16, 8) (v81)
+    v82:8 = Bin(Xor, 8) (v81, v75)
+    AStore(AllocaId(35), 16, 8) (v82)
+    v83:8 = Bin(Shl, 8) (v71, 0x10)
+    v84:8 = Bin(ShrU, 8) (v71, 0x30)
+    v85:8 = Bin(Or, 8) (v83, v84)
+    AStore(AllocaId(35), 24, 8) (v85)
+    v86:8 = Bin(Xor, 8) (v85, v78)
+    AStore(AllocaId(35), 24, 8) (v86)
+    v87:8 = Bin(Shl, 8) (v75, 0x20)
+    v88:8 = Bin(ShrU, 8) (v75, 0x20)
+    v89:8 = Bin(Or, 8) (v87, v88)
+    AStore(AllocaId(35), 0, 8) (v89)
+    v90:8 = Bin(Add, 8) (v78, v82)
+    AStore(AllocaId(35), 8, 8) (v90)
+    v91:8 = Bin(Add, 8) (v89, v86)
+    AStore(AllocaId(35), 0, 8) (v91)
+    v92:8 = Bin(Shl, 8) (v82, 0x11)
+    v93:8 = Bin(ShrU, 8) (v82, 0x2f)
+    v94:8 = Bin(Or, 8) (v92, v93)
+    AStore(AllocaId(35), 16, 8) (v94)
+    v95:8 = Bin(Xor, 8) (v94, v90)
+    AStore(AllocaId(35), 16, 8) (v95)
+    v96:8 = Bin(Shl, 8) (v86, 0x15)
+    v97:8 = Bin(ShrU, 8) (v86, 0x2b)
+    v98:8 = Bin(Or, 8) (v96, v97)
+    AStore(AllocaId(35), 24, 8) (v98)
+    v99:8 = Bin(Xor, 8) (v98, v91)
+    AStore(AllocaId(35), 24, 8) (v99)
+    v100:8 = Bin(Shl, 8) (v90, 0x20)
+    v101:8 = Bin(ShrU, 8) (v90, 0x20)
+    v102:8 = Bin(Or, 8) (v100, v101)
+    AStore(AllocaId(35), 8, 8) (v102)
+    v104:8 = Bin(Xor, 8) (v91, v70)
+    AStore(AllocaId(35), 0, 8) (v104)
+    v106:8 = Bin(Xor, 8) (v102, 0xff)
+    AStore(AllocaId(35), 8, 8) (v106)
+    Call(Call { target: image.fn188, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v72)
+    invoke -> b43() unwind b48()
 b34(): ; Body
     trap
 b35(): ; Body
@@ -5266,30 +5254,34 @@ b39(): ; Body
 b40(): ; Body
     trap
 b41(): ; Body
-    v99:8 = ALoad(AllocaId(35), 0, 8) ()
-    v100:8 = ALoad(AllocaId(35), 16, 8) ()
-    v101:8 = Bin(Xor, 8) (v99, v100)
-    v102:8 = ALoad(AllocaId(35), 8, 8) ()
-    v103:8 = Bin(Xor, 8) (v101, v102)
-    v104:8 = ALoad(AllocaId(35), 24, 8) ()
-    v105:8 = Bin(Xor, 8) (v103, v104)
-    jmp b2()
+    trap
 b42(): ; Body
     trap
 b43(): ; Body
-    trap
+    v107:8 = ALoad(AllocaId(35), 0, 8) ()
+    v108:8 = ALoad(AllocaId(35), 16, 8) ()
+    v109:8 = Bin(Xor, 8) (v107, v108)
+    v110:8 = ALoad(AllocaId(35), 8, 8) ()
+    v111:8 = Bin(Xor, 8) (v109, v110)
+    v112:8 = ALoad(AllocaId(35), 24, 8) ()
+    v113:8 = Bin(Xor, 8) (v111, v112)
+    jmp b2()
 b44(): ; Body
     trap
-b45(): ; Stub cold
-    v108:8 = LandingPad ()
-    jmp b47(v108)
-b46(): ; Stub cold
-    v109:8 = LandingPad ()
-    jmp b47(v109)
-b47(v110:8): ; Body cold
-    hcall resume [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None])] ins [0] outs [] (v110)
+b45(): ; Body
     trap
-b48(): ; Body
+b46(): ; Body
+    trap
+b47(): ; Stub cold
+    v116:8 = LandingPad ()
+    jmp b49(v116)
+b48(): ; Stub cold
+    v117:8 = LandingPad ()
+    jmp b49(v117)
+b49(v118:8): ; Body cold
+    hcall resume [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None])] ins [0] outs [] (v118)
+    trap
+b50(): ; Body
     trap
 
 fn hashbrown::raw::RawTable::<(u64, u64)>::erase
@@ -5632,7 +5624,7 @@ b0(v0:8, v1:8): ; Entry
     AStore(AllocaId(237), 0, 8) (0x0)
     AStore(AllocaId(237), 8, 8) (0x0)
     v21:8 = AllocaAddr(AllocaId(237), 0) ()
-    v23:8 = RefAddr(image.k952, false) ()
+    v23:8 = RefAddr(image.k696, false) ()
     br Eq.w8 v19, 0x0 ? b46() : b27()
 b1(): ; Body
     trap
@@ -5757,7 +5749,7 @@ b40(): ; Body
     AStore(AllocaId(91), 0, 8) (0x0)
     AStore(AllocaId(91), 8, 8) (0x0)
     v85:8 = AllocaAddr(AllocaId(91), 0) ()
-    v87:8 = RefAddr(image.k952, false) ()
+    v87:8 = RefAddr(image.k696, false) ()
     br Eq.w8 v83, 0x0 ? b99() : b80()
 b41(): ; Body
     trap
@@ -5770,8 +5762,8 @@ b44(): ; Body
 b45(): ; Body
     trap
 b46(): ; Body cold
-    v33:8 = RefAddr(image.k4563, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v33, 0x237, 0x0, v23)
+    v33:8 = RefAddr(image.k3619, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v33, 0x237, 0x0, v23)
     trap
 b47(): ; Body
     trap
@@ -5921,8 +5913,8 @@ b97(): ; Body
 b98(): ; Body
     trap
 b99(): ; Body cold
-    v97:8 = RefAddr(image.k4563, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v97, 0x237, 0x0, v87)
+    v97:8 = RefAddr(image.k3619, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v97, 0x237, 0x0, v87)
     trap
 b100(): ; Body
     trap
@@ -6323,7 +6315,7 @@ b21(v31:8, v36:8): ; Body
     AStore(AllocaId(149), 0, 8) (0x0)
     AStore(AllocaId(149), 8, 8) (0x0)
     v40:8 = AllocaAddr(AllocaId(149), 0) ()
-    v42:8 = RefAddr(image.k952, false) ()
+    v42:8 = RefAddr(image.k696, false) ()
     br Eq.w8 v38, 0x0 ? b53() : b34()
 b22(): ; Body
     trap
@@ -6425,8 +6417,8 @@ b51(): ; Body
 b52(): ; Body
     trap
 b53(): ; Body cold
-    v52:8 = RefAddr(image.k4563, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v52, 0x237, 0x0, v42)
+    v52:8 = RefAddr(image.k3619, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v52, 0x237, 0x0, v42)
     trap
 b54(): ; Body
     trap
@@ -6601,7 +6593,7 @@ b114(): ; Body
 b115(): ; Body
     trap
 
-fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::RandomState>>::rustc_entry::{closure#0}}>
+fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0}}>
 a0: $-168, 8 bytes, Promoted
 a1: $-160, 8 bytes, Promoted
 a2: $-152, 8 bytes, Promoted
@@ -6924,7 +6916,7 @@ b21(v31:8, v36:8): ; Body
     AStore(AllocaId(149), 0, 8) (0x0)
     AStore(AllocaId(149), 8, 8) (0x0)
     v40:8 = AllocaAddr(AllocaId(149), 0) ()
-    v42:8 = RefAddr(image.k952, false) ()
+    v42:8 = RefAddr(image.k696, false) ()
     br Eq.w8 v38, 0x0 ? b53() : b34()
 b22(): ; Body
     trap
@@ -7026,8 +7018,8 @@ b51(): ; Body
 b52(): ; Body
     trap
 b53(): ; Body cold
-    v52:8 = RefAddr(image.k4563, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v52, 0x237, 0x0, v42)
+    v52:8 = RefAddr(image.k3619, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v52, 0x237, 0x0, v42)
     trap
 b54(): ; Body
     trap
@@ -7464,7 +7456,7 @@ b25(): ; Body
     AStore(AllocaId(92), 0, 8) (0x0)
     AStore(AllocaId(92), 8, 8) (0x0)
     v92:8 = AllocaAddr(AllocaId(92), 0) ()
-    v94:8 = RefAddr(image.k952, false) ()
+    v94:8 = RefAddr(image.k696, false) ()
     br Eq.w8 v90, 0x0 ? b57() : b38()
 b26(): ; Body
     trap
@@ -7554,8 +7546,8 @@ b55(): ; Body
 b56(): ; Body
     trap
 b57(): ; Body cold
-    v104:8 = RefAddr(image.k4563, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v104, 0x237, 0x0, v94)
+    v104:8 = RefAddr(image.k3619, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v104, 0x237, 0x0, v94)
     trap
 b58(): ; Body
     trap
@@ -7675,7 +7667,7 @@ b88(): ; Body
 b89(): ; Body
     trap
 
-fn hashbrown::raw::RawTable::<(u64, u64)>::reserve::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::RandomState>::{closure#0}}>
+fn hashbrown::raw::RawTable::<(u64, u64)>::reserve::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>
 a0: $-89, 1 bytes, Promoted
 a1: $-88, 8 bytes, Promoted
 a2: $-80, 8 bytes, Promoted
@@ -7719,7 +7711,7 @@ b13(): ; Stub cold
     v19:8 = LandingPad ()
     jmp b6()
 
-fn hashbrown::raw::RawTable::<(u64, u64)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::RandomState>::{closure#0}}>::{closure#0}
+fn hashbrown::raw::RawTable::<(u64, u64)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#0}
 a0: $-160, 8 bytes, Promoted
 a1: $-152, 8 bytes, Promoted
 a2: $-144, 8 bytes, Promoted
@@ -7780,14 +7772,14 @@ a56: $-40, 8 bytes, Promoted, inlined
 a57: $-24, 8 bytes, Promoted, inlined
 a58: $-16, 8 bytes, Promoted, inlined
 a59: $-8, 8 bytes, Promoted, inlined
-a60: $-352, 8 bytes, Promoted, inlined
-a61: $-344, 8 bytes, Promoted, inlined
-a62: $-336, 8 bytes, Promoted, inlined
+a60: $-88, 8 bytes, Promoted, inlined
+a61: $-80, 8 bytes, Promoted, inlined
+a62: $-72, 72 bytes, Promoted, escaped, inlined
 a63: $-328, 8 bytes, Promoted, inlined
-a64: $-320, 72 bytes, Promoted, escaped, inlined
-a65: $-248, 8 bytes, Promoted, inlined
-a66: $-240, 8 bytes, Promoted, inlined
-a67: $-232, 8 bytes, Promoted, inlined
+a64: $-320, 8 bytes, Promoted, inlined
+a65: $-312, 8 bytes, Promoted, inlined
+a66: $-304, 8 bytes, Promoted, inlined
+a67: $-296, 72 bytes, Promoted, escaped, inlined
 a68: $-224, 8 bytes, Promoted, inlined
 a69: $-216, 8 bytes, Promoted, inlined
 a70: $-208, 8 bytes, Promoted, inlined
@@ -7828,7 +7820,7 @@ b0(v0:8, v1:8, v2:8): ; Entry
 b1(): ; Body
     trap
 b2(): ; Body head 0
-    ret 0x8 (v104)
+    ret 0x8 (v112)
 b3(): ; Body
     trap
 b4(): ; Body
@@ -7847,27 +7839,21 @@ b10(): ; Body
     trap
 b11(): ; Body head 3
     v27:8 = Load(8, 0) (v3)
-    v29:8 = Load(8, 0) (v27)
-    v30:8 = Load(8, 8) (v27)
-    v33:8 = Bin(Xor, 8) (v29, 0x736f6d6570736575)
-    v35:8 = Bin(Xor, 8) (v30, 0x646f72616e646f6d)
-    v36:8 = Bin(Xor, 8) (v29, 0x6c7967656e657261)
-    v37:8 = Bin(Xor, 8) (v30, 0x7465646279746573)
-    AStore(AllocaId(22), 0, 8) (v33)
-    AStore(AllocaId(22), 8, 8) (v36)
-    AStore(AllocaId(22), 16, 8) (v35)
-    AStore(AllocaId(22), 24, 8) (v37)
-    AStore(AllocaId(22), 32, 8) (v29)
-    AStore(AllocaId(22), 40, 8) (v30)
+    AStore(AllocaId(22), 0, 8) (0x736f6d6570736575)
+    AStore(AllocaId(22), 8, 8) (0x6c7967656e657261)
+    AStore(AllocaId(22), 16, 8) (0x646f72616e646f6d)
+    AStore(AllocaId(22), 24, 8) (0x7465646279746573)
+    AStore(AllocaId(22), 32, 8) (0x0)
+    AStore(AllocaId(22), 40, 8) (0x0)
     AStore(AllocaId(22), 48, 8) (0x0)
     AStore(AllocaId(22), 56, 8) (0x0)
     AStore(AllocaId(22), 64, 8) (0x0)
-    v48:8 = AllocaAddr(AllocaId(22), 0) ()
-    v50:8 = Load(8, -16) (v15)
-    AStore(AllocaId(50), 0, 8) (v50)
-    v51:8 = AllocaAddr(AllocaId(50), 0) ()
-    Call(Call { target: image.fn206.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: false } }) (v48, v51, 0x8)
-    invoke -> b30() unwind b44()
+    v56:8 = AllocaAddr(AllocaId(22), 0) ()
+    v58:8 = Load(8, -16) (v15)
+    AStore(AllocaId(50), 0, 8) (v58)
+    v59:8 = AllocaAddr(AllocaId(50), 0) ()
+    Call(Call { target: image.fn176.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: false } }) (v56, v59, 0x8)
+    invoke -> b32() unwind b46()
 b12(): ; Body
     trap
 b13(): ; Body
@@ -7905,72 +7891,72 @@ b28(): ; Body
 b29(): ; Body
     trap
 b30(): ; Body
-    v53:8 = ALoad(AllocaId(22), 0, 8) ()
-    AStore(AllocaId(35), 0, 8) (v53)
-    v54:8 = ALoad(AllocaId(22), 8, 8) ()
-    AStore(AllocaId(35), 8, 8) (v54)
-    v55:8 = ALoad(AllocaId(22), 16, 8) ()
-    AStore(AllocaId(35), 16, 8) (v55)
-    v56:8 = ALoad(AllocaId(22), 24, 8) ()
-    AStore(AllocaId(35), 24, 8) (v56)
-    v57:8 = ALoad(AllocaId(22), 48, 8) ()
-    v58:8 = Bin(And, 8) (v57, 0xff)
-    v59:8 = Bin(Shl, 8) (v58, 0x38)
-    v60:8 = ALoad(AllocaId(22), 56, 8) ()
-    v61:8 = Bin(Or, 8) (v59, v60)
-    v62:8 = Bin(Xor, 8) (v56, v61)
-    AStore(AllocaId(35), 24, 8) (v62)
-    v63:8 = AllocaAddr(AllocaId(35), 0) ()
-    v66:8 = Bin(Add, 8) (v53, v55)
-    AStore(AllocaId(35), 0, 8) (v66)
-    v69:8 = Bin(Add, 8) (v54, v62)
-    AStore(AllocaId(35), 8, 8) (v69)
-    v70:8 = Bin(Shl, 8) (v55, 0xd)
-    v71:8 = Bin(ShrU, 8) (v55, 0x33)
-    v72:8 = Bin(Or, 8) (v70, v71)
-    AStore(AllocaId(35), 16, 8) (v72)
-    v73:8 = Bin(Xor, 8) (v72, v66)
-    AStore(AllocaId(35), 16, 8) (v73)
-    v74:8 = Bin(Shl, 8) (v62, 0x10)
-    v75:8 = Bin(ShrU, 8) (v62, 0x30)
-    v76:8 = Bin(Or, 8) (v74, v75)
-    AStore(AllocaId(35), 24, 8) (v76)
-    v77:8 = Bin(Xor, 8) (v76, v69)
-    AStore(AllocaId(35), 24, 8) (v77)
-    v78:8 = Bin(Shl, 8) (v66, 0x20)
-    v79:8 = Bin(ShrU, 8) (v66, 0x20)
-    v80:8 = Bin(Or, 8) (v78, v79)
-    AStore(AllocaId(35), 0, 8) (v80)
-    v81:8 = Bin(Add, 8) (v69, v73)
-    AStore(AllocaId(35), 8, 8) (v81)
-    v82:8 = Bin(Add, 8) (v80, v77)
-    AStore(AllocaId(35), 0, 8) (v82)
-    v83:8 = Bin(Shl, 8) (v73, 0x11)
-    v84:8 = Bin(ShrU, 8) (v73, 0x2f)
-    v85:8 = Bin(Or, 8) (v83, v84)
-    AStore(AllocaId(35), 16, 8) (v85)
-    v86:8 = Bin(Xor, 8) (v85, v81)
-    AStore(AllocaId(35), 16, 8) (v86)
-    v87:8 = Bin(Shl, 8) (v77, 0x15)
-    v88:8 = Bin(ShrU, 8) (v77, 0x2b)
-    v89:8 = Bin(Or, 8) (v87, v88)
-    AStore(AllocaId(35), 24, 8) (v89)
-    v90:8 = Bin(Xor, 8) (v89, v82)
-    AStore(AllocaId(35), 24, 8) (v90)
-    v91:8 = Bin(Shl, 8) (v81, 0x20)
-    v92:8 = Bin(ShrU, 8) (v81, 0x20)
-    v93:8 = Bin(Or, 8) (v91, v92)
-    AStore(AllocaId(35), 8, 8) (v93)
-    v95:8 = Bin(Xor, 8) (v82, v61)
-    AStore(AllocaId(35), 0, 8) (v95)
-    v97:8 = Bin(Xor, 8) (v93, 0xff)
-    AStore(AllocaId(35), 8, 8) (v97)
-    Call(Call { target: image.fn218, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v63)
-    invoke -> b40() unwind b45()
+    trap
 b31(): ; Body
     trap
 b32(): ; Body
-    trap
+    v61:8 = ALoad(AllocaId(22), 0, 8) ()
+    AStore(AllocaId(35), 0, 8) (v61)
+    v62:8 = ALoad(AllocaId(22), 8, 8) ()
+    AStore(AllocaId(35), 8, 8) (v62)
+    v63:8 = ALoad(AllocaId(22), 16, 8) ()
+    AStore(AllocaId(35), 16, 8) (v63)
+    v64:8 = ALoad(AllocaId(22), 24, 8) ()
+    AStore(AllocaId(35), 24, 8) (v64)
+    v65:8 = ALoad(AllocaId(22), 48, 8) ()
+    v66:8 = Bin(And, 8) (v65, 0xff)
+    v67:8 = Bin(Shl, 8) (v66, 0x38)
+    v68:8 = ALoad(AllocaId(22), 56, 8) ()
+    v69:8 = Bin(Or, 8) (v67, v68)
+    v70:8 = Bin(Xor, 8) (v64, v69)
+    AStore(AllocaId(35), 24, 8) (v70)
+    v71:8 = AllocaAddr(AllocaId(35), 0) ()
+    v74:8 = Bin(Add, 8) (v61, v63)
+    AStore(AllocaId(35), 0, 8) (v74)
+    v77:8 = Bin(Add, 8) (v62, v70)
+    AStore(AllocaId(35), 8, 8) (v77)
+    v78:8 = Bin(Shl, 8) (v63, 0xd)
+    v79:8 = Bin(ShrU, 8) (v63, 0x33)
+    v80:8 = Bin(Or, 8) (v78, v79)
+    AStore(AllocaId(35), 16, 8) (v80)
+    v81:8 = Bin(Xor, 8) (v80, v74)
+    AStore(AllocaId(35), 16, 8) (v81)
+    v82:8 = Bin(Shl, 8) (v70, 0x10)
+    v83:8 = Bin(ShrU, 8) (v70, 0x30)
+    v84:8 = Bin(Or, 8) (v82, v83)
+    AStore(AllocaId(35), 24, 8) (v84)
+    v85:8 = Bin(Xor, 8) (v84, v77)
+    AStore(AllocaId(35), 24, 8) (v85)
+    v86:8 = Bin(Shl, 8) (v74, 0x20)
+    v87:8 = Bin(ShrU, 8) (v74, 0x20)
+    v88:8 = Bin(Or, 8) (v86, v87)
+    AStore(AllocaId(35), 0, 8) (v88)
+    v89:8 = Bin(Add, 8) (v77, v81)
+    AStore(AllocaId(35), 8, 8) (v89)
+    v90:8 = Bin(Add, 8) (v88, v85)
+    AStore(AllocaId(35), 0, 8) (v90)
+    v91:8 = Bin(Shl, 8) (v81, 0x11)
+    v92:8 = Bin(ShrU, 8) (v81, 0x2f)
+    v93:8 = Bin(Or, 8) (v91, v92)
+    AStore(AllocaId(35), 16, 8) (v93)
+    v94:8 = Bin(Xor, 8) (v93, v89)
+    AStore(AllocaId(35), 16, 8) (v94)
+    v95:8 = Bin(Shl, 8) (v85, 0x15)
+    v96:8 = Bin(ShrU, 8) (v85, 0x2b)
+    v97:8 = Bin(Or, 8) (v95, v96)
+    AStore(AllocaId(35), 24, 8) (v97)
+    v98:8 = Bin(Xor, 8) (v97, v90)
+    AStore(AllocaId(35), 24, 8) (v98)
+    v99:8 = Bin(Shl, 8) (v89, 0x20)
+    v100:8 = Bin(ShrU, 8) (v89, 0x20)
+    v101:8 = Bin(Or, 8) (v99, v100)
+    AStore(AllocaId(35), 8, 8) (v101)
+    v103:8 = Bin(Xor, 8) (v90, v69)
+    AStore(AllocaId(35), 0, 8) (v103)
+    v105:8 = Bin(Xor, 8) (v101, 0xff)
+    AStore(AllocaId(35), 8, 8) (v105)
+    Call(Call { target: image.fn188, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v71)
+    invoke -> b42() unwind b47()
 b33(): ; Body
     trap
 b34(): ; Body
@@ -7986,30 +7972,34 @@ b38(): ; Body
 b39(): ; Body
     trap
 b40(): ; Body
-    v98:8 = ALoad(AllocaId(35), 0, 8) ()
-    v99:8 = ALoad(AllocaId(35), 16, 8) ()
-    v100:8 = Bin(Xor, 8) (v98, v99)
-    v101:8 = ALoad(AllocaId(35), 8, 8) ()
-    v102:8 = Bin(Xor, 8) (v100, v101)
-    v103:8 = ALoad(AllocaId(35), 24, 8) ()
-    v104:8 = Bin(Xor, 8) (v102, v103)
-    jmp b2()
+    trap
 b41(): ; Body
     trap
 b42(): ; Body
-    trap
+    v106:8 = ALoad(AllocaId(35), 0, 8) ()
+    v107:8 = ALoad(AllocaId(35), 16, 8) ()
+    v108:8 = Bin(Xor, 8) (v106, v107)
+    v109:8 = ALoad(AllocaId(35), 8, 8) ()
+    v110:8 = Bin(Xor, 8) (v108, v109)
+    v111:8 = ALoad(AllocaId(35), 24, 8) ()
+    v112:8 = Bin(Xor, 8) (v110, v111)
+    jmp b2()
 b43(): ; Body
     trap
-b44(): ; Stub cold
-    v107:8 = LandingPad ()
-    jmp b46(v107)
-b45(): ; Stub cold
-    v108:8 = LandingPad ()
-    jmp b46(v108)
-b46(v109:8): ; Body cold
-    hcall resume [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None])] ins [0] outs [] (v109)
+b44(): ; Body
     trap
-b47(): ; Body
+b45(): ; Body
+    trap
+b46(): ; Stub cold
+    v115:8 = LandingPad ()
+    jmp b48(v115)
+b47(): ; Stub cold
+    v116:8 = LandingPad ()
+    jmp b48(v116)
+b48(v117:8): ; Body cold
+    hcall resume [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None])] ins [0] outs [] (v117)
+    trap
+b49(): ; Body
     trap
 
 fn hashbrown::raw::RawTableInner::drop_elements::<(std::string::String, usize)>
@@ -8183,7 +8173,7 @@ b16(): ; Body
 b17(): ; Body
     jmp b7(v53)
 b18(v35:8): ; Body head 4
-    Call(Call { target: image.sym29, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v35)
+    Call(Call { target: image.sym26, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v35)
     invoke -> b34() unwind b38()
 b19(): ; Body
     trap
@@ -8219,7 +8209,7 @@ b32(): ; Body
 b33(): ; Body
     trap
 b34(): ; Body
-    Call(Call { target: image.sym30, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v35)
+    Call(Call { target: image.sym27, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v35)
     jmp b4()
 b35(): ; Body
     trap
@@ -8233,7 +8223,7 @@ b38(): ; Stub cold
 b39(): ; Body
     trap
 b40(): ; Body cold
-    Call(Call { target: image.sym30, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: true } }) (v35)
+    Call(Call { target: image.sym27, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: true } }) (v35)
     invoke -> b42() unwind b45()
 b41(): ; Body
     trap
@@ -8248,7 +8238,7 @@ b45(): ; Stub cold
     v44:8 = LandingPad ()
     jmp b46()
 b46(): ; Body cold
-    Call(Call { target: image.sym19, regs: [], parts: [], site: None }) ()
+    Call(Call { target: image.sym16, regs: [], parts: [], site: None }) ()
     trap
 b47(): ; Body
     trap
@@ -8581,7 +8571,7 @@ b1(v15:8, v16:8, v29:1, v109:8, v113:8, v122:8): ; Body head 0
     AStore(AllocaId(133), 0, 8) (0x0)
     AStore(AllocaId(133), 8, 8) (0x0)
     v217:8 = AllocaAddr(AllocaId(133), 0) ()
-    v219:8 = RefAddr(image.k952, false) ()
+    v219:8 = RefAddr(image.k696, false) ()
     br Eq.w8 v21, 0x0 ? b85() : b66()
 b2(v24:2, v68:8, v71:8, v75:8, v77:8, v120:8, v134:1): ; Body head 1
     br Eq.w2 v24, 0x0 ? b10() : b3()
@@ -8857,8 +8847,8 @@ b83(): ; Body
 b84(): ; Body
     trap
 b85(): ; Body cold
-    v229:8 = RefAddr(image.k4563, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v229, 0x237, 0x0, v219)
+    v229:8 = RefAddr(image.k3619, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v229, 0x237, 0x0, v219)
     trap
 b86(): ; Body
     trap
@@ -9051,7 +9041,7 @@ b1(v8:8): ; Body head 0
     AStore(AllocaId(75), 0, 8) (0x0)
     AStore(AllocaId(75), 8, 8) (0x0)
     v106:8 = AllocaAddr(AllocaId(75), 0) ()
-    v108:8 = RefAddr(image.k952, false) ()
+    v108:8 = RefAddr(image.k696, false) ()
     br Eq.w8 v12, 0x0 ? b65() : b46()
 b2(v14:8, v30:8, v32:8): ; Body head 1
     br Eq.w8 v14, 0x1 ? b6() : b3()
@@ -9245,8 +9235,8 @@ b63(): ; Body
 b64(): ; Body
     trap
 b65(): ; Body cold
-    v118:8 = RefAddr(image.k4563, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v118, 0x237, 0x0, v108)
+    v118:8 = RefAddr(image.k3619, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v118, 0x237, 0x0, v108)
     trap
 b66(): ; Body
     trap
@@ -9775,7 +9765,7 @@ b9(v858:2, v859:2, v860:2, v861:1, v862:1, v863:2, v864:2, v865:2, v866:1, v867:
 b10(): ; Body head 4 cold
     v63:8 = AllocaAddr(AllocaId(32), 0) ()
     v452:8 = AllocaAddr(AllocaId(32), 24) ()
-    Call(Call { target: image.fn86.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: Pad { catch: true } }) (v63, v452)
+    Call(Call { target: image.fn71.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: Pad { catch: true } }) (v63, v452)
     invoke -> b141() unwind b33()
 b11(): ; Body
     trap
@@ -10017,7 +10007,7 @@ b50(): ; Body
     v291:8 = ALoad(AllocaId(32), 16, 8) ()
     v292:8 = Bin(Add, 8) (v288, 0x1)
     v293:8 = AllocaAddr(AllocaId(83), 0) ()
-    Call(Call { target: image.fn125.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: Continue }) (v293, v290, v291, v292)
+    Call(Call { target: image.fn104.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: Continue }) (v293, v290, v291, v292)
     v294:8 = ALoad(AllocaId(83), 0, 8) ()
     v295:8 = ALoad(AllocaId(83), 8, 8) ()
     v296:8 = ALoad(AllocaId(83), 16, 8) ()
@@ -10032,7 +10022,7 @@ b50(): ; Body
 b51(): ; Body
     trap
 b52(): ; Body
-    Call(Call { target: image.sym57, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: None }) (v299, v295, v294)
+    Call(Call { target: image.sym42, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: None }) (v299, v295, v294)
     jmp b9(0xffff, 0xffff, 0xffff, 0xff, 0xff, 0x0, 0x0, 0x0, 0x0, 0x0)
 b53(): ; Body
     trap
@@ -10057,7 +10047,7 @@ b61(): ; Body
     AStore(AllocaId(172), 0, 8) (0x0)
     AStore(AllocaId(172), 8, 8) (0x0)
     v311:8 = AllocaAddr(AllocaId(172), 0) ()
-    v313:8 = RefAddr(image.k952, false) ()
+    v313:8 = RefAddr(image.k696, false) ()
     br Eq.w8 v309, 0x0 ? b93() : b74()
 b62(): ; Body
     trap
@@ -10147,8 +10137,8 @@ b91(): ; Body
 b92(): ; Body
     trap
 b93(): ; Body cold
-    v323:8 = RefAddr(image.k4563, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v323, 0x237, 0x0, v313)
+    v323:8 = RefAddr(image.k3619, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v323, 0x237, 0x0, v313)
     trap
 b94(): ; Body
     trap
@@ -10379,7 +10369,7 @@ b141(): ; Body cold
     hcall resume [(Fp, [None, None]), (Imm(4294967048), [Some(Scratch(0)), None])] ins [0] outs [] (v23)
     trap
 
-fn hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>>::rustc_entry
+fn hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry
 a0: $-192, 8 bytes, Promoted
 a1: $-184, 8 bytes, Promoted
 a2: $-176, 8 bytes, Promoted
@@ -10430,7 +10420,7 @@ b2(): ; Body head 0
     br Eq.w8 v28, 0x0 ? b4() : b3()
 b3(): ; Body
     v14:8 = AllocaAddr(AllocaId(14), 0) ()
-    Call(Call { target: image.sym29, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v14)
+    Call(Call { target: image.sym26, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v14)
     invoke -> b27() unwind b31()
 b4(): ; Body
     Call(Call { target: fn2.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: false } }) (v1, 0x1, v6)
@@ -10446,7 +10436,7 @@ b6(v19:8, v20:8, v21:8, v22:8, v23:8): ; Body head 1
     ret 0x8 (v0)
 b7(): ; Body head 2 cold
     v24:8 = AllocaAddr(AllocaId(14), 0) ()
-    Call(Call { target: image.fn51.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: true } }) (v24)
+    Call(Call { target: image.fn45.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: true } }) (v24)
     invoke -> b43() unwind b21()
 b8(): ; Body
     trap
@@ -10498,7 +10488,7 @@ b26(): ; Body
     trap
 b27(): ; Body
     v37:8 = AllocaAddr(AllocaId(14), 0) ()
-    Call(Call { target: image.sym30, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v37)
+    Call(Call { target: image.sym27, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v37)
     jmp b6(0xffffffffffffffff, v28, v1, undef, undef)
 b28(): ; Body
     trap
@@ -10513,7 +10503,7 @@ b32(): ; Body
     trap
 b33(): ; Body cold
     v38:8 = AllocaAddr(AllocaId(14), 0) ()
-    Call(Call { target: image.sym30, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: true } }) (v38)
+    Call(Call { target: image.sym27, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: true } }) (v38)
     invoke -> b35() unwind b38()
 b34(): ; Body
     trap
@@ -10540,7 +10530,7 @@ b43(): ; Body cold
     hcall resume [(Fp, [None, None]), (Imm(4294967208), [Some(Scratch(0)), None])] ins [0] outs [] (v34)
     trap
 
-fn hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::RandomState>>::rustc_entry
+fn hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry
 a0: $-120, 8 bytes, Promoted
 a1: $-112, 8 bytes, Promoted
 a2: $-104, 8 bytes, Promoted
@@ -10610,122 +10600,122 @@ b18(): ; Stub cold
     jmp b12(v21)
 
 fn main
-a0: $-1376, 8 bytes, Promoted
-a1: $-1368, 40 bytes, Memory, pinned, escaped
-a2: $-1328, 8 bytes, Promoted
-a3: $-1320, 8 bytes, Promoted
-a4: $-1312, 8 bytes, Promoted
-a5: $-1304, 8 bytes, Promoted
-a6: $-1296, 8 bytes, Promoted
-a7: $-1288, 8 bytes, Promoted
-a8: $-1280, 8 bytes, Promoted
-a9: $-1272, 8 bytes, Promoted
-a10: $-1264, 8 bytes, Promoted
-a11: $-1256, 8 bytes, Promoted
-a12: $-1248, 16 bytes, Promoted, escaped
-a13: $-1232, 16 bytes, Promoted, escaped
-a14: $-1216, 16 bytes, Promoted, escaped
-a15: $-1200, 16 bytes, Promoted, escaped
-a16: $-1184, 16 bytes, Promoted, escaped
-a17: $-1168, 16 bytes, Promoted, escaped
-a18: $-1152, 96 bytes, Memory, escaped
-a19: $-1056, 8 bytes, Promoted
-a20: $-1048, 8 bytes, Promoted
-a21: $-1040, 8 bytes, Promoted
-a22: $-1032, 8 bytes, Promoted
-a23: $-1024, 8 bytes, Promoted
-a24: $-1016, 8 bytes, Memory, escaped
-a25: $-1008, 8 bytes, Promoted
-a26: $-1000, 8 bytes, Promoted
-a27: $-992, 8 bytes, Memory, escaped
-a28: $-984, 8 bytes, Promoted
-a29: $-976, 8 bytes, Promoted
-a30: $-968, 8 bytes, Promoted
-a31: $-960, 8 bytes, Promoted
-a32: $-952, 8 bytes, Promoted
-a33: $-944, 8 bytes, Promoted
-a34: $-936, 8 bytes, Promoted
-a35: $-928, 8 bytes, Promoted
-a36: $-920, 8 bytes, Promoted
-a37: $-912, 8 bytes, Promoted
-a38: $-904, 1 bytes, Promoted
-a39: $-896, 8 bytes, Promoted
-a40: $-888, 8 bytes, Promoted
-a41: $-880, 16 bytes, Memory, pinned, escaped
-a42: $-864, 16 bytes, Memory, pinned, escaped
-a43: $-845, 1 bytes, Promoted
-a44: $-844, 4 bytes, Memory, pinned, escaped
-a45: $-840, 8 bytes, Promoted
-a46: $-832, 8 bytes, Promoted
-a47: $-824, 8 bytes, Promoted
-a48: $-816, 8 bytes, Promoted
-a49: $-808, 24 bytes, Memory, pinned, escaped
-a50: $-784, 24 bytes, Memory, pinned, escaped
-a51: $-760, 8 bytes, Promoted
-a52: $-752, 40 bytes, Memory, pinned, escaped
-a53: $-712, 8 bytes, Promoted
-a54: $-700, 4 bytes, Promoted
-a55: $-696, 8 bytes, Promoted
-a56: $-688, 8 bytes, Promoted
-a57: $-680, 4 bytes, Promoted
-a58: $-676, 4 bytes, Promoted
-a59: $-672, 8 bytes, Memory, pinned, escaped
-a60: $-664, 4 bytes, Promoted
-a61: $-660, 4 bytes, Promoted
-a62: $-656, 8 bytes, Promoted
-a63: $-648, 48 bytes, Memory, pinned, escaped
-a64: $-600, 8 bytes, Promoted
-a65: $-592, 40 bytes, Memory, pinned, escaped
-a66: $-552, 8 bytes, Memory, escaped
-a67: $-544, 8 bytes, Promoted
-a68: $-536, 8 bytes, Promoted
-a69: $-528, 8 bytes, Memory, escaped
-a70: $-520, 8 bytes, Promoted
-a71: $-512, 8 bytes, Promoted
-a72: $-504, 8 bytes, Promoted
-a73: $-496, 8 bytes, Promoted
-a74: $-488, 1 bytes, Promoted
-a75: $-480, 8 bytes, Promoted
-a76: $-464, 8 bytes, Promoted
-a77: $-456, 8 bytes, Promoted
-a78: $-448, 8 bytes, Promoted
-a79: $-440, 8 bytes, Memory, pinned, escaped
-a80: $-432, 8 bytes, Promoted
-a81: $-424, 8 bytes, Promoted
-a82: $-416, 8 bytes, Promoted
-a83: $-408, 8 bytes, Promoted
-a84: $-400, 32 bytes, Memory, pinned, escaped
-a85: $-364, 4 bytes, Promoted
-a86: $-360, 8 bytes, Promoted
-a87: $-352, 8 bytes, Promoted
-a88: $-344, 8 bytes, Promoted
-a89: $-336, 32 bytes, Memory, pinned, escaped
-a90: $-304, 32 bytes, Memory, pinned, escaped
-a91: $-272, 8 bytes, Memory, escaped
-a92: $-264, 8 bytes, Memory, escaped
-a93: $-256, 8 bytes, Promoted
-a94: $-248, 1 bytes, Promoted
-a95: $-236, 4 bytes, Promoted
-a96: $-232, 8 bytes, Promoted
-a97: $-224, 8 bytes, Promoted
-a98: $-216, 8 bytes, Promoted
-a99: $-208, 24 bytes, Memory, pinned, escaped
-a100: $-184, 8 bytes, Promoted
-a101: $-176, 8 bytes, Promoted
-a102: $-168, 8 bytes, Promoted
-a103: $-160, 8 bytes, Promoted
-a104: $-152, 8 bytes, Promoted
-a105: $-144, 8 bytes, Promoted
-a106: $-136, 8 bytes, Promoted
-a107: $-128, 8 bytes, Promoted
-a108: $-120, 8 bytes, Promoted
-a109: $-112, 16 bytes, Memory, pinned, escaped
-a110: $-96, 8 bytes, Promoted
-a111: $-88, 8 bytes, Promoted
-a112: $-80, 8 bytes, Promoted
-a113: $-72, 8 bytes, Promoted
-a114: $-64, 8 bytes, Promoted
-a115: $-56, 48 bytes, Memory, pinned, escaped
+a0: $-1344, 8 bytes, Promoted
+a1: $-1336, 40 bytes, Memory, pinned, escaped
+a2: $-1296, 8 bytes, Promoted
+a3: $-1288, 8 bytes, Promoted
+a4: $-1280, 8 bytes, Promoted
+a5: $-1272, 8 bytes, Promoted
+a6: $-1264, 8 bytes, Promoted
+a7: $-1256, 8 bytes, Promoted
+a8: $-1248, 8 bytes, Promoted
+a9: $-1240, 8 bytes, Promoted
+a10: $-1232, 8 bytes, Promoted
+a11: $-1224, 8 bytes, Promoted
+a12: $-1216, 16 bytes, Promoted, escaped
+a13: $-1200, 16 bytes, Promoted, escaped
+a14: $-1184, 16 bytes, Promoted, escaped
+a15: $-1168, 16 bytes, Promoted, escaped
+a16: $-1152, 16 bytes, Promoted, escaped
+a17: $-1136, 16 bytes, Promoted, escaped
+a18: $-1120, 96 bytes, Memory, escaped
+a19: $-1024, 8 bytes, Promoted
+a20: $-1016, 8 bytes, Promoted
+a21: $-1008, 8 bytes, Promoted
+a22: $-1000, 8 bytes, Promoted
+a23: $-992, 8 bytes, Promoted
+a24: $-984, 8 bytes, Memory, escaped
+a25: $-976, 8 bytes, Promoted
+a26: $-968, 8 bytes, Promoted
+a27: $-960, 8 bytes, Memory, escaped
+a28: $-952, 8 bytes, Promoted
+a29: $-944, 8 bytes, Promoted
+a30: $-936, 8 bytes, Promoted
+a31: $-928, 8 bytes, Promoted
+a32: $-920, 8 bytes, Promoted
+a33: $-912, 8 bytes, Promoted
+a34: $-904, 8 bytes, Promoted
+a35: $-896, 8 bytes, Promoted
+a36: $-888, 8 bytes, Promoted
+a37: $-880, 8 bytes, Promoted
+a38: $-872, 1 bytes, Promoted
+a39: $-864, 8 bytes, Promoted
+a40: $-856, 8 bytes, Promoted
+a41: $-848, 16 bytes, Memory, pinned, escaped
+a42: $-832, 16 bytes, Memory, pinned, escaped
+a43: $-813, 1 bytes, Promoted
+a44: $-812, 4 bytes, Memory, pinned, escaped
+a45: $-808, 8 bytes, Promoted
+a46: $-800, 8 bytes, Promoted
+a47: $-792, 8 bytes, Promoted
+a48: $-784, 8 bytes, Promoted
+a49: $-776, 24 bytes, Memory, pinned, escaped
+a50: $-752, 24 bytes, Memory, pinned, escaped
+a51: $-728, 8 bytes, Promoted
+a52: $-720, 40 bytes, Memory, pinned, escaped
+a53: $-680, 8 bytes, Promoted
+a54: $-668, 4 bytes, Promoted
+a55: $-664, 8 bytes, Promoted
+a56: $-656, 8 bytes, Promoted
+a57: $-648, 4 bytes, Promoted
+a58: $-644, 4 bytes, Promoted
+a59: $-640, 8 bytes, Memory, pinned, escaped
+a60: $-632, 4 bytes, Promoted
+a61: $-628, 4 bytes, Promoted
+a62: $-624, 8 bytes, Promoted
+a63: $-616, 32 bytes, Memory, pinned, escaped
+a64: $-584, 8 bytes, Promoted
+a65: $-576, 40 bytes, Memory, pinned, escaped
+a66: $-536, 8 bytes, Memory, escaped
+a67: $-528, 8 bytes, Promoted
+a68: $-520, 8 bytes, Promoted
+a69: $-512, 8 bytes, Memory, escaped
+a70: $-504, 8 bytes, Promoted
+a71: $-496, 8 bytes, Promoted
+a72: $-488, 8 bytes, Promoted
+a73: $-480, 8 bytes, Promoted
+a74: $-472, 1 bytes, Promoted
+a75: $-464, 8 bytes, Promoted
+a76: $-448, 8 bytes, Promoted
+a77: $-440, 8 bytes, Promoted
+a78: $-432, 8 bytes, Promoted
+a79: $-424, 8 bytes, Memory, pinned, escaped
+a80: $-416, 8 bytes, Promoted
+a81: $-408, 8 bytes, Promoted
+a82: $-400, 8 bytes, Promoted
+a83: $-392, 8 bytes, Promoted
+a84: $-384, 32 bytes, Memory, pinned, escaped
+a85: $-348, 4 bytes, Promoted
+a86: $-344, 8 bytes, Promoted
+a87: $-336, 8 bytes, Promoted
+a88: $-328, 8 bytes, Promoted
+a89: $-320, 32 bytes, Memory, pinned, escaped
+a90: $-288, 32 bytes, Memory, pinned, escaped
+a91: $-256, 8 bytes, Memory, escaped
+a92: $-248, 8 bytes, Memory, escaped
+a93: $-240, 8 bytes, Promoted
+a94: $-232, 1 bytes, Promoted
+a95: $-220, 4 bytes, Promoted
+a96: $-216, 8 bytes, Promoted
+a97: $-208, 8 bytes, Promoted
+a98: $-200, 8 bytes, Promoted
+a99: $-192, 24 bytes, Memory, pinned, escaped
+a100: $-168, 8 bytes, Promoted
+a101: $-160, 8 bytes, Promoted
+a102: $-152, 8 bytes, Promoted
+a103: $-144, 8 bytes, Promoted
+a104: $-136, 8 bytes, Promoted
+a105: $-128, 8 bytes, Promoted
+a106: $-120, 8 bytes, Promoted
+a107: $-112, 8 bytes, Promoted
+a108: $-104, 8 bytes, Promoted
+a109: $-96, 16 bytes, Memory, pinned, escaped
+a110: $-80, 8 bytes, Promoted
+a111: $-72, 8 bytes, Promoted
+a112: $-64, 8 bytes, Promoted
+a113: $-56, 8 bytes, Promoted
+a114: $-48, 8 bytes, Promoted
+a115: $-40, 32 bytes, Memory, pinned, escaped
 a116: $-8, 8 bytes, Promoted
 a117: $-240, 24 bytes, Memory, escaped, inlined
 a118: $-216, 8 bytes, Promoted, inlined
@@ -11022,158 +11012,140 @@ a408: $-16, 8 bytes, Promoted, inlined
 a409: $-8, 8 bytes, Promoted, inlined
 a410: $-16, 8 bytes, Promoted, inlined
 a411: $-8, 8 bytes, Promoted, inlined
-a412: $-80, 8 bytes, Promoted, inlined
-a413: $-72, 8 bytes, Promoted, inlined
-a414: $-64, 8 bytes, Promoted, inlined
-a415: $-56, 8 bytes, Promoted, inlined
-a416: $-48, 8 bytes, Promoted, inlined
-a417: $-40, 8 bytes, Promoted, inlined
-a418: $-32, 8 bytes, Promoted, inlined
-a419: $-24, 8 bytes, Promoted, inlined
-a420: $-16, 8 bytes, Promoted, inlined
-a421: $-8, 8 bytes, Promoted, inlined
-a422: $-16, 8 bytes, Promoted, inlined
-a423: $-8, 8 bytes, Promoted, inlined
-a424: $-16, 8 bytes, Promoted, inlined
-a425: $-8, 8 bytes, Promoted, inlined
-a426: $-80, 8 bytes, Promoted, inlined
-a427: $-72, 8 bytes, Promoted, inlined
-a428: $-64, 8 bytes, Promoted, inlined
-a429: $-56, 8 bytes, Promoted, inlined
-a430: $-48, 8 bytes, Promoted, inlined
-a431: $-40, 8 bytes, Promoted, inlined
-a432: $-32, 8 bytes, Promoted, inlined
-a433: $-24, 8 bytes, Promoted, inlined
-a434: $-16, 8 bytes, Promoted, inlined
-a435: $-8, 8 bytes, Promoted, inlined
-a436: $-80, 8 bytes, Promoted, inlined
-a437: $-72, 8 bytes, Promoted, inlined
-a438: $-64, 8 bytes, Promoted, inlined
-a439: $-56, 8 bytes, Promoted, inlined
-a440: $-48, 8 bytes, Promoted, inlined
-a441: $-40, 8 bytes, Promoted, inlined
-a442: $-32, 8 bytes, Promoted, inlined
-a443: $-24, 8 bytes, Promoted, inlined
-a444: $-16, 8 bytes, Promoted, inlined
-a445: $-8, 8 bytes, Promoted, inlined
-a446: $-80, 8 bytes, Promoted, inlined
-a447: $-72, 8 bytes, Promoted, inlined
-a448: $-64, 8 bytes, Promoted, inlined
-a449: $-56, 8 bytes, Promoted, inlined
-a450: $-48, 8 bytes, Promoted, inlined
-a451: $-40, 8 bytes, Promoted, inlined
-a452: $-32, 8 bytes, Promoted, inlined
-a453: $-24, 8 bytes, Promoted, inlined
-a454: $-16, 8 bytes, Promoted, inlined
-a455: $-8, 8 bytes, Promoted, inlined
-a456: $-80, 8 bytes, Promoted, inlined
-a457: $-72, 8 bytes, Promoted, inlined
-a458: $-64, 8 bytes, Promoted, inlined
-a459: $-56, 8 bytes, Promoted, inlined
-a460: $-48, 8 bytes, Promoted, inlined
-a461: $-40, 8 bytes, Promoted, inlined
-a462: $-32, 8 bytes, Promoted, inlined
-a463: $-24, 8 bytes, Promoted, inlined
-a464: $-16, 8 bytes, Promoted, inlined
-a465: $-8, 8 bytes, Promoted, inlined
-a466: $-64, 8 bytes, Promoted, inlined
-a467: $-56, 8 bytes, Promoted, inlined
-a468: $-48, 8 bytes, Promoted, inlined
-a469: $-40, 8 bytes, Promoted, inlined
-a470: $-32, 32 bytes, Memory, escaped, inlined
-a471: $-16, 8 bytes, Promoted, inlined
-a472: $-8, 8 bytes, Promoted, inlined
-a473: $-16, 8 bytes, Promoted, inlined
-a474: $-8, 8 bytes, Promoted, inlined
-a475: $-16, 8 bytes, Promoted, inlined
-a476: $-8, 8 bytes, Promoted, inlined
-a477: $-40, 8 bytes, Promoted, inlined
-a478: $-32, 8 bytes, Promoted, inlined
-a479: $-24, 8 bytes, Promoted, inlined
-a480: $-16, 8 bytes, Promoted, inlined
-a481: $-8, 8 bytes, Promoted, inlined
-a482: $-32, 8 bytes, Promoted, inlined
-a483: $-24, 8 bytes, Promoted, inlined
+a412: $-104, 8 bytes, Promoted, inlined
+a413: $-96, 8 bytes, Promoted, inlined
+a414: $-88, 8 bytes, Promoted, inlined
+a415: $-80, 8 bytes, Promoted, inlined
+a416: $-72, 8 bytes, Promoted, inlined
+a417: $-64, 8 bytes, Promoted, inlined
+a418: $-56, 8 bytes, Promoted, inlined
+a419: $-48, 8 bytes, Promoted, inlined
+a420: $-40, 8 bytes, Promoted, inlined
+a421: $-32, 8 bytes, Promoted, inlined
+a422: $-24, 8 bytes, Promoted, inlined
+a423: $-16, 8 bytes, Promoted, inlined
+a424: $-8, 8 bytes, Promoted, inlined
+a425: $-80, 8 bytes, Promoted, inlined
+a426: $-72, 8 bytes, Promoted, inlined
+a427: $-64, 8 bytes, Promoted, inlined
+a428: $-56, 8 bytes, Promoted, inlined
+a429: $-48, 8 bytes, Promoted, inlined
+a430: $-40, 8 bytes, Promoted, inlined
+a431: $-32, 8 bytes, Promoted, inlined
+a432: $-24, 8 bytes, Promoted, inlined
+a433: $-16, 8 bytes, Promoted, inlined
+a434: $-8, 8 bytes, Promoted, inlined
+a435: $-16, 8 bytes, Promoted, inlined
+a436: $-8, 8 bytes, Promoted, inlined
+a437: $-16, 8 bytes, Promoted, inlined
+a438: $-8, 8 bytes, Promoted, inlined
+a439: $-80, 8 bytes, Promoted, inlined
+a440: $-72, 8 bytes, Promoted, inlined
+a441: $-64, 8 bytes, Promoted, inlined
+a442: $-56, 8 bytes, Promoted, inlined
+a443: $-48, 8 bytes, Promoted, inlined
+a444: $-40, 8 bytes, Promoted, inlined
+a445: $-32, 8 bytes, Promoted, inlined
+a446: $-24, 8 bytes, Promoted, inlined
+a447: $-16, 8 bytes, Promoted, inlined
+a448: $-8, 8 bytes, Promoted, inlined
+a449: $-80, 8 bytes, Promoted, inlined
+a450: $-72, 8 bytes, Promoted, inlined
+a451: $-64, 8 bytes, Promoted, inlined
+a452: $-56, 8 bytes, Promoted, inlined
+a453: $-48, 8 bytes, Promoted, inlined
+a454: $-40, 8 bytes, Promoted, inlined
+a455: $-32, 8 bytes, Promoted, inlined
+a456: $-24, 8 bytes, Promoted, inlined
+a457: $-16, 8 bytes, Promoted, inlined
+a458: $-8, 8 bytes, Promoted, inlined
+a459: $-80, 8 bytes, Promoted, inlined
+a460: $-72, 8 bytes, Promoted, inlined
+a461: $-64, 8 bytes, Promoted, inlined
+a462: $-56, 8 bytes, Promoted, inlined
+a463: $-48, 8 bytes, Promoted, inlined
+a464: $-40, 8 bytes, Promoted, inlined
+a465: $-32, 8 bytes, Promoted, inlined
+a466: $-24, 8 bytes, Promoted, inlined
+a467: $-16, 8 bytes, Promoted, inlined
+a468: $-8, 8 bytes, Promoted, inlined
+a469: $-80, 8 bytes, Promoted, inlined
+a470: $-72, 8 bytes, Promoted, inlined
+a471: $-64, 8 bytes, Promoted, inlined
+a472: $-56, 8 bytes, Promoted, inlined
+a473: $-48, 8 bytes, Promoted, inlined
+a474: $-40, 8 bytes, Promoted, inlined
+a475: $-32, 8 bytes, Promoted, inlined
+a476: $-24, 8 bytes, Promoted, inlined
+a477: $-16, 8 bytes, Promoted, inlined
+a478: $-8, 8 bytes, Promoted, inlined
+a479: $-64, 8 bytes, Promoted, inlined
+a480: $-56, 8 bytes, Promoted, inlined
+a481: $-48, 8 bytes, Promoted, inlined
+a482: $-40, 8 bytes, Promoted, inlined
+a483: $-32, 32 bytes, Memory, escaped, inlined
 a484: $-16, 8 bytes, Promoted, inlined
 a485: $-8, 8 bytes, Promoted, inlined
-a486: $-160, 8 bytes, Promoted, inlined
-a487: $-152, 8 bytes, Promoted, inlined
-a488: $-144, 8 bytes, Promoted, inlined
-a489: $-136, 8 bytes, Promoted, inlined
-a490: $-128, 8 bytes, Promoted, inlined
-a491: $-120, 8 bytes, Promoted, inlined
-a492: $-112, 8 bytes, Promoted, inlined
-a493: $-104, 8 bytes, Promoted, inlined
-a494: $-96, 8 bytes, Promoted, inlined
-a495: $-88, 8 bytes, Promoted, inlined
-a496: $-80, 8 bytes, Promoted, inlined
-a497: $-72, 8 bytes, Promoted, inlined
-a498: $-64, 8 bytes, Promoted, inlined
-a499: $-56, 8 bytes, Promoted, inlined
-a500: $-48, 8 bytes, Promoted, inlined
-a501: $-40, 8 bytes, Promoted, inlined
-a502: $-32, 8 bytes, Promoted, inlined
-a503: $-24, 8 bytes, Promoted, inlined
-a504: $-16, 8 bytes, Promoted, inlined
-a505: $-8, 8 bytes, Promoted, inlined
-a506: $-64, 8 bytes, Promoted, inlined
-a507: $-56, 24 bytes, Promoted, escaped, inlined
+a486: $-16, 8 bytes, Promoted, inlined
+a487: $-8, 8 bytes, Promoted, inlined
+a488: $-16, 8 bytes, Promoted, inlined
+a489: $-8, 8 bytes, Promoted, inlined
+a490: $-40, 8 bytes, Promoted, inlined
+a491: $-32, 8 bytes, Promoted, inlined
+a492: $-24, 8 bytes, Promoted, inlined
+a493: $-16, 8 bytes, Promoted, inlined
+a494: $-8, 8 bytes, Promoted, inlined
+a495: $-32, 8 bytes, Promoted, inlined
+a496: $-24, 8 bytes, Promoted, inlined
+a497: $-16, 8 bytes, Promoted, inlined
+a498: $-8, 8 bytes, Promoted, inlined
+a499: $-104, 8 bytes, Promoted, inlined
+a500: $-96, 8 bytes, Promoted, inlined
+a501: $-88, 8 bytes, Promoted, inlined
+a502: $-80, 8 bytes, Promoted, inlined
+a503: $-72, 8 bytes, Promoted, inlined
+a504: $-64, 8 bytes, Promoted, inlined
+a505: $-56, 8 bytes, Promoted, inlined
+a506: $-48, 8 bytes, Promoted, inlined
+a507: $-40, 8 bytes, Promoted, inlined
 a508: $-32, 8 bytes, Promoted, inlined
 a509: $-24, 8 bytes, Promoted, inlined
 a510: $-16, 8 bytes, Promoted, inlined
 a511: $-8, 8 bytes, Promoted, inlined
-a512: $-120, 8 bytes, Promoted, inlined
-a513: $-112, 8 bytes, Promoted, inlined
-a514: $-104, 8 bytes, Promoted, inlined
-a515: $-96, 8 bytes, Promoted, inlined
-a516: $-88, 8 bytes, Promoted, inlined
-a517: $-80, 8 bytes, Promoted, inlined
-a518: $-72, 8 bytes, Promoted, inlined
-a519: $-64, 8 bytes, Promoted, inlined
-a520: $-56, 8 bytes, Promoted, inlined
-a521: $-41, 1 bytes, Promoted, inlined
-a522: $-40, 8 bytes, Promoted, inlined
-a523: $-32, 8 bytes, Promoted, inlined
-a524: $-24, 8 bytes, Promoted, inlined
+a512: $-16, 8 bytes, Promoted, inlined
+a513: $-8, 8 bytes, Promoted, inlined
+a514: $-16, 8 bytes, Promoted, inlined
+a515: $-8, 8 bytes, Promoted, inlined
+a516: $-16, 8 bytes, Promoted, inlined
+a517: $-8, 8 bytes, Promoted, inlined
+a518: $-16, 8 bytes, Promoted, inlined
+a519: $-8, 8 bytes, Promoted, inlined
+a520: $-40, 8 bytes, Promoted, inlined
+a521: $-32, 8 bytes, Promoted, inlined
+a522: $-24, 8 bytes, Promoted, inlined
+a523: $-16, 8 bytes, Promoted, inlined
+a524: $-8, 8 bytes, Promoted, inlined
 a525: $-16, 8 bytes, Promoted, inlined
 a526: $-8, 8 bytes, Promoted, inlined
-a527: $-72, 8 bytes, Promoted, inlined
-a528: $-64, 8 bytes, Promoted, inlined
-a529: $-56, 8 bytes, Promoted, inlined
-a530: $-48, 8 bytes, Promoted, inlined
+a527: $-16, 8 bytes, Promoted, inlined
+a528: $-8, 8 bytes, Promoted, inlined
+a529: $-16, 8 bytes, Promoted, inlined
+a530: $-8, 8 bytes, Promoted, inlined
 a531: $-40, 8 bytes, Promoted, inlined
 a532: $-32, 8 bytes, Promoted, inlined
 a533: $-24, 8 bytes, Promoted, inlined
 a534: $-16, 8 bytes, Promoted, inlined
 a535: $-8, 8 bytes, Promoted, inlined
-a536: $-16, 8 bytes, Promoted, inlined
-a537: $-8, 8 bytes, Promoted, inlined
-a538: $-16, 8 bytes, Promoted, inlined
-a539: $-8, 8 bytes, Promoted, inlined
-a540: $-16, 8 bytes, Promoted, inlined
-a541: $-8, 8 bytes, Promoted, inlined
-a542: $-16, 8 bytes, Promoted, inlined
-a543: $-8, 8 bytes, Promoted, inlined
-a544: $-40, 8 bytes, Promoted, inlined
-a545: $-32, 8 bytes, Promoted, inlined
-a546: $-24, 8 bytes, Promoted, inlined
-a547: $-16, 8 bytes, Promoted, inlined
-a548: $-8, 8 bytes, Promoted, inlined
-a549: $-16, 8 bytes, Promoted, inlined
-a550: $-8, 8 bytes, Promoted, inlined
-a551: $-16, 8 bytes, Promoted, inlined
-a552: $-8, 8 bytes, Promoted, inlined
-a553: $-16, 8 bytes, Promoted, inlined
-a554: $-8, 8 bytes, Promoted, inlined
-a555: $-40, 8 bytes, Promoted, inlined
-a556: $-32, 8 bytes, Promoted, inlined
-a557: $-24, 8 bytes, Promoted, inlined
-a558: $-16, 8 bytes, Promoted, inlined
-a559: $-8, 8 bytes, Promoted, inlined
 b0(): ; Entry
     AStore(AllocaId(1), 32, 8) (0x50910)
-    v436:8 = Call(Call { target: image.fn241.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (0x0)
-    invoke -> b315() unwind b323()
+    v437:8 = RefAddr(image.k368, false) ()
+    AStore(AllocaId(115), 0, 8) (v437)
+    AStore(AllocaId(115), 8, 8) (0x0)
+    AStore(AllocaId(115), 16, 8) (0x0)
+    AStore(AllocaId(115), 24, 8) (0x0)
+    AStore(AllocaId(109), 0, 8) (0x0)
+    AStore(AllocaId(109), 8, 8) (0x50910)
+    jmp b2(0x1)
 b1(): ; Body
     trap
 b2(v14:8): ; Body head 0
@@ -11191,7 +11163,7 @@ b4(): ; Body
     AStore(AllocaId(1), 36, 4) (0x2c)
     v39:8 = Bin(ShrU, 8) (v374, 0x2c)
     v363:8 = AllocaAddr(AllocaId(319), 0) ()
-    Call(Call { target: image.fn111.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: false } }) (v363, v31, v39)
+    Call(Call { target: image.fn92.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: false } }) (v363, v31, v39)
     invoke -> b242() unwind b93()
 b5(): ; Body
     trap
@@ -11205,9 +11177,9 @@ b8(): ; Body
     AStore(AllocaId(1), 36, 4) (0x14)
     AStore(AllocaId(1), 32, 8) (0x1)
     AStore(AllocaId(1), 32, 8) (0x2)
-    v421:8 = AllocaAddr(AllocaId(470), 0) ()
-    Call(Call { target: image.fn117.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: Pad { catch: false } }) (v421, 0x0, 0x100000, 0x2)
-    invoke -> b300() unwind b99()
+    v425:8 = AllocaAddr(AllocaId(483), 0) ()
+    Call(Call { target: image.fn96.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: Pad { catch: false } }) (v425, 0x0, 0x100000, 0x2)
+    invoke -> b304() unwind b99()
 b9(): ; Body
     trap
 b10(): ; Body
@@ -11257,11 +11229,11 @@ b26(): ; Body
 b27(): ; Body
     trap
 b28(): ; Body
-    v413:8 = ALoad(AllocaId(115), 24, 8) ()
-    AStore(AllocaId(69), 0, 8) (v413)
+    v417:8 = ALoad(AllocaId(115), 24, 8) ()
+    AStore(AllocaId(69), 0, 8) (v417)
     v106:8 = AllocaAddr(AllocaId(115), 0) ()
     Call(Call { target: image.fn4.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v106)
-    invoke -> b287() unwind b113()
+    invoke -> b291() unwind b113()
 b29(): ; Body
     trap
 b30(): ; Body
@@ -11347,20 +11319,20 @@ b47(): ; Body
     v210:8 = AllocaAddr(AllocaId(92), 0) ()
     v211:8 = AllocaAddr(AllocaId(91), 0) ()
     v212:8 = AllocaAddr(AllocaId(66), 0) ()
-    v420:8 = RefAddr(image.sym1, false) ()
-    v415:8 = RefAddr(image.sym3, false) ()
+    v424:8 = RefAddr(image.sym1, false) ()
+    v419:8 = RefAddr(image.sym3, false) ()
     AStore(AllocaId(18), 0, 8) (v209)
-    AStore(AllocaId(18), 8, 8) (v420)
+    AStore(AllocaId(18), 8, 8) (v424)
     AStore(AllocaId(18), 16, 8) (v210)
-    AStore(AllocaId(18), 24, 8) (v415)
+    AStore(AllocaId(18), 24, 8) (v419)
     AStore(AllocaId(18), 32, 8) (v211)
-    AStore(AllocaId(18), 40, 8) (v415)
+    AStore(AllocaId(18), 40, 8) (v419)
     AStore(AllocaId(18), 48, 8) (v204)
-    AStore(AllocaId(18), 56, 8) (v420)
+    AStore(AllocaId(18), 56, 8) (v424)
     AStore(AllocaId(18), 64, 8) (v212)
-    AStore(AllocaId(18), 72, 8) (v415)
+    AStore(AllocaId(18), 72, 8) (v419)
     AStore(AllocaId(18), 80, 8) (v208)
-    AStore(AllocaId(18), 88, 8) (v420)
+    AStore(AllocaId(18), 88, 8) (v424)
     v237:8 = RefAddr(k47, false) ()
     v238:8 = AllocaAddr(AllocaId(18), 0) ()
     Call(Call { target: sym49, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: Pad { catch: false } }) (v237, v238)
@@ -11416,15 +11388,15 @@ b69(): ; Body
 b70(): ; Body head 3 cold
     v248:8 = AllocaAddr(AllocaId(63), 0) ()
     AStore(AllocaId(1), 32, 8) (v248)
-    v467:8 = AllocaAddr(AllocaId(63), 32) ()
-    Call(Call { target: image.fn24.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: Pad { catch: true } }) (v248, v467, 0x20, 0x10)
-    invoke -> b342() unwind b163()
+    v442:8 = AllocaAddr(AllocaId(63), 32) ()
+    Call(Call { target: image.fn20.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: Pad { catch: true } }) (v248, v442, 0x20, 0x10)
+    invoke -> b329() unwind b163()
 b71(v254:8): ; Body head 4 cold
     v251:8 = AllocaAddr(AllocaId(115), 0) ()
     AStore(AllocaId(1), 32, 8) (v251)
-    v470:8 = AllocaAddr(AllocaId(115), 32) ()
-    Call(Call { target: image.fn25.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: Pad { catch: true } }) (v251, v470, 0x10, 0x10)
-    invoke -> b351() unwind b165()
+    v445:8 = AllocaAddr(AllocaId(115), 32) ()
+    Call(Call { target: image.fn21.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: Pad { catch: true } }) (v251, v445, 0x10, 0x10)
+    invoke -> b338() unwind b165()
 b72(): ; Body
     trap
 b73(): ; Body head 5 cold
@@ -11437,7 +11409,7 @@ b75(v257:8): ; Body cold
 b76(): ; Body
     trap
 b77(): ; Osr(0)
-    v58:8 = OsrLoad(-64, 8) ()
+    v58:8 = OsrLoad(-48, 8) ()
     jmp b2(v58)
 b78(): ; Osr(1)
     jmp b24()
@@ -11542,18 +11514,20 @@ b115(): ; Stub cold
     jmp b71(v110)
 b116(): ; Body
     AStore(AllocaId(66), 0, 8) (v119)
-    v121:8 = AllocaAddr(AllocaId(63), 0) ()
-    Call(Call { target: fn25.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v121)
-    invoke -> b118() unwind b119()
+    v412:8 = RefAddr(image.k368, false) ()
+    AStore(AllocaId(63), 0, 8) (v412)
+    AStore(AllocaId(63), 8, 8) (0x0)
+    AStore(AllocaId(63), 16, 8) (0x0)
+    AStore(AllocaId(63), 24, 8) (0x0)
+    AStore(AllocaId(59), 0, 8) (0x1fbd000000000)
+    jmp b42()
 b117(): ; Stub cold
     v120:8 = LandingPad ()
     jmp b71(v120)
 b118(): ; Body
-    AStore(AllocaId(59), 0, 8) (0x1fbd000000000)
-    jmp b42()
-b119(): ; Stub cold
-    v122:8 = LandingPad ()
-    jmp b71(v122)
+    trap
+b119(): ; Body cold
+    trap
 b120(): ; Body
     trap
 b121(): ; Body cold
@@ -11642,7 +11616,7 @@ b158(): ; Body
     v243:8 = AllocaAddr(AllocaId(63), 0) ()
     AStore(AllocaId(1), 32, 8) (v243)
     v401:8 = AllocaAddr(AllocaId(63), 32) ()
-    Call(Call { target: image.fn24.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: Pad { catch: false } }) (v243, v401, 0x20, 0x10)
+    Call(Call { target: image.fn20.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: Pad { catch: false } }) (v243, v401, 0x20, 0x10)
     invoke -> b270() unwind b161()
 b159(): ; Stub cold
     v242:8 = LandingPad ()
@@ -11709,7 +11683,7 @@ b177(): ; Body
     trap
 b178(): ; Body
     v287:8 = Bin(ShrU, 8) (v166, 0x1)
-    v288:8 = RefAddr(image.k3032, false) ()
+    v288:8 = RefAddr(image.k2216, false) ()
     br Eq.w8 v165, 0x0 ? b188() : b185()
 b179(): ; Body
     trap
@@ -11730,8 +11704,8 @@ b186(): ; Body
 b187(): ; Body
     trap
 b188(): ; Body cold
-    v290:8 = RefAddr(image.k5831, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v290, 0x22f, 0x0, v288)
+    v290:8 = RefAddr(image.k4467, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v290, 0x22f, 0x0, v288)
     trap
 b189(): ; Body
     trap
@@ -11769,8 +11743,8 @@ b192(): ; Body
     AStore(AllocaId(117), 16, 8) (v286)
     v263:8 = AllocaAddr(AllocaId(130), 0) ()
     v264:8 = AllocaAddr(AllocaId(117), 0) ()
-    v507:8 = AllocaAddr(AllocaId(63), 0) ()
-    Call(Call { target: image.fn110.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: false } }) (v263, v507, v264)
+    v480:8 = AllocaAddr(AllocaId(63), 0) ()
+    Call(Call { target: image.fn91.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: false } }) (v263, v480, v264)
     invoke -> b171() unwind b137()
 b193(): ; Body
     trap
@@ -11827,8 +11801,8 @@ b217(): ; Body
     jmp b219(0x0)
 b218(): ; Body
     v331:8 = AllocaAddr(AllocaId(115), 32) ()
-    v504:8 = AllocaAddr(AllocaId(79), 0) ()
-    v332:8 = Call(Call { target: image.fn79, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v331, v504)
+    v477:8 = AllocaAddr(AllocaId(79), 0) ()
+    v332:8 = Call(Call { target: image.fn64, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v331, v477)
     invoke -> b225() unwind b105()
 b219(v334:8): ; Body
     br Eq.w8 v334, 0x0 ? b24() : b31()
@@ -11844,9 +11818,9 @@ b223(): ; Body
 b224(): ; Body
     trap
 b225(): ; Body
-    v505:8 = AllocaAddr(AllocaId(115), 0) ()
-    v506:8 = AllocaAddr(AllocaId(79), 0) ()
-    v333:8 = Call(Call { target: image.fn18.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v505, v332, v506)
+    v478:8 = AllocaAddr(AllocaId(115), 0) ()
+    v479:8 = AllocaAddr(AllocaId(79), 0) ()
+    v333:8 = Call(Call { target: image.fn14.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v478, v332, v479)
     invoke -> b226() unwind b105()
 b226(): ; Body
     br Eq.w8 v333, 0x0 ? b220() : b221()
@@ -11871,9 +11845,9 @@ b232(): ; Body
 b233(v348:8, v349:8): ; Body
     br Eq.w8 v348, 0x0 ? b28() : b26()
 b234(): ; Body cold
-    v350:8 = RefAddr(image.k6768, false) ()
-    v351:8 = RefAddr(image.k4354, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v351, 0x1a3, 0x0, v350)
+    v350:8 = RefAddr(image.k5048, false) ()
+    v351:8 = RefAddr(image.k3410, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v351, 0x1a3, 0x0, v350)
     trap
 b235(): ; Body
     trap
@@ -11966,8 +11940,8 @@ b269(): ; Body
 b270(): ; Body
     v246:8 = AllocaAddr(AllocaId(115), 0) ()
     AStore(AllocaId(1), 32, 8) (v246)
-    v429:8 = AllocaAddr(AllocaId(115), 32) ()
-    Call(Call { target: image.fn25.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: Continue }) (v246, v429, 0x10, 0x10)
+    v433:8 = AllocaAddr(AllocaId(115), 32) ()
+    Call(Call { target: image.fn21.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: Continue }) (v246, v433, 0x10, 0x10)
     ret 0x0 ()
 b271(): ; Body
     trap
@@ -12002,10 +11976,7 @@ b285(): ; Body
 b286(): ; Body
     trap
 b287(): ; Body
-    v108:8 = AllocaAddr(AllocaId(115), 0) ()
-    v109:8 = AllocaAddr(AllocaId(65), 0) ()
-    Call(Call { target: fn23.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: Pad { catch: false } }) (v109, v108)
-    invoke -> b114() unwind b115()
+    trap
 b288(): ; Body
     trap
 b289(): ; Body
@@ -12013,7 +11984,10 @@ b289(): ; Body
 b290(): ; Body
     trap
 b291(): ; Body
-    trap
+    v108:8 = AllocaAddr(AllocaId(115), 0) ()
+    v109:8 = AllocaAddr(AllocaId(65), 0) ()
+    Call(Call { target: fn23.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: Pad { catch: false } }) (v109, v108)
+    invoke -> b114() unwind b115()
 b292(): ; Body
     trap
 b293(): ; Body
@@ -12031,33 +12005,7 @@ b298(): ; Body
 b299(): ; Body
     trap
 b300(): ; Body
-    v422:8 = ALoad(AllocaId(470), 0, 8) ()
-    v423:8 = ALoad(AllocaId(470), 8, 8) ()
-    v424:8 = ALoad(AllocaId(470), 16, 8) ()
-    v425:8 = ALoad(AllocaId(470), 24, 8) ()
-    AStore(AllocaId(89), 0, 8) (v422)
-    AStore(AllocaId(89), 8, 8) (v423)
-    AStore(AllocaId(89), 16, 8) (v424)
-    AStore(AllocaId(89), 24, 8) (v425)
-    AStore(AllocaId(1), 8, 8) (v422)
-    AStore(AllocaId(1), 16, 8) (v423)
-    v71:4 = ALoad(AllocaId(89), 20, 4) ()
-    v73:4 = ALoad(AllocaId(89), 28, 4) ()
-    AStore(AllocaId(1), 24, 4) (v424)
-    AStore(AllocaId(1), 28, 4) (v71)
-    AStore(AllocaId(1), 32, 4) (v425)
-    AStore(AllocaId(1), 36, 4) (v73)
-    v418:8 = ALoad(AllocaId(1), 24, 8) ()
-    v419:8 = ALoad(AllocaId(1), 32, 8) ()
-    AStore(AllocaId(90), 0, 8) (v422)
-    AStore(AllocaId(90), 8, 8) (v423)
-    AStore(AllocaId(90), 16, 8) (v418)
-    AStore(AllocaId(90), 24, 8) (v419)
-    AStore(AllocaId(84), 0, 8) (v422)
-    AStore(AllocaId(84), 8, 8) (v423)
-    AStore(AllocaId(84), 16, 8) (v418)
-    AStore(AllocaId(84), 24, 8) (v419)
-    jmp b24()
+    trap
 b301(): ; Body
     trap
 b302(): ; Body
@@ -12065,7 +12013,33 @@ b302(): ; Body
 b303(): ; Body
     trap
 b304(): ; Body
-    trap
+    v426:8 = ALoad(AllocaId(483), 0, 8) ()
+    v427:8 = ALoad(AllocaId(483), 8, 8) ()
+    v428:8 = ALoad(AllocaId(483), 16, 8) ()
+    v429:8 = ALoad(AllocaId(483), 24, 8) ()
+    AStore(AllocaId(89), 0, 8) (v426)
+    AStore(AllocaId(89), 8, 8) (v427)
+    AStore(AllocaId(89), 16, 8) (v428)
+    AStore(AllocaId(89), 24, 8) (v429)
+    AStore(AllocaId(1), 8, 8) (v426)
+    AStore(AllocaId(1), 16, 8) (v427)
+    v71:4 = ALoad(AllocaId(89), 20, 4) ()
+    v73:4 = ALoad(AllocaId(89), 28, 4) ()
+    AStore(AllocaId(1), 24, 4) (v428)
+    AStore(AllocaId(1), 28, 4) (v71)
+    AStore(AllocaId(1), 32, 4) (v429)
+    AStore(AllocaId(1), 36, 4) (v73)
+    v422:8 = ALoad(AllocaId(1), 24, 8) ()
+    v423:8 = ALoad(AllocaId(1), 32, 8) ()
+    AStore(AllocaId(90), 0, 8) (v426)
+    AStore(AllocaId(90), 8, 8) (v427)
+    AStore(AllocaId(90), 16, 8) (v422)
+    AStore(AllocaId(90), 24, 8) (v423)
+    AStore(AllocaId(84), 0, 8) (v426)
+    AStore(AllocaId(84), 8, 8) (v427)
+    AStore(AllocaId(84), 16, 8) (v422)
+    AStore(AllocaId(84), 24, 8) (v423)
+    jmp b24()
 b305(): ; Body
     trap
 b306(): ; Body
@@ -12087,54 +12061,36 @@ b313(): ; Body
 b314(): ; Body
     trap
 b315(): ; Body
-    br Eq.w8 v436, 0x0 ? b316() : b319()
+    trap
 b316(): ; Body
-    jmp b318(0x1, undef, undef)
+    trap
 b317(): ; Body
     trap
-b318(v437:8, v438:8, v439:8): ; Body
-    br Eq.w8 v437, 0x0 ? b329() : b330()
+b318(): ; Body
+    trap
 b319(): ; Body
-    v440:8 = Load(8, 0) (v436)
-    v441:8 = Load(8, 8) (v436)
-    v442:8 = Bin(Add, 8) (v440, 0x1)
-    Store(8, 0) (v436, v442)
-    Store(8, 8) (v436, v441)
-    jmp b318(0x0, v440, v441)
+    trap
 b320(): ; Body
     trap
 b321(): ; Body
     trap
 b322(): ; Body
     trap
-b323(): ; Stub cold
-    v445:8 = LandingPad ()
-    jmp b327()
+b323(): ; Body
+    trap
 b324(): ; Body
     trap
 b325(): ; Body
     trap
 b326(): ; Body
     trap
-b327(): ; Body cold
-    hcall resume [(Fp, [None, None]), (Imm(4294967240), [Some(Scratch(0)), None])] ins [0] outs [] (v445)
+b327(): ; Body
     trap
 b328(): ; Body
     trap
-b329(): ; Body
-    v454:8 = RefAddr(image.k624, false) ()
-    AStore(AllocaId(115), 0, 8) (v454)
-    AStore(AllocaId(115), 8, 8) (0x0)
-    AStore(AllocaId(115), 16, 8) (0x0)
-    AStore(AllocaId(115), 24, 8) (0x0)
-    AStore(AllocaId(115), 32, 8) (v438)
-    AStore(AllocaId(115), 40, 8) (v439)
-    AStore(AllocaId(109), 0, 8) (0x0)
-    AStore(AllocaId(109), 8, 8) (0x50910)
-    jmp b2(0x1)
-b330(): ; Body cold
-    v451:8 = RefAddr(image.k232, false) ()
-    Call(Call { target: image.sym6, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v451)
+b329(): ; Body cold
+    jmp b71(v257)
+b330(): ; Body
     trap
 b331(): ; Body
     trap
@@ -12150,34 +12106,8 @@ b336(): ; Body
     trap
 b337(): ; Body
     trap
-b338(): ; Body
-    trap
-b339(): ; Body
-    trap
-b340(): ; Body
-    trap
-b341(): ; Body
-    trap
-b342(): ; Body cold
-    jmp b71(v257)
-b343(): ; Body
-    trap
-b344(): ; Body
-    trap
-b345(): ; Body
-    trap
-b346(): ; Body
-    trap
-b347(): ; Body
-    trap
-b348(): ; Body
-    trap
-b349(): ; Body
-    trap
-b350(): ; Body
-    trap
-b351(): ; Body cold
-    hcall resume [(Fp, [None, None]), (Imm(4294965968), [Some(Scratch(0)), None])] ins [0] outs [] (v254)
+b338(): ; Body cold
+    hcall resume [(Fp, [None, None]), (Imm(4294966000), [Some(Scratch(0)), None])] ins [0] outs [] (v254)
     trap
 
 fn main::{closure#0}
@@ -12367,7 +12297,7 @@ b0(v0:8, v1:8): ; Entry
     AStore(AllocaId(3), 0, 8) (0x0)
     AStore(AllocaId(3), 8, 8) (0x0)
     v5:8 = AllocaAddr(AllocaId(3), 0) ()
-    v11:8 = RefAddr(image.k952, false) ()
+    v11:8 = RefAddr(image.k696, false) ()
     br Eq.w8 v1, 0x0 ? b30() : b11()
 b1(): ; Body
     trap
@@ -12436,8 +12366,8 @@ b28(): ; Body
 b29(): ; Body
     trap
 b30(): ; Body cold
-    v21:8 = RefAddr(image.k4563, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v21, 0x237, 0x0, v11)
+    v21:8 = RefAddr(image.k3619, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v21, 0x237, 0x0, v11)
     trap
 b31(): ; Body
     trap
@@ -12515,7 +12445,7 @@ b3(): ; Body
 b4(): ; Body
     trap
 
-fn std::collections::HashMap::<u64, u64>::entry
+fn std::collections::HashMap::<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::entry
 a0: $-128, 8 bytes, Promoted
 a1: $-120, 8 bytes, Promoted
 a2: $-112, 8 bytes, Promoted
@@ -12548,7 +12478,7 @@ b0(v0:8, v1:8, v2:8): ; Entry
     AStore(AllocaId(23), 0, 8) (v2)
     v16:8 = PtrAdd(32) (v1)
     v17:8 = AllocaAddr(AllocaId(23), 0) ()
-    v18:8 = Call(Call { target: image.fn79, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v16, v17)
+    v18:8 = Call(Call { target: image.fn64, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v16, v17)
     invoke -> b8() unwind b15()
 b1(): ; Body
     jmp b2(v22)
@@ -12569,14 +12499,14 @@ b7(): ; Body
     trap
 b8(): ; Body
     v19:8 = AllocaAddr(AllocaId(23), 0) ()
-    v20:8 = Call(Call { target: image.fn19.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v1, v18, v19)
+    v20:8 = Call(Call { target: image.fn15.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v1, v18, v19)
     invoke -> b14() unwind b18()
 b9(): ; Body
     trap
 b10(): ; Body
     jmp b13(0x0, v20, v1)
 b11(): ; Body
-    Call(Call { target: image.fn20.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: false } }) (v1, 0x1, v16)
+    Call(Call { target: image.fn16.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: false } }) (v1, 0x1, v16)
     invoke -> b12() unwind b16()
 b12(): ; Body
     v21:8 = ALoad(AllocaId(23), 0, 8) ()
@@ -13101,7 +13031,7 @@ b1(): ; Body
     AStore(AllocaId(33), 7, 1) (0x0)
     v35:8 = ALoad(AllocaId(33), 0, 8) ()
     v36:8 = AllocaAddr(AllocaId(148), 0) ()
-    Call(Call { target: image.sym51, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }, ArgReg { xmm: false, size: 8, index: 4 }], parts: [], site: Pad { catch: false } }) (v36, v2, 0x0, 0x1, v35)
+    Call(Call { target: image.sym38, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }, ArgReg { xmm: false, size: 8, index: 4 }], parts: [], site: Pad { catch: false } }) (v36, v2, 0x0, 0x1, v35)
     invoke -> b79() unwind b18()
 b2(): ; Body
     trap
@@ -13109,7 +13039,7 @@ b3(): ; Body
     v27:8 = Load(8, 0) (v3)
     v28:8 = Load(8, 8) (v3)
     v29:8 = AllocaAddr(AllocaId(17), 0) ()
-    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: false } }) (v29, v27, v28)
+    Call(Call { target: image.sym28, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: false } }) (v29, v27, v28)
     invoke -> b21() unwind b16()
 b4(): ; Body
     trap
@@ -13177,7 +13107,7 @@ b28(): ; Body
     jmp b29(v38)
 b29(v43:8): ; Body
     v44:1 = Cmp(LtU, 8) (v43, v2)
-    v46:8 = RefAddr(image.k2736, false) ()
+    v46:8 = RefAddr(image.k1840, false) ()
     br v44 ? b32() : b31()
 b30(): ; Body
     trap
@@ -13194,8 +13124,8 @@ b31(): ; Body
     v125:8 = Bin(Or, 8) (v120, v124)
     br GtU.w8 v2, 0x0 ? b37() : b70()
 b32(): ; Body cold
-    v47:8 = RefAddr(image.k5350, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v47, 0x1bb, 0x0, v46)
+    v47:8 = RefAddr(image.k4185, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v47, 0x1bb, 0x0, v46)
     trap
 b33(): ; Body
     trap
@@ -13217,13 +13147,13 @@ b35(): ; Body cold
     v139:8 = Ext { from: 1, to: 8, sx: false } (v53)
     v141:8 = Bin(Shl, 8) (v139, 0x38)
     v142:8 = Bin(Or, 8) (v137, v141)
-    Call(Call { target: image.sym52, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: Pad { catch: false } }) (v49, v142)
+    Call(Call { target: image.sym39, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: Pad { catch: false } }) (v49, v142)
     invoke -> - unwind b18()
 b36(): ; Body
     trap
 b37(): ; Body
     AStore(AllocaId(33), 0, 8) (0x1)
-    v57:8 = RefAddr(image.k1568, false) ()
+    v57:8 = RefAddr(image.k840, false) ()
     br Eq.w8 v125, 0x0 ? b65() : b51()
 b38(): ; Body
     trap
@@ -13272,7 +13202,7 @@ b58(): ; Body
 b59(): ; Body
     AStore(AllocaId(33), 0, 8) (v2)
     hcall memcpy [(Fp, [None, None]), (Imm(4294967160), [Some(Scratch(0)), None]), (Imm(4294967168), [Some(Scratch(8)), None]), (Imm(4294967136), [Some(Alloca(AllocaId(33), 0)), None])] ins [0, 8] outs [] (v125, v1)
-    v69:8 = RefAddr(image.k1672, false) ()
+    v69:8 = RefAddr(image.k944, false) ()
     AStore(AllocaId(33), 0, 8) (v69)
     br LtU.w8 v38, v2 ? b75() : b74()
 b60(): ; Body
@@ -13286,8 +13216,8 @@ b63(): ; Body
 b64(): ; Body
     trap
 b65(): ; Body cold
-    v67:8 = RefAddr(image.k4563, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v67, 0x237, 0x0, v57)
+    v67:8 = RefAddr(image.k3619, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v67, 0x237, 0x0, v57)
     trap
 b66(): ; Body
     trap
@@ -13308,8 +13238,8 @@ b73(): ; Body
 b74(): ; Body
     jmp b7(v38, v125, v2)
 b75(): ; Body cold
-    v70:8 = RefAddr(image.k4156, false) ()
-    Call(Call { target: image.sym53, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v70, 0x18d, 0x0, v69)
+    v70:8 = RefAddr(image.k3212, false) ()
+    Call(Call { target: image.sym40, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v70, 0x18d, 0x0, v69)
     trap
 b76(): ; Body
     trap
@@ -13534,8 +13464,8 @@ b42(): ; Body
 b43(v70:8): ; Body
     br LeU.w8 v66, v70 ? b11() : b10()
 b44(): ; Body cold
-    v72:8 = RefAddr(image.k5770, false) ()
-    Call(Call { target: image.sym54, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: None }) (v72, 0x3d)
+    v72:8 = RefAddr(image.k4406, false) ()
+    Call(Call { target: image.sym41, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: None }) (v72, 0x3d)
     trap
 b45(): ; Body
     trap
@@ -13546,9 +13476,9 @@ b47(): ; Body
     v76:8 = Bin(And, 8) (v1, v75)
     br Eq.w8 v76, 0x0 ? b20() : b22()
 b48(): ; Body cold
-    v78:8 = RefAddr(image.k1979, false) ()
-    v79:8 = RefAddr(image.k2104, false) ()
-    Call(Call { target: image.sym37, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: true } }) (v78, 0x55, v79)
+    v78:8 = RefAddr(image.k1227, false) ()
+    v79:8 = RefAddr(image.k1352, false) ()
+    Call(Call { target: image.sym33, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: true } }) (v78, 0x55, v79)
     invoke -> - unwind b35()
 b49(): ; Body
     trap
@@ -13559,9 +13489,9 @@ b51(): ; Body
     v86:8 = Bin(And, 8) (v0, v85)
     br Eq.w8 v86, 0x0 ? b12() : b14()
 b52(): ; Body cold
-    v88:8 = RefAddr(image.k1979, false) ()
-    v89:8 = RefAddr(image.k2104, false) ()
-    Call(Call { target: image.sym37, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: true } }) (v88, 0x55, v89)
+    v88:8 = RefAddr(image.k1227, false) ()
+    v89:8 = RefAddr(image.k1352, false) ()
+    Call(Call { target: image.sym33, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: true } }) (v88, 0x55, v89)
     invoke -> - unwind b33()
 
 fn std::ptr::drop_glue::<(std::string::String, usize)> - shim(Some((std::string::String, usize)))
@@ -13578,7 +13508,7 @@ a9: $-8, 8 bytes, Promoted, inlined
 a10: $-16, 8 bytes, Promoted, inlined
 a11: $-8, 8 bytes, Promoted, inlined
 b0(v0:8): ; Entry
-    Call(Call { target: image.sym29, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v0)
+    Call(Call { target: image.sym26, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v0)
     invoke -> b4() unwind b8()
 b1(): ; Body
     trap
@@ -13587,7 +13517,7 @@ b2(): ; Body
 b3(): ; Body
     trap
 b4(): ; Body
-    Call(Call { target: image.sym30, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v0)
+    Call(Call { target: image.sym27, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v0)
     ret 0x0 ()
 b5(): ; Body
     trap
@@ -13601,7 +13531,7 @@ b8(): ; Stub cold
 b9(): ; Body
     trap
 b10(): ; Body cold
-    Call(Call { target: image.sym30, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: true } }) (v0)
+    Call(Call { target: image.sym27, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: true } }) (v0)
     invoke -> b12() unwind b15()
 b11(): ; Body
     trap
@@ -13616,7 +13546,7 @@ b15(): ; Stub cold
     v2:8 = LandingPad ()
     jmp b16()
 b16(): ; Body cold
-    Call(Call { target: image.sym19, regs: [], parts: [], site: None }) ()
+    Call(Call { target: image.sym16, regs: [], parts: [], site: None }) ()
     trap
 b17(): ; Body
     trap

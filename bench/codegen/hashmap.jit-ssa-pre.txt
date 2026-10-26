@@ -391,7 +391,7 @@ b0(v0:8): ; Entry
     Store(8, 8) (v0, v180)
     ret 0x0 ()
 
-fn <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:24:43: 24:50}>::{closure#0}}>::{closure#0}
+fn <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:28:43: 28:50}>::{closure#0}}>::{closure#0}
 a0: $-112, 8 bytes, Promoted
 a1: $-104, 8 bytes, Promoted
 a2: $-96, 8 bytes, Promoted
@@ -430,6 +430,127 @@ b9(): ; Body
     v17:8 = PtrIndex(16) (v2, 0xffffffffffffffff)
     jmp b7(v17)
 
+fn <std::hash::BuildHasherDefault<std::hash::DefaultHasher> as std::hash::BuildHasher>::build_hasher
+a0: $-88, 8 bytes, Promoted
+a1: $-80, 8 bytes, Promoted
+a2: $-72, 72 bytes, Memory, escaped
+b0(v0:8, v1:8): ; Entry
+    v2:8 = AllocaAddr(AllocaId(2), 0) ()
+    Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v2)
+    v3:8 = ALoad(AllocaId(2), 0, 8) ()
+    v4:8 = ALoad(AllocaId(2), 8, 8) ()
+    v5:8 = ALoad(AllocaId(2), 16, 8) ()
+    v6:8 = ALoad(AllocaId(2), 24, 8) ()
+    v7:8 = ALoad(AllocaId(2), 32, 8) ()
+    v8:8 = ALoad(AllocaId(2), 40, 8) ()
+    v9:8 = ALoad(AllocaId(2), 48, 8) ()
+    v10:8 = ALoad(AllocaId(2), 56, 8) ()
+    v11:8 = ALoad(AllocaId(2), 64, 8) ()
+    Store(8, 0) (v0, v3)
+    Store(8, 8) (v0, v4)
+    Store(8, 16) (v0, v5)
+    Store(8, 24) (v0, v6)
+    Store(8, 32) (v0, v7)
+    Store(8, 40) (v0, v8)
+    Store(8, 48) (v0, v9)
+    Store(8, 56) (v0, v10)
+    Store(8, 64) (v0, v11)
+    ret 0x8 (v0)
+
+fn <std::hash::BuildHasherDefault<std::hash::DefaultHasher> as std::hash::BuildHasher>::hash_one::<&std::string::String>
+a0: $-120, 8 bytes, Promoted
+a1: $-112, 8 bytes, Promoted
+a2: $-104, 72 bytes, Memory, escaped
+a3: $-32, 8 bytes, Promoted
+a4: $-24, 8 bytes, Memory, escaped
+a5: $-16, 8 bytes, Promoted
+a6: $-8, 8 bytes, Promoted
+b0(v0:8, v1:8): ; Entry
+    AStore(AllocaId(4), 0, 8) (v1)
+    v2:8 = AllocaAddr(AllocaId(2), 0) ()
+    Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: Pad { catch: false } }) (v2, v0)
+    invoke -> b7() unwind b8()
+b1(): ; Body
+    v4:8 = AllocaAddr(AllocaId(4), 0) ()
+    v5:8 = AllocaAddr(AllocaId(2), 0) ()
+    Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: Pad { catch: false } }) (v4, v5)
+    invoke -> b9() unwind b10()
+b2(): ; Body
+    v7:8 = AllocaAddr(AllocaId(2), 0) ()
+    v8:8 = Call(Call { target: fn2, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v7)
+    invoke -> b11() unwind b12()
+b3(): ; Body
+    ret 0x8 (v8)
+b4(v10:8): ; Body head 0
+    hcall resume [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None])] ins [0] outs [] (v10)
+    trap
+b5(): ; Body
+    jmp b4(v3)
+b6(v11:8): ; Body
+    jmp b4(v11)
+b7(): ; Body
+    jmp b1()
+b8(): ; Stub
+    v3:8 = LandingPad ()
+    jmp b5()
+b9(): ; Body
+    jmp b2()
+b10(): ; Stub
+    v6:8 = LandingPad ()
+    jmp b6(v6)
+b11(): ; Body
+    jmp b3()
+b12(): ; Stub
+    v9:8 = LandingPad ()
+    jmp b6(v9)
+
+fn <std::hash::BuildHasherDefault<std::hash::DefaultHasher> as std::hash::BuildHasher>::hash_one::<&u64>
+a0: $-120, 8 bytes, Promoted
+a1: $-112, 8 bytes, Promoted
+a2: $-104, 72 bytes, Memory, escaped
+a3: $-32, 8 bytes, Promoted
+a4: $-24, 8 bytes, Memory, escaped
+a5: $-16, 8 bytes, Promoted
+a6: $-8, 8 bytes, Promoted
+b0(v0:8, v1:8): ; Entry
+    AStore(AllocaId(4), 0, 8) (v1)
+    v2:8 = AllocaAddr(AllocaId(2), 0) ()
+    Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: Pad { catch: false } }) (v2, v0)
+    invoke -> b7() unwind b8()
+b1(): ; Body
+    v4:8 = AllocaAddr(AllocaId(4), 0) ()
+    v5:8 = AllocaAddr(AllocaId(2), 0) ()
+    Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: Pad { catch: false } }) (v4, v5)
+    invoke -> b9() unwind b10()
+b2(): ; Body
+    v7:8 = AllocaAddr(AllocaId(2), 0) ()
+    v8:8 = Call(Call { target: fn2, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v7)
+    invoke -> b11() unwind b12()
+b3(): ; Body
+    ret 0x8 (v8)
+b4(v10:8): ; Body head 0
+    hcall resume [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None])] ins [0] outs [] (v10)
+    trap
+b5(): ; Body
+    jmp b4(v3)
+b6(v11:8): ; Body
+    jmp b4(v11)
+b7(): ; Body
+    jmp b1()
+b8(): ; Stub
+    v3:8 = LandingPad ()
+    jmp b5()
+b9(): ; Body
+    jmp b2()
+b10(): ; Stub
+    v6:8 = LandingPad ()
+    jmp b6(v6)
+b11(): ; Body
+    jmp b3()
+b12(): ; Stub
+    v9:8 = LandingPad ()
+    jmp b6(v9)
+
 fn <std::hash::DefaultHasher as std::hash::Hasher>::finish
 a0: $-32, 8 bytes, Promoted
 a1: $-16, 8 bytes, Promoted
@@ -437,171 +558,6 @@ a2: $-8, 8 bytes, Promoted
 b0(v0:8): ; Entry
     v1:8 = Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Continue }) (v0)
     ret 0x8 (v1)
-
-fn <std::hash::RandomState as std::hash::BuildHasher>::build_hasher
-a0: $-352, 8 bytes, Promoted
-a1: $-344, 8 bytes, Promoted
-a2: $-336, 8 bytes, Promoted
-a3: $-328, 8 bytes, Promoted
-a4: $-320, 72 bytes, Memory, escaped
-a5: $-248, 8 bytes, Promoted
-a6: $-240, 8 bytes, Promoted
-a7: $-232, 8 bytes, Promoted
-a8: $-224, 8 bytes, Promoted
-a9: $-216, 8 bytes, Promoted
-a10: $-208, 8 bytes, Promoted
-a11: $-200, 8 bytes, Promoted
-a12: $-192, 8 bytes, Promoted
-a13: $-184, 8 bytes, Promoted
-a14: $-176, 8 bytes, Promoted
-a15: $-168, 8 bytes, Promoted
-a16: $-160, 8 bytes, Promoted
-a17: $-152, 8 bytes, Promoted
-a18: $-144, 8 bytes, Promoted
-a19: $-136, 8 bytes, Promoted
-a20: $-128, 8 bytes, Promoted
-a21: $-120, 8 bytes, Promoted
-a22: $-112, 8 bytes, Promoted
-a23: $-104, 8 bytes, Promoted
-a24: $-96, 8 bytes, Promoted
-a25: $-88, 8 bytes, Promoted
-a26: $-80, 8 bytes, Promoted
-a27: $-72, 8 bytes, Promoted
-a28: $-64, 8 bytes, Promoted
-a29: $-56, 8 bytes, Promoted
-a30: $-48, 8 bytes, Promoted
-a31: $-40, 8 bytes, Promoted
-a32: $-32, 8 bytes, Promoted
-a33: $-24, 8 bytes, Promoted
-a34: $-16, 8 bytes, Promoted
-a35: $-8, 8 bytes, Promoted
-b0(v0:8, v1:8): ; Entry
-    v2:8 = Load(8, 0) (v1)
-    v3:8 = Load(8, 8) (v1)
-    AStore(AllocaId(4), 32, 8) (v2)
-    AStore(AllocaId(4), 40, 8) (v3)
-    AStore(AllocaId(4), 48, 8) (0x0)
-    AStore(AllocaId(4), 0, 8) (0x0)
-    AStore(AllocaId(4), 8, 8) (0x0)
-    AStore(AllocaId(4), 16, 8) (0x0)
-    AStore(AllocaId(4), 24, 8) (0x0)
-    AStore(AllocaId(4), 56, 8) (0x0)
-    AStore(AllocaId(4), 64, 8) (0x0)
-    v11:8 = AllocaAddr(AllocaId(4), 0) ()
-    Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v11)
-    v12:8 = ALoad(AllocaId(4), 0, 8) ()
-    v13:8 = ALoad(AllocaId(4), 8, 8) ()
-    v14:8 = ALoad(AllocaId(4), 16, 8) ()
-    v15:8 = ALoad(AllocaId(4), 24, 8) ()
-    v16:8 = ALoad(AllocaId(4), 32, 8) ()
-    v17:8 = ALoad(AllocaId(4), 40, 8) ()
-    v18:8 = ALoad(AllocaId(4), 48, 8) ()
-    v19:8 = ALoad(AllocaId(4), 56, 8) ()
-    v20:8 = ALoad(AllocaId(4), 64, 8) ()
-    Store(8, 0) (v0, v12)
-    Store(8, 8) (v0, v13)
-    Store(8, 16) (v0, v14)
-    Store(8, 24) (v0, v15)
-    Store(8, 32) (v0, v16)
-    Store(8, 40) (v0, v17)
-    Store(8, 48) (v0, v18)
-    Store(8, 56) (v0, v19)
-    Store(8, 64) (v0, v20)
-    ret 0x8 (v0)
-
-fn <std::hash::RandomState as std::hash::BuildHasher>::hash_one::<&std::string::String>
-a0: $-120, 8 bytes, Promoted
-a1: $-112, 8 bytes, Promoted
-a2: $-104, 72 bytes, Memory, escaped
-a3: $-32, 8 bytes, Promoted
-a4: $-24, 8 bytes, Memory, escaped
-a5: $-16, 8 bytes, Promoted
-a6: $-8, 8 bytes, Promoted
-b0(v0:8, v1:8): ; Entry
-    AStore(AllocaId(4), 0, 8) (v1)
-    v2:8 = AllocaAddr(AllocaId(2), 0) ()
-    Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: Pad { catch: false } }) (v2, v0)
-    invoke -> b7() unwind b8()
-b1(): ; Body
-    v4:8 = AllocaAddr(AllocaId(4), 0) ()
-    v5:8 = AllocaAddr(AllocaId(2), 0) ()
-    Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: Pad { catch: false } }) (v4, v5)
-    invoke -> b9() unwind b10()
-b2(): ; Body
-    v7:8 = AllocaAddr(AllocaId(2), 0) ()
-    v8:8 = Call(Call { target: fn2, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v7)
-    invoke -> b11() unwind b12()
-b3(): ; Body
-    ret 0x8 (v8)
-b4(v10:8): ; Body head 0
-    hcall resume [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None])] ins [0] outs [] (v10)
-    trap
-b5(): ; Body
-    jmp b4(v3)
-b6(v11:8): ; Body
-    jmp b4(v11)
-b7(): ; Body
-    jmp b1()
-b8(): ; Stub
-    v3:8 = LandingPad ()
-    jmp b5()
-b9(): ; Body
-    jmp b2()
-b10(): ; Stub
-    v6:8 = LandingPad ()
-    jmp b6(v6)
-b11(): ; Body
-    jmp b3()
-b12(): ; Stub
-    v9:8 = LandingPad ()
-    jmp b6(v9)
-
-fn <std::hash::RandomState as std::hash::BuildHasher>::hash_one::<&u64>
-a0: $-120, 8 bytes, Promoted
-a1: $-112, 8 bytes, Promoted
-a2: $-104, 72 bytes, Memory, escaped
-a3: $-32, 8 bytes, Promoted
-a4: $-24, 8 bytes, Memory, escaped
-a5: $-16, 8 bytes, Promoted
-a6: $-8, 8 bytes, Promoted
-b0(v0:8, v1:8): ; Entry
-    AStore(AllocaId(4), 0, 8) (v1)
-    v2:8 = AllocaAddr(AllocaId(2), 0) ()
-    Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: Pad { catch: false } }) (v2, v0)
-    invoke -> b7() unwind b8()
-b1(): ; Body
-    v4:8 = AllocaAddr(AllocaId(4), 0) ()
-    v5:8 = AllocaAddr(AllocaId(2), 0) ()
-    Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: Pad { catch: false } }) (v4, v5)
-    invoke -> b9() unwind b10()
-b2(): ; Body
-    v7:8 = AllocaAddr(AllocaId(2), 0) ()
-    v8:8 = Call(Call { target: fn2, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v7)
-    invoke -> b11() unwind b12()
-b3(): ; Body
-    ret 0x8 (v8)
-b4(v10:8): ; Body head 0
-    hcall resume [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None])] ins [0] outs [] (v10)
-    trap
-b5(): ; Body
-    jmp b4(v3)
-b6(v11:8): ; Body
-    jmp b4(v11)
-b7(): ; Body
-    jmp b1()
-b8(): ; Stub
-    v3:8 = LandingPad ()
-    jmp b5()
-b9(): ; Body
-    jmp b2()
-b10(): ; Stub
-    v6:8 = LandingPad ()
-    jmp b6(v6)
-b11(): ; Body
-    jmp b3()
-b12(): ; Stub
-    v9:8 = LandingPad ()
-    jmp b6(v9)
 
 fn core::hash::sip::u8to64_le
 a0: $-184, 8 bytes, Promoted
@@ -753,7 +709,7 @@ b5(v12:8): ; Body
     v13:1 = Cmp(LeU, 8) (v4, v12)
     ret 0x1 (v13)
 
-fn hashbrown::map::HashMap::<u64, u64, std::hash::RandomState>::retain::<{closure@bench/hashmap.rs:23:16: 23:22}>
+fn hashbrown::map::HashMap::<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::retain::<{closure@bench/hashmap.rs:27:16: 27:22}>
 a0: $-216, 8 bytes, Promoted
 a1: $-208, 8 bytes, Promoted
 a2: $-200, 8 bytes, Promoted
@@ -1125,7 +1081,7 @@ b31(): ; Osr(7)
     v70:8 = OsrLoad(-16, 8) ()
     jmp b24(v69, v70)
 
-fn hashbrown::raw::RawIterRange::<(u64, u64)>::fold_impl::<{closure@<hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:24:43: 24:50}>::{closure#0}}>::{closure#0}}, u64>
+fn hashbrown::raw::RawIterRange::<(u64, u64)>::fold_impl::<{closure@<hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:28:43: 28:50}>::{closure#0}}>::{closure#0}}, u64>
 a0: $-288, 16 bytes, Memory, escaped
 a1: $-272, 8 bytes, Promoted
 a2: $-264, 8 bytes, Promoted
@@ -1469,7 +1425,7 @@ b31(): ; Osr(7)
     v70:8 = OsrLoad(-16, 8) ()
     jmp b24(v69, v70)
 
-fn hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>>::rustc_entry::{closure#0}}>
+fn hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0}}>
 a0: $-168, 8 bytes, Promoted
 a1: $-160, 8 bytes, Promoted
 a2: $-152, 8 bytes, Promoted
@@ -1549,7 +1505,7 @@ b18(): ; Stub
     v8:8 = LandingPad ()
     jmp b16()
 
-fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::RandomState>::{closure#0}}>
+fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>
 a0: $-89, 1 bytes, Promoted
 a1: $-88, 8 bytes, Promoted
 a2: $-80, 8 bytes, Promoted
@@ -1597,7 +1553,7 @@ b13(): ; Stub
     v19:8 = LandingPad ()
     jmp b11()
 
-fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::RandomState>::{closure#0}}>::{closure#0}
+fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#0}
 a0: $-160, 8 bytes, Promoted
 a1: $-152, 8 bytes, Promoted
 a2: $-144, 8 bytes, Promoted
@@ -1771,7 +1727,7 @@ b18(): ; Stub
     v8:8 = LandingPad ()
     jmp b16()
 
-fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::RandomState>>::rustc_entry::{closure#0}}>
+fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0}}>
 a0: $-168, 8 bytes, Promoted
 a1: $-160, 8 bytes, Promoted
 a2: $-152, 8 bytes, Promoted
@@ -1967,7 +1923,7 @@ b22(): ; Stub
     v5:8 = LandingPad ()
     jmp b20()
 
-fn hashbrown::raw::RawTable::<(u64, u64)>::reserve::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::RandomState>::{closure#0}}>
+fn hashbrown::raw::RawTable::<(u64, u64)>::reserve::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>
 a0: $-89, 1 bytes, Promoted
 a1: $-88, 8 bytes, Promoted
 a2: $-80, 8 bytes, Promoted
@@ -2015,7 +1971,7 @@ b13(): ; Stub
     v19:8 = LandingPad ()
     jmp b11()
 
-fn hashbrown::raw::RawTable::<(u64, u64)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::RandomState>::{closure#0}}>::{closure#0}
+fn hashbrown::raw::RawTable::<(u64, u64)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#0}
 a0: $-160, 8 bytes, Promoted
 a1: $-152, 8 bytes, Promoted
 a2: $-144, 8 bytes, Promoted
@@ -3030,7 +2986,7 @@ b39(): ; Stub
     v186:8 = LandingPad ()
     jmp b24(v186)
 
-fn hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>>::rustc_entry
+fn hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry
 a0: $-192, 8 bytes, Promoted
 a1: $-184, 8 bytes, Promoted
 a2: $-176, 8 bytes, Promoted
@@ -3132,7 +3088,7 @@ b23(): ; Stub
     v29:8 = LandingPad ()
     jmp b14(v29)
 
-fn hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::RandomState>>::rustc_entry
+fn hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry
 a0: $-120, 8 bytes, Promoted
 a1: $-112, 8 bytes, Promoted
 a2: $-104, 8 bytes, Promoted
@@ -3203,122 +3159,122 @@ b18(): ; Stub
     jmp b12(v21)
 
 fn main
-a0: $-1376, 8 bytes, Promoted
-a1: $-1368, 40 bytes, Memory, pinned, escaped
-a2: $-1328, 8 bytes, Promoted
-a3: $-1320, 8 bytes, Promoted
-a4: $-1312, 8 bytes, Promoted
-a5: $-1304, 8 bytes, Promoted
-a6: $-1296, 8 bytes, Promoted
-a7: $-1288, 8 bytes, Promoted
-a8: $-1280, 8 bytes, Promoted
-a9: $-1272, 8 bytes, Promoted
-a10: $-1264, 8 bytes, Promoted
-a11: $-1256, 8 bytes, Promoted
-a12: $-1248, 16 bytes, Memory, escaped
-a13: $-1232, 16 bytes, Memory, escaped
-a14: $-1216, 16 bytes, Memory, escaped
-a15: $-1200, 16 bytes, Memory, escaped
-a16: $-1184, 16 bytes, Memory, escaped
-a17: $-1168, 16 bytes, Memory, escaped
-a18: $-1152, 96 bytes, Memory, escaped
-a19: $-1056, 8 bytes, Promoted
-a20: $-1048, 8 bytes, Promoted
-a21: $-1040, 8 bytes, Promoted
-a22: $-1032, 8 bytes, Promoted
-a23: $-1024, 8 bytes, Promoted
-a24: $-1016, 8 bytes, Memory, escaped
-a25: $-1008, 8 bytes, Promoted
-a26: $-1000, 8 bytes, Promoted
-a27: $-992, 8 bytes, Memory, escaped
-a28: $-984, 8 bytes, Promoted
-a29: $-976, 8 bytes, Promoted
-a30: $-968, 8 bytes, Promoted
-a31: $-960, 8 bytes, Promoted
-a32: $-952, 8 bytes, Promoted
-a33: $-944, 8 bytes, Promoted
-a34: $-936, 8 bytes, Promoted
-a35: $-928, 8 bytes, Promoted
-a36: $-920, 8 bytes, Promoted
-a37: $-912, 8 bytes, Promoted
-a38: $-904, 1 bytes, Promoted
-a39: $-896, 8 bytes, Promoted
-a40: $-888, 8 bytes, Promoted
-a41: $-880, 16 bytes, Memory, pinned, escaped
-a42: $-864, 16 bytes, Memory, pinned, escaped
-a43: $-845, 1 bytes, Promoted
-a44: $-844, 4 bytes, Memory, pinned, escaped
-a45: $-840, 8 bytes, Promoted
-a46: $-832, 8 bytes, Promoted
-a47: $-824, 8 bytes, Promoted
-a48: $-816, 8 bytes, Promoted
-a49: $-808, 24 bytes, Memory, pinned, escaped
-a50: $-784, 24 bytes, Memory, pinned, escaped
-a51: $-760, 8 bytes, Promoted
-a52: $-752, 40 bytes, Memory, pinned, escaped
-a53: $-712, 8 bytes, Promoted
-a54: $-700, 4 bytes, Promoted
-a55: $-696, 8 bytes, Promoted
-a56: $-688, 8 bytes, Promoted
-a57: $-680, 4 bytes, Promoted
-a58: $-676, 4 bytes, Promoted
-a59: $-672, 8 bytes, Memory, pinned, escaped
-a60: $-664, 4 bytes, Promoted
-a61: $-660, 4 bytes, Promoted
-a62: $-656, 8 bytes, Memory
-a63: $-648, 48 bytes, Memory, pinned, escaped
-a64: $-600, 8 bytes, Promoted
-a65: $-592, 40 bytes, Memory, pinned, escaped
-a66: $-552, 8 bytes, Memory, escaped
-a67: $-544, 8 bytes, Promoted
-a68: $-536, 8 bytes, Promoted
-a69: $-528, 8 bytes, Memory, escaped
-a70: $-520, 8 bytes, Promoted
-a71: $-512, 8 bytes, Promoted
-a72: $-504, 8 bytes, Promoted
-a73: $-496, 8 bytes, Promoted
-a74: $-488, 1 bytes, Promoted
-a75: $-480, 8 bytes, Promoted
-a76: $-464, 8 bytes, Promoted
-a77: $-456, 8 bytes, Promoted
-a78: $-448, 8 bytes, Promoted
-a79: $-440, 8 bytes, Memory, pinned, escaped
-a80: $-432, 8 bytes, Promoted
-a81: $-424, 8 bytes, Promoted
-a82: $-416, 8 bytes, Promoted
-a83: $-408, 8 bytes, Promoted
-a84: $-400, 32 bytes, Memory, pinned, escaped
-a85: $-364, 4 bytes, Promoted
-a86: $-360, 8 bytes, Promoted
-a87: $-352, 8 bytes, Promoted
-a88: $-344, 8 bytes, Promoted
-a89: $-336, 32 bytes, Memory, pinned, escaped
-a90: $-304, 32 bytes, Memory, pinned, escaped
-a91: $-272, 8 bytes, Memory, escaped
-a92: $-264, 8 bytes, Memory, escaped
-a93: $-256, 8 bytes, Promoted
-a94: $-248, 1 bytes, Promoted
-a95: $-236, 4 bytes, Promoted
-a96: $-232, 8 bytes, Promoted
-a97: $-224, 8 bytes, Promoted
-a98: $-216, 8 bytes, Promoted
-a99: $-208, 24 bytes, Memory, pinned, escaped
-a100: $-184, 8 bytes, Promoted
-a101: $-176, 8 bytes, Promoted
-a102: $-168, 8 bytes, Promoted
-a103: $-160, 8 bytes, Promoted
-a104: $-152, 8 bytes, Promoted
-a105: $-144, 8 bytes, Promoted
-a106: $-136, 8 bytes, Promoted
-a107: $-128, 8 bytes, Promoted
-a108: $-120, 8 bytes, Promoted
-a109: $-112, 16 bytes, Memory, pinned, escaped
-a110: $-96, 8 bytes, Promoted
-a111: $-88, 8 bytes, Promoted
-a112: $-80, 8 bytes, Promoted
-a113: $-72, 8 bytes, Promoted
-a114: $-64, 8 bytes, Promoted
-a115: $-56, 48 bytes, Memory, pinned, escaped
+a0: $-1344, 8 bytes, Promoted
+a1: $-1336, 40 bytes, Memory, pinned, escaped
+a2: $-1296, 8 bytes, Promoted
+a3: $-1288, 8 bytes, Promoted
+a4: $-1280, 8 bytes, Promoted
+a5: $-1272, 8 bytes, Promoted
+a6: $-1264, 8 bytes, Promoted
+a7: $-1256, 8 bytes, Promoted
+a8: $-1248, 8 bytes, Promoted
+a9: $-1240, 8 bytes, Promoted
+a10: $-1232, 8 bytes, Promoted
+a11: $-1224, 8 bytes, Promoted
+a12: $-1216, 16 bytes, Memory, escaped
+a13: $-1200, 16 bytes, Memory, escaped
+a14: $-1184, 16 bytes, Memory, escaped
+a15: $-1168, 16 bytes, Memory, escaped
+a16: $-1152, 16 bytes, Memory, escaped
+a17: $-1136, 16 bytes, Memory, escaped
+a18: $-1120, 96 bytes, Memory, escaped
+a19: $-1024, 8 bytes, Promoted
+a20: $-1016, 8 bytes, Promoted
+a21: $-1008, 8 bytes, Promoted
+a22: $-1000, 8 bytes, Promoted
+a23: $-992, 8 bytes, Promoted
+a24: $-984, 8 bytes, Memory, escaped
+a25: $-976, 8 bytes, Promoted
+a26: $-968, 8 bytes, Promoted
+a27: $-960, 8 bytes, Memory, escaped
+a28: $-952, 8 bytes, Promoted
+a29: $-944, 8 bytes, Promoted
+a30: $-936, 8 bytes, Promoted
+a31: $-928, 8 bytes, Promoted
+a32: $-920, 8 bytes, Promoted
+a33: $-912, 8 bytes, Promoted
+a34: $-904, 8 bytes, Promoted
+a35: $-896, 8 bytes, Promoted
+a36: $-888, 8 bytes, Promoted
+a37: $-880, 8 bytes, Promoted
+a38: $-872, 1 bytes, Promoted
+a39: $-864, 8 bytes, Promoted
+a40: $-856, 8 bytes, Promoted
+a41: $-848, 16 bytes, Memory, pinned, escaped
+a42: $-832, 16 bytes, Memory, pinned, escaped
+a43: $-813, 1 bytes, Promoted
+a44: $-812, 4 bytes, Memory, pinned, escaped
+a45: $-808, 8 bytes, Promoted
+a46: $-800, 8 bytes, Promoted
+a47: $-792, 8 bytes, Promoted
+a48: $-784, 8 bytes, Promoted
+a49: $-776, 24 bytes, Memory, pinned, escaped
+a50: $-752, 24 bytes, Memory, pinned, escaped
+a51: $-728, 8 bytes, Promoted
+a52: $-720, 40 bytes, Memory, pinned, escaped
+a53: $-680, 8 bytes, Promoted
+a54: $-668, 4 bytes, Promoted
+a55: $-664, 8 bytes, Promoted
+a56: $-656, 8 bytes, Promoted
+a57: $-648, 4 bytes, Promoted
+a58: $-644, 4 bytes, Promoted
+a59: $-640, 8 bytes, Memory, pinned, escaped
+a60: $-632, 4 bytes, Promoted
+a61: $-628, 4 bytes, Promoted
+a62: $-624, 8 bytes, Memory
+a63: $-616, 32 bytes, Memory, pinned, escaped
+a64: $-584, 8 bytes, Promoted
+a65: $-576, 40 bytes, Memory, pinned, escaped
+a66: $-536, 8 bytes, Memory, escaped
+a67: $-528, 8 bytes, Promoted
+a68: $-520, 8 bytes, Promoted
+a69: $-512, 8 bytes, Memory, escaped
+a70: $-504, 8 bytes, Promoted
+a71: $-496, 8 bytes, Promoted
+a72: $-488, 8 bytes, Promoted
+a73: $-480, 8 bytes, Promoted
+a74: $-472, 1 bytes, Promoted
+a75: $-464, 8 bytes, Promoted
+a76: $-448, 8 bytes, Promoted
+a77: $-440, 8 bytes, Promoted
+a78: $-432, 8 bytes, Promoted
+a79: $-424, 8 bytes, Memory, pinned, escaped
+a80: $-416, 8 bytes, Promoted
+a81: $-408, 8 bytes, Promoted
+a82: $-400, 8 bytes, Promoted
+a83: $-392, 8 bytes, Promoted
+a84: $-384, 32 bytes, Memory, pinned, escaped
+a85: $-348, 4 bytes, Promoted
+a86: $-344, 8 bytes, Promoted
+a87: $-336, 8 bytes, Promoted
+a88: $-328, 8 bytes, Promoted
+a89: $-320, 32 bytes, Memory, pinned, escaped
+a90: $-288, 32 bytes, Memory, pinned, escaped
+a91: $-256, 8 bytes, Memory, escaped
+a92: $-248, 8 bytes, Memory, escaped
+a93: $-240, 8 bytes, Promoted
+a94: $-232, 1 bytes, Promoted
+a95: $-220, 4 bytes, Promoted
+a96: $-216, 8 bytes, Promoted
+a97: $-208, 8 bytes, Promoted
+a98: $-200, 8 bytes, Promoted
+a99: $-192, 24 bytes, Memory, pinned, escaped
+a100: $-168, 8 bytes, Promoted
+a101: $-160, 8 bytes, Promoted
+a102: $-152, 8 bytes, Promoted
+a103: $-144, 8 bytes, Promoted
+a104: $-136, 8 bytes, Promoted
+a105: $-128, 8 bytes, Promoted
+a106: $-120, 8 bytes, Promoted
+a107: $-112, 8 bytes, Promoted
+a108: $-104, 8 bytes, Promoted
+a109: $-96, 16 bytes, Memory, pinned, escaped
+a110: $-80, 8 bytes, Promoted
+a111: $-72, 8 bytes, Promoted
+a112: $-64, 8 bytes, Promoted
+a113: $-56, 8 bytes, Promoted
+a114: $-48, 8 bytes, Promoted
+a115: $-40, 32 bytes, Memory, pinned, escaped
 a116: $-8, 8 bytes, Promoted
 b0(): ; Entry
     AStore(AllocaId(1), 32, 8) (0x50910)
@@ -3748,7 +3704,7 @@ b71(v254:8): ; Body head 4
     Call(Call { target: fn51, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: true } }) (v252)
     invoke -> b164() unwind b165()
 b72(): ; Body
-    hcall resume [(Fp, [None, None]), (Imm(4294965968), [Some(Scratch(0)), None])] ins [0] outs [] (v254)
+    hcall resume [(Fp, [None, None]), (Imm(4294966000), [Some(Scratch(0)), None])] ins [0] outs [] (v254)
     trap
 b73(): ; Body head 5
     Call(Call { target: sym54, regs: [], parts: [], site: None }) ()
@@ -3760,7 +3716,7 @@ b75(v257:8): ; Body
 b76(): ; Body
     jmp b73()
 b77(): ; Osr(0)
-    v58:8 = OsrLoad(-64, 8) ()
+    v58:8 = OsrLoad(-48, 8) ()
     jmp b2(v58)
 b78(): ; Osr(1)
     jmp b24()
@@ -4127,7 +4083,7 @@ b0(v0:8, v1:1): ; Entry
     Store(8, 8) (v0, v8)
     ret 0x8 (v0)
 
-fn std::collections::HashMap::<u64, u64>::entry
+fn std::collections::HashMap::<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::entry
 a0: $-128, 8 bytes, Promoted
 a1: $-120, 8 bytes, Promoted
 a2: $-112, 8 bytes, Promoted

@@ -1,36 +1,3 @@
-fn <! as std::sys::thread_local::native::lazy::DestroyedState>::register_dtor::<std::cell::Cell<(u64, u64)>> (frame 16, args 0, ret 0)
-    arg $-8, 8
-    ret $0, 0
-
-fn <&mut core::io::write::default_write_fmt::Adapter<'_, std::sys::stdio::unix::Stderr> as std::fmt::Write::write_fmt::SpecWriteFmt>::spec_write_fmt (frame 80, args 0, ret 1) [hint]
-    arg $-16, 8
-    arg $-32, 264
-    arg $-24, 520
-    ; escape align 8 $-32, 16 bytes
-    addr $-64, $-32
-L0:
-    call $-56, fn0, 526344, [4294967232, 8]
-    br.eq.imm.w64 $-56, 0, L2
-    mov.w128 $-72, $-56
-L1:
-    call $-1, fn1, 1, [4294967280, 8, 4294967224, 264, 4294967232, 520]
-    jmp L4
-L2:
-    mov.w64 $-56, $-16
-    addr.const $-48, k2
-L3:
-    call.sym $-1, sym3, 1, [4294967240, 8, 4294967248, 264, 4294967264, 520, 4294967272, 776]
-L4:
-    ret $-1, 1
-    unreachable
-  cleanup L0 -> continue
-  cleanup L1 -> continue
-  cleanup L3 -> continue
-  fn0 = std::fmt::Arguments::<'_>::as_statically_known_str
-  fn1 = <core::io::write::default_write_fmt::Adapter<'_, std::sys::stdio::unix::Stderr> as std::fmt::Write>::write_str
-  k2 = const allocation + 0
-  sym3 = std::fmt::write
-
 fn <&u64 as std::ops::Rem<u64>>::rem (frame 64, args 0, ret 8) [hint]
     arg $-16, 8
     arg $-24, 264
@@ -487,122 +454,6 @@ fn <core::hash::sip::Sip13Rounds as core::hash::sip::Sip>::d_rounds (frame 48, a
     store.w64 [$-8 + 8], $-16
     ret $0, 0
 
-fn <core::io::error::repr::Repr as std::ops::Drop>::drop (frame 48, args 0, ret 0) [hint]
-    arg $-8, 8
-    load.w64 $-32, [$-8 + 0]
-L0:
-    ; escape align 8 $-24, 16 bytes
-    call $0, fn0, 0, [4294967272, 72, 4294967264, 264]
-    ; escape align 8 $-24, 16 bytes
-    addr $-40, $-24
-L1:
-    call $0, fn1, 0, [4294967256, 8]
-    ; end $-24, 16 bytes
-    ret $0, 0
-  cleanup L0 -> continue
-  cleanup L1 -> continue
-  fn0 = core::io::error::repr::decode_repr::<core::io::error::CustomOwner, {closure@<core::io::error::repr::Repr as std::ops::Drop>::drop::{closure#0}}>
-  fn1 = std::ptr::drop_glue::<core::io::error::ErrorData<core::io::error::CustomOwner>> - shim(Some(core::io::error::ErrorData<core::io::error::CustomOwner>))
-
-fn <core::io::error::repr::Repr as std::ops::Drop>::drop::{closure#0} (frame 48, args 0, ret 8)
-    arg $-16, 8
-    imm.w8 $-33, 1
-    br! $-33, L0
-    mov.w64 $-32, $-16
-    addr.const $-40, k0
-    call $0, fn1, 0, [4294967264, 8, 4294967256, 264]
-L0:
-    mov.w64 $-24, $-16
-    mov.w64 $-8, $-24
-    ret $-8, 8
-  k0 = const allocation + 0
-  fn1 = std::ptr::NonNull::<T>::new_unchecked::precondition_check
-
-fn <core::io::write::default_write_fmt::Adapter<'_, std::sys::stdio::unix::Stderr> as std::fmt::Write>::write_char (frame 128, args 0, ret 1)
-    arg $-16, 8
-    arg $-20, 260
-    imm.w32 $-84, 0
-    ; escape align 1 $-84, 4 bytes
-    addr $-80, $-84
-    mov.w64 $-72, $-80
-    imm.w64 $-64, 4
-    mov.w32 $-88, $-20
-L0:
-    call $-104, fn0, 526344, [4294967208, 4, 4294967224, 264, 4294967232, 520]
-    jmp L2
-L1:
-    ; end $-84, 4 bytes
-    ret $-1, 1
-L2:
-    mov.w64 $-120, $-104
-    mov.w64 $-112, $-96
-    mov.w128 $-40, $-120
-    mov.w64 $-56, $-40
-    mov.w64 $-48, $-32
-L3:
-    call $-1, fn1, 1, [4294967280, 8, 4294967240, 264, 4294967248, 520]
-    jmp L1
-  cleanup L0 -> continue
-  cleanup L3 -> continue
-  fn0 = std::char::encode_utf8_raw
-  fn1 = <core::io::write::default_write_fmt::Adapter<'_, std::sys::stdio::unix::Stderr> as std::fmt::Write>::write_str
-
-fn <core::io::write::default_write_fmt::Adapter<'_, std::sys::stdio::unix::Stderr> as std::fmt::Write>::write_fmt (frame 32, args 0, ret 1)
-    arg $-16, 8
-    arg $-32, 264
-    arg $-24, 520
-L0:
-    call $-1, fn0, 1, [4294967280, 8, 4294967264, 264, 4294967272, 520]
-    ret $-1, 1
-  cleanup L0 -> continue
-  fn0 = <&mut core::io::write::default_write_fmt::Adapter<'_, std::sys::stdio::unix::Stderr> as std::fmt::Write::write_fmt::SpecWriteFmt>::spec_write_fmt
-
-fn <core::io::write::default_write_fmt::Adapter<'_, std::sys::stdio::unix::Stderr> as std::fmt::Write>::write_str (frame 96, args 0, ret 1)
-    arg $-16, 8
-    arg $-32, 264
-    arg $-24, 520
-    load.w64 $-48, [$-16 + 0]
-    mov.w128 $-80, $-32
-L0:
-    call $-64, fn0, 8, [4294967248, 8, 4294967216, 264, 4294967224, 520]
-    br.eq.imm.w64 $-64, 0, L3
-    jmp L1
-    unreachable
-L1:
-    mov.w64 $-88, $-64
-    ptr.add $-96, $-16, 8
-L2:
-    call $0, fn1, 0, [4294967200, 8]
-    jmp L4
-L3:
-    imm.w8 $-1, 0
-    jmp L7
-L4:
-    store.w64 [$-16 + 8], $-64
-    imm.w8 $-1, 1
-    jmp L7
-L5:
-    store.w64 [$-16 + 8], $-64
-L6:
-    resume $-56
-L7:
-    ret $-1, 1
-L8:
-    lpad $-56
-    jmp L5
-  cleanup L0 -> continue
-  cleanup L2 -> L8
-  cleanup L6 -> continue
-  fn0 = <std::sys::stdio::unix::Stderr as std::io::Write>::write_all
-  fn1 = std::ptr::drop_glue::<std::result::Result<(), std::io::Error>> - shim(Some(std::result::Result<(), std::io::Error>))
-
-fn <fn() -> std::cell::Cell<(u64, u64)> {std::hash::RandomState::new::KEYS::__rust_std_internal_init_fn} as std::ops::FnOnce<()>>::call_once - shim(fn() -> std::cell::Cell<(u64, u64)> {std::hash::RandomState::new::KEYS::__rust_std_internal_init_fn}) (frame 16, args 0, ret 16)
-L0:
-    call $-16, fn0, 526344, []
-    ret $-16, 526344
-  cleanup L0 -> continue
-  fn0 = std::hash::RandomState::new::KEYS::__rust_std_internal_init_fn
-
 fn <fn() as std::ops::FnOnce<()>>::call_once - shim(fn()) (frame 16, args 0, ret 0)
     arg $-8, 8
 L0:
@@ -622,7 +473,7 @@ L0:
   cleanup L0 -> continue
   fn0 = std::str::<impl std::borrow::ToOwned for str>::to_owned
 
-fn <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:24:43: 24:50}>::{closure#0}}> (frame 176, args 0, ret 8)
+fn <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:28:43: 28:50}>::{closure#0}}> (frame 176, args 0, ret 8)
     arg $-136, 8
     arg $-56, 264
     arg $-64, 520
@@ -653,9 +504,9 @@ L4:
     jmp L2
   cleanup L0 -> L4
   cleanup L2 -> continue
-  fn0 = hashbrown::raw::RawIterRange::<(u64, u64)>::fold_impl::<{closure@<hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:24:43: 24:50}>::{closure#0}}>::{closure#0}}, u64>
+  fn0 = hashbrown::raw::RawIterRange::<(u64, u64)>::fold_impl::<{closure@<hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:28:43: 28:50}>::{closure#0}}>::{closure#0}}, u64>
 
-fn <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:24:43: 24:50}>::{closure#0}}>::{closure#0} (frame 112, args 0, ret 8)
+fn <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:28:43: 28:50}>::{closure#0}}>::{closure#0} (frame 112, args 0, ret 8)
     arg $-16, 8
     arg $-24, 264
     arg $-32, 520
@@ -695,7 +546,7 @@ L7:
     ptr.index $-56, $-64, $-112, 16
     jmp L5
   cleanup L2 -> continue
-  fn0 = <std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@bench/hashmap.rs:24:43: 24:50}>::{closure#0}
+  fn0 = <std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@bench/hashmap.rs:28:43: 28:50}>::{closure#0}
 
 fn <hashbrown::raw::RawTable<(std::string::String, usize)> as std::ops::Drop>::drop (frame 48, args 0, ret 0)
     arg $-8, 8
@@ -770,7 +621,45 @@ L1:
     jmp L0
   sym0 = alloc::alloc::__rust_dealloc
 
-fn <std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@bench/hashmap.rs:24:43: 24:50}> (frame 176, args 0, ret 8) [hint]
+fn <std::collections::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>> as std::default::Default>::default (frame 112, args 0, ret 32) [hint]
+    arg $-40, 8
+L0:
+    call $0, fn0, 0, []
+    const $-104, k1, 32
+    mov.w64 $-72, $-104
+    mov.w64 $-64, $-96
+    mov.w64 $-56, $-88
+    mov.w64 $-48, $-80
+    mov.w64 $-32, $-72
+    mov.w64 $-24, $-64
+    mov.w64 $-16, $-56
+    mov.w64 $-8, $-48
+    store.copy [$-40 + 0], $-32, 32
+    ret $-40, 8
+  cleanup L0 -> continue
+  fn0 = <std::hash::BuildHasherDefault<std::hash::DefaultHasher> as std::default::Default>::default
+  k1 = const allocation + 0
+
+fn <std::collections::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>> as std::default::Default>::default (frame 112, args 0, ret 32) [hint]
+    arg $-40, 8
+L0:
+    call $0, fn0, 0, []
+    const $-104, k1, 32
+    mov.w64 $-72, $-104
+    mov.w64 $-64, $-96
+    mov.w64 $-56, $-88
+    mov.w64 $-48, $-80
+    mov.w64 $-32, $-72
+    mov.w64 $-24, $-64
+    mov.w64 $-16, $-56
+    mov.w64 $-8, $-48
+    store.copy [$-40 + 0], $-32, 32
+    ret $-40, 8
+  cleanup L0 -> continue
+  fn0 = <std::hash::BuildHasherDefault<std::hash::DefaultHasher> as std::default::Default>::default
+  k1 = const allocation + 0
+
+fn <std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@bench/hashmap.rs:28:43: 28:50}> (frame 176, args 0, ret 8) [hint]
     arg $-128, 8
     arg $-56, 264
     load.copy $-48, [$-128 + 0], 40
@@ -800,9 +689,9 @@ L4:
     jmp L2
   cleanup L0 -> L4
   cleanup L2 -> continue
-  fn0 = <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:24:43: 24:50}>::{closure#0}}>
+  fn0 = <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:28:43: 28:50}>::{closure#0}}>
 
-fn <std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@bench/hashmap.rs:24:43: 24:50}>::{closure#0} (frame 80, args 0, ret 8)
+fn <std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@bench/hashmap.rs:28:43: 28:50}>::{closure#0} (frame 80, args 0, ret 8)
     arg $-16, 8
     arg $-24, 264
     arg $-40, 520
@@ -816,6 +705,116 @@ L0:
     ret $-8, 8
   cleanup L0 -> continue
   fn0 = main::{closure#1}
+
+fn <std::hash::BuildHasherDefault<std::hash::DefaultHasher> as std::default::Default>::default (frame 0, args 0, ret 0)
+    ret $0, 0
+
+fn <std::hash::BuildHasherDefault<std::hash::DefaultHasher> as std::hash::BuildHasher>::build_hasher (frame 96, args 0, ret 72)
+    arg $-88, 8
+    arg $-80, 264
+L0:
+    ; escape align 8 $-72, 72 bytes
+    call $0, fn0, 0, [4294967224, 72]
+    store.copy [$-88 + 0], $-72, 72
+    ret $-88, 8
+  cleanup L0 -> continue
+  fn0 = <std::hash::DefaultHasher as std::default::Default>::default
+
+fn <std::hash::BuildHasherDefault<std::hash::DefaultHasher> as std::hash::BuildHasher>::hash_one::<&std::string::String> (frame 128, args 0, ret 8)
+    arg $-16, 8
+    arg $-24, 264
+L0:
+    ; escape align 8 $-104, 72 bytes
+    call $0, fn0, 0, [4294967192, 72, 4294967280, 264]
+    ; escape align 8 $-24, 8 bytes
+    addr $-112, $-24
+    ; escape align 8 $-104, 72 bytes
+    addr $-120, $-104
+L1:
+    call $0, fn1, 0, [4294967184, 8, 4294967176, 264]
+    ; escape align 8 $-104, 72 bytes
+    addr $-112, $-104
+L2:
+    call $-8, fn2, 8, [4294967184, 8]
+    ; end $-104, 72 bytes
+    ret $-8, 8
+L3:
+    resume $-32
+L4:
+    lpad $-32
+    jmp L3
+L5:
+    lpad $-32
+    jmp L3
+  cleanup L0 -> L4
+  cleanup L1 -> L5
+  cleanup L2 -> L5
+  cleanup L3 -> continue
+  fn0 = <std::hash::BuildHasherDefault<std::hash::DefaultHasher> as std::hash::BuildHasher>::build_hasher
+  fn1 = core::hash::impls::<impl std::hash::Hash for &std::string::String>::hash::<std::hash::DefaultHasher>
+  fn2 = <std::hash::DefaultHasher as std::hash::Hasher>::finish
+
+fn <std::hash::BuildHasherDefault<std::hash::DefaultHasher> as std::hash::BuildHasher>::hash_one::<&u64> (frame 128, args 0, ret 8)
+    arg $-16, 8
+    arg $-24, 264
+L0:
+    ; escape align 8 $-104, 72 bytes
+    call $0, fn0, 0, [4294967192, 72, 4294967280, 264]
+    ; escape align 8 $-24, 8 bytes
+    addr $-112, $-24
+    ; escape align 8 $-104, 72 bytes
+    addr $-120, $-104
+L1:
+    call $0, fn1, 0, [4294967184, 8, 4294967176, 264]
+    ; escape align 8 $-104, 72 bytes
+    addr $-112, $-104
+L2:
+    call $-8, fn2, 8, [4294967184, 8]
+    ; end $-104, 72 bytes
+    ret $-8, 8
+L3:
+    resume $-32
+L4:
+    lpad $-32
+    jmp L3
+L5:
+    lpad $-32
+    jmp L3
+  cleanup L0 -> L4
+  cleanup L1 -> L5
+  cleanup L2 -> L5
+  cleanup L3 -> continue
+  fn0 = <std::hash::BuildHasherDefault<std::hash::DefaultHasher> as std::hash::BuildHasher>::build_hasher
+  fn1 = core::hash::impls::<impl std::hash::Hash for &u64>::hash::<std::hash::DefaultHasher>
+  fn2 = <std::hash::DefaultHasher as std::hash::Hasher>::finish
+
+fn <std::hash::DefaultHasher as std::default::Default>::default (frame 336, args 0, ret 72) [hint]
+    arg $-80, 8
+    imm.w64 $-328, 0
+    imm.w64 $-320, 0
+    imm.w64 $-312, 0
+    imm.w64 $-304, 0
+    imm.w64 $-264, 0
+    imm.w64 $-256, 0
+    imm.w64 $-248, 0
+    mov.w64 $-296, $-328
+    mov.w64 $-288, $-320
+    mov.w64 $-280, $-312
+    mov.w64 $-272, $-304
+    imm.w64 $-240, 0
+    imm.w64 $-232, 0
+    ; escape align 8 $-296, 72 bytes
+    addr $-304, $-296
+L0:
+    call $0, fn0, 0, [4294966992, 8]
+    copy $-224, $-296, 72
+    ; end $-296, 72 bytes
+    copy $-152, $-224, 72
+    copy $-72, $-152, 72
+    store.copy [$-80 + 0], $-72, 72
+    ret $-80, 8
+  cleanup L0 -> continue
+  fn0 = core::hash::sip::Hasher::<core::hash::sip::Sip13Rounds>::reset
 
 fn <std::hash::DefaultHasher as std::hash::Hasher>::finish (frame 32, args 0, ret 8) [hint]
     arg $-16, 8
@@ -862,105 +861,6 @@ L0:
     ret $0, 0
   cleanup L0 -> continue
   fn0 = <std::hash::DefaultHasher as std::hash::Hasher>::write
-
-fn <std::hash::RandomState as std::hash::BuildHasher>::build_hasher (frame 352, args 0, ret 72) [hint]
-    arg $-88, 8
-    arg $-80, 264
-    load.w64 $-168, [$-80 + 0]
-    load.w64 $-176, [$-80 + 8]
-    imm.w64 $-352, 0
-    imm.w64 $-344, 0
-    imm.w64 $-336, 0
-    imm.w64 $-328, 0
-    mov.w64 $-288, $-168
-    mov.w64 $-280, $-176
-    imm.w64 $-272, 0
-    mov.w64 $-320, $-352
-    mov.w64 $-312, $-344
-    mov.w64 $-304, $-336
-    mov.w64 $-296, $-328
-    imm.w64 $-264, 0
-    imm.w64 $-256, 0
-    ; escape align 8 $-320, 72 bytes
-    addr $-328, $-320
-L0:
-    call $0, fn0, 0, [4294966968, 8]
-    copy $-248, $-320, 72
-    ; end $-320, 72 bytes
-    copy $-160, $-248, 72
-    copy $-72, $-160, 72
-    store.copy [$-88 + 0], $-72, 72
-    ret $-88, 8
-  cleanup L0 -> continue
-  fn0 = core::hash::sip::Hasher::<core::hash::sip::Sip13Rounds>::reset
-
-fn <std::hash::RandomState as std::hash::BuildHasher>::hash_one::<&std::string::String> (frame 128, args 0, ret 8)
-    arg $-16, 8
-    arg $-24, 264
-L0:
-    ; escape align 8 $-104, 72 bytes
-    call $0, fn0, 0, [4294967192, 72, 4294967280, 264]
-    ; escape align 8 $-24, 8 bytes
-    addr $-112, $-24
-    ; escape align 8 $-104, 72 bytes
-    addr $-120, $-104
-L1:
-    call $0, fn1, 0, [4294967184, 8, 4294967176, 264]
-    ; escape align 8 $-104, 72 bytes
-    addr $-112, $-104
-L2:
-    call $-8, fn2, 8, [4294967184, 8]
-    ; end $-104, 72 bytes
-    ret $-8, 8
-L3:
-    resume $-32
-L4:
-    lpad $-32
-    jmp L3
-L5:
-    lpad $-32
-    jmp L3
-  cleanup L0 -> L4
-  cleanup L1 -> L5
-  cleanup L2 -> L5
-  cleanup L3 -> continue
-  fn0 = <std::hash::RandomState as std::hash::BuildHasher>::build_hasher
-  fn1 = core::hash::impls::<impl std::hash::Hash for &std::string::String>::hash::<std::hash::DefaultHasher>
-  fn2 = <std::hash::DefaultHasher as std::hash::Hasher>::finish
-
-fn <std::hash::RandomState as std::hash::BuildHasher>::hash_one::<&u64> (frame 128, args 0, ret 8)
-    arg $-16, 8
-    arg $-24, 264
-L0:
-    ; escape align 8 $-104, 72 bytes
-    call $0, fn0, 0, [4294967192, 72, 4294967280, 264]
-    ; escape align 8 $-24, 8 bytes
-    addr $-112, $-24
-    ; escape align 8 $-104, 72 bytes
-    addr $-120, $-104
-L1:
-    call $0, fn1, 0, [4294967184, 8, 4294967176, 264]
-    ; escape align 8 $-104, 72 bytes
-    addr $-112, $-104
-L2:
-    call $-8, fn2, 8, [4294967184, 8]
-    ; end $-104, 72 bytes
-    ret $-8, 8
-L3:
-    resume $-32
-L4:
-    lpad $-32
-    jmp L3
-L5:
-    lpad $-32
-    jmp L3
-  cleanup L0 -> L4
-  cleanup L1 -> L5
-  cleanup L2 -> L5
-  cleanup L3 -> continue
-  fn0 = <std::hash::RandomState as std::hash::BuildHasher>::build_hasher
-  fn1 = core::hash::impls::<impl std::hash::Hash for &u64>::hash::<std::hash::DefaultHasher>
-  fn2 = <std::hash::DefaultHasher as std::hash::Hasher>::finish
 
 fn <std::iter::StepBy<std::ops::Range<u64>> as std::iter::IntoIterator>::into_iter (frame 80, args 0, ret 32) [hint]
     arg $-72, 8
@@ -1081,145 +981,6 @@ L0:
     ret $0, 0
   cleanup L0 -> continue
   fn0 = <std::hash::DefaultHasher as std::hash::Hasher>::write_str
-
-fn <std::sys::stdio::unix::Stderr as std::io::Write>::write_all (frame 176, args 0, ret 8)
-    arg $-16, 8
-    arg $-32, 264
-    arg $-24, 520
-L0:
-    mov.w128 $-96, $-32
-    mov.w64 $-104, $-88
-    eq.imm.w64 $-73, $-104, 0
-    br! $-73, L1
-    ; end $-96, 16 bytes
-    imm.w64 $-8, 0
-    jmp L11
-L1:
-    ; end $-96, 16 bytes
-    mov.w128 $-112, $-32
-L2:
-    call.sym $-96, sym0, 526344, [4294967280, 8, 4294967184, 264, 4294967192, 520]
-    mov.w64 $-40, $-96
-    br.eq.imm.w64 $-40, 0, L3
-    jmp L4
-    unreachable
-L3:
-    br.eq.imm.w64 $-88, 0, L7
-    jmp L6
-L4:
-    ; escape align 8 $-96, 16 bytes
-    addr $-104, $-88
-L5:
-    call $-74, fn1, 1, [4294967192, 8]
-    jmp L8
-L6:
-    mov.w64 $-104, $-88
-    mov.w64 $-112, $-24
-    br.lt.u.w64 $-112, $-104, L19
-    jmp L21
-L7:
-    addr.const $-8, k2
-    jmp L11
-L8:
-    br! $-74, L9
-    jmp L15
-L9:
-    mov.w64 $-104, $-88
-    mov.w64 $-8, $-104
-    jmp L11
-L10:
-    ; end $-96, 16 bytes
-    jmp L0
-L11:
-    ; end $-96, 16 bytes
-    ret $-8, 8
-L12:
-    resume $-72
-L13:
-    ; escape align 8 $-96, 16 bytes
-    addr $-176, $-88
-L14:
-    call $0, fn3, 0, [4294967120, 8]
-    jmp L10
-L15:
-    mov.w64 $-56, $-96
-    br.eq.imm.w64 $-56, 0, L10
-    jmp L13
-L16:
-    ; escape align 8 $-96, 16 bytes
-    addr $-176, $-88
-L17:
-    call $0, fn4, 0, [4294967120, 8]
-    jmp L12
-L18:
-    mov.w64 $-64, $-96
-    br.eq.imm.w64 $-64, 1, L16
-    jmp L12
-L19:
-    addr.const $-176, k5
-L20:
-    call.sym $0, sym6, 0, [4294967192, 8, 4294967184, 264, 4294967184, 520, 4294967120, 776]
-    unreachable
-L21:
-    sub.w64 $-120, $-112, $-104
-    mov.w64 $-152, $-32
-    mov.w64 $-144, $-24
-    mov.w64 $-160, $-152
-    ptr.index $-168, $-160, $-104, 1
-    mov.w64 $-136, $-168
-    mov.w64 $-128, $-120
-    mov.w64 $-32, $-136
-    mov.w64 $-24, $-128
-    jmp L15
-L22:
-    call.sym $0, sym7, 0, []
-    unreachable
-L23:
-    lpad $-72
-    jmp L18
-L24:
-    lpad $-72
-    jmp L22
-  cleanup L2 -> continue
-  cleanup L5 -> L23
-  cleanup L12 -> continue
-  cleanup L14 -> continue
-  cleanup L17 -> L24 (catch)
-  cleanup L20 -> L23
-  sym0 = <std::sys::stdio::unix::Stderr as std::io::Write>::write
-  fn1 = std::io::Error::is_interrupted
-  k2 = const allocation + 0
-  fn3 = std::ptr::drop_glue::<std::io::Error> - shim(Some(std::io::Error))
-  fn4 = std::ptr::drop_glue::<std::io::Error> - shim(Some(std::io::Error))
-  k5 = const allocation + 0
-  sym6 = core::slice::index::slice_index_fail
-  sym7 = core::panicking::panic_in_cleanup
-
-fn <std::sys::stdio::unix::Stderr as std::io::Write>::write_fmt (frame 96, args 0, ret 8)
-    arg $-16, 8
-    arg $-32, 264
-    arg $-24, 520
-    ; escape align 8 $-32, 16 bytes
-    addr $-64, $-32
-L0:
-    call $-56, fn0, 526344, [4294967232, 8]
-    br.eq.imm.w64 $-56, 0, L2
-    mov.w128 $-72, $-56
-    mov.w128 $-88, $-72
-L1:
-    call $-8, fn1, 8, [4294967280, 8, 4294967208, 264, 4294967216, 520]
-    jmp L3
-L2:
-    call $-8, fn2, 8, [4294967280, 8, 4294967264, 264, 4294967272, 520]
-L3:
-    ret $-8, 8
-    unreachable
-  cleanup L0 -> continue
-  cleanup L1 -> continue
-  cleanup L2 -> continue
-  fn0 = std::fmt::Arguments::<'_>::as_statically_known_str
-  fn1 = <std::sys::stdio::unix::Stderr as std::io::Write>::write_all
-  fn2 = core::io::write::default_write_fmt::<std::sys::stdio::unix::Stderr>
 
 fn <u32 as std::iter::Step>::forward_unchecked (frame 32, args 0, ret 4) [hint]
     arg $-8, 4
@@ -1448,7 +1209,7 @@ L0:
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
 
-fn <{closure@hashbrown::raw::RawTable<(std::string::String, usize)>::find<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>>::rustc_entry::{closure#0}}>::{closure#0}} as std::ops::FnOnce<(usize,)>>::call_once - shim (frame 48, args 0, ret 1)
+fn <{closure@hashbrown::raw::RawTable<(std::string::String, usize)>::find<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0}}>::{closure#0}} as std::ops::FnOnce<(usize,)>>::call_once - shim (frame 48, args 0, ret 1)
     arg $-24, 8
     arg $-16, 264
     arg $-32, 520
@@ -1464,9 +1225,9 @@ L2:
     jmp L1
   cleanup L0 -> L2
   cleanup L1 -> continue
-  fn0 = hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>>::rustc_entry::{closure#0}}>::{closure#0}
+  fn0 = hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0}}>::{closure#0}
 
-fn <{closure@hashbrown::raw::RawTable<(std::string::String, usize)>::find<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>>::rustc_entry::{closure#0}}>::{closure#0}} as std::ops::FnOnce<(usize,)>>::call_once - shim(vtable) (frame 48, args 0, ret 1)
+fn <{closure@hashbrown::raw::RawTable<(std::string::String, usize)>::find<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0}}>::{closure#0}} as std::ops::FnOnce<(usize,)>>::call_once - shim(vtable) (frame 48, args 0, ret 1)
     arg $-16, 8
     arg $-24, 264
     load.w128 $-40, [$-16 + 0]
@@ -1474,9 +1235,9 @@ L0:
     call $-1, fn0, 1, [4294967256, 8, 4294967264, 264, 4294967272, 520]
     ret $-1, 1
   cleanup L0 -> continue
-  fn0 = <{closure@hashbrown::raw::RawTable<(std::string::String, usize)>::find<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>>::rustc_entry::{closure#0}}>::{closure#0}} as std::ops::FnOnce<(usize,)>>::call_once - shim
+  fn0 = <{closure@hashbrown::raw::RawTable<(std::string::String, usize)>::find<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0}}>::{closure#0}} as std::ops::FnOnce<(usize,)>>::call_once - shim
 
-fn <{closure@hashbrown::raw::RawTable<(std::string::String, usize)>::reserve_rehash<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::RandomState>::{closure#0}}>::{closure#0}} as std::ops::FnOnce<(&mut hashbrown::raw::RawTableInner, usize)>>::call_once - shim (frame 48, args 0, ret 8)
+fn <{closure@hashbrown::raw::RawTable<(std::string::String, usize)>::reserve_rehash<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#0}} as std::ops::FnOnce<(&mut hashbrown::raw::RawTableInner, usize)>>::call_once - shim (frame 48, args 0, ret 8)
     arg $-16, 8
     arg $-32, 264
     arg $-24, 520
@@ -1492,9 +1253,9 @@ L2:
     jmp L1
   cleanup L0 -> L2
   cleanup L1 -> continue
-  fn0 = hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::RandomState>::{closure#0}}>::{closure#0}
+  fn0 = hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#0}
 
-fn <{closure@hashbrown::raw::RawTable<(std::string::String, usize)>::reserve_rehash<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::RandomState>::{closure#0}}>::{closure#0}} as std::ops::FnOnce<(&mut hashbrown::raw::RawTableInner, usize)>>::call_once - shim(vtable) (frame 48, args 0, ret 8)
+fn <{closure@hashbrown::raw::RawTable<(std::string::String, usize)>::reserve_rehash<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#0}} as std::ops::FnOnce<(&mut hashbrown::raw::RawTableInner, usize)>>::call_once - shim(vtable) (frame 48, args 0, ret 8)
     arg $-16, 8
     arg $-32, 264
     arg $-24, 520
@@ -1503,9 +1264,9 @@ L0:
     call $-8, fn0, 8, [4294967256, 8, 4294967264, 264, 4294967272, 520]
     ret $-8, 8
   cleanup L0 -> continue
-  fn0 = <{closure@hashbrown::raw::RawTable<(std::string::String, usize)>::reserve_rehash<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::RandomState>::{closure#0}}>::{closure#0}} as std::ops::FnOnce<(&mut hashbrown::raw::RawTableInner, usize)>>::call_once - shim
+  fn0 = <{closure@hashbrown::raw::RawTable<(std::string::String, usize)>::reserve_rehash<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#0}} as std::ops::FnOnce<(&mut hashbrown::raw::RawTableInner, usize)>>::call_once - shim
 
-fn <{closure@hashbrown::raw::RawTable<(std::string::String, usize)>::reserve_rehash<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::RandomState>::{closure#0}}>::{closure#1}} as std::ops::FnOnce<(*mut u8,)>>::call_once - shim (frame 32, args 0, ret 0)
+fn <{closure@hashbrown::raw::RawTable<(std::string::String, usize)>::reserve_rehash<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#1}} as std::ops::FnOnce<(*mut u8,)>>::call_once - shim (frame 32, args 0, ret 0)
     arg $-8, 8
     addr $-16, $0
 L0:
@@ -1518,7 +1279,7 @@ L2:
     jmp L1
   cleanup L0 -> L2
   cleanup L1 -> continue
-  fn0 = hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::RandomState>::{closure#0}}>::{closure#1}
+  fn0 = hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#1}
 
 fn <{closure@hashbrown::raw::RawTable<(u64, u64)>::find<{closure@hashbrown::map::equivalent_key<u64, u64, u64>::{closure#0}}>::{closure#0}} as std::ops::FnOnce<(usize,)>>::call_once - shim (frame 48, args 0, ret 1)
     arg $-24, 8
@@ -1548,7 +1309,7 @@ L0:
   cleanup L0 -> continue
   fn0 = <{closure@hashbrown::raw::RawTable<(u64, u64)>::find<{closure@hashbrown::map::equivalent_key<u64, u64, u64>::{closure#0}}>::{closure#0}} as std::ops::FnOnce<(usize,)>>::call_once - shim
 
-fn <{closure@hashbrown::raw::RawTable<(u64, u64)>::find<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::RandomState>>::rustc_entry::{closure#0}}>::{closure#0}} as std::ops::FnOnce<(usize,)>>::call_once - shim (frame 48, args 0, ret 1)
+fn <{closure@hashbrown::raw::RawTable<(u64, u64)>::find<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0}}>::{closure#0}} as std::ops::FnOnce<(usize,)>>::call_once - shim (frame 48, args 0, ret 1)
     arg $-24, 8
     arg $-16, 264
     arg $-32, 520
@@ -1564,9 +1325,9 @@ L2:
     jmp L1
   cleanup L0 -> L2
   cleanup L1 -> continue
-  fn0 = hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::RandomState>>::rustc_entry::{closure#0}}>::{closure#0}
+  fn0 = hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0}}>::{closure#0}
 
-fn <{closure@hashbrown::raw::RawTable<(u64, u64)>::find<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::RandomState>>::rustc_entry::{closure#0}}>::{closure#0}} as std::ops::FnOnce<(usize,)>>::call_once - shim(vtable) (frame 48, args 0, ret 1)
+fn <{closure@hashbrown::raw::RawTable<(u64, u64)>::find<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0}}>::{closure#0}} as std::ops::FnOnce<(usize,)>>::call_once - shim(vtable) (frame 48, args 0, ret 1)
     arg $-16, 8
     arg $-24, 264
     load.w128 $-40, [$-16 + 0]
@@ -1574,9 +1335,9 @@ L0:
     call $-1, fn0, 1, [4294967256, 8, 4294967264, 264, 4294967272, 520]
     ret $-1, 1
   cleanup L0 -> continue
-  fn0 = <{closure@hashbrown::raw::RawTable<(u64, u64)>::find<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::RandomState>>::rustc_entry::{closure#0}}>::{closure#0}} as std::ops::FnOnce<(usize,)>>::call_once - shim
+  fn0 = <{closure@hashbrown::raw::RawTable<(u64, u64)>::find<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0}}>::{closure#0}} as std::ops::FnOnce<(usize,)>>::call_once - shim
 
-fn <{closure@hashbrown::raw::RawTable<(u64, u64)>::reserve_rehash<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::RandomState>::{closure#0}}>::{closure#0}} as std::ops::FnOnce<(&mut hashbrown::raw::RawTableInner, usize)>>::call_once - shim (frame 48, args 0, ret 8)
+fn <{closure@hashbrown::raw::RawTable<(u64, u64)>::reserve_rehash<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#0}} as std::ops::FnOnce<(&mut hashbrown::raw::RawTableInner, usize)>>::call_once - shim (frame 48, args 0, ret 8)
     arg $-16, 8
     arg $-32, 264
     arg $-24, 520
@@ -1592,9 +1353,9 @@ L2:
     jmp L1
   cleanup L0 -> L2
   cleanup L1 -> continue
-  fn0 = hashbrown::raw::RawTable::<(u64, u64)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::RandomState>::{closure#0}}>::{closure#0}
+  fn0 = hashbrown::raw::RawTable::<(u64, u64)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#0}
 
-fn <{closure@hashbrown::raw::RawTable<(u64, u64)>::reserve_rehash<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::RandomState>::{closure#0}}>::{closure#0}} as std::ops::FnOnce<(&mut hashbrown::raw::RawTableInner, usize)>>::call_once - shim(vtable) (frame 48, args 0, ret 8)
+fn <{closure@hashbrown::raw::RawTable<(u64, u64)>::reserve_rehash<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#0}} as std::ops::FnOnce<(&mut hashbrown::raw::RawTableInner, usize)>>::call_once - shim(vtable) (frame 48, args 0, ret 8)
     arg $-16, 8
     arg $-32, 264
     arg $-24, 520
@@ -1603,22 +1364,7 @@ L0:
     call $-8, fn0, 8, [4294967256, 8, 4294967264, 264, 4294967272, 520]
     ret $-8, 8
   cleanup L0 -> continue
-  fn0 = <{closure@hashbrown::raw::RawTable<(u64, u64)>::reserve_rehash<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::RandomState>::{closure#0}}>::{closure#0}} as std::ops::FnOnce<(&mut hashbrown::raw::RawTableInner, usize)>>::call_once - shim
-
-fn <{closure@std::hash::RandomState::new::KEYS::{constant#0}::{closure#1}} as std::ops::FnOnce<(std::option::Option<&mut std::option::Option<std::cell::Cell<(u64, u64)>>>,)>>::call_once - shim (frame 32, args 0, ret 8)
-    arg $-16, 8
-    addr $-24, $-8
-L0:
-    call $-8, fn0, 8, [4294967272, 8, 4294967280, 264]
-    ret $-8, 8
-L1:
-    resume $-32
-L2:
-    lpad $-32
-    jmp L1
-  cleanup L0 -> L2
-  cleanup L1 -> continue
-  fn0 = std::hash::RandomState::new::KEYS::{constant#0}::{closure#1}
+  fn0 = <{closure@hashbrown::raw::RawTable<(u64, u64)>::reserve_rehash<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#0}} as std::ops::FnOnce<(&mut hashbrown::raw::RawTableInner, usize)>>::call_once - shim
 
 fn <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::call_once - shim (frame 32, args 0, ret 4)
     arg $-16, 8
@@ -1912,287 +1658,6 @@ L8:
   k4 = const allocation + 0
   fn5 = <usize as std::slice::SliceIndex<[T]>>::get_unchecked::precondition_check
 
-fn core::io::error::repr::Repr::data::{closure#0} (frame 16, args 0, ret 8)
-    arg $-16, 8
-    mov.w64 $-8, $-16
-    ret $-8, 8
-
-fn core::io::error::repr::decode_repr::<&core::io::error::Custom, {closure@core::io::error::repr::Repr::data::{closure#0}}> (frame 208, args 0, ret 16) [hint]
-    arg $-128, 8
-    arg $-24, 264
-    imm.w8 $-41, 1
-    mov.w64 $-32, $-24
-    mov.w64 $-136, $-24
-    and.imm.w64 $-144, $-136, 3
-    switch.dense.w64 $-144, 0, L0, [L3, L2, L6, L4]
-L0:
-    addr.const $-192, k0
-    imm.w64 $-184, 40
-    addr.const $-200, k1
-L1:
-    call.sym $0, sym2, 0, [4294967104, 8, 4294967112, 264, 4294967096, 520]
-    unreachable
-L2:
-    mov.w64 $-168, $-24
-    mov.w64 $-176, $-24
-    imm.w64 $-184, 18446744073709551615
-    ptr.index $-112, $-176, $-184, 1
-    jmp L16
-L3:
-    mov.w64 $-56, $-24
-    mov.w64 $-160, $-24
-    mov.w64 $-152, $-56
-    mov.w64 $-8, $-152
-    imm.w8 $-16, 2
-    jmp L18
-L4:
-    shr.u.imm.w64 $-160, $-136, 32
-    trunc.w64.w32 $-148, $-160
-L5:
-    call $-150, fn3, 1, [4294967148, 4]
-    jmp L7
-L6:
-    mov.w64 $-168, $-136
-    shr.s.imm.w64 $-160, $-168, 32
-    trunc.w64.w32 $-148, $-160
-    mov.w32 $-12, $-148
-    imm.w8 $-16, 0
-    jmp L18
-L7:
-    br.eq.imm.w8 $-150, 255, L14
-    jmp L15
-L8:
-    mov.w64 $-8, $-160
-    imm.w8 $-16, 3
-L9:
-    store.copy [$-128 + 0], $-16, 16
-    ret $-128, 8
-L10:
-    resume $-120
-L11:
-    jmp L10
-L12:
-    br! $-41, L10
-    jmp L11
-L13:
-    unreachable
-L14:
-    addr.const $-184, k4
-    call $0, fn5, 0, [4294967112, 8]
-    jmp L13
-L15:
-    mov.w8 $-149, $-150
-    mov.w8 $-15, $-149
-    imm.w8 $-16, 1
-    jmp L18
-L16:
-    mov.w64 $-160, $-112
-    mov.w64 $-168, $-24
-    mov.w64 $-176, $-112
-    mov.w64 $-152, $-112
-    imm.w8 $-41, 0
-    mov.w64 $-168, $-152
-L17:
-    call $-160, fn6, 8, [4294967128, 8]
-    jmp L8
-L18:
-    jmp L9
-L19:
-    lpad $-120
-    jmp L12
-  cleanup L1 -> L19
-  cleanup L5 -> L19
-  cleanup L10 -> continue
-  cleanup L17 -> L19
-  k0 = const allocation + 0
-  k1 = const allocation + 0
-  sym2 = core::panicking::panic
-  fn3 = std::io::ErrorKind::from_prim
-  k4 = const allocation + 0
-  fn5 = std::hint::unreachable_unchecked::precondition_check
-  fn6 = core::io::error::repr::Repr::data::{closure#0}
-
-fn core::io::error::repr::decode_repr::<core::io::error::CustomOwner, {closure@<core::io::error::repr::Repr as std::ops::Drop>::drop::{closure#0}}> (frame 208, args 0, ret 16) [hint]
-    arg $-128, 8
-    arg $-24, 264
-    imm.w8 $-41, 1
-    mov.w64 $-32, $-24
-    mov.w64 $-136, $-24
-    and.imm.w64 $-144, $-136, 3
-    switch.dense.w64 $-144, 0, L0, [L3, L2, L6, L4]
-L0:
-    addr.const $-192, k0
-    imm.w64 $-184, 40
-    addr.const $-200, k1
-L1:
-    call.sym $0, sym2, 0, [4294967104, 8, 4294967112, 264, 4294967096, 520]
-    unreachable
-L2:
-    mov.w64 $-168, $-24
-    mov.w64 $-176, $-24
-    imm.w64 $-184, 18446744073709551615
-    ptr.index $-112, $-176, $-184, 1
-    jmp L16
-L3:
-    mov.w64 $-56, $-24
-    mov.w64 $-160, $-24
-    mov.w64 $-152, $-56
-    mov.w64 $-8, $-152
-    imm.w8 $-16, 2
-    jmp L18
-L4:
-    shr.u.imm.w64 $-160, $-136, 32
-    trunc.w64.w32 $-148, $-160
-L5:
-    call $-150, fn3, 1, [4294967148, 4]
-    jmp L7
-L6:
-    mov.w64 $-168, $-136
-    shr.s.imm.w64 $-160, $-168, 32
-    trunc.w64.w32 $-148, $-160
-    mov.w32 $-12, $-148
-    imm.w8 $-16, 0
-    jmp L18
-L7:
-    br.eq.imm.w8 $-150, 255, L14
-    jmp L15
-L8:
-    mov.w64 $-8, $-160
-    imm.w8 $-16, 3
-L9:
-    store.copy [$-128 + 0], $-16, 16
-    ret $-128, 8
-L10:
-    resume $-120
-L11:
-    jmp L10
-L12:
-    br! $-41, L10
-    jmp L11
-L13:
-    unreachable
-L14:
-    addr.const $-184, k4
-    call $0, fn5, 0, [4294967112, 8]
-    jmp L13
-L15:
-    mov.w8 $-149, $-150
-    mov.w8 $-15, $-149
-    imm.w8 $-16, 1
-    jmp L18
-L16:
-    mov.w64 $-160, $-112
-    mov.w64 $-168, $-24
-    mov.w64 $-176, $-112
-    mov.w64 $-152, $-112
-    imm.w8 $-41, 0
-    mov.w64 $-168, $-152
-L17:
-    call $-160, fn6, 8, [4294967128, 8]
-    jmp L8
-L18:
-    jmp L9
-L19:
-    lpad $-120
-    jmp L12
-  cleanup L1 -> L19
-  cleanup L5 -> L19
-  cleanup L10 -> continue
-  cleanup L17 -> L19
-  k0 = const allocation + 0
-  k1 = const allocation + 0
-  sym2 = core::panicking::panic
-  fn3 = std::io::ErrorKind::from_prim
-  k4 = const allocation + 0
-  fn5 = std::hint::unreachable_unchecked::precondition_check
-  fn6 = <core::io::error::repr::Repr as std::ops::Drop>::drop::{closure#0}
-
-fn core::io::write::default_write_fmt::<std::sys::stdio::unix::Stderr> (frame 192, args 0, ret 8)
-    arg $-16, 8
-    arg $-32, 264
-    arg $-24, 520
-    mov.w64 $-72, $-16
-    imm.w64 $-64, 0
-    ; escape align 8 $-72, 16 bytes
-    addr $-104, $-72
-    mov.w64 $-96, $-104
-    addr.const $-88, k0
-L0:
-    call.sym $-73, sym1, 1, [4294967200, 8, 4294967208, 264, 4294967264, 520, 4294967272, 776]
-    zext.w8.w64 $-40, $-73
-    br.eq.imm.w64 $-40, 0, L2
-    jmp L1
-    unreachable
-L1:
-    ne.imm.w64 $-177, $-64, 0
-    zext.w8.w64 $-88, $-177
-    eq.imm.w64 $-75, $-88, 0
-    xor.imm.w8 $-74, $-75, 1
-    br! $-74, L5
-    jmp L4
-L2:
-    imm.w64 $-8, 0
-    ; escape align 8 $-72, 16 bytes
-    addr $-184, $-64
-L3:
-    call $0, fn2, 0, [4294967112, 8]
-    jmp L7
-L4:
-    mov.w64 $-8, $-64
-    jmp L7
-L5:
-    addr.const $-120, k3
-    imm.w64 $-112, 86
-    mov.w64 $-152, $-120
-    mov.w64 $-144, $-112
-    mov.w64 $-136, $-152
-    mov.w64 $-128, $-136
-    addr.const $-176, k4
-    imm.w64 $-168, 86
-    mov.w64 $-160, $-168
-    shl.imm.w64 $-152, $-160, 1
-    or.imm.w64 $-144, $-152, 1
-    mov.w64 $-136, $-144
-    mov.w64 $-96, $-128
-    mov.w64 $-88, $-136
-    addr.const $-184, k5
-L6:
-    call.sym $0, sym6, 0, [4294967200, 8, 4294967208, 264, 4294967112, 520]
-    unreachable
-L7:
-    ; end $-72, 16 bytes
-    ret $-8, 8
-L8:
-    ; escape align 8 $-72, 16 bytes
-    addr $-184, $-72
-L9:
-    call $0, fn7, 0, [4294967112, 8]
-L10:
-    resume $-56
-L11:
-    call.sym $0, sym8, 0, []
-    unreachable
-L12:
-    lpad $-56
-    jmp L8
-L13:
-    lpad $-56
-    jmp L11
-  cleanup L0 -> L12
-  cleanup L3 -> continue
-  cleanup L6 -> L12
-  cleanup L9 -> L13 (catch)
-  cleanup L10 -> continue
-  k0 = const allocation + 0
-  sym1 = std::fmt::write
-  fn2 = std::ptr::drop_glue::<std::result::Result<(), std::io::Error>> - shim(Some(std::result::Result<(), std::io::Error>))
-  k3 = const allocation + 0
-  k4 = const allocation + 0
-  k5 = const allocation + 0
-  sym6 = std::rt::panic_fmt
-  fn7 = std::ptr::drop_glue::<core::io::write::default_write_fmt::Adapter<'_, std::sys::stdio::unix::Stderr>> - shim(Some(core::io::write::default_write_fmt::Adapter<'_, std::sys::stdio::unix::Stderr>))
-  sym8 = core::panicking::panic_in_cleanup
-
 fn core::num::<impl u32>::unchecked_add::precondition_check (frame 128, args 0, ret 0) [hint]
     arg $-4, 4
     arg $-8, 260
@@ -2378,7 +1843,7 @@ L3:
   fn2 = std::arch::x86_64::_mm_set1_epi8
   fn3 = std::arch::x86_64::_mm_or_si128
 
-fn hashbrown::map::HashMap::<u64, u64, std::hash::RandomState>::get::<u64> (frame 144, args 0, ret 8) [hint]
+fn hashbrown::map::HashMap::<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::get::<u64> (frame 144, args 0, ret 8) [hint]
     arg $-16, 8
     arg $-24, 264
     load.w64 $-64, [$-16 + 24]
@@ -2433,10 +1898,10 @@ L11:
     jmp L9
   cleanup L1 -> continue
   cleanup L4 -> continue
-  fn0 = <std::hash::RandomState as std::hash::BuildHasher>::hash_one::<&u64>
+  fn0 = <std::hash::BuildHasherDefault<std::hash::DefaultHasher> as std::hash::BuildHasher>::hash_one::<&u64>
   fn1 = hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::map::equivalent_key<u64, u64, u64>::{closure#0}}>
 
-fn hashbrown::map::HashMap::<u64, u64, std::hash::RandomState>::iter (frame 208, args 0, ret 40)
+fn hashbrown::map::HashMap::<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::iter (frame 208, args 0, ret 40)
     arg $-72, 8
     arg $-48, 264
     load.w64 $-176, [$-48 + 0]
@@ -2480,7 +1945,7 @@ L4:
   cleanup L4 -> continue
   fn0 = hashbrown::raw::RawIterRange::<(u64, u64)>::new
 
-fn hashbrown::map::HashMap::<u64, u64, std::hash::RandomState>::retain::<{closure@bench/hashmap.rs:23:16: 23:22}> (frame 224, args 0, ret 0)
+fn hashbrown::map::HashMap::<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::retain::<{closure@bench/hashmap.rs:27:16: 27:22}> (frame 224, args 0, ret 0)
     arg $-8, 8
     load.w64 $-168, [$-8 + 0]
     mov.w64 $-120, $-168
@@ -2609,7 +2074,7 @@ L0:
   cleanup L0 -> continue
   fn0 = <u64 as hashbrown::Equivalent<u64>>::equivalent
 
-fn hashbrown::map::make_hasher::<std::string::String, usize, std::hash::RandomState>::{closure#0} (frame 48, args 0, ret 8)
+fn hashbrown::map::make_hasher::<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0} (frame 48, args 0, ret 8)
     arg $-16, 8
     arg $-24, 264
     load.w64 $-32, [$-16 + 0]
@@ -2618,9 +2083,9 @@ L0:
     call $-8, fn0, 8, [4294967264, 8, 4294967256, 264]
     ret $-8, 8
   cleanup L0 -> continue
-  fn0 = <std::hash::RandomState as std::hash::BuildHasher>::hash_one::<&std::string::String>
+  fn0 = <std::hash::BuildHasherDefault<std::hash::DefaultHasher> as std::hash::BuildHasher>::hash_one::<&std::string::String>
 
-fn hashbrown::map::make_hasher::<u64, u64, std::hash::RandomState>::{closure#0} (frame 48, args 0, ret 8)
+fn hashbrown::map::make_hasher::<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0} (frame 48, args 0, ret 8)
     arg $-16, 8
     arg $-24, 264
     load.w64 $-32, [$-16 + 0]
@@ -2629,7 +2094,7 @@ L0:
     call $-8, fn0, 8, [4294967264, 8, 4294967256, 264]
     ret $-8, 8
   cleanup L0 -> continue
-  fn0 = <std::hash::RandomState as std::hash::BuildHasher>::hash_one::<&u64>
+  fn0 = <std::hash::BuildHasherDefault<std::hash::DefaultHasher> as std::hash::BuildHasher>::hash_one::<&u64>
 
 fn hashbrown::raw::FullBucketsIndices::next_impl (frame 192, args 0, ret 16) [always]
     arg $-24, 8
@@ -2867,7 +2332,7 @@ L19:
   k1 = const allocation + 0
   fn2 = std::arch::x86_64::_mm_movemask_epi8
 
-fn hashbrown::raw::RawIterRange::<(u64, u64)>::fold_impl::<{closure@<hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:24:43: 24:50}>::{closure#0}}>::{closure#0}}, u64> (frame 288, args 0, ret 8)
+fn hashbrown::raw::RawIterRange::<(u64, u64)>::fold_impl::<{closure@<hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:28:43: 28:50}>::{closure#0}}>::{closure#0}}, u64> (frame 288, args 0, ret 8)
     arg $-264, 8
     arg $-48, 264
     arg $-56, 520
@@ -3023,7 +2488,7 @@ L26:
   cleanup L20 -> L26
   fn0 = std::arch::x86_64::_mm_load_si128
   k1 = const allocation + 0
-  fn2 = <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:24:43: 24:50}>::{closure#0}}>::{closure#0}
+  fn2 = <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:28:43: 28:50}>::{closure#0}}>::{closure#0}
   fn3 = std::arch::x86_64::_mm_movemask_epi8
 
 fn hashbrown::raw::RawIterRange::<(u64, u64)>::new (frame 208, args 0, ret 32)
@@ -3189,7 +2654,7 @@ L19:
   k1 = const allocation + 0
   fn2 = std::arch::x86_64::_mm_movemask_epi8
 
-fn hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>>::rustc_entry::{closure#0}}> (frame 176, args 0, ret 8) [hint]
+fn hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0}}> (frame 176, args 0, ret 8) [hint]
     arg $-16, 8
     arg $-24, 264
     arg $-32, 520
@@ -3260,7 +2725,7 @@ L11:
   k0 = const allocation + 0
   fn1 = hashbrown::raw::RawTableInner::find_inner
 
-fn hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>>::rustc_entry::{closure#0}}>::{closure#0} (frame 160, args 0, ret 1)
+fn hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0}}>::{closure#0} (frame 160, args 0, ret 1)
     arg $-16, 8
     arg $-24, 264
     load.w64 $-40, [$-16 + 0]
@@ -3321,7 +2786,7 @@ L13:
     ptr.index $-112, $-120, $-160, 32
     jmp L11
   cleanup L8 -> continue
-  fn0 = hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>>::rustc_entry::{closure#0}
+  fn0 = hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0}
 
 fn hashbrown::raw::RawTable::<(std::string::String, usize)>::insert_no_grow (frame 224, args 0, ret 8)
     arg $-16, 8
@@ -3445,7 +2910,7 @@ L18:
   fn1 = std::ptr::drop_glue::<(std::string::String, usize)> - shim(Some((std::string::String, usize)))
   sym2 = core::panicking::panic_in_cleanup
 
-fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::RandomState>::{closure#0}}> (frame 96, args 0, ret 0)
+fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}> (frame 96, args 0, ret 0)
     arg $-8, 8
     arg $-16, 264
     arg $-24, 520
@@ -3480,9 +2945,9 @@ L8:
     jmp L4
   cleanup L2 -> continue
   cleanup L6 -> L8
-  fn0 = hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::RandomState>::{closure#0}}>
+  fn0 = hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>
 
-fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::RandomState>::{closure#0}}> (frame 176, args 0, ret 16) [never, cold]
+fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}> (frame 176, args 0, ret 16) [never, cold]
     arg $-24, 8
     arg $-32, 264
     arg $-40, 520
@@ -3520,11 +2985,11 @@ L4:
   cleanup L2 -> L4
   cleanup L3 -> continue
   k0 = const allocation + 0
-  sym1 = <{closure@hashbrown::raw::RawTable<(std::string::String, usize)>::reserve_rehash<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::RandomState>::{closure#0}}>::{closure#1}} as std::ops::FnOnce<(*mut u8,)>>::call_once - shim
+  sym1 = <{closure@hashbrown::raw::RawTable<(std::string::String, usize)>::reserve_rehash<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#1}} as std::ops::FnOnce<(*mut u8,)>>::call_once - shim
   k2 = const allocation + 0
   fn3 = hashbrown::raw::RawTableInner::reserve_rehash_inner::<std::alloc::Global>
 
-fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::RandomState>::{closure#0}}>::{closure#0} (frame 160, args 0, ret 8)
+fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#0} (frame 160, args 0, ret 8)
     arg $-16, 8
     arg $-24, 264
     arg $-32, 520
@@ -3585,9 +3050,9 @@ L13:
     ptr.index $-112, $-120, $-160, 32
     jmp L11
   cleanup L8 -> continue
-  fn0 = hashbrown::map::make_hasher::<std::string::String, usize, std::hash::RandomState>::{closure#0}
+  fn0 = hashbrown::map::make_hasher::<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}
 
-fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::RandomState>::{closure#0}}>::{closure#1} (frame 32, args 0, ret 0)
+fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#1} (frame 32, args 0, ret 0)
     arg $-8, 8
     arg $-16, 264
     mov.w64 $-24, $-16
@@ -3825,7 +3290,7 @@ L13:
   cleanup L8 -> continue
   fn0 = hashbrown::map::equivalent_key::<u64, u64, u64>::{closure#0}
 
-fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::RandomState>>::rustc_entry::{closure#0}}> (frame 176, args 0, ret 8) [hint]
+fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0}}> (frame 176, args 0, ret 8) [hint]
     arg $-16, 8
     arg $-24, 264
     arg $-32, 520
@@ -3896,7 +3361,7 @@ L11:
   k0 = const allocation + 0
   fn1 = hashbrown::raw::RawTableInner::find_inner
 
-fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::RandomState>>::rustc_entry::{closure#0}}>::{closure#0} (frame 160, args 0, ret 1)
+fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0}}>::{closure#0} (frame 160, args 0, ret 1)
     arg $-16, 8
     arg $-24, 264
     load.w64 $-40, [$-16 + 0]
@@ -3957,7 +3422,7 @@ L13:
     ptr.index $-112, $-120, $-160, 16
     jmp L11
   cleanup L8 -> continue
-  fn0 = hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::RandomState>>::rustc_entry::{closure#0}
+  fn0 = hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0}
 
 fn hashbrown::raw::RawTable::<(u64, u64)>::insert_no_grow (frame 192, args 0, ret 8)
     arg $-16, 8
@@ -4062,7 +3527,7 @@ L15:
   cleanup L1 -> continue
   fn0 = hashbrown::raw::RawTableInner::find_insert_index
 
-fn hashbrown::raw::RawTable::<(u64, u64)>::reserve::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::RandomState>::{closure#0}}> (frame 96, args 0, ret 0)
+fn hashbrown::raw::RawTable::<(u64, u64)>::reserve::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}> (frame 96, args 0, ret 0)
     arg $-8, 8
     arg $-16, 264
     arg $-24, 520
@@ -4097,9 +3562,9 @@ L8:
     jmp L4
   cleanup L2 -> continue
   cleanup L6 -> L8
-  fn0 = hashbrown::raw::RawTable::<(u64, u64)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::RandomState>::{closure#0}}>
+  fn0 = hashbrown::raw::RawTable::<(u64, u64)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>
 
-fn hashbrown::raw::RawTable::<(u64, u64)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::RandomState>::{closure#0}}> (frame 176, args 0, ret 16) [never, cold]
+fn hashbrown::raw::RawTable::<(u64, u64)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}> (frame 176, args 0, ret 16) [never, cold]
     arg $-24, 8
     arg $-32, 264
     arg $-40, 520
@@ -4137,11 +3602,11 @@ L4:
   cleanup L2 -> L4
   cleanup L3 -> continue
   k0 = const allocation + 0
-  sym1 = <{closure@hashbrown::raw::RawTable<(u64, u64)>::reserve_rehash<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::RandomState>::{closure#0}}>::{closure#1}} as std::ops::FnOnce<(*mut u8,)>>::call_once - shim
+  sym1 = <{closure@hashbrown::raw::RawTable<(u64, u64)>::reserve_rehash<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#1}} as std::ops::FnOnce<(*mut u8,)>>::call_once - shim
   k2 = const allocation + 0
   fn3 = hashbrown::raw::RawTableInner::reserve_rehash_inner::<std::alloc::Global>
 
-fn hashbrown::raw::RawTable::<(u64, u64)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::RandomState>::{closure#0}}>::{closure#0} (frame 160, args 0, ret 8)
+fn hashbrown::raw::RawTable::<(u64, u64)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#0} (frame 160, args 0, ret 8)
     arg $-16, 8
     arg $-24, 264
     arg $-32, 520
@@ -4202,7 +3667,7 @@ L13:
     ptr.index $-112, $-120, $-160, 16
     jmp L11
   cleanup L8 -> continue
-  fn0 = hashbrown::map::make_hasher::<u64, u64, std::hash::RandomState>::{closure#0}
+  fn0 = hashbrown::map::make_hasher::<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}
 
 fn hashbrown::raw::RawTableInner::drop_elements::<(std::string::String, usize)> (frame 176, args 0, ret 0)
     arg $-8, 8
@@ -6336,7 +5801,7 @@ L25:
   k3 = const allocation + 0
   sym4 = core::panicking::panic_const::panic_const_add_overflow
 
-fn hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>>::rustc_entry (frame 192, args 0, ret 40)
+fn hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry (frame 192, args 0, ret 40)
     arg $-96, 8
     arg $-48, 264
     arg $-184, 520
@@ -6418,14 +5883,14 @@ L14:
   cleanup L7 -> L14 (catch)
   cleanup L8 -> continue
   cleanup L10 -> L13
-  fn0 = <std::hash::RandomState as std::hash::BuildHasher>::hash_one::<&std::string::String>
+  fn0 = <std::hash::BuildHasherDefault<std::hash::DefaultHasher> as std::hash::BuildHasher>::hash_one::<&std::string::String>
   fn1 = std::ptr::drop_glue::<std::string::String> - shim(Some(std::string::String))
-  fn2 = hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::RandomState>::{closure#0}}>
+  fn2 = hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>
   fn3 = std::ptr::drop_glue::<std::string::String> - shim(Some(std::string::String))
-  fn4 = hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>>::rustc_entry::{closure#0}}>
+  fn4 = hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0}}>
   sym5 = core::panicking::panic_in_cleanup
 
-fn hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>>::rustc_entry::{closure#0} (frame 48, args 0, ret 1)
+fn hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0} (frame 48, args 0, ret 1)
     arg $-16, 8
     arg $-24, 264
     mov.w64 $-40, $-24
@@ -6436,7 +5901,7 @@ L0:
   cleanup L0 -> continue
   fn0 = <std::string::String as std::cmp::PartialEq>::eq
 
-fn hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::RandomState>>::rustc_entry (frame 128, args 0, ret 24)
+fn hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry (frame 128, args 0, ret 24)
     arg $-64, 8
     arg $-32, 264
     arg $-40, 520
@@ -6494,11 +5959,11 @@ L9:
   cleanup L3 -> L9
   cleanup L5 -> continue
   cleanup L7 -> L9
-  fn0 = <std::hash::RandomState as std::hash::BuildHasher>::hash_one::<&u64>
-  fn1 = hashbrown::raw::RawTable::<(u64, u64)>::reserve::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::RandomState>::{closure#0}}>
-  fn2 = hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::RandomState>>::rustc_entry::{closure#0}}>
+  fn0 = <std::hash::BuildHasherDefault<std::hash::DefaultHasher> as std::hash::BuildHasher>::hash_one::<&u64>
+  fn1 = hashbrown::raw::RawTable::<(u64, u64)>::reserve::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>
+  fn2 = hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0}}>
 
-fn hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::RandomState>>::rustc_entry::{closure#0} (frame 48, args 0, ret 1)
+fn hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0} (frame 48, args 0, ret 1)
     arg $-16, 8
     arg $-24, 264
     mov.w64 $-40, $-24
@@ -6509,359 +5974,359 @@ L0:
   cleanup L0 -> continue
   fn0 = std::cmp::impls::<impl std::cmp::PartialEq for u64>::eq
 
-fn main (frame 1376, args 0, ret 0)
-    imm.w64 $-1336, 330000
+fn main (frame 1344, args 0, ret 0)
+    imm.w64 $-1304, 330000
 L0:
-    call $-8, fn0, 8, [4294965960, 8]
+    call $-8, fn0, 8, [4294965992, 8]
 L1:
-    ; end $-1336, 8 bytes
-    ; escape align 8 $-56, 48 bytes
-    call $0, fn1, 0, [4294967240, 72]
-    imm.w64 $-64, 1
-    imm.w64 $-96, 0
-    mov.w64 $-88, $-8
+    ; end $-1304, 8 bytes
+    ; escape align 8 $-40, 32 bytes
+    call $0, fn1, 0, [4294967256, 72]
+    imm.w64 $-48, 1
+    imm.w64 $-80, 0
+    mov.w64 $-72, $-8
 L2:
-    call $-80, fn2, 526344, [4294967200, 8, 4294967208, 264]
-    mov.w128 $-112, $-80
+    call $-64, fn2, 526344, [4294967216, 8, 4294967224, 264]
+    mov.w128 $-96, $-64
 L3:
-    ; escape align 8 $-112, 16 bytes
-    addr $-136, $-112
+    ; escape align 8 $-96, 16 bytes
+    addr $-120, $-96
 L4:
-    call $-128, fn3, 526344, [4294967160, 8]
-    mov.w64 $-144, $-128
-    br.eq.imm.w64 $-144, 0, L7
+    call $-112, fn3, 526344, [4294967176, 8]
+    mov.w64 $-128, $-112
+    br.eq.imm.w64 $-128, 0, L7
     jmp L5
     unreachable
 L5:
-    mov.w64 $-152, $-120
-    mov.w64 $-176, $-64
-    imm.w64 $-1336, 6364136223846793005
+    mov.w64 $-136, $-104
+    mov.w64 $-160, $-48
+    imm.w64 $-1304, 6364136223846793005
 L6:
-    call $-168, fn4, 8, [4294967120, 8, 4294965960, 264]
+    call $-152, fn4, 8, [4294967136, 8, 4294965992, 264]
     jmp L9
 L7:
-    ; end $-1336, 8 bytes
-    imm.w64 $-264, 0
-    imm.w64 $-272, 0
-    imm.w32 $-1332, 20
-    mov.w32 $-364, $-1332
-    ; end $-1332, 4 bytes
-    br.lt.u.imm.w32 $-364, 64, L17
-    addr.const $-1336, k5
+    ; end $-1304, 8 bytes
+    imm.w64 $-248, 0
+    imm.w64 $-256, 0
+    imm.w32 $-1300, 20
+    mov.w32 $-348, $-1300
+    ; end $-1300, 4 bytes
+    br.lt.u.imm.w32 $-348, 64, L17
+    addr.const $-1304, k5
 L8:
-    call.sym $0, sym6, 0, [4294965960, 8]
+    call.sym $0, sym6, 0, [4294965992, 8]
     unreachable
 L9:
-    ; end $-1336, 8 bytes
-    imm.w64 $-1336, 1442695040888963407
+    ; end $-1304, 8 bytes
+    imm.w64 $-1304, 1442695040888963407
 L10:
-    call $-160, fn7, 8, [4294967128, 8, 4294965960, 264]
-    ; end $-1336, 8 bytes
-    mov.w64 $-64, $-160
-    ; escape align 8 $-56, 48 bytes
-    addr $-216, $-56
-    mov.w64 $-232, $-64
-    imm.w32 $-1332, 44
-    mov.w32 $-236, $-1332
-    ; end $-1332, 4 bytes
-    br.lt.u.imm.w32 $-236, 64, L12
-    addr.const $-1336, k8
+    call $-144, fn7, 8, [4294967144, 8, 4294965992, 264]
+    ; end $-1304, 8 bytes
+    mov.w64 $-48, $-144
+    ; escape align 8 $-40, 32 bytes
+    addr $-200, $-40
+    mov.w64 $-216, $-48
+    imm.w32 $-1300, 44
+    mov.w32 $-220, $-1300
+    ; end $-1300, 4 bytes
+    br.lt.u.imm.w32 $-220, 64, L12
+    addr.const $-1304, k8
 L11:
-    call.sym $0, sym9, 0, [4294965960, 8]
+    call.sym $0, sym9, 0, [4294965992, 8]
     unreachable
 L12:
-    ; end $-1336, 8 bytes
-    shr.u.imm.w64 $-224, $-232, 44
+    ; end $-1304, 8 bytes
+    shr.u.imm.w64 $-208, $-216, 44
 L13:
-    ; escape align 8 $-208, 24 bytes
-    call $0, fn10, 0, [4294967088, 72, 4294967080, 264, 4294967072, 520]
-    mov.w128 $-1352, $-208
-    mov.w64 $-1336, $-192
-    imm.w64 $-1360, 0
+    ; escape align 8 $-192, 24 bytes
+    call $0, fn10, 0, [4294967104, 72, 4294967096, 264, 4294967088, 520]
+    mov.w128 $-1320, $-192
+    mov.w64 $-1304, $-176
+    imm.w64 $-1328, 0
 L14:
-    ; escape align 8 $-1352, 24 bytes
-    call $-184, fn11, 8, [4294965944, 72, 4294965936, 264]
-    ; end $-1360, 32 bytes
-    load.w64 $-1336, [$-184 + 0]
-    add.ovf.u.w64 $-256, $-248, $-1336, $-152
-    ; end $-1336, 8 bytes
-    br! $-248, L16
-    addr.const $-1336, k12
+    ; escape align 8 $-1320, 24 bytes
+    call $-168, fn11, 8, [4294965976, 72, 4294965968, 264]
+    ; end $-1328, 32 bytes
+    load.w64 $-1304, [$-168 + 0]
+    add.ovf.u.w64 $-240, $-232, $-1304, $-136
+    ; end $-1304, 8 bytes
+    br! $-232, L16
+    addr.const $-1304, k12
 L15:
-    call.sym $0, sym13, 0, [4294965960, 8]
+    call.sym $0, sym13, 0, [4294965992, 8]
     unreachable
 L16:
-    ; end $-1336, 8 bytes
-    store.w64 [$-184 + 0], $-256
+    ; end $-1304, 8 bytes
+    store.w64 [$-168 + 0], $-240
     jmp L3
 L17:
-    imm.w64 $-1336, 1
-    shl.imm.w64 $-360, $-1336, 20
-    ; end $-1336, 8 bytes
-    imm.w64 $-352, 0
-    mov.w64 $-344, $-360
-    imm.w64 $-1336, 2
+    imm.w64 $-1304, 1
+    shl.imm.w64 $-344, $-1304, 20
+    ; end $-1304, 8 bytes
+    imm.w64 $-336, 0
+    mov.w64 $-328, $-344
+    imm.w64 $-1304, 2
 L18:
-    ; escape align 8 $-336, 32 bytes
-    call $0, fn14, 0, [4294966960, 72, 4294966944, 264, 4294966952, 520, 4294965960, 776]
-    ; end $-1336, 8 bytes
-    mov.w128 $-1360, $-336
-    mov.w128 $-1344, $-320
+    ; escape align 8 $-320, 32 bytes
+    call $0, fn14, 0, [4294966976, 72, 4294966960, 264, 4294966968, 520, 4294965992, 776]
+    ; end $-1304, 8 bytes
+    mov.w128 $-1328, $-320
+    mov.w128 $-1312, $-304
 L19:
-    ; escape align 8 $-304, 32 bytes
-    ; escape align 8 $-1360, 32 bytes
-    call $0, fn15, 0, [4294966992, 72, 4294965936, 328]
-    ; end $-1360, 32 bytes
-    mov.w64 $-400, $-304
-    mov.w64 $-392, $-296
+    ; escape align 8 $-288, 32 bytes
+    ; escape align 8 $-1328, 32 bytes
+    call $0, fn15, 0, [4294967008, 72, 4294965968, 328]
+    ; end $-1328, 32 bytes
     mov.w64 $-384, $-288
     mov.w64 $-376, $-280
+    mov.w64 $-368, $-272
+    mov.w64 $-360, $-264
 L20:
-    ; escape align 8 $-400, 32 bytes
-    addr $-424, $-400
+    ; escape align 8 $-384, 32 bytes
+    addr $-408, $-384
 L21:
-    call $-416, fn16, 526344, [4294966872, 8]
-    mov.w64 $-432, $-416
-    br.eq.imm.w64 $-432, 0, L23
-    mov.w64 $-440, $-408
-    ; escape align 8 $-56, 48 bytes
-    addr $-456, $-56
-    ; escape align 8 $-440, 8 bytes
-    addr $-464, $-440
+    call $-400, fn16, 526344, [4294966888, 8]
+    mov.w64 $-416, $-400
+    br.eq.imm.w64 $-416, 0, L23
+    mov.w64 $-424, $-392
+    ; escape align 8 $-40, 32 bytes
+    addr $-440, $-40
+    ; escape align 8 $-424, 8 bytes
+    addr $-448, $-424
 L22:
-    call $-448, fn17, 8, [4294966840, 8, 4294966832, 264]
+    call $-432, fn17, 8, [4294966856, 8, 4294966848, 264]
     jmp L25
 L23:
-    ; escape align 8 $-56, 48 bytes
-    addr $-536, $-56
+    ; escape align 8 $-40, 32 bytes
+    addr $-520, $-40
 L24:
-    call $-528, fn18, 8, [4294966760, 8]
+    call $-512, fn18, 8, [4294966776, 8]
     jmp L29
 L25:
-    br.eq.imm.w64 $-448, 0, L20
-    mov.w64 $-480, $-448
-    imm.w64 $-1336, 1
-    add.ovf.u.w64 $-496, $-488, $-264, $-1336
-    ; end $-1336, 8 bytes
-    br! $-488, L27
-    addr.const $-1336, k19
+    br.eq.imm.w64 $-432, 0, L20
+    mov.w64 $-464, $-432
+    imm.w64 $-1304, 1
+    add.ovf.u.w64 $-480, $-472, $-248, $-1304
+    ; end $-1304, 8 bytes
+    br! $-472, L27
+    addr.const $-1304, k19
 L26:
-    call.sym $0, sym20, 0, [4294965960, 8]
+    call.sym $0, sym20, 0, [4294965992, 8]
     unreachable
 L27:
-    ; end $-1336, 8 bytes
-    mov.w64 $-264, $-496
-    mov.w64 $-512, $-272
-    load.w64 $-520, [$-480 + 0]
+    ; end $-1304, 8 bytes
+    mov.w64 $-248, $-480
+    mov.w64 $-496, $-256
+    load.w64 $-504, [$-464 + 0]
 L28:
-    call $-504, fn21, 8, [4294966784, 8, 4294966776, 264]
-    mov.w64 $-272, $-504
+    call $-488, fn21, 8, [4294966800, 8, 4294966792, 264]
+    mov.w64 $-256, $-488
     jmp L20
 L29:
-    ; escape align 8 $-56, 48 bytes
-    addr $-544, $-56
+    ; escape align 8 $-40, 32 bytes
+    addr $-528, $-40
 L30:
-    call $0, fn22, 0, [4294966752, 8]
-    ; escape align 8 $-56, 48 bytes
-    addr $-600, $-56
+    call $0, fn22, 0, [4294966768, 8]
+    ; escape align 8 $-40, 32 bytes
+    addr $-584, $-40
 L31:
-    ; escape align 8 $-592, 40 bytes
-    call $0, fn23, 0, [4294966704, 72, 4294966696, 264]
-    mov.w128 $-1368, $-592
-    mov.w128 $-1352, $-576
-    mov.w64 $-1336, $-560
-    imm.w64 $-1376, 0
+    ; escape align 8 $-576, 40 bytes
+    call $0, fn23, 0, [4294966720, 72, 4294966712, 264]
+    mov.w128 $-1336, $-576
+    mov.w128 $-1320, $-560
+    mov.w64 $-1304, $-544
+    imm.w64 $-1344, 0
 L32:
-    ; escape align 8 $-1368, 40 bytes
-    call $-552, fn24, 8, [4294965928, 72, 4294965920, 264]
+    ; escape align 8 $-1336, 40 bytes
+    call $-536, fn24, 8, [4294965960, 72, 4294965952, 264]
 L33:
-    ; end $-1376, 48 bytes
-    ; escape align 8 $-648, 48 bytes
-    call $0, fn25, 0, [4294966648, 72]
-    imm.w32 $-664, 0
-    imm.w32 $-660, 130000
+    ; end $-1344, 48 bytes
+    ; escape align 8 $-616, 32 bytes
+    call $0, fn25, 0, [4294966680, 72]
+    imm.w32 $-632, 0
+    imm.w32 $-628, 130000
 L34:
-    call $-656, fn26, 263172, [4294966632, 4, 4294966636, 260]
-    mov.w64 $-672, $-656
+    call $-624, fn26, 263172, [4294966664, 4, 4294966668, 260]
+    mov.w64 $-640, $-624
 L35:
-    ; escape align 4 $-672, 8 bytes
-    addr $-688, $-672
+    ; escape align 4 $-640, 8 bytes
+    addr $-656, $-640
 L36:
-    call $-680, fn27, 263172, [4294966608, 8]
-    zext.w32.w64 $-696, $-680
-    br.eq.imm.w64 $-696, 0, L38
-    mov.w32 $-700, $-676
-    ; escape align 8 $-648, 48 bytes
-    addr $-760, $-648
-    imm.w32 $-1332, 5003
-    eq.imm.w32 $-845, $-1332, 0
-    ; end $-1332, 4 bytes
-    br! $-845, L40
-    addr.const $-1336, k28
+    call $-648, fn27, 263172, [4294966640, 8]
+    zext.w32.w64 $-664, $-648
+    br.eq.imm.w64 $-664, 0, L38
+    mov.w32 $-668, $-644
+    ; escape align 8 $-616, 32 bytes
+    addr $-728, $-616
+    imm.w32 $-1300, 5003
+    eq.imm.w32 $-813, $-1300, 0
+    ; end $-1300, 4 bytes
+    br! $-813, L40
+    addr.const $-1304, k28
 L37:
-    call.sym $0, sym29, 0, [4294965960, 8]
+    call.sym $0, sym29, 0, [4294965992, 8]
     unreachable
 L38:
-    ; end $-1336, 8 bytes
-    ; escape align 8 $-56, 48 bytes
-    addr $-1000, $-56
+    ; end $-1304, 8 bytes
+    ; escape align 8 $-40, 32 bytes
+    addr $-968, $-40
 L39:
-    call $-992, fn30, 8, [4294966296, 8]
+    call $-960, fn30, 8, [4294966328, 8]
     jmp L49
 L40:
-    zext.w32.w64 $-1336, $-700
-    mul.imm.w64 $-1336, $-1336, 3516327413
-    shr.u.imm.w64 $-1336, $-1336, 44
-    trunc.w64.w32 $-1340, $-1336
-    mul.imm.w32 $-1340, $-1340, 5003
-    sub.w32 $-844, $-700, $-1340
-    ; end $-1340, 12 bytes
-    ; escape align 4 $-844, 4 bytes
-    addr $-840, $-844
-    mov.w64 $-832, $-840
-    mov.w64 $-1272, $-832
+    zext.w32.w64 $-1304, $-668
+    mul.imm.w64 $-1304, $-1304, 3516327413
+    shr.u.imm.w64 $-1304, $-1304, 44
+    trunc.w64.w32 $-1308, $-1304
+    mul.imm.w32 $-1308, $-1308, 5003
+    sub.w32 $-812, $-668, $-1308
+    ; end $-1308, 12 bytes
+    ; escape align 4 $-812, 4 bytes
+    addr $-808, $-812
+    mov.w64 $-800, $-808
+    mov.w64 $-1240, $-800
 L41:
-    ; escape align 8 $-880, 16 bytes
-    call $0, fn31, 0, [4294966416, 72, 4294966024, 264]
-    mov.w128 $-864, $-880
-    addr.const $-888, k32
-    ; escape align 8 $-864, 16 bytes
-    addr $-896, $-864
+    ; escape align 8 $-848, 16 bytes
+    call $0, fn31, 0, [4294966448, 72, 4294966056, 264]
+    mov.w128 $-832, $-848
+    addr.const $-856, k32
+    ; escape align 8 $-832, 16 bytes
+    addr $-864, $-832
 L42:
-    call $-824, fn33, 526344, [4294966408, 8, 4294966400, 264]
+    call $-792, fn33, 526344, [4294966440, 8, 4294966432, 264]
 L43:
-    ; escape align 8 $-808, 24 bytes
-    call $0, fn34, 0, [4294966488, 72, 4294966472, 264, 4294966480, 520]
-    mov.w128 $-1352, $-808
-    mov.w64 $-1336, $-792
+    ; escape align 8 $-776, 24 bytes
+    call $0, fn34, 0, [4294966520, 72, 4294966504, 264, 4294966512, 520]
+    mov.w128 $-1320, $-776
+    mov.w64 $-1304, $-760
 L44:
-    ; escape align 8 $-784, 24 bytes
-    ; escape align 8 $-1352, 24 bytes
-    call $0, fn35, 0, [4294966512, 72, 4294965944, 328]
-    ; end $-1352, 24 bytes
-    mov.w128 $-1352, $-784
-    mov.w64 $-1336, $-768
+    ; escape align 8 $-752, 24 bytes
+    ; escape align 8 $-1320, 24 bytes
+    call $0, fn35, 0, [4294966544, 72, 4294965976, 328]
+    ; end $-1320, 24 bytes
+    mov.w128 $-1320, $-752
+    mov.w64 $-1304, $-736
 L45:
-    ; escape align 8 $-752, 40 bytes
-    ; escape align 8 $-1352, 24 bytes
-    call $0, fn36, 0, [4294966544, 72, 4294966536, 264, 4294965944, 584]
-    ; end $-1352, 24 bytes
-    mov.w128 $-1368, $-752
-    mov.w128 $-1352, $-736
-    mov.w64 $-1336, $-720
+    ; escape align 8 $-720, 40 bytes
+    ; escape align 8 $-1320, 24 bytes
+    call $0, fn36, 0, [4294966576, 72, 4294966568, 264, 4294965976, 584]
+    ; end $-1320, 24 bytes
+    mov.w128 $-1336, $-720
+    mov.w128 $-1320, $-704
+    mov.w64 $-1304, $-688
 L46:
-    ; escape align 8 $-1368, 40 bytes
-    call $-712, fn37, 8, [4294965928, 72]
-    ; end $-1368, 40 bytes
-    load.w64 $-1336, [$-712 + 0]
-    imm.w64 $-1344, 1
-    add.ovf.u.w64 $-912, $-904, $-1336, $-1344
-    ; end $-1344, 16 bytes
-    br! $-904, L48
-    addr.const $-1336, k38
+    ; escape align 8 $-1336, 40 bytes
+    call $-680, fn37, 8, [4294965960, 72]
+    ; end $-1336, 40 bytes
+    load.w64 $-1304, [$-680 + 0]
+    imm.w64 $-1312, 1
+    add.ovf.u.w64 $-880, $-872, $-1304, $-1312
+    ; end $-1312, 16 bytes
+    br! $-872, L48
+    addr.const $-1304, k38
 L47:
-    call.sym $0, sym39, 0, [4294965960, 8]
+    call.sym $0, sym39, 0, [4294965992, 8]
     unreachable
 L48:
-    ; end $-1336, 8 bytes
-    store.w64 [$-712 + 0], $-912
+    ; end $-1304, 8 bytes
+    store.w64 [$-680 + 0], $-880
     jmp L35
 L49:
-    ; escape align 8 $-992, 8 bytes
-    addr $-984, $-992
-    ; escape align 8 $-648, 48 bytes
-    addr $-1024, $-648
+    ; escape align 8 $-960, 8 bytes
+    addr $-952, $-960
+    ; escape align 8 $-616, 32 bytes
+    addr $-992, $-616
 L50:
-    call $-1016, fn40, 8, [4294966272, 8]
-    ; escape align 8 $-1016, 8 bytes
-    addr $-1008, $-1016
-    ; escape align 8 $-528, 8 bytes
-    addr $-1032, $-528
-    ; escape align 8 $-264, 8 bytes
-    addr $-1040, $-264
-    ; escape align 8 $-272, 8 bytes
-    addr $-1048, $-272
-    ; escape align 8 $-552, 8 bytes
-    addr $-1056, $-552
-    mov.w64 $-976, $-984
-    mov.w64 $-968, $-1008
-    mov.w64 $-960, $-1032
-    mov.w64 $-952, $-1040
-    mov.w64 $-944, $-1048
-    mov.w64 $-936, $-1056
-    mov.w64 $-1280, $-960
+    call $-984, fn40, 8, [4294966304, 8]
+    ; escape align 8 $-984, 8 bytes
+    addr $-976, $-984
+    ; escape align 8 $-512, 8 bytes
+    addr $-1000, $-512
+    ; escape align 8 $-248, 8 bytes
+    addr $-1008, $-248
+    ; escape align 8 $-256, 8 bytes
+    addr $-1016, $-256
+    ; escape align 8 $-536, 8 bytes
+    addr $-1024, $-536
+    mov.w64 $-944, $-952
+    mov.w64 $-936, $-976
+    mov.w64 $-928, $-1000
+    mov.w64 $-920, $-1008
+    mov.w64 $-912, $-1016
+    mov.w64 $-904, $-1024
+    mov.w64 $-1248, $-928
 L51:
-    ; escape align 8 $-1168, 16 bytes
-    call $0, fn41, 0, [4294966128, 72, 4294966016, 264]
-    mov.w64 $-1288, $-952
+    ; escape align 8 $-1136, 16 bytes
+    call $0, fn41, 0, [4294966160, 72, 4294966048, 264]
+    mov.w64 $-1256, $-920
 L52:
-    ; escape align 8 $-1184, 16 bytes
-    call $0, fn42, 0, [4294966112, 72, 4294966008, 264]
-    mov.w64 $-1296, $-944
+    ; escape align 8 $-1152, 16 bytes
+    call $0, fn42, 0, [4294966144, 72, 4294966040, 264]
+    mov.w64 $-1264, $-912
 L53:
-    ; escape align 8 $-1200, 16 bytes
-    call $0, fn43, 0, [4294966096, 72, 4294966000, 264]
-    mov.w64 $-1304, $-976
+    ; escape align 8 $-1168, 16 bytes
+    call $0, fn43, 0, [4294966128, 72, 4294966032, 264]
+    mov.w64 $-1272, $-944
 L54:
-    ; escape align 8 $-1216, 16 bytes
-    call $0, fn44, 0, [4294966080, 72, 4294965992, 264]
-    mov.w64 $-1312, $-936
+    ; escape align 8 $-1184, 16 bytes
+    call $0, fn44, 0, [4294966112, 72, 4294966024, 264]
+    mov.w64 $-1280, $-904
 L55:
-    ; escape align 8 $-1232, 16 bytes
-    call $0, fn45, 0, [4294966064, 72, 4294965984, 264]
-    mov.w64 $-1320, $-968
+    ; escape align 8 $-1200, 16 bytes
+    call $0, fn45, 0, [4294966096, 72, 4294966016, 264]
+    mov.w64 $-1288, $-936
 L56:
-    ; escape align 8 $-1248, 16 bytes
-    call $0, fn46, 0, [4294966048, 72, 4294965976, 264]
-    mov.w128 $-1152, $-1168
-    mov.w128 $-1136, $-1184
-    mov.w128 $-1120, $-1200
-    mov.w128 $-1104, $-1216
-    mov.w128 $-1088, $-1232
-    mov.w128 $-1072, $-1248
-    addr.const $-1256, k47
-    ; escape align 8 $-1152, 96 bytes
-    addr $-1264, $-1152
+    ; escape align 8 $-1216, 16 bytes
+    call $0, fn46, 0, [4294966080, 72, 4294966008, 264]
+    mov.w128 $-1120, $-1136
+    mov.w128 $-1104, $-1152
+    mov.w128 $-1088, $-1168
+    mov.w128 $-1072, $-1184
+    mov.w128 $-1056, $-1200
+    mov.w128 $-1040, $-1216
+    addr.const $-1224, k47
+    ; escape align 8 $-1120, 96 bytes
+    addr $-1232, $-1120
 L57:
-    call $-928, fn48, 526344, [4294966040, 8, 4294966032, 264]
+    call $-896, fn48, 526344, [4294966072, 8, 4294966064, 264]
 L58:
-    call.sym $0, sym49, 0, [4294966368, 8, 4294966376, 264]
-    ; escape align 8 $-648, 48 bytes
-    addr $-1336, $-648
+    call.sym $0, sym49, 0, [4294966400, 8, 4294966408, 264]
+    ; escape align 8 $-616, 32 bytes
+    addr $-1304, $-616
 L59:
-    call $0, fn50, 0, [4294965960, 8]
-    ; end $-1336, 8 bytes
-    ; escape align 8 $-56, 48 bytes
-    addr $-1336, $-56
+    call $0, fn50, 0, [4294965992, 8]
+    ; end $-1304, 8 bytes
+    ; escape align 8 $-40, 32 bytes
+    addr $-1304, $-40
 L60:
-    call $0, fn51, 0, [4294965960, 8]
-    ; end $-1336, 8 bytes
+    call $0, fn51, 0, [4294965992, 8]
+    ; end $-1304, 8 bytes
     ret $0, 0
 L61:
-    ; escape align 8 $-648, 48 bytes
-    addr $-1336, $-648
+    ; escape align 8 $-616, 32 bytes
+    addr $-1304, $-616
 L62:
-    call $0, fn52, 0, [4294965960, 8]
+    call $0, fn52, 0, [4294965992, 8]
 L63:
-    ; end $-1336, 8 bytes
-    ; escape align 8 $-56, 48 bytes
-    addr $-1336, $-56
+    ; end $-1304, 8 bytes
+    ; escape align 8 $-40, 32 bytes
+    addr $-1304, $-40
 L64:
-    call $0, fn53, 0, [4294965960, 8]
+    call $0, fn53, 0, [4294965992, 8]
 L65:
-    ; end $-1336, 8 bytes
-    resume $-1328
+    ; end $-1304, 8 bytes
+    resume $-1296
 L66:
     call.sym $0, sym54, 0, []
     unreachable
 L67:
-    lpad $-1328
+    lpad $-1296
     jmp L63
 L68:
-    lpad $-1328
+    lpad $-1296
     jmp L61
 L69:
-    lpad $-1328
+    lpad $-1296
     jmp L66
   cleanup L0 -> continue
   cleanup L1 -> continue
@@ -6911,7 +6376,7 @@ L69:
   cleanup L64 -> L69 (catch)
   cleanup L65 -> continue
   fn0 = std::hint::black_box::<u64>
-  fn1 = std::collections::HashMap::<u64, u64>::new
+  fn1 = <std::collections::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>> as std::default::Default>::default
   fn2 = <std::ops::Range<u64> as std::iter::IntoIterator>::into_iter
   fn3 = std::iter::range::<impl std::iter::Iterator for std::ops::Range<u64>>::next
   fn4 = core::num::<impl u64>::wrapping_mul
@@ -6920,37 +6385,37 @@ L69:
   fn7 = core::num::<impl u64>::wrapping_add
   k8 = const allocation + 0
   sym9 = core::panicking::panic_const::panic_const_shr_overflow
-  fn10 = std::collections::HashMap::<u64, u64>::entry
+  fn10 = std::collections::HashMap::<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::entry
   fn11 = std::collections::hash_map::Entry::<'_, u64, u64>::or_insert
   k12 = const allocation + 0
   sym13 = core::panicking::panic_const::panic_const_add_overflow
   fn14 = <std::ops::Range<u64> as std::iter::Iterator>::step_by
   fn15 = <std::iter::StepBy<std::ops::Range<u64>> as std::iter::IntoIterator>::into_iter
   fn16 = <std::iter::StepBy<std::ops::Range<u64>> as std::iter::Iterator>::next
-  fn17 = std::collections::HashMap::<u64, u64>::get::<u64>
-  fn18 = std::collections::HashMap::<u64, u64>::len
+  fn17 = std::collections::HashMap::<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::get::<u64>
+  fn18 = std::collections::HashMap::<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::len
   k19 = const allocation + 0
   sym20 = core::panicking::panic_const::panic_const_add_overflow
   fn21 = core::num::<impl u64>::wrapping_add
-  fn22 = std::collections::HashMap::<u64, u64>::retain::<{closure@bench/hashmap.rs:23:16: 23:22}>
-  fn23 = std::collections::HashMap::<u64, u64>::values
-  fn24 = <std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@bench/hashmap.rs:24:43: 24:50}>
-  fn25 = std::collections::HashMap::<std::string::String, usize>::new
+  fn22 = std::collections::HashMap::<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::retain::<{closure@bench/hashmap.rs:27:16: 27:22}>
+  fn23 = std::collections::HashMap::<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::values
+  fn24 = <std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@bench/hashmap.rs:28:43: 28:50}>
+  fn25 = <std::collections::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>> as std::default::Default>::default
   fn26 = <std::ops::Range<u32> as std::iter::IntoIterator>::into_iter
   fn27 = std::iter::range::<impl std::iter::Iterator for std::ops::Range<u32>>::next
   k28 = const allocation + 0
   sym29 = core::panicking::panic_const::panic_const_rem_by_zero
-  fn30 = std::collections::HashMap::<u64, u64>::len
+  fn30 = std::collections::HashMap::<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::len
   fn31 = core::fmt::rt::Argument::<'_>::new_display::<u32>
   k32 = const allocation + 0
   fn33 = std::fmt::Arguments::<'_>::new::<4, 1>
   fn34 = std::fmt::format
   fn35 = std::hint::must_use::<std::string::String>
-  fn36 = std::collections::HashMap::<std::string::String, usize>::entry
+  fn36 = std::collections::HashMap::<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::entry
   fn37 = std::collections::hash_map::Entry::<'_, std::string::String, usize>::or_default
   k38 = const allocation + 0
   sym39 = core::panicking::panic_const::panic_const_add_overflow
-  fn40 = std::collections::HashMap::<std::string::String, usize>::len
+  fn40 = std::collections::HashMap::<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::len
   fn41 = core::fmt::rt::Argument::<'_>::new_display::<usize>
   fn42 = core::fmt::rt::Argument::<'_>::new_display::<u64>
   fn43 = core::fmt::rt::Argument::<'_>::new_display::<u64>
@@ -6960,10 +6425,10 @@ L69:
   k47 = const allocation + 0
   fn48 = std::fmt::Arguments::<'_>::new::<59, 6>
   sym49 = std::io::_print
-  fn50 = std::ptr::drop_glue::<std::collections::HashMap<std::string::String, usize>> - shim(Some(std::collections::HashMap<std::string::String, usize>))
-  fn51 = std::ptr::drop_glue::<std::collections::HashMap<u64, u64>> - shim(Some(std::collections::HashMap<u64, u64>))
-  fn52 = std::ptr::drop_glue::<std::collections::HashMap<std::string::String, usize>> - shim(Some(std::collections::HashMap<std::string::String, usize>))
-  fn53 = std::ptr::drop_glue::<std::collections::HashMap<u64, u64>> - shim(Some(std::collections::HashMap<u64, u64>))
+  fn50 = std::ptr::drop_glue::<std::collections::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>> - shim(Some(std::collections::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>))
+  fn51 = std::ptr::drop_glue::<std::collections::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>> - shim(Some(std::collections::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>))
+  fn52 = std::ptr::drop_glue::<std::collections::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>> - shim(Some(std::collections::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>))
+  fn53 = std::ptr::drop_glue::<std::collections::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>> - shim(Some(std::collections::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>))
   sym54 = core::panicking::panic_in_cleanup
 
 fn main::{closure#0} (frame 64, args 0, ret 1)
@@ -7244,193 +6709,6 @@ fn std::arch::x86_64::_mm_store_si128 (frame 48, args 0, ret 0) [hint]
     store.w128 [$-8 + 0], $-32
     ret $0, 0
 
-fn std::char::encode_utf8_raw (frame 128, args 0, ret 16) [hint]
-    arg $-20, 4
-    arg $-40, 264
-    arg $-32, 520
-    br.lt.u.imm.w32 $-20, 128, L8
-    jmp L5
-L0:
-    addr.const $-104, k0
-L1:
-    call $0, fn1, 0, [4294967276, 4, 4294967248, 264, 4294967240, 520, 4294967192, 776]
-    unreachable
-L2:
-    mov.w64 $-96, $-40
-    mov.w64 $-88, $-32
-    mov.w64 $-80, $-96
-L3:
-    call $0, fn2, 0, [4294967276, 4, 4294967216, 264]
-    mov.w64 $-72, $-40
-    mov.w64 $-64, $-32
-    mov.w64 $-80, $-72
-    imm.w8 $-97, 1
-    br! $-97, L10
-    jmp L9
-L4:
-    mov.w64 $-56, $-32
-    mov.w64 $-88, $-48
-    br.lt.u.w64 $-56, $-88, L0
-    jmp L2
-L5:
-    br.lt.u.imm.w32 $-20, 2048, L7
-    br.lt.u.imm.w32 $-20, 65536, L6
-    imm.w64 $-48, 4
-    jmp L4
-L6:
-    imm.w64 $-48, 3
-    jmp L4
-L7:
-    imm.w64 $-48, 2
-    jmp L4
-L8:
-    imm.w64 $-48, 1
-    jmp L4
-L9:
-    mov.w64 $-88, $-72
-    imm.w64 $-104, 1
-    imm.w64 $-112, 1
-    addr.const $-120, k3
-    call $0, fn4, 0, [4294967208, 8, 4294967192, 264, 4294967184, 520, 4294967248, 776, 4294967176, 1032]
-L10:
-    mov.w64 $-96, $-80
-    mov.w64 $-88, $-48
-    mov.w64 $-16, $-96
-    mov.w64 $-8, $-88
-    ret $-16, 526344
-  cleanup L1 -> continue
-  cleanup L3 -> continue
-  k0 = const allocation + 0
-  fn1 = std::char::encode_utf8_raw::do_panic::runtime
-  fn2 = std::char::encode_utf8_raw_unchecked
-  k3 = const allocation + 0
-  fn4 = std::slice::from_raw_parts_mut::precondition_check
-
-fn std::char::encode_utf8_raw::do_panic::runtime (frame 224, args 0, ret 0) [hint]
-    arg $-4, 4
-    arg $-16, 264
-    arg $-24, 520
-    arg $-216, 776
-    ; escape align 8 $-16, 8 bytes
-    addr $-32, $-16
-    ; escape align 4 $-4, 4 bytes
-    addr $-40, $-4
-    ; escape align 8 $-24, 8 bytes
-    addr $-48, $-24
-    mov.w64 $-176, $-32
-    mov.w64 $-152, $-176
-    addr.sym $-168, sym0
-    mov.w64 $-160, $-168
-    mov.w64 $-144, $-152
-    mov.w64 $-136, $-160
-    mov.w128 $-128, $-144
-    mov.w64 $-192, $-40
-    mov.w64 $-168, $-192
-    addr.sym $-184, sym1
-    mov.w64 $-176, $-184
-    mov.w64 $-160, $-168
-    mov.w64 $-152, $-176
-    mov.w128 $-144, $-160
-    mov.w64 $-208, $-48
-    mov.w64 $-184, $-208
-    addr.sym $-200, sym2
-    mov.w64 $-192, $-200
-    mov.w64 $-176, $-184
-    mov.w64 $-168, $-192
-    mov.w128 $-160, $-176
-    mov.w128 $-112, $-128
-    mov.w128 $-96, $-144
-    mov.w128 $-80, $-160
-    ; escape align 8 $-112, 48 bytes
-    addr $-120, $-112
-    addr.const $-128, k3
-    mov.w64 $-136, $-120
-    mov.w64 $-64, $-128
-    mov.w64 $-56, $-136
-    mov.w64 $-224, $-216
-L0:
-    call.sym $0, sym4, 0, [4294967232, 8, 4294967240, 264, 4294967072, 520]
-    unreachable
-  cleanup L0 -> continue
-  sym0 = core::fmt::num::imp::<impl std::fmt::Display for usize>::fmt
-  sym1 = core::fmt::num::<impl std::fmt::UpperHex for u32>::fmt
-  sym2 = core::fmt::num::imp::<impl std::fmt::Display for usize>::fmt
-  k3 = const allocation + 0
-  sym4 = std::rt::panic_fmt
-
-fn std::char::encode_utf8_raw_unchecked (frame 48, args 0, ret 0) [hint]
-    arg $-4, 4
-    arg $-16, 264
-    br.lt.u.imm.w32 $-4, 128, L7
-    jmp L4
-L0:
-    or.imm.w8 $-48, $-26, 192
-    store.w8 [$-16 + 0], $-48
-    imm.w64 $-48, 1
-    ptr.index $-40, $-16, $-48, 1
-    store.w8 [$-40 + 0], $-25
-    jmp L3
-L1:
-    br.eq.imm.w64! $-24, 3, L2
-    or.imm.w8 $-48, $-27, 224
-    store.w8 [$-16 + 0], $-48
-    imm.w64 $-48, 1
-    ptr.index $-40, $-16, $-48, 1
-    store.w8 [$-40 + 0], $-26
-    imm.w64 $-48, 2
-    ptr.index $-40, $-16, $-48, 1
-    store.w8 [$-40 + 0], $-25
-    jmp L3
-L2:
-    store.w8 [$-16 + 0], $-28
-    imm.w64 $-48, 1
-    ptr.index $-40, $-16, $-48, 1
-    store.w8 [$-40 + 0], $-27
-    imm.w64 $-48, 2
-    ptr.index $-40, $-16, $-48, 1
-    store.w8 [$-40 + 0], $-26
-    imm.w64 $-48, 3
-    ptr.index $-40, $-16, $-48, 1
-    store.w8 [$-40 + 0], $-25
-    jmp L3
-L3:
-    ret $0, 0
-L4:
-    br.lt.u.imm.w32 $-4, 2048, L6
-    br.lt.u.imm.w32 $-4, 65536, L5
-    imm.w64 $-24, 4
-    jmp L8
-L5:
-    imm.w64 $-24, 3
-    jmp L8
-L6:
-    imm.w64 $-24, 2
-    jmp L8
-L7:
-    imm.w64 $-24, 1
-    trunc.w32.w8 $-48, $-4
-    store.w8 [$-16 + 0], $-48
-    jmp L3
-L8:
-    and.imm.w32 $-32, $-4, 63
-    trunc.w32.w8 $-26, $-32
-    or.imm.w8 $-25, $-26, 128
-    shr.u.imm.w32 $-36, $-4, 6
-    and.imm.w32 $-32, $-36, 63
-    trunc.w32.w8 $-27, $-32
-    or.imm.w8 $-26, $-27, 128
-    shr.u.imm.w32 $-36, $-4, 12
-    and.imm.w32 $-32, $-36, 63
-    trunc.w32.w8 $-28, $-32
-    or.imm.w8 $-27, $-28, 128
-    shr.u.imm.w32 $-40, $-4, 18
-    and.imm.w32 $-36, $-40, 63
-    trunc.w32.w8 $-29, $-36
-    or.imm.w8 $-28, $-29, 240
-    mov.w64 $-40, $-24
-    br.eq.imm.w64 $-40, 2, L0
-    jmp L1
-
 fn std::cmp::impls::<impl std::cmp::PartialEq for u64>::eq (frame 48, args 0, ret 1) [hint]
     arg $-16, 8
     arg $-24, 264
@@ -7463,7 +6741,7 @@ fn std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt (frame 48, args 0,
     lt.u.w64 $-1, $-32, $-40
     ret $-1, 1
 
-fn std::collections::HashMap::<std::string::String, usize>::entry (frame 240, args 0, ret 40) [hint]
+fn std::collections::HashMap::<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::entry (frame 240, args 0, ret 40) [hint]
     arg $-80, 8
     arg $-48, 264
     arg $-216, 520
@@ -7507,38 +6785,14 @@ L3:
     imm.w64 $-40, 18446744073709551615
     jmp L1
   cleanup L0 -> continue
-  fn0 = hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>>::rustc_entry
+  fn0 = hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry
 
-fn std::collections::HashMap::<std::string::String, usize>::len (frame 16, args 0, ret 8)
+fn std::collections::HashMap::<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::len (frame 16, args 0, ret 8)
     arg $-16, 8
     load.w64 $-8, [$-16 + 24]
     ret $-8, 8
 
-fn std::collections::HashMap::<std::string::String, usize>::new (frame 160, args 0, ret 48) [hint]
-    arg $-56, 8
-    addr.const $-160, k0
-L0:
-    call $-72, fn1, 526344, [4294967136, 8]
-    const $-152, k2, 32
-    mov.w128 $-88, $-72
-    mov.w64 $-120, $-152
-    mov.w64 $-112, $-144
-    mov.w64 $-104, $-136
-    mov.w64 $-96, $-128
-    mov.w64 $-48, $-120
-    mov.w64 $-40, $-112
-    mov.w64 $-32, $-104
-    mov.w64 $-24, $-96
-    mov.w64 $-16, $-88
-    mov.w64 $-8, $-80
-    store.copy [$-56 + 0], $-48, 48
-    ret $-56, 8
-  cleanup L0 -> continue
-  k0 = const allocation + 0
-  fn1 = std::thread::LocalKey::<std::cell::Cell<(u64, u64)>>::with::<{closure@std::hash::RandomState::new::{closure#0}}, std::hash::RandomState>
-  k2 = const allocation + 0
-
-fn std::collections::HashMap::<u64, u64>::entry (frame 128, args 0, ret 24) [hint]
+fn std::collections::HashMap::<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::entry (frame 128, args 0, ret 24) [hint]
     arg $-48, 8
     arg $-32, 264
     arg $-40, 520
@@ -7571,9 +6825,9 @@ L3:
     imm.w64 $-24, 0
     jmp L1
   cleanup L0 -> continue
-  fn0 = hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::RandomState>>::rustc_entry
+  fn0 = hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry
 
-fn std::collections::HashMap::<u64, u64>::get::<u64> (frame 32, args 0, ret 8) [hint]
+fn std::collections::HashMap::<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::get::<u64> (frame 32, args 0, ret 8) [hint]
     arg $-16, 8
     arg $-24, 264
     mov.w64 $-32, $-16
@@ -7581,47 +6835,23 @@ L0:
     call $-8, fn0, 8, [4294967264, 8, 4294967272, 264]
     ret $-8, 8
   cleanup L0 -> continue
-  fn0 = hashbrown::map::HashMap::<u64, u64, std::hash::RandomState>::get::<u64>
+  fn0 = hashbrown::map::HashMap::<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::get::<u64>
 
-fn std::collections::HashMap::<u64, u64>::len (frame 16, args 0, ret 8)
+fn std::collections::HashMap::<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::len (frame 16, args 0, ret 8)
     arg $-16, 8
     load.w64 $-8, [$-16 + 24]
     ret $-8, 8
 
-fn std::collections::HashMap::<u64, u64>::new (frame 160, args 0, ret 48) [hint]
-    arg $-56, 8
-    addr.const $-160, k0
-L0:
-    call $-72, fn1, 526344, [4294967136, 8]
-    const $-152, k2, 32
-    mov.w128 $-88, $-72
-    mov.w64 $-120, $-152
-    mov.w64 $-112, $-144
-    mov.w64 $-104, $-136
-    mov.w64 $-96, $-128
-    mov.w64 $-48, $-120
-    mov.w64 $-40, $-112
-    mov.w64 $-32, $-104
-    mov.w64 $-24, $-96
-    mov.w64 $-16, $-88
-    mov.w64 $-8, $-80
-    store.copy [$-56 + 0], $-48, 48
-    ret $-56, 8
-  cleanup L0 -> continue
-  k0 = const allocation + 0
-  fn1 = std::thread::LocalKey::<std::cell::Cell<(u64, u64)>>::with::<{closure@std::hash::RandomState::new::{closure#0}}, std::hash::RandomState>
-  k2 = const allocation + 0
-
-fn std::collections::HashMap::<u64, u64>::retain::<{closure@bench/hashmap.rs:23:16: 23:22}> (frame 16, args 0, ret 0) [hint]
+fn std::collections::HashMap::<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::retain::<{closure@bench/hashmap.rs:27:16: 27:22}> (frame 16, args 0, ret 0) [hint]
     arg $-8, 8
     mov.w64 $-16, $-8
 L0:
     call $0, fn0, 0, [4294967280, 8]
     ret $0, 0
   cleanup L0 -> continue
-  fn0 = hashbrown::map::HashMap::<u64, u64, std::hash::RandomState>::retain::<{closure@bench/hashmap.rs:23:16: 23:22}>
+  fn0 = hashbrown::map::HashMap::<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::retain::<{closure@bench/hashmap.rs:27:16: 27:22}>
 
-fn std::collections::HashMap::<u64, u64>::values (frame 144, args 0, ret 40)
+fn std::collections::HashMap::<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::values (frame 144, args 0, ret 40)
     arg $-56, 8
     arg $-48, 264
     mov.w64 $-144, $-48
@@ -7642,7 +6872,7 @@ L0:
     store.copy [$-56 + 0], $-40, 40
     ret $-56, 8
   cleanup L0 -> continue
-  fn0 = hashbrown::map::HashMap::<u64, u64, std::hash::RandomState>::iter
+  fn0 = hashbrown::map::HashMap::<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::iter
 
 fn std::collections::hash_map::Entry::<'_, std::string::String, usize>::or_default (frame 304, args 0, ret 8) [hint]
     arg $-264, 8
@@ -7862,58 +7092,6 @@ L20:
   cleanup L4 -> continue
   fn0 = hashbrown::raw::RawTable::<(u64, u64)>::insert_no_grow
 
-fn std::fmt::Arguments::<'_>::as_statically_known_str (frame 144, args 0, ret 16) [hint]
-    arg $-24, 8
-    load.w64 $-48, [$-24 + 8]
-    mov.w64 $-40, $-48
-    and.imm.w64 $-48, $-40, 1
-    br.eq.imm.w64 $-48, 1, L3
-    jmp L4
-L0:
-    br! $-33, L1
-    jmp L2
-L1:
-    const $-16, k0, 16
-L2:
-    ret $-16, 526344
-L3:
-    load.w64 $-88, [$-24 + 0]
-    mov.w64 $-48, $-88
-    shr.u.imm.w64 $-96, $-40, 1
-    imm.w8 $-113, 1
-    br! $-113, L7
-    jmp L6
-L4:
-    const $-16, k1, 16
-L5:
-    ne.imm.w64 $-113, $-16, 0
-    zext.w8.w64 $-48, $-113
-    eq.imm.w64 $-34, $-48, 1
-    mov.w8 $-144, $-34
-    ; lend $-144, 1 bytes
-    ; lend $-33, 1 bytes
-    island sym2, [4294967152, 4294967263]
-    jmp L0
-L6:
-    mov.w64 $-104, $-88
-    imm.w64 $-120, 1
-    imm.w64 $-128, 1
-    addr.const $-136, k3
-    call $0, fn4, 0, [4294967192, 8, 4294967176, 264, 4294967168, 520, 4294967200, 776, 4294967160, 1032]
-L7:
-    mov.w64 $-112, $-48
-    mov.w64 $-104, $-96
-    mov.w64 $-80, $-112
-    mov.w64 $-72, $-104
-    mov.w128 $-64, $-80
-    mov.w128 $-16, $-64
-    jmp L5
-  k0 = const allocation + 0
-  k1 = const allocation + 0
-  sym2 = island ryo_island_call[FnDef(DefId(2:2335 ~ core[efd5]::intrinsics::is_val_statically_known), Binder { value: [bool], bound_vars: [] }), (bool,), bool]
-  k3 = const allocation + 0
-  fn4 = std::slice::from_raw_parts::precondition_check
-
 fn std::fmt::Arguments::<'_>::new::<4, 1> (frame 48, args 0, ret 16) [hint]
     arg $-24, 8
     arg $-32, 264
@@ -7994,42 +7172,6 @@ L0:
   cleanup L0 -> continue
   sym0 = std::fmt::format::format_inner
 
-fn std::hash::RandomState::new::KEYS::__rust_std_internal_init_fn (frame 48, args 0, ret 16) [hint]
-L0:
-    call.sym $-32, sym0, 526344, []
-    mov.w128 $-48, $-32
-    mov.w128 $-16, $-48
-    ret $-16, 526344
-  cleanup L0 -> continue
-  sym0 = std::sys::random::linux::hashmap_random_keys
-
-fn std::hash::RandomState::new::KEYS::{constant#0}::{closure#1} (frame 32, args 0, ret 8)
-    arg $-16, 8
-    arg $-24, 264
-    call.sym $-32, sym0, 8, []
-L0:
-    call $-8, fn1, 8, [4294967264, 8, 4294967272, 264]
-    ret $-8, 8
-  cleanup L0 -> continue
-  sym0 = std::hash::RandomState::new::KEYS::{constant#0}::{closure#1}::__RUST_STD_INTERNAL_VAL - shim(tls)
-  fn1 = std::thread::local_impl::LazyStorage::<std::cell::Cell<(u64, u64)>, !>::get_or_init::<fn() -> std::cell::Cell<(u64, u64)> {std::hash::RandomState::new::KEYS::__rust_std_internal_init_fn}>
-
-fn std::hash::RandomState::new::{closure#0} (frame 80, args 0, ret 16)
-    arg $-24, 8
-    mov.w64 $-56, $-24
-    mov.w64 $-48, $-56
-    load.w64 $-32, [$-48 + 0]
-    load.w64 $-40, [$-48 + 8]
-    add.imm.w64 $-64, $-32, 1
-    mov.w64 $-56, $-64
-    mov.w64 $-48, $-40
-    mov.w64 $-72, $-24
-    mov.w64 $-64, $-72
-    store.w128 [$-64 + 0], $-56
-    mov.w64 $-16, $-32
-    mov.w64 $-8, $-40
-    ret $-16, 526344
-
 fn std::hint::assert_unchecked::precondition_check (frame 128, args 0, ret 0) [hint]
     arg $-1, 1
     arg $-104, 264
@@ -8073,37 +7215,8 @@ fn std::hint::must_use::<std::string::String> (frame 64, args 0, ret 24) [always
     store.copy [$-56 + 0], $-24, 24
     ret $-56, 8
 
-fn std::hint::unreachable_unchecked::precondition_check (frame 112, args 0, ret 0) [hint]
-    arg $-96, 8
-    addr.const $-16, k0
-    imm.w64 $-8, 199
-    mov.w64 $-64, $-16
-    mov.w64 $-56, $-8
-    mov.w64 $-48, $-64
-    mov.w64 $-40, $-48
-    addr.const $-88, k1
-    imm.w64 $-80, 199
-    mov.w64 $-72, $-80
-    shl.imm.w64 $-64, $-72, 1
-    or.imm.w64 $-56, $-64, 1
-    mov.w64 $-48, $-56
-    mov.w64 $-32, $-40
-    mov.w64 $-24, $-48
-    imm.w8 $-97, 0
-    mov.w64 $-112, $-96
-    call.sym $0, sym2, 0, [4294967264, 8, 4294967272, 264, 4294967199, 513, 4294967184, 776]
-    unreachable
-  k0 = const allocation + 0
-  k1 = const allocation + 0
-  sym2 = core::panicking::panic_nounwind_fmt
-
 fn std::intrinsics::cold_path (frame 0, args 0, ret 0) [cold]
     ret $0, 0
-
-fn std::intrinsics::is_val_statically_known::<bool> (frame 16, args 0, ret 1)
-    arg $-2, 1
-    imm.w8 $-1, 0
-    ret $-1, 1
 
 fn std::intrinsics::rotate_left::<u64> (frame 80, args 0, ret 8)
     arg $-16, 8
@@ -8155,236 +7268,6 @@ L2:
   k0 = const allocation + 0
   fn1 = std::ptr::swap_nonoverlapping::<hashbrown::raw::RawTableInner>
   sym2 = core::panicking::panic_cannot_unwind
-
-fn std::io::Error::is_interrupted (frame 128, args 0, ret 1) [hint]
-    arg $-16, 8
-    load.w64 $-96, [$-16 + 0]
-L0:
-    ; escape align 8 $-88, 16 bytes
-    call $0, fn0, 0, [4294967208, 72, 4294967200, 264]
-    jmp L8
-L1:
-    unreachable
-L2:
-    mov.w64 $-64, $-80
-    load.w8 $-113, [$-64 + 16]
-    zext.w8.w64 $-96, $-113
-    eq.imm.w64 $-1, $-96, 35
-    jmp L7
-L3:
-    mov.w8 $-89, $-87
-    zext.w8.w64 $-104, $-89
-    eq.imm.w64 $-1, $-104, 35
-    jmp L7
-L4:
-    mov.w64 $-40, $-80
-    load.w8 $-113, [$-40 + 32]
-    zext.w8.w64 $-96, $-113
-    eq.imm.w64 $-1, $-96, 35
-    jmp L7
-L5:
-    mov.w32 $-92, $-84
-L6:
-    call.sym $-104, sym1, 8, []
-    jmp L9
-L7:
-    ; end $-88, 16 bytes
-    ret $-1, 1
-L8:
-    zext.w8.w64 $-32, $-88
-    switch.dense.w64 $-32, 0, L1, [L5, L3, L2, L4]
-L9:
-    load.w64 $-112, [$-104 + 16]
-L10:
-    call.ptr $-1, $-112, 1, [4294967204, 4]
-    jmp L7
-  cleanup L0 -> continue
-  cleanup L6 -> continue
-  cleanup L10 -> continue
-  fn0 = core::io::error::repr::decode_repr::<&core::io::error::Custom, {closure@core::io::error::repr::Repr::data::{closure#0}}>
-  sym1 = core::io::error::os_functions::get_os_functions
-
-fn std::io::ErrorKind::from_prim (frame 368, args 0, ret 1) [hint]
-    arg $-8, 4
-    br.eq.imm.w32! $-8, 0, L0
-    imm.w8 $-1, 0
-    jmp L44
-L0:
-    br.eq.imm.w32! $-8, 1, L1
-    imm.w8 $-1, 1
-    jmp L44
-L1:
-    br.eq.imm.w32! $-8, 2, L2
-    imm.w8 $-1, 2
-    jmp L44
-L2:
-    br.eq.imm.w32! $-8, 3, L3
-    imm.w8 $-1, 3
-    jmp L44
-L3:
-    br.eq.imm.w32! $-8, 4, L4
-    imm.w8 $-1, 4
-    jmp L44
-L4:
-    br.eq.imm.w32! $-8, 5, L5
-    imm.w8 $-1, 5
-    jmp L44
-L5:
-    br.eq.imm.w32! $-8, 6, L6
-    imm.w8 $-1, 6
-    jmp L44
-L6:
-    br.eq.imm.w32! $-8, 7, L7
-    imm.w8 $-1, 7
-    jmp L44
-L7:
-    br.eq.imm.w32! $-8, 8, L8
-    imm.w8 $-1, 8
-    jmp L44
-L8:
-    br.eq.imm.w32! $-8, 9, L9
-    imm.w8 $-1, 9
-    jmp L44
-L9:
-    br.eq.imm.w32! $-8, 10, L10
-    imm.w8 $-1, 10
-    jmp L44
-L10:
-    br.eq.imm.w32! $-8, 11, L11
-    imm.w8 $-1, 11
-    jmp L44
-L11:
-    br.eq.imm.w32! $-8, 12, L12
-    imm.w8 $-1, 12
-    jmp L44
-L12:
-    br.eq.imm.w32! $-8, 13, L13
-    imm.w8 $-1, 13
-    jmp L44
-L13:
-    br.eq.imm.w32! $-8, 14, L14
-    imm.w8 $-1, 14
-    jmp L44
-L14:
-    br.eq.imm.w32! $-8, 15, L15
-    imm.w8 $-1, 15
-    jmp L44
-L15:
-    br.eq.imm.w32! $-8, 16, L16
-    imm.w8 $-1, 16
-    jmp L44
-L16:
-    br.eq.imm.w32! $-8, 17, L17
-    imm.w8 $-1, 17
-    jmp L44
-L17:
-    br.eq.imm.w32! $-8, 18, L18
-    imm.w8 $-1, 18
-    jmp L44
-L18:
-    br.eq.imm.w32! $-8, 19, L19
-    imm.w8 $-1, 19
-    jmp L44
-L19:
-    br.eq.imm.w32! $-8, 20, L20
-    imm.w8 $-1, 20
-    jmp L44
-L20:
-    br.eq.imm.w32! $-8, 21, L21
-    imm.w8 $-1, 21
-    jmp L44
-L21:
-    br.eq.imm.w32! $-8, 22, L22
-    imm.w8 $-1, 22
-    jmp L44
-L22:
-    br.eq.imm.w32! $-8, 23, L23
-    imm.w8 $-1, 23
-    jmp L44
-L23:
-    br.eq.imm.w32! $-8, 24, L24
-    imm.w8 $-1, 24
-    jmp L44
-L24:
-    br.eq.imm.w32! $-8, 25, L25
-    imm.w8 $-1, 25
-    jmp L44
-L25:
-    br.eq.imm.w32! $-8, 26, L26
-    imm.w8 $-1, 26
-    jmp L44
-L26:
-    br.eq.imm.w32! $-8, 27, L27
-    imm.w8 $-1, 27
-    jmp L44
-L27:
-    br.eq.imm.w32! $-8, 28, L28
-    imm.w8 $-1, 28
-    jmp L44
-L28:
-    br.eq.imm.w32! $-8, 29, L29
-    imm.w8 $-1, 29
-    jmp L44
-L29:
-    br.eq.imm.w32! $-8, 30, L30
-    imm.w8 $-1, 30
-    jmp L44
-L30:
-    br.eq.imm.w32! $-8, 31, L31
-    imm.w8 $-1, 31
-    jmp L44
-L31:
-    br.eq.imm.w32! $-8, 32, L32
-    imm.w8 $-1, 32
-    jmp L44
-L32:
-    br.eq.imm.w32! $-8, 33, L33
-    imm.w8 $-1, 33
-    jmp L44
-L33:
-    br.eq.imm.w32! $-8, 34, L34
-    imm.w8 $-1, 34
-    jmp L44
-L34:
-    br.eq.imm.w32! $-8, 35, L35
-    imm.w8 $-1, 35
-    jmp L44
-L35:
-    br.eq.imm.w32! $-8, 42, L36
-    imm.w8 $-1, 42
-    jmp L44
-L36:
-    br.eq.imm.w32! $-8, 37, L37
-    imm.w8 $-1, 37
-    jmp L44
-L37:
-    br.eq.imm.w32! $-8, 36, L38
-    imm.w8 $-1, 36
-    jmp L44
-L38:
-    br.eq.imm.w32! $-8, 38, L39
-    imm.w8 $-1, 38
-    jmp L44
-L39:
-    br.eq.imm.w32! $-8, 39, L40
-    imm.w8 $-1, 39
-    jmp L44
-L40:
-    br.eq.imm.w32! $-8, 40, L41
-    imm.w8 $-1, 40
-    jmp L44
-L41:
-    br.eq.imm.w32! $-8, 41, L42
-    imm.w8 $-1, 41
-    jmp L44
-L42:
-    br.eq.imm.w32! $-8, 43, L43
-    imm.w8 $-1, 43
-    jmp L44
-L43:
-    imm.w8 $-1, 255
-L44:
-    ret $-1, 1
 
 fn std::iter::StepBy::<std::ops::Range<u64>>::new (frame 144, args 0, ret 32) [hint]
     arg $-80, 8
@@ -8921,49 +7804,7 @@ L0:
   cleanup L0 -> continue
   sym0 = <alloc::raw_vec::RawVec<u8> as std::ops::Drop>::drop
 
-fn std::ptr::drop_glue::<core::io::error::CustomOwner> - shim(Some(core::io::error::CustomOwner)) (frame 16, args 0, ret 0)
-    arg $-8, 8
-    mov.w64 $-16, $-8
-L0:
-    call.sym $0, sym0, 0, [4294967280, 8]
-    ret $0, 0
-  cleanup L0 -> continue
-  sym0 = <core::io::error::CustomOwner as std::ops::Drop>::drop
-
-fn std::ptr::drop_glue::<core::io::error::ErrorData<core::io::error::CustomOwner>> - shim(Some(core::io::error::ErrorData<core::io::error::CustomOwner>)) (frame 32, args 0, ret 0)
-    arg $-8, 8
-    load.w8 $-25, [$-8 + 0]
-    zext.w8.w64 $-16, $-25
-    switch.dense.w64 $-16, 0, L1, [L0, L0, L0]
-L0:
-    ret $0, 0
-L1:
-    ptr.add $-32, $-8, 8
-L2:
-    call $0, fn0, 0, [4294967264, 8]
-    jmp L0
-  cleanup L2 -> continue
-  fn0 = std::ptr::drop_glue::<core::io::error::CustomOwner> - shim(Some(core::io::error::CustomOwner))
-
-fn std::ptr::drop_glue::<core::io::error::repr::Repr> - shim(Some(core::io::error::repr::Repr)) (frame 16, args 0, ret 0)
-    arg $-8, 8
-    mov.w64 $-16, $-8
-L0:
-    call $0, fn0, 0, [4294967280, 8]
-    ret $0, 0
-  cleanup L0 -> continue
-  fn0 = <core::io::error::repr::Repr as std::ops::Drop>::drop
-
-fn std::ptr::drop_glue::<core::io::write::default_write_fmt::Adapter<'_, std::sys::stdio::unix::Stderr>> - shim(Some(core::io::write::default_write_fmt::Adapter<'_, std::sys::stdio::unix::Stderr>)) (frame 16, args 0, ret 0)
-    arg $-8, 8
-    ptr.add $-16, $-8, 8
-L0:
-    call $0, fn0, 0, [4294967280, 8]
-    ret $0, 0
-  cleanup L0 -> continue
-  fn0 = std::ptr::drop_glue::<std::result::Result<(), std::io::Error>> - shim(Some(std::result::Result<(), std::io::Error>))
-
-fn std::ptr::drop_glue::<hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>> - shim(Some(hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>)) (frame 16, args 0, ret 0)
+fn std::ptr::drop_glue::<hashbrown::map::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>> - shim(Some(hashbrown::map::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>)) (frame 16, args 0, ret 0)
     arg $-8, 8
     mov.w64 $-16, $-8
 L0:
@@ -8972,7 +7813,7 @@ L0:
   cleanup L0 -> continue
   fn0 = std::ptr::drop_glue::<hashbrown::raw::RawTable<(std::string::String, usize)>> - shim(Some(hashbrown::raw::RawTable<(std::string::String, usize)>))
 
-fn std::ptr::drop_glue::<hashbrown::map::HashMap<u64, u64, std::hash::RandomState>> - shim(Some(hashbrown::map::HashMap<u64, u64, std::hash::RandomState>)) (frame 16, args 0, ret 0)
+fn std::ptr::drop_glue::<hashbrown::map::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>> - shim(Some(hashbrown::map::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>)) (frame 16, args 0, ret 0)
     arg $-8, 8
     mov.w64 $-16, $-8
 L0:
@@ -9026,23 +7867,23 @@ L0:
   cleanup L0 -> continue
   fn0 = <hashbrown::scopeguard::ScopeGuard<hashbrown::raw::RawTableInner, {closure@hashbrown::raw::RawTableInner::prepare_resize<std::alloc::Global>::{closure#0}}> as std::ops::Drop>::drop
 
-fn std::ptr::drop_glue::<std::collections::HashMap<std::string::String, usize>> - shim(Some(std::collections::HashMap<std::string::String, usize>)) (frame 16, args 0, ret 0)
+fn std::ptr::drop_glue::<std::collections::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>> - shim(Some(std::collections::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>)) (frame 16, args 0, ret 0)
     arg $-8, 8
     mov.w64 $-16, $-8
 L0:
     call $0, fn0, 0, [4294967280, 8]
     ret $0, 0
   cleanup L0 -> continue
-  fn0 = std::ptr::drop_glue::<hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>> - shim(Some(hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>))
+  fn0 = std::ptr::drop_glue::<hashbrown::map::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>> - shim(Some(hashbrown::map::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>))
 
-fn std::ptr::drop_glue::<std::collections::HashMap<u64, u64>> - shim(Some(std::collections::HashMap<u64, u64>)) (frame 16, args 0, ret 0)
+fn std::ptr::drop_glue::<std::collections::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>> - shim(Some(std::collections::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>)) (frame 16, args 0, ret 0)
     arg $-8, 8
     mov.w64 $-16, $-8
 L0:
     call $0, fn0, 0, [4294967280, 8]
     ret $0, 0
   cleanup L0 -> continue
-  fn0 = std::ptr::drop_glue::<hashbrown::map::HashMap<u64, u64, std::hash::RandomState>> - shim(Some(hashbrown::map::HashMap<u64, u64, std::hash::RandomState>))
+  fn0 = std::ptr::drop_glue::<hashbrown::map::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>> - shim(Some(hashbrown::map::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>))
 
 fn std::ptr::drop_glue::<std::collections::hash_map::VacantEntry<'_, std::string::String, usize>> - shim(Some(std::collections::hash_map::VacantEntry<'_, std::string::String, usize>)) (frame 16, args 0, ret 0)
     arg $-8, 8
@@ -9052,29 +7893,6 @@ L0:
     ret $0, 0
   cleanup L0 -> continue
   fn0 = std::ptr::drop_glue::<hashbrown::rustc_entry::RustcVacantEntry<'_, std::string::String, usize>> - shim(Some(hashbrown::rustc_entry::RustcVacantEntry<'_, std::string::String, usize>))
-
-fn std::ptr::drop_glue::<std::io::Error> - shim(Some(std::io::Error)) (frame 16, args 0, ret 0)
-    arg $-8, 8
-    mov.w64 $-16, $-8
-L0:
-    call $0, fn0, 0, [4294967280, 8]
-    ret $0, 0
-  cleanup L0 -> continue
-  fn0 = std::ptr::drop_glue::<core::io::error::repr::Repr> - shim(Some(core::io::error::repr::Repr))
-
-fn std::ptr::drop_glue::<std::result::Result<(), std::io::Error>> - shim(Some(std::result::Result<(), std::io::Error>)) (frame 32, args 0, ret 0)
-    arg $-8, 8
-    load.w64 $-32, [$-8 + 0]
-    br.eq.imm.w64! $-32, 0, L1
-L0:
-    ret $0, 0
-L1:
-    mov.w64 $-32, $-8
-L2:
-    call $0, fn0, 0, [4294967264, 8]
-    jmp L0
-  cleanup L2 -> continue
-  fn0 = std::ptr::drop_glue::<std::io::Error> - shim(Some(std::io::Error))
 
 fn std::ptr::drop_glue::<std::string::String> - shim(Some(std::string::String)) (frame 16, args 0, ret 0)
     arg $-8, 8
@@ -9122,64 +7940,6 @@ L9:
   fn1 = std::ptr::drop_glue::<alloc::raw_vec::RawVec<u8>> - shim(Some(alloc::raw_vec::RawVec<u8>))
   fn2 = std::ptr::drop_glue::<alloc::raw_vec::RawVec<u8>> - shim(Some(alloc::raw_vec::RawVec<u8>))
   sym3 = core::panicking::panic_in_cleanup
-
-fn std::ptr::replace::precondition_check (frame 160, args 0, ret 0) [hint]
-    arg $-8, 8
-    arg $-16, 264
-    arg $-17, 513
-    arg $-136, 776
-L0:
-    call $-50, fn0, 1, [4294967288, 8, 4294967280, 264]
-    jmp L7
-L1:
-    ret $0, 0
-L2:
-    addr.const $-40, k1
-    imm.w64 $-32, 221
-    mov.w64 $-104, $-40
-    mov.w64 $-96, $-32
-    mov.w64 $-88, $-104
-    mov.w64 $-80, $-88
-    addr.const $-128, k2
-    imm.w64 $-120, 221
-    mov.w64 $-112, $-120
-    shl.imm.w64 $-104, $-112, 1
-    or.imm.w64 $-96, $-104, 1
-    mov.w64 $-88, $-96
-    mov.w64 $-72, $-80
-    mov.w64 $-64, $-88
-    imm.w8 $-137, 0
-    mov.w64 $-152, $-136
-    call.sym $0, sym3, 0, [4294967224, 8, 4294967232, 264, 4294967159, 513, 4294967144, 776]
-    unreachable
-L3:
-    br! $-17, L6
-    jmp L5
-L4:
-    jmp L2
-L5:
-    jmp L1
-L6:
-    mov.w64 $-64, $-8
-    eq.imm.w64 $-51, $-64, 0
-    xor.imm.w8 $-49, $-51, 1
-    br! $-49, L2
-    jmp L1
-L7:
-    br! $-50, L4
-    jmp L3
-L8:
-    call.sym $0, sym4, 0, []
-    unreachable
-L9:
-    lpad $-48
-    jmp L8
-  cleanup L0 -> L9 (catch)
-  fn0 = std::ptr::const_ptr::<impl *const ()>::is_aligned_to
-  k1 = const allocation + 0
-  k2 = const allocation + 0
-  sym3 = core::panicking::panic_nounwind_fmt
-  sym4 = core::panicking::panic_cannot_unwind
 
 fn std::ptr::swap_chunk::<1> (frame 32, args 0, ret 0) [hint]
     arg $-8, 8
@@ -9594,76 +8354,6 @@ L12:
   sym3 = core::panicking::panic_nounwind_fmt
   sym4 = core::panicking::panic_cannot_unwind
 
-fn std::slice::from_raw_parts_mut::precondition_check (frame 160, args 0, ret 0) [hint]
-    arg $-8, 8
-    arg $-16, 264
-    arg $-24, 520
-    arg $-32, 776
-    arg $-144, 1032
-    mov.w64 $-72, $-8
-L0:
-    call $-58, fn0, 1, [4294967224, 8, 4294967272, 264]
-    jmp L7
-L1:
-    br.eq.imm.w64 $-16, 0, L8
-    jmp L9
-L2:
-    ret $0, 0
-L3:
-    jmp L4
-L4:
-    addr.const $-48, k1
-    imm.w64 $-40, 283
-    mov.w64 $-112, $-48
-    mov.w64 $-104, $-40
-    mov.w64 $-96, $-112
-    mov.w64 $-88, $-96
-    addr.const $-136, k2
-    imm.w64 $-128, 283
-    mov.w64 $-120, $-128
-    shl.imm.w64 $-112, $-120, 1
-    or.imm.w64 $-104, $-112, 1
-    mov.w64 $-96, $-104
-    mov.w64 $-80, $-88
-    mov.w64 $-72, $-96
-    imm.w8 $-145, 0
-    mov.w64 $-160, $-144
-    call.sym $0, sym3, 0, [4294967216, 8, 4294967224, 264, 4294967151, 513, 4294967136, 776]
-    unreachable
-L5:
-    mov.w64 $-80, $-8
-    eq.imm.w64 $-59, $-80, 0
-    xor.imm.w8 $-57, $-59, 1
-    br! $-57, L4
-    jmp L1
-L6:
-    jmp L4
-L7:
-    br! $-58, L6
-    jmp L5
-L8:
-    imm.w64 $-72, 18446744073709551615
-    jmp L10
-L9:
-    imm.w64 $-152, 9223372036854775807
-    div.u.w64 $-72, $-152, $-16
-L10:
-    le.u.w64 $-58, $-32, $-72
-    br! $-58, L3
-    jmp L2
-L11:
-    call.sym $0, sym4, 0, []
-    unreachable
-L12:
-    lpad $-56
-    jmp L11
-  cleanup L0 -> L12 (catch)
-  fn0 = std::ptr::const_ptr::<impl *const ()>::is_aligned_to
-  k1 = const allocation + 0
-  k2 = const allocation + 0
-  sym3 = core::panicking::panic_nounwind_fmt
-  sym4 = core::panicking::panic_cannot_unwind
-
 fn std::str::<impl std::borrow::ToOwned for str>::to_owned (frame 96, args 0, ret 24) [hint]
     arg $-48, 8
     arg $-40, 264
@@ -9688,268 +8378,6 @@ L0:
     ret $0, 0
   cleanup L0 -> continue
   fn0 = <fn() as std::ops::FnOnce<()>>::call_once - shim(fn())
-
-fn std::thread::LocalKey::<std::cell::Cell<(u64, u64)>>::try_with::<{closure@std::hash::RandomState::new::{closure#0}}, std::hash::RandomState> (frame 128, args 0, ret 24) [hint]
-    arg $-64, 8
-    arg $-32, 264
-    imm.w8 $-41, 1
-    load.w64 $-104, [$-32 + 0]
-    imm.w64 $-120, 0
-L0:
-    call.ptr $-96, $-104, 8, [4294967176, 8]
-    mov.w64 $-112, $-96
-    eq.imm.w64 $-97, $-112, 0
-    br! $-97, L7
-    jmp L6
-L1:
-    mov.w128 $-16, $-80
-    imm.w64 $-24, 0
-L2:
-    store.copy [$-64 + 0], $-24, 24
-    ret $-64, 8
-L3:
-    resume $-56
-L4:
-    jmp L3
-L5:
-    br! $-41, L3
-    jmp L4
-L6:
-    imm.w64 $-88, 0
-    imm.w64 $-80, 0
-    imm.w64 $-80, 1
-    eq.imm.w64 $-81, $-80, 1
-    imm.w64 $-24, 1
-    jmp L2
-L7:
-    mov.w64 $-112, $-96
-    mov.w64 $-88, $-112
-    mov.w64 $-96, $-88
-    mov.w64 $-80, $-96
-    mov.w64 $-88, $-80
-    mov.w64 $-72, $-88
-    mov.w64 $-40, $-72
-    imm.w8 $-41, 0
-    mov.w64 $-88, $-40
-L8:
-    call $-80, fn0, 526344, [4294967208, 8]
-    jmp L1
-L9:
-    lpad $-56
-    jmp L5
-  cleanup L0 -> L9
-  cleanup L3 -> continue
-  cleanup L8 -> L9
-  fn0 = std::hash::RandomState::new::{closure#0}
-
-fn std::thread::LocalKey::<std::cell::Cell<(u64, u64)>>::with::<{closure@std::hash::RandomState::new::{closure#0}}, std::hash::RandomState> (frame 64, args 0, ret 16)
-    arg $-24, 8
-L0:
-    ; escape align 8 $-56, 24 bytes
-    call $0, fn0, 0, [4294967240, 72, 4294967272, 264]
-    mov.w64 $-32, $-56
-    br.eq.imm.w64 $-32, 0, L3
-    jmp L1
-    unreachable
-L1:
-    addr.const $-64, k1
-L2:
-    call.sym $0, sym2, 0, [4294967232, 8]
-    unreachable
-L3:
-    mov.w128 $-16, $-48
-    ; end $-56, 24 bytes
-    ret $-16, 526344
-  cleanup L0 -> continue
-  cleanup L2 -> continue
-  fn0 = std::thread::LocalKey::<std::cell::Cell<(u64, u64)>>::try_with::<{closure@std::hash::RandomState::new::{closure#0}}, std::hash::RandomState>
-  k1 = const allocation + 0
-  sym2 = std::thread::local::panic_access_error
-
-fn std::thread::local_impl::LazyStorage::<std::cell::Cell<(u64, u64)>, !>::get_or_init::<fn() -> std::cell::Cell<(u64, u64)> {std::hash::RandomState::new::KEYS::__rust_std_internal_init_fn}> (frame 96, args 0, ret 8) [hint]
-    arg $-16, 8
-    arg $-24, 264
-    ptr.add $-96, $-16, 16
-    mov.w64 $-88, $-96
-    load.w8 $-73, [$-88 + 0]
-    zext.w8.w64 $-40, $-73
-    br.eq.imm.w64! $-40, 1, L0
-    mov.w64 $-64, $-16
-    mov.w64 $-88, $-64
-    mov.w64 $-8, $-64
-    jmp L2
-L0:
-    imm.w8 $-49, 0
-L1:
-    call $-8, fn0, 8, [4294967280, 8, 4294967272, 264]
-L2:
-    ret $-8, 8
-L3:
-    resume $-72
-L4:
-    jmp L3
-L5:
-    br! $-49, L3
-    jmp L4
-L6:
-    lpad $-72
-    jmp L5
-  cleanup L1 -> L6
-  cleanup L3 -> continue
-  fn0 = std::thread::local_impl::LazyStorage::<std::cell::Cell<(u64, u64)>, !>::get_or_init_slow::<fn() -> std::cell::Cell<(u64, u64)> {std::hash::RandomState::new::KEYS::__rust_std_internal_init_fn}>
-
-fn std::thread::local_impl::LazyStorage::<std::cell::Cell<(u64, u64)>, !>::get_or_init_slow::<fn() -> std::cell::Cell<(u64, u64)> {std::hash::RandomState::new::KEYS::__rust_std_internal_init_fn}> (frame 288, args 0, ret 8) [cold]
-    arg $-16, 8
-    arg $-24, 264
-    ptr.add $-152, $-16, 16
-    mov.w64 $-144, $-152
-    load.w8 $-129, [$-144 + 0]
-    ; end $-144, 8 bytes
-    zext.w8.w64 $-40, $-129
-    switch.dense.w64 $-40, 0, L0, [L3, L2, L1]
-L0:
-    unreachable
-L1:
-    imm.w64 $-8, 0
-    jmp L13
-L2:
-    mov.w64 $-112, $-16
-    mov.w64 $-144, $-112
-    mov.w64 $-8, $-112
-    ; end $-144, 8 bytes
-    jmp L13
-L3:
-    ; end $-129, 1 bytes
-    br.eq.imm.w64 $-24, 0, L14
-    jmp L15
-L4:
-    addr $-168, $-96
-    addr.const $-200, k0
-    imm.w64 $-192, 43
-    mov.w64 $-232, $-200
-    mov.w64 $-224, $-192
-    mov.w64 $-216, $-232
-    mov.w64 $-208, $-216
-    addr.const $-256, k1
-    imm.w64 $-248, 43
-    mov.w64 $-240, $-248
-    shl.imm.w64 $-232, $-240, 1
-    or.imm.w64 $-224, $-232, 1
-    mov.w64 $-216, $-224
-    mov.w64 $-184, $-208
-    mov.w64 $-176, $-216
-L5:
-    call $-160, fn2, 8, [4294967128, 8, 4294967112, 264, 4294967120, 520]
-    jmp L9
-L6:
-    ; escape align 8 $-144, 16 bytes
-    addr $-168, $-144
-    mov.w64 $-160, $-168
-    mov.w64 $-168, $-160
-L7:
-    call.sym $0, sym3, 0, [4294967128, 8]
-    jmp L24
-L8:
-    call $0, fn4, 0, [4294967280, 8]
-    jmp L12
-L9:
-    ; escape align 8 $-160, 8 bytes
-    addr $-264, $-160
-L10:
-    call $0, fn5, 0, [4294967032, 8]
-L11:
-    ; end $-160, 8 bytes
-    call.sym $0, sym6, 0, []
-    unreachable
-L12:
-    mov.w64 $-128, $-16
-    mov.w64 $-152, $-128
-    mov.w64 $-8, $-128
-    ; end $-144, 16 bytes
-    jmp L13
-L13:
-    ; end $-129, 1 bytes
-    ret $-8, 8
-L14:
-    imm.w64 $-152, 0
-    ; end $-160, 8 bytes
-    jmp L17
-L15:
-    mov.w64 $-168, $-24
-    imm.w64 $-192, 0
-    load.w64 $-152, [$-168 + 0]
-    load.w64 $-144, [$-168 + 8]
-    load.w64 $-136, [$-168 + 16]
-    store.w64 [$-168 + 0], $-192
-    store.w64 [$-168 + 8], $-184
-    store.w64 [$-168 + 16], $-176
-    ; end $-160, 8 bytes
-    mov.w64 $-160, $-152
-    br.eq.imm.w64 $-160, 0, L17
-    jmp L18
-L16:
-    ; end $-160, 8 bytes
-    ; end $-152, 24 bytes
-    mov.w64 $-120, $-16
-    mov.w64 $-152, $-120
-    mov.w128 $-200, $-64
-    mov.w128 $-184, $-200
-    mov.w128 $-168, $-184
-    imm.w8 $-257, 1
-    br! $-257, L22
-    jmp L21
-L17:
-    call $-64, fn7, 526344, []
-    jmp L19
-L18:
-    mov.w128 $-64, $-144
-    jmp L16
-L19:
-    jmp L16
-L20:
-    ; end $-168, 16 bytes
-    imm.w8 $-146, 1
-    ptr.add $-168, $-16, 16
-    mov.w64 $-160, $-168
-    load.w8 $-145, [$-160 + 0]
-    store.w8 [$-160 + 0], $-146
-    ; end $-160, 8 bytes
-    zext.w8.w64 $-88, $-145
-    switch.dense.w64 $-88, 0, L0, [L8, L6, L4]
-L21:
-    mov.w64 $-176, $-120
-    imm.w64 $-264, 8
-    imm.w8 $-265, 0
-    addr.const $-280, k8
-    call $0, fn9, 0, [4294967120, 8, 4294967032, 264, 4294967031, 513, 4294967016, 776]
-L22:
-    imm.w8 $-257, 0
-    br! $-257, L23
-    mov.w128 $-144, $-168
-    jmp L20
-L23:
-    load.w128 $-144, [$-152 + 0]
-    store.w128 [$-152 + 0], $-168
-    jmp L20
-L24:
-    ; end $-160, 8 bytes
-    jmp L12
-  cleanup L5 -> continue
-  cleanup L7 -> continue
-  cleanup L8 -> continue
-  cleanup L10 -> continue
-  cleanup L11 -> continue
-  cleanup L17 -> continue
-  k0 = const allocation + 0
-  k1 = const allocation + 0
-  fn2 = <std::sys::stdio::unix::Stderr as std::io::Write>::write_fmt
-  sym3 = std::ptr::drop_glue::<std::cell::Cell<(u64, u64)>> - shim(None)
-  fn4 = <! as std::sys::thread_local::native::lazy::DestroyedState>::register_dtor::<std::cell::Cell<(u64, u64)>>
-  fn5 = std::ptr::drop_glue::<std::result::Result<(), std::io::Error>> - shim(Some(std::result::Result<(), std::io::Error>))
-  sym6 = std::process::abort
-  fn7 = <fn() -> std::cell::Cell<(u64, u64)> {std::hash::RandomState::new::KEYS::__rust_std_internal_init_fn} as std::ops::FnOnce<()>>::call_once - shim(fn() -> std::cell::Cell<(u64, u64)> {std::hash::RandomState::new::KEYS::__rust_std_internal_init_fn})
-  k8 = const allocation + 0
-  fn9 = std::ptr::replace::precondition_check
 
 fn std::vec::Vec::<T, A>::set_len::precondition_check (frame 144, args 0, ret 0) [hint]
     arg $-8, 8
