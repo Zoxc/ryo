@@ -236,8 +236,9 @@ follows the decoder's structure:
 
 - **Scopes** (before each instruction; no code): `Escape`, `End` and `Lend` keep `RRel`
   (`Rel`, `fp` in `rbp`, `EscWF`: escaped objects' ids are distinct allocations) with the x86
-  state unchanged (`Ryo/Proofs/Scope.lean`, `rrel_scopes`). Not yet: the memory part
-  (`MemRel`) across them.
+  state unchanged (`Ryo/Proofs/Scope.lean`, `rrel_scopes`), and so does the memory part
+  (`MemRel`: `Ryo/Proofs/ScopeMem.lean`, `memRel_foldlM`; the new allocation holds the frame's
+  bytes at `fp + off`, `End`'s bytes become `Uninit`).
 - **Inline steps**: R's `step` of a native instruction of a `Sound` class (scopes, `view`,
   `opSem`, `Then.succ`) is simulated by the class's sequence: `RRel` after, `rip` past the
   items, and the next instruction the fall-through or, for a branch class, the target exactly
