@@ -774,7 +774,7 @@ impl ImageWriter {
         }
         let unwind = if pe {
             assert!(mode.frame_pointer, "PE unwind info needs the frame pointer");
-            unwind_pe(&func_code, &mut relocs)
+            unwind_pe(&func_code, mode, &mut relocs)
         } else {
             let slot = symbols.off as u64 + 8 * self.personality.expect("prepare").0 as u64;
             unwind_elf(&func_code, slot, mode, &mut relocs)
@@ -987,13 +987,12 @@ fn advance(fde: &mut Vec<u8>, loc: &mut u32, to: u32) {
     }
 }
 
-/// `.pdata` and `.xdata`: per function, its range and unwind info for the shared prologue
-/// (`push rbp; push rdi; push rsi; lea rbp, [rsp + 16]; sub rsp, F - 16`, `rbp` the frame
-/// register at offset 16 from `rsp`). There is no exception handler: panics unwind through VM
-/// frames, but their landing pads don't run. The counter check before the prologue counts as
-/// part of it (it moves nothing), and the entry's counter stub at the end of the code, which
-/// runs before the prologue, has an entry of its own without unwind codes, as a leaf.
-fn unwind_pe(funcs: &[FuncCode], relocs: &mut Vec<Reloc>) -> Vec<(Section, Vec<u8>)> {
+/// `.pdata` and `.xdata`: per function, its range and unwind info ([`pe_unwind_info`]).
+/// There is no exception handler: panics unwind through VM frames, but their landing pads
+/// don't run. The counter check before the prologue counts as part of it (it moves nothing),
+/// and the entry's counter stub at the end of the code, which runs before the prologue, has
+/// an entry of its own without unwind codes, as a leaf ([`PE_LEAF_UNWIND`]).
+fn unwind_pe(funcs: &[FuncCode], mode: Mode, relocs: &mut Vec<Reloc>) -> Vec<(Section, Vec<u8>)> {
     let rva = |section, offset, target, addend| Reloc { section, offset, target: RelocTarget::Section(target), addend, kind: RelocKind::Rva32 };
     let (mut pdata, mut xdata) = (Vec::new(), Vec::new());
     let mut entry = |pdata: &mut Vec<u8>, start: u32, end: u32, x: i64| {
@@ -1006,51 +1005,57 @@ fn unwind_pe(funcs: &[FuncCode], relocs: &mut Vec<Reloc>) -> Vec<(Section, Vec<u
     for f in funcs {
         let x = xdata.len() as i64;
         entry(&mut pdata, f.start, f.start + f.entry_stub, x);
-        // Prologue: push rbp (1), push rdi (1), push rsi (1), lea rbp, [rsp + 16] (5),
-        // [mov eax, F - 16 (5); call probe (5)], sub (4 or 7).
-        let alloc = f.frame_size - 16;
-        let probe = if f.frame_size >= asm::PROBE_FROM { 10 } else { 0 };
-        let p = f.prologue;
-        let sub_end = p
-            + 8
-            + probe
-            + if alloc == 0 {
-                0
-            } else if alloc < 128 {
-                4
-            } else {
-                7
-            };
-        // Unwind codes, last operation first: (offset after it, op | info << 4, extra slots).
-        let mut codes: Vec<u8> = Vec::new();
-        if alloc != 0 {
-            if alloc <= 128 {
-                codes.extend_from_slice(&[sub_end as u8, 2 | (((alloc / 8 - 1) as u8) << 4)]);
-            } else if alloc <= 512 * 1024 - 8 {
-                codes.extend_from_slice(&[sub_end as u8, 1]);
-                codes.extend_from_slice(&((alloc / 8) as u16).to_le_bytes());
-            } else {
-                codes.extend_from_slice(&[sub_end as u8, 1 | 1 << 4]);
-                codes.extend_from_slice(&alloc.to_le_bytes());
-            }
-        }
-        codes.extend_from_slice(&[p as u8 + 8, 3]); // UWOP_SET_FPREG
-        codes.extend_from_slice(&[p as u8 + 3, 0 | 6 << 4]); // UWOP_PUSH_NONVOL rsi
-        codes.extend_from_slice(&[p as u8 + 2, 0 | 7 << 4]); // UWOP_PUSH_NONVOL rdi
-        codes.extend_from_slice(&[p as u8 + 1, 0 | 5 << 4]); // UWOP_PUSH_NONVOL rbp
-        let slots = codes.len() / 2;
-        debug_assert!(sub_end < 256);
-        // Version 1; the frame register rbp, at rsp + 1 * 16.
-        xdata.extend_from_slice(&[1, sub_end as u8, slots as u8, 5 | 1 << 4]);
-        xdata.extend_from_slice(&codes);
-        while xdata.len() % 4 != 0 {
-            xdata.push(0);
-        }
+        let ef = EhFunc { len: f.len, frame_size: f.frame_size, prologue: f.prologue, entry_stub: f.entry_stub };
+        xdata.extend_from_slice(&pe_unwind_info(&ef, mode));
         if f.entry_stub < f.len {
-            // Version 1, no prologue, no codes: the return address at `rsp`.
             entry(&mut pdata, f.start + f.entry_stub, f.start + f.len, xdata.len() as i64);
-            xdata.extend_from_slice(&[1, 0, 0, 0]);
+            xdata.extend_from_slice(&PE_LEAF_UNWIND);
         }
     }
     vec![(Section::Pdata, pdata), (Section::Xdata, xdata)]
+}
+
+/// The PE `UNWIND_INFO` of code without a frame: version 1, no prologue, no codes, so the
+/// return address is at `rsp` (a leaf).
+pub const PE_LEAF_UNWIND: [u8; 4] = [1, 0, 0, 0];
+
+/// The PE `UNWIND_INFO` (x64, version 1, no handler, 4-byte aligned) of a function encoded in
+/// PE `mode` with the shared prologue at `f.prologue`: `push rbp; push rdi; push rsi; lea
+/// rbp, [rsp + 16]`, then for frames from [`asm::PROBE_FROM`] the probe (`mov eax, F - 16;
+/// call` it, through `r11` with [`Mode::far_rt`]), then `sub rsp, F - 16` unless 0. `rbp` is
+/// the frame register, at `rsp + 16` once set, so past the prologue `rsp` may move freely
+/// (island calls' shadow space, the JIT's OSR entries). The unwind codes, last operation
+/// first: the allocation (`UWOP_ALLOC_SMALL`, or `UWOP_ALLOC_LARGE` with a 16-bit or 32-bit
+/// size), `UWOP_SET_FPREG`, `UWOP_PUSH_NONVOL` of `rsi`, `rdi`, `rbp`.
+pub fn pe_unwind_info(f: &EhFunc, mode: Mode) -> Vec<u8> {
+    debug_assert!(mode.pe && f.frame_size >= 16);
+    let alloc = f.frame_size - 16;
+    let p = f.prologue;
+    let sub_end = p + asm::prologue_len(f.frame_size, mode);
+    assert!(sub_end < 256, "a PE prologue ends within 255 bytes");
+    // Unwind codes: (offset after the operation, op | info << 4, extra slots).
+    let mut codes: Vec<u8> = Vec::new();
+    if alloc != 0 {
+        if alloc <= 128 {
+            codes.extend_from_slice(&[sub_end as u8, 2 | (((alloc / 8 - 1) as u8) << 4)]);
+        } else if alloc <= 512 * 1024 - 8 {
+            codes.extend_from_slice(&[sub_end as u8, 1]);
+            codes.extend_from_slice(&((alloc / 8) as u16).to_le_bytes());
+        } else {
+            codes.extend_from_slice(&[sub_end as u8, 1 | 1 << 4]);
+            codes.extend_from_slice(&alloc.to_le_bytes());
+        }
+    }
+    codes.extend_from_slice(&[p as u8 + 8, 3]); // UWOP_SET_FPREG
+    codes.extend_from_slice(&[p as u8 + 3, 6 << 4]); // UWOP_PUSH_NONVOL rsi
+    codes.extend_from_slice(&[p as u8 + 2, 7 << 4]); // UWOP_PUSH_NONVOL rdi
+    codes.extend_from_slice(&[p as u8 + 1, 5 << 4]); // UWOP_PUSH_NONVOL rbp
+    let slots = codes.len() / 2;
+    // Version 1, no flags; the frame register rbp, at rsp + 1 * 16.
+    let mut out = vec![1, sub_end as u8, slots as u8, 5 | 1 << 4];
+    out.extend_from_slice(&codes);
+    while out.len() % 4 != 0 {
+        out.push(0);
+    }
+    out
 }

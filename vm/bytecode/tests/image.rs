@@ -333,6 +333,36 @@ fn pe_unwind_info() {
     assert_eq!(obj.symbols.len(), 4);
 }
 
+/// `pe_unwind_info` byte for byte (hand-checked against the x64 `UNWIND_INFO` layout, and
+/// decoded by `llvm-readobj --unwind` from a COFF object holding them): every allocation
+/// form, the probe's call near and through `r11`, a counter check before the prologue.
+#[test]
+fn pe_unwind_info_encodings() {
+    let pe = Mode { pe: true, fp_arg: true, ..ELF };
+    let info = |frame_size: u32, prologue: u32, mode: Mode| {
+        ryo_bytecode::image::pe_unwind_info(&EhFunc { len: 1000, frame_size, prologue, entry_stub: 1000 }, mode)
+    };
+    // The pushes and the frame register, last first: set fpreg after 8 bytes, push rsi (6)
+    // after 3, rdi (7) after 2, rbp (5) after 1.
+    let tail = |p: u8| [p + 8, 3, p + 3, 6 << 4, p + 2, 7 << 4, p + 1, 5 << 4];
+    // F = 16: nothing allocated; the prologue is the 8 bytes of pushes and `lea`.
+    assert_eq!(info(16, 0, pe), [&[1, 8, 4, 0x15][..], &tail(0)].concat());
+    // F = 144: `sub rsp, 128` (imm32, 7 bytes) after 15, UWOP_ALLOC_SMALL of 16 slots.
+    assert_eq!(info(144, 0, pe), [&[1, 15, 5, 0x15, 15, 2 | 15 << 4][..], &tail(0), &[0, 0]].concat());
+    // F = 160: 144 bytes, UWOP_ALLOC_LARGE with 18 slots in a 16-bit field.
+    assert_eq!(info(160, 0, pe), [&[1, 15, 6, 0x15, 15, 1, 18, 0][..], &tail(0)].concat());
+    // F = 4096: `mov eax, 4080; call ryo_probe_stack` (10 bytes) before the `sub`.
+    assert_eq!(info(4096, 0, pe), [&[1, 25, 6, 0x15, 25, 1, 0xfe, 1][..], &tail(0)].concat());
+    // Through `r11` (`mov eax, 4080; mov r11, imm64; call r11`, 18 bytes).
+    assert_eq!(info(4096, 0, Mode { far_rt: true, ..pe }), [&[1, 33, 6, 0x15, 33, 1, 0xfe, 1][..], &tail(0)].concat());
+    // 512 KiB allocated, past the 16-bit form: UWOP_ALLOC_LARGE with the size in 32 bits.
+    let big = info(512 * 1024 + 16, 0, pe);
+    assert_eq!(big, [&[1, 25, 7, 0x15, 25, 0x11, 0, 0, 8, 0][..], &tail(0), &[0, 0]].concat());
+    // A counter check of 12 bytes first: every offset moves by 12.
+    assert_eq!(info(48, 12, pe), [&[1, 24, 5, 0x15, 24, 2 | 3 << 4][..], &tail(12), &[0, 0]].concat());
+    assert_eq!(PE_LEAF_UNWIND, [1, 0, 0, 0]);
+}
+
 #[test]
 fn empty_image() {
     let obj = ImageWriter::new(1).finish(ELF).unwrap();
