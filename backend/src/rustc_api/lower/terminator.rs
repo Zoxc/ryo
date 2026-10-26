@@ -329,11 +329,22 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// A call of the lang item for `reason` (`panic_cannot_unwind`, `panic_in_cleanup`), which
     /// reports the panic and aborts, as cg_ssa's `codegen_terminate_terminator`.
     pub fn terminate_call(&mut self, reason: UnwindTerminateReason, source_info: SourceInfo) -> Result<(), NeedsNative> {
+        self.lang_item_call(reason.lang_item(), &[], UnwindAction::Unreachable, source_info)
+    }
+
+    /// A diverging call of the monomorphic lang item `item` (a panic function).
+    fn lang_item_call(
+        &mut self,
+        item: LangItem,
+        args: &[ArgSrc<'_, 'tcx>],
+        unwind: UnwindAction,
+        source_info: SourceInfo,
+    ) -> Result<(), NeedsNative> {
         let tcx = self.tcx;
-        let def_id = tcx.require_lang_item(reason.lang_item(), source_info.span);
+        let def_id = tcx.require_lang_item(item, source_info.span);
         let instance = Instance::mono(tcx, def_id);
         let fty = Ty::new_fn_def(tcx, def_id, ty::Binder::dummy(instance.args));
-        self.direct_call(fty, instance, &[], CallCont::diverging(UnwindAction::Unreachable), source_info)
+        self.direct_call(fty, instance, args, CallCont::diverging(unwind), source_info)
     }
 
     /// `Assert`: branch to `target` if `cond == expected`, else call the panic function for
@@ -378,10 +389,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             | AssertKind::ResumedAfterPanic(_)
             | AssertKind::ResumedAfterDrop(_) => (msg.panic_function(), vec![]),
         };
-        let def_id = tcx.require_lang_item(item, term.source_info.span);
-        let instance = Instance::mono(tcx, def_id);
-        let fty = Ty::new_fn_def(tcx, def_id, ty::Binder::dummy(instance.args));
-        self.direct_call(fty, instance, &args, CallCont::diverging(unwind), term.source_info)
+        self.lang_item_call(item, &args, unwind, term.source_info)
     }
 }
 
