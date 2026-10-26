@@ -320,6 +320,16 @@ follows the decoder's structure:
   `lea r11,[rip+rec]; …; call [r11+8|16]; jmp back` refines a no-op, given the trip contract
   ([jit.md](jit.md) §E.2). Counter memory is runtime-owned: excluded from the program's
   memory relation.
+
+  **Implemented** (`Ryo/Proofs/Counter.lean`, `counter_noop`): the check changes only the 8
+  counter bytes, the flags and `rip`; taken, the stub (with the trip in place of its `call`,
+  `TripContract`: returns to its return address with `rsp`, the callee-saved registers and
+  memory outside the runtime-owned set `Owned` and the stack below `rsp` kept) jumps back right
+  after the check. Either way the state `Agree`s with the one before (`rsp`, callee-saved
+  registers, memory outside `Owned` and below `rsp`), which keeps the frame relation
+  (`rel_of_agree`) when the frame's bytes are neither owned nor below `rsp`. The register
+  cache is empty at every check (heads are branch targets). Not covered: the trip's `Done`
+  outcome (a transfer into JIT code, `FnSim`'s business).
 - **Prologue, epilogue, probe**: the `ryo_probe_stack` contract; the prologue establishes
   `fp` and `F` as the FDE says (§C4 checks the FDE against it).
 - **Branch relaxation, padding, jump tables**: handled by the decoder (targets are positions),
