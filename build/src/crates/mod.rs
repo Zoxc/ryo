@@ -634,9 +634,6 @@ impl Env<'_> {
             .env("CARGO_TARGET_DIR", self.target);
         if !self.stock {
             c.env("RUSTFLAGS", RUSTFLAGS).env("CARGO_INCREMENTAL", "0").env("CARGO_BUILD_JOBS", "1");
-        } else if self.backend == Backend::Ryo {
-            // ryo can't compile incrementally; cargo-ryo sets this too.
-            c.env("CARGO_INCREMENTAL", "0");
         }
         if stats {
             c.env("RYO_STATS", "1");
@@ -853,7 +850,7 @@ fn header(info: &RustcInfo, root: &Path, opts: &Options) -> Vec<(String, String)
     ];
     if opts.stock {
         h.retain(|(k, _)| !matches!(k.as_str(), "profile" | "RUSTFLAGS" | "environment"));
-        h.push(("stock".into(), "cargo's and rustc's defaults (crate profiles, jobs, codegen units, incremental, debuginfo as cargo sets them); only RUSTC is changed, plus CARGO_INCREMENTAL=0 for ryo (as cargo-ryo). Not a fair comparison.".into()));
+        h.push(("stock".into(), "cargo's and rustc's defaults (crate profiles, jobs, codegen units, incremental, debuginfo as cargo sets them); only RUSTC is changed. Not a fair comparison.".into()));
     }
     if !governor.is_empty() {
         h.push(("cpufreq governor".into(), governor.trim().to_owned()));

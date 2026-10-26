@@ -114,15 +114,9 @@ impl CodegenBackend for RyoBackend {
         if self.switches.marker {
             eprintln!("{INIT_MARKER}");
         }
-        // Incremental compilation is a non-goal (design/README.md): the portal symbols and the
-        // image come from per-session state that the query system doesn't track, so reused
-        // objects could carry stale symbols.
-        if sess.opts.incremental.is_some() {
-            sess.dcx().fatal(
-                "the ryo backend doesn't support incremental compilation; remove `-Cincremental` \
-                 (cargo-ryo sets CARGO_INCREMENTAL=0)",
-            );
-        }
+        // `-Cincremental` is allowed: the partition query is `eval_always`, so the image is
+        // rebuilt every session, and the native CGU is hashed as our partition returns it
+        // (`codegen_unit`); `symbol_name` reads only tracked queries.
         self.llvm.init(sess)
     }
 
@@ -199,7 +193,15 @@ impl CodegenBackend for RyoBackend {
         // Usually already computed (metadata encoding, `exported_generic_symbols`); this forces
         // it otherwise, so the results are set.
         let partitions = tcx.collect_and_partition_mono_items(());
-        let results = partition::results(tcx).expect("collect_and_partition_mono_items didn't run our provider");
+        let linked_roots = || tcx.crate_types().iter().map(|&t| (t, partition::linked_roots(tcx, t))).collect();
+        let macho = tcx.sess.target.binary_format == rustc_target::spec::BinaryFormat::MachO;
+        // A crate with no VM code has no image (`partition::vm_enabled`); its output still
+        // registers its upstream crates' images.
+        let Some(results) = partition::results(tcx) else {
+            let _ = self.link_info.set(link::LinkInfo { image: None, linked_roots: linked_roots(), macho });
+            let llvm = self.llvm.codegen_crate(tcx);
+            return Box::new(RyoOngoingCodegen { llvm, image: None });
+        };
         assert_eq!(partitions.codegen_units[0].name(), results.cgu_name);
         let fmt = object_format(tcx.sess);
         let scid = symbols::local_stable_crate_id(tcx);
@@ -215,15 +217,14 @@ impl CodegenBackend for RyoBackend {
         }
         drop(write_t);
         let _ = self.link_info.set(link::LinkInfo {
-            local_image: objfile::image_symbol(scid),
-            image_module: image_name.clone(),
-            linked_roots: tcx.crate_types().iter().map(|&t| (t, partition::linked_roots(tcx, t))).collect(),
-            macho: tcx.sess.target.binary_format == rustc_target::spec::BinaryFormat::MachO,
+            image: Some(link::LocalImage { symbol: objfile::image_symbol(scid), module: image_name.clone() }),
+            linked_roots: linked_roots(),
+            macho,
         });
         dump_lean::dump(tcx, &self.switches, results);
         // The native CGU (step 4), compiled by cg_llvm as usual.
         let llvm = self.llvm.codegen_crate(tcx);
-        Box::new(RyoOngoingCodegen { llvm, image: (image_name, image_path) })
+        Box::new(RyoOngoingCodegen { llvm, image: Some((image_name, image_path)) })
     }
 
     fn join_codegen(
@@ -239,8 +240,9 @@ impl CodegenBackend for RyoBackend {
         let (mut modules, work_products) = self.llvm.join_codegen(ongoing.llvm, sess, incr_comp_session, outputs, crate_info);
         // The image, so `link_rlib` and the object list include it (design/backend.md#pipeline
         // step 5).
-        let (name, path) = ongoing.image;
-        modules.modules.push(object_module(name, path));
+        if let Some((name, path)) = ongoing.image {
+            modules.modules.push(object_module(name, path));
+        }
         (modules, work_products)
     }
 
@@ -302,8 +304,8 @@ fn binary_format(f: &rustc_target::spec::BinaryFormat) -> object::BinaryFormat {
 }
 
 /// What `codegen_crate` returns: cg_llvm's ongoing codegen, plus the image object's module name
-/// and path (design/backend.md#pipeline step 5).
+/// and path if the crate has one (design/backend.md#pipeline step 5).
 struct RyoOngoingCodegen {
     llvm: Box<dyn Any>,
-    image: (String, PathBuf),
+    image: Option<(String, PathBuf)>,
 }

@@ -16,9 +16,6 @@ fn main() {
 
     let mut cmd = Command::new("cargo");
     cmd.args(env::args_os().skip(1)).env("RUSTC", rustc_ryo).env("RUSTC_BOOTSTRAP", "1");
-    // The backend rejects incremental compilation (design/README.md, non-goals), which cargo's
-    // dev profile enables by default.
-    cmd.env("CARGO_INCREMENTAL", "0");
     if let Some(toolchain) = option_env!("RYO_TOOLCHAIN") {
         cmd.env("RUSTUP_TOOLCHAIN", toolchain);
     }

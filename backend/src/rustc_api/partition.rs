@@ -154,8 +154,18 @@ impl Results {
 
 /// Our `collect_and_partition_mono_items` (design/backend.md#pipeline steps 1–4).
 pub fn collect_and_partition_mono_items<'tcx>(tcx: TyCtxt<'tcx>, original: super::PartitionProvider) -> MonoItemPartitions<'tcx> {
-    // `rustc-ryo` forces `-Ccodegen-units=1`; `Session::codegen_units`
-    // (`rustc_session/src/session.rs:1058`) returns it.
+    // Providers are plain fns, so this one reads the switches itself.
+    let switches = super::switches::Switches::from_env();
+    if switches.marker {
+        eprintln!("{}", super::PARTITION_MARKER);
+    }
+    // A crate with no VM code is rustc's partition as is: no image, any number of codegen
+    // units, cg_llvm's incremental reuse (design/backend.md#pipeline).
+    if !vm_enabled(tcx, &switches) {
+        return original(tcx, ());
+    }
+    // `rustc-ryo` forces `-Ccodegen-units=1` (except for crates it knows have no VM code);
+    // `Session::codegen_units` (`rustc_session/src/session.rs:1058`) returns it.
     let n = tcx.sess.codegen_units().as_usize();
     if n != 1 {
         tcx.dcx().fatal(format!("the ryo backend requires `-Ccodegen-units=1`, but {n} codegen units were requested"));
@@ -165,11 +175,6 @@ pub fn collect_and_partition_mono_items<'tcx>(tcx: TyCtxt<'tcx>, original: super
         && tcx.crate_types().iter().any(|t| matches!(t, CrateType::Dylib | CrateType::Sdylib))
     {
         tcx.dcx().fatal("the ryo backend doesn't support `-Clto` for dylibs");
-    }
-    // Providers are plain fns, so this one reads the switches itself.
-    let switches = super::switches::Switches::from_env();
-    if switches.marker {
-        eprintln!("{}", super::PARTITION_MARKER);
     }
     let partitions = original(tcx, ());
     // With one CGU requested, merging always leaves exactly one, and partitioning never returns
@@ -192,6 +197,15 @@ pub fn collect_and_partition_mono_items<'tcx>(tcx: TyCtxt<'tcx>, original: super
         // Keeps every original DefId, VM functions included (design/backend.md#query-overrides).
         all_mono_items: partitions.all_mono_items,
     }
+}
+
+/// Whether the crate may have VM code. Proc macros stay native: it keeps VM code out of
+/// rustc's own process, and they gain nothing from it. `RYO_NO_VM` is a debugging switch
+/// (design/backend.md#pipeline, step 2). A panic runtime (`panic_unwind`, `panic_abort`) too:
+/// portals re-raise a panic from the VM through its `__rust_start_panic` (design/vm.md,
+/// Unwinding), so that must be native, and the rest of the runtime gains nothing from the VM.
+fn vm_enabled(tcx: TyCtxt<'_>, switches: &Switches) -> bool {
+    !switches.no_vm && !tcx.crate_types().contains(&CrateType::ProcMacro) && !tcx.is_panic_runtime(LOCAL_CRATE)
 }
 
 /// How the image's machine code is generated: as `ryo_rt`'s handlers expect `fp`, with a
@@ -282,28 +296,17 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         }
     }
 
-    fn vm_enabled(&self) -> bool {
-        // Proc macros stay native: it keeps VM code out of rustc's own process, and they gain
-        // nothing from it. `RYO_NO_VM` is a debugging switch (design/backend.md#pipeline, step 2).
-        // A panic runtime (`panic_unwind`, `panic_abort`) too: portals re-raise a panic from
-        // the VM through its `__rust_start_panic` (design/vm.md, Unwinding), so that must be
-        // native, and the rest of the runtime gains nothing from the VM.
-        !self.switches.no_vm && !self.tcx.crate_types().contains(&CrateType::ProcMacro) && !self.tcx.is_panic_runtime(LOCAL_CRATE)
-    }
-
     fn run(mut self) -> (CodegenUnit<'tcx>, Results) {
         let tcx = self.tcx;
         let stats = self.switches.stats;
 
         // Step 2/3: classify and lower. `ryo_rt` instances are always native (design/vm.md).
         let mut candidates: Vec<(Instance<'tcx>, MonoItemData)> = Vec::new();
-        if self.vm_enabled() {
-            for (item, data) in self.cgu.items() {
-                if let MonoItem::Fn(instance) = *item
-                    && instance.def_id().krate != self.rt.krate
-                {
-                    candidates.push((instance, *data));
-                }
+        for (item, data) in self.cgu.items() {
+            if let MonoItem::Fn(instance) = *item
+                && instance.def_id().krate != self.rt.krate
+            {
+                candidates.push((instance, *data));
             }
         }
         // A stable image order: by symbol name.

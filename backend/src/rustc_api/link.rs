@@ -17,12 +17,18 @@ use rustc_session::config::{CrateType, OutputFilenames, OutputType};
 use super::object_module;
 use crate::objfile;
 
+/// The local crate's image.
+pub struct LocalImage {
+    /// Its symbol.
+    pub symbol: String,
+    /// The name of its `CompiledModule`.
+    pub module: String,
+}
+
 /// What `link` needs from `codegen_crate`.
 pub struct LinkInfo {
-    /// The local crate's image symbol.
-    pub local_image: String,
-    /// The name of the image's `CompiledModule`.
-    pub image_module: String,
+    /// The local crate's image, if it has VM code.
+    pub image: Option<LocalImage>,
     /// Per crate type, the image symbols that only LTO needs (`partition::linked_roots`).
     pub linked_roots: Vec<(CrateType, LinkedRoots)>,
     /// The target writes Mach-O objects.
@@ -96,8 +102,10 @@ pub fn link(
         // In an rlib, the image must not be a Rust object: `-Clto` downstream reads bitcode
         // from every Rust object of an rlib and leaves them out of the link, which would drop
         // the image. So it is added afterwards, as a plain member.
-        let image = if crate_type == CrateType::Rlib {
-            let i = these.modules.iter().position(|m| m.name == info.image_module);
+        let image = if crate_type == CrateType::Rlib
+            && let Some(local) = &info.image
+        {
+            let i = these.modules.iter().position(|m| m.name == local.module);
             i.map(|i| these.modules.remove(i))
         } else {
             None
@@ -176,7 +184,7 @@ fn append_to_rlib(sess: &Session, rlib: &Path, object: &Path) {
 /// registered by that dylib's registry. Upstream rlibs are recognized as ryo-built by an image
 /// symbol in their archive symbol table.
 fn registry_images(sess: &Session, fmt: &dyn objfile::ObjectFormat, info: &LinkInfo, crate_info: &CrateInfo, crate_type: CrateType) -> Vec<String> {
-    let mut images = vec![info.local_image.clone()];
+    let mut images: Vec<String> = info.image.iter().map(|i| i.symbol.clone()).collect();
     let Some(deps) = crate_info.dependency_formats.get(&crate_type) else { return images };
     for (cnum, linkage) in deps.iter_enumerated() {
         if cnum == LOCAL_CRATE || *linkage != Linkage::Static {

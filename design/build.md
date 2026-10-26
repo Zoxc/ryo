@@ -113,7 +113,8 @@ modeled on cg_clif's `build_system/`.
    - `-Zcodegen-backend=dist/lib/librustc_codegen_ryo.so`
    - `-Zunstable-options --extern force:ryo_rt`
    - `-Ccodegen-units=1`, appended *after* the user's args so it wins
-     ([backend.md](backend.md#pipeline))
+     ([backend.md](backend.md#pipeline)), except for crates it knows have no VM code
+     (`--crate-type proc-macro`, `RYO_NO_VM` set), which keep rustc's codegen units
    - on windows-msvc targets (`--target *-msvc`, or none on an msvc host),
      `-Clink-arg=/IGNORE:4217 -Clink-arg=/IGNORE:4286` ([platforms.md](platforms.md))
 
@@ -132,8 +133,8 @@ modeled on cg_clif's `build_system/`.
    no such option and a backend can't add one, and sets `RYO_STATS=N` for the backend
    ([backend.md](backend.md#debugging-switches)).
 
-   `cargo-ryo` sets `RUSTC=rustc-ryo` and `CARGO_INCREMENTAL=0` (incremental compilation is
-   a non-goal, and the backend rejects it, [README.md](README.md#goals)).
+   `cargo-ryo` sets `RUSTC=rustc-ryo`; cargo's dev profile compiles incrementally
+   ([README.md](README.md#goals)).
 
 ### `build-clif`: the Cranelift backend on stable
 
@@ -179,8 +180,13 @@ This gives a third backend, built from the same toolchain, to compare against.
   each also with `fp-rbp`.
   Some programs are a staticlib or cdylib called from a
   C `main`, compiled with `cc`, or `cl` on windows-msvc hosts (skipped without one). The smoke tests check that `rustc-ryo`
-  rejects `-Zrandomize-layout`, more than one codegen unit and `-Cincremental`, and that
-  `cargo-ryo` builds a dev-profile package. The `backtrace` check builds
+  rejects `-Zrandomize-layout` and more than one codegen unit for a crate with VM code, and
+  that `cargo-ryo` builds a dev-profile package (incrementally). The `incremental` check
+  rebuilds `tests/incremental/edits.rs` after a series of scripted edits (`--cfg revN`) with
+  `-Cincremental -Zincremental-verify-ich`: the output must be plain rustc's and the
+  executable byte-identical to a clean incremental build's, at opt-level 0, at opt-level 2
+  with thin LTO, and with `RYO_NO_VM` at 16 codegen units, where `#![rustc_partition_reused]`
+  checks rustc's reuse; and rebuilds a proc macro at the default codegen units. The `backtrace` check builds
   `tests/vm_backtrace.rs` (a panic two VM calls deep, caught by `catch_unwind`) and runs it
   with `RUST_BACKTRACE=1`: the backtrace must name the VM functions by their own
   symbols, and the native frames around them, and the cleanup
@@ -307,8 +313,7 @@ llvm,clif,ryo] [--path DIR] [--timeout SECS] [--out FILE]` compares LLVM (plain 
   per-package profile overrides is rejected (none of the nine has any). `rustc-ryo` forces `-Ccodegen-units=1` anyway; no MIR
   optimization flags are added for any backend.
 - **`--stock`**: none of the above; cargo's and rustc's defaults (the crate's own profiles,
-  parallel jobs, codegen units, incremental, debuginfo), only `RUSTC` changed, plus
-  `CARGO_INCREMENTAL=0` for ryo, which can't compile incrementally (as `cargo-ryo`). An unfair
+  parallel jobs, codegen units, incremental, debuginfo), only `RUSTC` changed. An unfair
   comparison, for what a user would see.
 - **Steps** of a build: `cargo build --lib`, `cargo build --tests` (`cargo test`'s build),
   `cargo build --example ryo_bench`. The warm-up starts from a clean target directory and

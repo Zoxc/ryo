@@ -142,9 +142,13 @@ pub fn ryo_args(dist: &Path, passed: Vec<OsString>) -> Result<Vec<OsString>, Str
         args.push(a.into());
     }
     let msvc = targets_msvc(&passed);
+    let no_vm = is_proc_macro(&passed) || env::var_os("RYO_NO_VM").is_some();
     args.extend(passed);
-    // After the user's arguments, so it wins (design/backend.md#pipeline).
-    args.push("-Ccodegen-units=1".into());
+    // After the user's arguments, so it wins (design/backend.md#pipeline). Not for crates
+    // that have no VM code: the backend takes rustc's partition for those as is.
+    if !no_vm {
+        args.push("-Ccodegen-units=1".into());
+    }
     if msvc {
         // Image symbol slots of upstream symbols relocate against `__imp_<sym>` even when the
         // definition is linked statically; link.exe and lld-link then resolve it locally and
@@ -188,6 +192,17 @@ pub fn take_ryo_stats(args: &mut Vec<OsString>) -> Result<Option<String>, String
     }
     *args = out;
     Ok(level)
+}
+
+/// Whether `--crate-type proc-macro` (or `--crate-type=proc-macro`) is among `args`.
+fn is_proc_macro(args: &[OsString]) -> bool {
+    let mut prev = false;
+    args.iter().any(|a| {
+        let s = a.to_str().unwrap_or("");
+        let types = if prev { Some(s) } else { s.strip_prefix("--crate-type=") };
+        prev = s == "--crate-type";
+        types.is_some_and(|t| t.split(',').any(|t| t == "proc-macro"))
+    })
 }
 
 /// Whether the compilation targets windows-msvc: `--target` names an `-msvc` triple, or there
@@ -276,6 +291,14 @@ mod tests {
             want.extend(args(&["-Clink-arg=/IGNORE:4217", "-Clink-arg=/IGNORE:4286"]));
         }
         assert_eq!(got, want);
+    }
+
+    #[test]
+    fn leaves_codegen_units_of_proc_macros() {
+        let forced = |list: &[&str]| ryo_args(Path::new("/d"), args(list)).unwrap().iter().any(|a| a == "-Ccodegen-units=1");
+        assert!(!forced(&["x.rs", "--crate-type", "proc-macro"]));
+        assert!(!forced(&["x.rs", "--crate-type=proc-macro"]));
+        assert!(forced(&["x.rs", "--crate-type", "lib"]));
     }
 
     #[test]

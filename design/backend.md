@@ -37,7 +37,10 @@ and `codegen_crate` reads them.
      (`partition.rs`, `need_symbol`; `objfile.rs`, `global_function`), with their linkage
      and visibility; an `Internal` one becomes hidden.
 
-   The backend errors if `sess.codegen_units()` isn't 1.
+   The backend errors if `sess.codegen_units()` isn't 1. A crate with no VM code (a proc
+   macro, a panic runtime, `RYO_NO_VM`, step 2) skips all of this: the provider returns
+   rustc's partition as is, with any number of CGUs, and `codegen_crate` writes no image
+   (its final outputs still get a registry object for their upstream images).
 2. **Classify** each mono item:
    - `Fn(instance)` → VM, unless something in it can't be expressed as a VM op or an island
      template. Those functions stay native as a whole:

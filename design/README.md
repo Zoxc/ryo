@@ -39,10 +39,13 @@ x86-64 calls of the VM's handlers, and uses
 - A JIT in the runtime that recompiles hot VM functions on a background thread and switches
   running calls over to the new code ([jit.md](jit.md)).
 
-Non-goals: incremental compilation, debuginfo for VM code, targets other than x86_64. The
-backend rejects `-Cincremental`: VM functions' symbols and the image come from
-per-session state the query system doesn't track, so reused objects could carry stale
-symbols. `cargo-ryo` sets `CARGO_INCREMENTAL=0`, so cargo's dev profile works.
+Non-goals: debuginfo for VM code, targets other than x86_64.
+
+Incremental compilation (`-Cincremental`, cargo's dev profile) reuses the front end's
+work and cg_llvm's object for the crate's (single) native codegen unit when its items are
+unchanged; the image is rebuilt every session, as the partition query that builds it is
+`eval_always`. `y test incremental` rebuilds a program
+after scripted edits with `-Zincremental-verify-ich`.
 
 **Targets**: `x86_64-unknown-linux-gnu` (ELF), `x86_64-pc-windows-msvc` (PE/COFF) and
 `x86_64-apple-darwin` (Mach-O; arm64 Macs run it under Rosetta). Every format-specific

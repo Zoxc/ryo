@@ -312,6 +312,7 @@ fn test_targets(rel: &str) -> Option<(Vec<&'static str>, Vec<&'static str>)> {
         "vm_exports.rs" => vec!["exports"],
         "vm_statics.rs" => vec!["dump"],
         "vm_jit_private.rs" => vec!["jit-private-std"],
+        "incremental/edits.rs" | "incremental/pm.rs" | "incremental/pm_user.rs" => vec!["incremental"],
         _ => vec![],
     };
     (!programs.is_empty() || !checks.is_empty()).then_some((programs, checks))
@@ -412,9 +413,7 @@ impl Sel {
             || self.backend
             || self.checks.contains(&name)
             || match name {
-                "reject-randomize-layout" | "reject-codegen-units" | "reject-incremental" | "metadata-only" | "dump" | "exports" | "backtrace" => {
-                    self.fast
-                }
+                "reject-randomize-layout" | "reject-codegen-units" | "metadata-only" | "dump" | "exports" | "backtrace" => self.fast,
                 "rt-core-only" | "jit-sealed" => self.rt,
                 "jit-private-std" => self.jit,
                 _ => false,
@@ -658,7 +657,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
             ("jit-private-std", Box::new(|| jit_private_std(&rustc_ryo, &root.join("tests").join("vm_jit_private.rs"), &out))),
             ("reject-randomize-layout", Box::new(|| reject_randomize_layout(&rustc_ryo, &hello, &out))),
             ("reject-codegen-units", Box::new(|| reject_codegen_units(&rustc_ryo, &hello, &out))),
-            ("reject-incremental", Box::new(|| reject_incremental(&rustc_ryo, &hello, &out))),
+            ("incremental", Box::new(|| incremental(&rustc_ryo, &root.join("tests").join("incremental"), &out))),
             ("metadata-only", Box::new(|| metadata_only(&rustc_ryo, &hello, &out))),
             ("dump", Box::new(|| dump(&rustc_ryo, &root.join("tests").join("vm_statics.rs"), &out))),
             ("exports", Box::new(|| same_exports(&rustc_ryo, &root.join("tests").join("vm_exports.rs"), &out))),

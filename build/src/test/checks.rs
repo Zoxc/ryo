@@ -2,7 +2,7 @@
 
 use std::ffi::OsString;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::utils::{cmd, dll_name, exe_name, output};
@@ -22,8 +22,7 @@ pub(super) fn cargo_smoke(root: &Path, out: &Path) -> Result<(), String> {
         .args(["run", "--quiet", "--offline"])
         .current_dir(&pkg)
         .env("RYO_BACKEND_MARKER", "1")
-        // Force a rebuild, so the marker is printed. The dev profile turns on incremental
-        // compilation, which `cargo-ryo` must turn off again.
+        // Force a rebuild, so the marker is printed. The dev profile compiles incrementally.
         .env("CARGO_TARGET_DIR", pkg.join("target"))
         .env_remove("CARGO_INCREMENTAL")
         .output()
@@ -86,19 +85,84 @@ pub(super) fn have_cc() -> bool {
     Command::new("cc").arg("--version").output().is_ok_and(|o| o.status.success())
 }
 
-/// Incremental compilation is a non-goal; the backend rejects it (design/README.md).
-pub(super) fn reject_incremental(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
-    let res = cmd(rustc_ryo)
-        .arg(src)
-        .arg(format!("-Cincremental={}", out.join("incr").display()))
-        .arg("-o")
-        .arg(out.join(exe_name("incremental")))
-        .output()
-        .map_err(|e| e.to_string())?;
-    let stderr = String::from_utf8_lossy(&res.stderr);
-    if res.status.success() || !stderr.contains("incremental compilation") {
-        return Err(format!("expected rustc-ryo to reject -Cincremental; stderr:\n{stderr}"));
+/// Rebuild after edits (design/README.md#goals): `tests/incremental/edits.rs`, built with
+/// `-Cincremental -Zincremental-verify-ich` once per revision in one incremental directory,
+/// each revision an edit of the previous. Each build's output must equal plain rustc's (also
+/// with the JIT compiling every function), and its executable must be byte-identical to a
+/// clean incremental build's. At opt-level 0, at opt-level 2 with thin LTO, and with
+/// `RYO_NO_VM` at 16 codegen units, where rustc checks which units are reused. Then a proc
+/// macro (no VM code, any number of codegen units) rebuilt after an edit, and used.
+pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result<(), String> {
+    const REVISIONS: u32 = 9;
+    let src = dir_in.join("edits.rs");
+    let dir = out.join("incremental");
+    let _ = fs::remove_dir_all(&dir);
+    let run = |exe: &Path, env: &[(&str, &str)]| -> Result<String, String> {
+        let res = Command::new(exe).envs(env.iter().copied()).output().map_err(|e| format!("running {}: {e}", exe.display()))?;
+        if !res.status.success() {
+            return Err(format!("{}: {}\nstderr:\n{}", exe.display(), res.status, String::from_utf8_lossy(&res.stderr)));
+        }
+        Ok(String::from_utf8_lossy(&res.stdout).into_owned())
+    };
+    let reuse = &["--cfg", "reuse", "-Zquery-dep-graph"][..];
+    // Name, flags, flags for the incremental chain only, environment.
+    let configs: [(&str, &[&str], &[&str], &[(&str, &str)]); 3] = [
+        ("O0", &[], &[], &[]),
+        ("O2-thin", &["-Copt-level=2", "-Clto=thin"], &[], &[]),
+        ("no-vm-16", &["-Ccodegen-units=16"], reuse, &[("RYO_NO_VM", "1")]),
+    ];
+    for (config, flags, chain_flags, env) in configs {
+        let incr = dir.join(config).join("incr");
+        for rev in 1..=REVISIONS {
+            let cfg = format!("rev{rev}");
+            let build = |rustc: &Path, incr: Option<&Path>, extra: &[&str], sub: &str| -> Result<PathBuf, String> {
+                // The chain's output path stays the same: it is part of the session.
+                let d = if sub == "incr" { dir.join(config).join("chain") } else { dir.join(config).join(&cfg).join(sub) };
+                fs::create_dir_all(&d).map_err(|e| format!("creating {}: {e}", d.display()))?;
+                let exe = d.join(exe_name("edits"));
+                let mut c = cmd(rustc);
+                c.arg("--edition=2024").arg(&src).args(["--cfg", &cfg]).arg("-o").arg(&exe);
+                if let Some(incr) = incr {
+                    c.args(flags).args(extra).envs(env.iter().copied());
+                    c.arg(format!("-Cincremental={}", incr.display())).arg("-Zincremental-verify-ich");
+                }
+                crate::utils::run(&mut c).map_err(|e| format!("{config} {cfg} {sub}: {e}"))?;
+                Ok(exe)
+            };
+            let reference = run(&build(Path::new("rustc"), None, &[], "rustc")?, &[])?;
+            let exe = build(rustc_ryo, Some(&incr), chain_flags, "incr")?;
+            for env in [&[][..], super::JIT_SYNC] {
+                let got = run(&exe, env)?;
+                if got != reference {
+                    return Err(format!("{config} {cfg} {env:?}: output {got:?}, plain rustc's {reference:?}"));
+                }
+            }
+            let clean = build(rustc_ryo, Some(&dir.join(config).join(&cfg).join("clean-incr")), &[], "clean")?;
+            let read = |p: &Path| fs::read(p).map_err(|e| format!("reading {}: {e}", p.display()));
+            if read(&exe)? != read(&clean)? {
+                return Err(format!("{config} {cfg}: {} differs from the clean build {}", exe.display(), clean.display()));
+            }
+        }
     }
+
+    let pm_dir = dir.join("pm");
+    fs::create_dir_all(&pm_dir).map_err(|e| format!("creating {}: {e}", pm_dir.display()))?;
+    for (rev, want) in [("rev1", "41\n"), ("rev2", "42\n")] {
+        let mut c = cmd(rustc_ryo);
+        c.arg("--edition=2024").arg(dir_in.join("pm.rs")).args(["--crate-type", "proc-macro", "--crate-name", "pm", "--cfg", rev]);
+        c.arg(format!("-Cincremental={}", pm_dir.join("incr").display())).args(["-Zincremental-verify-ich", "-Zquery-dep-graph", "--out-dir"]);
+        crate::utils::run(c.arg(&pm_dir)).map_err(|e| format!("proc macro {rev}: {e}"))?;
+        let exe = pm_dir.join(exe_name("pm_user"));
+        let mut extern_pm = OsString::from("pm=");
+        extern_pm.push(pm_dir.join(dll_name("pm")));
+        crate::utils::run(cmd(rustc_ryo).arg("--edition=2024").arg(dir_in.join("pm_user.rs")).arg("--extern").arg(extern_pm).arg("-o").arg(&exe))
+            .map_err(|e| format!("proc macro user {rev}: {e}"))?;
+        let got = run(&exe, &[])?;
+        if got != want {
+            return Err(format!("proc macro {rev}: output {got:?}, expected {want:?}"));
+        }
+    }
+    let _ = fs::remove_dir_all(&dir);
     Ok(())
 }
 
@@ -440,8 +504,9 @@ pub(super) fn reject_randomize_layout(rustc_ryo: &Path, src: &Path, out: &Path) 
     Ok(())
 }
 
-/// The backend itself rejects more than one codegen unit (design/backend.md#pipeline). `rustc-ryo`
-/// always appends `-Ccodegen-units=1`, so this runs plain rustc with the backend.
+/// The backend itself rejects more than one codegen unit for a crate with VM code
+/// (design/backend.md#pipeline). `rustc-ryo` appends `-Ccodegen-units=1` for those, so this
+/// runs plain rustc with the backend.
 pub(super) fn reject_codegen_units(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     let dist = rustc_ryo.parent().and_then(Path::parent).ok_or("bad dist path")?;
     let mut backend = OsString::from("-Zcodegen-backend=");
