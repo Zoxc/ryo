@@ -179,38 +179,24 @@ pub fn arg_block<'tcx>(tcx: TyCtxt<'tcx>, inputs: &[Ty<'tcx>]) -> Result<(Vec<Ar
     Ok((fields, size))
 }
 
-/// The return kind of `ret` ([`ryo_bytecode::asm::RET_SRET`]): its `PassMode` as LLVM lowers
-/// it on x86-64. `Direct` and `Pair` scalars go to the next of `rax`, `rdx` (integers and
-/// pointers; `i128` takes both) or `xmm0`, `xmm1` (floats); a `Cast` is the Rust ABI's
-/// integer for an aggregate of up to 8 bytes; `Indirect` is sret.
-fn ret_kind<'tcx>(tcx: TyCtxt<'tcx>, ret: &ArgAbi<'tcx, Ty<'tcx>>) -> Result<u32, NeedsNative> {
+/// One register-sized piece of a value passed in registers: a scalar, or the Rust ABI's
+/// integer for a small aggregate.
+#[derive(Clone, Copy)]
+struct Piece {
+    float: bool,
+    size: u32,
+    off: u32,
+}
+
+/// The pieces of `arg` when its `PassMode` passes it in registers as LLVM lowers it on x86-64:
+/// a `Direct` scalar, the two scalars of a `Pair`, or a `Cast` to one integer of at most 8
+/// bytes (the Rust ABI's small aggregates). `None` for every other mode.
+fn reg_pieces<'tcx>(tcx: TyCtxt<'tcx>, arg: &ArgAbi<'tcx, Ty<'tcx>>) -> Option<Vec<Piece>> {
     let cx = LayoutCx(tcx);
-    let pe = crate::rustc_api::symbols::is_pe(tcx);
-    let scalar = |s: Scalar, off: u32, out: &mut Vec<RetPart>| -> Result<(), NeedsNative> {
-        let size = s.size(&cx).bytes() as u32;
-        if pe && (size == 16 || size == 2 && matches!(s.primitive(), Primitive::Float(_))) {
-            // Win64 returns `i128` in `xmm0` (LLVM 19); its `f16` and `f128` returns are
-            // unchecked (guess).
-            return native("i128, f16 or f128 return on Win64");
-        }
-        match s.primitive() {
-            Primitive::Float(_) => out.push(RetPart { xmm: true, size, off }),
-            Primitive::Int(..) | Primitive::Pointer(_) if size == 16 => {
-                out.extend([RetPart { xmm: false, size: 8, off }, RetPart { xmm: false, size: 8, off: off + 8 }])
-            }
-            Primitive::Int(..) | Primitive::Pointer(_) => out.push(RetPart { xmm: false, size, off }),
-        }
-        Ok(())
-    };
-    let mut parts = Vec::new();
-    match (&ret.mode, ret.layout.backend_repr) {
-        (PassMode::Ignore, _) => return Ok(0),
-        (PassMode::Indirect { .. }, _) => return Ok(RET_SRET),
-        (PassMode::Direct(_), BackendRepr::Scalar(s)) => scalar(s, 0, &mut parts)?,
-        (PassMode::Pair(..), BackendRepr::ScalarPair { a, b, b_offset }) => {
-            scalar(a, 0, &mut parts)?;
-            scalar(b, b_offset.bytes() as u32, &mut parts)?;
-        }
+    let scalar = |s: Scalar, off: u32| Piece { float: matches!(s.primitive(), Primitive::Float(_)), size: s.size(&cx).bytes() as u32, off };
+    match (&arg.mode, arg.layout.backend_repr) {
+        (PassMode::Direct(_), BackendRepr::Scalar(s)) => Some(vec![scalar(s, 0)]),
+        (PassMode::Pair(..), BackendRepr::ScalarPair { a, b, b_offset }) => Some(vec![scalar(a, 0), scalar(b, b_offset.bytes() as u32)]),
         (PassMode::Cast { cast, pad_i32: false }, _)
             if cast.prefix.is_empty()
                 && cast.rest_offset.is_none()
@@ -218,9 +204,38 @@ fn ret_kind<'tcx>(tcx: TyCtxt<'tcx>, ret: &ArgAbi<'tcx, Ty<'tcx>>) -> Result<u32
                 && cast.rest.total == cast.rest.unit.size
                 && cast.rest.total.bytes() <= 8 =>
         {
-            parts.push(RetPart { xmm: false, size: cast.rest.total.bytes() as u32, off: 0 })
+            Some(vec![Piece { float: false, size: cast.rest.total.bytes() as u32, off: 0 }])
         }
-        (mode, repr) => return native(format!("return passed as {mode:?} ({repr:?})")),
+        _ => None,
+    }
+}
+
+/// The return kind of `ret` ([`ryo_bytecode::asm::RET_SRET`]): its `PassMode` as LLVM lowers
+/// it on x86-64. `Direct` and `Pair` scalars go to the next of `rax`, `rdx` (integers and
+/// pointers; `i128` takes both) or `xmm0`, `xmm1` (floats); a `Cast` is the Rust ABI's
+/// integer for an aggregate of up to 8 bytes; `Indirect` is sret.
+fn ret_kind<'tcx>(tcx: TyCtxt<'tcx>, ret: &ArgAbi<'tcx, Ty<'tcx>>) -> Result<u32, NeedsNative> {
+    match ret.mode {
+        PassMode::Ignore => return Ok(0),
+        PassMode::Indirect { .. } => return Ok(RET_SRET),
+        _ => {}
+    }
+    let Some(pieces) = reg_pieces(tcx, ret) else {
+        return native(format!("return passed as {:?} ({:?})", ret.mode, ret.layout.backend_repr));
+    };
+    let pe = crate::rustc_api::symbols::is_pe(tcx);
+    let mut parts = Vec::new();
+    for Piece { float, size, off } in pieces {
+        if pe && (size == 16 || size == 2 && float) {
+            // Win64 returns `i128` in `xmm0` (LLVM 19); its `f16` and `f128` returns are
+            // unchecked (guess).
+            return native("i128, f16 or f128 return on Win64");
+        }
+        if !float && size == 16 {
+            parts.extend([RetPart { xmm: false, size: 8, off }, RetPart { xmm: false, size: 8, off: off + 8 }]);
+        } else {
+            parts.push(RetPart { xmm: float, size, off });
+        }
     }
     if parts.len() > 2 {
         return native("return value in more than two registers");
@@ -238,7 +253,6 @@ fn ret_kind<'tcx>(tcx: TyCtxt<'tcx>, ret: &ArgAbi<'tcx, Ty<'tcx>>) -> Result<u32
 /// r8 r9` or `xmm0`–`xmm3` by class, then 8-byte stack slots after the shadow space. An sret
 /// return takes the first integer register.
 fn arg_plan<'tcx>(tcx: TyCtxt<'tcx>, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, sret: bool) -> Result<ArgPlan, NeedsNative> {
-    let cx = LayoutCx(tcx);
     let pe = crate::rustc_api::symbols::is_pe(tcx);
     struct State {
         pe: bool,
@@ -331,34 +345,20 @@ fn arg_plan<'tcx>(tcx: TyCtxt<'tcx>, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, sret: bool)
         st.gpr = 1;
         st.pos = 1;
     }
-    let scalar = |st: &mut State, s: Scalar, off: u32, out: &mut Vec<ArgLoc>| {
-        let size = s.size(&cx).bytes() as u32;
-        match s.primitive() {
-            Primitive::Float(_) => st.float(size, off, out),
-            Primitive::Int(..) | Primitive::Pointer(_) => st.int(size, off, out),
-        }
-    };
     let mut locs = Vec::with_capacity(fn_abi.args.len());
     for arg in fn_abi.args.iter() {
         let mut out = Vec::new();
-        match (&arg.mode, arg.layout.backend_repr) {
-            (PassMode::Ignore, _) => {}
-            (PassMode::Direct(_), BackendRepr::Scalar(s)) => scalar(&mut st, s, 0, &mut out)?,
-            (PassMode::Pair(..), BackendRepr::ScalarPair { a, b, b_offset }) => {
-                scalar(&mut st, a, 0, &mut out)?;
-                scalar(&mut st, b, b_offset.bytes() as u32, &mut out)?;
+        match arg.mode {
+            PassMode::Ignore => {}
+            PassMode::Indirect { meta_attrs: None, on_stack: false, .. } => st.ptr(&mut out),
+            _ => {
+                let Some(pieces) = reg_pieces(tcx, arg) else {
+                    return native(format!("argument passed as {:?} ({:?})", arg.mode, arg.layout.backend_repr));
+                };
+                for Piece { float, size, off } in pieces {
+                    if float { st.float(size, off, &mut out)? } else { st.int(size, off, &mut out)? }
+                }
             }
-            (PassMode::Cast { cast, pad_i32: false }, _)
-                if cast.prefix.is_empty()
-                    && cast.rest_offset.is_none()
-                    && cast.rest.unit.kind == RegKind::Integer
-                    && cast.rest.total == cast.rest.unit.size
-                    && cast.rest.total.bytes() <= 8 =>
-            {
-                st.int(cast.rest.total.bytes() as u32, 0, &mut out)?
-            }
-            (PassMode::Indirect { meta_attrs: None, on_stack: false, .. }, _) => st.ptr(&mut out),
-            (mode, repr) => return native(format!("argument passed as {mode:?} ({repr:?})")),
         }
         locs.push(out);
     }
