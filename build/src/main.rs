@@ -75,13 +75,20 @@ enum Cmd {
     Bench(bench::Options),
     BenchCodegen,
     BenchCrates(crates::Options),
-    /// `lean`, `lean gen` (`regen`) or `lean --proofs` (`proofs`).
-    Lean {
-        regen: bool,
-        proofs: bool,
-    },
+    Lean(LeanMode),
     Clean,
     Help,
+}
+
+/// What `y lean` does.
+#[derive(Debug, PartialEq)]
+enum LeanMode {
+    /// `lean`: check the generated tables, then `lake build` and `lake test`.
+    Check,
+    /// `lean --proofs`: `Check`, plus the slow proofs.
+    Proofs,
+    /// `lean gen`: regenerate the tables.
+    Generate,
 }
 
 fn parse_args(args: &[String]) -> Result<Cmd, String> {
@@ -121,9 +128,9 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
             opts => bench::parse_options(opts).map(Cmd::Bench),
         },
         "lean" => match rest.as_slice() {
-            [] => Ok(Cmd::Lean { regen: false, proofs: false }),
-            ["gen"] => Ok(Cmd::Lean { regen: true, proofs: false }),
-            ["--proofs"] => Ok(Cmd::Lean { regen: false, proofs: true }),
+            [] => Ok(Cmd::Lean(LeanMode::Check)),
+            ["gen"] => Ok(Cmd::Lean(LeanMode::Generate)),
+            ["--proofs"] => Ok(Cmd::Lean(LeanMode::Proofs)),
             [arg, ..] => Err(format!("unexpected argument `{arg}`")),
         },
         "clean" => no_args(Cmd::Clean),
@@ -190,8 +197,9 @@ fn main() -> ExitCode {
         Cmd::Bench(opts) => bench::run(&opts),
         Cmd::BenchCodegen => bench::codegen(),
         Cmd::BenchCrates(opts) => crates::run(opts),
-        Cmd::Lean { regen: false, proofs } => lean::check(proofs),
-        Cmd::Lean { regen: true, .. } => lean::generate(),
+        Cmd::Lean(LeanMode::Check) => lean::check(false),
+        Cmd::Lean(LeanMode::Proofs) => lean::check(true),
+        Cmd::Lean(LeanMode::Generate) => lean::generate(),
         Cmd::Clean => dist::clean(),
     };
     match result {
@@ -246,9 +254,9 @@ mod tests {
         assert_eq!(parse(&["bench", "codegen"]), Ok(Cmd::BenchCodegen));
         assert!(matches!(parse(&["bench", "crates", "--quick"]), Ok(Cmd::BenchCrates(o)) if o.run_samples == 1));
         assert!(parse(&["bench", "crates", "--frob"]).is_err());
-        assert_eq!(parse(&["lean"]), Ok(Cmd::Lean { regen: false, proofs: false }));
-        assert_eq!(parse(&["lean", "gen"]), Ok(Cmd::Lean { regen: true, proofs: false }));
-        assert_eq!(parse(&["lean", "--proofs"]), Ok(Cmd::Lean { regen: false, proofs: true }));
+        assert_eq!(parse(&["lean"]), Ok(Cmd::Lean(LeanMode::Check)));
+        assert_eq!(parse(&["lean", "gen"]), Ok(Cmd::Lean(LeanMode::Generate)));
+        assert_eq!(parse(&["lean", "--proofs"]), Ok(Cmd::Lean(LeanMode::Proofs)));
         assert!(parse(&["lean", "x"]).is_err());
         assert_eq!(parse(&["clean"]), Ok(Cmd::Clean));
         assert!(parse(&["clean", "x"]).is_err());
