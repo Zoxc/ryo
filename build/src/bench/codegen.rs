@@ -203,106 +203,8 @@ fn jit_dumps(exe: &Path, dir: &Path, aot: &str) -> Result<Vec<(&'static str, Str
 /// The `RYO_DUMP_CODE` text as x86 assembly: per function, its instructions at offsets from
 /// the function start, with relocated operands named by their targets.
 fn disassemble(dump: &str) -> Result<String, String> {
-    use iced_x86::{Decoder, DecoderOptions, Formatter, IntelFormatter};
     use std::fmt::Write;
     let mut out = String::new();
-    // `osr`: where the body ends and the OSR code starts (JIT code), which gets a comment
-    // line; the padding between them isn't printed.
-    let flush = |out: &mut String, code: &[u8], relocs: &[(u32, String)], osr: Option<(usize, usize)>| {
-        // First pass: the instructions and jump-table entries, and the positions they refer to
-        // within the function, which get labels.
-        enum Item {
-            Insn(iced_x86::Instruction),
-            Long(usize),
-            Osr,
-        }
-        let mut osr = osr;
-        let mut items = Vec::new();
-        let mut targets = std::collections::BTreeSet::new();
-        let reloc_in = |insn: &iced_x86::Instruction| relocs.iter().any(|(at, _)| (insn.ip() as u32..insn.next_ip() as u32).contains(at));
-        let mut d = Decoder::with_ip(64, code, 0, DecoderOptions::NONE);
-        // A jump table's position: the `lea rcx, [rip + T]` of the switch sequence.
-        let mut table = None;
-        while d.can_decode() {
-            let at = d.ip() as usize;
-            if let Some((end, osr_at)) = osr
-                && at == end
-            {
-                osr = None;
-                items.push((osr_at, Item::Osr));
-                d.set_position(osr_at).unwrap();
-                d.set_ip(osr_at as u64);
-                continue;
-            }
-            if table == Some(at) {
-                // `i32` offsets from the table to its targets. The table ends at the first
-                // target after it, or (all targets before it) at an offset out of the function.
-                let mut end = code.len();
-                let mut pos = at;
-                while pos + 4 <= end {
-                    let e = i32::from_le_bytes(code[pos..pos + 4].try_into().unwrap()) as i64;
-                    let to = at as i64 + e;
-                    if !(0..code.len() as i64).contains(&to) {
-                        break;
-                    }
-                    if to as usize >= pos + 4 {
-                        end = end.min(to as usize);
-                    }
-                    targets.insert(to as u64);
-                    items.push((pos, Item::Long(to as usize)));
-                    pos += 4;
-                }
-                table = None;
-                d.set_position(pos).unwrap();
-                d.set_ip(pos as u64);
-                continue;
-            }
-            let insn = d.decode();
-            // The JIT's tables: `lea r11, [rip + T]` (its OSR dispatcher and the SSA tier's
-            // switches).
-            let r = insn.op0_register();
-            if insn.mnemonic() == iced_x86::Mnemonic::Lea
-                && (r == iced_x86::Register::RCX || (r == iced_x86::Register::R11 && !reloc_in(&insn)))
-                && insn.is_ip_rel_memory_operand()
-            {
-                table = Some(insn.ip_rel_memory_address() as usize);
-            }
-            if !reloc_in(&insn) {
-                if insn
-                    .op_kinds()
-                    .any(|k| matches!(k, iced_x86::OpKind::NearBranch16 | iced_x86::OpKind::NearBranch32 | iced_x86::OpKind::NearBranch64))
-                {
-                    targets.insert(insn.near_branch_target());
-                }
-                if insn.is_ip_rel_memory_operand() && (insn.ip_rel_memory_address() as usize) < code.len() {
-                    targets.insert(insn.ip_rel_memory_address());
-                }
-            }
-            items.push((at, Item::Insn(insn)));
-        }
-        let labels: HashMap<u64, String> = targets.iter().enumerate().map(|(i, &t)| (t, format!("L{i}"))).collect();
-        let mut fmt = IntelFormatter::with_options(Some(Box::new(Relocs(relocs.to_vec(), labels.clone()))), None);
-        let o = fmt.options_mut();
-        o.set_first_operand_char_index(8);
-        o.set_branch_leading_zeros(false);
-        o.set_show_branch_size(false);
-        let mut text = String::new();
-        for (at, item) in &items {
-            if let Some(l) = labels.get(&(*at as u64)) {
-                writeln!(out, "{l}:").unwrap();
-            }
-            match item {
-                Item::Osr => writeln!(out, "  ; OSR entries").unwrap(),
-                Item::Long(to) => writeln!(out, "    .long   {}", labels[&(*to as u64)]).unwrap(),
-                Item::Insn(insn) => {
-                    text.clear();
-                    fmt.format(insn, &mut text);
-                    writeln!(out, "    {text}").unwrap();
-                }
-            }
-        }
-        out.push('\n');
-    };
     let mut code = Vec::new();
     let mut relocs = Vec::new();
     let mut osr = None;
@@ -312,7 +214,7 @@ fn disassemble(dump: &str) -> Result<String, String> {
     for line in dump.lines() {
         if let Some(name) = line.strip_prefix("fn ") {
             if !out.is_empty() || !code.is_empty() {
-                flush(&mut out, &code, &relocs, osr.take());
+                disassemble_function(&mut out, &code, &relocs, osr.take());
             }
             writeln!(out, "fn {name}").unwrap();
             code.clear();
@@ -332,9 +234,120 @@ fn disassemble(dump: &str) -> Result<String, String> {
         }
     }
     if !code.is_empty() {
-        flush(&mut out, &code, &relocs, osr);
+        disassemble_function(&mut out, &code, &relocs, osr);
     }
     Ok(out)
+}
+
+/// One function of the dump, appended to `out`. `osr`: where the body ends and the OSR code
+/// starts (JIT code), which gets a comment line; the padding between them isn't printed.
+fn disassemble_function(out: &mut String, code: &[u8], relocs: &[(u32, String)], osr: Option<(usize, usize)>) {
+    use iced_x86::{Decoder, DecoderOptions, Formatter, IntelFormatter};
+    use std::fmt::Write;
+    // First pass: the instructions and jump-table entries, and the positions they refer to
+    // within the function, which get labels.
+    let mut osr = osr;
+    let mut items = Vec::new();
+    let mut targets = std::collections::BTreeSet::new();
+    let mut d = Decoder::with_ip(64, code, 0, DecoderOptions::NONE);
+    // A jump table's position: the `lea rcx, [rip + T]` of the switch sequence.
+    let mut table = None;
+    while d.can_decode() {
+        let at = d.ip() as usize;
+        if let Some((end, osr_at)) = osr
+            && at == end
+        {
+            osr = None;
+            items.push((osr_at, Item::Osr));
+            d.set_position(osr_at).unwrap();
+            d.set_ip(osr_at as u64);
+            continue;
+        }
+        if table == Some(at) {
+            // `i32` offsets from the table to its targets. The table ends at the first
+            // target after it, or (all targets before it) at an offset out of the function.
+            let mut end = code.len();
+            let mut pos = at;
+            while pos + 4 <= end {
+                let e = i32::from_le_bytes(code[pos..pos + 4].try_into().unwrap()) as i64;
+                let to = at as i64 + e;
+                if !(0..code.len() as i64).contains(&to) {
+                    break;
+                }
+                if to as usize >= pos + 4 {
+                    end = end.min(to as usize);
+                }
+                targets.insert(to as u64);
+                items.push((pos, Item::Long(to as usize)));
+                pos += 4;
+            }
+            table = None;
+            d.set_position(pos).unwrap();
+            d.set_ip(pos as u64);
+            continue;
+        }
+        let insn = d.decode();
+        // The JIT's tables: `lea r11, [rip + T]` (its OSR dispatcher and the SSA tier's
+        // switches).
+        let r = insn.op0_register();
+        if insn.mnemonic() == iced_x86::Mnemonic::Lea
+            && (r == iced_x86::Register::RCX || (r == iced_x86::Register::R11 && reloc_at(relocs, &insn).is_none()))
+            && insn.is_ip_rel_memory_operand()
+        {
+            table = Some(insn.ip_rel_memory_address() as usize);
+        }
+        if reloc_at(relocs, &insn).is_none() {
+            if is_near_branch(&insn) {
+                targets.insert(insn.near_branch_target());
+            }
+            if insn.is_ip_rel_memory_operand() && (insn.ip_rel_memory_address() as usize) < code.len() {
+                targets.insert(insn.ip_rel_memory_address());
+            }
+        }
+        items.push((at, Item::Insn(insn)));
+    }
+    let labels: HashMap<u64, String> = targets.iter().enumerate().map(|(i, &t)| (t, format!("L{i}"))).collect();
+    let mut fmt = IntelFormatter::with_options(Some(Box::new(Relocs { relocs: relocs.to_vec(), labels: labels.clone() })), None);
+    let o = fmt.options_mut();
+    o.set_first_operand_char_index(8);
+    o.set_branch_leading_zeros(false);
+    o.set_show_branch_size(false);
+    let mut text = String::new();
+    for (at, item) in &items {
+        if let Some(l) = labels.get(&(*at as u64)) {
+            writeln!(out, "{l}:").unwrap();
+        }
+        match item {
+            Item::Osr => writeln!(out, "  ; OSR entries").unwrap(),
+            Item::Long(to) => writeln!(out, "    .long   {}", labels[&(*to as u64)]).unwrap(),
+            Item::Insn(insn) => {
+                text.clear();
+                fmt.format(insn, &mut text);
+                writeln!(out, "    {text}").unwrap();
+            }
+        }
+    }
+    out.push('\n');
+}
+
+enum Item {
+    Insn(iced_x86::Instruction),
+    Long(usize),
+    Osr,
+}
+
+fn is_near_branch(insn: &iced_x86::Instruction) -> bool {
+    insn.op_kinds().any(|k| matches!(k, iced_x86::OpKind::NearBranch16 | iced_x86::OpKind::NearBranch32 | iced_x86::OpKind::NearBranch64))
+}
+
+/// The target of the relocation inside `insn`, if any.
+fn reloc_at<'a>(relocs: &'a [(u32, String)], insn: &iced_x86::Instruction) -> Option<&'a str> {
+    relocs.iter().find(|(at, _)| (insn.ip() as u32..insn.next_ip() as u32).contains(at)).map(|(_, to)| to.as_str())
+}
+
+/// Whether `address` is `insn`'s branch target or RIP-relative address.
+fn refers_to(insn: &iced_x86::Instruction, address: u64) -> bool {
+    (is_near_branch(insn) && insn.near_branch_target() == address) || (insn.is_ip_rel_memory_operand() && insn.ip_rel_memory_address() == address)
 }
 
 /// Names the relocated operands of one function's instructions: each relocated field is a
@@ -342,7 +355,10 @@ fn disassemble(dump: &str) -> Result<String, String> {
 /// call through `r11`.
 /// Other operands that name a position in the function (branch targets, a jump table) are
 /// named by its label.
-struct Relocs(Vec<(u32, String)>, HashMap<u64, String>);
+struct Relocs {
+    relocs: Vec<(u32, String)>,
+    labels: HashMap<u64, String>,
+}
 
 impl iced_x86::SymbolResolver for Relocs {
     fn symbol(
@@ -353,21 +369,17 @@ impl iced_x86::SymbolResolver for Relocs {
         address: u64,
         _address_size: u32,
     ) -> Option<iced_x86::SymbolResult<'_>> {
-        let (start, end) = (insn.ip() as u32, insn.next_ip() as u32);
-        let near =
-            insn.op_kinds().any(|k| matches!(k, iced_x86::OpKind::NearBranch16 | iced_x86::OpKind::NearBranch32 | iced_x86::OpKind::NearBranch64));
         // The relocated operand only, not an immediate of the same instruction.
         // (Or the `imm64` of a `mov r11, imm64` before a call through `r11`.)
         let imm64 = insn.op_kinds().any(|k| k == iced_x86::OpKind::Immediate64) && insn.immediate64() == address;
-        let relocated =
-            (near && insn.near_branch_target() == address) || (insn.is_ip_rel_memory_operand() && insn.ip_rel_memory_address() == address) || imm64;
-        if let Some((_, to)) = self.0.iter().find(|(at, _)| (start..end).contains(at))
-            && relocated
-        {
-            return Some(iced_x86::SymbolResult::with_str(address, to.as_str()));
+        let refers = refers_to(insn, address);
+        if refers || imm64 {
+            if let Some(to) = reloc_at(&self.relocs, insn) {
+                return Some(iced_x86::SymbolResult::with_str(address, to));
+            }
         }
-        if (near && insn.near_branch_target() == address) || (insn.is_ip_rel_memory_operand() && insn.ip_rel_memory_address() == address) {
-            return self.1.get(&address).map(|l| iced_x86::SymbolResult::with_str(address, l.as_str()));
+        if refers {
+            return self.labels.get(&address).map(|l| iced_x86::SymbolResult::with_str(address, l.as_str()));
         }
         None
     }
