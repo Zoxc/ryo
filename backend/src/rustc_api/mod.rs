@@ -206,6 +206,7 @@ impl CodegenBackend for RyoBackend {
             local_image: objfile::image_symbol(scid),
             image_module: image_name.clone(),
             linked_roots: tcx.crate_types().iter().map(|&t| (t, partition::linked_roots(tcx, t))).collect(),
+            macho: tcx.sess.target.binary_format == rustc_target::spec::BinaryFormat::MachO,
         });
         dump_lean::dump(tcx);
         // The native CGU (step 4), compiled by cg_llvm as usual.

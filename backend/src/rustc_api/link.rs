@@ -26,6 +26,8 @@ pub struct LinkInfo {
     /// Per crate type, the image symbols that only LTO needs, as entries of its
     /// `linked_symbols` and of its `exported_symbols` (`partition::linked_roots`).
     pub linked_roots: Vec<(CrateType, (Vec<String>, Vec<String>))>,
+    /// The target writes Mach-O objects.
+    pub macho: bool,
 }
 
 pub fn link(
@@ -74,7 +76,14 @@ pub fn link(
             let name = format!("{}.ryo_registry.{}", crate_info.local_crate_name, crate_type);
             let path = outputs.temp_path_for_cgu(OutputType::Object, &name);
             fs::write(&path, bytes).unwrap_or_else(|e| sess.dcx().fatal(format!("writing {}: {e}", path.display())));
-            these.modules.push(object_module(name, path));
+            // Mach-O has no constructor priorities: ld64 and lld lay out `__mod_init_func` in
+            // input order and dyld runs it in that order, so the registry object goes first,
+            // ahead of the crate's own objects and every rlib (design/platforms.md).
+            if info.macho {
+                these.modules.insert(0, object_module(name, path));
+            } else {
+                these.modules.push(object_module(name, path));
+            }
             drop(registry_t);
         }
         // In an rlib, the image must not be a Rust object: `-Clto` downstream reads bitcode
