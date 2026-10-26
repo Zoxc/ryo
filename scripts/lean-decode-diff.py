@@ -41,76 +41,26 @@ sysroot's objects) and `lake build` in lean/ first.
 import argparse
 import concurrent.futures
 import difflib
-import os
 import re
 import shutil
-import subprocess
 import sys
-import tempfile
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+from lean_corpus import IMAGE_GLOB, ROOT, add_common_args, build_all, compile_program, require, run, sysroot_images, variants, work_dir
+
 REF_DIR = ROOT / "scripts" / "lean-decode-ref"
-TIMEOUT = 600
 
 # The per-function decode comparison: `ryo-lean decode <obj>` prints, for each VM function, what
 # `lean-decode-ref decode <obj>` prints (see scripts/lean-decode-ref/src/main.rs).
 LEAN_DECODE = ["decode"]
 
 
-def run(cmd, cwd=None, timeout=TIMEOUT):
-    try:
-        p = subprocess.run(cmd, cwd=cwd or ROOT, capture_output=True, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        return None, b"", b"<timeout>"
-    return p.returncode, p.stdout, p.stderr
-
-
-# --- objects ---------------------------------------------------------------------------------
-
-
-def programs(names):
-    srcs = sorted((ROOT / "tests" / "lean").glob("*.rs")) + sorted((ROOT / "tests").glob("*.rs")) + sorted((ROOT / "bench").glob("*.rs"))
-    out = []
-    for s in srcs:
-        label = f"{s.parent.relative_to(ROOT)}/{s.stem}"
-        if names and s.stem not in names and label not in names:
-            continue
-        out.append((label, s))
-    return out
-
-
-def compile_program(rustc_ryo, label, src, flags, out_dir):
-    """Builds `src` with -Csave-temps in `out_dir`; the image objects it leaves, or an error."""
-    shutil.rmtree(out_dir, ignore_errors=True)
-    out_dir.mkdir(parents=True)
-    name = src.stem
-    cmd = [str(rustc_ryo), "--edition=2024", str(src), "--crate-type", "bin", "--crate-name", name, "-o", str(out_dir / name), "-Csave-temps"] + flags
-    code, _, err = run(cmd, cwd=out_dir)
-    objs = sorted(out_dir.glob("*.ryo_image.rcgu.o"))
+def build(src, flags, out_dir):
+    """Builds `src` in `out_dir`: (the image objects it leaves, None) or (None, an error)."""
+    code, why = compile_program(src, flags, out_dir)
+    objs = sorted(out_dir.glob(IMAGE_GLOB))
     if code != 0 and not objs:
-        return [], err.decode(errors="replace").strip().splitlines()[-1:] or ["build failed"]
+        return None, why
     return objs, None
-
-
-def sysroot_objects(names, out_dir):
-    lib = ROOT / "dist" / "sysroot-ryo" / "lib" / "rustlib"
-    rlibs = sorted(lib.glob("*/lib/*.rlib"))
-    out = []
-    for rlib in rlibs:
-        crate = re.sub(r"^lib|-[0-9a-f]+$", "", rlib.stem)
-        if names and crate not in names and f"sysroot/{crate}" not in names:
-            continue
-        code, members, _ = run(["ar", "t", str(rlib)])
-        for m in members.decode().split():
-            if m.endswith(".ryo_image.rcgu.o"):
-                d = out_dir / crate
-                d.mkdir(parents=True, exist_ok=True)
-                code, data, _ = run(["ar", "p", str(rlib), m])
-                if code == 0:
-                    (d / m).write_bytes(data)
-                    out.append((f"sysroot/{crate}", d / m))
-    return out
 
 
 # --- readelf ---------------------------------------------------------------------------------
@@ -353,48 +303,25 @@ def check(obj, args, ref, work):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("names", nargs="*")
-    ap.add_argument("--ryo-lean", default=str(ROOT / "lean" / ".lake" / "build" / "bin" / "ryo-lean"))
-    ap.add_argument("--opt", action="store_true")
+    add_common_args(ap)
     ap.add_argument("--no-sysroot", action="store_true", help="skip the ryo sysroot's objects")
     ap.add_argument("--decode", action="store_true", help="also compare the per-function decode (ryo-lean decode)")
     ap.add_argument("--readelf", action="store_true", help="also compare ryo-lean elf with readelf")
     ap.add_argument("--unwind", action="store_true", help="also compare ryo-lean ehframe with readelf and ryo-lean lsda with lean-decode-ref lsda")
     ap.add_argument("--frame-pointer", action="store_true", help="also build the programs with -Cforce-frame-pointers=yes")
-    ap.add_argument("--keep")
-    ap.add_argument("-j", type=int, default=os.cpu_count() or 4)
     args = ap.parse_args()
 
-    rustc_ryo = ROOT / "dist" / "bin" / "rustc-ryo"
-    if not rustc_ryo.exists():
-        sys.exit(f"{rustc_ryo} not found; run ./y.sh build")
-    if not Path(args.ryo_lean).exists():
-        sys.exit(f"{args.ryo_lean} not found; build it with `lake build` in lean/, or pass --ryo-lean")
+    require(args.ryo_lean)
     code, _, err = run(["cargo", "build", "--release", "--quiet", "--manifest-path", str(REF_DIR / "Cargo.toml")])
     if code != 0:
         sys.exit("building scripts/lean-decode-ref failed:\n" + err.decode(errors="replace"))
     ref = REF_DIR / "target" / "release" / "lean-decode-ref"
 
-    work = Path(args.keep) if args.keep else Path(tempfile.mkdtemp(prefix="lean-decode-diff-"))
-    work.mkdir(parents=True, exist_ok=True)
-    variants = [("", [])] + ([("-O3", ["-Copt-level=3"])] if args.opt else [])
-    if args.frame_pointer:
-        variants += [(v + "-fp", f + ["-Cforce-frame-pointers=yes"]) for v, f in variants]
-    objs, skipped = [], []
-    with concurrent.futures.ThreadPoolExecutor(args.j) as pool:
-        jobs = {}
-        for label, src in programs(args.names):
-            for suffix, flags in variants:
-                l = label + suffix
-                jobs[pool.submit(compile_program, rustc_ryo, l, src, flags, work / l.replace("/", "_"))] = l
-        for f in concurrent.futures.as_completed(jobs):
-            found, err = f.result()
-            if found:
-                objs += [(jobs[f], o) for o in found]
-            else:
-                skipped.append((jobs[f], err))
+    work = work_dir(args.keep, "lean-decode-diff-")
+    built, skipped = build_all(args.names, variants(args.opt, args.frame_pointer), work, args.j, build)
+    objs = [(label, o) for label, found in built for o in found]
     if not args.no_sysroot:
-        objs += sysroot_objects(args.names, work / "sysroot")
+        objs += sysroot_images(args.names, work / "sysroot")
     objs.sort()
 
     rows, reports = [], []
@@ -418,7 +345,7 @@ def main():
     for label, funcs, st in rows:
         print(f"{label:<{w}}  {funcs:>6}  {st}")
     for label, err in sorted(skipped):
-        print(f"{label:<{w}}  {'-':>6}  skipped: {' '.join(err)}")
+        print(f"{label:<{w}}  {'-':>6}  skipped: {err}")
     for rep in reports:
         print()
         print(rep)

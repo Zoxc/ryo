@@ -28,74 +28,28 @@ Exits nonzero if any group has a mismatch. Run `./y.sh build` and `lake build` i
 
 import argparse
 import concurrent.futures
-import os
 import re
 import shutil
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-TIMEOUT = 1800
-
-
-def run(cmd, cwd=None, timeout=TIMEOUT):
-    try:
-        p = subprocess.run(cmd, cwd=cwd or ROOT, capture_output=True, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        return None, b"", b"<timeout>"
-    return p.returncode, p.stdout, p.stderr
-
-
-def programs(names):
-    srcs = sorted((ROOT / "tests" / "lean").glob("*.rs")) + sorted((ROOT / "tests").glob("*.rs")) + sorted((ROOT / "bench").glob("*.rs"))
-    out = []
-    for s in srcs:
-        label = f"{s.parent.relative_to(ROOT)}/{s.stem}"
-        if names and s.stem not in names and label not in names:
-            continue
-        out.append((label, s))
-    return out
+from lean_corpus import IMAGE_GLOB, add_common_args, build_all, compile_program, require, run, sysroot_images, variants, work_dir
 
 
 def group_objects(d):
     """A directory's image objects and its registry object (or None)."""
-    images = sorted(d.glob("*.ryo_image.rcgu.o"))
+    images = sorted(d.glob(IMAGE_GLOB))
     regs = sorted(d.glob("*.ryo_registry*.o"))
     return images, (regs[0] if regs else None)
 
 
-def compile_program(rustc_ryo, src, flags, out_dir):
-    """Builds `src` with -Csave-temps in `out_dir`: (image objects, registry object), or an error."""
-    shutil.rmtree(out_dir, ignore_errors=True)
-    out_dir.mkdir(parents=True)
-    name = src.stem
-    cmd = [str(rustc_ryo), "--edition=2024", str(src), "--crate-type", "bin", "--crate-name", name, "-o", str(out_dir / name), "-Csave-temps"] + flags
-    code, _, err = run(cmd, cwd=out_dir)
+def build(src, flags, out_dir):
+    """Builds `src` in `out_dir`: ((image objects, registry object), None) or (None, an error)."""
+    code, why = compile_program(src, flags, out_dir)
     images, reg = group_objects(out_dir)
     if code != 0 and not images:
-        return None, err.decode(errors="replace").strip().splitlines()[-1:] or ["build failed"]
+        return None, why
     return (images, reg), None
-
-
-def sysroot_groups(names, out_dir):
-    lib = ROOT / "dist" / "sysroot-ryo" / "lib" / "rustlib"
-    out = []
-    for rlib in sorted(lib.glob("*/lib/*.rlib")):
-        crate = re.sub(r"^lib|-[0-9a-f]+$", "", rlib.stem)
-        if names and crate not in names and f"sysroot/{crate}" not in names:
-            continue
-        _, members, _ = run(["ar", "t", str(rlib)])
-        for m in members.decode().split():
-            if m.endswith(".ryo_image.rcgu.o"):
-                d = out_dir / crate
-                d.mkdir(parents=True, exist_ok=True)
-                code, data, _ = run(["ar", "p", str(rlib), m])
-                if code == 0:
-                    (d / m).write_bytes(data)
-                    out.append((f"sysroot/{crate}", [d / m], None))
-    return out
 
 
 SUMMARY = re.compile(r"^check-image: (\d+) image objects \((\d+) functions\).*: (\d+) mismatches$")
@@ -118,18 +72,13 @@ def check(ryo_lean, images, reg, keep_dir):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("names", nargs="*")
-    ap.add_argument("--ryo-lean", default=str(ROOT / "lean" / ".lake" / "build" / "bin" / "ryo-lean"))
-    ap.add_argument("--opt", action="store_true")
+    add_common_args(ap)
     ap.add_argument("--frame-pointer", action="store_true", help="also build the programs with -Cforce-frame-pointers=yes")
     ap.add_argument("--no-sysroot", action="store_true", help="skip the ryo sysroot's objects")
     ap.add_argument("--corpus", help="check the groups of objects in this directory instead of building")
-    ap.add_argument("--keep")
-    ap.add_argument("-j", type=int, default=os.cpu_count() or 4)
     args = ap.parse_args()
 
-    if not Path(args.ryo_lean).exists():
-        sys.exit(f"{args.ryo_lean} not found; build it with `lake build` in lean/, or pass --ryo-lean")
+    require(args.ryo_lean, rustc_ryo=not args.corpus)
     groups, skipped = [], []
     work = None
     if args.corpus:
@@ -143,28 +92,11 @@ def main():
                 if images and (not args.names or g.name in args.names or label in args.names):
                     groups.append((label, images, reg))
     else:
-        rustc_ryo = ROOT / "dist" / "bin" / "rustc-ryo"
-        if not rustc_ryo.exists():
-            sys.exit(f"{rustc_ryo} not found; run ./y.sh build")
-        work = Path(args.keep) if args.keep else Path(tempfile.mkdtemp(prefix="lean-image-check-"))
-        work.mkdir(parents=True, exist_ok=True)
-        variants = [("", [])] + ([("-O3", ["-Copt-level=3"])] if args.opt else [])
-        if args.frame_pointer:
-            variants += [(v + "-fp", f + ["-Cforce-frame-pointers=yes"]) for v, f in variants]
-        with concurrent.futures.ThreadPoolExecutor(args.j) as pool:
-            jobs = {}
-            for label, src in programs(args.names):
-                for suffix, flags in variants:
-                    l = label + suffix
-                    jobs[pool.submit(compile_program, rustc_ryo, src, flags, work / l.replace("/", "_"))] = l
-            for f in concurrent.futures.as_completed(jobs):
-                found, err = f.result()
-                if found:
-                    groups.append((jobs[f], found[0], found[1]))
-                else:
-                    skipped.append((jobs[f], err))
+        work = work_dir(args.keep, "lean-image-check-")
+        built, skipped = build_all(args.names, variants(args.opt, args.frame_pointer), work, args.j, build)
+        groups = [(label, images, reg) for label, (images, reg) in built]
         if not args.no_sysroot:
-            groups += sysroot_groups(args.names, work / "sysroot")
+            groups += [(label, [obj], None) for label, obj in sysroot_images(args.names, work / "sysroot")]
     groups.sort(key=lambda g: g[0])
 
     rows, reports = [], []
@@ -187,7 +119,7 @@ def main():
     for label, nobj, reg, funcs, st in rows:
         print(f"{label:<{w}}  {nobj:>4}  {reg:>8}  {funcs:>6}  {st}")
     for label, err in sorted(skipped):
-        print(f"{label:<{w}}  {'-':>4}  {'-':>8}  {'-':>6}  skipped: {' '.join(err)}")
+        print(f"{label:<{w}}  {'-':>4}  {'-':>8}  {'-':>6}  skipped: {err}")
     for rep in reports:
         print()
         print(rep)

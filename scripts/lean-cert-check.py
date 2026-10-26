@@ -35,13 +35,10 @@ import concurrent.futures
 import os
 import re
 import shutil
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-TIMEOUT = 1800
+from lean_corpus import IMAGE_GLOB, add_common_args, build_all, compile_program, require, run, variants, work_dir
 LINE = re.compile(
     r"^cert-check (\S+): funcs (\d+) certs (\d+) in-dump (\d+) undecoded (\d+) sig-abi (\d+) blocks (\d+) truncated (\d+) "
     r"calls (\d+) by-entry (\d+) by-abi (\d+) unverified (\d+) islands (\d+) "
@@ -54,42 +51,17 @@ DEAD_FIELDS = ["dropped", "not_dead", "not_dead_plain"]
 MAP_LINE = re.compile(r"^cert-map: certificates (\d+) unmatched (\d+)$")
 
 
-def run(cmd, cwd=None, env=None, timeout=TIMEOUT):
-    try:
-        p = subprocess.run(cmd, cwd=cwd or ROOT, env=env, capture_output=True, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        return None, b"", b"<timeout>"
-    return p.returncode, p.stdout, p.stderr
-
-
-def programs(names):
-    srcs = sorted((ROOT / "tests" / "lean").glob("*.rs")) + sorted((ROOT / "tests").glob("*.rs")) + sorted((ROOT / "bench").glob("*.rs"))
-    out = []
-    for s in srcs:
-        label = f"{s.parent.relative_to(ROOT)}/{s.stem}"
-        if names and s.stem not in names and label not in names:
-            continue
-        out.append((label, s))
-    return out
-
-
-def build(rustc_ryo, src, flags, out_dir):
-    """Builds `src` in `out_dir` with the dump: a skip reason, or None."""
-    shutil.rmtree(out_dir, ignore_errors=True)
-    out_dir.mkdir(parents=True)
-    name = src.stem
-    env = dict(os.environ, RYO_DUMP_LEAN=str(out_dir / "dump"))
-    cmd = [str(rustc_ryo), "--edition=2024", str(src), "--crate-type", "bin", "--crate-name", name, "-o", str(out_dir / name), "-Csave-temps"]
-    code, _, err = run(cmd + flags, cwd=out_dir, env=env)
-    if not list(out_dir.glob("*.ryo_image.rcgu.o")):
-        why = err.decode(errors="replace").strip().splitlines()[-1:] if code != 0 else ["no image object"]
-        return " ".join(why) or "build failed"
-    return None
+def build(src, flags, out_dir):
+    """Builds `src` in `out_dir` with the dump: (`out_dir`, None) or (None, a skip reason)."""
+    code, why = compile_program(src, flags, out_dir, env=dict(os.environ, RYO_DUMP_LEAN=str(out_dir / "dump")))
+    if not list(out_dir.glob(IMAGE_GLOB)):
+        return None, why if code != 0 else "no image object"
+    return out_dir, None
 
 
 def check(ryo_lean, label, out_dir, verbose):
     """Runs check-cert on the program in `out_dir`: (objects' rows, report lines, skip reason)."""
-    objs = sorted(out_dir.glob("*.ryo_image.rcgu.o"))
+    objs = sorted(out_dir.glob(IMAGE_GLOB))
     certs = sorted((out_dir / "dump").glob("*.cert.json"))
     if not objs:
         return [], [], "no image object"
@@ -130,43 +102,20 @@ def check(ryo_lean, label, out_dir, verbose):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("names", nargs="*")
-    ap.add_argument("--ryo-lean", default=str(ROOT / "lean" / ".lake" / "build" / "bin" / "ryo-lean"))
-    ap.add_argument("--opt", action="store_true")
+    add_common_args(ap)
     ap.add_argument("--corpus", help="check the programs built in this directory instead of building")
-    ap.add_argument("--keep")
-    ap.add_argument("-j", type=int, default=os.cpu_count() or 4)
     ap.add_argument("-v", action="store_true", help="print every error")
     args = ap.parse_args()
 
-    if not Path(args.ryo_lean).exists():
-        sys.exit(f"{args.ryo_lean} not found; build it with `lake build` in lean/, or pass --ryo-lean")
+    require(args.ryo_lean, rustc_ryo=not args.corpus)
     rows, reports, skipped = [], [], []
     work = None
     if args.corpus:
         dirs = [(d.name, d) for d in sorted(Path(args.corpus).iterdir())
                 if d.is_dir() and (not args.names or d.name in args.names or d.name.removesuffix("-O3").split("_", 1)[-1] in args.names)]
     else:
-        rustc_ryo = ROOT / "dist" / "bin" / "rustc-ryo"
-        if not rustc_ryo.exists():
-            sys.exit(f"{rustc_ryo} not found; run ./y.sh build")
-        work = Path(args.keep) if args.keep else Path(tempfile.mkdtemp(prefix="lean-cert-check-"))
-        work.mkdir(parents=True, exist_ok=True)
-        variants = [("", [])] + ([("-O3", ["-Copt-level=3"])] if args.opt else [])
-        dirs = []
-        with concurrent.futures.ThreadPoolExecutor(args.j) as pool:
-            jobs = {}
-            for label, src in programs(args.names):
-                for suffix, flags in variants:
-                    l = label + suffix
-                    d = work / l.replace("/", "_")
-                    jobs[pool.submit(build, rustc_ryo, src, flags, d)] = (l, d)
-            for f in concurrent.futures.as_completed(jobs):
-                why = f.result()
-                if why:
-                    skipped.append((jobs[f][0], why))
-                else:
-                    dirs.append(jobs[f])
+        work = work_dir(args.keep, "lean-cert-check-")
+        dirs, skipped = build_all(args.names, variants(args.opt), work, args.j, build)
     with concurrent.futures.ThreadPoolExecutor(args.j) as pool:
         jobs = {pool.submit(check, args.ryo_lean, label, d, args.v): label for label, d in dirs}
         for f in concurrent.futures.as_completed(jobs):

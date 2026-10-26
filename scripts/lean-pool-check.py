@@ -31,13 +31,10 @@ import concurrent.futures
 import os
 import re
 import shutil
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-TIMEOUT = 600
+from lean_corpus import IMAGE_GLOB, add_common_args, build_all, compile_program, require, run, variants, work_dir
 LINE = re.compile(
     r"^pool-check (\S+): refs (\d+) matched (\d+) \(vtables (\d+)\) reached (\d+) bytes (\d+) not-in-dump (\d+) mismatched (\d+) errors (\d+)$"
 )
@@ -48,41 +45,21 @@ DUMP_LINE = re.compile(
 DUMP_FIELDS = ["funcs", "in_dump", "slots", "slot_instances", "slot_statics", "dump_errors"]
 
 
-def run(cmd, cwd=None, env=None, timeout=TIMEOUT):
-    try:
-        p = subprocess.run(cmd, cwd=cwd or ROOT, env=env, capture_output=True, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        return None, b"", b"<timeout>"
-    return p.returncode, p.stdout, p.stderr
-
-
-def programs(names):
-    srcs = sorted((ROOT / "tests" / "lean").glob("*.rs")) + sorted((ROOT / "tests").glob("*.rs")) + sorted((ROOT / "bench").glob("*.rs"))
-    out = []
-    for s in srcs:
-        label = f"{s.parent.relative_to(ROOT)}/{s.stem}"
-        if names and s.stem not in names and label not in names:
-            continue
-        out.append((label, s))
-    return out
-
-
-def build_and_check(rustc_ryo, ryo_lean, label, src, flags, out_dir, verbose):
-    """Builds `src` in `out_dir` and runs check-pool: (objects' rows, report lines, skip reason)."""
-    shutil.rmtree(out_dir, ignore_errors=True)
-    out_dir.mkdir(parents=True)
-    name = src.stem
-    dump_dir = out_dir / "dump"
-    env = dict(os.environ, RYO_DUMP_LEAN=str(dump_dir))
-    cmd = [str(rustc_ryo), "--edition=2024", str(src), "--crate-type", "bin", "--crate-name", name, "-o", str(out_dir / name), "-Csave-temps"]
-    code, _, err = run(cmd + flags, cwd=out_dir, env=env)
-    objs = sorted(out_dir.glob("*.ryo_image.rcgu.o"))
-    dump = dump_dir / f"{name}.json"
+def build(src, flags, out_dir):
+    """Builds `src` in `out_dir` with the dump: ((objects, dump), None) or (None, a skip reason)."""
+    dump = out_dir / "dump" / f"{src.stem}.json"
+    code, why = compile_program(src, flags, out_dir, env=dict(os.environ, RYO_DUMP_LEAN=str(dump.parent)))
+    objs = sorted(out_dir.glob(IMAGE_GLOB))
     if not objs:
-        why = err.decode(errors="replace").strip().splitlines()[-1:] if code != 0 else ["no image object"]
-        return [], [], " ".join(why) or "build failed"
+        return None, why if code != 0 else "no image object"
     if not dump.exists():
-        return [], [], "no dump written"
+        return None, "no dump written"
+    return (objs, dump), None
+
+
+def check(ryo_lean, label, objs, dump, verbose):
+    """Runs check-pool on a program's objects: (objects' rows, report lines, skip reason)."""
+    out_dir = dump.parent.parent
     code, out, err = run([ryo_lean, "check-pool", str(dump)] + [str(o) for o in objs] + (["-v"] if verbose else []))
     text = out.decode(errors="replace")
     (out_dir / "check-pool.txt").write_text(text + err.decode(errors="replace"))
@@ -111,30 +88,16 @@ def build_and_check(rustc_ryo, ryo_lean, label, src, flags, out_dir, verbose):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("names", nargs="*")
-    ap.add_argument("--ryo-lean", default=str(ROOT / "lean" / ".lake" / "build" / "bin" / "ryo-lean"))
-    ap.add_argument("--opt", action="store_true")
-    ap.add_argument("--keep")
-    ap.add_argument("-j", type=int, default=os.cpu_count() or 4)
+    add_common_args(ap)
     ap.add_argument("-v", action="store_true", help="also list the references not in the dump")
     args = ap.parse_args()
 
-    rustc_ryo = ROOT / "dist" / "bin" / "rustc-ryo"
-    if not rustc_ryo.exists():
-        sys.exit(f"{rustc_ryo} not found; run ./y.sh build")
-    if not Path(args.ryo_lean).exists():
-        sys.exit(f"{args.ryo_lean} not found; build it with `lake build` in lean/, or pass --ryo-lean")
-
-    work = Path(args.keep) if args.keep else Path(tempfile.mkdtemp(prefix="lean-pool-check-"))
-    work.mkdir(parents=True, exist_ok=True)
-    variants = [("", [])] + ([("-O3", ["-Copt-level=3"])] if args.opt else [])
-    rows, reports, skipped = [], [], []
+    require(args.ryo_lean)
+    work = work_dir(args.keep, "lean-pool-check-")
+    built, skipped = build_all(args.names, variants(args.opt), work, args.j, build)
+    rows, reports = [], []
     with concurrent.futures.ThreadPoolExecutor(args.j) as pool:
-        jobs = {}
-        for label, src in programs(args.names):
-            for suffix, flags in variants:
-                l = label + suffix
-                jobs[pool.submit(build_and_check, rustc_ryo, args.ryo_lean, l, src, flags, work / l.replace("/", "_"), args.v)] = l
+        jobs = {pool.submit(check, args.ryo_lean, l, objs, dump, args.v): l for l, (objs, dump) in built}
         for f in concurrent.futures.as_completed(jobs):
             r, rep, why = f.result()
             if why:
