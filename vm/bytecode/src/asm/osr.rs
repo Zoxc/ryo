@@ -42,7 +42,7 @@ const DW_RBP: u8 = 6;
 const DW_RSP: u8 = 7;
 
 fn uleb(out: &mut Vec<u8>, v: u32) {
-    super::lsda::uleb(out, v);
+    super::leb::put(out, v.into());
 }
 
 /// `DW_CFA_def_cfa reg, off`.

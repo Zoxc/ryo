@@ -28,6 +28,9 @@ use alloc::vec::Vec;
 
 #[cfg(feature = "alloc")]
 use super::encode::{DroppedStore, Scope, ScopeKind};
+use super::leb::Reader;
+#[cfg(feature = "alloc")]
+use super::leb::{put, zigzag};
 use crate::full::Opcode;
 
 /// An instruction entry: the inline sequence at byte position `at` is the instruction `op`,
@@ -74,77 +77,30 @@ pub struct InsnList {
     pub scopes: Vec<Scope>,
 }
 
-#[cfg(feature = "alloc")]
-fn put(out: &mut Vec<u8>, mut v: u64) {
-    loop {
-        let b = (v & 0x7f) as u8;
-        v >>= 7;
-        if v == 0 {
-            out.push(b);
-            return;
-        }
-        out.push(b | 0x80);
-    }
-}
-
-#[cfg(feature = "alloc")]
-fn zigzag(v: i32) -> u64 {
-    ((v << 1) ^ (v >> 31)) as u32 as u64
-}
-
-/// A reader of the stream.
-struct Bytes<'a>(&'a [u8]);
-
-impl Bytes<'_> {
-    fn get(&mut self) -> Option<u64> {
-        let mut v = 0u64;
-        let mut shift = 0;
-        while shift < 64 {
-            let (&b, rest) = self.0.split_first()?;
-            self.0 = rest;
-            v |= ((b & 0x7f) as u64) << shift;
-            if b & 0x80 == 0 {
-                return Some(v);
-            }
-            shift += 7;
-        }
-        None
-    }
-
-    fn u32(&mut self) -> Option<u32> {
-        u32::try_from(self.get()?).ok()
-    }
-
-    fn i32(&mut self) -> Option<i32> {
-        let v = self.u32()?;
-        Some((v >> 1) as i32 ^ -((v & 1) as i32))
-    }
-}
-
 /// Reads the stream `bytes` of a function of `code_len` bytes, calling `f` with each entry
 /// and its position. `None` if it isn't well formed: every position within the code (the end
 /// included), every field valid, the entries at one position in order (a target once).
 pub fn walk(bytes: &[u8], code_len: u32, mut f: impl FnMut(u32, Entry)) -> Option<()> {
-    let mut b = Bytes(bytes);
+    let mut b = Reader(bytes);
     let mut pos = 0u32;
     // The kind order of the last entry at `pos`.
     let mut last: Option<u8> = None;
     while !b.0.is_empty() {
-        let v = b.get()?;
+        let v = b.u64()?;
         let delta = u32::try_from(v >> 1).ok()?;
         pos = pos.checked_add(delta).filter(|&p| p <= code_len)?;
         if delta != 0 {
             last = None;
         }
         let (order, e) = if v & 1 == 0 {
-            let op = Opcode::from_u16(u16::try_from(b.get()?).ok()?)?;
+            let op = Opcode::from_u16(u16::try_from(b.u64()?).ok()?)?;
             (3, Entry::Insn { op, sel: b.u32()? })
         } else {
-            match b.get()? {
+            match b.u64()? {
                 0 => (0, Entry::Target),
                 1 => {
-                    let frame_offset = b.i32()?;
-                    let sr = b.get()?;
+                    let frame_offset = b.zigzag_i32()?;
+                    let sr = b.u64()?;
                     let size = match sr >> 4 {
                         l @ 0..=3 => 1u8 << l,
                         _ => return None,
@@ -156,7 +112,7 @@ pub fn walk(bytes: &[u8], code_len: u32, mut f: impl FnMut(u32, Entry)) -> Optio
                     (2, Entry::Dropped { frame_offset, size, reg })
                 }
                 k @ 2..=4 => {
-                    let frame_offset = b.i32()?;
+                    let frame_offset = b.zigzag_i32()?;
                     let size = b.u32()?;
                     let align = if k == 2 { b.u32().filter(|a| a.is_power_of_two() && *a <= 16)? } else { 0 };
                     (1, Entry::Scope { frame_offset, size, kind: k as u8, align })

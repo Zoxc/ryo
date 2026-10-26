@@ -58,7 +58,7 @@ fn dw(r: R) -> u8 {
 }
 
 fn uleb(out: &mut Vec<u8>, v: u32) {
-    asm::lsda::uleb(out, v);
+    asm::leb::put(out, v.into());
 }
 
 fn xcc(c: Cc) -> X {

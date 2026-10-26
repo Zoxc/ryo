@@ -44,6 +44,7 @@ mod encode;
 pub mod frame;
 #[cfg(feature = "alloc")]
 mod inline;
+pub(crate) mod leb;
 pub mod list;
 #[cfg(feature = "alloc")]
 pub mod lsda;

@@ -970,7 +970,7 @@ fn eh_fde_with(eh: &mut Vec<u8>, cie: usize, f: &EhFunc, mode: Mode, ptrs: EhPoi
         // After the prologue: CFA = rsp + F + 16 (`DW_CFA_def_cfa_offset`).
         advance(&mut fde, &mut loc, f.prologue + asm::prologue_len(f.frame_size, mode));
         fde.push(0x0e);
-        asm::lsda::uleb(&mut fde, f.frame_size + 16);
+        asm::leb::put(&mut fde, (f.frame_size + 16).into());
     }
     if f.entry_stub < f.len {
         // The entry's stub: CFA = rsp + 8 (`DW_CFA_def_cfa`), and `rbp` not saved yet
