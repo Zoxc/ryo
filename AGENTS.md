@@ -8,6 +8,10 @@
 - Codegen dumps. After every change that can affect the generated code (AOT or JIT), run
   `./y.sh build && ./y.sh bench codegen` and commit the regenerated `bench/codegen/`
   with that change, so its diff shows the effect.
+- Testing. Run `./y.sh test --no-changed` plus the targeted runs for what you changed
+  (`--only jit|backend|lean|std|rt`, `--program …`). Don't run `./y.sh test --full` unless
+  asked; plain `./y.sh test` escalates to it when the test selection inputs change. Rebuild
+  the ryo sysroot and `ryo-lean` first if they're stale. Say which suites you ran.
 - Optimizing. When a change is meant to make generated code faster, compare it against the
   commit before with `scripts/compare-branches.py --worktree <base> --build head=. --metric
   cachegrind` (deterministic, so small differences are real), and report both the
