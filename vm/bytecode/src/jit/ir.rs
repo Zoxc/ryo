@@ -82,6 +82,52 @@ impl BinOp {
     pub fn commutative(self) -> bool {
         matches!(self, BinOp::Add | BinOp::Mul | BinOp::And | BinOp::Or | BinOp::Xor)
     }
+
+    /// `a self b` on the low `w` bytes ([`Op::Bin`]).
+    pub fn eval(self, w: u8, a: u64, b: u64) -> u64 {
+        let (a, b) = (mask(a, w), mask(b, w));
+        let r = match self {
+            BinOp::Add => a.wrapping_add(b),
+            BinOp::Sub => a.wrapping_sub(b),
+            BinOp::Mul => a.wrapping_mul(b),
+            BinOp::And => a & b,
+            BinOp::Or => a | b,
+            BinOp::Xor => a ^ b,
+            BinOp::Shl => a << (b & (8 * w as u64 - 1)),
+            BinOp::ShrU => a >> (b & (8 * w as u64 - 1)),
+            BinOp::ShrS => (sext(a, w) >> (b & (8 * w as u64 - 1))) as u64,
+            // Undefined for a zero divisor or `MIN / -1`: any value will do.
+            BinOp::DivU => a.checked_div(b).unwrap_or(0),
+            BinOp::RemU => a.checked_rem(b).unwrap_or(0),
+            BinOp::DivS => sext(a, w).checked_div(sext(b, w)).unwrap_or(0) as u64,
+            BinOp::RemS => sext(a, w).checked_rem(sext(b, w)).unwrap_or(0) as u64,
+        };
+        mask(r, w)
+    }
+
+    /// `a self b` (an add, a sub or a mul) at `w` bytes, signed or not, and whether it
+    /// overflowed ([`Op::Ovf`]).
+    pub fn eval_ovf(self, signed: bool, w: u8, a: u64, b: u64) -> (u64, bool) {
+        let bits = 8 * w as u32;
+        if signed {
+            let (x, y) = (sext(a, w) as i128, sext(b, w) as i128);
+            let r = match self {
+                BinOp::Add => x + y,
+                BinOp::Sub => x - y,
+                _ => x * y,
+            };
+            let lim = 1i128 << (bits - 1);
+            (mask(r as u64, w), r < -lim || r >= lim)
+        } else {
+            let (x, y) = (mask(a, w) as u128, mask(b, w) as u128);
+            let (r, under) = match self {
+                BinOp::Add => (x + y, false),
+                BinOp::Sub => (x.wrapping_sub(y), x < y),
+                _ => (x * y, false),
+            };
+            (mask(r as u64, w), under || r > mask(u64::MAX, w) as u128)
+        }
+    }
 }
 
 /// A comparison, signed (`S`) or unsigned (`U`).
@@ -129,6 +175,11 @@ impl Cc {
             Cc::GeS => Cc::LeS,
             Cc::GeU => Cc::LeU,
         }
+    }
+
+    /// Whether `a self a` holds.
+    pub fn reflexive(self) -> bool {
+        matches!(self, Cc::Eq | Cc::LeS | Cc::LeU | Cc::GeS | Cc::GeU)
     }
 
     /// Whether `a self b` holds on the low `w` bytes.
@@ -268,6 +319,22 @@ pub enum Op {
 }
 
 impl Op {
+    /// The result of a pure single-result operation on the constant operands `x`, unmasked
+    /// to the result's width; `None` for any other operation.
+    pub fn fold(&self, x: &[u64]) -> Option<u64> {
+        Some(match *self {
+            Op::Bin(o, w) => o.eval(w, x[0], x[1]),
+            Op::Cmp(cc, w) => cc.holds(w, x[0], x[1]) as u64,
+            Op::Ext { from, to, sx } => {
+                let x = mask(x[0], from);
+                mask(if sx { sext(x, from) as u64 } else { x }, to)
+            }
+            Op::PtrAdd(k) => x[0].wrapping_add(k as u64),
+            Op::PtrIndex(s) => x[0].wrapping_add(x[1].wrapping_mul(s as u64)),
+            _ => return None,
+        })
+    }
+
     /// Whether it has no effect but its result: dropped when the result is unused.
     pub fn pure(&self) -> bool {
         matches!(

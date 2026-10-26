@@ -39,27 +39,6 @@ enum Loc {
 /// At most this many remembered memory values per block, to keep the pass linear.
 const MAX_MEM: usize = 32;
 
-pub(super) fn eval_bin(op: BinOp, w: u8, a: u64, b: u64) -> u64 {
-    let (a, b) = (mask(a, w), mask(b, w));
-    let r = match op {
-        BinOp::Add => a.wrapping_add(b),
-        BinOp::Sub => a.wrapping_sub(b),
-        BinOp::Mul => a.wrapping_mul(b),
-        BinOp::And => a & b,
-        BinOp::Or => a | b,
-        BinOp::Xor => a ^ b,
-        BinOp::Shl => a << (b & (8 * w as u64 - 1)),
-        BinOp::ShrU => a >> (b & (8 * w as u64 - 1)),
-        BinOp::ShrS => (sext(a, w) >> (b & (8 * w as u64 - 1))) as u64,
-        // Undefined for a zero divisor or `MIN / -1`: any value will do.
-        BinOp::DivU => a.checked_div(b).unwrap_or(0),
-        BinOp::RemU => a.checked_rem(b).unwrap_or(0),
-        BinOp::DivS => sext(a, w).checked_div(sext(b, w)).unwrap_or(0) as u64,
-        BinOp::RemS => sext(a, w).checked_rem(sext(b, w)).unwrap_or(0) as u64,
-    };
-    mask(r, w)
-}
-
 /// A pure operation's key for common subexpressions: a tag, its immediates, its operands.
 type Key = (u8, u64, u64, u32, u32);
 
@@ -120,12 +99,16 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
     }
     // Not a handler call: cloning it allocates nothing.
     let op = f.insts[i.idx()].op.clone();
+    let n = f.insts[i.idx()].args.len().min(2);
+    let mut xs = [0; 2];
+    if args[..n].iter().zip(&mut xs).all(|(&a, x)| konst(f, a).map(|c| *x = c).is_some()) {
+        if let Some(c) = op.fold(&xs[..n]) {
+            return Simp::Const(c);
+        }
+    }
     match op {
         Op::Bin(o, w) => {
             let (mut a, mut b) = (args[0], args[1]);
-            if let (Some(x), Some(y)) = (konst(f, a), konst(f, b)) {
-                return Simp::Const(eval_bin(o, w, x, y));
-            }
             if o.commutative() && konst(f, a).is_some() {
                 core::mem::swap(&mut a, &mut b);
                 f.insts[i.idx()].args.swap(0, 1);
@@ -150,11 +133,8 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
         }
         Op::Cmp(cc, w) => {
             let (a, b) = (args[0], args[1]);
-            if let (Some(x), Some(y)) = (konst(f, a), konst(f, b)) {
-                return Simp::Const(cc.holds(w, x, y) as u64);
-            }
             if a == b && !matches!(f.def(a), ValueDef::Undef) {
-                return Simp::Const(matches!(cc, Cc::Eq | Cc::LeS | Cc::LeU | Cc::GeS | Cc::GeU) as u64);
+                return Simp::Const(cc.reflexive() as u64);
             }
             if konst(f, a).is_some() {
                 f.insts[i.idx()].op = Op::Cmp(cc.swap(), w);
@@ -162,11 +142,7 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
             }
             Simp::Keep
         }
-        Op::Ext { from, to, sx } => {
-            if let Some(x) = konst(f, args[0]) {
-                let x = mask(x, from);
-                return Simp::Const(mask(if sx { sext(x, from) as u64 } else { x }, to));
-            }
+        Op::Ext { from, to, .. } => {
             if from == to {
                 return Simp::Value(args[0]);
             }
@@ -175,9 +151,6 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
         Op::PtrAdd(k) => {
             if k == 0 {
                 return Simp::Value(args[0]);
-            }
-            if let Some(x) = konst(f, args[0]) {
-                return Simp::Const(x.wrapping_add(k as u64));
             }
             let d = def_inst(f, args[0]);
             match d.map(|d| &f.insts[d.idx()].op) {
@@ -203,15 +176,11 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
             Simp::Keep
         }
         Op::PtrIndex(s) => {
-            match (konst(f, args[0]), konst(f, args[1])) {
-                (Some(p), Some(x)) => return Simp::Const(p.wrapping_add(x.wrapping_mul(s as u64))),
-                (_, Some(x)) => {
-                    f.insts[i.idx()].op = Op::PtrAdd(x.wrapping_mul(s as u64) as i64);
-                    f.insts[i.idx()].args.truncate(1);
-                    // The new `PtrAdd` may fold further.
-                    return simplify(f, i);
-                }
-                _ => {}
+            if let Some(x) = konst(f, args[1]) {
+                f.insts[i.idx()].op = Op::PtrAdd(x.wrapping_mul(s as u64) as i64);
+                f.insts[i.idx()].args.truncate(1);
+                // The new `PtrAdd` may fold further.
+                return simplify(f, i);
             }
             Simp::Keep
         }

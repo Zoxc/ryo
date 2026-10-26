@@ -17,7 +17,7 @@
 
 use alloc::vec::Vec;
 
-use super::lvn::{Simp, eval_bin, simplify as simplify_inst};
+use super::lvn::{Simp, simplify as simplify_inst};
 use super::osr::{osr_edge, same_params};
 use crate::jit::ir::*;
 
@@ -82,29 +82,6 @@ fn edge_at(t: &Term, k: usize) -> &Edge {
     }
 }
 
-/// `a op b` at `w` bytes, signed or not, and whether it overflowed ([`Op::Ovf`]).
-fn eval_ovf(op: BinOp, signed: bool, w: u8, a: u64, b: u64) -> (u64, bool) {
-    let bits = 8 * w as u32;
-    if signed {
-        let (x, y) = (sext(a, w) as i128, sext(b, w) as i128);
-        let r = match op {
-            BinOp::Add => x + y,
-            BinOp::Sub => x - y,
-            _ => x * y,
-        };
-        let lim = 1i128 << (bits - 1);
-        (mask(r as u64, w), r < -lim || r >= lim)
-    } else {
-        let (x, y) = (mask(a, w) as u128, mask(b, w) as u128);
-        let (r, under) = match op {
-            BinOp::Add => (x + y, false),
-            BinOp::Sub => (x.wrapping_sub(y), x < y),
-            _ => (x * y, false),
-        };
-        (mask(r as u64, w), under || r > mask(u64::MAX, w) as u128)
-    }
-}
-
 /// The propagation's state.
 struct Sccp {
     lat: Vec<Lat>,
@@ -150,13 +127,20 @@ impl Sccp {
         let r = Value(id.res);
         let arg = |n: usize, w: u8| self.at(id.args[n], w);
         let same = || id.args.len() == 2 && id.args[0] == id.args[1] && !matches!(f.def(id.args[0]), ValueDef::Undef);
+        let mut xs = [0; 2];
+        let n = id.args.len();
+        if n <= 2 && id.args.iter().zip(&mut xs).all(|(&a, x)| matches!(self.lat[a.idx()], Lat::C(c) if { *x = c; true })) {
+            if let Some(c) = id.op.fold(&xs[..n]) {
+                self.set(r, Lat::C(mask(c, f.w(r))));
+                return;
+            }
+        }
         let l = match id.op {
             Op::Bin(o, w) => {
                 let (x, y) = (arg(0, w), arg(1, w));
                 let all = mask(u64::MAX, w);
                 let zero = |l: Lat| l == Lat::C(0);
                 match (x, y) {
-                    (Lat::C(x), Lat::C(y)) => Lat::C(eval_bin(o, w, x, y)),
                     _ if matches!(o, BinOp::Mul | BinOp::And) && (zero(x) || zero(y)) => Lat::C(0),
                     _ if o == BinOp::Or && (x == Lat::C(all) || y == Lat::C(all)) => Lat::C(all),
                     _ if matches!(o, BinOp::Sub | BinOp::Xor) && same() => Lat::C(0),
@@ -165,8 +149,7 @@ impl Sccp {
                 }
             }
             Op::Cmp(cc, w) => match (arg(0, w), arg(1, w)) {
-                (Lat::C(x), Lat::C(y)) => Lat::C(cc.holds(w, x, y) as u64),
-                _ if same() => Lat::C(matches!(cc, Cc::Eq | Cc::LeS | Cc::LeU | Cc::GeS | Cc::GeU) as u64),
+                _ if same() => Lat::C(cc.reflexive() as u64),
                 (Lat::Top, _) | (_, Lat::Top) => Lat::Top,
                 _ => Lat::Bot,
             },
@@ -174,7 +157,7 @@ impl Sccp {
                 let (x, y) = (arg(0, w), arg(1, w));
                 let (lr, lf) = match (x, y) {
                     (Lat::C(x), Lat::C(y)) => {
-                        let (v, o) = eval_ovf(o, signed, w, x, y);
+                        let (v, o) = o.eval_ovf(signed, w, x, y);
                         (Lat::C(v), Lat::C(o as u64))
                     }
                     (Lat::Top, _) | (_, Lat::Top) => (Lat::Top, Lat::Top),
@@ -184,16 +167,10 @@ impl Sccp {
                 self.set(Value(id.res + 1), lf);
                 return;
             }
-            Op::Ext { from, to, sx } => match arg(0, from) {
-                Lat::C(x) => Lat::C(mask(if sx { sext(x, from) as u64 } else { x }, to)),
-                l => l,
-            },
-            Op::PtrAdd(k) => match arg(0, 8) {
-                Lat::C(x) => Lat::C(x.wrapping_add(k as u64)),
-                l => l,
-            },
-            Op::PtrIndex(s) => match (arg(0, 8), arg(1, 8)) {
-                (Lat::C(p), Lat::C(x)) => Lat::C(p.wrapping_add(x.wrapping_mul(s as u64))),
+            // Not all constant ([`Op::fold`]).
+            Op::Ext { from, .. } => arg(0, from),
+            Op::PtrAdd(_) => arg(0, 8),
+            Op::PtrIndex(_) => match (arg(0, 8), arg(1, 8)) {
                 (Lat::Top, _) | (_, Lat::Top) => Lat::Top,
                 _ => Lat::Bot,
             },
