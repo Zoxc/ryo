@@ -320,38 +320,26 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     fn index(&mut self, pv: PlaceVal<'tcx>, idx: u32, elem: TyAndLayout<'tcx>) -> Result<PlaceVal<'tcx>, NeedsNative> {
         let stride = u32::try_from(elem.size.bytes()).map_err(|_| NeedsNative("element above 4 GiB".into()))?;
         let t = self.temp8();
-        let k = match pv.loc {
-            Loc::Slot(s) => {
-                self.escape(s, pv.base)?;
-                self.op(Opcode::Addr, &[t, s]);
-                self.op(Opcode::PtrIndex, &[t, t, idx, stride]);
-                0
+        let (p, k) = match pv.loc {
+            Loc::Slot(_) => {
+                self.addr_into(t, pv.loc, pv.base)?;
+                (t, 0)
             }
-            Loc::Mem { p, k } => {
-                self.op(Opcode::PtrIndex, &[t, p, idx, stride]);
-                k
-            }
+            Loc::Mem { p, k } => (p, k),
         };
+        self.op(Opcode::PtrIndex, &[t, p, idx, stride]);
         Ok(PlaceVal { loc: Loc::Mem { p: t, k }, layout: elem, meta: None, base: None })
     }
 
     /// The address of `loc` in a slot (which may be the pointer slot itself). A frame place
     /// escapes as part of `base` ([`FnCx::escape`]).
     pub fn place_addr(&mut self, loc: Loc, base: Option<Local>) -> Result<u32, NeedsNative> {
-        Ok(match loc {
-            Loc::Slot(s) => {
-                self.escape(s, base)?;
-                let t = self.temp8();
-                self.op(Opcode::Addr, &[t, s]);
-                t
-            }
-            Loc::Mem { p, k: 0 } => p,
-            Loc::Mem { p, k } => {
-                let t = self.temp8();
-                self.ptr_add(t, p, i64::from(k));
-                t
-            }
-        })
+        if let Loc::Mem { p, k: 0 } = loc {
+            return Ok(p);
+        }
+        let t = self.temp8();
+        self.addr_into(t, loc, base)?;
+        Ok(t)
     }
 
     /// Writes the address of `loc` to slot `d`. A frame place escapes as part of `base`
