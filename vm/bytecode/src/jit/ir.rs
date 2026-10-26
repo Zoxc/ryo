@@ -522,6 +522,8 @@ pub struct Func {
     pub allocas: Vec<Alloca>,
     /// The entry block's parameters' registers.
     pub entry_regs: Vec<ArgReg>,
+    /// PE code: the arguments take the Win64 registers.
+    pub pe: bool,
     /// By AOT loop head, its OSR entry block.
     pub osr: Vec<Option<Block>>,
     /// The AOT frame size.

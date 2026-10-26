@@ -85,6 +85,12 @@ impl RegEntry {
     pub const NONE: RegEntry = RegEntry { ins: [0; ARG_REGS], nin: 0, data: [0; ARG_REGS], ndata: 0, outs: [0; 2], nout: 0, ret: false };
 }
 
+/// The handlers that write `xmm6`–`xmm15`, callee-saved on Win64 but not in `sysv64` code:
+/// their `i128` result stays in `xmm6` across a call. The lowering calls the `as_cast` island
+/// instead on PE, and the SSA tier doesn't compile them there; `vm/rt/tests/codegen.rs`
+/// checks that no other handler (or register entry) writes those registers.
+pub const PE_XMM_CLOBBERS: [Opcode; 4] = [Opcode::CvtF2iSatSF32W128, Opcode::CvtF2iSatUF32W128, Opcode::CvtF2iSatSF64W128, Opcode::CvtF2iSatUF64W128];
+
 /// `op`'s register entry in `mode` (whose register layout gives the data registers), if it
 /// has one: a handler that returns (`op`, `br` and `switch` shapes; not `resume`), whose frame
 /// operands are all read, written or updated at 1 to 8 bytes (no `addr`, no blocks, no

@@ -455,6 +455,18 @@ impl X86 {
         self.insn(false, false, false, &[0xff], 4, Rm::R(r), &[]);
     }
 
+    /// `rex.w jmp r`: the same jump, in the form the Win64 unwinder takes for an epilogue's
+    /// end (a plain `jmp r` after the pops isn't one).
+    pub fn jmp_r_w(&mut self, r: R) {
+        self.insn(false, true, false, &[0xff], 4, Rm::R(r), &[]);
+    }
+
+    /// `mov r11, imm64; rex.w jmp r11` ([`Self::jmp_r_w`]).
+    pub fn jmp_abs_w(&mut self, to: Ref) {
+        self.mov_r11_abs(to);
+        self.code.extend_from_slice(&[0x49, 0xff, 0xe3]);
+    }
+
     pub fn jmp_mem(&mut self, m: Mem) {
         self.insn(false, false, false, &[0xff], 4, Rm::M(m), &[]);
     }

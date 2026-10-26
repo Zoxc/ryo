@@ -30,6 +30,9 @@ pub struct Output {
     pub osr: Option<OsrCode>,
     pub osr_at: u32,
     pub frame_size: u32,
+    /// PE: the body's `UNWIND_INFO` ([`crate::image::pe_unwind_codes`]), which also covers the
+    /// OSR code (it runs in the body's frame); [`Output::cfi`] is then empty.
+    pub pe_unwind: Vec<u8>,
     /// The compilation as text (`RYO_JIT_DUMP`): the reduced code, the IR, the locations and
     /// the code.
     pub dump: Option<alloc::string::String>,
@@ -228,8 +231,14 @@ struct Frame {
     saves: Vec<(R, i32)>,
     /// Whether the saves are pushed and popped: they sit at the frame's top (nothing pinned
     /// above them), right below `rbp`'s save or, without a frame pointer, from the slot
-    /// that is the alignment padding below the return address.
+    /// that is the alignment padding below the return address. On PE, below the saves of
+    /// `rdi` and `rsi`, which are always pushed, at `fp - 8` and `fp - 16` as in the AOT frame.
     pushed: bool,
+    /// PE: where the prologue's `lea rbp, [rsp + pe_fp]` sets the frame register (the
+    /// `UNWIND_INFO`'s frame offset, times 16): past the pushes, and with saves that aren't
+    /// pushed, past them too, since the unwind codes address them upward from there
+    /// (`u32::MAX`: no room for them).
+    pe_fp: u32,
 }
 
 /// Options of the back end.
@@ -240,7 +249,9 @@ pub struct Opts {
 }
 
 fn layout(f: &Func, al: &Alloc, mode: Mode, opts: Opts) -> Frame {
-    let mut top = 0i32;
+    // PE: the top 16 bytes hold `rdi` and `rsi` (the AOT code's slots for them).
+    let top0 = if mode.pe { -16 } else { 0 };
+    let mut top = top0;
     for a in &f.allocas {
         if a.pinned && a.kind != AllocaKind::Incoming {
             top = top.min(a.aot_off);
@@ -255,16 +266,40 @@ fn layout(f: &Func, al: &Alloc, mode: Mode, opts: Opts) -> Frame {
     };
     // The saves, packed at the top: pushed when nothing is pinned above them. Each is
     // 8-aligned: `DW_CFA_offset` counts in 8 bytes (a pinned alloca may end `top` anywhere).
-    let pushed = top == 0;
+    let pushed = top == top0;
     if pushed && !mode.frame_pointer {
         cur = 8;
     }
     cur -= cur.rem_euclid(8);
     let mut saves = Vec::new();
-    for &r in &al.saved {
+    // PE saves that aren't pushed: the unwind codes address them upward from at most 240
+    // bytes below `rbp` ([`Frame::pe_fp`]), so they go into the 8-byte slots there that no
+    // pinned alloca covers, or into the home space the Win64 caller reserves above the
+    // return address (`fp + 16` to `fp + 48`), if no stack argument is read there.
+    let mut pe_slots = Vec::new();
+    if mode.pe && !pushed {
+        let home = !f.allocas.iter().any(|a| a.kind == AllocaKind::Incoming && a.aot_off < 48 && a.aot_off + a.size as i32 > 16);
+        if home {
+            pe_slots.extend([16, 24, 32, 40]);
+        }
+        let free =
+            |o: i32| !f.allocas.iter().any(|a| a.pinned && a.kind != AllocaKind::Incoming && o < a.aot_off + a.size as i32 && o + 8 > a.aot_off);
+        pe_slots.extend((1..=28).map(|j| -16 - 8 * j).filter(|&o| free(o)));
+    }
+    let mut pe_short = false;
+    for (k, &r) in al.saved.iter().enumerate() {
+        if mode.pe && !pushed {
+            match pe_slots.get(k) {
+                Some(&o) => saves.push((r, o)),
+                None => pe_short = true,
+            }
+            continue;
+        }
         cur -= 8;
         saves.push((r, cur));
     }
+    // The rest of the frame below the PE saves.
+    cur = saves.iter().map(|s| s.1).fold(cur, i32::min);
     cur = cur.min(0);
     let mut alloca = alloc::vec![0i32; f.allocas.len()];
     let mut order: Vec<usize> = (0..f.allocas.len()).collect();
@@ -293,13 +328,27 @@ fn layout(f: &Func, al: &Alloc, mode: Mode, opts: Opts) -> Frame {
     }
     let spill0 = if al.spills > 0 { place(&mut cur, 8 * al.spills, 0) } else { cur };
     let scratch = place(&mut cur, f.scratch.max(8), 0);
+    // PE: the callees' 32 bytes of shadow space (VM functions, natives and islands take the
+    // Win64 convention; the `sysv64` handlers don't), unless the stack arguments cover it.
+    if mode.pe && f.insts.iter().any(|i| matches!(i.op, Op::Call(_) | Op::Island(_))) {
+        out_size = out_size.max(32);
+    }
     let size = ((-cur) as u32 + out_size).next_multiple_of(16);
+    let pe_fp = if !mode.pe {
+        0
+    } else if pushed {
+        (16 + 8 * saves.len() as u32).next_multiple_of(16)
+    } else if pe_short {
+        u32::MAX
+    } else {
+        (saves.iter().map(|&(_, o)| (-o).max(0) as u32).max().unwrap_or(0).max(16)).next_multiple_of(16)
+    };
     for (k, a) in f.allocas.iter().enumerate() {
         if a.kind == AllocaKind::Outgoing {
             alloca[k] = -(size as i32);
         }
     }
-    Frame { size, alloca, spill0, scratch, saves, pushed }
+    Frame { size, alloca, spill0, scratch, saves, pushed, pe_fp }
 }
 
 struct E<'a> {
@@ -319,6 +368,9 @@ struct E<'a> {
     ovf_cc: Option<X>,
     /// The move stubs of edges into cold blocks: emitted after the last block.
     cold_stubs: Vec<(u32, Edge)>,
+    /// PE: the prologue's operations, by their end in the code, and its length.
+    pe_ops: Vec<(u32, crate::image::PeUnwindOp)>,
+    pe_prologue: u32,
 }
 
 impl<'a> E<'a> {
@@ -511,6 +563,9 @@ impl<'a> E<'a> {
     /// saves ([`Frame::pushed`]) come right after the frame pointer's, before the stack
     /// probe and the `sub` of the rest of the frame.
     fn prologue(&mut self) {
+        if self.mode.pe {
+            return self.prologue_pe();
+        }
         let size = self.fr.size;
         let fp = self.mode.frame_pointer;
         if fp {
@@ -562,8 +617,73 @@ impl<'a> E<'a> {
         }
     }
 
+    /// The PE prologue, as the AOT one (vm.md, "Frames") with the saves after `rdi`'s and
+    /// `rsi`'s: `push rbp; push rdi; push rsi`, the pushed saves, `sub rsp` to
+    /// [`Frame::pe_fp`] if the pushes don't reach it, `lea rbp, [rsp + pe_fp]`, the probe and
+    /// the `sub` of the rest, then the saves that aren't pushed. Each operation has its
+    /// unwind code; the frame register is set after the pushes, as Win64 requires, so that
+    /// past it every `rsp` (OSR entries, the probe) unwinds from `rbp`.
+    fn prologue_pe(&mut self) {
+        use crate::image::PeUnwindOp as U;
+        let (size, k) = (self.fr.size, self.fr.pe_fp);
+        // The unwind codes' offsets are from the function's start: the entry block comes first.
+        debug_assert!(self.a.ps.iter().all(|p| matches!(p, P::Bind(_))), "the PE prologue at the start");
+        let mut ops = Vec::new();
+        let mut pushed = 0;
+        let pushes: Vec<R> = [R::Rbp, R::Rdi, R::Rsi].into_iter().chain(self.fr.saves.iter().map(|s| s.0).filter(|_| self.fr.pushed)).collect();
+        for r in pushes {
+            self.a.x().push(r);
+            ops.push((self.a.x().pos(), U::Push(r.num())));
+            pushed += 8;
+        }
+        // Below `rbp`'s save.
+        pushed -= 8;
+        if k > pushed {
+            self.a.x().alu_imm(Alu::Sub, 8, Rm::R(R::Rsp), (k - pushed) as i64);
+            ops.push((self.a.x().pos(), U::Alloc(k - pushed)));
+        }
+        self.a.x().lea(R::Rbp, Mem::base(R::Rsp, k as i32));
+        ops.push((self.a.x().pos(), U::SetFpreg));
+        let rest = size - k;
+        if size >= PROBE_FROM {
+            self.a.x().mov_imm(4, Rm::R(R::Rax), rest as u64);
+            let far = self.mode.far_rt;
+            self.a.x().call_rt(Ref::Probe, far);
+        }
+        if rest != 0 {
+            self.a.x().alu_imm(Alu::Sub, 8, Rm::R(R::Rsp), rest as i64);
+            ops.push((self.a.x().pos(), U::Alloc(rest)));
+        }
+        if !self.fr.pushed {
+            for (r, o) in self.fr.saves.clone() {
+                self.a.x().mov(8, Rm::M(Mem::base(R::Rbp, o)), Rm::R(r));
+                ops.push((self.a.x().pos(), U::Save(r.num(), (o + k as i32) as u32)));
+            }
+        }
+        self.pe_prologue = self.a.x().pos();
+        self.pe_ops = ops;
+    }
+
     /// The epilogue before `ret` or a tail jump.
     fn epilogue(&mut self) {
+        if self.mode.pe {
+            // `lea rsp, [rbp - 16 - 8n]` and the pops: a Win64 epilogue (after the saves'
+            // loads, which are body code).
+            if !self.fr.pushed {
+                for (r, o) in self.fr.saves.clone() {
+                    self.a.x().mov(8, Rm::R(r), Rm::M(Mem::base(R::Rbp, o)));
+                }
+            }
+            let n = if self.fr.pushed { self.fr.saves.len() as i32 } else { 0 };
+            self.a.x().lea(R::Rsp, Mem::base(R::Rbp, -16 - 8 * n));
+            for (r, _) in self.fr.saves.clone().into_iter().rev().take(n as usize) {
+                self.a.x().pop(r);
+            }
+            for r in [R::Rsi, R::Rdi, R::Rbp] {
+                self.a.x().pop(r);
+            }
+            return;
+        }
         let fp = self.mode.frame_pointer;
         if !self.fr.pushed {
             for (r, o) in self.fr.saves.clone() {
@@ -613,7 +733,7 @@ impl<'a> E<'a> {
         let mut ms = Vec::new();
         for (r, &v) in regs.iter().zip(args) {
             if !r.xmm {
-                ms.push((Rm::R(asm_int_arg(r.index)), self.src(v)));
+                ms.push((Rm::R(int_arg(self.mode.pe, r.index)), self.src(v)));
             }
         }
         if let Some(c) = callee {
@@ -623,7 +743,7 @@ impl<'a> E<'a> {
         // Narrow integers zero-extended, as the AOT code loads them: native callees may rely
         // on it (`zeroext`).
         for r in regs.iter().filter(|r| !r.xmm && r.size < 8) {
-            let x = asm_int_arg(r.index);
+            let x = int_arg(self.mode.pe, r.index);
             self.a.x().movzx(x, r.size as u8, Rm::R(x));
         }
     }
@@ -962,8 +1082,10 @@ impl<'a> E<'a> {
                     b.extend_from_slice(&(self.slot_off(o) as u32).to_le_bytes());
                 }
                 let o = self.ro(&b, 4) + 4;
-                self.fp_into(R::Rdi);
-                self.a.x().lea(R::Rsi, Mem::Rip(Ref::Ro(o)));
+                // Win64 on PE (`rcx`, `rdx`), into the frame's shadow space ([`layout`]).
+                let (fp, ops) = if self.mode.pe { (R::Rcx, R::Rdx) } else { (R::Rdi, R::Rsi) };
+                self.fp_into(fp);
+                self.a.x().lea(ops, Mem::Rip(Ref::Ro(o)));
                 let s = isl.isl;
                 self.call_with_site(isl.site, pad, |x| x.call_mem(Mem::Rip(Ref::Sym(s))));
             }
@@ -1180,7 +1302,7 @@ impl<'a> E<'a> {
                     if r.xmm {
                         xs.push((d, r.index as u8, r.size));
                     } else {
-                        ms.push((d, Src::R(asm_int_arg(r.index))));
+                        ms.push((d, Src::R(int_arg(self.mode.pe, r.index))));
                     }
                 }
             }
@@ -1304,7 +1426,11 @@ impl<'a> E<'a> {
                 self.call_args(&call.regs, rest, callee);
                 self.epilogue();
                 match call.target {
+                    // PE: through a register as `rex.w jmp`, which the unwinder takes for the
+                    // epilogue's end (design/jit.md, "Limits").
+                    CallTarget::Func(g) if self.mode.pe && g.0 & asm::FUNC_KINDS == asm::FUNC_FAR => self.a.x().jmp_abs_w(Ref::Func(g)),
                     CallTarget::Func(g) => self.a.x().jmp_func(g),
+                    CallTarget::Ptr if self.mode.pe => self.a.x().jmp_r_w(R::Rax),
                     CallTarget::Ptr => self.a.x().jmp_r(R::Rax),
                     _ => return Err(Unsupported("a tail call through a symbol")),
                 }
@@ -1343,14 +1469,50 @@ impl<'a> E<'a> {
     }
 }
 
-/// The integer argument register `i` (sysv64).
-fn asm_int_arg(i: u32) -> R {
-    ARGS[i as usize]
+/// The integer argument register `i` of VM functions and natives: `rdi rsi rdx rcx r8 r9`,
+/// or on PE (Win64) `rcx rdx r8 r9` ([`check_pe`] rejects the others there).
+pub(super) fn int_arg(pe: bool, i: u32) -> R {
+    if pe { [R::Rcx, R::Rdx, R::R8, R::R9][i as usize] } else { ARGS[i as usize] }
+}
+
+/// What the SSA tier doesn't do on PE: arguments past the four Win64 registers (the reduced
+/// code has none), handlers that clobber `xmm6`–`xmm15` (callee-saved on Win64, but
+/// not in the `sysv64` handlers; the lowering never calls them on PE), and a pinned alloca in
+/// the top 16 bytes, which hold `rdi` and `rsi`.
+fn check_pe(f: &Func) -> Result<(), Unsupported> {
+    let regs_ok = |rs: &[asm::ArgReg]| rs.iter().all(|r| r.index < 4);
+    if !regs_ok(&f.entry_regs) {
+        return Err(Unsupported("PE: an argument past the fourth"));
+    }
+    for i in &f.insts {
+        match &i.op {
+            Op::Call(c) if !regs_ok(&c.regs) => return Err(Unsupported("PE: an argument past the fourth")),
+            Op::HCall(h) if super::effects::PE_XMM_CLOBBERS.contains(&h.h) => return Err(Unsupported("PE: a handler that clobbers xmm6-15")),
+            _ => {}
+        }
+    }
+    for b in &f.blocks {
+        if let Term::TailCall { call, .. } = &b.term
+            && !regs_ok(&call.regs)
+        {
+            return Err(Unsupported("PE: an argument past the fourth"));
+        }
+    }
+    if f.allocas.iter().any(|a| a.pinned && a.kind != AllocaKind::Incoming && a.aot_off + a.size as i32 > -16) {
+        return Err(Unsupported("PE: a pinned alloca over the rdi and rsi saves"));
+    }
+    Ok(())
 }
 
 /// Generates `f` with allocation `al`.
 pub fn emit(f: &Func, al: &Alloc, mode: Mode, code_consts: &[u8], opts: Opts) -> Result<Output, Unsupported> {
+    if mode.pe {
+        check_pe(f)?;
+    }
     let fr = layout(f, al, mode, opts);
+    if fr.pe_fp > 240 {
+        return Err(Unsupported("PE: no room for the saves within 240 bytes of the frame pointer"));
+    }
     let uses = super::regalloc::use_counts(f);
     let mut e = E {
         f,
@@ -1365,6 +1527,8 @@ pub fn emit(f: &Func, al: &Alloc, mode: Mode, code_consts: &[u8], opts: Opts) ->
         uses,
         ovf_cc: None,
         cold_stubs: Vec::new(),
+        pe_ops: Vec::new(),
+        pe_prologue: 0,
     };
     e.a.nlabels = f.blocks.len() as u32;
     let order = &f.layout;
@@ -1373,6 +1537,7 @@ pub fn emit(f: &Func, al: &Alloc, mode: Mode, code_consts: &[u8], opts: Opts) ->
     }
     let cold_stubs = core::mem::take(&mut e.cold_stubs);
     e.emit_stubs(cold_stubs);
+    let pe_unwind = if mode.pe { crate::image::pe_unwind_codes(e.pe_prologue, e.fr.pe_fp / 16, &e.pe_ops) } else { Vec::new() };
     let E { a, rodata, sites, cfi, fr, .. } = e;
     // The marks' pieces, to positions.
     let (code, relocs, lab, pos) = a.finish();
@@ -1383,7 +1548,7 @@ pub fn emit(f: &Func, al: &Alloc, mode: Mode, code_consts: &[u8], opts: Opts) ->
     let cfi = cfi.into_iter().map(|(m, v)| (at(m), v)).collect();
     let osr_at = (code.len() as u32).next_multiple_of(16);
     let osr = if !f.osr.is_empty() { Some(osr_code(f, al, mode, &fr, &lab, osr_at)?) } else { None };
-    Ok(Output { code, relocs, rodata, call_sites, cfi, osr, osr_at, frame_size: fr.size, dump: None })
+    Ok(Output { code, relocs, rodata, call_sites, cfi, osr, osr_at, frame_size: fr.size, pe_unwind, dump: None })
 }
 
 /// `DW_CFA_offset r`: `r` saved at `fp + o`, which is `CFA - 16 + o`. The offset counts in

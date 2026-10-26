@@ -1333,8 +1333,9 @@ extern "sysv64" fn call_checked(code: *const u8, a: u64, b: u64, regs: *mut [u64
 
 /// PE code through the JIT (design/platforms.md): compiled at the entry and by OSR at a loop
 /// head, with and without shuffled frames, with a frame that probes the stack; the results
-/// are the AOT code's, the calls end in JIT code, `rsp` moves by the frames' difference, and
-/// the callee-saved registers, `rdi` and `rsi` included, survive both.
+/// are the AOT code's, the calls end in JIT code, `rsp` moves by the frames' difference (by
+/// a multiple of 16 through the SSA tier), and the callee-saved registers, `rdi` and `rsi`
+/// included, survive both.
 #[test]
 fn pe_code() {
     init();
@@ -1384,8 +1385,14 @@ fn pe_code_at(shuffle: bool, frame: u32, k: Option<i64>) {
     }
     // The JIT code's prologue is the one its `UNWIND_INFO` describes (`image::pe_unwind_info`):
     // `push rbp; push rdi; push rsi; lea rbp, [rsp + 16]`, the probe, `sub rsp, F - 16`.
+    let ssa = std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode");
     let check_prologue = || {
         let code = unsafe { std::slice::from_raw_parts((*img.record(f)).jit_code, 32) };
+        if ssa {
+            // The SSA tier's own (its forms: `tests/jit_pe.rs`, and `ssa.rs`'s `pe_frames`).
+            assert_eq!(code[..3], [0x55, 0x57, 0x56], "{what}");
+            return;
+        }
         assert_eq!(code[..8], [0x55, 0x57, 0x56, 0x48, 0x8d, 0x6c, 0x24, 0x10], "{what}");
         let jf = if shuffle { 2 * frame + 64 } else { frame };
         let sub = if frame >= 4096 {
@@ -1413,7 +1420,7 @@ fn pe_code_at(shuffle: bool, frame: u32, k: Option<i64>) {
         assert!(in_jit(&img, f, o(&obs.last)), "{what}, call {call}: ended at {:#x}", o(&obs.last));
         if call == 0 && k.is_some() {
             assert!(in_aot(&img, f, o(&obs.first)), "{what}: started at {:#x}", o(&obs.first));
-            assert_eq!(o(&obs.first_sp) - o(&obs.last_sp), jit_rsp_delta(frame, shuffle), "{what}: rsp");
+            check_rsp(o(&obs.first_sp), o(&obs.last_sp), frame, shuffle, &what);
         } else {
             assert!(in_jit(&img, f, o(&obs.first)), "{what}, call {call}: started at {:#x}", o(&obs.first));
         }

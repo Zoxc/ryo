@@ -314,7 +314,7 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
             ValueDef::Param(blk, n) => {
                 if f.blocks[blk.idx()].kind == super::ir::BlockKind::Entry && (n as usize) < f.entry_regs.len() {
                     let r = f.entry_regs[n as usize];
-                    (!r.xmm).then(|| [R::Rdi, R::Rsi, R::Rdx, R::Rcx, R::R8, R::R9][r.index as usize])
+                    (!r.xmm).then(|| super::emit::int_arg(f.pe, r.index))
                 } else {
                     f.blocks[blk.idx()].preds.iter().find_map(|&(p, k)| {
                         let e = f.blocks[p.idx()].term.edges().into_iter().nth(k as usize)?.args.get(n as usize).copied()?;

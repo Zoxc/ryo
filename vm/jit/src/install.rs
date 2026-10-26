@@ -114,6 +114,8 @@ enum Body {
     Aot(EhFunc),
     /// The SSA tier's rows.
     Rows(Vec<(u32, Vec<u8>)>),
+    /// The SSA tier's PE `UNWIND_INFO`.
+    Pe(Vec<u8>),
 }
 
 /// An address range `lo..hi` that code must reach with 32-bit PC-relative fields.
@@ -649,7 +651,7 @@ impl Jit {
                         relocs: o.relocs,
                         rodata: o.rodata,
                         call_sites: o.call_sites,
-                        body: Body::Rows(o.cfi),
+                        body: if mode.pe { Body::Pe(o.pe_unwind) } else { Body::Rows(o.cfi) },
                         osr: o.osr,
                         osr_at: o.osr_at as usize,
                     };
@@ -737,7 +739,8 @@ impl Jit {
 
         // Unwind information. ELF: the CIE, the FDE, the OSR code's FDE, the terminator, then
         // the LSDA. PE: one `RUNTIME_FUNCTION` over the body and the OSR code, then its
-        // `UNWIND_INFO` (`pe_unwind_info`, the AOT code's form): past the prologue every
+        // `UNWIND_INFO` (`pe_unwind_info`, the AOT code's form, or the SSA tier's own, from the
+        // same encoder, `pe_unwind_codes`): past the prologue every
         // `rsp` is described by `rbp`, the OSR code's included, which keeps the AOT frame's
         // `rbp` and saved `rdi`/`rsi` (design/jit.md, "Unwinding and profiling").
         let mut eh = Vec::new();
@@ -745,18 +748,24 @@ impl Jit {
         let (mut pers_field, mut fields, mut osr_fields, mut lsda_at) = (0, None, None, 0);
         let pe_end = (if osr.is_some() { osr_at + osr_len } else { code_len }) as u32;
         if mode.pe {
-            let Body::Aot(ef) = &body else { return Err("SSA code on PE") };
-            if ef.prologue != 0 || ef.entry_stub != ef.len {
-                return Err("PE code with a counter check");
-            }
             eh.extend_from_slice(&[0; 12]);
-            eh.extend_from_slice(&pe_unwind_info(ef, mode));
+            match &body {
+                Body::Aot(ef) => {
+                    if ef.prologue != 0 || ef.entry_stub != ef.len {
+                        return Err("PE code with a counter check");
+                    }
+                    eh.extend_from_slice(&pe_unwind_info(ef, mode));
+                }
+                Body::Pe(info) => eh.extend_from_slice(info),
+                Body::Rows(_) => return Err("DWARF rows on PE"),
+            }
         } else {
             pers_field = eh_cie(&mut eh);
             fdes.push(eh.len());
             fields = Some(match &body {
                 Body::Aot(ef) => eh_fde(&mut eh, 0, ef, mode),
                 Body::Rows(rows) => eh_fde_rows(&mut eh, 0, code_len as u32, rows),
+                Body::Pe(_) => return Err("PE unwind info off PE"),
             });
             if osr.is_some() {
                 fdes.push(eh.len());

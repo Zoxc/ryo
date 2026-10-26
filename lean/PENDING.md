@@ -9,6 +9,13 @@ remove it once a Lean session has handled it.
   that the end pointer keeps its place relative to the object under any layout (it was a
   1-byte access of the next byte, in whatever alloca held it). Only matters if the Lean model covers the SSA tier. Commit: "JIT: keep end pointers with
   their escaped object".
+- The JIT's SSA tier compiles PE code: its frames always save `rdi`/`rsi` at `fp - 8`/`fp - 16`
+  (pushed after `rbp`), set `rbp` with `lea rbp, [rsp + K]` after the pushes, store saves
+  that can't be pushed into the caller's home space or free slots within 240 bytes below
+  `rbp`, and describe it all with a PE `UNWIND_INFO` from the shared encoder
+  `image::pe_unwind_codes` (which `pe_unwind_info` now uses, byte-identical). Calls get 32
+  bytes of shadow space; Win64 argument registers. Only matters if the Lean model covers the
+  SSA tier's frames or the PE unwind info. Commit: "JIT SSA: compile PE code with Win64 frames".
 
 
 - The SSA tier's inliner splices callees whose `ret` has more parts than the call site

@@ -1374,3 +1374,336 @@ fn inline_across_images() {
     }
     check_stats(before, 1);
 }
+
+// ---- PE code ----
+
+/// An image's VM code in the PE form, which runs on Linux with Win64 natives (as `jit.rs`'s
+/// `pe_code`): only the unwind information differs, which nothing registers off Windows.
+const PE: ryo_bytecode::asm::Mode = ryo_bytecode::asm::Mode { pe: true, frame_pointer: true, ..ENC };
+
+/// Native, Win64: `note(obs)` as [`note`], keeping `rdi`, `rsi` and `xmm6`–`xmm15` around
+/// the SysV Rust code.
+#[unsafe(naked)]
+extern "C" fn note_pe() {
+    core::arch::naked_asm!(
+        "push rdi",
+        "push rsi",
+        "mov rdi, rcx",
+        "mov rsi, [rsp + 16]",
+        "sub rsp, 168",
+        "movdqu [rsp], xmm6",
+        "movdqu [rsp + 16], xmm7",
+        "movdqu [rsp + 32], xmm8",
+        "movdqu [rsp + 48], xmm9",
+        "movdqu [rsp + 64], xmm10",
+        "movdqu [rsp + 80], xmm11",
+        "movdqu [rsp + 96], xmm12",
+        "movdqu [rsp + 112], xmm13",
+        "movdqu [rsp + 128], xmm14",
+        "movdqu [rsp + 144], xmm15",
+        "call {note}",
+        "movdqu xmm6, [rsp]",
+        "movdqu xmm7, [rsp + 16]",
+        "movdqu xmm8, [rsp + 32]",
+        "movdqu xmm9, [rsp + 48]",
+        "movdqu xmm10, [rsp + 64]",
+        "movdqu xmm11, [rsp + 80]",
+        "movdqu xmm12, [rsp + 96]",
+        "movdqu xmm13, [rsp + 112]",
+        "movdqu xmm14, [rsp + 128]",
+        "movdqu xmm15, [rsp + 144]",
+        "add rsp, 168",
+        "pop rsi",
+        "pop rdi",
+        "ret",
+        note = sym note_rs,
+    )
+}
+
+/// Native, Win64: `mix_pe(a, b, c, d, e) = a + 3b + 5c + 7d + 11e`, `e` on the stack past the
+/// shadow space. It traps unless `rsp` is 16-aligned at the call, then writes its whole
+/// shadow space and every volatile register (`rax`, `rcx`, `rdx`, `r8`–`r11`,
+/// `xmm0`–`xmm5`), as a Win64 callee may.
+#[unsafe(naked)]
+extern "C" fn mix_pe() {
+    core::arch::naked_asm!(
+        "lea rax, [rsp + 8]",
+        "test al, 15",
+        "jnz 2f",
+        "mov rax, [rsp + 40]",
+        "imul rax, rax, 11",
+        "imul rdx, rdx, 3",
+        "add rax, rdx",
+        "imul r8, r8, 5",
+        "add rax, r8",
+        "imul r9, r9, 7",
+        "add rax, r9",
+        "add rax, rcx",
+        "mov rcx, -1",
+        "mov [rsp + 8], rcx",
+        "mov [rsp + 16], rcx",
+        "mov [rsp + 24], rcx",
+        "mov [rsp + 32], rcx",
+        "mov rdx, rcx",
+        "mov r8, rcx",
+        "mov r9, rcx",
+        "mov r10, rcx",
+        "mov r11, rcx",
+        "pcmpeqd xmm0, xmm0",
+        "pcmpeqd xmm1, xmm1",
+        "pcmpeqd xmm2, xmm2",
+        "pcmpeqd xmm3, xmm3",
+        "pcmpeqd xmm4, xmm4",
+        "pcmpeqd xmm5, xmm5",
+        "ret",
+        "2: ud2",
+    )
+}
+
+fn mix_rs(a: u64, b: u64, c: u64, d: u64, e: u64) -> u64 {
+    a.wrapping_add(b.wrapping_mul(3)).wrapping_add(c.wrapping_mul(5)).wrapping_add(d.wrapping_mul(7)).wrapping_add(e.wrapping_mul(11))
+}
+
+/// Calls the VM function at `code` as a Win64 caller: 32 bytes of shadow space (filled with
+/// garbage) and the stack arguments `a`, `b` after it, or with `in_home` in its first two
+/// slots; every callee-saved register of Win64 (and `r12`, which holds `regs`, of SysV) set
+/// to a known value, then stored in `regs`: `rbx rbp rdi rsi r13 r14 r15`, then the low
+/// halves of `xmm6`–`xmm15`.
+#[unsafe(naked)]
+extern "sysv64" fn call_checked_pe(code: *const u8, a: u64, b: u64, regs: *mut [u64; 17], in_home: u64) -> u64 {
+    core::arch::naked_asm!(
+        "push rbp",
+        "push rbx",
+        "push r12",
+        "push r13",
+        "push r14",
+        "push r15",
+        "mov r12, rcx",
+        "mov rax, rdi",
+        "sub rsp, 56",
+        "mov rcx, -1",
+        "mov [rsp], rcx",
+        "mov [rsp + 8], rcx",
+        "mov [rsp + 16], rcx",
+        "mov [rsp + 24], rcx",
+        "test r8, r8",
+        "jz 2f",
+        "mov [rsp], rsi",
+        "mov [rsp + 8], rdx",
+        "jmp 3f",
+        "2:",
+        "mov [rsp + 32], rsi",
+        "mov [rsp + 40], rdx",
+        "3:",
+        "movabs rcx, 0x0606060606060606",
+        "movq xmm6, rcx",
+        "movabs rcx, 0x0707070707070707",
+        "movq xmm7, rcx",
+        "movabs rcx, 0x0808080808080808",
+        "movq xmm8, rcx",
+        "movabs rcx, 0x0909090909090909",
+        "movq xmm9, rcx",
+        "movabs rcx, 0x0a0a0a0a0a0a0a0a",
+        "movq xmm10, rcx",
+        "movabs rcx, 0x0b0b0b0b0b0b0b0b",
+        "movq xmm11, rcx",
+        "movabs rcx, 0x0c0c0c0c0c0c0c0c",
+        "movq xmm12, rcx",
+        "movabs rcx, 0x0d0d0d0d0d0d0d0d",
+        "movq xmm13, rcx",
+        "movabs rcx, 0x0e0e0e0e0e0e0e0e",
+        "movq xmm14, rcx",
+        "movabs rcx, 0x0f0f0f0f0f0f0f0f",
+        "movq xmm15, rcx",
+        "movabs rbx, 0x1111111111111111",
+        "movabs rbp, 0x2222222222222222",
+        "movabs rdi, 0x3333333333333333",
+        "movabs rsi, 0x4444444444444444",
+        "movabs r13, 0x5555555555555555",
+        "movabs r14, 0x6666666666666666",
+        "movabs r15, 0x7777777777777777",
+        "call rax",
+        "mov [r12], rbx",
+        "mov [r12 + 8], rbp",
+        "mov [r12 + 16], rdi",
+        "mov [r12 + 24], rsi",
+        "mov [r12 + 32], r13",
+        "mov [r12 + 40], r14",
+        "mov [r12 + 48], r15",
+        "movq [r12 + 56], xmm6",
+        "movq [r12 + 64], xmm7",
+        "movq [r12 + 72], xmm8",
+        "movq [r12 + 80], xmm9",
+        "movq [r12 + 88], xmm10",
+        "movq [r12 + 96], xmm11",
+        "movq [r12 + 104], xmm12",
+        "movq [r12 + 112], xmm13",
+        "movq [r12 + 120], xmm14",
+        "movq [r12 + 128], xmm15",
+        "add rsp, 56",
+        "pop r15",
+        "pop r14",
+        "pop r13",
+        "pop r12",
+        "pop rbx",
+        "pop rbp",
+        "ret",
+    )
+}
+
+/// Where a PE frame's saves go ([`pe_frames`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum PeSaves {
+    /// Pushed: nothing pinned.
+    Pushed,
+    /// Below pinned allocas (an 8 KiB one, so the frame probes), in the caller's home space.
+    Home,
+    /// The same with the arguments read from the home space: in the slots below `rdi`'s and
+    /// `rsi`'s that no pinned alloca covers.
+    Gap,
+}
+
+/// PE code through the SSA tier: a loop with values live across a Win64 native call (five
+/// arguments, the fifth on the stack past the shadow space, which the callee overwrites, as
+/// it does every volatile register), entered at the entry and by OSR, with and without
+/// shuffled frames, with the saves pushed, in the home space and in the slots below `rdi`'s
+/// and `rsi`'s. The results are the AOT code's, the code ran in the JIT code, and every
+/// callee-saved register of Win64, `xmm6`–`xmm15` included, survives.
+#[test]
+fn pe_frames() {
+    let (_g, before) = start();
+    let mut n_compiled = 0;
+    for saves in [PeSaves::Pushed, PeSaves::Home, PeSaves::Gap] {
+        for shuffle in [false, true] {
+            for k in [None, Some(0i64), Some(3)] {
+                pe_frames_at(saves, shuffle, k);
+                n_compiled += 1;
+            }
+        }
+    }
+    check_stats(before, n_compiled);
+}
+
+fn pe_frames_at(saves: PeSaves, shuffle: bool, k: Option<i64>) {
+    let what = format!("{saves:?}, shuffle {shuffle}, osr at {k:?}");
+    let big = saves != PeSaves::Pushed;
+    let mut w = ImageWriter::new(unique_scid());
+    let s_note = w.symbol("note_pe", 0);
+    let s_mix = w.symbol("mix_pe", 0);
+    let mut defs = Defs::default();
+    let (n, obs) = if saves == PeSaves::Gap { (16, 24) } else { (48, 56) };
+    let frame: u32 = if big { 8192 + 64 } else { 128 };
+    let stack5 = -(frame as i32) + 32;
+    // f(n, obs): i, acc, v1, v2, v3 = 0, 1, 7, 11, 13; (big: e = 5, p = &e, q = &big) for i < n
+    // { (big: *q = acc) r = mix(i, acc, v1, v2, v3); (big: acc = *q + *p) acc = acc * 3 + r;
+    // v1 += i; v2 += 3; v3 *= 5; i += 1 }; ret acc + v1 + v2 + v3.
+    // i@-24, acc@-32, v1@-40, v2@-48, v3@-56, e@-64, p@-72, q@-80, r@-88, t@-96 (big).
+    let mut a = Asm::new();
+    a.i(Insn::CallSym { d: Slot(0), sym: s_note, k: 0, a: List::from_words(&regs(&[obs])) });
+    a.i(Insn::ImmW64 { d: Slot(-24), imm: 0 });
+    a.i(Insn::ImmW64 { d: Slot(-32), imm: 1 });
+    a.i(Insn::ImmW64 { d: Slot(-40), imm: 7 });
+    a.i(Insn::ImmW64 { d: Slot(-48), imm: 11 });
+    a.i(Insn::ImmW64 { d: Slot(-56), imm: 13 });
+    let mut scopes = Vec::new();
+    if big {
+        a.i(Insn::ImmW64 { d: Slot(-64), imm: 5 });
+        let at = a.i(Insn::Addr { d: Slot(-72), s: Slot(-64) });
+        scopes.push(escape(at, -64, 8));
+        let at = a.i(Insn::Addr { d: Slot(-80), s: Slot(-8192) });
+        scopes.push(escape(at, -8192, 8000));
+    }
+    let head = a.i(Insn::BrLtUW64 { a: Slot(-24), b: Slot(n), neg: F, t: Target(0) });
+    if big {
+        a.i(Insn::StoreW64 { m: Mem { p: Slot(-80), k: 0 }, s: Slot(-32) });
+    }
+    a.i(Insn::MovW64 { d: Slot(stack5), s: Slot(-56) });
+    a.i(Insn::CallSym { d: Slot(-88), sym: s_mix, k: 8, a: List::from_words(&regs(&[-24, -32, -40, -48])) });
+    if big {
+        a.i(Insn::LoadW64 { d: Slot(-32), m: Mem { p: Slot(-80), k: 0 } });
+        a.i(Insn::LoadW64 { d: Slot(-96), m: Mem { p: Slot(-72), k: 0 } });
+        a.i(Insn::AddW64 { d: Slot(-32), a: Slot(-32), b: Slot(-96) });
+    }
+    a.i(Insn::MulImmW64 { d: Slot(-32), a: Slot(-32), imm: 3 });
+    a.i(Insn::AddW64 { d: Slot(-32), a: Slot(-32), b: Slot(-88) });
+    a.i(Insn::AddW64 { d: Slot(-40), a: Slot(-40), b: Slot(-24) });
+    a.i(Insn::AddImmW64 { d: Slot(-48), a: Slot(-48), imm: 3 });
+    a.i(Insn::MulImmW64 { d: Slot(-56), a: Slot(-56), imm: 5 });
+    a.i(Insn::AddImmW64 { d: Slot(-24), a: Slot(-24), imm: 1 });
+    let back = a.i(Insn::Jmp { t: Target(0) });
+    a.patch(back, "t", head);
+    let done = a.i(Insn::AddW64 { d: Slot(-32), a: Slot(-32), b: Slot(-40) });
+    a.patch(head, "t", done);
+    a.i(Insn::AddW64 { d: Slot(-32), a: Slot(-32), b: Slot(-48) });
+    a.i(Insn::AddW64 { d: Slot(-32), a: Slot(-32), b: Slot(-56) });
+    a.i(Insn::CallSym { d: Slot(0), sym: s_note, k: 0, a: List::from_words(&regs(&[obs])) });
+    a.ret(Slot(-32), 8);
+    let f = defs.add(&mut w, func(a.done(), frame, 16, 8), scopes);
+    w.prepare(PE);
+    w.validate_functions().unwrap();
+    let enc = defs.0.iter().map(|(f, sc)| ryo_bytecode::asm::encode(&f.code, f.frame_size, &f.cleanup, sc, PE).unwrap()).collect();
+    let mut obj = w.finish_encoded(enc).unwrap();
+    // Off Windows nothing reads `.pdata` and `.xdata`.
+    obj.relocs.retain(|r| r.kind != ryo_bytecode::image::RelocKind::Rva32);
+    obj.unwind.clear();
+    let img = link(obj, &[("note_pe", note_pe as *const () as usize), ("mix_pe", mix_pe as *const () as usize)]);
+    if shuffle {
+        ryo_rt::vm::jit_shuffle_image(img.header);
+    }
+    register(&[&img]);
+
+    let nv = 20u64;
+    let (mut acc, mut v1, mut v2, mut v3) = (1u64, 7u64, 11u64, 13u64);
+    for i in 0..nv {
+        let r = mix_rs(i, acc, v1, v2, v3);
+        if big {
+            acc = acc.wrapping_add(5);
+        }
+        acc = acc.wrapping_mul(3).wrapping_add(r);
+        v1 = v1.wrapping_add(i);
+        v2 = v2.wrapping_add(3);
+        v3 = v3.wrapping_mul(5);
+    }
+    let want = acc.wrapping_add(v1).wrapping_add(v2).wrapping_add(v3);
+    if let Some(k) = k {
+        img.trip_after(f, 1, k);
+    }
+    let mut saved = [
+        0x1111111111111111u64,
+        0x2222222222222222,
+        0x3333333333333333,
+        0x4444444444444444,
+        0x5555555555555555,
+        0x6666666666666666,
+        0x7777777777777777,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ];
+    for x in 6..16u64 {
+        saved[x as usize + 1] = x * 0x0101010101010101;
+    }
+    for call in 0..2 {
+        let o_ = Obs::default();
+        let mut regs = [0u64; 17];
+        let got = call_checked_pe(img.code(f), nv, &raw const o_ as u64, &mut regs, (saves == PeSaves::Gap) as u64);
+        assert_eq!(got, want, "{what}, call {call}");
+        // The first call's trip into the JIT is Linux code: it keeps only the SysV registers.
+        let n = if call == 0 { 7 } else { 17 };
+        assert_eq!(regs[..n], saved[..n], "{what}, call {call}: callee-saved registers");
+        assert_eq!(state(&img, f), JIT_DONE, "{what}");
+        assert!(in_jit(&img, f, o(&o_.last)), "{what}, call {call}: ended at {:#x}", o(&o_.last));
+        if call == 0 && k.is_some() {
+            assert!(in_aot(&img, f, o(&o_.first)), "{what}: started at {:#x}", o(&o_.first));
+        } else {
+            assert!(in_jit(&img, f, o(&o_.first)), "{what}, call {call}: started at {:#x}", o(&o_.first));
+        }
+    }
+}

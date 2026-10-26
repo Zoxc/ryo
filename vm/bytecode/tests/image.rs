@@ -362,6 +362,23 @@ fn pe_unwind_info_encodings() {
     // A counter check of 12 bytes first: every offset moves by 12.
     assert_eq!(info(48, 12, pe), [&[1, 24, 5, 0x15, 24, 2 | 3 << 4][..], &tail(12), &[0, 0]].concat());
     assert_eq!(PE_LEAF_UNWIND, [1, 0, 0, 0]);
+    // The SSA tier's forms: a push of rbx (3) after 4, an allocation, the frame register at
+    // rsp + 32 after 13, saves of r12 by `mov` (8-scaled 16-bit, then 32-bit unscaled) and of
+    // xmm6 (16-scaled).
+    use ryo_bytecode::image::{PeUnwindOp as U, pe_unwind_codes};
+    let ops = [
+        (1, U::Push(5)),
+        (4, U::Push(3)),
+        (8, U::Alloc(8)),
+        (13, U::SetFpreg),
+        (17, U::Save(12, 16)),
+        (25, U::Save(12, 0x80000)),
+        (30, U::SaveXmm(6, 32)),
+    ];
+    assert_eq!(
+        pe_unwind_codes(30, 2, &ops),
+        [1, 30, 11, 0x25, 30, 8 | 6 << 4, 2, 0, 25, 5 | 12 << 4, 0, 0, 8, 0, 17, 4 | 12 << 4, 2, 0, 13, 3, 8, 2, 4, 3 << 4, 1, 5 << 4, 0, 0]
+    );
 }
 
 #[test]

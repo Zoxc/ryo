@@ -249,7 +249,13 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
     let mut s = B {
         code,
         fr,
-        f: Func { allocas: fr.allocas.clone(), aot_frame: frame_size, osr: alloc::vec![None; code.enterable.len()], ..Default::default() },
+        f: Func {
+            allocas: fr.allocas.clone(),
+            aot_frame: frame_size,
+            pe: mode.pe,
+            osr: alloc::vec![None; code.enterable.len()],
+            ..Default::default()
+        },
         defs: Vec::new(),
         sealed: Vec::new(),
         filled: Vec::new(),

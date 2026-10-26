@@ -1081,27 +1081,72 @@ pub fn pe_unwind_info(f: &EhFunc, mode: Mode) -> Vec<u8> {
     let alloc = f.frame_size - 16;
     let p = f.prologue;
     let sub_end = p + asm::prologue_len(f.frame_size, mode);
-    assert!(sub_end < 256, "a PE prologue ends within 255 bytes");
-    // Unwind codes: (offset after the operation, op | info << 4, extra slots).
-    let mut codes: Vec<u8> = Vec::new();
+    let mut ops = vec![(p + 1, PeUnwindOp::Push(5)), (p + 2, PeUnwindOp::Push(7)), (p + 3, PeUnwindOp::Push(6)), (p + 8, PeUnwindOp::SetFpreg)];
     if alloc != 0 {
-        if alloc <= 128 {
-            codes.extend_from_slice(&[sub_end as u8, 2 | (((alloc / 8 - 1) as u8) << 4)]);
-        } else if alloc <= 512 * 1024 - 8 {
-            codes.extend_from_slice(&[sub_end as u8, 1]);
-            codes.extend_from_slice(&((alloc / 8) as u16).to_le_bytes());
-        } else {
-            codes.extend_from_slice(&[sub_end as u8, 1 | 1 << 4]);
-            codes.extend_from_slice(&alloc.to_le_bytes());
+        ops.push((sub_end, PeUnwindOp::Alloc(alloc)));
+    }
+    pe_unwind_codes(sub_end, 1, &ops)
+}
+
+/// An operation of a PE prologue ([`pe_unwind_codes`]); registers by their x86 number.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PeUnwindOp {
+    /// `push reg` (`UWOP_PUSH_NONVOL`).
+    Push(u8),
+    /// `sub rsp, n` (`UWOP_ALLOC_SMALL` or `UWOP_ALLOC_LARGE`), `n` a multiple of 8.
+    Alloc(u32),
+    /// The frame register's `lea rbp, [rsp + 16 * offset]` (`UWOP_SET_FPREG`).
+    SetFpreg,
+    /// `mov [frame + off], reg` (`UWOP_SAVE_NONVOL`), `off` from the frame base (`rbp - 16 *
+    /// offset` once set), a multiple of 8.
+    Save(u8, u32),
+    /// `movaps [frame + off], xmm` (`UWOP_SAVE_XMM128`), `off` a multiple of 16.
+    SaveXmm(u8, u32),
+}
+
+/// The PE `UNWIND_INFO` (x64, version 1, no handler, 4-byte aligned) of a prologue of
+/// `prologue_len` bytes whose operations `ops` end at the given offsets, in code order, with
+/// `rbp` as the frame register at `rsp + 16 * fp_offset` (scaled, at most 15).
+pub fn pe_unwind_codes(prologue_len: u32, fp_offset: u32, ops: &[(u32, PeUnwindOp)]) -> Vec<u8> {
+    assert!(prologue_len < 256, "a PE prologue ends within 255 bytes");
+    assert!(fp_offset < 16, "the frame register within 240 bytes of rsp");
+    // Unwind codes, last operation first: (offset after the operation, op | info << 4, extra
+    // slots).
+    let mut codes: Vec<u8> = Vec::new();
+    for &(at, op) in ops.iter().rev() {
+        debug_assert!(at <= prologue_len);
+        let at = at as u8;
+        match op {
+            PeUnwindOp::Push(r) => codes.extend_from_slice(&[at, r << 4]),
+            PeUnwindOp::Alloc(n) => {
+                debug_assert!(n % 8 == 0 && n != 0);
+                if n <= 128 {
+                    codes.extend_from_slice(&[at, 2 | (((n / 8 - 1) as u8) << 4)]);
+                } else if n <= 512 * 1024 - 8 {
+                    codes.extend_from_slice(&[at, 1]);
+                    codes.extend_from_slice(&((n / 8) as u16).to_le_bytes());
+                } else {
+                    codes.extend_from_slice(&[at, 1 | 1 << 4]);
+                    codes.extend_from_slice(&n.to_le_bytes());
+                }
+            }
+            PeUnwindOp::SetFpreg => codes.extend_from_slice(&[at, 3]),
+            PeUnwindOp::Save(r, off) | PeUnwindOp::SaveXmm(r, off) => {
+                let (scale, near, far) = if matches!(op, PeUnwindOp::Save(..)) { (8, 4, 5) } else { (16, 8, 9) };
+                debug_assert!(off % scale == 0);
+                if off / scale <= 0xffff {
+                    codes.extend_from_slice(&[at, near | r << 4]);
+                    codes.extend_from_slice(&((off / scale) as u16).to_le_bytes());
+                } else {
+                    codes.extend_from_slice(&[at, far | r << 4]);
+                    codes.extend_from_slice(&off.to_le_bytes());
+                }
+            }
         }
     }
-    codes.extend_from_slice(&[p as u8 + 8, 3]); // UWOP_SET_FPREG
-    codes.extend_from_slice(&[p as u8 + 3, 6 << 4]); // UWOP_PUSH_NONVOL rsi
-    codes.extend_from_slice(&[p as u8 + 2, 7 << 4]); // UWOP_PUSH_NONVOL rdi
-    codes.extend_from_slice(&[p as u8 + 1, 5 << 4]); // UWOP_PUSH_NONVOL rbp
     let slots = codes.len() / 2;
-    // Version 1, no flags; the frame register rbp, at rsp + 1 * 16.
-    let mut out = vec![1, sub_end as u8, slots as u8, 5 | 1 << 4];
+    // Version 1, no flags; the frame register rbp (5).
+    let mut out = vec![1, prologue_len as u8, slots as u8, 5 | (fp_offset as u8) << 4];
     out.extend_from_slice(&codes);
     while out.len() % 4 != 0 {
         out.push(0);

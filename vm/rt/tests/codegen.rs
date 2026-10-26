@@ -101,7 +101,7 @@ fn win64_handlers_preserve_xmm6_to_15() {
     }
     let asm = rt_asm("codegen-win64", &[], Some(TARGET));
     // Their `i128` result stays in `xmm6` across a call; the lowering uses an island on PE.
-    let avoided = [Opcode::CvtF2iSatSF32W128, Opcode::CvtF2iSatUF32W128, Opcode::CvtF2iSatSF64W128, Opcode::CvtF2iSatUF64W128];
+    let avoided = ryo_bytecode::jit::effects::PE_XMM_CLOBBERS;
     let mut checked = 0;
     for &op in ALL_OPCODES {
         if !has_handler(op) || avoided.contains(&op) {

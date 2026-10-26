@@ -175,7 +175,7 @@ pub fn ir_of(d: &crate::asm::Decoded, mode: crate::asm::Mode) -> Result<ir::Func
 /// The SSA IR of the decoded function `d` as construction leaves it, before the folds.
 #[cfg(feature = "alloc")]
 fn built(d: &crate::asm::Decoded, mode: crate::asm::Mode) -> Result<ir::Func, Unsupported> {
-    if mode.pe || mode.counters || !mode.valid() {
+    if mode.counters || !mode.valid() {
         return Err(Unsupported("mode"));
     }
     let code = decode::decode(d, mode)?;

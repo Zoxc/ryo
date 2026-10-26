@@ -203,10 +203,10 @@ section; its fields and the counter checks and stubs that use it are in
   requires (a separate entry would make `pop rcx; jmp head` look like an epilogue). As in
   the AOT code, panics unwind through JIT frames but their landing pads don't run
   ([platforms.md](platforms.md)). The entry prefix has no entry: a leaf, the return address
-  at `rsp` (the AOT stub's, then the body's start, whose prologue hasn't run). Only the
-  re-encoding pipeline compiles PE code: the SSA tier doesn't take the PE mode (its frames,
-  the `rdi`/`rsi` saves and Win64 islands aren't done), so `RYO_JIT_OPT=ssa` falls back
-  for every function.
+  at `rsp` (the AOT stub's, then the body's start, whose prologue hasn't run). The SSA
+  tier's functions get their own `UNWIND_INFO` (`jit::Output::pe_unwind`, [PE
+  frames](#back-end)), over the OSR code too: its entries keep `rbp`, `rdi` and `rsi`, and
+  store the other saves before they jump to the head.
 - **macOS** (`sys/macos.rs`): the same `.eh_frame` as on ELF (Mach-O images' VM code is
   SysV with DWARF unwind information), but registered one FDE at a time: libunwind's
   `__register_frame` (libSystem's) takes a single FDE, finds its CIE through the FDE's CIE
@@ -282,7 +282,7 @@ them → x86-64 with a register allocator. It lives in `ryo_bytecode::jit` (`all
 that it is tested without the runtime; `install.rs` calls `jit::compile` in place of
 `asm::encode_reduced_at`. A function it doesn't handle (`jit::Unsupported`, with the reason
 under `RYO_JIT_LOG`) goes through the re-encoding pipeline, which stays the fallback and the
-`reencode` mode: PE images, 16-byte SSE arguments and results, an island operand without a
+`reencode` mode: on PE, frames without room for their saves (see [PE frames](#back-end)), 16-byte SSE arguments and results, an island operand without a
 `Lend` scope, a frame access in the return address's 16 bytes or below the frame, more than
 about 65 000 slot shapes or 8 million variable × block definitions. In the corpus that is
 about one function in 500. Handlers stay calls, and nothing is speculated: the AOT code stays the
@@ -462,6 +462,25 @@ the same bytes at the head, and the entry's `OsrLoad` of the second goes. OSR he
   `push rbp; mov rbp, rsp; sub rsp, F` with `fp-rbp`) then a `mov` per save. The probe from
   `PROBE_FROM` comes before the `sub`; handler and island operands are `fp` offsets either
   way; OSR entries store the saves at their slots, which the epilogue reads either way.
+- **PE frames**: as the AOT code's ([vm.md](vm.md#frames)), `rdi` and `rsi` (callee-saved
+  on Win64, not in the `sysv64` handlers) are always saved, at `fp - 8` and `fp - 16`
+  where the AOT frame has them, so OSR entries leave them; the other saves follow. The
+  prologue is `push rbp; push rdi; push rsi`, the pushed saves, a `sub rsp` up to the
+  frame offset `K` if the pushes don't reach a multiple of 16, `lea rbp, [rsp + K]`, the
+  probe, `sub rsp, F - K`, then the stored saves; each with its unwind code (the shared
+  encoder `image::pe_unwind_codes`: `UWOP_PUSH_NONVOL`, `UWOP_ALLOC_*`, `UWOP_SET_FPREG`,
+  `UWOP_SAVE_NONVOL`). Win64 sets the frame register after the pushes and addresses
+  stored saves upward from `rbp - K`, `K` at most 240, so with pinned allocas the saves
+  go into the caller's home space (`fp + 16` to `fp + 48`, unless a stack argument is
+  read there) and the 8-byte slots within 240 bytes below `rbp` that no pinned alloca
+  covers, the rest of the frame below them; without room the function is re-encoded. The
+  epilogue is the stored saves' loads, `lea rsp, [rbp - 16 - 8n]`, the pops, then `ret`
+  or the tail jump, a register one as `rex.w jmp` so that the unwinder sees an epilogue.
+  Calls of VM functions, natives and islands (Win64: `rcx rdx r8 r9`, `xmm0`–`xmm3` by
+  position) get 32 bytes of shadow space at the bottom of the frame, if the stack
+  arguments don't cover it; handlers stay `sysv64`. The tier never names `xmm6`–`xmm15`
+  and doesn't compile the handlers that write them (`effects::PE_XMM_CLOBBERS`, the `i128`
+  saturating casts, which the lowering avoids on PE), nor arguments past the fourth.
 - **Instruction selection**: per instruction over the allocated locations; two-address
   forms with a hint to reuse the first operand's register, immediates where they fit
   (`r10` takes the others), `[base + index*scale]` for `ptr.index` by 1, 2, 4 or 8,
@@ -767,7 +786,10 @@ for shuffled frames per image, `RtApi::shuffled`):
   register: the JIT's far one (`mov r11, imm64; jmp r11`, a callee more than 2 GiB away)
   and, as in AOT code, `tail_call.ptr`'s `jmp rax`. The unwinder takes only `ret`, `jmp`s
   to outside the function or through memory, and `rex.w jmp reg` right after the pops as
-  an epilogue's end. Nothing synchronous stops there.
+  an epilogue's end. Nothing synchronous stops there. The SSA tier's tail jumps through a
+  register are `rex.w jmp`, which it takes. In the SSA tier's OSR code, before an entry
+  stores the saves (`rbx`, `r12`–`r15`) at their slots, an unwind (a stack overflow in its
+  probe) would take them from those slots' AOT bytes.
 - Island calls and `call.sym.ind` stay through the image's symbol slots. A callee's slot is
   never replaced by a direct call: a caller compiled before its callee keeps the slot.
 - A program that interposes `malloc` itself with Rust code (which may call VM code) would
@@ -804,7 +826,16 @@ for shuffled frames per image, `RtApi::shuffled`):
   code's, the JIT prologue is the one `pe_unwind_info` describes, and every callee-saved
   register of both conventions, `rdi` and `rsi` included, survives. `vm/bytecode/tests/
   image.rs` checks `pe_unwind_info` byte for byte (decoded once with `llvm-readobj
-  --unwind` from a hand-made COFF object). The Windows registration itself has never run.
+  --unwind` from a hand-made COFF object). Through the SSA tier, `ssa.rs`'s `pe_frames`
+  runs a loop with values live across a five-argument Win64 native (its fifth argument past
+  the shadow space, which the callee overwrites with every volatile register), at the
+  entry and by OSR, shuffled or not, with the saves pushed, in the home space and below the
+  `rdi`/`rsi` saves (an 8 KiB pinned alloca, so the frame probes): the results are the AOT
+  code's and every Win64 callee-saved register, `xmm6`–`xmm15` included, survives.
+  `vm/bytecode/tests/jit_pe.rs` runs each SSA prologue symbolically and unwinds it at every
+  step by its `UNWIND_INFO` as `RtlVirtualUnwind` does, checks that each epilogue restores
+  the caller's registers in the form the unwinder recognizes, and that no code names
+  `xmm6`–`xmm15`. The Windows registration itself has never run.
 - **The corpus**: `RYO_JIT_THRESHOLD=0 RYO_JIT_SYNC=1 y test` runs it with every function's
   JIT code from its first call, and `RYO_JIT_THRESHOLD=2,0` instead enters it by OSR at the
   first loop head pass of each function's first call (whose entry check doesn't trip),
