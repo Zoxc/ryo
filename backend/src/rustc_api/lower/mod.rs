@@ -197,10 +197,10 @@ pub fn vm_fn_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> Result<Ab
 enum UnwindTo {
     /// Out of the frame, to the caller.
     Continue,
-    /// Through a landing pad ([`FnCx::landing_pads`]) to this block.
+    /// Through a landing pad ([`FnCx::unwind_targets`]) to this block.
     Block(BasicBlock),
     /// Through a landing pad to the function's stub calling the reason's lang item
-    /// ([`FnCx::terminate_stubs`]).
+    /// ([`FnCx::unwind_targets`]).
     Terminate(rustc_middle::mir::UnwindTerminateReason),
 }
 
@@ -239,10 +239,6 @@ pub struct FnCx<'a, 'tcx> {
     insns: u32,
     /// The certificate being recorded, if [`LowerCx::cert`].
     cert: Option<Box<cert::Recorder>>,
-    /// Label of each terminate stub.
-    terminate_at: Vec<(rustc_middle::mir::UnwindTerminateReason, Label)>,
-    /// Label of each landing pad, by where it goes.
-    pads: Vec<(UnwindTo, Label)>,
     /// A `#[target_feature]` function: a `simd_*` intrinsic without an instruction keeps it
     /// native instead of becoming an island, which is compiled without the features.
     pub strict_simd: bool,
@@ -282,8 +278,6 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             fused: None,
             insns: 0,
             cert: cx.cert.then(Box::default),
-            terminate_at: Vec::new(),
-            pads: Vec::new(),
             caller_location,
             strict_simd: !tcx.codegen_instance_attrs(instance.def).target_features.is_empty(),
         })
@@ -323,20 +317,26 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             self.terminator(data.terminator())?;
             self.cert_term(start);
         }
-        self.terminate_stubs()?;
-        self.landing_pads();
+        self.unwind_targets()?;
         Ok(())
     }
 
-    /// Emits one stub per terminate reason the cleanup entries use, after the blocks: a call
-    /// of the reason's lang item, as cg_ssa's terminate block (design/lowering.md#unwinding).
-    fn terminate_stubs(&mut self) -> Result<(), NeedsNative> {
-        let mut done = Vec::new();
-        for i in 0..self.cleanup.len() {
-            if let UnwindTo::Terminate(reason) = self.cleanup[i].1
-                && !done.contains(&reason)
+    /// Emits the unwind targets after the blocks, and points each cleanup entry at its pad.
+    ///
+    /// First one stub per terminate reason the cleanup entries use: a call of the reason's
+    /// lang item, as cg_ssa's terminate block (design/lowering.md#unwinding). Then one landing
+    /// pad per distinct place unwinding goes to in this frame: `lpad x` (which stores the
+    /// exception object in the function's exception slot `x`), then a jump to the cleanup
+    /// block or terminate stub. A cleanup block may also be reached by a jump from another
+    /// one, so the pads are separate from the blocks, and `lpad` runs once per landing.
+    fn unwind_targets(&mut self) -> Result<(), NeedsNative> {
+        let cleanup = std::mem::take(&mut self.cleanup);
+        // Few distinct targets per function: linear lookups (the reasons aren't `Hash`).
+        let mut stubs = Vec::new();
+        for &(_, to) in &cleanup {
+            if let UnwindTo::Terminate(reason) = to
+                && !stubs.iter().any(|&(r, _)| r == reason)
             {
-                done.push(reason);
                 let at = self.asm.label();
                 self.bind(at);
                 self.reset_temps();
@@ -344,46 +344,38 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let start = self.insns;
                 self.terminate_call(reason, self.body.source_info(rustc_middle::mir::Location::START).clone())?;
                 self.cert_stub(reason, start);
-                self.terminate_at.push((reason, at));
+                stubs.push((reason, at));
             }
         }
-        Ok(())
-    }
-
-    /// Emits one landing pad per distinct place unwinding goes to in this frame, after the
-    /// blocks and terminate stubs: `lpad x` (which stores the exception object in the
-    /// function's exception slot `x`), then a jump to the cleanup block or terminate stub. A
-    /// cleanup block may also be reached by a jump from another one, so the pads are separate
-    /// from the blocks, and `lpad` runs once per landing.
-    fn landing_pads(&mut self) {
-        for i in 0..self.cleanup.len() {
-            let to = self.cleanup[i].1;
-            if to == UnwindTo::Continue || self.pads.iter().any(|p| p.0 == to) {
-                continue;
-            }
-            let at = self.asm.label();
-            self.bind(at);
-            let start = self.insns;
-            self.op(Opcode::Lpad, &[self.frame.exception_slot()]);
-            let target = match to {
-                UnwindTo::Block(bb) => self.block_labels[bb.as_usize()],
-                UnwindTo::Terminate(r) => self.terminate_at.iter().find(|t| t.0 == r).expect("terminate stub").1,
-                UnwindTo::Continue => unreachable!(),
-            };
-            self.emit(Opcode::Jmp, vec![Opnd::Target(target)]);
-            self.cert_pad(start, if let UnwindTo::Block(bb) = to { Some(bb.as_u32()) } else { None });
-            self.pads.push((to, at));
-        }
-        for &(id, to) in &self.cleanup {
-            let u = match to {
-                UnwindTo::Continue => Unwind::Continue,
-                UnwindTo::Block(_) => Unwind::Pad { pad: self.pads.iter().find(|p| p.0 == to).expect("landing pad").1, catch: false },
+        let mut pads: Vec<(UnwindTo, Label)> = Vec::new();
+        for &(id, to) in &cleanup {
+            let (target, catch) = match to {
+                UnwindTo::Continue => {
+                    self.asm.set_unwind(id, Unwind::Continue);
+                    continue;
+                }
+                UnwindTo::Block(bb) => (self.block_labels[bb.as_usize()], false),
                 // As cg_llvm's terminate pads: a catch-all, so it runs even when nothing up
                 // the stack catches.
-                UnwindTo::Terminate(_) => Unwind::Pad { pad: self.pads.iter().find(|p| p.0 == to).expect("landing pad").1, catch: true },
+                UnwindTo::Terminate(r) => (stubs.iter().find(|s| s.0 == r).expect("terminate stub").1, true),
             };
-            self.asm.set_unwind(id, u);
+            let pad = match pads.iter().find(|p| p.0 == to) {
+                Some(&(_, at)) => at,
+                None => {
+                    let at = self.asm.label();
+                    self.bind(at);
+                    let start = self.insns;
+                    self.op(Opcode::Lpad, &[self.frame.exception_slot()]);
+                    self.jmp_label(target);
+                    self.cert_pad(start, if let UnwindTo::Block(bb) = to { Some(bb.as_u32()) } else { None });
+                    pads.push((to, at));
+                    at
+                }
+            };
+            self.asm.set_unwind(id, Unwind::Pad { pad, catch });
         }
+        self.cleanup = cleanup;
+        Ok(())
     }
 
     /// Finishes the machine code, now that the frame size is known.
@@ -410,8 +402,18 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
 
     /// Emits an instruction.
     pub fn emit(&mut self, op: Opcode, ops: Vec<Opnd<Label>>) -> InsnId {
+        self.insn(op, &ops)
+    }
+
+    /// Emits `op` with operands `ops`, counting it.
+    fn insn(&mut self, op: Opcode, ops: &[Opnd<Label>]) -> InsnId {
         self.insns += 1;
-        self.asm.insn(op, &ops)
+        self.asm.insn(op, ops)
+    }
+
+    /// `jmp` to `l`.
+    pub fn jmp_label(&mut self, l: Label) {
+        self.insn(Opcode::Jmp, &[Opnd::Target(l)]);
     }
 
     /// Binds `l` to the current position.
@@ -425,8 +427,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     pub fn op(&mut self, op: Opcode, operands: &[u32]) -> InsnId {
         let mut ops = std::mem::take(&mut self.scratch);
         opnds(op, operands, &mut ops);
-        self.insns += 1;
-        let id = self.asm.insn(op, &ops);
+        let id = self.insn(op, &ops);
         self.scratch = ops;
         id
     }
@@ -438,8 +439,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         opnds(op, operands, &mut ops);
         ops.push(Opnd::Neg(neg));
         ops.push(Opnd::Target(self.block_labels[bb.as_usize()]));
-        self.insns += 1;
-        let id = self.asm.insn(op, &ops);
+        let id = self.insn(op, &ops);
         self.scratch = ops;
         id
     }
@@ -479,7 +479,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// `jmp` to `bb`, unless it is the next block.
     pub fn jump(&mut self, bb: BasicBlock) {
         if Some(bb) != self.next_block {
-            self.emit(Opcode::Jmp, vec![Opnd::Target(self.block_labels[bb.as_usize()])]);
+            self.jmp_label(self.block_labels[bb.as_usize()]);
         }
     }
 
