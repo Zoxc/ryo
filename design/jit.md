@@ -736,8 +736,13 @@ for shuffled frames per image, `RtApi::shuffled`):
   `atexit` handler to close the registry (it could wait on a lock the thread died holding;
   the registry isn't torn down anyway); a thread killed inside `RtlAddFunctionTable` could
   leave ntdll's function table lock held, which would hang only an unwind through
-  non-image code during the rest of the exit. macOS needs a hint-and-verify mapping,
-  `MAP_JIT`, and a separate read-write mapping for the call slots and unwind data.
+  non-image code during the rest of the exit. macOS (x86_64, `vm/jit/src/sys/macos.rs`) has
+  its OS layer written but disabled (`SUPPORTED` false), since the backend writes no
+  Mach-O and so there are no images: it registers each FDE by itself (libunwind's
+  `__register_frame` takes one), maps with the hint-and-verify region search, and makes
+  code executable with `mprotect` (a hardened runtime needs
+  `allow-unsigned-executable-memory`). Untested on macOS; `y build` doesn't seal the JIT
+  for Apple targets.
 - Asynchronous unwinding on Windows (a debugger's or a sampling profiler's stack walk)
   misreads a frame stopped after its epilogue's `pop rbp` at a tail call through a
   register: the JIT's far one (`mov r11, imm64; jmp r11`, a callee more than 2 GiB away)

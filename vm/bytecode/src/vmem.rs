@@ -8,7 +8,10 @@
 //! writable, except on aarch64 Apple (`MAP_JIT`), where it is write-protected per thread
 //! until the writing thread calls [`make_writable`] (`pthread_jit_write_protect_np`). A
 //! hardened-runtime macOS binary also needs the `com.apple.security.cs.allow-jit` (aarch64)
-//! or `allow-unsigned-executable-memory` (x86_64) entitlement.
+//! or `allow-unsigned-executable-memory` (x86_64) entitlement. x86_64 Apple, natively or
+//! under Rosetta (which sees the `mprotect`s and retranslates written code), maps without
+//! `MAP_JIT` and switches with `mprotect`, as Linux does; its `mmap` takes the address as a
+//! hint only.
 //!
 //! Elsewhere (no Linux, Apple or Windows) reserving fails, and so does everything after.
 

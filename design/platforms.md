@@ -24,6 +24,12 @@ x86_64-pc-windows-msvc`: objects, sections, relocations and an lld-link link aga
 import libraries). Nothing has run on Windows yet. It counts as unverified until the Windows
 job of `.github/workflows/ci.yml` (`y build`, `y test` on windows-latest) has passed.
 
+**macOS** is not a target: the backend writes no Mach-O (a non-goal, [README](README.md)).
+`y build --target x86_64-apple-darwin` still builds std and `ryo_rt` for it, without the
+JIT. The JIT's OS layer for x86_64 macOS (`vm/jit/src/sys/macos.rs`: one
+`__register_frame` per FDE; `vmem`'s hint-and-verify `mmap` and `mprotect`; `__ulock` waits in
+the trips) is written and type-checked, but disabled, and has never run.
+
 The backend's format-specific parts sit behind one `trait ObjectFormat`, covering the image
 section, symbol and relocation kinds, the registry constructor section and import
 indirection. `object::BinaryFormat` picks the implementation from the target spec.

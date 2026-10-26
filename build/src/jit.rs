@@ -19,7 +19,9 @@ const COFF_PREFIX: &str = "__ryo_jit$";
 /// Whether `ryo_rt` gets the JIT on `triple`. On x86_64 Linux it is the real one; on
 /// windows-msvc, until the JIT is ported (design/jit.md#packaging), a `ryo_jit_start` that fails,
 /// so that the trips act as the no-op JIT, but sealed and bundled the same way. Elsewhere
-/// `ryo_rt` has no `jit` feature, and its trips are the no-op JIT.
+/// `ryo_rt` has no `jit` feature, and its trips are the no-op JIT. That includes Apple:
+/// without Mach-O images there is nothing to compile, and sealing would need a Mach-O path
+/// (`_`-prefixed symbols, `llvm-objcopy` on Mach-O) that nothing could exercise.
 pub fn supported(triple: &str) -> bool {
     triple.starts_with("x86_64-") && (triple.contains("-linux-") || coff(triple))
 }
