@@ -4,7 +4,7 @@ use rustc_middle::mir::interpret::Scalar;
 use rustc_middle::mir::{ConstValue, NonDivergingIntrinsic, Operand, Place, Rvalue, Statement, StatementKind};
 use ryo_bytecode::full::Opcode;
 
-use super::emit::{Width, opw};
+use super::emit::Width;
 use super::place::{Loc, PlaceVal};
 use super::{CodeReloc, FnCx, NeedsNative, SPLIT_MAX, native};
 
@@ -26,23 +26,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     let (dst, _) = self.operand_slot(&c.dst)?;
                     let elem = src_layout.ty.builtin_deref(true).ok_or_else(|| NeedsNative("copy of a non-pointer".into()))?;
                     let el = self.layout_of(elem)?;
-                    let size = el.size.bytes();
                     // A constant count: inline pieces.
-                    if let Some(count) = self.const_int(&c.count)?
-                        && let Some(n) = count.checked_mul(u128::from(size))
-                        && n <= u128::from(SPLIT_MAX)
-                    {
-                        let copy = |fx: &mut Self| fx.mem_copy_pieces(dst, src, n as u32);
-                        if count == 1 {
-                            self.with_cuts(el, copy)
-                        } else {
-                            copy(self)
-                        }
+                    if let Some(n) = Self::small_block(el, self.const_int(&c.count)?) {
+                        self.mem_copy_elems(dst, src, el, n);
                         return Ok(());
                     }
                     let (count, _) = self.operand_slot(&c.count)?;
-                    let n = self.temp8();
-                    self.op(opw("MulImm", Width::W64), &[n, count, size as u32, (size >> 32) as u32]);
+                    let n = self.block_bytes(count, el);
                     self.op(Opcode::Memcpy, &[dst, src, n]);
                     Ok(())
                 }

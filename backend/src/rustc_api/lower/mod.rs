@@ -547,6 +547,27 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         self.op_branch(opw(&format!("Br{family}Imm"), w), &ops, neg, bb);
     }
 
+    /// Copies `n` bytes (a constant number of elements of `el`, from [`FnCx::small_block`])
+    /// as pieces, cut at `el`'s fields when it is one element.
+    pub fn mem_copy_elems(&mut self, dst: u32, src: u32, el: TyAndLayout<'tcx>, n: u32) {
+        if u64::from(n) == el.size.bytes() { self.with_cuts(el, |fx| fx.mem_copy_pieces(dst, src, n)) } else { self.mem_copy_pieces(dst, src, n) }
+    }
+
+    /// The bytes of `count` elements of `el` when `count` is a constant small enough for
+    /// [`FnCx::mem_copy_elems`] / [`FnCx::mem_set_pieces`].
+    pub fn small_block(el: TyAndLayout<'tcx>, count: Option<u128>) -> Option<u32> {
+        let n = count?.checked_mul(u128::from(el.size.bytes()))?;
+        (n <= u128::from(SPLIT_MAX)).then_some(n as u32)
+    }
+
+    /// The bytes of `count` (a slot) elements of `el`, in a new temporary: the length of a
+    /// `memcpy`/`memmove`/`memset` handler call.
+    pub fn block_bytes(&mut self, count: u32, el: TyAndLayout<'tcx>) -> u32 {
+        let n = self.temp8();
+        self.op_imm("Mul", Width::W64, n, count, u128::from(el.size.bytes()));
+        n
+    }
+
     /// Copies `n <= SPLIT_MAX` bytes from the memory at `src` to the memory at `dst` as
     /// `load`/`store` pieces (cut at [`FnCx::cuts`]) through a temporary: every piece is loaded
     /// before the first store, so overlapping ranges copy as `memmove` does.

@@ -79,19 +79,15 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             }
             "copy" | "write_bytes" => {
                 let el = self.layout_of(callee.args.type_at(0))?;
-                let size = el.size.bytes();
                 let copy = name.as_str() == "copy";
                 // A constant count: inline pieces.
                 if let [x, y, count] = args
-                    && let Some(count) = self.arg_const(count)?
-                    && let Some(n) = count.checked_mul(u128::from(size))
-                    && n <= u128::from(SPLIT_MAX)
+                    && let Some(n) = Self::small_block(el, self.arg_const(count)?)
                 {
-                    let (x, n) = (self.arg_slot(x)?, n as u32);
+                    let x = self.arg_slot(x)?;
                     if copy {
                         let y = self.arg_slot(y)?;
-                        let f = |fx: &mut Self| fx.mem_copy_pieces(y, x, n);
-                        if count == 1 { self.with_cuts(el, f) } else { f(self) }
+                        self.mem_copy_elems(y, x, el, n);
                     } else {
                         let byte = match self.arg_const(y)? {
                             Some(b) => Ok(b as u8),
@@ -101,8 +97,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     }
                 } else {
                     let [x, y, count] = self.arg_slots::<3>(args)?;
-                    let n = self.temp8();
-                    self.op(opw("MulImm", Width::W64), &[n, count, size as u32, (size >> 32) as u32]);
+                    let n = self.block_bytes(count, el);
                     if copy {
                         // copy(src, dst, count)
                         self.op(Opcode::Memmove, &[y, x, n]);
@@ -319,10 +314,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 true
             }
             "volatile_copy_memory" | "volatile_copy_nonoverlapping_memory" | "volatile_set_memory" => {
-                let size = self.layout_of(ty0())?.size.bytes();
+                let el = self.layout_of(ty0())?;
                 let [x, y, count] = self.arg_slots::<3>(args)?;
-                let n = self.temp8();
-                self.op_imm("Mul", Width::W64, n, count, u128::from(size));
+                let n = self.block_bytes(count, el);
                 let op = match name {
                     "volatile_copy_memory" => Opcode::Memmove,
                     "volatile_copy_nonoverlapping_memory" => Opcode::Memcpy,
