@@ -23,11 +23,18 @@ pub struct LinkInfo {
     pub local_image: String,
     /// The name of the image's `CompiledModule`.
     pub image_module: String,
-    /// Per crate type, the image symbols that only LTO needs, as entries of its
-    /// `linked_symbols` and of its `exported_symbols` (`partition::linked_roots`).
-    pub linked_roots: Vec<(CrateType, (Vec<String>, Vec<String>))>,
+    /// Per crate type, the image symbols that only LTO needs (`partition::linked_roots`).
+    pub linked_roots: Vec<(CrateType, LinkedRoots)>,
     /// The target writes Mach-O objects.
     pub macho: bool,
+}
+
+/// Image symbols that only LTO needs, by the crate type list they appear in.
+pub struct LinkedRoots {
+    /// Entries of the crate type's `linked_symbols`.
+    pub linked: Vec<String>,
+    /// Entries of its `exported_symbols`.
+    pub exported: Vec<String>,
 }
 
 pub fn link(
@@ -122,7 +129,7 @@ pub fn link(
 /// `symbols.o` (rustc already leaves that empty under `-Clto`, `linker.rs:1760-1768`). One
 /// occurrence per crate that listed it, so the names rustc lists itself stay.
 fn remove_roots(crate_info: &mut CrateInfo, info: &LinkInfo, crate_type: CrateType) {
-    let Some((_, (linked_roots, exported_roots))) = info.linked_roots.iter().find(|(t, _)| *t == crate_type) else {
+    let Some((_, roots)) = info.linked_roots.iter().find(|(t, _)| *t == crate_type) else {
         return;
     };
     // Names are undecorated on both sides (`partition::linked_roots`).
@@ -141,11 +148,11 @@ fn remove_roots(crate_info: &mut CrateInfo, info: &LinkInfo, crate_type: CrateTy
         _ => false,
     };
     if let Some(linked) = crate_info.linked_symbols.get_mut(&crate_type) {
-        let mut count = counts(linked_roots);
+        let mut count = counts(&roots.linked);
         linked.retain(|(name, _)| !take(&mut count, name));
     }
     if let Some(exported) = crate_info.exported_symbols.get_mut(&crate_type) {
-        let mut count = counts(exported_roots);
+        let mut count = counts(&roots.exported);
         exported.retain(|e| !take(&mut count, &e.name));
     }
 }

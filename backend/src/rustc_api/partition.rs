@@ -21,6 +21,7 @@ use ryo_bytecode::image::{AllocFixup, AllocReloc, AllocTarget, FuncSymbol, Funct
 use crate::objfile;
 
 use super::dump;
+use super::link::LinkedRoots;
 use super::lower::{self, CodeReloc, LowerCx, LoweredFn, NeedsNative};
 use super::switches::Switches;
 use super::symbols::{self, local_stable_crate_id, rt_symbol, static_symbol};
@@ -1068,9 +1069,9 @@ fn is_root(s: &ExportedSymbol<'_>, info: &SymbolExportInfo) -> bool {
 /// (`symbol_export.rs:737-738`), and for `linked_symbols` on x86_64; on targets that
 /// decorate (i686 Windows `_`, Arm64EC `#`, `linking_symbol_name_for_instance_in_crate`)
 /// the roots would stay in `symbols.o`, which ryo doesn't support anyway.
-pub fn linked_roots(tcx: TyCtxt<'_>, crate_type: CrateType) -> (Vec<String>, Vec<String>) {
-    let (mut linked, mut exported) = (Vec::new(), Vec::new());
-    let Some(deps) = tcx.dependency_formats(()).get(&crate_type) else { return (linked, exported) };
+pub fn linked_roots(tcx: TyCtxt<'_>, crate_type: CrateType) -> LinkedRoots {
+    let mut roots = LinkedRoots { linked: Vec::new(), exported: Vec::new() };
+    let Some(deps) = tcx.dependency_formats(()).get(&crate_type) else { return roots };
     let threshold = rustc_codegen_ssa::back::symbol_export::crates_export_threshold(&[crate_type]);
     let exports_rust = crate_type != CrateType::ProcMacro
         && SymbolExportLevel::Rust.is_below_threshold(threshold)
@@ -1083,14 +1084,14 @@ pub fn linked_roots(tcx: TyCtxt<'_>, crate_type: CrateType) -> (Vec<String>, Vec
             if let ExportedSymbol::NoDefId(name) = s
                 && is_root(s, info)
             {
-                linked.push(name.name.to_owned());
+                roots.linked.push(name.name.to_owned());
                 if exports_rust && !tcx.is_compiler_builtins(cnum) {
-                    exported.push(name.name.to_owned());
+                    roots.exported.push(name.name.to_owned());
                 }
             }
         }
     }
-    (linked, exported)
+    roots
 }
 
 /// The items an allocation refers to by symbol (functions and statics), through nested
