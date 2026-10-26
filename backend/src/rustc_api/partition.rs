@@ -191,10 +191,10 @@ pub fn collect_and_partition_mono_items<'tcx>(tcx: TyCtxt<'tcx>, original: super
 /// How the image's machine code is generated: as `ryo_rt`'s handlers expect `fp`, with a
 /// frame pointer where the session needs one, with loop-head alignment unless
 /// `RYO_ASM_ALIGN=0`, and for the target's object format.
-pub fn asm_mode(tcx: TyCtxt<'_>, rt: RtItems, switches: &Switches) -> asm::Mode {
+fn asm_mode(tcx: TyCtxt<'_>, rt: RtItems, switches: &Switches) -> asm::Mode {
     let fp_arg = tcx.const_eval_poly(rt.fp_arg).ok().and_then(|v| v.try_to_scalar_int()).map(|i| i.to_u8() != 0);
     let Some(fp_arg) = fp_arg else { tcx.dcx().fatal("ryo_rt's FP_ARG isn't a bool") };
-    let pe = tcx.sess.target.binary_format == rustc_target::spec::BinaryFormat::Coff;
+    let pe = super::symbols::is_pe(tcx);
     asm::Mode {
         fp_arg,
         // Handlers that read `rbp` and PE unwind info need it (`asm::Mode::frame_pointer`).
@@ -234,6 +234,8 @@ struct Partitioner<'a, 'tcx> {
     tcx: TyCtxt<'tcx>,
     rt: RtItems,
     switches: &'a Switches,
+    /// How the image's machine code is generated ([`asm_mode`]), for lowering and merging.
+    mode: asm::Mode,
     cgu: &'a CodegenUnit<'tcx>,
     /// VM functions in image order.
     vm: Vec<VmFn<'tcx>>,
@@ -262,6 +264,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             tcx,
             rt,
             switches,
+            mode: asm_mode(tcx, rt, switches),
             cgu,
             vm: Vec::new(),
             index: FxHashMap::default(),
@@ -301,7 +304,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         candidates.sort_by_cached_key(|(i, _)| tcx.symbol_name(*i).name);
         let (mut ok, failed) = {
             let _t = tcx.prof.generic_activity("ryo_lower");
-            lower_all(tcx, &candidates, asm_mode(tcx, self.rt, self.switches), self.switches)
+            lower_all(tcx, &candidates, self.mode, self.switches)
         };
         if stats >= 2 {
             for (instance, why) in &failed {
@@ -691,7 +694,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         let mut w = ImageWriter::new(local_stable_crate_id(tcx));
         let rt_krate = self.rt.krate;
         let mut pool = Pool::default();
-        let mode = asm_mode(tcx, self.rt, self.switches);
+        let mode = self.mode;
         w.prepare(mode);
         if tcx.sess.target.binary_format == rustc_target::spec::BinaryFormat::MachO {
             // As LLVM writes `__eh_frame` (design/platforms.md).
