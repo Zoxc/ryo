@@ -208,7 +208,10 @@ This gives a third backend, built from the same toolchain, to compare against.
   `ryo-std-jit` (run with `RYO_JIT_THRESHOLD=0 RYO_JIT_SYNC=1`: every VM function, std's
   included, runs its JIT code from its first call), `ryo-std-jit-shuffle` (also
   `RYO_JIT_SHUFFLE=1`) and `ryo-std-jit-reencode` (through the re-encoding pipeline instead
-  of the SSA tier). Without one, they are skipped.
+  of the SSA tier). Without a current one (missing, or stale against its inputs), an
+  explicit `--full`, `--only std` or `--variant ryo-std-*` fails; otherwise (the fast suite,
+  `--only jit`, changed test programs, or `--full` reached from the changed paths) they are
+  skipped with a warning.
 - `test --cross T`: builds and links, without running, the corpus for target `T` (after
   `build --target T`), against stand-in system libraries ([platforms.md](platforms.md),
   cross-checking). `T` is `x86_64-pc-windows-msvc` (lld-link, `/force:unresolved`, empty

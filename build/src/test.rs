@@ -543,9 +543,13 @@ pub fn run(opts: &Options) -> Result<(), String> {
         }
     }
     let sel = select(&root, opts)?;
-    let wants_std = sel.full || sel.std || (sel.fast && FAST.iter().any(|(_, vs)| vs.iter().any(|v| v.starts_with("ryo-std"))));
+    // Whether any ryo-std variant is selected (also through `--only jit`, the JIT variants, or
+    // a changed test program, which runs under every variant).
+    let wants_std = variants.iter().any(|v| v.ryo_std && CORPUS.iter().any(|p| sel.corpus(p, v)));
     if wants_std && let Err(why) = ryo_sysroot_usable(&root) {
-        if sel.full || opts.only == Some(Area::Std) || opts.variants.iter().any(|v| v.starts_with("ryo-std")) {
+        // Only an explicit request fails; the fast suite and an escalation to `--full` from
+        // the changed paths skip them.
+        if opts.full || opts.only == Some(Area::Std) || opts.variants.iter().any(|v| v.starts_with("ryo-std")) {
             return Err(format!("the ryo-std variants can't run: {why}"));
         }
         eprintln!("[y] WARNING: the ryo-std variants are SKIPPED: {why}");
