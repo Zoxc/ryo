@@ -597,46 +597,6 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         }
     }
 
-    /// The arguments in frame slots, any number.
-    /// The arguments in frame slots, each with its size, as island operands (a slot given as
-    /// one is a receiver's data pointer).
-    fn island_args(&mut self, args: &[ArgSrc<'_, 'tcx>]) -> Result<Vec<(u32, u32)>, NeedsNative> {
-        args.iter()
-            .map(|a| match *a {
-                ArgSrc::Operand(op) => self.operand_slot(op).map(|(s, l)| (s, l.size.bytes() as u32)),
-                ArgSrc::Slot(s) => Ok((s, 8)),
-            })
-            .collect()
-    }
-
-    /// The arguments in frame slots.
-    fn arg_slots<const N: usize>(&mut self, args: &[ArgSrc<'_, 'tcx>]) -> Result<[u32; N], NeedsNative> {
-        if args.len() != N {
-            return native("intrinsic argument count");
-        }
-        let mut out = [0; N];
-        for (o, a) in out.iter_mut().zip(args) {
-            *o = self.arg_slot(a)?;
-        }
-        Ok(out)
-    }
-
-    /// An argument in a frame slot.
-    fn arg_slot(&mut self, a: &ArgSrc<'_, 'tcx>) -> Result<u32, NeedsNative> {
-        Ok(match *a {
-            ArgSrc::Operand(op) => self.operand_slot(op)?.0,
-            ArgSrc::Slot(s) => s,
-        })
-    }
-
-    /// The value of an argument if it is an integer constant.
-    fn arg_const(&self, a: &ArgSrc<'_, 'tcx>) -> Result<Option<u128>, NeedsNative> {
-        match *a {
-            ArgSrc::Operand(op) => self.const_int(op),
-            ArgSrc::Slot(_) => Ok(None),
-        }
-    }
-
     /// `d = a / v` for a nonzero constant `v` (w8-w64) that divides `a` exactly
     /// (`exact_div`, `ptr_offset_from`; UB otherwise): with `|v| = 2^k * m`, `m` odd, a shift
     /// by `k` and a multiply by the inverse of `m` mod 2^N (negated for a negative `v`).

@@ -43,6 +43,59 @@ pub enum ArgSrc<'b, 'tcx> {
     Slot(u32),
 }
 
+/// [`ArgSrc`] accessors.
+impl<'a, 'tcx> FnCx<'a, 'tcx> {
+    /// An argument in a frame slot, with its size (a slot given as one is a receiver's data
+    /// pointer).
+    fn arg_slot_sized(&mut self, a: &ArgSrc<'_, 'tcx>) -> Result<(u32, u32), NeedsNative> {
+        match *a {
+            ArgSrc::Operand(op) => self.operand_slot(op).map(|(s, l)| (s, l.size.bytes() as u32)),
+            ArgSrc::Slot(s) => Ok((s, 8)),
+        }
+    }
+
+    /// An argument in a frame slot.
+    pub(super) fn arg_slot(&mut self, a: &ArgSrc<'_, 'tcx>) -> Result<u32, NeedsNative> {
+        Ok(self.arg_slot_sized(a)?.0)
+    }
+
+    /// The arguments in frame slots, each with its size, as island operands.
+    pub(super) fn island_args(&mut self, args: &[ArgSrc<'_, 'tcx>]) -> Result<Vec<(u32, u32)>, NeedsNative> {
+        args.iter().map(|a| self.arg_slot_sized(a)).collect()
+    }
+
+    /// The `N` arguments of an intrinsic in frame slots.
+    pub(super) fn arg_slots<const N: usize>(&mut self, args: &[ArgSrc<'_, 'tcx>]) -> Result<[u32; N], NeedsNative> {
+        if args.len() != N {
+            return native("intrinsic argument count");
+        }
+        let mut out = [0; N];
+        for (o, a) in out.iter_mut().zip(args) {
+            *o = self.arg_slot(a)?;
+        }
+        Ok(out)
+    }
+
+    /// The value of an argument if it is an integer constant.
+    pub(super) fn arg_const(&self, a: &ArgSrc<'_, 'tcx>) -> Result<Option<u128>, NeedsNative> {
+        match *a {
+            ArgSrc::Operand(op) => self.const_int(op),
+            ArgSrc::Slot(_) => Ok(None),
+        }
+    }
+
+    /// Copies argument `a` (`size` bytes) to slot `d`.
+    fn arg_into(&mut self, a: ArgSrc<'_, 'tcx>, d: u32, size: u32) -> Result<(), NeedsNative> {
+        match a {
+            ArgSrc::Operand(op) => self.operand_into(op, Loc::Slot(d)),
+            ArgSrc::Slot(s) => {
+                self.mov(d, s, size);
+                Ok(())
+            }
+        }
+    }
+}
+
 /// How a call reaches its callee.
 #[derive(Clone, Copy)]
 enum Target<'tcx> {
@@ -565,16 +618,6 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             }
         }
         Ok(())
-    }
-
-    fn arg_into(&mut self, a: ArgSrc<'_, 'tcx>, d: u32, size: u32) -> Result<(), NeedsNative> {
-        match a {
-            ArgSrc::Operand(op) => self.operand_into(op, Loc::Slot(d)),
-            ArgSrc::Slot(s) => {
-                self.mov(d, s, size);
-                Ok(())
-            }
-        }
     }
 
     /// The destination slot of a call, and whether it must be stored to memory afterwards.
