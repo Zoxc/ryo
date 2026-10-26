@@ -737,8 +737,8 @@ for shuffled frames per image, `RtApi::shuffled`):
   the registry isn't torn down anyway); a thread killed inside `RtlAddFunctionTable` could
   leave ntdll's function table lock held, which would hang only an unwind through
   non-image code during the rest of the exit. macOS (x86_64, `vm/jit/src/sys/macos.rs`) has
-  its OS layer written but disabled (`SUPPORTED` false), since the backend writes no
-  Mach-O and so there are no images: it registers each FDE by itself (libunwind's
+  its OS layer written but disabled (`SUPPORTED` false): the backend writes Mach-O images,
+  but none has run yet. It registers each FDE by itself (libunwind's
   `__register_frame` takes one), maps with the hint-and-verify region search, and makes
   code executable with `mprotect` (a hardened runtime needs
   `allow-unsigned-executable-memory`). Untested on macOS; `y build` doesn't seal the JIT

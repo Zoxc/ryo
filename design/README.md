@@ -39,14 +39,15 @@ x86-64 calls of the VM's handlers, and uses
 - A JIT in the runtime that recompiles hot VM functions on a background thread and switches
   running calls over to the new code ([jit.md](jit.md)).
 
-Non-goals: incremental compilation, debuginfo for VM code, targets other than x86_64,
-Mach-O. The backend rejects `-Cincremental`: VM functions' symbols and the image come from
+Non-goals: incremental compilation, debuginfo for VM code, targets other than x86_64. The
+backend rejects `-Cincremental`: VM functions' symbols and the image come from
 per-session state the query system doesn't track, so reused objects could carry stale
 symbols. `cargo-ryo` sets `CARGO_INCREMENTAL=0`, so cargo's dev profile works.
 
-**Targets**: `x86_64-unknown-linux-gnu` (ELF) and `x86_64-pc-windows-msvc` (PE/COFF). Every
-format-specific mechanism has an ELF and a PE variant ([platforms.md](platforms.md)), and
-`y test` runs on both.
+**Targets**: `x86_64-unknown-linux-gnu` (ELF), `x86_64-pc-windows-msvc` (PE/COFF) and
+`x86_64-apple-darwin` (Mach-O; arm64 Macs run it under Rosetta). Every format-specific
+mechanism has an ELF, a PE and a Mach-O variant ([platforms.md](platforms.md)), and `y test`
+runs on Linux and Windows. macOS support is implemented but has not run on a Mac.
 
 ## Terms
 

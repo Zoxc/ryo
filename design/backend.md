@@ -83,7 +83,7 @@ and `codegen_crate` reads them.
    args). The merge pass deduplicates islands (same template + args → one instance), assigns
    function indices and symbols, rewrites each function's relocation targets to them,
    and adds the function to the image writer under its own symbol. The handlers and `ryo_probe_stack` the code
-   calls, the JIT records' `ryo_jit_trip_entry` and `ryo_jit_trip_osr`, and `rust_eh_personality` on ELF, are added to the image's LTO roots
+   calls, the JIT records' `ryo_jit_trip_entry` and `ryo_jit_trip_osr`, and `rust_eh_personality` on ELF and Mach-O, are added to the image's LTO roots
    ([Query overrides](#query-overrides-provide)).
 4. **Build the native CGU.** This is a copy of the original CGU, with the VM functions removed
    and the stub instances (islands and `c_main`) added. Our override returns exactly this CGU,
@@ -124,7 +124,7 @@ and `codegen_crate` reads them.
        That only depends on `instantiation_mode`, not on partitioning, so there is no query
        cycle. These items, and all other image-referenced `Internal` items whose symbols
        are already crate-unique (statics, generics), become `External` + `Hidden`.
-     - **The TLS shim**, which the backend adds itself on ELF (on PE rustc creates and
+     - **The TLS shim**, which the backend adds itself on ELF and Mach-O (on PE rustc creates and
        exports it, [lowering.md](lowering.md#rvalues)): the same static always gives the same
        body, so it is `WeakODR` + `Hidden`. cg_llvm puts WeakODR functions in their own comdat
        where the target supports it (`predefine_fn`, `rustc_codegen_llvm/src/mono_item.rs:80-84`),
@@ -158,7 +158,9 @@ and `codegen_crate` reads them.
    read-only part is `.data.rel.ro.ryo_image` (writable only while relocating), the writable
    part `.data.ryo_image`, the code `.text.ryo_image`, and the unwind information
    `.eh_frame` and `.gcc_except_table.ryo_image`; on PE they are `.rdata$ryo_image`,
-   `.data$ryo_image`, `.text$ryo_image`, `.pdata` and `.xdata` ([platforms.md](platforms.md)). Limitation: with `--emit=obj` (no linking) the emitted
+   `.data$ryo_image`, `.text$ryo_image`, `.pdata` and `.xdata`; on Mach-O `__DATA,__const`,
+   `__DATA,__data`, `__TEXT,__text`, `__TEXT,__eh_frame` and `__TEXT,__gcc_except_tab`
+   ([platforms.md](platforms.md)). Limitation: with `--emit=obj` (no linking) the emitted
    `.o` lacks the image, because `join_codegen` adds the image module after cg_ssa has copied
    the module objects to the outputs; and no registry object is generated then. A binary with a VM `main` also gets `__ryo_main` in this
    object ([stubs.md](stubs.md#program-entry-main)).
@@ -212,7 +214,8 @@ and `codegen_crate` reads them.
    - **Plain rustc can't do the final link** of ryo-built rlibs: without our backend there is
      no registry object, and `__ryo_registry_anchor` is undefined. Final links always go
      through `rustc-ryo`.
-     A constructor (`.init_array.00000` on ELF, `.CRT$XCT` on PE, ahead of other constructors) calls
+     A constructor (`.init_array.00000` on ELF, `.CRT$XCT` on PE, ahead of other constructors;
+     `__mod_init_func` on Mach-O) calls
      `ryo_vm_register(images, n)`. The registry's own symbols are local, so a dylib and the
      exe that links it don't clash.
    - **`ryo_rt`** arrives through `--extern force:ryo_rt` (`rustc_session/src/config.rs:2621`),

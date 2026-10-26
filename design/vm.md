@@ -573,7 +573,9 @@ panic runtime, as through native frames. The image carries the unwind informatio
   nothing, so only an asynchronous unwinder (a profiler's) could stop between them and the
   `ret` or tail jump. The rules start after the counter check, and the entry's counter stub
   has the entry's ([JIT records and counters](#jit-records-and-counters)). The linker merges the section into the program's `.eh_frame` (and its
-  `.eh_frame_hdr`).
+  `.eh_frame_hdr`). Mach-O takes the same section in LLVM's form: 8-byte FDE and LSDA
+  pointers without relocations, and the personality through the GOT
+  ([platforms.md](platforms.md#mach-o-x86_64-apple-darwin)).
 - **LSDA** (`asm::lsda`, in `.gcc_except_table.ryo_image`): per function, the call-site
   table `rust_eh_personality` reads (`uleb128` entries, landing pads relative to the
   function start, no type table). Every call that may unwind is a call site: the call of the
@@ -729,7 +731,7 @@ jit records   with counters, one `JitRecord` per function, 64-aligned, past the 
               counters](#jit-records-and-counters))
 ```
 
-**Text** (`.text.ryo_image` / `.text$ryo_image`): every function's machine code, in function
+**Text** (`.text.ryo_image` / `.text$ryo_image` / `__TEXT,__text`): every function's machine code, in function
 table order, each aligned to 16 (padded with `int3`), with the function's own symbol
 on it: global, with the function's linkage and visibility, when native code or the image
 calls it by name, local otherwise (backtraces, profilers) ([backend.md](backend.md#pipeline)). **Unwind**: `.eh_frame` and
@@ -746,6 +748,8 @@ calls it by name, local otherwise (backtraces, profilers) ([backend.md](backend.
   - `Pc32` (`R_X86_64_PC32` / `REL32`): the code's RIP-relative fields (symbol slots,
     constants, the data area, code constants, the function's JIT record), and the
     `.eh_frame` references.
+  - `Pc64`: the 8-byte `.eh_frame` pointers of Mach-O images (`EhPointers::Abs8`), which
+    the backend writes without relocations.
   - `Call32` (`R_X86_64_PLT32` / `REL32`): calls of the handlers and `ryo_probe_stack`.
   - `Rva32` (`IMAGE_REL_AMD64_ADDR32NB`): the `.pdata` entries.
 

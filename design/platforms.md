@@ -1,6 +1,7 @@
-# Platforms: ELF and PE
+# Platforms: ELF, PE and Mach-O
 
-Targets: `x86_64-unknown-linux-gnu` and `x86_64-pc-windows-msvc`.
+Targets: `x86_64-unknown-linux-gnu`, `x86_64-pc-windows-msvc` and `x86_64-apple-darwin`
+(Mach-O, [below](#mach-o-x86_64-apple-darwin); arm64 Macs run it under Rosetta).
 
 | Concern | ELF (linux-gnu) | PE/COFF (windows-msvc) |
 |---|---|---|
@@ -24,12 +25,31 @@ x86_64-pc-windows-msvc`: objects, sections, relocations and an lld-link link aga
 import libraries). Nothing has run on Windows yet. It counts as unverified until the Windows
 job of `.github/workflows/ci.yml` (`y build`, `y test` on windows-latest) has passed.
 
-**macOS** is not a target: the backend writes no Mach-O (a non-goal, [README](README.md)).
-`y build --target x86_64-apple-darwin` still builds std and `ryo_rt` for it, without the
-JIT. The JIT's OS layer for x86_64 macOS (`vm/jit/src/sys/macos.rs`: one
-`__register_frame` per FDE; `vmem`'s hint-and-verify `mmap` and `mprotect`; `__ulock` waits in
-the trips) is written and type-checked, but disabled, and has never run.
+## Mach-O (x86_64-apple-darwin)
+
+macOS uses the ELF column's mechanisms (SysV ABI, Itanium unwinding with landing pads, no
+indirect slots: dyld binds data pointers to symbols in other dylibs, and the TLS shims are
+the backend's, as `dll_tls_export` holds), in Mach-O objects (`objfile.rs`, `MachO`). arm64
+is out of scope.
+
+| Concern | Mach-O |
+|---|---|
+| Symbols | rustc's names with the `_` prefix (`ObjectFormat::mangle`; the `object` crate's own mangling is off, as it skips symbols of unknown kind), also when reading the image symbols out of an rlib's symbol table. Hidden is `N_PEXT`, weak `N_WEAK_DEF`, protected is exported as default. `LC_BUILD_VERSION` with the session's deployment target (`MACOSX_DEPLOYMENT_TARGET`, `Session::apple_deployment_target`), as rustc's own objects have it. The objects don't set `MH_SUBSECTIONS_VIA_SYMBOLS`: calls between image functions have no relocations, so each section stays one atom |
+| Image sections | `__DATA,__const` (read-only part; ld64 moves it to `__DATA_CONST`), `__DATA,__data`, the code in `__TEXT,__text`, the anchor and `__ryo_main` slots in `__DATA,__ryo_anchor` and `__DATA,__ryo_main` (one object can't have two sections of one name) |
+| Unwind info of VM code | `__TEXT,__eh_frame` (`S_COALESCED`, no-TOC, strip-static-syms, live-support, as LLVM's) and `__TEXT,__gcc_except_tab`, in the form LLVM writes, which is what ld64, ld-prime and lld read: the CIE's personality is an `X86_64_RELOC_GOT` to `_rust_eh_personality` (the image's personality slot stays, unused by it), the FDE and LSDA pointers are 8 bytes (`DW_EH_PE_pcrel \| DW_EH_PE_absptr`, `EhPointers::Abs8`: lld reads 4-byte ones unsigned and loses FDEs whose code comes before them) and have no relocations: they hold the targets' addresses in the object (`patch_by_address`, after the object is written), from which the linker finds them. No `__compact_unwind`: the linker makes `__unwind_info` from the FDEs (lld keeps them as DWARF entries; ld64 may turn some into compact encodings) |
+| Relocations | All extern: `object` writes implicit addends without the target section's address, which section-numbered ones need, so references to a section go to a linker-private local symbol at its start (`l__text`, …). `X86_64_RELOC_UNSIGNED` (data), `X86_64_RELOC_SIGNED` (RIP-relative code fields; an ELF addend of −4 is an implicit 0, and an immediate after the field needs no `SIGNED_1` with an extern target), `X86_64_RELOC_BRANCH` (handler and probe calls; ld64 adds a stub for a dylib `ryo_rt`), `X86_64_RELOC_GOT` (the personality). No subtractor pairs: nothing needs one |
+| Image registry | The registry object's constructor (as on ELF: `lea rdi`, `mov esi`, `jmp _ryo_vm_register`) in `__DATA,__mod_init_func` (`S_MOD_INIT_FUNC_POINTERS`). dyld runs an image's initializers after those of the dylibs it depends on, in section order within the image; std on macOS (which reads its arguments through `_NSGetArgv`) has no initializer that could run VM code first, but another crate's constructor could, if the linker puts it first |
+| Runtime, JIT | `y build --target x86_64-apple-darwin` (packaging, not the backend). The JIT's OS layer (`vm/jit/src/sys/macos.rs`: one `__register_frame` per FDE; `vmem`'s hint-and-verify `mmap` and `mprotect`; `__ulock` waits in the trips) is written and type-checked, but disabled (`SUPPORTED` false) |
+
+**Status**: implemented and checked from Linux only: `objfile.rs`'s unit tests read the image
+and registry objects back with `object` (sections, symbols, relocation types and implicit
+addends, the `__eh_frame` layout and pointers); by hand, a program built with
+`rustc-ryo --target x86_64-apple-darwin` linked with `rust-lld -flavor darwin` against
+stand-in `.tbd` libraries (`-undefined dynamic_lookup`) gets a DWARF `__unwind_info` entry
+with its LSDA for every VM function, the constructor in `__mod_init_func` and the registry
+list and `__ryo_main` pointing where they should. Nothing has run on macOS, and neither ld64
+nor ld-prime has linked it.
 
 The backend's format-specific parts sit behind one `trait ObjectFormat`, covering the image
-section, symbol and relocation kinds, the registry constructor section and import
-indirection. `object::BinaryFormat` picks the implementation from the target spec.
+section, symbol and relocation kinds, the registry constructor section, import indirection,
+symbol name mangling and Mach-O's relocation-free `__eh_frame`. `object::BinaryFormat` picks the implementation from the target spec.
