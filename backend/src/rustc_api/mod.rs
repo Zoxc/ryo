@@ -220,7 +220,7 @@ impl CodegenBackend for RyoBackend {
             linked_roots: tcx.crate_types().iter().map(|&t| (t, partition::linked_roots(tcx, t))).collect(),
             macho: tcx.sess.target.binary_format == rustc_target::spec::BinaryFormat::MachO,
         });
-        dump_lean::dump(tcx, &self.switches);
+        dump_lean::dump(tcx, &self.switches, results);
         // The native CGU (step 4), compiled by cg_llvm as usual.
         let llvm = self.llvm.codegen_crate(tcx);
         Box::new(RyoOngoingCodegen { llvm, image: (image_name, image_path) })

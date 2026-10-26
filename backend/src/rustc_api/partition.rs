@@ -34,9 +34,12 @@ pub struct RtItems {
     pub fp_arg: DefId,
 }
 
-/// A value computed once per session and kept in a static (providers are plain fns). It is
-/// keyed on the session's `GlobalCtxt` address, so a second session in the same process is a
-/// fatal error instead of reading stale values.
+/// A value computed once per session and kept in a static. Only [`Results`] needs one: the
+/// partition provider hands it to the exported-symbols providers, and query providers are plain
+/// fns with no per-session slot to reach (rustc_codegen_cranelift overrides no queries, so it
+/// keeps all its state in the backend struct and `OngoingCodegen`). It is keyed on the
+/// session's `GlobalCtxt` address, so a second session in the same process is a fatal error
+/// instead of reading stale values.
 struct SessionCell<T>(OnceLock<(usize, T)>);
 
 impl<T> SessionCell<T> {

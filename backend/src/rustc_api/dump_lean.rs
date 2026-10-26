@@ -52,10 +52,10 @@ use rustc_middle::ty::{self, Instance, InstanceKind, ShimKind, Ty, TyCtxt, Typin
 use rustc_target::callconv::{ArgAbi, FnAbi, PassMode};
 
 /// Writes the dump if `RYO_DUMP_LEAN` is set and the crate has an entry function.
-pub fn dump(tcx: TyCtxt<'_>, switches: &super::switches::Switches) {
+pub fn dump(tcx: TyCtxt<'_>, switches: &super::switches::Switches, results: &super::partition::Results) {
     let Some(dir) = &switches.dump_lean else { return };
     let dir = std::path::PathBuf::from(dir);
-    write_certs(tcx, &dir);
+    write_certs(tcx, results, &dir);
     let Some((main, _)) = tcx.entry_fn(()) else { return };
     let mut d = Dumper::new(tcx);
     let start = d.instance(Instance::mono(tcx, main));
@@ -86,8 +86,7 @@ pub fn dump(tcx: TyCtxt<'_>, switches: &super::switches::Switches) {
 }
 
 /// Writes `<dir>/<crate name>.cert.json`, the certificates of the image's VM functions.
-fn write_certs(tcx: TyCtxt<'_>, dir: &std::path::Path) {
-    let Some(results) = super::partition::results(tcx) else { return };
+fn write_certs(tcx: TyCtxt<'_>, results: &super::partition::Results, dir: &std::path::Path) {
     let mut out = String::from("{\"functions\":[");
     for (i, (symbol, cert)) in results.certs.iter().enumerate() {
         if i > 0 {
