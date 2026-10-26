@@ -6,8 +6,10 @@
 //!   list in `src/ops.rs`.
 //! - [`abi`]: frame header constants and [`abi::arg_block`], the argument block layout.
 //! - [`asm`]: the machine-code form of instructions: handler register layouts, and (`alloc`)
-//!   the x86-64 encoder and decoder, and the reduced instruction set ([`asm::reduced`]): the
-//!   instructions that run as native code, and one `handler` instruction for the rest.
+//!   the x86-64 encoder and decoder, and the mapping to the reduced set ([`asm::reduce`]).
+//! - [`reduced`]: the reduced instruction set, generated from `src/reduced_ops.rs`: the
+//!   instructions that run as native code, and one `handler` instruction for the rest. It
+//!   shares [`full`]'s operand machinery (`define_ops!`), hence `full`'s `#[macro_use]`.
 //! - [`image`]: the image format, its zero-copy reader, the writer (`alloc`), and the portal
 //!   `ID` helpers.
 //! - [`jit`]: the JIT's SSA tier: the handlers' frame effects, and (`alloc`) the SSA IR, its

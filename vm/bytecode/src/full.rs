@@ -1,6 +1,7 @@
 //! The full instruction set: operand types, the per-opcode operand table, decoding, encoding
-//! and disassembly. The lowering emits it; the reduced set ([`crate::asm::reduced`]) is the
-//! subset of it that runs as native code, with every handler call one `handler` instruction.
+//! and disassembly. The lowering emits it; the reduced set ([`crate::reduced`], mapped to by
+//! [`crate::asm::reduce`]) is the subset of it that runs as native code, with every handler
+//! call one `handler` instruction.
 //!
 //! Everything here is derived from the single opcode list in `src/ops.rs`: the [`Opcode`]
 //! enum, the [`OP_INFO`] table (mnemonic, operand names and kinds, fixed length), the decoded
@@ -165,6 +166,7 @@ pub enum OperandKind {
     /// A count word followed by that many elements of the given kind.
     List(ElemKind),
     /// The handler of a reduced `handler` ([`crate::reduced::Handler`]): a full opcode.
+    /// Reduced set only: no full-set opcode has this operand.
     Handler,
 }
 
@@ -186,6 +188,7 @@ pub enum ElemKind {
     /// [`Case128`] (5 words).
     Case128,
     /// [`crate::reduced::Arg`] (3 words): a reduced `handler`'s argument registers.
+    /// Reduced set only.
     Arg,
 }
 
