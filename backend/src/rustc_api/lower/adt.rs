@@ -94,9 +94,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                             rustc_abi::Primitive::Int(_, signed) => !tag.is_bool() && signed,
                             rustc_abi::Primitive::Float(_) | rustc_abi::Primitive::Pointer(_) => false,
                         };
-                        self.with_place_slot(dst, |fx, d| {
+                        self.into_place(dst, |fx, d| {
                             fx.int_cast(d, t, tw, dw, signed);
-                            Ok(())
                         })
                     }
                     TagEncoding::Niche { untagged_variant, ref niche_variants, niche_start } => {
@@ -108,9 +107,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                             end: niche_variants.last.as_u32(),
                             niche_start: tw.truncate(niche_start),
                         };
-                        self.with_place_slot(dst, |fx, d| {
+                        self.into_place(dst, |fx, d| {
                             fx.niche_discr(d, dw, n);
-                            Ok(())
                         })
                     }
                 }

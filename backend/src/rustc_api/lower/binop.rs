@@ -41,10 +41,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let stride = u32::try_from(self.layout_of(pointee)?.size.bytes()).map_err(|_| NeedsNative("Offset stride above 4 GiB".into()))?;
                 let (p, _) = self.operand_slot(a)?;
                 let (i, _) = self.operand_slot(b)?;
-                self.with_place_slot(dst, |fx, d| {
-                    fx.op(ryo_bytecode::full::Opcode::PtrIndex, &[d, p, i, stride]);
-                    Ok(())
-                })
+                self.op_to(dst, ryo_bytecode::full::Opcode::PtrIndex, &[p, i, stride])
             }
             BinOp::AddWithOverflow | BinOp::SubWithOverflow | BinOp::MulWithOverflow => {
                 let ScalarKind::Int { w, signed } = self.scalar_kind(la)? else { return native("float overflow op") };
@@ -62,9 +59,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let (sa, _) = self.operand_slot(a)?;
                 let (sb, _) = self.operand_slot(b)?;
                 let (v, o) = (dst.layout.fields.offset(0).bytes() as u32, dst.layout.fields.offset(1).bytes() as u32);
-                self.with_place_slot(dst, |fx, d| {
+                self.into_place(dst, |fx, d| {
                     fx.op(opc, &[d + v, d + o, sa, sb]);
-                    Ok(())
                 })
             }
             BinOp::Cmp => {
@@ -72,10 +68,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let (sa, _) = self.operand_slot(a)?;
                 let (sb, _) = self.operand_slot(b)?;
                 let su = if signed { "S" } else { "U" };
-                self.with_place_slot(dst, |fx, d| {
-                    fx.op(opw(&format!("Cmp3{su}"), w), &[d, sa, sb]);
-                    Ok(())
-                })
+                self.op_to(dst, opw(&format!("Cmp3{su}"), w), &[sa, sb])
             }
             BinOp::Eq => self.compare(dst, Cmp::Eq, a, b),
             BinOp::Ne => self.compare(dst, Cmp::Ne, a, b),
@@ -106,9 +99,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let (sa, la) = self.operand_slot(a)?;
         let (sb, lb) = self.operand_slot(b)?;
         let n = dst.layout.size.bytes() as u32;
-        self.with_place_slot(dst, |fx, d| {
+        self.into_place(dst, |fx, d| {
             fx.island(template, &[], &[(sa, la.size.bytes() as u32), (sb, lb.size.bytes() as u32), (d, n)], None);
-            Ok(())
         })
     }
 
@@ -153,13 +145,10 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             && let v = w.truncate(v)
             && (v == 1 || (signed && v == w.truncate(u128::MAX)))
         {
-            return self.with_place_slot(dst, |fx, d| {
-                match op {
-                    BinOp::Rem => fx.imm(w, d, 0),
-                    _ if v == 1 => fx.mov(d, sa, w.bytes()),
-                    _ => fx.op_imm("Mul", w, d, sa, v),
-                }
-                Ok(())
+            return self.into_place(dst, |fx, d| match op {
+                BinOp::Rem => fx.imm(w, d, 0),
+                _ if v == 1 => fx.mov(d, sa, w.bytes()),
+                _ => fx.op_imm("Mul", w, d, sa, v),
             });
         }
         // Unsigned `x / 2^k` and `x % 2^k`: `shr.u.imm x, k` and `and.imm x, 2^k - 1`.
@@ -170,9 +159,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         {
             let v = w.truncate(v);
             let (fam, imm) = if op == BinOp::Div { ("ShrU", u128::from(v.trailing_zeros())) } else { ("And", v - 1) };
-            return self.with_place_slot(dst, |fx, d| {
+            return self.into_place(dst, |fx, d| {
                 fx.op_imm(fam, w, d, sa, imm);
-                Ok(())
             });
         }
         // Unsigned w8-w32 `x / b` and `x % b` by another constant: `q = (zext(x) * M) >> p`
@@ -189,26 +177,21 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             self.op_imm("Mul", Width::W64, t, t, m);
             self.op_imm("ShrU", Width::W64, t, t, u128::from(p));
             if op == BinOp::Div {
-                return self.with_place_slot(dst, |fx, d| {
+                return self.into_place(dst, |fx, d| {
                     fx.int_cast(d, t, Width::W64, w, false);
-                    Ok(())
                 });
             }
             let q = self.frame.temp(u64::from(w.bytes()), u64::from(w.bytes()));
             self.int_cast(q, t, Width::W64, w, false);
             self.op_imm("Mul", w, q, q, v);
-            return self.with_place_slot(dst, |fx, d| {
-                fx.op(opw("Sub", w), &[d, sa, q]);
-                Ok(())
-            });
+            return self.op_to(dst, opw("Sub", w), &[sa, q]);
         }
         // `x op constant`: the `.imm` form.
         if let Some(v) = self.const_int(b)?
             && try_opcode(&format!("{family}Imm{}", w.suffix())).is_some()
         {
-            return self.with_place_slot(dst, |fx, d| {
+            return self.into_place(dst, |fx, d| {
                 fx.op_imm(&family, w, d, sa, v);
-                Ok(())
             });
         }
         let (mut sb, lb) = self.operand_slot(b)?;
@@ -220,10 +203,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             sb = t;
         }
         let opc = opw(&family, w);
-        self.with_place_slot(dst, |fx, d| {
-            fx.op(opc, &[d, sa, sb]);
-            Ok(())
-        })
+        self.op_to(dst, opc, &[sa, sb])
     }
 
     fn float_arith(&mut self, dst: PlaceVal<'tcx>, op: BinOp, f: FloatWidth, a: &Operand<'tcx>, b: &Operand<'tcx>) -> Result<(), NeedsNative> {
@@ -238,10 +218,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let (sa, _) = self.operand_slot(a)?;
         let (sb, _) = self.operand_slot(b)?;
         let opc = opcode(&format!("{family}{}", f.suffix()));
-        self.with_place_slot(dst, |fx, d| {
-            fx.op(opc, &[d, sa, sb]);
-            Ok(())
-        })
+        self.op_to(dst, opc, &[sa, sb])
     }
 
     fn compare(&mut self, dst: PlaceVal<'tcx>, cmp: Cmp, a: &Operand<'tcx>, b: &Operand<'tcx>) -> Result<(), NeedsNative> {
@@ -262,10 +239,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 Cmp::Ge => ("Fle", sb, sa),
             };
             let opc = opcode(&format!("{name}{}", f.suffix()));
-            return self.with_place_slot(dst, |fx, d| {
-                fx.op(opc, &[d, x, y]);
-                Ok(())
-            });
+            return self.op_to(dst, opc, &[x, y]);
         }
         let ScalarKind::Int { w, signed } = kind else { unreachable!() };
         let su = if signed { "S" } else { "U" };
@@ -279,9 +253,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         };
         if let Some(v) = self.const_int(b)? {
             let family = name(cmp);
-            return self.with_place_slot(dst, |fx, d| {
+            return self.into_place(dst, |fx, d| {
                 fx.op_imm(&family, w, d, sa, v);
-                Ok(())
             });
         }
         let (sb, _) = self.operand_slot(b)?;
@@ -291,10 +264,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             c => (c, sa, sb),
         };
         let opc = opw(&name(c), w);
-        self.with_place_slot(dst, |fx, d| {
-            fx.op(opc, &[d, x, y]);
-            Ok(())
-        })
+        self.op_to(dst, opc, &[x, y])
     }
 
     /// Wide pointer compares: data, then metadata (lexicographic, as cg_ssa does).
@@ -306,10 +276,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             let (name, combine) = if let Cmp::Eq = cmp { ("EqW64", "AndW8") } else { ("NeW64", "OrW8") };
             self.op(opcode(name), &[t, sa, sb]);
             self.op(opcode(name), &[t + 1, sa + 8, sb + 8]);
-            return self.with_place_slot(dst, |fx, d| {
-                fx.op(opcode(combine), &[d, t, t + 1]);
-                Ok(())
-            });
+            return self.op_to(dst, opcode(combine), &[t, t + 1]);
         }
         // x < y is x.data < y.data, or equal data and x.meta < y.meta (`<=` on the metadata
         // for `<=`). `>` and `>=` swap the operands.
@@ -319,10 +286,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         self.op(opcode("EqW64"), &[t + 1, x, y]);
         self.op(opcode(meta), &[t + 2, x + 8, y + 8]);
         self.op(opcode("AndW8"), &[t + 1, t + 1, t + 2]);
-        self.with_place_slot(dst, |fx, d| {
-            fx.op(opcode("OrW8"), &[d, t, t + 1]);
-            Ok(())
-        })
+        self.op_to(dst, opcode("OrW8"), &[t, t + 1])
     }
 
     pub fn unary_op(&mut self, dst: PlaceVal<'tcx>, op: UnOp, a: &Operand<'tcx>) -> Result<(), NeedsNative> {
@@ -333,9 +297,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     return Ok(()); // thin pointer: `()`
                 }
                 let (s, _) = self.operand_slot(a)?;
-                self.with_place_slot(dst, |fx, d| {
+                self.into_place(dst, |fx, d| {
                     fx.mov(d, s + 8, 8);
-                    Ok(())
                 })
             }
             UnOp::Not | UnOp::Neg => {

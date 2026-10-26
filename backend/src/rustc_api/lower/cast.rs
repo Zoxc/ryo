@@ -61,31 +61,27 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     // No VM instructions for `f16`/`f128`: the `as_cast` island.
                     let (s, _) = self.operand_slot(op)?;
                     let (sn, dn) = (src.size.bytes() as u32, to_layout.size.bytes() as u32);
-                    return self.with_place_slot(dst, |fx, d| {
+                    return self.into_place(dst, |fx, d| {
                         fx.island(AS_CAST, &[src.ty.into(), to.into()], &[(s, sn), (d, dn)], None);
-                        Ok(())
                     });
                 }
                 let from = self.scalar_kind(src)?;
                 let into = self.scalar_kind(to_layout)?;
                 let (s, _) = self.operand_slot(op)?;
-                self.with_place_slot(dst, |fx, d| {
-                    match (from, into) {
-                        (ScalarKind::Int { w: a, signed }, ScalarKind::Int { w: b, .. }) => fx.int_cast(d, s, a, b, signed),
-                        (ScalarKind::Float(f), ScalarKind::Int { w, signed }) => {
-                            let su = if signed { "S" } else { "U" };
-                            fx.op(opcode(&format!("CvtF2iSat{su}{}{}", f.suffix(), w.suffix())), &[d, s]);
-                        }
-                        (ScalarKind::Int { w, signed }, ScalarKind::Float(f)) => {
-                            let su = if signed { "S" } else { "U" };
-                            fx.op(opcode(&format!("CvtI2f{su}{}{}", w.suffix(), f.suffix())), &[d, s]);
-                        }
-                        (ScalarKind::Float(a), ScalarKind::Float(b)) if a == b => fx.mov(d, s, to_layout.size.bytes() as u32),
-                        (ScalarKind::Float(a), ScalarKind::Float(b)) => {
-                            fx.op(opcode(&format!("CvtF2f{}{}", a.suffix(), b.suffix())), &[d, s]);
-                        }
+                self.into_place(dst, |fx, d| match (from, into) {
+                    (ScalarKind::Int { w: a, signed }, ScalarKind::Int { w: b, .. }) => fx.int_cast(d, s, a, b, signed),
+                    (ScalarKind::Float(f), ScalarKind::Int { w, signed }) => {
+                        let su = if signed { "S" } else { "U" };
+                        fx.op(opcode(&format!("CvtF2iSat{su}{}{}", f.suffix(), w.suffix())), &[d, s]);
                     }
-                    Ok(())
+                    (ScalarKind::Int { w, signed }, ScalarKind::Float(f)) => {
+                        let su = if signed { "S" } else { "U" };
+                        fx.op(opcode(&format!("CvtI2f{su}{}{}", w.suffix(), f.suffix())), &[d, s]);
+                    }
+                    (ScalarKind::Float(a), ScalarKind::Float(b)) if a == b => fx.mov(d, s, to_layout.size.bytes() as u32),
+                    (ScalarKind::Float(a), ScalarKind::Float(b)) => {
+                        fx.op(opcode(&format!("CvtF2f{}{}", a.suffix(), b.suffix())), &[d, s]);
+                    }
                 })
             }
             CastKind::PtrToPtr => {
@@ -96,9 +92,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 if from == 16 && to == 8 {
                     // Wide to thin: drop the metadata.
                     let (s, _) = self.operand_slot(op)?;
-                    self.with_place_slot(dst, |fx, d| {
+                    self.into_place(dst, |fx, d| {
                         fx.mov(d, s, 8);
-                        Ok(())
                     })
                 } else {
                     native("PtrToPtr between unexpected sizes")
@@ -138,9 +133,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
 
     /// `addr.sym` of `instance` (its portal if it is a VM function).
     fn fn_addr_into(&mut self, dst: PlaceVal<'tcx>, instance: Instance<'tcx>) -> Result<(), NeedsNative> {
-        self.with_place_slot(dst, |fx, d| {
+        self.into_place(dst, |fx, d| {
             fx.addr_sym(d, CodeReloc::Symbol { target: instance });
-            Ok(())
         })
     }
 

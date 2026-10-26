@@ -171,4 +171,21 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         }
         self.with_slot(dst.loc, dst.layout.size.bytes() as u32, f)
     }
+
+    /// [`with_place_slot`](Self::with_place_slot) for an infallible `f`.
+    pub fn into_place(&mut self, dst: PlaceVal<'tcx>, f: impl FnOnce(&mut Self, u32)) -> Result<(), NeedsNative> {
+        self.with_place_slot(dst, |fx, d| {
+            f(fx, d);
+            Ok(())
+        })
+    }
+
+    /// `op d, srcs...` into the place `dst`.
+    pub fn op_to(&mut self, dst: PlaceVal<'tcx>, op: Opcode, srcs: &[u32]) -> Result<(), NeedsNative> {
+        self.into_place(dst, |fx, d| {
+            let mut ops = vec![d];
+            ops.extend_from_slice(srcs);
+            fx.op(op, &ops);
+        })
+    }
 }
