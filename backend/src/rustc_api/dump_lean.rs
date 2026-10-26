@@ -34,7 +34,7 @@
 use std::collections::VecDeque;
 use std::rc::Rc;
 
-use super::json::{J, ctor, num, obj, opt, pair, tag, write_str};
+use super::json::{J, ctor, num, obj, opt, pair, tag};
 use rustc_abi::{
     BackendRepr, FieldsShape, HasDataLayout, IntegerType, Primitive, Scalar, Size, TagEncoding, TargetDataLayout, Variants, WrappingRange,
 };
@@ -77,40 +77,23 @@ pub fn dump(tcx: TyCtxt<'_>, switches: &super::switches::Switches, results: &sup
             ]),
         ),
     ]);
-    let mut out = String::new();
-    program.write(&mut out);
-    let path = dir.join(format!("{}.json", tcx.crate_name(LOCAL_CRATE)));
-    if let Err(e) = std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(&path, out)) {
-        tcx.dcx().fatal(format!("RYO_DUMP_LEAN: writing {}: {e}", path.display()));
-    }
+    write_json(tcx, &dir, "json", &program);
 }
 
 /// Writes `<dir>/<crate name>.cert.json`, the certificates of the image's VM functions.
 fn write_certs(tcx: TyCtxt<'_>, results: &super::partition::Results, dir: &std::path::Path) {
-    let mut out = String::from("{\"functions\":[");
-    for (i, (symbol, cert)) in results.certs.iter().enumerate() {
-        if i > 0 {
-            out.push(',');
-        }
-        out.push_str("{\"symbol\":");
-        write_str(&mut out, symbol);
-        out.push_str(",\"cert\":");
-        out.push_str(cert);
-        out.push('}');
-    }
-    out.push_str("],\"islands\":[");
-    for (i, (symbol, template)) in results.islands.iter().enumerate() {
-        if i > 0 {
-            out.push(',');
-        }
-        out.push_str("{\"symbol\":");
-        write_str(&mut out, symbol);
-        out.push_str(",\"template\":");
-        write_str(&mut out, template);
-        out.push('}');
-    }
-    out.push_str("]}");
-    let path = dir.join(format!("{}.cert.json", tcx.crate_name(LOCAL_CRATE)));
+    let entry = |key, symbol: &str, v| obj(vec![("symbol", J::Str(symbol.into())), (key, v)]);
+    let functions = results.certs.iter().map(|(symbol, cert)| entry("cert", symbol, J::Raw(cert.as_str().into())));
+    let islands = results.islands.iter().map(|(symbol, template)| entry("template", symbol, J::Str(template.clone())));
+    let certs = obj(vec![("functions", J::Arr(functions.collect())), ("islands", J::Arr(islands.collect()))]);
+    write_json(tcx, dir, "cert.json", &certs);
+}
+
+/// Writes `j` to `<dir>/<crate name>.<ext>`, or fails the compilation.
+fn write_json(tcx: TyCtxt<'_>, dir: &std::path::Path, ext: &str, j: &J) {
+    let mut out = String::new();
+    j.write(&mut out);
+    let path = dir.join(format!("{}.{ext}", tcx.crate_name(LOCAL_CRATE)));
     if let Err(e) = std::fs::create_dir_all(dir).and_then(|()| std::fs::write(&path, out)) {
         tcx.dcx().fatal(format!("RYO_DUMP_LEAN: writing {}: {e}", path.display()));
     }
@@ -157,7 +140,7 @@ enum GlobalKey {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum GKind {
     Const,
-    /// A vtable, with the `dyn` type's name if known.
+    /// A vtable (the `dyn` type's name, if known, is in `Dumper::global_kinds`).
     Vtable,
     Static,
 }
@@ -200,7 +183,7 @@ impl<'tcx> Dumper<'tcx> {
     }
 
     fn typing_env(&self) -> TypingEnv<'tcx> {
-        TypingEnv::fully_monomorphized()
+        self.cx.typing_env()
     }
 
     fn run(&mut self) {
@@ -797,11 +780,6 @@ impl<'tcx> Dumper<'tcx> {
             _ => ctor("traitObject", vec![("t", J::Str(format!("ryo-dump: unsupported unsized type {}", self.name_of(t))))]),
         }
     }
-
-    /// The name of the `dyn` type of a vtable for `preds`.
-    fn dyn_name(&self, dyn_ty: Ty<'tcx>) -> String {
-        self.name_of(dyn_ty)
-    }
 }
 
 fn sign_extend(v: u128, bits: u64) -> i128 {
@@ -1066,7 +1044,7 @@ impl<'a, 'tcx> FnDump<'a, 'tcx> {
             (_, ty::Dynamic(preds, _)) => {
                 let principal = preds.principal().map(|p| tcx.instantiate_bound_regions_with_erased(p));
                 let vt = tcx.vtable_allocation((sa, principal));
-                let name = d.dyn_name(sb);
+                let name = d.name_of(sb);
                 let g = d.global(GlobalKey::Alloc(vt), GKind::Vtable, Some(name));
                 ctor("vtable", vec![("g", num(g))])
             }
