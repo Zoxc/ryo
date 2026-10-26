@@ -645,6 +645,13 @@ impl Env<'_> {
     }
 }
 
+/// The last `n` lines of `stderr` that `keep` accepts, joined by `sep`.
+fn stderr_tail(stderr: &[u8], n: usize, sep: &str, keep: impl Fn(&str) -> bool) -> String {
+    let err = String::from_utf8_lossy(stderr);
+    let lines: Vec<&str> = err.lines().filter(|l| keep(l)).collect();
+    lines[lines.len().saturating_sub(n)..].join(sep)
+}
+
 struct BuildSample {
     steps: BuildSteps,
     test_exes: Vec<PathBuf>,
@@ -677,9 +684,7 @@ fn build_sample(env: &Env, krate: &Crate, members: &[String], logs: &Path, clean
         let out = c.output().map_err(|e| format!("running cargo: {e}"))?;
         let wall = start.elapsed().as_secs_f64();
         if !out.status.success() {
-            let err = String::from_utf8_lossy(&out.stderr);
-            let tail: Vec<&str> = err.lines().filter(|l| !l.trim_start().starts_with("Compiling")).collect();
-            let tail = tail[tail.len().saturating_sub(30)..].join("\n");
+            let tail = stderr_tail(&out.stderr, 30, "\n", |l| !l.trim_start().starts_with("Compiling"));
             return Err(format!("`cargo build {}` failed with {}:\n{tail}", args.join(" "), out.status));
         }
         Ok((Step { wall, units: timing::read_units(logs)? }, String::from_utf8_lossy(&out.stdout).into_owned()))
@@ -729,9 +734,7 @@ fn test_executables(json: &str) -> Vec<PathBuf> {
 fn run_timed(c: &mut Command, timeout: u64) -> Result<(f64, String), String> {
     let (t, out) = run_raw(c, timeout)?;
     if !out.status.success() {
-        let err = String::from_utf8_lossy(&out.stderr);
-        let tail: Vec<&str> = err.lines().collect();
-        return Err(format!("exited with {}: {}", out.status, tail[tail.len().saturating_sub(10)..].join("\n")));
+        return Err(format!("exited with {}: {}", out.status, stderr_tail(&out.stderr, 10, "\n", |_| true)));
     }
     Ok((t, String::from_utf8_lossy(&out.stdout).into_owned()))
 }
@@ -786,9 +789,7 @@ fn run_tests(src: &Path, krate: &Crate, exes: &[PathBuf], timeout: u64) -> (f64,
                     }
                 }
                 if !out.status.success() && f == 0 {
-                    let err = String::from_utf8_lossy(&out.stderr);
-                    let tail: Vec<&str> = err.lines().collect();
-                    o.failures.push(format!("{name}: exited with {}: {}", out.status, tail[tail.len().saturating_sub(5)..].join(" | ")));
+                    o.failures.push(format!("{name}: exited with {}: {}", out.status, stderr_tail(&out.stderr, 5, " | ", |_| true)));
                 }
             }
             Err(e) => o.failures.push(format!("{name}: {e}")),
