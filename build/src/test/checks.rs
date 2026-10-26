@@ -7,7 +7,8 @@ use std::process::Command;
 
 use crate::utils::{cmd, dll_name, exe_name, output};
 
-/// `cargo-ryo run` on a one-file package wrapping `tests/hello.rs`.
+/// `cargo-ryo run` on a one-file package wrapping `tests/hello.rs`, then `cargo ryo build`
+/// (cargo's subcommand lookup, with `dist/bin` on `PATH`).
 pub(super) fn cargo_smoke(root: &Path, out: &Path) -> Result<(), String> {
     let pkg = out.join("cargo-hello");
     fs::create_dir_all(&pkg).map_err(|e| format!("creating {}: {e}", pkg.display()))?;
@@ -18,7 +19,7 @@ pub(super) fn cargo_smoke(root: &Path, out: &Path) -> Result<(), String> {
     );
     fs::write(pkg.join("Cargo.toml"), manifest).map_err(|e| e.to_string())?;
     let cargo_ryo = crate::utils::dist_bin(&root, "cargo-ryo");
-    let res = cmd(cargo_ryo)
+    let res = cmd(&cargo_ryo)
         .args(["run", "--quiet", "--offline"])
         .current_dir(&pkg)
         .env("RYO_BACKEND_MARKER", "1")
@@ -27,11 +28,31 @@ pub(super) fn cargo_smoke(root: &Path, out: &Path) -> Result<(), String> {
         .env_remove("CARGO_INCREMENTAL")
         .output()
         .map_err(|e| e.to_string())?;
-    let _ = fs::remove_dir_all(pkg.join("target"));
     let stdout = String::from_utf8_lossy(&res.stdout);
     let stderr = String::from_utf8_lossy(&res.stderr);
     if !res.status.success() || stdout != "Hello, world!\n" || !stderr.contains(BACKEND_MARKER) || !stderr.contains(PARTITION_MARKER) {
+        let _ = fs::remove_dir_all(pkg.join("target"));
         return Err(format!("{}\nstdout:\n{stdout}\nstderr:\n{stderr}", res.status));
+    }
+    // As a cargo subcommand, cargo runs `cargo-ryo ryo build`, which must not recurse.
+    let bin = cargo_ryo.parent().ok_or("dist/bin")?.to_path_buf();
+    let mut paths = vec![bin];
+    paths.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()));
+    let path = std::env::join_paths(paths).map_err(|e| e.to_string())?;
+    let res = cmd("cargo")
+        .args(["ryo", "build", "--quiet", "--offline"])
+        .current_dir(&pkg)
+        .env("PATH", path)
+        .env("RYO_BACKEND_MARKER", "1")
+        .env("CARGO_TARGET_DIR", pkg.join("target-sub"))
+        .env_remove("CARGO_INCREMENTAL")
+        .output()
+        .map_err(|e| e.to_string())?;
+    let _ = fs::remove_dir_all(pkg.join("target"));
+    let _ = fs::remove_dir_all(pkg.join("target-sub"));
+    let stderr = String::from_utf8_lossy(&res.stderr);
+    if !res.status.success() || !stderr.contains(BACKEND_MARKER) {
+        return Err(format!("cargo ryo build: {}\nstderr:\n{stderr}", res.status));
     }
     Ok(())
 }

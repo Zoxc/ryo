@@ -14,8 +14,14 @@ fn main() {
     let bin = exe.parent().expect("exe has a parent");
     let rustc_ryo = bin.join(format!("rustc-ryo{}", env::consts::EXE_SUFFIX));
 
+    // Run as `cargo ryo build`, cargo calls `cargo-ryo ryo build`: drop the `ryo`, or cargo
+    // would run `cargo ryo build` again, forever.
+    let mut args = env::args_os().skip(1).peekable();
+    if args.peek().is_some_and(|a| a == "ryo") {
+        args.next();
+    }
     let mut cmd = Command::new("cargo");
-    cmd.args(env::args_os().skip(1)).env("RUSTC", rustc_ryo).env("RUSTC_BOOTSTRAP", "1");
+    cmd.args(args).env("RUSTC", rustc_ryo).env("RUSTC_BOOTSTRAP", "1");
     if let Some(toolchain) = option_env!("RYO_TOOLCHAIN") {
         cmd.env("RUSTUP_TOOLCHAIN", toolchain);
     }
