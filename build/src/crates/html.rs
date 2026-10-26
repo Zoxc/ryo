@@ -5,7 +5,7 @@ use std::fmt::Write;
 
 use super::stats::Summary;
 use super::timing::{Coverage, Totals, Unit, coverage, totals};
-use super::{Backend, Cell, Report, Step};
+use super::{Backend, Cell, Phase, Report, Step};
 
 #[derive(Clone, Copy, PartialEq)]
 enum Measure {
@@ -15,6 +15,8 @@ enum Measure {
 
 struct Metric {
     id: &'static str,
+    /// Whose failures make its cells bad ([`cell_state`]).
+    phase: Phase,
     title: &'static str,
     what: &'static str,
     unit: Measure,
@@ -34,6 +36,7 @@ fn sum(step: &Step, primary: Option<bool>) -> Totals {
 const METRICS: &[Metric] = &[
     Metric {
         id: "build-wall",
+        phase: Phase::Build,
         title: "Build: wall time",
         what: "cargo build --lib of the crate, its dependencies already built",
         unit: Measure::Secs,
@@ -42,6 +45,7 @@ const METRICS: &[Metric] = &[
     },
     Metric {
         id: "build-deps-backend",
+        phase: Phase::Build,
         title: "Build: dependencies, backend",
         what: "the codegen section (backend) summed over the dependencies, build scripts and proc macros (clean builds)",
         unit: Measure::Secs,
@@ -50,6 +54,7 @@ const METRICS: &[Metric] = &[
     },
     Metric {
         id: "build-deps-frontend",
+        phase: Phase::Build,
         title: "Build: dependencies, frontend",
         what: "process start to the codegen section, summed over the dependencies",
         unit: Measure::Secs,
@@ -58,6 +63,7 @@ const METRICS: &[Metric] = &[
     },
     Metric {
         id: "build-deps-rustc",
+        phase: Phase::Build,
         title: "Build: dependencies, rustc total",
         what: "rustc wall time summed over the dependencies",
         unit: Measure::Secs,
@@ -66,6 +72,7 @@ const METRICS: &[Metric] = &[
     },
     Metric {
         id: "build-leaf-backend",
+        phase: Phase::Build,
         title: "Build: leaf crate, backend",
         what: "the codegen section of the benchmarked crate's library",
         unit: Measure::Secs,
@@ -74,6 +81,7 @@ const METRICS: &[Metric] = &[
     },
     Metric {
         id: "build-leaf-frontend",
+        phase: Phase::Build,
         title: "Build: leaf crate, frontend",
         what: "process start to the codegen section, for the benchmarked crate's library",
         unit: Measure::Secs,
@@ -82,6 +90,7 @@ const METRICS: &[Metric] = &[
     },
     Metric {
         id: "build-leaf-rustc",
+        phase: Phase::Build,
         title: "Build: leaf crate, rustc total",
         what: "rustc wall time of the benchmarked crate's library",
         unit: Measure::Secs,
@@ -90,6 +99,7 @@ const METRICS: &[Metric] = &[
     },
     Metric {
         id: "test-build-wall",
+        phase: Phase::Build,
         title: "Test build: wall time",
         what: "cargo build --tests (= cargo test --no-run), on top of the library build in the same target directory, so only dev-dependencies and the test targets",
         unit: Measure::Secs,
@@ -98,6 +108,7 @@ const METRICS: &[Metric] = &[
     },
     Metric {
         id: "test-build-backend",
+        phase: Phase::Build,
         title: "Test build: backend",
         what: "the codegen section summed over every unit of the test build",
         unit: Measure::Secs,
@@ -106,6 +117,7 @@ const METRICS: &[Metric] = &[
     },
     Metric {
         id: "test-build-link",
+        phase: Phase::Build,
         title: "Test build: link",
         what: "the link section summed over every unit of the test build",
         unit: Measure::Secs,
@@ -114,6 +126,7 @@ const METRICS: &[Metric] = &[
     },
     Metric {
         id: "test-run",
+        phase: Phase::Test,
         title: "Test run time",
         what: "every test binary run once with RUST_TEST_THREADS=1, summed (doc tests excluded)",
         unit: Measure::Secs,
@@ -122,6 +135,7 @@ const METRICS: &[Metric] = &[
     },
     Metric {
         id: "workload",
+        phase: Phase::Workload,
         title: "Workload run time",
         what: "tests/crates/<crate>.rs, built as an example against the crate",
         unit: Measure::Secs,
@@ -130,6 +144,7 @@ const METRICS: &[Metric] = &[
     },
     Metric {
         id: "size-workload",
+        phase: Phase::Workload,
         title: "Binary size: workload",
         what: "the workload executable (debuginfo=0, not stripped)",
         unit: Measure::Bytes,
@@ -138,6 +153,7 @@ const METRICS: &[Metric] = &[
     },
     Metric {
         id: "size-tests",
+        phase: Phase::Test,
         title: "Binary size: test binaries",
         what: "all test executables, summed",
         unit: Measure::Bytes,
@@ -160,29 +176,18 @@ fn esc(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
-/// Whether a cell has a problem the tables must show.
-/// Whether a cell has a problem the tables must show, for a metric of kind `kind`
-/// ([`metric_kind`]): the build's, the tests' or the workload's failures.
-fn cell_state(cell: &Cell, kind: &str) -> Option<String> {
+/// Whether a cell has a problem the tables must show, for a metric of phase `phase`: a failed
+/// build, or the tests' or the workload's failures.
+fn cell_state(cell: &Cell, phase: Phase) -> Option<String> {
     if cell.build_failed {
         return Some("build failed".into());
     }
-    let prefix = match kind {
-        "workload" => "workload:",
-        "test" => "test:",
-        _ => return None,
-    };
-    match cell.errors.iter().filter(|e| e.starts_with(prefix)).count() {
-        0 => None,
-        n => Some(format!("{n} {kind} failure(s)")),
+    if !matches!(phase, Phase::Test | Phase::Workload) {
+        return None;
     }
-}
-
-fn metric_kind(id: &str) -> &'static str {
-    match id {
-        "workload" | "size-workload" => "workload",
-        "test-run" | "size-tests" => "test",
-        _ => "build",
+    match cell.errors.iter().filter(|e| e.phase == phase).count() {
+        0 => None,
+        n => Some(format!("{n} {} failure(s)", phase.name())),
     }
 }
 
@@ -397,7 +402,7 @@ fn metric_table(r: &Report, m: &Metric, data: &[Vec<Option<Summary>>]) -> String
         let c = &r.crates[ci];
         let _ = write!(s, "<tr><td>{}</td>", c.krate.name);
         for (bi, cell) in row.iter().enumerate() {
-            let state = cell_state(&c.cells[bi], metric_kind(m.id));
+            let state = cell_state(&c.cells[bi], m.phase);
             match cell {
                 Some(v) => {
                     let ratio = llvm
@@ -571,7 +576,7 @@ fn tests_section(r: &Report) -> String {
                 None => s.push_str("<td class=\"bad\">not run</td>"),
             }
             for e in &cell.errors {
-                let _ = write!(problems, "<li><b>{} [{}]</b>: <pre>{}</pre></li>", c.krate.name, r.backends[bi].name(), esc(e));
+                let _ = write!(problems, "<li><b>{} [{}]</b>: <pre>{}</pre></li>", c.krate.name, r.backends[bi].name(), esc(&e.to_string()));
             }
         }
         s.push_str("</tr>");
@@ -630,7 +635,7 @@ pub fn text_summary(r: &Report) -> String {
         for (ci, row) in data.iter().enumerate() {
             let mut line = vec![r.crates[ci].krate.name.to_owned()];
             for (bi, cell) in row.iter().enumerate() {
-                let bad = cell_state(&r.crates[ci].cells[bi], metric_kind(m.id)).is_some();
+                let bad = cell_state(&r.crates[ci].cells[bi], m.phase).is_some();
                 line.push(match cell {
                     Some(v) => format!("{}{}{}", fmt_value(v.median, m.unit), if v.noisy() { "*" } else { "" }, if bad { " !" } else { "" }),
                     None => "failed".to_owned(),
@@ -658,6 +663,7 @@ pub fn text_summary(r: &Report) -> String {
     for c in &r.crates {
         for (bi, cell) in c.cells.iter().enumerate() {
             for e in &cell.errors {
+                let e = e.to_string();
                 let first = e.lines().take(3).collect::<Vec<_>>().join(" | ");
                 let _ = writeln!(out, "FAILURE {} [{}]: {first}", c.krate.name, r.backends[bi].name());
             }
@@ -669,7 +675,7 @@ pub fn text_summary(r: &Report) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crates::{CRATES, CrateResult, TestOutcome};
+    use crate::crates::{CRATES, CellError, CrateResult, TestOutcome};
 
     fn step(wall: f64) -> Step {
         let u = |name: &str, primary| Unit {
@@ -701,7 +707,7 @@ mod tests {
                 failures: if failed { vec!["t: x".into()] } else { vec![] },
                 ..TestOutcome::default()
             }),
-            errors: if failed { vec!["test: t: x".into()] } else { vec![] },
+            errors: if failed { vec![CellError::new(Phase::Test, "t: x")] } else { vec![] },
             workload_size: Some(1_500_000),
             ..Cell::default()
         };
@@ -727,13 +733,12 @@ mod tests {
 
     #[test]
     fn failure_kinds() {
-        let cell = Cell { errors: vec!["workload: output differs".into()], ..Cell::default() };
-        assert_eq!(cell_state(&cell, metric_kind("workload")).as_deref(), Some("1 workload failure(s)"));
-        assert_eq!(cell_state(&cell, metric_kind("size-workload")).as_deref(), Some("1 workload failure(s)"));
-        assert_eq!(cell_state(&cell, metric_kind("test-run")), None);
-        assert_eq!(cell_state(&cell, metric_kind("build-wall")), None);
+        let cell = Cell { errors: vec![CellError::new(Phase::Workload, "output differs")], ..Cell::default() };
+        assert_eq!(cell_state(&cell, Phase::Workload).as_deref(), Some("1 workload failure(s)"));
+        assert_eq!(cell_state(&cell, Phase::Test), None);
+        assert_eq!(cell_state(&cell, Phase::Build), None);
         let cell = Cell { build_failed: true, ..Cell::default() };
-        assert_eq!(cell_state(&cell, metric_kind("build-wall")).as_deref(), Some("build failed"));
+        assert_eq!(cell_state(&cell, Phase::Build).as_deref(), Some("build failed"));
     }
 
     #[test]

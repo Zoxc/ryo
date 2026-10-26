@@ -243,11 +243,49 @@ pub struct TestOutcome {
     pub failures: Vec<String>,
 }
 
+/// The part of a crate's measurement an error happened in.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Phase {
+    Prepare,
+    Build,
+    Test,
+    Workload,
+}
+
+impl Phase {
+    pub fn name(self) -> &'static str {
+        match self {
+            Phase::Prepare => "prepare",
+            Phase::Build => "build",
+            Phase::Test => "test",
+            Phase::Workload => "workload",
+        }
+    }
+}
+
+/// A build or run error of a [`Cell`]; displays as `<phase>: <message>`.
+pub struct CellError {
+    pub phase: Phase,
+    pub msg: String,
+}
+
+impl CellError {
+    pub fn new(phase: Phase, msg: impl Into<String>) -> Self {
+        CellError { phase, msg: msg.into() }
+    }
+}
+
+impl std::fmt::Display for CellError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.phase.name(), self.msg)
+    }
+}
+
 /// Everything measured for one crate and backend.
 #[derive(Default)]
 pub struct Cell {
     /// Build or run errors. A failed build stops the backend for this crate.
-    pub errors: Vec<String>,
+    pub errors: Vec<CellError>,
     pub build_failed: bool,
     /// `cargo build --lib` from a clean target directory.
     pub dep_build: Vec<Step>,
@@ -346,7 +384,7 @@ pub fn run(opts: Options) -> Result<(), String> {
             Err(e) => {
                 eprintln!("[y] {}: preparing the sources FAILED: {e}", krate.name);
                 for cell in &mut cells {
-                    cell.errors.push(format!("prepare: {e}"));
+                    cell.errors.push(CellError::new(Phase::Prepare, e.to_string()));
                     cell.build_failed = true;
                 }
                 results.push(CrateResult { krate, cells });
@@ -389,7 +427,7 @@ pub fn run(opts: Options) -> Result<(), String> {
                     }
                     Err(e) => {
                         eprintln!("[y] {} build {label} [{}]: FAILED", krate.name, backend.name());
-                        cell.errors.push(format!("build: {e}"));
+                        cell.errors.push(CellError::new(Phase::Build, e.to_string()));
                         cell.build_failed = true;
                     }
                 }
@@ -410,21 +448,21 @@ pub fn run(opts: Options) -> Result<(), String> {
                 let label = if i == 0 { "warm-up".to_owned() } else { format!("{i}/{}", opts.run_samples) };
                 let (time, outcome) = run_tests(&src, krate, &cell.test_exes, opts.timeout);
                 if i == 0 {
-                    cell.errors.extend(outcome.failures.iter().map(|f| format!("test: {f}")));
+                    cell.errors.extend(outcome.failures.iter().map(|f| CellError::new(Phase::Test, f.clone())));
                     cell.tests = Some(outcome);
                 } else if outcome.failures.is_empty() {
                     cell.test_run.push(time);
                 } else {
                     // A failed or timed-out binary makes the sum meaningless: drop the sample.
-                    cell.errors.push(format!("test: run sample {i} dropped: {}", outcome.failures.join("; ")));
+                    cell.errors.push(CellError::new(Phase::Test, format!("run sample {i} dropped: {}", outcome.failures.join("; "))));
                 }
                 let w = cell.example.as_ref().map(|e| run_timed(Command::new(e).current_dir(&src), opts.timeout));
                 match w {
                     None => {}
                     Some(Ok((_, out))) if i == 0 => cell.workload_output = Some(out),
                     Some(Ok((t, _))) => cell.workload.push(t),
-                    Some(Err(e)) if i == 0 => cell.errors.push(format!("workload: {e}")),
-                    Some(Err(e)) => cell.errors.push(format!("workload: run sample {i} dropped: {e}")),
+                    Some(Err(e)) if i == 0 => cell.errors.push(CellError::new(Phase::Workload, e.to_string())),
+                    Some(Err(e)) => cell.errors.push(CellError::new(Phase::Workload, format!("run sample {i} dropped: {e}"))),
                 }
                 eprintln!(
                     "[y] {} run {label} [{}]: tests {time:.2}s, workload {}",
@@ -440,7 +478,7 @@ pub fn run(opts: Options) -> Result<(), String> {
             if let (Some((r, rb)), Some(o)) = (&reference, &cell.workload_output)
                 && r != o
             {
-                cell.errors.push(format!("workload: output differs from {}'s: {:?} vs {:?}", rb.name(), o.trim(), r.trim()));
+                cell.errors.push(CellError::new(Phase::Workload, format!("output differs from {}'s: {:?} vs {:?}", rb.name(), o.trim(), r.trim())));
             }
         }
         results.push(CrateResult { krate, cells });
