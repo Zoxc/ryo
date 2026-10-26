@@ -125,6 +125,32 @@ pub fn exe_name(name: &str) -> String {
     format!("{name}{}", std::env::consts::EXE_SUFFIX)
 }
 
+/// Plain-text table of `lines` (the first is the header, optionally followed by a dashed
+/// rule): the first column left-aligned, the others right-aligned, two spaces apart.
+pub fn text_table(lines: &[Vec<String>], rule: bool) -> String {
+    let cols = lines[0].len();
+    let widths: Vec<usize> = (0..cols).map(|i| lines.iter().map(|l| l.get(i).map_or(0, |c| c.chars().count())).max().unwrap()).collect();
+    let mut out = String::new();
+    for (n, line) in lines.iter().enumerate() {
+        let mut text = String::new();
+        for (i, cell) in line.iter().enumerate() {
+            let pad = " ".repeat(widths[i] - cell.chars().count());
+            if i == 0 {
+                text.push_str(&format!("{cell}{pad}"));
+            } else {
+                text.push_str(&format!("  {pad}{cell}"));
+            }
+        }
+        out.push_str(text.trim_end());
+        out.push('\n');
+        if n == 0 && rule {
+            out.push_str(&"-".repeat(widths.iter().sum::<usize>() + 2 * (cols - 1)));
+            out.push('\n');
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

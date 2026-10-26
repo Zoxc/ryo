@@ -647,16 +647,7 @@ pub fn text_summary(r: &Report) -> String {
             }
             lines.push(line);
         }
-        let widths: Vec<usize> = (0..lines[0].len()).map(|i| lines.iter().map(|l| l[i].chars().count()).max().unwrap()).collect();
-        let _ = writeln!(out, "\n{} (median; * noisy, ! failures)", m.title);
-        for line in &lines {
-            let mut t = String::new();
-            for (i, c) in line.iter().enumerate() {
-                let pad = " ".repeat(widths[i] - c.chars().count());
-                if i == 0 { t.push_str(&format!("{c}{pad}")) } else { t.push_str(&format!("  {pad}{c}")) }
-            }
-            let _ = writeln!(out, "{}", t.trim_end());
-        }
+        let _ = write!(out, "\n{} (median; * noisy, ! failures)\n{}", m.title, crate::utils::text_table(&lines, false));
     }
     if let Some(ryo) = r.backends.iter().position(|&b| b == Backend::Ryo) {
         let all: Vec<&Unit> =

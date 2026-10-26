@@ -391,27 +391,7 @@ fn grid(title: &str, header: &[&str], rows: &[(&str, Vec<Option<String>>)]) -> S
         }
         lines.push(line);
     }
-    let cols = lines[0].len();
-    let widths: Vec<usize> = (0..cols).map(|i| lines.iter().map(|l| l.get(i).map_or(0, |c| c.chars().count())).max().unwrap()).collect();
-    let mut out = format!("{title}\n");
-    for (n, line) in lines.iter().enumerate() {
-        let mut text = String::new();
-        for (i, cell) in line.iter().enumerate() {
-            let pad = widths[i] - cell.chars().count();
-            if i == 0 {
-                text.push_str(&format!("{cell}{}", " ".repeat(pad)));
-            } else {
-                text.push_str(&format!("  {}{cell}", " ".repeat(pad)));
-            }
-        }
-        out.push_str(text.trim_end());
-        out.push('\n');
-        if n == 0 {
-            out.push_str(&"-".repeat(widths.iter().sum::<usize>() + 2 * (cols - 1)));
-            out.push('\n');
-        }
-    }
-    out
+    format!("{title}\n{}", crate::utils::text_table(&lines, true))
 }
 
 #[cfg(test)]
