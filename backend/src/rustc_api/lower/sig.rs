@@ -36,7 +36,8 @@ pub struct AbiSig<'tcx> {
     /// Whether the last input is the implicit `#[track_caller]` location.
     pub caller_location: bool,
     /// Whether the callee is `extern "rust-call"`: the caller's trailing tuple argument is
-    /// spread over the ABI inputs. Set by the call site, which knows the fn type.
+    /// spread over the ABI inputs. Set by `fn_ptr_sig`, and for an instance by the call site,
+    /// which knows the fn type.
     pub rust_call: bool,
     /// How a VM function of this signature returns its value (a call's kind, exact sizes,
     /// [`ryo_bytecode::asm::RET_SRET`]); 0 for signatures only islands call.
@@ -81,11 +82,7 @@ impl<'tcx> AbiSig<'tcx> {
 
 /// The ABI signature of a direct call of (or the body of) `instance`.
 pub fn abi_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> Result<AbiSig<'tcx>, NeedsNative> {
-    let typing_env = TypingEnv::fully_monomorphized();
-    let fn_abi = tcx
-        .fn_abi_of_instance_no_deduced_attrs(typing_env.as_query_input((instance, ty::List::empty())))
-        .map_err(|e| NeedsNative(super::no_trim(|| format!("fn ABI: {e:?}"))))?;
-    from_fn_abi(tcx, fn_abi, instance.def.requires_caller_location(tcx), None)
+    instance_sig(tcx, instance, None)
 }
 
 /// The ABI signature of the virtual call `instance` (`InstanceKind::Virtual`), with `receiver`
@@ -98,20 +95,25 @@ pub fn abi_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> Result<AbiS
 /// only matches the callee's if `receiver` has the callee receiver's niche: the caller passes
 /// `&()` when the receiver's data pointer is non-null, `*mut ()` otherwise.
 pub fn virtual_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>, receiver: Ty<'tcx>) -> Result<AbiSig<'tcx>, NeedsNative> {
+    instance_sig(tcx, instance, Some(receiver))
+}
+
+fn instance_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>, receiver: Option<Ty<'tcx>>) -> Result<AbiSig<'tcx>, NeedsNative> {
     let typing_env = TypingEnv::fully_monomorphized();
-    let fn_abi = tcx
-        .fn_abi_of_instance_no_deduced_attrs(typing_env.as_query_input((instance, ty::List::empty())))
-        .map_err(|e| NeedsNative(super::no_trim(|| format!("fn ABI: {e:?}"))))?;
-    from_fn_abi(tcx, fn_abi, instance.def.requires_caller_location(tcx), Some(receiver))
+    let fn_abi = tcx.fn_abi_of_instance_no_deduced_attrs(typing_env.as_query_input((instance, ty::List::empty()))).map_err(fn_abi_err)?;
+    from_fn_abi(tcx, fn_abi, instance.def.requires_caller_location(tcx), receiver)
 }
 
 /// The ABI signature of a call through a fn pointer of type `sig`.
 pub fn fn_ptr_sig<'tcx>(tcx: TyCtxt<'tcx>, sig: ty::PolyFnSig<'tcx>) -> Result<AbiSig<'tcx>, NeedsNative> {
     let typing_env = TypingEnv::fully_monomorphized();
-    let fn_abi = tcx
-        .fn_abi_of_fn_ptr(typing_env.as_query_input((sig, ty::List::empty())))
-        .map_err(|e| NeedsNative(super::no_trim(|| format!("fn ABI: {e:?}"))))?;
-    from_fn_abi(tcx, fn_abi, false, None)
+    let fn_abi = tcx.fn_abi_of_fn_ptr(typing_env.as_query_input((sig, ty::List::empty()))).map_err(fn_abi_err)?;
+    let rust_call = sig.abi() == rustc_abi::ExternAbi::RustCall;
+    Ok(AbiSig { rust_call, ..from_fn_abi(tcx, fn_abi, false, None)? })
+}
+
+fn fn_abi_err(e: &ty::layout::FnAbiError<'_>) -> NeedsNative {
+    NeedsNative(super::no_trim(|| format!("fn ABI: {e:?}")))
 }
 
 /// `receiver` replaces the type of the first input (virtual calls).

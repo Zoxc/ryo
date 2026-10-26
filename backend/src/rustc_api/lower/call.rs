@@ -215,8 +215,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         if let InstanceKind::Virtual(_, idx) = callee.def {
             let Some(&recv) = args.first() else { return native("virtual call without a receiver") };
             let (data, vtable, recv_ty) = self.receiver(recv, tail)?;
-            let mut sig = virtual_sig(tcx, callee, recv_ty)?;
-            sig.rust_call = rust_call;
+            let sig = AbiSig { rust_call, ..virtual_sig(tcx, callee, recv_ty)? };
             // The method's entry in the vtable (`VirtualIndex::get_fn`).
             let f = self.temp8();
             let k = u32::try_from(idx * 8).map_err(|_| NeedsNative("vtable index".into()))?;
@@ -225,46 +224,34 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             return Ok((Target::Ptr(f, sig.conv), sig, args));
         }
         let has_symbol = !matches!(callee.def, InstanceKind::Intrinsic(_));
-        // The callee's ABI signature, if computed to pick the target (reused below).
-        let mut callee_sig = None;
-        // VM functions are Rust-ABI; a candidate with another ABI stays native.
-        let target = if self.cx.vm.contains(&callee) && abi_sig(tcx, callee).is_ok_and(|s| s.conv == CallConv::Rust) {
-            Target::Vm(callee)
-        } else if !has_symbol {
-            if tail || !self.fn_once_able(fty, callee) {
-                return native(no_trim(|| format!("call of {callee} (needs an intrinsic wrapper)")));
-            }
-            Target::Template(fty)
-        } else {
-            let sig = abi_sig(tcx, callee)?;
-            let target = match sig.conv {
-                CallConv::Rust => Target::Ext(callee),
-                conv => Target::Sym(callee, conv),
-            };
-            callee_sig = Some(sig);
-            target
-        };
-        let sig = match target {
-            Target::Template(_) => {
+        let vm = self.cx.vm.contains(&callee);
+        let callee_sig = (has_symbol || vm).then(|| abi_sig(tcx, callee));
+        let (target, sig) = match callee_sig {
+            // VM functions are Rust-ABI; a candidate with another ABI stays native.
+            Some(Ok(sig)) if vm && sig.conv == CallConv::Rust => (Target::Vm(callee), AbiSig { rust_call, ..sig }),
+            _ if !has_symbol => {
+                if tail || !self.fn_once_able(fty, callee) {
+                    return native(no_trim(|| format!("call of {callee} (needs an intrinsic wrapper)")));
+                }
                 let s = tcx.normalize_erasing_late_bound_regions(TypingEnv::fully_monomorphized(), fty.fn_sig(tcx));
-                tys_sig(tcx, s.inputs().to_vec(), s.output())?
+                (Target::Template(fty), tys_sig(tcx, s.inputs().to_vec(), s.output())?)
             }
-            Target::Vm(_) | Target::Ext(_) | Target::Sym(..) | Target::Ptr(..) => {
-                let mut sig = match callee_sig {
-                    Some(sig) => sig,
-                    None => abi_sig(tcx, callee)?,
+            Some(sig) => {
+                let sig = sig?;
+                let target = match sig.conv {
+                    CallConv::Rust => Target::Ext(callee),
+                    conv => Target::Sym(callee, conv),
                 };
-                sig.rust_call = rust_call;
-                sig
+                (target, AbiSig { rust_call, ..sig })
             }
+            None => unreachable!("a callee without a symbol is a template call"),
         };
         Ok((target, sig, args))
     }
 
     /// The target and signature of a call through the fn pointer `func` of type `fty`.
     fn ptr_target(&mut self, func: &Operand<'tcx>, fty: Ty<'tcx>) -> Result<(Target<'tcx>, AbiSig<'tcx>), NeedsNative> {
-        let mut sig = fn_ptr_sig(self.tcx, fty.fn_sig(self.tcx))?;
-        sig.rust_call = fty.fn_sig(self.tcx).abi() == ExternAbi::RustCall;
+        let sig = fn_ptr_sig(self.tcx, fty.fn_sig(self.tcx))?;
         let (p, _) = self.operand_slot(func)?;
         Ok((Target::Ptr(p, sig.conv), sig))
     }
