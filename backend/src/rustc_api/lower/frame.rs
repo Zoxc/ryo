@@ -126,35 +126,27 @@ impl<'tcx> Frame<'tcx> {
                 }
                 // A slot of its own, which the prologue fills from the argument's registers
                 // and stack slots.
-                end = place_below(end, size, align)?;
-                slot(-(end as i32))
+                alloc_below(&mut end, size, align)?
             } else if size == 0 {
                 slot(-(end as i32))
             } else if sharing.as_ref().is_some_and(|s| s.shareable.contains(local)) {
                 shared.push(local);
                 0
             } else {
-                end = place_below(end, size, align)?;
-                slot(-(end as i32))
+                alloc_below(&mut end, size, align)?
             };
             locals.push(LocalSlot { off, layout });
+        }
+        let n_args = n_fixed + spread.map_or(0, |s| locals[s].layout.fields.count());
+        if n_args != n_inputs {
+            return native(if spread.is_some() { "spread argument doesn't match the ABI" } else { "argument count doesn't match the ABI" });
         }
         let unwinds = body.basic_blocks.iter().any(|b| {
             matches!(b.terminator().unwind(), Some(UnwindAction::Cleanup(_) | UnwindAction::Terminate(_)))
                 || matches!(b.terminator().kind, TerminatorKind::UnwindResume)
         });
-        let exception = if unwinds {
-            end = place_below(end, 8, 8)?;
-            Some(slot(-(end as i32)))
-        } else {
-            None
-        };
-        let sret = if sig.ret_kind == ryo_bytecode::asm::RET_SRET {
-            end = place_below(end, 8, 8)?;
-            Some(slot(-(end as i32)))
-        } else {
-            None
-        };
+        let exception = if unwinds { Some(alloc_below(&mut end, 8, 8)?) } else { None };
+        let sret = if sig.ret_kind == ryo_bytecode::asm::RET_SRET { Some(alloc_below(&mut end, 8, 8)?) } else { None };
         if let Some(sharing) = &sharing {
             end = sharing.place(&mut locals, &shared, end)?;
         }
@@ -171,36 +163,16 @@ impl<'tcx> Frame<'tcx> {
             }
         }
         if sig.caller_location {
-            end = place_below(end, 8, 8)?;
-            arg_homes.push(slot(-(end as i32)));
+            arg_homes.push(alloc_below(&mut end, 8, 8)?);
         }
         let mut arg_ptrs = Vec::with_capacity(sig.inputs.len());
         for i in 0..sig.inputs.len() {
             let indirect =
                 sig.plan.as_ref().is_some_and(|p| p.locs.get(i).is_some_and(|l| matches!(l[..], [ArgLoc::PtrReg(_) | ArgLoc::PtrStack(_)])));
-            arg_ptrs.push(if indirect {
-                end = place_below(end, 8, 8)?;
-                Some(slot(-(end as i32)))
-            } else {
-                None
-            });
-        }
-        let spread = spread.map(|s| (s, n_fixed));
-        match spread {
-            Some((s, first)) => {
-                let fields = locals[s].layout.fields.count();
-                if first + fields != n_inputs {
-                    return native("spread argument doesn't match the ABI");
-                }
-            }
-            None if n_fixed != n_inputs => return native("argument count doesn't match the ABI"),
-            None => {}
+            arg_ptrs.push(if indirect { Some(alloc_below(&mut end, 8, 8)?) } else { None });
         }
         if end >= OUT_END {
             return native("frame too large");
-        }
-        if arg_homes.len() != sig.inputs.len() {
-            return native("argument count doesn't match the ABI");
         }
         Ok(Frame { locals, locals_end: end, temp_top: end, high: end, temps: Vec::new(), exception, sret, arg_homes, arg_ptrs })
     }
@@ -461,6 +433,13 @@ fn place_below(taken: u32, size: u32, align: u32) -> Result<u32, NeedsNative> {
         Some(d) if d < OUT_END => Ok(d.next_multiple_of(align.max(1))),
         _ => native("frame too large"),
     }
+}
+
+/// Places an object of `size` bytes directly below the `end` bytes under `fp`
+/// ([`place_below`]), moves `end` past it and returns its slot.
+fn alloc_below(end: &mut u32, size: u32, align: u32) -> Result<u32, NeedsNative> {
+    *end = place_below(*end, size, align)?;
+    Ok(slot(-(*end as i32)))
 }
 
 /// Applies the `StorageLive`/`StorageDead` statements to `live`, calling `on_live(l, live)`
