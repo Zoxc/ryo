@@ -540,6 +540,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         self.op(opw(&format!("{family}Imm"), w), &ops);
     }
 
+    /// `br.family.imm.w s, v` (`v` truncated to the width), branching to `bb` per `neg`.
+    pub fn br_imm(&mut self, family: &str, w: Width, s: u32, v: u128, neg: bool, bb: BasicBlock) {
+        let mut ops = vec![s];
+        ops.extend(emit::imm_words(w, w.truncate(v)));
+        self.op_branch(opw(&format!("Br{family}Imm"), w), &ops, neg, bb);
+    }
+
     /// Copies `n <= SPLIT_MAX` bytes from the memory at `src` to the memory at `dst` as
     /// `load`/`store` pieces (cut at [`FnCx::cuts`]) through a temporary: every piece is loaded
     /// before the first store, so overlapping ranges copy as `memmove` does.

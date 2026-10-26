@@ -280,9 +280,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let (s, a) = (el.size.bytes(), el.align.abi.bytes());
         self.into_dest(cont, |fx, d| {
             if size {
-                let mut ops = vec![d, p + 8];
-                ops.extend(imm_words(Width::W64, u128::from(s)));
-                fx.op(opw("MulImm", Width::W64), &ops);
+                fx.op_imm("Mul", Width::W64, d, p + 8, u128::from(s));
             } else {
                 fx.imm(Width::W64, d, u128::from(a));
             }
@@ -324,9 +322,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let size = self.layout_of(ty0())?.size.bytes();
                 let [x, y, count] = self.arg_slots::<3>(args)?;
                 let n = self.temp8();
-                let mut ops = vec![n, count];
-                ops.extend(imm_words(Width::W64, u128::from(size)));
-                self.op(opw("MulImm", Width::W64), &ops);
+                self.op_imm("Mul", Width::W64, n, count, u128::from(size));
                 let op = match name {
                     "volatile_copy_memory" => Opcode::Memmove,
                     "volatile_copy_nonoverlapping_memory" => Opcode::Memcpy,

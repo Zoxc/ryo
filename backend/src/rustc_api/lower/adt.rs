@@ -192,15 +192,11 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     }
 
     fn add_imm(&mut self, d: u32, w: Width, v: u128) {
-        let mut ops = vec![d, d];
-        ops.extend(imm_words(w, w.truncate(v)));
-        self.op(opw("AddImm", w), &ops);
+        self.op_imm("Add", w, d, d, v);
     }
 
     fn xor_imm(&mut self, d: u32, w: Width, v: u128) {
-        let mut ops = vec![d, d];
-        ops.extend(imm_words(w, w.truncate(v)));
-        self.op(opw("XorImm", w), &ops);
+        self.op_imm("Xor", w, d, d, v);
     }
 
     /// Writes the tag of `variant` (cg_ssa's `codegen_set_discr`).

@@ -230,9 +230,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     // `br` branches when `s != 0`.
                     self.op_branch(Opcode::Br, &[s], (v == 1) == ne, t);
                 } else {
-                    let mut ops = vec![s];
-                    ops.extend(imm_words(w, v));
-                    self.op_branch(opw("BrEqImm", w), &ops, ne, t);
+                    self.br_imm("Eq", w, s, v, ne, t);
                 }
                 self.jump(rest);
                 return Ok(());
@@ -245,11 +243,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         {
             // Two values: compare-and-branch on each instead of a `switch.dense` table. An
             // unreachable `otherwise` makes the second test unnecessary.
-            let test = |fx: &mut Self, v: u128, ne: bool, bb: BasicBlock| {
-                let mut ops = vec![s];
-                ops.extend(imm_words(w, v));
-                fx.op_branch(opw("BrEqImm", w), &ops, ne, bb);
-            };
+            let test = |fx: &mut Self, v: u128, ne: bool, bb: BasicBlock| fx.br_imm("Eq", w, s, v, ne, bb);
             test(self, v0, false, bb0);
             if self.body[otherwise].is_empty_unreachable() {
                 self.jump(bb1);
@@ -310,14 +304,12 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             .collect();
         if arms.len() <= NICHE_TESTS_MAX {
             for (k, &(v, bb)) in arms.iter().enumerate() {
-                let mut ops = vec![n.slot];
-                ops.extend(imm_words(tw, v));
                 if k + 1 == arms.len() && Some(bb) == self.next_block && Some(untagged_bb) != self.next_block {
                     // The last arm falls through: branch away when the tag differs.
-                    self.op_branch(opw("BrEqImm", tw), &ops, true, untagged_bb);
+                    self.br_imm("Eq", tw, n.slot, v, true, untagged_bb);
                     return Ok(());
                 }
-                self.op_branch(opw("BrEqImm", tw), &ops, false, bb);
+                self.br_imm("Eq", tw, n.slot, v, false, bb);
             }
             self.jump(untagged_bb);
             return Ok(());
@@ -325,12 +317,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         // `r = tag - niche_start`; `r >u relative_max` is the untagged variant, otherwise `r`
         // is the niche variant `start + r`.
         let r = self.frame.temp(u64::from(tw.bytes()), u64::from(tw.bytes()));
-        let mut ops = vec![r, n.slot];
-        ops.extend(imm_words(tw, n.niche_start));
-        self.op(opw("SubImm", tw), &ops);
-        let mut ops = vec![r];
-        ops.extend(imm_words(tw, u128::from(n.end - n.start)));
-        self.op_branch(opw("BrGtUImm", tw), &ops, false, untagged_bb);
+        self.op_imm("Sub", tw, r, n.slot, n.niche_start);
+        self.br_imm("GtU", tw, r, u128::from(n.end - n.start), false, untagged_bb);
         let labels = (n.start..=n.end).map(|i| self.block_label(target(i))).collect();
         let base = if tw == Width::W128 { Opnd::Imm128(0) } else { Opnd::Imm(0) };
         let default = self.block_label(untagged_bb);

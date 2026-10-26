@@ -28,7 +28,7 @@ use ryo_bytecode::asm::{ARG_ADDR, ArgReg, RET_SRET, RetPart, ret_kind, ret_parts
 use ryo_bytecode::full::Opcode;
 
 use super::cert::CallKind;
-use super::emit::opcode;
+use super::emit::{Width, opcode};
 use super::frame;
 use super::island::templates;
 use super::place::{Loc, PlaceVal};
@@ -701,7 +701,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let f = self.temp8();
         let idx = ty::COMMON_VTABLE_ENTRIES_DROPINPLACE as u32;
         self.op(super::emit::opcode("LoadW64"), &[f, vtable, idx * 8]);
-        self.op_branch(super::emit::opcode("BrEqImmW64"), &[f, 0, 0], false, target);
+        self.br_imm("Eq", Width::W64, f, 0, false, target);
         let ptr = self.temp8();
         self.addr_into(ptr, pv.loc, pv.base)?;
         // `unsafe fn(*mut ())`: the pointer in the first integer register.
