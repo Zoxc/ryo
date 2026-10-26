@@ -207,8 +207,15 @@ section; its fields and the counter checks and stubs that use it are in
   re-encoding pipeline compiles PE code: the SSA tier doesn't take the PE mode (its frames,
   the `rdi`/`rsi` saves and Win64 islands aren't done), so `RYO_JIT_OPT=ssa` falls back
   for every function.
+- **macOS** (`sys/macos.rs`): the same `.eh_frame` as on ELF (Mach-O images' VM code is
+  SysV with DWARF unwind information), but registered one FDE at a time: libunwind's
+  `__register_frame` (libSystem's) takes a single FDE, finds its CIE through the FDE's CIE
+  pointer, and adds its range to the `DwarfFDECache` that the unwinder searches for code no
+  loaded image covers. It has no exit teardown; the common `FRAMES_OPEN` lock and `atexit`
+  close stay anyway.
 - **Perf map**: with `RYO_JIT_PERFMAP=1`, a line per function in `/tmp/perf-<pid>.map`,
-  named `ryo-jit:f<index>@<AOT address>`, so `perf` names JIT frames (not on Windows).
+  named `ryo-jit:f<index>@<AOT address>`, so `perf` names JIT frames (Linux only: off on
+  Windows and macOS, `sys::perfmap_path`).
 - **Backtraces**: JIT frames have no symbols, so backtraces show them unnamed (`y test`'s
   `backtrace` check runs with `RYO_JIT=off`).
 
@@ -697,6 +704,18 @@ rlib bundles (`build/src/jit.rs`, [build.md](build.md#build)):
   LTO input, so users' `-Clto` doesn't touch it. The backend and the image format don't
   know about it. Without `RYO_JIT_LIB_DIR` (`vm/`'s own tests) the `ryo_jit` rlib provides
   `ryo_jit_start` instead, on the tests' std.
+- **Mach-O**: sealed as on ELF: `llvm-objcopy --keep-global-symbol=_ryo_jit_start` (C
+  symbols carry Mach-O's `_` prefix) makes the rest non-external, and the object is archived
+  alone, in the BSD format. Its undefined symbols are libSystem's (`dispatch_*`, `_dyld_*`,
+  `pthread_*`, `__tlv_bootstrap`) and the unwinder's. `jit-sealed` also checks that it has no
+  initializers (`__mod_init_func`, `__init_offsets`) and no `LC_LINKER_OPTION` (the
+  counterpart of `.drectve`). Code memory needs no `MAP_JIT` on x86_64 (`vmem`: `mmap`, then
+  `mprotect` W^X), so a binary signed with the hardened runtime needs the
+  `com.apple.security.cs.allow-unsigned-executable-memory` entitlement;
+  `com.apple.security.cs.allow-jit` only covers `MAP_JIT` mappings. Without the hardened
+  runtime nothing is needed. Under Rosetta 2 the `mprotect`s make the translator drop and
+  retranslate rewritten pages. arm64 (`MAP_JIT` with per-thread write protection,
+  `pthread_jit_write_protect_np`, needed there) is not a target.
 - **PE**: `y build` seals and bundles it the same way. Its own imports (`RtlAddFunctionTable`,
   `GetStdHandle`, `WriteFile`) are `raw-dylib` from kernel32, import members of the
   library like std's ([platforms.md](platforms.md)).
@@ -728,7 +747,7 @@ for shuffled frames per image, `RtApi::shuffled`):
 ## Limits
 
 - A child of `fork` has no JIT thread, so with `RYO_JIT_SYNC` its trips wait forever.
-- The JIT runs on Linux and Windows (`sys`). On Windows it is built and link-checked from
+- The JIT runs on Linux, Windows and x86_64 macOS (`sys`). On Windows it is built and link-checked from
   Linux only (`y test --cross`), and its code is run on Linux (`jit.rs`'s `pe_code`), but
   it has never run on Windows: the unwind registration, the exit behaviour and the regions
   (`VirtualAlloc` at each hint, which fails where taken; 32 MiB committed per region) are
@@ -736,13 +755,13 @@ for shuffled frames per image, `RtApi::shuffled`):
   `atexit` handler to close the registry (it could wait on a lock the thread died holding;
   the registry isn't torn down anyway); a thread killed inside `RtlAddFunctionTable` could
   leave ntdll's function table lock held, which would hang only an unwind through
-  non-image code during the rest of the exit. macOS (x86_64, `vm/jit/src/sys/macos.rs`) has
-  its OS layer written but disabled (`SUPPORTED` false): the backend writes Mach-O images,
-  but none has run yet. It registers each FDE by itself (libunwind's
-  `__register_frame` takes one), maps with the hint-and-verify region search, and makes
-  code executable with `mprotect` (a hardened runtime needs
-  `allow-unsigned-executable-memory`). Untested on macOS; `y build` doesn't seal the JIT
-  for Apple targets.
+  non-image code during the rest of the exit. macOS (x86_64, natively or under Rosetta,
+  `vm/jit/src/sys/macos.rs`) is likewise sealed and checked from Linux only (`y test --cross
+  x86_64-apple-darwin`: `jit-sealed`, `rt-core-only` and the corpus) and has never run: the per-FDE registration (read from LLVM's libunwind, which
+  Apple's may differ from), the hint-and-verify region search (`mmap` without
+  `MAP_FIXED_NOREPLACE`, the address only a hint), the `__ulock` waits in the trips, and
+  ld64 linking the sealed object (a second `rust_eh_personality`, local, among the
+  personalities compact unwind can encode, three at most) are untested there.
 - Asynchronous unwinding on Windows (a debugger's or a sampling profiler's stack walk)
   misreads a frame stopped after its epilogue's `pop rbp` at a tail call through a
   register: the JIT's far one (`mov r11, imm64; jmp r11`, a callee more than 2 GiB away)
@@ -811,10 +830,10 @@ and checks the passes on it and on hand-built IR (value numbering, constants thr
 and past its OSR entry, a switch on a constant, a self-loop parameter, a dead handler call),
   `tests/jit_x86.rs` checks the
   encoder against `objdump`, and `vm/rt/tests/ops.rs` the handler effect table.
-- **Packaging**: `jit-sealed` (`y test`, and `y test --cross` for PE) checks the bundled
-  object: only `ryo_jit_start` (and the renamed symbols and constants) defined globally, no
-  Rust symbol or allocator shim referenced, no unwinder defined, and on COFF no `.drectve`
-  or `.CRT$X*` section. `jit-private-std` runs `tests/vm_jit_private.rs`, whose VM global
+- **Packaging**: `jit-sealed` (`y test`, and `y test --cross` for PE and Mach-O) checks the
+  bundled object: only `ryo_jit_start` (and the renamed symbols and constants) defined
+  globally, no Rust symbol or allocator shim referenced, no unwinder defined, on COFF no
+  `.drectve` or `.CRT$X*` section, and on Mach-O no initializers or linker options. `jit-private-std` runs `tests/vm_jit_private.rs`, whose VM global
   allocator trips while it holds its lock (with the program's allocator, the JIT would
   deadlock there), and the same program built with `-Cpanic=abort` and run with
   `RYO_JIT_TEST_PANIC`, which must run as without the JIT.

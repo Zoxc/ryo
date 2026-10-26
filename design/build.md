@@ -80,17 +80,23 @@ modeled on cg_clif's `build_system/`.
        by template, native functions by reason ([backend.md](backend.md#debugging-switches)).
    - `--target T` (repeatable): also install std (from the toolchain's rust-std for `T`)
      and `ryo_rt` for `T`, for cross-compiling with `rustc-ryo --target T`
-     ([platforms.md](platforms.md), cross-checking PE on Linux).
+     ([platforms.md](platforms.md), cross-checking PE and Mach-O on Linux). For
+     `x86_64-apple-darwin` (natively or under Rosetta; arm64 is not a target) that is std,
+     `ryo_rt` with the sealed JIT, and `ryo_bytecode`: rlibs and objects, which only a
+     macOS host can link for real (ld64 and the SDK; `test --cross` links with `rust-lld`
+     against stand-ins). On a macOS host `y test` runs programs with `DYLD_LIBRARY_PATH` for
+     their dylibs.
    - **The JIT** (`build/src/jit.rs`, [jit.md](jit.md#packaging)), for each target that has
-     it (x86_64 Linux, and windows-msvc, where it is a stub for now): `cargo rustc --release
+     it (x86_64 Linux, windows-msvc and macOS): `cargo rustc --release
      -p ryo_jit --crate-type staticlib` in its own cargo invocation and target directory
      (`target/jit/`; with `ryo_rt`'s, `ryo_bytecode`'s `alloc` feature would be unified into
      `ryo_rt`'s copy), with fat LTO, `-Copt-level=3 -Ccodegen-units=1 -Cpanic=unwind`, no
      debug information and no `RUSTFLAGS`, against the toolchain's std. Then it is sealed
      with the toolchain's `llvm-ar` and `llvm-objcopy` (`llvm-tools`; no linker, so it works
      for a cross target too): the one LTO object is extracted, every definition but
-     `ryo_jit_start` made local (ELF) or renamed (COFF), debug information stripped, and the
-     object archived alone (ELF) or with the staticlib's import members (COFF) into
+     `ryo_jit_start` made local (ELF, Mach-O: `_ryo_jit_start`) or renamed (COFF), debug
+     information stripped, and the object archived alone (ELF, Mach-O in the BSD format) or
+     with the staticlib's import members (COFF) into
      `target/jit/sealed/<target>/libryo_jit.a` (`ryo_jit.lib`). About 35 s from clean.
    - `ryo_rt` is always built with the stock LLVM backend, against that std, with
      `-Copt-level=3 -Ccodegen-units=1 -Cpanic=unwind -Cembed-bitcode=yes` regardless of the
@@ -198,10 +204,16 @@ This gives a third backend, built from the same toolchain, to compare against.
   `RYO_JIT_SHUFFLE=1`) and `ryo-std-jit-reencode` (through the re-encoding pipeline instead
   of the SSA tier). Without one, they are skipped.
 - `test --cross T`: builds and links, without running, the corpus for target `T` (after
-  `build --target T`), against stand-in import libraries ([platforms.md](platforms.md),
-  cross-checking). Skipped if the sysroot has no `rust-lld`. It also checks the target's
-  bundled JIT object (`jit-sealed`, the COFF form: no `.drectve` or `.CRT$X*` either), and
-  allows the imports of its private std.
+  `build --target T`), against stand-in system libraries ([platforms.md](platforms.md),
+  cross-checking). `T` is `x86_64-pc-windows-msvc` (lld-link, `/force:unresolved`, empty
+  import libraries) or `x86_64-apple-darwin` (ld64.lld, `-flat_namespace -undefined
+  warning`, empty `libSystem`/`libc`/`libm` archives and a `usr/lib/libSystem.B.tbd` that
+  exports nothing, as `SDKROOT`, and `-rpath` to `dist/`'s std for the dylib programs). Skipped if the sysroot has no `rust-lld`. It also checks the target's
+  bundled JIT object (`jit-sealed`, in the COFF form no `.drectve` or `.CRT$X*` either, in
+  the Mach-O form no initializers or `LC_LINKER_OPTION`), and allows the imports of its
+  private std. On Mach-O it also runs `rt-core-only` on the target's `ryo_rt` (Mach-O
+  relocations, `_`-prefixed names; calls within one object's `__text` have no relocation,
+  so it sees fewer edges than on ELF, where every function has its own section).
 - `test --clif`: also builds the corpus with `rustc-clif` and diffs its output too. That
   helps tell ryo bugs from test-corpus problems.
 - `bench [--runs N]`: hyperfine comparisons of each program in `bench/` (fib, sieve,
