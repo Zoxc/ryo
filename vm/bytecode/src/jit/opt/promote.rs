@@ -6,7 +6,8 @@
 //! [`Op::AllocaAddr`] of it is left), no handler or island names it, and its accesses
 //! ([`Op::ALoad`], [`Op::AStore`]) cut it into pieces of power-of-two widths (scalar
 //! replacement: an access covering several pieces is split into one per piece, a `u64` read
-//! of two `u32` stores becomes two field reads put together). Its fields become SSA values (Braun et al. again, on the IR): a load is replaced
+//! of two `u32` stores becomes two field reads put together, a vector read or written as two
+//! 8-byte halves their pair or its halves). Its fields become SSA values (Braun et al. again, on the IR): a load is replaced
 //! by the value the last store to its field on each path left, through new block parameters
 //! where paths meet; a field nothing stored is undefined, but at an OSR entry, where a field
 //! of the AOT frame's alloca is loaded from it ([`Op::OsrLoad`]).
@@ -108,7 +109,7 @@ fn try_promote(f: &mut Func, mut ok: Vec<bool>) -> Result<bool, AllocaId> {
             match &f.insts[i.idx()].op {
                 Op::AllocaAddr(a, _) => ok[a.idx()] = false,
                 Op::ALoad(a, o, w) | Op::AStore(a, o, w) => {
-                    if (1..=8).contains(w) && *o >= 0 && (*o as u32 + *w as u32) <= f.allocas[a.idx()].size {
+                    if matches!(w, 1..=8 | 16) && *o >= 0 && (*o as u32 + *w as u32) <= f.allocas[a.idx()].size {
                         acc[a.idx()].push((*o, *w));
                     } else {
                         ok[a.idx()] = false;
@@ -151,7 +152,10 @@ fn try_promote(f: &mut Func, mut ok: Vec<bool>) -> Result<bool, AllocaId> {
         cuts.dedup();
         let pieces: Vec<(i32, u8)> =
             cuts.windows(2).filter(|c| fs.iter().any(|&(o, w)| o <= c[0] && c[1] <= o + w as i32)).map(|c| (c[0], (c[1] - c[0]) as u8)).collect();
-        if pieces.iter().any(|p| !p.1.is_power_of_two()) {
+        // A vector access split only into its two 8-byte halves.
+        let halves =
+            |&(o, w): &(i32, u8)| w != 16 || pieces.binary_search(&(o, 16)).is_ok() || (pieces.contains(&(o, 8)) && pieces.contains(&(o + 8, 8)));
+        if pieces.iter().any(|p| !p.1.is_power_of_two()) || !fs.iter().all(halves) {
             ok[a] = false;
             continue;
         }
@@ -329,6 +333,23 @@ fn split_accesses(f: &mut Func, live: &[Block], split: &[bool], fields: &[Field]
                 out.push(k);
                 (!ws.is_empty()).then(|| f.result(k))
             };
+            if w == 16 {
+                // A vector over its two halves.
+                if store {
+                    let v = f.insts[i.idx()].args[0];
+                    for (n, (po, pw)) in mine.into_iter().enumerate() {
+                        let h = emit(f, Op::V(VOp::Half(n as u8)), alloc::vec![v], &[8]).unwrap();
+                        emit(f, Op::AStore(a, po, pw), alloc::vec![h], &[]);
+                    }
+                } else {
+                    let lo = emit(f, Op::ALoad(a, o, 8), Vec::new(), &[8]).unwrap();
+                    let hi = emit(f, Op::ALoad(a, o + 8, 8), Vec::new(), &[8]).unwrap();
+                    let x = emit(f, Op::V(VOp::Pair), alloc::vec![lo, hi], &[16]).unwrap();
+                    let r = f.result(i);
+                    f.values[r.idx()].def = ValueDef::Alias(x);
+                }
+                continue;
+            }
             if store {
                 let v = f.insts[i.idx()].args[0];
                 // The width the store reads its value at.

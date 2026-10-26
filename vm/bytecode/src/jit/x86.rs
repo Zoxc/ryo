@@ -2,7 +2,9 @@
 //! allocation and instruction selection need, each in its shortest standard encoding.
 //!
 //! Widths `w` are operand sizes in bytes (1, 2, 4 or 8). Byte forms take a REX prefix whenever
-//! a byte register is spl/bpl/sil/dil, so they never mean ah/ch/dh/bh.
+//! a byte register is spl/bpl/sil/dil, so they never mean ah/ch/dh/bh. The SSE2 forms for
+//! vectors take `xmm` registers by number; their packed operations are register to register
+//! only (a legacy SSE memory operand must be aligned), loads and stores `movdqu`.
 
 use alloc::vec::Vec;
 
@@ -66,6 +68,25 @@ impl Mem {
 pub enum Rm {
     R(R),
     M(Mem),
+}
+
+/// An `xmm` register or memory operand.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum X {
+    X(u8),
+    M(Mem),
+}
+
+/// The packed integer operations (`66 0F op /r`), by their opcode byte.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum Packed {
+    Pcmpgtb = 0x64,
+    Punpcklqdq = 0x6c,
+    Pcmpeqb = 0x74,
+    Pand = 0xdb,
+    Por = 0xeb,
+    Pxor = 0xef,
 }
 
 /// The classic group-1 ops.
@@ -411,6 +432,46 @@ impl X86 {
     pub fn movq_from_xmm(&mut self, dst: Rm, x: u8, w: u8) {
         debug_assert!(matches!(w, 2 | 4 | 8) && x < 16);
         self.insn(true, w == 8, false, &[0x0f, 0x7e], x, dst, &[]);
+    }
+
+    /// An SSE instruction `[prefix] [REX] 0F opc /r`: `reg` an `xmm` (or, for `pmovmskb`,
+    /// general-purpose) register number, `rm` an `xmm` register or memory.
+    fn sse(&mut self, prefix: u8, opc: u8, reg: u8, rm: X, imm: &[u8]) {
+        self.code.push(prefix);
+        let rm = match rm {
+            X::X(x) => Rm::R(R::from_num(x)),
+            X::M(m) => Rm::M(m),
+        };
+        self.insn(false, false, false, &[0x0f, opc], reg, rm, imm);
+    }
+
+    /// `movdqu x, [m]` (or `movdqa x, y` between registers).
+    pub fn movdqu_load(&mut self, x: u8, src: X) {
+        match src {
+            X::X(y) if y == x => {}
+            X::X(_) => self.sse(0x66, 0x6f, x, src, &[]),
+            X::M(_) => self.sse(0xf3, 0x6f, x, src, &[]),
+        }
+    }
+
+    /// `movdqu [m], x`.
+    pub fn movdqu_store(&mut self, m: Mem, x: u8) {
+        self.sse(0xf3, 0x7f, x, X::M(m), &[]);
+    }
+
+    /// A packed operation `d = d op s` (`66 0F op /r`), register to register.
+    pub fn packed(&mut self, op: Packed, d: u8, s: u8) {
+        self.sse(0x66, op as u8, d, X::X(s), &[]);
+    }
+
+    /// `pmovmskb r32, x`: the lanes' top bits.
+    pub fn pmovmskb(&mut self, r: R, x: u8) {
+        self.sse(0x66, 0xd7, r.num(), X::X(x), &[]);
+    }
+
+    /// `pshufd d, s, imm`.
+    pub fn pshufd(&mut self, d: u8, s: u8, imm: u8) {
+        self.sse(0x66, 0x70, d, X::X(s), &[imm]);
     }
 
     fn rel32(&mut self, opc: u8, to: Ref) {

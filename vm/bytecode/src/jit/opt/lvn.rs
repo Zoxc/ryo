@@ -55,6 +55,18 @@ fn key(op: &Op, args: &[Value]) -> Option<Key> {
         Op::PtrAdd(k) => (3, k as u64, 0, a(0), u32::MAX),
         Op::PtrIndex(s) => (4, s as u64, 0, a(0), a(1)),
         Op::AllocaAddr(al, k) => (5, al.0 as u64, k as u32 as u64, u32::MAX, u32::MAX),
+        Op::V(o) => {
+            let (t, n) = match o {
+                VOp::Splat => (0, 0),
+                VOp::Eq => (1, 0),
+                VOp::LtS => (2, 0),
+                VOp::Msb => (3, 0),
+                VOp::Half(n) => (4, n),
+                VOp::Pair => (5, 0),
+            };
+            (7, t, n as u64, a(0), a(1))
+        }
+        Op::VConst(c) => (8, c as u64, (c >> 64) as u64, u32::MAX, u32::MAX),
         Op::RefAddr(to, ind) => {
             let (kind, x) = match to {
                 Ref::Const(k) => (0, k.0),
@@ -111,6 +123,43 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
         }
     }
     match op {
+        Op::V(o) => simplify_v(f, i, o, args),
+        Op::VConst(c) => match u64::try_from(c) {
+            Ok(c) => Simp::Const(c),
+            Err(_) => Simp::Keep,
+        },
+        Op::Bin(o, 16) => {
+            let (a, b) = (args[0], args[1]);
+            match (vconst(f, a), vconst(f, b)) {
+                (Some(x), Some(y)) => {
+                    let r = match o {
+                        BinOp::And => x & y,
+                        BinOp::Or => x | y,
+                        _ => x ^ y,
+                    };
+                    return set_vconst(f, i, r);
+                }
+                (Some(c), None) | (None, Some(c)) => {
+                    let other = if vconst(f, a).is_some() { b } else { a };
+                    let k = if vconst(f, a).is_some() { a } else { b };
+                    match (o, c) {
+                        (BinOp::And, 0) => return Simp::Const(0),
+                        (BinOp::Or | BinOp::Xor, 0) => return Simp::Value(other),
+                        (BinOp::And, u128::MAX) => return Simp::Value(other),
+                        (BinOp::Or, u128::MAX) => return Simp::Value(k),
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+            if a == b && !matches!(f.def(a), ValueDef::Undef) {
+                match o {
+                    BinOp::Xor => return Simp::Const(0),
+                    _ => return Simp::Value(a),
+                }
+            }
+            Simp::Keep
+        }
         Op::Bin(o, w) => {
             let (mut a, mut b) = (args[0], args[1]);
             if o.commutative() && konst(f, a).is_some() {
@@ -133,6 +182,11 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
                     _ => {}
                 }
             }
+            if o == BinOp::Or
+                && let Some(v) = reassembled(f, Value(f.insts[i.idx()].res), w)
+            {
+                return Simp::Value(v);
+            }
             Simp::Keep
         }
         Op::Cmp(cc, w) => {
@@ -149,6 +203,16 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
         Op::Ext { from, to, .. } => {
             if from == to {
                 return Simp::Value(args[0]);
+            }
+            // The low bytes of a zero extension back to its source's width: the source.
+            if let Some(d) = def_inst(f, args[0])
+                && let Op::Ext { from: f0, to: t0, sx: false } = f.insts[d.idx()].op
+                && t0 > f0
+                && t0 == from
+                && to == f0
+                && f.w(f.insts[d.idx()].args[0]) == f0
+            {
+                return Simp::Value(f.insts[d.idx()].args[0]);
             }
             Simp::Keep
         }
@@ -188,6 +252,158 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
             }
             Simp::Keep
         }
+        _ => Simp::Keep,
+    }
+}
+
+/// A value's bits as pieces of other values' bits: (its bit, length, source, source bit); the
+/// bits no piece covers are zero. Through zero extensions, constant shifts and disjoint ors.
+fn pieces(f: &Func, v: Value, depth: u32, out: &mut Vec<(u32, u32, Value, u32)>) -> bool {
+    let w = 8 * f.w(v) as u32;
+    let leaf = |out: &mut Vec<(u32, u32, Value, u32)>| {
+        out.push((0, w, v, 0));
+        true
+    };
+    let ValueDef::Inst(d, 0) = f.def(v) else { return leaf(out) };
+    if depth == 0 {
+        return leaf(out);
+    }
+    let id = &f.insts[d.idx()];
+    let cut = |ps: Vec<(u32, u32, Value, u32)>, sh: i64, bits: u32, out: &mut Vec<(u32, u32, Value, u32)>| {
+        for (at, n, s, sb) in ps {
+            let (mut lo, mut hi, mut sb) = (at as i64 + sh, (at + n) as i64 + sh, sb as i64);
+            if lo < 0 {
+                sb -= lo;
+                lo = 0;
+            }
+            hi = hi.min(bits as i64);
+            if lo < hi {
+                out.push((lo as u32, (hi - lo) as u32, s, sb as u32));
+            }
+        }
+    };
+    let sub = |x: Value| -> Option<Vec<(u32, u32, Value, u32)>> {
+        let mut p = Vec::new();
+        pieces(f, x, depth - 1, &mut p).then_some(p)
+    };
+    let konst = |x: Value| if let ValueDef::Const(c) = f.def(x) { Some(c) } else { None };
+    match id.op {
+        Op::Ext { from, to, sx: false } if to > from => {
+            let Some(p) = sub(id.args[0]) else { return false };
+            cut(p, 0, 8 * from as u32, out);
+            true
+        }
+        Op::Ext { from, to, .. } if to <= from && f.w(id.args[0]) >= to => {
+            let Some(p) = sub(id.args[0]) else { return false };
+            cut(p, 0, w, out);
+            true
+        }
+        Op::Bin(o @ (BinOp::Shl | BinOp::ShrU), bw) if bw <= 8 && konst(id.args[1]).is_some() => {
+            let c = konst(id.args[1]).unwrap() & (8 * bw as u64 - 1);
+            let Some(p) = sub(id.args[0]) else { return false };
+            let mut q = Vec::new();
+            cut(p, 0, 8 * bw as u32, &mut q);
+            cut(q, if o == BinOp::Shl { c as i64 } else { -(c as i64) }, w, out);
+            true
+        }
+        Op::Bin(BinOp::Or, bw) if bw <= 8 => {
+            let (Some(a), Some(b)) = (sub(id.args[0]), sub(id.args[1])) else { return false };
+            let n = out.len();
+            out.extend(a);
+            out.extend(b);
+            let mut ps = out[n..].to_vec();
+            ps.sort_unstable_by_key(|p| p.0);
+            ps.windows(2).all(|x| x[0].0 + x[0].1 <= x[1].0)
+        }
+        _ => leaf(out),
+    }
+}
+
+/// An or of `w` bytes that puts the low bytes of one value back together: that value.
+fn reassembled(f: &Func, v: Value, w: u8) -> Option<Value> {
+    let mut ps = Vec::new();
+    if !pieces(f, v, 6, &mut ps) {
+        return None;
+    }
+    ps.sort_unstable_by_key(|p| p.0);
+    let src = ps.first()?.2;
+    let mut at = 0;
+    for &(lo, n, s, sb) in &ps {
+        if s != src || lo != at || sb != lo {
+            return None;
+        }
+        at += n;
+    }
+    (at == 8 * w as u32 && f.w(src) >= w && src != v && f.w(src) != 16).then_some(src)
+}
+
+/// `v` as a 16-byte constant: a constant (zero-extended) or a [`Op::VConst`].
+pub(crate) fn vconst(f: &Func, v: Value) -> Option<u128> {
+    match f.def(v) {
+        ValueDef::Const(c) => Some(c as u128),
+        ValueDef::Inst(d, 0) => match f.insts[d.idx()].op {
+            Op::VConst(c) => Some(c),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Instruction `i`'s 16-byte result is the constant `c`: a constant if it is one, else `i`
+/// becomes a [`Op::VConst`].
+fn set_vconst(f: &mut Func, i: Inst, c: u128) -> Simp {
+    if let Ok(c) = u64::try_from(c) {
+        return Simp::Const(c);
+    }
+    let id = &mut f.insts[i.idx()];
+    id.op = Op::VConst(c);
+    id.args.clear();
+    Simp::Keep
+}
+
+/// The vector operation `i` folded: on constants, `x == x`, `x < x`, the top bits of a
+/// `x < 0` (those of `x`: `_mm_movemask_epi8`), and a half of a pair or a pair of halves.
+fn simplify_v(f: &mut Func, i: Inst, o: VOp, args: [Value; 2]) -> Simp {
+    let (ws, rw) = o.widths();
+    let n = ws.len();
+    let mut xs = [0u128; 2];
+    let consts = args[..n].iter().zip(&mut xs).all(|(&a, x)| vconst(f, a).map(|c| *x = c).is_some());
+    if consts {
+        let r = o.eval(&xs[..n]);
+        return if rw == 16 { set_vconst(f, i, r) } else { Simp::Const(r as u64) };
+    }
+    let same = n == 2 && args[0] == args[1] && !matches!(f.def(args[0]), ValueDef::Undef);
+    let def = |f: &Func, v: Value| match f.def(v) {
+        ValueDef::Inst(d, 0) => Some(d),
+        _ => None,
+    };
+    match o {
+        VOp::Eq if same => set_vconst(f, i, u128::MAX),
+        VOp::LtS if same => Simp::Const(0),
+        VOp::Msb => {
+            if let Some(d) = def(f, args[0])
+                && f.insts[d.idx()].op == Op::V(VOp::LtS)
+                && vconst(f, f.insts[d.idx()].args[1]) == Some(0)
+            {
+                let x = f.insts[d.idx()].args[0];
+                f.insts[i.idx()].args[0] = x;
+            }
+            Simp::Keep
+        }
+        VOp::Half(h) => match def(f, args[0]) {
+            Some(d) if f.insts[d.idx()].op == Op::V(VOp::Pair) => Simp::Value(f.insts[d.idx()].args[h as usize]),
+            _ => Simp::Keep,
+        },
+        VOp::Pair => match (def(f, args[0]), def(f, args[1])) {
+            (Some(x), Some(y))
+                if f.insts[x.idx()].op == Op::V(VOp::Half(0))
+                    && f.insts[y.idx()].op == Op::V(VOp::Half(1))
+                    && f.insts[x.idx()].args[0] == f.insts[y.idx()].args[0] =>
+            {
+                Simp::Value(f.insts[x.idx()].args[0])
+            }
+            _ => Simp::Keep,
+        },
         _ => Simp::Keep,
     }
 }
@@ -242,6 +458,20 @@ pub(super) fn const_loads(f: &Func) -> bool {
 /// constant `c`; it may also have become a `RefAddr` (pure).
 fn fold_const_load(f: &mut Func, i: Inst, mem: &dyn ConstMem) -> Option<u64> {
     let Op::Load(w, off) = f.insts[i.idx()].op else { return None };
+    if w == 16 {
+        // A vector: two plain 8-byte halves.
+        let a = const_at(f, f.insts[i.idx()].args[0], off)?;
+        let b = const_at(f, f.insts[i.idx()].args[0], off + 8)?;
+        let (PoolRead::Bits(lo), PoolRead::Bits(hi)) = (mem.read(a, 8)?, mem.read(b, 8)?) else { return None };
+        let c = lo as u128 | (hi as u128) << 64;
+        if let Ok(c) = u64::try_from(c) {
+            return Some(c);
+        }
+        let id = &mut f.insts[i.idx()];
+        id.op = Op::VConst(c);
+        id.args.clear();
+        return None;
+    }
     if !matches!(w, 1 | 2 | 4 | 8) {
         return None;
     }
@@ -256,6 +486,86 @@ fn fold_const_load(f: &mut Func, i: Inst, mem: &dyn ConstMem) -> Option<u64> {
     id.op = Op::RefAddr(to, false);
     id.args.clear();
     None
+}
+
+/// A load of `w` bytes at `l` that the known memory `mem` holds across the vector class: a
+/// 16-byte load of two known 8-byte halves is their pair, an 8-byte (or narrower) load of a
+/// known vector's half is that half. The new instructions go to `kept` (of block `b`).
+fn halves(f: &mut Func, kept: &mut Vec<Inst>, b: Block, mem: &[(Loc, u8, Value)], l: Loc, w: u8) -> Option<Value> {
+    let shift = |l: Loc, d: i32| match l {
+        Loc::A(a, o) => Loc::A(a, o + d),
+        Loc::P(p, o) => Loc::P(p, o + d),
+    };
+    let find =
+        |l: Loc, n: u8, vector: bool| mem.iter().rev().find(|e| e.0 == l && e.1 >= n && (f.w(e.2) == 16) == vector && f.w(e.2) >= n).map(|e| e.2);
+    let new = |f: &mut Func, kept: &mut Vec<Inst>, op: Op, args: Vec<Value>, rw: u8| -> Value {
+        let k = f.inst(b, op, args, &[rw]);
+        f.blocks[b.idx()].insts.pop();
+        match simplify(f, k) {
+            Simp::Value(v) => v,
+            Simp::Const(c) => f.konst(mask(c, rw), rw),
+            Simp::Keep => {
+                kept.push(k);
+                f.result(k)
+            }
+        }
+    };
+    if w == 16 {
+        let (lo, hi) = (find(l, 8, false)?, find(shift(l, 8), 8, false)?);
+        return Some(new(f, kept, Op::V(VOp::Pair), alloc::vec![lo, hi], 16));
+    }
+    if w > 8 {
+        return None;
+    }
+    let (v, h) = match find(l, 16, true) {
+        Some(v) => (v, 0),
+        None => (find(shift(l, -8), 16, true)?, 1),
+    };
+    let x = new(f, kept, Op::V(VOp::Half(h)), alloc::vec![v], 8);
+    Some(if w == 8 { x } else { new(f, kept, Op::Ext { from: 8, to: w, sx: false }, alloc::vec![x], w) })
+}
+
+/// A pair of the 8-byte loads at `p + k` and `p + k + 8` of this block (`kept`), with nothing
+/// between them that may write memory, is one 16-byte load where the first was; the two
+/// become its halves. Whether `i`, the pair, became that load.
+fn pair_load(f: &mut Func, kept: &mut Vec<Inst>, i: Inst) -> bool {
+    let (x, y) = (f.insts[i.idx()].args[0], f.insts[i.idx()].args[1]);
+    let load = |f: &Func, v: Value| match f.def(v) {
+        ValueDef::Inst(d, 0) => match f.insts[d.idx()].op {
+            Op::Load(8, k) => Some((d, f.insts[d.idx()].args[0], k)),
+            _ => None,
+        },
+        _ => None,
+    };
+    let (Some((lx, px, kx)), Some((ly, py, ky))) = (load(f, x), load(f, y)) else { return false };
+    if px != py || ky != kx.wrapping_add(8) {
+        return false;
+    }
+    let (Some(ax), Some(ay)) = (kept.iter().position(|&k| k == lx), kept.iter().position(|&k| k == ly)) else { return false };
+    let (lo, hi) = (ax.min(ay), ax.max(ay));
+    let writes =
+        kept[lo..hi].iter().any(|&k| matches!(f.insts[k.idx()].op, Op::Store(..) | Op::AStore(..) | Op::HCall(_) | Op::Call(_) | Op::Island(_)));
+    if writes {
+        return false;
+    }
+    let b = f.insts[i.idx()].block;
+    let mk = |f: &mut Func, op: Op, args: Vec<Value>, w: u8| {
+        let k = f.inst(b, op, args, &[w]);
+        f.blocks[b.idx()].insts.pop();
+        k
+    };
+    let l = mk(f, Op::Load(16, kx), alloc::vec![px], 16);
+    let lv = f.result(l);
+    let h0 = mk(f, Op::V(VOp::Half(0)), alloc::vec![lv], 8);
+    let h1 = mk(f, Op::V(VOp::Half(1)), alloc::vec![lv], 8);
+    kept.retain(|&k| k != lx && k != ly);
+    kept.splice(lo..lo, [l, h0, h1]);
+    let (r0, r1) = (f.result(h0), f.result(h1));
+    f.values[x.idx()].def = ValueDef::Alias(r0);
+    f.values[y.idx()].def = ValueDef::Alias(r1);
+    let r = f.insts[i.idx()].res as usize;
+    f.values[r].def = ValueDef::Alias(lv);
+    true
 }
 
 /// Runs value numbering on every reachable block of `f`, walking the dominator tree, with
@@ -328,6 +638,9 @@ pub fn lvn(f: &mut Func, pools: Option<&dyn ConstMem>) {
                 alias(f, c);
                 continue;
             }
+            if is_pure && f.insts[i.idx()].op == Op::V(VOp::Pair) && pair_load(f, &mut kept, i) {
+                continue;
+            }
             if is_pure {
                 match simplify(f, i) {
                     Simp::Value(v) => {
@@ -363,7 +676,7 @@ pub fn lvn(f: &mut Func, pools: Option<&dyn ConstMem>) {
                 [a.first().copied().unwrap_or(Value(u32::MAX)), a.get(1).copied().unwrap_or(Value(u32::MAX))]
             };
             let lookup = |f: &Func, mem: &[(Loc, u8, Value)], l: Loc, w: u8| {
-                mem.iter().rev().find(|e| e.0 == l && e.1 >= w).map(|e| e.2).filter(|&v| f.w(v) >= w)
+                mem.iter().rev().find(|e| e.0 == l && e.1 >= w).map(|e| e.2).filter(|&v| f.w(v) >= w && (f.w(v) == 16) == (w == 16))
             };
             let remember = |mem: &mut Vec<(Loc, u8, Value)>, l: Loc, w: u8, v: Value| {
                 if mem.len() == MAX_MEM {
@@ -373,14 +686,14 @@ pub fn lvn(f: &mut Func, pools: Option<&dyn ConstMem>) {
             };
             match f.insts[i.idx()].op {
                 Op::ALoad(a, off, w) => {
-                    if let Some(v) = lookup(f, &mem, Loc::A(a, off), w) {
+                    if let Some(v) = lookup(f, &mem, Loc::A(a, off), w).or_else(|| halves(f, &mut kept, b, &mem, Loc::A(a, off), w)) {
                         alias(f, v);
                         continue;
                     }
                     remember(&mut mem, Loc::A(a, off), w, Value(res));
                 }
                 Op::Load(w, off) => {
-                    if let Some(v) = lookup(f, &mem, Loc::P(args[0], off), w) {
+                    if let Some(v) = lookup(f, &mem, Loc::P(args[0], off), w).or_else(|| halves(f, &mut kept, b, &mem, Loc::P(args[0], off), w)) {
                         alias(f, v);
                         continue;
                     }

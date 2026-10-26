@@ -1,6 +1,11 @@
 //! Register allocation for the SSA tier (design/jit.md, "The SSA tier"): every value gets a
 //! location that holds it from its definition to its last use ([`Loc`]). [`naive`] puts every
 //! value in a stack slot of its own: the correctness baseline (`RYO_JIT_OPT=ssa-naive`).
+//!
+//! Two register classes: 1 to 8-byte values take general-purpose registers, 16-byte vectors
+//! `xmm` registers ([`xmm_registers`]). No `xmm` register is callee-saved for the SSA tier
+//! (SysV has none; on PE it never names `xmm6`–`xmm15`), so a vector live across a call
+//! lives in a 16-byte spill slot (two 8-byte ones).
 
 use alloc::vec::Vec;
 
@@ -14,8 +19,22 @@ pub enum Loc {
     /// Nowhere: a constant, undefined, or unused.
     None,
     Reg(R),
-    /// Spill slot `n` (8 bytes).
+    /// An `xmm` register (a vector).
+    Xmm(u8),
+    /// Spill slot `n` (8 bytes; a vector's takes `n` and `n + 1`).
     Spill(u32),
+}
+
+/// The allocatable `xmm` registers, and the emitter's two scratch ones: `xmm0`–`xmm13` and
+/// `xmm14`, `xmm15`; on PE, where `xmm6`–`xmm15` are callee-saved and the SSA tier never
+/// names them, `xmm0`–`xmm3` and `xmm4`, `xmm5`.
+pub fn xmm_registers(pe: bool) -> (core::ops::Range<u8>, [u8; 2]) {
+    if pe { (0..4, [4, 5]) } else { (0..14, [14, 15]) }
+}
+
+/// The spill slots a value of `w` bytes takes.
+fn slots(w: u8) -> u32 {
+    if w == 16 { 2 } else { 1 }
 }
 
 #[derive(Clone, Debug)]
@@ -38,7 +57,7 @@ pub fn naive(f: &Func, uses: &[u32]) -> Alloc {
         };
         if needs {
             loc[v] = Loc::Spill(spills);
-            spills += 1;
+            spills += slots(d.w);
         }
     }
     Alloc { loc, spills, saved: Vec::new() }
@@ -323,7 +342,7 @@ pub fn remat(f: &mut Func) {
 
 /// Each block's loop depth, the loops approximated as the layout ranges from a head to its
 /// last predecessor at or after it.
-fn loop_depth(f: &Func) -> Vec<u32> {
+pub(crate) fn loop_depth(f: &Func) -> Vec<u32> {
     let mut at = alloc::vec![usize::MAX; f.blocks.len()];
     for (k, &b) in f.layout.iter().enumerate() {
         at[b.idx()] = k;
@@ -519,6 +538,10 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
     let mut active: Vec<(u32, usize, R)> = Vec::new();
     let mut free = [true; 16];
     let mut saved = Vec::new();
+    // The same for the vectors' `xmm` registers.
+    let (xregs, _) = xmm_registers(f.pe);
+    let mut xactive: Vec<(u32, usize, u8)> = Vec::new();
+    let mut xfree = [true; 16];
     for v in order {
         let (a, b) = (lo[v], hi[v]);
         active.retain(|&(end, _, r)| {
@@ -529,8 +552,63 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
                 true
             }
         });
+        xactive.retain(|&(end, _, r)| {
+            if end <= a {
+                xfree[r as usize] = true;
+                false
+            } else {
+                true
+            }
+        });
         let clob = cross[v];
         let cross = clob & CALL != 0;
+        if f.values[v].w == 16 {
+            // Across a call: memory (no `xmm` register survives one).
+            if cross {
+                loc[v] = Loc::Spill(spills);
+                spills += 2;
+                continue;
+            }
+            let xmm_of = |x: Value| match loc[x.idx()] {
+                Loc::Xmm(r) => Some(r),
+                _ => None,
+            };
+            // A hint: the first operand's register (two-address forms), an argument's for a
+            // parameter.
+            let hint = match f.values[v].def {
+                ValueDef::Inst(i, _) => f.insts[i.idx()].args.first().and_then(|&x| xmm_of(x)),
+                ValueDef::Param(blk, n) => f.blocks[blk.idx()]
+                    .preds
+                    .iter()
+                    .find_map(|&(p, k)| xmm_of(*f.blocks[p.idx()].term.edges().nth(k as usize)?.args.get(n as usize)?)),
+                _ => None,
+            };
+            let pick = hint.filter(|&r| xfree[r as usize] && xregs.contains(&r)).or_else(|| xregs.clone().find(|&r| xfree[r as usize]));
+            match pick {
+                Some(r) => {
+                    xfree[r as usize] = false;
+                    xactive.push((b, v, r));
+                    loc[v] = Loc::Xmm(r);
+                }
+                None => {
+                    let cand = xactive.iter().enumerate().min_by_key(|(_, (end, w, _))| (density(*w, *end), u32::MAX - end)).map(|(k, &x)| (k, x));
+                    match cand {
+                        Some((k, (end, w, r))) if (density(w, end), u32::MAX - end) < (density(v, b), u32::MAX - b) => {
+                            loc[w] = Loc::Spill(spills);
+                            spills += 2;
+                            xactive.remove(k);
+                            xactive.push((b, v, r));
+                            loc[v] = Loc::Xmm(r);
+                        }
+                        _ => {
+                            loc[v] = Loc::Spill(spills);
+                            spills += 2;
+                        }
+                    }
+                }
+            }
+            continue;
+        }
         // A hint: the register of the first operand (two-address forms), of an argument for a
         // parameter, or the fixed register the value comes in.
         let hint: Option<R> = match f.values[v].def {
@@ -635,14 +713,18 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
 pub fn check(f: &Func, al: &Alloc, frame_pointer: bool) -> Result<(), alloc::string::String> {
     use alloc::format;
     let live = live_in(f);
-    let slot = |l: Loc| -> Option<usize> {
-        match l {
+    let (xregs, _) = xmm_registers(f.pe);
+    // A location's numbers: registers, `xmm` registers from 16, spill slots from 32 (two for
+    // a vector).
+    let slot = |v: Value| -> Option<(usize, usize)> {
+        match al.loc[v.idx()] {
             Loc::None => None,
-            Loc::Reg(r) => Some(r.num() as usize),
-            Loc::Spill(n) => Some(16 + n as usize),
+            Loc::Reg(r) => Some((r.num() as usize, 1)),
+            Loc::Xmm(x) => Some((16 + x as usize, 1)),
+            Loc::Spill(n) => Some((32 + n as usize, slots(f.w(v)) as usize)),
         }
     };
-    let n = 16 + al.spills as usize;
+    let n = 32 + al.spills as usize + 1;
     for &b in &f.layout {
         let bd = &f.blocks[b.idx()];
         let mut owner: Vec<Option<u32>> = alloc::vec![None; n];
@@ -657,20 +739,30 @@ pub fn check(f: &Func, al: &Alloc, frame_pointer: bool) -> Result<(), alloc::str
             if frame_pointer && l == Loc::Reg(R::Rbp) {
                 return Err(format!("{v} is in rbp"));
             }
-            let s = slot(l).ok_or_else(|| format!("{v} is used in {b} but has no location"))?;
-            match owner[s] {
-                Some(w) if w != v.0 => Err(format!("{v} and v{w} both live in {l:?} in {b}")),
-                _ => {
-                    owner[s] = Some(v.0);
-                    Ok(())
+            if let Loc::Xmm(x) = l
+                && !xregs.contains(&x)
+            {
+                return Err(format!("{v} is in a reserved xmm{x}"));
+            }
+            if matches!(l, Loc::Xmm(_)) && f.w(v) != 16 || matches!(l, Loc::Reg(_)) && f.w(v) == 16 {
+                return Err(format!("{v} ({} bytes) is in {l:?}", f.w(v)));
+            }
+            let (s, k) = slot(v).ok_or_else(|| format!("{v} is used in {b} but has no location"))?;
+            for s in s..s + k {
+                match owner[s] {
+                    Some(w) if w != v.0 => return Err(format!("{v} and v{w} both live in {l:?} in {b}")),
+                    _ => owner[s] = Some(v.0),
                 }
             }
+            Ok(())
         };
         let release = |owner: &mut Vec<Option<u32>>, v: Value| -> Result<(), alloc::string::String> {
-            if let Some(s) = slot(al.loc[v.idx()]) {
-                match owner[s] {
-                    Some(w) if w != v.0 => return Err(format!("{v}'s definition in {b} overwrites v{w}")),
-                    _ => owner[s] = None,
+            if let Some((s, k)) = slot(v) {
+                for s in s..s + k {
+                    match owner[s] {
+                        Some(w) if w != v.0 => return Err(format!("{v}'s definition in {b} overwrites v{w}")),
+                        _ => owner[s] = None,
+                    }
                 }
             }
             Ok(())
@@ -688,6 +780,11 @@ pub fn check(f: &Func, al: &Alloc, frame_pointer: bool) -> Result<(), alloc::str
                 if let Some(w) = owner[r] {
                     return Err(format!("v{w} lives across {i}, which clobbers it, in {:?}", R::from_num(r as u8)));
                 }
+            }
+            if m & CALL != 0
+                && let Some(w) = owner[16..32].iter().flatten().next()
+            {
+                return Err(format!("v{w} lives across {i}, a call, in an xmm register"));
             }
             for &a in &id.args {
                 claim(&mut owner, a)?;

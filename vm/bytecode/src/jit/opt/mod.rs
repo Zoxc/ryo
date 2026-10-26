@@ -10,6 +10,7 @@
 //!   and stores (value numbered again).
 //! - `osr`: the OSR-transparent loop facts the forward analyses share: OSR edges left out.
 //! - `fold`: the folds instruction selection relies on.
+//! - `hoist`: splats of loop-invariant bytes out of their loops.
 //! - `checks`: check elimination: overflow checks and compares the dominating branches
 //!   and value ranges decide.
 //! - `dce`: dead code elimination, effect-free handler calls included.
@@ -23,6 +24,7 @@ pub mod copies;
 pub mod dce;
 pub mod dse;
 pub mod fold;
+pub mod hoist;
 pub mod layout;
 pub mod lvn;
 pub mod osr;
@@ -67,6 +69,7 @@ pub fn run(f: &mut Func, mem: Option<&dyn ConstMem>) {
         lvn::lvn(f, mem);
     }
     fold::fold(f);
+    hoist::hoist(f);
     checks::checks(f);
     dce::dce(f);
     thread::thread(f);

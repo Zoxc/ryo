@@ -10,7 +10,7 @@ use alloc::vec::Vec;
 use super::Unsupported;
 use super::ir::*;
 use super::regalloc::{Alloc, Loc};
-use super::x86::{Alu, Cc as X, Mem, R, Rm, Shift, X86};
+use super::x86::{self, Alu, Cc as X, Mem, Packed, R, Rm, Shift, X86};
 use crate::asm::osr::{self, OsrCode};
 use crate::asm::{self, CallSite, Mode, PROBE_FROM, Ref, Reloc, RetPart};
 use crate::full::{ElemKind, OperandKind};
@@ -98,6 +98,16 @@ fn sext(v: u64, w: u8) -> i64 {
 enum Src {
     R(R),
     M(Mem),
+    Imm(u64),
+    Undef,
+}
+
+/// A vector operand source.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum XSrc {
+    X(u8),
+    M(Mem),
+    /// A constant, zero-extended.
     Imm(u64),
     Undef,
 }
@@ -408,6 +418,7 @@ impl<'a> E<'a> {
             Loc::Reg(r) => Src::R(r),
             Loc::Spill(n) => Src::M(self.fp_mem(self.fr.spill0 + 8 * n as i32)),
             Loc::None => Src::Undef,
+            Loc::Xmm(_) => unreachable!("{v}, a vector, as a scalar"),
         }
     }
 
@@ -417,7 +428,160 @@ impl<'a> E<'a> {
             Loc::Reg(r) => Some(Rm::R(r)),
             Loc::Spill(n) => Some(Rm::M(self.fp_mem(self.fr.spill0 + 8 * n as i32))),
             Loc::None => None,
+            Loc::Xmm(_) => unreachable!("{v}, a vector, as a scalar"),
         }
+    }
+
+    /// The emitter's scratch `xmm` registers.
+    fn xs(&self) -> [u8; 2] {
+        super::regalloc::xmm_registers(self.mode.pe).1
+    }
+
+    /// Where the vector `v` is.
+    fn xsrc(&self, v: Value) -> XSrc {
+        match self.f.def(v) {
+            ValueDef::Const(c) => return XSrc::Imm(c),
+            ValueDef::Undef => return XSrc::Undef,
+            _ => {}
+        }
+        match self.al.loc[v.idx()] {
+            Loc::Xmm(x) => XSrc::X(x),
+            Loc::Spill(n) => XSrc::M(self.fp_mem(self.fr.spill0 + 8 * n as i32)),
+            Loc::None => XSrc::Undef,
+            Loc::Reg(_) => unreachable!("{v}, a scalar, as a vector"),
+        }
+    }
+
+    /// Where the vector `v` goes (`None`: nowhere, unused).
+    fn xdst(&self, v: Value) -> Option<x86::X> {
+        match self.al.loc[v.idx()] {
+            Loc::Xmm(x) => Some(x86::X::X(x)),
+            Loc::Spill(n) => Some(x86::X::M(self.fp_mem(self.fr.spill0 + 8 * n as i32))),
+            Loc::None => None,
+            Loc::Reg(_) => unreachable!("{v}, a scalar, as a vector"),
+        }
+    }
+
+    /// Loads the vector `s` into `xmm` register `x`.
+    fn xload(&mut self, x: u8, s: XSrc) {
+        match s {
+            XSrc::X(y) => self.a.x().movdqu_load(x, x86::X::X(y)),
+            XSrc::M(m) => self.a.x().movdqu_load(x, x86::X::M(m)),
+            XSrc::Imm(c) => self.vconst(x, c as u128),
+            XSrc::Undef => {}
+        }
+    }
+
+    /// The constant `c` into `xmm` register `x`: `pxor` for zeros, `pcmpeqb` for ones, a
+    /// `movq` of a 64-bit one, else a load from the function's read-only data.
+    fn vconst(&mut self, x: u8, c: u128) {
+        match c {
+            0 => self.a.x().packed(Packed::Pxor, x, x),
+            u128::MAX => self.a.x().packed(Packed::Pcmpeqb, x, x),
+            _ if c <= u64::MAX as u128 => {
+                self.a.x().mov_imm(8, Rm::R(S1), c as u64);
+                self.a.x().movq_to_xmm(x, Rm::R(S1), 8);
+            }
+            _ => {
+                let o = self.ro(&c.to_le_bytes(), 16);
+                self.a.x().movdqu_load(x, x86::X::M(Mem::Rip(Ref::Ro(o))));
+            }
+        }
+    }
+
+    /// The vector `v` in an `xmm` register: its own, or loaded into `scratch`.
+    fn xreg(&mut self, v: Value, scratch: u8) -> u8 {
+        match self.xsrc(v) {
+            XSrc::X(x) => x,
+            s => {
+                self.xload(scratch, s);
+                scratch
+            }
+        }
+    }
+
+    /// The `xmm` register to compute the vector `v` in: its own if it isn't one of `avoid`'s,
+    /// else the first scratch one.
+    fn xwork(&self, v: Value, avoid: &[Value]) -> u8 {
+        match self.al.loc[v.idx()] {
+            Loc::Xmm(x) if !avoid.iter().any(|&a| self.xsrc(a) == XSrc::X(x)) => x,
+            _ => self.xs()[0],
+        }
+    }
+
+    /// Stores `xmm` register `x` to the vector `v`'s location.
+    fn xput(&mut self, v: Value, x: u8) {
+        match self.xdst(v) {
+            Some(x86::X::X(d)) => self.a.x().movdqu_load(d, x86::X::X(x)),
+            Some(x86::X::M(m)) => self.a.x().movdqu_store(m, x),
+            None => {}
+        }
+    }
+
+    fn xmov(&mut self, d: x86::X, s: XSrc) {
+        match (d, s) {
+            (_, XSrc::Undef) => {}
+            (x86::X::X(x), s) => self.xload(x, s),
+            (x86::X::M(m), XSrc::X(x)) => self.a.x().movdqu_store(m, x),
+            (x86::X::M(m), XSrc::M(n)) => {
+                let t = self.xs()[0];
+                self.a.x().movdqu_load(t, x86::X::M(n));
+                self.a.x().movdqu_store(m, t);
+            }
+            (x86::X::M(m), XSrc::Imm(c)) => {
+                let Mem::Base { base, disp, .. } = m else { unreachable!("a frame slot") };
+                self.mov(Rm::M(m), Src::Imm(c));
+                self.a.x().mov_imm(8, Rm::M(Mem::base(base, disp + 8)), 0);
+            }
+        }
+    }
+
+    /// A parallel move of vectors (the second scratch `xmm` register breaks cycles).
+    fn xmoves(&mut self, mut ms: Vec<(x86::X, XSrc)>) {
+        let same = |d: &x86::X, s: &XSrc| match (d, s) {
+            (x86::X::X(a), XSrc::X(b)) => a == b,
+            (x86::X::M(a), XSrc::M(b)) => a == b,
+            _ => false,
+        };
+        ms.retain(|(d, s)| !matches!(s, XSrc::Undef) && !same(d, s));
+        while !ms.is_empty() {
+            let free = (0..ms.len()).find(|&i| !ms.iter().enumerate().any(|(j, (_, s))| j != i && same(&ms[i].0, s)));
+            match free {
+                Some(i) => {
+                    let (d, s) = ms.remove(i);
+                    self.xmov(d, s);
+                }
+                None => {
+                    let d = ms[0].0;
+                    let s = match d {
+                        x86::X::X(x) => XSrc::X(x),
+                        x86::X::M(m) => XSrc::M(m),
+                    };
+                    let t = self.xs()[1];
+                    self.xmov(x86::X::X(t), s);
+                    for m in ms.iter_mut() {
+                        if same(&d, &m.1) {
+                            m.1 = XSrc::X(t);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// `x = a op b` for a packed operation (`a` copied to the result's register first; a
+    /// commutative one may swap its operands to reuse the result's).
+    fn vbin(&mut self, op: Packed, commutative: bool, a: Value, b: Value, x: Value) {
+        let (mut a, mut b) = (a, b);
+        if commutative && matches!(self.al.loc[x.idx()], Loc::Xmm(r) if self.xsrc(b) == XSrc::X(r)) {
+            core::mem::swap(&mut a, &mut b);
+        }
+        let rd = self.xwork(x, &[b]);
+        let sa = self.xsrc(a);
+        self.xload(rd, sa);
+        let rb = self.xreg(b, self.xs()[1]);
+        self.a.x().packed(op, rd, rb);
+        self.xput(x, rd);
     }
 
     /// Loads `v` (8 bytes) into `r`.
@@ -857,6 +1021,109 @@ impl<'a> E<'a> {
         }
         let args = id.args.clone();
         match id.op.clone() {
+            Op::Bin(op, 16) => {
+                let p = match op {
+                    BinOp::And => Packed::Pand,
+                    BinOp::Or => Packed::Por,
+                    _ => Packed::Pxor,
+                };
+                self.vbin(p, true, args[0], args[1], res[0]);
+            }
+            Op::V(VOp::Eq) => self.vbin(Packed::Pcmpeqb, true, args[0], args[1], res[0]),
+            // `a < b` is `b > a`.
+            Op::V(VOp::LtS) => self.vbin(Packed::Pcmpgtb, false, args[1], args[0], res[0]),
+            Op::V(VOp::Splat) => {
+                // The byte times `0x01010101` in every dword.
+                let x = res[0];
+                let rx = self.xwork(x, &[]);
+                match self.src(args[0]) {
+                    Src::R(r) => self.a.x().movzx(S1, 1, Rm::R(r)),
+                    Src::M(m) => self.a.x().movzx(S1, 1, Rm::M(m)),
+                    Src::Imm(c) => self.a.x().mov_imm(4, Rm::R(S1), c & 0xff),
+                    Src::Undef => {}
+                }
+                self.a.x().imul_imm(4, S1, Rm::R(S1), 0x0101_0101);
+                self.a.x().movq_to_xmm(rx, Rm::R(S1), 4);
+                self.a.x().pshufd(rx, rx, 0);
+                self.xput(x, rx);
+            }
+            Op::V(VOp::Msb) => {
+                let x = res[0];
+                let rd = self.work(x, &[]);
+                let ra = self.xreg(args[0], self.xs()[0]);
+                self.a.x().pmovmskb(rd, ra);
+                self.put(x, rd);
+            }
+            Op::V(VOp::Half(n)) => {
+                let x = res[0];
+                let rd = self.work(x, &[]);
+                match self.xsrc(args[0]) {
+                    // From memory: the half's bytes.
+                    XSrc::M(Mem::Base { base, disp, .. }) => self.a.x().mov(8, Rm::R(rd), Rm::M(Mem::base(base, disp + 8 * n as i32))),
+                    XSrc::Imm(c) => self.a.x().mov_imm(8, Rm::R(rd), if n == 0 { c } else { 0 }),
+                    XSrc::Undef => {}
+                    s => {
+                        let XSrc::X(ra) = s else { unreachable!("a frame slot") };
+                        let ra = if n == 0 {
+                            ra
+                        } else {
+                            let t = self.xs()[1];
+                            self.a.x().pshufd(t, ra, 0xee);
+                            t
+                        };
+                        self.a.x().movq_from_xmm(Rm::R(rd), ra, 8);
+                    }
+                }
+                self.put(x, rd);
+            }
+            Op::V(VOp::Pair) => {
+                let x = res[0];
+                let rd = self.xwork(x, &[]);
+                let t = self.xs()[1];
+                for (k, r) in [(0, rd), (1, t)] {
+                    match self.src(args[k]) {
+                        Src::R(g) => self.a.x().movq_to_xmm(r, Rm::R(g), 8),
+                        Src::M(m) => self.a.x().movq_to_xmm(r, Rm::M(m), 8),
+                        Src::Imm(c) => self.vconst(r, c as u128),
+                        Src::Undef => {}
+                    }
+                }
+                self.a.x().packed(Packed::Punpcklqdq, rd, t);
+                self.xput(x, rd);
+            }
+            Op::VConst(c) => {
+                let x = res[0];
+                let rd = self.xwork(x, &[]);
+                self.vconst(rd, c);
+                self.xput(x, rd);
+            }
+            Op::Load(16, k) => {
+                let x = res[0];
+                let rp = self.reg(args[0], S1);
+                let rd = self.xwork(x, &[]);
+                self.a.x().movdqu_load(rd, x86::X::M(Mem::base(rp, k)));
+                self.xput(x, rd);
+            }
+            Op::ALoad(a, k, 16) => {
+                let x = res[0];
+                let rd = self.xwork(x, &[]);
+                let m = self.fp_mem(self.fr.alloca[a.idx()] + k);
+                self.a.x().movdqu_load(rd, x86::X::M(m));
+                self.xput(x, rd);
+            }
+            Op::Store(16, k) => {
+                let rp = self.reg(args[0], S1);
+                let rv = self.xreg(args[1], self.xs()[0]);
+                self.a.x().movdqu_store(Mem::base(rp, k), rv);
+            }
+            Op::AStore(a, k, 16) => {
+                let m = self.fp_mem(self.fr.alloca[a.idx()] + k);
+                let rv = self.xreg(args[0], self.xs()[0]);
+                self.a.x().movdqu_store(m, rv);
+            }
+            Op::HCall(_) | Op::Call(_) if args.iter().chain(&res).any(|&v| self.f.w(v) == 16) => {
+                return Err(Unsupported("a vector operand of a call"));
+            }
             Op::Bin(op @ (BinOp::DivS | BinOp::DivU | BinOp::RemS | BinOp::RemU), w) => self.divrem(op, w, args[0], args[1], res[0]),
             Op::Bin(op @ (BinOp::Shl | BinOp::ShrS | BinOp::ShrU), w) if !matches!(self.src(args[1]), Src::Imm(_)) => {
                 self.shift_var(op, w, args[0], args[1], res[0])
@@ -1162,6 +1429,8 @@ impl<'a> E<'a> {
                 // `sar` of a narrow value is at 64 bits.
                 Op::Bin(BinOp::ShrS, w) if w < 4 => 8,
                 Op::Bin(_, w) if w <= 4 => 4,
+                // `pmovmskb` writes a 32-bit register.
+                Op::V(VOp::Msb) => 2,
                 Op::Load(w @ (1 | 2 | 4), _) | Op::ALoad(_, _, w @ (1 | 2 | 4)) => w,
                 Op::Ext { from, to, sx: false } if to > from => from,
                 Op::Ext { from, to, .. } if to <= from => {
@@ -1371,21 +1640,36 @@ impl<'a> E<'a> {
         }
     }
 
-    /// The moves of an edge.
+    /// The moves of an edge: the scalars', then the vectors' (which may use `S1` for a
+    /// constant).
     fn edge_moves(&mut self, e: &Edge) {
         let params = self.f.blocks[e.to.idx()].params.clone();
         let mut ms = Vec::new();
+        let mut xs = Vec::new();
         for (&a, &p) in e.args.iter().zip(&params) {
-            if let Some(d) = self.dst(p) {
+            if self.f.w(p) == 16 {
+                if let Some(d) = self.xdst(p) {
+                    xs.push((d, self.xsrc(a)));
+                }
+            } else if let Some(d) = self.dst(p) {
                 ms.push((d, self.src(a)));
             }
         }
         self.moves(ms);
+        self.xmoves(xs);
     }
 
     fn edge_has_moves(&self, e: &Edge) -> bool {
         let params = &self.f.blocks[e.to.idx()].params;
         e.args.iter().zip(params).any(|(&a, &p)| {
+            if self.f.w(p) == 16 {
+                return match (self.xdst(p), self.xsrc(a)) {
+                    (None, _) | (_, XSrc::Undef) => false,
+                    (Some(x86::X::X(x)), XSrc::X(y)) => x != y,
+                    (Some(x86::X::M(x)), XSrc::M(y)) => x != y,
+                    _ => true,
+                };
+            }
             let (d, s) = (self.dst(p), self.src(a));
             match (d, s) {
                 (None, _) | (_, Src::Undef) => false,
@@ -1719,7 +2003,7 @@ fn osr_code(f: &Func, al: &Alloc, mode: Mode, fr: &Frame, lab: &[u32], at: u32) 
             let id = &f.insts[i.idx()];
             if let Op::OsrLoad(off, w) = id.op {
                 loads.push((Value(id.res), off, w, k));
-                k += 8;
+                k += if w == 16 { 16 } else { 8 };
             }
         }
         let mut copies: Vec<(i32, i32, u32, i32)> = Vec::new();
@@ -1743,6 +2027,10 @@ fn osr_code(f: &Func, al: &Alloc, mode: Mode, fr: &Frame, lab: &[u32], at: u32) 
             }
         };
         for &(_, off, w, k) in &loads {
+            if w == 16 {
+                copy(&mut x, (base, off), (R::Rsp, k), 16);
+                continue;
+            }
             match w {
                 1 | 2 => x.movzx(S1, w, Rm::M(mem_of(base, off))),
                 4 => x.mov(4, Rm::R(S1), Rm::M(mem_of(base, off))),
@@ -1773,6 +2061,24 @@ fn osr_code(f: &Func, al: &Alloc, mode: Mode, fr: &Frame, lab: &[u32], at: u32) 
             };
             match al.loc[p.idx()] {
                 Loc::None => {}
+                // A vector: from the scratch copy, or a zero-extended constant.
+                Loc::Xmm(r) => match src {
+                    Src::Imm(c) => {
+                        x.mov_imm(8, Rm::R(S1), c);
+                        x.movq_to_xmm(r, Rm::R(S1), 8);
+                    }
+                    Src::M(m) => x.movdqu_load(r, x86::X::M(m)),
+                    _ => unreachable!(),
+                },
+                Loc::Spill(s) if f.w(p) == 16 => match src {
+                    Src::Imm(c) => {
+                        x.mov_imm(8, Rm::R(S1), c);
+                        x.mov(8, Rm::M(jit_mem(s)), Rm::R(S1));
+                        x.mov_imm(8, Rm::M(jit_mem(s + 1)), 0);
+                    }
+                    Src::M(Mem::Base { base: b, disp, .. }) => copy(&mut x, (b, disp), (base, fr.spill0 + 8 * s as i32), 16),
+                    _ => unreachable!(),
+                },
                 Loc::Spill(s) => match src {
                     Src::Imm(c) if fits32(c as i64) => x.mov_imm(8, Rm::M(jit_mem(s)), c),
                     Src::Imm(c) => {

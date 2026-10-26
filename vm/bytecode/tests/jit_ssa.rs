@@ -818,3 +818,180 @@ fn const_copy_from_the_pool() {
     let f = ir(&d);
     assert!(live_ops(&f).iter().any(|o| matches!(o, Op::HCall(_))), "{f}");
 }
+
+/// The ops of `f`'s blocks in layout, in order.
+fn ops(f: &IrFunc) -> Vec<Op> {
+    f.layout.iter().flat_map(|b| &f.blocks[b.idx()].insts).map(|i| f.insts[i.idx()].op.clone()).collect()
+}
+
+/// `_mm_movemask_epi8(_mm_cmpeq_epi8(_mm_loadu_si128(p), _mm_set1_epi8(tag)))`: the vectors
+/// are promoted 16-byte values, the load one `Load(16)`, the operations native.
+#[test]
+fn vectors_promoted() {
+    use ryo_bytecode::jit::ir::VOp;
+    let v = vec![
+        arg(-8, 0),
+        arg(-16, 1),
+        Insn::LoadCopy { d: Slot(-48), m: Mem { p: Slot(-8), k: 0 }, len: 16 },
+        Insn::VsplatI8x16 { d: Slot(-64), s: Slot(-16) },
+        Insn::VeqI8x16 { d: Slot(-64), a: Slot(-48), b: Slot(-64) },
+        Insn::VmsbI8x16 { d: Slot(-72), a: Slot(-64) },
+        Insn::ZextW16W64 { d: Slot(-80), s: Slot(-72) },
+        Insn::Ret { s: Slot(-80), k: 8 },
+    ];
+    let f = ir(&decoded(&v, 80, &[]));
+    assert!(f.allocas.iter().all(|a| a.kind == AllocaKind::Promoted), "{f}");
+    let ops = ops(&f);
+    assert!(ops.contains(&Op::Load(16, 0)), "{f}");
+    for o in [VOp::Splat, VOp::Eq, VOp::Msb] {
+        assert!(ops.contains(&Op::V(o)), "{o:?}\n{f}");
+    }
+    assert!(!ops.iter().any(|o| matches!(o, Op::HCall(_))), "{f}");
+}
+
+/// `vmsb(vlt.s(x, 0))` is `vmsb(x)`, and operations on constants fold: a splat of a constant
+/// byte is a vector constant, its top bits a constant mask.
+#[test]
+fn vector_folds() {
+    use ryo_bytecode::jit::ir::VOp;
+    let v = vec![
+        arg(-8, 0),
+        Insn::LoadCopy { d: Slot(-48), m: Mem { p: Slot(-8), k: 0 }, len: 16 },
+        Insn::Zero { d: Slot(-64), len: 16 },
+        Insn::VltSI8x16 { d: Slot(-64), a: Slot(-48), b: Slot(-64) },
+        Insn::VmsbI8x16 { d: Slot(-72), a: Slot(-64) },
+        Insn::ImmW8 { d: Slot(-73), imm: 0x80 },
+        Insn::VsplatI8x16 { d: Slot(-96), s: Slot(-73) },
+        Insn::VmsbI8x16 { d: Slot(-98), a: Slot(-96) },
+        Insn::OrW128 { d: Slot(-48), a: Slot(-48), b: Slot(-96) },
+        Insn::VmsbI8x16 { d: Slot(-100), a: Slot(-48) },
+        Insn::ZextW16W64 { d: Slot(-80), s: Slot(-72) },
+        Insn::ZextW16W64 { d: Slot(-88), s: Slot(-98) },
+        Insn::ZextW16W64 { d: Slot(-104), s: Slot(-100) },
+        Insn::AddW64 { d: Slot(-80), a: Slot(-80), b: Slot(-88) },
+        Insn::AddW64 { d: Slot(-80), a: Slot(-80), b: Slot(-104) },
+        Insn::Ret { s: Slot(-80), k: 8 },
+    ];
+    let f = ir(&decoded(&v, 112, &[]));
+    let ops = ops(&f);
+    assert!(!ops.contains(&Op::V(VOp::LtS)), "{f}");
+    assert!(!ops.contains(&Op::V(VOp::Splat)), "{f}");
+    // The splat's mask folded; the others stay, the or's of a vector constant.
+    assert_eq!(ops.iter().filter(|o| **o == Op::V(VOp::Msb)).count(), 2, "{f}");
+    assert!(ops.contains(&Op::VConst(u128::from_le_bytes([0x80; 16]))), "{f}");
+}
+
+/// A vector also read as two `u64` halves stays in memory: a promoted field is read whole.
+#[test]
+fn vector_read_as_halves() {
+    let v = vec![
+        arg(-8, 0),
+        Insn::LoadCopy { d: Slot(-48), m: Mem { p: Slot(-8), k: 0 }, len: 16 },
+        Insn::VeqI8x16 { d: Slot(-64), a: Slot(-48), b: Slot(-48) },
+        Insn::XorW128 { d: Slot(-64), a: Slot(-64), b: Slot(-48) },
+        Insn::AddW64 { d: Slot(-72), a: Slot(-64), b: Slot(-56) },
+        Insn::Ret { s: Slot(-72), k: 8 },
+    ];
+    let f = ir(&decoded(&v, 80, &[]));
+    let mem = f.allocas.iter().filter(|a| a.kind == AllocaKind::Memory).count();
+    assert_eq!(mem, 1, "{f}");
+}
+
+/// A splat of a byte loaded before a loop, inside the loop: hoisted to the load.
+#[test]
+fn splat_hoisted() {
+    use ryo_bytecode::jit::ir::VOp;
+    let v = vec![
+        arg(-8, 0),
+        arg(-16, 1),
+        Insn::LoadW8 { d: Slot(-88), m: Mem { p: Slot(-16), k: 0 } },
+        Insn::ImmW64 { d: Slot(-24), imm: 0 },
+        Insn::ImmW64 { d: Slot(-32), imm: 0 },
+        // 5: the head.
+        Insn::BrLtUImmW64 { a: Slot(-24), imm: 4, neg: F, t: Target(14) },
+        Insn::LoadCopy { d: Slot(-48), m: Mem { p: Slot(-8), k: 0 }, len: 16 },
+        Insn::VsplatI8x16 { d: Slot(-64), s: Slot(-88) },
+        Insn::VeqI8x16 { d: Slot(-64), a: Slot(-48), b: Slot(-64) },
+        Insn::VmsbI8x16 { d: Slot(-66), a: Slot(-64) },
+        Insn::ZextW16W64 { d: Slot(-80), s: Slot(-66) },
+        Insn::AddW64 { d: Slot(-32), a: Slot(-32), b: Slot(-80) },
+        Insn::AddImmW64 { d: Slot(-24), a: Slot(-24), imm: 1 },
+        Insn::Jmp { t: Target(5) },
+        Insn::Ret { s: Slot(-32), k: 8 },
+    ];
+    let f = ir(&decoded(&v, 96, &[]));
+    let splat = f.insts.iter().position(|i| {
+        i.op == Op::V(VOp::Splat)
+            && f.blocks[i.block.idx()].insts.iter().any(|k| k.0 as usize == f.insts.iter().position(|j| std::ptr::eq(j, i)).unwrap())
+    });
+    let b = f.insts[splat.expect("a splat")].block;
+    assert!(f.blocks[b.idx()].head.is_none(), "not in the loop: {f}");
+    let eq = f
+        .insts
+        .iter()
+        .find(|i| i.op == Op::V(VOp::Eq) && f.blocks[i.block.idx()].insts.iter().any(|k| std::ptr::eq(&f.insts[k.idx()], *i)))
+        .expect("an eq");
+    assert_ne!(eq.block, b, "{f}");
+}
+
+/// A vector loaded as two 8-byte halves through a pointer, its upper half put back together
+/// from 4 and 2-byte pieces: one 16-byte load, and the pieces the half itself.
+#[test]
+fn halves_reassembled() {
+    use ryo_bytecode::jit::ir::{BinOp, Func as F, Inst, VOp};
+    let mut f = F::default();
+    let b = f.block(BlockKind::Entry);
+    f.layout.push(b);
+    let p = f.param(b, 8);
+    f.entry_regs.push(ArgReg { xmm: false, size: 8, index: 0 });
+    let v = |f: &mut F, i: Inst| f.result(i);
+    let lo = f.inst(b, Op::Load(8, 0), vec![p], &[8]);
+    let hi = f.inst(b, Op::Load(8, 8), vec![p], &[8]);
+    let (lo, hi) = (v(&mut f, lo), v(&mut f, hi));
+    let k32 = f.konst(32, 8);
+    let k48 = f.konst(48, 8);
+    let a = f.inst(b, Op::Ext { from: 4, to: 8, sx: false }, vec![hi], &[8]);
+    let s = f.inst(b, Op::Bin(BinOp::ShrU, 8), vec![hi, k32], &[8]);
+    let s = v(&mut f, s);
+    let m = f.inst(b, Op::Ext { from: 2, to: 8, sx: false }, vec![s], &[8]);
+    let m = v(&mut f, m);
+    let m = f.inst(b, Op::Bin(BinOp::Shl, 8), vec![m, k32], &[8]);
+    let t = f.inst(b, Op::Bin(BinOp::ShrU, 8), vec![hi, k48], &[8]);
+    let t = v(&mut f, t);
+    let t = f.inst(b, Op::Bin(BinOp::Shl, 8), vec![t, k48], &[8]);
+    let (a, m, t) = (v(&mut f, a), v(&mut f, m), v(&mut f, t));
+    let o = f.inst(b, Op::Bin(BinOp::Or, 8), vec![a, m], &[8]);
+    let o = v(&mut f, o);
+    let o = f.inst(b, Op::Bin(BinOp::Or, 8), vec![o, t], &[8]);
+    let o = v(&mut f, o);
+    let pr = f.inst(b, Op::V(VOp::Pair), vec![lo, o], &[16]);
+    let pr = v(&mut f, pr);
+    let mk = f.inst(b, Op::V(VOp::Msb), vec![pr], &[2]);
+    let mk = v(&mut f, mk);
+    f.terminate(b, Term::Ret { k: 2, parts: vec![mk] });
+    ryo_bytecode::jit::opt::run(&mut f, None);
+    f.verify().unwrap();
+    let ops = ops(&f);
+    assert_eq!(ops, vec![Op::Load(16, 0), Op::V(VOp::Msb)], "{f}");
+}
+
+/// A zero extension's low bytes are its source, but a truncation's extension is a mask.
+#[test]
+fn extension_identities() {
+    use ryo_bytecode::jit::ir::Func as F;
+    for (inner, outer, folds) in [((1, 4), (4, 1), true), ((8, 1), (1, 8), false)] {
+        let mut f = F::default();
+        let b = f.block(BlockKind::Entry);
+        f.layout.push(b);
+        let p = f.param(b, inner.0);
+        f.entry_regs.push(ArgReg { xmm: false, size: 8, index: 0 });
+        let e = f.inst(b, Op::Ext { from: inner.0, to: inner.1, sx: false }, vec![p], &[inner.1]);
+        let e = f.result(e);
+        let t = f.inst(b, Op::Ext { from: outer.0, to: outer.1, sx: false }, vec![e], &[outer.1]);
+        let t = f.result(t);
+        f.terminate(b, Term::Ret { k: 8, parts: vec![t] });
+        ryo_bytecode::jit::opt::run(&mut f, None);
+        let Term::Ret { parts, .. } = &f.blocks[0].term else { panic!() };
+        assert_eq!(parts[0] == p, folds, "{inner:?} then {outer:?}: {f}");
+    }
+}

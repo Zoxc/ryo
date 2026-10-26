@@ -291,12 +291,16 @@ baseline the tier refines.
 ### IR
 
 `jit::ir`: blocks with parameters (no phis), instructions in an arena, `u32` ids.
-- **Values** are untyped bit vectors of 1, 2, 4 or 8 bytes: an operation of width `w` reads
-  the low `w` bytes of its operands, and the rest of a register or slot holding a value is
-  unspecified. Compares give 1-byte booleans. Constants and `undef` are values without a
-  definition.
+- **Values** are untyped bit vectors of 1, 2, 4 or 8 bytes, or 16 for a vector: an
+  operation of width `w` reads the low `w` bytes of its operands, and the rest of a register
+  or slot holding a value is unspecified. Vectors are a class of their own (no operation
+  reads one at a scalar width, or a scalar as a vector). Compares give 1-byte booleans.
+  Constants and `undef` are values without a definition; a 16-byte constant is its `u64`
+  zero-extended, `VConst` any other.
 - **Instructions**: the native reduced instructions on values (`Bin`, `Cmp`, `PtrAdd`,
-  `PtrIndex`), `AllocaAddr`, `RefAddr` (`addr.const`, `addr.sym`, `addr.sym.ind`: a
+  `PtrIndex`), the vector operations (`V`: `vsplat`, `veq`, `vlt.s`, `vmsb` on 16 × 8-bit
+  lanes, a vector's 8-byte halves and a pair of them; `and`/`or`/`xor.w128` are `Bin` at
+  16 bytes; [SIMD](#simd)), `AllocaAddr`, `RefAddr` (`addr.const`, `addr.sym`, `addr.sym.ind`: a
   pure rip-relative `lea` of the constant, or a load of the symbol slot and for `.ind` once
   more through it; JIT code is always within reach of the image), `Load`/`Store` through a pointer, `ALoad`/`AStore` of a memory
   alloca, `OsrLoad` (OSR entries only), `LandingPad` (the exception object, `rax`),
@@ -325,7 +329,8 @@ object (`Escape` scopes), every island operand (`Lend` scopes,
 [vm.md](vm.md#escapes-storage-ends-and-island-operands)), and the lengths of block-copying
 handlers. Each is:
 - **promoted** when no escape covers it, no island or block handler touches it, and every
-  access is a 1, 2, 4 or 8-byte field: a reaching-shape dataflow (per byte, the
+  access is a 1, 2, 4 or 8-byte field, or a 16-byte one read and written only whole (a
+  vector): a reaching-shape dataflow (per byte, the
   `(offset, width)` that last wrote it) gives each read the variable it reads, so a slot
   reused at another width splits into variables; a read that two shapes reach keeps the
   alloca in memory. Its fields are SSA variables: mem2reg and scalar replacement in one;
@@ -685,14 +690,50 @@ the units that inline it.
   operations (overflow arithmetic, extensions, …) are the follow-up, as are splitting and
   rematerialization.
 - The re-encoding pipeline stays, as the fallback and the `reencode` mode.
-- Only 1, 2, 4 and 8-byte integer fields are promoted (`w128` values and floats stay in
-  memory; floats move through general-purpose registers at calls).
+- Only 1, 2, 4 and 8-byte integer fields and whole vectors are promoted (`w128` integers and
+  floats stay in memory; floats move through general-purpose registers at calls).
 - AOT code keeps its counter checks at acyclic heads, and the dispatcher returns into the
   AOT code there.
 - Two scratch registers (`r10`, `r11`) rather than one: simpler instruction selection and
   moves at the cost of one allocatable register.
 - Intervals without holes, and no allocation hint beyond the above: the first allocator
   is simple; holes, splitting and a regalloc2 comparison are follow-ups.
+
+### SIMD
+
+The SIMD instructions (`vsplat.i8x16`, `veq.i8x16`, `vlt.s.i8x16`, `vmsb.i8x16`,
+[instructions.md](instructions.md)) and `and`/`or`/`xor.w128` decode as native vector
+operations, not handler calls, with exact 16-byte accesses (2 for `vmsb`'s mask, 1 for
+`vsplat`'s byte):
+
+- **Fields**: a 16-byte field a vector operation reads or writes whole promotes to a 16-byte
+  value (a narrower read of it keeps the alloca in memory). Small copies are cut into one
+  16-byte piece over such a field (also across frame-to-frame copies), so `load.copy` of 16
+  bytes into it is one 16-byte load (`_mm_loadu_si128`). After inlining, a vector stored as
+  two 8-byte halves and loaded whole is their pair, a half of a stored vector a half
+  (`opt::lvn`), and promotion splits a vector access over two 8-byte fields the same way; a
+  pair of the halves of one vector is that vector, a pair of the two 8-byte loads of a
+  16-byte range one 16-byte load, and an or that puts a value's bytes back together that
+  value.
+- **Folds** (`opt::lvn`): operations on constants, `vmsb(vlt.s(x, 0))` to `vmsb(x)` (so
+  `_mm_movemask_epi8` is one `pmovmskb`), `x == x`, `x < x`, and the bitwise identities with
+  zeros and ones. `opt::hoist` moves a `vsplat` of a byte defined outside the loops around it
+  to the byte's definition; of a loop head's parameter passed on unchanged around the loop
+  (one at an OSR head), it adds a vector parameter that each entering edge (the OSR entry's
+  included) computes and the back edges pass on.
+- **Registers**: a second class, `xmm0`–`xmm13` with `xmm14`/`xmm15` the emitter's scratch
+  registers; on PE `xmm0`–`xmm3` and `xmm4`/`xmm5`, so that the tier never names the
+  callee-saved `xmm6`–`xmm15`. No `xmm` register survives a call: a vector live across one
+  takes a 16-byte spill slot (two 8-byte ones). The checker checks the classes, the reserved
+  registers and that no vector is in an `xmm` register across a call; edge moves, OSR entries
+  (`OsrLoad`s of 16 bytes) and parameters handle both classes.
+- **Emission** (SSE2, the x86-64 baseline): `movdqu` loads and stores, `movdqa` between
+  registers, packed operations register to register only (a legacy SSE memory operand must
+  be aligned): `pcmpeqb`, `pcmpgtb` with the operands swapped for `vlt.s`, `pand`/`por`/`pxor`;
+  `pmovmskb` for `vmsb`; `vsplat` as `movzx`, `imul 0x01010101`, `movd`, `pshufd 0`; halves
+  by `movq` (`pshufd 0xee` for the high one, or a load from a spilled vector), a pair by two
+  `movq` and `punpcklqdq`; constants as `pxor`, `pcmpeqb x, x`, a `movq` of a 64-bit one or a
+  load from the function's read-only data.
 
 ## Packaging
 
@@ -873,16 +914,21 @@ for shuffled frames per image, `RtApi::shuffled`):
   its own) checks, by `ryo_jit::ssa_stats`, that its functions go through the tier: switch
   tables with edge arguments, sparse switches, tail calls with stack arguments and through
   a pointer, SSE arguments and results, a catching landing pad, probed 12 KiB frames entered
-  by OSR, and an alloca pinned at the head. Then the corpus on its own VM
+  by OSR, an alloca pinned at the head, and every SIMD instruction and fold
+  (`simd_against_handlers`: each against the AOT code's handlers on edge-lane and random
+  vectors at every misalignment, across a call, in a loop entered by OSR at several head
+  passes). Then the corpus on its own VM
   functions through the tier (`ryo-jit-ssa`, threshold 0, and `ryo-jit-ssa-osr`, OSR at the
   first head pass; with a ryo sysroot, `ryo-std-jit` and `ryo-std-jit-shuffle` go through
   the tier too, and `ryo-std-jit-reencode` through the re-encoding pipeline). `vm/bytecode/tests/jit_ssa.rs`
   builds hand-written functions' IR (promotion, block parameters at a loop head and its OSR
   loads, reaching shapes, pinned and moved escaped locals, handler slots sharing a register)
 and checks the passes on it and on hand-built IR (value numbering, constants through a loop
-and past its OSR entry, a switch on a constant, a self-loop parameter, a dead handler call),
+and past its OSR entry, a switch on a constant, a self-loop parameter, a dead handler call, promoted vectors, the
+vector folds and the splat hoist, a vector reassembled from its halves),
   `tests/jit_x86.rs` checks the
-  encoder against `objdump`, and `vm/rt/tests/ops.rs` the handler effect table.
+  encoder against `objdump` (the SSE2 forms included), `jit_pe.rs` that vectors on PE
+  stay out of `xmm6`–`xmm15`, and `vm/rt/tests/ops.rs` the handler effect table.
 - **Packaging**: `jit-sealed` (`y test`, and `y test --cross` for PE and Mach-O) checks the
   bundled object: only `ryo_jit_start` (and the renamed symbols and constants) defined
   globally, no Rust symbol or allocator shim referenced, no unwinder defined, on COFF no

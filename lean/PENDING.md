@@ -13,6 +13,15 @@ remove it once a Lean session has handled it.
   rejected. `i128` returns are `rax:rdx` and `f16` returns `xmm0` as on SysV. Commit: "Win64:
   pass i128, f16 and f128 as LLVM does".
 
+- The SSA tier compiles the SIMD instructions (`vsplat`/`veq`/`vlt.s`/`vmsb.i8x16`,
+  `and`/`or`/`xor.w128`) natively: 16-byte IR values (`Op::V`, `Op::VConst`), vector fields
+  of allocas promoted, copies cut into 16-byte pieces over them, an `xmm` register class
+  (no `xmm` value across a call; on PE only `xmm0`–`xmm5`), 16-byte spill slots and OSR
+  loads, SSE2 emission, the folds `vmsb(vlt.s(x, 0)) = vmsb(x)`, half/pair and constant
+  folds, the splat hoist (`opt::hoist`), and LVN's reassembly of a value from its shifted
+  pieces. The handlers' semantics and effects are unchanged. Only matters if the Lean model
+  covers the SSA tier. Commit: "JIT SSA: native SSE2 for the SIMD instructions".
+
 - The SSA tier's frame cut (`jit/alloca.rs`) joins an `addr` at an escaped object's end
   (the object escaping at that `addr`, unless one escaping there starts at that address;
   with none escaping there, any escaped object ending there) to the object's alloca, so

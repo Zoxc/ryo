@@ -1,8 +1,11 @@
 //! The SSA IR (design/jit.md, "The SSA tier"): blocks with parameters, instructions in an
-//! arena, `u32` ids. Values are untyped bit vectors of 1, 2, 4 or 8 bytes: an operation of
-//! width `w` reads the low `w` bytes of its operands and defines the low `w` bytes of its
-//! result (the rest of a register or slot holding it is unspecified). Compare results are
-//! 1-byte booleans (0 or 1).
+//! arena, `u32` ids. Values are untyped bit vectors of 1, 2, 4 or 8 bytes (general-purpose
+//! registers) or 16 bytes (vectors, in `xmm` registers): an operation of width `w` reads the
+//! low `w` bytes of its operands and defines the low `w` bytes of its result (the rest of a
+//! register or slot holding it is unspecified). Vectors and scalars are separate classes: no
+//! operation reads a vector at a scalar width or the other way round. Compare results are
+//! 1-byte booleans (0 or 1). A constant of 16 bytes is its `u64` zero-extended
+//! ([`Op::VConst`] makes any other).
 //!
 //! Frame memory is cut into allocas ([`Alloca`]); pointers into the frame come only from
 //! [`Op::AllocaAddr`]. Promoted allocas have no memory: their fields are SSA values.
@@ -54,7 +57,7 @@ pub enum ValueDef {
 #[derive(Clone, Copy, Debug)]
 pub struct ValueData {
     pub def: ValueDef,
-    /// Bytes: 1, 2, 4 or 8.
+    /// Bytes: 1, 2, 4, 8 or 16.
     pub w: u8,
 }
 
@@ -276,9 +279,58 @@ pub struct Island {
     pub site: Site,
 }
 
+/// A vector operation on 16 × 8-bit lanes ([`Op::V`]; the `vsplat`, `veq`, `vlt.s` and
+/// `vmsb` instructions, design/instructions.md "SIMD"), or between a vector and its two
+/// 64-bit halves.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VOp {
+    /// A byte (1-byte operand) in every lane.
+    Splat,
+    /// Lanes equal: `0xff`, else 0.
+    Eq,
+    /// Lanes less, signed: `0xff`, else 0.
+    LtS,
+    /// The lanes' top bits: a 2-byte mask, lane `i` at bit `i`.
+    Msb,
+    /// The 8-byte half `n` (0: the low bytes).
+    Half(u8),
+    /// Two 8-byte operands as one vector, the first in the low bytes.
+    Pair,
+}
+
+impl VOp {
+    /// The operands' widths and the result's.
+    pub fn widths(self) -> (&'static [u8], u8) {
+        match self {
+            VOp::Splat => (&[1], 16),
+            VOp::Eq | VOp::LtS => (&[16, 16], 16),
+            VOp::Msb => (&[16], 2),
+            VOp::Half(_) => (&[16], 8),
+            VOp::Pair => (&[8, 8], 16),
+        }
+    }
+
+    /// The result on constant operands (vectors as `u128`, scalars in their low bytes).
+    pub fn eval(self, x: &[u128]) -> u128 {
+        let lanes = |v: u128| v.to_le_bytes();
+        let map2 = |a: u128, b: u128, g: fn(u8, u8) -> bool| {
+            let (a, b) = (lanes(a), lanes(b));
+            u128::from_le_bytes(core::array::from_fn(|i| if g(a[i], b[i]) { 0xff } else { 0 }))
+        };
+        match self {
+            VOp::Splat => u128::from_le_bytes([x[0] as u8; 16]),
+            VOp::Eq => map2(x[0], x[1], |a, b| a == b),
+            VOp::LtS => map2(x[0], x[1], |a, b| (a as i8) < (b as i8)),
+            VOp::Msb => lanes(x[0]).iter().enumerate().fold(0, |m, (i, &c)| m | ((c >> 7) as u128) << i),
+            VOp::Half(n) => (x[0] >> (64 * n as u32)) as u64 as u128,
+            VOp::Pair => x[0] as u64 as u128 | (x[1] as u64 as u128) << 64,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Op {
-    /// `a op b`.
+    /// `a op b` (at 16 bytes only `And`, `Or` and `Xor`).
     Bin(BinOp, u8),
     /// `a cc b`: a boolean.
     Cmp(Cc, u8),
@@ -301,6 +353,10 @@ pub enum Op {
     RefAddr(Ref, bool),
     /// The address of byte `k` of the alloca (its provenance).
     AllocaAddr(AllocaId, i32),
+    /// A vector operation (pure).
+    V(VOp),
+    /// A 16-byte constant (pure): one a [`ValueDef::Const`] can't be.
+    VConst(u128),
     /// `w` bytes at `[p + k]`.
     Load(u8, i32),
     /// `[p + k] = v` (`w` bytes).
@@ -331,6 +387,12 @@ impl Op {
             }
             Op::PtrAdd(k) => x[0].wrapping_add(k as u64),
             Op::PtrIndex(s) => x[0].wrapping_add(x[1].wrapping_mul(s as u64)),
+            // A vector result only when it is a constant's (its high half zero).
+            Op::V(o) => {
+                let xs: Vec<u128> = x.iter().map(|&c| c as u128).collect();
+                let r = o.eval(&xs);
+                u64::try_from(r).ok()?
+            }
             _ => return None,
         })
     }
@@ -340,6 +402,8 @@ impl Op {
         matches!(
             self,
             Op::Bin(..)
+                | Op::V(_)
+                | Op::VConst(_)
                 | Op::Cmp(..)
                 | Op::Ovf(..)
                 | Op::Ext { .. }
@@ -668,7 +732,7 @@ impl Func {
     }
 
     pub fn value(&mut self, def: ValueDef, w: u8) -> Value {
-        debug_assert!(matches!(w, 1 | 2 | 4 | 8), "width {w}");
+        debug_assert!(matches!(w, 1 | 2 | 4 | 8 | 16), "width {w}");
         self.values.push(ValueData { def, w });
         Value(self.values.len() as u32 - 1)
     }
@@ -905,7 +969,7 @@ impl Func {
                 ValueDef::Const(_) | ValueDef::Undef => return Ok(()),
                 _ => {}
             }
-            if d.w < w {
+            if d.w < w || (d.w == 16) != (w == 16) {
                 return Err(format!("{v} is {} bytes, used at {w} in {b}", d.w));
             }
             let (db, dk) = pos[v.idx()];
@@ -927,6 +991,19 @@ impl Func {
                 }
                 for (&a, &w) in id.args.iter().zip(&ws) {
                     check(a, b, k as u32 + 1, w)?;
+                }
+                let rw: &[u8] = match id.op {
+                    Op::V(o) => &[o.widths().1],
+                    Op::VConst(_) => &[16],
+                    _ => &[],
+                };
+                if !rw.is_empty() && (id.nres != 1 || self.w(Value(id.res)) != rw[0]) {
+                    return Err(format!("{i} in {b}: a result of the wrong width"));
+                }
+                if let Op::Bin(o, 16) = id.op
+                    && !matches!(o, BinOp::And | BinOp::Or | BinOp::Xor)
+                {
+                    return Err(format!("{i} in {b}: {o:?} at 16 bytes"));
                 }
             }
             let end = bd.insts.len() as u32 + 1;
@@ -964,6 +1041,8 @@ impl Func {
     pub fn arg_widths(&self, id: &InstData) -> Vec<u8> {
         match &id.op {
             Op::Bin(_, w) | Op::Cmp(_, w) | Op::Ovf(_, _, w) => alloc::vec![*w, *w],
+            Op::V(o) => o.widths().0.to_vec(),
+            Op::VConst(_) => Vec::new(),
             Op::Ext { from, .. } => alloc::vec![*from],
             Op::PtrAdd(_) => alloc::vec![8],
             Op::PtrIndex(_) => alloc::vec![8, 8],

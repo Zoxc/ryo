@@ -2058,7 +2058,7 @@ fn devirt_second_round() {
 }
 
 /// `_mm_movemask_epi8(_mm_cmpeq_epi8(load(p), _mm_set1_epi8(tag)))` as one VM function,
-/// inlined into its caller: SIMD handler calls on 16-byte allocas, which stay in memory.
+/// inlined into its caller: the vectors promoted, the operations native SSE2.
 #[test]
 fn inline_simd_handlers() {
     let (_g, before) = start();
@@ -2098,4 +2098,197 @@ fn inline_simd_handlers() {
         assert_eq!(state(&img, e), JIT_COLD, "eqmask was inlined, never called");
     }
     check_stats(before, 1);
+}
+
+/// The SIMD test inputs: vectors of edge lanes (0x00, 0x01, 0x7f, 0x80, 0x81, 0xfe, 0xff) and
+/// pseudo-random ones.
+fn simd_vectors() -> Vec<[u8; 16]> {
+    const EDGES: [u8; 7] = [0x00, 0x01, 0x7f, 0x80, 0x81, 0xfe, 0xff];
+    let mut v = Vec::new();
+    for (k, &e) in EDGES.iter().enumerate() {
+        v.push([e; 16]);
+        let mut x = [EDGES[(k + 2) % 7]; 16];
+        x[k * 2] = e;
+        x[15 - k] = e;
+        v.push(x);
+    }
+    let mut s = 0x2545_f491_4f6c_dd1du64;
+    for _ in 0..16 {
+        let mut x = [0; 16];
+        for c in x.chunks_mut(8) {
+            s ^= s << 13;
+            s ^= s >> 7;
+            s ^= s << 17;
+            c.copy_from_slice(&s.to_le_bytes());
+        }
+        v.push(x);
+    }
+    v
+}
+
+/// The SIMD cases: each a function `f(pa, pb, out, obs)` (pa@16, pb@24, out@32, obs@40) that
+/// loads `a` (at -32) and `b` (at -48) from `pa` and `pb`, computes, and stores 16 bytes to
+/// `out`. `t`@-64, `d`@-80, the mask `m`@-88, byte `s`@-96, `x`@-104, `i`@-112, `p`@-120.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum SimdCase {
+    Splat,
+    Eq,
+    Lt,
+    Msb,
+    And,
+    Or,
+    Xor,
+    /// `vmsb(vlt.s(a, 0))`.
+    Movemask,
+    /// `veq(a, vsplat(pb[0]))`.
+    EqSplat,
+    /// Vectors live across a call (spilled).
+    AcrossCall,
+    /// Operations on a constant splat.
+    Constants,
+    /// `d = or(xor(d, vsplat(pa[i])), veq(d, b))` for `i < 16`: a vector live around a loop.
+    Loop,
+}
+
+fn simd_fn(c: SimdCase, s_note: Sym, s_mul3: Sym) -> FunctionDef {
+    use SimdCase::*;
+    let sl = Slot;
+    let (a_, b_, t, d, m, s, x, i, p) = (sl(-32), sl(-48), sl(-64), sl(-80), sl(-88), sl(-96), sl(-104), sl(-112), sl(-120));
+    let mut a = Asm::new();
+    note_call(&mut a, s_note, 40);
+    a.i(Insn::LoadCopy { d: a_, m: Mem { p: Slot(16), k: 0 }, len: 16 });
+    a.i(Insn::LoadCopy { d: b_, m: Mem { p: Slot(24), k: 0 }, len: 16 });
+    let mask = |a: &mut Asm, from: Slot| {
+        a.i(Insn::VmsbI8x16 { d: m, a: from });
+        a.i(Insn::ZextW16W64 { d: x, s: m });
+        a.i(Insn::Zero { d, len: 16 });
+        a.i(Insn::MovW64 { d, s: x });
+    };
+    match c {
+        Splat => {
+            a.i(Insn::LoadW8 { d: s, m: Mem { p: Slot(24), k: 3 } });
+            a.i(Insn::VsplatI8x16 { d, s });
+        }
+        Eq => {
+            a.i(Insn::VeqI8x16 { d, a: a_, b: b_ });
+        }
+        Lt => {
+            a.i(Insn::VltSI8x16 { d, a: a_, b: b_ });
+        }
+        Msb => mask(&mut a, a_),
+        And => {
+            a.i(Insn::AndW128 { d, a: a_, b: b_ });
+        }
+        Or => {
+            a.i(Insn::OrW128 { d, a: a_, b: b_ });
+        }
+        Xor => {
+            a.i(Insn::XorW128 { d, a: a_, b: b_ });
+        }
+        Movemask => {
+            a.i(Insn::Zero { d: t, len: 16 });
+            a.i(Insn::VltSI8x16 { d: t, a: a_, b: t });
+            mask(&mut a, t);
+        }
+        EqSplat => {
+            a.i(Insn::LoadW8 { d: s, m: Mem { p: Slot(24), k: 0 } });
+            a.i(Insn::VsplatI8x16 { d: t, s });
+            a.i(Insn::VeqI8x16 { d, a: a_, b: t });
+        }
+        AcrossCall => {
+            a.i(Insn::VeqI8x16 { d: t, a: a_, b: b_ });
+            a.i(Insn::ImmW64 { d: i, imm: 5 });
+            a.i(Insn::CallSym { d: x, sym: s_mul3, k: 8, a: List::from_words(&regs(&[-112])) });
+            a.i(Insn::VltSI8x16 { d, a: t, b: a_ });
+            a.i(Insn::XorW128 { d, a: d, b: b_ });
+            // The call's result in the first lane.
+            a.i(Insn::MovW8 { d: Slot(-80), s: x });
+        }
+        Constants => {
+            a.i(Insn::ImmW8 { d: s, imm: 0x81 });
+            a.i(Insn::VsplatI8x16 { d: t, s });
+            a.i(Insn::VltSI8x16 { d, a: t, b: a_ });
+            a.i(Insn::XorW128 { d, a: d, b: t });
+            a.i(Insn::VmsbI8x16 { d: m, a: t });
+            a.i(Insn::MovW16 { d: Slot(-80), s: m });
+        }
+        Loop => {
+            a.i(Insn::Zero { d, len: 16 });
+            a.i(Insn::MovW64 { d: p, s: Slot(16) });
+            a.i(Insn::ImmW64 { d: i, imm: 0 });
+            let head = a.i(Insn::BrLtUImmW64 { a: i, imm: 16, neg: F, t: Target(0) });
+            a.i(Insn::LoadW8 { d: s, m: Mem { p, k: 0 } });
+            a.i(Insn::VsplatI8x16 { d: t, s });
+            a.i(Insn::XorW128 { d, a: d, b: t });
+            a.i(Insn::VeqI8x16 { d: t, a: d, b: b_ });
+            a.i(Insn::OrW128 { d, a: d, b: t });
+            a.i(Insn::AddImmW64 { d: p, a: p, imm: 1 });
+            a.i(Insn::AddImmW64 { d: i, a: i, imm: 1 });
+            let back = a.i(Insn::Jmp { t: Target(0) });
+            a.patch(back, "t", head);
+            let done = a.pos();
+            a.patch(head, "t", done);
+        }
+    }
+    a.i(Insn::StoreCopy { m: Mem { p: Slot(32), k: 0 }, s: d, len: 16 });
+    note_call(&mut a, s_note, 40);
+    a.i(Insn::Ret { s: Slot(0), k: 0 });
+    func(a.done(), 128, 32, 0)
+}
+
+/// Every SIMD instruction and fold, compiled natively by the SSA tier, against the handlers
+/// the AOT code calls: each case on edge-lane and random vectors at every misalignment, the
+/// loop also entered by OSR at several head passes.
+#[test]
+fn simd_against_handlers() {
+    use SimdCase::*;
+    let (_g, before) = start();
+    let vs = simd_vectors();
+    let mut buf = [0u8; 64];
+    let mut compiled = 0;
+    let cases = [Splat, Eq, Lt, Msb, And, Or, Xor, Movemask, EqSplat, AcrossCall, Constants, Loop];
+    for c in cases {
+        // The loop: compiled at the entry, and by OSR after 0, 3 and 15 head passes.
+        let trips: &[Option<i64>] = if c == Loop { &[None, Some(0), Some(3), Some(15)] } else { &[None] };
+        for &k in trips {
+            let mut w = ImageWriter::new(unique_scid());
+            let s_note = w.symbol("note", 0);
+            let s_mul3 = w.symbol("mul3", 0);
+            let mut defs = Defs::default();
+            let f = defs.add(&mut w, simd_fn(c, s_note, s_mul3), vec![]);
+            let img = defs.build(w);
+            let run = |i: usize| -> ([u8; 16], Obs) {
+                let (x, y) = (vs[i], vs[(i * 5 + 3) % vs.len()]);
+                let off = i % 16;
+                let mut buf = buf;
+                buf[off..off + 16].copy_from_slice(&x);
+                buf[32 + (15 - off)..48 + (15 - off)].copy_from_slice(&y);
+                let mut out = [0u8; 16];
+                let obs = Obs::default();
+                let pa = buf[off..].as_ptr() as u64;
+                let pb = buf[32 + (15 - off)..].as_ptr() as u64;
+                ok::<_, ()>(img.id(f), (pa, pb, out.as_mut_ptr() as u64, &raw const obs as u64));
+                (out, obs)
+            };
+            // The AOT code (its handlers) first: no trips.
+            img.set_counters(f, -(1 << 40), -(1 << 40));
+            let want: Vec<[u8; 16]> = (0..vs.len()).map(|i| run(i).0).collect();
+            match k {
+                None => img.trip_after(f, 0, 0),
+                Some(k) => img.trip_after(f, 1, k),
+            }
+            for i in 0..vs.len() {
+                let (got, obs) = run(i);
+                let what = format!("{c:?} (trip {k:?}) on {:x?}, {:x?}", vs[i], vs[(i * 5 + 3) % vs.len()]);
+                assert_eq!(got, want[i], "{what}");
+                assert!(in_jit(&img, f, o(&obs.last)), "{what}: ended at {:#x}", o(&obs.last));
+                if i == 0 && k.is_some() {
+                    assert!(in_aot(&img, f, o(&obs.first)), "{what}: started at {:#x}", o(&obs.first));
+                }
+            }
+            compiled += 1;
+        }
+        buf.iter_mut().for_each(|b| *b = b.wrapping_add(0x5b));
+    }
+    check_stats(before, compiled);
 }

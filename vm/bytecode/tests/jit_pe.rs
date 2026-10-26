@@ -427,3 +427,25 @@ fn xmm_clobbering_handlers_unsupported() {
     let r = compile(&v, 48, &[], Allocator::LinearScan, false);
     assert!(matches!(r, Err(jit::Error::Unsupported(u)) if u.0.contains("xmm")), "{r:?}");
 }
+
+/// Eight vectors live at once and across a call: on PE the SSA tier keeps them in `xmm0`–`xmm3`
+/// (scratch `xmm4`, `xmm5`) and spill slots, never naming `xmm6`–`xmm15`.
+#[test]
+fn vectors_without_xmm6_to_15() {
+    let mut v = vec![arg(-8, 0)];
+    for i in 0..8i32 {
+        v.push(Insn::LoadCopy { d: Slot(-32 - 16 * i), m: Mem { p: Slot(-8), k: 16 * i }, len: 16 });
+    }
+    for i in 0..8i32 {
+        v.push(Insn::VeqI8x16 { d: Slot(-32 - 16 * i), a: Slot(-32 - 16 * i), b: Slot(-32 - 16 * ((i + 1) % 8)) });
+    }
+    let p = param(-8, 0);
+    v.push(Insn::Call { d: Slot(-168), f: Func(0), k: 8, a: List::from_words(&p) });
+    for i in 1..8i32 {
+        v.push(Insn::XorW128 { d: Slot(-32), a: Slot(-32), b: Slot(-32 - 16 * i) });
+    }
+    v.push(Insn::VmsbI8x16 { d: Slot(-176), a: Slot(-32) });
+    v.push(Insn::ZextW16W64 { d: Slot(-184), s: Slot(-176) });
+    v.push(Insn::Ret { s: Slot(-184), k: 8 });
+    each(&v, 192, &[], "vectors", |_, _| {});
+}

@@ -243,6 +243,36 @@ fn encoder_matches_objdump() {
         c.add(format!("push {}", reg(d, 8)), |x| x.push(d));
         c.add(format!("pop {}", reg(d, 8)), |x| x.pop(d));
     }
+    // SSE2 for vectors: packed operations register to register, `movdqu` loads and stores.
+    let packed = [
+        (Packed::Pcmpeqb, "pcmpeqb"),
+        (Packed::Pcmpgtb, "pcmpgtb"),
+        (Packed::Pand, "pand"),
+        (Packed::Por, "por"),
+        (Packed::Pxor, "pxor"),
+        (Packed::Punpcklqdq, "punpcklqdq"),
+    ];
+    for a in 0..16u8 {
+        for b in 0..16u8 {
+            for &(op, name) in &packed {
+                c.add(format!("{name} xmm{a},xmm{b}"), |x| x.packed(op, a, b));
+            }
+            if a != b {
+                c.add(format!("movdqa xmm{a},xmm{b}"), |x| x.movdqu_load(a, X::X(b)));
+            }
+            c.add(format!("pshufd xmm{a},xmm{b},0x0"), |x| x.pshufd(a, b, 0));
+            c.add(format!("pshufd xmm{a},xmm{b},0xee"), |x| x.pshufd(a, b, 0xee));
+        }
+        for d in regs() {
+            c.add(format!("pmovmskb {},xmm{a}", reg(d, 4)), |x| x.pmovmskb(d, a));
+        }
+    }
+    for m in some_mems() {
+        for xr in [0u8, 7, 8, 15] {
+            c.add(format!("movdqu xmm{xr},{}", mem(m, 16)), |x| x.movdqu_load(xr, X::M(m)));
+            c.add(format!("movdqu {},xmm{xr}", mem(m, 16)), |x| x.movdqu_store(m, xr));
+        }
+    }
     c.add("ret".into(), |x| x.ret());
     c.add("ud2".into(), |x| x.ud2());
     c.add("int3".into(), |x| x.int3());

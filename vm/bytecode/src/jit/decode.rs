@@ -58,7 +58,7 @@ pub enum Kind {
     Mov(u8),
     /// A small block copy (`copy`, `zero`, `load.copy`, `store.copy`, `mov.w128`,
     /// `load.w128`, `store.w128` of up to [`MAX_COPY`] bytes), done as `pieces` (offsets in
-    /// the block, widths) of plain loads and stores: every piece is read before any is
+    /// the block, widths: 1 to 8, or 16 over a vector) of plain loads and stores: every piece is read before any is
     /// written, so overlap is exact. Accesses: the pointer slot (with a `Mem` side) read,
     /// then a frame source's pieces read, then a frame destination's pieces written.
     Copy {
@@ -333,13 +333,33 @@ fn small_copy(h: full::Opcode, args: &[Arg], l: &asm::Layout, pool: bool) -> Opt
     (len != 0 && len <= MAX_COPY && clear(dst) && clear(src)).then_some((len, dst, src, p))
 }
 
+/// The handlers that are native operations on 16-byte vectors in the SSA tier, as the IR
+/// operation (`d` first, then the operands, in operand order).
+pub fn vector_op(h: full::Opcode) -> Option<super::ir::Op> {
+    use super::ir::{BinOp, Op, VOp};
+    use full::Opcode::*;
+    Some(match h {
+        VsplatI8x16 => Op::V(VOp::Splat),
+        VeqI8x16 => Op::V(VOp::Eq),
+        VltSI8x16 => Op::V(VOp::LtS),
+        VmsbI8x16 => Op::V(VOp::Msb),
+        AndW128 => Op::Bin(BinOp::And, 16),
+        OrW128 => Op::Bin(BinOp::Or, 16),
+        XorW128 => Op::Bin(BinOp::Xor, 16),
+        _ => return None,
+    })
+}
+
 /// Cuts the small copies into pieces and gives them their frame accesses. The cuts follow
 /// the boundaries of the other scalar accesses of the same frame bytes, carried across
 /// frame-to-frame copies, so that a copied aggregate's fields stay the variables the rest of
-/// the code reads and writes (and promote).
+/// the code reads and writes (and promote). A 16-byte stretch between cuts that a vector
+/// operation reads or writes whole on either side (also carried across the copies) is one
+/// 16-byte piece: the vector moves as one value.
 fn cut_copies(insns: &mut [RInsn], mem: Option<&dyn super::opt::ConstMem>) {
     use alloc::collections::BTreeSet;
     let mut cuts: BTreeSet<i32> = BTreeSet::new();
+    let mut whole: BTreeSet<i32> = BTreeSet::new();
     let mut copies = Vec::new();
     for (i, ri) in insns.iter().enumerate() {
         if let Kind::Copy { .. } = ri.kind {
@@ -347,9 +367,12 @@ fn cut_copies(insns: &mut [RInsn], mem: Option<&dyn super::opt::ConstMem>) {
             continue;
         }
         for a in &ri.accs {
-            if matches!(a.how, How::Read | How::Write | How::Update) && matches!(a.size, 1 | 2 | 4 | 8) {
+            if matches!(a.how, How::Read | How::Write | How::Update) && matches!(a.size, 1 | 2 | 4 | 8 | 16) {
                 cuts.insert(a.off);
                 cuts.insert(a.off + a.size as i32);
+                if a.size == 16 {
+                    whole.insert(a.off);
+                }
             }
         }
     }
@@ -384,8 +407,26 @@ fn cut_copies(insns: &mut [RInsn], mem: Option<&dyn super::opt::ConstMem>) {
             break;
         }
     }
+    // The whole vectors, across the frame-to-frame copies (whose cuts now agree).
+    if !whole.is_empty() {
+        for _ in 0..4 {
+            let mut changed = false;
+            for &i in &copies {
+                let ([Some(d), Some(s)], len) = frames(&insns[i].kind) else { continue };
+                for r in rel(&cuts, [Some(d), Some(s)], len).into_iter().collect::<Vec<u32>>().windows(2) {
+                    if r[1] - r[0] == 16 && (whole.contains(&(d + r[0] as i32)) || whole.contains(&(s + r[0] as i32))) {
+                        changed |= whole.insert(d + r[0] as i32) | whole.insert(s + r[0] as i32);
+                    }
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+    }
     for &i in &copies {
         let (bases, len) = frames(&insns[i].kind);
+        let vector = |at: u32| bases.iter().flatten().any(|&b| whole.contains(&(b + at as i32)));
         let mut r = rel(&cuts, bases, len);
         // A pool source's relocated fields are pieces of their own, which the fold makes
         // `RefAddr`s.
@@ -399,6 +440,10 @@ fn cut_copies(insns: &mut [RInsn], mem: Option<&dyn super::opt::ConstMem>) {
         let split = |r: &[u32]| {
             let mut ps = Vec::new();
             for w in r.windows(2) {
+                if w[1] - w[0] == 16 && vector(w[0]) {
+                    ps.push((w[0], 16));
+                    continue;
+                }
                 let mut at = w[0];
                 while at < w[1] {
                     let n = (w[1] - at).min(8);
@@ -593,8 +638,10 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
                         Some(Effect::Block) => (block, How::Block),
                         None => return Err(bad("handler operand")),
                     };
-                    // `w128` scalars aren't promoted: blocks.
+                    // `w128` scalars aren't promoted: blocks. A vector operation's operands are
+                    // exact: whole 16-byte fields.
                     let how = match how {
+                        How::Write | How::Read if vector_op(h).is_some() => how,
                         How::Write if size > 8 => How::BlockWrite,
                         How::Read | How::Update if size > 8 => How::Block,
                         how => how,

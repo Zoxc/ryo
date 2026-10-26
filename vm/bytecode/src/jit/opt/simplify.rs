@@ -142,7 +142,8 @@ impl Sccp {
                 let zero = |l: Lat| l == Lat::C(0);
                 match (x, y) {
                     _ if matches!(o, BinOp::Mul | BinOp::And) && (zero(x) || zero(y)) => Lat::C(0),
-                    _ if o == BinOp::Or && (x == Lat::C(all) || y == Lat::C(all)) => Lat::C(all),
+                    // At 16 bytes a constant is zero-extended: not all ones.
+                    _ if o == BinOp::Or && w < 16 && (x == Lat::C(all) || y == Lat::C(all)) => Lat::C(all),
                     _ if matches!(o, BinOp::Sub | BinOp::Xor) && same() => Lat::C(0),
                     (Lat::Top, _) | (_, Lat::Top) => Lat::Top,
                     _ => Lat::Bot,

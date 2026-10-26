@@ -36,7 +36,7 @@ struct B<'a> {
     rows: Vec<(u32, Vec<Value>)>,
     row_of: Vec<u32>,
     users: Vec<Vec<Value>>,
-    undef: [Option<Value>; 9],
+    undef: [Option<Value>; 17],
     /// The IR block of each R block (`None` for an `lpad`'s).
     ir: Vec<Option<Block>>,
     scratch: u32,
@@ -204,6 +204,7 @@ impl<'a> B<'a> {
     fn read(&mut self, b: Block, i: usize, k: usize, w: u8) -> Value {
         match self.fr.res[i][k] {
             Res::Var(v) => self.read_var(v, b),
+            Res::Undef if w == 16 => self.undef(16),
             Res::Undef => self.undef(w.max(1).min(8).next_power_of_two()),
             Res::Mem(a, off) => {
                 let n = self.f.inst(b, Op::ALoad(a, off, w), Vec::new(), &[w]);
@@ -264,7 +265,7 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
         rows: Vec::new(),
         row_of: Vec::new(),
         users: Vec::new(),
-        undef: [None; 9],
+        undef: [None; 17],
         ir: alloc::vec![None; nb],
         scratch: 0,
         mode,
@@ -603,6 +604,21 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
                     let a = s.read(cur, i, 1, w);
                     let b = s.read(cur, i, 2, w);
                     let l = s.f.inst(cur, Op::Bin(op, w), alloc::vec![a, b], &[w]);
+                    let v = s.f.result(l);
+                    s.write(cur, i, 0, v);
+                }
+                Kind::Handler { h, then: Then::Next, .. } if let Some(op) = super::decode::vector_op(*h) => {
+                    // `d` and its operands: a native vector operation.
+                    let ws: &[u8] = match &op {
+                        Op::V(o) => o.widths().0,
+                        _ => &[16, 16],
+                    };
+                    let args = ws.iter().enumerate().map(|(k, &w)| s.read(cur, i, k + 1, w)).collect();
+                    let rw = match &op {
+                        Op::V(o) => o.widths().1,
+                        _ => 16,
+                    };
+                    let l = s.f.inst(cur, op, args, &[rw]);
                     let v = s.f.result(l);
                     s.write(cur, i, 0, v);
                 }

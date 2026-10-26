@@ -4,7 +4,8 @@
 //! argument area, or the incoming one. Also which allocas may be escaped at an OSR entry
 //! (pinned to their AOT offsets), and for every access of a promoted alloca the variable it
 //! reads or writes (by a reaching-shape dataflow, so that slots reused at other widths
-//! split).
+//! split). Fields are 1, 2, 4 or 8 bytes, or 16 for a vector, which is only read whole (a
+//! narrower read of one keeps its alloca in memory).
 
 use alloc::vec::Vec;
 
@@ -158,7 +159,8 @@ pub fn analyze(code: &Code, frame_size: u32) -> Result<Frame, Unsupported> {
                     How::BlockWrite => opaque[b] = true,
                     How::Write => {}
                 }
-                if !matches!(a.size, 1 | 2 | 4 | 8) {
+                // Vectors are whole 16-byte reads and writes (never updates).
+                if !matches!(a.size, 1 | 2 | 4 | 8) && !(a.size == 16 && matches!(a.how, How::Read | How::Write)) {
                     odd[b] = true;
                 }
             }
@@ -327,7 +329,12 @@ pub fn analyze(code: &Code, frame_size: u32) -> Result<Frame, Unsupported> {
                     let all = bytes.clone().all(|x| st[pbyte[x] as usize] == first);
                     let r = if all && first == NONE {
                         Some(Res::Undef)
-                    } else if all && first != CONFLICT && shapes[first as usize].0 == a.off && shapes[first as usize].1 as u32 >= a.size {
+                    } else if all
+                        && first != CONFLICT
+                        && shapes[first as usize].0 == a.off
+                        && shapes[first as usize].1 as u32 >= a.size
+                        && (shapes[first as usize].1 == 16) == (a.size == 16)
+                    {
                         Some(Res::Var(first as u32))
                     } else {
                         None

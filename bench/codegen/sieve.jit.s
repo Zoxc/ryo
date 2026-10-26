@@ -278,69 +278,53 @@ fn sieve
     mov     rsi,r13
     call    qword ptr [image.fn29.slot]
     mov     rax,[rsp+48h]
-    mov     rcx,rax
-    shr     rcx,20h
-    mov     rdx,rax
-    shr     rdx,30h
-    mov     rsi,rax
-    shr     rsi,38h
-    mov     rdi,[rsp+50h]
-    mov     r8,[rsp+58h]
-    mov     eax,eax
-    movzx   ecx,cx
-    shl     rcx,20h
-    or      rax,rcx
-    movzx   edx,dl
-    shl     rdx,30h
-    or      rax,rdx
-    movzx   esi,sil
-    shl     rsi,38h
-    or      rax,rsi
+    mov     rcx,[rsp+50h]
+    mov     rsi,[rsp+58h]
     mov     [rsp+98h],rax
-    mov     [rsp+0A0h],rdi
-    mov     [rsp+0A8h],r8
+    mov     [rsp+0A0h],rcx
+    mov     [rsp+0A8h],rsi
     lea     r11,[k3]
     mov     [rsp+18h],r11
     mov     r11d,0
-    cmp     r11,r8
+    cmp     r11,rsi
     jae     L11
-    mov     byte ptr [rdi],0
+    mov     byte ptr [rcx],0
     lea     r11,[k5]
     mov     [rsp+10h],r11
     mov     rcx,[rsp+0A0h]
-    mov     rsi,[rsp+0A8h]
+    mov     rdi,[rsp+0A8h]
     mov     r11d,1
-    cmp     r11,rsi
+    cmp     r11,rdi
     jae     L12
     mov     byte ptr [rcx+1],0
-    mov     edi,2
+    mov     ecx,2
 L0:
-    mov     rax,rdi
-    mul     rdi
-    mov     rcx,rax
+    mov     rax,rcx
+    mul     rcx
+    mov     r8,rax
     jb      L16
-    cmp     r12,rcx
+    cmp     r12,r8
     jb      L5
-    lea     rcx,[k9]
+    lea     r8,[k9]
     mov     r13,[rsp+0A0h]
     mov     r14,[rsp+0A8h]
-    cmp     rdi,r14
+    cmp     rcx,r14
     jae     L13
-    lea     r13,[r13+rdi]
+    lea     r13,[r13+rcx]
     movzx   r13d,byte ptr [r13]
     test    r13b,r13b
     jne     L2
     jmp     L1
 L1:
-    mov     r15,rdi
+    mov     r15,rcx
     mov     rbp,rbx
     jmp     L4
 L2:
-    mov     rax,rdi
-    mul     rdi
+    mov     rax,rcx
+    mul     rcx
     mov     r13,rax
     jb      L17
-    mov     r15,rdi
+    mov     r15,rcx
     mov     rbp,rbx
 L3:
     cmp     r12,r13
@@ -360,7 +344,7 @@ L3:
 L4:
     add     r15,1
     jb      L19
-    mov     rdi,r15
+    mov     rcx,r15
     mov     rbx,rbp
     jmp     L0
 L5:
@@ -426,18 +410,19 @@ L10:
     ud2
 L11:
     mov     edi,0
-    mov     rsi,r8
     mov     rdx,[rsp+18h]
     call    image.sym15
     ud2
 L12:
+    mov     rsi,rdi
     mov     edi,1
     mov     rdx,[rsp+10h]
     call    image.sym15
     ud2
 L13:
+    mov     rdi,rcx
     mov     rsi,r14
-    mov     rdx,rcx
+    mov     rdx,r8
     call    image.sym15
     ud2
 L14:
@@ -520,7 +505,7 @@ L23:
     mov     [rdx-58h],r14
     mov     [rdx-60h],r15
     mov     [rdx-68h],rbp
-    mov     rdi,[rsp]
+    mov     rcx,[rsp]
     mov     r12,[rsp+8]
     mov     rbx,[rsp+10h]
     lea     rsp,[rsp+0B0h]
