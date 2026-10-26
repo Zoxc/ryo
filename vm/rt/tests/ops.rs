@@ -248,7 +248,7 @@ fn int_ops(imm: bool) -> Vec<Opcode> {
 #[test]
 fn integer_ops_all_widths() {
     let ops = int_ops(false);
-    assert_eq!(ops.len(), 173);
+    assert_eq!(ops.len(), 172);
     let mut f = Frame::new();
     let fp = f.fp();
     let mut checked = 0;

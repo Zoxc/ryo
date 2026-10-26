@@ -411,7 +411,8 @@ frame.write(d, frame.read::<T>(a).count_ones());  // leading_zeros, trailing_zer
 
 #### `bswap`, `bitreverse` `.wN d, a`
 
-The intrinsics. Handlers `ryo_h_BswapW8` … (`un`):
+The intrinsics. Handlers `ryo_h_BswapW16`, `ryo_h_BitreverseW8` … (`un`). `bswap` has no
+`w8` form: a one-byte `bswap` lowers to `mov.w8`.
 
 ```rust
 frame.write(d, frame.read::<T>(a).swap_bytes());  // reverse_bits

@@ -24,3 +24,7 @@ remove it once a Lean session has handled it.
   with no ordering; the backend maps every ordering of `atomic_singlethreadfence` to it. The
   generated tables are regenerated; any hand-written spec or proof naming the per-ordering
   forms should use the single op. Commit: "Merge the compiler_fence opcodes into one".
+
+- `bswap.w8` is gone from the opcode list (a one-byte `bswap` was already lowered to
+  `mov.w8`). The generated tables are regenerated; any hand-written spec or proof naming
+  `bswap.w8` should drop it. Commit: "Remove the bswap.w8 opcode".

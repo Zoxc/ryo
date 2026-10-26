@@ -161,7 +161,6 @@ def handlers : Array (Option HandlerInfo) := #[
   some (HandlerInfo.mk HandlerKind.count ["u8", "count_ones"] none), -- ctpop.w8
   some (HandlerInfo.mk HandlerKind.count ["u8", "leading_zeros"] none), -- ctlz.w8
   some (HandlerInfo.mk HandlerKind.count ["u8", "trailing_zeros"] none), -- cttz.w8
-  some (HandlerInfo.mk HandlerKind.un ["u8", "swap_bytes"] none), -- bswap.w8
   some (HandlerInfo.mk HandlerKind.un ["u8", "reverse_bits"] none), -- bitreverse.w8
   some (HandlerInfo.mk HandlerKind.ovf ["i8", "overflowing_add"] none), -- add.ovf.s.w8
   some (HandlerInfo.mk HandlerKind.ovf ["u8", "overflowing_add"] none), -- add.ovf.u.w8

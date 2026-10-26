@@ -95,7 +95,6 @@ define_ops! {
     CtpopW8 = "ctpop.w8" op { d: Slot, a: Slot },
     CtlzW8 = "ctlz.w8" op { d: Slot, a: Slot },
     CttzW8 = "cttz.w8" op { d: Slot, a: Slot },
-    BswapW8 = "bswap.w8" op { d: Slot, a: Slot },
     BitreverseW8 = "bitreverse.w8" op { d: Slot, a: Slot },
     AddOvfSW8 = "add.ovf.s.w8" op { d: Slot, o: Slot, a: Slot, b: Slot },
     AddOvfUW8 = "add.ovf.u.w8" op { d: Slot, o: Slot, a: Slot, b: Slot },

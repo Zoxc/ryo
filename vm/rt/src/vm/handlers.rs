@@ -95,7 +95,6 @@ macro_rules! for_each_handler {
         CtpopW8 => count(u8, count_ones);
         CtlzW8 => count(u8, leading_zeros);
         CttzW8 => count(u8, trailing_zeros);
-        BswapW8 => un(u8, swap_bytes);
         BitreverseW8 => un(u8, reverse_bits);
         AddOvfSW8 => ovf(i8, overflowing_add);
         AddOvfUW8 => ovf(u8, overflowing_add);

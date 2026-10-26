@@ -165,7 +165,6 @@ def asmInfos : Array AsmInfo := #[
   AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- ctpop.w8
   AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- ctlz.w8
   AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- cttz.w8
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- bswap.w8
   AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- bitreverse.w8
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 0 4)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false, Loc.mk 4 0 1 false] 1 5)), -- add.ovf.s.w8
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 0 4)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false, Loc.mk 4 0 1 false] 1 5)), -- add.ovf.u.w8

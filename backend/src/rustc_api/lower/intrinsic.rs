@@ -165,7 +165,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let family = if name.as_str() == "bswap" { "Bswap" } else { "Bitreverse" };
                 self.into_dest(&cont, |fx, d| {
                     if family == "Bswap" && w == Width::W8 {
-                        // One byte: the identity.
+                        // One byte: the identity (there is no `bswap.w8`).
                         fx.mov(d, x, 1);
                     } else {
                         fx.op(opw(family, w), &[d, x]);

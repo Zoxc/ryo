@@ -90,7 +90,6 @@ pub(super) const TABLE: [Option<Effects>; Opcode::COUNT] = [
     /* ctpop.w8 */ e(&[Some(Write(4)), Some(Read(1))], false),
     /* ctlz.w8 */ e(&[Some(Write(4)), Some(Read(1))], false),
     /* cttz.w8 */ e(&[Some(Write(4)), Some(Read(1))], false),
-    /* bswap.w8 */ e(&[Some(Write(1)), Some(Read(1))], false),
     /* bitreverse.w8 */ e(&[Some(Write(1)), Some(Read(1))], false),
     /* add.ovf.s.w8 */ e(&[Some(Write(1)), Some(Write(1)), Some(Read(1)), Some(Read(1))], false),
     /* add.ovf.u.w8 */ e(&[Some(Write(1)), Some(Write(1)), Some(Read(1)), Some(Read(1))], false),

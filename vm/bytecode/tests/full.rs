@@ -158,7 +158,8 @@ fn widths_complete() {
             "switch.dense",
             "switch.sparse",
         ] {
-            assert!(has(&format!("{o}.w{w}")), "{o}.w{w}");
+            // A one-byte `bswap` is the identity (`mov.w8`): no `bswap.w8`.
+            assert_eq!(has(&format!("{o}.w{w}")), o != "bswap" || w != 8, "{o}.w{w}");
         }
         let at128 = w != 128;
         assert_eq!(has(&format!("mul.w{w}")), at128);
@@ -269,7 +270,7 @@ fn opcode_table_is_pinned() {
             eat(&format!("{:?}", o.kind));
         }
     }
-    assert_eq!(h, 0x81989b434ec577a6, "opcode table hash {h:#x}");
+    assert_eq!(h, 0xe6147bb4267a156a, "opcode table hash {h:#x}");
 }
 
 /// Pins the image table layouts: any change to a table entry's size or field offsets fails
