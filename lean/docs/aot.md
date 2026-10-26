@@ -305,6 +305,15 @@ follows the decoder's structure:
   does). The lemmas show each sequence preserves it, and that targets, non-inline
   instructions, overlapping writes and stores through pointers clear it as
   [vm.md](../../design/vm.md#register-cache) describes.
+
+  **Implemented** (`Ryo/Proofs/Cache.lean`): `CacheInv` (each cached register holds its
+  slot's zero-extended value, and `zx` bounds it); `update_inv` for `cacheSafe` items (the
+  decoder must clear the cache at the others: writes to `rbp`, `mov`, memory writes other than
+  `st`/`stImm`/`setcc`, calls, and the 64-bit `movsx` `update` mislabels, which `sequence`
+  never emits); operand substitution (`exec_withRm`) and dropped reloads (`reload`); and
+  `emit_sound`: the emitted items end in the state of the sequence with `rax` renamed, with
+  `CacheInv` after. Not yet: that sequences are `cacheSafe`, `unemit`'s completeness, the
+  clearing points.
 - **Dropped stores**: the relation lets the L2 frame differ from R on bytes whose store was
   dropped, until overwritten. The Lean decoder **checks** each dropped store's deadness by a
   backward liveness over the decoded code (`Frame.decodeChecked`). Handlers read and write

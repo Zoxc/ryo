@@ -19,4 +19,5 @@ import Ryo.Proofs.Scope
 import Ryo.Proofs.Step
 import Ryo.Proofs.ScopeMem
 import Ryo.Proofs.Handler
+import Ryo.Proofs.Cache
 import Ryo.Proofs.NicheDiscr
