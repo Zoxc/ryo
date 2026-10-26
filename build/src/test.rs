@@ -143,6 +143,7 @@ const FAST: &[(&str, &[&str])] = &[
     ("vm_cdylib", &["ryo"]),
     ("vm_lto_dep", &["ryo-lto"]),
     ("vm_abort_cleanup", &["ryo-abort"]),
+    ("end_ptrs", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-shuffle"]),
 ];
 
 /// The [`CORPUS`] programs only `--full` (or a change to them) runs, with the reason.
