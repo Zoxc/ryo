@@ -112,6 +112,15 @@ enum Target<'tcx> {
     Ptr(u32, CallConv),
 }
 
+/// What a call's operand resolves to.
+enum Callee<'tcx> {
+    Intrinsic(Instance<'tcx>),
+    /// A fn item: a body, a virtual call or a shim.
+    Direct(Instance<'tcx>),
+    /// A fn pointer.
+    Ptr,
+}
+
 /// What happens after a call: where the value goes and where control goes.
 pub struct CallCont<'tcx> {
     pub dest: Option<PlaceVal<'tcx>>,
@@ -130,26 +139,35 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         unwind: UnwindAction,
         source_info: SourceInfo,
     ) -> Result<(), NeedsNative> {
-        let tcx = self.tcx;
-        let fty = self.mono(func.ty(self.body, tcx));
+        let (fty, callee) = self.resolve_callee(func, source_info)?;
         let dest = self.place(destination)?;
         let cont = CallCont { dest: Some(dest), target, unwind };
-        let srcs: Vec<ArgSrc<'_, 'tcx>> = args.iter().map(|a| ArgSrc::Operand(&a.node)).collect();
-        match *fty.kind() {
+        let srcs = arg_srcs(args);
+        match callee {
+            Callee::Intrinsic(callee) => self.intrinsic_call(callee, fty, &srcs, cont, source_info),
+            Callee::Direct(callee) => self.direct_call(fty, callee, &srcs, cont, source_info),
+            Callee::Ptr => self.indirect_call(func, fty, &srcs, cont, source_info),
+        }
+    }
+
+    /// The monomorphic type of the called operand `func` and what it resolves to.
+    fn resolve_callee(&self, func: &Operand<'tcx>, source_info: SourceInfo) -> Result<(Ty<'tcx>, Callee<'tcx>), NeedsNative> {
+        let tcx = self.tcx;
+        let fty = self.mono(func.ty(self.body, tcx));
+        let callee = match *fty.kind() {
             ty::FnDef(def_id, fn_args) => {
                 let fn_args = fn_args.no_bound_vars().expect("monomorphic callee");
                 let callee = Instance::expect_resolve(tcx, TypingEnv::fully_monomorphized(), def_id, fn_args, source_info.span);
                 match callee.def {
-                    InstanceKind::Intrinsic(_) => self.intrinsic_call(callee, fty, &srcs, cont, source_info),
-                    InstanceKind::LlvmIntrinsic(_) => native("call of an LLVM intrinsic"),
-                    InstanceKind::Item(_) | InstanceKind::Virtual(..) | InstanceKind::Shim(_) => {
-                        self.direct_call(fty, callee, &srcs, cont, source_info)
-                    }
+                    InstanceKind::Intrinsic(_) => Callee::Intrinsic(callee),
+                    InstanceKind::LlvmIntrinsic(_) => return native("call of an LLVM intrinsic"),
+                    InstanceKind::Item(_) | InstanceKind::Virtual(..) | InstanceKind::Shim(_) => Callee::Direct(callee),
                 }
             }
-            ty::FnPtr(..) => self.indirect_call(func, fty, &srcs, cont, source_info),
-            _ => native("call of a non-fn type"),
-        }
+            ty::FnPtr(..) => Callee::Ptr,
+            _ => return native("call of a non-fn type"),
+        };
+        Ok((fty, callee))
     }
 
     /// A call of the resolved `callee`, whose fn item type is `fty`.
@@ -443,24 +461,15 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         args: &[Spanned<Operand<'tcx>>],
         source_info: SourceInfo,
     ) -> Result<(), NeedsNative> {
-        let tcx = self.tcx;
-        let fty = self.mono(func.ty(self.body, tcx));
-        let srcs: Vec<ArgSrc<'_, 'tcx>> = args.iter().map(|a| ArgSrc::Operand(&a.node)).collect();
-        let (target, sig, srcs) = match *fty.kind() {
-            ty::FnDef(def_id, fn_args) => {
-                let fn_args = fn_args.no_bound_vars().expect("monomorphic callee");
-                let callee = Instance::expect_resolve(tcx, TypingEnv::fully_monomorphized(), def_id, fn_args, source_info.span);
-                match callee.def {
-                    InstanceKind::Intrinsic(_) => return native("tail call of an intrinsic"),
-                    InstanceKind::LlvmIntrinsic(_) => return native("call of an LLVM intrinsic"),
-                    InstanceKind::Item(_) | InstanceKind::Virtual(..) | InstanceKind::Shim(_) => self.direct_target(fty, callee, &srcs, true)?,
-                }
-            }
-            ty::FnPtr(..) => {
+        let (fty, callee) = self.resolve_callee(func, source_info)?;
+        let srcs = arg_srcs(args);
+        let (target, sig, srcs) = match callee {
+            Callee::Intrinsic(_) => return native("tail call of an intrinsic"),
+            Callee::Direct(callee) => self.direct_target(fty, callee, &srcs, true)?,
+            Callee::Ptr => {
                 let (t, sig) = self.ptr_target(func, fty)?;
                 (t, sig, srcs)
             }
-            _ => return native("call of a non-fn type"),
         };
         if sig.conv != CallConv::Rust {
             return native("tail call of a non-Rust ABI");
@@ -737,4 +746,9 @@ pub fn load_kind(k: u32) -> u32 {
 /// Whether a call of `target` goes through an island, which takes its arguments as a block.
 fn island_target(target: Target<'_>) -> bool {
     matches!(target, Target::Template(_) | Target::Sym(..) | Target::Ptr(_, CallConv::C))
+}
+
+/// A call's MIR arguments as argument sources.
+fn arg_srcs<'b, 'tcx>(args: &'b [Spanned<Operand<'tcx>>]) -> Vec<ArgSrc<'b, 'tcx>> {
+    args.iter().map(|a| ArgSrc::Operand(&a.node)).collect()
 }
