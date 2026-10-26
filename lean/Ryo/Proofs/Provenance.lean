@@ -446,4 +446,65 @@ theorem escape_liveDisjoint {s s' : Ryo.Vm.R.RState} {off : Int} {size align : N
     · exact (hnew b j hj2 hlb h3 h4 h1 (by simpa [Allocation.size, hlen] using h2)).elim
     · rfl
 
+/-! ### Immutable allocations and folded loads -/
+
+/-- A store leaves every immutable allocation as it was (a store into one is UB): the
+constant pool, the code constants and the symbol slots keep the bytes they had before VM
+code ran. -/
+theorem store_immutable {st : Ryo.Vm.OpSem.State} {p : ThinPointer} {bs : List AbstractByte}
+    {al : Align} {mem' : Memory} {id : AllocId} {a : Allocation}
+    (h : st.store st.mem p bs al = .ok mem') (ha : st.mem.get? id = some a)
+    (hm : a.mutable = false) : mem'.get? id = some a := by
+  unfold State.store at h
+  rw [liftOutcome_ok] at h
+  unfold Memory.store at h
+  split at h
+  · simp [throwUb, throwThe, MonadExceptOf.throw] at h
+  cases hc : st.mem.checkPtr (st.resolve p bs.length) bs.length with
+  | error e => simp [hc, bind, Except.bind] at h
+  | ok r =>
+    simp only [hc, bind, Except.bind] at h
+    cases r with
+    | none => simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; exact ha
+    | some r =>
+      obtain ⟨j, off⟩ := r
+      simp only at h
+      split at h
+      · simp [throwUb, throwThe, MonadExceptOf.throw] at h
+      · rename_i hmj
+        simp only [pure, Except.pure, Except.ok.injEq] at h
+        subst h
+        by_cases hj : j = id
+        · subst hj
+          rw [getElem!_of_get? ha, hm] at hmj
+          simp at hmj
+        · simp only [Memory.get?] at ha ⊢
+          rw [Array.set!_eq_setIfInBounds, Array.getElem?_setIfInBounds_ne hj]
+          exact ha
+
+/-- **Folding a load of a relocated field**: where an allocation holds a pointer `t`'s bytes
+(a pool or data field with an `R_X86_64_64` relocation, as `Image.world` writes it), a load
+of those 8 bytes through a pointer into it reads `t`, provenance included, so the load may
+fold to `t` (a `RefAddr` of the target); folding it to the bare address also needs `t`'s
+provenance exposed (`drop_exposed_mono`). With the allocation immutable (`store_immutable`),
+the bytes are those of the image. -/
+theorem fold_load_reloc {st : Ryo.Vm.OpSem.State} {p t : ThinPointer} {id : AllocId}
+    {a : Allocation} {off : Nat} {bs : List AbstractByte} (hd : LiveDisjoint st.mem)
+    (hp : p.prov = some id) (ha : st.mem.get? id = some a) (hl : a.live = true)
+    (hoff : p.addr = a.addr + off) (hb : (a.data.extract off (off + 8)).toList = encodePtr t)
+    (ht : t.addr < 2 ^ 64) (h : st.load p 8 = .ok bs) : decodePtr bs = some t := by
+  obtain ⟨j, b, hg, hlb, h1, h2, rfl⟩ := load_ok (by decide) h
+  have hlen : off + 8 ≤ a.size := by
+    have := congrArg List.length hb
+    simp only [Array.length_toList, Array.size_extract, encodePtr_length] at this
+    unfold Allocation.size; omega
+  have hfi : st.fits p.addr 8 id = true := stFits_iff.2 ⟨a, ha, hl, by omega, by omega⟩
+  have hfj : st.fits p.addr 8 j = true := stFits_iff.2 ⟨b, hg, hlb, h1, h2⟩
+  have := fits_unique hd (by decide) hfi hfj
+  subst this
+  rw [ha] at hg
+  cases hg
+  rw [hoff, Nat.add_sub_cancel_left, hb]
+  exact decodePtr_encodePtr t ht
+
 end Ryo.Proofs.Provenance

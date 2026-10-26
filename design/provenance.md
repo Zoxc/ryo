@@ -85,10 +85,12 @@ the proofs ([verification.md](verification.md)) must justify. The model is R's
   overlap (`LiveDisjoint`, kept by `escape`). The price: in R, an out-of-bounds access from
   an object reaches an *exposed* neighbour (L0 says UB), so independent placement of
   escaped objects rests on L0's placement being daemonic, not on R's UB.
-- **Image** (`R/Run.lean`, `world`): five allocations, all exposed: the constant pool
-  (immutable, `.const`), the data area from the fixups on (mutable), the symbol slots
-  (immutable, holding made-up addresses without provenance), the site slots, the code
-  constants. Relocated pool/data fields hold pointers with the target part's provenance.
+- **Image** (`R/Run.lean`, `worldWith`): five allocations, the constant pool (immutable,
+  `.const`), the data area from the fixups on (mutable), the symbol slots (immutable), the
+  site slots, the code constants; then the environment's allocations the symbol slots point
+  to (`NativeAlloc`: native statics and functions, other images' parts), each slot holding
+  its target's address without provenance. Every allocation is exposed
+  (`worldWith_exposed`), so integer addresses reach them. Relocated pool/data fields hold pointers with the target part's provenance.
   The constant-pool check (verification.md) requires each entry's relocations to be
   exactly its rustc allocation's provenance.
 - **Consequences** (§C0.3): frame privacy (no provenance for non-escaped bytes exists),
@@ -198,14 +200,16 @@ R's memory under the JIT's layout: `AllocaAddr` carries its alloca's provenance.
   by `≤def` bytes and `ProvLe` pointers is matched), and the invariant that `ι` maps L0's
   exposed allocations into R's and that `LiveDisjoint` holds of every world (image parts,
   environment answers).
-- **Coarse image allocations.** R has one allocation for the whole constant pool and one
-  for the data area, where L0 has one per global, so `ι` is many-to-one and R is more
-  defined across entries. Symbol slots hold made-up addresses without provenance, so a
-  native static reached by `addr.sym` is only reachable through exposure of an
-  environment allocation the model doesn't build.
-- **`rebase`** makes another image's addresses integers: sound only via rule 4 (image
-  parts exposed); the R-SSA checker's "each `Ref` carries its image" (lean/docs/jit.md)
-  isn't settled.
+- **Image allocations** (settled): one allocation per image part is kept. L0's globals map
+  into the parts at offsets, R being more defined across entries, which refinement allows;
+  constant-load folding is justified on it (`store_immutable`, `fold_load_reloc`,
+  `drop_exposed_mono`; lean/docs/reduced.md §C0.7 "Image and environment"). Native
+  statics reached through `addr.sym` are environment allocations the world exposes, and
+  `rebase`'s integer addresses are sound by that exposure. Left: the multi-image world is
+  the environment's (assumed: every loaded image's parts and natives exposed and disjoint),
+  and that no step or environment answer changes an immutable allocation.
+- The remaining items are recorded as future obligations in lean/docs/reduced.md §C0.7
+  ("Provenance obligations not addressed yet").
 - **Islands** run cg_llvm code under LLVM's provenance and `noalias` rules; a `Lend`
   operand is assumed not captured (template contract, not checked against LLVM IR).
 - **Memory alias analysis** uses no provenance: store-to-load forwarding through pointers

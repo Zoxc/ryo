@@ -90,7 +90,8 @@ operands, so they are layout-relative already.
   - integer operations decode their operands as integers, dropping provenance as MiniRust's
     integer decode does; `ptr.add` and `ptr.index` keep it;
   - **exposure is invisible in R** (`expose_provenance` lowers to a move), so every escaped
-    object counts as exposed, and so do the image's parts (`Image.world`). A never-escaped object is never exposed.
+    object counts as exposed, and so do the image's parts and the environment's allocations
+    (`Image.worldWith`, §C0.7 "Image and environment"). A never-escaped object is never exposed.
 - **Accesses through pointers** (a `[p+k]` operand, a handler's or island's deref, a
   callee) are L0 memory accesses, with the provenance **resolved at the access**
   (`State.resolve`): the pointer's own, if its allocation is live and contains the range;
@@ -313,6 +314,49 @@ instruction), and `unpack` rejects mutated arguments. Not checked by `view`, as 
   live). Because R has provenance, "not escaped at the loop head" already means
   "unreferenced" in R, and the lemma is applied in R, not by going back to L0. It is proved
   once on `Ryo/Spec/Mem`, so it holds for L0 as well.
+
+**Image and environment.** R's world (`Image.worldWith`, `Ryo/Vm/R/Run.lean`) has one
+allocation per image part (the constant pool, the data area, the symbol slots, the site
+slots, the code constants), not one per L0 global, and the environment's allocations that
+symbol slots point to (`NativeAlloc`: native statics and functions, another image's parts),
+each slot holding its target's address as a plain integer, as the runtime fills it. Every
+allocation of the world is exposed (`worldWith_exposed`). So:
+
+- **Granularity.** `ι` maps each L0 global to its part *at an offset* (an injection in
+  CompCert's sense, not a renaming). R is more defined than L0 across entries of a part (an
+  access from one constant into the next is UB in L0 only), which a refinement allows; no
+  pass relies on per-entry bounds. Per-entry allocations would be needed only for a rule that
+  wants R's UB between globals, and none does.
+- **Constant-load folding** (a load from the pool, the code constants or the symbol slots
+  folded at JIT time; rule 5 of design/provenance.md): the allocation is immutable, so a
+  store never changes it (`store_immutable`, `Ryo/Proofs/Provenance.lean`), and a load of
+  a relocated field reads the pointer the relocation wrote, provenance included
+  (`fold_load_reloc`), which is what a `RefAddr` of the target makes (`Image.addrs`); folding
+  to the bare address is sound because the target is exposed (`drop_exposed_mono`). A
+  non-relocated field folds to its integer; a partly relocated read decodes without
+  provenance in both. Left: that no other step changes an immutable allocation (`opSem`'s
+  frame writes touch escaped objects only, environment answers must keep them: an
+  environment obligation with `LiveDisjoint`).
+- **Cross-image addresses as integers** (`rebase`: another image's `RefAddr`s become
+  64-bit constants; a symbol slot's value): justified by exposure, given that the
+  environment's world contains every loaded image's parts and natives, exposed and
+  disjoint (`drop_exposed_mono`, `resolve_of_fits`). The multi-image world itself (each
+  image at its own addresses, ids renumbered) is the environment's, not built in Lean.
+
+**Provenance obligations not addressed yet** (design/provenance.md, "gaps"):
+
+- *Islands* run cg_llvm code under LLVM's provenance and `noalias` rules; that a `Lend`
+  operand is not captured, and that pointers an island keeps or returns have the
+  provenance R gives them, is the template contract's, not checked against the LLVM IR.
+- *Alias analysis without provenance*: the JIT's forwarding and DSE use no provenance or
+  base/offset disambiguation, so nothing about them needs more than the accesses' lemmas
+  above; a pass that does use rule 2 between memory pointers needs its own lemma.
+- *PE fixups* (the writable fixup area patched at registration) are not modeled: their
+  slots are in the data area as plain bytes.
+- The step-level forms of the relations: an R step from states related by `≤def` bytes and
+  `ProvLe` pointers is matched (the access and byte lemmas are its cases), and
+  `LiveDisjoint` of every reachable state (escapes keep it, `escape_liveDisjoint`; image
+  parts' made-up addresses and environment answers must).
 
 ---
 

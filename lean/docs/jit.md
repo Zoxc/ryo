@@ -218,8 +218,12 @@ after loading" (RELRO, trusted, [aot.md](aot.md) §C6), and the callee's image's
 ([aot.md](aot.md) §C4) to have passed. **Devirtualization by constant propagation** needs
 "pool memory is read-only": D7 makes consts immutable allocations (a write is UB), and §C4
 checks the pool is in RELRO and holds the allocation, so a load from a constant vtable may be
-folded. Open question: D7 lets the source pick a const's copy; with constants from image B
-folded into a unit of image A, check that "each `Ref` carries its image" suffices.
+folded: a load of a relocated field reads the pointer a `RefAddr` of its target makes
+(`fold_load_reloc`, `store_immutable`; [reduced.md](reduced.md) §C0.7, "Image and
+environment"). D7 lets the source pick a const's copy; constants from image B folded into a
+unit of image A as 64-bit integers (`rebase`) are sound because every image part is exposed
+(`drop_exposed_mono`), so a `Ref` need not carry its image for soundness, only for the
+validator to recompute the address.
 
 ## E.7 What the JIT guarantee depends on
 

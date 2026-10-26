@@ -15,12 +15,18 @@ the callee's R code (`Program.invoke`), and an image object as such a program
   callee (`ret_kind = RET_SRET`), its `ret_size` as the destination's size (the image's
   claim; C1' is to check it against the return type). The world: the constant pool and the
   code constants as one immutable allocation each, the data area (statics) as a mutable one,
-  the symbol slots (each holding a made-up address of its symbol, `Image.symAddr`, outside
-  every allocation: the runtime fills them) and the site cache slots, at the made-up
-  addresses of `DecodeObj`; pointers between them (the read-only and data sections'
-  `R_X86_64_64` relocations into those parts) carry their allocation's provenance, others
-  (to symbols) are left as the object has them. One allocation per part, not per constant
-  (D7's copies) or static: enough to run code, not the image check's model. Each function's
+  the symbol slots and the site cache slots, at the made-up addresses of `DecodeObj`;
+  pointers between them (the read-only and data sections' `R_X86_64_64` relocations into
+  those parts) carry their allocation's provenance, others (to symbols) are left as the
+  object has them. A symbol slot holds its target's address as an integer, as the runtime
+  fills it: with `Image.worldWith o ns`, the address of the environment's allocation `ns`
+  gives for it (a native static or function, another image's part), else a made-up address
+  outside every allocation (`Image.symAddr`; `Image.world`). Every allocation of the world is
+  exposed (`worldWith_exposed`), so integers reach them as pointers do (`rebase`'s
+  constants, a slot's value). One allocation per part, not per constant (D7's copies) or
+  static: R is then more defined than L0 across entries, which a refinement allows (L0's
+  globals map into the parts at offsets, reduced.md §C0.7), and a load of a relocated pool
+  field reads the pointer a `RefAddr` of its target makes (`Ryo.Proofs.Provenance`). Each function's
   zero-sized frame objects (`Code.zeroSized`) come from outside, by symbol: `rrun --cert`
   gives the certificate's locals of size 0 (`Main.lean`; without a certificate there are none,
   and `addr` of a zero-sized local is UB).
@@ -121,9 +127,25 @@ open Ryo.Obj
 /-- Where the symbol of slot `s` is said to be: a made-up address, without an allocation. -/
 def symAddr (s : Nat) : Nat := 0x2000_0000 + 16 * s
 
-/-- The symbol slots' contents: each its symbol's made-up address. -/
-def symSlots (n : Nat) : ByteArray :=
-  ⟨((List.range n).flatMap fun s => (encodeBits 8 (symAddr s)).filterMap AbstractByte.data).toArray⟩
+/-- An allocation of the environment that symbol slot `slot` holds the address of: a native
+static or function, a thread-local, another image's part. The runtime fills the slot with
+`addr` as a plain integer (no provenance), so the allocation is reached through exposure: the
+world exposes it (`worldWith`). -/
+structure NativeAlloc where
+  slot : Nat
+  addr : Nat
+  data : List AbstractByte := []
+  mutable : Bool := false
+  kind : AllocationKind := .static
+deriving Repr, Inhabited
+
+/-- The address symbol slot `s` holds: its native allocation's, else a made-up one. -/
+def slotAddr (ns : List NativeAlloc) (s : Nat) : Nat :=
+  ((ns.find? (·.slot == s)).map (·.addr)).getD (symAddr s)
+
+/-- The symbol slots' contents: each its symbol's address (`slotAddr`). -/
+def symSlots (n : Nat) (ns : List NativeAlloc := []) : ByteArray :=
+  ⟨((List.range n).flatMap fun s => (encodeBits 8 (slotAddr ns s)).filterMap AbstractByte.data).toArray⟩
 
 /-- The symbol slot whose symbol is at `a`, if any. -/
 def symAt? (n a : Nat) : Option Nat :=
@@ -133,13 +155,13 @@ def symAt? (n a : Nat) : Option Nat :=
 /-- The image's parts as allocations: (made-up address, bytes, mutable, kind), in `AllocId`
 order: the constant pool, the data area, the symbol slots, the site slots, the code
 constants. -/
-def parts (o : ImageObject) : List (Nat × ByteArray × Bool × AllocationKind) :=
+def parts (o : ImageObject) (ns : List NativeAlloc := []) : List (Nat × ByteArray × Bool × AllocationKind) :=
   let h := o.image.header
   let dataEnd := if h.jitRecords.count != 0 then h.jitRecords.off else h.dataSize
   let dataBytes := (o.elf.data o.data).extract (o.dataBase + h.fixupArea) (o.dataBase + dataEnd)
   [(DecodeObj.consts, o.image.bytes.extract h.consts.off (h.consts.off + h.consts.count), false, .const),
    (DecodeObj.datas, dataBytes, true, .static),
-   (DecodeObj.syms, symSlots h.symbols.count, false, .static),
+   (DecodeObj.syms, symSlots h.symbols.count ns, false, .static),
    (DecodeObj.sites, ByteArray.mk (Array.replicate (8 * h.siteCount) 0), true, .static),
    (DecodeObj.ros, o.image.codeConsts, false, .const)]
 
@@ -171,10 +193,11 @@ def pointerTo (o : ImageObject) (i : Nat) (off : Int) : Option ThinPointer :=
     (within (o.dataBase + h.fixupArea) (dataEnd - h.fixupArea)).bind (addrs ∘ .data)
   else none
 
-/-- The image's world: its parts as allocations, with the pointers between them. -/
-def world (o : ImageObject) : World := Id.run do
+/-- The image's memory: its parts as allocations, with the pointers between them, then the
+native allocations `ns` (from `AllocId` 5 on, in order). -/
+def worldMem (o : ImageObject) (ns : List NativeAlloc) : Memory := Id.run do
   let mut mem : Memory := {}
-  for (addr, bs, mutable, kind) in parts o do
+  for (addr, bs, mutable, kind) in parts o ns do
     let a : Allocation := { data := bs.toList.toArray.map AbstractByte.ofByte, addr,
                             align := Align.ofBytes 8, kind, mutable := mutable && kind != .vtable,
                             vtableRo := by intro h; simp [h] }
@@ -191,7 +214,27 @@ def world (o : ImageObject) : World := Id.run do
       let .ok (.sect i off) := o.elf.target r | continue
       let some p := pointerTo o i off | continue
       mem := mem.writeInit ⟨(mem.get? id).get!.addr + (r.offset - base), some id⟩ (encodePtr p)
-  return { mem, exposed := (List.range 5) }
+  for n in ns do
+    let a : Allocation := { data := n.data.toArray, addr := n.addr, align := Align.one,
+                            kind := n.kind, mutable := n.mutable && n.kind != .vtable,
+                            vtableRo := by intro h; simp [h] }
+    mem := ⟨mem.allocs.push a⟩
+  return mem
+
+/-- The image's world with the environment's allocations `ns` that its symbol slots point to:
+every allocation exposed (the image's parts, which code reaches as integers too: `rebase`'s
+constants, a symbol slot's value; and the natives, reachable only that way). -/
+def worldWith (o : ImageObject) (ns : List NativeAlloc) : World :=
+  let mem := worldMem o ns
+  { mem, exposed := List.range mem.allocs.size }
+
+/-- The image's world alone: symbol slots hold made-up addresses outside every allocation. -/
+def world (o : ImageObject) : World := worldWith o []
+
+/-- Every allocation of the world is exposed. -/
+theorem worldWith_exposed (o : ImageObject) (ns : List NativeAlloc) (id : AllocId)
+    (h : id < (worldWith o ns).mem.allocs.size) : id ∈ (worldWith o ns).exposed := by
+  simpa [worldWith] using h
 
 /-- The callee of instruction `k` if it is a `call` or `tail_call` of an image function. -/
 def imageCallee (d : Decoded) (k : Nat) : Option Nat :=
