@@ -55,10 +55,6 @@ impl<T> SessionCell<T> {
         v
     }
 
-    fn get_or_init(&self, tcx: TyCtxt<'_>, f: impl FnOnce() -> T) -> &T {
-        Self::check(tcx, self.0.get_or_init(|| (Self::key(tcx), f())))
-    }
-
     /// Fails if a value was already set.
     fn set(&self, tcx: TyCtxt<'_>, v: T) -> Result<(), ()> {
         self.0.set((Self::key(tcx), v)).map_err(|_| ())
@@ -69,17 +65,23 @@ impl<T> SessionCell<T> {
     }
 }
 
-static RT_ITEMS: SessionCell<Option<RtItems>> = SessionCell::new();
-
 /// `ryo_rt`'s crate and template items, found through its diagnostic items. `None` if
 /// `ryo_rt` isn't loaded (rustc wasn't run through `rustc-ryo`).
 pub fn rt_items(tcx: TyCtxt<'_>) -> Option<RtItems> {
-    *RT_ITEMS.get_or_init(tcx, || {
-        let krate = *tcx.crates(()).iter().find(|&&c| tcx.crate_name(c).as_str() == "ryo_rt")?;
-        let items = tcx.diagnostic_items(krate);
-        let get = |name: &str| items.name_to_id.get(&Symbol::intern(name)).copied();
-        Some(RtItems { krate, c_main: get("ryo_c_main")?, fp_arg: get("ryo_rt_fp_arg")? })
-    })
+    let krate = *tcx.crates(()).iter().find(|&&c| is_rt_crate(tcx, c))?;
+    rt_items_in(tcx, krate)
+}
+
+/// Whether `krate` is `ryo_rt`.
+pub fn is_rt_crate(tcx: TyCtxt<'_>, krate: CrateNum) -> bool {
+    tcx.crate_name(krate).as_str() == "ryo_rt"
+}
+
+/// [`rt_items`], given `ryo_rt`'s crate.
+pub fn rt_items_in(tcx: TyCtxt<'_>, krate: CrateNum) -> Option<RtItems> {
+    let items = tcx.diagnostic_items(krate);
+    let get = |name: &str| items.name_to_id.get(&Symbol::intern(name)).copied();
+    Some(RtItems { krate, c_main: get("ryo_c_main")?, fp_arg: get("ryo_rt_fp_arg")? })
 }
 
 /// What the partition provider hands to the other providers and to `codegen_crate`. Set once:
