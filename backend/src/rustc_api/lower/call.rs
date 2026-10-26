@@ -254,50 +254,45 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let rd = if k == 0 { 0 } else { d };
         // The island calls' operands: the argument block, the result, and the callee.
         let (bn, dn) = (sig.block_size, sig.output.size.bytes() as u32);
-        let at = match target {
-            Target::Vm(callee) => {
-                let a = self.pass_args(sig, homes, Some(d), false)?;
-                let f = self.reloc(CodeReloc::Call { callee });
-                let at = self.op(Opcode::Call, &[&[rd, f, k][..], &a].concat());
-                self.cert_call(at, CallKind::Vm, sig.plan.as_ref(), sig.ret_kind, sig.output.size.bytes());
-                Some(at)
-            }
-            Target::Ext(callee) => {
-                let a = self.pass_args(sig, homes, Some(d), false)?;
-                let r = CodeReloc::Symbol { target: callee };
-                let op = if self.sym_indirect(&r) { Opcode::CallSymInd } else { Opcode::CallSym };
-                let sym = self.reloc(r);
-                let at = self.op(op, &[&[rd, sym, k][..], &a].concat());
-                self.cert_call(at, CallKind::Sym, sig.plan.as_ref(), sig.ret_kind, sig.output.size.bytes());
-                Some(at)
-            }
-            Target::Ptr(p, CallConv::Rust) => {
-                let a = self.pass_args(sig, homes, Some(d), false)?;
-                let at = self.op(Opcode::CallPtr, &[&[rd, p, k][..], &a].concat());
-                self.cert_call(at, CallKind::Ptr, sig.plan.as_ref(), sig.ret_kind, sig.output.size.bytes());
-                Some(at)
-            }
+        match target {
             Target::Template(fty) => {
                 let args = [fty.into(), sig.args_tuple(tcx).into(), sig.output.ty.into()];
                 self.island(templates::CALL, &args, &[(block, bn), (d, dn)], Some(cont.unwind));
-                None
             }
-            Target::Sym(callee, conv) => {
-                let p = self.sym_addr(callee);
+            Target::Sym(_, conv) | Target::Ptr(_, conv @ CallConv::C) => {
+                let p = match target {
+                    Target::Sym(callee, _) => self.sym_addr(callee),
+                    Target::Ptr(p, _) => p,
+                    _ => unreachable!(),
+                };
                 let (name, args) = self.ptr_island(sig, conv)?;
                 self.island(&name, &args, &[(block, bn), (d, dn), (p, 8)], Some(cont.unwind));
-                None
             }
-            Target::Ptr(p, CallConv::C) => {
-                let (name, args) = self.ptr_island(sig, CallConv::C)?;
-                self.island(&name, &args, &[(block, bn), (d, dn), (p, 8)], Some(cont.unwind));
-                None
+            Target::Vm(_) | Target::Ext(_) | Target::Ptr(_, CallConv::Rust) => {
+                let a = self.pass_args(sig, homes, Some(d), false)?;
+                let (op, f, kind) = match target {
+                    Target::Vm(callee) => (Opcode::Call, self.reloc(CodeReloc::Call { callee }), CallKind::Vm),
+                    Target::Ext(callee) => {
+                        let r = CodeReloc::Symbol { target: callee };
+                        let op = if self.sym_indirect(&r) { Opcode::CallSymInd } else { Opcode::CallSym };
+                        (op, self.reloc(r), CallKind::Sym)
+                    }
+                    Target::Ptr(p, _) => (Opcode::CallPtr, p, CallKind::Ptr),
+                    _ => unreachable!(),
+                };
+                let at = self.call_insn(op, &[rd, f, k], &a, kind, sig);
+                self.unwind_entry(at, cont.unwind);
             }
-        };
-        if let Some(at) = at {
-            self.unwind_entry(at, cont.unwind);
         }
         self.finish_call(cont, d, after)
+    }
+
+    /// The call instruction `op` with the operands `head` then the register arguments `a`,
+    /// and its certificate entry.
+    fn call_insn(&mut self, op: Opcode, head: &[u32], a: &[u32], kind: CallKind, sig: &AbiSig<'tcx>) -> super::InsnId {
+        let at = self.op(op, &[head, a].concat());
+        self.cert_call(at, kind, sig.plan.as_ref(), sig.ret_kind, sig.output.size.bytes());
+        at
     }
 
     /// Passes the inputs in their slots `homes` as `sig`'s calling convention says: the
@@ -430,18 +425,12 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             Target::Template(_) => unreachable!("tail calls don't use the call template"),
         };
         let a = self.pass_args(&sig, &homes, None, true)?;
-        match (target, p) {
-            (Target::Vm(callee), _) => {
-                let f = self.reloc(CodeReloc::Call { callee });
-                let at = self.op(Opcode::TailCall, &[&[f][..], &a].concat());
-                self.cert_call(at, CallKind::TailVm, sig.plan.as_ref(), sig.ret_kind, sig.output.size.bytes());
-            }
-            (_, Some(p)) => {
-                let at = self.op(Opcode::TailCallPtr, &[&[p][..], &a].concat());
-                self.cert_call(at, CallKind::TailPtr, sig.plan.as_ref(), sig.ret_kind, sig.output.size.bytes());
-            }
-            (_, None) => unreachable!(),
-        }
+        let (op, f, kind) = match (target, p) {
+            (_, Some(p)) => (Opcode::TailCallPtr, p, CallKind::TailPtr),
+            (Target::Vm(callee), None) => (Opcode::TailCall, self.reloc(CodeReloc::Call { callee }), CallKind::TailVm),
+            _ => unreachable!(),
+        };
+        self.call_insn(op, &[f], &a, kind, &sig);
         Ok(())
     }
 
@@ -645,8 +634,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             let homes = self.write_args(&sig, &[ArgSrc::Slot(ptr)], self.body.source_info(rustc_middle::mir::Location::START).clone(), false)?;
             let a = self.pass_args(&sig, &homes, None, false)?;
             let f = self.reloc(CodeReloc::Call { callee: glue });
-            let at = self.op(Opcode::Call, &[&[0, f, 0][..], &a].concat());
-            self.cert_call(at, CallKind::DropVm, sig.plan.as_ref(), sig.ret_kind, sig.output.size.bytes());
+            let at = self.call_insn(Opcode::Call, &[0, f, 0], &a, CallKind::DropVm, &sig);
             self.unwind_entry(at, unwind);
         } else {
             self.island(templates::DROP_IN_PLACE, &[ty.into()], &[(ptr, if pv.meta.is_some() { 16 } else { 8 })], Some(unwind));
@@ -668,9 +656,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let ptr = self.temp8();
         self.addr_into(ptr, pv.loc, pv.base)?;
         // `unsafe fn(*mut ())`: the pointer in the first integer register.
-        let a = [ptr, ArgReg { xmm: false, size: 8, index: 0 }.word()];
-        let at = self.op(Opcode::CallPtr, &[&[0, f, 0][..], &a].concat());
-        let plan = ArgPlan { locs: vec![vec![ArgLoc::Reg { reg: ArgReg { xmm: false, size: 8, index: 0 }, off: 0 }]], stack_size: 0 };
+        let reg = ArgReg { xmm: false, size: 8, index: 0 };
+        let at = self.op(Opcode::CallPtr, &[0, f, 0, ptr, reg.word()]);
+        let plan = ArgPlan { locs: vec![vec![ArgLoc::Reg { reg, off: 0 }]], stack_size: 0 };
         self.cert_call(at, CallKind::VirtualDrop, Some(&plan), 0, 0);
         self.unwind_entry(at, unwind);
         self.jump(target);
