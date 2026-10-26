@@ -1,4 +1,4 @@
-//! Sample statistics for `y bench crates`.
+//! Sample statistics for `y bench` and `y bench crates`.
 
 /// A cell is noisy when its standard deviation is more than this fraction of its median.
 pub const NOISY: f64 = 0.03;

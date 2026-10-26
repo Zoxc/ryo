@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
+use crate::crates::stats::Summary;
 use crate::utils::{cmd, describe, exe_name, root};
 
 mod codegen;
@@ -190,7 +191,9 @@ impl Timer {
                         times.push(elapsed);
                     }
                 }
-                Ok(stats(&times))
+                // `runs` is at least 1.
+                let s = Summary::of(&times).unwrap();
+                Ok(Stats { mean: s.mean, stddev: s.stddev })
             }
             Timer::Hyperfine { json } => {
                 let line: Vec<String> =
@@ -212,13 +215,6 @@ impl Timer {
             }
         }
     }
-}
-
-fn stats(times: &[f64]) -> Stats {
-    let n = times.len() as f64;
-    let mean = times.iter().sum::<f64>() / n;
-    let var = if times.len() > 1 { times.iter().map(|t| (t - mean) * (t - mean)).sum::<f64>() / (n - 1.0) } else { 0.0 };
-    Stats { mean, stddev: var.sqrt() }
 }
 
 /// `mean` and `stddev` of the first entry of the `results` array in hyperfine's
@@ -476,13 +472,6 @@ mod tests {
         let e = "==1== I refs:        1,234\n==2== I refs: 10\n==1== I1  misses: 5\n";
         assert_eq!(parse_cachegrind(e), Some(1244));
         assert_eq!(parse_cachegrind("nothing"), None);
-    }
-
-    #[test]
-    fn mean_and_stddev() {
-        let s = stats(&[1.0, 2.0, 3.0]);
-        assert_eq!(s, Stats { mean: 2.0, stddev: 1.0 });
-        assert_eq!(stats(&[4.0]), Stats { mean: 4.0, stddev: 0.0 });
     }
 
     #[test]

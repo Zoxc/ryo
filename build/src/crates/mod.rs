@@ -2,7 +2,7 @@
 //! crates with LLVM, Cranelift and ryo in cargo's `dev` profile, and writes an HTML report.
 
 mod html;
-mod stats;
+pub mod stats;
 pub mod timing;
 
 use std::fs;
