@@ -22,6 +22,7 @@ use crate::objfile;
 
 use super::dump;
 use super::lower::{self, CodeReloc, LowerCx, LoweredFn, NeedsNative};
+use super::switches::Switches;
 use super::symbols::{self, local_stable_crate_id, rt_symbol, static_symbol};
 
 /// The `ryo_rt` items the backend instantiates or checks (design/stubs.md, Lookup).
@@ -154,7 +155,9 @@ pub fn collect_and_partition_mono_items<'tcx>(tcx: TyCtxt<'tcx>, original: super
     {
         tcx.dcx().fatal("the ryo backend doesn't support `-Clto` for dylibs");
     }
-    if super::switches::get().marker {
+    // Providers are plain fns, so this one reads the switches itself.
+    let switches = super::switches::Switches::from_env();
+    if switches.marker {
         eprintln!("{}", super::PARTITION_MARKER);
     }
     let partitions = original(tcx, ());
@@ -167,7 +170,7 @@ pub fn collect_and_partition_mono_items<'tcx>(tcx: TyCtxt<'tcx>, original: super
 
     let (native, results) = {
         let _t = tcx.prof.generic_activity("ryo_partition");
-        Partitioner::new(tcx, rt, cgu).run()
+        Partitioner::new(tcx, rt, &switches, cgu).run()
     };
     if RESULTS.set(tcx, results).is_err() {
         tcx.dcx().fatal("collect_and_partition_mono_items ran twice in one process");
@@ -183,7 +186,7 @@ pub fn collect_and_partition_mono_items<'tcx>(tcx: TyCtxt<'tcx>, original: super
 /// How the image's machine code is generated: as `ryo_rt`'s handlers expect `fp`, with a
 /// frame pointer where the session needs one, with loop-head alignment unless
 /// `RYO_ASM_ALIGN=0`, and for the target's object format.
-pub fn asm_mode(tcx: TyCtxt<'_>, rt: RtItems) -> asm::Mode {
+pub fn asm_mode(tcx: TyCtxt<'_>, rt: RtItems, switches: &Switches) -> asm::Mode {
     let fp_arg = tcx.const_eval_poly(rt.fp_arg).ok().and_then(|v| v.try_to_scalar_int()).map(|i| i.to_u8() != 0);
     let Some(fp_arg) = fp_arg else { tcx.dcx().fatal("ryo_rt's FP_ARG isn't a bool") };
     let pe = tcx.sess.target.binary_format == rustc_target::spec::BinaryFormat::Coff;
@@ -191,7 +194,7 @@ pub fn asm_mode(tcx: TyCtxt<'_>, rt: RtItems) -> asm::Mode {
         fp_arg,
         // Handlers that read `rbp` and PE unwind info need it (`asm::Mode::frame_pointer`).
         frame_pointer: !fp_arg || pe || needs_frame_pointer(tcx.sess),
-        align_loops: super::switches::get().asm_align,
+        align_loops: switches.asm_align,
         pe,
         // The JIT's trigger, in every build: one code shape (design/vm.md, "JIT records and
         // counters").
@@ -225,6 +228,7 @@ pub(super) struct VmFn<'tcx> {
 struct Partitioner<'a, 'tcx> {
     tcx: TyCtxt<'tcx>,
     rt: RtItems,
+    switches: &'a Switches,
     cgu: &'a CodegenUnit<'tcx>,
     /// VM functions in image order.
     vm: Vec<VmFn<'tcx>>,
@@ -248,10 +252,11 @@ struct Stats {
 }
 
 impl<'a, 'tcx> Partitioner<'a, 'tcx> {
-    fn new(tcx: TyCtxt<'tcx>, rt: RtItems, cgu: &'a CodegenUnit<'tcx>) -> Self {
+    fn new(tcx: TyCtxt<'tcx>, rt: RtItems, switches: &'a Switches, cgu: &'a CodegenUnit<'tcx>) -> Self {
         Partitioner {
             tcx,
             rt,
+            switches,
             cgu,
             vm: Vec::new(),
             index: FxHashMap::default(),
@@ -269,12 +274,12 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         // A panic runtime (`panic_unwind`, `panic_abort`) too: portals re-raise a panic from
         // the VM through its `__rust_start_panic` (design/vm.md, Unwinding), so that must be
         // native, and the rest of the runtime gains nothing from the VM.
-        !super::switches::get().no_vm && !self.tcx.crate_types().contains(&CrateType::ProcMacro) && !self.tcx.is_panic_runtime(LOCAL_CRATE)
+        !self.switches.no_vm && !self.tcx.crate_types().contains(&CrateType::ProcMacro) && !self.tcx.is_panic_runtime(LOCAL_CRATE)
     }
 
     fn run(mut self) -> (CodegenUnit<'tcx>, Results) {
         let tcx = self.tcx;
-        let stats = super::switches::get().stats;
+        let stats = self.switches.stats;
 
         // Step 2/3: classify and lower. `ryo_rt` instances are always native (design/vm.md).
         let mut candidates: Vec<(Instance<'tcx>, MonoItemData)> = Vec::new();
@@ -291,7 +296,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         candidates.sort_by_cached_key(|(i, _)| tcx.symbol_name(*i).name);
         let (mut ok, failed) = {
             let _t = tcx.prof.generic_activity("ryo_lower");
-            lower_all(tcx, &candidates, asm_mode(tcx, self.rt))
+            lower_all(tcx, &candidates, asm_mode(tcx, self.rt, self.switches), self.switches)
         };
         if stats >= 2 {
             for (instance, why) in &failed {
@@ -681,7 +686,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         let mut w = ImageWriter::new(local_stable_crate_id(tcx));
         let rt_krate = self.rt.krate;
         let mut pool = Pool::default();
-        let mode = asm_mode(tcx, self.rt);
+        let mode = asm_mode(tcx, self.rt, self.switches);
         w.prepare(mode);
         if tcx.sess.target.binary_format == rustc_target::spec::BinaryFormat::MachO {
             // As LLVM writes `__eh_frame` (design/platforms.md).
@@ -691,11 +696,10 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         // The handlers the code calls, and whether it probes the stack.
         let mut handlers = vec![false; ryo_bytecode::full::ALL_OPCODES.len()];
         let mut probe = false;
-        let switches = super::switches::get();
-        if let Some(path) = &switches.dump {
+        if let Some(path) = &self.switches.dump {
             dump::write(tcx, "RYO_DUMP", path, &dump::vm_text(tcx, &self.vm, mode));
         }
-        let mut code_dump = switches.dump_code.as_ref().map(|_| dump::code_text(tcx, &self.vm));
+        let mut code_dump = self.switches.dump_code.as_ref().map(|_| dump::code_text(tcx, &self.vm));
         let merge_t = tcx.prof.generic_activity("ryo_merge");
         for (i, v) in self.vm.iter_mut().enumerate() {
             let l = &mut v.lowered;
@@ -789,7 +793,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             encoded.push(code);
         }
         drop(merge_t);
-        if let (Some(path), Some(text)) = (&switches.dump_code, &code_dump) {
+        if let (Some(path), Some(text)) = (&self.switches.dump_code, &code_dump) {
             dump::write(tcx, "RYO_DUMP_CODE", path, text);
         }
         let _t = tcx.prof.generic_activity("ryo_finish_image");
@@ -841,13 +845,14 @@ fn lower_all<'tcx>(
     tcx: TyCtxt<'tcx>,
     candidates: &[(Instance<'tcx>, MonoItemData)],
     mode: asm::Mode,
+    switches: &Switches,
 ) -> (FxHashMap<Instance<'tcx>, LoweredFn<'tcx>>, Vec<(Instance<'tcx>, NeedsNative)>) {
     let mut vm: FxHashSet<Instance<'tcx>> = candidates.iter().map(|c| c.0).collect();
     let mut ok: FxHashMap<Instance<'tcx>, LoweredFn<'tcx>> = FxHashMap::default();
     let mut failed = Vec::new();
     let mut todo: Vec<Instance<'tcx>> = candidates.iter().map(|c| c.0).collect();
     while !todo.is_empty() {
-        let cx = LowerCx { vm: &vm, mode, cert: super::switches::get().dump_lean.is_some() };
+        let cx = LowerCx { vm: &vm, mode, cert: switches.dump_lean.is_some(), asm_check: switches.asm_check };
         let out: Vec<_> = rustc_data_structures::sync::par_map(todo, |instance| (instance, lower::lower(tcx, &cx, instance)));
         let mut removed = false;
         for (instance, r) in out {

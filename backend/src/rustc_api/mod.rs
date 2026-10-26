@@ -47,13 +47,19 @@ pub const PARTITION_MARKER: &str = "ryo backend: partition";
 /// The ryo backend: cg_llvm plus the VM pipeline (design/backend.md).
 pub struct RyoBackend {
     llvm: Box<dyn CodegenBackend>,
+    /// The debugging switches, read when the backend is created.
+    switches: switches::Switches,
     /// Set by `codegen_crate` for `link`, which has no `tcx`.
     link_info: OnceLock<link::LinkInfo>,
 }
 
 impl RyoBackend {
     pub fn new() -> BoxedBackend {
-        Box::new(RyoBackend { llvm: rustc_codegen_llvm::LlvmCodegenBackend::new(), link_info: OnceLock::new() })
+        Box::new(RyoBackend {
+            llvm: rustc_codegen_llvm::LlvmCodegenBackend::new(),
+            switches: switches::Switches::from_env(),
+            link_info: OnceLock::new(),
+        })
     }
 }
 
@@ -105,7 +111,7 @@ impl CodegenBackend for RyoBackend {
     }
 
     fn init(&self, sess: &Session) {
-        if switches::get().marker {
+        if self.switches.marker {
             eprintln!("{INIT_MARKER}");
         }
         // Incremental compilation is a non-goal (design/README.md): the portal symbols and the
@@ -214,7 +220,7 @@ impl CodegenBackend for RyoBackend {
             linked_roots: tcx.crate_types().iter().map(|&t| (t, partition::linked_roots(tcx, t))).collect(),
             macho: tcx.sess.target.binary_format == rustc_target::spec::BinaryFormat::MachO,
         });
-        dump_lean::dump(tcx);
+        dump_lean::dump(tcx, &self.switches);
         // The native CGU (step 4), compiled by cg_llvm as usual.
         let llvm = self.llvm.codegen_crate(tcx);
         Box::new(RyoOngoingCodegen { llvm, image: (image_name, image_path) })

@@ -1,9 +1,9 @@
 //! The backend's debugging switches (design/backend.md, "Debugging switches"): every
-//! environment variable the backend reads, read once.
+//! environment variable the backend reads. `init` reads them for the backend, and the partition
+//! provider (a plain fn, which can't reach the backend) reads them again and threads them
+//! through partitioning and lowering.
 
 use std::ffi::OsString;
-use std::sync::OnceLock;
-
 pub struct Switches {
     /// `RYO_STATS`: the statistics level, 0 for none.
     pub stats: u32,
@@ -24,9 +24,8 @@ pub struct Switches {
     pub marker: bool,
 }
 
-pub fn get() -> &'static Switches {
-    static SWITCHES: OnceLock<Switches> = OnceLock::new();
-    SWITCHES.get_or_init(|| {
+impl Switches {
+    pub fn from_env() -> Switches {
         let var = std::env::var_os;
         Switches {
             stats: std::env::var("RYO_STATS").ok().and_then(|v| v.parse().ok()).unwrap_or(0),
@@ -38,5 +37,5 @@ pub fn get() -> &'static Switches {
             asm_align: var("RYO_ASM_ALIGN").is_none_or(|v| v != "0"),
             marker: var("RYO_BACKEND_MARKER").is_some(),
         }
-    })
+    }
 }

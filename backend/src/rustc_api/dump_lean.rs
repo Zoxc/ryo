@@ -52,8 +52,8 @@ use rustc_middle::ty::{self, Instance, InstanceKind, ShimKind, Ty, TyCtxt, Typin
 use rustc_target::callconv::{ArgAbi, FnAbi, PassMode};
 
 /// Writes the dump if `RYO_DUMP_LEAN` is set and the crate has an entry function.
-pub fn dump(tcx: TyCtxt<'_>) {
-    let Some(dir) = &super::switches::get().dump_lean else { return };
+pub fn dump(tcx: TyCtxt<'_>, switches: &super::switches::Switches) {
+    let Some(dir) = &switches.dump_lean else { return };
     let dir = std::path::PathBuf::from(dir);
     write_certs(tcx, &dir);
     let Some((main, _)) = tcx.entry_fn(()) else { return };

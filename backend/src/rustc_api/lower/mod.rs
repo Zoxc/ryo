@@ -119,6 +119,8 @@ pub struct LowerCx<'a, 'tcx> {
     pub mode: asm::Mode,
     /// Whether to record the certificate for the Lean lowering check (`cert.rs`).
     pub cert: bool,
+    /// `RYO_ASM_CHECK`: re-encode the machine code and check it.
+    pub asm_check: bool,
 }
 
 /// Lowers `instance` to bytecode, or says why it must stay native.
@@ -376,7 +378,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let frame_size = self.frame.frame_size(self.max_outgoing)?;
         let cert = self.cert_json(frame_size, sig.plan.as_ref());
         let code = std::mem::replace(&mut self.asm, Asm::new(self.cx.mode)).finish(frame_size, |s| frame::frame_offset(s, frame_size) as u32);
-        if crate::rustc_api::switches::get().asm_check {
+        if self.cx.asm_check {
             reencode_check(&code, self.cx.mode);
         }
         let ret = self.frame.locals[rustc_middle::mir::RETURN_PLACE];
