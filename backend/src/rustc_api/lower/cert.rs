@@ -11,11 +11,10 @@
 //!
 //! [`LowerCx::cert`]: super::LowerCx::cert
 
-use std::fmt::Write as _;
-
 use rustc_middle::mir::{Local, UnwindTerminateReason};
 use ryo_bytecode::asm::InsnId;
 
+use super::super::json::{J, num, obj, opt, tag};
 use super::FnCx;
 use super::frame::frame_offset;
 use super::sig::{ArgLoc, ArgPlan};
@@ -146,68 +145,45 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// The certificate as a JSON object, once the frame size `frame_size` is known.
     pub fn cert_json(&self, frame_size: u32, plan: Option<&ArgPlan>) -> Option<String> {
         let c = self.cert.as_deref()?;
-        let off = |s: u32| frame_offset(s, frame_size);
-        let mut o = String::new();
-        let range = |o: &mut String, r: Range| {
-            let _ = write!(o, "[{},{}]", r.0, r.1);
-        };
-        let _ =
-            write!(o, "{{\"frameSize\":{frame_size},\"outgoing\":{},\"argSize\":{},\"retKind\":{}", self.max_outgoing, self.arg_size, self.ret_kind);
-        // The frame map.
-        o.push_str(",\"locals\":[");
-        for (i, l) in self.frame.locals.iter().enumerate() {
-            let sep = if i > 0 { "," } else { "" };
-            let _ = write!(o, "{sep}{{\"off\":{},\"size\":{}}}", off(l.off), l.layout.size.bytes());
-        }
+        let off = |s: u32| num(frame_offset(s, frame_size));
+        let opt_off = |v: Option<u32>| opt(v.map(off));
+        let range = |r: Range| J::Arr(vec![num(r.0), num(r.1)]);
         let (locals_end, high) = self.frame.extent();
-        let _ = write!(o, "],\"localsEnd\":{locals_end},\"tempsEnd\":{high}");
-        let opt = |v: Option<u32>| v.map_or("null".to_owned(), |s| off(s).to_string());
-        let _ = write!(o, ",\"exception\":{},\"sret\":{}", opt(self.frame.exception), opt(self.frame.sret));
-        let list = |xs: &mut dyn Iterator<Item = String>| xs.collect::<Vec<_>>().join(",");
-        let _ = write!(o, ",\"argHomes\":[{}]", list(&mut self.frame.arg_homes.iter().map(|&s| off(s).to_string())));
-        let _ = write!(o, ",\"argPtrs\":[{}]", list(&mut self.frame.arg_ptrs.iter().map(|&s| opt(s))));
-        let _ = write!(o, ",\"callerLocation\":{}", opt(self.caller_location));
-        let _ = write!(o, ",\"spreadArg\":{}", self.body.spread_arg.map_or("null".to_owned(), |l: Local| l.as_usize().to_string()));
-        o.push_str(",\"plan\":");
-        plan_json(&mut o, plan);
-        // The instruction ranges.
-        o.push_str(",\"prologue\":");
-        range(&mut o, c.prologue);
-        o.push_str(",\"blocks\":[");
-        for (i, b) in c.blocks.iter().enumerate() {
-            o.push_str(if i > 0 { ",{\"stmts\":[" } else { "{\"stmts\":[" });
-            for (j, &r) in b.stmts.iter().enumerate() {
-                if j > 0 {
-                    o.push(',');
-                }
-                range(&mut o, r);
-            }
-            o.push_str("],\"term\":");
-            range(&mut o, b.term);
-            let _ = write!(o, ",\"fused\":{}}}", b.fused);
-        }
-        o.push_str("],\"stubs\":[");
-        for (i, &(reason, r)) in c.stubs.iter().enumerate() {
-            let sep = if i > 0 { "," } else { "" };
-            let _ = write!(o, "{sep}{{\"reason\":\"{}\",\"insns\":", terminate_reason(reason));
-            range(&mut o, r);
-            o.push('}');
-        }
-        o.push_str("],\"pads\":[");
-        for (i, &(r, bb)) in c.pads.iter().enumerate() {
-            let sep = if i > 0 { "," } else { "" };
-            let _ = write!(o, "{sep}{{\"insns\":");
-            range(&mut o, r);
-            let _ = write!(o, ",\"block\":{}}}", bb.map_or("null".to_owned(), |b| b.to_string()));
-        }
-        o.push_str("],\"calls\":[");
-        for (i, (at, kind, plan, k, size)) in c.calls.iter().enumerate() {
-            let sep = if i > 0 { "," } else { "" };
-            let _ = write!(o, "{sep}{{\"insn\":{at},\"kind\":\"{}\",\"retKind\":{k},\"retSize\":{size},\"plan\":", kind.name());
-            plan_json(&mut o, plan.as_ref());
-            o.push('}');
-        }
-        o.push_str("]}");
+        let locals = self.frame.locals.iter().map(|l| obj(vec![("off", off(l.off)), ("size", num(l.layout.size.bytes()))]));
+        let blocks = c
+            .blocks
+            .iter()
+            .map(|b| obj(vec![("stmts", J::Arr(b.stmts.iter().map(|&r| range(r)).collect())), ("term", range(b.term)), ("fused", J::Bool(b.fused))]));
+        let stubs = c.stubs.iter().map(|&(reason, r)| obj(vec![("reason", tag(terminate_reason(reason))), ("insns", range(r))]));
+        let pads = c.pads.iter().map(|&(r, bb)| obj(vec![("insns", range(r)), ("block", opt(bb.map(num)))]));
+        let calls = c.calls.iter().map(|(at, kind, plan, k, size)| {
+            obj(vec![("insn", num(at)), ("kind", tag(kind.name())), ("retKind", num(k)), ("retSize", num(size)), ("plan", plan_json(plan.as_ref()))])
+        });
+        let j = obj(vec![
+            ("frameSize", num(frame_size)),
+            ("outgoing", num(self.max_outgoing)),
+            ("argSize", num(self.arg_size)),
+            ("retKind", num(self.ret_kind)),
+            // The frame map.
+            ("locals", J::Arr(locals.collect())),
+            ("localsEnd", num(locals_end)),
+            ("tempsEnd", num(high)),
+            ("exception", opt_off(self.frame.exception)),
+            ("sret", opt_off(self.frame.sret)),
+            ("argHomes", J::Arr(self.frame.arg_homes.iter().map(|&s| off(s)).collect())),
+            ("argPtrs", J::Arr(self.frame.arg_ptrs.iter().map(|&s| opt_off(s)).collect())),
+            ("callerLocation", opt_off(self.caller_location)),
+            ("spreadArg", opt(self.body.spread_arg.map(|l: Local| num(l.as_usize())))),
+            ("plan", plan_json(plan)),
+            // The instruction ranges.
+            ("prologue", range(c.prologue)),
+            ("blocks", J::Arr(blocks.collect())),
+            ("stubs", J::Arr(stubs.collect())),
+            ("pads", J::Arr(pads.collect())),
+            ("calls", J::Arr(calls.collect())),
+        ]);
+        let mut o = String::new();
+        j.write(&mut o);
         Some(o)
     }
 }
@@ -222,28 +198,16 @@ fn terminate_reason(r: UnwindTerminateReason) -> &'static str {
 
 /// An [`ArgPlan`]: `{"stackSize", "locs"}`, each input's pieces as `{"reg": {xmm, size,
 /// index}, "off"}`, `{"stack", "off", "size"}`, `{"ptrReg"}` or `{"ptrStack"}`.
-fn plan_json(o: &mut String, plan: Option<&ArgPlan>) {
-    let Some(p) = plan else {
-        o.push_str("null");
-        return;
-    };
-    let _ = write!(o, "{{\"stackSize\":{},\"locs\":[", p.stack_size);
-    for (i, locs) in p.locs.iter().enumerate() {
-        o.push_str(if i > 0 { ",[" } else { "[" });
-        for (j, l) in locs.iter().enumerate() {
-            if j > 0 {
-                o.push(',');
-            }
-            let _ = match *l {
-                ArgLoc::Reg { reg, off } => {
-                    write!(o, "{{\"reg\":{{\"xmm\":{},\"size\":{},\"index\":{}}},\"off\":{off}}}", reg.xmm, reg.size, reg.index)
-                }
-                ArgLoc::Stack { at, off, size } => write!(o, "{{\"stack\":{at},\"off\":{off},\"size\":{size}}}"),
-                ArgLoc::PtrReg(i) => write!(o, "{{\"ptrReg\":{i}}}"),
-                ArgLoc::PtrStack(at) => write!(o, "{{\"ptrStack\":{at}}}"),
-            };
+fn plan_json(plan: Option<&ArgPlan>) -> J {
+    let Some(p) = plan else { return J::Null };
+    let loc = |l: &ArgLoc| match *l {
+        ArgLoc::Reg { reg, off } => {
+            obj(vec![("reg", obj(vec![("xmm", J::Bool(reg.xmm)), ("size", num(reg.size)), ("index", num(reg.index))])), ("off", num(off))])
         }
-        o.push(']');
-    }
-    o.push_str("]}");
+        ArgLoc::Stack { at, off, size } => obj(vec![("stack", num(at)), ("off", num(off)), ("size", num(size))]),
+        ArgLoc::PtrReg(i) => obj(vec![("ptrReg", num(i))]),
+        ArgLoc::PtrStack(at) => obj(vec![("ptrStack", num(at))]),
+    };
+    let locs = p.locs.iter().map(|locs| J::Arr(locs.iter().map(loc).collect()));
+    obj(vec![("stackSize", num(p.stack_size)), ("locs", J::Arr(locs.collect()))])
 }

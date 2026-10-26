@@ -32,9 +32,9 @@
 //! and untrusted (lean/docs/aot.md §C1), but for the island names, which rustc gives.
 
 use std::collections::VecDeque;
-use std::fmt::Write as _;
 use std::rc::Rc;
 
+use super::json::{J, ctor, num, obj, opt, pair, tag, write_str};
 use rustc_abi::{
     BackendRepr, FieldsShape, HasDataLayout, IntegerType, Primitive, Scalar, Size, TagEncoding, TargetDataLayout, Variants, WrappingRange,
 };
@@ -115,104 +115,6 @@ fn write_certs(tcx: TyCtxt<'_>, dir: &std::path::Path) {
     if let Err(e) = std::fs::create_dir_all(dir).and_then(|()| std::fs::write(&path, out)) {
         tcx.dcx().fatal(format!("RYO_DUMP_LEAN: writing {}: {e}", path.display()));
     }
-}
-
-// ---------------------------------------------------------------------------------------------
-// JSON
-
-/// A JSON value. `Raw` is already serialized (memoized types).
-enum J {
-    Null,
-    Bool(bool),
-    Num(String),
-    Str(String),
-    Arr(Vec<J>),
-    Obj(Vec<(&'static str, J)>),
-    Raw(Rc<str>),
-}
-
-impl J {
-    fn write(&self, out: &mut String) {
-        match self {
-            J::Null => out.push_str("null"),
-            J::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
-            J::Num(n) => out.push_str(n),
-            J::Str(s) => write_str(out, s),
-            J::Arr(xs) => {
-                out.push('[');
-                for (i, x) in xs.iter().enumerate() {
-                    if i > 0 {
-                        out.push(',');
-                    }
-                    x.write(out);
-                }
-                out.push(']');
-            }
-            J::Obj(fs) => {
-                out.push('{');
-                for (i, (k, v)) in fs.iter().enumerate() {
-                    if i > 0 {
-                        out.push(',');
-                    }
-                    write_str(out, k);
-                    out.push(':');
-                    v.write(out);
-                }
-                out.push('}');
-            }
-            J::Raw(s) => out.push_str(s),
-        }
-    }
-
-    fn to_raw(&self) -> Rc<str> {
-        let mut s = String::new();
-        self.write(&mut s);
-        s.into()
-    }
-}
-
-fn write_str(out: &mut String, s: &str) {
-    out.push('"');
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => {
-                let _ = write!(out, "\\u{:04x}", c as u32);
-            }
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-}
-
-fn num(n: impl std::fmt::Display) -> J {
-    J::Num(n.to_string())
-}
-
-fn obj(fields: Vec<(&'static str, J)>) -> J {
-    J::Obj(fields)
-}
-
-/// A constructor with arguments: `{"ctor": {"arg": ..}}` (Lean's derived encoding).
-fn ctor(name: &'static str, args: Vec<(&'static str, J)>) -> J {
-    J::Obj(vec![(name, J::Obj(args))])
-}
-
-/// A constructor without arguments: `"ctor"`.
-fn tag(name: &str) -> J {
-    J::Str(name.to_owned())
-}
-
-fn opt(o: Option<J>) -> J {
-    o.unwrap_or(J::Null)
-}
-
-fn pair(a: J, b: J) -> J {
-    J::Arr(vec![a, b])
 }
 
 // ---------------------------------------------------------------------------------------------

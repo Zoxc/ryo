@@ -10,6 +10,7 @@
 
 mod dump;
 mod dump_lean;
+mod json;
 mod link;
 mod lower;
 mod partition;
