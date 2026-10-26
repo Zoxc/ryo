@@ -23,9 +23,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install the toolchain
         run: rustup toolchain install 1.99.1 --profile minimal --component rustc-dev,rust-src,llvm-tools
-      # Puts `cl` on PATH, for the C programs of `y test`.
-      - if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
+      # No developer shell on Windows: rustc finds link.exe itself, and `y test` finds `cl` for
+      # its C programs with vswhere (design/platforms.md).
       - if: runner.os != 'Windows'
         run: ./y.sh build && ./y.sh test
       - if: runner.os == 'Windows'

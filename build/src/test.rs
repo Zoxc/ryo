@@ -619,7 +619,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
 
     // The corpus, one program per job; each builds its references and variants in its own
     // directories.
-    let cc = have_cc();
+    let cc = c_compiler().is_some();
     let mut work: Vec<(&Program, Vec<&Variant>)> = Vec::new();
     for program in CORPUS {
         if !opts.programs.is_empty() && !opts.programs.iter().any(|p| p == program.name) {
@@ -856,7 +856,7 @@ impl Ctx {
     /// with `cc`, or `cl` on MSVC hosts.
     fn link_c(&self, dir: &Path, c_main: &str, lib: &Crate, native_libs: &[String]) -> Result<PathBuf, String> {
         let exe = dir.join(exe_name("c_main"));
-        let mut c = Command::new(C_COMPILER);
+        let mut c = c_compiler().ok_or_else(|| format!("no `{C_COMPILER}`"))?;
         if MSVC {
             // Everything after `/link` goes to link.exe, including the `/defaultlib:` options
             // in `native-static-libs`.

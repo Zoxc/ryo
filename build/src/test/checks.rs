@@ -106,14 +106,58 @@ pub(super) const MSVC: bool = cfg!(target_env = "msvc");
 /// The C compiler for the [`Program::c_main`] programs.
 pub(super) const C_COMPILER: &str = if MSVC { "cl" } else { "cc" };
 
-/// Whether [`C_COMPILER`] is available (`cl` is only on `PATH` in a Visual Studio developer
-/// environment).
-pub(super) fn have_cc() -> bool {
-    if MSVC {
-        // `cl` without arguments prints its banner; starting at all is enough.
-        return Command::new("cl").output().is_ok();
+/// A command running [`C_COMPILER`], or `None` if there is none. On MSVC, `cl` from `PATH`
+/// in a Visual Studio developer environment, else from the newest Visual Studio with the C++
+/// tools, with the environment ([`msvc_env`]) its `vcvars64.bat` sets up.
+pub(super) fn c_compiler() -> Option<Command> {
+    if !MSVC {
+        return Command::new("cc").arg("--version").output().is_ok_and(|o| o.status.success()).then(|| Command::new("cc"));
     }
-    Command::new("cc").arg("--version").output().is_ok_and(|o| o.status.success())
+    // `cl` without arguments prints its banner; starting at all is enough.
+    if Command::new("cl").output().is_ok() {
+        return Some(Command::new("cl"));
+    }
+    let env = msvc_env()?;
+    let path = env.iter().find(|(k, _)| k.eq_ignore_ascii_case("PATH"))?;
+    let cl = std::env::split_paths(&path.1).map(|d| d.join("cl.exe")).find(|p| p.is_file())?;
+    let mut c = Command::new(cl);
+    c.envs(env.iter().map(|(k, v)| (k, v)));
+    Some(c)
+}
+
+/// The environment of a Visual Studio developer shell, without needing one: `vswhere` (at its
+/// fixed place) finds the newest installation with the x64 C++ tools, and `cmd` runs its
+/// `vcvars64.bat` and prints the result with `set`. Computed once.
+#[cfg(windows)]
+fn msvc_env() -> Option<&'static [(String, String)]> {
+    use std::os::windows::process::CommandExt;
+    static ENV: std::sync::OnceLock<Option<Vec<(String, String)>>> = std::sync::OnceLock::new();
+    ENV.get_or_init(|| {
+        let pf = std::env::var_os("ProgramFiles(x86)")?;
+        let vswhere = Path::new(&pf).join("Microsoft Visual Studio").join("Installer").join("vswhere.exe");
+        let o = Command::new(vswhere)
+            .args(["-latest", "-products", "*", "-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64", "-property", "installationPath"])
+            .output()
+            .ok()?;
+        let install = String::from_utf8_lossy(&o.stdout).lines().next()?.trim().to_owned();
+        let bat = Path::new(&install).join("VC").join("Auxiliary").join("Build").join("vcvars64.bat");
+        if !o.status.success() || !bat.is_file() {
+            return None;
+        }
+        // `cmd /s /c "<line>"` takes the line between the outer quotes as is.
+        let o = Command::new("cmd").raw_arg(format!("/d /s /c \"\"{}\" >nul && set\"", bat.display())).output().ok()?;
+        if !o.status.success() {
+            return None;
+        }
+        let vars = String::from_utf8_lossy(&o.stdout).lines().filter_map(|l| l.split_once('=')).map(|(k, v)| (k.to_owned(), v.to_owned())).collect();
+        Some(vars)
+    })
+    .as_deref()
+}
+
+#[cfg(not(windows))]
+fn msvc_env() -> Option<&'static [(String, String)]> {
+    None
 }
 
 /// Rebuild after edits (design/README.md#goals): `tests/incremental/edits.rs`, built with
