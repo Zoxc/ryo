@@ -63,3 +63,13 @@ remove it once a Lean session has handled it.
   Rule: an immutable allocation's read equals its `world` bytes (stores to it are UB), and
   the copy pieces equal the handler's footprint. Only matters if the Lean model covers the
   SSA tier. Commit: "JIT: fold loads from the constant pool".
+
+- The SSA tier devirtualizes calls (`jit::inline::devirt`, `Env::direct`): a `Call Ptr` (or
+  tail call) whose callee is `RefAddr(Sym(s), false)` becomes a call of symbol `s`; one whose
+  callee is a constant equal to a registered image's VM function's AOT entry becomes a
+  direct call of that function (the unit's call form for another image's). It runs on the
+  root before and after inlining, and on each explored callee's copy. Add it to
+  lean/docs/jit.md §E.3's pass list. Rule: a call through the address of `f`'s AOT entry
+  equals a call of `f` (the entry dispatches to the JIT code; arguments, results and
+  unwinding unchanged); a symbol slot is filled once, before VM code runs. Commit: "JIT: call
+  constant function pointers directly".

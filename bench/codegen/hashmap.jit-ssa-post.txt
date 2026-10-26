@@ -2820,7 +2820,7 @@ b10(): ; Body
     v67:8 = Load(8, 0) (v86)
     v69:8 = Bin(Sub, 8) (v67, v10)
     v70:8 = Bin(ShrS, 8) (v69, 0x4)
-    Call(Call { target: image.fn146, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: Pad { catch: false } }) (v86, v70)
+    Call(Call { target: image.fn146.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: Pad { catch: false } }) (v86, v70)
     invoke -> b58() unwind b38()
 b11(): ; Body
     trap
@@ -3660,7 +3660,7 @@ b23(): ; Body
     v67:8 = Bin(And, 8) (v65, v66)
     AStore(AllocaId(24), 0, 8) (v67)
     v119:8 = AllocaAddr(AllocaId(3), 0) ()
-    v69:1 = Call(Call { target: Ptr, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Pad { catch: false } }) (0x55618675ec40, v119, v67)
+    v69:1 = Call(Call { target: image.fn82.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Pad { catch: false } }) (v119, v67)
     invoke -> b35() unwind b18()
 b24(): ; Body
     trap
@@ -4517,64 +4517,6 @@ b47(v110:8): ; Body cold
 b48(): ; Body
     trap
 
-fn hashbrown::raw::RawTable::<(u64, u64)>::erase
-a0: $-56, 8 bytes, Promoted
-a1: $-48, 8 bytes, Promoted
-a2: $-40, 8 bytes, Promoted
-a3: $-32, 8 bytes, Promoted
-a4: $-16, 8 bytes, Promoted, escaped
-a5: $-8, 8 bytes, Promoted
-a6: $-96, 8 bytes, Promoted, inlined
-a7: $-88, 8 bytes, Promoted, inlined
-a8: $-80, 8 bytes, Promoted, inlined
-a9: $-67, 1 bytes, Promoted, inlined
-a10: $-66, 1 bytes, Promoted, inlined
-a11: $-65, 1 bytes, Promoted, inlined
-a12: $-64, 8 bytes, Promoted, inlined
-a13: $-56, 8 bytes, Promoted, inlined
-a14: $-48, 8 bytes, Promoted, inlined
-a15: $-40, 8 bytes, Promoted, inlined
-a16: $-32, 8 bytes, Promoted, inlined
-a17: $-24, 8 bytes, Promoted, inlined
-a18: $-16, 8 bytes, Promoted, inlined
-a19: $-8, 8 bytes, Promoted, inlined
-b0(v0:8, v1:8): ; Entry
-    v11:8 = Load(8, 0) (v0)
-    v13:8 = Bin(Sub, 8) (v11, v1)
-    v14:8 = Bin(ShrS, 8) (v13, 0x4)
-    Call(Call { target: image.fn146.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: Continue }) (v0, v14)
-    v10:8 = PtrAdd(-16) (v1)
-    jmp b6()
-b1(): ; Body
-    trap
-b2(): ; Body head 0
-    Call(Call { target: sym1, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v10)
-    ret 0x0 ()
-b3(): ; Body
-    trap
-b4(): ; Body
-    trap
-b5(): ; Body
-    trap
-b6(): ; Body head 1
-    jmp b2()
-b7(): ; Body
-    trap
-b8(): ; Body
-    trap
-b9(): ; Body
-    trap
-b10(): ; Body
-    trap
-b11(): ; Body
-    trap
-b12(): ; Body
-    trap
-b13(): ; Body
-    trap
-b14(): ; Body
-    trap
-
 fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::map::equivalent_key<u64, u64, u64>::{closure#0}}>
 a0: $-168, 8 bytes, Promoted
 a1: $-160, 8 bytes, Promoted
@@ -4710,7 +4652,7 @@ b23(): ; Body
     v67:8 = Bin(And, 8) (v65, v66)
     AStore(AllocaId(24), 0, 8) (v67)
     v119:8 = AllocaAddr(AllocaId(3), 0) ()
-    v69:1 = Call(Call { target: Ptr, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Pad { catch: false } }) (0x55618675f0c0, v119, v67)
+    v69:1 = Call(Call { target: image.fn84.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Pad { catch: false } }) (v119, v67)
     invoke -> b35() unwind b18()
 b24(): ; Body
     trap
@@ -5035,7 +4977,7 @@ b23(): ; Body
     v67:8 = Bin(And, 8) (v65, v66)
     AStore(AllocaId(24), 0, 8) (v67)
     v119:8 = AllocaAddr(AllocaId(3), 0) ()
-    v69:1 = Call(Call { target: Ptr, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Pad { catch: false } }) (0x55618675f300, v119, v67)
+    v69:1 = Call(Call { target: image.fn85.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Pad { catch: false } }) (v119, v67)
     invoke -> b35() unwind b18()
 b24(): ; Body
     trap
@@ -8035,7 +7977,7 @@ a558: $-16, 8 bytes, Promoted, inlined
 a559: $-8, 8 bytes, Promoted, inlined
 b0(): ; Entry
     AStore(AllocaId(1), 32, 8) (0x50910)
-    v436:8 = Call(Call { target: Ptr, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (0x55618676b9c0, 0x0)
+    v436:8 = Call(Call { target: image.fn232.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (0x0)
     invoke -> b315() unwind b323()
 b1(): ; Body
     trap

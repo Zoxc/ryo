@@ -1524,7 +1524,7 @@ L5:
     mov     rsi,rcx
     sar     rsi,4
     mov     rdi,r15
-    call    image.fn146
+    call    qword ptr [image.fn146.slot]
     mov     rdi,rbp
     lea     rdi,[rdi-10h]
     call    image.sym22
@@ -2650,8 +2650,7 @@ L1:
     and     rsi,rcx
     mov     [rsp+30h],rsi
     lea     rdi,[rsp+70h]
-    mov     rax,55618675EC40h
-    call    rax
+    call    qword ptr [image.fn82.slot]
     test    al,al
     je      L4
     mov     rax,[rsp+30h]
@@ -3253,38 +3252,6 @@ L10:
 L11:
     ret
 
-fn hashbrown::raw::RawTable::<(u64, u64)>::erase
-    push    rbx
-    sub     rsp,10h
-    mov     rbx,rsi
-    mov     rax,[rdi]
-    sub     rax,rbx
-    mov     rsi,rax
-    sar     rsi,4
-    call    qword ptr [image.fn146.slot]
-    mov     rdi,rbx
-    lea     rdi,[rdi-10h]
-    jmp     L1
-L0:
-    call    sym1
-    add     rsp,10h
-    pop     rbx
-    ret
-L1:
-    jmp     L0
-  ; OSR entries
-    lea     r11,[L2]
-    movsxd  rax,[r11+rax*4]
-    add     rax,r11
-    jmp     rax
-L2:
-    .long   L3
-    .long   L4
-L3:
-    ret
-L4:
-    ret
-
 fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::map::equivalent_key<u64, u64, u64>::{closure#0}}>
     push    rbx
     push    r12
@@ -3366,8 +3333,7 @@ L1:
     and     rsi,rcx
     mov     [rsp+30h],rsi
     lea     rdi,[rsp+70h]
-    mov     rax,55618675F0C0h
-    call    rax
+    call    qword ptr [image.fn84.slot]
     test    al,al
     je      L4
     mov     rax,[rsp+30h]
@@ -3610,8 +3576,7 @@ L1:
     and     rsi,rcx
     mov     [rsp+30h],rsi
     lea     rdi,[rsp+70h]
-    mov     rax,55618675F300h
-    call    rax
+    call    qword ptr [image.fn85.slot]
     test    al,al
     je      L4
     mov     rax,[rsp+30h]
@@ -6054,8 +6019,7 @@ fn main
     mov     [rsp+160h],r13
     mov     qword ptr [rsp+198h],50910h
     mov     edi,0
-    mov     rax,55618676B9C0h
-    call    rax
+    call    qword ptr [image.fn232.slot]
     test    rax,rax
     jne     L1
     mov     ecx,1

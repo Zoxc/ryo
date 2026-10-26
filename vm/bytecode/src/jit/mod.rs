@@ -103,13 +103,26 @@ pub fn compile(
     opt::run(&mut f, mem);
     let mut decisions = opts.dump.then(alloc::string::String::new);
     let mut inlined_ir = None;
+    // Calls through constant pointers become direct before and after inlining (the inlined
+    // code's constants can be the callers').
+    let mut devirt = 0;
     if let Some(env) = env.as_deref_mut() {
+        let (calls, tails) = inline::devirt(&mut f, env);
+        let first = calls.len() + tails;
+        devirt += first;
         if opts.check {
             f.verify().map_err(|e| Error::Check(alloc::format!("IR before inlining: {e}")))?;
         }
         let n = inline::inline(&mut f, env, mem, &inline::PARAMS, opts.check, decisions.as_mut()).map_err(Error::Check)?;
         if n > 0 {
             inlined_ir = opts.dump.then(|| alloc::format!("{f}"));
+        }
+        if n > 0 || first > 0 {
+            opt::run(&mut f, mem);
+        }
+        let (new, tails) = inline::devirt(&mut f, env);
+        devirt += new.len() + tails;
+        if devirt > first {
             opt::run(&mut f, mem);
         }
     }
@@ -140,6 +153,7 @@ pub fn compile(
         regalloc::check(&f, &al, mode.frame_pointer).map_err(|e| Error::Check(alloc::format!("allocation: {e}")))?;
     }
     let mut out = emit::emit(&f, &al, mode, code_consts, emit::Opts { stress: opts.stress })?;
+    out.devirt = devirt;
     if opts.dump {
         use core::fmt::Write;
         let mut s = alloc::string::String::new();

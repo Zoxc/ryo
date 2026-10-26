@@ -85,6 +85,88 @@ pub trait Env {
     /// Function `g`'s flags ([`crate::image::FUNC_INLINE_ALWAYS`] etc.: its source
     /// attributes).
     fn flags(&self, g: VmFunc) -> u8;
+    /// The target a call of the constant address `a` (in the unit's terms) calls it by, if
+    /// `a` is a registered image's VM function's entry (its AOT entry: function pointers
+    /// aren't re-linked): a function of the root's image, or another image's in the unit's
+    /// call form ([`Env::retarget`]'s). `None` for anything else (a native, a stub, an
+    /// interior address).
+    fn direct(&mut self, a: u64) -> Option<CallTarget>;
+}
+
+/// The direct target of a call through the pointer `v` of `f`, if known: the symbol `s`
+/// for its slot's value (`call [rip + slot]` reads the same slot), or what [`Env::direct`]
+/// gives for a constant.
+fn direct_target(f: &Func, v: Value, env: &mut dyn Env) -> Option<CallTarget> {
+    let mut v = f.resolve(v);
+    loop {
+        match f.def(v) {
+            ValueDef::Const(a) if f.w(v) == 8 => return env.direct(a),
+            ValueDef::Inst(i, 0) => match f.insts[i.idx()].op {
+                Op::RefAddr(Ref::Sym(s), false) => return Some(CallTarget::Sym(s)),
+                // A rebased callee's symbol value, before the folds.
+                Op::PtrAdd(0) => v = f.resolve(f.insts[i.idx()].args[0]),
+                _ => return None,
+            },
+            _ => return None,
+        }
+    }
+}
+
+/// The calls and tail calls (by their block, for a tail call) through a pointer of `f`
+/// that [`direct_target`] knows the targets of.
+fn devirt_sites(f: &Func, env: &mut dyn Env) -> Vec<(Block, Option<Inst>, CallTarget)> {
+    let mut v = Vec::new();
+    for b in f.live_blocks() {
+        let bd = &f.blocks[b.idx()];
+        for &i in &bd.insts {
+            if let Op::Call(c) = &f.insts[i.idx()].op
+                && c.target == CallTarget::Ptr
+                && let Some(t) = direct_target(f, f.insts[i.idx()].args[0], env)
+            {
+                v.push((b, Some(i), t));
+            }
+        }
+        if let Term::TailCall { call, args } = &bd.term
+            && call.target == CallTarget::Ptr
+            && let Some(t) = direct_target(f, args[0], env)
+        {
+            v.push((b, None, t));
+        }
+    }
+    v
+}
+
+/// Devirtualization (design/jit.md, "Inlining"): the calls of `f` through a pointer whose
+/// target is known ([`direct_target`]) become direct calls of it, with the same arguments,
+/// results and unwinding. Returns the calls it changed, and how many tail calls. Only for the
+/// unit's IR: the targets of other images are the unit's call forms, so a cached IR
+/// ([`Env::ir`]) is never changed.
+pub fn devirt(f: &mut Func, env: &mut dyn Env) -> (Vec<Inst>, usize) {
+    let sites = devirt_sites(f, env);
+    let calls = apply_devirt(f, &sites);
+    let tails = sites.len() - calls.len();
+    (calls, tails)
+}
+
+fn apply_devirt(f: &mut Func, sites: &[(Block, Option<Inst>, CallTarget)]) -> Vec<Inst> {
+    let mut new = Vec::new();
+    for &(b, i, t) in sites {
+        match i {
+            Some(i) => {
+                let id = &mut f.insts[i.idx()];
+                let Op::Call(c) = &mut id.op else { unreachable!() };
+                c.target = t;
+                id.args.remove(0);
+                new.push(i);
+            }
+            None => {
+                let Term::TailCall { call, args } = &mut f.blocks[b.idx()].term else { unreachable!() };
+                call.target = t;
+                args.remove(0);
+            }
+        }
+    }
+    new
 }
 
 /// `c`, a function of image `img`, in the terms of the root's image (design/jit.md,
@@ -742,6 +824,13 @@ pub fn inline(
             match rebase(c, g.img, env) {
                 Ok(r) => ir = Some(Rc::new(r)),
                 Err(w) => why = Some(w),
+            }
+        }
+        // Its calls through constant pointers, made direct in the unit's copy.
+        if let (None, Some(c)) = (why, &mut ir) {
+            let sites = devirt_sites(c, env);
+            if !sites.is_empty() {
+                apply_devirt(Rc::make_mut(c), &sites);
             }
         }
         if let (None, Some(c)) = (why, &ir) {

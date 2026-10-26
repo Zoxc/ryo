@@ -1776,3 +1776,212 @@ fn constant_pool_loads() {
     }
     check_stats(before, 1);
 }
+
+/// How many calls through constant pointers the SSA tier made direct in its roots since
+/// `before` (none through re-encoding).
+fn devirt_since(before: usize) -> usize {
+    ryo_jit::ssa_devirt() - before
+}
+
+fn ssa() -> bool {
+    std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode")
+}
+
+/// A function calling `g(x)` through `p` (`p` set up by `setup`, which gets the slot):
+/// f(x) = g(x) + 1. x@16 (an entry function's) or in a register; x'@-8, p@-16, r@-24.
+fn call_through_by(reg: bool, setup: impl FnOnce(&mut Asm, i32)) -> FunctionDef {
+    let mut a = Asm::new();
+    a.i(if reg { arg(-8, 0) } else { Insn::MovW64 { d: Slot(-8), s: Slot(16) } });
+    setup(&mut a, -16);
+    a.i(Insn::CallPtr { d: Slot(-24), p: Slot(-16), k: 8, a: List::from_words(&regs(&[-8])) });
+    a.i(Insn::AddImmW64 { d: Slot(-24), a: Slot(-24), imm: 1 });
+    a.ret(Slot(-24), 8);
+    func(a.done(), 32, if reg { 0 } else { 8 }, 8)
+}
+
+fn call_through(setup: impl FnOnce(&mut Asm, i32)) -> FunctionDef {
+    call_through_by(false, setup)
+}
+
+/// A vtable-like constant of 48 bytes whose word at `at` relocates to symbol `s` (plus
+/// `addend`), the others plain.
+fn vtable(w: &mut ImageWriter, s: Sym, at: u32, addend: i64) -> Const {
+    let mut vt = [0u8; 48];
+    vt[..8].copy_from_slice(&99u64.to_le_bytes());
+    w.add_const(&vt, 8, &[AllocReloc { offset: at, target: AllocTarget::Symbol(s), addend }])
+}
+
+/// Devirtualization (`jit::inline::devirt`): a call through a symbol's value
+/// (`addr.sym; call.ptr`) and through a function pointer loaded from the constant pool
+/// become direct calls of the image's function `g`, and `g`, small, is inlined; a tail call
+/// through a symbol's value becomes a direct one.
+#[test]
+fn devirt_symbol_and_pool_pointer() {
+    let (_g, before) = start();
+    let d0 = ryo_jit::ssa_devirt();
+    let mut w = ImageWriter::new(unique_scid());
+    let gd = rounds(1, 0);
+    let s_g = w.symbol(&gd.name.clone(), 0);
+    let g = w.add_function(gd);
+    let vt = vtable(&mut w, s_g, 32, 0);
+    let f1 = w.add_function(call_through(|a, p| {
+        a.i(Insn::AddrSym { d: Slot(p), sym: s_g });
+    }));
+    let f2 = w.add_function(call_through(|a, p| {
+        a.i(Insn::AddrConst { d: Slot(p), a: Abs::Const(vt) });
+        a.i(Insn::LoadW64 { d: Slot(p), m: Mem { p: Slot(p), k: 32 } });
+    }));
+    // f3(x) = become g(x) through the symbol's value. x@16; p@-8.
+    let mut a = Asm::new();
+    a.i(Insn::AddrSym { d: Slot(-8), sym: s_g });
+    a.i(Insn::TailCallPtr { p: Slot(-8), a: List::from_words(&regs(&[16])) });
+    let f3 = w.add_function(func(a.done(), 16, 8, 8));
+    let img = build(w, &syms());
+    for x in [0u64, 5, 1 << 40] {
+        assert_eq!(ok::<_, u64>(img.id(f1), (x,)), rounds_value(1, x) + 1, "f1({x})");
+        assert_eq!(ok::<_, u64>(img.id(f2), (x,)), rounds_value(1, x) + 1, "f2({x})");
+    }
+    if ssa() {
+        assert_eq!(state(&img, g), JIT_COLD, "g inlined into f1 and f2");
+        assert_eq!(devirt_since(d0), 2, "calls made direct");
+    }
+    for x in [0u64, 5, 1 << 40] {
+        assert_eq!(ok::<_, u64>(img.id(f3), (x,)), rounds_value(1, x), "f3({x})");
+    }
+    if ssa() {
+        assert_eq!(devirt_since(d0), 3, "calls made direct");
+    }
+    check_stats(before, 4);
+}
+
+/// An `#[inline(never)]` target is called directly, not inlined; another image's function
+/// is called by the JIT's call form and inlined (rebased); a target that isn't a VM
+/// function's entry (a native, or an address inside a function's code) stays an indirect call.
+#[test]
+fn devirt_targets() {
+    let (_g, before) = start();
+    let d0 = ryo_jit::ssa_devirt();
+    // Image B: g(x) = 3x + 1.
+    let mut w = ImageWriter::new(unique_scid());
+    let gb = w.add_function(rounds(1, 0));
+    let img_b = build(w, &syms());
+
+    let mut w = ImageWriter::new(unique_scid());
+    let nd = rounds(1, FUNC_INLINE_NEVER);
+    let s_n = w.symbol(&nd.name.clone(), 0);
+    let n = w.add_function(nd);
+    let s_gb = w.symbol("gb", 0);
+    let s_mul3 = w.symbol("mul3", 0);
+    let vt_n = vtable(&mut w, s_n, 8, 0);
+    let vt_gb = vtable(&mut w, s_gb, 16, 0);
+    let vt_mul3 = vtable(&mut w, s_mul3, 24, 0);
+    let vt_inside = vtable(&mut w, s_n, 32, 1);
+    let through = |vt: Const, at: i32| {
+        call_through(move |a, p| {
+            a.i(Insn::AddrConst { d: Slot(p), a: Abs::Const(vt) });
+            a.i(Insn::LoadW64 { d: Slot(p), m: Mem { p: Slot(p), k: at } });
+        })
+    };
+    let f_n = w.add_function(through(vt_n, 8));
+    let f_gb = w.add_function(through(vt_gb, 16));
+    let f_mul3 = w.add_function(through(vt_mul3, 24));
+    // f_inside(x) = x == 0 ? (*vt_inside[32])(x) : x. The pointer is `n`'s entry + 1, never
+    // called. x@16; p@-8, r@-16.
+    let mut a = Asm::new();
+    a.i(Insn::ImmW64 { d: Slot(-16), imm: 0 });
+    let br = a.i(Insn::BrEqW64 { a: Slot(16), b: Slot(-16), neg: Neg(false), t: Target(0) });
+    a.ret(Slot(16), 8);
+    let at = a.i(Insn::AddrConst { d: Slot(-8), a: Abs::Const(vt_inside) });
+    a.patch(br, "t", at);
+    a.i(Insn::LoadW64 { d: Slot(-8), m: Mem { p: Slot(-8), k: 32 } });
+    a.i(Insn::CallPtr { d: Slot(-16), p: Slot(-8), k: 8, a: List::from_words(&regs(&[16])) });
+    a.ret(Slot(-16), 8);
+    let f_inside = w.add_function(func(a.done(), 16, 8, 8));
+    let mut sy = syms();
+    sy.push(("gb", img_b.code(gb) as usize));
+    let img = build(w, &sy);
+
+    for x in [1u64, 5, 1 << 40] {
+        assert_eq!(ok::<_, u64>(img.id(f_n), (x,)), rounds_value(1, x) + 1, "f_n({x})");
+        assert_eq!(ok::<_, u64>(img.id(f_gb), (x,)), rounds_value(1, x) + 1, "f_gb({x})");
+        assert_eq!(ok::<_, u64>(img.id(f_mul3), (x,)), x.wrapping_mul(3) + 1, "f_mul3({x})");
+        assert_eq!(ok::<_, u64>(img.id(f_inside), (x,)), x, "f_inside({x})");
+    }
+    if ssa() {
+        assert_ne!(state(&img, n), JIT_COLD, "n, inline(never), called");
+        assert_eq!(state(&img_b, gb), JIT_COLD, "B's g inlined into f_gb");
+        assert_eq!(devirt_since(d0), 2, "calls made direct: f_n's and f_gb's");
+    }
+    // f_n, f_gb, f_mul3, f_inside and n.
+    check_stats(before, 5);
+}
+
+/// The same code in two images whose vtable slot relocates to an external symbol, resolved
+/// to a native in one and to a VM function in the other: each image's unit calls its own
+/// target. And a function of image B that calls through its own vtable, inlined into a unit
+/// of image A (rebased, its copy made direct to B's function), keeps its indirect call in the
+/// IR cache: B's own unit, inlining it later, gets it from there and makes it direct itself.
+#[test]
+fn devirt_per_image_and_cache() {
+    let (_g, before) = start();
+    let d0 = ryo_jit::ssa_devirt();
+    // Image B: g(x) = 3x + 1; h(x) = vt[40](x) + 1 (g); k(x) = h(x) + 1.
+    let mut w = ImageWriter::new(unique_scid());
+    let gd = rounds(1, 0);
+    let s_g = w.symbol(&gd.name.clone(), 0);
+    let g = w.add_function(gd);
+    let vt = vtable(&mut w, s_g, 40, 0);
+    let hd = call_through_by(true, |a, p| {
+        a.i(Insn::AddrConst { d: Slot(p), a: Abs::Const(vt) });
+        a.i(Insn::LoadW64 { d: Slot(p), m: Mem { p: Slot(p), k: 40 } });
+    });
+    let h = w.add_function(hd);
+    let mut a = Asm::new();
+    a.i(Insn::MovW64 { d: Slot(-8), s: Slot(16) });
+    a.i(Insn::Call { d: Slot(-16), f: h, k: 8, a: List::from_words(&regs(&[-8])) });
+    a.i(Insn::AddImmW64 { d: Slot(-16), a: Slot(-16), imm: 1 });
+    a.ret(Slot(-16), 8);
+    let k = w.add_function(func(a.done(), 16, 8, 8));
+    let img_b = build(w, &syms());
+
+    // Images A1 and A2: f(x) = vt[16](x) + 1 with vt[16] = `tgt`; u(x) = B's h(x) + 1.
+    let image_a = |tgt: usize| {
+        let mut w = ImageWriter::new(unique_scid());
+        let s_t = w.symbol("tgt", 0);
+        let s_h = w.symbol("h", 0);
+        let vt = vtable(&mut w, s_t, 16, 0);
+        let f = w.add_function(call_through(|a, p| {
+            a.i(Insn::AddrConst { d: Slot(p), a: Abs::Const(vt) });
+            a.i(Insn::LoadW64 { d: Slot(p), m: Mem { p: Slot(p), k: 16 } });
+        }));
+        let mut a = Asm::new();
+        a.i(Insn::MovW64 { d: Slot(-8), s: Slot(16) });
+        a.i(Insn::CallSym { d: Slot(-16), sym: s_h, k: 8, a: List::from_words(&regs(&[-8])) });
+        a.i(Insn::AddImmW64 { d: Slot(-16), a: Slot(-16), imm: 1 });
+        a.ret(Slot(-16), 8);
+        let u = w.add_function(func(a.done(), 16, 8, 8));
+        let mut sy = syms();
+        sy.push(("tgt", tgt));
+        sy.push(("h", img_b.code(h) as usize));
+        (build(w, &sy), f, u)
+    };
+    let (a1, f1, u1) = image_a(mul3 as *const () as usize);
+    let (a2, f2, _) = image_a(img_b.code(g) as usize);
+    for x in [1u64, 5, 1 << 40] {
+        assert_eq!(ok::<_, u64>(a1.id(f1), (x,)), x.wrapping_mul(3) + 1, "A1 f({x})");
+        assert_eq!(ok::<_, u64>(a2.id(f2), (x,)), rounds_value(1, x) + 1, "A2 f({x})");
+    }
+    if ssa() {
+        assert_eq!(devirt_since(d0), 1, "only A2's call made direct");
+    }
+    for x in [1u64, 5, 1 << 40] {
+        assert_eq!(ok::<_, u64>(a1.id(u1), (x,)), rounds_value(1, x) + 2, "A1 u({x})");
+        assert_eq!(ok::<_, u64>(img_b.id(k), (x,)), rounds_value(1, x) + 2, "B k({x})");
+    }
+    if ssa() {
+        assert_eq!(state(&img_b, h), JIT_COLD, "h inlined into u and k");
+        assert_eq!(state(&img_b, g), JIT_COLD, "g inlined into A2's f, u and k");
+    }
+    // A1's f, A2's f, u, k.
+    check_stats(before, 4);
+}

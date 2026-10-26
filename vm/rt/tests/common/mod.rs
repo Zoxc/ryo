@@ -187,8 +187,8 @@ pub struct Linked {
 unsafe impl Sync for Linked {}
 unsafe impl Send for Linked {}
 
-/// Places the sections and applies every relocation, resolving symbols through `syms`
-/// (and `rust_eh_personality` to std's), the handlers through `vm::handler` and the probe to
+/// Places the sections and applies every relocation, resolving symbols through `syms`, else
+/// to the image's function of that name (and `rust_eh_personality` to std's), the handlers through `vm::handler` and the probe to
 /// `vm::probe_stack`. Then makes the text executable and registers the `.eh_frame`.
 pub fn link(obj: ImageObject, syms: &[(&str, usize)]) -> Linked {
     let map: HashMap<&str, usize> = syms.iter().copied().collect();
@@ -220,8 +220,12 @@ pub fn link(obj: ImageObject, syms: &[(&str, usize)]) -> Linked {
                 let name = &obj.symbols[s.0 as usize].name;
                 if name == PERSONALITY {
                     rust_eh_personality as *const () as usize
+                } else if let Some(&a) = map.get(name.as_str()) {
+                    a
                 } else {
-                    *map.get(name.as_str()).unwrap_or_else(|| panic!("unresolved symbol {name}"))
+                    // The image's own function of that name.
+                    let f = obj.functions.iter().find(|f| f.name == *name).unwrap_or_else(|| panic!("unresolved symbol {name}"));
+                    text as usize + f.start as usize
                 }
             }
             RelocTarget::Section(s) => base(s),

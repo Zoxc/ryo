@@ -36,6 +36,9 @@ pub struct Output {
     /// The compilation as text (`RYO_JIT_DUMP`): the reduced code, the IR, the locations and
     /// the code.
     pub dump: Option<alloc::string::String>,
+    /// How many calls through a constant pointer of the root became direct
+    /// ([`super::inline::devirt`]).
+    pub devirt: usize,
 }
 
 const S1: R = R::R11;
@@ -1670,7 +1673,7 @@ pub fn emit(f: &Func, al: &Alloc, mode: Mode, code_consts: &[u8], opts: Opts) ->
     let cfi = cfi.into_iter().map(|(m, v)| (at(m), v)).collect();
     let osr_at = (code.len() as u32).next_multiple_of(16);
     let osr = if !f.osr.is_empty() { Some(osr_code(f, al, mode, &fr, &lab, osr_at)?) } else { None };
-    Ok(Output { code, relocs, rodata, call_sites, cfi, osr, osr_at, frame_size: fr.size, pe_unwind, dump: None })
+    Ok(Output { code, relocs, rodata, call_sites, cfi, osr, osr_at, frame_size: fr.size, pe_unwind, dump: None, devirt: 0 })
 }
 
 /// `DW_CFA_offset r`: `r` saved at `fp + o`, which is `CFA - 16 + o`. The offset counts in

@@ -41,6 +41,13 @@ pub fn ssa_stats() -> (usize, usize) {
     (install::SSA_COMPILED.load(SeqCst), install::SSA_FALLBACK.load(SeqCst))
 }
 
+/// How many calls through a constant pointer the SSA tier made direct in its roots (tests).
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[doc(hidden)]
+pub fn ssa_devirt() -> usize {
+    install::SSA_DEVIRT.load(core::sync::atomic::Ordering::SeqCst)
+}
+
 /// The length of the code the JIT installed for the record at `rec`, 0 if none (tests).
 #[cfg(target_arch = "x86_64")]
 #[doc(hidden)]

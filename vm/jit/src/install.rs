@@ -63,6 +63,9 @@ pub(crate) fn settled(rec: *mut JitRecord) -> bool {
 /// pipeline ([`crate::ssa_stats`]).
 pub(crate) static SSA_COMPILED: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
 pub(crate) static SSA_FALLBACK: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+/// How many of the SSA tier's roots' calls through constant pointers became direct
+/// ([`crate::ssa_devirt`]).
+pub(crate) static SSA_DEVIRT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
 
 /// A function's machine code, from either pipeline, before it is installed.
 struct Gen {
@@ -168,6 +171,9 @@ enum Name {
     /// Another image's function or symbol (inlined code calls it).
     Other(u32),
     OtherSym(u32),
+    /// A function by its entry's address: a call through a constant pointer
+    /// ([`jit::inline::Env::direct`]).
+    Addr(usize),
 }
 
 /// A callee by what decides how it is called: a VM function with a JIT record (header,
@@ -339,6 +345,16 @@ impl jit::inline::Env for InlineEnv<'_> {
 
     fn sym_value(&self, img: usize, s: Sym) -> Option<u64> {
         image_of(img).symbols().get(s.0 as usize).copied()
+    }
+
+    fn direct(&mut self, a: u64) -> Option<CallTarget> {
+        let c @ Callee::Vm(h, g) = vm_callee(self.rt, usize::try_from(a).ok()?)? else { return None };
+        if h == self.header {
+            return Some(CallTarget::Func(Func(g)));
+        }
+        let op = callee(self.place, c, Name::Addr(a as usize), &mut self.ext, &mut self.memo);
+        self.ext_vm.insert(op, (h, g));
+        Some(CallTarget::Func(Func(op)))
     }
 }
 
@@ -667,6 +683,7 @@ impl Jit {
                         osr_at: o.osr_at as usize,
                     };
                     SSA_COMPILED.fetch_add(1, SeqCst);
+                    SSA_DEVIRT.fetch_add(o.devirt, SeqCst);
                     return self.install(rec, func, &img, place, personality, &ssa_ext, out, "compiled (ssa)");
                 }
                 Err(jit::Error::Unsupported(u)) => {
@@ -1037,6 +1054,7 @@ impl Jit {
                 Name::Sym(x) => Sym(x).to_string(),
                 Name::Other(g) => std::format!("{}@other", Func(g)),
                 Name::OtherSym(x) => std::format!("{}@other", Sym(x)),
+                Name::Addr(a) => std::format!("{a:#x}"),
             };
             let _ = writeln!(s, "ext {} {form} {name}", Func(e.kind | k as u32));
         }
