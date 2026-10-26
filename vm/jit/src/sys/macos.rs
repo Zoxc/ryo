@@ -1,9 +1,16 @@
 //! macOS (x86_64, natively or under Rosetta): libunwind's `__register_frame`, which takes one
 //! FDE, not a whole `.eh_frame` as libgcc's does.
 //!
-//! Not enabled ([`SUPPORTED`] is false): the backend writes no Mach-O, so there are no VM
-//! images on macOS and nothing for the JIT to compile. The parts below are what it needs once
-//! there are; they compile on `x86_64-apple-darwin`, and the FDE handling is tested on Linux.
+//! Enabled, but never run on macOS: it compiles for `x86_64-apple-darwin` and is sealed and
+//! link-checked from Linux (`y test --cross x86_64-apple-darwin`); the FDE handling is tested
+//! on Linux. Mach-O VM images are the backend's (design/platforms.md); their code is SysV
+//! with `.eh_frame` unwind information, as on ELF, so the installer treats them as ELF's.
+//!
+//! Code memory is `vmem`'s: on x86_64 plain `mmap` and `mprotect` W^X, without `MAP_JIT`.
+//! A binary signed with the hardened runtime then needs the
+//! `com.apple.security.cs.allow-unsigned-executable-memory` entitlement (`allow-jit` only
+//! covers `MAP_JIT` memory); without the hardened runtime nothing is needed. Under Rosetta
+//! the translator sees the `mprotect`s and retranslates rewritten pages.
 //!
 //! What libunwind makes of [`Unwind::eh`] (`UnwindLevel1-gcc-ext.c`, `DwarfParser.hpp`):
 //! `__register_frame(fde)` decodes the FDE, finds its CIE through the FDE's CIE pointer (the
@@ -23,7 +30,7 @@ use core::ffi::{c_int, c_void};
 
 use super::Unwind;
 
-pub(crate) const SUPPORTED: bool = false;
+pub(crate) const SUPPORTED: bool = true;
 
 unsafe extern "C" {
     fn write(fd: c_int, buf: *const c_void, n: usize) -> isize;
@@ -56,10 +63,10 @@ pub(crate) fn write_stderr(b: &[u8]) {
     unsafe { write(2, b.as_ptr().cast(), b.len()) };
 }
 
-/// Where profilers look for the process's JIT symbols: there is no `perf` on macOS, but
-/// samply reads the same file, and it is only written with `RYO_JIT_PERFMAP=1`.
+/// None: there is no `perf` on macOS, so `RYO_JIT_PERFMAP` does nothing. (samply reads
+/// `/tmp/perf-<pid>.map` files too; untried, so left off.)
 pub(crate) fn perfmap_path() -> Option<std::string::String> {
-    Some(std::format!("/tmp/perf-{}.map", std::process::id()))
+    None
 }
 
 #[cfg(test)]
