@@ -946,7 +946,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
         let hello = root.join("tests").join("hello.rs");
         type Check<'a> = Box<dyn Fn() -> Result<(), String> + 'a>;
         let checks: [(&str, Check); 11] = [
-            ("rt-core-only", Box::new(|| rt_core_only(&root))),
+            ("rt-core-only", Box::new(|| rt_core_only(&root, &crate::utils::RustcInfo::get()?.host))),
             ("jit-sealed", Box::new(|| jit_sealed(&root, &out))),
             ("jit-private-std", Box::new(|| jit_private_std(&rustc_ryo, &root.join("tests").join("vm_jit_private.rs"), &out))),
             ("reject-randomize-layout", Box::new(|| reject_randomize_layout(&rustc_ryo, &hello, &out))),
@@ -1163,7 +1163,13 @@ impl Ctx {
         run.env_remove("RUST_BACKTRACE").env_remove("RUST_LIB_BACKTRACE").current_dir(dir);
         run.envs(variant.env.iter().copied());
         // Dylibs are found next to the binary, and std's in the sysroot that built it.
-        let lib_path_var = if cfg!(windows) { "PATH" } else { "LD_LIBRARY_PATH" };
+        let lib_path_var = if cfg!(windows) {
+            "PATH"
+        } else if cfg!(target_vendor = "apple") {
+            "DYLD_LIBRARY_PATH"
+        } else {
+            "LD_LIBRARY_PATH"
+        };
         let mut paths = vec![dir.to_path_buf(), self.target_libdir(variant)?];
         paths.extend(std::env::split_paths(&std::env::var_os(lib_path_var).unwrap_or_default()));
         run.env(lib_path_var, std::env::join_paths(paths).map_err(|e| e.to_string())?);
@@ -1413,7 +1419,7 @@ fn reject_incremental(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), St
 /// export are exactly plain rustc's (plus the runtime's own), with and without
 /// `-Clto`: the image's symbols are listed
 /// as exports for LTO, and `link` must remove those, and only those
-/// (design/backend.md#query-overrides). ELF only (`llvm-nm -D`).
+/// (design/backend.md#query-overrides). ELF and Mach-O (`llvm-nm -D`).
 fn same_exports(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     if cfg!(windows) {
         return Ok(());
@@ -1439,7 +1445,8 @@ fn same_exports(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> 
             // (C level), and in a Rust dylib everything of `ryo_rt` and `ryo_bytecode`,
             // the handlers included.
             let runtime = |s: &str| s == "ryo_vm_register" || s.contains("6ryo_rt") || s.contains("12ryo_bytecode") || is_rt_internal(s);
-            let mut syms: Vec<String> = syms.lines().filter(|s| !runtime(s)).map(str::to_owned).collect();
+            let mut syms: Vec<String> =
+                syms.lines().map(|s| crate::jit::unprefixed(&info.host, s)).filter(|s| !runtime(s)).map(str::to_owned).collect();
             syms.sort();
             lists.push(syms);
         }
@@ -1473,12 +1480,12 @@ fn outside(s: &str) -> bool {
 /// points (native: a panic runtime is never VM code): with `--sysroot ryo`, std's allocator,
 /// locks and TLS may be VM functions, which the runtime must not call while it switches VM
 /// state (design/vm.md, "No re-entry into the VM from the runtime"). Checked on the undefined
-/// symbols of every sysroot's `ryo_rt` rlib, by crate in their v0 mangled names. ELF only.
-/// The JIT's trips are part of it; the JIT thread, which uses std, is the sealed object that
+/// symbols of every sysroot's `ryo_rt` rlib for `triple`, by crate in their v0 mangled names.
+/// ELF and Mach-O (`test --cross` checks a Mach-O target's). The JIT's trips are part of it; the JIT thread, which uses std, is the sealed object that
 /// the rlib bundles (design/jit.md#packaging), which `ryo_rt` reaches only through `ryo_jit_start`
 /// and `jit-sealed` checks: this check skips it.
-fn rt_core_only(root: &Path) -> Result<(), String> {
-    if cfg!(windows) {
+pub(crate) fn rt_core_only(root: &Path, triple: &str) -> Result<(), String> {
+    if triple.contains("-windows-") {
         return Ok(());
     }
     let info = crate::utils::RustcInfo::get()?;
@@ -1486,7 +1493,7 @@ fn rt_core_only(root: &Path) -> Result<(), String> {
     let dist = root.join("dist");
     let mut libs = Vec::new();
     for sysroot in [dist.clone(), dist.join(crate::sysroot::SYSROOT_DIR)] {
-        let dir = sysroot.join("lib").join("rustlib").join(&info.host).join("lib");
+        let dir = sysroot.join("lib").join("rustlib").join(triple).join("lib");
         let Ok(entries) = fs::read_dir(&dir) else { continue };
         for e in entries.flatten() {
             let name = e.file_name().to_string_lossy().into_owned();
@@ -1506,6 +1513,7 @@ fn rt_core_only(root: &Path) -> Result<(), String> {
         let bad: Vec<&str> = syms
             .lines()
             .map(str::trim)
+            .map(|s| crate::jit::unprefixed(triple, s))
             .filter(|s| {
                 if let Some(member) = s.strip_suffix(':') {
                     in_jit = member == crate::jit::OBJECT;
@@ -1530,7 +1538,7 @@ fn rt_core_only(root: &Path) -> Result<(), String> {
                 n.starts_with("libryo_bytecode") && n.ends_with(".rlib")
             })
             .ok_or_else(|| format!("no ryo_bytecode rlib in {}", dir.display()))?;
-        if let Some(path) = panic_path(&objdump, &lib, &bytecode)? {
+        if let Some(path) = panic_path(&objdump, &lib, &bytecode, triple)? {
             return Err(format!("{} reaches core's panic path: {}", lib.display(), path.join(" <- ")));
         }
     }
@@ -1602,7 +1610,7 @@ fn jit_private_std(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), Strin
 /// counts as runtime: the templates are generic and instantiated in the program's crates,
 /// which may panic like any program code. The edges are the relocations in each function
 /// (`llvm-objdump -dr`), which cover calls and taken addresses.
-fn panic_path(objdump: &Path, rt: &Path, bytecode: &Path) -> Result<Option<Vec<String>>, String> {
+fn panic_path(objdump: &Path, rt: &Path, bytecode: &Path, triple: &str) -> Result<Option<Vec<String>>, String> {
     use std::collections::HashMap;
     let mut edges: HashMap<String, Vec<String>> = HashMap::new();
     let mut roots = Vec::new();
@@ -1621,15 +1629,15 @@ fn panic_path(objdump: &Path, rt: &Path, bytecode: &Path) -> Result<Option<Vec<S
                 continue;
             }
             if let Some((_, name)) = line.strip_suffix(">:").and_then(|l| l.split_once(" <")) {
-                let name = name.to_owned();
+                let name = crate::jit::unprefixed(triple, name).to_owned();
                 if is_rt {
                     roots.push(name.clone());
                 }
                 edges.entry(name.clone()).or_default();
                 cur = Some(name);
-            } else if let (Some(f), Some(i)) = (&cur, line.find("R_X86_64_")) {
+            } else if let (Some(f), Some(i)) = (&cur, line.find("R_X86_64_").or_else(|| line.find("X86_64_RELOC_"))) {
                 let target = line[i..].split_whitespace().nth(1).unwrap_or("");
-                let target = target.split(['+', '-']).next().unwrap_or("").to_owned();
+                let target = crate::jit::unprefixed(triple, target.split(['+', '-']).next().unwrap_or("")).to_owned();
                 edges.entry(f.clone()).or_default().push(target);
             }
         }

@@ -1,12 +1,14 @@
 //! `y test --cross <target>` (design/platforms.md): builds the test corpus for another target
-//! (windows-msvc) with plain rustc and with `rustc-ryo`, and links it with the sysroot's
-//! `rust-lld` (lld-link flavor) against empty stand-in import libraries, with
-//! `/force:unresolved`. Nothing runs. The check: every symbol the ryo build leaves unresolved
+//! (windows-msvc or x86_64 macOS) with plain rustc and with `rustc-ryo`, and links it with the
+//! sysroot's `rust-lld` against empty stand-in libraries, leaving symbols unresolved: the
+//! lld-link flavor with `/force:unresolved` for windows-msvc, the ld64 flavor with
+//! `-flat_namespace -undefined warning` for macOS (there is no SDK: `libSystem` is an empty
+//! archive). Nothing runs. The check: every symbol the ryo build leaves unresolved
 //! is also unresolved in plain rustc's build of the same program, or is one of the CRT/SDK
-//! symbols `ryo_rt` itself uses ([`RT_IMPORTS`]) or its sealed JIT does (in a Rust dylib, which
-//! plain rustc links to std's DLL, the JIT's private std brings its own imports), i.e. comes
-//! from the missing CRT/SDK libraries. A missing ryo symbol (an image, a portal, an `__imp_` slot, the
-//! registry) shows up as a difference.
+//! symbols `ryo_rt` itself uses ([`RT_IMPORTS`], [`RT_IMPORTS_MACHO`]) or its sealed JIT does
+//! (in a Rust dylib, which plain rustc links to std's DLL, the JIT's private std brings its own
+//! imports), i.e. comes from the missing system libraries. A missing ryo symbol (an image, a
+//! portal, an `__imp_` slot, the registry) shows up as a difference.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -59,6 +61,33 @@ const RT_IMPORTS: &[&str] = &[
     "const type_info::`vftable'",
 ];
 
+/// The libraries std and `ryo_rt` name on macOS, replaced by empty archives (`lib<name>.a`).
+const STUB_LIBS_MACHO: &[&str] = &["System", "c", "m", "iconv", "resolv"];
+
+/// An empty libSystem, as a text-based stub.
+const LIBSYSTEM_TBD: &str = "--- !tapi-tbd\ntbd-version: 4\ntargets: [ x86_64-macos ]\ninstall-name: '/usr/lib/libSystem.B.dylib'\n...\n";
+
+/// [`RT_IMPORTS`] on macOS, as lld names them (Mach-O's `_` prefix): libSystem's functions
+/// `ryo_rt` and `ryo_bytecode` call (`vm/rt/src/vm/sys.rs`, the trips' `__ulock` waits,
+/// `vmem`) and the unwinder's `_Unwind_Resume`, which `resume` jumps to.
+const RT_IMPORTS_MACHO: &[&str] = &[
+    "__Unwind_Resume",
+    "___ulock_wait",
+    "___ulock_wake",
+    "_abort",
+    "_getenv",
+    "_memcmp",
+    "_memcpy",
+    "_memmove",
+    "_memset",
+    "_strlen",
+    "_write",
+    "_mmap",
+    "_mprotect",
+    "_munmap",
+    "_atexit",
+];
+
 pub fn run(target: &str) -> Result<(), String> {
     let root = root();
     let info = RustcInfo::get()?;
@@ -76,10 +105,24 @@ pub fn run(target: &str) -> Result<(), String> {
     let _ = fs::remove_dir_all(&out);
     let stubs = out.join("stub-libs");
     fs::create_dir_all(&stubs).map_err(|e| format!("creating {}: {e}", stubs.display()))?;
-    for lib in STUB_LIBS {
-        fs::write(stubs.join(format!("{lib}.lib")), b"!<arch>\n").map_err(|e| e.to_string())?;
+    let macho = crate::jit::macho(target);
+    if macho {
+        for lib in STUB_LIBS_MACHO {
+            fs::write(stubs.join(format!("lib{lib}.a")), b"!<arch>\n").map_err(|e| e.to_string())?;
+        }
+        // std's dylib loads libSystem by its install name, which lld looks up as a text stub
+        // under the SDK root (`SDKROOT`, below): one that exports nothing.
+        let usr_lib = stubs.join("usr").join("lib");
+        fs::create_dir_all(&usr_lib).map_err(|e| e.to_string())?;
+        fs::write(usr_lib.join("libSystem.B.tbd"), LIBSYSTEM_TBD).map_err(|e| e.to_string())?;
+    } else {
+        for lib in STUB_LIBS {
+            fs::write(stubs.join(format!("{lib}.lib")), b"!<arch>\n").map_err(|e| e.to_string())?;
+        }
     }
-    let link = Link { target, lld, stubs };
+    let rt_imports = if macho { RT_IMPORTS_MACHO } else { RT_IMPORTS };
+    let std_dir = dist.join("lib").join("rustlib").join(target).join("lib");
+    let link = Link { target, lld, stubs, macho, std_dir };
 
     let mut failed = Vec::new();
     // The sealed JIT bundled into this target's `ryo_rt` (design/jit.md#packaging), and its
@@ -90,7 +133,9 @@ pub fn run(target: &str) -> Result<(), String> {
         let dir = out.join("jit-sealed");
         let res = crate::jit::check_sealed(&info, &rlib, &dir, target).and_then(|()| {
             let nm = crate::jit::llvm_tool(&info, "llvm-nm");
-            let syms = crate::utils::output(cmd(nm).args(["-u", "-C", "-j"]).arg(dir.join(crate::jit::OBJECT)))?;
+            // Demangled as lld-link prints them; ld64.lld prints raw names.
+            let demangle = if macho { "--no-demangle" } else { "-C" };
+            let syms = crate::utils::output(cmd(nm).args(["-u", demangle, "-j"]).arg(dir.join(crate::jit::OBJECT)))?;
             jit_imports = syms
                 .lines()
                 .map(|s| match s.trim().strip_prefix("__imp_") {
@@ -105,6 +150,16 @@ pub fn run(target: &str) -> Result<(), String> {
             Err(msg) => {
                 eprintln!("[y] test --cross {target} jit-sealed: FAILED: {msg}");
                 failed.push("jit-sealed");
+            }
+        }
+    }
+    // `ryo_rt` keeps to `core` (ELF and Mach-O; `y test` checks the host's).
+    if macho {
+        match crate::test::rt_core_only(&root, target) {
+            Ok(()) => eprintln!("[y] test --cross {target} rt-core-only: ok"),
+            Err(msg) => {
+                eprintln!("[y] test --cross {target} rt-core-only: FAILED: {msg}");
+                failed.push("rt-core-only");
             }
         }
     }
@@ -123,7 +178,7 @@ pub fn run(target: &str) -> Result<(), String> {
                 // resolves to the import thunk, so it is fine wherever the import itself is.
                 let extra: Vec<&String> = ryo
                     .difference(&reference)
-                    .filter(|s| !RT_IMPORTS.contains(&s.as_str()) && !jit_imports.contains(*s))
+                    .filter(|s| !rt_imports.contains(&s.as_str()) && !jit_imports.contains(*s))
                     .filter(|s| !reference.contains(&format!("__declspec(dllimport) {s}")))
                     // The other way round: the image loads a foreign function's address through
                     // `__imp_` where plain rustc calls it directly (`abs` from the CRT). An
@@ -154,6 +209,10 @@ struct Link<'a> {
     target: &'a str,
     lld: PathBuf,
     stubs: PathBuf,
+    /// The ld64 flavor (macOS) rather than lld-link.
+    macho: bool,
+    /// `dist/`'s std for the target.
+    std_dir: PathBuf,
 }
 
 impl Link<'_> {
@@ -178,13 +237,23 @@ impl Link<'_> {
                 .arg(dir)
                 .args(program.flags)
                 .arg(format!("-Clinker={}", self.lld.display()))
-                .args(["-Clinker-flavor=lld-link", "-Clink-arg=/force:unresolved", "-Clink-arg=/DEBUG:NONE"])
                 .arg("-L")
                 .arg(&self.stubs);
+            if self.macho {
+                // rustc asks `xcrun` for the SDK unless `SDKROOT` names one; the stand-ins are
+                // all the SDK there is.
+                c.args(["-Clinker-flavor=ld64.lld", "-Clink-arg=-flat_namespace", "-Clink-arg=-undefined", "-Clink-arg=warning"])
+                    .env("SDKROOT", &self.stubs);
+                // A flat namespace makes lld load the dependencies of dylibs too, std's among
+                // them by `@rpath`: the same file in the toolchain's sysroot and in `dist/`.
+                c.arg("-Clink-arg=-rpath").arg(format!("-Clink-arg={}", self.std_dir.display()));
+            } else {
+                c.args(["-Clinker-flavor=lld-link", "-Clink-arg=/force:unresolved", "-Clink-arg=/DEBUG:NONE"]);
+            }
             if std::ptr::eq(krate, program.crates.last().unwrap()) {
                 c.args(final_flags);
             }
-            if krate.kind == CrateKind::Bin {
+            if krate.kind == CrateKind::Bin && !self.macho {
                 // There is no CRT to provide the default entry point.
                 c.arg("-Clink-arg=/entry:mainCRTStartup");
             }

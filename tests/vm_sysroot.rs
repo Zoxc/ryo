@@ -9,11 +9,12 @@ use std::sync::atomic::{AtomicU32, Ordering};
 static FROM_CTOR: AtomicU32 = AtomicU32::new(0);
 
 /// Run by the C runtime before `main`, with the priority of std's own argument initializer
-/// (`.init_array.00099`): it enters the VM, so the image registry's constructor must have run
+/// (`.init_array.00099`; on Mach-O, which has no priorities, an ordinary initializer): it enters the VM, so the image registry's constructor must have run
 /// already, whatever the link order.
 #[used]
-#[cfg_attr(not(windows), unsafe(link_section = ".init_array.00099"))]
+#[cfg_attr(not(any(windows, target_vendor = "apple")), unsafe(link_section = ".init_array.00099"))]
 #[cfg_attr(windows, unsafe(link_section = ".CRT$XCU"))]
+#[cfg_attr(target_vendor = "apple", unsafe(link_section = "__DATA,__mod_init_func,mod_init_funcs"))]
 static CTOR: extern "C" fn() = ctor;
 
 extern "C" fn ctor() {

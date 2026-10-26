@@ -36,7 +36,8 @@ commands:
                                ryo sysroot; `--program`/`--variant` run only those corpus
                                entries; `--no-changed` only the fixed fast set
   test --cross T               cross-build and link (not run) the corpus for target T, e.g.
-                               x86_64-pc-windows-msvc; needs `build --target T` first
+                               x86_64-pc-windows-msvc or x86_64-apple-darwin; needs
+                               `build --target T` first
   bench [--runs N] [--llvm O0,O2d,..] [--clif] [--ryo aot,jit] [--metric time|cachegrind]
                                compare LLVM -O0/-O3, Cranelift and ryo: compile and run time
                                (or run Ir); the options pick the columns (`d`: debug assertions)
