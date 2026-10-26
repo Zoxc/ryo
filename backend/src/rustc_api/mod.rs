@@ -3,6 +3,7 @@
 //! - this file: the `CodegenBackend` impl and the query overrides
 //! - [`partition`]: pipeline steps 1–4 and the image contents
 //! - [`lower`]: MIR → bytecode
+//! - [`symbols`]: the image's symbol names and linkage (PE imports)
 //! - [`link`]: step 6, one `link_binary` per crate type with its registry object
 //! - [`dump_lean`]: `RYO_DUMP_LEAN`, the program as the Lean MIR spec's input (lean/)
 
@@ -11,6 +12,7 @@ mod link;
 mod lower;
 mod partition;
 mod switches;
+mod symbols;
 
 use std::any::Any;
 use std::path::PathBuf;
@@ -79,7 +81,7 @@ fn collect_and_partition_mono_items<'tcx>(tcx: TyCtxt<'tcx>, (): ()) -> MonoItem
 }
 
 fn symbol_name<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> ty::SymbolName<'tcx> {
-    partition::symbol_name(tcx, instance, || (originals().symbol_name)(tcx, instance))
+    symbols::symbol_name(tcx, instance, || (originals().symbol_name)(tcx, instance))
 }
 
 fn exported_generic_symbols<'tcx>(tcx: TyCtxt<'tcx>, krate: LocalCrate) -> &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)] {
@@ -191,11 +193,11 @@ impl CodegenBackend for RyoBackend {
         let results = partition::results(tcx).expect("collect_and_partition_mono_items didn't run our provider");
         assert_eq!(partitions.codegen_units[0].name(), results.cgu_name);
         let fmt = object_format(tcx.sess);
-        let scid = partition::local_stable_crate_id(tcx);
+        let scid = symbols::local_stable_crate_id(tcx);
         // Step 5: the image object (design/backend.md#pipeline).
         let image_name = format!("{}.ryo_image", results.cgu_name);
         let image_path = tcx.output_filenames(()).temp_path_for_cgu(OutputType::Object, &image_name);
-        let rt_symbol = |name: &str| partition::rt_symbol(tcx, name);
+        let rt_symbol = |name: &str| symbols::rt_symbol(tcx, name);
         let write_t = tcx.prof.generic_activity("ryo_write_image");
         let bytes =
             objfile::write_image(&*fmt, &results.image, scid, results.main_symbol.as_deref(), &rt_symbol).unwrap_or_else(|e| tcx.dcx().fatal(e));
@@ -263,74 +265,6 @@ fn object_module(name: String, object: PathBuf) -> CompiledModule {
         llvm_ir: None,
         links_from_incr_cache: Vec::new(),
     }
-}
-
-/// How an image symbol slot is used, which decides whether it is indirect
-/// (design/platforms.md, design/vm.md#image-format).
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SymRole {
-    /// The `sym` of `addr.sym`/`addr.sym.ind` or `call.ext`/`call.ext.ind`: its address is
-    /// observable, so on PE it must be the real one.
-    Target,
-    /// An `island` instruction's `sym`, or the `island` operand of a call: only ever called.
-    Island,
-}
-
-/// The image slot flags for `target` used as `role`: on PE, a [`SymRole::Target`] symbol
-/// defined outside this crate (an upstream crate's, or a foreign item) gets an indirect slot
-/// ([`SYM_INDIRECT`](ryo_bytecode::image::SYM_INDIRECT)), relocated against its `__imp_`
-/// import slot, and the instruction must be the `.ind` form (`addr.sym.ind`,
-/// `call.ext.ind`). Islands are always direct: a direct reference to a function in another
-/// DLL resolves to its import thunk, which is fine to call. The writer keys slots by name and
-/// flags, so one symbol can have both.
-pub(crate) fn symbol_flags<'tcx>(tcx: TyCtxt<'tcx>, target: Instance<'tcx>, role: SymRole) -> u8 {
-    let pe = matches!(tcx.sess.target.binary_format, rustc_target::spec::BinaryFormat::Coff);
-    if pe && role == SymRole::Target && !tcx.should_codegen_locally(target) { ryo_bytecode::image::SYM_INDIRECT } else { 0 }
-}
-
-/// The image's function flags for `instance` ([`FUNC_INLINE_ALWAYS`] etc., read by the JIT's
-/// inliner): its `#[inline(..)]` and `#[cold]` attributes, through
-/// `codegen_instance_attrs`, so shims get their item's.
-///
-/// [`FUNC_INLINE_ALWAYS`]: ryo_bytecode::image::FUNC_INLINE_ALWAYS
-pub(crate) fn func_flags<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> u8 {
-    use rustc_hir::attrs::InlineAttr;
-    use rustc_middle::middle::codegen_fn_attrs::CodegenFnAttrFlags;
-    use ryo_bytecode::image::*;
-    let attrs = tcx.codegen_instance_attrs(instance.def);
-    let inline = match attrs.inline {
-        InlineAttr::Always | InlineAttr::Force { .. } => FUNC_INLINE_ALWAYS,
-        InlineAttr::Never => FUNC_INLINE_NEVER,
-        InlineAttr::Hint => FUNC_INLINE_HINT,
-        InlineAttr::None => 0,
-    };
-    inline | if attrs.flags.contains(CodegenFnAttrFlags::COLD) { FUNC_COLD } else { 0 }
-}
-
-/// The names of [`func_flags`]' bits, as the dumps print them (` [always, cold]`, or empty).
-pub(crate) fn func_flags_suffix(flags: u8) -> String {
-    use ryo_bytecode::image::*;
-    let names = [(FUNC_INLINE_ALWAYS, "always"), (FUNC_INLINE_NEVER, "never"), (FUNC_COLD, "cold"), (FUNC_INLINE_HINT, "hint")];
-    let set: Vec<&str> = names.iter().filter(|n| flags & n.0 != 0).map(|n| n.1).collect();
-    if set.is_empty() { String::new() } else { format!(" [{}]", set.join(", ")) }
-}
-
-/// [`symbol_flags`] for a static used as an address: on PE, statics of upstream crates and
-/// foreign statics are imports.
-pub(crate) fn static_symbol_flags(tcx: TyCtxt<'_>, def_id: rustc_hir::def_id::DefId) -> u8 {
-    if is_pe(tcx) && (!def_id.is_local() || tcx.is_foreign_item(def_id)) { ryo_bytecode::image::SYM_INDIRECT } else { 0 }
-}
-
-/// Whether a static with an indirect slot also needs a direct one: a foreign static from a
-/// static library. Upstream Rust statics don't (rustc defines `__imp_<sym>` for the data of
-/// rlibs), and data in a DLL can't be referenced directly.
-pub(crate) fn static_needs_direct_slot(tcx: TyCtxt<'_>, def_id: rustc_hir::def_id::DefId) -> bool {
-    tcx.is_foreign_item(def_id) && tcx.native_library(def_id).is_some_and(|lib| matches!(lib.kind, rustc_hir::attrs::NativeLibKind::Static { .. }))
-}
-
-/// Whether the target uses PE/COFF objects.
-pub(crate) fn is_pe(tcx: TyCtxt<'_>) -> bool {
-    matches!(tcx.sess.target.binary_format, rustc_target::spec::BinaryFormat::Coff)
 }
 
 /// The image and registry objects' format for the session's target (design/platforms.md).

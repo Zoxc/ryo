@@ -10,7 +10,7 @@ use rustc_hir::attrs::Linkage;
 use rustc_hir::def_id::{CrateNum, DefId, LOCAL_CRATE};
 use rustc_middle::middle::exported_symbols::{ExportedSymbol, SymbolExportInfo, SymbolExportKind, SymbolExportLevel};
 use rustc_middle::mir::interpret::{AllocId, GlobalAlloc};
-use rustc_middle::mono::{CodegenUnit, CollectionMode, InstantiationMode, MonoItem, MonoItemData, MonoItemPartitions, Visibility};
+use rustc_middle::mono::{CodegenUnit, CollectionMode, MonoItem, MonoItemData, MonoItemPartitions, Visibility};
 use rustc_middle::ty::{self, Instance, InstanceKind, Ty, TyCtxt, TypingEnv};
 use rustc_session::config::{CrateType, EntryFnType};
 use rustc_span::Symbol;
@@ -23,6 +23,7 @@ use ryo_bytecode::image::{
 use crate::objfile;
 
 use super::lower::{self, CodeReloc, LowerCx, LoweredFn, NeedsNative};
+use super::symbols::{self, local_stable_crate_id, rt_symbol, static_symbol};
 
 /// The `ryo_rt` items the backend instantiates or checks (design/stubs.md, Lookup).
 #[derive(Clone, Copy)]
@@ -211,11 +212,6 @@ fn needs_frame_pointer(sess: &rustc_session::Session) -> bool {
     }
     fp.ratchet(sess.opts.cg.force_frame_pointers);
     fp != FramePointer::MayOmit
-}
-
-/// The symbol of one of `ryo_rt`'s handlers or `ryo_probe_stack` (`#[rustc_std_internal_symbol]`s).
-pub fn rt_symbol(tcx: TyCtxt<'_>, name: &str) -> String {
-    rustc_symbol_mangling::mangle_internal_symbol(tcx, name)
 }
 
 /// A VM function: its lowering, and whether native code or the image calls it by name (then
@@ -477,7 +473,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         for (name, v) in fns {
             let l = &v.lowered;
             let c = &l.code;
-            let flags = super::func_flags_suffix(super::func_flags(tcx, v.instance));
+            let flags = func_flags_suffix(symbols::func_flags(tcx, v.instance));
             writeln!(out, "fn {name} (frame {}, args {}, ret {}){flags}", l.frame_size, l.arg_size, l.ret_size).unwrap();
             match asm::decode(&c.code, &c.relocs, &c.rodata, &c.call_sites, &c.dropped, &c.scopes, mode) {
                 Ok(d) => dump_labeled(&mut out, &d.words, &d.cleanup, &d.scopes),
@@ -515,7 +511,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         let mut out = String::new();
         for (name, v) in fns {
             let c = &v.lowered.code;
-            let flags = super::func_flags_suffix(super::func_flags(self.tcx, v.instance));
+            let flags = func_flags_suffix(symbols::func_flags(self.tcx, v.instance));
             writeln!(out, "fn {name}{flags}").unwrap();
             out.push_str("code ");
             for b in &c.code {
@@ -708,7 +704,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         }
         if let MonoItem::Fn(f) = item
             && lower::is_tls_shim(f)
-            && !super::is_pe(tcx)
+            && !symbols::is_pe(tcx)
             && !self.cgu.items().contains_key(&item)
             && !self.added.contains_key(&item)
         {
@@ -795,7 +791,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                     CodeReloc::Call { callee } => self.index[&callee],
                     CodeReloc::Symbol { target } => {
                         pool.roots.function(tcx, target);
-                        let flags = super::symbol_flags(tcx, target, super::SymRole::Target);
+                        let flags = symbols::symbol_flags(tcx, target, symbols::SymRole::Target);
                         let Sym(s) = w.symbol(tcx.symbol_name(target).name, flags);
                         if flags & ryo_bytecode::image::SYM_INDIRECT != 0 {
                             // A direct reference too, so the linker extracts the archive member
@@ -808,9 +804,9 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                     }
                     CodeReloc::Static { def_id } => {
                         pool.roots.static_(tcx, def_id);
-                        let flags = super::static_symbol_flags(tcx, def_id);
+                        let flags = symbols::static_symbol_flags(tcx, def_id);
                         let Sym(s) = w.symbol(static_symbol(tcx, def_id).name, flags);
-                        if flags & ryo_bytecode::image::SYM_INDIRECT != 0 && super::static_needs_direct_slot(tcx, def_id) {
+                        if flags & ryo_bytecode::image::SYM_INDIRECT != 0 && symbols::static_needs_direct_slot(tcx, def_id) {
                             // As for functions: lld synthesizes `__imp_<sym>` only for a
                             // defined symbol, and a C static library has no `__imp_` of its own
                             // (design/platforms.md).
@@ -824,7 +820,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                     CodeReloc::Island { template, args } => {
                         let island = island_instance(tcx, rt_krate, template, args);
                         pool.roots.function(tcx, island);
-                        let flags = super::symbol_flags(tcx, island, super::SymRole::Island);
+                        let flags = symbols::symbol_flags(tcx, island, symbols::SymRole::Island);
                         w.symbol(tcx.symbol_name(island).name, flags).0
                     }
                 })
@@ -884,7 +880,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                 ret_kind: l.ret_kind,
                 cleanup: Vec::new(),
                 symbol,
-                flags: super::func_flags(tcx, v.instance),
+                flags: symbols::func_flags(tcx, v.instance),
             });
             encoded.push(code);
         }
@@ -979,11 +975,6 @@ fn lower_all<'tcx>(
     (ok, failed)
 }
 
-/// The symbol of a static (its own, or the foreign item's link name).
-fn static_symbol<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> ty::SymbolName<'tcx> {
-    tcx.symbol_name(Instance::mono(tcx, def_id))
-}
-
 /// The image's constant pool: allocations copied with their pointers relocated
 /// (design/lowering.md#constants), and raw byte constants. Deduplicated. On PE, allocations
 /// pointing directly at imports go into the writable fixup area instead, with a load-time
@@ -1046,7 +1037,7 @@ impl Pool {
                 // Patched at registration from the `__imp_` slot (design/platforms.md).
                 let (name, direct) = match target_alloc {
                     GlobalAlloc::Function { instance } => (tcx.symbol_name(instance).name, true),
-                    GlobalAlloc::Static(def_id) => (static_symbol(tcx, def_id).name, super::static_needs_direct_slot(tcx, def_id)),
+                    GlobalAlloc::Static(def_id) => (static_symbol(tcx, def_id).name, symbols::static_needs_direct_slot(tcx, def_id)),
                     _ => unreachable!("only functions and statics are imports"),
                 };
                 if direct {
@@ -1207,38 +1198,6 @@ fn alloc_refs<'tcx>(tcx: TyCtxt<'tcx>, id: AllocId, seen: &mut FxHashSet<AllocId
     }
 }
 
-pub fn local_stable_crate_id(tcx: TyCtxt<'_>) -> u64 {
-    tcx.stable_crate_id(LOCAL_CRATE).as_u64()
-}
-
-/// Our `symbol_name` (design/backend.md#query-overrides): `c_main` is the target's entry name, and local copies of `LocalCopy` instances get
-/// a crate-unique suffix (design/backend.md, Linkage).
-pub fn symbol_name<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>, original: impl FnOnce() -> ty::SymbolName<'tcx>) -> ty::SymbolName<'tcx> {
-    if let InstanceKind::Item(def_id) = instance.def
-        && let Some(rt) = rt_items(tcx)
-        && def_id.krate == rt.krate
-    {
-        if def_id == rt.c_main {
-            return ty::SymbolName::new(tcx, &tcx.sess.target.entry_name);
-        }
-    }
-    let name = original();
-    if !symbol_from_attrs(tcx, instance)
-        && MonoItem::Fn(instance).instantiation_mode(tcx) == InstantiationMode::LocalCopy
-        && instance.upstream_monomorphization(tcx).is_none()
-    {
-        return ty::SymbolName::new(tcx, &format!("{}.ryo{:016x}", name.name, local_stable_crate_id(tcx)));
-    }
-    name
-}
-
-/// Whether `instance`'s symbol is fixed by its attributes or is a foreign item's (an LLVM
-/// intrinsic's, `#[no_mangle]`, `#[rustc_std_internal_symbol]`): it must not get the
-/// crate-unique suffix.
-fn symbol_from_attrs<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> bool {
-    rustc_symbol_mangling::symbol_name_from_attrs(tcx, instance.def).is_some()
-}
-
 /// The value of `upstream_monomorphizations`: per generic item, the upstream crate whose copy
 /// of each instance to link to.
 pub type UpstreamMonos<'tcx> = rustc_hir::def_id::DefIdMap<rustc_data_structures::unord::UnordMap<ty::GenericArgsRef<'tcx>, CrateNum>>;
@@ -1384,4 +1343,12 @@ fn dump_labeled(out: &mut String, words: &[u32], cleanup: &[ryo_bytecode::image:
         };
         writeln!(out, "  cleanup {} -> {to}", name(e.offset as usize)).unwrap();
     }
+}
+
+/// The names of [`func_flags`]' bits, as the dumps print them (` [always, cold]`, or empty).
+pub(crate) fn func_flags_suffix(flags: u8) -> String {
+    use ryo_bytecode::image::*;
+    let names = [(FUNC_INLINE_ALWAYS, "always"), (FUNC_INLINE_NEVER, "never"), (FUNC_COLD, "cold"), (FUNC_INLINE_HINT, "hint")];
+    let set: Vec<&str> = names.iter().filter(|n| flags & n.0 != 0).map(|n| n.1).collect();
+    if set.is_empty() { String::new() } else { format!(" [{}]", set.join(", ")) }
 }

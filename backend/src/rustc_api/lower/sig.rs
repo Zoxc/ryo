@@ -185,7 +185,7 @@ pub fn arg_block<'tcx>(tcx: TyCtxt<'tcx>, inputs: &[Ty<'tcx>]) -> Result<(Vec<Ar
 /// integer for an aggregate of up to 8 bytes; `Indirect` is sret.
 fn ret_kind<'tcx>(tcx: TyCtxt<'tcx>, ret: &ArgAbi<'tcx, Ty<'tcx>>) -> Result<u32, NeedsNative> {
     let cx = LayoutCx(tcx);
-    let pe = super::super::is_pe(tcx);
+    let pe = crate::rustc_api::symbols::is_pe(tcx);
     let scalar = |s: Scalar, off: u32, out: &mut Vec<RetPart>| -> Result<(), NeedsNative> {
         let size = s.size(&cx).bytes() as u32;
         if pe && (size == 16 || size == 2 && matches!(s.primitive(), Primitive::Float(_))) {
@@ -239,7 +239,7 @@ fn ret_kind<'tcx>(tcx: TyCtxt<'tcx>, ret: &ArgAbi<'tcx, Ty<'tcx>>) -> Result<u32
 /// return takes the first integer register.
 fn arg_plan<'tcx>(tcx: TyCtxt<'tcx>, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, sret: bool) -> Result<ArgPlan, NeedsNative> {
     let cx = LayoutCx(tcx);
-    let pe = super::super::is_pe(tcx);
+    let pe = crate::rustc_api::symbols::is_pe(tcx);
     struct State {
         pe: bool,
         gpr: u32,
