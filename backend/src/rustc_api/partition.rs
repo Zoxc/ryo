@@ -112,10 +112,6 @@ impl Results {
     }
 }
 
-fn stats_level() -> u32 {
-    std::env::var("RYO_STATS").ok().and_then(|v| v.parse().ok()).unwrap_or(0)
-}
-
 /// Our `collect_and_partition_mono_items` (design/backend.md#pipeline steps 1–4).
 pub fn collect_and_partition_mono_items<'tcx>(tcx: TyCtxt<'tcx>, original: super::PartitionProvider) -> MonoItemPartitions<'tcx> {
     // `rustc-ryo` forces `-Ccodegen-units=1`; `Session::codegen_units`
@@ -130,7 +126,7 @@ pub fn collect_and_partition_mono_items<'tcx>(tcx: TyCtxt<'tcx>, original: super
     {
         tcx.dcx().fatal("the ryo backend doesn't support `-Clto` for dylibs");
     }
-    if std::env::var_os("RYO_BACKEND_MARKER").is_some() {
+    if super::switches::get().marker {
         eprintln!("{}", super::PARTITION_MARKER);
     }
     let partitions = original(tcx, ());
@@ -167,7 +163,7 @@ pub fn asm_mode(tcx: TyCtxt<'_>, rt: RtItems) -> asm::Mode {
         fp_arg,
         // Handlers that read `rbp` and PE unwind info need it (`asm::Mode::frame_pointer`).
         frame_pointer: !fp_arg || pe || needs_frame_pointer(tcx.sess),
-        align_loops: std::env::var_os("RYO_ASM_ALIGN").is_none_or(|v| v != "0"),
+        align_loops: super::switches::get().asm_align,
         pe,
         // The JIT's trigger, in every build: one code shape (design/vm.md, "JIT records and
         // counters").
@@ -250,12 +246,12 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         // A panic runtime (`panic_unwind`, `panic_abort`) too: portals re-raise a panic from
         // the VM through its `__rust_start_panic` (design/vm.md, Unwinding), so that must be
         // native, and the rest of the runtime gains nothing from the VM.
-        std::env::var_os("RYO_NO_VM").is_none() && !self.tcx.crate_types().contains(&CrateType::ProcMacro) && !self.tcx.is_panic_runtime(LOCAL_CRATE)
+        !super::switches::get().no_vm && !self.tcx.crate_types().contains(&CrateType::ProcMacro) && !self.tcx.is_panic_runtime(LOCAL_CRATE)
     }
 
     fn run(mut self) -> (CodegenUnit<'tcx>, Results) {
         let tcx = self.tcx;
-        let stats = stats_level();
+        let stats = super::switches::get().stats;
 
         // Step 2/3: classify and lower. `ryo_rt` instances are always native (design/vm.md).
         let mut candidates: Vec<(Instance<'tcx>, MonoItemData)> = Vec::new();
@@ -757,11 +753,11 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         // The handlers the code calls, and whether it probes the stack.
         let mut handlers = vec![false; ryo_bytecode::full::ALL_OPCODES.len()];
         let mut probe = false;
-        if let Some(path) = std::env::var_os("RYO_DUMP") {
+        if let Some(path) = &super::switches::get().dump {
             let text = self.dump(mode);
             std::fs::write(&path, text).unwrap_or_else(|e| tcx.dcx().fatal(format!("ryo: RYO_DUMP: {e}")));
         }
-        let dump_code = std::env::var_os("RYO_DUMP_CODE");
+        let dump_code = super::switches::get().dump_code.as_deref();
         if let Some(path) = &dump_code {
             let text = self.dump_code();
             std::fs::write(path, text).unwrap_or_else(|e| tcx.dcx().fatal(format!("ryo: RYO_DUMP_CODE: {e}")));
@@ -948,7 +944,7 @@ fn lower_all<'tcx>(
     let mut failed = Vec::new();
     let mut todo: Vec<Instance<'tcx>> = candidates.iter().map(|c| c.0).collect();
     while !todo.is_empty() {
-        let cx = LowerCx { vm: &vm, mode, cert: std::env::var_os("RYO_DUMP_LEAN").is_some() };
+        let cx = LowerCx { vm: &vm, mode, cert: super::switches::get().dump_lean.is_some() };
         let out: Vec<_> = rustc_data_structures::sync::par_map(todo, |instance| (instance, lower::lower(tcx, &cx, instance)));
         let mut removed = false;
         for (instance, r) in out {

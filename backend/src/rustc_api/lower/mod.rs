@@ -376,7 +376,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let frame_size = self.frame.frame_size(self.max_outgoing)?;
         let cert = self.cert_json(frame_size, sig.plan.as_ref());
         let code = std::mem::replace(&mut self.asm, Asm::new(self.cx.mode)).finish(frame_size, |s| frame::frame_offset(s, frame_size) as u32);
-        if std::env::var_os("RYO_ASM_CHECK").is_some() {
+        if crate::rustc_api::switches::get().asm_check {
             reencode_check(&code, self.cx.mode);
         }
         let ret = self.frame.locals[rustc_middle::mir::RETURN_PLACE];

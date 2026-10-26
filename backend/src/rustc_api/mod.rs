@@ -10,6 +10,7 @@ mod dump_lean;
 mod link;
 mod lower;
 mod partition;
+mod switches;
 
 use std::any::Any;
 use std::path::PathBuf;
@@ -99,7 +100,7 @@ impl CodegenBackend for RyoBackend {
     }
 
     fn init(&self, sess: &Session) {
-        if std::env::var_os("RYO_BACKEND_MARKER").is_some() {
+        if switches::get().marker {
             eprintln!("{INIT_MARKER}");
         }
         // Incremental compilation is a non-goal (design/README.md): the portal symbols and the
