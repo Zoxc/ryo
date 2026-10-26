@@ -984,3 +984,73 @@ fn handler_effects_are_exact() {
     }
     assert!(checked > 400, "{checked} handlers checked");
 }
+
+/// The SIMD handlers against `core::arch`'s SSE2 intrinsics: a fixed-seed random sweep, and
+/// every lane at each edge value, with `d` separate and aliasing `a` and `b`.
+#[test]
+fn simd_against_sse2() {
+    use core::arch::x86_64::*;
+    let v = |x: __m128i| unsafe { core::mem::transmute::<__m128i, [u8; 16]>(x) };
+    let m = |x: [u8; 16]| unsafe { core::mem::transmute::<[u8; 16], __m128i>(x) };
+    let mut vecs: Vec<[u8; 16]> = Vec::new();
+    let mut s = 0x9e37_79b9_7f4a_7c15u64;
+    let mut next = || {
+        s ^= s << 13;
+        s ^= s >> 7;
+        s ^= s << 17;
+        s
+    };
+    for _ in 0..2000 {
+        let (x, y) = (next(), next());
+        vecs.push(((x as u128) | (y as u128) << 64).to_le_bytes());
+    }
+    const EDGES: [u8; 7] = [0x00, 0x01, 0x7F, 0x80, 0x81, 0xFE, 0xFF];
+    for (k, &e) in EDGES.iter().enumerate() {
+        for i in 0..16 {
+            let mut x = [EDGES[(k + 3) % EDGES.len()]; 16];
+            x[i] = e;
+            vecs.push(x);
+        }
+    }
+    let mut f = Frame::new();
+    let fp = f.fp();
+    let bin = |op: Opcode, fp: *mut u8, x: [u8; 16], y: [u8; 16], (d, a, b): (i32, i32, i32)| {
+        put_bytes(fp, a, &x);
+        put_bytes(fp, b, &y);
+        run(op, fp, |n| {
+            slot(match n {
+                "d" => d,
+                "a" => a,
+                "b" => b,
+                _ => unreachable!(),
+            })
+        });
+        <[u8; 16]>::try_from(get_bytes(fp, d, 16)).unwrap()
+    };
+    for (i, &x) in vecs.iter().enumerate() {
+        let y = vecs[(i * 7 + 1) % vecs.len()];
+        // Equal lanes too: `y` with every other lane from `x`.
+        let y2: [u8; 16] = core::array::from_fn(|j| if j % 2 == 0 { x[j] } else { y[j] });
+        for y in [y, y2] {
+            let (eq, lt) = unsafe { (v(_mm_cmpeq_epi8(m(x), m(y))), v(_mm_cmplt_epi8(m(x), m(y)))) };
+            for regs in [(D, A, B), (A, A, B), (B, A, B)] {
+                assert_eq!(bin(Opcode::VeqI8x16, fp, x, y, regs), eq, "veq {x:?} {y:?} {regs:?}");
+                assert_eq!(bin(Opcode::VltSI8x16, fp, x, y, regs), lt, "vlt.s {x:?} {y:?} {regs:?}");
+            }
+        }
+        for d in [D, A] {
+            put_bytes(fp, A, &x);
+            put(fp, D, u128::MAX);
+            run(Opcode::VmsbI8x16, fp, |n| slot(if n == "d" { d } else { A }));
+            let r = u16::from_le_bytes(get_bytes(fp, d, 2).try_into().unwrap());
+            assert_eq!(r as i32, unsafe { _mm_movemask_epi8(m(x)) }, "vmsb {x:?}");
+            if d == D {
+                assert_eq!(get_bytes(fp, D + 2, 14), [0xff; 14], "vmsb writes 2 bytes");
+            }
+            put_bytes(fp, A, &x);
+            run(Opcode::VsplatI8x16, fp, |n| slot(if n == "d" { d } else { A + (i % 16) as i32 }));
+            let r = <[u8; 16]>::try_from(get_bytes(fp, d, 16)).unwrap();
+            assert_eq!(r, unsafe { v(_mm_set1_epi8(x[i % 16] as i8)) }, "vsplat {}", x[i % 16]);
+        }
+    }
+}

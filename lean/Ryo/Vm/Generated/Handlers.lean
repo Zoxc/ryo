@@ -51,6 +51,9 @@ inductive HandlerKind where
   | fmeth
   | fneg
   | «fun»
+  | vsplat
+  | vcmp
+  | vmsb
   | cvt
   | aload
   | astore
@@ -408,6 +411,10 @@ def handlers : Array (Option HandlerInfo) := #[
   some (HandlerInfo.mk HandlerKind.fmeth ["f64", "copysign"] none), -- copysign.f64
   some (HandlerInfo.mk HandlerKind.fneg ["f64"] none), -- fneg.f64
   some (HandlerInfo.mk HandlerKind.«fun» ["f64", "abs"] none), -- fabs.f64
+  some (HandlerInfo.mk HandlerKind.vsplat ["u8", "16"] none), -- vsplat.i8x16
+  some (HandlerInfo.mk HandlerKind.vcmp ["u8", "16", "=="] none), -- veq.i8x16
+  some (HandlerInfo.mk HandlerKind.vcmp ["i8", "16", "<"] none), -- vlt.s.i8x16
+  some (HandlerInfo.mk HandlerKind.vmsb ["u8", "16"] none), -- vmsb.i8x16
   some (HandlerInfo.mk HandlerKind.cvt ["u8", "u16"] none), -- zext.w8.w16
   some (HandlerInfo.mk HandlerKind.cvt ["i8", "i16"] none), -- sext.w8.w16
   some (HandlerInfo.mk HandlerKind.cvt ["u8", "u32"] none), -- zext.w8.w32

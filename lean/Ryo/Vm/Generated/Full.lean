@@ -11,7 +11,7 @@ import Ryo.Vm.Generated.Types
 namespace Ryo.Vm.Full
 
 /-- The number of opcodes. -/
-def count : Nat := 901
+def count : Nat := 905
 
 /-- `full::OP_INFO`, by opcode value. -/
 def opInfos : Array OpInfo := #[
@@ -344,6 +344,10 @@ def opInfos : Array OpInfo := #[
   OpInfo.mk "CopysignF64" "copysign.f64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "FnegF64" "fneg.f64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
   OpInfo.mk "FabsF64" "fabs.f64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "VsplatI8x16" "vsplat.i8x16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
+  OpInfo.mk "VeqI8x16" "veq.i8x16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "VltSI8x16" "vlt.s.i8x16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "VmsbI8x16" "vmsb.i8x16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
   OpInfo.mk "ZextW8W16" "zext.w8.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "SextW8W16" "sext.w8.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "ZextW8W32" "zext.w8.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
@@ -1595,1150 +1599,1158 @@ def copysignF64 : Opcode := ⟨326⟩
 def fnegF64 : Opcode := ⟨327⟩
 /-- `fabs.f64` -/
 def fabsF64 : Opcode := ⟨328⟩
+/-- `vsplat.i8x16` -/
+def vsplatI8x16 : Opcode := ⟨329⟩
+/-- `veq.i8x16` -/
+def veqI8x16 : Opcode := ⟨330⟩
+/-- `vlt.s.i8x16` -/
+def vltSI8x16 : Opcode := ⟨331⟩
+/-- `vmsb.i8x16` -/
+def vmsbI8x16 : Opcode := ⟨332⟩
 /-- `zext.w8.w16` -/
-def zextW8W16 : Opcode := ⟨329⟩
+def zextW8W16 : Opcode := ⟨333⟩
 /-- `sext.w8.w16` -/
-def sextW8W16 : Opcode := ⟨330⟩
+def sextW8W16 : Opcode := ⟨334⟩
 /-- `zext.w8.w32` -/
-def zextW8W32 : Opcode := ⟨331⟩
+def zextW8W32 : Opcode := ⟨335⟩
 /-- `sext.w8.w32` -/
-def sextW8W32 : Opcode := ⟨332⟩
+def sextW8W32 : Opcode := ⟨336⟩
 /-- `zext.w8.w64` -/
-def zextW8W64 : Opcode := ⟨333⟩
+def zextW8W64 : Opcode := ⟨337⟩
 /-- `sext.w8.w64` -/
-def sextW8W64 : Opcode := ⟨334⟩
+def sextW8W64 : Opcode := ⟨338⟩
 /-- `zext.w8.w128` -/
-def zextW8W128 : Opcode := ⟨335⟩
+def zextW8W128 : Opcode := ⟨339⟩
 /-- `sext.w8.w128` -/
-def sextW8W128 : Opcode := ⟨336⟩
+def sextW8W128 : Opcode := ⟨340⟩
 /-- `zext.w16.w32` -/
-def zextW16W32 : Opcode := ⟨337⟩
+def zextW16W32 : Opcode := ⟨341⟩
 /-- `sext.w16.w32` -/
-def sextW16W32 : Opcode := ⟨338⟩
+def sextW16W32 : Opcode := ⟨342⟩
 /-- `zext.w16.w64` -/
-def zextW16W64 : Opcode := ⟨339⟩
+def zextW16W64 : Opcode := ⟨343⟩
 /-- `sext.w16.w64` -/
-def sextW16W64 : Opcode := ⟨340⟩
+def sextW16W64 : Opcode := ⟨344⟩
 /-- `zext.w16.w128` -/
-def zextW16W128 : Opcode := ⟨341⟩
+def zextW16W128 : Opcode := ⟨345⟩
 /-- `sext.w16.w128` -/
-def sextW16W128 : Opcode := ⟨342⟩
+def sextW16W128 : Opcode := ⟨346⟩
 /-- `zext.w32.w64` -/
-def zextW32W64 : Opcode := ⟨343⟩
+def zextW32W64 : Opcode := ⟨347⟩
 /-- `sext.w32.w64` -/
-def sextW32W64 : Opcode := ⟨344⟩
+def sextW32W64 : Opcode := ⟨348⟩
 /-- `zext.w32.w128` -/
-def zextW32W128 : Opcode := ⟨345⟩
+def zextW32W128 : Opcode := ⟨349⟩
 /-- `sext.w32.w128` -/
-def sextW32W128 : Opcode := ⟨346⟩
+def sextW32W128 : Opcode := ⟨350⟩
 /-- `zext.w64.w128` -/
-def zextW64W128 : Opcode := ⟨347⟩
+def zextW64W128 : Opcode := ⟨351⟩
 /-- `sext.w64.w128` -/
-def sextW64W128 : Opcode := ⟨348⟩
+def sextW64W128 : Opcode := ⟨352⟩
 /-- `trunc.w16.w8` -/
-def truncW16W8 : Opcode := ⟨349⟩
+def truncW16W8 : Opcode := ⟨353⟩
 /-- `trunc.w32.w8` -/
-def truncW32W8 : Opcode := ⟨350⟩
+def truncW32W8 : Opcode := ⟨354⟩
 /-- `trunc.w32.w16` -/
-def truncW32W16 : Opcode := ⟨351⟩
+def truncW32W16 : Opcode := ⟨355⟩
 /-- `trunc.w64.w8` -/
-def truncW64W8 : Opcode := ⟨352⟩
+def truncW64W8 : Opcode := ⟨356⟩
 /-- `trunc.w64.w16` -/
-def truncW64W16 : Opcode := ⟨353⟩
+def truncW64W16 : Opcode := ⟨357⟩
 /-- `trunc.w64.w32` -/
-def truncW64W32 : Opcode := ⟨354⟩
+def truncW64W32 : Opcode := ⟨358⟩
 /-- `trunc.w128.w8` -/
-def truncW128W8 : Opcode := ⟨355⟩
+def truncW128W8 : Opcode := ⟨359⟩
 /-- `trunc.w128.w16` -/
-def truncW128W16 : Opcode := ⟨356⟩
+def truncW128W16 : Opcode := ⟨360⟩
 /-- `trunc.w128.w32` -/
-def truncW128W32 : Opcode := ⟨357⟩
+def truncW128W32 : Opcode := ⟨361⟩
 /-- `trunc.w128.w64` -/
-def truncW128W64 : Opcode := ⟨358⟩
+def truncW128W64 : Opcode := ⟨362⟩
 /-- `cvt.f2i.sat.s.f32.w8` -/
-def cvtF2iSatSF32W8 : Opcode := ⟨359⟩
+def cvtF2iSatSF32W8 : Opcode := ⟨363⟩
 /-- `cvt.f2i.sat.s.f32.w16` -/
-def cvtF2iSatSF32W16 : Opcode := ⟨360⟩
+def cvtF2iSatSF32W16 : Opcode := ⟨364⟩
 /-- `cvt.f2i.sat.s.f32.w32` -/
-def cvtF2iSatSF32W32 : Opcode := ⟨361⟩
+def cvtF2iSatSF32W32 : Opcode := ⟨365⟩
 /-- `cvt.f2i.sat.s.f32.w64` -/
-def cvtF2iSatSF32W64 : Opcode := ⟨362⟩
+def cvtF2iSatSF32W64 : Opcode := ⟨366⟩
 /-- `cvt.f2i.sat.s.f32.w128` -/
-def cvtF2iSatSF32W128 : Opcode := ⟨363⟩
+def cvtF2iSatSF32W128 : Opcode := ⟨367⟩
 /-- `cvt.f2i.sat.s.f64.w8` -/
-def cvtF2iSatSF64W8 : Opcode := ⟨364⟩
+def cvtF2iSatSF64W8 : Opcode := ⟨368⟩
 /-- `cvt.f2i.sat.s.f64.w16` -/
-def cvtF2iSatSF64W16 : Opcode := ⟨365⟩
+def cvtF2iSatSF64W16 : Opcode := ⟨369⟩
 /-- `cvt.f2i.sat.s.f64.w32` -/
-def cvtF2iSatSF64W32 : Opcode := ⟨366⟩
+def cvtF2iSatSF64W32 : Opcode := ⟨370⟩
 /-- `cvt.f2i.sat.s.f64.w64` -/
-def cvtF2iSatSF64W64 : Opcode := ⟨367⟩
+def cvtF2iSatSF64W64 : Opcode := ⟨371⟩
 /-- `cvt.f2i.sat.s.f64.w128` -/
-def cvtF2iSatSF64W128 : Opcode := ⟨368⟩
+def cvtF2iSatSF64W128 : Opcode := ⟨372⟩
 /-- `cvt.f2i.sat.u.f32.w8` -/
-def cvtF2iSatUF32W8 : Opcode := ⟨369⟩
+def cvtF2iSatUF32W8 : Opcode := ⟨373⟩
 /-- `cvt.f2i.sat.u.f32.w16` -/
-def cvtF2iSatUF32W16 : Opcode := ⟨370⟩
+def cvtF2iSatUF32W16 : Opcode := ⟨374⟩
 /-- `cvt.f2i.sat.u.f32.w32` -/
-def cvtF2iSatUF32W32 : Opcode := ⟨371⟩
+def cvtF2iSatUF32W32 : Opcode := ⟨375⟩
 /-- `cvt.f2i.sat.u.f32.w64` -/
-def cvtF2iSatUF32W64 : Opcode := ⟨372⟩
+def cvtF2iSatUF32W64 : Opcode := ⟨376⟩
 /-- `cvt.f2i.sat.u.f32.w128` -/
-def cvtF2iSatUF32W128 : Opcode := ⟨373⟩
+def cvtF2iSatUF32W128 : Opcode := ⟨377⟩
 /-- `cvt.f2i.sat.u.f64.w8` -/
-def cvtF2iSatUF64W8 : Opcode := ⟨374⟩
+def cvtF2iSatUF64W8 : Opcode := ⟨378⟩
 /-- `cvt.f2i.sat.u.f64.w16` -/
-def cvtF2iSatUF64W16 : Opcode := ⟨375⟩
+def cvtF2iSatUF64W16 : Opcode := ⟨379⟩
 /-- `cvt.f2i.sat.u.f64.w32` -/
-def cvtF2iSatUF64W32 : Opcode := ⟨376⟩
+def cvtF2iSatUF64W32 : Opcode := ⟨380⟩
 /-- `cvt.f2i.sat.u.f64.w64` -/
-def cvtF2iSatUF64W64 : Opcode := ⟨377⟩
+def cvtF2iSatUF64W64 : Opcode := ⟨381⟩
 /-- `cvt.f2i.sat.u.f64.w128` -/
-def cvtF2iSatUF64W128 : Opcode := ⟨378⟩
+def cvtF2iSatUF64W128 : Opcode := ⟨382⟩
 /-- `cvt.i2f.s.w8.f32` -/
-def cvtI2fSW8F32 : Opcode := ⟨379⟩
+def cvtI2fSW8F32 : Opcode := ⟨383⟩
 /-- `cvt.i2f.s.w8.f64` -/
-def cvtI2fSW8F64 : Opcode := ⟨380⟩
+def cvtI2fSW8F64 : Opcode := ⟨384⟩
 /-- `cvt.i2f.s.w16.f32` -/
-def cvtI2fSW16F32 : Opcode := ⟨381⟩
+def cvtI2fSW16F32 : Opcode := ⟨385⟩
 /-- `cvt.i2f.s.w16.f64` -/
-def cvtI2fSW16F64 : Opcode := ⟨382⟩
+def cvtI2fSW16F64 : Opcode := ⟨386⟩
 /-- `cvt.i2f.s.w32.f32` -/
-def cvtI2fSW32F32 : Opcode := ⟨383⟩
+def cvtI2fSW32F32 : Opcode := ⟨387⟩
 /-- `cvt.i2f.s.w32.f64` -/
-def cvtI2fSW32F64 : Opcode := ⟨384⟩
+def cvtI2fSW32F64 : Opcode := ⟨388⟩
 /-- `cvt.i2f.s.w64.f32` -/
-def cvtI2fSW64F32 : Opcode := ⟨385⟩
+def cvtI2fSW64F32 : Opcode := ⟨389⟩
 /-- `cvt.i2f.s.w64.f64` -/
-def cvtI2fSW64F64 : Opcode := ⟨386⟩
+def cvtI2fSW64F64 : Opcode := ⟨390⟩
 /-- `cvt.i2f.s.w128.f32` -/
-def cvtI2fSW128F32 : Opcode := ⟨387⟩
+def cvtI2fSW128F32 : Opcode := ⟨391⟩
 /-- `cvt.i2f.s.w128.f64` -/
-def cvtI2fSW128F64 : Opcode := ⟨388⟩
+def cvtI2fSW128F64 : Opcode := ⟨392⟩
 /-- `cvt.i2f.u.w8.f32` -/
-def cvtI2fUW8F32 : Opcode := ⟨389⟩
+def cvtI2fUW8F32 : Opcode := ⟨393⟩
 /-- `cvt.i2f.u.w8.f64` -/
-def cvtI2fUW8F64 : Opcode := ⟨390⟩
+def cvtI2fUW8F64 : Opcode := ⟨394⟩
 /-- `cvt.i2f.u.w16.f32` -/
-def cvtI2fUW16F32 : Opcode := ⟨391⟩
+def cvtI2fUW16F32 : Opcode := ⟨395⟩
 /-- `cvt.i2f.u.w16.f64` -/
-def cvtI2fUW16F64 : Opcode := ⟨392⟩
+def cvtI2fUW16F64 : Opcode := ⟨396⟩
 /-- `cvt.i2f.u.w32.f32` -/
-def cvtI2fUW32F32 : Opcode := ⟨393⟩
+def cvtI2fUW32F32 : Opcode := ⟨397⟩
 /-- `cvt.i2f.u.w32.f64` -/
-def cvtI2fUW32F64 : Opcode := ⟨394⟩
+def cvtI2fUW32F64 : Opcode := ⟨398⟩
 /-- `cvt.i2f.u.w64.f32` -/
-def cvtI2fUW64F32 : Opcode := ⟨395⟩
+def cvtI2fUW64F32 : Opcode := ⟨399⟩
 /-- `cvt.i2f.u.w64.f64` -/
-def cvtI2fUW64F64 : Opcode := ⟨396⟩
+def cvtI2fUW64F64 : Opcode := ⟨400⟩
 /-- `cvt.i2f.u.w128.f32` -/
-def cvtI2fUW128F32 : Opcode := ⟨397⟩
+def cvtI2fUW128F32 : Opcode := ⟨401⟩
 /-- `cvt.i2f.u.w128.f64` -/
-def cvtI2fUW128F64 : Opcode := ⟨398⟩
+def cvtI2fUW128F64 : Opcode := ⟨402⟩
 /-- `cvt.f2f.f32.f64` -/
-def cvtF2fF32F64 : Opcode := ⟨399⟩
+def cvtF2fF32F64 : Opcode := ⟨403⟩
 /-- `cvt.f2f.f64.f32` -/
-def cvtF2fF64F32 : Opcode := ⟨400⟩
+def cvtF2fF64F32 : Opcode := ⟨404⟩
 /-- `atomic.load.w8.relaxed` -/
-def atomicLoadW8Relaxed : Opcode := ⟨401⟩
+def atomicLoadW8Relaxed : Opcode := ⟨405⟩
 /-- `atomic.load.w8.acquire` -/
-def atomicLoadW8Acquire : Opcode := ⟨402⟩
+def atomicLoadW8Acquire : Opcode := ⟨406⟩
 /-- `atomic.load.w8.seqcst` -/
-def atomicLoadW8Seqcst : Opcode := ⟨403⟩
+def atomicLoadW8Seqcst : Opcode := ⟨407⟩
 /-- `atomic.store.w8.relaxed` -/
-def atomicStoreW8Relaxed : Opcode := ⟨404⟩
+def atomicStoreW8Relaxed : Opcode := ⟨408⟩
 /-- `atomic.store.w8.release` -/
-def atomicStoreW8Release : Opcode := ⟨405⟩
+def atomicStoreW8Release : Opcode := ⟨409⟩
 /-- `atomic.store.w8.seqcst` -/
-def atomicStoreW8Seqcst : Opcode := ⟨406⟩
+def atomicStoreW8Seqcst : Opcode := ⟨410⟩
 /-- `atomic.load.w16.relaxed` -/
-def atomicLoadW16Relaxed : Opcode := ⟨407⟩
+def atomicLoadW16Relaxed : Opcode := ⟨411⟩
 /-- `atomic.load.w16.acquire` -/
-def atomicLoadW16Acquire : Opcode := ⟨408⟩
+def atomicLoadW16Acquire : Opcode := ⟨412⟩
 /-- `atomic.load.w16.seqcst` -/
-def atomicLoadW16Seqcst : Opcode := ⟨409⟩
+def atomicLoadW16Seqcst : Opcode := ⟨413⟩
 /-- `atomic.store.w16.relaxed` -/
-def atomicStoreW16Relaxed : Opcode := ⟨410⟩
+def atomicStoreW16Relaxed : Opcode := ⟨414⟩
 /-- `atomic.store.w16.release` -/
-def atomicStoreW16Release : Opcode := ⟨411⟩
+def atomicStoreW16Release : Opcode := ⟨415⟩
 /-- `atomic.store.w16.seqcst` -/
-def atomicStoreW16Seqcst : Opcode := ⟨412⟩
+def atomicStoreW16Seqcst : Opcode := ⟨416⟩
 /-- `atomic.load.w32.relaxed` -/
-def atomicLoadW32Relaxed : Opcode := ⟨413⟩
+def atomicLoadW32Relaxed : Opcode := ⟨417⟩
 /-- `atomic.load.w32.acquire` -/
-def atomicLoadW32Acquire : Opcode := ⟨414⟩
+def atomicLoadW32Acquire : Opcode := ⟨418⟩
 /-- `atomic.load.w32.seqcst` -/
-def atomicLoadW32Seqcst : Opcode := ⟨415⟩
+def atomicLoadW32Seqcst : Opcode := ⟨419⟩
 /-- `atomic.store.w32.relaxed` -/
-def atomicStoreW32Relaxed : Opcode := ⟨416⟩
+def atomicStoreW32Relaxed : Opcode := ⟨420⟩
 /-- `atomic.store.w32.release` -/
-def atomicStoreW32Release : Opcode := ⟨417⟩
+def atomicStoreW32Release : Opcode := ⟨421⟩
 /-- `atomic.store.w32.seqcst` -/
-def atomicStoreW32Seqcst : Opcode := ⟨418⟩
+def atomicStoreW32Seqcst : Opcode := ⟨422⟩
 /-- `atomic.load.w64.relaxed` -/
-def atomicLoadW64Relaxed : Opcode := ⟨419⟩
+def atomicLoadW64Relaxed : Opcode := ⟨423⟩
 /-- `atomic.load.w64.acquire` -/
-def atomicLoadW64Acquire : Opcode := ⟨420⟩
+def atomicLoadW64Acquire : Opcode := ⟨424⟩
 /-- `atomic.load.w64.seqcst` -/
-def atomicLoadW64Seqcst : Opcode := ⟨421⟩
+def atomicLoadW64Seqcst : Opcode := ⟨425⟩
 /-- `atomic.store.w64.relaxed` -/
-def atomicStoreW64Relaxed : Opcode := ⟨422⟩
+def atomicStoreW64Relaxed : Opcode := ⟨426⟩
 /-- `atomic.store.w64.release` -/
-def atomicStoreW64Release : Opcode := ⟨423⟩
+def atomicStoreW64Release : Opcode := ⟨427⟩
 /-- `atomic.store.w64.seqcst` -/
-def atomicStoreW64Seqcst : Opcode := ⟨424⟩
+def atomicStoreW64Seqcst : Opcode := ⟨428⟩
 /-- `atomic.xchg.w8.relaxed` -/
-def atomicXchgW8Relaxed : Opcode := ⟨425⟩
+def atomicXchgW8Relaxed : Opcode := ⟨429⟩
 /-- `atomic.xchg.w8.acquire` -/
-def atomicXchgW8Acquire : Opcode := ⟨426⟩
+def atomicXchgW8Acquire : Opcode := ⟨430⟩
 /-- `atomic.xchg.w8.release` -/
-def atomicXchgW8Release : Opcode := ⟨427⟩
+def atomicXchgW8Release : Opcode := ⟨431⟩
 /-- `atomic.xchg.w8.acqrel` -/
-def atomicXchgW8Acqrel : Opcode := ⟨428⟩
+def atomicXchgW8Acqrel : Opcode := ⟨432⟩
 /-- `atomic.xchg.w8.seqcst` -/
-def atomicXchgW8Seqcst : Opcode := ⟨429⟩
+def atomicXchgW8Seqcst : Opcode := ⟨433⟩
 /-- `atomic.add.w8.relaxed` -/
-def atomicAddW8Relaxed : Opcode := ⟨430⟩
+def atomicAddW8Relaxed : Opcode := ⟨434⟩
 /-- `atomic.add.w8.acquire` -/
-def atomicAddW8Acquire : Opcode := ⟨431⟩
+def atomicAddW8Acquire : Opcode := ⟨435⟩
 /-- `atomic.add.w8.release` -/
-def atomicAddW8Release : Opcode := ⟨432⟩
+def atomicAddW8Release : Opcode := ⟨436⟩
 /-- `atomic.add.w8.acqrel` -/
-def atomicAddW8Acqrel : Opcode := ⟨433⟩
+def atomicAddW8Acqrel : Opcode := ⟨437⟩
 /-- `atomic.add.w8.seqcst` -/
-def atomicAddW8Seqcst : Opcode := ⟨434⟩
+def atomicAddW8Seqcst : Opcode := ⟨438⟩
 /-- `atomic.sub.w8.relaxed` -/
-def atomicSubW8Relaxed : Opcode := ⟨435⟩
+def atomicSubW8Relaxed : Opcode := ⟨439⟩
 /-- `atomic.sub.w8.acquire` -/
-def atomicSubW8Acquire : Opcode := ⟨436⟩
+def atomicSubW8Acquire : Opcode := ⟨440⟩
 /-- `atomic.sub.w8.release` -/
-def atomicSubW8Release : Opcode := ⟨437⟩
+def atomicSubW8Release : Opcode := ⟨441⟩
 /-- `atomic.sub.w8.acqrel` -/
-def atomicSubW8Acqrel : Opcode := ⟨438⟩
+def atomicSubW8Acqrel : Opcode := ⟨442⟩
 /-- `atomic.sub.w8.seqcst` -/
-def atomicSubW8Seqcst : Opcode := ⟨439⟩
+def atomicSubW8Seqcst : Opcode := ⟨443⟩
 /-- `atomic.and.w8.relaxed` -/
-def atomicAndW8Relaxed : Opcode := ⟨440⟩
+def atomicAndW8Relaxed : Opcode := ⟨444⟩
 /-- `atomic.and.w8.acquire` -/
-def atomicAndW8Acquire : Opcode := ⟨441⟩
+def atomicAndW8Acquire : Opcode := ⟨445⟩
 /-- `atomic.and.w8.release` -/
-def atomicAndW8Release : Opcode := ⟨442⟩
+def atomicAndW8Release : Opcode := ⟨446⟩
 /-- `atomic.and.w8.acqrel` -/
-def atomicAndW8Acqrel : Opcode := ⟨443⟩
+def atomicAndW8Acqrel : Opcode := ⟨447⟩
 /-- `atomic.and.w8.seqcst` -/
-def atomicAndW8Seqcst : Opcode := ⟨444⟩
+def atomicAndW8Seqcst : Opcode := ⟨448⟩
 /-- `atomic.or.w8.relaxed` -/
-def atomicOrW8Relaxed : Opcode := ⟨445⟩
+def atomicOrW8Relaxed : Opcode := ⟨449⟩
 /-- `atomic.or.w8.acquire` -/
-def atomicOrW8Acquire : Opcode := ⟨446⟩
+def atomicOrW8Acquire : Opcode := ⟨450⟩
 /-- `atomic.or.w8.release` -/
-def atomicOrW8Release : Opcode := ⟨447⟩
+def atomicOrW8Release : Opcode := ⟨451⟩
 /-- `atomic.or.w8.acqrel` -/
-def atomicOrW8Acqrel : Opcode := ⟨448⟩
+def atomicOrW8Acqrel : Opcode := ⟨452⟩
 /-- `atomic.or.w8.seqcst` -/
-def atomicOrW8Seqcst : Opcode := ⟨449⟩
+def atomicOrW8Seqcst : Opcode := ⟨453⟩
 /-- `atomic.xor.w8.relaxed` -/
-def atomicXorW8Relaxed : Opcode := ⟨450⟩
+def atomicXorW8Relaxed : Opcode := ⟨454⟩
 /-- `atomic.xor.w8.acquire` -/
-def atomicXorW8Acquire : Opcode := ⟨451⟩
+def atomicXorW8Acquire : Opcode := ⟨455⟩
 /-- `atomic.xor.w8.release` -/
-def atomicXorW8Release : Opcode := ⟨452⟩
+def atomicXorW8Release : Opcode := ⟨456⟩
 /-- `atomic.xor.w8.acqrel` -/
-def atomicXorW8Acqrel : Opcode := ⟨453⟩
+def atomicXorW8Acqrel : Opcode := ⟨457⟩
 /-- `atomic.xor.w8.seqcst` -/
-def atomicXorW8Seqcst : Opcode := ⟨454⟩
+def atomicXorW8Seqcst : Opcode := ⟨458⟩
 /-- `atomic.nand.w8.relaxed` -/
-def atomicNandW8Relaxed : Opcode := ⟨455⟩
+def atomicNandW8Relaxed : Opcode := ⟨459⟩
 /-- `atomic.nand.w8.acquire` -/
-def atomicNandW8Acquire : Opcode := ⟨456⟩
+def atomicNandW8Acquire : Opcode := ⟨460⟩
 /-- `atomic.nand.w8.release` -/
-def atomicNandW8Release : Opcode := ⟨457⟩
+def atomicNandW8Release : Opcode := ⟨461⟩
 /-- `atomic.nand.w8.acqrel` -/
-def atomicNandW8Acqrel : Opcode := ⟨458⟩
+def atomicNandW8Acqrel : Opcode := ⟨462⟩
 /-- `atomic.nand.w8.seqcst` -/
-def atomicNandW8Seqcst : Opcode := ⟨459⟩
+def atomicNandW8Seqcst : Opcode := ⟨463⟩
 /-- `atomic.min.w8.relaxed` -/
-def atomicMinW8Relaxed : Opcode := ⟨460⟩
+def atomicMinW8Relaxed : Opcode := ⟨464⟩
 /-- `atomic.min.w8.acquire` -/
-def atomicMinW8Acquire : Opcode := ⟨461⟩
+def atomicMinW8Acquire : Opcode := ⟨465⟩
 /-- `atomic.min.w8.release` -/
-def atomicMinW8Release : Opcode := ⟨462⟩
+def atomicMinW8Release : Opcode := ⟨466⟩
 /-- `atomic.min.w8.acqrel` -/
-def atomicMinW8Acqrel : Opcode := ⟨463⟩
+def atomicMinW8Acqrel : Opcode := ⟨467⟩
 /-- `atomic.min.w8.seqcst` -/
-def atomicMinW8Seqcst : Opcode := ⟨464⟩
+def atomicMinW8Seqcst : Opcode := ⟨468⟩
 /-- `atomic.max.w8.relaxed` -/
-def atomicMaxW8Relaxed : Opcode := ⟨465⟩
+def atomicMaxW8Relaxed : Opcode := ⟨469⟩
 /-- `atomic.max.w8.acquire` -/
-def atomicMaxW8Acquire : Opcode := ⟨466⟩
+def atomicMaxW8Acquire : Opcode := ⟨470⟩
 /-- `atomic.max.w8.release` -/
-def atomicMaxW8Release : Opcode := ⟨467⟩
+def atomicMaxW8Release : Opcode := ⟨471⟩
 /-- `atomic.max.w8.acqrel` -/
-def atomicMaxW8Acqrel : Opcode := ⟨468⟩
+def atomicMaxW8Acqrel : Opcode := ⟨472⟩
 /-- `atomic.max.w8.seqcst` -/
-def atomicMaxW8Seqcst : Opcode := ⟨469⟩
+def atomicMaxW8Seqcst : Opcode := ⟨473⟩
 /-- `atomic.umin.w8.relaxed` -/
-def atomicUminW8Relaxed : Opcode := ⟨470⟩
+def atomicUminW8Relaxed : Opcode := ⟨474⟩
 /-- `atomic.umin.w8.acquire` -/
-def atomicUminW8Acquire : Opcode := ⟨471⟩
+def atomicUminW8Acquire : Opcode := ⟨475⟩
 /-- `atomic.umin.w8.release` -/
-def atomicUminW8Release : Opcode := ⟨472⟩
+def atomicUminW8Release : Opcode := ⟨476⟩
 /-- `atomic.umin.w8.acqrel` -/
-def atomicUminW8Acqrel : Opcode := ⟨473⟩
+def atomicUminW8Acqrel : Opcode := ⟨477⟩
 /-- `atomic.umin.w8.seqcst` -/
-def atomicUminW8Seqcst : Opcode := ⟨474⟩
+def atomicUminW8Seqcst : Opcode := ⟨478⟩
 /-- `atomic.umax.w8.relaxed` -/
-def atomicUmaxW8Relaxed : Opcode := ⟨475⟩
+def atomicUmaxW8Relaxed : Opcode := ⟨479⟩
 /-- `atomic.umax.w8.acquire` -/
-def atomicUmaxW8Acquire : Opcode := ⟨476⟩
+def atomicUmaxW8Acquire : Opcode := ⟨480⟩
 /-- `atomic.umax.w8.release` -/
-def atomicUmaxW8Release : Opcode := ⟨477⟩
+def atomicUmaxW8Release : Opcode := ⟨481⟩
 /-- `atomic.umax.w8.acqrel` -/
-def atomicUmaxW8Acqrel : Opcode := ⟨478⟩
+def atomicUmaxW8Acqrel : Opcode := ⟨482⟩
 /-- `atomic.umax.w8.seqcst` -/
-def atomicUmaxW8Seqcst : Opcode := ⟨479⟩
+def atomicUmaxW8Seqcst : Opcode := ⟨483⟩
 /-- `atomic.xchg.w16.relaxed` -/
-def atomicXchgW16Relaxed : Opcode := ⟨480⟩
+def atomicXchgW16Relaxed : Opcode := ⟨484⟩
 /-- `atomic.xchg.w16.acquire` -/
-def atomicXchgW16Acquire : Opcode := ⟨481⟩
+def atomicXchgW16Acquire : Opcode := ⟨485⟩
 /-- `atomic.xchg.w16.release` -/
-def atomicXchgW16Release : Opcode := ⟨482⟩
+def atomicXchgW16Release : Opcode := ⟨486⟩
 /-- `atomic.xchg.w16.acqrel` -/
-def atomicXchgW16Acqrel : Opcode := ⟨483⟩
+def atomicXchgW16Acqrel : Opcode := ⟨487⟩
 /-- `atomic.xchg.w16.seqcst` -/
-def atomicXchgW16Seqcst : Opcode := ⟨484⟩
+def atomicXchgW16Seqcst : Opcode := ⟨488⟩
 /-- `atomic.add.w16.relaxed` -/
-def atomicAddW16Relaxed : Opcode := ⟨485⟩
+def atomicAddW16Relaxed : Opcode := ⟨489⟩
 /-- `atomic.add.w16.acquire` -/
-def atomicAddW16Acquire : Opcode := ⟨486⟩
+def atomicAddW16Acquire : Opcode := ⟨490⟩
 /-- `atomic.add.w16.release` -/
-def atomicAddW16Release : Opcode := ⟨487⟩
+def atomicAddW16Release : Opcode := ⟨491⟩
 /-- `atomic.add.w16.acqrel` -/
-def atomicAddW16Acqrel : Opcode := ⟨488⟩
+def atomicAddW16Acqrel : Opcode := ⟨492⟩
 /-- `atomic.add.w16.seqcst` -/
-def atomicAddW16Seqcst : Opcode := ⟨489⟩
+def atomicAddW16Seqcst : Opcode := ⟨493⟩
 /-- `atomic.sub.w16.relaxed` -/
-def atomicSubW16Relaxed : Opcode := ⟨490⟩
+def atomicSubW16Relaxed : Opcode := ⟨494⟩
 /-- `atomic.sub.w16.acquire` -/
-def atomicSubW16Acquire : Opcode := ⟨491⟩
+def atomicSubW16Acquire : Opcode := ⟨495⟩
 /-- `atomic.sub.w16.release` -/
-def atomicSubW16Release : Opcode := ⟨492⟩
+def atomicSubW16Release : Opcode := ⟨496⟩
 /-- `atomic.sub.w16.acqrel` -/
-def atomicSubW16Acqrel : Opcode := ⟨493⟩
+def atomicSubW16Acqrel : Opcode := ⟨497⟩
 /-- `atomic.sub.w16.seqcst` -/
-def atomicSubW16Seqcst : Opcode := ⟨494⟩
+def atomicSubW16Seqcst : Opcode := ⟨498⟩
 /-- `atomic.and.w16.relaxed` -/
-def atomicAndW16Relaxed : Opcode := ⟨495⟩
+def atomicAndW16Relaxed : Opcode := ⟨499⟩
 /-- `atomic.and.w16.acquire` -/
-def atomicAndW16Acquire : Opcode := ⟨496⟩
+def atomicAndW16Acquire : Opcode := ⟨500⟩
 /-- `atomic.and.w16.release` -/
-def atomicAndW16Release : Opcode := ⟨497⟩
+def atomicAndW16Release : Opcode := ⟨501⟩
 /-- `atomic.and.w16.acqrel` -/
-def atomicAndW16Acqrel : Opcode := ⟨498⟩
+def atomicAndW16Acqrel : Opcode := ⟨502⟩
 /-- `atomic.and.w16.seqcst` -/
-def atomicAndW16Seqcst : Opcode := ⟨499⟩
+def atomicAndW16Seqcst : Opcode := ⟨503⟩
 /-- `atomic.or.w16.relaxed` -/
-def atomicOrW16Relaxed : Opcode := ⟨500⟩
+def atomicOrW16Relaxed : Opcode := ⟨504⟩
 /-- `atomic.or.w16.acquire` -/
-def atomicOrW16Acquire : Opcode := ⟨501⟩
+def atomicOrW16Acquire : Opcode := ⟨505⟩
 /-- `atomic.or.w16.release` -/
-def atomicOrW16Release : Opcode := ⟨502⟩
+def atomicOrW16Release : Opcode := ⟨506⟩
 /-- `atomic.or.w16.acqrel` -/
-def atomicOrW16Acqrel : Opcode := ⟨503⟩
+def atomicOrW16Acqrel : Opcode := ⟨507⟩
 /-- `atomic.or.w16.seqcst` -/
-def atomicOrW16Seqcst : Opcode := ⟨504⟩
+def atomicOrW16Seqcst : Opcode := ⟨508⟩
 /-- `atomic.xor.w16.relaxed` -/
-def atomicXorW16Relaxed : Opcode := ⟨505⟩
+def atomicXorW16Relaxed : Opcode := ⟨509⟩
 /-- `atomic.xor.w16.acquire` -/
-def atomicXorW16Acquire : Opcode := ⟨506⟩
+def atomicXorW16Acquire : Opcode := ⟨510⟩
 /-- `atomic.xor.w16.release` -/
-def atomicXorW16Release : Opcode := ⟨507⟩
+def atomicXorW16Release : Opcode := ⟨511⟩
 /-- `atomic.xor.w16.acqrel` -/
-def atomicXorW16Acqrel : Opcode := ⟨508⟩
+def atomicXorW16Acqrel : Opcode := ⟨512⟩
 /-- `atomic.xor.w16.seqcst` -/
-def atomicXorW16Seqcst : Opcode := ⟨509⟩
+def atomicXorW16Seqcst : Opcode := ⟨513⟩
 /-- `atomic.nand.w16.relaxed` -/
-def atomicNandW16Relaxed : Opcode := ⟨510⟩
+def atomicNandW16Relaxed : Opcode := ⟨514⟩
 /-- `atomic.nand.w16.acquire` -/
-def atomicNandW16Acquire : Opcode := ⟨511⟩
+def atomicNandW16Acquire : Opcode := ⟨515⟩
 /-- `atomic.nand.w16.release` -/
-def atomicNandW16Release : Opcode := ⟨512⟩
+def atomicNandW16Release : Opcode := ⟨516⟩
 /-- `atomic.nand.w16.acqrel` -/
-def atomicNandW16Acqrel : Opcode := ⟨513⟩
+def atomicNandW16Acqrel : Opcode := ⟨517⟩
 /-- `atomic.nand.w16.seqcst` -/
-def atomicNandW16Seqcst : Opcode := ⟨514⟩
+def atomicNandW16Seqcst : Opcode := ⟨518⟩
 /-- `atomic.min.w16.relaxed` -/
-def atomicMinW16Relaxed : Opcode := ⟨515⟩
+def atomicMinW16Relaxed : Opcode := ⟨519⟩
 /-- `atomic.min.w16.acquire` -/
-def atomicMinW16Acquire : Opcode := ⟨516⟩
+def atomicMinW16Acquire : Opcode := ⟨520⟩
 /-- `atomic.min.w16.release` -/
-def atomicMinW16Release : Opcode := ⟨517⟩
+def atomicMinW16Release : Opcode := ⟨521⟩
 /-- `atomic.min.w16.acqrel` -/
-def atomicMinW16Acqrel : Opcode := ⟨518⟩
+def atomicMinW16Acqrel : Opcode := ⟨522⟩
 /-- `atomic.min.w16.seqcst` -/
-def atomicMinW16Seqcst : Opcode := ⟨519⟩
+def atomicMinW16Seqcst : Opcode := ⟨523⟩
 /-- `atomic.max.w16.relaxed` -/
-def atomicMaxW16Relaxed : Opcode := ⟨520⟩
+def atomicMaxW16Relaxed : Opcode := ⟨524⟩
 /-- `atomic.max.w16.acquire` -/
-def atomicMaxW16Acquire : Opcode := ⟨521⟩
+def atomicMaxW16Acquire : Opcode := ⟨525⟩
 /-- `atomic.max.w16.release` -/
-def atomicMaxW16Release : Opcode := ⟨522⟩
+def atomicMaxW16Release : Opcode := ⟨526⟩
 /-- `atomic.max.w16.acqrel` -/
-def atomicMaxW16Acqrel : Opcode := ⟨523⟩
+def atomicMaxW16Acqrel : Opcode := ⟨527⟩
 /-- `atomic.max.w16.seqcst` -/
-def atomicMaxW16Seqcst : Opcode := ⟨524⟩
+def atomicMaxW16Seqcst : Opcode := ⟨528⟩
 /-- `atomic.umin.w16.relaxed` -/
-def atomicUminW16Relaxed : Opcode := ⟨525⟩
+def atomicUminW16Relaxed : Opcode := ⟨529⟩
 /-- `atomic.umin.w16.acquire` -/
-def atomicUminW16Acquire : Opcode := ⟨526⟩
+def atomicUminW16Acquire : Opcode := ⟨530⟩
 /-- `atomic.umin.w16.release` -/
-def atomicUminW16Release : Opcode := ⟨527⟩
+def atomicUminW16Release : Opcode := ⟨531⟩
 /-- `atomic.umin.w16.acqrel` -/
-def atomicUminW16Acqrel : Opcode := ⟨528⟩
+def atomicUminW16Acqrel : Opcode := ⟨532⟩
 /-- `atomic.umin.w16.seqcst` -/
-def atomicUminW16Seqcst : Opcode := ⟨529⟩
+def atomicUminW16Seqcst : Opcode := ⟨533⟩
 /-- `atomic.umax.w16.relaxed` -/
-def atomicUmaxW16Relaxed : Opcode := ⟨530⟩
+def atomicUmaxW16Relaxed : Opcode := ⟨534⟩
 /-- `atomic.umax.w16.acquire` -/
-def atomicUmaxW16Acquire : Opcode := ⟨531⟩
+def atomicUmaxW16Acquire : Opcode := ⟨535⟩
 /-- `atomic.umax.w16.release` -/
-def atomicUmaxW16Release : Opcode := ⟨532⟩
+def atomicUmaxW16Release : Opcode := ⟨536⟩
 /-- `atomic.umax.w16.acqrel` -/
-def atomicUmaxW16Acqrel : Opcode := ⟨533⟩
+def atomicUmaxW16Acqrel : Opcode := ⟨537⟩
 /-- `atomic.umax.w16.seqcst` -/
-def atomicUmaxW16Seqcst : Opcode := ⟨534⟩
+def atomicUmaxW16Seqcst : Opcode := ⟨538⟩
 /-- `atomic.xchg.w32.relaxed` -/
-def atomicXchgW32Relaxed : Opcode := ⟨535⟩
+def atomicXchgW32Relaxed : Opcode := ⟨539⟩
 /-- `atomic.xchg.w32.acquire` -/
-def atomicXchgW32Acquire : Opcode := ⟨536⟩
+def atomicXchgW32Acquire : Opcode := ⟨540⟩
 /-- `atomic.xchg.w32.release` -/
-def atomicXchgW32Release : Opcode := ⟨537⟩
+def atomicXchgW32Release : Opcode := ⟨541⟩
 /-- `atomic.xchg.w32.acqrel` -/
-def atomicXchgW32Acqrel : Opcode := ⟨538⟩
+def atomicXchgW32Acqrel : Opcode := ⟨542⟩
 /-- `atomic.xchg.w32.seqcst` -/
-def atomicXchgW32Seqcst : Opcode := ⟨539⟩
+def atomicXchgW32Seqcst : Opcode := ⟨543⟩
 /-- `atomic.add.w32.relaxed` -/
-def atomicAddW32Relaxed : Opcode := ⟨540⟩
+def atomicAddW32Relaxed : Opcode := ⟨544⟩
 /-- `atomic.add.w32.acquire` -/
-def atomicAddW32Acquire : Opcode := ⟨541⟩
+def atomicAddW32Acquire : Opcode := ⟨545⟩
 /-- `atomic.add.w32.release` -/
-def atomicAddW32Release : Opcode := ⟨542⟩
+def atomicAddW32Release : Opcode := ⟨546⟩
 /-- `atomic.add.w32.acqrel` -/
-def atomicAddW32Acqrel : Opcode := ⟨543⟩
+def atomicAddW32Acqrel : Opcode := ⟨547⟩
 /-- `atomic.add.w32.seqcst` -/
-def atomicAddW32Seqcst : Opcode := ⟨544⟩
+def atomicAddW32Seqcst : Opcode := ⟨548⟩
 /-- `atomic.sub.w32.relaxed` -/
-def atomicSubW32Relaxed : Opcode := ⟨545⟩
+def atomicSubW32Relaxed : Opcode := ⟨549⟩
 /-- `atomic.sub.w32.acquire` -/
-def atomicSubW32Acquire : Opcode := ⟨546⟩
+def atomicSubW32Acquire : Opcode := ⟨550⟩
 /-- `atomic.sub.w32.release` -/
-def atomicSubW32Release : Opcode := ⟨547⟩
+def atomicSubW32Release : Opcode := ⟨551⟩
 /-- `atomic.sub.w32.acqrel` -/
-def atomicSubW32Acqrel : Opcode := ⟨548⟩
+def atomicSubW32Acqrel : Opcode := ⟨552⟩
 /-- `atomic.sub.w32.seqcst` -/
-def atomicSubW32Seqcst : Opcode := ⟨549⟩
+def atomicSubW32Seqcst : Opcode := ⟨553⟩
 /-- `atomic.and.w32.relaxed` -/
-def atomicAndW32Relaxed : Opcode := ⟨550⟩
+def atomicAndW32Relaxed : Opcode := ⟨554⟩
 /-- `atomic.and.w32.acquire` -/
-def atomicAndW32Acquire : Opcode := ⟨551⟩
+def atomicAndW32Acquire : Opcode := ⟨555⟩
 /-- `atomic.and.w32.release` -/
-def atomicAndW32Release : Opcode := ⟨552⟩
+def atomicAndW32Release : Opcode := ⟨556⟩
 /-- `atomic.and.w32.acqrel` -/
-def atomicAndW32Acqrel : Opcode := ⟨553⟩
+def atomicAndW32Acqrel : Opcode := ⟨557⟩
 /-- `atomic.and.w32.seqcst` -/
-def atomicAndW32Seqcst : Opcode := ⟨554⟩
+def atomicAndW32Seqcst : Opcode := ⟨558⟩
 /-- `atomic.or.w32.relaxed` -/
-def atomicOrW32Relaxed : Opcode := ⟨555⟩
+def atomicOrW32Relaxed : Opcode := ⟨559⟩
 /-- `atomic.or.w32.acquire` -/
-def atomicOrW32Acquire : Opcode := ⟨556⟩
+def atomicOrW32Acquire : Opcode := ⟨560⟩
 /-- `atomic.or.w32.release` -/
-def atomicOrW32Release : Opcode := ⟨557⟩
+def atomicOrW32Release : Opcode := ⟨561⟩
 /-- `atomic.or.w32.acqrel` -/
-def atomicOrW32Acqrel : Opcode := ⟨558⟩
+def atomicOrW32Acqrel : Opcode := ⟨562⟩
 /-- `atomic.or.w32.seqcst` -/
-def atomicOrW32Seqcst : Opcode := ⟨559⟩
+def atomicOrW32Seqcst : Opcode := ⟨563⟩
 /-- `atomic.xor.w32.relaxed` -/
-def atomicXorW32Relaxed : Opcode := ⟨560⟩
+def atomicXorW32Relaxed : Opcode := ⟨564⟩
 /-- `atomic.xor.w32.acquire` -/
-def atomicXorW32Acquire : Opcode := ⟨561⟩
+def atomicXorW32Acquire : Opcode := ⟨565⟩
 /-- `atomic.xor.w32.release` -/
-def atomicXorW32Release : Opcode := ⟨562⟩
+def atomicXorW32Release : Opcode := ⟨566⟩
 /-- `atomic.xor.w32.acqrel` -/
-def atomicXorW32Acqrel : Opcode := ⟨563⟩
+def atomicXorW32Acqrel : Opcode := ⟨567⟩
 /-- `atomic.xor.w32.seqcst` -/
-def atomicXorW32Seqcst : Opcode := ⟨564⟩
+def atomicXorW32Seqcst : Opcode := ⟨568⟩
 /-- `atomic.nand.w32.relaxed` -/
-def atomicNandW32Relaxed : Opcode := ⟨565⟩
+def atomicNandW32Relaxed : Opcode := ⟨569⟩
 /-- `atomic.nand.w32.acquire` -/
-def atomicNandW32Acquire : Opcode := ⟨566⟩
+def atomicNandW32Acquire : Opcode := ⟨570⟩
 /-- `atomic.nand.w32.release` -/
-def atomicNandW32Release : Opcode := ⟨567⟩
+def atomicNandW32Release : Opcode := ⟨571⟩
 /-- `atomic.nand.w32.acqrel` -/
-def atomicNandW32Acqrel : Opcode := ⟨568⟩
+def atomicNandW32Acqrel : Opcode := ⟨572⟩
 /-- `atomic.nand.w32.seqcst` -/
-def atomicNandW32Seqcst : Opcode := ⟨569⟩
+def atomicNandW32Seqcst : Opcode := ⟨573⟩
 /-- `atomic.min.w32.relaxed` -/
-def atomicMinW32Relaxed : Opcode := ⟨570⟩
+def atomicMinW32Relaxed : Opcode := ⟨574⟩
 /-- `atomic.min.w32.acquire` -/
-def atomicMinW32Acquire : Opcode := ⟨571⟩
+def atomicMinW32Acquire : Opcode := ⟨575⟩
 /-- `atomic.min.w32.release` -/
-def atomicMinW32Release : Opcode := ⟨572⟩
+def atomicMinW32Release : Opcode := ⟨576⟩
 /-- `atomic.min.w32.acqrel` -/
-def atomicMinW32Acqrel : Opcode := ⟨573⟩
+def atomicMinW32Acqrel : Opcode := ⟨577⟩
 /-- `atomic.min.w32.seqcst` -/
-def atomicMinW32Seqcst : Opcode := ⟨574⟩
+def atomicMinW32Seqcst : Opcode := ⟨578⟩
 /-- `atomic.max.w32.relaxed` -/
-def atomicMaxW32Relaxed : Opcode := ⟨575⟩
+def atomicMaxW32Relaxed : Opcode := ⟨579⟩
 /-- `atomic.max.w32.acquire` -/
-def atomicMaxW32Acquire : Opcode := ⟨576⟩
+def atomicMaxW32Acquire : Opcode := ⟨580⟩
 /-- `atomic.max.w32.release` -/
-def atomicMaxW32Release : Opcode := ⟨577⟩
+def atomicMaxW32Release : Opcode := ⟨581⟩
 /-- `atomic.max.w32.acqrel` -/
-def atomicMaxW32Acqrel : Opcode := ⟨578⟩
+def atomicMaxW32Acqrel : Opcode := ⟨582⟩
 /-- `atomic.max.w32.seqcst` -/
-def atomicMaxW32Seqcst : Opcode := ⟨579⟩
+def atomicMaxW32Seqcst : Opcode := ⟨583⟩
 /-- `atomic.umin.w32.relaxed` -/
-def atomicUminW32Relaxed : Opcode := ⟨580⟩
+def atomicUminW32Relaxed : Opcode := ⟨584⟩
 /-- `atomic.umin.w32.acquire` -/
-def atomicUminW32Acquire : Opcode := ⟨581⟩
+def atomicUminW32Acquire : Opcode := ⟨585⟩
 /-- `atomic.umin.w32.release` -/
-def atomicUminW32Release : Opcode := ⟨582⟩
+def atomicUminW32Release : Opcode := ⟨586⟩
 /-- `atomic.umin.w32.acqrel` -/
-def atomicUminW32Acqrel : Opcode := ⟨583⟩
+def atomicUminW32Acqrel : Opcode := ⟨587⟩
 /-- `atomic.umin.w32.seqcst` -/
-def atomicUminW32Seqcst : Opcode := ⟨584⟩
+def atomicUminW32Seqcst : Opcode := ⟨588⟩
 /-- `atomic.umax.w32.relaxed` -/
-def atomicUmaxW32Relaxed : Opcode := ⟨585⟩
+def atomicUmaxW32Relaxed : Opcode := ⟨589⟩
 /-- `atomic.umax.w32.acquire` -/
-def atomicUmaxW32Acquire : Opcode := ⟨586⟩
+def atomicUmaxW32Acquire : Opcode := ⟨590⟩
 /-- `atomic.umax.w32.release` -/
-def atomicUmaxW32Release : Opcode := ⟨587⟩
+def atomicUmaxW32Release : Opcode := ⟨591⟩
 /-- `atomic.umax.w32.acqrel` -/
-def atomicUmaxW32Acqrel : Opcode := ⟨588⟩
+def atomicUmaxW32Acqrel : Opcode := ⟨592⟩
 /-- `atomic.umax.w32.seqcst` -/
-def atomicUmaxW32Seqcst : Opcode := ⟨589⟩
+def atomicUmaxW32Seqcst : Opcode := ⟨593⟩
 /-- `atomic.xchg.w64.relaxed` -/
-def atomicXchgW64Relaxed : Opcode := ⟨590⟩
+def atomicXchgW64Relaxed : Opcode := ⟨594⟩
 /-- `atomic.xchg.w64.acquire` -/
-def atomicXchgW64Acquire : Opcode := ⟨591⟩
+def atomicXchgW64Acquire : Opcode := ⟨595⟩
 /-- `atomic.xchg.w64.release` -/
-def atomicXchgW64Release : Opcode := ⟨592⟩
+def atomicXchgW64Release : Opcode := ⟨596⟩
 /-- `atomic.xchg.w64.acqrel` -/
-def atomicXchgW64Acqrel : Opcode := ⟨593⟩
+def atomicXchgW64Acqrel : Opcode := ⟨597⟩
 /-- `atomic.xchg.w64.seqcst` -/
-def atomicXchgW64Seqcst : Opcode := ⟨594⟩
+def atomicXchgW64Seqcst : Opcode := ⟨598⟩
 /-- `atomic.add.w64.relaxed` -/
-def atomicAddW64Relaxed : Opcode := ⟨595⟩
+def atomicAddW64Relaxed : Opcode := ⟨599⟩
 /-- `atomic.add.w64.acquire` -/
-def atomicAddW64Acquire : Opcode := ⟨596⟩
+def atomicAddW64Acquire : Opcode := ⟨600⟩
 /-- `atomic.add.w64.release` -/
-def atomicAddW64Release : Opcode := ⟨597⟩
+def atomicAddW64Release : Opcode := ⟨601⟩
 /-- `atomic.add.w64.acqrel` -/
-def atomicAddW64Acqrel : Opcode := ⟨598⟩
+def atomicAddW64Acqrel : Opcode := ⟨602⟩
 /-- `atomic.add.w64.seqcst` -/
-def atomicAddW64Seqcst : Opcode := ⟨599⟩
+def atomicAddW64Seqcst : Opcode := ⟨603⟩
 /-- `atomic.sub.w64.relaxed` -/
-def atomicSubW64Relaxed : Opcode := ⟨600⟩
+def atomicSubW64Relaxed : Opcode := ⟨604⟩
 /-- `atomic.sub.w64.acquire` -/
-def atomicSubW64Acquire : Opcode := ⟨601⟩
+def atomicSubW64Acquire : Opcode := ⟨605⟩
 /-- `atomic.sub.w64.release` -/
-def atomicSubW64Release : Opcode := ⟨602⟩
+def atomicSubW64Release : Opcode := ⟨606⟩
 /-- `atomic.sub.w64.acqrel` -/
-def atomicSubW64Acqrel : Opcode := ⟨603⟩
+def atomicSubW64Acqrel : Opcode := ⟨607⟩
 /-- `atomic.sub.w64.seqcst` -/
-def atomicSubW64Seqcst : Opcode := ⟨604⟩
+def atomicSubW64Seqcst : Opcode := ⟨608⟩
 /-- `atomic.and.w64.relaxed` -/
-def atomicAndW64Relaxed : Opcode := ⟨605⟩
+def atomicAndW64Relaxed : Opcode := ⟨609⟩
 /-- `atomic.and.w64.acquire` -/
-def atomicAndW64Acquire : Opcode := ⟨606⟩
+def atomicAndW64Acquire : Opcode := ⟨610⟩
 /-- `atomic.and.w64.release` -/
-def atomicAndW64Release : Opcode := ⟨607⟩
+def atomicAndW64Release : Opcode := ⟨611⟩
 /-- `atomic.and.w64.acqrel` -/
-def atomicAndW64Acqrel : Opcode := ⟨608⟩
+def atomicAndW64Acqrel : Opcode := ⟨612⟩
 /-- `atomic.and.w64.seqcst` -/
-def atomicAndW64Seqcst : Opcode := ⟨609⟩
+def atomicAndW64Seqcst : Opcode := ⟨613⟩
 /-- `atomic.or.w64.relaxed` -/
-def atomicOrW64Relaxed : Opcode := ⟨610⟩
+def atomicOrW64Relaxed : Opcode := ⟨614⟩
 /-- `atomic.or.w64.acquire` -/
-def atomicOrW64Acquire : Opcode := ⟨611⟩
+def atomicOrW64Acquire : Opcode := ⟨615⟩
 /-- `atomic.or.w64.release` -/
-def atomicOrW64Release : Opcode := ⟨612⟩
+def atomicOrW64Release : Opcode := ⟨616⟩
 /-- `atomic.or.w64.acqrel` -/
-def atomicOrW64Acqrel : Opcode := ⟨613⟩
+def atomicOrW64Acqrel : Opcode := ⟨617⟩
 /-- `atomic.or.w64.seqcst` -/
-def atomicOrW64Seqcst : Opcode := ⟨614⟩
+def atomicOrW64Seqcst : Opcode := ⟨618⟩
 /-- `atomic.xor.w64.relaxed` -/
-def atomicXorW64Relaxed : Opcode := ⟨615⟩
+def atomicXorW64Relaxed : Opcode := ⟨619⟩
 /-- `atomic.xor.w64.acquire` -/
-def atomicXorW64Acquire : Opcode := ⟨616⟩
+def atomicXorW64Acquire : Opcode := ⟨620⟩
 /-- `atomic.xor.w64.release` -/
-def atomicXorW64Release : Opcode := ⟨617⟩
+def atomicXorW64Release : Opcode := ⟨621⟩
 /-- `atomic.xor.w64.acqrel` -/
-def atomicXorW64Acqrel : Opcode := ⟨618⟩
+def atomicXorW64Acqrel : Opcode := ⟨622⟩
 /-- `atomic.xor.w64.seqcst` -/
-def atomicXorW64Seqcst : Opcode := ⟨619⟩
+def atomicXorW64Seqcst : Opcode := ⟨623⟩
 /-- `atomic.nand.w64.relaxed` -/
-def atomicNandW64Relaxed : Opcode := ⟨620⟩
+def atomicNandW64Relaxed : Opcode := ⟨624⟩
 /-- `atomic.nand.w64.acquire` -/
-def atomicNandW64Acquire : Opcode := ⟨621⟩
+def atomicNandW64Acquire : Opcode := ⟨625⟩
 /-- `atomic.nand.w64.release` -/
-def atomicNandW64Release : Opcode := ⟨622⟩
+def atomicNandW64Release : Opcode := ⟨626⟩
 /-- `atomic.nand.w64.acqrel` -/
-def atomicNandW64Acqrel : Opcode := ⟨623⟩
+def atomicNandW64Acqrel : Opcode := ⟨627⟩
 /-- `atomic.nand.w64.seqcst` -/
-def atomicNandW64Seqcst : Opcode := ⟨624⟩
+def atomicNandW64Seqcst : Opcode := ⟨628⟩
 /-- `atomic.min.w64.relaxed` -/
-def atomicMinW64Relaxed : Opcode := ⟨625⟩
+def atomicMinW64Relaxed : Opcode := ⟨629⟩
 /-- `atomic.min.w64.acquire` -/
-def atomicMinW64Acquire : Opcode := ⟨626⟩
+def atomicMinW64Acquire : Opcode := ⟨630⟩
 /-- `atomic.min.w64.release` -/
-def atomicMinW64Release : Opcode := ⟨627⟩
+def atomicMinW64Release : Opcode := ⟨631⟩
 /-- `atomic.min.w64.acqrel` -/
-def atomicMinW64Acqrel : Opcode := ⟨628⟩
+def atomicMinW64Acqrel : Opcode := ⟨632⟩
 /-- `atomic.min.w64.seqcst` -/
-def atomicMinW64Seqcst : Opcode := ⟨629⟩
+def atomicMinW64Seqcst : Opcode := ⟨633⟩
 /-- `atomic.max.w64.relaxed` -/
-def atomicMaxW64Relaxed : Opcode := ⟨630⟩
+def atomicMaxW64Relaxed : Opcode := ⟨634⟩
 /-- `atomic.max.w64.acquire` -/
-def atomicMaxW64Acquire : Opcode := ⟨631⟩
+def atomicMaxW64Acquire : Opcode := ⟨635⟩
 /-- `atomic.max.w64.release` -/
-def atomicMaxW64Release : Opcode := ⟨632⟩
+def atomicMaxW64Release : Opcode := ⟨636⟩
 /-- `atomic.max.w64.acqrel` -/
-def atomicMaxW64Acqrel : Opcode := ⟨633⟩
+def atomicMaxW64Acqrel : Opcode := ⟨637⟩
 /-- `atomic.max.w64.seqcst` -/
-def atomicMaxW64Seqcst : Opcode := ⟨634⟩
+def atomicMaxW64Seqcst : Opcode := ⟨638⟩
 /-- `atomic.umin.w64.relaxed` -/
-def atomicUminW64Relaxed : Opcode := ⟨635⟩
+def atomicUminW64Relaxed : Opcode := ⟨639⟩
 /-- `atomic.umin.w64.acquire` -/
-def atomicUminW64Acquire : Opcode := ⟨636⟩
+def atomicUminW64Acquire : Opcode := ⟨640⟩
 /-- `atomic.umin.w64.release` -/
-def atomicUminW64Release : Opcode := ⟨637⟩
+def atomicUminW64Release : Opcode := ⟨641⟩
 /-- `atomic.umin.w64.acqrel` -/
-def atomicUminW64Acqrel : Opcode := ⟨638⟩
+def atomicUminW64Acqrel : Opcode := ⟨642⟩
 /-- `atomic.umin.w64.seqcst` -/
-def atomicUminW64Seqcst : Opcode := ⟨639⟩
+def atomicUminW64Seqcst : Opcode := ⟨643⟩
 /-- `atomic.umax.w64.relaxed` -/
-def atomicUmaxW64Relaxed : Opcode := ⟨640⟩
+def atomicUmaxW64Relaxed : Opcode := ⟨644⟩
 /-- `atomic.umax.w64.acquire` -/
-def atomicUmaxW64Acquire : Opcode := ⟨641⟩
+def atomicUmaxW64Acquire : Opcode := ⟨645⟩
 /-- `atomic.umax.w64.release` -/
-def atomicUmaxW64Release : Opcode := ⟨642⟩
+def atomicUmaxW64Release : Opcode := ⟨646⟩
 /-- `atomic.umax.w64.acqrel` -/
-def atomicUmaxW64Acqrel : Opcode := ⟨643⟩
+def atomicUmaxW64Acqrel : Opcode := ⟨647⟩
 /-- `atomic.umax.w64.seqcst` -/
-def atomicUmaxW64Seqcst : Opcode := ⟨644⟩
+def atomicUmaxW64Seqcst : Opcode := ⟨648⟩
 /-- `atomic.cxchg.w8.relaxed.relaxed` -/
-def atomicCxchgW8RelaxedRelaxed : Opcode := ⟨645⟩
+def atomicCxchgW8RelaxedRelaxed : Opcode := ⟨649⟩
 /-- `atomic.cxchg.w8.relaxed.acquire` -/
-def atomicCxchgW8RelaxedAcquire : Opcode := ⟨646⟩
+def atomicCxchgW8RelaxedAcquire : Opcode := ⟨650⟩
 /-- `atomic.cxchg.w8.relaxed.seqcst` -/
-def atomicCxchgW8RelaxedSeqcst : Opcode := ⟨647⟩
+def atomicCxchgW8RelaxedSeqcst : Opcode := ⟨651⟩
 /-- `atomic.cxchg.w8.acquire.relaxed` -/
-def atomicCxchgW8AcquireRelaxed : Opcode := ⟨648⟩
+def atomicCxchgW8AcquireRelaxed : Opcode := ⟨652⟩
 /-- `atomic.cxchg.w8.acquire.acquire` -/
-def atomicCxchgW8AcquireAcquire : Opcode := ⟨649⟩
+def atomicCxchgW8AcquireAcquire : Opcode := ⟨653⟩
 /-- `atomic.cxchg.w8.acquire.seqcst` -/
-def atomicCxchgW8AcquireSeqcst : Opcode := ⟨650⟩
+def atomicCxchgW8AcquireSeqcst : Opcode := ⟨654⟩
 /-- `atomic.cxchg.w8.release.relaxed` -/
-def atomicCxchgW8ReleaseRelaxed : Opcode := ⟨651⟩
+def atomicCxchgW8ReleaseRelaxed : Opcode := ⟨655⟩
 /-- `atomic.cxchg.w8.release.acquire` -/
-def atomicCxchgW8ReleaseAcquire : Opcode := ⟨652⟩
+def atomicCxchgW8ReleaseAcquire : Opcode := ⟨656⟩
 /-- `atomic.cxchg.w8.release.seqcst` -/
-def atomicCxchgW8ReleaseSeqcst : Opcode := ⟨653⟩
+def atomicCxchgW8ReleaseSeqcst : Opcode := ⟨657⟩
 /-- `atomic.cxchg.w8.acqrel.relaxed` -/
-def atomicCxchgW8AcqrelRelaxed : Opcode := ⟨654⟩
+def atomicCxchgW8AcqrelRelaxed : Opcode := ⟨658⟩
 /-- `atomic.cxchg.w8.acqrel.acquire` -/
-def atomicCxchgW8AcqrelAcquire : Opcode := ⟨655⟩
+def atomicCxchgW8AcqrelAcquire : Opcode := ⟨659⟩
 /-- `atomic.cxchg.w8.acqrel.seqcst` -/
-def atomicCxchgW8AcqrelSeqcst : Opcode := ⟨656⟩
+def atomicCxchgW8AcqrelSeqcst : Opcode := ⟨660⟩
 /-- `atomic.cxchg.w8.seqcst.relaxed` -/
-def atomicCxchgW8SeqcstRelaxed : Opcode := ⟨657⟩
+def atomicCxchgW8SeqcstRelaxed : Opcode := ⟨661⟩
 /-- `atomic.cxchg.w8.seqcst.acquire` -/
-def atomicCxchgW8SeqcstAcquire : Opcode := ⟨658⟩
+def atomicCxchgW8SeqcstAcquire : Opcode := ⟨662⟩
 /-- `atomic.cxchg.w8.seqcst.seqcst` -/
-def atomicCxchgW8SeqcstSeqcst : Opcode := ⟨659⟩
+def atomicCxchgW8SeqcstSeqcst : Opcode := ⟨663⟩
 /-- `atomic.cxchg.w16.relaxed.relaxed` -/
-def atomicCxchgW16RelaxedRelaxed : Opcode := ⟨660⟩
+def atomicCxchgW16RelaxedRelaxed : Opcode := ⟨664⟩
 /-- `atomic.cxchg.w16.relaxed.acquire` -/
-def atomicCxchgW16RelaxedAcquire : Opcode := ⟨661⟩
+def atomicCxchgW16RelaxedAcquire : Opcode := ⟨665⟩
 /-- `atomic.cxchg.w16.relaxed.seqcst` -/
-def atomicCxchgW16RelaxedSeqcst : Opcode := ⟨662⟩
+def atomicCxchgW16RelaxedSeqcst : Opcode := ⟨666⟩
 /-- `atomic.cxchg.w16.acquire.relaxed` -/
-def atomicCxchgW16AcquireRelaxed : Opcode := ⟨663⟩
+def atomicCxchgW16AcquireRelaxed : Opcode := ⟨667⟩
 /-- `atomic.cxchg.w16.acquire.acquire` -/
-def atomicCxchgW16AcquireAcquire : Opcode := ⟨664⟩
+def atomicCxchgW16AcquireAcquire : Opcode := ⟨668⟩
 /-- `atomic.cxchg.w16.acquire.seqcst` -/
-def atomicCxchgW16AcquireSeqcst : Opcode := ⟨665⟩
+def atomicCxchgW16AcquireSeqcst : Opcode := ⟨669⟩
 /-- `atomic.cxchg.w16.release.relaxed` -/
-def atomicCxchgW16ReleaseRelaxed : Opcode := ⟨666⟩
+def atomicCxchgW16ReleaseRelaxed : Opcode := ⟨670⟩
 /-- `atomic.cxchg.w16.release.acquire` -/
-def atomicCxchgW16ReleaseAcquire : Opcode := ⟨667⟩
+def atomicCxchgW16ReleaseAcquire : Opcode := ⟨671⟩
 /-- `atomic.cxchg.w16.release.seqcst` -/
-def atomicCxchgW16ReleaseSeqcst : Opcode := ⟨668⟩
+def atomicCxchgW16ReleaseSeqcst : Opcode := ⟨672⟩
 /-- `atomic.cxchg.w16.acqrel.relaxed` -/
-def atomicCxchgW16AcqrelRelaxed : Opcode := ⟨669⟩
+def atomicCxchgW16AcqrelRelaxed : Opcode := ⟨673⟩
 /-- `atomic.cxchg.w16.acqrel.acquire` -/
-def atomicCxchgW16AcqrelAcquire : Opcode := ⟨670⟩
+def atomicCxchgW16AcqrelAcquire : Opcode := ⟨674⟩
 /-- `atomic.cxchg.w16.acqrel.seqcst` -/
-def atomicCxchgW16AcqrelSeqcst : Opcode := ⟨671⟩
+def atomicCxchgW16AcqrelSeqcst : Opcode := ⟨675⟩
 /-- `atomic.cxchg.w16.seqcst.relaxed` -/
-def atomicCxchgW16SeqcstRelaxed : Opcode := ⟨672⟩
+def atomicCxchgW16SeqcstRelaxed : Opcode := ⟨676⟩
 /-- `atomic.cxchg.w16.seqcst.acquire` -/
-def atomicCxchgW16SeqcstAcquire : Opcode := ⟨673⟩
+def atomicCxchgW16SeqcstAcquire : Opcode := ⟨677⟩
 /-- `atomic.cxchg.w16.seqcst.seqcst` -/
-def atomicCxchgW16SeqcstSeqcst : Opcode := ⟨674⟩
+def atomicCxchgW16SeqcstSeqcst : Opcode := ⟨678⟩
 /-- `atomic.cxchg.w32.relaxed.relaxed` -/
-def atomicCxchgW32RelaxedRelaxed : Opcode := ⟨675⟩
+def atomicCxchgW32RelaxedRelaxed : Opcode := ⟨679⟩
 /-- `atomic.cxchg.w32.relaxed.acquire` -/
-def atomicCxchgW32RelaxedAcquire : Opcode := ⟨676⟩
+def atomicCxchgW32RelaxedAcquire : Opcode := ⟨680⟩
 /-- `atomic.cxchg.w32.relaxed.seqcst` -/
-def atomicCxchgW32RelaxedSeqcst : Opcode := ⟨677⟩
+def atomicCxchgW32RelaxedSeqcst : Opcode := ⟨681⟩
 /-- `atomic.cxchg.w32.acquire.relaxed` -/
-def atomicCxchgW32AcquireRelaxed : Opcode := ⟨678⟩
+def atomicCxchgW32AcquireRelaxed : Opcode := ⟨682⟩
 /-- `atomic.cxchg.w32.acquire.acquire` -/
-def atomicCxchgW32AcquireAcquire : Opcode := ⟨679⟩
+def atomicCxchgW32AcquireAcquire : Opcode := ⟨683⟩
 /-- `atomic.cxchg.w32.acquire.seqcst` -/
-def atomicCxchgW32AcquireSeqcst : Opcode := ⟨680⟩
+def atomicCxchgW32AcquireSeqcst : Opcode := ⟨684⟩
 /-- `atomic.cxchg.w32.release.relaxed` -/
-def atomicCxchgW32ReleaseRelaxed : Opcode := ⟨681⟩
+def atomicCxchgW32ReleaseRelaxed : Opcode := ⟨685⟩
 /-- `atomic.cxchg.w32.release.acquire` -/
-def atomicCxchgW32ReleaseAcquire : Opcode := ⟨682⟩
+def atomicCxchgW32ReleaseAcquire : Opcode := ⟨686⟩
 /-- `atomic.cxchg.w32.release.seqcst` -/
-def atomicCxchgW32ReleaseSeqcst : Opcode := ⟨683⟩
+def atomicCxchgW32ReleaseSeqcst : Opcode := ⟨687⟩
 /-- `atomic.cxchg.w32.acqrel.relaxed` -/
-def atomicCxchgW32AcqrelRelaxed : Opcode := ⟨684⟩
+def atomicCxchgW32AcqrelRelaxed : Opcode := ⟨688⟩
 /-- `atomic.cxchg.w32.acqrel.acquire` -/
-def atomicCxchgW32AcqrelAcquire : Opcode := ⟨685⟩
+def atomicCxchgW32AcqrelAcquire : Opcode := ⟨689⟩
 /-- `atomic.cxchg.w32.acqrel.seqcst` -/
-def atomicCxchgW32AcqrelSeqcst : Opcode := ⟨686⟩
+def atomicCxchgW32AcqrelSeqcst : Opcode := ⟨690⟩
 /-- `atomic.cxchg.w32.seqcst.relaxed` -/
-def atomicCxchgW32SeqcstRelaxed : Opcode := ⟨687⟩
+def atomicCxchgW32SeqcstRelaxed : Opcode := ⟨691⟩
 /-- `atomic.cxchg.w32.seqcst.acquire` -/
-def atomicCxchgW32SeqcstAcquire : Opcode := ⟨688⟩
+def atomicCxchgW32SeqcstAcquire : Opcode := ⟨692⟩
 /-- `atomic.cxchg.w32.seqcst.seqcst` -/
-def atomicCxchgW32SeqcstSeqcst : Opcode := ⟨689⟩
+def atomicCxchgW32SeqcstSeqcst : Opcode := ⟨693⟩
 /-- `atomic.cxchg.w64.relaxed.relaxed` -/
-def atomicCxchgW64RelaxedRelaxed : Opcode := ⟨690⟩
+def atomicCxchgW64RelaxedRelaxed : Opcode := ⟨694⟩
 /-- `atomic.cxchg.w64.relaxed.acquire` -/
-def atomicCxchgW64RelaxedAcquire : Opcode := ⟨691⟩
+def atomicCxchgW64RelaxedAcquire : Opcode := ⟨695⟩
 /-- `atomic.cxchg.w64.relaxed.seqcst` -/
-def atomicCxchgW64RelaxedSeqcst : Opcode := ⟨692⟩
+def atomicCxchgW64RelaxedSeqcst : Opcode := ⟨696⟩
 /-- `atomic.cxchg.w64.acquire.relaxed` -/
-def atomicCxchgW64AcquireRelaxed : Opcode := ⟨693⟩
+def atomicCxchgW64AcquireRelaxed : Opcode := ⟨697⟩
 /-- `atomic.cxchg.w64.acquire.acquire` -/
-def atomicCxchgW64AcquireAcquire : Opcode := ⟨694⟩
+def atomicCxchgW64AcquireAcquire : Opcode := ⟨698⟩
 /-- `atomic.cxchg.w64.acquire.seqcst` -/
-def atomicCxchgW64AcquireSeqcst : Opcode := ⟨695⟩
+def atomicCxchgW64AcquireSeqcst : Opcode := ⟨699⟩
 /-- `atomic.cxchg.w64.release.relaxed` -/
-def atomicCxchgW64ReleaseRelaxed : Opcode := ⟨696⟩
+def atomicCxchgW64ReleaseRelaxed : Opcode := ⟨700⟩
 /-- `atomic.cxchg.w64.release.acquire` -/
-def atomicCxchgW64ReleaseAcquire : Opcode := ⟨697⟩
+def atomicCxchgW64ReleaseAcquire : Opcode := ⟨701⟩
 /-- `atomic.cxchg.w64.release.seqcst` -/
-def atomicCxchgW64ReleaseSeqcst : Opcode := ⟨698⟩
+def atomicCxchgW64ReleaseSeqcst : Opcode := ⟨702⟩
 /-- `atomic.cxchg.w64.acqrel.relaxed` -/
-def atomicCxchgW64AcqrelRelaxed : Opcode := ⟨699⟩
+def atomicCxchgW64AcqrelRelaxed : Opcode := ⟨703⟩
 /-- `atomic.cxchg.w64.acqrel.acquire` -/
-def atomicCxchgW64AcqrelAcquire : Opcode := ⟨700⟩
+def atomicCxchgW64AcqrelAcquire : Opcode := ⟨704⟩
 /-- `atomic.cxchg.w64.acqrel.seqcst` -/
-def atomicCxchgW64AcqrelSeqcst : Opcode := ⟨701⟩
+def atomicCxchgW64AcqrelSeqcst : Opcode := ⟨705⟩
 /-- `atomic.cxchg.w64.seqcst.relaxed` -/
-def atomicCxchgW64SeqcstRelaxed : Opcode := ⟨702⟩
+def atomicCxchgW64SeqcstRelaxed : Opcode := ⟨706⟩
 /-- `atomic.cxchg.w64.seqcst.acquire` -/
-def atomicCxchgW64SeqcstAcquire : Opcode := ⟨703⟩
+def atomicCxchgW64SeqcstAcquire : Opcode := ⟨707⟩
 /-- `atomic.cxchg.w64.seqcst.seqcst` -/
-def atomicCxchgW64SeqcstSeqcst : Opcode := ⟨704⟩
+def atomicCxchgW64SeqcstSeqcst : Opcode := ⟨708⟩
 /-- `atomic.cxchg.weak.w8.relaxed.relaxed` -/
-def atomicCxchgWeakW8RelaxedRelaxed : Opcode := ⟨705⟩
+def atomicCxchgWeakW8RelaxedRelaxed : Opcode := ⟨709⟩
 /-- `atomic.cxchg.weak.w8.relaxed.acquire` -/
-def atomicCxchgWeakW8RelaxedAcquire : Opcode := ⟨706⟩
+def atomicCxchgWeakW8RelaxedAcquire : Opcode := ⟨710⟩
 /-- `atomic.cxchg.weak.w8.relaxed.seqcst` -/
-def atomicCxchgWeakW8RelaxedSeqcst : Opcode := ⟨707⟩
+def atomicCxchgWeakW8RelaxedSeqcst : Opcode := ⟨711⟩
 /-- `atomic.cxchg.weak.w8.acquire.relaxed` -/
-def atomicCxchgWeakW8AcquireRelaxed : Opcode := ⟨708⟩
+def atomicCxchgWeakW8AcquireRelaxed : Opcode := ⟨712⟩
 /-- `atomic.cxchg.weak.w8.acquire.acquire` -/
-def atomicCxchgWeakW8AcquireAcquire : Opcode := ⟨709⟩
+def atomicCxchgWeakW8AcquireAcquire : Opcode := ⟨713⟩
 /-- `atomic.cxchg.weak.w8.acquire.seqcst` -/
-def atomicCxchgWeakW8AcquireSeqcst : Opcode := ⟨710⟩
+def atomicCxchgWeakW8AcquireSeqcst : Opcode := ⟨714⟩
 /-- `atomic.cxchg.weak.w8.release.relaxed` -/
-def atomicCxchgWeakW8ReleaseRelaxed : Opcode := ⟨711⟩
+def atomicCxchgWeakW8ReleaseRelaxed : Opcode := ⟨715⟩
 /-- `atomic.cxchg.weak.w8.release.acquire` -/
-def atomicCxchgWeakW8ReleaseAcquire : Opcode := ⟨712⟩
+def atomicCxchgWeakW8ReleaseAcquire : Opcode := ⟨716⟩
 /-- `atomic.cxchg.weak.w8.release.seqcst` -/
-def atomicCxchgWeakW8ReleaseSeqcst : Opcode := ⟨713⟩
+def atomicCxchgWeakW8ReleaseSeqcst : Opcode := ⟨717⟩
 /-- `atomic.cxchg.weak.w8.acqrel.relaxed` -/
-def atomicCxchgWeakW8AcqrelRelaxed : Opcode := ⟨714⟩
+def atomicCxchgWeakW8AcqrelRelaxed : Opcode := ⟨718⟩
 /-- `atomic.cxchg.weak.w8.acqrel.acquire` -/
-def atomicCxchgWeakW8AcqrelAcquire : Opcode := ⟨715⟩
+def atomicCxchgWeakW8AcqrelAcquire : Opcode := ⟨719⟩
 /-- `atomic.cxchg.weak.w8.acqrel.seqcst` -/
-def atomicCxchgWeakW8AcqrelSeqcst : Opcode := ⟨716⟩
+def atomicCxchgWeakW8AcqrelSeqcst : Opcode := ⟨720⟩
 /-- `atomic.cxchg.weak.w8.seqcst.relaxed` -/
-def atomicCxchgWeakW8SeqcstRelaxed : Opcode := ⟨717⟩
+def atomicCxchgWeakW8SeqcstRelaxed : Opcode := ⟨721⟩
 /-- `atomic.cxchg.weak.w8.seqcst.acquire` -/
-def atomicCxchgWeakW8SeqcstAcquire : Opcode := ⟨718⟩
+def atomicCxchgWeakW8SeqcstAcquire : Opcode := ⟨722⟩
 /-- `atomic.cxchg.weak.w8.seqcst.seqcst` -/
-def atomicCxchgWeakW8SeqcstSeqcst : Opcode := ⟨719⟩
+def atomicCxchgWeakW8SeqcstSeqcst : Opcode := ⟨723⟩
 /-- `atomic.cxchg.weak.w16.relaxed.relaxed` -/
-def atomicCxchgWeakW16RelaxedRelaxed : Opcode := ⟨720⟩
+def atomicCxchgWeakW16RelaxedRelaxed : Opcode := ⟨724⟩
 /-- `atomic.cxchg.weak.w16.relaxed.acquire` -/
-def atomicCxchgWeakW16RelaxedAcquire : Opcode := ⟨721⟩
+def atomicCxchgWeakW16RelaxedAcquire : Opcode := ⟨725⟩
 /-- `atomic.cxchg.weak.w16.relaxed.seqcst` -/
-def atomicCxchgWeakW16RelaxedSeqcst : Opcode := ⟨722⟩
+def atomicCxchgWeakW16RelaxedSeqcst : Opcode := ⟨726⟩
 /-- `atomic.cxchg.weak.w16.acquire.relaxed` -/
-def atomicCxchgWeakW16AcquireRelaxed : Opcode := ⟨723⟩
+def atomicCxchgWeakW16AcquireRelaxed : Opcode := ⟨727⟩
 /-- `atomic.cxchg.weak.w16.acquire.acquire` -/
-def atomicCxchgWeakW16AcquireAcquire : Opcode := ⟨724⟩
+def atomicCxchgWeakW16AcquireAcquire : Opcode := ⟨728⟩
 /-- `atomic.cxchg.weak.w16.acquire.seqcst` -/
-def atomicCxchgWeakW16AcquireSeqcst : Opcode := ⟨725⟩
+def atomicCxchgWeakW16AcquireSeqcst : Opcode := ⟨729⟩
 /-- `atomic.cxchg.weak.w16.release.relaxed` -/
-def atomicCxchgWeakW16ReleaseRelaxed : Opcode := ⟨726⟩
+def atomicCxchgWeakW16ReleaseRelaxed : Opcode := ⟨730⟩
 /-- `atomic.cxchg.weak.w16.release.acquire` -/
-def atomicCxchgWeakW16ReleaseAcquire : Opcode := ⟨727⟩
+def atomicCxchgWeakW16ReleaseAcquire : Opcode := ⟨731⟩
 /-- `atomic.cxchg.weak.w16.release.seqcst` -/
-def atomicCxchgWeakW16ReleaseSeqcst : Opcode := ⟨728⟩
+def atomicCxchgWeakW16ReleaseSeqcst : Opcode := ⟨732⟩
 /-- `atomic.cxchg.weak.w16.acqrel.relaxed` -/
-def atomicCxchgWeakW16AcqrelRelaxed : Opcode := ⟨729⟩
+def atomicCxchgWeakW16AcqrelRelaxed : Opcode := ⟨733⟩
 /-- `atomic.cxchg.weak.w16.acqrel.acquire` -/
-def atomicCxchgWeakW16AcqrelAcquire : Opcode := ⟨730⟩
+def atomicCxchgWeakW16AcqrelAcquire : Opcode := ⟨734⟩
 /-- `atomic.cxchg.weak.w16.acqrel.seqcst` -/
-def atomicCxchgWeakW16AcqrelSeqcst : Opcode := ⟨731⟩
+def atomicCxchgWeakW16AcqrelSeqcst : Opcode := ⟨735⟩
 /-- `atomic.cxchg.weak.w16.seqcst.relaxed` -/
-def atomicCxchgWeakW16SeqcstRelaxed : Opcode := ⟨732⟩
+def atomicCxchgWeakW16SeqcstRelaxed : Opcode := ⟨736⟩
 /-- `atomic.cxchg.weak.w16.seqcst.acquire` -/
-def atomicCxchgWeakW16SeqcstAcquire : Opcode := ⟨733⟩
+def atomicCxchgWeakW16SeqcstAcquire : Opcode := ⟨737⟩
 /-- `atomic.cxchg.weak.w16.seqcst.seqcst` -/
-def atomicCxchgWeakW16SeqcstSeqcst : Opcode := ⟨734⟩
+def atomicCxchgWeakW16SeqcstSeqcst : Opcode := ⟨738⟩
 /-- `atomic.cxchg.weak.w32.relaxed.relaxed` -/
-def atomicCxchgWeakW32RelaxedRelaxed : Opcode := ⟨735⟩
+def atomicCxchgWeakW32RelaxedRelaxed : Opcode := ⟨739⟩
 /-- `atomic.cxchg.weak.w32.relaxed.acquire` -/
-def atomicCxchgWeakW32RelaxedAcquire : Opcode := ⟨736⟩
+def atomicCxchgWeakW32RelaxedAcquire : Opcode := ⟨740⟩
 /-- `atomic.cxchg.weak.w32.relaxed.seqcst` -/
-def atomicCxchgWeakW32RelaxedSeqcst : Opcode := ⟨737⟩
+def atomicCxchgWeakW32RelaxedSeqcst : Opcode := ⟨741⟩
 /-- `atomic.cxchg.weak.w32.acquire.relaxed` -/
-def atomicCxchgWeakW32AcquireRelaxed : Opcode := ⟨738⟩
+def atomicCxchgWeakW32AcquireRelaxed : Opcode := ⟨742⟩
 /-- `atomic.cxchg.weak.w32.acquire.acquire` -/
-def atomicCxchgWeakW32AcquireAcquire : Opcode := ⟨739⟩
+def atomicCxchgWeakW32AcquireAcquire : Opcode := ⟨743⟩
 /-- `atomic.cxchg.weak.w32.acquire.seqcst` -/
-def atomicCxchgWeakW32AcquireSeqcst : Opcode := ⟨740⟩
+def atomicCxchgWeakW32AcquireSeqcst : Opcode := ⟨744⟩
 /-- `atomic.cxchg.weak.w32.release.relaxed` -/
-def atomicCxchgWeakW32ReleaseRelaxed : Opcode := ⟨741⟩
+def atomicCxchgWeakW32ReleaseRelaxed : Opcode := ⟨745⟩
 /-- `atomic.cxchg.weak.w32.release.acquire` -/
-def atomicCxchgWeakW32ReleaseAcquire : Opcode := ⟨742⟩
+def atomicCxchgWeakW32ReleaseAcquire : Opcode := ⟨746⟩
 /-- `atomic.cxchg.weak.w32.release.seqcst` -/
-def atomicCxchgWeakW32ReleaseSeqcst : Opcode := ⟨743⟩
+def atomicCxchgWeakW32ReleaseSeqcst : Opcode := ⟨747⟩
 /-- `atomic.cxchg.weak.w32.acqrel.relaxed` -/
-def atomicCxchgWeakW32AcqrelRelaxed : Opcode := ⟨744⟩
+def atomicCxchgWeakW32AcqrelRelaxed : Opcode := ⟨748⟩
 /-- `atomic.cxchg.weak.w32.acqrel.acquire` -/
-def atomicCxchgWeakW32AcqrelAcquire : Opcode := ⟨745⟩
+def atomicCxchgWeakW32AcqrelAcquire : Opcode := ⟨749⟩
 /-- `atomic.cxchg.weak.w32.acqrel.seqcst` -/
-def atomicCxchgWeakW32AcqrelSeqcst : Opcode := ⟨746⟩
+def atomicCxchgWeakW32AcqrelSeqcst : Opcode := ⟨750⟩
 /-- `atomic.cxchg.weak.w32.seqcst.relaxed` -/
-def atomicCxchgWeakW32SeqcstRelaxed : Opcode := ⟨747⟩
+def atomicCxchgWeakW32SeqcstRelaxed : Opcode := ⟨751⟩
 /-- `atomic.cxchg.weak.w32.seqcst.acquire` -/
-def atomicCxchgWeakW32SeqcstAcquire : Opcode := ⟨748⟩
+def atomicCxchgWeakW32SeqcstAcquire : Opcode := ⟨752⟩
 /-- `atomic.cxchg.weak.w32.seqcst.seqcst` -/
-def atomicCxchgWeakW32SeqcstSeqcst : Opcode := ⟨749⟩
+def atomicCxchgWeakW32SeqcstSeqcst : Opcode := ⟨753⟩
 /-- `atomic.cxchg.weak.w64.relaxed.relaxed` -/
-def atomicCxchgWeakW64RelaxedRelaxed : Opcode := ⟨750⟩
+def atomicCxchgWeakW64RelaxedRelaxed : Opcode := ⟨754⟩
 /-- `atomic.cxchg.weak.w64.relaxed.acquire` -/
-def atomicCxchgWeakW64RelaxedAcquire : Opcode := ⟨751⟩
+def atomicCxchgWeakW64RelaxedAcquire : Opcode := ⟨755⟩
 /-- `atomic.cxchg.weak.w64.relaxed.seqcst` -/
-def atomicCxchgWeakW64RelaxedSeqcst : Opcode := ⟨752⟩
+def atomicCxchgWeakW64RelaxedSeqcst : Opcode := ⟨756⟩
 /-- `atomic.cxchg.weak.w64.acquire.relaxed` -/
-def atomicCxchgWeakW64AcquireRelaxed : Opcode := ⟨753⟩
+def atomicCxchgWeakW64AcquireRelaxed : Opcode := ⟨757⟩
 /-- `atomic.cxchg.weak.w64.acquire.acquire` -/
-def atomicCxchgWeakW64AcquireAcquire : Opcode := ⟨754⟩
+def atomicCxchgWeakW64AcquireAcquire : Opcode := ⟨758⟩
 /-- `atomic.cxchg.weak.w64.acquire.seqcst` -/
-def atomicCxchgWeakW64AcquireSeqcst : Opcode := ⟨755⟩
+def atomicCxchgWeakW64AcquireSeqcst : Opcode := ⟨759⟩
 /-- `atomic.cxchg.weak.w64.release.relaxed` -/
-def atomicCxchgWeakW64ReleaseRelaxed : Opcode := ⟨756⟩
+def atomicCxchgWeakW64ReleaseRelaxed : Opcode := ⟨760⟩
 /-- `atomic.cxchg.weak.w64.release.acquire` -/
-def atomicCxchgWeakW64ReleaseAcquire : Opcode := ⟨757⟩
+def atomicCxchgWeakW64ReleaseAcquire : Opcode := ⟨761⟩
 /-- `atomic.cxchg.weak.w64.release.seqcst` -/
-def atomicCxchgWeakW64ReleaseSeqcst : Opcode := ⟨758⟩
+def atomicCxchgWeakW64ReleaseSeqcst : Opcode := ⟨762⟩
 /-- `atomic.cxchg.weak.w64.acqrel.relaxed` -/
-def atomicCxchgWeakW64AcqrelRelaxed : Opcode := ⟨759⟩
+def atomicCxchgWeakW64AcqrelRelaxed : Opcode := ⟨763⟩
 /-- `atomic.cxchg.weak.w64.acqrel.acquire` -/
-def atomicCxchgWeakW64AcqrelAcquire : Opcode := ⟨760⟩
+def atomicCxchgWeakW64AcqrelAcquire : Opcode := ⟨764⟩
 /-- `atomic.cxchg.weak.w64.acqrel.seqcst` -/
-def atomicCxchgWeakW64AcqrelSeqcst : Opcode := ⟨761⟩
+def atomicCxchgWeakW64AcqrelSeqcst : Opcode := ⟨765⟩
 /-- `atomic.cxchg.weak.w64.seqcst.relaxed` -/
-def atomicCxchgWeakW64SeqcstRelaxed : Opcode := ⟨762⟩
+def atomicCxchgWeakW64SeqcstRelaxed : Opcode := ⟨766⟩
 /-- `atomic.cxchg.weak.w64.seqcst.acquire` -/
-def atomicCxchgWeakW64SeqcstAcquire : Opcode := ⟨763⟩
+def atomicCxchgWeakW64SeqcstAcquire : Opcode := ⟨767⟩
 /-- `atomic.cxchg.weak.w64.seqcst.seqcst` -/
-def atomicCxchgWeakW64SeqcstSeqcst : Opcode := ⟨764⟩
+def atomicCxchgWeakW64SeqcstSeqcst : Opcode := ⟨768⟩
 /-- `atomic.load.ptr.relaxed` -/
-def atomicLoadPtrRelaxed : Opcode := ⟨765⟩
+def atomicLoadPtrRelaxed : Opcode := ⟨769⟩
 /-- `atomic.load.ptr.acquire` -/
-def atomicLoadPtrAcquire : Opcode := ⟨766⟩
+def atomicLoadPtrAcquire : Opcode := ⟨770⟩
 /-- `atomic.load.ptr.seqcst` -/
-def atomicLoadPtrSeqcst : Opcode := ⟨767⟩
+def atomicLoadPtrSeqcst : Opcode := ⟨771⟩
 /-- `atomic.store.ptr.relaxed` -/
-def atomicStorePtrRelaxed : Opcode := ⟨768⟩
+def atomicStorePtrRelaxed : Opcode := ⟨772⟩
 /-- `atomic.store.ptr.release` -/
-def atomicStorePtrRelease : Opcode := ⟨769⟩
+def atomicStorePtrRelease : Opcode := ⟨773⟩
 /-- `atomic.store.ptr.seqcst` -/
-def atomicStorePtrSeqcst : Opcode := ⟨770⟩
+def atomicStorePtrSeqcst : Opcode := ⟨774⟩
 /-- `atomic.xchg.ptr.relaxed` -/
-def atomicXchgPtrRelaxed : Opcode := ⟨771⟩
+def atomicXchgPtrRelaxed : Opcode := ⟨775⟩
 /-- `atomic.xchg.ptr.acquire` -/
-def atomicXchgPtrAcquire : Opcode := ⟨772⟩
+def atomicXchgPtrAcquire : Opcode := ⟨776⟩
 /-- `atomic.xchg.ptr.release` -/
-def atomicXchgPtrRelease : Opcode := ⟨773⟩
+def atomicXchgPtrRelease : Opcode := ⟨777⟩
 /-- `atomic.xchg.ptr.acqrel` -/
-def atomicXchgPtrAcqrel : Opcode := ⟨774⟩
+def atomicXchgPtrAcqrel : Opcode := ⟨778⟩
 /-- `atomic.xchg.ptr.seqcst` -/
-def atomicXchgPtrSeqcst : Opcode := ⟨775⟩
+def atomicXchgPtrSeqcst : Opcode := ⟨779⟩
 /-- `atomic.add.ptr.relaxed` -/
-def atomicAddPtrRelaxed : Opcode := ⟨776⟩
+def atomicAddPtrRelaxed : Opcode := ⟨780⟩
 /-- `atomic.add.ptr.acquire` -/
-def atomicAddPtrAcquire : Opcode := ⟨777⟩
+def atomicAddPtrAcquire : Opcode := ⟨781⟩
 /-- `atomic.add.ptr.release` -/
-def atomicAddPtrRelease : Opcode := ⟨778⟩
+def atomicAddPtrRelease : Opcode := ⟨782⟩
 /-- `atomic.add.ptr.acqrel` -/
-def atomicAddPtrAcqrel : Opcode := ⟨779⟩
+def atomicAddPtrAcqrel : Opcode := ⟨783⟩
 /-- `atomic.add.ptr.seqcst` -/
-def atomicAddPtrSeqcst : Opcode := ⟨780⟩
+def atomicAddPtrSeqcst : Opcode := ⟨784⟩
 /-- `atomic.sub.ptr.relaxed` -/
-def atomicSubPtrRelaxed : Opcode := ⟨781⟩
+def atomicSubPtrRelaxed : Opcode := ⟨785⟩
 /-- `atomic.sub.ptr.acquire` -/
-def atomicSubPtrAcquire : Opcode := ⟨782⟩
+def atomicSubPtrAcquire : Opcode := ⟨786⟩
 /-- `atomic.sub.ptr.release` -/
-def atomicSubPtrRelease : Opcode := ⟨783⟩
+def atomicSubPtrRelease : Opcode := ⟨787⟩
 /-- `atomic.sub.ptr.acqrel` -/
-def atomicSubPtrAcqrel : Opcode := ⟨784⟩
+def atomicSubPtrAcqrel : Opcode := ⟨788⟩
 /-- `atomic.sub.ptr.seqcst` -/
-def atomicSubPtrSeqcst : Opcode := ⟨785⟩
+def atomicSubPtrSeqcst : Opcode := ⟨789⟩
 /-- `atomic.and.ptr.relaxed` -/
-def atomicAndPtrRelaxed : Opcode := ⟨786⟩
+def atomicAndPtrRelaxed : Opcode := ⟨790⟩
 /-- `atomic.and.ptr.acquire` -/
-def atomicAndPtrAcquire : Opcode := ⟨787⟩
+def atomicAndPtrAcquire : Opcode := ⟨791⟩
 /-- `atomic.and.ptr.release` -/
-def atomicAndPtrRelease : Opcode := ⟨788⟩
+def atomicAndPtrRelease : Opcode := ⟨792⟩
 /-- `atomic.and.ptr.acqrel` -/
-def atomicAndPtrAcqrel : Opcode := ⟨789⟩
+def atomicAndPtrAcqrel : Opcode := ⟨793⟩
 /-- `atomic.and.ptr.seqcst` -/
-def atomicAndPtrSeqcst : Opcode := ⟨790⟩
+def atomicAndPtrSeqcst : Opcode := ⟨794⟩
 /-- `atomic.or.ptr.relaxed` -/
-def atomicOrPtrRelaxed : Opcode := ⟨791⟩
+def atomicOrPtrRelaxed : Opcode := ⟨795⟩
 /-- `atomic.or.ptr.acquire` -/
-def atomicOrPtrAcquire : Opcode := ⟨792⟩
+def atomicOrPtrAcquire : Opcode := ⟨796⟩
 /-- `atomic.or.ptr.release` -/
-def atomicOrPtrRelease : Opcode := ⟨793⟩
+def atomicOrPtrRelease : Opcode := ⟨797⟩
 /-- `atomic.or.ptr.acqrel` -/
-def atomicOrPtrAcqrel : Opcode := ⟨794⟩
+def atomicOrPtrAcqrel : Opcode := ⟨798⟩
 /-- `atomic.or.ptr.seqcst` -/
-def atomicOrPtrSeqcst : Opcode := ⟨795⟩
+def atomicOrPtrSeqcst : Opcode := ⟨799⟩
 /-- `atomic.xor.ptr.relaxed` -/
-def atomicXorPtrRelaxed : Opcode := ⟨796⟩
+def atomicXorPtrRelaxed : Opcode := ⟨800⟩
 /-- `atomic.xor.ptr.acquire` -/
-def atomicXorPtrAcquire : Opcode := ⟨797⟩
+def atomicXorPtrAcquire : Opcode := ⟨801⟩
 /-- `atomic.xor.ptr.release` -/
-def atomicXorPtrRelease : Opcode := ⟨798⟩
+def atomicXorPtrRelease : Opcode := ⟨802⟩
 /-- `atomic.xor.ptr.acqrel` -/
-def atomicXorPtrAcqrel : Opcode := ⟨799⟩
+def atomicXorPtrAcqrel : Opcode := ⟨803⟩
 /-- `atomic.xor.ptr.seqcst` -/
-def atomicXorPtrSeqcst : Opcode := ⟨800⟩
+def atomicXorPtrSeqcst : Opcode := ⟨804⟩
 /-- `atomic.cxchg.ptr.relaxed.relaxed` -/
-def atomicCxchgPtrRelaxedRelaxed : Opcode := ⟨801⟩
+def atomicCxchgPtrRelaxedRelaxed : Opcode := ⟨805⟩
 /-- `atomic.cxchg.ptr.relaxed.acquire` -/
-def atomicCxchgPtrRelaxedAcquire : Opcode := ⟨802⟩
+def atomicCxchgPtrRelaxedAcquire : Opcode := ⟨806⟩
 /-- `atomic.cxchg.ptr.relaxed.seqcst` -/
-def atomicCxchgPtrRelaxedSeqcst : Opcode := ⟨803⟩
+def atomicCxchgPtrRelaxedSeqcst : Opcode := ⟨807⟩
 /-- `atomic.cxchg.ptr.acquire.relaxed` -/
-def atomicCxchgPtrAcquireRelaxed : Opcode := ⟨804⟩
+def atomicCxchgPtrAcquireRelaxed : Opcode := ⟨808⟩
 /-- `atomic.cxchg.ptr.acquire.acquire` -/
-def atomicCxchgPtrAcquireAcquire : Opcode := ⟨805⟩
+def atomicCxchgPtrAcquireAcquire : Opcode := ⟨809⟩
 /-- `atomic.cxchg.ptr.acquire.seqcst` -/
-def atomicCxchgPtrAcquireSeqcst : Opcode := ⟨806⟩
+def atomicCxchgPtrAcquireSeqcst : Opcode := ⟨810⟩
 /-- `atomic.cxchg.ptr.release.relaxed` -/
-def atomicCxchgPtrReleaseRelaxed : Opcode := ⟨807⟩
+def atomicCxchgPtrReleaseRelaxed : Opcode := ⟨811⟩
 /-- `atomic.cxchg.ptr.release.acquire` -/
-def atomicCxchgPtrReleaseAcquire : Opcode := ⟨808⟩
+def atomicCxchgPtrReleaseAcquire : Opcode := ⟨812⟩
 /-- `atomic.cxchg.ptr.release.seqcst` -/
-def atomicCxchgPtrReleaseSeqcst : Opcode := ⟨809⟩
+def atomicCxchgPtrReleaseSeqcst : Opcode := ⟨813⟩
 /-- `atomic.cxchg.ptr.acqrel.relaxed` -/
-def atomicCxchgPtrAcqrelRelaxed : Opcode := ⟨810⟩
+def atomicCxchgPtrAcqrelRelaxed : Opcode := ⟨814⟩
 /-- `atomic.cxchg.ptr.acqrel.acquire` -/
-def atomicCxchgPtrAcqrelAcquire : Opcode := ⟨811⟩
+def atomicCxchgPtrAcqrelAcquire : Opcode := ⟨815⟩
 /-- `atomic.cxchg.ptr.acqrel.seqcst` -/
-def atomicCxchgPtrAcqrelSeqcst : Opcode := ⟨812⟩
+def atomicCxchgPtrAcqrelSeqcst : Opcode := ⟨816⟩
 /-- `atomic.cxchg.ptr.seqcst.relaxed` -/
-def atomicCxchgPtrSeqcstRelaxed : Opcode := ⟨813⟩
+def atomicCxchgPtrSeqcstRelaxed : Opcode := ⟨817⟩
 /-- `atomic.cxchg.ptr.seqcst.acquire` -/
-def atomicCxchgPtrSeqcstAcquire : Opcode := ⟨814⟩
+def atomicCxchgPtrSeqcstAcquire : Opcode := ⟨818⟩
 /-- `atomic.cxchg.ptr.seqcst.seqcst` -/
-def atomicCxchgPtrSeqcstSeqcst : Opcode := ⟨815⟩
+def atomicCxchgPtrSeqcstSeqcst : Opcode := ⟨819⟩
 /-- `atomic.cxchg.weak.ptr.relaxed.relaxed` -/
-def atomicCxchgWeakPtrRelaxedRelaxed : Opcode := ⟨816⟩
+def atomicCxchgWeakPtrRelaxedRelaxed : Opcode := ⟨820⟩
 /-- `atomic.cxchg.weak.ptr.relaxed.acquire` -/
-def atomicCxchgWeakPtrRelaxedAcquire : Opcode := ⟨817⟩
+def atomicCxchgWeakPtrRelaxedAcquire : Opcode := ⟨821⟩
 /-- `atomic.cxchg.weak.ptr.relaxed.seqcst` -/
-def atomicCxchgWeakPtrRelaxedSeqcst : Opcode := ⟨818⟩
+def atomicCxchgWeakPtrRelaxedSeqcst : Opcode := ⟨822⟩
 /-- `atomic.cxchg.weak.ptr.acquire.relaxed` -/
-def atomicCxchgWeakPtrAcquireRelaxed : Opcode := ⟨819⟩
+def atomicCxchgWeakPtrAcquireRelaxed : Opcode := ⟨823⟩
 /-- `atomic.cxchg.weak.ptr.acquire.acquire` -/
-def atomicCxchgWeakPtrAcquireAcquire : Opcode := ⟨820⟩
+def atomicCxchgWeakPtrAcquireAcquire : Opcode := ⟨824⟩
 /-- `atomic.cxchg.weak.ptr.acquire.seqcst` -/
-def atomicCxchgWeakPtrAcquireSeqcst : Opcode := ⟨821⟩
+def atomicCxchgWeakPtrAcquireSeqcst : Opcode := ⟨825⟩
 /-- `atomic.cxchg.weak.ptr.release.relaxed` -/
-def atomicCxchgWeakPtrReleaseRelaxed : Opcode := ⟨822⟩
+def atomicCxchgWeakPtrReleaseRelaxed : Opcode := ⟨826⟩
 /-- `atomic.cxchg.weak.ptr.release.acquire` -/
-def atomicCxchgWeakPtrReleaseAcquire : Opcode := ⟨823⟩
+def atomicCxchgWeakPtrReleaseAcquire : Opcode := ⟨827⟩
 /-- `atomic.cxchg.weak.ptr.release.seqcst` -/
-def atomicCxchgWeakPtrReleaseSeqcst : Opcode := ⟨824⟩
+def atomicCxchgWeakPtrReleaseSeqcst : Opcode := ⟨828⟩
 /-- `atomic.cxchg.weak.ptr.acqrel.relaxed` -/
-def atomicCxchgWeakPtrAcqrelRelaxed : Opcode := ⟨825⟩
+def atomicCxchgWeakPtrAcqrelRelaxed : Opcode := ⟨829⟩
 /-- `atomic.cxchg.weak.ptr.acqrel.acquire` -/
-def atomicCxchgWeakPtrAcqrelAcquire : Opcode := ⟨826⟩
+def atomicCxchgWeakPtrAcqrelAcquire : Opcode := ⟨830⟩
 /-- `atomic.cxchg.weak.ptr.acqrel.seqcst` -/
-def atomicCxchgWeakPtrAcqrelSeqcst : Opcode := ⟨827⟩
+def atomicCxchgWeakPtrAcqrelSeqcst : Opcode := ⟨831⟩
 /-- `atomic.cxchg.weak.ptr.seqcst.relaxed` -/
-def atomicCxchgWeakPtrSeqcstRelaxed : Opcode := ⟨828⟩
+def atomicCxchgWeakPtrSeqcstRelaxed : Opcode := ⟨832⟩
 /-- `atomic.cxchg.weak.ptr.seqcst.acquire` -/
-def atomicCxchgWeakPtrSeqcstAcquire : Opcode := ⟨829⟩
+def atomicCxchgWeakPtrSeqcstAcquire : Opcode := ⟨833⟩
 /-- `atomic.cxchg.weak.ptr.seqcst.seqcst` -/
-def atomicCxchgWeakPtrSeqcstSeqcst : Opcode := ⟨830⟩
+def atomicCxchgWeakPtrSeqcstSeqcst : Opcode := ⟨834⟩
 /-- `fence.acquire` -/
-def fenceAcquire : Opcode := ⟨831⟩
+def fenceAcquire : Opcode := ⟨835⟩
 /-- `fence.release` -/
-def fenceRelease : Opcode := ⟨832⟩
+def fenceRelease : Opcode := ⟨836⟩
 /-- `fence.acqrel` -/
-def fenceAcqrel : Opcode := ⟨833⟩
+def fenceAcqrel : Opcode := ⟨837⟩
 /-- `fence.seqcst` -/
-def fenceSeqcst : Opcode := ⟨834⟩
+def fenceSeqcst : Opcode := ⟨838⟩
 /-- `compiler_fence` -/
-def compilerFence : Opcode := ⟨835⟩
+def compilerFence : Opcode := ⟨839⟩
 /-- `jmp` -/
-def jmp : Opcode := ⟨836⟩
+def jmp : Opcode := ⟨840⟩
 /-- `br` -/
-def br : Opcode := ⟨837⟩
+def br : Opcode := ⟨841⟩
 /-- `br.eq.w8` -/
-def brEqW8 : Opcode := ⟨838⟩
+def brEqW8 : Opcode := ⟨842⟩
 /-- `br.lt.s.w8` -/
-def brLtSW8 : Opcode := ⟨839⟩
+def brLtSW8 : Opcode := ⟨843⟩
 /-- `br.lt.u.w8` -/
-def brLtUW8 : Opcode := ⟨840⟩
+def brLtUW8 : Opcode := ⟨844⟩
 /-- `br.eq.imm.w8` -/
-def brEqImmW8 : Opcode := ⟨841⟩
+def brEqImmW8 : Opcode := ⟨845⟩
 /-- `br.lt.s.imm.w8` -/
-def brLtSImmW8 : Opcode := ⟨842⟩
+def brLtSImmW8 : Opcode := ⟨846⟩
 /-- `br.lt.u.imm.w8` -/
-def brLtUImmW8 : Opcode := ⟨843⟩
+def brLtUImmW8 : Opcode := ⟨847⟩
 /-- `br.gt.s.imm.w8` -/
-def brGtSImmW8 : Opcode := ⟨844⟩
+def brGtSImmW8 : Opcode := ⟨848⟩
 /-- `br.gt.u.imm.w8` -/
-def brGtUImmW8 : Opcode := ⟨845⟩
+def brGtUImmW8 : Opcode := ⟨849⟩
 /-- `br.eq.w16` -/
-def brEqW16 : Opcode := ⟨846⟩
+def brEqW16 : Opcode := ⟨850⟩
 /-- `br.lt.s.w16` -/
-def brLtSW16 : Opcode := ⟨847⟩
+def brLtSW16 : Opcode := ⟨851⟩
 /-- `br.lt.u.w16` -/
-def brLtUW16 : Opcode := ⟨848⟩
+def brLtUW16 : Opcode := ⟨852⟩
 /-- `br.eq.imm.w16` -/
-def brEqImmW16 : Opcode := ⟨849⟩
+def brEqImmW16 : Opcode := ⟨853⟩
 /-- `br.lt.s.imm.w16` -/
-def brLtSImmW16 : Opcode := ⟨850⟩
+def brLtSImmW16 : Opcode := ⟨854⟩
 /-- `br.lt.u.imm.w16` -/
-def brLtUImmW16 : Opcode := ⟨851⟩
+def brLtUImmW16 : Opcode := ⟨855⟩
 /-- `br.gt.s.imm.w16` -/
-def brGtSImmW16 : Opcode := ⟨852⟩
+def brGtSImmW16 : Opcode := ⟨856⟩
 /-- `br.gt.u.imm.w16` -/
-def brGtUImmW16 : Opcode := ⟨853⟩
+def brGtUImmW16 : Opcode := ⟨857⟩
 /-- `br.eq.w32` -/
-def brEqW32 : Opcode := ⟨854⟩
+def brEqW32 : Opcode := ⟨858⟩
 /-- `br.lt.s.w32` -/
-def brLtSW32 : Opcode := ⟨855⟩
+def brLtSW32 : Opcode := ⟨859⟩
 /-- `br.lt.u.w32` -/
-def brLtUW32 : Opcode := ⟨856⟩
+def brLtUW32 : Opcode := ⟨860⟩
 /-- `br.eq.imm.w32` -/
-def brEqImmW32 : Opcode := ⟨857⟩
+def brEqImmW32 : Opcode := ⟨861⟩
 /-- `br.lt.s.imm.w32` -/
-def brLtSImmW32 : Opcode := ⟨858⟩
+def brLtSImmW32 : Opcode := ⟨862⟩
 /-- `br.lt.u.imm.w32` -/
-def brLtUImmW32 : Opcode := ⟨859⟩
+def brLtUImmW32 : Opcode := ⟨863⟩
 /-- `br.gt.s.imm.w32` -/
-def brGtSImmW32 : Opcode := ⟨860⟩
+def brGtSImmW32 : Opcode := ⟨864⟩
 /-- `br.gt.u.imm.w32` -/
-def brGtUImmW32 : Opcode := ⟨861⟩
+def brGtUImmW32 : Opcode := ⟨865⟩
 /-- `br.eq.w64` -/
-def brEqW64 : Opcode := ⟨862⟩
+def brEqW64 : Opcode := ⟨866⟩
 /-- `br.lt.s.w64` -/
-def brLtSW64 : Opcode := ⟨863⟩
+def brLtSW64 : Opcode := ⟨867⟩
 /-- `br.lt.u.w64` -/
-def brLtUW64 : Opcode := ⟨864⟩
+def brLtUW64 : Opcode := ⟨868⟩
 /-- `br.eq.imm.w64` -/
-def brEqImmW64 : Opcode := ⟨865⟩
+def brEqImmW64 : Opcode := ⟨869⟩
 /-- `br.lt.s.imm.w64` -/
-def brLtSImmW64 : Opcode := ⟨866⟩
+def brLtSImmW64 : Opcode := ⟨870⟩
 /-- `br.lt.u.imm.w64` -/
-def brLtUImmW64 : Opcode := ⟨867⟩
+def brLtUImmW64 : Opcode := ⟨871⟩
 /-- `br.gt.s.imm.w64` -/
-def brGtSImmW64 : Opcode := ⟨868⟩
+def brGtSImmW64 : Opcode := ⟨872⟩
 /-- `br.gt.u.imm.w64` -/
-def brGtUImmW64 : Opcode := ⟨869⟩
+def brGtUImmW64 : Opcode := ⟨873⟩
 /-- `br.eq.w128` -/
-def brEqW128 : Opcode := ⟨870⟩
+def brEqW128 : Opcode := ⟨874⟩
 /-- `br.lt.s.w128` -/
-def brLtSW128 : Opcode := ⟨871⟩
+def brLtSW128 : Opcode := ⟨875⟩
 /-- `br.lt.u.w128` -/
-def brLtUW128 : Opcode := ⟨872⟩
+def brLtUW128 : Opcode := ⟨876⟩
 /-- `br.eq.imm.w128` -/
-def brEqImmW128 : Opcode := ⟨873⟩
+def brEqImmW128 : Opcode := ⟨877⟩
 /-- `br.lt.s.imm.w128` -/
-def brLtSImmW128 : Opcode := ⟨874⟩
+def brLtSImmW128 : Opcode := ⟨878⟩
 /-- `br.lt.u.imm.w128` -/
-def brLtUImmW128 : Opcode := ⟨875⟩
+def brLtUImmW128 : Opcode := ⟨879⟩
 /-- `br.gt.s.imm.w128` -/
-def brGtSImmW128 : Opcode := ⟨876⟩
+def brGtSImmW128 : Opcode := ⟨880⟩
 /-- `br.gt.u.imm.w128` -/
-def brGtUImmW128 : Opcode := ⟨877⟩
+def brGtUImmW128 : Opcode := ⟨881⟩
 /-- `switch.dense.w8` -/
-def switchDenseW8 : Opcode := ⟨878⟩
+def switchDenseW8 : Opcode := ⟨882⟩
 /-- `switch.dense.w16` -/
-def switchDenseW16 : Opcode := ⟨879⟩
+def switchDenseW16 : Opcode := ⟨883⟩
 /-- `switch.dense.w32` -/
-def switchDenseW32 : Opcode := ⟨880⟩
+def switchDenseW32 : Opcode := ⟨884⟩
 /-- `switch.dense.w64` -/
-def switchDenseW64 : Opcode := ⟨881⟩
+def switchDenseW64 : Opcode := ⟨885⟩
 /-- `switch.dense.w128` -/
-def switchDenseW128 : Opcode := ⟨882⟩
+def switchDenseW128 : Opcode := ⟨886⟩
 /-- `switch.sparse.w8` -/
-def switchSparseW8 : Opcode := ⟨883⟩
+def switchSparseW8 : Opcode := ⟨887⟩
 /-- `switch.sparse.w16` -/
-def switchSparseW16 : Opcode := ⟨884⟩
+def switchSparseW16 : Opcode := ⟨888⟩
 /-- `switch.sparse.w32` -/
-def switchSparseW32 : Opcode := ⟨885⟩
+def switchSparseW32 : Opcode := ⟨889⟩
 /-- `switch.sparse.w64` -/
-def switchSparseW64 : Opcode := ⟨886⟩
+def switchSparseW64 : Opcode := ⟨890⟩
 /-- `switch.sparse.w128` -/
-def switchSparseW128 : Opcode := ⟨887⟩
+def switchSparseW128 : Opcode := ⟨891⟩
 /-- `unreachable` -/
-def unreachable : Opcode := ⟨888⟩
+def unreachable : Opcode := ⟨892⟩
 /-- `abort` -/
-def abort : Opcode := ⟨889⟩
+def abort : Opcode := ⟨893⟩
 /-- `call` -/
-def call : Opcode := ⟨890⟩
+def call : Opcode := ⟨894⟩
 /-- `call.sym` -/
-def callSym : Opcode := ⟨891⟩
+def callSym : Opcode := ⟨895⟩
 /-- `call.sym.ind` -/
-def callSymInd : Opcode := ⟨892⟩
+def callSymInd : Opcode := ⟨896⟩
 /-- `call.ptr` -/
-def callPtr : Opcode := ⟨893⟩
+def callPtr : Opcode := ⟨897⟩
 /-- `tail_call` -/
-def tailCall : Opcode := ⟨894⟩
+def tailCall : Opcode := ⟨898⟩
 /-- `tail_call.ptr` -/
-def tailCallPtr : Opcode := ⟨895⟩
+def tailCallPtr : Opcode := ⟨899⟩
 /-- `ret` -/
-def ret : Opcode := ⟨896⟩
+def ret : Opcode := ⟨900⟩
 /-- `arg` -/
-def arg : Opcode := ⟨897⟩
+def arg : Opcode := ⟨901⟩
 /-- `island` -/
-def island : Opcode := ⟨898⟩
+def island : Opcode := ⟨902⟩
 /-- `lpad` -/
-def lpad : Opcode := ⟨899⟩
+def lpad : Opcode := ⟨903⟩
 /-- `resume` -/
-def resume : Opcode := ⟨900⟩
+def resume : Opcode := ⟨904⟩
 
 end Opcode
 

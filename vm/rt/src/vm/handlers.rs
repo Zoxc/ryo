@@ -10,6 +10,7 @@
 // variants. The `*_ptr` atomic kinds are `AtomicPtr`'s: the same machine operations as the
 // 64-bit integer ones, but the value is a pointer (with provenance, in the Lean semantics),
 // and the read-modify-write ones take a `usize` operand (`fetch_byte_add`, `fetch_or`, ...).
+// The SIMD kinds (`vsplat`, `vcmp`, `vmsb`) take the lane type and the lane count.
 
 macro_rules! for_each_handler {
     ($m:ident!($($args:tt)*)) => { $m! { ($($args)*)
@@ -342,6 +343,10 @@ macro_rules! for_each_handler {
         CopysignF64 => fmeth(f64, copysign);
         FnegF64 => fneg(f64);
         FabsF64 => fun(f64, abs);
+        VsplatI8x16 => vsplat(u8, 16);
+        VeqI8x16 => vcmp(u8, 16, ==);
+        VltSI8x16 => vcmp(i8, 16, <);
+        VmsbI8x16 => vmsb(u8, 16);
         ZextW8W16 => cvt(u8, u16);
         SextW8W16 => cvt(i8, i16);
         ZextW8W32 => cvt(u8, u32);

@@ -345,6 +345,12 @@ define_ops! {
     FnegF64 = "fneg.f64" op { d: Slot, a: Slot },
     FabsF64 = "fabs.f64" op { d: Slot, a: Slot },
 
+    // ---- SIMD (128-bit vectors) ----
+    VsplatI8x16 = "vsplat.i8x16" op { d: Slot, s: Slot },
+    VeqI8x16 = "veq.i8x16" op { d: Slot, a: Slot, b: Slot },
+    VltSI8x16 = "vlt.s.i8x16" op { d: Slot, a: Slot, b: Slot },
+    VmsbI8x16 = "vmsb.i8x16" op { d: Slot, a: Slot },
+
     // ---- conversions ----
     ZextW8W16 = "zext.w8.w16" op { d: Slot, s: Slot },
     SextW8W16 = "sext.w8.w16" op { d: Slot, s: Slot },

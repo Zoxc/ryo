@@ -137,6 +137,15 @@ where
         else mid
       else n
 
+/-- A SIMD kind's lane count parameter. -/
+def laneCount (p : Option String) : M Nat :=
+  match p.bind String.toNat? with
+  | some c => pure c
+  | none => throw (.unsupported s!"lane count {p}")
+
+/-- Lane `i` of a vector of `8 × n`-bit lanes read as one little-endian integer `v`. -/
+def lane (n v i : Nat) : BitVec (8 * n) := BitVec.ofNat (8 * n) (v / 2 ^ (8 * n * i))
+
 /-- The meaning of handler kind `k` with parameters `ps` (interp.rs's body macros). -/
 def kindSem (k : HandlerKind) (ps : List String) (e : Env) : M Out := do
   let p0 := ps.head?
@@ -259,6 +268,27 @@ def kindSem (k : HandlerKind) (ps : List String) (e : Env) : M Out := do
     match p1 with
     | some "abs" => pure (out e [("d", intBytes f.size (Ryo.Spec.Float.abs f (← e.int "a")))])
     | m => throw (.unsupported s!"float function {m}")
+  | .vsplat =>
+    let (n, _) ← intTy p0
+    let c ← laneCount p1
+    let v ← e.int "s"
+    pure (out e [("d", (List.replicate c (intBytes n v)).flatten)])
+  | .vcmp =>
+    let (n, s) ← intTy p0
+    let c ← laneCount p1
+    let some o := (ps.drop 2).head? | throw (.unsupported "comparison")
+    let a ← e.int "a"
+    let b ← e.int "b"
+    let ls ← (List.range c).mapM fun i => do
+      let r ← intCmp o s (lane n a i) (lane n b i)
+      pure (intBytes n (if r then 2 ^ (8 * n) - 1 else 0))
+    pure (out e [("d", ls.flatten)])
+  | .vmsb =>
+    let (n, _) ← intTy p0
+    let c ← laneCount p1
+    let a ← e.int "a"
+    let m := ((List.range c).map fun i => (lane n a i).msb.toNat * 2 ^ i).sum
+    pure (out e [("d", intBytes 2 m)])
   | .cvt =>
     let x ← parseTy p0
     let y ← parseTy p1

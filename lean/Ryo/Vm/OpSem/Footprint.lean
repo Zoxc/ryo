@@ -147,6 +147,15 @@ def footprintOf (k : HandlerKind) (ps : List String) : Option Footprint := do
   | .count => let n ← w; pure { reads := [rd "a" n], writes := [rd "d" 4] }
   | .ovf =>
     let n ← w; pure { reads := [rd "a" n, rd "b" n], writes := [rd "d" n, rd "o" 1] }
+  | .vsplat =>
+    let n ← w; let c ← (ps.drop 1).head?.bind String.toNat?
+    pure { reads := [rd "s" n], writes := [rd "d" (n * c)] }
+  | .vcmp =>
+    let n ← w; let c ← (ps.drop 1).head?.bind String.toNat?
+    pure { reads := [rd "a" (n * c), rd "b" (n * c)], writes := [rd "d" (n * c)] }
+  | .vmsb =>
+    let n ← w; let c ← (ps.drop 1).head?.bind String.toNat?
+    pure { reads := [rd "a" (n * c)], writes := [rd "d" 2] }
   | .cvt =>
     let x ← w
     let y ← (ps.drop 1).head?.bind tySize

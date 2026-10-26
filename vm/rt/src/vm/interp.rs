@@ -336,6 +336,31 @@ macro_rules! fcmp {
         put!($a, $fp, $op, d, get!($t, $a, $fp, $op, a) $o get!($t, $a, $fp, $op, b))
     };
 }
+macro_rules! vsplat {
+    ($a:ident, $fp:ident, $op:ident, $t:ty, $n:literal) => {
+        put!($a, $fp, $op, d, [get!($t, $a, $fp, $op, s); $n])
+    };
+}
+macro_rules! vcmp {
+    ($a:ident, $fp:ident, $op:ident, $t:ty, $n:literal, $o:tt) => {{
+        let (x, y) = (get!([$t; $n], $a, $fp, $op, a), get!([$t; $n], $a, $fp, $op, b));
+        // All ones or all zeros per lane (`0 - 1` wraps).
+        put!($a, $fp, $op, d, core::array::from_fn::<$t, $n, _>(|i| (0 as $t).wrapping_sub((x[i] $o y[i]) as $t)))
+    }};
+}
+macro_rules! vmsb {
+    ($a:ident, $fp:ident, $op:ident, $t:ty, $n:literal) => {{
+        // The top bit of each lane, lane `i` at bit `i` (`pmovmskb`); `$n` ≤ 16.
+        let x = get!([$t; $n], $a, $fp, $op, a);
+        let mut m = 0u16;
+        let mut i = 0;
+        while i < $n {
+            m |= ((x[i] >> (<$t>::BITS - 1)) as u16 & 1) << i;
+            i += 1;
+        }
+        put!($a, $fp, $op, d, m)
+    }};
+}
 macro_rules! cvt {
     ($a:ident, $fp:ident, $op:ident, $x:ty, $y:ty) => {
         // `as`: zero/sign extension, truncation, saturating float → int (NaN → 0), int → float
