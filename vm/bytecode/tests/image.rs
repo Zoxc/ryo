@@ -99,6 +99,7 @@ fn link(obj: &ImageObject, resolve: impl Fn(&SymbolDef) -> u64) -> Linked {
                 unsafe { std::ptr::copy_nonoverlapping(d.as_ptr(), (buf.addr() + r.offset) as *mut u8, 4) };
             }
             RelocKind::Rva32 => unreachable!("ELF"),
+            RelocKind::Pc64 => unreachable!("Mach-O `.eh_frame` only"),
         }
     }
     l

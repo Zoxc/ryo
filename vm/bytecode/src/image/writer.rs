@@ -151,6 +151,8 @@ pub enum RelocKind {
     Pc32,
     /// 32 bits, as `Pc32`, of a call (through the PLT if the target is in a shared object).
     Call32,
+    /// 64 bits: `target + addend - field` (the `.eh_frame` pointers of [`EhPointers::Abs8`]).
+    Pc64,
     /// 32 bits: `target + addend` relative to the image base (PE `ADDR32NB`).
     Rva32,
 }
@@ -405,6 +407,20 @@ pub struct ImageWriter {
     mode: Option<Mode>,
     /// The slot of `rust_eh_personality` (ELF).
     personality: Option<Sym>,
+    eh_pointers: EhPointers,
+}
+
+/// How `.eh_frame` encodes the FDEs' first address, range and LSDA pointer
+/// ([`ImageWriter::set_eh_pointers`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum EhPointers {
+    /// 4 bytes, `DW_EH_PE_pcrel | DW_EH_PE_sdata4` ([`RelocKind::Pc32`]): ELF, and the JIT.
+    #[default]
+    Sdata4,
+    /// 8 bytes, `DW_EH_PE_pcrel | DW_EH_PE_absptr` ([`RelocKind::Pc64`]): Mach-O, as LLVM
+    /// writes `__eh_frame` there. lld reads 4-byte pointers as unsigned, so it loses FDEs
+    /// whose code comes before them; Apple's linkers only ever see LLVM's form.
+    Abs8,
 }
 
 /// The personality routine of VM code's unwind information (ELF).
@@ -440,7 +456,13 @@ impl ImageWriter {
             sites: 0,
             mode: None,
             personality: None,
+            eh_pointers: EhPointers::Sdata4,
         }
+    }
+
+    /// Sets the pointer encoding of `.eh_frame` (not PE). The default is [`EhPointers::Sdata4`].
+    pub fn set_eh_pointers(&mut self, p: EhPointers) {
+        self.eh_pointers = p;
     }
 
     /// The 32-bit crate hash the registry uses.
@@ -777,7 +799,7 @@ impl ImageWriter {
             unwind_pe(&func_code, mode, &mut relocs)
         } else {
             let slot = symbols.off as u64 + 8 * self.personality.expect("prepare").0 as u64;
-            unwind_elf(&func_code, slot, mode, &mut relocs)
+            unwind_elf(&func_code, slot, mode, self.eh_pointers, &mut relocs)
         };
 
         Ok(ImageObject {
@@ -832,18 +854,24 @@ unsafe fn put<T: Copy>(buf: &mut [u8], off: u32, v: &[T]) {
 /// no rules: they make no calls, so only asynchronous unwinding could stop there. The
 /// counter check before the prologue moves nothing, and the entry's counter stub at the end
 /// of the code runs before the prologue: there the CFA is `rsp + 8` again.
-fn unwind_elf(funcs: &[FuncCode], personality_slot: u64, mode: Mode, relocs: &mut Vec<Reloc>) -> Vec<(Section, Vec<u8>)> {
-    let pc = |section, offset, target, addend| Reloc { section, offset, target: RelocTarget::Section(target), addend, kind: RelocKind::Pc32 };
+fn unwind_elf(funcs: &[FuncCode], personality_slot: u64, mode: Mode, ptrs: EhPointers, relocs: &mut Vec<Reloc>) -> Vec<(Section, Vec<u8>)> {
+    let pc = |offset, target, addend, kind| Reloc { section: Section::EhFrame, offset, target: RelocTarget::Section(target), addend, kind };
+    let kind = match ptrs {
+        EhPointers::Sdata4 => RelocKind::Pc32,
+        EhPointers::Abs8 => RelocKind::Pc64,
+    };
     let mut eh = Vec::new();
-    let p = eh_cie(&mut eh);
-    relocs.push(pc(Section::EhFrame, p as u64, Section::ReadOnly, personality_slot as i64));
+    let p = eh_cie_with(&mut eh, ptrs);
+    // The personality field is 4 bytes in both encodings.
+    relocs.push(pc(p as u64, Section::ReadOnly, personality_slot as i64, RelocKind::Pc32));
     let mut lsda = Vec::new();
     for f in funcs {
         let l = lsda.len() as u64;
         lsda.extend_from_slice(&asm::lsda::write(&f.call_sites));
-        let fields = eh_fde(&mut eh, 0, &EhFunc { len: f.len, frame_size: f.frame_size, prologue: f.prologue, entry_stub: f.entry_stub }, mode);
-        relocs.push(pc(Section::EhFrame, fields.pc_begin as u64, Section::Text, f.start as i64));
-        relocs.push(pc(Section::EhFrame, fields.lsda as u64, Section::Lsda, l as i64));
+        let ef = EhFunc { len: f.len, frame_size: f.frame_size, prologue: f.prologue, entry_stub: f.entry_stub };
+        let fields = eh_fde_with(&mut eh, 0, &ef, mode, ptrs);
+        relocs.push(pc(fields.pc_begin as u64, Section::Text, f.start as i64, kind));
+        relocs.push(pc(fields.lsda as u64, Section::Lsda, l as i64, kind));
     }
     vec![(Section::EhFrame, eh), (Section::Lsda, lsda)]
 }
@@ -851,6 +879,8 @@ fn unwind_elf(funcs: &[FuncCode], personality_slot: u64, mode: Mode, relocs: &mu
 /// `DW_EH_PE_pcrel | DW_EH_PE_sdata4`: the encoding of every pointer [`eh_cie`] and
 /// [`eh_fde`] write (the personality's with `DW_EH_PE_indirect` too).
 const PCREL_SDATA4: u8 = 0x1b;
+/// `DW_EH_PE_pcrel | DW_EH_PE_absptr`: the FDE pointers of [`EhPointers::Abs8`].
+const PCREL_ABSPTR: u8 = 0x10;
 
 /// Appends the CIE of VM code's `.eh_frame` to `eh`: augmentation `zPLR`, the personality
 /// through a pointer-sized slot (`DW_EH_PE_indirect`), the LSDA and FDE pointers PC-relative
@@ -858,13 +888,23 @@ const PCREL_SDATA4: u8 = 0x1b;
 /// CFA − 8). Returns the position in `eh` of the personality field, which holds the slot's
 /// address less the field's own. The image writer and the JIT (`ryo_rt`) share it.
 pub fn eh_cie(eh: &mut Vec<u8>) -> usize {
+    eh_cie_with(eh, EhPointers::Sdata4)
+}
+
+/// [`eh_cie`] with the LSDA and FDE pointers encoded as `ptrs` says (the personality stays
+/// `sdata4`, indirect).
+fn eh_cie_with(eh: &mut Vec<u8>, ptrs: EhPointers) -> usize {
+    let enc = match ptrs {
+        EhPointers::Sdata4 => PCREL_SDATA4,
+        EhPointers::Abs8 => PCREL_ABSPTR,
+    };
     let mut cie = vec![0, 0, 0, 0, 1];
     cie.extend_from_slice(b"zPLR\0");
     cie.extend_from_slice(&[1, 0x78, 16]); // code align 1, data align -8, return address r16
     cie.extend_from_slice(&[7, 0x80 | PCREL_SDATA4]); // augmentation length, P encoding (indirect)
     let personality = eh.len() + 4 + cie.len();
     cie.extend_from_slice(&[0; 4]);
-    cie.extend_from_slice(&[PCREL_SDATA4, PCREL_SDATA4]); // L, R encodings
+    cie.extend_from_slice(&[enc, enc]); // L, R encodings
     cie.extend_from_slice(&[0x0c, 7, 8, 0x90, 1]); // CFA = rsp + 8; return address at CFA - 8
     while (cie.len() + 4) % 8 != 0 {
         cie.push(0); // DW_CFA_nop
@@ -901,15 +941,24 @@ pub struct EhFields {
 /// nothing, and the entry's counter stub at the end of the code runs before the prologue:
 /// there the CFA is `rsp + 8` again.
 pub fn eh_fde(eh: &mut Vec<u8>, cie: usize, f: &EhFunc, mode: Mode) -> EhFields {
+    eh_fde_with(eh, cie, f, mode, EhPointers::Sdata4)
+}
+
+/// [`eh_fde`] with the first address, range and LSDA pointer of size `ptrs`.
+fn eh_fde_with(eh: &mut Vec<u8>, cie: usize, f: &EhFunc, mode: Mode, ptrs: EhPointers) -> EhFields {
     let at = eh.len();
     let mut fde = Vec::new();
     fde.extend_from_slice(&((at + 4 - cie) as u32).to_le_bytes()); // back to the CIE
+    let size = match ptrs {
+        EhPointers::Sdata4 => 4,
+        EhPointers::Abs8 => 8,
+    };
     let pc_begin = at + 4 + fde.len();
-    fde.extend_from_slice(&[0; 4]);
-    fde.extend_from_slice(&f.len.to_le_bytes());
-    fde.push(4);
+    fde.extend_from_slice(&[0; 8][..size]);
+    fde.extend_from_slice(&u64::from(f.len).to_le_bytes()[..size]);
+    fde.push(size as u8); // augmentation length: the LSDA pointer
     let lsda = at + 4 + fde.len();
-    fde.extend_from_slice(&[0; 4]);
+    fde.extend_from_slice(&[0; 8][..size]);
     let mut loc = 0;
     if mode.frame_pointer {
         // After `push rbp`: CFA = rsp + 16, rbp at CFA - 16; after `mov rbp, rsp`: CFA = rbp + 16.

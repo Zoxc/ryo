@@ -35,3 +35,10 @@ remove it once a Lean session has handled it.
 - `bswap.w8` is gone from the opcode list (a one-byte `bswap` was already lowered to
   `mov.w8`). The generated tables are regenerated; any hand-written spec or proof naming
   `bswap.w8` should drop it. Commit: "Remove the bswap.w8 opcode".
+
+- Image writer: `ImageWriter::set_eh_pointers(EhPointers::Abs8)` (Mach-O images) writes
+  the CIE's L and R encodings as `DW_EH_PE_pcrel | DW_EH_PE_absptr` (0x10), and each FDE's
+  `pc_begin`, `pc_range` and LSDA pointer as 8 bytes (augmentation length 8), with
+  `RelocKind::Pc64` for the pointers. The default (`Sdata4`, ELF and the JIT, `eh_cie` and
+  `eh_fde`) is unchanged. Only matters if the Lean `.eh_frame` model (`Ryo/Obj/EhFrame.lean`)
+  is to cover Mach-O images. Commit: "image: 8-byte .eh_frame pointers for Mach-O images".

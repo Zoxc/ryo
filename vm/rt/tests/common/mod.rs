@@ -240,6 +240,7 @@ pub fn link(obj: ImageObject, syms: &[(&str, usize)]) -> Linked {
                 unsafe { (field as *mut i32).write_unaligned(d32) }
             }
             RelocKind::Rva32 => panic!("PE relocation on ELF"),
+            RelocKind::Pc64 => panic!("Mach-O `.eh_frame` relocation"),
         }
     }
     assert!(unsafe { vmem::make_executable(text, text_len) }, "make_executable");
