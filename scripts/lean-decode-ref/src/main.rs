@@ -330,11 +330,12 @@ impl<'d> Linked<'d> {
             span(h.jit_records)
         ));
         out.push(format!(
-            "parts functions {} code_consts {} fixups {} sym_flags {} symbols {} consts {} lists {} call_sites {}",
+            "parts functions {} code_consts {} fixups {} sym_flags {} func_flags {} symbols {} consts {} lists {} call_sites {}",
             span(h.functions),
             span(h.code_consts),
             span(h.fixups),
             span(h.sym_flags),
+            span(h.func_flags),
             span(h.symbols),
             span(h.consts),
             span(h.lists),

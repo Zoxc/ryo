@@ -20,22 +20,6 @@ remove it once a Lean session has handled it.
   up to 128 bytes (`MAX_COPY`), not 64. Only matters if the Lean model covers the SSA tier.
   Commit: "JIT: do block copies of up to 128 bytes as loads and stores" (2c86394).
 
-- Image header gains `func_flags` (`[u8]` per function, bits always/never/cold/hint:
-  `FUNC_INLINE_ALWAYS = 1`, `FUNC_INLINE_NEVER = 2`, `FUNC_COLD = 4`, `FUNC_INLINE_HINT = 8`)
-  after `sym_flags`, so `Header` grows 136 → 144 bytes and the parts after it move
-  (`lean/Ryo/Obj/Image.lean` `readHeader`, the `parts` dump line); the reader checks its count
-  equals the function count, and `validate` rejects unknown bits. Nothing in the VM semantics
-  reads it (the JIT's inliner does). Commit: "Carry inline and cold attributes in the image".
-
-- The four `compiler_fence.{acquire,release,acqrel,seqcst}` opcodes are one `compiler_fence`
-  with no ordering; the backend maps every ordering of `atomic_singlethreadfence` to it. The
-  generated tables are regenerated; any hand-written spec or proof naming the per-ordering
-  forms should use the single op. Commit: "Merge the compiler_fence opcodes into one".
-
-- `bswap.w8` is gone from the opcode list (a one-byte `bswap` was already lowered to
-  `mov.w8`). The generated tables are regenerated; any hand-written spec or proof naming
-  `bswap.w8` should drop it. Commit: "Remove the bswap.w8 opcode".
-
 - Image writer: `ImageWriter::set_eh_pointers(EhPointers::Abs8)` (Mach-O images) writes
   the CIE's L and R encodings as `DW_EH_PE_pcrel | DW_EH_PE_absptr` (0x10), and each FDE's
   `pc_begin`, `pc_range` and LSDA pointer as 8 bytes (augmentation length 8), with

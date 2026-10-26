@@ -8,7 +8,7 @@ text sections its header's `data` and `text` fields are relocated against. Ports
 (`vm/bytecode/src/image/mod.rs`) over the object's bytes, and gathers each function's inputs
 to `asm::decode_reduced` (`Ryo.Obj.FuncInputs`).
 
-Layouts are `repr(C)` (`Header` 136 bytes, `FuncEntry` 36, `CallSiteEntry` 12,
+Layouts are `repr(C)` (`Header` 144 bytes, `FuncEntry` 36, `CallSiteEntry` 12,
 `FixupEntry` 16). Each function's scopes, dropped stores and branch targets are in its
 instruction list (`Ryo.Obj.List`), a run of the instruction-list bytes.
 -/
@@ -34,7 +34,15 @@ def CATCH : Nat := 0x80000000
 /-- `image::SYM_INDIRECT`. -/
 def SYM_INDIRECT : Nat := 1
 
-def headerSize : Nat := 136
+/-- `image::FUNC_INLINE_ALWAYS` etc.: a function's inline and cold attributes. Nothing in
+the VM semantics reads them (the JIT's inliner does). -/
+def FUNC_INLINE_ALWAYS : Nat := 1
+def FUNC_INLINE_NEVER : Nat := 2
+def FUNC_COLD : Nat := 4
+def FUNC_INLINE_HINT : Nat := 8
+def FUNC_FLAGS : Nat := FUNC_INLINE_ALWAYS ||| FUNC_INLINE_NEVER ||| FUNC_COLD ||| FUNC_INLINE_HINT
+
+def headerSize : Nat := 144
 
 /-- `image::Span`: offset and element count. -/
 structure Span where
@@ -57,6 +65,8 @@ structure Header where
   codeConsts : Span
   fixups : Span
   symFlags : Span
+  /-- One flag byte per function (`FUNC_INLINE_ALWAYS` etc.). -/
+  funcFlags : Span
   symbols : Span
   consts : Span
   /-- The functions' instruction lists (bytes). -/
@@ -103,6 +113,7 @@ inductive ImageError where
   | badFunction (i : Nat)
   | badFixup (i : Nat)
   | badSymbolFlags (i : Nat)
+  | badFuncFlags (i : Nat)
   | badMode
   /-- A function's instruction list (function index) is malformed. -/
   | badList (i : Nat)
@@ -119,6 +130,7 @@ instance : ToString ImageError where
     | .badFunction i => s!"BadFunction({i})"
     | .badFixup i => s!"BadFixup({i})"
     | .badSymbolFlags i => s!"BadSymbolFlags({i})"
+    | .badFuncFlags i => s!"BadFuncFlags({i})"
     | .badMode => "BadMode"
     | .badList i => s!"BadList({i})"
     | .badCallSite i => s!"BadCallSite({i})"
@@ -141,9 +153,9 @@ def readHeader (b : ByteArray) : Header :=
   { crateHash := u32! b 8, size := u32! b 12, stableCrateId := u64! b 16, data := u64! b 24,
     dataSize := u32! b 32, textSize := u32! b 36, text := u64! b 40, functions := span! b 48,
     codeConsts := span! b 56, fixups := span! b 64, symFlags := span! b 72,
-    symbols := span! b 80, consts := span! b 88, lists := span! b 96,
-    callSites := span! b 104, siteCount := u32! b 112, fixupArea := u32! b 116,
-    mode := u32! b 120, jitRecords := span! b 124 }
+    funcFlags := span! b 80, symbols := span! b 88, consts := span! b 96, lists := span! b 104,
+    callSites := span! b 112, siteCount := u32! b 120, fixupArea := u32! b 124,
+    mode := u32! b 128, jitRecords := span! b 132 }
 
 /-- `cast`'s checks: `span.count` elements of `size` bytes at `span.off` lie in `len` bytes,
 and `span.off` is a multiple of `align` (the section start is 8-aligned). -/
@@ -166,6 +178,7 @@ def Image.parse (bytes : ByteArray) (aligned : Bool := true) : Except ImageError
   checkPart n h.codeConsts 1 1 "code constants"
   checkPart n h.fixups 16 8 "fixups"
   checkPart n h.symFlags 1 1 "symbol flags"
+  checkPart n h.funcFlags 1 1 "function flags"
   checkPart n h.symbols 8 8 "symbols"
   checkPart n h.consts 1 1 "constants"
   checkPart n h.lists 1 1 "instruction lists"
@@ -173,6 +186,7 @@ def Image.parse (bytes : ByteArray) (aligned : Bool := true) : Except ImageError
   let all := MODE_FP_ARG ||| MODE_FRAME_POINTER ||| MODE_ALIGN_LOOPS ||| MODE_PE ||| MODE_COUNTERS
   if h.mode &&& (2 ^ 32 - 1 - all) != 0 || !(Mode.ofBits h.mode).valid then throw .badMode
   if h.symFlags.count != h.symbols.count then throw (.outOfBounds "symbol flags")
+  if h.funcFlags.count != h.functions.count then throw (.outOfBounds "function flags")
   if h.siteCount * 8 > h.fixupArea || h.fixupArea > h.dataSize then throw .badData
   let r := h.jitRecords
   let records := if (Mode.ofBits h.mode).counters then h.functions.count else 0
@@ -227,6 +241,10 @@ def symbolFlags (img : Image) : Array Nat :=
   (Array.range img.header.symFlags.count).map fun i =>
     (readU8 img.bytes (img.header.symFlags.off + i)).toOption.getD 0
 
+def funcFlags (img : Image) : Array Nat :=
+  (Array.range img.header.funcFlags.count).map fun i =>
+    (readU8 img.bytes (img.header.funcFlags.off + i)).toOption.getD 0
+
 def codeConsts (img : Image) : ByteArray :=
   img.bytes.extract img.header.codeConsts.off (img.header.codeConsts.off + img.header.codeConsts.count)
 
@@ -265,6 +283,10 @@ def validate (img : Image) : Except ImageError Unit := do
   i := 0
   for fl in img.symbolFlags do
     if fl &&& (255 - SYM_INDIRECT) != 0 then throw (.badSymbolFlags i)
+    i := i + 1
+  i := 0
+  for fl in img.funcFlags do
+    if fl &&& (255 - FUNC_FLAGS) != 0 then throw (.badFuncFlags i)
     i := i + 1
 
 end Image
@@ -500,7 +522,7 @@ private def hex (n : Nat) : String :=
 image <symbol>
 crate_hash <hex> stable_crate_id <hex> mode <bits> <Mode>
 sizes ro <size> data <data_size> text <text_size> sites <site_count> fixup_area <off> jit_records <off>+<count>
-parts functions <off>+<n> code_consts .. fixups .. sym_flags .. symbols .. consts .. lists .. call_sites ..
+parts functions <off>+<n> code_consts .. fixups .. sym_flags .. func_flags .. symbols .. consts .. lists .. call_sites ..
 validate ok | validate error: <ImageError>
 sym <i> flags <f> <name>
 func <i> off <code_off> len <code_len> arg <arg_size> ret <ret_size> kind <ret_kind> list <bytes> call_sites <n> relocs <n> <name>
@@ -515,7 +537,7 @@ def summary (o : ImageObject) : Array String := Id.run do
   let mut out := #[s!"image {o.symbol}",
     s!"crate_hash {hex h.crateHash} stable_crate_id {hex h.stableCrateId} mode {h.mode} {img.mode}",
     s!"sizes ro {h.size} data {h.dataSize} text {h.textSize} sites {h.siteCount} fixup_area {h.fixupArea} jit_records {h.jitRecords}",
-    s!"parts functions {h.functions} code_consts {h.codeConsts} fixups {h.fixups} sym_flags {h.symFlags} symbols {h.symbols} consts {h.consts} lists {h.lists} call_sites {h.callSites}"]
+    s!"parts functions {h.functions} code_consts {h.codeConsts} fixups {h.fixups} sym_flags {h.symFlags} func_flags {h.funcFlags} symbols {h.symbols} consts {h.consts} lists {h.lists} call_sites {h.callSites}"]
   out := out.push (match img.validate with
     | .ok () => "validate ok"
     | .error e => s!"validate error: {e}")
