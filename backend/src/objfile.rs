@@ -55,7 +55,9 @@ pub trait ObjectFormat {
     /// An unwind section of the image ([`Section::EhFrame`] …).
     fn unwind_section(&self, obj: &mut Object<'static>, which: Section) -> object::write::SectionId;
     /// A local symbol naming the code of a VM function (backtraces, profilers).
-    fn local_function(&self, obj: &mut Object<'static>, name: &str, section: object::write::SectionId, offset: u64, size: u64);
+    fn local_function(&self, obj: &mut Object<'static>, name: &str, section: object::write::SectionId, offset: u64, size: u64) {
+        obj.add_symbol(defined(name, section, offset, size, SymbolKind::Text, SymbolScope::Compilation));
+    }
     /// The global symbol of a VM function that native code calls by name.
     fn global_function(&self, obj: &mut Object<'static>, name: &str, section: object::write::SectionId, offset: u64, size: u64, sym: FuncSymbol);
     /// A section for data that is only written by relocations (RELRO / `.rdata`).
@@ -144,19 +146,6 @@ impl ObjectFormat for Elf {
         }
     }
 
-    fn local_function(&self, obj: &mut Object<'static>, name: &str, section: object::write::SectionId, offset: u64, size: u64) {
-        obj.add_symbol(Symbol {
-            name: name.as_bytes().to_vec(),
-            value: offset,
-            size,
-            kind: SymbolKind::Text,
-            scope: SymbolScope::Compilation,
-            weak: false,
-            section: SymbolSection::Section(section),
-            flags: SymbolFlags::None,
-        });
-    }
-
     fn global_function(&self, obj: &mut Object<'static>, name: &str, section: object::write::SectionId, offset: u64, size: u64, sym: FuncSymbol) {
         let (scope, st_other) = match sym.visibility {
             SymVisibility::Default => (SymbolScope::Dynamic, elf::STV_DEFAULT),
@@ -165,14 +154,9 @@ impl ObjectFormat for Elf {
         };
         let bind = if sym.weak { elf::STB_WEAK } else { elf::STB_GLOBAL };
         obj.add_symbol(Symbol {
-            name: name.as_bytes().to_vec(),
-            value: offset,
-            size,
-            kind: SymbolKind::Text,
-            scope,
             weak: sym.weak,
-            section: SymbolSection::Section(section),
             flags: SymbolFlags::Elf { st_info: (bind << 4) | elf::STT_FUNC, st_other },
+            ..defined(name, section, offset, size, SymbolKind::Text, scope)
         });
     }
 
@@ -195,14 +179,8 @@ impl ObjectFormat for Elf {
         kind: SymbolKind,
     ) -> SymbolId {
         obj.add_symbol(Symbol {
-            name: name.as_bytes().to_vec(),
-            value: offset,
-            size,
-            kind,
-            scope: SymbolScope::Linkage,
-            weak: false,
-            section: SymbolSection::Section(section),
             flags: SymbolFlags::Elf { st_info: (elf::STB_GLOBAL << 4) | elf_type(kind), st_other: elf::STV_HIDDEN },
+            ..defined(name, section, offset, size, kind, SymbolScope::Linkage)
         })
     }
 
@@ -268,33 +246,11 @@ impl ObjectFormat for Coff {
         obj.add_section(Vec::new(), name.to_vec(), SectionKind::ReadOnlyData)
     }
 
-    fn local_function(&self, obj: &mut Object<'static>, name: &str, section: object::write::SectionId, offset: u64, size: u64) {
-        obj.add_symbol(Symbol {
-            name: name.as_bytes().to_vec(),
-            value: offset,
-            size,
-            kind: SymbolKind::Text,
-            scope: SymbolScope::Compilation,
-            weak: false,
-            section: SymbolSection::Section(section),
-            flags: SymbolFlags::None,
-        });
-    }
-
     fn global_function(&self, obj: &mut Object<'static>, name: &str, section: object::write::SectionId, offset: u64, size: u64, _sym: FuncSymbol) {
         // PE has no symbol visibility: a DLL exports what its export list names (rustc's
         // `/EXPORT` directives). A weak definition would need a comdat; VM functions never
         // have weak linkage (`vm_fn_sig` keeps functions with such a `#[linkage]` native).
-        obj.add_symbol(Symbol {
-            name: name.as_bytes().to_vec(),
-            value: offset,
-            size,
-            kind: SymbolKind::Text,
-            scope: SymbolScope::Dynamic,
-            weak: false,
-            section: SymbolSection::Section(section),
-            flags: SymbolFlags::None,
-        });
+        obj.add_symbol(defined(name, section, offset, size, SymbolKind::Text, SymbolScope::Dynamic));
     }
 
     fn relro_section(&self, obj: &mut Object<'static>, name: &str) -> object::write::SectionId {
@@ -317,16 +273,7 @@ impl ObjectFormat for Coff {
     ) -> SymbolId {
         // PE has no symbol visibility: a DLL exports only what its export list (rustc's
         // `/EXPORT` directives) names, and these symbols are never in it.
-        obj.add_symbol(Symbol {
-            name: name.as_bytes().to_vec(),
-            value: offset,
-            size,
-            kind,
-            scope: SymbolScope::Linkage,
-            weak: false,
-            section: SymbolSection::Section(section),
-            flags: SymbolFlags::None,
-        })
+        obj.add_symbol(defined(name, section, offset, size, kind, SymbolScope::Linkage))
     }
 
     fn import_slot(&self, name: &str) -> Result<String, String> {
@@ -431,19 +378,6 @@ impl ObjectFormat for MachO {
         }
     }
 
-    fn local_function(&self, obj: &mut Object<'static>, name: &str, section: object::write::SectionId, offset: u64, size: u64) {
-        obj.add_symbol(Symbol {
-            name: name.as_bytes().to_vec(),
-            value: offset,
-            size,
-            kind: SymbolKind::Text,
-            scope: SymbolScope::Compilation,
-            weak: false,
-            section: SymbolSection::Section(section),
-            flags: SymbolFlags::None,
-        });
-    }
-
     fn global_function(&self, obj: &mut Object<'static>, name: &str, section: object::write::SectionId, offset: u64, size: u64, sym: FuncSymbol) {
         // Hidden is `N_PEXT` (private extern); a weak definition `N_WEAK_DEF`. Mach-O has no
         // protected visibility: such a symbol is exported as a default one.
@@ -451,16 +385,7 @@ impl ObjectFormat for MachO {
             SymVisibility::Default | SymVisibility::Protected => SymbolScope::Dynamic,
             SymVisibility::Hidden => SymbolScope::Linkage,
         };
-        obj.add_symbol(Symbol {
-            name: name.as_bytes().to_vec(),
-            value: offset,
-            size,
-            kind: SymbolKind::Text,
-            scope,
-            weak: sym.weak,
-            section: SymbolSection::Section(section),
-            flags: SymbolFlags::None,
-        });
+        obj.add_symbol(Symbol { weak: sym.weak, ..defined(name, section, offset, size, SymbolKind::Text, scope) });
     }
 
     fn relro_section(&self, obj: &mut Object<'static>, name: &str) -> object::write::SectionId {
@@ -487,16 +412,7 @@ impl ObjectFormat for MachO {
         kind: SymbolKind,
     ) -> SymbolId {
         // `N_PEXT`: global in the link unit, not exported.
-        obj.add_symbol(Symbol {
-            name: name.as_bytes().to_vec(),
-            value: offset,
-            size,
-            kind,
-            scope: SymbolScope::Linkage,
-            weak: false,
-            section: SymbolSection::Section(section),
-            flags: SymbolFlags::None,
-        })
+        obj.add_symbol(defined(name, section, offset, size, kind, SymbolScope::Linkage))
     }
 
     fn import_slot(&self, name: &str) -> Result<String, String> {
@@ -559,6 +475,20 @@ fn elf_type(kind: SymbolKind) -> u8 {
         SymbolKind::Text => elf::STT_FUNC,
         SymbolKind::Data => elf::STT_OBJECT,
         _ => elf::STT_NOTYPE,
+    }
+}
+
+/// A symbol defined at `offset` in `section`, strong and without format-specific flags.
+fn defined(name: &str, section: object::write::SectionId, offset: u64, size: u64, kind: SymbolKind, scope: SymbolScope) -> Symbol {
+    Symbol {
+        name: name.as_bytes().to_vec(),
+        value: offset,
+        size,
+        kind,
+        scope,
+        weak: false,
+        section: SymbolSection::Section(section),
+        flags: SymbolFlags::None,
     }
 }
 
