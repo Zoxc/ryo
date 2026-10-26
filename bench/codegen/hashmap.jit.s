@@ -61,7 +61,6 @@ L7:
     jb      L30
     mov     edx,[r12]
     mov     [rsp+40h],edx
-    mov     edx,edx
     mov     rdi,rdx
     mov     edx,4
 L8:
@@ -93,7 +92,6 @@ L10:
     jb      L31
     movzx   r8d,word ptr [r8]
     mov     [rsp+34h],r8w
-    movzx   r8d,r8w
     mov     r9,rdx
     imul    r9,8
     mov     rcx,r9
@@ -110,7 +108,6 @@ L11:
     mov     byte ptr [rsp+35h],1
     lea     r8,[r12+rdx]
     movzx   r8d,byte ptr [r8]
-    movzx   r8d,r8b
     imul    rdx,8
     mov     rcx,rdx
     shl     r8,cl
@@ -239,7 +236,6 @@ L23:
     jb      L34
     mov     eax,[rax]
     mov     [rsp+50h],eax
-    mov     eax,eax
     mov     rdx,rax
     mov     eax,4
 L24:
@@ -272,7 +268,6 @@ L26:
     jb      L35
     movzx   r8d,word ptr [r8]
     mov     [rsp+44h],r8w
-    movzx   r8d,r8w
     mov     r9,rax
     imul    r9,8
     mov     rcx,r9
@@ -289,7 +284,6 @@ L27:
     mov     byte ptr [rsp+45h],1
     lea     r13,[r13+r14]
     movzx   r9d,byte ptr [r13]
-    movzx   r9d,r9b
     imul    rax,8
     mov     rcx,rax
     shl     r9,cl
@@ -1373,7 +1367,6 @@ L3:
     jb      L9
     mov     r8d,[r8]
     mov     [rsp+20h],r8d
-    mov     r8d,r8d
     mov     r9,r8
     mov     r8d,4
 L4:
@@ -1406,7 +1399,6 @@ L6:
     jb      L10
     movzx   ebx,word ptr [rbx]
     mov     [rsp+14h],bx
-    movzx   ebx,bx
     mov     r12,r8
     imul    r12,8
     mov     rcx,r12
@@ -1423,7 +1415,6 @@ L7:
     mov     byte ptr [rsp+15h],1
     lea     rdi,[rdi+rdx]
     movzx   edx,byte ptr [rdi]
-    movzx   edx,dl
     imul    r8,8
     mov     rcx,r8
     shl     rdx,cl
@@ -3197,7 +3188,6 @@ L2:
     mov     edx,0FFFFFF50h
     call    ryo_h_CttzW16
     mov     eax,[rsp+4Ch]
-    mov     eax,eax
     mov     [rsp+30h],rax
     mov     qword ptr [rsp+28h],1
     mov     rcx,[rsp+50h]
@@ -4201,7 +4191,6 @@ L2:
     mov     edx,0FFFFFF30h
     call    ryo_h_CttzW16
     mov     eax,[rsp+6Ch]
-    mov     eax,eax
     mov     [rsp+50h],rax
     mov     qword ptr [rsp+48h],1
     mov     rcx,[rsp+70h]
@@ -5364,7 +5353,6 @@ L2:
     mov     edx,0FFFFFF00h
     call    ryo_h_CttzW16
     mov     eax,[rsp+4Ch]
-    mov     eax,eax
     mov     [rsp+30h],rax
     mov     qword ptr [rsp+28h],1
     mov     rcx,[rsp+0B0h]
@@ -5524,7 +5512,6 @@ L1:
     mov     edx,0FFFFFFA0h
     call    ryo_h_CttzW16
     mov     eax,[rsp+4Ch]
-    mov     eax,eax
     mov     [rsp+30h],rax
     mov     qword ptr [rsp+28h],1
     mov     rcx,[r12]
@@ -5805,7 +5792,6 @@ L6:
     mov     edx,0FFFFFC60h
     call    ryo_h_CttzW16
     mov     ecx,[rsp+12Ch]
-    mov     ecx,ecx
     mov     [rsp+110h],rcx
     mov     qword ptr [rsp+108h],1
     mov     rdx,[rsp+160h]
@@ -7749,14 +7735,14 @@ L0:
     lea     r9,[image.k2736]
     test    r8b,r8b
     jne     L9
-    mov     r8d,eax
-    movzx   r14d,dx
+    mov     r8,rax
+    mov     r14,rdx
     shl     r14,20h
     or      r8,r14
-    movzx   r14d,sil
+    mov     r14,rsi
     shl     r14,30h
     or      r8,r14
-    movzx   r14d,dil
+    mov     r14,rdi
     shl     r14,38h
     or      r14,r8
     cmp     r13,0
@@ -7841,14 +7827,10 @@ L10:
     movzx   edi,word ptr [rsp+2Ch]
     movzx   r8d,byte ptr [rsp+2Eh]
     movzx   r9d,byte ptr [rsp+2Fh]
-    mov     esi,esi
-    movzx   edi,di
     shl     rdi,20h
     or      rsi,rdi
-    movzx   r8d,r8b
     shl     r8,30h
     or      rsi,r8
-    movzx   r9d,r9b
     shl     r9,38h
     or      rsi,r9
     mov     rdi,rcx

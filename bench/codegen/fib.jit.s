@@ -11,12 +11,10 @@ L0:
     mov     rax,rbx
     sub     eax,1
     mov     rdi,rax
-    mov     edi,edi
     call    fn2
     mov     r12,rax
     sub     ebx,2
     mov     rdi,rbx
-    mov     edi,edi
     call    fn2
     add     r12,rax
     jb      L2

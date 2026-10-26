@@ -179,9 +179,36 @@ fn fixed_regs() {
     println!("{acc}");
 }
 
+#[inline(never)]
+fn wide(a: u32, b: u16, c: u8) -> u64 {
+    a as u64 * 3 + b as u64 * 5 + c as u64
+}
+
+/// Narrow values whose upper bits the SSA tier knows are zero (4-byte ops, narrow loads,
+/// zero extensions) as call arguments, return values and widened, and ones it doesn't
+/// (sign-extending shifts, block parameters).
+#[inline(never)]
+fn known_zero() -> u32 {
+    let xs: [u32; 4] = black_box([u32::MAX, 7, 1 << 31, 0x8000_0001]);
+    let bs: [u8; 3] = black_box([0xff, 0x80, 1]);
+    let mut acc = 0u64;
+    let mut last = 0u32;
+    for (k, &x) in xs.iter().enumerate() {
+        let y = x.wrapping_add(x);
+        let b = bs[k % 3];
+        let s = (b as i8 >> 1) as u8;
+        acc = acc.wrapping_add(wide(y, (y >> 3) as u16, s)).wrapping_add(y as u64).wrapping_add(b as u64);
+        acc ^= wide(last, b as u16, (x as u8).wrapping_mul(3)) << 7;
+        last = if y > 9 { y } else { x };
+    }
+    println!("{acc}");
+    last.wrapping_mul(5)
+}
+
 fn main() {
     offsets();
     fixed_regs();
+    println!("{}", known_zero());
     by_one();
     small_div();
     rotates();

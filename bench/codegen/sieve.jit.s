@@ -1,7 +1,6 @@
 fn <std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize::<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}
     sub     rsp,18h
     movzx   eax,byte ptr [rsi]
-    movzx   eax,al
     add     rsp,18h
     ret
   ; OSR entries
@@ -469,7 +468,6 @@ L21:
 fn std::clone::impls::<impl std::clone::Clone for bool>::clone
     sub     rsp,18h
     movzx   eax,byte ptr [rdi]
-    movzx   eax,al
     add     rsp,18h
     ret
 

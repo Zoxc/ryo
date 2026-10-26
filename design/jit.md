@@ -489,7 +489,9 @@ the same bytes at the head, and the entry's `OsrLoad` of the second goes. OSR he
   ones as `mul` in `rax`/`rdx`) with `seto`/`setb`/`seta`, or their `jcc` for `br ovf`;
   the `div`/`rem` and variable-shift handlers decode as native operations, `div`/`idiv` in
   `rax`/`rdx` (8 and 16 bits at 32) and shifts by `cl` (masked explicitly at 8 and 16 bits);
-  extensions as `movzx`/`movsx`/`mov r32`, fall-through layout. `r10` and `r11` are the emitter's
+  extensions as `movzx`/`movsx`/`mov r32` (none, nor for narrow call arguments and return
+  parts, when the instruction that made the value leaves its upper bits zero: `E::zext`),
+  fall-through layout. `r10` and `r11` are the emitter's
   scratch registers and never allocated.
 - **Calls**: `hcall.reg` moves its `In` values into the first argument registers (a
   parallel move), sets the data registers after them, calls the register entry and moves

@@ -26,7 +26,6 @@ fn <std::iter::Enumerate<I> as std::iter::Iterator>::fold::enumerate::<&u32, u64
     mov     rax,[rdi]
     mov     ecx,[rdx]
     imul    rsi,1Fh
-    mov     ecx,ecx
     xor     rcx,rax
     add     rsi,rcx
     add     rax,1
@@ -1491,7 +1490,7 @@ L25:
     mov     r11,[rsp+18h]
     mov     [r11],esi
     movzx   esi,byte ptr [rsp+96h]
-    movzx   edi,sil
+    mov     rdi,rsi
     mov     r11,[rsp+28h]
     lea     rdi,[r11+rdi*4]
     xor     esi,1
@@ -9799,7 +9798,6 @@ L90:
     mov     rdx,[rsp+18h]
     mov     rcx,[rsp+40h]
     mov     r8,[rsp+20h]
-    mov     ecx,ecx
     call    fn15
     mov     r8,[rsp+1E0h]
     mov     [rsp+28h],rbx
@@ -10154,7 +10152,6 @@ L2:
 fn main::{closure#2}
     sub     rsp,18h
     mov     eax,[rsi]
-    mov     eax,eax
     add     rsp,18h
     ret
 
@@ -11001,13 +10998,12 @@ L6:
 fn std::iter::adapters::map::map_fold::<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}
     sub     rsp,18h
     mov     eax,[rsi]
-    mov     ecx,eax
+    mov     rcx,rax
     mov     rdx,rcx
     imul    rdx,10624DD3h
     shr     rdx,26h
     imul    edx,3E8h
     sub     eax,edx
-    mov     eax,eax
     shl     rcx,20h
     or      rax,rcx
     mov     rcx,rax

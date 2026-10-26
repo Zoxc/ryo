@@ -742,7 +742,9 @@ impl<'a> E<'a> {
         self.moves(ms);
         // Narrow integers zero-extended, as the AOT code loads them: native callees may rely
         // on it (`zeroext`).
-        for r in regs.iter().filter(|r| !r.xmm && r.size < 8) {
+        let narrow: Vec<&asm::ArgReg> =
+            regs.iter().zip(args).filter(|(r, v)| !r.xmm && r.size < 8 && self.zext(**v) > r.size as u8).map(|(r, _)| r).collect();
+        for r in narrow {
             let x = int_arg(self.mode.pe, r.index);
             self.a.x().movzx(x, r.size as u8, Rm::R(x));
         }
@@ -906,7 +908,7 @@ impl<'a> E<'a> {
             Op::Ext { from, to, sx } => {
                 let x = res[0];
                 let rd = self.work(x, &[]);
-                if to <= from {
+                if to <= from || (!sx && self.zext(args[0]) <= from) {
                     self.load(rd, args[0]);
                 } else {
                     self.ext_into(rd, args[0], from, sx);
@@ -1097,6 +1099,33 @@ impl<'a> E<'a> {
             }
         }
         Ok(())
+    }
+
+    /// How many low bytes of `v`'s location can be nonzero (8: unknown): what the
+    /// instruction that made it writes, a 4-byte op's result zero-extended to 64 bits, a
+    /// narrow load's by `movzx` (R4 of O14).
+    fn zext(&self, v: Value) -> u8 {
+        let mut v = v;
+        loop {
+            let ValueDef::Inst(i, n) = self.f.def(v) else { return 8 };
+            let id = &self.f.insts[i.idx()];
+            return match id.op {
+                // `sar` of a narrow value is at 64 bits.
+                Op::Bin(BinOp::ShrS, w) if w < 4 => 8,
+                Op::Bin(_, w) if w <= 4 => 4,
+                Op::Load(w @ (1 | 2 | 4), _) | Op::ALoad(_, _, w @ (1 | 2 | 4)) => w,
+                Op::Ext { from, to, sx: false } if to > from => from,
+                Op::Ext { from, to, .. } if to <= from => {
+                    v = id.args[0];
+                    continue;
+                }
+                Op::Ovf(BinOp::Add | BinOp::Sub, _, 4) | Op::Ovf(BinOp::Mul, _, 1) | Op::Ovf(BinOp::Mul, true, 4) if n == 0 => 4,
+                Op::Ovf(BinOp::Mul, false, 2) if n == 0 => 4,
+                Op::Ovf(BinOp::Mul, true, 2) if n == 0 => 8,
+                Op::HCall(ref h) if !h.reg && (n as usize) < h.outs.len() && matches!(self.f.w(v), 1 | 2 | 4) => self.f.w(v),
+                _ => 8,
+            };
+        }
     }
 
     /// Loads `v`'s low `from` bytes into `r`, zero- or sign-extended (`sx`) to 64 bits.
@@ -1455,9 +1484,9 @@ impl<'a> E<'a> {
                 self.moves(ms);
                 // Narrow integer parts zero-extended, as the AOT code loads them.
                 let mut g = 0;
-                for p in ps.iter().filter(|p| !p.xmm) {
+                for (p, &v) in ps.iter().zip(parts).filter(|(p, _)| !p.xmm) {
                     let r = [R::Rax, R::Rdx][g];
-                    if p.size < 8 {
+                    if p.size < 8 && self.zext(v) > p.size as u8 {
                         self.a.x().movzx(r, p.size as u8, Rm::R(r));
                     }
                     g += 1;
