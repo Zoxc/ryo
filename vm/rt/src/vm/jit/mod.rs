@@ -172,11 +172,20 @@ fn from_env() -> Config {
 
 /// `RYO_JIT_THRESHOLD`'s value: `L` or `E,L` ([`Config::threshold`]); `None` if malformed.
 fn parse_thresholds(s: &[u8]) -> Option<(i64, i64)> {
-    let lim = |t: i64| t.clamp(0, JIT_BIAS / 4);
     match s.iter().position(|&c| c == b',') {
-        Some(k) => Some((lim(parse_i64(&s[..k])?), lim(parse_i64(&s[k + 1..])?))),
-        None => parse_i64(s).map(|t| (lim(t) / 16, lim(t))),
+        Some(k) => Some((limit(parse_i64(&s[..k])?), limit(parse_i64(&s[k + 1..])?))),
+        None => parse_i64(s).map(thresholds_of),
     }
+}
+
+/// A threshold, clamped to what the counters hold.
+fn limit(t: i64) -> i64 {
+    t.clamp(0, JIT_BIAS / 4)
+}
+
+/// The thresholds of a single `L`: `L / 16` calls and `L` loop iterations.
+fn thresholds_of(l: i64) -> (i64, i64) {
+    (limit(l) / 16, limit(l))
 }
 
 impl Config {
@@ -188,21 +197,19 @@ impl Config {
 }
 
 /// Sets the JIT's settings instead of the environment, before anything reads them (tests):
-/// on, with `sync` ([`Config::sync`]) and `threshold` (as `RYO_JIT_THRESHOLD=threshold`), and
-/// `RYO_JIT_LOG`, `RYO_JIT_OPT` and `RYO_JIT_CHECK` from the environment. False if they were
-/// read already.
+/// on, with `sync` ([`Config::sync`]) and `threshold` (as `RYO_JIT_THRESHOLD=threshold`), no
+/// perf map, shuffling or test panics, and the rest (`RYO_JIT_LOG`, `RYO_JIT_OPT`,
+/// `RYO_JIT_CHECK`) from the environment. False if they were read already.
 #[doc(hidden)]
 pub fn configure_jit(sync: bool, threshold: Option<i64>) -> bool {
     set_config(|| Config {
         enabled: true,
-        threshold: threshold.map(|t| t.clamp(0, JIT_BIAS / 4)).map(|t| (t / 16, t)),
+        threshold: threshold.map(thresholds_of),
         sync,
         perfmap: false,
-        log: var(c"RYO_JIT_LOG").is_some(),
         shuffle: false,
         test_panic: false,
-        opt: opt_flags(),
-        check: var(c"RYO_JIT_CHECK") == Some(b"1"),
+        ..from_env()
     })
 }
 
