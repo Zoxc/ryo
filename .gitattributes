@@ -1,0 +1,4 @@
+# LF in the working tree on Windows too, whatever core.autocrlf says: generated files (the Lean
+# vectors) and expected outputs are compared byte for byte. y.cmd keeps its CRLF.
+* text=auto eol=lf
+*.cmd -text
