@@ -11,7 +11,7 @@ use super::Unsupported;
 use super::ir::*;
 use super::regalloc::{Alloc, Loc};
 use super::x86::{Alu, Cc as X, Mem, R, Rm, Shift, X86};
-use crate::asm::osr::OsrCode;
+use crate::asm::osr::{self, OsrCode};
 use crate::asm::{self, CallSite, Mode, PROBE_FROM, Ref, Reloc, RetPart};
 use crate::full::{ElemKind, OperandKind};
 use crate::reduced::Arg;
@@ -1681,13 +1681,6 @@ fn save_rule(v: &mut Vec<u8>, r: R, o: i32) {
     uleb(v, ((16 - o) / 8) as u32);
 }
 
-/// `DW_CFA_def_cfa reg, off`.
-fn def_cfa(reg: u8, off: u32) -> Vec<u8> {
-    let mut v = alloc::vec![0x0c, reg];
-    uleb(&mut v, off);
-    v
-}
-
 /// The OSR dispatcher and entries: each converts the AOT frame at a head into the JIT one
 /// (design/jit.md, "OSR"): everything it reads from the AOT frame into a scratch area below
 /// both frames first, then the callee-saved registers' saves, the moved allocas' copies, the
@@ -1696,35 +1689,12 @@ fn osr_code(f: &Func, al: &Alloc, mode: Mode, fr: &Frame, lab: &[u32], at: u32) 
     let fp = mode.frame_pointer;
     let f_aot = f.aot_frame;
     let f_jit = fr.size;
-    let mut x = X86::default();
-    let mut cfi = Vec::new();
     let mut probes = Vec::new();
-    if fp {
-        let mut v = def_cfa(6, 16);
-        v.extend([0x86, 2]);
-        cfi.push((0, v));
-    } else {
-        cfi.push((0, def_cfa(7, f_aot + 24)));
-    }
-    // The dispatcher: `lea r11, [rip + table]; movsxd rax, [r11 + rax*4]; add rax, r11;
-    // jmp rax`, then the table of `i32` offsets from it.
-    x.bytes(&[0x4c, 0x8d, 0x1d, 0, 0, 0, 0]);
-    let table_field = 3;
-    x.bytes(&[0x49, 0x63, 0x04, 0x83, 0x4c, 0x01, 0xd8, 0xff, 0xe0]);
-    while x.code.len() % 4 != 0 {
-        x.int3();
-    }
-    let table = x.code.len();
-    let d = (table - (table_field + 4)) as i32;
-    x.code[table_field..table_field + 4].copy_from_slice(&d.to_le_bytes());
-    x.code.resize(table + 4 * f.osr.len(), 0);
+    let (code, mut cfi, table) = osr::dispatcher(f.osr.len(), fp, f_aot);
+    let mut x = X86 { code, ..X86::default() };
     let mem_of = |base: R, off: i32| Mem::base(base, off);
     for (n, o) in f.osr.iter().enumerate() {
-        let start = x.code.len();
-        x.code[table + 4 * n..][..4].copy_from_slice(&((start - table) as i32).to_le_bytes());
-        if !fp {
-            cfi.push((start as u32, def_cfa(7, f_aot + 24)));
-        }
+        osr::entry_start(&mut x.code, &mut cfi, table, n, fp, f_aot);
         let Some(ob) = o else {
             x.ret();
             continue;
@@ -1732,18 +1702,11 @@ fn osr_code(f: &Func, al: &Alloc, mode: Mode, fr: &Frame, lab: &[u32], at: u32) 
         let obd = &f.blocks[ob.idx()];
         let Term::Jmp(edge) = &obd.term else { return Err(Unsupported("an OSR entry that doesn't jump")) };
         let head = edge.to;
-        // `pop rcx`: the stub's return address.
-        x.pop(R::Rcx);
-        if !fp {
-            let mut v = alloc::vec![0x0e];
-            uleb(&mut v, f_aot + 16);
-            cfi.push((x.pos(), v));
-        }
+        osr::drop_return(&mut x.code, &mut cfi, fp, f_aot);
         let base = if fp {
             R::Rbp
         } else {
-            x.lea(R::Rdx, Mem::base(R::Rsp, f_aot as i32));
-            cfi.push((x.pos(), def_cfa(1, 16)));
+            osr::fp_to_rdx(&mut x.code, &mut cfi, f_aot);
             R::Rdx
         };
         // What the entry reads: each OSR load's value, each moved alloca's bytes.
@@ -1763,20 +1726,18 @@ fn osr_code(f: &Func, al: &Alloc, mode: Mode, fr: &Frame, lab: &[u32], at: u32) 
                 k += al_.size.next_multiple_of(8) as i32;
             }
         }
-        let scratch = (k as u32).next_multiple_of(16);
-        let low = f_aot.max(f_jit) + scratch;
-        let grow = low - f_aot;
-        if grow >= PROBE_FROM {
-            x.mov_imm(4, super::x86::Rm::R(R::Rax), grow as u64);
-            x.code.push(0xe8);
-            probes.push(x.pos());
-            x.bytes(&[0; 4]);
-        }
+        let low = osr::low(f_aot, f_jit, k as u32);
+        osr::probe(&mut x.code, &mut probes, low - f_aot, mode.far_rt);
         x.lea(R::Rsp, mem_of(base, -(low as i32)));
         // Read from the AOT frame.
-        let piece = |x: &mut X86, from: Mem, to: Mem, size: u8| {
-            x.mov(size, Rm::R(S1), Rm::M(from));
-            x.mov(size, Rm::M(to), Rm::R(S1));
+        let copy = |x: &mut X86, (fb, from): (R, i32), (tb, to): (R, i32), size: u32| {
+            let mut d = 0;
+            while d < size {
+                let s = [8u32, 4, 2, 1].into_iter().find(|&s| s <= size - d).unwrap();
+                x.mov(s as u8, Rm::R(S1), Rm::M(mem_of(fb, from + d as i32)));
+                x.mov(s as u8, Rm::M(mem_of(tb, to + d as i32)), Rm::R(S1));
+                d += s;
+            }
         };
         for &(_, off, w, k) in &loads {
             match w {
@@ -1787,24 +1748,14 @@ fn osr_code(f: &Func, al: &Alloc, mode: Mode, fr: &Frame, lab: &[u32], at: u32) 
             x.mov(8, Rm::M(mem_of(R::Rsp, k)), Rm::R(S1));
         }
         for &(from, _, size, k) in &copies {
-            let mut d = 0;
-            while d < size {
-                let s = [8u32, 4, 2, 1].into_iter().find(|&s| s <= size - d).unwrap();
-                piece(&mut x, mem_of(base, from + d as i32), mem_of(R::Rsp, k + d as i32), s as u8);
-                d += s;
-            }
+            copy(&mut x, (base, from), (R::Rsp, k), size);
         }
         // The callee-saved registers still hold the caller's values: save them.
         for &(r, o) in &fr.saves {
             x.mov(8, Rm::M(mem_of(base, o)), Rm::R(r));
         }
         for &(_, to, size, k) in &copies {
-            let mut d = 0;
-            while d < size {
-                let s = [8u32, 4, 2, 1].into_iter().find(|&s| s <= size - d).unwrap();
-                piece(&mut x, mem_of(R::Rsp, k + d as i32), mem_of(base, to + d as i32), s as u8);
-                d += s;
-            }
+            copy(&mut x, (R::Rsp, k), (base, to), size);
         }
         // The head's parameters: memory ones first, then registers (`rdx`, the base, last).
         let params = &f.blocks[head.idx()].params;
@@ -1849,11 +1800,7 @@ fn osr_code(f: &Func, al: &Alloc, mode: Mode, fr: &Frame, lab: &[u32], at: u32) 
             // `rsp` is `fp - low`.
             x.lea(R::Rsp, mem_of(R::Rsp, (low - f_jit) as i32));
         }
-        // `jmp rel32` to the head.
-        let landing = lab[head.idx()];
-        x.code.push(0xe9);
-        let rel = landing as i64 - (at as i64 + x.code.len() as i64 + 4);
-        x.bytes(&(rel as i32).to_le_bytes());
+        osr::jmp_landing(&mut x.code, at, lab[head.idx()]);
     }
     Ok(OsrCode { code: x.code, probes, cfi })
 }

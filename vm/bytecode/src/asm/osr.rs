@@ -96,17 +96,18 @@ fn lea(out: &mut Vec<u8>, dst: u8, base: Base, disp: i32) {
     base.modrm(out, dst, disp);
 }
 
-/// The dispatcher and entries for `entries` (by head index), for a function whose AOT frame
-/// is `f_aot` and JIT frame `f_jit` bytes, in `mode`, placed `at` bytes after the JIT code's
-/// start (the landings' origin).
-pub fn osr_code(entries: &[Option<OsrEntry>], f_aot: u32, f_jit: u32, mode: Mode, at: u32) -> OsrCode {
+/// The CFA rules: offset in the code, DWARF call frame instructions.
+pub(crate) type Cfi = Vec<(u32, Vec<u8>)>;
+
+/// The start of an OSR code, shared by the AOT-layout entries here and the SSA tier's: the
+/// initial CFA rule and the dispatcher for `n` heads. Returns the code, the rules and the
+/// table's offset.
+///
+/// With a frame pointer the rules are the body's throughout: CFA = rbp + 16, rbp saved at
+/// CFA - 16. Without, CFA = rsp + F_aot + 24 while the stub's return address is on the stack.
+pub(crate) fn dispatcher(n: usize, fp: bool, f_aot: u32) -> (Vec<u8>, Cfi, usize) {
     let mut c = Vec::new();
-    let mut probes = Vec::new();
     let mut cfi = Vec::new();
-    let fp = mode.frame_pointer;
-    // With a frame pointer the rules are the body's throughout: CFA = rbp + 16, rbp saved at
-    // CFA - 16. Without, CFA = rsp + F_aot + 24 while the stub's return address is on the
-    // stack.
     if fp {
         let mut v = def_cfa(DW_RBP, 16);
         v.extend([0x86, 2]);
@@ -114,8 +115,8 @@ pub fn osr_code(entries: &[Option<OsrEntry>], f_aot: u32, f_jit: u32, mode: Mode
     } else {
         cfi.push((0, def_cfa(DW_RSP, f_aot + 24)));
     }
-    // The dispatcher: `lea r11, [rip + table]; movsxd rax, [r11 + rax*4]; add rax, r11;
-    // jmp rax`, then the table, 4-aligned, of `i32` offsets from it.
+    // `lea r11, [rip + table]; movsxd rax, [r11 + rax*4]; add rax, r11; jmp rax`, then the
+    // table, 4-aligned, of `i32` offsets from it.
     c.extend([0x4c, 0x8d, 0x1d]);
     let table_field = c.len();
     c.extend([0; 4]);
@@ -126,56 +127,99 @@ pub fn osr_code(entries: &[Option<OsrEntry>], f_aot: u32, f_jit: u32, mode: Mode
     let table = c.len();
     let d = (table - (table_field + 4)) as i32;
     c[table_field..table_field + 4].copy_from_slice(&d.to_le_bytes());
-    c.resize(table + 4 * entries.len(), 0);
+    c.resize(table + 4 * n, 0);
+    (c, cfi, table)
+}
+
+/// Starts head `n`'s entry at the end of `c`: its table slot and, without a frame pointer,
+/// its CFA rule.
+pub(crate) fn entry_start(c: &mut Vec<u8>, cfi: &mut Cfi, table: usize, n: usize, fp: bool, f_aot: u32) {
+    let len = c.len();
+    let off = (len - table) as i32;
+    c[table + 4 * n..][..4].copy_from_slice(&off.to_le_bytes());
+    if !fp {
+        cfi.push((len as u32, def_cfa(DW_RSP, f_aot + 24)));
+    }
+}
+
+/// `pop rcx`: drops the stub's return address (CFA = rsp + F_aot + 16 without a frame
+/// pointer).
+pub(crate) fn drop_return(c: &mut Vec<u8>, cfi: &mut Cfi, fp: bool, f_aot: u32) {
+    c.push(0x59);
+    if !fp {
+        let mut v = alloc::vec![0x0e];
+        uleb(&mut v, f_aot + 16);
+        cfi.push((c.len() as u32, v));
+    }
+}
+
+/// `lea rdx, [rsp + F_aot]` after [`drop_return`] without a frame pointer: rdx = fp, and from
+/// here CFA = rdx + 16.
+pub(crate) fn fp_to_rdx(c: &mut Vec<u8>, cfi: &mut Cfi, f_aot: u32) {
+    lea(c, 2, Base::Rsp, f_aot as i32);
+    cfi.push((c.len() as u32, def_cfa(DW_RDX, 16)));
+}
+
+/// The low end of an entry's stack, `fp - low`: the scratch area of `scratch` bytes below
+/// both frames.
+pub(crate) fn low(f_aot: u32, f_jit: u32, scratch: u32) -> u32 {
+    f_aot.max(f_jit) + scratch.next_multiple_of(16)
+}
+
+/// `mov eax, grow; call ryo_probe_stack` when growing the stack by `grow` bytes needs it:
+/// touches the pages below `rsp`. With `far_rt`, `mov r11, imm64; call r11` (the field is
+/// the `imm64`). Preserves everything but `rax` and `r11`.
+pub(crate) fn probe(c: &mut Vec<u8>, probes: &mut Vec<u32>, grow: u32, far_rt: bool) {
+    if grow < PROBE_FROM {
+        return;
+    }
+    c.push(0xb8);
+    c.extend(grow.to_le_bytes());
+    if far_rt {
+        c.extend([0x49, 0xbb]);
+        probes.push(c.len() as u32);
+        c.extend([0; 8]);
+        c.extend([0x41, 0xff, 0xd3]);
+    } else {
+        c.push(0xe8);
+        probes.push(c.len() as u32);
+        c.extend([0; 4]);
+    }
+}
+
+/// `jmp rel32` to `landing` in the JIT code, the OSR code being placed `at` bytes after its
+/// start.
+pub(crate) fn jmp_landing(c: &mut Vec<u8>, at: u32, landing: u32) {
+    c.push(0xe9);
+    let rel = landing as i64 - (at as i64 + c.len() as i64 + 4);
+    c.extend((rel as i32).to_le_bytes());
+}
+
+/// The dispatcher and entries for `entries` (by head index), for a function whose AOT frame
+/// is `f_aot` and JIT frame `f_jit` bytes, in `mode`, placed `at` bytes after the JIT code's
+/// start (the landings' origin).
+pub fn osr_code(entries: &[Option<OsrEntry>], f_aot: u32, f_jit: u32, mode: Mode, at: u32) -> OsrCode {
+    let mut probes = Vec::new();
+    let fp = mode.frame_pointer;
+    let (mut c, mut cfi, table) = dispatcher(entries.len(), fp, f_aot);
     for (n, e) in entries.iter().enumerate() {
-        let start = c.len();
-        let off = (start - table) as i32;
-        c[table + 4 * n..][..4].copy_from_slice(&off.to_le_bytes());
-        if !fp {
-            cfi.push((start as u32, def_cfa(DW_RSP, f_aot + 24)));
-        }
+        entry_start(&mut c, &mut cfi, table, n, fp, f_aot);
         let Some(e) = e else {
             // Not enterable: back to the stub, and on in the AOT code.
             c.push(0xc3);
             continue;
         };
-        // `pop rcx`: drop the stub's return address.
-        c.push(0x59);
-        if !fp {
-            // `DW_CFA_def_cfa_offset`: CFA = rsp + F_aot + 16.
-            let mut v = alloc::vec![0x0e];
-            uleb(&mut v, f_aot + 16);
-            cfi.push((c.len() as u32, v));
-        }
+        drop_return(&mut c, &mut cfi, fp, f_aot);
         if !(e.moves.is_empty() && f_aot == f_jit) {
             let base = if fp {
                 Base::Rbp
             } else {
-                // `lea rdx, [rsp + F_aot]`: rdx = fp, and from here CFA = rdx + 16.
-                lea(&mut c, 2, Base::Rsp, f_aot as i32);
-                cfi.push((c.len() as u32, def_cfa(DW_RDX, 16)));
+                fp_to_rdx(&mut c, &mut cfi, f_aot);
                 Base::Rdx
             };
             // The scratch area below both frames, 8 bytes per started 8 of each move.
-            let scratch: u32 = e.moves.iter().map(|m| m.2.next_multiple_of(8)).sum::<u32>().next_multiple_of(16);
-            let low = f_aot.max(f_jit) + scratch;
-            let grow = low - f_aot;
-            if grow >= PROBE_FROM {
-                // `mov eax, grow; call ryo_probe_stack`: touches the pages below `rsp`. With
-                // `far_rt`, `mov r11, imm64; call r11` (the field is the `imm64`).
-                c.push(0xb8);
-                c.extend(grow.to_le_bytes());
-                if mode.far_rt {
-                    c.extend([0x49, 0xbb]);
-                    probes.push(c.len() as u32);
-                    c.extend([0; 8]);
-                    c.extend([0x41, 0xff, 0xd3]);
-                } else {
-                    c.push(0xe8);
-                    probes.push(c.len() as u32);
-                    c.extend([0; 4]);
-                }
-            }
+            let low = low(f_aot, f_jit, e.moves.iter().map(|m| m.2.next_multiple_of(8)).sum());
+            probe(&mut c, &mut probes, low - f_aot, mode.far_rt);
             if low != f_aot {
                 lea(&mut c, 4, base, -(low as i32));
             }
@@ -203,10 +247,7 @@ pub fn osr_code(entries: &[Option<OsrEntry>], f_aot: u32, f_jit: u32, mode: Mode
                 lea(&mut c, 4, base, -(f_jit as i32));
             }
         }
-        // `jmp rel32` to the head in the JIT code.
-        c.push(0xe9);
-        let rel = e.landing as i64 - (at as i64 + c.len() as i64 + 4);
-        c.extend((rel as i32).to_le_bytes());
+        jmp_landing(&mut c, at, e.landing);
     }
     OsrCode { code: c, probes, cfi }
 }
