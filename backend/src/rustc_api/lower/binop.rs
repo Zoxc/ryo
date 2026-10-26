@@ -54,17 +54,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     _ => "MulOvf",
                 };
                 let su = if signed { "S" } else { "U" };
-                let (sa, la) = self.operand_slot(a)?;
-                let (sb, lb) = self.operand_slot(b)?;
                 let Some(opc) = try_opcode(&format!("{family}{su}{}", w.suffix())) else {
                     // 128-bit `mul.ovf`: an island writing the whole pair.
                     let template = if signed { templates::MUL_OVF_S_W128 } else { templates::MUL_OVF_U_W128 };
-                    let n = dst.layout.size.bytes() as u32;
-                    return self.with_place_slot(dst, |fx, d| {
-                        fx.island(template, &[], &[(sa, la.size.bytes() as u32), (sb, lb.size.bytes() as u32), (d, n)], None);
-                        Ok(())
-                    });
+                    return self.binop_island(dst, template, a, b);
                 };
+                let (sa, _) = self.operand_slot(a)?;
+                let (sb, _) = self.operand_slot(b)?;
                 let (v, o) = (dst.layout.fields.offset(0).bytes() as u32, dst.layout.fields.offset(1).bytes() as u32);
                 self.with_place_slot(dst, |fx, d| {
                     fx.op(opc, &[d + v, d + o, sa, sb]);
@@ -105,6 +101,17 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         }
     }
 
+    /// An operation with no instruction at this width: a `[a, b, dest]` island.
+    fn binop_island(&mut self, dst: PlaceVal<'tcx>, template: &str, a: &Operand<'tcx>, b: &Operand<'tcx>) -> Result<(), NeedsNative> {
+        let (sa, la) = self.operand_slot(a)?;
+        let (sb, lb) = self.operand_slot(b)?;
+        let n = dst.layout.size.bytes() as u32;
+        self.with_place_slot(dst, |fx, d| {
+            fx.island(template, &[], &[(sa, la.size.bytes() as u32), (sb, lb.size.bytes() as u32), (d, n)], None);
+            Ok(())
+        })
+    }
+
     fn arith(&mut self, dst: PlaceVal<'tcx>, op: BinOp, a: &Operand<'tcx>, b: &Operand<'tcx>) -> Result<(), NeedsNative> {
         let la = self.operand_layout(a)?;
         let kind = self.scalar_kind(la)?;
@@ -135,13 +142,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 (BinOp::Rem, true) => templates::REM_S_W128,
                 _ => templates::MUL_W128,
             };
-            let (sa, la) = self.operand_slot(a)?;
-            let (sb, lb) = self.operand_slot(b)?;
-            let n = dst.layout.size.bytes() as u32;
-            return self.with_place_slot(dst, |fx, d| {
-                fx.island(template, &[], &[(sa, la.size.bytes() as u32), (sb, lb.size.bytes() as u32), (d, n)], None);
-                Ok(())
-            });
+            return self.binop_island(dst, template, a, b);
         }
         let shift = matches!(op, BinOp::Shl | BinOp::ShlUnchecked | BinOp::Shr | BinOp::ShrUnchecked);
         let (sa, _) = self.operand_slot(a)?;
@@ -150,15 +151,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         if matches!(op, BinOp::Div | BinOp::Rem)
             && let Some(v) = self.const_int(b)?
             && let v = w.truncate(v)
-            && let minus_one = signed
-            && v == w.truncate(u128::MAX)
-            && (v == 1 || minus_one)
+            && (v == 1 || (signed && v == w.truncate(u128::MAX)))
         {
             return self.with_place_slot(dst, |fx, d| {
-                match (op, minus_one) {
-                    (BinOp::Rem, _) => fx.imm(w, d, 0),
-                    (_, false) => fx.mov(d, sa, w.bytes()),
-                    (_, true) => fx.op_imm("Mul", w, d, sa, v),
+                match op {
+                    BinOp::Rem => fx.imm(w, d, 0),
+                    _ if v == 1 => fx.mov(d, sa, w.bytes()),
+                    _ => fx.op_imm("Mul", w, d, sa, v),
                 }
                 Ok(())
             });
