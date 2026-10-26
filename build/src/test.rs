@@ -183,7 +183,7 @@ pub(crate) const CORPUS: &[Program] = &[
     ),
     single!(
         "vm_lowerings",
-        vm: &["main", "offsets", "by_one", "small_div", "rotates", "copies"]
+        vm: &["main", "offsets", "fixed_regs", "by_one", "small_div", "rotates", "copies"]
     ),
     // The ABI sweep (design/build.md#test-and-bench).
     single!(

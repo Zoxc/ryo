@@ -3701,7 +3701,7 @@ b11(): ; Body
 b12(): ; Body
     jmp b14(0xffffffffffffffff)
 b13(): ; Body
-    v30:8 = hcall.reg div.u.w64 [(Fp, [None, None]), (Imm(4294967224), [Some(Scratch(0)), None]), (Imm(4294967144), [Some(Scratch(8)), None]), (Imm(4294967280), [Some(Scratch(16)), None])] outs 1 (0x7fffffffffffffff, v1)
+    v30:8 = Bin(DivU, 8) (0x7fffffffffffffff, v1)
     jmp b14(v30)
 b14(v32:8): ; Body
     v33:1 = Cmp(LeU, 8) (v3, v32)

@@ -131,17 +131,35 @@ fn live_in(f: &Func) -> Vec<Vec<u64>> {
     live
 }
 
-/// Whether each value is live across a call: live after it (but for its results) by the exact
-/// liveness, walking each block backward from its live-out set. A tail call needs nothing live
-/// after it, and a return only moves into its return registers after the last use.
-fn crossing(f: &Func, live: &[Vec<u64>]) -> Vec<bool> {
+/// [`clobbers`]' bit for a call (which clobbers every caller-saved register).
+const CALL: u32 = 1 << 16;
+
+/// The registers instruction `id` clobbers (bit `r.num()`), which no value live across it may
+/// be in, with [`CALL`] for a call: `rax`/`rdx` for `div`/`rem` and the unsigned 64-bit `mul`
+/// with overflow, `rcx` for a shift by a variable.
+pub fn clobbers(f: &Func, id: &super::ir::InstData) -> u32 {
+    use super::ir::BinOp as B;
+    let bit = |r: R| 1u32 << r.num();
+    match id.op {
+        _ if id.op.is_call() => CALL | [R::Rax, R::Rcx, R::Rdx, R::Rsi, R::Rdi, R::R8, R::R9].iter().fold(0, |m, &r| m | bit(r)),
+        Op::Bin(B::DivS | B::DivU | B::RemS | B::RemU, _) | Op::Ovf(B::Mul, false, 8) => bit(R::Rax) | bit(R::Rdx),
+        Op::Bin(B::Shl | B::ShrS | B::ShrU, _) if !matches!(f.values[id.args[1].idx()].def, ValueDef::Const(_)) => bit(R::Rcx),
+        _ => 0,
+    }
+}
+
+/// The registers each value is live across a clobber of ([`clobbers`]): live after it (but for
+/// its results) by the exact liveness, walking each block backward from its live-out set. A
+/// tail call needs nothing live after it, and a return only moves into its return registers
+/// after the last use.
+fn crossing(f: &Func, live: &[Vec<u64>]) -> Vec<u32> {
     let words = f.values.len().div_ceil(64);
-    let mut cross = alloc::vec![false; f.values.len()];
+    let mut cross = alloc::vec![0u32; f.values.len()];
     let tracked = |v: super::ir::Value| matches!(f.values[v.idx()].def, ValueDef::Inst(..) | ValueDef::Param(..));
     let mut cur = alloc::vec![0u64; words];
     for &b in &f.layout {
         let bd = &f.blocks[b.idx()];
-        if !bd.insts.iter().any(|i| f.insts[i.idx()].op.is_call()) {
+        if !bd.insts.iter().any(|i| clobbers(f, &f.insts[i.idx()]) != 0) {
             continue;
         }
         cur.fill(0);
@@ -168,11 +186,12 @@ fn crossing(f: &Func, live: &[Vec<u64>]) -> Vec<bool> {
             for r in id.results() {
                 cur[r.idx() / 64] &= !(1 << (r.idx() % 64));
             }
-            if id.op.is_call() {
+            let m = clobbers(f, id);
+            if m != 0 {
                 for (w, &bits) in cur.iter().enumerate() {
                     let mut x = bits;
                     while x != 0 {
-                        cross[w * 64 + x.trailing_zeros() as usize] = true;
+                        cross[w * 64 + x.trailing_zeros() as usize] |= m;
                         x &= x - 1;
                     }
                 }
@@ -271,7 +290,19 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
         })
         .collect();
     order.sort_by_key(|&v| (lo[v], v));
-    let (caller, callee) = registers(frame_pointer);
+    // Hints from uses: a shift amount wants `rcx`.
+    let mut want: Vec<Option<R>> = alloc::vec![None; nv];
+    for id in &f.insts {
+        if clobbers(f, id) == 1 << R::Rcx.num() {
+            want[id.args[1].idx()] = Some(R::Rcx);
+        }
+    }
+    let (mut caller, callee) = registers(frame_pointer);
+    if want.iter().any(|w| w.is_some()) {
+        // Keep `rcx` for the shift amounts.
+        caller.retain(|&r| r != R::Rcx);
+        caller.push(R::Rcx);
+    }
     let def_cold = |v: usize| match f.values[v].def {
         ValueDef::Inst(i, _) => f.blocks[f.insts[i.idx()].block.idx()].cold,
         ValueDef::Param(b, _) => f.blocks[b.idx()].cold,
@@ -293,12 +324,15 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
                 true
             }
         });
-        let cross = cross[v];
+        let clob = cross[v];
+        let cross = clob & CALL != 0;
         // A hint: the register of the first operand (two-address forms), of an argument for a
         // parameter, or the fixed register the value comes in.
         let hint: Option<R> = match f.values[v].def {
             ValueDef::Inst(i, n) => match &f.insts[i.idx()].op {
                 Op::Ovf(..) if n != 0 => None,
+                Op::Bin(super::ir::BinOp::DivS | super::ir::BinOp::DivU, _) | Op::Ovf(super::ir::BinOp::Mul, false, 8) => Some(R::Rax),
+                Op::Bin(super::ir::BinOp::RemS | super::ir::BinOp::RemU, _) => Some(R::Rdx),
                 Op::Bin(..) | Op::Ovf(..) | Op::Ext { .. } | Op::PtrAdd(_) | Op::PtrIndex(_) => {
                     match f.insts[i.idx()].args.first().map(|a| loc[a.idx()]) {
                         Some(Loc::Reg(r)) => Some(r),
@@ -327,14 +361,20 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
             }
             _ => None,
         };
-        let ok = |r: &R| free[r.num() as usize] && (!cross || (callee.contains(r) && (!def_cold(v) || saved.contains(r))));
+        let shifts_by_var = |v: usize| matches!(f.values[v].def, ValueDef::Inst(i, _) if clobbers(f, &f.insts[i.idx()]) == 1 << R::Rcx.num());
+        let ok =
+            |r: &R| free[r.num() as usize] && clob >> r.num() & 1 == 0 && (!cross || (callee.contains(r) && (!def_cold(v) || saved.contains(r))));
+        let hint = match want[v] {
+            Some(r) if ok(&r) => Some(r),
+            _ => hint.filter(|&r| clob >> r.num() & 1 == 0 && !(r == R::Rcx && shifts_by_var(v))),
+        };
         let pick = match hint.filter(|r| ok(r) && (caller.contains(r) || callee.contains(r))) {
             Some(h) => Some(caller.iter().chain(&callee).find(|&&r| r == h).unwrap()),
             // A value of cold code crossing a call takes a callee-saved register only if the
             // prologue saves it anyway: otherwise a spill slot, off the hot path.
             None if cross && def_cold(v) => callee.iter().find(|r| free[r.num() as usize] && saved.contains(*r)),
             None if cross => callee.iter().find(|r| free[r.num() as usize]),
-            None => caller.iter().chain(&callee).find(|r| free[r.num() as usize]),
+            None => caller.iter().chain(&callee).find(|r| ok(r) && !(**r == R::Rcx && shifts_by_var(v))).or_else(|| caller.iter().find(|r| ok(r))),
         };
         match pick {
             Some(&r) => {
@@ -351,7 +391,7 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
                 let cand = active
                     .iter()
                     .enumerate()
-                    .filter(|(_, (_, _, r))| !cross || callee.contains(r))
+                    .filter(|(_, (_, _, r))| (!cross || callee.contains(r)) && clob >> r.num() & 1 == 0)
                     .max_by_key(|(_, (end, _, _))| *end)
                     .map(|(k, &x)| (k, x));
                 match cand {
@@ -381,7 +421,6 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
 pub fn check(f: &Func, al: &Alloc, frame_pointer: bool) -> Result<(), alloc::string::String> {
     use alloc::format;
     let live = live_in(f);
-    let (caller, _) = registers(frame_pointer);
     let slot = |l: Loc| -> Option<usize> {
         match l {
             Loc::None => None,
@@ -445,11 +484,10 @@ pub fn check(f: &Func, al: &Alloc, frame_pointer: bool) -> Result<(), alloc::str
             for r in id.results() {
                 release(&mut owner, r)?;
             }
-            if id.op.is_call() {
-                for &r in &caller {
-                    if let Some(w) = owner[r.num() as usize] {
-                        return Err(format!("v{w} lives across the call {i} in {r:?}"));
-                    }
+            let m = clobbers(f, id);
+            for r in (0..16).filter(|&r| m >> r & 1 != 0) {
+                if let Some(w) = owner[r] {
+                    return Err(format!("v{w} lives across {i}, which clobbers it, in {:?}", R::from_num(r as u8)));
                 }
             }
             for &a in &id.args {

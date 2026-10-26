@@ -486,8 +486,10 @@ the same bytes at the head, and the entry's `OsrLoad` of the second goes. OSR he
   (`r10` takes the others), `[base + index*scale]` for `ptr.index` by 1, 2, 4 or 8,
   `setcc`, compare-branches fused, overflow ops as `add`/`sub`/`imul` (8 and 16-bit
   multiplies, and unsigned 32-bit ones, in 32 or 64 bits with a range check; unsigned 64-bit
-  ones as `mul`, `rax` and `rdx` saved in `r10`/`r11` around it) with `seto`/`setb`/`seta`, or
-  their `jcc` for `br ovf`, extensions as `movzx`/`movsx`/`mov r32`, fall-through layout. `r10` and `r11` are the emitter's
+  ones as `mul` in `rax`/`rdx`) with `seto`/`setb`/`seta`, or their `jcc` for `br ovf`;
+  the `div`/`rem` and variable-shift handlers decode as native operations, `div`/`idiv` in
+  `rax`/`rdx` (8 and 16 bits at 32) and shifts by `cl` (masked explicitly at 8 and 16 bits);
+  extensions as `movzx`/`movsx`/`mov r32`, fall-through layout. `r10` and `r11` are the emitter's
   scratch registers and never allocated.
 - **Calls**: `hcall.reg` moves its `In` values into the first argument registers (a
   parallel move), sets the data registers after them, calls the register entry and moves
@@ -557,13 +559,16 @@ only it, and is unchanged).
   dataflow), then each value's interval is the hull of its live positions in the linear
   block order (holes are ignored), and it lives in one register or one slot throughout.
   Intervals that cross a call or handler call take callee-saved registers (`rbx`,
-  `r12`–`r15`, `rbp` without a frame pointer); others prefer the caller-saved ones; hints
-  are the first operand's register, an incoming edge argument's for a parameter, the
-  argument register for an entry parameter, and `rax`/`rdx` for results. When no register
+  `r12`–`r15`, `rbp` without a frame pointer); others prefer the caller-saved ones, but
+  not the fixed registers an instruction they cross clobbers (`regalloc::clobbers`: `rax`/
+  `rdx` for `div`, `rem` and the unsigned 64-bit `mul.ovf`, `rcx` for a variable shift);
+  hints are the first operand's register, an incoming edge argument's for a parameter, the
+  argument register for an entry parameter, `rax`/`rdx` for results (also of `div`/`rem`),
+  and `rcx` for a shift amount (`rcx` goes last among the caller-saved registers then). When no register
   is free, the interval ending last is spilled.
 - **Checker** (`RYO_JIT_CHECK=1`): `regalloc::check` walks each block backward from its
   exact live-out set and checks that no location holds two live values, that nothing lives
-  across a call in a caller-saved register, that `r10`, `r11` (and `rbp` with a frame
+  across an instruction in a register it clobbers (a call: every caller-saved one), that `r10`, `r11` (and `rbp` with a frame
   pointer) aren't allocated, and that every use has a location; with `Func::verify` before
   it. A failure is printed on stderr and the function stays in its AOT code (`Failed`), so
   that the corpus (which compares stderr) and the JIT tests (which check where code runs)

@@ -48,9 +48,14 @@ pub(super) fn eval_bin(op: BinOp, w: u8, a: u64, b: u64) -> u64 {
         BinOp::And => a & b,
         BinOp::Or => a | b,
         BinOp::Xor => a ^ b,
-        BinOp::Shl => a.wrapping_shl(b as u32),
-        BinOp::ShrU => a.wrapping_shr(b as u32),
-        BinOp::ShrS => sext(a, w).wrapping_shr(b as u32) as u64,
+        BinOp::Shl => a << (b & (8 * w as u64 - 1)),
+        BinOp::ShrU => a >> (b & (8 * w as u64 - 1)),
+        BinOp::ShrS => (sext(a, w) >> (b & (8 * w as u64 - 1))) as u64,
+        // Undefined for a zero divisor or `MIN / -1`: any value will do.
+        BinOp::DivU => a.checked_div(b).unwrap_or(0),
+        BinOp::RemU => a.checked_rem(b).unwrap_or(0),
+        BinOp::DivS => sext(a, w).checked_div(sext(b, w)).unwrap_or(0) as u64,
+        BinOp::RemS => sext(a, w).checked_rem(sext(b, w)).unwrap_or(0) as u64,
     };
     mask(r, w)
 }
@@ -128,7 +133,7 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
             let all = mask(u64::MAX, w);
             match (o, konst(f, b).map(|c| mask(c, w))) {
                 (BinOp::Add | BinOp::Sub | BinOp::Or | BinOp::Xor | BinOp::Shl | BinOp::ShrS | BinOp::ShrU, Some(0)) => return Simp::Value(a),
-                (BinOp::Mul, Some(1)) => return Simp::Value(a),
+                (BinOp::Mul | BinOp::DivS | BinOp::DivU, Some(1)) => return Simp::Value(a),
                 (BinOp::Mul | BinOp::And, Some(0)) => return Simp::Const(0),
                 (BinOp::And, Some(c)) if c == all => return Simp::Value(a),
                 (BinOp::Or, Some(c)) if c == all => return Simp::Const(all),

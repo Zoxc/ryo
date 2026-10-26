@@ -829,6 +829,10 @@ impl<'a> E<'a> {
         }
         let args = id.args.clone();
         match id.op.clone() {
+            Op::Bin(op @ (BinOp::DivS | BinOp::DivU | BinOp::RemS | BinOp::RemU), w) => self.divrem(op, w, args[0], args[1], res[0]),
+            Op::Bin(op @ (BinOp::Shl | BinOp::ShrS | BinOp::ShrU), w) if !matches!(self.src(args[1]), Src::Imm(_)) => {
+                self.shift_var(op, w, args[0], args[1], res[0])
+            }
             Op::Bin(op, w) => {
                 let x = res[0];
                 let (mut a, mut b) = (args[0], args[1]);
@@ -877,7 +881,8 @@ impl<'a> E<'a> {
                         Err(imm) => self.a.x().imul_imm(ww, rd, Rm::R(rd), imm as i32),
                     },
                     BinOp::Shl | BinOp::ShrU | BinOp::ShrS => {
-                        let Src::Imm(n) = self.src(b) else { return Err(Unsupported("a shift by a variable")) };
+                        let Src::Imm(n) = self.src(b) else { unreachable!("a shift by a variable") };
+                        let n = n & (8 * w as u64 - 1);
                         let sh = match op {
                             BinOp::Shl => Shift::Shl,
                             BinOp::ShrU => Shift::Shr,
@@ -887,6 +892,7 @@ impl<'a> E<'a> {
                         let sw = if op == BinOp::ShrU && w < 4 { 4 } else { sw };
                         self.a.x().shift_imm(sh, sw, Rm::R(rd), n as u8);
                     }
+                    _ => unreachable!(),
                 }
                 self.put(x, rd);
             }
@@ -1176,38 +1182,76 @@ impl<'a> E<'a> {
         cc
     }
 
-    /// `x = a * b` (unsigned 64 bits) with `mul`, which takes `rax` and `rdx`: both saved in
-    /// the scratch registers around it, and restored but where `x` goes.
+    /// `x = a * b` (unsigned 64 bits) with `mul`, in `rax` and `rdx` (which the allocator
+    /// keeps free of values live across it).
     fn mul_u64(&mut self, a: Value, b: Value, x: Value) -> X {
-        self.a.x().mov(8, Rm::R(S1), Rm::R(R::Rax));
-        self.a.x().mov(8, Rm::R(S2), Rm::R(R::Rdx));
-        self.load(R::Rax, a);
         let s = match self.src(b) {
-            Src::R(R::Rax) => Rm::R(S1),
+            Src::R(R::Rax) => {
+                self.a.x().mov(8, Rm::R(S1), Rm::R(R::Rax));
+                Rm::R(S1)
+            }
             Src::R(r) => Rm::R(r),
             Src::M(m) => Rm::M(m),
             Src::Imm(c) => {
-                self.a.x().mov_imm(8, Rm::R(R::Rdx), c);
-                Rm::R(R::Rdx)
+                self.a.x().mov_imm(8, Rm::R(S1), c);
+                Rm::R(S1)
             }
-            Src::Undef => Rm::R(R::Rdx),
+            Src::Undef => Rm::R(S1),
         };
+        self.load(R::Rax, a);
         self.a.x().mul(s);
-        match self.dst(x) {
-            Some(Rm::R(R::Rax)) => self.a.x().mov(8, Rm::R(R::Rdx), Rm::R(S2)),
-            Some(Rm::R(R::Rdx)) => {
-                self.a.x().mov(8, Rm::R(R::Rdx), Rm::R(R::Rax));
-                self.a.x().mov(8, Rm::R(R::Rax), Rm::R(S1));
-            }
-            d => {
-                if let Some(d) = d {
-                    self.a.x().mov(8, d, Rm::R(R::Rax));
-                }
-                self.a.x().mov(8, Rm::R(R::Rax), Rm::R(S1));
-                self.a.x().mov(8, Rm::R(R::Rdx), Rm::R(S2));
-            }
-        }
+        self.put(x, R::Rax);
         X::B
+    }
+
+    /// `x = a / b` or `a % b` at `w` bytes, with `div`/`idiv` in `rax`/`rdx` (which the
+    /// allocator keeps free of values live across it; `w8`/`w16` divide the extended values
+    /// at 32 bits). `b` goes to `S1` if it is in `rax` or `rdx`.
+    fn divrem(&mut self, op: BinOp, w: u8, a: Value, b: Value, x: Value) {
+        let signed = matches!(op, BinOp::DivS | BinOp::RemS);
+        let dw = w.max(4);
+        let s = match self.src(b) {
+            Src::R(r) if w >= 4 && r != R::Rax && r != R::Rdx => Rm::R(r),
+            Src::M(m) if w >= 4 => Rm::M(m),
+            _ => {
+                self.ext_into(S1, b, w, signed);
+                Rm::R(S1)
+            }
+        };
+        self.ext_into(R::Rax, a, w, signed);
+        if signed {
+            self.a.x().cdq(dw);
+        } else {
+            self.a.x().alu(Alu::Xor, 4, Rm::R(R::Rdx), Rm::R(R::Rdx));
+        }
+        self.a.x().div(dw, signed, s);
+        let r = if matches!(op, BinOp::DivS | BinOp::DivU) { R::Rax } else { R::Rdx };
+        self.put(x, r);
+    }
+
+    /// `x = a << b` (or `>>`) by a variable amount, in `cl` (which the allocator keeps free of
+    /// values live across it), masked to the width (`w8`/`w16` explicitly).
+    fn shift_var(&mut self, op: BinOp, w: u8, a: Value, b: Value, x: Value) {
+        let rd = match self.al.loc[x.idx()] {
+            Loc::Reg(r) if r != R::Rcx && self.src(b) != Src::R(r) => r,
+            _ => S1,
+        };
+        match (op, w) {
+            (BinOp::ShrU, 1 | 2) => self.ext_into(rd, a, w, false),
+            (BinOp::ShrS, 1 | 2) => self.ext_into(rd, a, w, true),
+            _ => self.load(rd, a),
+        }
+        self.load(R::Rcx, b);
+        if w < 4 {
+            self.a.x().alu_imm(Alu::And, 4, Rm::R(R::Rcx), 8 * w as i64 - 1);
+        }
+        let sh = match op {
+            BinOp::Shl => Shift::Shl,
+            BinOp::ShrU => Shift::Shr,
+            _ => Shift::Sar,
+        };
+        self.a.x().shift_cl(sh, w.max(4), Rm::R(rd));
+        self.put(x, rd);
     }
 
     /// Loads `w` bytes at `m` into `r`.

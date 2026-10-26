@@ -143,8 +143,45 @@ fn copies() {
     println!("{arr:?} {w:?}");
 }
 
+/// Division, remainder, shifts by a variable and the unsigned 64-bit overflowing `mul` at
+/// every width, with other values live across them: the SSA tier's fixed registers
+/// (`rax`/`rdx`, `cl`).
+#[inline(never)]
+fn fixed_regs() {
+    macro_rules! ops {
+        ($($t:ty),*) => {$({
+            let xs: [$t; 6] = black_box([<$t>::MAX, <$t>::MIN, 7, 100, 3, 0 as $t]);
+            let ys: [$t; 5] = black_box([1, 2, 3, 9, <$t>::MAX]);
+            let mut acc: $t = 0;
+            for (k, &x) in xs.iter().enumerate() {
+                for &y in &ys {
+                    let (a, b, c) = (x ^ acc, y.wrapping_add(k as $t), acc.wrapping_mul(3));
+                    let q = if b != 0 && !(b == (0 as $t).wrapping_sub(1) && a == <$t>::MIN) { a / b } else { 0 };
+                    let r = if b != 0 && !(b == (0 as $t).wrapping_sub(1) && a == <$t>::MIN) { a % b } else { 0 };
+                    let s = y as u32;
+                    let l = a.wrapping_shl(s) ^ a.wrapping_shr(s ^ 5) ^ c.wrapping_shl(k as u32);
+                    acc = acc.wrapping_add(q ^ r ^ l ^ a ^ b ^ c);
+                }
+            }
+            print!("{} ", acc);
+        })*};
+    }
+    ops!(u8, i8, u16, i16, u32, i32, u64, i64, usize);
+    let xs: [u64; 4] = black_box([3, u64::MAX, 1 << 40, 12345]);
+    let mut acc = 0u64;
+    for &x in &xs {
+        for &y in &xs {
+            let keep = x ^ y;
+            let (p, o) = x.overflowing_mul(y);
+            acc = acc.wrapping_add(p ^ keep ^ o as u64);
+        }
+    }
+    println!("{acc}");
+}
+
 fn main() {
     offsets();
+    fixed_regs();
     by_one();
     small_div();
     rotates();

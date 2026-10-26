@@ -356,6 +356,31 @@ impl X86 {
         self.sized(w, 0xc0, d, false, dst, &[amt]);
     }
 
+    /// A shift by `cl`.
+    pub fn shift_cl(&mut self, op: Shift, w: u8, dst: Rm) {
+        let d = match op {
+            Shift::Shl => 4,
+            Shift::Shr => 5,
+            Shift::Sar => 7,
+        };
+        self.sized(w, 0xd2, d, false, dst, &[]);
+    }
+
+    /// `div`/`idiv` at 4 or 8 bytes: `rdx:rax / src`, the quotient to `rax`, the remainder
+    /// to `rdx`.
+    pub fn div(&mut self, w: u8, signed: bool, src: Rm) {
+        assert!(matches!(w, 4 | 8), "bad div width {w}");
+        self.sized(w, 0xf6, if signed { 7 } else { 6 }, false, src, &[]);
+    }
+
+    /// `cdq` (4 bytes) or `cqo` (8): `rax`'s sign into `rdx`.
+    pub fn cdq(&mut self, w: u8) {
+        if w == 8 {
+            self.code.push(0x48);
+        }
+        self.code.push(0x99);
+    }
+
     pub fn neg(&mut self, w: u8, dst: Rm) {
         self.sized(w, 0xf6, 3, false, dst, &[]);
     }

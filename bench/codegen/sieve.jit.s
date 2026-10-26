@@ -262,13 +262,9 @@ fn sieve
     mov     byte ptr [rsi+1],0
     mov     esi,2
 L0:
-    mov     r11,rax
-    mov     r10,rdx
     mov     rax,rsi
     mul     rsi
     mov     r8,rax
-    mov     rax,r11
-    mov     rdx,r10
     jb      L11
     cmp     r12,r8
     jb      L5
@@ -287,13 +283,9 @@ L1:
     mov     r15,rbx
     jmp     L4
 L2:
-    mov     r11,rax
-    mov     r10,rdx
     mov     rax,rsi
     mul     rsi
     mov     r9,rax
-    mov     rax,r11
-    mov     rdx,r10
     jb      L12
     mov     r14,rsi
     mov     r15,rbx

@@ -33,3 +33,9 @@ remove it once a Lean session has handled it.
   `RelocKind::Pc64` for the pointers. The default (`Sdata4`, ELF and the JIT, `eh_cie` and
   `eh_fde`) is unchanged. Only matters if the Lean `.eh_frame` model (`Ryo/Obj/EhFrame.lean`)
   is to cover Mach-O images. Commit: "image: 8-byte .eh_frame pointers for Mach-O images".
+
+- The SSA tier decodes the `div`/`rem` and variable-shift handlers (`div.{s,u}.wN`,
+  `rem.{s,u}.wN`, `shl.wN`, `shr.{s,u}.wN`) as native `BinOp`s (`DivS`/`DivU`/`RemS`/`RemU`,
+  shifts with a variable amount masked to the width), allocated with fixed-register
+  clobbers (`regalloc::clobbers`). Only matters if the Lean model covers the SSA tier.
+  Commit: "JIT SSA: fixed registers for div, rem, variable shifts and mul".

@@ -438,7 +438,6 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
                     let b = match imm {
                         Some(v) if shift => s.f.konst(v & (8 * *w as u64 - 1), *w),
                         Some(v) => s.f.konst(mask(*v, *w), *w),
-                        None if shift => return Err(Unsupported("a shift by a slot")),
                         None => s.read(cur, i, 1, *w),
                     };
                     let l = s.f.inst(cur, Op::Bin(op, *w), alloc::vec![a, b], &[*w]);
@@ -588,6 +587,14 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
                         break;
                     }
                 }
+                Kind::Handler { h, then: Then::Next, .. } if let Some((op, w)) = native_bin(*h) => {
+                    // `d, a, b`: a native operation (fixed registers, not a call).
+                    let a = s.read(cur, i, 1, w);
+                    let b = s.read(cur, i, 2, w);
+                    let l = s.f.inst(cur, Op::Bin(op, w), alloc::vec![a, b], &[w]);
+                    let v = s.f.result(l);
+                    s.write(cur, i, 0, v);
+                }
                 Kind::Handler { h, args, slots, then } => {
                     let mut regs: Vec<(Arg, [Option<SlotRef>; 2])> = args.iter().map(|&a| (a, [None, None])).collect();
                     let mut ins = Vec::new();
@@ -731,4 +738,28 @@ fn fill_stub(s: &mut B<'_>, (b, pad): (Block, u32)) -> Result<(), Unsupported> {
     let e = s.edge(s_next(s.code, pad as usize)?);
     s.finish_block(b, Term::Jmp(e));
     Ok(())
+}
+
+/// The handlers that are native binary operations in the SSA tier: shifts by a variable,
+/// division and remainder (`d, a, b`, all of width `w`).
+fn native_bin(h: crate::full::Opcode) -> Option<(BinOp, u8)> {
+    let segs: Vec<&str> = h.mnemonic().split('.').collect();
+    let (op, w) = match segs[..] {
+        ["shl", w] => (BinOp::Shl, w),
+        ["shr", "s", w] => (BinOp::ShrS, w),
+        ["shr", "u", w] => (BinOp::ShrU, w),
+        ["div", "s", w] => (BinOp::DivS, w),
+        ["div", "u", w] => (BinOp::DivU, w),
+        ["rem", "s", w] => (BinOp::RemS, w),
+        ["rem", "u", w] => (BinOp::RemU, w),
+        _ => return None,
+    };
+    let w = match w {
+        "w8" => 1,
+        "w16" => 2,
+        "w32" => 4,
+        "w64" => 8,
+        _ => return None,
+    };
+    Some((op, w))
 }

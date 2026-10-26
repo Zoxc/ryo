@@ -66,10 +66,16 @@ pub enum BinOp {
     And,
     Or,
     Xor,
-    /// Shifts: the amount is a constant operand, less than the width in bits.
+    /// Shifts: the amount is masked to the width in bits less one (a constant operand is
+    /// already below it).
     Shl,
     ShrS,
     ShrU,
+    /// Division and remainder, signed or not: undefined for a zero divisor or `MIN / -1`.
+    DivS,
+    DivU,
+    RemS,
+    RemU,
 }
 
 impl BinOp {
