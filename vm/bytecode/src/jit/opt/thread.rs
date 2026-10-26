@@ -69,34 +69,9 @@ pub fn thread(f: &mut Func) {
         };
         f.blocks[b].term = t;
     }
-    // The predecessors again, and what's still reachable.
-    for bd in &mut f.blocks {
-        bd.preds.clear();
-    }
-    let n = f.blocks.len();
-    let mut live = alloc::vec![false; n];
-    let mut stack: Vec<usize> = (0..n).filter(|&b| matches!(f.blocks[b].kind, BlockKind::Entry | BlockKind::Osr(_))).collect();
-    // Landing pad stubs are reached through their invokes; keep any without one too. Loop
-    // heads with OSR entries are reached from those.
-    stack.extend((0..n).filter(|&b| f.blocks[b].kind == BlockKind::Stub));
-    while let Some(b) = stack.pop() {
-        if core::mem::replace(&mut live[b], true) {
-            continue;
-        }
-        stack.extend(f.blocks[b].term.edges().map(|e| e.to.idx()));
-    }
-    for b in 0..n {
-        if !live[b] {
-            // Unreachable: no edges, so it neither roots nor feeds anything.
-            f.blocks[b].term = Term::Trap;
-            f.blocks[b].insts.clear();
-            f.blocks[b].params.clear();
-            continue;
-        }
-        let tos: Vec<usize> = f.blocks[b].term.edges().map(|e| e.to.idx()).collect();
-        for (k, to) in tos.into_iter().enumerate() {
-            f.blocks[to].preds.push((Block(b as u32), k as u16));
-        }
-    }
-    f.layout.retain(|b| live[b.idx()]);
+    // What's still reachable, and the predecessors again. Landing pad stubs are reached
+    // through their invokes; keep any without one too. Loop heads with OSR entries are
+    // reached from those.
+    f.prune(true);
+    f.rebuild_preds();
 }

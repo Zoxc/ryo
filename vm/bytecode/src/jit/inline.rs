@@ -94,7 +94,7 @@ pub trait Env {
 /// constant arguments, tail calls.
 pub fn rebase(c: &Func, img: ImageId, env: &mut dyn Env) -> Result<Func, &'static str> {
     let mut g = c.clone();
-    for b in live_blocks(c) {
+    for b in c.live_blocks() {
         if matches!(g.blocks[b.idx()].term, Term::TailCall { .. }) {
             return Err("a tail call");
         }
@@ -241,13 +241,6 @@ pub struct Shape {
     pub cold: Vec<bool>,
 }
 
-/// The blocks of `f` that can run: its layout and its OSR entries.
-fn live_blocks(f: &Func) -> Vec<Block> {
-    let mut v = f.layout.clone();
-    v.extend(f.osr.iter().flatten().copied());
-    v
-}
-
 /// The successors of a block that its normal execution reaches (not a landing pad).
 fn normal_succs(t: &Term) -> Vec<Block> {
     match t {
@@ -258,7 +251,7 @@ fn normal_succs(t: &Term) -> Vec<Block> {
 
 pub fn shape(f: &Func) -> Shape {
     let n = f.blocks.len();
-    let live = live_blocks(f);
+    let live = f.live_blocks();
     let rpo = f.rpo();
     let idom = f.idoms(&rpo);
     let dominates = |a: Block, mut b: Block| -> bool {
@@ -1224,47 +1217,9 @@ pub fn splice(f: &mut Func, call: Inst, c: &Func) {
     let at = f.layout.iter().position(|&x| x == b).expect("the call's block in the layout");
     order.push(k);
     f.layout.splice(at + 1..at + 1, order);
-    prune(f);
-    rebuild_preds(f);
-}
-
-/// Drops the blocks nothing reaches from the entry and the OSR entries any more (the code
-/// after a landing pad stub no copied call unwinds to, say): emptied, trapping, out of the
-/// layout.
-fn prune(f: &mut Func) {
-    let n = f.blocks.len();
-    let mut seen = alloc::vec![false; n];
-    let mut stack: Vec<Block> = f.layout.iter().copied().filter(|b| f.blocks[b.idx()].kind == BlockKind::Entry).collect();
-    stack.extend(f.osr.iter().flatten().copied());
-    while let Some(b) = stack.pop() {
-        if core::mem::replace(&mut seen[b.idx()], true) {
-            continue;
-        }
-        stack.extend(f.blocks[b.idx()].term.edges().map(|e| e.to));
-    }
-    for b in 0..n {
-        if !seen[b] {
-            let bd = &mut f.blocks[b];
-            bd.insts.clear();
-            bd.params.clear();
-            bd.term = Term::Trap;
-            bd.kind = if bd.kind == BlockKind::Stub { BlockKind::Body } else { bd.kind };
-        }
-    }
-    f.layout.retain(|b| seen[b.idx()]);
-}
-
-/// Recomputes every block's predecessors from the terminators of the blocks that can run.
-pub fn rebuild_preds(f: &mut Func) {
-    for bd in &mut f.blocks {
-        bd.preds.clear();
-    }
-    for b in live_blocks(f) {
-        let tos: Vec<Block> = f.blocks[b.idx()].term.edges().map(|e| e.to).collect();
-        for (k, to) in tos.into_iter().enumerate() {
-            f.blocks[to.idx()].preds.push((b, k as u16));
-        }
-    }
+    // The code after a landing pad stub no copied call unwinds to, say.
+    f.prune(false);
+    f.rebuild_preds();
 }
 
 /// Calls and tail calls of functions and symbols get the targets `env` gives them
@@ -1276,7 +1231,7 @@ pub fn retarget(f: &mut Func, env: &mut dyn Env) {
         CallTarget::Func(_) | CallTarget::Sym(_) => env.retarget(root.img, t),
         _ => None,
     };
-    for b in live_blocks(f) {
+    for b in f.live_blocks() {
         for k in 0..f.blocks[b.idx()].insts.len() {
             let i = f.blocks[b.idx()].insts[k];
             if let Op::Call(c) = &mut f.insts[i.idx()].op

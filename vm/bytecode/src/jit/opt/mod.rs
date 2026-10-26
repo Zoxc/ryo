@@ -30,8 +30,6 @@ pub mod promote;
 pub mod simplify;
 pub mod thread;
 
-use alloc::vec::Vec;
-
 use super::ir::*;
 
 /// Runs the passes on `f`, in order.
@@ -47,31 +45,4 @@ pub fn run(f: &mut Func) {
     dce::dce(f);
     thread::thread(f);
     layout::layout(f);
-}
-
-/// Drops the blocks not reachable from the entry and the OSR entries: they are emptied, left
-/// without edges or predecessors, and dropped from the layout.
-pub(super) fn prune(f: &mut Func) {
-    let n = f.blocks.len();
-    let mut seen = alloc::vec![false; n];
-    let mut stack: Vec<usize> = (0..n).filter(|&b| matches!(f.blocks[b].kind, BlockKind::Entry | BlockKind::Osr(_))).collect();
-    for &b in &stack {
-        seen[b] = true;
-    }
-    while let Some(b) = stack.pop() {
-        for e in f.blocks[b].term.edges() {
-            if !seen[e.to.idx()] {
-                seen[e.to.idx()] = true;
-                stack.push(e.to.idx());
-            }
-        }
-    }
-    for b in 0..n {
-        if !seen[b] {
-            fold::set_term(f, b, Term::Trap);
-            f.blocks[b].insts.clear();
-            f.blocks[b].preds.clear();
-        }
-    }
-    f.layout.retain(|b| seen[b.idx()]);
 }

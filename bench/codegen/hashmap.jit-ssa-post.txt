@@ -6741,7 +6741,7 @@ b0(v0:8, v1:8, v2:8, v3:8, v4:8, v5:1): ; Entry
     br Eq.w8 v66, 0x0 ? b13() : b14()
 b1(): ; Body
     trap
-b2(v202:8, v205:8, v207:8, v444:2, v453:2, v462:2, v471:1, v480:1): ; Body head 0
+b2(v202:8, v205:8, v207:8, v445:2, v454:2, v463:2, v472:1, v481:1): ; Body head 0
     v11:8 = AllocaAddr(AllocaId(30), 0) ()
     AStore(AllocaId(28), 8, 8) (v11)
     v13:8 = ALoad(AllocaId(30), 16, 8) ()
@@ -6951,22 +6951,22 @@ b26(): ; Osr(0)
     v244:8 = OsrLoad(-24, 8) ()
     v245:8 = OsrLoad(-48, 8) ()
     v246:8 = OsrLoad(-56, 8) ()
-    v484:2 = OsrLoad(-80, 2) ()
-    v486:2 = OsrLoad(-78, 2) ()
-    v488:2 = OsrLoad(-76, 2) ()
-    v490:1 = OsrLoad(-74, 1) ()
-    v492:1 = OsrLoad(-73, 1) ()
-    jmp b2(v244, v245, v246, v484, v486, v488, v490, v492)
-b27(): ; Osr(1)
-    v203:8 = OsrLoad(-24, 8) ()
-    v204:8 = OsrLoad(-48, 8) ()
-    v206:8 = OsrLoad(-56, 8) ()
     v485:2 = OsrLoad(-80, 2) ()
     v487:2 = OsrLoad(-78, 2) ()
     v489:2 = OsrLoad(-76, 2) ()
     v491:1 = OsrLoad(-74, 1) ()
     v493:1 = OsrLoad(-73, 1) ()
-    jmp b4(v203, v204, v206, v485, v487, v489, v491, v493)
+    jmp b2(v244, v245, v246, v485, v487, v489, v491, v493)
+b27(): ; Osr(1)
+    v203:8 = OsrLoad(-24, 8) ()
+    v204:8 = OsrLoad(-48, 8) ()
+    v206:8 = OsrLoad(-56, 8) ()
+    v484:2 = OsrLoad(-80, 2) ()
+    v486:2 = OsrLoad(-78, 2) ()
+    v488:2 = OsrLoad(-76, 2) ()
+    v490:1 = OsrLoad(-74, 1) ()
+    v492:1 = OsrLoad(-73, 1) ()
+    jmp b4(v203, v204, v206, v484, v486, v488, v490, v492)
 b28(): ; Body
     AStore(AllocaId(81), 0, 8) (v22)
     v268:8 = ALoad(AllocaId(31), 32, 8) ()
@@ -7264,7 +7264,7 @@ b80(): ; Body
     v197:8 = Bin(Sub, 8) (v195, 0x1)
     AStore(AllocaId(6), 0, 8) (v197)
     Store(8, 16) (v194, v197)
-    jmp b4(v202, v205, v207, v444, v453, v462, v471, v480)
+    jmp b4(v202, v205, v207, v445, v454, v463, v472, v481)
 b81(): ; Body
     hcall const [(Fp, [None, None]), (Imm(4294967152), [Some(Alloca(AllocaId(123), 0)), None]), (image.k672, [None, None]), (Imm(16), [None, None])] ins [] outs [] ()
     v339:8 = ALoad(AllocaId(30), 0, 8) ()
@@ -9240,7 +9240,7 @@ b37(): ; Stub cold
     jmp b13()
 b38(): ; Body cold
     trap
-b39(): ; Stub cold
+b39(): ; Body cold
     trap
 b40(): ; Body
     trap

@@ -439,7 +439,7 @@ pub fn checks(f: &mut Func) {
         }
     }
     if changed {
-        super::prune(f);
+        f.prune(false);
     }
 }
 

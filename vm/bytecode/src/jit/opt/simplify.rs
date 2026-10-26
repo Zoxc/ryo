@@ -417,7 +417,7 @@ fn sccp(f: &mut Func) -> bool {
     }
     f.resolve_aliases();
     if folded {
-        super::prune(f);
+        f.prune(false);
     }
     again
 }

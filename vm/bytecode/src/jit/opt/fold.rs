@@ -114,7 +114,7 @@ fn fold_const_branches(f: &mut Func) {
         }
     }
     if changed {
-        super::prune(f);
+        f.prune(false);
     }
 }
 

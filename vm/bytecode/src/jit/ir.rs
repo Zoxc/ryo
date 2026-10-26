@@ -541,6 +541,65 @@ pub struct Func {
 }
 
 impl Func {
+    /// The blocks that can run: the layout and the OSR entries.
+    pub fn live_blocks(&self) -> Vec<Block> {
+        let mut v = self.layout.clone();
+        v.extend(self.osr.iter().flatten().copied());
+        v
+    }
+
+    /// Recomputes every block's predecessors from the terminators of the blocks that can run,
+    /// in block order.
+    pub fn rebuild_preds(&mut self) {
+        for bd in &mut self.blocks {
+            bd.preds.clear();
+        }
+        let mut live = self.live_blocks();
+        live.sort_unstable();
+        for b in live {
+            let tos: Vec<Block> = self.blocks[b.idx()].term.edges().map(|e| e.to).collect();
+            for (k, to) in tos.into_iter().enumerate() {
+                self.blocks[to.idx()].preds.push((b, k as u16));
+            }
+        }
+    }
+
+    /// Drops the blocks not reachable from the entry and the OSR entries (and, with
+    /// `keep_stubs`, from any landing pad stub): they are emptied, trap, have no parameters
+    /// or predecessors, aren't stubs, and leave the layout. The reachable blocks lose the
+    /// predecessors that were dropped.
+    pub fn prune(&mut self, keep_stubs: bool) {
+        let n = self.blocks.len();
+        let mut seen = alloc::vec![false; n];
+        let mut stack: Vec<usize> = (0..n)
+            .filter(|&b| match self.blocks[b].kind {
+                BlockKind::Entry | BlockKind::Osr(_) => true,
+                BlockKind::Stub => keep_stubs,
+                _ => false,
+            })
+            .collect();
+        while let Some(b) = stack.pop() {
+            if core::mem::replace(&mut seen[b], true) {
+                continue;
+            }
+            stack.extend(self.blocks[b].term.edges().map(|e| e.to.idx()));
+        }
+        for (b, bd) in self.blocks.iter_mut().enumerate() {
+            if seen[b] {
+                bd.preds.retain(|&(p, _)| seen[p.idx()]);
+            } else {
+                bd.insts.clear();
+                bd.params.clear();
+                bd.preds.clear();
+                bd.term = Term::Trap;
+                if bd.kind == BlockKind::Stub {
+                    bd.kind = BlockKind::Body;
+                }
+            }
+        }
+        self.layout.retain(|b| seen[b.idx()]);
+    }
+
     pub fn value(&mut self, def: ValueDef, w: u8) -> Value {
         debug_assert!(matches!(w, 1 | 2 | 4 | 8), "width {w}");
         self.values.push(ValueData { def, w });

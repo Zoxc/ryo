@@ -101,8 +101,7 @@ pub fn promote(f: &mut Func) -> bool {
 /// [`promote`] of the allocas `ok` allows, or the alloca that got stuck at a stub.
 fn try_promote(f: &mut Func, mut ok: Vec<bool>) -> Result<bool, AllocaId> {
     let na = f.allocas.len();
-    let mut live: Vec<Block> = f.layout.clone();
-    live.extend(f.osr.iter().flatten().copied());
+    let mut live: Vec<Block> = f.live_blocks();
     let mut acc: Vec<Vec<(i32, u8)>> = alloc::vec![Vec::new(); na];
     for &b in &live {
         for &i in &f.blocks[b.idx()].insts {
@@ -182,7 +181,7 @@ fn try_promote(f: &mut Func, mut ok: Vec<bool>) -> Result<bool, AllocaId> {
             live.push(mid);
         }
     }
-    super::super::inline::rebuild_preds(f);
+    f.rebuild_preds();
     let field = |op: &Op| -> Option<u32> {
         match op {
             Op::ALoad(a, o, w) | Op::AStore(a, o, w) => field_of.get(&(a.0, *o, *w)).copied(),
