@@ -9,28 +9,32 @@
 //! - `install`: the compiler: decodes a function from its image, encodes it again without
 //!   counters, builds its OSR entries, and installs the code near the image.
 //!
-//! Linux on x86_64 only. Elsewhere (windows-msvc, until the JIT is ported) `ryo_jit_start`
-//! fails, so that the runtime's trips act as the no-op JIT, but `y build` seals and bundles
-//! it the same way.
+//! - `sys`: what it needs of the OS beyond `vmem` and std (unwind registration).
+//!
+//! x86_64 only; the OS-specific parts are in `sys`. Where `sys::SUPPORTED` is false (not
+//! ported yet) `ryo_jit_start` fails, so that the runtime's trips act as the no-op JIT, but
+//! `y build` seals and bundles it the same way.
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 mod install;
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
+mod sys;
+#[cfg(target_arch = "x86_64")]
 mod thread;
 
 use ryo_bytecode::jit_abi::RtApi;
 
 /// Starts the JIT thread, which compiles what `rt` queues. False if the thread didn't start;
 /// the runtime then acts as the no-op JIT. Called once per runtime.
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 #[unsafe(no_mangle)]
 pub extern "C" fn ryo_jit_start(rt: &'static RtApi) -> bool {
-    thread::start(rt)
+    sys::SUPPORTED && thread::start(rt)
 }
 
 /// How many functions the SSA tier (`RYO_JIT_OPT=ssa…`) compiled, and how many went to the
 /// re-encoding pipeline instead (tests).
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 #[doc(hidden)]
 pub fn ssa_stats() -> (usize, usize) {
     use core::sync::atomic::Ordering::SeqCst;
@@ -38,7 +42,7 @@ pub fn ssa_stats() -> (usize, usize) {
 }
 
 /// The length of the code the JIT installed for the record at `rec`, 0 if none (tests).
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 #[doc(hidden)]
 pub fn code_len(rec: *const ryo_bytecode::image::JitRecord) -> usize {
     let lens = install::CODE_LEN.lock().unwrap_or_else(|e| e.into_inner());
@@ -46,7 +50,7 @@ pub fn code_len(rec: *const ryo_bytecode::image::JitRecord) -> usize {
 }
 
 /// Without a JIT for this target: fails, so the runtime acts as the no-op JIT.
-#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+#[cfg(not(target_arch = "x86_64"))]
 #[unsafe(no_mangle)]
 pub extern "C" fn ryo_jit_start(rt: &'static RtApi) -> bool {
     let _ = rt;

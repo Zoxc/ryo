@@ -11,7 +11,7 @@ use crate::install::Jit;
 /// Starts the JIT thread. False if the thread didn't start.
 pub(crate) fn start(rt: &'static RtApi) -> bool {
     quiet_panics(rt.flags & JIT_LOG != 0);
-    crate::install::close_frame_registry_at_exit();
+    crate::sys::close_frame_registry_at_exit();
     std::thread::Builder::new().name(NAME.into()).spawn(move || main(rt)).is_ok()
 }
 

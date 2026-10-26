@@ -3,7 +3,6 @@
 //! loop heads, and installs the code near the image: code memory, relocation, unwind
 //! information, the perf map, and the record's publication (design/jit.md, "Compiling and installing").
 
-use core::ffi::{c_int, c_void};
 use core::ptr;
 use core::sync::atomic::Ordering::{Acquire, Release, SeqCst};
 use core::sync::atomic::{AtomicI64, AtomicPtr, AtomicU32, AtomicUsize};
@@ -33,47 +32,6 @@ const REACH: usize = (1 << 31) - (1 << 20);
 /// Where a function's code starts in its allocation: 16-aligned, after the entry prefix.
 const CODE_AT: usize = 16;
 const _: () = assert!(JIT_ENTRY_PREFIX <= CODE_AT);
-
-unsafe extern "C" {
-    fn getpid() -> c_int;
-    fn write(fd: c_int, buf: *const c_void, n: usize) -> isize;
-    /// libgcc's: registers an `.eh_frame` (terminated by a zero word) with the unwinder.
-    fn __register_frame(begin: *const u8);
-    fn atexit(f: extern "C" fn()) -> c_int;
-}
-
-/// Whether `__register_frame` may still be called: false once the process is exiting.
-/// libgcc's frame registry is a b-tree that a destructor of libgcc (`release_registered_frames`,
-/// run by `exit` after the `atexit` handlers) frees without taking its locks, so a
-/// registration still running on this thread then corrupts the heap or faults in
-/// `btree_destroy`. The lock is held across each registration and by the `atexit` handler
-/// [`close_frame_registry`] that ends them, so the registry is idle when it's torn down.
-static FRAMES_OPEN: std::sync::Mutex<bool> = std::sync::Mutex::new(true);
-
-/// Arranges for [`close_frame_registry`] to run at exit, before libgcc's teardown: `atexit`
-/// handlers registered after startup run before the shared objects' destructors.
-pub(crate) fn close_frame_registry_at_exit() {
-    // SAFETY: a plain function with no arguments.
-    unsafe { atexit(close_frame_registry) };
-}
-
-/// Ends JIT unwind registrations: waits for the one in progress, if any.
-extern "C" fn close_frame_registry() {
-    *FRAMES_OPEN.lock().unwrap_or_else(|e| e.into_inner()) = false;
-}
-
-/// Registers the `.eh_frame` at `eh` with the unwinder, unless the process is exiting.
-///
-/// # Safety
-/// `eh` is a complete `.eh_frame`, terminated by a zero word, that lives forever.
-unsafe fn register_frame(eh: *const u8) -> bool {
-    let open = FRAMES_OPEN.lock().unwrap_or_else(|e| e.into_inner());
-    if *open {
-        // SAFETY: as the caller promises; the registry isn't being torn down while `open`.
-        unsafe { __register_frame(eh) };
-    }
-    *open
-}
 
 // The record's fields the JIT shares with the trips and the counter checks, which read and
 // write them with plain instructions: atomics of their size.
@@ -464,12 +422,9 @@ impl Jit {
         let lo = handlers.first().map_or(probe, |h| h.0).min(probe);
         let hi = handlers.last().map_or(probe, |h| h.0).max(probe) + PAGE;
         let perfmap = (rt.flags & ryo_bytecode::jit_abi::JIT_PERFMAP != 0)
-            .then(|| {
-                // SAFETY: always safe to call.
-                let pid = unsafe { getpid() };
-                std::fs::OpenOptions::new().create(true).append(true).open(std::format!("/tmp/perf-{pid}.map")).ok()
-            })
-            .flatten();
+            .then(crate::sys::perfmap_path)
+            .flatten()
+            .and_then(|path| std::fs::OpenOptions::new().create(true).append(true).open(path).ok());
         let dump = std::env::var("RYO_JIT_DUMP").ok().filter(|d| !d.is_empty());
         let ssa_limit = std::env::var("RYO_JIT_SSA_LIMIT").ok().and_then(|n| n.parse().ok());
         Jit {
@@ -783,10 +738,14 @@ impl Jit {
         // LSDA.
         let mut eh = Vec::new();
         let pers_field = eh_cie(&mut eh);
+        let mut fdes = std::vec![eh.len()];
         let fields = match &body {
             Body::Aot(ef) => eh_fde(&mut eh, 0, ef, mode),
             Body::Rows(rows) => eh_fde_rows(&mut eh, 0, code_len as u32, rows),
         };
+        if osr.is_some() {
+            fdes.push(eh.len());
+        }
         let osr_fields = osr.as_ref().map(|o| eh_fde_rows(&mut eh, 0, o.code.len() as u32, &o.cfi));
         eh.extend_from_slice(&[0; 4]);
         let lsda_at = eh.len();
@@ -936,7 +895,8 @@ impl Jit {
             }
             // Unregistered, the code must not run: nothing could unwind through it. At exit
             // it isn't needed.
-            if !register_frame(eh_base as *const u8) {
+            let unwind = crate::sys::Unwind { eh: eh_base as *const u8, fdes: &fdes, code: (base, base + size) };
+            if !crate::sys::register_unwind(&unwind) {
                 return Err("exiting");
             }
         }
@@ -1058,17 +1018,17 @@ impl Jit {
 /// `Stderr`: linked as an rlib (tests), the JIT shares the program's, whose lock a program
 /// thread may hold while it waits for this one (`RYO_JIT_SYNC`).
 pub(crate) fn log_line(line: &str) {
-    // SAFETY: a write of a live buffer.
-    unsafe { write(2, line.as_ptr().cast(), line.len()) };
+    crate::sys::write_stderr(line.as_bytes());
 }
 
 #[cfg(test)]
 mod tests {
     #[test]
     fn no_frame_registration_once_exiting() {
-        super::close_frame_registry();
-        // Not a valid `.eh_frame`: once closed, it must not reach libgcc.
-        assert!(!unsafe { super::register_frame(core::ptr::dangling()) });
-        *super::FRAMES_OPEN.lock().unwrap() = true;
+        crate::sys::close_frame_registry();
+        // Not a valid `.eh_frame`: once closed, it must not reach the unwinder.
+        let u = crate::sys::Unwind { eh: core::ptr::dangling(), fdes: &[0], code: (0, 0) };
+        assert!(!unsafe { crate::sys::register_unwind(&u) });
+        crate::sys::reopen_frame_registry();
     }
 }
