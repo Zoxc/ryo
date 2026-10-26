@@ -4,3 +4,4 @@ RyoProofs — the proofs too slow for the default build (`lake build RyoProofs`,
 -/
 import RyoProofs.InlineOps
 import RyoProofs.InlineOk
+import RyoProofs.OpFacts

@@ -23,6 +23,7 @@ import Ryo.Proofs.Cache
 import Ryo.Proofs.NicheDiscr
 import Ryo.Proofs.Provenance
 import Ryo.Proofs.Shapes
+import Ryo.Proofs.OpFacts
 import Ryo.Proofs.Switch
 import Ryo.Proofs.ArgRet
 import Ryo.Proofs.CacheStep
