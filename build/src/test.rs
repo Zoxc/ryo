@@ -126,6 +126,7 @@ pub(crate) const CORPUS: &[Program] = &[
     single!("collections"),
     single!("panics"),
     single!("exit_code"),
+    single!("end_ptrs"),
     Program {
         name: "cross_crate",
         crates: &[krate("ccl", "cross_crate/lib.rs", CrateKind::Rlib), krate("main", "cross_crate/main.rs", CrateKind::Bin)],

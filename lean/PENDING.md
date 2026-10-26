@@ -3,6 +3,13 @@
 Rust-side changes that the Lean model or proofs don't reflect yet. Add an entry per change;
 remove it once a Lean session has handled it.
 
+- The SSA tier's frame cut (`jit/alloca.rs`) joins an `addr` at an escaped object's end
+  (the object escaping at that `addr`, unless one escaping there starts at that address;
+  with none escaping there, any escaped object ending there) to the object's alloca, so
+  that the end pointer keeps its place relative to the object under any layout (it was a
+  1-byte access of the next byte, in whatever alloca held it). Only matters if the Lean model covers the SSA tier. Commit: "JIT: keep end pointers with
+  their escaped object".
+
 
 - The SSA tier's inliner splices callees whose `ret` has more parts than the call site
   reads (an sret callee returning its pointer to a site with no results): the extra parts

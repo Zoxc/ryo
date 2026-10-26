@@ -110,8 +110,35 @@ pub fn analyze(code: &Code, frame_size: u32) -> Result<Frame, Unsupported> {
     let mut opaque = alloc::vec![false; n];
     let mut accessed = alloc::vec![false; n];
     let mut odd = alloc::vec![false; n];
-    for i in &code.insns {
+    // The ends of escaped objects. An `addr` there (past a trailing zero-sized field, say)
+    // is a 1-byte access of the next byte, which may be another alloca's or none: join the
+    // two so that the end pointer stays with its object, whatever the layout. The object is
+    // the one escaping at the `addr` (`ScopeAt::at`), unless one escaping there also starts
+    // there (a call's arguments passed by address are their objects' starts); with none
+    // escaping there, any escaped object that ends there.
+    let mut ends: Vec<(u32, i64, i64)> = code
+        .scopes
+        .iter()
+        .filter(|s| matches!(s.kind, ScopeKind::Escape { .. }) && s.size != 0)
+        .map(|s| (s.at, s.off as i64, s.off as i64 + s.size as i64))
+        .collect();
+    ends.sort_unstable();
+    let mut any_end: Vec<i64> = ends.iter().map(|e| e.2).collect();
+    any_end.sort_unstable();
+    for (k, i) in code.insns.iter().enumerate() {
         let island = matches!(i.kind, Kind::Island { .. });
+        let here = &ends[ends.partition_point(|e| e.0 < k as u32)..ends.partition_point(|e| e.0 <= k as u32)];
+        for a in i.accs.iter().filter(|a| a.how == How::Addr) {
+            let off = a.off as i64;
+            let end = if here.is_empty() {
+                any_end.binary_search(&off).is_ok()
+            } else {
+                here.iter().any(|e| e.2 == off) && !here.iter().any(|e| e.1 == off)
+            };
+            if end {
+                span(&mut uf, a.off as i64 - 1, 2);
+            }
+        }
         // A zero-sized island operand accesses nothing.
         for a in i.accs.iter().filter(|a| a.size != 0 || a.how != How::Block) {
             span(&mut uf, a.off as i64, a.size.max(1));
