@@ -155,9 +155,9 @@ L1:
     mov     dword ptr [rsp+0Ch],1
     mov     edx,[rsp+54h]
     sub     edx,[rsp+0Ch]
+    mov     [rsp+3Ch],edx
     setb    cl
     mov     [rsp+40h],cl
-    mov     [rsp+3Ch],edx
     test    byte ptr [rsp+40h],0FFh
     je      L2
     lea     rdi,[k0]
@@ -174,9 +174,9 @@ L2:
     mov     dword ptr [rsp+0Ch],2
     mov     edx,[rsp+54h]
     sub     edx,[rsp+0Ch]
+    mov     [rsp+24h],edx
     setb    cl
     mov     [rsp+28h],cl
-    mov     [rsp+24h],edx
     test    byte ptr [rsp+28h],0FFh
     je      L3
     lea     rdi,[k3]
@@ -192,9 +192,9 @@ L3:
     mov     [rsp+30h],rax
     mov     rax,[rsp+48h]
     add     rax,[rsp+30h]
+    mov     [rsp+10h],rax
     setb    cl
     mov     [rsp+18h],cl
-    mov     [rsp+10h],rax
     test    byte ptr [rsp+18h],0FFh
     je      L4
     lea     rsi,[k6]

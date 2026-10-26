@@ -1543,9 +1543,9 @@ L0:
     mov     [rsp+20h],rdx
     mov     rax,[rsp+28h]
     add     rax,[rsp+20h]
+    mov     [rsp+10h],rax
     setb    cl
     mov     [rsp+18h],cl
-    mov     [rsp+10h],rax
     test    byte ptr [rsp+18h],0FFh
     je      L1
     lea     rsi,[k0]
@@ -2129,9 +2129,9 @@ L0:
     mov     qword ptr [rsp+8],1
     mov     rdx,[rsp+140h]
     add     rdx,[rsp+8]
+    mov     [rsp+110h],rdx
     setb    cl
     mov     [rsp+118h],cl
-    mov     [rsp+110h],rdx
     test    byte ptr [rsp+118h],0FFh
     je      L1
     lea     rdi,[k0]
@@ -2186,9 +2186,9 @@ L3:
     mov     rdx,[rsp+0E8h]
     mov     [rsp+0C8h],rdx
     mul     rdx
+    mov     [rsp+0B8h],rax
     setb    cl
     mov     [rsp+0C0h],cl
-    mov     [rsp+0B8h],rax
     test    byte ptr [rsp+0C0h],0FFh
     je      L4
     lea     rdi,[k7]
@@ -2224,9 +2224,9 @@ L4:
     mov     [rsp+80h],rdi
     mov     rax,[rsp+88h]
     mul     rdi
+    mov     [rsp+70h],rax
     setb    cl
     mov     [rsp+78h],cl
-    mov     [rsp+70h],rax
     test    byte ptr [rsp+78h],0FFh
     je      L5
     lea     r9,[k11]
@@ -2266,9 +2266,9 @@ L7:
     mov     [rsp+40h],rsi
     mov     rdi,[rsp+90h]
     add     rdi,rsi
+    mov     [rsp+30h],rdi
     setb    cl
     mov     [rsp+38h],cl
-    mov     [rsp+30h],rdi
     test    byte ptr [rsp+38h],0FFh
     je      L8
     lea     r9,[k15]
@@ -2284,9 +2284,9 @@ L9:
     mov     qword ptr [rsp+8],1
     mov     rdx,[rsp+0E8h]
     add     rdx,[rsp+8]
+    mov     [rsp+20h],rdx
     setb    cl
     mov     [rsp+28h],cl
-    mov     [rsp+20h],rdx
     test    byte ptr [rsp+28h],0FFh
     je      L10
     lea     rdi,[k17]

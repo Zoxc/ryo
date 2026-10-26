@@ -692,9 +692,9 @@ L0:
     mov     rax,[rax]
     mov     qword ptr [rsp+8],1
     add     rax,[rsp+8]
+    mov     [rsp+60h],rax
     setb    cl
     mov     [rsp+68h],cl
-    mov     [rsp+60h],rax
     test    byte ptr [rsp+68h],0FFh
     je      L1
     lea     rdi,[k1]
@@ -15953,9 +15953,9 @@ L0:
     mov     rdi,[rsp+78h]
     mov     rax,[rsp+48h]
     mul     rdi
+    mov     [rsp+28h],rax
     setb    cl
     mov     [rsp+30h],cl
-    mov     [rsp+28h],rax
     movzx   r8d,byte ptr [rsp+30h]
     mov     [rsp+63h],r8b
     mov     [rsp+18h],rax
@@ -16146,9 +16146,9 @@ L2:
     mov     qword ptr [rsp+18h],1
     mov     rsi,[rsp+308h]
     sub     rsi,[rsp+18h]
+    mov     [rsp+0E0h],rsi
     setb    cl
     mov     [rsp+0E8h],cl
-    mov     [rsp+0E0h],rsi
     test    byte ptr [rsp+0E8h],0FFh
     je      L3
     lea     r8,[k24]
@@ -16506,9 +16506,9 @@ L5:
     mov     [rsp+298h],rsi
     mov     qword ptr [rsp],1
     sub     rsi,[rsp]
+    mov     [rsp+288h],rsi
     setb    cl
     mov     [rsp+290h],cl
-    mov     [rsp+288h],rsi
     test    byte ptr [rsp+290h],0FFh
     je      L6
     lea     r9,[k2]
@@ -16563,9 +16563,9 @@ L8:
     mov     [rsp+230h],rdx
     mov     qword ptr [rsp],1
     sub     rdx,[rsp]
+    mov     [rsp+220h],rdx
     setb    cl
     mov     [rsp+228h],cl
-    mov     [rsp+220h],rdx
     test    byte ptr [rsp+228h],0FFh
     je      L9
     lea     r8,[k8]
@@ -16589,9 +16589,9 @@ L9:
     mov     qword ptr [rsp],1
     mov     rdx,[rsp+2C0h]
     sub     rdx,[rsp]
+    mov     [rsp+208h],rdx
     setb    cl
     mov     [rsp+210h],cl
-    mov     [rsp+208h],rdx
     test    byte ptr [rsp+210h],0FFh
     je      L10
     lea     rdi,[k12]
@@ -16743,9 +16743,9 @@ L17:
     mov     qword ptr [rsp],1
     mov     rdx,[rsp+1A8h]
     add     rdx,[rsp]
+    mov     [rsp+0C8h],rdx
     setb    cl
     mov     [rsp+0D0h],cl
-    mov     [rsp+0C8h],rdx
     test    byte ptr [rsp+0D0h],0FFh
     je      L18
     lea     rdi,[k30]
@@ -16784,9 +16784,9 @@ L20:
     mov     qword ptr [rsp],1
     mov     rdx,[rsp+1A0h]
     add     rdx,[rsp]
+    mov     [rsp+88h],rdx
     setb    cl
     mov     [rsp+90h],cl
-    mov     [rsp+88h],rdx
     test    byte ptr [rsp+90h],0FFh
     je      L21
     lea     rdi,[k35]

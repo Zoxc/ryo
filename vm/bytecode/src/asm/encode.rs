@@ -661,10 +661,16 @@ fn cache(pieces: &mut [Piece], target: &[bool]) -> Vec<(usize, u32)> {
         // One sequence: native items up to its write, or up to its branch.
         let start = k;
         items.clear();
+        let mut ended = false;
         while let Some(&Piece::Native(it)) = pieces.get(k) {
+            let next = match pieces.get(k + 1) {
+                Some(Piece::Native(n)) => Some(n),
+                _ => None,
+            };
+            ended = it.ends_inline_at(items.last(), next);
             items.push(it);
             k += 1;
-            if it.ends_inline() {
+            if ended {
                 break;
             }
         }
@@ -677,7 +683,7 @@ fn cache(pieces: &mut [Piece], target: &[bool]) -> Vec<(usize, u32)> {
             *p = if j < dropped { Piece::Gone } else { Piece::Native(out[j - dropped]) };
         }
         // A compare-branch's branch keeps the cache.
-        if !items.last().is_some_and(Item::ends_inline) && matches!(pieces.get(k), Some(Piece::Branch { cond, .. }) if *cond != Cond::Always) {
+        if !ended && matches!(pieces.get(k), Some(Piece::Branch { cond, .. }) if *cond != Cond::Always) {
             k += 1;
         }
     }
@@ -923,17 +929,27 @@ impl Asm {
     }
 
     /// With [`Asm::drop_exactly`], drops the store that ends the last instruction, an inline
-    /// sequence that writes a frame slot from a register ([`Asm::can_drop_store`]).
+    /// sequence that writes a frame slot from a register ([`Asm::can_drop_store`]), or an
+    /// overflow op's result store, before its flag's.
     pub fn drop_store(&mut self) {
-        debug_assert!(self.can_drop_store(), "not a register store");
-        let k = self.pieces.len() - 1;
+        let k = self.droppable_store().expect("not a register store");
         self.drops.as_mut().expect("drop_exactly").push(k);
     }
 
     /// Whether the last instruction is an inline sequence that ends in a store of a register
-    /// the register cache may hold ([`Asm::drop_store`]).
+    /// the register cache may hold, or an overflow op ([`Asm::drop_store`]).
     pub fn can_drop_store(&self) -> bool {
-        matches!(self.pieces.last(), Some(Piece::Native(Item::St { src, m, .. })) if *src != Reg::Rcx && m.base == Reg::Rbp)
+        self.droppable_store().is_some()
+    }
+
+    /// The piece [`Asm::drop_store`] drops.
+    fn droppable_store(&self) -> Option<usize> {
+        let reg_store = |p: &Piece| matches!(p, Piece::Native(Item::St { src, m, .. }) if *src != Reg::Rcx && m.base == Reg::Rbp);
+        let n = self.pieces.len();
+        match self.pieces.get(n.saturating_sub(3)..).unwrap_or_default() {
+            [st, Piece::Native(Item::SetccCl(_)), Piece::Native(Item::St { .. })] if reg_store(st) => Some(n - 3),
+            _ => self.pieces.last().is_some_and(reg_store).then(|| n - 1),
+        }
     }
 
     /// Sets where unwinding out of instruction `id` goes (once; only for instructions that
@@ -1196,7 +1212,7 @@ impl Asm {
         let sels = cache(&mut pieces, &target);
         match drops {
             // The cache drops at most a sequence's leading reload, so a store named is still
-            // its last piece.
+            // its last piece (or an overflow op's result store).
             Some(ks) => {
                 for k in ks {
                     match pieces[k] {

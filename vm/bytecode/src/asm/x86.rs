@@ -600,6 +600,17 @@ impl Item {
         }
     }
 
+    /// Whether the item ends its inline sequence, after `prev` and before `next`: as
+    /// [`Item::ends_inline`], but an overflow op's result store, which its flag's `setcc cl`
+    /// follows, doesn't, and that flag's store (from `cl`, into the frame) does.
+    pub fn ends_inline_at(&self, prev: Option<&Item>, next: Option<&Item>) -> bool {
+        match self {
+            Item::St { .. } if matches!(prev, Some(Item::SetccCl(_))) => true,
+            Item::St { .. } if matches!(next, Some(Item::SetccCl(_))) => false,
+            _ => self.ends_inline(),
+        }
+    }
+
     /// Whether the item may be part of an inline sequence.
     pub fn is_inline(&self) -> bool {
         matches!(

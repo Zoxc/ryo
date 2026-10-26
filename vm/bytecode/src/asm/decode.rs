@@ -905,19 +905,29 @@ fn inline_insn(c: &mut Cursor<'_>, cache: &mut Cache, dropped: &mut &[DroppedSto
     let mut branch = None;
     let mut was_dropped = false;
     loop {
-        // A dropped store ends the sequence where it would have been.
+        // A dropped store ends the sequence where it would have been, but for an overflow
+        // op's result store, which its flag follows.
         if let Some(d) = dropped.first()
             && d.at == c.pos
         {
             items.push(d.item);
             was_dropped = true;
             *dropped = &dropped[1..];
-            break;
+            let next = c.item().ok();
+            c.pos = d.at;
+            if !matches!(next, Some(Item::SetccCl(_))) {
+                break;
+            }
+            continue;
         }
         match c.item() {
             Ok(it) if it.is_inline() => {
+                let at = c.pos;
+                let next = c.item().ok();
+                c.pos = at;
+                let ended = it.ends_inline_at(items.last(), next.as_ref());
                 items.push(it);
-                if it.ends_inline() {
+                if ended {
                     break;
                 }
             }

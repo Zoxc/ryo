@@ -4669,9 +4669,9 @@ L0:
     mov     rdi,[rsp+78h]
     mov     rax,[rsp+48h]
     mul     rdi
+    mov     [rsp+28h],rax
     setb    cl
     mov     [rsp+30h],cl
-    mov     [rsp+28h],rax
     movzx   r8d,byte ptr [rsp+30h]
     mov     [rsp+63h],r8b
     mov     [rsp+18h],rax
@@ -11572,9 +11572,9 @@ L0:
     mov     [rsp+80h],rdx
     mov     rsi,[rsp+0C0h]
     mul     rsi
+    mov     [rsp+18h],rax
     setb    cl
     mov     [rsp+20h],cl
-    mov     [rsp+18h],rax
     movzx   edi,byte ptr [rsp+20h]
     mov     [rsp+2Fh],dil
     mov     [rsp+8],rax
@@ -11814,9 +11814,9 @@ L13:
     mov     rax,[rsp+0B8h]
     mov     qword ptr [rsp+10h],8
     mul     qword ptr [rsp+10h]
+    mov     [rsp+20h],rax
     setb    cl
     mov     [rsp+28h],cl
-    mov     [rsp+20h],rax
     movzx   esi,byte ptr [rsp+28h]
     mov     [rsp+37h],sil
     mov     [rsp+18h],rax
@@ -11836,9 +11836,9 @@ L16:
     mov     rax,[rsp+80h]
     mov     rdx,[rsp+50h]
     mul     rdx
+    mov     [rsp+38h],rax
     setb    cl
     mov     [rsp+40h],cl
-    mov     [rsp+38h],rax
     movzx   esi,byte ptr [rsp+40h]
     mov     [rsp+66h],sil
     mov     [rsp+28h],rax
@@ -11911,9 +11911,9 @@ L26:
     mov     qword ptr [rsp+10h],1
     mov     rdx,[rsp+50h]
     add     rdx,[rsp+10h]
+    mov     [rsp+40h],rdx
     setb    cl
     mov     [rsp+48h],cl
-    mov     [rsp+40h],rdx
     test    byte ptr [rsp+48h],0FFh
     je      L23
     lea     rdi,[k3]
@@ -11946,9 +11946,9 @@ L29:
     mov     rax,[rsp+20h]
     mov     rdx,[rsp+58h]
     mul     rdx
+    mov     [rsp+38h],rax
     setb    cl
     mov     [rsp+40h],cl
-    mov     [rsp+38h],rax
     movzx   esi,byte ptr [rsp+40h]
     mov     [rsp+4Fh],sil
     mov     [rsp+28h],rax
@@ -12435,9 +12435,9 @@ L6:
     mov     rax,[rsp+4A8h]
     mov     rax,[rax]
     add     rax,[rsp+4C8h]
+    mov     [rsp+460h],rax
     setb    cl
     mov     [rsp+468h],cl
-    mov     [rsp+460h],rax
     test    byte ptr [rsp+468h],0FFh
     je      L7
     lea     rsi,[k12]
@@ -12522,9 +12522,9 @@ L12:
     mov     qword ptr [rsp+28h],1
     mov     rdi,[rsp+458h]
     add     rdi,[rsp+28h]
+    mov     [rsp+370h],rdi
     setb    cl
     mov     [rsp+378h],cl
-    mov     [rsp+370h],rdi
     test    byte ptr [rsp+378h],0FFh
     je      L13
     lea     r9,[k19]
@@ -12687,9 +12687,9 @@ L18:
     mov     rax,[rax]
     mov     qword ptr [rsp+20h],1
     add     rax,[rsp+20h]
+    mov     [rsp+1D0h],rax
     setb    cl
     mov     [rsp+1D8h],cl
-    mov     [rsp+1D0h],rax
     test    byte ptr [rsp+1D8h],0FFh
     je      L19
     lea     rdi,[k38]

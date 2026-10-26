@@ -310,11 +310,11 @@ pub(super) fn sequence<T>(op: Opcode, ops: &[Opnd<T>]) -> Option<(Vec<Item>, Opt
             cmp_imm(&mut v, w, slot(0), imm(1));
             br = cond(2, c);
         }
-        // `d, o, a, b`: the result in `rax`, the flag through `cl`, stored before the result.
+        // `d, o, a, b`: the result in `rax`, stored first (the store leaves the flags alone),
+        // then the flag through `cl`, so overlapping outputs end as the handlers leave them.
         Class::Ovf(op, signed, w) => {
-            v.extend([ld(w, slot(2)), Item::Alu { op, w, reg: R, rm: Rm::Mem(slot(3)) }]);
+            v.extend([ld(w, slot(2)), Item::Alu { op, w, reg: R, rm: Rm::Mem(slot(3)) }, st(w, slot(0))]);
             flag(&mut v, if signed { Cond::O } else { Cond::B }, slot(1));
-            v.push(st(w, slot(0)));
         }
         Class::MulOvf(signed, w) => {
             let (a, b) = (slot(2), slot(3));
@@ -355,8 +355,8 @@ pub(super) fn sequence<T>(op: Opcode, ops: &[Opnd<T>]) -> Option<(Vec<Item>, Opt
                     Cond::A
                 }
             };
-            flag(&mut v, cond, slot(1));
             v.push(st(w, slot(0)));
+            flag(&mut v, cond, slot(1));
         }
         Class::Ext { from, to, sx } => {
             if sx && to == W::Q {
@@ -397,9 +397,9 @@ fn classify(items: &[Item], br: bool) -> Option<Class> {
     use Item::*;
     let z = Cond::Z;
     let frame = |m: &M| m.base == Reg::Rbp;
-    // An overflow op: its flag, then the result's store.
+    // An overflow op: the result's store, then its flag.
     if items.iter().any(|it| matches!(it, SetccCl(_))) {
-        let [.., St { w, .. }] = items else { return None };
+        let [.., St { w, src: Reg::Rax, .. }, SetccCl(_), St { .. }] = items else { return None };
         return Some(if items.iter().any(|it| matches!(it, MulQ(_) | Imul { .. })) {
             Class::MulOvf(false, *w)
         } else {
@@ -477,13 +477,15 @@ fn decode_as(op: Opcode, items: &[Item], branch: Option<(Cond, u32)>) -> Option<
     });
     {
         let info = op.info();
+        let ovf = info.operand_index("o").is_some();
         let mut f = frame.iter().copied();
         let mut ops = Vec::with_capacity(info.operands.len());
         for o in info.operands {
             ops.push(match o.kind {
+                // An overflow op's result, stored before its flag.
+                OperandKind::Slot if o.name == "d" && ovf => Opnd::Slot(*frame.get(frame.len().checked_sub(2)?)?),
                 OperandKind::Slot if o.name == "d" => Opnd::Slot(*frame.last()?),
-                // An overflow flag, stored before the result.
-                OperandKind::Slot if o.name == "o" => Opnd::Slot(*frame.get(frame.len().checked_sub(2)?)?),
+                OperandKind::Slot if o.name == "o" => Opnd::Slot(*frame.last()?),
                 OperandKind::Slot => Opnd::Slot(f.next()?),
                 OperandKind::Mem => Opnd::Mem(f.next()?, rax?),
                 OperandKind::U8 => Opnd::Imm(imm as u8 as u64),

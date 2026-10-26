@@ -1173,3 +1173,91 @@ fn many_live_across_call() {
         assert!(in_jit(&img, f, out[0]), "ran at {:#x}", out[0]);
     }
 }
+
+/// An overflow op whose flag overlaps its result: the AOT code and the JIT's both store the
+/// result first and the flag over it, as the handlers do. f(x, a, b, out): out[0] = where
+/// it runs; t = x; t[0..w], t[k] = a op.ovf b; ret t. x@16, a@24, b@32, out@40; t@-16,
+/// r@-8.
+#[test]
+fn ovf_flag_over_result() {
+    type Model = fn(u64, u64) -> (u64, bool);
+    let cases: [(fn(Slot, Slot, Slot, Slot) -> Insn<'static>, u32, Model); 6] = [
+        (
+            |d, o, a, b| Insn::AddOvfUW32 { d, o, a, b },
+            4,
+            |a, b| {
+                let (r, v) = (a as u32).overflowing_add(b as u32);
+                (r as u64, v)
+            },
+        ),
+        (
+            |d, o, a, b| Insn::SubOvfSW64 { d, o, a, b },
+            8,
+            |a, b| {
+                let (r, v) = (a as i64).overflowing_sub(b as i64);
+                (r as u64, v)
+            },
+        ),
+        (
+            |d, o, a, b| Insn::AddOvfSW8 { d, o, a, b },
+            1,
+            |a, b| {
+                let (r, v) = (a as i8).overflowing_add(b as i8);
+                (r as u8 as u64, v)
+            },
+        ),
+        (|d, o, a, b| Insn::MulOvfUW64 { d, o, a, b }, 8, |a, b| a.overflowing_mul(b)),
+        (
+            |d, o, a, b| Insn::MulOvfSW16 { d, o, a, b },
+            2,
+            |a, b| {
+                let (r, v) = (a as i16).overflowing_mul(b as i16);
+                (r as u16 as u64, v)
+            },
+        ),
+        (
+            |d, o, a, b| Insn::MulOvfUW32 { d, o, a, b },
+            4,
+            |a, b| {
+                let (r, v) = (a as u32).overflowing_mul(b as u32);
+                (r as u64, v)
+            },
+        ),
+    ];
+    init();
+    let x = 0x5555_5555_5555_5555u64;
+    let pairs = [(1u64, 2u64), (u64::MAX, 2), (0x7fff_ffff_ffff_ffff, 1), (0x8000_0000, 0x8000_0000), (0x7f, 0x7f), (0x1234, 0)];
+    for (mk, w, model) in cases {
+        for k in [0, w - 1] {
+            let mut wr = ImageWriter::new(unique_scid());
+            let s_ret = wr.symbol("ret_addr", 0);
+            let mut a = Asm::new();
+            a.i(Insn::CallSym { d: Slot(-8), sym: s_ret, k: 8, a: List::from_words(&[]) });
+            a.i(Insn::StoreW64 { m: Mem { p: Slot(40), k: 0 }, s: Slot(-8) });
+            a.i(Insn::MovW64 { d: Slot(-16), s: Slot(16) });
+            a.i(mk(Slot(-16), Slot(-16 + k as i32), Slot(24), Slot(32)));
+            a.ret(Slot(-16), 8);
+            let f = wr.add_function(func(a.done(), 16, 32, 8));
+            let img = build(wr, &syms());
+            for jit in [false, true] {
+                if jit {
+                    img.trip_after(f, 0, 0);
+                } else {
+                    img.trip_after(f, 1 << 40, 1 << 40);
+                }
+                for (p, q) in pairs {
+                    let (r, v) = model(p, q);
+                    let mut want = x.to_le_bytes();
+                    want[..w as usize].copy_from_slice(&r.to_le_bytes()[..w as usize]);
+                    want[k as usize] = v as u8;
+                    let mut out = [0u64; 1];
+                    let got = ok::<_, u64>(img.id(f), (x, p, q, out.as_mut_ptr() as u64));
+                    let what = format!("width {w}, flag at +{k}, jit {jit}: {p:#x} {q:#x}");
+                    assert_eq!(got, u64::from_le_bytes(want), "{what}");
+                    let at = if jit { in_jit(&img, f, out[0]) } else { in_aot(&img, f, out[0]) };
+                    assert!(at, "{what}: ran at {:#x}, state {}", out[0], state(&img, f));
+                }
+            }
+        }
+    }
+}
