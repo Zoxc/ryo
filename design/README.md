@@ -15,6 +15,8 @@ x86-64 calls of the VM's handlers, and uses
   its uses in the lowering, and its inline sequence or handler
 - [jit.md](jit.md): the JIT: counters and trips, the JIT thread, re-encoding and
   installing, OSR, packaging as a sealed object, settings
+- [provenance.md](provenance.md): pointer provenance across the lowering, the VM, the JIT
+  and the Lean model; the rules optimizations follow, and the gaps
 - [platforms.md](platforms.md): ELF and PE specifics
 - [verification.md](verification.md): the plan to verify the compiled code in Lean
   (`lean/`): levels, what is proved, checked and trusted, the AOT and JIT theorems
