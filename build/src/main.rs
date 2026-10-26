@@ -97,33 +97,24 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
         "build" => {
             let mut sysroot = Sysroot::Llvm;
             let mut targets = Vec::new();
-            let mut args = rest.iter().copied();
-            while let Some(arg) = args.next() {
-                let (flag, value) = match arg.split_once('=') {
-                    Some((f, v)) if f.starts_with("--") => (f, Some(v)),
-                    _ => (arg, None),
-                };
-                let mut value = || value.or_else(|| args.next()).ok_or(format!("`{flag}` needs a value"));
+            let mut args = crate::utils::Flags::new(&rest);
+            while let Some(flag) = args.next()? {
                 match flag {
                     "--sysroot" => {
-                        sysroot = match value()? {
+                        sysroot = match args.value()? {
                             "llvm" => Sysroot::Llvm,
                             "ryo" => Sysroot::Ryo,
                             other => return Err(format!("unknown sysroot `{other}`")),
                         }
                     }
-                    "--target" => targets.push(value()?.to_owned()),
-                    _ => return Err(format!("unexpected argument `{arg}`")),
+                    "--target" => targets.push(args.value()?.to_owned()),
+                    _ => return Err(args.unexpected()),
                 }
             }
             Ok(Cmd::Build { sysroot, targets })
         }
         "build-clif" => no_args(Cmd::BuildClif),
-        "test" => match rest.as_slice() {
-            ["--cross", t] => Ok(Cmd::CrossTest { target: t.to_string() }),
-            [a] if a.starts_with("--cross=") => Ok(Cmd::CrossTest { target: a["--cross=".len()..].to_owned() }),
-            _ => parse_test(&rest).map(Cmd::Test),
-        },
+        "test" => parse_test(&rest),
         "bench" => match rest.as_slice() {
             ["codegen"] => Ok(Cmd::BenchCodegen),
             ["crates", opts @ ..] => crates::parse_options(opts).map(Cmd::BenchCrates),
@@ -141,30 +132,33 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
     }
 }
 
-fn parse_test(rest: &[&str]) -> Result<test::Options, String> {
+fn parse_test(rest: &[&str]) -> Result<Cmd, String> {
     let mut opts = test::Options::default();
-    let mut args = rest.iter().copied();
-    while let Some(arg) = args.next() {
-        let (flag, value) = match arg.split_once('=') {
-            Some((f, v)) if f.starts_with("--") => (f, Some(v)),
-            _ => (arg, None),
-        };
-        let mut value = || value.or_else(|| args.next()).ok_or(format!("`{flag}` needs a value"));
+    let mut cross = None;
+    let mut args = crate::utils::Flags::new(rest);
+    while let Some(flag) = args.next()? {
         match flag {
+            "--cross" => cross = Some(args.value()?.to_owned()),
             "--clif" => opts.clif = true,
             "--full" => opts.full = true,
             "--no-changed" => opts.no_changed = true,
-            "--only" => opts.only = Some(test::Area::parse(value()?)?),
-            "--program" => opts.programs.push(value()?.to_owned()),
-            "--variant" => opts.variants.push(value()?.to_owned()),
-            _ => return Err(format!("unexpected argument `{arg}`")),
+            "--only" => opts.only = Some(test::Area::parse(args.value()?)?),
+            "--program" => opts.programs.push(args.value()?.to_owned()),
+            "--variant" => opts.variants.push(args.value()?.to_owned()),
+            _ => return Err(args.unexpected()),
         }
+    }
+    if let Some(target) = cross {
+        if opts != test::Options::default() {
+            return Err("`--cross` takes no other `test` flags".to_owned());
+        }
+        return Ok(Cmd::CrossTest { target });
     }
     let modes = [opts.full, opts.only.is_some(), opts.no_changed, !opts.programs.is_empty() || !opts.variants.is_empty()];
     if modes.iter().filter(|m| **m).count() > 1 {
         return Err("`--full`, `--only`, `--no-changed` and `--program`/`--variant` exclude each other".to_owned());
     }
-    Ok(opts)
+    Ok(Cmd::Test(opts))
 }
 
 fn main() -> ExitCode {
@@ -241,6 +235,8 @@ mod tests {
         );
         assert!(parse(&["test", "--only", "x"]).is_err());
         assert!(parse(&["test", "--full", "--no-changed"]).is_err());
+        assert!(parse(&["test", "--clif=x"]).is_err());
+        assert!(parse(&["test", "--cross", "a", "--full"]).is_err());
         let cross = || Ok(Cmd::CrossTest { target: "x86_64-pc-windows-msvc".into() });
         assert_eq!(parse(&["test", "--cross", "x86_64-pc-windows-msvc"]), cross());
         assert_eq!(parse(&["test", "--cross=x86_64-pc-windows-msvc"]), cross());

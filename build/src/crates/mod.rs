@@ -184,28 +184,23 @@ pub fn parse_options(args: &[&str]) -> Result<Options, String> {
         path: None,
         stock: false,
     };
-    let mut args = args.iter().copied();
-    while let Some(arg) = args.next() {
-        let (flag, value) = match arg.split_once('=') {
-            Some((f, v)) if f.starts_with("--") => (f, Some(v)),
-            _ => (arg, None),
-        };
-        let mut value = || value.or_else(|| args.next()).ok_or(format!("`{flag}` needs a value"));
+    let mut args = crate::utils::Flags::new(args);
+    while let Some(flag) = args.next()? {
         let count0 = |v: &str| v.parse::<u32>().map_err(|_| format!("bad count `{v}`"));
         let count = |v: &str| count0(v).ok().filter(|&n| n > 0).ok_or(format!("bad count `{v}`"));
         match flag {
-            "--dep-samples" => o.dep_samples = count0(value()?)?,
-            "--leaf-samples" => o.leaf_samples = count(value()?)?,
-            "--build-samples" => o.dep_samples = count(value()?).inspect(|&n| o.leaf_samples = n)?,
-            "--run-samples" => o.run_samples = count0(value()?)?,
+            "--dep-samples" => o.dep_samples = count0(args.value()?)?,
+            "--leaf-samples" => o.leaf_samples = count(args.value()?)?,
+            "--build-samples" => o.dep_samples = count(args.value()?).inspect(|&n| o.leaf_samples = n)?,
+            "--run-samples" => o.run_samples = count0(args.value()?)?,
             "--quick" => (o.dep_samples, o.leaf_samples, o.run_samples) = (1, 1, 1),
-            "--timeout" => o.timeout = value()?.parse().ok().filter(|&n| n > 0).ok_or("bad timeout")?,
-            "--out" => o.out = Some(value()?.into()),
-            "--path" => o.path = Some(value()?.into()),
+            "--timeout" => o.timeout = args.value()?.parse().ok().filter(|&n| n > 0).ok_or("bad timeout")?,
+            "--out" => o.out = Some(args.value()?.into()),
+            "--path" => o.path = Some(args.value()?.into()),
             "--stock" => o.stock = true,
             "--crates" => {
                 o.crates.clear();
-                let v = value()?;
+                let v = args.value()?;
                 if v == "all" {
                     o.crates = CRATES.iter().map(|c| c.name.to_owned()).collect();
                     continue;
@@ -219,11 +214,11 @@ pub fn parse_options(args: &[&str]) -> Result<Options, String> {
             }
             "--backends" => {
                 o.backends.clear();
-                for b in value()?.split(',') {
+                for b in args.value()?.split(',') {
                     o.backends.push(Backend::parse(b).ok_or(format!("unknown backend `{b}`"))?);
                 }
             }
-            _ => return Err(format!("unexpected argument `{arg}`")),
+            _ => return Err(args.unexpected()),
         }
     }
     Ok(o)

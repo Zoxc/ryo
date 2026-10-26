@@ -68,21 +68,16 @@ impl Default for Options {
 
 pub fn parse_options(args: &[&str]) -> Result<Options, String> {
     let mut o = Options::default();
-    let mut args = args.iter().copied();
-    while let Some(arg) = args.next() {
-        let (flag, value) = match arg.split_once('=') {
-            Some((f, v)) if f.starts_with("--") => (f, Some(v)),
-            _ => (arg, None),
-        };
-        let mut value = || value.or_else(|| args.next()).ok_or(format!("`{flag}` needs a value"));
+    let mut args = crate::utils::Flags::new(args);
+    while let Some(flag) = args.next()? {
         let list = |v: &str| v.split(',').filter(|s| !s.is_empty()).map(str::to_owned).collect::<Vec<_>>();
         match flag {
             "--runs" => {
-                let n = value()?;
+                let n = args.value()?;
                 o.runs = n.parse().ok().filter(|&r| r > 0).ok_or(format!("bad run count `{n}`"))?;
             }
             "--llvm" => {
-                for l in list(value()?) {
+                for l in list(args.value()?) {
                     let level = l.strip_suffix('d').unwrap_or(&l);
                     if !matches!(level, "O0" | "O1" | "O2" | "O3") {
                         return Err(format!("bad LLVM level `{l}` (expected O0..O3, optionally with a `d` suffix)"));
@@ -92,7 +87,7 @@ pub fn parse_options(args: &[&str]) -> Result<Options, String> {
             }
             "--clif" => o.clif = true,
             "--ryo" => {
-                for m in list(value()?) {
+                for m in list(args.value()?) {
                     if !matches!(m.as_str(), "aot" | "jit") {
                         return Err(format!("bad ryo mode `{m}` (expected aot or jit)"));
                     }
@@ -100,13 +95,13 @@ pub fn parse_options(args: &[&str]) -> Result<Options, String> {
                 }
             }
             "--metric" => {
-                o.metric = match value()? {
+                o.metric = match args.value()? {
                     "time" => Metric::Time,
                     "cachegrind" => Metric::Cachegrind,
                     m => return Err(format!("unknown metric `{m}`")),
                 }
             }
-            _ => return Err(format!("unexpected argument `{arg}`")),
+            _ => return Err(args.unexpected()),
         }
     }
     Ok(o)
