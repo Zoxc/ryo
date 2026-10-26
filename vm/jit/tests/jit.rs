@@ -1261,3 +1261,161 @@ fn ovf_flag_over_result() {
         }
     }
 }
+
+// ---- PE code ----
+
+/// An image's VM code in the PE form (Win64 islands, `rdi` and `rsi` saved in the frame),
+/// which runs on Linux as long as its natives take the Win64 convention: only the unwind
+/// information differs, which neither the test nor the JIT registers off Windows.
+const PE: Mode = Mode { pe: true, frame_pointer: true, ..ENC };
+
+/// Native, Win64: [`note`], preserving `rdi` and `rsi`.
+#[unsafe(naked)]
+extern "C" fn note_pe() {
+    core::arch::naked_asm!(
+        "push rdi",
+        "push rsi",
+        "mov rdi, rcx",
+        "mov rsi, [rsp + 16]",
+        "lea rdx, [rsp + 24]",
+        "sub rsp, 8",
+        "call {note}",
+        "add rsp, 8",
+        "pop rsi",
+        "pop rdi",
+        "ret",
+        note = sym note_rs,
+    )
+}
+
+/// Calls the VM function at `code` with the argument block `[a, b]`, every callee-saved
+/// register of both conventions set to a known value, and stores those registers after the
+/// return in `regs` (`rbx rbp rdi rsi r13 r14 r15`; `r12` holds `regs`).
+#[unsafe(naked)]
+extern "sysv64" fn call_checked(code: *const u8, a: u64, b: u64, regs: *mut [u64; 7]) -> u64 {
+    core::arch::naked_asm!(
+        "push rbp",
+        "push rbx",
+        "push r12",
+        "push r13",
+        "push r14",
+        "push r15",
+        "mov r12, rcx",
+        "mov rax, rdi",
+        "sub rsp, 24",
+        "mov [rsp], rsi",
+        "mov [rsp + 8], rdx",
+        "movabs rbx, 0x1111111111111111",
+        "movabs rbp, 0x2222222222222222",
+        "movabs rdi, 0x3333333333333333",
+        "movabs rsi, 0x4444444444444444",
+        "movabs r13, 0x5555555555555555",
+        "movabs r14, 0x6666666666666666",
+        "movabs r15, 0x7777777777777777",
+        "call rax",
+        "mov [r12], rbx",
+        "mov [r12 + 8], rbp",
+        "mov [r12 + 16], rdi",
+        "mov [r12 + 24], rsi",
+        "mov [r12 + 32], r13",
+        "mov [r12 + 40], r14",
+        "mov [r12 + 48], r15",
+        "add rsp, 24",
+        "pop r15",
+        "pop r14",
+        "pop r13",
+        "pop r12",
+        "pop rbx",
+        "pop rbp",
+        "ret",
+    )
+}
+
+/// PE code through the JIT (design/platforms.md): compiled at the entry and by OSR at a loop
+/// head, with and without shuffled frames, with a frame that probes the stack; the results
+/// are the AOT code's, the calls end in JIT code, `rsp` moves by the frames' difference, and
+/// the callee-saved registers, `rdi` and `rsi` included, survive both.
+#[test]
+fn pe_code() {
+    init();
+    for shuffle in [false, true] {
+        for frame in [32, 4096] {
+            for k in [None, Some(0i64), Some(3)] {
+                pe_code_at(shuffle, frame, k);
+            }
+        }
+    }
+}
+
+fn pe_code_at(shuffle: bool, frame: u32, k: Option<i64>) {
+    let what = format!("shuffle {shuffle}, frame {frame}, osr at {k:?}");
+    let mut w = ImageWriter::new(unique_scid());
+    let s_note = w.symbol("note_pe", 0);
+    // f(n, obs) = (acc = 1; for i < n: acc = acc * 3 + i), noting where it runs before and
+    // after the loop. n@16, obs@24; i@-24, acc@-32.
+    let mut a = Asm::new();
+    note_call(&mut a, s_note, 24);
+    a.i(Insn::ImmW64 { d: Slot(-24), imm: 0 });
+    a.i(Insn::ImmW64 { d: Slot(-32), imm: 1 });
+    let head = a.i(Insn::BrLtUW64 { a: Slot(-24), b: Slot(16), neg: F, t: Target(0) });
+    a.i(Insn::MulImmW64 { d: Slot(-32), a: Slot(-32), imm: 3 });
+    a.i(Insn::AddW64 { d: Slot(-32), a: Slot(-32), b: Slot(-24) });
+    a.i(Insn::AddImmW64 { d: Slot(-24), a: Slot(-24), imm: 1 });
+    let back = a.i(Insn::Jmp { t: Target(0) });
+    a.patch(back, "t", head);
+    let done = note_call(&mut a, s_note, 24);
+    a.patch(head, "t", done);
+    a.ret(Slot(-32), 8);
+    let f = w.add_function(func(a.done(), frame, 16, 8));
+    let mut obj = w.finish(PE).unwrap();
+    // Off Windows nothing reads `.pdata` and `.xdata`.
+    obj.relocs.retain(|r| r.kind != RelocKind::Rva32);
+    obj.unwind.clear();
+    let img = link(obj, &[("note_pe", note_pe as *const () as usize)]);
+    if shuffle {
+        ryo_rt::vm::jit_shuffle_image(img.header);
+    }
+    register(&[&img]);
+
+    let n = 20u64;
+    let want = (0..n).fold(1u64, |acc, i| acc.wrapping_mul(3).wrapping_add(i));
+    if let Some(k) = k {
+        img.trip_after(f, 1, k);
+    }
+    // The JIT code's prologue is the one its `UNWIND_INFO` describes (`image::pe_unwind_info`):
+    // `push rbp; push rdi; push rsi; lea rbp, [rsp + 16]`, the probe, `sub rsp, F - 16`.
+    let check_prologue = || {
+        let code = unsafe { std::slice::from_raw_parts((*img.record(f)).jit_code, 32) };
+        assert_eq!(code[..8], [0x55, 0x57, 0x56, 0x48, 0x8d, 0x6c, 0x24, 0x10], "{what}");
+        let jf = if shuffle { 2 * frame + 64 } else { frame };
+        let sub = if frame >= 4096 {
+            assert_eq!((code[8], &code[9..13], code[13]), (0xb8, &(jf - 16).to_le_bytes()[..], 0xe8), "{what}: the probe");
+            &code[18..]
+        } else {
+            &code[8..]
+        };
+        if jf - 16 < 128 {
+            assert_eq!(sub[..4], [0x48, 0x83, 0xec, (jf - 16) as u8], "{what}");
+        } else {
+            assert_eq!(sub[..7], [&[0x48, 0x81, 0xec][..], &(jf - 16).to_le_bytes()].concat()[..], "{what}");
+        }
+    };
+    let saved =
+        [0x1111111111111111, 0x2222222222222222, 0x3333333333333333, 0x4444444444444444, 0x5555555555555555, 0x6666666666666666, 0x7777777777777777];
+    let o = |a: &AtomicU64| a.load(std::sync::atomic::Ordering::SeqCst);
+    for call in 0..2 {
+        let obs = Obs::default();
+        let mut regs = [0u64; 7];
+        assert_eq!(call_checked(img.code(f), n, &raw const obs as u64, &mut regs), want, "{what}, call {call}");
+        assert_eq!(regs, saved, "{what}, call {call}: callee-saved registers");
+        assert_eq!(state(&img, f), JIT_DONE, "{what}");
+        check_prologue();
+        assert!(in_jit(&img, f, o(&obs.last)), "{what}, call {call}: ended at {:#x}", o(&obs.last));
+        if call == 0 && k.is_some() {
+            assert!(in_aot(&img, f, o(&obs.first)), "{what}: started at {:#x}", o(&obs.first));
+            assert_eq!(o(&obs.first_sp) - o(&obs.last_sp), jit_rsp_delta(frame, shuffle), "{what}: rsp");
+        } else {
+            assert!(in_jit(&img, f, o(&obs.first)), "{what}, call {call}: started at {:#x}", o(&obs.first));
+        }
+    }
+}

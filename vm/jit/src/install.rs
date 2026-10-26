@@ -14,7 +14,9 @@ use ryo_bytecode::asm::frame::{self, SlotMap};
 use ryo_bytecode::asm::osr::OsrEntry;
 use ryo_bytecode::asm::{self, FUNC_FAR, FUNC_KINDS, FUNC_NEAR, FUNC_SLOT, Mode, Ref};
 use ryo_bytecode::full::{Const, Data, Func, Site, Sym};
-use ryo_bytecode::image::{EhFunc, Image, ImageResolver, JIT_DONE, JitRecord, eh_cie, eh_fde, eh_fde_rows, jit_count, jit_settle, jit_unbiased};
+use ryo_bytecode::image::{
+    EhFunc, Image, ImageResolver, JIT_DONE, JitRecord, eh_cie, eh_fde, eh_fde_rows, jit_count, jit_settle, jit_unbiased, pe_unwind_info,
+};
 use ryo_bytecode::jit;
 use ryo_bytecode::jit::inline::VmFunc;
 use ryo_bytecode::jit::ir::CallTarget;
@@ -565,11 +567,10 @@ impl Jit {
         // SAFETY: a record of a linked image, whose header it points at.
         let (func, img) = unsafe { ((*rec).func, Image::from_header((*rec).header.cast()).map_err(|_| "invalid image")?) };
         let h = img.header();
-        if img.mode().pe {
-            return Err("PE");
-        }
         let info = self.image(&img);
-        let personality = info.personality.ok_or("no personality slot")?;
+        // PE code has no personality: its unwind info has no handler, so landing pads don't
+        // run, as in the AOT code (design/platforms.md).
+        let personality = if img.mode().pe { 0 } else { info.personality.ok_or("no personality slot")? };
         let place = self.place(info.span).ok_or("no code memory near the image")?;
         // SAFETY: a linked image's text section.
         let text = unsafe { core::slice::from_raw_parts(h.text as usize as *const u8, h.text_size as usize) };
@@ -734,22 +735,37 @@ impl Jit {
         let Gen { len: code_len, code: enc_code, relocs, rodata, call_sites, body, osr, osr_at } = out;
         let osr_len = osr.as_ref().map_or(0, |o| o.code.len());
 
-        // Unwind information: the CIE, the FDE, the OSR code's FDE, the terminator, then the
-        // LSDA.
+        // Unwind information. ELF: the CIE, the FDE, the OSR code's FDE, the terminator, then
+        // the LSDA. PE: one `RUNTIME_FUNCTION` over the body and the OSR code, then its
+        // `UNWIND_INFO` (`pe_unwind_info`, the AOT code's form): past the prologue every
+        // `rsp` is described by `rbp`, the OSR code's included, which keeps the AOT frame's
+        // `rbp` and saved `rdi`/`rsi` (design/jit.md, "Unwinding and profiling").
         let mut eh = Vec::new();
-        let pers_field = eh_cie(&mut eh);
-        let mut fdes = std::vec![eh.len()];
-        let fields = match &body {
-            Body::Aot(ef) => eh_fde(&mut eh, 0, ef, mode),
-            Body::Rows(rows) => eh_fde_rows(&mut eh, 0, code_len as u32, rows),
-        };
-        if osr.is_some() {
+        let mut fdes = Vec::new();
+        let (mut pers_field, mut fields, mut osr_fields, mut lsda_at) = (0, None, None, 0);
+        let pe_end = (if osr.is_some() { osr_at + osr_len } else { code_len }) as u32;
+        if mode.pe {
+            let Body::Aot(ef) = &body else { return Err("SSA code on PE") };
+            if ef.prologue != 0 || ef.entry_stub != ef.len {
+                return Err("PE code with a counter check");
+            }
+            eh.extend_from_slice(&[0; 12]);
+            eh.extend_from_slice(&pe_unwind_info(ef, mode));
+        } else {
+            pers_field = eh_cie(&mut eh);
             fdes.push(eh.len());
+            fields = Some(match &body {
+                Body::Aot(ef) => eh_fde(&mut eh, 0, ef, mode),
+                Body::Rows(rows) => eh_fde_rows(&mut eh, 0, code_len as u32, rows),
+            });
+            if osr.is_some() {
+                fdes.push(eh.len());
+            }
+            osr_fields = osr.as_ref().map(|o| eh_fde_rows(&mut eh, 0, o.code.len() as u32, &o.cfi));
+            eh.extend_from_slice(&[0; 4]);
+            lsda_at = eh.len();
+            eh.extend_from_slice(&asm::lsda::write(&call_sites));
         }
-        let osr_fields = osr.as_ref().map(|o| eh_fde_rows(&mut eh, 0, o.code.len() as u32, &o.cfi));
-        eh.extend_from_slice(&[0; 4]);
-        let lsda_at = eh.len();
-        eh.extend_from_slice(&asm::lsda::write(&call_sites));
 
         // Code memory: the entry prefix, the code, the OSR code, then its code constants.
         let ro_at = (CODE_AT + osr_at + osr_len).next_multiple_of(16);
@@ -877,11 +893,21 @@ impl Jit {
             eh[at..at + 4].copy_from_slice(&d.to_le_bytes());
             Ok(())
         };
-        pc(&mut eh, pers_field, personality)?;
-        pc(&mut eh, fields.pc_begin, jit_f)?;
-        pc(&mut eh, fields.lsda, eh_base + lsda_at)?;
+        if let Some(fields) = fields {
+            pc(&mut eh, pers_field, personality)?;
+            pc(&mut eh, fields.pc_begin, jit_f)?;
+            pc(&mut eh, fields.lsda, eh_base + lsda_at)?;
+        }
         if let Some(f) = osr_fields {
             pc(&mut eh, f.pc_begin, jit_f + osr_at)?;
+        }
+        if mode.pe {
+            // The `RUNTIME_FUNCTION`: offsets from `base`, below the region's read-write end.
+            let rva = |a: usize| u32::try_from(a - base).map_err(|_| "out of reach");
+            let rf = [rva(jit_f)?, rva(jit_f)? + pe_end, rva(eh_base + 12)?];
+            for (k, v) in rf.iter().enumerate() {
+                eh[4 * k..][..4].copy_from_slice(&v.to_le_bytes());
+            }
         }
 
         // SAFETY: fresh read-write memory of the region, `size` and `eh.len()` bytes, which
@@ -895,8 +921,14 @@ impl Jit {
             }
             // Unregistered, the code must not run: nothing could unwind through it. At exit
             // it isn't needed.
-            let unwind = crate::sys::Unwind { eh: eh_base as *const u8, fdes: &fdes, code: (base, base + size) };
-            if !crate::sys::register_unwind(&unwind) {
+            let unwind = if mode.pe {
+                crate::sys::Unwind { eh: ptr::null(), fdes: &[], code: (base, base + size), pdata: (eh_base as *const u8, 1) }
+            } else {
+                crate::sys::Unwind { eh: eh_base as *const u8, fdes: &fdes, code: (base, base + size), pdata: (ptr::null(), 0) }
+            };
+            // PE code off Windows (tests, which run PE images' VM code on Linux): there is
+            // no unwinder to tell, and nothing unwinds through it.
+            if (cfg!(windows) || !mode.pe) && !crate::sys::register_unwind(&unwind) {
                 return Err("exiting");
             }
         }
@@ -1027,7 +1059,7 @@ mod tests {
     fn no_frame_registration_once_exiting() {
         crate::sys::close_frame_registry();
         // Not a valid `.eh_frame`: once closed, it must not reach the unwinder.
-        let u = crate::sys::Unwind { eh: core::ptr::dangling(), fdes: &[0], code: (0, 0) };
+        let u = crate::sys::Unwind { eh: core::ptr::dangling(), fdes: &[0], code: (0, 0), pdata: (core::ptr::dangling(), 1) };
         assert!(!unsafe { crate::sys::register_unwind(&u) });
         crate::sys::reopen_frame_registry();
     }

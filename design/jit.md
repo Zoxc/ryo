@@ -191,8 +191,24 @@ section; its fields and the counter checks and stubs that use it are in
   address, which the runtime passes in (`RtApi::personality`): in the JIT that name is its
   own std's. So panics unwind through JIT frames and their landing pads run. The entry
   prefix before the FDE's range runs before the frame exists and calls nothing.
+- **PE** (`sys/windows.rs`): per function one `RUNTIME_FUNCTION` over the body and the OSR
+  code, and the AOT code's `UNWIND_INFO` (`image::pe_unwind_info`: `push rbp; push rdi;
+  push rsi; lea rbp, [rsp + 16]`, the probe, `sub`, `rbp` the frame register, no handler),
+  in the region's read-write end, registered with `RtlAddFunctionTable` (base: the
+  function's allocation, below both; never deleted, code is never freed). One entry covers
+  the OSR code too: there the AOT frame's `rbp` and saved `rdi`/`rsi` are already in place
+  (the stub's return address and the moving `rsp` don't matter with a frame register), so
+  the body's description past its prologue is the OSR code's at every instruction, and an
+  entry's `jmp` to its head stays inside the function, which the unwinder's epilogue check
+  requires (a separate entry would make `pop rcx; jmp head` look like an epilogue). As in
+  the AOT code, panics unwind through JIT frames but their landing pads don't run
+  ([platforms.md](platforms.md)). The entry prefix has no entry: a leaf, the return address
+  at `rsp` (the AOT stub's, then the body's start, whose prologue hasn't run). Only the
+  re-encoding pipeline compiles PE code: the SSA tier doesn't take the PE mode (its frames,
+  the `rdi`/`rsi` saves and Win64 islands aren't done), so `RYO_JIT_OPT=ssa` falls back
+  for every function.
 - **Perf map**: with `RYO_JIT_PERFMAP=1`, a line per function in `/tmp/perf-<pid>.map`,
-  named `ryo-jit:f<index>@<AOT address>`, so `perf` names JIT frames.
+  named `ryo-jit:f<index>@<AOT address>`, so `perf` names JIT frames (not on Windows).
 - **Backtraces**: JIT frames have no symbols, so backtraces show them unnamed (`y test`'s
   `backtrace` check runs with `RYO_JIT=off`).
 
@@ -681,8 +697,9 @@ rlib bundles (`build/src/jit.rs`, [build.md](build.md#build)):
   LTO input, so users' `-Clto` doesn't touch it. The backend and the image format don't
   know about it. Without `RYO_JIT_LIB_DIR` (`vm/`'s own tests) the `ryo_jit` rlib provides
   `ryo_jit_start` instead, on the tests' std.
-- **PE**: `y build` seals and bundles it the same way, but there `ryo_jit_start` returns
-  false until the JIT is ported ([platforms.md](platforms.md)).
+- **PE**: `y build` seals and bundles it the same way. Its own imports (`RtlAddFunctionTable`,
+  `GetStdHandle`, `WriteFile`) are `raw-dylib` from kernel32, import members of the
+  library like std's ([platforms.md](platforms.md)).
 - **Cost**: the sealed object is about 1.6 MB, and a binary's text is about 0.24 MB larger
   than with the JIT on the program's std (a private std's threads, panics, formatting and
   collections; on PE, with the stub, the file grows by about 50 KB). A proc macro carries
@@ -711,10 +728,22 @@ for shuffled frames per image, `RtApi::shuffled`):
 ## Limits
 
 - A child of `fork` has no JIT thread, so with `RYO_JIT_SYNC` its trips wait forever.
-- The JIT is Linux-only (the mapping and `__register_frame`). Windows needs
-  `VirtualAlloc2` with an address window and `RtlInstallFunctionTableCallback` per mapping;
-  macOS a hint-and-verify mapping, `MAP_JIT`, and a separate read-write mapping for the call
-  slots and unwind data.
+- The JIT runs on Linux and Windows (`sys`). On Windows it is built and link-checked from
+  Linux only (`y test --cross`), and its code is run on Linux (`jit.rs`'s `pe_code`), but
+  it has never run on Windows: the unwind registration, the exit behaviour and the regions
+  (`VirtualAlloc` at each hint, which fails where taken; 32 MiB committed per region) are
+  untested there. Exit: `ExitProcess` kills the JIT thread wherever it is, so there is no
+  `atexit` handler to close the registry (it could wait on a lock the thread died holding;
+  the registry isn't torn down anyway); a thread killed inside `RtlAddFunctionTable` could
+  leave ntdll's function table lock held, which would hang only an unwind through
+  non-image code during the rest of the exit. macOS needs a hint-and-verify mapping,
+  `MAP_JIT`, and a separate read-write mapping for the call slots and unwind data.
+- Asynchronous unwinding on Windows (a debugger's or a sampling profiler's stack walk)
+  misreads a frame stopped after its epilogue's `pop rbp` at a tail call through a
+  register: the JIT's far one (`mov r11, imm64; jmp r11`, a callee more than 2 GiB away)
+  and, as in AOT code, `tail_call.ptr`'s `jmp rax`. The unwinder takes only `ret`, `jmp`s
+  to outside the function or through memory, and `rex.w jmp reg` right after the pops as
+  an epilogue's end. Nothing synchronous stops there.
 - Island calls and `call.sym.ind` stay through the image's symbol slots. A callee's slot is
   never replaced by a direct call: a caller compiled before its callee keeps the slot.
 - A program that interposes `malloc` itself with Rust code (which may call VM code) would
@@ -745,6 +774,13 @@ for shuffled frames per image, `RtApi::shuffled`):
   after OSR runs the JIT frame's landing pad, `rsp` moves by the frames' difference, and a
   thread spinning in an AOT loop and one deep in a self-recursion, both started before the
   compile, reach JIT code without returning (a native callee checks its return address).
+  `pe_code` runs an image's VM code in the PE form on Linux (Win64 natives, its `.pdata`
+  dropped; the JIT registers nothing for PE code off Windows): compiled at the entry and by
+  OSR, with and without shuffled frames, with a probed frame, its results are the AOT
+  code's, the JIT prologue is the one `pe_unwind_info` describes, and every callee-saved
+  register of both conventions, `rdi` and `rsi` included, survives. `vm/bytecode/tests/
+  image.rs` checks `pe_unwind_info` byte for byte (decoded once with `llvm-readobj
+  --unwind` from a hand-made COFF object). The Windows registration itself has never run.
 - **The corpus**: `RYO_JIT_THRESHOLD=0 RYO_JIT_SYNC=1 y test` runs it with every function's
   JIT code from its first call, and `RYO_JIT_THRESHOLD=2,0` instead enters it by OSR at the
   first loop head pass of each function's first call (whose entry check doesn't trip),

@@ -6,7 +6,11 @@
 //! The exit-time rule is common: unwinders' registries may be torn down at exit (libgcc frees
 //! its b-tree in a destructor without locks), so registrations hold [`FRAMES_OPEN`], and an
 //! `atexit` handler closes it, after which nothing is registered and the code isn't
-//! published.
+//! published. Windows has no such teardown (`RtlAddFunctionTable`'s list lives as long as
+//! the process), and there the handler could hang: `ExitProcess` kills the JIT thread
+//! wherever it is, perhaps holding the lock, before it runs the DLLs' detach code, which
+//! may run `atexit` handlers. So there is none: registrations take the lock, but nothing
+//! closes it.
 
 #[cfg_attr(target_os = "linux", path = "linux.rs")]
 #[cfg_attr(windows, path = "windows.rs")]
@@ -17,31 +21,41 @@ mod imp;
 pub(crate) use imp::{SUPPORTED, perfmap_path, write_stderr};
 
 /// The unwind information of one installed function, in the region's read-write memory,
-/// which lives forever.
+/// which lives forever. Each OS reads the fields it needs.
+#[allow(dead_code)]
 pub(crate) struct Unwind<'a> {
-    /// The `.eh_frame`: a CIE, then the FDEs, terminated by a zero word.
+    /// The `.eh_frame`: a CIE, then the FDEs, terminated by a zero word. Null for PE code.
     pub eh: *const u8,
     /// The offsets in `eh` of its FDEs (the body's, the OSR code's).
     pub fdes: &'a [usize],
     /// The code it describes, `start..end`.
     pub code: (usize, usize),
+    /// PE code: its function table, `RUNTIME_FUNCTION`s (`begin`, `end`, `UNWIND_INFO`, each
+    /// a `u32` offset from `code.0`), and their number; else null and 0.
+    pub pdata: (*const u8, u32),
 }
 
 /// Whether unwind information may still be registered: false once the process is exiting.
 static FRAMES_OPEN: std::sync::Mutex<bool> = std::sync::Mutex::new(true);
 
+#[cfg(not(windows))]
 unsafe extern "C" {
     fn atexit(f: extern "C" fn()) -> core::ffi::c_int;
 }
 
 /// Arranges for [`close_frame_registry`] to run at exit, before the unwinder's teardown:
 /// `atexit` handlers registered after startup run before the shared objects' destructors.
+/// Not on Windows (see above).
 pub(crate) fn close_frame_registry_at_exit() {
     // SAFETY: a plain function with no arguments.
-    unsafe { atexit(close_frame_registry) };
+    #[cfg(not(windows))]
+    unsafe {
+        atexit(close_frame_registry)
+    };
 }
 
 /// Ends unwind registrations: waits for the one in progress, if any.
+#[cfg_attr(windows, allow(dead_code))]
 pub(crate) extern "C" fn close_frame_registry() {
     *FRAMES_OPEN.lock().unwrap_or_else(|e| e.into_inner()) = false;
 }
