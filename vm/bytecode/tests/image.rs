@@ -569,7 +569,36 @@ fn validate_rejects_bad_tables() {
     assert_eq!(validate_edited(&obj, |r, h| r[h.sym_flags.off as usize + 2] = 0x80), Err(ImageError::BadSymbolFlags(2)));
     // Unknown function flag bits.
     assert_eq!(validate_edited(&obj, |r, h| r[h.func_flags.off as usize + 1] = 0x10), Err(ImageError::BadFuncFlags(1)));
+    // Constant relocations: out of order (overlapping), misaligned, past the pool.
+    let cr = |h: &Header, i: usize| h.const_relocs.off as usize + 4 * i;
+    assert_eq!(validate_edited(&obj, |r, h| put32(r, cr(h, 1), 0)), Err(ImageError::BadConstReloc(1)));
+    assert_eq!(validate_edited(&obj, |r, h| put32(r, cr(h, 0), 1)), Err(ImageError::BadConstReloc(0)));
+    assert_eq!(validate_edited(&obj, |r, h| put32(r, cr(h, 1), h.consts.count - 4)), Err(ImageError::BadConstReloc(1)));
     assert_eq!(validate_edited(&obj, |_, _| ()), Ok(()));
+}
+
+/// The constant relocation table is exactly the pool offsets of the object's relocations in
+/// the pool, and classifies reads.
+#[test]
+fn const_relocs_match_object() {
+    let obj = sample().finish(ELF).unwrap();
+    let b = Buf::new(&obj.rodata, 8);
+    let img = Image::parse(b.bytes()).unwrap();
+    let h = img.header();
+    let (lo, hi) = (h.consts.off as u64, h.consts.off as u64 + h.consts.count as u64);
+    let mut want: Vec<u32> =
+        obj.relocs.iter().filter(|r| r.section == Section::ReadOnly && (lo..hi).contains(&r.offset)).map(|r| (r.offset - lo) as u32).collect();
+    want.sort();
+    assert_eq!(img.const_relocs(), &want[..]);
+    assert_eq!(want, [8, 16]);
+    let f = want[0];
+    assert_eq!(img.const_reloc_at(f, 8), Some(true));
+    assert_eq!(img.const_reloc_at(f, 4), None);
+    assert_eq!(img.const_reloc_at(f + 4, 8), None);
+    assert_eq!(img.const_reloc_at(f + 8, 8), Some(true));
+    assert_eq!(img.const_reloc_at(f, 16), None);
+    assert_eq!(img.const_reloc_at(0, 6), Some(false));
+    assert_eq!(img.const_reloc_at(24, 8), Some(false));
 }
 
 #[test]

@@ -330,7 +330,7 @@ impl<'d> Linked<'d> {
             span(h.jit_records)
         ));
         out.push(format!(
-            "parts functions {} code_consts {} fixups {} sym_flags {} func_flags {} symbols {} consts {} lists {} call_sites {}",
+            "parts functions {} code_consts {} fixups {} sym_flags {} func_flags {} symbols {} consts {} lists {} call_sites {} const_relocs {}",
             span(h.functions),
             span(h.code_consts),
             span(h.fixups),
@@ -339,7 +339,8 @@ impl<'d> Linked<'d> {
             span(h.symbols),
             span(h.consts),
             span(h.lists),
-            span(h.call_sites)
+            span(h.call_sites),
+            span(h.const_relocs)
         ));
         out.push(match img.validate() {
             Ok(()) => "validate ok".into(),

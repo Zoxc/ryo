@@ -677,6 +677,12 @@ impl ImageWriter {
         let consts = span(self.consts.len(), 1, self.const_align as usize)?;
         let call_sites_span = span(call_sites.len(), mem::size_of::<CallSiteEntry>(), 4)?;
         let lists_span = span(lists.len(), 1, 1)?;
+        let mut const_reloc_offs: Vec<u32> = self.const_relocs.iter().map(|r| r.offset).collect();
+        const_reloc_offs.sort_unstable();
+        if const_reloc_offs.windows(2).any(|w| w[1] < w[0] + 8) {
+            return Err(WriteError::AllocReloc);
+        }
+        let const_relocs = span(const_reloc_offs.len(), 4, 4)?;
         let size = off;
 
         let header = Header {
@@ -701,6 +707,7 @@ impl ImageWriter {
             fixup_area: fixup_area as u32,
             mode: mode_bits(mode),
             jit_records,
+            const_relocs,
         };
 
         let mut ro = vec![0u8; size];
@@ -717,6 +724,7 @@ impl ImageWriter {
             put(&mut ro, consts.off, &self.consts);
             put(&mut ro, call_sites_span.off, &call_sites);
             put(&mut ro, lists_span.off, &lists);
+            put(&mut ro, const_relocs.off, &const_reloc_offs);
         }
 
         // Relocations.

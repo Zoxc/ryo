@@ -39,3 +39,15 @@ remove it once a Lean session has handled it.
   shifts with a variable amount masked to the width), allocated with fixed-register
   clobbers (`regalloc::clobbers`). Only matters if the Lean model covers the SSA tier.
   Commit: "JIT SSA: fixed registers for div, rem, variable shifts and mul".
+
+- Image header gains `const_relocs` (a `Span` at offset 140, after `jit_records`, so
+  `Header` grows 144 → 152 bytes; the part itself is `[u32]`, 4-aligned, laid out last in the
+  read-only section): the constant pool offset of every `Abs64` relocation inside the pool,
+  strictly increasing. `Image::parse` checks it in bounds and aligned (`"constant
+  relocations"`), `validate` that each field is 8-aligned in the section, inside the pool and
+  after the one before (`BadConstReloc(i)`). `lean/Ryo/Obj/Image.lean`: `readHeader`, the
+  checks, and the summary's `parts` line, which now ends `... call_sites <span> const_relocs
+  <span>` (`scripts/lean-decode-ref` prints it). The image check should require the table to
+  equal exactly the pool's `R_X86_64_64` relocation offsets (`Image.world` already iterates
+  them). Nothing in the VM semantics reads it (the JIT's constant-load fold does). Commit:
+  "Image: list the constant pool's relocated fields".

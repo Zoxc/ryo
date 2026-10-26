@@ -17,6 +17,7 @@
 //! | function flags | `[u8]`, one per function ([`FUNC_INLINE_ALWAYS`] etc.) |
 //! | symbols | `[u64]`: one pointer slot per symbol, filled by the linker |
 //! | constants | the constant pool, aligned to its most aligned allocation |
+//! | constant relocations | `[u32]`, sorted: the pool offset of every relocated (pointer) field in the pool |
 //!
 //! **Writable**: the site cache (`site_count` pointer-sized zeroed slots), then the fixup
 //! area at `Header::fixup_area` (constant allocations patched at registration, PE only),
@@ -323,6 +324,10 @@ pub struct Header {
     /// The [`JitRecord`]s: their byte offset in the writable section (64-aligned) and count
     /// (the function count with [`Mode::counters`], else 0).
     pub jit_records: Span,
+    /// `[u32]`, strictly increasing: the offset in the constant pool of every 8-byte field
+    /// the linker relocates (a pointer to a symbol, the pool or the data area). The JIT reads
+    /// it to tell pointer fields from integers when it folds loads from the pool.
+    pub const_relocs: Span,
 }
 
 /// A function table entry.
@@ -436,6 +441,8 @@ pub enum ImageError {
     BadCallSite(u32),
     /// The writable section layout is inconsistent.
     BadData,
+    /// A constant relocation (index) is out of the pool, misaligned or out of order.
+    BadConstReloc(u32),
 }
 
 impl fmt::Display for ImageError {
@@ -492,6 +499,7 @@ impl<'a> Image<'a> {
         cast::<u8>(bytes, header.consts, "constants")?;
         cast::<u8>(bytes, header.lists, "instruction lists")?;
         cast::<CallSiteEntry>(bytes, header.call_sites, "call sites")?;
+        cast::<u32>(bytes, header.const_relocs, "constant relocations")?;
         let mode = MODE_FP_ARG | MODE_FRAME_POINTER | MODE_ALIGN_LOOPS | MODE_PE | MODE_COUNTERS;
         if header.mode & !mode != 0 || !Self::mode_of(header.mode).valid() {
             return Err(ImageError::BadMode);
@@ -583,6 +591,15 @@ impl<'a> Image<'a> {
             if fl & !FUNC_FLAGS != 0 {
                 return Err(ImageError::BadFuncFlags(i as u32));
             }
+        }
+        // Each field 8-aligned in the section, inside the pool, after the one before.
+        let mut next = 0u64;
+        for (i, &o) in self.const_relocs().iter().enumerate() {
+            let at = self.header.consts.off as u64 + o as u64;
+            if (o as u64) < next || at % 8 != 0 || o as u64 + 8 > self.header.consts.count as u64 {
+                return Err(ImageError::BadConstReloc(i as u32));
+            }
+            next = o as u64 + 8;
         }
         Ok(())
     }
@@ -692,6 +709,24 @@ impl<'a> Image<'a> {
     /// The constant pool (what the VM keeps as `consts`).
     pub fn consts(&self) -> &'a [u8] {
         self.part(self.header.consts)
+    }
+
+    /// The pool offsets of the relocated fields in the constant pool, sorted.
+    pub fn const_relocs(&self) -> &'a [u32] {
+        self.part(self.header.const_relocs)
+    }
+
+    /// Whether the 8-byte field at pool offset `off` is relocated, and else whether any
+    /// relocated field overlaps `[off, off + len)`: `Some(true)` for exactly a field,
+    /// `Some(false)` for no overlap, `None` for a partial one.
+    pub fn const_reloc_at(&self, off: u32, len: u32) -> Option<bool> {
+        let rs = self.const_relocs();
+        // The first field that ends after `off`.
+        let i = rs.partition_point(|&r| r as u64 + 8 <= off as u64);
+        match rs.get(i) {
+            Some(&r) if (r as u64) < off as u64 + len as u64 => (r == off && len == 8).then_some(true),
+            _ => Some(false),
+        }
     }
 
     /// The writable section (from the relocated header field; null before linking).
