@@ -15,6 +15,10 @@ pub(crate) struct Program {
     pub(super) vm: &'static [&'static str],
     /// Functions the ryo build must not compile to bytecode.
     pub(super) native: &'static [&'static str],
+    /// The functions of [`Program::vm`] that stay native on PE: an `i128`, `f16` or `f128`
+    /// argument or return, theirs or a callee's, keeps a function native on Win64
+    /// (design/platforms.md, "ABI of VM functions").
+    pub(super) pe_native: &'static [&'static str],
     /// A C `main` (relative to `tests/`), compiled with `cc` (`cl` on MSVC) and linked against
     /// the last crate (a staticlib or cdylib). Skipped without that compiler.
     pub(super) c_main: Option<&'static str>,
@@ -27,6 +31,25 @@ impl Program {
     /// an rlib and a dylib is linked as the rlib.
     pub(crate) fn has_dylib(&self) -> bool {
         self.flags.contains(&"-Cprefer-dynamic") || self.crates.iter().any(|c| c.kind == CrateKind::Dylib)
+    }
+
+    /// Checks the functions the ryo build, for a PE target if `pe`, compiled to bytecode
+    /// (`vm_fns`, as `RYO_STATS` prints them): every one of [`Program::vm`] (unless not
+    /// `all_vm`) but the [`Program::pe_native`] ones on PE, and none of [`Program::native`]
+    /// (nor `pe_native` on PE).
+    pub(crate) fn check_vm(&self, vm_fns: &[String], pe: bool, all_vm: bool) -> Result<(), String> {
+        let names: Vec<&str> = vm_fns.iter().map(String::as_str).collect();
+        let want = |f: &&&str| !pe || !self.pe_native.contains(f);
+        let missing: Vec<_> = self.vm.iter().filter(want).filter(|f| !names.contains(f)).collect();
+        if all_vm && !missing.is_empty() {
+            return Err(format!("not compiled to bytecode: {missing:?}; VM functions: {names:?}"));
+        }
+        let pe_native = if pe { self.pe_native } else { &[] };
+        let wrong: Vec<_> = self.native.iter().chain(pe_native).filter(|f| names.contains(f)).collect();
+        if !wrong.is_empty() {
+            return Err(format!("compiled to bytecode, but must stay native: {wrong:?}"));
+        }
+        Ok(())
     }
 }
 
@@ -62,7 +85,8 @@ impl NativeLib {
 }
 
 /// Defaults for [`Program`] fields.
-pub(super) const PROGRAM: Program = Program { name: "", crates: &[], flags: &[], vm: &[], native: &[], c_main: None, native_lib: None };
+pub(super) const PROGRAM: Program =
+    Program { name: "", crates: &[], flags: &[], vm: &[], native: &[], pe_native: &[], c_main: None, native_lib: None };
 
 pub(crate) struct Crate {
     /// The crate name, passed as `--crate-name`.
@@ -109,6 +133,9 @@ macro_rules! single {
     ($name:literal, vm: $vm:expr $(,)?) => {
         Program { name: $name, crates: &[krate($name, concat!($name, ".rs"), CrateKind::Bin)], vm: $vm, ..PROGRAM }
     };
+    ($name:literal, vm: $vm:expr, pe_native: $pe:expr $(,)?) => {
+        Program { name: $name, crates: &[krate($name, concat!($name, ".rs"), CrateKind::Bin)], vm: $vm, pe_native: $pe, ..PROGRAM }
+    };
 }
 
 /// Programs built with plain rustc and with every [`Variant`]; their outputs must match.
@@ -138,7 +165,8 @@ pub(crate) const CORPUS: &[Program] = &[
     // printed without their crate name.
     single!(
         "vm_answer",
-        vm: &["main", "answer", "pick", "twice", "wide", "always"]
+        vm: &["main", "answer", "pick", "twice", "wide", "always"],
+        pe_native: &["main", "wide"],
     ),
     single!(
         "vm_main",
@@ -151,11 +179,13 @@ pub(crate) const CORPUS: &[Program] = &[
     // Milestone 4 (design/lowering.md): each feature's functions must be bytecode.
     single!(
         "vm_ints",
-        vm: &["main", "ops32", "ops_u8", "wide", "casts", "float_casts", "floats", "checked", "chars", "bits", "neg", "cmp"]
+        vm: &["main", "ops32", "ops_u8", "wide", "casts", "float_casts", "floats", "checked", "chars", "bits", "neg", "cmp"],
+        pe_native: &["main", "wide"],
     ),
     single!(
         "vm_control",
-        vm: &["main", "collatz", "dense", "sparse", "area", "discr", "niches", "make", "labeled", "switch128", "mid", "mid_index"]
+        vm: &["main", "collatz", "dense", "sparse", "area", "discr", "niches", "make", "labeled", "switch128", "mid", "mid_index"],
+        pe_native: &["main", "switch128"],
     ),
     single!(
         "vm_calls",
@@ -194,7 +224,11 @@ pub(crate) const CORPUS: &[Program] = &[
             "big::vm", "big::vm_to_native", "big::vm_ptrs", "big_late::vm", "big_late::vm_to_native", "opt_wide::vm",
             "niches::vm", "enums::vm", "enums::vm_to_native", "zsts::vm", "f16s::vm", "f16s::vm_to_native", "f128s::vm",
             "f128s::vm_to_native",
-        ]
+        ],
+        pe_native: &[
+            "wide::vm", "wide::vm_to_native", "wide_late::vm", "wide_late::vm_to_native", "opt_wide::vm", "f16s::vm",
+            "f16s::vm_to_native", "f128s::vm", "f128s::vm_to_native",
+        ],
     ),
     single!(
         "vm_tail",
@@ -210,6 +244,7 @@ pub(crate) const CORPUS: &[Program] = &[
             "sort_panics", "sort_panics::{closure#0}", "call_ptr", "tc_panic", "tc_panic - shim(reify)", "rethrow",
             "compares", "tc_nine", "<S as Loc>::at", "dyn_locs", "dyn_locs::{closure#0}"
         ],
+        pe_native: &["main", "tc_many"],
         // `tc_nine` is called from the native `native_caller`.
     ),
     // The terminate stubs: both programs abort (the exit status is compared too).
@@ -217,7 +252,8 @@ pub(crate) const CORPUS: &[Program] = &[
     single!("vm_abort_nounwind", vm: &["main", "no_unwind"]),
     single!(
         "vm_aggregates",
-        vm: &["main", "tail", "nested", "rcs", "coerce_ref", "coerce_pin", "coerce_tail", "repeat", "wide_cmp", "arith128", "ovf128", "half", "scopes", "half_size", "borrow_loop", "unwind_live", "relive", "packed", "min128"]
+        vm: &["main", "tail", "nested", "rcs", "coerce_ref", "coerce_pin", "coerce_tail", "repeat", "wide_cmp", "arith128", "ovf128", "half", "scopes", "half_size", "borrow_loop", "unwind_live", "relive", "packed", "min128"],
+        pe_native: &["main", "arith128", "ovf128", "min128"],
     ),
     Program {
         name: "vm_ffi",

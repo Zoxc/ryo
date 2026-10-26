@@ -14,8 +14,8 @@ use crate::utils::{cmd, describe, exe_name, output, root};
 mod checks;
 mod corpus;
 
-pub(crate) use checks::rt_core_only;
 use checks::*;
+pub(crate) use checks::{rt_core_only, vm_functions};
 pub(crate) use corpus::*;
 
 /// Which compiler builds a program.
@@ -827,15 +827,7 @@ impl Ctx {
         let exe = exe.ok_or_else(|| format!("{}: no binary crate", program.name))?;
         let result = self.run(&dir, &exe, variant)?;
         if variant.compiler == Compiler::Ryo && !variant.no_vm && !program.vm.is_empty() {
-            let names: Vec<&str> = vm_fns.iter().map(String::as_str).collect();
-            let missing: Vec<_> = program.vm.iter().filter(|f| !names.contains(f)).collect();
-            if !variant.vm_only && !missing.is_empty() {
-                return Err(format!("not compiled to bytecode: {missing:?}; VM functions: {names:?}"));
-            }
-            let wrong: Vec<_> = program.native.iter().filter(|f| names.contains(f)).collect();
-            if !wrong.is_empty() {
-                return Err(format!("compiled to bytecode, but must stay native: {wrong:?}"));
-            }
+            program.check_vm(&vm_fns, MSVC, !variant.vm_only)?;
         }
         Ok(result)
     }

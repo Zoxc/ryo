@@ -85,7 +85,7 @@ pub(super) const PARTITION_MARKER: &str = "ryo backend: partition";
 
 /// The functions a `RYO_STATS=1` build reports as compiled to bytecode:
 /// `ryo: vm fn <path>[ (global)]`.
-pub(super) fn vm_functions(stderr: &str) -> Vec<String> {
+pub(crate) fn vm_functions(stderr: &str) -> Vec<String> {
     stderr.lines().filter_map(|l| l.strip_prefix("ryo: vm fn ")).map(|f| f.strip_suffix(" (global)").unwrap_or(f).to_owned()).collect()
 }
 

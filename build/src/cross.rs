@@ -8,7 +8,8 @@
 //! symbols `ryo_rt` itself uses ([`RT_IMPORTS`], [`RT_IMPORTS_MACHO`]) or its sealed JIT does
 //! (in a Rust dylib, which plain rustc links to std's DLL, the JIT's private std brings its own
 //! imports), i.e. comes from the missing system libraries. A missing ryo symbol (an image, a
-//! portal, an `__imp_` slot, the registry) shows up as a difference.
+//! portal, an `__imp_` slot, the registry) shows up as a difference. The ryo builds must also compile the functions each
+//! program lists to bytecode (`Program::check_vm`, with the PE exceptions; windows-msvc only).
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -176,14 +177,17 @@ pub fn run(target: &str) -> Result<(), String> {
     }
     for program in CORPUS {
         let res = (|| {
-            let reference = link.build(&cmd("rustc"), program, &out.join(program.name).join("rustc"), &[])?;
+            let (reference, _) = link.build(&cmd("rustc"), program, &out.join(program.name).join("rustc"), &[])?;
             let mut builds = vec![("ryo", &[][..])];
             // `-Clto` on the last crate, as cargo passes it (no Rust dylibs).
             if !program.has_dylib() {
                 builds.push(("ryo-lto", &["-Clto=fat"][..]));
             }
             for (name, final_flags) in builds {
-                let ryo = link.build(&cmd(&rustc_ryo), program, &out.join(program.name).join(name), final_flags)?;
+                let (ryo, vm_fns) = link.build(&cmd(&rustc_ryo), program, &out.join(program.name).join(name), final_flags)?;
+                if !macho {
+                    program.check_vm(&vm_fns, true, true).map_err(|e| format!("{name}: {e}"))?;
+                }
                 // The image refers to a DLL function both through its `__imp_` slot and directly
                 // (design/platforms.md); with the real import library the direct reference
                 // resolves to the import thunk, so it is fine wherever the import itself is.
@@ -265,17 +269,25 @@ struct Link<'a> {
 
 impl Link<'_> {
     /// Builds and links every crate of `program` with `compiler` into `dir`, and returns the
-    /// symbols the links left unresolved.
-    fn build(&self, compiler: &std::process::Command, program: &Program, dir: &Path, final_flags: &[&str]) -> Result<BTreeSet<String>, String> {
+    /// symbols the links left unresolved and the functions compiled to bytecode (`RYO_STATS`).
+    fn build(
+        &self,
+        compiler: &std::process::Command,
+        program: &Program,
+        dir: &Path,
+        final_flags: &[&str],
+    ) -> Result<(BTreeSet<String>, Vec<String>), String> {
         fs::create_dir_all(dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
         let tests = root().join("tests");
         let mut undefined = BTreeSet::new();
+        let mut vm_fns = Vec::new();
         if let Some(lib) = &program.native_lib {
             lib.build(dir, Some(self.target))?;
         }
         for krate in program.crates {
             let mut c = cmd(compiler.get_program());
-            c.arg("--edition=2024")
+            c.env("RYO_STATS", "1")
+                .arg("--edition=2024")
                 .arg(tests.join(krate.src))
                 .args(krate.kind.flags())
                 .args(["--crate-name", krate.name, "--target", self.target])
@@ -316,8 +328,9 @@ impl Link<'_> {
                 return Err(format!("`{}` failed:\n{stderr}", describe(&c)));
             }
             undefined.extend(undefined_symbols(&stderr));
+            vm_fns.extend(crate::test::vm_functions(&stderr));
         }
-        Ok(undefined)
+        Ok((undefined, vm_fns))
     }
 }
 
