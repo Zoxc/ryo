@@ -571,7 +571,12 @@ only it, and is unchanged).
   `rdx` for `div`, `rem` and the unsigned 64-bit `mul.ovf`, `rcx` for a variable shift);
   hints are the first operand's register, an incoming edge argument's for a parameter, the
   argument register for an entry parameter, `rax`/`rdx` for results (also of `div`/`rem`),
-  and `rcx` for a shift amount (`rcx` goes last among the caller-saved registers then). When no register
+  and `rcx` for a shift amount (`rcx` goes last among the caller-saved registers then);
+  a use's hint (a shift amount, a call or register-entry argument, a returned value) goes
+  before an operand's but not before a register the value comes in. Before it,
+  `regalloc::remat` recomputes an `AllocaAddr` or a `RefAddr` that loads at most once,
+  when it is live across a call, before its uses after each call (one clone per stretch
+  between calls), so it takes no callee-saved register or spill slot. When no register
   is free, the interval ending last is spilled.
 - **Checker** (`RYO_JIT_CHECK=1`): `regalloc::check` walks each block backward from its
   exact live-out set and checks that no location holds two live values, that nothing lives

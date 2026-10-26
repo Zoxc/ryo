@@ -8,12 +8,10 @@ fn fib
     mov     eax,ebx
     jmp     L1
 L0:
-    lea     eax,[rbx-1]
-    mov     rdi,rax
+    lea     edi,[rbx-1]
     call    fn2
     mov     r12,rax
-    sub     ebx,2
-    mov     rdi,rbx
+    lea     edi,[rbx-2]
     call    fn2
     add     r12,rax
     jb      L2
@@ -24,8 +22,7 @@ L1:
     pop     rbx
     ret
 L2:
-    lea     rax,[k6]
-    mov     rdi,rax
+    lea     rdi,[k6]
     call    sym7
     ud2
 

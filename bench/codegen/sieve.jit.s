@@ -27,7 +27,7 @@ fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::fold::<usize, {closure@s
     mov     r9,rdx
     jmp     L3
 L0:
-    lea     rax,[k1]
+    lea     rcx,[k1]
     cmp     rsi,rdi
     jb      L6
     sub     rsi,rdi
@@ -36,10 +36,9 @@ L1:
     lea     r8,[rsp+10h]
     lea     r9,[rbx+r12]
     mov     rdi,r8
-    mov     rsi,rcx
+    mov     rsi,rax
     mov     rdx,r9
     call    fn0
-    mov     rcx,rax
     lea     r8,[k6]
     mov     r11,r12
     add     r11,1
@@ -47,10 +46,10 @@ L1:
     add     r12,1
     cmp     r12,r13
     jne     L5
-    mov     r9,rcx
+    mov     r9,rax
     jmp     L3
 L2:
-    mov     rcx,r9
+    mov     rax,r9
     mov     rbx,r14
     mov     r12,r15
     mov     r13,rbp
@@ -66,29 +65,26 @@ L3:
     pop     rbx
     ret
 L4:
-    mov     rcx,rdx
+    mov     rax,rdx
     mov     rbx,rdi
     mov     r12d,0
     mov     r13,rsi
     jmp     L1
 L5:
-    mov     r9,rcx
+    mov     r9,rax
     mov     r14,rbx
     mov     r15,r12
     mov     rbp,r13
     jmp     L2
 L6:
-    lea     rcx,[image.k1032]
-    mov     rdi,rcx
+    lea     rdi,[image.k1032]
     mov     esi,193h
     mov     edx,0
-    mov     rcx,rax
     movzx   edx,dl
     call    image.sym14
     ud2
 L7:
-    lea     rax,[image.k1233]
-    mov     rdi,rax
+    lea     rdi,[image.k1233]
     mov     esi,175h
     mov     edx,0
     mov     rcx,r8
@@ -141,7 +137,7 @@ L11:
     mov     [rdx-28h],rbp
     mov     r11,[rsp+20h]
     mov     [rdx-30h],r11
-    mov     rcx,[rsp]
+    mov     rax,[rsp]
     mov     rbx,[rsp+8]
     mov     r12,[rsp+10h]
     mov     r13,[rsp+18h]
@@ -213,8 +209,7 @@ fn core::num::<impl usize>::unchecked_add::precondition_check
     add     rsp,18h
     ret
 L0:
-    lea     rax,[k0]
-    mov     rdi,rax
+    lea     rdi,[k0]
     mov     esi,175h
     mov     rcx,rdx
     mov     edx,0
@@ -232,37 +227,35 @@ fn sieve
     mov     [rsp+48h],rbp
     mov     rbx,rdi
     mov     r12,rsi
-    mov     rax,r12
-    add     rax,1
+    mov     rdx,r12
+    add     rdx,1
     jb      L10
-    lea     rcx,[rsp+28h]
-    mov     rdi,rcx
+    lea     rdi,[rsp+28h]
     mov     esi,1
-    mov     rdx,rax
     movzx   esi,sil
     call    qword ptr [image.fn10.slot]
     mov     rax,[rsp+28h]
     mov     rcx,[rsp+30h]
-    mov     rdx,[rsp+38h]
+    mov     rsi,[rsp+38h]
     mov     [rsp+78h],rax
     mov     [rsp+80h],rcx
-    mov     [rsp+88h],rdx
-    lea     rax,[k3]
+    mov     [rsp+88h],rsi
+    lea     rdx,[k3]
     mov     r11d,0
-    cmp     r11,rdx
+    cmp     r11,rsi
     jae     L6
     mov     byte ptr [rcx],0
-    lea     rcx,[k5]
-    mov     rsi,[rsp+80h]
+    lea     rax,[k5]
+    mov     rcx,[rsp+80h]
     mov     rdi,[rsp+88h]
     mov     r11d,1
     cmp     r11,rdi
     jae     L7
-    mov     byte ptr [rsi+1],0
-    mov     esi,2
+    mov     byte ptr [rcx+1],0
+    mov     ecx,2
 L0:
-    mov     rax,rsi
-    mul     rsi
+    mov     rax,rcx
+    mul     rcx
     mov     r8,rax
     jb      L11
     cmp     r12,r8
@@ -270,23 +263,23 @@ L0:
     lea     r8,[k9]
     mov     r9,[rsp+80h]
     mov     r13,[rsp+88h]
-    cmp     rsi,r13
+    cmp     rcx,r13
     jae     L8
-    lea     r9,[r9+rsi]
+    lea     r9,[r9+rcx]
     movzx   r9d,byte ptr [r9]
     test    r9b,r9b
     jne     L2
     jmp     L1
 L1:
-    mov     r14,rsi
+    mov     r14,rcx
     mov     r15,rbx
     jmp     L4
 L2:
-    mov     rax,rsi
-    mul     rsi
+    mov     rax,rcx
+    mul     rcx
     mov     r9,rax
     jb      L12
-    mov     r14,rsi
+    mov     r14,rcx
     mov     r15,rbx
 L3:
     cmp     r12,r9
@@ -308,7 +301,7 @@ L3:
 L4:
     add     r14,1
     jb      L14
-    mov     rsi,r14
+    mov     rcx,r14
     mov     rbx,r15
     jmp     L0
 L5:
@@ -329,18 +322,16 @@ L5:
     ret
 L6:
     mov     edi,0
-    mov     rsi,rdx
-    mov     rdx,rax
     call    image.sym15
     ud2
 L7:
     mov     rsi,rdi
     mov     edi,1
-    mov     rdx,rcx
+    mov     rdx,rax
     call    image.sym15
     ud2
 L8:
-    mov     rdi,rsi
+    mov     rdi,rcx
     mov     rsi,r13
     mov     rdx,r8
     call    image.sym15
@@ -352,8 +343,7 @@ L9:
     call    image.sym15
     ud2
 L10:
-    lea     rax,[k0]
-    mov     rdi,rax
+    lea     rdi,[k0]
     call    sym1
     ud2
     mov     rbx,rax
@@ -361,8 +351,7 @@ L10:
     mov     rbx,rax
     jmp     L16
 L11:
-    lea     rax,[k7]
-    mov     rdi,rax
+    lea     rdi,[k7]
     call    sym8
     ud2
     mov     rbx,rax
@@ -370,8 +359,7 @@ L11:
     mov     rbx,rax
     jmp     L16
 L12:
-    lea     rax,[k11]
-    mov     rdi,rax
+    lea     rdi,[k11]
     call    sym8
     ud2
     mov     rbx,rax
@@ -379,22 +367,19 @@ L12:
     mov     rbx,rax
     jmp     L16
 L13:
-    lea     rax,[k15]
-    mov     rdi,rax
+    lea     rdi,[k15]
     call    sym1
     ud2
     mov     rbx,rax
     jmp     L16
 L14:
-    lea     rax,[k17]
-    mov     rdi,rax
+    lea     rdi,[k17]
     call    sym1
     ud2
     mov     rbx,rax
     jmp     L16
 L15:
-    lea     rax,[rsp+78h]
-    mov     rdi,rax
+    lea     rdi,[rsp+78h]
     call    qword ptr [fn19.slot]
     mov     [rsp],rbx
     lea     rdi,[rsp+0B0h]
@@ -431,7 +416,7 @@ L18:
     mov     [rdx-58h],r14
     mov     [rdx-60h],r15
     mov     [rdx-68h],rbp
-    mov     rsi,[rsp]
+    mov     rcx,[rsp]
     mov     r12,[rsp+8]
     mov     rbx,[rsp+10h]
     lea     rsp,[rsp+0D0h]
@@ -475,15 +460,15 @@ fn std::iter::adapters::map::map_fold::<&bool, usize, usize, {closure@<std::iter
     mov     rbx,rsi
     mov     rsi,rdx
     call    qword ptr [fn0.slot]
-    add     rbx,rax
+    mov     r11,rbx
+    add     r11,rax
+    mov     rax,r11
     jb      L0
-    mov     rax,rbx
     add     rsp,10h
     pop     rbx
     ret
 L0:
-    lea     rax,[image.k472]
-    mov     rdi,rax
+    lea     rdi,[image.k472]
     call    image.sym9
     ud2
     mov     ecx,1

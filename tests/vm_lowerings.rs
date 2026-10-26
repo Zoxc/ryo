@@ -247,7 +247,29 @@ fn leaf_heavy(xs: &[u64; 16]) -> u64 {
     acc ^ v.iter().fold(0, |s, &x| s ^ x)
 }
 
+#[inline(never)]
+fn bump(xs: &mut [u64; 4], k: usize) -> u64 {
+    xs[k % 4] = xs[k % 4].wrapping_mul(31).wrapping_add(k as u64);
+    xs[(k + 1) % 4]
+}
+
+/// Addresses of locals and statics live across calls: recomputed after each call
+/// (rematerialized), not kept in callee-saved registers.
+#[inline(never)]
+fn remat() -> u64 {
+    static S: [u8; 3] = [9, 8, 7];
+    let mut xs = [1u64, 2, 3, 4];
+    let mut acc = 0;
+    for k in 0..black_box(10) {
+        acc ^= bump(&mut xs, k);
+        acc = acc.wrapping_add(black_box(&S)[k % 3] as u64);
+        acc ^= bump(&mut xs, k + 2) << 1;
+    }
+    acc ^ xs.iter().sum::<u64>()
+}
+
 fn main() {
+    println!("{}", remat());
     println!("{} {}", leaf_args(1, 2, 3, 4, 5, 6, black_box(7), black_box(8)), leaf_heavy(&black_box(core::array::from_fn(|k| k as u64 * 0x9e37_79b9))));
     offsets();
     forms();

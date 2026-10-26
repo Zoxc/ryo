@@ -127,6 +127,9 @@ pub fn compile(
     if opts.check {
         f.verify().map_err(|e| Error::Check(alloc::format!("IR: {e}")))?;
     }
+    if opts.alloc == Allocator::LinearScan {
+        regalloc::remat(&mut f);
+    }
     let uses = regalloc::use_counts(&f);
     let al = match opts.alloc {
         Allocator::Naive => regalloc::naive(&f, &uses),

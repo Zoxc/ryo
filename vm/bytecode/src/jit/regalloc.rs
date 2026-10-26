@@ -206,6 +206,106 @@ fn crossing(f: &Func, live: &[Vec<u64>]) -> Vec<u32> {
     cross
 }
 
+/// Rematerialization (D3 O11a): an address that is cheap to recompute (`AllocaAddr`, a
+/// `RefAddr` that loads at most once) and is live across a call is recomputed before its uses
+/// after a call instead (one clone per stretch of a block between calls), so it never takes a
+/// callee-saved register or a spill slot. Uses in a block's terminator get a clone at the
+/// block's end (before a fused `Ovf`); an `Invoke`'s edges keep the original.
+pub fn remat(f: &mut Func) {
+    let live = live_in(f);
+    let cross = crossing(f, &live);
+    let cand = |f: &Func, v: super::ir::Value| {
+        cross.get(v.idx()).is_some_and(|c| c & CALL != 0)
+            && matches!(f.values[v.idx()].def, ValueDef::Inst(i, _) if matches!(f.insts[i.idx()].op, Op::AllocaAddr(..) | Op::RefAddr(_, false)))
+    };
+    if !(0..f.values.len()).any(|v| cand(f, super::ir::Value(v as u32))) {
+        return;
+    }
+    // Per block: the clone of each candidate valid since the last call.
+    let mut cur: Vec<(super::ir::Value, super::ir::Value)> = Vec::new();
+    let clone = |f: &mut Func, b: super::ir::Block, at: usize, v: super::ir::Value| -> super::ir::Value {
+        let ValueDef::Inst(i, _) = f.values[v.idx()].def else { unreachable!() };
+        let op = f.insts[i.idx()].op.clone();
+        let w = f.w(v);
+        let n = f.inst(b, op, Vec::new(), &[w]);
+        let k = f.blocks[b.idx()].insts.pop().unwrap();
+        f.blocks[b.idx()].insts.insert(at, k);
+        f.result(n)
+    };
+    for bi in 0..f.layout.len() {
+        let b = f.layout[bi];
+        cur.clear();
+        let mut k = 0;
+        while k < f.blocks[b.idx()].insts.len() {
+            let i = f.blocks[b.idx()].insts[k];
+            for n in 0..f.insts[i.idx()].args.len() {
+                let a = f.insts[i.idx()].args[n];
+                if !cand(f, a) {
+                    continue;
+                }
+                let c = match cur.iter().find(|(o, _)| *o == a) {
+                    Some(&(_, c)) => c,
+                    None => {
+                        let c = clone(f, b, k, a);
+                        k += 1;
+                        cur.push((a, c));
+                        c
+                    }
+                };
+                f.insts[i.idx()].args[n] = c;
+            }
+            let id = &f.insts[i.idx()];
+            if id.op.is_call() {
+                cur.clear();
+            }
+            // A candidate defined here is valid until the next call.
+            for r in id.results() {
+                if cand(f, r) {
+                    cur.push((r, r));
+                }
+            }
+            k += 1;
+        }
+        if matches!(f.blocks[b.idx()].term, super::ir::Term::Invoke { .. }) {
+            continue;
+        }
+        let fused = matches!(f.blocks[b.idx()].term, super::ir::Term::BrOvf { .. });
+        let mut term = core::mem::replace(&mut f.blocks[b.idx()].term, super::ir::Term::None);
+        let mut us: Vec<super::ir::Value> = term.uses();
+        for e in term.edges() {
+            us.extend(&e.args);
+        }
+        let mut subst: Vec<(super::ir::Value, super::ir::Value)> = Vec::new();
+        for u in &mut us {
+            if !cand(f, *u) {
+                continue;
+            }
+            let c = match cur.iter().find(|(o, _)| *o == *u) {
+                Some(&(_, c)) => c,
+                None => {
+                    let len = f.blocks[b.idx()].insts.len();
+                    let c = clone(f, b, if fused { len - 1 } else { len }, *u);
+                    cur.push((*u, c));
+                    c
+                }
+            };
+            subst.push((*u, c));
+        }
+        let sub = |v: &mut super::ir::Value| {
+            if let Some(&(_, c)) = subst.iter().find(|(o, _)| o == v) {
+                *v = c;
+            }
+        };
+        for u in term.uses_mut() {
+            sub(u);
+        }
+        for e in term.edges_mut() {
+            e.args.iter_mut().for_each(sub);
+        }
+        f.blocks[b.idx()].term = term;
+    }
+}
+
 /// Linear scan on SSA without splitting (design/jit.md, "The SSA tier"): each value's
 /// interval runs from its definition to its last use in the linear block order (holes
 /// ignored), and lives in one register or one stack slot throughout. Values live across a call
@@ -290,15 +390,60 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
         })
         .collect();
     order.sort_by_key(|&v| (lo[v], v));
-    // Hints from uses: a shift amount wants `rcx`.
+    // Hints from uses: a shift amount wants `rcx`, a call argument its register, a returned
+    // value its return register (the first use in layout order wins).
     let mut want: Vec<Option<R>> = alloc::vec![None; nv];
-    for id in &f.insts {
-        if clobbers(f, id) == 1 << R::Rcx.num() {
-            want[id.args[1].idx()] = Some(R::Rcx);
+    let mut var_shift = false;
+    for &b in &f.layout {
+        let bd = &f.blocks[b.idx()];
+        for &i in &bd.insts {
+            let id = &f.insts[i.idx()];
+            if clobbers(f, id) == 1 << R::Rcx.num() {
+                want[id.args[1].idx()].get_or_insert(R::Rcx);
+                var_shift = true;
+            }
+            match &id.op {
+                Op::Call(c) => {
+                    let rest = if c.target == super::ir::CallTarget::Ptr { &id.args[1..] } else { &id.args[..] };
+                    for (r, a) in c.regs.iter().zip(rest) {
+                        if !r.xmm {
+                            want[a.idx()].get_or_insert(super::emit::int_arg(f.pe, r.index));
+                        }
+                    }
+                }
+                Op::HCall(h) if h.reg => {
+                    for (k, a) in id.args.iter().enumerate() {
+                        want[a.idx()].get_or_insert([R::Rdi, R::Rsi, R::Rdx, R::Rcx, R::R8, R::R9][k]);
+                    }
+                }
+                _ => {}
+            }
+        }
+        match &bd.term {
+            super::ir::Term::TailCall { call, args } => {
+                let rest = if call.target == super::ir::CallTarget::Ptr { &args[1..] } else { &args[..] };
+                for (r, a) in call.regs.iter().zip(rest) {
+                    if !r.xmm {
+                        want[a.idx()].get_or_insert(super::emit::int_arg(f.pe, r.index));
+                    }
+                }
+            }
+            super::ir::Term::Ret { k, parts } if *k != 0 => {
+                let ps = crate::asm::ret_parts(*k, true).into_iter().flatten().flatten();
+                let mut g = [R::Rax, R::Rdx].into_iter();
+                for (p, a) in ps.zip(parts) {
+                    if !p.xmm
+                        && let Some(r) = g.next()
+                    {
+                        want[a.idx()].get_or_insert(r);
+                    }
+                }
+            }
+            _ => {}
         }
     }
     let (mut caller, callee) = registers(frame_pointer);
-    if want.iter().any(|w| w.is_some()) {
+    if var_shift {
         // Keep `rcx` for the shift amounts.
         caller.retain(|&r| r != R::Rcx);
         caller.push(R::Rcx);
@@ -364,8 +509,15 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
         let shifts_by_var = |v: usize| matches!(f.values[v].def, ValueDef::Inst(i, _) if clobbers(f, &f.insts[i.idx()]) == 1 << R::Rcx.num());
         let ok =
             |r: &R| free[r.num() as usize] && clob >> r.num() & 1 == 0 && (!cross || (callee.contains(r) && (!def_cold(v) || saved.contains(r))));
+        // A use's hint before an operand's, not before a register the value comes in.
+        let soft = match f.values[v].def {
+            ValueDef::Inst(i, _) => {
+                matches!(f.insts[i.idx()].op, Op::Bin(..) | Op::Ovf(..) | Op::Ext { .. } | Op::PtrAdd(_) | Op::PtrIndex(_)) || hint.is_none()
+            }
+            _ => hint.is_none(),
+        };
         let hint = match want[v] {
-            Some(r) if ok(&r) => Some(r),
+            Some(r) if ok(&r) && (soft || !hint.is_some_and(|h| ok(&h))) => Some(r),
             _ => hint.filter(|&r| clob >> r.num() & 1 == 0 && !(r == R::Rcx && shifts_by_var(v))),
         };
         let pick = match hint.filter(|r| ok(r) && (caller.contains(r) || callee.contains(r))) {
