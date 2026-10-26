@@ -28,8 +28,8 @@ The native ones are the *reduced* set (`vm/bytecode/src/reduced_ops.rs`,
   list has.
 
   There are no `f16` or `f128` instructions: those operations, the libm functions (`sqrt`,
-  `sin`, `powi`, …), SIMD and everything else without an instruction are islands
-  ([stubs.md](stubs.md#islands-vm--native)).
+  `sin`, `powi`, …), the SIMD intrinsics without an instruction ([SIMD](#simd)) and
+  everything else without one are islands ([stubs.md](stubs.md#islands-vm--native)).
 
 - **Inline forms** below use `[fp + x]` for a frame slot, which is `[rbp + x]` with a frame
   pointer and `[rsp + F + x]` without one. They show the sequence on `rax` before the
@@ -491,6 +491,46 @@ the other operand for a NaN) and `copysign` (`fmeth`):
 frame.write(d, frame.read::<F>(a).min(frame.read::<F>(b)));  // max, copysign
 ```
 
+## SIMD
+
+128-bit vectors in 16-byte frame slots, read and written unaligned. Lane `i` is the byte at
+slot offset `i` (the `#[repr(simd)]` layout); the shape, last in the mnemonic, names the
+lanes (`i8x16`: 16 8-bit integers), and `.s` marks a signed compare. Lanes are read as
+integers, like the integer instructions' operands. `d` may alias an input: the handlers
+read every input first. No traps, no memory accesses. All are handler calls, written as
+portable Rust over byte arrays (`vsplat`, `vcmp`, `vmsb`), which LLVM turns into the SSE2
+instructions. Bitwise operations on vectors are `and`/`or`/`xor.w128`; moves, loads and
+stores are the 128-bit and block ones. The backend's mapping from `simd_*` intrinsics is in
+[lowering.md](lowering.md#simd).
+
+#### `vsplat.i8x16 d, s`
+
+`simd_splat`: the byte `s` in every lane (`_mm_set1_epi8`).
+
+```rust
+frame.write(d, [frame.read::<u8>(s); 16]);
+```
+
+#### `veq.i8x16 d, a, b` and `vlt.s.i8x16 d, a, b`
+
+`simd_eq` (either signedness) and the signed `simd_lt` (`simd_gt` with swapped operands):
+each lane all ones if the compare holds, else zero (`pcmpeqb`, `pcmpgtb`).
+
+```rust
+let (x, y) = (frame.read::<[u8; 16]>(a), frame.read::<[u8; 16]>(b));
+frame.write(d, from_fn(|i| if x[i] == y[i] { 0xff } else { 0 }));  // vlt.s: x[i] as i8 < y[i] as i8
+```
+
+#### `vmsb.i8x16 d, a`
+
+`simd_bitmask` to a `u16`: the top bit of lane `i` at bit `i` (`pmovmskb`). Defined for
+every input, where `simd_bitmask` needs all-ones or all-zero lanes.
+
+```rust
+let x = frame.read::<[u8; 16]>(a);
+frame.write(d, (0..16).fold(0u16, |m, i| m | ((x[i] >> 7) as u16) << i));
+```
+
 ## Conversions
 
 #### `zext.wA.wB`, `sext.wA.wB`, `trunc.wA.wB` `d, s`
@@ -787,7 +827,7 @@ continues; the template's return value is ignored.
 
 Islands are everything the VM has no instruction for: `extern "C"` callees (`call_cN`),
 safe callees without a symbol (`call`), intrinsics, 128-bit multiply and divide,
-`f16`/`f128`, SIMD ([stubs.md](stubs.md#islands-vm--native)).
+`f16`/`f128`, SIMD without an instruction ([stubs.md](stubs.md#islands-vm--native)).
 
 The operand words are a code constant (offsets only; the lowering records each operand's
 extent with `Asm::lend`):

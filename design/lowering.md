@@ -39,6 +39,19 @@ callee an island). A `LoweredFn` holds:
 `NeedsNative(reason)` keeps the function native as a whole. `RYO_STATS=2` prints the reasons
 ([backend.md](backend.md#debugging-switches)).
 
+A `#[target_feature]` function is lowered like any other if every feature it enables is
+already enabled for the crate (`sess.internal_target_features`, which includes implied and
+`-C target-cpu`/`-C target-feature` features: on default x86_64 `sse2`, so stdarch's SSE2
+`_mm_*` functions): the attribute then changes nothing about its code. Its ABI is no reason
+to keep it native, since the Rust ABI passes vectors indirectly whatever the features
+(`rustc_target/src/callconv/mod.rs`, #44367), and other ABIs stay native anyway. Its body is
+checked like every body: an `llvm.*` link or inline asm keeps it native, and so does a
+`simd_*` intrinsic without an instruction ([SIMD](#simd)), which elsewhere is an island
+compiled without the features. So it is VM code only if all of it maps. A function with
+features the crate doesn't enable (`avx2` in memchr) stays native. Such fn items don't
+implement the `Fn*` traits, so they never go through the `call` island
+([Calls](#calls)).
+
 The lowering matches every MIR enum (`StatementKind`, `Rvalue`, `Operand`, `ProjectionElem`,
 `CastKind`, `BinOp`, `UnOp`, `TerminatorKind`, `AssertKind`, …) exhaustively, with no `_` arm,
 so a MIR change in a toolchain bump is a compile error. The tables below follow 1.99.1
@@ -303,7 +316,8 @@ island.
      `fmin`/`fmax` are `f*::min`/`max`), and the atomics up to 64 bits (an ordering
      combination the VM lacks uses `SeqCst`). As wrapper islands: `catch_unwind` ([Unwinding](#unwinding)),
      `compare_bytes`, `raw_eq` and the SIMD intrinsics without constant operands
-     ([stubs.md](stubs.md#templates)). Otherwise: safe intrinsics go through the `call`
+     ([stubs.md](stubs.md#templates)), except those [SIMD](#simd) maps to instructions.
+     Otherwise: safe intrinsics go through the `call`
      island (natively), unsafe ones with a fallback body call that body as an ordinary
      instance (cg_ssa's `IntrinsicResult::Fallback`; a VM function if the collector found
      it), and the rest keep the function native.
@@ -331,6 +345,24 @@ island.
    ([Unwinding](#unwinding)).
 
 Functions with unsized parameters (`unsized_fn_params`) are not lowered: they stay native.
+
+### SIMD
+
+`lower/simd.rs` maps the portable `simd_*` intrinsics SSE2 has single instructions for, by
+their type arguments, to VM instructions ([instructions.md](instructions.md#simd)):
+
+| intrinsic | type arguments | instruction |
+|---|---|---|
+| `simd_splat` | 16 × i8/u8, i8/u8 | `vsplat.i8x16 d, x` |
+| `simd_eq` | 16 × i8/u8, 16 × i8/u8 | `veq.i8x16 d, a, b` |
+| `simd_lt` / `simd_gt` | 16 × i8, 16 × i8/u8 | `vlt.s.i8x16 d, a, b` / `vlt.s.i8x16 d, b, a` |
+| `simd_bitmask` | 16 × i8/u8, `u16` or `[u8; 2]` | `vmsb.i8x16 d, a` |
+| `simd_and` / `or` / `xor` | any 16-byte integer vector | `and` / `or` / `xor.w128 d, a, b` |
+
+Vectors are 16-byte slots like any other value. Everything else (unsigned compares,
+`ne`/`le`/`ge`, other shapes, float vectors, `simd_shuffle`, …) is a wrapper island, or
+keeps a `#[target_feature]` function native (see the top of this file). The table is
+trusted, like the island contracts: L0 has no `simd_*` semantics yet.
 
 ### Caller location
 
@@ -435,10 +467,11 @@ SIMD intrinsics with constant operands, …), coroutines, extern-type tails, by-
 unsized arguments (`unsized_fn_params`) and references to
 foreign statics with a `#[linkage]` (std's `extern_weak` `weak!` statics: cg_llvm's private
 cell holding the symbol's address has no symbol the image could name).
-With `--sysroot ryo`, std builds and the corpus passes against it; 98.8% of the functions
-of the ryo-built sysroot crates are bytecode. Most of the rest are `#[target_feature]`
-functions (SIMD in `memchr`, `std_detect`), `extern "C"` definitions, C-variadic calls and over-aligned
-argument blocks (`y build --sysroot ryo` prints the table).
+With `--sysroot ryo`, std builds and the corpus passes against it; 99.2% of the functions
+of the ryo-built sysroot crates are bytecode. Most of the rest are `extern "C"`
+definitions, C-variadic calls, over-aligned argument blocks and the `#[target_feature]`
+functions with features beyond the crate's or bodies that don't map (`avx2` and LLVM
+intrinsics in `memchr` and `std_detect`; `y build --sysroot ryo` prints the table).
 The PE fixup area is only cross-checked (objects and links), not run, like the rest of the
 PE column ([platforms.md](platforms.md)). On PE, landing pads don't run
 ([vm.md](vm.md#unwinding)).
