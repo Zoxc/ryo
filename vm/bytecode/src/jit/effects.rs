@@ -3,14 +3,14 @@
 //! `asm::frame` over-estimates them (16 bytes, never killing); the SSA tier needs them exact
 //! to keep frame slots in registers across handler calls.
 //!
-//! The table is by family, from the mnemonic, mirroring the handler kinds of `ryo_rt`'s
-//! `handlers.rs` (whose bodies read `get!(T, …)` and write `put!(…, v: T)` at `T`'s size).
-//! `vm/rt/tests/ops.rs` checks it against the handlers themselves: each handler run on a
+//! The table (`effects_table.rs`) is generated from the Lean model's footprints of the
+//! handlers (`lean/Ryo/Vm/OpSem/JitEffects.lean`, `ryo-lean effects`; regenerate with
+//! `./y.sh lean gen`, which `y lean` checks was done). `vm/rt/tests/ops.rs` checks it against the handlers themselves: each handler run on a
 //! frame filled with a pattern writes only the bytes the table says, and depends only on the
 //! bytes it says it reads.
 
 use crate::asm::{ARG_REGS, Mode};
-use crate::full::{Opcode, OperandKind, Shape, str_eq};
+use crate::full::{Opcode, OperandKind, Shape};
 
 /// How a handler uses one of its frame operands (`Slot`, or the pointer slot of a `Mem`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,126 +38,20 @@ pub struct Effects {
     pub memory: bool,
 }
 
-/// The bytes of a width segment of a mnemonic (`w8` … `w128`, `f32`, `f64`, and the pointer
-/// atomics' `ptr`).
-const fn bytes(seg: &str) -> Option<u8> {
-    const W: [(&str, u8); 8] = [("ptr", 8), ("w8", 1), ("w16", 2), ("w32", 4), ("w64", 8), ("w128", 16), ("f32", 4), ("f64", 8)];
-    let mut i = 0;
-    while i < W.len() {
-        if str_eq(W[i].0, seg) {
-            return Some(W[i].1);
-        }
-        i += 1;
-    }
-    None
-}
-
-/// Whether `s` is one of `set`.
-const fn any(s: &str, set: &[&str]) -> bool {
-    let mut i = 0;
-    while i < set.len() {
-        if str_eq(s, set[i]) {
-            return true;
-        }
-        i += 1;
-    }
-    false
-}
-
-/// `s[from..to]` (mnemonics are ASCII).
-const fn sub(s: &str, from: usize, to: usize) -> &str {
-    let (_, rest) = s.as_bytes().split_at(from);
-    let (seg, _) = rest.split_at(to - from);
-    match core::str::from_utf8(seg) {
-        Ok(seg) => seg,
-        Err(_) => "",
-    }
-}
-
 /// The effects of `op`'s handler. `None` for opcodes without one. A `const fn`, so that
 /// `ryo_rt` generates the register entries from it ([`reg_entry`]).
 pub const fn effects(op: Opcode) -> Option<Effects> {
-    if !crate::asm::has_handler(op) {
-        return None;
-    }
-    let info = op.info();
-    let m = info.mnemonic;
-    let mb = m.as_bytes();
-    // The first segment, and the widths in the mnemonic, in order (`zext.w8.w32`: 1, then 4).
-    let mut first = "";
-    let mut ws = [0u8; 2];
-    let mut nw = 0;
-    let (mut at, mut i) = (0, 0);
-    while i <= mb.len() {
-        if i == mb.len() || mb[i] == b'.' {
-            let seg = sub(m, at, i);
-            if at == 0 {
-                first = seg;
-            }
-            if let Some(b) = bytes(seg)
-                && nw < 2
-            {
-                ws[nw] = b;
-                nw += 1;
-            }
-            at = i + 1;
-        }
-        i += 1;
-    }
-    let n = ws[0];
-    let mut out = Effects { opnds: [None; crate::asm::MAX_OPERANDS], memory: false };
-    let compare = any(first, &["eq", "ne", "lt", "le", "gt", "ge", "feq", "fne", "flt", "fle", "cmp3"]);
-    let ext = any(first, &["zext", "sext", "trunc", "cvt"]);
+    super::effects_table::TABLE[op as usize]
+}
+
+/// An entry of the generated table: `opnds`, padded with `None`.
+pub(super) const fn e(opnds: &[Option<Effect>], memory: bool) -> Option<Effects> {
+    let mut out = Effects { opnds: [None; crate::asm::MAX_OPERANDS], memory };
     let mut k = 0;
-    while k < info.operands.len() {
-        let o = info.operands[k];
+    while k < opnds.len() {
+        out.opnds[k] = opnds[k];
         k += 1;
-        if !matches!(o.kind, OperandKind::Slot | OperandKind::Mem) {
-            continue;
-        }
-        use Effect::*;
-        let (f, name) = (first, o.name);
-        let e = if str_eq(name, "m") {
-            // `Mem`: the pointer slot.
-            Read(8)
-        } else if any(f, &["copy", "const", "zero", "fill", "load", "store"]) && any(name, &["d", "s"]) && nw == 0 {
-            Block
-        } else if str_eq(f, "addr") && str_eq(name, "s") {
-            Addr
-        } else if any(f, &["addr", "ptr"]) && str_eq(name, "d") {
-            Write(8)
-        } else if any(name, &["p", "i", "dp", "sp", "n"]) {
-            Read(8)
-        } else if str_eq(f, "memset") && str_eq(name, "b") {
-            Read(1)
-        } else if str_eq(f, "lpad") && str_eq(name, "x") {
-            Write(8)
-        } else if str_eq(f, "resume") && str_eq(name, "x") {
-            Read(8)
-        } else if str_eq(f, "br") && str_eq(name, "s") {
-            Read(1)
-        } else if any(f, &["ctpop", "ctlz", "cttz"]) && str_eq(name, "d") {
-            Write(4)
-        } else if any(f, &["rotl", "rotr"]) && str_eq(name, "b") {
-            Read(4)
-        } else if ext && str_eq(name, "s") {
-            Read(ws[0])
-        } else if ext && str_eq(name, "d") {
-            Write(ws[1])
-        } else if str_eq(name, "o") {
-            Write(1)
-        } else if str_eq(name, "d") && compare {
-            Write(1)
-        } else if str_eq(name, "d") {
-            Write(n)
-        } else if n != 0 {
-            Read(n)
-        } else {
-            return None;
-        };
-        out.opnds[k - 1] = Some(e);
     }
-    out.memory = any(first, &["load", "store", "memcpy", "memmove", "memset", "atomic", "fence", "compiler_fence"]);
     Some(out)
 }
 

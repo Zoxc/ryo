@@ -295,7 +295,7 @@ baseline the tier refines.
 
 `jit::alloca` cuts the AOT frame into allocas: byte ranges that no access crosses, by
 union-find over the bytes of every access (with the handlers' exact effects,
-`jit::effects`, checked against the handlers without memory effects or operand-given lengths
+`jit::effects`, generated from the Lean footprints (`ryo-lean effects`), checked against the handlers without memory effects or operand-given lengths
 by `vm/rt/tests/ops.rs`, and against the Lean `opSem` footprints by
 `vm/rt/tests/lean_opsem.rs`), every escaped
 object (`Escape` scopes), every island operand (`Lend` scopes,

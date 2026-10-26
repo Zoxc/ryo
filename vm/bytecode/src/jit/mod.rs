@@ -24,6 +24,7 @@ pub mod build;
 #[cfg(feature = "alloc")]
 pub mod decode;
 pub mod effects;
+mod effects_table;
 #[cfg(feature = "alloc")]
 pub mod emit;
 #[cfg(feature = "alloc")]

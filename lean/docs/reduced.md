@@ -388,10 +388,9 @@ Out of scope: the opcodes without a Rust handler (`jmp`, the calls, `ret`, `arg`
 (islands). `view` and `unpack` are implemented (§C0.6, `Ryo/Vm/R/View.lean`), and so is the
 step function (§C0.4, `Ryo/Vm/R/Sem.lean`); left in `Ryo/Vm/R/`: frame objects and layouts
 beyond `φ_AOT`, and the contracts.
-The JIT's Rust effect table (`jit/effects.rs`) is checked against the footprints
-(`RyoTest/Effects.lean`, on vectors from `vm/bytecode/tests/lean_effects.rs`; [jit.md](jit.md)
-§E.7): every opcode agrees, `resume` aside. Not done yet: generating the Rust table from the
-footprints.
+The JIT's Rust effect table (`jit/effects_table.rs`, behind `jit::effects`) is generated from
+the footprints (`Ryo/Vm/OpSem/JitEffects.lean`, `ryo-lean effects`; [jit.md](jit.md) §E.7),
+with `resume`'s entry (no footprint) given by hand; `y lean` checks it is up to date.
 Reads are not checked for exactness (an over-approximated read only costs the JIT
 precision).
 
