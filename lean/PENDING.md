@@ -84,3 +84,7 @@ remove it once a Lean session has handled it.
   vectors to `and/or/xor.w128` (`lower/simd.rs`); trusted like the island contracts until L0
   has `simd_*` semantics (`simd_bitmask`'s all-0/all-1 lane precondition, which `vmsb`
   refines). Commit: "Lower i8x16 simd_* intrinsics to VM opcodes".
+- Functions whose `#[target_feature]`s are all enabled for the crate are now lowered as VM
+  functions; inside them a `simd_*` intrinsic without an instruction is `NeedsNative`
+  instead of an island (`FnCx::strict_simd`). Only matters if the Lean model covers which
+  functions are VM code. Commit: "Lower baseline #[target_feature] functions as VM code".

@@ -240,7 +240,11 @@ fn sse2_plain(x: u32) -> u32 {
 /// `simd_shuffle` has no instruction: native, not an island.
 #[target_feature(enable = "sse2")]
 fn sse2_shuffle(x: &[u8; 16]) -> [u8; 16] {
-    b(_mm_shuffle_epi32::<0x1b>(m(*x)))
+    let v = u8x16::from_array(*x);
+    let r: u8x16 = unsafe { simd::simd_shuffle(v, v, const { u32x16::from_array([15, 14, 13, 12, 3, 2, 1, 0, 16, 17, 18, 19, 31, 30, 29, 28]) }) };
+    let mut out = r.to_array();
+    out[0] ^= b(_mm_shuffle_epi32::<0x1b>(m(*x)))[1];
+    out
 }
 
 unsafe extern "unadjusted" {

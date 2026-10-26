@@ -13,6 +13,8 @@ pub(crate) struct Program {
     pub(crate) flags: &'static [&'static str],
     /// Functions the ryo build must compile to bytecode (as `RYO_STATS` prints them).
     pub(super) vm: &'static [&'static str],
+    /// Functions the ryo build must not compile to bytecode.
+    pub(super) native: &'static [&'static str],
     /// A C `main` (relative to `tests/`), compiled with `cc` (`cl` on MSVC) and linked against
     /// the last crate (a staticlib or cdylib). Skipped without that compiler.
     pub(super) c_main: Option<&'static str>,
@@ -60,7 +62,7 @@ impl NativeLib {
 }
 
 /// Defaults for [`Program`] fields.
-pub(super) const PROGRAM: Program = Program { name: "", crates: &[], flags: &[], vm: &[], c_main: None, native_lib: None };
+pub(super) const PROGRAM: Program = Program { name: "", crates: &[], flags: &[], vm: &[], native: &[], c_main: None, native_lib: None };
 
 pub(crate) struct Crate {
     /// The crate name, passed as `--crate-name`.
@@ -288,10 +290,34 @@ pub(crate) const CORPUS: &[Program] = &[
     ),
     // SIMD: the `simd_*` intrinsics with an instruction (`lower/simd.rs`) and the SSE2
     // `_mm_*` functions, hashbrown, `is_ascii` and `str::contains` built on them.
-    single!(
-        "vm_simd",
-        vm: &["main", "sse2_fns", "direct", "live_across", "probe", "core::core_arch::simd::Simd::<i8, 16>::splat", "std::simd::Simd::<u8, 16>::splat"]
-    ),
+    // `#[target_feature]` functions are VM code if the crate enables their features and their
+    // bodies map.
+    Program {
+        name: "vm_simd",
+        crates: &[krate("vm_simd", "vm_simd.rs", CrateKind::Bin)],
+        vm: &[
+            "main",
+            "sse2_fns",
+            "direct",
+            "live_across",
+            "probe",
+            "core::core_arch::simd::Simd::<i8, 16>::splat",
+            "std::simd::Simd::<u8, 16>::splat",
+            "std::arch::x86_64::_mm_cmpeq_epi8",
+            "std::arch::x86_64::_mm_movemask_epi8",
+            "std::arch::x86_64::_mm_set1_epi8",
+            "std::arch::x86_64::_mm_loadu_si128",
+            "std::arch::x86_64::_mm_cmpgt_epi8",
+            "std::arch::x86_64::_mm_or_si128",
+            "std::arch::x86_64::_mm_setzero_si128",
+            "sse2_mapped",
+            "sse2_plain",
+            "find_sse2",
+            "find",
+        ],
+        native: &["std::arch::x86_64::_mm_shuffle_epi32::<27>", "sse2_shuffle", "sse2_llvm", "sse2_asm", "avx2_sum", "find_avx2"],
+        ..PROGRAM
+    },
     // Externally implementable items: the implementations stay native (cg_llvm defines the
     // declarations' symbols next to them); their callers are VM functions.
     Program {

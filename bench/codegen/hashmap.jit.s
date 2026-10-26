@@ -295,63 +295,63 @@ L29:
     pop     rbx
     ret
 L30:
-    lea     rax,[image.k4515]
+    lea     rax,[image.k4563]
     mov     rdi,rax
     mov     esi,237h
     mov     edx,0
     mov     rcx,[rsp+28h]
     movzx   edx,dl
-    call    image.sym62
+    call    image.sym53
     ud2
 L31:
-    lea     rax,[image.k4515]
+    lea     rax,[image.k4563]
     mov     rdi,rax
     mov     esi,237h
     mov     edx,0
     mov     rcx,[rsp+20h]
     movzx   edx,dl
-    call    image.sym62
+    call    image.sym53
     ud2
 L32:
-    lea     rax,[image.k6416]
+    lea     rax,[image.k6464]
     mov     rdi,rax
     mov     esi,1ADh
     mov     edx,0
     mov     rcx,[rsp+18h]
     movzx   edx,dl
-    call    image.sym62
+    call    image.sym53
     ud2
 L33:
-    lea     rax,[image.k4515]
+    lea     rax,[image.k4563]
     mov     esi,237h
     mov     edx,0
     mov     rcx,rdi
     mov     rdi,rax
     movzx   edx,dl
-    call    image.sym62
+    call    image.sym53
     ud2
 L34:
-    lea     rdi,[image.k4515]
+    lea     rdi,[image.k4563]
     mov     esi,237h
     mov     edx,0
     movzx   edx,dl
-    call    image.sym62
+    call    image.sym53
     ud2
 L35:
-    lea     rdi,[image.k4515]
+    lea     rdi,[image.k4563]
     mov     esi,237h
     mov     edx,0
     mov     rcx,r9
     movzx   edx,dl
-    call    image.sym62
+    call    image.sym53
     ud2
 L36:
-    lea     rdi,[image.k6416]
+    lea     rdi,[image.k6464]
     mov     edx,0
     mov     rcx,rsi
     mov     esi,1ADh
     movzx   edx,dl
-    call    image.sym62
+    call    image.sym53
     ud2
   ; OSR entries
     lea     r11,[L37]
@@ -901,7 +901,7 @@ L2:
     mov     rdi,r15
     mov     edx,1
     mov     ecx,8
-    call    image.fn171
+    call    image.fn180
     test    al,al
     je      L7
     mov     rbp,[r15]
@@ -911,7 +911,7 @@ L2:
     mov     [rsp+60h],rax
     lea     rdi,[rsp+48h]
     mov     [rsp+10h],rdi
-    call    image.fn208
+    call    image.fn217
     jmp     L5
 L3:
     test    r15,r15
@@ -941,7 +941,7 @@ L6:
     lea     rsi,[rsp+1Fh]
     lea     rdi,[rsp+48h]
     mov     edx,1
-    call    image.fn197
+    call    image.fn206
     mov     rax,[rsp+48h]
     mov     [rsp+20h],rax
     mov     rcx,[rsp+50h]
@@ -1009,7 +1009,7 @@ L6:
     xor     rax,0FFh
     mov     [rsp+28h],rax
     mov     rdi,r8
-    call    image.fn209
+    call    image.fn218
     mov     rax,[rsp+20h]
     mov     rcx,[rsp+30h]
     xor     rax,rcx
@@ -1029,15 +1029,15 @@ L6:
     jmp     L8
     jmp     L8
 L7:
-    lea     rdi,[image.k4515]
-    lea     rcx,[image.k6632]
+    lea     rdi,[image.k4563]
+    lea     rcx,[image.k6680]
     mov     esi,237h
     mov     edx,0
     movzx   edx,dl
-    call    image.sym62
+    call    image.sym53
     ud2
 L8:
-    call    image.sym30
+    call    image.sym28
     ud2
     jmp     L9
 L9:
@@ -1113,7 +1113,7 @@ L2:
     mov     rdi,r12
     mov     edx,1
     mov     ecx,8
-    call    qword ptr [image.fn171.slot]
+    call    qword ptr [image.fn180.slot]
     test    al,al
     je      L7
     mov     r13,[r12]
@@ -1123,7 +1123,7 @@ L2:
     mov     [rsp+70h],rax
     lea     rdi,[rsp+58h]
     mov     [rsp+10h],rdi
-    call    image.fn208
+    call    image.fn217
     jmp     L5
 L3:
     test    r12,r12
@@ -1215,7 +1215,7 @@ L6:
     xor     rcx,0FFh
     mov     [rsp+38h],rcx
     mov     rdi,rax
-    call    qword ptr [image.fn209.slot]
+    call    qword ptr [image.fn218.slot]
     mov     rax,[rsp+30h]
     mov     rcx,[rsp+40h]
     xor     rax,rcx
@@ -1232,15 +1232,15 @@ L6:
     jmp     L8
     jmp     L8
 L7:
-    lea     rdi,[image.k4515]
-    lea     rcx,[image.k6632]
+    lea     rdi,[image.k4563]
+    lea     rcx,[image.k6680]
     mov     esi,237h
     mov     edx,0
     movzx   edx,dl
-    call    image.sym62
+    call    image.sym53
     ud2
 L8:
-    call    image.sym30
+    call    image.sym28
     ud2
     jmp     L9
 L9:
@@ -1257,32 +1257,6 @@ L9:
 L10:
     .long   L11
 L11:
-    ret
-
-fn core::core_arch::simd::Simd::<i8, 16>::splat
-    push    rbx
-    sub     rsp,20h
-    mov     rbx,rdi
-    mov     [rsp],rsi
-    lea     rdi,[rsp+20h]
-    mov     esi,0FFFFFFF0h
-    mov     edx,0FFFFFFE0h
-    call    ryo_h_VsplatI8x16
-    mov     rax,[rsp+10h]
-    mov     rcx,[rsp+18h]
-    mov     [rbx],rax
-    mov     [rbx+8],rcx
-    mov     rax,rbx
-    add     rsp,20h
-    pop     rbx
-    ret
-
-fn core::core_arch::x86::<impl core::core_arch::simd::Simd<i8, 16>>::as_m128i
-    mov     rax,[rsi]
-    mov     rcx,[rsi+8]
-    mov     [rdi],rax
-    mov     [rdi+8],rcx
-    mov     rax,rdi
     ret
 
 fn core::hash::sip::u8to64_le
@@ -1383,27 +1357,27 @@ L8:
     pop     rbx
     ret
 L9:
-    lea     rdi,[image.k4515]
+    lea     rdi,[image.k4563]
     mov     esi,237h
     mov     edx,0
     movzx   edx,dl
-    call    image.sym62
+    call    image.sym53
     ud2
 L10:
-    lea     rdi,[image.k4515]
+    lea     rdi,[image.k4563]
     mov     esi,237h
     mov     edx,0
     mov     rcx,r13
     movzx   edx,dl
-    call    image.sym62
+    call    image.sym53
     ud2
 L11:
-    lea     rdi,[image.k6416]
+    lea     rdi,[image.k6464]
     mov     esi,1ADh
     mov     edx,0
     mov     rcx,rax
     movzx   edx,dl
-    call    image.sym62
+    call    image.sym53
     ud2
   ; OSR entries
     lea     r11,[L12]
@@ -1456,61 +1430,84 @@ L2:
     ud2
 
 fn hashbrown::map::HashMap::<u64, u64, std::hash::RandomState>::retain::<{closure@bench/hashmap.rs:23:16: 23:22}>
-    sub     rsp,108h
-    mov     [rsp+68h],rbx
-    mov     [rsp+60h],r12
-    mov     [rsp+58h],r13
-    mov     [rsp+50h],r14
-    mov     [rsp+48h],r15
-    mov     [rsp+40h],rbp
-    mov     rbx,rdi
-    mov     r12,[rbx]
-    mov     [rsp+88h],r12
-    mov     [rsp+80h],r12
-    mov     [rsp+90h],r12
-    mov     r13,[rbx]
-    mov     rax,[rbx+8]
+    sub     rsp,238h
+    mov     [rsp+198h],rbx
+    mov     [rsp+190h],r12
+    mov     [rsp+188h],r13
+    mov     [rsp+180h],r14
+    mov     [rsp+178h],r15
+    mov     [rsp+170h],rbp
+    mov     [rsp+30h],rdi
+    mov     r11,[rsp+30h]
+    mov     r11,[r11]
+    mov     [rsp+18h],r11
+    mov     r10,[rsp+18h]
+    mov     [rsp+1B8h],r10
+    mov     r10,[rsp+18h]
+    mov     [rsp+1B0h],r10
+    mov     r10,[rsp+18h]
+    mov     [rsp+1C0h],r10
+    mov     r11,[rsp+30h]
+    mov     r13,[r11]
+    mov     r11,[rsp+30h]
+    mov     rax,[r11+8]
     add     rax,1
-    lea     r14,[r13+rax]
-    lea     rdi,[rsp+20h]
-    mov     rsi,r13
-    call    image.sym19
-    mov     rax,[rsp+20h]
-    mov     rcx,[rsp+28h]
-    mov     [rsp+30h],rax
-    mov     [rsp+38h],rcx
-    lea     rdi,[rsp+30h]
-    call    image.sym20
+    lea     r11,[r13+rax]
+    mov     [rsp+20h],r11
+    mov     rax,[r13]
+    mov     rcx,[r13+8]
+    mov     [rsp+60h],rax
+    mov     [rsp+68h],rcx
+    mov     [rsp+50h],rax
+    mov     [rsp+58h],rcx
+    mov     qword ptr [rsp+60h],0
+    mov     qword ptr [rsp+68h],0
+    lea     rdi,[rsp+230h]
+    mov     esi,0FFFFFE10h
+    mov     edx,0FFFFFE20h
+    mov     ecx,0FFFFFE30h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+230h]
+    mov     esi,0FFFFFE2Ah
+    mov     edx,0FFFFFE10h
+    call    ryo_h_VmsbI8x16
+    movzx   eax,word ptr [rsp+5Ah]
+    mov     [rsp+5Ch],eax
     mov     rdi,rax
     call    ryo_hr_NotW16
-    mov     qword ptr [rsp+38h],10h
-    lea     r13,[r13+10h]
-    mov     [rsp+70h],r12
-    mov     [rsp+78h],r13
-    mov     [rsp+80h],r14
-    mov     [rsp+88h],ax
-    mov     [rsp+8Ah],r10d
-    mov     [rsp+8Eh],r10w
-    jmp     L6
+    mov     r11,r13
+    lea     r11,[r11+10h]
+    mov     [rsp+28h],r11
+    mov     r10,[rsp+18h]
+    mov     [rsp+1A0h],r10
+    mov     r10,[rsp+28h]
+    mov     [rsp+1A8h],r10
+    mov     r10,[rsp+20h]
+    mov     [rsp+1B0h],r10
+    mov     [rsp+1B8h],ax
+    mov     [rsp+1BAh],r10d
+    mov     [rsp+1BEh],r10w
+    jmp     L12
 L0:
-    mov     rax,[rsp+90h]
+    mov     rax,[rsp+1C0h]
     test    rax,rax
     je      L2
-    lea     rdi,[rsp+70h]
+    lea     rdi,[rsp+1A0h]
     call    fn2
-    jmp     L7
+    jmp     L13
 L1:
     mov     rsi,rcx
     lea     rsi,[rsi-10h]
-    jmp     L9
+    mov     rax,rsi
+    jmp     L15
 L2:
-    mov     rbx,[rsp+68h]
-    mov     r12,[rsp+60h]
-    mov     r13,[rsp+58h]
-    mov     r14,[rsp+50h]
-    mov     r15,[rsp+48h]
-    mov     rbp,[rsp+40h]
-    add     rsp,108h
+    mov     rbx,[rsp+198h]
+    mov     r12,[rsp+190h]
+    mov     r13,[rsp+188h]
+    mov     r14,[rsp+180h]
+    mov     r15,[rsp+178h]
+    mov     rbp,[rsp+170h]
+    add     rsp,238h
     ret
 L3:
     test    cl,cl
@@ -1521,36 +1518,224 @@ L4:
     jmp     L0
 L5:
     mov     rcx,[r15]
-    sub     rcx,rbp
-    mov     rsi,rcx
-    sar     rsi,4
-    mov     rdi,r15
-    call    image.fn146
+    mov     rdx,rcx
+    sub     rdx,rbp
+    mov     r12,rdx
+    sar     r12,4
+    lea     rdx,[r12-10h]
+    mov     rsi,[r15+8]
+    and     rdx,rsi
+    lea     rcx,[rcx+rdx]
+    mov     qword ptr [rsp+70h],0
+    mov     qword ptr [rsp+78h],0
+    lea     rdx,[rsp+70h]
+    lea     rsi,[image.k952]
+    test    rcx,rcx
+    je      L16
+    test    rdx,rdx
+    je      L16
+    cmp     rcx,rdx
+    jae     L6
+    mov     rdi,rdx
+    sub     rdi,rcx
+    jmp     L7
+L6:
+    mov     r11,rcx
+    sub     r11,rdx
+    mov     rdx,r11
+    mov     rdi,rdx
+L7:
+    cmp     rdi,10h
+    jb      L16
+    mov     r14,[rcx]
+    mov     r13,[rcx+8]
+    mov     [rsp+70h],r14
+    mov     [rsp+78h],r13
+    mov     qword ptr [rsp],0FFh
+    lea     rdi,[rsp+230h]
+    mov     esi,0FFFFFE50h
+    mov     edx,0FFFFFDD0h
+    call    ryo_h_VsplatI8x16
+    mov     rcx,[rsp+80h]
+    mov     rdx,[rsp+88h]
+    mov     rdi,rcx
+    shr     rdi,20h
+    mov     r8,rdx
+    shr     r8,20h
+    mov     ecx,ecx
+    mov     edi,edi
+    shl     rdi,20h
+    or      rcx,rdi
+    mov     edx,edx
+    mov     r8d,r8d
+    shl     r8,20h
+    or      rdx,r8
+    mov     [rsp+0A0h],r14
+    mov     [rsp+0A8h],r13
+    mov     [rsp+0B0h],rcx
+    mov     [rsp+0B8h],rdx
+    lea     rdi,[rsp+230h]
+    mov     esi,0FFFFFE60h
+    mov     edx,0FFFFFE70h
+    mov     ecx,0FFFFFE80h
+    call    ryo_h_VeqI8x16
+    mov     rcx,[rsp+90h]
+    mov     rdx,[rsp+98h]
+    mov     [rsp+0E0h],rcx
+    mov     [rsp+0E8h],rdx
+    mov     [rsp+0D0h],rcx
+    mov     [rsp+0D8h],rdx
+    mov     qword ptr [rsp+0E0h],0
+    mov     qword ptr [rsp+0E8h],0
+    lea     rdi,[rsp+230h]
+    mov     esi,0FFFFFE90h
+    mov     edx,0FFFFFEA0h
+    mov     ecx,0FFFFFEB0h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+230h]
+    mov     esi,0FFFFFEAAh
+    mov     edx,0FFFFFE90h
+    call    ryo_h_VmsbI8x16
+    movzx   ecx,word ptr [rsp+0DAh]
+    mov     [rsp+0DCh],ecx
+    mov     r13,rcx
+    mov     rcx,[r15]
+    lea     rcx,[rcx+r12]
+    mov     qword ptr [rsp+0F0h],0
+    mov     qword ptr [rsp+0F8h],0
+    lea     rdx,[rsp+0F0h]
+    lea     rdi,[image.k952]
+    test    rcx,rcx
+    je      L17
+    test    rdx,rdx
+    je      L17
+    cmp     rcx,rdx
+    jae     L8
+    mov     r8,rdx
+    sub     r8,rcx
+    jmp     L9
+L8:
+    mov     r11,rcx
+    sub     r11,rdx
+    mov     rdx,r11
+    mov     r8,rdx
+L9:
+    cmp     r8,10h
+    jb      L17
+    mov     r14,[rcx]
+    mov     rbx,[rcx+8]
+    mov     [rsp+0F0h],r14
+    mov     [rsp+0F8h],rbx
+    mov     qword ptr [rsp],0FFh
+    lea     rdi,[rsp+230h]
+    mov     esi,0FFFFFED0h
+    mov     edx,0FFFFFDD0h
+    call    ryo_h_VsplatI8x16
+    mov     rcx,[rsp+100h]
+    mov     rdx,[rsp+108h]
+    mov     r8,rcx
+    shr     r8,20h
+    mov     r9,rdx
+    shr     r9,20h
+    mov     ecx,ecx
+    mov     r8d,r8d
+    shl     r8,20h
+    or      rcx,r8
+    mov     edx,edx
+    mov     r9d,r9d
+    shl     r9,20h
+    or      rdx,r9
+    mov     [rsp+120h],r14
+    mov     [rsp+128h],rbx
+    mov     [rsp+130h],rcx
+    mov     [rsp+138h],rdx
+    lea     rdi,[rsp+230h]
+    mov     esi,0FFFFFEE0h
+    mov     edx,0FFFFFEF0h
+    mov     ecx,0FFFFFF00h
+    call    ryo_h_VeqI8x16
+    mov     rcx,[rsp+110h]
+    mov     rdx,[rsp+118h]
+    mov     [rsp+160h],rcx
+    mov     [rsp+168h],rdx
+    mov     [rsp+150h],rcx
+    mov     [rsp+158h],rdx
+    mov     qword ptr [rsp+160h],0
+    mov     qword ptr [rsp+168h],0
+    lea     rdi,[rsp+230h]
+    mov     esi,0FFFFFF10h
+    mov     edx,0FFFFFF20h
+    mov     ecx,0FFFFFF30h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+230h]
+    mov     esi,0FFFFFF2Ah
+    mov     edx,0FFFFFF10h
+    call    ryo_h_VmsbI8x16
+    movzx   ecx,word ptr [rsp+15Ah]
+    mov     [rsp+15Ch],ecx
+    mov     rbx,rcx
+    mov     rdi,r13
+    call    ryo_hr_CtlzW16
+    mov     rcx,rax
+    mov     r13d,ecx
+    mov     rdi,rbx
+    call    ryo_hr_CttzW16
+    mov     rcx,rax
+    mov     ecx,ecx
+    add     r13,rcx
+    cmp     r13,10h
+    jb      L10
+    mov     ecx,80h
+    jmp     L11
+L10:
+    mov     rcx,[r15+10h]
+    add     rcx,1
+    mov     [r15+10h],rcx
+    mov     ecx,0FFh
+L11:
+    lea     rdx,[r12-10h]
+    mov     r8,[r15+8]
+    and     rdx,r8
+    add     rdx,10h
+    mov     r8,[r15]
+    lea     r8,[r8+r12]
+    mov     [r8],cl
+    mov     r8,[r15]
+    lea     r8,[r8+rdx]
+    mov     [r8],cl
+    mov     rcx,[r15+18h]
+    sub     rcx,1
+    mov     [r15+18h],rcx
+    lea     rbp,[rbp-10h]
     mov     rdi,rbp
-    lea     rdi,[rdi-10h]
-    call    image.sym22
+    call    image.sym20
     mov     [rsp+10h],r15
     jmp     L0
-L6:
-    mov     rcx,[rbx+18h]
-    mov     rdx,[rsp+88h]
-    mov     [rsp+70h],r12
-    mov     [rsp+78h],r13
-    mov     [rsp+80h],r14
-    mov     [rsp+88h],rdx
-    mov     [rsp+90h],rcx
-    mov     [rsp+10h],rbx
+L12:
+    mov     r11,[rsp+30h]
+    mov     rcx,[r11+18h]
+    mov     rdx,[rsp+1B8h]
+    mov     r10,[rsp+18h]
+    mov     [rsp+1A0h],r10
+    mov     r10,[rsp+28h]
+    mov     [rsp+1A8h],r10
+    mov     r10,[rsp+20h]
+    mov     [rsp+1B0h],r10
+    mov     [rsp+1B8h],rdx
+    mov     [rsp+1C0h],rcx
+    mov     r11,[rsp+30h]
+    mov     [rsp+10h],r11
     jmp     L0
-L7:
-    mov     rcx,[rsp+90h]
+L13:
+    mov     rcx,[rsp+1C0h]
     sub     rcx,1
-    mov     [rsp+90h],rcx
+    mov     [rsp+1C0h],rcx
     test    rax,rax
     je      L2
     mov     rcx,rax
     mov     rdx,[rsp+10h]
     jmp     L1
-L8:
+L14:
     mov     rax,[rax]
     mov     r11d,3
     mov     rax,rax
@@ -1560,44 +1745,58 @@ L8:
     setne   al
     mov     rbp,rcx
     mov     rcx,rax
-    mov     r15,rsi
+    mov     r15,r8
     jmp     L3
-L9:
-    mov     rax,rsi
-    mov     rsi,rdx
-    jmp     L8
-    jmp     L11
-L10:
+L15:
+    mov     r8,rdx
+    jmp     L14
+L16:
+    lea     rax,[image.k4563]
+    mov     rdi,rax
+    mov     edx,0
+    mov     rcx,rsi
+    mov     esi,237h
+    movzx   edx,dl
+    call    image.sym53
+    ud2
+L17:
+    lea     rax,[image.k4563]
+    mov     esi,237h
+    mov     edx,0
+    mov     rcx,rdi
+    mov     rdi,rax
+    movzx   edx,dl
+    call    image.sym53
+    ud2
+    jmp     L19
+L18:
     mov     [rsp],rax
-    lea     rdi,[rsp+100h]
-    mov     esi,0FFFFFF00h
+    lea     rdi,[rsp+230h]
+    mov     esi,0FFFFFDD0h
     call    ryo_h_Resume
     ud2
     mov     rcx,rax
     mov     rax,rcx
-    jmp     L11
-    mov     rcx,rax
-    mov     rax,rcx
-L11:
-    jmp     L10
+L19:
+    jmp     L18
   ; OSR entries
-    lea     r11,[L12]
+    lea     r11,[L20]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L12:
-    .long   L13
-    .long   L14
-    .long   L15
-    .long   L16
-    .long   L17
-    .long   L18
-    .long   L19
-    .long   L20
-L13:
+L20:
+    .long   L21
+    .long   L22
+    .long   L23
+    .long   L24
+    .long   L25
+    .long   L26
+    .long   L27
+    .long   L28
+L21:
     pop     rcx
     lea     rdx,[rsp+0E0h]
-    lea     rsp,[rdx-110h]
+    lea     rsp,[rdx-240h]
     mov     r11,[rdx-8]
     mov     [rsp],r11
     mov     [rdx-98h],rbx
@@ -1607,13 +1806,13 @@ L13:
     mov     [rdx-0B8h],r15
     mov     [rdx-0C0h],rbp
     mov     r11,[rsp]
-    mov     [rdx-0F0h],r11
+    mov     [rdx-220h],r11
     lea     rsp,[rsp+10h]
     jmp     L0
-L14:
+L22:
     pop     rcx
     lea     rdx,[rsp+0E0h]
-    lea     rsp,[rdx-110h]
+    lea     rsp,[rdx-240h]
     mov     r11,[rdx-98h]
     mov     [rsp],r11
     mov     r11,[rdx-8]
@@ -1628,12 +1827,12 @@ L14:
     mov     rdx,[rsp+8]
     lea     rsp,[rsp+10h]
     jmp     L1
-L15:
+L23:
     ret
-L16:
+L24:
     pop     rcx
     lea     rdx,[rsp+0E0h]
-    lea     rsp,[rdx-120h]
+    lea     rsp,[rdx-250h]
     movzx   r11d,byte ptr [rdx-0B1h]
     mov     [rsp],r11
     mov     r11,[rdx-0A0h]
@@ -1651,14 +1850,14 @@ L16:
     mov     r15,[rsp+10h]
     lea     rsp,[rsp+20h]
     jmp     L3
-L17:
+L25:
     ret
-L18:
+L26:
     ret
-L19:
+L27:
     pop     rcx
     lea     rdx,[rsp+0E0h]
-    lea     rsp,[rdx-120h]
+    lea     rsp,[rdx-250h]
     mov     r11,[rdx-0A8h]
     mov     [rsp],r11
     mov     r11,[rdx-0A0h]
@@ -1673,13 +1872,13 @@ L19:
     mov     [rdx-0C0h],rbp
     mov     rax,[rsp]
     mov     rcx,[rsp+8]
-    mov     rsi,[rsp+10h]
+    mov     r8,[rsp+10h]
     lea     rsp,[rsp+20h]
-    jmp     L8
-L20:
+    jmp     L14
+L28:
     pop     rcx
     lea     rdx,[rsp+0E0h]
-    lea     rsp,[rdx-120h]
+    lea     rsp,[rdx-250h]
     mov     r11,[rdx-0A8h]
     mov     [rsp],r11
     mov     r11,[rdx-0A0h]
@@ -1692,16 +1891,16 @@ L20:
     mov     [rdx-0B0h],r14
     mov     [rdx-0B8h],r15
     mov     [rdx-0C0h],rbp
-    mov     rsi,[rsp]
+    mov     rax,[rsp]
     mov     rcx,[rsp+8]
     mov     rdx,[rsp+10h]
     lea     rsp,[rsp+20h]
-    jmp     L9
+    jmp     L15
 
 fn hashbrown::raw::FullBucketsIndices::next_impl
-    sub     rsp,0A8h
-    mov     [rsp+28h],rbx
-    mov     [rsp+20h],r12
+    sub     rsp,0C8h
+    mov     [rsp+48h],rbx
+    mov     [rsp+40h],r12
     mov     rbx,rdi
 L0:
     movzx   r12d,word ptr [rbx+18h]
@@ -1716,31 +1915,41 @@ L0:
     mov     rcx,[rbx+8]
     lea     rdx,[rcx+rax]
     mov     eax,1
-    mov     rbx,[rsp+28h]
-    mov     r12,[rsp+20h]
-    add     rsp,0A8h
+    mov     rbx,[rsp+48h]
+    mov     r12,[rsp+40h]
+    add     rsp,0C8h
     ret
 L1:
     mov     rax,[rbx]
-    mov     qword ptr [rsp+18h],10h
-    mov     rsi,rax
-    lea     rsi,[rsi+10h]
-    mov     [rbx],rsi
-    lea     rdi,[rsp+30h]
-    call    sym1
-    mov     rax,[rsp+30h]
-    mov     rcx,[rsp+38h]
-    mov     [rsp+10h],rax
-    mov     [rsp+18h],rcx
-    lea     rdi,[rsp+10h]
-    call    sym2
+    mov     rcx,rax
+    lea     rcx,[rcx+10h]
+    mov     [rbx],rcx
+    mov     rcx,[rax+10h]
+    mov     rax,[rax+18h]
+    mov     [rsp+50h],rcx
+    mov     [rsp+58h],rax
+    mov     [rsp+30h],rcx
+    mov     [rsp+38h],rax
+    mov     [rsp+20h],rcx
+    mov     [rsp+28h],rax
+    mov     qword ptr [rsp+30h],0
+    mov     qword ptr [rsp+38h],0
+    lea     rdi,[rsp+0C0h]
+    mov     esi,0FFFFFF50h
+    mov     edx,0FFFFFF60h
+    mov     ecx,0FFFFFF70h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+0C0h]
+    mov     esi,0FFFFFF6Ah
+    mov     edx,0FFFFFF50h
+    call    ryo_h_VmsbI8x16
+    movzx   eax,word ptr [rsp+2Ah]
+    mov     [rsp+2Ch],eax
     mov     rdi,rax
     call    ryo_hr_NotW16
     mov     [rbx+18h],ax
     mov     rax,[rbx+8]
-    mov     [rsp+18h],rax
     add     rax,10h
-    mov     [rsp+10h],rax
     mov     [rbx+8],rax
     jmp     L0
   ; OSR entries
@@ -1753,27 +1962,19 @@ L2:
 L3:
     pop     rcx
     lea     rdx,[rsp+0C0h]
-    lea     rsp,[rdx-0E0h]
+    lea     rsp,[rdx-0D0h]
     mov     r11,[rdx-18h]
     mov     [rsp],r11
-    mov     r11,[rdx-0C0h]
-    mov     [rsp+8],r11
-    mov     r11,[rdx-0B8h]
-    mov     [rsp+10h],r11
     mov     [rdx-78h],rbx
     mov     [rdx-80h],r12
-    mov     r11,[rsp+8]
-    mov     [rdx-90h],r11
-    mov     r11,[rsp+10h]
-    mov     [rdx-88h],r11
     mov     rbx,[rsp]
-    lea     rsp,[rsp+40h]
+    lea     rsp,[rsp+10h]
     jmp     L0
 
 fn hashbrown::raw::RawIterRange::<(std::string::String, usize)>::next_impl::<false>
-    sub     rsp,0B8h
-    mov     [rsp+28h],rbx
-    mov     [rsp+20h],r12
+    sub     rsp,0D8h
+    mov     [rsp+48h],rbx
+    mov     [rsp+40h],r12
     mov     rbx,rdi
 L0:
     movzx   r12d,word ptr [rbx+18h]
@@ -1807,15 +2008,28 @@ L3:
     mov     eax,0
     jmp     L5
 L4:
-    mov     rsi,[r12+8]
-    lea     rdi,[rsp+30h]
-    call    sym0
-    mov     rax,[rsp+30h]
-    mov     rdx,[rsp+38h]
-    mov     [rsp+10h],rax
-    mov     [rsp+18h],rdx
-    lea     rdi,[rsp+10h]
-    call    sym2
+    mov     rax,[r12+8]
+    mov     rdx,[rax]
+    mov     rax,[rax+8]
+    mov     [rsp+50h],rdx
+    mov     [rsp+58h],rax
+    mov     [rsp+30h],rdx
+    mov     [rsp+38h],rax
+    mov     [rsp+20h],rdx
+    mov     [rsp+28h],rax
+    mov     qword ptr [rsp+30h],0
+    mov     qword ptr [rsp+38h],0
+    lea     rdi,[rsp+0D0h]
+    mov     esi,0FFFFFF40h
+    mov     edx,0FFFFFF50h
+    mov     ecx,0FFFFFF60h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+0D0h]
+    mov     esi,0FFFFFF5Ah
+    mov     edx,0FFFFFF40h
+    call    ryo_h_VmsbI8x16
+    movzx   eax,word ptr [rsp+2Ah]
+    mov     [rsp+2Ch],eax
     mov     rdi,rax
     call    ryo_hr_NotW16
     mov     [r12+18h],ax
@@ -1823,9 +2037,9 @@ L4:
     lea     rax,[rax-200h]
     jmp     L10
 L5:
-    mov     rbx,[rsp+28h]
-    mov     r12,[rsp+20h]
-    add     rsp,0B8h
+    mov     rbx,[rsp+48h]
+    mov     r12,[rsp+40h]
+    add     rsp,0D8h
     ret
 L6:
     mov     r12,rbx
@@ -1862,59 +2076,35 @@ L11:
 L12:
     pop     rcx
     lea     rdx,[rsp+0E0h]
-    lea     rsp,[rdx-100h]
+    lea     rsp,[rdx-0F0h]
     mov     r11,[rdx-10h]
     mov     [rsp],r11
-    mov     r11,[rdx-0E0h]
-    mov     [rsp+8],r11
-    mov     r11,[rdx-0D8h]
-    mov     [rsp+10h],r11
     mov     [rdx-88h],rbx
     mov     [rdx-90h],r12
-    mov     r11,[rsp+8]
-    mov     [rdx-0A0h],r11
-    mov     r11,[rsp+10h]
-    mov     [rdx-98h],r11
     mov     rbx,[rsp]
-    lea     rsp,[rsp+50h]
+    lea     rsp,[rsp+20h]
     jmp     L0
 L13:
     pop     rcx
     lea     rdx,[rsp+0E0h]
-    lea     rsp,[rdx-100h]
+    lea     rsp,[rdx-0F0h]
     mov     r11,[rdx-10h]
     mov     [rsp],r11
-    mov     r11,[rdx-0E0h]
-    mov     [rsp+8],r11
-    mov     r11,[rdx-0D8h]
-    mov     [rsp+10h],r11
     mov     [rdx-88h],rbx
     mov     [rdx-90h],r12
-    mov     r11,[rsp+8]
-    mov     [rdx-0A0h],r11
-    mov     r11,[rsp+10h]
-    mov     [rdx-98h],r11
     mov     rax,[rsp]
-    lea     rsp,[rsp+50h]
+    lea     rsp,[rsp+20h]
     jmp     L1
 L14:
     pop     rcx
     lea     rdx,[rsp+0E0h]
-    lea     rsp,[rdx-100h]
+    lea     rsp,[rdx-0F0h]
     mov     r11,[rdx-10h]
     mov     [rsp],r11
-    mov     r11,[rdx-0E0h]
-    mov     [rsp+8],r11
-    mov     r11,[rdx-0D8h]
-    mov     [rsp+10h],r11
     mov     [rdx-88h],rbx
     mov     [rdx-90h],r12
-    mov     r11,[rsp+8]
-    mov     [rdx-0A0h],r11
-    mov     r11,[rsp+10h]
-    mov     [rdx-98h],r11
     mov     r12,[rsp]
-    lea     rsp,[rsp+50h]
+    lea     rsp,[rsp+20h]
     jmp     L4
 L15:
     ret
@@ -1925,57 +2115,41 @@ L17:
 L18:
     pop     rcx
     lea     rdx,[rsp+0E0h]
-    lea     rsp,[rdx-100h]
+    lea     rsp,[rdx-0F0h]
     mov     r11,[rdx-90h]
     mov     [rsp],r11
     mov     r11,[rdx-10h]
     mov     [rsp+8],r11
-    mov     r11,[rdx-0E0h]
-    mov     [rsp+10h],r11
-    mov     r11,[rdx-0D8h]
-    mov     [rsp+18h],r11
     mov     [rdx-88h],rbx
     mov     [rdx-90h],r12
-    mov     r11,[rsp+10h]
-    mov     [rdx-0A0h],r11
-    mov     r11,[rsp+18h]
-    mov     [rdx-98h],r11
     mov     rax,[rsp]
     mov     rcx,[rsp+8]
-    lea     rsp,[rsp+50h]
+    lea     rsp,[rsp+20h]
     jmp     L9
 L19:
     pop     rcx
     lea     rdx,[rsp+0E0h]
-    lea     rsp,[rdx-100h]
+    lea     rsp,[rdx-0F0h]
     mov     r11,[rdx-90h]
     mov     [rsp],r11
     mov     r11,[rdx-10h]
     mov     [rsp+8],r11
-    mov     r11,[rdx-0E0h]
-    mov     [rsp+10h],r11
-    mov     r11,[rdx-0D8h]
-    mov     [rsp+18h],r11
     mov     [rdx-88h],rbx
     mov     [rdx-90h],r12
-    mov     r11,[rsp+10h]
-    mov     [rdx-0A0h],r11
-    mov     r11,[rsp+18h]
-    mov     [rdx-98h],r11
     mov     rax,[rsp]
     mov     r12,[rsp+8]
-    lea     rsp,[rsp+50h]
+    lea     rsp,[rsp+20h]
     jmp     L10
 
 fn hashbrown::raw::RawIterRange::<(u64, u64)>::fold_impl::<{closure@<hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:24:43: 24:50}>::{closure#0}}>::{closure#0}}, u64>
-    sub     rsp,118h
-    mov     [rsp+58h],rbx
-    mov     [rsp+50h],r12
-    mov     [rsp+48h],r13
-    mov     [rsp+40h],r14
-    mov     [rsp+38h],r15
-    mov     [rsp+30h],rbp
-    mov     [rsp+0D0h],rcx
+    sub     rsp,138h
+    mov     [rsp+78h],rbx
+    mov     [rsp+70h],r12
+    mov     [rsp+68h],r13
+    mov     [rsp+60h],r14
+    mov     [rsp+58h],r15
+    mov     [rsp+50h],rbp
+    mov     [rsp+0F0h],rcx
     mov     rax,[rdi]
     mov     rcx,[rdi+8]
     mov     r11,[rdi+10h]
@@ -2002,10 +2176,8 @@ L0:
     imul    r11,10h
     add     r11,[rsp+18h]
     mov     rax,r11
-    mov     rcx,rax
-    mov     rdx,rbx
-    mov     rsi,[rsp+10h]
-    mov     rdi,[rsp+18h]
+    mov     rcx,[rsp+10h]
+    mov     rdx,[rsp+18h]
     jmp     L6
 L1:
     sub     rcx,1
@@ -2017,25 +2189,40 @@ L1:
     jmp     L0
 L2:
     mov     rax,r13
-    mov     rbx,[rsp+58h]
-    mov     r12,[rsp+50h]
-    mov     r13,[rsp+48h]
-    mov     r14,[rsp+40h]
-    mov     r15,[rsp+38h]
-    mov     rbp,[rsp+30h]
-    add     rsp,118h
+    mov     rbx,[rsp+78h]
+    mov     r12,[rsp+70h]
+    mov     r13,[rsp+68h]
+    mov     r14,[rsp+60h]
+    mov     r15,[rsp+58h]
+    mov     rbp,[rsp+50h]
+    add     rsp,138h
     ret
 L3:
-    lea     rdi,[rsp+60h]
-    mov     rsi,rbx
-    call    sym0
-    mov     rax,[rsp+60h]
-    mov     rcx,[rsp+68h]
-    mov     [rsp+20h],rax
-    mov     [rsp+28h],rcx
-    lea     rdi,[rsp+20h]
-    call    sym3
-    jmp     L7
+    mov     rax,[rbx]
+    mov     rcx,[rbx+8]
+    mov     [rsp+80h],rax
+    mov     [rsp+88h],rcx
+    mov     [rsp+40h],rax
+    mov     [rsp+48h],rcx
+    mov     [rsp+30h],rax
+    mov     [rsp+38h],rcx
+    mov     qword ptr [rsp+40h],0
+    mov     qword ptr [rsp+48h],0
+    lea     rdi,[rsp+130h]
+    mov     esi,0FFFFFEF0h
+    mov     edx,0FFFFFF00h
+    mov     ecx,0FFFFFF10h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+130h]
+    mov     esi,0FFFFFF0Ah
+    mov     edx,0FFFFFEF0h
+    call    ryo_h_VmsbI8x16
+    movzx   eax,word ptr [rsp+3Ah]
+    mov     [rsp+3Ch],eax
+    mov     rdi,rax
+    call    ryo_hr_NotW16
+    lea     rbp,[rbp-100h]
+    jmp     L8
 L4:
     test    r12,r12
     je      L2
@@ -2045,29 +2232,24 @@ L4:
     mov     r15,r13
     jmp     L3
 L5:
-    mov     r12,[rsp+0D0h]
-    mov     r11,[r12]
-    mov     rcx,[rcx-8]
-    add     rdx,rcx
-    mov     rax,rdx
-    mov     rcx,rsi
-    mov     rdx,rdi
-    mov     rsi,r8
-    mov     rdi,r9
+    mov     r9,[rsp+0F0h]
+    mov     r11,[r9]
+    mov     rax,[rax-8]
+    add     rcx,rax
+    mov     rax,rcx
+    mov     rcx,rdx
+    mov     rdx,rsi
+    mov     rsi,rdi
+    mov     rdi,r8
     jmp     L1
 L6:
-    mov     r8,rsi
-    mov     rsi,r12
-    mov     r9,rdi
-    mov     rdi,rdx
-    mov     rdx,r13
+    mov     rsi,rbx
+    mov     rdi,rcx
+    mov     rcx,r13
+    mov     r8,rdx
+    mov     rdx,r12
     jmp     L5
 L7:
-    mov     rdi,rax
-    call    ryo_hr_NotW16
-    lea     rbp,[rbp-100h]
-    jmp     L9
-L8:
     lea     rcx,[rcx+10h]
     mov     rbx,rdx
     mov     r12,rsi
@@ -2075,46 +2257,31 @@ L8:
     mov     [rsp+10h],rcx
     mov     [rsp+18h],rax
     jmp     L0
-L9:
+L8:
     mov     rcx,rbx
     mov     rdx,rax
     mov     rax,rbp
     mov     rsi,r14
     mov     rdi,r15
-    jmp     L8
-    jmp     L13
-L10:
-    jmp     L12
-L11:
-    mov     [rsp],rax
-    lea     rdi,[rsp+110h]
-    mov     esi,0FFFFFEF0h
-    call    ryo_h_Resume
-    ud2
-L12:
-    jmp     L11
-    mov     rcx,rax
-    mov     rax,rcx
-L13:
-    jmp     L10
+    jmp     L7
   ; OSR entries
-    lea     r11,[L14]
+    lea     r11,[L9]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L14:
+L9:
+    .long   L10
+    .long   L11
+    .long   L12
+    .long   L13
+    .long   L14
     .long   L15
     .long   L16
     .long   L17
     .long   L18
     .long   L19
     .long   L20
-    .long   L21
-    .long   L22
-    .long   L23
-    .long   L24
-    .long   L25
-L15:
+L10:
     pop     rcx
     lea     rdx,[rsp+120h]
     lea     rsp,[rdx-160h]
@@ -2128,30 +2295,22 @@ L15:
     mov     [rsp+18h],r11
     mov     r11,[rdx-28h]
     mov     [rsp+20h],r11
-    mov     r11,[rdx-120h]
-    mov     [rsp+28h],r11
-    mov     r11,[rdx-118h]
-    mov     [rsp+30h],r11
     mov     [rdx-0B8h],rbx
     mov     [rdx-0C0h],r12
     mov     [rdx-0C8h],r13
     mov     [rdx-0D0h],r14
     mov     [rdx-0D8h],r15
     mov     [rdx-0E0h],rbp
-    mov     r11,[rsp+28h]
-    mov     [rdx-0F0h],r11
-    mov     r11,[rsp+30h]
-    mov     [rdx-0E8h],r11
     mov     r11,[rsp+18h]
-    mov     [rdx-100h],r11
+    mov     [rdx-120h],r11
     mov     r11,[rsp+20h]
-    mov     [rdx-0F8h],r11
+    mov     [rdx-118h],r11
     mov     rbx,[rsp]
     mov     r12,[rsp+8]
     mov     r13,[rsp+10h]
-    lea     rsp,[rsp+50h]
+    lea     rsp,[rsp+30h]
     jmp     L0
-L16:
+L11:
     pop     rcx
     lea     rdx,[rsp+120h]
     lea     rsp,[rdx-160h]
@@ -2165,30 +2324,22 @@ L16:
     mov     [rsp+18h],r11
     mov     r11,[rdx-28h]
     mov     [rsp+20h],r11
-    mov     r11,[rdx-120h]
-    mov     [rsp+28h],r11
-    mov     r11,[rdx-118h]
-    mov     [rsp+30h],r11
     mov     [rdx-0B8h],rbx
     mov     [rdx-0C0h],r12
     mov     [rdx-0C8h],r13
     mov     [rdx-0D0h],r14
     mov     [rdx-0D8h],r15
     mov     [rdx-0E0h],rbp
-    mov     r11,[rsp+28h]
-    mov     [rdx-0F0h],r11
-    mov     r11,[rsp+30h]
-    mov     [rdx-0E8h],r11
     mov     rax,[rsp]
     mov     rcx,[rsp+8]
     mov     rsi,[rsp+18h]
     mov     rdi,[rsp+20h]
     mov     rdx,[rsp+10h]
-    lea     rsp,[rsp+50h]
+    lea     rsp,[rsp+30h]
     jmp     L1
-L17:
+L12:
     ret
-L18:
+L13:
     pop     rcx
     lea     rdx,[rsp+120h]
     lea     rsp,[rdx-150h]
@@ -2200,33 +2351,25 @@ L18:
     mov     [rsp+10h],r11
     mov     r11,[rdx-38h]
     mov     [rsp+18h],r11
-    mov     r11,[rdx-120h]
-    mov     [rsp+20h],r11
-    mov     r11,[rdx-118h]
-    mov     [rsp+28h],r11
     mov     [rdx-0B8h],rbx
     mov     [rdx-0C0h],r12
     mov     [rdx-0C8h],r13
     mov     [rdx-0D0h],r14
     mov     [rdx-0D8h],r15
     mov     [rdx-0E0h],rbp
-    mov     r11,[rsp+20h]
-    mov     [rdx-0F0h],r11
-    mov     r11,[rsp+28h]
-    mov     [rdx-0E8h],r11
     mov     rbx,[rsp]
     mov     rbp,[rsp+8]
     mov     r14,[rsp+10h]
     mov     r15,[rsp+18h]
-    lea     rsp,[rsp+40h]
+    lea     rsp,[rsp+20h]
     jmp     L3
-L19:
+L14:
     ret
-L20:
+L15:
     ret
-L21:
+L16:
     ret
-L22:
+L17:
     pop     rcx
     lea     rdx,[rsp+120h]
     lea     rsp,[rdx-160h]
@@ -2242,29 +2385,21 @@ L22:
     mov     [rsp+20h],r11
     mov     r11,[rdx-28h]
     mov     [rsp+28h],r11
-    mov     r11,[rdx-120h]
-    mov     [rsp+30h],r11
-    mov     r11,[rdx-118h]
-    mov     [rsp+38h],r11
     mov     [rdx-0B8h],rbx
     mov     [rdx-0C0h],r12
     mov     [rdx-0C8h],r13
     mov     [rdx-0D0h],r14
     mov     [rdx-0D8h],r15
     mov     [rdx-0E0h],rbp
-    mov     r11,[rsp+30h]
-    mov     [rdx-0F0h],r11
-    mov     r11,[rsp+38h]
-    mov     [rdx-0E8h],r11
-    mov     rcx,[rsp]
-    mov     rsi,[rsp+10h]
-    mov     rdi,[rsp+18h]
-    mov     r8,[rsp+20h]
-    mov     r9,[rsp+28h]
-    mov     rdx,[rsp+8]
-    lea     rsp,[rsp+50h]
+    mov     rax,[rsp]
+    mov     rcx,[rsp+8]
+    mov     rsi,[rsp+18h]
+    mov     rdi,[rsp+20h]
+    mov     r8,[rsp+28h]
+    mov     rdx,[rsp+10h]
+    lea     rsp,[rsp+30h]
     jmp     L5
-L23:
+L18:
     pop     rcx
     lea     rdx,[rsp+120h]
     lea     rsp,[rdx-160h]
@@ -2280,29 +2415,21 @@ L23:
     mov     [rsp+20h],r11
     mov     r11,[rdx-28h]
     mov     [rsp+28h],r11
-    mov     r11,[rdx-120h]
-    mov     [rsp+30h],r11
-    mov     r11,[rdx-118h]
-    mov     [rsp+38h],r11
     mov     [rdx-0B8h],rbx
     mov     [rdx-0C0h],r12
     mov     [rdx-0C8h],r13
     mov     [rdx-0D0h],r14
     mov     [rdx-0D8h],r15
     mov     [rdx-0E0h],rbp
-    mov     r11,[rsp+30h]
-    mov     [rdx-0F0h],r11
-    mov     r11,[rsp+38h]
-    mov     [rdx-0E8h],r11
-    mov     rcx,[rsp]
+    mov     rax,[rsp]
     mov     r13,[rsp+8]
     mov     r12,[rsp+10h]
-    mov     rsi,[rsp+20h]
-    mov     rdi,[rsp+28h]
-    mov     rdx,[rsp+18h]
-    lea     rsp,[rsp+50h]
+    mov     rbx,[rsp+18h]
+    mov     rcx,[rsp+20h]
+    mov     rdx,[rsp+28h]
+    lea     rsp,[rsp+30h]
     jmp     L6
-L24:
+L19:
     pop     rcx
     lea     rdx,[rsp+120h]
     lea     rsp,[rdx-160h]
@@ -2316,28 +2443,20 @@ L24:
     mov     [rsp+18h],r11
     mov     r11,[rdx-38h]
     mov     [rsp+20h],r11
-    mov     r11,[rdx-120h]
-    mov     [rsp+28h],r11
-    mov     r11,[rdx-118h]
-    mov     [rsp+30h],r11
     mov     [rdx-0B8h],rbx
     mov     [rdx-0C0h],r12
     mov     [rdx-0C8h],r13
     mov     [rdx-0D0h],r14
     mov     [rdx-0D8h],r15
     mov     [rdx-0E0h],rbp
-    mov     r11,[rsp+28h]
-    mov     [rdx-0F0h],r11
-    mov     r11,[rsp+30h]
-    mov     [rdx-0E8h],r11
     mov     rax,[rsp]
     mov     rcx,[rsp+8]
     mov     rsi,[rsp+18h]
     mov     rdi,[rsp+20h]
     mov     rdx,[rsp+10h]
-    lea     rsp,[rsp+50h]
-    jmp     L8
-L25:
+    lea     rsp,[rsp+30h]
+    jmp     L7
+L20:
     pop     rcx
     lea     rdx,[rsp+120h]
     lea     rsp,[rdx-160h]
@@ -2351,32 +2470,24 @@ L25:
     mov     [rsp+18h],r11
     mov     r11,[rdx-38h]
     mov     [rsp+20h],r11
-    mov     r11,[rdx-120h]
-    mov     [rsp+28h],r11
-    mov     r11,[rdx-118h]
-    mov     [rsp+30h],r11
     mov     [rdx-0B8h],rbx
     mov     [rdx-0C0h],r12
     mov     [rdx-0C8h],r13
     mov     [rdx-0D0h],r14
     mov     [rdx-0D8h],r15
     mov     [rdx-0E0h],rbp
-    mov     r11,[rsp+28h]
-    mov     [rdx-0F0h],r11
-    mov     r11,[rsp+30h]
-    mov     [rdx-0E8h],r11
     mov     rbp,[rsp]
     mov     rbx,[rsp+8]
     mov     rax,[rsp+10h]
     mov     r14,[rsp+18h]
     mov     r15,[rsp+20h]
-    lea     rsp,[rsp+50h]
-    jmp     L9
+    lea     rsp,[rsp+30h]
+    jmp     L8
 
 fn hashbrown::raw::RawIterRange::<(u64, u64)>::next_impl::<false>
-    sub     rsp,0B8h
-    mov     [rsp+28h],rbx
-    mov     [rsp+20h],r12
+    sub     rsp,0D8h
+    mov     [rsp+48h],rbx
+    mov     [rsp+40h],r12
     mov     rbx,rdi
 L0:
     movzx   r12d,word ptr [rbx+18h]
@@ -2410,15 +2521,28 @@ L3:
     mov     eax,0
     jmp     L5
 L4:
-    mov     rsi,[r12+8]
-    lea     rdi,[rsp+30h]
-    call    sym0
-    mov     rax,[rsp+30h]
-    mov     rdx,[rsp+38h]
-    mov     [rsp+10h],rax
-    mov     [rsp+18h],rdx
-    lea     rdi,[rsp+10h]
-    call    sym2
+    mov     rax,[r12+8]
+    mov     rdx,[rax]
+    mov     rax,[rax+8]
+    mov     [rsp+50h],rdx
+    mov     [rsp+58h],rax
+    mov     [rsp+30h],rdx
+    mov     [rsp+38h],rax
+    mov     [rsp+20h],rdx
+    mov     [rsp+28h],rax
+    mov     qword ptr [rsp+30h],0
+    mov     qword ptr [rsp+38h],0
+    lea     rdi,[rsp+0D0h]
+    mov     esi,0FFFFFF40h
+    mov     edx,0FFFFFF50h
+    mov     ecx,0FFFFFF60h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+0D0h]
+    mov     esi,0FFFFFF5Ah
+    mov     edx,0FFFFFF40h
+    call    ryo_h_VmsbI8x16
+    movzx   eax,word ptr [rsp+2Ah]
+    mov     [rsp+2Ch],eax
     mov     rdi,rax
     call    ryo_hr_NotW16
     mov     [r12+18h],ax
@@ -2426,9 +2550,9 @@ L4:
     lea     rax,[rax-100h]
     jmp     L10
 L5:
-    mov     rbx,[rsp+28h]
-    mov     r12,[rsp+20h]
-    add     rsp,0B8h
+    mov     rbx,[rsp+48h]
+    mov     r12,[rsp+40h]
+    add     rsp,0D8h
     ret
 L6:
     mov     r12,rbx
@@ -2465,59 +2589,35 @@ L11:
 L12:
     pop     rcx
     lea     rdx,[rsp+0E0h]
-    lea     rsp,[rdx-100h]
+    lea     rsp,[rdx-0F0h]
     mov     r11,[rdx-10h]
     mov     [rsp],r11
-    mov     r11,[rdx-0E0h]
-    mov     [rsp+8],r11
-    mov     r11,[rdx-0D8h]
-    mov     [rsp+10h],r11
     mov     [rdx-88h],rbx
     mov     [rdx-90h],r12
-    mov     r11,[rsp+8]
-    mov     [rdx-0A0h],r11
-    mov     r11,[rsp+10h]
-    mov     [rdx-98h],r11
     mov     rbx,[rsp]
-    lea     rsp,[rsp+50h]
+    lea     rsp,[rsp+20h]
     jmp     L0
 L13:
     pop     rcx
     lea     rdx,[rsp+0E0h]
-    lea     rsp,[rdx-100h]
+    lea     rsp,[rdx-0F0h]
     mov     r11,[rdx-10h]
     mov     [rsp],r11
-    mov     r11,[rdx-0E0h]
-    mov     [rsp+8],r11
-    mov     r11,[rdx-0D8h]
-    mov     [rsp+10h],r11
     mov     [rdx-88h],rbx
     mov     [rdx-90h],r12
-    mov     r11,[rsp+8]
-    mov     [rdx-0A0h],r11
-    mov     r11,[rsp+10h]
-    mov     [rdx-98h],r11
     mov     rax,[rsp]
-    lea     rsp,[rsp+50h]
+    lea     rsp,[rsp+20h]
     jmp     L1
 L14:
     pop     rcx
     lea     rdx,[rsp+0E0h]
-    lea     rsp,[rdx-100h]
+    lea     rsp,[rdx-0F0h]
     mov     r11,[rdx-10h]
     mov     [rsp],r11
-    mov     r11,[rdx-0E0h]
-    mov     [rsp+8],r11
-    mov     r11,[rdx-0D8h]
-    mov     [rsp+10h],r11
     mov     [rdx-88h],rbx
     mov     [rdx-90h],r12
-    mov     r11,[rsp+8]
-    mov     [rdx-0A0h],r11
-    mov     r11,[rsp+10h]
-    mov     [rdx-98h],r11
     mov     r12,[rsp]
-    lea     rsp,[rsp+50h]
+    lea     rsp,[rsp+20h]
     jmp     L4
 L15:
     ret
@@ -2528,46 +2628,30 @@ L17:
 L18:
     pop     rcx
     lea     rdx,[rsp+0E0h]
-    lea     rsp,[rdx-100h]
+    lea     rsp,[rdx-0F0h]
     mov     r11,[rdx-90h]
     mov     [rsp],r11
     mov     r11,[rdx-10h]
     mov     [rsp+8],r11
-    mov     r11,[rdx-0E0h]
-    mov     [rsp+10h],r11
-    mov     r11,[rdx-0D8h]
-    mov     [rsp+18h],r11
     mov     [rdx-88h],rbx
     mov     [rdx-90h],r12
-    mov     r11,[rsp+10h]
-    mov     [rdx-0A0h],r11
-    mov     r11,[rsp+18h]
-    mov     [rdx-98h],r11
     mov     rax,[rsp]
     mov     rcx,[rsp+8]
-    lea     rsp,[rsp+50h]
+    lea     rsp,[rsp+20h]
     jmp     L9
 L19:
     pop     rcx
     lea     rdx,[rsp+0E0h]
-    lea     rsp,[rdx-100h]
+    lea     rsp,[rdx-0F0h]
     mov     r11,[rdx-90h]
     mov     [rsp],r11
     mov     r11,[rdx-10h]
     mov     [rsp+8],r11
-    mov     r11,[rdx-0E0h]
-    mov     [rsp+10h],r11
-    mov     r11,[rdx-0D8h]
-    mov     [rsp+18h],r11
     mov     [rdx-88h],rbx
     mov     [rdx-90h],r12
-    mov     r11,[rsp+10h]
-    mov     [rdx-0A0h],r11
-    mov     r11,[rsp+18h]
-    mov     [rdx-98h],r11
     mov     rax,[rsp]
     mov     r12,[rsp+8]
-    lea     rsp,[rsp+50h]
+    lea     rsp,[rsp+20h]
     jmp     L10
 
 fn hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>>::rustc_entry::{closure#0}}>
@@ -2576,386 +2660,236 @@ fn hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@has
     push    r13
     push    r14
     push    r15
-    sub     rsp,90h
+    push    rbp
+    sub     rsp,148h
     mov     rbx,rdi
-    mov     [rsp+80h],rdx
+    mov     [rsp+140h],rdx
     mov     rax,rsi
     shr     rax,39h
     and     rax,7Fh
-    mov     r12,rax
-    mov     [rsp+40h],rsi
-    mov     rax,[rbx+8]
-    mov     [rsp+58h],rax
-    and     rsi,rax
-    mov     [rsp+48h],rsi
-    mov     r13,rsi
-    mov     r14d,0
-L0:
-    mov     [rsp+40h],r13
-    mov     rax,[rbx]
-    mov     [rsp+50h],rax
-    mov     [rsp+58h],rax
-    lea     rsi,[rax+r13]
-    mov     [rsp+48h],rsi
-    mov     [rsp+40h],rsi
-    lea     rdi,[rsp+30h]
-    call    image.sym59
-    lea     rdi,[rsp+50h]
-    mov     rsi,r12
-    movzx   esi,sil
-    call    image.sym49
-    mov     rax,[rsp+30h]
-    mov     rcx,[rsp+38h]
-    mov     [rsp+60h],rax
-    mov     [rsp+68h],rcx
-    mov     rax,[rsp+50h]
-    mov     ecx,[rsp+58h]
-    movzx   edx,word ptr [rsp+5Ch]
-    movzx   esi,word ptr [rsp+5Eh]
-    mov     [rsp+70h],rax
-    mov     [rsp+78h],ecx
-    mov     [rsp+7Ch],dx
-    mov     [rsp+7Eh],si
-    lea     rdi,[rsp+40h]
-    lea     rsi,[rsp+60h]
-    lea     rdx,[rsp+70h]
-    call    image.sym60
-    mov     rax,[rsp+40h]
-    mov     rcx,[rsp+48h]
-    mov     [rsp+60h],rax
-    mov     [rsp+68h],rcx
-    lea     rdi,[rsp+60h]
-    call    image.sym20
-    mov     [rsp+5Ch],eax
-    mov     r15,rax
-L1:
-    test    r15w,r15w
-    je      L5
-    mov     rdi,r15
-    call    ryo_hr_CttzW16
-    mov     eax,eax
-    mov     [rsp+58h],rax
-    mov     qword ptr [rsp+50h],1
-    mov     [rsp+5Eh],r15w
-    lea     ecx,[r15-1]
-    and     r15d,ecx
-    mov     [rsp+48h],rax
-    mov     qword ptr [rsp+40h],1
-    mov     [rsp+58h],rax
-    add     rax,r13
-    mov     rcx,[rbx+8]
-    and     rax,rcx
-    mov     [rsp+50h],rax
-    mov     rcx,[rbx]
-    mov     r11d,0
-    sub     r11,rax
-    mov     rax,r11
     mov     r11,rax
-    imul    r11,20h
-    add     r11,rcx
-    mov     rcx,r11
-    mov     rax,[rsp+80h]
-    mov     rdx,[rcx-18h]
-    mov     rcx,[rcx-10h]
-    mov     rsi,[rax+8]
-    mov     rax,[rax+10h]
-    cmp     rcx,rax
-    jne     L2
-    mov     [rsp+18h],rcx
-    mov     [rsp+8],rdx
-    mov     [rsp],rsi
-    lea     rdi,[rsp+0B0h]
-    lea     rsi,[ro+4]
-    call    qword ptr [image.sym67]
-    mov     eax,[rsp+24h]
-    test    eax,eax
-    sete    al
-    jmp     L3
-L2:
-    mov     eax,0
-L3:
-    test    al,al
-    je      L6
-    mov     rax,[rsp+50h]
-    mov     rcx,rax
-    mov     eax,1
-L4:
-    test    rax,rax
-    je      L9
-    jmp     L8
-L5:
-    mov     qword ptr [rsp+50h],0
-    mov     dword ptr [rsp+58h],0
-    mov     word ptr [rsp+5Ch],0
-    mov     word ptr [rsp+5Eh],0
-    mov     qword ptr [rsp+58h],0
-    lea     rdi,[rsp+50h]
-    mov     esi,0FFh
-    movzx   esi,sil
-    call    image.sym49
-    mov     rax,[rsp+30h]
-    mov     rdx,[rsp+38h]
-    mov     [rsp+60h],rax
-    mov     [rsp+68h],rdx
-    mov     rax,[rsp+50h]
-    mov     edx,[rsp+58h]
-    movzx   esi,word ptr [rsp+5Ch]
-    movzx   edi,word ptr [rsp+5Eh]
-    mov     [rsp+70h],rax
-    mov     [rsp+78h],edx
-    mov     [rsp+7Ch],si
-    mov     [rsp+7Eh],di
-    lea     rdi,[rsp+40h]
-    lea     rsi,[rsp+60h]
-    lea     rdx,[rsp+70h]
-    call    image.sym60
-    mov     rax,[rsp+40h]
-    mov     rdx,[rsp+48h]
-    mov     [rsp+60h],rax
-    mov     [rsp+68h],rdx
-    lea     rdi,[rsp+60h]
-    call    image.sym20
-    test    ax,ax
-    je      L7
-    mov     eax,0
-    mov     ecx,0
-    jmp     L4
-L6:
-    jmp     L1
-L7:
+    mov     [rsp+20h],r11
     mov     rax,[rbx+8]
-    mov     [rsp+48h],rax
-    add     r14,10h
-    mov     [rsp+40h],r14
-    add     r13,r14
-    and     r13,rax
-    jmp     L0
-L8:
+    and     rsi,rax
+    mov     r13,rsi
+    mov     qword ptr [rsp+28h],0
+L0:
     mov     rax,[rbx]
-    mov     r11d,0
+    lea     rax,[rax+r13]
+    mov     qword ptr [rsp+50h],0
+    mov     qword ptr [rsp+58h],0
+    lea     rcx,[rsp+50h]
+    lea     rdx,[image.k952]
+    test    rax,rax
+    je      L15
+    test    rcx,rcx
+    je      L15
+    cmp     rax,rcx
+    jae     L1
+    mov     rsi,rcx
+    sub     rsi,rax
+    jmp     L2
+L1:
+    mov     r11,rax
     sub     r11,rcx
     mov     rcx,r11
+    mov     rsi,rcx
+L2:
+    cmp     rsi,10h
+    jb      L15
+    mov     r15,[rax]
+    mov     rbp,[rax+8]
+    mov     [rsp+50h],r15
+    mov     [rsp+58h],rbp
+    mov     r11,[rsp+20h]
+    mov     [rsp+10h],r11
+    lea     rdi,[rsp+170h]
+    mov     esi,0FFFFFEF0h
+    mov     edx,0FFFFFEA0h
+    call    ryo_h_VsplatI8x16
+    mov     rax,[rsp+60h]
+    mov     rcx,[rsp+68h]
+    mov     rsi,rcx
+    shr     rsi,20h
+    mov     rdi,rcx
+    shr     rdi,30h
+    mov     ecx,ecx
+    movzx   esi,si
+    shl     rsi,20h
+    or      rcx,rsi
+    movzx   edi,di
+    shl     rdi,30h
+    or      rcx,rdi
+    mov     [rsp+80h],r15
+    mov     [rsp+88h],rbp
+    mov     [rsp+90h],rax
+    mov     [rsp+98h],rcx
+    lea     rdi,[rsp+170h]
+    mov     esi,0FFFFFF00h
+    mov     edx,0FFFFFF10h
+    mov     ecx,0FFFFFF20h
+    call    ryo_h_VeqI8x16
+    mov     rax,[rsp+70h]
+    mov     rcx,[rsp+78h]
+    mov     [rsp+0C0h],rax
+    mov     [rsp+0C8h],rcx
+    mov     [rsp+0B0h],rax
+    mov     [rsp+0B8h],rcx
+    mov     qword ptr [rsp+0C0h],0
+    mov     qword ptr [rsp+0C8h],0
+    lea     rdi,[rsp+170h]
+    mov     esi,0FFFFFF30h
+    mov     edx,0FFFFFF40h
+    mov     ecx,0FFFFFF50h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+170h]
+    mov     esi,0FFFFFF4Ah
+    mov     edx,0FFFFFF30h
+    call    ryo_h_VmsbI8x16
+    movzx   eax,word ptr [rsp+0BAh]
+    mov     [rsp+0BCh],eax
+    mov     r12,rax
+L3:
+    test    r12w,r12w
+    je      L7
+    mov     rdi,r12
+    call    ryo_hr_CttzW16
+    mov     eax,eax
+    lea     ecx,[r12-1]
+    and     r12d,ecx
+    add     rax,r13
+    mov     rcx,[rbx+8]
+    mov     r14,rax
+    and     r14,rcx
+    mov     rax,[rbx]
+    mov     ecx,0
+    sub     rcx,r14
     mov     r11,rcx
     imul    r11,20h
     add     r11,rax
     mov     rax,r11
-    jmp     L12
+    mov     rcx,[rsp+140h]
+    mov     rsi,[rax-18h]
+    mov     rax,[rax-10h]
+    mov     rdi,[rcx+8]
+    mov     rcx,[rcx+10h]
+    cmp     rax,rcx
+    jne     L4
+    mov     [rsp+38h],rax
+    mov     [rsp+8],rsi
+    mov     [rsp],rdi
+    lea     rdi,[rsp+170h]
+    lea     rsi,[ro+4]
+    call    qword ptr [image.sym58]
+    mov     eax,[rsp+44h]
+    test    eax,eax
+    sete    al
+    jmp     L5
+L4:
+    mov     eax,0
+L5:
+    test    al,al
+    je      L8
+    mov     eax,1
+L6:
+    test    rax,rax
+    je      L11
+    jmp     L10
+L7:
+    mov     qword ptr [rsp+10h],0FFh
+    lea     rdi,[rsp+170h]
+    mov     esi,0FFFFFF60h
+    mov     edx,0FFFFFEA0h
+    call    ryo_h_VsplatI8x16
+    mov     rax,[rsp+0D0h]
+    mov     rcx,[rsp+0D8h]
+    mov     rsi,rcx
+    shr     rsi,20h
+    mov     rdi,rcx
+    shr     rdi,30h
+    mov     ecx,ecx
+    movzx   esi,si
+    shl     rsi,20h
+    or      rcx,rsi
+    movzx   edi,di
+    shl     rdi,30h
+    or      rcx,rdi
+    mov     [rsp+0F0h],r15
+    mov     [rsp+0F8h],rbp
+    mov     [rsp+100h],rax
+    mov     [rsp+108h],rcx
+    lea     rdi,[rsp+170h]
+    mov     esi,0FFFFFF70h
+    mov     edx,0FFFFFF80h
+    mov     ecx,0FFFFFF90h
+    call    ryo_h_VeqI8x16
+    mov     rax,[rsp+0E0h]
+    mov     rcx,[rsp+0E8h]
+    mov     [rsp+130h],rax
+    mov     [rsp+138h],rcx
+    mov     [rsp+120h],rax
+    mov     [rsp+128h],rcx
+    mov     qword ptr [rsp+130h],0
+    mov     qword ptr [rsp+138h],0
+    lea     rdi,[rsp+170h]
+    mov     esi,0FFFFFFA0h
+    mov     edx,0FFFFFFB0h
+    mov     ecx,0FFFFFFC0h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+170h]
+    mov     esi,0FFFFFFBAh
+    mov     edx,0FFFFFFA0h
+    call    ryo_h_VmsbI8x16
+    movzx   eax,word ptr [rsp+12Ah]
+    mov     [rsp+12Ch],eax
+    test    ax,ax
+    je      L9
+    mov     eax,0
+    mov     r14d,0
+    jmp     L6
+L8:
+    jmp     L3
 L9:
-    mov     ecx,0
+    mov     rax,[rbx+8]
+    mov     rcx,[rsp+28h]
+    add     rcx,10h
+    add     r13,rcx
+    and     r13,rax
+    mov     [rsp+28h],rcx
+    jmp     L0
 L10:
+    mov     rax,[rbx]
+    mov     ecx,0
+    sub     rcx,r14
+    mov     r11,rcx
+    imul    r11,20h
+    add     r11,rax
+    mov     rax,r11
+    jmp     L14
+L11:
+    mov     ecx,0
+L12:
     mov     rax,rcx
-    add     rsp,90h
+    add     rsp,148h
+    pop     rbp
     pop     r15
     pop     r14
     pop     r13
     pop     r12
     pop     rbx
     ret
-L11:
-    mov     rcx,rax
-    jmp     L10
-L12:
-    jmp     L11
-  ; OSR entries
-    lea     r11,[L13]
-    movsxd  rax,[r11+rax*4]
-    add     rax,r11
-    jmp     rax
 L13:
-    .long   L14
-    .long   L15
-    .long   L16
-    .long   L17
-L14:
-    ret
-L15:
-    ret
-L16:
-    ret
-L17:
-    ret
-
-fn hashbrown::raw::RawTable::<(std::string::String, usize)>::insert_no_grow
-    push    rbx
-    push    r12
-    push    r13
-    sub     rsp,0A0h
-    mov     rbx,rdi
-    mov     r12,rsi
-    mov     rax,[rdx]
-    mov     rcx,[rdx+8]
-    mov     rsi,[rdx+10h]
-    mov     rdx,[rdx+18h]
-    mov     [rsp+78h],rax
-    mov     [rsp+80h],rcx
-    mov     [rsp+88h],rsi
-    mov     [rsp+90h],rdx
-    mov     [rsp+50h],r12
-    mov     rax,[rbx+8]
-    and     rax,r12
-    mov     [rsp+58h],rax
-    mov     [rsp+40h],rax
-    mov     qword ptr [rsp+48h],0
-L0:
-    mov     rax,[rsp+40h]
-    mov     rcx,[rbx]
-    mov     [rsp+60h],rcx
-    mov     [rsp+68h],rcx
-    lea     rsi,[rcx+rax]
-    lea     rdi,[rsp+60h]
-    call    image.sym59
-    mov     rax,[rsp+60h]
-    mov     rcx,[rsp+68h]
-    mov     [rsp+50h],rax
-    mov     [rsp+58h],rcx
-    lea     rdx,[rsp+50h]
-    mov     [rsp+68h],rdx
-    lea     rdx,[rsp+40h]
-    mov     [rsp+60h],rdx
-    mov     edx,[rsp+5Ch]
-    mov     [rsp+10h],rax
-    mov     [rsp+18h],ecx
-    mov     [rsp+1Ch],edx
-    lea     rdi,[rsp+10h]
-    call    image.sym20
-    test    ax,ax
-    je      L3
-    jmp     L2
-L1:
-    cmp     rcx,1
-    je      L5
-    jmp     L4
-L2:
-    mov     [rsp],rax
-    lea     rdi,[rsp+0B0h]
-    mov     esi,0FFFFFF6Ch
-    mov     edx,0FFFFFF50h
-    call    ryo_h_CttzW16
-    mov     eax,[rsp+1Ch]
-    mov     rcx,[rsp+40h]
-    add     rcx,rax
-    mov     rax,[rbx+8]
-    and     rcx,rax
-    mov     rdx,rcx
-    mov     ecx,1
-    jmp     L1
-L3:
-    mov     ecx,0
-    mov     edx,0
-    jmp     L1
-L4:
-    mov     rax,[rbx+8]
-    mov     [rsp+68h],rax
-    mov     rcx,[rsp+48h]
-    add     rcx,10h
-    mov     [rsp+48h],rcx
-    mov     [rsp+60h],rcx
-    mov     rsi,[rsp+40h]
-    add     rsi,rcx
-    mov     [rsp+40h],rsi
-    and     rsi,rax
-    mov     [rsp+40h],rsi
-    jmp     L0
-L5:
-    mov     [rsp+68h],rdx
-    mov     rsi,[rbx]
-    lea     rax,[rsi+rdx]
-    movzx   eax,byte ptr [rax]
-    and     eax,80h
-    test    al,al
-    jne     L7
-    lea     rdi,[rsp+20h]
-    call    image.sym19
-    mov     rax,[rsp+20h]
-    mov     rcx,[rsp+28h]
-    mov     [rsp+30h],rax
-    mov     [rsp+38h],rcx
-    lea     rdi,[rsp+30h]
-    call    image.sym20
-    mov     rdi,rax
-    test    di,di
-    je      L9
-    jmp     L8
-L6:
-    mov     rcx,[rbx]
-    lea     rcx,[rcx+rax]
-    movzx   esi,byte ptr [rcx]
-    mov     r8,r12
-    shr     r8,39h
-    and     r8,7Fh
-    lea     r9,[rax-10h]
-    mov     r13,[rbx+8]
-    and     r9,r13
-    add     r9,10h
-    mov     [rcx],r8b
-    mov     rcx,[rbx]
-    lea     rcx,[rcx+r9]
-    mov     [rcx],r8b
-    mov     rcx,[rbx]
-    mov     r11d,0
-    sub     r11,rax
-    mov     rax,r11
-    mov     r11,rax
-    imul    r11,20h
-    add     r11,rcx
-    mov     rax,r11
-    jmp     L11
-L7:
-    mov     rax,rdx
-    jmp     L6
-L8:
-    call    ryo_hr_CttzW16
     mov     rcx,rax
-    mov     ecx,ecx
-    mov     rax,rcx
-    jmp     L6
-L9:
-    mov     eax,0
-    jmp     L6
-L10:
-    mov     rcx,rsi
-    and     ecx,1
-    test    cl,cl
-    setne   cl
-    movzx   ecx,cl
-    mov     rdx,[rbx+10h]
-    sub     rdx,rcx
-    mov     [rbx+10h],rdx
-    mov     rcx,[rsp+78h]
-    mov     rdx,[rsp+80h]
-    mov     rdi,[rsp+88h]
-    mov     r8,[rsp+90h]
-    jmp     L13
-L11:
-    jmp     L10
-L12:
-    mov     [rax-20h],rcx
-    mov     [rax-18h],rdx
-    mov     [rax-10h],rdi
-    mov     [rax-8],r8
-    mov     rsi,[rbx+18h]
-    add     rsi,1
-    mov     [rbx+18h],rsi
-    add     rsp,0A0h
-    pop     r13
-    pop     r12
-    pop     rbx
-    ret
-L13:
     jmp     L12
-    mov     rbx,rax
-    jmp     L15
 L14:
-    mov     [rsp],rbx
-    lea     rdi,[rsp+0B0h]
-    mov     esi,0FFFFFF50h
-    call    ryo_h_Resume
-    ud2
+    jmp     L13
 L15:
-    lea     rdi,[rsp+78h]
-    call    qword ptr [image.fn51.slot]
-    jmp     L14
-    call    sym2
+    lea     rdi,[image.k4563]
+    mov     esi,237h
+    mov     rcx,rdx
+    mov     edx,0
+    movzx   edx,dl
+    call    image.sym53
     ud2
   ; OSR entries
     lea     r11,[L16]
@@ -2967,9 +2901,6 @@ L16:
     .long   L18
     .long   L19
     .long   L20
-    .long   L21
-    .long   L22
-    .long   L23
 L17:
     ret
 L18:
@@ -2977,12 +2908,6 @@ L18:
 L19:
     ret
 L20:
-    ret
-L21:
-    ret
-L22:
-    ret
-L23:
     ret
 
 fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::RandomState>::{closure#0}}>
@@ -3085,12 +3010,12 @@ L3:
     mov     rsi,[rcx-18h]
     mov     r8,[rcx-10h]
     mov     rdx,r8
-    call    image.fn197
+    call    image.fn206
     mov     byte ptr [rsp+0Fh],0FFh
     lea     rsi,[rsp+0Fh]
     lea     rdi,[rsp+38h]
     mov     edx,1
-    call    image.fn197
+    call    image.fn206
     mov     rsi,[rsp+38h]
     mov     [rsp+10h],rsi
     mov     rdi,[rsp+40h]
@@ -3158,7 +3083,7 @@ L3:
     xor     rsi,0FFh
     mov     [rsp+18h],rsi
     mov     rdi,r12
-    call    image.fn209
+    call    image.fn218
     mov     rsi,[rsp+10h]
     mov     rdi,[rsp+20h]
     xor     rsi,rdi
@@ -3201,34 +3126,243 @@ L11:
 
 fn hashbrown::raw::RawTable::<(u64, u64)>::erase
     push    rbx
-    sub     rsp,10h
-    mov     rbx,rsi
-    mov     rax,[rdi]
-    sub     rax,rbx
-    mov     rsi,rax
-    sar     rsi,4
-    call    qword ptr [image.fn146.slot]
-    mov     rdi,rbx
-    lea     rdi,[rdi-10h]
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    push    rbp
+    sub     rsp,118h
+    mov     rbx,rdi
+    mov     r12,rsi
+    mov     rax,[rbx]
+    mov     rcx,rax
+    sub     rcx,r12
+    mov     r13,rcx
+    sar     r13,4
+    lea     rcx,[r13-10h]
+    mov     rdx,[rbx+8]
+    and     rcx,rdx
+    lea     rax,[rax+rcx]
+    mov     qword ptr [rsp+10h],0
+    mov     qword ptr [rsp+18h],0
+    lea     rcx,[rsp+10h]
+    lea     rdx,[image.k952]
+    test    rax,rax
+    je      L8
+    test    rcx,rcx
+    je      L8
+    cmp     rax,rcx
+    jae     L0
+    mov     rsi,rcx
+    sub     rsi,rax
     jmp     L1
 L0:
+    mov     r11,rax
+    sub     r11,rcx
+    mov     rcx,r11
+    mov     rsi,rcx
+L1:
+    cmp     rsi,10h
+    jb      L8
+    mov     r14,[rax]
+    mov     r15,[rax+8]
+    mov     [rsp+10h],r14
+    mov     [rsp+18h],r15
+    mov     qword ptr [rsp],0FFh
+    lea     rdi,[rsp+140h]
+    mov     esi,0FFFFFEE0h
+    mov     edx,0FFFFFEC0h
+    call    ryo_h_VsplatI8x16
+    mov     rax,[rsp+20h]
+    mov     rcx,[rsp+28h]
+    mov     rsi,rax
+    shr     rsi,20h
+    mov     rdi,rcx
+    shr     rdi,20h
+    mov     eax,eax
+    mov     esi,esi
+    shl     rsi,20h
+    or      rax,rsi
+    mov     ecx,ecx
+    mov     edi,edi
+    shl     rdi,20h
+    or      rcx,rdi
+    mov     [rsp+40h],r14
+    mov     [rsp+48h],r15
+    mov     [rsp+50h],rax
+    mov     [rsp+58h],rcx
+    lea     rdi,[rsp+140h]
+    mov     esi,0FFFFFEF0h
+    mov     edx,0FFFFFF00h
+    mov     ecx,0FFFFFF10h
+    call    ryo_h_VeqI8x16
+    mov     rax,[rsp+30h]
+    mov     rcx,[rsp+38h]
+    mov     [rsp+80h],rax
+    mov     [rsp+88h],rcx
+    mov     [rsp+70h],rax
+    mov     [rsp+78h],rcx
+    mov     qword ptr [rsp+80h],0
+    mov     qword ptr [rsp+88h],0
+    lea     rdi,[rsp+140h]
+    mov     esi,0FFFFFF20h
+    mov     edx,0FFFFFF30h
+    mov     ecx,0FFFFFF40h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+140h]
+    mov     esi,0FFFFFF3Ah
+    mov     edx,0FFFFFF20h
+    call    ryo_h_VmsbI8x16
+    movzx   eax,word ptr [rsp+7Ah]
+    mov     [rsp+7Ch],eax
+    mov     r14,rax
+    mov     rax,[rbx]
+    lea     rax,[rax+r13]
+    mov     qword ptr [rsp+90h],0
+    mov     qword ptr [rsp+98h],0
+    lea     rcx,[rsp+90h]
+    lea     rsi,[image.k952]
+    test    rax,rax
+    je      L9
+    test    rcx,rcx
+    je      L9
+    cmp     rax,rcx
+    jae     L2
+    mov     rdi,rcx
+    sub     rdi,rax
+    jmp     L3
+L2:
+    mov     r11,rax
+    sub     r11,rcx
+    mov     rcx,r11
+    mov     rdi,rcx
+L3:
+    cmp     rdi,10h
+    jb      L9
+    mov     r15,[rax]
+    mov     rbp,[rax+8]
+    mov     [rsp+90h],r15
+    mov     [rsp+98h],rbp
+    mov     qword ptr [rsp],0FFh
+    lea     rdi,[rsp+140h]
+    mov     esi,0FFFFFF60h
+    mov     edx,0FFFFFEC0h
+    call    ryo_h_VsplatI8x16
+    mov     rax,[rsp+0A0h]
+    mov     rcx,[rsp+0A8h]
+    mov     rdi,rax
+    shr     rdi,20h
+    mov     r8,rcx
+    shr     r8,20h
+    mov     eax,eax
+    mov     edi,edi
+    shl     rdi,20h
+    or      rax,rdi
+    mov     ecx,ecx
+    mov     r8d,r8d
+    shl     r8,20h
+    or      rcx,r8
+    mov     [rsp+0C0h],r15
+    mov     [rsp+0C8h],rbp
+    mov     [rsp+0D0h],rax
+    mov     [rsp+0D8h],rcx
+    lea     rdi,[rsp+140h]
+    mov     esi,0FFFFFF70h
+    mov     edx,0FFFFFF80h
+    mov     ecx,0FFFFFF90h
+    call    ryo_h_VeqI8x16
+    mov     rax,[rsp+0B0h]
+    mov     rcx,[rsp+0B8h]
+    mov     [rsp+100h],rax
+    mov     [rsp+108h],rcx
+    mov     [rsp+0F0h],rax
+    mov     [rsp+0F8h],rcx
+    mov     qword ptr [rsp+100h],0
+    mov     qword ptr [rsp+108h],0
+    lea     rdi,[rsp+140h]
+    mov     esi,0FFFFFFA0h
+    mov     edx,0FFFFFFB0h
+    mov     ecx,0FFFFFFC0h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+140h]
+    mov     esi,0FFFFFFBAh
+    mov     edx,0FFFFFFA0h
+    call    ryo_h_VmsbI8x16
+    movzx   eax,word ptr [rsp+0FAh]
+    mov     [rsp+0FCh],eax
+    mov     r15,rax
+    mov     rdi,r14
+    call    ryo_hr_CtlzW16
+    mov     r14d,eax
+    mov     rdi,r15
+    call    ryo_hr_CttzW16
+    mov     eax,eax
+    add     r14,rax
+    cmp     r14,10h
+    jb      L4
+    mov     eax,80h
+    jmp     L5
+L4:
+    mov     rax,[rbx+10h]
+    add     rax,1
+    mov     [rbx+10h],rax
+    mov     eax,0FFh
+L5:
+    lea     rcx,[r13-10h]
+    mov     rdi,[rbx+8]
+    and     rcx,rdi
+    add     rcx,10h
+    mov     rdi,[rbx]
+    lea     rdi,[rdi+r13]
+    mov     [rdi],al
+    mov     rdi,[rbx]
+    lea     rdi,[rdi+rcx]
+    mov     [rdi],al
+    mov     rax,[rbx+18h]
+    sub     rax,1
+    mov     [rbx+18h],rax
+    mov     rdi,r12
+    lea     rdi,[rdi-10h]
+    jmp     L7
+L6:
     call    sym1
-    add     rsp,10h
+    add     rsp,118h
+    pop     rbp
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
     pop     rbx
     ret
-L1:
-    jmp     L0
+L7:
+    jmp     L6
+L8:
+    lea     rdi,[image.k4563]
+    mov     esi,237h
+    mov     rcx,rdx
+    mov     edx,0
+    movzx   edx,dl
+    call    image.sym53
+    ud2
+L9:
+    lea     rdi,[image.k4563]
+    mov     edx,0
+    mov     rcx,rsi
+    mov     esi,237h
+    movzx   edx,dl
+    call    image.sym53
+    ud2
   ; OSR entries
-    lea     r11,[L2]
+    lea     r11,[L10]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L2:
-    .long   L3
-    .long   L4
-L3:
+L10:
+    .long   L11
+    .long   L12
+L11:
     ret
-L4:
+L12:
     ret
 
 fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::map::equivalent_key<u64, u64, u64>::{closure#0}}>
@@ -3237,142 +3371,185 @@ fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::map::equiv
     push    r13
     push    r14
     push    r15
-    sub     rsp,70h
+    push    rbp
+    sub     rsp,118h
     mov     rbx,rdi
-    mov     [rsp+60h],rdx
+    mov     [rsp+110h],rdx
     mov     rax,rsi
     shr     rax,39h
     and     rax,7Fh
-    mov     r12,rax
-    mov     [rsp+20h],rsi
+    mov     r11,rax
+    mov     [rsp+10h],r11
     mov     rax,[rbx+8]
-    mov     [rsp+38h],rax
     and     rsi,rax
-    mov     [rsp+28h],rsi
     mov     r13,rsi
     mov     r14d,0
 L0:
-    mov     [rsp+20h],r13
     mov     rax,[rbx]
-    mov     [rsp+30h],rax
-    mov     [rsp+38h],rax
-    lea     rsi,[rax+r13]
-    mov     [rsp+28h],rsi
-    mov     [rsp+20h],rsi
-    lea     rdi,[rsp+10h]
-    call    image.sym59
-    lea     rdi,[rsp+30h]
-    mov     rsi,r12
-    movzx   esi,sil
-    call    image.sym49
-    mov     rax,[rsp+10h]
-    mov     rcx,[rsp+18h]
-    mov     [rsp+40h],rax
-    mov     [rsp+48h],rcx
-    mov     rax,[rsp+30h]
-    mov     ecx,[rsp+38h]
-    movzx   edx,word ptr [rsp+3Ch]
-    movzx   esi,word ptr [rsp+3Eh]
-    mov     [rsp+50h],rax
-    mov     [rsp+58h],ecx
-    mov     [rsp+5Ch],dx
-    mov     [rsp+5Eh],si
-    lea     rdi,[rsp+20h]
-    lea     rsi,[rsp+40h]
-    lea     rdx,[rsp+50h]
-    call    image.sym60
-    mov     rax,[rsp+20h]
-    mov     rcx,[rsp+28h]
-    mov     [rsp+40h],rax
-    mov     [rsp+48h],rcx
-    lea     rdi,[rsp+40h]
-    call    image.sym20
-    mov     [rsp+3Ch],eax
-    mov     r15,rax
+    lea     rax,[rax+r13]
+    mov     qword ptr [rsp+20h],0
+    mov     qword ptr [rsp+28h],0
+    lea     rcx,[rsp+20h]
+    lea     rdx,[image.k952]
+    test    rax,rax
+    je      L13
+    test    rcx,rcx
+    je      L13
+    cmp     rax,rcx
+    jae     L1
+    mov     rsi,rcx
+    sub     rsi,rax
+    jmp     L2
 L1:
-    test    r15w,r15w
-    je      L3
-    mov     rdi,r15
+    mov     r11,rax
+    sub     r11,rcx
+    mov     rcx,r11
+    mov     rsi,rcx
+L2:
+    cmp     rsi,10h
+    jb      L13
+    mov     r15,[rax]
+    mov     rbp,[rax+8]
+    mov     [rsp+20h],r15
+    mov     [rsp+28h],rbp
+    mov     r11,[rsp+10h]
+    mov     [rsp],r11
+    lea     rdi,[rsp+140h]
+    mov     esi,0FFFFFEF0h
+    mov     edx,0FFFFFEC0h
+    call    ryo_h_VsplatI8x16
+    mov     rax,[rsp+30h]
+    mov     rcx,[rsp+38h]
+    mov     rsi,rcx
+    shr     rsi,20h
+    mov     rdi,rcx
+    shr     rdi,30h
+    mov     ecx,ecx
+    movzx   esi,si
+    shl     rsi,20h
+    or      rcx,rsi
+    movzx   edi,di
+    shl     rdi,30h
+    or      rcx,rdi
+    mov     [rsp+50h],r15
+    mov     [rsp+58h],rbp
+    mov     [rsp+60h],rax
+    mov     [rsp+68h],rcx
+    lea     rdi,[rsp+140h]
+    mov     esi,0FFFFFF00h
+    mov     edx,0FFFFFF10h
+    mov     ecx,0FFFFFF20h
+    call    ryo_h_VeqI8x16
+    mov     rax,[rsp+40h]
+    mov     rcx,[rsp+48h]
+    mov     [rsp+90h],rax
+    mov     [rsp+98h],rcx
+    mov     [rsp+80h],rax
+    mov     [rsp+88h],rcx
+    mov     qword ptr [rsp+90h],0
+    mov     qword ptr [rsp+98h],0
+    lea     rdi,[rsp+140h]
+    mov     esi,0FFFFFF30h
+    mov     edx,0FFFFFF40h
+    mov     ecx,0FFFFFF50h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+140h]
+    mov     esi,0FFFFFF4Ah
+    mov     edx,0FFFFFF30h
+    call    ryo_h_VmsbI8x16
+    movzx   eax,word ptr [rsp+8Ah]
+    mov     [rsp+8Ch],eax
+    mov     r12,rax
+L3:
+    test    r12w,r12w
+    je      L5
+    mov     rdi,r12
     call    ryo_hr_CttzW16
     mov     eax,eax
-    mov     [rsp+38h],rax
-    mov     qword ptr [rsp+30h],1
-    mov     [rsp+3Eh],r15w
-    lea     ecx,[r15-1]
-    and     r15d,ecx
-    mov     [rsp+28h],rax
-    mov     qword ptr [rsp+20h],1
-    mov     [rsp+38h],rax
+    lea     ecx,[r12-1]
+    and     r12d,ecx
     add     rax,r13
     mov     rcx,[rbx+8]
     and     rax,rcx
-    mov     [rsp+30h],rax
     mov     rcx,[rbx]
-    mov     edx,0
-    sub     rdx,rax
-    mov     r11,rdx
+    mov     esi,0
+    sub     rsi,rax
+    mov     r11,rsi
     imul    r11,10h
     add     r11,rcx
     mov     rcx,r11
-    mov     rdx,[rsp+60h]
-    mov     rdx,[rdx]
+    mov     rsi,[rsp+110h]
+    mov     rsi,[rsi]
     mov     rcx,[rcx-10h]
-    cmp     rdx,rcx
-    jne     L4
+    cmp     rsi,rcx
+    jne     L6
     mov     rcx,rax
     mov     eax,1
-L2:
+L4:
     test    rax,rax
-    je      L7
-    jmp     L6
-L3:
-    mov     qword ptr [rsp+30h],0
-    mov     dword ptr [rsp+38h],0
-    mov     word ptr [rsp+3Ch],0
-    mov     word ptr [rsp+3Eh],0
-    mov     qword ptr [rsp+38h],0
-    lea     rdi,[rsp+30h]
-    mov     esi,0FFh
-    movzx   esi,sil
-    call    image.sym49
-    mov     rax,[rsp+10h]
-    mov     rdx,[rsp+18h]
-    mov     [rsp+40h],rax
-    mov     [rsp+48h],rdx
-    mov     rax,[rsp+30h]
-    mov     edx,[rsp+38h]
-    movzx   esi,word ptr [rsp+3Ch]
-    movzx   edi,word ptr [rsp+3Eh]
-    mov     [rsp+50h],rax
-    mov     [rsp+58h],edx
-    mov     [rsp+5Ch],si
-    mov     [rsp+5Eh],di
-    lea     rdi,[rsp+20h]
-    lea     rsi,[rsp+40h]
-    lea     rdx,[rsp+50h]
-    call    image.sym60
-    mov     rax,[rsp+20h]
-    mov     rdx,[rsp+28h]
-    mov     [rsp+40h],rax
-    mov     [rsp+48h],rdx
-    lea     rdi,[rsp+40h]
-    call    image.sym20
+    je      L9
+    jmp     L8
+L5:
+    mov     qword ptr [rsp],0FFh
+    lea     rdi,[rsp+140h]
+    mov     esi,0FFFFFF60h
+    mov     edx,0FFFFFEC0h
+    call    ryo_h_VsplatI8x16
+    mov     rax,[rsp+0A0h]
+    mov     rsi,[rsp+0A8h]
+    mov     rdi,rsi
+    shr     rdi,20h
+    mov     r8,rsi
+    shr     r8,30h
+    mov     esi,esi
+    movzx   edi,di
+    shl     rdi,20h
+    or      rsi,rdi
+    movzx   r8d,r8w
+    shl     r8,30h
+    or      rsi,r8
+    mov     [rsp+0C0h],r15
+    mov     [rsp+0C8h],rbp
+    mov     [rsp+0D0h],rax
+    mov     [rsp+0D8h],rsi
+    lea     rdi,[rsp+140h]
+    mov     esi,0FFFFFF70h
+    mov     edx,0FFFFFF80h
+    mov     ecx,0FFFFFF90h
+    call    ryo_h_VeqI8x16
+    mov     rax,[rsp+0B0h]
+    mov     rsi,[rsp+0B8h]
+    mov     [rsp+100h],rax
+    mov     [rsp+108h],rsi
+    mov     [rsp+0F0h],rax
+    mov     [rsp+0F8h],rsi
+    mov     qword ptr [rsp+100h],0
+    mov     qword ptr [rsp+108h],0
+    lea     rdi,[rsp+140h]
+    mov     esi,0FFFFFFA0h
+    mov     edx,0FFFFFFB0h
+    mov     ecx,0FFFFFFC0h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+140h]
+    mov     esi,0FFFFFFBAh
+    mov     edx,0FFFFFFA0h
+    call    ryo_h_VmsbI8x16
+    movzx   eax,word ptr [rsp+0FAh]
+    mov     [rsp+0FCh],eax
     test    ax,ax
-    je      L5
+    je      L7
     mov     eax,0
     mov     ecx,0
-    jmp     L2
-L4:
-    jmp     L1
-L5:
+    jmp     L4
+L6:
+    jmp     L3
+L7:
     mov     rax,[rbx+8]
-    mov     [rsp+28h],rax
     add     r14,10h
-    mov     [rsp+20h],r14
     add     r13,r14
     and     r13,rax
     jmp     L0
-L6:
+L8:
     mov     rax,[rbx]
     mov     r11d,0
     sub     r11,rcx
@@ -3381,40 +3558,49 @@ L6:
     imul    r11,10h
     add     r11,rax
     mov     rax,r11
-    jmp     L10
-L7:
+    jmp     L12
+L9:
     mov     ecx,0
-L8:
+L10:
     mov     rax,rcx
-    add     rsp,70h
+    add     rsp,118h
+    pop     rbp
     pop     r15
     pop     r14
     pop     r13
     pop     r12
     pop     rbx
     ret
-L9:
+L11:
     mov     rcx,rax
-    jmp     L8
-L10:
-    jmp     L9
+    jmp     L10
+L12:
+    jmp     L11
+L13:
+    lea     rdi,[image.k4563]
+    mov     esi,237h
+    mov     rcx,rdx
+    mov     edx,0
+    movzx   edx,dl
+    call    image.sym53
+    ud2
   ; OSR entries
-    lea     r11,[L11]
+    lea     r11,[L14]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L11:
-    .long   L12
-    .long   L13
-    .long   L14
-    .long   L15
-L12:
-    ret
-L13:
-    ret
 L14:
-    ret
+    .long   L15
+    .long   L16
+    .long   L17
+    .long   L18
 L15:
+    ret
+L16:
+    ret
+L17:
+    ret
+L18:
     ret
 
 fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::RandomState>>::rustc_entry::{closure#0}}>
@@ -3423,142 +3609,185 @@ fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entr
     push    r13
     push    r14
     push    r15
-    sub     rsp,70h
+    push    rbp
+    sub     rsp,118h
     mov     rbx,rdi
-    mov     [rsp+60h],rdx
+    mov     [rsp+110h],rdx
     mov     rax,rsi
     shr     rax,39h
     and     rax,7Fh
-    mov     r12,rax
-    mov     [rsp+20h],rsi
+    mov     r11,rax
+    mov     [rsp+10h],r11
     mov     rax,[rbx+8]
-    mov     [rsp+38h],rax
     and     rsi,rax
-    mov     [rsp+28h],rsi
     mov     r13,rsi
     mov     r14d,0
 L0:
-    mov     [rsp+20h],r13
     mov     rax,[rbx]
-    mov     [rsp+30h],rax
-    mov     [rsp+38h],rax
-    lea     rsi,[rax+r13]
-    mov     [rsp+28h],rsi
-    mov     [rsp+20h],rsi
-    lea     rdi,[rsp+10h]
-    call    image.sym59
-    lea     rdi,[rsp+30h]
-    mov     rsi,r12
-    movzx   esi,sil
-    call    image.sym49
-    mov     rax,[rsp+10h]
-    mov     rcx,[rsp+18h]
-    mov     [rsp+40h],rax
-    mov     [rsp+48h],rcx
-    mov     rax,[rsp+30h]
-    mov     ecx,[rsp+38h]
-    movzx   edx,word ptr [rsp+3Ch]
-    movzx   esi,word ptr [rsp+3Eh]
-    mov     [rsp+50h],rax
-    mov     [rsp+58h],ecx
-    mov     [rsp+5Ch],dx
-    mov     [rsp+5Eh],si
-    lea     rdi,[rsp+20h]
-    lea     rsi,[rsp+40h]
-    lea     rdx,[rsp+50h]
-    call    image.sym60
-    mov     rax,[rsp+20h]
-    mov     rcx,[rsp+28h]
-    mov     [rsp+40h],rax
-    mov     [rsp+48h],rcx
-    lea     rdi,[rsp+40h]
-    call    image.sym20
-    mov     [rsp+3Ch],eax
-    mov     r15,rax
+    lea     rax,[rax+r13]
+    mov     qword ptr [rsp+20h],0
+    mov     qword ptr [rsp+28h],0
+    lea     rcx,[rsp+20h]
+    lea     rdx,[image.k952]
+    test    rax,rax
+    je      L13
+    test    rcx,rcx
+    je      L13
+    cmp     rax,rcx
+    jae     L1
+    mov     rsi,rcx
+    sub     rsi,rax
+    jmp     L2
 L1:
-    test    r15w,r15w
-    je      L3
-    mov     rdi,r15
+    mov     r11,rax
+    sub     r11,rcx
+    mov     rcx,r11
+    mov     rsi,rcx
+L2:
+    cmp     rsi,10h
+    jb      L13
+    mov     r15,[rax]
+    mov     rbp,[rax+8]
+    mov     [rsp+20h],r15
+    mov     [rsp+28h],rbp
+    mov     r11,[rsp+10h]
+    mov     [rsp],r11
+    lea     rdi,[rsp+140h]
+    mov     esi,0FFFFFEF0h
+    mov     edx,0FFFFFEC0h
+    call    ryo_h_VsplatI8x16
+    mov     rax,[rsp+30h]
+    mov     rcx,[rsp+38h]
+    mov     rsi,rcx
+    shr     rsi,20h
+    mov     rdi,rcx
+    shr     rdi,30h
+    mov     ecx,ecx
+    movzx   esi,si
+    shl     rsi,20h
+    or      rcx,rsi
+    movzx   edi,di
+    shl     rdi,30h
+    or      rcx,rdi
+    mov     [rsp+50h],r15
+    mov     [rsp+58h],rbp
+    mov     [rsp+60h],rax
+    mov     [rsp+68h],rcx
+    lea     rdi,[rsp+140h]
+    mov     esi,0FFFFFF00h
+    mov     edx,0FFFFFF10h
+    mov     ecx,0FFFFFF20h
+    call    ryo_h_VeqI8x16
+    mov     rax,[rsp+40h]
+    mov     rcx,[rsp+48h]
+    mov     [rsp+90h],rax
+    mov     [rsp+98h],rcx
+    mov     [rsp+80h],rax
+    mov     [rsp+88h],rcx
+    mov     qword ptr [rsp+90h],0
+    mov     qword ptr [rsp+98h],0
+    lea     rdi,[rsp+140h]
+    mov     esi,0FFFFFF30h
+    mov     edx,0FFFFFF40h
+    mov     ecx,0FFFFFF50h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+140h]
+    mov     esi,0FFFFFF4Ah
+    mov     edx,0FFFFFF30h
+    call    ryo_h_VmsbI8x16
+    movzx   eax,word ptr [rsp+8Ah]
+    mov     [rsp+8Ch],eax
+    mov     r12,rax
+L3:
+    test    r12w,r12w
+    je      L5
+    mov     rdi,r12
     call    ryo_hr_CttzW16
     mov     eax,eax
-    mov     [rsp+38h],rax
-    mov     qword ptr [rsp+30h],1
-    mov     [rsp+3Eh],r15w
-    lea     ecx,[r15-1]
-    and     r15d,ecx
-    mov     [rsp+28h],rax
-    mov     qword ptr [rsp+20h],1
-    mov     [rsp+38h],rax
+    lea     ecx,[r12-1]
+    and     r12d,ecx
     add     rax,r13
     mov     rcx,[rbx+8]
     and     rax,rcx
-    mov     [rsp+30h],rax
     mov     rcx,[rbx]
-    mov     edx,0
-    sub     rdx,rax
-    mov     r11,rdx
+    mov     esi,0
+    sub     rsi,rax
+    mov     r11,rsi
     imul    r11,10h
     add     r11,rcx
     mov     rcx,r11
-    mov     rdx,[rsp+60h]
+    mov     rsi,[rsp+110h]
     mov     rcx,[rcx-10h]
-    mov     rdx,[rdx]
-    cmp     rcx,rdx
-    jne     L4
+    mov     rsi,[rsi]
+    cmp     rcx,rsi
+    jne     L6
     mov     rcx,rax
     mov     eax,1
-L2:
+L4:
     test    rax,rax
-    je      L7
-    jmp     L6
-L3:
-    mov     qword ptr [rsp+30h],0
-    mov     dword ptr [rsp+38h],0
-    mov     word ptr [rsp+3Ch],0
-    mov     word ptr [rsp+3Eh],0
-    mov     qword ptr [rsp+38h],0
-    lea     rdi,[rsp+30h]
-    mov     esi,0FFh
-    movzx   esi,sil
-    call    image.sym49
-    mov     rax,[rsp+10h]
-    mov     rdx,[rsp+18h]
-    mov     [rsp+40h],rax
-    mov     [rsp+48h],rdx
-    mov     rax,[rsp+30h]
-    mov     edx,[rsp+38h]
-    movzx   esi,word ptr [rsp+3Ch]
-    movzx   edi,word ptr [rsp+3Eh]
-    mov     [rsp+50h],rax
-    mov     [rsp+58h],edx
-    mov     [rsp+5Ch],si
-    mov     [rsp+5Eh],di
-    lea     rdi,[rsp+20h]
-    lea     rsi,[rsp+40h]
-    lea     rdx,[rsp+50h]
-    call    image.sym60
-    mov     rax,[rsp+20h]
-    mov     rdx,[rsp+28h]
-    mov     [rsp+40h],rax
-    mov     [rsp+48h],rdx
-    lea     rdi,[rsp+40h]
-    call    image.sym20
+    je      L9
+    jmp     L8
+L5:
+    mov     qword ptr [rsp],0FFh
+    lea     rdi,[rsp+140h]
+    mov     esi,0FFFFFF60h
+    mov     edx,0FFFFFEC0h
+    call    ryo_h_VsplatI8x16
+    mov     rax,[rsp+0A0h]
+    mov     rsi,[rsp+0A8h]
+    mov     rdi,rsi
+    shr     rdi,20h
+    mov     r8,rsi
+    shr     r8,30h
+    mov     esi,esi
+    movzx   edi,di
+    shl     rdi,20h
+    or      rsi,rdi
+    movzx   r8d,r8w
+    shl     r8,30h
+    or      rsi,r8
+    mov     [rsp+0C0h],r15
+    mov     [rsp+0C8h],rbp
+    mov     [rsp+0D0h],rax
+    mov     [rsp+0D8h],rsi
+    lea     rdi,[rsp+140h]
+    mov     esi,0FFFFFF70h
+    mov     edx,0FFFFFF80h
+    mov     ecx,0FFFFFF90h
+    call    ryo_h_VeqI8x16
+    mov     rax,[rsp+0B0h]
+    mov     rsi,[rsp+0B8h]
+    mov     [rsp+100h],rax
+    mov     [rsp+108h],rsi
+    mov     [rsp+0F0h],rax
+    mov     [rsp+0F8h],rsi
+    mov     qword ptr [rsp+100h],0
+    mov     qword ptr [rsp+108h],0
+    lea     rdi,[rsp+140h]
+    mov     esi,0FFFFFFA0h
+    mov     edx,0FFFFFFB0h
+    mov     ecx,0FFFFFFC0h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+140h]
+    mov     esi,0FFFFFFBAh
+    mov     edx,0FFFFFFA0h
+    call    ryo_h_VmsbI8x16
+    movzx   eax,word ptr [rsp+0FAh]
+    mov     [rsp+0FCh],eax
     test    ax,ax
-    je      L5
+    je      L7
     mov     eax,0
     mov     ecx,0
-    jmp     L2
-L4:
-    jmp     L1
-L5:
+    jmp     L4
+L6:
+    jmp     L3
+L7:
     mov     rax,[rbx+8]
-    mov     [rsp+28h],rax
     add     r14,10h
-    mov     [rsp+20h],r14
     add     r13,r14
     and     r13,rax
     jmp     L0
-L6:
+L8:
     mov     rax,[rbx]
     mov     r11d,0
     sub     r11,rcx
@@ -3567,40 +3796,49 @@ L6:
     imul    r11,10h
     add     r11,rax
     mov     rax,r11
-    jmp     L10
-L7:
+    jmp     L12
+L9:
     mov     ecx,0
-L8:
+L10:
     mov     rax,rcx
-    add     rsp,70h
+    add     rsp,118h
+    pop     rbp
     pop     r15
     pop     r14
     pop     r13
     pop     r12
     pop     rbx
     ret
-L9:
+L11:
     mov     rcx,rax
-    jmp     L8
-L10:
-    jmp     L9
+    jmp     L10
+L12:
+    jmp     L11
+L13:
+    lea     rdi,[image.k4563]
+    mov     esi,237h
+    mov     rcx,rdx
+    mov     edx,0
+    movzx   edx,dl
+    call    image.sym53
+    ud2
   ; OSR entries
-    lea     r11,[L11]
+    lea     r11,[L14]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L11:
-    .long   L12
-    .long   L13
-    .long   L14
-    .long   L15
-L12:
-    ret
-L13:
-    ret
 L14:
-    ret
+    .long   L15
+    .long   L16
+    .long   L17
+    .long   L18
 L15:
+    ret
+L16:
+    ret
+L17:
+    ret
+L18:
     ret
 
 fn hashbrown::raw::RawTable::<(u64, u64)>::insert_no_grow
@@ -3610,7 +3848,7 @@ fn hashbrown::raw::RawTable::<(u64, u64)>::insert_no_grow
     push    r14
     push    r15
     push    rbp
-    sub     rsp,0A8h
+    sub     rsp,0E8h
     mov     rbx,rdi
     mov     r12,rsi
     mov     r13,rdx
@@ -3618,8 +3856,9 @@ fn hashbrown::raw::RawTable::<(u64, u64)>::insert_no_grow
     mov     r11,r13
     shr     r11,20h
     mov     [rsp+30h],r11
-    mov     rbp,r13
-    shr     rbp,30h
+    mov     r11,r13
+    shr     r11,30h
+    mov     [rsp+38h],r11
     mov     r11,r13
     shr     r11,38h
     mov     [rsp+10h],r11
@@ -3632,107 +3871,146 @@ fn hashbrown::raw::RawTable::<(u64, u64)>::insert_no_grow
     mov     r11,r14
     shr     r11,38h
     mov     [rsp+28h],r11
-    mov     [rsp+80h],r12
+    mov     [rsp+0D0h],r12
     mov     rax,[rbx+8]
     and     rax,r12
-    mov     [rsp+88h],rax
-    mov     [rsp+70h],rax
-    mov     qword ptr [rsp+78h],0
+    mov     [rsp+0D8h],rax
+    mov     [rsp+0C0h],rax
+    mov     qword ptr [rsp+0C8h],0
 L0:
-    mov     rax,[rsp+70h]
+    mov     rax,[rsp+0C0h]
     mov     rcx,[rbx]
-    mov     [rsp+90h],rcx
-    mov     [rsp+98h],rcx
-    lea     rsi,[rcx+rax]
-    lea     rdi,[rsp+90h]
-    call    image.sym59
-    mov     rax,[rsp+90h]
-    mov     rcx,[rsp+98h]
-    mov     [rsp+80h],rax
-    mov     [rsp+88h],rcx
-    lea     rdx,[rsp+80h]
-    mov     [rsp+98h],rdx
-    lea     rdx,[rsp+70h]
-    mov     [rsp+90h],rdx
-    mov     edx,[rsp+8Ch]
-    mov     [rsp+40h],rax
-    mov     [rsp+48h],ecx
-    mov     [rsp+4Ch],edx
-    lea     rdi,[rsp+40h]
-    call    image.sym20
-    test    ax,ax
-    je      L3
+    lea     rcx,[rcx+rax]
+    mov     qword ptr [rsp+40h],0
+    mov     qword ptr [rsp+48h],0
+    lea     rax,[rsp+40h]
+    lea     rdx,[image.k952]
+    test    rcx,rcx
+    je      L16
+    test    rax,rax
+    je      L16
+    cmp     rcx,rax
+    jae     L1
+    mov     rsi,rax
+    sub     rsi,rcx
     jmp     L2
 L1:
-    cmp     rcx,1
+    mov     r11,rcx
+    sub     r11,rax
+    mov     rax,r11
+    mov     rsi,rax
+L2:
+    cmp     rsi,10h
+    jb      L16
+    mov     rax,[rcx]
+    mov     rcx,[rcx+8]
+    mov     [rsp+40h],rax
+    mov     [rsp+48h],rcx
+    mov     [rsp+0D0h],rax
+    mov     [rsp+0D8h],rcx
+    mov     esi,[rsp+0DCh]
+    mov     [rsp+80h],rax
+    mov     [rsp+88h],ecx
+    mov     [rsp+8Ch],esi
+    mov     rcx,[rsp+88h]
+    mov     [rsp+70h],rax
+    mov     [rsp+78h],rcx
+    mov     [rsp+60h],rax
+    mov     [rsp+68h],rcx
+    mov     qword ptr [rsp+70h],0
+    mov     qword ptr [rsp+78h],0
+    lea     rdi,[rsp+110h]
+    mov     esi,0FFFFFF40h
+    mov     edx,0FFFFFF50h
+    mov     ecx,0FFFFFF60h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+110h]
+    mov     esi,0FFFFFF5Ah
+    mov     edx,0FFFFFF40h
+    call    ryo_h_VmsbI8x16
+    movzx   eax,word ptr [rsp+6Ah]
+    mov     [rsp+6Ch],eax
+    test    ax,ax
     je      L5
     jmp     L4
-L2:
+L3:
+    cmp     rcx,1
+    je      L7
+    jmp     L6
+L4:
     mov     [rsp],rax
-    lea     rdi,[rsp+0D0h]
+    lea     rdi,[rsp+110h]
     mov     esi,0FFFFFF7Ch
-    mov     edx,0FFFFFF30h
+    mov     edx,0FFFFFEF0h
     call    ryo_h_CttzW16
-    mov     eax,[rsp+4Ch]
-    mov     rcx,[rsp+70h]
+    mov     eax,[rsp+8Ch]
+    mov     rcx,[rsp+0C0h]
     add     rcx,rax
     mov     rax,[rbx+8]
     and     rcx,rax
-    mov     rdx,rcx
+    mov     rsi,rcx
     mov     ecx,1
-    jmp     L1
-L3:
-    mov     ecx,0
-    mov     edx,0
-    jmp     L1
-L4:
-    mov     rax,[rbx+8]
-    mov     [rsp+98h],rax
-    mov     rcx,[rsp+78h]
-    add     rcx,10h
-    mov     [rsp+78h],rcx
-    mov     [rsp+90h],rcx
-    mov     rsi,[rsp+70h]
-    add     rsi,rcx
-    mov     [rsp+70h],rsi
-    and     rsi,rax
-    mov     [rsp+70h],rsi
-    jmp     L0
+    jmp     L3
 L5:
-    mov     [rsp+98h],rdx
-    mov     rsi,[rbx]
-    lea     rax,[rsi+rdx]
-    movzx   eax,byte ptr [rax]
-    and     eax,80h
-    test    al,al
-    jne     L7
-    lea     rdi,[rsp+50h]
-    call    image.sym19
-    mov     rax,[rsp+50h]
-    mov     rcx,[rsp+58h]
-    mov     [rsp+60h],rax
-    mov     [rsp+68h],rcx
-    lea     rdi,[rsp+60h]
-    call    image.sym20
+    mov     ecx,0
+    mov     esi,0
+    jmp     L3
+L6:
+    mov     rax,[rbx+8]
+    mov     rcx,[rsp+0C8h]
+    add     rcx,10h
+    mov     [rsp+0C8h],rcx
+    mov     rdi,[rsp+0C0h]
+    add     rdi,rcx
+    mov     [rsp+0C0h],rdi
+    and     rdi,rax
+    mov     [rsp+0C0h],rdi
+    jmp     L0
+L7:
+    mov     rax,[rbx]
+    lea     rcx,[rax+rsi]
+    movzx   ecx,byte ptr [rcx]
+    and     ecx,80h
+    test    cl,cl
+    jne     L9
+    mov     rcx,[rax]
+    mov     rax,[rax+8]
+    mov     [rsp+0B0h],rcx
+    mov     [rsp+0B8h],rax
+    mov     [rsp+0A0h],rcx
+    mov     [rsp+0A8h],rax
+    mov     qword ptr [rsp+0B0h],0
+    mov     qword ptr [rsp+0B8h],0
+    lea     rdi,[rsp+110h]
+    mov     esi,0FFFFFF80h
+    mov     edx,0FFFFFF90h
+    mov     ecx,0FFFFFFA0h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+110h]
+    mov     esi,0FFFFFF9Ah
+    mov     edx,0FFFFFF80h
+    call    ryo_h_VmsbI8x16
+    movzx   eax,word ptr [rsp+0AAh]
+    mov     [rsp+0ACh],eax
     mov     rdi,rax
     test    di,di
-    je      L9
-    jmp     L8
-L6:
+    je      L11
+    jmp     L10
+L8:
     mov     rcx,[rbx]
     lea     rcx,[rcx+rax]
-    movzx   esi,byte ptr [rcx]
-    mov     r8,r12
-    shr     r8,39h
-    and     r8,7Fh
-    lea     r9,[rax-10h]
-    mov     r15,[rbx+8]
-    and     r9,r15
-    add     r9,10h
-    mov     [rcx],r8b
+    movzx   r8d,byte ptr [rcx]
+    mov     r9,r12
+    shr     r9,39h
+    and     r9,7Fh
+    lea     r15,[rax-10h]
+    mov     rbp,[rbx+8]
+    and     r15,rbp
+    add     r15,10h
+    mov     [rcx],r9b
     mov     rcx,[rbx]
-    lea     rcx,[rcx+r9]
-    mov     [rcx],r8b
+    lea     rcx,[rcx+r15]
+    mov     [rcx],r9b
     mov     rcx,[rbx]
     mov     r11d,0
     sub     r11,rax
@@ -3741,36 +4019,37 @@ L6:
     imul    r11,10h
     add     r11,rcx
     mov     rax,r11
-    jmp     L11
-L7:
-    mov     rax,rdx
-    jmp     L6
-L8:
+    jmp     L13
+L9:
+    mov     rax,rsi
+    jmp     L8
+L10:
     call    ryo_hr_CttzW16
     mov     rcx,rax
     mov     ecx,ecx
     mov     rax,rcx
-    jmp     L6
-L9:
+    jmp     L8
+L11:
     mov     eax,0
-    jmp     L6
-L10:
-    mov     rcx,rsi
+    jmp     L8
+L12:
+    mov     rcx,r8
     and     ecx,1
     test    cl,cl
     setne   cl
     movzx   ecx,cl
-    mov     rdx,[rbx+10h]
-    sub     rdx,rcx
-    mov     [rbx+10h],rdx
-    jmp     L13
-L11:
-    jmp     L10
-L12:
+    mov     rsi,[rbx+10h]
+    sub     rsi,rcx
+    mov     [rbx+10h],rsi
+    jmp     L15
+L13:
+    jmp     L12
+L14:
     mov     [rax-10h],r13d
     mov     r10,[rsp+30h]
     mov     [rax-0Ch],r10w
-    mov     [rax-0Ah],bpl
+    mov     r10,[rsp+38h]
+    mov     [rax-0Ah],r10b
     mov     r10,[rsp+10h]
     mov     [rax-9],r10b
     mov     [rax-8],r14d
@@ -3783,7 +4062,7 @@ L12:
     mov     rcx,[rbx+18h]
     add     rcx,1
     mov     [rbx+18h],rcx
-    add     rsp,0A8h
+    add     rsp,0E8h
     pop     rbp
     pop     r15
     pop     r14
@@ -3791,31 +4070,28 @@ L12:
     pop     r12
     pop     rbx
     ret
-L13:
-    jmp     L12
-    jmp     L15
-L14:
-    mov     [rsp],rax
-    lea     rdi,[rsp+0D0h]
-    mov     esi,0FFFFFF30h
-    call    ryo_h_Resume
-    ud2
 L15:
     jmp     L14
+L16:
+    lea     rdi,[image.k4563]
+    mov     esi,237h
+    mov     rcx,rdx
+    mov     edx,0
+    movzx   edx,dl
+    call    image.sym53
+    ud2
   ; OSR entries
-    lea     r11,[L16]
+    lea     r11,[L17]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L16:
-    .long   L17
+L17:
     .long   L18
     .long   L19
     .long   L20
     .long   L21
     .long   L22
-L17:
-    ret
+    .long   L23
 L18:
     ret
 L19:
@@ -3825,6 +4101,8 @@ L20:
 L21:
     ret
 L22:
+    ret
+L23:
     ret
 
 fn hashbrown::raw::RawTable::<(u64, u64)>::reserve::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::RandomState>::{closure#0}}>
@@ -3928,7 +4206,7 @@ L3:
     mov     [rsp+10h],rsi
     lea     rsi,[rsp+10h]
     mov     edx,8
-    call    qword ptr [image.fn197.slot]
+    call    qword ptr [image.fn206.slot]
     mov     rsi,[rsp+48h]
     mov     [rsp+20h],rsi
     mov     rdi,[rsp+50h]
@@ -3996,7 +4274,7 @@ L3:
     xor     rsi,0FFh
     mov     [rsp+28h],rsi
     mov     rdi,r12
-    call    image.fn209
+    call    image.fn218
     mov     rsi,[rsp+20h]
     mov     rdi,[rsp+30h]
     xor     rsi,rdi
@@ -4038,505 +4316,462 @@ L11:
     ret
 
 fn hashbrown::raw::RawTableInner::drop_elements::<(std::string::String, usize)>
-    sub     rsp,0D8h
-    mov     [rsp+50h],rbx
-    mov     [rsp+48h],r12
-    mov     [rsp+40h],r13
-    mov     [rsp+38h],r14
+    sub     rsp,118h
+    mov     [rsp+90h],rbx
+    mov     [rsp+88h],r12
+    mov     [rsp+80h],r13
+    mov     [rsp+78h],r14
+    mov     [rsp+70h],r15
     mov     rbx,rdi
     mov     rax,[rbx+18h]
-    mov     [rsp+78h],rax
+    mov     [rsp+0B8h],rax
     test    rax,rax
-    je      L2
+    je      L4
     mov     r12,[rbx]
-    mov     [rsp+70h],r12
-    mov     [rsp+68h],r12
-    mov     [rsp+78h],r12
+    mov     [rsp+0B0h],r12
+    mov     [rsp+0A8h],r12
+    mov     [rsp+0B8h],r12
     mov     r13,[rbx]
     mov     rax,[rbx+8]
     add     rax,1
     lea     r14,[r13+rax]
-    lea     rdi,[rsp+10h]
-    mov     rsi,r13
-    call    image.sym19
-    mov     rax,[rsp+10h]
-    mov     rcx,[rsp+18h]
+    mov     rax,[r13]
+    mov     rcx,[r13+8]
+    mov     [rsp+30h],rax
+    mov     [rsp+38h],rcx
     mov     [rsp+20h],rax
     mov     [rsp+28h],rcx
-    lea     rdi,[rsp+20h]
-    call    image.sym20
+    mov     qword ptr [rsp+30h],0
+    mov     qword ptr [rsp+38h],0
+    lea     rdi,[rsp+110h]
+    mov     esi,0FFFFFF00h
+    mov     edx,0FFFFFF10h
+    mov     ecx,0FFFFFF20h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+110h]
+    mov     esi,0FFFFFF1Ah
+    mov     edx,0FFFFFF00h
+    call    ryo_h_VmsbI8x16
+    movzx   eax,word ptr [rsp+2Ah]
+    mov     [rsp+2Ch],eax
     mov     rdi,rax
     call    ryo_hr_NotW16
-    mov     qword ptr [rsp+28h],10h
     lea     r13,[r13+10h]
-    mov     [rsp+58h],r12
-    mov     [rsp+60h],r13
-    mov     [rsp+68h],r14
-    mov     [rsp+70h],ax
-    mov     [rsp+72h],r10d
-    mov     [rsp+76h],r10w
-    jmp     L3
+    mov     [rsp+98h],r12
+    mov     [rsp+0A0h],r13
+    mov     [rsp+0A8h],r14
+    mov     [rsp+0B0h],ax
+    mov     [rsp+0B2h],r10d
+    mov     [rsp+0B6h],r10w
+    jmp     L5
 L0:
-    mov     rax,[rsp+78h]
+    mov     rax,[rsp+0B8h]
     test    rax,rax
-    je      L2
-    lea     rdi,[rsp+58h]
-    call    fn1
-    mov     rcx,[rsp+78h]
-    sub     rcx,1
-    mov     [rsp+78h],rcx
-    test    rax,rax
-    je      L2
-    jmp     L4
+    je      L4
 L1:
-    lea     rcx,[rcx-20h]
+    movzx   r15d,word ptr [rsp+0B0h]
+    test    r15w,r15w
+    je      L2
+    mov     rdi,r15
+    call    ryo_hr_CttzW16
+    mov     eax,eax
+    lea     ecx,[r15-1]
+    and     r15d,ecx
+    mov     [rsp+0B0h],r15w
+    mov     rcx,[rsp+98h]
+    mov     r11d,0
+    sub     r11,rax
+    mov     rax,r11
+    mov     r11,rax
+    imul    r11,20h
+    add     r11,rcx
+    mov     rcx,r11
+    mov     rax,[rsp+0B8h]
+    sub     rax,1
+    mov     [rsp+0B8h],rax
+    test    rcx,rcx
+    je      L4
     jmp     L6
 L2:
-    mov     rbx,[rsp+50h]
-    mov     r12,[rsp+48h]
-    mov     r13,[rsp+40h]
-    mov     r14,[rsp+38h]
-    add     rsp,0D8h
-    ret
-L3:
-    mov     rcx,[rbx+18h]
-    mov     rdx,[rsp+70h]
-    mov     [rsp+58h],r12
-    mov     [rsp+60h],r13
-    mov     [rsp+68h],r14
-    mov     [rsp+70h],rdx
-    mov     [rsp+78h],rcx
-    jmp     L0
-L4:
-    mov     rcx,rax
+    mov     r15,[rsp+0A0h]
+    mov     rax,[r15]
+    mov     rdx,[r15+8]
+    mov     [rsp+60h],rax
+    mov     [rsp+68h],rdx
+    mov     [rsp+50h],rax
+    mov     [rsp+58h],rdx
+    mov     qword ptr [rsp+60h],0
+    mov     qword ptr [rsp+68h],0
+    lea     rdi,[rsp+110h]
+    mov     esi,0FFFFFF30h
+    mov     edx,0FFFFFF40h
+    mov     ecx,0FFFFFF50h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+110h]
+    mov     esi,0FFFFFF4Ah
+    mov     edx,0FFFFFF30h
+    call    ryo_h_VmsbI8x16
+    movzx   eax,word ptr [rsp+5Ah]
+    mov     [rsp+5Ch],eax
+    mov     rdi,rax
+    call    ryo_hr_NotW16
+    mov     [rsp+0B0h],ax
+    mov     rax,[rsp+98h]
+    lea     rax,[rax-200h]
+    mov     [rsp+98h],rax
+    lea     r15,[r15+10h]
+    mov     [rsp+0A0h],r15
     jmp     L1
+L3:
+    lea     rax,[rax-20h]
+    jmp     L8
+L4:
+    mov     rbx,[rsp+90h]
+    mov     r12,[rsp+88h]
+    mov     r13,[rsp+80h]
+    mov     r14,[rsp+78h]
+    mov     r15,[rsp+70h]
+    add     rsp,118h
+    ret
 L5:
-    mov     rdi,rbx
-    call    image.sym31
-    mov     rdi,rbx
-    call    image.sym32
+    mov     rax,[rbx+18h]
+    mov     rdx,[rsp+0B0h]
+    mov     [rsp+98h],r12
+    mov     [rsp+0A0h],r13
+    mov     [rsp+0A8h],r14
+    mov     [rsp+0B0h],rdx
+    mov     [rsp+0B8h],rax
     jmp     L0
 L6:
-    mov     rbx,rcx
-    jmp     L5
+    mov     rax,rcx
+    jmp     L3
+L7:
+    mov     rdi,rbx
+    call    image.sym29
+    mov     rdi,rbx
+    call    image.sym30
+    jmp     L0
+L8:
+    mov     rbx,rax
+    jmp     L7
     mov     r12,rax
     mov     rdi,rbx
-    call    image.sym32
+    call    image.sym30
     mov     [rsp],r12
-    lea     rdi,[rsp+0D0h]
-    mov     esi,0FFFFFF30h
+    lea     rdi,[rsp+110h]
+    mov     esi,0FFFFFEF0h
     call    ryo_h_Resume
     ud2
-    call    image.sym21
+    call    image.sym19
     ud2
   ; OSR entries
-    lea     r11,[L7]
+    lea     r11,[L9]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L7:
-    .long   L8
-    .long   L9
+L9:
     .long   L10
     .long   L11
     .long   L12
     .long   L13
-L8:
+    .long   L14
+    .long   L15
+L10:
     pop     rcx
     lea     rdx,[rsp+0B0h]
-    lea     rsp,[rdx-0D0h]
+    lea     rsp,[rdx-110h]
     mov     [rdx-80h],rbx
     mov     [rdx-88h],r12
     mov     [rdx-90h],r13
     mov     [rdx-98h],r14
+    mov     [rdx-0A0h],r15
     lea     rsp,[rsp]
     jmp     L0
-L9:
+L11:
     pop     rcx
     lea     rdx,[rsp+0B0h]
-    lea     rsp,[rdx-0E0h]
+    lea     rsp,[rdx-120h]
     mov     r11,[rdx-80h]
     mov     [rsp],r11
     mov     [rdx-80h],rbx
     mov     [rdx-88h],r12
     mov     [rdx-90h],r13
     mov     [rdx-98h],r14
-    mov     rcx,[rsp]
+    mov     [rdx-0A0h],r15
+    mov     rax,[rsp]
     lea     rsp,[rsp+10h]
-    jmp     L1
-L10:
-    ret
-L11:
-    ret
+    jmp     L3
 L12:
+    ret
+L13:
+    ret
+L14:
     pop     rcx
     lea     rdx,[rsp+0B0h]
-    lea     rsp,[rdx-0E0h]
+    lea     rsp,[rdx-120h]
     mov     r11,[rdx-90h]
     mov     [rsp],r11
     mov     [rdx-80h],rbx
     mov     [rdx-88h],r12
     mov     [rdx-90h],r13
     mov     [rdx-98h],r14
+    mov     [rdx-0A0h],r15
     mov     rbx,[rsp]
     lea     rsp,[rsp+10h]
-    jmp     L5
-L13:
+    jmp     L7
+L15:
     pop     rcx
     lea     rdx,[rsp+0B0h]
-    lea     rsp,[rdx-0E0h]
+    lea     rsp,[rdx-120h]
     mov     r11,[rdx-90h]
     mov     [rsp],r11
     mov     [rdx-80h],rbx
     mov     [rdx-88h],r12
     mov     [rdx-90h],r13
     mov     [rdx-98h],r14
-    mov     rcx,[rsp]
+    mov     [rdx-0A0h],r15
+    mov     rax,[rsp]
     lea     rsp,[rsp+10h]
-    jmp     L6
-
-fn hashbrown::raw::RawTableInner::erase
-    push    rbx
-    push    r12
-    push    r13
-    push    r14
-    sub     rsp,78h
-    mov     rbx,rdi
-    mov     r12,rsi
-    lea     rax,[r12-10h]
-    mov     [rsp+38h],rax
-    mov     rcx,[rbx+8]
-    mov     [rsp+30h],rcx
-    and     rax,rcx
-    mov     rcx,[rbx]
-    mov     [rsp+48h],rcx
-    mov     [rsp+30h],rcx
-    lea     rsi,[rcx+rax]
-    mov     [rsp+38h],rsi
-    mov     [rsp+30h],rsi
-    lea     rdi,[rsp+10h]
-    call    sym0
-    lea     rdi,[rsp+40h]
-    mov     esi,0FFh
-    movzx   esi,sil
-    call    sym1
-    mov     rax,[rsp+10h]
-    mov     rcx,[rsp+18h]
-    mov     [rsp+50h],rax
-    mov     [rsp+58h],rcx
-    mov     eax,[rsp+40h]
-    mov     ecx,[rsp+44h]
-    mov     edx,[rsp+48h]
-    mov     esi,[rsp+4Ch]
-    mov     [rsp+60h],eax
-    mov     [rsp+64h],ecx
-    mov     [rsp+68h],edx
-    mov     [rsp+6Ch],esi
-    lea     rdi,[rsp+30h]
-    lea     rsi,[rsp+50h]
-    lea     rdx,[rsp+60h]
-    call    sym2
-    mov     rax,[rsp+30h]
-    mov     rcx,[rsp+38h]
-    mov     [rsp+50h],rax
-    mov     [rsp+58h],rcx
-    lea     rdi,[rsp+50h]
-    call    sym3
-    mov     [rsp+4Ch],eax
-    mov     r13,rax
-    mov     rax,[rbx]
-    mov     [rsp+48h],rax
-    mov     [rsp+30h],rax
-    lea     rsi,[rax+r12]
-    mov     [rsp+38h],rsi
-    mov     [rsp+30h],rsi
-    lea     rdi,[rsp+20h]
-    call    sym0
-    lea     rdi,[rsp+40h]
-    mov     esi,0FFh
-    movzx   esi,sil
-    call    sym1
-    mov     rax,[rsp+20h]
-    mov     rcx,[rsp+28h]
-    mov     [rsp+50h],rax
-    mov     [rsp+58h],rcx
-    mov     eax,[rsp+40h]
-    mov     ecx,[rsp+44h]
-    mov     edx,[rsp+48h]
-    mov     esi,[rsp+4Ch]
-    mov     [rsp+60h],eax
-    mov     [rsp+64h],ecx
-    mov     [rsp+68h],edx
-    mov     [rsp+6Ch],esi
-    lea     rdi,[rsp+30h]
-    lea     rsi,[rsp+50h]
-    lea     rdx,[rsp+60h]
-    call    sym2
-    mov     rax,[rsp+30h]
-    mov     rcx,[rsp+38h]
-    mov     [rsp+50h],rax
-    mov     [rsp+58h],rcx
-    lea     rdi,[rsp+50h]
-    call    sym3
-    mov     [rsp+4Ch],eax
-    mov     r14,rax
-    mov     rdi,r13
-    call    ryo_hr_CtlzW16
-    mov     [rsp+4Ch],eax
-    mov     r13d,eax
-    mov     [rsp+30h],r13
-    mov     rdi,r14
-    call    ryo_hr_CttzW16
-    mov     [rsp+44h],eax
-    mov     eax,eax
-    mov     [rsp+48h],rax
-    add     r13,rax
-    mov     [rsp+38h],r13
-    cmp     r13,10h
-    jb      L0
-    mov     eax,80h
-    jmp     L1
-L0:
-    mov     rax,[rbx+10h]
-    add     rax,1
-    mov     [rsp+50h],rax
-    mov     [rbx+10h],rax
-    mov     eax,0FFh
-L1:
-    lea     rcx,[r12-10h]
-    mov     [rsp+48h],rcx
-    mov     rdx,[rbx+8]
-    mov     [rsp+40h],rdx
-    and     rcx,rdx
-    mov     [rsp+30h],rcx
-    add     rcx,10h
-    mov     [rsp+38h],rcx
-    mov     rcx,[rbx]
-    mov     [rsp+40h],rcx
-    lea     rcx,[rcx+r12]
-    mov     [rsp+48h],rcx
-    mov     [rsp+30h],rcx
-    mov     [rcx],al
-    mov     rcx,[rbx]
-    mov     [rsp+40h],rcx
-    mov     rdx,[rsp+38h]
-    lea     rcx,[rcx+rdx]
-    mov     [rsp+48h],rcx
-    mov     [rsp+30h],rcx
-    mov     [rcx],al
-    mov     rax,[rbx+18h]
-    sub     rax,1
-    mov     [rsp+50h],rax
-    mov     [rbx+18h],rax
-    add     rsp,78h
-    pop     r14
-    pop     r13
-    pop     r12
-    pop     rbx
-    ret
-  ; OSR entries
-    lea     r11,[L2]
-    movsxd  rax,[r11+rax*4]
-    add     rax,r11
-    jmp     rax
-L2:
-    .long   L3
-    .long   L4
-L3:
-    ret
-L4:
-    ret
+    jmp     L8
 
 fn hashbrown::raw::RawTableInner::find_inner
-    sub     rsp,118h
-    mov     [rsp+98h],rbx
-    mov     [rsp+90h],r12
-    mov     [rsp+88h],r13
-    mov     [rsp+80h],r14
-    mov     [rsp+78h],r15
-    mov     [rsp+70h],rbp
+    sub     rsp,1F8h
+    mov     [rsp+178h],rbx
+    mov     [rsp+170h],r12
+    mov     [rsp+168h],r13
+    mov     [rsp+160h],r14
+    mov     [rsp+158h],r15
+    mov     [rsp+150h],rbp
     mov     rax,rsi
     shr     rax,39h
     and     rax,7Fh
-    mov     [rsp+30h],rsi
     mov     r8,[rdi+8]
-    mov     [rsp+48h],r8
     and     rsi,r8
-    mov     [rsp+38h],rsi
     mov     rbx,rsi
     mov     r12,rdi
     mov     r13,rax
-    mov     r14,rcx
-    mov     r15,rdx
+    mov     [rsp+10h],rcx
+    mov     [rsp+18h],rdx
     mov     ebp,0
 L0:
-    mov     [rsp+30h],rbx
     mov     rax,[r12]
-    mov     [rsp+40h],rax
-    mov     [rsp+48h],rax
-    lea     rsi,[rax+rbx]
-    mov     [rsp+38h],rsi
-    mov     [rsp+30h],rsi
-    lea     rdi,[rsp+0A0h]
-    call    sym0
-    lea     rdi,[rsp+40h]
-    mov     rsi,r13
-    movzx   esi,sil
-    call    sym1
-    mov     rax,[rsp+0A0h]
-    mov     rcx,[rsp+0A8h]
-    mov     [rsp+50h],rax
-    mov     [rsp+58h],rcx
-    mov     rax,[rsp+40h]
-    mov     ecx,[rsp+48h]
-    movzx   edx,word ptr [rsp+4Ch]
-    movzx   esi,word ptr [rsp+4Eh]
-    mov     [rsp+60h],rax
-    mov     [rsp+68h],ecx
-    mov     [rsp+6Ch],dx
-    mov     [rsp+6Eh],si
-    lea     rdi,[rsp+30h]
-    lea     rsi,[rsp+50h]
-    lea     rdx,[rsp+60h]
-    call    sym2
-    mov     rax,[rsp+30h]
-    mov     rcx,[rsp+38h]
-    mov     [rsp+50h],rax
-    mov     [rsp+58h],rcx
-    lea     rdi,[rsp+50h]
-    call    sym3
-    mov     [rsp+4Ch],eax
-    mov     [rsp+20h],r14
-    mov     [rsp+28h],r15
-    mov     [rsp+18h],rbp
-    mov     [rsp+10h],r13
+    lea     rax,[rax+rbx]
+    mov     qword ptr [rsp+60h],0
+    mov     qword ptr [rsp+68h],0
+    lea     rcx,[rsp+60h]
+    lea     r11,[image.k952]
+    mov     [rsp+30h],r11
+    test    rax,rax
+    je      L9
+    test    rcx,rcx
+    je      L9
+    cmp     rax,rcx
+    jae     L1
+    mov     rsi,rcx
+    sub     rsi,rax
+    jmp     L2
+L1:
+    mov     r11,rax
+    sub     r11,rcx
+    mov     rcx,r11
+    mov     rsi,rcx
+L2:
+    cmp     rsi,10h
+    jb      L9
+    mov     r14,[rax]
+    mov     r15,[rax+8]
+    mov     [rsp+60h],r14
+    mov     [rsp+68h],r15
+    mov     [rsp+180h],r14
+    mov     [rsp+188h],r15
+    mov     [rsp],r13
+    lea     rdi,[rsp+1F0h]
+    mov     esi,0FFFFFE80h
+    mov     edx,0FFFFFE10h
+    call    ryo_h_VsplatI8x16
+    mov     rax,[rsp+70h]
+    mov     rcx,[rsp+78h]
+    mov     rsi,rcx
+    shr     rsi,20h
+    mov     rdi,rcx
+    shr     rdi,30h
+    mov     ecx,ecx
+    movzx   esi,si
+    shl     rsi,20h
+    or      rcx,rsi
+    movzx   edi,di
+    shl     rdi,30h
+    or      rcx,rdi
+    mov     [rsp+90h],r14
+    mov     [rsp+98h],r15
+    mov     [rsp+0A0h],rax
+    mov     [rsp+0A8h],rcx
+    lea     rdi,[rsp+1F0h]
+    mov     esi,0FFFFFE90h
+    mov     edx,0FFFFFEA0h
+    mov     ecx,0FFFFFEB0h
+    call    ryo_h_VeqI8x16
+    mov     rax,[rsp+80h]
+    mov     rcx,[rsp+88h]
+    mov     [rsp+0D0h],rax
+    mov     [rsp+0D8h],rcx
+    mov     [rsp+0C0h],rax
+    mov     [rsp+0C8h],rcx
+    mov     qword ptr [rsp+0D0h],0
+    mov     qword ptr [rsp+0D8h],0
+    lea     rdi,[rsp+1F0h]
+    mov     esi,0FFFFFEC0h
+    mov     edx,0FFFFFED0h
+    mov     ecx,0FFFFFEE0h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+1F0h]
+    mov     esi,0FFFFFEDAh
+    mov     edx,0FFFFFEC0h
+    call    ryo_h_VmsbI8x16
+    movzx   eax,word ptr [rsp+0CAh]
+    mov     [rsp+0CCh],eax
+    mov     r14,[rsp+10h]
+    mov     r15,[rsp+18h]
+    mov     [rsp+28h],rbp
+    mov     [rsp+20h],r13
     mov     r13,r12
     mov     r12,rbx
     mov     rbx,rax
-L1:
+L3:
     test    bx,bx
-    je      L4
+    je      L6
     mov     rdi,rbx
     call    ryo_hr_CttzW16
     mov     eax,eax
-    mov     [rsp+48h],rax
-    mov     qword ptr [rsp+40h],1
-    mov     [rsp+4Eh],bx
     lea     ecx,[rbx-1]
     and     ebx,ecx
-    mov     [rsp+38h],rax
-    mov     qword ptr [rsp+30h],1
-    mov     [rsp+48h],rax
     add     rax,r12
     mov     rcx,[r13+8]
-    mov     rsi,rax
-    and     rsi,rcx
-    mov     [rsp+40h],rsi
-    mov     r11,[rsp+20h]
-    mov     rax,[r11+20h]
-    mov     rdi,[rsp+28h]
-    call    rax
-    mov     rcx,r12
-    mov     rdx,r13
-    mov     rsi,[rsp+20h]
-    mov     rdi,[rsp+28h]
-    mov     r8,[rsp+18h]
-    mov     r9,[rsp+10h]
-L2:
-    test    al,al
-    je      L5
-    mov     rax,[rsp+40h]
     mov     rbp,rax
-    mov     eax,1
-L3:
+    and     rbp,rcx
+    mov     rax,[r14+20h]
+    mov     rdi,r15
+    mov     rsi,rbp
+    call    rax
+    mov     [rsp+38h],rbx
+    mov     [rsp+40h],r12
+    mov     [rsp+48h],r13
+    mov     [rsp+50h],r14
+    mov     r8,r15
+    mov     r9,[rsp+28h]
     mov     rdx,rbp
-    mov     rbx,[rsp+98h]
-    mov     r12,[rsp+90h]
-    mov     r13,[rsp+88h]
-    mov     r14,[rsp+80h]
-    mov     r15,[rsp+78h]
-    mov     rbp,[rsp+70h]
-    add     rsp,118h
-    ret
+    mov     rbp,[rsp+20h]
 L4:
-    mov     qword ptr [rsp+40h],0
-    mov     dword ptr [rsp+48h],0
-    mov     word ptr [rsp+4Ch],0
-    mov     word ptr [rsp+4Eh],0
-    mov     qword ptr [rsp+48h],0
-    lea     rax,[rsp+40h]
-    mov     rdi,rax
-    mov     esi,0FFh
-    movzx   esi,sil
-    call    sym1
-    mov     rax,[rsp+0A0h]
-    mov     rbp,[rsp+0A8h]
-    mov     [rsp+50h],rax
-    mov     [rsp+58h],rbp
-    mov     rax,[rsp+40h]
-    mov     ebp,[rsp+48h]
-    movzx   r14d,word ptr [rsp+4Ch]
-    movzx   r15d,word ptr [rsp+4Eh]
-    mov     [rsp+60h],rax
-    mov     [rsp+68h],ebp
-    mov     [rsp+6Ch],r14w
-    mov     [rsp+6Eh],r15w
-    lea     rax,[rsp+30h]
-    lea     r14,[rsp+50h]
-    lea     r15,[rsp+60h]
-    mov     rdi,rax
-    mov     rsi,r14
-    mov     rdx,r15
-    call    sym2
-    mov     rax,[rsp+30h]
-    mov     r14,[rsp+38h]
-    mov     [rsp+50h],rax
-    mov     [rsp+58h],r14
-    lea     rax,[rsp+50h]
-    mov     rdi,rax
-    call    sym3
-    test    ax,ax
-    je      L6
-    mov     eax,0
-    mov     ebp,0
-    jmp     L3
+    test    al,al
+    je      L7
+    mov     eax,1
 L5:
-    mov     r12,rcx
-    mov     r13,rdx
-    mov     [rsp+20h],rsi
-    mov     [rsp+28h],rdi
-    mov     [rsp+18h],r8
-    mov     [rsp+10h],r9
-    jmp     L1
+    mov     rbx,[rsp+178h]
+    mov     r12,[rsp+170h]
+    mov     r13,[rsp+168h]
+    mov     r14,[rsp+160h]
+    mov     r15,[rsp+158h]
+    mov     rbp,[rsp+150h]
+    add     rsp,1F8h
+    ret
 L6:
+    mov     qword ptr [rsp],0FFh
+    lea     rdi,[rsp+1F0h]
+    mov     esi,0FFFFFEF0h
+    mov     edx,0FFFFFE10h
+    call    ryo_h_VsplatI8x16
+    mov     rax,[rsp+0E0h]
+    mov     rdx,[rsp+0E8h]
+    mov     rbx,rdx
+    shr     rbx,20h
+    mov     rcx,rdx
+    shr     rcx,30h
+    mov     rsi,[rsp+180h]
+    mov     rdi,[rsp+188h]
+    mov     edx,edx
+    movzx   ebx,bx
+    shl     rbx,20h
+    or      rdx,rbx
+    movzx   ecx,cx
+    shl     rcx,30h
+    or      rdx,rcx
+    mov     [rsp+100h],rsi
+    mov     [rsp+108h],rdi
+    mov     [rsp+110h],rax
+    mov     [rsp+118h],rdx
+    lea     rdi,[rsp+1F0h]
+    mov     esi,0FFFFFF00h
+    mov     edx,0FFFFFF10h
+    mov     ecx,0FFFFFF20h
+    call    ryo_h_VeqI8x16
+    mov     rax,[rsp+0F0h]
+    mov     rcx,[rsp+0F8h]
+    mov     [rsp+140h],rax
+    mov     [rsp+148h],rcx
+    mov     [rsp+130h],rax
+    mov     [rsp+138h],rcx
+    mov     qword ptr [rsp+140h],0
+    mov     qword ptr [rsp+148h],0
+    lea     rdi,[rsp+1F0h]
+    mov     esi,0FFFFFF30h
+    mov     edx,0FFFFFF40h
+    mov     ecx,0FFFFFF50h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+1F0h]
+    mov     esi,0FFFFFF4Ah
+    mov     edx,0FFFFFF30h
+    call    ryo_h_VmsbI8x16
+    movzx   eax,word ptr [rsp+13Ah]
+    mov     [rsp+13Ch],eax
+    test    ax,ax
+    je      L8
+    mov     eax,0
+    mov     edx,0
+    jmp     L5
+L7:
+    mov     rbx,[rsp+38h]
+    mov     r12,[rsp+40h]
+    mov     r13,[rsp+48h]
+    mov     r14,[rsp+50h]
+    mov     r15,r8
+    mov     [rsp+28h],r9
+    mov     [rsp+20h],rbp
+    jmp     L3
+L8:
     mov     rax,[r13+8]
-    mov     [rsp+38h],rax
-    mov     rcx,[rsp+18h]
+    mov     rcx,[rsp+28h]
     add     rcx,10h
-    mov     [rsp+30h],rcx
     add     r12,rcx
     and     r12,rax
     mov     rbx,r12
     mov     r12,r13
-    mov     r13,[rsp+10h]
-    mov     r14,[rsp+20h]
-    mov     r15,[rsp+28h]
+    mov     r13,[rsp+20h]
+    mov     [rsp+10h],r14
+    mov     [rsp+18h],r15
     mov     rbp,rcx
     jmp     L0
+L9:
+    lea     rdi,[image.k4563]
+    mov     esi,237h
+    mov     edx,0
+    mov     rcx,[rsp+30h]
+    movzx   edx,dl
+    call    image.sym53
+    ud2
   ; OSR entries
-    lea     r11,[L7]
+    lea     r11,[L10]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L7:
-    .long   L8
-    .long   L9
-    .long   L10
+L10:
     .long   L11
-L8:
+    .long   L12
+    .long   L13
+    .long   L14
+L11:
     pop     rcx
     lea     rdx,[rsp+100h]
-    lea     rsp,[rdx-180h]
+    lea     rsp,[rdx-220h]
     mov     r11,[rdx-0A0h]
     mov     [rsp],r11
     mov     r11,[rdx-18h]
@@ -4549,56 +4784,26 @@ L8:
     mov     [rsp+20h],r11
     mov     r11,[rdx-98h]
     mov     [rsp+28h],r11
-    mov     r11,[rdx-100h]
-    mov     [rsp+30h],r11
-    mov     r11,[rdx-0F8h]
-    mov     [rsp+38h],r11
-    mov     r11,[rdx-0F0h]
-    mov     [rsp+40h],r11
-    mov     r11,[rdx-0E8h]
-    mov     [rsp+48h],r11
-    mov     r11,[rdx-0C0h]
-    mov     [rsp+50h],r11
-    mov     r11,[rdx-0B8h]
-    mov     [rsp+58h],r11
-    mov     r11,[rdx-0B0h]
-    mov     [rsp+60h],r11
-    mov     r11,[rdx-0A8h]
-    mov     [rsp+68h],r11
     mov     [rdx-78h],rbx
     mov     [rdx-80h],r12
     mov     [rdx-88h],r13
     mov     [rdx-90h],r14
     mov     [rdx-98h],r15
     mov     [rdx-0A0h],rbp
-    mov     r11,[rsp+30h]
-    mov     [rdx-0B0h],r11
-    mov     r11,[rsp+38h]
-    mov     [rdx-0A8h],r11
-    mov     r11,[rsp+40h]
-    mov     [rdx-0C0h],r11
-    mov     r11,[rsp+48h]
-    mov     [rdx-0B8h],r11
-    mov     r11,[rsp+50h]
-    mov     [rdx-0D0h],r11
-    mov     r11,[rsp+58h]
-    mov     [rdx-0C8h],r11
-    mov     r11,[rsp+60h]
-    mov     [rdx-0E0h],r11
-    mov     r11,[rsp+68h]
-    mov     [rdx-0D8h],r11
+    mov     r11,[rsp+18h]
+    mov     [rdx-1E0h],r11
+    mov     r11,[rsp+20h]
+    mov     [rdx-1D8h],r11
     mov     rbx,[rsp]
     mov     r12,[rsp+8]
     mov     r13,[rsp+10h]
-    mov     r14,[rsp+18h]
-    mov     r15,[rsp+20h]
     mov     rbp,[rsp+28h]
-    lea     rsp,[rsp+70h]
+    lea     rsp,[rsp+30h]
     jmp     L0
-L9:
+L12:
     pop     rcx
     lea     rdx,[rsp+100h]
-    lea     rsp,[rdx-190h]
+    lea     rsp,[rdx-230h]
     movzx   r11d,word ptr [rdx-32h]
     mov     [rsp],r11
     mov     r11,[rdx-0A0h]
@@ -4613,61 +4818,27 @@ L9:
     mov     [rsp+28h],r11
     movzx   r11d,byte ptr [rdx-49h]
     mov     [rsp+30h],r11
-    mov     r11,[rdx-100h]
-    mov     [rsp+38h],r11
-    mov     r11,[rdx-0F8h]
-    mov     [rsp+40h],r11
-    mov     r11,[rdx-0F0h]
-    mov     [rsp+48h],r11
-    mov     r11,[rdx-0E8h]
-    mov     [rsp+50h],r11
-    mov     r11,[rdx-0C0h]
-    mov     [rsp+58h],r11
-    mov     r11,[rdx-0B8h]
-    mov     [rsp+60h],r11
-    mov     r11,[rdx-0B0h]
-    mov     [rsp+68h],r11
-    mov     r11,[rdx-0A8h]
-    mov     [rsp+70h],r11
     mov     [rdx-78h],rbx
     mov     [rdx-80h],r12
     mov     [rdx-88h],r13
     mov     [rdx-90h],r14
     mov     [rdx-98h],r15
     mov     [rdx-0A0h],rbp
-    mov     r11,[rsp+38h]
-    mov     [rdx-0B0h],r11
-    mov     r11,[rsp+40h]
-    mov     [rdx-0A8h],r11
-    mov     r11,[rsp+48h]
-    mov     [rdx-0C0h],r11
-    mov     r11,[rsp+50h]
-    mov     [rdx-0B8h],r11
-    mov     r11,[rsp+58h]
-    mov     [rdx-0D0h],r11
-    mov     r11,[rsp+60h]
-    mov     [rdx-0C8h],r11
-    mov     r11,[rsp+68h]
-    mov     [rdx-0E0h],r11
-    mov     r11,[rsp+70h]
-    mov     [rdx-0D8h],r11
-    mov     r11,[rsp+18h]
-    mov     [rdx-0F0h],r11
-    mov     r11,[rsp+20h]
-    mov     [rdx-0E8h],r11
     mov     r11,[rsp+28h]
-    mov     [rdx-0F8h],r11
+    mov     [rdx-1C8h],r11
     mov     r11,[rsp+30h]
-    mov     [rdx-100h],r11
+    mov     [rdx-1D0h],r11
     mov     rbx,[rsp]
     mov     r12,[rsp+8]
     mov     r13,[rsp+10h]
-    lea     rsp,[rsp+80h]
-    jmp     L1
-L10:
+    mov     r14,[rsp+18h]
+    mov     r15,[rsp+20h]
+    lea     rsp,[rsp+40h]
+    jmp     L3
+L13:
     pop     rcx
     lea     rdx,[rsp+100h]
-    lea     rsp,[rdx-190h]
+    lea     rsp,[rdx-240h]
     movzx   r11d,byte ptr [rdx-8Bh]
     mov     [rsp],r11
     movzx   r11d,word ptr [rdx-32h]
@@ -4684,181 +4855,202 @@ L10:
     mov     [rsp+30h],r11
     movzx   r11d,byte ptr [rdx-49h]
     mov     [rsp+38h],r11
-    mov     r11,[rdx-100h]
-    mov     [rsp+40h],r11
-    mov     r11,[rdx-0F8h]
-    mov     [rsp+48h],r11
-    mov     r11,[rdx-0F0h]
-    mov     [rsp+50h],r11
-    mov     r11,[rdx-0E8h]
-    mov     [rsp+58h],r11
     mov     r11,[rdx-0C0h]
-    mov     [rsp+60h],r11
-    mov     r11,[rdx-0B8h]
-    mov     [rsp+68h],r11
-    mov     r11,[rdx-0B0h]
-    mov     [rsp+70h],r11
-    mov     r11,[rdx-0A8h]
-    mov     [rsp+78h],r11
+    mov     [rsp+40h],r11
     mov     [rdx-78h],rbx
     mov     [rdx-80h],r12
     mov     [rdx-88h],r13
     mov     [rdx-90h],r14
     mov     [rdx-98h],r15
     mov     [rdx-0A0h],rbp
-    mov     r11,[rsp+40h]
-    mov     [rdx-0B0h],r11
-    mov     r11,[rsp+48h]
-    mov     [rdx-0A8h],r11
-    mov     r11,[rsp+50h]
-    mov     [rdx-0C0h],r11
-    mov     r11,[rsp+58h]
-    mov     [rdx-0B8h],r11
-    mov     r11,[rsp+60h]
-    mov     [rdx-0D0h],r11
-    mov     r11,[rsp+68h]
-    mov     [rdx-0C8h],r11
-    mov     r11,[rsp+70h]
-    mov     [rdx-0E0h],r11
-    mov     r11,[rsp+78h]
-    mov     [rdx-0D8h],r11
+    mov     r11,[rsp+8]
+    mov     [rdx-1B8h],r11
+    mov     r11,[rsp+10h]
+    mov     [rdx-1B0h],r11
+    mov     r11,[rsp+18h]
+    mov     [rdx-1A8h],r11
+    mov     r11,[rsp+20h]
+    mov     [rdx-1A0h],r11
     mov     rax,[rsp]
-    mov     rbx,[rsp+8]
-    mov     rcx,[rsp+10h]
-    mov     rsi,[rsp+20h]
-    mov     rdi,[rsp+28h]
-    mov     r8,[rsp+30h]
-    mov     r9,[rsp+38h]
-    mov     rdx,[rsp+18h]
-    lea     rsp,[rsp+80h]
-    jmp     L2
-L11:
+    mov     r8,[rsp+28h]
+    mov     r9,[rsp+30h]
+    mov     rbp,[rsp+38h]
+    mov     rdx,[rsp+40h]
+    lea     rsp,[rsp+50h]
+    jmp     L4
+L14:
     ret
 
 fn hashbrown::raw::RawTableInner::find_insert_index
-    sub     rsp,0C8h
-    mov     [rsp+58h],rbx
-    mov     [rsp+60h],rsi
+    sub     rsp,108h
+    mov     [rsp+98h],rbx
+    mov     [rsp+0A0h],rsi
     mov     rax,[rdi+8]
     and     rsi,rax
-    mov     [rsp+68h],rsi
-    mov     [rsp+70h],rsi
-    mov     qword ptr [rsp+78h],0
+    mov     [rsp+0A8h],rsi
+    mov     [rsp+0B0h],rsi
+    mov     qword ptr [rsp+0B8h],0
     mov     rbx,rdi
 L0:
-    mov     rax,[rsp+70h]
+    mov     rax,[rsp+0B0h]
     mov     rcx,[rbx]
-    mov     [rsp+40h],rcx
-    mov     [rsp+48h],rcx
-    lea     rsi,[rcx+rax]
-    lea     rdi,[rsp+40h]
-    call    sym0
-    mov     rax,[rsp+40h]
-    mov     rcx,[rsp+48h]
-    mov     [rsp+60h],rax
-    mov     [rsp+68h],rcx
-    lea     rdx,[rsp+60h]
-    mov     [rsp+48h],rdx
-    lea     rdx,[rsp+70h]
-    mov     [rsp+40h],rdx
-    mov     edx,[rsp+6Ch]
+    lea     rcx,[rcx+rax]
+    mov     qword ptr [rsp+10h],0
+    mov     qword ptr [rsp+18h],0
+    lea     rax,[rsp+10h]
+    lea     rdx,[image.k952]
+    test    rcx,rcx
+    je      L11
+    test    rax,rax
+    je      L11
+    cmp     rcx,rax
+    jae     L1
+    mov     rsi,rax
+    sub     rsi,rcx
+    jmp     L2
+L1:
+    mov     r11,rcx
+    sub     r11,rax
+    mov     rax,r11
+    mov     rsi,rax
+L2:
+    cmp     rsi,10h
+    jb      L11
+    mov     rax,[rcx]
+    mov     rcx,[rcx+8]
     mov     [rsp+10h],rax
-    mov     [rsp+18h],ecx
-    mov     [rsp+1Ch],edx
-    lea     rdi,[rsp+10h]
-    call    image.sym20
+    mov     [rsp+18h],rcx
+    mov     [rsp+0A0h],rax
+    mov     [rsp+0A8h],rcx
+    mov     esi,[rsp+0ACh]
+    mov     [rsp+50h],rax
+    mov     [rsp+58h],ecx
+    mov     [rsp+5Ch],esi
+    mov     rcx,[rsp+58h]
+    mov     [rsp+40h],rax
+    mov     [rsp+48h],rcx
+    mov     [rsp+30h],rax
+    mov     [rsp+38h],rcx
+    mov     qword ptr [rsp+40h],0
+    mov     qword ptr [rsp+48h],0
+    lea     rdi,[rsp+100h]
+    mov     esi,0FFFFFF20h
+    mov     edx,0FFFFFF30h
+    mov     ecx,0FFFFFF40h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+100h]
+    mov     esi,0FFFFFF3Ah
+    mov     edx,0FFFFFF20h
+    call    ryo_h_VmsbI8x16
+    movzx   eax,word ptr [rsp+3Ah]
+    mov     [rsp+3Ch],eax
     test    ax,ax
-    je      L1
+    je      L3
     mov     [rsp],rax
-    lea     rdi,[rsp+0C0h]
+    lea     rdi,[rsp+100h]
     mov     esi,0FFFFFF5Ch
-    mov     edx,0FFFFFF40h
+    mov     edx,0FFFFFF00h
     call    ryo_h_CttzW16
-    mov     eax,[rsp+1Ch]
-    mov     rcx,[rsp+70h]
+    mov     eax,[rsp+5Ch]
+    mov     rcx,[rsp+0B0h]
     add     rcx,rax
     mov     rax,[rbx+8]
     and     rcx,rax
     mov     eax,1
-    jmp     L2
-L1:
+    jmp     L4
+L3:
     mov     eax,0
     mov     ecx,0
-L2:
-    cmp     rax,1
-    je      L4
-    mov     rax,[rbx+8]
-    mov     [rsp+48h],rax
-    mov     rdx,[rsp+78h]
-    add     rdx,10h
-    mov     [rsp+78h],rdx
-    mov     [rsp+40h],rdx
-    mov     rsi,[rsp+70h]
-    add     rsi,rdx
-    mov     [rsp+70h],rsi
-    and     rsi,rax
-    mov     [rsp+70h],rsi
-    jmp     L0
-L3:
-    mov     rbx,[rsp+58h]
-    add     rsp,0C8h
-    ret
 L4:
-    mov     [rsp+48h],rcx
-    mov     rsi,[rbx]
-    lea     rdx,[rsi+rcx]
-    movzx   edx,byte ptr [rdx]
-    and     edx,80h
-    test    dl,dl
-    jne     L6
-    lea     rdi,[rsp+20h]
-    call    image.sym19
-    mov     rdx,[rsp+20h]
-    mov     rsi,[rsp+28h]
-    mov     [rsp+30h],rdx
-    mov     [rsp+38h],rsi
-    lea     rdi,[rsp+30h]
-    call    image.sym20
-    mov     rdx,rax
-    mov     rdi,rdx
-    test    di,di
-    je      L8
-    jmp     L7
+    cmp     rax,1
+    je      L6
+    mov     rax,[rbx+8]
+    mov     rsi,[rsp+0B8h]
+    add     rsi,10h
+    mov     [rsp+0B8h],rsi
+    mov     rdi,[rsp+0B0h]
+    add     rdi,rsi
+    mov     [rsp+0B0h],rdi
+    and     rdi,rax
+    mov     [rsp+0B0h],rdi
+    jmp     L0
 L5:
-    jmp     L3
+    mov     rbx,[rsp+98h]
+    add     rsp,108h
+    ret
 L6:
-    mov     rax,rcx
-    jmp     L5
+    mov     rsi,[rbx]
+    lea     rdi,[rsi+rcx]
+    movzx   edi,byte ptr [rdi]
+    and     edi,80h
+    test    dil,dil
+    jne     L8
+    mov     rdi,[rsi]
+    mov     rsi,[rsi+8]
+    mov     [rsp+80h],rdi
+    mov     [rsp+88h],rsi
+    mov     [rsp+70h],rdi
+    mov     [rsp+78h],rsi
+    mov     qword ptr [rsp+80h],0
+    mov     qword ptr [rsp+88h],0
+    lea     rdi,[rsp+100h]
+    mov     esi,0FFFFFF60h
+    mov     edx,0FFFFFF70h
+    mov     ecx,0FFFFFF80h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+100h]
+    mov     esi,0FFFFFF7Ah
+    mov     edx,0FFFFFF60h
+    call    ryo_h_VmsbI8x16
+    movzx   esi,word ptr [rsp+7Ah]
+    mov     [rsp+7Ch],esi
+    mov     rdi,rsi
+    test    di,di
+    je      L10
+    jmp     L9
 L7:
-    call    ryo_hr_CttzW16
-    mov     eax,eax
     jmp     L5
 L8:
+    mov     rax,rcx
+    jmp     L7
+L9:
+    call    ryo_hr_CttzW16
+    mov     eax,eax
+    jmp     L7
+L10:
     mov     eax,0
-    jmp     L5
+    jmp     L7
+L11:
+    lea     rdi,[image.k4563]
+    mov     esi,237h
+    mov     rcx,rdx
+    mov     edx,0
+    movzx   edx,dl
+    call    image.sym53
+    ud2
   ; OSR entries
-    lea     r11,[L9]
+    lea     r11,[L12]
     movsxd  rax,[r11+rax*4]
     add     rax,r11
     jmp     rax
-L9:
-    .long   L10
-    .long   L11
-    .long   L12
-L10:
+L12:
+    .long   L13
+    .long   L14
+    .long   L15
+L13:
     pop     rcx
     lea     rdx,[rsp+80h]
-    lea     rsp,[rdx-0D0h]
+    lea     rsp,[rdx-110h]
     mov     r11,[rdx-10h]
     mov     [rsp],r11
     mov     [rdx-68h],rbx
     mov     rbx,[rsp]
     lea     rsp,[rsp+10h]
     jmp     L0
-L11:
+L14:
     pop     rcx
     lea     rdx,[rsp+80h]
-    lea     rsp,[rdx-0E0h]
+    lea     rsp,[rdx-120h]
     mov     r11,[rdx-70h]
     mov     [rsp],r11
     mov     r11,[rdx-68h]
@@ -4870,40 +5062,56 @@ L11:
     mov     rcx,[rsp+8]
     mov     rbx,[rsp+10h]
     lea     rsp,[rsp+20h]
-    jmp     L2
-L12:
+    jmp     L4
+L15:
     ret
 
 fn hashbrown::raw::RawTableInner::find_insert_index_in_group
     push    rbx
     push    r12
-    sub     rsp,28h
+    sub     rsp,58h
     mov     rbx,rdi
     mov     r12,rdx
     mov     rax,[rsi]
     mov     ecx,[rsi+8]
     mov     edx,[rsi+0Ch]
-    mov     [rsp+10h],rax
-    mov     [rsp+18h],ecx
-    mov     [rsp+1Ch],edx
-    lea     rdi,[rsp+10h]
-    call    sym0
+    mov     [rsp+40h],rax
+    mov     [rsp+48h],ecx
+    mov     [rsp+4Ch],edx
+    mov     rcx,[rsp+48h]
+    mov     [rsp+30h],rax
+    mov     [rsp+38h],rcx
+    mov     [rsp+20h],rax
+    mov     [rsp+28h],rcx
+    mov     qword ptr [rsp+30h],0
+    mov     qword ptr [rsp+38h],0
+    lea     rdi,[rsp+60h]
+    mov     esi,0FFFFFFB0h
+    mov     edx,0FFFFFFC0h
+    mov     ecx,0FFFFFFD0h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+60h]
+    mov     esi,0FFFFFFCAh
+    mov     edx,0FFFFFFB0h
+    call    ryo_h_VmsbI8x16
+    movzx   eax,word ptr [rsp+2Ah]
+    mov     [rsp+2Ch],eax
     test    ax,ax
     je      L2
     jmp     L1
 L0:
     mov     rax,rcx
-    add     rsp,28h
+    add     rsp,58h
     pop     r12
     pop     rbx
     ret
 L1:
     mov     [rsp],rax
-    lea     rdi,[rsp+30h]
+    lea     rdi,[rsp+60h]
     mov     esi,0FFFFFFECh
-    mov     edx,0FFFFFFD0h
+    mov     edx,0FFFFFFA0h
     call    ryo_h_CttzW16
-    mov     eax,[rsp+1Ch]
+    mov     eax,[rsp+4Ch]
     mov     rcx,[r12]
     add     rcx,rax
     mov     rax,[rbx+8]
@@ -4926,20 +5134,20 @@ L4:
     ret
 
 fn hashbrown::raw::RawTableInner::resize_inner::<std::alloc::Global>
-    sub     rsp,328h
-    mov     [rsp+1C8h],rbx
-    mov     [rsp+1C0h],r12
-    mov     [rsp+1B8h],r13
-    mov     [rsp+1B0h],r14
-    mov     [rsp+1A8h],r15
-    mov     [rsp+1A0h],rbp
+    sub     rsp,3E8h
+    mov     [rsp+288h],rbx
+    mov     [rsp+280h],r12
+    mov     [rsp+278h],r13
+    mov     [rsp+270h],r14
+    mov     [rsp+268h],r15
+    mov     [rsp+260h],rbp
     mov     [rsp+70h],rdi
     mov     [rsp+78h],rsi
     mov     [rsp+10h],rcx
     mov     [rsp+18h],r8
-    mov     r11,[rsp+338h]
+    mov     r11,[rsp+3F8h]
     mov     [rsp+60h],r11
-    mov     r11,[rsp+330h]
+    mov     r11,[rsp+3F0h]
     mov     [rsp+68h],r11
     mov     r11,[rsp+68h]
     shr     r11,10h
@@ -4965,324 +5173,411 @@ fn hashbrown::raw::RawTableInner::resize_inner::<std::alloc::Global>
     mov     r11,[rsp+60h]
     shr     r11,38h
     mov     [rsp+48h],r11
-    lea     rdi,[rsp+170h]
+    lea     rdi,[rsp+240h]
     mov     rsi,[rsp+78h]
     mov     rcx,[rsp+60h]
     mov     r8,rdx
     mov     rdx,[rsp+68h]
     movzx   r9d,r9b
     call    qword ptr [fn0.slot]
-    mov     r11,[rsp+170h]
-    mov     [rsp+0B0h],r11
-    mov     r11,[rsp+0B0h]
+    mov     r11,[rsp+240h]
+    mov     [rsp+0F0h],r11
+    mov     r11,[rsp+0F0h]
     cmp     r11,0
-    je      L20
-    jmp     L21
+    je      L22
+    jmp     L23
 L0:
-    lea     rcx,[rsp+1D0h]
-    mov     [rsp+168h],rcx
-    mov     rcx,[rsp+1E0h]
-    mov     [rsp+160h],rcx
+    lea     rcx,[rsp+290h]
+    mov     r14,rcx
+    shr     r14,20h
+    mov     r15,rcx
+    shr     r15,30h
+    mov     rbp,rcx
+    shr     rbp,38h
+    mov     rcx,[rsp+2A0h]
     test    rcx,rcx
-    je      L14
+    je      L16
 L1:
-    movzx   r14d,word ptr [rsp+1E8h]
-    test    r14w,r14w
+    movzx   ebx,word ptr [rsp+2A8h]
+    test    bx,bx
     je      L2
-    mov     rdi,r14
+    mov     rdi,rbx
     call    ryo_hr_CttzW16
     mov     rcx,rax
     mov     ecx,ecx
-    lea     edx,[r14-1]
-    and     r14d,edx
-    mov     [rsp+1E8h],r14w
-    mov     rdx,[rsp+1D8h]
+    lea     edx,[rbx-1]
+    and     ebx,edx
+    mov     [rsp+2A8h],bx
+    mov     rdx,[rsp+298h]
     add     rdx,rcx
-    mov     rcx,[rsp+168h]
+    lea     rcx,[rsp+290h]
+    mov     ecx,ecx
+    movzx   esi,r14w
+    shl     rsi,20h
+    or      rcx,rsi
+    movzx   esi,r15b
+    shl     rsi,30h
+    or      rcx,rsi
+    movzx   esi,bpl
+    shl     rsi,38h
+    or      rcx,rsi
     mov     rsi,[rcx+10h]
     sub     rsi,1
-    mov     [rsp+190h],rsi
     mov     [rcx+10h],rsi
+    mov     [rsp+0C0h],rdx
     mov     r11,[rsp+90h]
-    mov     [rsp+98h],r11
-    mov     [rsp+0A0h],r15
-    mov     r14,r12
-    mov     r12,r13
-    mov     r13,rbx
-    mov     rbx,[rsp+80h]
-    mov     r15,[rsp+88h]
+    mov     [rsp+0B0h],r11
+    mov     r11,[rsp+98h]
+    mov     [rsp+0B8h],r11
+    mov     r15,[rsp+0A0h]
+    mov     rbp,[rsp+0A8h]
+    mov     r14,r13
+    mov     r13,r12
+    mov     r12,[rsp+80h]
+    mov     rbx,[rsp+88h]
     jmp     L3
 L2:
-    mov     rcx,[rsp+1D0h]
-    mov     qword ptr [rsp+0D8h],10h
-    mov     rsi,rcx
-    lea     rsi,[rsi+10h]
-    mov     [rsp+1D0h],rsi
-    lea     rdi,[rsp+0C0h]
-    call    sym3
-    mov     rcx,[rsp+0C0h]
-    mov     rdx,[rsp+0C8h]
-    mov     [rsp+0D0h],rcx
-    mov     [rsp+0D8h],rdx
-    lea     rdi,[rsp+0D0h]
-    call    sym4
-    mov     rcx,rax
+    mov     rcx,[rsp+290h]
+    mov     rdx,rcx
+    lea     rdx,[rdx+10h]
+    mov     [rsp+290h],rdx
+    mov     rdx,[rcx+10h]
+    mov     rcx,[rcx+18h]
+    mov     [rsp+130h],rdx
+    mov     [rsp+138h],rcx
+    mov     [rsp+120h],rdx
+    mov     [rsp+128h],rcx
+    mov     qword ptr [rsp+130h],0
+    mov     qword ptr [rsp+138h],0
+    lea     rdi,[rsp+3E0h]
+    mov     esi,0FFFFFD30h
+    mov     edx,0FFFFFD40h
+    mov     ecx,0FFFFFD50h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+3E0h]
+    mov     esi,0FFFFFD4Ah
+    mov     edx,0FFFFFD30h
+    call    ryo_h_VmsbI8x16
+    movzx   ecx,word ptr [rsp+12Ah]
+    mov     [rsp+12Ch],ecx
     mov     rdi,rcx
     call    ryo_hr_NotW16
     mov     rcx,rax
-    mov     [rsp+1E8h],cx
-    mov     rcx,[rsp+1D8h]
-    mov     [rsp+0D8h],rcx
+    mov     [rsp+2A8h],cx
+    mov     rcx,[rsp+298h]
     add     rcx,10h
-    mov     [rsp+0D0h],rcx
-    mov     [rsp+1D8h],rcx
+    mov     [rsp+298h],rcx
     jmp     L1
 L3:
-    mov     [rsp+160h],rdx
-    mov     r11,[rsp+98h]
+    mov     r11,[rsp+0C0h]
+    shr     r11,10h
+    mov     [rsp+0C8h],r11
+    mov     r11,[rsp+0C0h]
+    shr     r11,20h
+    mov     [rsp+0D0h],r11
+    mov     r11,[rsp+0C0h]
+    shr     r11,30h
+    mov     [rsp+0D8h],r11
+    mov     r11,[rsp+0C0h]
+    shr     r11,38h
+    mov     [rsp+0E0h],r11
+    mov     r11,[rsp+0B0h]
     mov     rcx,[r11+28h]
-    mov     rdi,[rsp+0A0h]
-    mov     rsi,rbx
+    mov     rdi,[rsp+0B8h]
+    mov     rsi,r12
+    mov     rdx,[rsp+0C0h]
     mov     rax,rcx
     call    rax
-    mov     [rsp+0A8h],rax
-    mov     r10,[rsp+0A8h]
-    mov     [rsp+120h],r10
-    mov     rcx,[rsp+210h]
-    and     rcx,[rsp+0A8h]
-    mov     [rsp+128h],rcx
-    mov     [rsp+110h],rcx
-    mov     qword ptr [rsp+118h],0
+    mov     [rsp+0E8h],rax
+    mov     r10,[rsp+0E8h]
+    mov     [rsp+1D0h],r10
+    mov     rcx,[rsp+2D0h]
+    and     rcx,[rsp+0E8h]
+    mov     [rsp+1D8h],rcx
+    mov     [rsp+1C0h],rcx
+    mov     qword ptr [rsp+1C8h],0
 L4:
-    mov     rcx,[rsp+110h]
-    mov     rdx,[rsp+208h]
-    mov     [rsp+130h],rdx
-    mov     [rsp+138h],rdx
-    lea     rsi,[rdx+rcx]
-    lea     rdi,[rsp+130h]
-    call    image.sym59
-    mov     rcx,[rsp+130h]
-    mov     rdx,[rsp+138h]
-    mov     [rsp+120h],rcx
-    mov     [rsp+128h],rdx
-    lea     rsi,[rsp+120h]
-    mov     [rsp+138h],rsi
-    lea     rsi,[rsp+110h]
-    mov     [rsp+130h],rsi
-    mov     esi,[rsp+12Ch]
-    mov     [rsp+0E0h],rcx
-    mov     [rsp+0E8h],edx
-    mov     [rsp+0ECh],esi
-    lea     rdi,[rsp+0E0h]
-    call    sym4
-    mov     rcx,rax
-    test    cx,cx
-    je      L7
+    mov     rcx,[rsp+1C0h]
+    mov     rdx,[rsp+2C8h]
+    lea     rdx,[rdx+rcx]
+    mov     qword ptr [rsp+140h],0
+    mov     qword ptr [rsp+148h],0
+    lea     rcx,[rsp+140h]
+    lea     r11,[image.k952]
+    mov     [rsp+0F8h],r11
+    test    rdx,rdx
+    je      L24
+    test    rcx,rcx
+    je      L24
+    cmp     rdx,rcx
+    jae     L5
+    mov     rdi,rcx
+    sub     rdi,rdx
     jmp     L6
 L5:
-    cmp     rdx,1
+    mov     r11,rdx
+    sub     r11,rcx
+    mov     rcx,r11
+    mov     rdi,rcx
+L6:
+    cmp     rdi,10h
+    jb      L24
+    mov     rcx,[rdx]
+    mov     rdx,[rdx+8]
+    mov     [rsp+140h],rcx
+    mov     [rsp+148h],rdx
+    mov     [rsp+1D0h],rcx
+    mov     [rsp+1D8h],rdx
+    mov     edi,[rsp+1DCh]
+    mov     [rsp+180h],rcx
+    mov     [rsp+188h],edx
+    mov     [rsp+18Ch],edi
+    mov     rdx,[rsp+188h]
+    mov     [rsp+170h],rcx
+    mov     [rsp+178h],rdx
+    mov     [rsp+160h],rcx
+    mov     [rsp+168h],rdx
+    mov     qword ptr [rsp+170h],0
+    mov     qword ptr [rsp+178h],0
+    lea     rdi,[rsp+3E0h]
+    mov     esi,0FFFFFD70h
+    mov     edx,0FFFFFD80h
+    mov     ecx,0FFFFFD90h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+3E0h]
+    mov     esi,0FFFFFD8Ah
+    mov     edx,0FFFFFD70h
+    call    ryo_h_VmsbI8x16
+    movzx   ecx,word ptr [rsp+16Ah]
+    mov     [rsp+16Ch],ecx
+    test    cx,cx
     je      L9
     jmp     L8
-L6:
-    mov     [rsp],rcx
-    lea     rdi,[rsp+320h]
-    mov     esi,0FFFFFDCCh
-    mov     edx,0FFFFFCE0h
-    call    ryo_h_CttzW16
-    mov     ecx,[rsp+0ECh]
-    mov     rdx,[rsp+110h]
-    add     rdx,rcx
-    mov     rcx,[rsp+210h]
-    and     rdx,rcx
-    mov     rsi,rdx
-    mov     edx,1
-    jmp     L5
 L7:
-    mov     edx,0
-    mov     esi,0
-    jmp     L5
+    cmp     rdx,1
+    je      L11
+    jmp     L10
 L8:
-    mov     rcx,[rsp+210h]
-    mov     [rsp+138h],rcx
-    mov     rdx,[rsp+118h]
-    add     rdx,10h
-    mov     [rsp+118h],rdx
-    mov     [rsp+130h],rdx
-    mov     rdi,[rsp+110h]
-    add     rdi,rdx
-    mov     [rsp+110h],rdi
-    and     rdi,rcx
-    mov     [rsp+110h],rdi
-    jmp     L4
+    mov     [rsp],rcx
+    lea     rdi,[rsp+3E0h]
+    mov     esi,0FFFFFDACh
+    mov     edx,0FFFFFC20h
+    call    ryo_h_CttzW16
+    mov     ecx,[rsp+18Ch]
+    mov     rdx,[rsp+1C0h]
+    add     rdx,rcx
+    mov     rcx,[rsp+2D0h]
+    and     rdx,rcx
+    mov     rdi,rdx
+    mov     edx,1
+    jmp     L7
 L9:
-    mov     [rsp+138h],rsi
-    mov     rcx,[rsp+208h]
-    lea     rdx,[rcx+rsi]
+    mov     edx,0
+    mov     edi,0
+    jmp     L7
+L10:
+    mov     rcx,[rsp+2D0h]
+    mov     rdx,[rsp+1C8h]
+    add     rdx,10h
+    mov     [rsp+1C8h],rdx
+    mov     r8,[rsp+1C0h]
+    add     r8,rdx
+    mov     [rsp+1C0h],r8
+    and     r8,rcx
+    mov     [rsp+1C0h],r8
+    jmp     L4
+L11:
+    mov     rcx,[rsp+2C8h]
+    lea     rdx,[rcx+rdi]
     movzx   edx,byte ptr [rdx]
     and     edx,80h
     test    dl,dl
-    jne     L11
-    lea     rdi,[rsp+0F0h]
-    mov     rsi,rcx
-    call    sym3
-    mov     rcx,[rsp+0F0h]
-    mov     rdx,[rsp+0F8h]
-    mov     [rsp+100h],rcx
-    mov     [rsp+108h],rdx
-    lea     rdi,[rsp+100h]
-    call    sym4
-    mov     rcx,rax
-    mov     rdi,rcx
-    test    di,di
-    je      L13
-    jmp     L12
-L10:
-    mov     rdx,[rsp+208h]
-    lea     rdx,[rdx+rcx]
-    movzx   r11d,byte ptr [rdx]
-    mov     r8,[rsp+0A8h]
-    shr     r8,39h
-    and     r8,7Fh
-    lea     r9,[rcx-10h]
-    mov     rax,[rsp+210h]
-    and     r9,rax
-    add     r9,10h
-    mov     [rdx],r8b
-    mov     rax,[rsp+208h]
-    lea     rax,[rax+r9]
-    mov     [rax],r8b
-    movzx   eax,bp
-    movzx   edx,r13w
-    shl     rdx,10h
-    or      rax,rdx
-    movzx   edx,r14w
-    shl     rdx,20h
-    or      rax,rdx
-    movzx   edx,r12b
-    shl     rdx,30h
-    or      rax,rdx
-    movzx   edx,r15b
-    shl     rdx,38h
-    or      rdx,rax
-    mov     rax,[rbx]
-    mov     r8,[rsp+160h]
+    jne     L13
+    mov     rdx,[rcx]
+    mov     rcx,[rcx+8]
+    mov     [rsp+1B0h],rdx
+    mov     [rsp+1B8h],rcx
+    mov     [rsp+1A0h],rdx
+    mov     [rsp+1A8h],rcx
+    mov     qword ptr [rsp+1B0h],0
+    mov     qword ptr [rsp+1B8h],0
+    lea     rdi,[rsp+3E0h]
+    mov     esi,0FFFFFDB0h
+    mov     edx,0FFFFFDC0h
+    mov     ecx,0FFFFFDD0h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+3E0h]
+    mov     esi,0FFFFFDCAh
+    mov     edx,0FFFFFDB0h
+    call    ryo_h_VmsbI8x16
+    movzx   ecx,word ptr [rsp+1AAh]
+    mov     [rsp+1ACh],ecx
+    test    cx,cx
+    je      L15
+    jmp     L14
+L12:
+    mov     r8,[rsp+2C8h]
+    lea     r8,[r8+rdx]
+    movzx   r11d,byte ptr [r8]
+    mov     r9,[rsp+0E8h]
+    shr     r9,39h
+    and     r9,7Fh
+    lea     rax,[rdx-10h]
+    mov     rsi,[rsp+2D0h]
+    and     rax,rsi
+    add     rax,10h
+    mov     [r8],r9b
+    mov     rsi,[rsp+2C8h]
+    lea     rsi,[rsi+rax]
+    mov     [rsi],r9b
+    movzx   eax,r15w
+    movzx   esi,bp
+    shl     rsi,10h
+    or      rax,rsi
+    movzx   esi,r13w
+    shl     rsi,20h
+    or      rax,rsi
+    movzx   esi,r14b
+    shl     rsi,30h
+    or      rax,rsi
+    movzx   esi,bl
+    shl     rsi,38h
+    or      rax,rsi
+    mov     rsi,[r12]
+    movzx   r8d,word ptr [rsp+0C0h]
+    movzx   r9d,word ptr [rsp+0C8h]
+    shl     r9,10h
+    or      r8,r9
+    movzx   r9d,word ptr [rsp+0D0h]
+    shl     r9,20h
+    or      r8,r9
+    movzx   r9d,byte ptr [rsp+0D8h]
+    shl     r9,30h
+    or      r8,r9
+    movzx   r9d,byte ptr [rsp+0E0h]
+    shl     r9,38h
+    or      r8,r9
     add     r8,1
-    imul    r8,rdx
+    imul    r8,rax
     mov     r11d,0
     sub     r11,r8
     mov     r8,r11
-    lea     rax,[rax+r8]
-    mov     r8,[rsp+208h]
-    add     rcx,1
-    imul    rcx,rdx
+    lea     rsi,[rsi+r8]
+    mov     r8,[rsp+2C8h]
+    add     rdx,1
+    imul    rdx,rax
     mov     r11d,0
-    sub     r11,rcx
-    mov     rcx,r11
-    lea     r8,[r8+rcx]
+    sub     r11,rdx
+    mov     rdx,r11
+    lea     r8,[r8+rdx]
     mov     rdi,r8
-    mov     rsi,rax
+    mov     rdx,rax
     call    ryo_hr_Memcpy
-    mov     [rsp+80h],rbx
-    mov     r11,[rsp+98h]
+    mov     [rsp+80h],r12
+    mov     r11,[rsp+0B0h]
     mov     [rsp+90h],r11
-    mov     rbx,r13
-    mov     r13,r12
-    mov     r12,r14
-    mov     [rsp+88h],r15
-    mov     r15,[rsp+0A0h]
+    mov     r11,[rsp+0B8h]
+    mov     [rsp+98h],r11
+    mov     [rsp+0A0h],r15
+    mov     [rsp+0A8h],rbp
+    mov     r12,r13
+    mov     r13,r14
+    mov     [rsp+88h],rbx
     jmp     L0
-L11:
-    mov     rcx,rsi
-    jmp     L10
-L12:
+L13:
+    mov     rdx,rdi
+    jmp     L12
+L14:
+    mov     rdi,rcx
     call    ryo_hr_CttzW16
     mov     eax,eax
-    mov     rcx,rax
-    jmp     L10
-L13:
-    mov     ecx,0
-    jmp     L10
-L14:
+    mov     rdx,rax
+    jmp     L12
+L15:
+    mov     edx,0
+    jmp     L12
+L16:
     mov     r11,[rsp+80h]
     mov     rax,[r11+18h]
-    mov     [rsp+1E8h],rax
-    mov     rcx,[rsp+218h]
+    mov     [rsp+2A8h],rax
+    mov     rcx,[rsp+2D8h]
     sub     rcx,rax
-    mov     [rsp+218h],rcx
+    mov     [rsp+2D8h],rcx
     mov     r11,[rsp+80h]
     mov     rax,[r11+18h]
-    mov     [rsp+1E8h],rax
-    mov     [rsp+220h],rax
+    mov     [rsp+2A8h],rax
+    mov     [rsp+2E0h],rax
     mov     r10,[rsp+80h]
-    mov     [rsp+1E8h],r10
-    lea     rdx,[rsp+208h]
-    mov     [rsp+1E0h],rdx
+    mov     [rsp+2A8h],r10
+    lea     rdx,[rsp+2C8h]
+    mov     [rsp+2A0h],rdx
     mov     r11,[rsp+80h]
     mov     rdx,[r11]
     mov     r11,[rsp+80h]
     mov     rsi,[r11+8]
     mov     r11,[rsp+80h]
     mov     rdi,[r11+10h]
-    mov     [rsp+190h],rdi
+    mov     r8,rdi
+    shr     r8,10h
+    mov     r9,rdi
+    shr     r9,20h
+    mov     rbx,rdi
+    shr     rbx,30h
+    mov     r12,rdi
+    shr     r12,38h
     mov     r11,[rsp+80h]
-    mov     rdi,[r11+18h]
-    mov     [rsp+198h],rdi
-    mov     rdi,[rsp+208h]
-    mov     r8,[rsp+210h]
+    mov     r13,[r11+18h]
+    mov     r14,r13
+    shr     r14,20h
+    mov     r11,r13
+    shr     r11,30h
+    mov     [rsp+108h],r11
+    mov     r11,r13
+    shr     r11,38h
+    mov     [rsp+100h],r11
+    mov     rbp,[rsp+2C8h]
+    mov     r15,[rsp+2D0h]
     mov     r11,[rsp+80h]
-    mov     [r11],rdi
-    mov     rdi,[rsp+1E8h]
-    mov     [rdi+8],r8
-    mov     rdi,[rsp+1E8h]
-    mov     [rdi+10h],rcx
-    mov     rcx,[rsp+1E8h]
+    mov     [r11],rbp
+    mov     rbp,[rsp+2A8h]
+    mov     [rbp+8],r15
+    mov     r15,[rsp+2A8h]
+    mov     [r15+10h],rcx
+    mov     rcx,[rsp+2A8h]
     mov     [rcx+18h],rax
-    mov     rax,[rsp+1E0h]
+    mov     rax,[rsp+2A0h]
     mov     [rax],rdx
-    mov     rax,[rsp+1E0h]
+    mov     rax,[rsp+2A0h]
     mov     [rax+8],rsi
-    mov     rax,[rsp+1E0h]
-    mov     rcx,[rsp+190h]
-    mov     [rax+10h],rcx
-    mov     rax,[rsp+1E0h]
-    mov     rcx,[rsp+198h]
-    mov     [rax+18h],rcx
-    mov     rax,[rsp+210h]
+    mov     rax,[rsp+2A0h]
+    movzx   edi,di
+    movzx   r8d,r8w
+    shl     r8,10h
+    or      rdi,r8
+    movzx   r9d,r9w
+    shl     r9,20h
+    or      rdi,r9
+    movzx   ebx,bl
+    shl     rbx,30h
+    or      rdi,rbx
+    movzx   r12d,r12b
+    shl     r12,38h
+    or      rdi,r12
+    mov     [rax+10h],rdi
+    mov     rax,[rsp+2A0h]
+    mov     r13d,r13d
+    movzx   r14d,r14w
+    shl     r14,20h
+    or      r13,r14
+    movzx   ecx,byte ptr [rsp+108h]
+    shl     rcx,30h
+    or      r13,rcx
+    movzx   ecx,byte ptr [rsp+100h]
+    shl     rcx,38h
+    or      r13,rcx
+    mov     [rax+18h],r13
+    mov     rax,[rsp+2D0h]
     test    rax,rax
-    je      L15
-    jmp     L16
-L15:
-    mov     eax,0FFFFh
-    mov     ecx,0FFFFh
-    mov     edx,0FFFFh
-    mov     esi,0FFh
-    mov     edi,0FFh
-    mov     r8d,0
-    mov     r9d,0
-    mov     ebx,0
-    mov     r12d,0
-    mov     r13d,0
-    jmp     L19
-L16:
-    mov     r11,[rsp+1F0h]
-    mov     rsi,[rsp+1F8h]
-    mov     rdx,[rsp+200h]
-    lea     rcx,[rax+1]
-    lea     rdi,[rsp+140h]
-    call    qword ptr [image.fn125.slot]
-    mov     rdx,[rsp+140h]
-    mov     rsi,[rsp+148h]
-    mov     rax,[rsp+150h]
-    mov     rcx,[rsp+208h]
-    mov     [rsp+140h],rcx
-    mov     [rsp+148h],rcx
-    mov     r11d,0
-    sub     r11,rax
-    mov     rax,r11
-    mov     [rsp+140h],rax
-    lea     rdi,[rcx+rax]
-    mov     [rsp+150h],rdi
-    test    rsi,rsi
     je      L17
     jmp     L18
 L17:
@@ -5296,9 +5591,30 @@ L17:
     mov     ebx,0
     mov     r12d,0
     mov     r13d,0
-    jmp     L19
+    jmp     L21
 L18:
-    call    image.sym66
+    mov     r11,[rsp+2B0h]
+    mov     rsi,[rsp+2B8h]
+    mov     rdx,[rsp+2C0h]
+    lea     rcx,[rax+1]
+    lea     rdi,[rsp+1E0h]
+    call    qword ptr [image.fn125.slot]
+    mov     rdx,[rsp+1E0h]
+    mov     rsi,[rsp+1E8h]
+    mov     rax,[rsp+1F0h]
+    mov     rcx,[rsp+2C8h]
+    mov     [rsp+1E0h],rcx
+    mov     [rsp+1E8h],rcx
+    mov     r11d,0
+    sub     r11,rax
+    mov     rax,r11
+    mov     [rsp+1E0h],rax
+    lea     rdi,[rcx+rax]
+    mov     [rsp+1F0h],rdi
+    test    rsi,rsi
+    je      L19
+    jmp     L20
+L19:
     mov     eax,0FFFFh
     mov     ecx,0FFFFh
     mov     edx,0FFFFh
@@ -5309,7 +5625,20 @@ L18:
     mov     ebx,0
     mov     r12d,0
     mov     r13d,0
-L19:
+    jmp     L21
+L20:
+    call    image.sym57
+    mov     eax,0FFFFh
+    mov     ecx,0FFFFh
+    mov     edx,0FFFFh
+    mov     esi,0FFh
+    mov     edi,0FFh
+    mov     r8d,0
+    mov     r9d,0
+    mov     ebx,0
+    mov     r12d,0
+    mov     r13d,0
+L21:
     movzx   eax,ax
     movzx   ecx,cx
     shl     rcx,10h
@@ -5337,50 +5666,44 @@ L19:
     shl     r13,38h
     mov     rdx,r8
     or      rdx,r13
-    mov     rbx,[rsp+1C8h]
-    mov     r12,[rsp+1C0h]
-    mov     r13,[rsp+1B8h]
-    mov     r14,[rsp+1B0h]
-    mov     r15,[rsp+1A8h]
-    mov     rbp,[rsp+1A0h]
-    add     rsp,328h
+    mov     rbx,[rsp+288h]
+    mov     r12,[rsp+280h]
+    mov     r13,[rsp+278h]
+    mov     r14,[rsp+270h]
+    mov     r15,[rsp+268h]
+    mov     rbp,[rsp+260h]
+    add     rsp,3E8h
     ret
-L20:
-    movzx   eax,word ptr [rsp+178h]
-    movzx   ecx,word ptr [rsp+17Ah]
-    movzx   edx,word ptr [rsp+17Ch]
-    movzx   esi,byte ptr [rsp+17Eh]
-    movzx   edi,byte ptr [rsp+17Fh]
-    movzx   r8d,word ptr [rsp+180h]
-    movzx   r9d,word ptr [rsp+182h]
-    movzx   ebx,word ptr [rsp+184h]
-    movzx   r12d,byte ptr [rsp+186h]
-    movzx   r13d,byte ptr [rsp+187h]
-    mov     [rsp+180h],ax
-    mov     [rsp+182h],cx
-    mov     [rsp+184h],dx
-    mov     [rsp+186h],sil
-    mov     [rsp+187h],dil
-    mov     [rsp+188h],r8w
-    mov     [rsp+18Ah],r9w
-    mov     [rsp+18Ch],bx
-    mov     [rsp+18Eh],r12b
-    mov     [rsp+18Fh],r13b
-    mov     qword ptr [rsp+178h],1
-    mov     byte ptr [rsp+177h],1
-    mov     qword ptr [rsp+168h],0
-    mov     [rsp+160h],r8w
-    mov     [rsp+162h],r9w
-    mov     [rsp+164h],bx
-    mov     [rsp+166h],r12b
-    mov     [rsp+167h],r13b
-    jmp     L19
-L21:
-    mov     rax,[rsp+178h]
-    mov     rcx,[rsp+180h]
-    mov     rdx,[rsp+188h]
+L22:
+    movzx   eax,word ptr [rsp+248h]
+    movzx   ecx,word ptr [rsp+24Ah]
+    movzx   edx,word ptr [rsp+24Ch]
+    movzx   esi,byte ptr [rsp+24Eh]
+    movzx   edi,byte ptr [rsp+24Fh]
+    movzx   r8d,word ptr [rsp+250h]
+    movzx   r9d,word ptr [rsp+252h]
+    movzx   ebx,word ptr [rsp+254h]
+    movzx   r12d,byte ptr [rsp+256h]
+    movzx   r13d,byte ptr [rsp+257h]
+    mov     [rsp+250h],ax
+    mov     [rsp+252h],cx
+    mov     [rsp+254h],dx
+    mov     [rsp+256h],sil
+    mov     [rsp+257h],dil
+    mov     [rsp+258h],r8w
+    mov     [rsp+25Ah],r9w
+    mov     [rsp+25Ch],bx
+    mov     [rsp+25Eh],r12b
+    mov     [rsp+25Fh],r13b
+    mov     qword ptr [rsp+248h],1
+    mov     byte ptr [rsp+247h],1
+    jmp     L21
+L23:
+    mov     rax,[rsp+248h]
+    mov     rcx,[rsp+250h]
+    mov     rdx,[rsp+258h]
     mov     r10,[rsp+78h]
-    mov     [rsp+178h],r10
+    mov     [rsp+248h],r10
     movzx   esi,word ptr [rsp+68h]
     movzx   edi,word ptr [rsp+50h]
     shl     rdi,10h
@@ -5394,7 +5717,7 @@ L21:
     movzx   edi,byte ptr [rsp+28h]
     shl     rdi,38h
     or      rsi,rdi
-    mov     [rsp+180h],rsi
+    mov     [rsp+250h],rsi
     movzx   edi,word ptr [rsp+60h]
     movzx   r8d,word ptr [rsp+30h]
     shl     r8,10h
@@ -5408,112 +5731,138 @@ L21:
     movzx   r8d,byte ptr [rsp+48h]
     shl     r8,38h
     or      rdi,r8
-    mov     [rsp+188h],rdi
-    mov     [rsp+160h],rdx
+    mov     [rsp+258h],rdi
     mov     r10,[rsp+78h]
-    mov     [rsp+178h],r10
-    mov     [rsp+180h],rsi
-    mov     [rsp+188h],rdi
+    mov     [rsp+248h],r10
+    mov     [rsp+250h],rsi
+    mov     [rsp+258h],rdi
+    mov     r10,[rsp+0F0h]
+    mov     [rsp+290h],r10
+    mov     [rsp+298h],rax
+    mov     [rsp+2A0h],rcx
+    mov     [rsp+2A8h],rdx
     mov     r10,[rsp+78h]
-    mov     [rsp+168h],r10
-    mov     r10,[rsp+0B0h]
-    mov     [rsp+1D0h],r10
-    mov     [rsp+1D8h],rax
-    mov     [rsp+1E0h],rcx
-    mov     [rsp+1E8h],rdx
-    mov     [rsp+160h],rdx
-    mov     r10,[rsp+78h]
-    mov     [rsp+1F0h],r10
-    mov     [rsp+1F8h],rsi
-    mov     [rsp+200h],rdi
-    mov     r10,[rsp+0B0h]
-    mov     [rsp+208h],r10
-    mov     [rsp+210h],rax
-    mov     [rsp+218h],rcx
-    mov     [rsp+220h],rdx
+    mov     [rsp+2B0h],r10
+    mov     [rsp+2B8h],rsi
+    mov     [rsp+2C0h],rdi
+    mov     r10,[rsp+0F0h]
+    mov     [rsp+2C8h],r10
+    mov     [rsp+2D0h],rax
+    mov     [rsp+2D8h],rcx
+    mov     [rsp+2E0h],rdx
     mov     r11,[rsp+70h]
     mov     rbx,[r11]
-    mov     [rsp+1D0h],rbx
-    mov     [rsp+1E8h],rbx
-    mov     [rsp+1D8h],rbx
-    lea     rdi,[rsp+160h]
-    mov     rsi,rbx
-    call    sym3
-    movzx   eax,word ptr [rsp+160h]
-    movzx   ecx,word ptr [rsp+162h]
-    movzx   edx,word ptr [rsp+164h]
-    movzx   esi,byte ptr [rsp+166h]
-    movzx   edi,byte ptr [rsp+167h]
-    mov     r8d,[rsp+168h]
-    movzx   r9d,word ptr [rsp+16Ch]
-    movzx   r12d,byte ptr [rsp+16Eh]
-    movzx   r13d,byte ptr [rsp+16Fh]
-    mov     [rsp+190h],ax
-    mov     [rsp+192h],cx
-    mov     [rsp+194h],dx
-    mov     [rsp+196h],sil
-    mov     [rsp+197h],dil
-    mov     [rsp+198h],r8d
-    mov     [rsp+19Ch],r9w
-    mov     [rsp+19Eh],r12b
-    mov     [rsp+19Fh],r13b
-    lea     rdi,[rsp+190h]
-    call    sym4
-    mov     [rsp+1DCh],eax
-    mov     [rsp+1E0h],ax
-    lea     rdi,[rsp+320h]
+    mov     [rsp+290h],rbx
+    mov     [rsp+2A8h],rbx
+    mov     [rsp+298h],rbx
+    mov     rax,[rbx]
+    mov     rcx,[rbx+8]
+    mov     rdx,rax
+    shr     rdx,10h
+    mov     rsi,rax
+    shr     rsi,20h
+    mov     rdi,rax
+    shr     rdi,30h
+    mov     r8,rax
+    shr     r8,38h
+    mov     r9,rcx
+    shr     r9,20h
+    mov     r12,rcx
+    shr     r12,30h
+    mov     r13,rcx
+    shr     r13,38h
+    movzx   eax,ax
+    movzx   edx,dx
+    shl     rdx,10h
+    or      rax,rdx
+    movzx   esi,si
+    shl     rsi,20h
+    or      rax,rsi
+    movzx   edi,dil
+    shl     rdi,30h
+    or      rax,rdi
+    movzx   r8d,r8b
+    shl     r8,38h
+    or      rax,r8
+    mov     ecx,ecx
+    movzx   r9d,r9w
+    shl     r9,20h
+    or      rcx,r9
+    movzx   r12d,r12b
+    shl     r12,30h
+    or      rcx,r12
+    movzx   r13d,r13b
+    shl     r13,38h
+    or      rcx,r13
+    mov     [rsp+220h],rax
+    mov     [rsp+228h],rcx
+    mov     [rsp+210h],rax
+    mov     [rsp+218h],rcx
+    mov     qword ptr [rsp+220h],0
+    mov     qword ptr [rsp+228h],0
+    lea     rdi,[rsp+3E0h]
+    mov     esi,0FFFFFE20h
+    mov     edx,0FFFFFE30h
+    mov     ecx,0FFFFFE40h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+3E0h]
+    mov     esi,0FFFFFE3Ah
+    mov     edx,0FFFFFE20h
+    call    ryo_h_VmsbI8x16
+    movzx   eax,word ptr [rsp+21Ah]
+    mov     [rsp+21Ch],eax
+    mov     [rsp+29Ch],eax
+    mov     [rsp+2A0h],ax
+    lea     rdi,[rsp+3E0h]
     mov     esi,0FFFFFEC2h
     mov     edx,0FFFFFEC0h
     call    ryo_h_NotW16
-    movzx   eax,word ptr [rsp+1E2h]
-    mov     [rsp+1E4h],ax
-    mov     [rsp+1E6h],ax
+    movzx   eax,word ptr [rsp+2A2h]
+    mov     [rsp+2A4h],ax
+    mov     [rsp+2A6h],ax
     mov     r11,[rsp+70h]
     mov     rcx,[r11+18h]
-    mov     [rsp+1D8h],rcx
-    mov     [rsp+158h],ax
-    mov     [rsp+1D0h],rbx
-    mov     qword ptr [rsp+1D8h],0
-    mov     [rsp+1E0h],rcx
-    mov     rax,[rsp+158h]
-    mov     [rsp+1E8h],rax
+    mov     [rsp+298h],rcx
+    mov     [rsp+238h],ax
+    mov     [rsp+290h],rbx
+    mov     qword ptr [rsp+298h],0
+    mov     [rsp+2A0h],rcx
+    mov     rax,[rsp+238h]
+    mov     [rsp+2A8h],rax
     mov     r11,[rsp+70h]
     mov     [rsp+80h],r11
     mov     r11,[rsp+18h]
     mov     [rsp+90h],r11
-    mov     r15,[rsp+10h]
-    mov     rbp,[rsp+68h]
-    mov     rbx,[rsp+50h]
+    mov     r11,[rsp+10h]
+    mov     [rsp+98h],r11
+    mov     r11,[rsp+68h]
+    mov     [rsp+0A0h],r11
+    mov     r11,[rsp+50h]
+    mov     [rsp+0A8h],r11
     mov     r12,[rsp+58h]
     mov     r13,[rsp+20h]
     mov     r11,[rsp+28h]
     mov     [rsp+88h],r11
     jmp     L0
+L24:
+    lea     rdi,[image.k4563]
+    mov     esi,237h
+    mov     edx,0
+    mov     rcx,[rsp+0F8h]
+    movzx   edx,dl
+    call    image.sym53
+    ud2
     mov     rbx,rax
-    jmp     L24
-    mov     rbx,rax
-    jmp     L24
-L22:
-    lea     rdi,[rsp+1F0h]
-    lea     rsi,[rsp+208h]
+    lea     rdi,[rsp+2B0h]
+    lea     rsi,[rsp+2C8h]
     call    qword ptr [image.fn86.slot]
     mov     [rsp],rbx
-    lea     rdi,[rsp+320h]
-    mov     esi,0FFFFFCE0h
+    lea     rdi,[rsp+3E0h]
+    mov     esi,0FFFFFC20h
     call    ryo_h_Resume
     ud2
-    jmp     L23
-    mov     rbx,rax
-    jmp     L24
-    mov     rbx,rax
-    jmp     L24
-    mov     rbx,rax
-    jmp     L24
-L23:
     call    sym9
     ud2
-L24:
-    jmp     L22
   ; OSR entries
     lea     r11,[L25]
     movsxd  rax,[r11+rax*4]
@@ -5529,7 +5878,7 @@ L25:
 L26:
     pop     rcx
     lea     rdx,[rsp+270h]
-    lea     rsp,[rdx-3B0h]
+    lea     rsp,[rdx-450h]
     mov     r11,[rdx-18h]
     mov     [rsp],r11
     mov     r11,[rdx-30h]
@@ -5546,24 +5895,16 @@ L26:
     mov     [rsp+30h],r11
     movzx   r11d,byte ptr [rdx-49h]
     mov     [rsp+38h],r11
-    mov     r11,[rdx-240h]
-    mov     [rsp+40h],r11
-    mov     r11,[rdx-238h]
-    mov     [rsp+48h],r11
     mov     r11,[rdx-1E0h]
-    mov     [rsp+50h],r11
+    mov     [rsp+40h],r11
     mov     r11,[rdx-1D8h]
-    mov     [rsp+58h],r11
+    mov     [rsp+48h],r11
     mov     r11,[rdx-1D0h]
-    mov     [rsp+60h],r11
+    mov     [rsp+50h],r11
     mov     r11,[rdx-1C8h]
-    mov     [rsp+68h],r11
-    mov     r11,[rdx-170h]
-    mov     [rsp+70h],r11
-    mov     r11,[rdx-168h]
-    mov     [rsp+78h],r11
+    mov     [rsp+58h],r11
     mov     r11,[rdx-58h]
-    mov     [rsp+80h],r11
+    mov     [rsp+60h],r11
     mov     [rdx-158h],rbx
     mov     [rdx-160h],r12
     mov     [rdx-168h],r13
@@ -5571,40 +5912,35 @@ L26:
     mov     [rdx-178h],r15
     mov     [rdx-180h],rbp
     mov     r11,[rsp+40h]
-    mov     [rdx-190h],r11
-    mov     r11,[rsp+48h]
-    mov     [rdx-188h],r11
-    mov     r11,[rsp+50h]
-    mov     [rdx-1B0h],r11
-    mov     r11,[rsp+58h]
-    mov     [rdx-1A8h],r11
-    mov     r11,[rsp+60h]
     mov     [rdx-1A0h],r11
-    mov     r11,[rsp+68h]
+    mov     r11,[rsp+48h]
     mov     [rdx-198h],r11
-    mov     r11,[rsp+70h]
-    mov     [rdx-1C0h],r11
-    mov     r11,[rsp+78h]
-    mov     [rdx-1B8h],r11
-    mov     r11,[rsp+80h]
-    mov     [rdx-1C8h],r11
+    mov     r11,[rsp+50h]
+    mov     [rdx-190h],r11
+    mov     r11,[rsp+58h]
+    mov     [rdx-188h],r11
+    mov     r11,[rsp+60h]
+    mov     [rdx-1A8h],r11
     mov     r11,[rsp]
-    mov     [rdx-2A0h],r11
+    mov     [rdx-360h],r11
     mov     r11,[rsp+8]
-    mov     [rdx-290h],r11
+    mov     [rdx-350h],r11
+    mov     r11,[rsp+10h]
+    mov     [rdx-348h],r11
+    mov     r11,[rsp+18h]
+    mov     [rdx-340h],r11
+    mov     r11,[rsp+20h]
+    mov     [rdx-338h],r11
     mov     r11,[rsp+38h]
-    mov     [rdx-298h],r11
-    mov     r15,[rsp+10h]
-    mov     rbp,[rsp+18h]
-    mov     rbx,[rsp+20h]
+    mov     [rdx-358h],r11
     mov     r12,[rsp+28h]
     mov     r13,[rsp+30h]
-    lea     rsp,[rsp+90h]
+    lea     rsp,[rsp+70h]
     jmp     L0
 L27:
     pop     rcx
     lea     rdx,[rsp+270h]
-    lea     rsp,[rdx-3B0h]
+    lea     rsp,[rdx-450h]
     mov     r11,[rdx-158h]
     mov     [rsp],r11
     mov     r11,[rdx-18h]
@@ -5623,24 +5959,16 @@ L27:
     mov     [rsp+38h],r11
     movzx   r11d,byte ptr [rdx-49h]
     mov     [rsp+40h],r11
-    mov     r11,[rdx-240h]
-    mov     [rsp+48h],r11
-    mov     r11,[rdx-238h]
-    mov     [rsp+50h],r11
     mov     r11,[rdx-1E0h]
-    mov     [rsp+58h],r11
+    mov     [rsp+48h],r11
     mov     r11,[rdx-1D8h]
-    mov     [rsp+60h],r11
+    mov     [rsp+50h],r11
     mov     r11,[rdx-1D0h]
-    mov     [rsp+68h],r11
+    mov     [rsp+58h],r11
     mov     r11,[rdx-1C8h]
-    mov     [rsp+70h],r11
-    mov     r11,[rdx-170h]
-    mov     [rsp+78h],r11
-    mov     r11,[rdx-168h]
-    mov     [rsp+80h],r11
+    mov     [rsp+60h],r11
     mov     r11,[rdx-58h]
-    mov     [rsp+88h],r11
+    mov     [rsp+68h],r11
     mov     [rdx-158h],rbx
     mov     [rdx-160h],r12
     mov     [rdx-168h],r13
@@ -5648,35 +5976,28 @@ L27:
     mov     [rdx-178h],r15
     mov     [rdx-180h],rbp
     mov     r11,[rsp+48h]
-    mov     [rdx-190h],r11
-    mov     r11,[rsp+50h]
-    mov     [rdx-188h],r11
-    mov     r11,[rsp+58h]
-    mov     [rdx-1B0h],r11
-    mov     r11,[rsp+60h]
-    mov     [rdx-1A8h],r11
-    mov     r11,[rsp+68h]
     mov     [rdx-1A0h],r11
-    mov     r11,[rsp+70h]
+    mov     r11,[rsp+50h]
     mov     [rdx-198h],r11
-    mov     r11,[rsp+78h]
-    mov     [rdx-1C0h],r11
-    mov     r11,[rsp+80h]
-    mov     [rdx-1B8h],r11
-    mov     r11,[rsp+88h]
-    mov     [rdx-1C8h],r11
+    mov     r11,[rsp+58h]
+    mov     [rdx-190h],r11
+    mov     r11,[rsp+60h]
+    mov     [rdx-188h],r11
+    mov     r11,[rsp+68h]
+    mov     [rdx-1A8h],r11
+    mov     r11,[rsp]
+    mov     [rdx-320h],r11
     mov     r11,[rsp+10h]
-    mov     [rdx-288h],r11
+    mov     [rdx-330h],r11
     mov     r11,[rsp+18h]
-    mov     [rdx-280h],r11
-    mov     rbx,[rsp+8]
-    mov     rbp,[rsp+20h]
-    mov     r13,[rsp+28h]
-    mov     r14,[rsp+30h]
-    mov     r12,[rsp+38h]
-    mov     r15,[rsp+40h]
-    mov     rdx,[rsp]
-    lea     rsp,[rsp+90h]
+    mov     [rdx-328h],r11
+    mov     r12,[rsp+8]
+    mov     r15,[rsp+20h]
+    mov     rbp,[rsp+28h]
+    mov     r13,[rsp+30h]
+    mov     r14,[rsp+38h]
+    mov     rbx,[rsp+40h]
+    lea     rsp,[rsp+70h]
     jmp     L3
 L28:
     ret
@@ -5718,9 +6039,9 @@ L0:
     test    r15,r15
     je      L1
     lea     rdi,[rsp+8]
-    call    image.sym31
+    call    image.sym29
     lea     rdi,[rsp+8]
-    call    image.sym32
+    call    image.sym30
     mov     rax,0FFFFFFFFFFFFFFFFh
     mov     rcx,r15
     mov     rdx,r12
@@ -5753,7 +6074,7 @@ L3:
     jmp     L0
     mov     rbx,rax
     lea     rdi,[rsp+8]
-    call    image.sym32
+    call    image.sym30
     mov     [rsp],rbx
     lea     rdi,[rsp+40h]
     mov     esi,0FFFFFFC0h
@@ -5884,7 +6205,7 @@ fn main
     mov     [rsp+160h],r13
     mov     qword ptr [rsp+198h],50910h
     mov     edi,0
-    call    qword ptr [image.fn232.slot]
+    call    qword ptr [image.fn241.slot]
     test    rax,rax
     jne     L1
     mov     ecx,1
@@ -6287,20 +6608,20 @@ L32:
     call    image.sym6
     ud2
 L33:
-    lea     rcx,[image.k6720]
-    lea     rdi,[image.k4306]
+    lea     rcx,[image.k6768]
+    lea     rdi,[image.k4354]
     mov     esi,1A3h
     mov     edx,0
     movzx   edx,dl
-    call    image.sym62
+    call    image.sym53
     ud2
 L34:
-    lea     rdi,[image.k5783]
+    lea     rdi,[image.k5831]
     mov     esi,22Fh
     mov     rcx,rdx
     mov     edx,0
     movzx   edx,dl
-    call    image.sym62
+    call    image.sym53
     ud2
     mov     r12,rax
     jmp     L39
@@ -6660,6 +6981,114 @@ fn std::arch::x86_64::__m128i::as_i8x16
     mov     rax,rdi
     ret
 
+fn std::arch::x86_64::_mm_cmpeq_epi8
+    push    rbx
+    sub     rsp,40h
+    mov     rbx,rdi
+    mov     rax,[rsi]
+    mov     rcx,[rsi+8]
+    mov     rsi,[rdx]
+    mov     rdx,[rdx+8]
+    mov     [rsp+20h],rax
+    mov     [rsp+28h],rcx
+    mov     [rsp+30h],rsi
+    mov     [rsp+38h],rdx
+    lea     rdi,[rsp+40h]
+    mov     esi,0FFFFFFD0h
+    mov     edx,0FFFFFFE0h
+    mov     ecx,0FFFFFFF0h
+    call    ryo_h_VeqI8x16
+    mov     rax,[rsp+10h]
+    mov     rcx,[rsp+18h]
+    mov     [rbx],rax
+    mov     [rbx+8],rcx
+    mov     rax,rbx
+    add     rsp,40h
+    pop     rbx
+    ret
+
+fn std::arch::x86_64::_mm_loadu_si128
+    sub     rsp,28h
+    mov     qword ptr [rsp+10h],0
+    mov     qword ptr [rsp+18h],0
+    lea     rax,[rsp+10h]
+    lea     rcx,[image.k952]
+    test    rsi,rsi
+    je      L2
+    test    rax,rax
+    je      L2
+    cmp     rsi,rax
+    jae     L0
+    mov     rdx,rax
+    sub     rdx,rsi
+    jmp     L1
+L0:
+    mov     r11,rsi
+    sub     r11,rax
+    mov     rax,r11
+    mov     rdx,rax
+L1:
+    cmp     rdx,10h
+    jb      L2
+    mov     rax,[rsi]
+    mov     rdx,[rsi+8]
+    mov     [rsp+10h],rax
+    mov     [rsp+18h],rdx
+    mov     [rdi],rax
+    mov     [rdi+8],rdx
+    mov     rax,rdi
+    add     rsp,28h
+    ret
+L2:
+    lea     rdi,[image.k4563]
+    mov     esi,237h
+    mov     edx,0
+    movzx   edx,dl
+    call    image.sym53
+    ud2
+
+fn std::arch::x86_64::_mm_movemask_epi8
+    sub     rsp,48h
+    mov     rax,[rdi]
+    mov     rcx,[rdi+8]
+    mov     [rsp+30h],rax
+    mov     [rsp+38h],rcx
+    mov     [rsp+20h],rax
+    mov     [rsp+28h],rcx
+    mov     qword ptr [rsp+30h],0
+    mov     qword ptr [rsp+38h],0
+    lea     rdi,[rsp+40h]
+    mov     esi,0FFFFFFD0h
+    mov     edx,0FFFFFFE0h
+    mov     ecx,0FFFFFFF0h
+    call    ryo_h_VltSI8x16
+    lea     rdi,[rsp+40h]
+    mov     esi,0FFFFFFEAh
+    mov     edx,0FFFFFFD0h
+    call    ryo_h_VmsbI8x16
+    movzx   eax,word ptr [rsp+2Ah]
+    mov     [rsp+2Ch],eax
+    add     rsp,48h
+    ret
+
+fn std::arch::x86_64::_mm_set1_epi8
+    push    rbx
+    sub     rsp,20h
+    mov     rbx,rdi
+    mov     [rsp],rsi
+    lea     rdi,[rsp+20h]
+    mov     esi,0FFFFFFF0h
+    mov     edx,0FFFFFFE0h
+    call    ryo_h_VsplatI8x16
+    mov     rax,[rsp+10h]
+    mov     rcx,[rsp+18h]
+    mov     [rbx],rax
+    mov     [rbx+8],rcx
+    mov     rax,rbx
+    add     rsp,20h
+    pop     rbx
+    ret
+
 fn std::collections::HashMap::<u64, u64>::entry
     push    rbx
     push    r12
@@ -6915,10 +7344,6 @@ L0:
 L1:
     ret
 
-fn std::mem::size_of::<std::arch::x86_64::__m128i>
-    mov     eax,10h
-    ret
-
 fn std::option::Option::<&str>::map_or_else::<std::string::String, {closure@std::fmt::format::{closure#0}}, for<'a> fn(&'a str) -> <str as std::borrow::ToOwned>::Owned {<str as std::borrow::ToOwned>::to_owned}>
     push    rbx
     push    r12
@@ -6942,7 +7367,7 @@ fn std::option::Option::<&str>::map_or_else::<std::string::String, {closure@std:
     mov     ecx,1
     mov     r8,r14
     movzx   edx,dl
-    call    image.sym57
+    call    image.sym51
     mov     rax,[rsp+18h]
     test    rax,rax
     jne     L10
@@ -7020,7 +7445,7 @@ L7:
     mov     rcx,[rcx+8]
     lea     rdi,[rsp+38h]
     mov     rdx,rcx
-    call    image.sym42
+    call    image.sym40
     mov     rcx,[rsp+38h]
     mov     rsi,[rsp+40h]
     mov     rdi,[rsp+48h]
@@ -7037,12 +7462,12 @@ L8:
     pop     rbx
     ret
 L9:
-    lea     rdi,[image.k5302]
+    lea     rdi,[image.k5350]
     mov     esi,1BBh
     mov     edx,0
     mov     rcx,r9
     movzx   edx,dl
-    call    image.sym62
+    call    image.sym53
     ud2
 L10:
     mov     rdi,[rsp+20h]
@@ -7057,23 +7482,23 @@ L10:
     shl     r9,38h
     mov     rsi,rcx
     or      rsi,r9
-    call    image.sym58
+    call    image.sym52
     ud2
 L11:
-    lea     rdi,[image.k4515]
+    lea     rdi,[image.k4563]
     mov     esi,237h
     mov     edx,0
     mov     rcx,rax
     movzx   edx,dl
-    call    image.sym62
+    call    image.sym53
     ud2
 L12:
-    lea     rdi,[image.k4108]
+    lea     rdi,[image.k4156]
     mov     esi,18Dh
     mov     rcx,rdx
     mov     edx,0
     movzx   edx,dl
-    call    image.sym62
+    call    image.sym53
     ud2
     mov     ecx,1
     jmp     L16
@@ -7149,54 +7574,6 @@ L2:
     ret
 L3:
     ret
-
-fn std::ptr::copy_nonoverlapping::<u8>
-    sub     rsp,18h
-    lea     rcx,[k0]
-    test    rdx,rdx
-    jne     L0
-    mov     eax,1
-    jmp     L1
-L0:
-    mov     eax,0
-L1:
-    test    al,al
-    je      L6
-L2:
-    test    al,al
-    je      L7
-L3:
-    cmp     rdi,rsi
-    jae     L4
-    mov     r8,rsi
-    sub     r8,rdi
-    jmp     L5
-L4:
-    mov     r8,rdi
-    sub     r8,rsi
-L5:
-    cmp     rdx,r8
-    ja      L8
-    mov     r10,rdi
-    mov     rdi,rsi
-    mov     rsi,r10
-    call    ryo_hr_Memcpy
-    add     rsp,18h
-    ret
-L6:
-    test    rdi,rdi
-    je      L8
-    jmp     L2
-L7:
-    test    rsi,rsi
-    jne     L3
-L8:
-    lea     rdi,[image.k4515]
-    mov     esi,237h
-    mov     edx,0
-    movzx   edx,dl
-    call    image.sym62
-    ud2
 
 fn std::ptr::copy_nonoverlapping::precondition_check
     push    rbx
@@ -7279,18 +7656,18 @@ L8:
     lea     rdi,[image.k1979]
     lea     rdx,[image.k2104]
     mov     esi,55h
-    call    image.sym39
+    call    image.sym37
     ud2
 L9:
     lea     rdi,[image.k1979]
     lea     rdx,[image.k2104]
     mov     esi,55h
-    call    image.sym39
+    call    image.sym37
     ud2
 L10:
-    lea     rdi,[image.k5722]
+    lea     rdi,[image.k5770]
     mov     esi,3Dh
-    call    image.sym63
+    call    image.sym54
     ud2
     jmp     L14
     jmp     L14
@@ -7351,21 +7728,21 @@ fn std::ptr::drop_glue::<(std::string::String, usize)> - shim(Some((std::string:
     sub     rsp,20h
     mov     rbx,rdi
     mov     rdi,rbx
-    call    image.sym31
+    call    image.sym29
     mov     rdi,rbx
-    call    image.sym32
+    call    image.sym30
     add     rsp,20h
     pop     rbx
     ret
     mov     [rsp+10h],rax
     mov     rdi,rbx
-    call    image.sym32
+    call    image.sym30
     mov     r11,[rsp+10h]
     mov     [rsp],r11
     lea     rdi,[rsp+20h]
     mov     esi,0FFFFFFE0h
     call    ryo_h_Resume
     ud2
-    call    image.sym21
+    call    image.sym19
     ud2
 

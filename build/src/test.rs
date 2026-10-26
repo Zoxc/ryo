@@ -828,6 +828,10 @@ impl Ctx {
             if !variant.vm_only && !missing.is_empty() {
                 return Err(format!("not compiled to bytecode: {missing:?}; VM functions: {names:?}"));
             }
+            let wrong: Vec<_> = program.native.iter().filter(|f| names.contains(f)).collect();
+            if !wrong.is_empty() {
+                return Err(format!("compiled to bytecode, but must stay native: {wrong:?}"));
+            }
         }
         Ok(result)
     }

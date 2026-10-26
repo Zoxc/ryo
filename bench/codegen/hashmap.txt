@@ -2339,7 +2339,7 @@ fn hashbrown::control::group::sse2::Group::convert_special_to_empty_and_full_to_
     load.copy $-32, [$-120 + 0], 16
 L0:
     ; escape align 16 $-64, 16 bytes
-    call.sym $0, sym0, 0, [4294967232, 72]
+    call $0, fn0, 0, [4294967232, 72]
     mov.w128 $-96, $-32
     mov.w128 $-144, $-64
     mov.w128 $-160, $-96
@@ -2347,20 +2347,20 @@ L1:
     ; escape align 16 $-80, 16 bytes
     ; escape align 16 $-144, 16 bytes
     ; escape align 16 $-160, 16 bytes
-    call.sym $0, sym1, 0, [4294967216, 72, 4294967152, 328, 4294967136, 584]
+    call $0, fn1, 0, [4294967216, 72, 4294967152, 328, 4294967136, 584]
     ; end $-160, 40 bytes
     ; end $-96, 16 bytes
     imm.w8 $-121, 128
 L2:
     ; escape align 16 $-112, 16 bytes
-    call.sym $0, sym2, 0, [4294967184, 72, 4294967175, 257]
+    call $0, fn2, 0, [4294967184, 72, 4294967175, 257]
     mov.w128 $-144, $-80
     mov.w128 $-160, $-112
 L3:
     ; escape align 16 $-96, 16 bytes
     ; escape align 16 $-144, 16 bytes
     ; escape align 16 $-160, 16 bytes
-    call.sym $0, sym3, 0, [4294967200, 72, 4294967152, 328, 4294967136, 584]
+    call $0, fn3, 0, [4294967200, 72, 4294967152, 328, 4294967136, 584]
     ; end $-160, 40 bytes
     ; end $-112, 16 bytes
     mov.w128 $-16, $-96
@@ -2373,10 +2373,10 @@ L3:
   cleanup L1 -> continue
   cleanup L2 -> continue
   cleanup L3 -> continue
-  sym0 = std::arch::x86_64::_mm_setzero_si128
-  sym1 = std::arch::x86_64::_mm_cmpgt_epi8
-  sym2 = std::arch::x86_64::_mm_set1_epi8
-  sym3 = std::arch::x86_64::_mm_or_si128
+  fn0 = std::arch::x86_64::_mm_setzero_si128
+  fn1 = std::arch::x86_64::_mm_cmpgt_epi8
+  fn2 = std::arch::x86_64::_mm_set1_epi8
+  fn3 = std::arch::x86_64::_mm_or_si128
 
 fn hashbrown::map::HashMap::<u64, u64, std::hash::RandomState>::get::<u64> (frame 144, args 0, ret 8) [hint]
     arg $-16, 8
@@ -2662,7 +2662,7 @@ L2:
     mov.w64 $-136, $-48
 L3:
     ; escape align 16 $-112, 16 bytes
-    call.sym $0, sym1, 0, [4294967184, 72, 4294967160, 264]
+    call $0, fn1, 0, [4294967184, 72, 4294967160, 264]
     jmp L5
 L4:
     zext.w32.w64 $-168, $-152
@@ -2686,7 +2686,7 @@ L5:
     mov.w128 $-192, $-112
 L6:
     ; escape align 16 $-192, 16 bytes
-    call.sym $-124, sym2, 4, [4294967104, 72]
+    call $-124, fn2, 4, [4294967104, 72]
     ; end $-192, 20 bytes
     trunc.w32.w16 $-120, $-124
     not.w16 $-118, $-120
@@ -2701,8 +2701,8 @@ L6:
   cleanup L3 -> continue
   cleanup L6 -> continue
   k0 = const allocation + 0
-  sym1 = std::arch::x86_64::_mm_load_si128
-  sym2 = std::arch::x86_64::_mm_movemask_epi8
+  fn1 = std::arch::x86_64::_mm_load_si128
+  fn2 = std::arch::x86_64::_mm_movemask_epi8
 
 fn hashbrown::raw::RawIterRange::<(std::string::String, usize)>::new (frame 208, args 0, ret 32)
     arg $-168, 8
@@ -2714,11 +2714,11 @@ fn hashbrown::raw::RawIterRange::<(std::string::String, usize)>::new (frame 208,
     mov.w64 $-192, $-40
 L0:
     ; escape align 16 $-160, 16 bytes
-    call.sym $0, sym0, 0, [4294967136, 72, 4294967104, 264]
+    call $0, fn0, 0, [4294967136, 72, 4294967104, 264]
     mov.w128 $-208, $-160
 L1:
     ; escape align 16 $-208, 16 bytes
-    call.sym $-184, sym1, 4, [4294967088, 72]
+    call $-184, fn1, 4, [4294967088, 72]
     ; end $-208, 16 bytes
     trunc.w32.w16 $-180, $-184
     not.w16 $-178, $-180
@@ -2735,8 +2735,8 @@ L1:
     ret $-168, 8
   cleanup L0 -> continue
   cleanup L1 -> continue
-  sym0 = std::arch::x86_64::_mm_load_si128
-  sym1 = std::arch::x86_64::_mm_movemask_epi8
+  fn0 = std::arch::x86_64::_mm_load_si128
+  fn1 = std::arch::x86_64::_mm_movemask_epi8
 
 fn hashbrown::raw::RawIterRange::<(std::string::String, usize)>::next_impl::<false> (frame 224, args 0, ret 8)
     arg $-16, 8
@@ -2757,7 +2757,7 @@ L2:
     mov.w64 $-152, $-48
 L3:
     ; escape align 16 $-128, 16 bytes
-    call.sym $0, sym0, 0, [4294967168, 72, 4294967144, 264]
+    call $0, fn0, 0, [4294967168, 72, 4294967144, 264]
     jmp L13
 L4:
     ret $-8, 8
@@ -2822,7 +2822,7 @@ L13:
     mov.w128 $-224, $-128
 L14:
     ; escape align 16 $-224, 16 bytes
-    call.sym $-140, sym2, 4, [4294967072, 72]
+    call $-140, fn2, 4, [4294967072, 72]
     ; end $-224, 24 bytes
     trunc.w32.w16 $-136, $-140
     not.w16 $-134, $-136
@@ -2863,9 +2863,9 @@ L19:
     jmp L17
   cleanup L3 -> continue
   cleanup L14 -> continue
-  sym0 = std::arch::x86_64::_mm_load_si128
+  fn0 = std::arch::x86_64::_mm_load_si128
   k1 = const allocation + 0
-  sym2 = std::arch::x86_64::_mm_movemask_epi8
+  fn2 = std::arch::x86_64::_mm_movemask_epi8
 
 fn hashbrown::raw::RawIterRange::<(u64, u64)>::fold_impl::<{closure@<hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:24:43: 24:50}>::{closure#0}}>::{closure#0}}, u64> (frame 288, args 0, ret 8)
     arg $-264, 8
@@ -2894,7 +2894,7 @@ L3:
     mov.w64 $-208, $-96
 L4:
     ; escape align 16 $-176, 16 bytes
-    call.sym $0, sym0, 0, [4294967120, 72, 4294967088, 264]
+    call $0, fn0, 0, [4294967120, 72, 4294967088, 264]
     jmp L19
 L5:
     ret $-8, 8
@@ -2975,7 +2975,7 @@ L19:
     mov.w128 $-288, $-176
 L20:
     ; escape align 16 $-288, 16 bytes
-    call.sym $-196, sym3, 4, [4294967008, 72]
+    call $-196, fn3, 4, [4294967008, 72]
     ; end $-288, 24 bytes
     trunc.w32.w16 $-192, $-196
     not.w16 $-190, $-192
@@ -3021,10 +3021,10 @@ L26:
   cleanup L7 -> continue
   cleanup L15 -> L26
   cleanup L20 -> L26
-  sym0 = std::arch::x86_64::_mm_load_si128
+  fn0 = std::arch::x86_64::_mm_load_si128
   k1 = const allocation + 0
   fn2 = <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:24:43: 24:50}>::{closure#0}}>::{closure#0}
-  sym3 = std::arch::x86_64::_mm_movemask_epi8
+  fn3 = std::arch::x86_64::_mm_movemask_epi8
 
 fn hashbrown::raw::RawIterRange::<(u64, u64)>::new (frame 208, args 0, ret 32)
     arg $-168, 8
@@ -3036,11 +3036,11 @@ fn hashbrown::raw::RawIterRange::<(u64, u64)>::new (frame 208, args 0, ret 32)
     mov.w64 $-192, $-40
 L0:
     ; escape align 16 $-160, 16 bytes
-    call.sym $0, sym0, 0, [4294967136, 72, 4294967104, 264]
+    call $0, fn0, 0, [4294967136, 72, 4294967104, 264]
     mov.w128 $-208, $-160
 L1:
     ; escape align 16 $-208, 16 bytes
-    call.sym $-184, sym1, 4, [4294967088, 72]
+    call $-184, fn1, 4, [4294967088, 72]
     ; end $-208, 16 bytes
     trunc.w32.w16 $-180, $-184
     not.w16 $-178, $-180
@@ -3057,8 +3057,8 @@ L1:
     ret $-168, 8
   cleanup L0 -> continue
   cleanup L1 -> continue
-  sym0 = std::arch::x86_64::_mm_load_si128
-  sym1 = std::arch::x86_64::_mm_movemask_epi8
+  fn0 = std::arch::x86_64::_mm_load_si128
+  fn1 = std::arch::x86_64::_mm_movemask_epi8
 
 fn hashbrown::raw::RawIterRange::<(u64, u64)>::next_impl::<false> (frame 224, args 0, ret 8)
     arg $-16, 8
@@ -3079,7 +3079,7 @@ L2:
     mov.w64 $-152, $-48
 L3:
     ; escape align 16 $-128, 16 bytes
-    call.sym $0, sym0, 0, [4294967168, 72, 4294967144, 264]
+    call $0, fn0, 0, [4294967168, 72, 4294967144, 264]
     jmp L13
 L4:
     ret $-8, 8
@@ -3144,7 +3144,7 @@ L13:
     mov.w128 $-224, $-128
 L14:
     ; escape align 16 $-224, 16 bytes
-    call.sym $-140, sym2, 4, [4294967072, 72]
+    call $-140, fn2, 4, [4294967072, 72]
     ; end $-224, 24 bytes
     trunc.w32.w16 $-136, $-140
     not.w16 $-134, $-136
@@ -3185,9 +3185,9 @@ L19:
     jmp L17
   cleanup L3 -> continue
   cleanup L14 -> continue
-  sym0 = std::arch::x86_64::_mm_load_si128
+  fn0 = std::arch::x86_64::_mm_load_si128
   k1 = const allocation + 0
-  sym2 = std::arch::x86_64::_mm_movemask_epi8
+  fn2 = std::arch::x86_64::_mm_movemask_epi8
 
 fn hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::RandomState>>::rustc_entry::{closure#0}}> (frame 176, args 0, ret 8) [hint]
     arg $-16, 8
@@ -4527,7 +4527,7 @@ fn hashbrown::raw::RawTableInner::erase (frame 192, args 0, ret 0) [hint]
     mov.w64 $-128, $-48
 L0:
     ; escape align 16 $-64, 16 bytes
-    call.sym $0, sym0, 0, [4294967232, 72, 4294967168, 264]
+    call $0, fn0, 0, [4294967232, 72, 4294967168, 264]
     jmp L4
 L1:
     ; end $-120, 8 bytes
@@ -4576,20 +4576,20 @@ L4:
     imm.w8 $-153, 255
 L5:
     ; escape align 16 $-144, 16 bytes
-    call.sym $0, sym1, 0, [4294967152, 72, 4294967143, 257]
+    call $0, fn1, 0, [4294967152, 72, 4294967143, 257]
     mov.w128 $-176, $-64
     mov.w128 $-192, $-144
 L6:
     ; escape align 16 $-128, 16 bytes
     ; escape align 16 $-176, 16 bytes
     ; escape align 16 $-192, 16 bytes
-    call.sym $0, sym2, 0, [4294967168, 72, 4294967120, 328, 4294967104, 584]
+    call $0, fn2, 0, [4294967168, 72, 4294967120, 328, 4294967104, 584]
     ; end $-192, 40 bytes
     ; end $-144, 16 bytes
     mov.w128 $-176, $-128
 L7:
     ; escape align 16 $-176, 16 bytes
-    call.sym $-132, sym3, 4, [4294967120, 72]
+    call $-132, fn3, 4, [4294967120, 72]
     ; end $-176, 24 bytes
     trunc.w32.w16 $-66, $-132
     ; end $-132, 4 bytes
@@ -4603,26 +4603,26 @@ L7:
     mov.w64 $-128, $-80
 L8:
     ; escape align 16 $-96, 16 bytes
-    call.sym $0, sym4, 0, [4294967200, 72, 4294967168, 264]
+    call $0, fn4, 0, [4294967200, 72, 4294967168, 264]
     ; end $-128, 8 bytes
     ; end $-120, 8 bytes
     imm.w8 $-153, 255
 L9:
     ; escape align 16 $-144, 16 bytes
-    call.sym $0, sym5, 0, [4294967152, 72, 4294967143, 257]
+    call $0, fn5, 0, [4294967152, 72, 4294967143, 257]
     mov.w128 $-176, $-96
     mov.w128 $-192, $-144
 L10:
     ; escape align 16 $-128, 16 bytes
     ; escape align 16 $-176, 16 bytes
     ; escape align 16 $-192, 16 bytes
-    call.sym $0, sym6, 0, [4294967168, 72, 4294967120, 328, 4294967104, 584]
+    call $0, fn6, 0, [4294967168, 72, 4294967120, 328, 4294967104, 584]
     ; end $-192, 40 bytes
     ; end $-144, 16 bytes
     mov.w128 $-176, $-128
 L11:
     ; escape align 16 $-176, 16 bytes
-    call.sym $-132, sym7, 4, [4294967120, 72]
+    call $-132, fn7, 4, [4294967120, 72]
     ; end $-176, 24 bytes
     trunc.w32.w16 $-98, $-132
     ; end $-132, 4 bytes
@@ -4648,14 +4648,14 @@ L11:
   cleanup L9 -> continue
   cleanup L10 -> continue
   cleanup L11 -> continue
-  sym0 = std::arch::x86_64::_mm_loadu_si128
-  sym1 = std::arch::x86_64::_mm_set1_epi8
-  sym2 = std::arch::x86_64::_mm_cmpeq_epi8
-  sym3 = std::arch::x86_64::_mm_movemask_epi8
-  sym4 = std::arch::x86_64::_mm_loadu_si128
-  sym5 = std::arch::x86_64::_mm_set1_epi8
-  sym6 = std::arch::x86_64::_mm_cmpeq_epi8
-  sym7 = std::arch::x86_64::_mm_movemask_epi8
+  fn0 = std::arch::x86_64::_mm_loadu_si128
+  fn1 = std::arch::x86_64::_mm_set1_epi8
+  fn2 = std::arch::x86_64::_mm_cmpeq_epi8
+  fn3 = std::arch::x86_64::_mm_movemask_epi8
+  fn4 = std::arch::x86_64::_mm_loadu_si128
+  fn5 = std::arch::x86_64::_mm_set1_epi8
+  fn6 = std::arch::x86_64::_mm_cmpeq_epi8
+  fn7 = std::arch::x86_64::_mm_movemask_epi8
 
 fn hashbrown::raw::RawTableInner::fallible_with_capacity::<std::alloc::Global> (frame 272, args 0, ret 32) [hint]
     arg $-144, 8
@@ -4810,7 +4810,7 @@ L0:
     mov.w64 $-176, $-88
 L1:
     ; escape align 16 $-112, 16 bytes
-    call.sym $0, sym0, 0, [4294967184, 72, 4294967120, 264]
+    call $0, fn0, 0, [4294967184, 72, 4294967120, 264]
     jmp L5
 L2:
     mov.w16 $-214, $-50
@@ -4829,20 +4829,20 @@ L5:
     mov.w8 $-141, $-73
 L6:
     ; escape align 16 $-192, 16 bytes
-    call.sym $0, sym1, 0, [4294967104, 72, 4294967155, 257]
+    call $0, fn1, 0, [4294967104, 72, 4294967155, 257]
     mov.w128 $-240, $-112
     mov.w128 $-256, $-192
 L7:
     ; escape align 16 $-176, 16 bytes
     ; escape align 16 $-240, 16 bytes
     ; escape align 16 $-256, 16 bytes
-    call.sym $0, sym2, 0, [4294967120, 72, 4294967056, 328, 4294967040, 584]
+    call $0, fn2, 0, [4294967120, 72, 4294967056, 328, 4294967040, 584]
     ; end $-256, 42 bytes
     ; end $-192, 16 bytes
     mov.w128 $-240, $-176
 L8:
     ; escape align 16 $-240, 16 bytes
-    call.sym $-180, sym3, 4, [4294967056, 72]
+    call $-180, fn3, 4, [4294967056, 72]
     ; end $-240, 26 bytes
     trunc.w32.w16 $-142, $-180
     ; end $-180, 4 bytes
@@ -4866,7 +4866,7 @@ L10:
     imm.w8 $-215, 255
 L11:
     ; escape align 16 $-192, 16 bytes
-    call.sym $0, sym5, 0, [4294967104, 72, 4294967081, 257]
+    call $0, fn5, 0, [4294967104, 72, 4294967081, 257]
     jmp L14
 L12:
     zext.w32.w64 $-208, $-212
@@ -4899,13 +4899,13 @@ L15:
     ; escape align 16 $-176, 16 bytes
     ; escape align 16 $-240, 16 bytes
     ; escape align 16 $-256, 16 bytes
-    call.sym $0, sym6, 0, [4294967120, 72, 4294967056, 328, 4294967040, 584]
+    call $0, fn6, 0, [4294967120, 72, 4294967056, 328, 4294967040, 584]
     ; end $-256, 42 bytes
     ; end $-192, 16 bytes
     mov.w128 $-240, $-176
 L16:
     ; escape align 16 $-240, 16 bytes
-    call.sym $-144, sym7, 4, [4294967056, 72]
+    call $-144, fn7, 4, [4294967056, 72]
     ; end $-240, 26 bytes
     trunc.w32.w16 $-138, $-144
     ; end $-176, 16 bytes
@@ -4944,14 +4944,14 @@ L20:
   cleanup L13 -> continue
   cleanup L15 -> continue
   cleanup L16 -> continue
-  sym0 = std::arch::x86_64::_mm_loadu_si128
-  sym1 = std::arch::x86_64::_mm_set1_epi8
-  sym2 = std::arch::x86_64::_mm_cmpeq_epi8
-  sym3 = std::arch::x86_64::_mm_movemask_epi8
+  fn0 = std::arch::x86_64::_mm_loadu_si128
+  fn1 = std::arch::x86_64::_mm_set1_epi8
+  fn2 = std::arch::x86_64::_mm_cmpeq_epi8
+  fn3 = std::arch::x86_64::_mm_movemask_epi8
   k4 = const allocation + 0
-  sym5 = std::arch::x86_64::_mm_set1_epi8
-  sym6 = std::arch::x86_64::_mm_cmpeq_epi8
-  sym7 = std::arch::x86_64::_mm_movemask_epi8
+  fn5 = std::arch::x86_64::_mm_set1_epi8
+  fn6 = std::arch::x86_64::_mm_cmpeq_epi8
+  fn7 = std::arch::x86_64::_mm_movemask_epi8
   k8 = const allocation + 0
 
 fn hashbrown::raw::RawTableInner::find_insert_index (frame 128, args 0, ret 8) [hint]
@@ -4975,7 +4975,7 @@ L0:
     mov.w64 $-112, $-48
 L1:
     ; escape align 16 $-128, 16 bytes
-    call.sym $0, sym0, 0, [4294967168, 72, 4294967184, 264]
+    call $0, fn0, 0, [4294967168, 72, 4294967184, 264]
     jmp L4
 L2:
     ; end $-128, 8 bytes
@@ -5018,7 +5018,7 @@ L8:
   cleanup L1 -> continue
   cleanup L5 -> continue
   cleanup L7 -> continue
-  sym0 = std::arch::x86_64::_mm_loadu_si128
+  fn0 = std::arch::x86_64::_mm_loadu_si128
   fn1 = hashbrown::raw::RawTableInner::find_insert_index_in_group
   fn2 = hashbrown::raw::RawTableInner::fix_insert_index
 
@@ -5030,7 +5030,7 @@ fn hashbrown::raw::RawTableInner::find_insert_index_in_group (frame 128, args 0,
     mov.w128 $-128, $-96
 L0:
     ; escape align 16 $-128, 16 bytes
-    call.sym $-80, sym0, 4, [4294967168, 72]
+    call $-80, fn0, 4, [4294967168, 72]
     jmp L2
 L1:
     ; end $-128, 16 bytes
@@ -5069,7 +5069,7 @@ L5:
     const $-16, k2, 16
     jmp L1
   cleanup L0 -> continue
-  sym0 = std::arch::x86_64::_mm_movemask_epi8
+  fn0 = std::arch::x86_64::_mm_movemask_epi8
   k1 = const allocation + 0
   k2 = const allocation + 0
 
@@ -5095,7 +5095,7 @@ L1:
     mov.w64 $-128, $-32
 L2:
     ; escape align 16 $-80, 16 bytes
-    call.sym $0, sym0, 0, [4294967216, 72, 4294967168, 264]
+    call $0, fn0, 0, [4294967216, 72, 4294967168, 264]
     jmp L4
 L3:
     jmp L0
@@ -5103,7 +5103,7 @@ L4:
     mov.w128 $-160, $-80
 L5:
     ; escape align 16 $-160, 16 bytes
-    call.sym $-116, sym1, 4, [4294967136, 72]
+    call $-116, fn1, 4, [4294967136, 72]
     ; end $-160, 24 bytes
     trunc.w32.w16 $-82, $-116
     mov.w16 $-96, $-82
@@ -5131,8 +5131,8 @@ L9:
     unreachable
   cleanup L2 -> continue
   cleanup L5 -> continue
-  sym0 = std::arch::x86_64::_mm_load_si128
-  sym1 = std::arch::x86_64::_mm_movemask_epi8
+  fn0 = std::arch::x86_64::_mm_load_si128
+  fn1 = std::arch::x86_64::_mm_movemask_epi8
   k2 = const allocation + 0
 
 fn hashbrown::raw::RawTableInner::new_uninitialized::<std::alloc::Global> (frame 304, args 0, ret 32)
@@ -5315,7 +5315,7 @@ L2:
     mov.w128 $-256, $-240
 L3:
     ; escape align 16 $-256, 16 bytes
-    call.sym $0, sym1, 0, [4294967080, 8, 4294967040, 328]
+    call $0, fn1, 0, [4294967080, 8, 4294967040, 328]
     jmp L11
 L4:
     ; end $-256, 16 bytes
@@ -5339,7 +5339,7 @@ L6:
     mov.w64 $-216, $-64
 L7:
     ; escape align 16 $-208, 16 bytes
-    call.sym $0, sym2, 0, [4294967088, 72, 4294967080, 264]
+    call $0, fn2, 0, [4294967088, 72, 4294967080, 264]
     jmp L9
 L8:
     load.w64 $-160, [$-8 + 8]
@@ -5401,8 +5401,8 @@ L15:
   cleanup L7 -> continue
   cleanup L10 -> continue
   fn0 = std::iter::StepBy::<std::ops::Range<usize>>::new
-  sym1 = std::arch::x86_64::_mm_store_si128
-  sym2 = std::arch::x86_64::_mm_load_si128
+  fn1 = std::arch::x86_64::_mm_store_si128
+  fn2 = std::arch::x86_64::_mm_load_si128
   fn3 = hashbrown::control::group::sse2::Group::convert_special_to_empty_and_full_to_deleted
 
 fn hashbrown::raw::RawTableInner::prepare_resize::<std::alloc::Global>::{closure#0} (frame 160, args 0, ret 0)
@@ -5977,12 +5977,12 @@ L12:
     mov.w64 $-352, $-344
 L13:
     ; escape align 16 $-368, 16 bytes
-    call.sym $0, sym3, 0, [4294966928, 72, 4294966944, 264]
+    call $0, fn3, 0, [4294966928, 72, 4294966944, 264]
     ; end $-328, 8 bytes
     mov.w128 $-576, $-368
 L14:
     ; escape align 16 $-576, 16 bytes
-    call.sym $-324, sym4, 4, [4294966720, 72]
+    call $-324, fn4, 4, [4294966720, 72]
     ; end $-576, 24 bytes
     trunc.w32.w16 $-320, $-324
     ; end $-324, 4 bytes
@@ -6098,8 +6098,8 @@ L22:
   fn0 = hashbrown::raw::RawTableInner::fallible_with_capacity::<std::alloc::Global>
   fn1 = hashbrown::raw::RawTableInner::find_insert_index
   fn2 = std::ptr::drop_glue::<hashbrown::scopeguard::ScopeGuard<hashbrown::raw::RawTableInner, {closure@hashbrown::raw::RawTableInner::prepare_resize<std::alloc::Global>::{closure#0}}>> - shim(Some(hashbrown::scopeguard::ScopeGuard<hashbrown::raw::RawTableInner, {closure@hashbrown::raw::RawTableInner::prepare_resize<std::alloc::Global>::{closure#0}}>))
-  sym3 = std::arch::x86_64::_mm_load_si128
-  sym4 = std::arch::x86_64::_mm_movemask_epi8
+  fn3 = std::arch::x86_64::_mm_load_si128
+  fn4 = std::arch::x86_64::_mm_movemask_epi8
   k5 = const allocation + 0
   fn6 = hashbrown::raw::FullBucketsIndices::next_impl
   k7 = const allocation + 0
@@ -7089,6 +7089,160 @@ fn std::arch::x86_64::__m128i::as_i8x16 (frame 48, args 0, ret 16) [hint]
     mov.w128 $-16, $-32
     store.copy [$-40 + 0], $-16, 16
     ret $-40, 8
+
+fn std::arch::x86_64::_mm_cmpeq_epi8 (frame 144, args 0, ret 16) [hint]
+    arg $-56, 8
+    arg $-120, 264
+    arg $-128, 520
+    load.copy $-32, [$-120 + 0], 16
+    load.copy $-48, [$-128 + 0], 16
+    mov.w128 $-144, $-32
+L0:
+    ; escape align 16 $-96, 16 bytes
+    ; escape align 16 $-144, 16 bytes
+    call $0, fn0, 0, [4294967200, 72, 4294967152, 328]
+    ; end $-144, 16 bytes
+    mov.w128 $-144, $-48
+L1:
+    ; escape align 16 $-112, 16 bytes
+    ; escape align 16 $-144, 16 bytes
+    call $0, fn1, 0, [4294967184, 72, 4294967152, 328]
+    ; end $-144, 16 bytes
+    veq.i8x16 $-80, $-96, $-112
+    ; end $-112, 16 bytes
+    ; end $-96, 16 bytes
+    mov.w128 $-16, $-80
+    store.copy [$-56 + 0], $-16, 16
+    ret $-56, 8
+  cleanup L0 -> continue
+  cleanup L1 -> continue
+  fn0 = std::arch::x86_64::__m128i::as_i8x16
+  fn1 = std::arch::x86_64::__m128i::as_i8x16
+
+fn std::arch::x86_64::_mm_cmpgt_epi8 (frame 144, args 0, ret 16) [hint]
+    arg $-56, 8
+    arg $-120, 264
+    arg $-128, 520
+    load.copy $-32, [$-120 + 0], 16
+    load.copy $-48, [$-128 + 0], 16
+    mov.w128 $-144, $-32
+L0:
+    ; escape align 16 $-96, 16 bytes
+    ; escape align 16 $-144, 16 bytes
+    call $0, fn0, 0, [4294967200, 72, 4294967152, 328]
+    ; end $-144, 16 bytes
+    mov.w128 $-144, $-48
+L1:
+    ; escape align 16 $-112, 16 bytes
+    ; escape align 16 $-144, 16 bytes
+    call $0, fn1, 0, [4294967184, 72, 4294967152, 328]
+    ; end $-144, 16 bytes
+    vlt.s.i8x16 $-80, $-112, $-96
+    ; end $-112, 16 bytes
+    ; end $-96, 16 bytes
+    mov.w128 $-16, $-80
+    store.copy [$-56 + 0], $-16, 16
+    ret $-56, 8
+  cleanup L0 -> continue
+  cleanup L1 -> continue
+  fn0 = std::arch::x86_64::__m128i::as_i8x16
+  fn1 = std::arch::x86_64::__m128i::as_i8x16
+
+fn std::arch::x86_64::_mm_load_si128 (frame 32, args 0, ret 16) [hint]
+    arg $-32, 8
+    arg $-24, 264
+    load.w128 $-16, [$-24 + 0]
+    store.copy [$-32 + 0], $-16, 16
+    ret $-32, 8
+
+fn std::arch::x86_64::_mm_loadu_si128 (frame 80, args 0, ret 16) [hint]
+    arg $-32, 8
+    arg $-24, 264
+    const $-48, k0, 16
+    mov.w64 $-56, $-24
+    ; escape align 16 $-48, 16 bytes
+    addr $-72, $-48
+    mov.w64 $-64, $-72
+L0:
+    call $-72, fn1, 8, []
+L1:
+    call $0, fn2, 0, [4294967240, 8, 4294967232, 264, 4294967224, 520]
+    mov.w128 $-16, $-48
+    ; end $-48, 16 bytes
+    store.copy [$-32 + 0], $-16, 16
+    ret $-32, 8
+  cleanup L0 -> continue
+  cleanup L1 -> continue
+  k0 = const allocation + 0
+  fn1 = std::mem::size_of::<std::arch::x86_64::__m128i>
+  fn2 = std::ptr::copy_nonoverlapping::<u8>
+
+fn std::arch::x86_64::_mm_movemask_epi8 (frame 96, args 0, ret 4) [hint]
+    arg $-72, 8
+    load.copy $-32, [$-72 + 0], 16
+    mov.w128 $-96, $-32
+L0:
+    ; escape align 16 $-64, 16 bytes
+    ; escape align 16 $-96, 16 bytes
+    call $0, fn0, 0, [4294967232, 72, 4294967200, 328]
+    ; end $-96, 24 bytes
+    const $-96, k1, 16
+    vlt.s.i8x16 $-48, $-64, $-96
+    ; end $-96, 24 bytes
+    ; end $-64, 16 bytes
+    vmsb.i8x16 $-54, $-48
+    zext.w16.w32 $-52, $-54
+    ; end $-54, 2 bytes
+    mov.w32 $-4, $-52
+    ; end $-52, 4 bytes
+    ret $-4, 4
+  cleanup L0 -> continue
+  fn0 = std::arch::x86_64::__m128i::as_i8x16
+  k1 = const allocation + 0
+
+fn std::arch::x86_64::_mm_or_si128 (frame 80, args 0, ret 16) [hint]
+    arg $-56, 8
+    arg $-64, 264
+    arg $-72, 520
+    load.copy $-32, [$-64 + 0], 16
+    load.copy $-48, [$-72 + 0], 16
+    or.w128 $-16, $-32, $-48
+    store.copy [$-56 + 0], $-16, 16
+    ret $-56, 8
+
+fn std::arch::x86_64::_mm_set1_epi8 (frame 64, args 0, ret 16) [hint]
+    arg $-32, 8
+    arg $-17, 257
+L0:
+    ; escape align 16 $-48, 16 bytes
+    call $0, fn0, 0, [4294967248, 72, 4294967279, 257]
+    mov.w128 $-64, $-48
+L1:
+    ; escape align 16 $-16, 16 bytes
+    ; escape align 16 $-64, 16 bytes
+    call $0, fn1, 0, [4294967280, 72, 4294967232, 328]
+    ; end $-64, 16 bytes
+    ; end $-48, 16 bytes
+    store.copy [$-32 + 0], $-16, 16
+    ret $-32, 8
+  cleanup L0 -> continue
+  cleanup L1 -> continue
+  fn0 = core::core_arch::simd::Simd::<i8, 16>::splat
+  fn1 = core::core_arch::x86::<impl core::core_arch::simd::Simd<i8, 16>>::as_m128i
+
+fn std::arch::x86_64::_mm_setzero_si128 (frame 32, args 0, ret 16) [hint]
+    arg $-24, 8
+    const $-16, k0, 16
+    store.copy [$-24 + 0], $-16, 16
+    ret $-24, 8
+  k0 = const allocation + 0
+
+fn std::arch::x86_64::_mm_store_si128 (frame 48, args 0, ret 0) [hint]
+    arg $-8, 8
+    arg $-40, 264
+    load.copy $-32, [$-40 + 0], 16
+    store.w128 [$-8 + 0], $-32
+    ret $0, 0
 
 fn std::char::encode_utf8_raw (frame 128, args 0, ret 16) [hint]
     arg $-20, 4

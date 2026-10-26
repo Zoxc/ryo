@@ -2056,3 +2056,46 @@ fn devirt_second_round() {
     // f, f3, g2.
     check_stats(before, 3);
 }
+
+/// `_mm_movemask_epi8(_mm_cmpeq_epi8(load(p), _mm_set1_epi8(tag)))` as one VM function,
+/// inlined into its caller: SIMD handler calls on 16-byte allocas, which stay in memory.
+#[test]
+fn inline_simd_handlers() {
+    let (_g, before) = start();
+    let mut w = ImageWriter::new(unique_scid());
+    let mut defs = Defs::default();
+    let s_ret = w.symbol("ret_addr", 0);
+    // eqmask(p, tag): v@-48 (16), t@-64 (16), m@-72 (2), r@-80.
+    let mut a = Asm::new();
+    a.i(arg(-8, 0));
+    a.i(arg(-16, 1));
+    a.i(Insn::LoadCopy { d: Slot(-48), m: Mem { p: Slot(-8), k: 0 }, len: 16 });
+    a.i(Insn::VsplatI8x16 { d: Slot(-64), s: Slot(-16) });
+    a.i(Insn::VeqI8x16 { d: Slot(-64), a: Slot(-48), b: Slot(-64) });
+    a.i(Insn::VmsbI8x16 { d: Slot(-72), a: Slot(-64) });
+    a.i(Insn::ZextW16W64 { d: Slot(-80), s: Slot(-72) });
+    a.ret(Slot(-80), 8);
+    let e = defs.add(&mut w, func(a.done(), 80, 0, 8), vec![]);
+    // f(p, tag, out): r = eqmask(p, tag); out[0] = where it runs; ret r. p@16, tag@24,
+    // out@32 (copied to -8, -16, -24); r@-32, tmp@-40.
+    let mut a = Asm::new();
+    a.i(Insn::MovW64 { d: Slot(-8), s: Slot(16) });
+    a.i(Insn::MovW64 { d: Slot(-16), s: Slot(24) });
+    a.i(Insn::MovW64 { d: Slot(-24), s: Slot(32) });
+    a.i(Insn::Call { d: Slot(-32), f: e, k: 8, a: List::from_words(&regs(&[-8, -16])) });
+    where_at(&mut a, s_ret, -40, -24, 0);
+    a.ret(Slot(-32), 8);
+    let f = defs.add(&mut w, func(a.done(), 48, 24, 8), vec![]);
+    let img = defs.build(w);
+    let bytes: [u8; 16] = [7, 0x80, 7, 1, 0xff, 7, 7, 0, 3, 7, 0x7f, 7, 7, 7, 0, 7];
+    for tag in [7u8, 0x80, 0, 0x55] {
+        let want = bytes.iter().enumerate().filter(|&(_, &c)| c == tag).map(|(i, _)| 1u64 << i).sum::<u64>();
+        let mut out = [0u64; 1];
+        assert_eq!(ok::<_, u64>(img.id(f), (bytes.as_ptr() as u64, tag as u64, out.as_mut_ptr() as u64)), want, "tag {tag}");
+        assert!(in_jit(&img, f, out[0]), "ran at {:#x}", out[0]);
+    }
+    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
+        assert_eq!(state(&img, e), JIT_COLD, "eqmask was inlined, never called");
+    }
+    check_stats(before, 1);
+}

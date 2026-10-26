@@ -175,8 +175,15 @@ pub fn vm_fn_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> Result<Ab
     if attrs.linkage.is_some_and(|l| !matches!(l, rustc_hir::attrs::Linkage::External | rustc_hir::attrs::Linkage::Internal)) {
         return native("#[linkage]");
     }
-    if !attrs.target_features.is_empty() {
-        return native("#[target_feature]");
+    // A `#[target_feature]` function whose features the crate already enables is codegened
+    // exactly as without the attribute, so it can be VM code. Its ABI doesn't depend on the
+    // features: the Rust ABI passes vectors indirectly (`rustc_target/src/callconv/mod.rs`,
+    // #44367), and other ABIs stay native below. The MIR inliner only inlines callees whose
+    // features are a subset, so what it inlined is checked with the body: an `llvm.*` link
+    // or inline asm keeps the function native, and so does a `simd_*` intrinsic without an
+    // instruction (`FnCx::strict_simd`).
+    if !attrs.target_features.iter().all(|f| tcx.sess.internal_target_features.contains(&f.name)) {
+        return native("#[target_feature] not enabled for the crate");
     }
     let sig = abi_sig(tcx, instance)?;
     if sig.conv != sig::CallConv::Rust {
