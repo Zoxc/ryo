@@ -268,7 +268,21 @@ fn remat() -> u64 {
     acc ^ xs.iter().sum::<u64>()
 }
 
+/// More values live across calls and a loop than there are registers: spilled by weight.
+#[inline(never)]
+fn pressure(n: u64) -> u64 {
+    let (a, b, c, d, e, f, g, h) = (n + 1, n * 3, n ^ 5, n + 7, n * 11, n ^ 13, n + 17, n * 19);
+    let mut xs = [n; 4];
+    let mut acc = 0u64;
+    for k in 0..black_box(20u64) {
+        acc = acc.wrapping_add(bump(&mut xs, k as usize)).wrapping_mul(a | 1) ^ b.wrapping_add(k);
+        acc ^= c.rotate_left(k as u32) ^ d;
+    }
+    acc ^ e ^ f ^ g ^ h ^ bump(&mut xs, 3) ^ a ^ b ^ c ^ d
+}
+
 fn main() {
+    println!("{}", pressure(black_box(12345)));
     println!("{}", remat());
     println!("{} {}", leaf_args(1, 2, 3, 4, 5, 6, black_box(7), black_box(8)), leaf_heavy(&black_box(core::array::from_fn(|k| k as u64 * 0x9e37_79b9))));
     offsets();

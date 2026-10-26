@@ -577,7 +577,9 @@ only it, and is unchanged).
   `regalloc::remat` recomputes an `AllocaAddr` or a `RefAddr` that loads at most once,
   when it is live across a call, before its uses after each call (one clone per stretch
   between calls), so it takes no callee-saved register or spill slot. When no register
-  is free, the interval ending last is spilled.
+  is free, the interval with the least spill weight per position is spilled (its
+  definition and uses, each `8^depth` by loop depth, approximated as the layout range from
+  a head to its last predecessor; 1 in cold blocks; of equal ones, the one ending last).
 - **Checker** (`RYO_JIT_CHECK=1`): `regalloc::check` walks each block backward from its
   exact live-out set and checks that no location holds two live values, that nothing lives
   across an instruction in a register it clobbers (a call: every caller-saved one), that `r10`, `r11` (and `rbp` with a frame

@@ -306,12 +306,66 @@ pub fn remat(f: &mut Func) {
     }
 }
 
+/// Each block's loop depth, the loops approximated as the layout ranges from a head to its
+/// last predecessor at or after it.
+fn loop_depth(f: &Func) -> Vec<u32> {
+    let mut at = alloc::vec![usize::MAX; f.blocks.len()];
+    for (k, &b) in f.layout.iter().enumerate() {
+        at[b.idx()] = k;
+    }
+    // `+1` at each head, `-1` after its latch, summed along the layout.
+    let mut delta = alloc::vec![0i32; f.layout.len() + 1];
+    for (h, &b) in f.layout.iter().enumerate() {
+        if let Some(latch) = f.blocks[b.idx()].preds.iter().map(|&(p, _)| at[p.idx()]).filter(|&p| p != usize::MAX && p >= h).max() {
+            delta[h] += 1;
+            delta[latch + 1] -= 1;
+        }
+    }
+    let mut depth = alloc::vec![0u32; f.blocks.len()];
+    let mut d = 0i32;
+    for (k, &b) in f.layout.iter().enumerate() {
+        d += delta[k];
+        depth[b.idx()] = d.max(0) as u32;
+    }
+    depth
+}
+
+/// Each value's spill weight (D3 O11a): its definition and uses, each counting `8^depth`
+/// ([`loop_depth`], capped at 3); in cold blocks 1.
+fn weights(f: &Func) -> Vec<u64> {
+    let depth = loop_depth(f);
+    let mut w = alloc::vec![0u64; f.values.len()];
+    for &b in &f.layout {
+        let bd = &f.blocks[b.idx()];
+        let c = if bd.cold { 1 } else { 8u64.pow(depth[b.idx()].min(3)) };
+        for &p in &bd.params {
+            w[p.idx()] += c;
+        }
+        for &i in &bd.insts {
+            let id = &f.insts[i.idx()];
+            for a in id.args.iter().copied().chain(id.results()) {
+                w[a.idx()] += c;
+            }
+        }
+        for u in bd.term.uses() {
+            w[u.idx()] += c;
+        }
+        for e in bd.term.edges() {
+            for a in &e.args {
+                w[a.idx()] += c;
+            }
+        }
+    }
+    w
+}
+
 /// Linear scan on SSA without splitting (design/jit.md, "The SSA tier"): each value's
 /// interval runs from its definition to its last use in the linear block order (holes
 /// ignored), and lives in one register or one stack slot throughout. Values live across a call
 /// (which clobbers every caller-saved register; [`crossing`], by the exact liveness, so a call
 /// in a hole of the interval doesn't count) get callee-saved registers; when none is free, the
-/// interval that ends last is spilled.
+/// interval with the least spill weight per position ([`weights`] over its length; of equal
+/// ones, the one ending last) is spilled.
 pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
     let pos = positions(f);
     let live = live_in(f);
@@ -377,6 +431,9 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
             }
         }
     }
+    let weight = weights(f);
+    // Weight per position from `a` on: what spilling saves for the register it frees.
+    let density = |w: usize, end: u32| weight[w] * 256 / (end.saturating_sub(lo[w]) as u64 + 2);
     let mut order: Vec<usize> = (0..nv)
         .filter(|&v| {
             // Unused values need no location (their definitions write nowhere).
@@ -544,10 +601,12 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
                     .iter()
                     .enumerate()
                     .filter(|(_, (_, _, r))| (!cross || callee.contains(r)) && clob >> r.num() & 1 == 0)
-                    .max_by_key(|(_, (end, _, _))| *end)
+                    .min_by_key(|(_, (end, w, _))| (density(*w, *end), u32::MAX - end))
                     .map(|(k, &x)| (k, x));
                 match cand {
-                    Some((k, (end, w, r))) if end > b && !(cross && def_cold(v) && !saved.contains(&r)) => {
+                    Some((k, (end, w, r)))
+                        if (density(w, end), u32::MAX - end) < (density(v, b), u32::MAX - b) && !(cross && def_cold(v) && !saved.contains(&r)) =>
+                    {
                         loc[w] = Loc::Spill(spills);
                         spills += 1;
                         active.remove(k);

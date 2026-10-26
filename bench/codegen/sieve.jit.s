@@ -240,12 +240,14 @@ fn sieve
     mov     [rsp+78h],rax
     mov     [rsp+80h],rcx
     mov     [rsp+88h],rsi
-    lea     rdx,[k3]
+    lea     r11,[k3]
+    mov     [rsp+18h],r11
     mov     r11d,0
     cmp     r11,rsi
     jae     L6
     mov     byte ptr [rcx],0
-    lea     rax,[k5]
+    lea     r11,[k5]
+    mov     [rsp+10h],r11
     mov     rcx,[rsp+80h]
     mov     rdi,[rsp+88h]
     mov     r11d,1
@@ -284,19 +286,17 @@ L2:
 L3:
     cmp     r12,r9
     jb      L4
-    lea     r11,[k13]
-    mov     [rsp+10h],r11
-    mov     rbp,[rsp+80h]
-    mov     r11,[rsp+88h]
-    mov     [rsp+18h],r11
-    cmp     r9,[rsp+18h]
+    lea     rbp,[k13]
+    mov     rax,[rsp+80h]
+    mov     rdx,[rsp+88h]
+    cmp     r9,rdx
     jae     L9
-    lea     rbp,[rbp+r9]
-    mov     byte ptr [rbp],0
-    mov     rbp,r9
-    add     rbp,r14
+    lea     rax,[rax+r9]
+    mov     byte ptr [rax],0
+    mov     rax,r9
+    add     rax,r14
     jb      L13
-    mov     r9,rbp
+    mov     r9,rax
     jmp     L3
 L4:
     add     r14,1
@@ -305,12 +305,12 @@ L4:
     mov     rbx,r15
     jmp     L0
 L5:
-    mov     r12,[rsp+78h]
-    mov     r14,[rsp+80h]
-    mov     r15,[rsp+88h]
-    mov     [rbx],r12
-    mov     [rbx+8],r14
-    mov     [rbx+10h],r15
+    mov     rax,[rsp+78h]
+    mov     r12,[rsp+80h]
+    mov     r14,[rsp+88h]
+    mov     [rbx],rax
+    mov     [rbx+8],r12
+    mov     [rbx+10h],r14
     mov     rax,rbx
     mov     rbx,[rsp+70h]
     mov     r12,[rsp+68h]
@@ -322,12 +322,13 @@ L5:
     ret
 L6:
     mov     edi,0
+    mov     rdx,[rsp+18h]
     call    image.sym15
     ud2
 L7:
     mov     rsi,rdi
     mov     edi,1
-    mov     rdx,rax
+    mov     rdx,[rsp+10h]
     call    image.sym15
     ud2
 L8:
@@ -338,8 +339,8 @@ L8:
     ud2
 L9:
     mov     rdi,r9
-    mov     rsi,[rsp+18h]
-    mov     rdx,[rsp+10h]
+    mov     rsi,rdx
+    mov     rdx,rbp
     call    image.sym15
     ud2
 L10:
