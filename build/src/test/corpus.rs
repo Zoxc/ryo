@@ -286,6 +286,12 @@ pub(crate) const CORPUS: &[Program] = &[
             "<fn(u32) -> u32 {with_asm} as std::ops::FnMut<(u32,)>>::call_mut - shim(fn(u32) -> u32 {with_asm})"
         ]
     ),
+    // SIMD: the `simd_*` intrinsics with an instruction (`lower/simd.rs`) and the SSE2
+    // `_mm_*` functions, hashbrown, `is_ascii` and `str::contains` built on them.
+    single!(
+        "vm_simd",
+        vm: &["main", "sse2_fns", "direct", "live_across", "probe", "core::core_arch::simd::Simd::<i8, 16>::splat", "std::simd::Simd::<u8, 16>::splat"]
+    ),
     // Externally implementable items: the implementations stay native (cg_llvm defines the
     // declarations' symbols next to them); their callers are VM functions.
     Program {

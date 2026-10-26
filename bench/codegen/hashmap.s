@@ -3508,8 +3508,9 @@ L0:
     mov     [rsp],rdi
     mov     [rsp+0Fh],sil
     lea     rdi,[rsp+20h]
-    lea     rsi,[ro+4]
-    call    qword ptr [sym0]
+    mov     esi,0FFFFFFF0h
+    mov     edx,0FFFFFFEFh
+    call    ryo_h_VsplatI8x16
     lea     rdi,[rsp+20h]
     mov     esi,0FFFFFFE0h
     xor     edx,edx

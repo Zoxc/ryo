@@ -79,3 +79,8 @@ remove it once a Lean session has handled it.
   (`Params::rounds = 2`, `inline`'s `only`), charged against the unit as it is; calls made
   direct after that stay calls. Add to lean/docs/jit.md §E.3's pass list. Commit: "JIT:
   inline calls that devirtualization made direct".
+- The backend lowers `simd_splat/eq/lt/gt/bitmask` at 16 × i8/u8 to `vsplat`/`veq`/`vlt.s`/
+  `vmsb.i8x16` (`simd_gt(a, b)` as `vlt.s(b, a)`) and `simd_and/or/xor` on 16-byte integer
+  vectors to `and/or/xor.w128` (`lower/simd.rs`); trusted like the island contracts until L0
+  has `simd_*` semantics (`simd_bitmask`'s all-0/all-1 lane precondition, which `vmsb`
+  refines). Commit: "Lower i8x16 simd_* intrinsics to VM opcodes".

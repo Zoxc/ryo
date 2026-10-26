@@ -301,7 +301,7 @@ L30:
     mov     edx,0
     mov     rcx,[rsp+28h]
     movzx   edx,dl
-    call    image.sym63
+    call    image.sym62
     ud2
 L31:
     lea     rax,[image.k4515]
@@ -310,7 +310,7 @@ L31:
     mov     edx,0
     mov     rcx,[rsp+20h]
     movzx   edx,dl
-    call    image.sym63
+    call    image.sym62
     ud2
 L32:
     lea     rax,[image.k6416]
@@ -319,7 +319,7 @@ L32:
     mov     edx,0
     mov     rcx,[rsp+18h]
     movzx   edx,dl
-    call    image.sym63
+    call    image.sym62
     ud2
 L33:
     lea     rax,[image.k4515]
@@ -328,14 +328,14 @@ L33:
     mov     rcx,rdi
     mov     rdi,rax
     movzx   edx,dl
-    call    image.sym63
+    call    image.sym62
     ud2
 L34:
     lea     rdi,[image.k4515]
     mov     esi,237h
     mov     edx,0
     movzx   edx,dl
-    call    image.sym63
+    call    image.sym62
     ud2
 L35:
     lea     rdi,[image.k4515]
@@ -343,7 +343,7 @@ L35:
     mov     edx,0
     mov     rcx,r9
     movzx   edx,dl
-    call    image.sym63
+    call    image.sym62
     ud2
 L36:
     lea     rdi,[image.k6416]
@@ -351,7 +351,7 @@ L36:
     mov     rcx,rsi
     mov     esi,1ADh
     movzx   edx,dl
-    call    image.sym63
+    call    image.sym62
     ud2
   ; OSR entries
     lea     r11,[L37]
@@ -1034,7 +1034,7 @@ L7:
     mov     esi,237h
     mov     edx,0
     movzx   edx,dl
-    call    image.sym63
+    call    image.sym62
     ud2
 L8:
     call    image.sym30
@@ -1237,7 +1237,7 @@ L7:
     mov     esi,237h
     mov     edx,0
     movzx   edx,dl
-    call    image.sym63
+    call    image.sym62
     ud2
 L8:
     call    image.sym30
@@ -1261,18 +1261,19 @@ L11:
 
 fn core::core_arch::simd::Simd::<i8, 16>::splat
     push    rbx
-    sub     rsp,30h
+    sub     rsp,20h
     mov     rbx,rdi
-    mov     [rsp+2Fh],sil
-    lea     rdi,[rsp+30h]
-    lea     rsi,[ro+4]
-    call    qword ptr [sym0]
+    mov     [rsp],rsi
+    lea     rdi,[rsp+20h]
+    mov     esi,0FFFFFFF0h
+    mov     edx,0FFFFFFE0h
+    call    ryo_h_VsplatI8x16
     mov     rax,[rsp+10h]
     mov     rcx,[rsp+18h]
     mov     [rbx],rax
     mov     [rbx+8],rcx
     mov     rax,rbx
-    add     rsp,30h
+    add     rsp,20h
     pop     rbx
     ret
 
@@ -1386,7 +1387,7 @@ L9:
     mov     esi,237h
     mov     edx,0
     movzx   edx,dl
-    call    image.sym63
+    call    image.sym62
     ud2
 L10:
     lea     rdi,[image.k4515]
@@ -1394,7 +1395,7 @@ L10:
     mov     edx,0
     mov     rcx,r13
     movzx   edx,dl
-    call    image.sym63
+    call    image.sym62
     ud2
 L11:
     lea     rdi,[image.k6416]
@@ -1402,7 +1403,7 @@ L11:
     mov     edx,0
     mov     rcx,rax
     movzx   edx,dl
-    call    image.sym63
+    call    image.sym62
     ud2
   ; OSR entries
     lea     r11,[L12]
@@ -1524,7 +1525,7 @@ L5:
     mov     rsi,rcx
     sar     rsi,4
     mov     rdi,r15
-    call    qword ptr [image.fn146.slot]
+    call    image.fn146
     mov     rdi,rbp
     lea     rdi,[rdi-10h]
     call    image.sym22
@@ -2665,7 +2666,7 @@ L1:
     mov     [rsp],rsi
     lea     rdi,[rsp+0B0h]
     lea     rsi,[ro+4]
-    call    qword ptr [image.sym68]
+    call    qword ptr [image.sym67]
     mov     eax,[rsp+24h]
     test    eax,eax
     sete    al
@@ -3196,6 +3197,38 @@ L9:
 L10:
     ret
 L11:
+    ret
+
+fn hashbrown::raw::RawTable::<(u64, u64)>::erase
+    push    rbx
+    sub     rsp,10h
+    mov     rbx,rsi
+    mov     rax,[rdi]
+    sub     rax,rbx
+    mov     rsi,rax
+    sar     rsi,4
+    call    qword ptr [image.fn146.slot]
+    mov     rdi,rbx
+    lea     rdi,[rdi-10h]
+    jmp     L1
+L0:
+    call    sym1
+    add     rsp,10h
+    pop     rbx
+    ret
+L1:
+    jmp     L0
+  ; OSR entries
+    lea     r11,[L2]
+    movsxd  rax,[r11+rax*4]
+    add     rax,r11
+    jmp     rax
+L2:
+    .long   L3
+    .long   L4
+L3:
+    ret
+L4:
     ret
 
 fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::map::equivalent_key<u64, u64, u64>::{closure#0}}>
@@ -5265,7 +5298,7 @@ L17:
     mov     r13d,0
     jmp     L19
 L18:
-    call    image.sym67
+    call    image.sym66
     mov     eax,0FFFFh
     mov     ecx,0FFFFh
     mov     edx,0FFFFh
@@ -6259,7 +6292,7 @@ L33:
     mov     esi,1A3h
     mov     edx,0
     movzx   edx,dl
-    call    image.sym63
+    call    image.sym62
     ud2
 L34:
     lea     rdi,[image.k5783]
@@ -6267,7 +6300,7 @@ L34:
     mov     rcx,rdx
     mov     edx,0
     movzx   edx,dl
-    call    image.sym63
+    call    image.sym62
     ud2
     mov     r12,rax
     jmp     L39
@@ -7009,7 +7042,7 @@ L9:
     mov     edx,0
     mov     rcx,r9
     movzx   edx,dl
-    call    image.sym63
+    call    image.sym62
     ud2
 L10:
     mov     rdi,[rsp+20h]
@@ -7032,7 +7065,7 @@ L11:
     mov     edx,0
     mov     rcx,rax
     movzx   edx,dl
-    call    image.sym63
+    call    image.sym62
     ud2
 L12:
     lea     rdi,[image.k4108]
@@ -7040,7 +7073,7 @@ L12:
     mov     rcx,rdx
     mov     edx,0
     movzx   edx,dl
-    call    image.sym63
+    call    image.sym62
     ud2
     mov     ecx,1
     jmp     L16
@@ -7162,7 +7195,7 @@ L8:
     mov     esi,237h
     mov     edx,0
     movzx   edx,dl
-    call    image.sym63
+    call    image.sym62
     ud2
 
 fn std::ptr::copy_nonoverlapping::precondition_check
@@ -7257,7 +7290,7 @@ L9:
 L10:
     lea     rdi,[image.k5722]
     mov     esi,3Dh
-    call    image.sym64
+    call    image.sym63
     ud2
     jmp     L14
     jmp     L14

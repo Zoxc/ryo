@@ -1697,12 +1697,9 @@ L8:
 fn core::core_arch::simd::Simd::<i8, 16>::splat (frame 32, args 0, ret 16) [hint]
     arg $-32, 8
     arg $-17, 257
-    ; lend $-17, 1 bytes
-    ; lend $-16, 16 bytes
-    island sym0, [4294967279, 4294967280]
+    vsplat.i8x16 $-16, $-17
     store.copy [$-32 + 0], $-16, 16
     ret $-32, 8
-  sym0 = island ryo_island_simd_splat[core::core_arch::simd::Simd<i8, 16_usize>, i8]
 
 fn core::core_arch::x86::<impl core::core_arch::simd::Simd<i8, 16>>::as_m128i (frame 48, args 0, ret 16) [hint]
     arg $-40, 8

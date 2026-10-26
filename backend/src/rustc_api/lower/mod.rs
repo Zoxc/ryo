@@ -22,6 +22,7 @@
 //! | [`terminator`] | terminators other than calls |
 //! | [`call`] | calls: VM calls, `call.ext`, call islands, drops |
 //! | [`intrinsic`] | intrinsic calls |
+//! | [`simd`] | `simd_*` intrinsics with an instruction |
 //! | [`constant`] | constants and constant-pool references |
 //! | [`island`] | island instructions and requests |
 //!
@@ -43,6 +44,7 @@ mod operand;
 mod place;
 mod rvalue;
 mod sig;
+mod simd;
 mod terminator;
 
 use rustc_data_structures::fx::FxHashSet;
@@ -234,6 +236,9 @@ pub struct FnCx<'a, 'tcx> {
     terminate_at: Vec<(rustc_middle::mir::UnwindTerminateReason, Label)>,
     /// Label of each landing pad, by where it goes.
     pads: Vec<(UnwindTo, Label)>,
+    /// A `#[target_feature]` function: a `simd_*` intrinsic without an instruction keeps it
+    /// native instead of becoming an island, which is compiled without the features.
+    pub strict_simd: bool,
 }
 
 impl<'a, 'tcx> FnCx<'a, 'tcx> {
@@ -273,6 +278,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             terminate_at: Vec::new(),
             pads: Vec::new(),
             caller_location,
+            strict_simd: !tcx.codegen_instance_attrs(instance.def).target_features.is_empty(),
         })
     }
 

@@ -1,7 +1,8 @@
 //! Intrinsic calls (design/lowering.md#calls, `InstanceKind::Intrinsic`): the matching VM
-//! instruction where one exists, else a wrapper island (`catch_unwind`, `compare_bytes`,
-//! SIMD), else the generic `call` island for intrinsics that implement `FnOnce`, else the
-//! fallback body as an ordinary call. Intrinsics with none of these keep the function native.
+//! instruction where one exists (`simd_*`: [`super::simd`]), else a wrapper island
+//! (`catch_unwind`, `compare_bytes`, SIMD), else the generic `call` island for intrinsics
+//! that implement `FnOnce`, else the fallback body as an ordinary call. Intrinsics with none
+//! of these keep the function native.
 //!
 //! Most intrinsics never get here: `LowerIntrinsics` turns them into MIR operations
 //! (`transmute`, overflow arithmetic, `copy_nonoverlapping`, …).
@@ -427,6 +428,12 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 self.wrapper(templates::RAW_EQ, &[ty0().into()], &ins, cont)?
             }
             n if n.starts_with("simd_") => {
+                if self.simd_op(n, callee, args, cont)? {
+                    return Ok(true);
+                }
+                if self.strict_simd {
+                    return native("simd_* without an opcode in a #[target_feature] fn");
+                }
                 let Some(arity) = templates::simd(n) else { return Ok(false) };
                 let ins = self.island_args(args)?;
                 if ins.len() != arity {
@@ -604,7 +611,11 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     }
 
     /// Runs `f` with a slot standing for the call's destination. Returns `true` (handled).
-    fn into_dest(&mut self, cont: &CallCont<'tcx>, f: impl FnOnce(&mut Self, u32) -> Result<(), NeedsNative>) -> Result<bool, NeedsNative> {
+    pub(super) fn into_dest(
+        &mut self,
+        cont: &CallCont<'tcx>,
+        f: impl FnOnce(&mut Self, u32) -> Result<(), NeedsNative>,
+    ) -> Result<bool, NeedsNative> {
         let Some(dest) = cont.dest else { return native("intrinsic without a destination") };
         self.with_place_slot(dest, f)?;
         Ok(true)

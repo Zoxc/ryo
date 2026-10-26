@@ -134,6 +134,7 @@ const FAST: &[(&str, &[&str])] = &[
     ("vm_cross", &["ryo", "ryo-jit-ssa"]),
     ("vm_intrinsics", &["ryo"]),
     ("vm_lowerings", &["ryo", "ryo-jit-ssa"]),
+    ("vm_simd", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle"]),
     ("vm_unwind", &["ryo", "ryo-jit-ssa"]),
     ("vm_aggregates", &["ryo", "ryo-jit-ssa"]),
     ("vm_statics_cross", &["ryo", "ryo-jit-ssa"]),

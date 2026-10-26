@@ -605,11 +605,10 @@ b12(): ; Stub
 
 fn core::core_arch::simd::Simd::<i8, 16>::splat
 a0: $-32, 8 bytes, Promoted
-a1: $-17, 1 bytes, Memory
+a1: $-17, 1 bytes, Promoted
 a2: $-16, 16 bytes, Memory
 b0(v0:8, v1:1): ; Entry
-    AStore(AllocaId(1), 0, 1) (v1)
-    Island(Island { isl: Sym(62), ops: [Alloca(AllocaId(1), 0), Alloca(AllocaId(2), 0)], site: None }) ()
+    hcall vsplat.i8x16 [(Fp, [None, None]), (Imm(4294967280), [Some(Alloca(AllocaId(2), 0)), None]), (Imm(4294967279), [Some(Scratch(0)), None])] ins [0] outs [] (v1)
     v2:8 = ALoad(AllocaId(2), 0, 8) ()
     v3:8 = ALoad(AllocaId(2), 8, 8) ()
     Store(8, 0) (v0, v2)
@@ -1811,6 +1810,40 @@ b16(): ; Body
 b17(): ; Body
     v26:8 = PtrIndex(32) (v10, 0xffffffffffffffff)
     jmp b15(v26)
+
+fn hashbrown::raw::RawTable::<(u64, u64)>::erase
+a0: $-56, 8 bytes, Promoted
+a1: $-48, 8 bytes, Promoted
+a2: $-40, 8 bytes, Promoted
+a3: $-32, 8 bytes, Promoted
+a4: $-16, 8 bytes, Memory, escaped
+a5: $-8, 8 bytes, Promoted
+b0(v0:8, v1:8): ; Entry
+    AStore(AllocaId(4), 0, 8) (v1)
+    v2:8 = AllocaAddr(AllocaId(4), 0) ()
+    Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: Continue }) (v0, v2)
+    br 0x0 ? b1() : b4()
+b1(): ; Body
+    jmp b3()
+b2(v4:8): ; Body head 0
+    Call(Call { target: sym1, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Continue }) (v4)
+    jmp b9()
+b3(): ; Body
+    jmp b2(0x8)
+b4(): ; Body
+    v6:8 = ALoad(AllocaId(4), 0, 8) ()
+    br 0x0 ? b5() : b8()
+b5(): ; Body
+    jmp b7()
+b6(v8:8): ; Body head 1
+    jmp b2(v8)
+b7(): ; Body
+    jmp b6(v6)
+b8(): ; Body
+    v10:8 = PtrIndex(16) (v6, 0xffffffffffffffff)
+    jmp b6(v10)
+b9(): ; Body
+    ret 0x0 ()
 
 fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::map::equivalent_key<u64, u64, u64>::{closure#0}}>
 a0: $-168, 8 bytes, Promoted
