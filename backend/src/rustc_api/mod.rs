@@ -210,17 +210,15 @@ impl CodegenBackend for RyoBackend {
         let image_path = tcx.output_filenames(()).temp_path_for_cgu(OutputType::Object, &image_name);
         let rt_symbol = |name: &str| symbols::rt_symbol(tcx, name);
         let write_t = tcx.prof.generic_activity("ryo_write_image");
-        let bytes =
-            objfile::write_image(&*fmt, &results.image, scid, results.main_symbol.as_deref(), &rt_symbol).unwrap_or_else(|e| tcx.dcx().fatal(e));
+        let cgu_hash = ryo_bytecode::image::cgu_hash(results.cgu_name.as_str().as_bytes());
+        let bytes = objfile::write_image(&*fmt, &results.image, scid, cgu_hash, results.main_symbol.as_deref(), &rt_symbol)
+            .unwrap_or_else(|e| tcx.dcx().fatal(e));
         if let Err(e) = std::fs::write(&image_path, bytes) {
             tcx.dcx().fatal(format!("writing {}: {e}", image_path.display()));
         }
         drop(write_t);
-        let _ = self.link_info.set(link::LinkInfo {
-            image: Some(link::LocalImage { symbol: objfile::image_symbol(scid), module: image_name.clone() }),
-            linked_roots: linked_roots(),
-            macho,
-        });
+        let _ =
+            self.link_info.set(link::LinkInfo { image: Some(link::LocalImage { module: image_name.clone() }), linked_roots: linked_roots(), macho });
         dump_lean::dump(tcx, &self.switches, results);
         // The native CGU (step 4), compiled by cg_llvm as usual.
         let llvm = self.llvm.codegen_crate(tcx);

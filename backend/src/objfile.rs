@@ -11,18 +11,16 @@ use object::{
 use ryo_bytecode::full::Opcode;
 use ryo_bytecode::image::{FuncSymbol, ImageObject, RelocKind, RelocTarget, SYM_INDIRECT, Section, SymVisibility};
 
-/// The symbol an image defines: `__ryo_image_<StableCrateId>`, with the id in hex.
-pub fn image_symbol(stable_crate_id: u64) -> String {
-    format!("{IMAGE_SYMBOL_PREFIX}{stable_crate_id:016x}")
+/// The symbol an image defines: `__ryo_image_<StableCrateId>_<CGU hash>`, both in hex
+/// (`image::cgu_hash` of the codegen unit's name).
+pub fn image_symbol(stable_crate_id: u64, cgu_hash: u64) -> String {
+    format!("__ryo_image_{stable_crate_id:016x}_{cgu_hash:016x}")
 }
-
-/// Prefix of [`image_symbol`]; the registry finds upstream images by it.
-pub const IMAGE_SYMBOL_PREFIX: &str = "__ryo_image_";
 
 /// The pointer slot `ryo_rt::entry::c_main` loads the entry fn's address from.
 pub const MAIN_SLOT_SYMBOL: &str = "__ryo_main";
 
-/// Defined by every registry object; every image object references it.
+/// Defined (weak, or a COMDAT on PE) by every registry stub; every image object references it.
 pub const ANCHOR_SYMBOL: &str = "__ryo_registry_anchor";
 
 /// The registration entry point in `ryo_rt`.
@@ -82,9 +80,22 @@ pub trait ObjectFormat {
     /// The symbol an indirect symbol slot ([`SYM_INDIRECT`]) for `name` relocates against:
     /// the import slot holding `name`'s address. An error on formats without import slots.
     fn import_slot(&self, name: &str) -> Result<String, String>;
-    /// Adds a constructor that calls `ryo_vm_register(images, n)`. With `register_import`,
-    /// `ryo_vm_register` is in another DLL and is called through its import slot.
-    fn add_registry_ctor(&self, obj: &mut Object<'static>, images: object::write::SectionId, n: usize, register_import: bool);
+    /// The section of an image object's registration entry: one pointer to its header, in
+    /// the link unit's entry list (design/backend.md#pipeline), kept by linker GC.
+    fn entry_section(&self, obj: &mut Object<'static>) -> object::write::SectionId;
+    /// The registry stub's part: a null entry of the entry list (so the list exists in every
+    /// link unit), and a constructor that calls `ryo_vm_register(start, end)` with the list's
+    /// bounds. With `register_import`, `ryo_vm_register` is in another DLL and is called
+    /// through its import slot.
+    fn add_registry_ctor(&self, obj: &mut Object<'static>, register_import: bool);
+    /// Defines the hidden registry anchor `name`, such that several stubs in one link (two
+    /// ryo staticlibs in a C program) don't clash: weak, or a COMDAT on PE.
+    fn define_anchor(&self, obj: &mut Object<'static>, name: &str) {
+        let anchor = self.data_section(obj, "ryo_registry_anchor");
+        obj.append_section_data(anchor, &[0], 1);
+        let id = self.hidden_global(obj, name, anchor, 0, 1, SymbolKind::Data);
+        obj.symbol_mut(id).weak = true;
+    }
     /// The object-file name of the symbol `name` (as rustc names it): Mach-O prepends `_`.
     fn mangle(&self, name: &str) -> String {
         name.to_owned()
@@ -193,19 +204,47 @@ impl ObjectFormat for Elf {
         Err(format!("indirect symbol `{name}` in an ELF image (indirect slots are PE-only)"))
     }
 
-    fn add_registry_ctor(&self, obj: &mut Object<'static>, images: object::write::SectionId, n: usize, _register_import: bool) {
+    fn entry_section(&self, obj: &mut Object<'static>) -> object::write::SectionId {
+        // A C-identifier name, so the linker defines `__start_`/`__stop_` bounds; retained, as
+        // lld (>= 13, `-z start-stop-gc`) doesn't keep a section for its bounds' references.
+        let s = obj.add_section(Vec::new(), ELF_ENTRIES.as_bytes().to_vec(), SectionKind::Data);
+        obj.section_mut(s).flags = SectionFlags::Elf { sh_flags: u64::from(elf::SHF_ALLOC | elf::SHF_WRITE | elf::SHF_GNU_RETAIN) };
+        s
+    }
+
+    fn define_anchor(&self, obj: &mut Object<'static>, name: &str) {
+        let anchor = self.data_section(obj, "ryo_registry_anchor");
+        obj.append_section_data(anchor, &[0], 1);
+        obj.add_symbol(Symbol {
+            weak: true,
+            flags: SymbolFlags::Elf { st_info: (elf::STB_WEAK << 4) | elf::STT_OBJECT, st_other: elf::STV_HIDDEN },
+            ..defined(name, anchor, 0, 1, SymbolKind::Data, SymbolScope::Linkage)
+        });
+    }
+
+    fn add_registry_ctor(&self, obj: &mut Object<'static>, _register_import: bool) {
+        let entries = self.entry_section(obj);
+        obj.append_section_data(entries, &[0; 8], 8);
         // The dynamic linker resolves the PLT entry if `ryo_rt` is in a shared object.
-        // lea rdi, [rip + images]; mov esi, n; jmp ryo_vm_register
-        let mut code = vec![0x48, 0x8d, 0x3d, 0, 0, 0, 0, 0xbe];
-        code.extend_from_slice(&u32::try_from(n).expect("too many images").to_le_bytes());
-        code.extend_from_slice(&[0xe9, 0, 0, 0, 0]);
+        // lea rdi, [rip + __start_ryo_images]; lea rsi, [rip + __stop_ryo_images];
+        // jmp ryo_vm_register
+        let code = [0x48, 0x8d, 0x3d, 0, 0, 0, 0, 0x48, 0x8d, 0x35, 0, 0, 0, 0, 0xe9, 0, 0, 0, 0];
         let text = obj.add_section(obj.segment_name(StandardSegment::Text).to_vec(), b".text.ryo_registry".to_vec(), SectionKind::Text);
         obj.append_section_data(text, &code, 16);
-        let images_sym = obj.section_symbol(images);
+        // Hidden, so each link unit (executable or shared object) walks its own list.
+        let bound = |obj: &mut Object<'static>, name: String| {
+            obj.add_symbol(Symbol {
+                flags: SymbolFlags::Elf { st_info: elf::STB_GLOBAL << 4, st_other: elf::STV_HIDDEN },
+                ..undefined_symbol(&name, SymbolKind::Unknown)
+            })
+        };
+        let start = bound(obj, format!("__start_{ELF_ENTRIES}"));
+        let stop = bound(obj, format!("__stop_{ELF_ENTRIES}"));
         let register = undefined(obj, REGISTER_SYMBOL, SymbolKind::Text);
         let rel = |offset, symbol, r_type| Relocation { offset, symbol, addend: -4, flags: RelocationFlags::Elf { r_type } };
-        obj.add_relocation(text, rel(3, images_sym, elf::R_X86_64_PC32)).unwrap();
-        obj.add_relocation(text, rel(13, register, elf::R_X86_64_PLT32)).unwrap();
+        obj.add_relocation(text, rel(3, start, elf::R_X86_64_PC32)).unwrap();
+        obj.add_relocation(text, rel(10, stop, elf::R_X86_64_PC32)).unwrap();
+        obj.add_relocation(text, rel(15, register, elf::R_X86_64_PLT32)).unwrap();
         // Priority 0, before every other constructor: std's own (`.init_array.00099`, args
         // init) may be VM code (design/platforms.md).
         let init = obj.add_section(Vec::new(), b".init_array.00000".to_vec(), SectionKind::Elf(elf::SHT_INIT_ARRAY));
@@ -287,12 +326,23 @@ impl ObjectFormat for Coff {
         Ok(format!("__imp_{name}"))
     }
 
-    fn add_registry_ctor(&self, obj: &mut Object<'static>, images: object::write::SectionId, n: usize, register_import: bool) {
+    fn entry_section(&self, obj: &mut Object<'static>) -> object::write::SectionId {
+        // Grouped: the linker sorts `.ryo$*` by suffix, so the entries (`$m`) sit between the
+        // stub's markers (`$a`, `$z`), as the CRT's `.CRT$XC*`. Not a COMDAT, so `/OPT:REF`
+        // keeps it.
+        coff_entries(obj, "m")
+    }
+
+    fn add_registry_ctor(&self, obj: &mut Object<'static>, register_import: bool) {
+        let start = coff_entries(obj, "a");
+        obj.append_section_data(start, &[0; 8], 8);
+        let end = coff_entries(obj, "z");
+        obj.append_section_data(end, &[0; 8], 8);
         // Win64: the first two arguments are in rcx and rdx. The tail jump leaves rsp alone,
         // so this is a leaf function and needs no unwind info (no `.pdata`).
-        // lea rcx, [rip + images]; mov edx, n; jmp ryo_vm_register / jmp [rip + __imp_...]
-        let mut code = vec![0x48, 0x8d, 0x0d, 0, 0, 0, 0, 0xba];
-        code.extend_from_slice(&u32::try_from(n).expect("too many images").to_le_bytes());
+        // lea rcx, [rip + .ryo$a]; lea rdx, [rip + .ryo$z];
+        // jmp ryo_vm_register / jmp [rip + __imp_ryo_vm_register]
+        let mut code = vec![0x48, 0x8d, 0x0d, 0, 0, 0, 0, 0x48, 0x8d, 0x15, 0, 0, 0, 0];
         let target = if register_import {
             code.extend_from_slice(&[0xff, 0x25, 0, 0, 0, 0]);
             undefined(obj, &format!("__imp_{REGISTER_SYMBOL}"), SymbolKind::Data)
@@ -303,11 +353,13 @@ impl ObjectFormat for Coff {
         let target_at = code.len() as u64 - 4;
         let text = obj.add_section(Vec::new(), b".text$ryo_registry".to_vec(), SectionKind::Text);
         obj.append_section_data(text, &code, 16);
-        let images_sym = obj.section_symbol(images);
+        let start_sym = obj.section_symbol(start);
+        let end_sym = obj.section_symbol(end);
         // `object` turns the addend into COFF's implicit one (REL32 is relative to the end of
         // the field, so -4 becomes 0).
         let rel = |offset, symbol| Relocation { offset, symbol, addend: -4, flags: RelocationFlags::Coff { typ: pe::IMAGE_REL_AMD64_REL32 } };
-        obj.add_relocation(text, rel(3, images_sym)).unwrap();
+        obj.add_relocation(text, rel(3, start_sym)).unwrap();
+        obj.add_relocation(text, rel(10, end_sym)).unwrap();
         obj.add_relocation(text, rel(target_at, target)).unwrap();
         // Read-only, like the CRT's own `.CRT$XC*` sections (`#pragma section(".CRT$XCU",
         // long, read)`), so the linker merges them without an attribute-mismatch warning.
@@ -317,6 +369,16 @@ impl ObjectFormat for Coff {
         obj.append_section_data(init, &[0; 8], 8);
         let text_sym = obj.section_symbol(text);
         obj.add_relocation(init, Relocation { offset: 0, symbol: text_sym, addend: 0, flags: self.abs64() }).unwrap();
+    }
+
+    fn define_anchor(&self, obj: &mut Object<'static>, name: &str) {
+        // A weak definition needs a COMDAT on PE; any copy will do.
+        let anchor = obj.add_section(Vec::new(), b".data$ryo_registry_anchor".to_vec(), SectionKind::Data);
+        obj.append_section_data(anchor, &[0], 1);
+        // A COMDAT section needs its section symbol (`object`'s COFF writer).
+        obj.section_symbol(anchor);
+        let symbol = self.hidden_global(obj, name, anchor, 0, 1, SymbolKind::Data);
+        obj.add_comdat(object::write::Comdat { kind: object::ComdatKind::Any, symbol, sections: vec![anchor] });
     }
 }
 
@@ -395,10 +457,10 @@ impl ObjectFormat for MachO {
 
     fn relro_section(&self, obj: &mut Object<'static>, name: &str) -> object::write::SectionId {
         // `__DATA,__const` (ld64 moves it to `__DATA_CONST`, read-only after the fixups) for
-        // the image and the registry list, the first such section of their object; the small
+        // the image, the first such section of its object; the small
         // slots of the image object get sections of their own in `__DATA`, as an object
         // must not have two sections of the same name.
-        let sect = if name == "ryo_image" || name == "ryo_registry" { "__const".to_owned() } else { format!("__{name}") };
+        let sect = if name == "ryo_image" { "__const".to_owned() } else { format!("__{name}") };
         Self::section(obj, "__DATA", &sect, SectionKind::ReadOnlyDataWithRel)
     }
 
@@ -424,19 +486,29 @@ impl ObjectFormat for MachO {
         Err(format!("indirect symbol `{name}` in a Mach-O image (indirect slots are PE-only)"))
     }
 
-    fn add_registry_ctor(&self, obj: &mut Object<'static>, images: object::write::SectionId, n: usize, _register_import: bool) {
-        // As on ELF; ld64 adds a stub if `ryo_rt` is in a dylib.
-        // lea rdi, [rip + images]; mov esi, n; jmp _ryo_vm_register
-        let mut code = vec![0x48, 0x8d, 0x3d, 0, 0, 0, 0, 0xbe];
-        code.extend_from_slice(&u32::try_from(n).expect("too many images").to_le_bytes());
-        code.extend_from_slice(&[0xe9, 0, 0, 0, 0]);
+    fn entry_section(&self, obj: &mut Object<'static>) -> object::write::SectionId {
+        // `S_ATTR_NO_DEAD_STRIP` against `-dead_strip`.
+        let s = Self::section(obj, "__DATA", MACHO_ENTRIES, SectionKind::Data);
+        obj.section_mut(s).flags = SectionFlags::MachO { flags: macho::S_REGULAR | macho::S_ATTR_NO_DEAD_STRIP };
+        s
+    }
+
+    fn add_registry_ctor(&self, obj: &mut Object<'static>, _register_import: bool) {
+        let entries = self.entry_section(obj);
+        obj.append_section_data(entries, &[0; 8], 8);
+        // As on ELF, with the bounds ld64 and lld define for `section$start$<seg>$<sect>`;
+        // ld64 adds a stub if `ryo_rt` is in a dylib.
+        // lea rdi, [rip + start]; lea rsi, [rip + end]; jmp _ryo_vm_register
+        let code = [0x48, 0x8d, 0x3d, 0, 0, 0, 0, 0x48, 0x8d, 0x35, 0, 0, 0, 0, 0xe9, 0, 0, 0, 0];
         let text = self.text_section(obj);
         obj.append_section_data(text, &code, 16);
-        let images_sym = self.section_target(obj, images);
+        let start = undefined(obj, &format!("section$start$__DATA${MACHO_ENTRIES}"), SymbolKind::Data);
+        let end = undefined(obj, &format!("section$end$__DATA${MACHO_ENTRIES}"), SymbolKind::Data);
         let register = undefined(obj, &self.mangle(REGISTER_SYMBOL), SymbolKind::Text);
         let rel = |offset, symbol, kind| Relocation { offset, symbol, addend: -4, flags: self.reloc(kind) };
-        obj.add_relocation(text, rel(3, images_sym, RelocKind::Pc32)).unwrap();
-        obj.add_relocation(text, rel(13, register, RelocKind::Call32)).unwrap();
+        obj.add_relocation(text, rel(3, start, RelocKind::Pc32)).unwrap();
+        obj.add_relocation(text, rel(10, end, RelocKind::Pc32)).unwrap();
+        obj.add_relocation(text, rel(15, register, RelocKind::Call32)).unwrap();
         // dyld runs an image's initializers in the order of `__mod_init_func`, after those of
         // the images it depends on (`ryo_rt`'s dylib, if it is one).
         let init = Self::section(obj, "__DATA", "__mod_init_func", SectionKind::Data);
@@ -502,7 +574,11 @@ fn undefined(obj: &mut Object<'static>, name: &str, kind: SymbolKind) -> SymbolI
     if let Some(id) = obj.symbol_id(name.as_bytes()) {
         return id;
     }
-    obj.add_symbol(Symbol {
+    obj.add_symbol(undefined_symbol(name, kind))
+}
+
+fn undefined_symbol(name: &str, kind: SymbolKind) -> Symbol {
+    Symbol {
         name: name.as_bytes().to_vec(),
         value: 0,
         size: 0,
@@ -511,18 +587,29 @@ fn undefined(obj: &mut Object<'static>, name: &str, kind: SymbolKind) -> SymbolI
         weak: false,
         section: SymbolSection::Undefined,
         flags: SymbolFlags::None,
-    })
+    }
 }
 
-/// The image object: the image sections, `__ryo_image_<id>` at the start of the read-only
-/// one, a symbol per VM function (global for those native code calls by name), a reference
-/// to the registry anchor, and, for binaries with a VM `main`, the `__ryo_main` slot
+/// The ELF section of the registration entries (`__start_ryo_images` …).
+const ELF_ENTRIES: &str = "ryo_images";
+/// The Mach-O section (in `__DATA`) of the registration entries.
+const MACHO_ENTRIES: &str = "__ryo_images";
+
+/// The PE section `.ryo$<suffix>` of the registration entries or the stub's markers.
+fn coff_entries(obj: &mut Object<'static>, suffix: &str) -> object::write::SectionId {
+    obj.add_section(Vec::new(), format!(".ryo${suffix}").into_bytes(), SectionKind::ReadOnlyData)
+}
+
+/// The image object: the image sections, `__ryo_image_<id>_<cgu>` at the start of the
+/// read-only one, a symbol per VM function (global for those native code calls by name), its
+/// registration entry (a pointer to the header), a reference to the registry anchor, and, for binaries with a VM `main`, the `__ryo_main` slot
 /// pointing at `main_symbol`. `rt_symbol` names `ryo_rt`'s handlers (`ryo_h_<op>`) and
 /// `ryo_probe_stack`, as rustc mangles them.
 pub fn write_image(
     fmt: &dyn ObjectFormat,
     image: &ImageObject,
     stable_crate_id: u64,
+    cgu_hash: u64,
     main_symbol: Option<&str>,
     rt_symbol: &dyn Fn(&str) -> String,
 ) -> Result<Vec<u8>, String> {
@@ -552,7 +639,7 @@ pub fn write_image(
         Section::Text => text,
         Section::EhFrame | Section::Lsda | Section::Pdata | Section::Xdata => unwind.iter().find(|u| u.0 == s).expect("unwind section").1,
     };
-    fmt.hidden_global(&mut obj, &fmt.mangle(&image_symbol(stable_crate_id)), ro, 0, image.rodata.len() as u64, SymbolKind::Data);
+    fmt.hidden_global(&mut obj, &fmt.mangle(&image_symbol(stable_crate_id, cgu_hash)), ro, 0, image.rodata.len() as u64, SymbolKind::Data);
 
     // Indirect slots relocate against the import slot (design/platforms.md). The writer only
     // relocates against indirect symbols from their slots (constants pointing at them are
@@ -604,8 +691,16 @@ pub fn write_image(
             .map_err(|e| format!("image relocation: {e}"))?;
     }
 
-    // A reference to the registry object of the link unit, so that a C linker taking the
-    // image out of a staticlib takes the registry object too (design/backend.md#pipeline).
+    // The registration entry: the stub's constructor registers every image in its link
+    // unit's list (design/backend.md#pipeline).
+    let entry = fmt.entry_section(&mut obj);
+    obj.append_section_data(entry, &[0; 8], 8);
+    let header = fmt.section_target(&mut obj, ro);
+    obj.add_relocation(entry, Relocation { offset: 0, symbol: header, addend: 0, flags: fmt.abs64() })
+        .map_err(|e| format!("registration entry relocation: {e}"))?;
+
+    // A reference to the registry stub of the link unit, so that a C linker taking the image
+    // out of a staticlib takes the stub too (design/backend.md#pipeline).
     let anchor_slot = fmt.relro_section(&mut obj, "ryo_anchor");
     obj.append_section_data(anchor_slot, &[0; 8], 8);
     let anchor = undefined(&mut obj, &fmt.mangle(ANCHOR_SYMBOL), SymbolKind::Data);
@@ -661,44 +756,14 @@ fn patch_by_address(bytes: &mut [u8], eh: &str, fields: &[(u64, String, i64, u64
     Ok(())
 }
 
-/// The registry object of one final link: a constructor registering `images` (image symbols),
-/// and the hidden `__ryo_registry_anchor`. `register_import`: see
-/// [`ObjectFormat::add_registry_ctor`].
-pub fn write_registry(fmt: &dyn ObjectFormat, images: &[String], register_import: bool) -> Result<Vec<u8>, String> {
+/// The registry stub of one final link: the same for every crate. A constructor registering
+/// the link unit's entry list (each image object's entry), and the hidden
+/// `__ryo_registry_anchor`. `register_import`: see [`ObjectFormat::add_registry_ctor`].
+pub fn write_registry(fmt: &dyn ObjectFormat, register_import: bool) -> Result<Vec<u8>, String> {
     let mut obj = fmt.new_object();
-    let anchor = fmt.data_section(&mut obj, "ryo_registry_anchor");
-    obj.append_section_data(anchor, &[0], 1);
-    fmt.hidden_global(&mut obj, &fmt.mangle(ANCHOR_SYMBOL), anchor, 0, 1, SymbolKind::Data);
-    if !images.is_empty() {
-        let list = fmt.relro_section(&mut obj, "ryo_registry");
-        obj.append_section_data(list, &vec![0; images.len() * 8], 8);
-        for (i, name) in images.iter().enumerate() {
-            let symbol = undefined(&mut obj, &fmt.mangle(name), SymbolKind::Data);
-            obj.add_relocation(list, Relocation { offset: i as u64 * 8, symbol, addend: 0, flags: fmt.abs64() })
-                .map_err(|e| format!("registry relocation: {e}"))?;
-        }
-        fmt.add_registry_ctor(&mut obj, list, images.len(), register_import);
-    }
+    fmt.define_anchor(&mut obj, &fmt.mangle(ANCHOR_SYMBOL));
+    fmt.add_registry_ctor(&mut obj, register_import);
     obj.write().map_err(|e| format!("writing the registry object: {e}"))
-}
-
-/// The image symbols an archive (an rlib) defines, from its symbol table, as rustc names
-/// them (without Mach-O's `_`).
-pub fn archive_image_symbols<'d, R: object::ReadRef<'d>>(fmt: &dyn ObjectFormat, data: R) -> Result<Vec<String>, String> {
-    let prefix = fmt.mangle(IMAGE_SYMBOL_PREFIX);
-    let archive = object::read::archive::ArchiveFile::parse(data).map_err(|e| e.to_string())?;
-    let mut out = Vec::new();
-    if let Some(symbols) = archive.symbols().map_err(|e| e.to_string())? {
-        for s in symbols {
-            let s = s.map_err(|e| e.to_string())?;
-            if let Ok(name) = std::str::from_utf8(s.name())
-                && let Some(id) = name.strip_prefix(&prefix)
-            {
-                out.push(format!("{IMAGE_SYMBOL_PREFIX}{id}"));
-            }
-        }
-    }
-    Ok(out)
 }
 
 #[cfg(test)]
@@ -715,6 +780,7 @@ mod tests {
     use super::*;
 
     const SCID: u64 = 0x0123_4567_89ab_cdef;
+    const CGU: u64 = 0xfedc_ba98_7654_3210;
     const MODE: Mode = Mode { fp_arg: true, frame_pointer: true, align_loops: true, pe: false, counters: true, far_rt: false };
 
     fn fmt() -> MachO {
@@ -747,7 +813,7 @@ mod tests {
 
     /// The written image object, read back.
     fn written(img: &ImageObject) -> Vec<u8> {
-        write_image(&fmt(), img, SCID, Some("main_fn"), &rt).expect("write_image")
+        write_image(&fmt(), img, SCID, CGU, Some("main_fn"), &rt).expect("write_image")
     }
 
     fn section<'a>(file: &'a MachOFile64<'a, Endianness>, name: &str) -> object::read::macho::MachOSection64<'a, 'a, Endianness> {
@@ -777,6 +843,7 @@ mod tests {
             ("__TEXT", "__gcc_except_tab"),
             ("__DATA", "__ryo_anchor"),
             ("__DATA", "__ryo_main"),
+            ("__DATA", "__ryo_images"),
         ] {
             assert!(segs.contains(&(want.0.to_owned(), want.1.to_owned())), "missing {want:?} in {segs:?}");
         }
@@ -792,8 +859,18 @@ mod tests {
         assert_eq!((global.scope(), global.address()), (SymbolScope::Dynamic, text.address() + img.functions[0].start as u64));
         let local = sym("__ZN3foo5local17h0123456789abcdefE");
         assert_eq!((local.scope(), local.address()), (SymbolScope::Compilation, text.address() + img.functions[1].start as u64));
-        let image = sym(&format!("_{}", image_symbol(SCID)));
+        let image = sym(&format!("_{}", image_symbol(SCID, CGU)));
         assert_eq!((image.scope(), image.address()), (SymbolScope::Linkage, section(&file, "__const").address()));
+        // The registration entry: kept against `-dead_strip`, pointing at the header.
+        let entries = section(&file, "__ryo_images");
+        let object::SectionFlags::MachO { flags } = entries.flags() else { panic!() };
+        assert_eq!(flags, macho::S_REGULAR | macho::S_ATTR_NO_DEAD_STRIP);
+        let rels: Vec<_> = entries.relocations().collect();
+        assert_eq!(rels.len(), 1);
+        assert_eq!(rels[0].0, 0);
+        assert_eq!(rels[0].1.flags(), RelocationFlags::MachO { r_type: macho::X86_64_RELOC_UNSIGNED, r_pcrel: false, r_length: 3 });
+        let RelocationTarget::Symbol(si) = rels[0].1.target() else { panic!() };
+        assert_eq!(file.symbol_by_index(si).unwrap().address(), section(&file, "__const").address());
         assert_eq!(sym("___ryo_main").scope(), SymbolScope::Linkage);
         for undef in ["_ext_fn", "_main_fn", "___ryo_registry_anchor", "_rust_eh_personality"] {
             assert!(sym(undef).is_undefined(), "{undef}");
@@ -910,8 +987,7 @@ mod tests {
 
     #[test]
     fn registry() {
-        let images = vec![image_symbol(1), image_symbol(2)];
-        let bytes = write_registry(&fmt(), &images, false).unwrap();
+        let bytes = write_registry(&fmt(), false).unwrap();
         let file = MachOFile64::<Endianness>::parse(&*bytes).unwrap();
         let init = section(&file, "__mod_init_func");
         let object::SectionFlags::MachO { flags } = init.flags() else { panic!() };
@@ -926,18 +1002,20 @@ mod tests {
         assert_eq!(r.flags(), RelocationFlags::MachO { r_type: macho::X86_64_RELOC_UNSIGNED, r_pcrel: false, r_length: 3 });
         assert_eq!(target(&r).address(), text.address());
         let text_relocs: Vec<_> = text.relocations().collect();
+        assert_eq!(text_relocs.len(), 3);
         let at = |o| text_relocs.iter().find(|(off, _)| *off == o).map(|(_, r)| r).unwrap();
-        assert_eq!(at(3).flags(), RelocationFlags::MachO { r_type: macho::X86_64_RELOC_SIGNED, r_pcrel: true, r_length: 2 });
-        assert_eq!(target(at(3)).address(), section(&file, "__const").address());
-        assert_eq!(at(13).flags(), RelocationFlags::MachO { r_type: macho::X86_64_RELOC_BRANCH, r_pcrel: true, r_length: 2 });
-        assert_eq!(target(at(13)).name(), Ok("_ryo_vm_register"));
-        let list = section(&file, "__const");
-        let names: Vec<_> = list.relocations().map(|(o, r)| (o, target(&r).name().unwrap().to_owned())).collect();
-        for (i, img) in images.iter().enumerate() {
-            assert!(names.contains(&(i as u64 * 8, format!("_{img}"))), "{names:?}");
-        }
+        let signed = RelocationFlags::MachO { r_type: macho::X86_64_RELOC_SIGNED, r_pcrel: true, r_length: 2 };
+        assert_eq!((at(3).flags(), target(at(3)).name()), (signed, Ok("section$start$__DATA$__ryo_images")));
+        assert!(target(at(3)).is_undefined());
+        assert_eq!((at(10).flags(), target(at(10)).name()), (signed, Ok("section$end$__DATA$__ryo_images")));
+        assert_eq!(at(15).flags(), RelocationFlags::MachO { r_type: macho::X86_64_RELOC_BRANCH, r_pcrel: true, r_length: 2 });
+        assert_eq!(target(at(15)).name(), Ok("_ryo_vm_register"));
+        // The stub's own entry is null, so the section exists in every link.
+        let entries = section(&file, "__ryo_images");
+        assert_eq!(entries.data().unwrap(), &[0; 8]);
+        assert_eq!(entries.relocations().count(), 0);
         let anchor = file.symbols().find(|s| s.name() == Ok("___ryo_registry_anchor")).unwrap();
-        assert_eq!(anchor.scope(), SymbolScope::Linkage);
+        assert_eq!((anchor.scope(), anchor.is_weak()), (SymbolScope::Linkage, true));
         assert_eq!(anchor.section_index(), Some(section(&file, "__data").index()));
     }
 }

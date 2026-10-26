@@ -5,7 +5,7 @@ use std::path::Path;
 use crate::utils::{cmd, root};
 
 /// A test program: one or more crates under `tests/`, built in order. The binary crate runs,
-/// or, for [`Program::c_main`], a C program linked against the last crate.
+/// or, for [`Program::c_main`], a C program linked against its staticlib and cdylib crates.
 pub(crate) struct Program {
     pub(crate) name: &'static str,
     pub(crate) crates: &'static [Crate],
@@ -24,7 +24,7 @@ pub(crate) struct Program {
     /// landing pads don't run on PE (design/platforms.md, "Panics out of islands").
     pub(super) pe_lost_cleanups: &'static [&'static str],
     /// A C `main` (relative to `tests/`), compiled with `cc` (`cl` on MSVC) and linked against
-    /// the last crate (a staticlib or cdylib). Skipped without that compiler.
+    /// the staticlib and cdylib crates, in order. Skipped without that compiler.
     pub(super) c_main: Option<&'static str>,
     /// A static library the crates link (`#[link(kind = "static")]`), built before them.
     pub native_lib: Option<NativeLib>,
@@ -378,6 +378,16 @@ pub(crate) const CORPUS: &[Program] = &[
         crates: &[krate("vmc", "vm_c/lib.rs", CrateKind::Staticlib)],
         vm: &["answer"],
         c_main: Some("vm_c/main.c"),
+        ..PROGRAM
+    },
+    // Two ryo staticlibs in one C program: each brings a registry stub defining the (weak)
+    // anchor, and one stub registers both images (with the JIT on, each image's function is
+    // compiled).
+    Program {
+        name: "vm_staticlib2",
+        crates: &[krate("vma", "vm_c2/a.rs", CrateKind::Staticlib), krate("vmb", "vm_c2/b.rs", CrateKind::Staticlib)],
+        vm: &["answer_a", "answer_b"],
+        c_main: Some("vm_c2/main.c"),
         ..PROGRAM
     },
     Program { name: "vm_cdylib", crates: &[krate("vmc", "vm_c/lib.rs", CrateKind::Cdylib)], vm: &["answer"], c_main: Some("vm_c/main.c"), ..PROGRAM },

@@ -141,6 +141,7 @@ const FAST: &[(&str, &[&str])] = &[
     ("vm_dylib", &["ryo", "ryo-jit-ssa"]),
     ("vm_ffi", &["ryo", "ryo-jit-ssa"]),
     ("vm_cdylib", &["ryo"]),
+    ("vm_staticlib2", &["ryo", "ryo-jit-ssa"]),
     ("vm_lto_dep", &["ryo-lto"]),
     ("vm_abort_cleanup", &["ryo-abort"]),
     ("end_ptrs", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-shuffle"]),
@@ -631,6 +632,8 @@ pub fn run(opts: &Options) -> Result<(), String> {
             .filter(|v| sel.corpus(program, v))
             .filter(|v| !(v.vm_only && program.vm.is_empty()))
             .filter(|v| !((!v.final_flags.is_empty() || v.abort) && program.has_dylib()))
+            // Two LTO'd (or abort) staticlibs each carry all of std: one C link can't take both.
+            .filter(|v| !((!v.final_flags.is_empty() || v.abort) && program.crates.iter().filter(|c| c.kind == CrateKind::Staticlib).count() > 1))
             .collect();
         if vs.is_empty() {
             continue;
@@ -819,7 +822,7 @@ impl Ctx {
             }
             // Every library crate is a dependency of the crates after it.
             for dep in program.crates.iter().take_while(|d| d.name != krate.name) {
-                if dep.kind != CrateKind::Bin {
+                if !matches!(dep.kind, CrateKind::Bin | CrateKind::Staticlib | CrateKind::Cdylib) {
                     c.args(["--extern", dep.name]);
                 }
             }
@@ -842,7 +845,8 @@ impl Ctx {
             }
         }
         if let Some(c_main) = program.c_main {
-            exe = Some(self.link_c(&dir, c_main, program.crates.last().unwrap(), &native_libs)?);
+            let libs: Vec<&Crate> = program.crates.iter().filter(|c| matches!(c.kind, CrateKind::Staticlib | CrateKind::Cdylib)).collect();
+            exe = Some(self.link_c(&dir, c_main, &libs, &native_libs)?);
         }
         let exe = exe.ok_or_else(|| format!("{}: no binary crate", program.name))?;
         let result = self.run(&dir, &exe, variant)?;
@@ -852,9 +856,9 @@ impl Ctx {
         Ok(result)
     }
 
-    /// Compiles and links the C program `c_main` against `lib` (a staticlib or cdylib in `dir`),
-    /// with `cc`, or `cl` on MSVC hosts.
-    fn link_c(&self, dir: &Path, c_main: &str, lib: &Crate, native_libs: &[String]) -> Result<PathBuf, String> {
+    /// Compiles and links the C program `c_main` against `libs` (staticlibs or cdylibs in
+    /// `dir`), with `cc`, or `cl` on MSVC hosts.
+    fn link_c(&self, dir: &Path, c_main: &str, libs: &[&Crate], native_libs: &[String]) -> Result<PathBuf, String> {
         let exe = dir.join(exe_name("c_main"));
         let mut c = c_compiler().ok_or_else(|| format!("no `{C_COMPILER}`"))?;
         if MSVC {
@@ -863,18 +867,26 @@ impl Ctx {
             let mut fe = OsString::from("/Fe:");
             fe.push(&exe);
             c.current_dir(dir).arg("/nologo").arg(self.tests.join(c_main)).arg(fe).arg("/link");
-            match lib.kind {
-                CrateKind::Staticlib => c.arg(dir.join(format!("{}.lib", lib.name))).args(native_libs),
-                CrateKind::Cdylib => c.arg(dir.join(format!("{}.dll.lib", lib.name))),
-                _ => return Err("c_main needs a staticlib or cdylib".to_owned()),
-            };
+            for lib in libs {
+                match lib.kind {
+                    CrateKind::Staticlib => c.arg(dir.join(format!("{}.lib", lib.name))),
+                    _ => c.arg(dir.join(format!("{}.dll.lib", lib.name))),
+                };
+            }
         } else {
             c.arg(self.tests.join(c_main)).arg("-o").arg(&exe);
-            match lib.kind {
-                CrateKind::Staticlib => c.arg(dir.join(format!("lib{}.a", lib.name))).args(native_libs),
-                CrateKind::Cdylib => c.arg("-L").arg(dir).arg(format!("-l{}", lib.name)),
-                _ => return Err("c_main needs a staticlib or cdylib".to_owned()),
-            };
+            for lib in libs {
+                match lib.kind {
+                    CrateKind::Staticlib => c.arg(dir.join(format!("lib{}.a", lib.name))),
+                    _ => c.arg("-L").arg(dir).arg(format!("-l{}", lib.name)),
+                };
+            }
+        }
+        if libs.is_empty() {
+            return Err("c_main needs a staticlib or cdylib".to_owned());
+        }
+        if libs.iter().any(|l| l.kind == CrateKind::Staticlib) {
+            c.args(native_libs);
         }
         let res = c.output().map_err(|e| format!("failed to run `{}`: {e}", describe(&c)))?;
         if !res.status.success() {

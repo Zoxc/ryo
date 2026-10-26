@@ -303,11 +303,19 @@ fn image_layouts_are_pinned() {
             offset_of!(JitRecord, func),
             offset_of!(JitRecord, header),
         ),
-        offset_of!(Header, const_relocs),
+        (offset_of!(Header, const_relocs), offset_of!(Header, cgu_hash)),
     );
     assert_eq!(
         layout,
-        ((152, 24, 48, 40, 124), (36, 4, 8, 12, 16, 20, 28), (8, 16, 8), (12, 4, 8), (80, 104, 112, 128), (132, 64, 8, 16, 24, 32, 36, 40), 140),
+        (
+            (160, 24, 48, 40, 124),
+            (36, 4, 8, 12, 16, 20, 28),
+            (8, 16, 8),
+            (12, 4, 8),
+            (80, 104, 112, 128),
+            (132, 64, 8, 16, 24, 32, 36, 40),
+            (140, 152)
+        ),
         "{layout:?}"
     );
 }

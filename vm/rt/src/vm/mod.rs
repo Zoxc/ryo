@@ -26,19 +26,22 @@ pub use jit::{JIT_ENTRY_PREFIX, configure_jit, jit_shuffle_image, jit_stats};
 pub use jit::{trip_entry, trip_osr};
 pub use registry::ImageRt;
 
-/// Registers `n` images. `images[i]` is the address of an image header
-/// (`__ryo_image_<StableCrateId>`). Called by each link unit's registry object constructor,
-/// including for shared objects loaded at run time. Images already registered are skipped.
-/// Aborts on an invalid image or a crate hash collision.
+/// Registers the images whose header addresses are the non-null entries of `[start, end)`.
+/// Called by each link unit's registry stub constructor with the bounds of the link unit's
+/// `ryo_images` section (each image object contributes one entry, the stub a null one;
+/// design/backend.md#pipeline), including for shared objects loaded at run time. Images
+/// already registered are skipped. Aborts on an invalid image, or on two images with the same
+/// crate and CGU hashes.
 ///
 /// # Safety
-/// `images` must point at `n` pointers to linked images that stay mapped and unchanged for the
-/// rest of the process (images are never unregistered).
+/// `[start, end)` must be readable pointer-sized entries, each null or a linked image's header
+/// that stays mapped and unchanged for the rest of the process (images are never
+/// unregistered).
 ///
 /// `C-unwind`, so the compiler adds no abort-on-unwind guard, which would reference core's
 /// panic path (design/vm.md, "No re-entry"); nothing in it panics (`y test`'s `rt-core-only`).
 #[unsafe(no_mangle)]
-pub unsafe extern "C-unwind" fn ryo_vm_register(images: *const *const u8, n: usize) {
+pub unsafe extern "C-unwind" fn ryo_vm_register(start: *const *const u8, end: *const *const u8) {
     // SAFETY: per the caller.
-    unsafe { registry::register(images, n) }
+    unsafe { registry::register(start, end) }
 }

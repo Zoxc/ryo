@@ -271,6 +271,19 @@ pub const fn crate_hash(stable_crate_id: u64) -> u32 {
     (stable_crate_id ^ (stable_crate_id >> 32)) as u32
 }
 
+/// The 64-bit hash of a codegen unit name (FNV-1a) the image header and symbol carry. CGU
+/// names are stable across sessions, so is the hash.
+pub const fn cgu_hash(name: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut i = 0;
+    while i < name.len() {
+        h ^= name[i] as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        i += 1;
+    }
+    h
+}
+
 /// A byte range within the read-only section: offset and element count.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -328,6 +341,9 @@ pub struct Header {
     /// the linker relocates (a pointer to a symbol, the pool or the data area). The JIT reads
     /// it to tell pointer fields from integers when it folds loads from the pool.
     pub const_relocs: Span,
+    /// Identifies the image among its crate's: a hash of rustc's codegen unit name
+    /// ([`cgu_hash`]). The registry rejects two images with the same crate and CGU hashes.
+    pub cgu_hash: u64,
 }
 
 /// A function table entry.

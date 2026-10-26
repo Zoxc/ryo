@@ -88,3 +88,22 @@ remove it once a Lean session has handled it.
   functions; inside them a `simd_*` intrinsic without an instruction is `NeedsNative`
   instead of an island (`FnCx::strict_simd`). Only matters if the Lean model covers which
   functions are VM code. Commit: "Lower baseline #[target_feature] functions as VM code".
+
+- Image identity and registration through the linker (CGU plan stage 3). The image symbol is
+  `__ryo_image_<StableCrateId>_<CGU hash>` (both 16 hex digits; the CGU hash is
+  `image::cgu_hash`, 64-bit FNV-1a of rustc's CGU name), and `Header` gains `cgu_hash: u64`
+  at offset 152 (after `const_relocs`, `Header` grows 152 -> 160 bytes). Each image object
+  has a new section with one 8-byte entry, `R_X86_64_64` + 0 against the read-only
+  section's start (ELF `ryo_images`, flags `SHF_ALLOC|SHF_WRITE|SHF_GNU_RETAIN`; PE `.ryo$m`;
+  Mach-O `__DATA,__ryo_images`). The registry object is now a crate-independent stub: a
+  weak hidden `__ryo_registry_anchor` (a COMDAT on PE), a null 8-byte `ryo_images` entry,
+  the constructor `lea rdi, [rip + __start_ryo_images]; lea rsi, [rip + __stop_ryo_images];
+  jmp ryo_vm_register` (both bounds undefined `STV_HIDDEN`, `R_X86_64_PC32` - 4; the jump
+  `R_X86_64_PLT32` - 4), and `.init_array.00000` as before; no image list
+  (`.data.rel.ro.ryo_registry` is gone). `ryo_vm_register(start, end)` registers the
+  non-null entries of `[start, end)` and rejects two images with the same `(crate_hash,
+  cgu_hash)`. Lean: `Obj/Image.lean` (`readHeader`, `headerSize`, the image symbol form),
+  `Check/Image/Relocs.lean` (the header symbol check, the entry section and its relocation
+  as an allowed section), `Check/Image/Registry.lean` (the stub's form instead of the list;
+  `checkLink`: each image object has its entry, not a list membership), `X86.registryCtor`.
+  Commit: "Register images through a linker section; CGU hash in the image identity".

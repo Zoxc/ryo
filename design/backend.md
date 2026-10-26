@@ -40,7 +40,7 @@ and `codegen_crate` reads them.
    The backend errors if `sess.codegen_units()` isn't 1. A crate with no VM code (a proc
    macro, a panic runtime, `RYO_NO_VM`, step 2) skips all of this: the provider returns
    rustc's partition as is, with any number of CGUs, and `codegen_crate` writes no image
-   (its final outputs still get a registry object for their upstream images).
+   (its final outputs still get a registry stub, for their upstream images).
 2. **Classify** each mono item:
    - `Fn(instance)` → VM, unless something in it can't be expressed as a VM op or an island
      template. Those functions stay native as a whole:
@@ -156,8 +156,9 @@ and `codegen_crate` reads them.
    (`rmeta-link`), and a downstream `-Clto` build reads bitcode from each of those and leaves
    them out of the link (`rustc_codegen_llvm/src/back/lto.rs:94-120`,
    `rustc_codegen_ssa/src/back/link.rs:3756`), which would fail and drop the image.
-   The image defines one global symbol, `__ryo_image_<StableCrateId>` (the id as 16 hex
-   digits), hidden: only the registry object of the same link unit references it. On ELF the
+   The image defines one global symbol, `__ryo_image_<StableCrateId>_<CGU hash>` (both as
+   16 hex digits; the CGU hash is `image::cgu_hash`, FNV-1a of rustc's CGU name, also in the
+   header), hidden: nothing references it, it names the header in tools and dumps. On ELF the
    read-only part is `.data.rel.ro.ryo_image` (writable only while relocating), the writable
    part `.data.ryo_image`, the code `.text.ryo_image`, and the unwind information
    `.eh_frame` and `.gcc_except_table.ryo_image`; on PE they are `.rdata$ryo_image`,
@@ -165,36 +166,41 @@ and `codegen_crate` reads them.
    `__DATA,__data`, `__TEXT,__text`, `__TEXT,__eh_frame` and `__TEXT,__gcc_except_tab`
    ([platforms.md](platforms.md)). Limitation: with `--emit=obj` (no linking) the emitted
    `.o` lacks the image, because `join_codegen` adds the image module after cg_ssa has copied
-   the module objects to the outputs; and no registry object is generated then. A binary with a VM `main` also gets `__ryo_main` in this
+   the module objects to the outputs; and no registry stub is generated then. A binary with a VM `main` also gets `__ryo_main` in this
    object ([stubs.md](stubs.md#program-entry-main)).
 6. **Link** with cg_llvm's `link` (`link_binary`). The VM is part of `ryo_rt`, which links like
    any Rust dependency, so there is no native runtime library. Two additions:
-   - **Registry object**: image objects in rlibs are archive members that nothing
-     references, so the linker would skip them. At every final link (exe, dylib, cdylib,
-     staticlib), the backend generates a small registry object. It references
-     `__ryo_image_<id>` for every ryo-built crate linked *statically* into this output, which
-     pulls the members in. Which crates those are:
-     - The local crate is always included.
-     - Upstream crates come from `CrateInfo.dependency_formats` for the output's crate type
-       (`Linkage::Static`), filtered to the ryo-built ones: those whose rlib
-       (`CrateInfo.used_crate_source`) has an `__ryo_image_` symbol in its archive symbol
-       table, which also gives the symbol (only that table is read, not the whole rlib). The compiler has no public query for a crate's own
-       dependencies (`CStore::crate_dependencies_in_postorder` is `pub(crate)`), and `link`
-       has no `tcx` and doesn't receive the ongoing value
-       (`rustc_codegen_ssa/src/traits/backend.rs:143-150`). `codegen_crate` stores the local
-       image's symbol in a `OnceLock` on `RyoBackend` for `link`.
-     - Crates already linked into an upstream Rust dylib are registered by that dylib's own
-       registry object.
+   - **Registration through the linker**: each image object registers itself. It holds
+     one pointer-sized entry pointing at its header, in a section of its own: ELF
+     `ryo_images` (writable, `SHF_GNU_RETAIN`), PE `.ryo$m`, Mach-O `__DATA,__ryo_images`
+     (`S_ATTR_NO_DEAD_STRIP`). The linker concatenates the entries of every image object in
+     the link unit, and keeps them under section GC (`--gc-sections`, `/OPT:REF`,
+     `-dead_strip`); the image they point at stays with them.
+   - **Registry stub**: at every final link (exe, dylib, cdylib, staticlib) the backend adds
+     a small object, the same for every crate (`objfile.rs`, `write_registry`): a null entry
+     (so the list exists in every link unit) and a constructor, `lea` of the list's start,
+     `lea` of its end, `jmp ryo_vm_register` (`.init_array.00000` on ELF, `.CRT$XCT` on PE,
+     ahead of other constructors; `__mod_init_func` on Mach-O). The bounds are the linker's
+     `__start_ryo_images`/`__stop_ryo_images` (referenced hidden, so a dylib and the exe
+     that links it each walk their own list), on Mach-O `section$start$__DATA$__ryo_images`
+     and `section$end$...`, on PE the stub's own markers in `.ryo$a` and `.ryo$z` (the
+     linker sorts grouped sections by their suffix, as the CRT's `.CRT$XC*`). Null entries
+     (the stub's, PE incremental-link padding) are skipped. The stub lists no images, so
+     `link` reads no rlib symbol tables. Images in rlibs are archive members, taken only if
+     referenced (a native call into a VM function, another image's `call.sym`, a function
+     pointer); an image nothing references is never called, so it needn't be registered,
+     and it now drops out of the link. Crates linked into an upstream Rust dylib are
+     registered by that dylib's own stub.
 
      **One `link_binary` call per crate type**: `link_binary` loops over
      `crate_info.crate_types` itself and gives every output the same modules
      (`rustc_codegen_ssa/src/back/link.rs:326-401`), but each output needs its own registry
-     object (and an rlib none). So our `link` calls `link_binary` once per crate type,
+     stub (and an rlib none). So our `link` calls `link_binary` once per crate type,
      through cg_llvm's `link` (cg_llvm's `LlvmArchiveBuilderBuilder` is `pub(crate)`,
      `rustc_codegen_llvm/src/back/archive.rs:13`, so we can't call `link_binary` with it
      ourselves):
      - with a single-type copy of `CrateInfo` (it is `Clone`)
-     - with that type's registry object added to the modules
+     - with the registry stub added to the modules
      - with every temporary object hardlinked per call (module objects, the allocator module,
        global-asm and DWARF objects) for every call but the last, since `link_binary`
        deletes them at the end (`link.rs:444-490`)
@@ -203,24 +209,19 @@ and `codegen_crate` reads them.
        the first call, the backend copies `metadata.path()` and the `stub_or_full()` bytes into
        its own directory, and every call but the last (which gets the original) reloads from
        that copy with `EncodedMetadata::from_path(path, stub_path, None)` (`encoder.rs:2384-2388`).
-   - **Staticlib outputs**: nothing in the archive references the registry object, so a C
-     linker consuming the staticlib would drop it, and with it the constructor and images.
-     So every registry object (for every output type) defines a hidden global
-     `__ryo_registry_anchor`, and every image object references it with a strong reference
-     (a pointer slot relocated against it, `objfile.rs`, `write_image`). Each link unit has
-     exactly one registry object, so the symbol is unique per unit. In a staticlib, any
-     image the C linker takes (any VM function called) then pulls the registry object in, and with it
-     the constructor and the images. (A weak reference would not cause archive extraction.)
-     The limitation: one ryo staticlib per final C link. With two, both define the anchor,
-     the archive extractor takes the first, and the second staticlib's images are never
-     registered. With `--whole-archive`, the result is a duplicate-symbol error instead.
+   - **Staticlib outputs**: nothing in the archive references the stub, so a C linker
+     consuming the staticlib would drop it, and with it the constructor. So every stub
+     defines a hidden `__ryo_registry_anchor`, and every image object references it with a
+     strong reference (a pointer slot relocated against it, `objfile.rs`, `write_image`). In
+     a staticlib, any image the C linker takes (any VM function called) then pulls the stub
+     in. (A weak reference would not cause archive extraction.) The anchor is a weak
+     definition (a COMDAT on PE), so two ryo staticlibs in one C link don't clash: the
+     extractor takes one stub, which registers every entry of the link unit, the other
+     staticlib's images included; if both are taken (`--whole-archive`), both constructors
+     run and the second finds every image registered.
    - **Plain rustc can't do the final link** of ryo-built rlibs: without our backend there is
-     no registry object, and `__ryo_registry_anchor` is undefined. Final links always go
-     through `rustc-ryo`.
-     A constructor (`.init_array.00000` on ELF, `.CRT$XCT` on PE, ahead of other constructors;
-     `__mod_init_func` on Mach-O) calls
-     `ryo_vm_register(images, n)`. The registry's own symbols are local, so a dylib and the
-     exe that links it don't clash.
+     no stub, and `__ryo_registry_anchor` is undefined. Final links always go through
+     `rustc-ryo`.
    - **`ryo_rt`** arrives through `--extern force:ryo_rt` (`rustc_session/src/config.rs:2621`),
      which loads it even when nothing names it. A backend has no hook for injecting an
      `extern crate`. So it is in `CrateInfo`, its generics can be instantiated, and it gets
@@ -339,7 +340,7 @@ instantiate generics in their own VM.
 machine code), `ryo_stubs` (islands, stub neighbors, the native CGU), `ryo_merge`
 (relocation resolution) and `ryo_finish_image` (image layout); `ryo_write_image` (step 5); and at link time
 `ryo_link_prep` (per crate type, everything before rustc's `link_binary`) with
-`ryo_registry_images`, and `ryo_append_rlib`. measureme's `summarize` lists them.
+`ryo_registry` (writing the stub), and `ryo_append_rlib`. measureme's `summarize` lists them.
 
 ## Symbol consistency
 

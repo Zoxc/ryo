@@ -8,7 +8,6 @@ use rustc_codegen_ssa::back::archive::{AddArchiveKind, ArArchiveBuilderBuilder, 
 use rustc_codegen_ssa::traits::CodegenBackend;
 use rustc_codegen_ssa::{CompiledModule, CompiledModules, CrateInfo};
 use rustc_data_structures::fx::FxHashMap;
-use rustc_hir::def_id::LOCAL_CRATE;
 use rustc_metadata::EncodedMetadata;
 use rustc_middle::middle::dependency_format::Linkage;
 use rustc_session::Session;
@@ -19,8 +18,6 @@ use crate::objfile;
 
 /// The local crate's image.
 pub struct LocalImage {
-    /// Its symbol.
-    pub symbol: String,
     /// The name of its `CompiledModule`.
     pub module: String,
 }
@@ -80,12 +77,12 @@ pub fn link(
             let (full, stub) = saved_metadata.clone().unwrap();
             EncodedMetadata::from_path(full, stub, None).unwrap_or_else(|e| sess.dcx().fatal(format!("reloading the crate metadata: {e}")))
         };
-        // Without linking (`--emit=obj` etc.) a registry object would only be left behind.
+        // Without linking (`--emit=obj` etc.) a registry object would only be left behind. The
+        // stub lists no images: each image object linked brings its own entry.
         if crate_type != CrateType::Rlib && sess.opts.output_types.should_link() {
-            let registry_t = sess.prof.generic_activity("ryo_registry_images");
-            let images = registry_images(sess, &*fmt, info, &crate_info, crate_type);
+            let registry_t = sess.prof.generic_activity("ryo_registry");
             let import = register_is_imported(&crate_info, crate_type);
-            let bytes = objfile::write_registry(&*fmt, &images, import).unwrap_or_else(|e| sess.dcx().fatal(e));
+            let bytes = objfile::write_registry(&*fmt, import).unwrap_or_else(|e| sess.dcx().fatal(e));
             let name = format!("{}.ryo_registry.{}", crate_info.local_crate_name, crate_type);
             let path = outputs.temp_path_for_cgu(OutputType::Object, &name);
             fs::write(&path, bytes).unwrap_or_else(|e| sess.dcx().fatal(format!("writing {}: {e}", path.display())));
@@ -177,29 +174,6 @@ fn append_to_rlib(sess: &Session, rlib: &Path, object: &Path) {
     if let Err(e) = fs::rename(&tmp, rlib) {
         sess.dcx().fatal(format!("writing {}: {e}", rlib.display()));
     }
-}
-
-/// The image symbols a final output of `crate_type` registers: the local crate's, and those of
-/// the upstream crates linked into it statically. Crates linked into an upstream dylib are
-/// registered by that dylib's registry. Upstream rlibs are recognized as ryo-built by an image
-/// symbol in their archive symbol table.
-fn registry_images(sess: &Session, fmt: &dyn objfile::ObjectFormat, info: &LinkInfo, crate_info: &CrateInfo, crate_type: CrateType) -> Vec<String> {
-    let mut images: Vec<String> = info.image.iter().map(|i| i.symbol.clone()).collect();
-    let Some(deps) = crate_info.dependency_formats.get(&crate_type) else { return images };
-    for (cnum, linkage) in deps.iter_enumerated() {
-        if cnum == LOCAL_CRATE || *linkage != Linkage::Static {
-            continue;
-        }
-        let Some(rlib) = crate_info.used_crate_source.get(&cnum).and_then(|s| s.rlib.clone()) else { continue };
-        // Only the archive's symbol table is read, not the whole rlib.
-        let file = fs::File::open(&rlib).unwrap_or_else(|e| sess.dcx().fatal(format!("reading {}: {e}", rlib.display())));
-        let cache = object::ReadCache::new(file);
-        match objfile::archive_image_symbols(fmt, &cache) {
-            Ok(syms) => images.extend(syms),
-            Err(e) => sess.dcx().fatal(format!("reading the symbol table of {}: {e}", rlib.display())),
-        }
-    }
-    images
 }
 
 /// Whether `ryo_vm_register` lives in another shared object for an output of `crate_type`:

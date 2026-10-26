@@ -391,6 +391,7 @@ fn check_function(i: u32, f: &mut FunctionDef, lim: &CodeLimits, symbols: &[Symb
 #[derive(Clone, Debug)]
 pub struct ImageWriter {
     stable_crate_id: u64,
+    cgu_hash: u64,
     functions: Vec<FunctionDef>,
     consts: Vec<u8>,
     const_align: u32,
@@ -443,6 +444,7 @@ impl ImageWriter {
     pub fn new(stable_crate_id: u64) -> Self {
         ImageWriter {
             stable_crate_id,
+            cgu_hash: 0,
             functions: Vec::new(),
             consts: Vec::new(),
             const_align: 1,
@@ -463,6 +465,11 @@ impl ImageWriter {
     /// Sets the pointer encoding of `.eh_frame` (not PE). The default is [`EhPointers::Sdata4`].
     pub fn set_eh_pointers(&mut self, p: EhPointers) {
         self.eh_pointers = p;
+    }
+
+    /// Sets the header's CGU hash ([`super::cgu_hash`]; 0 by default).
+    pub fn set_cgu_hash(&mut self, h: u64) {
+        self.cgu_hash = h;
     }
 
     /// The 32-bit crate hash the registry uses.
@@ -708,6 +715,7 @@ impl ImageWriter {
             mode: mode_bits(mode),
             jit_records,
             const_relocs,
+            cgu_hash: self.cgu_hash,
         };
 
         let mut ro = vec![0u8; size];

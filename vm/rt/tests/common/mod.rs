@@ -255,7 +255,7 @@ pub fn link(obj: ImageObject, syms: &[(&str, usize)]) -> Linked {
 
 pub fn register(images: &[&Linked]) {
     let hs: Vec<*const u8> = images.iter().map(|l| l.header).collect();
-    unsafe { ryo_rt::vm::ryo_vm_register(hs.as_ptr(), hs.len()) };
+    unsafe { ryo_rt::vm::ryo_vm_register(hs.as_ptr(), hs.as_ptr().add(hs.len())) };
 }
 
 /// Encodes and links an image (unregistered).

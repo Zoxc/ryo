@@ -249,7 +249,7 @@ fn registry_first(info: &RustcInfo, exe: &Path) -> Result<(), String> {
         return Err(format!("{} has {} initializers, expected the registry's and the program's", exe.display(), ptrs.len()));
     };
     let dis = crate::utils::output(
-        cmd(&objdump).arg("-d").arg(format!("--start-address={first:#x}")).arg(format!("--stop-address={:#x}", first + 18)).arg(exe),
+        cmd(&objdump).arg("-d").arg(format!("--start-address={first:#x}")).arg(format!("--stop-address={:#x}", first + 19)).arg(exe),
     )?;
     if !dis.contains("<_ryo_vm_register>") {
         return Err(format!("the first initializer of {} (at {first:#x}) isn't the registry's:\n{dis}", exe.display()));

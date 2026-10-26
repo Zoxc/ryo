@@ -18,7 +18,7 @@ pub struct ImageRt {
 }
 
 struct Snapshot {
-    /// Images sorted by crate hash.
+    /// Images sorted by crate hash (then CGU hash).
     by_hash: *const *const ImageRt,
     n: usize,
 }
@@ -37,11 +37,13 @@ fn snapshot() -> Option<&'static Snapshot> {
     unsafe { SNAPSHOT.load(Ordering::Acquire).as_ref() }
 }
 
-/// Registers `n` images whose headers are at `images[0..n]`. See [`super::ryo_vm_register`].
+/// Registers the images whose headers are the non-null entries of `[start, end)`. See
+/// [`super::ryo_vm_register`].
 ///
 /// # Safety
 /// As for `ryo_vm_register`.
-pub unsafe fn register(headers: *const *const u8, n: usize) {
+pub unsafe fn register(start: *const *const u8, end: *const *const u8) {
+    let n = (end as usize).saturating_sub(start as usize) / size_of::<*const u8>();
     let g = lock();
     let old: &[&ImageRt] = match snapshot() {
         Some(s) => images(s, s.by_hash),
@@ -56,7 +58,10 @@ pub unsafe fn register(headers: *const *const u8, n: usize) {
     let mut len = old.len();
     for i in 0..n {
         // SAFETY: the caller passes `n` readable header pointers.
-        let h = unsafe { *headers.add(i) };
+        let h = unsafe { *start.add(i) };
+        if h.is_null() {
+            continue; // the stub's entry, or linker padding (PE incremental linking)
+        }
         if done(len).iter().any(|im| ptr::eq(im.view.header(), h.cast())) {
             continue; // registered before (e.g. a library loaded twice)
         }
@@ -66,9 +71,9 @@ pub unsafe fn register(headers: *const *const u8, n: usize) {
             Err(_) => fatal("ryo_vm_register: invalid image"),
         };
         let hdr = view.header();
-        if let Some(o) = done(len).iter().find(|im| im.view.crate_hash() == view.crate_hash()) {
+        if let Some(o) = done(len).iter().find(|im| im.view.crate_hash() == view.crate_hash() && im.view.header().cgu_hash == hdr.cgu_hash) {
             if o.view.header().stable_crate_id == hdr.stable_crate_id {
-                fatal("ryo_vm_register: a crate's image is registered twice (two copies of one crate)");
+                fatal("ryo_vm_register: an image is registered twice (two copies of one crate)");
             }
             fatal("ryo_vm_register: crate hash collision between two images");
         }
@@ -103,7 +108,7 @@ pub unsafe fn register(headers: *const *const u8, n: usize) {
     }
     // SAFETY: the first `len` entries are initialized, and nothing else views them.
     let list = unsafe { core::slice::from_raw_parts_mut(by_hash, len) };
-    sort_by_key(list, |im| im.view.crate_hash() as usize);
+    sort_by_key(list, |im| (im.view.crate_hash(), im.view.header().cgu_hash));
     let snap = alloc_forever(&g, size_of::<Snapshot>(), align_of::<Snapshot>()).cast::<Snapshot>();
     // SAFETY: fresh allocation; fully written before it is published.
     unsafe { snap.write(Snapshot { by_hash: by_hash.cast(), n: len }) };
@@ -132,7 +137,7 @@ pub fn image_at(addr: usize) -> *const u8 {
 /// An insertion sort: core's sorts reference its panic path (`panic_on_ord_violation`), which
 /// the runtime must not reach (design/vm.md, "No re-entry"). Lists are short (one entry per
 /// image).
-fn sort_by_key(list: &mut [&ImageRt], key: impl Fn(&ImageRt) -> usize) {
+fn sort_by_key<K: Ord>(list: &mut [&ImageRt], key: impl Fn(&ImageRt) -> K) {
     let p = list.as_mut_ptr();
     for i in 1..list.len() {
         let mut j = i;

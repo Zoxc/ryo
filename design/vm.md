@@ -661,8 +661,9 @@ the backend carry no version numbers and no compatibility checks: a reader assum
 its own build. The header's magic only tells an image from other bytes.
 
 Each crate's image is one object file with a read-only section, a writable section, a text
-section and unwind sections, plus relocations. It defines the symbol
-`__ryo_image_<StableCrateId>`, which points at the header.
+section and unwind sections, plus relocations, and its registration entry (a pointer to the
+header, [backend.md](backend.md#pipeline)). It defines the symbol
+`__ryo_image_<StableCrateId>_<CGU hash>`, which points at the header.
 
 **Read-only** (`.data.rel.ro.ryo_image` / `.rdata$ryo_image`):
 
@@ -670,7 +671,8 @@ section and unwind sections, plus relocations. It defines the symbol
 header          magic, crate hash, StableCrateId, pointers to the writable
                 and text sections (relocated), sizes, offset/count of every part below,
                 site count, fixup area offset, the `asm::Mode` the code was encoded in,
-                the JIT records' offset and count
+                the JIT records' offset and count, the constant pool's relocated
+                fields, the CGU hash (`image::cgu_hash` of rustc's CGU name)
 functions       per function, sorted by code offset: code offset and length (bytes in the
                 text section), argument block size, return value size, return kind, and
                 its instruction list (byte offset and length) and its run of the
@@ -765,7 +767,8 @@ calls it by name, local otherwise (backtraces, profilers) ([backend.md](backend.
   slot (the address of `__imp_<sym>`).
 - The crate hash is the 32-bit fold of the `StableCrateId`
   (`ryo_bytecode::image::crate_hash`). It is stored in the header, which also keeps the full
-  `StableCrateId`, so the registry can detect collisions.
+  `StableCrateId`, so the registry can detect collisions. With the CGU hash, it identifies
+  the image: two images with the same crate and CGU hashes are rejected.
 - **Images are trusted**: they are produced by the backend, and the VM doesn't validate
   code. `Image::parse` checks the header (with the mode: known bits, `Mode::valid`) and
   part bounds, and `Image::validate` checks the tables only (functions with their scope and
@@ -791,11 +794,12 @@ calls it by name, local otherwise (backtraces, profilers) ([backend.md](backend.
   thread, which uses std, is the sealed object the rlib bundles, with a std of its own
   ([Packaging](jit.md#packaging)): the check skips that member (`jit-sealed` checks it), and the
   runtime reaches it only through `ryo_jit_start`.
-- **Registry**: `ryo_vm_register(images, n)` is called by the registry object's constructor,
-  and also when a shared object loads at run time (`dlopen`/`LoadLibrary`). It appends the
-  images to a global list under `ryo_rt`'s lock, applies the PE fixups, and publishes the
+- **Registry**: `ryo_vm_register(start, end)` is called by the registry stub's constructor
+  with the bounds of the link unit's entry list (the non-null entries are image headers), so
+  also when a shared object loads at run time (`dlopen`/`LoadLibrary`). It skips images
+  already registered (by header address), appends the others to a global list under `ryo_rt`'s lock, applies the PE fixups, and publishes the
   list: readers load an atomic pointer to an immutable snapshot, and old snapshots are never
-  freed. The snapshot holds the images sorted by crate hash. Images are never unregistered:
+  freed. The snapshot holds the images sorted by crate hash, then CGU hash. Images are never unregistered:
   unloading a shared object that contains ryo code (`dlclose`/`FreeLibrary`) is not
   supported, because frames and fn pointers may still point into it.
   It does no other work, so startup is O(number of images): it only parses headers
@@ -805,7 +809,7 @@ calls it by name, local otherwise (backtraces, profilers) ([backend.md](backend.
   allocator.
 - **`__ryo_registry_anchor`**: each image object references it (a pointer slot relocated
   against it, `objfile.rs`, `write_image`), so a C linker that takes an image out of a
-  staticlib takes the registry object defining it too ([backend.md](backend.md#pipeline)).
+  staticlib takes the registry stub defining it too ([backend.md](backend.md#pipeline)).
 
 ## JIT
 

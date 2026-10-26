@@ -701,6 +701,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
     fn build_image(&mut self) -> (ImageObject, Roots) {
         let tcx = self.tcx;
         let mut w = ImageWriter::new(local_stable_crate_id(tcx));
+        w.set_cgu_hash(ryo_bytecode::image::cgu_hash(self.cgu.name().as_str().as_bytes()));
         let rt_krate = self.rt.krate;
         let mut pool = Pool::default();
         let mode = self.mode;
