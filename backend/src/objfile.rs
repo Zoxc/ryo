@@ -41,6 +41,11 @@ pub fn handler_name(op: Opcode) -> String {
     format!("ryo_h_{op:?}")
 }
 
+/// The name of opcode `op`'s register entry in `ryo_rt` (JIT code only; before mangling).
+pub fn reg_handler_name(op: Opcode) -> String {
+    format!("ryo_hr_{op:?}")
+}
+
 /// The object-format-specific parts of the image and registry objects.
 pub trait ObjectFormat {
     fn new_object(&self) -> Object<'static>;

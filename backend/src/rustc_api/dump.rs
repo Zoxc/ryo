@@ -72,9 +72,9 @@ pub(super) fn code_text<'tcx>(tcx: TyCtxt<'tcx>, vm: &[VmFn<'tcx>]) -> String {
         out.push('\n');
         for r in &c.relocs {
             let to = match r.to {
-                Ref::Handler(op) => format!("ryo_h_{op:?}"),
-                Ref::RegHandler(op) => format!("ryo_hr_{op:?}"),
-                Ref::Probe => "ryo_probe_stack".to_owned(),
+                Ref::Handler(op) => crate::objfile::handler_name(op),
+                Ref::RegHandler(op) => crate::objfile::reg_handler_name(op),
+                Ref::Probe => crate::objfile::PROBE_SYMBOL.to_owned(),
                 Ref::Func(x) => x.to_string(),
                 Ref::Sym(x) => x.to_string(),
                 Ref::Site(x) => x.to_string(),
