@@ -86,30 +86,31 @@ impl From<Unsupported> for Error {
 }
 
 /// Compiles the decoded function `d` (its code constants `code_consts`, encoded in `mode`
-/// without counters) through the SSA tier, with `env` inlining the image's functions it
-/// calls ([`inline`]).
+/// without counters) through the SSA tier, folding loads from `mem` (the constant pools,
+/// [`opt::ConstMem`]), with `env` inlining the image's functions it calls ([`inline`]).
 #[cfg(feature = "alloc")]
 pub fn compile(
     d: &crate::asm::Decoded,
     code_consts: &[u8],
     mode: crate::asm::Mode,
     opts: &Options,
+    mem: Option<&dyn opt::ConstMem>,
     mut env: Option<&mut dyn inline::Env>,
 ) -> Result<Output, Error> {
-    let mut f = built(d, mode)?;
+    let mut f = built(d, mode, mem)?;
     // The IR as construction leaves it, before value numbering and the folds (`RYO_JIT_DUMP`).
     let built_ir = opts.dump.then(|| alloc::format!("{f}"));
-    opt::run(&mut f);
+    opt::run(&mut f, mem);
     let mut decisions = opts.dump.then(alloc::string::String::new);
     let mut inlined_ir = None;
     if let Some(env) = env.as_deref_mut() {
         if opts.check {
             f.verify().map_err(|e| Error::Check(alloc::format!("IR before inlining: {e}")))?;
         }
-        let n = inline::inline(&mut f, env, &inline::PARAMS, opts.check, decisions.as_mut()).map_err(Error::Check)?;
+        let n = inline::inline(&mut f, env, mem, &inline::PARAMS, opts.check, decisions.as_mut()).map_err(Error::Check)?;
         if n > 0 {
             inlined_ir = opts.dump.then(|| alloc::format!("{f}"));
-            opt::run(&mut f);
+            opt::run(&mut f, mem);
         }
     }
     let before = (opts.check && opts.dump).then(|| alloc::format!("{f}"));
@@ -119,7 +120,7 @@ pub fn compile(
             let ir = |f: &ir::Func| before.as_ref().map(|b| alloc::format!("\n; before\n{b}\n; after\n{f}")).unwrap_or_default();
             f.verify().map_err(|e| Error::Check(alloc::format!("IR after promotion: {e}{}", ir(&f))))?;
         }
-        opt::run(&mut f);
+        opt::run(&mut f, mem);
     }
     if let Some(env) = env {
         inline::retarget(&mut f, env);
@@ -167,21 +168,22 @@ pub fn compile(
     Ok(out)
 }
 
-/// The SSA IR of the decoded function `d`, as register allocation gets it.
+/// The SSA IR of the decoded function `d`, as register allocation gets it, with the loads
+/// from `mem` (its image's constant pool and the others) folded.
 #[cfg(feature = "alloc")]
-pub fn ir_of(d: &crate::asm::Decoded, mode: crate::asm::Mode) -> Result<ir::Func, Unsupported> {
-    let mut f = built(d, mode)?;
-    opt::run(&mut f);
+pub fn ir_of(d: &crate::asm::Decoded, mode: crate::asm::Mode, mem: Option<&dyn opt::ConstMem>) -> Result<ir::Func, Unsupported> {
+    let mut f = built(d, mode, mem)?;
+    opt::run(&mut f, mem);
     Ok(f)
 }
 
 /// The SSA IR of the decoded function `d` as construction leaves it, before the folds.
 #[cfg(feature = "alloc")]
-fn built(d: &crate::asm::Decoded, mode: crate::asm::Mode) -> Result<ir::Func, Unsupported> {
+fn built(d: &crate::asm::Decoded, mode: crate::asm::Mode, mem: Option<&dyn opt::ConstMem>) -> Result<ir::Func, Unsupported> {
     if mode.counters || !mode.valid() {
         return Err(Unsupported("mode"));
     }
-    let code = decode::decode(d, mode)?;
+    let code = decode::decode(d, mode, mem)?;
     let fr = alloca::analyze(&code, d.frame_size)?;
     build::build(&code, &fr, d.frame_size, mode)
 }

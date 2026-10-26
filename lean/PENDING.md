@@ -51,3 +51,15 @@ remove it once a Lean session has handled it.
   equal exactly the pool's `R_X86_64_64` relocation offsets (`Image.world` already iterates
   them). Nothing in the VM semantics reads it (the JIT's constant-load fold does). Commit:
   "Image: list the constant pool's relocated fields".
+
+- The SSA tier folds loads from the constant pool (`jit::opt::lvn`, `jit::opt::ConstMem`,
+  `Image::read_pool`): a read with no relocated byte becomes the pool's bits; a whole
+  relocated 8-byte field into the pool or the data area the `RefAddr` of its target, one to
+  a function or native symbol its bits; partial reads of a relocated field, reads past the
+  pool, and the data area aren't folded; a constant address (another image's pool, found by
+  `RtApi::image_at`, which now also matches read-only sections) gives integers (rule 4, as
+  `rebase`). And `const` of at most `MAX_COPY` bytes decodes as a block copy from the pool
+  (`Side::Pool`), cut at its relocated fields. Add both to lean/docs/jit.md §E.3's pass list.
+  Rule: an immutable allocation's read equals its `world` bytes (stores to it are UB), and
+  the copy pieces equal the handler's footprint. Only matters if the Lean model covers the
+  SSA tier. Commit: "JIT: fold loads from the constant pool".

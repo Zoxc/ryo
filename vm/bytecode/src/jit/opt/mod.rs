@@ -30,15 +30,41 @@ pub mod promote;
 pub mod simplify;
 pub mod thread;
 
-use super::ir::*;
+use alloc::vec::Vec;
 
-/// Runs the passes on `f`, in order.
-pub fn run(f: &mut Func) {
-    lvn::lvn(f);
+use super::ir::*;
+pub use crate::image::PoolRead;
+
+/// A constant address the IR names: an offset in the constant pool of the IR's image (its
+/// `RefAddr(Const)` plus an offset), or an absolute address (another image's, after
+/// [`super::inline::rebase`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConstAt {
+    Root(u32),
+    Abs(u64),
+}
+
+/// The memory fixed before VM code runs that loads may be folded from (design/provenance.md,
+/// rule 5): the constant pools of the registered images.
+pub trait ConstMem {
+    /// `w` (1, 2, 4, 8) bytes at `a`, if `[a, a + w)` lies in a registered image's constant
+    /// pool and reads no relocated field partly: plain bits, or a relocated field read whole
+    /// ([`crate::image::Image::read_pool`]). Only a `Root` read gives `Const` or `Data`; an
+    /// absolute one gives the field's bits (every image part is an exposed allocation).
+    fn read(&self, a: ConstAt, w: u8) -> Option<PoolRead>;
+    /// The pool offsets of the relocated fields of the IR's image that overlap `[k, k +
+    /// len)`, in order.
+    fn relocs(&self, k: u32, len: u32) -> Vec<u32>;
+}
+
+/// Runs the passes on `f`, in order, folding loads from `mem`.
+pub fn run(f: &mut Func, mem: Option<&dyn ConstMem>) {
+    lvn::lvn(f, mem);
     dse::dse(f);
     simplify::simplify(f);
-    if copies::copies(f) {
-        lvn::lvn(f);
+    // `simplify` may have aliased the parameter a load's base was to a constant address.
+    if copies::copies(f) || mem.is_some_and(|_| lvn::const_loads(f)) {
+        lvn::lvn(f, mem);
     }
     fold::fold(f);
     checks::checks(f);

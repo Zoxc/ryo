@@ -38,7 +38,7 @@ fn compile(insns: &[Insn<'_>], frame: u32, scopes: &[(usize, i32, u32, ScopeKind
         .collect();
     let enc = asm::encode(&words, frame, &[], &scopes, PE).expect("encodes");
     let d = asm::decode_reduced(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, PE).expect("decodes");
-    jit::compile(&d, &[], PE, &Options { alloc, stress, check: true, dump: false }, None)
+    jit::compile(&d, &[], PE, &Options { alloc, stress, check: true, dump: false }, None, None)
 }
 
 fn arg(d: i32, i: u32) -> Insn<'static> {

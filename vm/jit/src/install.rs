@@ -257,7 +257,7 @@ impl jit::inline::Env for InlineEnv<'_> {
         let text = unsafe { core::slice::from_raw_parts(h.text as usize as *const u8, h.text_size as usize) };
         let res = ImageResolver { image: img, handlers: self.handlers, probe: self.probe };
         let f = match res.decode(g.func.0, text) {
-            Some(Ok(d)) => jit::ir_of(&d, self.mode).ok().map(std::rc::Rc::new),
+            Some(Ok(d)) => jit::ir_of(&d, self.mode, Some(&PoolMem { header: g.img, rt: self.rt })).ok().map(std::rc::Rc::new),
             _ => None,
         };
         self.cache.insert((g.img, g.func.0), f.clone());
@@ -342,6 +342,48 @@ impl jit::inline::Env for InlineEnv<'_> {
     }
 }
 
+/// The constant pools the SSA tier folds loads from ([`jit::opt::ConstMem`]): those of the
+/// image whose header is at `header` (the IR's), and through `image_at` every registered
+/// image's. Registered images stay forever, and their pools are final once registered: the
+/// loader applied their relocations before.
+struct PoolMem {
+    header: usize,
+    rt: &'static RtApi,
+}
+
+impl jit::opt::ConstMem for PoolMem {
+    fn read(&self, a: jit::opt::ConstAt, w: u8) -> Option<jit::opt::PoolRead> {
+        use jit::opt::{ConstAt, PoolRead};
+        match a {
+            ConstAt::Root(k) => image_of(self.header).read_pool(k as u64, w),
+            ConstAt::Abs(addr) => {
+                let header = (self.rt.image_at)(addr as usize);
+                if header.is_null() {
+                    return None;
+                }
+                let img = image_of(header as usize);
+                let pool = img.consts().as_ptr() as u64;
+                // Another image's pointer fields (or this one's, by address) as their bits:
+                // the IR can't name another image's parts, and each part is exposed.
+                let off = addr.checked_sub(pool)?;
+                let read = img.read_pool(off, w)?;
+                let bits = |a: u64| PoolRead::Bits(a);
+                Some(match read {
+                    PoolRead::Bits(b) => bits(b),
+                    PoolRead::Const(t) => bits(pool + t as u64),
+                    PoolRead::Data(t) => bits(img.fixup_area() as u64 + t as u64),
+                })
+            }
+        }
+    }
+
+    fn relocs(&self, k: u32, len: u32) -> Vec<u32> {
+        let rs = image_of(self.header).const_relocs();
+        let lo = rs.partition_point(|&r| r as u64 + 8 <= k as u64);
+        rs[lo..].iter().copied().take_while(|&r| (r as u64) < k as u64 + len as u64).collect()
+    }
+}
+
 /// The VM function with a JIT record whose AOT entry is `addr`, of any registered image.
 fn vm_callee(rt: &RtApi, addr: usize) -> Option<Callee> {
     let header = (rt.image_at)(addr);
@@ -351,7 +393,7 @@ fn vm_callee(rt: &RtApi, addr: usize) -> Option<Callee> {
     // SAFETY: a registered image's header.
     let img = unsafe { Image::from_header(header) }.ok()?;
     let h = img.header();
-    let off = u32::try_from(addr - h.text as usize).ok()?;
+    let off = u32::try_from(addr.checked_sub(h.text as usize)?).ok()?;
     let g = img.functions().binary_search_by_key(&off, |f| f.code_off).ok()? as u32;
     (g < h.jit_records.count).then_some(Callee::Vm(header as usize, g))
 }
@@ -606,7 +648,8 @@ impl Jit {
                 memo: HashMap::new(),
                 ext_vm: HashMap::new(),
             };
-            let r = jit::compile(ds, img.code_consts(), mode, &opts, Some(&mut env));
+            let mem = PoolMem { header, rt: self.rt };
+            let r = jit::compile(ds, img.code_consts(), mode, &opts, Some(&mem), Some(&mut env));
             let ssa_ext = env.ext;
             match r {
                 Ok(mut o) => {

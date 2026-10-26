@@ -154,6 +154,8 @@ pub enum Side {
     Mem(i32),
     /// Zeros (a source only).
     Zero,
+    /// The constant pool from this offset (a source only: `const`).
+    Pool(u32),
 }
 
 /// The longest block copy done as loads and stores; longer ones call their handler.
@@ -301,7 +303,7 @@ fn arg_list(a: &[u32], accs: &mut Vec<Acc>, regs: &mut Vec<ArgReg>) -> Result<()
 
 /// A handler call that is a small block copy: its length, destination, source and the
 /// pointer slot of its `Mem` side. Frame sides must stay clear of the return address.
-fn small_copy(h: full::Opcode, args: &[Arg], l: &asm::Layout) -> Option<(u32, Side, Side, Option<i32>)> {
+fn small_copy(h: full::Opcode, args: &[Arg], l: &asm::Layout, pool: bool) -> Option<(u32, Side, Side, Option<i32>)> {
     let info = h.info();
     let m = info.mnemonic;
     let reg = |name: &str, part: u8| -> Option<u64> {
@@ -314,6 +316,10 @@ fn small_copy(h: full::Opcode, args: &[Arg], l: &asm::Layout) -> Option<(u32, Si
     let (len, dst, src, p) = match m {
         "copy" => (reg("len", 0)? as u32, Side::Frame(slot("d")?), Side::Frame(slot("s")?), None),
         "zero" => (reg("len", 0)? as u32, Side::Frame(slot("d")?), Side::Zero, None),
+        "const" if pool => {
+            let Arg::Const(k) = *args.get(l.locs[info.operand_index("k")?].reg as usize)? else { return None };
+            (reg("len", 0)? as u32, Side::Frame(slot("d")?), Side::Pool(k.0), None)
+        }
         "load.copy" => (reg("len", 0)? as u32, Side::Frame(slot("d")?), Side::Mem(disp()?), Some(slot("m")?)),
         "store.copy" => (reg("len", 0)? as u32, Side::Mem(disp()?), Side::Frame(slot("s")?), Some(slot("m")?)),
         "load.w128" => (16, Side::Frame(slot("d")?), Side::Mem(disp()?), Some(slot("m")?)),
@@ -331,7 +337,7 @@ fn small_copy(h: full::Opcode, args: &[Arg], l: &asm::Layout) -> Option<(u32, Si
 /// the boundaries of the other scalar accesses of the same frame bytes, carried across
 /// frame-to-frame copies, so that a copied aggregate's fields stay the variables the rest of
 /// the code reads and writes (and promote).
-fn cut_copies(insns: &mut [RInsn]) {
+fn cut_copies(insns: &mut [RInsn], mem: Option<&dyn super::opt::ConstMem>) {
     use alloc::collections::BTreeSet;
     let mut cuts: BTreeSet<i32> = BTreeSet::new();
     let mut copies = Vec::new();
@@ -380,7 +386,16 @@ fn cut_copies(insns: &mut [RInsn]) {
     }
     for &i in &copies {
         let (bases, len) = frames(&insns[i].kind);
-        let r: Vec<u32> = rel(&cuts, bases, len).into_iter().collect();
+        let mut r = rel(&cuts, bases, len);
+        // A pool source's relocated fields are pieces of their own, which the fold makes
+        // `RefAddr`s.
+        if let (Kind::Copy { src: Side::Pool(k), .. }, Some(mem)) = (&insns[i].kind, mem) {
+            for f in mem.relocs(*k, len) {
+                let at = f as i64 - *k as i64;
+                r.extend([at, at + 8].into_iter().filter(|&c| c > 0 && c < len as i64).map(|c| c as u32));
+            }
+        }
+        let r: Vec<u32> = r.into_iter().collect();
         let split = |r: &[u32]| {
             let mut ps = Vec::new();
             for w in r.windows(2) {
@@ -411,7 +426,7 @@ fn cut_copies(insns: &mut [RInsn]) {
 }
 
 /// Classifies the instruction at word `at` of `d`.
-fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode) -> Result<(RInsn, usize), Unsupported> {
+fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Result<(RInsn, usize), Unsupported> {
     let words = &d.words[at..];
     let len = reduced::insn_len(words).map_err(|_| bad("reduced code"))?;
     let (ri, _) = Insn::decode(words).map_err(|_| bad("reduced code"))?;
@@ -542,7 +557,7 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode) -> Result<(RInsn,
                 let off = if loc.shared { (v >> loc.shift) as u32 } else { v as u32 } as i32;
                 accs.push(acc(off, 8, How::Write));
                 Kind::Lpad
-            } else if let Some((len, dst, src, p)) = small_copy(h, &args, &l) {
+            } else if let Some((len, dst, src, p)) = small_copy(h, &args, &l, pool) {
                 if let Some(p) = p {
                     accs.push(acc(p, 8, How::Read));
                 }
@@ -721,7 +736,7 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode) -> Result<(RInsn,
 }
 
 /// Decodes `d` into instructions and blocks.
-pub fn decode(d: &Decoded, mode: Mode) -> Result<Code, Unsupported> {
+pub fn decode(d: &Decoded, mode: Mode, mem: Option<&dyn super::opt::ConstMem>) -> Result<Code, Unsupported> {
     // Instruction starts first, for the scopes' positions.
     let mut starts = Vec::new();
     let mut at = 0;
@@ -743,7 +758,7 @@ pub fn decode(d: &Decoded, mode: Mode) -> Result<Code, Unsupported> {
             si += 1;
         }
         let lends: Vec<ScopeAt> = scopes[si..].iter().take_while(|s| s.at as usize == i).filter(|s| s.kind == ScopeKind::Lend).copied().collect();
-        let (mut ri, _) = insn(d, w as usize, &lends, mode)?;
+        let (mut ri, _) = insn(d, w as usize, &lends, mode, mem.is_some())?;
         for s in ri.succ.iter_mut() {
             *s = if *s as usize == d.words.len() { return Err(bad("falls off the end")) } else { idx(*s)? };
         }
@@ -759,7 +774,7 @@ pub fn decode(d: &Decoded, mode: Mode) -> Result<Code, Unsupported> {
         }
         insns.push(ri);
     }
-    cut_copies(&mut insns);
+    cut_copies(&mut insns, mem);
     for e in &d.cleanup {
         let i = idx(e.offset)? as usize;
         if !insns[i].may_unwind() {

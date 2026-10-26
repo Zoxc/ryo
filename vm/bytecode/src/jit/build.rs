@@ -352,7 +352,14 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
                 Kind::Copy { dst, src, pieces, .. } => {
                     use super::decode::Side;
                     let mem = matches!(dst, Side::Mem(_)) || matches!(src, Side::Mem(_));
-                    let p = if mem { Some(s.read(cur, i, 0, 8)) } else { None };
+                    let p = if mem {
+                        Some(s.read(cur, i, 0, 8))
+                    } else if let Side::Pool(k) = src {
+                        let a = s.f.inst(cur, Op::RefAddr(crate::asm::Ref::Const(crate::full::Const(*k)), false), Vec::new(), &[8]);
+                        Some(s.f.result(a))
+                    } else {
+                        None
+                    };
                     let mut k = mem as usize;
                     // Every piece read first, then written: exact when the two overlap.
                     let mut vals = Vec::with_capacity(pieces.len());
@@ -367,6 +374,10 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
                                 s.f.result(l)
                             }
                             Side::Zero => s.f.konst(0, w),
+                            Side::Pool(_) => {
+                                let l = s.f.inst(cur, Op::Load(w, off as i32), alloc::vec![p.unwrap()], &[w]);
+                                s.f.result(l)
+                            }
                         });
                     }
                     for (&(off, w), v) in pieces.iter().zip(vals) {
@@ -378,7 +389,7 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
                             Side::Mem(d) => {
                                 s.f.inst(cur, Op::Store(w, d + off as i32), alloc::vec![p.unwrap(), v], &[]);
                             }
-                            Side::Zero => unreachable!("a zero destination"),
+                            Side::Zero | Side::Pool(_) => unreachable!("a source-only side"),
                         }
                     }
                 }

@@ -202,7 +202,7 @@ pub const PARAMS: Params = Params {
 
 /// `c` with its entry parameters given constants (`None`: unknown) replaced by them, after
 /// [`super::opt::run`]: the trial of §5. The parameters stay, unused.
-pub fn specialize(c: &Func, consts: &[Option<(u64, u8)>]) -> Func {
+pub fn specialize(c: &Func, consts: &[Option<(u64, u8)>], mem: Option<&dyn super::opt::ConstMem>) -> Func {
     let mut g = c.clone();
     let Some(entry) = g.blocks.iter().position(|b| b.kind == BlockKind::Entry) else { return g };
     let params = g.blocks[entry].params.clone();
@@ -229,7 +229,7 @@ pub fn specialize(c: &Func, consts: &[Option<(u64, u8)>]) -> Func {
         }
         bd.term = t;
     }
-    super::opt::run(&mut g);
+    super::opt::run(&mut g, mem);
     g
 }
 
@@ -652,7 +652,14 @@ impl Cluster {
 /// Inlines into `f` (its IR after [`super::opt::run`]) what the heuristic decides, and
 /// with `check` verifies the IR after each splice. Notes the decisions in `dump`. Returns
 /// how many calls it inlined.
-pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump: Option<&mut String>) -> Result<usize, String> {
+pub fn inline(
+    f: &mut Func,
+    env: &mut dyn Env,
+    mem: Option<&dyn super::opt::ConstMem>,
+    p: &Params,
+    check: bool,
+    mut dump: Option<&mut String>,
+) -> Result<usize, String> {
     let root_shape = shape(f);
     let root_cost = cost(f, &root_shape);
     let mut nodes = alloc::vec![Node {
@@ -779,7 +786,7 @@ pub fn inline(f: &mut Func, env: &mut dyn Env, p: &Params, check: bool, mut dump
                 let spec = match trials.iter().find(|t| t.0 == key) {
                     Some(t) => Some(t.1.clone()),
                     None if trials.len() < p.trials => {
-                        let s = Rc::new(specialize(&c, &consts));
+                        let s = Rc::new(specialize(&c, &consts, mem));
                         trials.push((key, s.clone()));
                         Some(s)
                     }

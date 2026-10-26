@@ -14,7 +14,10 @@
 //!   bytes, or the same pointer value and offset, as an earlier load or store in the block,
 //!   with nothing in between that may write them, is replaced by the value loaded or stored
 //!   (at least as wide: values are read by their low bytes). A block with a single
-//!   predecessor starts from what that one's end knows (extended basic blocks).
+//!   predecessor starts from what that one's end knows (extended basic blocks);
+//! - **constant loads**: a load from a constant pool ([`super::ConstMem`]) becomes the
+//!   constant it reads, or a relocated pointer field the `RefAddr` of its target. Stores
+//!   to the pool are UB, so nothing kills these.
 //!
 //! What may write what: a store through a pointer may write any other pointer's bytes and
 //! the escaped (or pinned) allocas, never the others; a store to an alloca only its own
@@ -25,6 +28,7 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
+use super::{ConstAt, ConstMem, PoolRead};
 use crate::asm::Ref;
 use crate::jit::ir::*;
 
@@ -212,8 +216,51 @@ fn bit_count(f: &Func, i: Inst, h: &HCall) -> Option<fn(u64) -> u32> {
     })
 }
 
-/// Runs value numbering on every reachable block of `f`, walking the dominator tree.
-pub fn lvn(f: &mut Func) {
+/// The constant address a load of `p` plus `off` reads, if `p` is one.
+fn const_at(f: &Func, p: Value, off: i32) -> Option<ConstAt> {
+    match f.def(p) {
+        ValueDef::Const(a) => Some(ConstAt::Abs(a.wrapping_add(off as i64 as u64))),
+        ValueDef::Inst(d, 0) => match f.insts[d.idx()].op {
+            Op::RefAddr(Ref::Const(k), false) => u32::try_from(k.0 as i64 + off as i64).ok().map(ConstAt::Root),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Whether a load of `f` reads a constant address (that value numbering may fold).
+pub(super) fn const_loads(f: &Func) -> bool {
+    f.layout.iter().flat_map(|b| &f.blocks[b.idx()].insts).any(|&i| {
+        let id = &f.insts[i.idx()];
+        matches!(id.op, Op::Load(_, off) if const_at(f, id.args[0], off).is_some())
+    })
+}
+
+/// Folds the load `i` from constant memory (design/provenance.md, rule 5): into the constant
+/// it reads, or for a relocated field read whole into the image's pool or data area, the
+/// `RefAddr` of its target (which keeps its provenance). `Some(c)` if it became the
+/// constant `c`; it may also have become a `RefAddr` (pure).
+fn fold_const_load(f: &mut Func, i: Inst, mem: &dyn ConstMem) -> Option<u64> {
+    let Op::Load(w, off) = f.insts[i.idx()].op else { return None };
+    if !matches!(w, 1 | 2 | 4 | 8) {
+        return None;
+    }
+    let a = const_at(f, f.insts[i.idx()].args[0], off)?;
+    let to = match mem.read(a, w)? {
+        PoolRead::Bits(b) => return Some(b),
+        // Only a whole field reads as a pointer, and only from the IR's own image.
+        PoolRead::Const(t) => Ref::Const(crate::full::Const(t)),
+        PoolRead::Data(t) => Ref::Data(crate::full::Data(t)),
+    };
+    let id = &mut f.insts[i.idx()];
+    id.op = Op::RefAddr(to, false);
+    id.args.clear();
+    None
+}
+
+/// Runs value numbering on every reachable block of `f`, walking the dominator tree, with
+/// the loads from `mem` folded.
+pub fn lvn(f: &mut Func, pools: Option<&dyn ConstMem>) {
     let aliasable: Vec<bool> = f.allocas.iter().map(|a| a.escaped || a.pinned).collect();
     let rpo = f.rpo();
     let idom = f.idoms(&rpo);
@@ -261,6 +308,17 @@ pub fn lvn(f: &mut Func) {
             }
             let res = f.insts[i.idx()].res;
             let alias = |f: &mut Func, v: Value| f.values[res as usize].def = ValueDef::Alias(v);
+            if let Some(pools) = pools
+                && matches!(f.insts[i.idx()].op, Op::Load(..))
+            {
+                super::fold::fold_addr(f, i);
+                if let Some(c) = fold_const_load(f, i, pools) {
+                    let w = f.w(Value(res));
+                    let c = f.konst(mask(c, w), w);
+                    alias(f, c);
+                    continue;
+                }
+            }
             let op = &f.insts[i.idx()].op;
             let (bits, is_pure) = (matches!(op, Op::HCall(h) if bit_count(f, i, h).is_some()), op.pure());
             // A bit count of a constant folds; one of a run-time value stays a handler call.

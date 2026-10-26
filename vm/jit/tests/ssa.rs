@@ -11,7 +11,7 @@ mod common;
 use common::*;
 
 use ryo_bytecode::asm::{ArgReg, RetPart, Scope, ScopeKind, ret_kind};
-use ryo_bytecode::image::{FUNC_COLD, FUNC_INLINE_ALWAYS, FUNC_INLINE_NEVER};
+use ryo_bytecode::image::{FUNC_COLD, FUNC_INLINE_ALWAYS, FUNC_INLINE_NEVER, Image};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering::SeqCst};
 use std::sync::{Mutex, MutexGuard, Once};
 
@@ -1317,13 +1317,15 @@ fn inline_across_images() {
     let s_mul3 = w.symbol("mul3", 0);
     let s_static = w.symbol("b_static", 0);
     let k = w.add_const(&1000u64.to_le_bytes(), 8, &[]);
+    // A pointer to `k`, which the fold reads through (as an address, from image A).
+    let kp = w.add_const(&[0; 8], 8, &[AllocReloc { offset: 0, target: AllocTarget::Const(k), addend: 0 }]);
     let data = w.add_data(&[0; 8], 8, &[], &[]);
     let mut a = Asm::new();
     a.i(arg(-8, 0));
     a.i(Insn::AddW64 { d: Slot(-8), a: Slot(-8), b: Slot(-8) });
     a.ret(Slot(-8), 8);
     let h = w.add_function(func(a.done(), 16, 0, 8));
-    // g(x): *data += x; *b_static += 1; ret *k + mul3(x) + h(x) + *data. x@-8, p@-16, t@-24,
+    // g(x): *data += x; *b_static += 1; ret **kp + mul3(x) + h(x) + *data. x@-8, p@-16, t@-24,
     // r@-32.
     let mut a = Asm::new();
     a.i(arg(-8, 0));
@@ -1335,7 +1337,8 @@ fn inline_across_images() {
     a.i(Insn::LoadW64 { d: Slot(-24), m: Mem { p: Slot(-16), k: 0 } });
     a.i(Insn::AddImmW64 { d: Slot(-24), a: Slot(-24), imm: 1 });
     a.i(Insn::StoreW64 { m: Mem { p: Slot(-16), k: 0 }, s: Slot(-24) });
-    a.i(Insn::AddrConst { d: Slot(-16), a: Abs::Const(k) });
+    a.i(Insn::AddrConst { d: Slot(-16), a: Abs::Const(kp) });
+    a.i(Insn::LoadW64 { d: Slot(-16), m: Mem { p: Slot(-16), k: 0 } });
     a.i(Insn::LoadW64 { d: Slot(-32), m: Mem { p: Slot(-16), k: 0 } });
     a.i(Insn::CallSym { d: Slot(-24), sym: s_mul3, k: 8, a: List::from_words(&regs(&[-8])) });
     a.i(Insn::AddW64 { d: Slot(-32), a: Slot(-32), b: Slot(-24) });
@@ -1706,4 +1709,70 @@ fn pe_frames_at(saves: PeSaves, shuffle: bool, k: Option<i64>) {
             assert!(in_jit(&img, f, o(&o_.first)), "{what}, call {call}: started at {:#x}", o(&o_.first));
         }
     }
+}
+
+/// Loads from the constant pool, which the SSA tier folds: a vtable-like constant's function
+/// pointer (called through), its pointer to a string (read through), its plain field, a
+/// partial read of a pointer field (which stays a load), and a 16-byte `const` copy of a
+/// `(len, ptr)` pair whose second word is relocated. The data area's value, written by
+/// native code between calls, is read anew each time.
+/// f(x, out): out[0..2] = pair; out[2] = low half of vt.str; data[0] += 1;
+/// ret mul3(x) + vt.str[0] + vt.n + data[0]. x@16, out@24; x'@-8, p@-16, q@-24, t@-32,
+/// r@-40, pair@-56.
+#[test]
+fn constant_pool_loads() {
+    let (_g, before) = start();
+    let mut w = ImageWriter::new(unique_scid());
+    let s_mul3 = w.symbol("mul3", 0);
+    let s = w.add_const(b"hello, world!\0\0\0", 8, &[]);
+    let mut vt = [0u8; 24];
+    vt[16..].copy_from_slice(&77u64.to_le_bytes());
+    let vt = w.add_const(
+        &vt,
+        8,
+        &[
+            AllocReloc { offset: 0, target: AllocTarget::Symbol(s_mul3), addend: 0 },
+            AllocReloc { offset: 8, target: AllocTarget::Const(s), addend: 7 },
+        ],
+    );
+    let mut pair = [0u8; 16];
+    pair[..8].copy_from_slice(&5u64.to_le_bytes());
+    let pair = w.add_const(&pair, 8, &[AllocReloc { offset: 8, target: AllocTarget::Const(s), addend: 0 }]);
+    let data = w.add_data(&[0; 8], 8, &[], &[]);
+    let mut a = Asm::new();
+    a.i(Insn::MovW64 { d: Slot(-8), s: Slot(16) });
+    a.i(Insn::Const { d: Slot(-56), k: pair, len: 16 });
+    a.i(Insn::StoreCopy { m: Mem { p: Slot(24), k: 0 }, s: Slot(-56), len: 16 });
+    a.i(Insn::AddrConst { d: Slot(-16), a: Abs::Const(vt) });
+    a.i(Insn::LoadW32 { d: Slot(-32), m: Mem { p: Slot(-16), k: 8 } });
+    a.i(Insn::ZextW32W64 { d: Slot(-32), s: Slot(-32) });
+    a.i(Insn::StoreW64 { m: Mem { p: Slot(24), k: 16 }, s: Slot(-32) });
+    a.i(Insn::LoadW64 { d: Slot(-24), m: Mem { p: Slot(-16), k: 0 } });
+    a.i(Insn::CallPtr { d: Slot(-40), p: Slot(-24), k: 8, a: List::from_words(&regs(&[-8])) });
+    a.i(Insn::LoadW64 { d: Slot(-24), m: Mem { p: Slot(-16), k: 8 } });
+    a.i(Insn::LoadW8 { d: Slot(-32), m: Mem { p: Slot(-24), k: 0 } });
+    a.i(Insn::ZextW8W64 { d: Slot(-32), s: Slot(-32) });
+    a.i(Insn::AddW64 { d: Slot(-40), a: Slot(-40), b: Slot(-32) });
+    a.i(Insn::LoadW64 { d: Slot(-32), m: Mem { p: Slot(-16), k: 16 } });
+    a.i(Insn::AddW64 { d: Slot(-40), a: Slot(-40), b: Slot(-32) });
+    a.i(Insn::AddrConst { d: Slot(-16), a: Abs::Data(data) });
+    a.i(Insn::LoadW64 { d: Slot(-32), m: Mem { p: Slot(-16), k: 0 } });
+    a.i(Insn::AddImmW64 { d: Slot(-32), a: Slot(-32), imm: 1 });
+    a.i(Insn::StoreW64 { m: Mem { p: Slot(-16), k: 0 }, s: Slot(-32) });
+    a.i(Insn::AddW64 { d: Slot(-40), a: Slot(-40), b: Slot(-32) });
+    a.ret(Slot(-40), 8);
+    let f = w.add_function(func(a.done(), 64, 16, 8));
+    let img = build(w, &syms());
+    let pool = unsafe { Image::from_header(img.header) }.unwrap().consts().as_ptr() as u64;
+    let s_addr = pool + s.0 as u64;
+    for (n, x) in [3u64, 1 << 40, 9].into_iter().enumerate() {
+        // Native code changes the data area between the calls.
+        unsafe { *img.data.add(Image::from_header(img.header).unwrap().header().fixup_area as usize + data.0 as usize).cast::<u64>() += 100 };
+        let mut out = [0u64; 3];
+        let r = ok::<_, u64>(img.id(f), (x, out.as_mut_ptr() as u64));
+        let d = (n as u64 + 1) * 101;
+        assert_eq!(r, x.wrapping_mul(3) + b'w' as u64 + 77 + d, "f({x})");
+        assert_eq!(out, [5, s_addr, (s_addr + 7) as u32 as u64], "f({x})");
+    }
+    check_stats(before, 1);
 }

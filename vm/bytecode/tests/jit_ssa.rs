@@ -45,7 +45,7 @@ fn decoded_with_pads(insns: &[Insn<'_>], frame: u32, scopes: &[(usize, i32, u32,
 
 fn ir(d: &Decoded) -> ryo_bytecode::jit::ir::Func {
     let mode = Mode { counters: false, ..MODE };
-    let f = ryo_bytecode::jit::ir_of(d, mode).unwrap_or_else(|e| panic!("{e:?}"));
+    let f = ryo_bytecode::jit::ir_of(d, mode, None).unwrap_or_else(|e| panic!("{e:?}"));
     if let Err(e) = f.verify() {
         panic!("{e}\n{f}");
     }
@@ -342,7 +342,7 @@ fn dead_handler_call() {
 
 fn opt(mut f: IrFunc) -> IrFunc {
     f.verify().unwrap_or_else(|e| panic!("{e}\n{f}"));
-    ryo_bytecode::jit::opt::run(&mut f);
+    ryo_bytecode::jit::opt::run(&mut f, None);
     f.verify().unwrap_or_else(|e| panic!("{e}\n{f}"));
     f
 }
@@ -508,7 +508,7 @@ fn dominator_value_numbering_and_dead_stores() {
     let r = f.result(i);
     f.terminate(b2, Term::Ret { k: 8, parts: vec![r] });
     f.layout = vec![b0, b1, b2];
-    ryo_bytecode::jit::opt::lvn::lvn(&mut f);
+    ryo_bytecode::jit::opt::lvn::lvn(&mut f, None);
     ryo_bytecode::jit::opt::dse::dse(&mut f);
     f.verify().unwrap_or_else(|e| panic!("{e}\n{f}"));
     assert!(f.blocks[b1.idx()].insts.is_empty(), "{f}");
@@ -633,4 +633,188 @@ fn power_of_two_check_folds() {
     let f = opt(ir(&decoded(&v, 32, &[])));
     assert!(live_ops(&f).is_empty(), "{f}");
     assert!(f.layout.iter().all(|b| !matches!(f.blocks[b.idx()].term, Term::Trap)), "{f}");
+}
+
+/// A constant pool for the fold: `bytes` at pool offset 0 (or, by address, at `BASE`), with
+/// relocated fields at the offsets `relocs` gives, each read whole as its `PoolRead`.
+struct Pool {
+    bytes: Vec<u8>,
+    relocs: Vec<(u32, ryo_bytecode::image::PoolRead)>,
+}
+
+const BASE: u64 = 0x7000_0000;
+
+impl ryo_bytecode::jit::opt::ConstMem for Pool {
+    fn read(&self, a: ryo_bytecode::jit::opt::ConstAt, w: u8) -> Option<ryo_bytecode::image::PoolRead> {
+        use ryo_bytecode::image::PoolRead;
+        use ryo_bytecode::jit::opt::ConstAt;
+        let (off, abs) = match a {
+            ConstAt::Root(k) => (k as u64, false),
+            ConstAt::Abs(x) => (x.checked_sub(BASE)?, true),
+        };
+        let b = self.bytes.get(off as usize..)?.get(..w as usize)?;
+        let mut v = [0u8; 8];
+        v[..b.len()].copy_from_slice(b);
+        let bits = u64::from_le_bytes(v);
+        for &(r, to) in &self.relocs {
+            let r = r as u64;
+            if r < off + w as u64 && off < r + 8 {
+                if r != off || w != 8 {
+                    return None;
+                }
+                return Some(match (to, abs) {
+                    (PoolRead::Const(t), true) => PoolRead::Bits(BASE + t as u64),
+                    (to, _) => to,
+                });
+            }
+        }
+        Some(PoolRead::Bits(bits))
+    }
+
+    fn relocs(&self, k: u32, len: u32) -> Vec<u32> {
+        self.relocs.iter().map(|r| r.0).filter(|&r| r + 8 > k && r < k + len).collect()
+    }
+}
+
+fn ir_with(d: &Decoded, pool: &Pool) -> IrFunc {
+    let mode = Mode { counters: false, ..MODE };
+    let f = ryo_bytecode::jit::ir_of(d, mode, Some(pool)).unwrap_or_else(|e| panic!("{e:?}"));
+    f.verify().unwrap_or_else(|e| panic!("{e}\n{f}"));
+    f
+}
+
+/// The pool of the fold tests: 0..16 plain bytes, at 16 a pointer to offset 4, at 24 a
+/// function pointer (bits), at 32 a pointer into the data area, then 4 plain bytes.
+fn pool() -> Pool {
+    use ryo_bytecode::image::PoolRead;
+    let mut bytes: Vec<u8> = (1..=44).collect();
+    bytes[24..32].copy_from_slice(&0x4000_1234u64.to_le_bytes());
+    Pool { bytes, relocs: vec![(16, PoolRead::Const(4)), (24, PoolRead::Bits(0x4000_1234)), (32, PoolRead::Data(8))] }
+}
+
+/// The function `ret load.w<w> [addr.const k0 + off]`.
+fn const_load(w: u8, off: i32) -> Decoded {
+    let load = |m| match w {
+        1 => Insn::LoadW8 { d: Slot(-16), m },
+        2 => Insn::LoadW16 { d: Slot(-16), m },
+        4 => Insn::LoadW32 { d: Slot(-16), m },
+        _ => Insn::LoadW64 { d: Slot(-16), m },
+    };
+    let v =
+        vec![Insn::AddrConst { d: Slot(-8), a: Abs::Const(Const(0)) }, load(Mem { p: Slot(-8), k: off }), Insn::Ret { s: Slot(-16), k: w as u32 }];
+    decoded(&v, 16, &[])
+}
+
+fn loads(f: &IrFunc) -> usize {
+    live_ops(f).iter().filter(|o| matches!(o, Op::Load(..))).count()
+}
+
+/// The constant returned, if the function returns one.
+fn ret_const(f: &IrFunc) -> Option<u64> {
+    f.layout.iter().find_map(|b| match &f.blocks[b.idx()].term {
+        Term::Ret { parts, .. } => match f.def(parts[0]) {
+            ValueDef::Const(c) => Some(c),
+            _ => None,
+        },
+        _ => None,
+    })
+}
+
+/// Plain reads of the pool fold to their bytes, at any width and offset, up to the pool's
+/// last byte; reads spanning its end, a relocated field partly, or nothing known stay loads.
+#[test]
+fn constant_pool_loads_fold() {
+    let p = pool();
+    let le = |o: usize, w: usize| {
+        let mut v = [0u8; 8];
+        v[..w].copy_from_slice(&p.bytes[o..o + w]);
+        u64::from_le_bytes(v)
+    };
+    for (w, off) in [(1u8, 0i32), (2, 3), (4, 5), (8, 1), (8, 8), (4, 40), (1, 43)] {
+        let f = ir_with(&const_load(w, off), &p);
+        assert_eq!(loads(&f), 0, "w{w} at {off}: {f}");
+        assert_eq!(ret_const(&f), Some(le(off as usize, w as usize)), "w{w} at {off}: {f}");
+    }
+    // The function pointer field: its bits.
+    let f = ir_with(&const_load(8, 24), &p);
+    assert_eq!(ret_const(&f), Some(0x4000_1234), "{f}");
+    // Partial reads of a pointer field, spanning the end, or with no pool given: loads.
+    for (w, off) in [(4u8, 16i32), (8, 20), (8, 12), (2, 43), (8, 40), (4, 36)] {
+        let f = ir_with(&const_load(w, off), &p);
+        assert_eq!(loads(&f), 1, "w{w} at {off}: {f}");
+    }
+    assert_eq!(loads(&ir(&const_load(8, 0))), 1);
+}
+
+/// A whole pointer field into the pool becomes the `RefAddr` of its target, and a load
+/// through it folds again; one into the data area becomes a data `RefAddr`, and a load
+/// through that stays.
+#[test]
+fn constant_pool_pointer_fields() {
+    use ryo_bytecode::asm::Ref;
+    let p = pool();
+    let chase = |off: i32| {
+        let v = vec![
+            Insn::AddrConst { d: Slot(-8), a: Abs::Const(Const(0)) },
+            Insn::LoadW64 { d: Slot(-16), m: Mem { p: Slot(-8), k: off } },
+            Insn::LoadW32 { d: Slot(-24), m: Mem { p: Slot(-16), k: 0 } },
+            Insn::Ret { s: Slot(-24), k: 4 },
+        ];
+        ir_with(&decoded(&v, 32, &[]), &p)
+    };
+    let f = chase(16);
+    assert_eq!(loads(&f), 0, "{f}");
+    assert_eq!(ret_const(&f), Some(u32::from_le_bytes(p.bytes[4..8].try_into().unwrap()) as u64), "{f}");
+    let f = chase(32);
+    assert_eq!(loads(&f), 1, "{f}");
+    assert!(live_ops(&f).contains(&Op::RefAddr(Ref::Data(Data(8)), false)), "{f}");
+    // Nothing is folded from the data area itself.
+    let v = vec![
+        Insn::AddrConst { d: Slot(-8), a: Abs::Data(Data(0)) },
+        Insn::LoadW64 { d: Slot(-16), m: Mem { p: Slot(-8), k: 0 } },
+        Insn::Ret { s: Slot(-16), k: 8 },
+    ];
+    assert_eq!(loads(&ir_with(&decoded(&v, 16, &[]), &p)), 1);
+}
+
+/// A constant address (a rebased callee's pool) reads as bits, its pointer fields as their
+/// targets' addresses.
+#[test]
+fn constant_pool_loads_by_address() {
+    let p = pool();
+    let at = |a: u64| {
+        let v = vec![
+            Insn::ImmW64 { d: Slot(-8), imm: a },
+            Insn::LoadW64 { d: Slot(-16), m: Mem { p: Slot(-8), k: 0 } },
+            Insn::Ret { s: Slot(-16), k: 8 },
+        ];
+        ir_with(&decoded(&v, 16, &[]), &p)
+    };
+    assert_eq!(ret_const(&at(BASE + 8)), Some(u64::from_le_bytes(p.bytes[8..16].try_into().unwrap())));
+    assert_eq!(ret_const(&at(BASE + 16)), Some(BASE + 4));
+    assert_eq!(loads(&at(BASE + 20)), 1);
+    assert_eq!(loads(&at(BASE - 8)), 1);
+}
+
+/// `const` of 24 bytes from offset 8: pieces cut at the relocated field at 16, which becomes
+/// a `RefAddr`, the others immediates; with no pool given, it stays a handler call.
+#[test]
+fn const_copy_from_the_pool() {
+    use ryo_bytecode::asm::Ref;
+    let p = pool();
+    let v = vec![
+        arg(-8, 0),
+        Insn::Const { d: Slot(-32), k: Const(8), len: 24 },
+        Insn::StoreW64 { m: Mem { p: Slot(-8), k: 0 }, s: Slot(-32) },
+        Insn::StoreW64 { m: Mem { p: Slot(-8), k: 8 }, s: Slot(-24) },
+        Insn::StoreW64 { m: Mem { p: Slot(-8), k: 16 }, s: Slot(-16) },
+        Insn::Ret { s: Slot(-8), k: 8 },
+    ];
+    let d = decoded(&v, 32, &[]);
+    let f = ir_with(&d, &p);
+    let ops = live_ops(&f);
+    assert!(!ops.iter().any(|o| matches!(o, Op::HCall(_) | Op::Load(..))), "{f}");
+    assert!(ops.contains(&Op::RefAddr(Ref::Const(Const(4)), false)), "{f}");
+    let f = ir(&d);
+    assert!(live_ops(&f).iter().any(|o| matches!(o, Op::HCall(_))), "{f}");
 }

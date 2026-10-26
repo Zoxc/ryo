@@ -451,6 +451,17 @@ impl fmt::Display for ImageError {
     }
 }
 
+/// What a read of the constant pool gives ([`Image::read_pool`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PoolRead {
+    /// Plain bytes, zero-extended.
+    Bits(u64),
+    /// A pointer field into the image's pool, at this offset.
+    Const(u32),
+    /// A pointer field into the image's data area, at this offset from the fixup area.
+    Data(u32),
+}
+
 /// A zero-copy view of an image's read-only section.
 #[derive(Clone, Copy)]
 pub struct Image<'a> {
@@ -727,6 +738,37 @@ impl<'a> Image<'a> {
             Some(&r) if (r as u64) < off as u64 + len as u64 => (r == off && len == 8).then_some(true),
             _ => Some(false),
         }
+    }
+
+    /// The `w` (1 to 8) bytes at pool offset `off`, little-endian, as the JIT folds a load
+    /// of them: `None` if they aren't all in the pool or read a relocated field partly. A
+    /// relocated field read whole is classified by its linked value: into this image's pool
+    /// or data area (one past the end included), or anything else (a function, a native
+    /// symbol: plain bits).
+    pub fn read_pool(&self, off: u64, w: u8) -> Option<PoolRead> {
+        let b = self.consts().get(usize::try_from(off).ok()?..)?.get(..w as usize)?;
+        let mut v = [0u8; 8];
+        v.get_mut(..b.len())?.copy_from_slice(b);
+        let v = u64::from_le_bytes(v);
+        if !self.const_reloc_at(off as u32, w as u32)? {
+            return Some(PoolRead::Bits(v));
+        }
+        let h = self.header;
+        let pool = (self.consts().as_ptr() as u64, h.consts.count as u64);
+        let data_end = if h.jit_records.count != 0 { h.jit_records.off } else { h.data_size };
+        let data = (h.data.wrapping_add(h.fixup_area as u64), data_end.saturating_sub(h.fixup_area) as u64);
+        let within = |r: (u64, u64), end: bool| v.checked_sub(r.0).filter(|&o| o < r.1 + end as u64).map(|o| o as u32);
+        Some(if let Some(o) = within(pool, false) {
+            PoolRead::Const(o)
+        } else if let Some(o) = within(data, false) {
+            PoolRead::Data(o)
+        } else if let Some(o) = within(pool, true) {
+            PoolRead::Const(o)
+        } else if let Some(o) = within(data, true) {
+            PoolRead::Data(o)
+        } else {
+            PoolRead::Bits(v)
+        })
     }
 
     /// The writable section (from the relocated header field; null before linking).
