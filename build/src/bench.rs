@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
+use crate::crates::Backend as Compiler;
 use crate::crates::stats::Summary;
 use crate::utils::{cmd, describe, exe_name, root};
 
@@ -21,13 +22,6 @@ pub const DEFAULT_RUNS: u32 = 5;
 /// Programs `bench/<name>.rs`. Each prints a result that must be the same for every
 /// backend.
 const PROGRAMS: &[&str] = &["fib", "sieve", "sort", "hashmap"];
-
-#[derive(Clone, Copy)]
-enum Compiler {
-    Rustc,
-    Clif,
-    Ryo,
-}
 
 /// A column of the tables.
 struct Backend {
@@ -123,7 +117,7 @@ fn backends(o: &Options) -> Vec<Backend> {
         if checks {
             flags.push("-Cdebug-assertions=on".to_owned());
         }
-        Backend { name: format!("llvm -{level}"), compiler: Compiler::Rustc, flags, env: Vec::new() }
+        Backend { name: format!("llvm -{level}"), compiler: Compiler::Llvm, flags, env: Vec::new() }
     };
     let clif = || Backend { name: "clif".to_owned(), compiler: Compiler::Clif, flags: Vec::new(), env: Vec::new() };
     if o.llvm.is_empty() && !o.clif && o.ryo.is_empty() {
@@ -252,14 +246,8 @@ struct Cell {
 
 pub fn run(opts: &Options) -> Result<(), String> {
     let root = root();
-    if !crate::utils::dist_bin(&root, "rustc-ryo").exists() {
-        eprintln!("[y] bench: dist/ is missing, building it");
-        crate::dist::build(&[], false)?;
-    }
     let backends = backends(opts);
-    if backends.iter().any(|b| matches!(b.compiler, Compiler::Clif)) {
-        crate::clif::ensure()?;
-    }
+    crate::crates::ensure_tools(&root, "bench", backends.iter().map(|b| b.compiler))?;
     let runs = opts.runs;
 
     let out = root.join("target").join("bench");
@@ -290,11 +278,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
             let dir = out.join(program).join(backend.name.replace([' ', '-'], ""));
             fs::create_dir_all(&dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
             let exe = dir.join(exe_name(program));
-            let compiler = match backend.compiler {
-                Compiler::Rustc => PathBuf::from("rustc"),
-                Compiler::Clif => crate::utils::dist_bin(&root, "rustc-clif"),
-                Compiler::Ryo => crate::utils::dist_bin(&root, "rustc-ryo"),
-            };
+            let compiler = backend.compiler.rustc(&root);
             let mut args = vec!["--edition=2024".to_owned(), path_str(&src)?];
             args.extend(COMMON_FLAGS.iter().map(|f| f.to_string()).chain(backend.flags.iter().cloned()));
             args.extend(["-o".to_owned(), path_str(&exe)?]);

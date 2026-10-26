@@ -128,13 +128,25 @@ impl Backend {
         BACKENDS.iter().copied().find(|b| b.name() == s)
     }
 
-    fn rustc(self, root: &Path) -> PathBuf {
+    pub fn rustc(self, root: &Path) -> PathBuf {
         match self {
             Backend::Llvm => "rustc".into(),
             Backend::Clif => crate::utils::dist_bin(root, "rustc-clif"),
-            Backend::Ryo => crate::utils::dist_bin(&root, "rustc-ryo"),
+            Backend::Ryo => crate::utils::dist_bin(root, "rustc-ryo"),
         }
     }
+}
+
+/// Builds `dist/` if it is missing, and rustc-clif if a backend needs it.
+pub fn ensure_tools(root: &Path, cmd: &str, mut backends: impl Iterator<Item = Backend>) -> Result<(), String> {
+    if !Backend::Ryo.rustc(root).exists() {
+        eprintln!("[y] {cmd}: dist/ is missing, building it");
+        crate::dist::build(&[], false)?;
+    }
+    if backends.any(|b| b == Backend::Clif) {
+        crate::clif::ensure()?;
+    }
+    Ok(())
 }
 
 #[derive(Debug, PartialEq)]
@@ -366,13 +378,7 @@ pub fn run(opts: Options) -> Result<(), String> {
     let started = Instant::now();
     let info = RustcInfo::get()?;
     let root = root();
-    if !crate::utils::dist_bin(&root, "rustc-ryo").exists() {
-        eprintln!("[y] bench crates: dist/ is missing, building it");
-        crate::dist::build(&[], false)?;
-    }
-    if opts.backends.contains(&Backend::Clif) {
-        crate::clif::ensure()?;
-    }
+    ensure_tools(&root, "bench crates", opts.backends.iter().copied())?;
     let base = root.join("target").join("bench-crates");
     let selected: Vec<&'static Crate> = match &opts.path {
         Some(path) => vec![local_crate(path)?],
