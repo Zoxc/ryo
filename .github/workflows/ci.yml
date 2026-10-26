@@ -1,4 +1,4 @@
-# `y build` and `y test` on Linux and Windows (design/platforms.md). The toolchain is the pinned
+# `y build` and `y test` on Linux, Windows and x86_64 macOS (design/platforms.md). The toolchain is the pinned
 # 1.99.1 (design/build.md#toolchain), named explicitly so a newer `stable` on the runner
 # doesn't fail `y`'s version check.
 name: CI
@@ -33,3 +33,21 @@ jobs:
         run: |
           call y.cmd build || exit /b 1
           call y.cmd test || exit /b 1
+
+  # x86_64 macOS (design/platforms.md). `macos-15-intel` is GitHub's Intel image, so the
+  # toolchain, the backend and the JIT run natively; Rosetta on an arm64 runner would also test
+  # the translator, but would need an x86_64 toolchain under `arch -x86_64`. Needs the backend's
+  # Mach-O output. The JIT runs from every function's first call, and also entered by OSR.
+  macos:
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the toolchain
+        run: rustup toolchain install 1.99.1 --profile minimal --component rustc-dev,rust-src,llvm-tools
+      - run: ./y.sh build && ./y.sh test
+      - name: JIT from the first call
+        run: ./y.sh test
+        env: { RYO_JIT_THRESHOLD: "0", RYO_JIT_SYNC: "1" }
+      - name: JIT by OSR, shuffled frames
+        run: ./y.sh test
+        env: { RYO_JIT_THRESHOLD: "2,0", RYO_JIT_SYNC: "1", RYO_JIT_SHUFFLE: "1" }
