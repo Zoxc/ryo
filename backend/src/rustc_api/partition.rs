@@ -567,10 +567,12 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                 }
                 MonoItem::Static(def_id) => {
                     if let Ok(alloc) = tcx.eval_static_initializer(def_id) {
-                        let mut seen = FxHashSet::default();
+                        // Statics are native items of their own.
+                        let (mut seen, mut items) = (FxHashSet::default(), Vec::new());
                         for prov in alloc.inner().provenance().ptrs().values() {
-                            alloc_fns(tcx, prov.alloc_id(), &mut seen, &mut refs);
+                            alloc_refs(tcx, prov.alloc_id(), &mut seen, &mut items);
                         }
+                        refs.extend(items.into_iter().filter_map(|n| if let MonoItem::Fn(f) = n { Some(f) } else { None }));
                     }
                 }
                 // `sym` operands are native references (like the collector's handling,
@@ -934,28 +936,6 @@ fn neighbors<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> Vec<MonoItem<
     }
 }
 
-/// The functions an allocation points at, through nested allocations and vtables (like the
-/// collector's `collect_alloc`, `rustc_monomorphize/src/collector.rs:1285`).
-fn alloc_fns<'tcx>(tcx: TyCtxt<'tcx>, id: AllocId, seen: &mut FxHashSet<AllocId>, out: &mut Vec<Instance<'tcx>>) {
-    if !seen.insert(id) {
-        return;
-    }
-    match tcx.global_alloc(id) {
-        GlobalAlloc::Function { instance } => out.push(instance),
-        GlobalAlloc::Memory(alloc) => {
-            for prov in alloc.inner().provenance().ptrs().values() {
-                alloc_fns(tcx, prov.alloc_id(), seen, out);
-            }
-        }
-        GlobalAlloc::VTable(ty, dyn_ty) => {
-            let principal = dyn_ty.principal().map(|p| tcx.instantiate_bound_regions_with_erased(p));
-            alloc_fns(tcx, tcx.vtable_allocation((ty, principal)), seen, out);
-        }
-        // Statics are native items of their own; type ids hold no pointers.
-        GlobalAlloc::Static(_) | GlobalAlloc::TypeId { .. } => {}
-    }
-}
-
 /// Lowers the candidates (in parallel) until the set of VM functions is stable: a function
 /// that calls a candidate which turned out native is lowered again, with an island for that
 /// call. Returns the lowered functions and the reasons the others stay native.
@@ -1208,7 +1188,8 @@ pub fn linked_roots(tcx: TyCtxt<'_>, crate_type: CrateType) -> (Vec<String>, Vec
 }
 
 /// The items an allocation refers to by symbol (functions and statics), through nested
-/// allocations and vtables.
+/// allocations and vtables (like the collector's `collect_alloc`,
+/// `rustc_monomorphize/src/collector.rs:1285`).
 fn alloc_refs<'tcx>(tcx: TyCtxt<'tcx>, id: AllocId, seen: &mut FxHashSet<AllocId>, out: &mut Vec<MonoItem<'tcx>>) {
     if !seen.insert(id) {
         return;
