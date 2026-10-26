@@ -32,9 +32,10 @@ commands:
   test [--clif] [--full | --only jit|backend|lean|std|rt | --no-changed]
        [--program NAME]... [--variant NAME]...
                                the fast suite plus the tests the changed paths select
-                               (notes/fast-tests.md); `--full` runs everything and needs the
-                               ryo sysroot; `--program`/`--variant` run only those corpus
-                               entries; `--no-changed` only the fixed fast set
+                               (design/build.md#fast-suite-and-changed-path-selection);
+                               `--full` runs everything and needs the ryo sysroot;
+                               `--program`/`--variant` run only those corpus entries;
+                               `--no-changed` only the fixed fast set
   test --cross T               cross-build and link (not run) the corpus for target T, e.g.
                                x86_64-pc-windows-msvc or x86_64-apple-darwin; needs
                                `build --target T` first

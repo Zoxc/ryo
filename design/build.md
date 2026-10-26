@@ -278,6 +278,48 @@ This gives a third backend, built from the same toolchain, to compare against.
   ([jit.md](jit.md#settings)); the `backtrace` check sets `RYO_JIT=off`, since JIT frames have
   no symbols.
 
+### Fast suite and changed-path selection
+
+A plain `y test` runs the fast set plus the tests the changed paths select
+(`build/src/test.rs`: `FAST`, `RULES`, `select`); `--full` runs everything above.
+
+- The fast set: two cargo runs in `vm/`, `vm` (`--workspace --exclude ryo_jit`, without
+  vm/rt/tests/codegen.rs and the slow `every_opcode_round_trips`) and `vm jit` (`-p ryo_jit`,
+  `RYO_JIT_OPT=ssa RYO_JIT_CHECK=1`); the corpus programs in `FAST`, each under the variants
+  listed there (`ryo` on most, the `ryo-jit-ssa*` variants on the VM programs, `ryo-lto` on
+  `vm_lto_dep`, `ryo-abort` on `vm_abort_cleanup`, `ryo-std` and `ryo-std-jit` on
+  `collections`); and the cheap checks (the three rejects, `metadata-only`, `dump`, `exports`,
+  `backtrace`). Every other corpus program is on `FULL_ONLY` with a reason; a unit test
+  checks that each program is on exactly one of the two lists. Without a current ryo sysroot
+  the ryo-std entries are skipped with a warning; the fast suite never builds the sysroot.
+- Changed paths: those in `git diff --name-only` against the merge base with `main`, plus
+  untracked files. Each matches the first prefix in `RULES` (`Cargo.lock` and `*.md` outside
+  `lean/` are matched first), and the extras are printed as `[y] extra: <what> (<path>
+  changed)`:
+  - `notes/`, `design/`, `.github/`, `*.md` outside `lean/`, `vm/bytecode/tests/` (the fast
+    set runs them) and `bench/codegen/`: nothing extra.
+  - `lean/`, `tests/lean/`: `y lean` (if `lake` is present).
+  - `vm/bytecode/src/{asm/,asm.rs,full.rs,reduced.rs,abi.rs}`: the whole corpus under `ryo`
+    and the JIT variants, all six `ryo_jit` runs, the slow vm tests, `y lean`.
+  - `vm/bytecode/src/jit*`, `vm/jit/`: all six `ryo_jit` runs, the corpus under the JIT
+    variants (`ryo-jit-ssa`, `-osr`, `-shuffle` and the `ryo-std-jit*` ones), `jit-private-std`.
+  - `vm/rt/src/vm/handlers.rs`: as other `vm/rt/` paths, plus `y lean`.
+  - `vm/rt/src/`, `vm/rt/tests/`, `vm/rt/build.rs`: the `fp-rbp` runs, codegen.rs,
+    `rt-core-only`, `jit-sealed`.
+  - `backend/`: the whole corpus under every variant (the ryo-std ones need a current
+    sysroot), every check, the slow vm tests and the JIT set.
+  - `tests/<file>`: the programs built from that file (or its directory) under every
+    variant, and the checks that use it.
+- Escalation to `--full` (`[y] escalating to --full: <why>`): any changed path under
+  `build/`, `bench/` outside `bench/codegen/`, `scripts/`, `rust-toolchain*` or a
+  `Cargo.lock`; a path no rule matches; a `tests/` file no program or check uses; or when
+  git can't list the changed paths. A unit test checks that every top- and second-level
+  directory git tracks has a rule. `--full` fails, instead of skipping, without a current
+  ryo sysroot, and adds `y lean` if `lake` is present.
+- `--no-changed` runs only the fast set; `--only jit|backend|lean|std|rt` only that area's
+  extras, without the fast set; `--program`/`--variant` only those corpus entries, without
+  cargo runs or checks.
+
 ### `bench crates`
 
 `y bench crates [--build-samples N] [--run-samples N] [--quick] [--crates a,b|all] [--backends

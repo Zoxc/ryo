@@ -118,7 +118,7 @@ fn variants(clif: bool) -> Vec<&'static Variant> {
     VARIANTS.iter().chain(clif.then_some(&CLIF)).filter(|v| VM_RUNS || v.no_vm || v.compiler != Compiler::Ryo).collect()
 }
 
-/// The fast suite's corpus (notes/fast-tests.md): each program with the variants it runs under.
+/// The fast suite's corpus: each program with the variants it runs under.
 /// Every other [`CORPUS`] program is on [`FULL_ONLY`]. The ryo-std variants run only with a ryo
 /// sysroot.
 const FAST: &[(&str, &[&str])] = &[
