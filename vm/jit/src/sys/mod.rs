@@ -18,6 +18,12 @@
 #[cfg_attr(not(any(target_os = "linux", windows, target_vendor = "apple")), path = "none.rs")]
 mod imp;
 
+// The macOS module's FDE handling, tested where the tests run.
+#[cfg(all(test, target_os = "linux"))]
+#[allow(dead_code)]
+#[path = "macos.rs"]
+mod macos;
+
 pub(crate) use imp::{SUPPORTED, perfmap_path, write_stderr};
 
 /// The unwind information of one installed function, in the region's read-write memory,
