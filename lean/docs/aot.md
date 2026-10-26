@@ -238,6 +238,12 @@ follows the decoder's structure:
   (`Rel`, `fp` in `rbp`, `EscWF`: escaped objects' ids are distinct allocations) with the x86
   state unchanged (`Ryo/Proofs/Scope.lean`, `rrel_scopes`). Not yet: the memory part
   (`MemRel`) across them.
+- **Inline steps**: R's `step` of a native instruction of a `Sound` class (scopes, `view`,
+  `opSem`, `Then.succ`) is simulated by the class's sequence: `RRel` after, `rip` past the
+  items, and the next instruction the fall-through or, for a branch class, the target exactly
+  when the sequence's condition holds (`Ryo/Proofs/Step.lean`, `inline_step`). The opcode
+  facts it takes (`InlineOk`: `shapeOk`, an `opSem` shape, not `resume`/`unreachable`) are
+  hypotheses; `inlineOps_shape` proves the first.
 - **Shapes**: for each shape (`op` handler call, `br`, `switch`, `trap`, `ret`, `arg`, `jmp`,
   `call*`, `tail_call*`, `island`, `lpad`), a lemma: from a state related to the R state,
   executing the canonical sequence reaches the related successor. Handler calls use `H h`.

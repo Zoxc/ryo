@@ -16,4 +16,5 @@ import Ryo.Vm.R.Run
 import Ryo.Proofs.Inline
 import Ryo.Proofs.Counter
 import Ryo.Proofs.Scope
+import Ryo.Proofs.Step
 import Ryo.Proofs.NicheDiscr
