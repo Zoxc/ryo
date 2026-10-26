@@ -33,16 +33,19 @@ MAD (median absolute deviation).
 
 `--metric cachegrind` counts instead: every command runs under `valgrind --tool=cachegrind`
 with its cache simulation (children traced, their counts summed). Compiles report millions
-of instructions executed; runs also report instruction-cache (I1) misses, data reads and
-writes, and first-level (D1) and last-level (LL) data cache misses, each in its own table.
+of instructions executed; runs also report an estimated cycle count, instruction-cache (I1)
+misses, data reads and writes, first-level (D1) and last-level (LL) cache misses and branch
+mispredictions (`--branch-sim`), each in its own table. The estimate is callgrind's
+heuristic, instructions + 10 * (I1 + D1 misses) + 100 * LL misses + 10 * mispredictions,
+so it weighs cache and branch effects that the instruction count misses.
 Runs get `RYO_JIT_SYNC=1` and `RYO_JIT_OPT=ssa` unless they are set: without a synchronous
 JIT the counts depend on when the JIT thread finishes. Set `RYO_JIT=off` to count AOT code.
 The counts don't depend on the machine's load, so one sample is taken (`--samples 1
 --warmup 0`) and small differences are real. Valgrind's caches are a simple model, not the
-machine's, so take the misses as a guide; and nothing sees branch mispredictions or
-dependency chains, so a change can cut instructions without getting faster. Runs are about
-100 times slower than native; `--no-cache-sim` drops the simulation and reports only
-instructions, about twice as fast. Not for `--crates`.
+machine's, so take the misses and the estimate as a guide; nothing sees dependency chains
+or latencies, so a change can cut both without getting faster. Runs are about
+100 times slower than native; `--no-cache-sim` drops the cache and branch simulation
+and reports only instructions, about twice as fast. Not for `--crates`.
 
 Crates: each build's own `./y.sh bench crates --backends ryo`, crate by crate, builds in
 shuffled order, with `--samples` build and run samples; their summary tables (medians) are
@@ -199,7 +202,8 @@ def timed(cmd, pin, cwd=None, cachegrind=False, cache_sim=True):
     the child and its waited-for descendants, or with `cachegrind`, their counts
     (`cachegrind_counts`, in place of cpu)."""
     if cachegrind:
-        cmd = ["valgrind", "--tool=cachegrind", f"--cache-sim={'yes' if cache_sim else 'no'}", "--trace-children=yes",
+        sim = "yes" if cache_sim else "no"
+        cmd = ["valgrind", "--tool=cachegrind", f"--cache-sim={sim}", f"--branch-sim={sim}", "--trace-children=yes",
                "--cachegrind-out-file=/dev/null", *cmd]
     if pin is not None:
         cmd = ["taskset", "-c", str(pin), *cmd]
@@ -221,15 +225,29 @@ def timed(cmd, pin, cwd=None, cachegrind=False, cache_sim=True):
 
 
 # The counts `--metric cachegrind` reports: name, the summary line, and which number on it
-# (0: the total, 1: reads, 2: writes).
+# (0: the total, 1: reads, 2: writes). "est. cycles" is computed (`est_cycles`), not read.
 CACHEGRIND = [
+    ("est. cycles", None, 0),
     ("instructions", "I refs:", 0),
     ("I1 misses", "I1  misses:", 0),
     ("data reads", "D refs:", 1),
     ("data writes", "D refs:", 2),
     ("D1 misses", "D1  misses:", 0),
     ("LL misses", "LL misses:", 0),
+    ("branch mispredicts", "Mispredicts:", 0),
 ]
+
+# Weights of the cycle estimate: callgrind's usual heuristic (KCachegrind's "Cycle
+# Estimation"), not a model of any real CPU.
+L1_MISS_CYCLES = 10
+LL_MISS_CYCLES = 100
+MISPREDICT_CYCLES = 10
+
+
+def est_cycles(c):
+    """Instructions plus weighted I1/D1 misses, LL misses and branch mispredictions."""
+    return (c["instructions"] + L1_MISS_CYCLES * (c["I1 misses"] + c["D1 misses"])
+            + LL_MISS_CYCLES * c["LL misses"] + MISPREDICT_CYCLES * c["branch mispredicts"])
 
 
 def cachegrind_counts(stderr):
@@ -240,11 +258,12 @@ def cachegrind_counts(stderr):
         if not line.startswith("=="):
             continue
         for name, key, i in CACHEGRIND:
-            if key in line:
+            if key and key in line:
                 nums = [w.replace(",", "") for w in line.split(key)[1].replace("(", " ").split()]
                 nums = [int(n) for n in nums if n.isdigit()]
                 if len(nums) > i:
                     out[name] += nums[i]
+    out["est. cycles"] = est_cycles(out)
     return out
 
 

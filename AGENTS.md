@@ -9,8 +9,9 @@
   with that change, so its diff shows the effect.
 - Optimizing. When a change is meant to make generated code faster, compare it against the
   commit before with `scripts/compare-branches.py --worktree <base> --build head=. --metric
-  cachegrind` (instruction counts: deterministic, so small differences are real), and report
-  those counts.
+  cachegrind` (deterministic, so small differences are real), and report both the
+  instruction counts and the estimated cycles (instructions plus weighted cache misses and
+  branch mispredictions), so changes that move cost without moving instructions show.
 - CPU time. Don't measure or rely on CPU time unless the user asks: the machine is typically
   busy, so timings are noise.
 - Lean sync. Changes to the Rust code (backend, JIT, VM) don't update the Lean code. Instead,
@@ -106,7 +107,8 @@ code that calls the VM's handlers; cg_llvm compiles everything else. Start at
 
 - `scripts/compare-branches.py --worktree <base> --build head=. --metric cachegrind`:
   instruction counts (one sample; `RYO_JIT_SYNC=1 RYO_JIT_OPT=ssa` set; `RYO_JIT=off` for
-  AOT only). Its default metric is CPU time, so always pass `--metric cachegrind`. See its docstring.
+  AOT only). Its default metric is CPU time, so always pass `--metric cachegrind`; it then
+  also reports estimated cycles, misses and branch mispredictions. See its docstring.
 - `./y.sh bench --metric cachegrind` for LLVM/Cranelift/ryo columns.
 
 ## Generated files
