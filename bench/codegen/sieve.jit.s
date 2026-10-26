@@ -466,9 +466,7 @@ L21:
     ret
 
 fn std::clone::impls::<impl std::clone::Clone for bool>::clone
-    sub     rsp,18h
     movzx   eax,byte ptr [rdi]
-    add     rsp,18h
     ret
 
 fn std::iter::adapters::map::map_fold::<&bool, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}}>::{closure#0}

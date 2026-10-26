@@ -239,6 +239,8 @@ struct Frame {
     /// pushed, past them too, since the unwind codes address them upward from there
     /// (`u32::MAX`: no room for them).
     pe_fp: u32,
+    /// No frame at all ([`layout`]): `rsp` stays where the call left it, `fp + 8`.
+    frameless: bool,
 }
 
 /// Options of the back end.
@@ -326,14 +328,24 @@ fn layout(f: &Func, al: &Alloc, mode: Mode, opts: Opts) -> Frame {
             }
         };
     }
+    // A leaf (no calls, no OSR entries) without a frame pointer needs no 16-byte alignment,
+    // nor the handlers' scratch area. Not on PE: its frame always saves `rdi` and `rsi`, and
+    // its unwind codes assume the frame register.
+    let leaf = !mode.pe
+        && !mode.frame_pointer
+        && f.osr.is_empty()
+        && f.layout.iter().all(|b| f.blocks[b.idx()].insts.iter().all(|i| !f.insts[i.idx()].op.is_call()));
     let spill0 = if al.spills > 0 { place(&mut cur, 8 * al.spills, 0) } else { cur };
-    let scratch = place(&mut cur, f.scratch.max(8), 0);
+    let scratch = if leaf && f.scratch == 0 { cur } else { place(&mut cur, f.scratch.max(8), 0) };
     // PE: the callees' 32 bytes of shadow space (VM functions, natives and islands take the
     // Win64 convention; the `sysv64` handlers don't), unless the stack arguments cover it.
     if mode.pe && f.insts.iter().any(|i| matches!(i.op, Op::Call(_) | Op::Island(_))) {
         out_size = out_size.max(32);
     }
-    let size = ((-cur) as u32 + out_size).next_multiple_of(16);
+    let mut size = (-cur) as u32 + out_size;
+    size = if leaf && size < PROBE_FROM { size.next_multiple_of(8) } else { size.next_multiple_of(16) };
+    // Nothing in the frame: not even the alignment slot below the return address.
+    let frameless = leaf && size == 0 && saves.is_empty();
     let pe_fp = if !mode.pe {
         0
     } else if pushed {
@@ -348,7 +360,7 @@ fn layout(f: &Func, al: &Alloc, mode: Mode, opts: Opts) -> Frame {
             alloca[k] = -(size as i32);
         }
     }
-    Frame { size, alloca, spill0, scratch, saves, pushed, pe_fp }
+    Frame { size, alloca, spill0, scratch, saves, pushed, pe_fp, frameless }
 }
 
 struct E<'a> {
@@ -375,7 +387,12 @@ struct E<'a> {
 
 impl<'a> E<'a> {
     fn fp_mem(&self, off: i32) -> Mem {
-        if self.mode.frame_pointer { Mem::base(R::Rbp, off) } else { Mem::base(R::Rsp, self.fr.size as i32 + off) }
+        if self.mode.frame_pointer { Mem::base(R::Rbp, off) } else { Mem::base(R::Rsp, self.sp_to_fp() + off) }
+    }
+
+    /// `fp - rsp` in the body, without a frame pointer.
+    fn sp_to_fp(&self) -> i32 {
+        if self.fr.frameless { -8 } else { self.fr.size as i32 }
     }
 
     fn src(&self, v: Value) -> Src {
@@ -524,7 +541,7 @@ impl<'a> E<'a> {
         if self.mode.frame_pointer {
             self.a.x().mov(8, Rm::R(r), Rm::R(R::Rbp));
         } else {
-            let m = Mem::base(R::Rsp, self.fr.size as i32);
+            let m = Mem::base(R::Rsp, self.sp_to_fp());
             self.a.x().lea(r, m);
         }
     }
@@ -575,6 +592,9 @@ impl<'a> E<'a> {
             self.a.x().mov(8, Rm::R(R::Rbp), Rm::R(R::Rsp));
             let m = self.a.mark();
             self.cfi.push((m, alloc::vec![0x0d, 6]));
+        }
+        if self.fr.frameless {
+            return;
         }
         let mut alloc_ = if fp { size } else { size + 8 };
         if self.fr.pushed {
@@ -685,6 +705,9 @@ impl<'a> E<'a> {
             return;
         }
         let fp = self.mode.frame_pointer;
+        if self.fr.frameless {
+            return;
+        }
         if !self.fr.pushed {
             for (r, o) in self.fr.saves.clone() {
                 let m = self.fp_mem(o);

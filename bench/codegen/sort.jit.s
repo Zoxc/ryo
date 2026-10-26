@@ -1,24 +1,18 @@
 fn <(u32, u32) as core::slice::sort::shared::smallsort::StableSmallSortTypeImpl>::small_sort_threshold
-    sub     rsp,18h
     mov     eax,20h
-    add     rsp,18h
     ret
 
 fn <(u32, u32) as core::slice::sort::stable::quicksort::IsFreeze>::is_freeze
-    sub     rsp,18h
     mov     eax,1
     movzx   eax,al
-    add     rsp,18h
     ret
 
 fn <for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt} as std::ops::FnMut<(&u32, &u32)>>::call_mut - shim(for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt})
-    sub     rsp,18h
     mov     eax,[rsi]
     mov     ecx,[rdx]
     cmp     eax,ecx
     setb    al
     movzx   eax,al
-    add     rsp,18h
     ret
 
 fn <std::iter::Enumerate<I> as std::iter::Iterator>::fold::enumerate::<&u32, u64, {closure@bench/sort.rs:46:37: 46:51}>::{closure#0}
@@ -482,9 +476,7 @@ L19:
     ret
 
 fn <u32 as core::slice::sort::shared::smallsort::UnstableSmallSortTypeImpl>::small_sort_threshold
-    sub     rsp,18h
     mov     eax,20h
-    add     rsp,18h
     ret
 
 fn <usize as std::slice::SliceIndex<[T]>>::get_unchecked::precondition_check
@@ -1064,7 +1056,6 @@ L17:
     ret
 
 fn core::slice::sort::shared::pivot::median3::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
-    sub     rsp,18h
     mov     eax,[rdi]
     mov     ecx,[rsi]
     cmp     eax,ecx
@@ -1087,7 +1078,6 @@ L1:
     mov     rdx,rdi
 L2:
     mov     rax,rdx
-    add     rsp,18h
     ret
 
 fn core::slice::sort::shared::pivot::median3_rec::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
@@ -10138,9 +10128,7 @@ L2:
     ud2
 
 fn main::{closure#2}
-    sub     rsp,18h
     mov     eax,[rsi]
-    add     rsp,18h
     ret
 
 fn merge_sort
@@ -10867,23 +10855,19 @@ L73:
     jmp     L21
 
 fn std::cmp::impls::<impl std::cmp::PartialOrd for u32>::lt
-    sub     rsp,18h
     mov     eax,[rdi]
     mov     ecx,[rsi]
     cmp     eax,ecx
     setb    al
     movzx   eax,al
-    add     rsp,18h
     ret
 
 fn std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt
-    sub     rsp,18h
     mov     rax,[rdi]
     mov     rcx,[rsi]
     cmp     rax,rcx
     setb    al
     movzx   eax,al
-    add     rsp,18h
     ret
 
 fn std::hint::assert_unchecked::precondition_check
@@ -11072,7 +11056,6 @@ L3:
     ret
 
 fn std::iter::range::<impl std::iter::Iterator for std::ops::Range<usize>>::next
-    sub     rsp,18h
     mov     rax,[rdi]
     mov     rcx,[rdi+8]
     cmp     rax,rcx
@@ -11086,7 +11069,6 @@ L0:
     mov     eax,0
 L1:
     mov     rdx,rcx
-    add     rsp,18h
     ret
 
 fn std::ptr::const_ptr::<impl *const ()>::is_aligned_to

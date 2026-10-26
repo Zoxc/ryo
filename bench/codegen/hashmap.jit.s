@@ -446,7 +446,6 @@ L40:
     jmp     L18
 
 fn <core::hash::sip::Sip13Rounds as core::hash::sip::Sip>::c_rounds
-    sub     rsp,18h
     mov     rax,[rdi]
     mov     rcx,[rdi+10h]
     add     rax,rcx
@@ -497,11 +496,9 @@ fn <core::hash::sip::Sip13Rounds as core::hash::sip::Sip>::c_rounds
     shr     rdx,20h
     or      rax,rdx
     mov     [rdi+8],rax
-    add     rsp,18h
     ret
 
 fn <core::hash::sip::Sip13Rounds as core::hash::sip::Sip>::d_rounds
-    sub     rsp,18h
     mov     rax,[rdi]
     mov     rcx,[rdi+10h]
     add     rax,rcx
@@ -644,7 +641,6 @@ fn <core::hash::sip::Sip13Rounds as core::hash::sip::Sip>::d_rounds
     shr     rax,20h
     or      rcx,rax
     mov     [rdi+8],rcx
-    add     rsp,18h
     ret
 
 fn <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:24:43: 24:50}>::{closure#0}}>::{closure#0}
@@ -678,7 +674,6 @@ L6:
     ret
 
 fn <std::hash::DefaultHasher as std::hash::Hasher>::finish
-    sub     rsp,18h
     mov     rax,[rdi]
     mov     rcx,[rdi+8]
     mov     rdx,[rdi+10h]
@@ -823,11 +818,9 @@ fn <std::hash::DefaultHasher as std::hash::Hasher>::finish
     xor     rdx,rdi
     xor     rdx,rax
     mov     rax,rdx
-    add     rsp,18h
     ret
 
 fn <std::hash::RandomState as std::hash::BuildHasher>::build_hasher
-    sub     rsp,18h
     mov     rax,[rsi]
     mov     rcx,[rsi+8]
     mov     rdx,rax
@@ -852,7 +845,6 @@ fn <std::hash::RandomState as std::hash::BuildHasher>::build_hasher
     mov     qword ptr [rdi+38h],0
     mov     qword ptr [rdi+40h],0
     mov     rax,rdi
-    add     rsp,18h
     ret
 
 fn <std::hash::RandomState as std::hash::BuildHasher>::hash_one::<&std::string::String>
@@ -1313,13 +1305,11 @@ fn core::core_arch::simd::Simd::<i8, 16>::splat
     ret
 
 fn core::core_arch::x86::<impl core::core_arch::simd::Simd<i8, 16>>::as_m128i
-    sub     rsp,18h
     mov     rax,[rsi]
     mov     rcx,[rsi+8]
     mov     [rdi],rax
     mov     [rdi+8],rcx
     mov     rax,rdi
-    add     rsp,18h
     ret
 
 fn core::hash::sip::u8to64_le
@@ -1462,17 +1452,13 @@ L15:
     ret
 
 fn core::num::<impl u64>::wrapping_add
-    sub     rsp,18h
     add     rdi,rsi
     mov     rax,rdi
-    add     rsp,18h
     ret
 
 fn core::num::<impl u64>::wrapping_mul
-    sub     rsp,18h
     imul    rdi,rsi
     mov     rax,rdi
-    add     rsp,18h
     ret
 
 fn core::ub_checks::maybe_is_nonoverlapping::runtime
@@ -7367,7 +7353,6 @@ L44:
     ret
 
 fn main::{closure#0}
-    sub     rsp,18h
     mov     rax,[rsi]
     mov     r11d,3
     mov     rax,rax
@@ -7376,27 +7361,22 @@ fn main::{closure#0}
     test    rdx,rdx
     setne   al
     movzx   eax,al
-    add     rsp,18h
     ret
 
 fn std::arch::x86_64::__m128i::as_i8x16
-    sub     rsp,18h
     mov     rax,[rsi]
     mov     rcx,[rsi+8]
     mov     [rdi],rax
     mov     [rdi+8],rcx
     mov     rax,rdi
-    add     rsp,18h
     ret
 
 fn std::cmp::impls::<impl std::cmp::PartialEq for u64>::eq
-    sub     rsp,18h
     mov     rax,[rdi]
     mov     rcx,[rsi]
     cmp     rax,rcx
     sete    al
     movzx   eax,al
-    add     rsp,18h
     ret
 
 fn std::collections::HashMap::<u64, u64>::entry
@@ -7643,7 +7623,6 @@ L16:
     ret
 
 fn std::iter::range::<impl std::iter::Iterator for std::ops::Range<u64>>::next
-    sub     rsp,18h
     mov     rax,[rdi]
     mov     rcx,[rdi+8]
     cmp     rax,rcx
@@ -7657,13 +7636,10 @@ L0:
     mov     eax,0
 L1:
     mov     rdx,rcx
-    add     rsp,18h
     ret
 
 fn std::mem::size_of::<std::arch::x86_64::__m128i>
-    sub     rsp,18h
     mov     eax,10h
-    add     rsp,18h
     ret
 
 fn std::option::Option::<&str>::map_or_else::<std::string::String, {closure@std::fmt::format::{closure#0}}, for<'a> fn(&'a str) -> <str as std::borrow::ToOwned>::Owned {<str as std::borrow::ToOwned>::to_owned}>

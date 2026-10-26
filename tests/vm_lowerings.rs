@@ -230,7 +230,25 @@ fn forms() {
     println!();
 }
 
+/// Leaves: no frame (the stack arguments read from `rsp`), and a frame without the 16-byte
+/// alignment (one pushed register, spills).
+#[inline(never)]
+fn leaf_args(a: u64, b: u64, c: u64, d: u64, e: u64, f: u64, g: u64, h: u32) -> u64 {
+    a ^ b.wrapping_mul(3) ^ c << 2 ^ d >> 1 ^ e ^ f.wrapping_add(g) ^ h as u64
+}
+
+#[inline(never)]
+fn leaf_heavy(xs: &[u64; 16]) -> u64 {
+    let v: [u64; 16] = core::array::from_fn(|k| xs[k].wrapping_mul(k as u64 + 1));
+    let mut acc = 0u64;
+    for k in 0..16 {
+        acc = acc.rotate_left(5) ^ v[k] ^ v[15 - k].wrapping_add(v[(k * 7) % 16]);
+    }
+    acc ^ v.iter().fold(0, |s, &x| s ^ x)
+}
+
 fn main() {
+    println!("{} {}", leaf_args(1, 2, 3, 4, 5, 6, black_box(7), black_box(8)), leaf_heavy(&black_box(core::array::from_fn(|k| k as u64 * 0x9e37_79b9))));
     offsets();
     forms();
     fixed_regs();

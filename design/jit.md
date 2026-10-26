@@ -462,6 +462,10 @@ the same bytes at the head, and the entry's `OsrLoad` of the second goes. OSR he
   `push rbp; mov rbp, rsp; sub rsp, F` with `fp-rbp`) then a `mov` per save. The probe from
   `PROBE_FROM` comes before the `sub`; handler and island operands are `fp` offsets either
   way; OSR entries store the saves at their slots, which the epilogue reads either way.
+  A leaf (no calls, no OSR entries) without `fp-rbp`, not on PE, has no handler scratch area and its
+  frame is rounded to 8 bytes, not 16 (nothing it calls needs the alignment); with nothing
+  in it and no saves, it has no frame at all (no prologue, epilogue or unwind rows; `fp`
+  is `rsp - 8`).
 - **PE frames**: as the AOT code's ([vm.md](vm.md#frames)), `rdi` and `rsi` (callee-saved
   on Win64, not in the `sysv64` handlers) are always saved, at `fp - 8` and `fp - 16`
   where the AOT frame has them, so OSR entries leave them; the other saves follow. The
