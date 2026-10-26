@@ -234,6 +234,10 @@ the function's instruction list: scopes, dropped stores, branch targets), the LS
 `RYO_DUMP_CODE` and not from a Rust re-serialization (§C4 has the ELF reader). The proof
 follows the decoder's structure:
 
+- **Scopes** (before each instruction; no code): `Escape`, `End` and `Lend` keep `RRel`
+  (`Rel`, `fp` in `rbp`, `EscWF`: escaped objects' ids are distinct allocations) with the x86
+  state unchanged (`Ryo/Proofs/Scope.lean`, `rrel_scopes`). Not yet: the memory part
+  (`MemRel`) across them.
 - **Shapes**: for each shape (`op` handler call, `br`, `switch`, `trap`, `ret`, `arg`, `jmp`,
   `call*`, `tail_call*`, `island`, `lpad`), a lemma: from a state related to the R state,
   executing the canonical sequence reaches the related successor. Handler calls use `H h`.
