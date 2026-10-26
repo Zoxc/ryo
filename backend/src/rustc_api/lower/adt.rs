@@ -2,9 +2,10 @@
 //! arrays and enums, all through `tcx.layout_of`. Mirrors cg_ssa's `codegen_get_discr` and
 //! `codegen_tag_value` (`rustc_codegen_ssa/src/mir/operand.rs`, `place.rs`).
 
-use rustc_abi::{BackendRepr, TagEncoding, VariantIdx, Variants};
+use rustc_abi::{BackendRepr, FieldIdx, TagEncoding, VariantIdx, Variants};
 use rustc_index::IndexVec;
 use rustc_middle::mir::{AggregateKind, Operand, Place};
+use rustc_middle::ty::layout::TyAndLayout;
 use ryo_bytecode::full::Opcode;
 
 use super::emit::{Width, opw};
@@ -21,6 +22,12 @@ pub struct NicheTag {
     pub start: u32,
     pub end: u32,
     pub niche_start: u128,
+}
+
+impl NicheTag {
+    fn new(slot: u32, tw: Width, untagged: VariantIdx, start: VariantIdx, end: VariantIdx, niche_start: u128) -> Self {
+        NicheTag { slot, tw, untagged: untagged.as_u32(), start: start.as_u32(), end: end.as_u32(), niche_start: tw.truncate(niche_start) }
+    }
 }
 
 impl<'a, 'tcx> FnCx<'a, 'tcx> {
@@ -84,9 +91,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 self.imm_into(dst.loc, dw, v)
             }
             Variants::Multiple { tag, ref tag_encoding, tag_field, .. } => {
-                let tag_layout = layout.field(&self.lcx(), tag_field.as_usize());
-                let tag_loc = pv.loc.offset(layout.fields.offset(tag_field.as_usize()).bytes())?;
-                let Some(tw) = Width::of_size(tag_layout.size.bytes()) else { return native("tag width") };
+                let (tag_loc, tag_layout, tw) = self.tag_field(pv, tag_field)?;
                 let t = self.loc_slot(tag_loc, tag_layout)?;
                 match *tag_encoding {
                     TagEncoding::Direct => {
@@ -99,14 +104,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                         })
                     }
                     TagEncoding::Niche { untagged_variant, ref niche_variants, niche_start } => {
-                        let n = NicheTag {
-                            slot: t,
-                            tw,
-                            untagged: untagged_variant.as_u32(),
-                            start: niche_variants.start.as_u32(),
-                            end: niche_variants.last.as_u32(),
-                            niche_start: tw.truncate(niche_start),
-                        };
+                        let n = NicheTag::new(t, tw, untagged_variant, niche_variants.start, niche_variants.last, niche_start);
                         self.into_place(dst, |fx, d| {
                             fx.niche_discr(d, dw, n);
                         })
@@ -124,18 +122,18 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         else {
             return Ok(None);
         };
+        let (tag_loc, tag_layout, tw) = self.tag_field(pv, tag_field)?;
+        let slot = self.loc_slot(tag_loc, tag_layout)?;
+        Ok(Some(NicheTag::new(slot, tw, untagged_variant, niche_variants.start, niche_variants.last, niche_start)))
+    }
+
+    /// The location, layout and width of the tag field `tag_field` of the enum at `pv`.
+    fn tag_field(&self, pv: PlaceVal<'tcx>, tag_field: FieldIdx) -> Result<(Loc, TyAndLayout<'tcx>, Width), NeedsNative> {
+        let layout = pv.layout;
         let tag_layout = layout.field(&self.lcx(), tag_field.as_usize());
         let tag_loc = pv.loc.offset(layout.fields.offset(tag_field.as_usize()).bytes())?;
         let Some(tw) = Width::of_size(tag_layout.size.bytes()) else { return native("tag width") };
-        let slot = self.loc_slot(tag_loc, tag_layout)?;
-        Ok(Some(NicheTag {
-            slot,
-            tw,
-            untagged: untagged_variant.as_u32(),
-            start: niche_variants.start.as_u32(),
-            end: niche_variants.last.as_u32(),
-            niche_start: tw.truncate(niche_start),
-        }))
+        Ok((tag_loc, tag_layout, tw))
     }
 
     /// `d` (width `dw`) = the variant index the niche tag `n` encodes, with plain integer ops
@@ -194,9 +192,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             }
             Variants::Single { .. } => Ok(()),
             Variants::Multiple { ref tag_encoding, tag_field, .. } => {
-                let tag_layout = layout.field(&self.lcx(), tag_field.as_usize());
-                let tag_loc = pv.loc.offset(layout.fields.offset(tag_field.as_usize()).bytes())?;
-                let Some(tw) = Width::of_size(tag_layout.size.bytes()) else { return native("tag width") };
+                let (tag_loc, _, tw) = self.tag_field(pv, tag_field)?;
                 let value = match *tag_encoding {
                     TagEncoding::Direct => {
                         let d = layout.ty.discriminant_for_variant(self.tcx, variant);
