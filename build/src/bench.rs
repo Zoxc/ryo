@@ -44,16 +44,45 @@ pub enum Metric {
     Cachegrind,
 }
 
+/// A `-Copt-level` for plain rustc: `O0`..`O3`, a `d` suffix (`O2d`) turning on debug
+/// assertions (and with them overflow checks, as at `O0`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LlvmLevel {
+    opt: u8,
+    debug_assertions: bool,
+}
+
+impl LlvmLevel {
+    fn parse(s: &str) -> Result<LlvmLevel, String> {
+        let (level, debug_assertions) = s.strip_suffix('d').map_or((s, false), |l| (l, true));
+        match level.strip_prefix('O').and_then(|n| n.parse().ok()).filter(|&n| n <= 3) {
+            Some(opt) => Ok(LlvmLevel { opt, debug_assertions }),
+            None => Err(format!("bad LLVM level `{s}` (expected O0..O3, optionally with a `d` suffix)")),
+        }
+    }
+}
+
+impl std::fmt::Display for LlvmLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "O{}{}", self.opt, if self.debug_assertions { "d" } else { "" })
+    }
+}
+
+/// How ryo runs the program: `aot` (`RYO_JIT=off`) or `jit` (`RYO_JIT_OPT=ssa`, plus
+/// `RYO_JIT_SYNC=1` under cachegrind).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RyoMode {
+    Aot,
+    Jit,
+}
+
 /// `y bench [--runs N] [--llvm LEVELS] [--clif] [--ryo MODES] [--metric time|cachegrind]`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Options {
     pub runs: u32,
-    /// `-Copt-level`s for plain rustc: `O0`..`O3`, a `d` suffix (`O2d`) turning on debug
-    /// assertions (and with them overflow checks, as at `O0`).
-    pub llvm: Vec<String>,
+    pub llvm: Vec<LlvmLevel>,
     pub clif: bool,
-    /// `aot` (`RYO_JIT=off`) and `jit` (`RYO_JIT_OPT=ssa`, plus `RYO_JIT_SYNC=1` under cachegrind).
-    pub ryo: Vec<String>,
+    pub ryo: Vec<RyoMode>,
     pub metric: Metric,
 }
 
@@ -76,20 +105,17 @@ pub fn parse_options(args: &[&str]) -> Result<Options, String> {
             }
             "--llvm" => {
                 for l in list(args.value()?) {
-                    let level = l.strip_suffix('d').unwrap_or(&l);
-                    if !matches!(level, "O0" | "O1" | "O2" | "O3") {
-                        return Err(format!("bad LLVM level `{l}` (expected O0..O3, optionally with a `d` suffix)"));
-                    }
-                    o.llvm.push(l);
+                    o.llvm.push(LlvmLevel::parse(&l)?);
                 }
             }
             "--clif" => o.clif = true,
             "--ryo" => {
                 for m in list(args.value()?) {
-                    if !matches!(m.as_str(), "aot" | "jit") {
-                        return Err(format!("bad ryo mode `{m}` (expected aot or jit)"));
-                    }
-                    o.ryo.push(m);
+                    o.ryo.push(match m.as_str() {
+                        "aot" => RyoMode::Aot,
+                        "jit" => RyoMode::Jit,
+                        _ => return Err(format!("bad ryo mode `{m}` (expected aot or jit)")),
+                    });
                 }
             }
             "--metric" => {
@@ -108,13 +134,9 @@ pub fn parse_options(args: &[&str]) -> Result<Options, String> {
 /// The columns `o` selects; the first is the reference whose output the others must match.
 /// Without `--llvm`, `--clif` or `--ryo`, the default columns.
 fn backends(o: &Options) -> Vec<Backend> {
-    let rustc = |level: &str| {
-        let (l, checks) = match level.strip_suffix('d') {
-            Some(l) => (l, true),
-            None => (level, false),
-        };
-        let mut flags = vec![format!("-Copt-level={}", &l[1..])];
-        if checks {
+    let rustc = |level: LlvmLevel| {
+        let mut flags = vec![format!("-Copt-level={}", level.opt)];
+        if level.debug_assertions {
             flags.push("-Cdebug-assertions=on".to_owned());
         }
         Backend { name: format!("llvm -{level}"), compiler: Compiler::Llvm, flags, env: Vec::new() }
@@ -122,19 +144,21 @@ fn backends(o: &Options) -> Vec<Backend> {
     let clif = || Backend { name: "clif".to_owned(), compiler: Compiler::Clif, flags: Vec::new(), env: Vec::new() };
     if o.llvm.is_empty() && !o.clif && o.ryo.is_empty() {
         let ryo = Backend { name: "ryo".to_owned(), compiler: Compiler::Ryo, flags: Vec::new(), env: Vec::new() };
-        return vec![rustc("O0"), rustc("O3"), clif(), ryo];
+        let level = |opt| LlvmLevel { opt, debug_assertions: false };
+        return vec![rustc(level(0)), rustc(level(3)), clif(), ryo];
     }
-    let mut v: Vec<Backend> = o.llvm.iter().map(|l| rustc(l)).collect();
+    let mut v: Vec<Backend> = o.llvm.iter().map(|&l| rustc(l)).collect();
     if o.clif {
         v.push(clif());
     }
-    for m in &o.ryo {
-        let mut env = if m == "aot" { vec![("RYO_JIT", "off")] } else { vec![("RYO_JIT_OPT", "ssa")] };
-        // Under cachegrind the counts depend on when a background JIT thread finishes.
-        if m != "aot" && o.metric == Metric::Cachegrind {
-            env.push(("RYO_JIT_SYNC", "1"));
-        }
-        v.push(Backend { name: format!("ryo {m}"), compiler: Compiler::Ryo, flags: Vec::new(), env });
+    for &m in &o.ryo {
+        let (name, env) = match m {
+            RyoMode::Aot => ("aot", vec![("RYO_JIT", "off")]),
+            // Under cachegrind the counts depend on when a background JIT thread finishes.
+            RyoMode::Jit if o.metric == Metric::Cachegrind => ("jit", vec![("RYO_JIT_OPT", "ssa"), ("RYO_JIT_SYNC", "1")]),
+            RyoMode::Jit => ("jit", vec![("RYO_JIT_OPT", "ssa")]),
+        };
+        v.push(Backend { name: format!("ryo {name}"), compiler: Compiler::Ryo, flags: Vec::new(), env });
     }
     v
 }
