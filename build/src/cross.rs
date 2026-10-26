@@ -164,6 +164,14 @@ pub fn run(target: &str) -> Result<(), String> {
                 failed.push("rt-core-only");
             }
         }
+    } else {
+        match no_red_zone(&info, &dist.join("lib").join("rustlib").join(target).join("lib").join("libryo_rt.rlib"), &out.join("red-zone")) {
+            Ok(n) => eprintln!("[y] test --cross {target} red-zone: ok ({n} objects)"),
+            Err(msg) => {
+                eprintln!("[y] test --cross {target} red-zone: FAILED: {msg}");
+                failed.push("red-zone");
+            }
+        }
     }
     for program in CORPUS {
         let res = (|| {
@@ -327,4 +335,44 @@ mod tests {
         let got: Vec<String> = super::undefined_symbols(s).collect();
         assert_eq!(got, ["mainCRTStartup", "__declspec(dllimport) CloseHandle"]);
     }
+}
+
+/// Checks that no code in `rlib` (`ryo_rt`, with the sealed JIT it bundles) accesses memory
+/// below `rsp`: on Windows, exception dispatch, APCs and debuggers may write there, and LLVM
+/// gives `sysv64` functions a red zone unless built with [`crate::jit::NO_REDZONE`]
+/// (design/platforms.md). Returns how many objects it checked.
+fn no_red_zone(info: &RustcInfo, rlib: &Path, dir: &Path) -> Result<usize, String> {
+    let _ = fs::remove_dir_all(dir);
+    fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    crate::utils::run(cmd(crate::jit::llvm_tool(info, "llvm-ar")).arg("x").arg(rlib).arg("--output").arg(dir))?;
+    let objdump = crate::jit::llvm_tool(info, "llvm-objdump");
+    let mut n = 0;
+    let mut bad = Vec::new();
+    for e in fs::read_dir(dir).map_err(|e| e.to_string())? {
+        let p = e.map_err(|e| e.to_string())?.path();
+        if !p.extension().is_some_and(|x| x == "o" || x == "obj") {
+            continue;
+        }
+        n += 1;
+        let asm = crate::utils::output(cmd(&objdump).args(["-d", "--no-show-raw-insn", "--x86-asm-syntax=att"]).arg(&p))?;
+        let mut func = "";
+        for l in asm.lines() {
+            if l.ends_with(">:") {
+                func = l;
+            }
+            // A negative displacement off `rsp` (AT&T: `-0x40(%rsp)`), with or without an index.
+            if let Some(k) = l.find("(%rsp") {
+                if l[..k].rsplit([' ', ',', '*']).next().is_some_and(|d| d.starts_with('-')) {
+                    bad.push(format!("{}: {func} {}", p.file_name().unwrap().to_string_lossy(), l.trim()));
+                }
+            }
+        }
+    }
+    if n == 0 {
+        return Err(format!("no objects in {}", rlib.display()));
+    }
+    if !bad.is_empty() {
+        return Err(format!("accesses below rsp:\n{}", bad.join("\n")));
+    }
+    Ok(n)
 }

@@ -38,6 +38,11 @@ pub fn symbol(triple: &str, name: &str) -> String {
     if macho(triple) { format!("_{name}") } else { name.to_owned() }
 }
 
+/// The flag that keeps `ryo_rt`'s and the JIT's code for Windows out of the memory below
+/// `rsp`: LLVM gives `sysv64` functions a red zone by their convention, even on Windows,
+/// where exception dispatch, APCs and debuggers may write there (design/platforms.md).
+pub const NO_REDZONE: &str = "-Cno-redzone=yes";
+
 /// Whether `triple` is a COFF (windows-msvc) target.
 fn coff(triple: &str) -> bool {
     triple.ends_with("-windows-msvc")
@@ -93,7 +98,8 @@ pub fn build(root: &Path, target: &Path, info: &RustcInfo, triple: &str, cross: 
         .env("CARGO_PROFILE_RELEASE_PANIC", "unwind")
         .env("CARGO_PROFILE_RELEASE_DEBUG", "0")
         .env_remove("RUSTFLAGS")
-        .env_remove("CARGO_ENCODED_RUSTFLAGS"))?;
+        // Its trips are `sysv64` code too: no red zone on Windows (design/platforms.md).
+        .env("CARGO_ENCODED_RUSTFLAGS", if triple.contains("-windows") { NO_REDZONE } else { "" }))?;
     let mut built = target_dir.clone();
     if let Some(t) = cross {
         built.push(t);

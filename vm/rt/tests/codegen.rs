@@ -71,7 +71,12 @@ fn rt_asm(dir: &str, features: &[&str], target: Option<&str>) -> String {
     if let Some(t) = target {
         c.args(["--target", t]);
     }
-    let st = c.args(["--", "-Ccodegen-units=1", "--emit=asm"]).status().expect("running cargo");
+    c.args(["--", "-Ccodegen-units=1", "--emit=asm"]);
+    // As `y build` builds it for Windows (design/platforms.md).
+    if target.is_some_and(|t| t.contains("-windows")) {
+        c.arg("-Cno-redzone=yes");
+    }
+    let st = c.status().expect("running cargo");
     assert!(st.success(), "building ryo_rt failed");
     let deps = match target {
         Some(t) => dir.join(t).join("release").join("deps"),
