@@ -131,13 +131,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
 
     /// The place whose niche-encoded discriminant only the `SwitchInt` of `data` reads.
     fn fusable_discr(&self, data: &'tcx BasicBlockData<'tcx>, uses: &IndexVec<Local, u32>) -> Option<Place<'tcx>> {
-        let TerminatorKind::SwitchInt { discr: Operand::Move(d), .. } = &data.terminator().kind else { return None };
-        let local = d.as_local()?;
-        let StatementKind::Assign(assign) = &data.statements.last()?.kind else { return None };
-        let (dst, Rvalue::Discriminant(p)) = &**assign else { return None };
-        if dst.as_local() != Some(local) || uses[local] != 2 {
-            return None;
-        }
+        let TerminatorKind::SwitchInt { discr, .. } = &data.terminator().kind else { return None };
+        let Rvalue::Discriminant(p) = fused_def(data, discr, uses)? else { return None };
         let layout = self.layout_of(self.mono(p.ty(self.body, self.tcx).ty)).ok()?;
         matches!(layout.variants, Variants::Multiple { tag_encoding: TagEncoding::Niche { .. }, .. }).then_some(*p)
     }
@@ -149,14 +144,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             TerminatorKind::Assert { cond, .. } => cond,
             _ => return None,
         };
-        let Operand::Move(cond) = cond else { return None };
-        let local = cond.as_local()?;
-        let StatementKind::Assign(assign) = &data.statements.last()?.kind else { return None };
-        let (dst, Rvalue::BinaryOp(op, ops)) = &**assign else { return None };
+        let Rvalue::BinaryOp(op, ops) = fused_def(data, cond, uses)? else { return None };
         let (a, b) = (&ops.0, &ops.1);
-        if dst.as_local() != Some(local) || uses[local] != 2 {
-            return None;
-        }
         if !matches!(op, BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge) {
             return None;
         }
@@ -406,4 +395,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let fty = Ty::new_fn_def(tcx, def_id, ty::Binder::dummy(instance.args));
         self.direct_call(fty, instance, &args, CallCont::diverging(unwind), term.source_info)
     }
+}
+
+/// The rvalue that the last statement of `data` assigns to `cond`, when that statement is
+/// `cond`'s only definition and the terminator is its only other use.
+fn fused_def<'b, 'tcx>(data: &'b BasicBlockData<'tcx>, cond: &Operand<'tcx>, uses: &IndexVec<Local, u32>) -> Option<&'b Rvalue<'tcx>> {
+    let Operand::Move(cond) = cond else { return None };
+    let local = cond.as_local()?;
+    let StatementKind::Assign(assign) = &data.statements.last()?.kind else { return None };
+    let (dst, rvalue) = &**assign;
+    (dst.as_local() == Some(local) && uses[local] == 2).then_some(rvalue)
 }
