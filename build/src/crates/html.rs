@@ -3,7 +3,7 @@
 
 use std::fmt::Write;
 
-use super::stats::Summary;
+use super::stats::{NOISY, Summary};
 use super::timing::{Coverage, Totals, Unit, coverage, totals};
 use super::{Backend, Cell, Phase, Report, Step};
 
@@ -243,7 +243,7 @@ fn tip_text(crate_name: &str, backend: Backend, s: &Summary, unit: Measure, llvm
         let _ = write!(t, "\n{:.2}× llvm", s.median / l.median);
     }
     if s.noisy() {
-        t.push_str("\nnoisy (stddev > 3% of median)");
+        let _ = write!(t, "\nnoisy (stddev > {:.0}% of median)", NOISY * 100.0);
     }
     t
 }
@@ -608,7 +608,11 @@ pub fn render(r: &Report) -> String {
     for (i, b) in r.backends.iter().enumerate() {
         let _ = write!(s, "<span><i class=\"sw\" style=\"background:{}\"></i>{}</span>", backend_color(i), b.name());
     }
-    s.push_str("</p><p class=\"muted\">Charts: each backend's median relative to LLVM's (log axis, dashed line = 1×), whiskers ± one standard deviation, absolute median as the label; hover for details. Tables: median (ratio to LLVM), ± stddev, min, n. Yellow cells are noisy (stddev &gt; 3% of median), red cells failed.</p>");
+    let _ = write!(
+        s,
+        "</p><p class=\"muted\">Charts: each backend's median relative to LLVM's (log axis, dashed line = 1×), whiskers ± one standard deviation, absolute median as the label; hover for details. Tables: median (ratio to LLVM), ± stddev, min, n. Yellow cells are noisy (stddev &gt; {:.0}% of median), red cells failed.</p>",
+        NOISY * 100.0
+    );
     s.push_str(&tests_section(r));
     s.push_str("<h2>Compile time breakdown</h2><p class=\"muted\">rustc time summed over all units of the library and test builds (medians): frontend = process start to codegen start, backend = codegen section, link = link section, other = the rest of the rustc process.</p>");
     s.push_str(&breakdown_chart(r));
