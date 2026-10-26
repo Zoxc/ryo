@@ -99,17 +99,17 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                         };
                         self.mem_set_pieces(x, byte, n);
                     }
-                    return self.intrinsic_next(&cont);
-                }
-                let [x, y, count] = self.arg_slots::<3>(args)?;
-                let n = self.temp8();
-                self.op(opw("MulImm", Width::W64), &[n, count, size as u32, (size >> 32) as u32]);
-                if copy {
-                    // copy(src, dst, count)
-                    self.op(Opcode::Memmove, &[y, x, n]);
                 } else {
-                    // write_bytes(dst, val, count)
-                    self.op(Opcode::Memset, &[x, y, n]);
+                    let [x, y, count] = self.arg_slots::<3>(args)?;
+                    let n = self.temp8();
+                    self.op(opw("MulImm", Width::W64), &[n, count, size as u32, (size >> 32) as u32]);
+                    if copy {
+                        // copy(src, dst, count)
+                        self.op(Opcode::Memmove, &[y, x, n]);
+                    } else {
+                        // write_bytes(dst, val, count)
+                        self.op(Opcode::Memset, &[x, y, n]);
+                    }
                 }
                 true
             }
@@ -126,13 +126,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                         fx.mem_copy_pieces(x, y, n);
                         fx.store_pieces(y, t, n);
                     });
-                    return self.intrinsic_next(&cont);
+                } else {
+                    let n = self.temp8();
+                    self.imm(Width::W64, n, u128::from(size));
+                    self.op(Opcode::LoadCopy, &[t, x, 0, size as u32]);
+                    self.op(Opcode::Memcpy, &[x, y, n]);
+                    self.op(Opcode::StoreCopy, &[y, 0, t, size as u32]);
                 }
-                let n = self.temp8();
-                self.imm(Width::W64, n, u128::from(size));
-                self.op(Opcode::LoadCopy, &[t, x, 0, size as u32]);
-                self.op(Opcode::Memcpy, &[x, y, n]);
-                self.op(Opcode::StoreCopy, &[y, 0, t, size as u32]);
                 true
             }
             "size_of_val" | "align_of_val" => {
@@ -303,7 +303,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     }
 
     /// Intrinsics beyond the first set: VM instructions where they exist, otherwise wrapper
-    /// islands. Returns whether `name` was lowered.
+    /// islands. Returns whether `name` was lowered (then the caller continues at the call's
+    /// target), as every arm of [`Self::intrinsic_call`] but `abort` does.
     fn more_intrinsics(&mut self, name: &str, callee: Instance<'tcx>, args: &[ArgSrc<'_, 'tcx>], cont: &CallCont<'tcx>) -> Result<bool, NeedsNative> {
         let ty0 = || callee.args.type_at(0);
         Ok(match name {
