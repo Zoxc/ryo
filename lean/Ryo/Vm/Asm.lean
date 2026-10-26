@@ -570,11 +570,9 @@ where
     | [.ld .., .shift op .., .st w ..] => some (.shiftImm op w)
     | _ => none
 
-/-- `inline::decode`: the instruction an inline sequence encodes, targets byte positions. The
-operands come from the frame displacements in order (`d` last), the `rax` displacement, the
-immediate, and the rip item's `Ref` (`addr.const`'s `Abs`, `addr.sym`'s `Sym`). -/
-def decodeInline (items : List Item) (branch : Option (Cond × Nat)) :
-    Option (Full.Opcode × List (Opnd Nat)) := do
+/-- The search of `decodeInline`: the instruction, and its class. -/
+def decodeInlineSearch (items : List Item) (branch : Option (Cond × Nat)) :
+    Option (Full.Opcode × List (Opnd Nat) × Class) := do
   let key ← classify items branch.isSome
   let frame : List (BitVec 32) :=
     items.filterMap fun it => (it.mem?.filter (·.base == .rbp)).map (·.disp)
@@ -627,8 +625,40 @@ def decodeInline (items : List Item) (branch : Option (Cond × Nat)) :
       | some i => ops := ops.set! i (.neg neg)
       | none => if neg then break
       if let some (v, b) := sequence cls ops.toList then
-        if v == items && b == branch.map (·.1) then return (op, ops.toList)
+        if v == items && b == branch.map (·.1) then return (op, ops.toList, cls)
   none
+
+/-- `inline::decode`: the instruction an inline sequence encodes, targets byte positions. The
+operands come from the frame displacements in order (`d` last), the `rax` displacement, the
+immediate, and the rip item's `Ref` (`addr.const`'s `Abs`, `addr.sym`'s `Sym`).
+
+The search's result is checked again (`(op, cls)` an inline opcode and its class, whose
+sequence for the operands is `items` with the branch's condition): the search can't return
+anything else, but the check makes that a fact `decodeInline_spec` states without reasoning
+about the search's loops. -/
+def decodeInline (items : List Item) (branch : Option (Cond × Nat)) :
+    Option (Full.Opcode × List (Opnd Nat)) := do
+  let (op, ops, cls) ← decodeInlineSearch items branch
+  if inlineOps.contains (op, cls) && sequence cls ops == some (items, branch.map (·.1)) then
+    some (op, ops)
+  else none
+
+theorem decodeInline_spec {items : List Item} {branch : Option (Cond × Nat)} {op : Full.Opcode}
+    {ops : List (Opnd Nat)} (h : decodeInline items branch = some (op, ops)) :
+    ∃ cls, (op, cls) ∈ inlineOps ∧ sequence cls ops = some (items, branch.map (·.1)) := by
+  unfold decodeInline at h
+  cases hs : decodeInlineSearch items branch with
+  | none => simp [hs] at h
+  | some r =>
+    obtain ⟨op', ops', cls⟩ := r
+    simp only [hs, bind, Option.bind_some] at h
+    split at h
+    · rename_i hc
+      simp only [Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      simp only [Bool.and_eq_true, List.contains_iff_mem, beq_iff_eq] at hc
+      exact ⟨cls, hc.1, hc.2⟩
+    · cases h
 
 /-! ### The register cache (`inline::Cache`) -/
 
