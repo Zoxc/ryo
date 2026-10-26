@@ -609,6 +609,7 @@ fn test_targets(rel: &str) -> Option<(Vec<&'static str>, Vec<&'static str>)> {
         "hello.rs" => vec!["cargo-ryo"],
         "vm_backtrace.rs" => vec!["backtrace"],
         "vm_exports.rs" => vec!["exports"],
+        "vm_statics.rs" => vec!["dump"],
         "vm_jit_private.rs" => vec!["jit-private-std"],
         _ => vec![],
     };
@@ -710,7 +711,9 @@ impl Sel {
             || self.backend
             || self.checks.contains(&name)
             || match name {
-                "reject-randomize-layout" | "reject-codegen-units" | "reject-incremental" | "metadata-only" | "exports" | "backtrace" => self.fast,
+                "reject-randomize-layout" | "reject-codegen-units" | "reject-incremental" | "metadata-only" | "dump" | "exports" | "backtrace" => {
+                    self.fast
+                }
                 "rt-core-only" | "jit-sealed" => self.rt,
                 "jit-private-std" => self.jit,
                 _ => false,
@@ -941,7 +944,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
     if !corpus_only {
         let hello = root.join("tests").join("hello.rs");
         type Check<'a> = Box<dyn Fn() -> Result<(), String> + 'a>;
-        let checks: [(&str, Check); 10] = [
+        let checks: [(&str, Check); 11] = [
             ("rt-core-only", Box::new(|| rt_core_only(&root))),
             ("jit-sealed", Box::new(|| jit_sealed(&root, &out))),
             ("jit-private-std", Box::new(|| jit_private_std(&rustc_ryo, &root.join("tests").join("vm_jit_private.rs"), &out))),
@@ -949,6 +952,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
             ("reject-codegen-units", Box::new(|| reject_codegen_units(&rustc_ryo, &hello, &out))),
             ("reject-incremental", Box::new(|| reject_incremental(&rustc_ryo, &hello, &out))),
             ("metadata-only", Box::new(|| metadata_only(&rustc_ryo, &hello, &out))),
+            ("dump", Box::new(|| dump(&rustc_ryo, &root.join("tests").join("vm_statics.rs"), &out))),
             ("exports", Box::new(|| same_exports(&rustc_ryo, &root.join("tests").join("vm_exports.rs"), &out))),
             ("backtrace", Box::new(|| backtrace(&rustc_ryo, &root.join("tests").join("vm_backtrace.rs"), &out))),
             // It runs the program it builds.
@@ -1703,6 +1707,29 @@ fn metadata_only(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String>
     let stderr = String::from_utf8_lossy(&res.stderr);
     if !res.status.success() || stderr.contains(PARTITION_MARKER) {
         return Err(format!("expected a metadata-only build without partitioning; stderr:\n{stderr}"));
+    }
+    Ok(())
+}
+
+/// `RYO_DUMP` of a program whose VM code names statics must build cleanly: printing a path
+/// with trimmed paths outside a diagnostic made rustc panic as the session ended.
+fn dump(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
+    let dump = out.join("dump.txt");
+    let res = cmd(rustc_ryo)
+        .args(["--edition=2024", "-O"])
+        .arg(src)
+        .arg("-o")
+        .arg(out.join(exe_name("dump")))
+        .env("RYO_DUMP", &dump)
+        .output()
+        .map_err(|e| e.to_string())?;
+    let stderr = String::from_utf8_lossy(&res.stderr);
+    if !res.status.success() {
+        return Err(format!("RYO_DUMP build failed; stderr:\n{stderr}"));
+    }
+    let text = fs::read_to_string(&dump).map_err(|e| format!("reading {}: {e}", dump.display()))?;
+    if !text.contains(" = static ") {
+        return Err(format!("{} names no static", dump.display()));
     }
     Ok(())
 }

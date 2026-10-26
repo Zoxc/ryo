@@ -467,7 +467,9 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                 let what = match *r {
                     CodeReloc::Call { callee } => format!("fn{i} = {}", path(callee)),
                     CodeReloc::Symbol { target } => format!("sym{i} = {}", path(target)),
-                    CodeReloc::Static { def_id } => format!("sym{i} = static {}", tcx.def_path_str(def_id)),
+                    CodeReloc::Static { def_id } => {
+                        format!("sym{i} = static {}", rustc_middle::ty::print::with_no_trimmed_paths!(tcx.def_path_str(def_id)))
+                    }
                     CodeReloc::Const { offset, .. } => format!("k{i} = const allocation + {offset}"),
                     CodeReloc::Bytes { ref bytes, align } => format!("k{i} = bytes {bytes:02x?} align {align}"),
                     CodeReloc::Data { offset, .. } => format!("data{i} = allocation + {offset}"),
