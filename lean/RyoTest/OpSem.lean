@@ -191,6 +191,13 @@ def movement : Except String Unit := do
   let raw := stOf [(-16, le 8 0x1000)] mem
   expectUb "load.w8" [S (-8), .mem (-16) 0] raw
   expectInt "load.w8" [S (-8), .mem (-16) 7] { raw with exposed := [0] } (-8) 1 8
+  -- A pointer whose own allocation doesn't contain the range falls back to the exposed one
+  -- that does (extra provenance never adds UB; `State.resolve`), else UB.
+  let two := mem ++ [mkAlloc 0x1008 (bytes [9, 10])]
+  expectUb "load.w8" [S (-8), .mem (-16) 9] (stOf [(-16, prov 0 0x1000)] two)
+  expectInt "load.w8" [S (-8), .mem (-16) 9] (stOf [(-16, prov 0 0x1000)] two (exposed := [1]))
+    (-8) 1 10
+  expectUb "load.w16" [S (-8), .mem (-16) 7] (stOf [(-16, prov 0 0x1000)] two (exposed := [0, 1]))
   -- An uninitialized pointer is UB.
   expectUb "load.w8" [S (-8), .mem (-16) 0] (stOf [] mem)
   -- `store` into an immutable allocation is UB.

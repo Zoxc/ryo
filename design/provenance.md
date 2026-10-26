@@ -73,8 +73,18 @@ the proofs ([verification.md](verification.md)) must justify. The model is R's
   dropped, `Uninit` UB); `ptr.add`/`ptr.index`/`addr*` keep or make provenance; `.ptr`
   atomics keep it, `.wN` drop it.
 - **Exposure is invisible**: `expose_provenance` is a move, so every escaped object counts
-  as exposed and a never-escaped one never is. A pointer without provenance is resolved at
-  **access** time to the live exposed allocation containing the range (`State.resolve`).
+  as exposed and a never-escaped one never is.
+- **Resolution at the access** (`State.resolve`, reduced.md §C0.3 "Resolution time"): an
+  access uses the pointer's own provenance if its live allocation contains the range, else
+  the live exposed allocation containing it, else is UB (non-zero length). The fallback for
+  pointers *with* provenance makes extra provenance never add UB, which is what lets R keep
+  provenance where Rust drops it (`as usize`, transmutes) and the JIT return a pointer where
+  R computed an integer; it picks the allocation whose bytes are at that address, so the
+  hardware agrees. Proved in `Ryo/Proofs/Provenance.lean` (`resolve_mono`, `load_mono`,
+  `store_mono`, `use_mono`, `drop_exposed_mono`), given that live allocations don't
+  overlap (`LiveDisjoint`, kept by `escape`). The price: in R, an out-of-bounds access from
+  an object reaches an *exposed* neighbour (L0 says UB), so independent placement of
+  escaped objects rests on L0's placement being daemonic, not on R's UB.
 - **Image** (`R/Run.lean`, `world`): five allocations, all exposed: the constant pool
   (immutable, `.const`), the data area from the fixups on (mutable), the symbol slots
   (immutable, holding made-up addresses without provenance), the site slots, the code
@@ -82,7 +92,8 @@ the proofs ([verification.md](verification.md)) must justify. The model is R's
   The constant-pool check (verification.md) requires each entry's relocations to be
   exactly its rustc allocation's provenance.
 - **Consequences** (§C0.3): frame privacy (no provenance for non-escaped bytes exists),
-  independent placement (a pointer of one object can't reach another; `φ` is a parameter),
+  independent placement of private objects (a pointer of one object can't reach a private
+  one; `φ` is a parameter),
   dangling after `End`. The relocation lemma (§C0.7) moves unreferenced objects at OSR.
 - **Proofs against x86** (`Ryo/Proofs/Inline/`): `Rel` relates frame bytes with provenance
   erased (`Rel.lean`); `MemRel` each live allocation byte to x86 memory, `FrameApart` no
@@ -91,7 +102,9 @@ the proofs ([verification.md](verification.md)) must justify. The model is R's
   (`Scope.lean`).
 - **L0 ↔ R** ([lean/docs/aot.md](../lean/docs/aot.md) §C1): provenance related by a renaming
   `ι` of allocation ids (escaped local ↔ its frame allocation, constant ↔ pool copy,
-  zero-sized local ↔ no provenance); escape coverage is checked per function
+  zero-sized local ↔ no provenance), and pointers by `ProvLe`: an L0 pointer with an
+  exposed provenance (an int→ptr cast's choice) relates to R's at the same address whatever
+  R's provenance (reduced.md §C0.7); escape coverage is checked per function
   (`Check/Lower/CertCheck.lean`, `checkAddrs`).
 
 ## JIT SSA tier (`vm/bytecode/src/jit/`, [jit.md](jit.md#the-ssa-tier))
@@ -139,17 +152,19 @@ R's memory under the JIT's layout: `AllocaAddr` carries its alloca's provenance.
    `AllocaAddr` of them reaches a store, call, handler or island. This rests on the
    image's scopes (checked by C1'; conditional otherwise, lean/docs/jit.md §E.7).
 2. **A pointer derived from one object never reaches another.** Allocas may be placed
-   independently; an access outside the object it was derived from is UB. Passes may rely
+   independently; an access outside the object it was derived from is UB in L0 (in R only
+   if no exposed allocation lies there: the placement is L0's daemonic choice). Passes may rely
    on it for allocas only; they don't rely on it between memory pointers (any two may
    alias).
 3. **Integer-typed slots and values may carry provenance.** Slots and IR values are
    untyped; a `mov`/`copy`/load/store or a ptr↔int transmute keeps it. Only an integer
    instruction (or a `.wN` atomic) drops it. So no pass may assume a value is
    provenance-free from its MIR type, and a value that is moved, loaded or stored must be
-   moved, loaded or stored as bytes.
+   moved, loaded or stored as bytes. A pass may *add* provenance (return a pointer where R
+   computes the same integer, as LVN's identities do): proved never to add UB.
 4. **Folding to a constant drops provenance.** A pointer-producing instruction may become
    an integer constant only if every access through the result lands in an exposed
-   allocation: image parts (all exposed in R) and escaped objects are; never fold
+   allocation (`drop_exposed_mono`): image parts (all exposed in R) and escaped objects are; never fold
    `AllocaAddr` (the JIT moves allocas, and OSR entries differ) and never give a frame
    address an integer form.
 5. **Loads from memory folded to constants.** Allowed only from an immutable allocation
@@ -177,15 +192,12 @@ R's memory under the JIT's layout: `AllocaAddr` carries its alloca's provenance.
   or the other alloca does, `&l.zst == (&l as *const u8).add(size_of_val(&l))` can fail and
   stepping back reads the wrong bytes. Unverified by a test. Related: C1' must still
   exclude an end where another escaped object starts (§C0.7).
-- **Access-time resolution vs `≤def`.** R resolves a provenance-less pointer when it is
-  used (`State.resolve`); MiniRust picks at the int→ptr cast; `Refine.lean` puts no
-  provenance below any. Under access-time resolution, adding provenance can add UB (an
-  access past A into an exposed B). The VM adds it where Rust drops it: `as usize` /
-  transmute keep the pointer's provenance in the slot, so `with_exposed_provenance` of an
-  unmodified exposed address keeps A in R while L0 may pick B; and LVN's identities
-  (`x + 0 → x`, `x & -1 → x`, `Ext` to the same width) return a pointer where R's result
-  was an integer. Neither is observable on x86; the L0 ↔ R and R ↔ R-SSA relations as
-  stated don't cover them.
+- **Resolution time** (was: access-time resolution vs `≤def`): settled by resolving with a
+  fallback (above), proved at the level of accesses and bytes. Left for the relations when
+  they are formalized (M5, M7): the step-level statement (an R step from states that differ
+  by `≤def` bytes and `ProvLe` pointers is matched), and the invariant that `ι` maps L0's
+  exposed allocations into R's and that `LiveDisjoint` holds of every world (image parts,
+  environment answers).
 - **Coarse image allocations.** R has one allocation for the whole constant pool and one
   for the data area, where L0 has one per global, so `ι` is many-to-one and R is more
   defined across entries. Symbol slots hold made-up addresses without provenance, so a

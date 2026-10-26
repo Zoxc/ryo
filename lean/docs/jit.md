@@ -85,7 +85,14 @@ abstract bytes; arithmetic drops provenance, `ptr.add`/`ptr.index` keep it; esca
 count as exposed. Because R already carries provenance, the R ↔ R-SSA relation is:
 
 - under the JIT's layout `φ_JIT`, identity on addresses and on provenance (each alloca is the
-  R allocation of its frame object);
+  R allocation of its frame object), with R-SSA's values allowed *more* provenance than R's
+  (`bytesLeDefined`): LVN's identities on any value (`x + 0`, `x & -1`, `x | 0`, a
+  same-width `Ext`) return a pointer operand where R computes an integer. That never adds UB,
+  because an access resolves to the pointer's own allocation only if it contains the range
+  and else to the exposed one that does ([reduced.md](reduced.md) §C0.3, "Resolution time";
+  `Ryo/Proofs/Provenance.lean`: `use_mono`, `intBytes_le`, `lvn_*`). The converse, an R-SSA
+  value with *less* provenance (folding a pointer to an integer constant: `rebase`, a
+  folded load), is sound when the provenance it drops is exposed (`drop_exposed_mono`);
 - for promoted allocas, CompCertSSA's dominance equation: at each point, the R object's
   private bytes equal the value of the variable's current SSA name;
 - at OSR entries, the relocation lemma for the moved (non-pinned) allocas, from `R(φ_AOT)` to

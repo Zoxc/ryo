@@ -90,12 +90,41 @@ operands, so they are layout-relative already.
   - integer operations decode their operands as integers, dropping provenance as MiniRust's
     integer decode does; `ptr.add` and `ptr.index` keep it;
   - **exposure is invisible in R** (`expose_provenance` lowers to a move), so every escaped
-    object counts as exposed, and an access through a pointer without provenance resolves
-    angelically among exposed allocations (`IntPtrCast`). A never-escaped object is never
-    exposed.
+    object counts as exposed, and so do the image's parts (`Image.world`). A never-escaped object is never exposed.
 - **Accesses through pointers** (a `[p+k]` operand, a handler's or island's deref, a
-  callee) are L0 memory accesses: they need the provenance of a live allocation and must stay
-  in it.
+  callee) are L0 memory accesses, with the provenance **resolved at the access**
+  (`State.resolve`): the pointer's own, if its allocation is live and contains the range;
+  else the exposed live allocation containing the range (`IntPtrCast`'s angelic choice; live
+  allocations don't overlap, so there is at most one); else the access is UB (unless it is
+  zero-sized). A pointer without provenance takes the second rule only.
+
+**Resolution time** (why the fallback for pointers *with* provenance). MiniRust and L0 resolve
+a provenance-less pointer at the int→ptr cast (`with_exposed_provenance` picks an exposed
+allocation, angelically) and drop provenance at ptr→int casts and transmutes. R can't do
+either: exposure and transmutes are moves, so R keeps the pointer's provenance where L0 has
+an integer, and the JIT's LVN identities (`x + 0 → x`, `x & -1 → x`, `x | 0 → x`, a
+same-width extension) return the pointer where R's result was an integer. With strict
+resolution (the pointer's own provenance or UB) that extra provenance could *add* UB: L0
+casts the address back, picks the exposed `B` the address lies in, and accesses it, where R
+still holds `A`'s provenance and would be out of bounds. With the fallback, provenance only
+ever adds definedness, which `Ryo/Proofs/Provenance.lean` proves (given `LiveDisjoint`,
+live allocations not overlapping, which `escape` keeps: `escape_liveDisjoint`):
+
+- `resolve_mono`, `load_mono`, `store_mono`, `checkDeref_mono`: an access through `p` gives
+  what one through `q` does whenever `q` is `p`'s address with no provenance, `p`'s, or any
+  exposed one (`ProvLe`), and `q`'s access is defined. The third case is L0's cast-time
+  choice (`provLe_exposed`).
+- `decodeBits_mono`, `decodePtr_mono`: bytes with more provenance (`bytesLeDefined`) are the
+  same integer and a pointer with at least the provenance; `intBytes_le` and `lvn_add_zero`,
+  `lvn_and_ones`, `lvn_or_zero`, `lvn_ext_same`: an LVN identity's integer result is `≤def`
+  its operand's bytes; `use_mono` puts them together for a pointer read back and used.
+
+Switching to cast-time resolution was the alternative: R would need a cast instruction it
+doesn't have (exposure is a move) and every R proof would track which bytes came from a
+cast. The fallback changes one definition, keeps every existing proof (they use only that
+`resolve` keeps the address, `resolve_addr`) and matches the hardware: the allocation it
+picks is the one whose bytes are at that address, so the R ↔ L2 relation is unchanged. What
+it costs is the in-bounds property below for *exposed* objects.
 
 What used to be separate rules of R are now consequences of the memory model:
 
@@ -105,11 +134,16 @@ What used to be separate rules of R are now consequences of the memory model:
   `addr` keep it: a zero-sized object has no bytes, and its pointer has no provenance, so
   any non-zero access through it needs an exposed allocation, which private bytes never
   are; an end pointer has the escaped object's provenance and reaches only its bytes.
-- **In bounds**: a pointer derived from object `A` cannot access object `B`, so objects can
-  be placed independently (the layout parameter). An end pointer of `A` at the start of `B`
-  still accesses only `A`.
-- **Storage ends**: after an `End`, pointers to the object dangle (LLVM's `lifetime.end`),
-  and its bytes are `Uninit`: a store before the `End` that nothing reads first is dead, which
+- **In bounds**: a pointer derived from object `A` cannot access a *private* object `B`, so
+  non-escaped objects can be placed independently (the layout parameter). An access through
+  it outside `A` reaches an exposed `B` that lies there (escaped objects, image parts, the
+  environment's allocations): defined in R, UB in L0 (whose pointer keeps `A`'s provenance),
+  so independent placement of escaped objects rests on L0's daemonic placement (`φ` is one
+  of L0's choices), not on R's UB. An end pointer of `A` at the start of `B` resolves to `A`
+  for zero-sized accesses and to `B` (if exposed) otherwise.
+- **Storage ends**: after an `End`, pointers to the object dangle (LLVM's `lifetime.end`;
+  in R an access through one reaches only an exposed allocation now at that address, never
+  the dead object's bytes), and its bytes are `Uninit`: a store before the `End` that nothing reads first is dead, which
   the dead-store check uses ([aot.md](aot.md) §C2).
 
 The escape ghost state of the earlier design is the set of live frame allocations. Dropped
@@ -250,7 +284,12 @@ instruction), and `unpack` rejects mutated arguments. Not checked by `view`, as 
   allocation, globals to their image copies, environment allocations to themselves. A
   non-escaped local's L0 allocation is unreferenced (no provenance for it exists in the L0
   state) and corresponds to private bytes. Bytes are related by MiniRust's "more defined"
-  order (`Ryo/Spec/Mem/Refine.lean`) through the renaming, extended by one case: a
+  order (`Ryo/Spec/Mem/Refine.lean`) through the renaming, extended by two cases. Pointers
+  relate by `ProvLe` (`Ryo/Proofs/Provenance.lean`): an L0 pointer with an exposed
+  provenance (an int→ptr cast's choice) relates to R's pointer at that address whatever its
+  provenance, which covers R keeping the provenance L0's `as usize`/transmute dropped; the
+  relation needs `ι` to map L0's exposed allocations into R's (every escaped local and every
+  global is exposed in R). And a
   zero-sized local's L0 allocation is renamed to *no* provenance, so an L0 pointer into it
   relates to R's provenance-less pointer at the same address. Nothing L0 does with that
   provenance can tell: a non-zero access through it is out of bounds (UB), a zero-sized one
@@ -263,7 +302,8 @@ instruction), and `unpack` rejects mutated arguments. Not checked by `view`, as 
   at their `φ` addresses, `Uninit` refined by any byte. R's provenance checks only add UB
   on the R side, which a refinement may ignore.
 - **R ↔ R-SSA** ([jit.md](jit.md) §E.3): under `φ_JIT`, allocas are R's frame objects with
-  the same provenance and addresses; promoted objects are SSA values (CompCertSSA's
+  the same provenance and addresses; values relate by `bytesLeDefined` (R-SSA may hold more
+  provenance: an LVN identity returns its pointer operand, `Ryo/Proofs/Provenance.lean`); promoted objects are SSA values (CompCertSSA's
   dominance equation). Entering JIT code by OSR changes the layout mid-execution, which the
   **relocation lemma** justifies: two states that differ only in the addresses of objects
   that nothing refers to (no provenance fragment for them anywhere, never exposed) are
@@ -327,9 +367,10 @@ footprint (op : Full.Opcode) : Option Footprint
   with their addresses (`zeroSized`, the layout restricted to them). A frame access to an
   escaped object's byte is its allocation's byte, so there is one copy of each byte; `addr`
   of an escaped object (or at its end) is a pointer with its provenance, of a zero-sized
-  object a pointer without provenance, of any other offset UB (§C0.3). A pointer
-  without provenance accesses the exposed allocation containing the range (`IntPtrCast`'s
-  angelic choice). Addresses of frame bytes appear only through allocations, so `opSem` is
+  object a pointer without provenance, of any other offset UB (§C0.3). An access uses the
+  pointer's provenance if its live allocation contains the range, else the exposed
+  allocation containing it (`IntPtrCast`'s angelic choice, made at the access: §C0.3,
+  "Resolution time"). Addresses of frame bytes appear only through allocations, so `opSem` is
   layout-independent.
 - **Results**: the control effect (`next`, `branch b` before the polarity, `index i` with the
   table's length for the default) and the next state, or a `Stop`: `ub`, `abort`,

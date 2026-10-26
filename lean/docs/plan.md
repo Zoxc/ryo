@@ -277,6 +277,10 @@ its log and IR are designed with the validators in mind.
   privacy is a consequence of its allocations, which the scopes delimit (§C0).
 - Validate the image object plus a linked-equals-object check (§C4); check every AOT FDE
   (§C4, cheap, rather than proving the generator).
+- R resolves provenance at the access, with a fallback: the pointer's own allocation if it
+  contains the range, else the exposed one that does (reduced.md §C0.3, "Resolution time"),
+  so extra provenance (kept where Rust drops it, or added by the JIT's identities) never adds
+  UB (`Ryo/Proofs/Provenance.lean`). Cast-time resolution would need a cast R doesn't have.
 - Handler contracts have exact frame footprints, and their pointer accesses are memory
   accesses with provenance (§C0.5).
 - `view` need not be total: C1' rejects functions whose handler args don't unpack (§C1,

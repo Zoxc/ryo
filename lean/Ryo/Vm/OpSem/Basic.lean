@@ -17,7 +17,8 @@ its bytes at every point; private bytes are reachable only through frame operand
 `addr` (`State.addrOf`) gives a pointer into an escaped object (with its provenance), one at an
 escaped object's end (one past its last byte, with its provenance), or, for a zero-sized frame
 object, a pointer without provenance at its address, which only zero-sized accesses may use
-(a non-zero access resolves among the exposed allocations, `State.resolve`). Zero-sized
+(a non-zero access resolves among the exposed allocations, `State.resolve`, which also
+serves a pointer whose own allocation doesn't contain the range). Zero-sized
 objects never escape (the encoder drops size-0 escapes), so their addresses are part of the
 state (`zeroSized`): the layout restricted to them, the one place `opSem` sees a frame address
 that isn't an allocation's.
@@ -224,19 +225,34 @@ def addrOf (st : State) (s : Int) : M ThinPointer :=
 
 /-! ### Memory through pointers -/
 
-/-- A pointer's provenance for an access of `len` bytes: its own, or (without one) the
-exposed live allocation containing the range (`IntPtrCast`'s angelic choice; allocations
-of non-zero size don't overlap, so there is at most one). -/
+/-- Does live allocation `id` contain `[addr, addr + len)`? -/
+def fits (st : State) (addr len : Nat) (id : AllocId) : Bool :=
+  match st.mem.get? id with
+  | some a => a.live && a.addr ≤ addr && addr + len ≤ a.addr + a.size
+  | none => false
+
+/-- `p` with the provenance of the exposed live allocation containing `[p.addr, p.addr + len)`,
+or `p` unchanged if there is none. -/
+def resolveExposed (st : State) (p : ThinPointer) (len : Nat) : ThinPointer :=
+  match st.exposed.find? (st.fits p.addr len) with
+  | some id => { p with prov := some id }
+  | none => p
+
+/-- A pointer's provenance for an access of `len` bytes: its own if that live allocation
+contains the range, else the exposed live allocation containing it (`IntPtrCast`'s angelic
+choice, made at the access; allocations of non-zero size don't overlap, so there is at most
+one), else its own (and the access is UB unless `len = 0`).
+
+The fallback for a pointer *with* provenance makes provenance only ever add definedness: R
+keeps provenance where Rust drops it (`expose_provenance` and ptr↔int transmutes are moves,
+the JIT's identities `x + 0 → x` return the pointer), and L0 resolves a provenance-less
+pointer at the int→ptr cast. With the fallback, a pointer is at least as defined as the same
+address without provenance, or with any exposed one (`Ryo.Proofs.Provenance`,
+reduced.md §C0.3). -/
 def resolve (st : State) (p : ThinPointer) (len : Nat) : ThinPointer :=
   match p.prov with
-  | some _ => p
-  | none =>
-    let fits (id : AllocId) : Bool := match st.mem.get? id with
-      | some a => a.live && a.addr ≤ p.addr && p.addr + len ≤ a.addr + a.size
-      | none => false
-    match st.exposed.find? fits with
-    | some id => { p with prov := some id }
-    | none => p
+  | some id => if st.fits p.addr len id then p else st.resolveExposed p len
+  | none => st.resolveExposed p len
 
 def load (st : State) (p : ThinPointer) (len : Nat) (align : Align := Align.one) :
     M (List AbstractByte) :=

@@ -70,11 +70,15 @@ theorem liftOutcome_ok {α : Type} {x : Except Outcome α} {a : α} :
 
 theorem resolve_addr (st : OpSem.State) (p : ThinPointer) (len : Nat) :
     (st.resolve p len).addr = p.addr := by
+  have he : (st.resolveExposed p len).addr = p.addr := by
+    unfold OpSem.State.resolveExposed
+    split <;> rfl
   unfold OpSem.State.resolve
   split
-  · rfl
-  · simp only
-    split <;> rfl
+  · split
+    · rfl
+    · exact he
+  · exact he
 
 theorem checkPtr_ok {m : Memory} {p : ThinPointer} {len : Nat} {r : Option (AllocId × Nat)}
     (hn : len ≠ 0) (h : m.checkPtr p len = .ok r) :
