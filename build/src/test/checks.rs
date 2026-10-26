@@ -59,7 +59,7 @@ pub(super) fn cargo_smoke(root: &Path, out: &Path) -> Result<(), String> {
 
 /// `RUST_BACKTRACE=1` through VM frames: a panic two VM calls deep, caught by
 /// `catch_unwind`, prints a backtrace naming the VM functions (by their symbols) and the
-/// native frames around them, and the cleanup and the catch still run.
+/// native frames around them, and the cleanup and the catch still run. PE differs (see below).
 pub(super) fn backtrace(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     let exe = out.join(exe_name("vm_backtrace"));
     crate::utils::run(cmd(rustc_ryo).arg("--edition=2024").arg(src).arg("-o").arg(&exe))?;
@@ -68,9 +68,19 @@ pub(super) fn backtrace(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), 
     let res = Command::new(&exe).env("RUST_BACKTRACE", "1").env("RYO_JIT", "off").output().map_err(|e| e.to_string())?;
     let stdout = String::from_utf8_lossy(&res.stdout);
     let stderr = String::from_utf8_lossy(&res.stderr);
-    let want = ["vm_backtrace::inner", "vm_backtrace::outer", "__rust_try", "vm_backtrace::main"];
+    // On PE the walk goes through the VM frames, but without their landing pads (no "guard
+    // dropped"), and the frames of functions with internal linkage, VM or native (`inner`,
+    // `outer`, `__rust_try`), are named after the nearest external symbol before them: the
+    // PDB lists only external symbols, and neither VM code nor a build without `-g` has
+    // CodeView records (design/platforms.md). Reaching `lang_start_internal` shows that the
+    // walk got through.
+    let (want, want_stdout): (&[&str], &str) = if MSVC {
+        (&["deep 7", "vm_backtrace::main", "std::rt::lang_start_internal"], "caught: true\n")
+    } else {
+        (&["vm_backtrace::inner", "vm_backtrace::outer", "__rust_try", "vm_backtrace::main"], "guard dropped\ncaught: true\n")
+    };
     let missing: Vec<_> = want.iter().filter(|w| !stderr.contains(*w)).collect();
-    if !res.status.success() || stdout != "guard dropped\ncaught: true\n" || !missing.is_empty() {
+    if !res.status.success() || stdout != want_stdout || !missing.is_empty() {
         return Err(format!("{}, missing frames {missing:?}\nstdout:\n{stdout}stderr:\n{stderr}", res.status));
     }
     Ok(())
