@@ -733,10 +733,16 @@ fn changed_paths(root: &Path) -> Result<Vec<String>, String> {
     Ok(paths)
 }
 
-/// Whether the ryo sysroot can be tested against: `Err` with the reason if not.
+/// Whether the ryo sysroot can be tested against, i.e. is there and built from the current
+/// inputs: `Err` with the reason if not.
 fn ryo_sysroot_usable(root: &Path) -> Result<(), String> {
-    let dir = root.join("dist").join(crate::sysroot::SYSROOT_DIR);
-    if dir.is_dir() { Ok(()) } else { Err(format!("no ryo sysroot at {} (`./y.sh build --sysroot ryo`)", dir.display())) }
+    use crate::sysroot::{SYSROOT_DIR, SysrootStatus, ryo_sysroot_status};
+    let dist = root.join("dist");
+    match ryo_sysroot_status(&crate::utils::RustcInfo::get()?, &dist) {
+        SysrootStatus::Current => Ok(()),
+        SysrootStatus::Missing => Err(format!("no ryo sysroot at {} (`./y.sh build --sysroot ryo`)", dist.join(SYSROOT_DIR).display())),
+        SysrootStatus::Stale(why) => Err(format!("the ryo sysroot is stale: {why} (`./y.sh build --sysroot ryo`)")),
+    }
 }
 
 /// The selection for `opts`, with the extras of the changed paths printed with their reasons.
