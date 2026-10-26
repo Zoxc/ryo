@@ -9,7 +9,8 @@ and `Rel st x` (`Ryo/Proofs/Inline/Rel.lean`: the frame bytes, `fp` in `rbp`, pr
 erased, `Uninit` refined by any byte), then running `items` from `x` succeeds with an `x'`
 such that (`Post`):
 
-- `Rel st' x'`, and `st'` differs from `st` at most in its private frame bytes;
+- `Rel st' x'`, and `st'` differs from `st` at most in its frame bytes, private or in escaped
+  objects (`SameButWrites`: memory changes only in the escaped objects' allocations, `EscOnly`);
 - only `rax`, `rcx` and the flags changed among the registers, the `xmm`s didn't, and `rip`
   moved past the items;
 - x86 memory changed only at the addresses of the footprint's write ranges;
@@ -18,9 +19,11 @@ such that (`Post`):
   taken when `b != neg`, `Then.succ`).
 
 Where `opSem` fails (UB: an `Uninit` integer read, `addr` of a non-escaped object, …) nothing
-is required. The written ranges must be private bytes (`Private`): a store into an escaped
-object writes its allocation in `opSem` (`writeEscaped`), which these theorems don't cover
-yet. Reads may be of private or escaped bytes (`Rel` covers both).
+is required. Reads and writes may be of private or escaped bytes: a write into an escaped object
+writes its allocation in `opSem` (`writeEscaped`), and `rel_writeFrame` (`Inline/Rel.lean`)
+keeps `Rel` for both (under `Rel`, escaped objects sit at their frame addresses, so two frame
+offsets never write the same allocation byte, `esc_inj`). Only `load` still assumes its
+destination private (`Private`), for `MemRel` (see `Inline/Mem.lean`).
 
 Classes: `mov`, `mov128`, `imm`, `addr`, `ptrAdd`, `ptrIndex`, `bin`, `binImm`, `mul`, `mulImm`,
 `shiftImm`, `cmp`, `cmpImm`, `br`, `brCmp`, `brCmpImm`, `ext` (`inline_sound`), and the rip-relative

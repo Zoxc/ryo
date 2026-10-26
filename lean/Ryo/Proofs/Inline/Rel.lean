@@ -11,9 +11,12 @@ Ryo.Proofs.Inline.Rel — the R ↔ L2 relation on a frame (reduced.md §C0.7: p
   `rbp + o`; and each escaped object's allocation is at `rbp + off` (`φ_AOT`, §C0.2).
 - `readFrame_rel`, `asNat_rel`: a frame read of `n` bytes at `o` relates to the `n` x86 bytes
   at `rbp + o`, and decodes to their little-endian value.
-- `rel_writeFrame`: a write of private bytes at `d`, against x86 memory that changes exactly
-  at those addresses, to bytes they relate to, keeps `Rel`, and keeps `opSem`'s memory,
-  escapes, exposure and exception.
+- `rel_writeFrame`: a write of frame bytes at `d` (private, or in escaped objects:
+  `writeEscaped`), against x86 memory that changes exactly at those addresses, to bytes they
+  relate to, keeps `Rel`, keeps `opSem`'s escapes, exposure and exception, and changes its
+  memory only in the escaped objects' allocations (`EscOnly`). Escaped objects of one
+  allocation can't alias each other's bytes under `Rel`: they are at their frame addresses
+  (`esc_inj`).
 -/
 import Ryo.Vm.OpSem
 import Ryo.X86.Exec
@@ -302,6 +305,15 @@ theorem writeEscaped_private {st : OpSem.State} {off : Int} {bs : List AbstractB
     simpa using h
   exact hp i this
 
+/-- A private write keeps `opSem`'s memory. -/
+theorem writeFrame_mem_private {st st' : OpSem.State} {d : Int} {bs : List AbstractByte}
+    (hw : st.writeFrame d bs = .ok st') (hp : ∀ i < bs.length, st.escapedAt (d + i) = none) :
+    st'.mem = st.mem := by
+  unfold OpSem.State.writeFrame at hw
+  rw [writeEscaped_private hp] at hw
+  simp only [bind, Except.bind, pure, Except.pure, Except.ok.injEq] at hw
+  subst hw; rfl
+
 theorem byteAt_with (st : OpSem.State) (f : Int → AbstractByte) (o : Int) :
     ({ st with mem := st.mem, frame := f } : OpSem.State).byteAt o =
       match st.escapedAt o with
@@ -313,50 +325,282 @@ theorem byteAt_with (st : OpSem.State) (f : Int → AbstractByte) (o : Int) :
   rw [he]
   cases st.escapedAt o <;> rfl
 
-/-- The relation after a private frame write at `d`, against an x86 state whose memory
-changed exactly at `rbp + d + i` (`i < bs.length`), to bytes the written ones relate to. -/
+/-- The step of `writeEscaped`'s fold. -/
+def escStep (st : OpSem.State) (off : Int) (mem : Memory) (p : AbstractByte × Nat) : OpSem.M Memory :=
+  match st.escapedAt (off + p.2) with
+  | none => pure mem
+  | some e =>
+    match mem.get? e.id with
+    | none => illFormed s!"escaped frame object at {e.off} has no allocation"
+    | some a =>
+      let a' := { a with data := a.data.set! (off + p.2 - e.off).toNat p.1 }
+      pure { allocs := mem.allocs.set! e.id a' }
+
+/-- The write `p` (byte `p.1` at frame offset `off + p.2`) lands at byte `j` of allocation
+`id`: its offset is in an escaped object of that allocation, at index `j`. -/
+def Hits (st : OpSem.State) (off : Int) (p : AbstractByte × Nat) (id : AllocId) (j : Nat) : Prop :=
+  ∃ e, st.escapedAt (off + p.2) = some e ∧ e.id = id ∧ (off + p.2 - e.off).toNat = j
+
+/-- How memory `m'` comes from `m` by the escaped-object writes `l` (`writeEscaped`): the same
+allocations, which differ at most in their data, at the bytes the writes hit, each of which
+holds a byte one of them wrote. -/
+def EscFrom (st : OpSem.State) (off : Int) (l : List (AbstractByte × Nat)) (m m' : Memory) : Prop :=
+  m'.allocs.size = m.allocs.size ∧
+  ∀ id a', m'.get? id = some a' → ∃ a, m.get? id = some a ∧ a' = { a with data := a'.data } ∧
+    a'.data.size = a.data.size ∧ ∀ j,
+      ((∀ p ∈ l, ¬ Hits st off p id j) → a'.data[j]? = a.data[j]?) ∧
+      ((∃ p ∈ l, Hits st off p id j) → j < a.data.size →
+        ∃ q ∈ l, Hits st off q id j ∧ a'.data[j]? = some q.1)
+
+theorem EscFrom.refl (st : OpSem.State) (off : Int) (m : Memory) : EscFrom st off [] m m :=
+  ⟨rfl, fun id a' h => ⟨a', h, rfl, rfl, fun _ => ⟨fun _ => rfl, fun ⟨_, hp, _⟩ => by simp at hp⟩⟩⟩
+
+theorem escStep_spec {st : OpSem.State} {off : Int} {m m' : Memory} {p : AbstractByte × Nat}
+    (h : escStep st off m p = .ok m') : EscFrom st off [p] m m' := by
+  unfold escStep at h
+  split at h
+  · rename_i hn
+    cases h
+    refine ⟨rfl, fun id a' h => ⟨a', h, rfl, rfl, fun j => ⟨fun _ => rfl, ?_⟩⟩⟩
+    rintro ⟨q, hq, e, he, -⟩
+    simp only [List.mem_singleton] at hq
+    subst hq
+    rw [hn] at he; cases he
+  · rename_i e he
+    split at h
+    · cases h
+    · rename_i a ha
+      cases h
+      refine ⟨by simp, fun id a' h' => ?_⟩
+      simp only [Memory.get?, Array.set!_eq_setIfInBounds, Array.getElem?_setIfInBounds] at h' ha
+      by_cases hid : e.id = id
+      · subst hid
+        have hlt : e.id < m.allocs.size := by
+          rcases Array.getElem?_eq_some_iff.1 ha with ⟨h1, _⟩; exact h1
+        simp only [hlt, ↓reduceIte, Option.some.injEq] at h'
+        subst h'
+        refine ⟨a, ha, rfl, by simp, fun j => ⟨fun hn => ?_, fun hh hj => ?_⟩⟩
+        · simp only [Array.set!_eq_setIfInBounds, Array.getElem?_setIfInBounds]
+          split
+          · rename_i hj; exact absurd ⟨e, he, rfl, hj⟩ (hn p (List.mem_singleton_self _))
+          · rfl
+        · obtain ⟨q, hq, e', he', -, hj'⟩ := hh
+          simp only [List.mem_singleton] at hq
+          subst hq
+          rw [he] at he'; cases he'
+          refine ⟨q, List.mem_singleton_self _, ⟨e, he, rfl, hj'⟩, ?_⟩
+          simp [Array.set!_eq_setIfInBounds, Array.getElem?_setIfInBounds, hj', hj]
+      · simp only [hid, ↓reduceIte] at h'
+        exact ⟨a', h', rfl, rfl, fun _ => ⟨fun _ => rfl, fun ⟨q, hq, e', he', hid', _⟩ => by
+          simp only [List.mem_singleton] at hq; subst hq; rw [he] at he'; cases he'
+          exact absurd hid' hid⟩⟩
+
+theorem EscFrom.trans {st : OpSem.State} {off : Int} {l1 l2 : List (AbstractByte × Nat)}
+    {m1 m2 m3 : Memory} (h1 : EscFrom st off l1 m1 m2) (h2 : EscFrom st off l2 m2 m3) :
+    EscFrom st off (l1 ++ l2) m1 m3 := by
+  refine ⟨h2.1.trans h1.1, fun id a3 h => ?_⟩
+  obtain ⟨a2, ha2, he2, hs2, hj2⟩ := h2.2 id a3 h
+  obtain ⟨a1, ha1, he1, hs1, hj1⟩ := h1.2 id a2 ha2
+  refine ⟨a1, ha1, by rw [he2, he1], hs2.trans hs1, fun j => ⟨fun hn => ?_, fun hh hj => ?_⟩⟩
+  · rw [(hj2 j).1 (fun p hp => hn p (List.mem_append_right _ hp)),
+      (hj1 j).1 (fun p hp => hn p (List.mem_append_left _ hp))]
+  · by_cases h2h : ∃ p ∈ l2, Hits st off p id j
+    · obtain ⟨q, hq, hh', hv⟩ := (hj2 j).2 h2h (by omega)
+      exact ⟨q, List.mem_append_right _ hq, hh', hv⟩
+    · have heq := (hj2 j).1 (fun p hp hh' => h2h ⟨p, hp, hh'⟩)
+      obtain ⟨p, hp, hph⟩ := hh
+      rcases List.mem_append.1 hp with hp | hp
+      · obtain ⟨q, hq, hh', hv⟩ := (hj1 j).2 ⟨p, hp, hph⟩ hj
+        exact ⟨q, List.mem_append_left _ hq, hh', heq.trans hv⟩
+      · exact absurd ⟨p, hp, hph⟩ h2h
+
+theorem foldlM_escStep {st : OpSem.State} {off : Int} :
+    ∀ (l : List (AbstractByte × Nat)) (m m' : Memory),
+      l.foldlM (escStep st off) m = .ok m' → EscFrom st off l m m' := by
+  intro l
+  induction l with
+  | nil => intro m m' h; cases h; exact EscFrom.refl ..
+  | cons p l ih =>
+    intro m m' h
+    simp only [List.foldlM_cons, bind, Except.bind] at h
+    cases h1 : escStep st off m p with
+    | error e => simp [h1] at h
+    | ok m1 =>
+      simp only [h1] at h
+      exact (escStep_spec h1).trans (ih m1 m' h)
+
+theorem writeEscaped_spec {st : OpSem.State} {off : Int} {bs : List AbstractByte} {m' : Memory}
+    (h : st.writeEscaped off bs = .ok m') : EscFrom st off bs.zipIdx st.mem m' :=
+  foldlM_escStep _ _ _ h
+
+theorem escapedAt_some {st : OpSem.State} {o : Int} {e : EscapedObj}
+    (h : st.escapedAt o = some e) : e ∈ st.escaped ∧ e.off ≤ o ∧ o < e.off + e.size := by
+  unfold OpSem.State.escapedAt at h
+  have h1 := List.mem_of_find?_eq_some h
+  have h2 := List.find?_some h
+  simp only [decide_eq_true_eq] at h2
+  exact ⟨h1, h2⟩
+
+theorem mem_zipIdx {bs : List AbstractByte} {q : AbstractByte × Nat} (h : q ∈ bs.zipIdx) :
+    ∃ hk : q.2 < bs.length, q.1 = bs[q.2] := by
+  obtain ⟨b, k⟩ := q
+  rw [List.mem_zipIdx_iff_getElem?] at h
+  obtain ⟨hk, hb⟩ := List.getElem?_eq_some_iff.1 h
+  exact ⟨hk, hb.symm⟩
+
+/-- Under `Rel`, two in-range frame offsets in escaped objects of the same allocation, at the
+same index, are the same offset: escaped objects are at their frame addresses. -/
+theorem esc_inj {st : OpSem.State} {x : X86.State} (hr : Rel st x) {o o' : Int}
+    {e e' : EscapedObj} (ho : -2 ^ 63 ≤ o ∧ o < 2 ^ 63) (ho' : -2 ^ 63 ≤ o' ∧ o' < 2 ^ 63)
+    (he : st.escapedAt o = some e) (he' : st.escapedAt o' = some e') (hid : e'.id = e.id)
+    {a : Allocation} (ha : st.mem.get? e.id = some a)
+    (hj : (o' - e'.off).toNat = (o - e.off).toNat) : o' = o := by
+  obtain ⟨hm, h1, h2⟩ := escapedAt_some he
+  obtain ⟨hm', h1', h2'⟩ := escapedAt_some he'
+  have l1 := hr.layout e hm a ha
+  have l2 := hr.layout e' hm' a (by rw [hid]; exact ha)
+  have : BitVec.ofInt 64 e.off = BitVec.ofInt 64 e'.off := by
+    have := l1.symm.trans l2
+    simpa [fpAddr] using this
+  have := congrArg BitVec.toNat this
+  simp only [BitVec.toNat_ofInt] at this
+  omega
+
+/-- Memory `m'` differs from `m` at most in the data of the allocations of `st`'s escaped
+objects (a frame write: `writeFrame`). -/
+def EscOnly (st : OpSem.State) (m m' : Memory) : Prop :=
+  m'.allocs.size = m.allocs.size ∧
+  ∀ id a', m'.get? id = some a' → ∃ a, m.get? id = some a ∧ a' = { a with data := a'.data } ∧
+    a'.data.size = a.data.size ∧ ((∀ e ∈ st.escaped, e.id ≠ id) → a' = a)
+
+theorem EscOnly.refl (st : OpSem.State) (m : Memory) : EscOnly st m m :=
+  ⟨rfl, fun _ a' h => ⟨a', h, rfl, rfl, fun _ => rfl⟩⟩
+
+theorem EscOnly.trans {st : OpSem.State} {m1 m2 m3 : Memory} (h1 : EscOnly st m1 m2)
+    (h2 : EscOnly st m2 m3) : EscOnly st m1 m3 := by
+  refine ⟨h2.1.trans h1.1, fun id a3 h => ?_⟩
+  obtain ⟨a2, ha2, he2, hs2, hn2⟩ := h2.2 id a3 h
+  obtain ⟨a1, ha1, he1, hs1, hn1⟩ := h1.2 id a2 ha2
+  exact ⟨a1, ha1, by rw [he2, he1], hs2.trans hs1, fun hn => (hn2 hn).trans (hn1 hn)⟩
+
+theorem EscOnly.of_escaped {st st1 : OpSem.State} {m m' : Memory} (h : EscOnly st1 m m')
+    (he : st1.escaped = st.escaped) : EscOnly st m m' :=
+  ⟨h.1, fun id a' ha => let ⟨a, h1, h2, h3, h4⟩ := h.2 id a' ha
+    ⟨a, h1, h2, h3, fun hn => h4 (he ▸ hn)⟩⟩
+
+theorem EscFrom.escOnly {st : OpSem.State} {off : Int} {l : List (AbstractByte × Nat)}
+    {m m' : Memory} (h : EscFrom st off l m m') : EscOnly st m m' := by
+  refine ⟨h.1, fun id a' ha' => ?_⟩
+  obtain ⟨a, ha, hae, hsz, hj⟩ := h.2 id a' ha'
+  refine ⟨a, ha, hae, hsz, fun hn => ?_⟩
+  have hd : a'.data = a.data := Array.ext_getElem? fun j => (hj j).1 fun p _ ⟨e, he, hid, _⟩ =>
+    hn e (escapedAt_some he).1 hid
+  rw [hae, hd]
+
+/-- `st'` differs from `st` at most in its frame bytes, private or escaped (`EscOnly`). -/
+def SameButWrites (st' st : OpSem.State) : Prop :=
+  st'.escaped = st.escaped ∧ EscOnly st st.mem st'.mem ∧ st'.exposed = st.exposed ∧
+    st'.exception = st.exception ∧ st'.zeroSized = st.zeroSized
+
+theorem SameButWrites.refl (st : OpSem.State) : SameButWrites st st :=
+  ⟨rfl, EscOnly.refl _ _, rfl, rfl, rfl⟩
+
+/-- The relation after a frame write at `d` (private or escaped bytes), against an x86 state
+whose memory changed exactly at `rbp + d + i` (`i < bs.length`), to bytes the written ones
+relate to. `opSem`'s memory changes only by the escaped bytes written (`EscFrom`). -/
 theorem rel_writeFrame {st st' : OpSem.State} {x x' : X86.State} {d : Int} {bs : List AbstractByte}
-    {xs : List UInt8} (hr : Rel st x) (hw : st.writeFrame d bs = .ok st')
-    (hp : ∀ i < bs.length, st.escapedAt (d + i) = none) (hd : -2 ^ 63 ≤ d)
+    {xs : List UInt8} (hr : Rel st x) (hw : st.writeFrame d bs = .ok st') (hd : -2 ^ 63 ≤ d)
     (hdn : d + bs.length ≤ 2 ^ 63) (hx : BytesRel bs xs) (hrbp : x'.reg .rbp = x.reg .rbp)
     (hin : ∀ i (h : i < xs.length), x'.mem (fpAddr x d + BitVec.ofNat 64 i) = xs[i])
     (hout : ∀ a, xs.length ≤ (a - fpAddr x d).toNat → x'.mem a = x.mem a) :
-    Rel st' x' ∧ st'.mem = st.mem ∧ st'.escaped = st.escaped ∧ st'.exposed = st.exposed ∧
-      st'.exception = st.exception ∧ st'.zeroSized = st.zeroSized := by
+    Rel st' x' ∧ EscOnly st st.mem st'.mem ∧ st'.escaped = st.escaped ∧
+      st'.exposed = st.exposed ∧ st'.exception = st.exception ∧ st'.zeroSized = st.zeroSized := by
   unfold OpSem.State.writeFrame at hw
-  rw [writeEscaped_private hp] at hw
-  simp only [bind, Except.bind, pure, Except.pure, Except.ok.injEq] at hw
+  cases hm : st.writeEscaped d bs with
+  | error e => simp [hm, bind, Except.bind] at hw
+  | ok m' =>
+  simp only [hm, bind, Except.bind, pure, Except.pure, Except.ok.injEq] at hw
   subst hw
+  have hesc := writeEscaped_spec hm
   have hlen := hx.length
   have hfp : ∀ o, fpAddr x' o = fpAddr x o := fun o => by simp [fpAddr, hrbp]
-  refine ⟨⟨fun o ho1 ho2 b hb => ?_, fun e he a ha => ?_, fun p hp' => ?_⟩, rfl, rfl, rfl, rfl, rfl⟩
+  refine ⟨⟨fun o ho1 ho2 b hb => ?_, fun e he a ha => ?_, fun p hp' => ?_⟩, hesc.escOnly, rfl, rfl, rfl, rfl⟩
   · rw [hfp]
-    rw [byteAt_with] at hb
+    have hea : ∀ (f : Int → AbstractByte) (m : Memory),
+        ({ st with mem := m, frame := f } : OpSem.State).escapedAt o = st.escapedAt o :=
+      fun _ _ => rfl
+    unfold OpSem.State.byteAt at hb
+    rw [hea] at hb
     by_cases hin' : d ≤ o ∧ o < d + bs.length
-    · -- Written: private, the new byte.
-      have hpo : st.escapedAt o = none := by
-        have := hp (o - d).toNat (by omega)
-        rwa [show d + ((o - d).toNat : Int) = o by omega] at this
-      simp only [hpo, OpSem.State.privateIn, pure, Except.pure, Except.ok.injEq] at hb
-      subst hb
-      have hk : (o - d).toNat < bs.length := by omega
-      simp only [hin', Option.isNone_none]
-      rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hk, Option.getD_some]
-      have := hin (o - d).toNat (by omega)
-      rw [← fpAddr_add, show d + ((o - d).toNat : Int) = o by omega] at this
-      rw [this]
-      exact hx.getElem _ hk _
-    · -- Not written: the old byte, at an address the x86 write didn't touch.
-      have hnot : x'.mem (fpAddr x o) = x.mem (fpAddr x o) :=
+    · have hk : (o - d).toNat < bs.length := by omega
+      have hxo : x'.mem (fpAddr x o) = xs[(o - d).toNat]'(by omega) := by
+        have := hin (o - d).toNat (by omega)
+        rwa [← fpAddr_add, show d + ((o - d).toNat : Int) = o by omega] at this
+      rw [hxo]
+      cases hf : st.escapedAt o with
+      | none =>
+        simp only [hf, OpSem.State.privateIn, hin', decide_true, Option.isNone_none, Bool.and_self,
+          ↓reduceIte, pure, Except.pure, Except.ok.injEq] at hb
+        subst hb
+        rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hk, Option.getD_some]
+        exact hx.getElem _ hk _
+      | some e =>
+        simp only [hf] at hb
+        split at hb
+        · rename_i a' ha'
+          split at hb
+          · cases hb
+          · split at hb
+            · rename_i b' hb'
+              cases hb
+              obtain ⟨a, ha, hae, hsz, hj⟩ := hesc.2 e.id a' ha'
+              have hhit : Hits st d (bs[(o - d).toNat], (o - d).toNat) e.id (o - e.off).toNat :=
+                ⟨e, by rw [show d + ((o - d).toNat : Int) = o by omega]; exact hf, rfl,
+                  by rw [show d + ((o - d).toNat : Int) = o by omega]⟩
+              have hjl : (o - e.off).toNat < a.data.size := by
+                rw [← hsz]; exact (Array.getElem?_eq_some_iff.1 hb').1
+              obtain ⟨q, hq, ⟨e', he', hid', hj'⟩, hv⟩ := (hj _).2
+                ⟨_, List.mem_zipIdx_iff_getElem?.2 (List.getElem?_eq_getElem hk), hhit⟩ hjl
+              obtain ⟨hqk, hq1⟩ := mem_zipIdx hq
+              have := esc_inj hr ⟨ho1, ho2⟩ ⟨by omega, by omega⟩ hf he' hid' ha hj'
+              rw [hb'] at hv
+              cases hv
+              rw [hq1]
+              have hqk' : q.2 = (o - d).toNat := by omega
+              simp only [hqk']
+              exact hx.getElem _ hk _
+            · cases hb
+        · cases hb
+    · have hnot : x'.mem (fpAddr x o) = x.mem (fpAddr x o) :=
         hout _ (by rw [← hlen]; exact fpAddr_sub_ge x o d bs.length ⟨ho1, ho2⟩ hd hdn hin')
       rw [hnot]
       apply hr.frame o ho1 ho2 b
-      revert hb
+      unfold OpSem.State.byteAt
       cases hf : st.escapedAt o with
       | none =>
-        simp [OpSem.State.privateIn, hin', OpSem.State.byteAt, hf]
-      | some e => simp
-  · rw [hfp]; exact hr.layout e he a ha
+        simp only [hf, OpSem.State.privateIn, hin', decide_false, Bool.false_and,
+          Bool.false_eq_true, ↓reduceIte] at hb
+        exact hb
+      | some e =>
+        simp only [hf] at hb ⊢
+        split at hb
+        · rename_i a' ha'
+          obtain ⟨a, ha, hae, hsz, hj⟩ := hesc.2 e.id a' ha'
+          have hnh : ∀ p ∈ bs.zipIdx, ¬ Hits st d p e.id (o - e.off).toNat := by
+            rintro q hq ⟨e', he', hid', hj'⟩
+            obtain ⟨hqk, -⟩ := mem_zipIdx hq
+            have := esc_inj hr ⟨ho1, ho2⟩ ⟨by omega, by omega⟩ hf he' hid' ha hj'
+            omega
+          have hdat := (hj _).1 hnh
+          rw [ha]
+          rw [hae] at hb
+          simp only at hb
+          simp only
+          rw [← hdat]
+          exact hb
+        · cases hb
+  · obtain ⟨a0, ha0, hae, -⟩ := hesc.2 _ _ ha
+    rw [hfp, hae]; exact hr.layout e he a0 ha0
   · rw [hfp]; exact hr.zeroSized p hp'
 
 end Ryo.Proofs.Inline

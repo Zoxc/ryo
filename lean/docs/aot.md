@@ -248,13 +248,14 @@ follows the decoder's structure:
   both immediate forms where `fits` decides), and every opcode of the class's handler shape
   (`shapeOk`): if `sequence c ops = some (items, br)`, `opSem op vals st` succeeds (`vals` the
   operand values `view` gives) and `Rel st x`, then `execItems items x` succeeds with `x'` and
-  `Rel st' x'`; `st'` differs from `st` only in private frame bytes; only `rax`, `rcx`, the
+  `Rel st' x'`; `st'` differs from `st` only in frame bytes (private or escaped); only `rax`, `rcx`, the
   flags and `rip` (past the items) changed; x86 memory changed only in the footprint's write
   ranges; and the control is `next`, or `branch b` with `br` holding on the flags iff
   `b != neg`. `Rel` (§C0.7 of [reduced.md](reduced.md)): every frame byte `opSem` reads
   (`byteAt`: private or escaped) relates to the byte at `rbp + off` (initialized bytes equal,
-  provenance erased, `Uninit` anything), and escaped objects are at `rbp + off`. Side
-  condition: the written range is private (`Private`). Proofs are per handler kind for
+  provenance erased, `Uninit` anything), and escaped objects are at `rbp + off`. Writes may be private or into
+  escaped objects (`writeEscaped`: `rel_writeFrame`, with `opSem`'s memory changed only in the
+  escaped objects' allocations, `EscOnly`). Proofs are per handler kind for
   `opSem` (`Inline/OpSem.lean`), then per width by `simp` and `bv_decide`. `load` and `store`
   (memory through a pointer) are `sound_load`/`sound_store` (`Inline/Mem.lean`), given the
   memory part of the relation (`MemRel`: live allocations' bytes at their addresses), private
@@ -274,8 +275,9 @@ follows the decoder's structure:
   the result `d` then the flag `o`, which differ when the ranges overlap (e.g. `d = o`):
   `SoundD` assumes the write ranges disjoint (`RangesDisjoint`), which C1' must check (or the
   backend could store the result first). And unsigned 64-bit `mul.ovf` (`mul`) also changes
-  `rdx` (`clobbers`, `PostC`; the register cache drops `rdx` after it). Left: writes into
-  escaped objects (`writeEscaped`). `bv_decide`'s proofs are axioms checked by compiled code
+  `rdx` (`clobbers`, `PostC`; the register cache drops `rdx` after it). `load` alone still
+  assumes a private destination (`Private`): keeping `MemRel` across a write into an escaped
+  object would also need allocations disjoint in the address space (`MemDisjoint`). `bv_decide`'s proofs are axioms checked by compiled code
   ([assumptions.md](assumptions.md) §1.4).
 - **Register cache**: invariant `CacheInv c regs mem fp`: for each `(r, slot, width) ∈ c`,
   `regs r = zext (mem[fp+slot, width])`. The decoder runs the same cache (as the Rust one

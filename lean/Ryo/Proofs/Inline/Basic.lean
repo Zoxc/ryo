@@ -40,7 +40,7 @@ def Private (op : Full.Opcode) (vals : Operands) (st : OpSem.State) : Prop :=
 structure Post (op : Full.Opcode) (ops : List (R.Opnd Nat)) (vals : Operands) (items : List Item)
     (br : Option Cond) (st st' : OpSem.State) (ctl : Control) (x x' : Ryo.X86.State) : Prop where
   rel : Rel st' x'
-  same : st'.SameButFrame st
+  same : SameButWrites st' st
   regs : ∀ i : Fin 16, i ≠ 0 → i ≠ 1 → x'.regs i = x.regs i
   xmm : x'.xmm = x.xmm
   rip : x'.rip = x.rip + BitVec.ofNat 64 (items.map Item.size).sum
@@ -56,7 +56,7 @@ def Sound (c : Class) : Prop :=
     (br : Option Cond) (vals : Operands) (st st' : OpSem.State) (ctl : Control)
     (ch : OpSem.Choice) (x : Ryo.X86.State),
     shapeOk op c = true → sequence c ops = some (items, br) → nativeVals ρ op ops = some vals →
-    opSem op vals st ch = .ok (ctl, st') → Rel st x → Private op vals st →
+    opSem op vals st ch = .ok (ctl, st') → Rel st x →
     ∃ x', execItems ctx items x = .ok x' ∧ Post op ops vals items br st st' ctl x x'
 
 /-! ### Operands -/
@@ -194,7 +194,7 @@ theorem post_mem {op : Full.Opcode} {ops : List (R.Opnd Nat)} {vals : Operands}
     {items : List Item} {st st' : OpSem.State} {ctl : Control} {x y : Ryo.X86.State} {n V : Nat}
     {d : BitVec 32} {bs : List AbstractByte} {a : BitVec 64}
     (hr : Rel st x) (hw : st.writeFrame d.toInt bs = .ok st') (hlen : bs.length = n) (hn : n ≤ 16)
-    (hwr : wranges op vals = [(d.toInt, n)]) (hp : Private op vals st)
+    (hwr : wranges op vals = [(d.toInt, n)])
     (hx : BytesRel bs (leEncode n V))
     (hyb : y.reg .rbp = x.reg .rbp) (hym : y.mem = x.mem)
     (hyr : ∀ i : Fin 16, i ≠ 0 → i ≠ 1 → y.regs i = x.regs i) (hyx : y.xmm = x.xmm)
@@ -205,7 +205,7 @@ theorem post_mem {op : Full.Opcode} {ops : List (R.Opnd Nat)} {vals : Operands}
       x.mem.write (fpAddr x d.toInt) bs.length V := by
     simp only [X86S.mem_setMem, X86S.mem_jump, hym, ea_frame, hlen]
     simp [fpAddr, hyb]
-  obtain ⟨hrel, h1, h2, h3, h4, h5⟩ := rel_store hr hw (by rw [hlen]; exact private_range hp hwr)
+  obtain ⟨hrel, h1, h2, h3, h4, h5⟩ := rel_store hr hw
     (by omega) (by omega) (by rw [hlen]; exact hx) (by simpa using hyb) hm
   refine ⟨hrel, ⟨h2, h1, h3, h4, h5⟩, fun i h0 h1 => ?_, ?_, ?_, fun a' ha => ?_, hctl⟩
   · simpa using hyr i h0 h1
@@ -226,7 +226,7 @@ theorem post_branch {op : Full.Opcode} {ops : List (R.Opnd Nat)} {vals : Operand
     (hctl : ∃ b, ctl = .branch b ∧
       ∀ neg t, R.nativeCtl op ops = some (.branch neg t) → cond.eval x'.flags = .ok (b != neg)) :
     Post op ops vals items (some cond) st st ctl x x' :=
-  ⟨rel_congr hr hyb hym, ⟨rfl, rfl, rfl, rfl, rfl⟩, hyr, hyx, hrip, fun a _ => by rw [hym], hctl⟩
+  ⟨rel_congr hr hyb hym, SameButWrites.refl st, hyr, hyx, hrip, fun a _ => by rw [hym], hctl⟩
 
 /-- Steps through the items of a sequence. -/
 macro "xrun" : tactic =>
@@ -429,7 +429,7 @@ theorem post_mov128 {op : Full.Opcode} {ops : List (R.Opnd Nat)} {vals : Operand
     {n1 n2 LO HI : Nat} {d : BitVec 32} {bs : List AbstractByte} {a1 a2 : BitVec 64}
     (hr : Rel st x) (hw : st.writeFrame d.toInt bs = .ok st') (hlen : bs.length = 16)
     (hd8 : d.toInt + 8 < 2 ^ 31) (hn1 : n1 = 8) (hn2 : n2 = 8)
-    (hwr : wranges op vals = [(d.toInt, 16)]) (hp : Private op vals st)
+    (hwr : wranges op vals = [(d.toInt, 16)])
     (hx : BytesRel bs (leEncode 8 LO ++ leEncode 8 HI))
     (hyb : y.reg .rbp = x.reg .rbp) (hym : y.mem = x.mem)
     (hyr : ∀ i : Fin 16, i ≠ 0 → i ≠ 1 → y.regs i = x.regs i) (hyx : y.xmm = x.xmm)
@@ -452,7 +452,7 @@ theorem post_mov128 {op : Full.Opcode} {ops : List (R.Opnd Nat)} {vals : Operand
   have hxs : (leEncode 8 LO ++ leEncode 8 HI).length = 16 := by simp [leEncode_length]
   obtain ⟨hrel, h1, h2, h3, h4, h5⟩ := rel_writeFrame
     (x' := (y2.jump a2).setMem ((y2.jump a2).ea ⟨.rbp, d⟩) 8 LO) hr hw
-    (by rw [hlen]; exact private_range hp hwr) (by omega) (by omega) hx
+    (by omega) (by omega) hx
     (by simpa [y2] using hyb)
     (fun i hi => by rw [hm]; exact write2_at _ _ _ _ _ (by rw [hxs] at hi; exact hi))
     (fun a ha => by rw [hm]; exact write2_out _ _ _ _ _ (by rw [hxs] at ha; exact ha))

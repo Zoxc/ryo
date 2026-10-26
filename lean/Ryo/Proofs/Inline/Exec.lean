@@ -82,13 +82,13 @@ theorem write_at (m : X86.Mem) (a : BitVec 64) (n v i : Nat) (hn : n ≤ 2 ^ 64)
 that relate to them, keeps the relation. -/
 theorem rel_store {st st' : OpSem.State} {x x' : X86.State} {d : Int} {bs : List AbstractByte}
     {V : Nat} (hr : Rel st x) (hw : st.writeFrame d bs = .ok st')
-    (hp : ∀ i < bs.length, st.escapedAt (d + i) = none) (hd : -2 ^ 63 ≤ d)
+    (hd : -2 ^ 63 ≤ d)
     (hdn : d + bs.length ≤ 2 ^ 63) (hx : BytesRel bs (leEncode bs.length V))
     (hrbp : x'.reg .rbp = x.reg .rbp) (hmem : x'.mem = x.mem.write (fpAddr x d) bs.length V) :
-    Rel st' x' ∧ st'.mem = st.mem ∧ st'.escaped = st.escaped ∧ st'.exposed = st.exposed ∧
+    Rel st' x' ∧ EscOnly st st.mem st'.mem ∧ st'.escaped = st.escaped ∧ st'.exposed = st.exposed ∧
       st'.exception = st.exception ∧ st'.zeroSized = st.zeroSized := by
   have hn : bs.length ≤ 2 ^ 64 := by omega
-  refine rel_writeFrame hr hw hp hd hdn hx hrbp (fun i hi => ?_) (fun a ha => ?_)
+  refine rel_writeFrame hr hw hd hdn hx hrbp (fun i hi => ?_) (fun a ha => ?_)
   · rw [hmem]
     simp only [leEncode_length] at hi
     exact write_at _ _ _ _ _ hn hi

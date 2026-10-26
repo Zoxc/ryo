@@ -36,12 +36,12 @@ def SoundG (c : Class) : Prop :=
     (br : Option Cond) (vals : Operands) (st st' : OpSem.State) (ctl : Control)
     (ch : OpSem.Choice) (x : Ryo.X86.State),
     shapeOk op c = true → sequence c ops = some (items, br) → nativeVals ρ op ops = some vals →
-    opSem op vals st ch = .ok (ctl, st') → Rel st x → Private op vals st → Globals ctx ρ st x →
+    opSem op vals st ch = .ok (ctl, st') → Rel st x → Globals ctx ρ st x →
     ∃ x', execItems ctx items x = .ok x' ∧ Post op ops vals items br st st' ctl x x'
 
 theorem Sound.soundG {c : Class} (h : Sound c) : SoundG c :=
-  fun ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hp _ =>
-    h ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hp
+  fun ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr _ =>
+    h ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr
 
 /-! ### `opSem` -/
 
@@ -95,7 +95,7 @@ theorem opSem_addrSym {op : Full.Opcode} {r : Option String} {b : Bool}
 /-! ### The sequences -/
 
 theorem sound_addrConst : SoundG .addrConst := by
-  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hp hg
+  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hg
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
   simp only [classHandler, classOperands] at hh ho
   obtain ⟨o0, o1, v0, v1, rfl, rfl, h0, h1⟩ := nvs2 ho hv
@@ -116,7 +116,7 @@ theorem sound_addrConst : SoundG .addrConst := by
     hh (fp_addr_const []) (by simp [opndVal, ho])
   xrun
   refine post_mem hr hwr (by rw [Theorems.encodePtr_length]; rfl) (by decide) hwr'
-    hp ?_ ?_ ?_ ?_ ?_ ?_ rfl
+    ?_ ?_ ?_ ?_ ?_ ?_ rfl
   · xobs
     exact bytesRel_ptr hpv
   all_goals xobs
@@ -124,7 +124,7 @@ theorem sound_addrConst : SoundG .addrConst := by
 /-- `addr.sym` (`ind` false) and `addr.sym.ind`. -/
 theorem sound_addrSym' (c : Class) (b : Bool) (hcb : c = (if b then .addrSymInd else .addrSym)) :
     SoundG c := by
-  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hp hg
+  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hg
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
   have hh' : op.handler? = some ⟨.addr_sym, [toString b], r⟩ := by
     subst hcb; cases b <;> exact hh
@@ -153,7 +153,7 @@ theorem sound_addrSym' (c : Class) (b : Bool) (hcb : c = (if b then .addrSymInd 
       ↓reduceIte, List.append_nil, List.cons_append, List.nil_append]
     xrun
     refine post_mem hr hb (by rw [Theorems.encodePtr_length]; rfl) (by decide) hwr'
-      hp ?_ ?_ ?_ ?_ ?_ ?_ rfl
+      ?_ ?_ ?_ ?_ ?_ ?_ rfl
     · xobs
       apply bytesRel_ptr
       rw [hva, ← hslot, X86.Mem.read64, readNat_eq]
@@ -169,7 +169,7 @@ theorem sound_addrSym' (c : Class) (b : Bool) (hcb : c = (if b then .addrSymInd 
       List.cons_append, List.nil_append]
     xrun
     refine post_mem hr hw (by rw [Theorems.encodePtr_length]; rfl) (by decide) hwr'
-      hp ?_ ?_ ?_ ?_ ?_ ?_ rfl
+      ?_ ?_ ?_ ?_ ?_ ?_ rfl
     · have hv1 : BitVec.ofNat 64 v.addr = x.mem.read64 (ctx.addrOf (.sym sy)) := by
         rw [hva, ← hslot, X86.Mem.read64, readNat_eq]
       have h2 := bytesRel_ptr (p := v2)

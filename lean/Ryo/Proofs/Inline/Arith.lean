@@ -16,7 +16,7 @@ open Ryo.Spec Ryo.Vm Ryo.Vm.OpSem Ryo.X86 Ryo.Vm.Asm
 
 
 theorem sound_bin (a : Alu) (w : W) : Sound (.bin a w) := by
-  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hp
+  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
   simp only [classHandler, classOperands] at hh ho
   obtain ⟨o0, o1, o2, v0, v1, v2, rfl, rfl, h0, h1, h2⟩ := nvs3 ho hv
@@ -49,13 +49,13 @@ theorem sound_bin (a : Alu) (w : W) : Sound (.bin a w) := by
   all_goals
     subst hres
     cases w <;> xrun <;>
-      refine post_mem hr hwr (by rw [hlen]; rfl) (by decide) (by rw [hwr']; rfl) hp (bytesRel_bv ?_) ?_ ?_ ?_ ?_ ?_ rfl
+      refine post_mem hr hwr (by rw [hlen]; rfl) (by decide) (by rw [hwr']; rfl) (bytesRel_bv ?_) ?_ ?_ ?_ ?_ ?_ rfl
   all_goals xobs
   all_goals rfl
 
 set_option maxHeartbeats 1000000 in
 theorem sound_binImm (a : Alu) (w : W) : Sound (.binImm a w) := by
-  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hp
+  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
   simp only [classHandler, classOperands] at hh ho
   obtain ⟨o0, o1, o2, v0, v1, v2, rfl, rfl, h0, h1, h2⟩ := nvs3 ho hv
@@ -96,12 +96,12 @@ theorem sound_binImm (a : Alu) (w : W) : Sound (.binImm a w) := by
   all_goals
     obtain ⟨rfl, rfl⟩ := hseq
     xrun
-    refine post_mem hr hwr (by rw [hlen]; rfl) (by decide) (by rw [hwr']; rfl) hp (bytesRel_bv ?_) ?_ ?_ ?_ ?_ ?_ rfl
+    refine post_mem hr hwr (by rw [hlen]; rfl) (by decide) (by rw [hwr']; rfl) (bytesRel_bv ?_) ?_ ?_ ?_ ?_ ?_ rfl
   all_goals xobs
   all_goals first | with_reducible rfl | ((try simp only [fits_iff] at hf); bv_decide)
 
 theorem sound_mul (w : W) : Sound (.mul w) := by
-  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hp
+  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
   simp only [classHandler, classOperands] at hh ho
   obtain ⟨o0, o1, o2, v0, v1, v2, rfl, rfl, h0, h1, h2⟩ := nvs3 ho hv
@@ -128,12 +128,12 @@ theorem sound_mul (w : W) : Sound (.mul w) := by
       List.cons_append, List.nil_append] at hseq
     obtain ⟨rfl, rfl⟩ := hseq
     xrun
-    refine post_mem hr hwr (by rw [hlen]; rfl) (by decide) (by rw [hwr']; rfl) hp (bytesRel_bv ?_) ?_ ?_ ?_ ?_ ?_ rfl
+    refine post_mem hr hwr (by rw [hlen]; rfl) (by decide) (by rw [hwr']; rfl) (bytesRel_bv ?_) ?_ ?_ ?_ ?_ ?_ rfl
   all_goals xobs
   all_goals first | with_reducible rfl | bv_decide
 
 theorem sound_mulImm (w : W) : Sound (.mulImm w) := by
-  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hp
+  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
   simp only [classHandler, classOperands] at hh ho
   obtain ⟨o0, o1, o2, v0, v1, v2, rfl, rfl, h0, h1, h2⟩ := nvs3 ho hv
@@ -164,7 +164,7 @@ theorem sound_mulImm (w : W) : Sound (.mulImm w) := by
   all_goals
     obtain ⟨rfl, rfl⟩ := hseq
     xrun
-    refine post_mem hr hwr (by rw [hlen]; rfl) (by decide) (by rw [hwr']; rfl) hp (bytesRel_bv ?_) ?_ ?_ ?_ ?_ ?_ rfl
+    refine post_mem hr hwr (by rw [hlen]; rfl) (by decide) (by rw [hwr']; rfl) (bytesRel_bv ?_) ?_ ?_ ?_ ?_ ?_ rfl
   all_goals xobs
   all_goals first
     | with_reducible rfl
@@ -173,7 +173,7 @@ theorem sound_mulImm (w : W) : Sound (.mulImm w) := by
     | bv_decide
 
 theorem sound_shiftImm (sh : Sh) (w : W) : Sound (.shiftImm sh w) := by
-  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hp
+  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
   simp only [classHandler, classOperands] at hh ho
   obtain ⟨o0, o1, o2, v0, v1, v2, rfl, rfl, h0, h1, h2⟩ := nvs3 ho hv
@@ -215,7 +215,7 @@ theorem sound_shiftImm (sh : Sh) (w : W) : Sound (.shiftImm sh w) := by
     cases w
   all_goals
     xrun
-    refine post_mem hr hwr (by rw [hlen]; rfl) (by decide) (by rw [hwr']; rfl) hp (bytesRel_bv ?_) ?_ ?_ ?_ ?_ ?_ rfl
+    refine post_mem hr hwr (by rw [hlen]; rfl) (by decide) (by rw [hwr']; rfl) (bytesRel_bv ?_) ?_ ?_ ?_ ?_ ?_ rfl
   all_goals simp only [W.bits, ne_eq, reduceCtorEq, not_false_eq_true, forall_const] at hlt hmw hm32
   all_goals xobs
   all_goals

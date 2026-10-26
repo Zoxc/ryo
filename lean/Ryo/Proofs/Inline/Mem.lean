@@ -308,11 +308,13 @@ theorem sound_load (w : W) : ∀ (ctx : Ctx) (ρ : R.Addrs) (op : Full.Opcode)
         .next x x' := by
     subst hits
     cases w <;> xrun <;>
-      refine post_mem hr hwr (by rw [hlen]; rfl) (by decide) (by rw [hwr']; rfl) hp
+      refine post_mem hr hwr (by rw [hlen]; rfl) (by decide) (by rw [hwr']; rfl)
         (bytesRel_val hbs (bytesAt_length ..) ?_) ?_ ?_ ?_ ?_ ?_ rfl
     all_goals xobs
   obtain ⟨x', hx, hpost⟩ := key
-  refine ⟨x', hx, hpost, memRel_frame (d := s0.toInt) (n := wbytes w) hm hpost.same.2.1 hap
+  have hmem : st'.mem = st.mem :=
+    writeFrame_mem_private hwr (by rw [hlen]; exact private_range hp hwr')
+  refine ⟨x', hx, hpost, memRel_frame (d := s0.toInt) (n := wbytes w) hm hmem hap
     (private_range hp hwr') (by omega) (by cases w <;> simp <;> omega) fun b hb => ?_⟩
   exact hpost.memOut b (by simp [hwr']; exact hb)
 

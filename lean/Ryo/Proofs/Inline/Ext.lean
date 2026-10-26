@@ -28,7 +28,7 @@ theorem ofNat_trunc (k m : Nat) {L : Nat} (h : k ≤ m := by decide) :
   exact (Nat.mod_mod_of_dvd _ (Nat.pow_dvd_pow 2 h)).symm
 
 theorem sound_ext (src dst : W) (sx : Bool) : Sound (.ext src dst sx) := by
-  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hp
+  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
   simp only [classHandler, classOperands] at hh ho
   obtain ⟨o0, o1, v0, v1, rfl, rfl, h0, h1⟩ := nvs2 ho hv
@@ -64,7 +64,7 @@ theorem sound_ext (src dst : W) (sx : Bool) : Sound (.ext src dst sx) := by
   all_goals
     try simp (config := { decide := true }) only [↓reduceIte, List.cons_append, List.nil_append]
     xrun
-    refine post_mem hr hwr (by rw [hlen]; rfl) (by decide) (by rw [hwr']; rfl) hp (bytesRel_bv ?_) ?_ ?_ ?_ ?_ ?_ rfl
+    refine post_mem hr hwr (by rw [hlen]; rfl) (by decide) (by rw [hwr']; rfl) (bytesRel_bv ?_) ?_ ?_ ?_ ?_ ?_ rfl
   all_goals xobs
   all_goals first
     | with_reducible rfl

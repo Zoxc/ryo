@@ -13,7 +13,7 @@ open Ryo.Spec Ryo.Vm Ryo.Vm.OpSem Ryo.X86 Ryo.Vm.Asm
 
 
 theorem sound_cmp (c : Cond) (w : W) : Sound (.cmp c w) := by
-  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hp
+  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
   simp only [classHandler, classOperands, cmpParams] at hh ho
   obtain ⟨o0, o1, o2, v0, v1, v2, rfl, rfl, h0, h1, h2⟩ := nvs3 ho hv
@@ -42,12 +42,12 @@ theorem sound_cmp (c : Cond) (w : W) : Sound (.cmp c w) := by
     cases w
   all_goals
     xrun
-    refine post_mem hr hwr hlen (by decide) hwr' hp (bytesRel_bool ?_) ?_ ?_ ?_ ?_ ?_ rfl
+    refine post_mem hr hwr hlen (by decide) hwr' (bytesRel_bool ?_) ?_ ?_ ?_ ?_ ?_ rfl
   all_goals xobs
   all_goals first | with_reducible rfl | bv_decide
 
 theorem sound_cmpImm (c : Cond) (w : W) : Sound (.cmpImm c w) := by
-  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hp
+  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
   simp only [classHandler, classOperands, cmpParams] at hh ho
   obtain ⟨o0, o1, o2, v0, v1, v2, rfl, rfl, h0, h1, h2⟩ := nvs3 ho hv
@@ -78,12 +78,12 @@ theorem sound_cmpImm (c : Cond) (w : W) : Sound (.cmpImm c w) := by
   all_goals
     obtain ⟨rfl, rfl⟩ := hseq
     xrun
-    refine post_mem hr hwr hlen (by decide) hwr' hp (bytesRel_bool ?_) ?_ ?_ ?_ ?_ ?_ rfl
+    refine post_mem hr hwr hlen (by decide) hwr' (bytesRel_bool ?_) ?_ ?_ ?_ ?_ ?_ rfl
   all_goals xobs
   all_goals first | with_reducible rfl | ((try simp only [fits_iff] at hf); bv_decide)
 
 theorem sound_br : Sound .br := by
-  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hp
+  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
   simp only [classHandler, classOperands] at hh ho
   obtain ⟨o0, o1, o2, v0, v1, v2, rfl, rfl, h0, h1, h2⟩ := nvs3 ho hv
@@ -114,7 +114,7 @@ theorem sound_br : Sound .br := by
       exact br_zf hlt8
 
 theorem sound_brCmp (c : Cond) (w : W) : Sound (.brCmp c w) := by
-  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hp
+  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
   simp only [classHandler, classOperands, cmpParams] at hh ho
   obtain ⟨o0, o1, o2, o3, v0, v1, v2, v3, rfl, rfl, h0, h1, h2, h3⟩ := nvs4 ho hv
@@ -151,7 +151,7 @@ theorem sound_brCmp (c : Cond) (w : W) : Sound (.brCmp c w) := by
       bv_decide
 
 theorem sound_brCmpImm (c : Cond) (w : W) : Sound (.brCmpImm c w) := by
-  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hp
+  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
   simp only [classHandler, classOperands, cmpParams] at hh ho
   obtain ⟨o0, o1, o2, o3, v0, v1, v2, v3, rfl, rfl, h0, h1, h2, h3⟩ := nvs4 ho hv

@@ -34,7 +34,7 @@ structure PostC (c : Class) (op : Full.Opcode) (ops : List (R.Opnd Nat)) (vals :
     (items : List Item) (br : Option Cond) (st st' : OpSem.State) (ctl : Control)
     (x x' : Ryo.X86.State) : Prop where
   rel : Rel st' x'
-  same : st'.SameButFrame st
+  same : SameButWrites st' st
   regs : ∀ i : Fin 16, i ∉ clobbers c → x'.regs i = x.regs i
   xmm : x'.xmm = x.xmm
   rip : x'.rip = x.rip + BitVec.ofNat 64 (items.map Item.size).sum
@@ -60,13 +60,13 @@ def SoundD (c : Class) : Prop :=
     (br : Option Cond) (vals : Operands) (st st' : OpSem.State) (ctl : Control)
     (ch : OpSem.Choice) (x : Ryo.X86.State),
     shapeOk op c = true → sequence c ops = some (items, br) → nativeVals ρ op ops = some vals →
-    opSem op vals st ch = .ok (ctl, st') → Rel st x → Private op vals st →
+    opSem op vals st ch = .ok (ctl, st') → Rel st x →
     RangesDisjoint (wranges op vals) →
     ∃ x', execItems ctx items x = .ok x' ∧ PostC c op ops vals items br st st' ctl x x'
 
 theorem Sound.soundD {c : Class} (h : Sound c) : SoundD c := by
-  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hp _
-  obtain ⟨x', hx, hpost⟩ := h ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hp
+  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr _
+  obtain ⟨x', hx, hpost⟩ := h ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr
   exact ⟨x', hx, hpost.toC⟩
 
 /-! ### `opSem` of `ovf` -/
@@ -130,7 +130,7 @@ theorem post_mem2 {c : Class} {op : Full.Opcode} {ops : List (R.Opnd Nat)} {vals
     (hr : Rel st x) (hw1 : st.writeFrame d.toInt bs = .ok st1)
     (hw2 : st1.writeFrame o.toInt fs = .ok st') (hlen : bs.length = n) (hn : n ≤ 16)
     (hfl : fs.length = 1)
-    (hwr : wranges op vals = [(d.toInt, n), (o.toInt, 1)]) (hp : Private op vals st)
+    (hwr : wranges op vals = [(d.toInt, n), (o.toInt, 1)])
     (hdj : RangesDisjoint (wranges op vals))
     (hx : BytesRel bs (leEncode n V)) (hf : BytesRel fs (leEncode 1 F))
     (hyb : y.reg .rbp = x.reg .rbp) (hym : y.mem = x.mem)
@@ -149,24 +149,15 @@ theorem post_mem2 {c : Class} {op : Full.Opcode} {ops : List (R.Opnd Nat)} {vals
       (x.mem.write (fpAddr x o.toInt) 1 F).write (fpAddr x d.toInt) n V := by
     simp only [X86S.mem_setMem, X86S.mem_jump, hym, ea_frame]
     simp [fpAddr, hyb]
-  have hpd : ∀ i < bs.length, st.escapedAt (d.toInt + i) = none := by
-    rw [hlen]
-    intro i hi
-    exact hp (d.toInt, n) (by simp [hwr]) _ (by simp [inRange]; omega)
   -- The intermediate state: only the result written.
   let xm : Ryo.X86.State := { x with mem := x.mem.write (fpAddr x d.toInt) n V }
-  obtain ⟨hrel1, e1, e2, e3, e4, e5⟩ := rel_store (x' := xm) hr hw1 hpd (by omega) (by omega)
+  obtain ⟨hrel1, e1, e2, e3, e4, e5⟩ := rel_store (x' := xm) hr hw1 (by omega) (by omega)
     (by rw [hlen]; exact hx) rfl (by rw [hlen])
-  have hpo : ∀ i < fs.length, st1.escapedAt (o.toInt + i) = none := by
-    rw [hfl]
-    intro i hi
-    have := hp (o.toInt, 1) (by simp [hwr]) (o.toInt + i) (by simp [inRange]; omega)
-    simpa [OpSem.State.escapedAt, e2] using this
   have hfpm : ∀ q, fpAddr xm q = fpAddr x q := fun _ => rfl
   have hod : n ≤ (fpAddr x o.toInt - fpAddr x d.toInt).toNat :=
     fpAddr_sub_ge x _ _ n (by omega) (by omega) (by omega) (by omega)
   have hl1 : (leEncode 1 F).length = 1 := by simp [leEncode_length]
-  obtain ⟨hrel, f1, f2, f3, f4, f5⟩ := rel_writeFrame hrel1 hw2 hpo (by omega) (by omega) hf
+  obtain ⟨hrel, f1, f2, f3, f4, f5⟩ := rel_writeFrame hrel1 hw2 (by omega) (by omega) hf
     (x' := (((y.jump a1).setMem ((y.jump a1).ea (M.frame o)) 1 F).jump a2).setMem
         ((((y.jump a1).setMem ((y.jump a1).ea (M.frame o)) 1 F).jump a2).ea (M.frame d)) n V)
     (by simp only [X86S.reg_setMem, X86S.reg_jump]; exact hyb)
@@ -179,7 +170,7 @@ theorem post_mem2 {c : Class} {op : Full.Opcode} {ops : List (R.Opnd Nat)} {vals
       rw [hm]
       rw [hl1, hfpm] at ha
       exact write_shadow _ _ _ _ _ _ _ _ ha)
-  refine ⟨hrel, ⟨f2.trans e2, f1.trans e1, f3.trans e3, f4.trans e4, f5.trans e5⟩,
+  refine ⟨hrel, ⟨f2.trans e2, e1.trans (f1.of_escaped e2), f3.trans e3, f4.trans e4, f5.trans e5⟩,
     fun i hi => ?_, ?_, ?_, fun a' ha => ?_, hctl⟩
   · simpa using hyr i hi
   · simpa using hyx
@@ -436,7 +427,7 @@ macro "mulOvf_close" : tactic =>
 
 theorem sound_ovf (a : Alu) (ha : a = .add ∨ a = .sub) (sg : Bool) (w : W) :
     SoundD (.ovf a sg w) := by
-  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hp hdj
+  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hdj
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
   simp only [classHandler, classOperands] at hh ho
   obtain ⟨o0, o1, o2, o3, v0, v1, v2, v3, rfl, rfl, h0, h1, h2, h3⟩ := nvs4 ho hv
@@ -479,7 +470,7 @@ theorem sound_ovf (a : Alu) (ha : a = .add ∨ a = .sub) (sg : Bool) (w : W) :
       List.cons_append, List.nil_append, Bool.false_eq_true, ↓reduceIte] at hseq
     obtain ⟨rfl, rfl⟩ := hseq
     cases w <;> xrun' <;>
-      refine post_mem2 hr hw1 hw2 (by rw [hlen]; rfl) (by decide) rfl (by rw [hwr']; rfl) hp hdj
+      refine post_mem2 hr hw1 hw2 (by rw [hlen]; rfl) (by decide) rfl (by rw [hwr']; rfl) hdj
         (bytesRel_bv ?_) (bytesRel_flag ?_) ?_ ?_ ?_ ?_ ?_ rfl
   all_goals xobs
   all_goals ovf_close
@@ -512,7 +503,7 @@ theorem exec_mulD (ctx : Ctx) (x : Ryo.X86.State) (a b : BitVec 32) :
 
 
 theorem sound_mulOvf (sg : Bool) (w : W) : SoundD (.mulOvf sg w) := by
-  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hp hdj
+  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hdj
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
   simp only [classHandler, classOperands] at hh ho
   obtain ⟨o0, o1, o2, o3, v0, v1, v2, v3, rfl, rfl, h0, h1, h2, h3⟩ := nvs4 ho hv
@@ -557,7 +548,7 @@ theorem sound_mulOvf (sg : Bool) (w : W) : SoundD (.mulOvf sg w) := by
     simp only [List.cons_append, List.nil_append]
     xrun'
     simp only [hcf, hzf, bind, Except.bind, Except.ok.injEq, exists_eq_left']
-    refine post_mem2 hr hw1 hw2 (by rw [hlen]; rfl) (by decide) rfl (by rw [hwr']; rfl) hp hdj
+    refine post_mem2 hr hw1 hw2 (by rw [hlen]; rfl) (by decide) rfl (by rw [hwr']; rfl) hdj
       (bytesRel_bv ?_) (bytesRel_flag ?_) ?_ ?_ ?_ ?_ ?_ rfl
     all_goals xobs
     all_goals (try simp only [hya, hym, hyb, hyx, hyrip])
@@ -574,7 +565,7 @@ theorem sound_mulOvf (sg : Bool) (w : W) : SoundD (.mulOvf sg w) := by
   all_goals
     simp only [List.cons_append, List.nil_append]
     xrun'
-    refine post_mem2 hr hw1 hw2 (by rw [hlen]; rfl) (by decide) rfl (by rw [hwr']; rfl) hp hdj
+    refine post_mem2 hr hw1 hw2 (by rw [hlen]; rfl) (by decide) rfl (by rw [hwr']; rfl) hdj
       (bytesRel_bv ?_) (bytesRel_flag ?_) ?_ ?_ ?_ ?_ ?_ rfl
   all_goals xobs
   case false.b.refine_1 => refine Eq.trans ?_ (res_zext (m := 8) (k := 32) (by decide) _ _).symm; rfl

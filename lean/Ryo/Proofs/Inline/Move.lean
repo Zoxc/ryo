@@ -12,7 +12,7 @@ open Ryo.Spec Ryo.Vm Ryo.Vm.OpSem Ryo.X86 Ryo.Vm.Asm
 
 
 theorem sound_mov (w : W) : Sound (.mov w) := by
-  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hp
+  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
   simp only [classHandler, classOperands] at hh ho
   obtain ⟨o0, o1, v0, v1, rfl, rfl, h0, h1⟩ := nvs2 ho hv
@@ -30,11 +30,11 @@ theorem sound_mov (w : W) : Sound (.mov w) := by
   have hrel := readFrame_rel hr hrd (by omega) (by omega)
   have hlen := readFrame_length hrd
   cases w <;> xrun <;>
-    refine post_mem hr hwr (by rw [hlen]; rfl) (by decide) (by rw [hwr']; rfl) hp (bytesRel_val hrel (bytesAt_length ..) ?_) ?_ ?_ ?_ ?_ ?_ rfl
+    refine post_mem hr hwr (by rw [hlen]; rfl) (by decide) (by rw [hwr']; rfl) (bytesRel_val hrel (bytesAt_length ..) ?_) ?_ ?_ ?_ ?_ ?_ rfl
   all_goals xobs
 
 theorem sound_imm (w : W) : Sound (.imm w) := by
-  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hp
+  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
   simp only [classHandler, classOperands] at hh ho
   obtain ⟨o0, o1, v0, v1, rfl, rfl, h0, h1⟩ := nvs2 ho hv
@@ -55,7 +55,7 @@ theorem sound_imm (w : W) : Sound (.imm w) := by
   all_goals
     obtain ⟨rfl, rfl⟩ := hseq
     xrun
-    refine post_mem hr hwr (by rw [hlen]; rfl) (by decide) (by rw [hwr']; rfl) hp
+    refine post_mem hr hwr (by rw [hlen]; rfl) (by decide) (by rw [hwr']; rfl)
       (bytesRel_imm ?_) ?_ ?_ ?_ ?_ ?_ rfl
   all_goals xobs
   all_goals
@@ -63,7 +63,7 @@ theorem sound_imm (w : W) : Sound (.imm w) := by
     bv_decide
 
 theorem sound_addr : Sound .addr := by
-  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hp
+  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
   simp only [classHandler, classOperands] at hh ho
   obtain ⟨o0, o1, v0, v1, rfl, rfl, h0, h1⟩ := nvs2 ho hv
@@ -78,13 +78,13 @@ theorem sound_addr : Sound .addr := by
   have hpv := addrOf_rel hr hpa
   xrun
   refine post_mem hr hwr (by rw [Theorems.encodePtr_length]; rfl) (by decide) (by rw [hwr']; rfl)
-    hp ?_ ?_ ?_ ?_ ?_ ?_ rfl
+    ?_ ?_ ?_ ?_ ?_ ?_ rfl
   · xobs
     exact bytesRel_ptr hpv
   all_goals xobs
 
 theorem sound_ptrAdd : Sound .ptrAdd := by
-  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hp
+  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
   simp only [classHandler, classOperands] at hh ho
   obtain ⟨o0, o1, o2, v0, v1, v2, rfl, rfl, h0, h1, h2⟩ := nvs3 ho hv
@@ -111,14 +111,14 @@ theorem sound_ptrAdd : Sound .ptrAdd := by
     simp
   xrun
   refine post_mem hr hwr (by rw [Theorems.encodePtr_length]; rfl) (by decide) (by rw [hwr']; rfl)
-    hp ?_ ?_ ?_ ?_ ?_ ?_ rfl
+    ?_ ?_ ?_ ?_ ?_ ?_ rfl
   · refine bytesRel_ptr ?_
     rw [hpv]
     xobs
   all_goals xobs
 
 theorem sound_ptrIndex : Sound .ptrIndex := by
-  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hp
+  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
   simp only [classHandler, classOperands] at hh ho
   obtain ⟨o0, o1, o2, o3, v0, v1, v2, v3, rfl, rfl, h0, h1, h2, h3⟩ := nvs4 ho hv
@@ -151,7 +151,7 @@ theorem sound_ptrIndex : Sound .ptrIndex := by
     rw [hsx]; exact ptrIndex_addr q _ _ i hqa
   xrun
   refine post_mem hr hwr (by rw [Theorems.encodePtr_length]; rfl) (by decide) (by rw [hwr']; rfl)
-    hp ?_ ?_ ?_ ?_ ?_ ?_ rfl
+    ?_ ?_ ?_ ?_ ?_ ?_ rfl
   · refine bytesRel_ptr ?_
     rw [hpv]
     xobs
@@ -159,7 +159,7 @@ theorem sound_ptrIndex : Sound .ptrIndex := by
   all_goals xobs
 
 theorem sound_mov128 : Sound .mov128 := by
-  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hp
+  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
   simp only [classHandler, classOperands] at hh ho
   obtain ⟨o0, o1, v0, v1, rfl, rfl, h0, h1⟩ := nvs2 ho hv
@@ -189,7 +189,7 @@ theorem sound_mov128 : Sound .mov128 := by
   rw [show (16 : Nat) = 8 + 8 from rfl, bytesAt_add] at hrel
   have hlen := readFrame_length hrd
   xrun
-  refine post_mov128 hr hwr hlen hb.2 rfl rfl hwr' hp ?_ ?_ ?_ ?_ ?_ ?_ rfl
+  refine post_mov128 hr hwr hlen hb.2 rfl rfl hwr' ?_ ?_ ?_ ?_ ?_ ?_ rfl
   · have hfa := fpAddr_add8 x s1 hb.1
     refine bytesRel_halves hrel (bytesAt_length ..) (bytesAt_length ..) ?_ ?_
     · xobs
