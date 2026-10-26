@@ -82,9 +82,10 @@ pub fn dump(tcx: TyCtxt<'_>, switches: &super::switches::Switches, results: &sup
 
 /// Writes `<dir>/<crate name>.cert.json`, the certificates of the image's VM functions.
 fn write_certs(tcx: TyCtxt<'_>, results: &super::partition::Results, dir: &std::path::Path) {
+    let Some(lean) = &results.lean else { return };
     let entry = |key, symbol: &str, v| obj(vec![("symbol", J::Str(symbol.into())), (key, v)]);
-    let functions = results.certs.iter().map(|(symbol, cert)| entry("cert", symbol, J::Raw(cert.as_str().into())));
-    let islands = results.islands.iter().map(|(symbol, template)| entry("template", symbol, J::Str(template.clone())));
+    let functions = lean.certs.iter().map(|(symbol, cert)| entry("cert", symbol, J::Raw(cert.as_str().into())));
+    let islands = lean.islands.iter().map(|(symbol, template)| entry("template", symbol, J::Str(template.clone())));
     let certs = obj(vec![("functions", J::Arr(functions.collect())), ("islands", J::Arr(islands.collect()))]);
     write_json(tcx, dir, "cert.json", &certs);
 }

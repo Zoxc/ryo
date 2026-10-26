@@ -97,16 +97,22 @@ pub struct Results {
     pub image: ImageObject,
     /// The symbol `__ryo_main` points at: the entry fn's, for a VM `main`.
     pub main_symbol: Option<String>,
-    /// With `RYO_DUMP_LEAN`: each VM function's symbol and lowering certificate (JSON), in
-    /// image order (`lower/cert.rs`).
-    pub certs: Vec<(String, String)>,
-    /// With `RYO_DUMP_LEAN`: the symbol of each island instance the image calls, and its
-    /// template's diagnostic item name, sorted (for the certificate file).
-    pub islands: Vec<(String, String)>,
+    /// With `RYO_DUMP_LEAN`: the data of the certificate file (`dump_lean::write_certs`).
+    pub lean: Option<LeanCerts>,
     /// For `exported_non_generic_symbols`: the Rust symbols the image refers to ([`Roots`]).
     lto_roots: Vec<(String, SymbolExportKind)>,
     /// The interned data, lifetime-erased ([`Results::exports`]).
     exports: Exports<'static>,
+}
+
+/// What `RYO_DUMP_LEAN`'s certificate file needs from the partition.
+pub struct LeanCerts {
+    /// Each VM function's symbol and lowering certificate (JSON), in image order
+    /// (`lower/cert.rs`).
+    pub certs: Vec<(String, String)>,
+    /// The symbol of each island instance the image calls, and its template's diagnostic
+    /// item name, sorted.
+    pub islands: Vec<(String, String)>,
 }
 
 /// The part of [`Results`] that holds this session's interned data.
@@ -129,14 +135,13 @@ impl Results {
         cgu_name: Symbol,
         image: ImageObject,
         main_symbol: Option<String>,
-        certs: Vec<(String, String)>,
-        islands: Vec<(String, String)>,
+        lean: Option<LeanCerts>,
         lto_roots: Vec<(String, SymbolExportKind)>,
         exports: Exports<'tcx>,
     ) -> Self {
         // SAFETY: only the lifetime parameter changes; `exports` restores it (see there).
         let exports = unsafe { std::mem::transmute::<Exports<'tcx>, Exports<'static>>(exports) };
-        Results { cgu_name, image, main_symbol, certs, islands, lto_roots, exports }
+        Results { cgu_name, image, main_symbol, lean, lto_roots, exports }
     }
 
     fn exports<'tcx>(&self, _tcx: TyCtxt<'tcx>) -> &Exports<'tcx> {
@@ -411,9 +416,10 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             self.print_coverage(&failed);
         }
 
-        let certs: Vec<(String, String)> =
-            self.vm.iter().filter_map(|v| Some((tcx.symbol_name(v.instance).name.to_owned(), v.lowered.cert.clone()?))).collect();
-        let islands = if certs.is_empty() { Vec::new() } else { self.island_names() };
+        let lean = self.switches.dump_lean.is_some().then(|| LeanCerts {
+            certs: self.vm.iter().filter_map(|v| Some((tcx.symbol_name(v.instance).name.to_owned(), v.lowered.cert.clone()?))).collect(),
+            islands: self.island_names(),
+        });
         let (image, roots) = self.build_image();
         let vm_exports: Vec<(Instance<'tcx>, Visibility)> =
             self.vm.iter().filter(|v| v.global && v.data.linkage == Linkage::External).map(|v| (v.instance, v.data.visibility)).collect();
@@ -429,8 +435,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             native.name(),
             image,
             main_symbol,
-            certs,
-            islands,
+            lean,
             roots.0.into_iter().collect(),
             Exports { vm: vm_exports, hidden_for_image: hidden },
         );
