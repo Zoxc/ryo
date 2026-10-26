@@ -11,7 +11,7 @@ import Ryo.Vm.Generated.Types
 namespace Ryo.Vm.Full
 
 /-- The number of opcodes. -/
-def count : Nat := 905
+def count : Nat := 902
 
 /-- `full::OP_INFO`, by opcode value. -/
 def opInfos : Array OpInfo := #[
@@ -851,10 +851,7 @@ def opInfos : Array OpInfo := #[
   OpInfo.mk "FenceRelease" "fence.release" Shape.op [] (some 1),
   OpInfo.mk "FenceAcqrel" "fence.acqrel" Shape.op [] (some 1),
   OpInfo.mk "FenceSeqcst" "fence.seqcst" Shape.op [] (some 1),
-  OpInfo.mk "CompilerFenceAcquire" "compiler_fence.acquire" Shape.op [] (some 1),
-  OpInfo.mk "CompilerFenceRelease" "compiler_fence.release" Shape.op [] (some 1),
-  OpInfo.mk "CompilerFenceAcqrel" "compiler_fence.acqrel" Shape.op [] (some 1),
-  OpInfo.mk "CompilerFenceSeqcst" "compiler_fence.seqcst" Shape.op [] (some 1),
+  OpInfo.mk "CompilerFence" "compiler_fence" Shape.op [] (some 1),
   OpInfo.mk "Jmp" "jmp" Shape.jmp [OperandInfo.mk "t" OperandKind.target] (some 2),
   OpInfo.mk "Br" "br" Shape.br [OperandInfo.mk "s" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 4),
   OpInfo.mk "BrEqW8" "br.eq.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
@@ -2613,144 +2610,138 @@ def fenceRelease : Opcode := ⟨833⟩
 def fenceAcqrel : Opcode := ⟨834⟩
 /-- `fence.seqcst` -/
 def fenceSeqcst : Opcode := ⟨835⟩
-/-- `compiler_fence.acquire` -/
-def compilerFenceAcquire : Opcode := ⟨836⟩
-/-- `compiler_fence.release` -/
-def compilerFenceRelease : Opcode := ⟨837⟩
-/-- `compiler_fence.acqrel` -/
-def compilerFenceAcqrel : Opcode := ⟨838⟩
-/-- `compiler_fence.seqcst` -/
-def compilerFenceSeqcst : Opcode := ⟨839⟩
+/-- `compiler_fence` -/
+def compilerFence : Opcode := ⟨836⟩
 /-- `jmp` -/
-def jmp : Opcode := ⟨840⟩
+def jmp : Opcode := ⟨837⟩
 /-- `br` -/
-def br : Opcode := ⟨841⟩
+def br : Opcode := ⟨838⟩
 /-- `br.eq.w8` -/
-def brEqW8 : Opcode := ⟨842⟩
+def brEqW8 : Opcode := ⟨839⟩
 /-- `br.lt.s.w8` -/
-def brLtSW8 : Opcode := ⟨843⟩
+def brLtSW8 : Opcode := ⟨840⟩
 /-- `br.lt.u.w8` -/
-def brLtUW8 : Opcode := ⟨844⟩
+def brLtUW8 : Opcode := ⟨841⟩
 /-- `br.eq.imm.w8` -/
-def brEqImmW8 : Opcode := ⟨845⟩
+def brEqImmW8 : Opcode := ⟨842⟩
 /-- `br.lt.s.imm.w8` -/
-def brLtSImmW8 : Opcode := ⟨846⟩
+def brLtSImmW8 : Opcode := ⟨843⟩
 /-- `br.lt.u.imm.w8` -/
-def brLtUImmW8 : Opcode := ⟨847⟩
+def brLtUImmW8 : Opcode := ⟨844⟩
 /-- `br.gt.s.imm.w8` -/
-def brGtSImmW8 : Opcode := ⟨848⟩
+def brGtSImmW8 : Opcode := ⟨845⟩
 /-- `br.gt.u.imm.w8` -/
-def brGtUImmW8 : Opcode := ⟨849⟩
+def brGtUImmW8 : Opcode := ⟨846⟩
 /-- `br.eq.w16` -/
-def brEqW16 : Opcode := ⟨850⟩
+def brEqW16 : Opcode := ⟨847⟩
 /-- `br.lt.s.w16` -/
-def brLtSW16 : Opcode := ⟨851⟩
+def brLtSW16 : Opcode := ⟨848⟩
 /-- `br.lt.u.w16` -/
-def brLtUW16 : Opcode := ⟨852⟩
+def brLtUW16 : Opcode := ⟨849⟩
 /-- `br.eq.imm.w16` -/
-def brEqImmW16 : Opcode := ⟨853⟩
+def brEqImmW16 : Opcode := ⟨850⟩
 /-- `br.lt.s.imm.w16` -/
-def brLtSImmW16 : Opcode := ⟨854⟩
+def brLtSImmW16 : Opcode := ⟨851⟩
 /-- `br.lt.u.imm.w16` -/
-def brLtUImmW16 : Opcode := ⟨855⟩
+def brLtUImmW16 : Opcode := ⟨852⟩
 /-- `br.gt.s.imm.w16` -/
-def brGtSImmW16 : Opcode := ⟨856⟩
+def brGtSImmW16 : Opcode := ⟨853⟩
 /-- `br.gt.u.imm.w16` -/
-def brGtUImmW16 : Opcode := ⟨857⟩
+def brGtUImmW16 : Opcode := ⟨854⟩
 /-- `br.eq.w32` -/
-def brEqW32 : Opcode := ⟨858⟩
+def brEqW32 : Opcode := ⟨855⟩
 /-- `br.lt.s.w32` -/
-def brLtSW32 : Opcode := ⟨859⟩
+def brLtSW32 : Opcode := ⟨856⟩
 /-- `br.lt.u.w32` -/
-def brLtUW32 : Opcode := ⟨860⟩
+def brLtUW32 : Opcode := ⟨857⟩
 /-- `br.eq.imm.w32` -/
-def brEqImmW32 : Opcode := ⟨861⟩
+def brEqImmW32 : Opcode := ⟨858⟩
 /-- `br.lt.s.imm.w32` -/
-def brLtSImmW32 : Opcode := ⟨862⟩
+def brLtSImmW32 : Opcode := ⟨859⟩
 /-- `br.lt.u.imm.w32` -/
-def brLtUImmW32 : Opcode := ⟨863⟩
+def brLtUImmW32 : Opcode := ⟨860⟩
 /-- `br.gt.s.imm.w32` -/
-def brGtSImmW32 : Opcode := ⟨864⟩
+def brGtSImmW32 : Opcode := ⟨861⟩
 /-- `br.gt.u.imm.w32` -/
-def brGtUImmW32 : Opcode := ⟨865⟩
+def brGtUImmW32 : Opcode := ⟨862⟩
 /-- `br.eq.w64` -/
-def brEqW64 : Opcode := ⟨866⟩
+def brEqW64 : Opcode := ⟨863⟩
 /-- `br.lt.s.w64` -/
-def brLtSW64 : Opcode := ⟨867⟩
+def brLtSW64 : Opcode := ⟨864⟩
 /-- `br.lt.u.w64` -/
-def brLtUW64 : Opcode := ⟨868⟩
+def brLtUW64 : Opcode := ⟨865⟩
 /-- `br.eq.imm.w64` -/
-def brEqImmW64 : Opcode := ⟨869⟩
+def brEqImmW64 : Opcode := ⟨866⟩
 /-- `br.lt.s.imm.w64` -/
-def brLtSImmW64 : Opcode := ⟨870⟩
+def brLtSImmW64 : Opcode := ⟨867⟩
 /-- `br.lt.u.imm.w64` -/
-def brLtUImmW64 : Opcode := ⟨871⟩
+def brLtUImmW64 : Opcode := ⟨868⟩
 /-- `br.gt.s.imm.w64` -/
-def brGtSImmW64 : Opcode := ⟨872⟩
+def brGtSImmW64 : Opcode := ⟨869⟩
 /-- `br.gt.u.imm.w64` -/
-def brGtUImmW64 : Opcode := ⟨873⟩
+def brGtUImmW64 : Opcode := ⟨870⟩
 /-- `br.eq.w128` -/
-def brEqW128 : Opcode := ⟨874⟩
+def brEqW128 : Opcode := ⟨871⟩
 /-- `br.lt.s.w128` -/
-def brLtSW128 : Opcode := ⟨875⟩
+def brLtSW128 : Opcode := ⟨872⟩
 /-- `br.lt.u.w128` -/
-def brLtUW128 : Opcode := ⟨876⟩
+def brLtUW128 : Opcode := ⟨873⟩
 /-- `br.eq.imm.w128` -/
-def brEqImmW128 : Opcode := ⟨877⟩
+def brEqImmW128 : Opcode := ⟨874⟩
 /-- `br.lt.s.imm.w128` -/
-def brLtSImmW128 : Opcode := ⟨878⟩
+def brLtSImmW128 : Opcode := ⟨875⟩
 /-- `br.lt.u.imm.w128` -/
-def brLtUImmW128 : Opcode := ⟨879⟩
+def brLtUImmW128 : Opcode := ⟨876⟩
 /-- `br.gt.s.imm.w128` -/
-def brGtSImmW128 : Opcode := ⟨880⟩
+def brGtSImmW128 : Opcode := ⟨877⟩
 /-- `br.gt.u.imm.w128` -/
-def brGtUImmW128 : Opcode := ⟨881⟩
+def brGtUImmW128 : Opcode := ⟨878⟩
 /-- `switch.dense.w8` -/
-def switchDenseW8 : Opcode := ⟨882⟩
+def switchDenseW8 : Opcode := ⟨879⟩
 /-- `switch.dense.w16` -/
-def switchDenseW16 : Opcode := ⟨883⟩
+def switchDenseW16 : Opcode := ⟨880⟩
 /-- `switch.dense.w32` -/
-def switchDenseW32 : Opcode := ⟨884⟩
+def switchDenseW32 : Opcode := ⟨881⟩
 /-- `switch.dense.w64` -/
-def switchDenseW64 : Opcode := ⟨885⟩
+def switchDenseW64 : Opcode := ⟨882⟩
 /-- `switch.dense.w128` -/
-def switchDenseW128 : Opcode := ⟨886⟩
+def switchDenseW128 : Opcode := ⟨883⟩
 /-- `switch.sparse.w8` -/
-def switchSparseW8 : Opcode := ⟨887⟩
+def switchSparseW8 : Opcode := ⟨884⟩
 /-- `switch.sparse.w16` -/
-def switchSparseW16 : Opcode := ⟨888⟩
+def switchSparseW16 : Opcode := ⟨885⟩
 /-- `switch.sparse.w32` -/
-def switchSparseW32 : Opcode := ⟨889⟩
+def switchSparseW32 : Opcode := ⟨886⟩
 /-- `switch.sparse.w64` -/
-def switchSparseW64 : Opcode := ⟨890⟩
+def switchSparseW64 : Opcode := ⟨887⟩
 /-- `switch.sparse.w128` -/
-def switchSparseW128 : Opcode := ⟨891⟩
+def switchSparseW128 : Opcode := ⟨888⟩
 /-- `unreachable` -/
-def unreachable : Opcode := ⟨892⟩
+def unreachable : Opcode := ⟨889⟩
 /-- `abort` -/
-def abort : Opcode := ⟨893⟩
+def abort : Opcode := ⟨890⟩
 /-- `call` -/
-def call : Opcode := ⟨894⟩
+def call : Opcode := ⟨891⟩
 /-- `call.sym` -/
-def callSym : Opcode := ⟨895⟩
+def callSym : Opcode := ⟨892⟩
 /-- `call.sym.ind` -/
-def callSymInd : Opcode := ⟨896⟩
+def callSymInd : Opcode := ⟨893⟩
 /-- `call.ptr` -/
-def callPtr : Opcode := ⟨897⟩
+def callPtr : Opcode := ⟨894⟩
 /-- `tail_call` -/
-def tailCall : Opcode := ⟨898⟩
+def tailCall : Opcode := ⟨895⟩
 /-- `tail_call.ptr` -/
-def tailCallPtr : Opcode := ⟨899⟩
+def tailCallPtr : Opcode := ⟨896⟩
 /-- `ret` -/
-def ret : Opcode := ⟨900⟩
+def ret : Opcode := ⟨897⟩
 /-- `arg` -/
-def arg : Opcode := ⟨901⟩
+def arg : Opcode := ⟨898⟩
 /-- `island` -/
-def island : Opcode := ⟨902⟩
+def island : Opcode := ⟨899⟩
 /-- `lpad` -/
-def lpad : Opcode := ⟨903⟩
+def lpad : Opcode := ⟨900⟩
 /-- `resume` -/
-def resume : Opcode := ⟨904⟩
+def resume : Opcode := ⟨901⟩
 
 end Opcode
 

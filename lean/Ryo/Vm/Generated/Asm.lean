@@ -919,10 +919,7 @@ def asmInfos : Array AsmInfo := #[
   AsmInfo.mk true false (some (Layout.mk [] 0 0)) (some (Layout.mk [] 1 1)), -- fence.release
   AsmInfo.mk true false (some (Layout.mk [] 0 0)) (some (Layout.mk [] 1 1)), -- fence.acqrel
   AsmInfo.mk true false (some (Layout.mk [] 0 0)) (some (Layout.mk [] 1 1)), -- fence.seqcst
-  AsmInfo.mk true false (some (Layout.mk [] 0 0)) (some (Layout.mk [] 1 1)), -- compiler_fence.acquire
-  AsmInfo.mk true false (some (Layout.mk [] 0 0)) (some (Layout.mk [] 1 1)), -- compiler_fence.release
-  AsmInfo.mk true false (some (Layout.mk [] 0 0)) (some (Layout.mk [] 1 1)), -- compiler_fence.acqrel
-  AsmInfo.mk true false (some (Layout.mk [] 0 0)) (some (Layout.mk [] 1 1)), -- compiler_fence.seqcst
+  AsmInfo.mk true false (some (Layout.mk [] 0 0)) (some (Layout.mk [] 1 1)), -- compiler_fence
   AsmInfo.mk false false none none, -- jmp
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 0 0 0 false, Loc.mk 0 0 0 false] 0 1)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 0 0 0 false, Loc.mk 0 0 0 false] 1 2)), -- br
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 0 0 0 false, Loc.mk 0 0 0 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 0 0 0 false, Loc.mk 0 0 0 false] 1 3)), -- br.eq.w8

@@ -19,3 +19,8 @@ remove it once a Lean session has handled it.
   (`lean/Ryo/Obj/Image.lean` `readHeader`, the `parts` dump line); the reader checks its count
   equals the function count, and `validate` rejects unknown bits. Nothing in the VM semantics
   reads it (the JIT's inliner does). Commit: "Carry inline and cold attributes in the image".
+
+- The four `compiler_fence.{acquire,release,acqrel,seqcst}` opcodes are one `compiler_fence`
+  with no ordering; the backend maps every ordering of `atomic_singlethreadfence` to it. The
+  generated tables are regenerated; any hand-written spec or proof naming the per-ordering
+  forms should use the single op. Commit: "Merge the compiler_fence opcodes into one".

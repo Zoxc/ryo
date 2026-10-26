@@ -537,7 +537,7 @@ see [lowering.md](lowering.md#rvalues).
 
 All handler calls; each performs the matching `core::sync::atomic` operation, on the
 pointer in slot `p`. The handlers are `ryo_h_AtomicLoadW8Relaxed` …
-`ryo_h_CompilerFenceSeqcst`.
+`ryo_h_CompilerFence`.
 
 The lowering (`intrinsic.rs`, `atomic`) maps the `atomic_*` intrinsics onto them; an
 ordering combination the opcode list doesn't have takes the `seqcst` form, which is
@@ -550,7 +550,9 @@ Widths 8–64 run in the VM; 128-bit atomics keep the function native for now (t
 
 `relaxed`, `acquire`, `release`, `acqrel` and `seqcst`, and only the combinations core
 accepts exist: loads have no `release`/`acqrel`, stores no `acquire`/`acqrel`, failure
-orderings are `relaxed`/`acquire`/`seqcst`, and fences aren't `relaxed`.
+orderings are `relaxed`/`acquire`/`seqcst`, and fences aren't `relaxed`. `compiler_fence`
+has no ordering: every ordering of `atomic_singlethreadfence` maps to it, since it emits no
+machine code and is the same barrier to the VM and the JIT for all of them.
 
 In the snippets, `AtomicT` is the width's `AtomicU8` … `AtomicU64` and `ord` the
 instruction's ordering.
@@ -612,12 +614,13 @@ frame.write(d, p.swap(frame.read::<*mut u8>(s), ord));           // xchg
 frame.write(d, p.fetch_byte_add(frame.read::<usize>(s), ord));   // fetch_byte_sub, fetch_and, …
 ```
 
-#### `fence.ord` and `compiler_fence.ord`
+#### `fence.ord` and `compiler_fence`
 
 No operands: `atomic_fence` and `atomic_singlethreadfence` (`fence`, `compiler_fence`):
 
 ```rust
-core::sync::atomic::fence(ord);           // compiler_fence
+core::sync::atomic::fence(ord);
+core::sync::atomic::compiler_fence(SeqCst);  // compiler_fence
 ```
 
 ## Control flow

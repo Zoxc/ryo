@@ -269,7 +269,7 @@ fn opcode_table_is_pinned() {
             eat(&format!("{:?}", o.kind));
         }
     }
-    assert_eq!(h, 0xeb61baa47ad0bac, "opcode table hash {h:#x}");
+    assert_eq!(h, 0x81989b434ec577a6, "opcode table hash {h:#x}");
 }
 
 /// Pins the image table layouts: any change to a table entry's size or field offsets fails

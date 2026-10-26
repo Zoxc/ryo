@@ -524,9 +524,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             let strong = format!("{base}{}", vec!["Seqcst"; ords.len()].concat());
             try_opcode(&exact).or_else(|| try_opcode(&strong)).ok_or_else(|| NeedsNative(format!("no opcode {exact}")))
         };
-        if name == "atomic_fence" || name == "atomic_singlethreadfence" {
-            let base = if name == "atomic_fence" { "Fence" } else { "CompilerFence" };
-            let op = pick(base.to_owned(), &[ord(0)])?;
+        if name == "atomic_singlethreadfence" {
+            // Every ordering is the same barrier to the VM and the JIT; no machine code.
+            self.op(Opcode::CompilerFence, &[]);
+            return Ok(true);
+        }
+        if name == "atomic_fence" {
+            let op = pick("Fence".to_owned(), &[ord(0)])?;
             self.op(op, &[]);
             return Ok(true);
         }

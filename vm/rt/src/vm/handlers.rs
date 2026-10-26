@@ -849,10 +849,7 @@ macro_rules! for_each_handler {
         FenceRelease => fence(Release);
         FenceAcqrel => fence(AcqRel);
         FenceSeqcst => fence(SeqCst);
-        CompilerFenceAcquire => compiler_fence(Acquire);
-        CompilerFenceRelease => compiler_fence(Release);
-        CompilerFenceAcqrel => compiler_fence(AcqRel);
-        CompilerFenceSeqcst => compiler_fence(SeqCst);
+        CompilerFence => compiler_fence(SeqCst);
         Br => br() -> bool;
         BrEqW8 => br_cmp(u8, ==) -> bool;
         BrLtSW8 => br_cmp(i8, <) -> bool;

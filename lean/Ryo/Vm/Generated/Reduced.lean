@@ -780,14 +780,14 @@ def toFullTable : Array (Option Full.Opcode) := #[
   some ⟨252⟩, some ⟨253⟩, some ⟨254⟩, some ⟨330⟩, some ⟨331⟩, some ⟨332⟩,
   some ⟨333⟩, some ⟨334⟩, some ⟨335⟩, some ⟨338⟩, some ⟨339⟩, some ⟨340⟩,
   some ⟨341⟩, some ⟨344⟩, some ⟨345⟩, some ⟨350⟩, some ⟨351⟩, some ⟨352⟩,
-  some ⟨353⟩, some ⟨354⟩, some ⟨355⟩, some ⟨840⟩, some ⟨841⟩, some ⟨842⟩,
-  some ⟨843⟩, some ⟨844⟩, some ⟨845⟩, some ⟨846⟩, some ⟨847⟩, some ⟨848⟩,
-  some ⟨849⟩, some ⟨850⟩, some ⟨851⟩, some ⟨852⟩, some ⟨853⟩, some ⟨854⟩,
-  some ⟨855⟩, some ⟨856⟩, some ⟨857⟩, some ⟨858⟩, some ⟨859⟩, some ⟨860⟩,
-  some ⟨861⟩, some ⟨862⟩, some ⟨863⟩, some ⟨864⟩, some ⟨865⟩, some ⟨866⟩,
-  some ⟨867⟩, some ⟨868⟩, some ⟨869⟩, some ⟨870⟩, some ⟨871⟩, some ⟨872⟩,
-  some ⟨873⟩, some ⟨892⟩, some ⟨894⟩, some ⟨895⟩, some ⟨896⟩, some ⟨897⟩,
-  some ⟨898⟩, some ⟨899⟩, some ⟨900⟩, some ⟨901⟩, some ⟨902⟩, none
+  some ⟨353⟩, some ⟨354⟩, some ⟨355⟩, some ⟨837⟩, some ⟨838⟩, some ⟨839⟩,
+  some ⟨840⟩, some ⟨841⟩, some ⟨842⟩, some ⟨843⟩, some ⟨844⟩, some ⟨845⟩,
+  some ⟨846⟩, some ⟨847⟩, some ⟨848⟩, some ⟨849⟩, some ⟨850⟩, some ⟨851⟩,
+  some ⟨852⟩, some ⟨853⟩, some ⟨854⟩, some ⟨855⟩, some ⟨856⟩, some ⟨857⟩,
+  some ⟨858⟩, some ⟨859⟩, some ⟨860⟩, some ⟨861⟩, some ⟨862⟩, some ⟨863⟩,
+  some ⟨864⟩, some ⟨865⟩, some ⟨866⟩, some ⟨867⟩, some ⟨868⟩, some ⟨869⟩,
+  some ⟨870⟩, some ⟨889⟩, some ⟨891⟩, some ⟨892⟩, some ⟨893⟩, some ⟨894⟩,
+  some ⟨895⟩, some ⟨896⟩, some ⟨897⟩, some ⟨898⟩, some ⟨899⟩, none
 ]
 
 /-- `Opcode::of_full` by full opcode. -/
@@ -864,16 +864,16 @@ def ofFullTable : Array (Option Opcode) := #[
   none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
   none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
   none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
-  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
-  some ⟨189⟩, some ⟨190⟩, some ⟨191⟩, some ⟨192⟩, some ⟨193⟩, some ⟨194⟩,
-  some ⟨195⟩, some ⟨196⟩, some ⟨197⟩, some ⟨198⟩, some ⟨199⟩, some ⟨200⟩,
-  some ⟨201⟩, some ⟨202⟩, some ⟨203⟩, some ⟨204⟩, some ⟨205⟩, some ⟨206⟩,
-  some ⟨207⟩, some ⟨208⟩, some ⟨209⟩, some ⟨210⟩, some ⟨211⟩, some ⟨212⟩,
-  some ⟨213⟩, some ⟨214⟩, some ⟨215⟩, some ⟨216⟩, some ⟨217⟩, some ⟨218⟩,
-  some ⟨219⟩, some ⟨220⟩, some ⟨221⟩, some ⟨222⟩, none, none, none, none, none,
-  none, none, none, none, none, none, none, none, none, none, none, none, none, some ⟨223⟩,
-  none, some ⟨224⟩, some ⟨225⟩, some ⟨226⟩, some ⟨227⟩, some ⟨228⟩,
-  some ⟨229⟩, some ⟨230⟩, some ⟨231⟩, some ⟨232⟩, none, none
+  none, none, none, none, none, none, none, none, none, none, none, none, some ⟨189⟩,
+  some ⟨190⟩, some ⟨191⟩, some ⟨192⟩, some ⟨193⟩, some ⟨194⟩, some ⟨195⟩,
+  some ⟨196⟩, some ⟨197⟩, some ⟨198⟩, some ⟨199⟩, some ⟨200⟩, some ⟨201⟩,
+  some ⟨202⟩, some ⟨203⟩, some ⟨204⟩, some ⟨205⟩, some ⟨206⟩, some ⟨207⟩,
+  some ⟨208⟩, some ⟨209⟩, some ⟨210⟩, some ⟨211⟩, some ⟨212⟩, some ⟨213⟩,
+  some ⟨214⟩, some ⟨215⟩, some ⟨216⟩, some ⟨217⟩, some ⟨218⟩, some ⟨219⟩,
+  some ⟨220⟩, some ⟨221⟩, some ⟨222⟩, none, none, none, none, none, none, none, none,
+  none, none, none, none, none, none, none, none, none, none, some ⟨223⟩, none,
+  some ⟨224⟩, some ⟨225⟩, some ⟨226⟩, some ⟨227⟩, some ⟨228⟩, some ⟨229⟩,
+  some ⟨230⟩, some ⟨231⟩, some ⟨232⟩, none, none
 ]
 
 def Opcode.full (op : Opcode) : Option Full.Opcode := toFullTable[op.val.toNat]!

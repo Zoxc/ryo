@@ -915,10 +915,7 @@ def handlers : Array (Option HandlerInfo) := #[
   some (HandlerInfo.mk HandlerKind.fence ["Release"] none), -- fence.release
   some (HandlerInfo.mk HandlerKind.fence ["AcqRel"] none), -- fence.acqrel
   some (HandlerInfo.mk HandlerKind.fence ["SeqCst"] none), -- fence.seqcst
-  some (HandlerInfo.mk HandlerKind.compiler_fence ["Acquire"] none), -- compiler_fence.acquire
-  some (HandlerInfo.mk HandlerKind.compiler_fence ["Release"] none), -- compiler_fence.release
-  some (HandlerInfo.mk HandlerKind.compiler_fence ["AcqRel"] none), -- compiler_fence.acqrel
-  some (HandlerInfo.mk HandlerKind.compiler_fence ["SeqCst"] none), -- compiler_fence.seqcst
+  some (HandlerInfo.mk HandlerKind.compiler_fence ["SeqCst"] none), -- compiler_fence
   none, -- jmp
   some (HandlerInfo.mk HandlerKind.br [] (some "bool")), -- br
   some (HandlerInfo.mk HandlerKind.br_cmp ["u8", "=="] (some "bool")), -- br.eq.w8

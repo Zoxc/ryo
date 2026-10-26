@@ -856,10 +856,7 @@ define_ops! {
     FenceRelease = "fence.release" op {  },
     FenceAcqrel = "fence.acqrel" op {  },
     FenceSeqcst = "fence.seqcst" op {  },
-    CompilerFenceAcquire = "compiler_fence.acquire" op {  },
-    CompilerFenceRelease = "compiler_fence.release" op {  },
-    CompilerFenceAcqrel = "compiler_fence.acqrel" op {  },
-    CompilerFenceSeqcst = "compiler_fence.seqcst" op {  },
+    CompilerFence = "compiler_fence" op {  },
 
     // ---- control flow ----
     // Branches take a polarity: `neg` (`!` after the mnemonic) branches when the condition is false.
