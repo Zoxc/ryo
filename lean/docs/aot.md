@@ -153,6 +153,29 @@ the backend gained them):
   pointer slot. Rule: an aggregate assignment of `n` bytes equals its pieces, given those two
   side conditions (piecewise copying of overlapping ranges or through the overwritten pointer
   would differ). ("Lower small block copies and zeroing to scalar pieces".)
+- Exact division by a constant `v = ±2^k * m` (`m` odd, w8-w64; `ptr_offset_from(_unsigned)`,
+  `exact_div`): `shr.s/u.imm k` then `mul.imm` by the inverse of `m` mod 2^N (negated for
+  negative `v`). Equal to the division only on exact multiples, which is all the intrinsics
+  define (inexact is UB); `m * inv = 1 mod 2^N` is checkable per site. Also `/ 1` -> `mov`,
+  `% 1` and signed `% -1` -> `imm 0` (dropping the read of `x`: a refinement), signed `/ -1`
+  -> `mul.imm` by all-ones. ("Lower exact division by constants to shifts and inverse
+  multiplies".)
+- Unsigned w8-w32 `/` and `%` by a constant `b` (not a power of two): `zext` to w64,
+  `mul.imm M`, `shr.u.imm p`, `trunc` (and `x - q * b` for `%`), when `M = ceil(2^p / b) <
+  2^(64-N)` and `M*b - 2^p <= 2^(p-N)`, both checked per site; the rule needs one Nat lemma
+  (the quotient is exact under those bounds). ("Lower small unsigned division by constants to
+  multiply-shift".)
+- `rotate_left`/`rotate_right` by a constant `n` (w8-w64): `shl.imm c`, `shr.u.imm N-c`, `or`
+  with `c = n mod N` (`N - c` for `rotate_right`), or a `mov` for `c = 0`; `bswap.w8` is a
+  `mov.w8` (a refinement: `mov` keeps uninit bytes where `bswap` is UB). Needs a
+  `BitVec.rotateLeft` unfolding lemma. ("Lower rotates by a constant to shifts and an or".)
+- `copy_nonoverlapping`, `copy`, `write_bytes` with a constant count of at most 48 bytes,
+  `typed_swap_nonoverlapping` of at most 48 bytes, and an all-equal-bytes `Repeat` of at most
+  48 bytes into memory: `load`/`store` pieces (all loads into a frame temp before the stores,
+  so `copy`'s overlap is exact) or `store` pieces of a byte pattern (`imm`, or `zext.w8.w64` +
+  `mul.imm 0x0101..01`), not `memcpy`/`memmove`/`memset`. Whole-range dereferenceability
+  becomes per piece: a refinement of UB. ("Lower constant-length copy and set intrinsics to
+  load/store pieces".)
 - Niche discriminants (`FnCx::niche_discr`): the plain-op decoding is proved against
   `tagToVariant` (`Ryo/Proofs/NicheDiscr.lean`, `nicheDiscr_sound`, on a model of the
   lowering); the fused form (a `SwitchInt` testing the tag with `br.eq.imm`, or `sub.imm` +

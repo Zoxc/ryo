@@ -121,7 +121,7 @@ the checkers never trust the JIT's view of its input:
 | 5 | Out-of-SSA + register allocation | location checker (Rideau–Leroy or regalloc2's symbolic checker): parallel moves on edges, callee-saved homes across calls and into landing pads | checker soundness |
 | 6 | Emission → x86 | **generic** L2+ decode of the JIT bytes (not `decodeReduced`), then a per-block template match of the items against the LIR; every item's feature is in the logged CPU features; allocas disjoint, aligned, pinned ones at their AOT offsets | one lemma per instruction-selection template against `opSem` |
 | 7 | OSR entries | decode the entry code (L2+); Lean recomputes AOT head liveness; the entry's moves establish the R ↔ R-SSA relation at the landing block from the AOT frame (every `osr.load` reads a whole field at its AOT offset, every moved live alloca is copied, no pinned alloca is written); `fp` and the incoming area stay put | `osr_entry_sound`, generalized to slot → register/slot homes; the relocation lemma |
-| 8 | Unwind tables | the JIT FDE's rows match the decoded prologue and callee-saved saves (`DW_CFA_offset`); the LSDA matches the LIR's call sites and pads | LSDA parse |
+| 8 | Unwind tables | the JIT FDE's rows match the decoded prologue and callee-saved saves (`DW_CFA_offset`; the saves are packed 8-byte slots at the frame's top, or, when no alloca is pinned above them, pushes and pops, each push without a frame pointer followed by a `DW_CFA_def_cfa_offset` row, "JIT SSA: push and pop callee-saved registers"); the LSDA matches the LIR's call sites and pads | LSDA parse |
 
 **Theorem (per compilation):** if every check passes, the JIT code (entry and every OSR
 entry) simulates the R programs that the Lean decoder read from the AOT code of the root and
