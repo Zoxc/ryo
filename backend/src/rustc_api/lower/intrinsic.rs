@@ -230,18 +230,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             }
             return self.direct_call(fty, callee, args, cont, source_info);
         }
-        self.intrinsic_next(&cont)
-    }
-
-    /// Continues after a lowered intrinsic: to the call's target block.
-    fn intrinsic_next(&mut self, cont: &CallCont<'tcx>) -> Result<(), NeedsNative> {
-        match cont.target {
-            Some(bb) => self.jump(bb),
-            None => {
-                self.op(Opcode::Unreachable, &[]);
-            }
-        }
-        Ok(())
+        self.continue_at(&cont)
     }
 
     /// `size_of_val` / `align_of_val` of the `T` behind the pointer in slot `p` (wide for

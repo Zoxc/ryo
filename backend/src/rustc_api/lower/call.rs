@@ -643,6 +643,12 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         if store && let Some(dest) = cont.dest {
             self.with_cuts(dest.layout, |fx| fx.store(dest.loc, d, dest.layout.size.bytes() as u32));
         }
+        self.continue_at(&cont)
+    }
+
+    /// Continues after a call (or a lowered intrinsic): at its target block, or traps if it
+    /// diverges.
+    pub(super) fn continue_at(&mut self, cont: &CallCont<'tcx>) -> Result<(), NeedsNative> {
         match cont.target {
             Some(bb) => self.jump(bb),
             None => {
