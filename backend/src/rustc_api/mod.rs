@@ -198,31 +198,35 @@ impl CodegenBackend for RyoBackend {
         // A crate with no VM code has no image (`partition::vm_enabled`); its output still
         // registers its upstream crates' images.
         let Some(results) = partition::results(tcx) else {
-            let _ = self.link_info.set(link::LinkInfo { image: None, linked_roots: linked_roots(), macho });
+            let _ = self.link_info.set(link::LinkInfo { images: Vec::new(), linked_roots: linked_roots(), macho });
             let llvm = self.llvm.codegen_crate(tcx);
-            return Box::new(RyoOngoingCodegen { llvm, image: None });
+            return Box::new(RyoOngoingCodegen { llvm, images: Vec::new() });
         };
-        assert_eq!(partitions.codegen_units[0].name(), results.cgu_name);
+        let _ = partitions;
         let fmt = object_format(tcx.sess);
         let scid = symbols::local_stable_crate_id(tcx);
-        // Step 5: the image object (design/backend.md#pipeline).
-        let image_name = format!("{}.ryo_image", results.cgu_name);
-        let image_path = tcx.output_filenames(()).temp_path_for_cgu(OutputType::Object, &image_name);
+        // Step 5: the image objects, one per CGU with VM functions (design/backend.md#pipeline).
         let rt_symbol = |name: &str| symbols::rt_symbol(tcx, name);
         let write_t = tcx.prof.generic_activity("ryo_write_image");
-        let cgu_hash = ryo_bytecode::image::cgu_hash(results.cgu_name.as_str().as_bytes());
-        let bytes = objfile::write_image(&*fmt, &results.image, scid, cgu_hash, results.main_symbol.as_deref(), &rt_symbol)
-            .unwrap_or_else(|e| tcx.dcx().fatal(e));
-        if let Err(e) = std::fs::write(&image_path, bytes) {
-            tcx.dcx().fatal(format!("writing {}: {e}", image_path.display()));
+        let mut images = Vec::with_capacity(results.images.len());
+        for img in &results.images {
+            let image_name = format!("{}.ryo_image", img.cgu_name);
+            let image_path = tcx.output_filenames(()).temp_path_for_cgu(OutputType::Object, &image_name);
+            let cgu_hash = ryo_bytecode::image::cgu_hash(img.cgu_name.as_str().as_bytes());
+            let bytes = objfile::write_image(&*fmt, &img.image, scid, cgu_hash, img.main_symbol.as_deref(), &rt_symbol)
+                .unwrap_or_else(|e| tcx.dcx().fatal(e));
+            if let Err(e) = std::fs::write(&image_path, bytes) {
+                tcx.dcx().fatal(format!("writing {}: {e}", image_path.display()));
+            }
+            images.push((image_name, image_path));
         }
         drop(write_t);
-        let _ =
-            self.link_info.set(link::LinkInfo { image: Some(link::LocalImage { module: image_name.clone() }), linked_roots: linked_roots(), macho });
+        let modules = images.iter().map(|(name, _)| name.clone()).collect();
+        let _ = self.link_info.set(link::LinkInfo { images: modules, linked_roots: linked_roots(), macho });
         dump_lean::dump(tcx, &self.switches, results);
-        // The native CGU (step 4), compiled by cg_llvm as usual.
+        // The native CGUs (step 4), compiled by cg_llvm as usual.
         let llvm = self.llvm.codegen_crate(tcx);
-        Box::new(RyoOngoingCodegen { llvm, image: Some((image_name, image_path)) })
+        Box::new(RyoOngoingCodegen { llvm, images })
     }
 
     fn join_codegen(
@@ -236,9 +240,9 @@ impl CodegenBackend for RyoBackend {
         let ongoing = ongoing_codegen.downcast::<RyoOngoingCodegen>().expect("expected RyoOngoingCodegen from RyoBackend::codegen_crate");
         // cg_llvm downcasts this to its own `OngoingCodegen` (`rustc_codegen_llvm/src/lib.rs:407-410`).
         let (mut modules, work_products) = self.llvm.join_codegen(ongoing.llvm, sess, incr_comp_session, outputs, crate_info);
-        // The image, so `link_rlib` and the object list include it (design/backend.md#pipeline
-        // step 5).
-        if let Some((name, path)) = ongoing.image {
+        // The images, so `link_rlib` and the object list include them
+        // (design/backend.md#pipeline step 5).
+        for (name, path) in ongoing.images {
             modules.modules.push(object_module(name, path));
         }
         (modules, work_products)
@@ -301,9 +305,10 @@ fn binary_format(f: &rustc_target::spec::BinaryFormat) -> object::BinaryFormat {
     }
 }
 
-/// What `codegen_crate` returns: cg_llvm's ongoing codegen, plus the image object's module name
-/// and path if the crate has one (design/backend.md#pipeline step 5).
+/// What `codegen_crate` returns: cg_llvm's ongoing codegen, plus the image objects
+/// (design/backend.md#pipeline step 5).
 struct RyoOngoingCodegen {
     llvm: Box<dyn Any>,
-    image: Option<(String, PathBuf)>,
+    /// The image objects: module name and path.
+    images: Vec<(String, PathBuf)>,
 }

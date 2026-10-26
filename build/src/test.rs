@@ -87,6 +87,16 @@ const VARIANTS: &[Variant] = &[
     Variant { name: "ryo-jit-ssa", env: JIT_SSA, ..VARIANT },
     Variant { name: "ryo-jit-ssa-osr", env: JIT_SSA_OSR, ..VARIANT },
     Variant { name: "ryo-jit-ssa-shuffle", env: JIT_SSA_SHUFFLE, ..VARIANT },
+    // One image per codegen unit (design/backend.md#pipeline): rustc's default merges the
+    // corpus's small crates into one CGU, these ask for many, so calls, fn pointers, vtables
+    // and statics cross images, and `#[inline]` functions get a copy per image.
+    Variant { name: "ryo-cgu1", flags: &["-Ccodegen-units=1"], ..VARIANT },
+    Variant { name: "ryo-cgu16", flags: &["-Ccodegen-units=16"], ..VARIANT },
+    Variant { name: "ryo-cgu256", flags: &["-Ccodegen-units=256"], ..VARIANT },
+    Variant { name: "ryo-cgu16-share-generics", flags: &["-Ccodegen-units=16", "-Zshare-generics=yes"], ..VARIANT },
+    Variant { name: "ryo-cgu16-lto", flags: &["-Ccodegen-units=16"], final_flags: &["-Clto=fat"], ..VARIANT },
+    Variant { name: "ryo-cgu16-thinlto-O3", flags: &["-Ccodegen-units=16", "-Copt-level=3"], final_flags: &["-Clto=thin"], vm_only: true, ..VARIANT },
+    Variant { name: "ryo-cgu16-jit-ssa", flags: &["-Ccodegen-units=16"], env: JIT_SSA, ..VARIANT },
 ];
 
 /// The JIT's settings for [`Variant::env`]: compile every function at its first call, and
@@ -129,16 +139,17 @@ const FAST: &[(&str, &[&str])] = &[
     ("generics_traits", &["ryo"]),
     ("vm_abi", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle"]),
     ("vm_control", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle"]),
-    ("vm_calls", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle"]),
+    ("vm_calls", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle", "ryo-cgu16"]),
     ("vm_tail", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle"]),
-    ("vm_cross", &["ryo", "ryo-jit-ssa"]),
+    ("vm_cross", &["ryo", "ryo-jit-ssa", "ryo-cgu16"]),
+    ("vm_cgu", &["ryo", "ryo-cgu1", "ryo-cgu16", "ryo-cgu256", "ryo-cgu16-share-generics", "ryo-cgu16-lto", "ryo-cgu16-jit-ssa"]),
     ("vm_intrinsics", &["ryo"]),
     ("vm_lowerings", &["ryo", "ryo-jit-ssa"]),
     ("vm_simd", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle"]),
     ("vm_unwind", &["ryo", "ryo-jit-ssa"]),
     ("vm_aggregates", &["ryo", "ryo-jit-ssa"]),
-    ("vm_statics_cross", &["ryo", "ryo-jit-ssa"]),
-    ("vm_dylib", &["ryo", "ryo-jit-ssa"]),
+    ("vm_statics_cross", &["ryo", "ryo-jit-ssa", "ryo-cgu16"]),
+    ("vm_dylib", &["ryo", "ryo-jit-ssa", "ryo-cgu16"]),
     ("vm_ffi", &["ryo", "ryo-jit-ssa"]),
     ("vm_cdylib", &["ryo"]),
     ("vm_staticlib2", &["ryo", "ryo-jit-ssa"]),
@@ -172,7 +183,7 @@ const FULL_ONLY: &[(&str, &str)] = &[
 
 /// The variants of the JIT ([`Sel::jit`]).
 const JIT_VARIANTS: &[&str] =
-    &["ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle", "ryo-std-jit", "ryo-std-jit-shuffle", "ryo-std-jit-reencode"];
+    &["ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle", "ryo-cgu16-jit-ssa", "ryo-std-jit", "ryo-std-jit-shuffle", "ryo-std-jit-reencode"];
 
 /// The areas of `test --only`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -415,7 +426,7 @@ impl Sel {
             || self.backend
             || self.checks.contains(&name)
             || match name {
-                "reject-randomize-layout" | "reject-codegen-units" | "metadata-only" | "dump" | "exports" | "backtrace" => self.fast,
+                "reject-randomize-layout" | "cgu-deterministic" | "metadata-only" | "dump" | "exports" | "backtrace" => self.fast,
                 "rt-core-only" | "jit-sealed" => self.rt,
                 "jit-private-std" => self.jit,
                 _ => false,
@@ -664,7 +675,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
             ("jit-sealed", Box::new(|| jit_sealed(&root, &out))),
             ("jit-private-std", Box::new(|| jit_private_std(&rustc_ryo, &root.join("tests").join("vm_jit_private.rs"), &out))),
             ("reject-randomize-layout", Box::new(|| reject_randomize_layout(&rustc_ryo, &hello, &out))),
-            ("reject-codegen-units", Box::new(|| reject_codegen_units(&rustc_ryo, &hello, &out))),
+            ("cgu-deterministic", Box::new(|| cgu_deterministic(&rustc_ryo, &root.join("tests").join("vm_cgu.rs"), &out))),
             ("incremental", Box::new(|| incremental(&rustc_ryo, &root.join("tests").join("incremental"), &out))),
             ("metadata-only", Box::new(|| metadata_only(&rustc_ryo, &hello, &out))),
             ("dump", Box::new(|| dump(&rustc_ryo, &root.join("tests").join("vm_statics.rs"), &out))),

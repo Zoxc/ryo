@@ -42,9 +42,9 @@ x86-64 calls of the VM's handlers, and uses
 Non-goals: debuginfo for VM code, targets other than x86_64.
 
 Incremental compilation (`-Cincremental`, cargo's dev profile) reuses the front end's
-work and cg_llvm's object for the crate's (single) native codegen unit when its items are
-unchanged; the image is rebuilt every session, as the partition query that builds it is
-`eval_always`. `y test incremental` rebuilds a program
+work and cg_llvm's objects for the native codegen units whose items are unchanged (one
+image and one native CGU per rustc CGU, 256 under incremental); the images are rebuilt
+every session, as the partition query that builds them is `eval_always`. `y test incremental` rebuilds a program
 after scripted edits with `-Zincremental-verify-ich`.
 
 **Targets**: `x86_64-unknown-linux-gnu` (ELF), `x86_64-pc-windows-msvc` (PE/COFF) and

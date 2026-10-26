@@ -15,10 +15,12 @@ and `codegen_crate` reads them.
 
 1. **Collect.** Call the original `collect_and_partition_mono_items` provider (saved in
    `provide`). The collector (`collect_crate_mono_items`) is `pub(crate)` in
-   `rustc_monomorphize`, so the query is the only entry point to it. `rustc-ryo` forces
-   `-Ccodegen-units=1`, so partitioning is cheap (`place_mono_items`, one merge pass,
-   internalize), and the single CGU it returns is useful as-is:
-   - its item list is the work list
+   `rustc_monomorphize`, so the query is the only entry point to it. Its CGUs (any number:
+   `-Ccodegen-units`, rustc's default, 256 under incremental) are used as-is, each one
+   getting an image of its own (**one image per CGU**):
+   - their item lists are the work list; an `#[inline]` (`LocalCopy`) function rustc copied
+     into several CGUs is lowered once per copy, each image keeping its own (calls to it
+     stay inside the image)
    - each item's `linkage`/`visibility` is what rustc decided. The image object defines each
      VM function's symbol with it ([stubs.md](stubs.md#vm-functions-as-native-functions)).
    - VM functions that are `Internal` and not referenced by native code get a local symbol.
@@ -35,9 +37,11 @@ and `codegen_crate` reads them.
      VM functions referenced that way, those that are not `Internal`, and those the image
      refers to by symbol (fn-pointer constants, vtables, `call.sym`) get a global symbol
      (`partition.rs`, `need_symbol`; `objfile.rs`, `global_function`), with their linkage
-     and visibility; an `Internal` one becomes hidden.
+     and visibility; an `Internal` one becomes hidden. An `Internal` copy in several CGUs
+     gets the global symbol in one of them only (the first that needs it, `exposed`), and
+     the others' references resolve to it: two would define the symbol twice.
 
-   The backend errors if `sess.codegen_units()` isn't 1. A crate with no VM code (a proc
+   A crate with no VM code (a proc
    macro, a panic runtime, `RYO_NO_VM`, step 2) skips all of this: the provider returns
    rustc's partition as is, with any number of CGUs, and `codegen_crate` writes no image
    (its final outputs still get a registry stub, for their upstream images).
@@ -63,8 +67,9 @@ and `codegen_crate` reads them.
      The lowering reports these as `Err(NeedsNative(reason))`.
 
      The lowering assumes every candidate is a VM function. A function that calls a
-     candidate which then stays native is lowered again, with an island for that call,
-     until the set of VM functions doesn't change.
+     candidate of its own CGU which then stays native is lowered again, with an island for
+     that call, until the set of VM functions doesn't change. A function that fails in one
+     CGU is native in all of them.
 
      Never VM: everything in a `proc-macro` crate (it keeps VM code out of rustc's own process,
      and proc macros gain nothing from it), everything in a panic runtime crate
@@ -73,24 +78,31 @@ and `codegen_crate` reads them.
      `RYO_NO_VM` is set ([Debugging switches](#debugging-switches)).
    - `Static`, `GlobalAsm` → native. Statics are data, and cg_llvm handles relocations,
      linkage and TLS.
-3. **Lower VM functions** with `par_map` over the list. This is the "single code unit,
-   parallel loop": every function is lowered on its own straight into machine code plus a
+3. **Lower VM functions** with one `par_map` over every CGU's functions, so the work is
+   parallel over CGUs and over the functions within each: every function is lowered on its own straight into machine code plus a
    relocation list ([lowering.md](lowering.md), [vm.md](vm.md#machine-code)), in the mode
    `asm_mode` gives: `fp` passing as `ryo_rt`'s `FP_ARG` says (the backend evaluates the
    const), a frame pointer only where rustc's LLVM backend would keep one, or `FP_ARG`
    or PE require it ([vm.md](vm.md#frames)), loop alignment unless `RYO_ASM_ALIGN=0`, inline instructions, the JIT's counters
    (always, [vm.md](vm.md#jit-records-and-counters)), and the target's object
-   format. The
-   results are merged in one pass at the end. An operation the VM doesn't support becomes an
+   format. A call of a VM function of the same CGU is a direct `call`; one of another CGU's
+   image is a `call.sym` through a symbol slot, as for a native Rust function (the JIT
+   recovers the callee from the slot's value, [jit.md](jit.md)), so an image refers to
+   another only by symbol. `RYO_STATS` counts these references. The
+   results are merged in one pass per image at the end. An operation the VM doesn't support becomes an
    `island` instruction whose `isl` operand is an *island* relocation (template + generic
    args). The merge pass deduplicates islands (same template + args → one instance), assigns
    function indices and symbols, rewrites each function's relocation targets to them,
    and adds the function to the image writer under its own symbol. The handlers and `ryo_probe_stack` the code
    calls, the JIT records' `ryo_jit_trip_entry` and `ryo_jit_trip_osr`, and `rust_eh_personality` on ELF and Mach-O, are added to the image's LTO roots
    ([Query overrides](#query-overrides-provide)).
-4. **Build the native CGU.** This is a copy of the original CGU, with the VM functions removed
-   and the stub instances (islands and `c_main`) added. Our override returns exactly this CGU,
-   so `self.llvm.codegen_crate(tcx)` compiles only what we ask for.
+4. **Build the native CGUs**, one per rustc CGU, with its name (kept even if empty). Each is
+   a copy of the original CGU, with its VM functions removed and the stub instances its
+   image needs (islands, and `c_main` in the CGU of the entry fn) added. Our override returns
+   exactly these CGUs, so `self.llvm.codegen_crate(tcx)` compiles only what we ask for, in
+   parallel as usual.
+   - **Islands** are `WeakODR` + `Hidden`, defined in every CGU whose image calls them:
+     cg_llvm puts them in a comdat, and the linker keeps one.
    - **Stub neighbors**: the collector never saw the stubs, so whatever a template body uses
      is missing. Examples: `f.call_once(args)` on a FnDef resolves to a `Shim(FnPtr)`
      (`rustc_ty_utils/src/instance.rs:338`), and `ptr::read::<Args>`, `MaybeUninit` methods
@@ -102,7 +114,8 @@ and `codegen_crate` reads them.
      the collector's `should_codegen_locally` (`collector.rs:1075`) runs on every neighbor,
      and it is public as the hook `tcx.should_codegen_locally` (`rustc_middle/src/hooks/mod.rs:90`),
      which the lowering uses for callees. Neighbors are always native, and `Internal`: only the
-     stubs reference them. A neighbor that is a VM function gets a global symbol instead.
+     stubs reference them. A neighbor that is a VM function of the same CGU gets a global
+     symbol instead; one another CGU defines globally (VM or native) is referenced.
    - **Upstream copies**: before defining a stub instance or neighbor, the backend checks
      `instance.upstream_monomorphization(tcx)`. If an upstream crate exports it
      (share-generics), the image relocates against that copy instead of defining a second one,
@@ -140,7 +153,7 @@ and `codegen_crate` reads them.
        but is kept.
      - Aliases aren't an option: cg_llvm only creates them for foreign-item DefIds
        (`mono_item.rs:54-134`).
-5. **Emit the image** as one extra object with the `object` crate ([vm.md](vm.md#image-format)):
+5. **Emit the images**, one extra object per CGU with VM functions (`<cgu>.ryo_image`), with the `object` crate ([vm.md](vm.md#image-format)):
    `ImageWriter::finish_encoded` lays out the sections and unwind information, and
    `objfile.rs` writes them with their relocations, the handler calls against the handlers'
    mangled symbols (`rt_symbol`), and each function's symbol (global or local, step 1).

@@ -114,8 +114,9 @@ pub(crate) fn native<T>(why: impl Into<String>) -> Result<T, NeedsNative> {
 
 /// What every function's lowering may read: shared, read-only.
 pub struct LowerCx<'a, 'tcx> {
-    /// The functions assumed to be VM functions of this image. A call of one of them is a
-    /// `call`; any other local callee is called through an island.
+    /// The functions assumed to be VM functions of this image (its CGU). A call of one of them
+    /// is a `call`; a VM function of another image is called by symbol (`call.sym`), as a
+    /// native Rust function; any other local callee is called through an island.
     pub vm: &'a FxHashSet<Instance<'tcx>>,
     /// How the machine code is generated.
     pub mode: asm::Mode,

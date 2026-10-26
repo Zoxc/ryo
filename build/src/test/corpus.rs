@@ -178,6 +178,7 @@ pub(crate) const CORPUS: &[Program] = &[
         "vm_control",
         vm: &["main", "collatz", "dense", "sparse", "area", "discr", "niches", "make", "labeled", "switch128", "mid", "mid_index"],
     ),
+    single!("vm_cgu", vm: &["main", "even::is_even", "odd::is_odd", "leaf::add", "leaf::twice", "<shapes::Square as shapes::Shape>::area", "table::mul"]),
     single!(
         "vm_calls",
         vm: &["main", "add", "swap", "bump", "sum", "fib", "talk", "<Dog as Speak>::speak", "constants", "apply", "double", "closures", "may_panic", "<Noisy as std::ops::Drop>::drop"],

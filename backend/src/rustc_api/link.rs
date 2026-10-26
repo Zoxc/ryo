@@ -16,16 +16,10 @@ use rustc_session::config::{CrateType, OutputFilenames, OutputType};
 use super::object_module;
 use crate::objfile;
 
-/// The local crate's image.
-pub struct LocalImage {
-    /// The name of its `CompiledModule`.
-    pub module: String,
-}
-
 /// What `link` needs from `codegen_crate`.
 pub struct LinkInfo {
-    /// The local crate's image, if it has VM code.
-    pub image: Option<LocalImage>,
+    /// The `CompiledModule` names of the local crate's images (one per CGU with VM code).
+    pub images: Vec<String>,
     /// Per crate type, the image symbols that only LTO needs (`partition::linked_roots`).
     pub linked_roots: Vec<(CrateType, LinkedRoots)>,
     /// The target writes Mach-O objects.
@@ -99,27 +93,29 @@ pub fn link(
         // In an rlib, the image must not be a Rust object: `-Clto` downstream reads bitcode
         // from every Rust object of an rlib and leaves them out of the link, which would drop
         // the image. So it is added afterwards, as a plain member.
-        let image = if crate_type == CrateType::Rlib
-            && let Some(local) = &info.image
-        {
-            let i = these.modules.iter().position(|m| m.name == local.module);
-            i.map(|i| these.modules.remove(i))
+        let images: Vec<CompiledModule> = if crate_type == CrateType::Rlib {
+            let (images, rest) = std::mem::take(&mut these.modules).into_iter().partition(|m| info.images.contains(&m.name));
+            these.modules = rest;
+            images
         } else {
-            None
+            Vec::new()
         };
         let mut single = crate_info.clone();
         single.crate_types = vec![crate_type];
         remove_roots(&mut single, info, crate_type);
         drop(prep_t);
         llvm.link(sess, these, single, this_metadata, outputs);
-        if let Some(object) = image.and_then(|m| m.object) {
+        let objects: Vec<PathBuf> = images.into_iter().filter_map(|m| m.object).collect();
+        if !objects.is_empty() {
             let _t = sess.prof.generic_activity("ryo_append_rlib");
             let rlib = rustc_session::output::out_filename(sess, crate_type, outputs, crate_info.local_crate_name);
             if let rustc_session::config::OutFileName::Real(rlib) = rlib {
-                append_to_rlib(sess, &rlib, &object);
+                append_to_rlib(sess, &rlib, &objects);
             }
             if !sess.opts.cg.save_temps {
-                let _ = fs::remove_file(&object);
+                for o in &objects {
+                    let _ = fs::remove_file(o);
+                }
             }
         }
     }
@@ -162,14 +158,16 @@ fn remove_roots(crate_info: &mut CrateInfo, info: &LinkInfo, crate_type: CrateTy
     }
 }
 
-/// Appends `object` to the archive `rlib` as a non-Rust member (`ArchiveEntryKind::Other`).
-fn append_to_rlib(sess: &Session, rlib: &Path, object: &Path) {
+/// Appends `objects` to the archive `rlib` as non-Rust members (`ArchiveEntryKind::Other`).
+fn append_to_rlib(sess: &Session, rlib: &Path, objects: &[PathBuf]) {
     let tmp = rlib.with_extension("rlib.ryo-tmp");
     let mut ab = ArArchiveBuilderBuilder.new_archive_builder(sess);
     if let Err(e) = ab.add_archive(rlib, AddArchiveKind::Other) {
         sess.dcx().fatal(format!("reading {}: {e}", rlib.display()));
     }
-    ab.add_file(object, ArchiveEntryKind::Other);
+    for object in objects {
+        ab.add_file(object, ArchiveEntryKind::Other);
+    }
     ab.build(&tmp, None);
     if let Err(e) = fs::rename(&tmp, rlib) {
         sess.dcx().fatal(format!("writing {}: {e}", rlib.display()));

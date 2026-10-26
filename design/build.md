@@ -112,9 +112,8 @@ modeled on cg_clif's `build_system/`.
    - `--sysroot dist`
    - `-Zcodegen-backend=dist/lib/librustc_codegen_ryo.so`
    - `-Zunstable-options --extern force:ryo_rt`
-   - `-Ccodegen-units=1`, appended *after* the user's args so it wins
-     ([backend.md](backend.md#pipeline)), except for crates it knows have no VM code
-     (`--crate-type proc-macro`, `RYO_NO_VM` set), which keep rustc's codegen units
+   - nothing about codegen units: the backend makes one image per CGU
+     ([backend.md](backend.md#pipeline))
    - on windows-msvc targets (`--target *-msvc`, or none on an msvc host),
      `-Clink-arg=/IGNORE:4217 -Clink-arg=/IGNORE:4286` ([platforms.md](platforms.md))
 
@@ -165,7 +164,7 @@ it from there, the same way it builds our backend:
 - The Cranelift crates come from crates.io through cg_clif's `Cargo.lock`, so the build needs
   network access once, or a vendored copy.
 - It installs `dist/lib/librustc_codegen_cranelift.so` and a `rustc-clif` wrapper (like
-  `rustc-ryo`, without `force:ryo_rt` and the forced `-Ccodegen-units=1`), using the same
+  `rustc-ryo`, without `force:ryo_rt`), using the same
   prebuilt LLVM std sysroot.
 
 This gives a third backend, built from the same toolchain, to compare against.
@@ -189,14 +188,19 @@ This gives a third backend, built from the same toolchain, to compare against.
   function from its first call or entered by OSR at its first loop head pass
   ([jit.md](jit.md#testing)); `test` runs the JIT's own tests through the tier (`vm jit`),
   its naive allocator (`vm jit ssa-naive`) and the re-encoding pipeline (`vm jit reencode`),
-  each also with `fp-rbp`.
+  each also with `fp-rbp`. rustc's default merges the corpus's small crates into one codegen
+  unit; the `ryo-cgu*` variants ask for 1, 16 and 256 (also with `-Zshare-generics`, fat
+  LTO, thin LTO at `-O3` and the JIT), so calls, fn pointers, vtables and statics cross
+  images (`tests/vm_cgu.rs` spreads over many).
   Some programs are a staticlib or cdylib called from a
   C `main`, compiled with `cc`, or `cl` on windows-msvc hosts (skipped without one). The smoke tests check that `rustc-ryo`
-  rejects `-Zrandomize-layout` and more than one codegen unit for a crate with VM code, and
+  rejects `-Zrandomize-layout`, that two builds of `tests/vm_cgu.rs` (many modules) at 16
+  codegen units give several, byte-identical image objects (`cgu-deterministic`), and
   that `cargo-ryo` builds a dev-profile package (incrementally). The `incremental` check
   rebuilds `tests/incremental/edits.rs` after a series of scripted edits (`--cfg revN`) with
   `-Cincremental -Zincremental-verify-ich`: the output must be plain rustc's and the
-  executable byte-identical to a clean incremental build's, at opt-level 0, at opt-level 2
+  executable byte-identical to a clean incremental build's, at opt-level 0 (incremental's
+  256 codegen units), at 16 codegen units, at opt-level 2
   with thin LTO, and with `RYO_NO_VM` at 16 codegen units, where `#![rustc_partition_reused]`
   checks rustc's reuse; and rebuilds a proc macro at the default codegen units. The `backtrace` check builds
   `tests/vm_backtrace.rs` (a panic two VM calls deep, caught by `catch_unwind`) and runs it

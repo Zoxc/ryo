@@ -215,8 +215,10 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
     };
     let reuse = &["--cfg", "reuse", "-Zquery-dep-graph"][..];
     // Name, flags, flags for the incremental chain only, environment.
-    let configs: [(&str, &[&str], &[&str], &[(&str, &str)]); 3] = [
+    // `O0` gets incremental's default of 256 codegen units, so one image per CGU.
+    let configs: [(&str, &[&str], &[&str], &[(&str, &str)]); 4] = [
         ("O0", &[], &[], &[]),
+        ("vm-16", &["-Ccodegen-units=16"], &[], &[]),
         ("O2-thin", &["-Copt-level=2", "-Clto=thin"], &[], &[]),
         ("no-vm-16", &["-Ccodegen-units=16"], reuse, &[("RYO_NO_VM", "1")]),
     ];
@@ -613,18 +615,40 @@ pub(super) fn reject_randomize_layout(rustc_ryo: &Path, src: &Path, out: &Path) 
     Ok(())
 }
 
-/// The backend itself rejects more than one codegen unit for a crate with VM code
-/// (design/backend.md#pipeline). `rustc-ryo` appends `-Ccodegen-units=1` for those, so this
-/// runs plain rustc with the backend.
-pub(super) fn reject_codegen_units(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
-    let dist = rustc_ryo.parent().and_then(Path::parent).ok_or("bad dist path")?;
-    let mut backend = OsString::from("-Zcodegen-backend=");
-    backend.push(dist.join("lib").join(dll_name("rustc_codegen_ryo")));
-    let res =
-        cmd("rustc").arg(backend).arg(src).arg("-Ccodegen-units=4").arg("-o").arg(out.join(exe_name("cgu4"))).output().map_err(|e| e.to_string())?;
-    let stderr = String::from_utf8_lossy(&res.stderr);
-    if res.status.success() || !stderr.contains("-Ccodegen-units=1") {
-        return Err(format!("expected the backend to reject 4 codegen units; stderr:\n{stderr}"));
+/// Two builds of a program split over 16 codegen units give byte-identical image objects,
+/// several of them (one per CGU with VM code, design/backend.md#pipeline).
+pub(super) fn cgu_deterministic(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
+    let build = |name: &str| -> Result<Vec<(String, Vec<u8>)>, String> {
+        let dir = out.join(name);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let res = cmd(rustc_ryo)
+            .args(["--edition=2024", "-Ccodegen-units=16", "-Csave-temps", "--crate-name", "vm_cgu", "--out-dir"])
+            .arg(&dir)
+            .arg(src)
+            .output()
+            .map_err(|e| e.to_string())?;
+        if !res.status.success() {
+            return Err(format!("building {}: {}", src.display(), String::from_utf8_lossy(&res.stderr)));
+        }
+        let mut images = Vec::new();
+        for e in std::fs::read_dir(&dir).map_err(|e| e.to_string())? {
+            let p = e.map_err(|e| e.to_string())?.path();
+            let name = p.file_name().unwrap_or_default().to_string_lossy().into_owned();
+            if name.contains(".ryo_image") {
+                images.push((name, std::fs::read(&p).map_err(|e| e.to_string())?));
+            }
+        }
+        images.sort();
+        Ok(images)
+    };
+    let (a, b) = (build("cgu-a")?, build("cgu-b")?);
+    if a.len() < 2 {
+        return Err(format!("expected several image objects at 16 codegen units, got {}", a.len()));
+    }
+    if a != b {
+        let names = |v: &[(String, Vec<u8>)]| v.iter().map(|(n, _)| n.clone()).collect::<Vec<_>>();
+        return Err(format!("two builds gave different image objects: {:?} vs {:?}", names(&a), names(&b)));
     }
     Ok(())
 }
