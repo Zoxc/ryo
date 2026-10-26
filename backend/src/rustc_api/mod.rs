@@ -5,8 +5,10 @@
 //! - [`lower`]: MIR → bytecode
 //! - [`symbols`]: the image's symbol names and linkage (PE imports)
 //! - [`link`]: step 6, one `link_binary` per crate type with its registry object
+//! - [`dump`]: `RYO_DUMP` / `RYO_DUMP_CODE`, the VM functions as text
 //! - [`dump_lean`]: `RYO_DUMP_LEAN`, the program as the Lean MIR spec's input (lean/)
 
+mod dump;
 mod dump_lean;
 mod link;
 mod lower;
