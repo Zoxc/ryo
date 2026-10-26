@@ -16,14 +16,26 @@ pub const OBJECT: &str = "ryo_jit.o";
 /// What COFF sealing prefixes the JIT's other external symbols with ([`build`]).
 const COFF_PREFIX: &str = "__ryo_jit$";
 
-/// Whether `ryo_rt` gets the JIT on `triple`. On x86_64 Linux it is the real one; on
-/// windows-msvc, until the JIT is ported (design/jit.md#packaging), a `ryo_jit_start` that fails,
-/// so that the trips act as the no-op JIT, but sealed and bundled the same way. Elsewhere
-/// `ryo_rt` has no `jit` feature, and its trips are the no-op JIT. That includes Apple:
-/// without Mach-O images there is nothing to compile, and sealing would need a Mach-O path
-/// (`_`-prefixed symbols, `llvm-objcopy` on Mach-O) that nothing could exercise.
+/// The symbol `s` of an object for `triple` as its C or Rust name: without Mach-O's `_`.
+pub fn unprefixed<'a>(triple: &str, s: &'a str) -> &'a str {
+    if macho(triple) { s.strip_prefix('_').unwrap_or(s) } else { s }
+}
+
+/// Whether `ryo_rt` gets the JIT on `triple`: x86_64 Linux, windows-msvc and macOS
+/// (design/jit.md#packaging). Elsewhere `ryo_rt` has no `jit` feature, and its trips are the
+/// no-op JIT.
 pub fn supported(triple: &str) -> bool {
-    triple.starts_with("x86_64-") && (triple.contains("-linux-") || coff(triple))
+    triple.starts_with("x86_64-") && (triple.contains("-linux-") || coff(triple) || macho(triple))
+}
+
+/// Whether `triple` is a Mach-O (Apple) target.
+pub fn macho(triple: &str) -> bool {
+    triple.contains("-apple-")
+}
+
+/// The object-file name of the C symbol `name` on `triple`: Mach-O prefixes an `_`.
+pub fn symbol(triple: &str, name: &str) -> String {
+    if macho(triple) { format!("_{name}") } else { name.to_owned() }
 }
 
 /// Whether `triple` is a COFF (windows-msvc) target.
@@ -52,8 +64,9 @@ pub fn llvm_tool(info: &RustcInfo, name: &str) -> PathBuf {
 /// on windows-msvc the import members of std's `raw-dylib` imports. That object is extracted
 /// and its globals but `ryo_jit_start` hidden, so that the JIT's std stays private: nothing
 /// else binds to it, and its references bind only to C libraries, the OS and the unwinder.
-/// - ELF: every other global becomes local (`llvm-objcopy --keep-global-symbol`); the object
-///   is the library's only member.
+/// - ELF and Mach-O: every other global becomes local (`llvm-objcopy --keep-global-symbol`,
+///   with Mach-O's `_` prefix: `_ryo_jit_start`); the object is the library's only member,
+///   archived in the BSD format on Mach-O, as rustc writes Apple archives.
 /// - COFF, where llvm-objcopy can't localize: rustc's LTO already made almost everything
 ///   internal, and the few other external definitions are renamed to `__ryo_jit$<name>`,
 ///   which nothing else defines or references, but for LLVM's constants named by their
@@ -116,7 +129,7 @@ fn seal(info: &RustcInfo, staticlib: &Path, out: &Path, triple: &str) -> Result<
         fs::write(&list, renames).map_err(|e| e.to_string())?;
         seal.arg(format!("--redefine-syms={}", list.display()));
     } else {
-        seal.arg(format!("--keep-global-symbol={START}"));
+        seal.arg(format!("--keep-global-symbol={}", symbol(triple, START)));
     }
     run(seal.arg(out.join(&lto)).arg(&obj))?;
     fs::remove_file(out.join(&lto)).map_err(|e| e.to_string())?;
@@ -128,6 +141,8 @@ fn seal(info: &RustcInfo, staticlib: &Path, out: &Path, triple: &str) -> Result<
         objects.dedup();
         run(cmd(&ar).arg("d").arg(&lib).args(&objects))?;
         run(cmd(&ar).arg("r").arg(&lib).arg(&obj))
+    } else if macho(triple) {
+        run(cmd(&ar).args(["rcs", "--format=darwin"]).arg(&lib).arg(&obj))
     } else {
         run(cmd(&ar).arg("rcs").arg(&lib).arg(&obj))
     }
@@ -156,7 +171,10 @@ fn lto_member(members: &str) -> Result<String, String> {
 /// references no Rust symbol and no allocator shim (which would bind to the program's std),
 /// and it doesn't define the unwinder, which it must share with the program (`__register_frame`
 /// registers JIT code with the program's). On COFF it also has no linker directives
-/// (`.drectve`) and no CRT initializers (`.CRT$X*`).
+/// (`.drectve`) and no CRT initializers (`.CRT$X*`), on Mach-O no initializers
+/// (`__mod_init_func`, `__init_offsets`) or linker options (`LC_LINKER_OPTION`, the
+/// counterpart of `.drectve`, which would add `-l` libraries to every link). Names are
+/// compared without Mach-O's `_` prefix.
 pub fn check_sealed(info: &RustcInfo, rlib: &Path, dir: &Path, triple: &str) -> Result<(), String> {
     let _ = fs::remove_dir_all(dir);
     fs::create_dir_all(dir).map_err(|e| e.to_string())?;
@@ -167,7 +185,8 @@ pub fn check_sealed(info: &RustcInfo, rlib: &Path, dir: &Path, triple: &str) -> 
     let names = |args: &[&str]| -> Result<Vec<String>, String> {
         Ok(output(cmd(&nm).args(args).args(["--no-demangle", "-j"]).arg(&obj))?
             .lines()
-            .map(|l| l.trim().to_owned())
+            .map(|l| l.trim())
+            .map(|l| unprefixed(triple, l).to_owned())
             .filter(|l| !l.is_empty())
             .collect())
     };
@@ -189,6 +208,16 @@ pub fn check_sealed(info: &RustcInfo, rlib: &Path, dir: &Path, triple: &str) -> 
         let sections = output(cmd(llvm_tool(info, "llvm-objdump")).arg("-h").arg(&obj))?;
         if let Some(s) = sections.lines().find(|l| l.contains(".drectve") || l.contains(".CRT$X")) {
             return Err(format!("{} has the section {}", obj.display(), s.trim()));
+        }
+    }
+    if macho(triple) {
+        let sections = output(cmd(llvm_tool(info, "llvm-objdump")).arg("-h").arg(&obj))?;
+        if let Some(s) = sections.lines().find(|l| l.contains("__mod_init_func") || l.contains("__init_offsets") || l.contains("__mod_term_func")) {
+            return Err(format!("{} has the section {}", obj.display(), s.trim()));
+        }
+        let commands = output(cmd(llvm_tool(info, "llvm-objdump")).arg("--private-headers").arg(&obj))?;
+        if commands.contains("LC_LINKER_OPTION") {
+            return Err(format!("{} has linker options (LC_LINKER_OPTION)", obj.display()));
         }
     }
     Ok(())
@@ -216,6 +245,10 @@ mod tests {
         assert!(super::supported("x86_64-unknown-linux-gnu"));
         assert!(super::supported("x86_64-pc-windows-msvc"));
         assert!(!super::supported("aarch64-unknown-linux-gnu"));
+        assert!(super::supported("x86_64-apple-darwin"));
+        assert!(!super::supported("aarch64-apple-darwin"));
         assert!(!super::supported("x86_64-pc-windows-gnu"));
+        assert_eq!(super::symbol("x86_64-apple-darwin", "ryo_jit_start"), "_ryo_jit_start");
+        assert_eq!(super::symbol("x86_64-unknown-linux-gnu", "ryo_jit_start"), "ryo_jit_start");
     }
 }
