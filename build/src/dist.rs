@@ -41,6 +41,8 @@ pub fn build(targets: &[String], ryo_std: bool) -> Result<(), String> {
         fs::create_dir_all(dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
     }
     copy(&backend, &dist_lib.join(dll_name("rustc_codegen_ryo")))?;
+    // What `rustc-ryo -vV` identifies the build by (design/build.md#the-y-build-tool).
+    let mut build_files = vec![backend.clone()];
     let mut all = vec![info.host.clone()];
     all.extend(targets.iter().filter(|t| **t != info.host).cloned());
     let mut host_jit = None;
@@ -52,13 +54,15 @@ pub fn build(targets: &[String], ryo_std: bool) -> Result<(), String> {
         let jit = if crate::jit::supported(triple) { Some(crate::jit::build(&root, &target, &info, triple, cross)?) } else { None };
         for (krate, rlib) in build_runtime(&root, &target, &dist, cross, jit.as_deref())? {
             copy(&rlib, &target_lib.join(format!("lib{krate}.rlib")))?;
+            build_files.push(rlib);
         }
         if cross.is_none() {
             host_jit = jit;
         }
     }
 
-    build_wrappers(&root, &dist_bin, &info)?;
+    let build_id = build_id(&build_files)?;
+    build_wrappers(&root, &dist_bin, &info, &build_id)?;
     if ryo_std {
         crate::sysroot::build(&info, &dist, host_jit.as_deref())?;
     }
@@ -219,15 +223,25 @@ fn rlib_crate(path: &Path) -> Option<&str> {
     Some(stem.split_once('-').map_or(stem, |(name, _)| name))
 }
 
-fn build_wrappers(root: &Path, dist_bin: &Path, info: &RustcInfo) -> Result<(), String> {
+/// A hash of `files`' contents: the backend dylib and the runtime rlibs.
+fn build_id(files: &[PathBuf]) -> Result<String, String> {
+    use std::hash::Hasher;
+    let mut h = std::hash::DefaultHasher::new();
+    for f in files {
+        h.write(&fs::read(f).map_err(|e| format!("{}: {e}", f.display()))?);
+    }
+    Ok(format!("{:016x}", h.finish()))
+}
+
+fn build_wrappers(root: &Path, dist_bin: &Path, info: &RustcInfo, build_id: &str) -> Result<(), String> {
     for name in ["rustc-ryo", "cargo-ryo"] {
-        build_wrapper(root, dist_bin, info, name)?;
+        build_wrapper(root, dist_bin, info, name, build_id)?;
     }
     Ok(())
 }
 
 /// Compiles `scripts/<name>.rs` into `dist/bin/<name>` with plain rustc.
-pub fn build_wrapper(root: &Path, dist_bin: &Path, info: &RustcInfo, name: &str) -> Result<(), String> {
+pub fn build_wrapper(root: &Path, dist_bin: &Path, info: &RustcInfo, name: &str, build_id: &str) -> Result<(), String> {
     eprintln!("[y] wrapper: {name}");
     run(cmd("rustc")
         .args(["--edition=2024", "-Copt-level=1", "-o"])
@@ -235,7 +249,8 @@ pub fn build_wrapper(root: &Path, dist_bin: &Path, info: &RustcInfo, name: &str)
         .arg(root.join("scripts").join(format!("{name}.rs")))
         .env("RYO_TOOLCHAIN", &info.toolchain)
         .env("RYO_RUSTC_DRIVER", &info.driver)
-        .env("RYO_RUSTC_RELEASE", crate::utils::PINNED_VERSION))
+        .env("RYO_RUSTC_RELEASE", crate::utils::PINNED_VERSION)
+        .env("RYO_BUILD_ID", build_id))
 }
 
 pub fn copy(from: &Path, to: &Path) -> Result<(), String> {

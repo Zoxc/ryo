@@ -34,6 +34,7 @@ fn main() {
             std::process::exit(1);
         }
     };
+    let passed_orig = passed.clone();
     let args = match ryo_args(&sysroot, passed) {
         Ok(args) => args,
         Err(msg) => {
@@ -49,6 +50,28 @@ fn main() {
     }
     if let Some(toolchain) = option_env!("RYO_TOOLCHAIN") {
         cmd.env("RUSTUP_TOOLCHAIN", toolchain);
+    }
+
+    if is_verbose_version(&passed_orig) {
+        // Cargo fingerprints the compiler by `rustc -vV`; tell it which ryo build this is
+        // (design/build.md#the-y-build-tool).
+        match cmd.output() {
+            Ok(out) => {
+                use std::io::Write;
+                let mut stdout = std::io::stdout().lock();
+                let _ = stdout.write_all(&out.stdout);
+                if out.status.success() {
+                    let _ = writeln!(stdout, "ryo-build: {}", option_env!("RYO_BUILD_ID").unwrap_or("unknown"));
+                }
+                let _ = stdout.flush();
+                let _ = std::io::stderr().write_all(&out.stderr);
+                std::process::exit(out.status.code().unwrap_or(1));
+            }
+            Err(err) => {
+                eprintln!("error: failed to run rustc: {err}");
+                std::process::exit(1);
+            }
+        }
     }
 
     #[cfg(unix)]
@@ -158,6 +181,21 @@ pub fn ryo_args(dist: &Path, passed: Vec<OsString>) -> Result<Vec<OsString>, Str
         }
     }
     Ok(args)
+}
+
+/// Whether `args` only ask for the verbose version (`-vV`, `--version --verbose`, ...), which
+/// cargo hashes into its fingerprints and metadata hashes.
+pub fn is_verbose_version(args: &[OsString]) -> bool {
+    let (mut version, mut verbose) = (false, false);
+    for a in args {
+        match a.to_str() {
+            Some("-vV" | "-Vv") => (version, verbose) = (true, true),
+            Some("-V" | "--version") => version = true,
+            Some("-v" | "--verbose") => verbose = true,
+            _ => return false,
+        }
+    }
+    version && verbose
 }
 
 /// Removes `-Zryo-stats[=N]` (or `-Z ryo-stats[=N]`) from `args`, which rustc wouldn't
@@ -344,6 +382,16 @@ mod tests {
         let got = ryo_args(Path::new("/d"), args(&["x.rs", "--sysroot", "/s"])).unwrap();
         assert!(got.iter().any(|a| a == "--sysroot=/s"));
         assert!(ryo_args(Path::new("/d"), args(&["x.rs", "--sysroot"])).is_err());
+    }
+
+    #[test]
+    fn verbose_version() {
+        for yes in [&["-vV"][..], &["-V", "-v"], &["--version", "--verbose"], &["-Vv"]] {
+            assert!(is_verbose_version(&args(yes)), "{yes:?}");
+        }
+        for no in [&["-V"][..], &["--version"], &[], &["-vV", "x.rs"], &["-v"]] {
+            assert!(!is_verbose_version(&args(no)), "{no:?}");
+        }
     }
 
     #[test]

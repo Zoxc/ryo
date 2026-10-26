@@ -8,7 +8,8 @@ use std::process::Command;
 use crate::utils::{cmd, dll_name, exe_name, output};
 
 /// `cargo-ryo run` on a one-file package wrapping `tests/hello.rs`, then `cargo ryo build`
-/// (cargo's subcommand lookup, with `dist/bin` on `PATH`).
+/// (cargo's subcommand lookup, with `dist/bin` on `PATH`) between plain `cargo build`s in one
+/// target directory: plain, ryo (rebuilds), ryo again (fresh), plain again (fresh).
 pub(super) fn cargo_smoke(root: &Path, out: &Path) -> Result<(), String> {
     let pkg = out.join("cargo-hello");
     fs::create_dir_all(&pkg).map_err(|e| format!("creating {}: {e}", pkg.display()))?;
@@ -39,22 +40,55 @@ pub(super) fn cargo_smoke(root: &Path, out: &Path) -> Result<(), String> {
     let mut paths = vec![bin];
     paths.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()));
     let path = std::env::join_paths(paths).map_err(|e| e.to_string())?;
-    let res = cmd("cargo")
-        .args(["ryo", "build", "--quiet", "--offline"])
-        .current_dir(&pkg)
-        .env("PATH", path)
-        .env("RYO_BACKEND_MARKER", "1")
-        .env("CARGO_TARGET_DIR", pkg.join("target-sub"))
-        .env_remove("CARGO_INCREMENTAL")
-        .output()
-        .map_err(|e| e.to_string())?;
-    let _ = fs::remove_dir_all(pkg.join("target"));
-    let _ = fs::remove_dir_all(pkg.join("target-sub"));
-    let stderr = String::from_utf8_lossy(&res.stderr);
-    if !res.status.success() || !stderr.contains(BACKEND_MARKER) {
-        return Err(format!("cargo ryo build: {}\nstderr:\n{stderr}", res.status));
+    let target_sub = pkg.join("target-sub");
+    let toolchain = crate::utils::RustcInfo::get()?.toolchain;
+    // Plain cargo (LLVM) and `cargo ryo` in one target directory: `rustc-ryo -vV` names the
+    // ryo build, so cargo tells their artifacts apart (design/build.md#the-y-build-tool).
+    let build = |ryo: bool| -> Result<(bool, String), String> {
+        let mut c = cmd("cargo");
+        if ryo {
+            c.arg("ryo");
+        } else {
+            c.env_remove("RUSTC").env("RUSTUP_TOOLCHAIN", &toolchain);
+        }
+        let res = c
+            .args(["build", "--verbose", "--offline"])
+            .current_dir(&pkg)
+            .env("PATH", &path)
+            .env("RYO_BACKEND_MARKER", "1")
+            .env("CARGO_TARGET_DIR", &target_sub)
+            .env_remove("CARGO_INCREMENTAL")
+            .output()
+            .map_err(|e| e.to_string())?;
+        let stderr = String::from_utf8_lossy(&res.stderr).into_owned();
+        let what = if ryo { "cargo ryo build" } else { "cargo build" };
+        if !res.status.success() {
+            return Err(format!("{what}: {}\nstderr:\n{stderr}", res.status));
+        }
+        let fresh = stderr.contains("Fresh cargo-hello") && !stderr.contains("Compiling cargo-hello");
+        Ok((fresh, stderr))
+    };
+    let steps = [(false, None), (true, Some(false)), (true, Some(true)), (false, Some(true))];
+    let mut result = Ok(());
+    for (i, (ryo, want_fresh)) in steps.into_iter().enumerate() {
+        let (fresh, stderr) = match build(ryo) {
+            Ok(r) => r,
+            Err(e) => {
+                result = Err(e);
+                break;
+            }
+        };
+        let marker = stderr.contains(BACKEND_MARKER);
+        if want_fresh.is_some_and(|w| w != fresh) || (ryo && !fresh && !marker) || (!ryo && marker) {
+            let what = if ryo { "cargo ryo build" } else { "cargo build" };
+            let want = if want_fresh == Some(true) { "fresh" } else { "a rebuild" };
+            result = Err(format!("step {}: {what}: expected {want}\nstderr:\n{stderr}", i + 1));
+            break;
+        }
     }
-    Ok(())
+    let _ = fs::remove_dir_all(pkg.join("target"));
+    let _ = fs::remove_dir_all(&target_sub);
+    result
 }
 
 /// `RUST_BACKTRACE=1` through VM frames: a panic two VM calls deep, caught by

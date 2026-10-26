@@ -136,6 +136,18 @@ modeled on cg_clif's `build_system/`.
    `cargo-ryo` sets `RUSTC=rustc-ryo`; cargo's dev profile compiles incrementally
    ([README.md](README.md#goals)).
 
+   Cargo identifies the compiler by `rustc -vV` (hashed into every fingerprint and
+   metadata hash; cached in `target/.rustc_info.json`, keyed by the compiler's path and
+   mtime). For `-vV` (or `-V -v`, `--version --verbose`) `rustc-ryo` appends a line
+   `ryo-build: <hash>` to rustc's output, a hash of the backend dylib and the runtime rlibs
+   that `y build` bakes in as `RYO_BUILD_ID` (each `y build` relinks the wrapper, so the
+   cache sees a new mtime). Plain cargo and `cargo ryo` artifacts thus coexist in one
+   target directory, and a new ryo build rebuilds them. The existing lines are unchanged
+   and `-V` alone isn't touched, so build scripts that parse the version (`rustc_version`
+   ignores unknown keys, `autocfg` reads `-V`) work. `--sysroot ryo` needs no line of its own:
+   it comes in `RUSTFLAGS`, which cargo fingerprints (`y test`'s `cargo-ryo` check covers the
+   switch between plain cargo and `cargo ryo`).
+
 ### `build-clif`: the Cranelift backend on stable
 
 The `rustc-codegen-cranelift` rustup component is nightly-only, but the stable `rustc-dev`

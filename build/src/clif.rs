@@ -56,7 +56,7 @@ pub fn build() -> Result<(), String> {
     })?;
 
     copy(&target_dir.join("release").join(dll_name(DYLIB)), &dist.join("lib").join(dll_name(DYLIB)))?;
-    build_wrapper(&root, &dist.join("bin"), &info, "rustc-clif")?;
+    build_wrapper(&root, &dist.join("bin"), &info, "rustc-clif", "")?;
     eprintln!("[y] done: {}", dist_bin(&root, "rustc-clif").display());
     Ok(())
 }
