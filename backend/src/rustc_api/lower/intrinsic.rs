@@ -13,7 +13,7 @@ use ryo_bytecode::full::Opcode;
 
 use super::call::{ArgSrc, CallCont};
 use super::cast::ScalarKind;
-use super::emit::{FloatWidth, Width, imm_words, opcode, opw, try_opcode};
+use super::emit::{FloatWidth, Width, opcode, opw, try_opcode};
 use super::island::templates;
 use super::place::Loc;
 use super::{FnCx, NeedsNative, SPLIT_MAX, native};
@@ -475,17 +475,12 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         self.imm(w, r, u128::from(w.bits() - 1));
         self.op(opw("Sub", w), &[r, r, s]);
         let (x, y) = (self.frame.temp(size, al), self.frame.temp(size, al));
-        let one = imm_words(w, 1);
         if left {
             self.op(opw("Shl", w), &[x, a, s]);
-            let mut ops = vec![y, b];
-            ops.extend(one);
-            self.op(opw("ShrUImm", w), &ops);
+            self.op_imm("ShrU", w, y, b, 1);
             self.op(opw("ShrU", w), &[y, y, r]);
         } else {
-            let mut ops = vec![x, a];
-            ops.extend(one);
-            self.op(opw("ShlImm", w), &ops);
+            self.op_imm("Shl", w, x, a, 1);
             self.op(opw("Shl", w), &[x, x, r]);
             self.op(opw("ShrU", w), &[y, b, s]);
         }

@@ -7,7 +7,7 @@ use rustc_index::IndexVec;
 use rustc_middle::mir::{AggregateKind, Operand, Place};
 use ryo_bytecode::full::Opcode;
 
-use super::emit::{Width, imm_words, opw};
+use super::emit::{Width, opw};
 use super::place::{Loc, PlaceVal};
 use super::{FnCx, NeedsNative, native};
 
@@ -146,57 +146,40 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     fn niche_discr(&mut self, d: u32, dw: Width, n: NicheTag) {
         let NicheTag { slot: t, tw, untagged, start, end, niche_start } = n;
         let (u, s) = (u128::from(untagged), u128::from(start));
-        let imm = |w: Width, v: u128| imm_words(w, w.truncate(v));
         let b = self.frame.temp(1, 1);
         if start == end {
             // One niche variant: `is_niche = tag == niche_start`, the value `start`.
-            let (cmp, lo) = if u == s + 1 { ("NeImm", s) } else { ("EqImm", u) };
-            let mut ops = vec![b, t];
-            ops.extend(imm(tw, niche_start));
-            self.op(opw(cmp, tw), &ops);
+            let (cmp, lo) = if u == s + 1 { ("Ne", s) } else { ("Eq", u) };
+            self.op_imm(cmp, tw, b, t, niche_start);
             self.int_cast(d, b, Width::W8, dw, false);
             if s.abs_diff(u) == 1 {
                 // `d = lo + b`.
                 if lo != 0 {
-                    self.add_imm(d, dw, lo);
+                    self.op_imm("Add", dw, d, d, lo);
                 }
                 return;
             }
             // `d = ((start ^ untagged) & -b) ^ untagged`.
             self.op(opw("Neg", dw), &[d, d]);
-            let mut ops = vec![d, d];
-            ops.extend(imm(dw, s ^ u));
-            self.op(opw("AndImm", dw), &ops);
-            self.xor_imm(d, dw, u);
+            self.op_imm("And", dw, d, d, s ^ u);
+            self.op_imm("Xor", dw, d, d, u);
             return;
         }
         // `r = tag - niche_start`, `b = r <=u relative_max`, `d = start + r` blended with
         // `untagged` by `b`.
         let r = self.frame.temp(u64::from(tw.bytes()), u64::from(tw.bytes()));
-        let mut ops = vec![r, t];
-        ops.extend(imm(tw, niche_start));
-        self.op(opw("SubImm", tw), &ops);
-        let mut ops = vec![b, r];
-        ops.extend(imm(tw, u128::from(end - start)));
-        self.op(opw("LeUImm", tw), &ops);
+        self.op_imm("Sub", tw, r, t, niche_start);
+        self.op_imm("LeU", tw, b, r, u128::from(end - start));
         self.int_cast(d, r, tw, dw, false);
         if s != 0 {
-            self.add_imm(d, dw, s);
+            self.op_imm("Add", dw, d, d, s);
         }
         let m = self.frame.temp(u64::from(dw.bytes()), u64::from(dw.bytes()));
         self.int_cast(m, b, Width::W8, dw, false);
         self.op(opw("Neg", dw), &[m, m]);
-        self.xor_imm(d, dw, u);
+        self.op_imm("Xor", dw, d, d, u);
         self.op(opw("And", dw), &[d, d, m]);
-        self.xor_imm(d, dw, u);
-    }
-
-    fn add_imm(&mut self, d: u32, w: Width, v: u128) {
-        self.op_imm("Add", w, d, d, v);
-    }
-
-    fn xor_imm(&mut self, d: u32, w: Width, v: u128) {
-        self.op_imm("Xor", w, d, d, v);
+        self.op_imm("Xor", dw, d, d, u);
     }
 
     /// Writes the tag of `variant` (cg_ssa's `codegen_set_discr`).

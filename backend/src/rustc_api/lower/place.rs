@@ -104,7 +104,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     (_, Some(meta)) => {
                         // len - offset
                         let t = self.temp8();
-                        self.op(opw("SubImm", Width::W64), &[t, meta, offset as u32, (offset >> 32) as u32]);
+                        self.op_imm("Sub", Width::W64, t, meta, offset.into());
                         self.index(pv, t, elem)
                     }
                     _ => native("ConstantIndex from the end of a sized non-array"),
@@ -127,7 +127,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 self.ptr_add(p, base, (from * stride) as i64);
                 let len = self.temp8();
                 let cut = from + to;
-                self.op(opw("SubImm", Width::W64), &[len, meta, cut as u32, (cut >> 32) as u32]);
+                self.op_imm("Sub", Width::W64, len, meta, cut.into());
                 Ok(PlaceVal { loc: Loc::Mem { p, k: 0 }, layout, meta: Some(len), base: None })
             }
         }
@@ -211,7 +211,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     1 => DynVal::Slot(meta),
                     n => {
                         let s = self.temp8();
-                        self.op(opw("MulImm", Width::W64), &[s, meta, n as u32, (n >> 32) as u32]);
+                        self.op_imm("Mul", Width::W64, s, meta, n.into());
                         DynVal::Slot(s)
                     }
                 };
@@ -235,7 +235,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     DynVal::Const(c) => DynVal::Const(unsized_off + c),
                     DynVal::Slot(s) => {
                         let t = self.temp8();
-                        self.op(opw("AddImm", Width::W64), &[t, s, unsized_off as u32, (unsized_off >> 32) as u32]);
+                        self.op_imm("Add", Width::W64, t, s, unsized_off.into());
                         DynVal::Slot(t)
                     }
                 };
@@ -267,9 +267,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let s = self.dyn_slot(v);
                 let t = self.temp8();
                 let m = a - 1;
-                self.op(opw("AddImm", Width::W64), &[t, s, m as u32, (m >> 32) as u32]);
+                self.op_imm("Add", Width::W64, t, s, m.into());
                 let m = !m;
-                self.op(opw("AndImm", Width::W64), &[t, t, m as u32, (m >> 32) as u32]);
+                self.op_imm("And", Width::W64, t, t, m.into());
                 DynVal::Slot(t)
             }
             (v, DynVal::Slot(a)) => {

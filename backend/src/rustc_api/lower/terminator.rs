@@ -19,7 +19,7 @@ use ryo_bytecode::asm::Opnd;
 use ryo_bytecode::full::Opcode;
 
 use super::call::{ArgSrc, CallCont};
-use super::emit::{Width, imm_words, opw, try_opcode};
+use super::emit::{Width, opw, try_opcode};
 use super::{FnCx, NeedsNative, native};
 
 /// The branch that tests `a op b`: the compare it calls (`"Eq"`, `"Lt"`, `"Gt"`), whether
@@ -171,12 +171,10 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let (sa, _) = self.operand_slot(c.a)?;
         if let Some(v) = self.const_int(c.b)? {
             let (cmp, _, neg) = branch_form(c.op, true);
-            let Some(opc) = try_opcode(&format!("Br{}Imm{}", name(cmp), w.suffix())) else {
+            if try_opcode(&format!("Br{}Imm{}", name(cmp), w.suffix())).is_none() {
                 return native("no br.imm for the width");
-            };
-            let mut ops = vec![sa];
-            ops.extend(imm_words(w, w.truncate(v)));
-            self.op_branch(opc, &ops, neg == when, bb);
+            }
+            self.br_imm(&name(cmp), w, sa, v, neg == when, bb);
             return Ok(());
         }
         let (sb, _) = self.operand_slot(c.b)?;
