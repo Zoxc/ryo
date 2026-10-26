@@ -3,19 +3,14 @@
 //! wrapper.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::dist::{build_wrapper, copy, copy_dir};
-use crate::utils::{RustcInfo, cmd, dll_name, exe_name, root, run};
-
-/// `dist/bin/rustc-clif`.
-pub fn rustc_clif(root: &Path) -> PathBuf {
-    root.join("dist").join("bin").join(exe_name("rustc-clif"))
-}
+use crate::utils::{RustcInfo, cmd, dist_bin, dll_name, root, run};
 
 /// Whether `dist/` has cg_clif and its wrapper (`y build` replaces `dist/`, removing them).
 pub fn installed(root: &Path) -> bool {
-    rustc_clif(root).exists() && root.join("dist").join("lib").join(dll_name(DYLIB)).exists()
+    dist_bin(root, "rustc-clif").exists() && root.join("dist").join("lib").join(dll_name(DYLIB)).exists()
 }
 
 const DYLIB: &str = "rustc_codegen_cranelift";
@@ -24,7 +19,7 @@ pub fn build() -> Result<(), String> {
     let info = RustcInfo::get()?;
     let root = root();
     let dist = root.join("dist");
-    if !dist.join("bin").join(exe_name("rustc-ryo")).exists() {
+    if !dist_bin(&root, "rustc-ryo").exists() {
         return Err("dist/ is missing; run `./y.sh build` first (cg_clif uses its std)".to_owned());
     }
 
@@ -62,7 +57,7 @@ pub fn build() -> Result<(), String> {
 
     copy(&target_dir.join("release").join(dll_name(DYLIB)), &dist.join("lib").join(dll_name(DYLIB)))?;
     build_wrapper(&root, &dist.join("bin"), &info, "rustc-clif")?;
-    eprintln!("[y] done: {}", rustc_clif(&root).display());
+    eprintln!("[y] done: {}", dist_bin(&root, "rustc-clif").display());
     Ok(())
 }
 

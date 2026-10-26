@@ -131,8 +131,8 @@ impl Backend {
     fn rustc(self, root: &Path) -> PathBuf {
         match self {
             Backend::Llvm => "rustc".into(),
-            Backend::Clif => crate::clif::rustc_clif(root),
-            Backend::Ryo => root.join("dist").join("bin").join(exe_name("rustc-ryo")),
+            Backend::Clif => crate::utils::dist_bin(root, "rustc-clif"),
+            Backend::Ryo => crate::utils::dist_bin(&root, "rustc-ryo"),
         }
     }
 }
@@ -319,7 +319,7 @@ pub fn run(opts: Options) -> Result<(), String> {
     let started = Instant::now();
     let info = RustcInfo::get()?;
     let root = root();
-    if !root.join("dist").join("bin").join(exe_name("rustc-ryo")).exists() {
+    if !crate::utils::dist_bin(&root, "rustc-ryo").exists() {
         eprintln!("[y] bench crates: dist/ is missing, building it");
         crate::dist::build(&[], false)?;
     }

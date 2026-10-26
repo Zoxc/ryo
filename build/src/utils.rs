@@ -74,6 +74,26 @@ impl RustcInfo {
         let driver = find_driver(&sysroot)?;
         Ok(RustcInfo { host, sysroot, toolchain, driver })
     }
+
+    /// The toolchain's host tool `name`, e.g. from `llvm-tools`.
+    pub fn tool(&self, name: &str) -> PathBuf {
+        self.sysroot.join("lib").join("rustlib").join(&self.host).join("bin").join(exe_name(name))
+    }
+
+    /// `rust-src`'s `library/`.
+    pub fn rust_src_library(&self) -> PathBuf {
+        self.sysroot.join("lib").join("rustlib").join("src").join("rust").join("library")
+    }
+}
+
+/// `dist/bin/<name>` (an executable).
+pub fn dist_bin(root: &Path, name: &str) -> PathBuf {
+    root.join("dist").join("bin").join(exe_name(name))
+}
+
+/// `dist/`'s `ryo_rt` rlib for `triple`.
+pub fn ryo_rt_rlib(root: &Path, triple: &str) -> PathBuf {
+    root.join("dist").join("lib").join("rustlib").join(triple).join("lib").join("libryo_rt.rlib")
 }
 
 /// The toolchain's `librustc_driver-<hash>` dylib (in `lib/`, or `bin/` on Windows).

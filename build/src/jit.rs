@@ -53,11 +53,6 @@ pub fn lib_name(triple: &str) -> &'static str {
     if coff(triple) { "ryo_jit.lib" } else { "libryo_jit.a" }
 }
 
-/// The toolchain's LLVM tool `name` (`llvm-tools`).
-pub fn llvm_tool(info: &RustcInfo, name: &str) -> PathBuf {
-    info.sysroot.join("lib").join("rustlib").join(&info.host).join("bin").join(crate::utils::exe_name(name))
-}
-
 /// Builds `ryo_jit` for `triple` (`cross` unless it is the host) as a staticlib, with fat LTO
 /// against the toolchain's std (the one `dist/` copies), and seals it into
 /// `target/jit/sealed/<triple>/`, which it returns: the directory `ryo_rt`'s build script
@@ -112,8 +107,8 @@ pub fn build(root: &Path, target: &Path, info: &RustcInfo, triple: &str, cross: 
 
 /// Seals `staticlib` into `out` (see [`build`]).
 fn seal(info: &RustcInfo, staticlib: &Path, out: &Path, triple: &str) -> Result<(), String> {
-    let ar = llvm_tool(info, "llvm-ar");
-    let objcopy = llvm_tool(info, "llvm-objcopy");
+    let ar = info.tool("llvm-ar");
+    let objcopy = info.tool("llvm-objcopy");
     if out.exists() {
         fs::remove_dir_all(out).map_err(|e| format!("removing {}: {e}", out.display()))?;
     }
@@ -128,7 +123,7 @@ fn seal(info: &RustcInfo, staticlib: &Path, out: &Path, triple: &str) -> Result<
     let mut seal = cmd(&objcopy);
     seal.arg("--strip-debug");
     if coff(triple) {
-        let nm = llvm_tool(info, "llvm-nm");
+        let nm = info.tool("llvm-nm");
         let defined = output(cmd(&nm).args(["--extern-only", "--defined-only", "--no-demangle", "-j"]).arg(out.join(&lto)))?;
         let renames: String = defined.lines().map(str::trim).filter(|s| coff_renamed(s)).map(|s| format!("{s} {COFF_PREFIX}{s}\n")).collect();
         let list = out.join("renames.txt");
@@ -184,8 +179,8 @@ fn lto_member(members: &str) -> Result<String, String> {
 pub fn check_sealed(info: &RustcInfo, rlib: &Path, dir: &Path, triple: &str) -> Result<(), String> {
     let _ = fs::remove_dir_all(dir);
     fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    let ar = llvm_tool(info, "llvm-ar");
-    let nm = llvm_tool(info, "llvm-nm");
+    let ar = info.tool("llvm-ar");
+    let nm = info.tool("llvm-nm");
     run(cmd(&ar).arg("x").arg(rlib).arg(OBJECT).arg("--output").arg(dir)).map_err(|e| format!("no sealed JIT in {}: {e}", rlib.display()))?;
     let obj = dir.join(OBJECT);
     let names = |args: &[&str]| -> Result<Vec<String>, String> {
@@ -211,17 +206,17 @@ pub fn check_sealed(info: &RustcInfo, rlib: &Path, dir: &Path, triple: &str) -> 
         return Err(format!("{} defines the unwinder's {unwinder:?}", obj.display()));
     }
     if coff(triple) {
-        let sections = output(cmd(llvm_tool(info, "llvm-objdump")).arg("-h").arg(&obj))?;
+        let sections = output(cmd(info.tool("llvm-objdump")).arg("-h").arg(&obj))?;
         if let Some(s) = sections.lines().find(|l| l.contains(".drectve") || l.contains(".CRT$X")) {
             return Err(format!("{} has the section {}", obj.display(), s.trim()));
         }
     }
     if macho(triple) {
-        let sections = output(cmd(llvm_tool(info, "llvm-objdump")).arg("-h").arg(&obj))?;
+        let sections = output(cmd(info.tool("llvm-objdump")).arg("-h").arg(&obj))?;
         if let Some(s) = sections.lines().find(|l| l.contains("__mod_init_func") || l.contains("__init_offsets") || l.contains("__mod_term_func")) {
             return Err(format!("{} has the section {}", obj.display(), s.trim()));
         }
-        let commands = output(cmd(llvm_tool(info, "llvm-objdump")).arg("--private-headers").arg(&obj))?;
+        let commands = output(cmd(info.tool("llvm-objdump")).arg("--private-headers").arg(&obj))?;
         if commands.contains("LC_LINKER_OPTION") {
             return Err(format!("{} has linker options (LC_LINKER_OPTION)", obj.display()));
         }

@@ -61,7 +61,7 @@ impl NativeLib {
         crate::utils::run(&mut c)?;
         let msvc = target.unwrap_or(&info.host).contains("msvc");
         let lib = if msvc { format!("{}.lib", self.name) } else { format!("lib{}.a", self.name) };
-        let ar = info.sysroot.join("lib").join("rustlib").join(&info.host).join("bin").join(exe_name("llvm-ar"));
+        let ar = info.tool("llvm-ar");
         crate::utils::run(cmd(ar).arg("rcs").arg(dir.join(lib)).arg(&obj))
     }
 }
@@ -825,7 +825,7 @@ const CODEGEN_TESTS: [&str; 2] = ["win64_handlers_preserve_xmm6_to_15", "handler
 pub fn run(opts: &Options) -> Result<(), String> {
     let start = Instant::now();
     let root = root();
-    let rustc_ryo = root.join("dist").join("bin").join(exe_name("rustc-ryo"));
+    let rustc_ryo = crate::utils::dist_bin(&root, "rustc-ryo");
     if !rustc_ryo.exists() {
         return Err("dist/ is missing; run `./y.sh build` first".to_owned());
     }
@@ -857,7 +857,8 @@ pub fn run(opts: &Options) -> Result<(), String> {
 
     let out = root.join("target").join("tests");
     fs::create_dir_all(&out).map_err(|e| format!("creating {}: {e}", out.display()))?;
-    let ctx = Ctx { tests: root.join("tests"), out: out.clone(), rustc_ryo: rustc_ryo.clone(), rustc_clif: crate::clif::rustc_clif(&root) };
+    let ctx =
+        Ctx { tests: root.join("tests"), out: out.clone(), rustc_ryo: rustc_ryo.clone(), rustc_clif: crate::utils::dist_bin(&root, "rustc-clif") };
     let failed = Mutex::new(Vec::new());
 
     // The runtime once more with handlers that read `fp` from `rbp`, so VM code keeps the
@@ -1336,7 +1337,7 @@ fn cargo_smoke(root: &Path, out: &Path) -> Result<(), String> {
         root.join("tests").join("hello.rs").to_str().ok_or("non-UTF-8 path")?,
     );
     fs::write(pkg.join("Cargo.toml"), manifest).map_err(|e| e.to_string())?;
-    let cargo_ryo = root.join("dist").join("bin").join(exe_name("cargo-ryo"));
+    let cargo_ryo = crate::utils::dist_bin(&root, "cargo-ryo");
     let res = cmd(cargo_ryo)
         .args(["run", "--quiet", "--offline"])
         .current_dir(&pkg)
@@ -1431,7 +1432,7 @@ fn same_exports(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> 
         return Ok(());
     }
     let info = crate::utils::RustcInfo::get()?;
-    let nm = info.sysroot.join("lib").join("rustlib").join(&info.host).join("bin").join("llvm-nm");
+    let nm = info.tool("llvm-nm");
     let dir = out.join("exports");
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let cases: [(&str, &[&str]); 5] = [
@@ -1495,7 +1496,7 @@ pub(crate) fn rt_core_only(root: &Path, triple: &str) -> Result<(), String> {
         return Ok(());
     }
     let info = crate::utils::RustcInfo::get()?;
-    let nm = info.sysroot.join("lib").join("rustlib").join(&info.host).join("bin").join("llvm-nm");
+    let nm = info.tool("llvm-nm");
     let dist = root.join("dist");
     let mut libs = Vec::new();
     for sysroot in [dist.clone(), dist.join(crate::sysroot::SYSROOT_DIR)] {
@@ -1533,7 +1534,7 @@ pub(crate) fn rt_core_only(root: &Path, triple: &str) -> Result<(), String> {
         if !bad.is_empty() {
             return Err(format!("{} uses symbols outside core: {bad:?}", lib.display()));
         }
-        let objdump = nm.with_file_name("llvm-objdump");
+        let objdump = info.tool("llvm-objdump");
         let dir = lib.parent().unwrap();
         let bytecode = fs::read_dir(dir)
             .map_err(|e| e.to_string())?
@@ -1559,7 +1560,7 @@ fn jit_sealed(root: &Path, out: &Path) -> Result<(), String> {
     if !crate::jit::supported(&info.host) {
         return Ok(());
     }
-    let lib = root.join("dist").join("lib").join("rustlib").join(&info.host).join("lib").join("libryo_rt.rlib");
+    let lib = crate::utils::ryo_rt_rlib(root, &info.host);
     crate::jit::check_sealed(&info, &lib, &out.join("jit-sealed"), &info.host)
 }
 

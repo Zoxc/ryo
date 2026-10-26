@@ -72,7 +72,7 @@ fn stamp(info: &RustcInfo, root: &Path, dist: &Path, jit: bool) -> Result<String
     // `prepare_sources` (how the library is patched) and the build's flags are in this file.
     let mut y = std::hash::DefaultHasher::new();
     y.write(include_str!("sysroot.rs").as_bytes());
-    let src = info.sysroot.join("lib").join("rustlib").join("src").join("rust").join("library");
+    let src = info.rust_src_library();
     Ok(format!(
         "rustc={:x}\nrust-src={}\nbackend={:x}\nvm={:x}\ny={:x}\njit={jit}\n",
         {
@@ -322,7 +322,7 @@ fn percent(part: u64, whole: u64) -> f64 {
 /// Copies `rust-src`'s `library/` to `dst` (once per toolchain, so cargo's fingerprints
 /// survive rebuilds), and adds `ryo_rt` to it, with its `jit` feature if `jit`.
 fn prepare_sources(info: &RustcInfo, root: &Path, dst: &Path, jit: bool) -> Result<(), String> {
-    let src = info.sysroot.join("lib").join("rustlib").join("src").join("rust").join("library");
+    let src = info.rust_src_library();
     if !src.is_dir() {
         return Err("no `rust-src` in the toolchain; run `rustup component add rust-src`".to_owned());
     }

@@ -248,7 +248,7 @@ fn shell_quote(s: &str) -> String {
 /// it, writing the JIT's code and IR ([`jit_dumps`]) to `bench/codegen/<name>.jit*`.
 pub fn codegen() -> Result<(), String> {
     let root = root();
-    let rustc_ryo = root.join("dist").join("bin").join(exe_name("rustc-ryo"));
+    let rustc_ryo = crate::utils::dist_bin(&root, "rustc-ryo");
     if !rustc_ryo.exists() {
         return Err("dist/ is missing; run `./y.sh build` first".to_owned());
     }
@@ -617,8 +617,7 @@ struct Cell {
 
 pub fn run(opts: &Options) -> Result<(), String> {
     let root = root();
-    let dist_bin = root.join("dist").join("bin");
-    if !dist_bin.join(exe_name("rustc-ryo")).exists() {
+    if !crate::utils::dist_bin(&root, "rustc-ryo").exists() {
         eprintln!("[y] bench: dist/ is missing, building it");
         crate::dist::build(&[], false)?;
     }
@@ -658,8 +657,8 @@ pub fn run(opts: &Options) -> Result<(), String> {
             let exe = dir.join(exe_name(program));
             let compiler = match backend.compiler {
                 Compiler::Rustc => PathBuf::from("rustc"),
-                Compiler::Clif => crate::clif::rustc_clif(&root),
-                Compiler::Ryo => dist_bin.join(exe_name("rustc-ryo")),
+                Compiler::Clif => crate::utils::dist_bin(&root, "rustc-clif"),
+                Compiler::Ryo => crate::utils::dist_bin(&root, "rustc-ryo"),
             };
             let mut args = vec!["--edition=2024".to_owned(), path_str(&src)?];
             args.extend(COMMON_FLAGS.iter().map(|f| f.to_string()).chain(backend.flags.iter().cloned()));

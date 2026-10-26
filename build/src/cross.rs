@@ -15,7 +15,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::test::{CORPUS, CrateKind, Program};
-use crate::utils::{RustcInfo, cmd, describe, exe_name, root};
+use crate::utils::{RustcInfo, cmd, describe, dist_bin, exe_name, root, ryo_rt_rlib};
 
 /// Import libraries std, `ryo_rt` and the corpus name on windows-msvc, replaced by empty
 /// archives. A library missing here fails the link with "could not open"; add it.
@@ -94,8 +94,9 @@ pub fn run(target: &str) -> Result<(), String> {
     let root = root();
     let info = RustcInfo::get()?;
     let dist = root.join("dist");
-    let rustc_ryo = dist.join("bin").join(exe_name("rustc-ryo"));
-    if !dist.join("lib").join("rustlib").join(target).join("lib").join("libryo_rt.rlib").exists() {
+    let rustc_ryo = dist_bin(&root, "rustc-ryo");
+    let rlib = ryo_rt_rlib(&root, target);
+    if !rlib.exists() {
         return Err(format!("dist/ has no ryo_rt for {target}; run `./y.sh build --target {target}` first"));
     }
     let lld = dist.join("lib").join("rustlib").join(&info.host).join("bin").join(exe_name("rust-lld"));
@@ -131,10 +132,9 @@ pub fn run(target: &str) -> Result<(), String> {
     // undefined symbols, as lld names them.
     let mut jit_imports = BTreeSet::new();
     if crate::jit::supported(target) {
-        let rlib = dist.join("lib").join("rustlib").join(target).join("lib").join("libryo_rt.rlib");
         let dir = out.join("jit-sealed");
         let res = crate::jit::check_sealed(&info, &rlib, &dir, target).and_then(|()| {
-            let nm = crate::jit::llvm_tool(&info, "llvm-nm");
+            let nm = info.tool("llvm-nm");
             // Demangled as lld-link prints them; ld64.lld prints raw names.
             let demangle = if macho { "--no-demangle" } else { "-C" };
             let syms = crate::utils::output(cmd(nm).args(["-u", demangle, "-j"]).arg(dir.join(crate::jit::OBJECT)))?;
@@ -165,7 +165,7 @@ pub fn run(target: &str) -> Result<(), String> {
             }
         }
     } else {
-        match no_red_zone(&info, &dist.join("lib").join("rustlib").join(target).join("lib").join("libryo_rt.rlib"), &out.join("red-zone")) {
+        match no_red_zone(&info, &rlib, &out.join("red-zone")) {
             Ok(n) => eprintln!("[y] test --cross {target} red-zone: ok ({n} objects)"),
             Err(msg) => {
                 eprintln!("[y] test --cross {target} red-zone: FAILED: {msg}");
@@ -230,7 +230,7 @@ pub fn run(target: &str) -> Result<(), String> {
 /// constructor (it jumps to `_ryo_vm_register`), and another one, the program's own
 /// (`tests/vm_sysroot.rs`'s, which enters the VM), follows it (design/platforms.md).
 fn registry_first(info: &RustcInfo, exe: &Path) -> Result<(), String> {
-    let objdump = crate::jit::llvm_tool(info, "llvm-objdump");
+    let objdump = info.tool("llvm-objdump");
     let dump = crate::utils::output(cmd(&objdump).args(["-s", "-j", "__mod_init_func"]).arg(exe))?;
     // ` <address> <word> <word> <word> <word>  <ascii>` lines: little-endian 8-byte pointers.
     let hex: String = dump
@@ -344,8 +344,8 @@ mod tests {
 fn no_red_zone(info: &RustcInfo, rlib: &Path, dir: &Path) -> Result<usize, String> {
     let _ = fs::remove_dir_all(dir);
     fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    crate::utils::run(cmd(crate::jit::llvm_tool(info, "llvm-ar")).arg("x").arg(rlib).arg("--output").arg(dir))?;
-    let objdump = crate::jit::llvm_tool(info, "llvm-objdump");
+    crate::utils::run(cmd(info.tool("llvm-ar")).arg("x").arg(rlib).arg("--output").arg(dir))?;
+    let objdump = info.tool("llvm-objdump");
     let mut n = 0;
     let mut bad = Vec::new();
     for e in fs::read_dir(dir).map_err(|e| e.to_string())? {
