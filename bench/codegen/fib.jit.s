@@ -8,8 +8,7 @@ fn fib
     mov     eax,ebx
     jmp     L1
 L0:
-    mov     rax,rbx
-    sub     eax,1
+    lea     eax,[rbx-1]
     mov     rdi,rax
     call    fn2
     mov     r12,rax

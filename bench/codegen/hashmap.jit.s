@@ -13,7 +13,7 @@ fn <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as std::hash::Hasher>:
     add     rax,r13
     mov     [rbx+30h],rax
     mov     rax,[rbx+40h]
-    cmp     rax,0
+    test    rax,rax
     je      L0
     jmp     L1
 L0:
@@ -42,9 +42,9 @@ L5:
     mov     dword ptr [rsp+40h],0
     lea     rdx,[rsp+40h]
     lea     rsi,[image.k3192]
-    cmp     r12,0
+    test    r12,r12
     je      L30
-    cmp     rdx,0
+    test    rdx,rdx
     je      L30
     cmp     r12,rdx
     jae     L6
@@ -64,8 +64,7 @@ L7:
     mov     rdi,rdx
     mov     edx,4
 L8:
-    mov     r8,rdx
-    add     r8,1
+    lea     r8,[rdx+1]
     cmp     r8,rax
     jae     L11
     mov     word ptr [rsp+34h],0
@@ -73,9 +72,9 @@ L8:
     lea     r9,[rsp+34h]
     lea     r11,[image.k3216]
     mov     [rsp+28h],r11
-    cmp     r8,0
+    test    r8,r8
     je      L31
-    cmp     r9,0
+    test    r9,r9
     je      L31
     cmp     r8,r9
     jae     L9
@@ -159,9 +158,9 @@ L15:
     lea     rdi,[rsp+60h]
     lea     r11,[k4]
     mov     [rsp+18h],r11
-    cmp     rdx,0
+    test    rdx,rdx
     je      L33
-    cmp     rdi,0
+    test    rdi,rdi
     je      L33
     cmp     rdx,rdi
     jae     L16
@@ -217,9 +216,9 @@ L21:
     lea     rax,[r13+r14]
     lea     rdx,[rsp+50h]
     lea     rdi,[image.k3192]
-    cmp     rax,0
+    test    rax,rax
     je      L34
-    cmp     rdx,0
+    test    rdx,rdx
     je      L34
     cmp     rax,rdx
     jae     L22
@@ -239,19 +238,17 @@ L23:
     mov     rdx,rax
     mov     eax,4
 L24:
-    mov     r8,rax
-    add     r8,1
+    lea     r8,[rax+1]
     cmp     r8,r12
     jae     L27
     mov     word ptr [rsp+44h],0
-    mov     r8,r14
-    add     r8,rax
+    lea     r8,[r14+rax]
     lea     r8,[r13+r8]
     lea     r9,[rsp+44h]
     lea     rcx,[image.k3216]
-    cmp     r8,0
+    test    r8,r8
     je      L35
-    cmp     r9,0
+    test    r9,r9
     je      L35
     cmp     r8,r9
     jae     L25
@@ -660,8 +657,7 @@ L1:
     mov     rcx,[rdi]
     mov     r11,[rcx]
     mov     rcx,[rdx-8]
-    mov     rax,rsi
-    add     rax,rcx
+    lea     rax,[rsi+rcx]
     jmp     L0
 L2:
     jmp     L1
@@ -942,19 +938,18 @@ L2:
     call    image.fn208
     jmp     L5
 L3:
-    cmp     rbp,0
+    test    rbp,rbp
     je      L7
     jmp     L1
 L4:
-    cmp     rbx,0
+    test    rbx,rbx
     je      L7
     jmp     L2
 L5:
     mov     rax,[rsp+68h]
     xor     rax,r14
     mov     [rsp+68h],rax
-    mov     rax,r15
-    add     rax,8
+    lea     rax,[r15+8]
     mov     r15,rax
     jmp     L0
 L6:
@@ -1164,19 +1159,18 @@ L2:
     call    image.fn208
     jmp     L5
 L3:
-    cmp     r14,0
+    test    r14,r14
     je      L7
     jmp     L1
 L4:
-    cmp     r15,0
+    test    r15,r15
     je      L7
     jmp     L2
 L5:
     mov     rax,[rsp+68h]
     xor     rax,rbp
     mov     [rsp+68h],rax
-    mov     rax,r13
-    add     rax,8
+    lea     rax,[r13+8]
     mov     r13,rax
     jmp     L0
 L6:
@@ -1348,9 +1342,9 @@ L1:
     lea     r8,[rdi+rdx]
     lea     r9,[rsp+20h]
     lea     rcx,[k0]
-    cmp     r8,0
+    test    r8,r8
     je      L9
-    cmp     r9,0
+    test    r9,r9
     je      L9
     cmp     r8,r9
     jae     L2
@@ -1370,19 +1364,17 @@ L3:
     mov     r9,r8
     mov     r8d,4
 L4:
-    mov     rbx,r8
-    add     rbx,1
+    lea     rbx,[r8+1]
     cmp     rbx,rax
     jae     L7
     mov     word ptr [rsp+14h],0
-    mov     rbx,rdx
-    add     rbx,r8
+    lea     rbx,[rdx+r8]
     lea     rbx,[rdi+rbx]
     lea     r12,[rsp+14h]
     lea     r13,[k2]
-    cmp     rbx,0
+    test    rbx,rbx
     je      L10
-    cmp     r12,0
+    test    r12,r12
     je      L10
     cmp     rbx,r12
     jae     L5
@@ -1550,7 +1542,7 @@ fn hashbrown::map::HashMap::<u64, u64, std::hash::RandomState>::retain::<{closur
     jmp     L6
 L0:
     mov     rax,[rsp+90h]
-    cmp     rax,0
+    test    rax,rax
     je      L2
     lea     rax,[rsp+70h]
     mov     rdi,rax
@@ -1602,7 +1594,7 @@ L7:
     mov     rcx,[rsp+90h]
     sub     rcx,1
     mov     [rsp+90h],rcx
-    cmp     rax,0
+    test    rax,rax
     je      L2
     mov     rcx,rax
     mov     rdx,[rsp+10h]
@@ -1613,7 +1605,7 @@ L8:
     mov     rax,rax
     xor     edx,edx
     div     r11
-    cmp     rdx,0
+    test    rdx,rdx
     setne   al
     mov     rbp,rcx
     mov     rcx,rax
@@ -1762,13 +1754,12 @@ fn hashbrown::raw::FullBucketsIndices::next_impl
     mov     rbx,rdi
 L0:
     movzx   r12d,word ptr [rbx+18h]
-    cmp     r12w,0
+    test    r12w,r12w
     je      L1
     mov     rdi,r12
     call    ryo_hr_CttzW16
     mov     eax,eax
-    mov     rcx,r12
-    sub     ecx,1
+    lea     ecx,[r12-1]
     and     r12d,ecx
     mov     [rbx+18h],r12w
     mov     [rsp+18h],rax
@@ -1855,14 +1846,13 @@ fn hashbrown::raw::RawIterRange::<(std::string::String, usize)>::next_impl::<fal
     mov     rbx,rdi
 L0:
     movzx   r12d,word ptr [rbx+18h]
-    cmp     r12w,0
+    test    r12w,r12w
     je      L6
     mov     rdi,r12
     call    ryo_hr_CttzW16
     mov     eax,eax
     mov     qword ptr [rsp+10h],1
-    mov     rcx,r12
-    sub     ecx,1
+    lea     ecx,[r12-1]
     and     r12d,ecx
     mov     [rbx+18h],r12w
     mov     [rsp+18h],rax
@@ -2125,14 +2115,13 @@ fn hashbrown::raw::RawIterRange::<(u64, u64)>::fold_impl::<{closure@<hashbrown::
     mov     r14,rcx
     mov     r15,rax
 L0:
-    cmp     bx,0
+    test    bx,bx
     je      L4
     mov     rdi,rbx
     call    ryo_hr_CttzW16
     mov     eax,eax
     mov     qword ptr [rsp+28h],1
-    mov     rcx,rbx
-    sub     ecx,1
+    lea     ecx,[rbx-1]
     and     ebx,ecx
     mov     [rsp+30h],rax
     mov     r11d,0
@@ -2185,7 +2174,7 @@ L4:
     call    ryo_h_Const
     mov     qword ptr [rsp+30h],0
     mov     byte ptr [rsp+2Fh],1
-    cmp     r12,0
+    test    r12,r12
     je      L2
     mov     rbx,r14
     mov     rbp,r15
@@ -2590,14 +2579,13 @@ fn hashbrown::raw::RawIterRange::<(u64, u64)>::next_impl::<false>
     mov     rbx,rdi
 L0:
     movzx   r12d,word ptr [rbx+18h]
-    cmp     r12w,0
+    test    r12w,r12w
     je      L6
     mov     rdi,r12
     call    ryo_hr_CttzW16
     mov     eax,eax
     mov     qword ptr [rsp+10h],1
-    mov     rcx,r12
-    sub     ecx,1
+    lea     ecx,[r12-1]
     and     r12d,ecx
     mov     [rbx+18h],r12w
     mov     [rsp+18h],rax
@@ -2914,7 +2902,7 @@ L0:
     mov     [rsp+5Ch],eax
     mov     rbx,rax
 L1:
-    cmp     bx,0
+    test    bx,bx
     je      L3
     mov     rdi,rbx
     call    ryo_hr_CttzW16
@@ -2922,8 +2910,7 @@ L1:
     mov     [rsp+58h],rax
     mov     qword ptr [rsp+50h],1
     mov     [rsp+5Eh],bx
-    mov     rcx,rbx
-    sub     ecx,1
+    lea     ecx,[rbx-1]
     and     ebx,ecx
     mov     [rsp+48h],rax
     mov     qword ptr [rsp+40h],1
@@ -2946,7 +2933,7 @@ L1:
 L2:
     mov     rax,[rsp+20h]
     mov     rcx,[rsp+28h]
-    cmp     rax,0
+    test    rax,rax
     je      L7
     jmp     L6
 L3:
@@ -2985,7 +2972,7 @@ L3:
     mov     [rsp+68h],rdx
     mov     rdi,r14
     call    image.sym20
-    cmp     ax,0
+    test    ax,ax
     je      L5
     lea     rdi,[rsp+0D0h]
     mov     esi,0FFFFFF50h
@@ -3095,7 +3082,7 @@ L3:
     lea     rsi,[ro+4]
     call    qword ptr [image.sym68]
     mov     esi,[rsp+24h]
-    cmp     esi,0
+    test    esi,esi
     sete    sil
     mov     rdx,rsi
     jmp     L5
@@ -3172,7 +3159,7 @@ L0:
     lea     rax,[rsp+40h]
     mov     rdi,rax
     call    image.sym20
-    cmp     ax,0
+    test    ax,ax
     je      L3
     jmp     L2
 L1:
@@ -3233,8 +3220,7 @@ L5:
     movzx   edx,byte ptr [rcx]
     shr     r12,39h
     and     r12,7Fh
-    mov     rsi,rax
-    sub     rsi,10h
+    lea     rsi,[rax-10h]
     mov     rdi,[rbx+8]
     and     rsi,rdi
     add     rsi,10h
@@ -3254,7 +3240,7 @@ L5:
 L6:
     mov     rax,rdx
     and     eax,1
-    cmp     al,0
+    test    al,al
     setne   al
     movzx   eax,al
     mov     rsi,[rbx+10h]
@@ -3647,7 +3633,7 @@ L0:
     mov     [rsp+5Ch],eax
     mov     rbx,rax
 L1:
-    cmp     bx,0
+    test    bx,bx
     je      L3
     mov     rdi,rbx
     call    ryo_hr_CttzW16
@@ -3655,8 +3641,7 @@ L1:
     mov     [rsp+58h],rax
     mov     qword ptr [rsp+50h],1
     mov     [rsp+5Eh],bx
-    mov     rcx,rbx
-    sub     ecx,1
+    lea     ecx,[rbx-1]
     and     ebx,ecx
     mov     [rsp+48h],rax
     mov     qword ptr [rsp+40h],1
@@ -3679,7 +3664,7 @@ L1:
 L2:
     mov     rax,[rsp+20h]
     mov     rcx,[rsp+28h]
-    cmp     rax,0
+    test    rax,rax
     je      L7
     jmp     L6
 L3:
@@ -3718,7 +3703,7 @@ L3:
     mov     [rsp+68h],rdx
     mov     rdi,r14
     call    image.sym20
-    cmp     ax,0
+    test    ax,ax
     je      L5
     lea     rdi,[rsp+0D0h]
     mov     esi,0FFFFFF50h
@@ -3919,7 +3904,7 @@ L0:
     mov     [rsp+5Ch],eax
     mov     rbx,rax
 L1:
-    cmp     bx,0
+    test    bx,bx
     je      L3
     mov     rdi,rbx
     call    ryo_hr_CttzW16
@@ -3927,8 +3912,7 @@ L1:
     mov     [rsp+58h],rax
     mov     qword ptr [rsp+50h],1
     mov     [rsp+5Eh],bx
-    mov     rcx,rbx
-    sub     ecx,1
+    lea     ecx,[rbx-1]
     and     ebx,ecx
     mov     [rsp+48h],rax
     mov     qword ptr [rsp+40h],1
@@ -3951,7 +3935,7 @@ L1:
 L2:
     mov     rax,[rsp+20h]
     mov     rcx,[rsp+28h]
-    cmp     rax,0
+    test    rax,rax
     je      L7
     jmp     L6
 L3:
@@ -3990,7 +3974,7 @@ L3:
     mov     [rsp+68h],rdx
     mov     rdi,r14
     call    image.sym20
-    cmp     ax,0
+    test    ax,ax
     je      L5
     lea     rdi,[rsp+0D0h]
     mov     esi,0FFFFFF50h
@@ -4175,7 +4159,7 @@ L0:
     lea     rax,[rsp+60h]
     mov     rdi,rax
     call    image.sym20
-    cmp     ax,0
+    test    ax,ax
     je      L3
     jmp     L2
 L1:
@@ -4236,8 +4220,7 @@ L5:
     movzx   edx,byte ptr [rcx]
     shr     r12,39h
     and     r12,7Fh
-    mov     rsi,rax
-    sub     rsi,10h
+    lea     rsi,[rax-10h]
     mov     rdi,[rbx+8]
     and     rsi,rdi
     add     rsi,10h
@@ -4257,7 +4240,7 @@ L5:
 L6:
     mov     rax,rdx
     and     eax,1
-    cmp     al,0
+    test    al,al
     setne   al
     movzx   eax,al
     mov     rsi,[rbx+10h]
@@ -4549,7 +4532,7 @@ fn hashbrown::raw::RawTableInner::drop_elements::<(std::string::String, usize)>
     mov     rbx,rdi
     mov     rax,[rbx+18h]
     mov     [rsp+78h],rax
-    cmp     rax,0
+    test    rax,rax
     je      L2
     mov     r12,[rbx]
     mov     [rsp+70h],r12
@@ -4583,7 +4566,7 @@ fn hashbrown::raw::RawTableInner::drop_elements::<(std::string::String, usize)>
     jmp     L3
 L0:
     mov     rax,[rsp+78h]
-    cmp     rax,0
+    test    rax,rax
     je      L2
     lea     rax,[rsp+58h]
     mov     rdi,rax
@@ -4591,7 +4574,7 @@ L0:
     mov     rcx,[rsp+78h]
     sub     rcx,1
     mov     [rsp+78h],rcx
-    cmp     rax,0
+    test    rax,rax
     je      L2
     jmp     L4
 L1:
@@ -4711,8 +4694,7 @@ fn hashbrown::raw::RawTableInner::erase
     sub     rsp,88h
     mov     [rsp+10h],rdi
     mov     r12,rsi
-    mov     rax,r12
-    sub     rax,10h
+    lea     rax,[r12-10h]
     mov     [rsp+48h],rax
     mov     r11,[rsp+10h]
     mov     rcx,[r11+8]
@@ -4825,8 +4807,7 @@ L0:
     mov     [r11+10h],rax
     mov     eax,0FFh
 L1:
-    mov     rcx,r12
-    sub     rcx,10h
+    lea     rcx,[r12-10h]
     mov     [rsp+58h],rcx
     mov     r11,[rsp+10h]
     mov     rdx,[r11+8]
@@ -4950,7 +4931,7 @@ L0:
     mov     rbp,[rsp+10h]
     mov     [rsp+18h],r13
 L1:
-    cmp     bx,0
+    test    bx,bx
     je      L4
     mov     rdi,rbx
     call    ryo_hr_CttzW16
@@ -4958,8 +4939,7 @@ L1:
     mov     [rsp+68h],rax
     mov     qword ptr [rsp+60h],1
     mov     [rsp+6Eh],bx
-    mov     rcx,rbx
-    sub     ecx,1
+    lea     ecx,[rbx-1]
     and     ebx,ecx
     mov     [rsp+58h],rax
     mov     qword ptr [rsp+50h],1
@@ -5036,7 +5016,7 @@ L4:
     mov     [rsp+78h],r14
     mov     rdi,r13
     call    sym3
-    cmp     ax,0
+    test    ax,ax
     je      L6
     lea     rdi,[rsp+130h]
     mov     esi,0FFFFFF10h
@@ -5339,7 +5319,7 @@ L0:
     lea     rax,[rsp+40h]
     mov     rdi,rax
     call    image.sym20
-    cmp     ax,0
+    test    ax,ax
     je      L3
     jmp     L2
 L1:
@@ -5402,7 +5382,7 @@ L6:
     mov     [rsp+60h],rsi
     movzx   esi,byte ptr [rsi]
     and     esi,80h
-    cmp     sil,0
+    test    sil,sil
     jne     L8
     lea     rsi,[rsp+50h]
     mov     rdi,rsi
@@ -5416,7 +5396,7 @@ L6:
     mov     rdi,rcx
     call    image.sym20
     mov     rcx,rax
-    cmp     cx,0
+    test    cx,cx
     je      L11
     jmp     L9
 L7:
@@ -5494,7 +5474,7 @@ fn hashbrown::raw::RawTableInner::find_insert_index_in_group
     lea     rax,[rsp+40h]
     mov     rdi,rax
     call    sym0
-    cmp     ax,0
+    test    ax,ax
     je      L2
     jmp     L1
 L0:
@@ -5552,7 +5532,7 @@ fn hashbrown::raw::RawTableInner::fix_insert_index
     mov     [rsp+20h],rcx
     movzx   ecx,byte ptr [rcx]
     and     ecx,80h
-    cmp     cl,0
+    test    cl,cl
     jne     L1
     lea     rcx,[rsp+10h]
     mov     rdi,rcx
@@ -5565,7 +5545,7 @@ fn hashbrown::raw::RawTableInner::fix_insert_index
     lea     rax,[rsp+30h]
     mov     rdi,rax
     call    sym1
-    cmp     ax,0
+    test    ax,ax
     je      L4
     jmp     L2
 L0:
@@ -5665,18 +5645,17 @@ L0:
     mov     [rsp+1E8h],rcx
     mov     rcx,[rsp+260h]
     mov     [rsp+1E0h],rcx
-    cmp     rcx,0
+    test    rcx,rcx
     je      L19
 L1:
     movzx   r15d,word ptr [rsp+268h]
-    cmp     r15w,0
+    test    r15w,r15w
     je      L2
     mov     rdi,r15
     call    ryo_hr_CttzW16
     mov     rcx,rax
     mov     ecx,ecx
-    mov     rdx,r15
-    sub     edx,1
+    lea     edx,[r15-1]
     and     r15d,edx
     mov     [rsp+268h],r15w
     mov     [rsp+0D8h],rcx
@@ -5776,7 +5755,7 @@ L4:
     mov     rdi,rcx
     call    sym4
     mov     rcx,rax
-    cmp     cx,0
+    test    cx,cx
     je      L7
     jmp     L6
 L5:
@@ -5835,7 +5814,7 @@ L9:
     mov     [rsp+140h],rdx
     movzx   edx,byte ptr [rdx]
     and     edx,80h
-    cmp     dl,0
+    test    dl,dl
     jne     L11
     lea     rdx,[rsp+130h]
     mov     rdi,rdx
@@ -5849,7 +5828,7 @@ L9:
     mov     rdi,rcx
     call    sym4
     mov     rcx,rax
-    cmp     cx,0
+    test    cx,cx
     je      L14
     jmp     L12
 L10:
@@ -5859,8 +5838,7 @@ L10:
     mov     r8,[rsp+0A8h]
     shr     r8,39h
     and     r8,7Fh
-    mov     r9,rdx
-    sub     r9,10h
+    lea     r9,[rdx-10h]
     mov     rax,[rsp+290h]
     and     r9,rax
     add     r9,10h
@@ -5981,7 +5959,7 @@ L15:
     mov     ecx,10h
     call    ryo_h_Const
     mov     rax,[rsp+290h]
-    cmp     rax,0
+    test    rax,rax
     je      L16
     mov     r11,[rsp+270h]
     mov     rcx,[rsp+278h]
@@ -6004,7 +5982,7 @@ L15:
     mov     [rsp+190h],rdx
     lea     rsi,[rsi+rdx]
     mov     [rsp+1A0h],rsi
-    cmp     rcx,0
+    test    rcx,rcx
     je      L16
     mov     rdi,rsi
     mov     rsi,rcx
@@ -6457,7 +6435,7 @@ fn hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, us
     mov     r15,rax
     jmp     L3
 L0:
-    cmp     r15,0
+    test    r15,r15
     je      L1
     lea     rbp,[rsp+8]
     mov     rdi,rbp
@@ -6568,7 +6546,7 @@ fn hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::Ra
     call    fn2
     jmp     L3
 L0:
-    cmp     rax,0
+    test    rax,rax
     je      L1
     mov     ecx,0
     mov     rdx,rax
@@ -6642,8 +6620,7 @@ L0:
     mov     rdx,[rsp+698h]
     cmp     rcx,rdx
     jae     L1
-    mov     rdx,rcx
-    add     rdx,1
+    lea     rdx,[rcx+1]
     mov     [rsp+690h],rdx
     mov     rbx,rcx
     mov     ecx,1
@@ -6651,7 +6628,7 @@ L0:
 L1:
     mov     ecx,0
 L2:
-    cmp     rcx,0
+    test    rcx,rcx
     je      L3
     mov     r10,5851F42D4C957F2Dh
     mov     [rsp+1C8h],r10
@@ -6713,7 +6690,7 @@ L3:
     jmp     L8
 L4:
     mov     rax,[rsp+38h]
-    cmp     rax,0
+    test    rax,rax
     je      L6
     mov     rcx,[rsp+40h]
     mov     rdx,[rsp+48h]
@@ -6748,10 +6725,10 @@ L7:
 L8:
     mov     rax,[rsp+580h]
     add     rax,1
-    cmp     rax,0
+    test    rax,rax
     je      L29
     mov     rcx,[rsp+578h]
-    cmp     rcx,0
+    test    rcx,rcx
     jbe     L9
     mov     rdx,[rsp+570h]
     add     rax,rdx
@@ -6770,13 +6747,13 @@ L9:
 L10:
     mov     rax,[rsp+50h]
     mov     rcx,[rsp+58h]
-    cmp     rax,0
+    test    rax,rax
     je      L15
     mov     [rsp+548h],rcx
     lea     rbx,[rsp+6C8h]
     lea     r12,[rsp+548h]
     mov     rax,[rsp+6E0h]
-    cmp     rax,0
+    test    rax,rax
     jne     L11
     mov     ecx,0
     jmp     L12
@@ -6789,11 +6766,11 @@ L11:
     mov     rsi,rax
     mov     rdx,r12
     call    qword ptr [image.fn18.slot]
-    cmp     rax,0
+    test    rax,rax
     je      L13
     jmp     L14
 L12:
-    cmp     rcx,0
+    test    rcx,rcx
     je      L8
     jmp     L16
 L13:
@@ -6854,8 +6831,7 @@ L18:
     mov     ecx,[rsp+464h]
     cmp     eax,ecx
     jae     L19
-    mov     rcx,rax
-    add     ecx,1
+    lea     ecx,[rax+1]
     mov     [rsp+460h],ecx
     mov     rcx,rax
     mov     eax,1
@@ -6864,7 +6840,7 @@ L19:
     mov     eax,0
 L20:
     mov     eax,eax
-    cmp     rax,0
+    test    rax,rax
     je      L21
     lea     rbx,[rsp+478h]
     mov     dword ptr [rsp+1CCh],138Bh
@@ -6935,7 +6911,7 @@ L22:
 L23:
     shr     rcx,1
     lea     rdx,[image.k3032]
-    cmp     rax,0
+    test    rax,rax
     je      L30
     mov     [rsp+98h],rax
     mov     [rsp+0A0h],rcx
@@ -7397,7 +7373,7 @@ fn main::{closure#0}
     mov     rax,rax
     xor     edx,edx
     div     r11
-    cmp     rdx,0
+    test    rdx,rdx
     setne   al
     movzx   eax,al
     add     rsp,18h
@@ -7460,11 +7436,11 @@ L1:
     mov     rsi,rcx
     mov     rcx,r12
 L2:
-    cmp     rcx,0
+    test    rcx,rcx
     je      L5
     jmp     L4
 L3:
-    cmp     rax,0
+    test    rax,rax
     je      L1
     jmp     L0
 L4:
@@ -7597,7 +7573,7 @@ fn std::collections::hash_map::Entry::<'_, u64, u64>::or_insert
     mov     rax,[rdi]
     mov     rcx,[rdi+8]
     mov     rdx,[rdi+10h]
-    cmp     rax,0
+    test    rax,rax
     je      L0
     mov     rdi,rax
     mov     r10,rsi
@@ -7672,8 +7648,7 @@ fn std::iter::range::<impl std::iter::Iterator for std::ops::Range<u64>>::next
     mov     rcx,[rdi+8]
     cmp     rax,rcx
     jae     L0
-    mov     rcx,rax
-    add     rcx,1
+    lea     rcx,[rax+1]
     mov     [rdi],rcx
     mov     rcx,rax
     mov     eax,1
@@ -7701,7 +7676,7 @@ fn std::option::Option::<&str>::map_or_else::<std::string::String, {closure@std:
     mov     rbx,rdi
     mov     r12,rsi
     mov     r13,rdx
-    cmp     r12,0
+    test    r12,r12
     je      L7
     lea     rdi,[rsp+80h]
     mov     esi,0FFFFFFB8h
@@ -7719,14 +7694,14 @@ fn std::option::Option::<&str>::map_or_else::<std::string::String, {closure@std:
     movzx   edx,dl
     call    image.sym57
     mov     rax,[rsp+18h]
-    cmp     rax,0
+    test    rax,rax
     jne     L10
     mov     r15,[rsp+20h]
     mov     eax,[rsp+28h]
     movzx   edx,word ptr [rsp+2Ch]
     movzx   esi,byte ptr [rsp+2Eh]
     movzx   edi,byte ptr [rsp+2Fh]
-    cmp     r14,0
+    test    r14,r14
     je      L1
     mov     r8,r15
 L0:
@@ -7745,7 +7720,7 @@ L0:
     mov     r14,rdi
     shl     r14,38h
     or      r14,r8
-    cmp     r13,0
+    test    r13,r13
     ja      L2
     jmp     L5
 L1:
@@ -7755,7 +7730,7 @@ L2:
     mov     qword ptr [rsp+40h],1
     mov     qword ptr [rsp+38h],1
     lea     rax,[image.k1568]
-    cmp     r14,0
+    test    r14,r14
     je      L11
     cmp     r12,r14
     jae     L3
@@ -7903,7 +7878,7 @@ fn std::ptr::const_ptr::<impl *const ()>::is_aligned_to
     jne     L0
     sub     r12,1
     and     rbx,r12
-    cmp     rbx,0
+    test    rbx,rbx
     sete    al
     movzx   eax,al
     add     rsp,8
@@ -7934,7 +7909,7 @@ L3:
 fn std::ptr::copy_nonoverlapping::<u8>
     sub     rsp,18h
     lea     rax,[k0]
-    cmp     rdx,0
+    test    rdx,rdx
     jne     L0
     mov     ecx,1
     jmp     L1
@@ -7965,11 +7940,11 @@ L5:
     add     rsp,18h
     ret
 L6:
-    cmp     rdi,0
+    test    rdi,rdi
     je      L8
     jmp     L2
 L7:
-    cmp     rsi,0
+    test    rsi,rsi
     jne     L3
 L8:
     lea     rcx,[image.k4515]
@@ -7995,12 +7970,12 @@ fn std::ptr::copy_nonoverlapping::precondition_check
     mov     r14,rcx
     mov     r15,r8
     mov     [rsp+10h],r9
-    cmp     r15,0
+    test    r15,r15
     jne     L0
     mov     ebp,1
     jmp     L1
 L0:
-    cmp     r13,0
+    test    r13,r13
     sete    al
     mov     rbp,rax
 L1:
@@ -8008,10 +7983,9 @@ L1:
     call    ryo_hr_CtpopW64
     cmp     eax,1
     jne     L8
-    mov     rax,r14
-    sub     rax,1
+    lea     rax,[r14-1]
     and     rax,rbx
-    cmp     rax,0
+    test    rax,rax
     je      L6
     jmp     L12
 L2:
@@ -8019,10 +7993,9 @@ L2:
     call    ryo_hr_CtpopW64
     cmp     eax,1
     jne     L9
-    mov     rax,r14
-    sub     rax,1
+    lea     rax,[r14-1]
     and     rax,r12
-    cmp     rax,0
+    test    rax,rax
     je      L7
     jmp     L13
 L3:
@@ -8051,13 +8024,13 @@ L5:
 L6:
     test    bpl,bpl
     jne     L2
-    cmp     rbx,0
+    test    rbx,rbx
     je      L11
     jmp     L2
 L7:
     test    bpl,bpl
     jne     L3
-    cmp     r12,0
+    test    r12,r12
     je      L11
     jmp     L3
 L8:

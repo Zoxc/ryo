@@ -398,6 +398,11 @@ impl X86 {
         self.insn(false, true, false, &[0x8d], dst.num(), Rm::M(m), &[]);
     }
 
+    /// `lea r32, [m]`: the address's low 32 bits, zero-extended.
+    pub fn lea32(&mut self, dst: R, m: Mem) {
+        self.insn(false, false, false, &[0x8d], dst.num(), Rm::M(m), &[]);
+    }
+
     pub fn movq_to_xmm(&mut self, x: u8, src: Rm, w: u8) {
         debug_assert!(matches!(w, 2 | 4 | 8) && x < 16);
         self.insn(true, w == 8, false, &[0x0f, 0x6e], x, src, &[]);

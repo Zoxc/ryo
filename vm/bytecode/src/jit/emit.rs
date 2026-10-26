@@ -845,6 +845,29 @@ impl<'a> E<'a> {
                 }
                 let rd = self.work(x, &[b]);
                 let ww = w.max(4);
+                // Three operands: `lea` (no flags are read after a `Bin`).
+                if let (BinOp::Add | BinOp::Sub, Src::R(ra)) = (op, self.src(a))
+                    && ra != rd
+                    && ww >= 4
+                {
+                    let m = match self.src(b) {
+                        Src::Imm(c) if op == BinOp::Add && fits32(sext(c, ww)) => Some(Mem::base(ra, sext(c, ww) as i32)),
+                        Src::Imm(c) if op == BinOp::Sub && fits32(sext(c, ww).wrapping_neg()) => {
+                            Some(Mem::base(ra, sext(c, ww).wrapping_neg() as i32))
+                        }
+                        Src::R(rb) if op == BinOp::Add => Some(Mem::Base { base: ra, index: Some((rb, 1)), disp: 0 }),
+                        _ => None,
+                    };
+                    if let Some(m) = m {
+                        if ww == 8 {
+                            self.a.x().lea(rd, m);
+                        } else {
+                            self.a.x().lea32(rd, m);
+                        }
+                        self.put(x, rd);
+                        return Ok(());
+                    }
+                }
                 match op {
                     BinOp::ShrU | BinOp::ShrS if w < 4 => {
                         let s = match self.src(a) {
@@ -1304,9 +1327,12 @@ impl<'a> E<'a> {
         }
     }
 
-    /// `cmp a, b` at `w` bytes.
+    /// `cmp a, b` at `w` bytes (`test a, a` for a register against 0: the same flags).
     fn compare(&mut self, a: Value, b: Value, w: u8) {
         let ra = match self.src(a) {
+            Src::R(r) if self.src(b) == Src::Imm(0) || matches!(self.src(b), Src::Imm(c) if sext(c, w) == 0) => {
+                return self.a.x().test(w, Rm::R(r), r);
+            }
             Src::R(r) => r,
             s => {
                 self.load_src(S1, s);

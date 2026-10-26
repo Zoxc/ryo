@@ -205,8 +205,34 @@ fn known_zero() -> u32 {
     last.wrapping_mul(5)
 }
 
+/// Compares against 0 at each width, signed and not (`test`), and three-operand adds and
+/// subtractions (`lea`, which must leave 32-bit results zero-extended).
+#[inline(never)]
+fn forms() {
+    macro_rules! zero {
+        ($($t:ty),*) => {$({
+            let xs: [$t; 4] = black_box([0, 1, <$t>::MAX, <$t>::MIN]);
+            let mut n = 0u32;
+            for &x in &xs {
+                n = n.wrapping_mul(2).wrapping_add((x < 0 as $t) as u32);
+                n = n.wrapping_mul(2).wrapping_add((x > 0 as $t) as u32);
+                n = n.wrapping_mul(2).wrapping_add((x <= 0 as $t) as u32);
+                n = n.wrapping_mul(2).wrapping_add((x == 0 as $t) as u32);
+                let y = x.wrapping_add(5);
+                let z = x.wrapping_sub(7);
+                n = n.wrapping_mul(3) ^ (y as u64).wrapping_add(z as u64).wrapping_add(x as u64) as u32;
+                if (y as u64) >> 40 != 0 && size_of::<$t>() < 8 { n = n.wrapping_add(1000) }
+            }
+            print!("{n} ");
+        })*};
+    }
+    zero!(u8, i8, u16, i16, u32, i32, u64, i64);
+    println!();
+}
+
 fn main() {
     offsets();
+    forms();
     fixed_regs();
     println!("{}", known_zero());
     by_one();

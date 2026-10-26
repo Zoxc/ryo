@@ -483,8 +483,9 @@ the same bytes at the head, and the entry's `OsrLoad` of the second goes. OSR he
   saturating casts, which the lowering avoids on PE), nor arguments past the fourth.
 - **Instruction selection**: per instruction over the allocated locations; two-address
   forms with a hint to reuse the first operand's register, immediates where they fit
-  (`r10` takes the others), `[base + index*scale]` for `ptr.index` by 1, 2, 4 or 8,
-  `setcc`, compare-branches fused, overflow ops as `add`/`sub`/`imul` (8 and 16-bit
+  (`r10` takes the others), `lea` for an add or subtract into another register (32-bit
+  `lea` at 4 bytes and below), `[base + index*scale]` for `ptr.index` by 1, 2, 4 or 8,
+  `setcc`, compare-branches fused, `test r, r` for a compare of a register with 0, overflow ops as `add`/`sub`/`imul` (8 and 16-bit
   multiplies, and unsigned 32-bit ones, in 32 or 64 bits with a range check; unsigned 64-bit
   ones as `mul` in `rax`/`rdx`) with `seto`/`setb`/`seta`, or their `jcc` for `br ovf`;
   the `div`/`rem` and variable-shift handlers decode as native operations, `div`/`idiv` in
