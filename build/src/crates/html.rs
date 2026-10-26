@@ -437,8 +437,15 @@ fn metric_table(r: &Report, m: &Metric, data: &[Vec<Option<Summary>>]) -> String
     s
 }
 
-fn coverage_row(name: &str, c: &Coverage) -> String {
-    format!("<tr><td>{name}</td><td>{}</td><td>{}</td><td>{:.1}%</td><td>{}</td></tr>", c.vm, c.native, c.vm_percent(), c.islands)
+fn coverage_row(name: &str, units: usize, c: &Coverage) -> String {
+    format!(
+        "<tr><td>{}</td><td>{units}</td><td>{}</td><td>{}</td><td>{:.1}%</td><td>{}</td></tr>",
+        esc(name),
+        c.vm,
+        c.native,
+        c.vm_percent(),
+        c.islands
+    )
 }
 
 /// Coverage from ryo's warm-up builds (`RYO_STATS=1`): the crate's library, its dependencies,
@@ -464,8 +471,7 @@ fn coverage_section(r: &Report) -> String {
         all.extend(build.units.iter().chain(&tests.units));
         for (what, units) in [("library", &leaf), ("dependencies", &deps), ("test targets", &test)] {
             let cov = coverage(units.iter().copied());
-            let row = coverage_row(&format!("{} {what}", c.krate.name), &cov);
-            let _ = write!(s, "{}", row.replacen("</td>", &format!("</td><td>{}</td>", units.len()), 1));
+            s.push_str(&coverage_row(&format!("{} {what}", c.krate.name), units.len(), &cov));
         }
     }
     s.push_str("</table>");
