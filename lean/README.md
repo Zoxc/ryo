@@ -211,3 +211,12 @@ M1 is done: `lake build` succeeds with no `sorry` (the five representation laws
 `Ryo/Spec/Theorems`), and `lake test` passes. M1b's dumper and differential runs work, and the
 lowering certificate is written and checked against the code and the dump (`check-cert`). What
 is left of M1 and the later milestones are in [docs/plan.md](docs/plan.md#3-milestones).
+
+## License and attribution
+
+Parts of the Lean specification (`Ryo/Spec/`, and the tests ported in `RyoTest/`) are ports
+of [MiniRust](https://github.com/minirust/minirust) (commit `d821c6e3`), by the MiniRust
+contributors, used under the MIT license or the Apache License 2.0, at your option. Each
+ported module's header names the MiniRust file it ports. ryo, these ports included, is
+licensed the same way: see [LICENSE-MIT](../LICENSE-MIT) and
+[LICENSE-APACHE](../LICENSE-APACHE) at the repository root.

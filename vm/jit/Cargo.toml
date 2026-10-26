@@ -2,6 +2,7 @@
 name = "ryo_jit"
 version = "0.1.0"
 edition.workspace = true
+license = "MIT OR Apache-2.0"
 
 # The JIT (design/jit.md): the compiler thread that `ryo_rt`'s trips start through
 # `ryo_jit_start`. It sees the runtime only through `ryo_bytecode::jit_abi::RtApi`.

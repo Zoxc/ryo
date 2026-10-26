@@ -2,6 +2,7 @@
 name = "ryo-lean-harness"
 version = "0.1.0"
 edition = "2024"
+license = "MIT OR Apache-2.0"
 publish = false
 description = "Co-simulates the Lean x86 model (ryo-lean exec-item) against the CPU (lean/docs/x86.md §B.3)"
 
