@@ -148,14 +148,11 @@ theorem inline_step (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State} {
         rw [← hp, hpc]
       | _ => simp [R.Then.succ] at hp
 
-/-- `inline_step` for a `SoundD` class (the overflow ops, and every `Sound` class), given that
-its written ranges are disjoint (`hdj`; only the overflow ops' theorems use it, and it goes
-once their sequences store the result first). The registers of `clobbers` may change, which
-`RRel` doesn't see. -/
-theorem inline_stepD (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
+/-- `inline_step` for a `SoundC` class (the overflow ops, and every `Sound` class): the registers
+of `clobbers` may change, which `RRel` doesn't see. -/
+theorem inline_stepC (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
     {ch : OpSem.Choice} {op : Reduced.Opcode} {ops : List (R.Opnd Nat)} {f : Full.Opcode}
-    {cls : Class} {items : List Item} {br : Option Cond} (hsound : SoundD cls)
-    (hdj : ∀ vals, nativeVals c.ρ f ops = some vals → RangesDisjoint (wranges f vals))
+    {cls : Class} {items : List Item} {br : Option Cond} (hsound : SoundC cls)
     (hr : RRel s x) (hi : c.d.insns[s.pc]? = some (.native op ops)) (hf : op.full = some f)
     (hok : InlineOk f cls) (hseq : sequence cls ops = some (items, br))
     (h : R.step c s ch = .ok (.step s')) :
@@ -173,7 +170,7 @@ theorem inline_stepD (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
     stepView_native hf hok.opShape hok.notResume hok.notUnreachable hv
   cases hs'
   obtain ⟨x', hx, hpost⟩ :=
-    hsound ctx c.ρ f ops items br vals s1.st st' ctl ch x hok.shape hseq hn ho hr1.rel (hdj vals hn)
+    hsound ctx c.ρ f ops items br vals s1.st st' ctl ch x hok.shape hseq hn ho hr1.rel
   have h5 : (5 : Fin 16) ∉ clobbers cls := by unfold clobbers; split <;> decide
   refine ⟨x', hx, ⟨hpost.rel, ?_, escWF_of_sameButWrites hr1.wf hpost.same⟩, hpost.rip,
     hpost.regs, ?_⟩

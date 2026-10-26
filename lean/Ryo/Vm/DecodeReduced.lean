@@ -378,7 +378,8 @@ def argInsn (mode : Mode) : DM (Option Proto) := do
 /-! ### Inline sequences -/
 
 /-- An inline sequence at the cursor (`inline_insn`): items up to the one that writes the
-result (or its dropped store), or up to a conditional branch, which must be the sequence as
+result (or its dropped store; an overflow op's result store, kept or dropped, is followed by
+its flag's, which ends it), or up to a conditional branch, which must be the sequence as
 the cache emits it (with `exact`; else only its extent and target matter). The proto, the
 cache after it and the dropped stores left; `none` with the cursor unmoved. -/
 def inlineInsn (cache : Cache) (dropped : List DroppedStore) (exact : Bool) :
@@ -387,21 +388,32 @@ def inlineInsn (cache : Cache) (dropped : List DroppedStore) (exact : Bool) :
   let mut items : Array Item := #[]
   let mut branch : Option (Cond × Nat) := none
   let mut wasDropped := false
+  let mut dropAt := 0
   let mut dr := dropped
   let mut ended := false
   for _ in [0:(← fuel) + dropped.length] do
     if let some d := dr.head? then
       if d.at_ == (← pos) then
+        dropAt := items.size
         items := items.push d.item
         wasDropped := true
         dr := dr.tail
-        ended := true
-        break
+        -- An overflow op's dropped result store: its flag's `setcc cl` follows.
+        let p ← pos
+        let next ← tryItem
+        setPos p
+        match next with
+        | some (.setccCl _) => continue
+        | _ => ended := true; break
     match ← tryItem with
     | some it =>
       if isInline it then
+        let p ← pos
+        let next ← tryItem
+        setPos p
+        let e := endsInlineAt it items.back? next
         items := items.push it
-        if endsInline it then ended := true; break
+        if e then ended := true; break
       else
         match it with
         | .branch cond t _ =>
@@ -421,7 +433,7 @@ def inlineInsn (cache : Cache) (dropped : List DroppedStore) (exact : Bool) :
     let (out, after) := cache.emit cand
     if out != its then none
     else
-      let items := if wasDropped then its.dropLast else its
+      let items := if wasDropped then its.eraseIdx dropAt else its
       some ({ op := d.1, ops := d.2, pos := p0, dropped := wasDropped, items }, after)
   if let some d := decodeInline its branch then
     if let some (p, c) := accept its d then return some (p, c, dr)

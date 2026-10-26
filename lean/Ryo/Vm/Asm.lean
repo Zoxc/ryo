@@ -227,6 +227,15 @@ def endsInline : Item → Bool
   | .st .. | .stImm .. | .setcc .. => true
   | _ => false
 
+/-- `Item::ends_inline_at`: as `endsInline`, after `prev` and before `next`, but an overflow
+op's result store, which its flag's `setcc cl` follows, doesn't end the sequence, and that
+flag's store does. -/
+def endsInlineAt (it : Item) (prev next : Option Item) : Bool :=
+  match it, prev, next with
+  | .st .., some (.setccCl _), _ => true
+  | .st .., _, some (.setccCl _) => false
+  | it, _, _ => endsInline it
+
 /-- `Item::is_inline`. -/
 def isInline : Item → Bool
   | .ld .. | .st .. | .stImm .. | .leaM .. | .alu .. | .aluImm .. | .imul .. | .imulImm ..
@@ -483,10 +492,11 @@ def sequence {T : Type} (c : Class) (ops : List (Opnd T)) : Option (List Item ×
   | .br => pure ([.testM8 (← slot 0)], some (← cond 1 .nz))
   | .brCmp c w => pure ([ld w (← slot 0), .alu .cmp w R (.mem (← slot 1))], some (← cond 2 c))
   | .brCmpImm c w => pure (cmpImmSeq w (← slot 0) (← imm 1), some (← cond 2 c))
-  -- `d, o, a, b`: the result in `rax`, the flag through `cl`, stored before the result.
+  -- `d, o, a, b`: the result in `rax`, stored first (the store leaves the flags alone), then
+  -- the flag through `cl`, so overlapping outputs end as `opSem` leaves them.
   | .ovf op signed w =>
     let flag := flagSeq (if signed then .o else .b) (← slot 1)
-    pure ([ld w (← slot 2), .alu op w R (.mem (← slot 3))] ++ flag ++ [st w (← slot 0)], none)
+    pure ([ld w (← slot 2), .alu op w R (.mem (← slot 3)), st w (← slot 0)] ++ flag, none)
   | .mulOvf signed w =>
     let a ← slot 2
     let b ← slot 3
@@ -503,7 +513,7 @@ def sequence {T : Type} (c : Class) (ops : List (Opnd T)) : Option (List Item ×
           then [.leaM C (Mrax (max / 2 + 1)), .aluImm .cmp .d (.reg C) max]
           else [.aluImm .cmp .d (.reg R) max]
         (pre ++ chk, .a)
-    pure (body ++ flagSeq c (← slot 1) ++ [st w (← slot 0)], none)
+    pure (body ++ [st w (← slot 0)] ++ flagSeq c (← slot 1), none)
   | .ext src dst sx =>
     let s ← slot 1
     let body : List Item := if sx && dst == .q then
@@ -516,10 +526,10 @@ def sequence {T : Type} (c : Class) (ops : List (Opnd T)) : Option (List Item ×
 def classify (items : List Item) (br : Bool) : Option Class :=
   let z := Cond.z
   let frame (m : M) : Bool := m.base == .rbp
-  -- An overflow op: its flag, then the result's store.
+  -- An overflow op: the result's store, then its flag.
   if items.any (fun | .setccCl _ => true | _ => false) then
-    match items.getLast? with
-    | some (.st w ..) =>
+    match items.reverse with
+    | .st .. :: .setccCl _ :: .st w .rax _ :: _ =>
       if items.any (fun | .mulQ _ | .imul .. => true | _ => false) then some (.mulOvf false w)
       else (items.findSome? fun | .alu op .. => some op | _ => none).map (.ovf · false w)
     | _ => none
@@ -585,16 +595,18 @@ def decodeInlineSearch (items : List Item) (branch : Option (Cond × Nat)) :
   for (op, cls) in inlineOps do
     if cls.key != key then continue
     let info := op.info
+    let ovf := info.operands.any (·.name == "o")
     let mut f := frame
     let mut ops : Array (Opnd Nat) := #[]
     for o in info.operands do
       match o.kind with
       | .slot =>
-        if o.name == "d" then ops := ops.push (.slot (← frame.getLast?))
-        -- An overflow flag, stored before the result.
-        else if o.name == "o" then
+        -- An overflow op's result, stored before its flag.
+        if o.name == "d" && ovf then
           if frame.length < 2 then none
           ops := ops.push (.slot (← frame[frame.length - 2]?))
+        else if o.name == "d" then ops := ops.push (.slot (← frame.getLast?))
+        else if o.name == "o" then ops := ops.push (.slot (← frame.getLast?))
         else
           let s ← f.head?
           f := f.tail

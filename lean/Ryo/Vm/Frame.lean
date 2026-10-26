@@ -6,7 +6,8 @@ dropped stores it shows dead.
 
 A dropped store is dead if none of its bytes is live after its instruction, along the
 instruction's successors (fall-through, branch targets, its landing pad): no path reads a byte
-of it before an instruction writes that byte for sure. Liveness is over the frame bytes
+of it before an instruction writes that byte for sure. An overflow op's result store is followed
+by its flag's, in the same instruction, which writes `o`'s byte for sure. Liveness is over the frame bytes
 `-F .. 0`; bytes above `fp` (the incoming area) aren't tracked, and no dropped store reaches
 them. The L2 frame then differs from R's only on bytes R never reads again (aot.md §C2).
 
@@ -677,6 +678,15 @@ def droppedStore (d : Decoded) (k : Nat) : Option (BitVec 32 × Nat) :=
     | _ => none
   | _ => none
 
+/-- The flag slot `o` of instruction `k`, an overflow op, stored after its result. -/
+def flagSlot (d : Decoded) (k : Nat) : Option (BitVec 32) :=
+  match d.insns[k]? with
+  | some (.native op ops) =>
+    match (op.info.operands.zip ops).find? (·.1.name == "o") with
+    | some (_, .slot s) => some s
+    | _ => none
+  | _ => none
+
 /-- The dropped stores `droppedNotDead` can't show dead: their instruction indices. -/
 def droppedNotDead (d : Decoded) (mode : Mode) (facts : Facts := {}) : Except String (List Nat) := do
   if d.dropped.isEmpty then return []
@@ -686,6 +696,10 @@ def droppedNotDead (d : Decoded) (mode : Mode) (facts : Facts := {}) : Except St
   let mut bad : List Nat := []
   for k in d.dropped do
     let liveOut := fl.succ[k]!.foldl (fun a s => a ||| liveIn[s]!) 0
+    -- An overflow op's flag store, after its (dropped) result's, writes `o`'s byte for sure.
+    let liveOut := match flagSlot d k with
+      | some o => let (lo, hi) := range f o 1; diff liveOut (bitsOf lo hi)
+      | none => liveOut
     match droppedStore d k with
     | some (s, w) =>
       let (lo, hi) := range f s w

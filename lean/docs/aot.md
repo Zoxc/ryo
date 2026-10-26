@@ -242,7 +242,7 @@ follows the decoder's structure:
 - **Inline steps**: R's `step` of a native instruction of a `Sound` class (scopes, `view`,
   `opSem`, `Then.succ`) is simulated by the class's sequence: `RRel` after, `rip` past the
   items, and the next instruction the fall-through or, for a branch class, the target exactly
-  when the sequence's condition holds (`Ryo/Proofs/Step.lean`, `inline_step`; `inline_stepD` for the overflow ops, with their disjointness as one hypothesis to drop once they store the result first). The opcode
+  when the sequence's condition holds (`Ryo/Proofs/Step.lean`, `inline_step`; `inline_stepC` for the `SoundC` classes, with `rdx` clobbered by unsigned 64-bit `mul.ovf`). The opcode
   facts it takes (`InlineOk`: `shapeOk`, an `opSem` shape, not `resume`/`unreachable`) are
   hypotheses; `inlineOps_shape` proves the first.
 - **Shapes**: for each shape (`op` handler call, `br`, `switch`, `trap`, `ret`, `arg`, `jmp`,
@@ -291,12 +291,11 @@ follows the decoder's structure:
   rip-relative addresses `addrConst`, `addrSym`, `addrSymInd` are `inline_sound_rip`
   (`Inline/Rip.lean`), given `Globals` (where constants, data and symbol slots are linked).
   The overflow ops `add.ovf`, `sub.ovf`, `mul.ovf`
-  are `inline_sound_ovf` (`Inline/Ovf.lean`, `SoundD`), with two side conditions. Their
-  sequences store the flag (`setcc cl; mov [o], cl`) before the result, while `opSem` commits
-  the result `d` then the flag `o`, which differ when the ranges overlap (e.g. `d = o`):
-  `SoundD` assumes the write ranges disjoint (`RangesDisjoint`), which C1' must check (or the
-  backend could store the result first). And unsigned 64-bit `mul.ovf` (`mul`) also changes
-  `rdx` (`clobbers`, `PostC`; the register cache drops `rdx` after it). `load` alone still
+  are `inline_sound_ovf` (`Inline/Ovf.lean`, `Sound`). Their sequences store the result `d`,
+  then the flag (`setcc cl; mov [o], cl`), as `opSem` commits them, so overlapping outputs
+  (e.g. `d = o`) agree. Unsigned 64-bit `mul.ovf` (`mul`) also changes `rdx`
+  (`inline_sound_umulq`: `SoundC`, `clobbers`, `PostC`; the register cache drops `rdx` after
+  it). `load` alone still
   assumes a private destination (`Private`): keeping `MemRel` across a write into an escaped
   object would also need allocations disjoint in the address space (`MemDisjoint`). `bv_decide`'s proofs are axioms checked by compiled code
   ([assumptions.md](assumptions.md) §1.4).

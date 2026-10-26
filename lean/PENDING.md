@@ -19,16 +19,3 @@ remove it once a Lean session has handled it.
   (`lean/Ryo/Obj/Image.lean` `readHeader`, the `parts` dump line); the reader checks its count
   equals the function count, and `validate` rejects unknown bits. Nothing in the VM semantics
   reads it (the JIT's inliner does). Commit: "Carry inline and cold attributes in the image".
-
-- Inline `add.ovf`/`sub.ovf`/`mul.ovf` (w8-w64) now store the result first and the flag
-  second (`... st d; setcc cl; mov [o], cl`), as `opSem` and the handlers write them, so
-  overlapping `d`/`o` end with the same bytes. `inline_sound_ovf`'s `RangesDisjoint`
-  hypothesis (Proofs/Inline/Ovf.lean, `SoundD`) can be dropped: swap the store order in
-  the modelled sequences and prove plain `Sound`. Decoding: the result's
-  store no longer ends the sequence (the flag's does), `d` is the second-to-last frame
-  operand and `o` the last, and a dropped (dead) result store sits mid-sequence, before
-  the `setcc cl` (the decoder continues past it; re-encoding's `drop_store` names it). The regenerated
-  `RyoTest/DecodeReducedVectors.lean` and `ViewVectors.lean` have the new order, so
-  `lake test` fails (decode_reduced and view vectors with ovf ops)
-  until the Lean decoder (`decodeReduced`'s inline sequences) reads it. Commit: "Store the
-  overflow ops' result before their flag".
