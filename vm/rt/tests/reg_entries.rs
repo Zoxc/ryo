@@ -63,6 +63,14 @@ fn register_entries_match_frame_entries() {
         let fx = effects(op).unwrap();
         let l = layout(op, MODE);
         let divides = ["div.", "rem."].iter().any(|p| mn.starts_with(p));
+        // The width of a float opcode's (`fadd.f32`) values.
+        let float = if mn.ends_with(".f32") {
+            Some(4)
+        } else if mn.ends_with(".f64") {
+            Some(8)
+        } else {
+            None
+        };
         for _ in 0..200 {
             let (mut frame, mut mem) = (Box::new(Buf([0; 1024])), Box::new(Buf([0; 1024])));
             for b in frame.0.iter_mut().chain(mem.0.iter_mut()) {
@@ -163,6 +171,17 @@ fn register_entries_match_frame_entries() {
                 };
                 let m = if w == 8 { u64::MAX } else { (1u64 << (8 * w)) - 1 };
                 let want = unsafe { fp.offset(off(i) as isize).cast::<u64>().read_unaligned() };
+                // A float result that is NaN in both: which NaN (whose payload) depends on the
+                // compiler's operand order, so any NaN matches any NaN.
+                let nan = |x: u64| match (float, w) {
+                    (Some(4), 4) => f32::from_bits(x as u32).is_nan(),
+                    (Some(8), 8) => f64::from_bits(x).is_nan(),
+                    _ => false,
+                };
+                if nan(got[n]) && nan(want) {
+                    n += 1;
+                    continue;
+                }
                 assert_eq!(got[n] & m, want & m, "{}: output {i}", what());
                 n += 1;
             }
