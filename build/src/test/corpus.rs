@@ -19,6 +19,10 @@ pub(crate) struct Program {
     /// argument or return, theirs or a callee's, keeps a function native on Win64
     /// (design/platforms.md, "ABI of VM functions").
     pub(super) pe_native: &'static [&'static str],
+    /// Lines of the reference stdout, in order, that the ryo build doesn't print on PE: the
+    /// output of cleanups (drops) that run while a panic unwinds through VM frames, whose
+    /// landing pads don't run on PE (design/platforms.md, "Panics out of islands").
+    pub(super) pe_lost_cleanups: &'static [&'static str],
     /// A C `main` (relative to `tests/`), compiled with `cc` (`cl` on MSVC) and linked against
     /// the last crate (a staticlib or cdylib). Skipped without that compiler.
     pub(super) c_main: Option<&'static str>,
@@ -86,7 +90,7 @@ impl NativeLib {
 
 /// Defaults for [`Program`] fields.
 pub(super) const PROGRAM: Program =
-    Program { name: "", crates: &[], flags: &[], vm: &[], native: &[], pe_native: &[], c_main: None, native_lib: None };
+    Program { name: "", crates: &[], flags: &[], vm: &[], native: &[], pe_native: &[], pe_lost_cleanups: &[], c_main: None, native_lib: None };
 
 pub(crate) struct Crate {
     /// The crate name, passed as `--crate-name`.
@@ -130,11 +134,8 @@ macro_rules! single {
     ($name:literal) => {
         Program { name: $name, crates: &[krate($name, concat!($name, ".rs"), CrateKind::Bin)], ..PROGRAM }
     };
-    ($name:literal, vm: $vm:expr $(,)?) => {
-        Program { name: $name, crates: &[krate($name, concat!($name, ".rs"), CrateKind::Bin)], vm: $vm, ..PROGRAM }
-    };
-    ($name:literal, vm: $vm:expr, pe_native: $pe:expr $(,)?) => {
-        Program { name: $name, crates: &[krate($name, concat!($name, ".rs"), CrateKind::Bin)], vm: $vm, pe_native: $pe, ..PROGRAM }
+    ($name:literal, $($field:ident: $value:expr),+ $(,)?) => {
+        Program { name: $name, crates: &[krate($name, concat!($name, ".rs"), CrateKind::Bin)], $($field: $value,)+ ..PROGRAM }
     };
 }
 
@@ -146,7 +147,7 @@ pub(crate) const CORPUS: &[Program] = &[
     single!("generics_traits"),
     single!("closures_iters"),
     single!("collections"),
-    single!("panics"),
+    single!("panics", pe_lost_cleanups: &["guard 1 dropped", "guard 3 dropped", "guard 99 dropped"]),
     single!("exit_code"),
     single!("end_ptrs"),
     Program {
@@ -190,6 +191,7 @@ pub(crate) const CORPUS: &[Program] = &[
     single!(
         "vm_calls",
         vm: &["main", "add", "swap", "bump", "sum", "fib", "talk", "<Dog as Speak>::speak", "constants", "apply", "double", "closures", "may_panic", "<Noisy as std::ops::Drop>::drop"],
+        pe_lost_cleanups: &["drop a"],
         // `speak` is a `call.ind` through the vtable; `P`'s `Debug` impl is called through a
         // vtable by native `fmt` code.
     ),
@@ -204,7 +206,8 @@ pub(crate) const CORPUS: &[Program] = &[
     ),
     single!(
         "vm_intrinsics",
-        vm: &["main", "atomics", "atomic_ptrs", "unwinding", "misc", "dst", "direct", "contention"]
+        vm: &["main", "atomics", "atomic_ptrs", "unwinding", "misc", "dst", "direct", "contention"],
+        pe_lost_cleanups: &["drop D2", "drop D1"],
     ),
     single!(
         "vm_lowerings",
