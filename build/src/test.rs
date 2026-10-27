@@ -119,13 +119,9 @@ const JIT_SSA_SHUFFLE: &[(&str, &str)] =
 /// Added by `test --clif`.
 const CLIF: Variant = Variant { name: "clif", compiler: Compiler::Clif, ..VARIANT };
 
-/// Whether the VM variants and the checks that run VM code are run. Without them, only the
-/// variants without VM code ([`Variant::no_vm`], plain rustc, Cranelift) are.
-const VM_RUNS: bool = true;
-
 /// The variants to build: [`VARIANTS`], plus [`CLIF`] for `test --clif`.
 fn variants(clif: bool) -> Vec<&'static Variant> {
-    VARIANTS.iter().chain(clif.then_some(&CLIF)).filter(|v| VM_RUNS || v.no_vm || v.compiler != Compiler::Ryo).collect()
+    VARIANTS.iter().chain(clif.then_some(&CLIF)).collect()
 }
 
 /// The fast suite's corpus: each program with the variants it runs under.
@@ -682,7 +678,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
             ("exports", Box::new(|| same_exports(&rustc_ryo, &root.join("tests").join("vm_exports.rs"), &out))),
             ("backtrace", Box::new(|| backtrace(&rustc_ryo, &root.join("tests").join("vm_backtrace.rs"), &out))),
             // It runs the program it builds.
-            ("cargo-ryo", Box::new(|| if VM_RUNS { cargo_smoke(&root, &out) } else { Ok(()) })),
+            ("cargo-ryo", Box::new(|| cargo_smoke(&root, &out))),
         ];
         for (name, check) in checks {
             if sel.check(name) {
@@ -978,9 +974,8 @@ mod tests {
             "ryo-jit-ssa-osr",
             "ryo-jit-ssa-shuffle",
         ];
-        let ryo: Vec<&str> = all.into_iter().filter(|n| super::VM_RUNS || *n == "ryo-novm").collect();
-        assert_eq!(names(false), ryo);
-        assert_eq!(names(true), [&ryo[..], &["clif"]].concat());
+        assert_eq!(names(false), all);
+        assert_eq!(names(true), [&all[..], &["clif"]].concat());
         assert!(super::variants(true).last().unwrap().compiler == super::Compiler::Clif);
     }
 
