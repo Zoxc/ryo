@@ -357,8 +357,6 @@ pub struct Cell {
     pub workload_output: Option<String>,
     pub workload_size: Option<u64>,
     pub tests_size: Option<u64>,
-    test_exes: Vec<PathBuf>,
-    example: Option<PathBuf>,
 }
 
 pub struct CrateResult {
@@ -420,6 +418,7 @@ pub fn run(opts: Options) -> Result<(), String> {
     };
     let y = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
     let header = header(&info, &root, &opts);
+    let ctx = Ctx { info: &info, root: &root, y: &y, base: &base, opts: &opts };
 
     let mut results = Vec::new();
     for krate in selected {
@@ -428,114 +427,18 @@ pub fn run(opts: Options) -> Result<(), String> {
             Target::Local { dir, .. } => prepare_local(dir),
             Target::Registry(c) => prepare(&root, &base, c),
         };
-        let sources = match prepared {
-            Ok(p) => p,
+        match prepared {
+            Ok(sources) => {
+                let artifacts = build_phase(&ctx, &krate, &sources, &mut cells);
+                run_phase(&ctx, &krate, &sources, &artifacts, &mut cells);
+                check_workload_outputs(&mut cells, &opts.backends);
+            }
             Err(e) => {
                 eprintln!("[y] {}: preparing the sources FAILED: {e}", krate.name());
                 for cell in &mut cells {
                     cell.errors.push(CellError::new(Phase::Prepare, e.to_string()));
                     cell.build_failed = true;
                 }
-                results.push(CrateResult { krate, cells });
-                continue;
-            }
-        };
-        // Builds, backends interleaved: one warm-up from a clean target directory (ryo's
-        // collects RYO_STATS), the dependency samples (clean too), then the leaf samples,
-        // each rebuilding only the crate itself.
-        let builds = opts.dep_samples + opts.leaf_samples;
-        for i in 0..=builds {
-            let clean = i <= opts.dep_samples;
-            for (bi, &backend) in opts.backends.iter().enumerate() {
-                let cell = &mut cells[bi];
-                if cell.build_failed {
-                    continue;
-                }
-                let label = match i {
-                    0 => "warm-up".to_owned(),
-                    _ if clean => format!("clean {i}/{}", opts.dep_samples),
-                    _ => format!("leaf {}/{}", i - opts.dep_samples, opts.leaf_samples),
-                };
-                let target = base.join("target").join(krate.name()).join(backend.name());
-                let env = Env {
-                    info: &info,
-                    root: &root,
-                    y: &y,
-                    backend,
-                    target: &target,
-                    src: &sources.dir,
-                    stock: opts.stock,
-                    overrides: &sources.overrides,
-                };
-                let t = Instant::now();
-                match build_sample(&env, &sources, &base.join("logs"), clean, i == 0 && backend == Backend::Ryo) {
-                    Ok(sample) => {
-                        eprintln!("[y] {} build {label} [{}]: {:.1}s", krate.name(), backend.name(), t.elapsed().as_secs_f64());
-                        cell.test_exes = sample.test_exes;
-                        cell.example = sample.example;
-                        if i == 0 {
-                            cell.warmup = Some(sample.steps);
-                        } else if clean {
-                            cell.dep_build.push(sample.steps.lib);
-                        } else {
-                            cell.build.push(sample.steps.lib);
-                            cell.test_build.push(sample.steps.tests);
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("[y] {} build {label} [{}]: FAILED", krate.name(), backend.name());
-                        cell.errors.push(CellError::new(Phase::Build, e.to_string()));
-                        cell.build_failed = true;
-                    }
-                }
-            }
-        }
-        for cell in &mut cells {
-            cell.tests_size = (!cell.test_exes.is_empty()).then(|| cell.test_exes.iter().filter_map(|e| fs::metadata(e).ok()).map(|m| m.len()).sum());
-            cell.workload_size = cell.example.as_ref().and_then(|e| fs::metadata(e).ok()).map(|m| m.len());
-        }
-        // Runs: one warm-up (which records the test results and the workload's output), then
-        // the samples, interleaved.
-        for i in (0..=opts.run_samples).filter(|_| opts.run_samples > 0) {
-            for (bi, &backend) in opts.backends.iter().enumerate() {
-                let cell = &mut cells[bi];
-                if cell.build_failed {
-                    continue;
-                }
-                let label = if i == 0 { "warm-up".to_owned() } else { format!("{i}/{}", opts.run_samples) };
-                let (time, outcome) = run_tests(&sources.dir, &krate, &cell.test_exes, opts.timeout);
-                if i == 0 {
-                    cell.errors.extend(outcome.failures.iter().map(|f| CellError::new(Phase::Test, f.clone())));
-                    cell.tests = Some(outcome);
-                } else if outcome.failures.is_empty() {
-                    cell.test_run.push(time);
-                } else {
-                    // A failed or timed-out binary makes the sum meaningless: drop the sample.
-                    cell.errors.push(CellError::new(Phase::Test, format!("run sample {i} dropped: {}", outcome.failures.join("; "))));
-                }
-                let w = cell.example.as_ref().map(|e| run_timed(Command::new(e).current_dir(&sources.dir), opts.timeout));
-                match w {
-                    None => {}
-                    Some(Ok((_, out))) if i == 0 => cell.workload_output = Some(out),
-                    Some(Ok((t, _))) => cell.workload.push(t),
-                    Some(Err(e)) if i == 0 => cell.errors.push(CellError::new(Phase::Workload, e.to_string())),
-                    Some(Err(e)) => cell.errors.push(CellError::new(Phase::Workload, format!("run sample {i} dropped: {e}"))),
-                }
-                eprintln!(
-                    "[y] {} run {label} [{}]: tests {time:.2}s, workload {}",
-                    krate.name(),
-                    backend.name(),
-                    cell.workload.last().map_or("-".to_owned(), |t| format!("{t:.3}s"))
-                );
-            }
-        }
-        // The workload prints a checksum that must not depend on the backend.
-        let reference = cells.iter().zip(&opts.backends).find_map(|(c, b)| Some((c.workload_output.clone()?, *b)));
-        for cell in &mut cells {
-            if let (Some((r, rb)), Some(o)) = (&reference, &cell.workload_output)
-                && r != o
-            {
-                cell.errors.push(CellError::new(Phase::Workload, format!("output differs from {}'s: {:?} vs {:?}", rb.name(), o.trim(), r.trim())));
             }
         }
         results.push(CrateResult { krate, cells });
@@ -547,6 +450,137 @@ pub fn run(opts: Options) -> Result<(), String> {
     print!("{}", html::text_summary(&report));
     println!("\nreport: {}", out.display());
     Ok(())
+}
+
+/// What every crate's measurement needs.
+struct Ctx<'a> {
+    info: &'a RustcInfo,
+    root: &'a Path,
+    /// This executable, the `RUSTC_WRAPPER`.
+    y: &'a Path,
+    /// `target/bench-crates`.
+    base: &'a Path,
+    opts: &'a Options,
+}
+
+/// The executables a backend's last build sample produced.
+#[derive(Default)]
+struct Artifacts {
+    test_exes: Vec<PathBuf>,
+    /// The workload, if the target has one.
+    example: Option<PathBuf>,
+}
+
+/// Builds, backends interleaved: one warm-up from a clean target directory (ryo's collects
+/// RYO_STATS), the dependency samples (clean too), then the leaf samples, each rebuilding only
+/// the crate itself. Records the samples and executable sizes in `cells`; returns each
+/// backend's executables.
+fn build_phase(ctx: &Ctx, krate: &Target, sources: &Sources, cells: &mut [Cell]) -> Vec<Artifacts> {
+    let opts = ctx.opts;
+    let mut artifacts: Vec<Artifacts> = cells.iter().map(|_| Artifacts::default()).collect();
+    for i in 0..=opts.dep_samples + opts.leaf_samples {
+        let clean = i <= opts.dep_samples;
+        for (bi, &backend) in opts.backends.iter().enumerate() {
+            let cell = &mut cells[bi];
+            if cell.build_failed {
+                continue;
+            }
+            let label = match i {
+                0 => "warm-up".to_owned(),
+                _ if clean => format!("clean {i}/{}", opts.dep_samples),
+                _ => format!("leaf {}/{}", i - opts.dep_samples, opts.leaf_samples),
+            };
+            let target = ctx.base.join("target").join(krate.name()).join(backend.name());
+            let env = Env {
+                info: ctx.info,
+                root: ctx.root,
+                y: ctx.y,
+                backend,
+                target: &target,
+                src: &sources.dir,
+                stock: opts.stock,
+                overrides: &sources.overrides,
+            };
+            let t = Instant::now();
+            match build_sample(&env, sources, &ctx.base.join("logs"), clean, i == 0 && backend == Backend::Ryo) {
+                Ok(sample) => {
+                    eprintln!("[y] {} build {label} [{}]: {:.1}s", krate.name(), backend.name(), t.elapsed().as_secs_f64());
+                    artifacts[bi] = sample.artifacts;
+                    if i == 0 {
+                        cell.warmup = Some(sample.steps);
+                    } else if clean {
+                        cell.dep_build.push(sample.steps.lib);
+                    } else {
+                        cell.build.push(sample.steps.lib);
+                        cell.test_build.push(sample.steps.tests);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[y] {} build {label} [{}]: FAILED", krate.name(), backend.name());
+                    cell.errors.push(CellError::new(Phase::Build, e.to_string()));
+                    cell.build_failed = true;
+                }
+            }
+        }
+    }
+    let size = |e: &PathBuf| fs::metadata(e).ok().map(|m| m.len());
+    for (cell, a) in cells.iter_mut().zip(&artifacts) {
+        cell.tests_size = (!a.test_exes.is_empty()).then(|| a.test_exes.iter().filter_map(size).sum());
+        cell.workload_size = a.example.as_ref().and_then(size);
+    }
+    artifacts
+}
+
+/// Runs: one warm-up (which records the test results and the workload's output), then the
+/// samples, backends interleaved.
+fn run_phase(ctx: &Ctx, krate: &Target, sources: &Sources, artifacts: &[Artifacts], cells: &mut [Cell]) {
+    let opts = ctx.opts;
+    for i in (0..=opts.run_samples).filter(|_| opts.run_samples > 0) {
+        for (bi, &backend) in opts.backends.iter().enumerate() {
+            let (cell, a) = (&mut cells[bi], &artifacts[bi]);
+            if cell.build_failed {
+                continue;
+            }
+            let label = if i == 0 { "warm-up".to_owned() } else { format!("{i}/{}", opts.run_samples) };
+            let (time, outcome) = run_tests(&sources.dir, krate, &a.test_exes, opts.timeout);
+            if i == 0 {
+                cell.errors.extend(outcome.failures.iter().map(|f| CellError::new(Phase::Test, f.clone())));
+                cell.tests = Some(outcome);
+            } else if outcome.failures.is_empty() {
+                cell.test_run.push(time);
+            } else {
+                // A failed or timed-out binary makes the sum meaningless: drop the sample.
+                cell.errors.push(CellError::new(Phase::Test, format!("run sample {i} dropped: {}", outcome.failures.join("; "))));
+            }
+            let w = a.example.as_ref().map(|e| run_timed(Command::new(e).current_dir(&sources.dir), opts.timeout));
+            match w {
+                None => {}
+                Some(Ok((_, out))) if i == 0 => cell.workload_output = Some(out),
+                Some(Ok((t, _))) => cell.workload.push(t),
+                Some(Err(e)) if i == 0 => cell.errors.push(CellError::new(Phase::Workload, e.to_string())),
+                Some(Err(e)) => cell.errors.push(CellError::new(Phase::Workload, format!("run sample {i} dropped: {e}"))),
+            }
+            eprintln!(
+                "[y] {} run {label} [{}]: tests {time:.2}s, workload {}",
+                krate.name(),
+                backend.name(),
+                cell.workload.last().map_or("-".to_owned(), |t| format!("{t:.3}s"))
+            );
+        }
+    }
+}
+
+/// The workload prints a checksum that must not depend on the backend: records an error in
+/// each cell whose output differs from the first backend's that has one.
+fn check_workload_outputs(cells: &mut [Cell], backends: &[Backend]) {
+    let reference = cells.iter().zip(backends).find_map(|(c, b)| Some((c.workload_output.clone()?, *b)));
+    for cell in cells {
+        if let (Some((r, rb)), Some(o)) = (&reference, &cell.workload_output)
+            && r != o
+        {
+            cell.errors.push(CellError::new(Phase::Workload, format!("output differs from {}'s: {:?} vs {:?}", rb.name(), o.trim(), r.trim())));
+        }
+    }
 }
 
 /// Downloads (once) and verifies the `.crate` archive, and extracts a fresh copy with the
@@ -697,8 +731,7 @@ fn stderr_tail(stderr: &[u8], n: usize, sep: &str, keep: impl Fn(&str) -> bool) 
 
 struct BuildSample {
     steps: BuildSteps,
-    test_exes: Vec<PathBuf>,
-    example: Option<PathBuf>,
+    artifacts: Artifacts,
 }
 
 /// Builds the crate: library, tests, then the workload. `clean` starts from a clean target
@@ -739,7 +772,7 @@ fn build_sample(env: &Env, sources: &Sources, logs: &Path, clean: bool, stats: b
     }
     let test_exes = test_executables(&json);
     let example_exe = (!local).then(|| env.target.join("debug").join("examples").join(exe_name("ryo_bench")));
-    Ok(BuildSample { steps: BuildSteps { lib, tests }, test_exes, example: example_exe })
+    Ok(BuildSample { steps: BuildSteps { lib, tests }, artifacts: Artifacts { test_exes, example: example_exe } })
 }
 
 /// The test binaries in cargo's `--message-format=json` output: `compiler-artifact` messages
