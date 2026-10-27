@@ -113,10 +113,10 @@ pub struct CguImage {
 
 /// What `RYO_DUMP_LEAN`'s certificate file needs from the partition.
 pub struct LeanCerts {
-    /// Each VM function's symbol and lowering certificate (JSON), in image order, the images
-    /// in CGU order, a symbol only once (an `#[inline]` copy in several images)
-    /// (`lower/cert.rs`).
-    pub certs: Vec<(String, String)>,
+    /// Per image, in CGU order: its CGU's name and each of its VM functions' symbol and
+    /// lowering certificate (JSON), in image order (`lower/cert.rs`). An `#[inline]` function
+    /// copied into several images has an entry in each: the copies are lowered separately.
+    pub images: Vec<(String, Vec<(String, String)>)>,
     /// The symbol of each island instance the image calls, and its template's diagnostic
     /// item name, sorted.
     pub islands: Vec<(String, String)>,
@@ -472,15 +472,16 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         }
 
         let lean = self.switches.dump_lean.is_some().then(|| {
-            let mut seen = FxHashSet::default();
-            let certs = self
+            let images = self
                 .units
                 .iter()
-                .flat_map(|u| u.vm.iter())
-                .filter_map(|v| Some((tcx.symbol_name(v.instance).name.to_owned(), v.lowered.cert.clone()?)))
-                .filter(|(s, _)| seen.insert(s.clone()))
+                .filter(|u| !u.vm.is_empty())
+                .map(|u| {
+                    let certs = u.vm.iter().filter_map(|v| Some((tcx.symbol_name(v.instance).name.to_owned(), v.lowered.cert.clone()?)));
+                    (u.cgu.name().to_string(), certs.collect())
+                })
                 .collect();
-            LeanCerts { certs, islands: self.island_names() }
+            LeanCerts { images, islands: self.island_names() }
         });
         let mut images = Vec::new();
         let mut roots = Roots::default();

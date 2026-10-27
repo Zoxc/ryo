@@ -25,10 +25,12 @@
 //! Only reads queries (all cached and side-effect free), and only when the variable is set.
 //!
 //! Next to it, `<dir>/<crate name>.cert.json`: the lowering's certificate for each VM function
-//! of the crate's image (`lower/cert.rs`), `{"functions": [{"symbol", "cert"}], "islands":
-//! [{"symbol", "template"}]}`, the functions in image order, and per island instance the image
-//! calls its symbol and its template's diagnostic item name (`tcx.symbol_name` of the
-//! instance, `get_diagnostic_name` of its def). Unlike the dump it is the lowering's own data,
+//! of each of the crate's images (`lower/cert.rs`), `{"images": [{"cgu", "functions":
+//! [{"symbol", "cert"}]}], "islands": [{"symbol", "template"}]}`: per image, in CGU order, its
+//! CGU's name (whose `image::cgu_hash` is the image header's) and its functions in image order
+//! (an `#[inline]` function copied into several images has an entry in each), and per island
+//! instance the images call its symbol and its template's diagnostic item name
+//! (`tcx.symbol_name` of the instance, `get_diagnostic_name` of its def). Unlike the dump it is the lowering's own data,
 //! and untrusted (lean/docs/aot.md §C1), but for the island names, which rustc gives.
 
 use std::collections::VecDeque;
@@ -80,13 +82,17 @@ pub fn dump(tcx: TyCtxt<'_>, switches: &super::switches::Switches, results: &sup
     write_json(tcx, &dir, "json", &program);
 }
 
-/// Writes `<dir>/<crate name>.cert.json`, the certificates of the image's VM functions.
+/// Writes `<dir>/<crate name>.cert.json`, the certificates of the images' VM functions: per
+/// image (its CGU's name) its functions in image order, and the crate's islands.
 fn write_certs(tcx: TyCtxt<'_>, results: &super::partition::Results, dir: &std::path::Path) {
     let Some(lean) = &results.lean else { return };
     let entry = |key, symbol: &str, v| obj(vec![("symbol", J::Str(symbol.into())), (key, v)]);
-    let functions = lean.certs.iter().map(|(symbol, cert)| entry("cert", symbol, J::Raw(cert.as_str().into())));
+    let images = lean.images.iter().map(|(cgu, certs)| {
+        let functions = certs.iter().map(|(symbol, cert)| entry("cert", symbol, J::Raw(cert.as_str().into())));
+        obj(vec![("cgu", J::Str(cgu.clone())), ("functions", J::Arr(functions.collect()))])
+    });
     let islands = lean.islands.iter().map(|(symbol, template)| entry("template", symbol, J::Str(template.clone())));
-    let certs = obj(vec![("functions", J::Arr(functions.collect())), ("islands", J::Arr(islands.collect()))]);
+    let certs = obj(vec![("images", J::Arr(images.collect())), ("islands", J::Arr(islands.collect()))]);
     write_json(tcx, dir, "cert.json", &certs);
 }
 
