@@ -71,6 +71,7 @@ pub use list::InsnList;
 pub use reduced::{encode_reduced, encode_reduced_at, is_native, reduce};
 
 use crate::full::{ElemKind, Opcode, OperandKind, Shape};
+use crate::image::JIT_LOOP_CTR;
 
 /// The argument registers handlers take: `rdi, rsi, rdx, rcx, r8, r9`.
 pub const ARG_REGS: usize = 6;

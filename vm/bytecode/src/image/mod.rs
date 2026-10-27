@@ -262,8 +262,6 @@ const _: () = {
     assert!(mem::offset_of!(JitRecord, header) == 40);
     assert!(mem::offset_of!(JitRecord, ctr_l) == JIT_LOOP_CTR as usize);
 };
-#[cfg(feature = "alloc")]
-const _: () = assert!(crate::asm::x86::LOOP_CTR == JIT_LOOP_CTR as u64);
 
 /// The 32-bit crate hash the registry uses, folded from the crate's
 /// `StableCrateId` (its `u64` value).

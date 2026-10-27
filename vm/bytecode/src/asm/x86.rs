@@ -59,10 +59,6 @@ pub const fn island_args(pe: bool) -> [Reg; 2] {
     if pe { [Reg::Rcx, Reg::Rdx] } else { [Reg::Rdi, Reg::Rsi] }
 }
 
-/// The offset of a JIT record's loop counter (`image::JIT_LOOP_CTR`), which [`Ref::RecLoopCtr`]
-/// names: a linked field that reaches the record plus this is that reference.
-pub const LOOP_CTR: u64 = 56;
-
 /// A branch condition, on the flags of the `test` or `cmp` before it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Cond {
@@ -1012,7 +1008,7 @@ impl<'a> Cursor<'a> {
                     Field::Local(local)
                 } else if record == Some(to) {
                     Field::Ref(Ref::Rec)
-                } else if record.map(|r| r + LOOP_CTR) == Some(to) {
+                } else if record.map(|r| r + super::JIT_LOOP_CTR as u64) == Some(to) {
                     Field::Ref(Ref::RecLoopCtr)
                 } else {
                     resolver.resolve(to).map_or(Field::Bad, Field::Ref)
