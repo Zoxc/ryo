@@ -7,7 +7,8 @@ use ryo_bytecode::full::{List, Neg, Target, list_words};
 use ryo_bytecode::reduced::{self, Arg, Handler, Insn, Opcode};
 
 /// `src/reduced_ops.rs` is generated: the header, the entries of `src/ops.rs` that run as
-/// native code (`asm::has_inline || !asm::has_handler`), in order, and the `handler` entry.
+/// native code (`asm::has_inline || !asm::has_handler`), in order (a family's with its widths
+/// cut down to theirs), and the `handler` entry.
 /// With `RYO_GEN=1` this test rewrites it, else it checks it is up to date.
 #[test]
 fn reduced_ops_generated() {
@@ -16,10 +17,29 @@ fn reduced_ops_generated() {
     let ops = std::fs::read_to_string(format!("{dir}/src/ops.rs")).unwrap();
     let have = std::fs::read_to_string(&path).unwrap();
     let mut want = String::from(REDUCED_HEADER);
-    let mut native = full::ALL_OPCODES.iter().filter(|&&f| asm::has_inline(f) || !asm::has_handler(f));
+    let is_native = |f: full::Opcode| asm::has_inline(f) || !asm::has_handler(f);
+    let mut native = full::ALL_OPCODES.iter().copied().filter(|&f| is_native(f));
     let mut next = native.next();
     for line in ops.lines() {
-        let Some((name, _)) = line.trim_start().split_once(" = \"") else { continue };
+        let t = line.trim_start();
+        if let Some(fam) = t.strip_prefix("fam ") {
+            // A family: its native members, with the widths list cut down to theirs.
+            let name: String = fam.split(" = ").next().unwrap().split(" * ").collect();
+            let f = *full::Family::ALL.iter().find(|f| format!("{f:?}") == name).unwrap();
+            let ws: Vec<_> = f.members().filter(|&op| is_native(op)).collect();
+            if ws.is_empty() {
+                continue;
+            }
+            for &op in &ws {
+                assert_eq!(next, Some(op), "{op:?}: not in ops.rs's order");
+                next = native.next();
+            }
+            let at = line.rfind(" @ [").unwrap();
+            let list: Vec<String> = ws.iter().map(|op| format!("{:?}", op.width().unwrap())).collect();
+            want.push_str(&format!("{} @ [{}],\n", &line[..at], list.join(", ")));
+            continue;
+        }
+        let Some((name, _)) = t.split_once(" = \"") else { continue };
         if let Some(f) = next
             && format!("{f:?}") == name
         {

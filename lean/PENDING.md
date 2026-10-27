@@ -192,3 +192,12 @@ remove it once a Lean session has handled it.
   Also: `volatile_load`/`_store` (and unaligned), `volatile_copy_memory`,
   `volatile_copy_nonoverlapping_memory` and `volatile_set_memory` lower to the islands
   `ryo_island_volatile_*` instead of VM loads, stores and `memcpy`/`memmove`/`memset`.
+
+- Opcodes are numbered family-major (Commit: "Ops: width-generic opcode families"): every
+  family of widths (`add.w8` .. `add.w128`, `atomic.add.w8.relaxed` .. `atomic.add.ptr.relaxed`)
+  has consecutive opcodes in width order, declared by one `fam` entry in `ops.rs` and
+  `handlers.rs`. Only the numbering and list order changed (same mnemonics, operands,
+  handlers): `Generated/` and `jit/effects_table.rs` are regenerated and `lake build`, `lake
+  test` pass. Not rechecked: `RyoProofs` (`RyoProofs.InlineOps`'s `decide +kernel` was
+  OOM-killed on a loaded machine). Optional: export `Family`/`OpWidth` (`Opcode::fw`) to the
+  generated tables, for statements over every width of a family.

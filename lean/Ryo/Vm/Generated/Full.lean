@@ -51,271 +51,271 @@ def opInfos : Array OpInfo := #[
   OpInfo.mk "PtrAdd" "ptr.add" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "imm" OperandKind.i64] (some 5),
   OpInfo.mk "PtrIndex" "ptr.index" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "i" OperandKind.slot, OperandInfo.mk "stride" OperandKind.u32] (some 5),
   OpInfo.mk "AddW8" "add.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "SubW8" "sub.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "MulW8" "mul.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "DivSW8" "div.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "DivUW8" "div.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RemSW8" "rem.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RemUW8" "rem.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "AndW8" "and.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "OrW8" "or.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "XorW8" "xor.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "ShlW8" "shl.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "ShrSW8" "shr.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "ShrUW8" "shr.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "EqW8" "eq.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "NeW8" "ne.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LtSW8" "lt.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LtUW8" "lt.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LeSW8" "le.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LeUW8" "le.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "Cmp3SW8" "cmp3.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "Cmp3UW8" "cmp3.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RotlW8" "rotl.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RotrW8" "rotr.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "AddImmW8" "add.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "SubImmW8" "sub.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "MulImmW8" "mul.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "AndImmW8" "and.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "OrImmW8" "or.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "XorImmW8" "xor.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "ShlImmW8" "shl.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "ShrSImmW8" "shr.s.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "ShrUImmW8" "shr.u.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "EqImmW8" "eq.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "NeImmW8" "ne.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "LtSImmW8" "lt.s.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "LtUImmW8" "lt.u.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "LeSImmW8" "le.s.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "LeUImmW8" "le.u.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "GtSImmW8" "gt.s.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "GtUImmW8" "gt.u.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "GeSImmW8" "ge.s.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "GeUImmW8" "ge.u.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "NegW8" "neg.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "NotW8" "not.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "CtpopW8" "ctpop.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "CtlzW8" "ctlz.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "CttzW8" "cttz.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "BitreverseW8" "bitreverse.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "AddOvfSW8" "add.ovf.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "AddOvfUW8" "add.ovf.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "SubOvfSW8" "sub.ovf.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "SubOvfUW8" "sub.ovf.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "MulOvfSW8" "mul.ovf.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "MulOvfUW8" "mul.ovf.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
   OpInfo.mk "AddW16" "add.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "SubW16" "sub.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "MulW16" "mul.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "DivSW16" "div.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "DivUW16" "div.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RemSW16" "rem.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RemUW16" "rem.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "AndW16" "and.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "OrW16" "or.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "XorW16" "xor.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "ShlW16" "shl.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "ShrSW16" "shr.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "ShrUW16" "shr.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "EqW16" "eq.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "NeW16" "ne.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LtSW16" "lt.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LtUW16" "lt.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LeSW16" "le.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LeUW16" "le.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "Cmp3SW16" "cmp3.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "Cmp3UW16" "cmp3.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RotlW16" "rotl.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RotrW16" "rotr.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "AddImmW16" "add.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "SubImmW16" "sub.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "MulImmW16" "mul.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "AndImmW16" "and.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "OrImmW16" "or.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "XorImmW16" "xor.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "ShlImmW16" "shl.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "ShrSImmW16" "shr.s.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "ShrUImmW16" "shr.u.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "EqImmW16" "eq.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "NeImmW16" "ne.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "LtSImmW16" "lt.s.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "LtUImmW16" "lt.u.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "LeSImmW16" "le.s.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "LeUImmW16" "le.u.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "GtSImmW16" "gt.s.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "GtUImmW16" "gt.u.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "GeSImmW16" "ge.s.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "GeUImmW16" "ge.u.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "NegW16" "neg.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "NotW16" "not.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "CtpopW16" "ctpop.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "CtlzW16" "ctlz.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "CttzW16" "cttz.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "BswapW16" "bswap.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "BitreverseW16" "bitreverse.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "AddOvfSW16" "add.ovf.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "AddOvfUW16" "add.ovf.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "SubOvfSW16" "sub.ovf.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "SubOvfUW16" "sub.ovf.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "MulOvfSW16" "mul.ovf.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "MulOvfUW16" "mul.ovf.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
   OpInfo.mk "AddW32" "add.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "SubW32" "sub.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "MulW32" "mul.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "DivSW32" "div.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "DivUW32" "div.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RemSW32" "rem.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RemUW32" "rem.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "AndW32" "and.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "OrW32" "or.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "XorW32" "xor.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "ShlW32" "shl.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "ShrSW32" "shr.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "ShrUW32" "shr.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "EqW32" "eq.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "NeW32" "ne.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LtSW32" "lt.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LtUW32" "lt.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LeSW32" "le.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LeUW32" "le.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "Cmp3SW32" "cmp3.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "Cmp3UW32" "cmp3.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RotlW32" "rotl.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RotrW32" "rotr.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "AddImmW32" "add.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "SubImmW32" "sub.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "MulImmW32" "mul.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "AndImmW32" "and.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "OrImmW32" "or.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "XorImmW32" "xor.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "ShlImmW32" "shl.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "ShrSImmW32" "shr.s.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "ShrUImmW32" "shr.u.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "EqImmW32" "eq.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "NeImmW32" "ne.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "LtSImmW32" "lt.s.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "LtUImmW32" "lt.u.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "LeSImmW32" "le.s.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "LeUImmW32" "le.u.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "GtSImmW32" "gt.s.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "GtUImmW32" "gt.u.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "GeSImmW32" "ge.s.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "GeUImmW32" "ge.u.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "NegW32" "neg.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "NotW32" "not.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "CtpopW32" "ctpop.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "CtlzW32" "ctlz.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "CttzW32" "cttz.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "BswapW32" "bswap.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "BitreverseW32" "bitreverse.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "AddOvfSW32" "add.ovf.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "AddOvfUW32" "add.ovf.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "SubOvfSW32" "sub.ovf.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "SubOvfUW32" "sub.ovf.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "MulOvfSW32" "mul.ovf.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "MulOvfUW32" "mul.ovf.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
   OpInfo.mk "AddW64" "add.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "SubW64" "sub.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "MulW64" "mul.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "DivSW64" "div.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "DivUW64" "div.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RemSW64" "rem.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RemUW64" "rem.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "AndW64" "and.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "OrW64" "or.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "XorW64" "xor.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "ShlW64" "shl.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "ShrSW64" "shr.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "ShrUW64" "shr.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "EqW64" "eq.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "NeW64" "ne.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LtSW64" "lt.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LtUW64" "lt.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LeSW64" "le.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LeUW64" "le.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "Cmp3SW64" "cmp3.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "Cmp3UW64" "cmp3.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RotlW64" "rotl.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RotrW64" "rotr.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "AddImmW64" "add.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
-  OpInfo.mk "SubImmW64" "sub.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
-  OpInfo.mk "MulImmW64" "mul.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
-  OpInfo.mk "AndImmW64" "and.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
-  OpInfo.mk "OrImmW64" "or.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
-  OpInfo.mk "XorImmW64" "xor.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
-  OpInfo.mk "ShlImmW64" "shl.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
-  OpInfo.mk "ShrSImmW64" "shr.s.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
-  OpInfo.mk "ShrUImmW64" "shr.u.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
-  OpInfo.mk "EqImmW64" "eq.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
-  OpInfo.mk "NeImmW64" "ne.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
-  OpInfo.mk "LtSImmW64" "lt.s.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
-  OpInfo.mk "LtUImmW64" "lt.u.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
-  OpInfo.mk "LeSImmW64" "le.s.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
-  OpInfo.mk "LeUImmW64" "le.u.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
-  OpInfo.mk "GtSImmW64" "gt.s.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
-  OpInfo.mk "GtUImmW64" "gt.u.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
-  OpInfo.mk "GeSImmW64" "ge.s.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
-  OpInfo.mk "GeUImmW64" "ge.u.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
-  OpInfo.mk "NegW64" "neg.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "NotW64" "not.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "CtpopW64" "ctpop.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "CtlzW64" "ctlz.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "CttzW64" "cttz.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "BswapW64" "bswap.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "BitreverseW64" "bitreverse.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "AddOvfSW64" "add.ovf.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "AddOvfUW64" "add.ovf.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "SubOvfSW64" "sub.ovf.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "SubOvfUW64" "sub.ovf.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "MulOvfSW64" "mul.ovf.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "MulOvfUW64" "mul.ovf.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
   OpInfo.mk "AddW128" "add.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "SubW8" "sub.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "SubW16" "sub.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "SubW32" "sub.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "SubW64" "sub.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "SubW128" "sub.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "MulW8" "mul.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "MulW16" "mul.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "MulW32" "mul.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "MulW64" "mul.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "DivSW8" "div.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "DivSW16" "div.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "DivSW32" "div.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "DivSW64" "div.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "DivUW8" "div.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "DivUW16" "div.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "DivUW32" "div.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "DivUW64" "div.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RemSW8" "rem.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RemSW16" "rem.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RemSW32" "rem.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RemSW64" "rem.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RemUW8" "rem.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RemUW16" "rem.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RemUW32" "rem.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RemUW64" "rem.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "AndW8" "and.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "AndW16" "and.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "AndW32" "and.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "AndW64" "and.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "AndW128" "and.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "OrW8" "or.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "OrW16" "or.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "OrW32" "or.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "OrW64" "or.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "OrW128" "or.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "XorW8" "xor.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "XorW16" "xor.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "XorW32" "xor.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "XorW64" "xor.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "XorW128" "xor.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "ShlW8" "shl.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "ShlW16" "shl.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "ShlW32" "shl.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "ShlW64" "shl.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "ShlW128" "shl.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "ShrSW8" "shr.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "ShrSW16" "shr.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "ShrSW32" "shr.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "ShrSW64" "shr.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "ShrSW128" "shr.s.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "ShrUW8" "shr.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "ShrUW16" "shr.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "ShrUW32" "shr.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "ShrUW64" "shr.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "ShrUW128" "shr.u.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "EqW8" "eq.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "EqW16" "eq.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "EqW32" "eq.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "EqW64" "eq.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "EqW128" "eq.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "NeW8" "ne.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "NeW16" "ne.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "NeW32" "ne.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "NeW64" "ne.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "NeW128" "ne.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LtSW8" "lt.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LtSW16" "lt.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LtSW32" "lt.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LtSW64" "lt.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "LtSW128" "lt.s.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LtUW8" "lt.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LtUW16" "lt.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LtUW32" "lt.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LtUW64" "lt.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "LtUW128" "lt.u.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LeSW8" "le.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LeSW16" "le.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LeSW32" "le.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LeSW64" "le.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "LeSW128" "le.s.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LeUW8" "le.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LeUW16" "le.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LeUW32" "le.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LeUW64" "le.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "LeUW128" "le.u.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "Cmp3SW8" "cmp3.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "Cmp3SW16" "cmp3.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "Cmp3SW32" "cmp3.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "Cmp3SW64" "cmp3.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "Cmp3SW128" "cmp3.s.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "Cmp3UW8" "cmp3.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "Cmp3UW16" "cmp3.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "Cmp3UW32" "cmp3.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "Cmp3UW64" "cmp3.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "Cmp3UW128" "cmp3.u.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RotlW8" "rotl.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RotlW16" "rotl.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RotlW32" "rotl.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RotlW64" "rotl.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "RotlW128" "rotl.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RotrW8" "rotr.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RotrW16" "rotr.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RotrW32" "rotr.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RotrW64" "rotr.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "RotrW128" "rotr.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "AddImmW8" "add.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "AddImmW16" "add.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "AddImmW32" "add.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
+  OpInfo.mk "AddImmW64" "add.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
   OpInfo.mk "AddImmW128" "add.imm.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u128] (some 7),
+  OpInfo.mk "SubImmW8" "sub.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "SubImmW16" "sub.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "SubImmW32" "sub.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
+  OpInfo.mk "SubImmW64" "sub.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
   OpInfo.mk "SubImmW128" "sub.imm.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u128] (some 7),
+  OpInfo.mk "MulImmW8" "mul.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "MulImmW16" "mul.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "MulImmW32" "mul.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
+  OpInfo.mk "MulImmW64" "mul.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
+  OpInfo.mk "AndImmW8" "and.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "AndImmW16" "and.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "AndImmW32" "and.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
+  OpInfo.mk "AndImmW64" "and.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
   OpInfo.mk "AndImmW128" "and.imm.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u128] (some 7),
+  OpInfo.mk "OrImmW8" "or.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "OrImmW16" "or.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "OrImmW32" "or.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
+  OpInfo.mk "OrImmW64" "or.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
   OpInfo.mk "OrImmW128" "or.imm.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u128] (some 7),
+  OpInfo.mk "XorImmW8" "xor.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "XorImmW16" "xor.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "XorImmW32" "xor.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
+  OpInfo.mk "XorImmW64" "xor.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
   OpInfo.mk "XorImmW128" "xor.imm.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u128] (some 7),
+  OpInfo.mk "ShlImmW8" "shl.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "ShlImmW16" "shl.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "ShlImmW32" "shl.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
+  OpInfo.mk "ShlImmW64" "shl.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
   OpInfo.mk "ShlImmW128" "shl.imm.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u128] (some 7),
+  OpInfo.mk "ShrSImmW8" "shr.s.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "ShrSImmW16" "shr.s.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "ShrSImmW32" "shr.s.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
+  OpInfo.mk "ShrSImmW64" "shr.s.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
   OpInfo.mk "ShrSImmW128" "shr.s.imm.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u128] (some 7),
+  OpInfo.mk "ShrUImmW8" "shr.u.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "ShrUImmW16" "shr.u.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "ShrUImmW32" "shr.u.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
+  OpInfo.mk "ShrUImmW64" "shr.u.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
   OpInfo.mk "ShrUImmW128" "shr.u.imm.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u128] (some 7),
+  OpInfo.mk "EqImmW8" "eq.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "EqImmW16" "eq.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "EqImmW32" "eq.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
+  OpInfo.mk "EqImmW64" "eq.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
   OpInfo.mk "EqImmW128" "eq.imm.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u128] (some 7),
+  OpInfo.mk "NeImmW8" "ne.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "NeImmW16" "ne.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "NeImmW32" "ne.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
+  OpInfo.mk "NeImmW64" "ne.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
   OpInfo.mk "NeImmW128" "ne.imm.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u128] (some 7),
+  OpInfo.mk "LtSImmW8" "lt.s.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "LtSImmW16" "lt.s.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "LtSImmW32" "lt.s.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
+  OpInfo.mk "LtSImmW64" "lt.s.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
   OpInfo.mk "LtSImmW128" "lt.s.imm.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u128] (some 7),
+  OpInfo.mk "LtUImmW8" "lt.u.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "LtUImmW16" "lt.u.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "LtUImmW32" "lt.u.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
+  OpInfo.mk "LtUImmW64" "lt.u.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
   OpInfo.mk "LtUImmW128" "lt.u.imm.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u128] (some 7),
+  OpInfo.mk "LeSImmW8" "le.s.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "LeSImmW16" "le.s.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "LeSImmW32" "le.s.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
+  OpInfo.mk "LeSImmW64" "le.s.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
   OpInfo.mk "LeSImmW128" "le.s.imm.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u128] (some 7),
+  OpInfo.mk "LeUImmW8" "le.u.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "LeUImmW16" "le.u.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "LeUImmW32" "le.u.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
+  OpInfo.mk "LeUImmW64" "le.u.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
   OpInfo.mk "LeUImmW128" "le.u.imm.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u128] (some 7),
+  OpInfo.mk "GtSImmW8" "gt.s.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "GtSImmW16" "gt.s.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "GtSImmW32" "gt.s.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
+  OpInfo.mk "GtSImmW64" "gt.s.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
   OpInfo.mk "GtSImmW128" "gt.s.imm.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u128] (some 7),
+  OpInfo.mk "GtUImmW8" "gt.u.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "GtUImmW16" "gt.u.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "GtUImmW32" "gt.u.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
+  OpInfo.mk "GtUImmW64" "gt.u.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
   OpInfo.mk "GtUImmW128" "gt.u.imm.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u128] (some 7),
+  OpInfo.mk "GeSImmW8" "ge.s.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "GeSImmW16" "ge.s.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "GeSImmW32" "ge.s.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
+  OpInfo.mk "GeSImmW64" "ge.s.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
   OpInfo.mk "GeSImmW128" "ge.s.imm.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u128] (some 7),
+  OpInfo.mk "GeUImmW8" "ge.u.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "GeUImmW16" "ge.u.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "GeUImmW32" "ge.u.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
+  OpInfo.mk "GeUImmW64" "ge.u.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
   OpInfo.mk "GeUImmW128" "ge.u.imm.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u128] (some 7),
+  OpInfo.mk "NegW8" "neg.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "NegW16" "neg.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "NegW32" "neg.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "NegW64" "neg.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
   OpInfo.mk "NegW128" "neg.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "NotW8" "not.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "NotW16" "not.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "NotW32" "not.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "NotW64" "not.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
   OpInfo.mk "NotW128" "not.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "CtpopW8" "ctpop.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "CtpopW16" "ctpop.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "CtpopW32" "ctpop.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "CtpopW64" "ctpop.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
   OpInfo.mk "CtpopW128" "ctpop.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "CtlzW8" "ctlz.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "CtlzW16" "ctlz.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "CtlzW32" "ctlz.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "CtlzW64" "ctlz.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
   OpInfo.mk "CtlzW128" "ctlz.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "CttzW8" "cttz.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "CttzW16" "cttz.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "CttzW32" "cttz.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "CttzW64" "cttz.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
   OpInfo.mk "CttzW128" "cttz.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "BswapW128" "bswap.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "BitreverseW8" "bitreverse.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "BitreverseW16" "bitreverse.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "BitreverseW32" "bitreverse.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "BitreverseW64" "bitreverse.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
   OpInfo.mk "BitreverseW128" "bitreverse.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "AddOvfSW8" "add.ovf.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "AddOvfSW16" "add.ovf.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "AddOvfSW32" "add.ovf.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "AddOvfSW64" "add.ovf.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
   OpInfo.mk "AddOvfSW128" "add.ovf.s.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "AddOvfUW8" "add.ovf.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "AddOvfUW16" "add.ovf.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "AddOvfUW32" "add.ovf.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "AddOvfUW64" "add.ovf.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
   OpInfo.mk "AddOvfUW128" "add.ovf.u.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "SubOvfSW8" "sub.ovf.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "SubOvfSW16" "sub.ovf.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "SubOvfSW32" "sub.ovf.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "SubOvfSW64" "sub.ovf.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
   OpInfo.mk "SubOvfSW128" "sub.ovf.s.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "SubOvfUW8" "sub.ovf.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "SubOvfUW16" "sub.ovf.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "SubOvfUW32" "sub.ovf.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "SubOvfUW64" "sub.ovf.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
   OpInfo.mk "SubOvfUW128" "sub.ovf.u.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "MulOvfSW8" "mul.ovf.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "MulOvfSW16" "mul.ovf.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "MulOvfSW32" "mul.ovf.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "MulOvfSW64" "mul.ovf.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "MulOvfUW8" "mul.ovf.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "MulOvfUW16" "mul.ovf.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "MulOvfUW32" "mul.ovf.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "MulOvfUW64" "mul.ovf.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "BswapW16" "bswap.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "BswapW32" "bswap.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "BswapW64" "bswap.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "BswapW128" "bswap.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
   OpInfo.mk "FaddF32" "fadd.f32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "FsubF32" "fsub.f32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "FmulF32" "fmul.f32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
@@ -399,456 +399,456 @@ def opInfos : Array OpInfo := #[
   OpInfo.mk "CvtF2iSatUF64W64" "cvt.f2i.sat.u.f64.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "CvtF2iSatUF64W128" "cvt.f2i.sat.u.f64.w128" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "CvtI2fSW8F32" "cvt.i2f.s.w8.f32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
-  OpInfo.mk "CvtI2fSW8F64" "cvt.i2f.s.w8.f64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "CvtI2fSW16F32" "cvt.i2f.s.w16.f32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
-  OpInfo.mk "CvtI2fSW16F64" "cvt.i2f.s.w16.f64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "CvtI2fSW32F32" "cvt.i2f.s.w32.f32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
-  OpInfo.mk "CvtI2fSW32F64" "cvt.i2f.s.w32.f64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "CvtI2fSW64F32" "cvt.i2f.s.w64.f32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
-  OpInfo.mk "CvtI2fSW64F64" "cvt.i2f.s.w64.f64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "CvtI2fSW128F32" "cvt.i2f.s.w128.f32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
+  OpInfo.mk "CvtI2fSW8F64" "cvt.i2f.s.w8.f64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
+  OpInfo.mk "CvtI2fSW16F64" "cvt.i2f.s.w16.f64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
+  OpInfo.mk "CvtI2fSW32F64" "cvt.i2f.s.w32.f64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
+  OpInfo.mk "CvtI2fSW64F64" "cvt.i2f.s.w64.f64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "CvtI2fSW128F64" "cvt.i2f.s.w128.f64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "CvtI2fUW8F32" "cvt.i2f.u.w8.f32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
-  OpInfo.mk "CvtI2fUW8F64" "cvt.i2f.u.w8.f64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "CvtI2fUW16F32" "cvt.i2f.u.w16.f32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
-  OpInfo.mk "CvtI2fUW16F64" "cvt.i2f.u.w16.f64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "CvtI2fUW32F32" "cvt.i2f.u.w32.f32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
-  OpInfo.mk "CvtI2fUW32F64" "cvt.i2f.u.w32.f64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "CvtI2fUW64F32" "cvt.i2f.u.w64.f32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
-  OpInfo.mk "CvtI2fUW64F64" "cvt.i2f.u.w64.f64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "CvtI2fUW128F32" "cvt.i2f.u.w128.f32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
+  OpInfo.mk "CvtI2fUW8F64" "cvt.i2f.u.w8.f64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
+  OpInfo.mk "CvtI2fUW16F64" "cvt.i2f.u.w16.f64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
+  OpInfo.mk "CvtI2fUW32F64" "cvt.i2f.u.w32.f64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
+  OpInfo.mk "CvtI2fUW64F64" "cvt.i2f.u.w64.f64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "CvtI2fUW128F64" "cvt.i2f.u.w128.f64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "CvtF2fF32F64" "cvt.f2f.f32.f64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "CvtF2fF64F32" "cvt.f2f.f64.f32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "AtomicLoadW8Relaxed" "atomic.load.w8.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
-  OpInfo.mk "AtomicLoadW8Acquire" "atomic.load.w8.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
-  OpInfo.mk "AtomicLoadW8Seqcst" "atomic.load.w8.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
-  OpInfo.mk "AtomicStoreW8Relaxed" "atomic.store.w8.relaxed" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
-  OpInfo.mk "AtomicStoreW8Release" "atomic.store.w8.release" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
-  OpInfo.mk "AtomicStoreW8Seqcst" "atomic.store.w8.seqcst" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "AtomicLoadW16Relaxed" "atomic.load.w16.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
-  OpInfo.mk "AtomicLoadW16Acquire" "atomic.load.w16.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
-  OpInfo.mk "AtomicLoadW16Seqcst" "atomic.load.w16.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
-  OpInfo.mk "AtomicStoreW16Relaxed" "atomic.store.w16.relaxed" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
-  OpInfo.mk "AtomicStoreW16Release" "atomic.store.w16.release" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
-  OpInfo.mk "AtomicStoreW16Seqcst" "atomic.store.w16.seqcst" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "AtomicLoadW32Relaxed" "atomic.load.w32.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
-  OpInfo.mk "AtomicLoadW32Acquire" "atomic.load.w32.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
-  OpInfo.mk "AtomicLoadW32Seqcst" "atomic.load.w32.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
-  OpInfo.mk "AtomicStoreW32Relaxed" "atomic.store.w32.relaxed" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
-  OpInfo.mk "AtomicStoreW32Release" "atomic.store.w32.release" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
-  OpInfo.mk "AtomicStoreW32Seqcst" "atomic.store.w32.seqcst" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "AtomicLoadW64Relaxed" "atomic.load.w64.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicLoadPtrRelaxed" "atomic.load.ptr.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicLoadW8Acquire" "atomic.load.w8.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicLoadW16Acquire" "atomic.load.w16.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicLoadW32Acquire" "atomic.load.w32.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
   OpInfo.mk "AtomicLoadW64Acquire" "atomic.load.w64.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicLoadPtrAcquire" "atomic.load.ptr.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicLoadW8Seqcst" "atomic.load.w8.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicLoadW16Seqcst" "atomic.load.w16.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicLoadW32Seqcst" "atomic.load.w32.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
   OpInfo.mk "AtomicLoadW64Seqcst" "atomic.load.w64.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicLoadPtrSeqcst" "atomic.load.ptr.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicStoreW8Relaxed" "atomic.store.w8.relaxed" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicStoreW16Relaxed" "atomic.store.w16.relaxed" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicStoreW32Relaxed" "atomic.store.w32.relaxed" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "AtomicStoreW64Relaxed" "atomic.store.w64.relaxed" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicStorePtrRelaxed" "atomic.store.ptr.relaxed" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicStoreW8Release" "atomic.store.w8.release" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicStoreW16Release" "atomic.store.w16.release" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicStoreW32Release" "atomic.store.w32.release" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "AtomicStoreW64Release" "atomic.store.w64.release" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicStorePtrRelease" "atomic.store.ptr.release" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicStoreW8Seqcst" "atomic.store.w8.seqcst" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicStoreW16Seqcst" "atomic.store.w16.seqcst" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicStoreW32Seqcst" "atomic.store.w32.seqcst" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "AtomicStoreW64Seqcst" "atomic.store.w64.seqcst" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
+  OpInfo.mk "AtomicStorePtrSeqcst" "atomic.store.ptr.seqcst" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "AtomicXchgW8Relaxed" "atomic.xchg.w8.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXchgW8Acquire" "atomic.xchg.w8.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXchgW8Release" "atomic.xchg.w8.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXchgW8Acqrel" "atomic.xchg.w8.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXchgW8Seqcst" "atomic.xchg.w8.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAddW8Relaxed" "atomic.add.w8.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAddW8Acquire" "atomic.add.w8.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAddW8Release" "atomic.add.w8.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAddW8Acqrel" "atomic.add.w8.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAddW8Seqcst" "atomic.add.w8.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicSubW8Relaxed" "atomic.sub.w8.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicSubW8Acquire" "atomic.sub.w8.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicSubW8Release" "atomic.sub.w8.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicSubW8Acqrel" "atomic.sub.w8.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicSubW8Seqcst" "atomic.sub.w8.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAndW8Relaxed" "atomic.and.w8.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAndW8Acquire" "atomic.and.w8.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAndW8Release" "atomic.and.w8.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAndW8Acqrel" "atomic.and.w8.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAndW8Seqcst" "atomic.and.w8.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicOrW8Relaxed" "atomic.or.w8.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicOrW8Acquire" "atomic.or.w8.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicOrW8Release" "atomic.or.w8.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicOrW8Acqrel" "atomic.or.w8.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicOrW8Seqcst" "atomic.or.w8.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXorW8Relaxed" "atomic.xor.w8.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXorW8Acquire" "atomic.xor.w8.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXorW8Release" "atomic.xor.w8.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXorW8Acqrel" "atomic.xor.w8.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXorW8Seqcst" "atomic.xor.w8.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicNandW8Relaxed" "atomic.nand.w8.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicNandW8Acquire" "atomic.nand.w8.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicNandW8Release" "atomic.nand.w8.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicNandW8Acqrel" "atomic.nand.w8.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicNandW8Seqcst" "atomic.nand.w8.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMinW8Relaxed" "atomic.min.w8.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMinW8Acquire" "atomic.min.w8.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMinW8Release" "atomic.min.w8.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMinW8Acqrel" "atomic.min.w8.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMinW8Seqcst" "atomic.min.w8.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMaxW8Relaxed" "atomic.max.w8.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMaxW8Acquire" "atomic.max.w8.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMaxW8Release" "atomic.max.w8.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMaxW8Acqrel" "atomic.max.w8.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMaxW8Seqcst" "atomic.max.w8.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUminW8Relaxed" "atomic.umin.w8.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUminW8Acquire" "atomic.umin.w8.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUminW8Release" "atomic.umin.w8.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUminW8Acqrel" "atomic.umin.w8.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUminW8Seqcst" "atomic.umin.w8.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUmaxW8Relaxed" "atomic.umax.w8.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUmaxW8Acquire" "atomic.umax.w8.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUmaxW8Release" "atomic.umax.w8.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUmaxW8Acqrel" "atomic.umax.w8.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUmaxW8Seqcst" "atomic.umax.w8.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicXchgW16Relaxed" "atomic.xchg.w16.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXchgW16Acquire" "atomic.xchg.w16.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXchgW16Release" "atomic.xchg.w16.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXchgW16Acqrel" "atomic.xchg.w16.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXchgW16Seqcst" "atomic.xchg.w16.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAddW16Relaxed" "atomic.add.w16.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAddW16Acquire" "atomic.add.w16.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAddW16Release" "atomic.add.w16.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAddW16Acqrel" "atomic.add.w16.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAddW16Seqcst" "atomic.add.w16.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicSubW16Relaxed" "atomic.sub.w16.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicSubW16Acquire" "atomic.sub.w16.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicSubW16Release" "atomic.sub.w16.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicSubW16Acqrel" "atomic.sub.w16.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicSubW16Seqcst" "atomic.sub.w16.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAndW16Relaxed" "atomic.and.w16.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAndW16Acquire" "atomic.and.w16.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAndW16Release" "atomic.and.w16.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAndW16Acqrel" "atomic.and.w16.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAndW16Seqcst" "atomic.and.w16.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicOrW16Relaxed" "atomic.or.w16.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicOrW16Acquire" "atomic.or.w16.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicOrW16Release" "atomic.or.w16.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicOrW16Acqrel" "atomic.or.w16.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicOrW16Seqcst" "atomic.or.w16.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXorW16Relaxed" "atomic.xor.w16.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXorW16Acquire" "atomic.xor.w16.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXorW16Release" "atomic.xor.w16.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXorW16Acqrel" "atomic.xor.w16.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXorW16Seqcst" "atomic.xor.w16.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicNandW16Relaxed" "atomic.nand.w16.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicNandW16Acquire" "atomic.nand.w16.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicNandW16Release" "atomic.nand.w16.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicNandW16Acqrel" "atomic.nand.w16.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicNandW16Seqcst" "atomic.nand.w16.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMinW16Relaxed" "atomic.min.w16.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMinW16Acquire" "atomic.min.w16.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMinW16Release" "atomic.min.w16.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMinW16Acqrel" "atomic.min.w16.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMinW16Seqcst" "atomic.min.w16.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMaxW16Relaxed" "atomic.max.w16.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMaxW16Acquire" "atomic.max.w16.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMaxW16Release" "atomic.max.w16.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMaxW16Acqrel" "atomic.max.w16.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMaxW16Seqcst" "atomic.max.w16.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUminW16Relaxed" "atomic.umin.w16.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUminW16Acquire" "atomic.umin.w16.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUminW16Release" "atomic.umin.w16.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUminW16Acqrel" "atomic.umin.w16.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUminW16Seqcst" "atomic.umin.w16.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUmaxW16Relaxed" "atomic.umax.w16.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUmaxW16Acquire" "atomic.umax.w16.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUmaxW16Release" "atomic.umax.w16.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUmaxW16Acqrel" "atomic.umax.w16.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUmaxW16Seqcst" "atomic.umax.w16.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicXchgW32Relaxed" "atomic.xchg.w32.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXchgW32Acquire" "atomic.xchg.w32.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXchgW32Release" "atomic.xchg.w32.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXchgW32Acqrel" "atomic.xchg.w32.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXchgW32Seqcst" "atomic.xchg.w32.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAddW32Relaxed" "atomic.add.w32.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAddW32Acquire" "atomic.add.w32.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAddW32Release" "atomic.add.w32.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAddW32Acqrel" "atomic.add.w32.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAddW32Seqcst" "atomic.add.w32.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicSubW32Relaxed" "atomic.sub.w32.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicSubW32Acquire" "atomic.sub.w32.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicSubW32Release" "atomic.sub.w32.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicSubW32Acqrel" "atomic.sub.w32.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicSubW32Seqcst" "atomic.sub.w32.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAndW32Relaxed" "atomic.and.w32.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAndW32Acquire" "atomic.and.w32.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAndW32Release" "atomic.and.w32.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAndW32Acqrel" "atomic.and.w32.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAndW32Seqcst" "atomic.and.w32.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicOrW32Relaxed" "atomic.or.w32.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicOrW32Acquire" "atomic.or.w32.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicOrW32Release" "atomic.or.w32.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicOrW32Acqrel" "atomic.or.w32.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicOrW32Seqcst" "atomic.or.w32.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXorW32Relaxed" "atomic.xor.w32.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXorW32Acquire" "atomic.xor.w32.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXorW32Release" "atomic.xor.w32.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXorW32Acqrel" "atomic.xor.w32.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXorW32Seqcst" "atomic.xor.w32.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicNandW32Relaxed" "atomic.nand.w32.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicNandW32Acquire" "atomic.nand.w32.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicNandW32Release" "atomic.nand.w32.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicNandW32Acqrel" "atomic.nand.w32.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicNandW32Seqcst" "atomic.nand.w32.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMinW32Relaxed" "atomic.min.w32.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMinW32Acquire" "atomic.min.w32.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMinW32Release" "atomic.min.w32.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMinW32Acqrel" "atomic.min.w32.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMinW32Seqcst" "atomic.min.w32.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMaxW32Relaxed" "atomic.max.w32.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMaxW32Acquire" "atomic.max.w32.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMaxW32Release" "atomic.max.w32.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMaxW32Acqrel" "atomic.max.w32.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicMaxW32Seqcst" "atomic.max.w32.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUminW32Relaxed" "atomic.umin.w32.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUminW32Acquire" "atomic.umin.w32.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUminW32Release" "atomic.umin.w32.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUminW32Acqrel" "atomic.umin.w32.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUminW32Seqcst" "atomic.umin.w32.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUmaxW32Relaxed" "atomic.umax.w32.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUmaxW32Acquire" "atomic.umax.w32.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUmaxW32Release" "atomic.umax.w32.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUmaxW32Acqrel" "atomic.umax.w32.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicUmaxW32Seqcst" "atomic.umax.w32.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicXchgW64Relaxed" "atomic.xchg.w64.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXchgPtrRelaxed" "atomic.xchg.ptr.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXchgW8Acquire" "atomic.xchg.w8.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXchgW16Acquire" "atomic.xchg.w16.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXchgW32Acquire" "atomic.xchg.w32.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicXchgW64Acquire" "atomic.xchg.w64.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXchgPtrAcquire" "atomic.xchg.ptr.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXchgW8Release" "atomic.xchg.w8.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXchgW16Release" "atomic.xchg.w16.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXchgW32Release" "atomic.xchg.w32.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicXchgW64Release" "atomic.xchg.w64.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXchgPtrRelease" "atomic.xchg.ptr.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXchgW8Acqrel" "atomic.xchg.w8.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXchgW16Acqrel" "atomic.xchg.w16.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXchgW32Acqrel" "atomic.xchg.w32.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicXchgW64Acqrel" "atomic.xchg.w64.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXchgPtrAcqrel" "atomic.xchg.ptr.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXchgW8Seqcst" "atomic.xchg.w8.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXchgW16Seqcst" "atomic.xchg.w16.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXchgW32Seqcst" "atomic.xchg.w32.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicXchgW64Seqcst" "atomic.xchg.w64.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXchgPtrSeqcst" "atomic.xchg.ptr.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAddW8Relaxed" "atomic.add.w8.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAddW16Relaxed" "atomic.add.w16.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAddW32Relaxed" "atomic.add.w32.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicAddW64Relaxed" "atomic.add.w64.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAddPtrRelaxed" "atomic.add.ptr.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAddW8Acquire" "atomic.add.w8.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAddW16Acquire" "atomic.add.w16.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAddW32Acquire" "atomic.add.w32.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicAddW64Acquire" "atomic.add.w64.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAddPtrAcquire" "atomic.add.ptr.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAddW8Release" "atomic.add.w8.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAddW16Release" "atomic.add.w16.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAddW32Release" "atomic.add.w32.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicAddW64Release" "atomic.add.w64.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAddPtrRelease" "atomic.add.ptr.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAddW8Acqrel" "atomic.add.w8.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAddW16Acqrel" "atomic.add.w16.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAddW32Acqrel" "atomic.add.w32.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicAddW64Acqrel" "atomic.add.w64.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAddPtrAcqrel" "atomic.add.ptr.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAddW8Seqcst" "atomic.add.w8.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAddW16Seqcst" "atomic.add.w16.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAddW32Seqcst" "atomic.add.w32.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicAddW64Seqcst" "atomic.add.w64.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAddPtrSeqcst" "atomic.add.ptr.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicSubW8Relaxed" "atomic.sub.w8.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicSubW16Relaxed" "atomic.sub.w16.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicSubW32Relaxed" "atomic.sub.w32.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicSubW64Relaxed" "atomic.sub.w64.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicSubPtrRelaxed" "atomic.sub.ptr.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicSubW8Acquire" "atomic.sub.w8.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicSubW16Acquire" "atomic.sub.w16.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicSubW32Acquire" "atomic.sub.w32.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicSubW64Acquire" "atomic.sub.w64.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicSubPtrAcquire" "atomic.sub.ptr.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicSubW8Release" "atomic.sub.w8.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicSubW16Release" "atomic.sub.w16.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicSubW32Release" "atomic.sub.w32.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicSubW64Release" "atomic.sub.w64.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicSubPtrRelease" "atomic.sub.ptr.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicSubW8Acqrel" "atomic.sub.w8.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicSubW16Acqrel" "atomic.sub.w16.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicSubW32Acqrel" "atomic.sub.w32.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicSubW64Acqrel" "atomic.sub.w64.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicSubPtrAcqrel" "atomic.sub.ptr.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicSubW8Seqcst" "atomic.sub.w8.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicSubW16Seqcst" "atomic.sub.w16.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicSubW32Seqcst" "atomic.sub.w32.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicSubW64Seqcst" "atomic.sub.w64.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicSubPtrSeqcst" "atomic.sub.ptr.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAndW8Relaxed" "atomic.and.w8.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAndW16Relaxed" "atomic.and.w16.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAndW32Relaxed" "atomic.and.w32.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicAndW64Relaxed" "atomic.and.w64.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAndPtrRelaxed" "atomic.and.ptr.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAndW8Acquire" "atomic.and.w8.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAndW16Acquire" "atomic.and.w16.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAndW32Acquire" "atomic.and.w32.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicAndW64Acquire" "atomic.and.w64.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAndPtrAcquire" "atomic.and.ptr.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAndW8Release" "atomic.and.w8.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAndW16Release" "atomic.and.w16.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAndW32Release" "atomic.and.w32.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicAndW64Release" "atomic.and.w64.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAndPtrRelease" "atomic.and.ptr.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAndW8Acqrel" "atomic.and.w8.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAndW16Acqrel" "atomic.and.w16.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAndW32Acqrel" "atomic.and.w32.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicAndW64Acqrel" "atomic.and.w64.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAndPtrAcqrel" "atomic.and.ptr.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAndW8Seqcst" "atomic.and.w8.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAndW16Seqcst" "atomic.and.w16.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAndW32Seqcst" "atomic.and.w32.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicAndW64Seqcst" "atomic.and.w64.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicAndPtrSeqcst" "atomic.and.ptr.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicOrW8Relaxed" "atomic.or.w8.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicOrW16Relaxed" "atomic.or.w16.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicOrW32Relaxed" "atomic.or.w32.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicOrW64Relaxed" "atomic.or.w64.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicOrPtrRelaxed" "atomic.or.ptr.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicOrW8Acquire" "atomic.or.w8.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicOrW16Acquire" "atomic.or.w16.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicOrW32Acquire" "atomic.or.w32.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicOrW64Acquire" "atomic.or.w64.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicOrPtrAcquire" "atomic.or.ptr.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicOrW8Release" "atomic.or.w8.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicOrW16Release" "atomic.or.w16.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicOrW32Release" "atomic.or.w32.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicOrW64Release" "atomic.or.w64.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicOrPtrRelease" "atomic.or.ptr.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicOrW8Acqrel" "atomic.or.w8.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicOrW16Acqrel" "atomic.or.w16.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicOrW32Acqrel" "atomic.or.w32.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicOrW64Acqrel" "atomic.or.w64.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicOrPtrAcqrel" "atomic.or.ptr.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicOrW8Seqcst" "atomic.or.w8.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicOrW16Seqcst" "atomic.or.w16.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicOrW32Seqcst" "atomic.or.w32.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicOrW64Seqcst" "atomic.or.w64.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicOrPtrSeqcst" "atomic.or.ptr.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXorW8Relaxed" "atomic.xor.w8.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXorW16Relaxed" "atomic.xor.w16.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXorW32Relaxed" "atomic.xor.w32.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicXorW64Relaxed" "atomic.xor.w64.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXorPtrRelaxed" "atomic.xor.ptr.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXorW8Acquire" "atomic.xor.w8.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXorW16Acquire" "atomic.xor.w16.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXorW32Acquire" "atomic.xor.w32.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicXorW64Acquire" "atomic.xor.w64.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXorPtrAcquire" "atomic.xor.ptr.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXorW8Release" "atomic.xor.w8.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXorW16Release" "atomic.xor.w16.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXorW32Release" "atomic.xor.w32.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicXorW64Release" "atomic.xor.w64.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXorPtrRelease" "atomic.xor.ptr.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXorW8Acqrel" "atomic.xor.w8.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXorW16Acqrel" "atomic.xor.w16.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXorW32Acqrel" "atomic.xor.w32.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicXorW64Acqrel" "atomic.xor.w64.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXorPtrAcqrel" "atomic.xor.ptr.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXorW8Seqcst" "atomic.xor.w8.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXorW16Seqcst" "atomic.xor.w16.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXorW32Seqcst" "atomic.xor.w32.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicXorW64Seqcst" "atomic.xor.w64.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicXorPtrSeqcst" "atomic.xor.ptr.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicNandW8Relaxed" "atomic.nand.w8.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicNandW16Relaxed" "atomic.nand.w16.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicNandW32Relaxed" "atomic.nand.w32.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicNandW64Relaxed" "atomic.nand.w64.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicNandW8Acquire" "atomic.nand.w8.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicNandW16Acquire" "atomic.nand.w16.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicNandW32Acquire" "atomic.nand.w32.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicNandW64Acquire" "atomic.nand.w64.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicNandW8Release" "atomic.nand.w8.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicNandW16Release" "atomic.nand.w16.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicNandW32Release" "atomic.nand.w32.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicNandW64Release" "atomic.nand.w64.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicNandW8Acqrel" "atomic.nand.w8.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicNandW16Acqrel" "atomic.nand.w16.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicNandW32Acqrel" "atomic.nand.w32.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicNandW64Acqrel" "atomic.nand.w64.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicNandW8Seqcst" "atomic.nand.w8.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicNandW16Seqcst" "atomic.nand.w16.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicNandW32Seqcst" "atomic.nand.w32.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicNandW64Seqcst" "atomic.nand.w64.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMinW8Relaxed" "atomic.min.w8.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMinW16Relaxed" "atomic.min.w16.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMinW32Relaxed" "atomic.min.w32.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicMinW64Relaxed" "atomic.min.w64.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMinW8Acquire" "atomic.min.w8.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMinW16Acquire" "atomic.min.w16.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMinW32Acquire" "atomic.min.w32.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicMinW64Acquire" "atomic.min.w64.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMinW8Release" "atomic.min.w8.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMinW16Release" "atomic.min.w16.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMinW32Release" "atomic.min.w32.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicMinW64Release" "atomic.min.w64.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMinW8Acqrel" "atomic.min.w8.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMinW16Acqrel" "atomic.min.w16.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMinW32Acqrel" "atomic.min.w32.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicMinW64Acqrel" "atomic.min.w64.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMinW8Seqcst" "atomic.min.w8.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMinW16Seqcst" "atomic.min.w16.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMinW32Seqcst" "atomic.min.w32.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicMinW64Seqcst" "atomic.min.w64.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMaxW8Relaxed" "atomic.max.w8.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMaxW16Relaxed" "atomic.max.w16.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMaxW32Relaxed" "atomic.max.w32.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicMaxW64Relaxed" "atomic.max.w64.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMaxW8Acquire" "atomic.max.w8.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMaxW16Acquire" "atomic.max.w16.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMaxW32Acquire" "atomic.max.w32.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicMaxW64Acquire" "atomic.max.w64.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMaxW8Release" "atomic.max.w8.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMaxW16Release" "atomic.max.w16.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMaxW32Release" "atomic.max.w32.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicMaxW64Release" "atomic.max.w64.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMaxW8Acqrel" "atomic.max.w8.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMaxW16Acqrel" "atomic.max.w16.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMaxW32Acqrel" "atomic.max.w32.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicMaxW64Acqrel" "atomic.max.w64.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMaxW8Seqcst" "atomic.max.w8.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMaxW16Seqcst" "atomic.max.w16.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicMaxW32Seqcst" "atomic.max.w32.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicMaxW64Seqcst" "atomic.max.w64.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUminW8Relaxed" "atomic.umin.w8.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUminW16Relaxed" "atomic.umin.w16.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUminW32Relaxed" "atomic.umin.w32.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicUminW64Relaxed" "atomic.umin.w64.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUminW8Acquire" "atomic.umin.w8.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUminW16Acquire" "atomic.umin.w16.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUminW32Acquire" "atomic.umin.w32.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicUminW64Acquire" "atomic.umin.w64.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUminW8Release" "atomic.umin.w8.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUminW16Release" "atomic.umin.w16.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUminW32Release" "atomic.umin.w32.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicUminW64Release" "atomic.umin.w64.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUminW8Acqrel" "atomic.umin.w8.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUminW16Acqrel" "atomic.umin.w16.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUminW32Acqrel" "atomic.umin.w32.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicUminW64Acqrel" "atomic.umin.w64.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUminW8Seqcst" "atomic.umin.w8.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUminW16Seqcst" "atomic.umin.w16.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUminW32Seqcst" "atomic.umin.w32.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicUminW64Seqcst" "atomic.umin.w64.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUmaxW8Relaxed" "atomic.umax.w8.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUmaxW16Relaxed" "atomic.umax.w16.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUmaxW32Relaxed" "atomic.umax.w32.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicUmaxW64Relaxed" "atomic.umax.w64.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUmaxW8Acquire" "atomic.umax.w8.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUmaxW16Acquire" "atomic.umax.w16.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUmaxW32Acquire" "atomic.umax.w32.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicUmaxW64Acquire" "atomic.umax.w64.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUmaxW8Release" "atomic.umax.w8.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUmaxW16Release" "atomic.umax.w16.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUmaxW32Release" "atomic.umax.w32.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicUmaxW64Release" "atomic.umax.w64.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUmaxW8Acqrel" "atomic.umax.w8.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUmaxW16Acqrel" "atomic.umax.w16.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUmaxW32Acqrel" "atomic.umax.w32.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicUmaxW64Acqrel" "atomic.umax.w64.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUmaxW8Seqcst" "atomic.umax.w8.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUmaxW16Seqcst" "atomic.umax.w16.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
+  OpInfo.mk "AtomicUmaxW32Seqcst" "atomic.umax.w32.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicUmaxW64Seqcst" "atomic.umax.w64.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicCxchgW8RelaxedRelaxed" "atomic.cxchg.w8.relaxed.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW8RelaxedAcquire" "atomic.cxchg.w8.relaxed.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW8RelaxedSeqcst" "atomic.cxchg.w8.relaxed.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW8AcquireRelaxed" "atomic.cxchg.w8.acquire.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW8AcquireAcquire" "atomic.cxchg.w8.acquire.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW8AcquireSeqcst" "atomic.cxchg.w8.acquire.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW8ReleaseRelaxed" "atomic.cxchg.w8.release.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW8ReleaseAcquire" "atomic.cxchg.w8.release.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW8ReleaseSeqcst" "atomic.cxchg.w8.release.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW8AcqrelRelaxed" "atomic.cxchg.w8.acqrel.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW8AcqrelAcquire" "atomic.cxchg.w8.acqrel.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW8AcqrelSeqcst" "atomic.cxchg.w8.acqrel.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW8SeqcstRelaxed" "atomic.cxchg.w8.seqcst.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW8SeqcstAcquire" "atomic.cxchg.w8.seqcst.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW8SeqcstSeqcst" "atomic.cxchg.w8.seqcst.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgW16RelaxedRelaxed" "atomic.cxchg.w16.relaxed.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW16RelaxedAcquire" "atomic.cxchg.w16.relaxed.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW16RelaxedSeqcst" "atomic.cxchg.w16.relaxed.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW16AcquireRelaxed" "atomic.cxchg.w16.acquire.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW16AcquireAcquire" "atomic.cxchg.w16.acquire.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW16AcquireSeqcst" "atomic.cxchg.w16.acquire.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW16ReleaseRelaxed" "atomic.cxchg.w16.release.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW16ReleaseAcquire" "atomic.cxchg.w16.release.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW16ReleaseSeqcst" "atomic.cxchg.w16.release.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW16AcqrelRelaxed" "atomic.cxchg.w16.acqrel.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW16AcqrelAcquire" "atomic.cxchg.w16.acqrel.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW16AcqrelSeqcst" "atomic.cxchg.w16.acqrel.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW16SeqcstRelaxed" "atomic.cxchg.w16.seqcst.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW16SeqcstAcquire" "atomic.cxchg.w16.seqcst.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW16SeqcstSeqcst" "atomic.cxchg.w16.seqcst.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgW32RelaxedRelaxed" "atomic.cxchg.w32.relaxed.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW32RelaxedAcquire" "atomic.cxchg.w32.relaxed.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW32RelaxedSeqcst" "atomic.cxchg.w32.relaxed.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW32AcquireRelaxed" "atomic.cxchg.w32.acquire.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW32AcquireAcquire" "atomic.cxchg.w32.acquire.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW32AcquireSeqcst" "atomic.cxchg.w32.acquire.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW32ReleaseRelaxed" "atomic.cxchg.w32.release.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW32ReleaseAcquire" "atomic.cxchg.w32.release.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW32ReleaseSeqcst" "atomic.cxchg.w32.release.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW32AcqrelRelaxed" "atomic.cxchg.w32.acqrel.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW32AcqrelAcquire" "atomic.cxchg.w32.acqrel.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW32AcqrelSeqcst" "atomic.cxchg.w32.acqrel.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW32SeqcstRelaxed" "atomic.cxchg.w32.seqcst.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW32SeqcstAcquire" "atomic.cxchg.w32.seqcst.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW32SeqcstSeqcst" "atomic.cxchg.w32.seqcst.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgW64RelaxedRelaxed" "atomic.cxchg.w64.relaxed.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW64RelaxedAcquire" "atomic.cxchg.w64.relaxed.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW64RelaxedSeqcst" "atomic.cxchg.w64.relaxed.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW64AcquireRelaxed" "atomic.cxchg.w64.acquire.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW64AcquireAcquire" "atomic.cxchg.w64.acquire.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW64AcquireSeqcst" "atomic.cxchg.w64.acquire.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW64ReleaseRelaxed" "atomic.cxchg.w64.release.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW64ReleaseAcquire" "atomic.cxchg.w64.release.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW64ReleaseSeqcst" "atomic.cxchg.w64.release.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW64AcqrelRelaxed" "atomic.cxchg.w64.acqrel.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW64AcqrelAcquire" "atomic.cxchg.w64.acqrel.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW64AcqrelSeqcst" "atomic.cxchg.w64.acqrel.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW64SeqcstRelaxed" "atomic.cxchg.w64.seqcst.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW64SeqcstAcquire" "atomic.cxchg.w64.seqcst.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgW64SeqcstSeqcst" "atomic.cxchg.w64.seqcst.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW8RelaxedRelaxed" "atomic.cxchg.weak.w8.relaxed.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW8RelaxedAcquire" "atomic.cxchg.weak.w8.relaxed.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW8RelaxedSeqcst" "atomic.cxchg.weak.w8.relaxed.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW8AcquireRelaxed" "atomic.cxchg.weak.w8.acquire.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW8AcquireAcquire" "atomic.cxchg.weak.w8.acquire.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW8AcquireSeqcst" "atomic.cxchg.weak.w8.acquire.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW8ReleaseRelaxed" "atomic.cxchg.weak.w8.release.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW8ReleaseAcquire" "atomic.cxchg.weak.w8.release.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW8ReleaseSeqcst" "atomic.cxchg.weak.w8.release.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW8AcqrelRelaxed" "atomic.cxchg.weak.w8.acqrel.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW8AcqrelAcquire" "atomic.cxchg.weak.w8.acqrel.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW8AcqrelSeqcst" "atomic.cxchg.weak.w8.acqrel.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW8SeqcstRelaxed" "atomic.cxchg.weak.w8.seqcst.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW8SeqcstAcquire" "atomic.cxchg.weak.w8.seqcst.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW8SeqcstSeqcst" "atomic.cxchg.weak.w8.seqcst.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW16RelaxedRelaxed" "atomic.cxchg.weak.w16.relaxed.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW16RelaxedAcquire" "atomic.cxchg.weak.w16.relaxed.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW16RelaxedSeqcst" "atomic.cxchg.weak.w16.relaxed.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW16AcquireRelaxed" "atomic.cxchg.weak.w16.acquire.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW16AcquireAcquire" "atomic.cxchg.weak.w16.acquire.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW16AcquireSeqcst" "atomic.cxchg.weak.w16.acquire.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW16ReleaseRelaxed" "atomic.cxchg.weak.w16.release.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW16ReleaseAcquire" "atomic.cxchg.weak.w16.release.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW16ReleaseSeqcst" "atomic.cxchg.weak.w16.release.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW16AcqrelRelaxed" "atomic.cxchg.weak.w16.acqrel.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW16AcqrelAcquire" "atomic.cxchg.weak.w16.acqrel.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW16AcqrelSeqcst" "atomic.cxchg.weak.w16.acqrel.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW16SeqcstRelaxed" "atomic.cxchg.weak.w16.seqcst.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW16SeqcstAcquire" "atomic.cxchg.weak.w16.seqcst.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW16SeqcstSeqcst" "atomic.cxchg.weak.w16.seqcst.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW32RelaxedRelaxed" "atomic.cxchg.weak.w32.relaxed.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW32RelaxedAcquire" "atomic.cxchg.weak.w32.relaxed.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW32RelaxedSeqcst" "atomic.cxchg.weak.w32.relaxed.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW32AcquireRelaxed" "atomic.cxchg.weak.w32.acquire.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW32AcquireAcquire" "atomic.cxchg.weak.w32.acquire.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW32AcquireSeqcst" "atomic.cxchg.weak.w32.acquire.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW32ReleaseRelaxed" "atomic.cxchg.weak.w32.release.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW32ReleaseAcquire" "atomic.cxchg.weak.w32.release.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW32ReleaseSeqcst" "atomic.cxchg.weak.w32.release.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW32AcqrelRelaxed" "atomic.cxchg.weak.w32.acqrel.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW32AcqrelAcquire" "atomic.cxchg.weak.w32.acqrel.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW32AcqrelSeqcst" "atomic.cxchg.weak.w32.acqrel.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW32SeqcstRelaxed" "atomic.cxchg.weak.w32.seqcst.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW32SeqcstAcquire" "atomic.cxchg.weak.w32.seqcst.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW32SeqcstSeqcst" "atomic.cxchg.weak.w32.seqcst.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW64RelaxedRelaxed" "atomic.cxchg.weak.w64.relaxed.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW64RelaxedAcquire" "atomic.cxchg.weak.w64.relaxed.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW64RelaxedSeqcst" "atomic.cxchg.weak.w64.relaxed.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW64AcquireRelaxed" "atomic.cxchg.weak.w64.acquire.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW64AcquireAcquire" "atomic.cxchg.weak.w64.acquire.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW64AcquireSeqcst" "atomic.cxchg.weak.w64.acquire.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW64ReleaseRelaxed" "atomic.cxchg.weak.w64.release.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW64ReleaseAcquire" "atomic.cxchg.weak.w64.release.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW64ReleaseSeqcst" "atomic.cxchg.weak.w64.release.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW64AcqrelRelaxed" "atomic.cxchg.weak.w64.acqrel.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW64AcqrelAcquire" "atomic.cxchg.weak.w64.acqrel.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW64AcqrelSeqcst" "atomic.cxchg.weak.w64.acqrel.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW64SeqcstRelaxed" "atomic.cxchg.weak.w64.seqcst.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW64SeqcstAcquire" "atomic.cxchg.weak.w64.seqcst.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicCxchgWeakW64SeqcstSeqcst" "atomic.cxchg.weak.w64.seqcst.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
-  OpInfo.mk "AtomicLoadPtrRelaxed" "atomic.load.ptr.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
-  OpInfo.mk "AtomicLoadPtrAcquire" "atomic.load.ptr.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
-  OpInfo.mk "AtomicLoadPtrSeqcst" "atomic.load.ptr.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot] (some 3),
-  OpInfo.mk "AtomicStorePtrRelaxed" "atomic.store.ptr.relaxed" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
-  OpInfo.mk "AtomicStorePtrRelease" "atomic.store.ptr.release" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
-  OpInfo.mk "AtomicStorePtrSeqcst" "atomic.store.ptr.seqcst" Shape.op [OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
-  OpInfo.mk "AtomicXchgPtrRelaxed" "atomic.xchg.ptr.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXchgPtrAcquire" "atomic.xchg.ptr.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXchgPtrRelease" "atomic.xchg.ptr.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXchgPtrAcqrel" "atomic.xchg.ptr.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXchgPtrSeqcst" "atomic.xchg.ptr.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAddPtrRelaxed" "atomic.add.ptr.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAddPtrAcquire" "atomic.add.ptr.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAddPtrRelease" "atomic.add.ptr.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAddPtrAcqrel" "atomic.add.ptr.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAddPtrSeqcst" "atomic.add.ptr.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicSubPtrRelaxed" "atomic.sub.ptr.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicSubPtrAcquire" "atomic.sub.ptr.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicSubPtrRelease" "atomic.sub.ptr.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicSubPtrAcqrel" "atomic.sub.ptr.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicSubPtrSeqcst" "atomic.sub.ptr.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAndPtrRelaxed" "atomic.and.ptr.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAndPtrAcquire" "atomic.and.ptr.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAndPtrRelease" "atomic.and.ptr.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAndPtrAcqrel" "atomic.and.ptr.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicAndPtrSeqcst" "atomic.and.ptr.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicOrPtrRelaxed" "atomic.or.ptr.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicOrPtrAcquire" "atomic.or.ptr.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicOrPtrRelease" "atomic.or.ptr.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicOrPtrAcqrel" "atomic.or.ptr.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicOrPtrSeqcst" "atomic.or.ptr.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXorPtrRelaxed" "atomic.xor.ptr.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXorPtrAcquire" "atomic.xor.ptr.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXorPtrRelease" "atomic.xor.ptr.release" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXorPtrAcqrel" "atomic.xor.ptr.acqrel" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
-  OpInfo.mk "AtomicXorPtrSeqcst" "atomic.xor.ptr.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 4),
   OpInfo.mk "AtomicCxchgPtrRelaxedRelaxed" "atomic.cxchg.ptr.relaxed.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW8RelaxedAcquire" "atomic.cxchg.w8.relaxed.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW16RelaxedAcquire" "atomic.cxchg.w16.relaxed.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW32RelaxedAcquire" "atomic.cxchg.w32.relaxed.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW64RelaxedAcquire" "atomic.cxchg.w64.relaxed.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgPtrRelaxedAcquire" "atomic.cxchg.ptr.relaxed.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW8RelaxedSeqcst" "atomic.cxchg.w8.relaxed.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW16RelaxedSeqcst" "atomic.cxchg.w16.relaxed.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW32RelaxedSeqcst" "atomic.cxchg.w32.relaxed.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW64RelaxedSeqcst" "atomic.cxchg.w64.relaxed.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgPtrRelaxedSeqcst" "atomic.cxchg.ptr.relaxed.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW8AcquireRelaxed" "atomic.cxchg.w8.acquire.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW16AcquireRelaxed" "atomic.cxchg.w16.acquire.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW32AcquireRelaxed" "atomic.cxchg.w32.acquire.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW64AcquireRelaxed" "atomic.cxchg.w64.acquire.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgPtrAcquireRelaxed" "atomic.cxchg.ptr.acquire.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW8AcquireAcquire" "atomic.cxchg.w8.acquire.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW16AcquireAcquire" "atomic.cxchg.w16.acquire.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW32AcquireAcquire" "atomic.cxchg.w32.acquire.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW64AcquireAcquire" "atomic.cxchg.w64.acquire.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgPtrAcquireAcquire" "atomic.cxchg.ptr.acquire.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW8AcquireSeqcst" "atomic.cxchg.w8.acquire.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW16AcquireSeqcst" "atomic.cxchg.w16.acquire.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW32AcquireSeqcst" "atomic.cxchg.w32.acquire.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW64AcquireSeqcst" "atomic.cxchg.w64.acquire.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgPtrAcquireSeqcst" "atomic.cxchg.ptr.acquire.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW8ReleaseRelaxed" "atomic.cxchg.w8.release.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW16ReleaseRelaxed" "atomic.cxchg.w16.release.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW32ReleaseRelaxed" "atomic.cxchg.w32.release.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW64ReleaseRelaxed" "atomic.cxchg.w64.release.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgPtrReleaseRelaxed" "atomic.cxchg.ptr.release.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW8ReleaseAcquire" "atomic.cxchg.w8.release.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW16ReleaseAcquire" "atomic.cxchg.w16.release.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW32ReleaseAcquire" "atomic.cxchg.w32.release.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW64ReleaseAcquire" "atomic.cxchg.w64.release.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgPtrReleaseAcquire" "atomic.cxchg.ptr.release.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW8ReleaseSeqcst" "atomic.cxchg.w8.release.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW16ReleaseSeqcst" "atomic.cxchg.w16.release.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW32ReleaseSeqcst" "atomic.cxchg.w32.release.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW64ReleaseSeqcst" "atomic.cxchg.w64.release.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgPtrReleaseSeqcst" "atomic.cxchg.ptr.release.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW8AcqrelRelaxed" "atomic.cxchg.w8.acqrel.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW16AcqrelRelaxed" "atomic.cxchg.w16.acqrel.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW32AcqrelRelaxed" "atomic.cxchg.w32.acqrel.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW64AcqrelRelaxed" "atomic.cxchg.w64.acqrel.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgPtrAcqrelRelaxed" "atomic.cxchg.ptr.acqrel.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW8AcqrelAcquire" "atomic.cxchg.w8.acqrel.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW16AcqrelAcquire" "atomic.cxchg.w16.acqrel.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW32AcqrelAcquire" "atomic.cxchg.w32.acqrel.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW64AcqrelAcquire" "atomic.cxchg.w64.acqrel.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgPtrAcqrelAcquire" "atomic.cxchg.ptr.acqrel.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW8AcqrelSeqcst" "atomic.cxchg.w8.acqrel.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW16AcqrelSeqcst" "atomic.cxchg.w16.acqrel.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW32AcqrelSeqcst" "atomic.cxchg.w32.acqrel.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW64AcqrelSeqcst" "atomic.cxchg.w64.acqrel.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgPtrAcqrelSeqcst" "atomic.cxchg.ptr.acqrel.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW8SeqcstRelaxed" "atomic.cxchg.w8.seqcst.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW16SeqcstRelaxed" "atomic.cxchg.w16.seqcst.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW32SeqcstRelaxed" "atomic.cxchg.w32.seqcst.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW64SeqcstRelaxed" "atomic.cxchg.w64.seqcst.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgPtrSeqcstRelaxed" "atomic.cxchg.ptr.seqcst.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW8SeqcstAcquire" "atomic.cxchg.w8.seqcst.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW16SeqcstAcquire" "atomic.cxchg.w16.seqcst.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW32SeqcstAcquire" "atomic.cxchg.w32.seqcst.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW64SeqcstAcquire" "atomic.cxchg.w64.seqcst.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgPtrSeqcstAcquire" "atomic.cxchg.ptr.seqcst.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW8SeqcstSeqcst" "atomic.cxchg.w8.seqcst.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW16SeqcstSeqcst" "atomic.cxchg.w16.seqcst.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW32SeqcstSeqcst" "atomic.cxchg.w32.seqcst.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgW64SeqcstSeqcst" "atomic.cxchg.w64.seqcst.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgPtrSeqcstSeqcst" "atomic.cxchg.ptr.seqcst.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW8RelaxedRelaxed" "atomic.cxchg.weak.w8.relaxed.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW16RelaxedRelaxed" "atomic.cxchg.weak.w16.relaxed.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW32RelaxedRelaxed" "atomic.cxchg.weak.w32.relaxed.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW64RelaxedRelaxed" "atomic.cxchg.weak.w64.relaxed.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgWeakPtrRelaxedRelaxed" "atomic.cxchg.weak.ptr.relaxed.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW8RelaxedAcquire" "atomic.cxchg.weak.w8.relaxed.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW16RelaxedAcquire" "atomic.cxchg.weak.w16.relaxed.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW32RelaxedAcquire" "atomic.cxchg.weak.w32.relaxed.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW64RelaxedAcquire" "atomic.cxchg.weak.w64.relaxed.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgWeakPtrRelaxedAcquire" "atomic.cxchg.weak.ptr.relaxed.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW8RelaxedSeqcst" "atomic.cxchg.weak.w8.relaxed.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW16RelaxedSeqcst" "atomic.cxchg.weak.w16.relaxed.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW32RelaxedSeqcst" "atomic.cxchg.weak.w32.relaxed.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW64RelaxedSeqcst" "atomic.cxchg.weak.w64.relaxed.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgWeakPtrRelaxedSeqcst" "atomic.cxchg.weak.ptr.relaxed.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW8AcquireRelaxed" "atomic.cxchg.weak.w8.acquire.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW16AcquireRelaxed" "atomic.cxchg.weak.w16.acquire.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW32AcquireRelaxed" "atomic.cxchg.weak.w32.acquire.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW64AcquireRelaxed" "atomic.cxchg.weak.w64.acquire.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgWeakPtrAcquireRelaxed" "atomic.cxchg.weak.ptr.acquire.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW8AcquireAcquire" "atomic.cxchg.weak.w8.acquire.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW16AcquireAcquire" "atomic.cxchg.weak.w16.acquire.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW32AcquireAcquire" "atomic.cxchg.weak.w32.acquire.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW64AcquireAcquire" "atomic.cxchg.weak.w64.acquire.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgWeakPtrAcquireAcquire" "atomic.cxchg.weak.ptr.acquire.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW8AcquireSeqcst" "atomic.cxchg.weak.w8.acquire.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW16AcquireSeqcst" "atomic.cxchg.weak.w16.acquire.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW32AcquireSeqcst" "atomic.cxchg.weak.w32.acquire.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW64AcquireSeqcst" "atomic.cxchg.weak.w64.acquire.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgWeakPtrAcquireSeqcst" "atomic.cxchg.weak.ptr.acquire.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW8ReleaseRelaxed" "atomic.cxchg.weak.w8.release.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW16ReleaseRelaxed" "atomic.cxchg.weak.w16.release.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW32ReleaseRelaxed" "atomic.cxchg.weak.w32.release.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW64ReleaseRelaxed" "atomic.cxchg.weak.w64.release.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgWeakPtrReleaseRelaxed" "atomic.cxchg.weak.ptr.release.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW8ReleaseAcquire" "atomic.cxchg.weak.w8.release.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW16ReleaseAcquire" "atomic.cxchg.weak.w16.release.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW32ReleaseAcquire" "atomic.cxchg.weak.w32.release.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW64ReleaseAcquire" "atomic.cxchg.weak.w64.release.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgWeakPtrReleaseAcquire" "atomic.cxchg.weak.ptr.release.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW8ReleaseSeqcst" "atomic.cxchg.weak.w8.release.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW16ReleaseSeqcst" "atomic.cxchg.weak.w16.release.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW32ReleaseSeqcst" "atomic.cxchg.weak.w32.release.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW64ReleaseSeqcst" "atomic.cxchg.weak.w64.release.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgWeakPtrReleaseSeqcst" "atomic.cxchg.weak.ptr.release.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW8AcqrelRelaxed" "atomic.cxchg.weak.w8.acqrel.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW16AcqrelRelaxed" "atomic.cxchg.weak.w16.acqrel.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW32AcqrelRelaxed" "atomic.cxchg.weak.w32.acqrel.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW64AcqrelRelaxed" "atomic.cxchg.weak.w64.acqrel.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgWeakPtrAcqrelRelaxed" "atomic.cxchg.weak.ptr.acqrel.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW8AcqrelAcquire" "atomic.cxchg.weak.w8.acqrel.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW16AcqrelAcquire" "atomic.cxchg.weak.w16.acqrel.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW32AcqrelAcquire" "atomic.cxchg.weak.w32.acqrel.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW64AcqrelAcquire" "atomic.cxchg.weak.w64.acqrel.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgWeakPtrAcqrelAcquire" "atomic.cxchg.weak.ptr.acqrel.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW8AcqrelSeqcst" "atomic.cxchg.weak.w8.acqrel.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW16AcqrelSeqcst" "atomic.cxchg.weak.w16.acqrel.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW32AcqrelSeqcst" "atomic.cxchg.weak.w32.acqrel.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW64AcqrelSeqcst" "atomic.cxchg.weak.w64.acqrel.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgWeakPtrAcqrelSeqcst" "atomic.cxchg.weak.ptr.acqrel.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW8SeqcstRelaxed" "atomic.cxchg.weak.w8.seqcst.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW16SeqcstRelaxed" "atomic.cxchg.weak.w16.seqcst.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW32SeqcstRelaxed" "atomic.cxchg.weak.w32.seqcst.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW64SeqcstRelaxed" "atomic.cxchg.weak.w64.seqcst.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgWeakPtrSeqcstRelaxed" "atomic.cxchg.weak.ptr.seqcst.relaxed" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW8SeqcstAcquire" "atomic.cxchg.weak.w8.seqcst.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW16SeqcstAcquire" "atomic.cxchg.weak.w16.seqcst.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW32SeqcstAcquire" "atomic.cxchg.weak.w32.seqcst.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW64SeqcstAcquire" "atomic.cxchg.weak.w64.seqcst.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgWeakPtrSeqcstAcquire" "atomic.cxchg.weak.ptr.seqcst.acquire" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW8SeqcstSeqcst" "atomic.cxchg.weak.w8.seqcst.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW16SeqcstSeqcst" "atomic.cxchg.weak.w16.seqcst.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW32SeqcstSeqcst" "atomic.cxchg.weak.w32.seqcst.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
+  OpInfo.mk "AtomicCxchgWeakW64SeqcstSeqcst" "atomic.cxchg.weak.w64.seqcst.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "AtomicCxchgWeakPtrSeqcstSeqcst" "atomic.cxchg.weak.ptr.seqcst.seqcst" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "old" OperandKind.slot, OperandInfo.mk "new" OperandKind.slot] (some 6),
   OpInfo.mk "FenceAcquire" "fence.acquire" Shape.op [] (some 1),
   OpInfo.mk "FenceRelease" "fence.release" Shape.op [] (some 1),
@@ -858,44 +858,44 @@ def opInfos : Array OpInfo := #[
   OpInfo.mk "Jmp" "jmp" Shape.jmp [OperandInfo.mk "t" OperandKind.target] (some 2),
   OpInfo.mk "Br" "br" Shape.br [OperandInfo.mk "s" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 4),
   OpInfo.mk "BrEqW8" "br.eq.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrLtSW8" "br.lt.s.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrLtUW8" "br.lt.u.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrEqImmW8" "br.eq.imm.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrLtSImmW8" "br.lt.s.imm.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrLtUImmW8" "br.lt.u.imm.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrGtSImmW8" "br.gt.s.imm.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrGtUImmW8" "br.gt.u.imm.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
   OpInfo.mk "BrEqW16" "br.eq.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrLtSW16" "br.lt.s.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrLtUW16" "br.lt.u.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrEqImmW16" "br.eq.imm.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrLtSImmW16" "br.lt.s.imm.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrLtUImmW16" "br.lt.u.imm.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrGtSImmW16" "br.gt.s.imm.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrGtUImmW16" "br.gt.u.imm.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
   OpInfo.mk "BrEqW32" "br.eq.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrLtSW32" "br.lt.s.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrLtUW32" "br.lt.u.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrEqImmW32" "br.eq.imm.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrLtSImmW32" "br.lt.s.imm.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrLtUImmW32" "br.lt.u.imm.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrGtSImmW32" "br.gt.s.imm.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrGtUImmW32" "br.gt.u.imm.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
   OpInfo.mk "BrEqW64" "br.eq.w64" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrLtSW64" "br.lt.s.w64" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrLtUW64" "br.lt.u.w64" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrEqImmW64" "br.eq.imm.w64" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 6),
-  OpInfo.mk "BrLtSImmW64" "br.lt.s.imm.w64" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 6),
-  OpInfo.mk "BrLtUImmW64" "br.lt.u.imm.w64" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 6),
-  OpInfo.mk "BrGtSImmW64" "br.gt.s.imm.w64" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 6),
-  OpInfo.mk "BrGtUImmW64" "br.gt.u.imm.w64" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 6),
   OpInfo.mk "BrEqW128" "br.eq.w128" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrLtSW8" "br.lt.s.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrLtSW16" "br.lt.s.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrLtSW32" "br.lt.s.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrLtSW64" "br.lt.s.w64" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
   OpInfo.mk "BrLtSW128" "br.lt.s.w128" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrLtUW8" "br.lt.u.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrLtUW16" "br.lt.u.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrLtUW32" "br.lt.u.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrLtUW64" "br.lt.u.w64" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
   OpInfo.mk "BrLtUW128" "br.lt.u.w128" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrEqImmW8" "br.eq.imm.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrEqImmW16" "br.eq.imm.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrEqImmW32" "br.eq.imm.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrEqImmW64" "br.eq.imm.w64" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 6),
   OpInfo.mk "BrEqImmW128" "br.eq.imm.w128" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u128, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 8),
+  OpInfo.mk "BrLtSImmW8" "br.lt.s.imm.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrLtSImmW16" "br.lt.s.imm.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrLtSImmW32" "br.lt.s.imm.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrLtSImmW64" "br.lt.s.imm.w64" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 6),
   OpInfo.mk "BrLtSImmW128" "br.lt.s.imm.w128" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u128, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 8),
+  OpInfo.mk "BrLtUImmW8" "br.lt.u.imm.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrLtUImmW16" "br.lt.u.imm.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrLtUImmW32" "br.lt.u.imm.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrLtUImmW64" "br.lt.u.imm.w64" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 6),
   OpInfo.mk "BrLtUImmW128" "br.lt.u.imm.w128" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u128, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 8),
+  OpInfo.mk "BrGtSImmW8" "br.gt.s.imm.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrGtSImmW16" "br.gt.s.imm.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrGtSImmW32" "br.gt.s.imm.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrGtSImmW64" "br.gt.s.imm.w64" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 6),
   OpInfo.mk "BrGtSImmW128" "br.gt.s.imm.w128" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u128, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 8),
+  OpInfo.mk "BrGtUImmW8" "br.gt.u.imm.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrGtUImmW16" "br.gt.u.imm.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrGtUImmW32" "br.gt.u.imm.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrGtUImmW64" "br.gt.u.imm.w64" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 6),
   OpInfo.mk "BrGtUImmW128" "br.gt.u.imm.w128" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u128, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 8),
   OpInfo.mk "SwitchDenseW8" "switch.dense.w8" Shape.switch [OperandInfo.mk "s" OperandKind.slot, OperandInfo.mk "base" OperandKind.u8, OperandInfo.mk "default" OperandKind.target, OperandInfo.mk "table" (OperandKind.list ElemKind.target)] (none),
   OpInfo.mk "SwitchDenseW16" "switch.dense.w16" Shape.switch [OperandInfo.mk "s" OperandKind.slot, OperandInfo.mk "base" OperandKind.u16, OperandInfo.mk "default" OperandKind.target, OperandInfo.mk "table" (OperandKind.list ElemKind.target)] (none),
@@ -1013,536 +1013,536 @@ def ptrAdd : Opcode := ⟨33⟩
 def ptrIndex : Opcode := ⟨34⟩
 /-- `add.w8` -/
 def addW8 : Opcode := ⟨35⟩
-/-- `sub.w8` -/
-def subW8 : Opcode := ⟨36⟩
-/-- `mul.w8` -/
-def mulW8 : Opcode := ⟨37⟩
-/-- `div.s.w8` -/
-def divSW8 : Opcode := ⟨38⟩
-/-- `div.u.w8` -/
-def divUW8 : Opcode := ⟨39⟩
-/-- `rem.s.w8` -/
-def remSW8 : Opcode := ⟨40⟩
-/-- `rem.u.w8` -/
-def remUW8 : Opcode := ⟨41⟩
-/-- `and.w8` -/
-def andW8 : Opcode := ⟨42⟩
-/-- `or.w8` -/
-def orW8 : Opcode := ⟨43⟩
-/-- `xor.w8` -/
-def xorW8 : Opcode := ⟨44⟩
-/-- `shl.w8` -/
-def shlW8 : Opcode := ⟨45⟩
-/-- `shr.s.w8` -/
-def shrSW8 : Opcode := ⟨46⟩
-/-- `shr.u.w8` -/
-def shrUW8 : Opcode := ⟨47⟩
-/-- `eq.w8` -/
-def eqW8 : Opcode := ⟨48⟩
-/-- `ne.w8` -/
-def neW8 : Opcode := ⟨49⟩
-/-- `lt.s.w8` -/
-def ltSW8 : Opcode := ⟨50⟩
-/-- `lt.u.w8` -/
-def ltUW8 : Opcode := ⟨51⟩
-/-- `le.s.w8` -/
-def leSW8 : Opcode := ⟨52⟩
-/-- `le.u.w8` -/
-def leUW8 : Opcode := ⟨53⟩
-/-- `cmp3.s.w8` -/
-def cmp3SW8 : Opcode := ⟨54⟩
-/-- `cmp3.u.w8` -/
-def cmp3UW8 : Opcode := ⟨55⟩
-/-- `rotl.w8` -/
-def rotlW8 : Opcode := ⟨56⟩
-/-- `rotr.w8` -/
-def rotrW8 : Opcode := ⟨57⟩
-/-- `add.imm.w8` -/
-def addImmW8 : Opcode := ⟨58⟩
-/-- `sub.imm.w8` -/
-def subImmW8 : Opcode := ⟨59⟩
-/-- `mul.imm.w8` -/
-def mulImmW8 : Opcode := ⟨60⟩
-/-- `and.imm.w8` -/
-def andImmW8 : Opcode := ⟨61⟩
-/-- `or.imm.w8` -/
-def orImmW8 : Opcode := ⟨62⟩
-/-- `xor.imm.w8` -/
-def xorImmW8 : Opcode := ⟨63⟩
-/-- `shl.imm.w8` -/
-def shlImmW8 : Opcode := ⟨64⟩
-/-- `shr.s.imm.w8` -/
-def shrSImmW8 : Opcode := ⟨65⟩
-/-- `shr.u.imm.w8` -/
-def shrUImmW8 : Opcode := ⟨66⟩
-/-- `eq.imm.w8` -/
-def eqImmW8 : Opcode := ⟨67⟩
-/-- `ne.imm.w8` -/
-def neImmW8 : Opcode := ⟨68⟩
-/-- `lt.s.imm.w8` -/
-def ltSImmW8 : Opcode := ⟨69⟩
-/-- `lt.u.imm.w8` -/
-def ltUImmW8 : Opcode := ⟨70⟩
-/-- `le.s.imm.w8` -/
-def leSImmW8 : Opcode := ⟨71⟩
-/-- `le.u.imm.w8` -/
-def leUImmW8 : Opcode := ⟨72⟩
-/-- `gt.s.imm.w8` -/
-def gtSImmW8 : Opcode := ⟨73⟩
-/-- `gt.u.imm.w8` -/
-def gtUImmW8 : Opcode := ⟨74⟩
-/-- `ge.s.imm.w8` -/
-def geSImmW8 : Opcode := ⟨75⟩
-/-- `ge.u.imm.w8` -/
-def geUImmW8 : Opcode := ⟨76⟩
-/-- `neg.w8` -/
-def negW8 : Opcode := ⟨77⟩
-/-- `not.w8` -/
-def notW8 : Opcode := ⟨78⟩
-/-- `ctpop.w8` -/
-def ctpopW8 : Opcode := ⟨79⟩
-/-- `ctlz.w8` -/
-def ctlzW8 : Opcode := ⟨80⟩
-/-- `cttz.w8` -/
-def cttzW8 : Opcode := ⟨81⟩
-/-- `bitreverse.w8` -/
-def bitreverseW8 : Opcode := ⟨82⟩
-/-- `add.ovf.s.w8` -/
-def addOvfSW8 : Opcode := ⟨83⟩
-/-- `add.ovf.u.w8` -/
-def addOvfUW8 : Opcode := ⟨84⟩
-/-- `sub.ovf.s.w8` -/
-def subOvfSW8 : Opcode := ⟨85⟩
-/-- `sub.ovf.u.w8` -/
-def subOvfUW8 : Opcode := ⟨86⟩
-/-- `mul.ovf.s.w8` -/
-def mulOvfSW8 : Opcode := ⟨87⟩
-/-- `mul.ovf.u.w8` -/
-def mulOvfUW8 : Opcode := ⟨88⟩
 /-- `add.w16` -/
-def addW16 : Opcode := ⟨89⟩
-/-- `sub.w16` -/
-def subW16 : Opcode := ⟨90⟩
-/-- `mul.w16` -/
-def mulW16 : Opcode := ⟨91⟩
-/-- `div.s.w16` -/
-def divSW16 : Opcode := ⟨92⟩
-/-- `div.u.w16` -/
-def divUW16 : Opcode := ⟨93⟩
-/-- `rem.s.w16` -/
-def remSW16 : Opcode := ⟨94⟩
-/-- `rem.u.w16` -/
-def remUW16 : Opcode := ⟨95⟩
-/-- `and.w16` -/
-def andW16 : Opcode := ⟨96⟩
-/-- `or.w16` -/
-def orW16 : Opcode := ⟨97⟩
-/-- `xor.w16` -/
-def xorW16 : Opcode := ⟨98⟩
-/-- `shl.w16` -/
-def shlW16 : Opcode := ⟨99⟩
-/-- `shr.s.w16` -/
-def shrSW16 : Opcode := ⟨100⟩
-/-- `shr.u.w16` -/
-def shrUW16 : Opcode := ⟨101⟩
-/-- `eq.w16` -/
-def eqW16 : Opcode := ⟨102⟩
-/-- `ne.w16` -/
-def neW16 : Opcode := ⟨103⟩
-/-- `lt.s.w16` -/
-def ltSW16 : Opcode := ⟨104⟩
-/-- `lt.u.w16` -/
-def ltUW16 : Opcode := ⟨105⟩
-/-- `le.s.w16` -/
-def leSW16 : Opcode := ⟨106⟩
-/-- `le.u.w16` -/
-def leUW16 : Opcode := ⟨107⟩
-/-- `cmp3.s.w16` -/
-def cmp3SW16 : Opcode := ⟨108⟩
-/-- `cmp3.u.w16` -/
-def cmp3UW16 : Opcode := ⟨109⟩
-/-- `rotl.w16` -/
-def rotlW16 : Opcode := ⟨110⟩
-/-- `rotr.w16` -/
-def rotrW16 : Opcode := ⟨111⟩
-/-- `add.imm.w16` -/
-def addImmW16 : Opcode := ⟨112⟩
-/-- `sub.imm.w16` -/
-def subImmW16 : Opcode := ⟨113⟩
-/-- `mul.imm.w16` -/
-def mulImmW16 : Opcode := ⟨114⟩
-/-- `and.imm.w16` -/
-def andImmW16 : Opcode := ⟨115⟩
-/-- `or.imm.w16` -/
-def orImmW16 : Opcode := ⟨116⟩
-/-- `xor.imm.w16` -/
-def xorImmW16 : Opcode := ⟨117⟩
-/-- `shl.imm.w16` -/
-def shlImmW16 : Opcode := ⟨118⟩
-/-- `shr.s.imm.w16` -/
-def shrSImmW16 : Opcode := ⟨119⟩
-/-- `shr.u.imm.w16` -/
-def shrUImmW16 : Opcode := ⟨120⟩
-/-- `eq.imm.w16` -/
-def eqImmW16 : Opcode := ⟨121⟩
-/-- `ne.imm.w16` -/
-def neImmW16 : Opcode := ⟨122⟩
-/-- `lt.s.imm.w16` -/
-def ltSImmW16 : Opcode := ⟨123⟩
-/-- `lt.u.imm.w16` -/
-def ltUImmW16 : Opcode := ⟨124⟩
-/-- `le.s.imm.w16` -/
-def leSImmW16 : Opcode := ⟨125⟩
-/-- `le.u.imm.w16` -/
-def leUImmW16 : Opcode := ⟨126⟩
-/-- `gt.s.imm.w16` -/
-def gtSImmW16 : Opcode := ⟨127⟩
-/-- `gt.u.imm.w16` -/
-def gtUImmW16 : Opcode := ⟨128⟩
-/-- `ge.s.imm.w16` -/
-def geSImmW16 : Opcode := ⟨129⟩
-/-- `ge.u.imm.w16` -/
-def geUImmW16 : Opcode := ⟨130⟩
-/-- `neg.w16` -/
-def negW16 : Opcode := ⟨131⟩
-/-- `not.w16` -/
-def notW16 : Opcode := ⟨132⟩
-/-- `ctpop.w16` -/
-def ctpopW16 : Opcode := ⟨133⟩
-/-- `ctlz.w16` -/
-def ctlzW16 : Opcode := ⟨134⟩
-/-- `cttz.w16` -/
-def cttzW16 : Opcode := ⟨135⟩
-/-- `bswap.w16` -/
-def bswapW16 : Opcode := ⟨136⟩
-/-- `bitreverse.w16` -/
-def bitreverseW16 : Opcode := ⟨137⟩
-/-- `add.ovf.s.w16` -/
-def addOvfSW16 : Opcode := ⟨138⟩
-/-- `add.ovf.u.w16` -/
-def addOvfUW16 : Opcode := ⟨139⟩
-/-- `sub.ovf.s.w16` -/
-def subOvfSW16 : Opcode := ⟨140⟩
-/-- `sub.ovf.u.w16` -/
-def subOvfUW16 : Opcode := ⟨141⟩
-/-- `mul.ovf.s.w16` -/
-def mulOvfSW16 : Opcode := ⟨142⟩
-/-- `mul.ovf.u.w16` -/
-def mulOvfUW16 : Opcode := ⟨143⟩
+def addW16 : Opcode := ⟨36⟩
 /-- `add.w32` -/
-def addW32 : Opcode := ⟨144⟩
-/-- `sub.w32` -/
-def subW32 : Opcode := ⟨145⟩
-/-- `mul.w32` -/
-def mulW32 : Opcode := ⟨146⟩
-/-- `div.s.w32` -/
-def divSW32 : Opcode := ⟨147⟩
-/-- `div.u.w32` -/
-def divUW32 : Opcode := ⟨148⟩
-/-- `rem.s.w32` -/
-def remSW32 : Opcode := ⟨149⟩
-/-- `rem.u.w32` -/
-def remUW32 : Opcode := ⟨150⟩
-/-- `and.w32` -/
-def andW32 : Opcode := ⟨151⟩
-/-- `or.w32` -/
-def orW32 : Opcode := ⟨152⟩
-/-- `xor.w32` -/
-def xorW32 : Opcode := ⟨153⟩
-/-- `shl.w32` -/
-def shlW32 : Opcode := ⟨154⟩
-/-- `shr.s.w32` -/
-def shrSW32 : Opcode := ⟨155⟩
-/-- `shr.u.w32` -/
-def shrUW32 : Opcode := ⟨156⟩
-/-- `eq.w32` -/
-def eqW32 : Opcode := ⟨157⟩
-/-- `ne.w32` -/
-def neW32 : Opcode := ⟨158⟩
-/-- `lt.s.w32` -/
-def ltSW32 : Opcode := ⟨159⟩
-/-- `lt.u.w32` -/
-def ltUW32 : Opcode := ⟨160⟩
-/-- `le.s.w32` -/
-def leSW32 : Opcode := ⟨161⟩
-/-- `le.u.w32` -/
-def leUW32 : Opcode := ⟨162⟩
-/-- `cmp3.s.w32` -/
-def cmp3SW32 : Opcode := ⟨163⟩
-/-- `cmp3.u.w32` -/
-def cmp3UW32 : Opcode := ⟨164⟩
-/-- `rotl.w32` -/
-def rotlW32 : Opcode := ⟨165⟩
-/-- `rotr.w32` -/
-def rotrW32 : Opcode := ⟨166⟩
-/-- `add.imm.w32` -/
-def addImmW32 : Opcode := ⟨167⟩
-/-- `sub.imm.w32` -/
-def subImmW32 : Opcode := ⟨168⟩
-/-- `mul.imm.w32` -/
-def mulImmW32 : Opcode := ⟨169⟩
-/-- `and.imm.w32` -/
-def andImmW32 : Opcode := ⟨170⟩
-/-- `or.imm.w32` -/
-def orImmW32 : Opcode := ⟨171⟩
-/-- `xor.imm.w32` -/
-def xorImmW32 : Opcode := ⟨172⟩
-/-- `shl.imm.w32` -/
-def shlImmW32 : Opcode := ⟨173⟩
-/-- `shr.s.imm.w32` -/
-def shrSImmW32 : Opcode := ⟨174⟩
-/-- `shr.u.imm.w32` -/
-def shrUImmW32 : Opcode := ⟨175⟩
-/-- `eq.imm.w32` -/
-def eqImmW32 : Opcode := ⟨176⟩
-/-- `ne.imm.w32` -/
-def neImmW32 : Opcode := ⟨177⟩
-/-- `lt.s.imm.w32` -/
-def ltSImmW32 : Opcode := ⟨178⟩
-/-- `lt.u.imm.w32` -/
-def ltUImmW32 : Opcode := ⟨179⟩
-/-- `le.s.imm.w32` -/
-def leSImmW32 : Opcode := ⟨180⟩
-/-- `le.u.imm.w32` -/
-def leUImmW32 : Opcode := ⟨181⟩
-/-- `gt.s.imm.w32` -/
-def gtSImmW32 : Opcode := ⟨182⟩
-/-- `gt.u.imm.w32` -/
-def gtUImmW32 : Opcode := ⟨183⟩
-/-- `ge.s.imm.w32` -/
-def geSImmW32 : Opcode := ⟨184⟩
-/-- `ge.u.imm.w32` -/
-def geUImmW32 : Opcode := ⟨185⟩
-/-- `neg.w32` -/
-def negW32 : Opcode := ⟨186⟩
-/-- `not.w32` -/
-def notW32 : Opcode := ⟨187⟩
-/-- `ctpop.w32` -/
-def ctpopW32 : Opcode := ⟨188⟩
-/-- `ctlz.w32` -/
-def ctlzW32 : Opcode := ⟨189⟩
-/-- `cttz.w32` -/
-def cttzW32 : Opcode := ⟨190⟩
-/-- `bswap.w32` -/
-def bswapW32 : Opcode := ⟨191⟩
-/-- `bitreverse.w32` -/
-def bitreverseW32 : Opcode := ⟨192⟩
-/-- `add.ovf.s.w32` -/
-def addOvfSW32 : Opcode := ⟨193⟩
-/-- `add.ovf.u.w32` -/
-def addOvfUW32 : Opcode := ⟨194⟩
-/-- `sub.ovf.s.w32` -/
-def subOvfSW32 : Opcode := ⟨195⟩
-/-- `sub.ovf.u.w32` -/
-def subOvfUW32 : Opcode := ⟨196⟩
-/-- `mul.ovf.s.w32` -/
-def mulOvfSW32 : Opcode := ⟨197⟩
-/-- `mul.ovf.u.w32` -/
-def mulOvfUW32 : Opcode := ⟨198⟩
+def addW32 : Opcode := ⟨37⟩
 /-- `add.w64` -/
-def addW64 : Opcode := ⟨199⟩
-/-- `sub.w64` -/
-def subW64 : Opcode := ⟨200⟩
-/-- `mul.w64` -/
-def mulW64 : Opcode := ⟨201⟩
-/-- `div.s.w64` -/
-def divSW64 : Opcode := ⟨202⟩
-/-- `div.u.w64` -/
-def divUW64 : Opcode := ⟨203⟩
-/-- `rem.s.w64` -/
-def remSW64 : Opcode := ⟨204⟩
-/-- `rem.u.w64` -/
-def remUW64 : Opcode := ⟨205⟩
-/-- `and.w64` -/
-def andW64 : Opcode := ⟨206⟩
-/-- `or.w64` -/
-def orW64 : Opcode := ⟨207⟩
-/-- `xor.w64` -/
-def xorW64 : Opcode := ⟨208⟩
-/-- `shl.w64` -/
-def shlW64 : Opcode := ⟨209⟩
-/-- `shr.s.w64` -/
-def shrSW64 : Opcode := ⟨210⟩
-/-- `shr.u.w64` -/
-def shrUW64 : Opcode := ⟨211⟩
-/-- `eq.w64` -/
-def eqW64 : Opcode := ⟨212⟩
-/-- `ne.w64` -/
-def neW64 : Opcode := ⟨213⟩
-/-- `lt.s.w64` -/
-def ltSW64 : Opcode := ⟨214⟩
-/-- `lt.u.w64` -/
-def ltUW64 : Opcode := ⟨215⟩
-/-- `le.s.w64` -/
-def leSW64 : Opcode := ⟨216⟩
-/-- `le.u.w64` -/
-def leUW64 : Opcode := ⟨217⟩
-/-- `cmp3.s.w64` -/
-def cmp3SW64 : Opcode := ⟨218⟩
-/-- `cmp3.u.w64` -/
-def cmp3UW64 : Opcode := ⟨219⟩
-/-- `rotl.w64` -/
-def rotlW64 : Opcode := ⟨220⟩
-/-- `rotr.w64` -/
-def rotrW64 : Opcode := ⟨221⟩
-/-- `add.imm.w64` -/
-def addImmW64 : Opcode := ⟨222⟩
-/-- `sub.imm.w64` -/
-def subImmW64 : Opcode := ⟨223⟩
-/-- `mul.imm.w64` -/
-def mulImmW64 : Opcode := ⟨224⟩
-/-- `and.imm.w64` -/
-def andImmW64 : Opcode := ⟨225⟩
-/-- `or.imm.w64` -/
-def orImmW64 : Opcode := ⟨226⟩
-/-- `xor.imm.w64` -/
-def xorImmW64 : Opcode := ⟨227⟩
-/-- `shl.imm.w64` -/
-def shlImmW64 : Opcode := ⟨228⟩
-/-- `shr.s.imm.w64` -/
-def shrSImmW64 : Opcode := ⟨229⟩
-/-- `shr.u.imm.w64` -/
-def shrUImmW64 : Opcode := ⟨230⟩
-/-- `eq.imm.w64` -/
-def eqImmW64 : Opcode := ⟨231⟩
-/-- `ne.imm.w64` -/
-def neImmW64 : Opcode := ⟨232⟩
-/-- `lt.s.imm.w64` -/
-def ltSImmW64 : Opcode := ⟨233⟩
-/-- `lt.u.imm.w64` -/
-def ltUImmW64 : Opcode := ⟨234⟩
-/-- `le.s.imm.w64` -/
-def leSImmW64 : Opcode := ⟨235⟩
-/-- `le.u.imm.w64` -/
-def leUImmW64 : Opcode := ⟨236⟩
-/-- `gt.s.imm.w64` -/
-def gtSImmW64 : Opcode := ⟨237⟩
-/-- `gt.u.imm.w64` -/
-def gtUImmW64 : Opcode := ⟨238⟩
-/-- `ge.s.imm.w64` -/
-def geSImmW64 : Opcode := ⟨239⟩
-/-- `ge.u.imm.w64` -/
-def geUImmW64 : Opcode := ⟨240⟩
-/-- `neg.w64` -/
-def negW64 : Opcode := ⟨241⟩
-/-- `not.w64` -/
-def notW64 : Opcode := ⟨242⟩
-/-- `ctpop.w64` -/
-def ctpopW64 : Opcode := ⟨243⟩
-/-- `ctlz.w64` -/
-def ctlzW64 : Opcode := ⟨244⟩
-/-- `cttz.w64` -/
-def cttzW64 : Opcode := ⟨245⟩
-/-- `bswap.w64` -/
-def bswapW64 : Opcode := ⟨246⟩
-/-- `bitreverse.w64` -/
-def bitreverseW64 : Opcode := ⟨247⟩
-/-- `add.ovf.s.w64` -/
-def addOvfSW64 : Opcode := ⟨248⟩
-/-- `add.ovf.u.w64` -/
-def addOvfUW64 : Opcode := ⟨249⟩
-/-- `sub.ovf.s.w64` -/
-def subOvfSW64 : Opcode := ⟨250⟩
-/-- `sub.ovf.u.w64` -/
-def subOvfUW64 : Opcode := ⟨251⟩
-/-- `mul.ovf.s.w64` -/
-def mulOvfSW64 : Opcode := ⟨252⟩
-/-- `mul.ovf.u.w64` -/
-def mulOvfUW64 : Opcode := ⟨253⟩
+def addW64 : Opcode := ⟨38⟩
 /-- `add.w128` -/
-def addW128 : Opcode := ⟨254⟩
+def addW128 : Opcode := ⟨39⟩
+/-- `sub.w8` -/
+def subW8 : Opcode := ⟨40⟩
+/-- `sub.w16` -/
+def subW16 : Opcode := ⟨41⟩
+/-- `sub.w32` -/
+def subW32 : Opcode := ⟨42⟩
+/-- `sub.w64` -/
+def subW64 : Opcode := ⟨43⟩
 /-- `sub.w128` -/
-def subW128 : Opcode := ⟨255⟩
+def subW128 : Opcode := ⟨44⟩
+/-- `mul.w8` -/
+def mulW8 : Opcode := ⟨45⟩
+/-- `mul.w16` -/
+def mulW16 : Opcode := ⟨46⟩
+/-- `mul.w32` -/
+def mulW32 : Opcode := ⟨47⟩
+/-- `mul.w64` -/
+def mulW64 : Opcode := ⟨48⟩
+/-- `div.s.w8` -/
+def divSW8 : Opcode := ⟨49⟩
+/-- `div.s.w16` -/
+def divSW16 : Opcode := ⟨50⟩
+/-- `div.s.w32` -/
+def divSW32 : Opcode := ⟨51⟩
+/-- `div.s.w64` -/
+def divSW64 : Opcode := ⟨52⟩
+/-- `div.u.w8` -/
+def divUW8 : Opcode := ⟨53⟩
+/-- `div.u.w16` -/
+def divUW16 : Opcode := ⟨54⟩
+/-- `div.u.w32` -/
+def divUW32 : Opcode := ⟨55⟩
+/-- `div.u.w64` -/
+def divUW64 : Opcode := ⟨56⟩
+/-- `rem.s.w8` -/
+def remSW8 : Opcode := ⟨57⟩
+/-- `rem.s.w16` -/
+def remSW16 : Opcode := ⟨58⟩
+/-- `rem.s.w32` -/
+def remSW32 : Opcode := ⟨59⟩
+/-- `rem.s.w64` -/
+def remSW64 : Opcode := ⟨60⟩
+/-- `rem.u.w8` -/
+def remUW8 : Opcode := ⟨61⟩
+/-- `rem.u.w16` -/
+def remUW16 : Opcode := ⟨62⟩
+/-- `rem.u.w32` -/
+def remUW32 : Opcode := ⟨63⟩
+/-- `rem.u.w64` -/
+def remUW64 : Opcode := ⟨64⟩
+/-- `and.w8` -/
+def andW8 : Opcode := ⟨65⟩
+/-- `and.w16` -/
+def andW16 : Opcode := ⟨66⟩
+/-- `and.w32` -/
+def andW32 : Opcode := ⟨67⟩
+/-- `and.w64` -/
+def andW64 : Opcode := ⟨68⟩
 /-- `and.w128` -/
-def andW128 : Opcode := ⟨256⟩
+def andW128 : Opcode := ⟨69⟩
+/-- `or.w8` -/
+def orW8 : Opcode := ⟨70⟩
+/-- `or.w16` -/
+def orW16 : Opcode := ⟨71⟩
+/-- `or.w32` -/
+def orW32 : Opcode := ⟨72⟩
+/-- `or.w64` -/
+def orW64 : Opcode := ⟨73⟩
 /-- `or.w128` -/
-def orW128 : Opcode := ⟨257⟩
+def orW128 : Opcode := ⟨74⟩
+/-- `xor.w8` -/
+def xorW8 : Opcode := ⟨75⟩
+/-- `xor.w16` -/
+def xorW16 : Opcode := ⟨76⟩
+/-- `xor.w32` -/
+def xorW32 : Opcode := ⟨77⟩
+/-- `xor.w64` -/
+def xorW64 : Opcode := ⟨78⟩
 /-- `xor.w128` -/
-def xorW128 : Opcode := ⟨258⟩
+def xorW128 : Opcode := ⟨79⟩
+/-- `shl.w8` -/
+def shlW8 : Opcode := ⟨80⟩
+/-- `shl.w16` -/
+def shlW16 : Opcode := ⟨81⟩
+/-- `shl.w32` -/
+def shlW32 : Opcode := ⟨82⟩
+/-- `shl.w64` -/
+def shlW64 : Opcode := ⟨83⟩
 /-- `shl.w128` -/
-def shlW128 : Opcode := ⟨259⟩
+def shlW128 : Opcode := ⟨84⟩
+/-- `shr.s.w8` -/
+def shrSW8 : Opcode := ⟨85⟩
+/-- `shr.s.w16` -/
+def shrSW16 : Opcode := ⟨86⟩
+/-- `shr.s.w32` -/
+def shrSW32 : Opcode := ⟨87⟩
+/-- `shr.s.w64` -/
+def shrSW64 : Opcode := ⟨88⟩
 /-- `shr.s.w128` -/
-def shrSW128 : Opcode := ⟨260⟩
+def shrSW128 : Opcode := ⟨89⟩
+/-- `shr.u.w8` -/
+def shrUW8 : Opcode := ⟨90⟩
+/-- `shr.u.w16` -/
+def shrUW16 : Opcode := ⟨91⟩
+/-- `shr.u.w32` -/
+def shrUW32 : Opcode := ⟨92⟩
+/-- `shr.u.w64` -/
+def shrUW64 : Opcode := ⟨93⟩
 /-- `shr.u.w128` -/
-def shrUW128 : Opcode := ⟨261⟩
+def shrUW128 : Opcode := ⟨94⟩
+/-- `eq.w8` -/
+def eqW8 : Opcode := ⟨95⟩
+/-- `eq.w16` -/
+def eqW16 : Opcode := ⟨96⟩
+/-- `eq.w32` -/
+def eqW32 : Opcode := ⟨97⟩
+/-- `eq.w64` -/
+def eqW64 : Opcode := ⟨98⟩
 /-- `eq.w128` -/
-def eqW128 : Opcode := ⟨262⟩
+def eqW128 : Opcode := ⟨99⟩
+/-- `ne.w8` -/
+def neW8 : Opcode := ⟨100⟩
+/-- `ne.w16` -/
+def neW16 : Opcode := ⟨101⟩
+/-- `ne.w32` -/
+def neW32 : Opcode := ⟨102⟩
+/-- `ne.w64` -/
+def neW64 : Opcode := ⟨103⟩
 /-- `ne.w128` -/
-def neW128 : Opcode := ⟨263⟩
+def neW128 : Opcode := ⟨104⟩
+/-- `lt.s.w8` -/
+def ltSW8 : Opcode := ⟨105⟩
+/-- `lt.s.w16` -/
+def ltSW16 : Opcode := ⟨106⟩
+/-- `lt.s.w32` -/
+def ltSW32 : Opcode := ⟨107⟩
+/-- `lt.s.w64` -/
+def ltSW64 : Opcode := ⟨108⟩
 /-- `lt.s.w128` -/
-def ltSW128 : Opcode := ⟨264⟩
+def ltSW128 : Opcode := ⟨109⟩
+/-- `lt.u.w8` -/
+def ltUW8 : Opcode := ⟨110⟩
+/-- `lt.u.w16` -/
+def ltUW16 : Opcode := ⟨111⟩
+/-- `lt.u.w32` -/
+def ltUW32 : Opcode := ⟨112⟩
+/-- `lt.u.w64` -/
+def ltUW64 : Opcode := ⟨113⟩
 /-- `lt.u.w128` -/
-def ltUW128 : Opcode := ⟨265⟩
+def ltUW128 : Opcode := ⟨114⟩
+/-- `le.s.w8` -/
+def leSW8 : Opcode := ⟨115⟩
+/-- `le.s.w16` -/
+def leSW16 : Opcode := ⟨116⟩
+/-- `le.s.w32` -/
+def leSW32 : Opcode := ⟨117⟩
+/-- `le.s.w64` -/
+def leSW64 : Opcode := ⟨118⟩
 /-- `le.s.w128` -/
-def leSW128 : Opcode := ⟨266⟩
+def leSW128 : Opcode := ⟨119⟩
+/-- `le.u.w8` -/
+def leUW8 : Opcode := ⟨120⟩
+/-- `le.u.w16` -/
+def leUW16 : Opcode := ⟨121⟩
+/-- `le.u.w32` -/
+def leUW32 : Opcode := ⟨122⟩
+/-- `le.u.w64` -/
+def leUW64 : Opcode := ⟨123⟩
 /-- `le.u.w128` -/
-def leUW128 : Opcode := ⟨267⟩
+def leUW128 : Opcode := ⟨124⟩
+/-- `cmp3.s.w8` -/
+def cmp3SW8 : Opcode := ⟨125⟩
+/-- `cmp3.s.w16` -/
+def cmp3SW16 : Opcode := ⟨126⟩
+/-- `cmp3.s.w32` -/
+def cmp3SW32 : Opcode := ⟨127⟩
+/-- `cmp3.s.w64` -/
+def cmp3SW64 : Opcode := ⟨128⟩
 /-- `cmp3.s.w128` -/
-def cmp3SW128 : Opcode := ⟨268⟩
+def cmp3SW128 : Opcode := ⟨129⟩
+/-- `cmp3.u.w8` -/
+def cmp3UW8 : Opcode := ⟨130⟩
+/-- `cmp3.u.w16` -/
+def cmp3UW16 : Opcode := ⟨131⟩
+/-- `cmp3.u.w32` -/
+def cmp3UW32 : Opcode := ⟨132⟩
+/-- `cmp3.u.w64` -/
+def cmp3UW64 : Opcode := ⟨133⟩
 /-- `cmp3.u.w128` -/
-def cmp3UW128 : Opcode := ⟨269⟩
+def cmp3UW128 : Opcode := ⟨134⟩
+/-- `rotl.w8` -/
+def rotlW8 : Opcode := ⟨135⟩
+/-- `rotl.w16` -/
+def rotlW16 : Opcode := ⟨136⟩
+/-- `rotl.w32` -/
+def rotlW32 : Opcode := ⟨137⟩
+/-- `rotl.w64` -/
+def rotlW64 : Opcode := ⟨138⟩
 /-- `rotl.w128` -/
-def rotlW128 : Opcode := ⟨270⟩
+def rotlW128 : Opcode := ⟨139⟩
+/-- `rotr.w8` -/
+def rotrW8 : Opcode := ⟨140⟩
+/-- `rotr.w16` -/
+def rotrW16 : Opcode := ⟨141⟩
+/-- `rotr.w32` -/
+def rotrW32 : Opcode := ⟨142⟩
+/-- `rotr.w64` -/
+def rotrW64 : Opcode := ⟨143⟩
 /-- `rotr.w128` -/
-def rotrW128 : Opcode := ⟨271⟩
+def rotrW128 : Opcode := ⟨144⟩
+/-- `add.imm.w8` -/
+def addImmW8 : Opcode := ⟨145⟩
+/-- `add.imm.w16` -/
+def addImmW16 : Opcode := ⟨146⟩
+/-- `add.imm.w32` -/
+def addImmW32 : Opcode := ⟨147⟩
+/-- `add.imm.w64` -/
+def addImmW64 : Opcode := ⟨148⟩
 /-- `add.imm.w128` -/
-def addImmW128 : Opcode := ⟨272⟩
+def addImmW128 : Opcode := ⟨149⟩
+/-- `sub.imm.w8` -/
+def subImmW8 : Opcode := ⟨150⟩
+/-- `sub.imm.w16` -/
+def subImmW16 : Opcode := ⟨151⟩
+/-- `sub.imm.w32` -/
+def subImmW32 : Opcode := ⟨152⟩
+/-- `sub.imm.w64` -/
+def subImmW64 : Opcode := ⟨153⟩
 /-- `sub.imm.w128` -/
-def subImmW128 : Opcode := ⟨273⟩
+def subImmW128 : Opcode := ⟨154⟩
+/-- `mul.imm.w8` -/
+def mulImmW8 : Opcode := ⟨155⟩
+/-- `mul.imm.w16` -/
+def mulImmW16 : Opcode := ⟨156⟩
+/-- `mul.imm.w32` -/
+def mulImmW32 : Opcode := ⟨157⟩
+/-- `mul.imm.w64` -/
+def mulImmW64 : Opcode := ⟨158⟩
+/-- `and.imm.w8` -/
+def andImmW8 : Opcode := ⟨159⟩
+/-- `and.imm.w16` -/
+def andImmW16 : Opcode := ⟨160⟩
+/-- `and.imm.w32` -/
+def andImmW32 : Opcode := ⟨161⟩
+/-- `and.imm.w64` -/
+def andImmW64 : Opcode := ⟨162⟩
 /-- `and.imm.w128` -/
-def andImmW128 : Opcode := ⟨274⟩
+def andImmW128 : Opcode := ⟨163⟩
+/-- `or.imm.w8` -/
+def orImmW8 : Opcode := ⟨164⟩
+/-- `or.imm.w16` -/
+def orImmW16 : Opcode := ⟨165⟩
+/-- `or.imm.w32` -/
+def orImmW32 : Opcode := ⟨166⟩
+/-- `or.imm.w64` -/
+def orImmW64 : Opcode := ⟨167⟩
 /-- `or.imm.w128` -/
-def orImmW128 : Opcode := ⟨275⟩
+def orImmW128 : Opcode := ⟨168⟩
+/-- `xor.imm.w8` -/
+def xorImmW8 : Opcode := ⟨169⟩
+/-- `xor.imm.w16` -/
+def xorImmW16 : Opcode := ⟨170⟩
+/-- `xor.imm.w32` -/
+def xorImmW32 : Opcode := ⟨171⟩
+/-- `xor.imm.w64` -/
+def xorImmW64 : Opcode := ⟨172⟩
 /-- `xor.imm.w128` -/
-def xorImmW128 : Opcode := ⟨276⟩
+def xorImmW128 : Opcode := ⟨173⟩
+/-- `shl.imm.w8` -/
+def shlImmW8 : Opcode := ⟨174⟩
+/-- `shl.imm.w16` -/
+def shlImmW16 : Opcode := ⟨175⟩
+/-- `shl.imm.w32` -/
+def shlImmW32 : Opcode := ⟨176⟩
+/-- `shl.imm.w64` -/
+def shlImmW64 : Opcode := ⟨177⟩
 /-- `shl.imm.w128` -/
-def shlImmW128 : Opcode := ⟨277⟩
+def shlImmW128 : Opcode := ⟨178⟩
+/-- `shr.s.imm.w8` -/
+def shrSImmW8 : Opcode := ⟨179⟩
+/-- `shr.s.imm.w16` -/
+def shrSImmW16 : Opcode := ⟨180⟩
+/-- `shr.s.imm.w32` -/
+def shrSImmW32 : Opcode := ⟨181⟩
+/-- `shr.s.imm.w64` -/
+def shrSImmW64 : Opcode := ⟨182⟩
 /-- `shr.s.imm.w128` -/
-def shrSImmW128 : Opcode := ⟨278⟩
+def shrSImmW128 : Opcode := ⟨183⟩
+/-- `shr.u.imm.w8` -/
+def shrUImmW8 : Opcode := ⟨184⟩
+/-- `shr.u.imm.w16` -/
+def shrUImmW16 : Opcode := ⟨185⟩
+/-- `shr.u.imm.w32` -/
+def shrUImmW32 : Opcode := ⟨186⟩
+/-- `shr.u.imm.w64` -/
+def shrUImmW64 : Opcode := ⟨187⟩
 /-- `shr.u.imm.w128` -/
-def shrUImmW128 : Opcode := ⟨279⟩
+def shrUImmW128 : Opcode := ⟨188⟩
+/-- `eq.imm.w8` -/
+def eqImmW8 : Opcode := ⟨189⟩
+/-- `eq.imm.w16` -/
+def eqImmW16 : Opcode := ⟨190⟩
+/-- `eq.imm.w32` -/
+def eqImmW32 : Opcode := ⟨191⟩
+/-- `eq.imm.w64` -/
+def eqImmW64 : Opcode := ⟨192⟩
 /-- `eq.imm.w128` -/
-def eqImmW128 : Opcode := ⟨280⟩
+def eqImmW128 : Opcode := ⟨193⟩
+/-- `ne.imm.w8` -/
+def neImmW8 : Opcode := ⟨194⟩
+/-- `ne.imm.w16` -/
+def neImmW16 : Opcode := ⟨195⟩
+/-- `ne.imm.w32` -/
+def neImmW32 : Opcode := ⟨196⟩
+/-- `ne.imm.w64` -/
+def neImmW64 : Opcode := ⟨197⟩
 /-- `ne.imm.w128` -/
-def neImmW128 : Opcode := ⟨281⟩
+def neImmW128 : Opcode := ⟨198⟩
+/-- `lt.s.imm.w8` -/
+def ltSImmW8 : Opcode := ⟨199⟩
+/-- `lt.s.imm.w16` -/
+def ltSImmW16 : Opcode := ⟨200⟩
+/-- `lt.s.imm.w32` -/
+def ltSImmW32 : Opcode := ⟨201⟩
+/-- `lt.s.imm.w64` -/
+def ltSImmW64 : Opcode := ⟨202⟩
 /-- `lt.s.imm.w128` -/
-def ltSImmW128 : Opcode := ⟨282⟩
+def ltSImmW128 : Opcode := ⟨203⟩
+/-- `lt.u.imm.w8` -/
+def ltUImmW8 : Opcode := ⟨204⟩
+/-- `lt.u.imm.w16` -/
+def ltUImmW16 : Opcode := ⟨205⟩
+/-- `lt.u.imm.w32` -/
+def ltUImmW32 : Opcode := ⟨206⟩
+/-- `lt.u.imm.w64` -/
+def ltUImmW64 : Opcode := ⟨207⟩
 /-- `lt.u.imm.w128` -/
-def ltUImmW128 : Opcode := ⟨283⟩
+def ltUImmW128 : Opcode := ⟨208⟩
+/-- `le.s.imm.w8` -/
+def leSImmW8 : Opcode := ⟨209⟩
+/-- `le.s.imm.w16` -/
+def leSImmW16 : Opcode := ⟨210⟩
+/-- `le.s.imm.w32` -/
+def leSImmW32 : Opcode := ⟨211⟩
+/-- `le.s.imm.w64` -/
+def leSImmW64 : Opcode := ⟨212⟩
 /-- `le.s.imm.w128` -/
-def leSImmW128 : Opcode := ⟨284⟩
+def leSImmW128 : Opcode := ⟨213⟩
+/-- `le.u.imm.w8` -/
+def leUImmW8 : Opcode := ⟨214⟩
+/-- `le.u.imm.w16` -/
+def leUImmW16 : Opcode := ⟨215⟩
+/-- `le.u.imm.w32` -/
+def leUImmW32 : Opcode := ⟨216⟩
+/-- `le.u.imm.w64` -/
+def leUImmW64 : Opcode := ⟨217⟩
 /-- `le.u.imm.w128` -/
-def leUImmW128 : Opcode := ⟨285⟩
+def leUImmW128 : Opcode := ⟨218⟩
+/-- `gt.s.imm.w8` -/
+def gtSImmW8 : Opcode := ⟨219⟩
+/-- `gt.s.imm.w16` -/
+def gtSImmW16 : Opcode := ⟨220⟩
+/-- `gt.s.imm.w32` -/
+def gtSImmW32 : Opcode := ⟨221⟩
+/-- `gt.s.imm.w64` -/
+def gtSImmW64 : Opcode := ⟨222⟩
 /-- `gt.s.imm.w128` -/
-def gtSImmW128 : Opcode := ⟨286⟩
+def gtSImmW128 : Opcode := ⟨223⟩
+/-- `gt.u.imm.w8` -/
+def gtUImmW8 : Opcode := ⟨224⟩
+/-- `gt.u.imm.w16` -/
+def gtUImmW16 : Opcode := ⟨225⟩
+/-- `gt.u.imm.w32` -/
+def gtUImmW32 : Opcode := ⟨226⟩
+/-- `gt.u.imm.w64` -/
+def gtUImmW64 : Opcode := ⟨227⟩
 /-- `gt.u.imm.w128` -/
-def gtUImmW128 : Opcode := ⟨287⟩
+def gtUImmW128 : Opcode := ⟨228⟩
+/-- `ge.s.imm.w8` -/
+def geSImmW8 : Opcode := ⟨229⟩
+/-- `ge.s.imm.w16` -/
+def geSImmW16 : Opcode := ⟨230⟩
+/-- `ge.s.imm.w32` -/
+def geSImmW32 : Opcode := ⟨231⟩
+/-- `ge.s.imm.w64` -/
+def geSImmW64 : Opcode := ⟨232⟩
 /-- `ge.s.imm.w128` -/
-def geSImmW128 : Opcode := ⟨288⟩
+def geSImmW128 : Opcode := ⟨233⟩
+/-- `ge.u.imm.w8` -/
+def geUImmW8 : Opcode := ⟨234⟩
+/-- `ge.u.imm.w16` -/
+def geUImmW16 : Opcode := ⟨235⟩
+/-- `ge.u.imm.w32` -/
+def geUImmW32 : Opcode := ⟨236⟩
+/-- `ge.u.imm.w64` -/
+def geUImmW64 : Opcode := ⟨237⟩
 /-- `ge.u.imm.w128` -/
-def geUImmW128 : Opcode := ⟨289⟩
+def geUImmW128 : Opcode := ⟨238⟩
+/-- `neg.w8` -/
+def negW8 : Opcode := ⟨239⟩
+/-- `neg.w16` -/
+def negW16 : Opcode := ⟨240⟩
+/-- `neg.w32` -/
+def negW32 : Opcode := ⟨241⟩
+/-- `neg.w64` -/
+def negW64 : Opcode := ⟨242⟩
 /-- `neg.w128` -/
-def negW128 : Opcode := ⟨290⟩
+def negW128 : Opcode := ⟨243⟩
+/-- `not.w8` -/
+def notW8 : Opcode := ⟨244⟩
+/-- `not.w16` -/
+def notW16 : Opcode := ⟨245⟩
+/-- `not.w32` -/
+def notW32 : Opcode := ⟨246⟩
+/-- `not.w64` -/
+def notW64 : Opcode := ⟨247⟩
 /-- `not.w128` -/
-def notW128 : Opcode := ⟨291⟩
+def notW128 : Opcode := ⟨248⟩
+/-- `ctpop.w8` -/
+def ctpopW8 : Opcode := ⟨249⟩
+/-- `ctpop.w16` -/
+def ctpopW16 : Opcode := ⟨250⟩
+/-- `ctpop.w32` -/
+def ctpopW32 : Opcode := ⟨251⟩
+/-- `ctpop.w64` -/
+def ctpopW64 : Opcode := ⟨252⟩
 /-- `ctpop.w128` -/
-def ctpopW128 : Opcode := ⟨292⟩
+def ctpopW128 : Opcode := ⟨253⟩
+/-- `ctlz.w8` -/
+def ctlzW8 : Opcode := ⟨254⟩
+/-- `ctlz.w16` -/
+def ctlzW16 : Opcode := ⟨255⟩
+/-- `ctlz.w32` -/
+def ctlzW32 : Opcode := ⟨256⟩
+/-- `ctlz.w64` -/
+def ctlzW64 : Opcode := ⟨257⟩
 /-- `ctlz.w128` -/
-def ctlzW128 : Opcode := ⟨293⟩
+def ctlzW128 : Opcode := ⟨258⟩
+/-- `cttz.w8` -/
+def cttzW8 : Opcode := ⟨259⟩
+/-- `cttz.w16` -/
+def cttzW16 : Opcode := ⟨260⟩
+/-- `cttz.w32` -/
+def cttzW32 : Opcode := ⟨261⟩
+/-- `cttz.w64` -/
+def cttzW64 : Opcode := ⟨262⟩
 /-- `cttz.w128` -/
-def cttzW128 : Opcode := ⟨294⟩
-/-- `bswap.w128` -/
-def bswapW128 : Opcode := ⟨295⟩
+def cttzW128 : Opcode := ⟨263⟩
+/-- `bitreverse.w8` -/
+def bitreverseW8 : Opcode := ⟨264⟩
+/-- `bitreverse.w16` -/
+def bitreverseW16 : Opcode := ⟨265⟩
+/-- `bitreverse.w32` -/
+def bitreverseW32 : Opcode := ⟨266⟩
+/-- `bitreverse.w64` -/
+def bitreverseW64 : Opcode := ⟨267⟩
 /-- `bitreverse.w128` -/
-def bitreverseW128 : Opcode := ⟨296⟩
+def bitreverseW128 : Opcode := ⟨268⟩
+/-- `add.ovf.s.w8` -/
+def addOvfSW8 : Opcode := ⟨269⟩
+/-- `add.ovf.s.w16` -/
+def addOvfSW16 : Opcode := ⟨270⟩
+/-- `add.ovf.s.w32` -/
+def addOvfSW32 : Opcode := ⟨271⟩
+/-- `add.ovf.s.w64` -/
+def addOvfSW64 : Opcode := ⟨272⟩
 /-- `add.ovf.s.w128` -/
-def addOvfSW128 : Opcode := ⟨297⟩
+def addOvfSW128 : Opcode := ⟨273⟩
+/-- `add.ovf.u.w8` -/
+def addOvfUW8 : Opcode := ⟨274⟩
+/-- `add.ovf.u.w16` -/
+def addOvfUW16 : Opcode := ⟨275⟩
+/-- `add.ovf.u.w32` -/
+def addOvfUW32 : Opcode := ⟨276⟩
+/-- `add.ovf.u.w64` -/
+def addOvfUW64 : Opcode := ⟨277⟩
 /-- `add.ovf.u.w128` -/
-def addOvfUW128 : Opcode := ⟨298⟩
+def addOvfUW128 : Opcode := ⟨278⟩
+/-- `sub.ovf.s.w8` -/
+def subOvfSW8 : Opcode := ⟨279⟩
+/-- `sub.ovf.s.w16` -/
+def subOvfSW16 : Opcode := ⟨280⟩
+/-- `sub.ovf.s.w32` -/
+def subOvfSW32 : Opcode := ⟨281⟩
+/-- `sub.ovf.s.w64` -/
+def subOvfSW64 : Opcode := ⟨282⟩
 /-- `sub.ovf.s.w128` -/
-def subOvfSW128 : Opcode := ⟨299⟩
+def subOvfSW128 : Opcode := ⟨283⟩
+/-- `sub.ovf.u.w8` -/
+def subOvfUW8 : Opcode := ⟨284⟩
+/-- `sub.ovf.u.w16` -/
+def subOvfUW16 : Opcode := ⟨285⟩
+/-- `sub.ovf.u.w32` -/
+def subOvfUW32 : Opcode := ⟨286⟩
+/-- `sub.ovf.u.w64` -/
+def subOvfUW64 : Opcode := ⟨287⟩
 /-- `sub.ovf.u.w128` -/
-def subOvfUW128 : Opcode := ⟨300⟩
+def subOvfUW128 : Opcode := ⟨288⟩
+/-- `mul.ovf.s.w8` -/
+def mulOvfSW8 : Opcode := ⟨289⟩
+/-- `mul.ovf.s.w16` -/
+def mulOvfSW16 : Opcode := ⟨290⟩
+/-- `mul.ovf.s.w32` -/
+def mulOvfSW32 : Opcode := ⟨291⟩
+/-- `mul.ovf.s.w64` -/
+def mulOvfSW64 : Opcode := ⟨292⟩
+/-- `mul.ovf.u.w8` -/
+def mulOvfUW8 : Opcode := ⟨293⟩
+/-- `mul.ovf.u.w16` -/
+def mulOvfUW16 : Opcode := ⟨294⟩
+/-- `mul.ovf.u.w32` -/
+def mulOvfUW32 : Opcode := ⟨295⟩
+/-- `mul.ovf.u.w64` -/
+def mulOvfUW64 : Opcode := ⟨296⟩
+/-- `bswap.w16` -/
+def bswapW16 : Opcode := ⟨297⟩
+/-- `bswap.w32` -/
+def bswapW32 : Opcode := ⟨298⟩
+/-- `bswap.w64` -/
+def bswapW64 : Opcode := ⟨299⟩
+/-- `bswap.w128` -/
+def bswapW128 : Opcode := ⟨300⟩
 /-- `fadd.f32` -/
 def faddF32 : Opcode := ⟨301⟩
 /-- `fsub.f32` -/
@@ -1709,42 +1709,42 @@ def cvtF2iSatUF64W64 : Opcode := ⟨381⟩
 def cvtF2iSatUF64W128 : Opcode := ⟨382⟩
 /-- `cvt.i2f.s.w8.f32` -/
 def cvtI2fSW8F32 : Opcode := ⟨383⟩
-/-- `cvt.i2f.s.w8.f64` -/
-def cvtI2fSW8F64 : Opcode := ⟨384⟩
 /-- `cvt.i2f.s.w16.f32` -/
-def cvtI2fSW16F32 : Opcode := ⟨385⟩
-/-- `cvt.i2f.s.w16.f64` -/
-def cvtI2fSW16F64 : Opcode := ⟨386⟩
+def cvtI2fSW16F32 : Opcode := ⟨384⟩
 /-- `cvt.i2f.s.w32.f32` -/
-def cvtI2fSW32F32 : Opcode := ⟨387⟩
-/-- `cvt.i2f.s.w32.f64` -/
-def cvtI2fSW32F64 : Opcode := ⟨388⟩
+def cvtI2fSW32F32 : Opcode := ⟨385⟩
 /-- `cvt.i2f.s.w64.f32` -/
-def cvtI2fSW64F32 : Opcode := ⟨389⟩
-/-- `cvt.i2f.s.w64.f64` -/
-def cvtI2fSW64F64 : Opcode := ⟨390⟩
+def cvtI2fSW64F32 : Opcode := ⟨386⟩
 /-- `cvt.i2f.s.w128.f32` -/
-def cvtI2fSW128F32 : Opcode := ⟨391⟩
+def cvtI2fSW128F32 : Opcode := ⟨387⟩
+/-- `cvt.i2f.s.w8.f64` -/
+def cvtI2fSW8F64 : Opcode := ⟨388⟩
+/-- `cvt.i2f.s.w16.f64` -/
+def cvtI2fSW16F64 : Opcode := ⟨389⟩
+/-- `cvt.i2f.s.w32.f64` -/
+def cvtI2fSW32F64 : Opcode := ⟨390⟩
+/-- `cvt.i2f.s.w64.f64` -/
+def cvtI2fSW64F64 : Opcode := ⟨391⟩
 /-- `cvt.i2f.s.w128.f64` -/
 def cvtI2fSW128F64 : Opcode := ⟨392⟩
 /-- `cvt.i2f.u.w8.f32` -/
 def cvtI2fUW8F32 : Opcode := ⟨393⟩
-/-- `cvt.i2f.u.w8.f64` -/
-def cvtI2fUW8F64 : Opcode := ⟨394⟩
 /-- `cvt.i2f.u.w16.f32` -/
-def cvtI2fUW16F32 : Opcode := ⟨395⟩
-/-- `cvt.i2f.u.w16.f64` -/
-def cvtI2fUW16F64 : Opcode := ⟨396⟩
+def cvtI2fUW16F32 : Opcode := ⟨394⟩
 /-- `cvt.i2f.u.w32.f32` -/
-def cvtI2fUW32F32 : Opcode := ⟨397⟩
-/-- `cvt.i2f.u.w32.f64` -/
-def cvtI2fUW32F64 : Opcode := ⟨398⟩
+def cvtI2fUW32F32 : Opcode := ⟨395⟩
 /-- `cvt.i2f.u.w64.f32` -/
-def cvtI2fUW64F32 : Opcode := ⟨399⟩
-/-- `cvt.i2f.u.w64.f64` -/
-def cvtI2fUW64F64 : Opcode := ⟨400⟩
+def cvtI2fUW64F32 : Opcode := ⟨396⟩
 /-- `cvt.i2f.u.w128.f32` -/
-def cvtI2fUW128F32 : Opcode := ⟨401⟩
+def cvtI2fUW128F32 : Opcode := ⟨397⟩
+/-- `cvt.i2f.u.w8.f64` -/
+def cvtI2fUW8F64 : Opcode := ⟨398⟩
+/-- `cvt.i2f.u.w16.f64` -/
+def cvtI2fUW16F64 : Opcode := ⟨399⟩
+/-- `cvt.i2f.u.w32.f64` -/
+def cvtI2fUW32F64 : Opcode := ⟨400⟩
+/-- `cvt.i2f.u.w64.f64` -/
+def cvtI2fUW64F64 : Opcode := ⟨401⟩
 /-- `cvt.i2f.u.w128.f64` -/
 def cvtI2fUW128F64 : Opcode := ⟨402⟩
 /-- `cvt.f2f.f32.f64` -/
@@ -1753,862 +1753,862 @@ def cvtF2fF32F64 : Opcode := ⟨403⟩
 def cvtF2fF64F32 : Opcode := ⟨404⟩
 /-- `atomic.load.w8.relaxed` -/
 def atomicLoadW8Relaxed : Opcode := ⟨405⟩
-/-- `atomic.load.w8.acquire` -/
-def atomicLoadW8Acquire : Opcode := ⟨406⟩
-/-- `atomic.load.w8.seqcst` -/
-def atomicLoadW8Seqcst : Opcode := ⟨407⟩
-/-- `atomic.store.w8.relaxed` -/
-def atomicStoreW8Relaxed : Opcode := ⟨408⟩
-/-- `atomic.store.w8.release` -/
-def atomicStoreW8Release : Opcode := ⟨409⟩
-/-- `atomic.store.w8.seqcst` -/
-def atomicStoreW8Seqcst : Opcode := ⟨410⟩
 /-- `atomic.load.w16.relaxed` -/
-def atomicLoadW16Relaxed : Opcode := ⟨411⟩
-/-- `atomic.load.w16.acquire` -/
-def atomicLoadW16Acquire : Opcode := ⟨412⟩
-/-- `atomic.load.w16.seqcst` -/
-def atomicLoadW16Seqcst : Opcode := ⟨413⟩
-/-- `atomic.store.w16.relaxed` -/
-def atomicStoreW16Relaxed : Opcode := ⟨414⟩
-/-- `atomic.store.w16.release` -/
-def atomicStoreW16Release : Opcode := ⟨415⟩
-/-- `atomic.store.w16.seqcst` -/
-def atomicStoreW16Seqcst : Opcode := ⟨416⟩
+def atomicLoadW16Relaxed : Opcode := ⟨406⟩
 /-- `atomic.load.w32.relaxed` -/
-def atomicLoadW32Relaxed : Opcode := ⟨417⟩
-/-- `atomic.load.w32.acquire` -/
-def atomicLoadW32Acquire : Opcode := ⟨418⟩
-/-- `atomic.load.w32.seqcst` -/
-def atomicLoadW32Seqcst : Opcode := ⟨419⟩
-/-- `atomic.store.w32.relaxed` -/
-def atomicStoreW32Relaxed : Opcode := ⟨420⟩
-/-- `atomic.store.w32.release` -/
-def atomicStoreW32Release : Opcode := ⟨421⟩
-/-- `atomic.store.w32.seqcst` -/
-def atomicStoreW32Seqcst : Opcode := ⟨422⟩
+def atomicLoadW32Relaxed : Opcode := ⟨407⟩
 /-- `atomic.load.w64.relaxed` -/
-def atomicLoadW64Relaxed : Opcode := ⟨423⟩
+def atomicLoadW64Relaxed : Opcode := ⟨408⟩
+/-- `atomic.load.ptr.relaxed` -/
+def atomicLoadPtrRelaxed : Opcode := ⟨409⟩
+/-- `atomic.load.w8.acquire` -/
+def atomicLoadW8Acquire : Opcode := ⟨410⟩
+/-- `atomic.load.w16.acquire` -/
+def atomicLoadW16Acquire : Opcode := ⟨411⟩
+/-- `atomic.load.w32.acquire` -/
+def atomicLoadW32Acquire : Opcode := ⟨412⟩
 /-- `atomic.load.w64.acquire` -/
-def atomicLoadW64Acquire : Opcode := ⟨424⟩
+def atomicLoadW64Acquire : Opcode := ⟨413⟩
+/-- `atomic.load.ptr.acquire` -/
+def atomicLoadPtrAcquire : Opcode := ⟨414⟩
+/-- `atomic.load.w8.seqcst` -/
+def atomicLoadW8Seqcst : Opcode := ⟨415⟩
+/-- `atomic.load.w16.seqcst` -/
+def atomicLoadW16Seqcst : Opcode := ⟨416⟩
+/-- `atomic.load.w32.seqcst` -/
+def atomicLoadW32Seqcst : Opcode := ⟨417⟩
 /-- `atomic.load.w64.seqcst` -/
-def atomicLoadW64Seqcst : Opcode := ⟨425⟩
+def atomicLoadW64Seqcst : Opcode := ⟨418⟩
+/-- `atomic.load.ptr.seqcst` -/
+def atomicLoadPtrSeqcst : Opcode := ⟨419⟩
+/-- `atomic.store.w8.relaxed` -/
+def atomicStoreW8Relaxed : Opcode := ⟨420⟩
+/-- `atomic.store.w16.relaxed` -/
+def atomicStoreW16Relaxed : Opcode := ⟨421⟩
+/-- `atomic.store.w32.relaxed` -/
+def atomicStoreW32Relaxed : Opcode := ⟨422⟩
 /-- `atomic.store.w64.relaxed` -/
-def atomicStoreW64Relaxed : Opcode := ⟨426⟩
+def atomicStoreW64Relaxed : Opcode := ⟨423⟩
+/-- `atomic.store.ptr.relaxed` -/
+def atomicStorePtrRelaxed : Opcode := ⟨424⟩
+/-- `atomic.store.w8.release` -/
+def atomicStoreW8Release : Opcode := ⟨425⟩
+/-- `atomic.store.w16.release` -/
+def atomicStoreW16Release : Opcode := ⟨426⟩
+/-- `atomic.store.w32.release` -/
+def atomicStoreW32Release : Opcode := ⟨427⟩
 /-- `atomic.store.w64.release` -/
-def atomicStoreW64Release : Opcode := ⟨427⟩
+def atomicStoreW64Release : Opcode := ⟨428⟩
+/-- `atomic.store.ptr.release` -/
+def atomicStorePtrRelease : Opcode := ⟨429⟩
+/-- `atomic.store.w8.seqcst` -/
+def atomicStoreW8Seqcst : Opcode := ⟨430⟩
+/-- `atomic.store.w16.seqcst` -/
+def atomicStoreW16Seqcst : Opcode := ⟨431⟩
+/-- `atomic.store.w32.seqcst` -/
+def atomicStoreW32Seqcst : Opcode := ⟨432⟩
 /-- `atomic.store.w64.seqcst` -/
-def atomicStoreW64Seqcst : Opcode := ⟨428⟩
+def atomicStoreW64Seqcst : Opcode := ⟨433⟩
+/-- `atomic.store.ptr.seqcst` -/
+def atomicStorePtrSeqcst : Opcode := ⟨434⟩
 /-- `atomic.xchg.w8.relaxed` -/
-def atomicXchgW8Relaxed : Opcode := ⟨429⟩
-/-- `atomic.xchg.w8.acquire` -/
-def atomicXchgW8Acquire : Opcode := ⟨430⟩
-/-- `atomic.xchg.w8.release` -/
-def atomicXchgW8Release : Opcode := ⟨431⟩
-/-- `atomic.xchg.w8.acqrel` -/
-def atomicXchgW8Acqrel : Opcode := ⟨432⟩
-/-- `atomic.xchg.w8.seqcst` -/
-def atomicXchgW8Seqcst : Opcode := ⟨433⟩
-/-- `atomic.add.w8.relaxed` -/
-def atomicAddW8Relaxed : Opcode := ⟨434⟩
-/-- `atomic.add.w8.acquire` -/
-def atomicAddW8Acquire : Opcode := ⟨435⟩
-/-- `atomic.add.w8.release` -/
-def atomicAddW8Release : Opcode := ⟨436⟩
-/-- `atomic.add.w8.acqrel` -/
-def atomicAddW8Acqrel : Opcode := ⟨437⟩
-/-- `atomic.add.w8.seqcst` -/
-def atomicAddW8Seqcst : Opcode := ⟨438⟩
-/-- `atomic.sub.w8.relaxed` -/
-def atomicSubW8Relaxed : Opcode := ⟨439⟩
-/-- `atomic.sub.w8.acquire` -/
-def atomicSubW8Acquire : Opcode := ⟨440⟩
-/-- `atomic.sub.w8.release` -/
-def atomicSubW8Release : Opcode := ⟨441⟩
-/-- `atomic.sub.w8.acqrel` -/
-def atomicSubW8Acqrel : Opcode := ⟨442⟩
-/-- `atomic.sub.w8.seqcst` -/
-def atomicSubW8Seqcst : Opcode := ⟨443⟩
-/-- `atomic.and.w8.relaxed` -/
-def atomicAndW8Relaxed : Opcode := ⟨444⟩
-/-- `atomic.and.w8.acquire` -/
-def atomicAndW8Acquire : Opcode := ⟨445⟩
-/-- `atomic.and.w8.release` -/
-def atomicAndW8Release : Opcode := ⟨446⟩
-/-- `atomic.and.w8.acqrel` -/
-def atomicAndW8Acqrel : Opcode := ⟨447⟩
-/-- `atomic.and.w8.seqcst` -/
-def atomicAndW8Seqcst : Opcode := ⟨448⟩
-/-- `atomic.or.w8.relaxed` -/
-def atomicOrW8Relaxed : Opcode := ⟨449⟩
-/-- `atomic.or.w8.acquire` -/
-def atomicOrW8Acquire : Opcode := ⟨450⟩
-/-- `atomic.or.w8.release` -/
-def atomicOrW8Release : Opcode := ⟨451⟩
-/-- `atomic.or.w8.acqrel` -/
-def atomicOrW8Acqrel : Opcode := ⟨452⟩
-/-- `atomic.or.w8.seqcst` -/
-def atomicOrW8Seqcst : Opcode := ⟨453⟩
-/-- `atomic.xor.w8.relaxed` -/
-def atomicXorW8Relaxed : Opcode := ⟨454⟩
-/-- `atomic.xor.w8.acquire` -/
-def atomicXorW8Acquire : Opcode := ⟨455⟩
-/-- `atomic.xor.w8.release` -/
-def atomicXorW8Release : Opcode := ⟨456⟩
-/-- `atomic.xor.w8.acqrel` -/
-def atomicXorW8Acqrel : Opcode := ⟨457⟩
-/-- `atomic.xor.w8.seqcst` -/
-def atomicXorW8Seqcst : Opcode := ⟨458⟩
-/-- `atomic.nand.w8.relaxed` -/
-def atomicNandW8Relaxed : Opcode := ⟨459⟩
-/-- `atomic.nand.w8.acquire` -/
-def atomicNandW8Acquire : Opcode := ⟨460⟩
-/-- `atomic.nand.w8.release` -/
-def atomicNandW8Release : Opcode := ⟨461⟩
-/-- `atomic.nand.w8.acqrel` -/
-def atomicNandW8Acqrel : Opcode := ⟨462⟩
-/-- `atomic.nand.w8.seqcst` -/
-def atomicNandW8Seqcst : Opcode := ⟨463⟩
-/-- `atomic.min.w8.relaxed` -/
-def atomicMinW8Relaxed : Opcode := ⟨464⟩
-/-- `atomic.min.w8.acquire` -/
-def atomicMinW8Acquire : Opcode := ⟨465⟩
-/-- `atomic.min.w8.release` -/
-def atomicMinW8Release : Opcode := ⟨466⟩
-/-- `atomic.min.w8.acqrel` -/
-def atomicMinW8Acqrel : Opcode := ⟨467⟩
-/-- `atomic.min.w8.seqcst` -/
-def atomicMinW8Seqcst : Opcode := ⟨468⟩
-/-- `atomic.max.w8.relaxed` -/
-def atomicMaxW8Relaxed : Opcode := ⟨469⟩
-/-- `atomic.max.w8.acquire` -/
-def atomicMaxW8Acquire : Opcode := ⟨470⟩
-/-- `atomic.max.w8.release` -/
-def atomicMaxW8Release : Opcode := ⟨471⟩
-/-- `atomic.max.w8.acqrel` -/
-def atomicMaxW8Acqrel : Opcode := ⟨472⟩
-/-- `atomic.max.w8.seqcst` -/
-def atomicMaxW8Seqcst : Opcode := ⟨473⟩
-/-- `atomic.umin.w8.relaxed` -/
-def atomicUminW8Relaxed : Opcode := ⟨474⟩
-/-- `atomic.umin.w8.acquire` -/
-def atomicUminW8Acquire : Opcode := ⟨475⟩
-/-- `atomic.umin.w8.release` -/
-def atomicUminW8Release : Opcode := ⟨476⟩
-/-- `atomic.umin.w8.acqrel` -/
-def atomicUminW8Acqrel : Opcode := ⟨477⟩
-/-- `atomic.umin.w8.seqcst` -/
-def atomicUminW8Seqcst : Opcode := ⟨478⟩
-/-- `atomic.umax.w8.relaxed` -/
-def atomicUmaxW8Relaxed : Opcode := ⟨479⟩
-/-- `atomic.umax.w8.acquire` -/
-def atomicUmaxW8Acquire : Opcode := ⟨480⟩
-/-- `atomic.umax.w8.release` -/
-def atomicUmaxW8Release : Opcode := ⟨481⟩
-/-- `atomic.umax.w8.acqrel` -/
-def atomicUmaxW8Acqrel : Opcode := ⟨482⟩
-/-- `atomic.umax.w8.seqcst` -/
-def atomicUmaxW8Seqcst : Opcode := ⟨483⟩
+def atomicXchgW8Relaxed : Opcode := ⟨435⟩
 /-- `atomic.xchg.w16.relaxed` -/
-def atomicXchgW16Relaxed : Opcode := ⟨484⟩
+def atomicXchgW16Relaxed : Opcode := ⟨436⟩
+/-- `atomic.xchg.w32.relaxed` -/
+def atomicXchgW32Relaxed : Opcode := ⟨437⟩
+/-- `atomic.xchg.w64.relaxed` -/
+def atomicXchgW64Relaxed : Opcode := ⟨438⟩
+/-- `atomic.xchg.ptr.relaxed` -/
+def atomicXchgPtrRelaxed : Opcode := ⟨439⟩
+/-- `atomic.xchg.w8.acquire` -/
+def atomicXchgW8Acquire : Opcode := ⟨440⟩
 /-- `atomic.xchg.w16.acquire` -/
-def atomicXchgW16Acquire : Opcode := ⟨485⟩
+def atomicXchgW16Acquire : Opcode := ⟨441⟩
+/-- `atomic.xchg.w32.acquire` -/
+def atomicXchgW32Acquire : Opcode := ⟨442⟩
+/-- `atomic.xchg.w64.acquire` -/
+def atomicXchgW64Acquire : Opcode := ⟨443⟩
+/-- `atomic.xchg.ptr.acquire` -/
+def atomicXchgPtrAcquire : Opcode := ⟨444⟩
+/-- `atomic.xchg.w8.release` -/
+def atomicXchgW8Release : Opcode := ⟨445⟩
 /-- `atomic.xchg.w16.release` -/
-def atomicXchgW16Release : Opcode := ⟨486⟩
+def atomicXchgW16Release : Opcode := ⟨446⟩
+/-- `atomic.xchg.w32.release` -/
+def atomicXchgW32Release : Opcode := ⟨447⟩
+/-- `atomic.xchg.w64.release` -/
+def atomicXchgW64Release : Opcode := ⟨448⟩
+/-- `atomic.xchg.ptr.release` -/
+def atomicXchgPtrRelease : Opcode := ⟨449⟩
+/-- `atomic.xchg.w8.acqrel` -/
+def atomicXchgW8Acqrel : Opcode := ⟨450⟩
 /-- `atomic.xchg.w16.acqrel` -/
-def atomicXchgW16Acqrel : Opcode := ⟨487⟩
+def atomicXchgW16Acqrel : Opcode := ⟨451⟩
+/-- `atomic.xchg.w32.acqrel` -/
+def atomicXchgW32Acqrel : Opcode := ⟨452⟩
+/-- `atomic.xchg.w64.acqrel` -/
+def atomicXchgW64Acqrel : Opcode := ⟨453⟩
+/-- `atomic.xchg.ptr.acqrel` -/
+def atomicXchgPtrAcqrel : Opcode := ⟨454⟩
+/-- `atomic.xchg.w8.seqcst` -/
+def atomicXchgW8Seqcst : Opcode := ⟨455⟩
 /-- `atomic.xchg.w16.seqcst` -/
-def atomicXchgW16Seqcst : Opcode := ⟨488⟩
+def atomicXchgW16Seqcst : Opcode := ⟨456⟩
+/-- `atomic.xchg.w32.seqcst` -/
+def atomicXchgW32Seqcst : Opcode := ⟨457⟩
+/-- `atomic.xchg.w64.seqcst` -/
+def atomicXchgW64Seqcst : Opcode := ⟨458⟩
+/-- `atomic.xchg.ptr.seqcst` -/
+def atomicXchgPtrSeqcst : Opcode := ⟨459⟩
+/-- `atomic.add.w8.relaxed` -/
+def atomicAddW8Relaxed : Opcode := ⟨460⟩
 /-- `atomic.add.w16.relaxed` -/
-def atomicAddW16Relaxed : Opcode := ⟨489⟩
+def atomicAddW16Relaxed : Opcode := ⟨461⟩
+/-- `atomic.add.w32.relaxed` -/
+def atomicAddW32Relaxed : Opcode := ⟨462⟩
+/-- `atomic.add.w64.relaxed` -/
+def atomicAddW64Relaxed : Opcode := ⟨463⟩
+/-- `atomic.add.ptr.relaxed` -/
+def atomicAddPtrRelaxed : Opcode := ⟨464⟩
+/-- `atomic.add.w8.acquire` -/
+def atomicAddW8Acquire : Opcode := ⟨465⟩
 /-- `atomic.add.w16.acquire` -/
-def atomicAddW16Acquire : Opcode := ⟨490⟩
+def atomicAddW16Acquire : Opcode := ⟨466⟩
+/-- `atomic.add.w32.acquire` -/
+def atomicAddW32Acquire : Opcode := ⟨467⟩
+/-- `atomic.add.w64.acquire` -/
+def atomicAddW64Acquire : Opcode := ⟨468⟩
+/-- `atomic.add.ptr.acquire` -/
+def atomicAddPtrAcquire : Opcode := ⟨469⟩
+/-- `atomic.add.w8.release` -/
+def atomicAddW8Release : Opcode := ⟨470⟩
 /-- `atomic.add.w16.release` -/
-def atomicAddW16Release : Opcode := ⟨491⟩
+def atomicAddW16Release : Opcode := ⟨471⟩
+/-- `atomic.add.w32.release` -/
+def atomicAddW32Release : Opcode := ⟨472⟩
+/-- `atomic.add.w64.release` -/
+def atomicAddW64Release : Opcode := ⟨473⟩
+/-- `atomic.add.ptr.release` -/
+def atomicAddPtrRelease : Opcode := ⟨474⟩
+/-- `atomic.add.w8.acqrel` -/
+def atomicAddW8Acqrel : Opcode := ⟨475⟩
 /-- `atomic.add.w16.acqrel` -/
-def atomicAddW16Acqrel : Opcode := ⟨492⟩
+def atomicAddW16Acqrel : Opcode := ⟨476⟩
+/-- `atomic.add.w32.acqrel` -/
+def atomicAddW32Acqrel : Opcode := ⟨477⟩
+/-- `atomic.add.w64.acqrel` -/
+def atomicAddW64Acqrel : Opcode := ⟨478⟩
+/-- `atomic.add.ptr.acqrel` -/
+def atomicAddPtrAcqrel : Opcode := ⟨479⟩
+/-- `atomic.add.w8.seqcst` -/
+def atomicAddW8Seqcst : Opcode := ⟨480⟩
 /-- `atomic.add.w16.seqcst` -/
-def atomicAddW16Seqcst : Opcode := ⟨493⟩
+def atomicAddW16Seqcst : Opcode := ⟨481⟩
+/-- `atomic.add.w32.seqcst` -/
+def atomicAddW32Seqcst : Opcode := ⟨482⟩
+/-- `atomic.add.w64.seqcst` -/
+def atomicAddW64Seqcst : Opcode := ⟨483⟩
+/-- `atomic.add.ptr.seqcst` -/
+def atomicAddPtrSeqcst : Opcode := ⟨484⟩
+/-- `atomic.sub.w8.relaxed` -/
+def atomicSubW8Relaxed : Opcode := ⟨485⟩
 /-- `atomic.sub.w16.relaxed` -/
-def atomicSubW16Relaxed : Opcode := ⟨494⟩
+def atomicSubW16Relaxed : Opcode := ⟨486⟩
+/-- `atomic.sub.w32.relaxed` -/
+def atomicSubW32Relaxed : Opcode := ⟨487⟩
+/-- `atomic.sub.w64.relaxed` -/
+def atomicSubW64Relaxed : Opcode := ⟨488⟩
+/-- `atomic.sub.ptr.relaxed` -/
+def atomicSubPtrRelaxed : Opcode := ⟨489⟩
+/-- `atomic.sub.w8.acquire` -/
+def atomicSubW8Acquire : Opcode := ⟨490⟩
 /-- `atomic.sub.w16.acquire` -/
-def atomicSubW16Acquire : Opcode := ⟨495⟩
+def atomicSubW16Acquire : Opcode := ⟨491⟩
+/-- `atomic.sub.w32.acquire` -/
+def atomicSubW32Acquire : Opcode := ⟨492⟩
+/-- `atomic.sub.w64.acquire` -/
+def atomicSubW64Acquire : Opcode := ⟨493⟩
+/-- `atomic.sub.ptr.acquire` -/
+def atomicSubPtrAcquire : Opcode := ⟨494⟩
+/-- `atomic.sub.w8.release` -/
+def atomicSubW8Release : Opcode := ⟨495⟩
 /-- `atomic.sub.w16.release` -/
 def atomicSubW16Release : Opcode := ⟨496⟩
-/-- `atomic.sub.w16.acqrel` -/
-def atomicSubW16Acqrel : Opcode := ⟨497⟩
-/-- `atomic.sub.w16.seqcst` -/
-def atomicSubW16Seqcst : Opcode := ⟨498⟩
-/-- `atomic.and.w16.relaxed` -/
-def atomicAndW16Relaxed : Opcode := ⟨499⟩
-/-- `atomic.and.w16.acquire` -/
-def atomicAndW16Acquire : Opcode := ⟨500⟩
-/-- `atomic.and.w16.release` -/
-def atomicAndW16Release : Opcode := ⟨501⟩
-/-- `atomic.and.w16.acqrel` -/
-def atomicAndW16Acqrel : Opcode := ⟨502⟩
-/-- `atomic.and.w16.seqcst` -/
-def atomicAndW16Seqcst : Opcode := ⟨503⟩
-/-- `atomic.or.w16.relaxed` -/
-def atomicOrW16Relaxed : Opcode := ⟨504⟩
-/-- `atomic.or.w16.acquire` -/
-def atomicOrW16Acquire : Opcode := ⟨505⟩
-/-- `atomic.or.w16.release` -/
-def atomicOrW16Release : Opcode := ⟨506⟩
-/-- `atomic.or.w16.acqrel` -/
-def atomicOrW16Acqrel : Opcode := ⟨507⟩
-/-- `atomic.or.w16.seqcst` -/
-def atomicOrW16Seqcst : Opcode := ⟨508⟩
-/-- `atomic.xor.w16.relaxed` -/
-def atomicXorW16Relaxed : Opcode := ⟨509⟩
-/-- `atomic.xor.w16.acquire` -/
-def atomicXorW16Acquire : Opcode := ⟨510⟩
-/-- `atomic.xor.w16.release` -/
-def atomicXorW16Release : Opcode := ⟨511⟩
-/-- `atomic.xor.w16.acqrel` -/
-def atomicXorW16Acqrel : Opcode := ⟨512⟩
-/-- `atomic.xor.w16.seqcst` -/
-def atomicXorW16Seqcst : Opcode := ⟨513⟩
-/-- `atomic.nand.w16.relaxed` -/
-def atomicNandW16Relaxed : Opcode := ⟨514⟩
-/-- `atomic.nand.w16.acquire` -/
-def atomicNandW16Acquire : Opcode := ⟨515⟩
-/-- `atomic.nand.w16.release` -/
-def atomicNandW16Release : Opcode := ⟨516⟩
-/-- `atomic.nand.w16.acqrel` -/
-def atomicNandW16Acqrel : Opcode := ⟨517⟩
-/-- `atomic.nand.w16.seqcst` -/
-def atomicNandW16Seqcst : Opcode := ⟨518⟩
-/-- `atomic.min.w16.relaxed` -/
-def atomicMinW16Relaxed : Opcode := ⟨519⟩
-/-- `atomic.min.w16.acquire` -/
-def atomicMinW16Acquire : Opcode := ⟨520⟩
-/-- `atomic.min.w16.release` -/
-def atomicMinW16Release : Opcode := ⟨521⟩
-/-- `atomic.min.w16.acqrel` -/
-def atomicMinW16Acqrel : Opcode := ⟨522⟩
-/-- `atomic.min.w16.seqcst` -/
-def atomicMinW16Seqcst : Opcode := ⟨523⟩
-/-- `atomic.max.w16.relaxed` -/
-def atomicMaxW16Relaxed : Opcode := ⟨524⟩
-/-- `atomic.max.w16.acquire` -/
-def atomicMaxW16Acquire : Opcode := ⟨525⟩
-/-- `atomic.max.w16.release` -/
-def atomicMaxW16Release : Opcode := ⟨526⟩
-/-- `atomic.max.w16.acqrel` -/
-def atomicMaxW16Acqrel : Opcode := ⟨527⟩
-/-- `atomic.max.w16.seqcst` -/
-def atomicMaxW16Seqcst : Opcode := ⟨528⟩
-/-- `atomic.umin.w16.relaxed` -/
-def atomicUminW16Relaxed : Opcode := ⟨529⟩
-/-- `atomic.umin.w16.acquire` -/
-def atomicUminW16Acquire : Opcode := ⟨530⟩
-/-- `atomic.umin.w16.release` -/
-def atomicUminW16Release : Opcode := ⟨531⟩
-/-- `atomic.umin.w16.acqrel` -/
-def atomicUminW16Acqrel : Opcode := ⟨532⟩
-/-- `atomic.umin.w16.seqcst` -/
-def atomicUminW16Seqcst : Opcode := ⟨533⟩
-/-- `atomic.umax.w16.relaxed` -/
-def atomicUmaxW16Relaxed : Opcode := ⟨534⟩
-/-- `atomic.umax.w16.acquire` -/
-def atomicUmaxW16Acquire : Opcode := ⟨535⟩
-/-- `atomic.umax.w16.release` -/
-def atomicUmaxW16Release : Opcode := ⟨536⟩
-/-- `atomic.umax.w16.acqrel` -/
-def atomicUmaxW16Acqrel : Opcode := ⟨537⟩
-/-- `atomic.umax.w16.seqcst` -/
-def atomicUmaxW16Seqcst : Opcode := ⟨538⟩
-/-- `atomic.xchg.w32.relaxed` -/
-def atomicXchgW32Relaxed : Opcode := ⟨539⟩
-/-- `atomic.xchg.w32.acquire` -/
-def atomicXchgW32Acquire : Opcode := ⟨540⟩
-/-- `atomic.xchg.w32.release` -/
-def atomicXchgW32Release : Opcode := ⟨541⟩
-/-- `atomic.xchg.w32.acqrel` -/
-def atomicXchgW32Acqrel : Opcode := ⟨542⟩
-/-- `atomic.xchg.w32.seqcst` -/
-def atomicXchgW32Seqcst : Opcode := ⟨543⟩
-/-- `atomic.add.w32.relaxed` -/
-def atomicAddW32Relaxed : Opcode := ⟨544⟩
-/-- `atomic.add.w32.acquire` -/
-def atomicAddW32Acquire : Opcode := ⟨545⟩
-/-- `atomic.add.w32.release` -/
-def atomicAddW32Release : Opcode := ⟨546⟩
-/-- `atomic.add.w32.acqrel` -/
-def atomicAddW32Acqrel : Opcode := ⟨547⟩
-/-- `atomic.add.w32.seqcst` -/
-def atomicAddW32Seqcst : Opcode := ⟨548⟩
-/-- `atomic.sub.w32.relaxed` -/
-def atomicSubW32Relaxed : Opcode := ⟨549⟩
-/-- `atomic.sub.w32.acquire` -/
-def atomicSubW32Acquire : Opcode := ⟨550⟩
 /-- `atomic.sub.w32.release` -/
-def atomicSubW32Release : Opcode := ⟨551⟩
-/-- `atomic.sub.w32.acqrel` -/
-def atomicSubW32Acqrel : Opcode := ⟨552⟩
-/-- `atomic.sub.w32.seqcst` -/
-def atomicSubW32Seqcst : Opcode := ⟨553⟩
-/-- `atomic.and.w32.relaxed` -/
-def atomicAndW32Relaxed : Opcode := ⟨554⟩
-/-- `atomic.and.w32.acquire` -/
-def atomicAndW32Acquire : Opcode := ⟨555⟩
-/-- `atomic.and.w32.release` -/
-def atomicAndW32Release : Opcode := ⟨556⟩
-/-- `atomic.and.w32.acqrel` -/
-def atomicAndW32Acqrel : Opcode := ⟨557⟩
-/-- `atomic.and.w32.seqcst` -/
-def atomicAndW32Seqcst : Opcode := ⟨558⟩
-/-- `atomic.or.w32.relaxed` -/
-def atomicOrW32Relaxed : Opcode := ⟨559⟩
-/-- `atomic.or.w32.acquire` -/
-def atomicOrW32Acquire : Opcode := ⟨560⟩
-/-- `atomic.or.w32.release` -/
-def atomicOrW32Release : Opcode := ⟨561⟩
-/-- `atomic.or.w32.acqrel` -/
-def atomicOrW32Acqrel : Opcode := ⟨562⟩
-/-- `atomic.or.w32.seqcst` -/
-def atomicOrW32Seqcst : Opcode := ⟨563⟩
-/-- `atomic.xor.w32.relaxed` -/
-def atomicXorW32Relaxed : Opcode := ⟨564⟩
-/-- `atomic.xor.w32.acquire` -/
-def atomicXorW32Acquire : Opcode := ⟨565⟩
-/-- `atomic.xor.w32.release` -/
-def atomicXorW32Release : Opcode := ⟨566⟩
-/-- `atomic.xor.w32.acqrel` -/
-def atomicXorW32Acqrel : Opcode := ⟨567⟩
-/-- `atomic.xor.w32.seqcst` -/
-def atomicXorW32Seqcst : Opcode := ⟨568⟩
-/-- `atomic.nand.w32.relaxed` -/
-def atomicNandW32Relaxed : Opcode := ⟨569⟩
-/-- `atomic.nand.w32.acquire` -/
-def atomicNandW32Acquire : Opcode := ⟨570⟩
-/-- `atomic.nand.w32.release` -/
-def atomicNandW32Release : Opcode := ⟨571⟩
-/-- `atomic.nand.w32.acqrel` -/
-def atomicNandW32Acqrel : Opcode := ⟨572⟩
-/-- `atomic.nand.w32.seqcst` -/
-def atomicNandW32Seqcst : Opcode := ⟨573⟩
-/-- `atomic.min.w32.relaxed` -/
-def atomicMinW32Relaxed : Opcode := ⟨574⟩
-/-- `atomic.min.w32.acquire` -/
-def atomicMinW32Acquire : Opcode := ⟨575⟩
-/-- `atomic.min.w32.release` -/
-def atomicMinW32Release : Opcode := ⟨576⟩
-/-- `atomic.min.w32.acqrel` -/
-def atomicMinW32Acqrel : Opcode := ⟨577⟩
-/-- `atomic.min.w32.seqcst` -/
-def atomicMinW32Seqcst : Opcode := ⟨578⟩
-/-- `atomic.max.w32.relaxed` -/
-def atomicMaxW32Relaxed : Opcode := ⟨579⟩
-/-- `atomic.max.w32.acquire` -/
-def atomicMaxW32Acquire : Opcode := ⟨580⟩
-/-- `atomic.max.w32.release` -/
-def atomicMaxW32Release : Opcode := ⟨581⟩
-/-- `atomic.max.w32.acqrel` -/
-def atomicMaxW32Acqrel : Opcode := ⟨582⟩
-/-- `atomic.max.w32.seqcst` -/
-def atomicMaxW32Seqcst : Opcode := ⟨583⟩
-/-- `atomic.umin.w32.relaxed` -/
-def atomicUminW32Relaxed : Opcode := ⟨584⟩
-/-- `atomic.umin.w32.acquire` -/
-def atomicUminW32Acquire : Opcode := ⟨585⟩
-/-- `atomic.umin.w32.release` -/
-def atomicUminW32Release : Opcode := ⟨586⟩
-/-- `atomic.umin.w32.acqrel` -/
-def atomicUminW32Acqrel : Opcode := ⟨587⟩
-/-- `atomic.umin.w32.seqcst` -/
-def atomicUminW32Seqcst : Opcode := ⟨588⟩
-/-- `atomic.umax.w32.relaxed` -/
-def atomicUmaxW32Relaxed : Opcode := ⟨589⟩
-/-- `atomic.umax.w32.acquire` -/
-def atomicUmaxW32Acquire : Opcode := ⟨590⟩
-/-- `atomic.umax.w32.release` -/
-def atomicUmaxW32Release : Opcode := ⟨591⟩
-/-- `atomic.umax.w32.acqrel` -/
-def atomicUmaxW32Acqrel : Opcode := ⟨592⟩
-/-- `atomic.umax.w32.seqcst` -/
-def atomicUmaxW32Seqcst : Opcode := ⟨593⟩
-/-- `atomic.xchg.w64.relaxed` -/
-def atomicXchgW64Relaxed : Opcode := ⟨594⟩
-/-- `atomic.xchg.w64.acquire` -/
-def atomicXchgW64Acquire : Opcode := ⟨595⟩
-/-- `atomic.xchg.w64.release` -/
-def atomicXchgW64Release : Opcode := ⟨596⟩
-/-- `atomic.xchg.w64.acqrel` -/
-def atomicXchgW64Acqrel : Opcode := ⟨597⟩
-/-- `atomic.xchg.w64.seqcst` -/
-def atomicXchgW64Seqcst : Opcode := ⟨598⟩
-/-- `atomic.add.w64.relaxed` -/
-def atomicAddW64Relaxed : Opcode := ⟨599⟩
-/-- `atomic.add.w64.acquire` -/
-def atomicAddW64Acquire : Opcode := ⟨600⟩
-/-- `atomic.add.w64.release` -/
-def atomicAddW64Release : Opcode := ⟨601⟩
-/-- `atomic.add.w64.acqrel` -/
-def atomicAddW64Acqrel : Opcode := ⟨602⟩
-/-- `atomic.add.w64.seqcst` -/
-def atomicAddW64Seqcst : Opcode := ⟨603⟩
-/-- `atomic.sub.w64.relaxed` -/
-def atomicSubW64Relaxed : Opcode := ⟨604⟩
-/-- `atomic.sub.w64.acquire` -/
-def atomicSubW64Acquire : Opcode := ⟨605⟩
+def atomicSubW32Release : Opcode := ⟨497⟩
 /-- `atomic.sub.w64.release` -/
-def atomicSubW64Release : Opcode := ⟨606⟩
+def atomicSubW64Release : Opcode := ⟨498⟩
+/-- `atomic.sub.ptr.release` -/
+def atomicSubPtrRelease : Opcode := ⟨499⟩
+/-- `atomic.sub.w8.acqrel` -/
+def atomicSubW8Acqrel : Opcode := ⟨500⟩
+/-- `atomic.sub.w16.acqrel` -/
+def atomicSubW16Acqrel : Opcode := ⟨501⟩
+/-- `atomic.sub.w32.acqrel` -/
+def atomicSubW32Acqrel : Opcode := ⟨502⟩
 /-- `atomic.sub.w64.acqrel` -/
-def atomicSubW64Acqrel : Opcode := ⟨607⟩
+def atomicSubW64Acqrel : Opcode := ⟨503⟩
+/-- `atomic.sub.ptr.acqrel` -/
+def atomicSubPtrAcqrel : Opcode := ⟨504⟩
+/-- `atomic.sub.w8.seqcst` -/
+def atomicSubW8Seqcst : Opcode := ⟨505⟩
+/-- `atomic.sub.w16.seqcst` -/
+def atomicSubW16Seqcst : Opcode := ⟨506⟩
+/-- `atomic.sub.w32.seqcst` -/
+def atomicSubW32Seqcst : Opcode := ⟨507⟩
 /-- `atomic.sub.w64.seqcst` -/
-def atomicSubW64Seqcst : Opcode := ⟨608⟩
+def atomicSubW64Seqcst : Opcode := ⟨508⟩
+/-- `atomic.sub.ptr.seqcst` -/
+def atomicSubPtrSeqcst : Opcode := ⟨509⟩
+/-- `atomic.and.w8.relaxed` -/
+def atomicAndW8Relaxed : Opcode := ⟨510⟩
+/-- `atomic.and.w16.relaxed` -/
+def atomicAndW16Relaxed : Opcode := ⟨511⟩
+/-- `atomic.and.w32.relaxed` -/
+def atomicAndW32Relaxed : Opcode := ⟨512⟩
 /-- `atomic.and.w64.relaxed` -/
-def atomicAndW64Relaxed : Opcode := ⟨609⟩
+def atomicAndW64Relaxed : Opcode := ⟨513⟩
+/-- `atomic.and.ptr.relaxed` -/
+def atomicAndPtrRelaxed : Opcode := ⟨514⟩
+/-- `atomic.and.w8.acquire` -/
+def atomicAndW8Acquire : Opcode := ⟨515⟩
+/-- `atomic.and.w16.acquire` -/
+def atomicAndW16Acquire : Opcode := ⟨516⟩
+/-- `atomic.and.w32.acquire` -/
+def atomicAndW32Acquire : Opcode := ⟨517⟩
 /-- `atomic.and.w64.acquire` -/
-def atomicAndW64Acquire : Opcode := ⟨610⟩
+def atomicAndW64Acquire : Opcode := ⟨518⟩
+/-- `atomic.and.ptr.acquire` -/
+def atomicAndPtrAcquire : Opcode := ⟨519⟩
+/-- `atomic.and.w8.release` -/
+def atomicAndW8Release : Opcode := ⟨520⟩
+/-- `atomic.and.w16.release` -/
+def atomicAndW16Release : Opcode := ⟨521⟩
+/-- `atomic.and.w32.release` -/
+def atomicAndW32Release : Opcode := ⟨522⟩
 /-- `atomic.and.w64.release` -/
-def atomicAndW64Release : Opcode := ⟨611⟩
+def atomicAndW64Release : Opcode := ⟨523⟩
+/-- `atomic.and.ptr.release` -/
+def atomicAndPtrRelease : Opcode := ⟨524⟩
+/-- `atomic.and.w8.acqrel` -/
+def atomicAndW8Acqrel : Opcode := ⟨525⟩
+/-- `atomic.and.w16.acqrel` -/
+def atomicAndW16Acqrel : Opcode := ⟨526⟩
+/-- `atomic.and.w32.acqrel` -/
+def atomicAndW32Acqrel : Opcode := ⟨527⟩
 /-- `atomic.and.w64.acqrel` -/
-def atomicAndW64Acqrel : Opcode := ⟨612⟩
+def atomicAndW64Acqrel : Opcode := ⟨528⟩
+/-- `atomic.and.ptr.acqrel` -/
+def atomicAndPtrAcqrel : Opcode := ⟨529⟩
+/-- `atomic.and.w8.seqcst` -/
+def atomicAndW8Seqcst : Opcode := ⟨530⟩
+/-- `atomic.and.w16.seqcst` -/
+def atomicAndW16Seqcst : Opcode := ⟨531⟩
+/-- `atomic.and.w32.seqcst` -/
+def atomicAndW32Seqcst : Opcode := ⟨532⟩
 /-- `atomic.and.w64.seqcst` -/
-def atomicAndW64Seqcst : Opcode := ⟨613⟩
+def atomicAndW64Seqcst : Opcode := ⟨533⟩
+/-- `atomic.and.ptr.seqcst` -/
+def atomicAndPtrSeqcst : Opcode := ⟨534⟩
+/-- `atomic.or.w8.relaxed` -/
+def atomicOrW8Relaxed : Opcode := ⟨535⟩
+/-- `atomic.or.w16.relaxed` -/
+def atomicOrW16Relaxed : Opcode := ⟨536⟩
+/-- `atomic.or.w32.relaxed` -/
+def atomicOrW32Relaxed : Opcode := ⟨537⟩
 /-- `atomic.or.w64.relaxed` -/
-def atomicOrW64Relaxed : Opcode := ⟨614⟩
+def atomicOrW64Relaxed : Opcode := ⟨538⟩
+/-- `atomic.or.ptr.relaxed` -/
+def atomicOrPtrRelaxed : Opcode := ⟨539⟩
+/-- `atomic.or.w8.acquire` -/
+def atomicOrW8Acquire : Opcode := ⟨540⟩
+/-- `atomic.or.w16.acquire` -/
+def atomicOrW16Acquire : Opcode := ⟨541⟩
+/-- `atomic.or.w32.acquire` -/
+def atomicOrW32Acquire : Opcode := ⟨542⟩
 /-- `atomic.or.w64.acquire` -/
-def atomicOrW64Acquire : Opcode := ⟨615⟩
+def atomicOrW64Acquire : Opcode := ⟨543⟩
+/-- `atomic.or.ptr.acquire` -/
+def atomicOrPtrAcquire : Opcode := ⟨544⟩
+/-- `atomic.or.w8.release` -/
+def atomicOrW8Release : Opcode := ⟨545⟩
+/-- `atomic.or.w16.release` -/
+def atomicOrW16Release : Opcode := ⟨546⟩
+/-- `atomic.or.w32.release` -/
+def atomicOrW32Release : Opcode := ⟨547⟩
 /-- `atomic.or.w64.release` -/
-def atomicOrW64Release : Opcode := ⟨616⟩
+def atomicOrW64Release : Opcode := ⟨548⟩
+/-- `atomic.or.ptr.release` -/
+def atomicOrPtrRelease : Opcode := ⟨549⟩
+/-- `atomic.or.w8.acqrel` -/
+def atomicOrW8Acqrel : Opcode := ⟨550⟩
+/-- `atomic.or.w16.acqrel` -/
+def atomicOrW16Acqrel : Opcode := ⟨551⟩
+/-- `atomic.or.w32.acqrel` -/
+def atomicOrW32Acqrel : Opcode := ⟨552⟩
 /-- `atomic.or.w64.acqrel` -/
-def atomicOrW64Acqrel : Opcode := ⟨617⟩
+def atomicOrW64Acqrel : Opcode := ⟨553⟩
+/-- `atomic.or.ptr.acqrel` -/
+def atomicOrPtrAcqrel : Opcode := ⟨554⟩
+/-- `atomic.or.w8.seqcst` -/
+def atomicOrW8Seqcst : Opcode := ⟨555⟩
+/-- `atomic.or.w16.seqcst` -/
+def atomicOrW16Seqcst : Opcode := ⟨556⟩
+/-- `atomic.or.w32.seqcst` -/
+def atomicOrW32Seqcst : Opcode := ⟨557⟩
 /-- `atomic.or.w64.seqcst` -/
-def atomicOrW64Seqcst : Opcode := ⟨618⟩
+def atomicOrW64Seqcst : Opcode := ⟨558⟩
+/-- `atomic.or.ptr.seqcst` -/
+def atomicOrPtrSeqcst : Opcode := ⟨559⟩
+/-- `atomic.xor.w8.relaxed` -/
+def atomicXorW8Relaxed : Opcode := ⟨560⟩
+/-- `atomic.xor.w16.relaxed` -/
+def atomicXorW16Relaxed : Opcode := ⟨561⟩
+/-- `atomic.xor.w32.relaxed` -/
+def atomicXorW32Relaxed : Opcode := ⟨562⟩
 /-- `atomic.xor.w64.relaxed` -/
-def atomicXorW64Relaxed : Opcode := ⟨619⟩
+def atomicXorW64Relaxed : Opcode := ⟨563⟩
+/-- `atomic.xor.ptr.relaxed` -/
+def atomicXorPtrRelaxed : Opcode := ⟨564⟩
+/-- `atomic.xor.w8.acquire` -/
+def atomicXorW8Acquire : Opcode := ⟨565⟩
+/-- `atomic.xor.w16.acquire` -/
+def atomicXorW16Acquire : Opcode := ⟨566⟩
+/-- `atomic.xor.w32.acquire` -/
+def atomicXorW32Acquire : Opcode := ⟨567⟩
 /-- `atomic.xor.w64.acquire` -/
-def atomicXorW64Acquire : Opcode := ⟨620⟩
+def atomicXorW64Acquire : Opcode := ⟨568⟩
+/-- `atomic.xor.ptr.acquire` -/
+def atomicXorPtrAcquire : Opcode := ⟨569⟩
+/-- `atomic.xor.w8.release` -/
+def atomicXorW8Release : Opcode := ⟨570⟩
+/-- `atomic.xor.w16.release` -/
+def atomicXorW16Release : Opcode := ⟨571⟩
+/-- `atomic.xor.w32.release` -/
+def atomicXorW32Release : Opcode := ⟨572⟩
 /-- `atomic.xor.w64.release` -/
-def atomicXorW64Release : Opcode := ⟨621⟩
+def atomicXorW64Release : Opcode := ⟨573⟩
+/-- `atomic.xor.ptr.release` -/
+def atomicXorPtrRelease : Opcode := ⟨574⟩
+/-- `atomic.xor.w8.acqrel` -/
+def atomicXorW8Acqrel : Opcode := ⟨575⟩
+/-- `atomic.xor.w16.acqrel` -/
+def atomicXorW16Acqrel : Opcode := ⟨576⟩
+/-- `atomic.xor.w32.acqrel` -/
+def atomicXorW32Acqrel : Opcode := ⟨577⟩
 /-- `atomic.xor.w64.acqrel` -/
-def atomicXorW64Acqrel : Opcode := ⟨622⟩
+def atomicXorW64Acqrel : Opcode := ⟨578⟩
+/-- `atomic.xor.ptr.acqrel` -/
+def atomicXorPtrAcqrel : Opcode := ⟨579⟩
+/-- `atomic.xor.w8.seqcst` -/
+def atomicXorW8Seqcst : Opcode := ⟨580⟩
+/-- `atomic.xor.w16.seqcst` -/
+def atomicXorW16Seqcst : Opcode := ⟨581⟩
+/-- `atomic.xor.w32.seqcst` -/
+def atomicXorW32Seqcst : Opcode := ⟨582⟩
 /-- `atomic.xor.w64.seqcst` -/
-def atomicXorW64Seqcst : Opcode := ⟨623⟩
+def atomicXorW64Seqcst : Opcode := ⟨583⟩
+/-- `atomic.xor.ptr.seqcst` -/
+def atomicXorPtrSeqcst : Opcode := ⟨584⟩
+/-- `atomic.nand.w8.relaxed` -/
+def atomicNandW8Relaxed : Opcode := ⟨585⟩
+/-- `atomic.nand.w16.relaxed` -/
+def atomicNandW16Relaxed : Opcode := ⟨586⟩
+/-- `atomic.nand.w32.relaxed` -/
+def atomicNandW32Relaxed : Opcode := ⟨587⟩
 /-- `atomic.nand.w64.relaxed` -/
-def atomicNandW64Relaxed : Opcode := ⟨624⟩
+def atomicNandW64Relaxed : Opcode := ⟨588⟩
+/-- `atomic.nand.w8.acquire` -/
+def atomicNandW8Acquire : Opcode := ⟨589⟩
+/-- `atomic.nand.w16.acquire` -/
+def atomicNandW16Acquire : Opcode := ⟨590⟩
+/-- `atomic.nand.w32.acquire` -/
+def atomicNandW32Acquire : Opcode := ⟨591⟩
 /-- `atomic.nand.w64.acquire` -/
-def atomicNandW64Acquire : Opcode := ⟨625⟩
+def atomicNandW64Acquire : Opcode := ⟨592⟩
+/-- `atomic.nand.w8.release` -/
+def atomicNandW8Release : Opcode := ⟨593⟩
+/-- `atomic.nand.w16.release` -/
+def atomicNandW16Release : Opcode := ⟨594⟩
+/-- `atomic.nand.w32.release` -/
+def atomicNandW32Release : Opcode := ⟨595⟩
 /-- `atomic.nand.w64.release` -/
-def atomicNandW64Release : Opcode := ⟨626⟩
+def atomicNandW64Release : Opcode := ⟨596⟩
+/-- `atomic.nand.w8.acqrel` -/
+def atomicNandW8Acqrel : Opcode := ⟨597⟩
+/-- `atomic.nand.w16.acqrel` -/
+def atomicNandW16Acqrel : Opcode := ⟨598⟩
+/-- `atomic.nand.w32.acqrel` -/
+def atomicNandW32Acqrel : Opcode := ⟨599⟩
 /-- `atomic.nand.w64.acqrel` -/
-def atomicNandW64Acqrel : Opcode := ⟨627⟩
+def atomicNandW64Acqrel : Opcode := ⟨600⟩
+/-- `atomic.nand.w8.seqcst` -/
+def atomicNandW8Seqcst : Opcode := ⟨601⟩
+/-- `atomic.nand.w16.seqcst` -/
+def atomicNandW16Seqcst : Opcode := ⟨602⟩
+/-- `atomic.nand.w32.seqcst` -/
+def atomicNandW32Seqcst : Opcode := ⟨603⟩
 /-- `atomic.nand.w64.seqcst` -/
-def atomicNandW64Seqcst : Opcode := ⟨628⟩
+def atomicNandW64Seqcst : Opcode := ⟨604⟩
+/-- `atomic.min.w8.relaxed` -/
+def atomicMinW8Relaxed : Opcode := ⟨605⟩
+/-- `atomic.min.w16.relaxed` -/
+def atomicMinW16Relaxed : Opcode := ⟨606⟩
+/-- `atomic.min.w32.relaxed` -/
+def atomicMinW32Relaxed : Opcode := ⟨607⟩
 /-- `atomic.min.w64.relaxed` -/
-def atomicMinW64Relaxed : Opcode := ⟨629⟩
+def atomicMinW64Relaxed : Opcode := ⟨608⟩
+/-- `atomic.min.w8.acquire` -/
+def atomicMinW8Acquire : Opcode := ⟨609⟩
+/-- `atomic.min.w16.acquire` -/
+def atomicMinW16Acquire : Opcode := ⟨610⟩
+/-- `atomic.min.w32.acquire` -/
+def atomicMinW32Acquire : Opcode := ⟨611⟩
 /-- `atomic.min.w64.acquire` -/
-def atomicMinW64Acquire : Opcode := ⟨630⟩
+def atomicMinW64Acquire : Opcode := ⟨612⟩
+/-- `atomic.min.w8.release` -/
+def atomicMinW8Release : Opcode := ⟨613⟩
+/-- `atomic.min.w16.release` -/
+def atomicMinW16Release : Opcode := ⟨614⟩
+/-- `atomic.min.w32.release` -/
+def atomicMinW32Release : Opcode := ⟨615⟩
 /-- `atomic.min.w64.release` -/
-def atomicMinW64Release : Opcode := ⟨631⟩
+def atomicMinW64Release : Opcode := ⟨616⟩
+/-- `atomic.min.w8.acqrel` -/
+def atomicMinW8Acqrel : Opcode := ⟨617⟩
+/-- `atomic.min.w16.acqrel` -/
+def atomicMinW16Acqrel : Opcode := ⟨618⟩
+/-- `atomic.min.w32.acqrel` -/
+def atomicMinW32Acqrel : Opcode := ⟨619⟩
 /-- `atomic.min.w64.acqrel` -/
-def atomicMinW64Acqrel : Opcode := ⟨632⟩
+def atomicMinW64Acqrel : Opcode := ⟨620⟩
+/-- `atomic.min.w8.seqcst` -/
+def atomicMinW8Seqcst : Opcode := ⟨621⟩
+/-- `atomic.min.w16.seqcst` -/
+def atomicMinW16Seqcst : Opcode := ⟨622⟩
+/-- `atomic.min.w32.seqcst` -/
+def atomicMinW32Seqcst : Opcode := ⟨623⟩
 /-- `atomic.min.w64.seqcst` -/
-def atomicMinW64Seqcst : Opcode := ⟨633⟩
+def atomicMinW64Seqcst : Opcode := ⟨624⟩
+/-- `atomic.max.w8.relaxed` -/
+def atomicMaxW8Relaxed : Opcode := ⟨625⟩
+/-- `atomic.max.w16.relaxed` -/
+def atomicMaxW16Relaxed : Opcode := ⟨626⟩
+/-- `atomic.max.w32.relaxed` -/
+def atomicMaxW32Relaxed : Opcode := ⟨627⟩
 /-- `atomic.max.w64.relaxed` -/
-def atomicMaxW64Relaxed : Opcode := ⟨634⟩
+def atomicMaxW64Relaxed : Opcode := ⟨628⟩
+/-- `atomic.max.w8.acquire` -/
+def atomicMaxW8Acquire : Opcode := ⟨629⟩
+/-- `atomic.max.w16.acquire` -/
+def atomicMaxW16Acquire : Opcode := ⟨630⟩
+/-- `atomic.max.w32.acquire` -/
+def atomicMaxW32Acquire : Opcode := ⟨631⟩
 /-- `atomic.max.w64.acquire` -/
-def atomicMaxW64Acquire : Opcode := ⟨635⟩
+def atomicMaxW64Acquire : Opcode := ⟨632⟩
+/-- `atomic.max.w8.release` -/
+def atomicMaxW8Release : Opcode := ⟨633⟩
+/-- `atomic.max.w16.release` -/
+def atomicMaxW16Release : Opcode := ⟨634⟩
+/-- `atomic.max.w32.release` -/
+def atomicMaxW32Release : Opcode := ⟨635⟩
 /-- `atomic.max.w64.release` -/
 def atomicMaxW64Release : Opcode := ⟨636⟩
+/-- `atomic.max.w8.acqrel` -/
+def atomicMaxW8Acqrel : Opcode := ⟨637⟩
+/-- `atomic.max.w16.acqrel` -/
+def atomicMaxW16Acqrel : Opcode := ⟨638⟩
+/-- `atomic.max.w32.acqrel` -/
+def atomicMaxW32Acqrel : Opcode := ⟨639⟩
 /-- `atomic.max.w64.acqrel` -/
-def atomicMaxW64Acqrel : Opcode := ⟨637⟩
+def atomicMaxW64Acqrel : Opcode := ⟨640⟩
+/-- `atomic.max.w8.seqcst` -/
+def atomicMaxW8Seqcst : Opcode := ⟨641⟩
+/-- `atomic.max.w16.seqcst` -/
+def atomicMaxW16Seqcst : Opcode := ⟨642⟩
+/-- `atomic.max.w32.seqcst` -/
+def atomicMaxW32Seqcst : Opcode := ⟨643⟩
 /-- `atomic.max.w64.seqcst` -/
-def atomicMaxW64Seqcst : Opcode := ⟨638⟩
+def atomicMaxW64Seqcst : Opcode := ⟨644⟩
+/-- `atomic.umin.w8.relaxed` -/
+def atomicUminW8Relaxed : Opcode := ⟨645⟩
+/-- `atomic.umin.w16.relaxed` -/
+def atomicUminW16Relaxed : Opcode := ⟨646⟩
+/-- `atomic.umin.w32.relaxed` -/
+def atomicUminW32Relaxed : Opcode := ⟨647⟩
 /-- `atomic.umin.w64.relaxed` -/
-def atomicUminW64Relaxed : Opcode := ⟨639⟩
+def atomicUminW64Relaxed : Opcode := ⟨648⟩
+/-- `atomic.umin.w8.acquire` -/
+def atomicUminW8Acquire : Opcode := ⟨649⟩
+/-- `atomic.umin.w16.acquire` -/
+def atomicUminW16Acquire : Opcode := ⟨650⟩
+/-- `atomic.umin.w32.acquire` -/
+def atomicUminW32Acquire : Opcode := ⟨651⟩
 /-- `atomic.umin.w64.acquire` -/
-def atomicUminW64Acquire : Opcode := ⟨640⟩
+def atomicUminW64Acquire : Opcode := ⟨652⟩
+/-- `atomic.umin.w8.release` -/
+def atomicUminW8Release : Opcode := ⟨653⟩
+/-- `atomic.umin.w16.release` -/
+def atomicUminW16Release : Opcode := ⟨654⟩
+/-- `atomic.umin.w32.release` -/
+def atomicUminW32Release : Opcode := ⟨655⟩
 /-- `atomic.umin.w64.release` -/
-def atomicUminW64Release : Opcode := ⟨641⟩
+def atomicUminW64Release : Opcode := ⟨656⟩
+/-- `atomic.umin.w8.acqrel` -/
+def atomicUminW8Acqrel : Opcode := ⟨657⟩
+/-- `atomic.umin.w16.acqrel` -/
+def atomicUminW16Acqrel : Opcode := ⟨658⟩
+/-- `atomic.umin.w32.acqrel` -/
+def atomicUminW32Acqrel : Opcode := ⟨659⟩
 /-- `atomic.umin.w64.acqrel` -/
-def atomicUminW64Acqrel : Opcode := ⟨642⟩
+def atomicUminW64Acqrel : Opcode := ⟨660⟩
+/-- `atomic.umin.w8.seqcst` -/
+def atomicUminW8Seqcst : Opcode := ⟨661⟩
+/-- `atomic.umin.w16.seqcst` -/
+def atomicUminW16Seqcst : Opcode := ⟨662⟩
+/-- `atomic.umin.w32.seqcst` -/
+def atomicUminW32Seqcst : Opcode := ⟨663⟩
 /-- `atomic.umin.w64.seqcst` -/
-def atomicUminW64Seqcst : Opcode := ⟨643⟩
+def atomicUminW64Seqcst : Opcode := ⟨664⟩
+/-- `atomic.umax.w8.relaxed` -/
+def atomicUmaxW8Relaxed : Opcode := ⟨665⟩
+/-- `atomic.umax.w16.relaxed` -/
+def atomicUmaxW16Relaxed : Opcode := ⟨666⟩
+/-- `atomic.umax.w32.relaxed` -/
+def atomicUmaxW32Relaxed : Opcode := ⟨667⟩
 /-- `atomic.umax.w64.relaxed` -/
-def atomicUmaxW64Relaxed : Opcode := ⟨644⟩
+def atomicUmaxW64Relaxed : Opcode := ⟨668⟩
+/-- `atomic.umax.w8.acquire` -/
+def atomicUmaxW8Acquire : Opcode := ⟨669⟩
+/-- `atomic.umax.w16.acquire` -/
+def atomicUmaxW16Acquire : Opcode := ⟨670⟩
+/-- `atomic.umax.w32.acquire` -/
+def atomicUmaxW32Acquire : Opcode := ⟨671⟩
 /-- `atomic.umax.w64.acquire` -/
-def atomicUmaxW64Acquire : Opcode := ⟨645⟩
+def atomicUmaxW64Acquire : Opcode := ⟨672⟩
+/-- `atomic.umax.w8.release` -/
+def atomicUmaxW8Release : Opcode := ⟨673⟩
+/-- `atomic.umax.w16.release` -/
+def atomicUmaxW16Release : Opcode := ⟨674⟩
+/-- `atomic.umax.w32.release` -/
+def atomicUmaxW32Release : Opcode := ⟨675⟩
 /-- `atomic.umax.w64.release` -/
-def atomicUmaxW64Release : Opcode := ⟨646⟩
+def atomicUmaxW64Release : Opcode := ⟨676⟩
+/-- `atomic.umax.w8.acqrel` -/
+def atomicUmaxW8Acqrel : Opcode := ⟨677⟩
+/-- `atomic.umax.w16.acqrel` -/
+def atomicUmaxW16Acqrel : Opcode := ⟨678⟩
+/-- `atomic.umax.w32.acqrel` -/
+def atomicUmaxW32Acqrel : Opcode := ⟨679⟩
 /-- `atomic.umax.w64.acqrel` -/
-def atomicUmaxW64Acqrel : Opcode := ⟨647⟩
+def atomicUmaxW64Acqrel : Opcode := ⟨680⟩
+/-- `atomic.umax.w8.seqcst` -/
+def atomicUmaxW8Seqcst : Opcode := ⟨681⟩
+/-- `atomic.umax.w16.seqcst` -/
+def atomicUmaxW16Seqcst : Opcode := ⟨682⟩
+/-- `atomic.umax.w32.seqcst` -/
+def atomicUmaxW32Seqcst : Opcode := ⟨683⟩
 /-- `atomic.umax.w64.seqcst` -/
-def atomicUmaxW64Seqcst : Opcode := ⟨648⟩
+def atomicUmaxW64Seqcst : Opcode := ⟨684⟩
 /-- `atomic.cxchg.w8.relaxed.relaxed` -/
-def atomicCxchgW8RelaxedRelaxed : Opcode := ⟨649⟩
-/-- `atomic.cxchg.w8.relaxed.acquire` -/
-def atomicCxchgW8RelaxedAcquire : Opcode := ⟨650⟩
-/-- `atomic.cxchg.w8.relaxed.seqcst` -/
-def atomicCxchgW8RelaxedSeqcst : Opcode := ⟨651⟩
-/-- `atomic.cxchg.w8.acquire.relaxed` -/
-def atomicCxchgW8AcquireRelaxed : Opcode := ⟨652⟩
-/-- `atomic.cxchg.w8.acquire.acquire` -/
-def atomicCxchgW8AcquireAcquire : Opcode := ⟨653⟩
-/-- `atomic.cxchg.w8.acquire.seqcst` -/
-def atomicCxchgW8AcquireSeqcst : Opcode := ⟨654⟩
-/-- `atomic.cxchg.w8.release.relaxed` -/
-def atomicCxchgW8ReleaseRelaxed : Opcode := ⟨655⟩
-/-- `atomic.cxchg.w8.release.acquire` -/
-def atomicCxchgW8ReleaseAcquire : Opcode := ⟨656⟩
-/-- `atomic.cxchg.w8.release.seqcst` -/
-def atomicCxchgW8ReleaseSeqcst : Opcode := ⟨657⟩
-/-- `atomic.cxchg.w8.acqrel.relaxed` -/
-def atomicCxchgW8AcqrelRelaxed : Opcode := ⟨658⟩
-/-- `atomic.cxchg.w8.acqrel.acquire` -/
-def atomicCxchgW8AcqrelAcquire : Opcode := ⟨659⟩
-/-- `atomic.cxchg.w8.acqrel.seqcst` -/
-def atomicCxchgW8AcqrelSeqcst : Opcode := ⟨660⟩
-/-- `atomic.cxchg.w8.seqcst.relaxed` -/
-def atomicCxchgW8SeqcstRelaxed : Opcode := ⟨661⟩
-/-- `atomic.cxchg.w8.seqcst.acquire` -/
-def atomicCxchgW8SeqcstAcquire : Opcode := ⟨662⟩
-/-- `atomic.cxchg.w8.seqcst.seqcst` -/
-def atomicCxchgW8SeqcstSeqcst : Opcode := ⟨663⟩
+def atomicCxchgW8RelaxedRelaxed : Opcode := ⟨685⟩
 /-- `atomic.cxchg.w16.relaxed.relaxed` -/
-def atomicCxchgW16RelaxedRelaxed : Opcode := ⟨664⟩
-/-- `atomic.cxchg.w16.relaxed.acquire` -/
-def atomicCxchgW16RelaxedAcquire : Opcode := ⟨665⟩
-/-- `atomic.cxchg.w16.relaxed.seqcst` -/
-def atomicCxchgW16RelaxedSeqcst : Opcode := ⟨666⟩
-/-- `atomic.cxchg.w16.acquire.relaxed` -/
-def atomicCxchgW16AcquireRelaxed : Opcode := ⟨667⟩
-/-- `atomic.cxchg.w16.acquire.acquire` -/
-def atomicCxchgW16AcquireAcquire : Opcode := ⟨668⟩
-/-- `atomic.cxchg.w16.acquire.seqcst` -/
-def atomicCxchgW16AcquireSeqcst : Opcode := ⟨669⟩
-/-- `atomic.cxchg.w16.release.relaxed` -/
-def atomicCxchgW16ReleaseRelaxed : Opcode := ⟨670⟩
-/-- `atomic.cxchg.w16.release.acquire` -/
-def atomicCxchgW16ReleaseAcquire : Opcode := ⟨671⟩
-/-- `atomic.cxchg.w16.release.seqcst` -/
-def atomicCxchgW16ReleaseSeqcst : Opcode := ⟨672⟩
-/-- `atomic.cxchg.w16.acqrel.relaxed` -/
-def atomicCxchgW16AcqrelRelaxed : Opcode := ⟨673⟩
-/-- `atomic.cxchg.w16.acqrel.acquire` -/
-def atomicCxchgW16AcqrelAcquire : Opcode := ⟨674⟩
-/-- `atomic.cxchg.w16.acqrel.seqcst` -/
-def atomicCxchgW16AcqrelSeqcst : Opcode := ⟨675⟩
-/-- `atomic.cxchg.w16.seqcst.relaxed` -/
-def atomicCxchgW16SeqcstRelaxed : Opcode := ⟨676⟩
-/-- `atomic.cxchg.w16.seqcst.acquire` -/
-def atomicCxchgW16SeqcstAcquire : Opcode := ⟨677⟩
-/-- `atomic.cxchg.w16.seqcst.seqcst` -/
-def atomicCxchgW16SeqcstSeqcst : Opcode := ⟨678⟩
+def atomicCxchgW16RelaxedRelaxed : Opcode := ⟨686⟩
 /-- `atomic.cxchg.w32.relaxed.relaxed` -/
-def atomicCxchgW32RelaxedRelaxed : Opcode := ⟨679⟩
-/-- `atomic.cxchg.w32.relaxed.acquire` -/
-def atomicCxchgW32RelaxedAcquire : Opcode := ⟨680⟩
-/-- `atomic.cxchg.w32.relaxed.seqcst` -/
-def atomicCxchgW32RelaxedSeqcst : Opcode := ⟨681⟩
-/-- `atomic.cxchg.w32.acquire.relaxed` -/
-def atomicCxchgW32AcquireRelaxed : Opcode := ⟨682⟩
-/-- `atomic.cxchg.w32.acquire.acquire` -/
-def atomicCxchgW32AcquireAcquire : Opcode := ⟨683⟩
-/-- `atomic.cxchg.w32.acquire.seqcst` -/
-def atomicCxchgW32AcquireSeqcst : Opcode := ⟨684⟩
-/-- `atomic.cxchg.w32.release.relaxed` -/
-def atomicCxchgW32ReleaseRelaxed : Opcode := ⟨685⟩
-/-- `atomic.cxchg.w32.release.acquire` -/
-def atomicCxchgW32ReleaseAcquire : Opcode := ⟨686⟩
-/-- `atomic.cxchg.w32.release.seqcst` -/
-def atomicCxchgW32ReleaseSeqcst : Opcode := ⟨687⟩
-/-- `atomic.cxchg.w32.acqrel.relaxed` -/
-def atomicCxchgW32AcqrelRelaxed : Opcode := ⟨688⟩
-/-- `atomic.cxchg.w32.acqrel.acquire` -/
-def atomicCxchgW32AcqrelAcquire : Opcode := ⟨689⟩
-/-- `atomic.cxchg.w32.acqrel.seqcst` -/
-def atomicCxchgW32AcqrelSeqcst : Opcode := ⟨690⟩
-/-- `atomic.cxchg.w32.seqcst.relaxed` -/
-def atomicCxchgW32SeqcstRelaxed : Opcode := ⟨691⟩
-/-- `atomic.cxchg.w32.seqcst.acquire` -/
-def atomicCxchgW32SeqcstAcquire : Opcode := ⟨692⟩
-/-- `atomic.cxchg.w32.seqcst.seqcst` -/
-def atomicCxchgW32SeqcstSeqcst : Opcode := ⟨693⟩
+def atomicCxchgW32RelaxedRelaxed : Opcode := ⟨687⟩
 /-- `atomic.cxchg.w64.relaxed.relaxed` -/
-def atomicCxchgW64RelaxedRelaxed : Opcode := ⟨694⟩
-/-- `atomic.cxchg.w64.relaxed.acquire` -/
-def atomicCxchgW64RelaxedAcquire : Opcode := ⟨695⟩
-/-- `atomic.cxchg.w64.relaxed.seqcst` -/
-def atomicCxchgW64RelaxedSeqcst : Opcode := ⟨696⟩
-/-- `atomic.cxchg.w64.acquire.relaxed` -/
-def atomicCxchgW64AcquireRelaxed : Opcode := ⟨697⟩
-/-- `atomic.cxchg.w64.acquire.acquire` -/
-def atomicCxchgW64AcquireAcquire : Opcode := ⟨698⟩
-/-- `atomic.cxchg.w64.acquire.seqcst` -/
-def atomicCxchgW64AcquireSeqcst : Opcode := ⟨699⟩
-/-- `atomic.cxchg.w64.release.relaxed` -/
-def atomicCxchgW64ReleaseRelaxed : Opcode := ⟨700⟩
-/-- `atomic.cxchg.w64.release.acquire` -/
-def atomicCxchgW64ReleaseAcquire : Opcode := ⟨701⟩
-/-- `atomic.cxchg.w64.release.seqcst` -/
-def atomicCxchgW64ReleaseSeqcst : Opcode := ⟨702⟩
-/-- `atomic.cxchg.w64.acqrel.relaxed` -/
-def atomicCxchgW64AcqrelRelaxed : Opcode := ⟨703⟩
-/-- `atomic.cxchg.w64.acqrel.acquire` -/
-def atomicCxchgW64AcqrelAcquire : Opcode := ⟨704⟩
-/-- `atomic.cxchg.w64.acqrel.seqcst` -/
-def atomicCxchgW64AcqrelSeqcst : Opcode := ⟨705⟩
-/-- `atomic.cxchg.w64.seqcst.relaxed` -/
-def atomicCxchgW64SeqcstRelaxed : Opcode := ⟨706⟩
-/-- `atomic.cxchg.w64.seqcst.acquire` -/
-def atomicCxchgW64SeqcstAcquire : Opcode := ⟨707⟩
-/-- `atomic.cxchg.w64.seqcst.seqcst` -/
-def atomicCxchgW64SeqcstSeqcst : Opcode := ⟨708⟩
-/-- `atomic.cxchg.weak.w8.relaxed.relaxed` -/
-def atomicCxchgWeakW8RelaxedRelaxed : Opcode := ⟨709⟩
-/-- `atomic.cxchg.weak.w8.relaxed.acquire` -/
-def atomicCxchgWeakW8RelaxedAcquire : Opcode := ⟨710⟩
-/-- `atomic.cxchg.weak.w8.relaxed.seqcst` -/
-def atomicCxchgWeakW8RelaxedSeqcst : Opcode := ⟨711⟩
-/-- `atomic.cxchg.weak.w8.acquire.relaxed` -/
-def atomicCxchgWeakW8AcquireRelaxed : Opcode := ⟨712⟩
-/-- `atomic.cxchg.weak.w8.acquire.acquire` -/
-def atomicCxchgWeakW8AcquireAcquire : Opcode := ⟨713⟩
-/-- `atomic.cxchg.weak.w8.acquire.seqcst` -/
-def atomicCxchgWeakW8AcquireSeqcst : Opcode := ⟨714⟩
-/-- `atomic.cxchg.weak.w8.release.relaxed` -/
-def atomicCxchgWeakW8ReleaseRelaxed : Opcode := ⟨715⟩
-/-- `atomic.cxchg.weak.w8.release.acquire` -/
-def atomicCxchgWeakW8ReleaseAcquire : Opcode := ⟨716⟩
-/-- `atomic.cxchg.weak.w8.release.seqcst` -/
-def atomicCxchgWeakW8ReleaseSeqcst : Opcode := ⟨717⟩
-/-- `atomic.cxchg.weak.w8.acqrel.relaxed` -/
-def atomicCxchgWeakW8AcqrelRelaxed : Opcode := ⟨718⟩
-/-- `atomic.cxchg.weak.w8.acqrel.acquire` -/
-def atomicCxchgWeakW8AcqrelAcquire : Opcode := ⟨719⟩
-/-- `atomic.cxchg.weak.w8.acqrel.seqcst` -/
-def atomicCxchgWeakW8AcqrelSeqcst : Opcode := ⟨720⟩
-/-- `atomic.cxchg.weak.w8.seqcst.relaxed` -/
-def atomicCxchgWeakW8SeqcstRelaxed : Opcode := ⟨721⟩
-/-- `atomic.cxchg.weak.w8.seqcst.acquire` -/
-def atomicCxchgWeakW8SeqcstAcquire : Opcode := ⟨722⟩
-/-- `atomic.cxchg.weak.w8.seqcst.seqcst` -/
-def atomicCxchgWeakW8SeqcstSeqcst : Opcode := ⟨723⟩
-/-- `atomic.cxchg.weak.w16.relaxed.relaxed` -/
-def atomicCxchgWeakW16RelaxedRelaxed : Opcode := ⟨724⟩
-/-- `atomic.cxchg.weak.w16.relaxed.acquire` -/
-def atomicCxchgWeakW16RelaxedAcquire : Opcode := ⟨725⟩
-/-- `atomic.cxchg.weak.w16.relaxed.seqcst` -/
-def atomicCxchgWeakW16RelaxedSeqcst : Opcode := ⟨726⟩
-/-- `atomic.cxchg.weak.w16.acquire.relaxed` -/
-def atomicCxchgWeakW16AcquireRelaxed : Opcode := ⟨727⟩
-/-- `atomic.cxchg.weak.w16.acquire.acquire` -/
-def atomicCxchgWeakW16AcquireAcquire : Opcode := ⟨728⟩
-/-- `atomic.cxchg.weak.w16.acquire.seqcst` -/
-def atomicCxchgWeakW16AcquireSeqcst : Opcode := ⟨729⟩
-/-- `atomic.cxchg.weak.w16.release.relaxed` -/
-def atomicCxchgWeakW16ReleaseRelaxed : Opcode := ⟨730⟩
-/-- `atomic.cxchg.weak.w16.release.acquire` -/
-def atomicCxchgWeakW16ReleaseAcquire : Opcode := ⟨731⟩
-/-- `atomic.cxchg.weak.w16.release.seqcst` -/
-def atomicCxchgWeakW16ReleaseSeqcst : Opcode := ⟨732⟩
-/-- `atomic.cxchg.weak.w16.acqrel.relaxed` -/
-def atomicCxchgWeakW16AcqrelRelaxed : Opcode := ⟨733⟩
-/-- `atomic.cxchg.weak.w16.acqrel.acquire` -/
-def atomicCxchgWeakW16AcqrelAcquire : Opcode := ⟨734⟩
-/-- `atomic.cxchg.weak.w16.acqrel.seqcst` -/
-def atomicCxchgWeakW16AcqrelSeqcst : Opcode := ⟨735⟩
-/-- `atomic.cxchg.weak.w16.seqcst.relaxed` -/
-def atomicCxchgWeakW16SeqcstRelaxed : Opcode := ⟨736⟩
-/-- `atomic.cxchg.weak.w16.seqcst.acquire` -/
-def atomicCxchgWeakW16SeqcstAcquire : Opcode := ⟨737⟩
-/-- `atomic.cxchg.weak.w16.seqcst.seqcst` -/
-def atomicCxchgWeakW16SeqcstSeqcst : Opcode := ⟨738⟩
-/-- `atomic.cxchg.weak.w32.relaxed.relaxed` -/
-def atomicCxchgWeakW32RelaxedRelaxed : Opcode := ⟨739⟩
-/-- `atomic.cxchg.weak.w32.relaxed.acquire` -/
-def atomicCxchgWeakW32RelaxedAcquire : Opcode := ⟨740⟩
-/-- `atomic.cxchg.weak.w32.relaxed.seqcst` -/
-def atomicCxchgWeakW32RelaxedSeqcst : Opcode := ⟨741⟩
-/-- `atomic.cxchg.weak.w32.acquire.relaxed` -/
-def atomicCxchgWeakW32AcquireRelaxed : Opcode := ⟨742⟩
-/-- `atomic.cxchg.weak.w32.acquire.acquire` -/
-def atomicCxchgWeakW32AcquireAcquire : Opcode := ⟨743⟩
-/-- `atomic.cxchg.weak.w32.acquire.seqcst` -/
-def atomicCxchgWeakW32AcquireSeqcst : Opcode := ⟨744⟩
-/-- `atomic.cxchg.weak.w32.release.relaxed` -/
-def atomicCxchgWeakW32ReleaseRelaxed : Opcode := ⟨745⟩
-/-- `atomic.cxchg.weak.w32.release.acquire` -/
-def atomicCxchgWeakW32ReleaseAcquire : Opcode := ⟨746⟩
-/-- `atomic.cxchg.weak.w32.release.seqcst` -/
-def atomicCxchgWeakW32ReleaseSeqcst : Opcode := ⟨747⟩
-/-- `atomic.cxchg.weak.w32.acqrel.relaxed` -/
-def atomicCxchgWeakW32AcqrelRelaxed : Opcode := ⟨748⟩
-/-- `atomic.cxchg.weak.w32.acqrel.acquire` -/
-def atomicCxchgWeakW32AcqrelAcquire : Opcode := ⟨749⟩
-/-- `atomic.cxchg.weak.w32.acqrel.seqcst` -/
-def atomicCxchgWeakW32AcqrelSeqcst : Opcode := ⟨750⟩
-/-- `atomic.cxchg.weak.w32.seqcst.relaxed` -/
-def atomicCxchgWeakW32SeqcstRelaxed : Opcode := ⟨751⟩
-/-- `atomic.cxchg.weak.w32.seqcst.acquire` -/
-def atomicCxchgWeakW32SeqcstAcquire : Opcode := ⟨752⟩
-/-- `atomic.cxchg.weak.w32.seqcst.seqcst` -/
-def atomicCxchgWeakW32SeqcstSeqcst : Opcode := ⟨753⟩
-/-- `atomic.cxchg.weak.w64.relaxed.relaxed` -/
-def atomicCxchgWeakW64RelaxedRelaxed : Opcode := ⟨754⟩
-/-- `atomic.cxchg.weak.w64.relaxed.acquire` -/
-def atomicCxchgWeakW64RelaxedAcquire : Opcode := ⟨755⟩
-/-- `atomic.cxchg.weak.w64.relaxed.seqcst` -/
-def atomicCxchgWeakW64RelaxedSeqcst : Opcode := ⟨756⟩
-/-- `atomic.cxchg.weak.w64.acquire.relaxed` -/
-def atomicCxchgWeakW64AcquireRelaxed : Opcode := ⟨757⟩
-/-- `atomic.cxchg.weak.w64.acquire.acquire` -/
-def atomicCxchgWeakW64AcquireAcquire : Opcode := ⟨758⟩
-/-- `atomic.cxchg.weak.w64.acquire.seqcst` -/
-def atomicCxchgWeakW64AcquireSeqcst : Opcode := ⟨759⟩
-/-- `atomic.cxchg.weak.w64.release.relaxed` -/
-def atomicCxchgWeakW64ReleaseRelaxed : Opcode := ⟨760⟩
-/-- `atomic.cxchg.weak.w64.release.acquire` -/
-def atomicCxchgWeakW64ReleaseAcquire : Opcode := ⟨761⟩
-/-- `atomic.cxchg.weak.w64.release.seqcst` -/
-def atomicCxchgWeakW64ReleaseSeqcst : Opcode := ⟨762⟩
-/-- `atomic.cxchg.weak.w64.acqrel.relaxed` -/
-def atomicCxchgWeakW64AcqrelRelaxed : Opcode := ⟨763⟩
-/-- `atomic.cxchg.weak.w64.acqrel.acquire` -/
-def atomicCxchgWeakW64AcqrelAcquire : Opcode := ⟨764⟩
-/-- `atomic.cxchg.weak.w64.acqrel.seqcst` -/
-def atomicCxchgWeakW64AcqrelSeqcst : Opcode := ⟨765⟩
-/-- `atomic.cxchg.weak.w64.seqcst.relaxed` -/
-def atomicCxchgWeakW64SeqcstRelaxed : Opcode := ⟨766⟩
-/-- `atomic.cxchg.weak.w64.seqcst.acquire` -/
-def atomicCxchgWeakW64SeqcstAcquire : Opcode := ⟨767⟩
-/-- `atomic.cxchg.weak.w64.seqcst.seqcst` -/
-def atomicCxchgWeakW64SeqcstSeqcst : Opcode := ⟨768⟩
-/-- `atomic.load.ptr.relaxed` -/
-def atomicLoadPtrRelaxed : Opcode := ⟨769⟩
-/-- `atomic.load.ptr.acquire` -/
-def atomicLoadPtrAcquire : Opcode := ⟨770⟩
-/-- `atomic.load.ptr.seqcst` -/
-def atomicLoadPtrSeqcst : Opcode := ⟨771⟩
-/-- `atomic.store.ptr.relaxed` -/
-def atomicStorePtrRelaxed : Opcode := ⟨772⟩
-/-- `atomic.store.ptr.release` -/
-def atomicStorePtrRelease : Opcode := ⟨773⟩
-/-- `atomic.store.ptr.seqcst` -/
-def atomicStorePtrSeqcst : Opcode := ⟨774⟩
-/-- `atomic.xchg.ptr.relaxed` -/
-def atomicXchgPtrRelaxed : Opcode := ⟨775⟩
-/-- `atomic.xchg.ptr.acquire` -/
-def atomicXchgPtrAcquire : Opcode := ⟨776⟩
-/-- `atomic.xchg.ptr.release` -/
-def atomicXchgPtrRelease : Opcode := ⟨777⟩
-/-- `atomic.xchg.ptr.acqrel` -/
-def atomicXchgPtrAcqrel : Opcode := ⟨778⟩
-/-- `atomic.xchg.ptr.seqcst` -/
-def atomicXchgPtrSeqcst : Opcode := ⟨779⟩
-/-- `atomic.add.ptr.relaxed` -/
-def atomicAddPtrRelaxed : Opcode := ⟨780⟩
-/-- `atomic.add.ptr.acquire` -/
-def atomicAddPtrAcquire : Opcode := ⟨781⟩
-/-- `atomic.add.ptr.release` -/
-def atomicAddPtrRelease : Opcode := ⟨782⟩
-/-- `atomic.add.ptr.acqrel` -/
-def atomicAddPtrAcqrel : Opcode := ⟨783⟩
-/-- `atomic.add.ptr.seqcst` -/
-def atomicAddPtrSeqcst : Opcode := ⟨784⟩
-/-- `atomic.sub.ptr.relaxed` -/
-def atomicSubPtrRelaxed : Opcode := ⟨785⟩
-/-- `atomic.sub.ptr.acquire` -/
-def atomicSubPtrAcquire : Opcode := ⟨786⟩
-/-- `atomic.sub.ptr.release` -/
-def atomicSubPtrRelease : Opcode := ⟨787⟩
-/-- `atomic.sub.ptr.acqrel` -/
-def atomicSubPtrAcqrel : Opcode := ⟨788⟩
-/-- `atomic.sub.ptr.seqcst` -/
-def atomicSubPtrSeqcst : Opcode := ⟨789⟩
-/-- `atomic.and.ptr.relaxed` -/
-def atomicAndPtrRelaxed : Opcode := ⟨790⟩
-/-- `atomic.and.ptr.acquire` -/
-def atomicAndPtrAcquire : Opcode := ⟨791⟩
-/-- `atomic.and.ptr.release` -/
-def atomicAndPtrRelease : Opcode := ⟨792⟩
-/-- `atomic.and.ptr.acqrel` -/
-def atomicAndPtrAcqrel : Opcode := ⟨793⟩
-/-- `atomic.and.ptr.seqcst` -/
-def atomicAndPtrSeqcst : Opcode := ⟨794⟩
-/-- `atomic.or.ptr.relaxed` -/
-def atomicOrPtrRelaxed : Opcode := ⟨795⟩
-/-- `atomic.or.ptr.acquire` -/
-def atomicOrPtrAcquire : Opcode := ⟨796⟩
-/-- `atomic.or.ptr.release` -/
-def atomicOrPtrRelease : Opcode := ⟨797⟩
-/-- `atomic.or.ptr.acqrel` -/
-def atomicOrPtrAcqrel : Opcode := ⟨798⟩
-/-- `atomic.or.ptr.seqcst` -/
-def atomicOrPtrSeqcst : Opcode := ⟨799⟩
-/-- `atomic.xor.ptr.relaxed` -/
-def atomicXorPtrRelaxed : Opcode := ⟨800⟩
-/-- `atomic.xor.ptr.acquire` -/
-def atomicXorPtrAcquire : Opcode := ⟨801⟩
-/-- `atomic.xor.ptr.release` -/
-def atomicXorPtrRelease : Opcode := ⟨802⟩
-/-- `atomic.xor.ptr.acqrel` -/
-def atomicXorPtrAcqrel : Opcode := ⟨803⟩
-/-- `atomic.xor.ptr.seqcst` -/
-def atomicXorPtrSeqcst : Opcode := ⟨804⟩
+def atomicCxchgW64RelaxedRelaxed : Opcode := ⟨688⟩
 /-- `atomic.cxchg.ptr.relaxed.relaxed` -/
-def atomicCxchgPtrRelaxedRelaxed : Opcode := ⟨805⟩
+def atomicCxchgPtrRelaxedRelaxed : Opcode := ⟨689⟩
+/-- `atomic.cxchg.w8.relaxed.acquire` -/
+def atomicCxchgW8RelaxedAcquire : Opcode := ⟨690⟩
+/-- `atomic.cxchg.w16.relaxed.acquire` -/
+def atomicCxchgW16RelaxedAcquire : Opcode := ⟨691⟩
+/-- `atomic.cxchg.w32.relaxed.acquire` -/
+def atomicCxchgW32RelaxedAcquire : Opcode := ⟨692⟩
+/-- `atomic.cxchg.w64.relaxed.acquire` -/
+def atomicCxchgW64RelaxedAcquire : Opcode := ⟨693⟩
 /-- `atomic.cxchg.ptr.relaxed.acquire` -/
-def atomicCxchgPtrRelaxedAcquire : Opcode := ⟨806⟩
+def atomicCxchgPtrRelaxedAcquire : Opcode := ⟨694⟩
+/-- `atomic.cxchg.w8.relaxed.seqcst` -/
+def atomicCxchgW8RelaxedSeqcst : Opcode := ⟨695⟩
+/-- `atomic.cxchg.w16.relaxed.seqcst` -/
+def atomicCxchgW16RelaxedSeqcst : Opcode := ⟨696⟩
+/-- `atomic.cxchg.w32.relaxed.seqcst` -/
+def atomicCxchgW32RelaxedSeqcst : Opcode := ⟨697⟩
+/-- `atomic.cxchg.w64.relaxed.seqcst` -/
+def atomicCxchgW64RelaxedSeqcst : Opcode := ⟨698⟩
 /-- `atomic.cxchg.ptr.relaxed.seqcst` -/
-def atomicCxchgPtrRelaxedSeqcst : Opcode := ⟨807⟩
+def atomicCxchgPtrRelaxedSeqcst : Opcode := ⟨699⟩
+/-- `atomic.cxchg.w8.acquire.relaxed` -/
+def atomicCxchgW8AcquireRelaxed : Opcode := ⟨700⟩
+/-- `atomic.cxchg.w16.acquire.relaxed` -/
+def atomicCxchgW16AcquireRelaxed : Opcode := ⟨701⟩
+/-- `atomic.cxchg.w32.acquire.relaxed` -/
+def atomicCxchgW32AcquireRelaxed : Opcode := ⟨702⟩
+/-- `atomic.cxchg.w64.acquire.relaxed` -/
+def atomicCxchgW64AcquireRelaxed : Opcode := ⟨703⟩
 /-- `atomic.cxchg.ptr.acquire.relaxed` -/
-def atomicCxchgPtrAcquireRelaxed : Opcode := ⟨808⟩
+def atomicCxchgPtrAcquireRelaxed : Opcode := ⟨704⟩
+/-- `atomic.cxchg.w8.acquire.acquire` -/
+def atomicCxchgW8AcquireAcquire : Opcode := ⟨705⟩
+/-- `atomic.cxchg.w16.acquire.acquire` -/
+def atomicCxchgW16AcquireAcquire : Opcode := ⟨706⟩
+/-- `atomic.cxchg.w32.acquire.acquire` -/
+def atomicCxchgW32AcquireAcquire : Opcode := ⟨707⟩
+/-- `atomic.cxchg.w64.acquire.acquire` -/
+def atomicCxchgW64AcquireAcquire : Opcode := ⟨708⟩
 /-- `atomic.cxchg.ptr.acquire.acquire` -/
-def atomicCxchgPtrAcquireAcquire : Opcode := ⟨809⟩
+def atomicCxchgPtrAcquireAcquire : Opcode := ⟨709⟩
+/-- `atomic.cxchg.w8.acquire.seqcst` -/
+def atomicCxchgW8AcquireSeqcst : Opcode := ⟨710⟩
+/-- `atomic.cxchg.w16.acquire.seqcst` -/
+def atomicCxchgW16AcquireSeqcst : Opcode := ⟨711⟩
+/-- `atomic.cxchg.w32.acquire.seqcst` -/
+def atomicCxchgW32AcquireSeqcst : Opcode := ⟨712⟩
+/-- `atomic.cxchg.w64.acquire.seqcst` -/
+def atomicCxchgW64AcquireSeqcst : Opcode := ⟨713⟩
 /-- `atomic.cxchg.ptr.acquire.seqcst` -/
-def atomicCxchgPtrAcquireSeqcst : Opcode := ⟨810⟩
+def atomicCxchgPtrAcquireSeqcst : Opcode := ⟨714⟩
+/-- `atomic.cxchg.w8.release.relaxed` -/
+def atomicCxchgW8ReleaseRelaxed : Opcode := ⟨715⟩
+/-- `atomic.cxchg.w16.release.relaxed` -/
+def atomicCxchgW16ReleaseRelaxed : Opcode := ⟨716⟩
+/-- `atomic.cxchg.w32.release.relaxed` -/
+def atomicCxchgW32ReleaseRelaxed : Opcode := ⟨717⟩
+/-- `atomic.cxchg.w64.release.relaxed` -/
+def atomicCxchgW64ReleaseRelaxed : Opcode := ⟨718⟩
 /-- `atomic.cxchg.ptr.release.relaxed` -/
-def atomicCxchgPtrReleaseRelaxed : Opcode := ⟨811⟩
+def atomicCxchgPtrReleaseRelaxed : Opcode := ⟨719⟩
+/-- `atomic.cxchg.w8.release.acquire` -/
+def atomicCxchgW8ReleaseAcquire : Opcode := ⟨720⟩
+/-- `atomic.cxchg.w16.release.acquire` -/
+def atomicCxchgW16ReleaseAcquire : Opcode := ⟨721⟩
+/-- `atomic.cxchg.w32.release.acquire` -/
+def atomicCxchgW32ReleaseAcquire : Opcode := ⟨722⟩
+/-- `atomic.cxchg.w64.release.acquire` -/
+def atomicCxchgW64ReleaseAcquire : Opcode := ⟨723⟩
 /-- `atomic.cxchg.ptr.release.acquire` -/
-def atomicCxchgPtrReleaseAcquire : Opcode := ⟨812⟩
+def atomicCxchgPtrReleaseAcquire : Opcode := ⟨724⟩
+/-- `atomic.cxchg.w8.release.seqcst` -/
+def atomicCxchgW8ReleaseSeqcst : Opcode := ⟨725⟩
+/-- `atomic.cxchg.w16.release.seqcst` -/
+def atomicCxchgW16ReleaseSeqcst : Opcode := ⟨726⟩
+/-- `atomic.cxchg.w32.release.seqcst` -/
+def atomicCxchgW32ReleaseSeqcst : Opcode := ⟨727⟩
+/-- `atomic.cxchg.w64.release.seqcst` -/
+def atomicCxchgW64ReleaseSeqcst : Opcode := ⟨728⟩
 /-- `atomic.cxchg.ptr.release.seqcst` -/
-def atomicCxchgPtrReleaseSeqcst : Opcode := ⟨813⟩
+def atomicCxchgPtrReleaseSeqcst : Opcode := ⟨729⟩
+/-- `atomic.cxchg.w8.acqrel.relaxed` -/
+def atomicCxchgW8AcqrelRelaxed : Opcode := ⟨730⟩
+/-- `atomic.cxchg.w16.acqrel.relaxed` -/
+def atomicCxchgW16AcqrelRelaxed : Opcode := ⟨731⟩
+/-- `atomic.cxchg.w32.acqrel.relaxed` -/
+def atomicCxchgW32AcqrelRelaxed : Opcode := ⟨732⟩
+/-- `atomic.cxchg.w64.acqrel.relaxed` -/
+def atomicCxchgW64AcqrelRelaxed : Opcode := ⟨733⟩
 /-- `atomic.cxchg.ptr.acqrel.relaxed` -/
-def atomicCxchgPtrAcqrelRelaxed : Opcode := ⟨814⟩
+def atomicCxchgPtrAcqrelRelaxed : Opcode := ⟨734⟩
+/-- `atomic.cxchg.w8.acqrel.acquire` -/
+def atomicCxchgW8AcqrelAcquire : Opcode := ⟨735⟩
+/-- `atomic.cxchg.w16.acqrel.acquire` -/
+def atomicCxchgW16AcqrelAcquire : Opcode := ⟨736⟩
+/-- `atomic.cxchg.w32.acqrel.acquire` -/
+def atomicCxchgW32AcqrelAcquire : Opcode := ⟨737⟩
+/-- `atomic.cxchg.w64.acqrel.acquire` -/
+def atomicCxchgW64AcqrelAcquire : Opcode := ⟨738⟩
 /-- `atomic.cxchg.ptr.acqrel.acquire` -/
-def atomicCxchgPtrAcqrelAcquire : Opcode := ⟨815⟩
+def atomicCxchgPtrAcqrelAcquire : Opcode := ⟨739⟩
+/-- `atomic.cxchg.w8.acqrel.seqcst` -/
+def atomicCxchgW8AcqrelSeqcst : Opcode := ⟨740⟩
+/-- `atomic.cxchg.w16.acqrel.seqcst` -/
+def atomicCxchgW16AcqrelSeqcst : Opcode := ⟨741⟩
+/-- `atomic.cxchg.w32.acqrel.seqcst` -/
+def atomicCxchgW32AcqrelSeqcst : Opcode := ⟨742⟩
+/-- `atomic.cxchg.w64.acqrel.seqcst` -/
+def atomicCxchgW64AcqrelSeqcst : Opcode := ⟨743⟩
 /-- `atomic.cxchg.ptr.acqrel.seqcst` -/
-def atomicCxchgPtrAcqrelSeqcst : Opcode := ⟨816⟩
+def atomicCxchgPtrAcqrelSeqcst : Opcode := ⟨744⟩
+/-- `atomic.cxchg.w8.seqcst.relaxed` -/
+def atomicCxchgW8SeqcstRelaxed : Opcode := ⟨745⟩
+/-- `atomic.cxchg.w16.seqcst.relaxed` -/
+def atomicCxchgW16SeqcstRelaxed : Opcode := ⟨746⟩
+/-- `atomic.cxchg.w32.seqcst.relaxed` -/
+def atomicCxchgW32SeqcstRelaxed : Opcode := ⟨747⟩
+/-- `atomic.cxchg.w64.seqcst.relaxed` -/
+def atomicCxchgW64SeqcstRelaxed : Opcode := ⟨748⟩
 /-- `atomic.cxchg.ptr.seqcst.relaxed` -/
-def atomicCxchgPtrSeqcstRelaxed : Opcode := ⟨817⟩
+def atomicCxchgPtrSeqcstRelaxed : Opcode := ⟨749⟩
+/-- `atomic.cxchg.w8.seqcst.acquire` -/
+def atomicCxchgW8SeqcstAcquire : Opcode := ⟨750⟩
+/-- `atomic.cxchg.w16.seqcst.acquire` -/
+def atomicCxchgW16SeqcstAcquire : Opcode := ⟨751⟩
+/-- `atomic.cxchg.w32.seqcst.acquire` -/
+def atomicCxchgW32SeqcstAcquire : Opcode := ⟨752⟩
+/-- `atomic.cxchg.w64.seqcst.acquire` -/
+def atomicCxchgW64SeqcstAcquire : Opcode := ⟨753⟩
 /-- `atomic.cxchg.ptr.seqcst.acquire` -/
-def atomicCxchgPtrSeqcstAcquire : Opcode := ⟨818⟩
+def atomicCxchgPtrSeqcstAcquire : Opcode := ⟨754⟩
+/-- `atomic.cxchg.w8.seqcst.seqcst` -/
+def atomicCxchgW8SeqcstSeqcst : Opcode := ⟨755⟩
+/-- `atomic.cxchg.w16.seqcst.seqcst` -/
+def atomicCxchgW16SeqcstSeqcst : Opcode := ⟨756⟩
+/-- `atomic.cxchg.w32.seqcst.seqcst` -/
+def atomicCxchgW32SeqcstSeqcst : Opcode := ⟨757⟩
+/-- `atomic.cxchg.w64.seqcst.seqcst` -/
+def atomicCxchgW64SeqcstSeqcst : Opcode := ⟨758⟩
 /-- `atomic.cxchg.ptr.seqcst.seqcst` -/
-def atomicCxchgPtrSeqcstSeqcst : Opcode := ⟨819⟩
+def atomicCxchgPtrSeqcstSeqcst : Opcode := ⟨759⟩
+/-- `atomic.cxchg.weak.w8.relaxed.relaxed` -/
+def atomicCxchgWeakW8RelaxedRelaxed : Opcode := ⟨760⟩
+/-- `atomic.cxchg.weak.w16.relaxed.relaxed` -/
+def atomicCxchgWeakW16RelaxedRelaxed : Opcode := ⟨761⟩
+/-- `atomic.cxchg.weak.w32.relaxed.relaxed` -/
+def atomicCxchgWeakW32RelaxedRelaxed : Opcode := ⟨762⟩
+/-- `atomic.cxchg.weak.w64.relaxed.relaxed` -/
+def atomicCxchgWeakW64RelaxedRelaxed : Opcode := ⟨763⟩
 /-- `atomic.cxchg.weak.ptr.relaxed.relaxed` -/
-def atomicCxchgWeakPtrRelaxedRelaxed : Opcode := ⟨820⟩
+def atomicCxchgWeakPtrRelaxedRelaxed : Opcode := ⟨764⟩
+/-- `atomic.cxchg.weak.w8.relaxed.acquire` -/
+def atomicCxchgWeakW8RelaxedAcquire : Opcode := ⟨765⟩
+/-- `atomic.cxchg.weak.w16.relaxed.acquire` -/
+def atomicCxchgWeakW16RelaxedAcquire : Opcode := ⟨766⟩
+/-- `atomic.cxchg.weak.w32.relaxed.acquire` -/
+def atomicCxchgWeakW32RelaxedAcquire : Opcode := ⟨767⟩
+/-- `atomic.cxchg.weak.w64.relaxed.acquire` -/
+def atomicCxchgWeakW64RelaxedAcquire : Opcode := ⟨768⟩
 /-- `atomic.cxchg.weak.ptr.relaxed.acquire` -/
-def atomicCxchgWeakPtrRelaxedAcquire : Opcode := ⟨821⟩
+def atomicCxchgWeakPtrRelaxedAcquire : Opcode := ⟨769⟩
+/-- `atomic.cxchg.weak.w8.relaxed.seqcst` -/
+def atomicCxchgWeakW8RelaxedSeqcst : Opcode := ⟨770⟩
+/-- `atomic.cxchg.weak.w16.relaxed.seqcst` -/
+def atomicCxchgWeakW16RelaxedSeqcst : Opcode := ⟨771⟩
+/-- `atomic.cxchg.weak.w32.relaxed.seqcst` -/
+def atomicCxchgWeakW32RelaxedSeqcst : Opcode := ⟨772⟩
+/-- `atomic.cxchg.weak.w64.relaxed.seqcst` -/
+def atomicCxchgWeakW64RelaxedSeqcst : Opcode := ⟨773⟩
 /-- `atomic.cxchg.weak.ptr.relaxed.seqcst` -/
-def atomicCxchgWeakPtrRelaxedSeqcst : Opcode := ⟨822⟩
+def atomicCxchgWeakPtrRelaxedSeqcst : Opcode := ⟨774⟩
+/-- `atomic.cxchg.weak.w8.acquire.relaxed` -/
+def atomicCxchgWeakW8AcquireRelaxed : Opcode := ⟨775⟩
+/-- `atomic.cxchg.weak.w16.acquire.relaxed` -/
+def atomicCxchgWeakW16AcquireRelaxed : Opcode := ⟨776⟩
+/-- `atomic.cxchg.weak.w32.acquire.relaxed` -/
+def atomicCxchgWeakW32AcquireRelaxed : Opcode := ⟨777⟩
+/-- `atomic.cxchg.weak.w64.acquire.relaxed` -/
+def atomicCxchgWeakW64AcquireRelaxed : Opcode := ⟨778⟩
 /-- `atomic.cxchg.weak.ptr.acquire.relaxed` -/
-def atomicCxchgWeakPtrAcquireRelaxed : Opcode := ⟨823⟩
+def atomicCxchgWeakPtrAcquireRelaxed : Opcode := ⟨779⟩
+/-- `atomic.cxchg.weak.w8.acquire.acquire` -/
+def atomicCxchgWeakW8AcquireAcquire : Opcode := ⟨780⟩
+/-- `atomic.cxchg.weak.w16.acquire.acquire` -/
+def atomicCxchgWeakW16AcquireAcquire : Opcode := ⟨781⟩
+/-- `atomic.cxchg.weak.w32.acquire.acquire` -/
+def atomicCxchgWeakW32AcquireAcquire : Opcode := ⟨782⟩
+/-- `atomic.cxchg.weak.w64.acquire.acquire` -/
+def atomicCxchgWeakW64AcquireAcquire : Opcode := ⟨783⟩
 /-- `atomic.cxchg.weak.ptr.acquire.acquire` -/
-def atomicCxchgWeakPtrAcquireAcquire : Opcode := ⟨824⟩
+def atomicCxchgWeakPtrAcquireAcquire : Opcode := ⟨784⟩
+/-- `atomic.cxchg.weak.w8.acquire.seqcst` -/
+def atomicCxchgWeakW8AcquireSeqcst : Opcode := ⟨785⟩
+/-- `atomic.cxchg.weak.w16.acquire.seqcst` -/
+def atomicCxchgWeakW16AcquireSeqcst : Opcode := ⟨786⟩
+/-- `atomic.cxchg.weak.w32.acquire.seqcst` -/
+def atomicCxchgWeakW32AcquireSeqcst : Opcode := ⟨787⟩
+/-- `atomic.cxchg.weak.w64.acquire.seqcst` -/
+def atomicCxchgWeakW64AcquireSeqcst : Opcode := ⟨788⟩
 /-- `atomic.cxchg.weak.ptr.acquire.seqcst` -/
-def atomicCxchgWeakPtrAcquireSeqcst : Opcode := ⟨825⟩
+def atomicCxchgWeakPtrAcquireSeqcst : Opcode := ⟨789⟩
+/-- `atomic.cxchg.weak.w8.release.relaxed` -/
+def atomicCxchgWeakW8ReleaseRelaxed : Opcode := ⟨790⟩
+/-- `atomic.cxchg.weak.w16.release.relaxed` -/
+def atomicCxchgWeakW16ReleaseRelaxed : Opcode := ⟨791⟩
+/-- `atomic.cxchg.weak.w32.release.relaxed` -/
+def atomicCxchgWeakW32ReleaseRelaxed : Opcode := ⟨792⟩
+/-- `atomic.cxchg.weak.w64.release.relaxed` -/
+def atomicCxchgWeakW64ReleaseRelaxed : Opcode := ⟨793⟩
 /-- `atomic.cxchg.weak.ptr.release.relaxed` -/
-def atomicCxchgWeakPtrReleaseRelaxed : Opcode := ⟨826⟩
+def atomicCxchgWeakPtrReleaseRelaxed : Opcode := ⟨794⟩
+/-- `atomic.cxchg.weak.w8.release.acquire` -/
+def atomicCxchgWeakW8ReleaseAcquire : Opcode := ⟨795⟩
+/-- `atomic.cxchg.weak.w16.release.acquire` -/
+def atomicCxchgWeakW16ReleaseAcquire : Opcode := ⟨796⟩
+/-- `atomic.cxchg.weak.w32.release.acquire` -/
+def atomicCxchgWeakW32ReleaseAcquire : Opcode := ⟨797⟩
+/-- `atomic.cxchg.weak.w64.release.acquire` -/
+def atomicCxchgWeakW64ReleaseAcquire : Opcode := ⟨798⟩
 /-- `atomic.cxchg.weak.ptr.release.acquire` -/
-def atomicCxchgWeakPtrReleaseAcquire : Opcode := ⟨827⟩
+def atomicCxchgWeakPtrReleaseAcquire : Opcode := ⟨799⟩
+/-- `atomic.cxchg.weak.w8.release.seqcst` -/
+def atomicCxchgWeakW8ReleaseSeqcst : Opcode := ⟨800⟩
+/-- `atomic.cxchg.weak.w16.release.seqcst` -/
+def atomicCxchgWeakW16ReleaseSeqcst : Opcode := ⟨801⟩
+/-- `atomic.cxchg.weak.w32.release.seqcst` -/
+def atomicCxchgWeakW32ReleaseSeqcst : Opcode := ⟨802⟩
+/-- `atomic.cxchg.weak.w64.release.seqcst` -/
+def atomicCxchgWeakW64ReleaseSeqcst : Opcode := ⟨803⟩
 /-- `atomic.cxchg.weak.ptr.release.seqcst` -/
-def atomicCxchgWeakPtrReleaseSeqcst : Opcode := ⟨828⟩
+def atomicCxchgWeakPtrReleaseSeqcst : Opcode := ⟨804⟩
+/-- `atomic.cxchg.weak.w8.acqrel.relaxed` -/
+def atomicCxchgWeakW8AcqrelRelaxed : Opcode := ⟨805⟩
+/-- `atomic.cxchg.weak.w16.acqrel.relaxed` -/
+def atomicCxchgWeakW16AcqrelRelaxed : Opcode := ⟨806⟩
+/-- `atomic.cxchg.weak.w32.acqrel.relaxed` -/
+def atomicCxchgWeakW32AcqrelRelaxed : Opcode := ⟨807⟩
+/-- `atomic.cxchg.weak.w64.acqrel.relaxed` -/
+def atomicCxchgWeakW64AcqrelRelaxed : Opcode := ⟨808⟩
 /-- `atomic.cxchg.weak.ptr.acqrel.relaxed` -/
-def atomicCxchgWeakPtrAcqrelRelaxed : Opcode := ⟨829⟩
+def atomicCxchgWeakPtrAcqrelRelaxed : Opcode := ⟨809⟩
+/-- `atomic.cxchg.weak.w8.acqrel.acquire` -/
+def atomicCxchgWeakW8AcqrelAcquire : Opcode := ⟨810⟩
+/-- `atomic.cxchg.weak.w16.acqrel.acquire` -/
+def atomicCxchgWeakW16AcqrelAcquire : Opcode := ⟨811⟩
+/-- `atomic.cxchg.weak.w32.acqrel.acquire` -/
+def atomicCxchgWeakW32AcqrelAcquire : Opcode := ⟨812⟩
+/-- `atomic.cxchg.weak.w64.acqrel.acquire` -/
+def atomicCxchgWeakW64AcqrelAcquire : Opcode := ⟨813⟩
 /-- `atomic.cxchg.weak.ptr.acqrel.acquire` -/
-def atomicCxchgWeakPtrAcqrelAcquire : Opcode := ⟨830⟩
+def atomicCxchgWeakPtrAcqrelAcquire : Opcode := ⟨814⟩
+/-- `atomic.cxchg.weak.w8.acqrel.seqcst` -/
+def atomicCxchgWeakW8AcqrelSeqcst : Opcode := ⟨815⟩
+/-- `atomic.cxchg.weak.w16.acqrel.seqcst` -/
+def atomicCxchgWeakW16AcqrelSeqcst : Opcode := ⟨816⟩
+/-- `atomic.cxchg.weak.w32.acqrel.seqcst` -/
+def atomicCxchgWeakW32AcqrelSeqcst : Opcode := ⟨817⟩
+/-- `atomic.cxchg.weak.w64.acqrel.seqcst` -/
+def atomicCxchgWeakW64AcqrelSeqcst : Opcode := ⟨818⟩
 /-- `atomic.cxchg.weak.ptr.acqrel.seqcst` -/
-def atomicCxchgWeakPtrAcqrelSeqcst : Opcode := ⟨831⟩
+def atomicCxchgWeakPtrAcqrelSeqcst : Opcode := ⟨819⟩
+/-- `atomic.cxchg.weak.w8.seqcst.relaxed` -/
+def atomicCxchgWeakW8SeqcstRelaxed : Opcode := ⟨820⟩
+/-- `atomic.cxchg.weak.w16.seqcst.relaxed` -/
+def atomicCxchgWeakW16SeqcstRelaxed : Opcode := ⟨821⟩
+/-- `atomic.cxchg.weak.w32.seqcst.relaxed` -/
+def atomicCxchgWeakW32SeqcstRelaxed : Opcode := ⟨822⟩
+/-- `atomic.cxchg.weak.w64.seqcst.relaxed` -/
+def atomicCxchgWeakW64SeqcstRelaxed : Opcode := ⟨823⟩
 /-- `atomic.cxchg.weak.ptr.seqcst.relaxed` -/
-def atomicCxchgWeakPtrSeqcstRelaxed : Opcode := ⟨832⟩
+def atomicCxchgWeakPtrSeqcstRelaxed : Opcode := ⟨824⟩
+/-- `atomic.cxchg.weak.w8.seqcst.acquire` -/
+def atomicCxchgWeakW8SeqcstAcquire : Opcode := ⟨825⟩
+/-- `atomic.cxchg.weak.w16.seqcst.acquire` -/
+def atomicCxchgWeakW16SeqcstAcquire : Opcode := ⟨826⟩
+/-- `atomic.cxchg.weak.w32.seqcst.acquire` -/
+def atomicCxchgWeakW32SeqcstAcquire : Opcode := ⟨827⟩
+/-- `atomic.cxchg.weak.w64.seqcst.acquire` -/
+def atomicCxchgWeakW64SeqcstAcquire : Opcode := ⟨828⟩
 /-- `atomic.cxchg.weak.ptr.seqcst.acquire` -/
-def atomicCxchgWeakPtrSeqcstAcquire : Opcode := ⟨833⟩
+def atomicCxchgWeakPtrSeqcstAcquire : Opcode := ⟨829⟩
+/-- `atomic.cxchg.weak.w8.seqcst.seqcst` -/
+def atomicCxchgWeakW8SeqcstSeqcst : Opcode := ⟨830⟩
+/-- `atomic.cxchg.weak.w16.seqcst.seqcst` -/
+def atomicCxchgWeakW16SeqcstSeqcst : Opcode := ⟨831⟩
+/-- `atomic.cxchg.weak.w32.seqcst.seqcst` -/
+def atomicCxchgWeakW32SeqcstSeqcst : Opcode := ⟨832⟩
+/-- `atomic.cxchg.weak.w64.seqcst.seqcst` -/
+def atomicCxchgWeakW64SeqcstSeqcst : Opcode := ⟨833⟩
 /-- `atomic.cxchg.weak.ptr.seqcst.seqcst` -/
 def atomicCxchgWeakPtrSeqcstSeqcst : Opcode := ⟨834⟩
 /-- `fence.acquire` -/
@@ -2627,82 +2627,82 @@ def jmp : Opcode := ⟨840⟩
 def br : Opcode := ⟨841⟩
 /-- `br.eq.w8` -/
 def brEqW8 : Opcode := ⟨842⟩
-/-- `br.lt.s.w8` -/
-def brLtSW8 : Opcode := ⟨843⟩
-/-- `br.lt.u.w8` -/
-def brLtUW8 : Opcode := ⟨844⟩
-/-- `br.eq.imm.w8` -/
-def brEqImmW8 : Opcode := ⟨845⟩
-/-- `br.lt.s.imm.w8` -/
-def brLtSImmW8 : Opcode := ⟨846⟩
-/-- `br.lt.u.imm.w8` -/
-def brLtUImmW8 : Opcode := ⟨847⟩
-/-- `br.gt.s.imm.w8` -/
-def brGtSImmW8 : Opcode := ⟨848⟩
-/-- `br.gt.u.imm.w8` -/
-def brGtUImmW8 : Opcode := ⟨849⟩
 /-- `br.eq.w16` -/
-def brEqW16 : Opcode := ⟨850⟩
-/-- `br.lt.s.w16` -/
-def brLtSW16 : Opcode := ⟨851⟩
-/-- `br.lt.u.w16` -/
-def brLtUW16 : Opcode := ⟨852⟩
-/-- `br.eq.imm.w16` -/
-def brEqImmW16 : Opcode := ⟨853⟩
-/-- `br.lt.s.imm.w16` -/
-def brLtSImmW16 : Opcode := ⟨854⟩
-/-- `br.lt.u.imm.w16` -/
-def brLtUImmW16 : Opcode := ⟨855⟩
-/-- `br.gt.s.imm.w16` -/
-def brGtSImmW16 : Opcode := ⟨856⟩
-/-- `br.gt.u.imm.w16` -/
-def brGtUImmW16 : Opcode := ⟨857⟩
+def brEqW16 : Opcode := ⟨843⟩
 /-- `br.eq.w32` -/
-def brEqW32 : Opcode := ⟨858⟩
-/-- `br.lt.s.w32` -/
-def brLtSW32 : Opcode := ⟨859⟩
-/-- `br.lt.u.w32` -/
-def brLtUW32 : Opcode := ⟨860⟩
-/-- `br.eq.imm.w32` -/
-def brEqImmW32 : Opcode := ⟨861⟩
-/-- `br.lt.s.imm.w32` -/
-def brLtSImmW32 : Opcode := ⟨862⟩
-/-- `br.lt.u.imm.w32` -/
-def brLtUImmW32 : Opcode := ⟨863⟩
-/-- `br.gt.s.imm.w32` -/
-def brGtSImmW32 : Opcode := ⟨864⟩
-/-- `br.gt.u.imm.w32` -/
-def brGtUImmW32 : Opcode := ⟨865⟩
+def brEqW32 : Opcode := ⟨844⟩
 /-- `br.eq.w64` -/
-def brEqW64 : Opcode := ⟨866⟩
-/-- `br.lt.s.w64` -/
-def brLtSW64 : Opcode := ⟨867⟩
-/-- `br.lt.u.w64` -/
-def brLtUW64 : Opcode := ⟨868⟩
-/-- `br.eq.imm.w64` -/
-def brEqImmW64 : Opcode := ⟨869⟩
-/-- `br.lt.s.imm.w64` -/
-def brLtSImmW64 : Opcode := ⟨870⟩
-/-- `br.lt.u.imm.w64` -/
-def brLtUImmW64 : Opcode := ⟨871⟩
-/-- `br.gt.s.imm.w64` -/
-def brGtSImmW64 : Opcode := ⟨872⟩
-/-- `br.gt.u.imm.w64` -/
-def brGtUImmW64 : Opcode := ⟨873⟩
+def brEqW64 : Opcode := ⟨845⟩
 /-- `br.eq.w128` -/
-def brEqW128 : Opcode := ⟨874⟩
+def brEqW128 : Opcode := ⟨846⟩
+/-- `br.lt.s.w8` -/
+def brLtSW8 : Opcode := ⟨847⟩
+/-- `br.lt.s.w16` -/
+def brLtSW16 : Opcode := ⟨848⟩
+/-- `br.lt.s.w32` -/
+def brLtSW32 : Opcode := ⟨849⟩
+/-- `br.lt.s.w64` -/
+def brLtSW64 : Opcode := ⟨850⟩
 /-- `br.lt.s.w128` -/
-def brLtSW128 : Opcode := ⟨875⟩
+def brLtSW128 : Opcode := ⟨851⟩
+/-- `br.lt.u.w8` -/
+def brLtUW8 : Opcode := ⟨852⟩
+/-- `br.lt.u.w16` -/
+def brLtUW16 : Opcode := ⟨853⟩
+/-- `br.lt.u.w32` -/
+def brLtUW32 : Opcode := ⟨854⟩
+/-- `br.lt.u.w64` -/
+def brLtUW64 : Opcode := ⟨855⟩
 /-- `br.lt.u.w128` -/
-def brLtUW128 : Opcode := ⟨876⟩
+def brLtUW128 : Opcode := ⟨856⟩
+/-- `br.eq.imm.w8` -/
+def brEqImmW8 : Opcode := ⟨857⟩
+/-- `br.eq.imm.w16` -/
+def brEqImmW16 : Opcode := ⟨858⟩
+/-- `br.eq.imm.w32` -/
+def brEqImmW32 : Opcode := ⟨859⟩
+/-- `br.eq.imm.w64` -/
+def brEqImmW64 : Opcode := ⟨860⟩
 /-- `br.eq.imm.w128` -/
-def brEqImmW128 : Opcode := ⟨877⟩
+def brEqImmW128 : Opcode := ⟨861⟩
+/-- `br.lt.s.imm.w8` -/
+def brLtSImmW8 : Opcode := ⟨862⟩
+/-- `br.lt.s.imm.w16` -/
+def brLtSImmW16 : Opcode := ⟨863⟩
+/-- `br.lt.s.imm.w32` -/
+def brLtSImmW32 : Opcode := ⟨864⟩
+/-- `br.lt.s.imm.w64` -/
+def brLtSImmW64 : Opcode := ⟨865⟩
 /-- `br.lt.s.imm.w128` -/
-def brLtSImmW128 : Opcode := ⟨878⟩
+def brLtSImmW128 : Opcode := ⟨866⟩
+/-- `br.lt.u.imm.w8` -/
+def brLtUImmW8 : Opcode := ⟨867⟩
+/-- `br.lt.u.imm.w16` -/
+def brLtUImmW16 : Opcode := ⟨868⟩
+/-- `br.lt.u.imm.w32` -/
+def brLtUImmW32 : Opcode := ⟨869⟩
+/-- `br.lt.u.imm.w64` -/
+def brLtUImmW64 : Opcode := ⟨870⟩
 /-- `br.lt.u.imm.w128` -/
-def brLtUImmW128 : Opcode := ⟨879⟩
+def brLtUImmW128 : Opcode := ⟨871⟩
+/-- `br.gt.s.imm.w8` -/
+def brGtSImmW8 : Opcode := ⟨872⟩
+/-- `br.gt.s.imm.w16` -/
+def brGtSImmW16 : Opcode := ⟨873⟩
+/-- `br.gt.s.imm.w32` -/
+def brGtSImmW32 : Opcode := ⟨874⟩
+/-- `br.gt.s.imm.w64` -/
+def brGtSImmW64 : Opcode := ⟨875⟩
 /-- `br.gt.s.imm.w128` -/
-def brGtSImmW128 : Opcode := ⟨880⟩
+def brGtSImmW128 : Opcode := ⟨876⟩
+/-- `br.gt.u.imm.w8` -/
+def brGtUImmW8 : Opcode := ⟨877⟩
+/-- `br.gt.u.imm.w16` -/
+def brGtUImmW16 : Opcode := ⟨878⟩
+/-- `br.gt.u.imm.w32` -/
+def brGtUImmW32 : Opcode := ⟨879⟩
+/-- `br.gt.u.imm.w64` -/
+def brGtUImmW64 : Opcode := ⟨880⟩
 /-- `br.gt.u.imm.w128` -/
 def brGtUImmW128 : Opcode := ⟨881⟩
 /-- `switch.dense.w8` -/

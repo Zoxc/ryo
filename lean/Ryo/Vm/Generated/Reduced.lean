@@ -41,208 +41,208 @@ def opInfos : Array OpInfo := #[
   OpInfo.mk "PtrAdd" "ptr.add" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "imm" OperandKind.i64] (some 5),
   OpInfo.mk "PtrIndex" "ptr.index" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "p" OperandKind.slot, OperandInfo.mk "i" OperandKind.slot, OperandInfo.mk "stride" OperandKind.u32] (some 5),
   OpInfo.mk "AddW8" "add.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "SubW8" "sub.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "MulW8" "mul.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "DivSW8" "div.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "DivUW8" "div.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RemSW8" "rem.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RemUW8" "rem.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "AndW8" "and.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "OrW8" "or.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "XorW8" "xor.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "ShlW8" "shl.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "ShrSW8" "shr.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "ShrUW8" "shr.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "EqW8" "eq.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "NeW8" "ne.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LtSW8" "lt.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LtUW8" "lt.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LeSW8" "le.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LeUW8" "le.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "Cmp3SW8" "cmp3.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "Cmp3UW8" "cmp3.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RotlW8" "rotl.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RotrW8" "rotr.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "AddImmW8" "add.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "SubImmW8" "sub.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "MulImmW8" "mul.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "AndImmW8" "and.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "OrImmW8" "or.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "XorImmW8" "xor.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "ShlImmW8" "shl.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "ShrSImmW8" "shr.s.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "ShrUImmW8" "shr.u.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "EqImmW8" "eq.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "NeImmW8" "ne.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "LtSImmW8" "lt.s.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "LtUImmW8" "lt.u.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "LeSImmW8" "le.s.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "LeUImmW8" "le.u.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "GtSImmW8" "gt.s.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "GtUImmW8" "gt.u.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "GeSImmW8" "ge.s.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "GeUImmW8" "ge.u.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
-  OpInfo.mk "CtlzW8" "ctlz.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "CttzW8" "cttz.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "AddOvfSW8" "add.ovf.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "AddOvfUW8" "add.ovf.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "SubOvfSW8" "sub.ovf.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "SubOvfUW8" "sub.ovf.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "MulOvfSW8" "mul.ovf.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "MulOvfUW8" "mul.ovf.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
   OpInfo.mk "AddW16" "add.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "SubW16" "sub.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "MulW16" "mul.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "DivSW16" "div.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "DivUW16" "div.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RemSW16" "rem.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RemUW16" "rem.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "AndW16" "and.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "OrW16" "or.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "XorW16" "xor.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "ShlW16" "shl.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "ShrSW16" "shr.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "ShrUW16" "shr.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "EqW16" "eq.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "NeW16" "ne.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LtSW16" "lt.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LtUW16" "lt.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LeSW16" "le.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LeUW16" "le.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "Cmp3SW16" "cmp3.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "Cmp3UW16" "cmp3.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RotlW16" "rotl.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RotrW16" "rotr.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "AddImmW16" "add.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "SubImmW16" "sub.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "MulImmW16" "mul.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "AndImmW16" "and.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "OrImmW16" "or.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "XorImmW16" "xor.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "ShlImmW16" "shl.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "ShrSImmW16" "shr.s.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "ShrUImmW16" "shr.u.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "EqImmW16" "eq.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "NeImmW16" "ne.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "LtSImmW16" "lt.s.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "LtUImmW16" "lt.u.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "LeSImmW16" "le.s.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "LeUImmW16" "le.u.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "GtSImmW16" "gt.s.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "GtUImmW16" "gt.u.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "GeSImmW16" "ge.s.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "GeUImmW16" "ge.u.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
-  OpInfo.mk "CtlzW16" "ctlz.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "CttzW16" "cttz.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "BswapW16" "bswap.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "AddOvfSW16" "add.ovf.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "AddOvfUW16" "add.ovf.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "SubOvfSW16" "sub.ovf.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "SubOvfUW16" "sub.ovf.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "MulOvfSW16" "mul.ovf.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "MulOvfUW16" "mul.ovf.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
   OpInfo.mk "AddW32" "add.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "SubW32" "sub.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "MulW32" "mul.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "DivSW32" "div.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "DivUW32" "div.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RemSW32" "rem.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RemUW32" "rem.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "AndW32" "and.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "OrW32" "or.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "XorW32" "xor.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "ShlW32" "shl.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "ShrSW32" "shr.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "ShrUW32" "shr.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "EqW32" "eq.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "NeW32" "ne.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LtSW32" "lt.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LtUW32" "lt.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LeSW32" "le.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "LeUW32" "le.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "Cmp3SW32" "cmp3.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "Cmp3UW32" "cmp3.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RotlW32" "rotl.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "RotrW32" "rotr.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
-  OpInfo.mk "AddImmW32" "add.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "SubImmW32" "sub.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "MulImmW32" "mul.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "AndImmW32" "and.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "OrImmW32" "or.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "XorImmW32" "xor.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "ShlImmW32" "shl.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "ShrSImmW32" "shr.s.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "ShrUImmW32" "shr.u.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "EqImmW32" "eq.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "NeImmW32" "ne.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "LtSImmW32" "lt.s.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "LtUImmW32" "lt.u.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "LeSImmW32" "le.s.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "LeUImmW32" "le.u.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "GtSImmW32" "gt.s.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "GtUImmW32" "gt.u.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "GeSImmW32" "ge.s.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "GeUImmW32" "ge.u.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
-  OpInfo.mk "CtlzW32" "ctlz.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "CttzW32" "cttz.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "BswapW32" "bswap.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "AddOvfSW32" "add.ovf.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "AddOvfUW32" "add.ovf.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "SubOvfSW32" "sub.ovf.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "SubOvfUW32" "sub.ovf.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "MulOvfSW32" "mul.ovf.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
-  OpInfo.mk "MulOvfUW32" "mul.ovf.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
   OpInfo.mk "AddW64" "add.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "SubW8" "sub.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "SubW16" "sub.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "SubW32" "sub.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "SubW64" "sub.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "MulW8" "mul.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "MulW16" "mul.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "MulW32" "mul.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "MulW64" "mul.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "DivSW8" "div.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "DivSW16" "div.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "DivSW32" "div.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "DivSW64" "div.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "DivUW8" "div.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "DivUW16" "div.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "DivUW32" "div.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "DivUW64" "div.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RemSW8" "rem.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RemSW16" "rem.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RemSW32" "rem.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "RemSW64" "rem.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RemUW8" "rem.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RemUW16" "rem.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RemUW32" "rem.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "RemUW64" "rem.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "AndW8" "and.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "AndW16" "and.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "AndW32" "and.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "AndW64" "and.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "OrW8" "or.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "OrW16" "or.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "OrW32" "or.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "OrW64" "or.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "XorW8" "xor.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "XorW16" "xor.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "XorW32" "xor.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "XorW64" "xor.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "ShlW8" "shl.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "ShlW16" "shl.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "ShlW32" "shl.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "ShlW64" "shl.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "ShrSW8" "shr.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "ShrSW16" "shr.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "ShrSW32" "shr.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "ShrSW64" "shr.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "ShrUW8" "shr.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "ShrUW16" "shr.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "ShrUW32" "shr.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "ShrUW64" "shr.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "EqW8" "eq.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "EqW16" "eq.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "EqW32" "eq.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "EqW64" "eq.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "NeW8" "ne.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "NeW16" "ne.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "NeW32" "ne.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "NeW64" "ne.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LtSW8" "lt.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LtSW16" "lt.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LtSW32" "lt.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "LtSW64" "lt.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LtUW8" "lt.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LtUW16" "lt.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LtUW32" "lt.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "LtUW64" "lt.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LeSW8" "le.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LeSW16" "le.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LeSW32" "le.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "LeSW64" "le.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LeUW8" "le.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LeUW16" "le.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "LeUW32" "le.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "LeUW64" "le.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "Cmp3SW8" "cmp3.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "Cmp3SW16" "cmp3.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "Cmp3SW32" "cmp3.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "Cmp3SW64" "cmp3.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "Cmp3UW8" "cmp3.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "Cmp3UW16" "cmp3.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "Cmp3UW32" "cmp3.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "Cmp3UW64" "cmp3.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RotlW8" "rotl.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RotlW16" "rotl.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RotlW32" "rotl.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "RotlW64" "rotl.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RotrW8" "rotr.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RotrW16" "rotr.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "RotrW32" "rotr.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
   OpInfo.mk "RotrW64" "rotr.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 4),
+  OpInfo.mk "AddImmW8" "add.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "AddImmW16" "add.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "AddImmW32" "add.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
   OpInfo.mk "AddImmW64" "add.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
+  OpInfo.mk "SubImmW8" "sub.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "SubImmW16" "sub.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "SubImmW32" "sub.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
   OpInfo.mk "SubImmW64" "sub.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
+  OpInfo.mk "MulImmW8" "mul.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "MulImmW16" "mul.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "MulImmW32" "mul.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
   OpInfo.mk "MulImmW64" "mul.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
+  OpInfo.mk "AndImmW8" "and.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "AndImmW16" "and.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "AndImmW32" "and.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
   OpInfo.mk "AndImmW64" "and.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
+  OpInfo.mk "OrImmW8" "or.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "OrImmW16" "or.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "OrImmW32" "or.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
   OpInfo.mk "OrImmW64" "or.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
+  OpInfo.mk "XorImmW8" "xor.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "XorImmW16" "xor.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "XorImmW32" "xor.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
   OpInfo.mk "XorImmW64" "xor.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
+  OpInfo.mk "ShlImmW8" "shl.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "ShlImmW16" "shl.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "ShlImmW32" "shl.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
   OpInfo.mk "ShlImmW64" "shl.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
+  OpInfo.mk "ShrSImmW8" "shr.s.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "ShrSImmW16" "shr.s.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "ShrSImmW32" "shr.s.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
   OpInfo.mk "ShrSImmW64" "shr.s.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
+  OpInfo.mk "ShrUImmW8" "shr.u.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "ShrUImmW16" "shr.u.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "ShrUImmW32" "shr.u.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
   OpInfo.mk "ShrUImmW64" "shr.u.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
+  OpInfo.mk "EqImmW8" "eq.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "EqImmW16" "eq.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "EqImmW32" "eq.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
   OpInfo.mk "EqImmW64" "eq.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
+  OpInfo.mk "NeImmW8" "ne.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "NeImmW16" "ne.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "NeImmW32" "ne.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
   OpInfo.mk "NeImmW64" "ne.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
+  OpInfo.mk "LtSImmW8" "lt.s.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "LtSImmW16" "lt.s.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "LtSImmW32" "lt.s.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
   OpInfo.mk "LtSImmW64" "lt.s.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
+  OpInfo.mk "LtUImmW8" "lt.u.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "LtUImmW16" "lt.u.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "LtUImmW32" "lt.u.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
   OpInfo.mk "LtUImmW64" "lt.u.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
+  OpInfo.mk "LeSImmW8" "le.s.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "LeSImmW16" "le.s.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "LeSImmW32" "le.s.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
   OpInfo.mk "LeSImmW64" "le.s.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
+  OpInfo.mk "LeUImmW8" "le.u.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "LeUImmW16" "le.u.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "LeUImmW32" "le.u.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
   OpInfo.mk "LeUImmW64" "le.u.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
+  OpInfo.mk "GtSImmW8" "gt.s.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "GtSImmW16" "gt.s.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "GtSImmW32" "gt.s.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
   OpInfo.mk "GtSImmW64" "gt.s.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
+  OpInfo.mk "GtUImmW8" "gt.u.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "GtUImmW16" "gt.u.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "GtUImmW32" "gt.u.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
   OpInfo.mk "GtUImmW64" "gt.u.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
+  OpInfo.mk "GeSImmW8" "ge.s.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "GeSImmW16" "ge.s.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "GeSImmW32" "ge.s.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
   OpInfo.mk "GeSImmW64" "ge.s.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
+  OpInfo.mk "GeUImmW8" "ge.u.imm.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8] (some 4),
+  OpInfo.mk "GeUImmW16" "ge.u.imm.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16] (some 4),
+  OpInfo.mk "GeUImmW32" "ge.u.imm.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32] (some 4),
   OpInfo.mk "GeUImmW64" "ge.u.imm.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64] (some 5),
+  OpInfo.mk "CtlzW8" "ctlz.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "CtlzW16" "ctlz.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "CtlzW32" "ctlz.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
   OpInfo.mk "CtlzW64" "ctlz.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "CttzW8" "cttz.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "CttzW16" "cttz.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "CttzW32" "cttz.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
   OpInfo.mk "CttzW64" "cttz.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
-  OpInfo.mk "BswapW64" "bswap.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "AddOvfSW8" "add.ovf.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "AddOvfSW16" "add.ovf.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "AddOvfSW32" "add.ovf.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
   OpInfo.mk "AddOvfSW64" "add.ovf.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "AddOvfUW8" "add.ovf.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "AddOvfUW16" "add.ovf.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "AddOvfUW32" "add.ovf.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
   OpInfo.mk "AddOvfUW64" "add.ovf.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "SubOvfSW8" "sub.ovf.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "SubOvfSW16" "sub.ovf.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "SubOvfSW32" "sub.ovf.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
   OpInfo.mk "SubOvfSW64" "sub.ovf.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "SubOvfUW8" "sub.ovf.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "SubOvfUW16" "sub.ovf.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "SubOvfUW32" "sub.ovf.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
   OpInfo.mk "SubOvfUW64" "sub.ovf.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "MulOvfSW8" "mul.ovf.s.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "MulOvfSW16" "mul.ovf.s.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "MulOvfSW32" "mul.ovf.s.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
   OpInfo.mk "MulOvfSW64" "mul.ovf.s.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "MulOvfUW8" "mul.ovf.u.w8" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "MulOvfUW16" "mul.ovf.u.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "MulOvfUW32" "mul.ovf.u.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
   OpInfo.mk "MulOvfUW64" "mul.ovf.u.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "o" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot] (some 5),
+  OpInfo.mk "BswapW16" "bswap.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "BswapW32" "bswap.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
+  OpInfo.mk "BswapW64" "bswap.w64" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "a" OperandKind.slot] (some 3),
   OpInfo.mk "ZextW8W16" "zext.w8.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "SextW8W16" "sext.w8.w16" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
   OpInfo.mk "ZextW8W32" "zext.w8.w32" Shape.op [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "s" OperandKind.slot] (some 3),
@@ -264,36 +264,36 @@ def opInfos : Array OpInfo := #[
   OpInfo.mk "Jmp" "jmp" Shape.jmp [OperandInfo.mk "t" OperandKind.target] (some 2),
   OpInfo.mk "Br" "br" Shape.br [OperandInfo.mk "s" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 4),
   OpInfo.mk "BrEqW8" "br.eq.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrLtSW8" "br.lt.s.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrLtUW8" "br.lt.u.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrEqImmW8" "br.eq.imm.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrLtSImmW8" "br.lt.s.imm.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrLtUImmW8" "br.lt.u.imm.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrGtSImmW8" "br.gt.s.imm.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrGtUImmW8" "br.gt.u.imm.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
   OpInfo.mk "BrEqW16" "br.eq.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrLtSW16" "br.lt.s.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrLtUW16" "br.lt.u.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrEqImmW16" "br.eq.imm.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrLtSImmW16" "br.lt.s.imm.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrLtUImmW16" "br.lt.u.imm.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrGtSImmW16" "br.gt.s.imm.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrGtUImmW16" "br.gt.u.imm.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
   OpInfo.mk "BrEqW32" "br.eq.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrLtSW32" "br.lt.s.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrLtUW32" "br.lt.u.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrEqImmW32" "br.eq.imm.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrLtSImmW32" "br.lt.s.imm.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrLtUImmW32" "br.lt.u.imm.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrGtSImmW32" "br.gt.s.imm.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
-  OpInfo.mk "BrGtUImmW32" "br.gt.u.imm.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
   OpInfo.mk "BrEqW64" "br.eq.w64" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrLtSW8" "br.lt.s.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrLtSW16" "br.lt.s.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrLtSW32" "br.lt.s.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
   OpInfo.mk "BrLtSW64" "br.lt.s.w64" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrLtUW8" "br.lt.u.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrLtUW16" "br.lt.u.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrLtUW32" "br.lt.u.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
   OpInfo.mk "BrLtUW64" "br.lt.u.w64" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "b" OperandKind.slot, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrEqImmW8" "br.eq.imm.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrEqImmW16" "br.eq.imm.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrEqImmW32" "br.eq.imm.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
   OpInfo.mk "BrEqImmW64" "br.eq.imm.w64" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 6),
+  OpInfo.mk "BrLtSImmW8" "br.lt.s.imm.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrLtSImmW16" "br.lt.s.imm.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrLtSImmW32" "br.lt.s.imm.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
   OpInfo.mk "BrLtSImmW64" "br.lt.s.imm.w64" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 6),
+  OpInfo.mk "BrLtUImmW8" "br.lt.u.imm.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrLtUImmW16" "br.lt.u.imm.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrLtUImmW32" "br.lt.u.imm.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
   OpInfo.mk "BrLtUImmW64" "br.lt.u.imm.w64" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 6),
+  OpInfo.mk "BrGtSImmW8" "br.gt.s.imm.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrGtSImmW16" "br.gt.s.imm.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrGtSImmW32" "br.gt.s.imm.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
   OpInfo.mk "BrGtSImmW64" "br.gt.s.imm.w64" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 6),
+  OpInfo.mk "BrGtUImmW8" "br.gt.u.imm.w8" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u8, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrGtUImmW16" "br.gt.u.imm.w16" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u16, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
+  OpInfo.mk "BrGtUImmW32" "br.gt.u.imm.w32" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u32, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 5),
   OpInfo.mk "BrGtUImmW64" "br.gt.u.imm.w64" Shape.br [OperandInfo.mk "a" OperandKind.slot, OperandInfo.mk "imm" OperandKind.u64, OperandInfo.mk "neg" OperandKind.neg, OperandInfo.mk "t" OperandKind.target] (some 6),
   OpInfo.mk "Unreachable" "unreachable" Shape.trap [] (some 1),
   OpInfo.mk "Call" "call" Shape.call [OperandInfo.mk "d" OperandKind.slot, OperandInfo.mk "f" OperandKind.func, OperandInfo.mk "k" OperandKind.u32, OperandInfo.mk "a" (OperandKind.list ElemKind.word)] (none),
@@ -375,410 +375,410 @@ def ptrAdd : Opcode := ⟨21⟩
 def ptrIndex : Opcode := ⟨22⟩
 /-- `add.w8` -/
 def addW8 : Opcode := ⟨23⟩
-/-- `sub.w8` -/
-def subW8 : Opcode := ⟨24⟩
-/-- `mul.w8` -/
-def mulW8 : Opcode := ⟨25⟩
-/-- `div.s.w8` -/
-def divSW8 : Opcode := ⟨26⟩
-/-- `div.u.w8` -/
-def divUW8 : Opcode := ⟨27⟩
-/-- `rem.s.w8` -/
-def remSW8 : Opcode := ⟨28⟩
-/-- `rem.u.w8` -/
-def remUW8 : Opcode := ⟨29⟩
-/-- `and.w8` -/
-def andW8 : Opcode := ⟨30⟩
-/-- `or.w8` -/
-def orW8 : Opcode := ⟨31⟩
-/-- `xor.w8` -/
-def xorW8 : Opcode := ⟨32⟩
-/-- `shl.w8` -/
-def shlW8 : Opcode := ⟨33⟩
-/-- `shr.s.w8` -/
-def shrSW8 : Opcode := ⟨34⟩
-/-- `shr.u.w8` -/
-def shrUW8 : Opcode := ⟨35⟩
-/-- `eq.w8` -/
-def eqW8 : Opcode := ⟨36⟩
-/-- `ne.w8` -/
-def neW8 : Opcode := ⟨37⟩
-/-- `lt.s.w8` -/
-def ltSW8 : Opcode := ⟨38⟩
-/-- `lt.u.w8` -/
-def ltUW8 : Opcode := ⟨39⟩
-/-- `le.s.w8` -/
-def leSW8 : Opcode := ⟨40⟩
-/-- `le.u.w8` -/
-def leUW8 : Opcode := ⟨41⟩
-/-- `cmp3.s.w8` -/
-def cmp3SW8 : Opcode := ⟨42⟩
-/-- `cmp3.u.w8` -/
-def cmp3UW8 : Opcode := ⟨43⟩
-/-- `rotl.w8` -/
-def rotlW8 : Opcode := ⟨44⟩
-/-- `rotr.w8` -/
-def rotrW8 : Opcode := ⟨45⟩
-/-- `add.imm.w8` -/
-def addImmW8 : Opcode := ⟨46⟩
-/-- `sub.imm.w8` -/
-def subImmW8 : Opcode := ⟨47⟩
-/-- `mul.imm.w8` -/
-def mulImmW8 : Opcode := ⟨48⟩
-/-- `and.imm.w8` -/
-def andImmW8 : Opcode := ⟨49⟩
-/-- `or.imm.w8` -/
-def orImmW8 : Opcode := ⟨50⟩
-/-- `xor.imm.w8` -/
-def xorImmW8 : Opcode := ⟨51⟩
-/-- `shl.imm.w8` -/
-def shlImmW8 : Opcode := ⟨52⟩
-/-- `shr.s.imm.w8` -/
-def shrSImmW8 : Opcode := ⟨53⟩
-/-- `shr.u.imm.w8` -/
-def shrUImmW8 : Opcode := ⟨54⟩
-/-- `eq.imm.w8` -/
-def eqImmW8 : Opcode := ⟨55⟩
-/-- `ne.imm.w8` -/
-def neImmW8 : Opcode := ⟨56⟩
-/-- `lt.s.imm.w8` -/
-def ltSImmW8 : Opcode := ⟨57⟩
-/-- `lt.u.imm.w8` -/
-def ltUImmW8 : Opcode := ⟨58⟩
-/-- `le.s.imm.w8` -/
-def leSImmW8 : Opcode := ⟨59⟩
-/-- `le.u.imm.w8` -/
-def leUImmW8 : Opcode := ⟨60⟩
-/-- `gt.s.imm.w8` -/
-def gtSImmW8 : Opcode := ⟨61⟩
-/-- `gt.u.imm.w8` -/
-def gtUImmW8 : Opcode := ⟨62⟩
-/-- `ge.s.imm.w8` -/
-def geSImmW8 : Opcode := ⟨63⟩
-/-- `ge.u.imm.w8` -/
-def geUImmW8 : Opcode := ⟨64⟩
-/-- `ctlz.w8` -/
-def ctlzW8 : Opcode := ⟨65⟩
-/-- `cttz.w8` -/
-def cttzW8 : Opcode := ⟨66⟩
-/-- `add.ovf.s.w8` -/
-def addOvfSW8 : Opcode := ⟨67⟩
-/-- `add.ovf.u.w8` -/
-def addOvfUW8 : Opcode := ⟨68⟩
-/-- `sub.ovf.s.w8` -/
-def subOvfSW8 : Opcode := ⟨69⟩
-/-- `sub.ovf.u.w8` -/
-def subOvfUW8 : Opcode := ⟨70⟩
-/-- `mul.ovf.s.w8` -/
-def mulOvfSW8 : Opcode := ⟨71⟩
-/-- `mul.ovf.u.w8` -/
-def mulOvfUW8 : Opcode := ⟨72⟩
 /-- `add.w16` -/
-def addW16 : Opcode := ⟨73⟩
-/-- `sub.w16` -/
-def subW16 : Opcode := ⟨74⟩
-/-- `mul.w16` -/
-def mulW16 : Opcode := ⟨75⟩
-/-- `div.s.w16` -/
-def divSW16 : Opcode := ⟨76⟩
-/-- `div.u.w16` -/
-def divUW16 : Opcode := ⟨77⟩
-/-- `rem.s.w16` -/
-def remSW16 : Opcode := ⟨78⟩
-/-- `rem.u.w16` -/
-def remUW16 : Opcode := ⟨79⟩
-/-- `and.w16` -/
-def andW16 : Opcode := ⟨80⟩
-/-- `or.w16` -/
-def orW16 : Opcode := ⟨81⟩
-/-- `xor.w16` -/
-def xorW16 : Opcode := ⟨82⟩
-/-- `shl.w16` -/
-def shlW16 : Opcode := ⟨83⟩
-/-- `shr.s.w16` -/
-def shrSW16 : Opcode := ⟨84⟩
-/-- `shr.u.w16` -/
-def shrUW16 : Opcode := ⟨85⟩
-/-- `eq.w16` -/
-def eqW16 : Opcode := ⟨86⟩
-/-- `ne.w16` -/
-def neW16 : Opcode := ⟨87⟩
-/-- `lt.s.w16` -/
-def ltSW16 : Opcode := ⟨88⟩
-/-- `lt.u.w16` -/
-def ltUW16 : Opcode := ⟨89⟩
-/-- `le.s.w16` -/
-def leSW16 : Opcode := ⟨90⟩
-/-- `le.u.w16` -/
-def leUW16 : Opcode := ⟨91⟩
-/-- `cmp3.s.w16` -/
-def cmp3SW16 : Opcode := ⟨92⟩
-/-- `cmp3.u.w16` -/
-def cmp3UW16 : Opcode := ⟨93⟩
-/-- `rotl.w16` -/
-def rotlW16 : Opcode := ⟨94⟩
-/-- `rotr.w16` -/
-def rotrW16 : Opcode := ⟨95⟩
-/-- `add.imm.w16` -/
-def addImmW16 : Opcode := ⟨96⟩
-/-- `sub.imm.w16` -/
-def subImmW16 : Opcode := ⟨97⟩
-/-- `mul.imm.w16` -/
-def mulImmW16 : Opcode := ⟨98⟩
-/-- `and.imm.w16` -/
-def andImmW16 : Opcode := ⟨99⟩
-/-- `or.imm.w16` -/
-def orImmW16 : Opcode := ⟨100⟩
-/-- `xor.imm.w16` -/
-def xorImmW16 : Opcode := ⟨101⟩
-/-- `shl.imm.w16` -/
-def shlImmW16 : Opcode := ⟨102⟩
-/-- `shr.s.imm.w16` -/
-def shrSImmW16 : Opcode := ⟨103⟩
-/-- `shr.u.imm.w16` -/
-def shrUImmW16 : Opcode := ⟨104⟩
-/-- `eq.imm.w16` -/
-def eqImmW16 : Opcode := ⟨105⟩
-/-- `ne.imm.w16` -/
-def neImmW16 : Opcode := ⟨106⟩
-/-- `lt.s.imm.w16` -/
-def ltSImmW16 : Opcode := ⟨107⟩
-/-- `lt.u.imm.w16` -/
-def ltUImmW16 : Opcode := ⟨108⟩
-/-- `le.s.imm.w16` -/
-def leSImmW16 : Opcode := ⟨109⟩
-/-- `le.u.imm.w16` -/
-def leUImmW16 : Opcode := ⟨110⟩
-/-- `gt.s.imm.w16` -/
-def gtSImmW16 : Opcode := ⟨111⟩
-/-- `gt.u.imm.w16` -/
-def gtUImmW16 : Opcode := ⟨112⟩
-/-- `ge.s.imm.w16` -/
-def geSImmW16 : Opcode := ⟨113⟩
-/-- `ge.u.imm.w16` -/
-def geUImmW16 : Opcode := ⟨114⟩
-/-- `ctlz.w16` -/
-def ctlzW16 : Opcode := ⟨115⟩
-/-- `cttz.w16` -/
-def cttzW16 : Opcode := ⟨116⟩
-/-- `bswap.w16` -/
-def bswapW16 : Opcode := ⟨117⟩
-/-- `add.ovf.s.w16` -/
-def addOvfSW16 : Opcode := ⟨118⟩
-/-- `add.ovf.u.w16` -/
-def addOvfUW16 : Opcode := ⟨119⟩
-/-- `sub.ovf.s.w16` -/
-def subOvfSW16 : Opcode := ⟨120⟩
-/-- `sub.ovf.u.w16` -/
-def subOvfUW16 : Opcode := ⟨121⟩
-/-- `mul.ovf.s.w16` -/
-def mulOvfSW16 : Opcode := ⟨122⟩
-/-- `mul.ovf.u.w16` -/
-def mulOvfUW16 : Opcode := ⟨123⟩
+def addW16 : Opcode := ⟨24⟩
 /-- `add.w32` -/
-def addW32 : Opcode := ⟨124⟩
+def addW32 : Opcode := ⟨25⟩
+/-- `add.w64` -/
+def addW64 : Opcode := ⟨26⟩
+/-- `sub.w8` -/
+def subW8 : Opcode := ⟨27⟩
+/-- `sub.w16` -/
+def subW16 : Opcode := ⟨28⟩
 /-- `sub.w32` -/
-def subW32 : Opcode := ⟨125⟩
+def subW32 : Opcode := ⟨29⟩
+/-- `sub.w64` -/
+def subW64 : Opcode := ⟨30⟩
+/-- `mul.w8` -/
+def mulW8 : Opcode := ⟨31⟩
+/-- `mul.w16` -/
+def mulW16 : Opcode := ⟨32⟩
 /-- `mul.w32` -/
-def mulW32 : Opcode := ⟨126⟩
+def mulW32 : Opcode := ⟨33⟩
+/-- `mul.w64` -/
+def mulW64 : Opcode := ⟨34⟩
+/-- `div.s.w8` -/
+def divSW8 : Opcode := ⟨35⟩
+/-- `div.s.w16` -/
+def divSW16 : Opcode := ⟨36⟩
 /-- `div.s.w32` -/
-def divSW32 : Opcode := ⟨127⟩
+def divSW32 : Opcode := ⟨37⟩
+/-- `div.s.w64` -/
+def divSW64 : Opcode := ⟨38⟩
+/-- `div.u.w8` -/
+def divUW8 : Opcode := ⟨39⟩
+/-- `div.u.w16` -/
+def divUW16 : Opcode := ⟨40⟩
 /-- `div.u.w32` -/
-def divUW32 : Opcode := ⟨128⟩
+def divUW32 : Opcode := ⟨41⟩
+/-- `div.u.w64` -/
+def divUW64 : Opcode := ⟨42⟩
+/-- `rem.s.w8` -/
+def remSW8 : Opcode := ⟨43⟩
+/-- `rem.s.w16` -/
+def remSW16 : Opcode := ⟨44⟩
 /-- `rem.s.w32` -/
-def remSW32 : Opcode := ⟨129⟩
+def remSW32 : Opcode := ⟨45⟩
+/-- `rem.s.w64` -/
+def remSW64 : Opcode := ⟨46⟩
+/-- `rem.u.w8` -/
+def remUW8 : Opcode := ⟨47⟩
+/-- `rem.u.w16` -/
+def remUW16 : Opcode := ⟨48⟩
 /-- `rem.u.w32` -/
-def remUW32 : Opcode := ⟨130⟩
+def remUW32 : Opcode := ⟨49⟩
+/-- `rem.u.w64` -/
+def remUW64 : Opcode := ⟨50⟩
+/-- `and.w8` -/
+def andW8 : Opcode := ⟨51⟩
+/-- `and.w16` -/
+def andW16 : Opcode := ⟨52⟩
 /-- `and.w32` -/
-def andW32 : Opcode := ⟨131⟩
+def andW32 : Opcode := ⟨53⟩
+/-- `and.w64` -/
+def andW64 : Opcode := ⟨54⟩
+/-- `or.w8` -/
+def orW8 : Opcode := ⟨55⟩
+/-- `or.w16` -/
+def orW16 : Opcode := ⟨56⟩
 /-- `or.w32` -/
-def orW32 : Opcode := ⟨132⟩
+def orW32 : Opcode := ⟨57⟩
+/-- `or.w64` -/
+def orW64 : Opcode := ⟨58⟩
+/-- `xor.w8` -/
+def xorW8 : Opcode := ⟨59⟩
+/-- `xor.w16` -/
+def xorW16 : Opcode := ⟨60⟩
 /-- `xor.w32` -/
-def xorW32 : Opcode := ⟨133⟩
+def xorW32 : Opcode := ⟨61⟩
+/-- `xor.w64` -/
+def xorW64 : Opcode := ⟨62⟩
+/-- `shl.w8` -/
+def shlW8 : Opcode := ⟨63⟩
+/-- `shl.w16` -/
+def shlW16 : Opcode := ⟨64⟩
 /-- `shl.w32` -/
-def shlW32 : Opcode := ⟨134⟩
+def shlW32 : Opcode := ⟨65⟩
+/-- `shl.w64` -/
+def shlW64 : Opcode := ⟨66⟩
+/-- `shr.s.w8` -/
+def shrSW8 : Opcode := ⟨67⟩
+/-- `shr.s.w16` -/
+def shrSW16 : Opcode := ⟨68⟩
 /-- `shr.s.w32` -/
-def shrSW32 : Opcode := ⟨135⟩
+def shrSW32 : Opcode := ⟨69⟩
+/-- `shr.s.w64` -/
+def shrSW64 : Opcode := ⟨70⟩
+/-- `shr.u.w8` -/
+def shrUW8 : Opcode := ⟨71⟩
+/-- `shr.u.w16` -/
+def shrUW16 : Opcode := ⟨72⟩
 /-- `shr.u.w32` -/
-def shrUW32 : Opcode := ⟨136⟩
+def shrUW32 : Opcode := ⟨73⟩
+/-- `shr.u.w64` -/
+def shrUW64 : Opcode := ⟨74⟩
+/-- `eq.w8` -/
+def eqW8 : Opcode := ⟨75⟩
+/-- `eq.w16` -/
+def eqW16 : Opcode := ⟨76⟩
 /-- `eq.w32` -/
-def eqW32 : Opcode := ⟨137⟩
+def eqW32 : Opcode := ⟨77⟩
+/-- `eq.w64` -/
+def eqW64 : Opcode := ⟨78⟩
+/-- `ne.w8` -/
+def neW8 : Opcode := ⟨79⟩
+/-- `ne.w16` -/
+def neW16 : Opcode := ⟨80⟩
 /-- `ne.w32` -/
-def neW32 : Opcode := ⟨138⟩
+def neW32 : Opcode := ⟨81⟩
+/-- `ne.w64` -/
+def neW64 : Opcode := ⟨82⟩
+/-- `lt.s.w8` -/
+def ltSW8 : Opcode := ⟨83⟩
+/-- `lt.s.w16` -/
+def ltSW16 : Opcode := ⟨84⟩
 /-- `lt.s.w32` -/
-def ltSW32 : Opcode := ⟨139⟩
+def ltSW32 : Opcode := ⟨85⟩
+/-- `lt.s.w64` -/
+def ltSW64 : Opcode := ⟨86⟩
+/-- `lt.u.w8` -/
+def ltUW8 : Opcode := ⟨87⟩
+/-- `lt.u.w16` -/
+def ltUW16 : Opcode := ⟨88⟩
 /-- `lt.u.w32` -/
-def ltUW32 : Opcode := ⟨140⟩
+def ltUW32 : Opcode := ⟨89⟩
+/-- `lt.u.w64` -/
+def ltUW64 : Opcode := ⟨90⟩
+/-- `le.s.w8` -/
+def leSW8 : Opcode := ⟨91⟩
+/-- `le.s.w16` -/
+def leSW16 : Opcode := ⟨92⟩
 /-- `le.s.w32` -/
-def leSW32 : Opcode := ⟨141⟩
+def leSW32 : Opcode := ⟨93⟩
+/-- `le.s.w64` -/
+def leSW64 : Opcode := ⟨94⟩
+/-- `le.u.w8` -/
+def leUW8 : Opcode := ⟨95⟩
+/-- `le.u.w16` -/
+def leUW16 : Opcode := ⟨96⟩
 /-- `le.u.w32` -/
-def leUW32 : Opcode := ⟨142⟩
+def leUW32 : Opcode := ⟨97⟩
+/-- `le.u.w64` -/
+def leUW64 : Opcode := ⟨98⟩
+/-- `cmp3.s.w8` -/
+def cmp3SW8 : Opcode := ⟨99⟩
+/-- `cmp3.s.w16` -/
+def cmp3SW16 : Opcode := ⟨100⟩
 /-- `cmp3.s.w32` -/
-def cmp3SW32 : Opcode := ⟨143⟩
+def cmp3SW32 : Opcode := ⟨101⟩
+/-- `cmp3.s.w64` -/
+def cmp3SW64 : Opcode := ⟨102⟩
+/-- `cmp3.u.w8` -/
+def cmp3UW8 : Opcode := ⟨103⟩
+/-- `cmp3.u.w16` -/
+def cmp3UW16 : Opcode := ⟨104⟩
 /-- `cmp3.u.w32` -/
-def cmp3UW32 : Opcode := ⟨144⟩
+def cmp3UW32 : Opcode := ⟨105⟩
+/-- `cmp3.u.w64` -/
+def cmp3UW64 : Opcode := ⟨106⟩
+/-- `rotl.w8` -/
+def rotlW8 : Opcode := ⟨107⟩
+/-- `rotl.w16` -/
+def rotlW16 : Opcode := ⟨108⟩
 /-- `rotl.w32` -/
-def rotlW32 : Opcode := ⟨145⟩
+def rotlW32 : Opcode := ⟨109⟩
+/-- `rotl.w64` -/
+def rotlW64 : Opcode := ⟨110⟩
+/-- `rotr.w8` -/
+def rotrW8 : Opcode := ⟨111⟩
+/-- `rotr.w16` -/
+def rotrW16 : Opcode := ⟨112⟩
 /-- `rotr.w32` -/
-def rotrW32 : Opcode := ⟨146⟩
+def rotrW32 : Opcode := ⟨113⟩
+/-- `rotr.w64` -/
+def rotrW64 : Opcode := ⟨114⟩
+/-- `add.imm.w8` -/
+def addImmW8 : Opcode := ⟨115⟩
+/-- `add.imm.w16` -/
+def addImmW16 : Opcode := ⟨116⟩
 /-- `add.imm.w32` -/
-def addImmW32 : Opcode := ⟨147⟩
+def addImmW32 : Opcode := ⟨117⟩
+/-- `add.imm.w64` -/
+def addImmW64 : Opcode := ⟨118⟩
+/-- `sub.imm.w8` -/
+def subImmW8 : Opcode := ⟨119⟩
+/-- `sub.imm.w16` -/
+def subImmW16 : Opcode := ⟨120⟩
 /-- `sub.imm.w32` -/
-def subImmW32 : Opcode := ⟨148⟩
+def subImmW32 : Opcode := ⟨121⟩
+/-- `sub.imm.w64` -/
+def subImmW64 : Opcode := ⟨122⟩
+/-- `mul.imm.w8` -/
+def mulImmW8 : Opcode := ⟨123⟩
+/-- `mul.imm.w16` -/
+def mulImmW16 : Opcode := ⟨124⟩
 /-- `mul.imm.w32` -/
-def mulImmW32 : Opcode := ⟨149⟩
+def mulImmW32 : Opcode := ⟨125⟩
+/-- `mul.imm.w64` -/
+def mulImmW64 : Opcode := ⟨126⟩
+/-- `and.imm.w8` -/
+def andImmW8 : Opcode := ⟨127⟩
+/-- `and.imm.w16` -/
+def andImmW16 : Opcode := ⟨128⟩
 /-- `and.imm.w32` -/
-def andImmW32 : Opcode := ⟨150⟩
+def andImmW32 : Opcode := ⟨129⟩
+/-- `and.imm.w64` -/
+def andImmW64 : Opcode := ⟨130⟩
+/-- `or.imm.w8` -/
+def orImmW8 : Opcode := ⟨131⟩
+/-- `or.imm.w16` -/
+def orImmW16 : Opcode := ⟨132⟩
 /-- `or.imm.w32` -/
-def orImmW32 : Opcode := ⟨151⟩
+def orImmW32 : Opcode := ⟨133⟩
+/-- `or.imm.w64` -/
+def orImmW64 : Opcode := ⟨134⟩
+/-- `xor.imm.w8` -/
+def xorImmW8 : Opcode := ⟨135⟩
+/-- `xor.imm.w16` -/
+def xorImmW16 : Opcode := ⟨136⟩
 /-- `xor.imm.w32` -/
-def xorImmW32 : Opcode := ⟨152⟩
+def xorImmW32 : Opcode := ⟨137⟩
+/-- `xor.imm.w64` -/
+def xorImmW64 : Opcode := ⟨138⟩
+/-- `shl.imm.w8` -/
+def shlImmW8 : Opcode := ⟨139⟩
+/-- `shl.imm.w16` -/
+def shlImmW16 : Opcode := ⟨140⟩
 /-- `shl.imm.w32` -/
-def shlImmW32 : Opcode := ⟨153⟩
+def shlImmW32 : Opcode := ⟨141⟩
+/-- `shl.imm.w64` -/
+def shlImmW64 : Opcode := ⟨142⟩
+/-- `shr.s.imm.w8` -/
+def shrSImmW8 : Opcode := ⟨143⟩
+/-- `shr.s.imm.w16` -/
+def shrSImmW16 : Opcode := ⟨144⟩
 /-- `shr.s.imm.w32` -/
-def shrSImmW32 : Opcode := ⟨154⟩
+def shrSImmW32 : Opcode := ⟨145⟩
+/-- `shr.s.imm.w64` -/
+def shrSImmW64 : Opcode := ⟨146⟩
+/-- `shr.u.imm.w8` -/
+def shrUImmW8 : Opcode := ⟨147⟩
+/-- `shr.u.imm.w16` -/
+def shrUImmW16 : Opcode := ⟨148⟩
 /-- `shr.u.imm.w32` -/
-def shrUImmW32 : Opcode := ⟨155⟩
+def shrUImmW32 : Opcode := ⟨149⟩
+/-- `shr.u.imm.w64` -/
+def shrUImmW64 : Opcode := ⟨150⟩
+/-- `eq.imm.w8` -/
+def eqImmW8 : Opcode := ⟨151⟩
+/-- `eq.imm.w16` -/
+def eqImmW16 : Opcode := ⟨152⟩
 /-- `eq.imm.w32` -/
-def eqImmW32 : Opcode := ⟨156⟩
+def eqImmW32 : Opcode := ⟨153⟩
+/-- `eq.imm.w64` -/
+def eqImmW64 : Opcode := ⟨154⟩
+/-- `ne.imm.w8` -/
+def neImmW8 : Opcode := ⟨155⟩
+/-- `ne.imm.w16` -/
+def neImmW16 : Opcode := ⟨156⟩
 /-- `ne.imm.w32` -/
 def neImmW32 : Opcode := ⟨157⟩
-/-- `lt.s.imm.w32` -/
-def ltSImmW32 : Opcode := ⟨158⟩
-/-- `lt.u.imm.w32` -/
-def ltUImmW32 : Opcode := ⟨159⟩
-/-- `le.s.imm.w32` -/
-def leSImmW32 : Opcode := ⟨160⟩
-/-- `le.u.imm.w32` -/
-def leUImmW32 : Opcode := ⟨161⟩
-/-- `gt.s.imm.w32` -/
-def gtSImmW32 : Opcode := ⟨162⟩
-/-- `gt.u.imm.w32` -/
-def gtUImmW32 : Opcode := ⟨163⟩
-/-- `ge.s.imm.w32` -/
-def geSImmW32 : Opcode := ⟨164⟩
-/-- `ge.u.imm.w32` -/
-def geUImmW32 : Opcode := ⟨165⟩
-/-- `ctlz.w32` -/
-def ctlzW32 : Opcode := ⟨166⟩
-/-- `cttz.w32` -/
-def cttzW32 : Opcode := ⟨167⟩
-/-- `bswap.w32` -/
-def bswapW32 : Opcode := ⟨168⟩
-/-- `add.ovf.s.w32` -/
-def addOvfSW32 : Opcode := ⟨169⟩
-/-- `add.ovf.u.w32` -/
-def addOvfUW32 : Opcode := ⟨170⟩
-/-- `sub.ovf.s.w32` -/
-def subOvfSW32 : Opcode := ⟨171⟩
-/-- `sub.ovf.u.w32` -/
-def subOvfUW32 : Opcode := ⟨172⟩
-/-- `mul.ovf.s.w32` -/
-def mulOvfSW32 : Opcode := ⟨173⟩
-/-- `mul.ovf.u.w32` -/
-def mulOvfUW32 : Opcode := ⟨174⟩
-/-- `add.w64` -/
-def addW64 : Opcode := ⟨175⟩
-/-- `sub.w64` -/
-def subW64 : Opcode := ⟨176⟩
-/-- `mul.w64` -/
-def mulW64 : Opcode := ⟨177⟩
-/-- `div.s.w64` -/
-def divSW64 : Opcode := ⟨178⟩
-/-- `div.u.w64` -/
-def divUW64 : Opcode := ⟨179⟩
-/-- `rem.s.w64` -/
-def remSW64 : Opcode := ⟨180⟩
-/-- `rem.u.w64` -/
-def remUW64 : Opcode := ⟨181⟩
-/-- `and.w64` -/
-def andW64 : Opcode := ⟨182⟩
-/-- `or.w64` -/
-def orW64 : Opcode := ⟨183⟩
-/-- `xor.w64` -/
-def xorW64 : Opcode := ⟨184⟩
-/-- `shl.w64` -/
-def shlW64 : Opcode := ⟨185⟩
-/-- `shr.s.w64` -/
-def shrSW64 : Opcode := ⟨186⟩
-/-- `shr.u.w64` -/
-def shrUW64 : Opcode := ⟨187⟩
-/-- `eq.w64` -/
-def eqW64 : Opcode := ⟨188⟩
-/-- `ne.w64` -/
-def neW64 : Opcode := ⟨189⟩
-/-- `lt.s.w64` -/
-def ltSW64 : Opcode := ⟨190⟩
-/-- `lt.u.w64` -/
-def ltUW64 : Opcode := ⟨191⟩
-/-- `le.s.w64` -/
-def leSW64 : Opcode := ⟨192⟩
-/-- `le.u.w64` -/
-def leUW64 : Opcode := ⟨193⟩
-/-- `cmp3.s.w64` -/
-def cmp3SW64 : Opcode := ⟨194⟩
-/-- `cmp3.u.w64` -/
-def cmp3UW64 : Opcode := ⟨195⟩
-/-- `rotl.w64` -/
-def rotlW64 : Opcode := ⟨196⟩
-/-- `rotr.w64` -/
-def rotrW64 : Opcode := ⟨197⟩
-/-- `add.imm.w64` -/
-def addImmW64 : Opcode := ⟨198⟩
-/-- `sub.imm.w64` -/
-def subImmW64 : Opcode := ⟨199⟩
-/-- `mul.imm.w64` -/
-def mulImmW64 : Opcode := ⟨200⟩
-/-- `and.imm.w64` -/
-def andImmW64 : Opcode := ⟨201⟩
-/-- `or.imm.w64` -/
-def orImmW64 : Opcode := ⟨202⟩
-/-- `xor.imm.w64` -/
-def xorImmW64 : Opcode := ⟨203⟩
-/-- `shl.imm.w64` -/
-def shlImmW64 : Opcode := ⟨204⟩
-/-- `shr.s.imm.w64` -/
-def shrSImmW64 : Opcode := ⟨205⟩
-/-- `shr.u.imm.w64` -/
-def shrUImmW64 : Opcode := ⟨206⟩
-/-- `eq.imm.w64` -/
-def eqImmW64 : Opcode := ⟨207⟩
 /-- `ne.imm.w64` -/
-def neImmW64 : Opcode := ⟨208⟩
+def neImmW64 : Opcode := ⟨158⟩
+/-- `lt.s.imm.w8` -/
+def ltSImmW8 : Opcode := ⟨159⟩
+/-- `lt.s.imm.w16` -/
+def ltSImmW16 : Opcode := ⟨160⟩
+/-- `lt.s.imm.w32` -/
+def ltSImmW32 : Opcode := ⟨161⟩
 /-- `lt.s.imm.w64` -/
-def ltSImmW64 : Opcode := ⟨209⟩
+def ltSImmW64 : Opcode := ⟨162⟩
+/-- `lt.u.imm.w8` -/
+def ltUImmW8 : Opcode := ⟨163⟩
+/-- `lt.u.imm.w16` -/
+def ltUImmW16 : Opcode := ⟨164⟩
+/-- `lt.u.imm.w32` -/
+def ltUImmW32 : Opcode := ⟨165⟩
 /-- `lt.u.imm.w64` -/
-def ltUImmW64 : Opcode := ⟨210⟩
+def ltUImmW64 : Opcode := ⟨166⟩
+/-- `le.s.imm.w8` -/
+def leSImmW8 : Opcode := ⟨167⟩
+/-- `le.s.imm.w16` -/
+def leSImmW16 : Opcode := ⟨168⟩
+/-- `le.s.imm.w32` -/
+def leSImmW32 : Opcode := ⟨169⟩
 /-- `le.s.imm.w64` -/
-def leSImmW64 : Opcode := ⟨211⟩
+def leSImmW64 : Opcode := ⟨170⟩
+/-- `le.u.imm.w8` -/
+def leUImmW8 : Opcode := ⟨171⟩
+/-- `le.u.imm.w16` -/
+def leUImmW16 : Opcode := ⟨172⟩
+/-- `le.u.imm.w32` -/
+def leUImmW32 : Opcode := ⟨173⟩
 /-- `le.u.imm.w64` -/
-def leUImmW64 : Opcode := ⟨212⟩
+def leUImmW64 : Opcode := ⟨174⟩
+/-- `gt.s.imm.w8` -/
+def gtSImmW8 : Opcode := ⟨175⟩
+/-- `gt.s.imm.w16` -/
+def gtSImmW16 : Opcode := ⟨176⟩
+/-- `gt.s.imm.w32` -/
+def gtSImmW32 : Opcode := ⟨177⟩
 /-- `gt.s.imm.w64` -/
-def gtSImmW64 : Opcode := ⟨213⟩
+def gtSImmW64 : Opcode := ⟨178⟩
+/-- `gt.u.imm.w8` -/
+def gtUImmW8 : Opcode := ⟨179⟩
+/-- `gt.u.imm.w16` -/
+def gtUImmW16 : Opcode := ⟨180⟩
+/-- `gt.u.imm.w32` -/
+def gtUImmW32 : Opcode := ⟨181⟩
 /-- `gt.u.imm.w64` -/
-def gtUImmW64 : Opcode := ⟨214⟩
+def gtUImmW64 : Opcode := ⟨182⟩
+/-- `ge.s.imm.w8` -/
+def geSImmW8 : Opcode := ⟨183⟩
+/-- `ge.s.imm.w16` -/
+def geSImmW16 : Opcode := ⟨184⟩
+/-- `ge.s.imm.w32` -/
+def geSImmW32 : Opcode := ⟨185⟩
 /-- `ge.s.imm.w64` -/
-def geSImmW64 : Opcode := ⟨215⟩
+def geSImmW64 : Opcode := ⟨186⟩
+/-- `ge.u.imm.w8` -/
+def geUImmW8 : Opcode := ⟨187⟩
+/-- `ge.u.imm.w16` -/
+def geUImmW16 : Opcode := ⟨188⟩
+/-- `ge.u.imm.w32` -/
+def geUImmW32 : Opcode := ⟨189⟩
 /-- `ge.u.imm.w64` -/
-def geUImmW64 : Opcode := ⟨216⟩
+def geUImmW64 : Opcode := ⟨190⟩
+/-- `ctlz.w8` -/
+def ctlzW8 : Opcode := ⟨191⟩
+/-- `ctlz.w16` -/
+def ctlzW16 : Opcode := ⟨192⟩
+/-- `ctlz.w32` -/
+def ctlzW32 : Opcode := ⟨193⟩
 /-- `ctlz.w64` -/
-def ctlzW64 : Opcode := ⟨217⟩
+def ctlzW64 : Opcode := ⟨194⟩
+/-- `cttz.w8` -/
+def cttzW8 : Opcode := ⟨195⟩
+/-- `cttz.w16` -/
+def cttzW16 : Opcode := ⟨196⟩
+/-- `cttz.w32` -/
+def cttzW32 : Opcode := ⟨197⟩
 /-- `cttz.w64` -/
-def cttzW64 : Opcode := ⟨218⟩
-/-- `bswap.w64` -/
-def bswapW64 : Opcode := ⟨219⟩
+def cttzW64 : Opcode := ⟨198⟩
+/-- `add.ovf.s.w8` -/
+def addOvfSW8 : Opcode := ⟨199⟩
+/-- `add.ovf.s.w16` -/
+def addOvfSW16 : Opcode := ⟨200⟩
+/-- `add.ovf.s.w32` -/
+def addOvfSW32 : Opcode := ⟨201⟩
 /-- `add.ovf.s.w64` -/
-def addOvfSW64 : Opcode := ⟨220⟩
+def addOvfSW64 : Opcode := ⟨202⟩
+/-- `add.ovf.u.w8` -/
+def addOvfUW8 : Opcode := ⟨203⟩
+/-- `add.ovf.u.w16` -/
+def addOvfUW16 : Opcode := ⟨204⟩
+/-- `add.ovf.u.w32` -/
+def addOvfUW32 : Opcode := ⟨205⟩
 /-- `add.ovf.u.w64` -/
-def addOvfUW64 : Opcode := ⟨221⟩
+def addOvfUW64 : Opcode := ⟨206⟩
+/-- `sub.ovf.s.w8` -/
+def subOvfSW8 : Opcode := ⟨207⟩
+/-- `sub.ovf.s.w16` -/
+def subOvfSW16 : Opcode := ⟨208⟩
+/-- `sub.ovf.s.w32` -/
+def subOvfSW32 : Opcode := ⟨209⟩
 /-- `sub.ovf.s.w64` -/
-def subOvfSW64 : Opcode := ⟨222⟩
+def subOvfSW64 : Opcode := ⟨210⟩
+/-- `sub.ovf.u.w8` -/
+def subOvfUW8 : Opcode := ⟨211⟩
+/-- `sub.ovf.u.w16` -/
+def subOvfUW16 : Opcode := ⟨212⟩
+/-- `sub.ovf.u.w32` -/
+def subOvfUW32 : Opcode := ⟨213⟩
 /-- `sub.ovf.u.w64` -/
-def subOvfUW64 : Opcode := ⟨223⟩
+def subOvfUW64 : Opcode := ⟨214⟩
+/-- `mul.ovf.s.w8` -/
+def mulOvfSW8 : Opcode := ⟨215⟩
+/-- `mul.ovf.s.w16` -/
+def mulOvfSW16 : Opcode := ⟨216⟩
+/-- `mul.ovf.s.w32` -/
+def mulOvfSW32 : Opcode := ⟨217⟩
 /-- `mul.ovf.s.w64` -/
-def mulOvfSW64 : Opcode := ⟨224⟩
+def mulOvfSW64 : Opcode := ⟨218⟩
+/-- `mul.ovf.u.w8` -/
+def mulOvfUW8 : Opcode := ⟨219⟩
+/-- `mul.ovf.u.w16` -/
+def mulOvfUW16 : Opcode := ⟨220⟩
+/-- `mul.ovf.u.w32` -/
+def mulOvfUW32 : Opcode := ⟨221⟩
 /-- `mul.ovf.u.w64` -/
-def mulOvfUW64 : Opcode := ⟨225⟩
+def mulOvfUW64 : Opcode := ⟨222⟩
+/-- `bswap.w16` -/
+def bswapW16 : Opcode := ⟨223⟩
+/-- `bswap.w32` -/
+def bswapW32 : Opcode := ⟨224⟩
+/-- `bswap.w64` -/
+def bswapW64 : Opcode := ⟨225⟩
 /-- `zext.w8.w16` -/
 def zextW8W16 : Opcode := ⟨226⟩
 /-- `sext.w8.w16` -/
@@ -821,66 +821,66 @@ def jmp : Opcode := ⟨244⟩
 def br : Opcode := ⟨245⟩
 /-- `br.eq.w8` -/
 def brEqW8 : Opcode := ⟨246⟩
-/-- `br.lt.s.w8` -/
-def brLtSW8 : Opcode := ⟨247⟩
-/-- `br.lt.u.w8` -/
-def brLtUW8 : Opcode := ⟨248⟩
-/-- `br.eq.imm.w8` -/
-def brEqImmW8 : Opcode := ⟨249⟩
-/-- `br.lt.s.imm.w8` -/
-def brLtSImmW8 : Opcode := ⟨250⟩
-/-- `br.lt.u.imm.w8` -/
-def brLtUImmW8 : Opcode := ⟨251⟩
-/-- `br.gt.s.imm.w8` -/
-def brGtSImmW8 : Opcode := ⟨252⟩
-/-- `br.gt.u.imm.w8` -/
-def brGtUImmW8 : Opcode := ⟨253⟩
 /-- `br.eq.w16` -/
-def brEqW16 : Opcode := ⟨254⟩
-/-- `br.lt.s.w16` -/
-def brLtSW16 : Opcode := ⟨255⟩
-/-- `br.lt.u.w16` -/
-def brLtUW16 : Opcode := ⟨256⟩
-/-- `br.eq.imm.w16` -/
-def brEqImmW16 : Opcode := ⟨257⟩
-/-- `br.lt.s.imm.w16` -/
-def brLtSImmW16 : Opcode := ⟨258⟩
-/-- `br.lt.u.imm.w16` -/
-def brLtUImmW16 : Opcode := ⟨259⟩
-/-- `br.gt.s.imm.w16` -/
-def brGtSImmW16 : Opcode := ⟨260⟩
-/-- `br.gt.u.imm.w16` -/
-def brGtUImmW16 : Opcode := ⟨261⟩
+def brEqW16 : Opcode := ⟨247⟩
 /-- `br.eq.w32` -/
-def brEqW32 : Opcode := ⟨262⟩
-/-- `br.lt.s.w32` -/
-def brLtSW32 : Opcode := ⟨263⟩
-/-- `br.lt.u.w32` -/
-def brLtUW32 : Opcode := ⟨264⟩
-/-- `br.eq.imm.w32` -/
-def brEqImmW32 : Opcode := ⟨265⟩
-/-- `br.lt.s.imm.w32` -/
-def brLtSImmW32 : Opcode := ⟨266⟩
-/-- `br.lt.u.imm.w32` -/
-def brLtUImmW32 : Opcode := ⟨267⟩
-/-- `br.gt.s.imm.w32` -/
-def brGtSImmW32 : Opcode := ⟨268⟩
-/-- `br.gt.u.imm.w32` -/
-def brGtUImmW32 : Opcode := ⟨269⟩
+def brEqW32 : Opcode := ⟨248⟩
 /-- `br.eq.w64` -/
-def brEqW64 : Opcode := ⟨270⟩
+def brEqW64 : Opcode := ⟨249⟩
+/-- `br.lt.s.w8` -/
+def brLtSW8 : Opcode := ⟨250⟩
+/-- `br.lt.s.w16` -/
+def brLtSW16 : Opcode := ⟨251⟩
+/-- `br.lt.s.w32` -/
+def brLtSW32 : Opcode := ⟨252⟩
 /-- `br.lt.s.w64` -/
-def brLtSW64 : Opcode := ⟨271⟩
+def brLtSW64 : Opcode := ⟨253⟩
+/-- `br.lt.u.w8` -/
+def brLtUW8 : Opcode := ⟨254⟩
+/-- `br.lt.u.w16` -/
+def brLtUW16 : Opcode := ⟨255⟩
+/-- `br.lt.u.w32` -/
+def brLtUW32 : Opcode := ⟨256⟩
 /-- `br.lt.u.w64` -/
-def brLtUW64 : Opcode := ⟨272⟩
+def brLtUW64 : Opcode := ⟨257⟩
+/-- `br.eq.imm.w8` -/
+def brEqImmW8 : Opcode := ⟨258⟩
+/-- `br.eq.imm.w16` -/
+def brEqImmW16 : Opcode := ⟨259⟩
+/-- `br.eq.imm.w32` -/
+def brEqImmW32 : Opcode := ⟨260⟩
 /-- `br.eq.imm.w64` -/
-def brEqImmW64 : Opcode := ⟨273⟩
+def brEqImmW64 : Opcode := ⟨261⟩
+/-- `br.lt.s.imm.w8` -/
+def brLtSImmW8 : Opcode := ⟨262⟩
+/-- `br.lt.s.imm.w16` -/
+def brLtSImmW16 : Opcode := ⟨263⟩
+/-- `br.lt.s.imm.w32` -/
+def brLtSImmW32 : Opcode := ⟨264⟩
 /-- `br.lt.s.imm.w64` -/
-def brLtSImmW64 : Opcode := ⟨274⟩
+def brLtSImmW64 : Opcode := ⟨265⟩
+/-- `br.lt.u.imm.w8` -/
+def brLtUImmW8 : Opcode := ⟨266⟩
+/-- `br.lt.u.imm.w16` -/
+def brLtUImmW16 : Opcode := ⟨267⟩
+/-- `br.lt.u.imm.w32` -/
+def brLtUImmW32 : Opcode := ⟨268⟩
 /-- `br.lt.u.imm.w64` -/
-def brLtUImmW64 : Opcode := ⟨275⟩
+def brLtUImmW64 : Opcode := ⟨269⟩
+/-- `br.gt.s.imm.w8` -/
+def brGtSImmW8 : Opcode := ⟨270⟩
+/-- `br.gt.s.imm.w16` -/
+def brGtSImmW16 : Opcode := ⟨271⟩
+/-- `br.gt.s.imm.w32` -/
+def brGtSImmW32 : Opcode := ⟨272⟩
 /-- `br.gt.s.imm.w64` -/
-def brGtSImmW64 : Opcode := ⟨276⟩
+def brGtSImmW64 : Opcode := ⟨273⟩
+/-- `br.gt.u.imm.w8` -/
+def brGtUImmW8 : Opcode := ⟨274⟩
+/-- `br.gt.u.imm.w16` -/
+def brGtUImmW16 : Opcode := ⟨275⟩
+/-- `br.gt.u.imm.w32` -/
+def brGtUImmW32 : Opcode := ⟨276⟩
 /-- `br.gt.u.imm.w64` -/
 def brGtUImmW64 : Opcode := ⟨277⟩
 /-- `unreachable` -/
@@ -918,49 +918,49 @@ def toFullTable : Array (Option Full.Opcode) := #[
   some ⟨7⟩, some ⟨8⟩, some ⟨9⟩, some ⟨13⟩, some ⟨14⟩, some ⟨15⟩,
   some ⟨16⟩, some ⟨18⟩, some ⟨19⟩, some ⟨20⟩, some ⟨21⟩, some ⟨29⟩,
   some ⟨30⟩, some ⟨31⟩, some ⟨32⟩, some ⟨33⟩, some ⟨34⟩, some ⟨35⟩,
-  some ⟨36⟩, some ⟨37⟩, some ⟨38⟩, some ⟨39⟩, some ⟨40⟩, some ⟨41⟩,
-  some ⟨42⟩, some ⟨43⟩, some ⟨44⟩, some ⟨45⟩, some ⟨46⟩, some ⟨47⟩,
-  some ⟨48⟩, some ⟨49⟩, some ⟨50⟩, some ⟨51⟩, some ⟨52⟩, some ⟨53⟩,
-  some ⟨54⟩, some ⟨55⟩, some ⟨56⟩, some ⟨57⟩, some ⟨58⟩, some ⟨59⟩,
-  some ⟨60⟩, some ⟨61⟩, some ⟨62⟩, some ⟨63⟩, some ⟨64⟩, some ⟨65⟩,
-  some ⟨66⟩, some ⟨67⟩, some ⟨68⟩, some ⟨69⟩, some ⟨70⟩, some ⟨71⟩,
-  some ⟨72⟩, some ⟨73⟩, some ⟨74⟩, some ⟨75⟩, some ⟨76⟩, some ⟨80⟩,
-  some ⟨81⟩, some ⟨83⟩, some ⟨84⟩, some ⟨85⟩, some ⟨86⟩, some ⟨87⟩,
-  some ⟨88⟩, some ⟨89⟩, some ⟨90⟩, some ⟨91⟩, some ⟨92⟩, some ⟨93⟩,
-  some ⟨94⟩, some ⟨95⟩, some ⟨96⟩, some ⟨97⟩, some ⟨98⟩, some ⟨99⟩,
-  some ⟨100⟩, some ⟨101⟩, some ⟨102⟩, some ⟨103⟩, some ⟨104⟩, some ⟨105⟩,
-  some ⟨106⟩, some ⟨107⟩, some ⟨108⟩, some ⟨109⟩, some ⟨110⟩, some ⟨111⟩,
-  some ⟨112⟩, some ⟨113⟩, some ⟨114⟩, some ⟨115⟩, some ⟨116⟩, some ⟨117⟩,
-  some ⟨118⟩, some ⟨119⟩, some ⟨120⟩, some ⟨121⟩, some ⟨122⟩, some ⟨123⟩,
-  some ⟨124⟩, some ⟨125⟩, some ⟨126⟩, some ⟨127⟩, some ⟨128⟩, some ⟨129⟩,
-  some ⟨130⟩, some ⟨134⟩, some ⟨135⟩, some ⟨136⟩, some ⟨138⟩, some ⟨139⟩,
-  some ⟨140⟩, some ⟨141⟩, some ⟨142⟩, some ⟨143⟩, some ⟨144⟩, some ⟨145⟩,
-  some ⟨146⟩, some ⟨147⟩, some ⟨148⟩, some ⟨149⟩, some ⟨150⟩, some ⟨151⟩,
-  some ⟨152⟩, some ⟨153⟩, some ⟨154⟩, some ⟨155⟩, some ⟨156⟩, some ⟨157⟩,
-  some ⟨158⟩, some ⟨159⟩, some ⟨160⟩, some ⟨161⟩, some ⟨162⟩, some ⟨163⟩,
-  some ⟨164⟩, some ⟨165⟩, some ⟨166⟩, some ⟨167⟩, some ⟨168⟩, some ⟨169⟩,
-  some ⟨170⟩, some ⟨171⟩, some ⟨172⟩, some ⟨173⟩, some ⟨174⟩, some ⟨175⟩,
-  some ⟨176⟩, some ⟨177⟩, some ⟨178⟩, some ⟨179⟩, some ⟨180⟩, some ⟨181⟩,
-  some ⟨182⟩, some ⟨183⟩, some ⟨184⟩, some ⟨185⟩, some ⟨189⟩, some ⟨190⟩,
-  some ⟨191⟩, some ⟨193⟩, some ⟨194⟩, some ⟨195⟩, some ⟨196⟩, some ⟨197⟩,
-  some ⟨198⟩, some ⟨199⟩, some ⟨200⟩, some ⟨201⟩, some ⟨202⟩, some ⟨203⟩,
-  some ⟨204⟩, some ⟨205⟩, some ⟨206⟩, some ⟨207⟩, some ⟨208⟩, some ⟨209⟩,
-  some ⟨210⟩, some ⟨211⟩, some ⟨212⟩, some ⟨213⟩, some ⟨214⟩, some ⟨215⟩,
-  some ⟨216⟩, some ⟨217⟩, some ⟨218⟩, some ⟨219⟩, some ⟨220⟩, some ⟨221⟩,
-  some ⟨222⟩, some ⟨223⟩, some ⟨224⟩, some ⟨225⟩, some ⟨226⟩, some ⟨227⟩,
-  some ⟨228⟩, some ⟨229⟩, some ⟨230⟩, some ⟨231⟩, some ⟨232⟩, some ⟨233⟩,
-  some ⟨234⟩, some ⟨235⟩, some ⟨236⟩, some ⟨237⟩, some ⟨238⟩, some ⟨239⟩,
-  some ⟨240⟩, some ⟨244⟩, some ⟨245⟩, some ⟨246⟩, some ⟨248⟩, some ⟨249⟩,
-  some ⟨250⟩, some ⟨251⟩, some ⟨252⟩, some ⟨253⟩, some ⟨333⟩, some ⟨334⟩,
+  some ⟨36⟩, some ⟨37⟩, some ⟨38⟩, some ⟨40⟩, some ⟨41⟩, some ⟨42⟩,
+  some ⟨43⟩, some ⟨45⟩, some ⟨46⟩, some ⟨47⟩, some ⟨48⟩, some ⟨49⟩,
+  some ⟨50⟩, some ⟨51⟩, some ⟨52⟩, some ⟨53⟩, some ⟨54⟩, some ⟨55⟩,
+  some ⟨56⟩, some ⟨57⟩, some ⟨58⟩, some ⟨59⟩, some ⟨60⟩, some ⟨61⟩,
+  some ⟨62⟩, some ⟨63⟩, some ⟨64⟩, some ⟨65⟩, some ⟨66⟩, some ⟨67⟩,
+  some ⟨68⟩, some ⟨70⟩, some ⟨71⟩, some ⟨72⟩, some ⟨73⟩, some ⟨75⟩,
+  some ⟨76⟩, some ⟨77⟩, some ⟨78⟩, some ⟨80⟩, some ⟨81⟩, some ⟨82⟩,
+  some ⟨83⟩, some ⟨85⟩, some ⟨86⟩, some ⟨87⟩, some ⟨88⟩, some ⟨90⟩,
+  some ⟨91⟩, some ⟨92⟩, some ⟨93⟩, some ⟨95⟩, some ⟨96⟩, some ⟨97⟩,
+  some ⟨98⟩, some ⟨100⟩, some ⟨101⟩, some ⟨102⟩, some ⟨103⟩, some ⟨105⟩,
+  some ⟨106⟩, some ⟨107⟩, some ⟨108⟩, some ⟨110⟩, some ⟨111⟩, some ⟨112⟩,
+  some ⟨113⟩, some ⟨115⟩, some ⟨116⟩, some ⟨117⟩, some ⟨118⟩, some ⟨120⟩,
+  some ⟨121⟩, some ⟨122⟩, some ⟨123⟩, some ⟨125⟩, some ⟨126⟩, some ⟨127⟩,
+  some ⟨128⟩, some ⟨130⟩, some ⟨131⟩, some ⟨132⟩, some ⟨133⟩, some ⟨135⟩,
+  some ⟨136⟩, some ⟨137⟩, some ⟨138⟩, some ⟨140⟩, some ⟨141⟩, some ⟨142⟩,
+  some ⟨143⟩, some ⟨145⟩, some ⟨146⟩, some ⟨147⟩, some ⟨148⟩, some ⟨150⟩,
+  some ⟨151⟩, some ⟨152⟩, some ⟨153⟩, some ⟨155⟩, some ⟨156⟩, some ⟨157⟩,
+  some ⟨158⟩, some ⟨159⟩, some ⟨160⟩, some ⟨161⟩, some ⟨162⟩, some ⟨164⟩,
+  some ⟨165⟩, some ⟨166⟩, some ⟨167⟩, some ⟨169⟩, some ⟨170⟩, some ⟨171⟩,
+  some ⟨172⟩, some ⟨174⟩, some ⟨175⟩, some ⟨176⟩, some ⟨177⟩, some ⟨179⟩,
+  some ⟨180⟩, some ⟨181⟩, some ⟨182⟩, some ⟨184⟩, some ⟨185⟩, some ⟨186⟩,
+  some ⟨187⟩, some ⟨189⟩, some ⟨190⟩, some ⟨191⟩, some ⟨192⟩, some ⟨194⟩,
+  some ⟨195⟩, some ⟨196⟩, some ⟨197⟩, some ⟨199⟩, some ⟨200⟩, some ⟨201⟩,
+  some ⟨202⟩, some ⟨204⟩, some ⟨205⟩, some ⟨206⟩, some ⟨207⟩, some ⟨209⟩,
+  some ⟨210⟩, some ⟨211⟩, some ⟨212⟩, some ⟨214⟩, some ⟨215⟩, some ⟨216⟩,
+  some ⟨217⟩, some ⟨219⟩, some ⟨220⟩, some ⟨221⟩, some ⟨222⟩, some ⟨224⟩,
+  some ⟨225⟩, some ⟨226⟩, some ⟨227⟩, some ⟨229⟩, some ⟨230⟩, some ⟨231⟩,
+  some ⟨232⟩, some ⟨234⟩, some ⟨235⟩, some ⟨236⟩, some ⟨237⟩, some ⟨254⟩,
+  some ⟨255⟩, some ⟨256⟩, some ⟨257⟩, some ⟨259⟩, some ⟨260⟩, some ⟨261⟩,
+  some ⟨262⟩, some ⟨269⟩, some ⟨270⟩, some ⟨271⟩, some ⟨272⟩, some ⟨274⟩,
+  some ⟨275⟩, some ⟨276⟩, some ⟨277⟩, some ⟨279⟩, some ⟨280⟩, some ⟨281⟩,
+  some ⟨282⟩, some ⟨284⟩, some ⟨285⟩, some ⟨286⟩, some ⟨287⟩, some ⟨289⟩,
+  some ⟨290⟩, some ⟨291⟩, some ⟨292⟩, some ⟨293⟩, some ⟨294⟩, some ⟨295⟩,
+  some ⟨296⟩, some ⟨297⟩, some ⟨298⟩, some ⟨299⟩, some ⟨333⟩, some ⟨334⟩,
   some ⟨335⟩, some ⟨336⟩, some ⟨337⟩, some ⟨338⟩, some ⟨341⟩, some ⟨342⟩,
   some ⟨343⟩, some ⟨344⟩, some ⟨347⟩, some ⟨348⟩, some ⟨353⟩, some ⟨354⟩,
   some ⟨355⟩, some ⟨356⟩, some ⟨357⟩, some ⟨358⟩, some ⟨840⟩, some ⟨841⟩,
-  some ⟨842⟩, some ⟨843⟩, some ⟨844⟩, some ⟨845⟩, some ⟨846⟩, some ⟨847⟩,
-  some ⟨848⟩, some ⟨849⟩, some ⟨850⟩, some ⟨851⟩, some ⟨852⟩, some ⟨853⟩,
-  some ⟨854⟩, some ⟨855⟩, some ⟨856⟩, some ⟨857⟩, some ⟨858⟩, some ⟨859⟩,
-  some ⟨860⟩, some ⟨861⟩, some ⟨862⟩, some ⟨863⟩, some ⟨864⟩, some ⟨865⟩,
-  some ⟨866⟩, some ⟨867⟩, some ⟨868⟩, some ⟨869⟩, some ⟨870⟩, some ⟨871⟩,
-  some ⟨872⟩, some ⟨873⟩, some ⟨892⟩, some ⟨894⟩, some ⟨895⟩, some ⟨896⟩,
+  some ⟨842⟩, some ⟨843⟩, some ⟨844⟩, some ⟨845⟩, some ⟨847⟩, some ⟨848⟩,
+  some ⟨849⟩, some ⟨850⟩, some ⟨852⟩, some ⟨853⟩, some ⟨854⟩, some ⟨855⟩,
+  some ⟨857⟩, some ⟨858⟩, some ⟨859⟩, some ⟨860⟩, some ⟨862⟩, some ⟨863⟩,
+  some ⟨864⟩, some ⟨865⟩, some ⟨867⟩, some ⟨868⟩, some ⟨869⟩, some ⟨870⟩,
+  some ⟨872⟩, some ⟨873⟩, some ⟨874⟩, some ⟨875⟩, some ⟨877⟩, some ⟨878⟩,
+  some ⟨879⟩, some ⟨880⟩, some ⟨892⟩, some ⟨894⟩, some ⟨895⟩, some ⟨896⟩,
   some ⟨897⟩, some ⟨898⟩, some ⟨899⟩, some ⟨900⟩, some ⟨901⟩, some ⟨902⟩,
   none
 ]
@@ -972,55 +972,51 @@ def ofFullTable : Array (Option Opcode) := #[
   some ⟨11⟩, some ⟨12⟩, none, some ⟨13⟩, some ⟨14⟩, some ⟨15⟩, some ⟨16⟩,
   none, none, none, none, none, none, none, some ⟨17⟩, some ⟨18⟩, some ⟨19⟩,
   some ⟨20⟩, some ⟨21⟩, some ⟨22⟩, some ⟨23⟩, some ⟨24⟩, some ⟨25⟩,
-  some ⟨26⟩, some ⟨27⟩, some ⟨28⟩, some ⟨29⟩, some ⟨30⟩, some ⟨31⟩,
-  some ⟨32⟩, some ⟨33⟩, some ⟨34⟩, some ⟨35⟩, some ⟨36⟩, some ⟨37⟩,
-  some ⟨38⟩, some ⟨39⟩, some ⟨40⟩, some ⟨41⟩, some ⟨42⟩, some ⟨43⟩,
-  some ⟨44⟩, some ⟨45⟩, some ⟨46⟩, some ⟨47⟩, some ⟨48⟩, some ⟨49⟩,
-  some ⟨50⟩, some ⟨51⟩, some ⟨52⟩, some ⟨53⟩, some ⟨54⟩, some ⟨55⟩,
-  some ⟨56⟩, some ⟨57⟩, some ⟨58⟩, some ⟨59⟩, some ⟨60⟩, some ⟨61⟩,
-  some ⟨62⟩, some ⟨63⟩, some ⟨64⟩, none, none, none, some ⟨65⟩, some ⟨66⟩,
-  none, some ⟨67⟩, some ⟨68⟩, some ⟨69⟩, some ⟨70⟩, some ⟨71⟩, some ⟨72⟩,
-  some ⟨73⟩, some ⟨74⟩, some ⟨75⟩, some ⟨76⟩, some ⟨77⟩, some ⟨78⟩,
-  some ⟨79⟩, some ⟨80⟩, some ⟨81⟩, some ⟨82⟩, some ⟨83⟩, some ⟨84⟩,
-  some ⟨85⟩, some ⟨86⟩, some ⟨87⟩, some ⟨88⟩, some ⟨89⟩, some ⟨90⟩,
-  some ⟨91⟩, some ⟨92⟩, some ⟨93⟩, some ⟨94⟩, some ⟨95⟩, some ⟨96⟩,
-  some ⟨97⟩, some ⟨98⟩, some ⟨99⟩, some ⟨100⟩, some ⟨101⟩, some ⟨102⟩,
-  some ⟨103⟩, some ⟨104⟩, some ⟨105⟩, some ⟨106⟩, some ⟨107⟩, some ⟨108⟩,
-  some ⟨109⟩, some ⟨110⟩, some ⟨111⟩, some ⟨112⟩, some ⟨113⟩, some ⟨114⟩,
-  none, none, none, some ⟨115⟩, some ⟨116⟩, some ⟨117⟩, none, some ⟨118⟩,
-  some ⟨119⟩, some ⟨120⟩, some ⟨121⟩, some ⟨122⟩, some ⟨123⟩, some ⟨124⟩,
+  some ⟨26⟩, none, some ⟨27⟩, some ⟨28⟩, some ⟨29⟩, some ⟨30⟩, none,
+  some ⟨31⟩, some ⟨32⟩, some ⟨33⟩, some ⟨34⟩, some ⟨35⟩, some ⟨36⟩,
+  some ⟨37⟩, some ⟨38⟩, some ⟨39⟩, some ⟨40⟩, some ⟨41⟩, some ⟨42⟩,
+  some ⟨43⟩, some ⟨44⟩, some ⟨45⟩, some ⟨46⟩, some ⟨47⟩, some ⟨48⟩,
+  some ⟨49⟩, some ⟨50⟩, some ⟨51⟩, some ⟨52⟩, some ⟨53⟩, some ⟨54⟩, none,
+  some ⟨55⟩, some ⟨56⟩, some ⟨57⟩, some ⟨58⟩, none, some ⟨59⟩, some ⟨60⟩,
+  some ⟨61⟩, some ⟨62⟩, none, some ⟨63⟩, some ⟨64⟩, some ⟨65⟩, some ⟨66⟩,
+  none, some ⟨67⟩, some ⟨68⟩, some ⟨69⟩, some ⟨70⟩, none, some ⟨71⟩,
+  some ⟨72⟩, some ⟨73⟩, some ⟨74⟩, none, some ⟨75⟩, some ⟨76⟩, some ⟨77⟩,
+  some ⟨78⟩, none, some ⟨79⟩, some ⟨80⟩, some ⟨81⟩, some ⟨82⟩, none,
+  some ⟨83⟩, some ⟨84⟩, some ⟨85⟩, some ⟨86⟩, none, some ⟨87⟩, some ⟨88⟩,
+  some ⟨89⟩, some ⟨90⟩, none, some ⟨91⟩, some ⟨92⟩, some ⟨93⟩, some ⟨94⟩,
+  none, some ⟨95⟩, some ⟨96⟩, some ⟨97⟩, some ⟨98⟩, none, some ⟨99⟩,
+  some ⟨100⟩, some ⟨101⟩, some ⟨102⟩, none, some ⟨103⟩, some ⟨104⟩,
+  some ⟨105⟩, some ⟨106⟩, none, some ⟨107⟩, some ⟨108⟩, some ⟨109⟩,
+  some ⟨110⟩, none, some ⟨111⟩, some ⟨112⟩, some ⟨113⟩, some ⟨114⟩, none,
+  some ⟨115⟩, some ⟨116⟩, some ⟨117⟩, some ⟨118⟩, none, some ⟨119⟩,
+  some ⟨120⟩, some ⟨121⟩, some ⟨122⟩, none, some ⟨123⟩, some ⟨124⟩,
   some ⟨125⟩, some ⟨126⟩, some ⟨127⟩, some ⟨128⟩, some ⟨129⟩, some ⟨130⟩,
-  some ⟨131⟩, some ⟨132⟩, some ⟨133⟩, some ⟨134⟩, some ⟨135⟩, some ⟨136⟩,
-  some ⟨137⟩, some ⟨138⟩, some ⟨139⟩, some ⟨140⟩, some ⟨141⟩, some ⟨142⟩,
-  some ⟨143⟩, some ⟨144⟩, some ⟨145⟩, some ⟨146⟩, some ⟨147⟩, some ⟨148⟩,
-  some ⟨149⟩, some ⟨150⟩, some ⟨151⟩, some ⟨152⟩, some ⟨153⟩, some ⟨154⟩,
-  some ⟨155⟩, some ⟨156⟩, some ⟨157⟩, some ⟨158⟩, some ⟨159⟩, some ⟨160⟩,
-  some ⟨161⟩, some ⟨162⟩, some ⟨163⟩, some ⟨164⟩, some ⟨165⟩, none, none,
-  none, some ⟨166⟩, some ⟨167⟩, some ⟨168⟩, none, some ⟨169⟩, some ⟨170⟩,
-  some ⟨171⟩, some ⟨172⟩, some ⟨173⟩, some ⟨174⟩, some ⟨175⟩, some ⟨176⟩,
-  some ⟨177⟩, some ⟨178⟩, some ⟨179⟩, some ⟨180⟩, some ⟨181⟩, some ⟨182⟩,
-  some ⟨183⟩, some ⟨184⟩, some ⟨185⟩, some ⟨186⟩, some ⟨187⟩, some ⟨188⟩,
-  some ⟨189⟩, some ⟨190⟩, some ⟨191⟩, some ⟨192⟩, some ⟨193⟩, some ⟨194⟩,
-  some ⟨195⟩, some ⟨196⟩, some ⟨197⟩, some ⟨198⟩, some ⟨199⟩, some ⟨200⟩,
-  some ⟨201⟩, some ⟨202⟩, some ⟨203⟩, some ⟨204⟩, some ⟨205⟩, some ⟨206⟩,
-  some ⟨207⟩, some ⟨208⟩, some ⟨209⟩, some ⟨210⟩, some ⟨211⟩, some ⟨212⟩,
-  some ⟨213⟩, some ⟨214⟩, some ⟨215⟩, some ⟨216⟩, none, none, none,
-  some ⟨217⟩, some ⟨218⟩, some ⟨219⟩, none, some ⟨220⟩, some ⟨221⟩,
-  some ⟨222⟩, some ⟨223⟩, some ⟨224⟩, some ⟨225⟩, none, none, none, none, none,
+  none, some ⟨131⟩, some ⟨132⟩, some ⟨133⟩, some ⟨134⟩, none, some ⟨135⟩,
+  some ⟨136⟩, some ⟨137⟩, some ⟨138⟩, none, some ⟨139⟩, some ⟨140⟩,
+  some ⟨141⟩, some ⟨142⟩, none, some ⟨143⟩, some ⟨144⟩, some ⟨145⟩,
+  some ⟨146⟩, none, some ⟨147⟩, some ⟨148⟩, some ⟨149⟩, some ⟨150⟩, none,
+  some ⟨151⟩, some ⟨152⟩, some ⟨153⟩, some ⟨154⟩, none, some ⟨155⟩,
+  some ⟨156⟩, some ⟨157⟩, some ⟨158⟩, none, some ⟨159⟩, some ⟨160⟩,
+  some ⟨161⟩, some ⟨162⟩, none, some ⟨163⟩, some ⟨164⟩, some ⟨165⟩,
+  some ⟨166⟩, none, some ⟨167⟩, some ⟨168⟩, some ⟨169⟩, some ⟨170⟩, none,
+  some ⟨171⟩, some ⟨172⟩, some ⟨173⟩, some ⟨174⟩, none, some ⟨175⟩,
+  some ⟨176⟩, some ⟨177⟩, some ⟨178⟩, none, some ⟨179⟩, some ⟨180⟩,
+  some ⟨181⟩, some ⟨182⟩, none, some ⟨183⟩, some ⟨184⟩, some ⟨185⟩,
+  some ⟨186⟩, none, some ⟨187⟩, some ⟨188⟩, some ⟨189⟩, some ⟨190⟩, none,
+  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
+  some ⟨191⟩, some ⟨192⟩, some ⟨193⟩, some ⟨194⟩, none, some ⟨195⟩,
+  some ⟨196⟩, some ⟨197⟩, some ⟨198⟩, none, none, none, none, none, none,
+  some ⟨199⟩, some ⟨200⟩, some ⟨201⟩, some ⟨202⟩, none, some ⟨203⟩,
+  some ⟨204⟩, some ⟨205⟩, some ⟨206⟩, none, some ⟨207⟩, some ⟨208⟩,
+  some ⟨209⟩, some ⟨210⟩, none, some ⟨211⟩, some ⟨212⟩, some ⟨213⟩,
+  some ⟨214⟩, none, some ⟨215⟩, some ⟨216⟩, some ⟨217⟩, some ⟨218⟩,
+  some ⟨219⟩, some ⟨220⟩, some ⟨221⟩, some ⟨222⟩, some ⟨223⟩, some ⟨224⟩,
+  some ⟨225⟩, none, none, none, none, none, none, none, none, none, none, none, none, none,
   none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
-  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
-  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
-  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
-  none, none, none, none, none, none, none, none, none, none, some ⟨226⟩, some ⟨227⟩,
-  some ⟨228⟩, some ⟨229⟩, some ⟨230⟩, some ⟨231⟩, none, none, some ⟨232⟩,
-  some ⟨233⟩, some ⟨234⟩, some ⟨235⟩, none, none, some ⟨236⟩, some ⟨237⟩,
-  none, none, none, none, some ⟨238⟩, some ⟨239⟩, some ⟨240⟩, some ⟨241⟩,
-  some ⟨242⟩, some ⟨243⟩, none, none, none, none, none, none, none, none, none, none,
-  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
-  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
-  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
-  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
-  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
+  none, none, none, none, some ⟨226⟩, some ⟨227⟩, some ⟨228⟩, some ⟨229⟩,
+  some ⟨230⟩, some ⟨231⟩, none, none, some ⟨232⟩, some ⟨233⟩, some ⟨234⟩,
+  some ⟨235⟩, none, none, some ⟨236⟩, some ⟨237⟩, none, none, none, none,
+  some ⟨238⟩, some ⟨239⟩, some ⟨240⟩, some ⟨241⟩, some ⟨242⟩, some ⟨243⟩,
   none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
   none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
   none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
@@ -1045,14 +1041,20 @@ def ofFullTable : Array (Option Opcode) := #[
   none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
   none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
   none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
-  none, none, none, none, none, none, none, some ⟨244⟩, some ⟨245⟩, some ⟨246⟩,
-  some ⟨247⟩, some ⟨248⟩, some ⟨249⟩, some ⟨250⟩, some ⟨251⟩, some ⟨252⟩,
-  some ⟨253⟩, some ⟨254⟩, some ⟨255⟩, some ⟨256⟩, some ⟨257⟩, some ⟨258⟩,
-  some ⟨259⟩, some ⟨260⟩, some ⟨261⟩, some ⟨262⟩, some ⟨263⟩, some ⟨264⟩,
-  some ⟨265⟩, some ⟨266⟩, some ⟨267⟩, some ⟨268⟩, some ⟨269⟩, some ⟨270⟩,
-  some ⟨271⟩, some ⟨272⟩, some ⟨273⟩, some ⟨274⟩, some ⟨275⟩, some ⟨276⟩,
-  some ⟨277⟩, none, none, none, none, none, none, none, none, none, none, none, none, none,
-  none, none, none, none, none, some ⟨278⟩, none, some ⟨279⟩, some ⟨280⟩,
+  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
+  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
+  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
+  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
+  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
+  none, none, none, none, none, none, none, none, none, none, none, none, none, none, none, none,
+  none, some ⟨244⟩, some ⟨245⟩, some ⟨246⟩, some ⟨247⟩, some ⟨248⟩,
+  some ⟨249⟩, none, some ⟨250⟩, some ⟨251⟩, some ⟨252⟩, some ⟨253⟩, none,
+  some ⟨254⟩, some ⟨255⟩, some ⟨256⟩, some ⟨257⟩, none, some ⟨258⟩,
+  some ⟨259⟩, some ⟨260⟩, some ⟨261⟩, none, some ⟨262⟩, some ⟨263⟩,
+  some ⟨264⟩, some ⟨265⟩, none, some ⟨266⟩, some ⟨267⟩, some ⟨268⟩,
+  some ⟨269⟩, none, some ⟨270⟩, some ⟨271⟩, some ⟨272⟩, some ⟨273⟩, none,
+  some ⟨274⟩, some ⟨275⟩, some ⟨276⟩, some ⟨277⟩, none, none, none, none, none,
+  none, none, none, none, none, none, some ⟨278⟩, none, some ⟨279⟩, some ⟨280⟩,
   some ⟨281⟩, some ⟨282⟩, some ⟨283⟩, some ⟨284⟩, some ⟨285⟩, some ⟨286⟩,
   some ⟨287⟩, none, none
 ]

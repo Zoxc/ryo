@@ -452,25 +452,27 @@ fn simplify_v(f: &mut Func, i: Inst, o: VOp, args: [Value; 2]) -> Simp {
 
 /// For a register-entry `ctpop`, `ctlz` or `cttz` handler call (W8 to W64) with no site and
 /// one operand value: its count, as the handler computes it (`ctlz`/`cttz` of 0 is the width).
-fn bit_count(f: &Func, i: Inst, h: &HCall) -> Option<fn(u64) -> u32> {
-    use crate::full::Opcode::*;
+fn bit_count(f: &Func, i: Inst, h: &HCall) -> Option<impl Fn(u64) -> u32> {
+    use crate::full::Family as F;
     if !h.reg || h.site != Site::None || h.ret || h.nout != 1 || f.insts[i.idx()].args.len() != 1 {
         return None;
     }
-    Some(match h.h {
-        CtpopW8 => |x| (x as u8).count_ones(),
-        CtlzW8 => |x| (x as u8).leading_zeros(),
-        CttzW8 => |x| (x as u8).trailing_zeros(),
-        CtpopW16 => |x| (x as u16).count_ones(),
-        CtlzW16 => |x| (x as u16).leading_zeros(),
-        CttzW16 => |x| (x as u16).trailing_zeros(),
-        CtpopW32 => |x| (x as u32).count_ones(),
-        CtlzW32 => |x| (x as u32).leading_zeros(),
-        CttzW32 => |x| (x as u32).trailing_zeros(),
-        CtpopW64 => |x| x.count_ones(),
-        CtlzW64 => |x| x.leading_zeros(),
-        CttzW64 => |x| x.trailing_zeros(),
-        _ => return None,
+    let (fam, w) = h.h.fw()?;
+    let bits = match w.int()? {
+        crate::full::Width::W128 => return None,
+        w => w.bits(),
+    };
+    if !matches!(fam, F::Ctpop | F::Ctlz | F::Cttz) {
+        return None;
+    }
+    // The value in the top `bits` bits: the counts of 64 bits are then those of `bits`.
+    Some(move |x: u64| {
+        let x = x << (64 - bits);
+        match fam {
+            F::Ctpop => x.count_ones(),
+            F::Ctlz => x.leading_zeros().min(bits),
+            _ => (x.trailing_zeros() - (64 - bits)).min(bits),
+        }
     })
 }
 

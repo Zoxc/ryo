@@ -4,6 +4,9 @@
 //! the checked-in files differ from what it generates; with `RYO_LEAN_GEN=1` (`./y.sh lean
 //! gen`) it rewrites them.
 
+#![feature(macro_metavar_expr_concat)]
+#![recursion_limit = "2048"]
+
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
 

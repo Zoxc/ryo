@@ -110,7 +110,13 @@ native frames, and unwind natively ([Unwinding](#unwinding)). The runtime lives 
   with its mnemonic, its *shape* ([Machine code](#machine-code)) and its operands. The
   opcode enum, the operand table, the decoder, the encoder and the disassembler of
   instruction words, and the handler register layouts are all generated from it. Opcode
-  values follow list order. Tests pin a hash of the opcode table, of the image table entry
+  values follow list order. The opcodes that differ only in their width are a *family*
+  (`fam Add = "add" .. @ [W8, W16, W32, W64, W128]`): its members have consecutive values in
+  width order (`w8` < `w16` < `w32` < `w64` < `w128` < `ptr`, the atomics' `AtomicPtr`
+  forms), `op.fw()` gives an opcode's `(Family, OpWidth)` and `Family::at(w)` the member of a
+  width, with `cc()`, `signed()`, `imm()` and `is_branch()` on the family; the conversions
+  between widths are `op.ext()`. `handlers.rs` lists a family's handlers in one entry too.
+  Tests pin a hash of the opcode table, of the image table entry
   sizes and field offsets (`Header`, `FuncEntry`, `FixupEntry`, `JitRecord`, ...), and of
   every opcode's machine code in eight modes (four with counters), so that a change to any
   of them is deliberate: it updates the pinned values. Nothing is versioned

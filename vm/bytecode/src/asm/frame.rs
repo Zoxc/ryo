@@ -67,17 +67,6 @@ pub struct InsnFrame {
     pub op: Option<full::Opcode>,
 }
 
-fn width(mnemonic: &str) -> Option<u32> {
-    mnemonic.split('.').find_map(|p| match p {
-        "w8" => Some(1),
-        "w16" => Some(2),
-        "w32" => Some(4),
-        "w64" => Some(8),
-        "w128" => Some(16),
-        _ => None,
-    })
-}
-
 /// Every instruction of `code` with its frame operands ([`InsnFrame`]), in order.
 pub fn insns(code: &[u32], mode: Mode) -> Result<Vec<InsnFrame>, FrameError> {
     let mut out = Vec::new();
@@ -130,10 +119,15 @@ pub fn insns(code: &[u32], mode: Mode) -> Result<Vec<InsnFrame>, FrameError> {
 /// The frame operands of the native instruction `w` (opcode `op`) at word `at`.
 fn native(op: full::Opcode, w: &[u32], at: usize, f: &mut InsnFrame) -> Result<(), &'static str> {
     let info = op.info();
-    let m = info.mnemonic;
-    let n = width(m).unwrap_or(8);
-    let first = m.split('.').next().unwrap_or("");
-    let compare = matches!(first, "eq" | "ne" | "lt" | "le" | "gt" | "ge");
+    let ext = op.ext();
+    // The operand width (an extension's source width), 8 bytes for the others.
+    let n = match (op.width(), ext) {
+        (Some(w), _) => w.bytes() as u32,
+        (None, Some(e)) => e.from.bytes(),
+        (None, None) => 8,
+    };
+    let compare = op.family().is_some_and(|f| f.cc().is_some() && !f.is_branch());
+    let (addr, ptr) = (op == full::Opcode::Addr, matches!(op, full::Opcode::PtrAdd | full::Opcode::PtrIndex));
     let named = |name: &str| -> usize {
         let mut pos = 1;
         for o in info.operands {
@@ -194,18 +188,16 @@ fn native(op: full::Opcode, w: &[u32], at: usize, f: &mut InsnFrame) -> Result<(
         }
         _ => {
             // An extension or truncation writes its second width.
-            let ext = matches!(first, "zext" | "sext" | "trunc");
-            let to = m.split('.').filter_map(width).nth(1).unwrap_or(n);
             let mut pos = 1;
             for o in info.operands {
                 let access = match (o.kind, o.name) {
-                    (OperandKind::Slot, "d") if m == "addr" || first == "ptr" => Some(Access::Write(8)),
-                    (OperandKind::Slot, "d") if ext => Some(Access::Write(to)),
+                    (OperandKind::Slot, "d") if addr || ptr => Some(Access::Write(8)),
+                    (OperandKind::Slot, "d") if let Some(e) = ext => Some(Access::Write(e.to.bytes())),
                     // An overflow flag.
                     (OperandKind::Slot, "o") => Some(Access::Write(1)),
                     (OperandKind::Slot, "d") => Some(Access::Write(if compare { 1 } else { n })),
-                    (OperandKind::Slot, "s") if m == "addr" => Some(Access::Addr),
-                    (OperandKind::Slot, "s") if m == "br" => Some(Access::Read(1)),
+                    (OperandKind::Slot, "s") if addr => Some(Access::Addr),
+                    (OperandKind::Slot, "s") if op == full::Opcode::Br => Some(Access::Read(1)),
                     (OperandKind::Slot, "p" | "i") => Some(Access::Read(8)),
                     (OperandKind::Slot, _) => Some(Access::Read(n)),
                     (OperandKind::Mem, _) => Some(Access::Read(8)),

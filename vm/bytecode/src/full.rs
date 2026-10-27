@@ -650,6 +650,96 @@ macro_rules! op_ty {
     ($lt:lifetime, Cases128) => { $crate::full::List<$lt, $crate::full::Case128> };
     ($lt:lifetime, Handler) => { $crate::reduced::Handler };
     ($lt:lifetime, Args) => { $crate::full::List<$lt, $crate::reduced::Arg> };
+    // In a family member, `ImmW` is the immediate of its width (`u64` for `ptr`) and
+    // `CasesW` the case list of its width; the other kinds don't depend on it.
+    ($lt:lifetime, ImmW W8) => { u8 };
+    ($lt:lifetime, ImmW W16) => { u16 };
+    ($lt:lifetime, ImmW W32) => { u32 };
+    ($lt:lifetime, ImmW W64) => { u64 };
+    ($lt:lifetime, ImmW W128) => { u128 };
+    ($lt:lifetime, ImmW Ptr) => { u64 };
+    ($lt:lifetime, CasesW W8) => { op_ty!($lt, Cases8) };
+    ($lt:lifetime, CasesW W16) => { op_ty!($lt, Cases16) };
+    ($lt:lifetime, CasesW W32) => { op_ty!($lt, Cases32) };
+    ($lt:lifetime, CasesW W64) => { op_ty!($lt, Cases64) };
+    ($lt:lifetime, CasesW W128) => { op_ty!($lt, Cases128) };
+    ($lt:lifetime, $k:ident $w:ident) => { op_ty!($lt, $k) };
+}
+
+/// The mnemonic component of a width token of the opcode list.
+macro_rules! width_mn {
+    (W8) => {
+        "w8"
+    };
+    (W16) => {
+        "w16"
+    };
+    (W32) => {
+        "w32"
+    };
+    (W64) => {
+        "w64"
+    };
+    (W128) => {
+        "w128"
+    };
+    (Ptr) => {
+        "ptr"
+    };
+}
+
+/// An opcode's `(family, width)` entry: `none none` for the opcodes outside the families.
+macro_rules! family_width {
+    (none none) => {
+        None
+    };
+    ($f:ident $w:ident) => {
+        Some((Family::$f, $crate::full::OpWidth::$w))
+    };
+}
+
+/// The operand width of a family member (design/instructions.md): the integer widths in
+/// their canonical order, then `ptr` (the atomics' `AtomicPtr` forms: 8 bytes, but a
+/// pointer, with provenance). A family's members have consecutive opcodes in this order, so
+/// `Family::at` is the family's first opcode plus the number of its widths below `w`.
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum OpWidth {
+    W8,
+    W16,
+    W32,
+    W64,
+    W128,
+    Ptr,
+}
+
+impl OpWidth {
+    pub const ALL: [OpWidth; 6] = [OpWidth::W8, OpWidth::W16, OpWidth::W32, OpWidth::W64, OpWidth::W128, OpWidth::Ptr];
+
+    /// The size in bytes (8 for `ptr`).
+    pub const fn bytes(self) -> u8 {
+        [1, 2, 4, 8, 16, 8][self as usize]
+    }
+
+    /// The mnemonic component: `w32`, `ptr`.
+    pub const fn mnemonic(self) -> &'static str {
+        ["w8", "w16", "w32", "w64", "w128", "ptr"][self as usize]
+    }
+
+    /// The integer width, `None` for `ptr`.
+    pub const fn int(self) -> Option<Width> {
+        match self {
+            OpWidth::Ptr => None,
+            w => Some(Width::ALL[w as usize]),
+        }
+    }
+}
+
+/// A family's opcodes: the first one's value and the bit set of its [`OpWidth`]s.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FamilyInfo {
+    pub base: u16,
+    pub mask: u8,
 }
 
 /// How an instruction runs as machine code ([`crate::asm`]): which handler it calls, and what
@@ -820,13 +910,31 @@ pub(crate) const fn fixed_len(kinds: &[OperandKind]) -> Option<usize> {
     Some(n)
 }
 
-/// Defines [`Opcode`], [`OP_INFO`], [`Insn`] and their decode/encode/display from one list.
+/// Defines [`Opcode`], [`OP_INFO`], [`Insn`], [`Family`] and their decode/encode/display from
+/// one list.
 ///
 /// Syntax: `Variant = "mnemonic" shape { operand: Kind, ... },` where `shape` is one of the
 /// names handled by `shape!` and `Kind` one of those handled by `op_ty!`. Field order is
-/// encoding order.
+/// encoding order. A family of widths is one entry,
+/// `fam Name = "stem" shape { .. } @ [W8, W16, ..],`, whose members `NameW8` (`stem.w8`),
+/// ... follow each other in the order of the widths ([`OpWidth`]); with
+/// `fam Pre * Post = "pre" * ".post" ..` the width goes in the middle (`PreW8Post`,
+/// `pre.w8.post`; the family is `PrePost`). Operand kinds `ImmW` and `CasesW` take the
+/// member's width.
 macro_rules! define_ops {
-    ($($name:ident = $mn:literal $shape:ident { $($field:ident : $kind:ident),* $(,)? },)*) => {
+    (@m [$($acc:tt)*] [$($fams:tt)*] fam $f:ident * $p:ident = $mn:literal * $mp:literal $shape:ident $fields:tt @ [$($w:ident),* $(,)?], $($rest:tt)*) => {
+        define_ops!(@m [$($acc)* $(${concat($f, $w, $p)} = concat!($mn, ".", width_mn!($w), $mp); $shape $w ${concat($f, $p)} $fields,)*] [$($fams)* ${concat($f, $p)}] $($rest)*);
+    };
+    (@m [$($acc:tt)*] [$($fams:tt)*] fam $f:ident = $mn:literal $shape:ident $fields:tt @ [$($w:ident),* $(,)?], $($rest:tt)*) => {
+        define_ops!(@m [$($acc)* $(${concat($f, $w)} = concat!($mn, ".", width_mn!($w)); $shape $w $f $fields,)*] [$($fams)* $f] $($rest)*);
+    };
+    (@m [$($acc:tt)*] [$($fams:tt)*] $name:ident = $mn:literal $shape:ident $fields:tt, $($rest:tt)*) => {
+        define_ops!(@m [$($acc)* $name = $mn; $shape none none $fields,] [$($fams)*] $($rest)*);
+    };
+    (@m [$($acc:tt)*] [$($fams:tt)*]) => {
+        define_ops!(@flat [$($fams)*] $($acc)*);
+    };
+    (@flat [$($fams:ident)*] $($name:ident = $mn:expr; $shape:ident $w:ident $fam:ident { $($field:ident : $kind:ident),* $(,)? },)*) => {
         /// An opcode: the low 16 bits of an instruction's word 0.
         ///
         /// Variants are numbered in list order; any change to the list changes the encoding.
@@ -855,6 +963,64 @@ macro_rules! define_ops {
         /// Every opcode, indexed by its value.
         pub const ALL_OPCODES: &[Opcode] = &[$(Opcode::$name),*];
 
+        /// A family of opcodes that differ only in their [`OpWidth`](crate::full::OpWidth):
+        /// `add.w8` .. `add.w128` are [`Family::Add`]'s. Its members have consecutive opcodes,
+        /// in width order.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub enum Family {
+            $($fams,)*
+        }
+
+        /// Each opcode's family and width, indexed by its value.
+        static OP_FAMILY: [Option<(Family, $crate::full::OpWidth)>; ALL_OPCODES.len()] = [$(family_width!($fam $w)),*];
+
+        /// Each family's first opcode and widths, indexed by the family.
+        /// They must be consecutive and in width order, for each family.
+        pub static FAMILY_INFO: [$crate::full::FamilyInfo; Family::ALL.len()] = {
+            let mut t = [$crate::full::FamilyInfo { base: u16::MAX, mask: 0 }; Family::ALL.len()];
+            let mut i = 0;
+            while i < OP_FAMILY.len() {
+                if let Some((f, w)) = OP_FAMILY[i] {
+                    let fi = &mut t[f as usize];
+                    if fi.mask == 0 {
+                        fi.base = i as u16;
+                    }
+                    assert!(fi.base as usize + fi.mask.count_ones() as usize == i, "a family's opcodes aren't consecutive");
+                    assert!(fi.mask >> w as u8 == 0, "a family's widths aren't in order");
+                    fi.mask |= 1 << w as u8;
+                }
+                i += 1;
+            }
+            t
+        };
+
+        impl Family {
+            /// Every family, indexed by its value.
+            pub const ALL: &[Family] = &[$(Family::$fams),*];
+
+            /// The family's member of width `w`, if it has one: its first opcode plus the
+            /// number of its widths below `w`.
+            #[inline]
+            pub const fn at(self, w: $crate::full::OpWidth) -> Option<Opcode> {
+                let fi = &FAMILY_INFO[self as usize];
+                if fi.mask & (1 << w as u8) == 0 {
+                    return None;
+                }
+                Opcode::from_u16(fi.base + (fi.mask & ((1u8 << w as u8) - 1)).count_ones() as u16)
+            }
+
+            /// The bit set of the family's widths (bit `w as u8` for [`OpWidth`](crate::full::OpWidth) `w`).
+            pub const fn widths(self) -> u8 {
+                FAMILY_INFO[self as usize].mask
+            }
+
+            /// The family's members, in width order.
+            pub fn members(self) -> impl Iterator<Item = Opcode> {
+                let fi = FAMILY_INFO[self as usize];
+                (0..fi.mask.count_ones() as u16).map(move |i| Opcode::from_u16(fi.base + i).unwrap())
+            }
+        }
+
         /// Static description of every opcode, indexed by its value.
         pub static OP_INFO: [$crate::full::OpInfo<Opcode>; ALL_OPCODES.len()] = [$(
             $crate::full::OpInfo {
@@ -863,9 +1029,9 @@ macro_rules! define_ops {
                 shape: shape!($shape),
                 operands: &[$(OperandInfo {
                     name: stringify!($field),
-                    kind: <op_ty!('static, $kind) as Operand<'static>>::KIND,
+                    kind: <op_ty!('static, $kind $w) as Operand<'static>>::KIND,
                 }),*],
-                fixed_len: fixed_len(&[$(<op_ty!('static, $kind) as Operand<'static>>::KIND),*]),
+                fixed_len: fixed_len(&[$(<op_ty!('static, $kind $w) as Operand<'static>>::KIND),*]),
             },
         )*];
 
@@ -874,7 +1040,7 @@ macro_rules! define_ops {
         pub enum Insn<'a> {
             $(
                 #[doc = concat!("`", $mn, "`")]
-                $name { $($field: op_ty!('a, $kind)),* },
+                $name { $($field: op_ty!('a, $kind $w)),* },
             )*
         }
 
@@ -897,7 +1063,7 @@ macro_rules! define_ops {
                 let mut pos = 1usize;
                 let insn = match op {
                     $(Opcode::$name => {
-                        $(let $field = <op_ty!('a, $kind) as Operand<'a>>::read(w, &mut pos)?;)*
+                        $(let $field = <op_ty!('a, $kind $w) as Operand<'a>>::read(w, &mut pos)?;)*
                         Insn::$name { $($field),* }
                     })*
                 };
@@ -949,6 +1115,30 @@ macro_rules! define_ops {
 
             pub const fn mnemonic(self) -> &'static str {
                 self.info().mnemonic
+            }
+
+            /// The opcode's family and width, if it is a family member.
+            #[inline]
+            pub const fn fw(self) -> Option<(Family, $crate::full::OpWidth)> {
+                OP_FAMILY[self as usize]
+            }
+
+            /// The opcode's family, if it is a family member.
+            #[inline]
+            pub const fn family(self) -> Option<Family> {
+                match self.fw() {
+                    Some((f, _)) => Some(f),
+                    None => None,
+                }
+            }
+
+            /// The opcode's width, if it is a family member.
+            #[inline]
+            pub const fn width(self) -> Option<$crate::full::OpWidth> {
+                match self.fw() {
+                    Some((_, w)) => Some(w),
+                    None => None,
+                }
             }
 
             /// Length in words, or `None` for the variable-length opcodes (see [`insn_len`]).
@@ -1027,7 +1217,7 @@ macro_rules! define_ops {
                         $(f.write_str(Operand::suffix($field))?;)*
                         let mut sep = " ";
                         $(
-                            if <op_ty!('_, $kind) as Operand<'_>>::LISTED {
+                            if <op_ty!('_, $kind $w) as Operand<'_>>::LISTED {
                                 f.write_str(sep)?;
                                 fmt::Display::fmt($field, f)?;
                                 sep = ", ";
@@ -1038,6 +1228,9 @@ macro_rules! define_ops {
                 }
             }
         }
+    };
+    ($($t:tt)*) => {
+        define_ops!(@m [] [] $($t)*);
     };
 }
 

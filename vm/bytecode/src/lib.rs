@@ -21,6 +21,9 @@
 //! the `alloc` feature (on by default; `ryo_rt` disables it).
 
 #![no_std]
+#![feature(macro_metavar_expr_concat)]
+// `define_ops!` takes the opcode list one entry per step.
+#![recursion_limit = "512"]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;

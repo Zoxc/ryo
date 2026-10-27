@@ -803,12 +803,8 @@ fn s_next(code: &Code, i: usize) -> Result<u32, Unsupported> {
 /// For a `switch.dense.w8`-`w64` handler call, its width, base and case count (from the
 /// arguments its layout gives them in), as [`Op::SwitchIdx`] takes them.
 fn dense_switch(h: crate::full::Opcode, args: &[Arg], mode: crate::asm::Mode) -> Option<(u8, u64, u32)> {
-    use crate::full::Opcode as O;
-    let w = match h {
-        O::SwitchDenseW8 => 1,
-        O::SwitchDenseW16 => 2,
-        O::SwitchDenseW32 => 4,
-        O::SwitchDenseW64 => 8,
+    let w = match h.fw() {
+        Some((crate::full::Family::SwitchDense, w)) if w != crate::full::OpWidth::W128 => w.bytes(),
         _ => return None,
     };
     let l = crate::asm::layout(h, mode);
@@ -822,25 +818,22 @@ fn dense_switch(h: crate::full::Opcode, args: &[Arg], mode: crate::asm::Mode) ->
 /// The handlers that are native binary operations in the SSA tier: shifts and rotates by a
 /// variable, division and remainder (`d, a, b`, all of width `w` but a rotate's 4-byte `b`).
 fn native_bin(h: crate::full::Opcode) -> Option<(BinOp, u8)> {
-    let segs: Vec<&str> = h.mnemonic().split('.').collect();
-    let (op, w) = match segs[..] {
-        ["shl", w] => (BinOp::Shl, w),
-        ["shr", "s", w] => (BinOp::ShrS, w),
-        ["shr", "u", w] => (BinOp::ShrU, w),
-        ["rotl", w] => (BinOp::Rotl, w),
-        ["rotr", w] => (BinOp::Rotr, w),
-        ["div", "s", w] => (BinOp::DivS, w),
-        ["div", "u", w] => (BinOp::DivU, w),
-        ["rem", "s", w] => (BinOp::RemS, w),
-        ["rem", "u", w] => (BinOp::RemU, w),
+    use crate::full::Family as F;
+    let (f, w) = h.fw()?;
+    let op = match f {
+        F::Shl => BinOp::Shl,
+        F::ShrS => BinOp::ShrS,
+        F::ShrU => BinOp::ShrU,
+        F::Rotl => BinOp::Rotl,
+        F::Rotr => BinOp::Rotr,
+        F::DivS => BinOp::DivS,
+        F::DivU => BinOp::DivU,
+        F::RemS => BinOp::RemS,
+        F::RemU => BinOp::RemU,
         _ => return None,
     };
-    let w = match w {
-        "w8" => 1,
-        "w16" => 2,
-        "w32" => 4,
-        "w64" => 8,
-        _ => return None,
-    };
-    Some((op, w))
+    match w {
+        crate::full::OpWidth::W128 | crate::full::OpWidth::Ptr => None,
+        w => Some((op, w.bytes())),
+    }
 }

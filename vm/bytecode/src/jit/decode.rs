@@ -230,33 +230,21 @@ pub struct Code {
     pub enterable: Vec<bool>,
 }
 
-fn width(seg: &str) -> Option<u8> {
-    Some(match seg {
-        "w8" => 1,
-        "w16" => 2,
-        "w32" => 4,
-        "w64" => 8,
-        "w128" => 16,
-        _ => return None,
-    })
-}
-
-fn cc_of(segs: &[&str]) -> Option<super::ir::Cc> {
-    use super::ir::Cc::*;
-    let s = |i: usize| segs.get(i).copied().unwrap_or("");
-    Some(match (s(0), s(1)) {
-        ("eq", _) => Eq,
-        ("ne", _) => Ne,
-        ("lt", "s") => LtS,
-        ("lt", "u") => LtU,
-        ("le", "s") => LeS,
-        ("le", "u") => LeU,
-        ("gt", "s") => GtS,
-        ("gt", "u") => GtU,
-        ("ge", "s") => GeS,
-        ("ge", "u") => GeU,
-        _ => return None,
-    })
+/// The IR condition of a compare family's condition.
+fn ir_cc(cc: full::Cc) -> super::ir::Cc {
+    use super::ir::Cc;
+    match cc {
+        full::Cc::Eq => Cc::Eq,
+        full::Cc::Ne => Cc::Ne,
+        full::Cc::LtS => Cc::LtS,
+        full::Cc::LtU => Cc::LtU,
+        full::Cc::LeS => Cc::LeS,
+        full::Cc::LeU => Cc::LeU,
+        full::Cc::GtS => Cc::GtS,
+        full::Cc::GtU => Cc::GtU,
+        full::Cc::GeS => Cc::GeS,
+        full::Cc::GeU => Cc::GeU,
+    }
 }
 
 /// Reads the immediate operand `name` of the native instruction `w` (opcode `op`).
@@ -639,73 +627,68 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
             }
         }
         _ => {
+            use full::{Family as F, Opcode as O};
             let fop = op.full().expect("native");
-            let m = fop.mnemonic();
-            let segs: Vec<&str> = m.split('.').collect();
-            let wd = segs.iter().find_map(|s| width(s)).unwrap_or(8);
-            let has_imm = segs.contains(&"imm");
-            let first = segs[0];
+            let fam = fop.family();
+            let wd = fop.width().map_or(8, full::OpWidth::bytes);
+            let has_imm = fam.is_some_and(F::imm);
             let s = |name: &str| slot(fop, w, name);
             let im = |name: &str| imm(fop, w, name);
-            match first {
-                "mov" if wd == 16 => Kind::Copy { len: 16, dst: Side::Frame(s("d")), src: Side::Frame(s("s")), pieces: Vec::new() },
-                "mov" => {
+            match (fop, fam) {
+                (_, Some(F::Mov)) if wd == 16 => Kind::Copy { len: 16, dst: Side::Frame(s("d")), src: Side::Frame(s("s")), pieces: Vec::new() },
+                (_, Some(F::Mov)) => {
                     accs.extend([acc(s("s"), wd as u32, How::Read), acc(s("d"), wd as u32, How::Write)]);
                     Kind::Mov(wd)
                 }
-                "imm" => {
+                (_, Some(F::Imm)) => {
                     accs.push(acc(s("d"), wd as u32, How::Write));
                     Kind::Imm(wd, im("imm"))
                 }
-                "load" => {
+                (_, Some(F::Load)) => {
                     let mem = full::Mem { p: full::Slot(s("m")), k: w[fop.info().operand_offset(1).unwrap() + 1] as i32 };
                     accs.extend([acc(mem.p.0, 8, How::Read), acc(s("d"), wd as u32, How::Write)]);
                     Kind::Load(wd, mem.k)
                 }
-                "store" => {
+                (_, Some(F::Store)) => {
                     let at_m = fop.info().operand_offset(0).unwrap();
                     accs.extend([acc(w[at_m] as i32, 8, How::Read), acc(s("s"), wd as u32, How::Read)]);
                     Kind::Store(wd, w[at_m + 1] as i32)
                 }
-                "addr" => {
+                (O::Addr | O::AddrSym | O::AddrSymInd | O::AddrConst, _) => {
                     accs.extend([acc(s("s"), 1, How::Addr), acc(s("d"), 8, How::Write)]);
                     Kind::Addr
                 }
-                "ptr" if segs[1] == "add" => {
+                (O::PtrAdd, _) => {
                     accs.extend([acc(s("p"), 8, How::Read), acc(s("d"), 8, How::Write)]);
                     Kind::PtrAdd(im("imm") as i64)
                 }
-                "ptr" => {
+                (O::PtrIndex, _) => {
                     accs.extend([acc(s("p"), 8, How::Read), acc(s("i"), 8, How::Read), acc(s("d"), 8, How::Write)]);
                     Kind::PtrIndex(im("stride") as u32)
                 }
-                "zext" | "sext" | "trunc" => {
-                    let mut ws = segs.iter().filter_map(|s| width(s));
-                    let (from, to) = (ws.next().ok_or(Unsupported("a native instruction"))?, ws.next().ok_or(Unsupported("a native instruction"))?);
+                (_, None) if fop.ext().is_some() => {
+                    let e = fop.ext().unwrap();
+                    let (from, to) = (e.from.bytes() as u8, e.to.bytes() as u8);
                     accs.extend([acc(s("s"), from as u32, How::Read), acc(s("d"), to as u32, How::Write)]);
-                    Kind::Ext { from, to, sx: first == "sext" }
+                    Kind::Ext { from, to, sx: e.sx }
                 }
-                "cttz" | "ctlz" => {
-                    let wd = wd as u8;
+                (_, Some(f @ (F::Cttz | F::Ctlz))) => {
                     pure(&mut accs, &[s("a")], &[wd], s("d"), 4);
-                    Kind::Pure { op: super::ir::Op::Count { lz: first == "ctlz", w: wd }, ws: alloc::vec![wd], out: 4 }
+                    Kind::Pure { op: super::ir::Op::Count { lz: f == F::Ctlz, w: wd }, ws: alloc::vec![wd], out: 4 }
                 }
-                "cmp3" => {
-                    let wd = wd as u8;
+                (_, Some(f @ (F::Cmp3S | F::Cmp3U))) => {
                     pure(&mut accs, &[s("a"), s("b")], &[wd, wd], s("d"), 1);
-                    Kind::Pure { op: super::ir::Op::Cmp3(segs[1] == "s", wd), ws: alloc::vec![wd, wd], out: 1 }
+                    Kind::Pure { op: super::ir::Op::Cmp3(f == F::Cmp3S, wd), ws: alloc::vec![wd, wd], out: 1 }
                 }
-                "bswap" => {
-                    let wd = wd as u8;
+                (_, Some(F::Bswap)) => {
                     pure(&mut accs, &[s("a")], &[wd], s("d"), wd);
                     Kind::Pure { op: super::ir::Op::Bswap(wd), ws: alloc::vec![wd], out: wd }
                 }
-                _ if segs.get(1) == Some(&"ovf") => {
-                    let bin = match first {
-                        "add" => BinOp::Add,
-                        "sub" => BinOp::Sub,
-                        "mul" => BinOp::Mul,
-                        _ => return Err(Unsupported("a native instruction")),
+                (_, Some(f @ (F::AddOvfS | F::AddOvfU | F::SubOvfS | F::SubOvfU | F::MulOvfS | F::MulOvfU))) => {
+                    let bin = match f {
+                        F::AddOvfS | F::AddOvfU => BinOp::Add,
+                        F::SubOvfS | F::SubOvfU => BinOp::Sub,
+                        _ => BinOp::Mul,
                     };
                     accs.extend([
                         acc(s("a"), wd as u32, How::Read),
@@ -713,46 +696,49 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
                         acc(s("d"), wd as u32, How::Write),
                         acc(s("o"), 1, How::Write),
                     ]);
-                    Kind::Ovf(bin, segs[2] == "s", wd)
+                    Kind::Ovf(bin, f.signed() == Some(true), wd)
                 }
-                "br" => {
+                (O::Br, _) => {
+                    falls = true;
+                    let t = rel(slot(fop, w, "t"));
+                    succ.push(t);
+                    accs.push(acc(s("s"), 1, How::Read));
+                    Kind::Br { cmp: None, neg: im("neg") != 0, t }
+                }
+                (_, Some(f)) if f.is_branch() => {
                     falls = true;
                     let t = rel(slot(fop, w, "t"));
                     succ.push(t);
                     let neg = im("neg") != 0;
-                    if segs.len() == 1 {
-                        accs.push(acc(s("s"), 1, How::Read));
-                        Kind::Br { cmp: None, neg, t }
-                    } else {
-                        let cc = cc_of(&segs[1..]).ok_or(Unsupported("branch"))?;
-                        accs.push(acc(s("a"), wd as u32, How::Read));
-                        let b = if has_imm { Some(im("imm")) } else { None };
-                        if b.is_none() {
-                            accs.push(acc(s("b"), wd as u32, How::Read));
-                        }
-                        Kind::Br { cmp: Some((cc, wd, b)), neg, t }
-                    }
-                }
-                _ => {
+                    let cc = ir_cc(f.cc().ok_or(Unsupported("branch"))?);
                     accs.push(acc(s("a"), wd as u32, How::Read));
                     let b = if has_imm { Some(im("imm")) } else { None };
                     if b.is_none() {
                         accs.push(acc(s("b"), wd as u32, How::Read));
                     }
-                    if let Some(cc) = cc_of(&segs) {
+                    Kind::Br { cmp: Some((cc, wd, b)), neg, t }
+                }
+                _ => {
+                    let f = fam.ok_or(Unsupported("a native instruction"))?;
+                    accs.push(acc(s("a"), wd as u32, How::Read));
+                    let b = if has_imm { Some(im("imm")) } else { None };
+                    if b.is_none() {
+                        accs.push(acc(s("b"), wd as u32, How::Read));
+                    }
+                    if let Some(cc) = f.cc() {
                         accs.push(acc(s("d"), 1, How::Write));
-                        Kind::Cmp(cc, wd, b)
+                        Kind::Cmp(ir_cc(cc), wd, b)
                     } else {
-                        let bin = match (first, segs.get(1).copied()) {
-                            ("add", _) => BinOp::Add,
-                            ("sub", _) => BinOp::Sub,
-                            ("mul", _) => BinOp::Mul,
-                            ("and", _) => BinOp::And,
-                            ("or", _) => BinOp::Or,
-                            ("xor", _) => BinOp::Xor,
-                            ("shl", _) => BinOp::Shl,
-                            ("shr", Some("s")) => BinOp::ShrS,
-                            ("shr", Some("u")) => BinOp::ShrU,
+                        let bin = match f {
+                            F::Add | F::AddImm => BinOp::Add,
+                            F::Sub | F::SubImm => BinOp::Sub,
+                            F::Mul | F::MulImm => BinOp::Mul,
+                            F::And | F::AndImm => BinOp::And,
+                            F::Or | F::OrImm => BinOp::Or,
+                            F::Xor | F::XorImm => BinOp::Xor,
+                            F::Shl | F::ShlImm => BinOp::Shl,
+                            F::ShrS | F::ShrSImm => BinOp::ShrS,
+                            F::ShrU | F::ShrUImm => BinOp::ShrU,
                             _ => return Err(Unsupported("a native instruction")),
                         };
                         accs.push(acc(s("d"), wd as u32, How::Write));

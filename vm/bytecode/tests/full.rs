@@ -270,7 +270,7 @@ fn opcode_table_is_pinned() {
             eat(&format!("{:?}", o.kind));
         }
     }
-    assert_eq!(h, 0xdc65662a7fa7a1a5, "opcode table hash {h:#x}");
+    assert_eq!(h, 0x58f0f41842d3574f, "opcode table hash {h:#x}");
 }
 
 /// Pins the image table layouts: any change to a table entry's size or field offsets fails
@@ -360,4 +360,72 @@ fn named_operand_offsets() {
     for op in [Opcode::Call, Opcode::CallSym, Opcode::CallSymInd, Opcode::CallPtr] {
         assert_eq!(operand_word(op, "d"), 1);
     }
+}
+
+/// The families: every opcode with one width component in its mnemonic (`ptr` in the
+/// atomics) is the member of that width of a family, whose members are consecutive in width
+/// order, with mnemonics that differ only in it; `Family::at` finds each member, and the
+/// family's attributes agree with the mnemonic.
+#[test]
+fn families() {
+    for &op in ALL_OPCODES {
+        let m = op.mnemonic();
+        let segs: Vec<&str> = m.split('.').collect();
+        let ws: Vec<_> =
+            (0..segs.len()).filter(|&k| OpWidth::ALL.iter().any(|w| w.mnemonic() == segs[k]) && (segs[k] != "ptr" || segs[0] == "atomic")).collect();
+        let Some((f, w)) = op.fw() else {
+            assert!(ws.len() != 1, "{m}: not in a family");
+            continue;
+        };
+        assert_eq!(ws.len(), 1, "{m}");
+        assert_eq!(segs[ws[0]], w.mnemonic(), "{m}");
+        assert_eq!((op.family(), op.width()), (Some(f), Some(w)));
+        assert_eq!(f.at(w), Some(op), "{m}");
+        // The other members: the same mnemonic but the width.
+        for m2 in f.members() {
+            let w2 = m2.width().unwrap();
+            let mut s2 = segs.clone();
+            s2[ws[0]] = w2.mnemonic();
+            assert_eq!(m2.mnemonic(), s2.join("."), "{m}");
+            assert_eq!(m2.info().shape, op.info().shape);
+        }
+        assert_eq!(f.members().count() as u32, f.widths().count_ones());
+        let rest: Vec<&str> = segs.iter().enumerate().filter(|&(k, _)| k != ws[0]).map(|(_, s)| *s).collect();
+        assert_eq!(f.imm(), rest.contains(&"imm") && rest[0] != "imm", "{m}");
+        assert_eq!(f.is_branch(), rest[0] == "br" && rest.len() > 1, "{m}");
+        let int = !["atomic", "cvt"].contains(&rest[0]);
+        let sign = rest.iter().find_map(|s| match *s {
+            "s" => Some(true),
+            "u" => Some(false),
+            _ => None,
+        });
+        if int {
+            assert_eq!(f.signed(), sign, "{m}");
+        }
+        let c = rest.iter().position(|s| ["eq", "ne", "lt", "le", "gt", "ge"].contains(s));
+        let cc = c.map(|c| match (rest[c], sign) {
+            ("eq", _) => Cc::Eq,
+            ("ne", _) => Cc::Ne,
+            ("lt", Some(true)) => Cc::LtS,
+            ("lt", _) => Cc::LtU,
+            ("le", Some(true)) => Cc::LeS,
+            ("le", _) => Cc::LeU,
+            ("gt", Some(true)) => Cc::GtS,
+            ("gt", _) => Cc::GtU,
+            ("ge", Some(true)) => Cc::GeS,
+            _ => Cc::GeU,
+        });
+        assert_eq!(f.cc(), cc, "{m}");
+    }
+    for &f in Family::ALL {
+        for w in OpWidth::ALL {
+            assert_eq!(f.at(w).is_some(), f.widths() & 1 << w as u8 != 0);
+        }
+    }
+    // The conversions between widths aren't families.
+    let e = Opcode::SextW8W32.ext().unwrap();
+    assert_eq!((e.from, e.to, e.sx), (Width::W8, Width::W32, true));
+    assert_eq!(Opcode::TruncW64W8.ext(), Some(Ext { from: Width::W64, to: Width::W8, sx: false }));
+    assert_eq!(Opcode::AddW8.ext(), None);
+    assert_eq!(Opcode::AddW32 as u16 - Family::Add.at(OpWidth::W8).unwrap() as u16, 2);
 }

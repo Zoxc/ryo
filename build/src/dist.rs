@@ -5,8 +5,9 @@ use std::path::{Path, PathBuf};
 
 use crate::utils::{RustcInfo, build_wrapper, cmd, copy, copy_dir, dll_name, output, root, run};
 
-/// Unstable features the backend may use, even though `RUSTC_BOOTSTRAP` allows all.
-const BACKEND_FEATURES: &str = "rustc_private";
+/// Unstable features the backend may use, even though `RUSTC_BOOTSTRAP` allows all
+/// (`macro_metavar_expr_concat`: `ryo_bytecode`'s opcode families).
+const BACKEND_FEATURES: &str = "rustc_private,macro_metavar_expr_concat";
 
 /// `targets`: extra targets to install std and `ryo_rt` for, for cross-compiling with
 /// `rustc-ryo --target` (their rust-std component must be installed).

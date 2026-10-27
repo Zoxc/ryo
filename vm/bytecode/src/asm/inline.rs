@@ -15,7 +15,7 @@ use alloc::vec::Vec;
 
 use super::encode::{Opnd, Ref};
 use super::x86::{Alu, Cond, Item, M, Reg, Rm, Sh, W};
-use crate::full::{ALL_OPCODES, Opcode, OperandKind};
+use crate::full::{ALL_OPCODES, Cc, Family, Opcode, OperandKind, Width};
 
 /// The inline sequence kinds, by the opcode's operation and width.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -76,93 +76,117 @@ enum Class {
     },
 }
 
-#[rustfmt::skip]
+/// The register width of an integer width, `None` for `w128`.
+const fn reg_width(w: Width) -> Option<W> {
+    Some(match w {
+        Width::W8 => W::B,
+        Width::W16 => W::W,
+        Width::W32 => W::D,
+        Width::W64 => W::Q,
+        Width::W128 => return None,
+    })
+}
+
+/// The condition for true of a compare family's condition.
+const fn cond(cc: Cc) -> Cond {
+    match cc {
+        Cc::Eq => Cond::Z,
+        Cc::Ne => Cond::Nz,
+        Cc::LtS => Cond::L,
+        Cc::LtU => Cond::B,
+        Cc::LeS => Cond::Le,
+        Cc::LeU => Cond::Be,
+        Cc::GtS => Cond::G,
+        Cc::GtU => Cond::A,
+        Cc::GeS => Cond::Ge,
+        Cc::GeU => Cond::Ae,
+    }
+}
+
+/// [`class`] by opcode value.
+static CLASSES: [Option<Class>; Opcode::COUNT] = {
+    let mut t = [None; Opcode::COUNT];
+    let mut i = 0;
+    while i < Opcode::COUNT {
+        t[i] = class_of(ALL_OPCODES[i]);
+        i += 1;
+    }
+    t
+};
+
 fn class(op: Opcode) -> Option<Class> {
-    use Class::{Bin, BinImm, BrCmp, BrCmpImm, Cmp, CmpImm, Ext, Imm, Load, Mov, Mul, MulImm, MulOvf, Ovf, ShiftImm, ShiftVar, Store};
-    use Opcode::*;
-    Some(match op {
-        MovW8 => Mov(W::B), MovW16 => Mov(W::W), MovW32 => Mov(W::D), MovW64 => Mov(W::Q),
-        MovW128 => Class::Mov128,
-        ImmW8 => Imm(W::B), ImmW16 => Imm(W::W), ImmW32 => Imm(W::D), ImmW64 => Imm(W::Q),
-        LoadW8 => Load(W::B), LoadW16 => Load(W::W), LoadW32 => Load(W::D), LoadW64 => Load(W::Q),
-        StoreW8 => Store(W::B), StoreW16 => Store(W::W), StoreW32 => Store(W::D), StoreW64 => Store(W::Q),
-        Addr => Class::Addr,
-        AddrConst => Class::AddrConst, AddrSym => Class::AddrSym, AddrSymInd => Class::AddrSymInd,
-        PtrAdd => Class::PtrAdd,
-        PtrIndex => Class::PtrIndex,
-        AddW8 => Bin(Alu::Add, W::B), AddW16 => Bin(Alu::Add, W::W), AddW32 => Bin(Alu::Add, W::D), AddW64 => Bin(Alu::Add, W::Q),
-        SubW8 => Bin(Alu::Sub, W::B), SubW16 => Bin(Alu::Sub, W::W), SubW32 => Bin(Alu::Sub, W::D), SubW64 => Bin(Alu::Sub, W::Q),
-        AndW8 => Bin(Alu::And, W::B), AndW16 => Bin(Alu::And, W::W), AndW32 => Bin(Alu::And, W::D), AndW64 => Bin(Alu::And, W::Q),
-        OrW8 => Bin(Alu::Or, W::B), OrW16 => Bin(Alu::Or, W::W), OrW32 => Bin(Alu::Or, W::D), OrW64 => Bin(Alu::Or, W::Q),
-        XorW8 => Bin(Alu::Xor, W::B), XorW16 => Bin(Alu::Xor, W::W), XorW32 => Bin(Alu::Xor, W::D), XorW64 => Bin(Alu::Xor, W::Q),
-        MulW8 => Mul(W::B), MulW16 => Mul(W::W), MulW32 => Mul(W::D), MulW64 => Mul(W::Q),
-        AddImmW8 => BinImm(Alu::Add, W::B), AddImmW16 => BinImm(Alu::Add, W::W), AddImmW32 => BinImm(Alu::Add, W::D), AddImmW64 => BinImm(Alu::Add, W::Q),
-        SubImmW8 => BinImm(Alu::Sub, W::B), SubImmW16 => BinImm(Alu::Sub, W::W), SubImmW32 => BinImm(Alu::Sub, W::D), SubImmW64 => BinImm(Alu::Sub, W::Q),
-        AndImmW8 => BinImm(Alu::And, W::B), AndImmW16 => BinImm(Alu::And, W::W), AndImmW32 => BinImm(Alu::And, W::D), AndImmW64 => BinImm(Alu::And, W::Q),
-        OrImmW8 => BinImm(Alu::Or, W::B), OrImmW16 => BinImm(Alu::Or, W::W), OrImmW32 => BinImm(Alu::Or, W::D), OrImmW64 => BinImm(Alu::Or, W::Q),
-        XorImmW8 => BinImm(Alu::Xor, W::B), XorImmW16 => BinImm(Alu::Xor, W::W), XorImmW32 => BinImm(Alu::Xor, W::D), XorImmW64 => BinImm(Alu::Xor, W::Q),
-        MulImmW8 => MulImm(W::B), MulImmW16 => MulImm(W::W), MulImmW32 => MulImm(W::D), MulImmW64 => MulImm(W::Q),
-        ShlImmW8 => ShiftImm(Sh::Shl, W::B), ShlImmW16 => ShiftImm(Sh::Shl, W::W), ShlImmW32 => ShiftImm(Sh::Shl, W::D), ShlImmW64 => ShiftImm(Sh::Shl, W::Q),
-        ShrSImmW8 => ShiftImm(Sh::Sar, W::B), ShrSImmW16 => ShiftImm(Sh::Sar, W::W), ShrSImmW32 => ShiftImm(Sh::Sar, W::D), ShrSImmW64 => ShiftImm(Sh::Sar, W::Q),
-        ShrUImmW8 => ShiftImm(Sh::Shr, W::B), ShrUImmW16 => ShiftImm(Sh::Shr, W::W), ShrUImmW32 => ShiftImm(Sh::Shr, W::D), ShrUImmW64 => ShiftImm(Sh::Shr, W::Q),
-        ShlW8 => ShiftVar(Sh::Shl, W::B), ShlW16 => ShiftVar(Sh::Shl, W::W), ShlW32 => ShiftVar(Sh::Shl, W::D), ShlW64 => ShiftVar(Sh::Shl, W::Q),
-        ShrSW8 => ShiftVar(Sh::Sar, W::B), ShrSW16 => ShiftVar(Sh::Sar, W::W), ShrSW32 => ShiftVar(Sh::Sar, W::D), ShrSW64 => ShiftVar(Sh::Sar, W::Q),
-        ShrUW8 => ShiftVar(Sh::Shr, W::B), ShrUW16 => ShiftVar(Sh::Shr, W::W), ShrUW32 => ShiftVar(Sh::Shr, W::D), ShrUW64 => ShiftVar(Sh::Shr, W::Q),
-        RotlW8 => ShiftVar(Sh::Rol, W::B), RotlW16 => ShiftVar(Sh::Rol, W::W), RotlW32 => ShiftVar(Sh::Rol, W::D), RotlW64 => ShiftVar(Sh::Rol, W::Q),
-        RotrW8 => ShiftVar(Sh::Ror, W::B), RotrW16 => ShiftVar(Sh::Ror, W::W), RotrW32 => ShiftVar(Sh::Ror, W::D), RotrW64 => ShiftVar(Sh::Ror, W::Q),
-        DivSW8 => Class::Div { signed: true, rem: false, w: W::B }, DivSW16 => Class::Div { signed: true, rem: false, w: W::W },
-        DivSW32 => Class::Div { signed: true, rem: false, w: W::D }, DivSW64 => Class::Div { signed: true, rem: false, w: W::Q },
-        DivUW8 => Class::Div { signed: false, rem: false, w: W::B }, DivUW16 => Class::Div { signed: false, rem: false, w: W::W },
-        DivUW32 => Class::Div { signed: false, rem: false, w: W::D }, DivUW64 => Class::Div { signed: false, rem: false, w: W::Q },
-        RemSW8 => Class::Div { signed: true, rem: true, w: W::B }, RemSW16 => Class::Div { signed: true, rem: true, w: W::W },
-        RemSW32 => Class::Div { signed: true, rem: true, w: W::D }, RemSW64 => Class::Div { signed: true, rem: true, w: W::Q },
-        RemUW8 => Class::Div { signed: false, rem: true, w: W::B }, RemUW16 => Class::Div { signed: false, rem: true, w: W::W },
-        RemUW32 => Class::Div { signed: false, rem: true, w: W::D }, RemUW64 => Class::Div { signed: false, rem: true, w: W::Q },
-        CttzW8 => Class::Count { lz: false, w: W::B }, CttzW16 => Class::Count { lz: false, w: W::W },
-        CttzW32 => Class::Count { lz: false, w: W::D }, CttzW64 => Class::Count { lz: false, w: W::Q },
-        CtlzW8 => Class::Count { lz: true, w: W::B }, CtlzW16 => Class::Count { lz: true, w: W::W },
-        CtlzW32 => Class::Count { lz: true, w: W::D }, CtlzW64 => Class::Count { lz: true, w: W::Q },
-        Cmp3SW8 => Class::Cmp3(true, W::B), Cmp3SW16 => Class::Cmp3(true, W::W), Cmp3SW32 => Class::Cmp3(true, W::D), Cmp3SW64 => Class::Cmp3(true, W::Q),
-        Cmp3UW8 => Class::Cmp3(false, W::B), Cmp3UW16 => Class::Cmp3(false, W::W), Cmp3UW32 => Class::Cmp3(false, W::D), Cmp3UW64 => Class::Cmp3(false, W::Q),
-        BswapW16 => Class::Bswap(W::W), BswapW32 => Class::Bswap(W::D), BswapW64 => Class::Bswap(W::Q),
-        EqW8 => Cmp(Cond::Z, W::B), EqW16 => Cmp(Cond::Z, W::W), EqW32 => Cmp(Cond::Z, W::D), EqW64 => Cmp(Cond::Z, W::Q),
-        NeW8 => Cmp(Cond::Nz, W::B), NeW16 => Cmp(Cond::Nz, W::W), NeW32 => Cmp(Cond::Nz, W::D), NeW64 => Cmp(Cond::Nz, W::Q),
-        LtSW8 => Cmp(Cond::L, W::B), LtSW16 => Cmp(Cond::L, W::W), LtSW32 => Cmp(Cond::L, W::D), LtSW64 => Cmp(Cond::L, W::Q),
-        LtUW8 => Cmp(Cond::B, W::B), LtUW16 => Cmp(Cond::B, W::W), LtUW32 => Cmp(Cond::B, W::D), LtUW64 => Cmp(Cond::B, W::Q),
-        LeSW8 => Cmp(Cond::Le, W::B), LeSW16 => Cmp(Cond::Le, W::W), LeSW32 => Cmp(Cond::Le, W::D), LeSW64 => Cmp(Cond::Le, W::Q),
-        LeUW8 => Cmp(Cond::Be, W::B), LeUW16 => Cmp(Cond::Be, W::W), LeUW32 => Cmp(Cond::Be, W::D), LeUW64 => Cmp(Cond::Be, W::Q),
-        EqImmW8 => CmpImm(Cond::Z, W::B), EqImmW16 => CmpImm(Cond::Z, W::W), EqImmW32 => CmpImm(Cond::Z, W::D), EqImmW64 => CmpImm(Cond::Z, W::Q),
-        NeImmW8 => CmpImm(Cond::Nz, W::B), NeImmW16 => CmpImm(Cond::Nz, W::W), NeImmW32 => CmpImm(Cond::Nz, W::D), NeImmW64 => CmpImm(Cond::Nz, W::Q),
-        LtSImmW8 => CmpImm(Cond::L, W::B), LtSImmW16 => CmpImm(Cond::L, W::W), LtSImmW32 => CmpImm(Cond::L, W::D), LtSImmW64 => CmpImm(Cond::L, W::Q),
-        LtUImmW8 => CmpImm(Cond::B, W::B), LtUImmW16 => CmpImm(Cond::B, W::W), LtUImmW32 => CmpImm(Cond::B, W::D), LtUImmW64 => CmpImm(Cond::B, W::Q),
-        LeSImmW8 => CmpImm(Cond::Le, W::B), LeSImmW16 => CmpImm(Cond::Le, W::W), LeSImmW32 => CmpImm(Cond::Le, W::D), LeSImmW64 => CmpImm(Cond::Le, W::Q),
-        LeUImmW8 => CmpImm(Cond::Be, W::B), LeUImmW16 => CmpImm(Cond::Be, W::W), LeUImmW32 => CmpImm(Cond::Be, W::D), LeUImmW64 => CmpImm(Cond::Be, W::Q),
-        GtSImmW8 => CmpImm(Cond::G, W::B), GtSImmW16 => CmpImm(Cond::G, W::W), GtSImmW32 => CmpImm(Cond::G, W::D), GtSImmW64 => CmpImm(Cond::G, W::Q),
-        GtUImmW8 => CmpImm(Cond::A, W::B), GtUImmW16 => CmpImm(Cond::A, W::W), GtUImmW32 => CmpImm(Cond::A, W::D), GtUImmW64 => CmpImm(Cond::A, W::Q),
-        GeSImmW8 => CmpImm(Cond::Ge, W::B), GeSImmW16 => CmpImm(Cond::Ge, W::W), GeSImmW32 => CmpImm(Cond::Ge, W::D), GeSImmW64 => CmpImm(Cond::Ge, W::Q),
-        GeUImmW8 => CmpImm(Cond::Ae, W::B), GeUImmW16 => CmpImm(Cond::Ae, W::W), GeUImmW32 => CmpImm(Cond::Ae, W::D), GeUImmW64 => CmpImm(Cond::Ae, W::Q),
-        Br => Class::Br,
-        BrEqW8 => BrCmp(Cond::Z, W::B), BrEqW16 => BrCmp(Cond::Z, W::W), BrEqW32 => BrCmp(Cond::Z, W::D), BrEqW64 => BrCmp(Cond::Z, W::Q),
-        BrLtSW8 => BrCmp(Cond::L, W::B), BrLtSW16 => BrCmp(Cond::L, W::W), BrLtSW32 => BrCmp(Cond::L, W::D), BrLtSW64 => BrCmp(Cond::L, W::Q),
-        BrLtUW8 => BrCmp(Cond::B, W::B), BrLtUW16 => BrCmp(Cond::B, W::W), BrLtUW32 => BrCmp(Cond::B, W::D), BrLtUW64 => BrCmp(Cond::B, W::Q),
-        BrEqImmW8 => BrCmpImm(Cond::Z, W::B), BrEqImmW16 => BrCmpImm(Cond::Z, W::W), BrEqImmW32 => BrCmpImm(Cond::Z, W::D), BrEqImmW64 => BrCmpImm(Cond::Z, W::Q),
-        BrLtSImmW8 => BrCmpImm(Cond::L, W::B), BrLtSImmW16 => BrCmpImm(Cond::L, W::W), BrLtSImmW32 => BrCmpImm(Cond::L, W::D), BrLtSImmW64 => BrCmpImm(Cond::L, W::Q),
-        BrLtUImmW8 => BrCmpImm(Cond::B, W::B), BrLtUImmW16 => BrCmpImm(Cond::B, W::W), BrLtUImmW32 => BrCmpImm(Cond::B, W::D), BrLtUImmW64 => BrCmpImm(Cond::B, W::Q),
-        BrGtSImmW8 => BrCmpImm(Cond::G, W::B), BrGtSImmW16 => BrCmpImm(Cond::G, W::W), BrGtSImmW32 => BrCmpImm(Cond::G, W::D), BrGtSImmW64 => BrCmpImm(Cond::G, W::Q),
-        BrGtUImmW8 => BrCmpImm(Cond::A, W::B), BrGtUImmW16 => BrCmpImm(Cond::A, W::W), BrGtUImmW32 => BrCmpImm(Cond::A, W::D), BrGtUImmW64 => BrCmpImm(Cond::A, W::Q),
-        AddOvfSW8 => Ovf(Alu::Add, true, W::B), AddOvfSW16 => Ovf(Alu::Add, true, W::W), AddOvfSW32 => Ovf(Alu::Add, true, W::D), AddOvfSW64 => Ovf(Alu::Add, true, W::Q),
-        AddOvfUW8 => Ovf(Alu::Add, false, W::B), AddOvfUW16 => Ovf(Alu::Add, false, W::W), AddOvfUW32 => Ovf(Alu::Add, false, W::D), AddOvfUW64 => Ovf(Alu::Add, false, W::Q),
-        SubOvfSW8 => Ovf(Alu::Sub, true, W::B), SubOvfSW16 => Ovf(Alu::Sub, true, W::W), SubOvfSW32 => Ovf(Alu::Sub, true, W::D), SubOvfSW64 => Ovf(Alu::Sub, true, W::Q),
-        SubOvfUW8 => Ovf(Alu::Sub, false, W::B), SubOvfUW16 => Ovf(Alu::Sub, false, W::W), SubOvfUW32 => Ovf(Alu::Sub, false, W::D), SubOvfUW64 => Ovf(Alu::Sub, false, W::Q),
-        MulOvfSW8 => MulOvf(true, W::B), MulOvfSW16 => MulOvf(true, W::W), MulOvfSW32 => MulOvf(true, W::D), MulOvfSW64 => MulOvf(true, W::Q),
-        MulOvfUW8 => MulOvf(false, W::B), MulOvfUW16 => MulOvf(false, W::W), MulOvfUW32 => MulOvf(false, W::D), MulOvfUW64 => MulOvf(false, W::Q),
-        ZextW8W16 => Ext { from: W::B, to: W::W, sx: false }, ZextW8W32 => Ext { from: W::B, to: W::D, sx: false }, ZextW8W64 => Ext { from: W::B, to: W::Q, sx: false },
-        ZextW16W32 => Ext { from: W::W, to: W::D, sx: false }, ZextW16W64 => Ext { from: W::W, to: W::Q, sx: false }, ZextW32W64 => Ext { from: W::D, to: W::Q, sx: false },
-        SextW8W16 => Ext { from: W::B, to: W::W, sx: true }, SextW8W32 => Ext { from: W::B, to: W::D, sx: true }, SextW8W64 => Ext { from: W::B, to: W::Q, sx: true },
-        SextW16W32 => Ext { from: W::W, to: W::D, sx: true }, SextW16W64 => Ext { from: W::W, to: W::Q, sx: true }, SextW32W64 => Ext { from: W::D, to: W::Q, sx: true },
-        TruncW16W8 => Ext { from: W::W, to: W::B, sx: false }, TruncW32W8 => Ext { from: W::D, to: W::B, sx: false }, TruncW32W16 => Ext { from: W::D, to: W::W, sx: false },
-        TruncW64W8 => Ext { from: W::Q, to: W::B, sx: false }, TruncW64W16 => Ext { from: W::Q, to: W::W, sx: false }, TruncW64W32 => Ext { from: W::Q, to: W::D, sx: false },
-        _ => return None,
+    CLASSES[op as usize]
+}
+
+/// `op`'s class: by its family and width for the families, up to 64 bits.
+const fn class_of(op: Opcode) -> Option<Class> {
+    use Family as F;
+    if let Some(e) = op.ext() {
+        return match (reg_width(e.from), reg_width(e.to)) {
+            (Some(from), Some(to)) => Some(Class::Ext { from, to, sx: e.sx }),
+            _ => None,
+        };
+    }
+    match op {
+        Opcode::MovW128 => return Some(Class::Mov128),
+        Opcode::Addr => return Some(Class::Addr),
+        Opcode::AddrConst => return Some(Class::AddrConst),
+        Opcode::AddrSym => return Some(Class::AddrSym),
+        Opcode::AddrSymInd => return Some(Class::AddrSymInd),
+        Opcode::PtrAdd => return Some(Class::PtrAdd),
+        Opcode::PtrIndex => return Some(Class::PtrIndex),
+        Opcode::Br => return Some(Class::Br),
+        _ => {}
+    }
+    let Some((f, w)) = op.fw() else { return None };
+    let Some(w) = w.int() else { return None };
+    let Some(w) = reg_width(w) else { return None };
+    if let Some(cc) = f.cc() {
+        let c = cond(cc);
+        return Some(match (f.is_branch(), f.imm()) {
+            (false, false) => Class::Cmp(c, w),
+            (false, true) => Class::CmpImm(c, w),
+            (true, false) => Class::BrCmp(c, w),
+            (true, true) => Class::BrCmpImm(c, w),
+        });
+    }
+    let signed = matches!(f.signed(), Some(true));
+    let alu = match f {
+        F::Add | F::AddImm | F::AddOvfS | F::AddOvfU => Some(Alu::Add),
+        F::Sub | F::SubImm | F::SubOvfS | F::SubOvfU => Some(Alu::Sub),
+        F::And | F::AndImm => Some(Alu::And),
+        F::Or | F::OrImm => Some(Alu::Or),
+        F::Xor | F::XorImm => Some(Alu::Xor),
+        _ => None,
+    };
+    let sh = match f {
+        F::Shl | F::ShlImm => Some(Sh::Shl),
+        F::ShrS | F::ShrSImm => Some(Sh::Sar),
+        F::ShrU | F::ShrUImm => Some(Sh::Shr),
+        F::Rotl => Some(Sh::Rol),
+        F::Rotr => Some(Sh::Ror),
+        _ => None,
+    };
+    Some(match f {
+        F::Mov => Class::Mov(w),
+        F::Imm => Class::Imm(w),
+        F::Load => Class::Load(w),
+        F::Store => Class::Store(w),
+        F::Mul => Class::Mul(w),
+        F::MulImm => Class::MulImm(w),
+        F::DivS | F::DivU | F::RemS | F::RemU => Class::Div { signed, rem: matches!(f, F::RemS | F::RemU), w },
+        F::Cttz | F::Ctlz => Class::Count { lz: matches!(f, F::Ctlz), w },
+        F::Cmp3S | F::Cmp3U => Class::Cmp3(signed, w),
+        F::Bswap => Class::Bswap(w),
+        F::MulOvfS | F::MulOvfU => Class::MulOvf(signed, w),
+        _ => match (sh, alu, f.imm()) {
+            (Some(sh), _, true) => Class::ShiftImm(sh, w),
+            (Some(sh), _, false) => Class::ShiftVar(sh, w),
+            (None, Some(a), _) if matches!(f, F::AddOvfS | F::AddOvfU | F::SubOvfS | F::SubOvfU) => Class::Ovf(a, signed, w),
+            (None, Some(a), true) => Class::BinImm(a, w),
+            (None, Some(a), false) => Class::Bin(a, w),
+            (None, None, _) => return None,
+        },
     })
 }
 
@@ -185,11 +209,8 @@ pub fn ssa_as_handler(op: Opcode) -> bool {
 /// is a frame slot, read plainly (the register cache is cleared by any instruction that
 /// isn't inline).
 pub(super) fn dense_index(op: Opcode, s: i32, base: u64, n: u64) -> Option<Vec<Item>> {
-    let w = match op {
-        Opcode::SwitchDenseW8 => W::B,
-        Opcode::SwitchDenseW16 => W::W,
-        Opcode::SwitchDenseW32 => W::D,
-        Opcode::SwitchDenseW64 => W::Q,
+    let w = match op.fw() {
+        Some((Family::SwitchDense, w)) => reg_width(w.int()?)?,
         _ => return None,
     };
     if n >= 1 << 31 {
