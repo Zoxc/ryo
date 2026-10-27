@@ -45,57 +45,29 @@ pub fn ryo_args(dist: &Path, passed: Vec<OsString>) -> Result<Vec<OsString>, Str
         // Show rustc's help, like plain `rustc` does.
         return Ok(passed);
     }
+    let mut passed = normalize(passed);
     if let Some(flag) = randomize_layout_flag(&passed) {
         return Err(format!("`{flag}` is not supported by rustc-ryo: argument block layouts must agree between crates"));
     }
-
-    let backend = common::backend_arg(dist, "rustc_codegen_ryo");
-    let mut args: Vec<OsString> = Vec::new();
-    // `--sysroot ryo` selects the std built with ryo (`y build --sysroot ryo`).
-    let ryo_sysroot = || {
-        let mut s = OsString::from("--sysroot=");
-        s.push(dist.join("sysroot-ryo"));
-        s
-    };
-    let mut passed_sysroot = false;
-    let mut user_sysroot = false;
-    let mut mapped = Vec::with_capacity(passed.len());
-    for a in passed {
-        if passed_sysroot {
-            passed_sysroot = false;
-            mapped.pop();
-            mapped.push(if a == "ryo" {
-                ryo_sysroot()
-            } else {
-                {
-                    let mut s = OsString::from("--sysroot=");
-                    s.push(a);
-                    s
-                }
-            });
-            continue;
-        }
-        if a == "--sysroot" {
-            user_sysroot = true;
-            passed_sysroot = true;
-        } else if a == "--sysroot=ryo" {
-            user_sysroot = true;
-            mapped.push(ryo_sysroot());
-            continue;
-        } else if a.to_str().is_some_and(|s| s.starts_with("--sysroot=")) {
-            user_sysroot = true;
-        }
-        mapped.push(a);
-    }
-    if passed_sysroot {
+    if passed.last().is_some_and(|a| a == "--sysroot") {
         return Err("`--sysroot` needs a value".to_owned());
     }
-    let passed = mapped;
+    // `--sysroot ryo` selects the std built with ryo (`y build --sysroot ryo`).
+    let mut user_sysroot = false;
+    for a in &mut passed {
+        if a == "--sysroot=ryo" {
+            *a = OsString::from("--sysroot=");
+            a.push(dist.join("sysroot-ryo"));
+        }
+        user_sysroot |= opt_value(a, "--sysroot=").is_some();
+    }
+
+    let mut args: Vec<OsString> = Vec::new();
     if !user_sysroot {
         args.push("--sysroot".into());
         args.push(dist.into());
     }
-    args.push(backend);
+    args.push(common::backend_arg(dist, "rustc_codegen_ryo"));
     for a in ["-Zunstable-options", "--extern", "force:ryo_rt"] {
         args.push(a.into());
     }
@@ -128,80 +100,81 @@ pub fn is_verbose_version(args: &[OsString]) -> bool {
     version && verbose
 }
 
+/// The options rustc-ryo looks at whose value may be a separate argument (`--target T`).
+const JOINED: [&str; 4] = ["--sysroot", "--target", "--crate-type", "-Z"];
+
+/// `args` with each `JOINED` option and its separate value merged into one argument
+/// (`--target=T`, `-ZV`), which rustc accepts as well, so the rest only checks one form.
+fn normalize(args: Vec<OsString>) -> Vec<OsString> {
+    let mut out: Vec<OsString> = Vec::with_capacity(args.len());
+    let mut iter = args.into_iter();
+    while let Some(a) = iter.next() {
+        match JOINED.iter().find(|&&o| a == o) {
+            Some(&o) => {
+                let mut joined = OsString::from(if o == "-Z" { o.to_owned() } else { format!("{o}=") });
+                match iter.next() {
+                    Some(v) => joined.push(v),
+                    None => joined = a, // a trailing option without a value: left to rustc
+                }
+                out.push(joined);
+            }
+            None => out.push(a),
+        }
+    }
+    out
+}
+
+/// The value of a normalized `<prefix>value` argument (`prefix` is e.g. `--target=`).
+fn opt_value<'a>(a: &'a OsString, prefix: &str) -> Option<&'a str> {
+    a.to_str()?.strip_prefix(prefix)
+}
+
+/// A normalized `-Zname[=value]` argument: `name` with `_` as `-`, and the value.
+fn z_opt(a: &OsString) -> Option<(String, Option<&str>)> {
+    let opt = opt_value(a, "-Z")?;
+    let (name, value) = match opt.split_once('=') {
+        Some((n, v)) => (n, Some(v)),
+        None => (opt, None),
+    };
+    Some((name.replace('_', "-"), value))
+}
+
 /// Removes `-Zryo-stats[=N]` (or `-Z ryo-stats[=N]`) from `args`, which rustc wouldn't
 /// accept, and returns the level for the backend's `RYO_STATS` (design/backend.md#debugging-switches).
-/// The last one wins; `-Zryo-stats` alone is level 1.
+/// The last one wins; `-Zryo-stats` alone is level 1. Normalizes `args` (`normalize`).
 pub fn take_ryo_stats(args: &mut Vec<OsString>) -> Result<Option<String>, String> {
+    *args = normalize(std::mem::take(args));
     let mut level = None;
-    let mut out = Vec::with_capacity(args.len());
-    let mut iter = std::mem::take(args).into_iter().peekable();
-    while let Some(a) = iter.next() {
-        let opt = match a.to_str() {
-            Some("-Z") => match iter.peek().and_then(|n| n.to_str()) {
-                Some(n) if n == "ryo-stats" || n.starts_with("ryo-stats=") => {
-                    let n = n.to_owned();
-                    iter.next();
-                    Some(n)
-                }
-                _ => None,
-            },
-            Some(s) => s.strip_prefix("-Z").filter(|o| *o == "ryo-stats" || o.starts_with("ryo-stats=")).map(str::to_owned),
-            None => None,
-        };
-        let Some(opt) = opt else {
-            out.push(a);
-            continue;
-        };
-        let value = opt.strip_prefix("ryo-stats").unwrap().strip_prefix('=').unwrap_or("1");
-        if value.parse::<u32>().is_err() {
-            return Err(format!("`-Zryo-stats={value}`: expected a number"));
+    for a in args.iter() {
+        if let Some((name, value)) = z_opt(a)
+            && name == "ryo-stats"
+        {
+            let value = value.unwrap_or("1");
+            if value.parse::<u32>().is_err() {
+                return Err(format!("`-Zryo-stats={value}`: expected a number"));
+            }
+            level = Some(value.to_owned());
         }
-        level = Some(value.to_owned());
     }
-    *args = out;
+    args.retain(|a| !z_opt(a).is_some_and(|(n, _)| n == "ryo-stats"));
     Ok(level)
 }
 
-/// Whether the compilation targets windows-msvc: `--target` names an `-msvc` triple, or there
-/// is none and the host is one.
+/// Whether the compilation targets windows-msvc: the last `--target=` of the normalized
+/// `args` names an `-msvc` triple, or there is none and the host is one.
 fn targets_msvc(args: &[OsString]) -> bool {
-    let mut target = None;
-    let mut prev_target = false;
-    for arg in args {
-        let s = arg.to_str().unwrap_or("");
-        if prev_target {
-            target = Some(s);
-        } else if let Some(t) = s.strip_prefix("--target=") {
-            target = Some(t);
-        }
-        prev_target = s == "--target";
-    }
-    match target {
+    match args.iter().filter_map(|a| opt_value(a, "--target=")).last() {
         Some(t) => t.ends_with("-msvc"),
         None => cfg!(target_env = "msvc"),
     }
 }
 
-/// Finds an enabling `-Zrandomize-layout` (`-Zrandomize-layout[=v]` or `-Z randomize-layout[=v]`).
+/// Finds an enabling `-Zrandomize-layout[=v]` among the normalized `args`.
 fn randomize_layout_flag(args: &[OsString]) -> Option<String> {
-    let mut prev_z = false;
-    for arg in args {
-        let Some(s) = arg.to_str() else {
-            prev_z = false;
-            continue;
-        };
-        let opt = if prev_z { Some(s) } else { s.strip_prefix("-Z") };
-        prev_z = s == "-Z";
-        let Some(opt) = opt else { continue };
-        let (name, value) = match opt.split_once('=') {
-            Some((n, v)) => (n, Some(v)),
-            None => (opt, None),
-        };
-        if name.replace('_', "-") == "randomize-layout" && !matches!(value, Some("no" | "n" | "off" | "false")) {
-            return Some(format!("-Z{opt}"));
-        }
-    }
-    None
+    args.iter().find_map(|a| match z_opt(a)? {
+        (n, v) if n == "randomize-layout" && !matches!(v, Some("no" | "n" | "off" | "false")) => a.to_str().map(str::to_owned),
+        _ => None,
+    })
 }
 
 // Run by `cargo test` in `build/`, which includes this file as a module.
@@ -250,7 +223,7 @@ mod tests {
     fn ryo_stats_flag() {
         let mut a = args(&["x.rs", "-Zryo-stats", "-Z", "threads=2"]);
         assert_eq!(take_ryo_stats(&mut a), Ok(Some("1".into())));
-        assert_eq!(a, args(&["x.rs", "-Z", "threads=2"]));
+        assert_eq!(a, args(&["x.rs", "-Zthreads=2"]));
         let mut a = args(&["-Z", "ryo-stats=2", "x.rs"]);
         assert_eq!(take_ryo_stats(&mut a), Ok(Some("2".into())));
         assert_eq!(a, args(&["x.rs"]));
