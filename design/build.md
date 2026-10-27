@@ -285,7 +285,10 @@ This gives a third backend, built from the same toolchain, to compare against.
   `RYO_DUMP_CODE` ([backend.md](backend.md#debugging-switches)), writing the VM instructions
   to `bench/codegen/<program>.txt` and the x86 code, disassembled with iced-x86, to
   `bench/codegen/<program>.s` (relocated operands by name, jump tables as `.long` entries).
-  Neither prints offsets: branch targets, jump tables and their entries name labels `L<n>`,
+  With `RYO_DUMP_NATIVE` it writes `bench/codegen/<program>.native.txt`: the functions that
+  stay native, by reason, and the VM functions with islands, of the program's crate only (std
+  comes from the LLVM sysroot), under a header saying so.
+  The code dumps don't print offsets: branch targets, jump tables and their entries name labels `L<n>`,
   numbered per function by position, with `L<n>:` before each target, so inserting an
   instruction only changes the lines around it. It then runs each program with the JIT
   compiling synchronously at its default threshold (`RYO_JIT_SYNC=1`, `RYO_JIT_OPT=ssa`, other

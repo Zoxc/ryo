@@ -98,7 +98,7 @@ code that calls the VM's handlers; cg_llvm compiles everything else. Start at
 ## Env vars
 
 - Backend (`design/backend.md#debugging-switches`): `RYO_STATS=1|2`, `RYO_DUMP=<file>`,
-  `RYO_DUMP_CODE=<file>`, `RYO_NO_VM`, `RYO_ASM_CHECK`, `RYO_ASM_ALIGN=0`,
+  `RYO_DUMP_CODE=<file>`, `RYO_DUMP_NATIVE=<file>`, `RYO_NO_VM`, `RYO_ASM_CHECK`, `RYO_ASM_ALIGN=0`,
   `RYO_BACKEND_MARKER`, `RYO_DUMP_LEAN=<dir>`.
 - Runtime/JIT (`design/jit.md#settings`): `RYO_JIT=off`, `RYO_JIT_THRESHOLD=n` (or `e,l`;
   0 = first call), `RYO_JIT_SYNC=1` (deterministic; needed for cachegrind),

@@ -9,9 +9,19 @@ use std::process::Stdio;
 use super::{PROGRAMS, path_str};
 use crate::utils::{cmd, exe_name, root};
 
+/// The header of `<program>.native.txt`.
+const NATIVE_HEADER: &str = "\
+# What stays native (compiled by cg_llvm) in the program's crate, and its VM functions' islands
+# (RYO_DUMP_NATIVE). Only the program's crate is compiled by ryo here: std, core and alloc come
+# precompiled from the LLVM sysroot, so their functions appear only as instances (generic or
+# inline) codegened in the program's crate. `[local]` marks the program's own code.
+
+";
+
 /// `y bench codegen` (design/build.md#test-and-bench): compiles each program with `rustc-ryo`
 /// and `RYO_DUMP`/`RYO_DUMP_CODE`, writing what the backend generated to
-/// `bench/codegen/<name>.txt` (VM instructions) and `bench/codegen/<name>.s` (x86), then runs
+/// `bench/codegen/<name>.txt` (VM instructions), `bench/codegen/<name>.s` (x86) and, with
+/// `RYO_DUMP_NATIVE`, `bench/codegen/<name>.native.txt` (what stays native), then runs
 /// it, writing the JIT's code and IR ([`jit_dumps`]) to `bench/codegen/<name>.jit*`.
 pub fn codegen() -> Result<(), String> {
     let root = root();
@@ -37,8 +47,12 @@ pub fn codegen() -> Result<(), String> {
         let code = out.join(format!("{program}.code"));
         c.env("RYO_DUMP", &dump);
         c.env("RYO_DUMP_CODE", &code);
+        let native = out.join(format!("{program}.native"));
+        c.env("RYO_DUMP_NATIVE", &native);
         eprintln!("[y] bench codegen {program}: {}", dump.display());
         crate::utils::run(&mut c)?;
+        let native = fs::read_to_string(&native).map_err(|e| format!("reading {}: {e}", native.display()))?;
+        crate::utils::write(&dump_dir.join(format!("{program}.native.txt")), format!("{NATIVE_HEADER}{native}"))?;
         let code = fs::read_to_string(&code).map_err(|e| format!("reading {}: {e}", code.display()))?;
         let s = dump_dir.join(format!("{program}.s"));
         crate::utils::write(&s, disassemble(&code)?)?;

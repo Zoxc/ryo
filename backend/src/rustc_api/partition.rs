@@ -536,6 +536,10 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         if let Some(path) = &self.switches.dump_code {
             dump::write(tcx, "RYO_DUMP_CODE", path, &fresh.iter().map(|f| f.code_dump.as_str()).collect::<String>());
         }
+        if let Some(path) = &self.switches.dump_native {
+            let kept: Vec<Instance<'tcx>> = self.units.iter().flat_map(|u| u.keep_native.iter().copied()).collect();
+            dump::write(tcx, "RYO_DUMP_NATIVE", path, &native_text(tcx, &fresh, &failed, &kept));
+        }
         let mut roots = Roots::default();
         let mut vm_exports: Vec<(Instance<'tcx>, Visibility)> = Vec::new();
         let mut hidden: Vec<Instance<'tcx>> = Vec::new();
@@ -862,7 +866,8 @@ fn image_part<'tcx>(
         && !tcx.sess.opts.unstable_opts.disable_incr_comp_backend_caching
         && switches.dump_lean.is_none()
         && switches.dump.is_none()
-        && switches.dump_code.is_none();
+        && switches.dump_code.is_none()
+        && switches.dump_native.is_none();
     if !incremental {
         return build();
     }
@@ -1008,6 +1013,82 @@ fn print_coverage(fresh: &[Fresh<'_>], failed: &[(Instance<'_>, NeedsNative)]) {
     for (why, n) in reasons {
         eprintln!("ryo: native reason: {n} {why}");
     }
+}
+
+/// The `RYO_DUMP_NATIVE` text (design/backend.md#debugging-switches): a summary (native
+/// functions by reason, island instructions by template), then each function that stays
+/// native with its reason, each VM function also kept native (`keep_native`), and each VM
+/// function with islands with its island instructions by template. Every line names the
+/// function's crate (`[local]` for the crate being compiled) and its instance path, sorted,
+/// so the text is deterministic.
+fn native_text<'tcx>(tcx: TyCtxt<'tcx>, fresh: &[Fresh<'tcx>], failed: &[(Instance<'tcx>, NeedsNative)], kept: &[Instance<'tcx>]) -> String {
+    use std::collections::BTreeMap;
+    use std::fmt::Write;
+    let name = |i: Instance<'tcx>| {
+        let k = i.def_id().krate;
+        let krate = if k == LOCAL_CRATE { "local".to_owned() } else { tcx.crate_name(k).to_string() };
+        format!("[{krate}] {}", path(i))
+    };
+    let mut natives: Vec<(String, &str)> = failed.iter().map(|(i, w)| (name(*i), w.0.as_str())).collect();
+    natives.sort();
+    let mut reasons: BTreeMap<&str, usize> = BTreeMap::new();
+    for (_, why) in &natives {
+        *reasons.entry(why).or_default() += 1;
+    }
+    let mut kept: Vec<String> = kept.iter().map(|i| name(*i)).collect();
+    kept.sort();
+    kept.dedup();
+    let mut n_vm = 0;
+    let mut with: Vec<(String, BTreeMap<Symbol, usize>)> = Vec::new();
+    let mut templates: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
+    for v in fresh.iter().flat_map(|f| f.vm.iter()) {
+        n_vm += 1;
+        let mut by: BTreeMap<Symbol, usize> = BTreeMap::new();
+        for r in &v.lowered.relocs {
+            if let CodeReloc::Island { template, .. } = *r {
+                *by.entry(template).or_default() += 1;
+            }
+        }
+        if !by.is_empty() {
+            with.push((name(v.instance), by));
+        }
+    }
+    with.sort_by(|a, b| a.0.cmp(&b.0));
+    for (_, by) in &with {
+        for (t, n) in by {
+            let e = templates.entry(t.as_str()).or_default();
+            e.0 += n;
+            e.1 += 1;
+        }
+    }
+    let mut out = String::new();
+    writeln!(out, "# {} native functions, by reason", natives.len()).unwrap();
+    let mut rs: Vec<_> = reasons.into_iter().collect();
+    rs.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+    for (why, n) in rs {
+        writeln!(out, "{n:5} {why}").unwrap();
+    }
+    let total: usize = templates.values().map(|t| t.0).sum();
+    writeln!(out, "\n# {total} island instructions in {} of {n_vm} VM functions, by template (instructions, functions)", with.len()).unwrap();
+    let mut ts: Vec<_> = templates.into_iter().collect();
+    ts.sort_by(|a, b| b.1.0.cmp(&a.1.0).then_with(|| a.0.cmp(b.0)));
+    for (t, (n, fns)) in ts {
+        writeln!(out, "{n:5} {fns:5} {t}").unwrap();
+    }
+    writeln!(out, "\n# native functions: [crate] instance: reason").unwrap();
+    for (f, why) in &natives {
+        writeln!(out, "{f}: {why}").unwrap();
+    }
+    writeln!(out, "\n# VM functions also kept native (local copies native code of their CGU references)").unwrap();
+    for f in &kept {
+        writeln!(out, "{f}").unwrap();
+    }
+    writeln!(out, "\n# VM functions with islands: [crate] instance: template x count, ...").unwrap();
+    for (f, by) in &with {
+        let list: Vec<String> = by.iter().map(|(t, n)| format!("{t} x{n}")).collect();
+        writeln!(out, "{f}: {}", list.join(", ")).unwrap();
+    }
+    out
 }
 
 /// Each island instance the fresh images call: its symbol and its template's name.

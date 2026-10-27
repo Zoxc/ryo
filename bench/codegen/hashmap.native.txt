@@ -1,0 +1,16 @@
+# What stays native (compiled by cg_llvm) in the program's crate, and its VM functions' islands
+# (RYO_DUMP_NATIVE). Only the program's crate is compiled by ryo here: std, core and alloc come
+# precompiled from the LLVM sysroot, so their functions appear only as instances (generic or
+# inline) codegened in the program's crate. `[local]` marks the program's own code.
+
+# 0 native functions, by reason
+
+# 1 island instructions in 1 of 213 VM functions, by template (instructions, functions)
+    1     1 ryo_island_compare_bytes
+
+# native functions: [crate] instance: reason
+
+# VM functions also kept native (local copies native code of their CGU references)
+
+# VM functions with islands: [crate] instance: template x count, ...
+[core] <u8 as core::slice::cmp::SlicePartialEq<u8>>::equal_same_length: ryo_island_compare_bytes x1

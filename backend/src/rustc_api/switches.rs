@@ -11,6 +11,9 @@ pub struct Switches {
     pub dump: Option<OsString>,
     /// `RYO_DUMP_CODE`: where to write the dump of the image's machine code.
     pub dump_code: Option<OsString>,
+    /// `RYO_DUMP_NATIVE`: where to write the list of functions that stay native, and of the
+    /// VM functions with islands.
+    pub dump_native: Option<OsString>,
     /// `RYO_DUMP_LEAN`: the directory for the Lean dump, and whether to build the
     /// certificates it holds.
     pub dump_lean: Option<OsString>,
@@ -31,6 +34,7 @@ impl Switches {
             stats: std::env::var("RYO_STATS").ok().and_then(|v| v.parse().ok()).unwrap_or(0),
             dump: var("RYO_DUMP"),
             dump_code: var("RYO_DUMP_CODE"),
+            dump_native: var("RYO_DUMP_NATIVE"),
             dump_lean: var("RYO_DUMP_LEAN"),
             no_vm: var("RYO_NO_VM").is_some(),
             asm_check: var("RYO_ASM_CHECK").is_some(),

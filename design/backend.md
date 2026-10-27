@@ -376,6 +376,13 @@ Environment variables read by the backend (and `y test`):
   pass: `image <index> <instance>` per function, and `ref <index> <image's> <function's>` per
   reference of its code (`ref 8 k64 k0`), with which `y bench codegen` names the JIT's code
   and IR by the function's own operands.
+- `RYO_DUMP_NATIVE=<file>` writes what stays native to `<file>`: a summary (native
+  functions by reason, island instructions by template with the number of functions), then
+  each function that stayed native as `[<crate>] <instance>: <reason>` (`[local]` for the
+  crate being compiled), the VM functions also kept native (`keep_native`), and each VM
+  function with islands as `[<crate>] <instance>: <template> x<n>, ...`. All sorted, without
+  addresses or hashes, for `y bench codegen` (`<program>.native.txt`). Like the other
+  dumps it turns image reuse off.
 - `RYO_NO_VM` keeps every function native.
 - `RYO_ASM_CHECK` reads every function's machine code back to the reduced set
   (`asm::decode_reduced`), encodes it again (`asm::encode_reduced`) and panics unless it is
