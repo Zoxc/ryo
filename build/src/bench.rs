@@ -32,8 +32,11 @@ struct Backend {
     env: Vec<(&'static str, &'static str)>,
 }
 
-/// Flags every backend gets, so compile times compare one codegen unit on one thread.
-const COMMON_FLAGS: &[&str] = &["-Ccodegen-units=1", "-Zthreads=1"];
+/// Flags every backend gets: cargo's dev profile (what `cargo build -v` passes for a leaf
+/// crate), except one codegen unit, no incremental and no debuginfo: compile times compare
+/// one codegen unit on one thread, and ryo emits no debuginfo for VM code. Debug assertions (and with them overflow checks) are per column
+/// ([`OptLevel`]). Keep in sync with `DEV_FLAGS` in scripts/compare-branches.py.
+const DEV_FLAGS: &[&str] = &["-Cembed-bitcode=no", "-Ccodegen-units=1", "-Zthreads=1"];
 
 /// What `y bench` measures of the programs' runs.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -45,8 +48,8 @@ pub enum Metric {
     Cachegrind,
 }
 
-/// A `-Copt-level` for plain rustc or cg_clif: `O0`..`O3`, a `d` suffix (`O2d`) turning on
-/// debug assertions (and with them overflow checks, as at `O0`).
+/// A `-Copt-level` for plain rustc or cg_clif: `O0`..`O3`, with debug assertions (and with
+/// them overflow checks) on, as in cargo's dev profile; an `n` suffix (`O2n`) turns them off.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct OptLevel {
     opt: u8,
@@ -55,17 +58,17 @@ pub struct OptLevel {
 
 impl OptLevel {
     fn parse(s: &str) -> Result<OptLevel, String> {
-        let (level, debug_assertions) = s.strip_suffix('d').map_or((s, false), |l| (l, true));
+        let (level, debug_assertions) = s.strip_suffix('n').map_or((s, true), |l| (l, false));
         match level.strip_prefix('O').and_then(|n| n.parse().ok()).filter(|&n| n <= 3) {
             Some(opt) => Ok(OptLevel { opt, debug_assertions }),
-            None => Err(format!("bad opt level `{s}` (expected O0..O3, optionally with a `d` suffix)")),
+            None => Err(format!("bad opt level `{s}` (expected O0..O3, optionally with an `n` suffix)")),
         }
     }
 }
 
 impl std::fmt::Display for OptLevel {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "O{}{}", self.opt, if self.debug_assertions { "d" } else { "" })
+        write!(f, "O{}{}", self.opt, if self.debug_assertions { "" } else { "n" })
     }
 }
 
@@ -89,7 +92,8 @@ pub struct Options {
 }
 
 impl Default for Options {
-    /// The default columns: LLVM -O0 and -O1, cg_clif -O0 and ryo as it runs by default.
+    /// The default columns: LLVM -O0 and -O1 and ryo as it runs by default (no cg_clif, so
+    /// no `build-clif` needed).
     fn default() -> Self {
         Options { runs: DEFAULT_RUNS, llvm: Vec::new(), clif: Vec::new(), ryo: Vec::new(), metric: Metric::Time }
     }
@@ -111,7 +115,7 @@ pub fn parse_options(args: &[&str]) -> Result<Options, String> {
                 }
             }
             "--clif" => match args.optional_value() {
-                None => o.clif.push(OptLevel { opt: 0, debug_assertions: false }),
+                None => o.clif.push(OptLevel { opt: 0, debug_assertions: true }),
                 Some(v) => {
                     for l in list(v) {
                         o.clif.push(OptLevel::parse(&l)?);
@@ -144,10 +148,7 @@ pub fn parse_options(args: &[&str]) -> Result<Options, String> {
 /// Without `--llvm`, `--clif` or `--ryo`, the default columns.
 fn backends(o: &Options) -> Vec<Backend> {
     let with = |compiler: Compiler, name: &str, level: OptLevel| {
-        let mut flags = vec![format!("-Copt-level={}", level.opt)];
-        if level.debug_assertions {
-            flags.push("-Cdebug-assertions=on".to_owned());
-        }
+        let flags = vec![format!("-Copt-level={}", level.opt), format!("-Cdebug-assertions={}", if level.debug_assertions { "on" } else { "off" })];
         Backend { name: format!("{name} -{level}"), compiler, flags, env: Vec::new() }
     };
     let rustc = |level| with(Compiler::Llvm, "llvm", level);
@@ -156,8 +157,8 @@ fn backends(o: &Options) -> Vec<Backend> {
         // Under cachegrind the counts depend on when a background JIT thread finishes.
         let env = if o.metric == Metric::Cachegrind { vec![("RYO_JIT_OPT", "ssa"), ("RYO_JIT_SYNC", "1")] } else { Vec::new() };
         let ryo = Backend { name: "ryo".to_owned(), compiler: Compiler::Ryo, flags: Vec::new(), env };
-        let level = |opt| OptLevel { opt, debug_assertions: false };
-        return vec![rustc(level(0)), rustc(level(1)), clif(level(0)), ryo];
+        let level = |opt| OptLevel { opt, debug_assertions: true };
+        return vec![rustc(level(0)), rustc(level(1)), ryo];
     }
     let mut v: Vec<Backend> = o.llvm.iter().map(|&l| rustc(l)).chain(o.clif.iter().map(|&l| clif(l))).collect();
     for &m in &o.ryo {
@@ -343,7 +344,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
             let exe = dir.join(exe_name(program));
             let compiler = backend.compiler.rustc(&root);
             let mut args = vec!["--edition=2024".to_owned(), path_str(&src)?];
-            args.extend(COMMON_FLAGS.iter().map(|f| f.to_string()).chain(backend.flags.iter().cloned()));
+            args.extend(DEV_FLAGS.iter().map(|f| f.to_string()).chain(backend.flags.iter().cloned()));
             args.extend(["-o".to_owned(), path_str(&exe)?]);
             let _ = fs::remove_file(&exe);
             let name = format!("{program} [{}]", backend.name);
@@ -369,6 +370,10 @@ pub fn run(opts: &Options) -> Result<(), String> {
     }
 
     let header: Vec<&str> = backends.iter().map(|b| b.name.as_str()).collect();
+    println!();
+    println!(
+        "built with cargo's dev profile (debug assertions and overflow checks; `n`: without them), except one CGU, no incremental and no debuginfo"
+    );
     println!();
     match timer {
         Timer::Hyperfine { .. } | Timer::Builtin => {
@@ -533,21 +538,22 @@ mod tests {
     #[test]
     fn options() {
         let o = parse_options(&[]).unwrap();
-        assert_eq!(backends(&o).iter().map(|b| b.name.as_str()).collect::<Vec<_>>(), ["llvm -O0", "llvm -O1", "clif -O0", "ryo"]);
-        let o = parse_options(&["--llvm", "O2d,O0", "--clif", "--ryo=aot,jit", "--metric", "cachegrind", "--runs=2"]).unwrap();
+        assert_eq!(backends(&o).iter().map(|b| b.name.as_str()).collect::<Vec<_>>(), ["llvm -O0", "llvm -O1", "ryo"]);
+        let o = parse_options(&["--llvm", "O2n,O0", "--clif", "--ryo=aot,jit", "--metric", "cachegrind", "--runs=2"]).unwrap();
         assert_eq!((o.runs, o.metric), (2, Metric::Cachegrind));
         let b = backends(&o);
-        assert_eq!(b.iter().map(|b| b.name.as_str()).collect::<Vec<_>>(), ["llvm -O2d", "llvm -O0", "clif -O0", "ryo aot", "ryo jit"]);
-        assert_eq!(b[0].flags, ["-Copt-level=2", "-Cdebug-assertions=on"]);
+        assert_eq!(b.iter().map(|b| b.name.as_str()).collect::<Vec<_>>(), ["llvm -O2n", "llvm -O0", "clif -O0", "ryo aot", "ryo jit"]);
+        assert_eq!(b[0].flags, ["-Copt-level=2", "-Cdebug-assertions=off"]);
+        assert_eq!(b[1].flags, ["-Copt-level=0", "-Cdebug-assertions=on"]);
         assert_eq!(b[3].env, [("RYO_JIT", "off")]);
-        let o = parse_options(&["--clif", "O0,O3d", "--clif=O1", "--clif", "--runs", "1"]).unwrap();
+        let o = parse_options(&["--clif", "O0,O3n", "--clif=O1", "--clif", "--runs", "1"]).unwrap();
         let b = backends(&o);
-        assert_eq!(b.iter().map(|b| b.name.as_str()).collect::<Vec<_>>(), ["clif -O0", "clif -O3d", "clif -O1", "clif -O0"]);
-        assert_eq!(b[1].flags, ["-Copt-level=3", "-Cdebug-assertions=on"]);
+        assert_eq!(b.iter().map(|b| b.name.as_str()).collect::<Vec<_>>(), ["clif -O0", "clif -O3n", "clif -O1", "clif -O0"]);
+        assert_eq!(b[1].flags, ["-Copt-level=3", "-Cdebug-assertions=off"]);
         assert!(parse_options(&["--clif", "O4"]).is_err());
         assert!(parse_options(&["--llvm", "O4"]).is_err());
         let o = parse_options(&["--metric", "cachegrind"]).unwrap();
-        assert_eq!(backends(&o)[3].env, [("RYO_JIT_OPT", "ssa"), ("RYO_JIT_SYNC", "1")]);
+        assert_eq!(backends(&o)[2].env, [("RYO_JIT_OPT", "ssa"), ("RYO_JIT_SYNC", "1")]);
         assert!(parse_options(&["--ryo", "x"]).is_err());
         assert!(parse_options(&["--runs", "0"]).is_err());
     }

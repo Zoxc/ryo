@@ -216,7 +216,7 @@ pub const USAGE: &str = "\
   bench crates [--dep-samples N] [--leaf-samples N] [--build-samples N (both)] [--run-samples N (0: no runs)] [--quick] [--crates a,b|all] [--backends llvm,clif,ryo]
                [--path DIR (a local workspace instead: members are the leaf)] [--timeout SECS] [--out FILE] [--stock (cargo/rustc defaults, only RUSTC changed)]
                                build, test and run pinned crates.io crates with each backend
-                               (dev profile); writes an HTML report";
+                               (default llvm,ryo; dev profile); writes an HTML report";
 
 pub fn parse_options(args: &[&str]) -> Result<Options, String> {
     let mut o = Options {
@@ -224,7 +224,8 @@ pub fn parse_options(args: &[&str]) -> Result<Options, String> {
         leaf_samples: DEFAULT_LEAF_SAMPLES,
         run_samples: DEFAULT_RUN_SAMPLES,
         crates: DEFAULT_CRATES.iter().map(|c| c.to_string()).collect(),
-        backends: BACKENDS.to_vec(),
+        // cg_clif only when asked for (`--backends`), so the default needs no `build-clif`.
+        backends: vec![Backend::Llvm, Backend::Ryo],
         timeout: DEFAULT_TIMEOUT,
         out: None,
         path: None,
@@ -941,8 +942,8 @@ mod tests {
     fn options() {
         let o = parse_options(&[]).unwrap();
         assert_eq!(
-            (o.dep_samples, o.leaf_samples, o.run_samples, o.backends.len()),
-            (DEFAULT_DEP_SAMPLES, DEFAULT_LEAF_SAMPLES, DEFAULT_RUN_SAMPLES, 3)
+            (o.dep_samples, o.leaf_samples, o.run_samples, o.backends.as_slice()),
+            (DEFAULT_DEP_SAMPLES, DEFAULT_LEAF_SAMPLES, DEFAULT_RUN_SAMPLES, [Backend::Llvm, Backend::Ryo].as_slice())
         );
         let o = parse_options(&["--quick", "--crates", "semver,memchr", "--backends=ryo"]).unwrap();
         assert_eq!((o.dep_samples, o.leaf_samples, o.run_samples), (1, 1, 1));

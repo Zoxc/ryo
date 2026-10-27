@@ -29,7 +29,7 @@ pub fn codegen() -> Result<(), String> {
         let dump = dump_dir.join(format!("{program}.txt"));
         let mut c = cmd(&rustc_ryo);
         c.args(["--edition=2024", &path_str(&src)?, "-o", &path_str(&out.join(exe_name(program)))?]);
-        // One image, as the benchmarks build (`bench`'s `COMMON_FLAGS`), whatever rustc's
+        // One image, as the benchmarks build (`bench`'s `DEV_FLAGS`), whatever rustc's
         // default codegen units.
         c.arg("-Ccodegen-units=1");
         // Paths relative to the repository, so the dumps don't depend on where it is.

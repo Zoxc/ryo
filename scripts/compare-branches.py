@@ -22,8 +22,9 @@ Examples:
     scripts/compare-branches.py --worktree HEAD~1 --worktree HEAD --metric wall
     scripts/compare-branches.py --worktree HEAD~1 --build head=. --metric cachegrind
 
-Programs: each is compiled with each build's `dist/bin/rustc-ryo` (`-Ccodegen-units=1
--Zthreads=1`, as `y bench`); every build must print the same output. Samples are taken in
+Programs: each is compiled with each build's `dist/bin/rustc-ryo` with cargo's dev profile,
+except one CGU, no incremental and no debuginfo (`DEV_FLAGS`, as `y bench`), then `--flags`; every build
+must print the same output. Samples are taken in
 rounds, one sample per build per round, the build order shuffled each round (`--seed`) so
 drift affects all alike; the first `--warmup` rounds are dropped, and a measurement stops
 early once it has 3 samples and `--max-time` seconds are spent. Times are the child's CPU
@@ -340,6 +341,12 @@ def mad(xs):
 
 # --- programs ---------------------------------------------------------------------------
 
+# cargo's dev profile (what `cargo build -v` passes for a leaf crate), except one codegen unit,
+# no incremental and no debuginfo; the same as `DEV_FLAGS` in build/src/bench.rs, plus the debug
+# assertions (and with them overflow checks) that `y bench` sets per column. `--flags` comes
+# after, so `--flags=-Cdebug-assertions=off` turns them off.
+DEV_FLAGS = ["-Cembed-bitcode=no", "-Ccodegen-units=1", "-Zthreads=1", "-Cdebug-assertions=on"]
+
 def program_list(args):
     bench = ROOT / "bench"
     programs = args.programs.split(",") if args.programs else sorted(f.stem for f in bench.glob("*.rs"))
@@ -351,7 +358,7 @@ def program_list(args):
 
 def programs_(args, builds, rng, programs, eta):
     bench = ROOT / "bench"
-    flags = ["-Ccodegen-units=1", "-Zthreads=1", *args.flags.split()]
+    flags = [*DEV_FLAGS, *args.flags.split()]
     names = list(builds)
     metric = Metric(args)
     out = Path(tempfile.mkdtemp(prefix="ryo-compare-"))

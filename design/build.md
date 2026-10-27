@@ -256,17 +256,20 @@ This gives a third backend, built from the same toolchain, to compare against.
 - `test --clif`: also builds the corpus with `rustc-clif` and diffs its output too. That
   helps tell ryo bugs from test-corpus problems.
 - `bench [--runs N]`: hyperfine comparisons of each program in `bench/` (fib, sieve,
-  sort, hashmap) built with LLVM `-O0`, LLVM `-O1`, Cranelift (`rustc-clif`) at `-O0` and ryo. Each comparison
+  sort, hashmap) built with LLVM `-O0`, LLVM `-O1` and ryo; `--clif` adds Cranelift (`rustc-clif`). Each comparison
   covers compile time (Cranelift is the fast-compile reference ryo competes with) and run
-  time, printed as two tables of mean and standard deviation. Every backend gets
-  `-Ccodegen-units=1 -Zthreads=1` (what `rustc-ryo` forces anyway) on top of its own flags,
-  so compile times compare one codegen unit on one thread. Failed builds and runs are collected and reported at the end. Without hyperfine on `PATH`,
+  time, printed as two tables of mean and standard deviation. Every backend builds
+  with cargo's dev profile, except one CGU, no incremental and no debuginfo: what `cargo
+  build -v` passes for a leaf crate (`-Cembed-bitcode=no`, debug assertions and with them
+  overflow checks at every opt level), without its `-Cdebuginfo=2` (ryo emits none for VM
+  code), plus `-Ccodegen-units=1 -Zthreads=1`, so compile times compare one codegen unit
+  on one thread. `scripts/compare-branches.py` uses the same
+  flags. Failed builds and runs are collected and reported at the end. Without hyperfine on `PATH`,
   a built-in timer does the same (one warmup, then `N` runs, default 5). The programs'
-  output must agree across backends. `y bench` builds `dist/` and cg_clif first if they are
+  output must agree across backends. `y bench` builds `dist/`, and cg_clif if a column needs it, first if they are
   missing; `y test --clif` builds cg_clif too.
-  `--llvm O0,O2d,..`, `--clif [O0,O3,..]` and `--ryo aot,jit` pick the columns instead (`d`: with
-  `-Cdebug-assertions=on`, which turns on overflow checks too, as `O0` and ryo have them;
-  ryo `aot` runs with `RYO_JIT=off`, `jit` with `RYO_JIT_OPT=ssa`); the first column is the
+  `--llvm O0,O2n,..`, `--clif [O0,O3,..]` and `--ryo aot,jit` pick the columns instead (`n`:
+  with `-Cdebug-assertions=off`, which turns off overflow checks too; ryo `aot` runs with `RYO_JIT=off`, `jit` with `RYO_JIT_OPT=ssa`); the first column is the
   output reference and the baseline of the ratio tables. A bare `--clif` is `-O0`. cg_clif
   maps `-O0` to Cranelift's `opt_level=none` and every other level (`-O1`..`-O3`, `s`, `z`)
   to `speed_and_size` (`rustc_codegen_cranelift/src/lib.rs`), so its `-O1`..`-O3` differ
@@ -360,9 +363,9 @@ A plain `y test` runs the fast set plus the tests the changed paths select
 ### `bench crates`
 
 `y bench crates [--build-samples N] [--run-samples N] [--quick] [--crates a,b|all] [--backends
-llvm,clif,ryo] [--path DIR] [--timeout SECS] [--out FILE]` compares LLVM (plain rustc), Cranelift
-(`rustc-clif`) and ryo (`rustc-ryo`, default sysroot) on real crates.io crates, in cargo's
-`dev` profile only. Written in Rust in `build/src/crates/`.
+llvm,clif,ryo] [--path DIR] [--timeout SECS] [--out FILE]` compares LLVM (plain rustc), ryo
+(`rustc-ryo`, default sysroot) and, if `--backends` names it, Cranelift (`rustc-clif`) on
+real crates.io crates, in cargo's `dev` profile only. The default is `llvm,ryo`. Written in Rust in `build/src/crates/`.
 
 - **Crates** (`CRATES` in `build/src/crates/mod.rs`): semver, smallvec, miniz_oxide, memchr,
   hashbrown, rand, regex-syntax, unicode-segmentation, serde_json. Pure Rust, no C
