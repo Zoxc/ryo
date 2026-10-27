@@ -245,6 +245,14 @@ struct CodeRef {
     func: u32,
 }
 
+/// The fields of a [`JitRecord`] the linker fills in ([`JitRecord::image_bytes`] leaves them
+/// 0), and with what.
+const JIT_RECORD_RELOCS: [(usize, RelocTarget); 3] = [
+    (mem::offset_of!(JitRecord, entry), RelocTarget::TripEntry),
+    (mem::offset_of!(JitRecord, osr), RelocTarget::TripOsr),
+    (mem::offset_of!(JitRecord, header), RelocTarget::Section(Section::ReadOnly)),
+];
+
 /// Why [`ImageWriter::finish`] failed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WriteError {
@@ -656,11 +664,7 @@ impl ImageWriter {
             let off = align_to(data.len() + 1, 64);
             data.resize(off, 0);
             for i in 0..funcs.len() as u32 {
-                let mut r = [0u8; 64];
-                r[0..8].copy_from_slice(&(-JIT_ENTRY_THRESHOLD).to_le_bytes());
-                r[JIT_LOOP_CTR as usize..][..8].copy_from_slice(&(-JIT_THRESHOLD).to_le_bytes());
-                r[mem::offset_of!(JitRecord, func)..][..4].copy_from_slice(&i.to_le_bytes());
-                data.extend_from_slice(&r);
+                data.extend_from_slice(&JitRecord::image_bytes(i));
             }
             Span { off: off.try_into().map_err(|_| WriteError::TooLarge)?, count: funcs.len() as u32 }
         } else {
@@ -760,9 +764,9 @@ impl ImageWriter {
         }
         for i in 0..jit_records.count as u64 {
             let rec = jit_records.off as u64 + 64 * i;
-            relocs.push(abs(Section::Writable, rec + mem::offset_of!(JitRecord, entry) as u64, RelocTarget::TripEntry, 0));
-            relocs.push(abs(Section::Writable, rec + mem::offset_of!(JitRecord, osr) as u64, RelocTarget::TripOsr, 0));
-            relocs.push(abs(Section::Writable, rec + mem::offset_of!(JitRecord, header) as u64, RelocTarget::Section(Section::ReadOnly), 0));
+            for (field, target) in JIT_RECORD_RELOCS {
+                relocs.push(abs(Section::Writable, rec + field as u64, target, 0));
+            }
         }
         // The code's fields. Calls between functions are resolved here.
         for &CodeRef { at, to, start, ro_base, func } in &code_refs {

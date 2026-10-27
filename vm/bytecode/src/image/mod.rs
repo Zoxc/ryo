@@ -134,6 +134,23 @@ pub struct JitRecord {
 // and write them with plain instructions: atomics of their size. Records live in images'
 // writable sections forever, so each view is `'static`.
 impl JitRecord {
+    /// The record of function `func` as the writer stores it, before relocation (see
+    /// [`JitRecord`]): the counters at their thresholds, `func` set, the rest 0.
+    pub const fn image_bytes(func: u32) -> [u8; 64] {
+        const fn put<const N: usize>(r: &mut [u8; 64], at: usize, v: [u8; N]) {
+            let mut i = 0;
+            while i < N {
+                r[at + i] = v[i];
+                i += 1;
+            }
+        }
+        let mut r = [0u8; 64];
+        put(&mut r, mem::offset_of!(JitRecord, ctr_e), (-JIT_ENTRY_THRESHOLD).to_le_bytes());
+        put(&mut r, mem::offset_of!(JitRecord, ctr_l), (-JIT_THRESHOLD).to_le_bytes());
+        put(&mut r, mem::offset_of!(JitRecord, func), func.to_le_bytes());
+        r
+    }
+
     pub fn ctr_e(r: *mut Self) -> &'static core::sync::atomic::AtomicI64 {
         // SAFETY: records live forever; the counters are 8-aligned.
         unsafe { core::sync::atomic::AtomicI64::from_ptr(&raw mut (*r).ctr_e) }
