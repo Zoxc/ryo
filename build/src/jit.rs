@@ -72,9 +72,20 @@ pub fn lib_name(triple: &str) -> &'static str {
 ///   which nothing else defines or references, but for LLVM's constants named by their
 ///   contents (`__xmm@…`, `__real@…`), which merge with the program's by content. The library
 ///   keeps its import members.
-pub fn build(root: &Path, target: &Path, info: &RustcInfo, triple: &str, cross: Option<&str>) -> Result<PathBuf, String> {
-    eprintln!("[y] jit: ryo_jit{}", cross.map(|t| format!(" for {t}")).unwrap_or_default());
-    let target_dir = target.join("jit");
+///
+/// `checked`: with `-Cdebug-assertions=on -Coverflow-checks=on` on top of the release
+/// optimizations, in `target/jit-checked/`: the JIT `y test` runs ([`CHECKED_DIR`]).
+pub fn build(root: &Path, target: &Path, info: &RustcInfo, triple: &str, cross: Option<&str>, checked: bool) -> Result<PathBuf, String> {
+    eprintln!("[y] jit: ryo_jit{}{}", if checked { " (checked)" } else { "" }, cross.map(|t| format!(" for {t}")).unwrap_or_default());
+    let target_dir = target.join(if checked { "jit-checked" } else { "jit" });
+    let mut rustflags: Vec<&str> = Vec::new();
+    // Its trips are `sysv64` code too: no red zone on Windows (design/platforms.md).
+    if triple.contains("-windows") {
+        rustflags.push(NO_REDZONE);
+    }
+    if checked {
+        rustflags.extend(["-Cdebug-assertions=on", "-Coverflow-checks=on"]);
+    }
     let mut cargo = cmd("cargo");
     cargo.args(["rustc", "--release", "-p", "ryo_jit", "--crate-type", "staticlib"]);
     if let Some(t) = cross {
@@ -93,8 +104,7 @@ pub fn build(root: &Path, target: &Path, info: &RustcInfo, triple: &str, cross: 
         .env("CARGO_PROFILE_RELEASE_PANIC", "unwind")
         .env("CARGO_PROFILE_RELEASE_DEBUG", "0")
         .env_remove("RUSTFLAGS")
-        // Its trips are `sysv64` code too: no red zone on Windows (design/platforms.md).
-        .env("CARGO_ENCODED_RUSTFLAGS", if triple.contains("-windows") { NO_REDZONE } else { "" }))?;
+        .env("CARGO_ENCODED_RUSTFLAGS", rustflags.join("\x1f")))?;
     let mut built = target_dir.clone();
     if let Some(t) = cross {
         built.push(t);
@@ -103,6 +113,26 @@ pub fn build(root: &Path, target: &Path, info: &RustcInfo, triple: &str, cross: 
     let out = target_dir.join("sealed").join(triple);
     seal(info, &staticlib, &out, triple)?;
     Ok(out)
+}
+
+/// Where a sysroot (`dist/`, `dist/sysroot-ryo/`) keeps its host `ryo_rt` with the checked
+/// JIT ([`build`]'s `checked`), which `rustc-ryo` links instead under `RYO_JIT_CHECKED=1`.
+pub const CHECKED_DIR: &str = "jit-checked";
+
+/// Writes `dst_dir/<rlib's name>`: the `ryo_rt` `rlib` with its bundled JIT object replaced by
+/// the one in `sealed` (a [`build`] output). The rest, metadata included, stays as is, so
+/// crates built against either link with either.
+pub fn swap_into_rlib(info: &RustcInfo, rlib: &Path, sealed: &Path, dst_dir: &Path) -> Result<(), String> {
+    let ar = info.tool("llvm-ar");
+    let members = output(cmd(&ar).arg("t").arg(rlib))?;
+    if !members.lines().any(|m| m.trim() == OBJECT) {
+        return Err(format!("{} has no {OBJECT} member", rlib.display()));
+    }
+    crate::utils::remove_dir_if_exists(dst_dir)?;
+    crate::utils::create_dir(dst_dir)?;
+    let dst = dst_dir.join(rlib.file_name().ok_or("rlib path without a name")?);
+    crate::utils::copy(rlib, &dst)?;
+    run(cmd(&ar).arg("r").arg(&dst).arg(sealed.join(OBJECT)))
 }
 
 /// Seals `staticlib` into `out` (see [`build`]).

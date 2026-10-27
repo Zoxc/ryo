@@ -98,6 +98,18 @@ modeled on cg_clif's `build_system/`.
      information stripped, and the object archived alone (ELF, Mach-O in the BSD format) or
      with the staticlib's import members (COFF) into
      `target/jit/sealed/<target>/libryo_jit.a` (`ryo_jit.lib`). About 35 s from clean.
+   - **The checked JIT**, for the host only: the same build with `-Cdebug-assertions=on
+     -Coverflow-checks=on` on top (`target/jit-checked/`), still optimized so tests stay
+     fast. After `ryo_rt` is built, a copy of its rlib with the bundled `ryo_jit.o` replaced
+     by the checked one (`llvm-ar r`; metadata unchanged, so crates built against either
+     `ryo_rt` link with either) goes to `dist/jit-checked/`, and likewise
+     `dist/sysroot-ryo/jit-checked/` for the ryo sysroot. `rustc-ryo` links it instead of the
+     sysroot's `ryo_rt` (`--extern force:ryo_rt=<path>`) when `RYO_JIT_CHECKED=1` is set and
+     there is no `--target` (it then also adds `+jit-checked` to its `-vV` build id, so cargo
+     rebuilds on a switch). `y test` sets it unless already set (`RYO_JIT_CHECKED=0`: the
+     release JIT) and prints which JIT it uses; everything else (`bench`, `bench codegen`,
+     `compare-branches.py`, `bench crates`, users) gets the release JIT. `ryo_rt` itself is
+     built only once, as above.
    - `ryo_rt` is always built with the stock LLVM backend, against that std, with
      `-Copt-level=3 -Ccodegen-units=1 -Cpanic=unwind -Cembed-bitcode=yes` regardless of the
      user's profile (bitcode, like std's, so `-Clto` builds can include it), and

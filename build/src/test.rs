@@ -680,6 +680,20 @@ pub fn run(opts: &Options) -> Result<(), String> {
         return Err("dist/ is missing; run `./y.sh build` first".to_owned());
     }
     let info = crate::utils::RustcInfo::get()?;
+    // The checked JIT (debug assertions, overflow checks; design/build.md#build) unless the
+    // caller set `RYO_JIT_CHECKED`; `rustc-ryo` reads it, for host compilations.
+    if std::env::var_os("RYO_JIT_CHECKED").is_none() {
+        // SAFETY: no other thread runs yet.
+        unsafe { std::env::set_var("RYO_JIT_CHECKED", "1") };
+    }
+    let checked = std::env::var_os("RYO_JIT_CHECKED").is_some_and(|v| !v.is_empty() && v != "0");
+    if checked && !root.join("dist").join(crate::jit::CHECKED_DIR).is_dir() {
+        return Err("dist/jit-checked/ is missing; run `./y.sh build`".to_owned());
+    }
+    eprintln!(
+        "[y] test: JIT: {}",
+        if checked { "checked (debug assertions, overflow checks; dist/jit-checked/)" } else { "release (RYO_JIT_CHECKED=0)" }
+    );
     if opts.clif {
         crate::clif::ensure()?;
     }

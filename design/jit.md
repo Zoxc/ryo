@@ -827,6 +827,9 @@ for shuffled frames per image, `RtApi::shuffled`):
 | `RYO_JIT_DUMP=dir` | the SSA tier writes each function's reduced code, IR before and after value numbering and the folds, locations and code (or, for one it doesn't handle, the reason and the reduced code) to `dir/f<index>-<image header address>.txt`, and every installed function's code with its relocations by name to `dir/f<index>-<image header address>.code` (for `y bench codegen`, [build.md](build.md#test-and-bench)); read by the JIT thread itself, not passed in `RtApi` |
 | `RYO_JIT_SSA_LIMIT=n` | debugging: only the first `n` functions the JIT compiles go to the SSA tier, the rest are re-encoded (bisects a miscompile; read by the JIT thread) |
 
+`y test` links a checked JIT, built with debug assertions and overflow checks
+(`RYO_JIT_CHECKED`, [build.md](build.md#build)); measurements use the release one.
+
 ## Limits
 
 - A child of `fork` has no JIT thread, so with `RYO_JIT_SYNC` its trips wait forever.

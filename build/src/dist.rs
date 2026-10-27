@@ -51,20 +51,28 @@ pub fn build(targets: &[String], ryo_std: bool) -> Result<(), String> {
         crate::utils::create_dir(&target_lib)?;
         install_llvm_sysroot(&info, &dist, triple)?;
         let cross = (*triple != info.host).then_some(triple.as_str());
-        let jit = if crate::jit::supported(triple) { Some(crate::jit::build(&root, &target, &info, triple, cross)?) } else { None };
+        let jit = if crate::jit::supported(triple) { Some(crate::jit::build(&root, &target, &info, triple, cross, false)?) } else { None };
+        // For the host, also the checked JIT `y test` runs (design/build.md#build): `ryo_rt`
+        // with it swapped in, in `dist/jit-checked/`.
+        let checked = if cross.is_none() && jit.is_some() { Some(crate::jit::build(&root, &target, &info, triple, None, true)?) } else { None };
         for (krate, rlib) in build_runtime(&root, &target, &dist, cross, jit.as_deref())? {
             copy(&rlib, &target_lib.join(format!("lib{krate}.rlib")))?;
+            if krate == "ryo_rt"
+                && let Some(sealed) = &checked
+            {
+                crate::jit::swap_into_rlib(&info, &target_lib.join("libryo_rt.rlib"), sealed, &dist.join(crate::jit::CHECKED_DIR))?;
+            }
             build_files.push(rlib);
         }
         if cross.is_none() {
-            host_jit = jit;
+            host_jit = jit.zip(checked);
         }
     }
 
     let build_id = build_id(&build_files)?;
     build_wrappers(&root, &dist_bin, &info, &build_id)?;
     if ryo_std {
-        crate::sysroot::build(&info, &dist, host_jit.as_deref())?;
+        crate::sysroot::build(&info, &dist, host_jit.as_ref().map(|(j, c)| (j.as_path(), c.as_path())))?;
     }
     eprintln!("[y] done: {}", dist.display());
     Ok(())

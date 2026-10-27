@@ -8,7 +8,7 @@ mod common;
 
 use std::env;
 use std::ffi::OsString;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[cfg(not(test))]
 fn main() {
@@ -16,7 +16,8 @@ fn main() {
     let mut passed: Vec<OsString> = env::args_os().skip(1).collect();
     let stats = take_ryo_stats(&mut passed).unwrap_or_else(|msg| common::fail(&msg));
     let verbose_version = is_verbose_version(&passed);
-    let args = ryo_args(&common::dist_dir(), passed).unwrap_or_else(|msg| common::fail(&msg));
+    let checked = env::var_os("RYO_JIT_CHECKED").is_some_and(|v| !v.is_empty() && v != "0");
+    let args = ryo_args(&common::dist_dir(), passed, checked).unwrap_or_else(|msg| common::fail(&msg));
     let mut cmd = common::toolchain_command("rustc");
     cmd.args(args);
     if let Some(level) = stats {
@@ -30,7 +31,8 @@ fn main() {
         let mut stdout = std::io::stdout().lock();
         let _ = stdout.write_all(&out.stdout);
         if out.status.success() {
-            let _ = writeln!(stdout, "ryo-build: {}", option_env!("RYO_BUILD_ID").unwrap_or("unknown"));
+            // The checked JIT is another `ryo_rt`: cargo rebuilds when it is switched.
+            let _ = writeln!(stdout, "ryo-build: {}{}", option_env!("RYO_BUILD_ID").unwrap_or("unknown"), if checked { "+jit-checked" } else { "" });
         }
         let _ = stdout.flush();
         let _ = std::io::stderr().write_all(&out.stderr);
@@ -39,8 +41,10 @@ fn main() {
     common::exec(cmd, "rustc")
 }
 
-/// The full rustc command line for the user's `passed` arguments.
-pub fn ryo_args(dist: &Path, passed: Vec<OsString>) -> Result<Vec<OsString>, String> {
+/// The full rustc command line for the user's `passed` arguments. `checked`
+/// (`RYO_JIT_CHECKED=1`, design/build.md#build): for the host (no `--target`), link the
+/// sysroot's `ryo_rt` with the checked JIT, from its `jit-checked/`.
+pub fn ryo_args(dist: &Path, passed: Vec<OsString>, checked: bool) -> Result<Vec<OsString>, String> {
     if passed.is_empty() {
         // Show rustc's help, like plain `rustc` does.
         return Ok(passed);
@@ -62,15 +66,23 @@ pub fn ryo_args(dist: &Path, passed: Vec<OsString>) -> Result<Vec<OsString>, Str
         user_sysroot |= opt_value(a, "--sysroot=").is_some();
     }
 
+    let mut rt = OsString::from("force:ryo_rt");
+    if checked && !passed.iter().any(|a| opt_value(a, "--target=").is_some()) {
+        let sysroot = passed.iter().filter_map(|a| opt_value(a, "--sysroot=")).last().map_or(dist.to_path_buf(), PathBuf::from);
+        rt.push("=");
+        rt.push(checked_rt(&sysroot)?);
+    }
+
     let mut args: Vec<OsString> = Vec::new();
     if !user_sysroot {
         args.push("--sysroot".into());
         args.push(dist.into());
     }
     args.push(common::backend_arg(dist, "rustc_codegen_ryo"));
-    for a in ["-Zunstable-options", "--extern", "force:ryo_rt"] {
+    for a in ["-Zunstable-options", "--extern"] {
         args.push(a.into());
     }
+    args.push(rt);
     let msvc = targets_msvc(&passed);
     // Any number of codegen units: one image per CGU (design/backend.md#pipeline).
     args.extend(passed);
@@ -160,6 +172,16 @@ pub fn take_ryo_stats(args: &mut Vec<OsString>) -> Result<Option<String>, String
     Ok(level)
 }
 
+/// The `ryo_rt` rlib with the checked JIT in `sysroot`'s `jit-checked/`.
+fn checked_rt(sysroot: &Path) -> Result<PathBuf, String> {
+    let dir = sysroot.join("jit-checked");
+    let found =
+        std::fs::read_dir(&dir).ok().into_iter().flatten().flatten().map(|e| e.path()).find(|p| {
+            p.extension().is_some_and(|e| e == "rlib") && p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("libryo_rt"))
+        });
+    found.ok_or_else(|| format!("RYO_JIT_CHECKED: no ryo_rt rlib in {}; run `./y.sh build`", dir.display()))
+}
+
 /// Whether the compilation targets windows-msvc: the last `--target=` of the normalized
 /// `args` names an `-msvc` triple, or there is none and the host is one.
 fn targets_msvc(args: &[OsString]) -> bool {
@@ -189,7 +211,7 @@ mod tests {
     #[test]
     fn adds_ryo_flags_around_user_args() {
         let dist = Path::new("/d");
-        let got = ryo_args(dist, args(&["foo.rs", "-Ccodegen-units=16"])).unwrap();
+        let got = ryo_args(dist, args(&["foo.rs", "-Ccodegen-units=16"]), false).unwrap();
         // `join`, so the separator is right on Windows too.
         let backend = dist.join("lib").join(crate::utils::dll_name("rustc_codegen_ryo"));
         let backend = format!("-Zcodegen-backend={}", backend.display());
@@ -203,7 +225,7 @@ mod tests {
     #[test]
     fn silences_import_warnings_on_msvc() {
         let ignore = |list: &[&str]| {
-            let got = ryo_args(Path::new("/d"), args(list)).unwrap();
+            let got = ryo_args(Path::new("/d"), args(list), false).unwrap();
             got.iter().any(|a| a == "-Clink-arg=/IGNORE:4217")
         };
         assert!(ignore(&["x.rs", "--target", "x86_64-pc-windows-msvc"]));
@@ -214,9 +236,9 @@ mod tests {
 
     #[test]
     fn keeps_user_sysroot_and_empty_args() {
-        let got = ryo_args(Path::new("/d"), args(&["--sysroot=/s", "x.rs"])).unwrap();
+        let got = ryo_args(Path::new("/d"), args(&["--sysroot=/s", "x.rs"]), false).unwrap();
         assert!(!got.iter().any(|a| a == "/d"));
-        assert!(ryo_args(Path::new("/d"), vec![]).unwrap().is_empty());
+        assert!(ryo_args(Path::new("/d"), vec![], false).unwrap().is_empty());
     }
 
     #[test]
@@ -236,13 +258,13 @@ mod tests {
     fn ryo_sysroot() {
         let want = format!("--sysroot={}", Path::new("/d").join("sysroot-ryo").display());
         for list in [&["x.rs", "--sysroot", "ryo"][..], &["x.rs", "--sysroot=ryo"]] {
-            let got = ryo_args(Path::new("/d"), args(list)).unwrap();
+            let got = ryo_args(Path::new("/d"), args(list), false).unwrap();
             assert!(got.iter().any(|a| a.to_str() == Some(want.as_str())), "{got:?}");
             assert!(!got.iter().any(|a| a == "/d"));
         }
-        let got = ryo_args(Path::new("/d"), args(&["x.rs", "--sysroot", "/s"])).unwrap();
+        let got = ryo_args(Path::new("/d"), args(&["x.rs", "--sysroot", "/s"]), false).unwrap();
         assert!(got.iter().any(|a| a == "--sysroot=/s"));
-        assert!(ryo_args(Path::new("/d"), args(&["x.rs", "--sysroot"])).is_err());
+        assert!(ryo_args(Path::new("/d"), args(&["x.rs", "--sysroot"]), false).is_err());
     }
 
     #[test]
@@ -258,10 +280,10 @@ mod tests {
     #[test]
     fn rejects_randomize_layout() {
         for bad in [&["-Zrandomize-layout"][..], &["-Z", "randomize-layout"], &["-Zrandomize_layout=yes"]] {
-            assert!(ryo_args(Path::new("/d"), args(bad)).is_err(), "{bad:?}");
+            assert!(ryo_args(Path::new("/d"), args(bad), false).is_err(), "{bad:?}");
         }
         for ok in [&["-Zrandomize-layout=no"][..], &["-Z", "mir-opt-level=1"], &["randomize-layout"]] {
-            assert!(ryo_args(Path::new("/d"), args(ok)).is_ok(), "{ok:?}");
+            assert!(ryo_args(Path::new("/d"), args(ok), false).is_ok(), "{ok:?}");
         }
     }
 }

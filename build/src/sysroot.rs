@@ -166,8 +166,11 @@ fn is_ryo_crate(name: &str) -> bool {
 /// `dist/sysroot-ryo` (with the toolchain's `bin/`, for `rust-lld`). `dist/` must already hold
 /// the backend and `rustc-ryo`. With `jit`, the sealed JIT's directory
 /// ([`crate::jit::build`]), `ryo_rt` gets its `jit` feature and bundles it, as in `dist/`: the
-/// JIT has a std of its own, the native one, so it never enters this sysroot's VM code.
-pub fn build(info: &RustcInfo, dist: &Path, jit: Option<&Path>) -> Result<(), String> {
+/// JIT has a std of its own, the native one, so it never enters this sysroot's VM code. The
+/// second directory is the checked JIT's, swapped into a copy of `ryo_rt` in
+/// `sysroot-ryo/jit-checked/` as for `dist/`.
+pub fn build(info: &RustcInfo, dist: &Path, jit: Option<(&Path, &Path)>) -> Result<(), String> {
+    let (jit, checked) = (jit.map(|j| j.0), jit.map(|j| j.1));
     eprintln!("[y] sysroot: std with the ryo backend");
     let root = root();
     let work = root.join("target").join("sysroot-ryo");
@@ -239,6 +242,12 @@ pub fn build(info: &RustcInfo, dist: &Path, jit: Option<&Path>) -> Result<(), St
         // `libsysroot` is the build's dummy root crate.
         if name.starts_with("lib") && !name.starts_with("libsysroot-") && matches!(ext, "rlib" | "rmeta" | "so" | "dll" | "lib") {
             copy(&path, &dst_lib.join(name))?;
+            if let Some(sealed) = checked
+                && name.starts_with("libryo_rt-")
+                && ext == "rlib"
+            {
+                crate::jit::swap_into_rlib(info, &dst_lib.join(name), sealed, &sysroot.join(crate::jit::CHECKED_DIR))?;
+            }
             n += 1;
         }
     }
