@@ -9,7 +9,7 @@
 //! (in a Rust dylib, which plain rustc links to std's DLL, the JIT's private std brings its own
 //! imports), i.e. comes from the missing system libraries. A missing ryo symbol (an image, a
 //! portal, an `__imp_` slot, the registry) shows up as a difference. The ryo builds must also compile the functions each
-//! program lists to bytecode (`Program::check_vm`; windows-msvc only).
+//! program lists to bytecode (`Program::check_vm`), so a silent fallback to LLVM fails.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -188,9 +188,7 @@ pub fn run(target: &str) -> Result<(), String> {
             }
             for (name, final_flags) in builds {
                 let (ryo, vm_fns) = link.build(&cmd(&rustc_ryo), program, &out.join(program.name).join(name), final_flags)?;
-                if !macho {
-                    program.check_vm(&vm_fns, true).map_err(|e| format!("{name}: {e}"))?;
-                }
+                program.check_vm(&vm_fns, true).map_err(|e| format!("{name}: {e}"))?;
                 // The image refers to a DLL function both through its `__imp_` slot and directly
                 // (design/platforms.md); with the real import library the direct reference
                 // resolves to the import thunk, so it is fine wherever the import itself is.
@@ -234,28 +232,71 @@ pub fn run(target: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// The first entry of the linked Mach-O program `exe`'s `__mod_init_func` is the registry
-/// constructor (it jumps to `_ryo_vm_register`), and another one, the program's own
-/// (`tests/vm_sysroot.rs`'s, which enters the VM), follows it (design/platforms.md).
+/// The initializers of the linked Mach-O program `exe` run the registry constructor first and
+/// the program's own (`tests/vm_sysroot.rs`'s `ctor`, which enters the VM) second
+/// (design/platforms.md). The initializers come from `__mod_init_func` (pointers: plain, as
+/// lld writes them, or chained-fixup rebases, as ld64 and ld-prime do with chained fixups) or
+/// from `__init_offsets` (4-byte offsets from the Mach-O header, ld-prime's). The registry's
+/// is recognized by its `jmp` to `_ryo_vm_register` (or a stub for it), the program's by the
+/// symbol at its address.
 fn registry_first(info: &RustcInfo, exe: &Path) -> Result<(), String> {
     let objdump = info.tool("llvm-objdump");
-    let dump = crate::utils::output(cmd(&objdump).args(["-s", "-j", "__mod_init_func"]).arg(exe))?;
-    // ` <address> <word> <word> <word> <word>  <ascii>` lines: little-endian 8-byte pointers.
-    let hex: String = dump
+    let nm = crate::utils::output(cmd(info.tool("llvm-nm")).args(["--defined-only", "--no-demangle"]).arg(exe))?;
+    let mut syms: Vec<(u64, &str)> = nm
         .lines()
-        .filter(|l| l.starts_with(' '))
-        .flat_map(|l| l.split_whitespace().skip(1).take(4).filter(|w| w.len() == 8 && w.chars().all(|c| c.is_ascii_hexdigit())))
+        .filter_map(|l| {
+            let mut it = l.split_whitespace();
+            let (a, _, name) = (it.next()?, it.next()?, it.next()?);
+            Some((u64::from_str_radix(a, 16).ok()?, name))
+        })
         .collect();
-    let bytes: Vec<u8> = (0..hex.len() / 2).map(|i| u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).unwrap()).collect();
-    let ptrs: Vec<u64> = bytes.chunks_exact(8).map(|c| u64::from_le_bytes(c.try_into().unwrap())).collect();
-    let [first, _, ..] = ptrs[..] else {
-        return Err(format!("{} has {} initializers, expected the registry's and the program's", exe.display(), ptrs.len()));
+    syms.sort();
+    let base = syms.iter().find(|s| s.1 == "__mh_execute_header").map(|s| s.0).ok_or("no __mh_execute_header symbol")?;
+    let headers = crate::utils::output(cmd(&objdump).arg("-h").arg(exe))?;
+    let section = |name: &str| -> Result<Vec<u8>, String> {
+        if !headers.split_whitespace().any(|w| w == name) {
+            return Ok(Vec::new());
+        }
+        let dump = crate::utils::output(cmd(&objdump).args(["-s", "-j", name]).arg(exe))?;
+        // ` <address> <word> <word> <word> <word>  <ascii>` lines, words in memory order.
+        let hex: String = dump
+            .lines()
+            .filter(|l| l.starts_with(' '))
+            .flat_map(|l| {
+                l.split_whitespace().skip(1).take(4).filter(|w| w.len() <= 8 && w.len() % 2 == 0 && w.chars().all(|c| c.is_ascii_hexdigit()))
+            })
+            .collect();
+        Ok((0..hex.len() / 2).map(|i| u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).unwrap()).collect())
+    };
+    let ptrs = section("__mod_init_func")?;
+    let offsets = section("__init_offsets")?;
+    let inits: Vec<u64> = if !ptrs.is_empty() {
+        ptrs.chunks_exact(8)
+            .map(|c| {
+                let v = u64::from_le_bytes(c.try_into().unwrap());
+                // A chained-fixup rebase (bit 63 clear) keeps its target in the low 36 bits:
+                // a vmaddr (`DYLD_CHAINED_PTR_64`) or an offset from the header
+                // (`DYLD_CHAINED_PTR_64_OFFSET`). A plain pointer is a vmaddr below 2^36.
+                let t = v & ((1 << 36) - 1);
+                if t < base { base + t } else { t }
+            })
+            .collect()
+    } else {
+        offsets.chunks_exact(4).map(|c| base + u64::from(u32::from_le_bytes(c.try_into().unwrap()))).collect()
+    };
+    let [registry, program, ..] = inits[..] else {
+        return Err(format!("{} has {} initializers, expected the registry's and the program's", exe.display(), inits.len()));
     };
     let dis = crate::utils::output(
-        cmd(&objdump).arg("-d").arg(format!("--start-address={first:#x}")).arg(format!("--stop-address={:#x}", first + 19)).arg(exe),
+        cmd(&objdump).arg("-d").arg(format!("--start-address={registry:#x}")).arg(format!("--stop-address={:#x}", registry + 19)).arg(exe),
     )?;
-    if !dis.contains("<_ryo_vm_register>") {
-        return Err(format!("the first initializer of {} (at {first:#x}) isn't the registry's:\n{dis}", exe.display()));
+    if !dis.lines().any(|l| l.contains("jmp") && l.contains("_ryo_vm_register")) {
+        return Err(format!("the first initializer of {} (at {registry:#x}) isn't the registry's:\n{dis}", exe.display()));
+    }
+    let names: Vec<&str> = syms.iter().filter(|s| s.0 == program).map(|s| s.1).collect();
+    // `_RNvCs<hash>_10vm_sysroot4ctor` (v0) or `__ZN10vm_sysroot4ctor17h<hash>E` (legacy).
+    if !names.iter().any(|n| n.contains("10vm_sysroot4ctor")) {
+        return Err(format!("the second initializer of {} (at {program:#x}) isn't the program's `ctor`: {names:?}", exe.display()));
     }
     Ok(())
 }

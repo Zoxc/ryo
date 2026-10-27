@@ -126,7 +126,8 @@ pub fn unique_scid() -> u64 {
 // ---- memory ----
 
 unsafe extern "C" {
-    /// libgcc's: registers an `.eh_frame` (terminated by a zero word) with the unwinder.
+    /// libgcc's: registers an `.eh_frame` (terminated by a zero word) with the unwinder. Apple's
+    /// libunwind takes one FDE instead ([`register_eh_frame`]).
     fn __register_frame(begin: *const u8);
     /// std's personality routine, which the CIE names.
     fn rust_eh_personality();
@@ -252,9 +253,29 @@ pub fn link(obj: ImageObject, syms: &[(&str, usize)]) -> Linked {
         }
     }
     assert!(unsafe { vmem::make_executable(text, text_len) }, "make_executable");
-    unsafe { __register_frame(eh) };
+    unsafe { register_eh_frame(eh) };
     let crate_hash = unsafe { Image::from_header(ro) }.unwrap().crate_hash();
     Linked { header: ro, data, text, crate_hash, symbols: obj.symbols.iter().map(|s| s.name.clone()).collect(), functions: obj.functions }
+}
+
+/// Registers the `.eh_frame` at `eh` (terminated by a zero word): at once with libgcc's
+/// `__register_frame`, one FDE at a time with Apple's, as the JIT does (vm/jit/src/sys/macos.rs).
+unsafe fn register_eh_frame(eh: *const u8) {
+    if cfg!(not(target_vendor = "apple")) {
+        return unsafe { __register_frame(eh) };
+    }
+    let mut p = eh;
+    loop {
+        // 32-bit lengths only: the writer emits no 64-bit DWARF.
+        let len = unsafe { (p as *const u32).read_unaligned() } as usize;
+        if len == 0 {
+            break;
+        }
+        if unsafe { (p.add(4) as *const u32).read_unaligned() } != 0 {
+            unsafe { __register_frame(p) }; // an FDE (a CIE's id is 0)
+        }
+        p = unsafe { p.add(4 + len) };
+    }
 }
 
 pub fn register(images: &[&Linked]) {

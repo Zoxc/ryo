@@ -3,7 +3,7 @@
 //! tail calls, multi-image calls, registration, re-entrancy, unwinding, large frames, deep
 //! recursion, and the fatal paths (in child processes).
 
-#![cfg(all(target_arch = "x86_64", target_os = "linux"))]
+#![cfg(all(target_arch = "x86_64", any(target_os = "linux", target_vendor = "apple")))]
 #![feature(unboxed_closures)]
 
 mod common;

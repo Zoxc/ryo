@@ -4,7 +4,7 @@
 //! mode, that every function it compiled went through the tier ([`ryo_jit::ssa_stats`]; a
 //! separate test binary, so that the counters are this file's alone).
 
-#![cfg(all(target_arch = "x86_64", target_os = "linux"))]
+#![cfg(all(target_arch = "x86_64", any(target_os = "linux", target_vendor = "apple")))]
 
 #[path = "../../rt/tests/common/mod.rs"]
 mod common;

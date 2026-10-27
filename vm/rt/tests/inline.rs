@@ -3,7 +3,7 @@
 //! holding the same arguments and memory. The handlers are checked against a model in
 //! `ops.rs`.
 
-#![cfg(all(target_arch = "x86_64", target_os = "linux"))]
+#![cfg(all(target_arch = "x86_64", any(target_os = "linux", target_vendor = "apple")))]
 
 mod common;
 use common::*;

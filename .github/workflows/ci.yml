@@ -36,7 +36,9 @@ jobs:
   # x86_64 macOS (design/platforms.md). `macos-15-intel` is GitHub's Intel image, so the
   # toolchain, the backend and the JIT run natively; Rosetta on an arm64 runner would also test
   # the translator, but would need an x86_64 toolchain under `arch -x86_64`. Needs the backend's
-  # Mach-O output. The JIT runs from every function's first call, and also entered by OSR.
+  # Mach-O output. `y test` includes the `vm/` workspace's tests (the in-memory VM and JIT tests
+  # run on Linux and macOS hosts). The JIT runs from every function's first call, and also
+  # entered by OSR.
   macos:
     runs-on: macos-15-intel
     steps:

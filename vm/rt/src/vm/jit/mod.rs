@@ -542,11 +542,17 @@ extern "sysv64-unwind" fn osr_trip(rec: *mut JitRecord) -> *const u8 {
     ptr::null()
 }
 
-/// What both trips do: queues the record if it is cold, and biases its counters as its
+/// What both trips do: registers the record's image if its link unit's registry constructor
+/// hasn't run yet ([`super::registry::ensure`]), queues the record if it is cold, and biases its counters as its
 /// state says ([`settle`]): away from the trigger while it is queued, failed or without a
 /// JIT, towards every check's stub once it is compiled. With [`Config::sync`], waits for a
 /// queued record to be compiled. Returns the record's state.
 fn trip(rec: *mut JitRecord) -> u32 {
+    // Before anything else: registration sets the image's counters (`registered`), which must
+    // not undo what the trip does to them.
+    // SAFETY: the writer sets `header` to the record's image's header, linked and mapped
+    // forever.
+    unsafe { super::registry::ensure((*rec).header.cast()) };
     let cfg = config();
     if !cfg.enabled || DISABLED.load(Relaxed) {
         for c in [JitRecord::ctr_e(rec), JitRecord::ctr_l(rec)] {

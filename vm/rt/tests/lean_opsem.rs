@@ -8,7 +8,7 @@
 //! Skipped (with a message) without the `ryo-lean` binary: `RYO_LEAN`, else
 //! `lean/.lake/build/bin/ryo-lean` (`cd lean && lake build`).
 
-#![cfg(all(target_arch = "x86_64", target_os = "linux"))]
+#![cfg(all(target_arch = "x86_64", any(target_os = "linux", target_vendor = "apple")))]
 
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};

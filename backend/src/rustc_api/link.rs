@@ -82,7 +82,8 @@ pub fn link(
             fs::write(&path, bytes).unwrap_or_else(|e| sess.dcx().fatal(format!("writing {}: {e}", path.display())));
             // Mach-O has no constructor priorities: ld64 and lld lay out `__mod_init_func` in
             // input order and dyld runs it in that order, so the registry object goes first,
-            // ahead of the crate's own objects and every rlib (design/platforms.md).
+            // ahead of the crate's own objects and every rlib (design/platforms.md). Objects ahead of
+            // rustc's can still come first; for them the JIT's trips register lazily.
             if info.macho {
                 these.modules.insert(0, object_module(name, path));
             } else {

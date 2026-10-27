@@ -71,6 +71,26 @@ pub unsafe fn register(start: *const *const u8, end: *const *const u8) {
     SNAPSHOT.store(snap, Ordering::Release);
 }
 
+/// Registers the image with header `h` if it isn't yet: the lazy path of registration, for
+/// VM code that runs before its link unit's registry constructor. On Mach-O, which has no
+/// constructor priorities, a constructor that the linker places ahead of the registry's (a C
+/// object's, a staticlib member's, a `-Wl` object's) may enter the VM (design/platforms.md).
+/// Such code runs as AOT code without registration, as nothing it executes reads the registry
+/// (Mach-O images have no fixups); what needs it is the JIT, so its trips call this first
+/// (a cold path). The constructor still registers the rest of the link unit, skipping `h`.
+///
+/// # Safety
+/// As for `ryo_vm_register`, for `h` (a JIT record's `header`).
+#[cfg_attr(not(feature = "jit"), allow(dead_code))]
+pub unsafe fn ensure(h: *const u8) {
+    if snapshot().is_some_and(|s| s.images().iter().any(|im| ptr::eq(im.header(), h.cast()))) {
+        return;
+    }
+    let entry = [h];
+    // SAFETY: per the caller; `register` skips the image if another thread just registered it.
+    unsafe { register(entry.as_ptr(), entry.as_ptr().wrapping_add(1)) }
+}
+
 /// The admission checks for header `h` against the images already registered (`existing`):
 /// `None` to skip it (a null entry, or an image registered before); aborts on an invalid,
 /// duplicate or unlinked image. Applies the image's fixups.

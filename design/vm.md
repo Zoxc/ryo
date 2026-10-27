@@ -867,6 +867,11 @@ calls it by name, local otherwise (backtraces, profilers) ([backend.md](backend.
   freed. The snapshot holds the images sorted by crate hash, then CGU hash. Images are never unregistered:
   unloading a shared object that contains ryo code (`dlclose`/`FreeLibrary`) is not
   supported, because frames and fn pointers may still point into it.
+  The JIT's trips also register their record's image if it isn't yet (`registry::ensure`,
+  in the trip, off the hot path): VM code can run before its link unit's constructor where
+  constructor order follows link order (Mach-O, [platforms.md](platforms.md#mach-o-x86_64-apple-darwin)),
+  and only the JIT needs the registry there (the image's thresholds, `image_at`; Mach-O
+  images have no fixups).
   It does no other work, so startup is O(number of images): it only parses headers
   (`Image::parse`, O(1)), and runs `Image::validate` only for images with PE fixups, which
   `apply_fixups` requires. Nothing looks functions up at run time: calls go to symbols.

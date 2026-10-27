@@ -4,7 +4,7 @@
 //! the AOT code's, with arguments of every kind, through recursion that switches over midway,
 //! unwinding with landing pads, calls between JIT and AOT functions, and many threads.
 
-#![cfg(all(target_arch = "x86_64", target_os = "linux"))]
+#![cfg(all(target_arch = "x86_64", any(target_os = "linux", target_vendor = "apple")))]
 #![feature(unboxed_closures)]
 
 #[path = "../../rt/tests/common/mod.rs"]
@@ -149,6 +149,39 @@ fn arguments_and_results() {
         assert_eq!(ok::<_, [u64; 3]>(img.id(triple), (5u64,)), [5, 6, 7]);
         assert_eq!(state(&img, triple), JIT_DONE);
     }
+}
+
+/// VM code that runs before its link unit's registry constructor (on Mach-O, a constructor the
+/// linker placed first, design/platforms.md) works: AOT code needs no registration, and the
+/// first trip registers the image itself, so the JIT compiles it with the configured
+/// thresholds. The constructor's registration afterwards skips the image.
+#[test]
+fn trip_registers_an_unregistered_image() {
+    init();
+    let mut w = ImageWriter::new(unique_scid());
+    let s_ret = w.symbol("ret_addr", 0);
+    // where(x) = where it runs, plus x.
+    let mut a = Asm::new();
+    a.i(Insn::CallSym { d: Slot(-8), sym: s_ret, k: 8, a: List::from_words(&[]) });
+    a.i(Insn::AddW64 { d: Slot(-8), a: Slot(-8), b: Slot(16) });
+    a.ret(Slot(-8), 8);
+    let f = w.add_function(func(a.done(), 16, 8, 8));
+    let other = add_leaf(&mut w, s_ret);
+    let img = assemble(w, &syms());
+    // The writer's thresholds: the first call doesn't trip, so it runs AOT code unregistered.
+    let at = ok::<_, u64>(img.id(f), (0u64,));
+    assert!(in_aot(&img, f, at), "the first call ran at {at:#x}");
+    assert_eq!(state(&img, f), JIT_COLD);
+    // Its next call trips, which registers the image (thresholds 0) and compiles it.
+    img.set_counters(f, -1, -1);
+    let at = ok::<_, u64>(img.id(f), (0u64,));
+    assert!(in_jit(&img, f, at), "the tripping call ran at {at:#x}");
+    assert_eq!(state(&img, f), JIT_DONE);
+    // Registration set the image's other counters to the thresholds (0).
+    assert_eq!(img.counters(other), (0, 0));
+    register(&[&img]);
+    let at = ok::<_, u64>(img.id(f), (0u64,));
+    assert!(in_jit(&img, f, at), "after the late registration, a call ran at {at:#x}");
 }
 
 /// A recursion that starts in AOT code switches over at the call that trips: the frames

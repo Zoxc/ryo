@@ -44,7 +44,7 @@ pub fn ssa_stats() -> (usize, usize) {
 }
 
 /// How many calls through a constant pointer the SSA tier made direct in its roots (tests).
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(any(target_os = "linux", target_vendor = "apple"), target_arch = "x86_64"))]
 #[doc(hidden)]
 pub fn ssa_devirt() -> usize {
     install::SSA_DEVIRT.load(core::sync::atomic::Ordering::Relaxed)
