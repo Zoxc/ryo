@@ -284,7 +284,7 @@ fn ratio_chart(r: &Report, m: &Metric, data: &[Vec<Option<Summary>>]) -> String 
     }
     for (ci, row) in data.iter().enumerate() {
         let gy = 24.0 + ci as f64 * group_h;
-        let name = r.crates[ci].krate.name;
+        let name = r.crates[ci].krate.name();
         let _ = write!(s, r#"<text x="0" y="{:.1}">{name}</text>"#, gy + nb * row_h / 2.0 + 4.0);
         let base = row[llvm].as_ref().filter(|s| s.median > 0.0);
         for (bi, cell) in row.iter().enumerate() {
@@ -339,7 +339,7 @@ fn breakdown_chart(r: &Report) -> String {
                 .map(|(a, b)| Step { wall: a.wall + b.wall, units: a.units.iter().chain(&b.units).cloned().collect() })
                 .collect();
             let parts = [med(&all, &|t| t.frontend), med(&all, &|t| t.backend), med(&all, &|t| t.link), med(&all, &|t| t.other)];
-            rows.push((format!("{} · {}", c.krate.name, r.backends[bi].name()), bi, parts));
+            rows.push((format!("{} · {}", c.krate.name(), r.backends[bi].name()), bi, parts));
         }
     }
     let max = rows.iter().map(|r| r.2.iter().sum::<f64>()).fold(0.0, f64::max).max(1e-9);
@@ -400,7 +400,7 @@ fn metric_table(r: &Report, m: &Metric, data: &[Vec<Option<Summary>>]) -> String
     s.push_str("</tr>");
     for (ci, row) in data.iter().enumerate() {
         let c = &r.crates[ci];
-        let _ = write!(s, "<tr><td>{}</td>", c.krate.name);
+        let _ = write!(s, "<tr><td>{}</td>", c.krate.name());
         for (bi, cell) in row.iter().enumerate() {
             let state = cell_state(&c.cells[bi], m.phase);
             match cell {
@@ -467,7 +467,7 @@ fn coverage_section(r: &Report) -> String {
     for c in &r.crates {
         let cell = &c.cells[ryo];
         let Some(super::BuildSteps { lib: build, tests }) = &cell.warmup else {
-            let _ = write!(s, "<tr><td>{}</td><td colspan=5 class=\"bad\">no data</td></tr>", c.krate.name);
+            let _ = write!(s, "<tr><td>{}</td><td colspan=5 class=\"bad\">no data</td></tr>", c.krate.name());
             continue;
         };
         let leaf: Vec<&Unit> = build.units.iter().filter(|u| u.primary).collect();
@@ -476,7 +476,7 @@ fn coverage_section(r: &Report) -> String {
         all.extend(build.units.iter().chain(&tests.units));
         for (what, units) in [("library", &leaf), ("dependencies", &deps), ("test targets", &test)] {
             let cov = coverage(units.iter().copied());
-            s.push_str(&coverage_row(&format!("{} {what}", c.krate.name), units.len(), &cov));
+            s.push_str(&coverage_row(&format!("{} {what}", c.krate.name()), units.len(), &cov));
         }
     }
     s.push_str("</table>");
@@ -518,7 +518,7 @@ fn unit_details(r: &Report) -> String {
                 }
             }
         }
-        let _ = write!(s, "<details><summary>{} ({} units)</summary><table><tr><th>unit</th><th>step</th>", c.krate.name, keys.len());
+        let _ = write!(s, "<details><summary>{} ({} units)</summary><table><tr><th>unit</th><th>step</th>", c.krate.name(), keys.len());
         for b in &r.backends {
             let _ = write!(s, "<th>{}</th>", b.name());
         }
@@ -562,7 +562,7 @@ fn tests_section(r: &Report) -> String {
     s.push_str("</tr>");
     let mut problems = String::new();
     for c in &r.crates {
-        let _ = write!(s, "<tr><td>{} {}</td>", c.krate.name, c.krate.version);
+        let _ = write!(s, "<tr><td>{} {}</td>", c.krate.name(), c.krate.version());
         for (bi, cell) in c.cells.iter().enumerate() {
             match &cell.tests {
                 Some(t) => {
@@ -576,7 +576,7 @@ fn tests_section(r: &Report) -> String {
                 None => s.push_str("<td class=\"bad\">not run</td>"),
             }
             for e in &cell.errors {
-                let _ = write!(problems, "<li><b>{} [{}]</b>: <pre>{}</pre></li>", c.krate.name, r.backends[bi].name(), esc(&e.to_string()));
+                let _ = write!(problems, "<li><b>{} [{}]</b>: <pre>{}</pre></li>", c.krate.name(), r.backends[bi].name(), esc(&e.to_string()));
             }
         }
         s.push_str("</tr>");
@@ -601,8 +601,9 @@ pub fn render(r: &Report) -> String {
     let _ = write!(s, "<tr><td>bench time</td><td>{:.1} min</td></tr></table>", r.total_time / 60.0);
     s.push_str("<h2>Crates</h2><table><tr><th>crate</th><th>version</th><th>why</th></tr>");
     for c in &r.crates {
-        let args = if c.krate.test_args.is_empty() { String::new() } else { format!(" (test binaries run with `{}`)", c.krate.test_args.join(" ")) };
-        let _ = write!(s, "<tr><td>{}</td><td>{}</td><td>{}{}</td></tr>", c.krate.name, c.krate.version, esc(c.krate.why), esc(&args));
+        let args =
+            if c.krate.test_args().is_empty() { String::new() } else { format!(" (test binaries run with `{}`)", c.krate.test_args().join(" ")) };
+        let _ = write!(s, "<tr><td>{}</td><td>{}</td><td>{}{}</td></tr>", c.krate.name(), c.krate.version(), esc(&c.krate.why()), esc(&args));
     }
     s.push_str("</table><p class=\"legend\">");
     for (i, b) in r.backends.iter().enumerate() {
@@ -637,7 +638,7 @@ pub fn text_summary(r: &Report) -> String {
         let data = metric_data(r, m);
         let mut lines: Vec<Vec<String>> = vec![std::iter::once("crate".to_owned()).chain(r.backends.iter().map(|b| b.name().to_owned())).collect()];
         for (ci, row) in data.iter().enumerate() {
-            let mut line = vec![r.crates[ci].krate.name.to_owned()];
+            let mut line = vec![r.crates[ci].krate.name().to_owned()];
             for (bi, cell) in row.iter().enumerate() {
                 let bad = cell_state(&r.crates[ci].cells[bi], m.phase).is_some();
                 line.push(match cell {
@@ -661,7 +662,7 @@ pub fn text_summary(r: &Report) -> String {
             for e in &cell.errors {
                 let e = e.to_string();
                 let first = e.lines().take(3).collect::<Vec<_>>().join(" | ");
-                let _ = writeln!(out, "FAILURE {} [{}]: {first}", c.krate.name, r.backends[bi].name());
+                let _ = writeln!(out, "FAILURE {} [{}]: {first}", c.krate.name(), r.backends[bi].name());
             }
         }
     }
@@ -671,7 +672,7 @@ pub fn text_summary(r: &Report) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crates::{BuildSteps, CRATES, CellError, CrateResult, TestOutcome};
+    use crate::crates::{BuildSteps, CRATES, CellError, CrateResult, Target, TestOutcome};
 
     fn step(wall: f64) -> Step {
         let u = |name: &str, primary| Unit {
@@ -709,7 +710,7 @@ mod tests {
         };
         let r = Report {
             backends: vec![Backend::Llvm, Backend::Clif, Backend::Ryo],
-            crates: vec![CrateResult { krate: &CRATES[0], cells: vec![cell(1.0, false), cell(0.5, false), cell(3.0, true)] }],
+            crates: vec![CrateResult { krate: Target::Registry(&CRATES[0]), cells: vec![cell(1.0, false), cell(0.5, false), cell(3.0, true)] }],
             header: vec![("date".into(), "today <now>".into())],
             total_time: 60.0,
         };
