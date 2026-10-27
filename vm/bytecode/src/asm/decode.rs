@@ -97,6 +97,14 @@ struct Read {
     scopes: Vec<(usize, Scope)>,
     /// The loop heads' instruction indices, in order.
     heads: Vec<usize>,
+    /// Each instruction's byte position, in order.
+    ipos: Vec<u32>,
+}
+
+/// The index of the instruction at byte position `b` of `ipos` ([`Read::ipos`]), for a
+/// target of the instruction at `at`.
+fn insn_index(ipos: &[u32], at: u32, b: u32) -> Result<usize, AsmError> {
+    ipos.binary_search(&b).map_err(|_| AsmError { at, what: "target isn't an instruction" })
 }
 
 /// Decodes one function's machine code, with its relocations (sorted), rodata, call sites and
@@ -110,11 +118,8 @@ pub fn decode(
     scopes: &[Scope],
     mode: Mode,
 ) -> Result<Decoded, AsmError> {
-    let Read { protos, frame_size, actions, scopes, heads } =
+    let Read { protos, frame_size, actions, scopes, heads, ipos } =
         read(code, Fields::Relocs(relocs), rodata, call_sites, dropped, scopes, None, mode, false)?;
-    let err = |at: u32, what: &'static str| AsmError { at, what };
-    let ipos: Vec<u32> = protos.iter().map(|p| p.pos).collect();
-    let index = |at: u32, b: u32| ipos.binary_search(&b).map_err(|_| err(at, "target isn't an instruction"));
     let mut wpos = Vec::with_capacity(protos.len());
     let mut w = 0u32;
     for p in &protos {
@@ -135,7 +140,7 @@ pub fn decode(
         let ops = p
             .ops
             .iter()
-            .map(|o| o.clone().map_targets(|b| Ok::<_, AsmError>(wpos[index(p.pos, b)?].wrapping_sub(wpos[i]))))
+            .map(|o| o.clone().map_targets(|b| Ok::<_, AsmError>(wpos[insn_index(&ipos, p.pos, b)?].wrapping_sub(wpos[i]))))
             .collect::<Result<Vec<_>, _>>()?;
         push_words(p.op, &ops, &mut words);
     }
@@ -213,9 +218,8 @@ pub fn decode_linked(
 
 /// The reduced instruction words of a function read with handler calls in the reduced form.
 fn reduced_of(r: Read) -> Result<Decoded, AsmError> {
-    let Read { protos, frame_size, actions, scopes, heads } = r;
-    let ipos: Vec<u32> = protos.iter().map(|p| p.pos).collect();
-    let index = |at: u32, b: u32| ipos.binary_search(&b).map(|i| i as u32).map_err(|_| AsmError { at, what: "target isn't an instruction" });
+    let Read { protos, frame_size, actions, scopes, heads, ipos } = r;
+    let index = |at: u32, b: u32| insn_index(&ipos, at, b).map(|i| i as u32);
     let cleanup: Vec<_> = actions.iter().enumerate().filter_map(|(i, a)| a.map(|(pad, catch)| (i, pad, catch))).collect();
     let dropped: Vec<usize> = protos.iter().enumerate().filter(|(_, p)| p.dropped).map(|(i, _)| i).collect();
     let mut insns = Vec::with_capacity(protos.len());
@@ -336,7 +340,7 @@ fn read(
 
     // Instruction positions → indices.
     let ipos: Vec<u32> = protos.iter().map(|p| p.pos).collect();
-    let index = |at: u32, b: u32| ipos.binary_search(&b).map_err(|_| err(at, "target isn't an instruction"));
+    let index = |at: u32, b: u32| insn_index(&ipos, at, b);
     // When aligning, loop heads start at multiples of 16, and only they are padded. Only
     // single branch targets make loop heads, not jump tables.
     let mut head = vec![false; protos.len()];
@@ -438,7 +442,7 @@ fn read(
     }
     // Scopes: before the first instruction at or after their position.
     let scopes = scopes.iter().map(|sc| (ipos.partition_point(|&p| p < sc.code_offset), *sc)).collect();
-    Ok(Read { protos, frame_size, actions, scopes, heads })
+    Ok(Read { protos, frame_size, actions, scopes, heads, ipos })
 }
 
 fn read_u32(ro: &[u8], at: u32) -> Option<u32> {
