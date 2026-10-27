@@ -107,4 +107,63 @@ impl Jit {
         }
         None
     }
+
+    /// Takes `size` bytes of code memory and `eh_size` of unwind information from `place`'s
+    /// region, and the call slots of the callees of `ext` that `relocs` call: the code's and the
+    /// information's addresses, and each callee's slot (0 for none). Retires the region if they
+    /// don't fit ([`CompileError::Retry`]).
+    pub(super) fn alloc(
+        &mut self,
+        place: Place,
+        ext: &[Ext],
+        relocs: &[asm::Reloc],
+        size: usize,
+        eh_size: usize,
+    ) -> Result<(usize, usize, Vec<usize>), CompileError> {
+        // The callees the code calls: the inliner may have given call forms to calls it then
+        // inlined, or of callees it explored only.
+        let mut used = std::vec![false; ext.len()];
+        for r in relocs {
+            if let Ref::Func(Func(g)) = r.to
+                && g & FUNC_KINDS != 0
+                && let Some(u) = used.get_mut((g & !FUNC_KINDS) as usize)
+            {
+                *u = true;
+            }
+        }
+        let new_slots = ext
+            .iter()
+            .zip(&used)
+            .filter_map(|(e, &u)| e.vm.filter(|_| u))
+            .filter(|&(hd, g)| !self.slots.contains_key(&(place.region, hd, g)))
+            .count();
+        let region = &mut self.regions[place.region];
+        debug_assert!(!region.retired, "a place is of a region in use");
+        if region.code + size + eh_size + 8 * new_slots > region.data {
+            // Full: retire it, and compile again for another.
+            region.retired = true;
+            return Err(CompileError::Retry);
+        }
+        let base = region.code;
+        region.code += size;
+        region.data -= eh_size;
+        let eh_base = region.data;
+        // The call slots, from the region's end too: the callee's JIT code if it was compiled
+        // meanwhile (publication is this thread's), else its AOT entry.
+        let mut slot_of = std::vec![0; ext.len()];
+        for (k, e) in ext.iter().enumerate() {
+            let Some((hd, g)) = e.vm.filter(|_| used[k]) else { continue };
+            slot_of[k] = *self.slots.entry((place.region, hd, g)).or_insert_with(|| {
+                region.data -= 8;
+                debug_assert!(region.data % 8 == 0, "call slots are 8-aligned (atomic stores)");
+                // `Ext::vm` names a registered image's function with a record.
+                let (callees::Target::Jit(target) | callees::Target::Aot(target)) = callees::vm_target(hd, g);
+                // SAFETY: the region's read-write end, which nothing else uses.
+                unsafe { (region.data as *mut usize).write(target) };
+                self.slots_of.entry((hd, g)).or_default().push(region.data);
+                region.data
+            });
+        }
+        Ok((base, eh_base, slot_of))
+    }
 }

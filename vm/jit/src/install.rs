@@ -287,11 +287,11 @@ impl Jit {
             // The AOT layout's words (the SSA tier lays out its own frame); the calls are
             // retargeted as above after inlining, by the same rules.
             if let Some((out, ssa_ext)) = self.compile_ssa(rec, func, &img, &d, mode, shuffled, place)? {
-                return self.install(rec, func, &img, place, personality, &ssa_ext, out, Tier::Ssa);
+                return self.install(&Install { rec, func, img: &img, place, personality, ext: &ssa_ext, tier: Tier::Ssa }, out);
             }
         }
         let out = compile_reencode(&d, &words, &map, &img, mode)?;
-        self.install(rec, func, &img, place, personality, &ext, out, Tier::Reencode)
+        self.install(&Install { rec, func, img: &img, place, personality, ext: &ext, tier: Tier::Reencode }, out)
     }
 
     /// Compiles `d`, the function `func` of `img` (record `rec`), for `place` through the SSA
@@ -374,23 +374,10 @@ impl Jit {
         }
     }
 
-    /// Installs the code `out` of the function `func` of `img` (record `rec`), compiled for
-    /// the region `place` with the callees `ext`: code memory, relocation, unwind
+    /// Installs the code `out` of `cx`'s function: code memory, relocation, unwind
     /// information, the perf map and the publication.
-    #[allow(clippy::too_many_arguments)]
-    fn install(
-        &mut self,
-        rec: *mut JitRecord,
-        func: u32,
-        img: &Image<'_>,
-        place: Place,
-        personality: usize,
-        ext: &[Ext],
-        out: Gen,
-        tier: Tier,
-    ) -> Result<(), CompileError> {
-        let h = img.header();
-        let mode = jit_mode(img, place.far_rt);
+    fn install(&mut self, cx: &Install<'_>, out: Gen) -> Result<(), CompileError> {
+        let mode = jit_mode(cx.img, cx.place.far_rt);
         let Gen { code: enc_code, mut relocs, rodata, call_sites, body, osr, osr_at, region } = out;
         let code_len = enc_code.len();
         // The OSR code's stack probes, relocated as the body's.
@@ -398,165 +385,59 @@ impl Jit {
             relocs.extend(o.probes.iter().map(|&p| asm::Reloc { at: (osr_at + p as usize) as u32, to: Ref::Probe }));
         }
         let osr_len = osr.as_ref().map_or(0, |o| o.code.len());
-
-        // Unwind information. ELF: the CIE, the FDE, the OSR code's FDE, the terminator, then
-        // the LSDA. PE: the `RUNTIME_FUNCTION`s, then their `UNWIND_INFO`s: the body's
-        // (`pe_unwind_info`, the AOT code's form, or the SSA tier's own, from the same encoder,
-        // `pe_unwind_codes`), over the OSR code too unless a pad region lies between: past the
-        // prologue every `rsp` is described by `rbp`, the OSR code's included, which keeps the
-        // AOT frame's `rbp`; the pad region's; and if apart, the OSR
-        // code's (the body's, all of it past the prologue). The body's and the region's name
-        // `ryo_seh_handler` through a thunk after the code, with the LSDA as their handler
-        // data (design/jit.md, "Unwinding and profiling"). `pe_rfs`: the entries' ranges in
-        // the code and their `UNWIND_INFO`s' offsets in `eh`; `pe_handlers`: the handler RVA
-        // fields.
-        let mut eh = Vec::new();
-        let mut fdes = Vec::new();
-        let (mut pers_field, mut fields, mut osr_fields, mut lsda_at) = (0, None, None, 0);
-        let mut pe_rfs: Vec<(usize, usize, usize)> = Vec::new();
-        let mut pe_handlers = Vec::new();
-        if mode.pe {
-            let info = match &body {
-                Body::Aot(ef) => {
-                    if ef.prologue != 0 || ef.entry_stub as usize != region {
-                        return Err("PE code with a counter check".into());
-                    }
-                    pe_unwind_info(ef, mode)
-                }
-                Body::Pe(info) => info.clone(),
-                Body::Rows(_) => return Err("DWARF rows on PE".into()),
-            };
-            let lsda = asm::lsda::write(&call_sites);
-            let has_region = region < code_len;
-            let r = if has_region { region as u32 } else { 0 };
-            eh.resize(12 * (1 + usize::from(has_region) * (1 + usize::from(osr.is_some()))), 0);
-            let mut add = |eh: &mut Vec<u8>, range: (usize, usize), info: &[u8], data: Option<Vec<u8>>| {
-                let at = eh.len();
-                match data {
-                    Some(d) => {
-                        let (bytes, field) = pe_with_handler(info, &d);
-                        pe_handlers.push(at + field);
-                        eh.extend_from_slice(&bytes);
-                    }
-                    None => eh.extend_from_slice(info),
-                }
-                pe_rfs.push((range.0, range.1, at));
-            };
-            let body_end = if has_region {
-                region
-            } else if osr.is_some() {
-                osr_at + osr_len
-            } else {
-                code_len
-            };
-            add(&mut eh, (0, body_end), &info, Some(pe_handler_data(0, r, &lsda)));
-            if has_region {
-                add(&mut eh, (region, code_len), &pe_region_unwind_info(), Some(pe_handler_data(r, r, &lsda)));
-                if osr.is_some() {
-                    // Never in its prologue: the codes apply from its first byte.
-                    let mut past = info.clone();
-                    past[1] = 0;
-                    add(&mut eh, (osr_at, osr_at + osr_len), &past, None);
-                }
-            }
-        } else {
-            pers_field = eh_cie(&mut eh);
-            fdes.push(eh.len());
-            fields = Some(match &body {
-                Body::Aot(ef) => eh_fde(&mut eh, 0, ef, mode),
-                Body::Rows(rows) => eh_fde_rows(&mut eh, 0, code_len as u32, rows),
-                Body::Pe(_) => return Err("PE unwind info off PE".into()),
-            });
-            if osr.is_some() {
-                fdes.push(eh.len());
-            }
-            osr_fields = osr.as_ref().map(|o| eh_fde_rows(&mut eh, 0, o.code.len() as u32, &o.cfi));
-            eh.extend_from_slice(&[0; 4]);
-            lsda_at = eh.len();
-            eh.extend_from_slice(&asm::lsda::write(&call_sites));
-        }
+        let mut eh = Eh::build(&body, osr.as_ref(), osr_at, &call_sites, code_len, region, mode)?;
 
         // Code memory: the entry prefix, the code, the OSR code, on PE the handler's thunk
         // (`jmp [rip]; .quad ryo_seh_handler`), then its code constants.
         let thunk_at = (CODE_AT + osr_at + osr_len).next_multiple_of(16);
         let ro_at = if mode.pe { thunk_at + 16 } else { thunk_at };
         let size = (ro_at + rodata.len()).next_multiple_of(PAGE);
-        let eh_size = eh.len().next_multiple_of(16);
+        let eh_size = eh.bytes.len().next_multiple_of(16);
         if size + eh_size > REGION / 2 {
             return Err("too large".into());
         }
-        let header = h as *const _ as usize;
-        // The callees the code calls: the inliner may have given call forms to calls it then
-        // inlined, or of callees it explored only.
-        let mut used = std::vec![false; ext.len()];
-        for r in &relocs {
-            if let Ref::Func(Func(g)) = r.to
-                && g & FUNC_KINDS != 0
-                && let Some(u) = used.get_mut((g & !FUNC_KINDS) as usize)
-            {
-                *u = true;
-            }
-        }
-        let new_slots = ext
-            .iter()
-            .zip(&used)
-            .filter_map(|(e, &u)| e.vm.filter(|_| u))
-            .filter(|&(hd, g)| !self.slots.contains_key(&(place.region, hd, g)))
-            .count();
-        let region = &mut self.regions[place.region];
-        debug_assert!(!region.retired, "a place is of a region in use");
-        if region.code + size + eh_size + 8 * new_slots > region.data {
-            // Full: retire it, and compile again for another.
-            region.retired = true;
-            return Err(CompileError::Retry);
-        }
-        let base = region.code;
-        region.code += size;
-        region.data -= eh_size;
-        let eh_base = region.data;
-        // The call slots, from the region's end too: the callee's JIT code if it was compiled
-        // meanwhile (publication is this thread's), else its AOT entry.
-        let mut slot_of = std::vec![0; ext.len()];
-        for (k, e) in ext.iter().enumerate() {
-            let Some((hd, g)) = e.vm.filter(|_| used[k]) else { continue };
-            slot_of[k] = *self.slots.entry((place.region, hd, g)).or_insert_with(|| {
-                region.data -= 8;
-                debug_assert!(region.data % 8 == 0, "call slots are 8-aligned (atomic stores)");
-                // `Ext::vm` names a registered image's function with a record.
-                let (callees::Target::Jit(target) | callees::Target::Aot(target)) = callees::vm_target(hd, g);
-                // SAFETY: the region's read-write end, which nothing else uses.
-                unsafe { (region.data as *mut usize).write(target) };
-                self.slots_of.entry((hd, g)).or_default().push(region.data);
-                region.data
-            });
-        }
-
-        let mut code = std::vec![0xccu8; size];
-        // `lea r11, [rip + code]; mov [rsp], r11; ret` (JIT_ENTRY_PREFIX).
-        let lea = (JIT_ENTRY_PREFIX - 7) as i32;
-        let mut prefix = std::vec![0x4c, 0x8d, 0x1d];
-        prefix.extend(lea.to_le_bytes());
-        prefix.extend([0x4c, 0x89, 0x1c, 0x24, 0xc3]);
-        code[CODE_LEN_AT..][..4].copy_from_slice(&(code_len as u32).to_le_bytes());
-        code[CODE_AT - JIT_ENTRY_PREFIX..CODE_AT].copy_from_slice(&prefix);
-        code[CODE_AT..][..code_len].copy_from_slice(&enc_code);
-        if let Some(o) = &osr {
-            code[CODE_AT + osr_at..][..o.code.len()].copy_from_slice(&o.code);
-        }
-        code[ro_at..][..rodata.len()].copy_from_slice(&rodata);
+        let (base, eh_base, slot_of) = self.alloc(cx.place, cx.ext, &relocs, size, eh_size)?;
+        let mut code = assemble(&enc_code, osr.as_ref().map(|o| (osr_at, &o.code[..])), &rodata, size, ro_at);
         let jit_f = base + CODE_AT;
-        let fs = img.functions();
+        self.relocate(cx, &mut code, base, ro_at, &relocs, &slot_of)?;
+        if let Some(dir) = &self.dump {
+            let header = cx.img.header() as *const _ as usize;
+            self.dump_code(dir, cx.func, header, cx.ext, &enc_code, &relocs, osr.as_ref().map(|o| (osr_at, o)), cx.tier);
+        }
+        eh.patch(eh_base, cx.personality, jit_f, osr.is_some().then_some(osr_at), base, base + thunk_at)?;
+        if mode.pe {
+            code[thunk_at..][..6].copy_from_slice(&[0xff, 0x25, 0, 0, 0, 0]);
+            code[thunk_at + 6..][..8].copy_from_slice(&(self.rt.seh_handler as u64).to_le_bytes());
+        }
+        map_and_register(&code, &eh, base, eh_base, mode)?;
+        self.publish(cx, jit_f, osr.is_some().then(|| jit_f + osr_at), code_len);
+        Ok(())
+    }
+
+    /// Patches the fields `relocs` of `code`, to be at `base`, with its code constants at
+    /// `ro_at` and the call slots `slot_of` of `cx.ext`.
+    fn relocate(
+        &self,
+        cx: &Install<'_>,
+        code: &mut [u8],
+        base: usize,
+        ro_at: usize,
+        relocs: &[asm::Reloc],
+        slot_of: &[usize],
+    ) -> Result<(), CompileError> {
+        let jit_f = base + CODE_AT;
+        let rec = cx.rec as usize;
         // The handlers of the image's form: PE code's own set if the runtime has one.
-        let (hs, rhs) = match (img.mode().pe, self.rt.pe_handlers.is_null()) {
+        let (hs, rhs) = match (cx.img.mode().pe, self.rt.pe_handlers.is_null()) {
             // SAFETY: the runtime's tables, non-null.
             (true, false) => unsafe { (&*self.rt.pe_handlers, &*self.rt.pe_reg_handlers) },
             _ => (&self.rt.handlers, &self.rt.reg_handlers),
         };
-        for r in &relocs {
+        for r in relocs {
             let field = jit_f + r.at as usize;
             // Fields of 8 bytes: an `imm64` of a call through `r11`.
             let abs = match r.to {
-                Ref::Handler(_) | Ref::RegHandler(_) | Ref::Probe => place.far_rt,
+                Ref::Handler(_) | Ref::RegHandler(_) | Ref::Probe => cx.place.far_rt,
                 Ref::Func(Func(g)) => g & FUNC_KINDS == FUNC_FAR,
                 _ => false,
             };
@@ -564,17 +445,17 @@ impl Jit {
                 Ref::Handler(op) => Some(hs[op as usize]).filter(|h| !h.is_null()).ok_or("no handler")? as usize,
                 Ref::RegHandler(op) => Some(rhs[op as usize]).filter(|h| !h.is_null()).ok_or("no register entry")? as usize,
                 Ref::Probe => self.rt.probe as usize,
-                Ref::Func(Func(g)) if g == func => jit_f,
+                Ref::Func(Func(g)) if g == cx.func => jit_f,
                 Ref::Func(Func(g)) if g & FUNC_KINDS != 0 => {
                     let k = (g & !FUNC_KINDS) as usize;
-                    if g & FUNC_KINDS == FUNC_SLOT { slot_of[k] } else { ext[k].addr }
+                    if g & FUNC_KINDS == FUNC_SLOT { slot_of[k] } else { cx.ext[k].addr }
                 }
                 // Every other call was retargeted.
                 Ref::Func(_) => return Err("an unexpected call".into()),
-                Ref::Sym(_) | Ref::Site(_) | Ref::Const(_) | Ref::Data(_) => image_ref_addr(img, r.to).ok_or("no such symbol")?,
+                Ref::Sym(_) | Ref::Site(_) | Ref::Const(_) | Ref::Data(_) => image_ref_addr(cx.img, r.to).ok_or("no such symbol")?,
                 Ref::Ro(o) => base + ro_at + o as usize,
-                Ref::Rec => rec as usize,
-                Ref::RecLoopCtr => rec as usize + ryo_bytecode::image::JIT_LOOP_CTR as usize,
+                Ref::Rec => rec,
+                Ref::RecLoopCtr => rec + ryo_bytecode::image::JIT_LOOP_CTR as usize,
             };
             if abs {
                 code[field - base..][..8].copy_from_slice(&(target as u64).to_le_bytes());
@@ -582,76 +463,31 @@ impl Jit {
                 patch_rel32(&mut code[field - base..], field + 4, target)?;
             }
         }
-        if let Some(dir) = &self.dump {
-            self.dump_code(dir, func, header, ext, &enc_code, &relocs, osr.as_ref().map(|o| (osr_at, o)), tier);
-        }
-        // `.eh_frame`'s PC-relative fields: relative to the field itself.
-        let pc = |eh: &mut Vec<u8>, at: usize, target: usize| patch_rel32(&mut eh[at..], eh_base + at, target);
-        if let Some(fields) = fields {
-            pc(&mut eh, pers_field, personality)?;
-            pc(&mut eh, fields.pc_begin, jit_f)?;
-            pc(&mut eh, fields.lsda, eh_base + lsda_at)?;
-        }
-        if let Some(f) = osr_fields {
-            pc(&mut eh, f.pc_begin, jit_f + osr_at)?;
-        }
-        if mode.pe {
-            // The `RUNTIME_FUNCTION`s and the handler fields: offsets from `base`, below the
-            // region's read-write end.
-            let rva = |a: usize| u32::try_from(a - base).map_err(|_| "out of reach");
-            for (k, &(begin, end, at)) in pe_rfs.iter().enumerate() {
-                for (j, v) in [rva(jit_f + begin)?, rva(jit_f + end)?, rva(eh_base + at)?].iter().enumerate() {
-                    eh[12 * k + 4 * j..][..4].copy_from_slice(&v.to_le_bytes());
-                }
-            }
-            let thunk = base + thunk_at;
-            for &f in &pe_handlers {
-                eh[f..f + 4].copy_from_slice(&rva(thunk)?.to_le_bytes());
-            }
-            code[thunk_at..][..6].copy_from_slice(&[0xff, 0x25, 0, 0, 0, 0]);
-            code[thunk_at + 6..][..8].copy_from_slice(&(self.rt.seh_handler as u64).to_le_bytes());
-        }
+        Ok(())
+    }
 
-        // SAFETY: fresh read-write memory of the region, `size` and `eh.len()` bytes, which
-        // nothing else uses; the code pages become executable only once written, and are
-        // never written again.
-        unsafe {
-            ptr::copy_nonoverlapping(code.as_ptr(), base as *mut u8, size);
-            ptr::copy_nonoverlapping(eh.as_ptr(), eh_base as *mut u8, eh.len());
-            if !vmem::make_executable(base as *mut u8, size) {
-                return Err("make_executable".into());
-            }
-            // Unregistered, the code must not run: nothing could unwind through it. At exit
-            // it isn't needed.
-            let unwind = if mode.pe {
-                crate::sys::Unwind { eh: ptr::null(), fdes: &[], code: (base, base + size), pdata: (eh_base as *const u8, pe_rfs.len() as u32) }
-            } else {
-                crate::sys::Unwind { eh: eh_base as *const u8, fdes: &fdes, code: (base, base + size), pdata: (ptr::null(), 0) }
-            };
-            // PE code off Windows (tests, which run PE images' VM code on Linux): there is
-            // no unwinder to tell, and nothing unwinds through it.
-            if (cfg!(windows) || !mode.pe) && !crate::sys::register_unwind(&unwind) {
-                return Err("exiting".into());
-            }
-        }
+    /// Publishes the installed code of `cx`'s function, at `jit_f` with its OSR dispatcher at
+    /// `osr_entry`: the perf map, the record, the call slots of it, and the log.
+    fn publish(&mut self, cx: &Install<'_>, jit_f: usize, osr_entry: Option<usize>, code_len: usize) {
+        let (rec, func) = (cx.rec, cx.func);
+        let h = cx.img.header();
         if let Some(m) = &mut self.perfmap {
-            let aot = h.text as usize + fs[func as usize].code_off as usize;
-            let _ = writeln!(m, "{jit_f:x} {:x} ryo-jit:f{func}@{aot:x}", code_len);
+            let aot = h.text as usize + cx.img.functions()[func as usize].code_off as usize;
+            let _ = writeln!(m, "{jit_f:x} {code_len:x} ryo-jit:f{func}@{aot:x}");
         }
 
         // Nothing allocates from the publication on: a panic past it (an allocation failure,
         // `thread::oom_panics`) would report a published record as failed.
         let line = self.rt.settings.log.then(|| {
             let c = counts(rec, self.rt.thresholds);
-            self.log_text(rec, &std::format!("compiled ({}, {} calls, {} loop iterations)", tier.name(), c.calls, c.iters))
+            self.log_text(rec, &std::format!("compiled ({}, {} calls, {} loop iterations)", cx.tier.name(), c.calls, c.iters))
         });
         // The dispatcher, at the start of the OSR code: every head's stub calls it from now.
-        let osr_entry = osr.as_ref().map(|_| (jit_f + osr_at) as *mut u8);
         // SAFETY: the record is this thread's until `Done`.
-        unsafe { JitRecord::publish(rec, jit_f as *const u8, (jit_f - JIT_ENTRY_PREFIX) as *mut u8, osr_entry) };
+        unsafe { JitRecord::publish(rec, jit_f as *const u8, (jit_f - JIT_ENTRY_PREFIX) as *mut u8, osr_entry.map(|a| a as *mut u8)) };
         // Calls of this function from JIT code compiled before it, of any image, go straight
         // to it now.
-        for &slot in self.slots_of.get(&(header, func)).map_or(&[][..], |v| &v[..]) {
+        for &slot in self.slots_of.get(&(h as *const _ as usize, func)).map_or(&[][..], |v| &v[..]) {
             // SAFETY: a call slot, 8-aligned, which JIT code reads with plain loads (an atomic
             // store of its size).
             unsafe { AtomicUsize::from_ptr(slot as *mut usize).store(jit_f, Release) };
@@ -659,7 +495,6 @@ impl Jit {
         if let Some(line) = line {
             log_line(&line);
         }
-        Ok(())
     }
 
     /// A line on stderr about `rec` (`RYO_JIT_LOG`).
@@ -673,6 +508,216 @@ impl Jit {
         let (func, header) = unsafe { ((*rec).func, (*rec).header) };
         std::format!("ryo-jit: f{func} of image {header:p}: {what}\n")
     }
+}
+
+/// What [`Jit::install`] installs: the function `func` of `img` (record `rec`), compiled by
+/// `tier` for the region `place` with the callees `ext`, and its image's personality slot.
+struct Install<'a> {
+    rec: *mut JitRecord,
+    func: u32,
+    img: &'a Image<'a>,
+    place: Place,
+    personality: usize,
+    ext: &'a [Ext],
+    tier: Tier,
+}
+
+/// A function's unwind information, before its PC-relative fields are patched
+/// ([`Eh::patch`]). ELF: the CIE, the FDE, the OSR code's FDE, the terminator, then the
+/// LSDA. PE: the `RUNTIME_FUNCTION`s, then their `UNWIND_INFO`s: the body's
+/// (`pe_unwind_info`, the AOT code's form, or the SSA tier's own, from the same encoder,
+/// `pe_unwind_codes`), over the OSR code too unless a pad region lies between: past the
+/// prologue every `rsp` is described by `rbp`, the OSR code's included, which keeps the
+/// AOT frame's `rbp`; the pad region's; and if apart, the OSR code's (the body's, all of it
+/// past the prologue). The body's and the region's name `ryo_seh_handler` through a thunk
+/// after the code, with the LSDA as their handler data (design/jit.md, "Unwinding and
+/// profiling").
+struct Eh {
+    bytes: Vec<u8>,
+    /// The FDEs' offsets (ELF).
+    fdes: Vec<usize>,
+    pers_field: usize,
+    fields: Option<ryo_bytecode::image::EhFields>,
+    osr_fields: Option<ryo_bytecode::image::EhFields>,
+    lsda_at: usize,
+    /// PE: the entries' ranges in the code and their `UNWIND_INFO`s' offsets in `bytes`.
+    pe_rfs: Vec<(usize, usize, usize)>,
+    /// PE: the handler RVA fields.
+    pe_handlers: Vec<usize>,
+}
+
+impl Eh {
+    /// The information of `body` (`code_len` bytes, its pad region at `region`, `code_len`
+    /// if none) and its OSR code `osr` at `osr_at`.
+    fn build(
+        body: &Body,
+        osr: Option<&asm::osr::OsrCode>,
+        osr_at: usize,
+        call_sites: &[asm::CallSite],
+        code_len: usize,
+        region: usize,
+        mode: Mode,
+    ) -> Result<Eh, CompileError> {
+        let mut eh = Eh {
+            bytes: Vec::new(),
+            fdes: Vec::new(),
+            pers_field: 0,
+            fields: None,
+            osr_fields: None,
+            lsda_at: 0,
+            pe_rfs: Vec::new(),
+            pe_handlers: Vec::new(),
+        };
+        let b = &mut eh.bytes;
+        if mode.pe {
+            let info = match body {
+                Body::Aot(ef) => {
+                    if ef.prologue != 0 || ef.entry_stub as usize != region {
+                        return Err("PE code with a counter check".into());
+                    }
+                    pe_unwind_info(ef, mode)
+                }
+                Body::Pe(info) => info.clone(),
+                Body::Rows(_) => return Err("DWARF rows on PE".into()),
+            };
+            let osr_len = osr.map_or(0, |o| o.code.len());
+            let lsda = asm::lsda::write(call_sites);
+            let has_region = region < code_len;
+            let r = if has_region { region as u32 } else { 0 };
+            b.resize(12 * (1 + usize::from(has_region) * (1 + usize::from(osr.is_some()))), 0);
+            let (rfs, handlers) = (&mut eh.pe_rfs, &mut eh.pe_handlers);
+            let mut add = |b: &mut Vec<u8>, range: (usize, usize), info: &[u8], data: Option<Vec<u8>>| {
+                let at = b.len();
+                match data {
+                    Some(d) => {
+                        let (bytes, field) = pe_with_handler(info, &d);
+                        handlers.push(at + field);
+                        b.extend_from_slice(&bytes);
+                    }
+                    None => b.extend_from_slice(info),
+                }
+                rfs.push((range.0, range.1, at));
+            };
+            let body_end = if has_region {
+                region
+            } else if osr.is_some() {
+                osr_at + osr_len
+            } else {
+                code_len
+            };
+            add(b, (0, body_end), &info, Some(pe_handler_data(0, r, &lsda)));
+            if has_region {
+                add(b, (region, code_len), &pe_region_unwind_info(), Some(pe_handler_data(r, r, &lsda)));
+                if osr.is_some() {
+                    // Never in its prologue: the codes apply from its first byte.
+                    let mut past = info.clone();
+                    past[1] = 0;
+                    add(b, (osr_at, osr_at + osr_len), &past, None);
+                }
+            }
+        } else {
+            eh.pers_field = eh_cie(b);
+            eh.fdes.push(b.len());
+            eh.fields = Some(match body {
+                Body::Aot(ef) => eh_fde(b, 0, ef, mode),
+                Body::Rows(rows) => eh_fde_rows(b, 0, code_len as u32, rows),
+                Body::Pe(_) => return Err("PE unwind info off PE".into()),
+            });
+            if osr.is_some() {
+                eh.fdes.push(b.len());
+            }
+            eh.osr_fields = osr.map(|o| eh_fde_rows(b, 0, o.code.len() as u32, &o.cfi));
+            b.extend_from_slice(&[0; 4]);
+            eh.lsda_at = b.len();
+            b.extend_from_slice(&asm::lsda::write(call_sites));
+        }
+        Ok(eh)
+    }
+
+    /// Patches the fields for the information at `eh_base` of code at `jit_f`, its OSR code
+    /// at `osr_at` past it, with `personality` the personality slot; on PE `base` is the
+    /// code's allocation and `thunk` the handler's thunk.
+    fn patch(
+        &mut self,
+        eh_base: usize,
+        personality: usize,
+        jit_f: usize,
+        osr_at: Option<usize>,
+        base: usize,
+        thunk: usize,
+    ) -> Result<(), &'static str> {
+        let eh = &mut self.bytes;
+        // `.eh_frame`'s PC-relative fields: relative to the field itself.
+        let mut pc = |at: usize, target: usize| patch_rel32(&mut eh[at..], eh_base + at, target);
+        if let Some(fields) = self.fields {
+            pc(self.pers_field, personality)?;
+            pc(fields.pc_begin, jit_f)?;
+            pc(fields.lsda, eh_base + self.lsda_at)?;
+        }
+        if let (Some(f), Some(at)) = (self.osr_fields, osr_at) {
+            pc(f.pc_begin, jit_f + at)?;
+        }
+        // PE: the `RUNTIME_FUNCTION`s and the handler fields: offsets from `base`, below the
+        // region's read-write end.
+        let rva = |a: usize| u32::try_from(a - base).map_err(|_| "out of reach");
+        for (k, &(begin, end, at)) in self.pe_rfs.iter().enumerate() {
+            for (j, v) in [rva(jit_f + begin)?, rva(jit_f + end)?, rva(eh_base + at)?].iter().enumerate() {
+                eh[12 * k + 4 * j..][..4].copy_from_slice(&v.to_le_bytes());
+            }
+        }
+        for &f in &self.pe_handlers {
+            eh[f..f + 4].copy_from_slice(&rva(thunk)?.to_le_bytes());
+        }
+        Ok(())
+    }
+}
+
+/// A function's code memory, `size` bytes: its length, the entry prefix, the code `body`,
+/// the OSR code at its offset past the body, and the code constants `rodata` at `ro_at`.
+fn assemble(body: &[u8], osr: Option<(usize, &[u8])>, rodata: &[u8], size: usize, ro_at: usize) -> Vec<u8> {
+    let mut code = std::vec![0xccu8; size];
+    // `lea r11, [rip + code]; mov [rsp], r11; ret` (JIT_ENTRY_PREFIX).
+    let lea = (JIT_ENTRY_PREFIX - 7) as i32;
+    let mut prefix = std::vec![0x4c, 0x8d, 0x1d];
+    prefix.extend(lea.to_le_bytes());
+    prefix.extend([0x4c, 0x89, 0x1c, 0x24, 0xc3]);
+    code[CODE_LEN_AT..][..4].copy_from_slice(&(body.len() as u32).to_le_bytes());
+    code[CODE_AT - JIT_ENTRY_PREFIX..CODE_AT].copy_from_slice(&prefix);
+    code[CODE_AT..][..body.len()].copy_from_slice(body);
+    if let Some((at, o)) = osr {
+        code[CODE_AT + at..][..o.len()].copy_from_slice(o);
+    }
+    code[ro_at..][..rodata.len()].copy_from_slice(rodata);
+    code
+}
+
+/// Copies `code` and the patched `eh` to their memory at `base` and `eh_base`, makes the code
+/// executable and registers its unwind information.
+fn map_and_register(code: &[u8], eh: &Eh, base: usize, eh_base: usize, mode: Mode) -> Result<(), CompileError> {
+    let size = code.len();
+    // SAFETY: fresh read-write memory of the region, `size` and `eh.len()` bytes, which
+    // nothing else uses; the code pages become executable only once written, and are
+    // never written again.
+    unsafe {
+        ptr::copy_nonoverlapping(code.as_ptr(), base as *mut u8, size);
+        ptr::copy_nonoverlapping(eh.bytes.as_ptr(), eh_base as *mut u8, eh.bytes.len());
+        if !vmem::make_executable(base as *mut u8, size) {
+            return Err("make_executable".into());
+        }
+        // Unregistered, the code must not run: nothing could unwind through it. At exit
+        // it isn't needed.
+        let unwind = if mode.pe {
+            crate::sys::Unwind { eh: ptr::null(), fdes: &[], code: (base, base + size), pdata: (eh_base as *const u8, eh.pe_rfs.len() as u32) }
+        } else {
+            crate::sys::Unwind { eh: eh_base as *const u8, fdes: &eh.fdes, code: (base, base + size), pdata: (ptr::null(), 0) }
+        };
+        // PE code off Windows (tests, which run PE images' VM code on Linux): there is
+        // no unwinder to tell, and nothing unwinds through it.
+        if (cfg!(windows) || !mode.pe) && !crate::sys::register_unwind(&unwind) {
+            return Err("exiting".into());
+        }
+    }
+    Ok(())
 }
 
 /// The address of an image part `r` refers to (`Sym`, `Site`, `Const`, `Data`), as installed
