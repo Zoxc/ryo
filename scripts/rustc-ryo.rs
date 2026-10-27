@@ -3,103 +3,40 @@
 //! Built by `y build` with plain rustc into `dist/bin/`. `RYO_TOOLCHAIN` is baked in at build
 //! time (design/build.md#the-y-build-tool).
 
+#[path = "wrapper_common.rs"]
+mod common;
+
 use std::env;
 use std::ffi::OsString;
-#[cfg(unix)]
-use std::os::unix::process::CommandExt;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::Path;
 
-#[allow(dead_code)]
+#[cfg(not(test))]
 fn main() {
-    // The backend links against this exact `rustc_driver`. If the toolchain was updated after
-    // `y build` (e.g. `rustup update` moved `stable`), it is gone and loading would fail.
-    if let Some(driver) = option_env!("RYO_RUSTC_DRIVER") {
-        if !Path::new(driver).exists() {
-            eprintln!(
-                "error: rustc-ryo was built for rustc {}, but the toolchain `{}` has changed \
-                 ({driver} is gone); install rustc {0} as that toolchain and rerun `./y.sh build`",
-                option_env!("RYO_RUSTC_RELEASE").unwrap_or("?"),
-                option_env!("RYO_TOOLCHAIN").unwrap_or("?"),
-            );
-            std::process::exit(1);
-        }
-    }
-    let sysroot = dist_dir();
+    common::check_driver("rustc-ryo", "`./y.sh build`");
     let mut passed: Vec<OsString> = env::args_os().skip(1).collect();
-    let stats = match take_ryo_stats(&mut passed) {
-        Ok(stats) => stats,
-        Err(msg) => {
-            eprintln!("error: {msg}");
-            std::process::exit(1);
-        }
-    };
-    let passed_orig = passed.clone();
-    let args = match ryo_args(&sysroot, passed) {
-        Ok(args) => args,
-        Err(msg) => {
-            eprintln!("error: {msg}");
-            std::process::exit(1);
-        }
-    };
-
-    let mut cmd = Command::new("rustc");
-    cmd.args(args).env("RUSTC_BOOTSTRAP", "1");
+    let stats = take_ryo_stats(&mut passed).unwrap_or_else(|msg| common::fail(&msg));
+    let verbose_version = is_verbose_version(&passed);
+    let args = ryo_args(&common::dist_dir(), passed).unwrap_or_else(|msg| common::fail(&msg));
+    let mut cmd = common::toolchain_command("rustc");
+    cmd.args(args);
     if let Some(level) = stats {
         cmd.env("RYO_STATS", level);
     }
-    if let Some(toolchain) = option_env!("RYO_TOOLCHAIN") {
-        cmd.env("RUSTUP_TOOLCHAIN", toolchain);
-    }
-
-    if is_verbose_version(&passed_orig) {
+    if verbose_version {
         // Cargo fingerprints the compiler by `rustc -vV`; tell it which ryo build this is
         // (design/build.md#the-y-build-tool).
-        match cmd.output() {
-            Ok(out) => {
-                use std::io::Write;
-                let mut stdout = std::io::stdout().lock();
-                let _ = stdout.write_all(&out.stdout);
-                if out.status.success() {
-                    let _ = writeln!(stdout, "ryo-build: {}", option_env!("RYO_BUILD_ID").unwrap_or("unknown"));
-                }
-                let _ = stdout.flush();
-                let _ = std::io::stderr().write_all(&out.stderr);
-                std::process::exit(out.status.code().unwrap_or(1));
-            }
-            Err(err) => {
-                eprintln!("error: failed to run rustc: {err}");
-                std::process::exit(1);
-            }
+        use std::io::Write;
+        let out = cmd.output().unwrap_or_else(|err| common::fail(&format!("failed to run rustc: {err}")));
+        let mut stdout = std::io::stdout().lock();
+        let _ = stdout.write_all(&out.stdout);
+        if out.status.success() {
+            let _ = writeln!(stdout, "ryo-build: {}", option_env!("RYO_BUILD_ID").unwrap_or("unknown"));
         }
+        let _ = stdout.flush();
+        let _ = std::io::stderr().write_all(&out.stderr);
+        std::process::exit(out.status.code().unwrap_or(1));
     }
-
-    #[cfg(unix)]
-    {
-        let err = cmd.exec();
-        eprintln!("error: failed to run rustc: {err}");
-        std::process::exit(1);
-    }
-    #[cfg(not(unix))]
-    match cmd.status() {
-        Ok(status) => std::process::exit(status.code().unwrap_or(1)),
-        Err(err) => {
-            eprintln!("error: failed to run rustc: {err}");
-            std::process::exit(1);
-        }
-    }
-}
-
-/// `dist/`, found from the location of this executable (`dist/bin/rustc-ryo`).
-#[allow(dead_code)]
-fn dist_dir() -> PathBuf {
-    let exe = env::current_exe().expect("current_exe");
-    let exe = real_path(exe);
-    let mut dir = exe.parent().expect("exe has a parent").to_path_buf();
-    if dir.file_name().is_some_and(|n| n == "bin") {
-        dir.pop();
-    }
-    dir
+    common::exec(cmd, "rustc")
 }
 
 /// The full rustc command line for the user's `passed` arguments.
@@ -112,9 +49,7 @@ pub fn ryo_args(dist: &Path, passed: Vec<OsString>) -> Result<Vec<OsString>, Str
         return Err(format!("`{flag}` is not supported by rustc-ryo: argument block layouts must agree between crates"));
     }
 
-    let mut backend = OsString::from("-Zcodegen-backend=");
-    backend.push(dist.join("lib").join(format!("{}rustc_codegen_ryo{}", env::consts::DLL_PREFIX, env::consts::DLL_SUFFIX)));
-
+    let backend = common::backend_arg(dist, "rustc_codegen_ryo");
     let mut args: Vec<OsString> = Vec::new();
     // `--sysroot ryo` selects the std built with ryo (`y build --sysroot ryo`).
     let ryo_sysroot = || {
@@ -267,19 +202,6 @@ fn randomize_layout_flag(args: &[OsString]) -> Option<String> {
         }
     }
     None
-}
-
-/// `p` canonicalized, without the `\\?\` prefix `canonicalize` adds on Windows, which some
-/// tools don't accept in paths derived from it (`--sysroot`, linker search paths).
-fn real_path(p: std::path::PathBuf) -> std::path::PathBuf {
-    let c = p.canonicalize().unwrap_or(p);
-    #[cfg(windows)]
-    if let Some(rest) = c.to_str().and_then(|s| s.strip_prefix(r"\\?\"))
-        && !rest.starts_with(r"UNC\")
-    {
-        return rest.into();
-    }
-    c
 }
 
 // Run by `cargo test` in `build/`, which includes this file as a module.
