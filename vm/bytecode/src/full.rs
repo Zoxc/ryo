@@ -761,8 +761,15 @@ impl<O> OpInfo<O> {
     }
 
     /// Index of the operand called `name`.
-    pub fn operand_index(&self, name: &str) -> Option<usize> {
-        self.operands.iter().position(|o| o.name == name)
+    pub const fn operand_index(&self, name: &str) -> Option<usize> {
+        let mut i = 0;
+        while i < self.operands.len() {
+            if str_eq(self.operands[i].name, name) {
+                return Some(i);
+            }
+            i += 1;
+        }
+        None
     }
 }
 
@@ -892,32 +899,19 @@ macro_rules! define_ops {
 
         /// Index of the operand called `name` of `op`, for `const` contexts. Panics if there is none.
         pub const fn operand_index_const(op: Opcode, name: &str) -> usize {
-            let info = op.info();
-            let mut i = 0;
-            while i < info.operands.len() {
-                if str_eq(info.operands[i].name, name) {
-                    return i;
-                }
-                i += 1;
+            match op.info().operand_index(name) {
+                Some(i) => i,
+                None => panic!("no such operand"),
             }
-            panic!("no such operand")
         }
 
         /// Word offset of the operand called `name` of `op`, or `usize::MAX` if it follows a list
         /// operand. Used for the [`off`] constants.
         pub const fn operand_word(op: Opcode, name: &str) -> usize {
-            let info = op.info();
-            let mut i = 0;
-            while i < info.operands.len() {
-                if str_eq(info.operands[i].name, name) {
-                    return match info.operand_offset(i) {
-                        Some(o) => o,
-                        None => usize::MAX,
-                    };
-                }
-                i += 1;
+            match op.info().operand_offset(operand_index_const(op, name)) {
+                Some(o) => o,
+                None => usize::MAX,
             }
-            panic!("no such operand")
         }
 
         impl Opcode {
