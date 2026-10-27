@@ -15,6 +15,7 @@ use super::Unsupported;
 use super::alloca::{Frame, Res};
 use super::decode::{Code, Kind, Then, Unwind};
 use super::ir::*;
+use crate::asm::ArgReg;
 use crate::reduced::Arg;
 
 const NO: u32 = u32::MAX;
@@ -238,6 +239,52 @@ impl<'a> B<'a> {
     fn edge(&self, rinsn: u32) -> Edge {
         let rb = self.code.block_of[rinsn as usize] as usize;
         Edge::to(self.ir[rb].expect("not an lpad"))
+    }
+
+    /// The arguments of call instruction `i` in `cur`: the callee pointer (for `Ptr`), then
+    /// each register's value (an address for one passed by address); and the index of the
+    /// accesses after them (the results').
+    fn call_args(&mut self, cur: Block, i: usize, target: CallTarget, regs: &[ArgReg]) -> Result<(Vec<Value>, usize), Unsupported> {
+        let mut args = Vec::new();
+        let mut k = 0;
+        if target == CallTarget::Ptr {
+            args.push(self.read(cur, i, 0, 8));
+            k = 1;
+        }
+        for r in regs {
+            let v = if self.code.insns[i].accs[k].how == super::decode::How::Addr {
+                let Res::Mem(a, off) = self.fr.res[i][k] else { return Err(Unsupported("an address of a promoted alloca")) };
+                let l = self.f.inst(cur, Op::AllocaAddr(a, off), Vec::new(), &[8]);
+                self.f.result(l)
+            } else {
+                self.read(cur, i, k, r.size as u8)
+            };
+            args.push(v);
+            k += 1;
+        }
+        Ok((args, k))
+    }
+
+    /// Ends `cur`, whose instruction `i` is a call site unwinding to the `lpad` at `pad`, with
+    /// an invoke: when it returns (`normal`: its results, written to the accesses from the
+    /// given index), to a new block that goes on after `i`. The new blocks, for the layout.
+    fn invoke(&mut self, cur: Block, i: usize, pad: u32, normal: Option<(&[Value], usize)>) -> Result<Vec<Block>, Unsupported> {
+        let cont = normal.map(|_| self.new_block(BlockKind::Body, 1));
+        let stub = self.new_block(BlockKind::Stub, 1);
+        self.finish_block(cur, Term::Invoke { normal: cont.map(Edge::to), pad: Edge::to(stub) });
+        // The stub: the exception object into the `lpad`'s slot, then to the code after it.
+        let l = self.f.inst(stub, Op::LandingPad, Vec::new(), &[8]);
+        let exc = self.f.result(l);
+        self.write(stub, pad as usize, 0, exc);
+        let e = self.edge(s_next(self.code, pad as usize)?);
+        self.finish_block(stub, Term::Jmp(e));
+        let (Some(cont), Some((results, k))) = (cont, normal) else { return Ok(alloc::vec![stub]) };
+        for (n, &v) in results.iter().enumerate() {
+            self.write(cont, i, k + n, v);
+        }
+        let e = self.edge(s_next(self.code, i)?);
+        self.finish_block(cont, Term::Jmp(e));
+        Ok(alloc::vec![cont, stub])
     }
 }
 
@@ -492,40 +539,13 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
                     });
                 }
                 Kind::Call { target, regs, parts, .. } => {
-                    let mut args = Vec::new();
-                    let mut k = 0;
-                    if *target == CallTarget::Ptr {
-                        args.push(s.read(cur, i, 0, 8));
-                        k = 1;
-                    }
-                    for r in regs {
-                        let v = if ri.accs[k].how == super::decode::How::Addr {
-                            let Res::Mem(a, off) = fr.res[i][k] else { return Err(Unsupported("an address of a promoted alloca")) };
-                            let l = s.f.inst(cur, Op::AllocaAddr(a, off), Vec::new(), &[8]);
-                            s.f.result(l)
-                        } else {
-                            s.read(cur, i, k, r.size as u8)
-                        };
-                        args.push(v);
-                        k += 1;
-                    }
+                    let (args, k) = s.call_args(cur, i, *target, regs)?;
                     let ws: Vec<u8> = parts.iter().map(|p| if matches!(p.size, 1 | 2 | 4 | 8) { p.size as u8 } else { 8 }).collect();
                     let call = Call { target: *target, regs: regs.clone(), parts: parts.clone(), site };
                     let ci = s.f.inst(cur, Op::Call(Box::new(call)), args, &ws);
                     let results: Vec<Value> = s.f.insts[ci.idx()].results().collect();
                     if let Unwind::Pad { pad, .. } = ri.unwind {
-                        let cont = s.new_block(BlockKind::Body, 1);
-                        let stub = stub_block(&mut s, pad)?;
-                        s.finish_block(cur, Term::Invoke { normal: Some(Edge::to(cont)), pad: Edge::to(stub.0) });
-                        fill_stub(&mut s, stub)?;
-                        for (n, v) in results.into_iter().enumerate() {
-                            s.write(cont, i, k + n, v);
-                        }
-                        let e = s.edge(next()?);
-                        s.finish_block(cont, Term::Jmp(e));
-                        extra.extend([cont, stub.0]);
-                        term = None;
-                        debug_assert!(last);
+                        extra = s.invoke(cur, i, pad, Some((&results, k)))?;
                         break;
                     }
                     for (n, v) in results.into_iter().enumerate() {
@@ -533,23 +553,7 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
                     }
                 }
                 Kind::TailCall { target, regs } => {
-                    let mut args = Vec::new();
-                    let mut k = 0;
-                    if *target == CallTarget::Ptr {
-                        args.push(s.read(cur, i, 0, 8));
-                        k = 1;
-                    }
-                    for r in regs {
-                        let v = if ri.accs[k].how == super::decode::How::Addr {
-                            let Res::Mem(a, off) = fr.res[i][k] else { return Err(Unsupported("an address of a promoted alloca")) };
-                            let l = s.f.inst(cur, Op::AllocaAddr(a, off), Vec::new(), &[8]);
-                            s.f.result(l)
-                        } else {
-                            s.read(cur, i, k, r.size as u8)
-                        };
-                        args.push(v);
-                        k += 1;
-                    }
+                    let (args, _) = s.call_args(cur, i, *target, regs)?;
                     term = Some(Term::TailCall {
                         call: Box::new(Call { target: *target, regs: regs.clone(), parts: Vec::new(), site: Site::None }),
                         args,
@@ -578,14 +582,7 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
                     let isl = Island { isl: CallTarget::Sym(*isl), ops: refs, site };
                     s.f.inst(cur, Op::Island(Box::new(isl)), Vec::new(), &[]);
                     if let Unwind::Pad { pad, .. } = ri.unwind {
-                        let cont = s.new_block(BlockKind::Body, 1);
-                        let stub = stub_block(&mut s, pad)?;
-                        s.finish_block(cur, Term::Invoke { normal: Some(Edge::to(cont)), pad: Edge::to(stub.0) });
-                        fill_stub(&mut s, stub)?;
-                        let e = s.edge(next()?);
-                        s.finish_block(cont, Term::Jmp(e));
-                        extra.extend([cont, stub.0]);
-                        term = None;
+                        extra = s.invoke(cur, i, pad, Some((&[], 0)))?;
                         break;
                     }
                 }
@@ -693,11 +690,7 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
                         }
                         Then::Trap => {
                             if let Unwind::Pad { pad, .. } = ri.unwind {
-                                let stub = stub_block(&mut s, pad)?;
-                                s.finish_block(cur, Term::Invoke { normal: None, pad: Edge::to(stub.0) });
-                                fill_stub(&mut s, stub)?;
-                                extra.push(stub.0);
-                                term = None;
+                                extra = s.invoke(cur, i, pad, None)?;
                                 break;
                             }
                             term = Some(Term::Trap);
@@ -755,22 +748,6 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
 /// The instruction index after `i`.
 fn s_next(code: &Code, i: usize) -> Result<u32, Unsupported> {
     if i + 1 < code.insns.len() { Ok(i as u32 + 1) } else { Err(Unsupported("falls off the end")) }
-}
-
-/// A landing pad stub for the `lpad` at instruction `pad`: the block, and the `lpad`.
-fn stub_block(s: &mut B<'_>, pad: u32) -> Result<(Block, u32), Unsupported> {
-    let b = s.new_block(BlockKind::Stub, 1);
-    Ok((b, pad))
-}
-
-/// The stub's body: the exception object into the `lpad`'s slot, then to the code after it.
-fn fill_stub(s: &mut B<'_>, (b, pad): (Block, u32)) -> Result<(), Unsupported> {
-    let l = s.f.inst(b, Op::LandingPad, Vec::new(), &[8]);
-    let exc = s.f.result(l);
-    s.write(b, pad as usize, 0, exc);
-    let e = s.edge(s_next(s.code, pad as usize)?);
-    s.finish_block(b, Term::Jmp(e));
-    Ok(())
 }
 
 /// For a `switch.dense.w8`-`w64` handler call, its width, base and case count (from the
