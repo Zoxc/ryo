@@ -118,32 +118,18 @@ impl jit::inline::Env for InlineEnv<'_> {
                 Callee::Vm(h, g)
             }
             CallTarget::Func(g) => Callee::Vm(self.header, g.0),
-            CallTarget::Sym(Sym(s)) => {
-                let a = image_of(self.header).symbols().get(s as usize).copied().unwrap_or(0) as usize;
-                if a == 0 {
-                    return None;
-                }
-                vm_callee(self.rt, a)?
-            }
+            CallTarget::Sym(Sym(s)) => sym_callee(self.rt, &image_of(self.header), s)?,
             _ => return None,
         };
-        let Callee::Vm(h, g) = c else { return None };
-        (g < image_of(h).functions().len() as u32).then_some(VmFunc { img: h, func: Func(g) })
+        let Callee::Vm(h, g) = c.checked()? else { return None };
+        Some(VmFunc { img: h, func: Func(g) })
     }
 
     fn retarget(&mut self, img: usize, t: CallTarget) -> Option<CallTarget> {
         let im = image_of(img);
         let (c, name) = match t {
-            CallTarget::Func(g) if g.0 < im.functions().len() as u32 => {
-                (Callee::Vm(img, g.0), if img == self.header { Name::Func(g.0) } else { Name::Other(g.0) })
-            }
-            CallTarget::Sym(Sym(s)) => {
-                let a = im.symbols().get(s as usize).copied().unwrap_or(0) as usize;
-                if a == 0 {
-                    return None;
-                }
-                (vm_callee(self.rt, a).unwrap_or(Callee::Addr(a)), if img == self.header { Name::Sym(s) } else { Name::OtherSym(s) })
-            }
+            CallTarget::Func(g) => (Callee::Vm(img, g.0).checked()?, if img == self.header { Name::Func(g.0) } else { Name::Other(g.0) }),
+            CallTarget::Sym(Sym(s)) => (sym_callee(self.rt, &im, s)?, if img == self.header { Name::Sym(s) } else { Name::OtherSym(s) }),
             _ => return None,
         };
         if c == Callee::Vm(self.header, self.root) {
@@ -224,6 +210,42 @@ impl jit::opt::ConstMem for PoolMem {
     }
 }
 
+impl Callee {
+    /// `self`, unless it is a function out of its image's range.
+    pub(super) fn checked(self) -> Option<Callee> {
+        match self {
+            Callee::Vm(h, g) if g >= image_of(h).functions().len() as u32 => None,
+            c => Some(c),
+        }
+    }
+}
+
+/// What a call of the callee in symbol slot `s` of `img` calls: `None` if the slot holds no
+/// address.
+pub(super) fn sym_callee(rt: &RtApi, img: &Image<'_>, s: u32) -> Option<Callee> {
+    let a = img.symbols().get(s as usize).copied().unwrap_or(0) as usize;
+    (a != 0).then(|| vm_callee(rt, a).unwrap_or(Callee::Addr(a)))
+}
+
+/// Where a VM function with a record runs now: its JIT code once published (this thread
+/// publishes, so it stays), else its AOT entry.
+pub(super) enum Target {
+    Jit(usize),
+    Aot(usize),
+}
+
+/// [`Target`] of function `g` of the registered image at `header`, which has a record.
+pub(super) fn vm_target(header: usize, g: u32) -> Target {
+    let img = image_of(header);
+    let r = img.jit_records().wrapping_add(g as usize);
+    if JitRecord::state(r).load(Acquire) == JIT_DONE {
+        // SAFETY: published before `Done`.
+        Target::Jit(unsafe { (*r).jit_code as usize })
+    } else {
+        Target::Aot(img.header().text as usize + img.functions()[g as usize].code_off as usize)
+    }
+}
+
 /// The VM function with a JIT record whose AOT entry is `addr`, of any registered image.
 pub(super) fn vm_callee(rt: &RtApi, addr: usize) -> Option<Callee> {
     let header = (rt.image_at)(addr);
@@ -245,20 +267,10 @@ pub(super) fn callee(place: Place, c: Callee, name: Name, ext: &mut Vec<Ext>, me
         return op;
     }
     let e = match c {
-        Callee::Vm(header, g) => {
-            // SAFETY: a registered image's header (`Callee::Vm` has a record).
-            let img = unsafe { Image::from_header(header as *const u8) }.expect("a registered image");
-            let r = img.jit_records().wrapping_add(g as usize);
-            if JitRecord::state(r).load(Acquire) == JIT_DONE {
-                // SAFETY: published before `Done`.
-                let code = unsafe { (*r).jit_code as usize };
-                Ext { kind: if place.reaches(code) { FUNC_NEAR } else { FUNC_FAR }, vm: None, addr: code, name }
-            } else {
-                let h = img.header();
-                let entry = h.text as usize + img.functions()[g as usize].code_off as usize;
-                Ext { kind: FUNC_SLOT, vm: Some((header, g)), addr: entry, name }
-            }
-        }
+        Callee::Vm(header, g) => match vm_target(header, g) {
+            Target::Jit(code) => Ext { kind: if place.reaches(code) { FUNC_NEAR } else { FUNC_FAR }, vm: None, addr: code, name },
+            Target::Aot(entry) => Ext { kind: FUNC_SLOT, vm: Some((header, g)), addr: entry, name },
+        },
         Callee::Addr(a) => Ext { kind: if place.reaches(a) { FUNC_NEAR } else { FUNC_FAR }, vm: None, addr: a, name },
     };
     let op = e.kind | ext.len() as u32;
@@ -283,7 +295,6 @@ impl Jit {
     ) -> Result<(), &'static str> {
         let h = img.header();
         let header = h as *const _ as usize;
-        let syms = img.symbols();
         let mut at = 0;
         while at < words.len() {
             let op = reduced::Opcode::from_u16(words[at] as u16);
@@ -292,19 +303,17 @@ impl Jit {
                 Some(reduced::Opcode::TailCall) => (at + 1, Callee::Vm(header, words[at + 1]), Name::Func(words[at + 1])),
                 Some(reduced::Opcode::CallSym) => {
                     let s = words[at + 2];
-                    let a = syms.get(s as usize).copied().unwrap_or(0) as usize;
-                    if a == 0 { (0, Callee::Addr(0), Name::Sym(s)) } else { (at + 2, vm_callee(self.rt, a).unwrap_or(Callee::Addr(a)), Name::Sym(s)) }
+                    match sym_callee(self.rt, img, s) {
+                        Some(c) => (at + 2, c, Name::Sym(s)),
+                        None => (0, Callee::Addr(0), Name::Sym(s)),
+                    }
                 }
                 _ => (0, Callee::Addr(0), Name::Sym(0)),
             };
             let is_self = c == Callee::Vm(header, func);
             if field != 0 && !is_self {
                 // Of the callee's image: a symbol may name another image's function.
-                if let Callee::Vm(hd, g) = c
-                    && g >= image_of(hd).functions().len() as u32
-                {
-                    return Err("function out of range");
-                }
+                let c = c.checked().ok_or("function out of range")?;
                 words[field] = callee(place, c, name, ext, memo);
                 if op == Some(reduced::Opcode::CallSym) {
                     words[at] = reduced::Opcode::Call as u32;

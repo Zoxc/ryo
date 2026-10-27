@@ -520,14 +520,8 @@ impl Jit {
             slot_of[k] = *self.slots.entry((start, hd, g)).or_insert_with(|| {
                 region.data -= 8;
                 debug_assert!(region.data % 8 == 0, "call slots are 8-aligned (atomic stores)");
-                // SAFETY: `Ext::vm` names a registered image's function with a record.
-                let gr = unsafe { Image::from_header(hd as *const u8) }.expect("a registered image").jit_records().wrapping_add(g as usize);
-                let target = if JitRecord::state(gr).load(Acquire) == JIT_DONE {
-                    // SAFETY: published before `Done`.
-                    unsafe { (*gr).jit_code as usize }
-                } else {
-                    e.addr
-                };
+                // `Ext::vm` names a registered image's function with a record.
+                let (callees::Target::Jit(target) | callees::Target::Aot(target)) = callees::vm_target(hd, g);
                 // SAFETY: the region's read-write end, which nothing else uses.
                 unsafe { (region.data as *mut usize).write(target) };
                 self.slots_of.entry((hd, g)).or_default().push(region.data);
