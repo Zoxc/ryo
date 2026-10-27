@@ -144,8 +144,12 @@ def short_rev(d):
     return git(d, "rev-parse", "--short", "HEAD", check=False)
 
 
+def has_dist(d):
+    return (d / "dist" / "bin" / "rustc-ryo").exists()
+
+
 def ensure_built(d, name):
-    if (d / "dist" / "bin" / "rustc-ryo").exists():
+    if has_dist(d):
         return
     PROGRESS.log(f"[compare] {name}: no dist/, running ./y.sh build in {d}")
     if subprocess.run(["./y.sh", "build"], cwd=d).returncode != 0:
@@ -186,7 +190,7 @@ def resolve_builds(args):
             name += "'"
         builds[name] = path
     for name, d in builds.items():
-        if not (d / "dist" / "bin" / "rustc-ryo").exists():
+        if not has_dist(d):
             sys.exit(f"{name}: no {d}/dist/bin/rustc-ryo (run ./y.sh build there)")
     if len(builds) < 2:
         PROGRESS.log("[compare] note: only one build; no ratios")
@@ -197,16 +201,10 @@ def resolve_builds(args):
 
 # --- timing -----------------------------------------------------------------------------
 
-def timed(cmd, pin, cwd=None, cachegrind=False, cache_sim=True):
-    """Runs `cmd`; returns (returncode, stdout, stderr, wall, cpu) with cpu = user+sys of
-    the child and its waited-for descendants, or with `cachegrind`, their counts
-    (`cachegrind_counts`, in place of cpu)."""
-    if cachegrind:
-        sim = "yes" if cache_sim else "no"
-        cmd = ["valgrind", "--tool=cachegrind", f"--cache-sim={sim}", f"--branch-sim={sim}", "--trace-children=yes",
-               "--cachegrind-out-file=/dev/null", *cmd]
-    if pin is not None:
-        cmd = ["taskset", "-c", str(pin), *cmd]
+def timed(cmd, metric, cwd=None):
+    """Runs `cmd` under `metric`; returns (returncode, stdout, stderr, measurement), the
+    measurement being {column: value} for the metric's columns."""
+    cmd = metric.wrap(cmd)
     with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
         t = time.perf_counter()
         p = subprocess.Popen(cmd, stdout=out, stderr=err, stdin=subprocess.DEVNULL, cwd=cwd)
@@ -216,12 +214,10 @@ def timed(cmd, pin, cwd=None, cachegrind=False, cache_sim=True):
         out.seek(0)
         err.seek(0)
         stderr = err.read().decode(errors="replace")
-        cpu = ru.ru_utime + ru.ru_stime
-        if cachegrind:
-            cpu = cachegrind_counts(stderr)
-            if not cpu["instructions"] and p.returncode == 0:
-                sys.exit(f"no cachegrind summary from {' '.join(cmd)}:\n{stderr}")
-        return p.returncode, out.read().decode(errors="replace"), stderr, wall, cpu
+        m = metric.measure(wall, ru, stderr)
+        if metric.name == "cachegrind" and not m["instructions"] and p.returncode == 0:
+            sys.exit(f"no cachegrind summary from {' '.join(cmd)}:\n{stderr}")
+        return p.returncode, out.read().decode(errors="replace"), stderr, m
 
 
 # The counts `--metric cachegrind` reports: name, the summary line, and which number on it
@@ -267,9 +263,55 @@ def cachegrind_counts(stderr):
     return out
 
 
+class Metric:
+    """What `--metric` measures: `measure` gives {column: value} for one run; the tables
+    report `columns(phase)` of those."""
+
+    def __init__(self, args):
+        self.name, self.pin = args.metric, args.pin
+        self.cache_sim = args.cache_sim
+        self.counts = self.name == "cachegrind"
+        if self.counts:
+            self.run_columns = [name for name, _, _ in CACHEGRIND] if self.cache_sim else ["instructions"]
+        else:
+            self.run_columns = ["time"]
+
+    def columns(self, phase):
+        # Compiles are reported by instructions only: the cache counts of rustc aren't of interest.
+        return ["instructions"] if self.counts and phase == "compile" else self.run_columns
+
+    def wrap(self, cmd):
+        if self.counts:
+            sim = "yes" if self.cache_sim else "no"
+            cmd = ["valgrind", "--tool=cachegrind", f"--cache-sim={sim}", f"--branch-sim={sim}", "--trace-children=yes",
+                   "--cachegrind-out-file=/dev/null", *cmd]
+        if self.pin is not None:
+            cmd = ["taskset", "-c", str(self.pin), *cmd]
+        return cmd
+
+    def measure(self, wall, ru, stderr):
+        """Wall time, the child's (and its waited-for descendants') user+sys time, or their
+        cachegrind counts (`cachegrind_counts`)."""
+        if self.counts:
+            return cachegrind_counts(stderr)
+        return {"time": wall if self.name == "wall" else ru.ru_utime + ru.ru_stime}
+
+    def cell(self, xs):
+        """Counts as millions; seconds as ms with min and MAD."""
+        if self.counts:
+            v = statistics.median(xs) * 1e-6
+            return f"{v:.3f}" if v < 100 else f"{v:.1f}"
+        return f"{statistics.median(xs) * 1e3:.1f} ({min(xs) * 1e3:.1f}, ±{mad(xs) * 1e3:.1f})"
+
+    def heading(self, phase, column, samples):
+        if self.counts:
+            return f"{phase} {column} (cachegrind, millions)"
+        return f"{phase} time ({self.name}, ms: median (min, ±MAD)), up to {samples} samples"
+
+
 def sample(label, names, args, rng, eta, fn):
-    """Rounds of `fn(name) -> (wall, cpu)` over `names`, shuffled each round; returns
-    {name: [seconds]} for the chosen metric, warmup rounds dropped."""
+    """Rounds of `fn(name) -> measurement` over `names`, shuffled each round; returns
+    {name: [measurement]}, warmup rounds dropped."""
     res = {n: [] for n in names}
     start = time.monotonic()
     rounds = args.warmup + args.samples
@@ -283,10 +325,10 @@ def sample(label, names, args, rng, eta, fn):
         for name in order:
             phase = f"warmup {i + 1}/{args.warmup}" if i < args.warmup else f"{i - args.warmup + 1}/{args.samples}"
             PROGRESS.show(f"{label} {phase} {name:>8} {eta.text()}")
-            wall, cpu = fn(name)
+            m = fn(name)
             eta.step()
             if i >= args.warmup:
-                res[name].append(wall if args.metric == "wall" else cpu)
+                res[name].append(m)
     return res
 
 
@@ -310,6 +352,7 @@ def programs_(args, builds, rng, programs, eta):
     bench = ROOT / "bench"
     flags = ["-Ccodegen-units=1", "-Zthreads=1", *args.flags.split()]
     names = list(builds)
+    metric = Metric(args)
     out = Path(tempfile.mkdtemp(prefix="ryo-compare-"))
     rows = []
     for prog in programs:
@@ -319,23 +362,23 @@ def programs_(args, builds, rng, programs, eta):
         def compile_(name):
             cmd = [str(builds[name] / "dist" / "bin" / "rustc-ryo"), "--edition=2024", str(src),
                    "-o", str(exes[name]), *flags]
-            rc, _, err, wall, cpu = timed(cmd, args.pin, cachegrind=args.metric == "cachegrind", cache_sim=args.cache_sim)
+            rc, _, err, m = timed(cmd, metric)
             if rc != 0:
                 PROGRESS.log("")
                 sys.exit(f"{prog} [{name}]: compile failed:\n{err}")
-            return wall, cpu
+            return m
 
         outputs = {}
 
         def run(name):
-            rc, stdout, err, wall, cpu = timed([str(exes[name])], args.pin, cachegrind=args.metric == "cachegrind", cache_sim=args.cache_sim)
+            rc, stdout, err, m = timed([str(exes[name])], metric)
             if rc != 0:
                 PROGRESS.log("")
                 sys.exit(f"{prog} [{name}]: exit {rc}\n{err}")
             outputs.setdefault(name, stdout)
             if outputs[name] != stdout:
                 sys.exit(f"{prog} [{name}]: output changed between runs")
-            return wall, cpu
+            return m
 
         # Compiling is sampled first; the last compile's executable is the one run.
         compile_t = sample(f"[programs] {prog:8} compile", names, args, rng, eta, compile_)
@@ -345,43 +388,24 @@ def programs_(args, builds, rng, programs, eta):
             if outputs[n] != outputs[base]:
                 PROGRESS.log("")
                 sys.exit(f"{prog}: outputs differ:\n{base}:\n{outputs[base]}\n{n}:\n{outputs[n]}")
-        rows.append((prog, compile_t, run_t))
+        rows.append((prog, {"compile": compile_t, "run": run_t}))
         PROGRESS.log(f"[compare] {prog} done")
 
-    # Seconds as ms, or counts as millions (one table per count).
-    if args.metric == "cachegrind":
-        counts = [name for name, _, _ in CACHEGRIND] if args.cache_sim else ["instructions"]
-        tables = [("compile", 1, "instructions")] + [("run", 2, name) for name in counts]
-    else:
-        tables = [("compile time", 1, None), ("run time", 2, None)]
-    for title, pick, count in tables:
-        if count is not None:
-            scale, unit, title = 1e-6, "M", f"{title} {count}"
-            get = lambda xs: [x[count] for x in xs]
-        else:
-            scale, unit = 1e3, "ms"
-            get = lambda xs: xs
-
-        def cell(xs):
-            if count is not None:
-                v = statistics.median(xs) * scale
-                return f"{v:.3f}" if v < 100 else f"{v:.1f}"
-            return f"{statistics.median(xs) * scale:.1f} ({min(xs) * scale:.1f}, ±{mad(xs) * scale:.1f})"
-
-        cells = [[cell(get(row[pick][n])) for n in names] for row in rows]
-        w = max([len(n) for n in names] + [len(c) for r in cells for c in r])
-        rw = max([7] + [len(f"{n}/{names[0]}") for n in names[1:]])
-        if count is not None:
-            print(f"\n{title} (cachegrind, millions)")
-        else:
-            print(f"\n{title} ({args.metric}, {unit}: median (min, ±MAD)), up to {args.samples} samples")
-        print(f"{'program':10} " + " ".join(f"{n:>{w}}" for n in names)
-              + "".join(f" {n + '/' + names[0]:>{rw}}" for n in names[1:]))
-        for row, cs in zip(rows, cells):
-            t = row[pick]
-            b = statistics.median(get(t[names[0]]))
-            ratios = "".join(f" {statistics.median(get(t[n])) / b if b else float('nan'):>{rw}.3f}" for n in names[1:])
-            print(f"{row[0]:10} " + " ".join(f"{c:>{w}}" for c in cs) + ratios)
+    for phase in ("compile", "run"):
+        for col in metric.columns(phase):
+            # {program: {build: [values]}}
+            vals = {prog: {n: [m[col] for m in t[phase][n]] for n in names} for prog, t in rows}
+            cells = [[metric.cell(vals[prog][n]) for n in names] for prog, _ in rows]
+            w = max([len(n) for n in names] + [len(c) for r in cells for c in r])
+            rw = max([7] + [len(f"{n}/{names[0]}") for n in names[1:]])
+            print("\n" + metric.heading(phase, col, args.samples))
+            print(f"{'program':10} " + " ".join(f"{n:>{w}}" for n in names)
+                  + "".join(f" {n + '/' + names[0]:>{rw}}" for n in names[1:]))
+            for (prog, _), cs in zip(rows, cells):
+                v = vals[prog]
+                b = statistics.median(v[names[0]])
+                ratios = "".join(f" {statistics.median(v[n]) / b if b else float('nan'):>{rw}.3f}" for n in names[1:])
+                print(f"{prog:10} " + " ".join(f"{c:>{w}}" for c in cs) + ratios)
 
 
 # --- crates -----------------------------------------------------------------------------
