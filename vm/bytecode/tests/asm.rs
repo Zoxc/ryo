@@ -943,3 +943,25 @@ fn decoders_survive_mutations() {
         }
     }
 }
+
+/// A call's SSE argument load is from the frame: `movsd xmm0, [rax - 8]` before a call isn't
+/// the argument list `[(-8, xmm0)]`.
+#[test]
+fn rejects_sse_argument_loads_off_the_frame() {
+    let m = Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false, counters: false, far_rt: false };
+    let k = asm::ret_kind(&[asm::RetPart { xmm: false, size: 8, off: 0 }]);
+    let w = asm::ArgReg { xmm: true, size: 8, index: 0 }.word();
+    let f = Fn {
+        insns: vec![vec![Opcode::Call as u32, -16i32 as u32, 0, k, 2, -8i32 as u32, w], vec![Opcode::Abort as u32]],
+        targets: Vec::new(),
+        unwind: Vec::new(),
+    };
+    let enc = check(&f, 16, m, "call");
+    // `movsd xmm0, [rbp - 8]` (f2 0f 10 45 f8) as `movsd xmm0, [rax - 8]` (f2 0f 10 40 f8).
+    let i = enc.code.windows(5).position(|p| p == [0xf2, 0x0f, 0x10, 0x45, 0xf8]).expect("argument load");
+    let mut code = enc.code.clone();
+    code[i + 3] = 0x40;
+    let (sites, d, sc) = (&enc.call_sites, &enc.dropped, &enc.scopes);
+    assert!(asm::decode(&code, &enc.relocs, &enc.rodata, sites, d, sc, m).is_err());
+    assert!(asm::decode_reduced(&code, &enc.relocs, &enc.rodata, sites, d, sc, m).is_err());
+}
