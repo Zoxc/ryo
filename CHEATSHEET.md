@@ -54,8 +54,10 @@ and uses a JIT with debug assertions (`RYO_JIT_CHECKED=0` for the release one).
 
 ## Benchmarks
 
-- `./y.sh bench --metric cachegrind`: LLVM, Cranelift and ryo on `bench/`, instructions per
-  run.
+- `./y.sh bench --metric cachegrind`: LLVM -O0 and -O1, Cranelift -O0 and ryo on `bench/`,
+  instructions and estimated cycles per run. `--llvm O0,O3d`, `--clif O0,O3` and `--ryo
+  aot,jit` pick the columns (`d`: debug assertions); cg_clif's O1 to O3 share one Cranelift
+  level and differ only in rustc's MIR passes.
 - `./y.sh bench codegen`: rewrites `bench/codegen/` (after `./y.sh build`).
 - `./y.sh bench crates --quick`: crates.io crates per backend, one sample each (the default
   is 5 builds and 10 runs). `--crates memchr --backends llvm,ryo` narrows it.
