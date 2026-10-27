@@ -73,6 +73,7 @@ pub use list::InsnList;
 pub use reduced::{as_handler, encode_reduced, encode_reduced_at, is_native, reduce};
 
 use crate::full::{ElemKind, Opcode, OperandKind, Shape};
+#[cfg(feature = "alloc")]
 use crate::image::JIT_LOOP_CTR;
 
 /// The argument registers handlers take: `rdi, rsi, rdx, rcx, r8, r9` (on PE, the
