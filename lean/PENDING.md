@@ -31,11 +31,3 @@ remove it once a Lean session has handled it.
   Out of scope for the model: its object readers (`readElf`/`readImageObject`) only read
   ELF objects, so a Mach-O image's `Abs8` `.eh_frame` never reaches `Ryo/Obj/EhFrame.lean`.
 
-- Incremental reuse of images (CGU plan stage 6). A reused image is byte-identical to a
-  fresh one, so the image model doesn't change; certificates (`RYO_DUMP_LEAN`) come only
-  from builds that lower every image (reuse is off then). Two linkage changes on the
-  backend side: a `LocalCopy` VM function never gets a global symbol (native code of its CGU
-  that refers to it gets a native copy instead), an `Internal` function unique in the crate
-  always does (hidden); native items an image refers to become `WeakODR` + `Hidden` when
-  they are `LocalCopy` or added for the image. Only `island_names`/symbol visibility in the
-  certificates can differ. Commit: "Reuse images across incremental sessions".

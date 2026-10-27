@@ -533,8 +533,15 @@ Registry: the constructor decoded with `decodeX` from its relocations, `.init_ar
 the list, and per link each image symbol listed once, at most one `__ryo_main`. A link's image
 objects include a crate's several images (one per CGU with VM functions, each with its own
 `ryo_images` entry), so the distinct `(crate_hash, cgu_hash)` check covers them; a call into
-another image of the crate is a `call.sym` through a slot naming the callee's hidden symbol,
-which these checks treat as any undefined symbol. Unwind: the
+another image of the crate is a `call.sym` through a slot naming the callee's global symbol,
+which these checks treat as any undefined symbol. A function symbol's binding and visibility
+aren't checked (only the registry's are): the backend makes a `LocalCopy` VM function's symbol
+local, a unique `Internal` one's global hidden, others follow rustc's linkage
+(design/backend.md, "Incremental"), and the native items an image refers to are on the native
+side, outside these objects; certificates name islands by symbol only. Under `-Cincremental` a
+reused image is byte-identical to a fresh one (its objects are named
+`<name>.<cgu>.ryo_image.<session>.rcgu.o`, which the scripts' glob doesn't match), and
+`RYO_DUMP_LEAN` turns reuse off, so the scripts build without `-Cincremental`. Unwind: the
 CIE (`zPLR`, entry rules, the personality through the slot naming `rust_eh_personality`), one
 FDE per function of range `code_len`, whose row table equals at every offset the rules the
 code establishes, derived from the counter check and prologue items read from the bytes
