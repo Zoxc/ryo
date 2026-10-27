@@ -201,6 +201,34 @@ impl ElemKind {
             ElemKind::Case128 => 5,
         }
     }
+
+    /// The bytes of a case value (1, 2, 4, 8 or 16, its size in a code constant), or `None`
+    /// for a kind that isn't a case.
+    pub const fn case_bytes(self) -> Option<usize> {
+        match self {
+            ElemKind::Case8 => Some(1),
+            ElemKind::Case16 => Some(2),
+            ElemKind::Case32 => Some(4),
+            ElemKind::Case64 => Some(8),
+            ElemKind::Case128 => Some(16),
+            ElemKind::Target | ElemKind::Word | ElemKind::Arg => None,
+        }
+    }
+
+    /// Whether this is a sparse switch's case kind.
+    pub const fn is_case(self) -> bool {
+        self.case_bytes().is_some()
+    }
+}
+
+impl Opcode {
+    /// The element kind of the opcode's case list, if it has one.
+    pub fn case_elem(self) -> Option<ElemKind> {
+        self.info().operands.iter().find_map(|o| match o.kind {
+            OperandKind::List(e) if e.is_case() => Some(e),
+            _ => None,
+        })
+    }
 }
 
 impl OperandKind {

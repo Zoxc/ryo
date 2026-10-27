@@ -5,8 +5,7 @@ use alloc::vec::Vec;
 
 use super::decode::Decoded;
 use super::encode::{
-    ArgVal, Asm, EncodeError, Encoded, Label, Opnd, Ref, RoReq, Rodata, Scope, ScopeKind, Unwind, case_elem, case_size, handler_args, operands,
-    push_words, word_len,
+    ArgVal, Asm, EncodeError, Encoded, Label, Opnd, Ref, RoReq, Rodata, Scope, ScopeKind, Unwind, handler_args, operands, push_words, word_len,
 };
 use super::{Mode, has_handler};
 use crate::full::{Elem, ElemKind, Opcode, OperandKind, Shape, insn_len};
@@ -360,11 +359,11 @@ pub fn encode_reduced_at(
                             Arg::Imm(n) => cases += n,
                             _ => return Err(bad()),
                         },
-                        OperandKind::List(e) if case_elem(h) == Some(e) => {
+                        OperandKind::List(e) if let Some(size) = e.case_bytes() => {
                             // A sparse switch's case values: as many as its cases, of its
                             // value size.
                             let (Arg::Ro(off), Arg::Imm(n)) = (args[r], args[r + 1]) else { return Err(bad()) };
-                            let len = usize::try_from(n).ok().and_then(|n| n.checked_mul(case_size(e))).ok_or_else(bad)?;
+                            let len = usize::try_from(n).ok().and_then(|n| n.checked_mul(size)).ok_or_else(bad)?;
                             values = code_consts.get(off as usize..).and_then(|b| b.get(..len)).ok_or_else(bad)?;
                             cases += n;
                             ro_args += 1;

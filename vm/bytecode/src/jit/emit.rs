@@ -13,7 +13,7 @@ use super::regalloc::{Alloc, Loc};
 use super::x86::{self, Alu, Cc as X, Mem, Packed, R, Rm, Shift, X86};
 use crate::asm::osr::{self, OsrCode};
 use crate::asm::{self, CallSite, Mode, PROBE_FROM, Ref, Reloc, RetPart};
-use crate::full::{ElemKind, OperandKind};
+use crate::full::ElemKind;
 use crate::reduced::Arg;
 
 /// The SSA tier's machine code for one function.
@@ -987,19 +987,7 @@ impl<'a> E<'a> {
             Arg::Site(s) => self.a.x().lea(r, Mem::Rip(Ref::Site(s))),
             Arg::Ro(off) => {
                 // A sparse switch's case values: as many as the next register says.
-                let size =
-                    h.h.info()
-                        .operands
-                        .iter()
-                        .find_map(|o| match o.kind {
-                            OperandKind::List(ElemKind::Case8) => Some(1),
-                            OperandKind::List(ElemKind::Case16) => Some(2),
-                            OperandKind::List(ElemKind::Case32) => Some(4),
-                            OperandKind::List(ElemKind::Case64) => Some(8),
-                            OperandKind::List(ElemKind::Case128) => Some(16),
-                            _ => None,
-                        })
-                        .ok_or(Unsupported("a code constant argument"))?;
+                let size = h.h.case_elem().and_then(ElemKind::case_bytes).ok_or(Unsupported("a code constant argument"))?;
                 let Some((Arg::Imm(n), _)) = h.regs.get(k + 1) else { return Err(Unsupported("case values")) };
                 let len = (*n as usize).checked_mul(size).ok_or(Unsupported("case values"))?;
                 let bytes = self.code_consts.get(off as usize..).and_then(|b| b.get(..len)).ok_or(Unsupported("case values"))?;

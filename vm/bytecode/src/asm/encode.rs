@@ -271,7 +271,7 @@ pub fn operands(code: &[u32], at: usize) -> Vec<Opnd> {
                     ElemKind::Target => Opnd::Targets((0..n).map(|i| target(el(i, 0))).collect()),
                     ElemKind::Word => Opnd::Words((0..n).map(|i| el(i, 0)).collect()),
                     ElemKind::Arg => unreachable!("not in the full set"),
-                    ElemKind::Case8 | ElemKind::Case16 | ElemKind::Case32 | ElemKind::Case64 | ElemKind::Case128 => {
+                    _ => {
                         let vw = e.words() - 1;
                         let vals = (0..n).map(|i| (0..vw).fold(0u128, |v, j| v | (el(i, j) as u128) << (32 * j))).collect();
                         Opnd::Cases(vals, (0..n).map(|i| target(el(i, vw))).collect())
@@ -460,26 +460,6 @@ pub(super) fn param_load(s: i32, w: u32, pe: bool) -> Vec<Item> {
         (true, 2) => vec![Item::Ld { w: W::W, sx: false, dst: F16_TMP, m }, Item::Movd { to_xmm: true, x: a.index as u8, r: F16_TMP }],
         (true, size) => vec![Item::Sse { st: false, size: size as u8, x: a.index as u8, m }],
     }
-}
-
-/// The element size of a case list's value array in the rodata.
-pub(super) fn case_size(e: ElemKind) -> usize {
-    match e {
-        ElemKind::Case8 => 1,
-        ElemKind::Case16 => 2,
-        ElemKind::Case32 => 4,
-        ElemKind::Case64 => 8,
-        ElemKind::Case128 => 16,
-        ElemKind::Target | ElemKind::Word | ElemKind::Arg => unreachable!("not a case list"),
-    }
-}
-
-/// The element kind of `op`'s case list, if it has one.
-pub(super) fn case_elem(op: Opcode) -> Option<ElemKind> {
-    op.info().operands.iter().find_map(|o| match o.kind {
-        OperandKind::List(e @ (ElemKind::Case8 | ElemKind::Case16 | ElemKind::Case32 | ElemKind::Case64 | ElemKind::Case128)) => Some(e),
-        _ => None,
-    })
 }
 
 /// A branch target of [`Asm`]: a position in the code, bound with [`Asm::bind`].
@@ -1046,7 +1026,7 @@ impl Asm {
                 Arg::Sym(s) => self.fixed(Item::Lea(reg, Ref::Sym(s))),
                 Arg::Site(s) => self.fixed(Item::Lea(reg, Ref::Site(s))),
                 Arg::Ro(_) => {
-                    let size = case_elem(op).map_or(1, case_size);
+                    let size = op.case_elem().and_then(ElemKind::case_bytes).unwrap_or(1);
                     let ro = self.ro(RoReq::Bytes { bytes: case_values.to_vec(), align: size.max(4) });
                     self.pieces.push(Piece::LeaRo { reg, ro });
                 }
@@ -1672,7 +1652,7 @@ pub(super) fn handler_args<T>(op: Opcode, ops: &[Opnd<T>], fp_arg: bool, mut ro:
             Opnd::Targets(t) => set(loc, 0, imm(t.len() as u64), false),
             Opnd::Cases(vals, _) => {
                 let OperandKind::List(e) = info.operands[i].kind else { unreachable!() };
-                let size = case_size(e);
+                let size = e.case_bytes().expect("a case list");
                 let mut b = Vec::with_capacity(vals.len() * size);
                 for v in vals {
                     b.extend_from_slice(&v.to_le_bytes()[..size]);

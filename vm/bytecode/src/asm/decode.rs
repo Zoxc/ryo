@@ -9,8 +9,8 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use super::encode::{
-    CallSite, DroppedStore, Opnd, Ref, RegVal, Reloc, Scope, arg_store, case_size, epilogue, fp_item, int_arg, prologue, push_words, result_stores,
-    ret_loads, word_len,
+    CallSite, DroppedStore, Opnd, Ref, RegVal, Reloc, Scope, arg_store, epilogue, fp_item, int_arg, prologue, push_words, result_stores, ret_loads,
+    word_len,
 };
 use super::inline::Cache;
 use super::list::{Hint, InsnList};
@@ -593,7 +593,7 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8]) -> Result<Proto, AsmError> {
             let l = layout(op, fr.mode);
             let n = op.info().operands.iter().zip(l.locs).find_map(|(o, loc)| match o.kind {
                 OperandKind::List(ElemKind::Target) => Some(loc.reg),
-                OperandKind::List(ElemKind::Case8 | ElemKind::Case16 | ElemKind::Case32 | ElemKind::Case64 | ElemKind::Case128) => Some(loc.reg + 1),
+                OperandKind::List(e) if e.is_case() => Some(loc.reg + 1),
                 _ => None,
             });
             let n = match n.map(|r| args.get(r as usize)) {
@@ -1160,16 +1160,15 @@ fn handler_operands(op: Opcode, setup: &[(u32, Item)], fr: &Frame, ro: &[u8], co
                 let n = usize::try_from(imm(loc.reg)?).ok().filter(|&n| n < code_len / 4).ok_or(err("case count"))?;
                 Opnd::Targets(vec![0; n])
             }
-            OperandKind::List(e @ (ElemKind::Case8 | ElemKind::Case16 | ElemKind::Case32 | ElemKind::Case64 | ElemKind::Case128)) => {
+            OperandKind::List(e) if let Some(size) = e.case_bytes() => {
                 let Ref::Ro(at) = addr(loc.reg)? else { return Err(err("case values")) };
                 let n = usize::try_from(imm(loc.reg + 1)?).map_err(|_| err("case values"))?;
-                let size = case_size(e);
                 let len = n.checked_mul(size).ok_or(err("case values"))?;
                 let b = ro.get(at as usize..).and_then(|b| b.get(..len)).ok_or(err("case values"))?;
                 let vals = b.chunks(size).map(|c| c.iter().rev().fold(0u128, |v, &x| v << 8 | x as u128)).collect();
                 Opnd::Cases(vals, vec![0; n])
             }
-            OperandKind::Func | OperandKind::Target | OperandKind::Neg | OperandKind::List(ElemKind::Word | ElemKind::Arg) | OperandKind::Handler => {
+            OperandKind::Func | OperandKind::Target | OperandKind::Neg | OperandKind::List(_) | OperandKind::Handler => {
                 return Err(err("operand in a register"));
             }
         });
