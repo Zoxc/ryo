@@ -449,3 +449,39 @@ fn vectors_without_xmm6_to_15() {
     v.push(Insn::Ret { s: Slot(-184), k: 8 });
     each(&v, 192, &[], "vectors", |_, _| {});
 }
+
+/// The SSA tier doesn't lay out PE pad regions (design/vm.md#pe-seh): a function with a
+/// cleanup landing pad is left to re-encoding (`Unsupported`), one with only a terminate
+/// stub's (a catching pad, entered by `RtlUnwindEx` with the frame's `rsp`) compiles.
+#[test]
+fn cleanup_pads_go_to_reencoding() {
+    use ryo_bytecode::image::{CATCH, CONTINUE, CleanupEntry};
+    for catch in [false, true] {
+        // 0: the call, 1: ret, 2: its landing pad, 3: resume, or a terminate stub's abort.
+        let insns = [
+            Insn::CallSym { d: Slot(0), sym: Sym(0), k: 0, a: List::from_words(&[]) },
+            Insn::Ret { s: Slot(0), k: 0 },
+            Insn::Lpad { x: Slot(-24) },
+            if catch { Insn::Abort {} } else { Insn::Resume { x: Slot(-24) } },
+        ];
+        let mut words = Vec::new();
+        let mut starts = Vec::new();
+        for i in &insns {
+            starts.push(words.len() as u32);
+            i.encode(&mut words);
+        }
+        let mut cleanup = vec![CleanupEntry { offset: starts[0], target: starts[2] | if catch { CATCH } else { 0 } }];
+        if !catch {
+            cleanup.push(CleanupEntry { offset: starts[3], target: CONTINUE });
+        }
+        let enc = asm::encode(&words, 32, &cleanup, &[], PE).expect("encodes");
+        assert_eq!(enc.region < enc.code.len() as u32, !catch, "a pad region");
+        let d = asm::decode_reduced(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, PE).expect("decodes");
+        let r = jit::compile(&d, &[], PE, &Options { alloc: Allocator::LinearScan, stress: false, check: true, dump: false }, None, None);
+        if catch {
+            assert!(r.is_ok(), "a terminate pad compiles");
+        } else {
+            assert!(matches!(r, Err(jit::Error::Unsupported(ref u)) if u.0 == "PE cleanup landing pads"), "a cleanup pad doesn't");
+        }
+    }
+}

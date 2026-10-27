@@ -97,6 +97,12 @@ pub fn compile(
     mem: Option<&dyn opt::ConstMem>,
     mut env: Option<&mut dyn inline::Env>,
 ) -> Result<Output, Error> {
+    // PE: cleanup landing pads run in a pad region (design/vm.md#unwinding), which this tier
+    // doesn't lay out; re-encoding does.
+    let pe_cleanup = |sites: &[crate::asm::CallSite]| mode.pe && sites.iter().any(|cs| cs.pad.is_some() && !cs.catch);
+    if mode.pe && crate::asm::pe_region_start(&d.cleanup).is_some() {
+        return Err(Error::Unsupported(Unsupported("PE cleanup landing pads")));
+    }
     let mut f = built(d, mode, mem)?;
     // The IR as construction leaves it, before value numbering and the folds (`RYO_JIT_DUMP`).
     let built_ir = opts.dump.then(|| alloc::format!("{f}"));
@@ -165,6 +171,10 @@ pub fn compile(
         regalloc::check(&f, &al, mode.frame_pointer).map_err(|e| Error::Check(alloc::format!("allocation: {e}")))?;
     }
     let mut out = emit::emit(&f, &al, &uses, mode, code_consts, emit::Opts { stress: opts.stress })?;
+    // An inlined callee's.
+    if pe_cleanup(&out.call_sites) {
+        return Err(Error::Unsupported(Unsupported("PE cleanup landing pads")));
+    }
     out.devirt = devirt;
     if opts.dump {
         use core::fmt::Write;

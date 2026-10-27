@@ -68,6 +68,10 @@ pub struct RtApi {
     /// its unwind information names, by this address. (The JIT's own `rust_eh_personality`,
     /// if it has a std of its own, is another function.)
     pub personality: *const (),
+    /// PE: `ryo_seh_handler`, the language handler VM code's unwind info names
+    /// (design/vm.md#unwinding), which the JIT's code reaches through a thunk of its own
+    /// (null off Windows).
+    pub seh_handler: *const (),
     /// The thresholds the records' counters started at, as counts: calls
     /// ([`JitRecord::ctr_e`]) and loop iterations ([`JitRecord::ctr_l`]), for
     /// [`crate::image::jit_count`].

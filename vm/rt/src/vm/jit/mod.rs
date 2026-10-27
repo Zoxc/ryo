@@ -584,6 +584,10 @@ fn start() -> bool {
         thresholds: cfg.thresholds(),
         probe: super::interp::probe_stack as *const (),
         personality: rust_eh_personality as *const (),
+        #[cfg(windows)]
+        seh_handler: super::seh::handler as *const (),
+        #[cfg(not(windows))]
+        seh_handler: ptr::null(),
         next_batch,
         done,
         shuffled,

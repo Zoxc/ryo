@@ -77,6 +77,10 @@ pub fn decide(flags: u32, cxx: bool, pc: u32, data: &PeHandlerData<'_>) -> Actio
 }
 
 #[cfg(windows)]
+#[cfg_attr(not(feature = "jit"), allow(unused_imports))]
+pub(crate) use win::handler;
+
+#[cfg(windows)]
 mod win {
     use core::ffi::c_void;
 

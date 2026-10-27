@@ -1427,6 +1427,54 @@ fn pe_code_at(shuffle: bool, frame: u32, k: Option<i64>) {
     }
 }
 
+/// PE code with a cleanup landing pad through the JIT (design/vm.md#unwinding): re-encoded
+/// with its pad region after the body (the SSA tier leaves such functions to re-encoding),
+/// and running as the AOT code on the normal path, callee-saved registers intact.
+#[test]
+fn pe_pad_region() {
+    init();
+    let mut w = ImageWriter::new(unique_scid());
+    let s_note = w.symbol("note_pe", 0);
+    // f(n, obs) = n, noting where it runs; its call's landing pad notes again and resumes.
+    // n@16, obs@24, the exception slot -24.
+    let mut a = Asm::new();
+    let site = note_call(&mut a, s_note, 24);
+    a.ret(Slot(16), 8);
+    let c = a.i(Insn::Lpad { x: Slot(-24) });
+    note_call(&mut a, s_note, 24);
+    let r = a.i(Insn::Resume { x: Slot(-24) });
+    let mut fd = func(a.done(), 32, 16, 8);
+    fd.cleanup = vec![CleanupEntry { offset: site, target: c }, CleanupEntry { offset: r, target: CONTINUE }];
+    let f = w.add_function(fd);
+    let mut obj = w.finish(PE).unwrap();
+    let fc = &obj.functions[f.0 as usize];
+    assert!(fc.region < fc.len, "a pad region");
+    obj.relocs.retain(|r| r.kind != RelocKind::Rva32);
+    obj.unwind.clear();
+    let img = link(obj, &[("note_pe", note_pe as *const () as usize)]);
+    register(&[&img]);
+    let fallbacks = ryo_jit::ssa_stats().1;
+    let saved =
+        [0x1111111111111111, 0x2222222222222222, 0x3333333333333333, 0x4444444444444444, 0x5555555555555555, 0x6666666666666666, 0x7777777777777777];
+    let o = |a: &AtomicU64| a.load(std::sync::atomic::Ordering::SeqCst);
+    for call in 0..2 {
+        let obs = Obs::default();
+        let mut regs = [0u64; 7];
+        assert_eq!(call_checked(img.code(f), 9, &raw const obs as u64, &mut regs), 9, "call {call}");
+        assert_eq!(regs, saved, "call {call}: callee-saved registers");
+        assert_eq!(state(&img, f), JIT_DONE);
+        assert!(in_jit(&img, f, o(&obs.last)), "call {call}: ended at {:#x}", o(&obs.last));
+    }
+    // Re-encoded: the AOT form's prologue, and the region's entry after the body.
+    let rec = unsafe { &*img.record(f) };
+    let code = unsafe { std::slice::from_raw_parts(rec.jit_code, ryo_jit::code_len(rec)) };
+    assert_eq!(code[..8], [0x55, 0x57, 0x56, 0x48, 0x8d, 0x6c, 0x24, 0x10]);
+    assert!(code.windows(7).any(|w| w == [0x48, 0x83, 0xec, 0x28, 0x41, 0xff, 0xe3]), "the region's entry");
+    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
+        assert!(ryo_jit::ssa_stats().1 > fallbacks, "the SSA tier left it");
+    }
+}
+
 /// Win64 arguments of the kinds `i128`, `f16` and `f128` lower to (design/platforms.md): an
 /// `i128` as two positional 8-byte arguments, here straddling `r9` and the stack; an `f16` in
 /// the low 2 bytes of the `xmm` of its position or of its stack slot; an `f128` as a pointer;
