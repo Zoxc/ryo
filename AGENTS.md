@@ -133,5 +133,5 @@ code that calls the VM's handlers; cg_llvm compiles everything else. Start at
 - `compare-branches.py --worktree` creates nested git worktrees under `target/compare/`;
   exclude `target/` when searching, and remove them with `git worktree remove`.
 - Toolchain is pinned to stable 1.99.1 with `RUSTC_BOOTSTRAP=1` (`rust-toolchain.toml`,
-  `design/build.md#toolchain`); `-Cincremental` and more than one codegen unit are rejected.
-- The JIT is Linux-only; on Windows it is a stub.
+  `design/build.md#toolchain`).
+- The JIT is built for Linux, Windows and x86_64 macOS, but has only ever run on Linux.
