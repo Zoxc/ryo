@@ -771,6 +771,25 @@ impl<O> OpInfo<O> {
         }
         None
     }
+
+    /// Word index of operand `i` (`operands.len()`: the instruction's length) in the
+    /// instruction `w`, reading the count words of the list operands before it.
+    pub fn operand_start(&self, w: &[u32], i: usize) -> Result<usize, DecodeError> {
+        let mut pos = 1usize;
+        for o in &self.operands[..i] {
+            pos += match o.kind {
+                OperandKind::List(e) => {
+                    let n = *w.get(pos).ok_or(DecodeError::Truncated)? as usize;
+                    1 + n.checked_mul(e.words()).ok_or(DecodeError::Truncated)?
+                }
+                k => k.words().unwrap(),
+            };
+        }
+        if pos > w.len() {
+            return Err(DecodeError::Truncated);
+        }
+        Ok(pos)
+    }
 }
 
 pub(crate) const fn str_eq(a: &str, b: &str) -> bool {
@@ -947,20 +966,8 @@ macro_rules! define_ops {
             if let Some(n) = op.fixed_len() {
                 return Ok(n);
             }
-            let mut pos = 1usize;
-            for o in op.info().operands {
-                pos += match o.kind {
-                    OperandKind::List(e) => {
-                        let n = *w.get(pos).ok_or(DecodeError::Truncated)? as usize;
-                        1 + n.checked_mul(e.words()).ok_or(DecodeError::Truncated)?
-                    }
-                    k => k.words().unwrap(),
-                };
-            }
-            if pos > w.len() {
-                return Err(DecodeError::Truncated);
-            }
-            Ok(pos)
+            let info = op.info();
+            info.operand_start(w, info.operands.len())
         }
 
         /// Iterates over the instructions of a code sequence, yielding `(word offset, insn)`.
@@ -1077,20 +1084,10 @@ impl CodeBuf {
     pub fn set_list_target(&mut self, insn_at: u32, operand: usize, i: usize, target_at: u32) {
         let at = insn_at as usize;
         let op = Opcode::from_u16(self.words[at] as u16).expect("not an instruction");
-        let mut pos = at + 1;
-        for (j, o) in op.info().operands.iter().enumerate() {
-            let n = match o.kind {
-                OperandKind::List(e) => 1 + self.words[pos] as usize * e.words(),
-                k => k.words().unwrap(),
-            };
-            if j == operand {
-                assert_eq!(o.kind, OperandKind::List(ElemKind::Target), "not a target list");
-                assert!(i < self.words[pos] as usize, "list index out of range");
-                self.words[pos + 1 + i] = target_at.wrapping_sub(insn_at) as u32;
-                return;
-            }
-            pos += n;
-        }
-        panic!("no operand {operand}");
+        let info = op.info();
+        assert_eq!(info.operands[operand].kind, OperandKind::List(ElemKind::Target), "not a target list");
+        let pos = at + info.operand_start(&self.words[at..], operand).expect("truncated instruction");
+        assert!(i < self.words[pos] as usize, "list index out of range");
+        self.words[pos + 1 + i] = target_at.wrapping_sub(insn_at) as u32;
     }
 }
