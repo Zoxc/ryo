@@ -38,7 +38,7 @@ fn compile(insns: &[Insn<'_>], frame: u32, scopes: &[(usize, i32, u32, ScopeKind
         .collect();
     let enc = asm::encode(&words, frame, &[], &scopes, PE).expect("encodes");
     let d = asm::decode_reduced(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, PE).expect("decodes");
-    jit::compile(&d, &[], PE, &Options { alloc, stress, check: true, dump: false }, None, None)
+    jit::compile(&d, &[], PE, &Options { alloc, stress, check: true, dump: false, licm: false }, None, None)
 }
 
 fn arg(d: i32, i: u32) -> Insn<'static> {
@@ -479,7 +479,8 @@ fn cleanup_pads_go_to_reencoding() {
         let enc = asm::encode(&words, 32, &cleanup, &[], PE).expect("encodes");
         assert_eq!(enc.region < enc.code.len() as u32, !catch, "a pad region");
         let d = asm::decode_reduced(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, PE).expect("decodes");
-        let r = jit::compile(&d, &[], PE, &Options { alloc: Allocator::LinearScan, stress: false, check: true, dump: false }, None, None);
+        let r =
+            jit::compile(&d, &[], PE, &Options { alloc: Allocator::LinearScan, stress: false, check: true, dump: false, licm: false }, None, None);
         if catch {
             assert!(r.is_ok(), "a terminate pad compiles");
         } else {

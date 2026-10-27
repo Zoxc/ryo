@@ -162,6 +162,7 @@ fn from_env() -> Config {
             test_oom: flag(c"RYO_JIT_TEST_OOM"),
             check: flag(c"RYO_JIT_CHECK"),
             opt: opt(),
+            licm: flag(c"RYO_JIT_LICM"),
             ssa_limit: var(c"RYO_JIT_SSA_LIMIT").and_then(parse_i64).and_then(|n| u64::try_from(n).ok()).unwrap_or(u64::MAX),
         },
     }

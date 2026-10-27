@@ -58,6 +58,8 @@ pub struct JitSettings {
     /// Only the first this many functions go to the SSA tier, the rest are re-encoded
     /// (`RYO_JIT_SSA_LIMIT`, debugging: bisects a miscompile); `u64::MAX` for all.
     pub ssa_limit: u64,
+    /// General loop-invariant code motion in the SSA tier (`RYO_JIT_LICM`), off by default.
+    pub licm: bool,
 }
 
 /// What the runtime gives the JIT: built once, before the JIT starts, and never changed.

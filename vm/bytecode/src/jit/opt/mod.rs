@@ -10,9 +10,9 @@
 //!   and stores (value numbered again).
 //! - `osr`: the OSR-transparent loop facts the forward analyses share: OSR edges left out.
 //! - `fold`: the folds instruction selection relies on.
-//! - `hoist`: splats of loop-invariant bytes out of their loops.
 //! - `checks`: check elimination: overflow checks and compares the dominating branches
 //!   and value ranges decide.
+//! - `hoist`: loop-invariant code motion, to preheaders and the OSR entries' landings.
 //! - `dce`: dead code elimination, effect-free handler calls included.
 //! - `thread`: jump threading through empty blocks.
 //! - `layout`: cold blocks last, and values crossing calls in them split off.
@@ -127,8 +127,8 @@ pub fn run(f: &mut Func, mem: Option<&dyn ConstMem>) {
         lvn::lvn(f, mem);
     }
     fold::fold(f);
-    hoist::hoist(f);
     checks::checks(f);
+    hoist::hoist(f);
     dce::dce(f);
     thread::thread(f);
     layout::layout(f);

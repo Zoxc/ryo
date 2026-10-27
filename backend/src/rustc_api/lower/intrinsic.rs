@@ -301,30 +301,22 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     Ok(())
                 })?
             }
-            "volatile_load" | "unaligned_volatile_load" => {
-                let size = self.layout_of(ty0())?.size.bytes() as u32;
-                let [p] = self.arg_slots::<1>(args)?;
-                self.into_dest(cont, |fx, d| {
-                    fx.load(d, Loc::Mem { p, k: 0 }, size);
-                    Ok(())
-                })?
+            // Islands, which the JIT doesn't see into (it would merge, forward or hoist VM
+            // loads and stores); a nontemporal store is a plain store.
+            "volatile_load"
+            | "unaligned_volatile_load"
+            | "volatile_store"
+            | "unaligned_volatile_store"
+            | "volatile_copy_memory"
+            | "volatile_copy_nonoverlapping_memory"
+            | "volatile_set_memory" => {
+                let ins = self.island_args(args)?;
+                self.wrapper(&format!("ryo_island_{name}"), &[ty0().into()], &ins, cont)?
             }
-            "volatile_store" | "unaligned_volatile_store" | "nontemporal_store" => {
+            "nontemporal_store" => {
                 let size = self.layout_of(ty0())?.size.bytes() as u32;
                 let [p, v] = self.arg_slots::<2>(args)?;
                 self.store(Loc::Mem { p, k: 0 }, v, size);
-                true
-            }
-            "volatile_copy_memory" | "volatile_copy_nonoverlapping_memory" | "volatile_set_memory" => {
-                let el = self.layout_of(ty0())?;
-                let [x, y, count] = self.arg_slots::<3>(args)?;
-                let n = self.block_bytes(count, el);
-                let op = match name {
-                    "volatile_copy_memory" => Opcode::Memmove,
-                    "volatile_copy_nonoverlapping_memory" => Opcode::Memcpy,
-                    _ => Opcode::Memset,
-                };
-                self.op(op, &[x, y, n]);
                 true
             }
             "exact_div" | "disjoint_bitor" => {

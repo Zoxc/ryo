@@ -416,7 +416,8 @@ identities find new constants, at most three rounds. Then the folds (`opt::fold`
 instruction selection relies on: a compare used only by the following branch becomes a
 `brcmp`, an overflow op (`add`/`sub`/`mul.ovf`) whose flag only the branch ending its block
 reads becomes a `br ovf` on the flags it leaves, and loads and stores through an `AllocaAddr` or a `PtrAdd` take its alloca or
-constant into their address. Last, `opt::dce` marks and sweeps: a value is live when an
+constant into their address. Then `opt::checks` (check elimination) and `opt::hoist`,
+[loop-invariant code motion](#loop-invariant-code-motion). Last, `opt::dce` marks and sweeps: a value is live when an
 effect, a terminator or a live value reads it, and a parameter's edge arguments only when the
 parameter is live, so pure instructions without live results and dead parameters (dead
 loop-carried values included, but not the entry's) go with their arguments. A handler call
@@ -482,6 +483,45 @@ the normal edges gone, its `OsrLoad`s can't stand for them). But a parameter equ
 earlier one of the same head on every normal edge (each edge passing them one value that
 isn't `undef`, or each its own parameter) becomes that one: the AOT frame's two slots hold
 the same bytes at the head, and the entry's `OsrLoad` of the second goes. OSR heads and their entries are never removed or merged.
+
+An OSR entry only loads from the AOT frame (its code is the entry sequence, not IR), so a
+value computed for it ([LICM](#loop-invariant-code-motion)) goes in a *landing*: a body block
+between the entry and its head that only the entry reaches (`osr::osr_landing`). Its edge into
+the head counts as the OSR edge (`osr_edge`): the values it passes are those of the normal
+edges whenever the entry is taken, by the argument above.
+
+### Loop-invariant code motion
+
+`opt::hoist`, after the checks; general only with `RYO_JIT_LICM=1` (off by default: it doesn't
+speed up the benches and costs 1-2% compile time), otherwise only `vsplat`s move, by the same
+rules (landings included). Natural loops of the dominators without the OSR edges,
+innermost first, so a value invariant in several levels leaves each in turn.
+- **What**: a pure operation whose operands are constants, values from before the loop,
+  hoisted values, or head parameters with one value on every normal edge (`osr::invariant`);
+  frame and constant addresses (`AllocaAddr`, `RefAddr` without `ind`) are recomputed where a
+  hoisted instruction needs them, never moved. Loads (`load`, and `aload` of a memory alloca)
+  too when nothing in the loop may write their bytes, by `opt::lvn`'s rules (a store through
+  the same pointer to other bytes doesn't). Not an overflow op (its flag feeds a branch).
+  Only instructions in blocks no other head's OSR entry reaches without passing the head.
+- **Faults**: a load through a pointer, a division and an effect-free handler call may fault,
+  so they move only if they run whenever the head does: every path from the head reaches
+  them with no exit, latch, call or cycle on the way.
+- **Where**: the head's one entry predecessor if it ends in a jump, or a new preheader that
+  the entry edges go to, with the head's parameters. At a head with an OSR entry the value
+  also needs computing for the entry: it becomes a new head parameter that the preheader
+  passes, each latch passes on, and the entry's landing computes again from the entry's
+  values of the head's parameters (OSR-transparently: an invariant parameter is its normal
+  value there, and a load nothing in the loop writes reads the same bytes at the head on every
+  iteration). Identical hoisted instructions are one.
+- **Register pressure**: a hoisted value is live across the whole loop, and the linear
+  scan's intervals are hulls in the layout. An instruction moves only if something in the
+  loop uses it (not one only an exit or a cold path uses). The expensive ones (divisions,
+  `vsplat`, effect-free handler calls, `RefAddr ind`) always move; a cheap one only if it
+  runs on every iteration, no call is laid out within the loop (but in blocks that end in a
+  trap), and it takes the register of an operand that nothing else in the loop uses, so it
+  costs the loop no register (a loop that runs once would pay for a new one: a callee-saved
+  register's save and restore in a hashmap probe, say). Cheap operations feeding a moved one
+  are copied out with it, the originals left for their other uses.
 
 ### Back end
 
@@ -755,10 +795,8 @@ operations, not handler calls, with exact 16-byte accesses (2 for `vmsb`'s mask,
   value.
 - **Folds** (`opt::lvn`): operations on constants, `vmsb(vlt.s(x, 0))` to `vmsb(x)` (so
   `_mm_movemask_epi8` is one `pmovmskb`), `x == x`, `x < x`, and the bitwise identities with
-  zeros and ones. `opt::hoist` moves a `vsplat` of a byte defined outside the loops around it
-  to the byte's definition; of a loop head's parameter passed on unchanged around the loop
-  (one at an OSR head), it adds a vector parameter that each entering edge (the OSR entry's
-  included) computes and the back edges pass on.
+  zeros and ones. `opt::hoist` moves a `vsplat` of an invariant byte out of its loops
+  ([LICM](#loop-invariant-code-motion)).
 - **Registers**: a second class, `xmm0`–`xmm13` with `xmm14`/`xmm15` the emitter's scratch
   registers; on PE `xmm0`–`xmm3` and `xmm4`/`xmm5`, so that the tier never names the
   callee-saved `xmm6`–`xmm15`. No `xmm` register survives a call: a vector live across one
@@ -860,6 +898,7 @@ for shuffled frames per image, `RtApi::shuffled`):
 | `RYO_JIT_OPT=…` | `ssa` (the default), `ssa-naive` or `reencode`: how functions are compiled ([The SSA tier](#the-ssa-tier)); with `RYO_JIT_SHUFFLE` the SSA tier lays allocas out in reverse with gaps |
 | `RYO_JIT_CHECK=1` | the SSA tier's checkers: a failure is printed on stderr and the function falls back |
 | `RYO_JIT_DUMP=dir` | the SSA tier writes each function's reduced code, IR before and after value numbering and the folds, locations and code (or, for one it doesn't handle, the reason and the reduced code) to `dir/f<index>-<image header address>.txt`, and every installed function's code with its relocations by name to `dir/f<index>-<image header address>.code` (for `y bench codegen`, [build.md](build.md#test-and-bench)); read by the JIT thread itself, not passed in `RtApi` |
+| `RYO_JIT_LICM=1` | the SSA tier's general [loop-invariant code motion](#loop-invariant-code-motion); off by default, when only splats are hoisted |
 | `RYO_JIT_SSA_LIMIT=n` | debugging: only the first `n` functions the JIT compiles go to the SSA tier, the rest are re-encoded (bisects a miscompile) |
 
 `y test` links a checked JIT, built with debug assertions and overflow checks

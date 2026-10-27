@@ -2441,13 +2441,13 @@ fn hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@has
     mov     rax,rsi
     shr     rax,39h
     and     rax,7Fh
+    mov     rcx,[rbx+8]
+    and     rsi,rcx
     movzx   r11d,al
     imul    r11d,1010101h
     movd    xmm14,r11d
     pshufd  xmm14,xmm14,0
     movdqu  [rsp+20h],xmm14
-    mov     rax,[rbx+8]
-    and     rsi,rax
     mov     r12,rsi
     mov     r13d,0
 L0:
@@ -3169,12 +3169,12 @@ fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::map::equiv
     mov     rax,rsi
     shr     rax,39h
     and     rax,7Fh
+    mov     rcx,[rdi+8]
+    and     rsi,rcx
     movzx   r11d,al
     imul    r11d,1010101h
     movd    xmm0,r11d
     pshufd  xmm0,xmm0,0
-    mov     rax,[rdi+8]
-    and     rsi,rax
     mov     eax,0
 L0:
     mov     rcx,[rdi]
@@ -3311,12 +3311,12 @@ fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entr
     mov     rax,rsi
     shr     rax,39h
     and     rax,7Fh
+    mov     rcx,[rdi+8]
+    and     rsi,rcx
     movzx   r11d,al
     imul    r11d,1010101h
     movd    xmm0,r11d
     pshufd  xmm0,xmm0,0
-    mov     rax,[rdi+8]
-    and     rsi,rax
     mov     eax,0
 L0:
     mov     rcx,[rdi]

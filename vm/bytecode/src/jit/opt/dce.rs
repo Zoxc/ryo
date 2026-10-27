@@ -6,7 +6,7 @@ use crate::jit::ir::*;
 /// Whether `op` has no effect but its results: a pure operation, or a call of a handler's
 /// register entry ([`crate::jit::effects::RegEntry`]) that touches no memory and can't unwind:
 /// its frame operands are values then, and it only computes.
-fn removable(op: &Op) -> bool {
+pub(super) fn removable(op: &Op) -> bool {
     match op {
         Op::HCall(h) => h.reg && h.site == Site::None && h.h != Opcode::Lpad && crate::jit::effects::effects(h.h).is_some_and(|e| !e.memory),
         op => op.pure(),

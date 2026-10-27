@@ -147,6 +147,18 @@ intrinsic_wrappers! {
 // SIMD wrappers: generic exactly like the intrinsic (same generic params, in order), so the
 // lowering passes the intrinsic's generic args unchanged. The backend's
 // `island::templates::simd` lists the same names with their arities.
+// Volatile accesses run here, not as VM loads and stores: the JIT's SSA tier would merge,
+// forward or hoist those, but an island is opaque to it (design/lowering.md).
+intrinsic_wrappers! {
+    volatile_load [T] (*const T) -> T = intrinsics::volatile_load;
+    unaligned_volatile_load [T] (*const T) -> T = intrinsics::unaligned_volatile_load;
+    volatile_store [T] (*mut T, T) -> () = intrinsics::volatile_store;
+    unaligned_volatile_store [T] (*mut T, T) -> () = intrinsics::unaligned_volatile_store;
+    volatile_copy_memory [T] (*mut T, *const T, usize) -> () = intrinsics::volatile_copy_memory;
+    volatile_copy_nonoverlapping_memory [T] (*mut T, *const T, usize) -> () = intrinsics::volatile_copy_nonoverlapping_memory;
+    volatile_set_memory [T] (*mut T, u8, usize) -> () = intrinsics::volatile_set_memory;
+}
+
 intrinsic_wrappers! {
     simd_add [T] (T, T) -> T = intrinsics::simd::simd_add;
     simd_sub [T] (T, T) -> T = intrinsics::simd::simd_sub;

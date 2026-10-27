@@ -91,6 +91,7 @@ pub fn promote(f: &mut Func) -> bool {
             Ok(changed) => {
                 if changed {
                     *f = g;
+                    super::osr::through_landings(f);
                 }
                 return changed;
             }

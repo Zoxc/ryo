@@ -4556,9 +4556,9 @@ b0(v0:8, v1:8, v2:8): ; Entry
     v26:8 = Bin(ShrU, 8) (v1, 0x39)
     v27:8 = Bin(And, 8) (v26, 0x7f)
     v28:1 = Ext { from: 8, to: 1, sx: false } (v27)
-    v57:16 = V(Splat) (v28)
     v29:8 = Load(8, 8) (v0)
     v30:8 = Bin(And, 8) (v1, v29)
+    v242:16 = V(Splat) (v28)
     jmp b21(v30, 0x0)
 b1(): ; Body
     trap
@@ -4669,7 +4669,7 @@ b47(): ; Body
     v240:8 = V(Half(1)) (v238)
     AStore(AllocaId(145), 0, 8) (v239)
     AStore(AllocaId(145), 8, 8) (v240)
-    v88:16 = V(Eq) (v238, v57)
+    v88:16 = V(Eq) (v238, v242)
     v97:2 = V(Msb) (v88)
     jmp b75(v97)
 b48(): ; Body
@@ -4738,15 +4738,15 @@ b76(): ; Body
     v112:8 = Bin(Add, 8) (v31, v109)
     v113:8 = Load(8, 8) (v0)
     v114:8 = Bin(And, 8) (v112, v113)
-    v244:8 = Load(8, 0) (v0)
-    v245:8 = Bin(Sub, 8) (0x0, v114)
-    v246:8 = PtrIndex(32) (v244, v245)
-    v248:8 = ALoad(AllocaId(12), 0, 8) ()
-    v249:8 = Load(8, -24) (v246)
-    v250:8 = Load(8, -16) (v246)
-    v251:8 = Load(8, 8) (v248)
-    v252:8 = Load(8, 16) (v248)
-    br Eq.w8 v250, v252 ? b110() : b113()
+    v245:8 = Load(8, 0) (v0)
+    v246:8 = Bin(Sub, 8) (0x0, v114)
+    v247:8 = PtrIndex(32) (v245, v246)
+    v249:8 = ALoad(AllocaId(12), 0, 8) ()
+    v250:8 = Load(8, -24) (v247)
+    v251:8 = Load(8, -16) (v247)
+    v252:8 = Load(8, 8) (v249)
+    v253:8 = Load(8, 16) (v249)
+    br Eq.w8 v251, v253 ? b110() : b113()
 b77(): ; Body
     trap
 b78(): ; Body
@@ -4821,21 +4821,21 @@ b108(): ; Body
 b109(): ; Body
     trap
 b110(): ; Body
-    AStore(AllocaId(277), 0, 8) (v250)
-    AStore(AllocaId(275), 8, 8) (v249)
-    AStore(AllocaId(275), 0, 8) (v251)
+    AStore(AllocaId(277), 0, 8) (v251)
+    AStore(AllocaId(275), 8, 8) (v250)
+    AStore(AllocaId(275), 0, 8) (v252)
     Island(Island { isl: image.sym43, ops: [Alloca(AllocaId(275), 8), Alloca(AllocaId(275), 0), Alloca(AllocaId(277), 0), Alloca(AllocaId(276), 0)], site: None }) ()
-    v253:4 = ALoad(AllocaId(276), 0, 4) ()
-    v254:1 = Cmp(Eq, 4) (v253, 0x0)
-    jmp b114(v254)
+    v254:4 = ALoad(AllocaId(276), 0, 4) ()
+    v255:1 = Cmp(Eq, 4) (v254, 0x0)
+    jmp b114(v255)
 b111(): ; Body
     trap
 b112(): ; Body
     trap
 b113(): ; Body
     jmp b114(0x0)
-b114(v256:1): ; Body
-    br v256 ? b78() : b98()
+b114(v257:1): ; Body
+    br v257 ? b78() : b98()
 b115(): ; Body
     trap
 b116(): ; Body
@@ -6567,9 +6567,9 @@ b0(v0:8, v1:8, v2:8): ; Entry
     v26:8 = Bin(ShrU, 8) (v1, 0x39)
     v27:8 = Bin(And, 8) (v26, 0x7f)
     v28:1 = Ext { from: 8, to: 1, sx: false } (v27)
-    v57:16 = V(Splat) (v28)
     v29:8 = Load(8, 8) (v0)
     v30:8 = Bin(And, 8) (v1, v29)
+    v242:16 = V(Splat) (v28)
     jmp b21(v30, 0x0)
 b1(): ; Body
     trap
@@ -6680,7 +6680,7 @@ b47(): ; Body
     v240:8 = V(Half(1)) (v238)
     AStore(AllocaId(145), 0, 8) (v239)
     AStore(AllocaId(145), 8, 8) (v240)
-    v88:16 = V(Eq) (v238, v57)
+    v88:16 = V(Eq) (v238, v242)
     v97:2 = V(Msb) (v88)
     jmp b75(v97)
 b48(): ; Body
@@ -6749,13 +6749,13 @@ b76(): ; Body
     v112:8 = Bin(Add, 8) (v31, v109)
     v113:8 = Load(8, 8) (v0)
     v114:8 = Bin(And, 8) (v112, v113)
-    v244:8 = Load(8, 0) (v0)
-    v245:8 = Bin(Sub, 8) (0x0, v114)
-    v246:8 = PtrIndex(16) (v244, v245)
-    v248:8 = ALoad(AllocaId(12), 0, 8) ()
-    v250:8 = Load(8, 0) (v248)
-    v251:8 = Load(8, -16) (v246)
-    br Eq.w8 v250, v251 ? b78() : b98()
+    v245:8 = Load(8, 0) (v0)
+    v246:8 = Bin(Sub, 8) (0x0, v114)
+    v247:8 = PtrIndex(16) (v245, v246)
+    v249:8 = ALoad(AllocaId(12), 0, 8) ()
+    v251:8 = Load(8, 0) (v249)
+    v252:8 = Load(8, -16) (v247)
+    br Eq.w8 v251, v252 ? b78() : b98()
 b77(): ; Body
     trap
 b78(): ; Body
@@ -7109,9 +7109,9 @@ b0(v0:8, v1:8, v2:8): ; Entry
     v26:8 = Bin(ShrU, 8) (v1, 0x39)
     v27:8 = Bin(And, 8) (v26, 0x7f)
     v28:1 = Ext { from: 8, to: 1, sx: false } (v27)
-    v57:16 = V(Splat) (v28)
     v29:8 = Load(8, 8) (v0)
     v30:8 = Bin(And, 8) (v1, v29)
+    v242:16 = V(Splat) (v28)
     jmp b21(v30, 0x0)
 b1(): ; Body
     trap
@@ -7222,7 +7222,7 @@ b47(): ; Body
     v240:8 = V(Half(1)) (v238)
     AStore(AllocaId(145), 0, 8) (v239)
     AStore(AllocaId(145), 8, 8) (v240)
-    v88:16 = V(Eq) (v238, v57)
+    v88:16 = V(Eq) (v238, v242)
     v97:2 = V(Msb) (v88)
     jmp b75(v97)
 b48(): ; Body
@@ -7291,13 +7291,13 @@ b76(): ; Body
     v112:8 = Bin(Add, 8) (v31, v109)
     v113:8 = Load(8, 8) (v0)
     v114:8 = Bin(And, 8) (v112, v113)
-    v244:8 = Load(8, 0) (v0)
-    v245:8 = Bin(Sub, 8) (0x0, v114)
-    v246:8 = PtrIndex(16) (v244, v245)
-    v248:8 = ALoad(AllocaId(12), 0, 8) ()
-    v249:8 = Load(8, -16) (v246)
-    v250:8 = Load(8, 0) (v248)
-    br Eq.w8 v249, v250 ? b78() : b98()
+    v245:8 = Load(8, 0) (v0)
+    v246:8 = Bin(Sub, 8) (0x0, v114)
+    v247:8 = PtrIndex(16) (v245, v246)
+    v249:8 = ALoad(AllocaId(12), 0, 8) ()
+    v250:8 = Load(8, -16) (v247)
+    v251:8 = Load(8, 0) (v249)
+    br Eq.w8 v250, v251 ? b78() : b98()
 b77(): ; Body
     trap
 b78(): ; Body

@@ -998,3 +998,220 @@ fn extension_identities() {
         assert_eq!(parts[0] == p, folds, "{inner:?} then {outer:?}: {f}");
     }
 }
+
+/// The live instructions' ops of block `b`.
+fn block_ops(f: &IrFunc, b: ryo_bytecode::jit::ir::Block) -> Vec<Op> {
+    f.blocks[b.idx()].insts.iter().map(|i| f.insts[i.idx()].op.clone()).collect()
+}
+
+/// `for i in 0..m - 1` with `m` passed on unchanged around the loop: `m - 1` moves out of
+/// the loop. The head has an OSR entry, so the value becomes a head parameter, computed again
+/// for the entry in a landing block between it and the head (the entry only loads).
+#[test]
+fn licm_through_an_osr_head() {
+    use ryo_bytecode::jit::ir::{BinOp, Cc};
+    let mut f = IrFunc::default();
+    let (b0, b1, b2, b3) = (f.block(BlockKind::Entry), f.block(BlockKind::Body), f.block(BlockKind::Body), f.block(BlockKind::Body));
+    let bo = f.block(BlockKind::Osr(0));
+    f.blocks[b1.idx()].head = Some(0);
+    f.osr = vec![Some(bo)];
+    let n = f.param(b0, 8);
+    let (i, m) = (f.param(b1, 8), f.param(b1, 8));
+    let (z, one) = (f.konst(0, 8), f.konst(1, 8));
+    f.terminate(b0, Term::Jmp(Edge { to: b1, args: vec![z, n] }));
+    let l1 = f.inst(bo, Op::OsrLoad(-8, 8), vec![], &[8]);
+    let l2 = f.inst(bo, Op::OsrLoad(-16, 8), vec![], &[8]);
+    let (l1, l2) = (f.result(l1), f.result(l2));
+    f.terminate(bo, Term::Jmp(Edge { to: b1, args: vec![l1, l2] }));
+    let s = f.inst(b1, Op::Bin(BinOp::Sub, 8), vec![m, one], &[8]);
+    let s = f.result(s);
+    let c = f.inst(b1, Op::Cmp(Cc::LtU, 8), vec![i, s], &[1]);
+    let c = f.result(c);
+    f.terminate(b1, Term::Br { cond: c, t: Edge::to(b2), f: Edge::to(b3) });
+    let i2 = f.inst(b2, Op::Bin(BinOp::Add, 8), vec![i, one], &[8]);
+    let i2 = f.result(i2);
+    f.terminate(b2, Term::Jmp(Edge { to: b1, args: vec![i2, m] }));
+    f.terminate(b3, Term::Ret { k: 8, parts: vec![i] });
+    f.layout = vec![b0, b1, b2, b3];
+    f.licm = true;
+    let f = opt(f);
+    let sub = |ops: Vec<Op>| ops.iter().any(|o| matches!(o, Op::Bin(BinOp::Sub, _)));
+    assert!(!sub(block_ops(&f, b1)), "{f}");
+    assert!(sub(block_ops(&f, b0)), "{f}");
+    // The OSR entry only loads; its landing computes the value.
+    assert!(block_ops(&f, bo).iter().all(|o| matches!(o, Op::OsrLoad(..))), "{f}");
+    let Term::Jmp(e) = &f.blocks[bo.idx()].term else { panic!("{f}") };
+    let land = e.to;
+    assert_ne!(land, b1, "{f}");
+    assert!(sub(block_ops(&f, land)), "{f}");
+    let Term::Jmp(e) = &f.blocks[land.idx()].term else { panic!("{f}") };
+    assert_eq!(e.to, b1, "{f}");
+    assert!(f.layout.contains(&land) && f.layout[0] == b0, "{f}");
+}
+
+/// A loop dividing by `[p]` and storing through `p` or `q`: the load (and so the division)
+/// moves out only when no store may write its bytes (one through `p` itself at other bytes
+/// can't).
+#[test]
+fn licm_loads_and_stores() {
+    use ryo_bytecode::jit::ir::{BinOp, Cc};
+    let build = |store: Option<(bool, i32)>| {
+        let mut f = IrFunc::default();
+        let (b0, b1, b2, b3) = (f.block(BlockKind::Entry), f.block(BlockKind::Body), f.block(BlockKind::Body), f.block(BlockKind::Body));
+        let (p, q, n) = (f.param(b0, 8), f.param(b0, 8), f.param(b0, 8));
+        let i = f.param(b1, 8);
+        let z = f.konst(0, 8);
+        f.terminate(b0, Term::Jmp(Edge { to: b1, args: vec![z] }));
+        let x = f.inst(b1, Op::Load(8, 0), vec![p], &[8]);
+        let x = f.result(x);
+        let c = f.inst(b1, Op::Cmp(Cc::LtU, 8), vec![i, n], &[1]);
+        let c = f.result(c);
+        f.terminate(b1, Term::Br { cond: c, t: Edge::to(b2), f: Edge::to(b3) });
+        let y = f.inst(b1, Op::Bin(BinOp::DivU, 8), vec![n, x], &[8]);
+        let y = f.result(y);
+        let i2 = f.inst(b2, Op::Bin(BinOp::Add, 8), vec![i, y], &[8]);
+        let i2 = f.result(i2);
+        if let Some((same, k)) = store {
+            f.inst(b2, Op::Store(8, k), vec![if same { p } else { q }, i2], &[]);
+        }
+        f.terminate(b2, Term::Jmp(Edge { to: b1, args: vec![i2] }));
+        f.terminate(b3, Term::Ret { k: 8, parts: vec![i] });
+        f.layout = vec![b0, b1, b2, b3];
+        f.licm = true;
+        f.licm = true;
+        let f = opt(f);
+        [b1, b2].iter().any(|&b| block_ops(&f, b).iter().any(|o| matches!(o, Op::Bin(BinOp::DivU, _))))
+    };
+    assert!(!build(None), "no store: hoisted");
+    assert!(!build(Some((true, 8))), "a store to other bytes of the same pointer: hoisted");
+    assert!(build(Some((true, 0))), "a store to its bytes: stays");
+    assert!(build(Some((false, 0))), "a store through another pointer: stays");
+}
+
+/// A call in the loop: a cheap invariant (`m - 1`) stays, as it would live across the call;
+/// a division moves out (only an exit path's trap aside, nothing runs before it).
+#[test]
+fn licm_across_a_call() {
+    use ryo_bytecode::jit::ir::{BinOp, Call, CallTarget, Cc, Site};
+    let mut f = IrFunc::default();
+    let (b0, b1, b2, b3) = (f.block(BlockKind::Entry), f.block(BlockKind::Body), f.block(BlockKind::Body), f.block(BlockKind::Body));
+    let (m, d) = (f.param(b0, 8), f.param(b0, 8));
+    let i = f.param(b1, 8);
+    let (z, one) = (f.konst(0, 8), f.konst(1, 8));
+    f.terminate(b0, Term::Jmp(Edge { to: b1, args: vec![z] }));
+    let s = f.inst(b1, Op::Bin(BinOp::Sub, 8), vec![m, one], &[8]);
+    let s = f.result(s);
+    let q = f.inst(b1, Op::Bin(BinOp::DivU, 8), vec![d, one], &[8]);
+    let q = f.result(q);
+    let c = f.inst(b1, Op::Cmp(Cc::LtU, 8), vec![i, s], &[1]);
+    let c = f.result(c);
+    f.terminate(b1, Term::Br { cond: c, t: Edge::to(b2), f: Edge::to(b3) });
+    let call = Call { target: CallTarget::Sym(Sym(0)), regs: vec![ArgReg { xmm: false, size: 8, index: 0 }], parts: vec![], site: Site::None };
+    f.inst(b2, Op::Call(Box::new(call)), vec![q], &[]);
+    let i2 = f.inst(b2, Op::Bin(BinOp::Add, 8), vec![i, one], &[8]);
+    let i2 = f.result(i2);
+    f.terminate(b2, Term::Jmp(Edge { to: b1, args: vec![i2] }));
+    f.terminate(b3, Term::Ret { k: 8, parts: vec![i] });
+    f.layout = vec![b0, b1, b2, b3];
+    f.licm = true;
+    let f = opt(f);
+    let ops = block_ops(&f, b1);
+    assert!(ops.iter().any(|o| matches!(o, Op::Bin(BinOp::Sub, _))), "{f}");
+    assert!(!ops.iter().any(|o| matches!(o, Op::Bin(BinOp::DivU, _))), "{f}");
+}
+
+/// An invariant only the loop's exit uses (a cold path, say) stays where it is: hoisted, it
+/// would be live across the whole loop for nothing.
+#[test]
+fn licm_not_for_exit_uses() {
+    use ryo_bytecode::jit::ir::{BinOp, Cc};
+    let mut f = IrFunc::default();
+    let (b0, b1, b2, b3) = (f.block(BlockKind::Entry), f.block(BlockKind::Body), f.block(BlockKind::Body), f.block(BlockKind::Body));
+    let (m, n) = (f.param(b0, 8), f.param(b0, 8));
+    let i = f.param(b1, 8);
+    let (z, one) = (f.konst(0, 8), f.konst(1, 8));
+    f.terminate(b0, Term::Jmp(Edge { to: b1, args: vec![z] }));
+    let s = f.inst(b1, Op::Bin(BinOp::Mul, 8), vec![m, m], &[8]);
+    let s = f.result(s);
+    let c = f.inst(b1, Op::Cmp(Cc::LtU, 8), vec![i, n], &[1]);
+    let c = f.result(c);
+    f.terminate(b1, Term::Br { cond: c, t: Edge::to(b2), f: Edge::to(b3) });
+    let i2 = f.inst(b2, Op::Bin(BinOp::Add, 8), vec![i, one], &[8]);
+    let i2 = f.result(i2);
+    f.terminate(b2, Term::Jmp(Edge { to: b1, args: vec![i2] }));
+    f.terminate(b3, Term::Ret { k: 8, parts: vec![s] });
+    f.layout = vec![b0, b1, b2, b3];
+    f.licm = true;
+    let f = opt(f);
+    assert!(block_ops(&f, b1).iter().any(|o| matches!(o, Op::Bin(BinOp::Mul, _))), "{f}");
+}
+
+/// A division (it traps on 0) after the loop's exit test isn't speculated: the loop may exit
+/// before it runs.
+#[test]
+fn licm_no_speculated_trap() {
+    use ryo_bytecode::jit::ir::{BinOp, Cc};
+    let mut f = IrFunc::default();
+    let (b0, b1, b2, b3) = (f.block(BlockKind::Entry), f.block(BlockKind::Body), f.block(BlockKind::Body), f.block(BlockKind::Body));
+    let (d, n) = (f.param(b0, 8), f.param(b0, 8));
+    let i = f.param(b1, 8);
+    let z = f.konst(0, 8);
+    f.terminate(b0, Term::Jmp(Edge { to: b1, args: vec![z] }));
+    let c = f.inst(b1, Op::Cmp(Cc::LtU, 8), vec![i, n], &[1]);
+    let c = f.result(c);
+    f.terminate(b1, Term::Br { cond: c, t: Edge::to(b2), f: Edge::to(b3) });
+    let q = f.inst(b2, Op::Bin(BinOp::DivU, 8), vec![n, d], &[8]);
+    let q = f.result(q);
+    let i2 = f.inst(b2, Op::Bin(BinOp::Add, 8), vec![i, q], &[8]);
+    let i2 = f.result(i2);
+    f.terminate(b2, Term::Jmp(Edge { to: b1, args: vec![i2] }));
+    f.terminate(b3, Term::Ret { k: 8, parts: vec![i] });
+    f.layout = vec![b0, b1, b2, b3];
+    f.licm = true;
+    let f = opt(f);
+    assert!(block_ops(&f, b2).iter().any(|o| matches!(o, Op::Bin(BinOp::DivU, _))), "{f}");
+}
+
+/// A volatile access is an island (the backend lowers `volatile_load` and its kin to
+/// `ryo_island_volatile_*`): the tier never moves, merges or forwards one.
+fn volatile_read() -> Op {
+    use ryo_bytecode::jit::ir::{CallTarget, Island, Site};
+    Op::Island(Box::new(Island { isl: CallTarget::Sym(Sym(0)), ops: vec![], site: Site::None }))
+}
+
+/// A volatile read in a loop with nothing else in it stays in the loop, LICM on.
+#[test]
+fn volatile_read_stays_in_its_loop() {
+    use ryo_bytecode::jit::ir::Cc;
+    let mut f = IrFunc::default();
+    let (b0, b1, b2) = (f.block(BlockKind::Entry), f.block(BlockKind::Body), f.block(BlockKind::Body));
+    f.terminate(b0, Term::Jmp(Edge::to(b1)));
+    f.inst(b1, volatile_read(), vec![], &[]);
+    let p = f.param(b0, 8);
+    let x = f.inst(b1, Op::Load(8, 0), vec![p], &[8]);
+    let x = f.result(x);
+    let z = f.konst(0, 8);
+    let c = f.inst(b1, Op::Cmp(Cc::Eq, 8), vec![x, z], &[1]);
+    let c = f.result(c);
+    f.terminate(b1, Term::Br { cond: c, t: Edge::to(b1), f: Edge::to(b2) });
+    f.terminate(b2, Term::Ret { k: 0, parts: vec![] });
+    f.layout = vec![b0, b1, b2];
+    f.licm = true;
+    let f = opt(f);
+    let ops = block_ops(&f, b1);
+    assert!(ops.iter().any(|o| matches!(o, Op::Island(_))), "{f}");
+    assert!(ops.iter().any(|o| matches!(o, Op::Load(..))), "the island may write [p]: {f}");
+}
+
+/// Two volatile reads in a block stay two.
+#[test]
+fn two_volatile_reads_stay_two() {
+    let mut f = IrFunc::default();
+    let b0 = f.block(BlockKind::Entry);
+    f.inst(b0, volatile_read(), vec![], &[]);
+    f.inst(b0, volatile_read(), vec![], &[]);
+    f.terminate(b0, Term::Ret { k: 0, parts: vec![] });
+    f.layout = vec![b0];
+    let f = opt(f);
+    assert_eq!(block_ops(&f, b0).iter().filter(|o| matches!(o, Op::Island(_))).count(), 2, "{f}");
+}

@@ -4,7 +4,7 @@
 //! on every normal edge holds when the head is entered by OSR too, as the AOT frame holds
 //! the values the same run from the entry would. The helpers here are that rule, for the
 //! passes to share:
-//! - [`osr_edge`]: whether an edge into a block is an OSR entry's;
+//! - [`osr_edge`]: whether an edge into a block is an OSR entry's (or its landing's);
 //! - [`normal_preds`]: a block's other predecessors;
 //! - [`invariant`]: the one value a head parameter has on every normal edge;
 //! - [`same_params`]: whether two parameters agree on every normal edge;
@@ -20,9 +20,18 @@ use alloc::vec::Vec;
 
 use crate::jit::ir::*;
 
-/// Whether `p`'s edges are an OSR entry's.
+/// Whether `p`'s edges are an OSR entry's, or its landing's ([`osr_landing`]).
 pub fn osr_edge(f: &Func, p: Block) -> bool {
-    matches!(f.blocks[p.idx()].kind, BlockKind::Osr(_))
+    matches!(f.blocks[p.idx()].kind, BlockKind::Osr(_)) || osr_landing(f, p)
+}
+
+/// Whether `b` is an OSR entry's *landing*: a block between the entry and its head, which
+/// only the entry reaches, computing the values [`super::hoist`] moved out of the loop (the
+/// entry itself only loads from the AOT frame). Its edge into the head counts as the OSR
+/// edge: the values it passes are the normal edges' whenever the entry is taken.
+pub fn osr_landing(f: &Func, b: Block) -> bool {
+    let bd = &f.blocks[b.idx()];
+    bd.kind == BlockKind::Body && bd.head.is_none() && matches!(bd.preds[..], [(o, _)] if matches!(f.blocks[o.idx()].kind, BlockKind::Osr(_)))
 }
 
 /// `b`'s predecessors but its OSR entry, each with the index of its edge into `b`.
@@ -72,4 +81,49 @@ pub fn same_params(f: &Func, b: Block, n: usize, m: usize) -> bool {
 /// reach) have none.
 pub fn normal_idoms(f: &Func, rpo: &[Block]) -> Vec<Option<Block>> {
     f.idoms_by(rpo, |p| !osr_edge(f, p))
+}
+
+/// Makes every value of an OSR entry that its landing uses a parameter of the landing: the
+/// entry's code sets only its target's parameters (its loads have no locations of their own).
+/// Construction of new variables ([`super::promote`]) reads them there directly.
+pub fn through_landings(f: &mut Func) {
+    for o in f.osr.clone().into_iter().flatten() {
+        let Term::Jmp(e) = &f.blocks[o.idx()].term else { continue };
+        let t = e.to;
+        if !osr_landing(f, t) {
+            continue;
+        }
+        let of_o = |f: &Func, v: Value| matches!(f.def(v), ValueDef::Inst(i, _) if f.insts[i.idx()].block == o);
+        let mut moved: Vec<(Value, Value)> = Vec::new();
+        let mut rename = |f: &mut Func, v: &mut Value| {
+            if !of_o(f, *v) {
+                return;
+            }
+            let p = match moved.iter().find(|m| m.0 == *v) {
+                Some(m) => m.1,
+                None => {
+                    let p = f.param(t, f.w(*v));
+                    moved.push((*v, p));
+                    p
+                }
+            };
+            *v = p;
+        };
+        for i in f.blocks[t.idx()].insts.clone() {
+            let mut args = core::mem::take(&mut f.insts[i.idx()].args);
+            args.iter_mut().for_each(|a| rename(f, a));
+            f.insts[i.idx()].args = args;
+        }
+        let mut term = core::mem::replace(&mut f.blocks[t.idx()].term, Term::None);
+        for u in term.uses_mut() {
+            rename(f, u);
+        }
+        for e in term.edges_mut() {
+            e.args.iter_mut().for_each(|a| rename(f, a));
+        }
+        f.blocks[t.idx()].term = term;
+        if let Term::Jmp(e) = &mut f.blocks[o.idx()].term {
+            e.args.extend(moved.iter().map(|m| m.0));
+        }
+    }
 }

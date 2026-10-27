@@ -177,3 +177,18 @@ remove it once a Lean session has handled it.
   file is WIP); `bodySim_unreachable`/`bodySim_jmp` only need that its op is a
   `switch.dense`, `bs_insn` the table read, the dispatch a `bodySim_dense`. Commit: "Asm, JIT
   SSA: inline shift/rotate/bswap/div/count/switch-index/cmp3 forms and native JIT ops".
+
+- JIT SSA LICM (design/jit.md#loop-invariant-code-motion): `opt::hoist`, which only moved
+  `vsplat`s, is now loop-invariant code motion (general only with `RYO_JIT_LICM=1`), run after `opt::checks`: pure operations, loads
+  nothing in the loop may write, divisions and effect-free handler calls (the last three only
+  where they run whenever the head does) move to a preheader (possibly a new block); at a
+  head with an OSR entry the value becomes a head parameter, computed for the entry in a new
+  *landing* block between the entry and the head (`osr::osr_landing`; `osr_edge` counts its
+  edge as the OSR edge, `osr::through_landings` passes entry values it uses as its
+  parameters after promotion), and `simplify`'s block merging never merges into an OSR entry.
+  Matters for the Lean description of the SSA tier's passes (the splat hoist in
+  `lean/docs/jit.md`) and the OSR obligations (the entry's target may now be a landing, not
+  the head). Commit: "JIT SSA: loop-invariant code motion, with OSR landings".
+  Also: `volatile_load`/`_store` (and unaligned), `volatile_copy_memory`,
+  `volatile_copy_nonoverlapping_memory` and `volatile_set_memory` lower to the islands
+  `ryo_island_volatile_*` instead of VM loads, stores and `memcpy`/`memmove`/`memset`.

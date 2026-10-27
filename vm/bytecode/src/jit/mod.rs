@@ -66,6 +66,8 @@ pub struct Options {
     pub check: bool,
     /// Describe the compilation in [`Output::dump`] (`RYO_JIT_DUMP`).
     pub dump: bool,
+    /// General loop-invariant code motion (`RYO_JIT_LICM`), off by default.
+    pub licm: bool,
 }
 
 /// Why [`compile`] gave no code.
@@ -104,6 +106,7 @@ pub fn compile(
         return Err(Error::Unsupported(Unsupported("PE cleanup landing pads")));
     }
     let mut f = built(d, mode, mem)?;
+    f.licm = opts.licm;
     // The IR as construction leaves it, before value numbering and the folds (`RYO_JIT_DUMP`).
     let built_ir = opts.dump.then(|| alloc::format!("{f}"));
     opt::run(&mut f, mem);

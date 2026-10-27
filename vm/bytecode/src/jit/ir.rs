@@ -777,6 +777,9 @@ pub struct Func {
     pub scratch: u32,
     /// The blocks in emission order (all but the OSR entries).
     pub layout: Vec<Block>,
+    /// General loop-invariant code motion ([`super::opt::hoist`], `RYO_JIT_LICM`); without
+    /// it only splats are hoisted.
+    pub licm: bool,
 }
 
 impl Func {

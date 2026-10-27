@@ -177,7 +177,7 @@ Take the pointers, the byte and the length from slots:
 - `memmove`: `copy`, and memory-to-memory copies above the temporary limit;
 - `memset`: `write_bytes`, and `Repeat`s of a byte pattern into memory.
 
-Also the `volatile_*` memory intrinsics, and the doubling copies of other `Repeat`s into
+Also the doubling copies of other `Repeat`s into
 memory.
 
 Handlers `ryo_h_Memcpy`, `ryo_h_Memmove`, `ryo_h_Memset` (`memcpy`, `memmove`, `memset`,

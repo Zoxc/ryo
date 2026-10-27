@@ -422,7 +422,8 @@ fn merge_blocks(f: &mut Func) -> bool {
     let mut gone = alloc::vec![false; n];
     let mut any = false;
     for b in 0..n {
-        if f.blocks[b].kind == BlockKind::Stub {
+        // An OSR entry only loads from the AOT frame: its landing ([`super::osr`]) stays.
+        if matches!(f.blocks[b].kind, BlockKind::Stub | BlockKind::Osr(_)) {
             continue;
         }
         loop {

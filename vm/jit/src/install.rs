@@ -314,6 +314,7 @@ impl Jit {
             stress: shuffled,
             check: self.rt.settings.check,
             dump: self.dump.is_some(),
+            licm: self.rt.settings.licm,
         };
         let header = h as *const _ as usize;
         let mut env = InlineEnv {

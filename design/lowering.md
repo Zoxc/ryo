@@ -312,11 +312,11 @@ island.
      `size_of_val`/`align_of_val` (also of structs with an unsized tail, as cg_ssa's
      `size_and_align_of_dst`), `vtable_size`/`vtable_align`, `ctpop`/`ctlz`/`cttz` (and
      `_nonzero`), `bswap`, `bitreverse`, rotates, `unchecked_funnel_shl`/`_shr`,
-     `exact_div`, `disjoint_bitor`, `ptr_guaranteed_cmp`, the volatile and nontemporal
-     accesses, `fabs`, `copysign*`, `minimum_number_nsz_*`/`maximum_number_nsz_*` (the VM's
+     `exact_div`, `disjoint_bitor`, `ptr_guaranteed_cmp`, the nontemporal store, `fabs`, `copysign*`, `minimum_number_nsz_*`/`maximum_number_nsz_*` (the VM's
      `fmin`/`fmax` are `f*::min`/`max`), and the atomics up to 64 bits (an ordering
      combination the VM lacks uses `SeqCst`). As wrapper islands: `catch_unwind` ([Unwinding](#unwinding)),
-     `compare_bytes`, `raw_eq` and the SIMD intrinsics without constant operands
+     `compare_bytes`, `raw_eq`, the `volatile_*` accesses and copies (opaque to the JIT,
+     which would merge, forward or hoist VM loads and stores) and the SIMD intrinsics without constant operands
      ([stubs.md](stubs.md#templates)), except those [SIMD](#simd) maps to instructions.
      Otherwise: safe intrinsics go through the `call`
      island (natively), unsafe ones with a fallback body call that body as an ordinary
