@@ -457,16 +457,21 @@ pub(super) fn jit_sealed(info: &crate::utils::RustcInfo, root: &Path, out: &Path
 /// has a VM global allocator that trips while it holds its lock (the JIT would deadlock
 /// allocating through it), and built with `-Cpanic=abort` and run with `RYO_JIT_TEST_PANIC`
 /// it must still run as without the JIT: every compile panics, which fails the function
-/// instead of aborting. Hosts with the JIT only.
+/// instead of aborting; so must it with `RYO_JIT_TEST_OOM`, where every compile fails an
+/// allocation (the JIT's allocation error hook panics). Hosts with the JIT only.
 pub(super) fn jit_private_std(info: &crate::utils::RustcInfo, rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     if !crate::jit::supported(&info.host) {
         return Ok(());
     }
     let want = "sum 499500 words w0,w97,w194,w291,w388,w485,w582,w679,w776,w873,w970\n";
     let sync = [("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC", "1")];
-    let cases: [(&str, &[&str], &[(&str, &str)]); 2] =
-        [("jit_private", &[], &[]), ("jit_private_abort", &["-Cpanic=abort"], &[("RYO_JIT_TEST_PANIC", "1"), ("RYO_JIT_LOG", "1")])];
-    for (name, flags, env) in cases {
+    // Each case: the name, the flags, the environment, and what stderr must contain.
+    let cases: [(&str, &[&str], &[(&str, &str)], &str); 3] = [
+        ("jit_private", &[], &[], ""),
+        ("jit_private_abort", &["-Cpanic=abort"], &[("RYO_JIT_TEST_PANIC", "1"), ("RYO_JIT_LOG", "1")], "RYO_JIT_TEST_PANIC"),
+        ("jit_private_oom", &["-Cpanic=abort"], &[("RYO_JIT_TEST_OOM", "1"), ("RYO_JIT_LOG", "1")], "bytes failed"),
+    ];
+    for (name, flags, env, want_err) in cases {
         let exe = out.join(exe_name(name));
         crate::utils::run(cmd(rustc_ryo).arg("--edition=2024").arg(src).args(flags).arg("-o").arg(&exe))?;
         // Into files, which never block the program as a full pipe would.
@@ -491,8 +496,9 @@ pub(super) fn jit_private_std(info: &crate::utils::RustcInfo, rustc_ryo: &Path, 
         let status = child.wait().map_err(|e| e.to_string())?;
         let stdout = fs::read_to_string(&out_file).unwrap_or_default();
         let stderr = fs::read_to_string(&err_file).unwrap_or_default();
-        let panicked = !env.is_empty();
-        if !status.success() || stdout != want || (panicked && !stderr.contains("RYO_JIT_TEST_PANIC")) {
+        // The compiles failed: the log says why and that the functions stayed on AOT code.
+        let failed = want_err.is_empty() || (stderr.contains(want_err) && stderr.contains(": panicked\n"));
+        if !status.success() || stdout != want || !failed {
             return Err(format!("{name}: {status}\nstdout:\n{stdout}stderr:\n{}", stderr.lines().take(20).collect::<Vec<_>>().join("\n")));
         }
     }

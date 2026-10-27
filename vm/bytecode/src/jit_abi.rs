@@ -48,6 +48,9 @@ pub struct JitSettings {
     /// Every compile panics, which must fail the function and nothing else
     /// (`RYO_JIT_TEST_PANIC`, tests).
     pub test_panic: bool,
+    /// Every compile fails an allocation, which must fail the function and nothing else
+    /// (`RYO_JIT_TEST_OOM`, tests).
+    pub test_oom: bool,
     /// Run the SSA tier's checkers (`RYO_JIT_CHECK`).
     pub check: bool,
     /// How functions are compiled (`RYO_JIT_OPT`).

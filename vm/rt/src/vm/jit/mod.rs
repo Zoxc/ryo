@@ -56,8 +56,9 @@ struct Config {
     /// (`asm::frame::shuffle_map`), so that OSR entries convert frames (tests).
     shuffle: bool,
     /// What the JIT gets: `RYO_JIT_LOG`, `RYO_JIT_PERFMAP`, `RYO_JIT_TEST_PANIC` (tests: the
-    /// JIT catches its panics even in a `-Cpanic=abort` program), `RYO_JIT_CHECK`,
-    /// `RYO_JIT_OPT` and `RYO_JIT_SSA_LIMIT`.
+    /// JIT catches its panics even in a `-Cpanic=abort` program), `RYO_JIT_TEST_OOM` (an
+    /// allocation failure in every compile), `RYO_JIT_CHECK`, `RYO_JIT_OPT` and
+    /// `RYO_JIT_SSA_LIMIT`.
     jit: JitSettings,
 }
 
@@ -158,6 +159,7 @@ fn from_env() -> Config {
             log: flag(c"RYO_JIT_LOG"),
             perfmap: flag(c"RYO_JIT_PERFMAP"),
             test_panic: flag(c"RYO_JIT_TEST_PANIC"),
+            test_oom: flag(c"RYO_JIT_TEST_OOM"),
             check: flag(c"RYO_JIT_CHECK"),
             opt: opt(),
             ssa_limit: var(c"RYO_JIT_SSA_LIMIT").and_then(parse_i64).and_then(|n| u64::try_from(n).ok()).unwrap_or(u64::MAX),
@@ -204,7 +206,7 @@ pub fn configure_jit(sync: bool, threshold: Option<i64>) -> bool {
             threshold: threshold.map(thresholds_of),
             sync,
             shuffle: false,
-            jit: JitSettings { perfmap: false, test_panic: false, ..env.jit },
+            jit: JitSettings { perfmap: false, test_panic: false, test_oom: false, ..env.jit },
         }
     })
 }

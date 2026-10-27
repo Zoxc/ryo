@@ -227,7 +227,8 @@ This gives a third backend, built from the same toolchain, to compare against.
   `ryo_jit_start`, no Rust symbol or allocator shim referenced, no unwinder defined
   ([jit.md](jit.md#packaging)). `jit-private-std` runs `tests/vm_jit_private.rs` with every
   function compiled at its first call: a VM global allocator that trips under its lock, and
-  with `-Cpanic=abort` and `RYO_JIT_TEST_PANIC` a panic in every compile
+  with `-Cpanic=abort` and `RYO_JIT_TEST_PANIC` a panic in every compile, or with
+  `RYO_JIT_TEST_OOM` an allocation failure
   ([jit.md](jit.md#testing)).
 - With a ryo sysroot in `dist/`, `test` also builds the corpus against it (`--sysroot ryo`):
   variants `ryo-std`, `ryo-std-O3` (output only, like `ryo-O3`),

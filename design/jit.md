@@ -105,6 +105,21 @@ section; its fields and the counter checks and stubs that use it are in
   takes the queue with `RtApi::next_batch` (which sleeps on the futex while it is empty),
   compiles each record, catching its panics, and reports it with `RtApi::done` (counted, or
   `Failed`; the waiters woken). It is detached; exiting mid-compile is fine.
+- **Allocation failure** is a panic on the JIT thread, not std's abort: `thread::oom_panics`
+  sets an allocation error hook (`std::alloc::set_alloc_error_hook`; `-Zoom=panic` is gone
+  from the pinned toolchain) that panics on `ryo-jit` and leaves other threads to the hook
+  before it (in the sealed JIT, whose std is private, std's default abort; as an rlib, the
+  program's). So an OOM fails the function, which keeps its AOT code. What makes that safe:
+  everything on the thread that allocates runs inside a `catch_unwind` (the compile, the
+  failure's log line; `recheck`'s room is reserved before the compile), so no panic ends the
+  thread or reaches `ryo_rt` (`RtApi`'s calls don't allocate in the JIT); and `install`
+  allocates nothing from `JitRecord::publish` on (the log line is formatted before), so a
+  published record is always reported compiled. A panic before publication leaves only
+  harmless state: the region space it took is lost, call slots it made are complete (they
+  hold their callee's address and are retargeted on its publication), code registered with
+  the unwinder is never reached. Code memory failing to map is an error (`vmem::reserve_code`
+  returns `None`: no region, the function fails). The panic itself allocates its payload: a
+  failure there is a second panic, which aborts, as in a truly exhausted process.
 
 ## Compiling and installing
 
@@ -759,7 +774,7 @@ rlib bundles (`build/src/jit.rs`, [build.md](build.md#build)):
   the JIT is built with the runtime ([version-matched](vm.md#image-format)).
   | Field | |
   |---|---|
-  | `settings` | `JitSettings`: `log`, `perfmap`, `test_panic`, `check`, `opt` (`JitOpt`), `ssa_limit` ([Settings](#settings)) |
+  | `settings` | `JitSettings`: `log`, `perfmap`, `test_panic`, `test_oom`, `check`, `opt` (`JitOpt`), `ssa_limit` ([Settings](#settings)) |
   | `probe` | `ryo_probe_stack`'s address |
   | `personality` | the program's `rust_eh_personality`'s address, by which the JIT finds an image's personality slot |
   | `thresholds` | the counters' thresholds (calls, loop iterations), for the counts |
@@ -831,6 +846,7 @@ for shuffled frames per image, `RtApi::shuffled`):
 | `RYO_JIT_LOG=1` | a line on stderr per compiled or failed function, and per function whose frame couldn't be shuffled, and the JIT thread's panics |
 | `RYO_JIT_SHUFFLE=1` | JIT frames in another layout ([OSR](#osr)) |
 | `RYO_JIT_TEST_PANIC=1` | tests: every compile panics, which must fail the function and nothing else |
+| `RYO_JIT_TEST_OOM=1` | tests: every compile fails an allocation (`isize::MAX` bytes), which must fail the function and nothing else |
 | `RYO_JIT_OPT=…` | `ssa` (the default), `ssa-naive` or `reencode`: how functions are compiled ([The SSA tier](#the-ssa-tier)); with `RYO_JIT_SHUFFLE` the SSA tier lays allocas out in reverse with gaps |
 | `RYO_JIT_CHECK=1` | the SSA tier's checkers: a failure is printed on stderr and the function falls back |
 | `RYO_JIT_DUMP=dir` | the SSA tier writes each function's reduced code, IR before and after value numbering and the folds, locations and code (or, for one it doesn't handle, the reason and the reduced code) to `dir/f<index>-<image header address>.txt`, and every installed function's code with its relocations by name to `dir/f<index>-<image header address>.code` (for `y bench codegen`, [build.md](build.md#test-and-bench)); read by the JIT thread itself, not passed in `RtApi` |
@@ -951,7 +967,8 @@ vector folds and the splat hoist, a vector reassembled from its halves),
   `.drectve` or `.CRT$X*` section, and on Mach-O no initializers or linker options. `jit-private-std` runs `tests/vm_jit_private.rs`, whose VM global
   allocator trips while it holds its lock (with the program's allocator, the JIT would
   deadlock there), and the same program built with `-Cpanic=abort` and run with
-  `RYO_JIT_TEST_PANIC`, which must run as without the JIT.
+  `RYO_JIT_TEST_PANIC`, and again with `RYO_JIT_TEST_OOM`, which must run as without the
+  JIT, logging the failed compiles.
 - The counters' code shape, its round trips and the trips of the no-op JIT are tested with
   the encoder ([vm.md](vm.md#jit-records-and-counters)).
 

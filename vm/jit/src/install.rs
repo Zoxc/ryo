@@ -208,6 +208,11 @@ impl Jit {
         if self.rt.settings.test_panic {
             panic!("RYO_JIT_TEST_PANIC");
         }
+        if self.rt.settings.test_oom {
+            // `isize::MAX` bytes: a valid layout no allocator can serve.
+            let v = Vec::<u8>::with_capacity(std::hint::black_box(usize::MAX / 2));
+            std::hint::black_box(&v);
+        }
         // Again in a new region if the one it was compiled for filled up (once is enough: the
         // new one is empty, and the function fits half of one).
         let r = match self.compile_once(rec) {
@@ -636,6 +641,12 @@ impl Jit {
             let _ = writeln!(m, "{jit_f:x} {:x} ryo-jit:f{func}@{aot:x}", code_len);
         }
 
+        // Nothing allocates from the publication on: a panic past it (an allocation failure,
+        // `thread::oom_panics`) would report a published record as failed.
+        let line = self.rt.settings.log.then(|| {
+            let c = counts(rec, self.rt.thresholds);
+            self.log_text(rec, &std::format!("compiled ({}, {} calls, {} loop iterations)", tier.name(), c.calls, c.iters))
+        });
         // The dispatcher, at the start of the OSR code: every head's stub calls it from now.
         let osr_entry = osr.as_ref().map(|_| (jit_f + osr_at) as *mut u8);
         // SAFETY: the record is this thread's until `Done`.
@@ -647,18 +658,22 @@ impl Jit {
             // store of its size).
             unsafe { AtomicUsize::from_ptr(slot as *mut usize).store(jit_f, Release) };
         }
-        if self.rt.settings.log {
-            let c = counts(rec, self.rt.thresholds);
-            self.log(rec, &std::format!("compiled ({}, {} calls, {} loop iterations)", tier.name(), c.calls, c.iters));
+        if let Some(line) = line {
+            log_line(&line);
         }
         Ok(())
     }
 
     /// A line on stderr about `rec` (`RYO_JIT_LOG`).
     pub(crate) fn log(&self, rec: *mut JitRecord, what: &str) {
+        log_line(&self.log_text(rec, what));
+    }
+
+    /// The line [`Jit::log`] writes.
+    fn log_text(&self, rec: *mut JitRecord, what: &str) -> String {
         // SAFETY: a record of a linked image.
         let (func, header) = unsafe { ((*rec).func, (*rec).header) };
-        log_line(&std::format!("ryo-jit: f{func} of image {header:p}: {what}\n"));
+        std::format!("ryo-jit: f{func} of image {header:p}: {what}\n")
     }
 }
 

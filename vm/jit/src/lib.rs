@@ -15,6 +15,8 @@
 //! ported yet) `ryo_jit_start` fails, so that the runtime's trips act as the no-op JIT, but
 //! `y build` seals and bundles it the same way.
 
+#![feature(alloc_error_hook)]
+
 #[cfg(target_arch = "x86_64")]
 mod install;
 #[cfg(target_arch = "x86_64")]

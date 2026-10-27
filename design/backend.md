@@ -386,7 +386,7 @@ Environment variables read by the backend (and `y test`):
   from the partition provider, so tests can tell that the backend and its override ran.
 
 `ryo_rt` reads only its JIT's (`RYO_JIT`, `RYO_JIT_THRESHOLD`, `RYO_JIT_SYNC`,
-`RYO_JIT_PERFMAP`, `RYO_JIT_LOG`, `RYO_JIT_SHUFFLE`, `RYO_JIT_TEST_PANIC`,
+`RYO_JIT_PERFMAP`, `RYO_JIT_LOG`, `RYO_JIT_SHUFFLE`, `RYO_JIT_TEST_PANIC`, `RYO_JIT_TEST_OOM`,
 [jit.md](jit.md#settings)), at run time; its build script reads `RYO_JIT_LIB_DIR`, the sealed JIT
 `y build` bundles. `y build` reads `RYO_RT_FEATURES`, extra cargo features for the sysroot's `ryo_rt` (such as `fp-rbp`,
 [vm.md](vm.md#handlers)); the backend follows `ryo_rt`'s `FP_ARG`.
