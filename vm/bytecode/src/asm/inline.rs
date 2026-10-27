@@ -701,12 +701,16 @@ fn classify(items: &[Item], br: bool) -> Option<Class> {
 /// the same sequence.
 pub(super) fn decode(items: &[Item], branch: Option<(Cond, u32)>) -> Option<(Opcode, Vec<Opnd>)> {
     let key = classify(items, branch.is_some())?;
-    ALL_OPCODES.iter().filter(|&&op| class(op).map(Class::key) == Some(key)).find_map(|&op| decode_as(op, items, branch))
+    ALL_OPCODES.iter().find_map(|&op| decode_keyed(op, key, items, branch))
 }
 
 /// [`decode`] as the instruction `op` only (an instruction list entry names it).
 pub(super) fn decode_op(op: Opcode, items: &[Item], branch: Option<(Cond, u32)>) -> Option<(Opcode, Vec<Opnd>)> {
-    let key = classify(items, branch.is_some())?;
+    decode_keyed(op, classify(items, branch.is_some())?, items, branch)
+}
+
+/// [`decode_as`] if `op`'s class has the key `key` ([`classify`] of the items).
+fn decode_keyed(op: Opcode, key: Class, items: &[Item], branch: Option<(Cond, u32)>) -> Option<(Opcode, Vec<Opnd>)> {
     if class(op).map(Class::key) != Some(key) {
         return None;
     }
@@ -849,6 +853,20 @@ fn read_reg(it: &Item) -> Option<Reg> {
     }
 }
 
+/// `xr` and `rax` swapped, other registers kept: the computing register renamed back, so that
+/// nothing else becomes `rax`.
+fn swap_rax(xr: Reg) -> impl Fn(Reg) -> Reg + Copy {
+    move |r| {
+        if r == xr {
+            R
+        } else if r == R {
+            xr
+        } else {
+            r
+        }
+    }
+}
+
 /// Whether `POOL[i]` is in the pool on PE (`pe`) or elsewhere.
 fn in_pool(pe: bool, i: usize) -> bool {
     !(pe && matches!(POOL[i], Reg::Rsi | Reg::Rdi))
@@ -937,15 +955,7 @@ impl Cache {
             return None;
         }
         let xr = POOL[x];
-        let back = |r: Reg| {
-            if r == xr {
-                R
-            } else if r == R {
-                xr
-            } else {
-                r
-            }
-        };
+        let back = swap_rax(xr);
         let mut c = *self;
         let mut out = Vec::with_capacity(items.len() + 1);
         if sel & 8 != 0 {
@@ -970,73 +980,52 @@ impl Cache {
     }
 
     /// The sequences on `rax` that [`Cache::emit`] may have turned into `items`, for the
-    /// decoder, which checks each by emitting it again: for each register the sequence may
-    /// have computed in, with the register renamed back, register operands that may have
-    /// been frame operands put back, and the dropped reload put back or not.
+    /// decoder, which checks each by emitting it again: [`Cache::invert`] of every selector
+    /// that may fit them. For each register the sequence may have computed in, with the
+    /// dropped reload put back or not, each register operand of that register that may have
+    /// been a frame operand put back or not (earlier items' choices first, as it is before
+    /// put back).
     pub(super) fn unemit(&self, items: &[Item]) -> Vec<Vec<Item>> {
         let mut out = Vec::new();
-        // The register computed in appears in the items, unless the sequence computes
-        // nothing in a register, when it is the one any would get.
-        let mut xs: Vec<usize> = (0..POOL.len())
-            .filter(|&i| in_pool(self.pe, i) && items.iter().any(|it| it.map_regs(|r| if r == POOL[i] { Reg::Rbp } else { r }) != *it))
-            .collect();
-        if xs.is_empty() {
-            xs.push(self.fresh());
+        for x in self.computing_regs(items) {
+            let free = self.frame_bits(items, x);
+            let n = free.len();
+            for reload in 0..2u32 {
+                for k in 0..1u32 << n {
+                    let m = free.iter().enumerate().filter(|&(t, _)| k >> (n - 1 - t) & 1 != 0).fold(0, |m, (_, &j)| m | 1 << j);
+                    out.extend(self.invert(items, x as u32 | reload << 3 | m << 4));
+                }
+            }
         }
+        out
+    }
+
+    /// The registers (by [`POOL`] index) a sequence [`Cache::emit`] turned into `items` may
+    /// have computed in.
+    fn computing_regs(&self, items: &[Item]) -> Vec<usize> {
         // A `mul` or `div` computes in `rax`, which a remainder's sequence may not show.
         if items.iter().any(|it| matches!(it, Item::MulQ(_) | Item::Div { .. })) {
-            xs = vec![0];
+            return vec![0];
         }
-        for x in xs {
-            let xr = POOL[x];
-            // The registers swapped, so nothing else becomes `rax`.
-            let back = |r: Reg| {
-                if r == xr {
-                    R
-                } else if r == R {
-                    xr
-                } else {
-                    r
-                }
-            };
-            for reload in [false, true] {
-                let mut c = *self;
-                let mut head = Vec::new();
-                if reload {
-                    let Some((s, w)) = c.regs[x].slot else { continue };
-                    head.push(Item::Ld { w, sx: false, dst: R, m: M::frame(s) });
-                }
-                // Each register operand: as it is, or the frame slot its register held.
-                let mut alts: Vec<Vec<Item>> = vec![head];
-                for &it in items {
-                    let mut opts = vec![it.map_regs(back)];
-                    if let Some(r) = read_reg(&it)
-                        && let Some(i) = pool(r)
-                        && let Some((s, _)) = c.regs[i].slot
-                    {
-                        let m = Rm::Mem(M::frame(s));
-                        let o = with_rm(it, m).map_regs(back);
-                        // Another register than the computing one is always a cached slot.
-                        if i == x {
-                            opts.push(o);
-                        } else {
-                            opts = vec![o];
-                        }
-                    }
-                    c.update(&it);
-                    alts = alts
-                        .into_iter()
-                        .flat_map(|a| {
-                            opts.iter().map(move |&o| {
-                                let mut a = a.clone();
-                                a.push(o);
-                                a
-                            })
-                        })
-                        .collect();
-                }
-                out.extend(alts);
+        // The register computed in appears in the items, unless the sequence computes
+        // nothing in a register, when it is the one any would get.
+        let xs: Vec<usize> = (0..POOL.len())
+            .filter(|&i| in_pool(self.pe, i) && items.iter().any(|it| it.map_regs(|r| if r == POOL[i] { Reg::Rbp } else { r }) != *it))
+            .collect();
+        if xs.is_empty() { vec![self.fresh()] } else { xs }
+    }
+
+    /// The items whose register operand is the computing register `POOL[x]` while it holds a
+    /// slot: the selector bits [`Cache::invert`] leaves free (another register's operand is
+    /// always its slot).
+    fn frame_bits(&self, items: &[Item], x: usize) -> Vec<usize> {
+        let mut c = *self;
+        let mut out = Vec::new();
+        for (j, it) in items.iter().enumerate() {
+            if read_reg(it).and_then(pool) == Some(x) && c.regs[x].slot.is_some() {
+                out.push(j);
             }
+            c.update(it);
         }
         out
     }
