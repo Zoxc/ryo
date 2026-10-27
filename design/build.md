@@ -274,7 +274,8 @@ This gives a third backend, built from the same toolchain, to compare against.
   runs about 30% fewer instructions at `-O3` than at `-O1`. `--metric cachegrind` builds once and reports, instead of times, one
   run's instructions (cachegrind `I refs`, children included) and estimated cycles, each
   also as ratios to the first column. It runs cachegrind with `--cache-sim=yes
-  --branch-sim=yes`; the estimate is instructions + 10 * (I1 + D1 misses) + 100 * LL misses
+  --branch-sim=yes`, and the ryo columns (except `aot`) with `RYO_JIT_SYNC=1 RYO_JIT_OPT=ssa`
+  so the counts don't depend on when the JIT thread finishes; the estimate is instructions + 10 * (I1 + D1 misses) + 100 * LL misses
   + 10 * branch mispredictions, the same as `scripts/compare-branches.py --metric
   cachegrind` (whose other tables show the misses themselves).
 - `bench codegen`: compiles each program in `bench/` with `rustc-ryo`, `RYO_DUMP` and

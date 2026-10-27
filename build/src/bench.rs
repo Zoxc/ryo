@@ -153,7 +153,9 @@ fn backends(o: &Options) -> Vec<Backend> {
     let rustc = |level| with(Compiler::Llvm, "llvm", level);
     let clif = |level| with(Compiler::Clif, "clif", level);
     if o.llvm.is_empty() && o.clif.is_empty() && o.ryo.is_empty() {
-        let ryo = Backend { name: "ryo".to_owned(), compiler: Compiler::Ryo, flags: Vec::new(), env: Vec::new() };
+        // Under cachegrind the counts depend on when a background JIT thread finishes.
+        let env = if o.metric == Metric::Cachegrind { vec![("RYO_JIT_OPT", "ssa"), ("RYO_JIT_SYNC", "1")] } else { Vec::new() };
+        let ryo = Backend { name: "ryo".to_owned(), compiler: Compiler::Ryo, flags: Vec::new(), env };
         let level = |opt| OptLevel { opt, debug_assertions: false };
         return vec![rustc(level(0)), rustc(level(1)), clif(level(0)), ryo];
     }
@@ -544,6 +546,8 @@ mod tests {
         assert_eq!(b[1].flags, ["-Copt-level=3", "-Cdebug-assertions=on"]);
         assert!(parse_options(&["--clif", "O4"]).is_err());
         assert!(parse_options(&["--llvm", "O4"]).is_err());
+        let o = parse_options(&["--metric", "cachegrind"]).unwrap();
+        assert_eq!(backends(&o)[3].env, [("RYO_JIT_OPT", "ssa"), ("RYO_JIT_SYNC", "1")]);
         assert!(parse_options(&["--ryo", "x"]).is_err());
         assert!(parse_options(&["--runs", "0"]).is_err());
     }
