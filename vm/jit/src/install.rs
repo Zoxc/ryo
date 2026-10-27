@@ -21,14 +21,16 @@ use ryo_bytecode::jit::ir::CallTarget;
 use ryo_bytecode::jit_abi::{JIT_ENTRY_PREFIX, JitOpt, RtApi};
 use ryo_bytecode::{Opcode, reduced, vmem};
 
+mod callees;
+mod dump;
+mod region;
+
+use callees::{Ext, InlineEnv, IrCache, Name, PoolMem};
+use region::{Place, REGION, Region, Span};
+
 /// The page size.
 const PAGE: usize = vmem::PAGE;
 
-/// The size of a code region: one mapping that code (from the start, in pages, made
-/// executable once written) and unwind information (from the end, read-write) are taken from.
-const REGION: usize = 32 << 20;
-/// How far apart a 32-bit PC-relative field and its target may be, with a margin.
-const REACH: usize = (1 << 31) - (1 << 20);
 /// Where a function's code starts in its allocation: 16-aligned, after the entry prefix.
 pub(crate) const CODE_AT: usize = 16;
 const _: () = assert!(JIT_ENTRY_PREFIX <= CODE_AT);
@@ -90,39 +92,6 @@ enum Body {
     Pe(Vec<u8>),
 }
 
-/// An address range `lo..hi` that code must reach with 32-bit PC-relative fields.
-#[derive(Clone, Copy)]
-struct Span {
-    lo: usize,
-    hi: usize,
-}
-
-/// A mapping near some images ([`REGION`]): code is taken from `code` up, unwind
-/// information from `data` down.
-struct Region {
-    start: usize,
-    end: usize,
-    code: usize,
-    data: usize,
-}
-
-impl Region {
-    /// Whether all of the region reaches all of `s`.
-    fn reaches(&self, s: Span) -> bool {
-        reaches(self.start, self.end, s)
-    }
-}
-
-fn reaches(start: usize, end: usize, s: Span) -> bool {
-    s.hi.saturating_sub(start) <= REACH && end.saturating_sub(s.lo) <= REACH
-}
-
-impl Span {
-    fn union(self, o: Span) -> Span {
-        Span { lo: self.lo.min(o.lo), hi: self.hi.max(o.hi) }
-    }
-}
-
 /// What the JIT knows about an image: its range, and its `rust_eh_personality` slot.
 #[derive(Clone, Copy)]
 struct ImageInfo {
@@ -162,57 +131,6 @@ impl Tier {
     }
 }
 
-/// The region a function is compiled for: calls are encoded by whether it reaches their
-/// targets.
-#[derive(Clone, Copy)]
-struct Place {
-    start: usize,
-    end: usize,
-    /// The handlers and the probe are out of reach ([`Mode::far_rt`]).
-    far_rt: bool,
-}
-
-impl Place {
-    fn reaches(&self, addr: usize) -> bool {
-        reaches(self.start, self.end, Span { lo: addr, hi: addr + 1 })
-    }
-}
-
-/// A callee a function's code calls other than directly as a function of its image:
-/// operand `kind | k` of its `call`s and `tail_call`s ([`asm::FUNC_KINDS`]) names `ext[k]`.
-#[derive(Clone, Copy)]
-struct Ext {
-    /// [`FUNC_SLOT`], [`FUNC_NEAR`] or [`FUNC_FAR`].
-    kind: u32,
-    /// The VM function (image header, function) a slot calls: its slot holds its AOT entry,
-    /// then its JIT code once it is published.
-    vm: Option<(usize, u32)>,
-    /// A known target's address, or a slot's callee's AOT entry.
-    addr: usize,
-    /// How the caller names it, for `RYO_JIT_DUMP`: its function `fn<g>` or symbol `sym<s>`.
-    name: Name,
-}
-
-#[derive(Clone, Copy)]
-enum Name {
-    Func(u32),
-    Sym(u32),
-    /// Another image's function or symbol (inlined code calls it).
-    Other(u32),
-    OtherSym(u32),
-    /// A function by its entry's address: a call through a constant pointer
-    /// ([`jit::inline::Env::direct`]).
-    Addr(usize),
-}
-
-/// A callee by what decides how it is called: a VM function with a JIT record (header,
-/// function), or a fixed address.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-enum Callee {
-    Vm(usize, u32),
-    Addr(usize),
-}
-
 pub(crate) struct Jit {
     rt: &'static RtApi,
     /// The handlers' addresses and opcodes, sorted, for [`ImageResolver`].
@@ -236,241 +154,6 @@ pub(crate) struct Jit {
     ssa_tried: u64,
     /// The inliner's callee IR, by (image header, function) ([`InlineEnv`]).
     ir_cache: IrCache,
-}
-
-/// Callee IR for the inliner, built once per function ([`jit::inline::Env::ir`]).
-type IrCache = HashMap<(usize, u32), Option<std::rc::Rc<jit::ir::Func>>>;
-
-/// At most this many functions' IR stay cached; the cache starts over past it.
-const IR_CACHE_MAX: usize = 4096;
-
-/// What the inliner gets for a compilation: the cache, what decodes functions of any
-/// registered image (images are never unregistered, so their headers stay valid), and what
-/// retargets the unit's calls after inlining ([`callee`]): the region, and the callees.
-struct InlineEnv<'a> {
-    cache: &'a mut IrCache,
-    handlers: &'a [(usize, Opcode)],
-    probe: usize,
-    mode: Mode,
-    header: usize,
-    root: u32,
-    thresholds: [i64; 2],
-    rt: &'static RtApi,
-    place: Place,
-    ext: Vec<Ext>,
-    memo: HashMap<Callee, u32>,
-    /// The VM function (image header, function) of each call form `kind | k` given.
-    ext_vm: HashMap<u32, (usize, u32)>,
-}
-
-/// The registered image whose header is at `header`.
-fn image_of(header: usize) -> Image<'static> {
-    // SAFETY: a registered image's header: registered images stay forever.
-    unsafe { Image::from_header(header as *const u8) }.expect("a registered image")
-}
-
-impl jit::inline::Env for InlineEnv<'_> {
-    fn root(&self) -> VmFunc {
-        VmFunc { img: self.header, func: Func(self.root) }
-    }
-
-    fn ir(&mut self, g: VmFunc) -> Option<std::rc::Rc<jit::ir::Func>> {
-        let img = image_of(g.img);
-        // Another image's code is inlined only if it was encoded as the root's.
-        if (Mode { counters: false, far_rt: self.mode.far_rt, ..img.mode() }) != self.mode {
-            return None;
-        }
-        if let Some(f) = self.cache.get(&(g.img, g.func.0)) {
-            return f.clone();
-        }
-        if self.cache.len() >= IR_CACHE_MAX {
-            self.cache.clear();
-        }
-        let h = img.header();
-        // SAFETY: a registered image's text section.
-        let text = unsafe { core::slice::from_raw_parts(h.text as usize as *const u8, h.text_size as usize) };
-        let res = ImageResolver { image: img, handlers: self.handlers, probe: self.probe };
-        let f = match res.decode(g.func.0, text) {
-            Some(Ok(d)) => jit::ir_of(&d, self.mode, Some(&PoolMem { header: g.img, rt: self.rt })).ok().map(std::rc::Rc::new),
-            _ => None,
-        };
-        self.cache.insert((g.img, g.func.0), f.clone());
-        f
-    }
-
-    fn flags(&self, g: VmFunc) -> u8 {
-        image_of(g.img).func_flags().get(g.func.0 as usize).copied().unwrap_or(0)
-    }
-
-    fn counts(&self, g: VmFunc) -> Option<(u64, u64)> {
-        let img = image_of(g.img);
-        (g.func.0 < img.header().jit_records.count).then(|| {
-            let c = counts(img.jit_records().wrapping_add(g.func.0 as usize), self.thresholds);
-            (c.calls, c.iters)
-        })
-    }
-
-    fn callee(&mut self, t: CallTarget) -> Option<VmFunc> {
-        let c = match t {
-            CallTarget::Func(g) if g.0 & FUNC_KINDS != 0 => {
-                let &(h, g) = self.ext_vm.get(&g.0)?;
-                Callee::Vm(h, g)
-            }
-            CallTarget::Func(g) => Callee::Vm(self.header, g.0),
-            CallTarget::Sym(Sym(s)) => {
-                let a = image_of(self.header).symbols().get(s as usize).copied().unwrap_or(0) as usize;
-                if a == 0 {
-                    return None;
-                }
-                vm_callee(self.rt, a)?
-            }
-            _ => return None,
-        };
-        let Callee::Vm(h, g) = c else { return None };
-        (g < image_of(h).functions().len() as u32).then_some(VmFunc { img: h, func: Func(g) })
-    }
-
-    fn retarget(&mut self, img: usize, t: CallTarget) -> Option<CallTarget> {
-        let im = image_of(img);
-        let (c, name) = match t {
-            CallTarget::Func(g) if g.0 < im.functions().len() as u32 => {
-                (Callee::Vm(img, g.0), if img == self.header { Name::Func(g.0) } else { Name::Other(g.0) })
-            }
-            CallTarget::Sym(Sym(s)) => {
-                let a = im.symbols().get(s as usize).copied().unwrap_or(0) as usize;
-                if a == 0 {
-                    return None;
-                }
-                (vm_callee(self.rt, a).unwrap_or(Callee::Addr(a)), if img == self.header { Name::Sym(s) } else { Name::OtherSym(s) })
-            }
-            _ => return None,
-        };
-        if c == Callee::Vm(self.header, self.root) {
-            // The root's own calls of itself stay; another image's become direct ones.
-            return (img != self.header).then_some(CallTarget::Func(Func(self.root)));
-        }
-        let op = callee(self.place, c, name, &mut self.ext, &mut self.memo);
-        if let Callee::Vm(h, g) = c {
-            self.ext_vm.insert(op, (h, g));
-        }
-        Some(CallTarget::Func(Func(op)))
-    }
-
-    fn addr(&self, img: usize, r: Ref) -> Option<u64> {
-        // As `Jit::install` relocates them.
-        let im = image_of(img);
-        let h = im.header();
-        let ro = im.bytes().as_ptr() as usize;
-        let a = match r {
-            Ref::Sym(Sym(s)) if (s as usize) < im.symbols().len() => ro + h.symbols.off as usize + 8 * s as usize,
-            Ref::Site(Site(s)) => h.data as usize + 8 * s as usize,
-            Ref::Const(Const(k)) => ro + h.consts.off as usize + k as usize,
-            Ref::Data(Data(k)) => h.data as usize + h.fixup_area as usize + k as usize,
-            // A code constant (sparse switch cases).
-            Ref::Ro(k) if (k as usize) < im.code_consts().len() => im.code_consts().as_ptr() as usize + k as usize,
-            _ => return None,
-        };
-        Some(a as u64)
-    }
-
-    fn sym_value(&self, img: usize, s: Sym) -> Option<u64> {
-        image_of(img).symbols().get(s.0 as usize).copied()
-    }
-
-    fn direct(&mut self, a: u64) -> Option<CallTarget> {
-        let c @ Callee::Vm(h, g) = vm_callee(self.rt, usize::try_from(a).ok()?)? else { return None };
-        if h == self.header {
-            return Some(CallTarget::Func(Func(g)));
-        }
-        let op = callee(self.place, c, Name::Addr(a as usize), &mut self.ext, &mut self.memo);
-        self.ext_vm.insert(op, (h, g));
-        Some(CallTarget::Func(Func(op)))
-    }
-}
-
-/// The constant pools the SSA tier folds loads from ([`jit::opt::ConstMem`]): those of the
-/// image whose header is at `header` (the IR's), and through `image_at` every registered
-/// image's. Registered images stay forever, and their pools are final once registered: the
-/// loader applied their relocations before.
-struct PoolMem {
-    header: usize,
-    rt: &'static RtApi,
-}
-
-impl jit::opt::ConstMem for PoolMem {
-    fn read(&self, a: jit::opt::ConstAt, w: u8) -> Option<jit::opt::PoolRead> {
-        use jit::opt::{ConstAt, PoolRead};
-        match a {
-            ConstAt::Root(k) => image_of(self.header).read_pool(k as u64, w),
-            ConstAt::Abs(addr) => {
-                let header = (self.rt.image_at)(addr as usize);
-                if header.is_null() {
-                    return None;
-                }
-                let img = image_of(header as usize);
-                let pool = img.consts().as_ptr() as u64;
-                // Another image's pointer fields (or this one's, by address) as their bits:
-                // the IR can't name another image's parts, and each part is exposed.
-                let off = addr.checked_sub(pool)?;
-                let read = img.read_pool(off, w)?;
-                let bits = |a: u64| PoolRead::Bits(a);
-                Some(match read {
-                    PoolRead::Bits(b) => bits(b),
-                    PoolRead::Const(t) => bits(pool + t as u64),
-                    PoolRead::Data(t) => bits(img.fixup_area() as u64 + t as u64),
-                })
-            }
-        }
-    }
-
-    fn relocs(&self, k: u32, len: u32) -> Vec<u32> {
-        let rs = image_of(self.header).const_relocs();
-        let lo = rs.partition_point(|&r| r as u64 + 8 <= k as u64);
-        rs[lo..].iter().copied().take_while(|&r| (r as u64) < k as u64 + len as u64).collect()
-    }
-}
-
-/// The VM function with a JIT record whose AOT entry is `addr`, of any registered image.
-fn vm_callee(rt: &RtApi, addr: usize) -> Option<Callee> {
-    let header = (rt.image_at)(addr);
-    if header.is_null() {
-        return None;
-    }
-    // SAFETY: a registered image's header.
-    let img = unsafe { Image::from_header(header) }.ok()?;
-    let h = img.header();
-    let off = u32::try_from(addr.checked_sub(h.text as usize)?).ok()?;
-    let g = img.functions().binary_search_by_key(&off, |f| f.code_off).ok()? as u32;
-    (g < h.jit_records.count).then_some(Callee::Vm(header as usize, g))
-}
-
-/// How code compiled for `place` calls `c` (named `name` by the caller): the operand of
-/// its `call`s, `kind | k` for `ext[k]`.
-fn callee(place: Place, c: Callee, name: Name, ext: &mut Vec<Ext>, memo: &mut HashMap<Callee, u32>) -> u32 {
-    if let Some(&op) = memo.get(&c) {
-        return op;
-    }
-    let e = match c {
-        Callee::Vm(header, g) => {
-            // SAFETY: a registered image's header (`Callee::Vm` has a record).
-            let img = unsafe { Image::from_header(header as *const u8) }.expect("a registered image");
-            let r = img.jit_records().wrapping_add(g as usize);
-            if JitRecord::state(r).load(Acquire) == JIT_DONE {
-                // SAFETY: published before `Done`.
-                let code = unsafe { (*r).jit_code as usize };
-                Ext { kind: if place.reaches(code) { FUNC_NEAR } else { FUNC_FAR }, vm: None, addr: code, name }
-            } else {
-                let h = img.header();
-                let entry = h.text as usize + img.functions()[g as usize].code_off as usize;
-                Ext { kind: FUNC_SLOT, vm: Some((header, g)), addr: entry, name }
-            }
-        }
-        Callee::Addr(a) => Ext { kind: if place.reaches(a) { FUNC_NEAR } else { FUNC_FAR }, vm: None, addr: a, name },
-    };
-    let op = e.kind | ext.len() as u32;
-    ext.push(e);
-    memo.insert(c, op);
-    op
 }
 
 impl Jit {
@@ -515,52 +198,6 @@ impl Jit {
         })
     }
 
-    /// The region to compile code of an image of span `s` for: one that also reaches the
-    /// handlers and the probe if there is one (mapping it if need be), else one that reaches
-    /// the image only, whose code calls them through `r11` ([`Mode::far_rt`]): an image far
-    /// from a shared `ryo_rt`.
-    fn place(&mut self, s: Span) -> Option<Place> {
-        let rt = self.rt_span;
-        let r = match self.region(s.union(rt)) {
-            Some(r) => r,
-            None => self.region(s)?,
-        };
-        let far_rt = !r.reaches(rt);
-        Some(Place { start: r.start, end: r.end, far_rt })
-    }
-
-    /// A region that reaches `s`, mapping a new one if none does.
-    fn region(&mut self, s: Span) -> Option<&mut Region> {
-        if s.hi - s.lo > REACH {
-            return None;
-        }
-        if let Some(i) = self.regions.iter().position(|r| r.reaches(s)) {
-            return Some(&mut self.regions[i]);
-        }
-        const STEP: usize = 2 << 20;
-        let above = s.hi.next_multiple_of(STEP);
-        let below = (s.lo & !(STEP - 1)).checked_sub(REGION);
-        for k in 0..(REACH / REGION) {
-            for hint in [above.checked_add(k * REGION), below.and_then(|b| b.checked_sub(k * REGION))].into_iter().flatten() {
-                if !reaches(hint, hint + REGION, s) {
-                    continue;
-                }
-                let Some(p) = vmem::reserve_code(hint, REGION) else { continue };
-                let p = p as usize;
-                // Linux before 4.17 (no `MAP_FIXED_NOREPLACE`) and Apple take the address as a
-                // hint only.
-                if !reaches(p, p + REGION, s) {
-                    // SAFETY: the mapping just made.
-                    unsafe { vmem::release(p as *mut u8, REGION) };
-                    continue;
-                }
-                self.regions.push(Region { start: p, end: p + REGION, code: p, data: p + REGION });
-                return self.regions.last_mut();
-            }
-        }
-        None
-    }
-
     /// Compiles the function of `rec` and publishes its code.
     pub(crate) fn compile(&mut self, rec: *mut JitRecord) -> Result<(), &'static str> {
         if self.rt.settings.test_panic {
@@ -576,53 +213,6 @@ impl Jit {
             CompileError::Retry => "region full",
             CompileError::Fail(why) => why,
         })
-    }
-
-    /// Rewrites the `call`s, `call.sym`s and `tail_call`s of `words` (the code of `func` of
-    /// `img`) to their callees' forms for `place` ([`callee`]): every call but a
-    /// self-call, and those through a symbol whose slot holds no address.
-    #[allow(clippy::too_many_arguments)]
-    fn retarget(
-        &self,
-        words: &mut [u32],
-        func: u32,
-        img: &Image<'_>,
-        place: Place,
-        ext: &mut Vec<Ext>,
-        memo: &mut HashMap<Callee, u32>,
-    ) -> Result<(), &'static str> {
-        let h = img.header();
-        let header = h as *const _ as usize;
-        let syms = img.symbols();
-        let mut at = 0;
-        while at < words.len() {
-            let op = reduced::Opcode::from_u16(words[at] as u16);
-            let (field, c, name) = match op {
-                Some(reduced::Opcode::Call) => (at + 2, Callee::Vm(header, words[at + 2]), Name::Func(words[at + 2])),
-                Some(reduced::Opcode::TailCall) => (at + 1, Callee::Vm(header, words[at + 1]), Name::Func(words[at + 1])),
-                Some(reduced::Opcode::CallSym) => {
-                    let s = words[at + 2];
-                    let a = syms.get(s as usize).copied().unwrap_or(0) as usize;
-                    if a == 0 { (0, Callee::Addr(0), Name::Sym(s)) } else { (at + 2, vm_callee(self.rt, a).unwrap_or(Callee::Addr(a)), Name::Sym(s)) }
-                }
-                _ => (0, Callee::Addr(0), Name::Sym(0)),
-            };
-            let is_self = c == Callee::Vm(header, func);
-            if field != 0 && !is_self {
-                // Of the callee's image: a symbol may name another image's function.
-                if let Callee::Vm(hd, g) = c
-                    && g >= image_of(hd).functions().len() as u32
-                {
-                    return Err("function out of range");
-                }
-                words[field] = callee(place, c, name, ext, memo);
-                if op == Some(reduced::Opcode::CallSym) {
-                    words[at] = reduced::Opcode::Call as u32;
-                }
-            }
-            at += reduced::insn_len(&words[at..]).map_err(|_| "reduced code")?;
-        }
-        Ok(())
     }
 
     fn compile_once(&mut self, rec: *mut JitRecord) -> Result<(), CompileError> {
@@ -674,109 +264,91 @@ impl Jit {
         let within_limit = self.ssa_tried < settings.ssa_limit;
         if settings.opt != JitOpt::Reencode && within_limit {
             self.ssa_tried += 1;
-            let opts = jit::Options {
-                alloc: if settings.opt == JitOpt::Ssa { jit::Allocator::LinearScan } else { jit::Allocator::Naive },
-                stress: (self.rt.shuffled)(h as *const _ as *const u8),
-                check: settings.check,
-                dump: self.dump.is_some(),
-            };
             // The AOT layout's words (the SSA tier lays out its own frame); the calls are
             // retargeted as above after inlining, by the same rules.
-            let ds = &d;
-            let header = h as *const _ as usize;
-            let mut env = InlineEnv {
-                cache: &mut self.ir_cache,
-                handlers: &self.handlers,
-                probe: self.rt.probe as usize,
-                mode,
-                header,
-                root: func,
-                thresholds: self.rt.thresholds,
-                rt: self.rt,
-                place,
-                ext: Vec::new(),
-                memo: HashMap::new(),
-                ext_vm: HashMap::new(),
-            };
-            let mem = PoolMem { header, rt: self.rt };
-            let r = jit::compile(ds, img.code_consts(), mode, &opts, Some(&mem), Some(&mut env));
-            let ssa_ext = env.ext;
-            match r {
-                Ok(mut o) => {
-                    if let (Some(dir), Some(text)) = (&self.dump, o.dump.take()) {
-                        let _ = std::fs::write(std::format!("{dir}/f{func}-{:x}.txt", h as *const _ as usize), text);
-                    }
-                    let out = Gen {
-                        len: o.code.len(),
-                        code: o.code,
-                        relocs: o.relocs,
-                        rodata: o.rodata,
-                        call_sites: o.call_sites,
-                        body: if mode.pe { Body::Pe(o.pe_unwind) } else { Body::Rows(o.cfi) },
-                        osr: o.osr,
-                        osr_at: o.osr_at as usize,
-                    };
-                    SSA_COMPILED.fetch_add(1, Relaxed);
-                    SSA_DEVIRT.fetch_add(o.devirt, Relaxed);
-                    return self.install(rec, func, &img, place, personality, &ssa_ext, out, Tier::Ssa);
-                }
-                Err(jit::Error::Unsupported(u)) => {
-                    SSA_FALLBACK.fetch_add(1, Relaxed);
-                    if let Some(dir) = &self.dump {
-                        let text = std::format!("; unsupported: {}\n{}", u.0, reduced::Disasm(&ds.words));
-                        let _ = std::fs::write(std::format!("{dir}/f{func}-{:x}.txt", h as *const _ as usize), text);
-                    }
-                    if settings.log {
-                        self.log(rec, &std::format!("ssa: {}", u.0));
-                    }
-                }
-                // A checker found a bug: always on stderr, so that tests see it, and the function
-                // stays in its AOT code (`Failed`), which tests that expect JIT code notice.
-                Err(jit::Error::Check(why)) => {
-                    SSA_FALLBACK.fetch_add(1, Relaxed);
-                    self.log(rec, &std::format!("ssa: check failed: {why}"));
-                    return Err("the SSA tier's checkers failed".into());
-                }
+            if let Some((out, ssa_ext)) = self.compile_ssa(rec, func, &img, &d, mode, place)? {
+                return self.install(rec, func, &img, place, personality, &ssa_ext, out, Tier::Ssa);
             }
         }
-        let words = &words[..];
-        // Scopes keep their bytes' new offsets; an end over bytes that move apart only ends
-        // escapes, which stay, so it is dropped (scopes are side data, not code).
-        let scopes: Vec<asm::Scope> =
-            d.scopes.iter().filter_map(|sc| Some(asm::Scope { frame_offset: map.map_range(sc.frame_offset, sc.size)?, ..*sc })).collect();
-        let (enc, starts) =
-            asm::encode_reduced_at(words, map.frame_size, &d.cleanup, &scopes, &d.dropped, img.code_consts(), mode).map_err(|_| "encode")?;
-
-        // OSR entries, one per AOT loop head, landing at the head in the JIT code. Values
-        // move where the layouts differ and the head's liveness says they matter.
-        let live = if map.is_identity() { Vec::new() } else { frame::head_liveness(&d, mode).map_err(|e| e.what)? };
-        let mut entries = Vec::with_capacity(d.heads.len());
-        for (n, &hd) in d.heads.iter().enumerate() {
-            // An `arg` reads an argument register and an `lpad` the exception object in
-            // `rax`, which a head's stub doesn't keep: no entry there.
-            let w = &words[hd as usize..];
-            let enterable = match reduced::Opcode::from_u16(w[0] as u16) {
-                Some(reduced::Opcode::Arg) => false,
-                Some(reduced::Opcode::Handler) => w[1] != Opcode::Lpad as u32,
-                _ => true,
-            };
-            let landing = starts.binary_search_by_key(&hd, |s| s.0).map(|i| starts[i].1).map_err(|_| "loop head")?;
-            entries.push(enterable.then(|| OsrEntry { landing, moves: live.get(n).map(|l| frame::osr_moves(l, &map)).unwrap_or_default() }));
-        }
-        let osr_at = enc.code.len().next_multiple_of(16);
-        let osr = (!entries.is_empty()).then(|| asm::osr::osr_code(&entries, d.frame_size, map.frame_size, mode, osr_at as u32));
-        let ef = EhFunc { len: enc.code.len() as u32, frame_size: map.frame_size, prologue: enc.prologue, entry_stub: enc.entry_stub };
-        let out = Gen {
-            len: enc.code.len(),
-            code: enc.code,
-            relocs: enc.relocs,
-            rodata: enc.rodata,
-            call_sites: enc.call_sites,
-            body: Body::Aot(ef),
-            osr,
-            osr_at,
-        };
+        let out = compile_reencode(&d, &words, &map, &img, mode)?;
         self.install(rec, func, &img, place, personality, &ext, out, Tier::Reencode)
+    }
+
+    /// Compiles `d`, the function `func` of `img` (record `rec`), for `place` through the SSA
+    /// tier: its code and callees, or `None` where the tier doesn't handle it (the
+    /// re-encoding pipeline does).
+    fn compile_ssa(
+        &mut self,
+        rec: *mut JitRecord,
+        func: u32,
+        img: &Image<'_>,
+        d: &asm::Decoded,
+        mode: Mode,
+        place: Place,
+    ) -> Result<Option<(Gen, Vec<Ext>)>, CompileError> {
+        let h = img.header();
+        let opts = jit::Options {
+            alloc: if self.rt.settings.opt == JitOpt::Ssa { jit::Allocator::LinearScan } else { jit::Allocator::Naive },
+            stress: (self.rt.shuffled)(h as *const _ as *const u8),
+            check: self.rt.settings.check,
+            dump: self.dump.is_some(),
+        };
+        let header = h as *const _ as usize;
+        let mut env = InlineEnv {
+            cache: &mut self.ir_cache,
+            handlers: &self.handlers,
+            probe: self.rt.probe as usize,
+            mode,
+            header,
+            root: func,
+            thresholds: self.rt.thresholds,
+            rt: self.rt,
+            place,
+            ext: Vec::new(),
+            memo: HashMap::new(),
+            ext_vm: HashMap::new(),
+        };
+        let mem = PoolMem { header, rt: self.rt };
+        let r = jit::compile(d, img.code_consts(), mode, &opts, Some(&mem), Some(&mut env));
+        let ssa_ext = env.ext;
+        match r {
+            Ok(mut o) => {
+                if let (Some(dir), Some(text)) = (&self.dump, o.dump.take()) {
+                    let _ = std::fs::write(std::format!("{dir}/f{func}-{:x}.txt", h as *const _ as usize), text);
+                }
+                let out = Gen {
+                    len: o.code.len(),
+                    code: o.code,
+                    relocs: o.relocs,
+                    rodata: o.rodata,
+                    call_sites: o.call_sites,
+                    body: if mode.pe { Body::Pe(o.pe_unwind) } else { Body::Rows(o.cfi) },
+                    osr: o.osr,
+                    osr_at: o.osr_at as usize,
+                };
+                SSA_COMPILED.fetch_add(1, Relaxed);
+                SSA_DEVIRT.fetch_add(o.devirt, Relaxed);
+                Ok(Some((out, ssa_ext)))
+            }
+            Err(jit::Error::Unsupported(u)) => {
+                SSA_FALLBACK.fetch_add(1, Relaxed);
+                if let Some(dir) = &self.dump {
+                    let text = std::format!("; unsupported: {}\n{}", u.0, reduced::Disasm(&d.words));
+                    let _ = std::fs::write(std::format!("{dir}/f{func}-{:x}.txt", h as *const _ as usize), text);
+                }
+                if self.rt.settings.log {
+                    self.log(rec, &std::format!("ssa: {}", u.0));
+                }
+                Ok(None)
+            }
+            // A checker found a bug: always on stderr, so that tests see it, and the function
+            // stays in its AOT code (`Failed`), which tests that expect JIT code notice.
+            Err(jit::Error::Check(why)) => {
+                SSA_FALLBACK.fetch_add(1, Relaxed);
+                self.log(rec, &std::format!("ssa: check failed: {why}"));
+                Err("the SSA tier's checkers failed".into())
+            }
+        }
     }
 
     /// Installs the code `out` of the function `func` of `img` (record `rec`), compiled for
@@ -1027,85 +599,53 @@ impl Jit {
         Ok(())
     }
 
-    /// `RYO_JIT_DUMP`: the installed code of `func` as `dir/f<func>-<header>.code`, for `y
-    /// bench codegen` to disassemble: `tier`, `code <hex>` (the body, then from `osr <offset>`
-    /// the OSR code) and a `reloc <offset> <target>` per relocated field, the targets by
-    /// image index as the backend's `RYO_DUMP_CODE` names them (`fn3`, `sym2`, `k16`,
-    /// `ryo_h_AddOvf`), and per retargeted callee `ext fn<operand> <form> <name>`: the code
-    /// and the IR call it as function `operand` ([`asm::FUNC_KINDS`]), which is the caller's
-    /// function or symbol `name`, through a call slot (`slot`), directly (`near`) or through
-    /// `r11` (`far`).
-    #[allow(clippy::too_many_arguments)]
-    fn dump_code(
-        &self,
-        dir: &str,
-        func: u32,
-        header: usize,
-        ext: &[Ext],
-        code: &[u8],
-        relocs: &[asm::Reloc],
-        osr: Option<(usize, &asm::osr::OsrCode)>,
-        tier: Tier,
-    ) {
-        use core::fmt::Write as _;
-        let mut s = std::format!("tier {}\ncode ", tier.name());
-        let hex = |s: &mut std::string::String, bytes: &[u8]| {
-            for b in bytes {
-                let _ = write!(s, "{b:02x}");
-            }
-            s.push('\n');
-        };
-        hex(&mut s, code);
-        if let Some((at, o)) = osr {
-            let _ = write!(s, "osr {at} ");
-            hex(&mut s, &o.code);
-        }
-        for r in relocs {
-            let to = match r.to {
-                Ref::Handler(op) => std::format!("ryo_h_{op:?}"),
-                Ref::RegHandler(op) => std::format!("ryo_hr_{op:?}"),
-                Ref::Probe => "ryo_probe_stack".into(),
-                Ref::Func(g) => g.to_string(),
-                Ref::Sym(x) => x.to_string(),
-                Ref::Site(x) => x.to_string(),
-                Ref::Const(x) => x.to_string(),
-                Ref::Data(x) => x.to_string(),
-                Ref::Ro(o) => std::format!("ro+{o}"),
-                Ref::Rec => "jit_record".into(),
-                Ref::RecLoopCtr => "jit_record.ctr_l".into(),
-            };
-            let _ = writeln!(s, "reloc {} {to}", r.at);
-        }
-        // The retargeted callees, which the code and the IR name.
-        for (k, e) in ext.iter().enumerate() {
-            let form = match e.kind {
-                FUNC_SLOT => "slot",
-                FUNC_NEAR => "near",
-                _ => "far",
-            };
-            let name = match e.name {
-                Name::Func(g) => Func(g).to_string(),
-                Name::Sym(x) => Sym(x).to_string(),
-                Name::Other(g) => std::format!("{}@other", Func(g)),
-                Name::OtherSym(x) => std::format!("{}@other", Sym(x)),
-                Name::Addr(a) => std::format!("{a:#x}"),
-            };
-            let _ = writeln!(s, "ext {} {form} {name}", Func(e.kind | k as u32));
-        }
-        if let Some((at, o)) = osr {
-            for &p in &o.probes {
-                let _ = writeln!(s, "reloc {} ryo_probe_stack", at + p as usize);
-            }
-        }
-        let _ = std::fs::write(std::format!("{dir}/f{func}-{header:x}.code"), s);
-    }
-
     /// A line on stderr about `rec` (`RYO_JIT_LOG`).
     pub(crate) fn log(&self, rec: *mut JitRecord, what: &str) {
         // SAFETY: a record of a linked image.
         let (func, header) = unsafe { ((*rec).func, (*rec).header) };
         log_line(&std::format!("ryo-jit: f{func} of image {header:p}: {what}\n"));
     }
+}
+
+/// The re-encoding pipeline: `d`'s reduced code `words`, retargeted and in the frame layout
+/// `map`, encoded again without counters, with OSR entries for its loop heads.
+fn compile_reencode(d: &asm::Decoded, words: &[u32], map: &SlotMap, img: &Image<'_>, mode: Mode) -> Result<Gen, CompileError> {
+    // Scopes keep their bytes' new offsets; an end over bytes that move apart only ends
+    // escapes, which stay, so it is dropped (scopes are side data, not code).
+    let scopes: Vec<asm::Scope> =
+        d.scopes.iter().filter_map(|sc| Some(asm::Scope { frame_offset: map.map_range(sc.frame_offset, sc.size)?, ..*sc })).collect();
+    let (enc, starts) =
+        asm::encode_reduced_at(words, map.frame_size, &d.cleanup, &scopes, &d.dropped, img.code_consts(), mode).map_err(|_| "encode")?;
+
+    // OSR entries, one per AOT loop head, landing at the head in the JIT code. Values
+    // move where the layouts differ and the head's liveness says they matter.
+    let live = if map.is_identity() { Vec::new() } else { frame::head_liveness(d, mode).map_err(|e| e.what)? };
+    let mut entries = Vec::with_capacity(d.heads.len());
+    for (n, &hd) in d.heads.iter().enumerate() {
+        // An `arg` reads an argument register and an `lpad` the exception object in
+        // `rax`, which a head's stub doesn't keep: no entry there.
+        let w = &words[hd as usize..];
+        let enterable = match reduced::Opcode::from_u16(w[0] as u16) {
+            Some(reduced::Opcode::Arg) => false,
+            Some(reduced::Opcode::Handler) => w[1] != Opcode::Lpad as u32,
+            _ => true,
+        };
+        let landing = starts.binary_search_by_key(&hd, |s| s.0).map(|i| starts[i].1).map_err(|_| "loop head")?;
+        entries.push(enterable.then(|| OsrEntry { landing, moves: live.get(n).map(|l| frame::osr_moves(l, map)).unwrap_or_default() }));
+    }
+    let osr_at = enc.code.len().next_multiple_of(16);
+    let osr = (!entries.is_empty()).then(|| asm::osr::osr_code(&entries, d.frame_size, map.frame_size, mode, osr_at as u32));
+    let ef = EhFunc { len: enc.code.len() as u32, frame_size: map.frame_size, prologue: enc.prologue, entry_stub: enc.entry_stub };
+    Ok(Gen {
+        len: enc.code.len(),
+        code: enc.code,
+        relocs: enc.relocs,
+        rodata: enc.rodata,
+        call_sites: enc.call_sites,
+        body: Body::Aot(ef),
+        osr,
+        osr_at,
+    })
 }
 
 /// Writes `line` to stderr, straight to the file descriptor rather than through std's
