@@ -5,7 +5,9 @@ frame slot `p`, plus `k`) against `opSem`: `load` (`sound_load`) and `store` (`s
 Besides `Rel` (the frame), they relate L0 memory to x86 memory:
 
 - `MemRel st x`: each live allocation's byte `i` relates to the x86 byte at `addr + i`;
-- `FrameApart st x`: no private frame byte is at an x86 address inside a live allocation;
+- `FrameApart st x`: no initialized private frame byte is at an x86 address inside a live
+  allocation (`store`);
+- `WrApart op vals st x` (`load`): the frame bytes the instruction writes aren't either;
 - `MemDisjoint st` (stores only): distinct live allocation bytes have distinct x86 addresses
   (non-overlapping, and none wraps around the address space).
 
@@ -203,11 +205,20 @@ def MemRel (st : OpSem.State) (x : X86.State) : Prop :=
   ∀ id a, st.mem.get? id = some a → a.live = true → ∀ i (h : i < a.data.size),
     ByteRel a.data[i] (x.mem (BitVec.ofNat 64 (a.addr + i)))
 
-/-- No private frame byte (at an offset in `[-2^63, 2^63)`) is at an x86 address in a live
-allocation. -/
+/-- No initialized private frame byte (at an offset in `[-2^63, 2^63)`) is at an x86 address
+in a live allocation. Only initialized ones: every x86 address is `fp + o` for some such `o`, so
+over all private bytes this would fail as soon as a live allocation (a global, the heap) lies
+outside the escaped objects; an `Uninit` byte relates to any x86 byte anyway. -/
 def FrameApart (st : OpSem.State) (x : X86.State) : Prop :=
   ∀ id a o, st.mem.get? id = some a → a.live = true → st.escapedAt o = none →
-    -2 ^ 63 ≤ o → o < 2 ^ 63 → ¬ ((fpAddr x o - BitVec.ofNat 64 a.addr).toNat < a.size)
+    st.frame o ≠ .uninit → -2 ^ 63 ≤ o → o < 2 ^ 63 →
+    ¬ ((fpAddr x o - BitVec.ofNat 64 a.addr).toNat < a.size)
+
+/-- The x86 addresses of the frame bytes `opSem op vals` writes are in no live allocation (what
+a write of private frame bytes needs to keep `MemRel`). -/
+def WrApart (op : Full.Opcode) (vals : Operands) (st : OpSem.State) (x : X86.State) : Prop :=
+  ∀ r ∈ wranges op vals, ∀ o, inRange o r = true → ∀ id a, st.mem.get? id = some a →
+    a.live = true → ¬ ((fpAddr x o - BitVec.ofNat 64 a.addr).toNat < a.size)
 
 /-- The live allocations' bytes have distinct x86 addresses. -/
 def MemDisjoint (st : OpSem.State) : Prop :=
@@ -230,10 +241,12 @@ theorem nv_mem {ρ : R.Addrs} {o : R.Opnd Nat} {v : Val} :
   cases o <;> simp [R.nativeVal, eq_comm] <;>
     exact ⟨fun h => ⟨_, _, ⟨rfl, rfl⟩, h⟩, fun ⟨_, _, ⟨h1, h2⟩, h⟩ => h1 ▸ h2 ▸ h⟩
 
-/-- A write to `n` private frame bytes at `d` keeps `MemRel`. -/
+/-- A write to `n` frame bytes at `d`, at x86 addresses in no live allocation, that leaves L0
+memory alone keeps `MemRel`. -/
 theorem memRel_frame {st st' : OpSem.State} {x x' : X86.State} {d : Int} {n : Nat}
-    (hm : MemRel st x) (hmem : st'.mem = st.mem) (hap : FrameApart st x)
-    (hp : ∀ i < n, st.escapedAt (d + i) = none) (hd : -2 ^ 63 ≤ d) (hdn : d + n ≤ 2 ^ 63)
+    (hm : MemRel st x) (hmem : st'.mem = st.mem)
+    (hap : ∀ i < n, ∀ id a, st.mem.get? id = some a → a.live = true →
+      ¬ ((fpAddr x (d + i) - BitVec.ofNat 64 a.addr).toNat < a.size))
     (hx : ∀ b, n ≤ (b - fpAddr x d).toNat → x'.mem b = x.mem b) : MemRel st' x' := by
   intro id a hg hl i hi
   rw [hmem] at hg
@@ -242,7 +255,7 @@ theorem memRel_frame {st st' : OpSem.State} {x x' : X86.State} {d : Int} {n : Na
   · apply Nat.not_lt.1
     intro hj
     generalize hb : BitVec.ofNat 64 (a.addr + i) = b at hj
-    have := hap id a (d + ((b - fpAddr x d).toNat : Nat)) hg hl (hp _ hj) (by omega) (by omega)
+    have := hap _ hj id a hg hl
     rw [fpAddr_add, bv_add_sub_toNat, ← hb, ofNat_add_sub] at this
     apply this
     simp only [BitVec.toNat_ofNat, Allocation.size]
@@ -276,7 +289,7 @@ theorem sound_load (w : W) : ∀ (ctx : Ctx) (ρ : R.Addrs) (op : Full.Opcode)
     (st st' : OpSem.State) (ctl : Control) (ch : OpSem.Choice) (x : Ryo.X86.State),
     shapeOk op (.load w) = true → sequence (.load w) ops = some (items, br) →
     nativeVals ρ op ops = some vals → opSem op vals st ch = .ok (ctl, st') → Rel st x →
-    Private op vals st → MemRel st x → FrameApart st x →
+    Private op vals st → MemRel st x → WrApart op vals st x →
     ∃ x', execItems ctx items x = .ok x' ∧ Post op ops vals items br st st' ctl x x' ∧
       MemRel st' x' := by
   intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hp hm hap
@@ -318,8 +331,9 @@ theorem sound_load (w : W) : ∀ (ctx : Ctx) (ρ : R.Addrs) (op : Full.Opcode)
   obtain ⟨x', hx, hpost⟩ := key
   have hmem : st'.mem = st.mem :=
     writeFrame_mem_private hwr (by rw [hlen]; exact private_range hp hwr')
-  refine ⟨x', hx, hpost, memRel_frame (d := s0.toInt) (n := wbytes w) hm hmem hap
-    (private_range hp hwr') (by omega) (by cases w <;> simp <;> omega) fun b hb => ?_⟩
+  refine ⟨x', hx, hpost, memRel_frame (d := s0.toInt) (n := wbytes w) hm hmem
+    (fun i hi => hap (s0.toInt, wbytes w) (by rw [hwr']; simp) (s0.toInt + i)
+      (by simp only [inRange, decide_eq_true_eq]; omega)) fun b hb => ?_⟩
   exact hpost.memOut b (by simp [hwr']; exact hb)
 
 /-! ### Stores through a pointer -/
@@ -422,7 +436,9 @@ theorem post_store {st : OpSem.State} {mem' : Memory} {x x' : X86.State} {id : A
     cases hE : st.escapedAt o with
     | none =>
       simp only [hE, pure, Except.pure, Except.ok.injEq] at hb
-      rw [hout _ fun id a hg hl => hap id a o hg hl hE ho1 ho2]
+      by_cases hu : st.frame o = .uninit
+      · rw [← hb, hu]; trivial
+      rw [hout _ fun id a hg hl => hap id a o hg hl hE hu ho1 ho2]
       exact hr.frame o ho1 ho2 b (by simp [OpSem.State.byteAt, hE, hb, pure, Except.pure])
     | some e =>
       simp only [hE] at hb

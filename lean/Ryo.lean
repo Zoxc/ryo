@@ -29,6 +29,7 @@ import Ryo.Proofs.Switch
 import Ryo.Proofs.ArgRet
 import Ryo.Proofs.CacheStep
 import Ryo.Proofs.CacheMem
+import Ryo.Proofs.FrameBounds
 import Ryo.Proofs.Call
 import Ryo.Proofs.Island
 import Ryo.Proofs.DecodeLink

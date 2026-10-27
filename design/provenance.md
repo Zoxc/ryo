@@ -99,9 +99,11 @@ the proofs ([verification.md](verification.md)) must justify. The model is R's
   dangling after `End`. The relocation lemma (§C0.7) moves unreferenced objects at OSR.
 - **Proofs against x86** (`Ryo/Proofs/Inline/`): `Rel` relates frame bytes with provenance
   erased (`Rel.lean`); `MemRel` each live allocation byte to x86 memory, `FrameApart` no
-  private byte inside an allocation, `MemDisjoint` (stores) distinct allocation bytes at
+  initialized private byte inside an allocation, `WrApart` (loads) no written one,
+  `MemDisjoint` (stores) distinct allocation bytes at
   distinct addresses (`Mem.lean`); `EscWF` fresh, distinct ids for escaped objects
-  (`Scope.lean`).
+  (`Scope.lean`); `FrameSep` over the frame window, which the scopes keep and which gives
+  `FrameApart`, `WrApart` and `MemDisjoint` (`ScopeMem.lean`).
 - **L0 ↔ R** ([lean/docs/aot.md](../lean/docs/aot.md) §C1): provenance related by a renaming
   `ι` of allocation ids (escaped local ↔ its frame allocation, constant ↔ pool copy,
   zero-sized local ↔ no provenance), and pointers by `ProvLe`: an L0 pointer with an

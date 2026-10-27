@@ -318,9 +318,13 @@ follows the decoder's structure:
   escaped objects' allocations, `EscOnly`). Proofs are per handler kind for
   `opSem` (`Inline/OpSem.lean`), then per width by `simp` and `bv_decide`. `load` and `store`
   (memory through a pointer) are `sound_load`/`sound_store` (`Inline/Mem.lean`), given the
-  memory part of the relation (`MemRel`: live allocations' bytes at their addresses), private
-  frame bytes outside every allocation (`FrameApart`) and, for `store`, allocations disjoint in
-  the address space (`MemDisjoint`). The link to the opcodes,
+  memory part of the relation (`MemRel`: live allocations' bytes at their addresses), for
+  `load` the written frame bytes outside every allocation (`WrApart`), for `store` the
+  initialized private frame bytes outside every allocation (`FrameApart`; over all private
+  bytes it would be false, every address being `fp + o` for some `o`) and allocations disjoint
+  in the address space (`MemDisjoint`). These follow from `FrameSep` over the frame window
+  `[-F, K)`, which R's scopes and these steps keep (`ScopeMem.lean`, `CacheMem.lean`'s `_sep`
+  steps), given the code's frame accesses in the window (`FrameBounds.lean`). The link to the opcodes,
   `(op, c) ∈ inlineOps → shapeOk op c`, is `inlineOps_shape` (`RyoProofs/InlineOps.lean`, in
   its own library `RyoProofs`, outside the default build: about 3.5 minutes): `decide +kernel`
   over the generated mnemonics as character lists (`Generated/Mnemonics.lean`), with
