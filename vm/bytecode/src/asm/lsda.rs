@@ -36,6 +36,28 @@ pub fn write(sites: &[CallSite]) -> Vec<u8> {
     out
 }
 
+/// The call site of the LSDA `lsda` (written by [`write`]) that contains the code offset
+/// `pc`: `Some(None)` if none does, `None` if `lsda` isn't one. Doesn't allocate, for the
+/// runtime's PE exception handler.
+pub fn find(lsda: &[u8], pc: u32) -> Option<Option<CallSite>> {
+    if lsda.get(..3)? != [0xff, 0xff, 0x01] {
+        return None;
+    }
+    let mut r = Reader(lsda.get(3..)?);
+    let len = r.minimal_u32()? as usize;
+    let mut table = Reader(r.0.get(..len)?);
+    while !table.0.is_empty() {
+        let (start, l, pad, action) = (table.minimal_u32()?, table.minimal_u32()?, table.minimal_u32()?, table.minimal_u32()?);
+        if action > 1 || (action == 1 && pad == 0) {
+            return None;
+        }
+        if pc.wrapping_sub(start) < l {
+            return Some(Some(CallSite { start, len: l, pad: (pad != 0).then_some(pad), catch: action == 1 }));
+        }
+    }
+    Some(None)
+}
+
 /// Reads an LSDA written by [`write`] back. `None` if it isn't one (also for a value not in
 /// its shortest encoding, as [`write`] never writes one).
 pub fn parse(lsda: &[u8]) -> Option<Vec<CallSite>> {

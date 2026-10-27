@@ -1126,8 +1126,86 @@ pub enum PeUnwindOp {
 /// `prologue_len` bytes whose operations `ops` end at the given offsets, in code order, with
 /// `rbp` as the frame register at `rsp + 16 * fp_offset` (scaled, at most 15).
 pub fn pe_unwind_codes(prologue_len: u32, fp_offset: u32, ops: &[(u32, PeUnwindOp)]) -> Vec<u8> {
-    assert!(prologue_len < 256, "a PE prologue ends within 255 bytes");
     assert!(fp_offset < 16, "the frame register within 240 bytes of rsp");
+    unwind_codes(prologue_len, 5 | (fp_offset as u8) << 4, ops)
+}
+
+/// The PE `UNWIND_INFO` (as [`pe_unwind_codes`]) of a VM function's pad region
+/// (design/vm.md#unwinding): its entry `sub rsp, PE_REGION_ALLOC` is the whole prologue, and
+/// there is no frame register (`rbp` is the function's `fp`, not the region's frame).
+pub fn pe_region_unwind_info() -> Vec<u8> {
+    let sub = asm::x86::Item::SubRsp(asm::PE_REGION_ALLOC).len();
+    unwind_codes(sub, 0, &[(sub, PeUnwindOp::Alloc(asm::PE_REGION_ALLOC))])
+}
+
+/// The flags of an `UNWIND_INFO` with a language handler that both phases call
+/// (`UNW_FLAG_EHANDLER | UNW_FLAG_UHANDLER`), in place in its first byte.
+pub const PE_HANDLER_FLAGS: u8 = (1 | 2) << 3;
+
+/// `info`, an `UNWIND_INFO` without a handler ([`pe_unwind_codes`]), with the language
+/// handler both phases call ([`PE_HANDLER_FLAGS`]): after the codes (whose array is padded to
+/// an even count) the handler's RVA, 0 here, then the handler data `data`, padded to 4. Also
+/// returns the RVA field's offset, which the caller relocates.
+pub fn pe_with_handler(info: &[u8], data: &[u8]) -> (Vec<u8>, usize) {
+    debug_assert!(info.len() % 4 == 0 && info[0] & 0xf8 == 0, "an UNWIND_INFO without flags");
+    let mut out = info.to_vec();
+    out[0] |= PE_HANDLER_FLAGS;
+    let rva = out.len();
+    out.extend_from_slice(&[0; 4]);
+    out.extend_from_slice(data);
+    while out.len() % 4 != 0 {
+        out.push(0);
+    }
+    (out, rva)
+}
+
+/// The handler data of a VM function's `UNWIND_INFO` on PE, which `ryo_seh_handler` reads
+/// ([`PeHandlerData`]): the offset of the entry's range from the function's start, the pad
+/// region's offset (0 if there is none), the LSDA's length, then the LSDA ([`asm::lsda`],
+/// offsets from the function's start), all `u32`s little-endian.
+pub fn pe_handler_data(begin: u32, region: u32, lsda: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(12 + lsda.len());
+    for v in [begin, region, lsda.len() as u32] {
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+    out.extend_from_slice(lsda);
+    out
+}
+
+/// [`pe_handler_data`] read back.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PeHandlerData<'a> {
+    /// The offset of the `RUNTIME_FUNCTION`'s range from the function's start.
+    pub begin: u32,
+    /// The pad region's offset from the function's start, 0 if there is none.
+    pub region: u32,
+    pub lsda: &'a [u8],
+}
+
+impl<'a> PeHandlerData<'a> {
+    /// The handler data at the start of `data`. `None` if it doesn't fit.
+    pub fn parse(data: &'a [u8]) -> Option<PeHandlerData<'a>> {
+        let word = |i: usize| Some(u32::from_le_bytes(data.get(4 * i..4 * i + 4)?.try_into().ok()?));
+        let (begin, region, len) = (word(0)?, word(1)?, word(2)?);
+        Some(PeHandlerData { begin, region, lsda: data.get(12..)?.get(..len as usize)? })
+    }
+
+    /// The handler data at `data`, whose length is in its header.
+    ///
+    /// # Safety
+    /// `data` must point at handler data [`pe_handler_data`] wrote.
+    pub unsafe fn from_ptr(data: *const u8) -> Option<PeHandlerData<'a>> {
+        // SAFETY: the header's 12 bytes, then the LSDA's length.
+        unsafe {
+            let len = u32::from_le_bytes(core::slice::from_raw_parts(data.add(8), 4).try_into().ok()?);
+            PeHandlerData::parse(core::slice::from_raw_parts(data, 12 + len as usize))
+        }
+    }
+}
+
+/// [`pe_unwind_codes`] with the frame register byte `frame` (0 for none).
+fn unwind_codes(prologue_len: u32, frame: u8, ops: &[(u32, PeUnwindOp)]) -> Vec<u8> {
+    assert!(prologue_len < 256, "a PE prologue ends within 255 bytes");
     // Unwind codes, last operation first: (offset after the operation, op | info << 4, extra
     // slots).
     let mut codes: Vec<u8> = Vec::new();
@@ -1163,8 +1241,8 @@ pub fn pe_unwind_codes(prologue_len: u32, fp_offset: u32, ops: &[(u32, PeUnwindO
         }
     }
     let slots = codes.len() / 2;
-    // Version 1, no flags; the frame register rbp (5).
-    let mut out = vec![1, prologue_len as u8, slots as u8, 5 | (fp_offset as u8) << 4];
+    // Version 1, no flags; the frame register.
+    let mut out = vec![1, prologue_len as u8, slots as u8, frame];
     out.extend_from_slice(&codes);
     while out.len() % 4 != 0 {
         out.push(0);

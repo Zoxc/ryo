@@ -381,6 +381,48 @@ fn pe_unwind_info_encodings() {
     );
 }
 
+/// `pe_with_handler`, the pad region's `UNWIND_INFO` and the handler data, byte for byte
+/// (the x64 `UNWIND_INFO` layout: the handler's RVA after the codes, whose array has an even
+/// count, then the language-specific data), and `lsda::find` on them.
+#[test]
+fn pe_unwind_with_handler() {
+    use ryo_bytecode::asm::{CallSite, lsda};
+    use ryo_bytecode::image::{PE_HANDLER_FLAGS, PeHandlerData, pe_handler_data, pe_region_unwind_info, pe_with_handler};
+    let pe = Mode { pe: true, fp_arg: true, ..ELF };
+    // F = 48: 5 codes, padded to 6; the RVA at 16, then the data, padded to 4.
+    let info = ryo_bytecode::image::pe_unwind_info(&EhFunc { len: 1000, frame_size: 48, prologue: 0, entry_stub: 1000 }, pe);
+    assert_eq!(info.len(), 16);
+    let (h, rva) = pe_with_handler(&info, &[0xaa, 0xbb, 0xcc]);
+    assert_eq!(PE_HANDLER_FLAGS, 0x18);
+    assert_eq!(h[0], 1 | 0x18);
+    assert_eq!((rva, &h[1..16], &h[16..]), (16, &info[1..], &[0, 0, 0, 0, 0xaa, 0xbb, 0xcc, 0][..]));
+    // 4 codes need no padding: the RVA right after them.
+    let info = ryo_bytecode::image::pe_unwind_info(&EhFunc { len: 1000, frame_size: 16, prologue: 0, entry_stub: 1000 }, pe);
+    let (h, rva) = pe_with_handler(&info, &[]);
+    assert_eq!((info.len(), rva, h.len()), (12, 12, 16));
+    // The region: `sub rsp, 40` (4 bytes) is the prologue, UWOP_ALLOC_SMALL of 5 slots, no
+    // frame register.
+    assert_eq!(pe_region_unwind_info(), [1, 4, 1, 0, 4, 2 | 4 << 4, 0, 0]);
+
+    let sites = [
+        CallSite { start: 10, len: 5, pad: Some(100), catch: false },
+        CallSite { start: 20, len: 6, pad: None, catch: false },
+        CallSite { start: 130, len: 5, pad: Some(170), catch: true },
+    ];
+    let l = lsda::write(&sites);
+    let data = pe_handler_data(96, 96, &l);
+    assert_eq!(&data[..12], [96, 0, 0, 0, 96, 0, 0, 0, l.len() as u8, 0, 0, 0]);
+    let d = PeHandlerData::parse(&data).unwrap();
+    assert_eq!((d.begin, d.region, d.lsda), (96, 96, &l[..]));
+    assert_eq!(unsafe { PeHandlerData::from_ptr(data.as_ptr()) }, Some(d));
+    assert_eq!(PeHandlerData::parse(&data[..data.len() - 1]), None);
+    for (pc, want) in [(9, None), (10, Some(sites[0])), (14, Some(sites[0])), (15, None), (25, Some(sites[1])), (134, Some(sites[2])), (500, None)] {
+        assert_eq!(lsda::find(d.lsda, pc), Some(want), "pc {pc}");
+    }
+    assert_eq!(lsda::find(&l[1..], 10), None);
+    assert_eq!(lsda::find(&lsda::write(&[]), 0), Some(None));
+}
+
 #[test]
 fn empty_image() {
     let obj = ImageWriter::new(1).finish(ELF).unwrap();

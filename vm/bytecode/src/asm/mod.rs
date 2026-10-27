@@ -105,6 +105,12 @@ pub struct Mode {
     pub far_rt: bool,
 }
 
+/// PE: what a VM function's pad region allocates below the trampoline's return address
+/// (design/vm.md#unwinding): the 32 bytes of shadow space of the calls in its cleanup code,
+/// and 8 more that keep `rsp` 16-aligned. Its entry is `sub rsp, PE_REGION_ALLOC; jmp r11`,
+/// and `resume` there is `add rsp, PE_REGION_ALLOC; ret`.
+pub const PE_REGION_ALLOC: u32 = 40;
+
 /// JIT call targets (design/jit.md, "Calls"): the JIT gives a `call` or `tail_call` whose
 /// callee it doesn't reach as a function of the image a function operand with one of these
 /// bits, and the rest of the operand numbers the target in the JIT's list. The encoders emit
