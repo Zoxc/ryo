@@ -278,6 +278,15 @@ theorem noArg_inline {fr : Frame} {c : Cursor} {p : Nat} {a : Bool} {cur cur' c'
   have e := callInsn_none hc; subst e
   exact noArg_of_item hn (noArg_inline_item h hq)
 
+/-- A dense switch read starts with an item. -/
+theorem denseSwitch_item {fr : Frame} {c c' : Cursor} {q : Proto}
+    (h : (denseSwitch fr).run c = .ok (some q, c')) : decodeItem c ≠ none := by
+  intro hn
+  have hs : denseScan c = none := by
+    unfold denseScan denseItems denseItems.go
+    simp [hn]
+  unfold denseSwitch at h
+  simp [hs, StateT.run, bind, StateT.bind, get, getThe, MonadStateOf.get, StateT.get, pure, StateT.pure, Except.pure, Except.bind] at h
 theorem noArg_insn {fr : Frame} {ro : ByteArray} {c : Cursor} {p : Nat} {a : Bool}
     {cur c' : Cursor} {q : Proto} (hn : NoArg fr c p a cur) (h : InsnRead fr ro cur q c') :
     cur = atPos c p := by
@@ -291,5 +300,6 @@ theorem noArg_insn {fr : Frame} {ro : ByteArray} {c : Cursor} {p : Nat} {a : Boo
   | unreachable hi => intro hn'; rw [hn'] at hi; cases hi
   | jmp hi => intro hn'; rw [hn'] at hi; cases hi
   | island hi _ => exact noArg_dec_item (by simp [Island.islandPre]) (islandCall_read hi).1
+  | dense h => exact denseSwitch_item h
 
 end Ryo.Proofs.DecodeLink

@@ -51,6 +51,10 @@ fn key(op: &Op, args: &[Value]) -> Option<Key> {
     Some(match *op {
         Op::Bin(o, w) => (0, o as u64, w as u64, a(0), a(1)),
         Op::Cmp(cc, w) => (1, cc as u64, w as u64, a(0), a(1)),
+        Op::Bswap(w) => (9, w as u64, 0, a(0), u32::MAX),
+        Op::Count { lz, w } => (10, lz as u64, w as u64, a(0), u32::MAX),
+        Op::Cmp3(signed, w) => (12, signed as u64, w as u64, a(0), a(1)),
+        Op::SwitchIdx { w, base, n } => (11 | w << 4, base, n as u64, a(0), u32::MAX),
         Op::Ext { from, to, sx } => (2, from as u64 | (to as u64) << 8 | (sx as u64) << 16, 0, a(0), u32::MAX),
         Op::PtrAdd(k) => (3, k as u64, 0, a(0), u32::MAX),
         Op::PtrIndex(s) => (4, s as u64, 0, a(0), a(1)),
@@ -168,7 +172,9 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
             }
             let all = mask(u64::MAX, w);
             match (o, konst(f, b).map(|c| mask(c, w))) {
-                (BinOp::Add | BinOp::Sub | BinOp::Or | BinOp::Xor | BinOp::Shl | BinOp::ShrS | BinOp::ShrU, Some(0)) => return Simp::Value(a),
+                (BinOp::Add | BinOp::Sub | BinOp::Or | BinOp::Xor | BinOp::Shl | BinOp::ShrS | BinOp::ShrU | BinOp::Rotl | BinOp::Rotr, Some(0)) => {
+                    return Simp::Value(a);
+                }
                 (BinOp::Mul | BinOp::DivS | BinOp::DivU, Some(1)) => return Simp::Value(a),
                 (BinOp::Mul | BinOp::And, Some(0)) => return Simp::Const(0),
                 (BinOp::And, Some(c)) if c == all => return Simp::Value(a),
@@ -243,6 +249,7 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
             }
             Simp::Keep
         }
+        Op::Cmp3(..) if args[0] == args[1] => Simp::Const(0),
         Op::PtrIndex(s) => {
             if let Some(x) = konst(f, args[1]) {
                 f.insts[i.idx()].op = Op::PtrAdd(x.wrapping_mul(s as u64) as i64);

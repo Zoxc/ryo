@@ -300,10 +300,13 @@ impl Alu {
     }
 }
 
-/// The shifts by an immediate, by their x86 `/digit`.
+/// The shifts and rotates, by their x86 `/digit`. The immediate shifts ([`Item::Shift`]) are
+/// `Shl`, `Shr` and `Sar` only.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Sh {
+    Rol = 0,
+    Ror = 1,
     Shl = 4,
     Shr = 5,
     Sar = 7,
@@ -421,6 +424,24 @@ pub enum Item {
     SetccCl(Cond),
     /// `mul r/m64`: `rdx:rax = rax * r/m`, the unsigned 64-bit multiply with overflow.
     MulQ(Rm),
+    /// `op reg, cl` at width `w`: a shift (`D` or `Q`) or a rotate (any width) by `cl`.
+    ShiftCl { op: Sh, w: W, reg: Reg },
+    /// `div r/m` (`idiv` if `signed`; `D` or `Q`): `rdx:rax / r/m`, the quotient in `rax`, the
+    /// remainder in `rdx`.
+    Div { signed: bool, w: W, rm: Rm },
+    /// `cdq` (`D`) or `cqo` (`Q`): `rdx` the sign of `rax`.
+    Cdq(W),
+    /// `bsf reg, r/m` (`D` or `Q`): the lowest set bit's index; on zero, ZF set and `reg`
+    /// undefined.
+    Bsf { w: W, reg: Reg, rm: Rm },
+    /// `bsr reg, r/m` (`D` or `Q`): the highest set bit's index, as [`Item::Bsf`].
+    Bsr { w: W, reg: Reg, rm: Rm },
+    /// `cmovcc reg, r/m` (`D`).
+    Cmov { cond: Cond, w: W, reg: Reg, rm: Rm },
+    /// `setcc reg8`, another register than `cl` ([`Item::SetccCl`]).
+    SetccR(Cond, Reg),
+    /// `bswap reg` (`D` or `Q`).
+    Bswap { w: W, reg: Reg },
 
     // Return values and arguments in SSE registers (`xmm0`–`xmm7`).
     /// An SSE load (`st` false) or store of `xmm{x}` at the frame slot `[m]`: `movss` for 4
@@ -520,10 +541,14 @@ impl Item {
             Item::Imul { rm, .. } => self.prefix_len() + 2 + rm.len(),
             Item::ImulImm { rm, imm, .. } => self.prefix_len() + 1 + rm.len() + if imm8(imm) { 1 } else { 4 },
             Item::Shift { .. } => self.prefix_len() + 3,
+            Item::ShiftCl { .. } | Item::Bswap { .. } => self.prefix_len() + 2,
+            Item::Bsf { rm, .. } | Item::Bsr { rm, .. } | Item::Cmov { rm, .. } => self.prefix_len() + 2 + rm.len(),
             Item::Setcc { m, .. } => self.prefix_len() + 2 + m.len(),
             Item::TestM8(m) => self.prefix_len() + 2 + m.len(),
             Item::SetccCl(_) => 3,
-            Item::MulQ(rm) => self.prefix_len() + 1 + rm.len(),
+            Item::SetccR(..) => self.prefix_len() + 3,
+            Item::MulQ(rm) | Item::Div { rm, .. } => self.prefix_len() + 1 + rm.len(),
+            Item::Cdq(w) => 1 + (w == W::Q) as u32,
             Item::Sse { size, m, .. } => (size != 16) as u32 + 2 + m.len(),
             Item::Movd { r, .. } => 4 + r.ext() as u32,
         }
@@ -541,8 +566,13 @@ impl Item {
             Item::AluImm { w, rm, .. } => (w == W::Q, None, rm, w == W::B),
             Item::Imul { w, reg, rm } | Item::ImulImm { w, reg, rm, .. } => (w == W::Q, Some(reg), rm, false),
             Item::Shift { w, reg, .. } => (w == W::Q, None, Rm::Reg(reg), false),
+            Item::ShiftCl { w, reg, .. } => (w == W::Q, None, Rm::Reg(reg), w == W::B),
+            Item::Bswap { w, reg } => (w == W::Q, None, Rm::Reg(reg), false),
+            Item::SetccR(_, reg) => (false, None, Rm::Reg(reg), true),
+            Item::Bsf { w, reg, rm } | Item::Bsr { w, reg, rm } | Item::Cmov { w, reg, rm, .. } => (w == W::Q, Some(reg), rm, false),
             Item::Setcc { m, .. } | Item::TestM8(m) => (false, None, Rm::Mem(m), false),
             Item::MulQ(rm) => (true, None, rm, false),
+            Item::Div { w, rm, .. } => (w == W::Q, None, rm, false),
             _ => return None,
         };
         let sil = |r: Reg| byte && !r.ext() && r.low() >= 4;
@@ -564,13 +594,24 @@ impl Item {
 
     /// The length of a native item's prefixes: the operand-size prefix for 16 bits, and REX.
     fn prefix_len(&self) -> u32 {
-        let w16 = matches!(self, Item::St { w: W::W, .. } | Item::StImm { w: W::W, .. } | Item::Alu { w: W::W, .. } | Item::AluImm { w: W::W, .. });
-        w16 as u32 + self.rex().is_some() as u32
+        self.w16() as u32 + self.rex().is_some() as u32
+    }
+
+    /// Whether the item takes the operand-size prefix (16 bits).
+    fn w16(&self) -> bool {
+        matches!(
+            self,
+            Item::St { w: W::W, .. }
+                | Item::StImm { w: W::W, .. }
+                | Item::Alu { w: W::W, .. }
+                | Item::AluImm { w: W::W, .. }
+                | Item::ShiftCl { w: W::W, .. }
+        )
     }
 
     /// Writes a native item's prefixes ([`Item::prefix_len`]).
     fn prefixes(&self, out: &mut Vec<u8>) {
-        if matches!(self, Item::St { w: W::W, .. } | Item::StImm { w: W::W, .. } | Item::Alu { w: W::W, .. } | Item::AluImm { w: W::W, .. }) {
+        if self.w16() {
             out.push(0x66);
         }
         if let Some(r) = self.rex() {
@@ -595,9 +636,16 @@ impl Item {
             Item::Imul { w, reg, rm } => Item::Imul { w, reg: f(reg), rm: frm(rm) },
             Item::ImulImm { w, reg, rm, imm } => Item::ImulImm { w, reg: f(reg), rm: frm(rm), imm },
             Item::Shift { op, w, reg, amt } => Item::Shift { op, w, reg: f(reg), amt },
+            Item::ShiftCl { op, w, reg } => Item::ShiftCl { op, w, reg: f(reg) },
+            Item::Bswap { w, reg } => Item::Bswap { w, reg: f(reg) },
+            Item::SetccR(cond, reg) => Item::SetccR(cond, f(reg)),
+            Item::Bsf { w, reg, rm } => Item::Bsf { w, reg: f(reg), rm: frm(rm) },
+            Item::Bsr { w, reg, rm } => Item::Bsr { w, reg: f(reg), rm: frm(rm) },
+            Item::Cmov { cond, w, reg, rm } => Item::Cmov { cond, w, reg: f(reg), rm: frm(rm) },
             Item::Setcc { cond, m } => Item::Setcc { cond, m: fm(m) },
             Item::TestM8(m) => Item::TestM8(fm(m)),
             Item::MulQ(rm) => Item::MulQ(frm(rm)),
+            Item::Div { signed, w, rm } => Item::Div { signed, w, rm: frm(rm) },
             Item::SetReg(r, v) => Item::SetReg(f(r), v),
             Item::Lea(r, to) => Item::Lea(f(r), to),
             Item::LoadRip(r, to) => Item::LoadRip(f(r), to),
@@ -643,6 +691,14 @@ impl Item {
                 | Item::TestM8(_)
                 | Item::SetccCl(_)
                 | Item::MulQ(_)
+                | Item::Div { .. }
+                | Item::Cdq(_)
+                | Item::ShiftCl { .. }
+                | Item::Bswap { .. }
+                | Item::SetccR(..)
+                | Item::Bsf { .. }
+                | Item::Bsr { .. }
+                | Item::Cmov { .. }
                 | Item::Lea(..)
                 | Item::LoadRip(..)
                 | Item::SetReg(Reg::Rax | Reg::Rcx | Reg::Rdx | Reg::Rsi | Reg::Rdi | Reg::R8 | Reg::R9 | Reg::R10 | Reg::R11, _)
@@ -672,6 +728,10 @@ impl Item {
             Item::Setcc { cond, m } => Item::Setcc { cond, m: f(m) },
             Item::TestM8(m) => Item::TestM8(f(m)),
             Item::MulQ(rm) => Item::MulQ(frm(rm)),
+            Item::Div { signed, w, rm } => Item::Div { signed, w, rm: frm(rm) },
+            Item::Bsf { w, reg, rm } => Item::Bsf { w, reg, rm: frm(rm) },
+            Item::Bsr { w, reg, rm } => Item::Bsr { w, reg, rm: frm(rm) },
+            Item::Cmov { cond, w, reg, rm } => Item::Cmov { cond, w, reg, rm: frm(rm) },
             Item::Sse { st, size, x, m } => Item::Sse { st, size, x, m: f(m) },
             it => it,
         }
@@ -697,7 +757,11 @@ impl Item {
             | Item::AluImm { rm: Rm::Mem(m), .. }
             | Item::Imul { rm: Rm::Mem(m), .. }
             | Item::ImulImm { rm: Rm::Mem(m), .. }
-            | Item::MulQ(Rm::Mem(m)) => Some(m),
+            | Item::MulQ(Rm::Mem(m))
+            | Item::Div { rm: Rm::Mem(m), .. }
+            | Item::Bsf { rm: Rm::Mem(m), .. }
+            | Item::Bsr { rm: Rm::Mem(m), .. }
+            | Item::Cmov { rm: Rm::Mem(m), .. } => Some(m),
             _ => None,
         }
     }
@@ -711,6 +775,10 @@ impl Item {
             | Item::Imul { w, rm: Rm::Mem(m), .. }
             | Item::ImulImm { w, rm: Rm::Mem(m), .. } => (m, w),
             Item::MulQ(Rm::Mem(m)) => (m, W::Q),
+            Item::Div { w, rm: Rm::Mem(m), .. }
+            | Item::Bsf { w, rm: Rm::Mem(m), .. }
+            | Item::Bsr { w, rm: Rm::Mem(m), .. }
+            | Item::Cmov { w, rm: Rm::Mem(m), .. } => (m, w),
             Item::TestM8(m) => (m, W::B),
             _ => return None,
         };
@@ -933,10 +1001,46 @@ impl Item {
                 out.push(0xff);
             }
             Item::SetccCl(cond) => out.extend_from_slice(&[0x0f, 0x90 | cond.cc(), 0xc1]),
+            Item::SetccR(cond, reg) => {
+                self.prefixes(out);
+                out.extend_from_slice(&[0x0f, 0x90 | cond.cc(), 0xc0 | reg.low()]);
+            }
+            Item::Bsf { reg, rm, .. } | Item::Bsr { reg, rm, .. } | Item::Cmov { reg, rm, .. } => {
+                self.prefixes(out);
+                out.extend_from_slice(&[
+                    0x0f,
+                    match *self {
+                        Item::Bsf { .. } => 0xbc,
+                        Item::Bsr { .. } => 0xbd,
+                        Item::Cmov { cond, .. } => 0x40 | cond.cc(),
+                        _ => unreachable!(),
+                    },
+                ]);
+                rm.write(reg.low(), out);
+            }
+            Item::Bswap { reg, .. } => {
+                self.prefixes(out);
+                out.extend_from_slice(&[0x0f, 0xc8 | reg.low()]);
+            }
+            Item::ShiftCl { op, w, reg } => {
+                self.prefixes(out);
+                out.extend_from_slice(&[if w == W::B { 0xd2 } else { 0xd3 }, 0xc0 | (op as u8) << 3 | reg.low()]);
+            }
             Item::MulQ(rm) => {
                 self.prefixes(out);
                 out.push(0xf7);
                 rm.write(4, out);
+            }
+            Item::Div { signed, rm, .. } => {
+                self.prefixes(out);
+                out.push(0xf7);
+                rm.write(6 | signed as u8, out);
+            }
+            Item::Cdq(w) => {
+                if w == W::Q {
+                    out.push(0x48);
+                }
+                out.push(0x99);
             }
             Item::Sse { st, size, x, m } => {
                 match size {
@@ -1134,6 +1238,7 @@ impl<'a> Cursor<'a> {
         };
         let dq = |w: W| if matches!(w, W::D | W::Q) { Ok(w) } else { Err(bad) };
         let item = match (w, op) {
+            (W::D | W::Q, 0x0f) if matches!(get(i)?, 0xc8..=0xcf) => Item::Bswap { w, reg: reg(get(i)? & 7 | rb)? },
             (W::D | W::Q, 0x0f) => {
                 let op2 = get(i)?;
                 let (r, rm, _) = modrm(i + 1)?;
@@ -1142,7 +1247,11 @@ impl<'a> Cursor<'a> {
                         Item::Ld { w: if op2 & 1 == 0 { W::B } else { W::W }, sx: op2 & 8 != 0, dst: reg(r)?, m: mem(rm)? }
                     }
                     0xaf => Item::Imul { w, reg: reg(r)?, rm },
+                    0xbc => Item::Bsf { w, reg: reg(r)?, rm },
+                    0xbd => Item::Bsr { w, reg: reg(r)?, rm },
+                    0x40..=0x4f if w == W::D => Item::Cmov { cond: Cond::from_cc(op2 & 0xf).ok_or(bad)?, w, reg: reg(r)?, rm },
                     0x90..=0x9f if w == W::D && r == 0 && rm == Rm::Reg(Reg::Rcx) => Item::SetccCl(Cond::from_cc(op2 & 0xf).ok_or(bad)?),
+                    0x90..=0x9f if w == W::D && r == 0 && matches!(rm, Rm::Reg(_)) => Item::SetccR(Cond::from_cc(op2 & 0xf).ok_or(bad)?, rm_reg(rm)?),
                     0x90..=0x9f if w == W::D && r == 0 => Item::Setcc { cond: Cond::from_cc(op2 & 0xf).ok_or(bad)?, m: mem(rm)? },
                     _ => return Err(bad),
                 }
@@ -1191,24 +1300,43 @@ impl<'a> Cursor<'a> {
                 };
                 Item::Shift { op, w: dq(w)?, reg: rm_reg(rm)?, amt: get(j)? }
             }
+            (_, 0xd2 | 0xd3) => {
+                let w = if op == 0xd2 { if w == W::D { W::B } else { return Err(bad) } } else { w };
+                let (r, rm, _) = modrm(i)?;
+                let op = match r {
+                    0 => Sh::Rol,
+                    1 => Sh::Ror,
+                    4 => Sh::Shl,
+                    5 => Sh::Shr,
+                    7 => Sh::Sar,
+                    _ => return Err(bad),
+                };
+                Item::ShiftCl { op, w, reg: rm_reg(rm)? }
+            }
             (W::D, 0xf6) => {
                 let (_, rm, _) = modrm(i)?;
                 Item::TestM8(mem(rm)?)
             }
-            (W::Q, 0xf7) => {
+            (W::D | W::Q, 0xf7) => {
                 let (r, rm, _) = modrm(i)?;
-                if r != 4 {
-                    return Err(bad);
+                match (w, r) {
+                    (W::Q, 4) => Item::MulQ(rm),
+                    (_, 6 | 7) => Item::Div { signed: r == 7, w, rm },
+                    _ => return Err(bad),
                 }
-                Item::MulQ(rm)
             }
+            (W::D | W::Q, 0x99) => Item::Cdq(w),
             _ => return Err(bad),
         };
         if let Item::Alu { rm: Rm::Reg(r), .. }
         | Item::AluImm { rm: Rm::Reg(r), .. }
         | Item::Imul { rm: Rm::Reg(r), .. }
         | Item::ImulImm { rm: Rm::Reg(r), .. }
-        | Item::MulQ(Rm::Reg(r)) = item
+        | Item::MulQ(Rm::Reg(r))
+        | Item::Div { rm: Rm::Reg(r), .. }
+        | Item::Bsf { rm: Rm::Reg(r), .. }
+        | Item::Bsr { rm: Rm::Reg(r), .. }
+        | Item::Cmov { rm: Rm::Reg(r), .. } = item
         {
             reg(r as u8)?;
         }

@@ -895,7 +895,7 @@ b2(): ; Body
 b3(): ; Body
     trap
 b4(): ; Body
-    v4:4 = hcall.reg cttz.w16 [(Fp, [None, None]), (Imm(4294967120), [Some(Scratch(0)), None]), (Imm(4294967126), [Some(Scratch(8)), None])] outs 1 (v2)
+    v4:4 = Count { lz: false, w: 2 } (v2)
     jmp b6()
 b5(): ; Body
     v5:8 = RefAddr(k0, false) ()
@@ -988,7 +988,7 @@ b6(v11:8): ; Body head 3
 b7(): ; Body
     trap
 b8(): ; Body
-    v12:4 = hcall.reg cttz.w16 [(Fp, [None, None]), (Imm(4294967092), [Some(Scratch(0)), None]), (Imm(4294967110), [Some(Scratch(8)), None])] outs 1 (v2)
+    v12:4 = Count { lz: false, w: 2 } (v2)
     jmp b11()
 b9(): ; Body
     v13:8 = RefAddr(k1, false) ()
@@ -1149,7 +1149,7 @@ b12(): ; Body
 b13(): ; Body
     trap
 b14(): ; Body
-    v27:4 = hcall.reg cttz.w16 [(Fp, [None, None]), (Imm(4294967028), [Some(Scratch(0)), None]), (Imm(4294967054), [Some(Scratch(8)), None])] outs 1 (v11)
+    v27:4 = Count { lz: false, w: 2 } (v11)
     jmp b17()
 b15(): ; Body
     v28:8 = RefAddr(k1, false) ()
@@ -1332,7 +1332,7 @@ b6(v11:8): ; Body head 3
 b7(): ; Body
     trap
 b8(): ; Body
-    v12:4 = hcall.reg cttz.w16 [(Fp, [None, None]), (Imm(4294967092), [Some(Scratch(0)), None]), (Imm(4294967110), [Some(Scratch(8)), None])] outs 1 (v2)
+    v12:4 = Count { lz: false, w: 2 } (v2)
     jmp b11()
 b9(): ; Body
     v13:8 = RefAddr(k1, false) ()
@@ -2366,7 +2366,7 @@ b8(): ; Body
     v45:2 = Ext { from: 4, to: 2, sx: false } (v44)
     jmp b2(v45, v15, v16, v109, v113, v122, v29)
 b9(): ; Body
-    v46:4 = hcall.reg cttz.w16 [(Fp, [None, None]), (Imm(4294967076), [Some(Scratch(0)), None]), (Imm(4294967152), [Some(Scratch(8)), None])] outs 1 (v24)
+    v46:4 = Count { lz: false, w: 2 } (v24)
     jmp b11()
 b10(): ; Body
     v47:8 = RefAddr(k4, false) ()
@@ -2600,30 +2600,31 @@ b2(): ; Body
     v10:2 = Ext { from: 4, to: 2, sx: false } (v7)
     br Eq.w2 v10, 0x0 ? b4() : b3()
 b3(): ; Body
-    hcall cttz.w16 [(Fp, [None, None]), (Imm(4294967180), [Some(Alloca(AllocaId(0), 12)), None]), (Imm(4294967194), [Some(Scratch(0)), None])] ins [0] outs [] (v10)
-    v12:4 = ALoad(AllocaId(0), 12, 4) ()
+    v12:4 = Count { lz: false, w: 2 } (v10)
+    AStore(AllocaId(0), 12, 4) (v12)
+    v13:4 = ALoad(AllocaId(0), 12, 4) ()
     jmp b5()
 b4(): ; Body
-    v13:8 = RefAddr(k1, false) ()
-    v14:8 = Load(8, 0) (v13)
-    v15:8 = Load(8, 8) (v13)
-    v17:1 = Cmp(Eq, 8) (v14, 0x1)
+    v14:8 = RefAddr(k1, false) ()
+    v15:8 = Load(8, 0) (v14)
+    v16:8 = Load(8, 8) (v14)
+    v18:1 = Cmp(Eq, 8) (v15, 0x1)
     jmp b7()
 b5(): ; Body
-    v18:8 = Ext { from: 4, to: 8, sx: false } (v12)
-    v21:1 = Cmp(Eq, 8) (0x1, 0x1)
-    v22:8 = Load(8, 0) (v2)
-    v23:8 = Bin(Add, 8) (v22, v18)
-    v24:8 = Load(8, 8) (v0)
-    v25:8 = Bin(And, 8) (v23, v24)
-    jmp b1(0x1, v25)
+    v19:8 = Ext { from: 4, to: 8, sx: false } (v13)
+    v22:1 = Cmp(Eq, 8) (0x1, 0x1)
+    v23:8 = Load(8, 0) (v2)
+    v24:8 = Bin(Add, 8) (v23, v19)
+    v25:8 = Load(8, 8) (v0)
+    v26:8 = Bin(And, 8) (v24, v25)
+    jmp b1(0x1, v26)
 b6(): ; Body
     trap
 b7(): ; Body
-    v27:8 = RefAddr(k2, false) ()
-    v28:8 = Load(8, 0) (v27)
-    v29:8 = Load(8, 8) (v27)
-    jmp b1(v28, v29)
+    v28:8 = RefAddr(k2, false) ()
+    v29:8 = Load(8, 0) (v28)
+    v30:8 = Load(8, 8) (v28)
+    jmp b1(v29, v30)
 
 fn hashbrown::raw::RawTableInner::resize_inner::<std::alloc::Global>
 a0: $-624, 8 bytes, Promoted

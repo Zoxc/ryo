@@ -2489,3 +2489,244 @@ fn simd_against_handlers() {
     }
     check_stats(before, compiled);
 }
+
+/// What the instruction `op` (`d, a, b` or `d, a`, up to 64 bits) leaves in a zeroed 8-byte
+/// `d` on the 8-byte slots `a` and `b`, by its definition (design/instructions.md).
+fn model(op: Opcode, a: u64, b: u64) -> u64 {
+    let m = op.mnemonic();
+    let parts: Vec<&str> = m.split('.').collect();
+    let n: u32 = parts.last().unwrap()[1..].parse().unwrap();
+    let mask = |x: u64| if n == 64 { x } else { x & ((1 << n) - 1) };
+    let sx = |x: u64| ((x << (64 - n)) as i64) >> (64 - n);
+    let (a, b) = (mask(a), mask(b));
+    let k = (b % n as u64) as u32;
+    // A byte, -1 to 1.
+    if parts[0] == "cmp3" {
+        let o = if parts[1] == "s" { sx(a).cmp(&sx(b)) } else { a.cmp(&b) };
+        return o as i8 as u8 as u64;
+    }
+    mask(match (parts[0], parts.get(1).copied()) {
+        ("shl", _) => a << k,
+        ("shr", Some("u")) => a >> k,
+        ("shr", _) => (sx(a) >> k) as u64,
+        ("rotl", _) if k == 0 => a,
+        ("rotl", _) => a << k | a >> (n - k),
+        ("rotr", _) if k == 0 => a,
+        ("rotr", _) => a >> k | a << (n - k),
+        ("bswap", _) => a.swap_bytes() >> (64 - n),
+        ("cttz", _) => (if a == 0 { n } else { a.trailing_zeros() }) as u64,
+        ("ctlz", _) => (if a == 0 { n } else { a.leading_zeros() - (64 - n) }) as u64,
+        // Below 32 bits in 32, so a signed `MIN / -1` wraps.
+        ("div", Some("u")) => a / b,
+        ("rem", Some("u")) => a % b,
+        ("div", _) => sx(a).wrapping_div(sx(b)) as u64,
+        ("rem", _) => sx(a).wrapping_rem(sx(b)) as u64,
+        _ => panic!("no model for {m}"),
+    })
+}
+
+/// Edge-case operand values: around every width's sign bit and all-ones, shift amounts
+/// around every width, and a few others.
+const EDGES: [u64; 24] = [
+    0,
+    1,
+    2,
+    7,
+    8,
+    9,
+    15,
+    16,
+    17,
+    31,
+    32,
+    33,
+    63,
+    64,
+    65,
+    0x80,
+    0xff,
+    0x8000,
+    0xffff,
+    0x8000_0000,
+    0xffff_ffff,
+    1 << 63,
+    u64::MAX,
+    0x0123_4567_89ab_cdef,
+];
+
+/// Each of `ops` (`d, a, b`, or `d, a` reading the first) in a function `f(a, b)` that chains six of them, each on the
+/// two results before it (so values stay live across them), and returns their xor: in the
+/// JIT code, it matches [`model`] on every pair of edge values.
+fn chains_match_model(ops: &[Opcode]) {
+    let (_g, before) = start();
+    let mut w = ImageWriter::new(unique_scid());
+    let mut fs = Vec::new();
+    for &op in ops {
+        let mut a = Asm::new();
+        let slot = |k: usize| if k < 2 { 16 + 8 * k as i32 } else { -8 * (k as i32 - 1) };
+        for k in 2..8 {
+            a.i(Insn::ImmW64 { d: Slot(slot(k)), imm: 0 });
+            let vals = [slot(k) as u32 as u128, slot(k - 2) as u32 as u128, slot(k - 1) as u32 as u128];
+            a.raw(op, &vals[..op.info().operands.len()]);
+        }
+        a.i(Insn::ImmW64 { d: Slot(-56), imm: 0 });
+        for k in 2..8 {
+            a.i(Insn::XorW64 { d: Slot(-56), a: Slot(-56), b: Slot(slot(k)) });
+        }
+        a.ret(Slot(-56), 8);
+        fs.push(w.add_function(func(a.done(), 64, 16, 8)));
+    }
+    let img = build(w, &syms());
+    for (&op, &f) in ops.iter().zip(&fs) {
+        for &x in &EDGES {
+            for &y in &EDGES {
+                let mut xs = vec![x, y];
+                for k in 2..8 {
+                    xs.push(model(op, xs[k - 2], xs[k - 1]));
+                }
+                let want = xs[2..].iter().fold(0, |s, v| s ^ v);
+                assert_eq!(ok::<_, u64>(img.id(f), (x, y)), want, "{} on {x:#x}, {y:#x}", op.mnemonic());
+            }
+        }
+    }
+    check_stats(before, ops.len());
+}
+
+/// Shifts and rotates by a variable amount, at every width: amounts at and past the width.
+#[test]
+fn variable_shifts_and_rotates() {
+    use Opcode::*;
+    chains_match_model(&[
+        ShlW8, ShlW16, ShlW32, ShlW64, ShrSW8, ShrSW16, ShrSW32, ShrSW64, ShrUW8, ShrUW16, ShrUW32, ShrUW64, RotlW8, RotlW16, RotlW32, RotlW64,
+        RotrW8, RotrW16, RotrW32, RotrW64,
+    ]);
+}
+
+/// `bswap` at 16, 32 and 64 bits.
+#[test]
+fn byte_swaps() {
+    use Opcode::*;
+    chains_match_model(&[BswapW16, BswapW32, BswapW64]);
+}
+
+/// Each of `ops` (`d, a, b`) in a function `f(a, b)` with `a + b` and `a ^ b` live across
+/// it, and with `b` a constant (each of `consts`) in another: in the JIT code, they match
+/// [`model`] on the pairs of edge values `defined` accepts.
+fn binary_matches_model(ops: &[Opcode], consts: &[u64], defined: impl Fn(Opcode, u64, u64) -> bool) {
+    let (_g, before) = start();
+    let mut w = ImageWriter::new(unique_scid());
+    let mut fs = Vec::new();
+    for &op in ops {
+        for c in [None].into_iter().chain(consts.iter().map(Some)) {
+            let mut a = Asm::new();
+            a.i(Insn::AddW64 { d: Slot(-16), a: Slot(16), b: Slot(24) });
+            a.i(Insn::XorW64 { d: Slot(-24), a: Slot(16), b: Slot(24) });
+            let b = match c {
+                Some(&c) => {
+                    a.i(Insn::ImmW64 { d: Slot(-32), imm: c });
+                    -32
+                }
+                None => 24,
+            };
+            a.i(Insn::ImmW64 { d: Slot(-8), imm: 0 });
+            a.raw(op, &[-8i32 as u32 as u128, 16, b as u32 as u128]);
+            a.i(Insn::XorW64 { d: Slot(-8), a: Slot(-8), b: Slot(-16) });
+            a.i(Insn::XorW64 { d: Slot(-8), a: Slot(-8), b: Slot(-24) });
+            a.ret(Slot(-8), 8);
+            fs.push((op, c.copied(), w.add_function(func(a.done(), 32, 16, 8))));
+        }
+    }
+    let img = build(w, &syms());
+    for &(op, c, f) in &fs {
+        for &x in &EDGES {
+            for &y in &EDGES {
+                let y = c.unwrap_or(y);
+                if !defined(op, x, y) {
+                    continue;
+                }
+                let want = model(op, x, y) ^ x.wrapping_add(y) ^ x ^ y;
+                assert_eq!(ok::<_, u64>(img.id(f), (x, y)), want, "{} on {x:#x}, {y:#x}", op.mnemonic());
+            }
+        }
+    }
+    check_stats(before, fs.len());
+}
+
+/// Division and remainder at every width, signed or not, by a variable and by constants:
+/// but for a zero divisor and a 32- or 64-bit signed `MIN / -1`, which fault.
+#[test]
+fn division() {
+    use Opcode::*;
+    let ops =
+        [DivSW8, DivSW16, DivSW32, DivSW64, DivUW8, DivUW16, DivUW32, DivUW64, RemSW8, RemSW16, RemSW32, RemSW64, RemUW8, RemUW16, RemUW32, RemUW64];
+    binary_matches_model(&ops, &[3, 7, u64::MAX, 0x8000_0001], |op, a, b| {
+        let n: u32 = op.mnemonic().rsplit('.').next().unwrap()[1..].parse().unwrap();
+        let mask = if n == 64 { u64::MAX } else { (1 << n) - 1 };
+        let signed = op.mnemonic().split('.').nth(1) == Some("s");
+        b & mask != 0 && !(signed && n >= 32 && b & mask == mask && a & mask == 1 << (n - 1))
+    });
+}
+
+/// `cttz` and `ctlz` at every width, zero included.
+#[test]
+fn bit_counts() {
+    use Opcode::*;
+    chains_match_model(&[CttzW8, CttzW16, CttzW32, CttzW64, CtlzW8, CtlzW16, CtlzW32, CtlzW64]);
+}
+
+/// Dense switches at every width up to 64 bits, with bases that make the index wrap (and a
+/// 64-bit one past `i32`): three cases returning `100 + i`, the default 99.
+#[test]
+fn dense_switch_indices() {
+    let (_g, before) = start();
+    let mut w = ImageWriter::new(unique_scid());
+    let cases: [(u32, Opcode, u64); 6] = [
+        (8, Opcode::SwitchDenseW8, 0xfe),
+        (16, Opcode::SwitchDenseW16, 0xfffe),
+        (32, Opcode::SwitchDenseW32, 7),
+        (32, Opcode::SwitchDenseW32, 0),
+        (64, Opcode::SwitchDenseW64, 1 << 40),
+        (64, Opcode::SwitchDenseW64, u64::MAX - 1),
+    ];
+    let mut fs = Vec::new();
+    for &(_, op, base) in &cases {
+        let mut a = Asm::new();
+        let tw = [0u32; 3];
+        let sw = match op {
+            Opcode::SwitchDenseW8 => a.i(Insn::SwitchDenseW8 { s: Slot(16), base: base as u8, default: Target(0), table: List::from_words(&tw) }),
+            Opcode::SwitchDenseW16 => a.i(Insn::SwitchDenseW16 { s: Slot(16), base: base as u16, default: Target(0), table: List::from_words(&tw) }),
+            Opcode::SwitchDenseW32 => a.i(Insn::SwitchDenseW32 { s: Slot(16), base: base as u32, default: Target(0), table: List::from_words(&tw) }),
+            _ => a.i(Insn::SwitchDenseW64 { s: Slot(16), base, default: Target(0), table: List::from_words(&tw) }),
+        };
+        for i in 0..3 {
+            let at = a.i(Insn::ImmW64 { d: Slot(-8), imm: 100 + i as u64 });
+            a.patch_list(sw, "table", i, at);
+            a.ret(Slot(-8), 8);
+        }
+        let d = a.i(Insn::ImmW64 { d: Slot(-8), imm: 99 });
+        a.patch(sw, "default", d);
+        a.ret(Slot(-8), 8);
+        fs.push(w.add_function(func(a.done(), 16, 8, 8)));
+    }
+    let img = build(w, &syms());
+    for (&(bits, op, base), &f) in cases.iter().zip(&fs) {
+        let mask = if bits == 64 { u64::MAX } else { (1 << bits) - 1 };
+        let mut xs: Vec<u64> = (0..6).map(|k| base.wrapping_add(k).wrapping_sub(1)).collect();
+        xs.extend(EDGES);
+        xs.extend([base | 1 << 63, base.wrapping_add(1 << bits.min(63))]);
+        for x in xs {
+            let i = x.wrapping_sub(base) & mask;
+            let want = if i < 3 { 100 + i } else { 99 };
+            assert_eq!(ok::<_, u64>(img.id(f), (x,)), want, "{} base {base:#x} on {x:#x}", op.mnemonic());
+        }
+    }
+    check_stats(before, fs.len());
+}
+
+/// `cmp3` at every width, signed or not.
+#[test]
+fn three_way_compares() {
+    use Opcode::*;
+    let ops = [Cmp3SW8, Cmp3SW16, Cmp3SW32, Cmp3SW64, Cmp3UW8, Cmp3UW16, Cmp3UW32, Cmp3UW64];
+    binary_matches_model(&ops, &[0, 1 << 63, 0x7f], |_, _, _| true);
+}

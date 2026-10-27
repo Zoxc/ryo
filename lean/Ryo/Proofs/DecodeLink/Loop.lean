@@ -466,6 +466,8 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
     intro m; unfold argInsn; repeat (first | exact PosOnly.pure _ | exact lrPure _ | exact PosOnly.pos | exact PosOnly.tryItem | exact PosOnly.setPos _ | exact PosOnly.fuel | exact PosOnly.item | exact PosOnly.err _ _ | exact lrGet | exact lrExpect _ | exact lrTake _ | refine PosOnly.forIn_range _ _ _ (fun _ _ => ?_) | refine PosOnly.forIn_list _ _ _ (fun _ _ => ?_) | refine PosOnly.bind ?_ (fun _ => ?_) | split | (dsimp only))
   have po_retSeq : ∀ fr, PosOnly (retSeq fr) := by
     intro fr; unfold retSeq; repeat (first | exact PosOnly.pure _ | exact lrPure _ | exact PosOnly.pos | exact PosOnly.tryItem | exact PosOnly.setPos _ | exact PosOnly.fuel | exact PosOnly.item | exact PosOnly.err _ _ | exact lrGet | exact lrExpect _ | exact lrTake _ | refine PosOnly.forIn_range _ _ _ (fun _ _ => ?_) | refine PosOnly.forIn_list _ _ _ (fun _ _ => ?_) | refine PosOnly.bind ?_ (fun _ => ?_) | split | (dsimp only))
+  have po_dense : ∀ fr, PosOnly (denseSwitch fr) := by
+    intro fr; unfold denseSwitch; repeat (first | exact PosOnly.pure _ | exact lrPure _ | exact PosOnly.pos | exact PosOnly.tryItem | exact PosOnly.setPos _ | exact PosOnly.fuel | exact PosOnly.item | exact PosOnly.err _ _ | exact lrGet | exact lrExpect _ | exact lrTake _ | refine PosOnly.forIn_range _ _ _ (fun _ _ => ?_) | refine PosOnly.forIn_list _ _ _ (fun _ _ => ?_) | refine PosOnly.bind ?_ (fun _ => ?_) | split | (dsimp only))
   have po_island : ∀ fr, PosOnly (islandCall fr) := by
     intro fr; unfold islandCall; repeat (first | exact PosOnly.pure _ | exact lrPure _ | exact PosOnly.pos | exact PosOnly.tryItem | exact PosOnly.setPos _ | exact PosOnly.fuel | exact PosOnly.item | exact PosOnly.err _ _ | exact lrGet | exact lrExpect _ | exact lrTake _ | refine PosOnly.forIn_range _ _ _ (fun _ _ => ?_) | refine PosOnly.forIn_list _ _ _ (fun _ _ => ?_) | refine PosOnly.bind ?_ (fun _ => ?_) | split | (dsimp only))
   have po_hargs : ∀ s fr p, PosOnly (handlerArgs s fr p) := by
@@ -485,6 +487,7 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
     | unreachable _ => rfl
     | jmp _ => rfl
     | island h _ => exact po_island _ _ _ _ h
+    | dense h => exact po_dense _ _ _ _ h
   have ite_ok : ∀ {α : Type} {p : Prop} [Decidable p] {x y : DM α} {c c' : Cursor} {a : α},
       (if p then x else y).run c = .ok (a, c') →
         (p ∧ x.run c = .ok (a, c')) ∨ (¬p ∧ y.run c = .ok (a, c')) := by

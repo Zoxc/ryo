@@ -262,6 +262,7 @@ def native (a : BitVec 64) (pl : Nat) (p66 : Bool) (rex : Nat) : List Nat → Op
       match r with
       | 0x04 :: 0x81 :: r => some (.item .loadTableEntry, r)
       | _ => none
+    else if op = 0x99 then some (.item (.cdq wd), r)
     else if 0xb8 ≤ op ∧ op < 0xc0 then do
       let d ← regOf (op - 0xb8) X
       if bW then do let (v, r) ← rd64 r; pure (.item (.setReg d v), r)
@@ -269,16 +270,26 @@ def native (a : BitVec 64) (pl : Nat) (p66 : Bool) (rex : Nat) : List Nat → Op
     else if op = 0x0f then
       match r with
       | [] => none
-      | op2 :: r => do
+      | op2 :: r =>
+        if 0xc8 ≤ op2 ∧ op2 < 0xd0 then do
+          let d ← regOf (op2 - 0xc8) X
+          pure (.item (.bswap wd d), r)
+        else do
         let (g, o, r) ← decModrm X r
-        if op2 = 0xaf then do
+        if op2 = 0xaf ∨ op2 = 0xbc ∨ op2 = 0xbd then do
           let reg ← regOf g R
           let rm ← o.rm?
-          pure (.item (.imul wd reg rm), r)
+          pure (.item (if op2 = 0xaf then .imul wd reg rm else if op2 = 0xbc then .bsf wd reg rm
+            else .bsr wd reg rm), r)
+        else if 0x40 ≤ op2 ∧ op2 < 0x50 then do
+          let c ← Cond.ofCc? (op2 - 0x40)
+          let reg ← regOf g R
+          let rm ← o.rm?
+          pure (.item (.cmov c wd reg rm), r)
         else if 0x90 ≤ op2 ∧ op2 < 0xa0 then do
           let c ← Cond.ofCc? (op2 - 0x90)
           match o with
-          | .reg _ => pure (.item (.setccCl c), r)
+          | .reg d => pure (.item (if d = .rcx then .setccCl c else .setccR c d), r)
           | .mem m => pure (.item (.setcc c m), r)
           | .rip _ => none
         else do
@@ -351,6 +362,10 @@ def native (a : BitVec 64) (pl : Nat) (p66 : Bool) (rex : Nat) : List Nat → Op
         let reg ← o.reg?
         let (amt, r) ← rdB r
         pure (.item (.shift sh wd reg amt), r)
+      else if op = 0xd2 ∨ op = 0xd3 then do
+        let sh ← Sh.ofNum? g
+        let reg ← o.reg?
+        pure (.item (.shiftCl sh (if op = 0xd2 then .b else wd) reg), r)
       else if op = 0xf6 then do
         let m ← o.mem?
         match r with
@@ -358,7 +373,7 @@ def native (a : BitVec 64) (pl : Nat) (p66 : Bool) (rex : Nat) : List Nat → Op
         | _ => none
       else if op = 0xf7 then do
         let rm ← o.rm?
-        pure (.item (.mulQ rm), r)
+        pure (.item (if g = 6 ∨ g = 7 then .div (g == 7) wd rm else .mulQ rm), r)
       else if op = 0xff then
         match o with
         | .reg _ => if g = 2 then pure (.item .callRax, r) else pure (.item .jmpRax, r)
@@ -512,6 +527,9 @@ def Ok (pos : BitVec 32) : Item → Prop
     rm ≠ .reg .rsp ∧ (w = .b → fitsSigned 8 imm = true) ∧ (w = .w → fitsSigned 16 imm = true)
   | .imul w _ _ | .imulImm w _ _ _ | .shift _ w _ _ => w = .d ∨ w = .q
   | .setcc c _ | .setccCl c => c ≠ .always
+  | .div _ w _ | .cdq w | .bsf w _ _ | .bsr w _ _ | .bswap w _ => w = .d ∨ w = .q
+  | .cmov c w _ _ => c ≠ .always ∧ (w = .d ∨ w = .q)
+  | .setccR c r => c ≠ .always ∧ r ≠ .rcx
   | .sse _ size x m => (size = 4 ∨ size = 8 ∨ size = 16) ∧ x < 8 ∧ (m.base = .rbp ∨ m.base = .rsp)
   | .movd _ x _ => x < 8
   | _ => True
@@ -605,30 +623,31 @@ theorem dec_66rex (a : BitVec 64) (p : BitVec 32) (k op : Nat) (t : List Nat) (h
   · simp [dec, dec66, h1, h2, h41, *]
 
 def ops66 : List Nat := [0x89, 0xc7, 0x81, 0x83, 0x02, 0x03, 0x0a, 0x0b, 0x22, 0x23, 0x2a, 0x2b, 0x32,
-  0x33, 0x3a, 0x3b]
+  0x33, 0x3a, 0x3b, 0xd3]
 
 theorem dec_66 (a : BitVec 64) (p : BitVec 32) (op : Nat) (t : List Nat) (hop : op ∈ ops66) :
     dec a p (0x66 :: op :: t) = native a 1 true 0 (op :: t) := by
   simp only [ops66, List.mem_cons, List.not_mem_nil, or_false] at hop
-  rcases hop with rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl <;> simp [dec, dec66]
+  rcases hop with rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl <;> simp [dec, dec66]
 
 def ops0 : List Nat := [0x88, 0x89, 0x8b, 0x8d, 0xc6, 0xc7, 0x80, 0x81, 0x83, 0x69, 0x6b, 0xc1, 0xf6,
-  0xf7, 0x02, 0x03, 0x0a, 0x0b, 0x22, 0x23, 0x2a, 0x2b, 0x32, 0x33, 0x3a, 0x3b]
+  0xf7, 0x02, 0x03, 0x0a, 0x0b, 0x22, 0x23, 0x2a, 0x2b, 0x32, 0x33, 0x3a, 0x3b, 0xd2, 0xd3, 0x99]
 
 theorem dec_0 (a : BitVec 64) (p : BitVec 32) (op : Nat) (t : List Nat) (hop : op ∈ ops0) :
     dec a p (op :: t) = native a 0 false 0 (op :: t) := by
   simp only [ops0, List.mem_cons, List.not_mem_nil, or_false] at hop
-  rcases hop with rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl <;>
+  rcases hop with rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl <;>
     simp [dec]
 
-def ops0f : List Nat := [0xb6, 0xb7, 0xbe, 0xbf, 0xaf, 0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97,
-  0x98, 0x99, 0x9a, 0x9b, 0x9c, 0x9d, 0x9e, 0x9f]
+def ops0f : List Nat := [0xb6, 0xb7, 0xbe, 0xbf, 0xaf, 0xbc, 0xbd] ++
+  (List.range 16).map (0x90 + ·) ++ (List.range 16).map (0x40 + ·) ++ (List.range 8).map (0xc8 + ·)
 
 theorem dec_0f (a : BitVec 64) (p : BitVec 32) (op : Nat) (t : List Nat) (hop : op ∈ ops0f) :
     dec a p (0x0f :: op :: t) = native a 0 false 0 (0x0f :: op :: t) := by
-  simp only [ops0f, List.mem_cons, List.not_mem_nil, or_false] at hop
-  rcases hop with rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl <;>
-    simp [dec, dec0f]
+  have key : ∀ o ∈ ops0f, o ≠ 0x1f ∧ o ≠ 0x0b ∧ ¬(0x80 ≤ o ∧ o < 0x90) ∧ o ≠ 0x10 ∧ o ≠ 0x11 := by
+    decide
+  have h1 := key op hop
+  simp [dec, dec0f, h1]
 
 theorem dec_nat0 {w R X : Bool} {pre : List UInt8} {k pl : Nat} (hR : RexOk w R X pre k pl)
     (a : BitVec 64) (p : BitVec 32) (op : Nat) (t : List Nat) (hop : op ∈ ops0) :
@@ -851,6 +870,98 @@ theorem fam_alu (ctx : Ctx) (pos : Nat) (rest : List Nat) (op : Alu) (w : W) (re
   cases w <;> cases op <;> prep <;> pre_dec <;>
     simp [native, hX, hRr, hW, decModrm_rm', regOf_reg, opnd_rm, Alu.ofNum?, keyOf]
 
+theorem fam_shiftCl (ctx : Ctx) (pos : Nat) (rest : List Nat) (op : Sh) (w : W) (reg : Reg) :
+    decAt ctx pos (((Item.shiftCl op w reg).linkedAt ctx pos).map UInt8.toNat ++ rest) =
+      some (keyOf ctx (.shiftCl op w reg), rest) := by
+  have e : (Item.shiftCl op w reg).rex? = rexOf (w == .q) none (.reg reg) (w == .b) := rfl
+  rexsetup (w == .q) none (.reg reg) (w == .b)
+  have hd := decModrm_rm (.reg reg) op.num (sh_num_lt op) rest
+  simp only [Rm.write, rmExt, opnd] at hd hX
+  cases w <;> prep <;> pre_dec <;> cases op <;>
+  · prep at hd
+    simp [native, hX, hd, regOf_reg, keyOf, Sh.ofNum?, Opnd.reg?]
+    all_goals (simp only [show ∀ a b : W, (a == b) = decide (a = b) from fun _ _ => rfl] at hW
+               simp at hW; omega)
+
+theorem fam_div (ctx : Ctx) (pos : Nat) (rest : List Nat) (sg : Bool) (w : W) (rm : Rm)
+    (h : Ok (BitVec.ofNat 32 pos) (.div sg w rm)) :
+    decAt ctx pos (((Item.div sg w rm).linkedAt ctx pos).map UInt8.toNat ++ rest) =
+      some (keyOf ctx (.div sg w rm), rest) := by
+  have e : (Item.div sg w rm).rex? = rexOf (w == .q) none rm false := rfl
+  rexsetup (w == .q) none rm false
+  simp only [Ok] at h
+  cases sg <;> cases w <;> simp at h <;> prep <;> pre_dec <;>
+    simp [native, hX, hRr, hW, decModrm_rm rm 6 (by decide), decModrm_rm rm 7 (by decide), keyOf,
+      opnd_rm]
+
+theorem fam_bsf (ctx : Ctx) (pos : Nat) (rest : List Nat) (lz : Bool) (w : W) (reg : Reg) (rm : Rm)
+    (h : Ok (BitVec.ofNat 32 pos) (if lz then .bsr w reg rm else .bsf w reg rm)) :
+    decAt ctx pos (((if lz then Item.bsr w reg rm else .bsf w reg rm).linkedAt ctx pos).map UInt8.toNat ++ rest) =
+      some (keyOf ctx (if lz then .bsr w reg rm else .bsf w reg rm), rest) := by
+  have e : (if lz then Item.bsr w reg rm else .bsf w reg rm).rex? = rexOf (w == .q) (some reg) rm false := by
+    cases lz <;> rfl
+  rw [linkedAt_plain _ _ _ (by cases lz <;> rfl)]
+  have hR := rexOf_spec (w == .q) (some reg) rm false
+  generalize rexK (w == .q) (some reg) rm false = k at hR
+  generalize rexPl (w == .q) (some reg) rm false = pl at hR
+  have he : ∀ i : Item, i = (if lz then Item.bsr w reg rm else .bsf w reg rm) →
+      (i.encode (BitVec.ofNat 32 pos)).1 = i.prefixes ++ [0x0f, if lz then 0xbd else 0xbc] ++ rm.write reg.low := by
+    intro i hi; subst hi; cases lz <;> rfl
+  rw [he _ rfl]
+  simp only [Item.prefixes, e]
+  generalize ((rexOf (w == .q) (some reg) rm false).map ([·])).getD [] = pre at hR ⊢
+  have hX := hR.2.2.2.2.2.2
+  have hRr := hR.2.2.2.2.2.1
+  have hW := hR.2.2.2.2.1
+  simp only [Option.map, Option.getD, rmExt_mem] at hRr hX
+  simp only [Ok] at h
+  cases lz <;> cases w <;> simp at h <;> prep <;> pre_dec <;>
+    simp [native, hX, hRr, hW, decModrm_rm', regOf_reg, keyOf, opnd_rm]
+
+theorem fam_cmov (ctx : Ctx) (pos : Nat) (rest : List Nat) (c : Cond) (w : W) (reg : Reg) (rm : Rm)
+    (h : Ok (BitVec.ofNat 32 pos) (.cmov c w reg rm)) :
+    decAt ctx pos (((Item.cmov c w reg rm).linkedAt ctx pos).map UInt8.toNat ++ rest) =
+      some (keyOf ctx (.cmov c w reg rm), rest) := by
+  have e : (Item.cmov c w reg rm).rex? = rexOf (w == .q) (some reg) rm false := rfl
+  rexsetup (w == .q) (some reg) rm false
+  simp only [Ok] at h
+  obtain ⟨hc, hw⟩ := h
+  rcases hw with rfl | rfl <;> cases c <;> simp at hc <;>
+    simp only [Cond.cc, Cond.cc?, Option.getD] <;> prep <;> pre_dec <;>
+    simp [native, hX, hRr, hW, decModrm_rm', regOf_reg, keyOf, opnd_rm, Cond.ofCc?]
+
+theorem fam_setccR (ctx : Ctx) (pos : Nat) (rest : List Nat) (c : Cond) (r : Reg)
+    (h : Ok (BitVec.ofNat 32 pos) (.setccR c r)) :
+    decAt ctx pos (((Item.setccR c r).linkedAt ctx pos).map UInt8.toNat ++ rest) =
+      some (keyOf ctx (.setccR c r), rest) := by
+  have e : (Item.setccR c r).rex? = rexOf false none (.reg r) true := rfl
+  rexsetup false none (.reg r) true
+  simp only [Ok] at h
+  obtain ⟨hc, hr⟩ := h
+  have hd := decModrm_rm (.reg r) 0 (by decide) rest
+  simp only [Rm.write, rmExt, opnd] at hd hX
+  cases c <;> simp at hc <;> simp only [Cond.cc, Cond.cc?, Option.getD] <;> prep <;> pre_dec <;>
+  · prep at hd
+    simp [native, hX, hd, keyOf, Cond.ofCc?, hr]
+
+theorem fam_cdq (ctx : Ctx) (pos : Nat) (rest : List Nat) (w : W)
+    (h : Ok (BitVec.ofNat 32 pos) (.cdq w)) :
+    decAt ctx pos (((Item.cdq w).linkedAt ctx pos).map UInt8.toNat ++ rest) =
+      some (keyOf ctx (.cdq w), rest) := by
+  rw [linkedAt_plain _ _ _ rfl]
+  simp only [Ok] at h
+  rcases h with rfl | rfl <;> simp [decAt, Item.encode, dec, native, keyOf]
+
+theorem fam_bswap (ctx : Ctx) (pos : Nat) (rest : List Nat) (w : W) (r : Reg)
+    (h : Ok (BitVec.ofNat 32 pos) (.bswap w r)) :
+    decAt ctx pos (((Item.bswap w r).linkedAt ctx pos).map UInt8.toNat ++ rest) =
+      some (keyOf ctx (.bswap w r), rest) := by
+  rw [linkedAt_plain _ _ _ rfl]
+  simp only [Ok] at h
+  rcases h with rfl | rfl <;> cases r <;>
+    simp [decAt, Item.encode, Item.prefixes, Item.rex?, Item.w16, dec, dec0f, native, regOf,
+      Reg.ofNum?, keyOf, byte, Reg.low, Reg.num, Reg.ext]
+
 /-! ### Other items -/
 
 macro "fixed" : tactic => `(tactic| (
@@ -1055,6 +1166,7 @@ theorem ok_of_wf (p : BitVec 32) (i : Item) (hw : i.wf p = true)
   case imul w reg rm => cases w <;> simp_all [Item.wf, Ok]
   case imulImm w reg rm imm => cases w <;> simp_all [Item.wf, Ok]
   case shift op w reg amt => cases w <;> simp_all [Item.wf, Ok]
+  case bswap w reg => cases w <;> simp_all [Item.wf, Ok]
   all_goals simp_all [Item.wf, Ok, Item.rmWf, Item.memWf, Reg.usable, or_assoc]
 
 theorem ok_of_spFrame (p : BitVec 32) (j : Item) (f : BitVec 32) (hw : j.wf p = true)
@@ -1069,6 +1181,10 @@ theorem ok_of_spFrame (p : BitVec 32) (j : Item) (f : BitVec 32) (hw : j.wf p = 
   case imul w reg rm => rcases rm with r | m <;> simp_all [Item.spFrame, Item.mapMem, Ok]
   case imulImm w reg rm imm => rcases rm with r | m <;> simp_all [Item.spFrame, Item.mapMem, Ok]
   case mulQ rm => rcases rm with r | m <;> simp_all [Item.spFrame, Item.mapMem, Ok]
+  case div sg w rm => rcases rm with r | m <;> simp_all [Item.spFrame, Item.mapMem, Ok]
+  case bsf w reg rm => rcases rm with r | m <;> simp_all [Item.spFrame, Item.mapMem, Ok]
+  case bsr w reg rm => rcases rm with r | m <;> simp_all [Item.spFrame, Item.mapMem, Ok]
+  case cmov c w reg rm => rcases rm with r | m <;> simp_all [Item.spFrame, Item.mapMem, Ok]
   all_goals simp_all [Item.spFrame, Item.mapMem, Ok]
 
 theorem dec_linked (ctx : Ctx) (pos : Nat) (rest : List Nat) (i : Item)
@@ -1105,6 +1221,14 @@ theorem dec_linked (ctx : Ctx) (pos : Nat) (rest : List Nat) (i : Item)
   case testM8 m => exact fam_testM8 ctx pos rest m
   case setccCl c => exact fam_setccCl ctx pos rest c h
   case mulQ rm => exact fam_mulQ ctx pos rest rm
+  case shiftCl op w r => exact fam_shiftCl ctx pos rest op w r
+  case div sg w rm => exact fam_div ctx pos rest sg w rm h
+  case cdq w => exact fam_cdq ctx pos rest w h
+  case bsf w r rm => exact fam_bsf ctx pos rest false w r rm h
+  case bsr w r rm => exact fam_bsf ctx pos rest true w r rm h
+  case cmov c w r rm => exact fam_cmov ctx pos rest c w r rm h
+  case setccR c r => exact fam_setccR ctx pos rest c r h
+  case bswap w r => exact fam_bswap ctx pos rest w r h
   case sse st size x m => exact fam_sse ctx pos rest st size x m h
   case movd t x r => exact fam_movd ctx pos rest t x r h
   all_goals exact fam_fixed ctx pos rest _ (by simp)

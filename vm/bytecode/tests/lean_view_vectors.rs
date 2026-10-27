@@ -384,7 +384,7 @@ fn inline_runs(rng: &mut Rng, out: &mut Out) {
         let mut f = Body { insns: Vec::new(), targets: Vec::new(), unwind: Vec::new() };
         for _ in 0..n {
             let op = match rng.below(8) {
-                0 => Opcode::DivUW32,
+                0 => Opcode::FaddF32,
                 _ => inline[rng.below(inline.len() as u64) as usize],
             };
             let mut w = insn(op, rng, 0, &mut f, &mut |rng| rng.below(n as u64 + 1) as usize);

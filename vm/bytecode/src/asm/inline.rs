@@ -1,6 +1,6 @@
 //! The inline form of the common VM instructions (design/vm.md, "Inline instructions"):
-//! moves, immediates, addresses (of slots, constants and symbols), address arithmetic, loads and stores, integer add/sub/logic/multiply,
-//! shifts by an immediate, compares and compare-branches, at widths up to 64 bits (and
+//! moves, immediates, addresses (of slots, constants and symbols), address arithmetic, loads and stores, integer add/sub/logic/multiply, byte swaps,
+//! shifts and rotates (by an immediate or a slot), compares and compare-branches, at widths up to 64 bits (and
 //! 128-bit moves, as two 64-bit halves). They
 //! are short native sequences on `rax` and `rcx` instead of handler calls; the register cache
 //! ([`Cache`]) renames `rax` as it emits them.
@@ -40,6 +40,23 @@ enum Class {
     Mul(W),
     MulImm(W),
     ShiftImm(Sh, W),
+    /// A shift or rotate by a slot's value (`cl`): `shl`, `shr.s`, `shr.u`, `rotl`, `rotr`.
+    ShiftVar(Sh, W),
+    /// `div` (`rem`: the remainder), signed or not.
+    Div {
+        signed: bool,
+        rem: bool,
+        w: W,
+    },
+    /// `cttz` (`ctlz` if `lz`).
+    Count {
+        lz: bool,
+        w: W,
+    },
+    /// `cmp3`, signed or not: -1, 0 or 1 as a byte.
+    Cmp3(bool, W),
+    /// `bswap.w16`-`bswap.w64`.
+    Bswap(W),
     /// A compare to a `bool`, the condition for true.
     Cmp(Cond, W),
     CmpImm(Cond, W),
@@ -61,7 +78,7 @@ enum Class {
 
 #[rustfmt::skip]
 fn class(op: Opcode) -> Option<Class> {
-    use Class::{Bin, BinImm, BrCmp, BrCmpImm, Cmp, CmpImm, Ext, Imm, Load, Mov, Mul, MulImm, MulOvf, Ovf, ShiftImm, Store};
+    use Class::{Bin, BinImm, BrCmp, BrCmpImm, Cmp, CmpImm, Ext, Imm, Load, Mov, Mul, MulImm, MulOvf, Ovf, ShiftImm, ShiftVar, Store};
     use Opcode::*;
     Some(match op {
         MovW8 => Mov(W::B), MovW16 => Mov(W::W), MovW32 => Mov(W::D), MovW64 => Mov(W::Q),
@@ -88,6 +105,26 @@ fn class(op: Opcode) -> Option<Class> {
         ShlImmW8 => ShiftImm(Sh::Shl, W::B), ShlImmW16 => ShiftImm(Sh::Shl, W::W), ShlImmW32 => ShiftImm(Sh::Shl, W::D), ShlImmW64 => ShiftImm(Sh::Shl, W::Q),
         ShrSImmW8 => ShiftImm(Sh::Sar, W::B), ShrSImmW16 => ShiftImm(Sh::Sar, W::W), ShrSImmW32 => ShiftImm(Sh::Sar, W::D), ShrSImmW64 => ShiftImm(Sh::Sar, W::Q),
         ShrUImmW8 => ShiftImm(Sh::Shr, W::B), ShrUImmW16 => ShiftImm(Sh::Shr, W::W), ShrUImmW32 => ShiftImm(Sh::Shr, W::D), ShrUImmW64 => ShiftImm(Sh::Shr, W::Q),
+        ShlW8 => ShiftVar(Sh::Shl, W::B), ShlW16 => ShiftVar(Sh::Shl, W::W), ShlW32 => ShiftVar(Sh::Shl, W::D), ShlW64 => ShiftVar(Sh::Shl, W::Q),
+        ShrSW8 => ShiftVar(Sh::Sar, W::B), ShrSW16 => ShiftVar(Sh::Sar, W::W), ShrSW32 => ShiftVar(Sh::Sar, W::D), ShrSW64 => ShiftVar(Sh::Sar, W::Q),
+        ShrUW8 => ShiftVar(Sh::Shr, W::B), ShrUW16 => ShiftVar(Sh::Shr, W::W), ShrUW32 => ShiftVar(Sh::Shr, W::D), ShrUW64 => ShiftVar(Sh::Shr, W::Q),
+        RotlW8 => ShiftVar(Sh::Rol, W::B), RotlW16 => ShiftVar(Sh::Rol, W::W), RotlW32 => ShiftVar(Sh::Rol, W::D), RotlW64 => ShiftVar(Sh::Rol, W::Q),
+        RotrW8 => ShiftVar(Sh::Ror, W::B), RotrW16 => ShiftVar(Sh::Ror, W::W), RotrW32 => ShiftVar(Sh::Ror, W::D), RotrW64 => ShiftVar(Sh::Ror, W::Q),
+        DivSW8 => Class::Div { signed: true, rem: false, w: W::B }, DivSW16 => Class::Div { signed: true, rem: false, w: W::W },
+        DivSW32 => Class::Div { signed: true, rem: false, w: W::D }, DivSW64 => Class::Div { signed: true, rem: false, w: W::Q },
+        DivUW8 => Class::Div { signed: false, rem: false, w: W::B }, DivUW16 => Class::Div { signed: false, rem: false, w: W::W },
+        DivUW32 => Class::Div { signed: false, rem: false, w: W::D }, DivUW64 => Class::Div { signed: false, rem: false, w: W::Q },
+        RemSW8 => Class::Div { signed: true, rem: true, w: W::B }, RemSW16 => Class::Div { signed: true, rem: true, w: W::W },
+        RemSW32 => Class::Div { signed: true, rem: true, w: W::D }, RemSW64 => Class::Div { signed: true, rem: true, w: W::Q },
+        RemUW8 => Class::Div { signed: false, rem: true, w: W::B }, RemUW16 => Class::Div { signed: false, rem: true, w: W::W },
+        RemUW32 => Class::Div { signed: false, rem: true, w: W::D }, RemUW64 => Class::Div { signed: false, rem: true, w: W::Q },
+        CttzW8 => Class::Count { lz: false, w: W::B }, CttzW16 => Class::Count { lz: false, w: W::W },
+        CttzW32 => Class::Count { lz: false, w: W::D }, CttzW64 => Class::Count { lz: false, w: W::Q },
+        CtlzW8 => Class::Count { lz: true, w: W::B }, CtlzW16 => Class::Count { lz: true, w: W::W },
+        CtlzW32 => Class::Count { lz: true, w: W::D }, CtlzW64 => Class::Count { lz: true, w: W::Q },
+        Cmp3SW8 => Class::Cmp3(true, W::B), Cmp3SW16 => Class::Cmp3(true, W::W), Cmp3SW32 => Class::Cmp3(true, W::D), Cmp3SW64 => Class::Cmp3(true, W::Q),
+        Cmp3UW8 => Class::Cmp3(false, W::B), Cmp3UW16 => Class::Cmp3(false, W::W), Cmp3UW32 => Class::Cmp3(false, W::D), Cmp3UW64 => Class::Cmp3(false, W::Q),
+        BswapW16 => Class::Bswap(W::W), BswapW32 => Class::Bswap(W::D), BswapW64 => Class::Bswap(W::Q),
         EqW8 => Cmp(Cond::Z, W::B), EqW16 => Cmp(Cond::Z, W::W), EqW32 => Cmp(Cond::Z, W::D), EqW64 => Cmp(Cond::Z, W::Q),
         NeW8 => Cmp(Cond::Nz, W::B), NeW16 => Cmp(Cond::Nz, W::W), NeW32 => Cmp(Cond::Nz, W::D), NeW64 => Cmp(Cond::Nz, W::Q),
         LtSW8 => Cmp(Cond::L, W::B), LtSW16 => Cmp(Cond::L, W::W), LtSW32 => Cmp(Cond::L, W::D), LtSW64 => Cmp(Cond::L, W::Q),
@@ -130,9 +167,50 @@ fn class(op: Opcode) -> Option<Class> {
 }
 
 /// Whether instructions of `op` are inlined, for some operands at least: `ptr.add` only with a 32-bit offset, `ptr.index` with a stride
-/// below 2^31, shifts by less than the width.
+/// below 2^31, shifts by an immediate below the width.
 pub fn has_inline(op: Opcode) -> bool {
     class(op).is_some()
+}
+
+/// Whether the JIT's SSA tier takes the inline instruction `op` as its handler call: it has
+/// no decoding of its own for it (variable shifts, rotates and division then become native
+/// operations from the handler, `jit::build`'s `native_bin`).
+pub fn ssa_as_handler(op: Opcode) -> bool {
+    matches!(class(op), Some(Class::ShiftVar(..) | Class::Div { .. }))
+}
+
+/// The index computation of `switch.dense.wN` (`N` up to 64) in place of its handler call,
+/// before the jump table: `s - base` (wrapping at `N` bits) in `rax`, or the default's index
+/// `n` if it isn't below `n`, the case count (below 2^31), or `None` if it doesn't apply. `s`
+/// is a frame slot, read plainly (the register cache is cleared by any instruction that
+/// isn't inline).
+pub(super) fn dense_index(op: Opcode, s: i32, base: u64, n: u64) -> Option<Vec<Item>> {
+    let w = match op {
+        Opcode::SwitchDenseW8 => W::B,
+        Opcode::SwitchDenseW16 => W::W,
+        Opcode::SwitchDenseW32 => W::D,
+        Opcode::SwitchDenseW64 => W::Q,
+        _ => return None,
+    };
+    if n >= 1 << 31 {
+        return None;
+    }
+    let mut v = vec![ld(w, M::frame(s))];
+    // `sub al`/`sub ax` keep the zero bits above from the `movzx`.
+    let sub = |imm: i32| Item::AluImm { op: Alu::Sub, w, rm: Rm::Reg(R), imm };
+    match w {
+        _ if w.sext(base) == 0 => {}
+        W::Q if !fits(base) => v.extend([Item::SetReg(C, base), Item::Alu { op: Alu::Sub, w, reg: R, rm: Rm::Reg(C) }]),
+        _ => v.push(sub(w.sext(base) as i32)),
+    }
+    // The index, below `n` <= 2^31 after the `cmov`, zero-extended for the table load.
+    let cw = if w == W::Q { W::Q } else { W::D };
+    v.extend([
+        Item::SetReg(C, n),
+        Item::Alu { op: Alu::Cmp, w: cw, reg: R, rm: Rm::Reg(C) },
+        Item::Cmov { cond: Cond::Ae, w: W::D, reg: R, rm: Rm::Reg(C) },
+    ]);
+    Some(v)
 }
 
 /// Whether `v` (a 64-bit value) is a sign-extended 32-bit one.
@@ -291,6 +369,88 @@ pub(super) fn sequence<T>(op: Opcode, ops: &[Opnd<T>]) -> Option<(Vec<Item>, Opt
             let sw = if w == W::Q { W::Q } else { W::D };
             v.extend([Item::Ld { w, sx, dst: R, m: slot(1) }, Item::Shift { op: sh, w: sw, reg: R, amt: x as u8 }, st(w, slot(0))]);
         }
+        Class::ShiftVar(sh, w) => {
+            let rot = matches!(sh, Sh::Rol | Sh::Ror);
+            // Shifts at 8 and 16 bits run in 32 (`sar` on the sign-extended value), the amount
+            // masked to the width; rotates run at the width, which divides `cl`'s 5-bit mask.
+            let narrow = matches!(w, W::B | W::W);
+            v.push(Item::Ld { w, sx: sh == Sh::Sar && narrow, dst: R, m: slot(1) });
+            if rot {
+                v.extend([Item::Ld { w: W::D, sx: false, dst: C, m: slot(2) }, Item::ShiftCl { op: sh, w, reg: R }]);
+            } else if narrow {
+                v.extend([
+                    Item::Ld { w, sx: false, dst: C, m: slot(2) },
+                    Item::AluImm { op: Alu::And, w: W::D, rm: Rm::Reg(C), imm: w.bits() as i32 - 1 },
+                    Item::ShiftCl { op: sh, w: W::D, reg: R },
+                ]);
+            } else {
+                // `cl`'s mask at 32 and 64 bits is the width's.
+                v.extend([Item::Ld { w: W::D, sx: false, dst: C, m: slot(2) }, Item::ShiftCl { op: sh, w, reg: R }]);
+            }
+            v.push(st(w, slot(0)));
+        }
+        // MIR rules out a zero divisor and `MIN / -1`, the cases that fault.
+        Class::Div { signed, rem, w } => {
+            let ext = if signed { Item::Cdq(if w == W::Q { W::Q } else { W::D }) } else { Item::SetReg(Reg::Rdx, 0) };
+            match w {
+                W::D | W::Q => v.extend([ld(w, slot(1)), ext, Item::Div { signed, w, rm: Rm::Mem(slot(2)) }]),
+                // 8 and 16 bits in 32, on the extended operands.
+                W::B | W::W => v.extend([
+                    Item::Ld { w, sx: signed, dst: R, m: slot(1) },
+                    Item::Ld { w, sx: signed, dst: C, m: slot(2) },
+                    ext,
+                    Item::Div { signed, w: W::D, rm: Rm::Reg(C) },
+                ]),
+            }
+            v.push(Item::St { w, src: if rem { Reg::Rdx } else { R }, m: slot(0) });
+        }
+        // The count as a `u32`; `bsf`/`bsr` of zero leave the register undefined, so `cmovz`
+        // gives that case's result, or a guard bit above the value makes it non-zero.
+        Class::Count { lz, w } => {
+            let n = w.bits();
+            let bw = if w == W::Q { W::Q } else { W::D };
+            v.push(ld(w, slot(1)));
+            if lz {
+                // `bsr` is `n - 1 - clz`, and `(2n - 1) ^ (n - 1)` is `n`.
+                v.extend([
+                    Item::Bsr { w: bw, reg: R, rm: Rm::Reg(R) },
+                    Item::SetReg(C, 2 * n as u64 - 1),
+                    Item::Cmov { cond: Cond::Z, w: W::D, reg: R, rm: Rm::Reg(C) },
+                    Item::AluImm { op: Alu::Xor, w: W::D, rm: Rm::Reg(R), imm: n as i32 - 1 },
+                ]);
+            } else if matches!(w, W::B | W::W) {
+                v.extend([Item::AluImm { op: Alu::Or, w: W::D, rm: Rm::Reg(R), imm: 1 << n }, Item::Bsf { w: W::D, reg: R, rm: Rm::Reg(R) }]);
+            } else {
+                v.extend([
+                    Item::Bsf { w, reg: R, rm: Rm::Reg(R) },
+                    Item::SetReg(C, n as u64),
+                    Item::Cmov { cond: Cond::Z, w: W::D, reg: R, rm: Rm::Reg(C) },
+                ]);
+            }
+            v.push(st(W::D, slot(0)));
+        }
+        // `(a > b) - (a < b)`: both flags of one `cmp`, `setcc` writing none.
+        Class::Cmp3(signed, w) => {
+            let (lt, gt) = if signed { (Cond::L, Cond::G) } else { (Cond::B, Cond::A) };
+            v.extend([
+                ld(w, slot(1)),
+                Item::Alu { op: Alu::Cmp, w, reg: R, rm: Rm::Mem(slot(2)) },
+                Item::SetccCl(lt),
+                Item::SetccR(gt, R),
+                Item::Alu { op: Alu::Sub, w: W::B, reg: R, rm: Rm::Reg(C) },
+                st(W::B, slot(0)),
+            ]);
+        }
+        Class::Bswap(w) => {
+            v.push(ld(w, slot(1)));
+            if w == W::W {
+                // The swapped halfword in the upper half of the 32-bit swap.
+                v.extend([Item::Bswap { w: W::D, reg: R }, Item::Shift { op: Sh::Shr, w: W::D, reg: R, amt: 16 }]);
+            } else {
+                v.push(Item::Bswap { w, reg: R });
+            }
+            v.push(st(w, slot(0)));
+        }
         Class::Cmp(c, w) => {
             v.extend([ld(w, slot(1)), Item::Alu { op: Alu::Cmp, w, reg: R, rm: Rm::Mem(slot(2)) }, Item::Setcc { cond: c, m: slot(0) }])
         }
@@ -397,6 +557,41 @@ fn classify(items: &[Item], br: bool) -> Option<Class> {
     use Item::*;
     let z = Cond::Z;
     let frame = |m: &M| m.base == Reg::Rbp;
+    // The new items first: they make the sequence one of theirs.
+    if items.iter().any(|it| matches!(it, ShiftCl { .. })) {
+        let (Some(ShiftCl { op, .. }), [.., St { w, .. }]) = (items.iter().find(|it| matches!(it, ShiftCl { .. })), items) else { return None };
+        return (!br).then_some(Class::ShiftVar(*op, *w));
+    }
+    if let Some(Div { signed, .. }) = items.iter().find(|it| matches!(it, Div { .. })) {
+        let [.., St { w, src, .. }] = items else { return None };
+        return (!br).then_some(Class::Div { signed: *signed, rem: *src == Reg::Rdx, w: *w });
+    }
+    // The width from the immediate (the guard bit, or `n` or `2n - 1` in `rcx`).
+    if let Some(lz) = items.iter().find_map(|it| match it {
+        Bsf { .. } => Some(false),
+        Bsr { .. } => Some(true),
+        _ => None,
+    }) {
+        let n = items.iter().find_map(|it| match *it {
+            AluImm { op: Op::Or, imm, .. } => Some(imm.trailing_zeros()),
+            SetReg(Reg::Rcx, v) => Some(if lz { (v as u32).div_ceil(2) } else { v as u32 }),
+            _ => None,
+        })?;
+        let w = [W::B, W::W, W::D, W::Q].into_iter().find(|w| w.bits() == n)?;
+        return (!br).then_some(Class::Count { lz, w });
+    }
+    // Before the overflow ops, which have a `setcc cl` too.
+    if let Some(SetccR(c, _)) = items.iter().find(|it| matches!(it, SetccR(..))) {
+        let w = items.iter().find_map(|it| match it {
+            Alu { op: Op::Cmp, w, .. } => Some(*w),
+            _ => None,
+        })?;
+        return (!br).then_some(Class::Cmp3(*c == Cond::G, w));
+    }
+    if items.iter().any(|it| matches!(it, Bswap { .. })) {
+        let [.., St { w, .. }] = items else { return None };
+        return (!br).then_some(Class::Bswap(*w));
+    }
     // An overflow op: the result's store, then its flag.
     if items.iter().any(|it| matches!(it, SetccCl(_))) {
         let [.., St { w, src: Reg::Rax, .. }, SetccCl(_), St { .. }] = items else { return None };
@@ -566,6 +761,7 @@ fn read_operand(it: &Item) -> Option<(M, W)> {
         Item::Alu { w, rm: Rm::Mem(m), .. } | Item::AluImm { op: Alu::Cmp, w, rm: Rm::Mem(m), .. } => Some((m, w)),
         Item::Imul { w, rm: Rm::Mem(m), .. } | Item::ImulImm { w, rm: Rm::Mem(m), .. } => Some((m, w)),
         Item::MulQ(Rm::Mem(m)) => Some((m, W::Q)),
+        Item::Div { w, rm: Rm::Mem(m), .. } => Some((m, w)),
         _ => None,
     }
     .filter(|(m, _)| m.base == Reg::Rbp)
@@ -579,6 +775,7 @@ fn with_rm(it: Item, rm: Rm) -> Item {
         Item::Imul { w, reg, .. } => Item::Imul { w, reg, rm },
         Item::ImulImm { w, reg, imm, .. } => Item::ImulImm { w, reg, rm, imm },
         Item::MulQ(_) => Item::MulQ(rm),
+        Item::Div { signed, w, .. } => Item::Div { signed, w, rm },
         it => it,
     }
 }
@@ -588,7 +785,9 @@ fn with_rm(it: Item, rm: Rm) -> Item {
 fn read_reg(it: &Item) -> Option<Reg> {
     match *it {
         Item::Alu { rm: Rm::Reg(r), .. } | Item::AluImm { op: Alu::Cmp, rm: Rm::Reg(r), .. } => Some(r),
-        Item::Imul { rm: Rm::Reg(r), .. } | Item::ImulImm { rm: Rm::Reg(r), .. } | Item::MulQ(Rm::Reg(r)) => Some(r),
+        Item::Imul { rm: Rm::Reg(r), .. } | Item::ImulImm { rm: Rm::Reg(r), .. } | Item::MulQ(Rm::Reg(r)) | Item::Div { rm: Rm::Reg(r), .. } => {
+            Some(r)
+        }
         _ => None,
     }
 }
@@ -612,7 +811,7 @@ impl Cache {
     /// `items` (an inline sequence, on `rax`) as emitted with the cache, which is updated to
     /// after it. The sequence computes in the register that holds its first operand's slot,
     /// dropping the reload, or else in [`Cache::fresh`]; frame operands held in a register
-    /// are read from it. Only the first item can be dropped. A `mul` (`rdx:rax`) computes in
+    /// are read from it. Only the first item can be dropped. A `mul` or `div` (`rdx:rax`) computes in
     /// `rax`, dropping the reload only if `rax` holds it.
     pub(super) fn emit(&mut self, items: &[Item]) -> Vec<Item> {
         self.emit_sel(items).0
@@ -626,7 +825,7 @@ impl Cache {
         self.tick += 1;
         let mut out = Vec::with_capacity(items.len());
         let mut rest = items;
-        let pinned = items.iter().any(|it| matches!(it, Item::MulQ(_)));
+        let pinned = items.iter().any(|it| matches!(it, Item::MulQ(_) | Item::Div { .. }));
         let x = match items.first() {
             Some(&Item::Ld { w, sx: false, dst: R, m }) if pinned => {
                 if self.regs[0].slot == Some((m.disp, w)) && m.base == Reg::Rbp {
@@ -713,6 +912,10 @@ impl Cache {
         if xs.is_empty() {
             xs.push(self.fresh());
         }
+        // A `mul` or `div` computes in `rax`, which a remainder's sequence may not show.
+        if items.iter().any(|it| matches!(it, Item::MulQ(_) | Item::Div { .. })) {
+            xs = vec![0];
+        }
         for x in xs {
             let xr = POOL[x];
             // The registers swapped, so nothing else becomes `rax`.
@@ -790,8 +993,23 @@ impl Cache {
             Item::Ld { w, sx, dst, m } => (dst, (!sx && m.base == Reg::Rbp).then_some((m.disp, w)), Some(if sx { W::D } else { w })),
             Item::Alu { op, w, reg, .. } if op != Alu::Cmp => (reg, None, wide(w)),
             Item::AluImm { op, w, rm: Rm::Reg(reg), .. } if op != Alu::Cmp => (reg, None, wide(w)),
-            Item::Imul { w, reg, .. } | Item::ImulImm { w, reg, .. } | Item::Shift { w, reg, .. } => (reg, None, wide(w)),
+            Item::Imul { w, reg, .. }
+            | Item::ImulImm { w, reg, .. }
+            | Item::Shift { w, reg, .. }
+            | Item::ShiftCl { w, reg, .. }
+            | Item::Bswap { w, reg }
+            | Item::Cmov { w, reg, .. } => (reg, None, wide(w)),
             Item::LeaM { dst, .. } | Item::SetReg(dst, _) | Item::Lea(dst, _) | Item::LoadRip(dst, _) => (dst, None, Some(W::Q)),
+            Item::Cdq(_) => (Reg::Rdx, None, None),
+            Item::SetccR(_, reg) => (reg, None, None),
+            // Undefined on zero at 64 bits (the 32-bit forms are followed by a `cmov`, or their
+            // source isn't zero).
+            Item::Bsf { w, reg, .. } | Item::Bsr { w, reg, .. } => (reg, None, (w == W::D).then_some(W::D)),
+            Item::Div { w, .. } => {
+                let d = pool(Reg::Rdx).unwrap();
+                self.regs[d] = Entry { used: self.regs[d].used, zx: Some(w), ..Entry::default() };
+                (Reg::Rax, None, Some(w))
+            }
             Item::MulQ(_) => {
                 self.regs[pool(Reg::Rdx).unwrap()] = Entry { used: self.regs[pool(Reg::Rdx).unwrap()].used, ..Entry::default() };
                 (Reg::Rax, None, Some(W::Q))

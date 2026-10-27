@@ -355,12 +355,19 @@ def nativeCandidate (c : Cursor) : Option Item := do
     | 0x0f =>
       if !dqw then none
       let op2 ← g i
+      if 0xc8 ≤ op2 && op2 ≤ 0xcf then pure (.bswap w (← reg ((op2 &&& 7).toNat + rb))) else
       let (r, rm, _) ← modrm (i + 1)
       if (op2 == 0xb6 || op2 == 0xb7 || op2 == 0xbe || op2 == 0xbf) && w == .d then
         pure (.ld (if op2 &&& 1 == 0 then .b else .w) (op2 &&& 8 != 0) (← reg r) (← mem rm))
       else if op2 == 0xaf then pure (.imul w (← reg r) rm)
+      else if op2 == 0xbc then pure (.bsf w (← reg r) rm)
+      else if op2 == 0xbd then pure (.bsr w (← reg r) rm)
+      else if 0x40 ≤ op2 && op2 ≤ 0x4f && w == .d then
+        pure (.cmov (← Cond.ofCc? (op2 &&& 0xf).toNat) w (← reg r) rm)
       else if 0x90 ≤ op2 && op2 ≤ 0x9f && w == .d && r == 0 && rm == .reg .rcx then
         pure (.setccCl (← Cond.ofCc? (op2 &&& 0xf).toNat))
+      else if 0x90 ≤ op2 && op2 ≤ 0x9f && w == .d && r == 0 && rm matches .reg _ then
+        pure (.setccR (← Cond.ofCc? (op2 &&& 0xf).toNat) (← rmReg rm))
       else if 0x90 ≤ op2 && op2 ≤ 0x9f && w == .d && r == 0 then
         pure (.setcc (← Cond.ofCc? (op2 &&& 0xf).toNat) (← mem rm))
       else none
@@ -391,16 +398,23 @@ def nativeCandidate (c : Cursor) : Option Item := do
       pure (.imulImm (← dq w) (← reg r) rm imm)
     | 0xc1 =>
       let (r, rm, j) ← modrm i
-      pure (.shift (← Sh.ofNum? r) (← dq w) (← rmReg rm) (BitVec.ofNat 8 (← g j).toNat))
+      let sh ← (Sh.ofNum? r).filter (·.isShift)
+      pure (.shift sh (← dq w) (← rmReg rm) (BitVec.ofNat 8 (← g j).toNat))
+    | 0xd2 | 0xd3 =>
+      let w ← if op == 0xd2 then byteW w else some w
+      let (r, rm, _) ← modrm i
+      pure (.shiftCl (← Sh.ofNum? r) w (← rmReg rm))
     | 0xf6 =>
       if w != .d then none
       let (_, rm, _) ← modrm i
       pure (.testM8 (← mem rm))
     | 0xf7 =>
-      if w != .q then none
+      if !dqw then none
       let (r, rm, _) ← modrm i
-      if r != 4 then none
-      pure (.mulQ rm)
+      if w == .q && r == 4 then pure (.mulQ rm)
+      else if r == 6 || r == 7 then pure (.div (r == 7) w rm)
+      else none
+    | 0x99 => if dqw then pure (.cdq w) else none
     | op =>
       if op < 0x40 && op &&& 6 == 2 then
         let w ← if op &&& 1 == 0 then byteW w else some w
@@ -410,7 +424,8 @@ def nativeCandidate (c : Cursor) : Option Item := do
   -- A register `r/m` operand must be usable too.
   match item with
   | .alu _ _ _ (.reg r) | .aluImm _ _ (.reg r) _ | .imul _ _ (.reg r) | .imulImm _ _ (.reg r) _
-  | .mulQ (.reg r) =>
+  | .mulQ (.reg r) | .div _ _ (.reg r) | .bsf _ _ (.reg r) | .bsr _ _ (.reg r)
+  | .cmov _ _ _ (.reg r) =>
     if !r.usable then none
   | _ => pure ()
   pure item

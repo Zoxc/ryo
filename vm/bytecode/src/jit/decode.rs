@@ -89,6 +89,13 @@ pub enum Kind {
     Bin(Bin, u8, Option<u64>),
     /// `d = a cc b` (or `cc imm`): `a`, [`b`], `d`.
     Cmp(super::ir::Cc, u8, Option<u64>),
+    /// A pure operation of the SSA IR: its operands read at the widths `ws` (accesses in
+    /// order), then the result (`out` bytes) written (the last access).
+    Pure {
+        op: super::ir::Op,
+        ws: Vec<u8>,
+        out: u8,
+    },
     /// `d, o = a op b` with overflow (`Add`, `Sub` or `Mul`), signed or not: `a`, `b`, `d`,
     /// `o`.
     Ovf(Bin, bool, u8),
@@ -470,12 +477,27 @@ fn cut_copies(insns: &mut [RInsn], mem: Option<&dyn super::opt::ConstMem>) {
     }
 }
 
+/// The accesses of a [`Kind::Pure`]: the operands at `ins` (widths `ws`) read, the result
+/// (`out` bytes) at `d` written.
+fn pure(accs: &mut Vec<Acc>, ins: &[i32], ws: &[u8], d: i32, out: u8) {
+    for (&o, &w) in ins.iter().zip(ws) {
+        accs.push(Acc { off: o, size: w as u32, how: How::Read });
+    }
+    accs.push(Acc { off: d, size: out as u32, how: How::Write });
+}
+
 /// Classifies the instruction at word `at` of `d`.
 fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Result<(RInsn, usize), Unsupported> {
     let words = &d.words[at..];
     let len = reduced::insn_len(words).map_err(|_| bad("reduced code"))?;
-    let (ri, _) = Insn::decode(words).map_err(|_| bad("reduced code"))?;
-    let w = &words[..len];
+    let mut w = &words[..len];
+    // A native instruction the SSA tier has no operation for: its handler call.
+    let as_handler;
+    if reduced::Opcode::from_u16(w[0] as u16).and_then(|op| op.full()).is_some_and(asm::ssa_as_handler) {
+        as_handler = asm::as_handler(w, mode);
+        w = &as_handler;
+    }
+    let (ri, _) = Insn::decode(w).map_err(|_| bad("reduced code"))?;
     let rel = |t: i32| (at as i64 + t as i64) as u32;
     let mut accs = Vec::new();
     let mut succ = Vec::new();
@@ -698,6 +720,21 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
                     let (from, to) = (ws.next().ok_or(bad("a native instruction"))?, ws.next().ok_or(bad("a native instruction"))?);
                     accs.extend([acc(s("s"), from as u32, How::Read), acc(s("d"), to as u32, How::Write)]);
                     Kind::Ext { from, to, sx: first == "sext" }
+                }
+                "cttz" | "ctlz" => {
+                    let wd = wd as u8;
+                    pure(&mut accs, &[s("a")], &[wd], s("d"), 4);
+                    Kind::Pure { op: super::ir::Op::Count { lz: first == "ctlz", w: wd }, ws: alloc::vec![wd], out: 4 }
+                }
+                "cmp3" => {
+                    let wd = wd as u8;
+                    pure(&mut accs, &[s("a"), s("b")], &[wd, wd], s("d"), 1);
+                    Kind::Pure { op: super::ir::Op::Cmp3(segs[1] == "s", wd), ws: alloc::vec![wd, wd], out: 1 }
+                }
+                "bswap" => {
+                    let wd = wd as u8;
+                    pure(&mut accs, &[s("a")], &[wd], s("d"), wd);
+                    Kind::Pure { op: super::ir::Op::Bswap(wd), ws: alloc::vec![wd], out: wd }
                 }
                 _ if segs.get(1) == Some(&"ovf") => {
                     let bin = match first {

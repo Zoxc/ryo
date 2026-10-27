@@ -55,7 +55,19 @@ rip-relative addresses (`inline_sound_rip`: they
 need `Globals`). -/
 def frameOnly : Class → Bool
   | .load _ | .store _ | .ovf .. | .mulOvf .. | .addrConst | .addrSym | .addrSymInd => false
+  -- No inline opcode is an immediate rotate (`classOfParts`).
+  | .shiftImm sh _ => sh.isShift
+  -- Not covered yet: the variable shifts and rotates, `div`/`rem`, `cttz`/`ctlz`, `cmp3`, `bswap`.
+  | .shiftVar .. | .div .. | .count .. | .cmp3 .. | .bswap _ => false
   | _ => true
+
+/-- The classes inlined after these proofs were written, which they don't cover yet (lean/PENDING.md):
+the variable shifts and rotates, `div`/`rem`, `cttz`/`ctlz`, `cmp3` and `bswap`. Their
+sequences use items the register cache proofs don't track (`cacheSafe`) and registers other than
+`rax` and `rcx` (`rdx`). -/
+def laterClass : Class → Bool
+  | .shiftVar .. | .div .. | .count .. | .cmp3 .. | .bswap _ => true
+  | _ => false
 
 /-- Each inline sequence implements `opSem` (see the module comment), for every class of
 `frameOnly`. -/
@@ -76,7 +88,7 @@ theorem inline_sound (c : Class) (hc : frameOnly c = true) : Sound c := by
   | binImm op w => exact sound_binImm op w
   | mul w => exact sound_mul w
   | mulImm w => exact sound_mulImm w
-  | shiftImm sh w => exact sound_shiftImm sh w
+  | shiftImm sh w => exact sound_shiftImm sh w (by simpa [frameOnly] using hc)
   | cmp c w => exact sound_cmp c w
   | cmpImm c w => exact sound_cmpImm c w
   | br => exact sound_br
@@ -85,6 +97,11 @@ theorem inline_sound (c : Class) (hc : frameOnly c = true) : Sound c := by
   | ovf => simp [frameOnly] at hc
   | mulOvf => simp [frameOnly] at hc
   | ext src dst sx => exact sound_ext src dst sx
+  | shiftVar => simp [frameOnly] at hc
+  | div => simp [frameOnly] at hc
+  | count => simp [frameOnly] at hc
+  | cmp3 => simp [frameOnly] at hc
+  | bswap => simp [frameOnly] at hc
 
 /-- The rip-relative address classes. -/
 def ripAddr : Class → Bool

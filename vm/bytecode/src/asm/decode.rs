@@ -684,6 +684,9 @@ impl Frame {
 fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8]) -> Result<Proto, AsmError> {
     let pos = c.pos;
     let err = |at: u32, what: &'static str| AsmError { at, what };
+    if let Some(p) = dense_switch(c, fr)? {
+        return Ok(p);
+    }
     let mut setup = Vec::new();
     let head = loop {
         let at = c.pos;
@@ -1105,6 +1108,78 @@ fn inline_insn(c: &mut Cursor<'_>, cache: &mut Cache, dropped: &mut &[DroppedSto
     c.pos = pos;
     *dropped = left;
     None
+}
+
+/// A dense switch whose index computation ([`super::inline::dense_index`]) stands in for its
+/// handler call, with its jump table, or `None` (the cursor unmoved) if there is none at the
+/// cursor.
+fn dense_switch(c: &mut Cursor<'_>, fr: &Frame) -> Result<Option<Proto>, AsmError> {
+    use super::x86::{Alu, Rm, W};
+    let pos = c.pos;
+    let mut items = Vec::new();
+    // The items up to the table's `lea`: at most six.
+    loop {
+        let at = c.pos;
+        match c.item() {
+            Ok(Item::LeaTable(_)) if !items.is_empty() => {
+                c.pos = at;
+                break;
+            }
+            Ok(it @ (Item::Ld { .. } | Item::AluImm { .. } | Item::SetReg(..) | Item::Alu { .. } | Item::Cmov { .. })) if items.len() < 6 => {
+                items.push(it)
+            }
+            _ => {
+                c.pos = pos;
+                return Ok(None);
+            }
+        }
+    }
+    let none = |c: &mut Cursor<'_>| {
+        c.pos = pos;
+        Ok(None)
+    };
+    let (Some(&Item::Ld { w, m, .. }), Some(&Item::Cmov { .. })) = (items.first(), items.last()) else { return none(c) };
+    let op = match w {
+        W::B => Opcode::SwitchDenseW8,
+        W::W => Opcode::SwitchDenseW16,
+        W::D => Opcode::SwitchDenseW32,
+        W::Q => Opcode::SwitchDenseW64,
+    };
+    let base = match items[1] {
+        Item::AluImm { op: Alu::Sub, imm, .. } => match w {
+            W::B => imm as u8 as u64,
+            W::W => imm as u16 as u64,
+            W::D => imm as u32 as u64,
+            W::Q => imm as i64 as u64,
+        },
+        Item::SetReg(Reg::Rcx, v) if matches!(items[2], Item::Alu { op: Alu::Sub, rm: Rm::Reg(Reg::Rcx), .. }) => v,
+        _ => 0,
+    };
+    let Some(&Item::SetReg(Reg::Rcx, n)) = items.get(items.len().wrapping_sub(3)) else { return none(c) };
+    if super::inline::dense_index(op, m.disp, base, n).as_deref() != Some(&items[..]) || m.base != Reg::Rbp {
+        return none(c);
+    }
+    let mut ts = table(c, n as usize + 1)?;
+    Ok(Some(if fr.reduced {
+        let l = layout(op, fr.mode);
+        let mut args = vec![Arg::Imm(0); l.regs as usize];
+        if fr.mode.fp_arg {
+            args[0] = Arg::Fp;
+        }
+        for (k, o) in op.info().operands.iter().enumerate() {
+            let v = match o.name {
+                "s" => m.disp as u32 as u64,
+                "base" => base,
+                "table" => n,
+                _ => continue,
+            };
+            args[l.locs[k].reg as usize] = Arg::Imm(v);
+        }
+        Proto { op, ops: Vec::new(), handler: Some((args, Then::Table(ts))), pos, sites: Vec::new(), dropped: false, counter: None, bare: false }
+    } else {
+        let default = ts.pop().expect("a default");
+        Proto::new(op, vec![Opnd::Slot(m.disp), Opnd::Imm(base), Opnd::Target(default), Opnd::Targets(ts)], pos, Vec::new())
+    }))
 }
 
 /// The jump table sequence and its `n` entries.

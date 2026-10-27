@@ -277,7 +277,13 @@ def generated : List Item :=
   Cond.all.flatMap (fun c => mems.map (.setcc c)) ++ mems.map .testM8 ++
   [4, 8, 16].flatMap (fun size => (List.range 8).flatMap fun x =>
     disps.flatMap fun d => [true, false].map fun st => .sse st size x ⟨.rbp, d⟩) ++
-  usableRegs.flatMap (fun r => (List.range 8).flatMap fun x => [true, false].map (.movd · x r))
+  usableRegs.flatMap (fun r => (List.range 8).flatMap fun x => [true, false].map (.movd · x r)) ++
+  -- The forms of the variable shifts and rotates, `div`, `cttz`/`ctlz`, `cmp3` and `bswap`.
+  usableRegs.flatMap (fun r =>
+    [Sh.shl, .shr, .sar, .rol, .ror].flatMap (fun op => W.all.map (.shiftCl op · r)) ++
+    [W.d, .q].flatMap (fun w => [.bswap w r] ++ rms.flatMap fun rm => [.bsf w r rm, .bsr w r rm]) ++
+    Cond.all.flatMap (fun c => [.setccR c r] ++ rms.map (.cmov c .d r))) ++
+  [W.d, .q].flatMap (fun w => [.cdq w] ++ rms.flatMap fun rm => [.div true w rm, .div false w rm])
 
 /-- `decodeItem (encode i) = some (i, len)` for the generated `wf` items, unlinked and in the
 `sp_frame` form; and `decodeItem` rejects the encodings of the non-`wf` ones (or reads another
@@ -305,7 +311,10 @@ def nonWfRejected : Except String Unit := do
   let bad : List Item := [.ld .d true .rax ⟨.rbp, 8⟩, .ld .b false .rsp ⟨.rbp, 8⟩,
     .alu .add .q .rbp (.reg .rax), .alu .add .q .rax (.reg .rsp), .imul .w .rax (.reg .rcx),
     .shift .shl .b .rax 1, .setcc .always ⟨.rax, 0⟩, .stImm .b ⟨.rax, 0⟩ 300,
-    .aluImm .add .w (.reg .rax) 70000, .sse false 16 0 ⟨.rax, 0⟩, .st .q .rax ⟨.rsp, 0⟩]
+    .aluImm .add .w (.reg .rax) 70000, .sse false 16 0 ⟨.rax, 0⟩, .st .q .rax ⟨.rsp, 0⟩,
+    .shift .rol .d .rax 1, .bswap .w .rax, .div true .w (.reg .rcx), .cdq .b, .bsf .w .rax (.reg .rcx),
+    .cmov .z .q .rax (.reg .rcx), .cmov .always .d .rax (.reg .rcx), .setccR .z .rcx,
+    .setccR .always .rax]
   for i in bad do
     if i.wf (BitVec.ofNat 32 pos) then throw s!"{repr i} is wf"
     let (bs, rs) := i.encode (BitVec.ofNat 32 pos)
@@ -395,6 +404,55 @@ def setup (vals : List (Reg × BitVec 64)) : State :=
   vals.foldl (fun s (r, v) => s.setReg r v) st0
 
 def execTests : List TestCase := [
+  ⟨"x86 exec shifts and rotates by cl", fun () => do
+    let s0 := (setup [(.rax, 0x81), (.rcx, 0x101)]).setFlags (flagsOf false true false false)
+    -- `rol al, cl` by 1 (`cl` 0x01): CF the new LSB, OF MSB xor CF, ZF/SF kept.
+    let s ← run [.shiftCl .rol .b .rax] s0
+    expectEq "rol8" (s.reg .rax) 0x03
+    expectFlags s (flagsOf true true false true)
+    let s ← run [.shiftCl .ror .w .rax] (s0.setReg .rcx 17)
+    expectEq "ror16 by 17 (mod 16: 1)" (s.reg .rax) 0x8040
+    let s ← run [.shiftCl .rol .b .rax] (s0.setReg .rcx 8)
+    expectEq "rol8 by 8" (s.reg .rax) 0x81
+    expectFlags s (flagsOf true true false none)
+    let s ← run [.shiftCl .shl .q .rax] (s0.setReg .rcx 0x44)
+    expectEq "shl64 by 0x44 & 63" (s.reg .rax) 0x810
+    let s ← run [.shiftCl .shl .d .rax] (s0.setReg .rcx 32)
+    expectEq "shl32 by 32 (masked 0)" (s.reg .rax) 0x81
+    expectFlags s (flagsOf false true false false)
+    let s ← run [.shiftCl .shr .b .rax] (s0.setReg .rcx 9)
+    expectEq "shr8 by 9" (s.reg .rax) 0
+    expectFlags s (flagsOf none true false none)⟩,
+  ⟨"x86 exec div, cdq", fun () => do
+    let s ← run [.cdq .d, .div true .d (.reg .rcx)] (setup [(.rax, 0xfffffff9), (.rcx, 2)])
+    expectEq "idiv -7 / 2" (s.reg .rax, s.reg .rdx) (0xfffffffd, 0xffffffff)
+    expectFlags s {}
+    let s ← run [.setReg .rdx 0, .div false .q (.reg .rcx)] (setup [(.rax, 100), (.rcx, 7)])
+    expectEq "div 100 / 7" (s.reg .rax, s.reg .rdx) (14, 2)
+    expectEq "div by 0" (match execItems ctx [.div false .q (.reg .rcx)] (setup [(.rcx, 0)]) with
+      | .error .divide => true
+      | _ => false) true
+    expectEq "idiv overflow" (match execItems ctx [.cdq .q, .div true .q (.reg .rcx)] (setup [(.rax, 0x8000000000000000), (.rcx, 0xffffffffffffffff)]) with
+      | .error .divide => true
+      | _ => false) true⟩,
+  ⟨"x86 exec bsf bsr cmov setcc r8 bswap", fun () => do
+    let s ← run [.bsf .d .rax (.reg .rcx)] (setup [(.rcx, 0x50)])
+    expectEq "bsf" (s.reg .rax) 4
+    expectFlags s (flagsOf none false none none)
+    let s ← run [.bsr .q .rax (.reg .rcx)] (setup [(.rcx, 0x50)])
+    expectEq "bsr" (s.reg .rax) 6
+    let s ← run [.bsf .q .rax (.reg .rcx)] (setup [(.rcx, 0)])
+    expectEq "bsf of 0: the oracle" (s.reg .rax) ctx.undef
+    expectFlags s (flagsOf none true none none)
+    let s ← run [.aluImm .cmp .d (.reg .rcx) 0, .cmov .nz .d .rax (.reg .rcx)]
+      (setup [(.rax, 0xffffffff00000005), (.rcx, 0)])
+    expectEq "cmov not taken zero-extends" (s.reg .rax) 5
+    let s ← run [.aluImm .cmp .d (.reg .rcx) 0, .setccR .z .rsi] (setup [(.rsi, 0x1234), (.rcx, 0)])
+    expectEq "setz sil" (s.reg .rsi) 0x1201
+    let s ← run [.bswap .d .rax] (setup [(.rax, 0xffffffff11223344)])
+    expectEq "bswap32" (s.reg .rax) 0x44332211
+    let s ← run [.bswap .q .rax] (setup [(.rax, 0x0102030405060708)])
+    expectEq "bswap64" (s.reg .rax) 0x0807060504030201⟩,
   ⟨"x86 exec add32 overflow zero-extends", fun () => do
     let s ← run [.alu .add .d .rax (.reg .rcx)] (setup [(.rax, 0xdead00007fffffff), (.rcx, 1)])
     expectEq "rax" (s.reg .rax) 0x80000000

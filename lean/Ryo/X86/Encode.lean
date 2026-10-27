@@ -106,6 +106,11 @@ def rex? (i : Item) : Option UInt8 :=
     | shift _ w reg _ => some (w == .q, none, .reg reg, false)
     | setcc _ m | testM8 m => some (false, none, .mem m, false)
     | mulQ rm => some (true, none, rm, false)
+    | shiftCl _ w reg => some (w == .q, none, .reg reg, w == .b)
+    | bswap w reg => some (w == .q, none, .reg reg, false)
+    | setccR _ reg => some (false, none, .reg reg, true)
+    | bsf w reg rm | bsr w reg rm | cmov _ w reg rm => some (w == .q, some reg, rm, false)
+    | div _ w rm => some (w == .q, none, rm, false)
     | _ => none
   parts.bind fun (w, reg, rm, isByte) =>
     let sil (r : Reg) : Bool := isByte && !r.ext && r.low ≥ 4
@@ -121,7 +126,7 @@ def rex? (i : Item) : Option UInt8 :=
 
 /-- Whether the item takes the operand-size prefix `0x66`. -/
 def w16 : Item → Bool
-  | st .w _ _ | stImm .w _ _ | alu _ .w _ _ | aluImm _ .w _ _ => true
+  | st .w _ _ | stImm .w _ _ | alu _ .w _ _ | aluImm _ .w _ _ | shiftCl _ .w _ => true
   | _ => false
 
 /-- A native item's prefixes: `0x66` for 16 bits, then REX (`Item::prefixes`). -/
@@ -221,6 +226,15 @@ def encode (i : Item) (pos : BitVec 32) : List UInt8 × List Reloc :=
   | testM8 m => plain (i.prefixes ++ [0xf6] ++ m.write 0 ++ [0xff])
   | setccCl cond => plain [0x0f, byte (0x90 ||| cond.cc), 0xc1]
   | mulQ rm => plain (i.prefixes ++ [0xf7] ++ rm.write 4)
+  | shiftCl op w reg =>
+    plain (i.prefixes ++ [if w == .b then 0xd2 else 0xd3, byte (0xc0 ||| op.num <<< 3 ||| reg.low)])
+  | div signed _ rm => plain (i.prefixes ++ [0xf7] ++ rm.write (if signed then 7 else 6))
+  | cdq w => plain ((if w == .q then [0x48] else []) ++ [0x99])
+  | bsf _ reg rm => plain (i.prefixes ++ [0x0f, 0xbc] ++ rm.write reg.low)
+  | bsr _ reg rm => plain (i.prefixes ++ [0x0f, 0xbd] ++ rm.write reg.low)
+  | cmov cond _ reg rm => plain (i.prefixes ++ [0x0f, byte (0x40 ||| cond.cc)] ++ rm.write reg.low)
+  | setccR cond reg => plain (i.prefixes ++ [0x0f, byte (0x90 ||| cond.cc), byte (0xc0 ||| reg.low)])
+  | bswap _ reg => plain (i.prefixes ++ [0x0f, byte (0xc8 ||| reg.low)])
   | sse isSt size x m =>
     let pre : List UInt8 := if size == 4 then [0xf3] else if size == 8 then [0xf2] else []
     plain (pre ++ [0x0f, if isSt then 0x11 else 0x10] ++ m.write x)

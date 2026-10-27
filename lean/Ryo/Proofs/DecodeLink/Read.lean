@@ -441,11 +441,14 @@ inductive InsnRead (fr : Frame) (ro : ByteArray) (c : Cursor) : Proto → Cursor
   | island {isl opsRo : Nat} {site : Nat × Nat} {ws : List (BitVec 32)} {c' : Cursor} :
       (islandCall fr).run c = .ok ((isl, opsRo, site), c') → opsArray ro opsRo = some ws →
       InsnRead fr ro c { op := .island, ops := [.sym isl, .words ws], pos := c.pos, sites := [site] } c'
+  /-- A dense switch's index computation and its table (`denseSwitch`), its handler call in the
+  reduced form: not described further yet. -/
+  | dense {c' : Cursor} {q : Proto} : (denseSwitch fr).run c = .ok (some q, c') → InsnRead fr ro c q c'
 
-theorem insn_read {fr : Frame} {ro : ByteArray} {c c' : Cursor} {q : Proto}
-    (h : (insn fr ro).run c = .ok (q, c')) : InsnRead fr ro c q c' := by
+theorem insnCore_read {fr : Frame} {ro : ByteArray} {c c' : Cursor} {q : Proto}
+    (h : (insnCore fr ro).run c = .ok (q, c')) : InsnRead fr ro c q c' := by
   have hc : c = atPos c c.pos := rfl
-  unfold insn at h
+  unfold insnCore at h
   obtain ⟨p0, c1, h1, h⟩ := bind_ok h
   obtain ⟨rfl, hc1⟩ := pos_run' h1
   subst c1
@@ -611,6 +614,52 @@ theorem insn_read {fr : Frame} {ro : ByteArray} {c c' : Cursor} {q : Proto}
             exact .unreachable hdh
           · exact (err_ok h).elim
         all_goals exact (err_ok h).elim
+
+
+/-- `denseSwitch` leaves the cursor where it was when it finds none. -/
+theorem denseSwitch_none {fr : Frame} {c c' : Cursor} (h : (denseSwitch fr).run c = .ok (none, c')) :
+    c' = c := by
+  unfold denseSwitch at h
+  obtain ⟨x, c1, h1, h2⟩ := bind_ok h
+  obtain ⟨rfl, rfl⟩ := get_run h1
+  clear h
+  split at h2
+  · obtain ⟨_, c2, -, h⟩ := bind_ok h2
+    obtain ⟨_, c3, -, h⟩ := bind_ok h
+    split at h
+    · cases (pure_ok h).1
+    · exact (err_ok h).elim
+  · exact (pure_ok h2).2.symm
+
+/-- What `denseSwitch` finds is a handler call of a `switch.dense` opcode. -/
+theorem denseSwitch_some {fr : Frame} {c c' : Cursor} {q : Proto}
+    (h : (denseSwitch fr).run c = .ok (some q, c')) : ∃ w, q.op = denseOp w ∧ q.handler.isSome := by
+  unfold denseSwitch at h
+  obtain ⟨x, c1, h1, h2⟩ := bind_ok h
+  obtain ⟨rfl, rfl⟩ := get_run h1
+  clear h
+  split at h2
+  · rename_i w _ _ _ _ _
+    obtain ⟨_, c2, -, h⟩ := bind_ok h2
+    obtain ⟨_, c3, -, h⟩ := bind_ok h
+    split at h
+    · cases (pure_ok h).1; exact ⟨w, rfl, rfl⟩
+    · exact (err_ok h).elim
+  · cases (pure_ok h2).1
+
+theorem insn_read {fr : Frame} {ro : ByteArray} {c c' : Cursor} {q : Proto}
+    (h : (insn fr ro).run c = .ok (q, c')) : InsnRead fr ro c q c' := by
+  unfold insn at h
+  obtain ⟨r, c1, h1, h2⟩ := bind_ok h
+  clear h
+  cases r with
+  | some p =>
+    obtain ⟨rfl, rfl⟩ := pure_ok h2
+    exact .dense h1
+  | none =>
+    have := denseSwitch_none h1
+    subst this
+    exact insnCore_read h2
 
 /-! ### `arg` -/
 

@@ -479,6 +479,12 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
                     s.write(cur, i, 2, Value(r));
                     s.write(cur, i, 3, Value(r + 1));
                 }
+                Kind::Pure { op, ws, out } => {
+                    let args = ws.iter().enumerate().map(|(k, &w)| s.read(cur, i, k, w)).collect();
+                    let l = s.f.inst(cur, op.clone(), args, &[*out]);
+                    let v = s.f.result(l);
+                    s.write(cur, i, ws.len(), v);
+                }
                 Kind::Ext { from, to, sx } => {
                     let a = s.read(cur, i, 0, *from);
                     let l = s.f.inst(cur, Op::Ext { from: *from, to: *to, sx: *sx }, alloc::vec![a], &[*to]);
@@ -602,7 +608,15 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
                 Kind::Handler { h, then: Then::Next, .. } if let Some((op, w)) = native_bin(*h) => {
                     // `d, a, b`: a native operation (fixed registers, not a call).
                     let a = s.read(cur, i, 1, w);
-                    let b = s.read(cur, i, 2, w);
+                    let b = if matches!(op, BinOp::Rotl | BinOp::Rotr) && w != 4 {
+                        // A rotate's amount is 4 bytes, extended or truncated to the width:
+                        // only its low bits count.
+                        let b = s.read(cur, i, 2, 4);
+                        let l = s.f.inst(cur, Op::Ext { from: 4, to: w, sx: false }, alloc::vec![b], &[w]);
+                        s.f.result(l)
+                    } else {
+                        s.read(cur, i, 2, w)
+                    };
                     let l = s.f.inst(cur, Op::Bin(op, w), alloc::vec![a, b], &[w]);
                     let v = s.f.result(l);
                     s.write(cur, i, 0, v);
@@ -621,6 +635,14 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
                     let l = s.f.inst(cur, op, args, &[rw]);
                     let v = s.f.result(l);
                     s.write(cur, i, 0, v);
+                }
+                // A dense switch's index computed in place of its handler call.
+                Kind::Handler { h, args, then: Then::Table(ts), .. } if let Some((w, base, n)) = dense_switch(*h, args, s.mode) => {
+                    let v = s.read(cur, i, 0, w);
+                    let l = s.f.inst(cur, Op::SwitchIdx { w, base, n }, alloc::vec![v], &[8]);
+                    let idx = s.f.result(l);
+                    let targets = ts.iter().map(|&t| s.edge(t)).collect();
+                    term = Some(Term::Switch { idx, targets });
                 }
                 Kind::Handler { h, args, slots, then } => {
                     let mut regs: Vec<(Arg, [Option<SlotRef>; 2])> = args.iter().map(|&a| (a, [None, None])).collect();
@@ -767,14 +789,35 @@ fn fill_stub(s: &mut B<'_>, (b, pad): (Block, u32)) -> Result<(), Unsupported> {
     Ok(())
 }
 
-/// The handlers that are native binary operations in the SSA tier: shifts by a variable,
-/// division and remainder (`d, a, b`, all of width `w`).
+/// For a `switch.dense.w8`-`w64` handler call, its width, base and case count (from the
+/// arguments its layout gives them in), as [`Op::SwitchIdx`] takes them.
+fn dense_switch(h: crate::full::Opcode, args: &[Arg], mode: crate::asm::Mode) -> Option<(u8, u64, u32)> {
+    use crate::full::Opcode as O;
+    let w = match h {
+        O::SwitchDenseW8 => 1,
+        O::SwitchDenseW16 => 2,
+        O::SwitchDenseW32 => 4,
+        O::SwitchDenseW64 => 8,
+        _ => return None,
+    };
+    let l = crate::asm::layout(h, mode);
+    let arg = |name: &str| match args.get(l.locs[h.info().operand_index(name)?].reg as usize) {
+        Some(Arg::Imm(v)) => Some(*v),
+        _ => None,
+    };
+    Some((w, arg("base")?, u32::try_from(arg("table")?).ok().filter(|&n| n < 1 << 31)?))
+}
+
+/// The handlers that are native binary operations in the SSA tier: shifts and rotates by a
+/// variable, division and remainder (`d, a, b`, all of width `w` but a rotate's 4-byte `b`).
 fn native_bin(h: crate::full::Opcode) -> Option<(BinOp, u8)> {
     let segs: Vec<&str> = h.mnemonic().split('.').collect();
     let (op, w) = match segs[..] {
         ["shl", w] => (BinOp::Shl, w),
         ["shr", "s", w] => (BinOp::ShrS, w),
         ["shr", "u", w] => (BinOp::ShrU, w),
+        ["rotl", w] => (BinOp::Rotl, w),
+        ["rotr", w] => (BinOp::Rotr, w),
         ["div", "s", w] => (BinOp::DivS, w),
         ["div", "u", w] => (BinOp::DivU, w),
         ["rem", "s", w] => (BinOp::RemS, w),

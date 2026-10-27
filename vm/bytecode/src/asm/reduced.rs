@@ -19,6 +19,29 @@ pub fn is_native<T>(op: Opcode, ops: &[Opnd<T>]) -> bool {
     !has_handler(op) || super::inline::sequence(op, ops).is_some()
 }
 
+/// The reduced instruction words of a handler call doing the native instruction `words` (a
+/// reduced one, of an opcode without targets or code constants) in `mode`.
+pub fn as_handler(words: &[u32], mode: Mode) -> Vec<u32> {
+    let mut full = words.to_vec();
+    let op = reduced::Opcode::from_u16(words[0] as u16).and_then(|op| op.full()).expect("a native instruction");
+    full[0] = op as u32;
+    let ops: Vec<Opnd> = operands(&full, 0);
+    let args: Vec<Arg> = handler_args(op, &ops, mode.fp_arg, |_| unreachable!("no code constants"))
+        .into_iter()
+        .map(|v| match v {
+            ArgVal::Fp => Arg::Fp,
+            ArgVal::Imm(v, _) => Arg::Imm(v),
+            _ => unreachable!("a slot or immediate argument"),
+        })
+        .collect();
+    let mut out = alloc::vec![reduced::Opcode::Handler as u32, op as u32, args.len() as u32];
+    for a in &args {
+        crate::full::Elem::put(a, &mut out);
+    }
+    out.extend([0, 0]);
+    out
+}
+
 /// What follows a handler call: its shape's control flow, with targets `T`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Then<T = u32> {

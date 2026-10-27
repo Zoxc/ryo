@@ -16,7 +16,8 @@ indices with `pos32 r t = tgt`.
   (`handler_step_br`), `ud2` (`handler_step_trap`), or `Switch.switchItems tb` with the entries
   at `tb` (`switch_tail`), the `then` table their targets (`tableEntry_itemAt`,
   `entries_codeAt`: the entries in memory given a boundary at `tb`, i.e. no relocation starting
-  in the `int3` padding, which the decoder doesn't check).
+  in the `int3` padding, which the decoder doesn't check). Not for a dense switch whose index
+  computation stands in for the call (`denseSwitch`, a hypothesis): its link is still to do.
 - `link_jmp`, `link_unreachable`, `link_ret`, `link_island`: `jmp tgt` (`jmp_step`), `ud2`
   (`unreachable_step`), `retLoads k.toNat src ++ epilogue F mode ++ [ret]` with `F` the frame size
   (`ret_step`), `islandPre ++ islandPost` and the rodata operand words (`island_sound`).
@@ -166,7 +167,7 @@ theorem noHandler : Full.Opcode.jmp.hasHandler = false ∧ Full.Opcode.ret.hasHa
 theorem link_handler {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {fr : Frame}
     {ro : ByteArray} {q : Proto} {args : List Arg} {t : Then Nat} (hk : LinkOk ctx m c rs)
     (hb : Boundary rs c.pos) (h : (insn fr ro).run c = .ok (q, c'))
-    (hh : q.handler = some (args, t)) :
+    (hh : q.handler = some (args, t)) (hnd : ∀ c'', (denseSwitch fr).run c ≠ .ok (some q, c'')) :
     ∃ n items, Full.Opcode.ofNat? n = some q.op ∧ q.op.hasHandler = true ∧
       Handler.setupItems fr.mode args = some items ∧
       CodeAt ctx m (items ++ [.call (.handler n)]) c.pos ∧
@@ -186,6 +187,7 @@ theorem link_handler {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {f
   | unreachable => cases hh
   | jmp => cases hh
   | island => cases hh
+  | dense hd => exact (hnd _ hd).elim
 
 /-- `jmp`: the item `jmp tgt` (`Shapes.jmp_step`), the operand its target's position. -/
 theorem link_jmp {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {fr : Frame}
@@ -201,6 +203,9 @@ theorem link_jmp {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {fr : 
   | ret => simp only at hop; exact absurd hop (by decide)
   | unreachable => simp only at hop; exact absurd hop (by decide)
   | island => simp only at hop; exact absurd hop (by decide)
+  | dense hd =>
+    obtain ⟨w, hw, -⟩ := denseSwitch_some hd
+    rw [hw] at hop; cases w <;> exact absurd hop (by decide)
   | @jmp tgt long len hi =>
     obtain ⟨hca, hq, hb'⟩ := hk.dec (Dec.single hi) hb
     exact ⟨tgt, long, rfl, rfl, hca, hq, hb'⟩
@@ -218,6 +223,9 @@ theorem link_unreachable {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc
   | ret => simp only at hop; exact absurd hop (by decide)
   | jmp => simp only at hop; exact absurd hop (by decide)
   | island => simp only at hop; exact absurd hop (by decide)
+  | dense hd =>
+    obtain ⟨w, hw, -⟩ := denseSwitch_some hd
+    rw [hw] at hop; cases w <;> exact absurd hop (by decide)
   | unreachable hi =>
     obtain ⟨hca, hq, hb'⟩ := hk.dec (Dec.single hi) hb
     exact ⟨rfl, rfl, hca, hq, hb'⟩
@@ -238,6 +246,9 @@ theorem link_ret {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {fr : 
   | jmp => simp only at hop; exact absurd hop (by decide)
   | unreachable => simp only at hop; exact absurd hop (by decide)
   | island => simp only at hop; exact absurd hop (by decide)
+  | dense hd =>
+    obtain ⟨w, hw, -⟩ := denseSwitch_some hd
+    rw [hw] at hop; cases w <;> exact absurd hop (by decide)
   | @ret s k c'' hr =>
     obtain ⟨hd, -, hk32⟩ := retSeq_read hr
     have hkk : (BitVec.ofNat 64 k).toNat = k := by
@@ -263,6 +274,9 @@ theorem link_island {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {fr
   | jmp => simp only at hop; exact absurd hop (by decide)
   | unreachable => simp only at hop; exact absurd hop (by decide)
   | ret => simp only at hop; exact absurd hop (by decide)
+  | dense hd =>
+    obtain ⟨w, hw, -⟩ := denseSwitch_some hd
+    rw [hw] at hop; cases w <;> exact absurd hop (by decide)
   | @island isl o site ws c'' hi hws =>
     obtain ⟨hd, -⟩ := islandCall_read hi
     obtain ⟨hca, hq, hb'⟩ := hk.dec hd hb

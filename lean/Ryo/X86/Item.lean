@@ -146,16 +146,23 @@ def Alu.ofNum? : Nat → Option Alu
 
 def Alu.all : List Alu := [.add, .or, .and, .sub, .xor, .cmp]
 
-/-- The shifts by an immediate, by their x86 `/digit`. -/
+/-- The shifts and rotates, by their x86 `/digit`. The immediate shifts (`Item.shift`) are
+`shl`, `shr` and `sar` only (`Sh.isShift`); `Item.shiftCl` takes all five. -/
 inductive Sh
-  | shl | shr | sar
+  | shl | shr | sar | rol | ror
 deriving DecidableEq, Repr, Inhabited, ToJson, FromJson
 
 def Sh.num : Sh → Nat
-  | shl => 4 | shr => 5 | sar => 7
+  | shl => 4 | shr => 5 | sar => 7 | rol => 0 | ror => 1
 
 def Sh.ofNum? : Nat → Option Sh
-  | 4 => some .shl | 5 => some .shr | 7 => some .sar | _ => none
+  | 4 => some .shl | 5 => some .shr | 7 => some .sar | 0 => some .rol | 1 => some .ror
+  | _ => none
+
+/-- A shift, not a rotate: the forms `Item.shift` has. -/
+def Sh.isShift : Sh → Bool
+  | rol | ror => false
+  | _ => true
 
 /-- What a relocated 4-byte field refers to (`encode.rs` `Ref`). Every field is PC-relative:
 once linked, it holds `target - (field + 4)`. Indices are the Rust newtypes' `u32`s; a
@@ -275,6 +282,24 @@ inductive Item
   | setccCl (cond : Cond)
   /-- `mul r/m64`: `rdx:rax = rax * r/m`. -/
   | mulQ (rm : Rm)
+  /-- `op reg, cl` at width `w`: a shift or a rotate by `cl` (`D2 /op` at `B`, else `D3 /op`). -/
+  | shiftCl (op : Sh) (w : W) (reg : Reg)
+  /-- `div r/m` (`idiv` if `signed`; `D` or `Q`): `rdx:rax / r/m`, the quotient in `rax`, the
+  remainder in `rdx`. -/
+  | div (signed : Bool) (w : W) (rm : Rm)
+  /-- `cdq` (`D`) or `cqo` (`Q`): `rdx` the sign of `rax`. -/
+  | cdq (w : W)
+  /-- `bsf reg, r/m` (`D` or `Q`): the lowest set bit's index; on zero, `ZF` set and `reg`
+  undefined. -/
+  | bsf (w : W) (reg : Reg) (rm : Rm)
+  /-- `bsr reg, r/m` (`D` or `Q`): the highest set bit's index, as `bsf`. -/
+  | bsr (w : W) (reg : Reg) (rm : Rm)
+  /-- `cmovcc reg, r/m` (`D`). -/
+  | cmov (cond : Cond) (w : W) (reg : Reg) (rm : Rm)
+  /-- `setcc reg8`, another register than `cl` (`setccCl`). -/
+  | setccR (cond : Cond) (reg : Reg)
+  /-- `bswap reg` (`D` or `Q`). -/
+  | bswap (w : W) (reg : Reg)
   /-- An SSE load (`st` false) or store of `xmm{x}` at `[m]`: `movss` (4 bytes), `movsd` (8),
   `movups` (16). -/
   | sse (st : Bool) (size : Nat) (x : Nat) (m : M)
@@ -295,7 +320,8 @@ namespace Item
 def mem? : Item → Option M
   | ld _ _ _ m | st _ _ m | stImm _ m _ | leaM _ m | setcc _ m | sse _ _ _ m | testM8 m => some m
   | alu _ _ _ (.mem m) | aluImm _ _ (.mem m) _ | imul _ _ (.mem m) | imulImm _ _ (.mem m) _
-  | mulQ (.mem m) => some m
+  | mulQ (.mem m) | div _ _ (.mem m) | bsf _ _ (.mem m) | bsr _ _ (.mem m)
+  | cmov _ _ _ (.mem m) => some m
   | _ => none
 
 /-- The item with its memory operand mapped by `f` (`Item::map_mem`). -/
@@ -309,6 +335,10 @@ def mapMem (f : M → M) : Item → Item
   | imul w r (.mem m) => imul w r (.mem (f m))
   | imulImm w r (.mem m) i => imulImm w r (.mem (f m)) i
   | mulQ (.mem m) => mulQ (.mem (f m))
+  | div sg w (.mem m) => div sg w (.mem (f m))
+  | bsf w r (.mem m) => bsf w r (.mem (f m))
+  | bsr w r (.mem m) => bsr w r (.mem (f m))
+  | cmov c w r (.mem m) => cmov c w r (.mem (f m))
   | setcc c m => setcc c (f m)
   | testM8 m => testM8 (f m)
   | sse s z x m => sse s z x (f m)
@@ -345,11 +375,18 @@ def wf (pos : BitVec 32) : Item → Bool
   | aluImm _ w rm imm => rmWf rm && (match w with
       | .b => fitsSigned 8 imm | .w => fitsSigned 16 imm | _ => true)
   | imul w reg rm | imulImm w reg rm _ => (w == .d || w == .q) && reg.usable && rmWf rm
-  | shift _ w reg _ => (w == .d || w == .q) && reg.usable
+  | shift op w reg _ => op.isShift && (w == .d || w == .q) && reg.usable
   | setcc c m => c != .always && memWf m
   | testM8 m => memWf m
   | setccCl c => c != .always
   | mulQ rm => rmWf rm
+  | shiftCl _ _ reg | bswap .d reg | bswap .q reg => reg.usable
+  | div _ w rm => (w == .d || w == .q) && rmWf rm
+  | bsf w reg rm | bsr w reg rm => (w == .d || w == .q) && reg.usable && rmWf rm
+  | cdq w => w == .d || w == .q
+  | cmov c w reg rm => c != .always && w == .d && reg.usable && rmWf rm
+  | setccR c reg => c != .always && reg.usable && reg != .rcx
+  | bswap .. => false
   | sse _ size x m => (size == 4 || size == 8 || size == 16) && x < 8 && m.base == .rbp
   | movd _ x r => x < 8 && r.usable
   | push r => r == .rdi || r == .rsi

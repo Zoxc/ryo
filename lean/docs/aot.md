@@ -337,9 +337,13 @@ follows the decoder's structure:
   `(op, c) ∈ inlineOps → shapeOk op c`, is `inlineOps_shape` (`RyoProofs/InlineOps.lean`, in
   its own library `RyoProofs`, outside the default build: about 3.5 minutes): `decide +kernel`
   over the generated mnemonics as character lists (`Generated/Mnemonics.lean`), with
-  `String.splitOn` replaced by a fuelled split proved equal to it; it covers all 222 inline
+  `String.splitOn` replaced by a fuelled split proved equal to it; it covers all 277 inline
   opcodes, the native `ovf`, `mulOvf`, `ext`, `addr.const`, `addr.sym` and `addr.sym.ind`
-  ones included, and uses no `bv_decide` or `native_decide`. The
+  ones included, and uses no `bv_decide` or `native_decide`. Not yet covered: the classes
+  inlined later (`laterClass`: variable shifts and rotates `shiftVar`, `div`/`rem`,
+  `cttz`/`ctlz` `count`, `cmp3`, `bswap`), which `frameOnly` excludes and the register cache
+  proofs take as a hypothesis (`sequence_ok`'s `hlater`); `RyoTest/Inline.lean` runs their
+  sequences against the handlers' methods. The
   rip-relative addresses `addrConst`, `addrSym`, `addrSymInd` are `inline_sound_rip`
   (`Inline/Rip.lean`), given `Globals` (where constants, data and symbol slots are linked).
   The overflow ops `add.ovf`, `sub.ovf`, `mul.ovf`

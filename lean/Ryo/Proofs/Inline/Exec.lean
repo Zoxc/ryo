@@ -149,10 +149,14 @@ theorem exec_shift (ctx : Ctx) (op : Sh) (w : W) (r : Reg) (amt : BitVec 8) (s :
     (shiftF op a c).1 = match op with
       | .shl => a <<< c
       | .shr => a >>> c
-      | .sar => a.sshiftRight c := by
+      | .sar => a.sshiftRight c
+      | .rol => a.rotateLeft c
+      | .ror => a.rotateRight c := by
   unfold shiftF
   by_cases h : c = 0
   · subst h; cases op <;> simp
+    · apply BitVec.eq_of_getLsbD_eq; intro i hi; simp [BitVec.getLsbD_rotateLeft]; omega
+    · simp [BitVec.rotateRight, BitVec.rotateRightAux]
   · cases op <;> simp [h]
 
 theorem toNat_lt_iff {n : Nat} (a b : BitVec n) : a.toNat < b.toNat ↔ a < b := BitVec.lt_def.symm

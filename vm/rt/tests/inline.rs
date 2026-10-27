@@ -180,6 +180,62 @@ fn resolve(op: Opcode, vals: &[u128], img: &Linked) -> Vec<u128> {
         .collect()
 }
 
+/// The width in bits of `op` (its last mnemonic part).
+fn bits(op: Opcode) -> u32 {
+    match op.mnemonic().rsplit('.').next().unwrap() {
+        "w8" => 8,
+        "w16" => 16,
+        "w32" => 32,
+        "w128" => 128,
+        _ => 64,
+    }
+}
+
+/// Whether `op` is a division or remainder.
+fn is_div(op: Opcode) -> bool {
+    op.mnemonic().starts_with("div.") || op.mnemonic().starts_with("rem.")
+}
+
+/// For a division (whose operands are argument slots), the arguments changed so it is
+/// defined: a zero divisor made 1, and a signed `MIN / -1`'s dividend made `MIN + 1`. A
+/// divisor of -1 and a dividend of `MIN` stay likely otherwise.
+fn div_defined(op: Opcode, vals: &[u128], args: &mut [u64; 8]) {
+    if !is_div(op) {
+        return;
+    }
+    let info = op.info();
+    let arg = |name: &str| ((vals[info.operand_index(name).unwrap()] as u32 as i32 - ARGS[0]) / 8) as usize;
+    let (a, b) = (arg("a"), arg("b"));
+    let n = bits(op);
+    let mask = if n == 64 { u64::MAX } else { (1 << n) - 1 };
+    if args[b] & mask == 0 {
+        args[b] |= 1;
+    }
+    let min = 1 << (n - 1);
+    if op.mnemonic().starts_with("div.s") || op.mnemonic().starts_with("rem.s") {
+        if args[b] & mask == mask && args[a] & mask == min {
+            args[a] += 1;
+        }
+    }
+}
+
+/// For a division in a run, the instructions before it that make its divisor positive and
+/// odd: never 0 or -1.
+fn div_guards(op: Opcode, vals: &[u128]) -> Vec<(Opcode, Vec<u128>)> {
+    if !is_div(op) {
+        return Vec::new();
+    }
+    let b = vals[op.info().operand_index("b").unwrap()];
+    let n = bits(op);
+    let (and, or) = match n {
+        8 => (Opcode::AndImmW8, Opcode::OrImmW8),
+        16 => (Opcode::AndImmW16, Opcode::OrImmW16),
+        32 => (Opcode::AndImmW32, Opcode::OrImmW32),
+        _ => (Opcode::AndImmW64, Opcode::OrImmW64),
+    };
+    vec![(and, vec![b, b, (u64::MAX >> (65 - n)) as u128]), (or, vec![b, b, 1])]
+}
+
 /// The sret pointer's slot.
 const SRET: i32 = -48;
 
@@ -253,6 +309,7 @@ fn inline_matches_handlers() {
                 args[1] = args[0];
             }
             let (c, vals) = function(op, &mut rng, &args, &refs);
+            div_defined(op, &vals, &mut args);
             code.push(c);
             operands.push(vals);
             inputs.push(args);
@@ -347,6 +404,10 @@ fn inline_runs_match_handlers() {
                 }
             }
             flag_apart(op, &mut vals, &mut rng);
+            for (g, gv) in div_guards(op, &vals) {
+                a.raw(g, &gv);
+                run.push((g, gv));
+            }
             a.raw(op, &vals);
             run.push((op, vals));
         }
@@ -414,12 +475,17 @@ fn frame_effects(op: Opcode, vals: &[u128]) -> (Vec<i32>, Vec<i32>) {
                 s,
                 if ptr {
                     8
-                } else if cmp {
+                } else if cmp || m.starts_with("cmp3") {
                     1
+                } else if m.starts_with("ctlz") || m.starts_with("cttz") {
+                    // The count, a `u32`.
+                    4
                 } else {
                     w(m)
                 },
             )),
+            // A rotate's amount is a `u32`.
+            OperandKind::Slot if o.name == "b" && m.starts_with("rot") => r.extend(bytes(s, w(m).max(4))),
             OperandKind::Slot => r.extend(bytes(s, if ptr { 8 } else { w(m) })),
             OperandKind::Mem => r.extend(bytes(s, 8)),
             _ => {}
@@ -468,6 +534,7 @@ fn dead_stores_match_handlers() {
             if let Some(d) = op.info().operand_index("d") {
                 recent.push(vals[d] as u32 as i32);
             }
+            run.extend(div_guards(op, &vals));
             run.push((op, vals));
         }
         // Scratch bytes dead after each instruction: not read again before written. The

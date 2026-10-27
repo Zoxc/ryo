@@ -586,7 +586,8 @@ fn constant_memcpy_from_a_local_promotes() {
 }
 
 /// `ctpop`, `ctlz` and `cttz` of a constant fold to the handler's count at every width (of 0,
-/// `ctlz`/`cttz` give the width); of a run-time value they stay handler calls.
+/// `ctlz`/`cttz` give the width); of a run-time value `ctpop` stays a handler call, the
+/// others an [`Op::Count`].
 #[test]
 fn bit_counts_of_constants_fold() {
     type Mk = fn(Slot, Slot) -> Insn<'static>;
@@ -610,10 +611,12 @@ fn bit_counts_of_constants_fold() {
                 assert_eq!(f.def(parts[0]), ValueDef::Const(want[k] as u64), "{bits} {k} {x:#x}\n{f}");
             }
         }
-        for mk in mk {
+        for (k, mk) in mk.iter().enumerate() {
             let v = vec![arg(-8, 0), mk(Slot(-16), Slot(-8)), Insn::Ret { s: Slot(-16), k: 4 }];
             let f = ir(&decoded(&v, 16, &[]));
-            assert_eq!(live_ops(&f).iter().filter(|o| matches!(o, Op::HCall(_))).count(), 1, "{f}");
+            // `ctlz` and `cttz` are an operation of the tier's own.
+            let n = live_ops(&f).iter().filter(|o| if k == 0 { matches!(o, Op::HCall(_)) } else { matches!(o, Op::Count { .. }) }).count();
+            assert_eq!(n, 1, "{f}");
         }
     }
 }

@@ -1078,6 +1078,16 @@ impl Asm {
         }
     }
 
+    /// A dense switch's index computation ([`super::inline::dense_index`]): its load of the
+    /// slot, then fixed items.
+    fn dense_index(&mut self, items: Vec<Item>) {
+        let mut it = items.into_iter();
+        self.pieces.push(Piece::Frame(it.next().expect("the load")));
+        for i in it {
+            self.fixed(i);
+        }
+    }
+
     /// The jump-table sequence on the index in `rax`, with `targets`.
     fn table(&mut self, targets: Vec<Label>) {
         self.pieces.push(Piece::LeaTable);
@@ -1131,7 +1141,17 @@ impl Asm {
             Then::Table(ts) => self.targets.push((*ts.last().expect("a default"), self.pieces.len())),
             Then::Next | Then::Trap => {}
         }
-        for (&a, &reg) in args.iter().zip(&ARGS) {
+        // A dense switch's index computation in place of the call, which takes the arguments
+        // `s`, `base` and the case count.
+        let dense = (|| {
+            let l = layout(op, self.mode);
+            let arg = |name: &str| match args.get(l.locs[op.info().operand_index(name)?].reg as usize) {
+                Some(Arg::Imm(v)) => Some(*v),
+                _ => None,
+            };
+            super::inline::dense_index(op, arg("s")? as u32 as i32, arg("base")?, arg("table")?)
+        })();
+        for (&a, &reg) in args.iter().zip(&ARGS).filter(|_| dense.is_none()) {
             match a {
                 Arg::Fp => self.pieces.push(Piece::Fp(reg)),
                 Arg::Exception => self.fixed(Item::Mov(reg, Reg::Rax)),
@@ -1148,7 +1168,10 @@ impl Asm {
             }
         }
         let site = matches!(then, Then::Trap).then_some(id);
-        self.maybe_site(rt_call(Ref::Handler(op), self.mode), site);
+        match dense {
+            Some(items) => self.dense_index(items),
+            None => self.maybe_site(rt_call(Ref::Handler(op), self.mode), site),
+        }
         match then {
             Then::Next => {}
             Then::Branch { neg, target } => {
@@ -1212,7 +1235,15 @@ impl Asm {
                 self.pieces.push(Piece::Branch { cond, to: target("t") });
             }
             Shape::Switch => {
-                self.handler_call(op, ops, None);
+                let opnd = |name: &str| info.operand_index(name).map(|i| &ops[i]);
+                let dense = || match (opnd("s")?, opnd("base")?, opnd("table")?) {
+                    (Opnd::Slot(s), Opnd::Imm(base), Opnd::Targets(t)) => super::inline::dense_index(op, *s, *base, t.len() as u64),
+                    _ => None,
+                };
+                match dense() {
+                    Some(items) => self.dense_index(items),
+                    None => self.handler_call(op, ops, None),
+                }
                 let mut ts = Vec::new();
                 for o in ops {
                     if let Opnd::Targets(t) | Opnd::Cases(_, t) = o {

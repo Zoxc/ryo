@@ -1189,7 +1189,7 @@ impl<'a> E<'a> {
                 return Err(Unsupported("a vector operand of a call"));
             }
             Op::Bin(op @ (BinOp::DivS | BinOp::DivU | BinOp::RemS | BinOp::RemU), w) => self.divrem(op, w, args[0], args[1], res[0]),
-            Op::Bin(op @ (BinOp::Shl | BinOp::ShrS | BinOp::ShrU), w) if !matches!(self.src(args[1]), Src::Imm(_)) => {
+            Op::Bin(op @ (BinOp::Shl | BinOp::ShrS | BinOp::ShrU | BinOp::Rotl | BinOp::Rotr), w) if !matches!(self.src(args[1]), Src::Imm(_)) => {
                 self.shift_var(op, w, args[0], args[1], res[0])
             }
             Op::Bin(op, w) => {
@@ -1266,7 +1266,84 @@ impl<'a> E<'a> {
                         let sw = if op == BinOp::ShrU && w < 4 { 4 } else { sw };
                         self.a.x().shift_imm(sh, sw, Rm::R(rd), n as u8);
                     }
+                    BinOp::Rotl | BinOp::Rotr => {
+                        // At the exact width: the low `w` bytes of `rd` are `a`.
+                        let Src::Imm(n) = self.src(b) else { unreachable!("a rotate by a variable") };
+                        let n = n & (8 * w as u64 - 1);
+                        if n != 0 {
+                            let sh = if op == BinOp::Rotl { Shift::Rol } else { Shift::Ror };
+                            self.a.x().shift_imm(sh, w, Rm::R(rd), n as u8);
+                        }
+                    }
                     _ => unreachable!(),
+                }
+                self.put(x, rd);
+            }
+            // As the AOT form: `bsf`/`bsr` leave their destination undefined on 0, so a
+            // `cmovz` gives that case, or below 32 bits a guard bit above the value for `cttz`.
+            Op::Count { lz, w } => {
+                let x = res[0];
+                let rd = self.work(x, &[]);
+                let n = 8 * w as u64;
+                self.ext_into(rd, args[0], w, false);
+                let bw = if w == 8 { 8 } else { 4 };
+                if !lz && w < 4 {
+                    self.a.x().alu_imm(Alu::Or, 4, Rm::R(rd), 1 << n);
+                    self.a.x().bsf(false, 4, rd, Rm::R(rd));
+                } else {
+                    self.a.x().bsf(lz, bw, rd, Rm::R(rd));
+                    // `S2`: `rd` may be `S1`.
+                    self.a.x().mov_imm(4, Rm::R(S2), if lz { 2 * n - 1 } else { n });
+                    self.a.x().cmov(X::E, 4, rd, Rm::R(S2));
+                    if lz {
+                        self.a.x().alu_imm(Alu::Xor, 4, Rm::R(rd), n as i64 - 1);
+                    }
+                }
+                self.put(x, rd);
+            }
+            // As the AOT form: the wrapped difference, then `cmovae` of the default's index.
+            Op::SwitchIdx { w, base, n } => {
+                let x = res[0];
+                let rd = self.work(x, &[]);
+                self.ext_into(rd, args[0], w, false);
+                if mask(base, w) != 0 {
+                    let b = sext(base, w);
+                    if w == 8 && !fits32(b) {
+                        self.a.x().mov_imm(8, Rm::R(S2), base);
+                        self.a.x().alu(Alu::Sub, 8, Rm::R(rd), Rm::R(S2));
+                    } else {
+                        self.a.x().alu_imm(Alu::Sub, w.max(4), Rm::R(rd), if w == 8 { b } else { b as i32 as i64 });
+                    }
+                    if w < 4 {
+                        self.a.x().alu_imm(Alu::And, 4, Rm::R(rd), mask(u64::MAX, w) as i64);
+                    }
+                }
+                // `S2`: `rd` may be `S1`.
+                self.a.x().mov_imm(4, Rm::R(S2), n as u64);
+                self.a.x().alu(Alu::Cmp, if w == 8 { 8 } else { 4 }, Rm::R(rd), Rm::R(S2));
+                self.a.x().cmov(X::Ae, 4, rd, Rm::R(S2));
+                self.put(x, rd);
+            }
+            // `(a > b) - (a < b)` from one compare, as the AOT form.
+            Op::Cmp3(signed, w) => {
+                let x = res[0];
+                self.compare(args[0], args[1], w);
+                let rd = self.work(x, &[]);
+                let (lt, gt) = if signed { (X::L, X::G) } else { (X::B, X::A) };
+                // `S2`: `rd` may be `S1`.
+                self.a.x().setcc(lt, Rm::R(S2));
+                self.a.x().setcc(gt, Rm::R(rd));
+                self.a.x().alu(Alu::Sub, 1, Rm::R(rd), Rm::R(S2));
+                self.put(x, rd);
+            }
+            Op::Bswap(w) => {
+                let x = res[0];
+                let rd = self.work(x, &[]);
+                self.load(rd, args[0]);
+                // 16 bits: the swapped halfword in the upper half of the 32-bit swap.
+                self.a.x().bswap(w.max(4), rd);
+                if w == 2 {
+                    self.a.x().shift_imm(Shift::Shr, 4, Rm::R(rd), 16);
                 }
                 self.put(x, rd);
             }
@@ -1620,8 +1697,9 @@ impl<'a> E<'a> {
         self.put(x, r);
     }
 
-    /// `x = a << b` (or `>>`) by a variable amount, in `cl` (which the allocator keeps free of
-    /// values live across it), masked to the width (`w8`/`w16` explicitly).
+    /// `x = a << b` (or `>>`, or a rotate) by a variable amount, in `cl` (which the allocator
+    /// keeps free of values live across it), masked to the width (`w8`/`w16` shifts
+    /// explicitly; rotates run at the width, where `cl`'s mask is a multiple of it).
     fn shift_var(&mut self, op: BinOp, w: u8, a: Value, b: Value, x: Value) {
         let rd = match self.al.loc[x.idx()] {
             Loc::Reg(r) if r != R::Rcx && self.src(b) != Src::R(r) => r,
@@ -1633,15 +1711,18 @@ impl<'a> E<'a> {
             _ => self.load(rd, a),
         }
         self.load(R::Rcx, b);
-        if w < 4 {
+        let rot = matches!(op, BinOp::Rotl | BinOp::Rotr);
+        if w < 4 && !rot {
             self.a.x().alu_imm(Alu::And, 4, Rm::R(R::Rcx), 8 * w as i64 - 1);
         }
         let sh = match op {
             BinOp::Shl => Shift::Shl,
             BinOp::ShrU => Shift::Shr,
+            BinOp::Rotl => Shift::Rol,
+            BinOp::Rotr => Shift::Ror,
             _ => Shift::Sar,
         };
-        self.a.x().shift_cl(sh, w.max(4), Rm::R(rd));
+        self.a.x().shift_cl(sh, if rot { w } else { w.max(4) }, Rm::R(rd));
         self.put(x, rd);
     }
 

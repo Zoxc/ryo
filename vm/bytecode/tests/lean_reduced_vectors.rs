@@ -558,7 +558,7 @@ fn register_cache(rng: &mut Rng, out: &mut Out) {
         let mut f = Fn::new();
         for _ in 0..n {
             let op = match rng.below(12) {
-                0 => Opcode::DivUW32,
+                0 => Opcode::FaddF32,
                 _ => inline[rng.below(inline.len() as u64) as usize],
             };
             let mut w = insn(op, rng, 0, &mut f, &mut |rng| rng.below(n as u64 + 1) as usize);
@@ -599,7 +599,7 @@ fn dead_stores(rng: &mut Rng, out: &mut Out) {
         for (i, &l) in labels.iter().enumerate().take(n) {
             a.bind(l);
             let op = match rng.below(16) {
-                0 => Opcode::DivUW32,
+                0 => Opcode::FaddF32,
                 1 => Opcode::Jmp,
                 _ => inline[rng.below(inline.len() as u64) as usize],
             };

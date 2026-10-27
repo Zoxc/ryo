@@ -161,7 +161,7 @@ theorem sext_sub_add (e t : BitVec 32) (he : e.toNat < 2 ^ 31) (ht : t.toNat < 2
   split <;> rename_i h <;> simp at h <;> omega
 
 theorem table_addr (b : BitVec 64) (t : BitVec 32) (i : Nat) :
-    b + t.setWidth 64 + (BitVec.ofNat 64 i <<< 2) = addrAt ⟨b, fun _ => 0⟩ (t.toNat + 4 * i) := by
+    b + t.setWidth 64 + (BitVec.ofNat 64 i <<< 2) = addrAt ⟨b, fun _ => 0, 0⟩ (t.toNat + 4 * i) := by
   apply BitVec.eq_of_toNat_eq
   simp [addrAt, BitVec.toNat_add, BitVec.toNat_shiftLeft, BitVec.toNat_setWidth,
     Nat.shiftLeft_eq]
@@ -181,7 +181,7 @@ theorem exec_switch {ctx : Ctx} {t : BitVec 32} {es : List (BitVec 32)} {i : Nat
   have hr := readNat_leBytes4 _ _ _ he
   have hrc : Reg.rax.idx ≠ Reg.rcx.idx := by decide
   have hcr : Reg.rcx.idx ≠ Reg.rax.idx := by decide
-  have hA' : ∀ n, addrAt ⟨ctx.base, fun _ => 0⟩ n = addrAt ctx n := fun _ => rfl
+  have hA' : ∀ n, addrAt ⟨ctx.base, fun _ => 0, 0⟩ n = addrAt ctx n := fun _ => rfl
   have htarget : BitVec.signExtend 64 (BitVec.ofNat 32 (es[i] - t).toNat) +
       (ctx.base + BitVec.setWidth 64 t) = addrAt ctx es[i].toNat := by
     rw [BitVec.ofNat_toNat, BitVec.setWidth_eq, BitVec.add_comm ctx.base, ← BitVec.add_assoc,

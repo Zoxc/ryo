@@ -213,6 +213,13 @@ def mapRegs (f : Reg → Reg) : Item → Item
   | .testM8 m => .testM8 ⟨f m.base, m.disp⟩
   | .setReg r v => .setReg (f r) v
   | .mulQ rm => .mulQ (mapRm f rm)
+  | .shiftCl o w r => .shiftCl o w (f r)
+  | .bswap w r => .bswap w (f r)
+  | .setccR c r => .setccR c (f r)
+  | .bsf w r rm => .bsf w (f r) (mapRm f rm)
+  | .bsr w r rm => .bsr w (f r) (mapRm f rm)
+  | .cmov c w r rm => .cmov c w (f r) (mapRm f rm)
+  | .div sg w rm => .div sg w (mapRm f rm)
   | .lea r to => .lea (f r) to
   | .loadRip r to => .loadRip (f r) to
   | it => it
@@ -240,6 +247,7 @@ def endsInlineAt (it : Item) (prev next : Option Item) : Bool :=
 def isInline : Item → Bool
   | .ld .. | .st .. | .stImm .. | .leaM .. | .alu .. | .aluImm .. | .imul .. | .imulImm ..
   | .shift .. | .setcc .. | .testM8 .. | .setccCl .. | .mulQ .. | .lea .. | .loadRip .. => true
+  | .div .. | .cdq _ | .shiftCl .. | .bswap .. | .setccR .. | .bsf .. | .bsr .. | .cmov .. => true
   | .setReg r _ => r != .rsp && r != .rbp
   | _ => false
 
@@ -256,6 +264,8 @@ def frameRead : Item → Option (M × Nat)
   | .imulImm w _ (.mem m) _ => if m.base == .rbp then some (m, w.bits / 8) else none
   | .testM8 m => if m.base == .rbp then some (m, 1) else none
   | .mulQ (.mem m) => if m.base == .rbp then some (m, 8) else none
+  | .div _ w (.mem m) | .bsf w _ (.mem m) | .bsr w _ (.mem m) | .cmov _ w _ (.mem m) =>
+    if m.base == .rbp then some (m, w.bits / 8) else none
   | _ => none
 
 /-- `Item::frame_write`. -/
@@ -284,6 +294,16 @@ inductive Class
   | mulOvf (signed : Bool) (w : W)
   /-- A zero or sign (`sx`) extension, or a truncation. -/
   | ext (src dst : W) (sx : Bool)
+  /-- A shift or rotate by a slot's value (`cl`): `shl`, `shr.s`, `shr.u`, `rotl`, `rotr`. -/
+  | shiftVar (sh : Sh) (w : W)
+  /-- `div` (`rem`: the remainder), signed or not. -/
+  | div (signed rem : Bool) (w : W)
+  /-- `cttz` (`ctlz` if `lz`), the count stored as a `u32`. -/
+  | count (lz : Bool) (w : W)
+  /-- `cmp3`, signed or not: -1, 0 or 1 as a byte. -/
+  | cmp3 (signed : Bool) (w : W)
+  /-- `bswap.w16`-`bswap.w64`. -/
+  | bswap (w : W)
 deriving DecidableEq, Repr, Inhabited
 
 /-- `Class::key`: the conditions dropped. -/
@@ -329,6 +349,22 @@ def classOfParts : List String → Option Class
   | ["ptr", "add"] => some .ptrAdd
   | ["ptr", "index"] => some .ptrIndex
   | ["br"] => some .br
+  | ["shl", w] => .shiftVar .shl <$> widthName w
+  | ["shr", "s", w] => .shiftVar .sar <$> widthName w
+  | ["shr", "u", w] => .shiftVar .shr <$> widthName w
+  | ["rotl", w] => .shiftVar .rol <$> widthName w
+  | ["rotr", w] => .shiftVar .ror <$> widthName w
+  | ["div", "s", w] => .div true false <$> widthName w
+  | ["div", "u", w] => .div false false <$> widthName w
+  | ["rem", "s", w] => .div true true <$> widthName w
+  | ["rem", "u", w] => .div false true <$> widthName w
+  | ["cttz", w] => .count false <$> widthName w
+  | ["ctlz", w] => .count true <$> widthName w
+  | ["cmp3", "s", w] => .cmp3 true <$> widthName w
+  | ["cmp3", "u", w] => .cmp3 false <$> widthName w
+  | ["bswap", w] => do
+    let w ← widthName w
+    if w == .b then none else some (.bswap w)
   | ["mul", w] => .mul <$> widthName w
   | ["eq", w] => .cmp .z <$> widthName w
   | ["ne", w] => .cmp .nz <$> widthName w
@@ -521,11 +557,111 @@ def sequence {T : Type} (c : Class) (ops : List (Opnd T)) : Option (List Item ×
         [ld src s, .shift .shl .q R n, .shift .sar .q R n]
       else [.ld src sx R s]
     pure (body ++ [st dst (← slot 0)], none)
+  -- Shifts at 8 and 16 bits run in 32 (`sar` on the sign-extended value), the amount masked to
+  -- the width; rotates run at the width, which divides `cl`'s 5-bit mask.
+  | .shiftVar sh w =>
+    let narrow := w == .b || w == .w
+    let a ← slot 1
+    let b ← slot 2
+    let d ← slot 0
+    let body : List Item :=
+      if sh == .rol || sh == .ror then [.ld .d false C b, .shiftCl sh w R]
+      else if narrow then
+        [.ld w false C b, .aluImm .and .d (.reg C) (BitVec.ofNat 32 (w.bits - 1)), .shiftCl sh .d R]
+      else [.ld .d false C b, .shiftCl sh w R]
+    pure ([.ld w (sh == .sar && narrow) R a] ++ body ++ [st w d], none)
+  -- MIR rules out a zero divisor and `MIN / -1`, the cases that fault.
+  | .div signed rem w =>
+    let a ← slot 1
+    let b ← slot 2
+    let d ← slot 0
+    let ext : Item := if signed then .cdq (if w == .q then .q else .d) else .setReg .rdx 0
+    let body : List Item := match w with
+      | .d | .q => [ld w a, ext, .div signed w (.mem b)]
+      -- 8 and 16 bits in 32, on the extended operands.
+      | _ => [.ld w signed R a, .ld w signed C b, ext, .div signed .d (.reg C)]
+    pure (body ++ [.st w (if rem then .rdx else R) d], none)
+  -- The count as a `u32`; `bsf`/`bsr` of zero leave the register undefined, so `cmovz` gives
+  -- that case's result, or a guard bit above the value makes it non-zero.
+  | .count lz w =>
+    let a ← slot 1
+    let d ← slot 0
+    let n := w.bits
+    let bw := if w == .q then W.q else .d
+    let body : List Item :=
+      if lz then
+        -- `bsr` is `n - 1 - clz`, and `(2n - 1) ^ (n - 1)` is `n`.
+        [.bsr bw R (.reg R), .setReg C (BitVec.ofNat 64 (2 * n - 1)), .cmov .z .d R (.reg C),
+          .aluImm .xor .d (.reg R) (BitVec.ofNat 32 (n - 1))]
+      else if w == .b || w == .w then
+        [.aluImm .or .d (.reg R) (BitVec.ofNat 32 (2 ^ n)), .bsf .d R (.reg R)]
+      else [.bsf w R (.reg R), .setReg C (BitVec.ofNat 64 n), .cmov .z .d R (.reg C)]
+    pure ([ld w a] ++ body ++ [st .d d], none)
+  -- `(a > b) - (a < b)`: both flags of one `cmp`, `setcc` writing none.
+  | .cmp3 signed w =>
+    let (lt, gt) : Cond × Cond := if signed then (.l, .g) else (.b, .a)
+    pure ([ld w (← slot 1), .alu .cmp w R (.mem (← slot 2)), .setccCl lt, .setccR gt R,
+      .alu .sub .b R (.reg C), st .b (← slot 0)], none)
+  | .bswap w =>
+    let a ← slot 1
+    let d ← slot 0
+    -- At 16 bits the swapped halfword is in the upper half of the 32-bit swap.
+    let body : List Item := if w == .w then [.bswap .d R, .shift .shr .d R 16] else [.bswap w R]
+    pure ([ld w a] ++ body ++ [st w d], none)
+
+/-- The trailing zeros of a 32-bit value (`u32::trailing_zeros`: 32 for 0). -/
+def trailingZeros (v : BitVec 32) : Nat := ((List.range 32).find? (v.getLsbD ·)).getD 32
+
+/-- `classify`'s first checks, for the sequences with an item only they have (`shiftCl`, `div`,
+`bsf`/`bsr`, `setcc r8`, `bswap`), in Rust's order: `none` without one, else the class (before
+the branch check). -/
+def classifyNew (items : List Item) : Option (Option Class) :=
+  let last := items.getLast?
+  if let some (.shiftCl op ..) := items.find? (· matches .shiftCl ..) then
+    some (match last with | some (.st w ..) => some (.shiftVar op w) | _ => none)
+  else if let some (.div signed ..) := items.find? (· matches .div ..) then
+    some (match last with | some (.st w src _) => some (.div signed (src == .rdx) w) | _ => none)
+  -- The width from the immediate (the guard bit, or `n` or `2n - 1` in `rcx`).
+  else if let some lz := items.findSome? (fun | .bsf .. => some false | .bsr .. => some true | _ => none) then
+    some (do
+      let n ← items.findSome? fun
+        | .aluImm .or _ _ imm => some (trailingZeros imm)
+        | .setReg .rcx v => some (if lz then ((v.setWidth 32).toNat + 1) / 2 else (v.setWidth 32).toNat)
+        | _ => none
+      let w ← W.all.find? (·.bits == n)
+      some (.count lz w))
+  -- Before the overflow ops, which have a `setcc cl` too.
+  else if let some (.setccR c _) := items.find? (· matches .setccR ..) then
+    some (do
+      let w ← items.findSome? fun | .alu .cmp w .. => some w | _ => none
+      some (.cmp3 (c == .g) w))
+  else if items.any (· matches .bswap ..) then
+    some (match last with | some (.st w ..) => some (.bswap w) | _ => none)
+  else none
+
+/-- `inline::dense_index`: the index computation of `switch.dense.wN` (`N` up to 64) in place of
+its handler call, before the jump table: `s - base` (wrapping at `N` bits) in `rax`, or the
+default's index `n` (the case count, below 2^31) if it isn't below `n`; `none` if it doesn't
+apply. `s` is a frame slot, read plainly (the register cache is cleared by any instruction that
+isn't inline). -/
+def denseIndex (op : Full.Opcode) (s : BitVec 32) (base n : BitVec 64) : Option (List Item) := do
+  let w ← if op == .switchDenseW8 then some W.b else if op == .switchDenseW16 then some .w
+    else if op == .switchDenseW32 then some .d else if op == .switchDenseW64 then some .q else none
+  if n.toNat ≥ 2 ^ 31 then none
+  -- `sub al`/`sub ax` keep the zero bits above from the `movzx`.
+  let sub : List Item :=
+    if (base.setWidth w.bits) == 0 then []
+    else if w == .q && !fits base then [.setReg C base, .alu .sub w R (.reg C)]
+    else [.aluImm .sub w (.reg R) (sextI32 w base)]
+  -- The index, below `n` after the `cmov`, zero-extended for the table load.
+  let cw := if w == .q then W.q else .d
+  some ([ld w (M.frame s)] ++ sub ++ [.setReg C n, .alu .cmp cw R (.reg C), .cmov .ae .d R (.reg C)])
 
 /-- `inline::classify`: the class key of the items, ending in a branch if `br`. -/
 def classify (items : List Item) (br : Bool) : Option Class :=
   let z := Cond.z
   let frame (m : M) : Bool := m.base == .rbp
+  if let some c := classifyNew items then (if br then none else c) else
   -- An overflow op: the result's store, then its flag.
   if items.any (fun | .setccCl _ => true | _ => false) then
     match items.reverse with
@@ -696,6 +832,7 @@ def readOperand : Item → Option (M × W)
   | .alu _ w _ (.mem m) | .aluImm .cmp w (.mem m) _ | .imul w _ (.mem m) | .imulImm w _ (.mem m) _ =>
     if m.base == .rbp then some (m, w) else none
   | .mulQ (.mem m) => if m.base == .rbp then some (m, .q) else none
+  | .div _ w (.mem m) => if m.base == .rbp then some (m, w) else none
   | _ => none
 
 /-- `with_rm`. -/
@@ -706,12 +843,13 @@ def withRm (it : Item) (rm : Rm) : Item :=
   | .imul w r _ => .imul w r rm
   | .imulImm w r _ i => .imulImm w r rm i
   | .mulQ _ => .mulQ rm
+  | .div sg w _ => .div sg w rm
   | it => it
 
 /-- `read_reg`. -/
 def readReg : Item → Option Reg
   | .alu _ _ _ (.reg r) | .aluImm .cmp _ (.reg r) _ | .imul _ _ (.reg r) | .imulImm _ _ (.reg r) _
-  | .mulQ (.reg r) => some r
+  | .mulQ (.reg r) | .div _ _ (.reg r) => some r
   | _ => none
 
 namespace Cache
@@ -754,10 +892,19 @@ def update (c : Cache) (item : Item) : Cache := Id.run do
     | .imul w reg _ | .imulImm w reg _ _ | .shift _ w reg _ => some (reg, none, wide w)
     | .leaM dst _ | .setReg dst _ | .lea dst _ | .loadRip dst _ => some (dst, none, some .q)
     | .mulQ _ => some (.rax, none, some .q)
+    | .shiftCl _ w reg | .bswap w reg | .cmov _ w reg _ => some (reg, none, wide w)
+    | .cdq _ => some (.rdx, none, none)
+    | .setccR _ reg => some (reg, none, none)
+    -- Undefined on zero at 64 bits (the 32-bit forms are followed by a `cmov`, or their source
+    -- isn't zero).
+    | .bsf w reg _ | .bsr w reg _ => some (reg, none, if w == .d then some .d else none)
+    | .div _ w _ => some (.rax, none, some w)
     | _ => none
-  -- `mul` writes `rdx` too.
+  -- `mul` writes `rdx` too, `div` its remainder there.
   if item matches .mulQ _ then
     c := c.setEntry 1 fun e => { e with slot := none, zx := none }
+  if let .div _ w _ := item then
+    c := c.setEntry 1 fun e => { e with slot := none, zx := some w }
   match item with
   | .st w src m =>
     if let some i := poolIdx src then
@@ -778,8 +925,8 @@ def update (c : Cache) (item : Item) : Cache := Id.run do
 cache after it. -/
 def emit (c : Cache) (items : List Item) : List Item × Cache := Id.run do
   let mut c := { c with tick := c.tick + 1 }
-  -- A `mul` (`rdx:rax`) computes in `rax`, dropping the reload only if `rax` holds it.
-  let pinned := items.any fun | .mulQ _ => true | _ => false
+  -- A `mul` or `div` (`rdx:rax`) computes in `rax`, dropping the reload only if `rax` holds it.
+  let pinned := items.any fun | .mulQ _ | .div .. => true | _ => false
   let (x, rest) := match items with
     | .ld w false .rax m :: tl =>
       if pinned then
@@ -807,6 +954,8 @@ def unemit (c : Cache) (items : List Item) : List (List Item) := Id.run do
   let mut xs : List Nat := (List.range 8).filter fun i =>
     items.any fun it => mapRegs (fun r => if r == pool[i]! then .rbp else r) it != it
   if xs.isEmpty then xs := [c.fresh]
+  -- A `mul` or `div` computes in `rax`, which a remainder's sequence may not show.
+  if items.any (fun | .mulQ _ | .div .. => true | _ => false) then xs := [0]
   for x in xs do
     let xr := pool[x]!
     let back (r : Reg) : Reg := if r == xr then R else if r == R then xr else r

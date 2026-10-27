@@ -74,6 +74,10 @@ pub enum BinOp {
     Shl,
     ShrS,
     ShrU,
+    /// Rotates: the amount taken modulo the width in bits (it comes from a 4-byte operand,
+    /// zero-extended at 8 bytes).
+    Rotl,
+    Rotr,
     /// Division and remainder, signed or not: undefined for a zero divisor or `MIN / -1`.
     DivS,
     DivU,
@@ -99,6 +103,11 @@ impl BinOp {
             BinOp::Shl => a << (b & (8 * w as u64 - 1)),
             BinOp::ShrU => a >> (b & (8 * w as u64 - 1)),
             BinOp::ShrS => (sext(a, w) >> (b & (8 * w as u64 - 1))) as u64,
+            BinOp::Rotl | BinOp::Rotr => {
+                let (n, k) = (8 * w as u32, (b & (8 * w as u64 - 1)) as u32);
+                let k = if self == BinOp::Rotl { k } else { (n - k) % n };
+                if k == 0 { a } else { a << k | a >> (n - k) }
+            }
             // Undefined for a zero divisor or `MIN / -1`: any value will do.
             BinOp::DivU => a.checked_div(b).unwrap_or(0),
             BinOp::RemU => a.checked_rem(b).unwrap_or(0),
@@ -353,6 +362,23 @@ pub enum Op {
     /// `a op b` (`Add`, `Sub` or `Mul`) at `w` bytes, signed or not, and whether it
     /// overflowed (a boolean).
     Ovf(BinOp, bool, u8),
+    /// `a` with its `w` (2, 4 or 8) bytes reversed.
+    Bswap(u8),
+    /// `a <=> b` at `w` bytes, signed or not: -1, 0 or 1, 1 byte.
+    Cmp3(bool, u8),
+    /// A dense switch's index (`switch.dense`): `i = a - base` at `w` bytes (wrapping), or
+    /// `n`, the default's, if `i` isn't below `n`: 8 bytes.
+    SwitchIdx {
+        w: u8,
+        base: u64,
+        n: u32,
+    },
+    /// The trailing (leading with `lz`) zero bits of `a`'s `w` bytes, the width in bits for 0:
+    /// 4 bytes.
+    Count {
+        lz: bool,
+        w: u8,
+    },
     /// `a` (`from` bytes) zero- or sign-extended (`sx`), or truncated, to `to` bytes.
     Ext {
         from: u8,
@@ -397,6 +423,22 @@ impl Op {
         Some(match *self {
             Op::Bin(o, w) => o.eval(w, x[0], x[1]),
             Op::Cmp(cc, w) => cc.holds(w, x[0], x[1]) as u64,
+            Op::Bswap(w) => mask(x[0], w).swap_bytes() >> (64 - 8 * w as u32),
+            Op::Cmp3(signed, w) => {
+                let (lt, gt) = if signed { (Cc::LtS, Cc::GtS) } else { (Cc::LtU, Cc::GtU) };
+                mask((gt.holds(w, x[0], x[1]) as u64).wrapping_sub(lt.holds(w, x[0], x[1]) as u64), 1)
+            }
+            Op::SwitchIdx { w, base, n } => mask(x[0].wrapping_sub(base), w).min(n as u64),
+            Op::Count { lz, w } => {
+                let (a, n) = (mask(x[0], w), 8 * w as u32);
+                (if a == 0 {
+                    n
+                } else if lz {
+                    a.leading_zeros() - (64 - n)
+                } else {
+                    a.trailing_zeros()
+                }) as u64
+            }
             Op::Ext { from, to, sx } => {
                 let x = mask(x[0], from);
                 mask(if sx { sext(x, from) as u64 } else { x }, to)
@@ -421,6 +463,10 @@ impl Op {
                 | Op::V(_)
                 | Op::VConst(_)
                 | Op::Cmp(..)
+                | Op::Bswap(_)
+                | Op::Count { .. }
+                | Op::SwitchIdx { .. }
+                | Op::Cmp3(..)
                 | Op::Ovf(..)
                 | Op::Ext { .. }
                 | Op::PtrAdd(_)
@@ -1061,7 +1107,8 @@ impl Func {
     /// The widths an instruction reads its arguments at.
     pub fn arg_widths(&self, id: &InstData) -> Vec<u8> {
         match &id.op {
-            Op::Bin(_, w) | Op::Cmp(_, w) | Op::Ovf(_, _, w) => alloc::vec![*w, *w],
+            Op::Bin(_, w) | Op::Cmp(_, w) | Op::Ovf(_, _, w) | Op::Cmp3(_, w) => alloc::vec![*w, *w],
+            Op::Bswap(w) | Op::Count { w, .. } | Op::SwitchIdx { w, .. } => alloc::vec![*w],
             Op::V(o) => o.widths().0.to_vec(),
             Op::VConst(_) => Vec::new(),
             Op::Ext { from, .. } => alloc::vec![*from],

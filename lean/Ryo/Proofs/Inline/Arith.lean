@@ -172,7 +172,7 @@ theorem sound_mulImm (w : W) : Sound (.mulImm w) := by
     | (simp only [fits_iff] at hf; simp only [hf]; rfl)
     | bv_decide
 
-theorem sound_shiftImm (sh : Sh) (w : W) : Sound (.shiftImm sh w) := by
+theorem sound_shiftImm (sh : Sh) (w : W) (hsh : sh.isShift = true) : Sound (.shiftImm sh w) := by
   intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
   simp only [classHandler, classOperands] at hh ho
@@ -185,6 +185,7 @@ theorem sound_shiftImm (sh : Sh) (w : W) : Sound (.shiftImm sh w) := by
     · exact (tyName_parse w).1
     · exact (tyName_parse w).1
     · exact (tyName_parse w).2
+    all_goals simp [Sh.isShift] at hsh
   obtain ⟨ba, va, res, hra, hva, hres, hwr, rfl⟩ :=
     opSem_binImm (Or.inr (Or.inr rfl)) hh hty ho hsem
   have hwr' := wranges_eq (vals := [.slot s0.toInt, .slot s1.toInt, .imm i.toNat]) (d := s0.toInt)
@@ -209,7 +210,7 @@ theorem sound_shiftImm (sh : Sh) (w : W) : Sound (.shiftImm sh w) := by
   have hm32 : w ≠ .q → i.toNat % 32 = i.toNat := by
     cases w <;> simp [W.bits] at hc ⊢ <;> omega
   have hmw : i.toNat % w.bits = i.toNat := Nat.mod_eq_of_lt (by omega)
-  cases sh <;> simp [intBin, shMethod, pure, Except.pure] at hres
+  cases sh <;> (try simp [Sh.isShift] at hsh) <;> simp [intBin, shMethod, pure, Except.pure] at hres
   all_goals
     subst hres
     cases w

@@ -123,9 +123,24 @@ impl Alu {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Shift {
+    Rol,
+    Ror,
     Shl,
     Shr,
     Sar,
+}
+
+impl Shift {
+    /// The `/digit` of the shift group.
+    fn digit(self) -> u8 {
+        match self {
+            Shift::Rol => 0,
+            Shift::Ror => 1,
+            Shift::Shl => 4,
+            Shift::Shr => 5,
+            Shift::Sar => 7,
+        }
+    }
 }
 
 /// Condition codes (the low nibble of jcc/setcc).
@@ -371,22 +386,31 @@ impl X86 {
     }
 
     pub fn shift_imm(&mut self, op: Shift, w: u8, dst: Rm, amt: u8) {
-        let d = match op {
-            Shift::Shl => 4,
-            Shift::Shr => 5,
-            Shift::Sar => 7,
-        };
-        self.sized(w, 0xc0, d, false, dst, &[amt]);
+        self.sized(w, 0xc0, op.digit(), false, dst, &[amt]);
+    }
+
+    /// `bsf dst, src` (`bsr` with `rev`).
+    pub fn bsf(&mut self, rev: bool, w: u8, dst: R, src: Rm) {
+        self.insn(false, w == 8, false, &[0x0f, 0xbc | rev as u8], dst.num(), src, &[]);
+    }
+
+    /// `cmovcc dst, src`.
+    pub fn cmov(&mut self, cc: Cc, w: u8, dst: R, src: Rm) {
+        self.insn(w == 2, w == 8, false, &[0x0f, 0x40 | cc as u8], dst.num(), src, &[]);
+    }
+
+    /// `bswap r` (`w` 4 or 8).
+    pub fn bswap(&mut self, w: u8, r: R) {
+        let rex = 0x40 | ((w == 8) as u8) << 3 | r.num() >> 3;
+        if rex != 0x40 {
+            self.code.push(rex);
+        }
+        self.code.extend_from_slice(&[0x0f, 0xc8 | (r.num() & 7)]);
     }
 
     /// A shift by `cl`.
     pub fn shift_cl(&mut self, op: Shift, w: u8, dst: Rm) {
-        let d = match op {
-            Shift::Shl => 4,
-            Shift::Shr => 5,
-            Shift::Sar => 7,
-        };
-        self.sized(w, 0xd2, d, false, dst, &[]);
+        self.sized(w, 0xd2, op.digit(), false, dst, &[]);
     }
 
     /// `div`/`idiv` at 4 or 8 bytes: `rdx:rax / src`, the quotient to `rax`, the remainder

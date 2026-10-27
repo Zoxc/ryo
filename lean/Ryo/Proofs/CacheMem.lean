@@ -219,13 +219,13 @@ theorem globals_congr {ctx : Ctx} {ρ : R.Addrs} {st : OpSem.State} {x y : X86.S
 comment). -/
 theorem cached_of (ctx : Ctx) {T : Type} {cls : Class} {ops : List (R.Opnd T)} {cand : List Item}
     {br : Option Cond} {cache : Cache} {x : X86.State} {Q : X86.State → Prop}
-    (hinv : CacheInv cache x) (hext : ∀ b, cls ≠ .ext .q b true)
+    (hinv : CacheInv cache x) (hext : ∀ b, cls ≠ .ext .q b true) (hlater : laterClass cls = false)
     (hseq : sequence cls ops = some (cand, br))
     (hQ : ∀ y z, y.reg .rbp = z.reg .rbp → y.mem = z.mem → y.flags = z.flags → Q z → Q y)
     (hrun : ∀ xr, xr ≠ .rbp → ∃ x1, execItems ctx cand (swapS xr x) = .ok x1 ∧ Q x1) :
     ∃ y, execItems ctx (cache.emit cand).1 x = .ok y ∧ Q y ∧ CacheInv (cache.emit cand).2 y ∧
       y.rip = x.rip + BitVec.ofNat 64 ((cache.emit cand).1.map Item.size).sum := by
-  have hok' := sequence_ok hext hseq
+  have hok' := sequence_ok hext hlater hseq
   have hsafe : ∀ it ∈ cand, cacheSafe it = true := fun it hit => by
     have := hok' it hit; simp only [seqItemOk, Bool.and_eq_true] at this; exact this.1
   generalize hxr : pool[(emitHead { cache with tick := cache.tick + 1 } cand).1]! = xr
@@ -288,7 +288,7 @@ theorem load_step_cached (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.Sta
       x'.rip = x.rip + BitVec.ofNat 64 ((cache.emit cand).1.map Item.size).sum ∧
       BrOk f ops s s' br x' := by
   obtain ⟨y, hy, ⟨hr', hm', hbr⟩, hcy, hrip⟩ := cached_of ctx
-    (Q := fun y => RRel s' y ∧ MemRel s'.st y ∧ BrOk f ops s s' br y) hinv (fun _ h => by cases h) hseq
+    (Q := fun y => RRel s' y ∧ MemRel s'.st y ∧ BrOk f ops s s' br y) hinv (fun _ h => by cases h) rfl hseq
     (fun y z hb hm hf hq =>
       ⟨rrel_congr hq.1 hb hm, memRel_congr hm hq.2.1, brOk_congr hf hq.2.2⟩)
     fun xr hb => by
@@ -315,7 +315,7 @@ theorem store_step_cached (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.St
       x'.rip = x.rip + BitVec.ofNat 64 ((cache.emit cand).1.map Item.size).sum ∧
       BrOk f ops s s' br x' := by
   obtain ⟨y, hy, ⟨hr', hm', hbr⟩, hcy, hrip⟩ := cached_of ctx
-    (Q := fun y => RRel s' y ∧ MemRel s'.st y ∧ BrOk f ops s s' br y) hinv (fun _ h => by cases h) hseq
+    (Q := fun y => RRel s' y ∧ MemRel s'.st y ∧ BrOk f ops s s' br y) hinv (fun _ h => by cases h) rfl hseq
     (fun y z hb hm hf hq =>
       ⟨rrel_congr hq.1 hb hm, memRel_congr hm hq.2.1, brOk_congr hf hq.2.2⟩)
     fun xr hb => by
@@ -338,8 +338,9 @@ theorem rip_step_cached (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.Stat
       x'.rip = x.rip + BitVec.ofNat 64 ((cache.emit cand).1.map Item.size).sum ∧
       BrOk f ops s s' br x' := by
   have hext : ∀ b, cls ≠ .ext .q b true := fun b he => by subst he; simp [ripAddr] at hc
+  have hlater : laterClass cls = false := by cases cls <;> simp_all [ripAddr, laterClass]
   obtain ⟨y, hy, ⟨hr', hbr⟩, hcy, hrip⟩ := cached_of ctx
-    (Q := fun y => RRel s' y ∧ BrOk f ops s s' br y) hinv hext hseq
+    (Q := fun y => RRel s' y ∧ BrOk f ops s s' br y) hinv hext hlater hseq
     (fun y z hb hm hf hq => ⟨rrel_congr hq.1 hb hm, brOk_congr hf hq.2⟩)
     fun xr hb => by
       obtain ⟨x1, hx1, hr1, -, hbr⟩ := rip_step ctx (x := swapS xr x) hc
@@ -578,7 +579,7 @@ theorem load_step_sep_cached (ctx : Ctx) {wl wh : Int} {c : R.Code} {s s' : R.RS
       BrOk f ops s s' br x' := by
   obtain ⟨y, hy, ⟨hr', hm', hs', hbr⟩, hcy, hrip⟩ := cached_of ctx
     (Q := fun y => RRel s' y ∧ MemRel s'.st y ∧ FrameSep wl wh s'.st y ∧ BrOk f ops s s' br y) hinv
-    (fun _ h => by cases h) hseq
+    (fun _ h => by cases h) rfl hseq
     (fun y z hb hm hf hq =>
       ⟨rrel_congr hq.1 hb hm, memRel_congr hm hq.2.1, hq.2.2.1.congr hb, brOk_congr hf hq.2.2.2⟩)
     fun xr hb => by
@@ -604,7 +605,7 @@ theorem store_step_sep_cached (ctx : Ctx) {wl wh : Int} {c : R.Code} {s s' : R.R
       BrOk f ops s s' br x' := by
   obtain ⟨y, hy, ⟨hr', hm', hs', hbr⟩, hcy, hrip⟩ := cached_of ctx
     (Q := fun y => RRel s' y ∧ MemRel s'.st y ∧ FrameSep wl wh s'.st y ∧ BrOk f ops s s' br y) hinv
-    (fun _ h => by cases h) hseq
+    (fun _ h => by cases h) rfl hseq
     (fun y z hb hm hf hq =>
       ⟨rrel_congr hq.1 hb hm, memRel_congr hm hq.2.1, hq.2.2.1.congr hb, brOk_congr hf hq.2.2.2⟩)
     fun xr hb => by
@@ -632,7 +633,8 @@ theorem rip_step_sep_cached (ctx : Ctx) {wl wh : Int} {c : R.Code} {s s' : R.RSt
       BrOk f ops s s' br x' := by
   have hext : ∀ b, cls ≠ .ext .q b true := fun b he => by subst he; simp [ripAddr] at hc
   obtain ⟨y, hy, ⟨hr', hs', hbr⟩, hcy, hrip⟩ := cached_of ctx
-    (Q := fun y => RRel s' y ∧ FrameSep wl wh s'.st y ∧ BrOk f ops s s' br y) hinv hext hseq
+    (Q := fun y => RRel s' y ∧ FrameSep wl wh s'.st y ∧ BrOk f ops s s' br y) hinv hext
+      (by cases cls <;> simp_all [ripAddr, laterClass]) hseq
     (fun y z hb hm hf hq => ⟨rrel_congr hq.1 hb hm, hq.2.1.congr hb, brOk_congr hf hq.2.2⟩)
     fun xr hb => by
       obtain ⟨x1, hx1, hr1, hs1, -, hbr⟩ := rip_step_sep ctx (x := swapS xr x) hc

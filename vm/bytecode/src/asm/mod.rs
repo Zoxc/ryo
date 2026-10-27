@@ -62,12 +62,12 @@ pub use encode::{
     pe_region_start, prologue_len, push_words, word_len,
 };
 #[cfg(feature = "alloc")]
-pub use inline::has_inline;
+pub use inline::{has_inline, ssa_as_handler};
 pub use list::Hint;
 #[cfg(feature = "alloc")]
 pub use list::InsnList;
 #[cfg(feature = "alloc")]
-pub use reduced::{encode_reduced, encode_reduced_at, is_native, reduce};
+pub use reduced::{as_handler, encode_reduced, encode_reduced_at, is_native, reduce};
 
 use crate::full::{ElemKind, Opcode, OperandKind, Shape};
 use crate::image::JIT_LOOP_CTR;

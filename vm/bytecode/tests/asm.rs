@@ -254,7 +254,15 @@ fn check(f: &Fn, frame_size: u32, mode: Mode, what: &str) -> asm::Encoded {
     let escapes: Vec<_> = scopes.iter().filter(|s| matches!(s.kind, ScopeKind::Escape { .. })).collect();
     let overlap = |a: &Scope, b: &Scope| a.frame_offset < b.frame_offset + b.size as i32 && b.frame_offset < a.frame_offset + a.size as i32;
     let kept: Vec<Scope> = scopes.iter().copied().filter(|s| s.kind != ScopeKind::End || escapes.iter().any(|e| overlap(s, e))).collect();
-    assert_eq!(dec.scopes, kept, "{what} {mode:?}");
+    // A scope right after instructions whose stores were dropped (no code) comes back before
+    // them: the same machine code position.
+    let starts: Vec<u32> = Decoder::new(&code).map(|r| r.unwrap().0 as u32).collect();
+    let same = |d: &Scope, k: &Scope| {
+        Scope { code_offset: k.code_offset, ..*d } == *k
+            && d.code_offset <= k.code_offset
+            && starts.iter().filter(|&&p| d.code_offset <= p && p < k.code_offset).all(|p| dec.dropped.contains(p))
+    };
+    assert!(dec.scopes.len() == kept.len() && dec.scopes.iter().zip(&kept).all(|(d, k)| same(d, k)), "{what} {mode:?}: {:?} != {kept:?}", dec.scopes);
     // The reduced decoder reads the same function as the full one, reduced.
     let red = asm::decode_reduced(&enc.code, &enc.relocs, &enc.rodata, &sites, &enc.dropped, &enc.scopes, mode)
         .unwrap_or_else(|e| panic!("{what} {mode:?} (reduced): {e:?}\n{}", Disasm(&code)));
@@ -608,7 +616,7 @@ fn register_cache_round_trips() {
         let mut f = Fn { insns: Vec::new(), targets: Vec::new(), unwind: Vec::new() };
         for _ in 0..n {
             let op = match rng.below(12) {
-                0 => Opcode::DivUW32,
+                0 => Opcode::FaddF32,
                 _ => inline[rng.below(inline.len() as u64) as usize],
             };
             let mut w = insn(op, &mut rng, 0, &mut f, &mut |rng| rng.below(n as u64 + 1) as usize);
@@ -724,7 +732,7 @@ fn dead_stores_reencode() {
         for (i, &l) in labels.iter().enumerate().take(n) {
             a.bind(l);
             let op = match rng.below(16) {
-                0 => Opcode::DivUW32,
+                0 => Opcode::FaddF32,
                 1 => Opcode::Jmp,
                 _ => inline[rng.below(inline.len() as u64) as usize],
             };
@@ -795,11 +803,11 @@ fn operand_registers() {
 fn linked_fields_must_resolve() {
     let m = MODES[0];
     let f = Fn {
-        insns: vec![vec![Opcode::DivUW32 as u32, -8i32 as u32, -8i32 as u32, -16i32 as u32], vec![Opcode::Jmp as u32, 0]],
+        insns: vec![vec![Opcode::FaddF32 as u32, -8i32 as u32, -8i32 as u32, -16i32 as u32], vec![Opcode::Jmp as u32, 0]],
         targets: vec![(1, 1, 0)],
         unwind: Vec::new(),
     };
-    let enc = check(&f, 16, m, "div; jmp");
+    let enc = check(&f, 16, m, "fadd; jmp");
     let decode = |code: &[u8]| {
         asm::decode_linked(code, Fake::CODE, m.counters.then_some(Fake::RECORD), &Fake { ro: &enc.rodata }, &enc.call_sites, &enc.list(), m)
     };
@@ -951,9 +959,9 @@ fn templates_are_pinned() {
         h
     };
     let elf = hash(&[MODES[0], MODES[1], MODES[8], MODES[10], MODES[11], MODES[18]], 7);
-    assert_eq!(elf, 0x18762925deab2e64, "ELF template hash {elf:#x}");
+    assert_eq!(elf, 0x3c3938bef3ad5db7, "ELF template hash {elf:#x}");
     let pe = hash(&[MODES[6], MODES[16]], 8);
-    assert_eq!(pe, 0xc4afcb801f823d32, "PE template hash {pe:#x}");
+    assert_eq!(pe, 0xbfcdf570a02b40d6, "PE template hash {pe:#x}");
 }
 
 /// Without a frame pointer, an SSE load or store of the slot at `rsp` has no displacement.

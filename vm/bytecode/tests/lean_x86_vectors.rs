@@ -248,6 +248,15 @@ fn gen_items(rng: &mut Rng) -> Vec<Item> {
             v.push(Item::Imul { w, reg: r, rm: gen_rm(rng) });
             v.push(Item::ImulImm { w, reg: r, rm: gen_rm(rng), imm: rng.i32() });
             v.push(Item::Shift { op: rng.pick(&SHS), w, reg: r, amt: rng.pick(&[0, 1, 2, 31, 32, 63, 64, 200]) });
+            v.push(Item::ShiftCl { op: rng.pick(&SHS), w, reg: r });
+            v.push(Item::Bswap { w, reg: r });
+            v.push(Item::Bsf { w, reg: r, rm: gen_rm(rng) });
+            v.push(Item::Bsr { w, reg: r, rm: Rm::Reg(rng.pick(&USABLE)) });
+            v.push(Item::Div { signed: rng.bool(), w, rm: gen_rm(rng) });
+            v.push(Item::Div { signed: rng.bool(), w, rm: Rm::Reg(r) });
+        }
+        for w in WS {
+            v.push(Item::ShiftCl { op: rng.pick(&[Sh::Rol, Sh::Ror]), w, reg: r });
         }
         v.push(Item::Movd { to_xmm: rng.bool(), x: rng.below(8) as u8, r });
         v.push(Item::TestM8(M { base: r, disp: rng.i32() }));
@@ -265,6 +274,13 @@ fn gen_items(rng: &mut Rng) -> Vec<Item> {
     }
     for _ in 0..6 {
         v.push(Item::TestM8(gen_m(rng)));
+    }
+    for w in DQ {
+        v.push(Item::Cdq(w));
+    }
+    for cond in CONDS {
+        v.push(Item::SetccR(cond, rng.pick(&USABLE)));
+        v.push(Item::Cmov { cond, w: W::D, reg: rng.pick(&USABLE), rm: gen_rm(rng) });
     }
     for size in [4u8, 8, 16] {
         for x in 0..8u8 {
@@ -424,6 +440,14 @@ fn item(i: &Item) -> String {
         Item::SetccCl(k) => c("setccCl", &[("cond", cond(k))]),
         Item::MulQ(y) => c("mulQ", &[("rm", rm(y))]),
         Item::Sse { st, size, x, m: y } => c("sse", &[("st", st.to_string()), ("size", size.to_string()), ("x", x.to_string()), ("m", m(y))]),
+        Item::Div { signed, w: x, rm: y } => c("div", &[("signed", signed.to_string()), ("w", w(x)), ("rm", rm(y))]),
+        Item::Cdq(x) => c("cdq", &[("w", w(x))]),
+        Item::Bsf { w: x, reg: r, rm: y } => c("bsf", &[("w", w(x)), ("reg", reg(r)), ("rm", rm(y))]),
+        Item::Bsr { w: x, reg: r, rm: y } => c("bsr", &[("w", w(x)), ("reg", reg(r)), ("rm", rm(y))]),
+        Item::Cmov { cond: k, w: x, reg: r, rm: y } => c("cmov", &[("cond", cond(k)), ("w", w(x)), ("reg", reg(r)), ("rm", rm(y))]),
+        Item::SetccR(k, r) => c("setccR", &[("cond", cond(k)), ("reg", reg(r))]),
+        Item::Bswap { w: x, reg: r } => c("bswap", &[("w", w(x)), ("reg", reg(r))]),
+        Item::ShiftCl { op, w: x, reg: r } => c("shiftCl", &[("op", sh(op)), ("w", w(x)), ("reg", reg(r))]),
         Item::Movd { to_xmm, x, r } => c("movd", &[("toXmm", to_xmm.to_string()), ("x", x.to_string()), ("r", reg(r))]),
     }
 }

@@ -130,15 +130,19 @@ impl Opcode {
     }
 }
 
-/// By reduced opcode, the full one of the same mnemonic (`u16::MAX` for none).
+/// By reduced opcode, the full one of the same mnemonic (`u16::MAX` for none). The lists
+/// are in the same order, so the search goes on from the last match.
 static TO_FULL: [u16; Opcode::COUNT] = {
     let mut out = [u16::MAX; Opcode::COUNT];
     let mut i = 0;
+    let mut from = 0;
     while i < Opcode::COUNT {
-        let mut j = 0;
+        let mut j = from;
         while j < full::Opcode::COUNT {
             if str_eq(OP_INFO[i].mnemonic, full::OP_INFO[j].mnemonic) {
                 out[i] = j as u16;
+                from = j + 1;
+                break;
             }
             j += 1;
         }

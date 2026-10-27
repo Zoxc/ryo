@@ -213,7 +213,7 @@ pub fn clobbers(f: &Func, id: &super::ir::InstData) -> u32 {
     match id.op {
         _ if id.op.is_call() => CALL | [R::Rax, R::Rcx, R::Rdx, R::Rsi, R::Rdi, R::R8, R::R9].iter().fold(0, |m, &r| m | bit(r)),
         Op::Bin(B::DivS | B::DivU | B::RemS | B::RemU, _) | Op::Ovf(B::Mul, false, 8) => bit(R::Rax) | bit(R::Rdx),
-        Op::Bin(B::Shl | B::ShrS | B::ShrU, _) if !matches!(f.values[id.args[1].idx()].def, ValueDef::Const(_)) => bit(R::Rcx),
+        Op::Bin(B::Shl | B::ShrS | B::ShrU | B::Rotl | B::Rotr, _) if !matches!(f.values[id.args[1].idx()].def, ValueDef::Const(_)) => bit(R::Rcx),
         _ => 0,
     }
 }

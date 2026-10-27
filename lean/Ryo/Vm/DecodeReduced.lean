@@ -16,8 +16,9 @@ registers set in order, and recovers every operand, the frame size and the unwin
 - the `arg`s at the start, calls and tail calls (argument loads, call, result stores),
   islands, `ret`, `jmp`, and every handler call as `handler h args then`, its argument
   registers read from `rdi` on (`fp`, the exception object, an immediate or an address), then
-  its shape's control flow (a branch on `al`, a jump table, `ud2`); `unreachable`, a bare
-  `ud2`;
+  its shape's control flow (a branch on `al`, a jump table, `ud2`); a `switch.dense.w8-w64`
+  whose index computation (`Asm.denseIndex`) stands in for the call, read as that handler call
+  (`denseSwitch`); `unreachable`, a bare `ud2`;
 - inline sequences, as the register cache (`Ryo.Vm.Asm.Cache`) emits them: the decoder runs
   the same cache, cleared at branch targets (known after a first pass) and by every
   instruction that isn't inline, and accepts a sequence only if emitting its instruction
@@ -549,8 +550,74 @@ def opsArray (ro : ByteArray) (at_ : Nat) : Option (List (BitVec 32)) := Id.run 
     | none => return none
   return some out.toList
 
-/-- One instruction that isn't inline (`insn`, in the reduced form). -/
-def insn (fr : Frame) (ro : ByteArray) : DM Proto := do
+/-- `dense_switch`'s scan: the items at the cursor up to the table's `lea` (at most six, each a
+load, an ALU operation, a `mov` of an immediate or a `cmov`), and the `lea`'s position. -/
+def denseItems (c : Cursor) : Option (List Item × Nat) := go c.pos [] 7
+where
+  go (p : Nat) (acc : List Item) : Nat → Option (List Item × Nat)
+    | 0 => none
+    | k + 1 =>
+      match decodeItem { c with pos := p } with
+      | some (.leaTable _, _) => if acc.isEmpty then none else some (acc.reverse, p)
+      | some (it, n) =>
+        if (it matches .ld .. | .aluImm .. | .setReg .. | .alu .. | .cmov ..) && acc.length < 6 then
+          go (p + n) (it :: acc) k
+        else none
+      | none => none
+
+/-- The opcode of `switch.dense.wN` at width `w`. -/
+def denseOp : W → Full.Opcode
+  | .b => .switchDenseW8 | .w => .switchDenseW16 | .d => .switchDenseW32 | .q => .switchDenseW64
+
+/-- A dense switch's index computation at the cursor (`dense_switch`, up to the table): its
+width, slot `s`, `base`, case count `n` and the table's position, if the items there are
+exactly `denseIndex` of them. -/
+def denseScan (c : Cursor) : Option (W × BitVec 32 × BitVec 64 × BitVec 64 × Nat) := do
+  let (its, at_) ← denseItems c
+  let (some (.ld w _ _ m), some (.cmov ..)) := (its.head?, its.getLast?) | none
+  let base : BitVec 64 := match (its[1]? : Option Item), (its[2]? : Option Item) with
+    | some (.aluImm .sub _ _ imm), _ => match w with
+      | .b => (imm.setWidth 8).setWidth 64
+      | .w => (imm.setWidth 16).setWidth 64
+      | .d => imm.setWidth 64
+      | .q => imm.signExtend 64
+    | some (.setReg .rcx v), some (.alu .sub _ _ (.reg .rcx)) => v
+    | _, _ => 0
+  let some (.setReg .rcx n) := (if its.length < 3 then none else its[its.length - 3]?) | none
+  if denseIndex (denseOp w) m.disp base n != some its || m.base != .rbp then none
+  some (w, m.disp, base, n, at_)
+
+/-- The handler arguments of a dense switch in the reduced form (`dense_switch`): `s`, `base`
+and the case count `n` in their registers, `fp` first with `Mode.fpArg`, the others 0. -/
+def denseArgs (fr : Frame) (op : Full.Opcode) (s : BitVec 32) (base n : BitVec 64) :
+    Option (List Arg) := do
+  let l ← op.layout fr.mode.fpArg
+  let mut args : Array Arg := Array.replicate l.regs (.imm 0)
+  if fr.mode.fpArg then args := args.set! 0 .fp
+  for (o, loc) in op.info.operands.zip l.locs do
+    let v? : Option (BitVec 64) :=
+      if o.name == "s" then some (s.setWidth 64)
+      else if o.name == "base" then some base
+      else if o.name == "table" then some n
+      else none
+    if let some v := v? then args := args.set! loc.reg (.imm v)
+  return args.toList
+
+/-- A dense switch whose index computation (`Asm.denseIndex`) stands in for its handler call,
+with its jump table (`dense_switch`), as that handler call in the reduced form
+(`denseArgs`); `none`, the cursor unmoved, if there is none at the cursor. -/
+def denseSwitch (fr : Frame) : DM (Option Proto) := do
+  let c ← get
+  let some (w, s, base, n, at_) := denseScan c | return none
+  setPos at_
+  let ts ← table (n.toNat + 1)
+  match denseArgs fr (denseOp w) s base n with
+  | some args => return some { op := denseOp w, handler := some (args, .table ts), pos := c.pos }
+  | none => err c.pos "no layout"
+
+/-- One instruction that isn't inline (`insn`, in the reduced form) and isn't a dense switch's
+index computation. -/
+def insnCore (fr : Frame) (ro : ByteArray) : DM Proto := do
   let p0 ← pos
   let mut setup : Array (Nat × Item) := #[]
   let mut head : Option (Nat × Item) := none
@@ -599,6 +666,12 @@ def insn (fr : Frame) (ro : ByteArray) : DM Proto := do
     let some ws := opsArray ro opsRo | err p0 "island operands"
     return { op := .island, ops := [.sym isl, .words ws], pos := p0, sites := [site] }
   | _ => err hat "not an instruction"
+
+/-- One instruction that isn't inline (`insn`, in the reduced form): a dense switch's index
+computation stands in for its handler call (`denseSwitch`), else `insnCore`. -/
+def insn (fr : Frame) (ro : ByteArray) : DM Proto := do
+  if let some p ← denseSwitch fr then return p
+  insnCore fr ro
 
 /-! ### The instruction loop and the function -/
 

@@ -671,8 +671,12 @@ def droppedStore (d : Decoded) (k : Nat) : Option (BitVec 32 × Nat) :=
   | some (.native op ops) =>
     match (op.info.operands.zip ops).find? (·.1.name == "d") with
     | some (_, .slot s) =>
+      let first := (op.info.mnemonic.splitOn ".").headD ""
       let w := if op.info.mnemonic == "mov.w128" then 8
         else if op.info.mnemonic == "addr" || op.info.mnemonic.startsWith "ptr" then 8
+        -- `cmp3` stores a byte, `cttz`/`ctlz` a `u32`, at any width.
+        else if first == "cmp3" then 1
+        else if first == "cttz" || first == "ctlz" then 4
         else ((secondWidth op.info.mnemonic).orElse fun _ => widthOfMnemonic op.info.mnemonic).getD 8
       some (s, w)
     | _ => none

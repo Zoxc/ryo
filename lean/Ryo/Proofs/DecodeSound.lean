@@ -937,6 +937,8 @@ theorem bs_insn {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {fr : V
     {ro : ByteArray} {q : Proto} (hk : LinkOk ctx m c rs) (hb : Boundary rs c.pos)
     (h : (insn fr ro).run c = .ok (q, c')) : Boundary rs c'.pos := by
   cases insn_read h with
+  -- The inline dense switch index (inline-forms): not yet covered (lean/PENDING.md).
+  | dense _ => sorry
   | handler hd hi hn hhh hs ht =>
     rename_i items hat n len nn op args' t' sites
     have hd' : Dec c c.pos (items ++ [.call (.handler n)]) (hat + len) :=
@@ -1214,6 +1216,8 @@ theorem bodySim_unreachable (_hD : Decodes S code relocs rodata callSites droppe
   exfalso
   obtain ⟨i, p1, ctr, hi, hio, -⟩ := protoFacts_insnOf hP
   cases hr with
+  -- The inline dense switch index (inline-forms): not yet covered (lean/PENDING.md).
+  | dense _ => sorry
   | handler _ _ _ hhh =>
     simp only at hop; subst hop
     simp [noHandler] at hhh
@@ -1300,6 +1304,8 @@ theorem bodySim_jmp (_hD : Decodes S code relocs rodata callSites dropped scopes
   obtain ⟨i, p1, ctr, hi, hio, hlt, hpk⟩ := protoFacts_insnOf hP
   have hb := hP.bound
   cases hr with
+  -- The inline dense switch index (inline-forms): not yet covered (lean/PENDING.md).
+  | dense _ => sorry
   | handler _ _ _ hhh =>
     simp only at hop; subst hop
     simp [noHandler] at hhh
@@ -1404,6 +1410,8 @@ theorem bodySim_of_read (hD : Decodes S code relocs rodata callSites dropped sco
     | unreachable => exact bodySim_unreachable hD H hP hn hir rfl
     | jmp => exact bodySim_jmp hD H hP hn hir rfl
     | island => exact bodySim_island hD H hP hn hir rfl
+    -- The inline dense switch index (inline-forms): not yet covered (lean/PENDING.md).
+    | dense _ => sorry
 
 /-! #### The iteration's prologue: padding and the counter check -/
 

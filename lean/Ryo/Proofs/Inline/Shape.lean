@@ -89,6 +89,15 @@ def classHandler : Class → Handlers.HandlerKind × List String
   | .ovf op sg w => (.ovf, [tyName sg w, if op == .add then "overflowing_add" else "overflowing_sub"])
   | .mulOvf sg w => (.ovf, [tyName sg w, "overflowing_mul"])
   | .ext a b sx => (.cvt, [tyName sx a, tyName sx b])
+  | .shiftVar sh w =>
+    match sh with
+    | .rol => (.rot, [tyName false w, "rotate_left"])
+    | .ror => (.rot, [tyName false w, "rotate_right"])
+    | _ => (.shift, [tyName (sh == .sar) w, shMethod sh])
+  | .div sg rem w => (.bin_fn, [tyName sg w, if rem then "unchecked_rem" else "unchecked_div"])
+  | .count lz w => (.count, [tyName false w, if lz then "leading_zeros" else "trailing_zeros"])
+  | .cmp3 sg w => (.cmp3, [tyName sg w])
+  | .bswap w => (.un, [tyName false w, "swap_bytes"])
 
 /-- The operands of the opcodes of a class. -/
 def classOperands : Class → List OperandInfo
@@ -100,7 +109,9 @@ def classOperands : Class → List OperandInfo
   | .ptrIndex => [⟨"d", .slot⟩, ⟨"p", .slot⟩, ⟨"i", .slot⟩, ⟨"stride", .u32⟩]
   | .load _ => [⟨"d", .slot⟩, ⟨"m", .mem⟩]
   | .store _ => [⟨"m", .mem⟩, ⟨"s", .slot⟩]
-  | .bin .. | .mul _ | .cmp .. => [⟨"d", .slot⟩, ⟨"a", .slot⟩, ⟨"b", .slot⟩]
+  | .bin .. | .mul _ | .cmp .. | .shiftVar .. | .div .. | .cmp3 .. =>
+    [⟨"d", .slot⟩, ⟨"a", .slot⟩, ⟨"b", .slot⟩]
+  | .count .. | .bswap _ => [⟨"d", .slot⟩, ⟨"a", .slot⟩]
   | .binImm _ w | .mulImm w | .shiftImm _ w | .cmpImm _ w =>
     [⟨"d", .slot⟩, ⟨"a", .slot⟩, ⟨"imm", (immKind w)⟩]
   | .br => [⟨"s", .slot⟩, ⟨"neg", .neg⟩, ⟨"t", .target⟩]

@@ -7,7 +7,7 @@ cache emits it (aot.md §C2 "Register cache", "Inline steps"; milestone M3 `deco
 - `sequence_ok`/`sequence_cacheSafe`: every item of `sequence cls ops` is `cacheSafe` and names
   no register but `rax`, `rcx` and `rbp` (`onlyARB`), given that `cls` isn't a sign extension
   from 64 bits (whose `movsx` at 64 bits `update` doesn't track; no inline opcode is one,
-  `inlineOps_ext`).
+  `inlineOps_ext`) nor one of the classes added later (`laterClass`: not covered yet).
 - `exec_swap`/`execItems_swap`: renaming is a register swap. With `rax` and `xr` swapped in the
   state (`swapS`) and the items (`swapR`), a `cacheSafe` sequence without `mulQ` (whose `rax`
   and `rdx` are fixed) runs as before, but for `rip` (a renamed item may be longer). On the
@@ -70,10 +70,12 @@ def seqItemOk (it : Item) : Bool := cacheSafe it && onlyARB it
 set_option maxHeartbeats 1000000 in
 /-- The items of an inline sequence are `cacheSafe` and name only `rax`, `rcx` and `rbp`. -/
 theorem sequence_ok {T : Type} {cls : Class} {ops : List (R.Opnd T)} {items : List Item}
-    {br : Option Cond} (hext : ∀ b, cls ≠ .ext .q b true) (h : sequence cls ops = some (items, br)) :
+    {br : Option Cond} (hext : ∀ b, cls ≠ .ext .q b true) (hlater : laterClass cls = false)
+    (h : sequence cls ops = some (items, br)) :
     ∀ it ∈ items, seqItemOk it = true := by
   intro it hit
-  cases cls <;> simp only [sequence, bind, Option.bind_eq_some_iff, pure] at h
+  cases cls <;> (try (simp [laterClass] at hlater; done)) <;>
+    simp only [sequence, bind, Option.bind_eq_some_iff, pure] at h
   all_goals (repeat' (first
     | (obtain ⟨_, hs, h⟩ := h
        split at hs <;> (try simp only [Option.some.injEq, reduceCtorEq] at hs) <;> (try subst hs))
@@ -92,9 +94,10 @@ theorem sequence_ok {T : Type} {cls : Class} {ops : List (R.Opnd T)} {items : Li
 
 /-- Every item of an inline sequence is one `update` tracks. -/
 theorem sequence_cacheSafe {T : Type} {cls : Class} {ops : List (R.Opnd T)} {items : List Item}
-    {br : Option Cond} (hext : ∀ b, cls ≠ .ext .q b true) (h : sequence cls ops = some (items, br)) :
+    {br : Option Cond} (hext : ∀ b, cls ≠ .ext .q b true) (hlater : laterClass cls = false)
+    (h : sequence cls ops = some (items, br)) :
     ∀ it ∈ items, cacheSafe it = true := fun it hit => by
-  have := sequence_ok hext h it hit
+  have := sequence_ok hext hlater h it hit
   simp only [seqItemOk, Bool.and_eq_true] at this
   exact this.1
 
@@ -226,7 +229,7 @@ theorem exec_swap (ctx : Ctx) {xr : Reg} (hc : xr ≠ .rcx) {it : Item} (hs : ca
 def inlineKind : Handlers.HandlerKind → Bool
   | .mov | .imm | .addr | .addr_const | .addr_sym | .ptr_add | .ptr_index | .load | .store
   | .bin | .binop | .bin_imm | .binop_imm | .shift_imm | .cmp | .cmp_imm | .br | .br_cmp
-  | .br_cmp_imm | .ovf | .cvt => true
+  | .br_cmp_imm | .ovf | .cvt | .shift | .rot | .bin_fn | .count | .cmp3 | .un => true
   | _ => false
 
 /-- The parameters of a `cvt` handler from `i64` to a signed integer. -/
@@ -335,6 +338,7 @@ theorem mapRegs_congr {f g : Reg → Reg} (hfg : ∀ r, okReg r = true → f r =
     intro rm hrm; cases rm <;> simp only [okRm] at hrm <;> simp [mapRegs.mapRm, hfg _ hrm]
   cases it <;> simp only [onlyARB, Bool.and_eq_true] at h <;> simp only [mapRegs] <;>
     first
+    | exact absurd h (by decide)
     | rfl
     | simp [hfg _ h]
     | simp [hfg _ h.1, hfg _ h.2]
@@ -439,6 +443,7 @@ theorem inline_step_cached (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.S
     {cls : Class} {cand : List Item} {br : Option Cond} {cache : Cache} (hsound : SoundC cls)
     (hinv : CacheInv cache x) (hr : RRel s x) (hi : c.d.insns[s.pc]? = some (.native op ops))
     (hf : op.full = some f) (hok : InlineOk f cls) (hext : ∀ b, cls ≠ .ext .q b true)
+    (hlater : laterClass cls = false)
     (hseq : sequence cls ops = some (cand, br)) (h : R.step c s ch = .ok (.step s')) :
     ∃ x', execItems ctx (cache.emit cand).1 x = .ok x' ∧ RRel s' x' ∧
       CacheInv (cache.emit cand).2 x' ∧
@@ -447,7 +452,7 @@ theorem inline_step_cached (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.S
       | none => s'.pc = s.pc + 1
       | some cond => ∃ neg t b, R.nativeCtl f ops = some (.branch neg t) ∧
           cond.eval x'.flags = .ok b ∧ s'.pc = if b then t else s.pc + 1 := by
-  have hok' := sequence_ok hext hseq
+  have hok' := sequence_ok hext hlater hseq
   have hsafe : ∀ it ∈ cand, cacheSafe it = true := fun it hit => by
     have := hok' it hit; simp only [seqItemOk, Bool.and_eq_true] at this; exact this.1
   -- The register `emit` puts the sequence in.

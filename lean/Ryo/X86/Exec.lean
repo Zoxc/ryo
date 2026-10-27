@@ -21,11 +21,23 @@ Flags (SDM Vol. 2, per instruction; `none` = undefined, see `Ryo.X86.State`):
 - `xor r32, r32` (`setReg r 0`) sets `ZF` and clears `CF OF SF`; the `mov` forms of `setReg`
   leave the flags alone. `sub rsp`/`add rsp` (`subRsp`/`addRsp`) set them as `sub`/`add`
   do; `inc` (`ctrInc`) as `add` of 1, but `CF`, which it keeps.
+- `shl`/`shr`/`sar`/`rol`/`ror` by `cl` (`shiftCl`): the count `cl` masked to 5 bits (6 at 64
+  bits), as for an immediate; a rotate at 8 or 16 bits rotates by that count modulo the width.
+  The shifts' flags as above, but `CF` undefined for `shl`/`shr` by at least the width (8- and
+  16-bit operands). Rotates (`rotF`): a masked count of 0 changes no flag; otherwise `CF` is the
+  bit rotated in last (`rol`: the result's LSB, `ror`: its MSB), `OF` is defined only for a
+  count of 1 (`rol`: `MSB xor CF`, `ror`: the XOR of the two top bits), and `SF`/`ZF` are kept.
+- `div`/`idiv`: all flags undefined; a zero divisor, or a quotient out of range, faults
+  (`Fault.divide`, `#DE`). `cdq`/`cqo`, `bswap`, `cmovcc`, `setcc r8`: no flags.
+- `bsf`/`bsr`: `ZF` is whether the source is zero; `CF`, `OF`, `SF` undefined. On a zero source
+  the destination is undefined: it gets `ctx.undef`, a value the context chooses (an oracle), so a
+  proof over every `ctx` holds whatever the CPU leaves there (as a later `cmovz` overwriting it
+  makes the inline `cttz`/`ctlz` do).
 - `lea` (`leaRbpRsp16`, `leaRspRbp16` too), `mov`, `movzx`/`movsx`, `setcc`, `push`/`pop`, `call`/`ret`, `leave`, `jmp`/`jcc`,
   SSE moves: no flags.
 
-Partial register writes: a 32-bit destination zero-extends into the 64-bit register; 8- and
-16-bit destinations merge into it (the byte registers are the low bytes: the encoder gives
+Partial register writes: a 32-bit destination zero-extends into the 64-bit register (also a
+`cmov` whose condition fails); 8- and 16-bit destinations merge into it (the byte registers are the low bytes: the encoder gives
 `sil`/`dil` a REX prefix, so `ah`–`bh` never occur). `movzx`/`movsx` (`ld` at `B`/`W`) write a
 32-bit destination. SSE: `movss`/`movsd` loads zero the rest of the register, stores write 4
 or 8 bytes; `movups` moves 16; `movd xmm, r32` zero-extends to 128 bits, `movd r32, xmm`
@@ -52,12 +64,17 @@ inductive Fault
   | notCode
   /-- An item outside what the encoder emits (e.g. an SSE move of another size). -/
   | badItem
+  /-- `div`/`idiv` by zero, or with a quotient that doesn't fit the width (`#DE`). -/
+  | divide
 deriving DecidableEq, Repr, ToJson, FromJson
 
 /-- Where the code runs: the function's address, and where its references live. -/
 structure Ctx where
   base : BitVec 64
   addrOf : RefAddr
+  /-- What an instruction writes where the SDM leaves its destination undefined (`bsf`/`bsr`
+  of zero): an oracle, so that facts proved for every `ctx` hold whatever the CPU writes. -/
+  undef : BitVec 64 := 0
 
 /-! ### Flag computations, at any width -/
 
@@ -104,7 +121,42 @@ def shiftF {n : Nat} (op : Sh) (a : BitVec n) (c : Nat) : BitVec n × Option Fla
       (r, a.getLsbD (n - c), if c = 1 then some (r.msb != a.getLsbD (n - c)) else none)
     | .shr => (a >>> c, a.getLsbD (c - 1), if c = 1 then some a.msb else none)
     | .sar => (a.sshiftRight c, a.getLsbD (c - 1), if c = 1 then some false else none)
+    -- `Item.shift` has no rotates (they aren't `wf`): these only make `shiftF` total, with
+    -- `SF`/`ZF` from the result; `shiftCl`'s rotates are `rotF`'s.
+    | .rol => let r := a.rotateLeft c; (r, r.getLsbD 0, none)
+    | .ror => let r := a.rotateRight c; (r, r.msb, none)
   (r, some { cf := some cf, of := of, zf := some (r == 0), sf := some r.msb })
+
+/-- A rotate (`rol`, else `ror`) by an already masked count `c`, modulo the width: the result
+and the new flags (`none`: unchanged, for a count of 0; else `SF`/`ZF` as in `f`). -/
+def rotF {n : Nat} (op : Sh) (a : BitVec n) (c : Nat) (f : Flags) : BitVec n × Option Flags :=
+  if c = 0 then (a, none) else
+  let r := if op == .rol then a.rotateLeft c else a.rotateRight c
+  let cf := if op == .rol then r.getLsbD 0 else r.msb
+  let of := if c = 1 then some (if op == .rol then r.msb != cf else r.msb != r.getLsbD (n - 2))
+    else none
+  (r, some { f with cf := some cf, of := of })
+
+/-- `div`/`idiv` of `hi:lo` by `b`: the quotient (truncated toward zero) and the remainder,
+or `none` for a zero divisor or a quotient that doesn't fit `n` bits (`#DE`). -/
+def divF (signed : Bool) {n : Nat} (hi lo b : BitVec n) : Option (BitVec n × BitVec n) :=
+  if b == 0 then none
+  else if signed then
+    let a := (hi ++ lo).toInt
+    let q := a.tdiv b.toInt
+    if -(2 ^ (n - 1) : Int) ≤ q ∧ q < 2 ^ (n - 1) then some (BitVec.ofInt n q, BitVec.ofInt n (a.tmod b.toInt))
+    else none
+  else
+    let a := hi.toNat * 2 ^ n + lo.toNat
+    if a / b.toNat < 2 ^ n then some (BitVec.ofNat n (a / b.toNat), BitVec.ofNat n (a % b.toNat))
+    else none
+
+/-- The bytes of `v` in reverse order (`bswap`). -/
+def bswapF {n : Nat} (v : BitVec n) : BitVec n := BitVec.ofNat n (ofLeBytes (leBytes v (n / 8)).reverse)
+
+/-- The index of the lowest set bit (`bsf`), or of the highest (`bsr`), of a non-zero `v`. -/
+def lowestSet {n : Nat} (v : BitVec n) : Nat := ((List.range n).find? (v.getLsbD ·)).getD 0
+def highestSet {n : Nat} (v : BitVec n) : Nat := ((List.range n).reverse.find? (v.getLsbD ·)).getD 0
 
 /-- Reads a flag, faulting if it is undefined. -/
 def need (name : String) : Option Bool → Except Fault Bool
@@ -274,6 +326,36 @@ def Item.exec (ctx : Ctx) (i : Item) (s : State) : Except Fault State :=
     let ovf := p ≥ 2 ^ 64
     let s1 := (s0.setReg .rax (BitVec.ofNat 64 p)).setReg .rdx (BitVec.ofNat 64 (p / 2 ^ 64))
     pure (s1.setFlags { cf := some ovf, of := some ovf, zf := none, sf := none })
+  | .shiftCl op w reg =>
+    let c := (s0.reg .rcx).toNat % (if w == .q then 64 else 32)
+    let v := s0.regW w reg
+    let (r, f) := if op.isShift then
+        let (r, f) := shiftF op v c
+        (r, if c ≥ w.bits && op != .sar then f.map ({ · with cf := none }) else f)
+      else rotF op v c s0.flags
+    let s1 := s0.setRegW w reg r
+    pure (match f with | some f => s1.setFlags f | none => s1)
+  | .div signed w rm =>
+    if w != .d && w != .q then throw .badItem else
+    match divF signed (s0.regW w .rdx) (s0.regW w .rax) (s0.rmW w rm) with
+    | none => throw .divide
+    | some (q, r) => pure (((s0.setRegW w .rax q).setRegW w .rdx r).setFlags {})
+  | .cdq w => pure (s0.setRegW w .rdx ((s0.regW w .rax).sshiftRight (w.bits - 1)))
+  | .bsf w reg rm =>
+    let v := s0.rmW w rm
+    let s1 := if v == 0 then s0.setReg reg ctx.undef else s0.setRegW w reg (BitVec.ofNat _ (lowestSet v))
+    pure (s1.setFlags { zf := some (v == 0) })
+  | .bsr w reg rm =>
+    let v := s0.rmW w rm
+    let s1 := if v == 0 then s0.setReg reg ctx.undef else s0.setRegW w reg (BitVec.ofNat _ (highestSet v))
+    pure (s1.setFlags { zf := some (v == 0) })
+  | .cmov cond w reg rm => do
+    let b ← cond.eval s0.flags
+    pure (s0.setRegW w reg (if b then s0.rmW w rm else s0.regW w reg))
+  | .setccR cond reg => do
+    let b ← cond.eval s0.flags
+    pure (s0.setRegW .b reg (if b then 1 else 0))
+  | .bswap w reg => pure (s0.setRegW w reg (bswapF (s0.regW w reg)))
   | .sse isSt size x m =>
     let a := s0.ea m
     let xi : Fin 16 := ⟨x % 16, Nat.mod_lt _ (by decide)⟩

@@ -39,7 +39,7 @@ theorem inlineOps_ext {f : Full.Opcode} {cls : Class} (h : (f, cls) ∈ inlineOp
 theorem inline_step_cached_ops (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
     {ch : OpSem.Choice} {op : Reduced.Opcode} {ops : List (R.Opnd Nat)} {f : Full.Opcode}
     {cls : Class} {cand : List Item} {br : Option Cond} {cache : Cache} (hsound : SoundC cls)
-    (hinv : CacheInv cache x) (hr : RRel s x) (hi : c.d.insns[s.pc]? = some (.native op ops))
+    (hlater : laterClass cls = false) (hinv : CacheInv cache x) (hr : RRel s x) (hi : c.d.insns[s.pc]? = some (.native op ops))
     (hf : op.full = some f) (hmem : (f, cls) ∈ inlineOps)
     (hseq : sequence cls ops = some (cand, br)) (h : R.step c s ch = .ok (.step s')) :
     ∃ x', execItems ctx (cache.emit cand).1 x = .ok x' ∧ RRel s' x' ∧
@@ -49,6 +49,6 @@ theorem inline_step_cached_ops (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X
       | none => s'.pc = s.pc + 1
       | some cond => ∃ neg t b, R.nativeCtl f ops = some (.branch neg t) ∧
           cond.eval x'.flags = .ok b ∧ s'.pc = if b then t else s.pc + 1 :=
-  inline_step_cached ctx hsound hinv hr hi hf (inlineOps_ok hmem) (inlineOps_ext hmem) hseq h
+  inline_step_cached ctx hsound hinv hr hi hf (inlineOps_ok hmem) (inlineOps_ext hmem) hlater hseq h
 
 end Ryo.Proofs.CacheStep

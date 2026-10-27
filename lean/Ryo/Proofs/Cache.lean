@@ -832,6 +832,28 @@ theorem CacheInv.exec_withRm {ctx : Ctx} {c : Cache} {x : X86.State} {it : Item}
         rw [rj n1 n2]
         rfl
       · exact nomatch ho
+  | div sg w' rm =>
+    cases rm with
+    | reg => simp [readOperand] at ho
+    | mem m' =>
+      simp only [readOperand] at ho
+      split at ho
+      · simp only [Option.some.injEq, Prod.mk.injEq] at ho
+        obtain ⟨rfl, rfl⟩ := ho
+        simp only [withRm, Item.exec, pure, Except.pure, Except.map, key]
+        generalize x.rip + BitVec.ofNat 64 (Item.div sg w' (.mem m')).size = n1
+        generalize x.rip + BitVec.ofNat 64 (Item.div sg w' (.reg pool[i]!)).size = n2
+        have rr : ∀ (a : BitVec 64) (w : W) (r : Reg), (x.jump a).regW w r = x.regW w r :=
+          fun _ _ _ => rfl
+        have rm2 : ∀ a : BitVec 64, (x.jump a).rmW w' (.reg pool[i]!) = x.rmW w' (.reg pool[i]!) :=
+          fun _ => rfl
+        simp only [rr, rm2]
+        split
+        · rfl
+        · cases divF sg (x.regW w' .rdx) (x.regW w' .rax) (x.rmW w' (.reg pool[i]!)) with
+          | none => rfl
+          | some p => cases w' <;> rfl
+      · exact nomatch ho
   | _ => simp [readOperand] at ho
 
 /-! ### `emit` -/
@@ -867,7 +889,7 @@ theorem exec_jump {ctx : Ctx} {it : Item} (hs : cacheSafe it = true) (s : X86.St
 /-- `emit`'s choice of register (its index in `pool`) and the items left once a dropped reload
 is gone. -/
 def emitHead (c : Cache) (items : List Item) : Nat × List Item :=
-  let pinned := items.any fun | .mulQ _ => true | _ => false
+  let pinned := items.any fun | .mulQ _ | .div .. => true | _ => false
   match items with
   | .ld w false .rax m :: tl =>
     if pinned then
@@ -1045,7 +1067,7 @@ theorem emitHead_cases (c : Cache) (items : List Item) (hsz : c.regs.size = 8) :
   dsimp only
   split
   · rename_i w m tl
-    by_cases hpin : ((Item.ld w false .rax m :: tl).any fun | .mulQ _ => true | _ => false) = true
+    by_cases hpin : ((Item.ld w false .rax m :: tl).any fun | .mulQ _ | .div .. => true | _ => false) = true
     · simp only [hpin, ↓reduceIte]
       by_cases hc : (m.base == Reg.rbp && c.regs[0]!.slot == some (m.disp, w)) = true
       · simp only [hc, ↓reduceIte]

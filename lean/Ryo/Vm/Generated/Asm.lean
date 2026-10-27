@@ -121,26 +121,26 @@ def asmInfos : Array AsmInfo := #[
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- add.w8
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- sub.w8
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- mul.w8
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- div.s.w8
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- div.u.w8
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rem.s.w8
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rem.u.w8
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- div.s.w8
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- div.u.w8
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rem.s.w8
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rem.u.w8
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- and.w8
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- or.w8
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- xor.w8
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- shl.w8
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- shr.s.w8
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- shr.u.w8
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- shl.w8
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- shr.s.w8
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- shr.u.w8
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- eq.w8
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- ne.w8
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- lt.s.w8
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- lt.u.w8
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- le.s.w8
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- le.u.w8
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- cmp3.s.w8
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- cmp3.u.w8
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rotl.w8
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rotr.w8
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- cmp3.s.w8
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- cmp3.u.w8
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rotl.w8
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rotr.w8
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- add.imm.w8
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- sub.imm.w8
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- mul.imm.w8
@@ -163,8 +163,8 @@ def asmInfos : Array AsmInfo := #[
   AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- neg.w8
   AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- not.w8
   AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- ctpop.w8
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- ctlz.w8
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- cttz.w8
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- ctlz.w8
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- cttz.w8
   AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- bitreverse.w8
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 0 4)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false, Loc.mk 4 0 1 false] 1 5)), -- add.ovf.s.w8
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 0 4)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false, Loc.mk 4 0 1 false] 1 5)), -- add.ovf.u.w8
@@ -175,26 +175,26 @@ def asmInfos : Array AsmInfo := #[
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- add.w16
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- sub.w16
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- mul.w16
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- div.s.w16
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- div.u.w16
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rem.s.w16
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rem.u.w16
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- div.s.w16
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- div.u.w16
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rem.s.w16
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rem.u.w16
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- and.w16
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- or.w16
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- xor.w16
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- shl.w16
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- shr.s.w16
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- shr.u.w16
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- shl.w16
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- shr.s.w16
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- shr.u.w16
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- eq.w16
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- ne.w16
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- lt.s.w16
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- lt.u.w16
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- le.s.w16
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- le.u.w16
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- cmp3.s.w16
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- cmp3.u.w16
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rotl.w16
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rotr.w16
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- cmp3.s.w16
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- cmp3.u.w16
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rotl.w16
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rotr.w16
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- add.imm.w16
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- sub.imm.w16
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- mul.imm.w16
@@ -217,9 +217,9 @@ def asmInfos : Array AsmInfo := #[
   AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- neg.w16
   AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- not.w16
   AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- ctpop.w16
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- ctlz.w16
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- cttz.w16
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- bswap.w16
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- ctlz.w16
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- cttz.w16
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- bswap.w16
   AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- bitreverse.w16
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 0 4)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false, Loc.mk 4 0 1 false] 1 5)), -- add.ovf.s.w16
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 0 4)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false, Loc.mk 4 0 1 false] 1 5)), -- add.ovf.u.w16
@@ -230,26 +230,26 @@ def asmInfos : Array AsmInfo := #[
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- add.w32
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- sub.w32
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- mul.w32
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- div.s.w32
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- div.u.w32
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rem.s.w32
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rem.u.w32
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- div.s.w32
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- div.u.w32
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rem.s.w32
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rem.u.w32
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- and.w32
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- or.w32
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- xor.w32
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- shl.w32
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- shr.s.w32
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- shr.u.w32
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- shl.w32
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- shr.s.w32
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- shr.u.w32
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- eq.w32
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- ne.w32
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- lt.s.w32
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- lt.u.w32
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- le.s.w32
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- le.u.w32
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- cmp3.s.w32
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- cmp3.u.w32
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rotl.w32
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rotr.w32
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- cmp3.s.w32
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- cmp3.u.w32
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rotl.w32
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rotr.w32
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- add.imm.w32
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- sub.imm.w32
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- mul.imm.w32
@@ -272,9 +272,9 @@ def asmInfos : Array AsmInfo := #[
   AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- neg.w32
   AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- not.w32
   AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- ctpop.w32
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- ctlz.w32
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- cttz.w32
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- bswap.w32
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- ctlz.w32
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- cttz.w32
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- bswap.w32
   AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- bitreverse.w32
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 0 4)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false, Loc.mk 4 0 1 false] 1 5)), -- add.ovf.s.w32
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 0 4)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false, Loc.mk 4 0 1 false] 1 5)), -- add.ovf.u.w32
@@ -285,26 +285,26 @@ def asmInfos : Array AsmInfo := #[
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- add.w64
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- sub.w64
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- mul.w64
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- div.s.w64
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- div.u.w64
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rem.s.w64
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rem.u.w64
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- div.s.w64
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- div.u.w64
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rem.s.w64
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rem.u.w64
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- and.w64
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- or.w64
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- xor.w64
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- shl.w64
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- shr.s.w64
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- shr.u.w64
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- shl.w64
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- shr.s.w64
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- shr.u.w64
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- eq.w64
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- ne.w64
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- lt.s.w64
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- lt.u.w64
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- le.s.w64
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- le.u.w64
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- cmp3.s.w64
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- cmp3.u.w64
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rotl.w64
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rotr.w64
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- cmp3.s.w64
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- cmp3.u.w64
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rotl.w64
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- rotr.w64
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- add.imm.w64
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- sub.imm.w64
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 0 3)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 1 4)), -- mul.imm.w64
@@ -327,9 +327,9 @@ def asmInfos : Array AsmInfo := #[
   AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- neg.w64
   AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- not.w64
   AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- ctpop.w64
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- ctlz.w64
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- cttz.w64
-  AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- bswap.w64
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- ctlz.w64
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- cttz.w64
+  AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- bswap.w64
   AsmInfo.mk true false (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false] 0 2)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false] 1 3)), -- bitreverse.w64
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 0 4)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false, Loc.mk 4 0 1 false] 1 5)), -- add.ovf.s.w64
   AsmInfo.mk true true (some (Layout.mk [Loc.mk 0 0 1 false, Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false] 0 4)) (some (Layout.mk [Loc.mk 1 0 1 false, Loc.mk 2 0 1 false, Loc.mk 3 0 1 false, Loc.mk 4 0 1 false] 1 5)), -- add.ovf.u.w64
