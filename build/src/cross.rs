@@ -14,8 +14,9 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
-use crate::test::{CORPUS, CrateKind, Program};
+use crate::test::{CORPUS, Crate, CrateKind, Program};
 use crate::utils::{RustcInfo, cmd, dist_bin, exe_name, root, ryo_rt_rlib};
 
 /// Import libraries std, `ryo_rt` and the corpus name on windows-msvc, replaced by empty
@@ -285,21 +286,8 @@ impl Link<'_> {
         if let Some(lib) = &program.native_lib {
             lib.build(self.info, dir, Some(self.target))?;
         }
-        for krate in program.crates {
-            let mut c = cmd(compiler.get_program());
-            c.env("RYO_STATS", "1")
-                .arg("--edition=2024")
-                .arg(tests.join(krate.src))
-                .args(krate.kind.flags())
-                .args(["--crate-name", krate.name, "--target", self.target])
-                .arg("--out-dir")
-                .arg(dir)
-                .arg("-L")
-                .arg(dir)
-                .args(program.flags)
-                .arg(format!("-Clinker={}", self.lld.display()))
-                .arg("-L")
-                .arg(&self.stubs);
+        let extra = |krate: &Crate, c: &mut Command| {
+            c.env("RYO_STATS", "1").args(["--target", self.target]).arg(format!("-Clinker={}", self.lld.display())).arg("-L").arg(&self.stubs);
             if self.macho {
                 // rustc asks `xcrun` for the SDK unless `SDKROOT` names one; the stand-ins are
                 // all the SDK there is.
@@ -311,19 +299,12 @@ impl Link<'_> {
             } else {
                 c.args(["-Clinker-flavor=lld-link", "-Clink-arg=/force:unresolved", "-Clink-arg=/DEBUG:NONE"]);
             }
-            if std::ptr::eq(krate, program.crates.last().unwrap()) {
-                c.args(final_flags);
-            }
             if krate.kind == CrateKind::Bin && !self.macho {
                 // There is no CRT to provide the default entry point.
                 c.arg("-Clink-arg=/entry:mainCRTStartup");
             }
-            for dep in program.crates.iter().take_while(|d| d.name != krate.name) {
-                if dep.kind != CrateKind::Bin {
-                    c.args(["--extern", dep.name]);
-                }
-            }
-            let stderr = crate::utils::capture_ok(&mut c)?.stderr;
+        };
+        for (_, stderr) in program.compile(&tests, dir, || cmd(compiler.get_program()), extra, final_flags)? {
             undefined.extend(undefined_symbols(&stderr));
             vm_fns.extend(crate::test::vm_functions(&stderr));
         }

@@ -819,28 +819,16 @@ impl Ctx<'_> {
         let mut exe = None;
         let mut vm_fns = Vec::new();
         let mut native_libs = Vec::new();
-        for krate in program.crates {
-            let mut c = self.compiler(variant);
-            c.arg("--edition=2024")
-                .arg(self.tests.join(krate.src))
-                .args(krate.kind.flags())
-                .args(["--crate-name", krate.name])
-                .arg("--out-dir")
-                .arg(&dir)
-                .arg("-L")
-                .arg(&dir)
-                .args(program.flags)
-                .args(variant.flags);
-            if std::ptr::eq(krate, program.crates.last().unwrap()) {
-                c.args(variant.final_flags);
-            }
-            // Every library crate is a dependency of the crates after it.
-            for dep in program.crates.iter().take_while(|d| d.name != krate.name) {
-                if !matches!(dep.kind, CrateKind::Bin | CrateKind::Staticlib | CrateKind::Cdylib) {
-                    c.args(["--extern", dep.name]);
-                }
-            }
-            let stderr = crate::utils::capture_ok(&mut c)?.stderr;
+        let stderrs = program.compile(
+            &self.tests,
+            &dir,
+            || self.compiler(variant),
+            |_, c| {
+                c.args(variant.flags);
+            },
+            variant.final_flags,
+        )?;
+        for (krate, stderr) in stderrs {
             if variant.compiler == Compiler::Ryo {
                 if !stderr.contains(BACKEND_MARKER) || !stderr.contains(PARTITION_MARKER) {
                     return Err(format!("the ryo backend didn't build {}; stderr:\n{stderr}", krate.name));

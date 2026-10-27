@@ -1,6 +1,7 @@
 //! The test corpus: the programs under `tests/` and how to build them.
 
 use std::path::Path;
+use std::process::Command;
 
 use crate::utils::{cmd, root};
 
@@ -47,6 +48,43 @@ impl Program {
             return Err(format!("compiled to bytecode, but must stay native: {wrong:?}"));
         }
         Ok(())
+    }
+
+    /// Compiles each crate, in order, from `tests` into `dir` with `compiler()`: the common
+    /// flags, then `extra(krate, cmd)`'s, then `final_flags` on the last crate. Every library
+    /// crate is an `--extern` of the crates after it. Returns each crate's stderr.
+    pub(crate) fn compile(
+        &self,
+        tests: &Path,
+        dir: &Path,
+        compiler: impl Fn() -> Command,
+        extra: impl Fn(&Crate, &mut Command),
+        final_flags: &[&str],
+    ) -> Result<Vec<(&'static Crate, String)>, String> {
+        let mut stderrs = Vec::new();
+        for (i, krate) in self.crates.iter().enumerate() {
+            let mut c = compiler();
+            c.arg("--edition=2024")
+                .arg(tests.join(krate.src))
+                .args(krate.kind.flags())
+                .args(["--crate-name", krate.name])
+                .arg("--out-dir")
+                .arg(dir)
+                .arg("-L")
+                .arg(dir)
+                .args(self.flags);
+            extra(krate, &mut c);
+            if i + 1 == self.crates.len() {
+                c.args(final_flags);
+            }
+            for dep in &self.crates[..i] {
+                if !matches!(dep.kind, CrateKind::Bin | CrateKind::Staticlib | CrateKind::Cdylib) {
+                    c.args(["--extern", dep.name]);
+                }
+            }
+            stderrs.push((krate, crate::utils::capture_ok(&mut c)?.stderr));
+        }
+        Ok(stderrs)
     }
 }
 
