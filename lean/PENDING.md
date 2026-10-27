@@ -3,16 +3,6 @@
 Rust-side changes that the Lean model or proofs don't reflect yet. Add an entry per change;
 remove it once a Lean session has handled it.
 
-- Win64 argument plans and returns (`lower/sig.rs`, `arg_plan`/`ret_kind`; Lean
-  `Check/Lower/Plan.lean`, `RyoTest/CertCheck.lean`'s `win64`) no longer reject `i128`,
-  `f16` and `f128`: on PE an `i128` integer piece is two 8-byte pieces (low half first),
-  each taking the next position (register `pos < 4` or an 8-byte stack slot); an `f16`
-  float piece is placed like `f32`/`f64` (`xmm` of its position, size 2, or an 8-byte slot);
-  a `Direct` `f128` argument is placed like an `Indirect` one (`ptrReg`/`ptrStack`); a
-  `Direct` `f128` return is `RET_SRET`; an `f128` in a `Pair` argument or return is still
-  rejected. `i128` returns are `rax:rdx` and `f16` returns `xmm0` as on SysV. Commit: "Win64:
-  pass i128, f16 and f128 as LLVM does".
-
 - Image writer: `ImageWriter::set_eh_pointers(EhPointers::Abs8)` (Mach-O images) writes
   the CIE's L and R encodings as `DW_EH_PE_pcrel | DW_EH_PE_absptr` (0x10), and each FDE's
   `pc_begin`, `pc_range` and LSDA pointer as 8 bytes (augmentation length 8), with
@@ -31,17 +21,6 @@ remove it once a Lean session has handled it.
   equal exactly the pool's `R_X86_64_64` relocation offsets (`Image.world` already iterates
   them). Nothing in the VM semantics reads it (the JIT's constant-load fold does). Commit:
   "Image: list the constant pool's relocated fields".
-
-- The backend lowers `simd_splat/eq/lt/gt/bitmask` at 16 × i8/u8 to `vsplat`/`veq`/`vlt.s`/
-  `vmsb.i8x16` (`simd_gt(a, b)` as `vlt.s(b, a)`) and `simd_and/or/xor` on 16-byte integer
-  vectors to `and/or/xor.w128` (`lower/simd.rs`); trusted like the island contracts until L0
-  has `simd_*` semantics (`simd_bitmask`'s all-0/all-1 lane precondition, which `vmsb`
-  refines). Commit: "Lower i8x16 simd_* intrinsics to VM opcodes".
-
-- Functions whose `#[target_feature]`s are all enabled for the crate are now lowered as VM
-  functions; inside them a `simd_*` intrinsic without an instruction is `NeedsNative`
-  instead of an island (`FnCx::strict_simd`). Only matters if the Lean model covers which
-  functions are VM code. Commit: "Lower baseline #[target_feature] functions as VM code".
 
 - Image identity and registration through the linker (CGU plan stage 3). The image symbol is
   `__ryo_image_<StableCrateId>_<CGU hash>` (both 16 hex digits; the CGU hash is

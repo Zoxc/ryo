@@ -181,6 +181,12 @@ the backend gained them):
   lowering); the fused form (a `SwitchInt` testing the tag with `br.eq.imm`, or `sub.imm` +
   `br.gt.u.imm` + `switch.dense` past 4 arms) is not, and nothing checks the model against
   the emitted ops.
+- `simd_splat`/`simd_eq`/`simd_bitmask` at 16 × `i8`/`u8` and `simd_lt`/`simd_gt` at 16 ×
+  `i8`: `vsplat`, `veq`, `vmsb.i8x16`, `vlt.s.i8x16` (`simd_gt(a, b)` as `vlt.s(b, a)`); `simd_and`/`or`/`xor` on
+  16-byte integer vectors: `and`/`or`/`xor.w128` (`lower/simd.rs`), not islands. Trusted like
+  the island contracts until L0 has `simd_*` semantics (`vmsb` refines `simd_bitmask`'s
+  all-0/all-1 lane precondition). The certificate check sees no call there, so nothing in it
+  changes. ("Lower i8x16 simd_* intrinsics to VM opcodes".)
 
 **Incremental coverage**: the checker reports per function `validated | unsupported(rule) |
 rejected(reason)`, totalled like `RYO_STATS`. `rejected` is a bug in the backend or the

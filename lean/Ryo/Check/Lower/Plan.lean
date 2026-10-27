@@ -66,15 +66,23 @@ def slot (size : Nat) : PlanM Nat := modifyGet fun st =>
   let at_ := roundUp st.stack (if size == 16 && !st.pe then 16 else 8)
   (at_, { st with stack := at_ + roundUp size 8 })
 
-/-- `State::int`: an integer of `size` bytes (1 to 8, or 16 for `i128` on SysV) at `off`. -/
+/-- `State::int` on Win64 for an integer of 1 to 8 bytes: the next position, or an 8-byte
+stack slot. -/
+def peInt (size off : Nat) : PlanM ArgLoc := do
+  let st ← get
+  let l ← if st.pos < 4 then pure (ArgLoc.reg ⟨false, size, st.pos⟩ off)
+    else do pure (.stack (← slot 8) off size)
+  modify fun s => { s with pos := s.pos + 1 }
+  return l
+
+/-- `State::int`: an integer of `size` bytes (1 to 8, or 16 for `i128`) at `off`. On Win64 an
+`i128` is two 8-byte integers, low half first, each taking the next position (so it can
+straddle `r9` and the stack). -/
 def int (size off : Nat) : PlanM (List ArgLoc) := do
   let st ← get
   if st.pe then
-    if size > 8 then throw "i128 argument on Win64"
-    let l ← if st.pos < 4 then pure (ArgLoc.reg ⟨false, size, st.pos⟩ off)
-      else do pure (.stack (← slot 8) off size)
-    modify fun s => { s with pos := s.pos + 1 }
-    return [l]
+    if size == 16 then return [← peInt 8 off, ← peInt 8 (off + 8)]
+    return [← peInt size off]
   else if size == 16 then
     if st.gpr ≤ 4 then
       set { st with gpr := st.gpr + 2 }
@@ -84,20 +92,6 @@ def int (size off : Nat) : PlanM (List ArgLoc) := do
     set { st with gpr := st.gpr + 1 }
     return [.reg ⟨false, size, st.gpr⟩ off]
   else do return [.stack (← slot 8) off size]
-
-/-- `State::float`: a float of `size` bytes at `off`. -/
-def float (size off : Nat) : PlanM (List ArgLoc) := do
-  let st ← get
-  if st.pe then
-    if size != 4 && size != 8 then throw "f16 or f128 argument on Win64"
-    let l ← if st.pos < 4 then pure (ArgLoc.reg ⟨true, size, st.pos⟩ off)
-      else do pure (.stack (← slot 8) off size)
-    modify fun s => { s with pos := s.pos + 1 }
-    return [l]
-  else if st.xmm < 8 then
-    set { st with xmm := st.xmm + 1 }
-    return [.reg ⟨true, size, st.xmm⟩ off]
-  else do return [.stack (← slot (max size 8)) off size]
 
 /-- `State::ptr`: an `Indirect` input's pointer. -/
 def ptr : PlanM (List ArgLoc) := do
@@ -110,6 +104,22 @@ def ptr : PlanM (List ArgLoc) := do
   if st.pe then modify fun s => { s with pos := s.pos + 1 }
   else if reg.isSome then modify fun s => { s with gpr := s.gpr + 1 }
   return [l]
+
+/-- `State::float`: a float of `size` bytes at `off`. -/
+def float (size off : Nat) : PlanM (List ArgLoc) := do
+  let st ← get
+  if st.pe then
+    -- An `f16` goes in the low 2 bytes of its `xmm` or its 8-byte stack slot; an `f128` is
+    -- passed by reference (`Direct` ones only: `argPlan` rejects one in a `Pair`).
+    if size == 16 then return ← ptr
+    let l ← if st.pos < 4 then pure (ArgLoc.reg ⟨true, size, st.pos⟩ off)
+      else do pure (.stack (← slot 8) off size)
+    modify fun s => { s with pos := s.pos + 1 }
+    return [l]
+  else if st.xmm < 8 then
+    set { st with xmm := st.xmm + 1 }
+    return [.reg ⟨true, size, st.xmm⟩ off]
+  else do return [.stack (← slot (max size 8)) off size]
 
 def scalar (s : AbiScalar) : PlanM (List ArgLoc) :=
   if s.float then float s.size s.off else int s.size s.off
@@ -132,7 +142,11 @@ def argPlan (pe : Bool) (abi : FnAbiSummary) (sret : Bool) : Except String ArgPl
     match a.mode, a.scalars with
     | .ignore, _ => pure []
     | .direct, some [s] => PlanM.scalar s
-    | .pair, some [x, y] => do return (← PlanM.scalar x) ++ (← PlanM.scalar y)
+    | .pair, some [x, y] => do
+      -- A pointer to one half of the input isn't an `ArgLoc`.
+      if pe && [x, y].any (fun s => s.float && s.size == 16) then
+        throw "f128 in a pair argument on Win64"
+      return (← PlanM.scalar x) ++ (← PlanM.scalar y)
     | .cast, _ => match castScalar? a with
       | some s => PlanM.int s.size 0
       | none => throw s!"argument passed as Cast {a.detail}"
@@ -144,8 +158,14 @@ def argPlan (pe : Bool) (abi : FnAbiSummary) (sret : Bool) : Except String ArgPl
 /-- `ret_kind`: how a VM function of this signature returns its value (`asm::ret_kind`'s
 encoding, `RET_SRET` for an `Indirect` return). -/
 def retKindOf (pe : Bool) (ret : ArgAbi) : Except String Nat := do
+  -- Win64: an `f128` comes back in memory the caller passes the address of, like an sret
+  -- (`i128` in `rax:rdx` as on SysV, `f16` in `xmm0`); not in a pair.
+  if pe && ret.mode matches .direct | .pair then
+    if let some ss := ret.scalars then
+      if ss.any (fun s => s.float && s.size == 16) then
+        if ss.length > 1 then throw "f128 in a returned pair on Win64"
+        return Ryo.Check.Image.RET_SRET
   let scalar (s : AbiScalar) : Except String (List RetPart) := do
-    if pe && (s.size == 16 || s.size == 2 && s.float) then throw "i128, f16 or f128 return on Win64"
     if s.float then return [⟨true, s.size, s.off⟩]
     if s.size == 16 then return [⟨false, 8, s.off⟩, ⟨false, 8, s.off + 8⟩]
     return [⟨false, s.size, s.off⟩]

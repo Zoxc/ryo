@@ -16,7 +16,8 @@ open Ryo.Spec Ryo.Vm.Asm Ryo.Check.Lower
 
 def RET_SRET : Nat := Ryo.Check.Image.RET_SRET
 
-/-- Arguments by their scalars (`"i8"` … `"i128"`, `"ptr"`, `"f32"`, `"f64"`, `"f128"`). -/
+/-- Arguments by their scalars (`"i8"` … `"i128"`, `"ptr"`, `"f16"`, `"f32"`, `"f64"`,
+`"f128"`). -/
 def scalarOf (s : String) (off : Nat := 0) : AbiScalar :=
   match s with
   | "i8" => ⟨false, 1, off⟩ | "i16" => ⟨false, 2, off⟩ | "i32" => ⟨false, 4, off⟩
@@ -107,9 +108,25 @@ def win64 : Except String Unit := do
   -- sret takes position 0; `Indirect` pointers take positions too.
   expectSig true (sig [indirect 24, i64, indirect 16, indirect 8] (indirect 40))
     RET_SRET [[.ptrReg 1], [r 2 8], [.ptrReg 3], [.ptrStack 32]] 48
-  expectNoSig true (sig [direct "i128"]) "i128 argument on Win64"
-  expectNoSig true (sig [direct "f16"]) "f16 or f128 argument"
-  expectNoSig true (sig [] (direct "i128")) "i128, f16 or f128 return"
+  -- An `i128` is two 8-byte positions, low half first; it can straddle `r9` and the stack.
+  expectSig true (sig [direct "i128", i64])
+    0 [[r 0 8 0, r 1 8 8], [r 2 8]] 32
+  expectSig true (sig [i64, i64, f64, direct "i128", direct "i128"])
+    0 [[r 0 8], [r 1 8], [x 2 8], [r 3 8 0, .stack 32 8 8], [.stack 40 0 8, .stack 48 8 8]] 64
+  -- An `f16` takes its position's `xmm` (2 bytes) or an 8-byte slot.
+  expectSig true (sig [direct "f16", i64, i64, i64, direct "f16"])
+    0 [[x 0 2], [r 1 8], [r 2 8], [r 3 8], [.stack 32 0 2]] 48
+  -- A `Direct` `f128` is passed by reference, like an `Indirect` input.
+  expectSig true (sig [i64, direct "f128", f64, i64, direct "f128"])
+    0 [[r 0 8], [.ptrReg 1], [x 2 8], [r 3 8], [.ptrStack 32]] 48
+  -- Returns: `i128` in `rax:rdx`, `f16` in `xmm0`, `f128` as sret (taking position 0).
+  expectSig true (sig [] (direct "i128")) (retKind [⟨false, 8, 0⟩, ⟨false, 8, 8⟩]) [] 32
+  expectSig true (sig [] (direct "f16")) (retKind [⟨true, 2, 0⟩]) [] 32
+  expectSig true (sig [direct "f128", i64] (direct "f128")) RET_SRET [[.ptrReg 1], [r 2 8]] 32
+  -- An `f128` in a `Pair` stays native; on SysV it doesn't.
+  expectNoSig true (sig [pair "f128" "i64" 16]) "f128 in a pair argument on Win64"
+  expectNoSig true (sig [] (pair "i64" "f128" 16)) "f128 in a returned pair on Win64"
+  expectSig false (sig [pair "f128" "i64" 16]) 0 [[x 0 16, r 0 8 16]] 0
 
 def certJson : String := "{\"functions\":[{\"symbol\":\"f\",\"cert\":{\"frameSize\":48,\"outgoing\":16,\"argSize\":16,\"retKind\":2147483648,\"locals\":[{\"off\":-16,\"size\":16},{\"off\":-24,\"size\":8}],\"localsEnd\":32,\"tempsEnd\":48,\"exception\":-40,\"sret\":-32,\"argHomes\":[-24,-48],\"argPtrs\":[null,-8],\"callerLocation\":null,\"spreadArg\":2,\"plan\":{\"stackSize\":16,\"locs\":[[{\"reg\":{\"xmm\":true,\"size\":8,\"index\":0},\"off\":0}],[{\"ptrReg\":1}],[{\"stack\":0,\"off\":8,\"size\":4}],[{\"ptrStack\":8}]]},\"prologue\":[0,3],\"blocks\":[{\"stmts\":[[3,3],[3,5]],\"term\":[5,7],\"fused\":true}],\"stubs\":[{\"reason\":\"abi\",\"insns\":[7,8]}],\"pads\":[{\"insns\":[8,10],\"block\":null}],\"calls\":[{\"insn\":6,\"kind\":\"dropVm\",\"retKind\":0,\"retSize\":0,\"plan\":null},{\"insn\":7,\"kind\":\"tailPtr\",\"retKind\":8,\"retSize\":8,\"plan\":{\"stackSize\":0,\"locs\":[]}}]}}],\"islands\":[{\"symbol\":\"isl\",\"template\":\"ryo_rt::island::call\"}]}"
 
