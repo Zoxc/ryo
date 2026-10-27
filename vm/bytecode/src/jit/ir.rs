@@ -249,6 +249,19 @@ pub struct HCall {
     pub site: Site,
 }
 
+impl Call {
+    /// The index of the argument passed in the callee's entry register `r`.
+    pub fn arg_for(&self, r: &ArgReg) -> Option<usize> {
+        self.regs.iter().position(|x| x.xmm == r.xmm && x.index == r.index)
+    }
+
+    /// The bytes of argument `ai` that the call defines: it zero-extends the argument to its
+    /// register's size (at most 8); past that, the register's bytes are unspecified.
+    pub fn arg_width(&self, ai: usize) -> u8 {
+        (self.regs[ai].size as u8).min(8)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CallTarget {
     /// A function of the image: `call rel32`.
@@ -675,6 +688,11 @@ pub struct Func {
 }
 
 impl Func {
+    /// The index of the entry block, if any.
+    pub fn entry(&self) -> Option<usize> {
+        self.blocks.iter().position(|b| b.kind == BlockKind::Entry)
+    }
+
     /// The blocks that can run: the layout and the OSR entries.
     pub fn live_blocks(&self) -> Vec<Block> {
         let mut v = self.layout.clone();

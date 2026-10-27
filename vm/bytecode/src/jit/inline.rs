@@ -314,7 +314,7 @@ pub const PARAMS: Params = Params {
 /// [`super::opt::run`]: the trial of §5. The parameters stay, unused.
 pub fn specialize(c: &Func, consts: &[Option<(u64, u8)>], mem: Option<&dyn super::opt::ConstMem>) -> Func {
     let mut g = c.clone();
-    let Some(entry) = g.blocks.iter().position(|b| b.kind == BlockKind::Entry) else { return g };
+    let Some(entry) = g.entry() else { return g };
     let params = g.blocks[entry].params.clone();
     let mut to: Vec<Option<Value>> = alloc::vec![None; g.values.len()];
     for (n, &p) in params.iter().enumerate() {
@@ -568,7 +568,7 @@ fn local_alloca(nodes: &[Node], root: &Func, memo: &mut BTreeMap<(usize, u32), b
         let pf: &Func = nodes[parent].ir.as_deref().unwrap_or(root);
         let site = &pf.insts[nodes[k].site.idx()];
         let Op::Call(call) = &site.op else { return false };
-        let Some(ai) = call.regs.iter().position(|x| x.xmm == r.xmm && x.index == r.index) else { return false };
+        let Some(ai) = call.arg_for(&r) else { return false };
         v = site.args[ai];
         k = parent;
     }
@@ -599,14 +599,14 @@ fn promotion(
     c: &Func,
     sh: &Shape,
 ) -> f64 {
-    let Some(entry) = c.blocks.iter().position(|b| b.kind == BlockKind::Entry) else { return 0.0 };
+    let Some(entry) = c.entry() else { return 0.0 };
     let pf: &Func = nodes[parent].ir.as_deref().unwrap_or(root);
     let mut total = 0.0;
     for (n, r) in c.entry_regs.iter().enumerate() {
         if r.xmm || r.size != 8 {
             continue;
         }
-        let Some(ai) = call.regs.iter().position(|x| x.xmm == r.xmm && x.index == r.index) else { continue };
+        let Some(ai) = call.arg_for(r) else { continue };
         if !local_alloca(nodes, root, memo, parent, pf.insts[site.idx()].args[ai]) {
             continue;
         }
@@ -651,12 +651,12 @@ fn blocker(c: &Func, call: &Call, unwind: Site) -> Option<&'static str> {
     if !call.regs.iter().all(|r| size_ok(r.size)) || !call.parts.iter().all(|p| size_ok(p.size)) {
         return Some("argument or result sizes");
     }
-    let Some(entry) = c.blocks.iter().position(|b| b.kind == BlockKind::Entry) else { return Some("no entry") };
+    let Some(entry) = c.entry() else { return Some("no entry") };
     if c.blocks[entry].params.len() != c.entry_regs.len() {
         return Some("entry parameters");
     }
     for r in &c.entry_regs {
-        if !size_ok(r.size) || !call.regs.iter().any(|x| x.xmm == r.xmm && x.index == r.index) {
+        if !size_ok(r.size) || !call.arg_for(r).is_some() {
             return Some("an argument register the call doesn't set");
         }
     }
@@ -892,10 +892,10 @@ pub fn inline(
                 .entry_regs
                 .iter()
                 .map(|r| {
-                    let ai = call.regs.iter().position(|x| x.xmm == r.xmm && x.index == r.index)?;
+                    let ai = call.arg_for(r)?;
                     let v = pf.insts[site.idx()].args[ai];
                     // The call zero-extends past its register's size and the value's width.
-                    let w = pf.w(v).min((call.regs[ai].size as u8).min(8));
+                    let w = pf.w(v).min(call.arg_width(ai));
                     match pf.def(v) {
                         ValueDef::Const(bits) => Some((mask(bits, w), w)),
                         _ => None,
@@ -1177,7 +1177,7 @@ pub fn splice(f: &mut Func, call: Inst, c: &Func) {
     };
 
     // Blocks and values.
-    let entry = c.blocks.iter().position(|b| b.kind == BlockKind::Entry).expect("an entry");
+    let entry = c.entry().expect("an entry");
     let mut bmap: Vec<Option<Block>> = alloc::vec![None; c.blocks.len()];
     for &cb in &c.layout {
         let kind = if c.blocks[cb.idx()].kind == BlockKind::Stub { BlockKind::Stub } else { BlockKind::Body };
@@ -1187,10 +1187,8 @@ pub fn splice(f: &mut Func, call: Inst, c: &Func) {
     // The entry's parameters: the arguments, widened where the callee reads more bytes.
     for (n, &p) in c.blocks[entry].params.iter().enumerate() {
         let r = c.entry_regs[n];
-        let a = cl.regs.iter().position(|x| x.xmm == r.xmm && x.index == r.index).expect("checked");
-        // The call zero-extends an argument to its register's size; past that, the
-        // register's bytes are unspecified.
-        let size = (cl.regs[a].size as u8).min(8);
+        let a = cl.arg_for(&r).expect("checked");
+        let size = cl.arg_width(a);
         let a = id.args[a];
         let from = f.w(a).min(size);
         let v = if from < c.w(p) && !matches!(f.def(a), ValueDef::Undef) {
