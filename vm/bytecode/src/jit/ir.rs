@@ -1071,8 +1071,11 @@ pub fn mask(v: u64, w: u8) -> u64 {
     if w >= 8 { v } else { v & ((1u64 << (8 * w)) - 1) }
 }
 
-/// `v`'s low `w` bytes, sign-extended.
+/// `v`'s low `w` bytes, sign-extended (`v` itself for `w >= 8`).
 pub fn sext(v: u64, w: u8) -> i64 {
+    if w >= 8 {
+        return v as i64;
+    }
     let s = 64 - 8 * w as u32;
     ((v << s) as i64) >> s
 }

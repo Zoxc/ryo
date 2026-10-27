@@ -83,16 +83,6 @@ fn fits32(v: i64) -> bool {
     v as i32 as i64 == v
 }
 
-/// `v`'s low `w` bytes, sign-extended.
-fn sext(v: u64, w: u8) -> i64 {
-    match w {
-        1 => v as u8 as i8 as i64,
-        2 => v as u16 as i16 as i64,
-        4 => v as u32 as i32 as i64,
-        _ => v as i64,
-    }
-}
-
 /// An operand source.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Src {
@@ -1443,13 +1433,7 @@ impl<'a> E<'a> {
             Src::R(x) => Rm::R(x),
             Src::M(m) => Rm::M(m),
             Src::Imm(c) => {
-                let c = if sx {
-                    sext(c, from) as u64
-                } else if from < 8 {
-                    c & ((1 << (8 * from)) - 1)
-                } else {
-                    c
-                };
+                let c = if sx { sext(c, from) as u64 } else { mask(c, from) };
                 return self.a.x().mov_imm(8, Rm::R(r), c);
             }
             Src::Undef => return,
