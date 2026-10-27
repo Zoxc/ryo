@@ -833,16 +833,29 @@ def decodeReduced (code : ByteArray) (relocs : Array Reloc) (rodata : ByteArray)
 /-! ### Frame bounds (Lean only)
 
 What the decoded code touches of its frame: each scope's range, the frame ranges each native
-instruction writes (its footprint's), `arg`'s destination and `ret`'s 16-byte source
-(`frameRanges`). `boundsOk` accepts the code only if they all start at or above `-F` and
-end at or below `frameTop`, the highest end (`0` if lower), with `F` and `frameTop` at most
-`2 ^ 31`: `Ryo.Proofs.DecodeLink.Bounds` turns it into `FrameBounds c frameTop`. Rust's
-decoder has no such check (its test vectors take random slots), so `decodeReduced` doesn't
-make it, and stays diffable; `decodeBounded` (and `Frame.decodeChecked`) do. -/
+instruction writes (its footprint's), `arg`'s destination, `ret`'s 16-byte source, a call's
+16-byte result slot and the frame ranges a handler call writes (its handler's footprint's, of
+the operands `unpack` gives) (`frameRanges`). Of those, the writes (`writeRanges`: the native
+and handler footprints' writes, `arg`'s destination, a call's result parts) must also miss the
+frame's link slots `[linkLo, 16)`: the saved `rbp` and the return address, and with PE the saved
+`rsi`/`rdi` below them; `arg`'s destination must lie below them. `boundsOk` accepts the code
+only if all frame ranges start at or above `-F` and end at or below `frameTop`, the highest end
+(`0` if lower), with `F` and `frameTop` at most `2 ^ 31`, and the writes miss the link slots:
+`Ryo.Proofs.DecodeLink.Bounds` turns it into `FrameBounds c frameTop`. Rust's decoder has no
+such check (its test vectors take random slots), so `decodeReduced` doesn't make it, and stays
+diffable; `decodeBounded` (and `Frame.decodeChecked`) do. -/
 
-/-- The placement the bounds check reads native operands with: no frame range depends on it (a
-range's offset is a slot's, its length an immediate's). -/
+/-- The placement the bounds check reads operands with: no frame range depends on it (a
+range's offset is a slot's, its length an immediate's or a case list's count). -/
 def anyAddrs : Addrs := fun _ => some default
+
+/-- The frame's link slots start at `linkLo`: the saved `rbp` at `0`, the return address at `8`,
+with PE the saved `rsi`/`rdi` at `-16` and `-8`. -/
+def linkLo (pe : Bool) : Int := if pe then -16 else 0
+
+/-- The frame range `r` misses the link slots. -/
+def offLink (pe : Bool) (r : Int × Nat) : Bool :=
+  decide (r.1 + r.2 ≤ linkLo pe) || decide (16 ≤ r.1)
 
 /-- The frame ranges a native instruction of opcode `f` with operands `ops` writes (its
 footprint's, `wranges`), `[]` if its operands don't fit. -/
@@ -854,6 +867,15 @@ def nativeWrites (f : Full.Opcode) (ops : List (Opnd Nat)) : List (Int × Nat) :
       | none => []
     | none => []
   else []
+
+/-- The frame ranges a handler call of `h` with argument registers `args` writes (its handler's
+footprint's, of the operands `unpack` gives), `[]` if they don't unpack. -/
+def handlerWrites (fpArg : Bool) (h : Full.Opcode) (args : List Arg) : List (Int × Nat) :=
+  match R.unpack anyAddrs h fpArg args with
+  | some vals => match OpSem.footprint h with
+    | some fp => fp.writeRanges (OpSem.opndVal h.info vals)
+    | none => []
+  | none => []
 
 /-- `arg`'s destination, of operands `[slot d, imm r]`. -/
 def argRange : List (Opnd Nat) → List (Int × Nat)
@@ -867,36 +889,66 @@ def retRange : List (Opnd Nat) → List (Int × Nat)
   | [.slot s, .imm _] => [(s.toInt, 16)]
   | _ => []
 
+/-- A call's 16-byte result slot, of operands `[slot d, callee, imm k, words]`. -/
+def resultRange : List (Opnd Nat) → List (Int × Nat)
+  | [.slot d, _, .imm _, .words _] => [(d.toInt, 16)]
+  | _ => []
+
+/-- The parts of a call's result slot it stores (`retParts k`'s), of operands
+`[slot d, callee, imm k, words]`. -/
+def resultParts : List (Opnd Nat) → List (Int × Nat)
+  | [.slot d, _, .imm k, .words _] => match retParts k.toNat false with
+    | some (a, b) => ([a, b].filterMap id).map fun p => (d.toInt + p.off, p.size)
+    | none => []
+  | _ => []
+
 /-- The frame ranges of a native instruction of opcode `f` that `FrameBounds` bounds. -/
 def nativeRanges (f : Full.Opcode) (ops : List (Opnd Nat)) : List (Int × Nat) :=
   nativeWrites f ops ++ (if f.info.shape = .arg then argRange ops
-    else if f.info.shape = .ret then retRange ops else [])
+    else if f.info.shape = .ret then retRange ops
+    else if f.info.shape = .call then resultRange ops else [])
 
 /-- The frame ranges of instruction `i` that `FrameBounds` bounds. -/
-def R.Insn.frameRanges : Insn → List (Int × Nat)
+def R.Insn.frameRanges (fpArg : Bool) : Insn → List (Int × Nat)
   | .native op ops => (op.full.map (nativeRanges · ops)).getD []
+  | .handler h args _ => handlerWrites fpArg h args
+
+/-- The frame ranges instruction `i` writes but `arg`'s destination (which `boundsOk` checks
+below the link slots): its footprint's and a call's result parts. -/
+def R.Insn.writeRanges (fpArg : Bool) : Insn → List (Int × Nat)
+  | .native op ops => (op.full.map fun f => nativeWrites f ops ++
+      (if f.info.shape = .call then resultParts ops else [])).getD []
+  | .handler h args _ => handlerWrites fpArg h args
+
+/-- `arg`'s destination, if `i` is an `arg`. -/
+def R.Insn.argRanges : Insn → List (Int × Nat)
+  | .native op ops => (op.full.map fun f =>
+      if f.info.shape = .arg then argRange ops else []).getD []
   | .handler .. => []
 
 /-- The scopes' and the instructions' frame ranges. -/
-def R.Decoded.frameRanges (d : Decoded) : List (Int × Nat) :=
+def R.Decoded.frameRanges (d : Decoded) (fpArg : Bool) : List (Int × Nat) :=
   d.scopes.toList.map (fun p => (p.2.frameOffset.toInt, p.2.size)) ++
-    d.insns.toList.flatMap Insn.frameRanges
+    d.insns.toList.flatMap (Insn.frameRanges fpArg)
 
 /-- The highest end of a frame range (at least `0`). -/
-def R.Decoded.frameTop (d : Decoded) : Int :=
-  d.frameRanges.foldl (fun t r => max t (r.1 + r.2)) 0
+def R.Decoded.frameTop (d : Decoded) (fpArg : Bool) : Int :=
+  (d.frameRanges fpArg).foldl (fun t r => max t (r.1 + r.2)) 0
 
-/-- Every frame range lies in `[-F, frameTop)`, `F` and `frameTop` at most `2 ^ 31`. -/
-def R.Decoded.boundsOk (d : Decoded) : Bool :=
-  decide (d.frameSize ≤ 2 ^ 31) && decide (d.frameTop ≤ 2 ^ 31) &&
-    d.frameRanges.all fun r => decide (-(d.frameSize : Int) ≤ r.1)
+/-- Every frame range lies in `[-F, frameTop)`, `F` and `frameTop` at most `2 ^ 31`; every
+frame write misses the link slots, and every `arg` destination lies below them. -/
+def R.Decoded.boundsOk (d : Decoded) (mode : Mode) : Bool :=
+  decide (d.frameSize ≤ 2 ^ 31) && decide (d.frameTop mode.fpArg ≤ 2 ^ 31) &&
+    (d.frameRanges mode.fpArg).all (fun r => decide (-(d.frameSize : Int) ≤ r.1)) &&
+    d.insns.toList.all (fun i => (i.writeRanges mode.fpArg).all (offLink mode.pe) &&
+      i.argRanges.all fun r => decide (r.1 + r.2 ≤ linkLo mode.pe))
 
 /-- `decodeReducedWith`, rejecting code whose frame ranges `boundsOk` doesn't accept. -/
 def decodeBounded (code : ByteArray) (fields : Fields) (rodata : ByteArray)
     (callSites : Array CallSite) (dropped : Array DroppedStore) (scopes : Array Scope)
     (mode : Mode) : Except AsmError Decoded := do
   let d ← decodeReducedWith code fields rodata callSites dropped scopes mode
-  if d.boundsOk then pure d else throw ⟨0, "frame access outside the frame"⟩
+  if d.boundsOk mode then pure d else throw ⟨0, "frame access outside the frame"⟩
 
 /-- The decoded function's text (`Decoded.toText`), or the error's. -/
 def decodeText (r : Except AsmError Decoded) : String :=
