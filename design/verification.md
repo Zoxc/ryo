@@ -146,8 +146,8 @@ the decoded code, or both:
   symbol slots name the callee the dump names.
 - **Unwind tables**: each FDE's rows match the decoded prologue and epilogue; LSDAs match the
   call-site table and the landing pads.
-- **Registry object** and `__ryo_main`: the three-instruction constructor, its `.init_array`
-  entry, the image list.
+- **Registry stub** and `__ryo_main`: each image object's registration entry, the
+  three-instruction constructor, its `.init_array` entry.
 
 A later check compares the linked executable with the objects (each image's sections equal the
 object's bytes with relocations applied), so the linker leaves the trusted base and only the

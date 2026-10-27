@@ -9,37 +9,8 @@ remove it once a Lean session has handled it.
   `RelocKind::Pc64` for the pointers. The default (`Sdata4`, ELF and the JIT, `eh_cie` and
   `eh_fde`) is unchanged. Only matters if the Lean `.eh_frame` model (`Ryo/Obj/EhFrame.lean`)
   is to cover Mach-O images. Commit: "image: 8-byte .eh_frame pointers for Mach-O images".
-
-- Image header gains `const_relocs` (a `Span` at offset 140, after `jit_records`, so
-  `Header` grows 144 → 152 bytes; the part itself is `[u32]`, 4-aligned, laid out last in the
-  read-only section): the constant pool offset of every `Abs64` relocation inside the pool,
-  strictly increasing. `Image::parse` checks it in bounds and aligned (`"constant
-  relocations"`), `validate` that each field is 8-aligned in the section, inside the pool and
-  after the one before (`BadConstReloc(i)`). `lean/Ryo/Obj/Image.lean`: `readHeader`, the
-  checks, and the summary's `parts` line, which now ends `... call_sites <span> const_relocs
-  <span>` (`scripts/lean-decode-ref` prints it). The image check should require the table to
-  equal exactly the pool's `R_X86_64_64` relocation offsets (`Image.world` already iterates
-  them). Nothing in the VM semantics reads it (the JIT's constant-load fold does). Commit:
-  "Image: list the constant pool's relocated fields".
-
-- Image identity and registration through the linker (CGU plan stage 3). The image symbol is
-  `__ryo_image_<StableCrateId>_<CGU hash>` (both 16 hex digits; the CGU hash is
-  `image::cgu_hash`, 64-bit FNV-1a of rustc's CGU name), and `Header` gains `cgu_hash: u64`
-  at offset 152 (after `const_relocs`, `Header` grows 152 -> 160 bytes). Each image object
-  has a new section with one 8-byte entry, `R_X86_64_64` + 0 against the read-only
-  section's start (ELF `ryo_images`, flags `SHF_ALLOC|SHF_WRITE|SHF_GNU_RETAIN`; PE `.ryo$m`;
-  Mach-O `__DATA,__ryo_images`). The registry object is now a crate-independent stub: a
-  weak hidden `__ryo_registry_anchor` (a COMDAT on PE), a null 8-byte `ryo_images` entry,
-  the constructor `lea rdi, [rip + __start_ryo_images]; lea rsi, [rip + __stop_ryo_images];
-  jmp ryo_vm_register` (both bounds undefined `STV_HIDDEN`, `R_X86_64_PC32` - 4; the jump
-  `R_X86_64_PLT32` - 4), and `.init_array.00000` as before; no image list
-  (`.data.rel.ro.ryo_registry` is gone). `ryo_vm_register(start, end)` registers the
-  non-null entries of `[start, end)` and rejects two images with the same `(crate_hash,
-  cgu_hash)`. Lean: `Obj/Image.lean` (`readHeader`, `headerSize`, the image symbol form),
-  `Check/Image/Relocs.lean` (the header symbol check, the entry section and its relocation
-  as an allowed section), `Check/Image/Registry.lean` (the stub's form instead of the list;
-  `checkLink`: each image object has its entry, not a list membership), `X86.registryCtor`.
-  Commit: "Register images through a linker section; CGU hash in the image identity".
+  Out of scope for the model: its object readers (`readElf`/`readImageObject`) only read
+  ELF objects, so a Mach-O image's `Abs8` `.eh_frame` never reaches `Ryo/Obj/EhFrame.lean`.
 
 - One image per codegen unit (CGU plan stage 4). A crate with VM code now has an image per
   rustc CGU with VM functions (`<cgu>.ryo_image`, symbol and header CGU hash from that CGU's

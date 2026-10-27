@@ -71,6 +71,7 @@ def SHT_SYMTAB_SHNDX := 18
 def SHF_WRITE := 0x1
 def SHF_ALLOC := 0x2
 def SHF_EXECINSTR := 0x4
+def SHF_GNU_RETAIN := 0x200000
 
 def SHN_UNDEF := 0
 def SHN_LORESERVE := 0xff00
@@ -87,6 +88,8 @@ def STT_OBJECT := 1
 def STT_FUNC := 2
 def STT_SECTION := 3
 def STT_FILE := 4
+
+def STV_HIDDEN := 2
 
 def R_X86_64_64 := 1
 def R_X86_64_PC32 := 2

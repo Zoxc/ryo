@@ -301,17 +301,17 @@ def callAbs : Except String Unit := do
 
 /-- `objfile.rs`: the ELF and PE registry constructors' bytes and relocations. -/
 def registry : Except String Unit := do
-  let (bs, rs) := encodeXItems (registryCtor 3 false false)
-  expectEq "elf" (hex bs) "488d3d00000000be03000000e900000000"
-  expectEq "elf relocs" rs [⟨3, .images⟩, ⟨13, .vmRegister⟩]
-  let (bs, rs) := encodeXItems (registryCtor 0 true false)
-  expectEq "pe" (hex bs) "488d0d00000000ba00000000e900000000"
-  expectEq "pe relocs" rs [⟨3, .images⟩, ⟨13, .vmRegister⟩]
-  let (bs, rs) := encodeXItems (registryCtor 70000 true true)
-  expectEq "pe import" (hex bs) "488d0d00000000ba70110100ff2500000000"
-  expectEq "pe import relocs" rs [⟨3, .images⟩, ⟨14, .vmRegisterImp⟩]
+  let (bs, rs) := encodeXItems (registryCtor false false)
+  expectEq "elf" (hex bs) "488d3d00000000488d3500000000e900000000"
+  expectEq "elf relocs" rs [⟨3, .entriesStart⟩, ⟨10, .entriesEnd⟩, ⟨15, .vmRegister⟩]
+  let (bs, rs) := encodeXItems (registryCtor true false)
+  expectEq "pe" (hex bs) "488d0d00000000488d1500000000e900000000"
+  expectEq "pe relocs" rs [⟨3, .entriesStart⟩, ⟨10, .entriesEnd⟩, ⟨15, .vmRegister⟩]
+  let (bs, rs) := encodeXItems (registryCtor true true)
+  expectEq "pe import" (hex bs) "488d0d00000000488d1500000000ff2500000000"
+  expectEq "pe import relocs" rs [⟨3, .entriesStart⟩, ⟨10, .entriesEnd⟩, ⟨16, .vmRegisterImp⟩]
   for (pe, imp) in [(false, false), (true, false), (true, true)] do
-    let xs := registryCtor 0 pe imp
+    let xs := registryCtor pe imp
     let (bs, rs) := encodeXItems xs
     let code := bs.toArray
     let f := XFields.relocs rs.toArray
@@ -321,8 +321,6 @@ def registry : Except String Unit := do
       let (c, _) ← decodeX { code, pos := n + m, fields := f }
       pure [a, b, c]
     expectEq "decode" got (some xs)
-    -- `mov esi, 0` stays the 5-byte form: `setReg`'s `xor` would not be the same code.
-    expectEq "not an item" ((decodeItem { code, pos := 7, fields := .relocs #[] }).isSome) false
 
 /-- The counter stubs (`encode.rs`), as items: `tests/image.rs` checks the same bytes. -/
 def stubs : Except String Unit := do

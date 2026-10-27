@@ -12,15 +12,16 @@ forms with encode, decode and semantics:
 - the JIT entry prefix (`vm/jit/src/install.rs`, `JIT_ENTRY_PREFIX`):
   `lea r11, [rip + code]; mov [rsp], r11; ret`;
 - the registry constructor (`backend/src/objfile.rs`, `add_registry_ctor`): ELF
-  `lea rdi, [rip + images]; mov esi, n; jmp ryo_vm_register`, PE
-  `lea rcx, [rip + images]; mov edx, n; jmp ryo_vm_register` or `jmp [rip + __imp_…]`. Its
-  `mov r32, imm32` always takes the 5-byte form, even for `n = 0` (not `setReg`'s shortest);
+  `lea rdi, [rip + __start_ryo_images]; lea rsi, [rip + __stop_ryo_images]; jmp ryo_vm_register`,
+  PE `lea rcx, [rip + .ryo$a]; lea rdx, [rip + .ryo$z]; jmp ryo_vm_register` or
+  `jmp [rip + __imp_…]`: `ryo_vm_register(start, end)` with the bounds of the link unit's
+  registration entries;
 - the trip stubs (`encode.rs`, the counter stubs): these are `Item`s already
   (`lea r11, [rip + record]`, `mov eax, n`, `call [r11 + 8|16]`, `jmp` back), so `entryStub` and
   `headStub` are lists of items, decoded by `decodeItem`.
 
-The references of these forms that `Ref` doesn't name (the images section, `ryo_vm_register`,
-its import slot) are `XRef`s. The decoder works as `decodeItem` does: parse a candidate, then
+The references of these forms that `Ref` doesn't name (the entry list's bounds,
+`ryo_vm_register`, its import slot) are `XRef`s. The decoder works as `decodeItem` does: parse a candidate, then
 check that it re-encodes to the bytes (outside its relocated fields) with exactly its
 relocations.
 -/
@@ -36,8 +37,11 @@ open Lean
 /-- What a relocated field of the extra forms refers to. -/
 inductive XRef
   | ref (r : Ref)
-  /-- The image list section the registry constructor passes (`images`). -/
-  | images
+  /-- The start of the link unit's registration entries, the registry constructor's first
+  argument (ELF `__start_ryo_images`, PE the `.ryo$a` marker). -/
+  | entriesStart
+  /-- Their end, its second (ELF `__stop_ryo_images`, PE the `.ryo$z` marker). -/
+  | entriesEnd
   /-- `ryo_vm_register`. -/
   | vmRegister
   /-- `__imp_ryo_vm_register`, its import slot (PE, `ryo_rt` in a DLL). -/
@@ -388,13 +392,14 @@ where
 at position 12): `lea r11, [rip + code]; mov [rsp], r11; ret`. -/
 def jitEntryPrefix : List XItem := [.leaR11 12, .movRspR11, .item .ret]
 
-/-- The registry constructor (`add_registry_ctor`): `n` images, ELF or PE, `ryo_vm_register`
-through its import slot (PE, `register_import`). -/
-def registryCtor (n : BitVec 32) (pe registerImport : Bool) : List XItem :=
+/-- The registry constructor (`add_registry_ctor`): `ryo_vm_register(start, end)` with the
+entry list's bounds, ELF or PE, `ryo_vm_register` through its import slot (PE,
+`register_import`). -/
+def registryCtor (pe registerImport : Bool) : List XItem :=
   if pe then
-    [.leaX .rcx .images, .movImm32 .rdx n,
+    [.leaX .rcx .entriesStart, .leaX .rdx .entriesEnd,
       if registerImport then .jmpMemX .vmRegisterImp else .jmpX .vmRegister]
-  else [.leaX .rdi .images, .movImm32 .rsi n, .jmpX .vmRegister]
+  else [.leaX .rdi .entriesStart, .leaX .rsi .entriesEnd, .jmpX .vmRegister]
 
 /-- A function's entry counter stub (`encode.rs`): the record into `r11`, `call [r11 + 8]`
 (`JIT_ENTRY_SLOT`), `jmp` back after the check. -/

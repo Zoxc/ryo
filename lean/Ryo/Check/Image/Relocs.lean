@@ -27,8 +27,9 @@ outside every function, overlapping ones and ones in no image section are mismat
 the writable and text sections), the symbol slots (exactly one `R_X86_64_64` + 0 each, against
 a symbol, its `SYM_INDIRECT` flag clear: ELF), and pool pointers (`R_X86_64_64` at 8-aligned
 pool offsets, against one of the image's symbols, or into the pool or the data area); nothing
-else. That a pool pointer is the allocation's provenance is the pool check
-(`Ryo/Check/Image/Pool.lean`).
+else. The header's constant relocation table (`const_relocs`) is exactly the pool offsets of
+the pool pointers, in order. That a pool pointer is the allocation's provenance is the pool
+check (`Ryo/Check/Image/Pool.lean`).
 
 **Writable section**: the JIT records (with counters, one per function): `ctr_e` =
 `-JIT_ENTRY_THRESHOLD` (at 0), `ctr_l` = `-JIT_THRESHOLD` (at `JIT_LOOP_CTR`), `func` its
@@ -36,10 +37,13 @@ index, every other byte 0; `entry` and `osr` relocated
 (`R_X86_64_64` + 0) against `ryo_jit_trip_entry` and `ryo_jit_trip_osr`, `header` against the
 image's header; data-area pointers as the pool's; nothing in the site cache.
 
-**Header**: the image symbol is `__ryo_image_<stable_crate_id as 16 hex digits>`, `crate_hash`
-folds it, the sections are where and as large as the header says (the read-only one RELRO).
+**Header**: the image symbol is `__ryo_image_<stable_crate_id>_<cgu_hash>` (each as 16 hex
+digits), `crate_hash` folds the id, the sections are where and as large as the header says (the read-only one RELRO).
 **Anchor**: one `R_X86_64_64` + 0 against `__ryo_registry_anchor`, the only content of an
-8-byte RELRO section. **`__ryo_main`**: at most one, an 8-byte slot with one `R_X86_64_64` + 0
+8-byte RELRO section. **Registration entry**: one 8-byte `ryo_images` section
+(`SHF_ALLOC | SHF_WRITE | SHF_GNU_RETAIN`), its one `R_X86_64_64` + 0 field against the start
+of the read-only section (the header), which the registry stub's constructor passes to
+`ryo_vm_register` with the other objects' (`Ryo/Check/Image/Registry.lean`). **`__ryo_main`**: at most one, an 8-byte slot with one `R_X86_64_64` + 0
 against a symbol, which, if this object defines it, is one of its functions. Which function
 it must be (`main`'s instance) needs the dump.
 -/
@@ -189,6 +193,13 @@ def checkRoRelocs (o : ImageObject) : Array String := Id.run do
       if let some e := allocTarget o names r then out := out.push s!"pool: {t}: {e}"
     else
       out := out.push s!"read-only: {t} at image offset {off}: not the header's data/text, a symbol slot or a pool pointer"
+  -- The constant relocation table: the pool pointers' offsets, as the writer sorts them.
+  let poolOffs := (o.roRelocs.filter fun r => r.type == .abs64 && r.offset ≥ o.roBase + h.consts.off
+    && r.offset + 8 ≤ o.roBase + h.consts.off + h.consts.count).map (·.offset - o.roBase - h.consts.off)
+  let table := o.image.constRelocs
+  if table != poolOffs then
+    let k := (List.range (max table.size poolOffs.size)).find? (fun k => table[k]? != poolOffs[k]?) |>.getD 0
+    out := out.push s!"const_relocs: {table.size} entries, the pool has {poolOffs.size} relocated fields; first difference at entry {k}: {table[k]?} vs {poolOffs[k]?}"
   let flags := o.image.symbolFlags
   for k in [0:h.symbols.count] do
     if slotCount[k]! != 1 then
@@ -262,8 +273,8 @@ def checkDataRelocs (o : ImageObject) : Array String := Id.run do
 def checkHeader (o : ImageObject) : Array String := Id.run do
   let h := o.image.header
   let mut out : Array String := #[]
-  let want := imageSymbolPrefix ++ hex16 h.stableCrateId
-  if o.symbol != want then out := out.push s!"header: image symbol `{o.symbol}`, stable_crate_id says `{want}`"
+  let want := imageSymbol h.stableCrateId h.cguHash
+  if o.symbol != want then out := out.push s!"header: image symbol `{o.symbol}`, stable_crate_id and cgu_hash say `{want}`"
   if h.crateHash != crateHash h.stableCrateId then
     out := out.push s!"header: crate_hash {hex h.crateHash}, stable_crate_id folds to {hex (crateHash h.stableCrateId)}"
   if o.roBase != 0 || o.dataBase != 0 || o.textBase != 0 then
@@ -292,6 +303,28 @@ def slotSection (e : Elf) (s : Section) : Except String Symbol := do
   let some sym := relSymbol e r | throw s!"`{s.name}`: bad symbol"
   if sym.type == Elf.STT_SECTION then throw s!"`{s.name}`: against a section"
   pure sym
+
+/-- The registration entry: the one `ryo_images` section, 8 bytes, retained writable data,
+with one `R_X86_64_64` + 0 field against the start of the image's header. -/
+def checkEntry (o : ImageObject) : Array String := Id.run do
+  let e := o.elf
+  let some s := match (e.sections.filter (·.name == entriesSection)).toList with
+      | [s] => some s
+      | _ => none
+    | #[s!"entry: {(e.sections.filter (·.name == entriesSection)).size} `{entriesSection}` sections, not 1"]
+  let mut out : Array String := #[]
+  let want := Elf.SHF_ALLOC ||| Elf.SHF_WRITE ||| Elf.SHF_GNU_RETAIN
+  if s.flags &&& (want ||| Elf.SHF_EXECINSTR) != want then
+    out := out.push s!"entry: `{entriesSection}` flags {s.flags}, not SHF_ALLOC | SHF_WRITE | SHF_GNU_RETAIN"
+  if s.size != 8 || !allBytes (e.data s) 0 8 0 then
+    out := out.push s!"entry: `{entriesSection}` isn't 8 zero bytes ({s.size} bytes)"
+  match (e.relocsOf s.index).toList with
+  | [r] =>
+    let ok := r.offset == 0 && r.type == .abs64 && (relSymbol e r).any fun t =>
+      t.type == Elf.STT_SECTION && t.shndx == o.ro.index && (t.value : Int) + r.addend == o.roBase
+    if !ok then out := out.push s!"entry: {relaText e r}, not R_X86_64_64 to the image's header"
+  | l => out := out.push s!"entry: {l.length} relocations, not 1"
+  return out
 
 /-- What a `__ryo_main` slot names: the symbol, and the function of this image it is, if it
 defines it. -/
@@ -337,8 +370,8 @@ def checkMain (o : ImageObject) : Array String × Option MainSlot := Id.run do
         | none => (out.push s!"{mainSlotName}: `{t.name}` is defined here but isn't one of the image's functions", some ⟨t.name, none⟩)
   | l => (#[s!"{mainSlotName}: {l.length} symbols"], none)
 
-/-- Relocation sections against sections that aren't the image's, its unwind tables, or the
-anchor and `__ryo_main` slots. -/
+/-- Relocation sections against sections that aren't the image's, its unwind tables, the
+anchor and `__ryo_main` slots, or the registration entry. -/
 def checkOtherRelocs (o : ImageObject) : Array String := Id.run do
   let e := o.elf
   let mut out : Array String := #[]
@@ -346,7 +379,7 @@ def checkOtherRelocs (o : ImageObject) : Array String := Id.run do
     let some s := e.section? rs.target | continue
     let known := rs.target == o.ro.index || rs.target == o.data.index || rs.target == o.text.index
       || s.name == ".eh_frame" || s.name.startsWith ".gcc_except_table"
-      || s.name == ".data.rel.ro.ryo_anchor" || s.name == ".data.rel.ro.ryo_main"
+      || s.name == ".data.rel.ro.ryo_anchor" || s.name == ".data.rel.ro.ryo_main" || s.name == entriesSection
     if !known then out := out.push s!"relocations of `{s.name}`, which isn't an image section"
   return out
 

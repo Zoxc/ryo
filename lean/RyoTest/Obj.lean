@@ -104,34 +104,36 @@ def elfRead : Except String Unit := do
 structure H where
   size : Option Nat := none
   dataSize : Nat := 0
-  functions : Span := ⟨144, 0⟩
+  functions : Span := ⟨160, 0⟩
   textSize : Nat := 0
-  codeConsts : Span := ⟨144, 0⟩
-  fixups : Span := ⟨144, 0⟩
-  symFlags : Span := ⟨144, 0⟩
+  codeConsts : Span := ⟨160, 0⟩
+  fixups : Span := ⟨160, 0⟩
+  symFlags : Span := ⟨160, 0⟩
   /-- By default, one zero flag per function, after `rest`. -/
   funcFlags : Option Span := none
-  symbols : Span := ⟨144, 0⟩
-  consts : Span := ⟨144, 0⟩
-  lists : Span := ⟨144, 0⟩
-  callSites : Span := ⟨144, 0⟩
+  symbols : Span := ⟨160, 0⟩
+  consts : Span := ⟨160, 0⟩
+  lists : Span := ⟨160, 0⟩
+  callSites : Span := ⟨160, 0⟩
   siteCount : Nat := 0
   fixupArea : Nat := 0
   mode : Nat := MODE_FP_ARG + MODE_FRAME_POINTER
   jitRecords : Span := ⟨0, 0⟩
+  constRelocs : Span := ⟨160, 0⟩
+  cguHash : Nat := 0
 
 def span (s : Span) : List UInt8 := le 4 s.off ++ le 4 s.count
 
 /-- An image: the header `h`, then `rest`. -/
 def mkImage (h : H) (rest : List UInt8 := []) (magic : String := "RYOIMAGE") : ByteArray :=
-  let ff := h.funcFlags.getD ⟨144 + rest.length, h.functions.count⟩
+  let ff := h.funcFlags.getD ⟨160 + rest.length, h.functions.count⟩
   let rest := if h.funcFlags.isNone then rest ++ List.replicate h.functions.count 0 else rest
-  let size := h.size.getD (144 + rest.length)
+  let size := h.size.getD (160 + rest.length)
   bytes (magic.toUTF8.toList ++ le 4 0 ++ le 4 size ++ le 8 0 ++ le 8 0 ++ le 4 h.dataSize
     ++ le 4 h.textSize ++ le 8 0 ++ span h.functions ++ span h.codeConsts
     ++ span h.fixups ++ span h.symFlags ++ span ff ++ span h.symbols ++ span h.consts ++ span h.lists
     ++ span h.callSites ++ le 4 h.siteCount ++ le 4 h.fixupArea ++ le 4 h.mode
-    ++ span h.jitRecords ++ le 4 0 ++ rest)
+    ++ span h.jitRecords ++ span h.constRelocs ++ le 4 0 ++ le 8 h.cguHash ++ rest)
 
 def funcEntry (off len : Nat) (list callSites : Span := ⟨0, 0⟩) : List UInt8 :=
   le 4 off ++ le 4 len ++ le 4 0 ++ le 4 0 ++ le 4 0 ++ span list ++ span callSites
@@ -154,23 +156,23 @@ def imageParse : Except String Unit := do
   expectParse (mkImage {}) .misaligned (aligned := false)
   expectParse (mkImage {} (magic := "RYOIMAGX")) .badMagic
   expectParse (mkImage { size := some 200 }) .truncated
-  expectParse (mkImage { functions := ⟨144, 1⟩ }) (.outOfBounds "functions")
-  expectParse (mkImage { symbols := ⟨148, 0⟩, symFlags := ⟨148, 0⟩ } (List.replicate 8 0)) .misaligned
+  expectParse (mkImage { functions := ⟨160, 1⟩ }) (.outOfBounds "functions")
+  expectParse (mkImage { symbols := ⟨164, 0⟩, symFlags := ⟨164, 0⟩ } (List.replicate 8 0)) .misaligned
   expectParse (mkImage { mode := 0 }) .badMode
   expectParse (mkImage { mode := MODE_FRAME_POINTER + 32 }) .badMode
   -- Without a frame pointer, `fp_arg` is required and PE excluded (`Mode::valid`).
   expectParse (mkImage { mode := MODE_FP_ARG + MODE_PE }) .badMode
   check ((Image.parse (mkImage { mode := MODE_FP_ARG })).toOption.isSome) "fp_arg alone is valid"
-  expectParse (mkImage { symFlags := ⟨144, 1⟩ } [0]) (.outOfBounds "symbol flags")
-  expectParse (mkImage { functions := ⟨144, 1⟩, funcFlags := some ⟨180, 0⟩ } (funcEntry 0 0))
+  expectParse (mkImage { symFlags := ⟨160, 1⟩ } [0]) (.outOfBounds "symbol flags")
+  expectParse (mkImage { functions := ⟨160, 1⟩, funcFlags := some ⟨196, 0⟩ } (funcEntry 0 0))
     (.outOfBounds "function flags")
   expectParse (mkImage { siteCount := 1, fixupArea := 0 }) .badData
   -- With counters, one 64-aligned JIT record per function.
   let f := funcEntry 0 0
   let counters := MODE_FP_ARG + MODE_FRAME_POINTER + MODE_COUNTERS
-  expectParse (mkImage { functions := ⟨144, 1⟩, mode := counters, dataSize := 128 } f) .badData
-  expectParse (mkImage { functions := ⟨144, 1⟩, mode := counters, dataSize := 128, jitRecords := ⟨32, 1⟩ } f) .badData
-  let good : H := { functions := ⟨144, 1⟩, mode := counters, dataSize := 128, jitRecords := ⟨64, 1⟩ }
+  expectParse (mkImage { functions := ⟨160, 1⟩, mode := counters, dataSize := 128 } f) .badData
+  expectParse (mkImage { functions := ⟨160, 1⟩, mode := counters, dataSize := 128, jitRecords := ⟨32, 1⟩ } f) .badData
+  let good : H := { functions := ⟨160, 1⟩, mode := counters, dataSize := 128, jitRecords := ⟨64, 1⟩ }
   let img ← match Image.parse (mkImage good f) with
     | .ok i => pure i
     | .error e => throw s!"expected a parse, got {e}"
@@ -178,26 +180,26 @@ def imageParse : Except String Unit := do
     "mode"
 
 def imageValidate : Except String Unit := do
-  expectValidate (mkImage { functions := ⟨144, 1⟩, textSize := 16 } (funcEntry 0 32)) (.badFunction 0)
-  expectValidate (mkImage { functions := ⟨144, 2⟩, textSize := 64 } (funcEntry 32 16 ++ funcEntry 0 16))
+  expectValidate (mkImage { functions := ⟨160, 1⟩, textSize := 16 } (funcEntry 0 32)) (.badFunction 0)
+  expectValidate (mkImage { functions := ⟨160, 2⟩, textSize := 64 } (funcEntry 32 16 ++ funcEntry 0 16))
     (.badFunction 1)
   -- Function 0's instruction list: a modifier of kind 5, an entry past the code's end, the
   -- entries at one position out of order (an end scope before a target), a target twice.
   for bad in [[0x01, 0x05], [0x41, 0x00], [0x01, 0x03, 0x00, 0x08, 0x01, 0x00], [0x01, 0x00, 0x01, 0x00]] do
     let rest := funcEntry 0 16 (list := ⟨0, bad.length⟩) ++ bad
-    expectValidate (mkImage { functions := ⟨144, 1⟩, textSize := 16, lists := ⟨180, bad.length⟩ } rest) (.badList 0)
+    expectValidate (mkImage { functions := ⟨160, 1⟩, textSize := 16, lists := ⟨196, bad.length⟩ } rest) (.badList 0)
   -- A call site past the function's end.
   let rest := funcEntry 0 16 (callSites := ⟨0, 1⟩) ++ le 4 8 ++ le 4 16 ++ le 4 CONTINUE
-  expectValidate (mkImage { functions := ⟨144, 1⟩, textSize := 16, callSites := ⟨180, 1⟩ } rest) (.badCallSite 0)
+  expectValidate (mkImage { functions := ⟨160, 1⟩, textSize := 16, callSites := ⟨196, 1⟩ } rest) (.badCallSite 0)
   -- A dropped store of 16 bytes (`size_log2` 4), one of `rbx` (3).
   for bad in [[0x01, 0x01, 0x00, 0x40], [0x01, 0x01, 0x00, 0x33]] do
     let rest := funcEntry 0 16 (list := ⟨0, 4⟩) ++ bad
-    expectValidate (mkImage { functions := ⟨144, 1⟩, textSize := 16, lists := ⟨180, 4⟩ } rest) (.badList 0)
+    expectValidate (mkImage { functions := ⟨160, 1⟩, textSize := 16, lists := ⟨196, 4⟩ } rest) (.badList 0)
   -- A well-formed list: a target at 4, an escape (offset -8, size 8, align 8) and a dropped
   -- store (offset -16, 8 bytes, `rdx`) at 8, an instruction entry (opcode 0, selector 9) at 12.
   let good := [0x09, 0x00, 0x09, 0x02, 0x0f, 0x08, 0x08, 0x01, 0x01, 0x1f, 0x32, 0x08, 0x00, 0x09]
   let rest := funcEntry 0 16 (list := ⟨0, good.length⟩) ++ good
-  match Image.parse (mkImage { functions := ⟨144, 1⟩, textSize := 16, lists := ⟨180, good.length⟩ } rest) with
+  match Image.parse (mkImage { functions := ⟨160, 1⟩, textSize := 16, lists := ⟨196, good.length⟩ } rest) with
   | .error e => throw s!"parse: {e}"
   | .ok img =>
     if let .error e := img.validate then throw s!"expected the list to validate, got {e}"
@@ -206,14 +208,14 @@ def imageValidate : Except String Unit := do
       && l.scopes == #[⟨8, -8, 8, .escape 8⟩] && l.dropped == #[⟨8, -16, 8, 2⟩]) s!"the list read: {repr l}"
   -- A function's run past its table.
   let rest := funcEntry 0 16 (list := ⟨0, 1⟩)
-  expectValidate (mkImage { functions := ⟨144, 1⟩, textSize := 16 } rest) (.badFunction 0)
-  expectValidate (mkImage { symFlags := ⟨144, 1⟩, symbols := ⟨152, 1⟩ } ([2] ++ List.replicate 15 0))
+  expectValidate (mkImage { functions := ⟨160, 1⟩, textSize := 16 } rest) (.badFunction 0)
+  expectValidate (mkImage { symFlags := ⟨160, 1⟩, symbols := ⟨168, 1⟩ } ([2] ++ List.replicate 15 0))
     (.badSymbolFlags 0)
-  expectValidate (mkImage { functions := ⟨144, 1⟩, funcFlags := some ⟨180, 1⟩ } (funcEntry 0 0 ++ [16]))
+  expectValidate (mkImage { functions := ⟨160, 1⟩, funcFlags := some ⟨196, 1⟩ } (funcEntry 0 0 ++ [16]))
     (.badFuncFlags 0)
   -- A good one: a function with a call site to a catching pad.
   let rest := funcEntry 0 16 (callSites := ⟨0, 1⟩) ++ le 4 0 ++ le 4 5 ++ le 4 (CATCH + 8)
-  match Image.parse (mkImage { functions := ⟨144, 1⟩, textSize := 16, callSites := ⟨180, 1⟩ } rest) with
+  match Image.parse (mkImage { functions := ⟨160, 1⟩, textSize := 16, callSites := ⟨196, 1⟩ } rest) with
   | .error e => throw s!"parse: {e}"
   | .ok img =>
     if let .error e := img.validate then throw s!"expected it to validate, got {e}"

@@ -3,10 +3,10 @@ Tests of the image checks (`Ryo/Check/Image`, aot.md §C4) on image and registry
 here from bytes: a small ELF writer, an image of two VM functions in the counters mode (an
 entry counter check and its stub, a handler call taking a symbol slot's address, a call of the
 other function, which carries no relocation and is a call site), with its JIT records, anchor
-and `__ryo_main` slots, `.eh_frame` and LSDAs, and a registry object listing it. The objects
-pass every check; mutations of them (a function's length, a relocation dropped or added, a JIT
-record's counter, a registry entry listed twice, an FDE's range, row or CFA offset, an LSDA's
-call sites) are rejected. The checks run on real objects in `scripts/lean-image-check.py`.
+and `__ryo_main` slots, its registration entry, `.eh_frame` and LSDAs, and a registry stub.
+The objects pass every check; mutations of them (a function's length, a relocation dropped or
+added, a JIT record's counter, the entry's relocation, the stub's bounds, an FDE's range, row or
+CFA offset, an LSDA's call sites) are rejected. The checks run on real objects in `scripts/lean-image-check.py`.
 -/
 import RyoTest.Harness
 import RyoTest.Obj
@@ -137,10 +137,12 @@ def callField : Nat := ((funcCode f0Items).2.find? (·.to == Ryo.X86.Ref.func 1)
 /-- Function 0's one call site: the `call` of function 1, unwinding continuing in the caller. -/
 def site0 : CallSite := ⟨callField - 1, 5, none, false⟩
 
--- Read-only layout: header, 2 functions, code constants (none, at 240), fixups (none), 1 symbol
--- flag at 240, the slot at 248, no instruction lists, the call-site table at 256 (one entry).
-def roSize : Nat := 268
-def slotOff : Nat := 248
+-- Read-only layout: header, 2 functions, code constants (none, at 256), fixups (none), 1 symbol
+-- flag at 256, the slot at 264, no pool, no instruction lists, the call-site table at 272 (one
+-- entry), no constant relocations (at 284).
+def roSize : Nat := 284
+def slotOff : Nat := 264
+def cgu : Nat := 0xfedcba9876543210
 def recOff : Nat := 64
 def dataSize : Nat := 64 + 2 * 64
 
@@ -174,7 +176,7 @@ def ehFrame (funcs : List (Nat × Nat × Nat × Nat)) : List UInt8 × Array Rel 
 5 `__ryo_main`. Symbols: 1–3 the first three's section symbols, 4–5 the functions, 6 the
 image, 7 the slot's `rust_eh_personality`, 8 `ryo_h_AddrSym`, 9–10 the trip entry points,
 11 the anchor, 12 `__ryo_main`, 13 the LSDA section's. Sections 6 and 7 are `.eh_frame` and
-the LSDAs, function 0's of the call sites `lsda0`. With `resolve`, the call of function 1 holds its displacement, as the writer
+the LSDAs, function 0's of the call sites `lsda0`, 8 the registration entry (`ryo_images`). With `resolve`, the call of function 1 holds its displacement, as the writer
 resolves it; without, its field is 0. -/
 def imageParts (resolve : Bool := true) (lsda0 : Array CallSite := #[site0]) : Parts := Id.run do
   let (c0, r0) := funcCode f0Items
@@ -189,9 +191,10 @@ def imageParts (resolve : Bool := true) (lsda0 : Array CallSite := #[site0]) : P
   let entry (off len : Nat) (sites : Span) : List UInt8 :=
     le 4 off ++ le 4 len ++ List.replicate 12 0 ++ le 8 0 ++ span sites
   let header := "RYOIMAGE".toUTF8.toList ++ le 4 (crateHash stableId) ++ le 4 roSize ++ le 8 stableId
-    ++ le 8 0 ++ le 4 dataSize ++ le 4 text.length ++ le 8 0 ++ span ⟨144, 2⟩
-    ++ span ⟨240, 0⟩ ++ span ⟨240, 0⟩ ++ span ⟨240, 1⟩ ++ span ⟨216, 2⟩ ++ span ⟨slotOff, 1⟩ ++ span ⟨256, 0⟩
-    ++ span ⟨256, 0⟩ ++ span ⟨256, 1⟩ ++ le 4 0 ++ le 4 0 ++ le 4 21 ++ span ⟨recOff, 2⟩ ++ le 4 0
+    ++ le 8 0 ++ le 4 dataSize ++ le 4 text.length ++ le 8 0 ++ span ⟨160, 2⟩
+    ++ span ⟨256, 0⟩ ++ span ⟨256, 0⟩ ++ span ⟨256, 1⟩ ++ span ⟨232, 2⟩ ++ span ⟨slotOff, 1⟩ ++ span ⟨272, 0⟩
+    ++ span ⟨272, 0⟩ ++ span ⟨272, 1⟩ ++ le 4 0 ++ le 4 0 ++ le 4 21 ++ span ⟨recOff, 2⟩ ++ span ⟨roSize, 0⟩
+    ++ le 4 0 ++ le 8 cgu
   let ro := header ++ entry 0 c0.length ⟨0, 1⟩ ++ entry f1Off c1.length ⟨1, 0⟩ ++ List.replicate 24 0 ++ [0]
     ++ List.replicate 7 0 ++ le 8 0 ++ le 4 site0.start ++ le 4 site0.len ++ le 4 CONTINUE
   let lsda0 := (Lsda.write lsda0).toList
@@ -208,21 +211,22 @@ def imageParts (resolve : Bool := true) (lsda0 : Array CallSite := #[site0]) : P
     { name := ".data.rel.ro.ryo_anchor", flags := 3, data := List.replicate 8 0 },
     { name := ".data.rel.ro.ryo_main", flags := 3, data := List.replicate 8 0 },
     { name := ".eh_frame", type := 0x70000001, flags := 2, data := eh },
-    { name := ".gcc_except_table.ryo_image", flags := 2, data := lsda0 ++ lsda1, align := 4 }]
+    { name := ".gcc_except_table.ryo_image", flags := 2, data := lsda0 ++ lsda1, align := 4 },
+    { name := entriesSection, flags := 3 + Elf.SHF_GNU_RETAIN, data := List.replicate 8 0 }]
   let syms : Array Sym := #[
     { name := "", bind := 0, type := Elf.STT_SECTION, shndx := 1 },
     { name := "", bind := 0, type := Elf.STT_SECTION, shndx := 2 },
     { name := "", bind := 0, type := Elf.STT_SECTION, shndx := 3 },
     { name := "f0", bind := 0, type := Elf.STT_FUNC, shndx := 3, size := c0.length },
     { name := "f1", type := Elf.STT_FUNC, vis := 2, shndx := 3, value := f1Off, size := c1.length },
-    { name := imageSymbolPrefix ++ hex16 stableId, type := Elf.STT_OBJECT, vis := 2, shndx := 1, size := roSize },
+    { name := imageSymbol stableId cgu, type := Elf.STT_OBJECT, vis := 2, shndx := 1, size := roSize },
     { name := "rust_eh_personality" }, { name := "ryo_h_AddrSym" }, { name := tripEntryName }, { name := tripOsrName },
     { name := anchorName },
     { name := mainSlotName, type := Elf.STT_OBJECT, vis := 2, shndx := 5, size := 8 },
     { name := "", bind := 0, type := Elf.STT_SECTION, shndx := 7 }]
   let abs := Elf.R_X86_64_64
   let mut rels : Array Rel := ehRels ++ #[⟨1, 24, 2, abs, 0⟩, ⟨1, 40, 3, abs, 0⟩, ⟨1, slotOff, 7, abs, 0⟩,
-    ⟨4, 0, 11, abs, 0⟩, ⟨5, 0, 5, abs, 0⟩]
+    ⟨4, 0, 11, abs, 0⟩, ⟨5, 0, 5, abs, 0⟩, ⟨8, 0, 1, abs, 0⟩]
   for i in [0:2] do
     let r := recOff + 64 * i
     rels := rels ++ #[⟨2, r + 8, 9, abs, 0⟩, ⟨2, r + 16, 10, abs, 0⟩, ⟨2, r + 40, 1, abs, 0⟩]
@@ -273,8 +277,8 @@ def imageNegative : Except String Unit := do
   let p := imageParts
   let c0 := (p.syms[3]!).size
   -- Function 0's code_len, one more or one less.
-  expectMismatch (p.poke 1 (144 + 4) (c0 + 1)) "st_size"
-  expectMismatch (p.poke 1 (144 + 4) (c0 - 1)) "decode"
+  expectMismatch (p.poke 1 (160 + 4) (c0 + 1)) "st_size"
+  expectMismatch (p.poke 1 (160 + 4) (c0 - 1)) "decode"
   -- The handler call's relocation dropped.
   let noCall := { p with rels := p.rels.filter (·.type != Elf.R_X86_64_PLT32) }
   expectMismatch noCall "func 0"
@@ -293,17 +297,26 @@ def imageNegative : Except String Unit := do
   expectMismatch { p with rels := p.rels.filter (fun r => !(r.sec == 2 && r.off == recOff + 8)) } "JIT record 0"
   -- The symbol slot's relocation, twice; its flag set.
   expectMismatch { p with rels := p.rels.push ⟨1, slotOff, 7, Elf.R_X86_64_64, 0⟩ } "symbol slot 0: 2 relocations"
-  expectMismatch (p.poke 1 240 1) "SYM_INDIRECT"
+  expectMismatch (p.poke 1 256 1) "SYM_INDIRECT"
   -- No anchor.
   expectMismatch { p with rels := p.rels.filter (·.sec != 4) } "anchor"
   -- A wrong image symbol for the stable crate id.
-  let syms := p.syms.set! 5 { p.syms[5]! with name := imageSymbolPrefix ++ hex16 (stableId + 1) }
+  let syms := p.syms.set! 5 { p.syms[5]! with name := imageSymbol (stableId + 1) cgu }
   expectMismatch { p with syms } "stable_crate_id"
+  let syms := p.syms.set! 5 { p.syms[5]! with name := imageSymbol stableId (cgu + 1) }
+  expectMismatch { p with syms } "cgu_hash"
+  -- The registration entry: missing, against the writable section, not retained.
+  expectMismatch { p with rels := p.rels.filter (·.sec != 8) } "entry: 0 relocations"
+  expectMismatch { p with rels := p.rels.map fun r => if r.sec == 8 then { r with sym := 2 } else r } "entry:"
+  expectMismatch { p with secs := p.secs.modify 7 fun s => { s with flags := 3 } } "SHF_GNU_RETAIN"
+  -- The constant relocation table: an entry, with an empty pool (validate rejects it too).
+  let p2 := { p with secs := p.secs.modify 0 fun s => { s with data := s.data ++ le 4 0 } }
+  expectMismatch ((p2.poke 1 140 roSize).poke 1 144 1 |>.poke 1 12 (roSize + 4)) "const_relocs: 1 entries"
   -- A function symbol of the wrong size, a missing one.
   expectMismatch { p with syms := p.syms.set! 4 { p.syms[4]! with size := 3 } } "st_size 3"
   expectMismatch { p with syms := p.syms.set! 4 { p.syms[4]! with type := Elf.STT_OBJECT } } "no function symbol"
   -- `ret_kind` 8 on function 1: its `ret` loads nothing, and function 0's call collects nothing.
-  let k1 := 144 + 36 + 16
+  let k1 := 160 + 36 + 16
   expectMismatch (p.poke 1 k1 8) "ret of kind"
   expectMismatch (p.poke 1 k1 8) "collects kind"
 
@@ -331,64 +344,72 @@ def unwindNegative : Except String Unit := do
   -- The personality through a slot naming another symbol.
   expectMismatch { p with syms := p.syms.set! 6 { p.syms[6]! with name := "ext_fn" } } "personality slot"
 
-/-! ## A registry object -/
+/-! ## A registry stub -/
 
-/-- A registry object listing `images`. Sections: 1 the anchor, 2 the list, 3 the
-constructor, 4 `.init_array.00000`. Symbols: 1 the list's, 2 the constructor's section, 3 the
-anchor, 4 `ryo_vm_register`, then the images. -/
-def registryParts (images : List String) (n : Option Nat := none) : Parts := Id.run do
-  let (code, xrs) := encodeXItems (registryCtor (bv32 (n.getD images.length)) false false)
+/-- The registry stub. Sections: 1 the anchor, 2 the null entry (`ryo_images`), 3 the
+constructor, 4 `.init_array.00000`. Symbols: 1 the constructor's section, 2 the anchor, 3
+`ryo_vm_register`, 4 `__start_ryo_images`, 5 `__stop_ryo_images`. -/
+def registryParts : Parts := Id.run do
+  let (code, xrs) := encodeXItems (registryCtor false false)
   let secs : Array Sec := #[
     { name := ".data.ryo_registry_anchor", flags := 3, data := [0], align := 1 },
-    { name := ".data.rel.ro.ryo_registry", flags := 3, data := List.replicate (8 * images.length) 0 },
+    { name := entriesSection, flags := 3 + Elf.SHF_GNU_RETAIN, data := List.replicate 8 0 },
     { name := ".text.ryo_registry", flags := 6, data := code, align := 16 },
     { name := ".init_array.00000", type := 14, flags := 3, data := List.replicate 8 0 }]
   let syms : Array Sym := #[
-    { name := "", bind := 0, type := Elf.STT_SECTION, shndx := 2 },
     { name := "", bind := 0, type := Elf.STT_SECTION, shndx := 3 },
-    { name := anchorName, type := Elf.STT_OBJECT, vis := 2, shndx := 1, size := 1 },
-    { name := registerName }] ++ (images.toArray.map fun n => { name := n })
-  let mut rels : Array Rel := #[⟨4, 0, 2, Elf.R_X86_64_64, 0⟩]
-  for (_, k) in images.zipIdx do
-    rels := rels.push ⟨2, 8 * k, 5 + k, Elf.R_X86_64_64, 0⟩
+    { name := anchorName, bind := Elf.STB_WEAK, type := Elf.STT_OBJECT, vis := 2, shndx := 1, size := 1 },
+    { name := registerName },
+    { name := entriesStartName, vis := 2 }, { name := entriesStopName, vis := 2 }]
+  let mut rels : Array Rel := #[⟨4, 0, 1, Elf.R_X86_64_64, 0⟩]
   for r in xrs do
     match r.to with
-    | .images => rels := rels.push ⟨3, r.pos, 1, Elf.R_X86_64_PC32, -4⟩
-    | _ => rels := rels.push ⟨3, r.pos, 4, Elf.R_X86_64_PLT32, -4⟩
+    | .entriesStart => rels := rels.push ⟨3, r.pos, 4, Elf.R_X86_64_PC32, -4⟩
+    | .entriesEnd => rels := rels.push ⟨3, r.pos, 5, Elf.R_X86_64_PC32, -4⟩
+    | _ => rels := rels.push ⟨3, r.pos, 3, Elf.R_X86_64_PLT32, -4⟩
   return { secs, syms, rels }
 
-def registryResult (p : Parts) : Except String (Array String × Array String) := do
+def registryResult (p : Parts) : Except String (Array String) := do
   return checkRegistry (← readElf p.write)
 
+def expectRegistryMismatch (p : Parts) (msg : String) : Except String Unit := do
+  let out ← registryResult p
+  check (out.any fun l => (l.splitOn msg).length > 1) s!"expected a registry mismatch containing `{msg}`, got {out}"
+
 def registry : Except String Unit := do
-  let img := imageSymbolPrefix ++ hex16 stableId
-  let other := imageSymbolPrefix ++ hex16 1
-  let (out, names) ← registryResult (registryParts [img, other])
+  let p := registryParts
+  let out ← registryResult p
   check out.isEmpty s!"expected no mismatches, got {out}"
-  check (names == #[img, other]) "listed names"
-  check (checkLink #[img] (some names) 1).isEmpty "link"
-  -- An entry twice.
-  let (out, names) ← registryResult (registryParts [img, img])
-  check (out.any fun l => (l.splitOn "listed twice").length > 1) s!"duplicate entry: {out}"
-  check (!(checkLink #[img] (some names) 1).isEmpty) "duplicate entry in the link"
-  -- An image of the link missing, two `__ryo_main`s.
-  check (!(checkLink #[img, imageSymbolPrefix ++ hex16 2] (some #[img]) 0).isEmpty) "missing image"
-  check (!(checkLink #[img] (some #[img]) 2).isEmpty) "two mains"
-  -- `n` off by one; the constructor's `jmp` relocated against something else.
-  let (out, _) ← registryResult (registryParts [img] (some 2))
-  check (out.any fun l => (l.splitOn "n = 2").length > 1) s!"wrong count: {out}"
-  let p := registryParts [img]
-  let p := { p with rels := p.rels.map fun r => if r.type == Elf.R_X86_64_PLT32 then { r with sym := 3 } else r }
-  let (out, _) ← registryResult p
-  check (out.any fun l => (l.splitOn "registry constructor").length > 1) s!"wrong jmp target: {out}"
-  -- Not an image symbol.
-  let (out, _) ← registryResult (registryParts ["foo"])
-  check (out.any fun l => (l.splitOn "image symbol").length > 1) s!"not an image symbol: {out}"
+  let img := imageSymbol stableId cgu
+  check (checkLink #[(img, crateHash stableId, cgu)] 1).isEmpty "link"
+  -- Two images with the same identity, two `__ryo_main`s.
+  check (!(checkLink #[(img, crateHash stableId, cgu), ("x", crateHash stableId, cgu)] 0).isEmpty) "same identity"
+  check (checkLink #[(img, crateHash stableId, cgu), (imageSymbol stableId 1, crateHash stableId, 1)] 0).isEmpty
+    "two images of one crate"
+  check (!(checkLink #[(img, crateHash stableId, cgu)] 2).isEmpty) "two mains"
+  -- The bounds swapped; the `jmp` relocated against something else; the bound not hidden.
+  let swapped := { p with rels := p.rels.map fun r =>
+    if r.sym == 4 then { r with sym := 5 } else if r.sym == 5 then { r with sym := 4 } else r }
+  expectRegistryMismatch swapped "registry constructor: 3 forms"
+  expectRegistryMismatch { p with rels := p.rels.map fun r => if r.type == Elf.R_X86_64_PLT32 then { r with sym := 2 } else r }
+    "registry constructor"
+  expectRegistryMismatch { p with syms := p.syms.set! 3 { p.syms[3]! with vis := 0 } } "registry constructor"
+  -- The anchor not weak; the entry relocated; an image list.
+  expectRegistryMismatch { p with syms := p.syms.set! 1 { p.syms[1]! with bind := Elf.STB_GLOBAL } } "weak and hidden"
+  expectRegistryMismatch { p with rels := p.rels.push ⟨2, 0, 3, Elf.R_X86_64_64, 0⟩ } "is relocated"
+  let list := { p with secs := p.secs.push { name := ".data.rel.ro.ryo_registry", flags := 3, data := List.replicate 8 0 },
+                       rels := p.rels.push ⟨5, 0, 3, Elf.R_X86_64_64, 0⟩ }
+  expectRegistryMismatch list "relocations of `.data.rel.ro.ryo_registry`"
 
 def names : Except String Unit := do
   check (isRtSymbol tripEntryName "_RNvCs5fGHjzWXRav_7___rustc18ryo_jit_trip_entry") "mangled trip entry"
   check (!isRtSymbol tripEntryName "_RNvCs5fGHjzWXRav_7___rustc17ryo_jit_trip_entry") "wrong length"
-  check (isImageSymbol "__ryo_image_f993ac938d16a46b" && !isImageSymbol "__ryo_image_f993ac938d16a46") "image symbols"
+  check (isImageSymbol "__ryo_image_f993ac938d16a46b_fedcba9876543210" && !isImageSymbol "__ryo_image_f993ac938d16a46b"
+    && !isImageSymbol "__ryo_image_f993ac938d16a46b_fedcba987654321") "image symbols"
+  check (imageSymbol 0x0123456789abcdef 0xfedcba9876543210 == "__ryo_image_0123456789abcdef_fedcba9876543210")
+    "imageSymbol"
+  -- FNV-1a vectors.
+  check (cguHash "" == 0xcbf29ce484222325 && cguHash "a" == 0xaf63dc4c8601ec8c) "cgu_hash"
   check (crateHash 0xf993ac938d16a46b == 0x748508f8) "crate_hash"
   check (loadKind 0x080305 == some 0x080408 && loadKind 0x030805 == none && retLoadKind RET_SRET == some 8 && retLoadKind 0 == some 0) "load kinds"
 

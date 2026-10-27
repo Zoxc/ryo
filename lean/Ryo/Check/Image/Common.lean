@@ -18,6 +18,11 @@ def tripOsrName : String := "ryo_jit_trip_osr"
 def anchorName : String := "__ryo_registry_anchor"
 def mainSlotName : String := "__ryo_main"
 def registerName : String := "ryo_vm_register"
+/-- The ELF section of the registration entries (`objfile.rs` `ELF_ENTRIES`), and the bounds
+the linker defines for it. -/
+def entriesSection : String := "ryo_images"
+def entriesStartName : String := "__start_" ++ entriesSection
+def entriesStopName : String := "__stop_" ++ entriesSection
 
 /-- Whether `name` is `ryo_rt`'s symbol `base`: unmangled, or as rustc mangles internal symbols
 (a v0 identifier `<len><base>` ending the name), as `ImageObject.isProbe` reads
@@ -45,6 +50,15 @@ def hex (n : Nat) : String := "0x" ++ String.ofList (Nat.toDigits 16 n)
 def hex16 (n : Nat) : String :=
   let s := String.ofList (Nat.toDigits 16 n)
   String.ofList (List.replicate (16 - s.length) '0') ++ s
+
+/-- The symbol an image defines (`objfile::image_symbol`):
+`__ryo_image_<stable_crate_id>_<cgu_hash>`, both as 16 hex digits. -/
+def imageSymbol (stableCrateId cguHash : Nat) : String :=
+  imageSymbolPrefix ++ hex16 stableCrateId ++ "_" ++ hex16 cguHash
+
+/-- `image::cgu_hash`: 64-bit FNV-1a of a codegen unit's name. -/
+def cguHash (name : String) : Nat :=
+  name.toUTF8.foldl (fun h b => ((h ^^^ b.toNat) * 0x100000001b3) % 2 ^ 64) 0xcbf29ce484222325
 
 /-- `image::crate_hash`. -/
 def crateHash (id : Nat) : Nat := (id ^^^ (id >>> 32)) % 2 ^ 32

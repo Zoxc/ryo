@@ -319,7 +319,14 @@ impl<'d> Linked<'d> {
         let img = self.image()?;
         let h = img.header();
         out.push(format!("image {}", self.symbol));
-        out.push(format!("crate_hash {:#x} stable_crate_id {:#x} mode {} {}", h.crate_hash, h.stable_crate_id, h.mode, mode_str(h.mode)));
+        out.push(format!(
+            "crate_hash {:#x} stable_crate_id {:#x} cgu_hash {:#x} mode {} {}",
+            h.crate_hash,
+            h.stable_crate_id,
+            h.cgu_hash,
+            h.mode,
+            mode_str(h.mode)
+        ));
         out.push(format!(
             "sizes ro {} data {} text {} sites {} fixup_area {} jit_records {}",
             h.size,

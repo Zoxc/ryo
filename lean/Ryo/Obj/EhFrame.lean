@@ -10,7 +10,9 @@ shows it. It reads what ryo emits and rejects the rest:
 - 32-bit entries only (no `0xffffffff` extended length); a zero length ends the section;
 - CIE version 1, augmentation `z` followed by any of `P`, `L`, `R` (or empty);
 - pointer encodings `DW_EH_PE_pcrel | DW_EH_PE_sdata4` (`0x1b`), and for the personality
-  also with `DW_EH_PE_indirect` (`0x9b`); a CIE without `R` (absolute 8-byte pointers) rejects;
+  also with `DW_EH_PE_indirect` (`0x9b`); a CIE without `R` (absolute 8-byte pointers) rejects,
+  and so does the Mach-O images' form (`EhPointers::Abs8`: `pcrel | absptr`, `0x10`, 8-byte
+  fields), which never reaches this reader: the object readers are ELF only;
 - the instructions `DW_CFA_advance_loc` (and `advance_loc1/2/4`), `def_cfa`,
   `def_cfa_offset`, `def_cfa_register`, `offset`, `restore` and `nop` (no advances or
   restores among a CIE's initial instructions).

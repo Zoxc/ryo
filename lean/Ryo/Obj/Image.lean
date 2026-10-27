@@ -2,13 +2,13 @@
 # The image in an image object (aot.md §C3)
 
 Locates a crate's image in its image object (`backend/src/objfile.rs`, `write_image`): the
-read-only section holding `__ryo_image_<StableCrateId>` at the header, and the writable and
+read-only section holding `__ryo_image_<StableCrateId>_<CGU hash>` at the header, and the writable and
 text sections its header's `data` and `text` fields are relocated against. Ports
 `Image::parse` and `Image::validate`'s bounds and alignment checks
 (`vm/bytecode/src/image/mod.rs`) over the object's bytes, and gathers each function's inputs
 to `asm::decode_reduced` (`Ryo.Obj.FuncInputs`).
 
-Layouts are `repr(C)` (`Header` 144 bytes, `FuncEntry` 36, `CallSiteEntry` 12,
+Layouts are `repr(C)` (`Header` 160 bytes, `FuncEntry` 36, `CallSiteEntry` 12,
 `FixupEntry` 16). Each function's scopes, dropped stores and branch targets are in its
 instruction list (`Ryo.Obj.List`), a run of the instruction-list bytes.
 -/
@@ -24,7 +24,8 @@ open Ryo.Vm
 /-- `image::MAGIC`. -/
 def imageMagic : List UInt8 := "RYOIMAGE".toUTF8.toList
 
-/-- The prefix of the symbol an image defines (`objfile::IMAGE_SYMBOL_PREFIX`). -/
+/-- The prefix of the symbol an image defines, `__ryo_image_<StableCrateId>_<CGU hash>` (both
+16 lowercase hex digits; `objfile::image_symbol`). -/
 def imageSymbolPrefix : String := "__ryo_image_"
 
 /-- `image::CONTINUE` and `image::CATCH`. -/
@@ -42,7 +43,7 @@ def FUNC_COLD : Nat := 4
 def FUNC_INLINE_HINT : Nat := 8
 def FUNC_FLAGS : Nat := FUNC_INLINE_ALWAYS ||| FUNC_INLINE_NEVER ||| FUNC_COLD ||| FUNC_INLINE_HINT
 
-def headerSize : Nat := 144
+def headerSize : Nat := 160
 
 /-- `image::Span`: offset and element count. -/
 structure Span where
@@ -76,6 +77,12 @@ structure Header where
   fixupArea : Nat
   mode : Nat
   jitRecords : Span
+  /-- `[u32]`, strictly increasing: the pool offset of every relocated 8-byte field of the
+  constant pool. Nothing in the VM semantics reads it (the JIT's constant-load fold does). -/
+  constRelocs : Span
+  /-- `image::cgu_hash` of the codegen unit's name: with `crateHash`, the image's identity in
+  the registry. -/
+  cguHash : Nat
   deriving Repr, Inhabited
 
 /-- `image::FuncEntry`. -/
@@ -119,6 +126,8 @@ inductive ImageError where
   | badList (i : Nat)
   | badCallSite (i : Nat)
   | badData
+  /-- A constant relocation (index) is out of the pool, misaligned or out of order. -/
+  | badConstReloc (i : Nat)
   deriving Repr, DecidableEq, Inhabited
 
 instance : ToString ImageError where
@@ -135,6 +144,7 @@ instance : ToString ImageError where
     | .badList i => s!"BadList({i})"
     | .badCallSite i => s!"BadCallSite({i})"
     | .badData => "BadData"
+    | .badConstReloc i => s!"BadConstReloc({i})"
 
 /-- A parsed read-only section: its bytes (`Header::size` of them) and header. -/
 structure Image where
@@ -155,7 +165,8 @@ def readHeader (b : ByteArray) : Header :=
     codeConsts := span! b 56, fixups := span! b 64, symFlags := span! b 72,
     funcFlags := span! b 80, symbols := span! b 88, consts := span! b 96, lists := span! b 104,
     callSites := span! b 112, siteCount := u32! b 120, fixupArea := u32! b 124,
-    mode := u32! b 128, jitRecords := span! b 132 }
+    mode := u32! b 128, jitRecords := span! b 132, constRelocs := span! b 140,
+    cguHash := u64! b 152 }
 
 /-- `cast`'s checks: `span.count` elements of `size` bytes at `span.off` lie in `len` bytes,
 and `span.off` is a multiple of `align` (the section start is 8-aligned). -/
@@ -183,6 +194,7 @@ def Image.parse (bytes : ByteArray) (aligned : Bool := true) : Except ImageError
   checkPart n h.consts 1 1 "constants"
   checkPart n h.lists 1 1 "instruction lists"
   checkPart n h.callSites 12 4 "call sites"
+  checkPart n h.constRelocs 4 4 "constant relocations"
   let all := MODE_FP_ARG ||| MODE_FRAME_POINTER ||| MODE_ALIGN_LOOPS ||| MODE_PE ||| MODE_COUNTERS
   if h.mode &&& (2 ^ 32 - 1 - all) != 0 || !(Mode.ofBits h.mode).valid then throw .badMode
   if h.symFlags.count != h.symbols.count then throw (.outOfBounds "symbol flags")
@@ -245,14 +257,19 @@ def funcFlags (img : Image) : Array Nat :=
   (Array.range img.header.funcFlags.count).map fun i =>
     (readU8 img.bytes (img.header.funcFlags.off + i)).toOption.getD 0
 
+/-- The pool offsets of the constant pool's relocated fields (`Image::const_relocs`). -/
+def constRelocs (img : Image) : Array Nat :=
+  (Array.range img.header.constRelocs.count).map fun i => u32! img.bytes (img.header.constRelocs.off + 4 * i)
+
 def codeConsts (img : Image) : ByteArray :=
   img.bytes.extract img.header.codeConsts.off (img.header.codeConsts.off + img.header.codeConsts.count)
 
 /-! ## `Image::validate` -/
 
 /-- `Image::validate`: the function table (sorted, in the text), each function's
-instruction list (well formed, `walkList`) and call-site run, the fixups and the symbol
-flags. -/
+instruction list (well formed, `walkList`) and call-site run, the fixups, the symbol and
+function flags, and the constant relocations (each 8-aligned in the section, inside the pool,
+after the one before). -/
 def validate (img : Image) : Except ImageError Unit := do
   let h := img.header
   let mut prevEnd := 0
@@ -288,6 +305,12 @@ def validate (img : Image) : Except ImageError Unit := do
   for fl in img.funcFlags do
     if fl &&& (255 - FUNC_FLAGS) != 0 then throw (.badFuncFlags i)
     i := i + 1
+  i := 0
+  let mut next := 0
+  for o in img.constRelocs do
+    if o < next || (h.consts.off + o) % 8 != 0 || o + 8 > h.consts.count then throw (.badConstReloc i)
+    next := o + 8
+    i := i + 1
 
 end Image
 
@@ -303,7 +326,7 @@ inductive Target where
 /-- An image object: the ELF object, the image, and the sections it lives in. -/
 structure ImageObject where
   elf : Elf
-  /-- `__ryo_image_<id>`. -/
+  /-- `__ryo_image_<id>_<cgu>`. -/
   symbol : String
   image : Image
   /-- The read-only, writable and text sections, and where the image starts in each (the
@@ -520,9 +543,9 @@ private def hex (n : Nat) : String :=
 
 ```
 image <symbol>
-crate_hash <hex> stable_crate_id <hex> mode <bits> <Mode>
+crate_hash <hex> stable_crate_id <hex> cgu_hash <hex> mode <bits> <Mode>
 sizes ro <size> data <data_size> text <text_size> sites <site_count> fixup_area <off> jit_records <off>+<count>
-parts functions <off>+<n> code_consts .. fixups .. sym_flags .. func_flags .. symbols .. consts .. lists .. call_sites ..
+parts functions <off>+<n> code_consts .. fixups .. sym_flags .. func_flags .. symbols .. consts .. lists .. call_sites .. const_relocs ..
 validate ok | validate error: <ImageError>
 sym <i> flags <f> <name>
 func <i> off <code_off> len <code_len> arg <arg_size> ret <ret_size> kind <ret_kind> list <bytes> call_sites <n> relocs <n> <name>
@@ -535,9 +558,9 @@ def summary (o : ImageObject) : Array String := Id.run do
   let img := o.image
   let h := img.header
   let mut out := #[s!"image {o.symbol}",
-    s!"crate_hash {hex h.crateHash} stable_crate_id {hex h.stableCrateId} mode {h.mode} {img.mode}",
+    s!"crate_hash {hex h.crateHash} stable_crate_id {hex h.stableCrateId} cgu_hash {hex h.cguHash} mode {h.mode} {img.mode}",
     s!"sizes ro {h.size} data {h.dataSize} text {h.textSize} sites {h.siteCount} fixup_area {h.fixupArea} jit_records {h.jitRecords}",
-    s!"parts functions {h.functions} code_consts {h.codeConsts} fixups {h.fixups} sym_flags {h.symFlags} func_flags {h.funcFlags} symbols {h.symbols} consts {h.consts} lists {h.lists} call_sites {h.callSites}"]
+    s!"parts functions {h.functions} code_consts {h.codeConsts} fixups {h.fixups} sym_flags {h.symFlags} func_flags {h.funcFlags} symbols {h.symbols} consts {h.consts} lists {h.lists} call_sites {h.callSites} const_relocs {h.constRelocs}"]
   out := out.push (match img.validate with
     | .ok () => "validate ok"
     | .error e => s!"validate error: {e}")
