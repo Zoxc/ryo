@@ -34,7 +34,7 @@ use core::sync::atomic::Ordering::{AcqRel, Acquire, Relaxed, Release, SeqCst};
 use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU8, AtomicU32, AtomicUsize};
 
 use ryo_bytecode::image::{Image, JIT_BIAS, JIT_COLD, JIT_DONE, JIT_ENTRY_THRESHOLD, JIT_FAILED, JIT_QUEUED, JIT_THRESHOLD, JitRecord, jit_settle};
-use ryo_bytecode::jit_abi::{JIT_CHECK, JIT_LOG, JIT_OPT_SSA, JIT_OPT_SSA_NAIVE, JIT_PERFMAP, JIT_SYNC, JIT_TEST_PANIC, RtApi};
+use ryo_bytecode::jit_abi::{JitOpt, JitSettings, RtApi};
 
 pub use ryo_bytecode::jit_abi::JIT_ENTRY_PREFIX;
 
@@ -52,29 +52,21 @@ struct Config {
     /// and continues in its JIT code, so threshold 0 runs every function's JIT code from its
     /// first call (tests).
     sync: bool,
-    /// `RYO_JIT_PERFMAP=1`: a line per compiled function in `/tmp/perf-<pid>.map`.
-    perfmap: bool,
-    /// `RYO_JIT_LOG=1`: a line on stderr per compiled or failed function.
-    log: bool,
     /// `RYO_JIT_SHUFFLE=1`: JIT code gets another frame layout than the AOT code's
     /// (`asm::frame::shuffle_map`), so that OSR entries convert frames (tests).
     shuffle: bool,
-    /// `RYO_JIT_TEST_PANIC=1`: every compile panics (tests: the JIT catches its panics even in
-    /// a `-Cpanic=abort` program).
-    test_panic: bool,
-    /// `RYO_JIT_OPT`: `ssa` (the default), `ssa-naive` or `reencode`: how the JIT compiles
-    /// (design/jit.md, "The SSA tier"), as [`RtApi::flags`] bits.
-    opt: u32,
-    /// `RYO_JIT_CHECK=1`: the SSA tier's checkers.
-    check: bool,
+    /// What the JIT gets: `RYO_JIT_LOG`, `RYO_JIT_PERFMAP`, `RYO_JIT_TEST_PANIC` (tests: the
+    /// JIT catches its panics even in a `-Cpanic=abort` program), `RYO_JIT_CHECK`,
+    /// `RYO_JIT_OPT` and `RYO_JIT_SSA_LIMIT`.
+    jit: JitSettings,
 }
 
-/// `RYO_JIT_OPT`'s flag bits: the SSA tier unless `reencode`.
-fn opt_flags() -> u32 {
+/// `RYO_JIT_OPT`: the SSA tier unless `reencode` or `ssa-naive`.
+fn opt() -> JitOpt {
     match var(c"RYO_JIT_OPT") {
-        Some(b"reencode") => 0,
-        Some(b"ssa-naive") => JIT_OPT_SSA_NAIVE,
-        _ => JIT_OPT_SSA,
+        Some(b"reencode") => JitOpt::Reencode,
+        Some(b"ssa-naive") => JitOpt::SsaNaive,
+        _ => JitOpt::Ssa,
     }
 }
 
@@ -161,12 +153,15 @@ fn from_env() -> Config {
         threshold: var(c"RYO_JIT_THRESHOLD")
             .map(|s| parse_thresholds(s).unwrap_or_else(|| fatal("RYO_JIT_THRESHOLD: expected `L` or `E,L` with decimal thresholds"))),
         sync: flag(c"RYO_JIT_SYNC"),
-        perfmap: flag(c"RYO_JIT_PERFMAP"),
-        log: flag(c"RYO_JIT_LOG"),
         shuffle: flag(c"RYO_JIT_SHUFFLE"),
-        test_panic: flag(c"RYO_JIT_TEST_PANIC"),
-        opt: opt_flags(),
-        check: flag(c"RYO_JIT_CHECK"),
+        jit: JitSettings {
+            log: flag(c"RYO_JIT_LOG"),
+            perfmap: flag(c"RYO_JIT_PERFMAP"),
+            test_panic: flag(c"RYO_JIT_TEST_PANIC"),
+            check: flag(c"RYO_JIT_CHECK"),
+            opt: opt(),
+            ssa_limit: var(c"RYO_JIT_SSA_LIMIT").and_then(parse_i64).and_then(|n| u64::try_from(n).ok()).unwrap_or(u64::MAX),
+        },
     }
 }
 
@@ -199,17 +194,18 @@ impl Config {
 /// Sets the JIT's settings instead of the environment, before anything reads them (tests):
 /// on, with `sync` ([`Config::sync`]) and `threshold` (as `RYO_JIT_THRESHOLD=threshold`), no
 /// perf map, shuffling or test panics, and the rest (`RYO_JIT_LOG`, `RYO_JIT_OPT`,
-/// `RYO_JIT_CHECK`) from the environment. False if they were read already.
+/// `RYO_JIT_CHECK`, `RYO_JIT_SSA_LIMIT`) from the environment. False if they were read already.
 #[doc(hidden)]
 pub fn configure_jit(sync: bool, threshold: Option<i64>) -> bool {
-    set_config(|| Config {
-        enabled: true,
-        threshold: threshold.map(thresholds_of),
-        sync,
-        perfmap: false,
-        shuffle: false,
-        test_panic: false,
-        ..from_env()
+    set_config(|| {
+        let env = from_env();
+        Config {
+            enabled: true,
+            threshold: threshold.map(thresholds_of),
+            sync,
+            shuffle: false,
+            jit: JitSettings { perfmap: false, test_panic: false, ..env.jit },
+        }
     })
 }
 
@@ -572,12 +568,6 @@ unsafe extern "C" {
 /// thread couldn't start.
 fn start() -> bool {
     let cfg = config();
-    let flags = (cfg.sync as u32) * JIT_SYNC
-        | (cfg.log as u32) * JIT_LOG
-        | (cfg.perfmap as u32) * JIT_PERFMAP
-        | (cfg.test_panic as u32) * JIT_TEST_PANIC
-        | cfg.opt
-        | (cfg.check as u32) * JIT_CHECK;
     let mut handlers = [ptr::null(); ryo_bytecode::Opcode::COUNT];
     for (h, &op) in handlers.iter_mut().zip(ryo_bytecode::ALL_OPCODES.iter()) {
         *h = super::interp::handler(op).unwrap_or(ptr::null());
@@ -587,7 +577,7 @@ fn start() -> bool {
         *h = super::interp::reg_handler(op).unwrap_or(ptr::null());
     }
     let api = RtApi {
-        flags,
+        settings: cfg.jit,
         thresholds: cfg.thresholds(),
         probe: super::interp::probe_stack as *const (),
         personality: rust_eh_personality as *const (),

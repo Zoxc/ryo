@@ -18,7 +18,7 @@ use ryo_bytecode::image::{EhFunc, Image, ImageResolver, JIT_DONE, JitRecord, eh_
 use ryo_bytecode::jit;
 use ryo_bytecode::jit::inline::VmFunc;
 use ryo_bytecode::jit::ir::CallTarget;
-use ryo_bytecode::jit_abi::{JIT_CHECK, JIT_ENTRY_PREFIX, JIT_LOG, JIT_OPT_SSA, JIT_OPT_SSA_NAIVE, JIT_TEST_PANIC, RtApi};
+use ryo_bytecode::jit_abi::{JIT_ENTRY_PREFIX, JitOpt, RtApi};
 use ryo_bytecode::{Opcode, reduced, vmem};
 
 /// The page size.
@@ -231,9 +231,8 @@ pub(crate) struct Jit {
     /// `RYO_JIT_DUMP`: the directory the SSA tier writes a description of each compilation
     /// to.
     dump: Option<String>,
-    /// `RYO_JIT_SSA_LIMIT`, and how many functions went to the SSA tier so far.
-    ssa_limit: Option<usize>,
-    ssa_tried: usize,
+    /// How many functions went to the SSA tier so far ([`ryo_bytecode::jit_abi::JitSettings::ssa_limit`]).
+    ssa_tried: u64,
     /// The inliner's callee IR, by (image header, function) ([`InlineEnv`]).
     ir_cache: IrCache,
 }
@@ -481,12 +480,13 @@ impl Jit {
         let probe = rt.probe as usize;
         let lo = handlers.first().map_or(probe, |h| h.0).min(probe);
         let hi = handlers.last().map_or(probe, |h| h.0).max(probe) + PAGE;
-        let perfmap = (rt.flags & ryo_bytecode::jit_abi::JIT_PERFMAP != 0)
+        let perfmap = rt
+            .settings
+            .perfmap
             .then(crate::sys::perfmap_path)
             .flatten()
             .and_then(|path| std::fs::OpenOptions::new().create(true).append(true).open(path).ok());
         let dump = std::env::var("RYO_JIT_DUMP").ok().filter(|d| !d.is_empty());
-        let ssa_limit = std::env::var("RYO_JIT_SSA_LIMIT").ok().and_then(|n| n.parse().ok());
         Jit {
             rt,
             handlers,
@@ -497,7 +497,6 @@ impl Jit {
             slots: HashMap::new(),
             slots_of: HashMap::new(),
             dump,
-            ssa_limit,
             ssa_tried: 0,
             ir_cache: HashMap::new(),
         }
@@ -563,7 +562,7 @@ impl Jit {
 
     /// Compiles the function of `rec` and publishes its code.
     pub(crate) fn compile(&mut self, rec: *mut JitRecord) -> Result<(), &'static str> {
-        if self.rt.flags & JIT_TEST_PANIC != 0 {
+        if self.rt.settings.test_panic {
             panic!("RYO_JIT_TEST_PANIC");
         }
         // Again in a new region if the one it was compiled for filled up (once is enough: the
@@ -651,7 +650,7 @@ impl Jit {
                     map = m;
                 }
                 Err(e) => {
-                    if self.rt.flags & JIT_LOG != 0 {
+                    if self.rt.settings.log {
                         self.log(rec, e.what);
                     }
                 }
@@ -668,16 +667,16 @@ impl Jit {
         self.retarget(&mut words, func, &img, place, &mut ext, &mut memo)?;
         // The SSA tier (`RYO_JIT_OPT`), else, or where it doesn't compile the function, the
         // re-encoding pipeline.
-        let flags = self.rt.flags;
+        let settings = self.rt.settings;
         // `RYO_JIT_SSA_LIMIT=n` (debugging: bisects a miscompile): only the first `n`
         // functions go through the SSA tier.
-        let within_limit = self.ssa_limit.is_none_or(|n| self.ssa_tried < n);
-        if flags & (JIT_OPT_SSA | JIT_OPT_SSA_NAIVE) != 0 && within_limit {
+        let within_limit = self.ssa_tried < settings.ssa_limit;
+        if settings.opt != JitOpt::Reencode && within_limit {
             self.ssa_tried += 1;
             let opts = jit::Options {
-                alloc: if flags & JIT_OPT_SSA != 0 { jit::Allocator::LinearScan } else { jit::Allocator::Naive },
+                alloc: if settings.opt == JitOpt::Ssa { jit::Allocator::LinearScan } else { jit::Allocator::Naive },
                 stress: (self.rt.shuffled)(h as *const _ as *const u8),
-                check: flags & JIT_CHECK != 0,
+                check: settings.check,
                 dump: self.dump.is_some(),
             };
             // The AOT layout's words (the SSA tier lays out its own frame); the calls are
@@ -726,7 +725,7 @@ impl Jit {
                         let text = std::format!("; unsupported: {}\n{}", u.0, reduced::Disasm(&ds.words));
                         let _ = std::fs::write(std::format!("{dir}/f{func}-{:x}.txt", h as *const _ as usize), text);
                     }
-                    if flags & JIT_LOG != 0 {
+                    if settings.log {
                         self.log(rec, &std::format!("ssa: {}", u.0));
                     }
                 }
@@ -1020,7 +1019,7 @@ impl Jit {
             // store of its size).
             unsafe { AtomicUsize::from_ptr(slot as *mut usize).store(jit_f, Release) };
         }
-        if self.rt.flags & JIT_LOG != 0 {
+        if self.rt.settings.log {
             let c = counts(rec, self.rt.thresholds);
             self.log(rec, &std::format!("compiled ({}, {} calls, {} loop iterations)", tier.name(), c.calls, c.iters));
         }

@@ -750,7 +750,7 @@ rlib bundles (`build/src/jit.rs`, [build.md](build.md#build)):
   the JIT is built with the runtime ([version-matched](vm.md#image-format)).
   | Field | |
   |---|---|
-  | `flags` | `JIT_SYNC`, `JIT_LOG`, `JIT_PERFMAP`, `JIT_TEST_PANIC`, `JIT_OPT_SSA`, `JIT_OPT_SSA_NAIVE`, `JIT_CHECK` ([Settings](#settings)) |
+  | `settings` | `JitSettings`: `log`, `perfmap`, `test_panic`, `check`, `opt` (`JitOpt`), `ssa_limit` ([Settings](#settings)) |
   | `probe` | `ryo_probe_stack`'s address |
   | `personality` | the program's `rust_eh_personality`'s address, by which the JIT finds an image's personality slot |
   | `thresholds` | the counters' thresholds (calls, loop iterations), for the counts |
@@ -809,8 +809,8 @@ rlib bundles (`build/src/jit.rs`, [build.md](build.md#build)):
 
 ## Settings
 
-Read once by the runtime side, with the C runtime's `getenv`, and passed on in
-`RtApi::flags` (`vm::configure_jit` sets them in tests, and `vm::jit_shuffle_image` asks
+Read once by the runtime side, with the C runtime's `getenv`, and those the JIT needs passed
+on in `RtApi::settings` (`vm::configure_jit` sets them in tests, and `vm::jit_shuffle_image` asks
 for shuffled frames per image, `RtApi::shuffled`):
 
 | Variable | Effect |
@@ -825,7 +825,7 @@ for shuffled frames per image, `RtApi::shuffled`):
 | `RYO_JIT_OPT=…` | `ssa` (the default), `ssa-naive` or `reencode`: how functions are compiled ([The SSA tier](#the-ssa-tier)); with `RYO_JIT_SHUFFLE` the SSA tier lays allocas out in reverse with gaps |
 | `RYO_JIT_CHECK=1` | the SSA tier's checkers: a failure is printed on stderr and the function falls back |
 | `RYO_JIT_DUMP=dir` | the SSA tier writes each function's reduced code, IR before and after value numbering and the folds, locations and code (or, for one it doesn't handle, the reason and the reduced code) to `dir/f<index>-<image header address>.txt`, and every installed function's code with its relocations by name to `dir/f<index>-<image header address>.code` (for `y bench codegen`, [build.md](build.md#test-and-bench)); read by the JIT thread itself, not passed in `RtApi` |
-| `RYO_JIT_SSA_LIMIT=n` | debugging: only the first `n` functions the JIT compiles go to the SSA tier, the rest are re-encoded (bisects a miscompile; read by the JIT thread) |
+| `RYO_JIT_SSA_LIMIT=n` | debugging: only the first `n` functions the JIT compiles go to the SSA tier, the rest are re-encoded (bisects a miscompile) |
 
 `y test` links a checked JIT, built with debug assertions and overflow checks
 (`RYO_JIT_CHECKED`, [build.md](build.md#build)); measurements use the release one.

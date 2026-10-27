@@ -1,7 +1,7 @@
 //! The JIT thread (design/jit.md): compiles what the runtime queued, in trip order,
 //! and reports each function. It sees the runtime only through the [`RtApi`] it starts with.
 
-use ryo_bytecode::jit_abi::{JIT_LOG, RtApi};
+use ryo_bytecode::jit_abi::RtApi;
 
 /// The JIT thread's name.
 const NAME: &str = "ryo-jit";
@@ -10,7 +10,7 @@ use crate::install::Jit;
 
 /// Starts the JIT thread. False if the thread didn't start.
 pub(crate) fn start(rt: &'static RtApi) -> bool {
-    quiet_panics(rt.flags & JIT_LOG != 0);
+    quiet_panics(rt.settings.log);
     crate::sys::close_frame_registry_at_exit();
     std::thread::Builder::new().name(NAME.into()).spawn(move || main(rt)).is_ok()
 }
@@ -60,7 +60,7 @@ fn main(rt: &'static RtApi) {
                 Err(_) => Some("panicked"),
             };
             if let Some(why) = why
-                && rt.flags & JIT_LOG != 0
+                && rt.settings.log
             {
                 jit.log(rec, why);
             }

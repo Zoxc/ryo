@@ -24,33 +24,44 @@ use crate::image::JitRecord;
 /// mispredicts once, but the function's own `ret` and its callers' don't.
 pub const JIT_ENTRY_PREFIX: usize = 12;
 
-/// [`RtApi::flags`]: a trip that queues a function waits until it is compiled
-/// (`RYO_JIT_SYNC`). The runtime does the waiting and the waking; for the JIT's information.
-pub const JIT_SYNC: u32 = 1;
-/// [`RtApi::flags`]: a line on stderr per compiled or failed function (`RYO_JIT_LOG`).
-pub const JIT_LOG: u32 = 2;
-/// [`RtApi::flags`]: a line per compiled function in `/tmp/perf-<pid>.map`
-/// (`RYO_JIT_PERFMAP`).
-pub const JIT_PERFMAP: u32 = 4;
-/// [`RtApi::flags`]: every compile panics, which must fail the function and nothing else
-/// (`RYO_JIT_TEST_PANIC`, tests).
-pub const JIT_TEST_PANIC: u32 = 8;
+/// How the JIT compiles (`RYO_JIT_OPT`, design/jit.md, "The SSA tier").
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum JitOpt {
+    /// Re-encodes the AOT code (`reencode`).
+    Reencode,
+    /// The SSA tier with every value in a stack slot (`ssa-naive`).
+    SsaNaive,
+    /// The SSA tier with its register allocator (`ssa`, the default).
+    Ssa,
+}
 
-/// [`RtApi::flags`]: compile through the SSA tier with every value in a stack slot
-/// (`RYO_JIT_OPT=ssa-naive`).
-pub const JIT_OPT_SSA_NAIVE: u32 = 16;
-/// [`RtApi::flags`]: compile through the SSA tier with its register allocator
-/// (`RYO_JIT_OPT=ssa`).
-pub const JIT_OPT_SSA: u32 = 32;
-/// [`RtApi::flags`]: run the SSA tier's checkers (`RYO_JIT_CHECK`).
-pub const JIT_CHECK: u32 = 64;
+/// The settings the JIT gets from the runtime, which reads them from the environment
+/// (design/jit.md, "Settings"). `RYO_JIT_DUMP`, a path, the JIT reads itself.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct JitSettings {
+    /// A line on stderr per compiled or failed function (`RYO_JIT_LOG`).
+    pub log: bool,
+    /// A line per compiled function in `/tmp/perf-<pid>.map` (`RYO_JIT_PERFMAP`).
+    pub perfmap: bool,
+    /// Every compile panics, which must fail the function and nothing else
+    /// (`RYO_JIT_TEST_PANIC`, tests).
+    pub test_panic: bool,
+    /// Run the SSA tier's checkers (`RYO_JIT_CHECK`).
+    pub check: bool,
+    /// How functions are compiled (`RYO_JIT_OPT`).
+    pub opt: JitOpt,
+    /// Only the first this many functions go to the SSA tier, the rest are re-encoded
+    /// (`RYO_JIT_SSA_LIMIT`, debugging: bisects a miscompile); `u64::MAX` for all.
+    pub ssa_limit: u64,
+}
 
 /// What the runtime gives the JIT: built once, before the JIT starts, and never changed.
 #[repr(C)]
 pub struct RtApi {
-    /// [`JIT_SYNC`], [`JIT_LOG`], [`JIT_PERFMAP`], [`JIT_TEST_PANIC`], [`JIT_OPT_SSA_NAIVE`],
-    /// [`JIT_OPT_SSA`], [`JIT_CHECK`].
-    pub flags: u32,
+    /// The settings.
+    pub settings: JitSettings,
     /// `ryo_probe_stack`'s address.
     pub probe: *const (),
     /// The program's `rust_eh_personality`: the JIT finds an image's personality slot, which
@@ -88,6 +99,3 @@ pub struct RtApi {
 
 // SAFETY: immutable once built; the pointers are code addresses.
 unsafe impl Sync for RtApi {}
-
-/// The name of the JIT's one exported symbol.
-pub const START_SYMBOL: &str = "ryo_jit_start";
