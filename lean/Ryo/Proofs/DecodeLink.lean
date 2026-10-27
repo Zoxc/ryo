@@ -25,15 +25,25 @@ positions of those instructions.
 - `DecodeLink.Inline`: an inline sequence without a dropped store is `cache.emit cand`, `cand`
   the `sequence` of its class and operands (`link_inline`, `CacheStep.inline_step_cached`'s
   items), then the `jcc` of a branch class.
+- `DecodeLink.Items`: what the candidate parsers return: every decoded item is `XmmOk`
+  (`decodeItem_xmmOk`), so `link_call_ok` is `link_call` without that hypothesis; without a frame
+  pointer the item in memory is `spFrame F` of the decoded one (`decodeItem_itemAt_sp`,
+  `LinkOkSp.dec`).
+- `DecodeLink.Arg`: `link_arg_exact`, `link_arg` with `ArgReg.of? r.toNat true = some a`
+  (`argInsn_bounds`).
+- `DecodeLink.Drop`: inline sequences with dropped stores (`DecDrop`, `SkipAt`,
+  `link_inline_drop`) and an inline branch's target operand (`inline_targets`,
+  `inline_branch_index`).
+- `DecodeLink.Ops`: the island operand array in memory, `OpsAt` from `opsArray`
+  (`opsAt_of_opsArray`, given the rodata loaded, `RoLoaded`).
+- `DecodeLink.Loop`: the instruction loop as a chain of iterations (`Iters`, `instructions_read`,
+  `read_instructions`): each proto read at its position after the padding and counter check,
+  with the cache and dropped stores it was read with.
 
-**Not here.** The instruction loop (`instructions`: which function read each proto, with the
-cursor where, the boundary carried along, the padding and counter checks skipped; a proto's
-`pos`, the branch target, is before a loop head's counter check, its items after it); inline
-sequences with a dropped store, and the `jcc` target against the `target` operand; the
-no-frame-pointer form (`decodeItem` returns `[rbp + d]` for code holding `[rsp + F + d]`);
-`XmmOk` and `link_arg`'s bounds, which need the candidate parsers' output ranges; a relocation
-starting in a jump table's padding; the island operand array in memory (`OpsAt` from
-`opsArray`).
+**Not here.** The step lemmas for the frame form without a frame pointer (the links give its
+items, `Item.spFrame`; `RRel` and the shape lemmas assume `rbp = fp`); the dead-store step
+(running the kept items of `SkipAt` against `cache.emit`'s output); a relocation starting in a
+jump table's padding.
 -/
 import Ryo.Proofs.DecodeLink.Bytes
 import Ryo.Proofs.DecodeLink.Run
@@ -42,3 +52,8 @@ import Ryo.Proofs.DecodeLink.Read
 import Ryo.Proofs.DecodeLink.Links
 import Ryo.Proofs.DecodeLink.Call
 import Ryo.Proofs.DecodeLink.Inline
+import Ryo.Proofs.DecodeLink.Items
+import Ryo.Proofs.DecodeLink.Arg
+import Ryo.Proofs.DecodeLink.Drop
+import Ryo.Proofs.DecodeLink.Ops
+import Ryo.Proofs.DecodeLink.Loop

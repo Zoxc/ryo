@@ -4,14 +4,14 @@ Ryo.Proofs.DecodeLink.Inline — inline sequences as `inlineInsn` reads them (ao
 
 - `inlineInsn_read`: an exact read (`exact = true`, the second pass) that accepted a sequence
   without a dropped store (`q.dropped = false`) found a candidate `cand` the decoder decodes to
-  `q.op`, `q.ops` (`decodeInline_spec`: `(q.op, cls) ∈ inlineOps` and `sequence cls q.ops =
-  some (cand, br)`), with `cache.emit cand = (q.items, cache')`: the items read, one after the
-  other, are `cache.emit cand`'s, then, for a branch class, the `jcc` the loop stopped at.
+  `q.op`, `q.ops` (`decodeInline cand br = some (q.op, q.ops)`, so by `decodeInline_spec`
+  `(q.op, cls) ∈ inlineOps` and `sequence cls q.ops = some (cand, br)`), with
+  `cache.emit cand = (q.items, cache')`: the items read, one after the other, are
+  `cache.emit cand`'s, then, for a branch class, the `jcc` the loop stopped at.
 - `link_inline`: in memory (`LinkOk`): `CodeAt` of `(cache.emit cand).1` (and the `jcc`).
 
-**Not here.** A sequence with a dropped store (the store is in `cache.emit cand` but not in the
-code: `q.items` is the output without it); that the `jcc`'s target is the `target` operand
-`decodeInlineSearch` puts in `q.ops` (it takes the branch's, but through the search's loops).
+Sequences with a dropped store, and the `jcc`'s target against the `target` operand, are in
+`DecodeLink.Drop`.
 -/
 import Ryo.Proofs.DecodeLink.Links
 
@@ -25,7 +25,8 @@ open Ryo.X86 Ryo.Vm Ryo.Vm.R Ryo.Vm.Asm
 theorem inlineInsn_read {cache cache' : Cache} {dropped dr' : List DroppedStore} {c c' : Cursor}
     {q : Proto} (h : (inlineInsn cache dropped true).run c = .ok (some (q, cache', dr'), c'))
     (hq : q.dropped = false) :
-    q.pos = c.pos ∧ q.handler = none ∧ ∃ cand br, (∃ cls, (q.op, cls) ∈ inlineOps ∧
+    q.pos = c.pos ∧ q.handler = none ∧ ∃ cand br, decodeInline cand br = some (q.op, q.ops) ∧
+      (∃ cls, (q.op, cls) ∈ inlineOps ∧
       sequence cls q.ops = some (cand, br.map (·.1))) ∧ cache.emit cand = (q.items, cache') ∧
       ((br = none ∧ Dec c c.pos q.items c'.pos) ∨ ∃ cond tgt long, br = some (cond, tgt.toNat) ∧
         Dec c c.pos (q.items ++ [.branch cond tgt long]) c'.pos) := by
@@ -247,7 +248,8 @@ theorem inlineInsn_read {cache cache' : Cache} {dropped dr' : List DroppedStore}
     subst hwd
     simp only [Bool.false_eq_true, ↓reduceIte] at hits
     obtain ⟨cls, hmem, hseq⟩ := decodeInline_spec hdi
-    refine ⟨hpos, hh, cand, branch, ⟨cls, by rw [hop]; exact hmem, by rw [hops]; exact hseq⟩, ?_, ?_⟩
+    refine ⟨hpos, hh, cand, branch, by rw [hop, hops]; exact hdi,
+      ⟨cls, by rw [hop]; exact hmem, by rw [hops]; exact hseq⟩, ?_, ?_⟩
     · rw [hits, hcache, ← hemit]
     · rw [hits]
       rcases hd rfl with ⟨hb, hd'⟩ | ⟨cond, tgt, long, hb, hd'⟩
@@ -270,7 +272,7 @@ theorem link_inline {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {ca
           CodeAt ctx m ((cache.emit cand).1 ++ [.branch cond tgt long]) c.pos ∧
           c'.pos = c.pos + codeSize ((cache.emit cand).1 ++ [.branch cond tgt long]) ∧
           Boundary rs c'.pos) := by
-  obtain ⟨hpos, hh, cand, br, ⟨cls, hmem, hseq⟩, hemit, hd⟩ := inlineInsn_read h hq
+  obtain ⟨hpos, hh, cand, br, -, ⟨cls, hmem, hseq⟩, hemit, hd⟩ := inlineInsn_read h hq
   refine ⟨hpos, hh, cand, br, cls, hmem, hseq, hemit, ?_⟩
   rw [hemit]
   rcases hd with ⟨hbr, hd⟩ | ⟨cond, tgt, long, hbr, hd⟩

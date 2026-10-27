@@ -21,9 +21,8 @@ indices with `pos32 r t = tgt`.
   (`unreachable_step`), `retLoads k.toNat src ++ epilogue F mode ++ [ret]` with `F` the frame size
   (`ret_step`), `islandPre ++ islandPost` and the rodata operand words (`island_sound`).
 - `link_arg`: `argStore a d pe` with `r = word a`, `ArgReg.of? r` defined; `of_word_eq`: its
-  result is `a` when `a.size < 32` and `a.index < 2 ^ 24` (what `ArgRet.arg_step` needs). That
-  `argInsn`'s `a` satisfies the bounds isn't proved (the integer size is a sum over the stores
-  read; the `xmm` fields come from the candidate parsers).
+  result is `a` when `a.size < 32` and `a.index < 2 ^ 24` (what `ArgRet.arg_step` needs);
+  `DecodeLink.Arg` proves the bounds of `argInsn`'s `a` (`link_arg_exact`).
 -/
 import Ryo.Proofs.DecodeLink.Read
 set_option linter.constructorNameAsVariable false

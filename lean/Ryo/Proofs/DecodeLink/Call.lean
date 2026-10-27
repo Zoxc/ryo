@@ -19,8 +19,8 @@ and size, and from a `movss`/`movsd`/`movups` load's memory operand only its dis
 the word gives back the decoded item only when the register number is below 8, the size 4, 8
 or 16 and the base `rbp`. `decodeItem` returns only such items (`sseCandidate` reads a 3-bit
 field and those sizes, `fromSpFrame` rejects `rsp` with a frame pointer, the `movd` parse a
-3-bit field), but that is a property of the candidate parsers not proved here; `link_call`
-states `callSeq`/`tailSeq` under it.
+3-bit field), a property of the candidate parsers: `link_call` states `callSeq`/`tailSeq`
+under it, and `DecodeLink.Items` discharges it (`decodeItem_xmmOk`, `link_call_ok`).
 -/
 import Ryo.Proofs.DecodeLink.Links
 import Ryo.Proofs.Call
