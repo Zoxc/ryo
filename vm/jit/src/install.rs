@@ -129,9 +129,37 @@ struct ImageInfo {
     personality: Option<usize>,
 }
 
-/// Returned by [`Jit::install`] when the region the code was encoded for filled up and was
-/// retired: the calls' forms depend on the region, so the function is compiled again.
-const RETRY: &str = "region full";
+/// Why a compilation didn't install code.
+enum CompileError {
+    /// The region the code was encoded for filled up and was retired ([`Jit::install`]):
+    /// the calls' forms depend on the region, so the function is compiled again.
+    Retry,
+    /// It failed, for this reason.
+    Fail(&'static str),
+}
+
+impl From<&'static str> for CompileError {
+    fn from(why: &'static str) -> CompileError {
+        CompileError::Fail(why)
+    }
+}
+
+/// Which pipeline compiled a function.
+#[derive(Clone, Copy)]
+enum Tier {
+    Ssa,
+    Reencode,
+}
+
+impl Tier {
+    /// Its name in `RYO_JIT_DUMP`'s `.code` files.
+    fn name(self) -> &'static str {
+        match self {
+            Tier::Ssa => "ssa",
+            Tier::Reencode => "reencode",
+        }
+    }
+}
 
 /// The region a function is compiled for: calls are encoded by whether it reaches their
 /// targets.
@@ -540,10 +568,14 @@ impl Jit {
         }
         // Again in a new region if the one it was compiled for filled up (once is enough: the
         // new one is empty, and the function fits half of one).
-        match self.compile_once(rec) {
-            Err(RETRY) => self.compile_once(rec),
+        let r = match self.compile_once(rec) {
+            Err(CompileError::Retry) => self.compile_once(rec),
             r => r,
-        }
+        };
+        r.map_err(|e| match e {
+            CompileError::Retry => "region full",
+            CompileError::Fail(why) => why,
+        })
     }
 
     /// Rewrites the `call`s, `call.sym`s and `tail_call`s of `words` (the code of `func` of
@@ -593,7 +625,7 @@ impl Jit {
         Ok(())
     }
 
-    fn compile_once(&mut self, rec: *mut JitRecord) -> Result<(), &'static str> {
+    fn compile_once(&mut self, rec: *mut JitRecord) -> Result<(), CompileError> {
         // SAFETY: a record of a linked image, whose header it points at.
         let (func, img) = unsafe { ((*rec).func, Image::from_header((*rec).header.cast()).map_err(|_| "invalid image")?) };
         let h = img.header();
@@ -686,7 +718,7 @@ impl Jit {
                     };
                     SSA_COMPILED.fetch_add(1, SeqCst);
                     SSA_DEVIRT.fetch_add(o.devirt, SeqCst);
-                    return self.install(rec, func, &img, place, personality, &ssa_ext, out, "compiled (ssa)");
+                    return self.install(rec, func, &img, place, personality, &ssa_ext, out, Tier::Ssa);
                 }
                 Err(jit::Error::Unsupported(u)) => {
                     SSA_FALLBACK.fetch_add(1, SeqCst);
@@ -703,7 +735,7 @@ impl Jit {
                 Err(jit::Error::Check(why)) => {
                     SSA_FALLBACK.fetch_add(1, SeqCst);
                     self.log(rec, &std::format!("ssa: check failed: {why}"));
-                    return Err("the SSA tier's checkers failed");
+                    return Err("the SSA tier's checkers failed".into());
                 }
             }
         }
@@ -744,7 +776,7 @@ impl Jit {
             osr,
             osr_at,
         };
-        self.install(rec, func, &img, place, personality, &ext, out, "compiled")
+        self.install(rec, func, &img, place, personality, &ext, out, Tier::Reencode)
     }
 
     /// Installs the code `out` of the function `func` of `img` (record `rec`), compiled for
@@ -760,8 +792,8 @@ impl Jit {
         personality: usize,
         ext: &[Ext],
         out: Gen,
-        what: &str,
-    ) -> Result<(), &'static str> {
+        tier: Tier,
+    ) -> Result<(), CompileError> {
         let h = img.header();
         let mode = Mode { counters: false, far_rt: place.far_rt, ..img.mode() };
         let Gen { len: code_len, code: enc_code, relocs, rodata, call_sites, body, osr, osr_at } = out;
@@ -782,12 +814,12 @@ impl Jit {
             match &body {
                 Body::Aot(ef) => {
                     if ef.prologue != 0 || ef.entry_stub != ef.len {
-                        return Err("PE code with a counter check");
+                        return Err("PE code with a counter check".into());
                     }
                     eh.extend_from_slice(&pe_unwind_info(ef, mode));
                 }
                 Body::Pe(info) => eh.extend_from_slice(info),
-                Body::Rows(_) => return Err("DWARF rows on PE"),
+                Body::Rows(_) => return Err("DWARF rows on PE".into()),
             }
         } else {
             pers_field = eh_cie(&mut eh);
@@ -795,7 +827,7 @@ impl Jit {
             fields = Some(match &body {
                 Body::Aot(ef) => eh_fde(&mut eh, 0, ef, mode),
                 Body::Rows(rows) => eh_fde_rows(&mut eh, 0, code_len as u32, rows),
-                Body::Pe(_) => return Err("PE unwind info off PE"),
+                Body::Pe(_) => return Err("PE unwind info off PE".into()),
             });
             if osr.is_some() {
                 fdes.push(eh.len());
@@ -811,7 +843,7 @@ impl Jit {
         let size = (ro_at + rodata.len()).next_multiple_of(PAGE);
         let eh_size = eh.len().next_multiple_of(16);
         if size + eh_size > REGION / 2 {
-            return Err("too large");
+            return Err("too large".into());
         }
         let header = h as *const _ as usize;
         let start = place.start;
@@ -828,13 +860,13 @@ impl Jit {
         }
         let new_slots =
             ext.iter().zip(&used).filter_map(|(e, &u)| e.vm.filter(|_| u)).filter(|&(hd, g)| !self.slots.contains_key(&(start, hd, g))).count();
-        let region = self.regions.iter_mut().find(|r| r.start == start).ok_or(RETRY)?;
+        let region = self.regions.iter_mut().find(|r| r.start == start).ok_or(CompileError::Retry)?;
         if region.code + size + eh_size + 8 * new_slots > region.data {
             // Full: retire it (it reaches nothing any more), and compile again for another.
             region.data = region.code;
             region.start = usize::MAX;
             region.end = usize::MAX;
-            return Err(RETRY);
+            return Err(CompileError::Retry);
         }
         let base = region.code;
         region.code += size;
@@ -896,7 +928,7 @@ impl Jit {
                     if g & FUNC_KINDS == FUNC_SLOT { slot_of[k] } else { ext[k].addr }
                 }
                 // Every other call was retargeted.
-                Ref::Func(_) => return Err("an unexpected call"),
+                Ref::Func(_) => return Err("an unexpected call".into()),
                 Ref::Sym(Sym(s)) => ro + h.symbols.off as usize + 8 * s as usize,
                 Ref::Site(Site(s)) => h.data as usize + 8 * s as usize,
                 Ref::Const(Const(k)) => ro + h.consts.off as usize + k as usize,
@@ -925,7 +957,7 @@ impl Jit {
             }
         }
         if let Some(dir) = &self.dump {
-            self.dump_code(dir, func, header, ext, &enc_code, &relocs, osr.as_ref().map(|o| (osr_at, o)), what);
+            self.dump_code(dir, func, header, ext, &enc_code, &relocs, osr.as_ref().map(|o| (osr_at, o)), tier);
         }
         let pc = |eh: &mut Vec<u8>, at: usize, target: usize| -> Result<(), &'static str> {
             let d = i32::try_from((target as i64).wrapping_sub((eh_base + at) as i64)).map_err(|_| "out of reach")?;
@@ -956,7 +988,7 @@ impl Jit {
             ptr::copy_nonoverlapping(code.as_ptr(), base as *mut u8, size);
             ptr::copy_nonoverlapping(eh.as_ptr(), eh_base as *mut u8, eh.len());
             if !vmem::make_executable(base as *mut u8, size) {
-                return Err("make_executable");
+                return Err("make_executable".into());
             }
             // Unregistered, the code must not run: nothing could unwind through it. At exit
             // it isn't needed.
@@ -968,7 +1000,7 @@ impl Jit {
             // PE code off Windows (tests, which run PE images' VM code on Linux): there is
             // no unwinder to tell, and nothing unwinds through it.
             if (cfg!(windows) || !mode.pe) && !crate::sys::register_unwind(&unwind) {
-                return Err("exiting");
+                return Err("exiting".into());
             }
         }
         if let Some(m) = &mut self.perfmap {
@@ -990,7 +1022,7 @@ impl Jit {
         }
         if self.rt.flags & JIT_LOG != 0 {
             let c = counts(rec, self.rt.thresholds);
-            self.log(rec, &std::format!("{what} ({} calls, {} loop iterations)", c.calls, c.iters));
+            self.log(rec, &std::format!("compiled ({}, {} calls, {} loop iterations)", tier.name(), c.calls, c.iters));
         }
         Ok(())
     }
@@ -1013,10 +1045,10 @@ impl Jit {
         code: &[u8],
         relocs: &[asm::Reloc],
         osr: Option<(usize, &asm::osr::OsrCode)>,
-        what: &str,
+        tier: Tier,
     ) {
         use core::fmt::Write as _;
-        let mut s = std::format!("tier {}\ncode ", if what.contains("ssa") { "ssa" } else { "reencode" });
+        let mut s = std::format!("tier {}\ncode ", tier.name());
         let hex = |s: &mut std::string::String, bytes: &[u8]| {
             for b in bytes {
                 let _ = write!(s, "{b:02x}");
