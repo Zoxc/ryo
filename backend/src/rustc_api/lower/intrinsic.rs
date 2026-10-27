@@ -14,19 +14,20 @@ use ryo_bytecode::full::Opcode;
 
 use super::call::{ArgSrc, CallCont};
 use super::cast::ScalarKind;
-use super::emit::{FloatWidth, Width, opcode, opw, try_opcode};
+use super::emit::{FloatOp, FloatWidth, IntOp, Width, opf, opw};
 use super::island::templates;
 use super::place::Loc;
 use super::{FnCx, NeedsNative, SPLIT_MAX, native};
+use ryo_bytecode::full::by_mnemonic;
 
 /// The suffix of an atomic opcode for an ordering.
 fn ord_name(o: ty::AtomicOrdering) -> &'static str {
     match o {
-        ty::AtomicOrdering::Relaxed => "Relaxed",
-        ty::AtomicOrdering::Release => "Release",
-        ty::AtomicOrdering::Acquire => "Acquire",
-        ty::AtomicOrdering::AcqRel => "Acqrel",
-        ty::AtomicOrdering::SeqCst => "Seqcst",
+        ty::AtomicOrdering::Relaxed => "relaxed",
+        ty::AtomicOrdering::Release => "release",
+        ty::AtomicOrdering::Acquire => "acquire",
+        ty::AtomicOrdering::AcqRel => "acqrel",
+        ty::AtomicOrdering::SeqCst => "seqcst",
     }
 }
 
@@ -61,7 +62,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let [a, b] = self.arg_slots::<2>(args)?;
                 let signed = name.as_str() == "ptr_offset_from";
                 self.into_dest(&cont, |fx, d| {
-                    fx.op(opw("Sub", Width::W64), &[d, a, b]);
+                    fx.op(opw(IntOp::Sub, Width::W64), &[d, a, b]);
                     if size > 1 {
                         // The distance is a multiple of `size` (UB otherwise).
                         fx.exact_div_const(Width::W64, signed, d, d, u128::from(size));
@@ -139,9 +140,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             }
             "ctpop" | "ctlz" | "cttz" | "ctlz_nonzero" | "cttz_nonzero" => {
                 let family = match name.as_str() {
-                    "ctpop" => "Ctpop",
-                    "ctlz" | "ctlz_nonzero" => "Ctlz",
-                    _ => "Cttz",
+                    "ctpop" => IntOp::Ctpop,
+                    "ctlz" | "ctlz_nonzero" => IntOp::Ctlz,
+                    _ => IntOp::Cttz,
                 };
                 let l = self.layout_of(callee.args.type_at(0))?;
                 let ScalarKind::Int { w, .. } = self.scalar_kind(l)? else { return native("count of a float") };
@@ -158,9 +159,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let l = self.layout_of(callee.args.type_at(0))?;
                 let ScalarKind::Int { w, .. } = self.scalar_kind(l)? else { return native("bswap of a float") };
                 let [x] = self.arg_slots::<1>(args)?;
-                let family = if name.as_str() == "bswap" { "Bswap" } else { "Bitreverse" };
+                let family = if name.as_str() == "bswap" { IntOp::Bswap } else { IntOp::Bitreverse };
                 self.into_dest(&cont, |fx, d| {
-                    if family == "Bswap" && w == Width::W8 {
+                    if family == IntOp::Bswap && w == Width::W8 {
                         // One byte: the identity (there is no `bswap.w8`).
                         fx.mov(d, x, 1);
                     } else {
@@ -189,15 +190,15 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                         } else {
                             let t = fx.frame.temp(u64::from(size), u64::from(size));
                             let u = fx.frame.temp(u64::from(size), u64::from(size));
-                            fx.op_imm("Shl", w, t, x, c);
-                            fx.op_imm("ShrU", w, u, x, u128::from(bits) - c);
-                            fx.op(opw("Or", w), &[d, t, u]);
+                            fx.op_imm(IntOp::Shl, w, t, x, c);
+                            fx.op_imm(IntOp::ShrU, w, u, x, u128::from(bits) - c);
+                            fx.op(opw(IntOp::Or, w), &[d, t, u]);
                         }
                         Ok(())
                     })?
                 } else {
                     let [x, n] = self.arg_slots::<2>(args)?;
-                    let family = if left { "Rotl" } else { "Rotr" };
+                    let family = if left { IntOp::Rotl } else { IntOp::Rotr };
                     self.into_dest(&cont, |fx, d| {
                         fx.op(opw(family, w), &[d, x, n]);
                         Ok(())
@@ -255,7 +256,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 // vtable entries 1 and 2: size, align.
                 let idx: u32 = if size { 1 } else { 2 };
                 self.into_dest(cont, |fx, d| {
-                    fx.op(opcode("LoadW64"), &[d, p + 8, idx * 8]);
+                    fx.op(Opcode::LoadW64, &[d, p + 8, idx * 8]);
                     Ok(())
                 })?;
                 Ok(true)
@@ -276,7 +277,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let (s, a) = (el.size.bytes(), el.align.abi.bytes());
         self.into_dest(cont, |fx, d| {
             if size {
-                fx.op_imm("Mul", Width::W64, d, p + 8, u128::from(s));
+                fx.op_imm(IntOp::Mul, Width::W64, d, p + 8, u128::from(s));
             } else {
                 fx.imm(Width::W64, d, u128::from(a));
             }
@@ -345,9 +346,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 }
                 let [a, b] = self.arg_slots::<2>(args)?;
                 let family = match (name, signed) {
-                    ("exact_div", true) => "DivS",
-                    ("exact_div", false) => "DivU",
-                    _ => "Or",
+                    ("exact_div", true) => IntOp::DivS,
+                    ("exact_div", false) => IntOp::DivU,
+                    _ => IntOp::Or,
                 };
                 self.into_dest(cont, |fx, d| {
                     fx.op(opw(family, w), &[d, a, b]);
@@ -359,7 +360,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 // "unknown").
                 let [a, b] = self.arg_slots::<2>(args)?;
                 self.into_dest(cont, |fx, d| {
-                    fx.op(opw("Eq", Width::W64), &[d, a, b]);
+                    fx.op(opw(IntOp::Eq, Width::W64), &[d, a, b]);
                     Ok(())
                 })?
             }
@@ -367,7 +368,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let [p] = self.arg_slots::<1>(args)?;
                 let idx = if name == "vtable_size" { ty::COMMON_VTABLE_ENTRIES_SIZE } else { ty::COMMON_VTABLE_ENTRIES_ALIGN };
                 self.into_dest(cont, |fx, d| {
-                    fx.op(opcode("LoadW64"), &[d, p, idx as u32 * 8]);
+                    fx.op(Opcode::LoadW64, &[d, p, idx as u32 * 8]);
                     Ok(())
                 })?
             }
@@ -392,12 +393,12 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     _ => return Ok(false),
                 };
                 let family = match name {
-                    "fabs" => "Fabs",
-                    "copysignf32" | "copysignf64" => "Copysign",
-                    n if n.starts_with("minimum") => "Fmin",
-                    _ => "Fmax",
+                    "fabs" => FloatOp::Fabs,
+                    "copysignf32" | "copysignf64" => FloatOp::Copysign,
+                    n if n.starts_with("minimum") => FloatOp::Fmin,
+                    _ => FloatOp::Fmax,
                 };
-                let op = opcode(&format!("{family}{}", fw.suffix()));
+                let op = opf(family, fw);
                 if name == "fabs" {
                     let [x] = self.arg_slots::<1>(args)?;
                     self.into_dest(cont, |fx, d| {
@@ -480,19 +481,19 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         // r = bits - 1 - s
         let r = self.frame.temp(size, al);
         self.imm(w, r, u128::from(w.bits() - 1));
-        self.op(opw("Sub", w), &[r, r, s]);
+        self.op(opw(IntOp::Sub, w), &[r, r, s]);
         let (x, y) = (self.frame.temp(size, al), self.frame.temp(size, al));
         if left {
-            self.op(opw("Shl", w), &[x, a, s]);
-            self.op_imm("ShrU", w, y, b, 1);
-            self.op(opw("ShrU", w), &[y, y, r]);
+            self.op(opw(IntOp::Shl, w), &[x, a, s]);
+            self.op_imm(IntOp::ShrU, w, y, b, 1);
+            self.op(opw(IntOp::ShrU, w), &[y, y, r]);
         } else {
-            self.op_imm("Shl", w, x, a, 1);
-            self.op(opw("Shl", w), &[x, x, r]);
-            self.op(opw("ShrU", w), &[y, b, s]);
+            self.op_imm(IntOp::Shl, w, x, a, 1);
+            self.op(opw(IntOp::Shl, w), &[x, x, r]);
+            self.op(opw(IntOp::ShrU, w), &[y, b, s]);
         }
         self.into_dest(cont, |fx, d| {
-            fx.op(opw("Or", w), &[d, x, y]);
+            fx.op(opw(IntOp::Or, w), &[d, x, y]);
             Ok(())
         })
     }
@@ -501,10 +502,11 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// doesn't have uses `SeqCst`, which is stronger than any other.
     fn atomic(&mut self, name: &str, callee: Instance<'tcx>, args: &[ArgSrc<'_, 'tcx>], cont: &CallCont<'tcx>) -> Result<bool, NeedsNative> {
         let ord = |i: usize| ord_name(callee.args.const_at(i).to_value().to_branch()[0].to_leaf().to_atomic_ordering());
+        // By mnemonic (`atomic.cxchg.weak.w64.acquire.relaxed`): orderings are a third axis.
         let pick = |base: String, ords: &[&str]| -> Result<Opcode, NeedsNative> {
-            let exact = format!("{base}{}", ords.concat());
-            let strong = format!("{base}{}", vec!["Seqcst"; ords.len()].concat());
-            try_opcode(&exact).or_else(|| try_opcode(&strong)).ok_or_else(|| NeedsNative(format!("no opcode {exact}")))
+            let exact = format!("{base}.{}", ords.join("."));
+            let strong = format!("{base}.{}", vec!["seqcst"; ords.len()].join("."));
+            by_mnemonic(&exact).or_else(|| by_mnemonic(&strong)).ok_or_else(|| NeedsNative(format!("no opcode {exact}")))
         };
         if name == "atomic_singlethreadfence" {
             // Every ordering is the same barrier to the VM and the JIT; no machine code.
@@ -512,7 +514,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             return Ok(true);
         }
         if name == "atomic_fence" {
-            let op = pick("Fence".to_owned(), &[ord(0)])?;
+            let op = pick("fence".to_owned(), &[ord(0)])?;
             self.op(op, &[]);
             return Ok(true);
         }
@@ -523,24 +525,24 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         };
         // A thin raw pointer uses the `ptr` forms, whose value is a pointer, not an integer
         // (provenance kept, lean/docs/reduced.md §D.1); they have no `nand`, `min` or `max`.
-        let ws = if ty.is_raw_ptr() { "Ptr" } else { w.suffix() };
+        let ws = if ty.is_raw_ptr() { "ptr" } else { w.mnemonic() };
         let rmw = |op: &str| match op {
-            "atomic_xchg" => Some(("Xchg", 1)),
-            "atomic_xadd" => Some(("Add", 2)),
-            "atomic_xsub" => Some(("Sub", 2)),
-            "atomic_and" => Some(("And", 2)),
-            "atomic_nand" => Some(("Nand", 2)),
-            "atomic_or" => Some(("Or", 2)),
-            "atomic_xor" => Some(("Xor", 2)),
-            "atomic_max" => Some(("Max", 1)),
-            "atomic_min" => Some(("Min", 1)),
-            "atomic_umax" => Some(("Umax", 1)),
-            "atomic_umin" => Some(("Umin", 1)),
+            "atomic_xchg" => Some(("xchg", 1)),
+            "atomic_xadd" => Some(("add", 2)),
+            "atomic_xsub" => Some(("sub", 2)),
+            "atomic_and" => Some(("and", 2)),
+            "atomic_nand" => Some(("nand", 2)),
+            "atomic_or" => Some(("or", 2)),
+            "atomic_xor" => Some(("xor", 2)),
+            "atomic_max" => Some(("max", 1)),
+            "atomic_min" => Some(("min", 1)),
+            "atomic_umax" => Some(("umax", 1)),
+            "atomic_umin" => Some(("umin", 1)),
             _ => None,
         };
         match name {
             "atomic_load" => {
-                let op = pick(format!("AtomicLoad{ws}"), &[ord(1)])?;
+                let op = pick(format!("atomic.load.{ws}"), &[ord(1)])?;
                 let [p] = self.arg_slots::<1>(args)?;
                 self.into_dest(cont, |fx, d| {
                     fx.op(op, &[d, p]);
@@ -548,14 +550,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 })
             }
             "atomic_store" => {
-                let op = pick(format!("AtomicStore{ws}"), &[ord(1)])?;
+                let op = pick(format!("atomic.store.{ws}"), &[ord(1)])?;
                 let [p, v] = self.arg_slots::<2>(args)?;
                 self.op(op, &[p, v]);
                 Ok(true)
             }
             "atomic_cxchg" | "atomic_cxchgweak" => {
-                let weak = if name == "atomic_cxchgweak" { "Weak" } else { "" };
-                let op = pick(format!("AtomicCxchg{weak}{ws}"), &[ord(1), ord(2)])?;
+                let weak = if name == "atomic_cxchgweak" { ".weak" } else { "" };
+                let op = pick(format!("atomic.cxchg{weak}.{ws}"), &[ord(1), ord(2)])?;
                 let [p, old, new] = self.arg_slots::<3>(args)?;
                 let Some(dest) = cont.dest else { return native("intrinsic without a destination") };
                 let (o0, o1) = (dest.layout.fields.offset(0).bytes() as u32, dest.layout.fields.offset(1).bytes() as u32);
@@ -566,7 +568,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             }
             n => match rmw(n) {
                 Some((family, ord_at)) => {
-                    let op = pick(format!("Atomic{family}{ws}"), &[ord(ord_at)])?;
+                    let op = pick(format!("atomic.{family}.{ws}"), &[ord(ord_at)])?;
                     let [p, v] = self.arg_slots::<2>(args)?;
                     self.into_dest(cont, |fx, d| {
                         fx.op(op, &[d, p, v]);
@@ -595,11 +597,11 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let c = w.truncate(if neg { inv.wrapping_neg() } else { inv });
         let mut src = a;
         if k > 0 {
-            self.op_imm(if signed { "ShrS" } else { "ShrU" }, w, d, a, u128::from(k));
+            self.op_imm(if signed { IntOp::ShrS } else { IntOp::ShrU }, w, d, a, u128::from(k));
             src = d;
         }
         if c != 1 {
-            self.op_imm("Mul", w, d, src, c);
+            self.op_imm(IntOp::Mul, w, d, src, c);
         } else {
             self.mov(d, src, w.bytes());
         }

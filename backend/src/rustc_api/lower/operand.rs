@@ -8,7 +8,7 @@ use rustc_middle::mir::Operand;
 use rustc_middle::ty::layout::TyAndLayout;
 use ryo_bytecode::full::Opcode;
 
-use super::emit::{Width, opw};
+use super::emit::{IntOp, Width, opw};
 use super::place::{Loc, PlaceVal};
 use super::{FnCx, NeedsNative, native};
 
@@ -52,12 +52,12 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 }
                 match Width::of_size(u64::from(size)) {
                     Some(w) => {
-                        self.op(opw("Load", w), &[d, p, k as u32]);
+                        self.op(opw(IntOp::Load, w), &[d, p, k as u32]);
                     }
                     // Split unless a piece would overwrite the pointer `p`.
                     None if size <= super::SPLIT_MAX && (p + 8 <= d || p >= d + size) => {
                         for (o, w) in super::pieces(size, Width::W64, &self.cuts) {
-                            self.op(opw("Load", w), &[d + o, p, (k + o as i32) as u32]);
+                            self.op(opw(IntOp::Load, w), &[d + o, p, (k + o as i32) as u32]);
                         }
                     }
                     None => {
@@ -78,11 +78,11 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 }
                 match Width::of_size(u64::from(size)) {
                     Some(w) => {
-                        self.op(opw("Store", w), &[p, k as u32, s]);
+                        self.op(opw(IntOp::Store, w), &[p, k as u32, s]);
                     }
                     None if size <= super::SPLIT_MAX => {
                         for (o, w) in super::pieces(size, Width::W64, &self.cuts) {
-                            self.op(opw("Store", w), &[p, (k + o as i32) as u32, s + o]);
+                            self.op(opw(IntOp::Store, w), &[p, (k + o as i32) as u32, s + o]);
                         }
                     }
                     None => {

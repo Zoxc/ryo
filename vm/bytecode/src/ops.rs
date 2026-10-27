@@ -933,3 +933,333 @@ define_ops! {
     Lpad = "lpad" lpad { x: Slot },
     Resume = "resume" trap { x: Slot },
 }
+
+// ---- typed families ----
+// The width- and format-suffixed opcodes by family, for code that picks an opcode by operation
+// and width (the backend's lowering). The tables are built from the mnemonics above at compile
+// time: `IntOp::Add.at(Width::W32)` is `AddW32`, and a combination the list lacks (`mul.w128`)
+// is `None`.
+
+/// Integer operand widths of the instruction set.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Width {
+    W8,
+    W16,
+    W32,
+    W64,
+    W128,
+}
+
+impl Width {
+    pub const ALL: [Width; 5] = [Width::W8, Width::W16, Width::W32, Width::W64, Width::W128];
+
+    /// The width of a scalar of `size` bytes, if the VM has one.
+    pub const fn of_size(size: u64) -> Option<Width> {
+        Some(match size {
+            1 => Width::W8,
+            2 => Width::W16,
+            4 => Width::W32,
+            8 => Width::W64,
+            16 => Width::W128,
+            _ => return None,
+        })
+    }
+
+    pub const fn bits(self) -> u32 {
+        8 << self as u32
+    }
+
+    pub const fn bytes(self) -> u32 {
+        self.bits() / 8
+    }
+
+    /// Words an immediate of this width takes (`U32` for widths up to 32).
+    pub const fn imm_words(self) -> usize {
+        match self {
+            Width::W8 | Width::W16 | Width::W32 => 1,
+            Width::W64 => 2,
+            Width::W128 => 4,
+        }
+    }
+
+    /// `v` truncated to this width.
+    pub const fn truncate(self, v: u128) -> u128 {
+        if matches!(self, Width::W128) { v } else { v & ((1u128 << self.bits()) - 1) }
+    }
+
+    /// The mnemonic component: `w32`.
+    pub const fn mnemonic(self) -> &'static str {
+        ["w8", "w16", "w32", "w64", "w128"][self as usize]
+    }
+}
+
+/// Float formats the VM implements (`f16` and `f128` are islands).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FloatWidth {
+    F32,
+    F64,
+}
+
+impl FloatWidth {
+    pub const ALL: [FloatWidth; 2] = [FloatWidth::F32, FloatWidth::F64];
+
+    /// The mnemonic component: `f32`.
+    pub const fn mnemonic(self) -> &'static str {
+        ["f32", "f64"][self as usize]
+    }
+}
+
+/// The forms of an integer family: `add.w32`, `add.imm.w32`, `br.eq.w32`, `br.eq.imm.w32`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum IntForm {
+    Reg,
+    Imm,
+    Br,
+    BrImm,
+}
+
+macro_rules! families {
+    ($(#[$m:meta])* $ty:ident { $($name:ident($stem:literal)),* $(,)? }) => {
+        $(#[$m])*
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub enum $ty { $($name),* }
+
+        impl $ty {
+            const ALL: &[$ty] = &[$($ty::$name),*];
+
+            /// The mnemonic without the width (and `br`, `imm`) components: `shr.u`.
+            pub const fn stem(self) -> &'static str {
+                match self { $($ty::$name => $stem),* }
+            }
+        }
+    };
+}
+
+families! {
+    /// Integer families, suffixed by a [`Width`].
+    IntOp {
+        Mov("mov"), Imm("imm"), Load("load"), Store("store"),
+        Add("add"), Sub("sub"), Mul("mul"), DivS("div.s"), DivU("div.u"), RemS("rem.s"), RemU("rem.u"),
+        And("and"), Or("or"), Xor("xor"), Shl("shl"), ShrS("shr.s"), ShrU("shr.u"), Rotl("rotl"), Rotr("rotr"),
+        Eq("eq"), Ne("ne"), LtS("lt.s"), LtU("lt.u"), LeS("le.s"), LeU("le.u"),
+        GtS("gt.s"), GtU("gt.u"), GeS("ge.s"), GeU("ge.u"), Cmp3S("cmp3.s"), Cmp3U("cmp3.u"),
+        Neg("neg"), Not("not"), Ctpop("ctpop"), Ctlz("ctlz"), Cttz("cttz"), Bswap("bswap"), Bitreverse("bitreverse"),
+        AddOvfS("add.ovf.s"), AddOvfU("add.ovf.u"), SubOvfS("sub.ovf.s"), SubOvfU("sub.ovf.u"),
+        MulOvfS("mul.ovf.s"), MulOvfU("mul.ovf.u"), SwitchDense("switch.dense"), SwitchSparse("switch.sparse"),
+    }
+}
+
+families! {
+    /// Float families, suffixed by a [`FloatWidth`].
+    FloatOp {
+        Fadd("fadd"), Fsub("fsub"), Fmul("fmul"), Fdiv("fdiv"), Frem("frem"),
+        Feq("feq"), Fne("fne"), Flt("flt"), Fle("fle"), Fmin("fmin"), Fmax("fmax"),
+        Copysign("copysign"), Fneg("fneg"), Fabs("fabs"),
+    }
+}
+
+const fn bytes_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+/// `s` without the `.`-separated last component `c`.
+const fn strip_last<'a>(s: &'a [u8], c: &[u8]) -> Option<&'a [u8]> {
+    if s.len() <= c.len() {
+        return None;
+    }
+    let (head, tail) = s.split_at(s.len() - c.len());
+    let (head, dot) = head.split_at(head.len() - 1);
+    if dot[0] == b'.' && bytes_eq(tail, c) { Some(head) } else { None }
+}
+
+/// The opcode whose mnemonic is `parts` joined by `.`.
+const fn find(parts: &[&str]) -> Option<Opcode> {
+    let mut i = 0;
+    'ops: while i < ALL_OPCODES.len() {
+        let op = ALL_OPCODES[i];
+        i += 1;
+        let mut m = op.mnemonic().as_bytes();
+        let mut j = parts.len();
+        while j > 1 {
+            j -= 1;
+            match strip_last(m, parts[j].as_bytes()) {
+                Some(h) => m = h,
+                None => continue 'ops,
+            }
+        }
+        if bytes_eq(m, parts[0].as_bytes()) {
+            return Some(op);
+        }
+    }
+    None
+}
+
+static INT_OPS: [[[Option<Opcode>; 5]; 4]; IntOp::ALL.len()] = {
+    let mut t = [[[None; 5]; 4]; IntOp::ALL.len()];
+    let mut i = 0;
+    while i < ALL_OPCODES.len() {
+        let op = ALL_OPCODES[i];
+        i += 1;
+        let m = op.mnemonic().as_bytes();
+        let mut w = 0;
+        while w < 5 {
+            if let Some(m) = strip_last(m, Width::ALL[w].mnemonic().as_bytes()) {
+                let (m, imm) = match strip_last(m, b"imm") {
+                    Some(m) => (m, true),
+                    None => (m, false),
+                };
+                let (m, br) = if m.len() > 3 && bytes_eq(m.split_at(3).0, b"br.") { (m.split_at(3).1, true) } else { (m, false) };
+                let form = match (br, imm) {
+                    (false, false) => IntForm::Reg,
+                    (false, true) => IntForm::Imm,
+                    (true, false) => IntForm::Br,
+                    (true, true) => IntForm::BrImm,
+                };
+                let mut f = 0;
+                while f < IntOp::ALL.len() {
+                    if bytes_eq(m, IntOp::ALL[f].stem().as_bytes()) {
+                        t[f][form as usize][w] = Some(op);
+                    }
+                    f += 1;
+                }
+            }
+            w += 1;
+        }
+    }
+    // Every family exists in some form.
+    let mut f = 0;
+    while f < IntOp::ALL.len() {
+        let mut any = false;
+        let mut k = 0;
+        while k < 20 {
+            any |= t[f][k / 5][k % 5].is_some();
+            k += 1;
+        }
+        assert!(any, "an IntOp family without opcodes");
+        f += 1;
+    }
+    t
+};
+
+impl IntOp {
+    /// `self` at width `w`: `add.w32`.
+    pub fn at(self, w: Width) -> Option<Opcode> {
+        INT_OPS[self as usize][IntForm::Reg as usize][w as usize]
+    }
+
+    /// The immediate form: `add.imm.w32`.
+    pub fn imm_at(self, w: Width) -> Option<Opcode> {
+        INT_OPS[self as usize][IntForm::Imm as usize][w as usize]
+    }
+
+    /// The compare-and-branch form: `br.eq.w32`.
+    pub fn br_at(self, w: Width) -> Option<Opcode> {
+        INT_OPS[self as usize][IntForm::Br as usize][w as usize]
+    }
+
+    /// The compare-with-immediate-and-branch form: `br.eq.imm.w32`.
+    pub fn br_imm_at(self, w: Width) -> Option<Opcode> {
+        INT_OPS[self as usize][IntForm::BrImm as usize][w as usize]
+    }
+}
+
+static FLOAT_OPS: [[Option<Opcode>; 2]; FloatOp::ALL.len()] = {
+    let mut t = [[None; 2]; FloatOp::ALL.len()];
+    let mut f = 0;
+    while f < FloatOp::ALL.len() {
+        let mut w = 0;
+        while w < 2 {
+            t[f][w] = find(&[FloatOp::ALL[f].stem(), FloatWidth::ALL[w].mnemonic()]);
+            w += 1;
+        }
+        assert!(t[f][0].is_some() || t[f][1].is_some(), "a FloatOp family without opcodes");
+        f += 1;
+    }
+    t
+};
+
+impl FloatOp {
+    /// `self` at format `f`: `fadd.f64`.
+    pub fn at(self, f: FloatWidth) -> Option<Opcode> {
+        FLOAT_OPS[self as usize][f as usize]
+    }
+}
+
+/// Integer conversions: `[signed][from][to]`, `trunc` when narrowing, `sext`/`zext` when
+/// widening, `None` on the diagonal.
+static INT_CASTS: [[[Option<Opcode>; 5]; 5]; 2] = {
+    let mut t = [[[None; 5]; 5]; 2];
+    let mut k = 0;
+    while k < 50 {
+        let (s, a, b) = (k / 25, k / 5 % 5, k % 5);
+        let name = if b < a {
+            "trunc"
+        } else if s == 1 {
+            "sext"
+        } else {
+            "zext"
+        };
+        if a != b {
+            t[s][a][b] = find(&[name, Width::ALL[a].mnemonic(), Width::ALL[b].mnemonic()]);
+            assert!(t[s][a][b].is_some(), "missing integer conversion");
+        }
+        k += 1;
+    }
+    t
+};
+
+/// `cvt.f2i.sat.{s,u}.F.W` and `cvt.i2f.{s,u}.W.F`: `[signed][float][int]`.
+static FLOAT_INT_CASTS: [[[[Option<Opcode>; 5]; 2]; 2]; 2] = {
+    let mut t = [[[[None; 5]; 2]; 2]; 2];
+    let mut k = 0;
+    while k < 20 {
+        let (s, f, w) = (k / 10, k / 5 % 2, k % 5);
+        let su = if s == 1 { "s" } else { "u" };
+        let (fm, wm) = (FloatWidth::ALL[f].mnemonic(), Width::ALL[w].mnemonic());
+        t[0][s][f][w] = find(&["cvt.f2i.sat", su, fm, wm]);
+        t[1][s][f][w] = find(&["cvt.i2f", su, wm, fm]);
+        assert!(t[0][s][f][w].is_some() && t[1][s][f][w].is_some(), "missing float conversion");
+        k += 1;
+    }
+    t
+};
+
+/// `d = s as <to>` between integer widths: `trunc`, `sext` or `zext`; `None` if `from == to`.
+pub fn int_cast_op(from: Width, to: Width, signed: bool) -> Option<Opcode> {
+    INT_CASTS[signed as usize][from as usize][to as usize]
+}
+
+/// Float to integer, saturating: `cvt.f2i.sat.{s,u}.F.W`.
+pub fn cvt_f2i(f: FloatWidth, w: Width, signed: bool) -> Opcode {
+    FLOAT_INT_CASTS[0][signed as usize][f as usize][w as usize].unwrap()
+}
+
+/// Integer to float: `cvt.i2f.{s,u}.W.F`.
+pub fn cvt_i2f(w: Width, f: FloatWidth, signed: bool) -> Opcode {
+    FLOAT_INT_CASTS[1][signed as usize][f as usize][w as usize].unwrap()
+}
+
+/// Between float formats: `cvt.f2f.A.B`; `None` if `a == b`.
+pub fn cvt_f2f(a: FloatWidth, b: FloatWidth) -> Option<Opcode> {
+    match (a, b) {
+        (FloatWidth::F32, FloatWidth::F64) => Some(Opcode::CvtF2fF32F64),
+        (FloatWidth::F64, FloatWidth::F32) => Some(Opcode::CvtF2fF64F32),
+        _ => None,
+    }
+}
+
+/// The opcode with mnemonic `m` (`atomic.load.w32.acquire`), for families with more
+/// components than width and format.
+pub fn by_mnemonic(m: &str) -> Option<Opcode> {
+    ALL_OPCODES.iter().copied().find(|op| op.mnemonic() == m)
+}

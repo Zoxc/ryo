@@ -57,7 +57,7 @@ use ryo_bytecode::asm::{self, Asm, InsnId, Label, Opnd, Unwind};
 use ryo_bytecode::full::{Abs, Const, ElemKind, Func, Opcode, OperandKind, Site, Sym};
 
 pub use self::constant::{is_import, is_tls_shim, vtable_alloc};
-use self::emit::{Width, opw};
+use self::emit::{IntOp, Width, opw};
 use self::frame::{Frame, OUT_END};
 pub use self::sig::{AbiSig, abi_sig};
 
@@ -504,11 +504,11 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         }
         match Width::of_size(u64::from(size)) {
             Some(w) => {
-                self.op(opw("Mov", w), &[d, s]);
+                self.op(opw(IntOp::Mov, w), &[d, s]);
             }
             None if size <= SPLIT_MAX && (d + size <= s || s + size <= d) => {
                 for (o, w) in pieces(size, Width::W128, &self.cuts) {
-                    self.op(opw("Mov", w), &[d + o, s + o]);
+                    self.op(opw(IntOp::Mov, w), &[d + o, s + o]);
                 }
             }
             None => {
@@ -546,21 +546,26 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     pub fn imm(&mut self, w: Width, d: u32, v: u128) {
         let mut ops = vec![d];
         ops.extend(emit::imm_words(w, v));
-        self.op(opw("Imm", w), &ops);
+        self.op(opw(IntOp::Imm, w), &ops);
     }
 
     /// `family.imm.w d, a, v`, `v` truncated to the width.
-    pub fn op_imm(&mut self, family: &str, w: Width, d: u32, a: u32, v: u128) {
+    pub fn op_imm(&mut self, family: IntOp, w: Width, d: u32, a: u32, v: u128) {
         let mut ops = vec![d, a];
         ops.extend(emit::imm_words(w, w.truncate(v)));
-        self.op(opw(&format!("{family}Imm"), w), &ops);
+        self.op(family.imm_at(w).unwrap_or_else(|| panic!("ryo lowering: no opcode {}.imm.{}", family.stem(), w.mnemonic())), &ops);
     }
 
     /// `br.family.imm.w s, v` (`v` truncated to the width), branching to `bb` per `neg`.
-    pub fn br_imm(&mut self, family: &str, w: Width, s: u32, v: u128, neg: bool, bb: BasicBlock) {
+    pub fn br_imm(&mut self, family: IntOp, w: Width, s: u32, v: u128, neg: bool, bb: BasicBlock) {
         let mut ops = vec![s];
         ops.extend(emit::imm_words(w, w.truncate(v)));
-        self.op_branch(opw(&format!("Br{family}Imm"), w), &ops, neg, bb);
+        self.op_branch(
+            family.br_imm_at(w).unwrap_or_else(|| panic!("ryo lowering: no opcode br.{}.imm.{}", family.stem(), w.mnemonic())),
+            &ops,
+            neg,
+            bb,
+        );
     }
 
     /// Copies `n` bytes (a constant number of elements of `el`, from [`FnCx::small_block`])
@@ -580,7 +585,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// `memcpy`/`memmove`/`memset` handler call.
     pub fn block_bytes(&mut self, count: u32, el: TyAndLayout<'tcx>) -> u32 {
         let n = self.temp8();
-        self.op_imm("Mul", Width::W64, n, count, u128::from(el.size.bytes()));
+        self.op_imm(IntOp::Mul, Width::W64, n, count, u128::from(el.size.bytes()));
         n
     }
 
@@ -600,14 +605,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// `load.wK d+i, [p+i]` pieces (`K` <= 64) for `n` bytes.
     pub fn load_pieces(&mut self, d: u32, p: u32, n: u32) {
         for (o, w) in pieces(n, Width::W64, &self.cuts) {
-            self.op(opw("Load", w), &[d + o, p, o]);
+            self.op(opw(IntOp::Load, w), &[d + o, p, o]);
         }
     }
 
     /// `store.wK [p+i], s+i` pieces (`K` <= 64) for `n` bytes.
     pub fn store_pieces(&mut self, p: u32, s: u32, n: u32) {
         for (o, w) in pieces(n, Width::W64, &self.cuts) {
-            self.op(opw("Store", w), &[p, o, s + o]);
+            self.op(opw(IntOp::Store, w), &[p, o, s + o]);
         }
     }
 
@@ -624,11 +629,11 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             Ok(b) => self.imm(Width::W64, t, u128::from(b) * ones),
             Err(s) => {
                 self.int_cast(t, s, Width::W8, Width::W64, false);
-                self.op_imm("Mul", Width::W64, t, t, ones);
+                self.op_imm(IntOp::Mul, Width::W64, t, t, ones);
             }
         }
         for (o, w) in pieces(n, Width::W64, &[]) {
-            self.op(opw("Store", w), &[dst, o, t]);
+            self.op(opw(IntOp::Store, w), &[dst, o, t]);
         }
     }
 

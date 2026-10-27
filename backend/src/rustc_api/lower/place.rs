@@ -6,7 +6,7 @@ use rustc_middle::mir::{Local, Place, PlaceTy, ProjectionElem};
 use rustc_middle::ty::layout::TyAndLayout;
 use rustc_middle::ty::{self, Ty};
 
-use super::emit::{Width, opw};
+use super::emit::{IntOp, Width, opw};
 use super::{FnCx, NeedsNative, native};
 use ryo_bytecode::full::Opcode;
 
@@ -104,7 +104,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     (_, Some(meta)) => {
                         // len - offset
                         let t = self.temp8();
-                        self.op_imm("Sub", Width::W64, t, meta, offset.into());
+                        self.op_imm(IntOp::Sub, Width::W64, t, meta, offset.into());
                         self.index(pv, t, elem)
                     }
                     _ => native("ConstantIndex from the end of a sized non-array"),
@@ -127,7 +127,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 self.ptr_add(p, base, (from * stride) as i64);
                 let len = self.temp8();
                 let cut = from + to;
-                self.op_imm("Sub", Width::W64, len, meta, cut.into());
+                self.op_imm(IntOp::Sub, Width::W64, len, meta, cut.into());
                 Ok(PlaceVal { loc: Loc::Mem { p, k: 0 }, layout, meta: Some(len), base: None })
             }
         }
@@ -180,7 +180,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             DynVal::Slot(o) => {
                 let base = self.place_addr(pv.loc, pv.base)?;
                 let p = self.temp8();
-                self.op(opw("Add", Width::W64), &[p, base, o]);
+                self.op(opw(IntOp::Add, Width::W64), &[p, base, o]);
                 Loc::Mem { p, k: 0 }
             }
         };
@@ -201,8 +201,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let (s, a) = (self.temp8(), self.temp8());
                 let size = ty::COMMON_VTABLE_ENTRIES_SIZE as u32 * 8;
                 let align = ty::COMMON_VTABLE_ENTRIES_ALIGN as u32 * 8;
-                self.op(opw("Load", Width::W64), &[s, meta, size]);
-                self.op(opw("Load", Width::W64), &[a, meta, align]);
+                self.op(opw(IntOp::Load, Width::W64), &[s, meta, size]);
+                self.op(opw(IntOp::Load, Width::W64), &[a, meta, align]);
                 Ok((DynVal::Slot(s), DynVal::Slot(a)))
             }
             ty::Slice(_) | ty::Str => {
@@ -211,7 +211,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     1 => DynVal::Slot(meta),
                     n => {
                         let s = self.temp8();
-                        self.op_imm("Mul", Width::W64, s, meta, n.into());
+                        self.op_imm(IntOp::Mul, Width::W64, s, meta, n.into());
                         DynVal::Slot(s)
                     }
                 };
@@ -235,7 +235,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     DynVal::Const(c) => DynVal::Const(unsized_off + c),
                     DynVal::Slot(s) => {
                         let t = self.temp8();
-                        self.op_imm("Add", Width::W64, t, s, unsized_off.into());
+                        self.op_imm(IntOp::Add, Width::W64, t, s, unsized_off.into());
                         DynVal::Slot(t)
                     }
                 };
@@ -267,18 +267,18 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let s = self.dyn_slot(v);
                 let t = self.temp8();
                 let m = a - 1;
-                self.op_imm("Add", Width::W64, t, s, m.into());
+                self.op_imm(IntOp::Add, Width::W64, t, s, m.into());
                 let m = !m;
-                self.op_imm("And", Width::W64, t, t, m.into());
+                self.op_imm(IntOp::And, Width::W64, t, t, m.into());
                 DynVal::Slot(t)
             }
             (v, DynVal::Slot(a)) => {
                 let s = self.dyn_slot(v);
                 let (t, n) = (self.temp8(), self.temp8());
-                self.op(opw("SubImm", Width::W64), &[t, a, 1, 0]);
-                self.op(opw("Add", Width::W64), &[t, t, s]);
-                self.op(opw("Neg", Width::W64), &[n, a]);
-                self.op(opw("And", Width::W64), &[t, t, n]);
+                self.op(IntOp::Sub.imm_at(Width::W64).unwrap(), &[t, a, 1, 0]);
+                self.op(opw(IntOp::Add, Width::W64), &[t, t, s]);
+                self.op(opw(IntOp::Neg, Width::W64), &[n, a]);
+                self.op(opw(IntOp::And, Width::W64), &[t, t, n]);
                 DynVal::Slot(t)
             }
         }
@@ -307,12 +307,12 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let (a, b) = (self.dyn_slot(a), self.dyn_slot(b));
         let (c, m, t) = (self.frame.temp(1, 1), self.temp8(), self.temp8());
         let (x, y) = if max { (a, b) } else { (b, a) };
-        self.op(opw("LtU", Width::W64), &[c, x, y]);
+        self.op(opw(IntOp::LtU, Width::W64), &[c, x, y]);
         self.int_cast(m, c, Width::W8, Width::W64, false);
-        self.op(opw("Neg", Width::W64), &[m, m]);
-        self.op(opw("Xor", Width::W64), &[t, a, b]);
-        self.op(opw("And", Width::W64), &[t, t, m]);
-        self.op(opw("Xor", Width::W64), &[t, t, a]);
+        self.op(opw(IntOp::Neg, Width::W64), &[m, m]);
+        self.op(opw(IntOp::Xor, Width::W64), &[t, a, b]);
+        self.op(opw(IntOp::And, Width::W64), &[t, t, m]);
+        self.op(opw(IntOp::Xor, Width::W64), &[t, t, a]);
         DynVal::Slot(t)
     }
 

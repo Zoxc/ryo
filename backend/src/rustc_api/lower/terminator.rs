@@ -19,25 +19,33 @@ use ryo_bytecode::asm::Opnd;
 use ryo_bytecode::full::Opcode;
 
 use super::call::{ArgSrc, CallCont};
-use super::emit::{Width, opw, try_opcode};
+use super::emit::{IntOp, Width, opw};
 use super::{FnCx, NeedsNative, native};
 
 /// The branch that tests `a op b`: the compare it calls (`"Eq"`, `"Lt"`, `"Gt"`), whether
 /// `a` and `b` are swapped, and its polarity (`neg`: branch when the compare is false). The
 /// register forms exist for `eq` and `lt`, the immediate forms (`imm`, `b` the immediate)
 /// also for `gt`.
-pub fn branch_form(op: BinOp, imm: bool) -> (&'static str, bool, bool) {
+pub fn branch_form(op: BinOp, imm: bool) -> (BrCmp, bool, bool) {
     match (op, imm) {
-        (BinOp::Eq, _) => ("Eq", false, false),
-        (BinOp::Ne, _) => ("Eq", false, true),
-        (BinOp::Lt, _) => ("Lt", false, false),
-        (BinOp::Ge, _) => ("Lt", false, true),
-        (BinOp::Gt, false) => ("Lt", true, false),
-        (BinOp::Le, false) => ("Lt", true, true),
-        (BinOp::Gt, true) => ("Gt", false, false),
-        (BinOp::Le, true) => ("Gt", false, true),
+        (BinOp::Eq, _) => (BrCmp::Eq, false, false),
+        (BinOp::Ne, _) => (BrCmp::Eq, false, true),
+        (BinOp::Lt, _) => (BrCmp::Lt, false, false),
+        (BinOp::Ge, _) => (BrCmp::Lt, false, true),
+        (BinOp::Gt, false) => (BrCmp::Lt, true, false),
+        (BinOp::Le, false) => (BrCmp::Lt, true, true),
+        (BinOp::Gt, true) => (BrCmp::Gt, false, false),
+        (BinOp::Le, true) => (BrCmp::Gt, false, true),
         _ => unreachable!("not a compare: {op:?}"),
     }
+}
+
+/// The compare of a compare-and-branch instruction, signedness aside.
+#[derive(Clone, Copy)]
+pub enum BrCmp {
+    Eq,
+    Lt,
+    Gt,
 }
 
 /// An integer compare `a op b` (`Eq` … `Ge`) whose `bool` result only feeds the block's
@@ -166,21 +174,27 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     fn branch_cmp(&mut self, c: FusedCmp<'tcx>, when: bool, bb: BasicBlock) -> Result<(), NeedsNative> {
         let layout = self.operand_layout(c.a)?;
         let Some(w) = Width::of_size(layout.size.bytes()) else { return native("compare of a non-scalar") };
-        let su = if layout.ty.is_signed() { "S" } else { "U" };
-        let name = |cmp: &str| if cmp == "Eq" { cmp.to_owned() } else { format!("{cmp}{su}") };
+        let signed = layout.ty.is_signed();
+        let name = |cmp: BrCmp| match cmp {
+            BrCmp::Eq => IntOp::Eq,
+            BrCmp::Lt if signed => IntOp::LtS,
+            BrCmp::Lt => IntOp::LtU,
+            BrCmp::Gt if signed => IntOp::GtS,
+            BrCmp::Gt => IntOp::GtU,
+        };
         let (sa, _) = self.operand_slot(c.a)?;
         if let Some(v) = self.const_int(c.b)? {
             let (cmp, _, neg) = branch_form(c.op, true);
-            if try_opcode(&format!("Br{}Imm{}", name(cmp), w.suffix())).is_none() {
+            if name(cmp).br_imm_at(w).is_none() {
                 return native("no br.imm for the width");
             }
-            self.br_imm(&name(cmp), w, sa, v, neg == when, bb);
+            self.br_imm(name(cmp), w, sa, v, neg == when, bb);
             return Ok(());
         }
         let (sb, _) = self.operand_slot(c.b)?;
         let (cmp, swap, neg) = branch_form(c.op, false);
         let (x, y) = if swap { (sb, sa) } else { (sa, sb) };
-        let Some(opc) = try_opcode(&format!("Br{}{}", name(cmp), w.suffix())) else {
+        let Some(opc) = name(cmp).br_at(w) else {
             return native("no br for the width");
         };
         self.op_branch(opc, &[x, y], neg == when, bb);
@@ -228,7 +242,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     // `br` branches when `s != 0`.
                     self.op_branch(Opcode::Br, &[s], (v == 1) == ne, t);
                 } else {
-                    self.br_imm("Eq", w, s, v, ne, t);
+                    self.br_imm(IntOp::Eq, w, s, v, ne, t);
                 }
                 self.jump(rest);
                 return Ok(());
@@ -241,7 +255,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         {
             // Two values: compare-and-branch on each instead of a `switch.dense` table. An
             // unreachable `otherwise` makes the second test unnecessary.
-            let test = |fx: &mut Self, v: u128, ne: bool, bb: BasicBlock| fx.br_imm("Eq", w, s, v, ne, bb);
+            let test = |fx: &mut Self, v: u128, ne: bool, bb: BasicBlock| fx.br_imm(IntOp::Eq, w, s, v, ne, bb);
             test(self, v0, false, bb0);
             if self.body[otherwise].is_empty_unreachable() {
                 self.jump(bb1);
@@ -270,11 +284,11 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 };
                 targets.push(self.block_label(bb));
             }
-            self.emit(opw("SwitchDense", w), vec![Opnd::Slot(s as i32), base(lo), Opnd::Target(default), Opnd::Targets(targets)]);
+            self.emit(opw(IntOp::SwitchDense, w), vec![Opnd::Slot(s as i32), base(lo), Opnd::Target(default), Opnd::Targets(targets)]);
         } else {
             let vals = cases.iter().map(|&(v, _)| v).collect();
             let targets = cases.iter().map(|&(_, bb)| self.block_label(bb)).collect();
-            self.emit(opw("SwitchSparse", w), vec![Opnd::Slot(s as i32), Opnd::Target(default), Opnd::Cases(vals, targets)]);
+            self.emit(opw(IntOp::SwitchSparse, w), vec![Opnd::Slot(s as i32), Opnd::Target(default), Opnd::Cases(vals, targets)]);
         }
         Ok(())
     }
@@ -304,10 +318,10 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             for (k, &(v, bb)) in arms.iter().enumerate() {
                 if k + 1 == arms.len() && Some(bb) == self.next_block && Some(untagged_bb) != self.next_block {
                     // The last arm falls through: branch away when the tag differs.
-                    self.br_imm("Eq", tw, n.slot, v, true, untagged_bb);
+                    self.br_imm(IntOp::Eq, tw, n.slot, v, true, untagged_bb);
                     return Ok(());
                 }
-                self.br_imm("Eq", tw, n.slot, v, false, bb);
+                self.br_imm(IntOp::Eq, tw, n.slot, v, false, bb);
             }
             self.jump(untagged_bb);
             return Ok(());
@@ -315,12 +329,12 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         // `r = tag - niche_start`; `r >u relative_max` is the untagged variant, otherwise `r`
         // is the niche variant `start + r`.
         let r = self.frame.temp(u64::from(tw.bytes()), u64::from(tw.bytes()));
-        self.op_imm("Sub", tw, r, n.slot, n.niche_start);
-        self.br_imm("GtU", tw, r, u128::from(n.end - n.start), false, untagged_bb);
+        self.op_imm(IntOp::Sub, tw, r, n.slot, n.niche_start);
+        self.br_imm(IntOp::GtU, tw, r, u128::from(n.end - n.start), false, untagged_bb);
         let labels = (n.start..=n.end).map(|i| self.block_label(target(i))).collect();
         let base = if tw == Width::W128 { Opnd::Imm128(0) } else { Opnd::Imm(0) };
         let default = self.block_label(untagged_bb);
-        self.emit(opw("SwitchDense", tw), vec![Opnd::Slot(r as i32), base, Opnd::Target(default), Opnd::Targets(labels)]);
+        self.emit(opw(IntOp::SwitchDense, tw), vec![Opnd::Slot(r as i32), base, Opnd::Target(default), Opnd::Targets(labels)]);
         Ok(())
     }
 

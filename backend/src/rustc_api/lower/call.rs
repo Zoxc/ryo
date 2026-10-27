@@ -28,7 +28,7 @@ use ryo_bytecode::asm::{ARG_ADDR, ArgReg, RET_SRET, RetPart, ret_kind, ret_parts
 use ryo_bytecode::full::Opcode;
 
 use super::cert::CallKind;
-use super::emit::{Width, opcode};
+use super::emit::{IntOp, Width};
 use super::frame;
 use super::island::templates;
 use super::place::{Loc, PlaceVal};
@@ -219,7 +219,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             // The method's entry in the vtable (`VirtualIndex::get_fn`).
             let f = self.temp8();
             let k = u32::try_from(idx * 8).map_err(|_| NeedsNative("vtable index".into()))?;
-            self.op(opcode("LoadW64"), &[f, vtable, k]);
+            self.op(Opcode::LoadW64, &[f, vtable, k]);
             args[0] = ArgSrc::Slot(data);
             return Ok((Target::Ptr(f, sig.conv), sig, args));
         }
@@ -696,8 +696,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let Some(vtable) = pv.meta else { return native("trait object without metadata") };
         let f = self.temp8();
         let idx = ty::COMMON_VTABLE_ENTRIES_DROPINPLACE as u32;
-        self.op(super::emit::opcode("LoadW64"), &[f, vtable, idx * 8]);
-        self.br_imm("Eq", Width::W64, f, 0, false, target);
+        self.op(Opcode::LoadW64, &[f, vtable, idx * 8]);
+        self.br_imm(IntOp::Eq, Width::W64, f, 0, false, target);
         let ptr = self.temp8();
         self.addr_into(ptr, pv.loc, pv.base)?;
         // `unsafe fn(*mut ())`: the pointer in the first integer register.

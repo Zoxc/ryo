@@ -6,9 +6,10 @@ use rustc_middle::ty::adjustment::PointerCoercion;
 use rustc_middle::ty::layout::TyAndLayout;
 use rustc_middle::ty::{self, FloatTy, Instance, Ty, TypingEnv};
 
-use super::emit::{FloatWidth, Width, opcode};
+use super::emit::{FloatWidth, Width};
 use super::place::{Loc, PlaceVal};
 use super::{CodeReloc, FnCx, NeedsNative, native};
+use ryo_bytecode::full::{Opcode, cvt_f2f, cvt_f2i, cvt_i2f, int_cast_op};
 
 /// `as_cast<A, B>` (`vm/rt/src/island.rs`): numeric casts from or to `f16`/`f128`.
 /// `ops`: `[src, dest]`.
@@ -39,11 +40,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     pub fn int_cast(&mut self, d: u32, s: u32, from: Width, to: Width, signed: bool) {
         if from == to {
             self.mov(d, s, from.bytes());
-        } else if to.bits() < from.bits() {
-            self.op(opcode(&format!("Trunc{}{}", from.suffix(), to.suffix())), &[d, s]);
         } else {
-            let ext = if signed { "Sext" } else { "Zext" };
-            self.op(opcode(&format!("{ext}{}{}", from.suffix(), to.suffix())), &[d, s]);
+            self.op(int_cast_op(from, to, signed).expect("distinct widths"), &[d, s]);
         }
     }
 
@@ -71,16 +69,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 self.into_place(dst, |fx, d| match (from, into) {
                     (ScalarKind::Int { w: a, signed }, ScalarKind::Int { w: b, .. }) => fx.int_cast(d, s, a, b, signed),
                     (ScalarKind::Float(f), ScalarKind::Int { w, signed }) => {
-                        let su = if signed { "S" } else { "U" };
-                        fx.op(opcode(&format!("CvtF2iSat{su}{}{}", f.suffix(), w.suffix())), &[d, s]);
+                        fx.op(cvt_f2i(f, w, signed), &[d, s]);
                     }
                     (ScalarKind::Int { w, signed }, ScalarKind::Float(f)) => {
-                        let su = if signed { "S" } else { "U" };
-                        fx.op(opcode(&format!("CvtI2f{su}{}{}", w.suffix(), f.suffix())), &[d, s]);
+                        fx.op(cvt_i2f(w, f, signed), &[d, s]);
                     }
                     (ScalarKind::Float(a), ScalarKind::Float(b)) if a == b => fx.mov(d, s, to_layout.size.bytes() as u32),
                     (ScalarKind::Float(a), ScalarKind::Float(b)) => {
-                        fx.op(opcode(&format!("CvtF2f{}{}", a.suffix(), b.suffix())), &[d, s]);
+                        fx.op(cvt_f2f(a, b).expect("distinct formats"), &[d, s]);
                     }
                 })
             }
@@ -215,7 +211,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let same = da.principal_def_id() == db.principal_def_id() || db.principal_def_id().is_none();
                 match (same, tcx.supertrait_vtable_slot((sa, sb))) {
                     (false, Some(idx)) => {
-                        self.op(opcode("LoadW64"), &[d, old, (idx * 8) as u32]);
+                        self.op(Opcode::LoadW64, &[d, old, (idx * 8) as u32]);
                     }
                     _ => self.mov(d, old, 8),
                 }

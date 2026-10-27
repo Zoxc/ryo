@@ -8,7 +8,7 @@ use rustc_middle::mir::{AggregateKind, Operand, Place};
 use rustc_middle::ty::layout::TyAndLayout;
 use ryo_bytecode::full::Opcode;
 
-use super::emit::{Width, opw};
+use super::emit::{IntOp, Width, opw};
 use super::place::{Loc, PlaceVal};
 use super::{FnCx, NeedsNative, native};
 
@@ -145,37 +145,37 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let b = self.frame.temp(1, 1);
         if start == end {
             // One niche variant: `is_niche = tag == niche_start`, the value `start`.
-            let (cmp, lo) = if u == s + 1 { ("Ne", s) } else { ("Eq", u) };
+            let (cmp, lo) = if u == s + 1 { (IntOp::Ne, s) } else { (IntOp::Eq, u) };
             self.op_imm(cmp, tw, b, t, niche_start);
             self.int_cast(d, b, Width::W8, dw, false);
             if s.abs_diff(u) == 1 {
                 // `d = lo + b`.
                 if lo != 0 {
-                    self.op_imm("Add", dw, d, d, lo);
+                    self.op_imm(IntOp::Add, dw, d, d, lo);
                 }
                 return;
             }
             // `d = ((start ^ untagged) & -b) ^ untagged`.
-            self.op(opw("Neg", dw), &[d, d]);
-            self.op_imm("And", dw, d, d, s ^ u);
-            self.op_imm("Xor", dw, d, d, u);
+            self.op(opw(IntOp::Neg, dw), &[d, d]);
+            self.op_imm(IntOp::And, dw, d, d, s ^ u);
+            self.op_imm(IntOp::Xor, dw, d, d, u);
             return;
         }
         // `r = tag - niche_start`, `b = r <=u relative_max`, `d = start + r` blended with
         // `untagged` by `b`.
         let r = self.frame.temp(u64::from(tw.bytes()), u64::from(tw.bytes()));
-        self.op_imm("Sub", tw, r, t, niche_start);
-        self.op_imm("LeU", tw, b, r, u128::from(end - start));
+        self.op_imm(IntOp::Sub, tw, r, t, niche_start);
+        self.op_imm(IntOp::LeU, tw, b, r, u128::from(end - start));
         self.int_cast(d, r, tw, dw, false);
         if s != 0 {
-            self.op_imm("Add", dw, d, d, s);
+            self.op_imm(IntOp::Add, dw, d, d, s);
         }
         let m = self.frame.temp(u64::from(dw.bytes()), u64::from(dw.bytes()));
         self.int_cast(m, b, Width::W8, dw, false);
-        self.op(opw("Neg", dw), &[m, m]);
-        self.op_imm("Xor", dw, d, d, u);
-        self.op(opw("And", dw), &[d, d, m]);
-        self.op_imm("Xor", dw, d, d, u);
+        self.op(opw(IntOp::Neg, dw), &[m, m]);
+        self.op_imm(IntOp::Xor, dw, d, d, u);
+        self.op(opw(IntOp::And, dw), &[d, d, m]);
+        self.op_imm(IntOp::Xor, dw, d, d, u);
     }
 
     /// Writes the tag of `variant` (cg_ssa's `codegen_set_discr`).

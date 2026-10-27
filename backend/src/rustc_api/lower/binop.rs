@@ -5,9 +5,10 @@ use rustc_middle::mir::{BinOp, ConstValue, Operand, UnOp};
 use rustc_middle::ty;
 
 use super::cast::ScalarKind;
-use super::emit::{FloatWidth, Width, opcode, opw, try_opcode};
+use super::emit::{FloatOp, FloatWidth, IntOp, Width, opf, opw};
 use super::place::PlaceVal;
 use super::{FnCx, NeedsNative, native};
+use ryo_bytecode::full::Opcode;
 
 /// Island templates for the 128-bit operations the VM has no instruction for
 /// (`vm/rt/src/island.rs`). `ops`: `[a, b, dest]`.
@@ -41,17 +42,19 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let stride = u32::try_from(self.layout_of(pointee)?.size.bytes()).map_err(|_| NeedsNative("Offset stride above 4 GiB".into()))?;
                 let (p, _) = self.operand_slot(a)?;
                 let (i, _) = self.operand_slot(b)?;
-                self.op_to(dst, ryo_bytecode::full::Opcode::PtrIndex, &[p, i, stride])
+                self.op_to(dst, Opcode::PtrIndex, &[p, i, stride])
             }
             BinOp::AddWithOverflow | BinOp::SubWithOverflow | BinOp::MulWithOverflow => {
                 let ScalarKind::Int { w, signed } = self.scalar_kind(la)? else { return native("float overflow op") };
-                let family = match op {
-                    BinOp::AddWithOverflow => "AddOvf",
-                    BinOp::SubWithOverflow => "SubOvf",
-                    _ => "MulOvf",
+                let family = match (op, signed) {
+                    (BinOp::AddWithOverflow, true) => IntOp::AddOvfS,
+                    (BinOp::AddWithOverflow, false) => IntOp::AddOvfU,
+                    (BinOp::SubWithOverflow, true) => IntOp::SubOvfS,
+                    (BinOp::SubWithOverflow, false) => IntOp::SubOvfU,
+                    (_, true) => IntOp::MulOvfS,
+                    (_, false) => IntOp::MulOvfU,
                 };
-                let su = if signed { "S" } else { "U" };
-                let Some(opc) = try_opcode(&format!("{family}{su}{}", w.suffix())) else {
+                let Some(opc) = family.at(w) else {
                     // 128-bit `mul.ovf`: an island writing the whole pair.
                     let template = if signed { templates::MUL_OVF_S_W128 } else { templates::MUL_OVF_U_W128 };
                     return self.binop_island(dst, template, a, b);
@@ -67,8 +70,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let ScalarKind::Int { w, signed } = self.scalar_kind(la)? else { return native("float Cmp") };
                 let (sa, _) = self.operand_slot(a)?;
                 let (sb, _) = self.operand_slot(b)?;
-                let su = if signed { "S" } else { "U" };
-                self.op_to(dst, opw(&format!("Cmp3{su}"), w), &[sa, sb])
+                self.op_to(dst, opw(if signed { IntOp::Cmp3S } else { IntOp::Cmp3U }, w), &[sa, sb])
             }
             BinOp::Eq => self.compare(dst, Cmp::Eq, a, b),
             BinOp::Ne => self.compare(dst, Cmp::Ne, a, b),
@@ -111,21 +113,21 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             ScalarKind::Float(f) => return self.float_arith(dst, op, f, a, b),
             ScalarKind::Int { w, signed } => (w, signed),
         };
-        let su = if signed { "S" } else { "U" };
+        let su = |s, u| if signed { s } else { u };
         let family = match op {
-            BinOp::Add | BinOp::AddUnchecked => "Add".to_owned(),
-            BinOp::Sub | BinOp::SubUnchecked => "Sub".to_owned(),
-            BinOp::Mul | BinOp::MulUnchecked => "Mul".to_owned(),
-            BinOp::Div => format!("Div{su}"),
-            BinOp::Rem => format!("Rem{su}"),
-            BinOp::BitXor => "Xor".to_owned(),
-            BinOp::BitAnd => "And".to_owned(),
-            BinOp::BitOr => "Or".to_owned(),
-            BinOp::Shl | BinOp::ShlUnchecked => "Shl".to_owned(),
-            BinOp::Shr | BinOp::ShrUnchecked => format!("Shr{su}"),
+            BinOp::Add | BinOp::AddUnchecked => IntOp::Add,
+            BinOp::Sub | BinOp::SubUnchecked => IntOp::Sub,
+            BinOp::Mul | BinOp::MulUnchecked => IntOp::Mul,
+            BinOp::Div => su(IntOp::DivS, IntOp::DivU),
+            BinOp::Rem => su(IntOp::RemS, IntOp::RemU),
+            BinOp::BitXor => IntOp::Xor,
+            BinOp::BitAnd => IntOp::And,
+            BinOp::BitOr => IntOp::Or,
+            BinOp::Shl | BinOp::ShlUnchecked => IntOp::Shl,
+            BinOp::Shr | BinOp::ShrUnchecked => su(IntOp::ShrS, IntOp::ShrU),
             _ => unreachable!("not an arithmetic op"),
         };
-        if try_opcode(&format!("{family}{}", w.suffix())).is_none() {
+        if family.at(w).is_none() {
             // 128-bit `mul`, `div`, `rem`: islands (design/lowering.md#binary-operations).
             let template = match (op, signed) {
                 (BinOp::Div, false) => templates::DIV_U_W128,
@@ -148,7 +150,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             return self.into_place(dst, |fx, d| match op {
                 BinOp::Rem => fx.imm(w, d, 0),
                 _ if v == 1 => fx.mov(d, sa, w.bytes()),
-                _ => fx.op_imm("Mul", w, d, sa, v),
+                _ => fx.op_imm(IntOp::Mul, w, d, sa, v),
             });
         }
         // Unsigned `x / 2^k` and `x % 2^k`: `shr.u.imm x, k` and `and.imm x, 2^k - 1`.
@@ -158,7 +160,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             && w.truncate(v).is_power_of_two()
         {
             let v = w.truncate(v);
-            let (fam, imm) = if op == BinOp::Div { ("ShrU", u128::from(v.trailing_zeros())) } else { ("And", v - 1) };
+            let (fam, imm) = if op == BinOp::Div { (IntOp::ShrU, u128::from(v.trailing_zeros())) } else { (IntOp::And, v - 1) };
             return self.into_place(dst, |fx, d| {
                 fx.op_imm(fam, w, d, sa, imm);
             });
@@ -174,8 +176,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             let v = w.truncate(v);
             let t = self.temp8();
             self.int_cast(t, sa, w, Width::W64, false);
-            self.op_imm("Mul", Width::W64, t, t, m);
-            self.op_imm("ShrU", Width::W64, t, t, u128::from(p));
+            self.op_imm(IntOp::Mul, Width::W64, t, t, m);
+            self.op_imm(IntOp::ShrU, Width::W64, t, t, u128::from(p));
             if op == BinOp::Div {
                 return self.into_place(dst, |fx, d| {
                     fx.int_cast(d, t, Width::W64, w, false);
@@ -183,15 +185,15 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             }
             let q = self.frame.temp(u64::from(w.bytes()), u64::from(w.bytes()));
             self.int_cast(q, t, Width::W64, w, false);
-            self.op_imm("Mul", w, q, q, v);
-            return self.op_to(dst, opw("Sub", w), &[sa, q]);
+            self.op_imm(IntOp::Mul, w, q, q, v);
+            return self.op_to(dst, opw(IntOp::Sub, w), &[sa, q]);
         }
         // `x op constant`: the `.imm` form.
         if let Some(v) = self.const_int(b)?
-            && try_opcode(&format!("{family}Imm{}", w.suffix())).is_some()
+            && family.imm_at(w).is_some()
         {
             return self.into_place(dst, |fx, d| {
-                fx.op_imm(&family, w, d, sa, v);
+                fx.op_imm(family, w, d, sa, v);
             });
         }
         let (mut sb, lb) = self.operand_slot(b)?;
@@ -202,22 +204,22 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             self.int_cast(t, sb, wb, w, false);
             sb = t;
         }
-        let opc = opw(&family, w);
+        let opc = opw(family, w);
         self.op_to(dst, opc, &[sa, sb])
     }
 
     fn float_arith(&mut self, dst: PlaceVal<'tcx>, op: BinOp, f: FloatWidth, a: &Operand<'tcx>, b: &Operand<'tcx>) -> Result<(), NeedsNative> {
         let family = match op {
-            BinOp::Add => "Fadd",
-            BinOp::Sub => "Fsub",
-            BinOp::Mul => "Fmul",
-            BinOp::Div => "Fdiv",
-            BinOp::Rem => "Frem",
+            BinOp::Add => FloatOp::Fadd,
+            BinOp::Sub => FloatOp::Fsub,
+            BinOp::Mul => FloatOp::Fmul,
+            BinOp::Div => FloatOp::Fdiv,
+            BinOp::Rem => FloatOp::Frem,
             _ => return native("float op"),
         };
         let (sa, _) = self.operand_slot(a)?;
         let (sb, _) = self.operand_slot(b)?;
-        let opc = opcode(&format!("{family}{}", f.suffix()));
+        let opc = opf(family, f);
         self.op_to(dst, opc, &[sa, sb])
     }
 
@@ -231,30 +233,30 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         if let ScalarKind::Float(f) = kind {
             let (sb, _) = self.operand_slot(b)?;
             let (name, x, y) = match cmp {
-                Cmp::Eq => ("Feq", sa, sb),
-                Cmp::Ne => ("Fne", sa, sb),
-                Cmp::Lt => ("Flt", sa, sb),
-                Cmp::Le => ("Fle", sa, sb),
-                Cmp::Gt => ("Flt", sb, sa),
-                Cmp::Ge => ("Fle", sb, sa),
+                Cmp::Eq => (FloatOp::Feq, sa, sb),
+                Cmp::Ne => (FloatOp::Fne, sa, sb),
+                Cmp::Lt => (FloatOp::Flt, sa, sb),
+                Cmp::Le => (FloatOp::Fle, sa, sb),
+                Cmp::Gt => (FloatOp::Flt, sb, sa),
+                Cmp::Ge => (FloatOp::Fle, sb, sa),
             };
-            let opc = opcode(&format!("{name}{}", f.suffix()));
+            let opc = opf(name, f);
             return self.op_to(dst, opc, &[x, y]);
         }
         let ScalarKind::Int { w, signed } = kind else { unreachable!() };
-        let su = if signed { "S" } else { "U" };
+        let su = |s, u| if signed { s } else { u };
         let name = |c: Cmp| match c {
-            Cmp::Eq => "Eq".to_owned(),
-            Cmp::Ne => "Ne".to_owned(),
-            Cmp::Lt => format!("Lt{su}"),
-            Cmp::Le => format!("Le{su}"),
-            Cmp::Gt => format!("Gt{su}"),
-            Cmp::Ge => format!("Ge{su}"),
+            Cmp::Eq => IntOp::Eq,
+            Cmp::Ne => IntOp::Ne,
+            Cmp::Lt => su(IntOp::LtS, IntOp::LtU),
+            Cmp::Le => su(IntOp::LeS, IntOp::LeU),
+            Cmp::Gt => su(IntOp::GtS, IntOp::GtU),
+            Cmp::Ge => su(IntOp::GeS, IntOp::GeU),
         };
         if let Some(v) = self.const_int(b)? {
             let family = name(cmp);
             return self.into_place(dst, |fx, d| {
-                fx.op_imm(&family, w, d, sa, v);
+                fx.op_imm(family, w, d, sa, v);
             });
         }
         let (sb, _) = self.operand_slot(b)?;
@@ -263,7 +265,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             Cmp::Ge => (Cmp::Le, sb, sa),
             c => (c, sa, sb),
         };
-        let opc = opw(&name(c), w);
+        let opc = opw(name(c), w);
         self.op_to(dst, opc, &[x, y])
     }
 
@@ -273,20 +275,20 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let (sb, _) = self.operand_slot(b)?;
         let t = self.frame.temp(3, 1);
         if let Cmp::Eq | Cmp::Ne = cmp {
-            let (name, combine) = if let Cmp::Eq = cmp { ("EqW64", "AndW8") } else { ("NeW64", "OrW8") };
-            self.op(opcode(name), &[t, sa, sb]);
-            self.op(opcode(name), &[t + 1, sa + 8, sb + 8]);
-            return self.op_to(dst, opcode(combine), &[t, t + 1]);
+            let (name, combine) = if let Cmp::Eq = cmp { (Opcode::EqW64, Opcode::AndW8) } else { (Opcode::NeW64, Opcode::OrW8) };
+            self.op(name, &[t, sa, sb]);
+            self.op(name, &[t + 1, sa + 8, sb + 8]);
+            return self.op_to(dst, combine, &[t, t + 1]);
         }
         // x < y is x.data < y.data, or equal data and x.meta < y.meta (`<=` on the metadata
         // for `<=`). `>` and `>=` swap the operands.
         let (x, y) = if let Cmp::Lt | Cmp::Le = cmp { (sa, sb) } else { (sb, sa) };
-        let meta = if let Cmp::Lt | Cmp::Gt = cmp { "LtUW64" } else { "LeUW64" };
-        self.op(opcode("LtUW64"), &[t, x, y]);
-        self.op(opcode("EqW64"), &[t + 1, x, y]);
-        self.op(opcode(meta), &[t + 2, x + 8, y + 8]);
-        self.op(opcode("AndW8"), &[t + 1, t + 1, t + 2]);
-        self.op_to(dst, opcode("OrW8"), &[t, t + 1])
+        let meta = if let Cmp::Lt | Cmp::Gt = cmp { Opcode::LtUW64 } else { Opcode::LeUW64 };
+        self.op(Opcode::LtUW64, &[t, x, y]);
+        self.op(Opcode::EqW64, &[t + 1, x, y]);
+        self.op(meta, &[t + 2, x + 8, y + 8]);
+        self.op(Opcode::AndW8, &[t + 1, t + 1, t + 2]);
+        self.op_to(dst, Opcode::OrW8, &[t, t + 1])
     }
 
     pub fn unary_op(&mut self, dst: PlaceVal<'tcx>, op: UnOp, a: &Operand<'tcx>) -> Result<(), NeedsNative> {
@@ -307,16 +309,16 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 self.with_place_slot(dst, |fx, d| {
                     match (op, kind) {
                         (UnOp::Not, ScalarKind::Int { .. }) if la.ty.is_bool() => {
-                            fx.op(opcode("XorImmW8"), &[d, s, 1]);
+                            fx.op(Opcode::XorImmW8, &[d, s, 1]);
                         }
                         (UnOp::Not, ScalarKind::Int { w, .. }) => {
-                            fx.op(opw("Not", w), &[d, s]);
+                            fx.op(opw(IntOp::Not, w), &[d, s]);
                         }
                         (UnOp::Neg, ScalarKind::Int { w, .. }) => {
-                            fx.op(opw("Neg", w), &[d, s]);
+                            fx.op(opw(IntOp::Neg, w), &[d, s]);
                         }
                         (UnOp::Neg, ScalarKind::Float(f)) => {
-                            fx.op(opcode(&format!("Fneg{}", f.suffix())), &[d, s]);
+                            fx.op(opf(FloatOp::Fneg, f), &[d, s]);
                         }
                         (UnOp::Not, ScalarKind::Float(_)) | (UnOp::PtrMetadata, _) => return native("unary op"),
                     }
