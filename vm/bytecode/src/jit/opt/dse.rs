@@ -39,10 +39,8 @@ pub fn dse(f: &mut Func) {
                     dead.retain(|&(c, l, h)| c != a || h <= lo || l >= hi);
                 }
                 Op::HCall(ref h) => {
-                    for s in h.regs.iter().flat_map(|r| r.1).flatten() {
-                        if let SlotRef::Alloca(a, _) = s {
-                            dead.retain(|&(c, ..)| c != a);
-                        }
+                    for a in h.allocas() {
+                        dead.retain(|&(c, ..)| c != a);
                     }
                 }
                 Op::Island(_) => dead.clear(),

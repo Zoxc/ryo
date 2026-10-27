@@ -576,12 +576,7 @@ fn local_alloca(nodes: &[Node], root: &Func, memo: &mut BTreeMap<(usize, u32), b
 
 /// Whether a handler call or an island of `g` names the alloca `a`: promotion can't take it.
 fn named(g: &Func, a: AllocaId) -> bool {
-    let is = |s: &SlotRef| matches!(s, SlotRef::Alloca(b, _) if *b == a);
-    g.insts.iter().any(|id| match &id.op {
-        Op::HCall(h) => h.regs.iter().flat_map(|r| r.1.iter().flatten()).any(is),
-        Op::Island(x) => x.ops.iter().any(is),
-        _ => false,
-    })
+    g.insts.iter().any(|id| id.op.named_allocas().any(|b| b == a))
 }
 
 /// The promotion benefit of inlining `c` at the call `site` of node `parent` (design/jit.md,

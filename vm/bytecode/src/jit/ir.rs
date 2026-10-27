@@ -258,6 +258,22 @@ pub struct HCall {
     pub site: Site,
 }
 
+impl HCall {
+    /// The allocas its frame operands name.
+    pub fn allocas(&self) -> impl Iterator<Item = AllocaId> + '_ {
+        self.regs.iter().flat_map(|r| r.1.iter().flatten()).filter_map(SlotRef::alloca)
+    }
+}
+
+impl SlotRef {
+    pub fn alloca(&self) -> Option<AllocaId> {
+        match *self {
+            SlotRef::Alloca(a, _) => Some(a),
+            SlotRef::Scratch(_) => None,
+        }
+    }
+}
+
 impl Call {
     /// The index of the argument passed in the callee's entry register `r`.
     pub fn arg_for(&self, r: &ArgReg) -> Option<usize> {
@@ -417,6 +433,16 @@ pub enum Op {
 }
 
 impl Op {
+    /// The allocas a handler call's frame operands or an island's operands name.
+    pub fn named_allocas(&self) -> impl Iterator<Item = AllocaId> + '_ {
+        let (h, isl) = match self {
+            Op::HCall(h) => (Some(h), None),
+            Op::Island(x) => (None, Some(x)),
+            _ => (None, None),
+        };
+        h.into_iter().flat_map(|h| h.allocas()).chain(isl.into_iter().flat_map(|x| x.ops.iter().filter_map(SlotRef::alloca)))
+    }
+
     /// The result of a pure single-result operation on the constant operands `x`, unmasked
     /// to the result's width; `None` for any other operation.
     pub fn fold(&self, x: &[u64]) -> Option<u64> {

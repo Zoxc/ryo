@@ -115,20 +115,9 @@ fn try_promote(f: &mut Func, mut ok: Vec<bool>) -> Result<bool, AllocaId> {
                         ok[a.idx()] = false;
                     }
                 }
-                Op::HCall(h) => {
-                    for r in &h.regs {
-                        for s in r.1.iter().flatten() {
-                            if let SlotRef::Alloca(a, _) = s {
-                                ok[a.idx()] = false;
-                            }
-                        }
-                    }
-                }
-                Op::Island(isl) => {
-                    for s in &isl.ops {
-                        if let SlotRef::Alloca(a, _) = s {
-                            ok[a.idx()] = false;
-                        }
+                op @ (Op::HCall(_) | Op::Island(_)) => {
+                    for a in op.named_allocas() {
+                        ok[a.idx()] = false;
                     }
                 }
                 _ => {}

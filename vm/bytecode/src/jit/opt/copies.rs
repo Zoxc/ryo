@@ -82,7 +82,7 @@ fn small(f: &Func, i: Inst) -> Option<(bool, u32)> {
     if id.args.len() != 3 || h.nout != 0 || h.ret || h.site != Site::None {
         return None;
     }
-    if h.regs.iter().flat_map(|r| r.1).flatten().any(|s| matches!(s, SlotRef::Alloca(..))) {
+    if h.allocas().next().is_some() {
         return None;
     }
     let ValueDef::Const(n) = f.def(f.resolve(id.args[2])) else { return None };

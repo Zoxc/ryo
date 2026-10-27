@@ -727,15 +727,8 @@ pub fn lvn(f: &mut Func, pools: Option<&dyn ConstMem>) {
                 }
                 Op::HCall(ref h) => {
                     let memory = crate::jit::effects::effects(h.h).is_none_or(|e| e.memory);
-                    let named: Vec<AllocaId> = h
-                        .regs
-                        .iter()
-                        .flat_map(|r| r.1)
-                        .flatten()
-                        .filter_map(|s| if let SlotRef::Alloca(a, _) = s { Some(a) } else { None })
-                        .collect();
                     mem.retain(|&(l, _, _)| match l {
-                        Loc::A(b, _) => !named.contains(&b) && !(memory && aliasable[b.idx()]),
+                        Loc::A(b, _) => !h.allocas().any(|a| a == b) && !(memory && aliasable[b.idx()]),
                         Loc::P(..) => !memory,
                     });
                 }
