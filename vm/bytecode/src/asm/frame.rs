@@ -296,10 +296,16 @@ impl SlotMap {
 
     /// How far the byte at `off` moves.
     pub fn delta(&self, off: i32) -> i32 {
+        self.segment(off).0
+    }
+
+    /// How far the byte at `off` moves, and the end of the bytes from `off` that move with it
+    /// (as far as the range or gap holding `off` reaches).
+    fn segment(&self, off: i32) -> (i32, i64) {
         let i = self.ranges.partition_point(|r| r.0 <= off);
         match i.checked_sub(1).map(|i| self.ranges[i]) {
-            Some((lo, len, d)) if (off as i64) < lo as i64 + len as i64 => d,
-            _ => 0,
+            Some((lo, len, d)) if (off as i64) < lo as i64 + len as i64 => (d, lo as i64 + len as i64),
+            _ => (0, self.ranges.get(i).map_or(i64::MAX, |r| r.0 as i64)),
         }
     }
 
@@ -309,14 +315,14 @@ impl SlotMap {
 
     /// Where the bytes `off .. off + len` go, if they move together.
     pub fn map_range(&self, off: i32, len: u32) -> Option<i32> {
-        let d = self.delta(off);
-        let mut o = off as i64;
+        let (d, mut o) = self.segment(off);
         let end = off as i64 + len as i64;
         while o < end {
-            if self.delta(o as i32) != d {
+            let (e, next) = self.segment(o as i32);
+            if e != d {
                 return None;
             }
-            o += 1;
+            o = next;
         }
         Some(off.wrapping_add(d))
     }
@@ -348,14 +354,10 @@ pub fn remap_slots(code: &[u32], mode: Mode, map: &SlotMap) -> Result<Vec<u32>, 
 pub fn shuffle_map(d: &Decoded, mode: Mode) -> Result<SlotMap, FrameError> {
     let f = d.frame_size as i64;
     let insns = insns(&d.words, mode)?;
-    let mut pinned = alloc::vec![false; f as usize];
-    let range = |o: i64, n: i64| (o.max(-f), (o + n).min(0));
+    let mut pinned = Bytes::new(d.frame_size);
     for sc in &d.scopes {
         if let ScopeKind::Escape { .. } = sc.kind {
-            let (lo, hi) = range(sc.frame_offset as i64, sc.size as i64);
-            for b in lo..hi {
-                pinned[(b + f) as usize] = true;
-            }
+            pinned.set(sc.frame_offset, sc.size, true);
         }
     }
     let escaped = pinned.clone();
@@ -363,21 +365,16 @@ pub fn shuffle_map(d: &Decoded, mode: Mode) -> Result<SlotMap, FrameError> {
         let mut changed = false;
         for i in &insns {
             for o in &i.opnds {
-                let off = d.words[o.word] as i32 as i64;
+                let off = d.words[o.word] as i32;
                 let n = match o.access {
-                    Access::Read(n) | Access::Write(n) | Access::Clobber(n) => n as i64,
+                    Access::Read(n) | Access::Write(n) | Access::Clobber(n) => n,
                     Access::Addr | Access::Opaque => 1,
                 };
-                if o.access == Access::Addr && off < 0 && !pinned.get((off + f) as usize).copied().unwrap_or(true) {
+                if o.access == Access::Addr && (-f..0).contains(&(off as i64)) && !pinned.contains(off) {
                     return Err(FrameError { at: i.at, what: "an address of bytes that don't escape" });
                 }
-                let (lo, hi) = range(off, n);
-                if lo >= hi {
-                    continue;
-                }
-                let p = &mut pinned[(lo + f) as usize..(hi + f) as usize];
-                if p.iter().any(|&x| x) && !p.iter().all(|&x| x) {
-                    p.fill(true);
+                if pinned.any_in(off, n) && !pinned.all_in(off, n) {
+                    pinned.set(off, n, true);
                     changed = true;
                 }
             }
@@ -397,19 +394,7 @@ pub fn shuffle_map(d: &Decoded, mode: Mode) -> Result<SlotMap, FrameError> {
         }
     }
     let delta = -(f as i32 + 64);
-    let mut ranges = Vec::new();
-    let mut b = 0;
-    while b < f as usize {
-        if pinned[b] {
-            b += 1;
-            continue;
-        }
-        let lo = b;
-        while b < f as usize && !pinned[b] {
-            b += 1;
-        }
-        ranges.push((lo as i32 - f as i32, (b - lo) as u32, delta));
-    }
+    let ranges = pinned.runs(-(f as i32), f as u32, false).map(|(lo, len)| (lo, len, delta)).collect();
     Ok(SlotMap { frame_size: 2 * d.frame_size + 64, ranges })
 }
 
@@ -447,10 +432,48 @@ impl Bytes {
         self.set(-(f as i32), f, true);
     }
 
+    fn get(&self, b: usize) -> bool {
+        self.bits[b / 64] >> (b % 64) & 1 != 0
+    }
+
     /// Whether the byte at `off` is in the set.
     pub fn contains(&self, off: i32) -> bool {
-        let r = self.range(off, 1);
-        r.start < r.end && self.bits[r.start / 64] >> (r.start % 64) & 1 != 0
+        self.range(off, 1).any(|b| self.get(b))
+    }
+
+    /// Whether any of the bytes `off .. off + n` in the frame is in the set.
+    fn any_in(&self, off: i32, n: u32) -> bool {
+        self.range(off, n).any(|b| self.get(b))
+    }
+
+    /// Whether all of the bytes `off .. off + n` in the frame are in the set.
+    fn all_in(&self, off: i32, n: u32) -> bool {
+        self.range(off, n).all(|b| self.get(b))
+    }
+
+    /// The maximal runs `(off, len)` of bytes in `off .. off + n` (in the frame) whose
+    /// membership is `v`.
+    fn runs(&self, off: i32, n: u32, v: bool) -> impl Iterator<Item = (i32, u32)> + '_ {
+        let f = self.frame_size as i64;
+        let r = self.range(off, n);
+        let mut b = r.start;
+        core::iter::from_fn(move || {
+            while b < r.end && self.get(b) != v {
+                b += 1;
+            }
+            let lo = b;
+            while b < r.end && self.get(b) == v {
+                b += 1;
+            }
+            (b > lo).then(|| ((lo as i64 - f) as i32, (b - lo) as u32))
+        })
+    }
+
+    /// Removes the bytes of `o`.
+    fn subtract(&mut self, o: &Bytes) {
+        for (a, b) in self.bits.iter_mut().zip(&o.bits) {
+            *a &= !b;
+        }
     }
 
     fn union(&mut self, o: &Bytes) -> bool {
@@ -509,9 +532,7 @@ pub fn head_liveness(d: &Decoded, mode: Mode) -> Result<Vec<Bytes>, FrameError> 
             }
         }
         // A byte read and written by the same instruction is read first.
-        for (kw, gw) in k.bits.iter_mut().zip(&g.bits) {
-            *kw &= !gw;
-        }
+        k.subtract(&g);
         gen_.push(g);
         kill.push(k);
     }
@@ -524,9 +545,7 @@ pub fn head_liveness(d: &Decoded, mode: Mode) -> Result<Vec<Bytes>, FrameError> 
             for &s in &succ[k] {
                 out.union(&live_in[s]);
             }
-            for (o, kw) in out.bits.iter_mut().zip(&kill[k].bits) {
-                *o &= !kw;
-            }
+            out.subtract(&kill[k]);
             out.union(&gen_[k]);
             if let Some(p) = pad[k] {
                 out.union(&live_in[p]);
@@ -541,16 +560,19 @@ pub fn head_liveness(d: &Decoded, mode: Mode) -> Result<Vec<Bytes>, FrameError> 
 /// `map` moves, as runs `(from, to, len)` of AOT and new offsets.
 pub fn osr_moves(live: &Bytes, map: &SlotMap) -> Vec<(i32, i32, u32)> {
     let mut out: Vec<(i32, i32, u32)> = Vec::new();
-    let f = live.frame_size as i32;
-    for off in -f..0 {
-        let d = map.delta(off);
-        if d == 0 || !live.contains(off) {
-            continue;
+    let mut off = -(live.frame_size as i64);
+    while off < 0 {
+        let (d, end) = map.segment(off as i32);
+        let end = end.min(0);
+        if d != 0 {
+            for (o, n) in live.runs(off as i32, (end - off) as u32, true) {
+                match out.last_mut() {
+                    Some((from, to, len)) if *from + *len as i32 == o && *to - *from == d => *len += n,
+                    _ => out.push((o, o + d, n)),
+                }
+            }
         }
-        match out.last_mut() {
-            Some((from, to, len)) if *from + *len as i32 == off && *to - *from == d => *len += 1,
-            _ => out.push((off, off + d, 1)),
-        }
+        off = end;
     }
     out
 }
