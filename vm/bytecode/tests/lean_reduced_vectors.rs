@@ -510,8 +510,10 @@ fn every_opcode(rng: &mut Rng, out: &mut Out) {
         f.insns.push(vec![Opcode::Jmp as u32, 0]);
         f.targets.push((pad + 1, 1, 0));
         f.insns.push(vec![Opcode::Abort as u32]);
+        // PE: no landing pads, whose forms the Lean decoder doesn't model yet (the pad region
+        // and the `nop` after their calls, lean/PENDING.md).
         if op_may_unwind(op) && list_len != 1 {
-            f.unwind.push((1, if list_len == 0 { None } else { Some((pad, k % 2 == 0)) }));
+            f.unwind.push((1, if list_len == 0 || mode.pe { None } else { Some((pad, k % 2 == 0)) }));
         }
         let enc = encode_fn(&f, FRAMES[k % FRAMES.len()], mode);
         out.encoded(&enc, mode);

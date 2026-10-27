@@ -178,10 +178,12 @@ pub struct FuncCode {
     pub frame_size: u32,
     /// Positions relative to `start`.
     pub call_sites: Vec<CallSite>,
-    /// Where the prologue starts and where the entry's counter stub does, relative to
-    /// `start` ([`Encoded::prologue`], [`Encoded::entry_stub`]).
+    /// Where the prologue starts, where the entry's counter stub does and where the PE pad
+    /// region does (`len` if none), relative to `start` ([`Encoded::prologue`],
+    /// [`Encoded::entry_stub`], [`Encoded::region`]).
     pub prologue: u32,
     pub entry_stub: u32,
+    pub region: u32,
 }
 
 /// A written image: section contents and relocations.
@@ -283,7 +285,7 @@ pub struct CodeLimits {
     pub data: u32,
 }
 
-fn op_falls_through(op: Opcode) -> bool {
+pub(crate) fn op_falls_through(op: Opcode) -> bool {
     !matches!(op, Opcode::Jmp | Opcode::Unreachable | Opcode::Abort | Opcode::Ret | Opcode::Resume | Opcode::TailCall | Opcode::TailCallPtr)
         && !op.mnemonic().starts_with("switch.")
 }
@@ -654,6 +656,7 @@ impl ImageWriter {
                 call_sites: e.call_sites.clone(),
                 prologue: e.prologue,
                 entry_stub: e.entry_stub,
+                region: e.region,
             });
         }
 
@@ -1057,8 +1060,9 @@ fn advance(fde: &mut Vec<u8>, loc: &mut u32, to: u32) {
 /// `.pdata` and `.xdata`: per function, its range and unwind info ([`pe_unwind_info`]).
 /// There is no exception handler: panics unwind through VM frames, but their landing pads
 /// don't run. The counter check before the prologue counts as part of it (it moves nothing),
-/// and the entry's counter stub at the end of the code, which runs before the prologue, has
-/// an entry of its own without unwind codes, as a leaf ([`PE_LEAF_UNWIND`]).
+/// the entry's counter stub after the code, which runs before the prologue, has an entry of
+/// its own without unwind codes, as a leaf ([`PE_LEAF_UNWIND`]), and so has the pad region
+/// after it ([`pe_region_unwind_info`]).
 fn unwind_pe(funcs: &[FuncCode], mode: Mode, relocs: &mut Vec<Reloc>) -> Vec<(Section, Vec<u8>)> {
     let rva = |section, offset, target, addend| Reloc { section, offset, target: RelocTarget::Section(target), addend, kind: RelocKind::Rva32 };
     let (mut pdata, mut xdata) = (Vec::new(), Vec::new());
@@ -1074,9 +1078,13 @@ fn unwind_pe(funcs: &[FuncCode], mode: Mode, relocs: &mut Vec<Reloc>) -> Vec<(Se
         entry(&mut pdata, f.start, f.start + f.entry_stub, x);
         let ef = EhFunc { len: f.len, frame_size: f.frame_size, prologue: f.prologue, entry_stub: f.entry_stub };
         xdata.extend_from_slice(&pe_unwind_info(&ef, mode));
-        if f.entry_stub < f.len {
-            entry(&mut pdata, f.start + f.entry_stub, f.start + f.len, xdata.len() as i64);
+        if f.entry_stub < f.region {
+            entry(&mut pdata, f.start + f.entry_stub, f.start + f.region, xdata.len() as i64);
             xdata.extend_from_slice(&PE_LEAF_UNWIND);
+        }
+        if f.region < f.len {
+            entry(&mut pdata, f.start + f.region, f.start + f.len, xdata.len() as i64);
+            xdata.extend_from_slice(&pe_region_unwind_info());
         }
     }
     vec![(Section::Pdata, pdata), (Section::Xdata, xdata)]

@@ -5,7 +5,8 @@ use alloc::vec::Vec;
 
 use super::decode::Decoded;
 use super::encode::{
-    ArgVal, Asm, EncodeError, Encoded, Label, Opnd, Ref, RoReq, Rodata, Scope, ScopeKind, Unwind, handler_args, operands, push_words, word_len,
+    ArgVal, Asm, EncodeError, Encoded, Label, Opnd, Ref, RoReq, Rodata, Scope, ScopeKind, Unwind, check_region, handler_args, operands, opnd_labels,
+    pe_region_start, push_words, word_len,
 };
 use super::{Mode, has_handler};
 use crate::full::{Elem, ElemKind, Opcode, OperandKind, Shape, insn_len};
@@ -52,14 +53,17 @@ pub(super) fn addr_arg(r: Ref) -> Option<Arg> {
 
 /// The reduced instruction words of `insns`, with cleanup entries (instruction, landing pad
 /// instruction or `None` to continue, catch), scopes by instruction index (the count for
-/// the end) and the instructions whose store was dropped.
+/// the end) and the instructions whose store was dropped. With `pe`, from the first cleanup
+/// landing pad on is the pad region, which has no loop heads.
 pub(super) fn words(
     insns: &[Insn],
     cleanup: &[(usize, Option<usize>, bool)],
     scopes: &[(usize, Scope)],
     dropped: &[usize],
     frame_size: u32,
+    pe: bool,
 ) -> Decoded {
+    let region = if pe { cleanup.iter().filter(|c| !c.2).filter_map(|c| c.1).min().unwrap_or(usize::MAX) } else { usize::MAX };
     let len = |i: &Insn| match i {
         Insn::Native(op, ops) => word_len(*op, ops),
         Insn::Handler(_, args, then) => {
@@ -120,7 +124,7 @@ pub(super) fn words(
             Insn::Handler(..) => Vec::new(),
         };
         for t in single {
-            if t as usize <= k {
+            if t as usize <= k && (t as usize) < region {
                 head[t as usize] = true;
             }
         }
@@ -215,7 +219,7 @@ pub fn reduce(
         })
         .collect::<Result<Vec<_>, EncodeError>>()?;
     let dropped = dropped.iter().map(|&w| idx(w).map(|i| i as usize)).collect::<Result<Vec<_>, _>>()?;
-    Ok(words(&insns, &out, &scopes, &dropped, frame_size))
+    Ok(words(&insns, &out, &scopes, &dropped, frame_size, mode.pe))
 }
 
 /// Encodes one function given in the reduced set (slots frame offsets), as
@@ -290,6 +294,8 @@ pub fn encode_reduced_at(
     for _ in 0..starts.len() {
         asm.label();
     }
+    let region = if mode.pe { pe_region_start(cleanup).map(idx).transpose().map_err(|_| EncodeError::BadRegion(0))? } else { None };
+    let mut flow = Vec::with_capacity(if region.is_some() { starts.len() } else { 0 });
     let mut scopes = scopes.iter().peekable();
     let mut scopes_at = |asm: &mut Asm, at: u32| -> Result<(), EncodeError> {
         while let Some(sc) = scopes.next_if(|sc| sc.code_offset <= at) {
@@ -307,6 +313,9 @@ pub fn encode_reduced_at(
     let mut dropped = dropped.iter().peekable();
     let mut full = Vec::new();
     for (i, &at) in starts.iter().enumerate() {
+        if region == Some(i) {
+            asm.begin_region();
+        }
         asm.bind(Label(i as u32));
         scopes_at(&mut asm, at)?;
         let w = &code[at as usize..];
@@ -324,6 +333,10 @@ pub fn encode_reduced_at(
                     return Err(EncodeError::ArgNotFirst(at));
                 }
                 let ops = operands(&full, 0).into_iter().map(|o| o.map_targets(|t| label(at, t))).collect::<Result<Vec<_>, _>>()?;
+                if region.is_some() {
+                    let falls = crate::image::op_falls_through(f) && f.info().shape != Shape::Trap;
+                    flow.push((falls, ops.iter().flat_map(opnd_labels).collect::<Vec<_>>()));
+                }
                 asm.insn(f, &ops)
             }
             None => {
@@ -379,6 +392,15 @@ pub fn encode_reduced_at(
                 {
                     return Err(bad());
                 }
+                if region.is_some() {
+                    let (falls, ts) = match &then {
+                        Then::Next => (true, Vec::new()),
+                        Then::Branch { target, .. } => (true, alloc::vec![target.0 as usize]),
+                        Then::Table(ts) => (false, ts.iter().map(|t| t.0 as usize).collect()),
+                        Then::Trap => (false, Vec::new()),
+                    };
+                    flow.push((falls, ts));
+                }
                 asm.handler(h, &args, values, then)
             }
         };
@@ -398,6 +420,9 @@ pub fn encode_reduced_at(
     }
     if let Some(&d) = dropped.next() {
         return Err(EncodeError::BadDropped(d));
+    }
+    if let Some(r) = region {
+        check_region(r, &starts, &flow, &action)?;
     }
     let (e, at) = asm.finish_labels(frame_size, |s| s);
     Ok((e, starts.into_iter().zip(at).collect()))

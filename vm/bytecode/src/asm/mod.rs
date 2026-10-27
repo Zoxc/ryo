@@ -60,7 +60,7 @@ pub use decode::{AsmError, Decoded, Resolver, decode, decode_linked, decode_redu
 #[cfg(feature = "alloc")]
 pub use encode::{
     Asm, CallSite, DroppedStore, EncodeError, Encoded, InsnId, Label, Opnd, PROBE_FROM, Ref, Reloc, Scope, ScopeKind, Unwind, encode, operands,
-    prologue_len, push_words, word_len,
+    pe_region_start, prologue_len, push_words, word_len,
 };
 #[cfg(feature = "alloc")]
 pub use inline::has_inline;

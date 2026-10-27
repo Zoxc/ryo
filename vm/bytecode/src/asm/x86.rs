@@ -356,6 +356,9 @@ pub enum Item {
     CallMemRax,
     /// `jmp rax`
     JmpRax,
+    /// `jmp r11`: a PE pad region's entry, to the landing pad the trampoline passes
+    /// (design/vm.md#unwinding).
+    JmpR11,
     /// `jmp rel32` to another function (a tail call).
     Jmp(Ref),
     /// JIT code only, never decoded: `mov r11, imm64; call r11`, a call of a target out of
@@ -478,6 +481,7 @@ impl Item {
             Item::WinEpilogue => 7,
             Item::TestAl | Item::CallRax | Item::JmpRax | Item::Ud2 | Item::CallMemRax => 2,
             Item::CallR11(_) => 4,
+            Item::JmpR11 => 3,
             Item::CtrInc(_) => 7,
             Item::TestRax | Item::Mov(..) | Item::AddRaxRcx => 3,
             Item::LoadTableEntry | Item::TableEntry { .. } => 4,
@@ -809,6 +813,7 @@ impl Item {
                 reloc(out, relocs, to);
             }
             Item::JmpRax => out.extend_from_slice(&[0xff, 0xe0]),
+            Item::JmpR11 => out.extend_from_slice(&[0x41, 0xff, 0xe3]),
             Item::Jmp(to) => {
                 out.push(0xe9);
                 reloc(out, relocs, to);
@@ -992,10 +997,6 @@ pub struct BadItem(pub u32);
 impl<'a> Cursor<'a> {
     pub fn new(code: &'a [u8], fields: Fields<'a>) -> Self {
         Cursor { code, pos: 0, fields, sp_frame: None }
-    }
-
-    pub fn at_end(&self) -> bool {
-        self.pos as usize >= self.code.len()
     }
 
     fn bytes(&self, n: usize) -> Result<&'a [u8], BadItem> {
@@ -1325,6 +1326,7 @@ impl<'a> Cursor<'a> {
             }
             (0, 0xe8) => Item::Call(self.field_ref(1, 5)?),
             (0x41, 0xff) if get(2)? == 0x53 => Item::CallR11(get(3)?),
+            (0x41, 0xff) if get(2)? == 0xe3 => Item::JmpR11,
             (0x48 | 0x4c, 0x8b) if get(2)? & 0xc7 == 0x05 => {
                 let reg = Reg::from_num(get(2)? >> 3 & 7 | (r as u8) << 3).ok_or(bad)?;
                 Item::LoadRip(reg, self.field_ref(3, 7)?)

@@ -396,6 +396,7 @@ fn item(i: &Item) -> String {
         Item::LoadRip(r, to) => c("loadRip", &[("dst", reg(r)), ("to", rf(to))]),
         Item::CallMemRax => "\"callMemRax\"".into(),
         Item::JmpRax => "\"jmpRax\"".into(),
+        Item::JmpR11 => "\"jmpR11\"".into(),
         Item::Jmp(to) => c("jmp", &[("to", rf(to))]),
         Item::CallAbs(_) | Item::JmpAbs(_) | Item::JmpMem(_) => unreachable!("JIT code only"),
         Item::Branch { cond: k, target, long } => c("branch", &[("cond", cond(k)), ("target", target.to_string()), ("long", long.to_string())]),

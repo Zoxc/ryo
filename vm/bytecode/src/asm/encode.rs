@@ -97,9 +97,12 @@ pub struct Encoded {
     /// [`Mode::counters`], else 0.
     pub prologue: u32,
     /// Where the out-of-line stub of the entry's counter starts, the last element of the
-    /// code (its frame isn't set up yet, unlike everywhere else past the prologue); the
-    /// code's length without counters.
+    /// code but for the pad region (its frame isn't set up yet, unlike everywhere else past
+    /// the prologue); [`Encoded::region`] without counters.
     pub entry_stub: u32,
+    /// PE: where the pad region's entry starts, after the counter stubs ([`Asm::begin_region`],
+    /// design/vm.md#unwinding); the code's length if there is none.
+    pub region: u32,
 }
 
 /// A change in which frame bytes may be reached through a pointer, at a code position. In
@@ -176,6 +179,10 @@ pub enum EncodeError {
     Decode(DecodeError),
     /// A branch target that isn't an instruction start (word offset of the instruction).
     BadTarget(u32),
+    /// PE: the pad region (from the first cleanup landing pad on, [`pe_region_start`]) isn't
+    /// closed: a branch into or out of it, a fall-through into it, a cleanup landing pad of
+    /// an instruction in it, or a catching one on the other side of its start (word offset).
+    BadRegion(u32),
     /// A cleanup entry not at an instruction that may unwind, or whose landing pad isn't an
     /// `lpad`.
     BadCleanup(u32),
@@ -770,6 +777,8 @@ pub fn encode(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], scopes: &
     for _ in 0..starts.len() {
         asm.label();
     }
+    let region = if mode.pe { pe_region_start(cleanup).map(idx).transpose().map_err(|_| EncodeError::BadRegion(0))? } else { None };
+    let mut flow = Vec::with_capacity(if region.is_some() { starts.len() } else { 0 });
     let mut scopes = scopes.iter().peekable();
     let mut scopes_at = |asm: &mut Asm, at: usize| -> Result<(), EncodeError> {
         while let Some(sc) = scopes.next_if(|sc| sc.code_offset as usize <= at) {
@@ -785,9 +794,16 @@ pub fn encode(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], scopes: &
         Ok(())
     };
     for (i, &(at, op)) in starts.iter().enumerate() {
+        if region == Some(i) {
+            asm.begin_region();
+        }
         asm.bind(Label(i as u32));
         scopes_at(&mut asm, at)?;
         let ops = operands(code, at).into_iter().map(|o| o.map_targets(|t| idx(t).map(|i| Label(i as u32)))).collect::<Result<Vec<_>, _>>()?;
+        if region.is_some() {
+            let falls = crate::image::op_falls_through(op) && op.info().shape != Shape::Trap;
+            flow.push((falls, ops.iter().flat_map(opnd_labels).collect::<Vec<_>>()));
+        }
         let id = asm.insn(op, &ops);
         if let Some(a) = action[i] {
             asm.set_unwind(id, a);
@@ -797,7 +813,52 @@ pub fn encode(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], scopes: &
     if scopes.next().is_some() {
         return Err(EncodeError::BadTarget(code.len() as u32));
     }
+    if let Some(r) = region {
+        check_region(r, &starts.iter().map(|&(s, _)| s as u32).collect::<Vec<_>>(), &flow, &action)?;
+    }
     Ok(asm.finish(frame_size, |s| s))
+}
+
+/// The labels of a branch operand.
+pub(super) fn opnd_labels(o: &Opnd<Label>) -> Vec<usize> {
+    match o {
+        Opnd::Target(t) => alloc::vec![t.0 as usize],
+        Opnd::Targets(ts) | Opnd::Cases(_, ts) => ts.iter().map(|t| t.0 as usize).collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// PE: the word offset where a function's pad region starts (design/vm.md#unwinding): at its
+/// first cleanup landing pad, if it has one. The lowering puts the cleanup landing pads first
+/// there, then the cleanup code with its own terminate stubs, after the body; the encoders
+/// lay it out after the counter stubs, and the decoders read it from there.
+pub fn pe_region_start(cleanup: &[CleanupEntry]) -> Option<u32> {
+    cleanup.iter().filter(|e| e.target != crate::image::CONTINUE && e.target & crate::image::CATCH == 0).map(|e| e.target).min()
+}
+
+/// Checks that the pad region from instruction `r` on is closed ([`EncodeError::BadRegion`]),
+/// given each instruction's word offset (`starts`), whether it may fall through to the next
+/// and its branch targets (`flow`, instruction indices) and its unwind action: nothing falls
+/// into it, no branch crosses its start, its own calls have no cleanup landing pads, and a
+/// catching landing pad (a terminate stub's) is on its call's side.
+pub(super) fn check_region(r: usize, starts: &[u32], flow: &[(bool, Vec<usize>)], action: &[Option<Unwind>]) -> Result<(), EncodeError> {
+    let bad = |i: usize| Err(EncodeError::BadRegion(starts[i]));
+    if r == 0 || flow[r - 1].0 {
+        return bad(r);
+    }
+    for (i, (_, ts)) in flow.iter().enumerate() {
+        if ts.iter().any(|&t| (t >= r) != (i >= r)) {
+            return bad(i);
+        }
+    }
+    for (i, a) in action.iter().enumerate() {
+        match *a {
+            Some(Unwind::Pad { pad, catch: false }) if i >= r || (pad.0 as usize) < r => return bad(i),
+            Some(Unwind::Pad { pad, catch: true }) if (pad.0 as usize >= r) != (i >= r) => return bad(i),
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 /// One function's machine code being built: instructions go in as opcodes and operands
@@ -819,6 +880,13 @@ pub struct Asm {
     drops: Option<Vec<usize>>,
     /// The inline sequences: their first piece and opcode.
     seqs: Vec<(usize, Opcode)>,
+    /// PE: the piece the pad region starts at ([`Asm::begin_region`]).
+    region: Option<usize>,
+    /// The calls that end their instruction (no result stores after them, or an island's in
+    /// the pad region): on PE one with a landing pad is followed by a `nop`, so that its
+    /// return address can't be an epilogue's start, where the unwinder takes the frame for one
+    /// being left and calls no handler for it.
+    bare_calls: Vec<usize>,
 }
 
 /// The register an operand register value goes in: a constant, or the address of a [`Ref`].
@@ -841,7 +909,43 @@ pub(super) enum ArgVal {
 
 impl Asm {
     pub fn new(mode: Mode) -> Asm {
-        Asm { mode, pieces: Vec::new(), labels: Vec::new(), ro: Vec::new(), unwind: Vec::new(), targets: Vec::new(), drops: None, seqs: Vec::new() }
+        Asm {
+            mode,
+            pieces: Vec::new(),
+            labels: Vec::new(),
+            ro: Vec::new(),
+            unwind: Vec::new(),
+            targets: Vec::new(),
+            drops: None,
+            seqs: Vec::new(),
+            region: None,
+            bare_calls: Vec::new(),
+        }
+    }
+
+    /// PE: starts the pad region (design/vm.md#unwinding): everything emitted from here on is
+    /// the cleanup code that `ryo_seh_handler` calls through the trampoline while an
+    /// exception unwinds, on a stack of its own below the unwinder's frames. [`Asm::finish`]
+    /// lays it out after the counter stubs, behind its entry `sub rsp, PE_REGION_ALLOC; jmp
+    /// r11`. In it, `resume` returns to the trampoline (`add rsp, PE_REGION_ALLOC; ret`),
+    /// island calls use the shadow space the entry allocated rather than moving `rsp`, and
+    /// loop heads have neither counter checks nor padding. Its first instruction must be a
+    /// cleanup landing pad, the first of the function's ([`pe_region_start`]), and nothing
+    /// may branch across its start.
+    pub fn begin_region(&mut self) {
+        debug_assert!(self.mode.pe && self.region.is_none(), "one pad region, on PE");
+        self.region = Some(self.pieces.len());
+    }
+
+    /// Whether the pad region has started.
+    fn in_region(&self) -> bool {
+        self.region.is_some()
+    }
+
+    /// `resume` in the pad region: back to the trampoline.
+    fn region_ret(&mut self) {
+        self.fixed(Item::AddRsp(super::PE_REGION_ALLOC));
+        self.fixed(Item::Ret);
     }
 
     /// A new, unbound label.
@@ -961,12 +1065,16 @@ impl Asm {
         let [fp, ops] = island_args(self.mode.pe);
         self.pieces.push(Piece::Fp(fp));
         self.pieces.push(Piece::LeaRo { reg: ops, ro });
-        if self.mode.pe {
+        // The pad region's `rsp` doesn't move: its entry allocated the shadow space.
+        let shadow = self.mode.pe && !self.in_region();
+        if shadow {
             self.fixed(Item::SubRsp(32));
         }
         self.maybe_site(Item::CallMem(Ref::Sym(isl)), site);
-        if self.mode.pe {
+        if shadow {
             self.fixed(Item::AddRsp(32));
+        } else {
+            self.bare_calls.push(self.pieces.len() - 1);
         }
     }
 
@@ -1013,6 +1121,10 @@ impl Asm {
     pub(super) fn handler(&mut self, op: Opcode, args: &[Arg], case_values: &[u8], then: Then<Label>) -> InsnId {
         let id = InsnId(self.unwind.len() as u32);
         self.unwind.push(None);
+        if op == Opcode::Resume && self.in_region() {
+            self.region_ret();
+            return id;
+        }
         // As `insn` records `t` and a switch's `default`, the operands of their own.
         match &then {
             Then::Branch { target, .. } => self.targets.push((*target, self.pieces.len())),
@@ -1053,6 +1165,10 @@ impl Asm {
     pub fn insn(&mut self, op: Opcode, ops: &[Opnd<Label>]) -> InsnId {
         let id = InsnId(self.unwind.len() as u32);
         self.unwind.push(None);
+        if op == Opcode::Resume && self.in_region() {
+            self.region_ret();
+            return id;
+        }
         let site = Some(id);
         let info = op.info();
         for o in ops {
@@ -1138,7 +1254,10 @@ impl Asm {
                     _ => Item::CallRax,
                 };
                 self.maybe_site(call, site);
-                self.result(k, d);
+                let at = self.pieces.len() - 1;
+                if self.result(k, d) == 0 {
+                    self.bare_calls.push(at);
+                }
             }
             Shape::TailCall => {
                 if op == Opcode::TailCallPtr {
@@ -1172,7 +1291,7 @@ impl Asm {
     /// unbound ones): where the instruction after it starts, after a loop head's padding (the
     /// JIT's OSR entries land there).
     pub fn finish_labels(self, frame_size: u32, fix: impl Fn(u32) -> u32) -> (Encoded, Vec<u32>) {
-        let Asm { mode, mut pieces, labels, ro, unwind, targets, drops, seqs } = self;
+        let Asm { mode, mut pieces, labels, ro, unwind, targets, drops, seqs, region, bare_calls } = self;
         debug_assert!(mode.valid(), "{mode:?}");
         let target = branch_targets(&pieces, &labels);
         let sels = cache(&mut pieces, &target);
@@ -1214,13 +1333,14 @@ impl Asm {
             })
             .collect();
 
-        // Loop heads: labels bound before a branch to them.
+        // Loop heads: labels bound before a branch to them, but in the pad region, which has
+        // neither counters nor padding.
         let mut head = vec![false; pieces.len() + 1];
         if mode.align_loops || mode.counters {
             for (to, k) in targets {
                 let at = labels[to.0 as usize];
                 debug_assert_ne!(at, usize::MAX, "unbound label");
-                if at <= k {
+                if at <= k && region.is_none_or(|r| at < r) {
                     head[at] = true;
                 }
             }
@@ -1266,7 +1386,41 @@ impl Asm {
         let mut head_check = false;
         // The elements where loop heads' counter checks start.
         let mut head_checks = Vec::new();
+        // The counter stubs: the loop heads' in order, then the entry's. Each loads the
+        // record into `r11` (and a head its index into `eax`), calls through the record's
+        // slot, and on return jumps back after its check. Returns where the entry's starts
+        // (the end without counters).
+        let stubs = |out: &mut Vec<Laid>, checks: &[usize]| -> usize {
+            let mut entry_stub = out.len();
+            if mode.counters {
+                let (entry, heads) = checks.split_first().expect("the entry's check");
+                for (n, &js) in heads.iter().chain([entry]).enumerate() {
+                    let stub = out.len();
+                    let Laid::Branch { to, .. } = &mut out[js] else { unreachable!() };
+                    *to = stub;
+                    fixed(out, Item::Lea(Reg::R11, Ref::Rec));
+                    if js == *entry {
+                        entry_stub = stub;
+                        fixed(out, Item::CallR11(crate::image::JIT_ENTRY_SLOT));
+                    } else {
+                        fixed(out, Item::SetReg(Reg::Rax, n as u64));
+                        fixed(out, Item::CallR11(crate::image::JIT_OSR_SLOT));
+                    }
+                    out.push(Laid::Branch { cond: Cond::Always, to: js + 1, long: false });
+                }
+            }
+            entry_stub
+        };
+        // The stubs come before the pad region (whose loop heads have no checks), its entry
+        // (`sub rsp, PE_REGION_ALLOC; jmp r11`) at `region_at`.
+        let (mut entry_stub, mut region_at) = (None, None);
         for (k, p) in pieces.into_iter().enumerate() {
+            if region == Some(k) {
+                entry_stub = Some(stubs(&mut out, &checks));
+                region_at = Some(out.len());
+                fixed(&mut out, Item::SubRsp(super::PE_REGION_ALLOC));
+                fixed(&mut out, Item::JmpR11);
+            }
             if head[k] {
                 if mode.align_loops {
                     out.push(Laid::Align);
@@ -1293,11 +1447,14 @@ impl Asm {
                 head_checks.push(out.len());
                 check(&mut out, &mut checks, true);
             }
+            // PE: the `nop` after a call with a landing pad that ends its instruction.
+            let mut nop = false;
             out.push(match p {
                 Piece::Fixed { item, site } => {
                     let a = site.and_then(|id| unwind[id.0 as usize]);
                     if let Some(Unwind::Pad { pad, .. }) = a {
                         sites.push((out.len(), lab(&pad)));
+                        nop = mode.pe && bare_calls.binary_search(&k).is_ok();
                     }
                     Laid::Fixed {
                         item,
@@ -1334,6 +1491,9 @@ impl Asm {
                     Laid::Table(ts.iter().map(lab).collect())
                 }
             });
+            if nop {
+                fixed(&mut out, Item::Nop(1));
+            }
         }
         if head.last() == Some(&true) && mode.align_loops {
             out.push(Laid::Align);
@@ -1344,27 +1504,11 @@ impl Asm {
         for e in empty {
             remap[e] = out.len();
         }
-        // The counter stubs: the loop heads' in order, then the entry's. Each loads the
-        // record into `r11` (and a head its index into `eax`), calls through the record's
-        // slot, and on return jumps back after its check.
-        let mut entry_stub = out.len();
-        if mode.counters {
-            let (entry, heads) = checks.split_first().expect("the entry's check");
-            for (n, &js) in heads.iter().chain([entry]).enumerate() {
-                let stub = out.len();
-                let Laid::Branch { to, .. } = &mut out[js] else { unreachable!() };
-                *to = stub;
-                fixed(&mut out, Item::Lea(Reg::R11, Ref::Rec));
-                if js == *entry {
-                    entry_stub = stub;
-                    fixed(&mut out, Item::CallR11(crate::image::JIT_ENTRY_SLOT));
-                } else {
-                    fixed(&mut out, Item::SetReg(Reg::Rax, n as u64));
-                    fixed(&mut out, Item::CallR11(crate::image::JIT_OSR_SLOT));
-                }
-                out.push(Laid::Branch { cond: Cond::Always, to: js + 1, long: false });
-            }
-        }
+        let entry_stub = match entry_stub {
+            Some(e) => e,
+            None => stubs(&mut out, &checks),
+        };
+        let region_at = region_at.unwrap_or(out.len());
         // Piece indices to element indices.
         for &b in &branches {
             if let Laid::Branch { to, .. } = &mut out[b] {
@@ -1407,7 +1551,7 @@ impl Asm {
                 (seqs[seqs.binary_search_by_key(&k, |s| s.0).expect("a sequence's start")].1, sel)
             })
             .collect();
-        let (mut e, mut marks) = layout_code(out, [prologue_at, entry_stub], &marks);
+        let (mut e, mut marks) = layout_code(out, [prologue_at, entry_stub, region_at], &marks);
         e.rodata = rodata.bytes;
         e.hints = marks[nlabels + target_elems.len()..].iter().zip(hint_ops).map(|(&at, (op, sel))| Hint { at, op, sel }).collect();
         e.targets = marks[nlabels..nlabels + target_elems.len()].to_vec();
@@ -1508,7 +1652,7 @@ fn layouts(fp_arg: bool) -> &'static [Layout] {
 }
 
 /// Lays out the elements (relaxing branches) and writes the code.
-fn layout_code(mut pieces: Vec<Laid>, [prologue, entry_stub]: [usize; 2], marks: &[usize]) -> (Encoded, Vec<u32>) {
+fn layout_code(mut pieces: Vec<Laid>, [prologue, entry_stub, region]: [usize; 3], marks: &[usize]) -> (Encoded, Vec<u32>) {
     const VAR: u32 = u32::MAX;
     let n = pieces.len();
     // Lengths that don't depend on the position (`VAR` for the others), and the short
@@ -1602,6 +1746,7 @@ fn layout_code(mut pieces: Vec<Laid>, [prologue, entry_stub]: [usize; 2], marks:
     debug_assert_eq!(out.code.len(), pos[n] as usize);
     out.prologue = pos[prologue];
     out.entry_stub = pos[entry_stub];
+    out.region = pos[region];
     let marks = marks.iter().map(|&m| if m == usize::MAX { u32::MAX } else { pos[m] }).collect();
     (out, marks)
 }

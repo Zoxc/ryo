@@ -287,9 +287,19 @@ fn check(f: &Fn, frame_size: u32, mode: Mode, what: &str) -> asm::Encoded {
         assert_eq!(enc.code[..3], [0x48, 0xff, 0x05], "{what}");
         assert_eq!(enc.code[enc.entry_stub as usize..][..3], [0x4c, 0x8d, 0x1d], "{what}");
         // `lea r11`, `call [r11 + 8]`, `jmp` back (`rel8` or `rel32`).
-        assert!(matches!(enc.code.len() as u32 - enc.entry_stub, 13 | 16), "{what}");
+        assert!(matches!(enc.region - enc.entry_stub, 13 | 16), "{what}");
     } else {
-        assert_eq!((ctrs, recs, enc.prologue, enc.entry_stub as usize), (0, 0, 0, enc.code.len()), "{what}");
+        assert_eq!((ctrs, recs, enc.prologue, enc.entry_stub), (0, 0, 0, enc.region), "{what}");
+    }
+    // PE: the pad region's entry, `sub rsp, 40; jmp r11`, after the stubs, right before the
+    // first cleanup landing pad.
+    match asm::pe_region_start(&cleanup) {
+        Some(_) if mode.pe => {
+            assert_eq!(enc.code[enc.region as usize..][..7], [0x48, 0x83, 0xec, 40, 0x41, 0xff, 0xe3], "{what}");
+            let first = enc.call_sites.iter().filter(|cs| !cs.catch).filter_map(|cs| cs.pad).min();
+            assert_eq!(first, Some(enc.region + 7), "{what}");
+        }
+        _ => assert_eq!(enc.region as usize, enc.code.len(), "{what}"),
     }
     assert_eq!(dec.heads.len(), red.heads.len(), "{what}");
     reencodes(&enc, mode, what);
@@ -420,11 +430,18 @@ fn every_opcode_round_trips() {
             for list_len in [0, 1, 3] {
                 // With and without counters, alternately (every mode gets both).
                 let mode = &Mode { counters: (op as usize + round + list_len) % 2 == 0, ..*mode };
-                // [abort], insn, filler…, lpad, jmp 0, abort.
+                // [abort], insn, filler…, lpad, jmp 0, abort. On PE, a cleanup landing pad
+                // starts the pad region, which nothing branches into or out of: [abort], insn,
+                // filler…, abort, lpad, jmp, abort.
                 let mut f = Fn { insns: vec![vec![Opcode::Abort as u32]], targets: Vec::new(), unwind: Vec::new() };
                 let fillers = [0, 2, 40][(round + list_len) % 3];
-                let last = 2 + fillers + 2;
-                let mut target = |rng: &mut Rng| [0, 1, last, 2 + fillers][rng.below(4) as usize];
+                let catch = round % 2 == 0;
+                let region = mode.pe && op_may_unwind(op) && list_len == 3 && !catch;
+                let last = 2 + fillers + 2 + usize::from(region);
+                let mut target = |rng: &mut Rng| {
+                    let k = rng.below(4) as usize;
+                    if region { [0, 1, 2 + fillers, 2 + fillers][k] } else { [0, 1, last, 2 + fillers][k] }
+                };
                 let w = insn(op, &mut rng, list_len, &mut f, &mut target);
                 if op == Opcode::Arg {
                     // `arg`s come first.
@@ -437,16 +454,107 @@ fn every_opcode_round_trips() {
                     let _ = k;
                     f.insns.push(filler);
                 }
+                if region {
+                    f.insns.push(vec![Opcode::Abort as u32]);
+                }
                 let pad = f.insns.len();
                 f.insns.push(vec![Opcode::Lpad as u32, rng.next() as u32]);
                 f.insns.push(vec![Opcode::Jmp as u32, 0]);
-                f.targets.push((pad + 1, 1, 0));
+                f.targets.push((pad + 1, 1, if region { pad + 2 } else { 0 }));
                 f.insns.push(vec![Opcode::Abort as u32]);
                 if op_may_unwind(op) && list_len != 1 {
-                    f.unwind.push((1, if list_len == 0 { None } else { Some((pad, round % 2 == 0)) }));
+                    f.unwind.push((1, if list_len == 0 { None } else { Some((pad, catch)) }));
                 }
                 check(&f, FRAMES[(round + list_len) % FRAMES.len()], *mode, op.mnemonic());
             }
+        }
+    }
+}
+
+/// PE: a function with a pad region (design/vm.md#unwinding) round-trips in every PE mode:
+/// cleanup landing pads after the counter stubs behind the region's entry, its own calls and
+/// islands (without moving `rsp`), with terminate pads on both sides, a loop in it (without a
+/// counter check or padding), `resume` returning, and a `nop` after each call with a landing
+/// pad that ends its instruction.
+#[test]
+fn pe_pad_region() {
+    let mut rng = Rng(0x5eed);
+    for mode in MODES.into_iter().filter(|m| m.pe) {
+        for round in 0..4 {
+            let mut f = Fn { insns: Vec::new(), targets: Vec::new(), unwind: Vec::new() };
+            let x = -8i32 as u32;
+            // A call storing nothing (bare), or with a random return kind.
+            let mut call = |f: &mut Fn, rng: &mut Rng, bare: bool| {
+                let mut w = insn(Opcode::Call, rng, 1, f, &mut |_| 0);
+                if bare {
+                    // Kind 0 stores nothing, to slot 0.
+                    (w[1], w[3]) = (0, 0);
+                }
+                f.insns.push(w);
+            };
+            // The body: a loop head at 0, calls and an island with the cleanup pad, a call
+            // with the body's terminate pad, `ret`.
+            call(&mut f, &mut rng, true);
+            let island = insn(Opcode::Island, &mut rng, 2, &mut f, &mut |_| 0);
+            f.insns.push(island);
+            call(&mut f, &mut rng, round % 2 == 0);
+            call(&mut f, &mut rng, true);
+            f.insns.push(vec![Opcode::Br as u32, 8, 0, 0]);
+            f.targets.push((4, 3, 0));
+            let ret = insn(Opcode::Ret, &mut rng, 0, &mut f, &mut |_| 0);
+            f.insns.push(ret);
+            // The body's terminate pad and stub.
+            let body_pad = f.insns.len();
+            f.insns.push(vec![Opcode::Lpad as u32, x]);
+            f.insns.push(vec![Opcode::Jmp as u32, 0]);
+            f.targets.push((body_pad + 1, 1, body_pad + 2));
+            call(&mut f, &mut rng, true);
+            f.insns.push(vec![Opcode::Unreachable as u32]);
+            // The region: the cleanup pad, a loop of a call and an island with the region's
+            // terminate pad, `resume`, then that pad and its stub.
+            let pad = f.insns.len();
+            f.insns.push(vec![Opcode::Lpad as u32, x]);
+            f.insns.push(vec![Opcode::Jmp as u32, 0]);
+            f.targets.push((pad + 1, 1, pad + 2));
+            call(&mut f, &mut rng, round < 2);
+            let island = insn(Opcode::Island, &mut rng, 1, &mut f, &mut |_| 0);
+            f.insns.push(island);
+            f.insns.push(vec![Opcode::Br as u32, 16, 1, 0]);
+            f.targets.push((pad + 4, 3, pad + 2));
+            f.insns.push(vec![Opcode::Resume as u32, x]);
+            let region_pad = f.insns.len();
+            f.insns.push(vec![Opcode::Lpad as u32, x]);
+            f.insns.push(vec![Opcode::Jmp as u32, 0]);
+            f.targets.push((region_pad + 1, 1, region_pad + 2));
+            call(&mut f, &mut rng, true);
+            f.insns.push(vec![Opcode::Unreachable as u32]);
+            f.unwind = vec![
+                (0, Some((pad, false))),
+                (1, Some((pad, false))),
+                (2, Some((pad, false))),
+                (3, Some((body_pad, true))),
+                (body_pad + 2, None),
+                (pad + 2, Some((region_pad, true))),
+                (pad + 3, Some((region_pad, true))),
+                (pad + 5, None),
+            ];
+            let enc = check(&f, [48, 4096][round % 2], mode, "pad region");
+            // The region's island doesn't move `rsp`: the body's does, once.
+            let subs = |code: &[u8]| code.windows(6).filter(|w| *w == [0x48, 0x83, 0xec, 0x20, 0xff, 0x15]).count();
+            assert_eq!((subs(&enc.code[..enc.region as usize]), subs(&enc.code[enc.region as usize..])), (1, 0), "{mode:?}");
+            // `resume`: `add rsp, 40; ret`.
+            assert!(enc.code[enc.region as usize..].windows(5).any(|w| w == [0x48, 0x83, 0xc4, 40, 0xc3]), "{mode:?}");
+            // The `nop`s after the bare calls with landing pads: in the body at least after
+            // the first call and the last before `br` (the third's return kind is random), in
+            // the region at least after the island (the call's kind is random when not bare).
+            let nops = |r: core::ops::Range<usize>| {
+                enc.call_sites
+                    .iter()
+                    .filter(|cs| cs.pad.is_some() && r.contains(&(cs.start as usize)) && enc.code[(cs.start + cs.len) as usize] == 0x90)
+                    .count()
+            };
+            assert!(nops(0..enc.region as usize) >= 2 + usize::from(round % 2 == 0), "{mode:?}");
+            assert!(nops(enc.region as usize..enc.code.len()) >= 1 + usize::from(round < 2), "{mode:?}");
         }
     }
 }
@@ -807,36 +915,45 @@ fn rejects_handler_calls_of_inlined_ops() {
 /// When it fails, update the pinned hash.
 #[test]
 fn templates_are_pinned() {
-    let mut h: u64 = 0xcbf29ce484222325; // FNV-1a
-    let mut eat = |b: &[u8]| {
-        for &x in b {
-            h = (h ^ x as u64).wrapping_mul(0x100000001b3);
+    // ELF and PE apart, so that a change to one shows which.
+    let hash = |modes: &[Mode], seed: u64| {
+        let mut h: u64 = 0xcbf29ce484222325; // FNV-1a
+        let mut eat = |b: &[u8]| {
+            for &x in b {
+                h = (h ^ x as u64).wrapping_mul(0x100000001b3);
+            }
+        };
+        let mut rng = Rng(seed);
+        for &op in ALL_OPCODES {
+            for &mode in modes {
+                let mut f = Fn { insns: vec![vec![Opcode::Lpad as u32, -8i32 as u32]], targets: Vec::new(), unwind: Vec::new() };
+                let w = insn(op, &mut rng, 2, &mut f, &mut |_| 0);
+                if op == Opcode::Arg {
+                    f.insns.insert(0, w);
+                } else {
+                    f.insns.push(w);
+                }
+                f.insns.push(vec![Opcode::Abort as u32]);
+                // On PE a cleanup landing pad would start the pad region, which can't be
+                // the first instruction: a catching one.
+                if op_may_unwind(op) {
+                    f.unwind.push((1, Some((0, mode.pe))));
+                }
+                let enc = check(&f, 4096, mode, op.mnemonic());
+                eat(&enc.code);
+                eat(&enc.rodata);
+                for r in &enc.relocs {
+                    eat(format!("{:?}", r).as_bytes());
+                }
+                eat(&lsda::write(&enc.call_sites));
+            }
         }
+        h
     };
-    let mut rng = Rng(7);
-    for &op in ALL_OPCODES {
-        for mode in [MODES[0], MODES[1], MODES[6], MODES[8], MODES[10], MODES[11], MODES[16], MODES[18]] {
-            let mut f = Fn { insns: vec![vec![Opcode::Lpad as u32, -8i32 as u32]], targets: Vec::new(), unwind: Vec::new() };
-            let w = insn(op, &mut rng, 2, &mut f, &mut |_| 0);
-            if op == Opcode::Arg {
-                f.insns.insert(0, w);
-            } else {
-                f.insns.push(w);
-            }
-            f.insns.push(vec![Opcode::Abort as u32]);
-            if op_may_unwind(op) {
-                f.unwind.push((1, Some((0, false))));
-            }
-            let enc = check(&f, 4096, mode, op.mnemonic());
-            eat(&enc.code);
-            eat(&enc.rodata);
-            for r in &enc.relocs {
-                eat(format!("{:?}", r).as_bytes());
-            }
-            eat(&lsda::write(&enc.call_sites));
-        }
-    }
-    assert_eq!(h, 0xe960c8074508021, "template hash {h:#x}");
+    let elf = hash(&[MODES[0], MODES[1], MODES[8], MODES[10], MODES[11], MODES[18]], 7);
+    assert_eq!(elf, 0x18762925deab2e64, "ELF template hash {elf:#x}");
+    let pe = hash(&[MODES[6], MODES[16]], 8);
+    assert_eq!(pe, 0xc4afcb801f823d32, "PE template hash {pe:#x}");
 }
 
 /// Without a frame pointer, an SSE load or store of the slot at `rsp` has no displacement.

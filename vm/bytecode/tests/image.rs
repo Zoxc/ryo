@@ -325,11 +325,20 @@ fn pe_unwind_info() {
     let obj = sample().finish(Mode { pe: true, ..ELF }).unwrap();
     let secs: Vec<_> = obj.unwind.iter().map(|u| u.0).collect();
     assert_eq!(secs, [Section::Pdata, Section::Xdata]);
-    assert_eq!(obj.unwind[0].1.len(), 3 * 12);
+    // Each function's body (without counters, no stub), and f0's pad region (its landing
+    // pad's block resumes).
+    assert_eq!(obj.unwind[0].1.len(), (3 + 1) * 12);
     // f0: version 1, prologue 12 bytes, 5 codes (alloc small 48 - 16, set fpreg, push rsi,
     // push rdi, push rbp), rbp at rsp + 16.
     assert_eq!(&obj.unwind[1].1[..14], [1, 12, 5, 5 | 1 << 4, 12, 2 | (32 / 8 - 1) << 4, 8, 3, 3, 6 << 4, 2, 7 << 4, 1, 5 << 4]);
-    assert_eq!(obj.relocs.iter().filter(|r| r.kind == RelocKind::Rva32).count(), 9);
+    // Then the region's.
+    assert_eq!(&obj.unwind[1].1[16..24], ryo_bytecode::image::pe_region_unwind_info());
+    let f0 = &obj.functions[0];
+    assert!(f0.entry_stub == f0.region && f0.region < f0.len);
+    // The region starts with its entry, `sub rsp, 40; jmp r11`, then the landing pad.
+    assert_eq!(obj.text[(f0.start + f0.region) as usize..][..7], [0x48, 0x83, 0xec, 40, 0x41, 0xff, 0xe3]);
+    assert_eq!(f0.call_sites[0].pad, Some(f0.region + 7));
+    assert_eq!(obj.relocs.iter().filter(|r| r.kind == RelocKind::Rva32).count(), 12);
     // No personality on PE.
     assert_eq!(obj.symbols.len(), 4);
 }
@@ -917,10 +926,12 @@ fn jit_records() {
         }
         assert!(f0.entry_stub > f0.prologue);
     }
-    // PE: the check is part of the prologue, and the entry's stub has an entry of its own.
+    // PE: the check is part of the prologue, and the entry's stub has an entry of its own,
+    // before f0's pad region's.
     let obj = sample().finish(Mode { pe: true, ..AOT }).unwrap();
-    assert_eq!(obj.unwind[0].1.len(), 2 * 3 * 12);
+    assert_eq!(obj.unwind[0].1.len(), (2 * 3 + 1) * 12);
     let x = &obj.unwind[1].1;
     assert_eq!(&x[..14], [1, 21, 5, 5 | 1 << 4, 21, 2 | (32 / 8 - 1) << 4, 17, 3, 12, 6 << 4, 11, 7 << 4, 10, 5 << 4]);
     assert_eq!(&x[16..20], [1, 0, 0, 0]);
+    assert_eq!(&x[20..28], ryo_bytecode::image::pe_region_unwind_info());
 }

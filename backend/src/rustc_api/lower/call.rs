@@ -375,6 +375,10 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             }
         }
         // A stack piece's slot: the outgoing area at `rsp`, or the incoming one at `fp + 16`.
+        // In the PE pad region `rsp` isn't `fp - F`, where the outgoing area is.
+        if self.in_region && plan.locs.iter().flatten().any(|l| matches!(l, ArgLoc::Stack { .. } | ArgLoc::PtrStack(_))) {
+            return native("a call with stack arguments in PE cleanup code");
+        }
         let stack = |at: u32| if tail { frame::slot((HEADER_SIZE + at) as i32) } else { Self::out(at) };
         for (i, locs) in plan.locs.iter().enumerate() {
             let home = homes[i];

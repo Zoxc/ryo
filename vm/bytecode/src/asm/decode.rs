@@ -68,11 +68,14 @@ struct Proto {
     /// With counters, a loop head's counter check before it: its stub's position and the
     /// position after the check, where the stub returns to.
     counter: Option<(u32, u32)>,
+    /// Its last item is its call (a call storing no result, an island in the pad region),
+    /// which on PE a `nop` follows if it has a landing pad (`encode::Asm::bare_calls`).
+    bare: bool,
 }
 
 impl Proto {
     fn new(op: Opcode, ops: Vec<Opnd>, pos: u32, sites: Vec<(u32, u32)>) -> Proto {
-        Proto { op, ops, handler: None, pos, sites, dropped: false, counter: None }
+        Proto { op, ops, handler: None, pos, sites, dropped: false, counter: None, bare: false }
     }
 
     /// The branch targets (byte positions).
@@ -163,7 +166,7 @@ pub fn decode_reduced(
     scopes: &[Scope],
     mode: Mode,
 ) -> Result<Decoded, AsmError> {
-    reduced_of(read(code, Fields::Relocs(relocs), rodata, call_sites, dropped, scopes, None, mode, true)?)
+    reduced_of(read(code, Fields::Relocs(relocs), rodata, call_sites, dropped, scopes, None, mode, true)?, mode.pe)
 }
 
 /// [`decode_reduced`] with the side data from the function's instruction list
@@ -178,7 +181,7 @@ pub fn decode_reduced_indexed(
     mode: Mode,
 ) -> Result<Decoded, AsmError> {
     let index = Some((&list.targets[..], &list.hints[..]));
-    reduced_of(read(code, Fields::Relocs(relocs), rodata, call_sites, &list.dropped, &list.scopes, index, mode, true)?)
+    reduced_of(read(code, Fields::Relocs(relocs), rodata, call_sites, &list.dropped, &list.scopes, index, mode, true)?, mode.pe)
 }
 
 /// What the `rel32` fields of linked code point at, for [`decode_linked`].
@@ -213,11 +216,11 @@ pub fn decode_linked(
 ) -> Result<Decoded, AsmError> {
     let fields = Fields::Linked { addr: code_addr, record, resolver };
     let index = Some((&list.targets[..], &list.hints[..]));
-    reduced_of(read(code, fields, resolver.code_consts(), call_sites, &list.dropped, &list.scopes, index, mode, true)?)
+    reduced_of(read(code, fields, resolver.code_consts(), call_sites, &list.dropped, &list.scopes, index, mode, true)?, mode.pe)
 }
 
 /// The reduced instruction words of a function read with handler calls in the reduced form.
-fn reduced_of(r: Read) -> Result<Decoded, AsmError> {
+fn reduced_of(r: Read, pe: bool) -> Result<Decoded, AsmError> {
     let Read { protos, frame_size, actions, scopes, heads, ipos } = r;
     let index = |at: u32, b: u32| insn_index(&ipos, at, b).map(|i| i as u32);
     let cleanup: Vec<_> = actions.iter().enumerate().filter_map(|(i, a)| a.map(|(pad, catch)| (i, pad, catch))).collect();
@@ -241,7 +244,7 @@ fn reduced_of(r: Read) -> Result<Decoded, AsmError> {
             }
         });
     }
-    let d = reduced::words(&insns, &cleanup, &scopes, &dropped, frame_size);
+    let d = reduced::words(&insns, &cleanup, &scopes, &dropped, frame_size, pe);
     debug_assert_eq!(d.heads.len(), heads.len());
     Ok(d)
 }
@@ -308,7 +311,24 @@ fn read(
     if !mode.frame_pointer {
         c.sp_frame = Some(frame_size);
     }
-    let fr = Frame { size: frame_size, mode, reduced };
+    let fr = Frame { size: frame_size, mode, reduced, region: false };
+    let fr_region = Frame { region: true, ..fr };
+
+    // PE: the pad region's entry, `sub rsp, PE_REGION_ALLOC; jmp r11`, right before the first
+    // cleanup landing pad (`encode::pe_region_start`); the body (and the counter stubs) end
+    // there.
+    const ENTRY_LEN: u32 = 7;
+    let region_at = match call_sites.iter().filter(|cs| !cs.catch).filter_map(|cs| cs.pad).min() {
+        Some(p) if mode.pe => Some(p.checked_sub(ENTRY_LEN).ok_or(err(p, "no pad region entry"))?),
+        _ => None,
+    };
+    let limit = region_at.unwrap_or(code.len() as u32);
+    // The side data of each part (all the body's without a region, where what is left over
+    // is an error).
+    let split = region_at.unwrap_or(u32::MAX);
+    let (dropped_body, dropped_region) = dropped.split_at(dropped.partition_point(|d| d.at < split));
+    let index_hints = index.map_or(&[][..], |(_, h)| h);
+    let (hints_body, hints_region) = index_hints.split_at(index_hints.partition_point(|h| h.at < split));
 
     // The register cache is cleared at branch targets. With the instruction list, they are
     // known up front, and checked once the function is read. Without, they are only known
@@ -317,9 +337,30 @@ fn read(
     // first.
     let body = c.pos;
     let stubs = entry.map(|e| e.0);
-    let (protos, padded) = match index {
-        Some((targets, hints)) => {
-            let (protos, padded) = instructions(&mut c, &fr, rodata, dropped, Some(targets), hints, stubs)?;
+    // The body's instructions, and the region's (from its first instruction), read with the
+    // targets `targets`; and where the body ends (the counter stubs start).
+    let read_parts = |c: &mut Cursor<'_>, targets: Option<&[u32]>, hints: [&[Hint]; 2]| -> Result<(Vec<Proto>, Vec<bool>, u32), AsmError> {
+        c.pos = body;
+        let (mut protos, mut padded) = instructions(c, &fr, rodata, dropped_body, targets, hints[0], stubs, limit, call_sites)?;
+        let body_end = c.pos;
+        if !mode.counters && body_end != limit {
+            return Err(err(body_end, "an instruction across the pad region's entry"));
+        }
+        let Some(r) = region_at else { return Ok((protos, padded, body_end)) };
+        // The counter stubs come between, checked below.
+        c.pos = r;
+        if c.item()? != Item::SubRsp(super::PE_REGION_ALLOC) || c.item()? != Item::JmpR11 {
+            return Err(err(r, "not the pad region's entry"));
+        }
+        let (rp, rpad) = instructions(c, &fr_region, rodata, dropped_region, targets, hints[1], None, code.len() as u32, call_sites)?;
+        protos.extend(rp);
+        padded.extend(rpad);
+        Ok((protos, padded, body_end))
+    };
+    let region_pos = region_at.map_or(u32::MAX, |r| r + ENTRY_LEN);
+    let (protos, padded, body_end) = match index {
+        Some((targets, _)) => {
+            let (protos, padded, rp) = read_parts(&mut c, Some(targets), [hints_body, hints_region])?;
             let mut actual: Vec<u32> = protos.iter().flat_map(Proto::targets).collect();
             actual.sort_unstable();
             actual.dedup();
@@ -327,24 +368,34 @@ fn read(
                 let at = actual.iter().zip(targets).find(|(a, t)| a != t).map_or(body, |(&a, &t)| a.min(t));
                 return Err(err(at, "branch targets aren't the instruction list's"));
             }
-            (protos, padded)
+            (protos, padded, rp)
         }
         None => {
-            let (protos, _) = instructions(&mut c, &fr, rodata, dropped, None, &[], stubs)?;
+            let (protos, _, _) = read_parts(&mut c, None, [&[], &[]])?;
             let mut targets: Vec<u32> = protos.iter().flat_map(Proto::targets).collect();
             targets.sort_unstable();
-            c.pos = body;
-            instructions(&mut c, &fr, rodata, dropped, Some(&targets), &[], stubs)?
+            read_parts(&mut c, Some(&targets), [&[], &[]])?
         }
     };
+    // The index of the region's first instruction (the count without one).
+    let rs = if region_at.is_some() { protos.partition_point(|p| p.pos < region_pos) } else { protos.len() };
+    if region_at.is_some() && protos.get(rs).is_none_or(|p| p.pos != region_pos) {
+        return Err(err(region_pos, "pad region without instructions"));
+    }
 
     // Instruction positions → indices.
     let ipos: Vec<u32> = protos.iter().map(|p| p.pos).collect();
     let index = |at: u32, b: u32| insn_index(&ipos, at, b);
     // When aligning, loop heads start at multiples of 16, and only they are padded. Only
-    // single branch targets make loop heads, not jump tables.
+    // single branch targets make loop heads, not jump tables. The pad region has none, and
+    // no branch crosses its start.
     let mut head = vec![false; protos.len()];
     for (i, p) in protos.iter().enumerate() {
+        for t in p.targets() {
+            if (index(p.pos, t)? >= rs) != (i >= rs) {
+                return Err(err(p.pos, "a branch across the pad region's start"));
+            }
+        }
         let single = p.ops.iter().filter_map(|o| match o {
             Opnd::Target(t) => Some(*t),
             _ => None,
@@ -357,7 +408,7 @@ fn read(
         };
         for t in single.chain(br) {
             let j = index(p.pos, t)?;
-            if j <= i {
+            if j <= i && j < rs {
                 head[j] = true;
             }
         }
@@ -371,8 +422,9 @@ fn read(
         }
     }
     let heads: Vec<usize> = (0..protos.len()).filter(|&i| head[i]).collect();
-    // The counter stubs after the code: the loop heads' in order, then the entry's.
+    // The counter stubs after the body: the loop heads' in order, then the entry's.
     if let Some((entry_stub, entry_back)) = entry {
+        c.pos = body_end;
         let checks = heads.iter().map(|&i| protos[i].counter.unwrap());
         for (n, (stub, back)) in checks.chain([(entry_stub, entry_back)]).enumerate() {
             let at = c.pos;
@@ -392,9 +444,14 @@ fn read(
                 _ => return Err(bad),
             }
         }
-        if !c.at_end() {
+        if c.pos != limit {
             return Err(err(c.pos, "code after the counter stubs"));
         }
+    }
+    // `resume` in the pad region takes the landing pads' exception slot.
+    let mut protos = protos;
+    if rs < protos.len() {
+        resume_slots(&mut protos[..], rs, fr.mode, reduced).map_err(|at| err(at, "resume without a landing pad"))?;
     }
 
     // Unwind actions from the call sites.
@@ -434,6 +491,8 @@ fn read(
                 };
                 actions[i] = Some((pad, catch));
             }
+            // The pad region's `resume`, a return with no call site, continues unwinding.
+            None if p.op == Opcode::Resume && i >= rs => actions[i] = Some((None, false)),
             None => {}
         }
     }
@@ -443,6 +502,40 @@ fn read(
     // Scopes: before the first instruction at or after their position.
     let scopes = scopes.iter().map(|sc| (ipos.partition_point(|&p| p < sc.code_offset), *sc)).collect();
     Ok(Read { protos, frame_size, actions, scopes, heads, ipos })
+}
+
+/// Gives each `resume` of the pad region (from instruction `rs` on), which its return doesn't
+/// show, the exception slot of the function's landing pads: every `lpad` and `resume` of a
+/// function has the same. `Err` with a `resume`'s position if there is no `lpad`.
+fn resume_slots(protos: &mut [Proto], rs: usize, mode: Mode, reduced: bool) -> Result<(), u32> {
+    let slot = protos.iter().find(|p| p.op == Opcode::Lpad).and_then(|p| match &p.handler {
+        // The slot is the lpad's last argument, after `fp` and the exception object.
+        Some((args, _)) => match args.last() {
+            Some(Arg::Imm(v)) => Some(*v as u32 as i32),
+            _ => None,
+        },
+        None => match p.ops.first() {
+            Some(Opnd::Slot(s)) => Some(*s),
+            _ => None,
+        },
+    });
+    for p in protos[rs..].iter_mut().filter(|p| p.op == Opcode::Resume) {
+        let x = slot.ok_or(p.pos)?;
+        if reduced {
+            let args = super::encode::handler_args(Opcode::Resume, &[Opnd::<u32>::Slot(x)], mode.fp_arg, |_| 0)
+                .into_iter()
+                .map(|v| match v {
+                    super::encode::ArgVal::Fp => Arg::Fp,
+                    super::encode::ArgVal::Imm(v, _) => Arg::Imm(v),
+                    _ => unreachable!("resume takes fp and a slot"),
+                })
+                .collect();
+            p.handler = Some((args, Then::Trap));
+        } else {
+            p.ops = vec![Opnd::Slot(x)];
+        }
+    }
+    Ok(())
 }
 
 fn read_u32(ro: &[u8], at: u32) -> Option<u32> {
@@ -465,12 +558,13 @@ fn op_targets(o: &Opnd) -> &[u32] {
     }
 }
 
-/// The instructions from the cursor to the end, and whether each is padded. With `targets`
+/// The instructions from the cursor to `limit`, and whether each is padded. With `targets`
 /// (sorted), the register cache is cleared at them and every inline sequence must be exactly
 /// as the cache emits it; without, inline sequences are only delimited ([`inline_insn`]).
 /// With counters, the code ends at the counter stubs: at the first loop head's, or without
 /// loop heads at the entry's, `entry_stub`. `hints` are the instruction list's instruction
 /// entries, each of which must be taken by an inline sequence.
+#[allow(clippy::too_many_arguments)]
 fn instructions(
     c: &mut Cursor<'_>,
     fr: &Frame,
@@ -479,6 +573,8 @@ fn instructions(
     targets: Option<&[u32]>,
     mut hints: &[Hint],
     entry_stub: Option<u32>,
+    limit: u32,
+    call_sites: &[CallSite],
 ) -> Result<(Vec<Proto>, Vec<bool>), AsmError> {
     let mut protos: Vec<Proto> = Vec::new();
     let mut padded = Vec::new();
@@ -486,7 +582,7 @@ fn instructions(
     let mut end = entry_stub;
     // Whether a loop head's counter check was read.
     let mut counted = false;
-    while !c.at_end() && Some(c.pos) != end {
+    while c.pos < limit && Some(c.pos) != end {
         // A sequence that left no code (its reload hit the cache, its store was dropped) ends
         // the block before a loop head's padding and counter check: none can start at a
         // target, where the cache is empty.
@@ -499,7 +595,7 @@ fn instructions(
             }
         }
         let pad = c.padding();
-        if pad != 0 && (!fr.mode.align_loops || pad >= 16 || c.pos % 16 != 0) {
+        if pad != 0 && (fr.region || !fr.mode.align_loops || pad >= 16 || c.pos % 16 != 0) {
             return Err(AsmError { at: c.pos, what: "padding" });
         }
         padded.push(pad != 0);
@@ -509,7 +605,7 @@ fn instructions(
         // A loop head's counter check.
         let pos = c.pos;
         let mut counter = None;
-        if fr.mode.counters {
+        if fr.mode.counters && !fr.region {
             let at = c.pos;
             match (c.item(), c.item()) {
                 (Ok(Item::CtrInc(true)), Ok(Item::Branch { cond: Cond::Ns, target, .. })) => {
@@ -541,6 +637,13 @@ fn instructions(
                 }
             }
         };
+        // PE: the `nop` after a call with a landing pad that ends its instruction.
+        if fr.mode.pe && p.bare && p.sites.iter().any(|&(at, _)| call_sites.iter().any(|cs| cs.start == at && cs.pad.is_some())) {
+            if c.code.get(c.pos as usize) != Some(&0x90) {
+                return Err(AsmError { at: c.pos, what: "no nop after a call with a landing pad" });
+            }
+            c.pos += 1;
+        }
         protos.push(Proto { pos, counter, ..p });
     }
     if let Some(d) = dropped.first() {
@@ -558,6 +661,8 @@ struct Frame {
     size: u32,
     mode: Mode,
     reduced: bool,
+    /// In the pad region (PE, design/vm.md#unwinding).
+    region: bool,
 }
 
 impl Frame {
@@ -606,7 +711,7 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8]) -> Result<Proto, AsmError> {
                 Some(_) => return Err(err(pos, "case count")),
             };
             let then = then(c, op, n, hat, &mut sites)?;
-            Proto { op, ops: Vec::new(), handler: Some((args, then)), pos, sites, dropped: false, counter: None }
+            Proto { op, ops: Vec::new(), handler: Some((args, then)), pos, sites, dropped: false, counter: None, bare: false }
         }
         Item::Call(Ref::Handler(op)) if has_handler(op) => {
             let mut ops = handler_operands(op, &setup, fr, ro, c.code.len(), pos)?;
@@ -636,6 +741,19 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8]) -> Result<Proto, AsmError> {
             }
             Proto::new(op, ops, pos, sites)
         }
+        // `resume` in the pad region: its slot is the landing pads' ([`resume_slots`]).
+        Item::AddRsp(super::PE_REGION_ALLOC) if fr.region && setup.is_empty() => {
+            let at = c.pos;
+            if c.item()? != Item::Ret {
+                return Err(err(at, "not the pad region's return"));
+            }
+            let mut p = Proto::new(Opcode::Resume, vec![Opnd::Slot(0)], pos, sites);
+            if fr.reduced {
+                p.ops.clear();
+                p.handler = Some((Vec::new(), Then::Trap));
+            }
+            p
+        }
         Item::Ld { .. } | Item::Sse { .. } | Item::Leave | Item::WinEpilogue | Item::AddRsp(_) if setup.is_empty() => {
             c.pos = pos;
             let (s, k) = ret(c, fr)?;
@@ -650,7 +768,7 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8]) -> Result<Proto, AsmError> {
             let (isl, ops_ro, site) = island_call(c, fr)?;
             sites.push(site);
             let ws = ops_array(ro, ops_ro).ok_or(err(pos, "island operands"))?;
-            Proto::new(Opcode::Island, vec![Opnd::Sym(isl), Opnd::Words(ws)], pos, sites)
+            Proto { bare: fr.region, ..Proto::new(Opcode::Island, vec![Opnd::Sym(isl), Opnd::Words(ws)], pos, sites) }
         }
         _ => return Err(err(hat, "not an instruction")),
     };
@@ -841,13 +959,15 @@ fn call_insn(c: &mut Cursor<'_>, fr: &Frame, dropped: &[DroppedStore]) -> Option
         _ => return fail(c),
     };
     let mut sites = Vec::new();
+    let mut bare = false;
     if call {
         sites.push((call_at, c.pos - call_at));
         let (d, k) = result(c);
+        bare = k == 0;
         ops.insert(0, Opnd::Slot(d));
         ops.extend([Opnd::Imm(k as u64), a_op]);
     }
-    Some(Proto::new(op, ops, pos, sites))
+    Some(Proto { bare, ..Proto::new(op, ops, pos, sites) })
 }
 
 /// An `arg` at the cursor: the store of an argument register to its slot.
@@ -1013,12 +1133,14 @@ fn island_call(c: &mut Cursor<'_>, fr: &Frame) -> Result<(crate::full::Sym, u32,
         return Err(bad);
     }
     let Item::Lea(r, Ref::Ro(ops)) = c.item()? else { return Err(bad) };
-    if r != opsr || (mode.pe && c.item()? != Item::SubRsp(32)) {
+    // The pad region's `rsp` doesn't move: its entry allocated the shadow space.
+    let shadow = mode.pe && !fr.region;
+    if r != opsr || (shadow && c.item()? != Item::SubRsp(32)) {
         return Err(bad);
     }
     let site = c.pos;
     let Item::CallMem(Ref::Sym(isl)) = c.item()? else { return Err(bad) };
-    if mode.pe && c.item()? != Item::AddRsp(32) {
+    if shadow && c.item()? != Item::AddRsp(32) {
         return Err(bad);
     }
     Ok((isl, ops, (site, 6)))

@@ -243,6 +243,8 @@ pub struct FnCx<'a, 'tcx> {
     /// A `#[target_feature]` function: a `simd_*` intrinsic without an instruction keeps it
     /// native instead of becoming an island, which is compiled without the features.
     pub strict_simd: bool,
+    /// PE: lowering the pad region ([`Asm::begin_region`]), whose `rsp` isn't `fp - F`.
+    pub in_region: bool,
 }
 
 impl<'a, 'tcx> FnCx<'a, 'tcx> {
@@ -281,36 +283,60 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             cert: cx.cert.then(Box::default),
             caller_location,
             strict_simd: !tcx.codegen_instance_attrs(instance.def).target_features.is_empty(),
+            in_region: false,
         })
     }
 
     /// Lowers every block, in index order. Cleanup blocks are only reached through landing
-    /// pads.
+    /// pads; on PE they come last, in the pad region (design/vm.md#unwinding), after the
+    /// body's unwind targets: the body's terminate stubs and their landing pads, then (the
+    /// region's start) the cleanup landing pads, the cleanup blocks and their own terminate
+    /// stubs. Without a cleanup landing pad there is no region, and the (unreachable) cleanup
+    /// blocks stay in the body.
     fn blocks(&mut self) -> Result<(), NeedsNative> {
         let body = self.body;
-        let n = body.basic_blocks.len();
         let uses = terminator::local_uses(body);
         let dead = frame::dead_after_read(body);
-        let mut dead = dead.iter().peekable();
-        for (bb, data) in body.basic_blocks.iter_enumerated() {
+        let pe = self.cx.mode.pe;
+        let mut order: Vec<BasicBlock> = body.basic_blocks.indices().collect();
+        if pe {
+            order.sort_by_key(|&bb| body.basic_blocks[bb].is_cleanup);
+        }
+        // Where the cleanup blocks start in `order` (its length without any on PE).
+        let cleanup_at = if pe { order.partition_point(|&bb| !body.basic_blocks[bb].is_cleanup) } else { order.len() };
+        for (i, &bb) in order.iter().enumerate() {
+            if i == cleanup_at {
+                let entries = std::mem::take(&mut self.cleanup);
+                let (pads, others): (Vec<_>, Vec<_>) = entries.into_iter().partition(|e| matches!(e.1, UnwindTo::Block(_)));
+                self.unwind_targets(others)?;
+                if !pads.is_empty() {
+                    self.asm.begin_region();
+                    self.in_region = true;
+                }
+                self.unwind_targets(pads)?;
+            }
+            let data = &body.basic_blocks[bb];
             self.bind(self.block_labels[bb.as_usize()]);
-            self.next_block = (bb.as_usize() + 1 < n).then(|| BasicBlock::from_usize(bb.as_usize() + 1));
+            self.next_block = order.get(i + 1).copied().filter(|_| i + 1 != cleanup_at);
             self.fused = self.fusable(data, &uses);
-            self.cert_block(self.fused.is_some());
+            self.cert_block(bb.as_usize(), self.fused.is_some());
             let stmts = &data.statements[..data.statements.len() - usize::from(self.fused.is_some())];
+            // The locals dead after this block's statements, in order.
+            let block_dead = &dead[dead.partition_point(|d| d.0.block < bb)..dead.partition_point(|d| d.0.block <= bb)];
+            let mut block_dead = block_dead.iter().peekable();
             for (i, stmt) in stmts.iter().enumerate() {
                 self.reset_temps();
                 let start = self.insns;
                 self.statement(stmt)?;
                 self.cert_stmt(start);
                 let here = rustc_middle::mir::Location { block: bb, statement_index: i };
-                while let Some(&&(at, local)) = dead.peek()
+                while let Some(&&(at, local)) = block_dead.peek()
                     && at <= here
                 {
                     if at == here {
                         self.local_dead(local);
                     }
-                    dead.next();
+                    block_dead.next();
                 }
             }
             self.reset_temps();
@@ -318,20 +344,19 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             self.terminator(data.terminator())?;
             self.cert_term(start);
         }
-        self.unwind_targets()?;
-        Ok(())
+        let entries = std::mem::take(&mut self.cleanup);
+        self.unwind_targets(entries)
     }
 
-    /// Emits the unwind targets after the blocks, and points each cleanup entry at its pad.
+    /// Emits the unwind targets of the cleanup entries `entries`, and points each at its pad.
     ///
-    /// First one stub per terminate reason the cleanup entries use: a call of the reason's
-    /// lang item, as cg_ssa's terminate block (design/lowering.md#unwinding). Then one landing
-    /// pad per distinct place unwinding goes to in this frame: `lpad x` (which stores the
-    /// exception object in the function's exception slot `x`), then a jump to the cleanup
-    /// block or terminate stub. A cleanup block may also be reached by a jump from another
-    /// one, so the pads are separate from the blocks, and `lpad` runs once per landing.
-    fn unwind_targets(&mut self) -> Result<(), NeedsNative> {
-        let cleanup = std::mem::take(&mut self.cleanup);
+    /// First one stub per terminate reason the entries use: a call of the reason's lang item,
+    /// as cg_ssa's terminate block (design/lowering.md#unwinding). Then one landing pad per
+    /// distinct place unwinding goes to in this frame: `lpad x` (which stores the exception
+    /// object in the function's exception slot `x`), then a jump to the cleanup block or
+    /// terminate stub. A cleanup block may also be reached by a jump from another one, so the
+    /// pads are separate from the blocks, and `lpad` runs once per landing.
+    fn unwind_targets(&mut self, cleanup: Vec<(InsnId, UnwindTo)>) -> Result<(), NeedsNative> {
         // Few distinct targets per function: linear lookups (the reasons aren't `Hash`).
         let mut stubs = Vec::new();
         for &(_, to) in &cleanup {
@@ -375,7 +400,6 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             };
             self.asm.set_unwind(id, Unwind::Pad { pad, catch });
         }
-        self.cleanup = cleanup;
         Ok(())
     }
 

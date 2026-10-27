@@ -72,7 +72,10 @@ struct BlockCert {
 #[derive(Default)]
 pub struct Recorder {
     prologue: Range,
+    /// By block index.
     blocks: Vec<BlockCert>,
+    /// The block being lowered.
+    cur: usize,
     /// Terminate stubs: the reason, the range.
     stubs: Vec<(UnwindTerminateReason, Range)>,
     /// Landing pads: the range, the MIR block they continue at (`None`: a terminate stub).
@@ -95,10 +98,15 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         }
     }
 
-    /// Starts a block (blocks are lowered in index order).
-    pub fn cert_block(&mut self, fused: bool) {
+    /// Starts block `bb` (blocks are lowered in index order, but on PE the cleanup blocks
+    /// last).
+    pub fn cert_block(&mut self, bb: usize, fused: bool) {
         if let Some(c) = &mut self.cert {
-            c.blocks.push(BlockCert { fused, ..BlockCert::default() });
+            if c.blocks.len() <= bb {
+                c.blocks.resize_with(bb + 1, BlockCert::default);
+            }
+            c.blocks[bb] = BlockCert { fused, ..BlockCert::default() };
+            c.cur = bb;
         }
     }
 
@@ -106,7 +114,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     pub fn cert_stmt(&mut self, start: u32) {
         let n = self.next_insn();
         if let Some(c) = &mut self.cert {
-            c.blocks.last_mut().expect("a block").stmts.push((start, n));
+            let b = c.cur;
+            c.blocks[b].stmts.push((start, n));
         }
     }
 
@@ -114,7 +123,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     pub fn cert_term(&mut self, start: u32) {
         let n = self.next_insn();
         if let Some(c) = &mut self.cert {
-            c.blocks.last_mut().expect("a block").term = (start, n);
+            let b = c.cur;
+            c.blocks[b].term = (start, n);
         }
     }
 
