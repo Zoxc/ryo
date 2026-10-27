@@ -158,7 +158,14 @@ of every inlined callee. Composed with the AOT theorem, the JIT code refines L0.
   symbols holding a VM function's entry. The splice lemma (§E.6) plus a rule for the
   specialization and for `rebase` (the pool-identity question, §E.6). ("Inline same-image
   calls in the JIT's SSA tier"; "Weigh inlining by the counters and specialize callees to
-  constants"; "Inline across images in the JIT's SSA tier".) A callee whose `ret` has more
+  constants"; "Inline across images in the JIT's SSA tier".) `rebase` also carries an
+  island (a call of its address in the JIT's call form: `Island::isl` a `CallTarget`), a
+  `call.sym.ind` (a `Load` of the slot's value, then a `CallTarget::Ptr` call) and a
+  handler's code-constant argument (`Arg::Ro`, sparse switch cases: an `Arg::Imm` of its
+  address in the callee image's code constants) ("JIT: inline islands, indirect symbol
+  calls and sparse switches across images"). A site that an earlier splice pruned (code
+  after a callee that never returns, a landing pad no copied call unwinds to) is skipped
+  ("JIT inliner: skip call sites an earlier splice pruned"). A callee whose `ret` has more
   parts than the site reads (an sret callee returning its pointer to a site with no results)
   is spliced with the extra parts dropped ("JIT inliner: allow a callee to return parts the
   call doesn't use"). After the first round and the devirtualization after it, one more
