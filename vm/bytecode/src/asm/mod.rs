@@ -186,9 +186,9 @@ const fn shareable(k: OperandKind) -> bool {
     matches!(k, OperandKind::Slot | OperandKind::U8 | OperandKind::U16 | OperandKind::U32)
 }
 
-/// Whether `shape`'s handler receives operand `name`. The call shapes pass only what the
-/// handler resolves; the rest goes to the call sequence around it.
-const fn passed(shape: Shape, _name: &str) -> bool {
+/// Whether instructions of `shape` call a handler with their operands. The other shapes
+/// are call sequences or jumps of their own, with no handler (or none that takes operands).
+const fn calls_handler(shape: Shape) -> bool {
     match shape {
         Shape::Op | Shape::Br | Shape::Switch | Shape::Trap | Shape::Lpad => true,
         Shape::Jmp | Shape::Call | Shape::TailCall | Shape::Ret | Shape::Island | Shape::Arg => false,
@@ -197,8 +197,7 @@ const fn passed(shape: Shape, _name: &str) -> bool {
 
 /// Whether instructions of `op` call a handler. `unreachable` is a bare `ud2`.
 pub const fn has_handler(op: Opcode) -> bool {
-    !matches!(op.info().shape, Shape::Jmp | Shape::Call | Shape::TailCall | Shape::Ret | Shape::Island | Shape::Arg)
-        && !matches!(op, Opcode::Unreachable)
+    calls_handler(op.info().shape) && !matches!(op, Opcode::Unreachable)
 }
 
 /// The register layout of `op`'s handler call (see the [module docs](self)). Fails to
@@ -210,16 +209,14 @@ pub const fn layout(op: Opcode, mode: Mode) -> Layout {
     let mut units = [(0u8, 0u8, false); 2 * MAX_OPERANDS];
     let mut n = 0;
     let mut i = 0;
-    while i < info.operands.len() {
+    while calls_handler(info.shape) && i < info.operands.len() {
         let o = info.operands[i];
-        if passed(info.shape, o.name) {
-            let k = kind_regs(o.kind);
-            let mut part = 0;
-            while part < k {
-                units[n] = (i as u8, part, k == 1 && shareable(o.kind));
-                n += 1;
-                part += 1;
-            }
+        let k = kind_regs(o.kind);
+        let mut part = 0;
+        while part < k {
+            units[n] = (i as u8, part, k == 1 && shareable(o.kind));
+            n += 1;
+            part += 1;
         }
         i += 1;
     }
