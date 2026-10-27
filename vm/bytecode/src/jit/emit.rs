@@ -91,6 +91,31 @@ enum Src {
     Undef,
 }
 
+impl Src {
+    /// Whether `d` already holds this source (a move from it to `d` is a no-op).
+    fn same(self, d: Rm) -> bool {
+        match (d, self) {
+            (Rm::R(a), Src::R(b)) => a == b,
+            (Rm::M(a), Src::M(b)) => a == b,
+            _ => false,
+        }
+    }
+
+    /// Whether a move of this source to `d` does something.
+    fn moves_to(self, d: Rm) -> bool {
+        self != Src::Undef && !self.same(d)
+    }
+}
+
+impl From<Rm> for Src {
+    fn from(d: Rm) -> Src {
+        match d {
+            Rm::R(r) => Src::R(r),
+            Rm::M(m) => Src::M(m),
+        }
+    }
+}
+
 /// A vector operand source.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum XSrc {
@@ -99,6 +124,31 @@ enum XSrc {
     /// A constant, zero-extended.
     Imm(u64),
     Undef,
+}
+
+impl XSrc {
+    /// Whether `d` already holds this source (a move from it to `d` is a no-op).
+    fn same(self, d: x86::X) -> bool {
+        match (d, self) {
+            (x86::X::X(a), XSrc::X(b)) => a == b,
+            (x86::X::M(a), XSrc::M(b)) => a == b,
+            _ => false,
+        }
+    }
+
+    /// Whether a move of this source to `d` does something.
+    fn moves_to(self, d: x86::X) -> bool {
+        self != XSrc::Undef && !self.same(d)
+    }
+}
+
+impl From<x86::X> for XSrc {
+    fn from(d: x86::X) -> XSrc {
+        match d {
+            x86::X::X(x) => XSrc::X(x),
+            x86::X::M(m) => XSrc::M(m),
+        }
+    }
 }
 
 /// A piece of code being laid out.
@@ -527,14 +577,9 @@ impl<'a> E<'a> {
 
     /// A parallel move of vectors (the second scratch `xmm` register breaks cycles).
     fn xmoves(&mut self, mut ms: Vec<(x86::X, XSrc)>) {
-        let same = |d: &x86::X, s: &XSrc| match (d, s) {
-            (x86::X::X(a), XSrc::X(b)) => a == b,
-            (x86::X::M(a), XSrc::M(b)) => a == b,
-            _ => false,
-        };
-        ms.retain(|(d, s)| !matches!(s, XSrc::Undef) && !same(d, s));
+        ms.retain(|(d, s)| s.moves_to(*d));
         while !ms.is_empty() {
-            let free = (0..ms.len()).find(|&i| !ms.iter().enumerate().any(|(j, (_, s))| j != i && same(&ms[i].0, s)));
+            let free = (0..ms.len()).find(|&i| !ms.iter().enumerate().any(|(j, (_, s))| j != i && s.same(ms[i].0)));
             match free {
                 Some(i) => {
                     let (d, s) = ms.remove(i);
@@ -542,14 +587,10 @@ impl<'a> E<'a> {
                 }
                 None => {
                     let d = ms[0].0;
-                    let s = match d {
-                        x86::X::X(x) => XSrc::X(x),
-                        x86::X::M(m) => XSrc::M(m),
-                    };
                     let t = self.xs()[1];
-                    self.xmov(x86::X::X(t), s);
+                    self.xmov(x86::X::X(t), d.into());
                     for m in ms.iter_mut() {
-                        if same(&d, &m.1) {
+                        if m.1.same(d) {
                             m.1 = XSrc::X(t);
                         }
                     }
@@ -600,6 +641,20 @@ impl<'a> E<'a> {
         }
     }
 
+    /// `v` as an r/m operand: its register or memory, or a constant loaded into `scratch`
+    /// (`None` if undefined).
+    fn rm(&mut self, v: Value, scratch: R) -> Option<Rm> {
+        match self.src(v) {
+            Src::R(r) => Some(Rm::R(r)),
+            Src::M(m) => Some(Rm::M(m)),
+            Src::Imm(c) => {
+                self.a.x().mov_imm(8, Rm::R(scratch), c);
+                Some(Rm::R(scratch))
+            }
+            Src::Undef => None,
+        }
+    }
+
     /// Stores `r` (8 bytes) to `v`'s location.
     fn put(&mut self, v: Value, r: R) {
         match self.dst(v) {
@@ -619,21 +674,9 @@ impl<'a> E<'a> {
 
     /// A parallel move: every destination gets its source's old value.
     fn moves(&mut self, mut ms: Vec<(Rm, Src)>) {
-        ms.retain(|(d, s)| {
-            !matches!(s, Src::Undef)
-                && !match (d, s) {
-                    (Rm::R(a), Src::R(b)) => a == b,
-                    (Rm::M(a), Src::M(b)) => a == b,
-                    _ => false,
-                }
-        });
-        let same = |d: &Rm, s: &Src| match (d, s) {
-            (Rm::R(a), Src::R(b)) => a == b,
-            (Rm::M(a), Src::M(b)) => a == b,
-            _ => false,
-        };
+        ms.retain(|(d, s)| s.moves_to(*d));
         while !ms.is_empty() {
-            let free = (0..ms.len()).find(|&i| !ms.iter().enumerate().any(|(j, (_, s))| j != i && same(&ms[i].0, s)));
+            let free = (0..ms.len()).find(|&i| !ms.iter().enumerate().any(|(j, (_, s))| j != i && s.same(ms[i].0)));
             match free {
                 Some(i) => {
                     let (d, s) = ms.remove(i);
@@ -642,13 +685,9 @@ impl<'a> E<'a> {
                 None => {
                     // A cycle: free the first destination by saving its value in `S2`.
                     let d = ms[0].0;
-                    let s = match d {
-                        Rm::R(r) => Src::R(r),
-                        Rm::M(m) => Src::M(m),
-                    };
-                    self.mov(Rm::R(S2), s);
+                    self.mov(Rm::R(S2), d.into());
                     for m in ms.iter_mut() {
-                        if same(&d, &m.1) {
+                        if m.1.same(d) {
                             m.1 = Src::R(S2);
                         }
                     }
@@ -897,15 +936,7 @@ impl<'a> E<'a> {
     fn call_args(&mut self, regs: &[asm::ArgReg], args: &[Value], callee: Option<Value>) {
         for (r, &v) in regs.iter().zip(args) {
             if r.xmm {
-                let s = match self.src(v) {
-                    Src::R(x) => Rm::R(x),
-                    Src::M(m) => Rm::M(m),
-                    Src::Imm(c) => {
-                        self.a.x().mov_imm(8, Rm::R(S1), c);
-                        Rm::R(S1)
-                    }
-                    Src::Undef => continue,
-                };
+                let Some(s) = self.rm(v, S1) else { continue };
                 self.a.x().movq_to_xmm(r.index as u8, s, if r.size == 8 { 8 } else { 4 });
             }
         }
@@ -1140,15 +1171,7 @@ impl<'a> E<'a> {
                 }
                 match op {
                     BinOp::ShrU | BinOp::ShrS if w < 4 => {
-                        let s = match self.src(a) {
-                            Src::R(r) => Rm::R(r),
-                            Src::M(m) => Rm::M(m),
-                            Src::Imm(c) => {
-                                self.a.x().mov_imm(8, Rm::R(rd), c);
-                                Rm::R(rd)
-                            }
-                            Src::Undef => Rm::R(rd),
-                        };
+                        let s = self.rm(a, rd).unwrap_or(Rm::R(rd));
                         if op == BinOp::ShrU {
                             self.a.x().movzx(rd, w, s);
                         } else {
@@ -1428,15 +1451,11 @@ impl<'a> E<'a> {
 
     /// Loads `v`'s low `from` bytes into `r`, zero- or sign-extended (`sx`) to 64 bits.
     fn ext_into(&mut self, r: R, v: Value, from: u8, sx: bool) {
-        let rm = match self.src(v) {
-            Src::R(x) => Rm::R(x),
-            Src::M(m) => Rm::M(m),
-            Src::Imm(c) => {
-                let c = if sx { sext(c, from) as u64 } else { mask(c, from) };
-                return self.a.x().mov_imm(8, Rm::R(r), c);
-            }
-            Src::Undef => return,
-        };
+        if let Src::Imm(c) = self.src(v) {
+            let c = if sx { sext(c, from) as u64 } else { mask(c, from) };
+            return self.a.x().mov_imm(8, Rm::R(r), c);
+        }
+        let Some(rm) = self.rm(v, r) else { return };
         match (from, sx) {
             (8, _) => self.a.x().mov(8, Rm::R(r), rm),
             (4, false) => self.a.x().mov(4, Rm::R(r), rm),
@@ -1511,13 +1530,7 @@ impl<'a> E<'a> {
                 self.a.x().mov(8, Rm::R(S1), Rm::R(R::Rax));
                 Rm::R(S1)
             }
-            Src::R(r) => Rm::R(r),
-            Src::M(m) => Rm::M(m),
-            Src::Imm(c) => {
-                self.a.x().mov_imm(8, Rm::R(S1), c);
-                Rm::R(S1)
-            }
-            Src::Undef => Rm::R(S1),
+            _ => self.rm(b, S1).unwrap_or(Rm::R(S1)),
         };
         self.load(R::Rax, a);
         self.a.x().mul(s);
@@ -1617,10 +1630,16 @@ impl<'a> E<'a> {
     /// The moves of an edge: the scalars', then the vectors' (which may use `S1` for a
     /// constant).
     fn edge_moves(&mut self, e: &Edge) {
-        let params = self.f.blocks[e.to.idx()].params.clone();
+        let (ms, xs) = self.edge_move_list(e);
+        self.moves(ms);
+        self.xmoves(xs);
+    }
+
+    /// The scalar and vector moves of an edge.
+    fn edge_move_list(&self, e: &Edge) -> (Vec<(Rm, Src)>, Vec<(x86::X, XSrc)>) {
         let mut ms = Vec::new();
         let mut xs = Vec::new();
-        for (&a, &p) in e.args.iter().zip(&params) {
+        for (&a, &p) in e.args.iter().zip(&self.f.blocks[e.to.idx()].params) {
             if self.f.w(p) == 16 {
                 if let Some(d) = self.xdst(p) {
                     xs.push((d, self.xsrc(a)));
@@ -1629,29 +1648,13 @@ impl<'a> E<'a> {
                 ms.push((d, self.src(a)));
             }
         }
-        self.moves(ms);
-        self.xmoves(xs);
+        (ms, xs)
     }
 
+    /// Whether [`Self::edge_moves`] emits anything for `e`.
     fn edge_has_moves(&self, e: &Edge) -> bool {
-        let params = &self.f.blocks[e.to.idx()].params;
-        e.args.iter().zip(params).any(|(&a, &p)| {
-            if self.f.w(p) == 16 {
-                return match (self.xdst(p), self.xsrc(a)) {
-                    (None, _) | (_, XSrc::Undef) => false,
-                    (Some(x86::X::X(x)), XSrc::X(y)) => x != y,
-                    (Some(x86::X::M(x)), XSrc::M(y)) => x != y,
-                    _ => true,
-                };
-            }
-            let (d, s) = (self.dst(p), self.src(a));
-            match (d, s) {
-                (None, _) | (_, Src::Undef) => false,
-                (Some(Rm::R(x)), Src::R(y)) => x != y,
-                (Some(Rm::M(x)), Src::M(y)) => x != y,
-                _ => true,
-            }
-        })
+        let (ms, xs) = self.edge_move_list(e);
+        ms.iter().any(|&(d, s)| s.moves_to(d)) || xs.iter().any(|&(d, s)| s.moves_to(d))
     }
 
     /// A label to branch to for `e`: its target's, or a stub doing its moves (emitted after
@@ -1772,17 +1775,9 @@ impl<'a> E<'a> {
                 let (mut g, mut x) = (0, 0u8);
                 for (p, &v) in ps.iter().zip(parts) {
                     if p.xmm {
-                        let s = match self.src(v) {
-                            Src::R(r) => Rm::R(r),
-                            Src::M(m) => Rm::M(m),
-                            Src::Imm(c) => {
-                                self.a.x().mov_imm(8, Rm::R(S1), c);
-                                Rm::R(S1)
-                            }
-                            Src::Undef => {
-                                x += 1;
-                                continue;
-                            }
+                        let Some(s) = self.rm(v, S1) else {
+                            x += 1;
+                            continue;
                         };
                         self.a.x().movq_to_xmm(x, s, if p.size == 8 { 8 } else { 4 });
                         x += 1;
