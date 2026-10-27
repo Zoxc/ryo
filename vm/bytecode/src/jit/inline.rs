@@ -529,86 +529,9 @@ fn promotable_accesses(g: &Func, sh: Option<&Shape>, d: &[bool]) -> Option<f64> 
     Some(n)
 }
 
-/// Whether the pointer `v` of node `k`'s IR `g` points into a memory alloca of the root or
-/// an inlined ancestor that only loads, stores and VM calls reach ([`promotable_accesses`]),
-/// following entry parameters up to the call sites that pass them.
-fn local_alloca(nodes: &[Node], root: &Func, memo: &mut BTreeMap<(usize, u32), bool>, mut k: usize, mut v: Value) -> bool {
-    loop {
-        let g: &Func = nodes[k].ir.as_deref().unwrap_or(root);
-        v = g.resolve(v);
-        let mut p = v;
-        while let ValueDef::Inst(i, 0) = g.def(p) {
-            match g.insts[i.idx()].op {
-                Op::PtrAdd(_) | Op::PtrIndex(_) => p = g.resolve(g.insts[i.idx()].args[0]),
-                Op::AllocaAddr(a, _) => {
-                    if let Some(&m) = memo.get(&(k, a.0)) {
-                        return m;
-                    }
-                    let al = &g.allocas[a.idx()];
-                    let ok = al.kind == AllocaKind::Memory && !al.pinned && !named(g, a) && {
-                        let addrs: Vec<Value> = (0..g.insts.len())
-                            .filter(|&j| matches!(g.insts[j].op, Op::AllocaAddr(b, _) if b == a) && g.insts[j].nres == 1)
-                            .map(|j| g.result(Inst(j as u32)))
-                            .collect();
-                        promotable_accesses(g, None, &derived(g, &addrs)).is_some()
-                    };
-                    memo.insert((k, a.0), ok);
-                    return ok;
-                }
-                _ => return false,
-            }
-        }
-        let ValueDef::Param(b, n) = g.def(p) else { return false };
-        if k == 0 || g.blocks[b.idx()].kind != BlockKind::Entry {
-            return false;
-        }
-        // The argument the call site passes in this parameter's register.
-        let r = g.entry_regs[n as usize];
-        let parent = nodes[k].parent;
-        let pf: &Func = nodes[parent].ir.as_deref().unwrap_or(root);
-        let site = &pf.insts[nodes[k].site.idx()];
-        let Op::Call(call) = &site.op else { return false };
-        let Some(ai) = call.arg_for(&r) else { return false };
-        v = site.args[ai];
-        k = parent;
-    }
-}
-
 /// Whether a handler call or an island of `g` names the alloca `a`: promotion can't take it.
 fn named(g: &Func, a: AllocaId) -> bool {
     g.insts.iter().any(|id| id.op.named_allocas().any(|b| b == a))
-}
-
-/// The promotion benefit of inlining `c` at the call `site` of node `parent` (design/jit.md,
-/// "Inlining"): a pointer argument into a caller's memory alloca that only loads, stores and calls
-/// reach ([`local_alloca`]) leaves the callee's accesses through it (by block weight) to
-/// promotion once inlined, each a memory access saved. Callee parameters that escape any
-/// other way (a handler, a store of the pointer, a return) get nothing.
-fn promotion(
-    nodes: &[Node],
-    root: &Func,
-    memo: &mut BTreeMap<(usize, u32), bool>,
-    parent: usize,
-    site: Inst,
-    call: &Call,
-    c: &Func,
-    sh: &Shape,
-) -> f64 {
-    let Some(entry) = c.entry() else { return 0.0 };
-    let pf: &Func = nodes[parent].ir.as_deref().unwrap_or(root);
-    let mut total = 0.0;
-    for (n, r) in c.entry_regs.iter().enumerate() {
-        if r.xmm || r.size != 8 {
-            continue;
-        }
-        let Some(ai) = call.arg_for(r) else { continue };
-        if !local_alloca(nodes, root, memo, parent, pf.insts[site.idx()].args[ai]) {
-            continue;
-        }
-        let param = c.blocks[entry].params[n];
-        total += promotable_accesses(c, Some(sh), &derived(c, &[param])).unwrap_or(0.0);
-    }
-    total
 }
 
 /// A node of the call tree: a call site and its callee.
@@ -638,6 +561,87 @@ struct Node {
     pending: bool,
     frame: u32,
     children: Vec<usize>,
+}
+
+/// The call tree: the root's IR and the nodes, the root's first.
+struct Tree<'a> {
+    root: &'a Func,
+    nodes: Vec<Node>,
+}
+
+impl Tree<'_> {
+    /// Node `k`'s IR.
+    fn ir(&self, k: usize) -> &Func {
+        self.nodes[k].ir.as_deref().unwrap_or(self.root)
+    }
+
+    /// Whether the pointer `v` of node `k`'s IR `g` points into a memory alloca of the root or
+    /// an inlined ancestor that only loads, stores and VM calls reach ([`promotable_accesses`]),
+    /// following entry parameters up to the call sites that pass them.
+    fn local_alloca(&self, memo: &mut BTreeMap<(usize, u32), bool>, mut k: usize, mut v: Value) -> bool {
+        loop {
+            let g = self.ir(k);
+            v = g.resolve(v);
+            let mut p = v;
+            while let ValueDef::Inst(i, 0) = g.def(p) {
+                match g.insts[i.idx()].op {
+                    Op::PtrAdd(_) | Op::PtrIndex(_) => p = g.resolve(g.insts[i.idx()].args[0]),
+                    Op::AllocaAddr(a, _) => {
+                        if let Some(&m) = memo.get(&(k, a.0)) {
+                            return m;
+                        }
+                        let al = &g.allocas[a.idx()];
+                        let ok = al.kind == AllocaKind::Memory && !al.pinned && !named(g, a) && {
+                            let addrs: Vec<Value> = (0..g.insts.len())
+                                .filter(|&j| matches!(g.insts[j].op, Op::AllocaAddr(b, _) if b == a) && g.insts[j].nres == 1)
+                                .map(|j| g.result(Inst(j as u32)))
+                                .collect();
+                            promotable_accesses(g, None, &derived(g, &addrs)).is_some()
+                        };
+                        memo.insert((k, a.0), ok);
+                        return ok;
+                    }
+                    _ => return false,
+                }
+            }
+            let ValueDef::Param(b, n) = g.def(p) else { return false };
+            if k == 0 || g.blocks[b.idx()].kind != BlockKind::Entry {
+                return false;
+            }
+            // The argument the call site passes in this parameter's register.
+            let r = g.entry_regs[n as usize];
+            let parent = self.nodes[k].parent;
+            let pf = self.ir(parent);
+            let site = &pf.insts[self.nodes[k].site.idx()];
+            let Op::Call(call) = &site.op else { return false };
+            let Some(ai) = call.arg_for(&r) else { return false };
+            v = site.args[ai];
+            k = parent;
+        }
+    }
+
+    /// The promotion benefit of inlining `c` at the call `site` of node `parent` (design/jit.md,
+    /// "Inlining"): a pointer argument into a caller's memory alloca that only loads, stores and calls
+    /// reach ([`local_alloca`]) leaves the callee's accesses through it (by block weight) to
+    /// promotion once inlined, each a memory access saved. Callee parameters that escape any
+    /// other way (a handler, a store of the pointer, a return) get nothing.
+    fn promotion(&self, memo: &mut BTreeMap<(usize, u32), bool>, parent: usize, site: Inst, call: &Call, c: &Func, sh: &Shape) -> f64 {
+        let Some(entry) = c.entry() else { return 0.0 };
+        let pf = self.ir(parent);
+        let mut total = 0.0;
+        for (n, r) in c.entry_regs.iter().enumerate() {
+            if r.xmm || r.size != 8 {
+                continue;
+            }
+            let Some(ai) = call.arg_for(r) else { continue };
+            if !self.local_alloca(memo, parent, pf.insts[site.idx()].args[ai]) {
+                continue;
+            }
+            let param = c.blocks[entry].params[n];
+            total += promotable_accesses(c, Some(sh), &derived(c, &[param])).unwrap_or(0.0);
+        }
+        total
+    }
 }
 
 /// Why the callee `c` can't be inlined at the call `call`, whose unwinding does `unwind`.
@@ -766,26 +770,48 @@ pub fn inline(
     check: bool,
     mut dump: Option<&mut String>,
 ) -> Result<usize, String> {
+    let mut tree = explore(f, env, mem, p, only, dump.as_deref_mut());
+    let cap = apply_profile(&mut tree.nodes, env, p);
+    let clusters = clusters(&tree.nodes);
+    let root = tree.nodes[0].func;
+    let accepted = select(&tree.nodes, &clusters, cap, p, root, dump);
+    let nodes = tree.nodes;
+    splice_accepted(f, &nodes, &accepted, check)?;
+    Ok(accepted.iter().filter(|&&a| a).count())
+}
+
+/// Exploration: the call tree of `f`, from its calls `only` or all of them, the pending
+/// sites taken by weight, heaviest first, within the budgets of `p`.
+fn explore<'a>(
+    f: &'a Func,
+    env: &mut dyn Env,
+    mem: Option<&dyn super::opt::ConstMem>,
+    p: &Params,
+    only: Option<&[Inst]>,
+    mut dump: Option<&mut String>,
+) -> Tree<'a> {
     let root_shape = shape(f);
     let root_cost = cost(f, &root_shape);
-    let mut nodes = alloc::vec![Node {
-        func: env.root(),
-        ir: None,
-        site: Inst(u32::MAX),
-        parent: usize::MAX,
-        depth: 0,
-        soft_depth: 0,
-        flags: 0,
-        weight: 1.0,
-        cost: root_cost,
-        benefit: 0.0,
-        cold: false,
-        unwind: Site::Continue,
-        pending: false,
-        frame: 0,
-        children: Vec::new(),
-    }];
-    // Exploration: the pending sites by weight, heaviest first.
+    let mut tree = Tree {
+        root: f,
+        nodes: alloc::vec![Node {
+            func: env.root(),
+            ir: None,
+            site: Inst(u32::MAX),
+            parent: usize::MAX,
+            depth: 0,
+            soft_depth: 0,
+            flags: 0,
+            weight: 1.0,
+            cost: root_cost,
+            benefit: 0.0,
+            cold: false,
+            unwind: Site::Continue,
+            pending: false,
+            frame: 0,
+            children: Vec::new(),
+        }],
+    };
     let root = env.root();
     let mut pending: Vec<(f64, usize, Inst, VmFunc, bool)> = Vec::new();
     let push_sites = |pending: &mut Vec<(f64, usize, Inst, VmFunc, bool)>, env: &mut dyn Env, nodes: &[Node], k: usize, g: &Func, sh: &Shape| {
@@ -793,41 +819,38 @@ pub fn inline(
             pending.push((nodes[k].weight * sh.weight[b.idx()], k, i, callee, sh.cold[b.idx()]));
         }
     };
-    push_sites(&mut pending, env, &nodes, 0, f, &root_shape);
+    push_sites(&mut pending, env, &tree.nodes, 0, f, &root_shape);
     if let Some(only) = only {
         pending.retain(|s| only.contains(&s.2));
     }
     let mut expanded = 0.0;
     let mut promo_memo = BTreeMap::new();
     let mut trials: Vec<((VmFunc, Vec<Option<(u64, u8)>>), Rc<Func>)> = Vec::new();
-    while !pending.is_empty() && nodes.len() < p.nodes {
+    while !pending.is_empty() && tree.nodes.len() < p.nodes {
         let at = (0..pending.len()).max_by(|&a, &b| pending[a].0.total_cmp(&pending[b].0)).unwrap();
         let (mut weight, parent, site, g, mut cold) = pending.swap_remove(at);
         let flags = env.flags(g);
         let always = flags & FUNC_INLINE_ALWAYS != 0;
-        let depth = nodes[parent].depth + 1;
-        let soft_depth = nodes[parent].soft_depth + !always as u32;
+        let depth = tree.nodes[parent].depth + 1;
+        let soft_depth = tree.nodes[parent].soft_depth + !always as u32;
         if flags & FUNC_COLD != 0 && !cold {
             weight /= 16.0;
             cold = true;
         }
-        let pf: &Func = match &nodes[parent].ir {
-            Some(ir) => ir,
-            None => f,
-        };
+        let pf = tree.ir(parent);
         let Op::Call(call) = &pf.insts[site.idx()].op else { unreachable!() };
         let call = call.clone();
         let mut why = None;
         let mut anc = parent;
         loop {
-            if nodes[anc].func == g {
+            if tree.nodes[anc].func == g {
                 why = Some("recursion");
                 break;
             }
             if anc == 0 {
                 break;
             }
-            anc = nodes[anc].parent;
+            anc = tree.nodes[anc].parent;
         }
         if flags & FUNC_INLINE_NEVER != 0 {
             why = why.or(Some("inline(never)"));
@@ -836,10 +859,10 @@ pub fn inline(
             why = why.or(Some("too deep"));
         }
         let unwind = match call.site {
-            Site::Continue => nodes[parent].unwind,
+            Site::Continue => tree.nodes[parent].unwind,
             s => s,
         };
-        let waiting = nodes[parent].pending || outgoing_pending(pf, site);
+        let waiting = tree.nodes[parent].pending || outgoing_pending(pf, site);
         let mut ir = if why.is_none() { env.ir(g) } else { None };
         if why.is_none() && ir.is_none() {
             why = Some("no IR");
@@ -879,50 +902,8 @@ pub fn inline(
                 continue;
             }
         };
-        let mut k_cost = cost(&c, &sh);
-        // A trial: the callee specialized to the call's constant arguments, memoized.
-        let mut folded = 0.0;
-        let (c, sh) = {
-            let consts: Vec<Option<(u64, u8)>> = c
-                .entry_regs
-                .iter()
-                .map(|r| {
-                    let ai = call.arg_for(r)?;
-                    let v = pf.insts[site.idx()].args[ai];
-                    // The call zero-extends past its register's size and the value's width.
-                    let w = pf.w(v).min(call.arg_width(ai));
-                    match pf.def(v) {
-                        ValueDef::Const(bits) => Some((mask(bits, w), w)),
-                        _ => None,
-                    }
-                })
-                .collect();
-            if k_cost <= p.trial_cost && consts.iter().any(|x| x.is_some()) {
-                let key = (g, consts.clone());
-                let spec = match trials.iter().find(|t| t.0 == key) {
-                    Some(t) => Some(t.1.clone()),
-                    None if trials.len() < p.trials => {
-                        let s = Rc::new(specialize(&c, &consts, mem));
-                        trials.push((key, s.clone()));
-                        Some(s)
-                    }
-                    None => None,
-                };
-                match spec {
-                    Some(s) => {
-                        let ssh = shape(&s);
-                        let sc = cost(&s, &ssh);
-                        folded = (k_cost - sc).max(0.0);
-                        k_cost = sc;
-                        (s, ssh)
-                    }
-                    None => (c, sh),
-                }
-            } else {
-                (c, sh)
-            }
-        };
-        let promoted = promotion(&nodes, f, &mut promo_memo, parent, site, &call, &c, &sh);
+        let (c, sh, k_cost, folded) = trial(&mut trials, mem, p, g, &call, pf, site, c, sh);
+        let promoted = tree.promotion(&mut promo_memo, parent, site, &call, &c, &sh);
         if expanded + k_cost > p.expand {
             if let Some(d) = dump.as_deref_mut() {
                 let _ = writeln!(d, ";   {} at {site} (depth {depth}): over the exploration budget", name(g, root));
@@ -931,8 +912,8 @@ pub fn inline(
         }
         expanded += k_cost;
         let frame = c.allocas.iter().filter(|a| matches!(a.kind, AllocaKind::Memory | AllocaKind::Outgoing)).map(|a| a.size).sum();
-        let k = nodes.len();
-        nodes.push(Node {
+        let k = tree.nodes.len();
+        tree.nodes.push(Node {
             func: g,
             ir: Some(c.clone()),
             site,
@@ -949,12 +930,73 @@ pub fn inline(
             frame,
             children: Vec::new(),
         });
-        nodes[parent].children.push(k);
-        push_sites(&mut pending, env, &nodes, k, &c, &sh);
+        tree.nodes[parent].children.push(k);
+        push_sites(&mut pending, env, &tree.nodes, k, &c, &sh);
     }
+    tree
+}
 
-    // The profile raises weights (§2): a callee's share of the root's calls, split over
-    // the unit's sites of it by their static weights (there are no samples of call sites).
+/// The trials so far: a callee and the constant arguments it was specialized to.
+type Trials = Vec<((VmFunc, Vec<Option<(u64, u8)>>), Rc<Func>)>;
+
+/// A trial: the callee `c` of the call `site` of `pf` specialized to the call's constant
+/// arguments, memoized in `trials`. Returns the callee to inline, its shape, its cost and
+/// the cost folded away.
+fn trial(
+    trials: &mut Trials,
+    mem: Option<&dyn super::opt::ConstMem>,
+    p: &Params,
+    g: VmFunc,
+    call: &Call,
+    pf: &Func,
+    site: Inst,
+    c: Rc<Func>,
+    sh: Shape,
+) -> (Rc<Func>, Shape, f64, f64) {
+    let k_cost = cost(&c, &sh);
+    let consts: Vec<Option<(u64, u8)>> = c
+        .entry_regs
+        .iter()
+        .map(|r| {
+            let ai = call.arg_for(r)?;
+            let v = pf.insts[site.idx()].args[ai];
+            // The call zero-extends past its register's size and the value's width.
+            let w = pf.w(v).min(call.arg_width(ai));
+            match pf.def(v) {
+                ValueDef::Const(bits) => Some((mask(bits, w), w)),
+                _ => None,
+            }
+        })
+        .collect();
+    if k_cost <= p.trial_cost && consts.iter().any(|x| x.is_some()) {
+        let key = (g, consts.clone());
+        let spec = match trials.iter().find(|t| t.0 == key) {
+            Some(t) => Some(t.1.clone()),
+            None if trials.len() < p.trials => {
+                let s = Rc::new(specialize(&c, &consts, mem));
+                trials.push((key, s.clone()));
+                Some(s)
+            }
+            None => None,
+        };
+        match spec {
+            Some(s) => {
+                let ssh = shape(&s);
+                let sc = cost(&s, &ssh);
+                let folded = (k_cost - sc).max(0.0);
+                (s, ssh, sc, folded)
+            }
+            None => (c, sh, k_cost, 0.0),
+        }
+    } else {
+        (c, sh, k_cost, 0.0)
+    }
+}
+
+/// The profile raises weights (§2): a callee's share of the root's calls, split over
+/// the unit's sites of it by their static weights (there are no samples of call sites).
+/// Returns the unit's cost cap.
+fn apply_profile(nodes: &mut [Node], env: &mut dyn Env, p: &Params) -> f64 {
     let root_counts = env.counts(env.root());
     if let Some((rc, _)) = root_counts.filter(|c| c.0 >= p.min_calls) {
         let mut sites: BTreeMap<(usize, u32), f64> = BTreeMap::new();
@@ -975,12 +1017,14 @@ pub fn inline(
             }
         }
     }
-    let cap = match root_counts {
+    match root_counts {
         Some((c, i)) if i as f64 >= p.loopy * c.max(1) as f64 => p.cap_loopy,
         _ => p.cap,
-    };
+    }
+}
 
-    // Clusters, bottom-up: children have larger indices than their parents.
+/// The clusters, bottom-up: children have larger indices than their parents.
+fn clusters(nodes: &[Node]) -> Vec<Cluster> {
     let mut clusters: Vec<Cluster> = nodes
         .iter()
         .enumerate()
@@ -1006,11 +1050,15 @@ pub fn inline(
             cl.frontier.extend(c.frontier);
         }
     }
+    clusters
+}
 
-    // Selection.
+/// Selection: which nodes to inline, clusters taken best first while the unit stays within
+/// `cap`.
+fn select(nodes: &[Node], clusters: &[Cluster], cap: f64, p: &Params, root: VmFunc, mut dump: Option<&mut String>) -> Vec<bool> {
     let mut accepted = alloc::vec![false; nodes.len()];
     let mut queue: Vec<usize> = nodes[0].children.clone();
-    let mut unit = root_cost;
+    let mut unit = nodes[0].cost;
     let mut frame = 0u32;
     // A cluster headed by an `#[inline(always)]` callee, not at a cold site: first, and
     // without the bar.
@@ -1052,50 +1100,41 @@ pub fn inline(
             queue.extend(cl.frontier.iter().copied());
         }
     }
+    accepted
+}
 
-    // The splices, each callee with its own accepted callees spliced in first.
+/// Splices `sub` in at the call `site` of `into` and, with `check`, verifies the result,
+/// `what` naming the splice in the error.
+fn splice_checked(into: &mut Func, site: Inst, sub: &Func, check: bool, what: impl FnOnce() -> String) -> Result<(), String> {
+    let before = check.then(|| alloc::format!("; callee\n{sub}\n; caller\n{into}"));
+    splice(into, site, sub);
+    if check {
+        into.verify().map_err(|e| alloc::format!("IR after inlining {}: {e}\n{}\n; after\n{into}", what(), before.unwrap_or_default()))?;
+    }
+    Ok(())
+}
+
+/// The splices into `f`, each callee with its own accepted callees spliced in first.
+fn splice_accepted(f: &mut Func, nodes: &[Node], accepted: &[bool], check: bool) -> Result<(), String> {
     fn build(nodes: &[Node], accepted: &[bool], k: usize, check: bool) -> Result<Func, String> {
         let mut g = (**nodes[k].ir.as_ref().unwrap()).clone();
         for &ch in &nodes[k].children {
             if accepted[ch] && live(&g, nodes[ch].site) {
                 let sub = build(nodes, accepted, ch, check)?;
-                let before = check.then(|| alloc::format!("; callee\n{sub}\n; caller\n{g}"));
-                splice(&mut g, nodes[ch].site, &sub);
-                if check {
-                    g.verify().map_err(|e| {
-                        alloc::format!(
-                            "IR after inlining {} into {}: {e}\n{}\n; after\n{g}",
-                            name(nodes[ch].func, nodes[0].func),
-                            name(nodes[k].func, nodes[0].func),
-                            before.unwrap_or_default()
-                        )
-                    })?;
-                }
+                splice_checked(&mut g, nodes[ch].site, &sub, check, || {
+                    alloc::format!("{} into {}", name(nodes[ch].func, nodes[0].func), name(nodes[k].func, nodes[0].func))
+                })?;
             }
         }
         Ok(g)
     }
-    let mut n = 0;
-    for &ch in &nodes[0].children.clone() {
+    for &ch in &nodes[0].children {
         if accepted[ch] && live(f, nodes[ch].site) {
-            let sub = build(&nodes, &accepted, ch, check)?;
-            let before = check.then(|| alloc::format!("; callee\n{sub}\n; caller\n{f}"));
-            splice(f, nodes[ch].site, &sub);
-            if check {
-                f.verify().map_err(|e| {
-                    alloc::format!(
-                        "IR after inlining {} into the root: {e}\n{}\n; after\n{f}",
-                        name(nodes[ch].func, root),
-                        before.unwrap_or_default()
-                    )
-                })?;
-            }
+            let sub = build(nodes, accepted, ch, check)?;
+            splice_checked(f, nodes[ch].site, &sub, check, || alloc::format!("{} into the root", name(nodes[ch].func, nodes[0].func)))?;
         }
     }
-    for a in &accepted {
-        n += *a as usize;
-    }
-    Ok(n)
+    Ok(())
 }
 
 /// Whether the call `site` is still in `f`: a splice prunes the code that became
