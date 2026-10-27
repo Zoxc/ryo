@@ -78,7 +78,7 @@ impl jit::inline::Env for InlineEnv<'_> {
     fn ir(&mut self, g: VmFunc) -> Option<std::rc::Rc<jit::ir::Func>> {
         let img = image_of(g.img);
         // Another image's code is inlined only if it was encoded as the root's.
-        if (Mode { counters: false, far_rt: self.mode.far_rt, ..img.mode() }) != self.mode {
+        if jit_mode(&img, self.mode.far_rt) != self.mode {
             return None;
         }
         if let Some(f) = self.cache.get(&(g.img, g.func.0)) {

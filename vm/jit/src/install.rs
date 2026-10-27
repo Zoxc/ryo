@@ -75,7 +75,6 @@ pub(crate) static SSA_DEVIRT: core::sync::atomic::AtomicUsize = core::sync::atom
 
 /// A function's machine code, from either pipeline, before it is installed.
 struct Gen {
-    len: usize,
     code: Vec<u8>,
     relocs: Vec<asm::Reloc>,
     rodata: Vec<u8>,
@@ -83,7 +82,7 @@ struct Gen {
     body: Body,
     osr: Option<asm::osr::OsrCode>,
     osr_at: usize,
-    /// PE: where the pad region starts (`len` if there is none, as for the SSA tier's code).
+    /// PE: where the pad region starts (`code.len()` if there is none, as for the SSA tier's code).
     region: usize,
 }
 
@@ -248,13 +247,14 @@ impl Jit {
         let text = unsafe { core::slice::from_raw_parts(h.text as usize as *const u8, h.text_size as usize) };
         let res = ImageResolver { image: img, handlers: &self.handlers, probe: self.rt.probe as usize };
         let d = res.decode(func, text).ok_or("no such function")?.map_err(|e| e.what)?;
-        let mode = Mode { counters: false, far_rt: place.far_rt, ..img.mode() };
+        let mode = jit_mode(&img, place.far_rt);
+        let shuffled = (self.rt.shuffled)(h as *const _ as *const u8);
 
         // The JIT frame layout: the AOT one, or with `RYO_JIT_SHUFFLE` one that moves every
         // slot it can (frame::shuffle_map), to catch reliance on matching frames.
         let mut map = SlotMap::identity(d.frame_size);
         let mut words = None;
-        if (self.rt.shuffled)(h as *const _ as *const u8) {
+        if shuffled {
             match frame::shuffle_map(&d, mode).and_then(|m| Ok((frame::remap_slots(&d.words, mode, &m)?, m))) {
                 Ok((w, m)) => {
                     words = Some(w);
@@ -286,7 +286,7 @@ impl Jit {
             self.ssa_tried += 1;
             // The AOT layout's words (the SSA tier lays out its own frame); the calls are
             // retargeted as above after inlining, by the same rules.
-            if let Some((out, ssa_ext)) = self.compile_ssa(rec, func, &img, &d, mode, place)? {
+            if let Some((out, ssa_ext)) = self.compile_ssa(rec, func, &img, &d, mode, shuffled, place)? {
                 return self.install(rec, func, &img, place, personality, &ssa_ext, out, Tier::Ssa);
             }
         }
@@ -297,6 +297,7 @@ impl Jit {
     /// Compiles `d`, the function `func` of `img` (record `rec`), for `place` through the SSA
     /// tier: its code and callees, or `None` where the tier doesn't handle it (the
     /// re-encoding pipeline does).
+    #[allow(clippy::too_many_arguments)]
     fn compile_ssa(
         &mut self,
         rec: *mut JitRecord,
@@ -304,12 +305,13 @@ impl Jit {
         img: &Image<'_>,
         d: &asm::Decoded,
         mode: Mode,
+        shuffled: bool,
         place: Place,
     ) -> Result<Option<(Gen, Vec<Ext>)>, CompileError> {
         let h = img.header();
         let opts = jit::Options {
             alloc: if self.rt.settings.opt == JitOpt::Ssa { jit::Allocator::LinearScan } else { jit::Allocator::Naive },
-            stress: (self.rt.shuffled)(h as *const _ as *const u8),
+            stress: shuffled,
             check: self.rt.settings.check,
             dump: self.dump.is_some(),
         };
@@ -338,7 +340,6 @@ impl Jit {
                 }
                 let len = o.code.len();
                 let out = Gen {
-                    len,
                     code: o.code,
                     relocs: o.relocs,
                     rodata: o.rodata,
@@ -389,8 +390,9 @@ impl Jit {
         tier: Tier,
     ) -> Result<(), CompileError> {
         let h = img.header();
-        let mode = Mode { counters: false, far_rt: place.far_rt, ..img.mode() };
-        let Gen { len: code_len, code: enc_code, relocs, rodata, call_sites, body, osr, osr_at, region } = out;
+        let mode = jit_mode(img, place.far_rt);
+        let Gen { code: enc_code, relocs, rodata, call_sites, body, osr, osr_at, region } = out;
+        let code_len = enc_code.len();
         let osr_len = osr.as_ref().map_or(0, |o| o.code.len());
 
         // Unwind information. ELF: the CIE, the FDE, the OSR code's FDE, the terminator, then
@@ -693,6 +695,12 @@ impl Jit {
     }
 }
 
+/// The mode JIT code of `img` is encoded in: without counters, calling the handlers through
+/// `r11` if `far_rt`.
+fn jit_mode(img: &Image<'_>, far_rt: bool) -> Mode {
+    Mode { counters: false, far_rt, ..img.mode() }
+}
+
 /// The re-encoding pipeline: `d`'s reduced code `words`, retargeted and in the frame layout
 /// `map`, encoded again without counters, with OSR entries for its loop heads.
 fn compile_reencode(d: &asm::Decoded, words: &[u32], map: &SlotMap, img: &Image<'_>, mode: Mode) -> Result<Gen, CompileError> {
@@ -723,7 +731,6 @@ fn compile_reencode(d: &asm::Decoded, words: &[u32], map: &SlotMap, img: &Image<
     let osr = (!entries.is_empty()).then(|| asm::osr::osr_code(&entries, d.frame_size, map.frame_size, mode, osr_at as u32));
     let ef = EhFunc { len: enc.code.len() as u32, frame_size: map.frame_size, prologue: enc.prologue, entry_stub: enc.entry_stub };
     Ok(Gen {
-        len: enc.code.len(),
         code: enc.code,
         relocs: enc.relocs,
         rodata: enc.rodata,
