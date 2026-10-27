@@ -102,6 +102,11 @@ pub struct RtApi {
     /// without one: [`crate::jit::effects::reg_entry`] says which have one, and how they take
     /// their operands.
     pub reg_handlers: [*const (); Opcode::COUNT],
+    /// Tests off Windows only (`ryo_rt`'s `pe-test`): the handlers and register entries of
+    /// PE code (Win64, `Mode::pe`), as [`RtApi::handlers`] and [`RtApi::reg_handlers`]; null
+    /// without them, when PE code uses those (on Windows they are the PE form's).
+    pub pe_handlers: *const [*const (); Opcode::COUNT],
+    pub pe_reg_handlers: *const [*const (); Opcode::COUNT],
 }
 
 // SAFETY: immutable once built; the pointers are code addresses.

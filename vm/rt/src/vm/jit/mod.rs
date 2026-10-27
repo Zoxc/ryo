@@ -391,10 +391,10 @@ pub unsafe extern "sysv64" fn trip_entry() {
 /// dispatcher, in the record's `osr` slot since before it was `Done` (the stubs call it
 /// directly then, so this is only for a stub that read the slot before). Else
 /// [`osr_trip`], keeping `eax`, and on to the dispatcher if that compiled it (`RYO_JIT_SYNC`),
-/// else back to the AOT code. On PE it also saves `xmm6`–`xmm15`, which VM code leaves to its
-/// caller (design/platforms.md) and the `sysv64` Rust code may clobber; `rdi` and `rsi` the
-/// prologue saved.
-#[cfg(not(windows))]
+/// else back to the AOT code. On PE it also saves `rdi`, `rsi` and `xmm6`–`xmm15`,
+/// callee-saved on Win64 (VM code preserves them for its caller) but not for the `sysv64`
+/// Rust code.
+#[cfg(not(any(windows, feature = "pe-test")))]
 #[unsafe(naked)]
 #[rustc_std_internal_symbol]
 #[unsafe(export_name = "ryo_jit_trip_osr")]
@@ -424,6 +424,45 @@ pub unsafe extern "sysv64" fn trip_osr() {
         trip = sym osr_trip,
     );
 }
+// With `pe-test`, PE code runs off Windows too: `rdi` and `rsi` are callee-saved there.
+#[cfg(all(not(windows), feature = "pe-test"))]
+#[unsafe(naked)]
+#[rustc_std_internal_symbol]
+#[unsafe(export_name = "ryo_jit_trip_osr")]
+pub unsafe extern "sysv64" fn trip_osr() {
+    core::arch::naked_asm!(
+        ".cfi_startproc",
+        "cmp dword ptr [r11 + {state}], {done}",
+        "jne 2f",
+        "jmp qword ptr [r11 + {osr}]",
+        "2:",
+        "push rax",
+        ".cfi_adjust_cfa_offset 8",
+        "push rdi",
+        ".cfi_adjust_cfa_offset 8",
+        "push rsi",
+        ".cfi_adjust_cfa_offset 8",
+        "mov rdi, r11",
+        "call {trip}",
+        "mov r11, rax",
+        "pop rsi",
+        ".cfi_adjust_cfa_offset -8",
+        "pop rdi",
+        ".cfi_adjust_cfa_offset -8",
+        "pop rax",
+        ".cfi_adjust_cfa_offset -8",
+        "test r11, r11",
+        "jz 3f",
+        "jmp r11",
+        "3:",
+        "ret",
+        ".cfi_endproc",
+        state = const core::mem::offset_of!(JitRecord, state),
+        done = const JIT_DONE,
+        osr = const core::mem::offset_of!(JitRecord, osr),
+        trip = sym osr_trip,
+    );
+}
 #[cfg(windows)]
 #[unsafe(naked)]
 #[rustc_std_internal_symbol]
@@ -436,6 +475,10 @@ pub unsafe extern "sysv64" fn trip_osr() {
         "jmp qword ptr [r11 + {osr}]",
         "2:",
         "push rax",
+        ".cfi_adjust_cfa_offset 8",
+        "push rdi",
+        ".cfi_adjust_cfa_offset 8",
+        "push rsi",
         ".cfi_adjust_cfa_offset 8",
         "sub rsp, 160",
         ".cfi_adjust_cfa_offset 160",
@@ -464,6 +507,10 @@ pub unsafe extern "sysv64" fn trip_osr() {
         "movaps xmm15, [rsp + 144]",
         "add rsp, 160",
         ".cfi_adjust_cfa_offset -160",
+        "pop rsi",
+        ".cfi_adjust_cfa_offset -8",
+        "pop rdi",
+        ".cfi_adjust_cfa_offset -8",
         "pop rax",
         ".cfi_adjust_cfa_offset -8",
         "test r11, r11",
@@ -581,6 +628,20 @@ fn start() -> bool {
     for (h, &op) in reg_handlers.iter_mut().zip(ryo_bytecode::ALL_OPCODES.iter()) {
         *h = super::interp::reg_handler(op).unwrap_or(ptr::null());
     }
+    #[cfg(all(feature = "pe-test", not(windows)))]
+    let (pe_handlers, pe_reg_handlers) = {
+        static PE: Once<[[*const (); ryo_bytecode::Opcode::COUNT]; 2]> = Once(UnsafeCell::new(MaybeUninit::uninit()));
+        let mut t = [[ptr::null(); ryo_bytecode::Opcode::COUNT]; 2];
+        for (k, &op) in ryo_bytecode::ALL_OPCODES.iter().enumerate() {
+            t[0][k] = super::interp::pe_handler(op).unwrap_or(ptr::null());
+            t[1][k] = super::interp::pe_reg_handler(op).unwrap_or(ptr::null());
+        }
+        // SAFETY: only the first push gets here, once, as for `RT_API`.
+        let t = unsafe { (*PE.0.get()).write(t) };
+        (&raw const t[0], &raw const t[1])
+    };
+    #[cfg(not(all(feature = "pe-test", not(windows))))]
+    let (pe_handlers, pe_reg_handlers) = (ptr::null(), ptr::null());
     let api = RtApi {
         settings: cfg.jit,
         thresholds: cfg.thresholds(),
@@ -596,6 +657,8 @@ fn start() -> bool {
         image_at,
         handlers,
         reg_handlers,
+        pe_handlers,
+        pe_reg_handlers,
     };
     // SAFETY: only the first push gets here, once; the JIT reads it only after the start.
     unsafe { ryo_jit_start((*RT_API.0.get()).write(api)) }

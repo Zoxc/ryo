@@ -3,7 +3,9 @@
 //! value and memory effects through both. Memory operands point into a buffer; handlers that
 //! read symbols, sites or constants are left out (their addresses must be valid).
 
-#![cfg(target_arch = "x86_64")]
+// Off Windows: on Windows nothing calls the register entries (the JIT is a stub there), and
+// the PE form's are run by `ryo_jit`'s tests through `pe-test`.
+#![cfg(all(target_arch = "x86_64", not(windows)))]
 
 use ryo_bytecode::asm::layout;
 use ryo_bytecode::full::{OperandKind, Shape};

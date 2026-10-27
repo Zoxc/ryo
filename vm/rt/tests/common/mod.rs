@@ -21,9 +21,9 @@ pub use ryo_bytecode::asm::Mode;
 pub use ryo_bytecode::full::*;
 pub use ryo_bytecode::image::*;
 
-/// The encoding mode: the runtime's, with loop alignment and counters on, as the backend
-/// encodes.
-pub const ENC: Mode = Mode { align_loops: true, pe: false, counters: true, ..ryo_rt::vm::MODE };
+/// The encoding mode: the runtime's (PE's on Windows), with loop alignment and counters on,
+/// as the backend encodes.
+pub const ENC: Mode = Mode { align_loops: true, counters: true, ..ryo_rt::vm::MODE };
 
 /// A code buffer with patchable branch targets.
 #[derive(Default)]
@@ -214,6 +214,9 @@ pub fn link(obj: ImageObject, syms: &[(&str, usize)]) -> Linked {
             s => panic!("unexpected section {s:?}"),
         }
     };
+    // PE code calls the PE form's handlers (`ryo_rt`'s `pe-test` set, off Windows).
+    let at = core::mem::offset_of!(Header, mode);
+    let pe = u32::from_le_bytes(obj.rodata[at..at + 4].try_into().unwrap()) & MODE_PE != 0;
     for r in &obj.relocs {
         let target = match r.target {
             RelocTarget::Symbol(s) => {
@@ -229,7 +232,7 @@ pub fn link(obj: ImageObject, syms: &[(&str, usize)]) -> Linked {
                 }
             }
             RelocTarget::Section(s) => base(s),
-            RelocTarget::Handler(op) => ryo_rt::vm::handler(op).unwrap_or_else(|| panic!("no handler for {op:?}")) as usize,
+            RelocTarget::Handler(op) => ryo_rt::vm::handler_for(op, pe).unwrap_or_else(|| panic!("no handler for {op:?}")) as usize,
             RelocTarget::Probe => ryo_rt::vm::probe_stack as *const () as usize,
             RelocTarget::TripEntry => ryo_rt::vm::trip_entry as *const () as usize,
             RelocTarget::TripOsr => ryo_rt::vm::trip_osr as *const () as usize,

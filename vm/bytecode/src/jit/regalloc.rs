@@ -63,10 +63,14 @@ pub fn naive(f: &Func, uses: &[u32]) -> Alloc {
 }
 
 /// The allocatable registers: caller-saved first, then callee-saved (`rbp` too without a
-/// frame pointer). `r10` and `r11` are the emitter's scratch registers.
-fn registers(frame_pointer: bool) -> (Vec<R>, Vec<R>) {
-    let caller = alloc::vec![R::Rax, R::Rcx, R::Rdx, R::Rsi, R::Rdi, R::R8, R::R9];
+/// frame pointer). `r10` and `r11` are the emitter's scratch registers. On PE (Win64, the
+/// handlers' convention too) `rsi` and `rdi` are callee-saved.
+fn registers(frame_pointer: bool, pe: bool) -> (Vec<R>, Vec<R>) {
+    let caller = caller_saved(pe).to_vec();
     let mut callee = alloc::vec![R::Rbx, R::R12, R::R13, R::R14, R::R15];
+    if pe {
+        callee.extend([R::Rsi, R::Rdi]);
+    }
     if !frame_pointer {
         callee.push(R::Rbp);
     }
@@ -201,6 +205,11 @@ fn live_in(f: &Func) -> Vec<BitSet> {
     live
 }
 
+/// The allocatable registers every call clobbers: SysV's, or on PE Win64's.
+fn caller_saved(pe: bool) -> &'static [R] {
+    if pe { &[R::Rax, R::Rcx, R::Rdx, R::R8, R::R9] } else { &[R::Rax, R::Rcx, R::Rdx, R::Rsi, R::Rdi, R::R8, R::R9] }
+}
+
 /// [`clobbers`]' bit for a call (which clobbers every caller-saved register).
 const CALL: u32 = 1 << 16;
 
@@ -211,7 +220,7 @@ pub fn clobbers(f: &Func, id: &super::ir::InstData) -> u32 {
     use super::ir::BinOp as B;
     let bit = |r: R| 1u32 << r.num();
     match id.op {
-        _ if id.op.is_call() => CALL | [R::Rax, R::Rcx, R::Rdx, R::Rsi, R::Rdi, R::R8, R::R9].iter().fold(0, |m, &r| m | bit(r)),
+        _ if id.op.is_call() => CALL | caller_saved(f.pe).iter().fold(0, |m, &r| m | bit(r)),
         Op::Bin(B::DivS | B::DivU | B::RemS | B::RemU, _) | Op::Ovf(B::Mul, false, 8) => bit(R::Rax) | bit(R::Rdx),
         Op::Bin(B::Shl | B::ShrS | B::ShrU | B::Rotl | B::Rotr, _) if !matches!(f.values[id.args[1].idx()].def, ValueDef::Const(_)) => bit(R::Rcx),
         _ => 0,
@@ -491,7 +500,7 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
                 }
                 Op::HCall(h) if h.reg => {
                     for (k, a) in id.args.iter().enumerate() {
-                        want[a.idx()].get_or_insert(R::ARGS[k]);
+                        want[a.idx()].get_or_insert(super::emit::handler_arg_reg(f.pe, k).expect("a register entry's argument register"));
                     }
                 }
                 _ => {}
@@ -520,7 +529,7 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
             _ => {}
         }
     }
-    let (mut caller, callee) = registers(frame_pointer);
+    let (mut caller, callee) = registers(frame_pointer, f.pe);
     if var_shift {
         // Keep `rcx` for the shift amounts.
         caller.retain(|&r| r != R::Rcx);

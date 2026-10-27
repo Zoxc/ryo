@@ -307,7 +307,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     fn emit_call(&mut self, target: Target<'tcx>, sig: &AbiSig<'tcx>, homes: &[u32], cont: CallCont<'tcx>) -> Result<(), NeedsNative> {
         let tcx = self.tcx;
         let (d, after) = self.call_dest(&cont, sig)?;
-        let block = Self::out(0);
+        let block = Self::out(self.island_block());
         let k = if sig.ret_kind == RET_SRET { 0 } else { sig.ret_kind };
         let rd = if k == 0 { 0 } else { d };
         // The island calls' operands: the argument block, the result, and the callee.
@@ -545,8 +545,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let home = |fx: &mut Self, i: usize, s: u32| -> u32 {
             let f = sig.fields[i];
             if island {
-                fx.mov(Self::out(f.offset), s, f.size);
-                Self::out(f.offset)
+                let at = Self::out(fx.island_block() + f.offset);
+                fx.mov(at, s, f.size);
+                at
             } else if indirect(i) {
                 let t = fx.frame.temp(u64::from(f.size), u64::from(f.align));
                 fx.mov(t, s, f.size);
@@ -588,12 +589,12 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             }
         }
         if sig.caller_location {
-            let t = if island { Self::out(sig.fields[n].offset) } else { self.temp8() };
+            let t = if island { Self::out(self.island_block() + sig.fields[n].offset) } else { self.temp8() };
             self.caller_location_into(source_info, t)?;
             homes.push(t);
         }
         if island {
-            self.outgoing(sig.block_size);
+            self.outgoing(self.island_block() + sig.block_size);
         }
         Ok(homes)
     }

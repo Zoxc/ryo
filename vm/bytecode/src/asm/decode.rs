@@ -15,7 +15,7 @@ use super::encode::{
 use super::inline::Cache;
 use super::list::{Hint, InsnList};
 use super::reduced::{self, Then, addr_arg};
-use super::x86::{ARGS, BadItem, Cond, Cursor, Fields, Item, M, Reg, island_args};
+use super::x86::{BadItem, Cond, Cursor, Fields, Item, M, Reg, STACK_ARG, W, handler_reg, island_args};
 use super::{ARG_ADDR, ArgReg, Mode, RetPart, has_handler, layout, ret_kind};
 use crate::full::{ElemKind, Opcode, OperandKind, Shape, Sym};
 use crate::image::{Cleanup, CleanupEntry, op_may_unwind};
@@ -286,18 +286,12 @@ fn read(
     loop {
         match c.item() {
             Ok(Item::SubRsp(n)) => alloc = n,
-            Ok(Item::PushRbp | Item::WinPrologue | Item::Mov(Reg::Rbp, Reg::Rsp) | Item::SetReg(Reg::Rax, _) | Item::Call(Ref::Probe)) => continue,
+            Ok(Item::PushRbp | Item::Mov(Reg::Rbp, Reg::Rsp) | Item::SetReg(Reg::Rax, _) | Item::Call(Ref::Probe)) => continue,
             _ => {}
         }
         break;
     }
-    let frame_size = if mode.pe {
-        alloc.checked_add(16).ok_or(err(0, "frame size out of range"))?
-    } else if mode.frame_pointer {
-        alloc
-    } else {
-        alloc.wrapping_sub(8)
-    };
+    let frame_size = if mode.frame_pointer { alloc } else { alloc.wrapping_sub(8) };
     if frame_size % 16 != 0 {
         return Err(err(0, "frame size not a multiple of 16"));
     }
@@ -522,7 +516,7 @@ fn resume_slots(protos: &mut [Proto], rs: usize, mode: Mode, reduced: bool) -> R
     for p in protos[rs..].iter_mut().filter(|p| p.op == Opcode::Resume) {
         let x = slot.ok_or(p.pos)?;
         if reduced {
-            let args = super::encode::handler_args(Opcode::Resume, &[Opnd::<u32>::Slot(x)], mode.fp_arg, |_| 0)
+            let args = super::encode::handler_args(Opcode::Resume, &[Opnd::<u32>::Slot(x)], mode, |_| 0)
                 .into_iter()
                 .map(|v| match v {
                     super::encode::ArgVal::Fp => Arg::Fp,
@@ -578,7 +572,7 @@ fn instructions(
 ) -> Result<(Vec<Proto>, Vec<bool>), AsmError> {
     let mut protos: Vec<Proto> = Vec::new();
     let mut padded = Vec::new();
-    let mut cache = Cache::default();
+    let mut cache = Cache::new(fr.mode.pe);
     let mut end = entry_stub;
     // Whether a loop head's counter check was read.
     let mut counted = false;
@@ -600,7 +594,7 @@ fn instructions(
         }
         padded.push(pad != 0);
         if targets.is_some_and(|t| t.binary_search(&c.pos).is_ok()) {
-            cache = Cache::default();
+            cache = Cache::new(fr.mode.pe);
         }
         // A loop head's counter check.
         let pos = c.pos;
@@ -626,13 +620,13 @@ fn instructions(
                 break 'p p;
             }
             if let Some(p) = call_insn(c, fr, dropped) {
-                cache = Cache::default();
+                cache = Cache::new(fr.mode.pe);
                 break 'p p;
             }
             match inline_insn(c, &mut cache, &mut dropped, &mut hints, targets.is_some()) {
                 Some(p) => p,
                 None => {
-                    cache = Cache::default();
+                    cache = Cache::new(fr.mode.pe);
                     insn(c, fr, ro)?
                 }
             }
@@ -666,8 +660,18 @@ struct Frame {
 }
 
 impl Frame {
-    fn epilogue(&self) -> Item {
+    fn epilogue(&self) -> Vec<Item> {
         epilogue(self.size, self.mode)
+    }
+
+    /// Reads the epilogue at the cursor (the cursor after it), or `None` (the cursor moved).
+    fn read_epilogue(&self, c: &mut Cursor<'_>) -> Option<()> {
+        for want in self.epilogue() {
+            if c.item().ok()? != want {
+                return None;
+            }
+        }
+        Some(())
     }
 
     /// `reg = fp`, as [`Cursor::item`] returns it: without a frame pointer, `lea reg,
@@ -692,6 +696,7 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8]) -> Result<Proto, AsmError> {
         let at = c.pos;
         match c.item()? {
             it @ (Item::SetReg(..) | Item::Lea(..) | Item::Mov(..) | Item::LeaM { .. }) => setup.push((at, it)),
+            it @ Item::StImm { w: W::D, m: STACK_ARG, .. } if fr.mode.pe => setup.push((at, it)),
             it => break (at, it),
         }
     };
@@ -757,7 +762,7 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8]) -> Result<Proto, AsmError> {
             }
             p
         }
-        Item::Ld { .. } | Item::Sse { .. } | Item::Leave | Item::WinEpilogue | Item::AddRsp(_) if setup.is_empty() => {
+        Item::Ld { .. } | Item::Sse { .. } | Item::Leave | Item::PopRbp | Item::AddRsp(_) if setup.is_empty() => {
             c.pos = pos;
             let (s, k) = ret(c, fr)?;
             Proto::new(Opcode::Ret, vec![Opnd::Slot(s), Opnd::Imm(k as u64)], pos, sites)
@@ -765,13 +770,13 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8]) -> Result<Proto, AsmError> {
         // A handler call's `ud2` is read with it (`then`): a bare one is `unreachable`.
         Item::Ud2 if setup.is_empty() => Proto::new(Opcode::Unreachable, Vec::new(), pos, sites),
         Item::Branch { cond: Cond::Always, target, .. } if setup.is_empty() => Proto::new(Opcode::Jmp, vec![Opnd::Target(target)], pos, sites),
-        Item::CallMem(_) | Item::SubRsp(32) => {
-            // An island: `fp`, `ops`, (PE) shadow space, the call through the slot.
+        Item::CallMem(_) => {
+            // An island: `fp`, `ops`, the call through the slot.
             c.pos = pos;
             let (isl, ops_ro, site) = island_call(c, fr)?;
             sites.push(site);
             let ws = ops_array(ro, ops_ro).ok_or(err(pos, "island operands"))?;
-            Proto { bare: fr.region, ..Proto::new(Opcode::Island, vec![Opnd::Sym(isl), Opnd::Words(ws)], pos, sites) }
+            Proto { bare: fr.mode.pe, ..Proto::new(Opcode::Island, vec![Opnd::Sym(isl), Opnd::Words(ws)], pos, sites) }
         }
         _ => return Err(err(hat, "not an instruction")),
     };
@@ -850,7 +855,7 @@ fn ret(c: &mut Cursor<'_>, fr: &Frame) -> Result<(i32, u32), AsmError> {
     if ret_loads(k, s) != items || super::ret_parts(k, true).is_none() && k != 0 {
         return Err(bad);
     }
-    for want in [fr.epilogue(), Item::Ret] {
+    for want in fr.epilogue().into_iter().chain([Item::Ret]) {
         let a = c.pos;
         if c.item()? != want {
             return Err(AsmError { at: a, what: "not the return sequence" });
@@ -954,12 +959,18 @@ fn call_insn(c: &mut Cursor<'_>, fr: &Frame, dropped: &[DroppedStore]) -> Option
         (Ok(Item::CallMem(Ref::Sym(s))), Pre::None) => (Opcode::CallSym, vec![Opnd::Sym(s)], true),
         (Ok(Item::CallMemRax), Pre::Sym(s)) => (Opcode::CallSymInd, vec![Opnd::Sym(*s)], true),
         (Ok(Item::CallRax), Pre::Ptr(p)) => (Opcode::CallPtr, vec![Opnd::Slot(*p)], true),
-        (Ok(it), _) if it == fr.epilogue() => match (c.item(), &pre) {
-            (Ok(Item::Jmp(Ref::Func(f))), Pre::None) => (Opcode::TailCall, vec![Opnd::Func(f), a_op.clone()], false),
-            (Ok(Item::JmpRax), Pre::Ptr(p)) => (Opcode::TailCallPtr, vec![Opnd::Slot(*p), a_op.clone()], false),
-            _ => return fail(c),
-        },
-        _ => return fail(c),
+        _ => {
+            // A tail call: the epilogue and the jump.
+            c.pos = call_at;
+            if fr.read_epilogue(c).is_none() {
+                return fail(c);
+            }
+            match (c.item(), &pre) {
+                (Ok(Item::Jmp(Ref::Func(f))), Pre::None) => (Opcode::TailCall, vec![Opnd::Func(f), a_op.clone()], false),
+                (Ok(Item::JmpRax), Pre::Ptr(p)) => (Opcode::TailCallPtr, vec![Opnd::Slot(*p), a_op.clone()], false),
+                _ => return fail(c),
+            }
+        }
     };
     let mut sites = Vec::new();
     let mut bare = false;
@@ -1208,16 +1219,11 @@ fn island_call(c: &mut Cursor<'_>, fr: &Frame) -> Result<(crate::full::Sym, u32,
         return Err(bad);
     }
     let Item::Lea(r, Ref::Ro(ops)) = c.item()? else { return Err(bad) };
-    // The pad region's `rsp` doesn't move: its entry allocated the shadow space.
-    let shadow = mode.pe && !fr.region;
-    if r != opsr || (shadow && c.item()? != Item::SubRsp(32)) {
+    if r != opsr {
         return Err(bad);
     }
     let site = c.pos;
     let Item::CallMem(Ref::Sym(isl)) = c.item()? else { return Err(bad) };
-    if shadow && c.item()? != Item::AddRsp(32) {
-        return Err(bad);
-    }
     Ok((isl, ops, (site, 6)))
 }
 
@@ -1253,12 +1259,20 @@ fn then(c: &mut Cursor<'_>, op: Opcode, n: usize, hat: u32, sites: &mut Vec<(u32
 }
 
 /// The argument registers of a handler call from the register setup before it (positions
-/// and items): each sets the next register from `rdi`, to `fp`, the exception object, a
-/// value or an address.
+/// and items): each sets the next position ([`super::handler_arg`]), to `fp`, the exception
+/// object, a value or an address; PE's stack argument to a 32-bit value.
 fn handler_args(setup: &[(u32, Item)], fr: &Frame, pos: u32) -> Result<Vec<Arg>, AsmError> {
     let mut out = Vec::with_capacity(setup.len());
+    let max = if fr.mode.pe { super::PE_ARG_REGS + 1 } else { super::ARG_REGS };
     for (i, &(at, it)) in setup.iter().enumerate() {
-        let r = *ARGS.get(i).ok_or(AsmError { at, what: "too many argument registers" })?;
+        if i >= max {
+            return Err(AsmError { at, what: "too many argument registers" });
+        }
+        let Some(r) = handler_reg(fr.mode.pe, i as u8) else {
+            let Item::StImm { w: W::D, m: STACK_ARG, imm } = it else { return Err(AsmError { at: pos, what: "operand registers out of order" }) };
+            out.push(Arg::Imm(imm as u32 as u64));
+            continue;
+        };
         out.push(match it {
             it if it == fr.fp(r) => Arg::Fp,
             Item::Mov(g, Reg::Rax) if g == r => Arg::Exception,
@@ -1279,17 +1293,20 @@ fn handler_operands(op: Opcode, setup: &[(u32, Item)], fr: &Frame, ro: &[u8], co
     let l = layout(op, mode);
     let info = op.info();
     let mut it = setup.iter().map(|s| s.1);
-    if mode.fp_arg && it.next() != Some(fr.fp(ARGS[0])) {
+    let reg = |i: u8| handler_reg(mode.pe, i);
+    if mode.fp_arg && it.next() != reg(0).map(|r| fr.fp(r)) {
         return Err(err("no fp argument"));
     }
-    if info.shape == Shape::Lpad && it.next() != Some(Item::Mov(ARGS[l.first as usize - 1], Reg::Rax)) {
+    if info.shape == Shape::Lpad && it.next() != reg(l.first - 1).map(|r| Item::Mov(r, Reg::Rax)) {
         return Err(err("no exception object"));
     }
     let mut regs: Vec<Option<RegVal>> = vec![None; l.regs as usize];
     for r in l.first..l.regs {
-        regs[r as usize] = Some(match it.next() {
-            Some(Item::SetReg(g, v)) if g == ARGS[r as usize] => RegVal::Imm(v),
-            Some(Item::Lea(g, to)) if g == ARGS[r as usize] => RegVal::Addr(to),
+        regs[r as usize] = Some(match (it.next(), reg(r)) {
+            (Some(Item::SetReg(g, v)), Some(want)) if g == want => RegVal::Imm(v),
+            (Some(Item::Lea(g, to)), Some(want)) if g == want => RegVal::Addr(to),
+            // PE's stack argument, a 32-bit operand.
+            (Some(Item::StImm { w: W::D, m: STACK_ARG, imm }), None) => RegVal::Imm(imm as u32 as u64),
             _ => return Err(err("operand registers out of order")),
         });
     }

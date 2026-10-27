@@ -1106,23 +1106,22 @@ fn unwind_pe(funcs: &[FuncCode], mode: Mode, relocs: &mut Vec<Reloc>) -> Vec<(Se
 pub const PE_LEAF_UNWIND: [u8; 4] = [1, 0, 0, 0];
 
 /// The PE `UNWIND_INFO` (x64, version 1, no handler, 4-byte aligned) of a function encoded in
-/// PE `mode` with the shared prologue at `f.prologue`: `push rbp; push rdi; push rsi; lea
-/// rbp, [rsp + 16]`, then for frames from [`asm::PROBE_FROM`] the probe (`mov eax, F - 16;
-/// call` it, through `r11` with [`Mode::far_rt`]), then `sub rsp, F - 16` unless 0. `rbp` is
-/// the frame register, at `rsp + 16` once set, so past the prologue `rsp` may move freely
-/// (island calls' shadow space, the JIT's OSR entries). The unwind codes, last operation
-/// first: the allocation (`UWOP_ALLOC_SMALL`, or `UWOP_ALLOC_LARGE` with a 16-bit or 32-bit
-/// size), `UWOP_SET_FPREG`, `UWOP_PUSH_NONVOL` of `rsi`, `rdi`, `rbp`.
+/// PE `mode` with the shared prologue at `f.prologue`: `push rbp; mov rbp, rsp`, then for
+/// frames from [`asm::PROBE_FROM`] the probe (`mov eax, F; call` it, through `r11` with
+/// [`Mode::far_rt`]), then `sub rsp, F` unless 0. `rbp` is the frame register, at `rsp` once
+/// set (frame offset 0), so past the prologue `rsp` may move freely (the JIT's OSR entries).
+/// The unwind codes, last operation first: the allocation (`UWOP_ALLOC_SMALL`, or
+/// `UWOP_ALLOC_LARGE` with a 16-bit or 32-bit size), `UWOP_SET_FPREG`, `UWOP_PUSH_NONVOL` of
+/// `rbp`.
 pub fn pe_unwind_info(f: &EhFunc, mode: Mode) -> Vec<u8> {
-    debug_assert!(mode.pe && f.frame_size >= 16);
-    let alloc = f.frame_size - 16;
+    debug_assert!(mode.pe);
     let p = f.prologue;
     let sub_end = p + asm::prologue_len(f.frame_size, mode);
-    let mut ops = vec![(p + 1, PeUnwindOp::Push(5)), (p + 2, PeUnwindOp::Push(7)), (p + 3, PeUnwindOp::Push(6)), (p + 8, PeUnwindOp::SetFpreg)];
-    if alloc != 0 {
-        ops.push((sub_end, PeUnwindOp::Alloc(alloc)));
+    let mut ops = vec![(p + 1, PeUnwindOp::Push(5)), (p + 4, PeUnwindOp::SetFpreg)];
+    if f.frame_size != 0 {
+        ops.push((sub_end, PeUnwindOp::Alloc(f.frame_size)));
     }
-    pe_unwind_codes(sub_end, 1, &ops)
+    pe_unwind_codes(sub_end, 0, &ops)
 }
 
 /// An operation of a PE prologue ([`pe_unwind_codes`]); registers by their x86 number.

@@ -51,8 +51,18 @@ impl Reg {
     }
 }
 
-/// The handler argument registers, in order (`sysv64`).
-pub const ARGS: [Reg; super::ARG_REGS] = [Reg::Rdi, Reg::Rsi, Reg::Rdx, Reg::Rcx, Reg::R8, Reg::R9];
+/// The register of a handler call's argument position `i` ([`super::handler_arg`]), `None`
+/// for PE's stack position.
+pub fn handler_reg(pe: bool, i: u8) -> Option<Reg> {
+    match super::handler_arg(pe, i) {
+        super::HandlerArg::Reg(n) => Reg::from_num(n),
+        super::HandlerArg::Stack => None,
+    }
+}
+
+/// PE: a handler call's stack argument ([`super::HandlerArg::Stack`]): the `dword` at
+/// `[rsp + 32]`, past the shadow space.
+pub const STACK_ARG: M = M { base: Reg::Rsp, disp: 32 };
 
 /// The island argument registers (`fp`, `ops`): the Rust ABI, `sysv64` or Win64.
 pub const fn island_args(pe: bool) -> [Reg; 2] {
@@ -322,11 +332,9 @@ fn imm8(v: i32) -> bool {
 pub enum Item {
     /// `push rbp`
     PushRbp,
-    /// The PE prologue's saves: `push rbp; push rdi; push rsi; lea rbp, [rsp + 16]` (`rdi`
-    /// and `rsi` are callee-saved on Win64, but not in the `sysv64` handlers).
-    WinPrologue,
-    /// The PE epilogue: `lea rsp, [rbp - 16]; pop rsi; pop rdi; pop rbp`.
-    WinEpilogue,
+    /// `pop rbp`: the end of the PE epilogue (`add rsp, F; pop rbp`, a form the Win64
+    /// unwinder recognizes, which `leave` isn't).
+    PopRbp,
     /// `sub rsp, imm` (`imm8` below 128, else `imm32`)
     SubRsp(u32),
     /// `add rsp, imm` (`imm8` below 128, else `imm32`)
@@ -451,11 +459,6 @@ pub enum Item {
     Movd { to_xmm: bool, x: u8, r: Reg },
 }
 
-/// [`Item::WinPrologue`]'s bytes.
-const WIN_PROLOGUE: [u8; 8] = [0x55, 0x57, 0x56, 0x48, 0x8d, 0x6c, 0x24, 0x10];
-/// [`Item::WinEpilogue`]'s bytes.
-const WIN_EPILOGUE: [u8; 7] = [0x48, 0x8d, 0x65, 0xf0, 0x5e, 0x5f, 0x5d];
-
 /// The standard multi-byte `nop`s (Intel SDM), by length.
 const NOPS: [&[u8]; 10] = [
     &[],
@@ -497,9 +500,7 @@ impl Item {
     /// The encoded length.
     pub fn len(&self) -> u32 {
         match *self {
-            Item::PushRbp | Item::Leave | Item::Ret | Item::Int3 => 1,
-            Item::WinPrologue => 8,
-            Item::WinEpilogue => 7,
+            Item::PushRbp | Item::PopRbp | Item::Leave | Item::Ret | Item::Int3 => 1,
             Item::TestAl | Item::CallRax | Item::JmpRax | Item::Ud2 | Item::CallMemRax => 2,
             Item::CallR11(_) => 4,
             Item::JmpR11 => 3,
@@ -674,35 +675,36 @@ impl Item {
         }
     }
 
-    /// Whether the item may be part of an inline sequence.
+    /// Whether the item may be part of an inline sequence (not PE's handler stack argument).
     pub fn is_inline(&self) -> bool {
-        matches!(
-            self,
-            Item::Ld { .. }
-                | Item::St { .. }
-                | Item::StImm { .. }
-                | Item::LeaM { .. }
-                | Item::Alu { .. }
-                | Item::AluImm { .. }
-                | Item::Imul { .. }
-                | Item::ImulImm { .. }
-                | Item::Shift { .. }
-                | Item::Setcc { .. }
-                | Item::TestM8(_)
-                | Item::SetccCl(_)
-                | Item::MulQ(_)
-                | Item::Div { .. }
-                | Item::Cdq(_)
-                | Item::ShiftCl { .. }
-                | Item::Bswap { .. }
-                | Item::SetccR(..)
-                | Item::Bsf { .. }
-                | Item::Bsr { .. }
-                | Item::Cmov { .. }
-                | Item::Lea(..)
-                | Item::LoadRip(..)
-                | Item::SetReg(Reg::Rax | Reg::Rcx | Reg::Rdx | Reg::Rsi | Reg::Rdi | Reg::R8 | Reg::R9 | Reg::R10 | Reg::R11, _)
-        )
+        !matches!(self, Item::StImm { m: STACK_ARG, .. })
+            && matches!(
+                self,
+                Item::Ld { .. }
+                    | Item::St { .. }
+                    | Item::StImm { .. }
+                    | Item::LeaM { .. }
+                    | Item::Alu { .. }
+                    | Item::AluImm { .. }
+                    | Item::Imul { .. }
+                    | Item::ImulImm { .. }
+                    | Item::Shift { .. }
+                    | Item::Setcc { .. }
+                    | Item::TestM8(_)
+                    | Item::SetccCl(_)
+                    | Item::MulQ(_)
+                    | Item::Div { .. }
+                    | Item::Cdq(_)
+                    | Item::ShiftCl { .. }
+                    | Item::Bswap { .. }
+                    | Item::SetccR(..)
+                    | Item::Bsf { .. }
+                    | Item::Bsr { .. }
+                    | Item::Cmov { .. }
+                    | Item::Lea(..)
+                    | Item::LoadRip(..)
+                    | Item::SetReg(Reg::Rax | Reg::Rcx | Reg::Rdx | Reg::Rsi | Reg::Rdi | Reg::R8 | Reg::R9 | Reg::R10 | Reg::R11, _)
+            )
     }
 
     /// The item with the displacements of its frame operands (`[rbp + d]`) mapped by `f`.
@@ -818,8 +820,7 @@ impl Item {
         };
         match *self {
             Item::PushRbp => out.push(0x55),
-            Item::WinPrologue => out.extend_from_slice(&WIN_PROLOGUE),
-            Item::WinEpilogue => out.extend_from_slice(&WIN_EPILOGUE),
+            Item::PopRbp => out.push(0x5d),
             Item::SubRsp(v) | Item::AddRsp(v) => {
                 let ext = if matches!(self, Item::SubRsp(_)) { 0xec } else { 0xc4 };
                 if v < 128 {
@@ -1348,6 +1349,8 @@ impl<'a> Cursor<'a> {
         }
         // Frame slots in the mode's form, returned in the encoder's.
         let item = match (item.mem().map(|m| m.base), self.sp_frame) {
+            // PE's handler stack argument (with a frame pointer), outside the frame slots.
+            (Some(Reg::Rsp), None) if matches!(item, Item::StImm { w: W::D, m: STACK_ARG, .. }) => item,
             (Some(Reg::Rbp), Some(_)) | (Some(Reg::Rsp), None) => return Err(bad),
             (Some(Reg::Rsp), Some(f)) => item.map_mem(|m| M::frame(m.disp.wrapping_sub(f as i32))),
             _ => item,
@@ -1365,16 +1368,9 @@ impl<'a> Cursor<'a> {
         let (rex, at) = if (0x40..=0x4f).contains(&b[0]) { (b[0], 1) } else { (0, 0) };
         let (w, r, x, bx) = (rex & 8 != 0, rex & 4 != 0, rex & 2 != 0, rex & 1 != 0);
         let op = get(at)?;
-        if all.starts_with(&WIN_PROLOGUE) {
-            self.pos += WIN_PROLOGUE.len() as u32;
-            return Ok(Item::WinPrologue);
-        }
-        if all.starts_with(&WIN_EPILOGUE) {
-            self.pos += WIN_EPILOGUE.len() as u32;
-            return Ok(Item::WinEpilogue);
-        }
         let item = match (rex, op) {
             (0, 0x55) => Item::PushRbp,
+            (0, 0x5d) => Item::PopRbp,
             // A counter's `inc`: of the record's call counter or its loop counter.
             (0x48, 0xff) if get(2)? == 0x05 => match self.field(3, 7)? {
                 Field::Ref(Ref::Rec) => Item::CtrInc(false),

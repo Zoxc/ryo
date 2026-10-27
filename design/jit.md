@@ -60,9 +60,10 @@ section; its fields and the counter checks and stubs that use it are in
   is 16-aligned at the trip), and restores them; it returns to the stub, or jumps to the
   JIT entry, with the stack as it found it. `ryo_jit_trip_osr` saves only `eax`, the
   head's index, for the dispatcher: nothing else is live at a head. On PE they also save
-  `xmm8`–`xmm15` (entry, a 320-byte area) and `xmm6`–`xmm15` (loop head), callee-saved on
-  Win64 but not for the `sysv64` Rust code they call (`rdi` and `rsi` are saved at an
-  entry, and by the prologue at a head).
+  `xmm8`–`xmm15` (entry, a 320-byte area) and `rdi`, `rsi` and `xmm6`–`xmm15` (loop head),
+  callee-saved on Win64 but not for the `sysv64` Rust code they call (`rdi` and `rsi` are
+  among an entry's argument registers); with `ryo_rt`'s `pe-test`, the Linux loop head trip
+  saves `rdi` and `rsi` too, for PE code run off Windows.
 - **No unwinding**: the Rust parts can't panic: nothing may unwind out of them, since the
   stubs aren't call sites. They are `sysv64-unwind`/`C-unwind` only so that the compiler
   adds no abort-on-unwind guard, which would reach core's panic path ("No re-entry").
@@ -207,11 +208,11 @@ section; its fields and the counter checks and stubs that use it are in
   own std's. So panics unwind through JIT frames and their landing pads run. The entry
   prefix before the FDE's range runs before the frame exists and calls nothing.
 - **PE** (`sys/windows.rs`): per function one `RUNTIME_FUNCTION` over the body and the OSR
-  code, and the AOT code's `UNWIND_INFO` (`image::pe_unwind_info`: `push rbp; push rdi;
-  push rsi; lea rbp, [rsp + 16]`, the probe, `sub`, `rbp` the frame register), in the
+  code, and the AOT code's `UNWIND_INFO` (`image::pe_unwind_info`: `push rbp; mov rbp,
+  rsp`, the probe, `sub`, `rbp` the frame register at offset 0), in the
   region's read-write end, registered with `RtlAddFunctionTable` (base: the function's
   allocation, below both; never deleted, code is never freed). One entry covers the OSR
-  code too: there the AOT frame's `rbp` and saved `rdi`/`rsi` are already in place (the
+  code too: there the AOT frame's `rbp` is already in place (the
   stub's return address and the moving `rsp` don't matter with a frame register), so the
   body's description past its prologue is the OSR code's at every instruction, and an
   entry's `jmp` to its head stays inside the function, which the unwinder's epilogue check
@@ -228,7 +229,8 @@ section; its fields and the counter checks and stubs that use it are in
   (`Unsupported`). The entry prefix has no entry: a leaf, the return address at `rsp` (the
   AOT stub's, then the body's start, whose prologue hasn't run). The SSA tier's functions
   get their own `UNWIND_INFO` (`jit::Output::pe_unwind`, [PE frames](#back-end)), over the
-  OSR code too: its entries keep `rbp`, `rdi` and `rsi`, and store the other saves before
+  OSR code too: its entries keep `rbp`, and store the other saves (`rdi` and `rsi` among
+  them, which the AOT code never touches) before
   they jump to the head; their terminate pads are entered by `RtlUnwindEx` with the SSA
   frame's `rsp`, as the Itanium personality enters them.
 - **macOS** (`sys/macos.rs`): the same `.eh_frame` as on ELF (Mach-O images' VM code is
@@ -495,25 +497,27 @@ the same bytes at the head, and the entry's `OsrLoad` of the second goes. OSR he
   frame is rounded to 8 bytes, not 16 (nothing it calls needs the alignment); with nothing
   in it and no saves, it has no frame at all (no prologue, epilogue or unwind rows; `fp`
   is `rsp - 8`).
-- **PE frames**: as the AOT code's ([vm.md](vm.md#frames)), `rdi` and `rsi` (callee-saved
-  on Win64, not in the `sysv64` handlers) are always saved, at `fp - 8` and `fp - 16`
-  where the AOT frame has them, so OSR entries leave them; the other saves follow. The
-  prologue is `push rbp; push rdi; push rsi`, the pushed saves, a `sub rsp` up to the
-  frame offset `K` if the pushes don't reach a multiple of 16, `lea rbp, [rsp + K]`, the
-  probe, `sub rsp, F - K`, then the stored saves; each with its unwind code (the shared
-  encoder `image::pe_unwind_codes`: `UWOP_PUSH_NONVOL`, `UWOP_ALLOC_*`, `UWOP_SET_FPREG`,
-  `UWOP_SAVE_NONVOL`). Win64 sets the frame register after the pushes and addresses
-  stored saves upward from `rbp - K`, `K` at most 240, so with pinned allocas the saves
-  go into the caller's home space (`fp + 16` to `fp + 48`, unless a stack argument is
-  read there) and the 8-byte slots within 240 bytes below `rbp` that no pinned alloca
-  covers, the rest of the frame below them; without room the function is re-encoded. The
-  epilogue is the stored saves' loads, `lea rsp, [rbp - 16 - 8n]`, the pops, then `ret`
-  or the tail jump, a register one as `rex.w jmp` so that the unwinder sees an epilogue.
-  Calls of VM functions, natives and islands (Win64: `rcx rdx r8 r9`, `xmm0`–`xmm3` by
-  position) get 32 bytes of shadow space at the bottom of the frame, if the stack
-  arguments don't cover it; handlers stay `sysv64`. The tier never names `xmm6`–`xmm15`
-  and doesn't compile the handlers that write them (`effects::PE_XMM_CLOBBERS`, the `i128`
-  saturating casts, which the lowering avoids on PE), nor arguments past the fourth.
+- **PE frames**: as the AOT code's ([vm.md](vm.md#frames)): `rbp` saved at `fp`, the
+  frame register, and the tier's own saves below it, where `rdi` and `rsi` are callee-saved
+  registers like `rbx` and `r12`–`r15` (Win64, the handlers' convention too: saved only
+  when used). The prologue is `push rbp`, the pushed saves, a `sub rsp` up to the frame
+  offset `K` if the pushes don't reach a multiple of 16, `lea rbp, [rsp + K]`, the probe,
+  `sub rsp, F - K`, then the stored saves; each with its unwind code (the shared encoder
+  `image::pe_unwind_codes`: `UWOP_PUSH_NONVOL`, `UWOP_ALLOC_*`, `UWOP_SET_FPREG`,
+  `UWOP_SAVE_NONVOL`). Win64 sets the frame register after the pushes and addresses stored
+  saves upward from `rbp - K`, `K` at most 240, so with pinned allocas the saves go into the
+  caller's home space (`fp + 16` to `fp + 48`, unless a stack argument is read there) and
+  the 8-byte slots within 240 bytes below `rbp` that no pinned alloca covers, the rest of
+  the frame below them; without room the function is re-encoded. The epilogue is the
+  stored saves' loads, `lea rsp, [rbp - 8n]`, the pops, then `ret` or the tail jump, a
+  register one as `rex.w jmp` so that the unwinder sees an epilogue. Calls (handlers, VM
+  functions, natives and islands; Win64: `rcx rdx r8 r9`, `xmm0`–`xmm3` by position) get
+  32 bytes of shadow space at the bottom of the frame, if the stack arguments don't cover
+  it, and 8 more for a handler's stack argument (`atomic.cxchg`, `mov [rsp + 32], r11d`).
+  Register entries there take at most four arguments, and return two values in `xmm0`,
+  which the call moves to `rax` and `rdx` (`movq`, `punpckhqdq`, `movq`). The tier never
+  names `xmm6`–`xmm15` (which every call preserves now, but the tier would have to save
+  with `UWOP_SAVE_XMM128` to use), nor compiles arguments past the fourth.
 - **Instruction selection**: per instruction over the allocated locations; two-address
   forms with a hint to reuse the first operand's register, immediates where they fit
   (`r10` takes the others), `lea` for an add or subtract into another register (32-bit
@@ -557,14 +561,17 @@ only it, and is unchanged).
   `resume`, `lpad` or traps) whose frame operands are each read, written or updated at 1 to
   8 bytes (no `addr`, no block operands, no `w128`), with at most six inputs and data
   registers and at most two results: most handlers.
-- **Convention**: `extern "sysv64-unwind" fn(a0, …, a5: u64) -> (u64, u64)`. The arguments
-  are, in order from `rdi`: the values of the frame operands it reads (by operand order,
+- **Convention**: `extern "C-unwind" fn(a0, …, a5: u64) -> (u64, u64)` (`RegRet` in `rax`,
+  `rdx`); on PE, Win64, whose 16-byte structs return through memory, at most four
+  arguments, all in registers, and the return value one `u64` in `rax` or two in `xmm0`,
+  low then high (`__m128i`, `ryo_rt`'s `RegRetOf`). The arguments are, in order from the
+  first argument register: the values of the frame operands it reads (by operand order,
   each in its register's low bytes, the rest ignored), then whole every argument register of
   the frame entry's layout that holds anything but a slot offset (immediates, addresses,
   case tables, a `Mem` operand's displacement; their slot-offset halves are ignored). No
   `fp`. The results are the values of the frame operands it writes (by operand order; for an
   update, the new value), then the `br`/`switch` return value, in `rax` then `rdx`, each in
-  the low bytes. It clobbers what any `sysv64` call does: the SSA tier keeps nothing in a
+  the low bytes. It clobbers what any call of the convention does: the SSA tier keeps nothing in a
   caller-saved register across it, as for every call. A `preserve_none`- or
   `preserve_most`-like convention, which would let values stay in caller-saved registers,
   isn't available to Rust functions without a naked wrapper; the entries are leaf functions
@@ -912,20 +919,23 @@ for shuffled frames per image, `RtApi::shuffled`):
   after OSR runs the JIT frame's landing pad, `rsp` moves by the frames' difference, and a
   thread spinning in an AOT loop and one deep in a self-recursion, both started before the
   compile, reach JIT code without returning (a native callee checks its return address).
-  `pe_code` runs an image's VM code in the PE form on Linux (Win64 natives, its `.pdata`
-  dropped; the JIT registers nothing for PE code off Windows): compiled at the entry and by
+  `pe_code` runs an image's VM code in the PE form on Linux (Win64 natives, `ryo_rt`'s
+  `pe-test` handlers, its `.pdata` dropped; the JIT registers nothing for PE code off
+  Windows): compiled at the entry and by
   OSR, with and without shuffled frames, with a probed frame, its results are the AOT
   code's, the JIT prologue is the one `pe_unwind_info` describes, and every callee-saved
   register of both conventions, `rdi` and `rsi` included, survives. `pe_numeric_args` calls
   a PE function through `extern "win64"` with the pieces `i128`, `f16` and `f128` lower to
   (an `i128` straddling `r9` and the stack, `f16`s in an `xmm` and a stack slot, an `f128`
-  pointer, an `f16` return in `xmm0`), in AOT code and then JIT code. `vm/bytecode/tests/
+  pointer, an `f16` return in `xmm0`), in AOT code and then JIT code; `pe_cxchg` an
+  `atomic.cxchg`, whose Win64 handler takes its fifth argument on the stack and whose
+  register entry returns two values in `xmm0`. `vm/bytecode/tests/
   image.rs` checks `pe_unwind_info` byte for byte (decoded once with `llvm-readobj
   --unwind` from a hand-made COFF object). Through the SSA tier, `ssa.rs`'s `pe_frames`
   runs a loop with values live across a five-argument Win64 native (its fifth argument past
   the shadow space, which the callee overwrites with every volatile register), at the
-  entry and by OSR, shuffled or not, with the saves pushed, in the home space and below the
-  `rdi`/`rsi` saves (an 8 KiB pinned alloca, so the frame probes): the results are the AOT
+  entry and by OSR, shuffled or not, with the saves pushed, in the home space and below
+  `rbp` (an 8 KiB pinned alloca, so the frame probes): the results are the AOT
   code's and every Win64 callee-saved register, `xmm6`–`xmm15` included, survives.
   `vm/bytecode/tests/jit_pe.rs` runs each SSA prologue symbolically and unwinds it at every
   step by its `UNWIND_INFO` as `RtlVirtualUnwind` does, checks that each epilogue restores

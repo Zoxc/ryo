@@ -1264,10 +1264,11 @@ fn ovf_flag_over_result() {
 
 // ---- PE code ----
 
-/// An image's VM code in the PE form (Win64 islands, `rdi` and `rsi` saved in the frame),
-/// which runs on Linux as long as its natives take the Win64 convention: only the unwind
-/// information differs, which neither the test nor the JIT registers off Windows.
-const PE: Mode = Mode { pe: true, frame_pointer: true, ..ENC };
+/// An image's VM code in the PE form (Win64 handlers and islands), which runs on Linux as
+/// long as its natives take the Win64 convention and its handlers are `ryo_rt`'s PE set
+/// (`pe-test`): only the unwind information differs, which neither the test nor the JIT
+/// registers off Windows.
+const PE: Mode = Mode { pe: true, frame_pointer: true, fp_arg: false, ..ENC };
 
 /// Native, Win64: [`note`], preserving `rdi` and `rsi`.
 #[unsafe(naked)]
@@ -1340,7 +1341,8 @@ extern "sysv64" fn call_checked(code: *const u8, a: u64, b: u64, regs: *mut [u64
 fn pe_code() {
     init();
     for shuffle in [false, true] {
-        for frame in [32, 4096] {
+        // Frames with room for the handlers' shadow space at their bottom.
+        for frame in [64, 4096] {
             for k in [None, Some(0i64), Some(3)] {
                 pe_code_at(shuffle, frame, k);
             }
@@ -1384,27 +1386,27 @@ fn pe_code_at(shuffle: bool, frame: u32, k: Option<i64>) {
         img.trip_after(f, 1, k);
     }
     // The JIT code's prologue is the one its `UNWIND_INFO` describes (`image::pe_unwind_info`):
-    // `push rbp; push rdi; push rsi; lea rbp, [rsp + 16]`, the probe, `sub rsp, F - 16`.
+    // `push rbp; mov rbp, rsp`, the probe, `sub rsp, F`.
     let ssa = std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode");
     let check_prologue = || {
         let code = unsafe { std::slice::from_raw_parts((*img.record(f)).jit_code, 32) };
         if ssa {
             // The SSA tier's own (its forms: `tests/jit_pe.rs`, and `ssa.rs`'s `pe_frames`).
-            assert_eq!(code[..3], [0x55, 0x57, 0x56], "{what}");
+            assert_eq!(code[0], 0x55, "{what}");
             return;
         }
-        assert_eq!(code[..8], [0x55, 0x57, 0x56, 0x48, 0x8d, 0x6c, 0x24, 0x10], "{what}");
+        assert_eq!(code[..4], [0x55, 0x48, 0x89, 0xe5], "{what}");
         let jf = if shuffle { 2 * frame + 64 } else { frame };
         let sub = if frame >= 4096 {
-            assert_eq!((code[8], &code[9..13], code[13]), (0xb8, &(jf - 16).to_le_bytes()[..], 0xe8), "{what}: the probe");
-            &code[18..]
+            assert_eq!((code[4], &code[5..9], code[9]), (0xb8, &jf.to_le_bytes()[..], 0xe8), "{what}: the probe");
+            &code[14..]
         } else {
-            &code[8..]
+            &code[4..]
         };
-        if jf - 16 < 128 {
-            assert_eq!(sub[..4], [0x48, 0x83, 0xec, (jf - 16) as u8], "{what}");
+        if jf < 128 {
+            assert_eq!(sub[..4], [0x48, 0x83, 0xec, jf as u8], "{what}");
         } else {
-            assert_eq!(sub[..7], [&[0x48, 0x81, 0xec][..], &(jf - 16).to_le_bytes()].concat()[..], "{what}");
+            assert_eq!(sub[..7], [&[0x48, 0x81, 0xec][..], &jf.to_le_bytes()].concat()[..], "{what}");
         }
     };
     let saved =
@@ -1468,7 +1470,7 @@ fn pe_pad_region() {
     // Re-encoded: the AOT form's prologue, and the region's entry after the body.
     let rec = unsafe { &*img.record(f) };
     let code = unsafe { std::slice::from_raw_parts(rec.jit_code, ryo_jit::code_len(rec)) };
-    assert_eq!(code[..8], [0x55, 0x57, 0x56, 0x48, 0x8d, 0x6c, 0x24, 0x10]);
+    assert_eq!(code[..4], [0x55, 0x48, 0x89, 0xe5]);
     assert!(code.windows(7).any(|w| w == [0x48, 0x83, 0xec, 0x28, 0x41, 0xff, 0xe3]), "the region's entry");
     if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
         assert!(ryo_jit::ssa_stats().1 > fallbacks, "the SSA tier left it");
@@ -1523,5 +1525,44 @@ fn pe_numeric_args() {
         let want = [0xffff_ffff_ffff_3c00 + round, q as u64, (q >> 64) as u64, 0x1111 + round, 0x2222, 0xffff_ffff_ffff_4000];
         assert_eq!(out, want, "round {round}");
         assert_eq!(state(&img, g) == JIT_DONE, round > 0, "round {round}");
+    }
+}
+
+/// A Win64 handler with five arguments, the fifth on the stack, and a register entry with
+/// two results, in `xmm0` (design/vm.md, "Handlers"): `atomic.cxchg` in PE code, in AOT code
+/// (the frame entry) and then in JIT code (with the SSA tier, the register entry).
+#[test]
+fn pe_cxchg() {
+    init();
+    let mut w = ImageWriter::new(unique_scid());
+    // g(p, old, new) = the old value | (exchanged) << 32 (values below 2^32).
+    let mut a = Asm::new();
+    a.i(arg(-8, 0));
+    a.i(arg(-16, 1));
+    a.i(arg(-24, 2));
+    a.i(Insn::AtomicCxchgW64SeqcstSeqcst { d: Slot(-32), o: Slot(-40), p: Slot(-8), old: Slot(-16), new: Slot(-24) });
+    a.i(Insn::ZextW8W64 { d: Slot(-48), s: Slot(-40) });
+    a.i(Insn::ShlImmW64 { d: Slot(-48), a: Slot(-48), imm: 32 });
+    a.i(Insn::OrW64 { d: Slot(-32), a: Slot(-32), b: Slot(-48) });
+    a.i(Insn::Ret { s: Slot(-32), k: 8 });
+    // 48 bytes of locals over the shadow space and the stack argument.
+    let g = w.add_function(func(a.done(), 96, 0, 8));
+    let mut obj = w.finish(PE).unwrap();
+    obj.relocs.retain(|r| r.kind != RelocKind::Rva32);
+    obj.unwind.clear();
+    let img = link(obj, &[]);
+    register(&[&img]);
+    img.trip_after(g, 1, 0);
+    type G = extern "win64" fn(*mut u64, u64, u64) -> u64;
+    let f: G = unsafe { std::mem::transmute(img.code(g)) };
+    for round in 0..4u64 {
+        let mut x = 7 + round;
+        // Fails, then succeeds.
+        assert_eq!(f(&mut x, 1, 9), 7 + round, "round {round}: failed exchange");
+        assert_eq!(x, 7 + round);
+        assert_eq!(f(&mut x, 7 + round, 9), 7 + round | 1 << 32, "round {round}: exchange");
+        assert_eq!(x, 9);
+        // The first call ran the AOT code, the rest the JIT code.
+        assert_eq!(state(&img, g), JIT_DONE, "round {round}");
     }
 }

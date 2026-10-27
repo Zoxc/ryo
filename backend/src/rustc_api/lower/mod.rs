@@ -61,6 +61,9 @@ use self::emit::{IntOp, Width, opw};
 use self::frame::{Frame, OUT_END};
 pub use self::sig::{AbiSig, abi_sig};
 
+/// PE: the 32 bytes of shadow space at the bottom of every frame (`FnCx::finish`).
+const PE_SHADOW: u32 = 32;
+
 /// A lowered function: its machine code, whose `Func`, `Sym`, `Site`, `Const` and `Data`
 /// references are indices into `relocs` until the merge pass resolves them.
 pub struct LoweredFn<'tcx> {
@@ -255,7 +258,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         body: &'tcx Body<'tcx>,
         sig: &AbiSig<'tcx>,
     ) -> Result<Self, NeedsNative> {
-        let frame = Frame::new(body, sig, cx.mode.pe, |local| {
+        let frame = Frame::new(body, sig, |local| {
             let ty = mono(tcx, instance, body.local_decls[local].ty);
             layout_of(tcx, ty)
         })?;
@@ -405,6 +408,11 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
 
     /// Finishes the machine code, now that the frame size is known.
     fn finish(mut self, sig: &AbiSig<'tcx>) -> Result<LoweredFn<'tcx>, NeedsNative> {
+        if self.cx.mode.pe {
+            // The shadow space of the Win64 handlers, islands and calls, reserved once at the
+            // frame's bottom (design/vm.md#frames).
+            self.outgoing(PE_SHADOW);
+        }
         let frame_size = self.frame.frame_size(self.max_outgoing)?;
         let cert = self.cert_json(frame_size, sig.plan.as_ref());
         let code = std::mem::replace(&mut self.asm, Asm::new(self.cx.mode)).finish(frame_size, |s| frame::frame_offset(s, frame_size) as u32);
@@ -433,6 +441,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// Emits `op` with operands `ops`, counting it.
     fn insn(&mut self, op: Opcode, ops: &[Opnd<Label>]) -> InsnId {
         self.insns += 1;
+        // PE: a handler's fifth argument goes past the shadow space (`asm::handler_arg`).
+        if self.cx.mode.pe
+            && ryo_bytecode::asm::has_handler(op)
+            && ryo_bytecode::asm::layout(op, self.cx.mode).regs as usize > ryo_bytecode::asm::PE_ARG_REGS
+        {
+            self.outgoing(PE_SHADOW + 8);
+        }
         self.asm.insn(op, ops)
     }
 
@@ -666,6 +681,12 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     pub fn out(off: u32) -> u32 {
         debug_assert!(off < OUT_END);
         off
+    }
+
+    /// Where an island's argument block starts in the outgoing area: past the shadow space on
+    /// PE, which the calls (handlers' too) may write while the block is being filled.
+    pub fn island_block(&self) -> u32 {
+        if self.cx.mode.pe { PE_SHADOW } else { 0 }
     }
 
     /// Notes an outgoing argument block of `size` bytes.

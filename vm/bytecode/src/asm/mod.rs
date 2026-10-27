@@ -21,10 +21,13 @@
 //!
 //! # Operands and registers
 //!
-//! A handler takes up to six operand registers, `rdi, rsi, rdx, rcx, r8, r9`, in operand
-//! order (the `sysv64` convention on every target). An operand takes one register, except
-//! `Mem` (`p`, `k`), `U128` (low, high) and a case list (values, count), which take two.
-//! The handler finds `fp` in `rbp`, or with [`Mode::fp_arg`] in `rdi`, before the operands.
+//! A handler takes its operands in the argument registers of the platform's C convention,
+//! in operand order ([`handler_arg`]): the six of `sysv64`, `rdi, rsi, rdx, rcx, r8, r9`,
+//! or on PE the four of Win64, `rcx, rdx, r8, r9`, and one 32-bit operand of its own as the
+//! fifth argument, on the stack (the `atomic.cxchg` handlers). An operand takes one
+//! register, except `Mem` (`p`, `k`), `U128` (low, high) and a case list (values, count),
+//! which take two. The handler finds `fp` in `rbp`, or with [`Mode::fp_arg`] (not on PE) in
+//! `rdi`, before the operands.
 //!
 //! # Frames
 //!
@@ -72,8 +75,38 @@ pub use reduced::{as_handler, encode_reduced, encode_reduced_at, is_native, redu
 use crate::full::{ElemKind, Opcode, OperandKind, Shape};
 use crate::image::JIT_LOOP_CTR;
 
-/// The argument registers handlers take: `rdi, rsi, rdx, rcx, r8, r9`.
+/// The argument registers handlers take: `rdi, rsi, rdx, rcx, r8, r9` (on PE, the
+/// positions of [`handler_arg`]: four registers, then the stack).
 pub const ARG_REGS: usize = 6;
+
+/// PE: the argument registers of Win64 handlers, `rcx, rdx, r8, r9`. Their layouts use one
+/// more position, the stack ([`handler_arg`]).
+pub const PE_ARG_REGS: usize = 4;
+
+/// Where a handler call passes the argument at position `i` of its layout ([`Layout`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HandlerArg {
+    /// An argument register, by its x86 number.
+    Reg(u8),
+    /// PE: the fifth argument, the 8 bytes at `[rsp + 32]` at the call, past the 32 bytes of
+    /// shadow space. It always holds one 32-bit operand, which the call stores as a
+    /// `dword`: the handler reads only its low 32 bits.
+    Stack,
+}
+
+/// The place of argument position `i` of a handler call ([`layout`]): `rdi, rsi, rdx, rcx,
+/// r8, r9`, or on PE (Win64 handlers) `rcx, rdx, r8, r9`, then [`HandlerArg::Stack`].
+pub const fn handler_arg(pe: bool, i: u8) -> HandlerArg {
+    const SYSV: [u8; ARG_REGS] = [7, 6, 2, 1, 8, 9];
+    const WIN64: [u8; PE_ARG_REGS] = [1, 2, 8, 9];
+    if !pe {
+        HandlerArg::Reg(SYSV[i as usize])
+    } else if (i as usize) < PE_ARG_REGS {
+        HandlerArg::Reg(WIN64[i as usize])
+    } else {
+        HandlerArg::Stack
+    }
+}
 
 /// The most operands an opcode has.
 pub const MAX_OPERANDS: usize = 8;
@@ -85,13 +118,13 @@ pub struct Mode {
     pub fp_arg: bool,
     /// Functions keep `fp` in `rbp` (`push rbp; mov rbp, rsp`) and address their slots
     /// through it. Without, they address them through `rsp`, which requires `fp_arg` (the
-    /// handlers can't find `fp` otherwise) and not `pe` (the island calls move `rsp`, which
-    /// PE unwind info can't describe).
+    /// handlers can't find `fp` otherwise) and not `pe`.
     pub frame_pointer: bool,
     /// Backward branch targets are padded to 16 bytes.
     pub align_loops: bool,
-    /// The target is PE/COFF: islands take the Win64 convention (`rcx`, `rdx`, 32 bytes of
-    /// shadow space).
+    /// The target is PE/COFF: handlers and islands take the Win64 convention (`rcx`, `rdx`,
+    /// `r8`, `r9`, 32 bytes of shadow space, which every frame reserves at its bottom), and
+    /// handlers read `fp` from `rbp` (no `fp_arg`).
     pub pe: bool,
     /// Every function counts its calls and its loop iterations up in two counters of its JIT
     /// record, and leaves through an out-of-line stub when one isn't negative any more: the
@@ -146,14 +179,16 @@ pub struct Layout {
     /// The first operand register: 1 with [`Mode::fp_arg`] (`rdi` is `fp`), one more for
     /// `lpad` (the exception object).
     pub first: u8,
-    /// The registers the handler call sets, `fp` and the exception object included.
+    /// The registers the handler call sets, `fp` and the exception object included (on PE
+    /// the stack argument too: positions, [`handler_arg`]).
     pub regs: u8,
 }
 
 impl Mode {
-    /// Whether the encoder supports the combination (see [`Mode::frame_pointer`]).
+    /// Whether the encoder supports the combination (see [`Mode::frame_pointer`] and
+    /// [`Mode::pe`]).
     pub const fn valid(self) -> bool {
-        self.frame_pointer || (self.fp_arg && !self.pe)
+        if self.pe { self.frame_pointer && !self.fp_arg } else { self.frame_pointer || self.fp_arg }
     }
 }
 
@@ -225,32 +260,23 @@ pub const fn layout(op: Opcode, mode: Mode) -> Layout {
         }
         i += 1;
     }
-    // Registers: groups of one or two units, `start[g]..start[g + 1]`.
-    let mut size = [1u8; 2 * MAX_OPERANDS];
-    let mut groups = n;
-    let max = ARG_REGS - first as usize;
-    while groups > max {
-        // The last adjacent pair of shareable single-unit groups.
-        let mut g = groups - 1;
-        let mut found = false;
-        while g > 0 {
-            if size[g] == 1 && size[g - 1] == 1 && unit_of(&size, &units, g).2 && unit_of(&size, &units, g - 1).2 {
-                found = true;
-                break;
-            }
-            g -= 1;
+    // Registers: groups of one or two units, `start[g]..start[g + 1]`. On PE, a fifth
+    // position on the stack, if it holds a single 32-bit operand; else fewer groups.
+    let (size, groups) = if mode.pe {
+        let max = PE_ARG_REGS - first as usize;
+        match pack(&units, n, max + 1) {
+            Some((size, groups)) if groups <= max || size[groups - 1] == 1 && unit_of(&size, &units, groups - 1).2 => (size, groups),
+            _ => match pack(&units, n, max) {
+                Some(p) => p,
+                None => panic!("an opcode's operands don't fit the argument registers"),
+            },
         }
-        if !found {
-            panic!("an opcode's operands don't fit the argument registers");
+    } else {
+        match pack(&units, n, ARG_REGS - first as usize) {
+            Some(p) => p,
+            None => panic!("an opcode's operands don't fit the argument registers"),
         }
-        size[g - 1] = 2;
-        let mut j = g;
-        while j + 1 < groups {
-            size[j] = size[j + 1];
-            j += 1;
-        }
-        groups -= 1;
-    }
+    };
     let mut locs = [Loc::NONE; MAX_OPERANDS];
     let mut u = 0;
     let mut g = 0;
@@ -268,6 +294,36 @@ pub const fn layout(op: Opcode, mode: Mode) -> Layout {
         g += 1;
     }
     Layout { locs, first, regs: first + groups as u8 }
+}
+
+/// The `n` units in at most `max` groups of one or two (the group sizes and the count):
+/// adjacent shareable single units pair up, from the last pair on. `None` if they don't fit.
+const fn pack(units: &[(u8, u8, bool); 2 * MAX_OPERANDS], n: usize, max: usize) -> Option<([u8; 2 * MAX_OPERANDS], usize)> {
+    let mut size = [1u8; 2 * MAX_OPERANDS];
+    let mut groups = n;
+    while groups > max {
+        // The last adjacent pair of shareable single-unit groups.
+        let mut g = groups - 1;
+        let mut found = false;
+        while g > 0 {
+            if size[g] == 1 && size[g - 1] == 1 && unit_of(&size, units, g).2 && unit_of(&size, units, g - 1).2 {
+                found = true;
+                break;
+            }
+            g -= 1;
+        }
+        if !found {
+            return None;
+        }
+        size[g - 1] = 2;
+        let mut j = g;
+        while j + 1 < groups {
+            size[j] = size[j + 1];
+            j += 1;
+        }
+        groups -= 1;
+    }
+    Some((size, groups))
 }
 
 /// The first unit of group `g`.

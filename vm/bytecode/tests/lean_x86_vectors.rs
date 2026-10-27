@@ -18,7 +18,7 @@ use ryo_bytecode::full::{Const, Data, Func, Site, Sym};
 use ryo_bytecode::image::JIT_LOOP_CTR;
 
 // What `x86.rs` takes from its parent module.
-const ARG_REGS: usize = 6;
+use ryo_bytecode::asm::{HandlerArg, handler_arg};
 mod decode {
     pub use ryo_bytecode::asm::Resolver;
 }
@@ -175,9 +175,8 @@ fn gen_items(rng: &mut Rng) -> Vec<Item> {
     let mut v = Vec::new();
     let pos_target = |rng: &mut Rng| rng.below(2000) as u32 + 1;
     v.extend([
+        // `Item::PopRbp` (PE's epilogue) isn't in the Lean model yet (lean/PENDING.md).
         Item::PushRbp,
-        Item::WinPrologue,
-        Item::WinEpilogue,
         Item::CallRax,
         Item::CallMemRax,
         Item::JmpRax,
@@ -396,8 +395,7 @@ fn item(i: &Item) -> String {
     let sh = |s: Sh| format!("\"{}\"", format!("{s:?}").to_lowercase());
     match *i {
         Item::PushRbp => "\"pushRbp\"".into(),
-        Item::WinPrologue => "\"winPrologue\"".into(),
-        Item::WinEpilogue => "\"winEpilogue\"".into(),
+        Item::PopRbp => c("pop", &[("r", reg(Reg::Rbp))]),
         Item::SubRsp(v) => c("subRsp", &[("v", v.to_string())]),
         Item::AddRsp(v) => c("addRsp", &[("v", v.to_string())]),
         Item::SetReg(r, v) => c("setReg", &[("r", reg(r)), ("v", v.to_string())]),
@@ -564,6 +562,11 @@ fn mutate(rng: &mut Rng, out: &mut Vec<String>, p: &Placed, sp: Option<u32>, lin
                 Some(_) => rs.clear(),
                 None => rs.push(Reloc { at: p.pos + rng.below(b.len() as u64) as u32, to: gen_ref(rng) }),
             },
+        }
+        // Not `pop rbp` (PE's `Item::PopRbp`), which the Lean decoder doesn't know yet
+        // (lean/PENDING.md).
+        if b.first() == Some(&0x5d) {
+            b[0] = 0x5e;
         }
         dec_vector(out, p, &b, len.max(p.pos), (!linked).then_some(&rs[..]), sp);
     }

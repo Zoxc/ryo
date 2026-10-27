@@ -15,7 +15,8 @@ native frames, and unwind natively ([Unwinding](#unwinding)). The runtime lives 
   VM code sets to `rsp + F` before each handler call; nothing is kept in registers across
   instructions but what the [register cache](#register-cache) keeps between inline
   sequences. With a frame pointer ([Frames](#frames)), VM code keeps `fp` in `rbp`, and with
-  `ryo_rt`'s `fp-rbp` feature the handlers read it from there ([Handlers](#handlers)).
+  `ryo_rt`'s `fp-rbp` feature, and always on PE, the handlers read it from there
+  ([Handlers](#handlers)).
 - **No image context**: the code addresses its image's symbol slots, constant pool, data
   area and code constants RIP-relative (relocations, [Image format](#image-format)), so a
   call into another image switches nothing.
@@ -42,9 +43,9 @@ native frames, and unwind natively ([Unwinding](#unwinding)). The runtime lives 
 - **Frame pointer**: the backend keeps one where rustc's LLVM backend would
   (`partition::asm_mode`, following `rustc_codegen_llvm::attributes::frame_pointer`): if
   the target's `frame_pointer` isn't `MayOmit`, with `-Cforce-frame-pointers` or
-  `-Zinstrument-mcount`. Also on PE, whose unwind info can't describe the island calls'
-  `rsp` adjustment ([Calls and islands](#calls-and-islands)), and when `ryo_rt`'s handlers
-  read `fp` from `rbp` (`fp-rbp`). Then the prologue is
+  `-Zinstrument-mcount`. Also on PE, whose handlers read `fp` from `rbp` and whose unwind
+  info describes frames by their frame register, and when `ryo_rt`'s handlers read `fp`
+  from `rbp` (`fp-rbp`). Then the prologue is
   ```
   push rbp
   mov rbp, rsp
@@ -52,20 +53,17 @@ native frames, and unwind natively ([Unwinding](#unwinding)). The runtime lives 
   sub rsp, F                           ; only if F > 0
   ```
   the epilogue is `leave`, slots are `[rbp + off]`, and handlers get `mov rdi, rbp`.
-- **PE**: the prologue also saves `rdi` and `rsi`, which are callee-saved on Win64 but not
-  in the `sysv64` handlers, in the top 16 bytes of the frame (the lowering reserves them,
-  `frame.rs`):
-  ```
-  push rbp; push rdi; push rsi
-  lea rbp, [rsp + 16]
-  mov eax, F - 16; call ryo_probe_stack ; only if F >= 4096
-  sub rsp, F - 16
-  ```
-  and the epilogue is `lea rsp, [rbp - 16]; pop rsi; pop rdi; pop rbp`
-  (`asm/encode.rs`, `Item::WinPrologue`/`WinEpilogue`). `xmm6`–`xmm15` aren't saved: VM
-  code doesn't touch them, and the `i128` saturating float casts, whose handlers keep a
-  value in `xmm6` across a call, go through the `as_cast` island on PE instead
-  ([lowering.md](lowering.md#casts)).
+- **PE**: the prologue is the frame pointer's (unwind codes `UWOP_PUSH_NONVOL rbp`,
+  `UWOP_SET_FPREG` at offset 0, the allocation), and the epilogue `add rsp, F; pop rbp`
+  (`Item::PopRbp`), the form the Win64 unwinder recognizes as an epilogue (`leave` isn't).
+  The handlers are Win64 functions ([Handlers](#handlers)), so they preserve `rbx`, `rbp`,
+  `rdi`, `rsi`, `r12`–`r15` and `xmm6`–`xmm15` as VM functions must for their callers:
+  nothing is saved beyond `rbp`, and inline sequences don't compute in `rdi` and `rsi` there
+  ([register cache](#register-cache)). Every frame reserves the 32 bytes of shadow space of
+  its calls (handlers, islands, VM and native functions) at its bottom, `fp - F` to
+  `fp - F + 32` (the lowering, `FnCx::finish`), 8 more where a handler takes a fifth
+  argument on the stack ([Handlers](#handlers)), and island argument blocks start past it:
+  `rsp` doesn't move in the body.
 - **Layout**: frames grow downward, and slots are signed offsets from `fp`
   (`ryo_bytecode::abi`):
   ```
@@ -73,10 +71,10 @@ native frames, and unwind natively ([Unwinding](#unwinding)). The runtime lives 
                     the caller in its outgoing area
   fp + 8            return address (points after the caller's call instruction)
   fp + 0            caller's rbp with a frame pointer, else unused
-  fp - 16 … fp - 1  PE: the saved rsi and rdi
   fp - 1 … fp - L   locals (the arguments' homes included), `_0`, temporaries, the
                     exception slot
   fp - F … fp - F + A   outgoing area: the stack arguments of calls, island argument blocks
+                    (PE: the shadow space first, then a handler's stack argument)
   ```
   `F = round16(L + largest outgoing area)` (`abi::frame_size`). `rsp` is `fp - F` while the
   function runs, so the outgoing area is at `rsp`, and a callee's `fp` is its caller's
@@ -170,15 +168,16 @@ ones, which are [inlined](#inline-instructions):
 | `jmp` | `jmp` | `jmp t` |
 | `call` | `call`, `call.sym`, `call.sym.ind`, `call.ptr` | the callee's address into `rax` where needed, the argument registers' loads, the call, the result's stores from the return registers ([Calls and islands](#calls-and-islands)) |
 | `tail_call` | `tail_call`, `tail_call.ptr` | `mov rax, [p]` for `.ptr`, the argument registers' loads, epilogue, `jmp fn` / `jmp rax` |
-| `island` | `island` | `lea rdi, [rsp + F]; lea rsi, [rip + ops]; call [rip + isl]` (with a frame pointer `mov rdi, rbp`; PE: `rcx`/`rdx` and 32 bytes of shadow space) |
-| `lpad` | `lpad` | `mov rsi, rax` (the exception object; `rdi` with `fp-rbp`), operand registers, handler call |
+| `island` | `island` | `lea rdi, [rsp + F]; lea rsi, [rip + ops]; call [rip + isl]` (with a frame pointer `mov rdi, rbp`; PE: `rcx`/`rdx`, the frame's shadow space) |
+| `lpad` | `lpad` | `mov rsi, rax` (the exception object; `rdi` with `fp-rbp`, `rcx` on PE), operand registers, handler call |
 
 The epilogue is `add rsp, F + 8`, `leave` with a frame pointer, or on PE
-`lea rsp, [rbp - 16]; pop rsi; pop rdi; pop rbp` ([Frames](#frames)).
+`add rsp, F; pop rbp` ([Frames](#frames)).
 
 - **Operand registers** (`asm::layout`, `core` only, shared by the encoder and the
   handlers): a handler takes up to six registers, `rdi, rsi, rdx, rcx, r8, r9`, in operand
-  order, on every target (`sysv64`). An operand takes one register, except a memory operand
+  order (on PE Win64's four, `rcx, rdx, r8, r9`, and a fifth argument on the stack,
+  [Handlers](#handlers); there `fp` is always `rbp`). An operand takes one register, except a memory operand
   (`p`, `k`), a `U128` (low, high) and a case list (values, count), which take two. `rdi`
   holds `fp` (`lea rdi, [rsp + F]`, or `mov rdi, rbp` with a frame pointer) and the operands
   start at `rsi`, except with `fp-rbp`, where handlers read `rbp` and the operands start at
@@ -255,7 +254,7 @@ its handler call. [instructions.md](instructions.md) gives each instruction's se
 
 Values stay in registers between inline sequences. The encoder tracks what the caller-saved
 registers but `rcx` hold (`inline::Cache`, run over the code in `Asm::finish`): `rax`, `rdx`,
-`rsi`, `rdi` and `r8`–`r11`. Every store still happens, so the frame is always up to date,
+`rsi`, `rdi` and `r8`–`r11` (on PE not `rsi` and `rdi`, callee-saved there). Every store still happens, so the frame is always up to date,
 and handlers, calls, unwinding and the decoder's view of the frame don't change.
 
 - **Which register**: a sequence is written on `rax` and renamed. If its first element
@@ -613,8 +612,8 @@ panic runtime, as through native frames. The image carries the unwind informatio
 Windows unwinds in two phases, calling each frame's language handler: a search for a frame
 that catches, then an unwind to it (`RtlUnwindEx`). VM code keeps the frame pointer
 ([Frames](#frames)); `.pdata`/`.xdata` (`image/writer.rs`, `unwind_pe`) describe each
-function's prologue (the pushes of `rbp`, `rdi` and `rsi`, `rbp` as frame register at
-`rsp + 16`, the allocation, after the counter check; the entry's counter stub has a leaf
+function's prologue (the push of `rbp`, `rbp` as frame register at `rsp + 0`, the
+allocation, after the counter check; the entry's counter stub has a leaf
 entry of its own) and name `ryo_rt`'s `ryo_seh_handler` (`vm/rt/src/vm/seh.rs`) for both
 phases, with its handler data (`image::pe_handler_data`): the entry's and the pad region's
 offsets in the function, and the function's LSDA, the ELF one.
@@ -648,8 +647,8 @@ offsets in the function, and the function's LSDA, the ELF one.
   `.pdata` entry of its own (`image::pe_region_unwind_info`: that allocation, no frame
   register, the handler), so that a stack walk or an exception from a pad goes through it,
   the trampoline and the handler into the unwinder's frames. There `rsp` isn't `fp - F`:
-  slots are `[rbp + off]` as everywhere on PE, island calls use the entry's shadow space
-  rather than moving `rsp`, a call with stack arguments keeps the function native, loop
+  slots are `[rbp + off]` as everywhere on PE, calls use the entry's shadow space (and a
+  handler's stack argument the 8 bytes past it) rather than the frame's, a call with stack arguments keeps the function native, loop
   heads have neither counter checks nor padding, and `resume x` is `add rsp, 40; ret`
   (`ryo_h_Resume` only serves cleanup code without a cleanup landing pad, which no unwind
   reaches). Nothing branches across the region's start (`EncodeError::BadRegion`). A panic
@@ -672,14 +671,22 @@ Each opcode with a handler (all but the `jmp`, `call`, `tail_call`, `ret`, `arg`
 shapes) has one non-inlined function
 in `ryo_rt`, `ryo_h_<Opcode>`:
 
-- **Signature**: `unsafe extern "sysv64-unwind" fn(a0, …, a5: u64) -> R`, the six argument
-  registers, on every target. `R` is `()`, `bool` (branches), `usize` (switches), or `!`
-  (traps). Each handler body reads its
-  operands through the opcode's `asm::layout`, a constant, so an unused register costs
-  nothing. `fp` comes in `rdi`, or with the `fp-rbp` feature from `rbp`, read before
-  anything else (handlers set up no frame pointer: `ryo_rt` is built without forced frame
-  pointers). `fp-rbp` saves the `fp` argument of every handler call, but VM code must then
-  keep the frame pointer.
+- **Signature**: `unsafe extern "C-unwind" fn(a0, …, a5: u64) -> R`, the platform's C
+  convention: SysV, its six argument registers `rdi, rsi, rdx, rcx, r8, r9`, or on PE Win64,
+  `rcx, rdx, r8, r9` and the stack (`asm::handler_arg`). `R` is `()`, `bool` (branches),
+  `usize` (switches), or `!` (traps). Each handler body reads its operands through the
+  opcode's `asm::layout`, a constant, so an unused register costs nothing. `fp` comes in
+  `rdi`, or with the `fp-rbp` feature, and always on PE, from `rbp`, read before anything
+  else (handlers set up no frame pointer: `ryo_rt` is built without forced frame pointers).
+  `fp-rbp` saves the `fp` argument of every handler call, but VM code must then keep the
+  frame pointer.
+- **PE layouts**: four registers and, for one 32-bit operand of its own, a fifth argument on
+  the stack, which the call stores past the shadow space (`mov dword [rsp + 32], imm32`,
+  `asm::x86::STACK_ARG`): only the `atomic.cxchg.*` handlers have five operands left after
+  pairing (`lpad` takes the exception object in `rcx`). The frame's bottom 32 bytes are the
+  calls' shadow space ([Frames](#frames)); handlers preserve `rdi`, `rsi` and `xmm6`–`xmm15`
+  as Win64 requires (`vm/rt/tests/codegen.rs`'s `win64_handlers` checks the Windows build),
+  so the `i128` saturating float casts are handlers there too.
 - **Symbols**: `#[rustc_std_internal_symbol]` with `export_name = "ryo_h_<Opcode>"`, so the
   symbol is mangled as rustc mangles internal symbols (`mangle_internal_symbol`, under
   `__rustc`), the same in every crate that links `ryo_rt`. The backend references them by
@@ -914,8 +921,11 @@ templates and the `main` wrapper. It is a normal Rust dependency of every ryo-bu
   side (`vm::jit`, [jit.md](jit.md)). Everything uses `core` only.
   - `vm::register`: `#[no_mangle] extern "C-unwind" fn ryo_vm_register(images, n)`.
   - `vm::MODE` / `vm::FP_ARG` (diagnostic item `ryo_rt_fp_arg`): whether the handlers take
-    `fp` in `rdi` (unless the `fp-rbp` cargo feature is on). The backend evaluates `FP_ARG`
-    and encodes to match, with a frame pointer if it is false.
+    `fp` in `rdi` (unless the `fp-rbp` cargo feature is on, or on Windows). The backend
+    evaluates `FP_ARG` and encodes to match, with a frame pointer if it is false. With the
+    `pe-test` feature (tests off Windows) a second, symbol-less set of handlers and register
+    entries in the PE form's Win64 convention (`vm::PE_MODE`, `pe_handler`), which the JIT
+    gets through `RtApi::pe_handlers`, runs PE code on Linux.
 - **`island`**: the island templates ([stubs.md](stubs.md#templates)).
 - **`entry`**: the C `main` wrapper `c_main` ([stubs.md](stubs.md#program-entry-main)).
 

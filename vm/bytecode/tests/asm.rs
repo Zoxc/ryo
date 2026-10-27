@@ -30,13 +30,15 @@ impl Rng {
     }
 }
 
-/// Every valid mode: the eight with a frame pointer, then the two without (which need
-/// `fp_arg` and not `pe`); then the same ten with counters.
+/// Every valid mode: the eight with a frame pointer (PE's twice, as it has no `fp_arg`), then
+/// the two without (which need `fp_arg` and not `pe`); then the same ten with counters.
 const MODES: [Mode; 20] = {
     let mut m = [Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false, counters: false, far_rt: false }; 20];
     let mut i = 0;
     while i < 8 {
-        m[i] = Mode { fp_arg: i & 1 != 0, frame_pointer: true, align_loops: i & 2 != 0, pe: i & 4 != 0, counters: false, far_rt: false };
+        // PE handlers read `fp` from `rbp`: no `fp_arg` there.
+        m[i] =
+            Mode { fp_arg: i & 1 != 0 && i & 4 == 0, frame_pointer: true, align_loops: i & 2 != 0, pe: i & 4 != 0, counters: false, far_rt: false };
         i += 1;
     }
     m[8] = Mode { fp_arg: true, frame_pointer: false, align_loops: false, pe: false, counters: false, far_rt: false };
@@ -232,8 +234,6 @@ fn random_scopes(code: &[u32]) -> Vec<Scope> {
 }
 
 fn check(f: &Fn, frame_size: u32, mode: Mode, what: &str) -> asm::Encoded {
-    // PE frames keep `rdi` and `rsi` in their top 16 bytes.
-    let frame_size = if mode.pe { frame_size.max(16) } else { frame_size };
     let (code, mut cleanup) = f.words();
     let scopes = random_scopes(&code);
     let enc = asm::encode(&code, frame_size, &cleanup, &scopes, mode).unwrap_or_else(|e| panic!("{what}: {e:?}\n{}", Disasm(&code)));
@@ -547,9 +547,9 @@ fn pe_pad_region() {
                 (pad + 5, None),
             ];
             let enc = check(&f, [48, 4096][round % 2], mode, "pad region");
-            // The region's island doesn't move `rsp`: the body's does, once.
+            // No island moves `rsp`: the frame's bottom is the shadow space.
             let subs = |code: &[u8]| code.windows(6).filter(|w| *w == [0x48, 0x83, 0xec, 0x20, 0xff, 0x15]).count();
-            assert_eq!((subs(&enc.code[..enc.region as usize]), subs(&enc.code[enc.region as usize..])), (1, 0), "{mode:?}");
+            assert_eq!((subs(&enc.code[..enc.region as usize]), subs(&enc.code[enc.region as usize..])), (0, 0), "{mode:?}");
             // `resume`: `add rsp, 40; ret`.
             assert!(enc.code[enc.region as usize..].windows(5).any(|w| w == [0x48, 0x83, 0xc4, 40, 0xc3]), "{mode:?}");
             // The `nop`s after the bare calls with landing pads: in the body at least after
@@ -961,7 +961,7 @@ fn templates_are_pinned() {
     let elf = hash(&[MODES[0], MODES[1], MODES[8], MODES[10], MODES[11], MODES[18]], 7);
     assert_eq!(elf, 0x3c3938bef3ad5db7, "ELF template hash {elf:#x}");
     let pe = hash(&[MODES[6], MODES[16]], 8);
-    assert_eq!(pe, 0xbfcdf570a02b40d6, "PE template hash {pe:#x}");
+    assert_eq!(pe, 0x14244d77fee48373, "PE template hash {pe:#x}");
 }
 
 /// Without a frame pointer, an SSE load or store of the slot at `rsp` has no displacement.

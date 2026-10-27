@@ -6,9 +6,8 @@
 //!   any instruction that writes `rbp`, so it sees the caller's (no frame pointer was set up;
 //!   a handler may save `rbp` and use it as a register afterwards);
 //! - the hot handlers have no prologue (no push, no stack adjustment) and make no call;
-//! - built for Windows, no handler but the four whose operations the lowering avoids on PE
-//!   writes `xmm6`–`xmm15`, which Win64 callers of VM functions expect preserved and the
-//!   `sysv64` handlers needn't (design/platforms.md).
+//! - built for Windows (Win64 handlers), every handler reads `rbp` first, saves any of
+//!   `xmm6`–`xmm15` it writes, and the hot ones have no prologue (design/platforms.md).
 //!
 //! It builds into its own target directory, so it doesn't contend with the running `cargo
 //! test`.
@@ -91,8 +90,12 @@ fn rt_asm(dir: &str, features: &[&str], target: Option<&str>) -> String {
     std::fs::read_to_string(s).unwrap()
 }
 
+/// Built for Windows, the handlers are Win64 functions (design/vm.md, "Handlers"): each
+/// handler written in Rust reads `rbp`, its `fp`, before writing it; one that writes one of
+/// `xmm6`–`xmm15` (callee-saved there) stores it first, and so do the register entries; the
+/// hot handlers have no prologue and make no call.
 #[test]
-fn win64_handlers_preserve_xmm6_to_15() {
+fn win64_handlers() {
     const TARGET: &str = "x86_64-pc-windows-msvc";
     let installed = Command::new("rustc").args(["--print", "target-libdir", "--target", TARGET]).output();
     if !installed.is_ok_and(|o| o.status.success() && std::path::Path::new(String::from_utf8_lossy(&o.stdout).trim()).exists()) {
@@ -100,25 +103,47 @@ fn win64_handlers_preserve_xmm6_to_15() {
         return;
     }
     let asm = rt_asm("codegen-win64", &[], Some(TARGET));
-    // Their `i128` result stays in `xmm6` across a call; the lowering uses an island on PE.
-    let avoided = ryo_bytecode::jit::effects::PE_XMM_CLOBBERS;
+    let pe = ryo_bytecode::asm::Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: true, counters: false, far_rt: false };
+    // AT&T syntax: the destination is the last operand.
+    let xmm_kept = |name: &str, a: &[&str]| {
+        for x in 6..16 {
+            let reg = format!("%xmm{x}");
+            let Some(w) = a.iter().position(|i| i.ends_with(&reg) || i.ends_with(&format!("%ymm{x}"))) else { continue };
+            let saved = a[..w]
+                .iter()
+                .any(|i| (i.starts_with("movaps") || i.starts_with("movups")) && i.contains(&format!("{reg}, ")) && i.ends_with("(%rsp)"));
+            assert!(saved, "{name}: writes {reg} without saving it\n{}", a.join("\n"));
+        }
+    };
     let mut checked = 0;
     for &op in ALL_OPCODES {
-        if !has_handler(op) || avoided.contains(&op) {
+        if !has_handler(op) || op == Opcode::Resume {
             continue;
         }
-        // The register entries too (the JIT doesn't run on PE yet, but they are built).
-        let reg = ryo_bytecode::jit::effects::reg_entry(op, ryo_rt::vm::MODE).is_some();
-        for name in [format!("ryo_h_{op:?}"), hr_name(op)].into_iter().take(1 + reg as usize) {
-            // A register entry identical to another may be merged into it, without a name.
-            let Some(a) = asm_of(&asm, &name).or_else(|| (!name.starts_with("ryo_h_")).then(Vec::new)) else { panic!("{name}: not in the assembly") };
-            // AT&T syntax: the destination is the last operand.
-            let bad = a.iter().find(|i| (6..16).any(|x| i.ends_with(&format!("%xmm{x}")) || i.ends_with(&format!("%ymm{x}"))));
-            assert!(bad.is_none(), "{name}: writes {:?}\n{}", bad, a.join("\n"));
+        let name = format!("ryo_h_{op:?}");
+        let a = asm_of(&asm, &name).unwrap_or_else(|| panic!("{name}: not in the assembly"));
+        let read = a.iter().position(|i| i.starts_with("movq\t%rbp, %"));
+        let writes = a.iter().position(|i| i.ends_with("%rbp") && !i.starts_with("push") && !i.starts_with("cmp") && !i.starts_with("test"));
+        match read {
+            Some(r) => assert!(writes.is_none_or(|w| w > r), "{name}: writes rbp before reading it\n{}", a.join("\n")),
+            None => assert!(op == Opcode::Abort, "{name}: doesn't read rbp\n{}", a.join("\n")),
+        }
+        xmm_kept(&name, &a);
+        // A register entry identical to another may be merged into it, without a name.
+        if ryo_bytecode::jit::effects::reg_entry(op, pe).is_some()
+            && let Some(a) = asm_of(&asm, &hr_name(op))
+        {
+            xmm_kept(&hr_name(op), &a);
         }
         checked += 1;
     }
     assert!(checked > 800, "{checked}");
+    for op in [Opcode::AddW32, Opcode::AddImmW64, Opcode::LoadW64, Opcode::StoreW64, Opcode::MovW64, Opcode::BrLtSW64, Opcode::Br, Opcode::EqW32] {
+        let a = asm_of(&asm, &format!("ryo_h_{op:?}")).unwrap();
+        let bad = a.iter().find(|i| i.starts_with("push") || (i.starts_with("sub") && i.ends_with("%rsp")) || i.starts_with("call"));
+        assert!(bad.is_none(), "{op:?}: has a prologue or a call\n{}", a.join("\n"));
+    }
+    eprintln!("AddW32 (Win64):\n  {}", asm_of(&asm, "ryo_h_AddW32").unwrap().join("\n  "));
 }
 
 #[test]

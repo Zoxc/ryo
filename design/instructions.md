@@ -40,7 +40,8 @@ The native ones are the *reduced* set (`vm/bytecode/src/reduced_ops.rs`,
   whose operands don't fit its sequence keeps its handler call.
 
 - **Handler calls**: the operand registers (`rdi` = `fp`, then the operands from `rsi`, or
-  from `rdi` with `fp-rbp`, [vm.md](vm.md#machine-code)), then `call ryo_h_<Opcode>`, then
+  from `rdi` with `fp-rbp`; on PE from `rcx`, Win64's, and a fifth on the stack,
+  [vm.md](vm.md#machine-code)), then `call ryo_h_<Opcode>`, then
   the shape's control flow. In the reduced set each is a `handler` instruction naming the
   full opcode.
 
@@ -562,8 +563,7 @@ frame.write(d, frame.read::<u32>(s) as f64);  // cvt.i2f.u.w32.f64
 frame.write(d, frame.read::<f32>(s) as f64);  // cvt.f2f.f32.f64
 ```
 
-Casts involving `f16` or `f128`, and on PE float to `i128`/`u128` (whose handlers keep a
-value in `xmm6`, [platforms.md](platforms.md)), are the `as_cast` island.
+Casts involving `f16` or `f128` are the `as_cast` island.
 
 Bit-preserving casts (transmutes, pointer casts) are `mov` or `copy`.
 
@@ -838,8 +838,8 @@ lea rsi, [rip + ops]
 call [rip + isl]
 ```
 
-On PE the registers are `rcx`/`rdx`, with `sub rsp, 32` / `add rsp, 32` around the call
-for the shadow space. The call is a call site.
+On PE the registers are `rcx`/`rdx`, and the shadow space is the frame's bottom 32 bytes,
+which every PE frame reserves ([vm.md](vm.md#frames)). The call is a call site.
 
 The `ops` array is exactly what the template reads; call templates take the argument
 block as a tuple in the outgoing area, `ops[1]` the destination.
@@ -850,7 +850,7 @@ The landing pad of a cleanup or terminate block, one `lpad x; jmp bb` stub per d
 unwind destination ([vm.md](vm.md#unwinding)).
 
 The personality enters it with the exception object in `rax`; `mov rsi, rax` (`rdi` with
-`fp-rbp`), the operand register, then handler `ryo_h_Lpad` (`lpad`), which stores the
+`fp-rbp`, `rcx` on PE), the operand register, then handler `ryo_h_Lpad` (`lpad`), which stores the
 object in the function's exception slot `x`:
 
 ```rust
@@ -877,7 +877,8 @@ jmp _Unwind_Resume
 ## Reduced: `handler`
 
 **`handler h, args, t`** (`!` with `neg`) exists only in the reduced set: a call of the
-handler of the full opcode `h` with the argument registers `args` from `rdi` on (`fp`, the
+handler of the full opcode `h` with the argument registers `args` from the first (`rdi`, on
+PE `rcx`, then PE's stack argument; `fp`, the
 exception object, an immediate, or the address of a constant, data, a symbol slot, a site
 or a code constant), then `h`'s shape's control flow:
 

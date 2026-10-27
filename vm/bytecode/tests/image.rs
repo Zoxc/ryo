@@ -330,15 +330,15 @@ fn pe_unwind_info() {
     // Each function's body (without counters, no stub), and f0's pad region (its landing
     // pad's block resumes).
     assert_eq!(obj.unwind[0].1.len(), (3 + 1) * 12);
-    // f0: version 1, the handler flags, prologue 12 bytes, 5 codes (alloc small 48 - 16, set
-    // fpreg, push rsi, push rdi, push rbp), rbp at rsp + 16; then (codes padded to 6) the
-    // handler's RVA and its data: no offset, the region's, and the LSDA.
+    // f0: version 1, the handler flags, prologue 8 bytes (`push rbp; mov rbp, rsp; sub rsp,
+    // 48`), 3 codes (alloc small 48, set fpreg, push rbp), rbp at rsp + 0; then (codes padded
+    // to 4) the handler's RVA and its data: no offset, the region's, and the LSDA.
     let infos = pe_infos(&obj);
     let f0 = &obj.functions[0];
     let x = &obj.unwind[1].1;
-    assert_eq!(&x[..14], [1 | 0x18, 12, 5, 5 | 1 << 4, 12, 2 | (32 / 8 - 1) << 4, 8, 3, 3, 6 << 4, 2, 7 << 4, 1, 5 << 4]);
+    assert_eq!(&x[..12], [1 | 0x18, 8, 3, 5, 8, 2 | (48 / 8 - 1) << 4, 4, 3, 1, 5 << 4, 0, 0]);
     let lsda = ryo_bytecode::asm::lsda::write(&f0.call_sites);
-    assert_eq!(&x[20..infos[1]], &ryo_bytecode::image::pe_with_handler(&[0; 4], &ryo_bytecode::image::pe_handler_data(0, f0.region, &lsda)).0[8..]);
+    assert_eq!(&x[16..infos[1]], &ryo_bytecode::image::pe_with_handler(&[0; 4], &ryo_bytecode::image::pe_handler_data(0, f0.region, &lsda)).0[8..]);
     // Then the region's, with the handler, its data at the region's offset.
     let region = ryo_bytecode::image::pe_with_handler(
         &ryo_bytecode::image::pe_region_unwind_info(),
@@ -353,7 +353,7 @@ fn pe_unwind_info() {
     // The `.pdata` fields, and every `UNWIND_INFO`'s handler.
     assert_eq!(obj.relocs.iter().filter(|r| r.kind == RelocKind::Rva32).count(), 12 + 4);
     let handlers: Vec<_> = obj.relocs.iter().filter(|r| r.target == RelocTarget::SehHandler).map(|r| (r.section, r.offset)).collect();
-    assert_eq!(handlers[..2], [(Section::Xdata, 16), (Section::Xdata, infos[1] as u64 + 8)]);
+    assert_eq!(handlers[..2], [(Section::Xdata, 12), (Section::Xdata, infos[1] as u64 + 8)]);
     // No personality on PE.
     assert_eq!(obj.symbols.len(), 4);
 }
@@ -371,28 +371,30 @@ fn pe_infos(obj: &ImageObject) -> Vec<usize> {
 /// form, the probe's call near and through `r11`, a counter check before the prologue.
 #[test]
 fn pe_unwind_info_encodings() {
-    let pe = Mode { pe: true, fp_arg: true, ..ELF };
+    let pe = Mode { pe: true, fp_arg: false, ..ELF };
     let info = |frame_size: u32, prologue: u32, mode: Mode| {
         ryo_bytecode::image::pe_unwind_info(&EhFunc { len: 1000, frame_size, prologue, entry_stub: 1000 }, mode)
     };
-    // The pushes and the frame register, last first: set fpreg after 8 bytes, push rsi (6)
-    // after 3, rdi (7) after 2, rbp (5) after 1.
-    let tail = |p: u8| [p + 8, 3, p + 3, 6 << 4, p + 2, 7 << 4, p + 1, 5 << 4];
-    // F = 16: nothing allocated; the prologue is the 8 bytes of pushes and `lea`.
-    assert_eq!(info(16, 0, pe), [&[1, 8, 4, 0x15][..], &tail(0)].concat());
-    // F = 144: `sub rsp, 128` (imm32, 7 bytes) after 15, UWOP_ALLOC_SMALL of 16 slots.
-    assert_eq!(info(144, 0, pe), [&[1, 15, 5, 0x15, 15, 2 | 15 << 4][..], &tail(0), &[0, 0]].concat());
-    // F = 160: 144 bytes, UWOP_ALLOC_LARGE with 18 slots in a 16-bit field.
-    assert_eq!(info(160, 0, pe), [&[1, 15, 6, 0x15, 15, 1, 18, 0][..], &tail(0)].concat());
-    // F = 4096: `mov eax, 4080; call ryo_probe_stack` (10 bytes) before the `sub`.
-    assert_eq!(info(4096, 0, pe), [&[1, 25, 6, 0x15, 25, 1, 0xfe, 1][..], &tail(0)].concat());
-    // Through `r11` (`mov eax, 4080; mov r11, imm64; call r11`, 18 bytes).
-    assert_eq!(info(4096, 0, Mode { far_rt: true, ..pe }), [&[1, 33, 6, 0x15, 33, 1, 0xfe, 1][..], &tail(0)].concat());
+    // The push and the frame register, last first: set fpreg after 4 bytes (`mov rbp, rsp`),
+    // push rbp (5) after 1.
+    let tail = |p: u8| [p + 4, 3, p + 1, 5 << 4];
+    // F = 0: nothing allocated; the prologue is the 4 bytes of `push` and `mov`.
+    assert_eq!(info(0, 0, pe), [&[1, 4, 2, 5][..], &tail(0)].concat());
+    // F = 16: `sub rsp, 16` (imm8) after 8, UWOP_ALLOC_SMALL of 2 slots.
+    assert_eq!(info(16, 0, pe), [&[1, 8, 3, 5, 8, 2 | 1 << 4][..], &tail(0), &[0, 0]].concat());
+    // F = 128: `sub rsp, 128` (imm32, 7 bytes) after 11, UWOP_ALLOC_SMALL of 16 slots.
+    assert_eq!(info(128, 0, pe), [&[1, 11, 3, 5, 11, 2 | 15 << 4][..], &tail(0), &[0, 0]].concat());
+    // F = 144: UWOP_ALLOC_LARGE with 18 slots in a 16-bit field.
+    assert_eq!(info(144, 0, pe), [&[1, 11, 4, 5, 11, 1, 18, 0][..], &tail(0)].concat());
+    // F = 4096: `mov eax, 4096; call ryo_probe_stack` (10 bytes) before the `sub`.
+    assert_eq!(info(4096, 0, pe), [&[1, 21, 4, 5, 21, 1, 0, 2][..], &tail(0)].concat());
+    // Through `r11` (`mov eax, 4096; mov r11, imm64; call r11`, 18 bytes).
+    assert_eq!(info(4096, 0, Mode { far_rt: true, ..pe }), [&[1, 29, 4, 5, 29, 1, 0, 2][..], &tail(0)].concat());
     // 512 KiB allocated, past the 16-bit form: UWOP_ALLOC_LARGE with the size in 32 bits.
     let big = info(512 * 1024 + 16, 0, pe);
-    assert_eq!(big, [&[1, 25, 7, 0x15, 25, 0x11, 0, 0, 8, 0][..], &tail(0), &[0, 0]].concat());
+    assert_eq!(big, [&[1, 21, 5, 5, 21, 0x11, 0x10, 0, 8, 0][..], &tail(0), &[0, 0]].concat());
     // A counter check of 12 bytes first: every offset moves by 12.
-    assert_eq!(info(48, 12, pe), [&[1, 24, 5, 0x15, 24, 2 | 3 << 4][..], &tail(12), &[0, 0]].concat());
+    assert_eq!(info(48, 12, pe), [&[1, 20, 3, 5, 20, 2 | 5 << 4][..], &tail(12), &[0, 0]].concat());
     assert_eq!(PE_LEAF_UNWIND, [1, 0, 0, 0]);
     // The SSA tier's forms: a push of rbx (3) after 4, an allocation, the frame register at
     // rsp + 32 after 13, saves of r12 by `mov` (8-scaled 16-bit, then 32-bit unscaled) and of
@@ -420,16 +422,16 @@ fn pe_unwind_info_encodings() {
 fn pe_unwind_with_handler() {
     use ryo_bytecode::asm::{CallSite, lsda};
     use ryo_bytecode::image::{PE_HANDLER_FLAGS, PeHandlerData, pe_handler_data, pe_region_unwind_info, pe_with_handler};
-    let pe = Mode { pe: true, fp_arg: true, ..ELF };
-    // F = 48: 5 codes, padded to 6; the RVA at 16, then the data, padded to 4.
+    let pe = Mode { pe: true, fp_arg: false, ..ELF };
+    // F = 48: 3 codes, padded to 4; the RVA at 12, then the data, padded to 4.
     let info = ryo_bytecode::image::pe_unwind_info(&EhFunc { len: 1000, frame_size: 48, prologue: 0, entry_stub: 1000 }, pe);
-    assert_eq!(info.len(), 16);
+    assert_eq!(info.len(), 12);
     let (h, rva) = pe_with_handler(&info, &[0xaa, 0xbb, 0xcc]);
     assert_eq!(PE_HANDLER_FLAGS, 0x18);
     assert_eq!(h[0], 1 | 0x18);
-    assert_eq!((rva, &h[1..16], &h[16..]), (16, &info[1..], &[0, 0, 0, 0, 0xaa, 0xbb, 0xcc, 0][..]));
+    assert_eq!((rva, &h[1..12], &h[12..]), (12, &info[1..], &[0, 0, 0, 0, 0xaa, 0xbb, 0xcc, 0][..]));
     // 4 codes need no padding: the RVA right after them.
-    let info = ryo_bytecode::image::pe_unwind_info(&EhFunc { len: 1000, frame_size: 16, prologue: 0, entry_stub: 1000 }, pe);
+    let info = ryo_bytecode::image::pe_unwind_info(&EhFunc { len: 1000, frame_size: 144, prologue: 0, entry_stub: 1000 }, pe);
     let (h, rva) = pe_with_handler(&info, &[]);
     assert_eq!((info.len(), rva, h.len()), (12, 12, 16));
     // The region: `sub rsp, 40` (4 bytes) is the prologue, UWOP_ALLOC_SMALL of 5 slots, no
@@ -956,7 +958,7 @@ fn jit_records() {
     assert_eq!(obj.unwind[0].1.len(), (2 * 3 + 1) * 12);
     let x = &obj.unwind[1].1;
     let infos = pe_infos(&obj);
-    assert_eq!(&x[..14], [1 | 0x18, 21, 5, 5 | 1 << 4, 21, 2 | (32 / 8 - 1) << 4, 17, 3, 12, 6 << 4, 11, 7 << 4, 10, 5 << 4]);
+    assert_eq!(&x[..10], [1 | 0x18, 17, 3, 5, 17, 2 | (48 / 8 - 1) << 4, 13, 3, 10, 5 << 4]);
     assert_eq!(&x[infos[1]..][..4], [1, 0, 0, 0]);
     assert_eq!(&x[infos[2]..][..8], [&[1 | 0x18][..], &ryo_bytecode::image::pe_region_unwind_info()[1..]].concat());
 }

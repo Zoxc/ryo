@@ -41,7 +41,7 @@ details (`fn_abi_of_instance`, `PassMode`, …) come from cg_llvm.
   - **Called directly**: VM code calls the island through its symbol slot,
     `lea rdi, [rsp + F]; lea rsi, [rip + ops]; call [rip + isl]` (`mov rdi, rbp` with a
     frame pointer, [vm.md](vm.md#frames)), with the Rust ABI's argument
-    registers (`rcx`/`rdx` and 32 bytes of shadow space on PE). Rust ABI, because Rust-ABI
+    registers (`rcx`/`rdx` on PE, the shadow space the frame's bottom 32 bytes). Rust ABI, because Rust-ABI
     functions may unwind: a panic leaves the island natively, into the VM frame
     ([Unwinding](#unwinding)). With `extern "C"`, a panic couldn't leave the island
     (nounwind plus an abort guard).

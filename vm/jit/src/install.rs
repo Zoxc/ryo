@@ -163,9 +163,19 @@ pub(crate) struct Jit {
 
 impl Jit {
     pub(crate) fn new(rt: &'static RtApi) -> Jit {
-        let mut handlers: Vec<(usize, Opcode)> =
-            rt.handlers.iter().zip(ryo_bytecode::ALL_OPCODES).filter(|(h, _)| !h.is_null()).map(|(&h, &op)| (h as usize, op)).collect();
-        handlers.sort_unstable_by_key(|h| h.0);
+        // The PE form's handlers too, if the runtime has a set of its own (tests off Windows).
+        // SAFETY: `pe_handlers` is null or points at the runtime's table.
+        let pe = unsafe { rt.pe_handlers.as_ref() };
+        let mut handlers: Vec<(usize, Opcode)> = [Some(&rt.handlers), pe]
+            .into_iter()
+            .flatten()
+            .flat_map(|t| t.iter().zip(ryo_bytecode::ALL_OPCODES))
+            .filter(|(h, _)| !h.is_null())
+            .map(|(&h, &op)| (h as usize, op))
+            .collect();
+        handlers.sort_unstable();
+        // The sets share `resume`.
+        handlers.dedup();
         let probe = rt.probe as usize;
         let lo = handlers.first().map_or(probe, |h| h.0).min(probe);
         let hi = handlers.last().map_or(probe, |h| h.0).max(probe) + PAGE;
@@ -388,7 +398,7 @@ impl Jit {
         // (`pe_unwind_info`, the AOT code's form, or the SSA tier's own, from the same encoder,
         // `pe_unwind_codes`), over the OSR code too unless a pad region lies between: past the
         // prologue every `rsp` is described by `rbp`, the OSR code's included, which keeps the
-        // AOT frame's `rbp` and saved `rdi`/`rsi`; the pad region's; and if apart, the OSR
+        // AOT frame's `rbp`; the pad region's; and if apart, the OSR
         // code's (the body's, all of it past the prologue). The body's and the region's name
         // `ryo_seh_handler` through a thunk after the code, with the LSDA as their handler
         // data (design/jit.md, "Unwinding and profiling"). `pe_rfs`: the entries' ranges in
@@ -535,6 +545,12 @@ impl Jit {
         let jit_f = base + CODE_AT;
         let ro = img.bytes().as_ptr() as usize;
         let fs = img.functions();
+        // The handlers of the image's form: PE code's own set if the runtime has one.
+        let (hs, rhs) = match (img.mode().pe, self.rt.pe_handlers.is_null()) {
+            // SAFETY: the runtime's tables, non-null.
+            (true, false) => unsafe { (&*self.rt.pe_handlers, &*self.rt.pe_reg_handlers) },
+            _ => (&self.rt.handlers, &self.rt.reg_handlers),
+        };
         for r in &relocs {
             let field = jit_f + r.at as usize;
             // Fields of 8 bytes: an `imm64` of a call through `r11`.
@@ -544,8 +560,8 @@ impl Jit {
                 _ => false,
             };
             let target = match r.to {
-                Ref::Handler(op) => Some(self.rt.handlers[op as usize]).filter(|h| !h.is_null()).ok_or("no handler")? as usize,
-                Ref::RegHandler(op) => Some(self.rt.reg_handlers[op as usize]).filter(|h| !h.is_null()).ok_or("no register entry")? as usize,
+                Ref::Handler(op) => Some(hs[op as usize]).filter(|h| !h.is_null()).ok_or("no handler")? as usize,
+                Ref::RegHandler(op) => Some(rhs[op as usize]).filter(|h| !h.is_null()).ok_or("no register entry")? as usize,
                 Ref::Probe => self.rt.probe as usize,
                 Ref::Func(Func(g)) if g == func => jit_f,
                 Ref::Func(Func(g)) if g & FUNC_KINDS != 0 => {

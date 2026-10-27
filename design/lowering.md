@@ -120,11 +120,12 @@ so a MIR change in a toolchain bump is a compile error. The tables below follow 
   one 8-byte slot where landing pads store the exception object ([Unwinding](#unwinding)).
 - **Outgoing area**: the stack arguments of the calls a function makes, and island
   argument blocks, are written at `fp - F`, the bottom of the frame (`rsp`), which is the
-  callee's `fp + 16`. The lowering
+  callee's `fp + 16`. On PE its first 32 bytes are the shadow space of every call, handlers'
+  included, which every frame reserves (8 more where a handler takes a stack argument), and
+  island argument blocks start past them (`FnCx::island_block`). The lowering
   hands out outgoing slots as offsets in the block and turns them into frame offsets once
   `F` is known (`frame.rs`, `emit::finish_slots`).
-- `frame_size` `F` = locals + temporaries + the largest outgoing area (and on PE the 16
-  bytes of saved `rdi`/`rsi` at the top), rounded up to 16 (`abi::frame_size`). It is an
+- `frame_size` `F` = locals + temporaries + the largest outgoing area, rounded up to 16 (`abi::frame_size`). It is an
   operand of the prologue's `sub rsp, F` ([vm.md](vm.md#frames)).
 - **Alignment**: frames are 16-aligned (`fp` is 16-aligned and `F` a multiple of 16), and
   every slot is aligned to its type relative to `fp`.

@@ -719,7 +719,9 @@ fn decode_as(op: Opcode, items: &[Item], branch: Option<(Cond, u32)>) -> Option<
 }
 
 /// The registers inline sequences compute in: the caller-saved ones but `rcx`, the sequences'
-/// scratch register. Every handler call clobbers them anyway.
+/// scratch register. Every handler call clobbers them anyway. On PE `rsi` and `rdi` are
+/// callee-saved (Win64 handlers preserve them, and VM functions must), so sequences don't
+/// compute in them there ([`Cache::new`]).
 pub(super) const POOL: [Reg; 8] = [Reg::Rax, Reg::Rdx, Reg::Rsi, Reg::Rdi, Reg::R8, Reg::R9, Reg::R10, Reg::R11];
 
 /// What a [`POOL`] register is known to hold.
@@ -743,6 +745,8 @@ pub(super) struct Cache {
     regs: [Entry; POOL.len()],
     /// Sequences emitted.
     tick: u32,
+    /// PE: `rsi` and `rdi` aren't in the pool ([`POOL`]).
+    pe: bool,
 }
 
 /// Whether the `n`-byte range at `a` overlaps the `m`-byte one at `b` (wrapping: raw slots
@@ -792,7 +796,17 @@ fn read_reg(it: &Item) -> Option<Reg> {
     }
 }
 
+/// Whether `POOL[i]` is in the pool on PE (`pe`) or elsewhere.
+fn in_pool(pe: bool, i: usize) -> bool {
+    !(pe && matches!(POOL[i], Reg::Rsi | Reg::Rdi))
+}
+
 impl Cache {
+    /// An empty cache, for code of a PE target (`pe`) or another.
+    pub(super) fn new(pe: bool) -> Cache {
+        Cache { pe, ..Cache::default() }
+    }
+
     /// The register holding the slot at `m` (a frame operand) at width `w` exactly, or at
     /// least `w` wide unless `exact`.
     fn find(&self, m: M, w: W, exact: bool) -> Option<usize> {
@@ -805,7 +819,7 @@ impl Cache {
     /// The register a sequence that doesn't start by reloading a cached slot computes in: an
     /// empty one if there is one, the least recently used first.
     fn fresh(&self) -> usize {
-        (0..POOL.len()).min_by_key(|&i| (self.regs[i].slot.is_some(), self.regs[i].used, i)).unwrap()
+        (0..POOL.len()).filter(|&i| in_pool(self.pe, i)).min_by_key(|&i| (self.regs[i].slot.is_some(), self.regs[i].used, i)).unwrap()
     }
 
     /// `items` (an inline sequence, on `rax`) as emitted with the cache, which is updated to
@@ -866,6 +880,9 @@ impl Cache {
     /// emitting it again. The inverse of the one [`Cache::unemit`] candidate `sel` names.
     pub(super) fn invert(&self, items: &[Item], sel: u32) -> Option<Vec<Item>> {
         let x = (sel & 7) as usize;
+        if !in_pool(self.pe, x) {
+            return None;
+        }
         let xr = POOL[x];
         let back = |r: Reg| {
             if r == xr {
@@ -907,8 +924,9 @@ impl Cache {
         let mut out = Vec::new();
         // The register computed in appears in the items, unless the sequence computes
         // nothing in a register, when it is the one any would get.
-        let mut xs: Vec<usize> =
-            (0..POOL.len()).filter(|&i| items.iter().any(|it| it.map_regs(|r| if r == POOL[i] { Reg::Rbp } else { r }) != *it)).collect();
+        let mut xs: Vec<usize> = (0..POOL.len())
+            .filter(|&i| in_pool(self.pe, i) && items.iter().any(|it| it.map_regs(|r| if r == POOL[i] { Reg::Rbp } else { r }) != *it))
+            .collect();
         if xs.is_empty() {
             xs.push(self.fresh());
         }

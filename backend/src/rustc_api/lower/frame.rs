@@ -79,11 +79,9 @@ pub struct Frame<'tcx> {
 
 impl<'tcx> Frame<'tcx> {
     /// Lays out the locals of `body`, whose arguments come in the argument block of `sig`.
-    /// On PE, the top 16 bytes of the frame hold the saved `rdi` and `rsi` (`pe`).
     pub fn new(
         body: &Body<'tcx>,
         sig: &AbiSig<'tcx>,
-        pe: bool,
         layout_of_local: impl Fn(Local) -> Result<TyAndLayout<'tcx>, NeedsNative>,
     ) -> Result<Self, NeedsNative> {
         let spread = body.spread_arg;
@@ -103,7 +101,7 @@ impl<'tcx> Frame<'tcx> {
             return native("argument block too large");
         }
         // Bytes below `fp` taken so far.
-        let mut end = if pe { 16 } else { 0 };
+        let mut end = 0;
         let mut locals = IndexVec::with_capacity(body.local_decls.len());
         let sharing = Sharing::new(body);
         // Locals that share slots, placed after the others.

@@ -1,19 +1,26 @@
-//! The handlers: one `extern "sysv64-unwind"` function `ryo_h_<Opcode>` per opcode
-//! (design/vm.md, "Handlers"), which the machine code of VM functions calls.
+//! The handlers: one `extern "C-unwind"` function `ryo_h_<Opcode>` per opcode
+//! (design/vm.md, "Handlers"), which the machine code of VM functions calls: `sysv64`, or on
+//! PE Win64.
 //!
 //! # Structure
 //!
 //! `handlers.rs` lists every opcode with the *kind* of its handler and the kind's
 //! parameters (`AddW32 => bin(u32, wrapping_add);`). Each kind is a macro in this file that
 //! expands to the handler body. `handlers!` turns each entry into a handler with the uniform
-//! signature `(a0, …, a5: u64) -> R`: the six argument registers. A body reads operand
-//! `name` from them through the opcode's register layout ([`ryo_bytecode::asm::layout`],
-//! a constant), so an unused register costs nothing and every handler is one function body.
+//! signature `(a0, …, a5: u64) -> R`: the six argument positions (on PE four registers and
+//! the stack, of which layouts use five, [`ryo_bytecode::asm::handler_arg`]). A body reads
+//! operand `name` from them through the opcode's register layout
+//! ([`ryo_bytecode::asm::layout`], a constant), so an unused argument costs nothing and every
+//! handler is one function body.
 //!
-//! The frame pointer `fp` comes in `rdi`, before the operands. With the `fp-rbp` feature it
-//! is `rbp` instead, which the caller (VM code) then keeps at its frame: the handler reads it
-//! before anything else, and must not write `rbp` before that (`ryo_rt` is built without
-//! forced frame pointers, and `tests/codegen.rs` checks every handler) ([`MODE`]).
+//! The frame pointer `fp` comes in `rdi`, before the operands. With the `fp-rbp` feature, and
+//! always on PE, it is `rbp` instead, which the caller (VM code) then keeps at its frame: the
+//! handler reads it before anything else, and must not write `rbp` before that (`ryo_rt` is
+//! built without forced frame pointers, and `tests/codegen.rs` checks every handler)
+//! ([`MODE`]).
+//!
+//! With the `pe-test` feature (off Windows, for tests) a second set, the PE form's (Win64,
+//! [`PE_MODE`]), has no symbols: [`pe_handler`], [`pe_reg_handler`].
 //!
 //! `resume` ends in a tail jump, so it is written in assembly.
 //!
@@ -43,29 +50,34 @@ use ryo_bytecode::jit::effects::RegEntry;
 
 /// How the machine code passes `fp`: the backend reads this (through `FP_ARG`) and encodes
 /// to match. The handlers work with and without a frame pointer when they take `fp` in
-/// `rdi`; tests encode without one then. The other fields don't concern the handlers.
+/// `rdi`; tests encode without one then. On PE (Win64 handlers) `fp` is always `rbp`. The
+/// other fields but `pe` don't concern the handlers.
 pub const MODE: asm::Mode = asm::Mode {
-    fp_arg: !cfg!(feature = "fp-rbp"),
-    frame_pointer: cfg!(feature = "fp-rbp"),
+    fp_arg: !cfg!(feature = "fp-rbp") && !cfg!(windows),
+    frame_pointer: cfg!(feature = "fp-rbp") || cfg!(windows),
     align_loops: false,
-    pe: false,
+    pe: cfg!(windows),
     counters: false,
     far_rt: false,
 };
+
+/// The mode of the PE handler set (`pe-test`): Win64 handlers that read `fp` from `rbp`.
+#[cfg(all(feature = "pe-test", not(windows)))]
+pub const PE_MODE: asm::Mode = asm::Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: true, counters: false, far_rt: false };
 
 /// Whether handlers take `fp` in `rdi`; the backend checks it agrees with its encoding.
 #[rustc_diagnostic_item = "ryo_rt_fp_arg"]
 pub const FP_ARG: bool = MODE.fp_arg;
 
-/// The location of operand `name` of `op` in the argument registers.
-const fn loc(op: Opcode, name: &str) -> Loc {
-    asm::layout(op, MODE).loc(op, name)
+/// The location of operand `name` of `op` in the argument registers of `mode`'s handlers.
+const fn loc(op: Opcode, name: &str, mode: asm::Mode) -> Loc {
+    asm::layout(op, mode).loc(op, name)
 }
 
-/// The frame pointer of the calling VM function.
+/// The frame pointer of the calling VM function, for `mode`'s handlers.
 #[inline(always)]
-fn read_fp(a: &[u64; ARG_REGS]) -> *mut u8 {
-    if MODE.fp_arg {
+fn read_fp(a: &[u64; ARG_REGS], mode: asm::Mode) -> *mut u8 {
+    if mode.fp_arg {
         a[0] as usize as *mut u8
     } else {
         let fp: *mut u8;
@@ -75,10 +87,11 @@ fn read_fp(a: &[u64; ARG_REGS]) -> *mut u8 {
     }
 }
 
-/// The operand `name` of `$op`: its register value (or the two of a wide operand).
+/// The operand `name` of `$op`: its register value (or the two of a wide operand). `M` is
+/// the mode of the handler set being expanded (each set's module defines it).
 macro_rules! v {
     ($a:ident, $op:ident, $name:ident) => {
-        asm::read(&$a, const { loc(Opcode::$op, stringify!($name)) })
+        asm::read(&$a, const { loc(Opcode::$op, stringify!($name), M) })
     };
 }
 
@@ -471,7 +484,7 @@ macro_rules! abort_now {
 }
 macro_rules! lpad {
     ($a:ident, $fp:ident, $op:ident,) => {
-        put!($a, $fp, $op, x, $a[const { asm::layout(Opcode::$op, MODE).first as usize - 1 }])
+        put!($a, $fp, $op, x, $a[const { asm::layout(Opcode::$op, M).first as usize - 1 }])
     };
 }
 /// Writes `v` to the slot at `p`.
@@ -513,9 +526,55 @@ unsafe fn sparse<T: Copy + Ord>(vals: *const T, n: usize, v: T) -> usize {
 #[repr(C)]
 pub struct RegRet(pub MaybeUninit<u64>, pub MaybeUninit<u64>);
 
-/// The register entry of `op` (`ryo_bytecode::jit::effects::RegEntry`), or `NONE`.
-const fn reg_entry(op: Opcode) -> RegEntry {
-    match ryo_bytecode::jit::effects::reg_entry(op, MODE) {
+/// The return type of a register entry of a handler set: [`RegRet`] (`sysv64`, `Sel<0>`),
+/// or for Win64, which returns a 16-byte struct through memory, one value in `rax`
+/// (`Sel<1>`) or two in `xmm0`, low and high (`Sel<2>`, `__m128i`).
+pub trait RegRetOf {
+    type T;
+    fn make(a: MaybeUninit<u64>, b: MaybeUninit<u64>) -> Self::T;
+}
+
+/// The selector of [`RegRetOf`].
+pub struct Sel<const N: usize>;
+
+impl RegRetOf for Sel<0> {
+    type T = RegRet;
+    #[inline(always)]
+    fn make(a: MaybeUninit<u64>, b: MaybeUninit<u64>) -> RegRet {
+        RegRet(a, b)
+    }
+}
+
+impl RegRetOf for Sel<1> {
+    type T = MaybeUninit<u64>;
+    #[inline(always)]
+    fn make(a: MaybeUninit<u64>, _: MaybeUninit<u64>) -> MaybeUninit<u64> {
+        a
+    }
+}
+
+impl RegRetOf for Sel<2> {
+    type T = core::arch::x86_64::__m128i;
+    #[inline(always)]
+    fn make(a: MaybeUninit<u64>, b: MaybeUninit<u64>) -> core::arch::x86_64::__m128i {
+        // SAFETY: 16 bytes of (possibly uninitialized) integers in an integer vector.
+        unsafe { core::mem::transmute::<[MaybeUninit<u64>; 2], core::arch::x86_64::__m128i>([a, b]) }
+    }
+}
+
+/// [`RegRetOf`]'s selector for `op`'s register entry in `mode`: 0 off PE, else the number
+/// of values it returns (one at least).
+pub const fn reg_ret_sel(op: Opcode, mode: asm::Mode) -> usize {
+    if !mode.pe {
+        return 0;
+    }
+    let e = reg_entry(op, mode);
+    if e.nout as usize + e.ret as usize == 2 { 2 } else { 1 }
+}
+
+/// The register entry of `op` (`ryo_bytecode::jit::effects::RegEntry`) in `mode`, or `NONE`.
+const fn reg_entry(op: Opcode, mode: asm::Mode) -> RegEntry {
+    match ryo_bytecode::jit::effects::reg_entry(op, mode) {
         Some(e) => e,
         None => RegEntry::NONE,
     }
@@ -524,11 +583,11 @@ const fn reg_entry(op: Opcode) -> RegEntry {
 /// The argument registers a register entry gives the body of `op`, per register the bits
 /// it keeps of the entry's data register and the bits it sets: each frame operand's slot
 /// offset is its offset in the entry's buffer, `8 * index`.
-const fn reg_patch(op: Opcode) -> [(u64, u64); ARG_REGS] {
+const fn reg_patch(op: Opcode, mode: asm::Mode) -> [(u64, u64); ARG_REGS] {
     let info = op.info();
-    let l = asm::layout(op, MODE);
+    let l = asm::layout(op, mode);
     let mut p = [(0u64, 0u64); ARG_REGS];
-    let e = reg_entry(op);
+    let e = reg_entry(op, mode);
     let mut j = 0;
     while j < e.ndata as usize {
         p[e.data[j] as usize].0 = !0;
@@ -559,15 +618,16 @@ macro_rules! reg_ret {
     };
 }
 
-/// The register entry of a handler (`RegEntry`): the body run on a buffer of the frame
-/// operands' values, which LLVM keeps in registers. `!` handlers have none.
+/// The register entry of a handler (`RegEntry`), of ABI `$abi`: the body run on a buffer of
+/// the frame operands' values, which LLVM keeps in registers. `!` handlers have none.
 macro_rules! reg_handler {
-    ($name:ident, $kind:ident, ($($p:tt)*), !) => {};
-    ($name:ident, $kind:ident, ($($p:tt)*), $($ret:tt)?) => {
-        #[allow(non_snake_case, unused_variables, unused_unsafe, unused_mut, unused_assignments, clippy::unused_unit)]
-        pub unsafe extern "sysv64-unwind" fn $name(r0: u64, r1: u64, r2: u64, r3: u64, r4: u64, r5: u64) -> RegRet {
-            const E: RegEntry = reg_entry(Opcode::$name);
-            const P: [(u64, u64); ARG_REGS] = reg_patch(Opcode::$name);
+    ($abi:literal, $name:ident, $kind:ident, ($($p:tt)*), !) => {};
+    ($abi:literal, $name:ident, $kind:ident, ($($p:tt)*), $($ret:tt)?) => {
+        // `__m128i` returns in `xmm0` (Win64's `__m128i`).
+        #[allow(non_snake_case, unused_variables, unused_unsafe, unused_mut, unused_assignments, clippy::unused_unit, improper_ctypes_definitions)]
+        pub unsafe extern $abi fn $name(r0: u64, r1: u64, r2: u64, r3: u64, r4: u64, r5: u64) -> <Sel<{ reg_ret_sel(Opcode::$name, M) }> as RegRetOf>::T {
+            const E: RegEntry = reg_entry(Opcode::$name, M);
+            const P: [(u64, u64); ARG_REGS] = reg_patch(Opcode::$name, M);
             let r = [r0, r1, r2, r3, r4, r5];
             let mut buf = [0u64; asm::MAX_OPERANDS];
             let mut k = 0;
@@ -599,18 +659,18 @@ macro_rules! reg_handler {
             if let Some(v) = v {
                 out[n] = MaybeUninit::new(v);
             }
-            RegRet(out[0], out[1])
+            <Sel<{ reg_ret_sel(Opcode::$name, M) }> as RegRetOf>::make(out[0], out[1])
         }
     };
 }
 
 /// The address of a register entry, if `op` has one.
 macro_rules! reg_addr {
-    ($name:ident, !) => {
+    ($m:ident, $hr:ident, $name:ident, !) => {
         None
     };
-    ($name:ident, $($ret:tt)?) => {
-        if const { ryo_bytecode::jit::effects::reg_entry(Opcode::$name, MODE).is_some() } { Some(hr::$name as *const ()) } else { None }
+    ($m:ident, $hr:ident, $name:ident, $($ret:tt)?) => {
+        if const { ryo_bytecode::jit::effects::reg_entry(Opcode::$name, $m).is_some() } { Some($hr::$name as *const ()) } else { None }
     };
 }
 
@@ -623,13 +683,14 @@ macro_rules! handlers {
         mod h {
             #[allow(unused_imports)]
             use super::*;
+            const M: asm::Mode = MODE;
             $(
                 #[rustc_std_internal_symbol]
                 #[unsafe(export_name = concat!("ryo_h_", stringify!($name)))]
                 #[allow(non_snake_case, unused_variables, unused_unsafe, clippy::unused_unit)]
-                pub unsafe extern "sysv64-unwind" fn $name(a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) $(-> $ret)? {
+                pub unsafe extern "C-unwind" fn $name(a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) $(-> $ret)? {
                     let a = [a0, a1, a2, a3, a4, a5];
-                    let fp = read_fp(&a);
+                    let fp = read_fp(&a, M);
                     // SAFETY: see the module docs.
                     unsafe { $kind!(a, fp, $name, $($p)*) }
                 }
@@ -642,7 +703,55 @@ macro_rules! handlers {
         mod hr {
             #[allow(unused_imports)]
             use super::*;
-            $(reg_handler!($name, $kind, ($($p)*), $($ret)?);)*
+            const M: asm::Mode = MODE;
+            $(reg_handler!("C-unwind", $name, $kind, ($($p)*), $($ret)?);)*
+        }
+
+        /// The PE form's handlers (`pe-test`): Win64, without symbols.
+        #[cfg(all(feature = "pe-test", not(windows)))]
+        mod hpe {
+            #[allow(unused_imports)]
+            use super::*;
+            const M: asm::Mode = PE_MODE;
+            $(
+                #[allow(non_snake_case, unused_variables, unused_unsafe, clippy::unused_unit)]
+                pub unsafe extern "win64-unwind" fn $name(a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) $(-> $ret)? {
+                    let a = [a0, a1, a2, a3, a4, a5];
+                    let fp = read_fp(&a, M);
+                    // SAFETY: see the module docs.
+                    unsafe { $kind!(a, fp, $name, $($p)*) }
+                }
+            )*
+        }
+
+        /// The PE form's register entries (`pe-test`).
+        #[cfg(all(feature = "pe-test", not(windows)))]
+        mod hrpe {
+            #[allow(unused_imports)]
+            use super::*;
+            const M: asm::Mode = PE_MODE;
+            $(reg_handler!("win64-unwind", $name, $kind, ($($p)*), $($ret)?);)*
+        }
+
+        /// The PE form's handler of `op` (`pe-test`; tests run PE code off Windows with it).
+        #[cfg(all(feature = "pe-test", not(windows)))]
+        #[doc(hidden)]
+        pub fn pe_handler(op: Opcode) -> Option<*const ()> {
+            match op {
+                $(Opcode::$name => Some(hpe::$name as *const ()),)*
+                Opcode::Resume => Some(resume as *const ()),
+                _ => None,
+            }
+        }
+
+        /// The PE form's register entry of `op` (`pe-test`).
+        #[cfg(all(feature = "pe-test", not(windows)))]
+        #[doc(hidden)]
+        pub fn pe_reg_handler(op: Opcode) -> Option<*const ()> {
+            match op {
+                $(Opcode::$name => reg_addr!(PE_MODE, hrpe, $name, $($ret)?),)*
+                _ => None,
+            }
         }
 
         /// Every opcode with a handler written in Rust, by value.
@@ -667,7 +776,7 @@ macro_rules! handlers {
         #[doc(hidden)]
         pub fn reg_handler(op: Opcode) -> Option<*const ()> {
             match op {
-                $(Opcode::$name => reg_addr!($name, $($ret)?),)*
+                $(Opcode::$name => reg_addr!(MODE, hr, $name, $($ret)?),)*
                 _ => None,
             }
         }
@@ -676,6 +785,18 @@ macro_rules! handlers {
 
 include!("handlers.rs");
 for_each_handler!(handlers!());
+
+/// The handler of `op` for code of the PE form (`pe`) or the target's: with `pe-test`, the PE
+/// set's off Windows (tests that link images by hand).
+#[doc(hidden)]
+pub fn handler_for(op: Opcode, pe: bool) -> Option<*const ()> {
+    #[cfg(all(feature = "pe-test", not(windows)))]
+    if pe {
+        return pe_handler(op);
+    }
+    let _ = pe;
+    handler(op)
+}
 
 // The list has exactly the opcodes with handlers, other than the assembly ones.
 const _: () = {
@@ -729,7 +850,7 @@ unsafe extern "C-unwind" {
 #[cfg(windows)]
 #[rustc_std_internal_symbol]
 #[unsafe(export_name = "ryo_h_Resume")]
-pub unsafe extern "sysv64-unwind" fn resume() -> ! {
+pub unsafe extern "C-unwind" fn resume() -> ! {
     super::sys::fatal("resume: VM unwinding isn't supported on this target")
 }
 

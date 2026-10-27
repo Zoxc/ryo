@@ -713,11 +713,12 @@ fn check_assumptions() {
             assert!(kinds.contains(&o.kind), "{:?}", o.kind);
         }
     }
-    // The layout depends only on `fp_arg`.
+    // Off PE, the layout depends only on `fp_arg`. (PE's Win64 layouts aren't in the Lean
+    // tables yet: lean/PENDING.md.)
     for bits in 0..32u32 {
         let b = |i: u32| bits >> i & 1 != 0;
         let m = Mode { fp_arg: b(0), frame_pointer: b(1), align_loops: b(2), pe: b(3), counters: b(4), far_rt: false };
-        if !m.valid() {
+        if !m.valid() || m.pe {
             continue;
         }
         for &op in full::ALL_OPCODES.iter().filter(|&&op| asm::has_handler(op)) {

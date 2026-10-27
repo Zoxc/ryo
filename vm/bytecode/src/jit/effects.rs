@@ -57,8 +57,9 @@ pub(super) const fn e(opnds: &[Option<Effect>], memory: bool) -> Option<Effects>
 
 /// A handler's register entry (design/jit.md, "Register entries"): the handler body with its
 /// frame operands in registers instead of frame slots, for the SSA tier. Like the frame entry
-/// it is `extern "sysv64-unwind" fn(a0, …, a5: u64)`, and it returns `(u64, u64)` in
-/// `rax`, `rdx`. It takes, in `rdi`, `rsi`, … in this order:
+/// it is `extern "C-unwind" fn(a0, …, a5: u64)`, and it returns `(u64, u64)` in `rax`, `rdx`;
+/// on PE (Win64, at most four arguments, all in registers) one value in `rax`, two in
+/// `xmm0` (low, high). It takes, in the argument registers in this order:
 /// - the values of the frame operands it reads ([`RegEntry::ins`], by operand index, in operand
 ///   order), each in the low bytes of its register;
 /// - then whole the frame entry's argument registers that hold anything but slot offsets
@@ -85,17 +86,11 @@ impl RegEntry {
     pub const NONE: RegEntry = RegEntry { ins: [0; ARG_REGS], nin: 0, data: [0; ARG_REGS], ndata: 0, outs: [0; 2], nout: 0, ret: false };
 }
 
-/// The handlers that write `xmm6`–`xmm15`, callee-saved on Win64 but not in `sysv64` code:
-/// their `i128` result stays in `xmm6` across a call. The lowering calls the `as_cast` island
-/// instead on PE, and the SSA tier doesn't compile them there; `vm/rt/tests/codegen.rs`
-/// checks that no other handler (or register entry) writes those registers.
-pub const PE_XMM_CLOBBERS: [Opcode; 4] = [Opcode::CvtF2iSatSF32W128, Opcode::CvtF2iSatUF32W128, Opcode::CvtF2iSatSF64W128, Opcode::CvtF2iSatUF64W128];
-
 /// `op`'s register entry in `mode` (whose register layout gives the data registers), if it
 /// has one: a handler that returns (`op`, `br` and `switch` shapes; not `resume`), whose frame
 /// operands are all read, written or updated at 1 to 8 bytes (no `addr`, no blocks, no
-/// `w128`), whose inputs and data registers fit the six argument registers and whose outputs
-/// and return value fit `rax` and `rdx`. Others keep only their frame entry.
+/// `w128`), whose inputs and data registers fit the argument registers (six, on PE four)
+/// and whose outputs and return value are at most two. Others keep only their frame entry.
 pub const fn reg_entry(op: Opcode, mode: Mode) -> Option<RegEntry> {
     let info = op.info();
     if !matches!(info.shape, Shape::Op | Shape::Br | Shape::Switch) || matches!(op, Opcode::Resume) {
@@ -103,6 +98,7 @@ pub const fn reg_entry(op: Opcode, mode: Mode) -> Option<RegEntry> {
     }
     let Some(e) = effects(op) else { return None };
     let l = crate::asm::layout(op, mode);
+    let regs = if mode.pe { crate::asm::PE_ARG_REGS } else { ARG_REGS };
     let mut r = RegEntry::NONE;
     r.ret = !matches!(info.shape, Shape::Op);
     let mut data = [false; ARG_REGS];
@@ -119,7 +115,7 @@ pub const fn reg_entry(op: Opcode, mode: Mode) -> Option<RegEntry> {
             _ => (false, false),
         };
         if reads {
-            if r.nin as usize == ARG_REGS {
+            if r.nin as usize == regs {
                 return None;
             }
             r.ins[r.nin as usize] = k as u8;
@@ -147,7 +143,7 @@ pub const fn reg_entry(op: Opcode, mode: Mode) -> Option<RegEntry> {
     let mut g = 0;
     while g < ARG_REGS {
         if data[g] {
-            if (r.nin + r.ndata) as usize == ARG_REGS {
+            if (r.nin + r.ndata) as usize == regs {
                 return None;
             }
             r.data[r.ndata as usize] = g as u8;

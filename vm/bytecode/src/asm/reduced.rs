@@ -26,7 +26,7 @@ pub fn as_handler(words: &[u32], mode: Mode) -> Vec<u32> {
     let op = reduced::Opcode::from_u16(words[0] as u16).and_then(|op| op.full()).expect("a native instruction");
     full[0] = op as u32;
     let ops: Vec<Opnd> = operands(&full, 0);
-    let args: Vec<Arg> = handler_args(op, &ops, mode.fp_arg, |_| unreachable!("no code constants"))
+    let args: Vec<Arg> = handler_args(op, &ops, mode, |_| unreachable!("no code constants"))
         .into_iter()
         .map(|v| match v {
             ArgVal::Fp => Arg::Fp,
@@ -188,7 +188,7 @@ pub fn reduce(
             insns.push(Insn::Native(op, ops));
             continue;
         }
-        let args = handler_args(op, &ops, mode.fp_arg, |r| match r {
+        let args = handler_args(op, &ops, mode, |r| match r {
             RoReq::Bytes { bytes, align } => rodata.add(bytes, align),
             RoReq::Ops(_) => unreachable!("handlers take no operand arrays"),
         })

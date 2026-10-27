@@ -13,7 +13,7 @@ use alloc::vec::Vec;
 
 use super::list::Hint;
 use super::reduced::Then;
-use super::x86::{ARGS, Cond, Item, M, Reg, Sh, W, island_args, padding};
+use super::x86::{Cond, Item, M, Reg, STACK_ARG, Sh, W, handler_reg, island_args, padding};
 use super::{ArgReg, Layout, Loc, Mode, RetPart, layout, ret_parts};
 use crate::full::{Const, Data, DecodeError, ElemKind, Func, Opcode, OperandKind, Shape, Site, Sym};
 use crate::image::{Cleanup, CleanupEntry};
@@ -495,8 +495,9 @@ enum Piece {
     /// A native item of an inline sequence, its frame displacements raw slots.
     Native(Item),
     /// `reg = v`, where the 32-bit halves flagged in `slots` (bit 0: low, bit 1: high) are raw
-    /// slots that become frame offsets.
-    SetReg { reg: Reg, v: u64, slots: u8 },
+    /// slots that become frame offsets; for `None`, PE's handler stack argument, the store
+    /// of the low half ([`super::HandlerArg::Stack`]).
+    SetReg { reg: Option<Reg>, v: u64, slots: u8 },
     /// A fixed item whose frame displacements are raw slots: the loads of a returned value
     /// and the stores of a call's result, outside the register cache.
     Frame(Item),
@@ -618,18 +619,19 @@ fn drop_dead_stores(pieces: &mut [Piece], target: &[bool]) {
 /// Runs the register cache ([`super::inline::Cache`]) over the inline sequences: from the
 /// start of the code, and cleared at every branch target and by every other instruction.
 /// Returns the first piece and the selector of each sequence it emitted non-plainly.
-fn cache(pieces: &mut [Piece], target: &[bool]) -> Vec<(usize, u32)> {
+fn cache(pieces: &mut [Piece], target: &[bool], pe: bool) -> Vec<(usize, u32)> {
     let mut sels = Vec::new();
-    let mut c = super::inline::Cache::default();
+    let fresh = || super::inline::Cache::new(pe);
+    let mut c = fresh();
     let mut items = Vec::new();
     let mut k = 0;
     while k < pieces.len() {
         if target[k] {
-            c = Default::default();
+            c = fresh();
         }
         if !matches!(pieces[k], Piece::Native(_)) {
             if !matches!(pieces[k], Piece::Dead { .. } | Piece::Scope { .. }) {
-                c = Default::default();
+                c = fresh();
             }
             k += 1;
             continue;
@@ -1045,37 +1047,36 @@ impl Asm {
 
     /// Sets the argument registers of `op`'s handler from `ops` and calls it.
     fn handler_call(&mut self, op: Opcode, ops: &[Opnd<Label>], site: Option<InsnId>) {
-        for (reg, v) in handler_args(op, ops, self.mode.fp_arg, |r| self.ro(r)).into_iter().enumerate() {
+        let pe = self.mode.pe;
+        for (k, v) in handler_args(op, ops, self.mode, |r| self.ro(r)).into_iter().enumerate() {
+            let Some(reg) = handler_reg(pe, k as u8) else {
+                // PE's stack argument: one 32-bit operand ([`super::layout`]).
+                let ArgVal::Imm(v, slots) = v else { unreachable!("a 32-bit operand on the stack") };
+                self.pieces.push(Piece::SetReg { reg: None, v, slots });
+                continue;
+            };
             match v {
-                ArgVal::Fp => self.pieces.push(Piece::Fp(ARGS[reg])),
+                ArgVal::Fp => self.pieces.push(Piece::Fp(reg)),
                 // The exception object, in `rax` at a landing pad.
-                ArgVal::Exception => self.fixed(Item::Mov(ARGS[reg], Reg::Rax)),
-                ArgVal::Imm(v, 0) => self.fixed(Item::SetReg(ARGS[reg], v)),
-                ArgVal::Imm(v, slots) => self.pieces.push(Piece::SetReg { reg: ARGS[reg], v, slots }),
-                ArgVal::Addr(r) => self.fixed(Item::Lea(ARGS[reg], r)),
-                ArgVal::Ro(ro) => self.pieces.push(Piece::LeaRo { reg: ARGS[reg], ro }),
+                ArgVal::Exception => self.fixed(Item::Mov(reg, Reg::Rax)),
+                ArgVal::Imm(v, 0) => self.fixed(Item::SetReg(reg, v)),
+                ArgVal::Imm(v, slots) => self.pieces.push(Piece::SetReg { reg: Some(reg), v, slots }),
+                ArgVal::Addr(r) => self.fixed(Item::Lea(reg, r)),
+                ArgVal::Ro(ro) => self.pieces.push(Piece::LeaRo { reg, ro }),
             }
         }
         self.maybe_site(rt_call(Ref::Handler(op), self.mode), site);
     }
 
     /// The direct island call `island(fp, ops)` through the symbol slot `isl`, `ops` the
-    /// operand array [`Asm::ro`]`[ro]` (PE: with 32 bytes of shadow space).
+    /// operand array [`Asm::ro`]`[ro]`. On PE the shadow space is the frame's bottom 32
+    /// bytes (or in the pad region what its entry allocated): `rsp` doesn't move.
     fn island_call(&mut self, isl: Sym, ro: u32, site: Option<InsnId>) {
         let [fp, ops] = island_args(self.mode.pe);
         self.pieces.push(Piece::Fp(fp));
         self.pieces.push(Piece::LeaRo { reg: ops, ro });
-        // The pad region's `rsp` doesn't move: its entry allocated the shadow space.
-        let shadow = self.mode.pe && !self.in_region();
-        if shadow {
-            self.fixed(Item::SubRsp(32));
-        }
         self.maybe_site(Item::CallMem(Ref::Sym(isl)), site);
-        if shadow {
-            self.fixed(Item::AddRsp(32));
-        } else {
-            self.bare_calls.push(self.pieces.len() - 1);
-        }
+        self.bare_calls.push(self.pieces.len() - 1);
     }
 
     /// A dense switch's index computation ([`super::inline::dense_index`]): its load of the
@@ -1151,7 +1152,13 @@ impl Asm {
             };
             super::inline::dense_index(op, arg("s")? as u32 as i32, arg("base")?, arg("table")?)
         })();
-        for (&a, &reg) in args.iter().zip(&ARGS).filter(|_| dense.is_none()) {
+        for (k, &a) in args.iter().enumerate().filter(|_| dense.is_none()) {
+            let Some(reg) = handler_reg(self.mode.pe, k as u8) else {
+                // PE's stack argument: one 32-bit operand ([`super::layout`]).
+                let Arg::Imm(v) = a else { unreachable!("a 32-bit operand on the stack") };
+                self.fixed(Item::StImm { w: W::D, m: STACK_ARG, imm: v as u32 as i32 });
+                continue;
+            };
             match a {
                 Arg::Fp => self.pieces.push(Piece::Fp(reg)),
                 Arg::Exception => self.fixed(Item::Mov(reg, Reg::Rax)),
@@ -1325,7 +1332,7 @@ impl Asm {
         let Asm { mode, mut pieces, labels, ro, unwind, targets, drops, seqs, region, bare_calls } = self;
         debug_assert!(mode.valid(), "{mode:?}");
         let target = branch_targets(&pieces, &labels);
-        let sels = cache(&mut pieces, &target);
+        let sels = cache(&mut pieces, &target, mode.pe);
         match drops {
             // The cache drops at most a sequence's leading reload, so a store named is still
             // its last piece (or an overflow op's result store).
@@ -1480,6 +1487,12 @@ impl Asm {
             }
             // PE: the `nop` after a call with a landing pad that ends its instruction.
             let mut nop = false;
+            // A multi-item epilogue (PE): all but its last item first.
+            if matches!(p, Piece::Epilogue) {
+                for &it in &epilogue[..epilogue.len() - 1] {
+                    fixed(&mut out, it);
+                }
+            }
             out.push(match p {
                 Piece::Fixed { item, site } => {
                     let a = site.and_then(|id| unwind[id.0 as usize]);
@@ -1500,7 +1513,7 @@ impl Asm {
                 Piece::Dropped(item) => Laid::Dropped(item.map_frame(|s| fix(s as u32) as i32)),
                 Piece::Native(item) => Laid::Fixed { item: slot(item), site: None },
                 Piece::Fp(reg) => Laid::Fixed { item: fp_item(reg, frame_size, mode), site: None },
-                Piece::Epilogue => Laid::Fixed { item: epilogue, site: None },
+                Piece::Epilogue => Laid::Fixed { item: *epilogue.last().expect("an epilogue"), site: None },
                 Piece::SetReg { reg, v, slots } => {
                     let mut v = v;
                     if slots & 1 != 0 {
@@ -1509,7 +1522,11 @@ impl Asm {
                     if slots & 2 != 0 {
                         v = v & 0xffff_ffff | (fix((v >> 32) as u32) as u64) << 32;
                     }
-                    Laid::Fixed { item: Item::SetReg(reg, v), site: None }
+                    let item = match reg {
+                        Some(reg) => Item::SetReg(reg, v),
+                        None => Item::StImm { w: W::D, m: STACK_ARG, imm: v as u32 as i32 },
+                    };
+                    Laid::Fixed { item, site: None }
                 }
                 Piece::LeaRo { reg, ro } => Laid::Fixed { item: Item::Lea(reg, Ref::Ro(ro_off[ro as usize])), site: None },
                 Piece::Branch { cond, to } => {
@@ -1617,17 +1634,12 @@ fn func_call(f: Func, tail: bool) -> Item {
 pub const PROBE_FROM: u32 = 4096;
 
 /// The prologue of a function with frame size `F`: `push rbp; mov rbp, rsp`, then for
-/// `F > 0` `sub rsp, F`; or without a frame pointer `sub rsp, F + 8`. On PE, the top 16 bytes
-/// of the frame hold `rdi` and `rsi` ([`Item::WinPrologue`], so `F` is at least 16), and the
-/// `sub` is of `F - 16`. A stack probe of the `sub`'s size comes before it for `F` from
-/// [`PROBE_FROM`].
+/// `F > 0` `sub rsp, F`; or without a frame pointer `sub rsp, F + 8`. A stack probe of the
+/// `sub`'s size comes before it for `F` from [`PROBE_FROM`]. PE's is the frame pointer's
+/// (`UWOP_PUSH_NONVOL rbp`, `UWOP_SET_FPREG` at offset 0, the allocation).
 pub(super) fn prologue(frame_size: u32, mode: Mode) -> Vec<Item> {
     let mut out = Vec::with_capacity(4);
-    let alloc = if mode.pe {
-        debug_assert!(frame_size >= 16, "PE frames keep rdi and rsi at the top");
-        out.push(Item::WinPrologue);
-        frame_size - 16
-    } else if mode.frame_pointer {
+    let alloc = if mode.frame_pointer {
         out.extend([Item::PushRbp, Item::Mov(Reg::Rbp, Reg::Rsp)]);
         frame_size
     } else {
@@ -1648,14 +1660,20 @@ pub fn prologue_len(frame_size: u32, mode: Mode) -> u32 {
 }
 
 /// The epilogue before `ret` and tail jumps: `leave`, or `add rsp, F + 8`, or on PE
-/// [`Item::WinEpilogue`].
-pub(super) fn epilogue(frame_size: u32, mode: Mode) -> Item {
+/// `add rsp, F` (for `F > 0`) and `pop rbp`, the form the Win64 unwinder recognizes as an
+/// epilogue (`rsp` is `fp - F` wherever there is one).
+pub(super) fn epilogue(frame_size: u32, mode: Mode) -> Vec<Item> {
     if mode.pe {
-        Item::WinEpilogue
+        let mut out = Vec::with_capacity(2);
+        if frame_size != 0 {
+            out.push(Item::AddRsp(frame_size));
+        }
+        out.push(Item::PopRbp);
+        out
     } else if mode.frame_pointer {
-        Item::Leave
+        vec![Item::Leave]
     } else {
-        Item::AddRsp(frame_size + 8)
+        vec![Item::AddRsp(frame_size + 8)]
     }
 }
 
@@ -1664,11 +1682,11 @@ pub(super) fn fp_item(reg: Reg, frame_size: u32, mode: Mode) -> Item {
     if mode.frame_pointer { Item::Mov(reg, Reg::Rbp) } else { Item::LeaM { dst: reg, m: super::x86::M { base: Reg::Rsp, disp: frame_size as i32 } } }
 }
 
-/// Every opcode's handler register layout, with `fp` in `rbp` and in `rdi`, computed at compile
-/// time.
-fn layouts(fp_arg: bool) -> &'static [Layout] {
-    const fn all(fp_arg: bool) -> [Layout; crate::full::ALL_OPCODES.len()] {
-        let mode = Mode { fp_arg, frame_pointer: true, align_loops: false, pe: false, counters: false, far_rt: false };
+/// Every opcode's handler register layout in `mode` (which depends on its `fp_arg` and `pe`),
+/// computed at compile time.
+fn layouts(mode: Mode) -> &'static [Layout] {
+    const fn all(fp_arg: bool, pe: bool) -> [Layout; crate::full::ALL_OPCODES.len()] {
+        let mode = Mode { fp_arg, frame_pointer: true, align_loops: false, pe, counters: false, far_rt: false };
         let mut out = [layout(Opcode::Jmp, mode); crate::full::ALL_OPCODES.len()];
         let mut i = 0;
         while i < out.len() {
@@ -1677,9 +1695,14 @@ fn layouts(fp_arg: bool) -> &'static [Layout] {
         }
         out
     }
-    static NO_FP: [Layout; crate::full::ALL_OPCODES.len()] = all(false);
-    static FP: [Layout; crate::full::ALL_OPCODES.len()] = all(true);
-    if fp_arg { &FP } else { &NO_FP }
+    static NO_FP: [Layout; crate::full::ALL_OPCODES.len()] = all(false, false);
+    static FP: [Layout; crate::full::ALL_OPCODES.len()] = all(true, false);
+    static PE: [Layout; crate::full::ALL_OPCODES.len()] = all(false, true);
+    match (mode.fp_arg, mode.pe) {
+        (_, true) => &PE,
+        (true, false) => &FP,
+        (false, false) => &NO_FP,
+    }
 }
 
 /// Lays out the elements (relaxing branches) and writes the code.
@@ -1782,15 +1805,15 @@ fn layout_code(mut pieces: Vec<Laid>, [prologue, entry_stub, region]: [usize; 3]
     (out, marks)
 }
 
-/// The values of `op`'s handler argument registers for operands `ops`, from `rdi` on: `fp`
-/// (with [`Mode::fp_arg`]), the exception object (`lpad`), then the operands' ([`layout`]).
-/// Case value arrays become code constants through `ro`, which returns the value of their
-/// [`ArgVal::Ro`].
-pub(super) fn handler_args<T>(op: Opcode, ops: &[Opnd<T>], fp_arg: bool, mut ro: impl FnMut(RoReq) -> u32) -> Vec<ArgVal> {
-    let l = layouts(fp_arg)[op as usize];
+/// The values of `op`'s handler argument positions for operands `ops`, from the first
+/// ([`super::handler_arg`]): `fp` (with [`Mode::fp_arg`]), the exception object (`lpad`),
+/// then the operands' ([`layout`]). Case value arrays become code constants through `ro`,
+/// which returns the value of their [`ArgVal::Ro`].
+pub(super) fn handler_args<T>(op: Opcode, ops: &[Opnd<T>], mode: Mode, mut ro: impl FnMut(RoReq) -> u32) -> Vec<ArgVal> {
+    let l = layouts(mode)[op as usize];
     let info = op.info();
     let mut regs = [None; super::ARG_REGS];
-    if fp_arg {
+    if mode.fp_arg {
         regs[0] = Some(ArgVal::Fp);
     }
     if info.shape == Shape::Lpad {
@@ -1861,6 +1884,8 @@ mod tests {
                 assert!(l.regs as usize <= super::super::ARG_REGS);
                 let l = layout(op, Mode { fp_arg: true, frame_pointer: false, align_loops: true, pe: false, counters: true, far_rt: false });
                 assert!(l.regs as usize <= super::super::ARG_REGS);
+                let l = layout(op, Mode { fp_arg: false, frame_pointer: true, align_loops: true, pe: true, counters: true, far_rt: false });
+                assert!(l.regs as usize <= super::super::PE_ARG_REGS + 1);
             }
         }
     }

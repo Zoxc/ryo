@@ -1579,7 +1579,7 @@ fn inline_indirect_symbol_call_across_images() {
 
 /// An image's VM code in the PE form, which runs on Linux with Win64 natives (as `jit.rs`'s
 /// `pe_code`): only the unwind information differs, which nothing registers off Windows.
-const PE: ryo_bytecode::asm::Mode = ryo_bytecode::asm::Mode { pe: true, frame_pointer: true, ..ENC };
+const PE: ryo_bytecode::asm::Mode = ryo_bytecode::asm::Mode { pe: true, frame_pointer: true, fp_arg: false, ..ENC };
 
 /// Native, Win64: `note(obs)` as [`note`], keeping `rdi`, `rsi` and `xmm6`–`xmm15` around
 /// the SysV Rust code.

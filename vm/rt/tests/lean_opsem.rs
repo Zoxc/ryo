@@ -19,9 +19,30 @@ use ryo_bytecode::{ALL_OPCODES, Opcode};
 use ryo_rt::vm::{FP_ARG, MODE, handler};
 
 /// Calls `f(a0..a5)` with `rbp = fp`, returning `rax`.
+#[cfg(not(windows))]
 #[unsafe(naked)]
 extern "sysv64" fn call_with_fp(a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64, fp: *mut u8, f: *const ()) -> u64 {
     core::arch::naked_asm!("push rbp", "mov rbp, [rsp + 16]", "call qword ptr [rsp + 24]", "pop rbp", "ret");
+}
+
+/// Calls the Win64 handler `f(a0..a5)` with `rbp = fp`, returning `rax`: `a4` and `a5` again
+/// past the callee's shadow space.
+#[cfg(windows)]
+#[unsafe(naked)]
+extern "win64" fn call_with_fp(a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64, fp: *mut u8, f: *const ()) -> u64 {
+    core::arch::naked_asm!(
+        "push rbp",
+        "mov rbp, [rsp + 64]",
+        "sub rsp, 48",
+        "mov rax, [rsp + 96]",
+        "mov [rsp + 32], rax",
+        "mov rax, [rsp + 104]",
+        "mov [rsp + 40], rax",
+        "call qword ptr [rsp + 120]",
+        "add rsp, 48",
+        "pop rbp",
+        "ret"
+    );
 }
 
 /// Calls `op`'s handler with `vals` (one per operand, in operand order; a memory operand

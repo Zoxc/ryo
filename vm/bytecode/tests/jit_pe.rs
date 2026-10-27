@@ -11,7 +11,7 @@ use ryo_bytecode::asm::{self, ArgReg, Mode, Scope, ScopeKind};
 use ryo_bytecode::full::*;
 use ryo_bytecode::jit::{self, Allocator, Options, Output};
 
-const PE: Mode = Mode { fp_arg: true, frame_pointer: true, align_loops: true, pe: true, counters: false, far_rt: false };
+const PE: Mode = Mode { fp_arg: false, frame_pointer: true, align_loops: true, pe: true, counters: false, far_rt: false };
 
 /// Encodes `insns` (targets as instruction indices) with frame `frame` in PE mode and
 /// compiles them through the SSA tier, its checkers on.
@@ -130,6 +130,7 @@ fn step(s: &mut State, c: &[u8], k: usize) -> Option<usize> {
                 (rm as usize, o + 2)
             };
             let (disp, end) = match md {
+                0 if rm & 7 != 5 => (0, at),
                 1 => (i8_at(c, at), at + 1),
                 2 => (i32_at(c, at), at + 4),
                 _ => return None,
@@ -401,8 +402,8 @@ fn saves_below_a_pinned_alloca() {
         });
         assert!(stored && home == (want == "home"), "pinned at {lo}: stored {stored}, home {home}");
     }
-    // Neither the home space nor the slots below `rdi` and `rsi`: re-encoded.
-    let (v, frame, sc) = pinned_loop(-1000, 984, true);
+    // Neither the home space nor two free slots below `rbp`: re-encoded.
+    let (v, frame, sc) = pinned_loop(-1000, 992, true);
     let r = compile(&v, frame, &sc, Allocator::LinearScan, false);
     assert!(matches!(&r, Err(jit::Error::Unsupported(u)) if u.0.contains("room")), "{r:?}");
 }
@@ -420,12 +421,13 @@ fn tail_call() {
     each(&v, 32, &[], "tail call", |f, what| assert!(f.epilogues >= 1, "{what}"));
 }
 
-/// The handlers that clobber `xmm6`–`xmm15` aren't compiled on PE.
+/// The handlers that use `xmm6`–`xmm15` (the `i128` saturating casts) are Win64 functions,
+/// which preserve them: compiled on PE like the others.
 #[test]
-fn xmm_clobbering_handlers_unsupported() {
+fn xmm6_using_handlers_compiled() {
     let v = vec![arg(-24, 0), Insn::CvtF2iSatSF64W128 { d: Slot(-48), s: Slot(-24) }, Insn::Ret { s: Slot(-48), k: 8 }];
     let r = compile(&v, 48, &[], Allocator::LinearScan, false);
-    assert!(matches!(r, Err(jit::Error::Unsupported(u)) if u.0.contains("xmm")), "{r:?}");
+    assert!(r.is_ok(), "{r:?}");
 }
 
 /// Eight vectors live at once and across a call: on PE the SSA tier keeps them in `xmm0`–`xmm3`

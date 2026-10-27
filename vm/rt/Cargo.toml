@@ -13,6 +13,10 @@ fp-rbp = []
 # without it, something else must define `ryo_jit_start` (the `ryo_jit` rlib, in tests).
 # Without the feature the JIT records' trips are the no-op JIT.
 jit = []
+# Tests off Windows: a second set of handlers and register entries in the PE form's Win64
+# convention (`vm::PE_MODE`, no symbols), which the JIT gets through `RtApi::pe_handlers`, so
+# that PE code runs on Linux.
+pe-test = []
 
 [dependencies]
 ryo_bytecode = { path = "../bytecode", default-features = false }

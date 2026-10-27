@@ -337,8 +337,7 @@ struct Frame {
     saves: Vec<(R, i32)>,
     /// Whether the saves are pushed and popped: they sit at the frame's top (nothing pinned
     /// above them), right below `rbp`'s save or, without a frame pointer, from the slot
-    /// that is the alignment padding below the return address. On PE, below the saves of
-    /// `rdi` and `rsi`, which are always pushed, at `fp - 8` and `fp - 16` as in the AOT frame.
+    /// that is the alignment padding below the return address.
     pushed: bool,
     /// PE: where the prologue's `lea rbp, [rsp + pe_fp]` sets the frame register (the
     /// `UNWIND_INFO`'s frame offset, times 16): past the pushes, and with saves that aren't
@@ -357,8 +356,7 @@ pub struct Opts {
 }
 
 fn layout(f: &Func, al: &Alloc, mode: Mode, opts: Opts) -> Frame {
-    // PE: the top 16 bytes hold `rdi` and `rsi` (the AOT code's slots for them).
-    let top0 = if mode.pe { -16 } else { 0 };
+    let top0 = 0;
     let mut top = top0;
     for a in &f.allocas {
         if a.pinned && a.kind != AllocaKind::Incoming {
@@ -392,7 +390,7 @@ fn layout(f: &Func, al: &Alloc, mode: Mode, opts: Opts) -> Frame {
         }
         let free =
             |o: i32| !f.allocas.iter().any(|a| a.pinned && a.kind != AllocaKind::Incoming && o < a.aot_off + a.size as i32 && o + 8 > a.aot_off);
-        pe_slots.extend((1..=28).map(|j| -16 - 8 * j).filter(|&o| free(o)));
+        pe_slots.extend((1..=30).map(|j| -8 * j).filter(|&o| free(o)));
     }
     let mut pe_short = false;
     for (k, &r) in al.saved.iter().enumerate() {
@@ -435,18 +433,21 @@ fn layout(f: &Func, al: &Alloc, mode: Mode, opts: Opts) -> Frame {
         };
     }
     // A leaf (no calls, no OSR entries) without a frame pointer needs no 16-byte alignment,
-    // nor the handlers' scratch area. Not on PE: its frame always saves `rdi` and `rsi`, and
-    // its unwind codes assume the frame register.
+    // nor the handlers' scratch area. Not on PE: its unwind codes assume the frame register.
     let leaf = !mode.pe
         && !mode.frame_pointer
         && f.osr.is_empty()
         && f.layout.iter().all(|b| f.blocks[b.idx()].insts.iter().all(|i| !f.insts[i.idx()].op.is_call()));
     let spill0 = if al.spills > 0 { place(&mut cur, 8 * al.spills, 0) } else { cur };
     let scratch = if leaf && f.scratch == 0 { cur } else { place(&mut cur, f.scratch.max(8), 0) };
-    // PE: the callees' 32 bytes of shadow space (VM functions, natives and islands take the
-    // Win64 convention; the `sysv64` handlers don't), unless the stack arguments cover it.
-    if mode.pe && f.insts.iter().any(|i| matches!(i.op, Op::Call(_) | Op::Island(_))) {
+    // PE: the callees' 32 bytes of shadow space (VM functions, natives, islands and handlers
+    // take the Win64 convention), unless the stack arguments cover it; 8 more for a handler's
+    // stack argument.
+    if mode.pe && f.insts.iter().any(|i| i.op.is_call()) {
         out_size = out_size.max(32);
+    }
+    if mode.pe && f.insts.iter().any(|i| matches!(&i.op, Op::HCall(h) if !h.reg && h.regs.len() > asm::PE_ARG_REGS)) {
+        out_size = out_size.max(40);
     }
     let mut size = (-cur) as u32 + out_size;
     size = if leaf && size < PROBE_FROM { size.next_multiple_of(8) } else { size.next_multiple_of(16) };
@@ -455,11 +456,11 @@ fn layout(f: &Func, al: &Alloc, mode: Mode, opts: Opts) -> Frame {
     let pe_fp = if !mode.pe {
         0
     } else if pushed {
-        (16 + 8 * saves.len() as u32).next_multiple_of(16)
+        (8 * saves.len() as u32).next_multiple_of(16)
     } else if pe_short {
         u32::MAX
     } else {
-        (saves.iter().map(|&(_, o)| (-o).max(0) as u32).max().unwrap_or(0).max(16)).next_multiple_of(16)
+        saves.iter().map(|&(_, o)| (-o).max(0) as u32).max().unwrap_or(0).next_multiple_of(16)
     };
     for (k, a) in f.allocas.iter().enumerate() {
         if a.kind == AllocaKind::Outgoing {
@@ -883,8 +884,8 @@ impl<'a> E<'a> {
         }
     }
 
-    /// The PE prologue, as the AOT one (vm.md, "Frames") with the saves after `rdi`'s and
-    /// `rsi`'s: `push rbp; push rdi; push rsi`, the pushed saves, `sub rsp` to
+    /// The PE prologue, as the AOT one (vm.md, "Frames") with the saves after `rbp`'s:
+    /// `push rbp`, the pushed saves, `sub rsp` to
     /// [`Frame::pe_fp`] if the pushes don't reach it, `lea rbp, [rsp + pe_fp]`, the probe and
     /// the `sub` of the rest, then the saves that aren't pushed. Each operation has its
     /// unwind code; the frame register is set after the pushes, as Win64 requires, so that
@@ -896,7 +897,7 @@ impl<'a> E<'a> {
         debug_assert!(self.a.ps.iter().all(|p| matches!(p, P::Bind(_))), "the PE prologue at the start");
         let mut ops = Vec::new();
         let mut pushed = 0;
-        let pushes: Vec<R> = [R::Rbp, R::Rdi, R::Rsi].into_iter().chain(self.fr.saves.iter().map(|s| s.0).filter(|_| self.fr.pushed)).collect();
+        let pushes: Vec<R> = [R::Rbp].into_iter().chain(self.fr.saves.iter().map(|s| s.0).filter(|_| self.fr.pushed)).collect();
         for r in pushes {
             self.a.x().push(r);
             ops.push((self.a.x().pos(), U::Push(r.num())));
@@ -934,8 +935,8 @@ impl<'a> E<'a> {
     /// The epilogue before `ret` or a tail jump.
     fn epilogue(&mut self) {
         if self.mode.pe {
-            // `lea rsp, [rbp - 16 - 8n]` and the pops: a Win64 epilogue (after the saves'
-            // loads, which are body code).
+            // `lea rsp, [rbp - 8n]` and the pops: a Win64 epilogue (after the saves' loads,
+            // which are body code).
             if !self.fr.pushed {
                 for i in 0..self.fr.saves.len() {
                     let (r, o) = self.fr.saves[i];
@@ -943,14 +944,12 @@ impl<'a> E<'a> {
                 }
             }
             let n = if self.fr.pushed { self.fr.saves.len() as i32 } else { 0 };
-            self.a.x().lea(R::Rsp, Mem::base(R::Rbp, -16 - 8 * n));
+            self.a.x().lea(R::Rsp, Mem::base(R::Rbp, -8 * n));
             for i in (self.fr.saves.len() - n as usize..self.fr.saves.len()).rev() {
                 let r = self.fr.saves[i].0;
                 self.a.x().pop(r);
             }
-            for r in [R::Rsi, R::Rdi, R::Rbp] {
-                self.a.x().pop(r);
-            }
+            self.a.x().pop(R::Rbp);
             return;
         }
         let fp = self.mode.frame_pointer;
@@ -1476,14 +1475,24 @@ impl<'a> E<'a> {
                 let nin = e.nin as usize;
                 // The `In` values into the first argument registers, then the data registers
                 // after them (which no `In` value's source is in any more).
-                let ms = args.iter().enumerate().map(|(k, &v)| (Rm::R(R::ARGS[k]), self.src(v))).collect();
+                let pe = self.mode.pe;
+                let reg = |k: usize| handler_arg_reg(pe, k).ok_or(Unsupported("a register entry's argument"));
+                let mut ms = Vec::with_capacity(args.len());
+                for (k, &v) in args.iter().enumerate() {
+                    ms.push((Rm::R(reg(k)?), self.src(v)));
+                }
                 self.moves(ms);
                 for j in 0..e.ndata as usize {
-                    self.hcall_arg(&h, e.data[j] as usize, R::ARGS[nin + j])?;
+                    self.hcall_arg(&h, e.data[j] as usize, reg(nin + j)?)?;
                 }
                 let hh = h.h;
                 let far = self.mode.far_rt;
                 self.call_with_site(h.site, pad, |x| x.call_rt(Ref::RegHandler(hh), far));
+                if pe && e.nout as usize + e.ret as usize == 2 {
+                    // Win64 entries return two values in `xmm0` (`ryo_rt`'s `RegRetOf`):
+                    // `movq rax, xmm0; punpckhqdq xmm0, xmm0; movq rdx, xmm0`.
+                    self.a.x().bytes(&[0x66, 0x48, 0x0f, 0x7e, 0xc0, 0x66, 0x0f, 0x6d, 0xc0, 0x66, 0x48, 0x0f, 0x7e, 0xc2]);
+                }
                 let ms = res.iter().enumerate().filter_map(|(k, &v)| Some((self.dst(v)?, Src::R(R::RETS[k])))).collect();
                 self.moves(ms);
             }
@@ -1494,7 +1503,14 @@ impl<'a> E<'a> {
                     self.mov(Rm::M(m), s);
                 }
                 for k in 0..h.regs.len() {
-                    self.hcall_arg(&h, k, R::ARGS[k])?;
+                    match handler_arg_reg(self.mode.pe, k) {
+                        Some(r) => self.hcall_arg(&h, k, r)?,
+                        None => {
+                            // PE's stack argument, a 32-bit operand past the shadow space.
+                            self.hcall_arg(&h, k, S1)?;
+                            self.a.x().mov(4, Rm::M(Mem::base(R::Rsp, 32)), Rm::R(S1));
+                        }
+                    }
                 }
                 let hh = h.h;
                 let far = self.mode.far_rt;
@@ -1954,10 +1970,14 @@ pub(super) fn int_arg(pe: bool, i: u32) -> R {
     if pe { R::PE_ARGS[i as usize] } else { R::ARGS[i as usize] }
 }
 
+/// The register of argument position `k` of a handler call ([`asm::handler_arg`]): SysV's
+/// `rdi rsi rdx rcx r8 r9`, or on PE Win64's `rcx rdx r8 r9`, `None` for PE's stack position.
+pub(super) fn handler_arg_reg(pe: bool, k: usize) -> Option<R> {
+    if pe { R::PE_ARGS.get(k).copied() } else { Some(R::ARGS[k]) }
+}
+
 /// What the SSA tier doesn't do on PE: arguments past the four Win64 registers (the reduced
-/// code has none), handlers that clobber `xmm6`–`xmm15` (callee-saved on Win64, but
-/// not in the `sysv64` handlers; the lowering never calls them on PE), and a pinned alloca in
-/// the top 16 bytes, which hold `rdi` and `rsi`.
+/// code has none).
 fn check_pe(f: &Func) -> Result<(), Unsupported> {
     let regs_ok = |rs: &[asm::ArgReg]| rs.iter().all(|r| r.index < 4);
     if !regs_ok(&f.entry_regs) {
@@ -1966,7 +1986,6 @@ fn check_pe(f: &Func) -> Result<(), Unsupported> {
     for i in &f.insts {
         match &i.op {
             Op::Call(c) if !regs_ok(&c.regs) => return Err(Unsupported("PE: an argument past the fourth")),
-            Op::HCall(h) if super::effects::PE_XMM_CLOBBERS.contains(&h.h) => return Err(Unsupported("PE: a handler that clobbers xmm6-15")),
             _ => {}
         }
     }
@@ -1976,9 +1995,6 @@ fn check_pe(f: &Func) -> Result<(), Unsupported> {
         {
             return Err(Unsupported("PE: an argument past the fourth"));
         }
-    }
-    if f.allocas.iter().any(|a| a.pinned && a.kind != AllocaKind::Incoming && a.aot_off + a.size as i32 > -16) {
-        return Err(Unsupported("PE: a pinned alloca over the rdi and rsi saves"));
     }
     Ok(())
 }

@@ -207,6 +207,10 @@ fn asm_mode(tcx: TyCtxt<'_>, rt: RtItems, switches: &Switches) -> asm::Mode {
     let fp_arg = tcx.const_eval_poly(rt.fp_arg).ok().and_then(|v| v.try_to_scalar_int()).map(|i| i.to_u8() != 0);
     let Some(fp_arg) = fp_arg else { tcx.dcx().fatal("ryo_rt's FP_ARG isn't a bool") };
     let pe = super::symbols::is_pe(tcx);
+    if pe && fp_arg {
+        // PE's handlers are Win64 and read `fp` from `rbp` (`asm::Mode::pe`).
+        tcx.dcx().fatal("ryo_rt's handlers take fp in rdi, but on PE they must read rbp: a ryo_rt built for another target?");
+    }
     asm::Mode {
         fp_arg,
         // Handlers that read `rbp` and PE unwind info need it (`asm::Mode::frame_pointer`).
