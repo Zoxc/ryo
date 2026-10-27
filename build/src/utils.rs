@@ -277,6 +277,16 @@ impl<'a> Flags<'a> {
         self.inline.take().or_else(|| self.args.next().copied()).ok_or(format!("`{}` needs a value", self.flag))
     }
 
+    /// The current flag's optional value: inline, or the next argument unless it is a flag
+    /// (starts with `-`).
+    pub fn optional_value(&mut self) -> Option<&'a str> {
+        self.inline.take().or_else(|| {
+            let next = self.args.clone().next().copied().filter(|a| !a.starts_with('-'))?;
+            self.args.next();
+            Some(next)
+        })
+    }
+
     /// The error for an unknown current argument.
     pub fn unexpected(&self) -> String {
         format!("unexpected argument `{}`", self.arg)

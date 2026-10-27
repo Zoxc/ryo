@@ -26,7 +26,7 @@ modeled on cg_clif's `build_system/`.
 - A zero-dependency bin crate (its own `Cargo.toml` and `Cargo.lock`, not a workspace member),
   run through `./y.sh <cmd>` (or `y.cmd`/`y.ps1` on Windows), which is
   `cargo run --manifest-path build/Cargo.toml -- <cmd>`.
-- Commands: `build [--sysroot llvm|ryo] [--target T]...`, `build-clif`, `test [--clif | --cross T]`, `bench [--runs N] [--llvm L] [--clif] [--ryo M] [--metric time|cachegrind]`, `bench codegen`,
+- Commands: `build [--sysroot llvm|ryo] [--target T]...`, `build-clif`, `test [--clif | --cross T]`, `bench [--runs N] [--llvm L] [--clif [L]] [--ryo M] [--metric time|cachegrind]`, `bench codegen`,
   `bench crates [...]`, `lean [gen]`, `clean`.
 - It sets `RUSTC_BOOTSTRAP=1` on everything it spawns.
 
@@ -256,7 +256,7 @@ This gives a third backend, built from the same toolchain, to compare against.
 - `test --clif`: also builds the corpus with `rustc-clif` and diffs its output too. That
   helps tell ryo bugs from test-corpus problems.
 - `bench [--runs N]`: hyperfine comparisons of each program in `bench/` (fib, sieve,
-  sort, hashmap) built with LLVM `-O0`, LLVM `-O3`, Cranelift (`rustc-clif`) and ryo. Each comparison
+  sort, hashmap) built with LLVM `-O0`, LLVM `-O1`, Cranelift (`rustc-clif`) at `-O0` and ryo. Each comparison
   covers compile time (Cranelift is the fast-compile reference ryo competes with) and run
   time, printed as two tables of mean and standard deviation. Every backend gets
   `-Ccodegen-units=1 -Zthreads=1` (what `rustc-ryo` forces anyway) on top of its own flags,
@@ -264,10 +264,14 @@ This gives a third backend, built from the same toolchain, to compare against.
   a built-in timer does the same (one warmup, then `N` runs, default 5). The programs'
   output must agree across backends. `y bench` builds `dist/` and cg_clif first if they are
   missing; `y test --clif` builds cg_clif too.
-  `--llvm O0,O2d,..`, `--clif` and `--ryo aot,jit` pick the columns instead (`d`: with
+  `--llvm O0,O2d,..`, `--clif [O0,O3,..]` and `--ryo aot,jit` pick the columns instead (`d`: with
   `-Cdebug-assertions=on`, which turns on overflow checks too, as `O0` and ryo have them;
   ryo `aot` runs with `RYO_JIT=off`, `jit` with `RYO_JIT_OPT=ssa`); the first column is the
-  output reference. `--metric cachegrind` builds once and reports, instead of times, one
+  output reference and the baseline of the ratio tables. A bare `--clif` is `-O0`. cg_clif
+  maps `-O0` to Cranelift's `opt_level=none` and every other level (`-O1`..`-O3`, `s`, `z`)
+  to `speed_and_size` (`rustc_codegen_cranelift/src/lib.rs`), so its `-O1`..`-O3` differ
+  only in what rustc does before codegen (its MIR passes); that still matters, e.g. sieve
+  runs about 30% fewer instructions at `-O3` than at `-O1`. `--metric cachegrind` builds once and reports, instead of times, one
   run's instructions (cachegrind `I refs`, children included) and estimated cycles, each
   also as ratios to the first column. It runs cachegrind with `--cache-sim=yes
   --branch-sim=yes`; the estimate is instructions + 10 * (I1 + D1 misses) + 100 * LL misses

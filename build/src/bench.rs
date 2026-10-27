@@ -45,25 +45,25 @@ pub enum Metric {
     Cachegrind,
 }
 
-/// A `-Copt-level` for plain rustc: `O0`..`O3`, a `d` suffix (`O2d`) turning on debug
-/// assertions (and with them overflow checks, as at `O0`).
+/// A `-Copt-level` for plain rustc or cg_clif: `O0`..`O3`, a `d` suffix (`O2d`) turning on
+/// debug assertions (and with them overflow checks, as at `O0`).
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct LlvmLevel {
+pub struct OptLevel {
     opt: u8,
     debug_assertions: bool,
 }
 
-impl LlvmLevel {
-    fn parse(s: &str) -> Result<LlvmLevel, String> {
+impl OptLevel {
+    fn parse(s: &str) -> Result<OptLevel, String> {
         let (level, debug_assertions) = s.strip_suffix('d').map_or((s, false), |l| (l, true));
         match level.strip_prefix('O').and_then(|n| n.parse().ok()).filter(|&n| n <= 3) {
-            Some(opt) => Ok(LlvmLevel { opt, debug_assertions }),
-            None => Err(format!("bad LLVM level `{s}` (expected O0..O3, optionally with a `d` suffix)")),
+            Some(opt) => Ok(OptLevel { opt, debug_assertions }),
+            None => Err(format!("bad opt level `{s}` (expected O0..O3, optionally with a `d` suffix)")),
         }
     }
 }
 
-impl std::fmt::Display for LlvmLevel {
+impl std::fmt::Display for OptLevel {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "O{}{}", self.opt, if self.debug_assertions { "d" } else { "" })
     }
@@ -77,20 +77,21 @@ pub enum RyoMode {
     Jit,
 }
 
-/// `y bench [--runs N] [--llvm LEVELS] [--clif] [--ryo MODES] [--metric time|cachegrind]`.
+/// `y bench [--runs N] [--llvm LEVELS] [--clif [LEVELS]] [--ryo MODES] [--metric time|cachegrind]`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Options {
     pub runs: u32,
-    pub llvm: Vec<LlvmLevel>,
-    pub clif: bool,
+    pub llvm: Vec<OptLevel>,
+    /// cg_clif's levels; a bare `--clif` is `O0`.
+    pub clif: Vec<OptLevel>,
     pub ryo: Vec<RyoMode>,
     pub metric: Metric,
 }
 
 impl Default for Options {
-    /// The default columns: LLVM -O0 and -O3, cg_clif and ryo as it runs by default.
+    /// The default columns: LLVM -O0 and -O1, cg_clif -O0 and ryo as it runs by default.
     fn default() -> Self {
-        Options { runs: DEFAULT_RUNS, llvm: Vec::new(), clif: false, ryo: Vec::new(), metric: Metric::Time }
+        Options { runs: DEFAULT_RUNS, llvm: Vec::new(), clif: Vec::new(), ryo: Vec::new(), metric: Metric::Time }
     }
 }
 
@@ -106,10 +107,17 @@ pub fn parse_options(args: &[&str]) -> Result<Options, String> {
             }
             "--llvm" => {
                 for l in list(args.value()?) {
-                    o.llvm.push(LlvmLevel::parse(&l)?);
+                    o.llvm.push(OptLevel::parse(&l)?);
                 }
             }
-            "--clif" => o.clif = true,
+            "--clif" => match args.optional_value() {
+                None => o.clif.push(OptLevel { opt: 0, debug_assertions: false }),
+                Some(v) => {
+                    for l in list(v) {
+                        o.clif.push(OptLevel::parse(&l)?);
+                    }
+                }
+            },
             "--ryo" => {
                 for m in list(args.value()?) {
                     o.ryo.push(match m.as_str() {
@@ -135,23 +143,21 @@ pub fn parse_options(args: &[&str]) -> Result<Options, String> {
 /// The columns `o` selects; the first is the reference whose output the others must match.
 /// Without `--llvm`, `--clif` or `--ryo`, the default columns.
 fn backends(o: &Options) -> Vec<Backend> {
-    let rustc = |level: LlvmLevel| {
+    let with = |compiler: Compiler, name: &str, level: OptLevel| {
         let mut flags = vec![format!("-Copt-level={}", level.opt)];
         if level.debug_assertions {
             flags.push("-Cdebug-assertions=on".to_owned());
         }
-        Backend { name: format!("llvm -{level}"), compiler: Compiler::Llvm, flags, env: Vec::new() }
+        Backend { name: format!("{name} -{level}"), compiler, flags, env: Vec::new() }
     };
-    let clif = || Backend { name: "clif".to_owned(), compiler: Compiler::Clif, flags: Vec::new(), env: Vec::new() };
-    if o.llvm.is_empty() && !o.clif && o.ryo.is_empty() {
+    let rustc = |level| with(Compiler::Llvm, "llvm", level);
+    let clif = |level| with(Compiler::Clif, "clif", level);
+    if o.llvm.is_empty() && o.clif.is_empty() && o.ryo.is_empty() {
         let ryo = Backend { name: "ryo".to_owned(), compiler: Compiler::Ryo, flags: Vec::new(), env: Vec::new() };
-        let level = |opt| LlvmLevel { opt, debug_assertions: false };
-        return vec![rustc(level(0)), rustc(level(3)), clif(), ryo];
+        let level = |opt| OptLevel { opt, debug_assertions: false };
+        return vec![rustc(level(0)), rustc(level(1)), clif(level(0)), ryo];
     }
-    let mut v: Vec<Backend> = o.llvm.iter().map(|&l| rustc(l)).collect();
-    if o.clif {
-        v.push(clif());
-    }
+    let mut v: Vec<Backend> = o.llvm.iter().map(|&l| rustc(l)).chain(o.clif.iter().map(|&l| clif(l))).collect();
     for &m in &o.ryo {
         let (name, env) = match m {
             RyoMode::Aot => ("aot", vec![("RYO_JIT", "off")]),
@@ -525,13 +531,18 @@ mod tests {
     #[test]
     fn options() {
         let o = parse_options(&[]).unwrap();
-        assert_eq!(backends(&o).iter().map(|b| b.name.as_str()).collect::<Vec<_>>(), ["llvm -O0", "llvm -O3", "clif", "ryo"]);
+        assert_eq!(backends(&o).iter().map(|b| b.name.as_str()).collect::<Vec<_>>(), ["llvm -O0", "llvm -O1", "clif -O0", "ryo"]);
         let o = parse_options(&["--llvm", "O2d,O0", "--clif", "--ryo=aot,jit", "--metric", "cachegrind", "--runs=2"]).unwrap();
         assert_eq!((o.runs, o.metric), (2, Metric::Cachegrind));
         let b = backends(&o);
-        assert_eq!(b.iter().map(|b| b.name.as_str()).collect::<Vec<_>>(), ["llvm -O2d", "llvm -O0", "clif", "ryo aot", "ryo jit"]);
+        assert_eq!(b.iter().map(|b| b.name.as_str()).collect::<Vec<_>>(), ["llvm -O2d", "llvm -O0", "clif -O0", "ryo aot", "ryo jit"]);
         assert_eq!(b[0].flags, ["-Copt-level=2", "-Cdebug-assertions=on"]);
         assert_eq!(b[3].env, [("RYO_JIT", "off")]);
+        let o = parse_options(&["--clif", "O0,O3d", "--clif=O1", "--clif", "--runs", "1"]).unwrap();
+        let b = backends(&o);
+        assert_eq!(b.iter().map(|b| b.name.as_str()).collect::<Vec<_>>(), ["clif -O0", "clif -O3d", "clif -O1", "clif -O0"]);
+        assert_eq!(b[1].flags, ["-Copt-level=3", "-Cdebug-assertions=on"]);
+        assert!(parse_options(&["--clif", "O4"]).is_err());
         assert!(parse_options(&["--llvm", "O4"]).is_err());
         assert!(parse_options(&["--ryo", "x"]).is_err());
         assert!(parse_options(&["--runs", "0"]).is_err());
@@ -550,7 +561,7 @@ mod tests {
     #[test]
     fn table_layout() {
         let s = |m| Stats { mean: m, stddev: 0.001 };
-        let header = ["llvm -O0", "llvm -O3", "clif", "ryo"];
+        let header = ["llvm -O0", "llvm -O1", "clif -O0", "ryo"];
         let cells = || (0..header.len()).map(|i| Cell { compile: Some(s(i as f64)), ..Cell::default() }).collect();
         let t = table("t", &header, &[("fib", cells()), ("hashmap", cells())], |c| c.compile.map(ms));
         let lines: Vec<&str> = t.lines().collect();

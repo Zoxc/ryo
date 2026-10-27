@@ -39,10 +39,12 @@ commands:
   test --cross T               cross-build and link (not run) the corpus for target T, e.g.
                                x86_64-pc-windows-msvc or x86_64-apple-darwin; needs
                                `build --target T` first
-  bench [--runs N] [--llvm O0,O2d,..] [--clif] [--ryo aot,jit] [--metric time|cachegrind]
-                               compare LLVM -O0/-O3, Cranelift and ryo: compile and run time
+  bench [--runs N] [--llvm O0,O2d,..] [--clif [O0,O3,..]] [--ryo aot,jit] [--metric time|cachegrind]
+                               compare LLVM -O0/-O1, Cranelift -O0 and ryo: compile and run time
                                (or, with cachegrind, run instructions and est. cycles); the options
-                               pick the columns (`d`: debug assertions)
+                               pick the columns (`d`: debug assertions; a bare `--clif` is O0;
+                               cg_clif's O1..O3 share Cranelift's `speed_and_size` and
+                               differ only in rustc's MIR passes)
   bench codegen                dump ryo's code for each bench program to bench/codegen/
   lean [gen | --proofs]        check the generated Lean tables, then `lake build` and
                                `lake test` in lean/; `gen` regenerates the tables;
