@@ -141,14 +141,14 @@ of every inlined callee. Composed with the AOT theorem, the JIT code refines L0.
   rip-relative `lea`, or the slot load and with `ind` one more load), pure and keyed by LVN.
   Its rule is the R ones' (`inline_sound_rip`). ("Give the JIT SSA tier a pure op for
   rip-relative addresses".)
-- **Small copies**: `copy`, `zero`, `load.copy`, `store.copy` of at most 64 bytes and
+- **Small copies**: `copy`, `zero`, `load.copy`, `store.copy` of at most 128 bytes (`MAX_COPY`) and
   `mov.w128`, `load.w128`, `store.w128` decode as `Kind::Copy`, pieces cut at the other
   scalar accesses' boundaries, all reads before all writes; and after `simplify`,
-  `memcpy`/`memmove`/`memset` handler calls of constant length 1 to 64 (operands all values,
+  `memcpy`/`memmove`/`memset` handler calls of constant length 1 to 128 (operands all values,
   no unwinding) become loads then stores (`memset`: the byte times `0x0101…`), then LVN again
   (`jit::opt::copies`). Rule: the pieces equal the handler's footprint effect. ("JIT SSA tier:
   small block copies as loads and stores"; "JIT SSA: constant-length memcpy/memmove/memset as
-  loads and stores".)
+  loads and stores"; "JIT: do block copies of up to 128 bytes as loads and stores".)
 - **Inlining** (`jit::inline`, step 4): an IR-to-IR splice with landing-pad action
   substitution, callee allocas appended as `Alloca::inlined`, outgoing areas merged; sites
   weighed by the JIT records' counts; small callees specialized to constant arguments first
@@ -158,7 +158,56 @@ of every inlined callee. Composed with the AOT theorem, the JIT code refines L0.
   symbols holding a VM function's entry. The splice lemma (§E.6) plus a rule for the
   specialization and for `rebase` (the pool-identity question, §E.6). ("Inline same-image
   calls in the JIT's SSA tier"; "Weigh inlining by the counters and specialize callees to
-  constants"; "Inline across images in the JIT's SSA tier".)
+  constants"; "Inline across images in the JIT's SSA tier".) A callee whose `ret` has more
+  parts than the site reads (an sret callee returning its pointer to a site with no results)
+  is spliced with the extra parts dropped ("JIT inliner: allow a callee to return parts the
+  call doesn't use"). After the first round and the devirtualization after it, one more
+  round restricted to the calls devirtualization made direct (`Params::rounds = 2`,
+  `inline`'s `only`), charged against the unit as it is ("JIT: inline calls that
+  devirtualization made direct").
+- **Devirtualization** (`jit::inline::devirt`, `Env::direct`; on the root before and after
+  inlining, and on each explored callee's copy): a `Call Ptr` (or tail call) whose callee is
+  `RefAddr(Sym(s), false)` becomes a call of `s`; one whose callee is a constant equal to a
+  registered image's VM function's AOT entry becomes a direct call of that function. Rule: a
+  call through the address of `f`'s AOT entry equals a call of `f` (the entry dispatches to
+  the JIT code; arguments, results and unwinding unchanged); a symbol slot is filled once,
+  before VM code runs. ("JIT: call constant function pointers directly".)
+- **Constant-pool loads** (`jit::opt::lvn`, `jit::opt::ConstMem`, `Image::read_pool`): a
+  read with no relocated byte becomes the pool's bits; a whole relocated 8-byte field into
+  the pool or the data area the `RefAddr` of its target, one to a function or native symbol
+  its bits; partial reads of a relocated field, reads past the pool, and the data area are
+  not folded; a constant address into another image's pool (`RtApi::image_at`) gives
+  integers (as `rebase`). `const` of at most `MAX_COPY` bytes decodes as a block copy from
+  the pool (`Side::Pool`), cut at its relocated fields. Rule: an immutable allocation's read
+  equals its `world` bytes (stores to it are UB, `Ryo/Proofs/Provenance.lean`'s
+  constant-load lemma), and the copy pieces equal the handler's footprint. ("JIT: fold loads
+  from the constant pool".)
+- **SIMD** (`Op::V`, `Op::VConst`): `vsplat`/`veq`/`vlt.s`/`vmsb.i8x16` and
+  `and`/`or`/`xor.w128` as 16-byte IR values (so R-SSA values also have 16 bytes), vector
+  fields of allocas promoted, copies cut into 16-byte pieces over them, an `xmm` register
+  class (none live across a call; on PE only `xmm0`–`xmm5`), 16-byte spill slots and OSR
+  loads, SSE2 emission; the folds `vmsb(vlt.s(x, 0)) = vmsb(x)`, half/pair and constant
+  folds, the splat hoist (`opt::hoist`), and LVN reassembling a value from its shifted
+  pieces. Rules against `opSem`'s vector handlers (`bv_decide`). ("JIT SSA: native SSE2 for
+  the SIMD instructions".)
+- **Division and variable shifts**: the `div`/`rem` and variable-shift handlers decode as
+  native `BinOp`s (`DivS`/`DivU`/`RemS`/`RemU`; shift amounts masked to the width), allocated
+  with fixed-register clobbers (`regalloc::clobbers`). Rule: the op equals `opSem` where the
+  handler doesn't trap (division by zero and `MIN / -1` stay checked before). ("JIT SSA: fixed
+  registers for div, rem, variable shifts and mul".)
+- **Frame cut, end pointers** (`jit/alloca.rs`): an `addr` at an escaped object's end is
+  joined to that object's alloca (the one escaping at that `addr`, unless one escaping there
+  starts at that address; with none escaping there, any escaped object ending there), so the
+  one-past-the-end pointer keeps its place under any layout. For the checker comparing the
+  frame-object tables, R's table must join it the same way. ("JIT: keep end pointers with
+  their escaped object".)
+- **PE frames**: SSA frames on PE save `rdi`/`rsi` at `fp - 8`/`fp - 16`, set `rbp` by
+  `lea rbp, [rsp + K]` after the pushes, store saves that can't be pushed into the caller's
+  home space or free slots within 240 bytes below `rbp`, give calls 32 bytes of shadow space
+  and use the Win64 argument registers, described by a PE `UNWIND_INFO` from
+  `image::pe_unwind_codes` (shared with the AOT `pe_unwind_info`). The Lean unwind model
+  (`Ryo/Obj/Unwind.lean`) covers only ELF `.eh_frame`; LIR → L2+ emission on PE needs the
+  Win64 frame and an `UNWIND_INFO` reader. ("JIT SSA: compile PE code with Win64 frames".)
 - **Promotion** (`jit::opt::promote`): allocas whose address no longer escapes, also when
   accessed at overlapping widths: fields are the pieces the accesses' bounds cut (power-of-two
   widths); a store covering several pieces stores each (shifted down), a load covering several
