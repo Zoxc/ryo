@@ -6,13 +6,15 @@
 //! not call them while it sets up or switches VM state (design/vm.md, "No re-entry into the
 //! VM from the runtime").
 
+use core::cell::UnsafeCell;
+use core::ops::{Deref, DerefMut};
 use core::ptr;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use ryo_bytecode::vmem;
 
 /// Page size for guard pages and mapping granularity ([`vmem::PAGE`]).
-pub const PAGE: usize = vmem::PAGE;
+const PAGE: usize = vmem::PAGE;
 
 #[cfg(unix)]
 mod os {
@@ -74,7 +76,7 @@ fn abort() -> ! {
 
 /// Maps `len` bytes (a multiple of [`PAGE`]) of zeroed read-write memory, page-aligned. The
 /// last `guard` bytes (a multiple of [`PAGE`]) are made inaccessible. Aborts on failure.
-pub fn map(len: usize, guard: usize) -> *mut u8 {
+fn map(len: usize, guard: usize) -> *mut u8 {
     debug_assert!(len % PAGE == 0 && guard % PAGE == 0 && guard < len);
     let Some(p) = vmem::reserve(0, len) else { fatal("out of memory mapping VM memory") };
     // SAFETY: the guard covers only the end of the new mapping, which nothing uses yet.
@@ -84,61 +86,87 @@ pub fn map(len: usize, guard: usize) -> *mut u8 {
     p
 }
 
-/// The runtime's lock: a spin lock on one `AtomicBool`. It is only taken on cold paths
-/// (registration, lazy table builds, first-use setup) and never held while running bytecode
-/// or native code, so contention is short.
-static LOCK: AtomicBool = AtomicBool::new(false);
+/// The runtime's lock: a spin lock on one `AtomicBool` that owns the state it guards. It is
+/// only taken on cold paths (registration, lazy table builds, first-use setup) and never held
+/// while running bytecode or native code, so contention is short.
+struct SpinLock<T> {
+    locked: AtomicBool,
+    data: UnsafeCell<T>,
+}
 
-pub struct LockGuard(());
+// SAFETY: `data` is only reached through a `LockGuard`, and at most one exists at a time.
+unsafe impl<T: Send> Sync for SpinLock<T> {}
+
+static RT: SpinLock<Bump> = SpinLock { locked: AtomicBool::new(false), data: UnsafeCell::new(Bump::EMPTY) };
+
+/// Holds the runtime lock until dropped; derefs to the state it guards.
+pub struct LockGuard<'a>(&'a SpinLock<Bump>);
 
 /// Takes the runtime lock until the guard is dropped. Not re-entrant.
-pub fn lock() -> LockGuard {
-    while LOCK.compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {
-        while LOCK.load(Ordering::Relaxed) {
+pub fn lock() -> LockGuard<'static> {
+    while RT.locked.compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {
+        while RT.locked.load(Ordering::Relaxed) {
             core::hint::spin_loop();
         }
     }
-    LockGuard(())
+    LockGuard(&RT)
 }
 
-impl Drop for LockGuard {
-    fn drop(&mut self) {
-        LOCK.store(false, Ordering::Release);
+impl Deref for LockGuard<'_> {
+    type Target = Bump;
+    fn deref(&self) -> &Bump {
+        // SAFETY: the guard holds the lock, so nothing else accesses `data`.
+        unsafe { &*self.0.data.get() }
     }
 }
 
-/// Bump allocator state: the current chunk's free range. Only touched under the lock.
-struct Bump {
+impl DerefMut for LockGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Bump {
+        // SAFETY: as for `deref`; `&mut self` makes this the only borrow through the guard.
+        unsafe { &mut *self.0.data.get() }
+    }
+}
+
+impl Drop for LockGuard<'_> {
+    fn drop(&mut self) {
+        self.0.locked.store(false, Ordering::Release);
+    }
+}
+
+/// Bump allocator state: the current chunk's free range. Owned by the runtime lock.
+pub struct Bump {
     cur: *mut u8,
     end: *mut u8,
 }
 
-static mut BUMP: Bump = Bump { cur: ptr::null_mut(), end: ptr::null_mut() };
+// SAFETY: the pointers are to process-lifetime mappings, usable from any thread.
+unsafe impl Send for Bump {}
 
 const CHUNK: usize = 64 * 1024;
 
-/// Allocates `size` bytes aligned to `align` (≤ [`PAGE`]) that are never freed. The memory is
-/// zeroed. For registry snapshots and tables, which live for the rest of the process.
-pub fn alloc_forever(_g: &LockGuard, size: usize, align: usize) -> *mut u8 {
-    debug_assert!(align.is_power_of_two() && align <= PAGE);
-    // SAFETY: BUMP is only accessed here, and the caller holds the lock (`_g`), so there is
-    // no concurrent access; it is accessed through a raw pointer, never a long-lived `&mut`.
-    unsafe {
-        let b = &raw mut BUMP;
-        let start = ((*b).cur as usize + align - 1) & !(align - 1);
-        if (*b).cur.is_null() || start + size > (*b).end as usize {
-            let len = (size + PAGE - 1) / PAGE * PAGE;
+impl Bump {
+    const EMPTY: Bump = Bump { cur: ptr::null_mut(), end: ptr::null_mut() };
+
+    /// Allocates `size` bytes aligned to `align` (≤ [`PAGE`]) that are never freed. The
+    /// memory is zeroed. For registry snapshots and tables, which live for the rest of the
+    /// process.
+    pub fn alloc_forever(&mut self, size: usize, align: usize) -> *mut u8 {
+        debug_assert!(align.is_power_of_two() && align <= PAGE);
+        loop {
+            let start = (self.cur as usize + align - 1) & !(align - 1);
+            if !self.cur.is_null() && start + size <= self.end as usize {
+                let p = self.cur.wrapping_add(start - self.cur as usize);
+                self.cur = p.wrapping_add(size);
+                return p;
+            }
+            let len = size.next_multiple_of(PAGE);
             if len > CHUNK / 2 {
                 // Large requests get their own mapping (page-aligned).
                 return map(len + PAGE, PAGE);
             }
             let c = map(CHUNK, 0);
-            (*b).cur = c;
-            (*b).end = c.add(CHUNK);
-            return alloc_forever(_g, size, align);
+            self.cur = c;
+            self.end = c.wrapping_add(CHUNK);
         }
-        let p = (*b).cur.add(start - (*b).cur as usize);
-        (*b).cur = p.add(size);
-        p
     }
 }

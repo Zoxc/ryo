@@ -3,14 +3,14 @@
 //! Registered images are kept in immutable snapshots, published through one atomic pointer.
 //! Readers load the pointer and never block. Writers (registration, lazy table builds) take
 //! the runtime lock. Snapshots and tables are allocated with
-//! [`sys::alloc_forever`] and never freed, so `&'static` references to them stay valid.
+//! [`sys::Bump::alloc_forever`] and never freed, so `&'static` references to them stay valid.
 
 use core::ptr;
 use core::sync::atomic::{AtomicPtr, Ordering};
 
 use ryo_bytecode::image::Image;
 
-use super::sys::{alloc_forever, fatal, lock};
+use super::sys::{fatal, lock};
 
 struct Snapshot {
     /// The registered images, sorted by crate hash (then CGU hash). Immutable once published.
@@ -40,10 +40,10 @@ fn snapshot() -> Option<&'static Snapshot> {
 /// As for `ryo_vm_register`.
 pub unsafe fn register(start: *const *const u8, end: *const *const u8) {
     let n = (end as usize).saturating_sub(start as usize) / size_of::<*const u8>();
-    let g = lock();
+    let mut g = lock();
     let old = snapshot().map_or(&[][..], Snapshot::images);
     let cap = old.len() + n;
-    let by_hash = alloc_forever(&g, cap * size_of::<Image<'static>>(), align_of::<Image<'static>>()).cast::<Image<'static>>();
+    let by_hash = g.alloc_forever(cap * size_of::<Image<'static>>(), align_of::<Image<'static>>()).cast::<Image<'static>>();
     // SAFETY: fresh, suitably sized and aligned allocation. Elements are written before
     // they are viewed: `done(len)` covers only the first `len`, which are initialized.
     unsafe { ptr::copy_nonoverlapping(old.as_ptr(), by_hash, old.len()) };
@@ -65,7 +65,7 @@ pub unsafe fn register(start: *const *const u8, end: *const *const u8) {
     // SAFETY: the first `len` entries are initialized, and nothing else views them.
     let list = unsafe { core::slice::from_raw_parts_mut(by_hash, len) };
     sort_by_key(list, |im| (im.crate_hash(), im.header().cgu_hash));
-    let snap = alloc_forever(&g, size_of::<Snapshot>(), align_of::<Snapshot>()).cast::<Snapshot>();
+    let snap = g.alloc_forever(size_of::<Snapshot>(), align_of::<Snapshot>()).cast::<Snapshot>();
     // SAFETY: fresh allocation; fully written before it is published.
     unsafe { snap.write(Snapshot { by_hash, n: len }) };
     SNAPSHOT.store(snap, Ordering::Release);
