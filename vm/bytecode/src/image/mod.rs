@@ -352,12 +352,14 @@ pub struct FuncEntry {
     pub code_off: u32,
     /// Length in bytes.
     pub code_len: u32,
-    /// Size of the stack argument area (informative: VM functions are called natively).
+    /// Size of the stack argument area. Like `ret_size` and `ret_kind`, nothing at run time
+    /// reads it (VM functions are called natively): the Lean image checks
+    /// (`lean/Ryo/Check/Image/Funcs.lean`) check the code against these signature fields.
     pub arg_size: u32,
     /// Size of the return value.
     pub ret_size: u32,
     /// How the function returns its value ([`crate::asm::RET_SRET`], exact sizes): how
-    /// a caller collects it (informative).
+    /// a caller collects it.
     pub ret_kind: u32,
     /// The function's instruction list ([`crate::asm::list`]: branch targets, scopes,
     /// dropped stores and the inline sequences the register cache emitted non-plainly): a

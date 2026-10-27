@@ -74,7 +74,8 @@ pub struct FunctionDef {
     /// as `symbol` says.
     pub name: String,
     pub code: Vec<u32>,
-    /// See [`FuncEntry::frame_size`].
+    /// The frame size `F` ([`crate::abi::frame_size`]): the prologue reserves it, and the
+    /// unwind information describes it. Not stored in the image.
     pub frame_size: u32,
     /// See [`FuncEntry::arg_size`].
     pub arg_size: u32,
