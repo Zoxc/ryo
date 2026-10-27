@@ -48,14 +48,14 @@ pub unsafe fn call<F: FnOnce<Args, Output = R>, Args: Tuple, R>(fp: *mut u8, ops
 }
 
 macro_rules! call_c_families {
-    ($($n:literal: $c:ident $c_diag:literal ($($T:ident $a:ident),*);)*) => {$(
-        #[doc = concat!("Call of an `unsafe extern \"C\" fn` with ", stringify!($n), " arguments.")]
+    ($($c:ident ($($T:ident $a:ident),*);)*) => {$(
+        /// Call of an `unsafe extern "C" fn` with as many arguments as the tuple.
         /// `ops`: `[args: (A0, …), dest: R, fn pointer]`.
         ///
         /// # Safety
         /// The operands must hold an initialized argument block, room for an `R`, and a fn
         /// pointer that is safe to call with these arguments.
-        #[rustc_diagnostic_item = $c_diag]
+        #[rustc_diagnostic_item = concat!("ryo_island_", stringify!($c))]
         pub unsafe fn $c<$($T,)* R>(fp: *mut u8, ops: *const u32) -> u32 {
             unsafe {
                 let f = slot::<unsafe extern "C" fn($($T),*) -> R>(fp, ops, 2).read();
@@ -68,23 +68,23 @@ macro_rules! call_c_families {
 }
 
 call_c_families! {
-    0: call_c0 "ryo_island_call_c0" ();
-    1: call_c1 "ryo_island_call_c1" (A0 a0);
-    2: call_c2 "ryo_island_call_c2" (A0 a0, A1 a1);
-    3: call_c3 "ryo_island_call_c3" (A0 a0, A1 a1, A2 a2);
-    4: call_c4 "ryo_island_call_c4" (A0 a0, A1 a1, A2 a2, A3 a3);
-    5: call_c5 "ryo_island_call_c5" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4);
-    6: call_c6 "ryo_island_call_c6" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5);
-    7: call_c7 "ryo_island_call_c7" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6);
-    8: call_c8 "ryo_island_call_c8" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7);
-    9: call_c9 "ryo_island_call_c9" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8);
-    10: call_c10 "ryo_island_call_c10" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9);
-    11: call_c11 "ryo_island_call_c11" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10);
-    12: call_c12 "ryo_island_call_c12" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11);
-    13: call_c13 "ryo_island_call_c13" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11, A12 a12);
-    14: call_c14 "ryo_island_call_c14" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11, A12 a12, A13 a13);
-    15: call_c15 "ryo_island_call_c15" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11, A12 a12, A13 a13, A14 a14);
-    16: call_c16 "ryo_island_call_c16" (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11, A12 a12, A13 a13, A14 a14, A15 a15);
+    call_c0 ();
+    call_c1 (A0 a0);
+    call_c2 (A0 a0, A1 a1);
+    call_c3 (A0 a0, A1 a1, A2 a2);
+    call_c4 (A0 a0, A1 a1, A2 a2, A3 a3);
+    call_c5 (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4);
+    call_c6 (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5);
+    call_c7 (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6);
+    call_c8 (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7);
+    call_c9 (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8);
+    call_c10 (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9);
+    call_c11 (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10);
+    call_c12 (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11);
+    call_c13 (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11, A12 a12);
+    call_c14 (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11, A12 a12, A13 a13);
+    call_c15 (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11, A12 a12, A13 a13, A14 a14);
+    call_c16 (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11, A12 a12, A13 a13, A14 a14, A15 a15);
 }
 
 /// Drop glue. `ops`: `[ptr: *mut T]`, a wide pointer if `T` is unsized.
@@ -116,13 +116,13 @@ pub unsafe fn catch_unwind<Data>(fp: *mut u8, ops: *const u32) -> u32 {
 }
 
 macro_rules! intrinsic_wrappers {
-    ($($name:ident $diag:literal [$($g:ident),*] ($($T:ty),*) -> $R:ty = $f:path;)*) => {$(
+    ($($name:ident [$($g:ident),*] ($($T:ty),*) -> $R:ty = $f:path;)*) => {$(
         #[doc = concat!("Island for `", stringify!($f), "`. `ops`: the inputs in order, then the destination.")]
         ///
         /// # Safety
         /// The operands must hold initialized inputs and room for the result, and the
         /// intrinsic's own preconditions must hold.
-        #[rustc_diagnostic_item = $diag]
+        #[rustc_diagnostic_item = concat!("ryo_island_", stringify!($name))]
         #[allow(unused_assignments)]
         pub unsafe fn $name<$($g),*>(fp: *mut u8, ops: *const u32) -> u32 {
             let mut i = 0;
@@ -134,78 +134,78 @@ macro_rules! intrinsic_wrappers {
 }
 
 intrinsic_wrappers! {
-    sqrtf32 "ryo_island_sqrtf32" [] (f32) -> f32 = intrinsics::sqrtf32;
-    sqrtf64 "ryo_island_sqrtf64" [] (f64) -> f64 = intrinsics::sqrtf64;
-    powif32 "ryo_island_powif32" [] (f32, i32) -> f32 = intrinsics::powif32;
-    powif64 "ryo_island_powif64" [] (f64, i32) -> f64 = intrinsics::powif64;
-    fmaf32 "ryo_island_fmaf32" [] (f32, f32, f32) -> f32 = intrinsics::fmaf32;
-    fmaf64 "ryo_island_fmaf64" [] (f64, f64, f64) -> f64 = intrinsics::fmaf64;
-    compare_bytes "ryo_island_compare_bytes" [] (*const u8, *const u8, usize) -> i32 = intrinsics::compare_bytes;
-    raw_eq "ryo_island_raw_eq" [T] (&T, &T) -> bool = intrinsics::raw_eq;
+    sqrtf32 [] (f32) -> f32 = intrinsics::sqrtf32;
+    sqrtf64 [] (f64) -> f64 = intrinsics::sqrtf64;
+    powif32 [] (f32, i32) -> f32 = intrinsics::powif32;
+    powif64 [] (f64, i32) -> f64 = intrinsics::powif64;
+    fmaf32 [] (f32, f32, f32) -> f32 = intrinsics::fmaf32;
+    fmaf64 [] (f64, f64, f64) -> f64 = intrinsics::fmaf64;
+    compare_bytes [] (*const u8, *const u8, usize) -> i32 = intrinsics::compare_bytes;
+    raw_eq [T] (&T, &T) -> bool = intrinsics::raw_eq;
 }
 
 // SIMD wrappers: generic exactly like the intrinsic (same generic params, in order), so the
 // lowering passes the intrinsic's generic args unchanged. The backend's
 // `island::templates::simd` lists the same names with their arities.
 intrinsic_wrappers! {
-    simd_add "ryo_island_simd_add" [T] (T, T) -> T = intrinsics::simd::simd_add;
-    simd_sub "ryo_island_simd_sub" [T] (T, T) -> T = intrinsics::simd::simd_sub;
-    simd_mul "ryo_island_simd_mul" [T] (T, T) -> T = intrinsics::simd::simd_mul;
-    simd_div "ryo_island_simd_div" [T] (T, T) -> T = intrinsics::simd::simd_div;
-    simd_rem "ryo_island_simd_rem" [T] (T, T) -> T = intrinsics::simd::simd_rem;
-    simd_shl "ryo_island_simd_shl" [T] (T, T) -> T = intrinsics::simd::simd_shl;
-    simd_shr "ryo_island_simd_shr" [T] (T, T) -> T = intrinsics::simd::simd_shr;
-    simd_and "ryo_island_simd_and" [T] (T, T) -> T = intrinsics::simd::simd_and;
-    simd_or "ryo_island_simd_or" [T] (T, T) -> T = intrinsics::simd::simd_or;
-    simd_xor "ryo_island_simd_xor" [T] (T, T) -> T = intrinsics::simd::simd_xor;
-    simd_saturating_add "ryo_island_simd_saturating_add" [T] (T, T) -> T = intrinsics::simd::simd_saturating_add;
-    simd_saturating_sub "ryo_island_simd_saturating_sub" [T] (T, T) -> T = intrinsics::simd::simd_saturating_sub;
-    simd_minimum_number_nsz "ryo_island_simd_minimum_number_nsz" [T] (T, T) -> T = intrinsics::simd::simd_minimum_number_nsz;
-    simd_maximum_number_nsz "ryo_island_simd_maximum_number_nsz" [T] (T, T) -> T = intrinsics::simd::simd_maximum_number_nsz;
-    simd_neg "ryo_island_simd_neg" [T] (T) -> T = intrinsics::simd::simd_neg;
-    simd_fabs "ryo_island_simd_fabs" [T] (T) -> T = intrinsics::simd::simd_fabs;
-    simd_bswap "ryo_island_simd_bswap" [T] (T) -> T = intrinsics::simd::simd_bswap;
-    simd_bitreverse "ryo_island_simd_bitreverse" [T] (T) -> T = intrinsics::simd::simd_bitreverse;
-    simd_ctlz "ryo_island_simd_ctlz" [T] (T) -> T = intrinsics::simd::simd_ctlz;
-    simd_ctpop "ryo_island_simd_ctpop" [T] (T) -> T = intrinsics::simd::simd_ctpop;
-    simd_cttz "ryo_island_simd_cttz" [T] (T) -> T = intrinsics::simd::simd_cttz;
-    simd_ceil "ryo_island_simd_ceil" [T] (T) -> T = intrinsics::simd::simd_ceil;
-    simd_floor "ryo_island_simd_floor" [T] (T) -> T = intrinsics::simd::simd_floor;
-    simd_round "ryo_island_simd_round" [T] (T) -> T = intrinsics::simd::simd_round;
-    simd_round_ties_even "ryo_island_simd_round_ties_even" [T] (T) -> T = intrinsics::simd::simd_round_ties_even;
-    simd_trunc "ryo_island_simd_trunc" [T] (T) -> T = intrinsics::simd::simd_trunc;
-    simd_fsqrt "ryo_island_simd_fsqrt" [T] (T) -> T = intrinsics::simd::simd_fsqrt;
-    simd_fma "ryo_island_simd_fma" [T] (T, T, T) -> T = intrinsics::simd::simd_fma;
-    simd_relaxed_fma "ryo_island_simd_relaxed_fma" [T] (T, T, T) -> T = intrinsics::simd::simd_relaxed_fma;
-    simd_funnel_shl "ryo_island_simd_funnel_shl" [T] (T, T, T) -> T = intrinsics::simd::simd_funnel_shl;
-    simd_funnel_shr "ryo_island_simd_funnel_shr" [T] (T, T, T) -> T = intrinsics::simd::simd_funnel_shr;
-    simd_eq "ryo_island_simd_eq" [T, U] (T, T) -> U = intrinsics::simd::simd_eq;
-    simd_ne "ryo_island_simd_ne" [T, U] (T, T) -> U = intrinsics::simd::simd_ne;
-    simd_lt "ryo_island_simd_lt" [T, U] (T, T) -> U = intrinsics::simd::simd_lt;
-    simd_le "ryo_island_simd_le" [T, U] (T, T) -> U = intrinsics::simd::simd_le;
-    simd_gt "ryo_island_simd_gt" [T, U] (T, T) -> U = intrinsics::simd::simd_gt;
-    simd_ge "ryo_island_simd_ge" [T, U] (T, T) -> U = intrinsics::simd::simd_ge;
-    simd_splat "ryo_island_simd_splat" [T, U] (U) -> T = intrinsics::simd::simd_splat;
-    simd_cast "ryo_island_simd_cast" [T, U] (T) -> U = intrinsics::simd::simd_cast;
-    simd_as "ryo_island_simd_as" [T, U] (T) -> U = intrinsics::simd::simd_as;
-    simd_bitmask "ryo_island_simd_bitmask" [T, U] (T) -> U = intrinsics::simd::simd_bitmask;
-    simd_reduce_add_unordered "ryo_island_simd_reduce_add_unordered" [T, U] (T) -> U = intrinsics::simd::simd_reduce_add_unordered;
-    simd_reduce_mul_unordered "ryo_island_simd_reduce_mul_unordered" [T, U] (T) -> U = intrinsics::simd::simd_reduce_mul_unordered;
-    simd_reduce_add_ordered "ryo_island_simd_reduce_add_ordered" [T, U] (T, U) -> U = intrinsics::simd::simd_reduce_add_ordered;
-    simd_reduce_mul_ordered "ryo_island_simd_reduce_mul_ordered" [T, U] (T, U) -> U = intrinsics::simd::simd_reduce_mul_ordered;
-    simd_reduce_max "ryo_island_simd_reduce_max" [T, U] (T) -> U = intrinsics::simd::simd_reduce_max;
-    simd_reduce_min "ryo_island_simd_reduce_min" [T, U] (T) -> U = intrinsics::simd::simd_reduce_min;
-    simd_reduce_and "ryo_island_simd_reduce_and" [T, U] (T) -> U = intrinsics::simd::simd_reduce_and;
-    simd_reduce_or "ryo_island_simd_reduce_or" [T, U] (T) -> U = intrinsics::simd::simd_reduce_or;
-    simd_reduce_xor "ryo_island_simd_reduce_xor" [T, U] (T) -> U = intrinsics::simd::simd_reduce_xor;
-    simd_reduce_all "ryo_island_simd_reduce_all" [T] (T) -> bool = intrinsics::simd::simd_reduce_all;
-    simd_reduce_any "ryo_island_simd_reduce_any" [T] (T) -> bool = intrinsics::simd::simd_reduce_any;
-    simd_select "ryo_island_simd_select" [M, T] (M, T, T) -> T = intrinsics::simd::simd_select;
-    simd_select_bitmask "ryo_island_simd_select_bitmask" [M, T] (M, T, T) -> T = intrinsics::simd::simd_select_bitmask;
-    simd_arith_offset "ryo_island_simd_arith_offset" [T, U] (T, U) -> T = intrinsics::simd::simd_arith_offset;
-    simd_cast_ptr "ryo_island_simd_cast_ptr" [T, U] (T) -> U = intrinsics::simd::simd_cast_ptr;
-    simd_expose_provenance "ryo_island_simd_expose_provenance" [T, U] (T) -> U = intrinsics::simd::simd_expose_provenance;
-    simd_with_exposed_provenance "ryo_island_simd_with_exposed_provenance" [T, U] (T) -> U = intrinsics::simd::simd_with_exposed_provenance;
+    simd_add [T] (T, T) -> T = intrinsics::simd::simd_add;
+    simd_sub [T] (T, T) -> T = intrinsics::simd::simd_sub;
+    simd_mul [T] (T, T) -> T = intrinsics::simd::simd_mul;
+    simd_div [T] (T, T) -> T = intrinsics::simd::simd_div;
+    simd_rem [T] (T, T) -> T = intrinsics::simd::simd_rem;
+    simd_shl [T] (T, T) -> T = intrinsics::simd::simd_shl;
+    simd_shr [T] (T, T) -> T = intrinsics::simd::simd_shr;
+    simd_and [T] (T, T) -> T = intrinsics::simd::simd_and;
+    simd_or [T] (T, T) -> T = intrinsics::simd::simd_or;
+    simd_xor [T] (T, T) -> T = intrinsics::simd::simd_xor;
+    simd_saturating_add [T] (T, T) -> T = intrinsics::simd::simd_saturating_add;
+    simd_saturating_sub [T] (T, T) -> T = intrinsics::simd::simd_saturating_sub;
+    simd_minimum_number_nsz [T] (T, T) -> T = intrinsics::simd::simd_minimum_number_nsz;
+    simd_maximum_number_nsz [T] (T, T) -> T = intrinsics::simd::simd_maximum_number_nsz;
+    simd_neg [T] (T) -> T = intrinsics::simd::simd_neg;
+    simd_fabs [T] (T) -> T = intrinsics::simd::simd_fabs;
+    simd_bswap [T] (T) -> T = intrinsics::simd::simd_bswap;
+    simd_bitreverse [T] (T) -> T = intrinsics::simd::simd_bitreverse;
+    simd_ctlz [T] (T) -> T = intrinsics::simd::simd_ctlz;
+    simd_ctpop [T] (T) -> T = intrinsics::simd::simd_ctpop;
+    simd_cttz [T] (T) -> T = intrinsics::simd::simd_cttz;
+    simd_ceil [T] (T) -> T = intrinsics::simd::simd_ceil;
+    simd_floor [T] (T) -> T = intrinsics::simd::simd_floor;
+    simd_round [T] (T) -> T = intrinsics::simd::simd_round;
+    simd_round_ties_even [T] (T) -> T = intrinsics::simd::simd_round_ties_even;
+    simd_trunc [T] (T) -> T = intrinsics::simd::simd_trunc;
+    simd_fsqrt [T] (T) -> T = intrinsics::simd::simd_fsqrt;
+    simd_fma [T] (T, T, T) -> T = intrinsics::simd::simd_fma;
+    simd_relaxed_fma [T] (T, T, T) -> T = intrinsics::simd::simd_relaxed_fma;
+    simd_funnel_shl [T] (T, T, T) -> T = intrinsics::simd::simd_funnel_shl;
+    simd_funnel_shr [T] (T, T, T) -> T = intrinsics::simd::simd_funnel_shr;
+    simd_eq [T, U] (T, T) -> U = intrinsics::simd::simd_eq;
+    simd_ne [T, U] (T, T) -> U = intrinsics::simd::simd_ne;
+    simd_lt [T, U] (T, T) -> U = intrinsics::simd::simd_lt;
+    simd_le [T, U] (T, T) -> U = intrinsics::simd::simd_le;
+    simd_gt [T, U] (T, T) -> U = intrinsics::simd::simd_gt;
+    simd_ge [T, U] (T, T) -> U = intrinsics::simd::simd_ge;
+    simd_splat [T, U] (U) -> T = intrinsics::simd::simd_splat;
+    simd_cast [T, U] (T) -> U = intrinsics::simd::simd_cast;
+    simd_as [T, U] (T) -> U = intrinsics::simd::simd_as;
+    simd_bitmask [T, U] (T) -> U = intrinsics::simd::simd_bitmask;
+    simd_reduce_add_unordered [T, U] (T) -> U = intrinsics::simd::simd_reduce_add_unordered;
+    simd_reduce_mul_unordered [T, U] (T) -> U = intrinsics::simd::simd_reduce_mul_unordered;
+    simd_reduce_add_ordered [T, U] (T, U) -> U = intrinsics::simd::simd_reduce_add_ordered;
+    simd_reduce_mul_ordered [T, U] (T, U) -> U = intrinsics::simd::simd_reduce_mul_ordered;
+    simd_reduce_max [T, U] (T) -> U = intrinsics::simd::simd_reduce_max;
+    simd_reduce_min [T, U] (T) -> U = intrinsics::simd::simd_reduce_min;
+    simd_reduce_and [T, U] (T) -> U = intrinsics::simd::simd_reduce_and;
+    simd_reduce_or [T, U] (T) -> U = intrinsics::simd::simd_reduce_or;
+    simd_reduce_xor [T, U] (T) -> U = intrinsics::simd::simd_reduce_xor;
+    simd_reduce_all [T] (T) -> bool = intrinsics::simd::simd_reduce_all;
+    simd_reduce_any [T] (T) -> bool = intrinsics::simd::simd_reduce_any;
+    simd_select [M, T] (M, T, T) -> T = intrinsics::simd::simd_select;
+    simd_select_bitmask [M, T] (M, T, T) -> T = intrinsics::simd::simd_select_bitmask;
+    simd_arith_offset [T, U] (T, U) -> T = intrinsics::simd::simd_arith_offset;
+    simd_cast_ptr [T, U] (T) -> U = intrinsics::simd::simd_cast_ptr;
+    simd_expose_provenance [T, U] (T) -> U = intrinsics::simd::simd_expose_provenance;
+    simd_with_exposed_provenance [T, U] (T) -> U = intrinsics::simd::simd_with_exposed_provenance;
 }
 
 // 128-bit `mul`, `div`, `rem` and `mul.ovf`: the VM has no such instructions
@@ -236,13 +236,13 @@ fn smulo128(a: i128, b: i128) -> (i128, bool) {
 }
 
 intrinsic_wrappers! {
-    mul_w128 "ryo_island_mul_w128" [] (u128, u128) -> u128 = mul128;
-    div_u_w128 "ryo_island_div_u_w128" [] (u128, u128) -> u128 = udiv128;
-    div_s_w128 "ryo_island_div_s_w128" [] (i128, i128) -> i128 = sdiv128;
-    rem_u_w128 "ryo_island_rem_u_w128" [] (u128, u128) -> u128 = urem128;
-    rem_s_w128 "ryo_island_rem_s_w128" [] (i128, i128) -> i128 = srem128;
-    mul_ovf_u_w128 "ryo_island_mul_ovf_u_w128" [] (u128, u128) -> (u128, bool) = umulo128;
-    mul_ovf_s_w128 "ryo_island_mul_ovf_s_w128" [] (i128, i128) -> (i128, bool) = smulo128;
+    mul_w128 [] (u128, u128) -> u128 = mul128;
+    div_u_w128 [] (u128, u128) -> u128 = udiv128;
+    div_s_w128 [] (i128, i128) -> i128 = sdiv128;
+    rem_u_w128 [] (u128, u128) -> u128 = urem128;
+    rem_s_w128 [] (i128, i128) -> i128 = srem128;
+    mul_ovf_u_w128 [] (u128, u128) -> (u128, bool) = umulo128;
+    mul_ovf_s_w128 [] (i128, i128) -> (i128, bool) = smulo128;
 }
 
 /// A numeric `as` cast the VM has no instruction for (`f16` and `f128`).
