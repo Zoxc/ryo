@@ -18,7 +18,7 @@ pub(crate) struct Program {
     pub(super) native: &'static [&'static str],
     /// A C `main` (relative to `tests/`), compiled with `cc` (`cl` on MSVC) and linked against
     /// the staticlib and cdylib crates, in order, or a C++ one (`.cpp`), compiled with `c++`
-    /// (`cl /EHs`). Skipped without that compiler.
+    /// (`cl /EHs`). Skipped without that compiler, but a failure on windows-msvc hosts.
     pub(super) c_main: Option<&'static str>,
     /// Built and run on windows-msvc hosts only (a C `main` using SEH).
     pub(super) msvc_only: bool,

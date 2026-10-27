@@ -1,7 +1,8 @@
 //! Windows: `RtlAddFunctionTable` per function, with the `RUNTIME_FUNCTION` and
 //! `UNWIND_INFO` the installer put in the region's read-write end (design/jit.md, "Unwinding
-//! and profiling"). The table is never deleted: code is never freed. Imports are `raw-dylib`,
-//! so the sealed JIT needs no import library.
+//! and profiling"). The table is never deleted: code is never freed. This file's imports are
+//! `raw-dylib`; `ryo_bytecode`'s `vmem` links `kernel32` as usual, which the program's link
+//! provides (std imports from it too).
 //!
 //! Untested on Windows itself: only built and link-checked from Linux.
 

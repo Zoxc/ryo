@@ -703,6 +703,9 @@ in `ryo_rt`, `ryo_h_<Opcode>`:
   end in a jump or need the caller's `rsp`. So are the JIT's trip entry points
   `ryo_jit_trip_entry` and `ryo_jit_trip_osr`, which must preserve every register but `rax`
   and `r11` ([JIT records and counters](#jit-records-and-counters), [jit.md](jit.md#records-and-trips)).
+  Their unwind information is DWARF CFI, or on Windows `.seh_*` directives (`ryo_probe_stack`
+  is where a stack overflow faults; without a `.pdata` entry the unwinder would take it for a
+  leaf), which `y test --cross` checks.
 - **Safety model**: images are trusted. Slots are accessed unaligned through `fp + offset`,
   values that may be pointers or uninitialized move as `MaybeUninit` or bytes, memory
   operands dereference what the program computed, and nothing in a handler panics (offset

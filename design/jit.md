@@ -62,8 +62,11 @@ section; its fields and the counter checks and stubs that use it are in
   head's index, for the dispatcher: nothing else is live at a head. On PE they also save
   `xmm8`–`xmm15` (entry, a 320-byte area) and `rdi`, `rsi` and `xmm6`–`xmm15` (loop head),
   callee-saved on Win64 but not for the `sysv64` Rust code they call (`rdi` and `rsi` are
-  among an entry's argument registers); with `ryo_rt`'s `pe-test`, the Linux loop head trip
-  saves `rdi` and `rsi` too, for PE code run off Windows.
+  among an entry's argument registers); with `ryo_rt`'s `pe-test` the Linux trips save the
+  same, for PE code run off Windows. On Windows they carry unwind info (`.seh_*`: the area
+  and the nonvolatile registers saved in it), so stack walks and a panic in their Rust code
+  get through them; the code after the restore isn't an epilogue form the Win64 unwinder
+  recognizes, so an asynchronous walk taken there goes wrong (no call can be there).
 - **No unwinding**: the Rust parts can't panic: nothing may unwind out of them, since the
   stubs aren't call sites. They are `sysv64-unwind`/`C-unwind` only so that the compiler
   adds no abort-on-unwind guard, which would reach core's panic path ("No re-entry").

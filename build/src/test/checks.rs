@@ -378,13 +378,10 @@ pub(super) fn outside(s: &str) -> bool {
 /// locks and TLS may be VM functions, which the runtime must not call while it switches VM
 /// state (design/vm.md, "No re-entry into the VM from the runtime"). Checked on the undefined
 /// symbols of every sysroot's `ryo_rt` rlib for `triple`, by crate in their v0 mangled names.
-/// ELF and Mach-O (`test --cross` checks a Mach-O target's). The JIT's trips are part of it; the JIT thread, which uses std, is the sealed object that
+/// ELF, PE and Mach-O (`test --cross` checks a cross target's). The JIT's trips are part of it; the JIT thread, which uses std, is the sealed object that
 /// the rlib bundles (design/jit.md#packaging), which `ryo_rt` reaches only through `ryo_jit_start`
 /// and `jit-sealed` checks: this check skips it.
 pub(crate) fn rt_core_only(info: &crate::utils::RustcInfo, root: &Path, triple: &str) -> Result<(), String> {
-    if triple.contains("-windows-") {
-        return Ok(());
-    }
     let nm = info.tool("llvm-nm");
     let dist = root.join("dist");
     let mut libs = Vec::new();
@@ -536,7 +533,9 @@ pub(super) fn panic_path(objdump: &Path, rt: &Path, bytecode: &Path, triple: &st
                 }
                 edges.entry(name.clone()).or_default();
                 cur = Some(name);
-            } else if let (Some(f), Some(i)) = (&cur, line.find("R_X86_64_").or_else(|| line.find("X86_64_RELOC_"))) {
+            } else if let (Some(f), Some(i)) =
+                (&cur, line.find("R_X86_64_").or_else(|| line.find("X86_64_RELOC_")).or_else(|| line.find("IMAGE_REL_AMD64_")))
+            {
                 let target = line[i..].split_whitespace().nth(1).unwrap_or("");
                 let target = crate::jit::unprefixed(triple, target.split(['+', '-']).next().unwrap_or("")).to_owned();
                 edges.entry(f.clone()).or_default().push(target);

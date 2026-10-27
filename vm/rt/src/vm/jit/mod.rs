@@ -264,20 +264,27 @@ static DISABLED: AtomicBool = AtomicBool::new(false);
 /// calls [`entry_trip`], restores them, and returns into the AOT code, or jumps to the JIT
 /// entry [`entry_trip`] gives, which drops the stub's return address
 /// ([`JIT_ENTRY_PREFIX`]). Clobbers `rax` and `r11`, which carry nothing at an entry. On PE
-/// it also saves `xmm8`–`xmm15`, callee-saved on Win64 but not for the `sysv64` Rust code
-/// it calls (`rdi`, `rsi`, `xmm6` and `xmm7` are among the argument registers it saves
-/// anyway), in a 320-byte area instead of 192.
-#[cfg(not(windows))]
+/// (and with `pe-test`, so PE-mode tests off Windows run the same code) it also saves
+/// `xmm8`–`xmm15`, callee-saved on Win64 but not for the `sysv64` Rust code it calls (`rdi`,
+/// `rsi`, `xmm6` and `xmm7` are among the argument registers it saves anyway), in a 320-byte
+/// area instead of 192. On Windows its unwind info records the area and the nonvolatile
+/// registers in it, so a panic in [`entry_trip`] or a stack walk passes through. The code
+/// after `add rsp` isn't an epilogue form the Win64 unwinder recognizes, so an asynchronous
+/// walk taken there (no call can be) goes wrong, as at a VM epilogue's `jmp reg`.
 #[unsafe(naked)]
 #[rustc_std_internal_symbol]
 #[unsafe(export_name = "ryo_jit_trip_entry")]
 pub unsafe extern "sysv64" fn trip_entry() {
     core::arch::naked_asm!(
-        ".cfi_startproc",
-        "sub rsp, 192",
-        ".cfi_adjust_cfa_offset 192",
+        cfi!(".cfi_startproc"),
+        seh!(".seh_proc {this}"),
+        "sub rsp, {area}",
+        cfi!(".cfi_adjust_cfa_offset {area}"),
+        seh!(".seh_stackalloc {area}"),
         "mov [rsp], rdi",
+        seh!(".seh_savereg rdi, 0"),
         "mov [rsp + 8], rsi",
+        seh!(".seh_savereg rsi, 8"),
         "mov [rsp + 16], rdx",
         "mov [rsp + 24], rcx",
         "mov [rsp + 32], r8",
@@ -289,66 +296,33 @@ pub unsafe extern "sysv64" fn trip_entry() {
         "movaps [rsp + 112], xmm4",
         "movaps [rsp + 128], xmm5",
         "movaps [rsp + 144], xmm6",
+        seh!(".seh_savexmm xmm6, 144"),
         "movaps [rsp + 160], xmm7",
-        "mov rdi, r11",
-        "call {trip}",
-        "mov r11, rax",
-        "mov rdi, [rsp]",
-        "mov rsi, [rsp + 8]",
-        "mov rdx, [rsp + 16]",
-        "mov rcx, [rsp + 24]",
-        "mov r8, [rsp + 32]",
-        "mov r9, [rsp + 40]",
-        "movaps xmm0, [rsp + 48]",
-        "movaps xmm1, [rsp + 64]",
-        "movaps xmm2, [rsp + 80]",
-        "movaps xmm3, [rsp + 96]",
-        "movaps xmm4, [rsp + 112]",
-        "movaps xmm5, [rsp + 128]",
-        "movaps xmm6, [rsp + 144]",
-        "movaps xmm7, [rsp + 160]",
-        "add rsp, 192",
-        ".cfi_adjust_cfa_offset -192",
-        "test r11, r11",
-        "jz 2f",
-        "jmp r11",
-        "2:",
-        "ret",
-        ".cfi_endproc",
-        trip = sym entry_trip,
-    );
-}
-#[cfg(windows)]
-#[unsafe(naked)]
-#[rustc_std_internal_symbol]
-#[unsafe(export_name = "ryo_jit_trip_entry")]
-pub unsafe extern "sysv64" fn trip_entry() {
-    core::arch::naked_asm!(
-        ".cfi_startproc",
-        "sub rsp, 320",
-        ".cfi_adjust_cfa_offset 320",
-        "mov [rsp], rdi",
-        "mov [rsp + 8], rsi",
-        "mov [rsp + 16], rdx",
-        "mov [rsp + 24], rcx",
-        "mov [rsp + 32], r8",
-        "mov [rsp + 40], r9",
-        "movaps [rsp + 48], xmm0",
-        "movaps [rsp + 64], xmm1",
-        "movaps [rsp + 80], xmm2",
-        "movaps [rsp + 96], xmm3",
-        "movaps [rsp + 112], xmm4",
-        "movaps [rsp + 128], xmm5",
-        "movaps [rsp + 144], xmm6",
-        "movaps [rsp + 160], xmm7",
+        seh!(".seh_savexmm xmm7, 160"),
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps [rsp + 176], xmm8",
+        seh!(".seh_savexmm xmm8, 176"),
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps [rsp + 192], xmm9",
+        seh!(".seh_savexmm xmm9, 192"),
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps [rsp + 208], xmm10",
+        seh!(".seh_savexmm xmm10, 208"),
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps [rsp + 224], xmm11",
+        seh!(".seh_savexmm xmm11, 224"),
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps [rsp + 240], xmm12",
+        seh!(".seh_savexmm xmm12, 240"),
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps [rsp + 256], xmm13",
+        seh!(".seh_savexmm xmm13, 256"),
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps [rsp + 272], xmm14",
+        seh!(".seh_savexmm xmm14, 272"),
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps [rsp + 288], xmm15",
+        seh!(".seh_savexmm xmm15, 288", ".seh_endprologue"),
         "mov rdi, r11",
         "call {trip}",
         "mov r11, rax",
@@ -366,163 +340,157 @@ pub unsafe extern "sysv64" fn trip_entry() {
         "movaps xmm5, [rsp + 128]",
         "movaps xmm6, [rsp + 144]",
         "movaps xmm7, [rsp + 160]",
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps xmm8, [rsp + 176]",
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps xmm9, [rsp + 192]",
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps xmm10, [rsp + 208]",
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps xmm11, [rsp + 224]",
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps xmm12, [rsp + 240]",
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps xmm13, [rsp + 256]",
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps xmm14, [rsp + 272]",
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps xmm15, [rsp + 288]",
-        "add rsp, 320",
-        ".cfi_adjust_cfa_offset -320",
+        "add rsp, {area}",
+        cfi!(".cfi_adjust_cfa_offset -{area}"),
         "test r11, r11",
         "jz 2f",
         "jmp r11",
         "2:",
         "ret",
-        ".cfi_endproc",
+        cfi!(".cfi_endproc"),
+        seh!(".seh_endproc"),
+        area = const TRIP_ENTRY_AREA,
         trip = sym entry_trip,
+        #[cfg(windows)]
+        this = sym trip_entry,
     );
 }
+/// [`trip_entry`]'s save area.
+const TRIP_ENTRY_AREA: usize = if cfg!(any(windows, feature = "pe-test")) { 320 } else { 192 };
 
 /// The trip of a loop head: `r11` is the JIT record, `eax` the head's index, `rsp + 8`
 /// 16-aligned, nothing live but `rsp` and `rbp`. A compiled function's head jumps to its OSR
 /// dispatcher, in the record's `osr` slot since before it was `Done` (the stubs call it
 /// directly then, so this is only for a stub that read the slot before). Else
 /// [`osr_trip`], keeping `eax`, and on to the dispatcher if that compiled it (`RYO_JIT_SYNC`),
-/// else back to the AOT code. On PE it also saves `rdi`, `rsi` and `xmm6`–`xmm15`,
-/// callee-saved on Win64 (VM code preserves them for its caller) but not for the `sysv64`
-/// Rust code.
-#[cfg(not(any(windows, feature = "pe-test")))]
+/// else back to the AOT code. On PE (and with `pe-test`) it also saves `rdi`, `rsi` and
+/// `xmm6`–`xmm15`, callee-saved on Win64 (VM code preserves them for its caller) but not for
+/// the `sysv64` Rust code; on Windows with unwind info, as [`trip_entry`]'s.
 #[unsafe(naked)]
 #[rustc_std_internal_symbol]
 #[unsafe(export_name = "ryo_jit_trip_osr")]
 pub unsafe extern "sysv64" fn trip_osr() {
     core::arch::naked_asm!(
-        ".cfi_startproc",
+        cfi!(".cfi_startproc"),
+        seh!(".seh_proc {this}"),
         "cmp dword ptr [r11 + {state}], {done}",
         "jne 2f",
         "jmp qword ptr [r11 + {osr}]",
         "2:",
         "push rax",
-        ".cfi_adjust_cfa_offset 8",
-        "mov rdi, r11",
-        "call {trip}",
-        "mov r11, rax",
-        "pop rax",
-        ".cfi_adjust_cfa_offset -8",
-        "test r11, r11",
-        "jz 3f",
-        "jmp r11",
-        "3:",
-        "ret",
-        ".cfi_endproc",
-        state = const core::mem::offset_of!(JitRecord, state),
-        done = const JIT_DONE,
-        osr = const core::mem::offset_of!(JitRecord, osr),
-        trip = sym osr_trip,
-    );
-}
-// With `pe-test`, PE code runs off Windows too: `rdi` and `rsi` are callee-saved there.
-#[cfg(all(not(windows), feature = "pe-test"))]
-#[unsafe(naked)]
-#[rustc_std_internal_symbol]
-#[unsafe(export_name = "ryo_jit_trip_osr")]
-pub unsafe extern "sysv64" fn trip_osr() {
-    core::arch::naked_asm!(
-        ".cfi_startproc",
-        "cmp dword ptr [r11 + {state}], {done}",
-        "jne 2f",
-        "jmp qword ptr [r11 + {osr}]",
-        "2:",
-        "push rax",
-        ".cfi_adjust_cfa_offset 8",
+        cfi!(".cfi_adjust_cfa_offset 8"),
+        seh!(".seh_stackalloc 8"),
+        #[cfg(any(windows, feature = "pe-test"))]
         "push rdi",
-        ".cfi_adjust_cfa_offset 8",
+        #[cfg(any(windows, feature = "pe-test"))]
+        cfi!(".cfi_adjust_cfa_offset 8"),
+        seh!(".seh_pushreg rdi"),
+        #[cfg(any(windows, feature = "pe-test"))]
         "push rsi",
-        ".cfi_adjust_cfa_offset 8",
-        "mov rdi, r11",
-        "call {trip}",
-        "mov r11, rax",
-        "pop rsi",
-        ".cfi_adjust_cfa_offset -8",
-        "pop rdi",
-        ".cfi_adjust_cfa_offset -8",
-        "pop rax",
-        ".cfi_adjust_cfa_offset -8",
-        "test r11, r11",
-        "jz 3f",
-        "jmp r11",
-        "3:",
-        "ret",
-        ".cfi_endproc",
-        state = const core::mem::offset_of!(JitRecord, state),
-        done = const JIT_DONE,
-        osr = const core::mem::offset_of!(JitRecord, osr),
-        trip = sym osr_trip,
-    );
-}
-#[cfg(windows)]
-#[unsafe(naked)]
-#[rustc_std_internal_symbol]
-#[unsafe(export_name = "ryo_jit_trip_osr")]
-pub unsafe extern "sysv64" fn trip_osr() {
-    core::arch::naked_asm!(
-        ".cfi_startproc",
-        "cmp dword ptr [r11 + {state}], {done}",
-        "jne 2f",
-        "jmp qword ptr [r11 + {osr}]",
-        "2:",
-        "push rax",
-        ".cfi_adjust_cfa_offset 8",
-        "push rdi",
-        ".cfi_adjust_cfa_offset 8",
-        "push rsi",
-        ".cfi_adjust_cfa_offset 8",
+        #[cfg(any(windows, feature = "pe-test"))]
+        cfi!(".cfi_adjust_cfa_offset 8"),
+        seh!(".seh_pushreg rsi"),
+        #[cfg(any(windows, feature = "pe-test"))]
         "sub rsp, 160",
-        ".cfi_adjust_cfa_offset 160",
+        #[cfg(any(windows, feature = "pe-test"))]
+        cfi!(".cfi_adjust_cfa_offset 160"),
+        seh!(".seh_stackalloc 160"),
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps [rsp + 0], xmm6",
+        seh!(".seh_savexmm xmm6, 0"),
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps [rsp + 16], xmm7",
+        seh!(".seh_savexmm xmm7, 16"),
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps [rsp + 32], xmm8",
+        seh!(".seh_savexmm xmm8, 32"),
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps [rsp + 48], xmm9",
+        seh!(".seh_savexmm xmm9, 48"),
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps [rsp + 64], xmm10",
+        seh!(".seh_savexmm xmm10, 64"),
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps [rsp + 80], xmm11",
+        seh!(".seh_savexmm xmm11, 80"),
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps [rsp + 96], xmm12",
+        seh!(".seh_savexmm xmm12, 96"),
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps [rsp + 112], xmm13",
+        seh!(".seh_savexmm xmm13, 112"),
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps [rsp + 128], xmm14",
+        seh!(".seh_savexmm xmm14, 128"),
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps [rsp + 144], xmm15",
+        seh!(".seh_savexmm xmm15, 144", ".seh_endprologue"),
         "mov rdi, r11",
         "call {trip}",
         "mov r11, rax",
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps xmm6, [rsp + 0]",
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps xmm7, [rsp + 16]",
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps xmm8, [rsp + 32]",
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps xmm9, [rsp + 48]",
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps xmm10, [rsp + 64]",
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps xmm11, [rsp + 80]",
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps xmm12, [rsp + 96]",
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps xmm13, [rsp + 112]",
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps xmm14, [rsp + 128]",
+        #[cfg(any(windows, feature = "pe-test"))]
         "movaps xmm15, [rsp + 144]",
+        #[cfg(any(windows, feature = "pe-test"))]
         "add rsp, 160",
-        ".cfi_adjust_cfa_offset -160",
+        #[cfg(any(windows, feature = "pe-test"))]
+        cfi!(".cfi_adjust_cfa_offset -160"),
+        #[cfg(any(windows, feature = "pe-test"))]
         "pop rsi",
-        ".cfi_adjust_cfa_offset -8",
+        #[cfg(any(windows, feature = "pe-test"))]
+        cfi!(".cfi_adjust_cfa_offset -8"),
+        #[cfg(any(windows, feature = "pe-test"))]
         "pop rdi",
-        ".cfi_adjust_cfa_offset -8",
+        #[cfg(any(windows, feature = "pe-test"))]
+        cfi!(".cfi_adjust_cfa_offset -8"),
         "pop rax",
-        ".cfi_adjust_cfa_offset -8",
+        cfi!(".cfi_adjust_cfa_offset -8"),
         "test r11, r11",
         "jz 3f",
         "jmp r11",
         "3:",
         "ret",
-        ".cfi_endproc",
+        cfi!(".cfi_endproc"),
+        seh!(".seh_endproc"),
         state = const core::mem::offset_of!(JitRecord, state),
         done = const JIT_DONE,
         osr = const core::mem::offset_of!(JitRecord, osr),
         trip = sym osr_trip,
+        #[cfg(windows)]
+        this = sym trip_osr,
     );
 }
 

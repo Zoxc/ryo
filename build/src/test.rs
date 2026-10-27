@@ -804,7 +804,19 @@ pub fn run(opts: &Options) -> Result<(), String> {
         if let Some(c_main) = program.c_main
             && !cc[usize::from(is_cxx(c_main))]
         {
-            eprintln!("[y] test {}: skipped (no `{}`)", program.name, c_compiler_name(is_cxx(c_main)));
+            // On Windows the SEH and C++ exception tests are C mains: a missing `cl` must not
+            // let the run pass without them.
+            let msg = format!("no `{}`", c_compiler_name(is_cxx(c_main)));
+            if MSVC {
+                report(
+                    program.name,
+                    Instant::now(),
+                    Err(format!("{msg} (run from a Visual Studio developer shell, or install the C++ tools)")),
+                    &failed,
+                );
+            } else {
+                eprintln!("[y] test {}: skipped ({msg})", program.name);
+            }
             continue;
         }
         work.push((program, vs));

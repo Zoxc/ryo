@@ -861,10 +861,15 @@ pub unsafe extern "C-unwind" fn resume() -> ! {
 #[rustc_std_internal_symbol]
 #[unsafe(export_name = "ryo_probe_stack")]
 pub unsafe extern "sysv64-unwind" fn probe_stack() {
+    // On Windows the guard page's fault is raised here: its unwind info (`push rax` as an
+    // 8-byte allocation) lets the dispatcher walk on into the caller, whose prologue is before
+    // its `ALLOC` at the call.
     core::arch::naked_asm!(
-        ".cfi_startproc",
+        cfi!(".cfi_startproc"),
+        seh!(".seh_proc {this}"),
         "push rax",
-        ".cfi_adjust_cfa_offset 8",
+        cfi!(".cfi_adjust_cfa_offset 8"),
+        seh!(".seh_stackalloc 8", ".seh_endprologue"),
         "lea r11, [rsp + 16]",
         "2:",
         "sub r11, 4096",
@@ -872,8 +877,11 @@ pub unsafe extern "sysv64-unwind" fn probe_stack() {
         "sub rax, 4096",
         "ja 2b",
         "pop rax",
-        ".cfi_adjust_cfa_offset -8",
+        cfi!(".cfi_adjust_cfa_offset -8"),
         "ret",
-        ".cfi_endproc",
+        cfi!(".cfi_endproc"),
+        seh!(".seh_endproc"),
+        #[cfg(windows)]
+        this = sym probe_stack,
     );
 }

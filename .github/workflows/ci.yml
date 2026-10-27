@@ -32,6 +32,18 @@ jobs:
         run: |
           call y.cmd build || exit /b 1
           call y.cmd test || exit /b 1
+      # As on macOS: the JIT from every function's first call, and entered by OSR. `y test`
+      # fails on Windows if it finds no `cl`, so the SEH and C++ mains can't be left out.
+      - if: runner.os == 'Windows'
+        name: JIT from the first call
+        shell: cmd
+        run: call y.cmd test || exit /b 1
+        env: { RYO_JIT_THRESHOLD: "0", RYO_JIT_SYNC: "1" }
+      - if: runner.os == 'Windows'
+        name: JIT by OSR, shuffled frames
+        shell: cmd
+        run: call y.cmd test || exit /b 1
+        env: { RYO_JIT_THRESHOLD: "2,0", RYO_JIT_SYNC: "1", RYO_JIT_SHUFFLE: "1" }
 
   # x86_64 macOS (design/platforms.md). `macos-15-intel` is GitHub's Intel image, so the
   # toolchain, the backend and the JIT run natively; Rosetta on an arm64 runner would also test

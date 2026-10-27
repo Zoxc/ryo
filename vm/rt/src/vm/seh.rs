@@ -26,6 +26,10 @@ pub const EXCEPTION_UNWINDING: u32 = 0x2;
 pub const EXCEPTION_EXIT_UNWIND: u32 = 0x4;
 /// `EXCEPTION_TARGET_UNWIND`: the frame is the unwind's target.
 pub const EXCEPTION_TARGET_UNWIND: u32 = 0x20;
+/// `EXCEPTION_COLLIDED_UNWIND`: the handler is called again for the frame an earlier unwind was
+/// in when a later one (started below, in a pad that unwind ran) went past it.
+#[allow(dead_code)] // The decision rests on `ScopeIndex` ([`decide`]).
+pub const EXCEPTION_COLLIDED_UNWIND: u32 = 0x40;
 /// The exception code of MSVC's C++ `throw` (`'msc' | 0xE0000000`), and of Rust panics.
 pub const CXX_EXCEPTION: u32 = 0xE06D_7363;
 
@@ -54,8 +58,20 @@ pub enum Action {
 /// The handler's action for the frame of a VM function whose handler data is `data`, its
 /// pc `pc` bytes past the function's start (a return address: the call before it is the call
 /// site), for an exception record with `flags` that is ([`is_cxx`]) a C++ exception or not.
-pub fn decide(flags: u32, cxx: bool, pc: u32, data: &PeHandlerData<'_>) -> Action {
+/// `entered` is whether the frame's pad was already called in this unwind: the handler sets
+/// `DispatcherContext.ScopeIndex` before it calls one, as `__C_specific_handler` does with
+/// the index of the next scope. The dispatcher starts each frame at 0, and a collided unwind
+/// (`EXCEPTION_COLLIDED_UNWIND`: a pad raised an exception that a native `__except` above
+/// caught, and its unwind went past this frame's handler) resumes with the interrupted
+/// unwind's context, so the pad doesn't run a second time.
+pub fn decide(flags: u32, cxx: bool, pc: u32, entered: bool, data: &PeHandlerData<'_>) -> Action {
     let unwinding = flags & (EXCEPTION_UNWINDING | EXCEPTION_EXIT_UNWIND) != 0;
+    // `pc - 1` is in the call a return address follows. For a frame that faulted itself the
+    // pc is the faulting instruction's, so a fault right after a cleanup call matches that
+    // call's site, and the unwind runs that site's pad (or a search takes its terminate pad).
+    if unwinding && entered {
+        return Action::Continue;
+    }
     let Some(site) = lsda::find(data.lsda, pc.wrapping_sub(1)) else { return Action::Abort("a VM function's LSDA is invalid") };
     match site {
         // A call that can't unwind (as on ELF, where the personality finds no call site).
@@ -145,11 +161,13 @@ mod win {
         );
     }
 
-    unsafe extern "system" {
+    unsafe extern "system-unwind" {
         /// Calls the landing pad `pad` through the pad region's entry `region`, with the
         /// nonvolatile registers of the VM frame (`ctx`, the context the unwinder unwound into
         /// it) and the exception object `obj` in `rax`, on the current stack (below this
-        /// handler), and returns once the pad's `resume` does (`global_asm!` below).
+        /// handler), and returns once the pad's `resume` does (`global_asm!` below). It
+        /// unwinds when the pad raises an SEH exception that something above catches: the
+        /// unwind of that exception passes through it (its unwind info), so `system-unwind`.
         fn ryo_seh_call_pad(ctx: *const Context, region: usize, pad: usize, obj: *mut ExceptionRecord);
     }
 
@@ -169,16 +187,17 @@ mod win {
         // SAFETY: the dispatcher's arguments, valid for the call; the handler data is the
         // image writer's (or the JIT's) `pe_handler_data`.
         unsafe {
-            let dc = &*dc;
+            let dc = &mut *dc;
             let Some(data) = PeHandlerData::from_ptr(dc.handler_data) else { fatal("a VM function's handler data is invalid") };
             let begin = dc.image_base.wrapping_add((*dc.function_entry).begin as u64);
             let func = begin.wrapping_sub(data.begin as u64);
             let pc = dc.control_pc.wrapping_sub(func) as u32;
             let r = &*rec;
             let cxx = is_cxx(r.code, r.params, r.info[0]);
-            match decide(r.flags, cxx, pc, &data) {
+            match decide(r.flags, cxx, pc, dc.scope_index != 0, &data) {
                 Action::Continue => {}
                 Action::CallPad(pad) => {
+                    dc.scope_index = 1;
                     ryo_seh_call_pad(dc.context, (func + data.region as u64) as usize, (func + pad as u64) as usize, rec);
                 }
                 Action::UnwindTo(pad) => {
@@ -199,7 +218,9 @@ mod win {
 // the exception object in `rax` and the pad in `r11`, and calls the pad region's entry, which
 // allocates the region's frame below and jumps to the pad. `rsp` is 16-aligned at the call. Its
 // own unwind information makes the frames of the region and of the code it calls walk back
-// through it into the handler and the unwinder's frames.
+// through it into the handler and the unwinder's frames. The `rax` a pad gets is the
+// exception record; a terminate stub reached through `RtlUnwindEx` gets whatever the unwind
+// leaves in it (the consolidation record, or the dispatcher's): neither relies on it.
 #[cfg(windows)]
 core::arch::global_asm!(
     ".text",
@@ -343,10 +364,30 @@ mod tests {
             (search, true, 10, Action::Abort("an exception unwinds out of a VM call that can't unwind")),
         ];
         for (flags, cxx, pc, want) in cases {
-            assert_eq!(decide(flags, cxx, pc, &d), want, "flags {flags:#x} cxx {cxx} pc {pc}");
+            assert_eq!(decide(flags, cxx, pc, false, &d), want, "flags {flags:#x} cxx {cxx} pc {pc}");
         }
         let bad = PeHandlerData { lsda: &[1, 2, 3], ..d };
-        assert_eq!(decide(search, true, 15, &bad), Action::Abort("a VM function's LSDA is invalid"));
+        assert_eq!(decide(search, true, 15, false, &bad), Action::Abort("a VM function's LSDA is invalid"));
+    }
+
+    /// A pad that raised an exception a native `__except` above caught: that unwind collides
+    /// with this one, and the handler, called again for the frame with the context of the
+    /// interrupted unwind (`ScopeIndex` set), doesn't call the pad again. A later unwind of the
+    /// frame (`ScopeIndex` back at 0) does.
+    #[test]
+    fn collided_unwind() {
+        let bytes = data();
+        let d = PeHandlerData::parse(&bytes).unwrap();
+        let collided = EXCEPTION_UNWINDING | EXCEPTION_COLLIDED_UNWIND;
+        for cxx in [false, true] {
+            assert_eq!(decide(EXCEPTION_UNWINDING, cxx, 15, false, &d), Action::CallPad(103));
+            assert_eq!(decide(collided, cxx, 15, true, &d), Action::Continue);
+            assert_eq!(decide(EXCEPTION_UNWINDING, cxx, 15, true, &d), Action::Continue);
+            assert_eq!(decide(EXCEPTION_EXIT_UNWIND, cxx, 15, true, &d), Action::Continue);
+            assert_eq!(decide(collided, cxx, 15, false, &d), Action::CallPad(103));
+        }
+        // The search phase doesn't look at it.
+        assert_eq!(decide(0, true, 26, true, &d), Action::UnwindTo(80));
     }
 
     #[test]
