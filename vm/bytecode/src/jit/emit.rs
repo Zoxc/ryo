@@ -151,6 +151,30 @@ impl From<x86::X> for XSrc {
     }
 }
 
+/// An ABI register holding a value of `size` bytes: a general-purpose one or `xmm<n>`.
+#[derive(Clone, Copy)]
+enum AbiReg {
+    G(R, u32),
+    X(u8, u32),
+}
+
+/// The return registers of `parts`: `rax`, `rdx` and `xmm0`, `xmm1` in order.
+fn ret_regs(parts: &[RetPart]) -> Vec<AbiReg> {
+    let (mut g, mut x) = (0, 0u8);
+    parts
+        .iter()
+        .map(|p| {
+            if p.xmm {
+                x += 1;
+                AbiReg::X(x - 1, p.size)
+            } else {
+                g += 1;
+                AbiReg::G(R::RETS[g - 1], p.size)
+            }
+        })
+        .collect()
+}
+
 /// A piece of code being laid out.
 #[derive(Clone, Debug)]
 enum P {
@@ -931,19 +955,25 @@ impl<'a> E<'a> {
         }
     }
 
-    /// Moves values into the argument registers of a call: `xmm` ones first (nothing else
-    /// writes them), then a parallel move of the integer ones (with the callee into `rax`).
-    fn call_args(&mut self, regs: &[asm::ArgReg], args: &[Value], callee: Option<Value>) {
-        for (r, &v) in regs.iter().zip(args) {
-            if r.xmm {
+    /// The registers of a call's arguments (or a function's parameters).
+    fn arg_regs(&self, regs: &[asm::ArgReg]) -> Vec<AbiReg> {
+        regs.iter().map(|r| if r.xmm { AbiReg::X(r.index as u8, r.size) } else { AbiReg::G(int_arg(self.mode.pe, r.index), r.size) }).collect()
+    }
+
+    /// Moves values into ABI registers (call arguments or return parts): `xmm` ones first
+    /// (nothing else writes them), then a parallel move of the integer ones (with `callee`
+    /// into `rax`), then narrow integers zero-extended.
+    fn to_abi(&mut self, regs: &[AbiReg], vals: &[Value], callee: Option<Value>) {
+        for (&r, &v) in regs.iter().zip(vals) {
+            if let AbiReg::X(x, size) = r {
                 let Some(s) = self.rm(v, S1) else { continue };
-                self.a.x().movq_to_xmm(r.index as u8, s, if r.size == 8 { 8 } else { 4 });
+                self.a.x().movq_to_xmm(x, s, if size == 8 { 8 } else { 4 });
             }
         }
         let mut ms = Vec::new();
-        for (r, &v) in regs.iter().zip(args) {
-            if !r.xmm {
-                ms.push((Rm::R(int_arg(self.mode.pe, r.index)), self.src(v)));
+        for (&r, &v) in regs.iter().zip(vals) {
+            if let AbiReg::G(g, _) = r {
+                ms.push((Rm::R(g), self.src(v)));
             }
         }
         if let Some(c) = callee {
@@ -952,33 +982,27 @@ impl<'a> E<'a> {
         self.moves(ms);
         // Narrow integers zero-extended, as the AOT code loads them: native callees may rely
         // on it (`zeroext`).
-        let narrow: Vec<&asm::ArgReg> =
-            regs.iter().zip(args).filter(|(r, v)| !r.xmm && r.size < 8 && self.zext(**v) > r.size as u8).map(|(r, _)| r).collect();
-        for r in narrow {
-            let x = int_arg(self.mode.pe, r.index);
-            self.a.x().movzx(x, r.size as u8, Rm::R(x));
+        for (&r, &v) in regs.iter().zip(vals) {
+            if let AbiReg::G(g, size) = r {
+                if size < 8 && self.zext(v) > size as u8 {
+                    self.a.x().movzx(g, size as u8, Rm::R(g));
+                }
+            }
         }
     }
 
-    /// After a call: the results from the return registers.
-    fn call_results(&mut self, parts: &[RetPart], results: &[Value]) {
+    /// Moves values out of ABI registers (call results or parameters) into their locations:
+    /// the integer ones in parallel, then the `xmm` ones.
+    fn from_abi(&mut self, regs: &[AbiReg], vals: &[Value]) {
         let mut ms = Vec::new();
-        let mut xs = Vec::new();
-        let (mut g, mut x) = (0, 0u8);
-        for (p, &v) in parts.iter().zip(results) {
-            if p.xmm {
-                xs.push((x, v, p.size));
-                x += 1;
-            } else {
-                if let Some(d) = self.dst(v) {
-                    ms.push((d, Src::R(R::RETS[g])));
-                }
-                g += 1;
+        for (&r, &v) in regs.iter().zip(vals) {
+            if let (AbiReg::G(g, _), Some(d)) = (r, self.dst(v)) {
+                ms.push((d, Src::R(g)));
             }
         }
         self.moves(ms);
-        for (x, v, size) in xs {
-            if let Some(d) = self.dst(v) {
+        for (&r, &v) in regs.iter().zip(vals) {
+            if let (AbiReg::X(x, size), Some(d)) = (r, self.dst(v)) {
                 self.a.x().movq_from_xmm(d, x, if size == 8 { 8 } else { 4 });
             }
         }
@@ -1387,7 +1411,8 @@ impl<'a> E<'a> {
             }
             Op::Call(c) => {
                 let (callee, rest) = if c.target == CallTarget::Ptr { (Some(args[0]), &args[1..]) } else { (None, &args[..]) };
-                self.call_args(&c.regs, rest, callee);
+                let regs = self.arg_regs(&c.regs);
+                self.to_abi(&regs, rest, callee);
                 match c.target {
                     CallTarget::Func(g) => self.call_with_site(c.site, pad, |x| x.call_func(g)),
                     CallTarget::Sym(s) => self.call_with_site(c.site, pad, |x| x.call_mem(Mem::Rip(Ref::Sym(s)))),
@@ -1397,7 +1422,7 @@ impl<'a> E<'a> {
                     }
                     CallTarget::Ptr => self.call_with_site(c.site, pad, |x| x.call_r(R::Rax)),
                 }
-                self.call_results(&c.parts, &res);
+                self.from_abi(&ret_regs(&c.parts), &res);
             }
             Op::Island(isl) => {
                 let mut b = Vec::with_capacity(4 + 4 * isl.ops.len());
@@ -1678,24 +1703,10 @@ impl<'a> E<'a> {
         let bd = &self.f.blocks[b.idx()];
         if bd.kind == BlockKind::Entry {
             self.prologue();
-            // The arguments into their locations: integer registers in parallel, then SSE.
+            // The arguments into their locations.
             let params = bd.params.clone();
-            let mut ms = Vec::new();
-            let mut xs = Vec::new();
-            for (k, &p) in params.iter().enumerate() {
-                let r = self.f.entry_regs[k];
-                if let Some(d) = self.dst(p) {
-                    if r.xmm {
-                        xs.push((d, r.index as u8, r.size));
-                    } else {
-                        ms.push((d, Src::R(int_arg(self.mode.pe, r.index))));
-                    }
-                }
-            }
-            self.moves(ms);
-            for (d, x, size) in xs {
-                self.a.x().movq_from_xmm(d, x, if size == 8 { 8 } else { 4 });
-            }
+            let regs = self.arg_regs(&self.f.entry_regs);
+            self.from_abi(&regs, &params);
         }
         let insts = bd.insts.clone();
         let pad = match &bd.term {
@@ -1771,37 +1782,14 @@ impl<'a> E<'a> {
             Term::Ret { k, parts } => {
                 let ps: Vec<RetPart> =
                     if *k == 0 { Vec::new() } else { asm::ret_parts(*k, true).ok_or(Unsupported("return kind"))?.into_iter().flatten().collect() };
-                let mut ms = Vec::new();
-                let (mut g, mut x) = (0, 0u8);
-                for (p, &v) in ps.iter().zip(parts) {
-                    if p.xmm {
-                        let Some(s) = self.rm(v, S1) else {
-                            x += 1;
-                            continue;
-                        };
-                        self.a.x().movq_to_xmm(x, s, if p.size == 8 { 8 } else { 4 });
-                        x += 1;
-                    } else {
-                        ms.push((Rm::R(R::RETS[g]), self.src(v)));
-                        g += 1;
-                    }
-                }
-                self.moves(ms);
-                // Narrow integer parts zero-extended, as the AOT code loads them.
-                let mut g = 0;
-                for (p, &v) in ps.iter().zip(parts).filter(|(p, _)| !p.xmm) {
-                    let r = R::RETS[g];
-                    if p.size < 8 && self.zext(v) > p.size as u8 {
-                        self.a.x().movzx(r, p.size as u8, Rm::R(r));
-                    }
-                    g += 1;
-                }
+                self.to_abi(&ret_regs(&ps), parts, None);
                 self.epilogue();
                 self.a.x().ret();
             }
             Term::TailCall { call, args } => {
                 let (callee, rest) = if call.target == CallTarget::Ptr { (Some(args[0]), &args[1..]) } else { (None, &args[..]) };
-                self.call_args(&call.regs, rest, callee);
+                let regs = self.arg_regs(&call.regs);
+                self.to_abi(&regs, rest, callee);
                 self.epilogue();
                 match call.target {
                     // PE: through a register as `rex.w jmp`, which the unwinder takes for the
