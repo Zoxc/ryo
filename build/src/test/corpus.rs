@@ -21,8 +21,15 @@ pub(crate) struct Program {
     /// landing pads don't run on PE (design/platforms.md, "Panics out of islands").
     pub(super) pe_lost_cleanups: &'static [&'static str],
     /// A C `main` (relative to `tests/`), compiled with `cc` (`cl` on MSVC) and linked against
-    /// the staticlib and cdylib crates, in order. Skipped without that compiler.
+    /// the staticlib and cdylib crates, in order, or a C++ one (`.cpp`), compiled with `c++`
+    /// (`cl /EHs`). Skipped without that compiler.
     pub(super) c_main: Option<&'static str>,
+    /// Built and run on windows-msvc hosts only (a C `main` using SEH).
+    pub(super) msvc_only: bool,
+    /// Unwinds a foreign exception (C++, SEH) through Rust frames: not built with
+    /// `-Cpanic=abort`, where the unwind enters Rust-ABI calls that can't unwind (undefined
+    /// behavior: LLVM's functions without landing pads let it pass, VM functions abort).
+    pub(super) foreign_unwind: bool,
     /// A static library the crates link (`#[link(kind = "static")]`), built before them.
     pub native_lib: Option<NativeLib>,
 }
@@ -119,8 +126,18 @@ impl NativeLib {
 }
 
 /// Defaults for [`Program`] fields.
-pub(super) const PROGRAM: Program =
-    Program { name: "", crates: &[], flags: &[], vm: &[], native: &[], pe_lost_cleanups: &[], c_main: None, native_lib: None };
+pub(super) const PROGRAM: Program = Program {
+    name: "",
+    crates: &[],
+    flags: &[],
+    vm: &[],
+    native: &[],
+    pe_lost_cleanups: &[],
+    c_main: None,
+    msvc_only: false,
+    foreign_unwind: false,
+    native_lib: None,
+};
 
 pub(crate) struct Crate {
     /// The crate name, passed as `--crate-name`.
@@ -413,4 +430,57 @@ pub(crate) const CORPUS: &[Program] = &[
         ..PROGRAM
     },
     Program { name: "vm_cdylib", crates: &[krate("vmc", "vm_c/lib.rs", CrateKind::Cdylib)], vm: &["answer"], c_main: Some("vm_c/main.c"), ..PROGRAM },
+    // Unwinding through VM frames (design/vm.md#unwinding): chains of VM and native frames
+    // into `catch_unwind`, a panic in a drop during unwinding, a panic nothing catches.
+    single!(
+        "vm_unwind_chain",
+        vm: &["main", "vm1", "vm2", "vm3", "consume", "check", "step", "vm_loop", "vm_resume", "<G as std::ops::Drop>::drop"],
+        native: &["native1", "native2", "native_resume"],
+    ),
+    single!("vm_double_panic", vm: &["main", "deep", "top", "<Bomb as std::ops::Drop>::drop"], native: &["native_mid"]),
+    single!("vm_uncaught", vm: &["main", "raise", "vm_entry", "run"]),
+    // C++ exceptions through VM frames: to a C++ catch, into a function that can't unwind,
+    // and through a drop that panics.
+    Program {
+        name: "vm_cxx",
+        crates: &[krate("vcx", "vm_cxx/lib.rs", CrateKind::Staticlib)],
+        vm: &["outer", "mid", "step", "with_catcher", "<Catcher as std::ops::Drop>::drop"],
+        native: &["native"],
+        c_main: Some("vm_cxx/through.cpp"),
+        foreign_unwind: true,
+        ..PROGRAM
+    },
+    Program {
+        name: "vm_cxx_terminate",
+        crates: &[krate("vcx", "vm_cxx/lib.rs", CrateKind::Staticlib)],
+        vm: &["nounwind", "mid"],
+        c_main: Some("vm_cxx/terminate.cpp"),
+        foreign_unwind: true,
+        ..PROGRAM
+    },
+    Program {
+        name: "vm_cxx_nested_panic",
+        crates: &[krate("vcx", "vm_cxx/lib.rs", CrateKind::Staticlib)],
+        vm: &["with_bomb", "mid", "<Bomb as std::ops::Drop>::drop"],
+        c_main: Some("vm_cxx/nested.cpp"),
+        foreign_unwind: true,
+        ..PROGRAM
+    },
+    // SEH exceptions and `longjmp` through VM frames from C.
+    Program {
+        name: "vm_seh_av",
+        crates: &[krate("vse", "vm_seh/lib.rs", CrateKind::Staticlib)],
+        vm: &["guarded", "inner"],
+        c_main: Some("vm_seh/av.c"),
+        foreign_unwind: true,
+        msvc_only: true,
+        ..PROGRAM
+    },
+    Program {
+        name: "vm_longjmp",
+        crates: &[krate("vse", "vm_seh/lib.rs", CrateKind::Staticlib)],
+        vm: &["plain", "plain_inner"],
+        c_main: Some("vm_seh/longjmp.c"),
+        ..PROGRAM
+    },
 ];

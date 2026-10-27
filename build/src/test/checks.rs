@@ -109,7 +109,13 @@ pub(super) fn backtrace(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), 
     } else {
         (&["vm_backtrace::inner", "vm_backtrace::outer", "__rust_try", "vm_backtrace::main"], "guard dropped\ncaught: true\n")
     };
-    let missing: Vec<_> = want.iter().filter(|w| !stderr.contains(*w)).collect();
+    let mut missing: Vec<_> = want.iter().filter(|w| !stderr.contains(*w)).collect();
+    // The backtrace the guard's drop captures in the landing pad walks out of it, through
+    // `outer`, into `main`.
+    if !MSVC {
+        let in_drop = stderr.split_once("drop backtrace:").map_or("", |(_, b)| b);
+        missing.extend(["vm_backtrace::outer", "vm_backtrace::main"].iter().filter(|w| !in_drop.contains(*w)));
+    }
     if !status.success() || stdout != want_stdout || !missing.is_empty() {
         return Err(format!("{status}, missing frames {missing:?}\nstdout:\n{stdout}stderr:\n{stderr}"));
     }
@@ -133,15 +139,28 @@ pub(crate) fn vm_functions(stderr: &str) -> Vec<String> {
 /// the cdylib's import library are `<name>.lib` and `<name>.dll.lib`.
 pub(super) const MSVC: bool = cfg!(target_env = "msvc");
 
-/// The C compiler for the [`Program::c_main`] programs.
-pub(super) const C_COMPILER: &str = if MSVC { "cl" } else { "cc" };
+/// The C compiler for the [`Program::c_main`] programs, and the C++ compiler for those in
+/// C++ (`.cpp`): `cl` compiles both.
+pub(super) fn c_compiler_name(cxx: bool) -> &'static str {
+    match (MSVC, cxx) {
+        (true, _) => "cl",
+        (false, false) => "cc",
+        (false, true) => "c++",
+    }
+}
 
-/// A command running [`C_COMPILER`], or `None` if there is none. On MSVC, `cl` from `PATH`
+/// Whether the [`Program::c_main`] `path` is C++.
+pub(super) fn is_cxx(path: &str) -> bool {
+    path.ends_with(".cpp")
+}
+
+/// A command running [`c_compiler_name`], or `None` if there is none. On MSVC, `cl` from `PATH`
 /// in a Visual Studio developer environment, else from the newest Visual Studio with the C++
 /// tools, with the environment ([`msvc_env`]) its `vcvars64.bat` sets up.
-pub(super) fn c_compiler() -> Option<Command> {
+pub(super) fn c_compiler(cxx: bool) -> Option<Command> {
     if !MSVC {
-        return Command::new("cc").arg("--version").output().is_ok_and(|o| o.status.success()).then(|| Command::new("cc"));
+        let name = c_compiler_name(cxx);
+        return Command::new(name).arg("--version").output().is_ok_and(|o| o.status.success()).then(|| Command::new(name));
     }
     // `cl` without arguments prints its banner; starting at all is enough.
     if Command::new("cl").output().is_ok() {

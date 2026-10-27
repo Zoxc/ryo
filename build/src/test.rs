@@ -164,6 +164,12 @@ const FAST: &[(&str, &[&str])] = &[
     ("vm_lto_dep", &["ryo-lto"]),
     ("vm_abort_cleanup", &["ryo-abort"]),
     ("end_ptrs", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-shuffle"]),
+    ("vm_unwind_chain", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-abort"]),
+    ("vm_double_panic", &["ryo", "ryo-jit-ssa"]),
+    ("vm_cxx", &["ryo", "ryo-jit-ssa"]),
+    ("vm_cxx_terminate", &["ryo"]),
+    ("vm_cxx_nested_panic", &["ryo"]),
+    ("vm_seh_av", &["ryo", "ryo-jit-ssa"]),
 ];
 
 /// The [`CORPUS`] programs only `--full` (or a change to them) runs, with the reason.
@@ -187,6 +193,8 @@ const FULL_ONLY: &[(&str, &str)] = &[
     ("vm_eii", "externally implementable items; rarely touched"),
     ("vm_linkage", "#[linkage] items stay native; rarely touched"),
     ("vm_staticlib", "a C main on a staticlib; vm_cdylib covers the C main"),
+    ("vm_uncaught", "an uncaught panic on a foreign thread; rarely touched"),
+    ("vm_longjmp", "longjmp over VM frames without drops; rarely touched"),
 ];
 
 /// The areas of `test --only`.
@@ -771,7 +779,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
 
     // The corpus, one program per job; each builds its references and variants in its own
     // directories.
-    let cc = c_compiler().is_some();
+    let cc = [c_compiler(false).is_some(), c_compiler(true).is_some()];
     let mut work: Vec<(&Program, Vec<&Variant>)> = Vec::new();
     for program in CORPUS {
         if !opts.programs.is_empty() && !opts.programs.iter().any(|p| p == program.name) {
@@ -783,14 +791,20 @@ pub fn run(opts: &Options) -> Result<(), String> {
             .filter(|v| sel.corpus(program, v))
             .filter(|v| !(v.vm_only && program.vm.is_empty()))
             .filter(|v| !((!v.final_flags.is_empty() || v.abort) && program.has_dylib()))
+            .filter(|v| !(v.abort && program.foreign_unwind))
             // Two LTO'd (or abort) staticlibs each carry all of std: one C link can't take both.
             .filter(|v| !((!v.final_flags.is_empty() || v.abort) && program.crates.iter().filter(|c| c.kind == CrateKind::Staticlib).count() > 1))
             .collect();
         if vs.is_empty() {
             continue;
         }
-        if program.c_main.is_some() && !cc {
-            eprintln!("[y] test {}: skipped (no `{C_COMPILER}`)", program.name);
+        if program.msvc_only && !MSVC {
+            continue;
+        }
+        if let Some(c_main) = program.c_main
+            && !cc[usize::from(is_cxx(c_main))]
+        {
+            eprintln!("[y] test {}: skipped (no `{}`)", program.name, c_compiler_name(is_cxx(c_main)));
             continue;
         }
         work.push((program, vs));
@@ -976,16 +990,21 @@ impl Ctx<'_> {
         Ok(result)
     }
 
-    /// Compiles and links the C program `c_main` against `libs` (staticlibs or cdylibs in
-    /// `dir`), with `cc`, or `cl` on MSVC hosts.
+    /// Compiles and links the C or C++ program `c_main` against `libs` (staticlibs or cdylibs
+    /// in `dir`), with `cc` or `c++`, or `cl` on MSVC hosts (for C++ with `/EHs`: C++
+    /// exceptions, which may come out of `extern "C"` functions, the Rust ones).
     fn link_c(&self, dir: &Path, c_main: &str, libs: &[&Crate], native_libs: &[String]) -> Result<PathBuf, String> {
         let exe = dir.join(exe_name("c_main"));
-        let mut c = c_compiler().ok_or_else(|| format!("no `{C_COMPILER}`"))?;
+        let cxx = is_cxx(c_main);
+        let mut c = c_compiler(cxx).ok_or_else(|| format!("no `{}`", c_compiler_name(cxx)))?;
         if MSVC {
             // Everything after `/link` goes to link.exe, including the `/defaultlib:` options
             // in `native-static-libs`.
             let mut fe = OsString::from("/Fe:");
             fe.push(&exe);
+            if cxx {
+                c.arg("/EHs");
+            }
             c.current_dir(dir).arg("/nologo").arg(self.tests.join(c_main)).arg(fe).arg("/link");
             for lib in libs {
                 match lib.kind {
