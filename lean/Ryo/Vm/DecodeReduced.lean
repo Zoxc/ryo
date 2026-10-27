@@ -37,7 +37,8 @@ for the instruction loop), which they never exhaust: every element read is at le
 Beyond Rust (aot.md §C2): the Rust decoder trusts the list of dropped stores; the Lean one
 checks their deadness by a backward liveness over the decoded code, `Ryo.Vm.Frame.decodeChecked`
 (`decodeReducedWith` and `Frame.droppedNotDead`). `decodeReduced` itself trusts the list, as
-Rust does, so that the two can be diffed.
+Rust does, so that the two can be diffed. Likewise `decodeBounded` checks that every frame access
+lies in the frame (`Decoded.boundsOk`, see "Frame bounds"), which Rust's decoder doesn't.
 
 `Inputs` is the JSON form of one function's decoder inputs, read by `ryo-lean decode` and by the
 test vectors:
@@ -54,6 +55,8 @@ test vectors:
 ```
 -/
 import Ryo.Vm.Asm
+import Ryo.Vm.R.View
+import Ryo.Vm.OpSem.Footprint
 import Lean.Data.Json
 
 set_option linter.constructorNameAsVariable false
@@ -826,6 +829,74 @@ def decodeReduced (code : ByteArray) (relocs : Array Reloc) (rodata : ByteArray)
     (callSites : Array CallSite) (dropped : Array DroppedStore) (scopes : Array Scope)
     (mode : Mode) : Except AsmError Decoded :=
   decodeReducedWith code (.relocs relocs) rodata callSites dropped scopes mode
+
+/-! ### Frame bounds (Lean only)
+
+What the decoded code touches of its frame: each scope's range, the frame ranges each native
+instruction writes (its footprint's), `arg`'s destination and `ret`'s 16-byte source
+(`frameRanges`). `boundsOk` accepts the code only if they all start at or above `-F` and
+end at or below `frameTop`, the highest end (`0` if lower), with `F` and `frameTop` at most
+`2 ^ 31`: `Ryo.Proofs.DecodeLink.Bounds` turns it into `FrameBounds c frameTop`. Rust's
+decoder has no such check (its test vectors take random slots), so `decodeReduced` doesn't
+make it, and stays diffable; `decodeBounded` (and `Frame.decodeChecked`) do. -/
+
+/-- The placement the bounds check reads native operands with: no frame range depends on it (a
+range's offset is a slot's, its length an immediate's). -/
+def anyAddrs : Addrs := fun _ => some default
+
+/-- The frame ranges a native instruction of opcode `f` with operands `ops` writes (its
+footprint's, `wranges`), `[]` if its operands don't fit. -/
+def nativeWrites (f : Full.Opcode) (ops : List (Opnd Nat)) : List (Int × Nat) :=
+  if f.info.operands.length = ops.length then
+    match (f.info.operands.zip ops).mapM (fun (i, o) => R.nativeVal anyAddrs i.kind o) with
+    | some vals => match OpSem.footprint f with
+      | some fp => fp.writeRanges (OpSem.opndVal f.info vals)
+      | none => []
+    | none => []
+  else []
+
+/-- `arg`'s destination, of operands `[slot d, imm r]`. -/
+def argRange : List (Opnd Nat) → List (Int × Nat)
+  | [.slot d, .imm r] => match ArgReg.of? r.toNat true with
+    | some a => [(d.toInt, a.size)]
+    | none => []
+  | _ => []
+
+/-- `ret`'s 16-byte source, of operands `[slot s, imm k]`. -/
+def retRange : List (Opnd Nat) → List (Int × Nat)
+  | [.slot s, .imm _] => [(s.toInt, 16)]
+  | _ => []
+
+/-- The frame ranges of a native instruction of opcode `f` that `FrameBounds` bounds. -/
+def nativeRanges (f : Full.Opcode) (ops : List (Opnd Nat)) : List (Int × Nat) :=
+  nativeWrites f ops ++ (if f.info.shape = .arg then argRange ops
+    else if f.info.shape = .ret then retRange ops else [])
+
+/-- The frame ranges of instruction `i` that `FrameBounds` bounds. -/
+def R.Insn.frameRanges : Insn → List (Int × Nat)
+  | .native op ops => (op.full.map (nativeRanges · ops)).getD []
+  | .handler .. => []
+
+/-- The scopes' and the instructions' frame ranges. -/
+def R.Decoded.frameRanges (d : Decoded) : List (Int × Nat) :=
+  d.scopes.toList.map (fun p => (p.2.frameOffset.toInt, p.2.size)) ++
+    d.insns.toList.flatMap Insn.frameRanges
+
+/-- The highest end of a frame range (at least `0`). -/
+def R.Decoded.frameTop (d : Decoded) : Int :=
+  d.frameRanges.foldl (fun t r => max t (r.1 + r.2)) 0
+
+/-- Every frame range lies in `[-F, frameTop)`, `F` and `frameTop` at most `2 ^ 31`. -/
+def R.Decoded.boundsOk (d : Decoded) : Bool :=
+  decide (d.frameSize ≤ 2 ^ 31) && decide (d.frameTop ≤ 2 ^ 31) &&
+    d.frameRanges.all fun r => decide (-(d.frameSize : Int) ≤ r.1)
+
+/-- `decodeReducedWith`, rejecting code whose frame ranges `boundsOk` doesn't accept. -/
+def decodeBounded (code : ByteArray) (fields : Fields) (rodata : ByteArray)
+    (callSites : Array CallSite) (dropped : Array DroppedStore) (scopes : Array Scope)
+    (mode : Mode) : Except AsmError Decoded := do
+  let d ← decodeReducedWith code fields rodata callSites dropped scopes mode
+  if d.boundsOk then pure d else throw ⟨0, "frame access outside the frame"⟩
 
 /-- The decoded function's text (`Decoded.toText`), or the error's. -/
 def decodeText (r : Except AsmError Decoded) : String :=

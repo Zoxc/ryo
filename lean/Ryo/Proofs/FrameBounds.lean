@@ -14,12 +14,10 @@ with `F` and `K` at most `2^31`.
   hypotheses replaced by `FrameBounds` (the last three through the register cache);
   `ret_step_fb_disp` is `ret_step`'s `hsrc`.
 
-Not established yet: that decoded code satisfies `FrameBounds`. The decoder takes frame
-displacements as 32-bit values (so only `toInt_bounds`), the dead-store check clamps access
-ranges to the frame (`Frame.range`), and the scope table isn't compared with the frame. A
-check over the decoded code with `FrameBounds` as its spec (decidable: finitely many
-instructions and scopes, `wranges` computed from the footprints) would discharge it, next to
-the decoder links (`DecodeLink`).
+Decoded code satisfies `FrameBounds` when the bounds check accepts it (`decodeBounded`,
+`Decoded.boundsOk`): `DecodeLink.Bounds.decode_frameBounds`, with `K = frameTop`, the highest
+end of its frame ranges, or any larger `K ≤ 2 ^ 31` (`DecodeLink.Bounds.FrameBounds.mono`).
+`fp + K ≤ 2 ^ 64` is an environment assumption (lean/docs/assumptions.md §5).
 -/
 import Ryo.Proofs.CacheMem
 import Ryo.Proofs.ArgRet

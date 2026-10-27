@@ -151,6 +151,11 @@ def checkSignature (o : ImageObject) (i : Nat) (d : Decoded) : Array String := I
   if f.retKind != 0 && f.retKind != RET_SRET && f.retSize > 16 then
     out := out.push s!"{l}: ret_kind {hex f.retKind} returns in registers, ret_size {f.retSize} > 16"
   if f.argSize % 16 != 0 then out := out.push s!"{l}: arg_size {f.argSize} isn't a multiple of 16"
+  -- The frame window `decode_sound` works in, `[-F, 16 + arg_size)` (`FrameBounds.mono` from
+  -- `decode_frameBounds`): the frame ranges in bounds, and the highest no higher than that.
+  if !d.boundsOk then out := out.push s!"{l}: frame access outside the frame (Decoded.boundsOk)"
+  if d.frameTop > 16 + (f.argSize : Int) then
+    out := out.push s!"{l}: frame ranges end at fp + {d.frameTop}, past 16 + arg_size {f.argSize}"
   -- The slots the first integer argument register is stored to (an sret function's pointer).
   let argSlots := d.insns.toList.filterMap fun
     | .native op [.slot s, .imm w] => if op.info.mnemonic == "arg" && w.toNat == 8 then some s else none

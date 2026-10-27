@@ -2,7 +2,7 @@
 Ryo.Vm.Frame — frame accesses of R code and the dead-store check aot.md §C2 asks of the Lean
 decoder: the Rust decoder trusts the encoder's list of dropped stores; `droppedNotDead` checks
 each by a backward liveness over the decoded code, and `decodeChecked` decodes only code whose
-dropped stores it shows dead.
+dropped stores it shows dead (and whose frame ranges lie in the frame, `decodeBounded`).
 
 A dropped store is dead if none of its bytes is live after its instruction, along the
 instruction's successors (fall-through, branch targets, its landing pad): no path reads a byte
@@ -806,13 +806,13 @@ def incomingExtents (decoded : Array (Option Decoded)) (mode : Mode) : Array (Op
 
 /-! ### The checked decoding -/
 
-/-- `decodeReducedWith`, accepting the code only if `droppedNotDead` shows every dropped store
-dead (given `facts`): the decoding, or an error naming the first store it doesn't (its word
-offset). -/
+/-- `decodeBounded` (`decodeReducedWith` with the frame bounds), accepting the code only if
+`droppedNotDead` shows every dropped store dead (given `facts`): the decoding, or an error
+naming the first store it doesn't (its word offset). -/
 def decodeChecked (code : ByteArray) (fields : Fields) (rodata : ByteArray)
     (callSites : Array CallSite) (dropped : Array DroppedStore) (scopes : Array Scope)
     (mode : Mode) (facts : Facts := {}) : Except String Decoded := do
-  let d ← match decodeReducedWith code fields rodata callSites dropped scopes mode with
+  let d ← match decodeBounded code fields rodata callSites dropped scopes mode with
     | .ok d => pure d
     | .error e => throw s!"{e.what} at {e.at_}"
   checkDropped d mode facts

@@ -39,6 +39,9 @@ positions of those instructions.
 - `DecodeLink.Loop`: the instruction loop as a chain of iterations (`Iters`, `instructions_read`,
   `read_instructions`): each proto read at its position after the padding and counter check,
   with the cache and dropped stores it was read with.
+- `DecodeLink.Bounds`: code the bounds check accepts (`decodeBounded`, `Decoded.boundsOk`)
+  satisfies `FrameBounds c frameTop` (`decode_frameBounds`, `frameBounds_of_boundsOk`), and so
+  for any larger end up to `2 ^ 31` (`FrameBounds.mono`).
 
 **Not here.** The step lemmas for the frame form without a frame pointer (the links give its
 items, `Item.spFrame`; `RRel` and the shape lemmas assume `rbp = fp`); the dead-store step
@@ -57,3 +60,4 @@ import Ryo.Proofs.DecodeLink.Arg
 import Ryo.Proofs.DecodeLink.Drop
 import Ryo.Proofs.DecodeLink.Ops
 import Ryo.Proofs.DecodeLink.Loop
+import Ryo.Proofs.DecodeLink.Bounds
