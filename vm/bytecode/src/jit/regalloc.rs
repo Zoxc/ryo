@@ -9,7 +9,6 @@
 
 use alloc::vec::Vec;
 
-pub use super::ir::use_counts;
 use super::ir::{Block, Func, Op, Value, ValueDef};
 use super::x86::R;
 
@@ -76,9 +75,9 @@ fn registers(frame_pointer: bool) -> (Vec<R>, Vec<R>) {
 
 /// Linear positions: block `b` starts at `start[b]` (its parameters are defined there),
 /// instruction `k` of it is at `start[b] + 2 (k + 1)`, its terminator after the last one.
-pub struct Positions {
-    pub start: Vec<u32>,
-    pub end: Vec<u32>,
+struct Positions {
+    start: Vec<u32>,
+    end: Vec<u32>,
 }
 
 fn positions(f: &Func) -> Positions {

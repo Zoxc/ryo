@@ -156,7 +156,7 @@ pub fn compile(
     if opts.alloc == Allocator::LinearScan {
         regalloc::remat(&mut f);
     }
-    let uses = regalloc::use_counts(&f);
+    let uses = ir::use_counts(&f);
     let al = match opts.alloc {
         Allocator::Naive => regalloc::naive(&f, &uses),
         Allocator::LinearScan => regalloc::linear_scan(&f, &uses, mode.frame_pointer),
@@ -164,7 +164,7 @@ pub fn compile(
     if opts.check {
         regalloc::check(&f, &al, mode.frame_pointer).map_err(|e| Error::Check(alloc::format!("allocation: {e}")))?;
     }
-    let mut out = emit::emit(&f, &al, mode, code_consts, emit::Opts { stress: opts.stress })?;
+    let mut out = emit::emit(&f, &al, &uses, mode, code_consts, emit::Opts { stress: opts.stress })?;
     out.devirt = devirt;
     if opts.dump {
         use core::fmt::Write;

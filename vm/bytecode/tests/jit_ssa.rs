@@ -261,7 +261,7 @@ fn cold_blocks_last() {
     assert!(f.layout.iter().filter(|b| f.blocks[b.idx()].cold).count() == 1, "{f}");
     // y and z cross the first call.
     assert_eq!(lb.params.len(), 2, "{f}");
-    let uses = ryo_bytecode::jit::regalloc::use_counts(&f);
+    let uses = ryo_bytecode::jit::ir::use_counts(&f);
     let al = ryo_bytecode::jit::regalloc::linear_scan(&f, &uses, false);
     ryo_bytecode::jit::regalloc::check(&f, &al, false).unwrap();
     assert!(al.saved.is_empty(), "{al:?}\n{f}");

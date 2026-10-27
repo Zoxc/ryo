@@ -377,7 +377,7 @@ struct E<'a> {
     sites: Vec<((u32, u32), u32, Option<u32>, bool)>,
     /// Unwind rows: (mark, instructions).
     cfi: Vec<((u32, u32), Vec<u8>)>,
-    uses: Vec<u32>,
+    uses: &'a [u32],
     /// The condition the flags hold an overflow in after the last [`Op::Ovf`].
     ovf_cc: Option<X>,
     /// The move stubs of edges into cold blocks: emitted after the last block.
@@ -1887,8 +1887,8 @@ fn check_pe(f: &Func) -> Result<(), Unsupported> {
     Ok(())
 }
 
-/// Generates `f` with allocation `al`.
-pub fn emit(f: &Func, al: &Alloc, mode: Mode, code_consts: &[u8], opts: Opts) -> Result<Output, Unsupported> {
+/// Generates `f` with allocation `al`; `uses` is [`use_counts`]`(f)`.
+pub fn emit(f: &Func, al: &Alloc, uses: &[u32], mode: Mode, code_consts: &[u8], opts: Opts) -> Result<Output, Unsupported> {
     if mode.pe {
         check_pe(f)?;
     }
@@ -1896,7 +1896,6 @@ pub fn emit(f: &Func, al: &Alloc, mode: Mode, code_consts: &[u8], opts: Opts) ->
     if fr.pe_fp > 240 {
         return Err(Unsupported("PE: no room for the saves within 240 bytes of the frame pointer"));
     }
-    let uses = super::regalloc::use_counts(f);
     let mut e = E {
         f,
         al,
