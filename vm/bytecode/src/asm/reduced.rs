@@ -163,7 +163,7 @@ pub fn reduce(
             continue;
         }
         let args = handler_args(op, &ops, mode.fp_arg, |r| match r {
-            RoReq::Bytes(b, align) => rodata.add(b, align),
+            RoReq::Bytes { bytes, align } => rodata.add(bytes, align),
             RoReq::Ops(_) => unreachable!("handlers take no operand arrays"),
         })
         .into_iter()

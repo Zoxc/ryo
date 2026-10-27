@@ -713,19 +713,13 @@ enum Laid {
     Scope(Scope),
 }
 
-/// A word of a code constant operand array.
-#[derive(Clone, Copy, Debug)]
-pub(super) enum RoWord {
-    /// A raw slot.
-    Slot(u32),
-}
-
 /// A code constant, built once the frame size is known.
 #[derive(Clone, Debug)]
 pub(super) enum RoReq {
-    Bytes(Vec<u8>, usize),
-    /// An operand array: the count, then the words.
-    Ops(Vec<RoWord>),
+    /// Bytes, aligned to `align`.
+    Bytes { bytes: Vec<u8>, align: usize },
+    /// An operand array: the count, then the words (raw slots).
+    Ops(Vec<u32>),
 }
 
 /// The rodata being built, deduplicated.
@@ -1064,7 +1058,7 @@ impl Asm {
                 Arg::Site(s) => self.fixed(Item::Lea(reg, Ref::Site(s))),
                 Arg::Ro(_) => {
                     let size = case_elem(op).map_or(1, case_size);
-                    let ro = self.ro(RoReq::Bytes(case_values.to_vec(), size.max(4)));
+                    let ro = self.ro(RoReq::Bytes { bytes: case_values.to_vec(), align: size.max(4) });
                     self.pieces.push(Piece::LeaRo { reg, ro });
                 }
             }
@@ -1189,7 +1183,7 @@ impl Asm {
             }
             Shape::Island => {
                 let Opnd::Words(w) = named("ops") else { unreachable!() };
-                let ro = self.ro(RoReq::Ops(w.iter().map(|&w| RoWord::Slot(w)).collect()));
+                let ro = self.ro(RoReq::Ops(w.to_vec()));
                 self.island_call(sym("isl"), ro, site);
             }
         }
@@ -1243,16 +1237,8 @@ impl Asm {
         let ro_off: Vec<u32> = ro
             .into_iter()
             .map(|r| match r {
-                RoReq::Bytes(b, align) => rodata.add(b, align),
-                RoReq::Ops(ws) => {
-                    let w: Vec<u32> = ws
-                        .iter()
-                        .map(|w| match *w {
-                            RoWord::Slot(s) => fix(s),
-                        })
-                        .collect();
-                    rodata.ops(&w)
-                }
+                RoReq::Bytes { bytes, align } => rodata.add(bytes, align),
+                RoReq::Ops(ws) => rodata.ops(&ws.iter().map(|&s| fix(s)).collect::<Vec<_>>()),
             })
             .collect();
 
@@ -1702,7 +1688,7 @@ pub(super) fn handler_args<T>(op: Opcode, ops: &[Opnd<T>], fp_arg: bool, mut ro:
                 for v in vals {
                     b.extend_from_slice(&v.to_le_bytes()[..size]);
                 }
-                let ro = ro(RoReq::Bytes(b, size.max(4)));
+                let ro = ro(RoReq::Bytes { bytes: b, align: size.max(4) });
                 set(loc, 0, ArgVal::Ro(ro), false);
                 set(loc, 1, imm(vals.len() as u64), false);
             }
