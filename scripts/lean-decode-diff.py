@@ -51,11 +51,6 @@ from lean_corpus import IMAGE_GLOB, ROOT, add_common_args, build_all, compile_pr
 
 REF_DIR = ROOT / "scripts" / "lean-decode-ref"
 
-# The per-function decode comparison: `ryo-lean decode <obj>` prints, for each VM function, what
-# `lean-decode-ref decode <obj>` prints (see scripts/lean-decode-ref/src/main.rs).
-LEAN_DECODE = ["decode"]
-
-
 def build(src, flags, out_dir):
     """Builds `src` in `out_dir`: (the image objects it leaves, None) or (None, an error)."""
     code, why = compile_program(src, flags, out_dir)
@@ -259,22 +254,31 @@ def compare(a, b, na, nb, limit=12):
     return d[: limit + 2] + ([f"... ({len(d)} diff lines)"] if len(d) > limit + 2 else [])
 
 
-def check(obj, args, ref, work):
+def lean_failed(code, out, err):
+    """A note when ryo-lean exited non-zero without output (a crash, not a difference), else None."""
+    if code != 0 and not out.strip():
+        lines = err.decode(errors="replace").strip().splitlines()
+        return f"ryo-lean failed ({code}): " + (lines[0] if lines else "no output")
+    return None
+
+
+def check(obj, args, ref):
     """Runs the comparisons on one object: (functions, {what: None | diff lines | note})."""
     results = {}
-    _, lean, lerr = run([args.ryo_lean, "obj", str(obj)])
-    _, rust, rerr = run([str(ref), "summary", str(obj)])
+    lcode, lean, lerr = run([args.ryo_lean, "obj", str(obj)])
+    _, rust, _ = run([str(ref), "summary", str(obj)])
     lean_l, rust_l = lean.decode(errors="replace").splitlines(), rust.decode(errors="replace").splitlines()
-    results["summary"] = compare(lean_l, rust_l, "ryo-lean obj", "lean-decode-ref summary")
+    results["summary"] = lean_failed(lcode, lean, lerr) or compare(lean_l, rust_l, "ryo-lean obj", "lean-decode-ref summary")
     funcs = sum(1 for l in rust_l if l.startswith("func "))
     if args.keep:
         (obj.parent / (obj.name + ".lean.txt")).write_text("\n".join(lean_l) + "\n")
         (obj.parent / (obj.name + ".rust.txt")).write_text("\n".join(rust_l) + "\n")
     if args.decode:
-        code, ld, lerr = run([args.ryo_lean] + LEAN_DECODE + [str(obj)])
+        # Each VM function decoded to the reduced set (see scripts/lean-decode-ref/src/main.rs).
+        lcode, ld, lerr = run([args.ryo_lean, "decode", str(obj)])
         _, rd, _ = run([str(ref), "decode", str(obj)])
         # (An image without functions: the Rust reference prints an empty line, Lean nothing.)
-        results["decode"] = compare(ld.decode(errors="replace").strip().splitlines(), rd.decode(errors="replace").strip().splitlines(),
+        results["decode"] = lean_failed(lcode, ld, lerr) or compare(ld.decode(errors="replace").strip().splitlines(), rd.decode(errors="replace").strip().splitlines(),
                                     "ryo-lean decode", "lean-decode-ref decode")
     if args.readelf:
         _, le, _ = run([args.ryo_lean, "elf", str(obj)])
@@ -328,7 +332,7 @@ def main():
 
     rows, reports = [], []
     with concurrent.futures.ThreadPoolExecutor(args.j) as pool:
-        futs = [pool.submit(check, o, args, ref, work) for _, o in objs]
+        futs = [pool.submit(check, o, args, ref) for _, o in objs]
         for (label, o), f in zip(objs, futs):
             funcs, res = f.result()
             status = []

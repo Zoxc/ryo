@@ -19,6 +19,7 @@ native ones. Run `./y.sh build` first.
 """
 
 import argparse
+import difflib
 import os
 import shutil
 import subprocess
@@ -54,8 +55,15 @@ def build(compiler, src, name, out_dir, flags, env=None):
     return exe, None
 
 
-def show(code, out):
+def show(code):
     return "build failed" if code is None else str(code)
+
+
+def diff(a, b, na, nb):
+    la = a.decode(errors="replace").splitlines()
+    lb = b.decode(errors="replace").splitlines()
+    out = list(difflib.unified_diff(la, lb, na, nb, lineterm="", n=1))
+    return ["  " + l for l in out[:40]]
 
 
 def main():
@@ -114,7 +122,7 @@ def main():
             native = rc == yc and ro == yo and rc is not None
             lean = lc == rc and lo == ro and lc is not None
             ok = native and lean
-            rows.append((label, show(rc, ro), show(yc, yo), show(lc, lo), "yes" if ok else "NO"))
+            rows.append((label, show(rc), show(yc), show(lc), "yes" if ok else "NO"))
             if not ok:
                 rep = [f"=== {label} ==="]
                 rep += notes
@@ -142,15 +150,6 @@ def main():
     bad = sum(1 for r in rows if r[4] != "yes")
     print(f"\n{len(rows) - bad}/{len(rows)} match")
     sys.exit(1 if bad else 0)
-
-
-def diff(a, b, na, nb):
-    import difflib
-
-    la = a.decode(errors="replace").splitlines()
-    lb = b.decode(errors="replace").splitlines()
-    out = list(difflib.unified_diff(la, lb, na, nb, lineterm="", n=1))
-    return ["  " + l for l in out[:40]]
 
 
 if __name__ == "__main__":
