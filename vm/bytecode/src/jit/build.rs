@@ -435,24 +435,13 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
                 }
                 Kind::Bin(op, w, imm) => {
                     let a = s.read(cur, i, 0, *w);
-                    let op = match op {
-                        super::decode::Bin::Add => BinOp::Add,
-                        super::decode::Bin::Sub => BinOp::Sub,
-                        super::decode::Bin::Mul => BinOp::Mul,
-                        super::decode::Bin::And => BinOp::And,
-                        super::decode::Bin::Or => BinOp::Or,
-                        super::decode::Bin::Xor => BinOp::Xor,
-                        super::decode::Bin::Shl => BinOp::Shl,
-                        super::decode::Bin::ShrS => BinOp::ShrS,
-                        super::decode::Bin::ShrU => BinOp::ShrU,
-                    };
-                    let shift = matches!(op, BinOp::Shl | BinOp::ShrS | BinOp::ShrU);
+                    let shift = matches!(*op, BinOp::Shl | BinOp::ShrS | BinOp::ShrU);
                     let b = match imm {
                         Some(v) if shift => s.f.konst(v & (8 * *w as u64 - 1), *w),
                         Some(v) => s.f.konst(mask(*v, *w), *w),
                         None => s.read(cur, i, 1, *w),
                     };
-                    let l = s.f.inst(cur, Op::Bin(op, *w), alloc::vec![a, b], &[*w]);
+                    let l = s.f.inst(cur, Op::Bin(*op, *w), alloc::vec![a, b], &[*w]);
                     let v = s.f.result(l);
                     s.write(cur, i, ri.accs.len() - 1, v);
                 }
@@ -469,12 +458,7 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
                 Kind::Ovf(op, signed, w) => {
                     let a = s.read(cur, i, 0, *w);
                     let b = s.read(cur, i, 1, *w);
-                    let op = match op {
-                        super::decode::Bin::Add => BinOp::Add,
-                        super::decode::Bin::Sub => BinOp::Sub,
-                        _ => BinOp::Mul,
-                    };
-                    let l = s.f.inst(cur, Op::Ovf(op, *signed, *w), alloc::vec![a, b], &[*w, 1]);
+                    let l = s.f.inst(cur, Op::Ovf(*op, *signed, *w), alloc::vec![a, b], &[*w, 1]);
                     let r = s.f.insts[l.idx()].res;
                     s.write(cur, i, 2, Value(r));
                     s.write(cur, i, 3, Value(r + 1));

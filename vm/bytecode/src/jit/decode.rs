@@ -7,6 +7,7 @@ use alloc::vec::Vec;
 
 use super::Unsupported;
 use super::effects::{Effect, effects};
+use super::ir::BinOp;
 use crate::asm::{self, ARG_ADDR, ArgReg, Decoded, Mode, RET_SRET, RetPart, ScopeKind};
 use crate::full::{self, Func as FuncIdx, OperandKind, Shape, Sym};
 use crate::image::{CATCH, CONTINUE};
@@ -35,19 +36,6 @@ pub struct Acc {
     pub off: i32,
     pub size: u32,
     pub how: How,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Bin {
-    Add,
-    Sub,
-    Mul,
-    And,
-    Or,
-    Xor,
-    Shl,
-    ShrS,
-    ShrU,
 }
 
 /// A native instruction, by what the builder makes of it. The accesses are in [`RInsn::accs`],
@@ -86,7 +74,7 @@ pub enum Kind {
     /// `d = p + i * stride`: `p`, `i`, `d`.
     PtrIndex(u32),
     /// `d = a op b` (or `op imm`): `a`, [`b`], `d`.
-    Bin(Bin, u8, Option<u64>),
+    Bin(BinOp, u8, Option<u64>),
     /// `d = a cc b` (or `cc imm`): `a`, [`b`], `d`.
     Cmp(super::ir::Cc, u8, Option<u64>),
     /// A pure operation of the SSA IR: its operands read at the widths `ws` (accesses in
@@ -98,7 +86,7 @@ pub enum Kind {
     },
     /// `d, o = a op b` with overflow (`Add`, `Sub` or `Mul`), signed or not: `a`, `b`, `d`,
     /// `o`.
-    Ovf(Bin, bool, u8),
+    Ovf(BinOp, bool, u8),
     /// `d = s` extended (zero or sign, `sx`) or truncated from `from` bytes to `to`: `s`, `d`.
     Ext {
         from: u8,
@@ -343,7 +331,7 @@ fn small_copy(h: full::Opcode, args: &[Arg], l: &asm::Layout, pool: bool) -> Opt
 /// The handlers that are native operations on 16-byte vectors in the SSA tier, as the IR
 /// operation (`d` first, then the operands, in operand order).
 pub fn vector_op(h: full::Opcode) -> Option<super::ir::Op> {
-    use super::ir::{BinOp, Op, VOp};
+    use super::ir::{Op, VOp};
     use full::Opcode::*;
     Some(match h {
         VsplatI8x16 => Op::V(VOp::Splat),
@@ -738,9 +726,9 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
                 }
                 _ if segs.get(1) == Some(&"ovf") => {
                     let bin = match first {
-                        "add" => Bin::Add,
-                        "sub" => Bin::Sub,
-                        "mul" => Bin::Mul,
+                        "add" => BinOp::Add,
+                        "sub" => BinOp::Sub,
+                        "mul" => BinOp::Mul,
                         _ => return Err(bad("a native instruction")),
                     };
                     accs.extend([
@@ -780,15 +768,15 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
                         Kind::Cmp(cc, wd, b)
                     } else {
                         let bin = match (first, segs.get(1).copied()) {
-                            ("add", _) => Bin::Add,
-                            ("sub", _) => Bin::Sub,
-                            ("mul", _) => Bin::Mul,
-                            ("and", _) => Bin::And,
-                            ("or", _) => Bin::Or,
-                            ("xor", _) => Bin::Xor,
-                            ("shl", _) => Bin::Shl,
-                            ("shr", Some("s")) => Bin::ShrS,
-                            ("shr", Some("u")) => Bin::ShrU,
+                            ("add", _) => BinOp::Add,
+                            ("sub", _) => BinOp::Sub,
+                            ("mul", _) => BinOp::Mul,
+                            ("and", _) => BinOp::And,
+                            ("or", _) => BinOp::Or,
+                            ("xor", _) => BinOp::Xor,
+                            ("shl", _) => BinOp::Shl,
+                            ("shr", Some("s")) => BinOp::ShrS,
+                            ("shr", Some("u")) => BinOp::ShrU,
                             _ => return Err(bad("a native instruction")),
                         };
                         accs.push(acc(s("d"), wd as u32, How::Write));
