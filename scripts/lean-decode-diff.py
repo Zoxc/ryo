@@ -5,8 +5,8 @@ objects, and the Lean ELF reader against readelf.
 The image objects are those of the corpus, compiled with dist/bin/rustc-ryo and
 -Csave-temps (which keeps `<name>.<cgu>.ryo_image.rcgu.o`): tests/lean/*.rs, tests/*.rs and
 bench/*.rs (the single-file programs; the ones that don't build alone are skipped), and, with
-a ryo sysroot (`./y.sh build --sysroot ryo`), the `*.ryo_image.rcgu.o` member of each of its
-rlibs (std and its dependencies).
+a ryo sysroot (`./y.sh build --sysroot ryo`), the `*.ryo_image.rcgu.o` members of each of its
+rlibs (std and its dependencies; one per CGU with VM code). Each object is compared alone.
 
 For each object it compares
   - `ryo-lean obj <obj>` with `lean-decode-ref summary <obj>` (scripts/lean-decode-ref, the
@@ -23,13 +23,15 @@ For each object it compares
     `lean-decode-ref lsda <obj>` (each function's FDE and LSDA, parsed by `asm::lsda::parse`,
     and whether it is the image's call-site table).
 
-Usage: scripts/lean-decode-diff.py [names...] [--opt] [--frame-pointer] [--no-sysroot]
-                                   [--decode] [--readelf] [--unwind]
+Usage: scripts/lean-decode-diff.py [names...] [--opt] [--frame-pointer] [--codegen-units N]
+                                   [--no-sysroot] [--decode] [--readelf] [--unwind]
                                    [--keep DIR] [--ryo-lean PATH] [-j N]
 
     names         programs (file stems, e.g. `ints`, `fib`) or sysroot crates (`std`); default:
                   all
     --opt         also build the programs with -Copt-level=3
+    --codegen-units N
+                  build the programs with -Ccodegen-units=N (several images per program)
     --frame-pointer
                   also build them with -Cforce-frame-pointers=yes (the frame-pointer mode)
     --keep DIR    keep the objects and outputs in DIR (default: a temporary directory)
@@ -68,7 +70,7 @@ def build(src, flags, out_dir):
 SHT = {"NULL": 0, "PROGBITS": 1, "SYMTAB": 2, "STRTAB": 3, "RELA": 4, "HASH": 5, "DYNAMIC": 6, "NOTE": 7, "NOBITS": 8, "REL": 9,
        "INIT_ARRAY": 14, "FINI_ARRAY": 15, "PREINIT_ARRAY": 16, "GROUP": 17, "X86_64_UNWIND": 0x70000001}
 SHF = [("W", 0x1), ("A", 0x2), ("X", 0x4), ("M", 0x10), ("S", 0x20), ("I", 0x40), ("L", 0x80), ("O", 0x100), ("G", 0x200), ("T", 0x400),
-       ("C", 0x800), ("E", 0x80000000)]
+       ("C", 0x800), ("o", 0x0FF00000), ("E", 0x80000000)]  # `o`: OS-specific, e.g. SHF_GNU_RETAIN (`ryo_images`)
 STT = {"NOTYPE": 0, "OBJECT": 1, "FUNC": 2, "SECTION": 3, "FILE": 4, "COMMON": 5, "TLS": 6}
 STB = {"LOCAL": 0, "GLOBAL": 1, "WEAK": 2, "UNIQUE": 10}
 STV = {"DEFAULT": 0, "INTERNAL": 1, "HIDDEN": 2, "PROTECTED": 3}
@@ -318,7 +320,7 @@ def main():
     ref = REF_DIR / "target" / "release" / "lean-decode-ref"
 
     work = work_dir(args.keep, "lean-decode-diff-")
-    built, skipped = build_all(args.names, variants(args.opt, args.frame_pointer), work, args.j, build)
+    built, skipped = build_all(args.names, variants(args.opt, args.frame_pointer, args.codegen_units), work, args.j, build)
     objs = [(label, o) for label, found in built for o in found]
     if not args.no_sysroot:
         objs += sysroot_images(args.names, work / "sysroot")
