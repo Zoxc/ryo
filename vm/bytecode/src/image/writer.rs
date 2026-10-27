@@ -29,7 +29,7 @@ use core::{mem, slice};
 
 use super::*;
 use crate::asm::{self, CallSite, Encoded, Mode, Ref};
-use crate::full::{ABS_DATA, Const, Data, DecodeError, Decoder, ElemKind, Func, Opcode, OperandKind, Site, Sym};
+use crate::full::{Abs, Const, Data, DecodeError, Decoder, ElemKind, Func, Opcode, OperandKind, Site, Sym};
 
 /// A symbol referenced by the image.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -338,10 +338,11 @@ pub fn validate_code(code: &[u32], lim: &CodeLimits) -> Result<Vec<bool>, (u32, 
                 OperandKind::Sym if w(0) >= lim.symbols => return fail(CodeError::SymOutOfRange),
                 OperandKind::Site if w(0) >= lim.sites => return fail(CodeError::SiteOutOfRange),
                 OperandKind::Const if w(0) > lim.consts => return fail(CodeError::ConstOutOfRange),
-                OperandKind::Abs if w(0) & ABS_DATA == 0 && w(0) > lim.consts => return fail(CodeError::ConstOutOfRange),
-                OperandKind::Abs if w(0) & ABS_DATA != 0 && w(0) & !ABS_DATA > lim.data => {
-                    return fail(CodeError::DataOutOfRange);
-                }
+                OperandKind::Abs => match Abs::from_word(w(0)) {
+                    Abs::Const(k) if k.0 > lim.consts => return fail(CodeError::ConstOutOfRange),
+                    Abs::Data(d) if d.0 > lim.data => return fail(CodeError::DataOutOfRange),
+                    _ => {}
+                },
                 OperandKind::List(e) => {
                     let n = w(0) as usize;
                     let ew = e.words();

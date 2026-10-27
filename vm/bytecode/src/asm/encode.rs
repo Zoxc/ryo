@@ -324,7 +324,7 @@ pub fn push_words(op: Opcode, ops: &[Opnd], words: &mut Vec<u32>) {
             },
             Opnd::Imm128(v) => words.extend((0..4).map(|k| (*v >> (32 * k)) as u32)),
             Opnd::Const(k) => words.push(k.0),
-            Opnd::Data(d) => words.push(d.0 | crate::full::ABS_DATA),
+            Opnd::Data(d) => words.push(crate::full::Abs::Data(*d).to_word()),
             Opnd::Sym(s) => words.push(s.0),
             Opnd::Site(s) => words.push(s.0),
             Opnd::Func(f) => words.push(f.0),

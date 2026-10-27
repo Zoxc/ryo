@@ -14,7 +14,7 @@ use rustc_middle::mir::interpret::{AllocId, GlobalAlloc, Scalar};
 use rustc_middle::mir::{ConstOperand, ConstValue};
 use rustc_middle::ty::layout::TyAndLayout;
 use rustc_middle::ty::{self, GenericArgs, Instance, InstanceKind, ShimKind, TyCtxt, TypingEnv};
-use ryo_bytecode::full::{ABS_DATA, Opcode};
+use ryo_bytecode::full::{Abs, Data, Opcode};
 
 use super::emit::Width;
 use super::place::{Loc, PlaceVal};
@@ -72,7 +72,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 if needs_fixup(self.tcx, alloc_id) {
                     // Copied out of the fixup area through its address.
                     let p = self.temp8();
-                    let a = self.reloc(CodeReloc::Data { alloc: alloc_id, offset }) | ABS_DATA;
+                    let a = Abs::Data(Data(self.reloc(CodeReloc::Data { alloc: alloc_id, offset }))).to_word();
                     self.op(Opcode::AddrConst, &[p, a]);
                     return self.copy_val(dst, Loc::Mem { p, k: 0 }, size);
                 }
@@ -119,7 +119,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         self.check_alloc(id)?;
         let offset = u32::try_from(offset).map_err(|_| NeedsNative("constant offset".into()))?;
         let a = if needs_fixup(self.tcx, id) {
-            self.reloc(CodeReloc::Data { alloc: id, offset }) | ABS_DATA
+            Abs::Data(Data(self.reloc(CodeReloc::Data { alloc: id, offset }))).to_word()
         } else {
             self.reloc(CodeReloc::Const { alloc: id, offset })
         };

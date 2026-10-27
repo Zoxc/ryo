@@ -138,6 +138,14 @@ impl Abs {
     pub fn from_word(v: u32) -> Abs {
         if v & ABS_DATA != 0 { Abs::Data(Data(v & !ABS_DATA)) } else { Abs::Const(Const(v)) }
     }
+
+    /// The operand's word.
+    pub const fn to_word(self) -> u32 {
+        match self {
+            Abs::Const(k) => k.0,
+            Abs::Data(d) => d.0 | ABS_DATA,
+        }
+    }
 }
 
 /// A branch's polarity: with `Neg(true)` (`!` after the mnemonic) the branch is taken when
@@ -301,27 +309,35 @@ pub trait Operand<'a>: Sized + Copy {
     }
 }
 
+/// The integer in the words `w`, low word first.
+#[inline]
+const fn words_to_u128(w: &[u32]) -> u128 {
+    let mut v = 0;
+    let mut i = 0;
+    while i < w.len() {
+        v |= (w[i] as u128) << (32 * i);
+        i += 1;
+    }
+    v
+}
+
+/// Appends the low `n` words of `v`, low word first.
+#[cfg(feature = "alloc")]
+fn push_u128(out: &mut Vec<u32>, v: u128, n: usize) {
+    out.extend((0..n).map(|i| (v >> (32 * i)) as u32));
+}
+
 macro_rules! int_operand {
     ($t:ty, $kind:ident, $n:literal) => {
         impl<'a> Operand<'a> for $t {
             const KIND: OperandKind = OperandKind::$kind;
             #[inline]
             fn read(w: &'a [u32], pos: &mut usize) -> Result<Self, DecodeError> {
-                let ws = take::<$n>(w, pos)?;
-                let mut v: u128 = 0;
-                let mut i = 0;
-                while i < $n {
-                    v |= (ws[i] as u128) << (32 * i);
-                    i += 1;
-                }
-                Ok(v as $t)
+                Ok(words_to_u128(take::<$n>(w, pos)?) as $t)
             }
             #[cfg(feature = "alloc")]
             fn write(&self, out: &mut Vec<u32>) {
-                let v = *self as u128;
-                for i in 0..$n {
-                    out.push((v >> (32 * i)) as u32);
-                }
+                push_u128(out, *self as u128, $n);
             }
         }
     };
@@ -359,10 +375,7 @@ impl<'a> Operand<'a> for Abs {
     }
     #[cfg(feature = "alloc")]
     fn write(&self, out: &mut Vec<u32>) {
-        out.push(match self {
-            Abs::Const(k) => k.0,
-            Abs::Data(d) => d.0 | ABS_DATA,
-        });
+        out.push(self.to_word());
     }
 }
 
@@ -486,18 +499,11 @@ macro_rules! case_elem {
         impl Elem for $name {
             const KIND: ElemKind = ElemKind::$kind;
             fn get(w: &[u32]) -> Self {
-                let mut v: u128 = 0;
-                for i in 0..$n {
-                    v |= (w[i] as u128) << (32 * i);
-                }
-                $name { value: v as $v, target: Target(w[$n] as i32) }
+                $name { value: words_to_u128(&w[..$n]) as $v, target: Target(w[$n] as i32) }
             }
             #[cfg(feature = "alloc")]
             fn put(&self, out: &mut Vec<u32>) {
-                let v = self.value as u128;
-                for i in 0..$n {
-                    out.push((v >> (32 * i)) as u32);
-                }
+                push_u128(out, self.value as u128, $n);
                 out.push(self.target.0 as u32);
             }
             fn fmt_elem(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
