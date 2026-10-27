@@ -7,13 +7,13 @@ don't build alone, or have no `main` and so no dump, are skipped) is built with
 dist/bin/rustc-ryo, -Csave-temps (which keeps `<name>.<cgu>.ryo_image.rcgu.o`) and RYO_DUMP_LEAN
 (the MIR dump `<dir>/<name>.json` and the certificate `<dir>/<name>.cert.json`), at -O0 and with
 --opt also at -O3. Then `ryo-lean check-cert <dump> <cert> <objects>` checks the certificate
-against the objects' decoded code and the dump: the function map (with several images, one
-per CGU, the certificate's functions in CGU then image order; a copy of an `#[inline]`
-function in a later image is not checked), each function's own signature, its instruction
-ranges, its calls and their plans, its islands, the escape coverage of the frame addresses it
-takes. This tabulates per object: functions, copies, those with a
-certificate, those whose symbol is a dumped body, functions not decoded, functions whose own
-plan the dump's ABI confirmed, blocks, blocks the dumper truncated, calls and how their plans
+against the objects' decoded code and the dump: the image map (with several images, one per
+CGU, each object against the certificate's image of its CGU, so an `#[inline]` function's
+copy in each image against its own entry), the function map, each function's own signature,
+its instruction ranges, its calls and their plans, its islands, the escape coverage of the
+frame addresses it takes. This tabulates per object: functions, those with a certificate,
+those whose symbol is a dumped body, functions not decoded, functions whose own plan the
+dump's ABI confirmed, blocks, blocks the dumper truncated, calls and how their plans
 were verified (by the callee's `FuncEntry`, by the dump's ABI, neither), islands, the frame
 addresses taken (`addr`s and by-address call arguments) and how each is covered (inside an
 object escaped on every path, at such an object's end, a zero-sized local; `addr_args` of them
@@ -45,15 +45,15 @@ from pathlib import Path
 
 from lean_corpus import IMAGE_GLOB, add_common_args, build_all, compile_program, require, run, variants, work_dir
 LINE = re.compile(
-    r"^cert-check (\S+): funcs (\d+) copies (\d+) certs (\d+) in-dump (\d+) undecoded (\d+) sig-abi (\d+) blocks (\d+) truncated (\d+) "
+    r"^cert-check (\S+): funcs (\d+) certs (\d+) in-dump (\d+) undecoded (\d+) sig-abi (\d+) blocks (\d+) truncated (\d+) "
     r"calls (\d+) by-entry (\d+) by-abi (\d+) unverified (\d+) islands (\d+) "
     r"addrs (\d+) by-escape (\d+) at-end (\d+) zero-sized (\d+) addr-args (\d+) errors (\d+)$"
 )
-FIELDS = ["funcs", "copies", "certs", "in_dump", "undecoded", "sig_abi", "blocks", "truncated", "calls", "by_entry", "by_abi", "unverified",
+FIELDS = ["funcs", "certs", "in_dump", "undecoded", "sig_abi", "blocks", "truncated", "calls", "by_entry", "by_abi", "unverified",
           "islands", "addrs", "by_escape", "at_end", "zero_sized", "addr_args", "errors"]
 DEAD_LINE = re.compile(r"^dead-check (\S+): dropped (\d+) not-shown-dead (\d+) \(without facts (\d+)\)$")
 DEAD_FIELDS = ["dropped", "not_dead", "not_dead_plain"]
-MAP_LINE = re.compile(r"^cert-map: certificates (\d+) unmatched (\d+)$")
+MAP_LINE = re.compile(r"^cert-map: images (\d+) certificates (\d+) unmatched (\d+)$")
 
 
 def build(src, flags, out_dir):
@@ -92,8 +92,8 @@ def check(ryo_lean, label, out_dir, verbose):
             continue
         m = MAP_LINE.match(line)
         if m:
-            if int(m.group(2)) and rows:
-                rows[-1][2]["errors"] += int(m.group(2))
+            if int(m.group(3)) and rows:
+                rows[-1][2]["errors"] += int(m.group(3))
             cur = (label, "cert-map", {})
         elif line.startswith("cert-check "):
             rows.append((label, line.split(":", 1)[0].removeprefix("cert-check "), None))

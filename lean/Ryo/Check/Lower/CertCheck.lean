@@ -6,16 +6,17 @@ they decide it without the relational spec. `ryo-lean check-cert`,
 
 Per object:
 
-- **Function map.** Each image function (its symbol) has exactly one certificate and each
-  certificate one function (over the objects checked together). Functions whose symbol is a
-  dumped instance with a body are counted; for them the dump is used below.
-- **Several images** (`owned`). A crate has an image object per CGU with VM functions, and
-  its certificate file lists the functions of all of them in CGU then image order, each
-  symbol once. An `#[inline]` function rustc copied into several CGUs is lowered once per
-  copy, and the copies differ (a call of a VM function is a `call` in that function's CGU and
-  a `call.sym` elsewhere), so the certificate describes the first copy only. Given the
-  objects in CGU order, the functions whose symbol no earlier object defines must be the
-  certificate's, in that order; the others are copies, counted (`copies`) and not checked.
+- **Image map.** A crate has an image object per CGU with VM functions, and its certificate
+  file a certificate image per image: the object's is the one whose CGU name hashes
+  (`cguHash`) to the header's `cgu_hash`, and there must be exactly one; each certificate
+  image must have an object (`unmatched`, over the objects checked together).
+- **Function map.** Within the object's certificate image, each image function (its symbol)
+  has exactly one certificate and each certificate one function, in image order. An
+  `#[inline]` function rustc copied into several CGUs is lowered once per copy, and the copies
+  differ (a call of a VM function is a `call` in that function's CGU and a `call.sym`
+  elsewhere), so each copy has its own image's certificate and is checked against it.
+  Functions whose symbol is a dumped instance with a body are counted; for them the dump is
+  used below.
 - **Own signature.** `argSize = plan.stackSize = FuncEntry.arg_size`, `retKind =
   FuncEntry.ret_kind`, `frameSize` the decoded frame size, an sret slot iff the return kind is
   `RET_SRET`, and the `arg` instructions are exactly the prologue's and are the plan's register
@@ -181,14 +182,24 @@ structure Ctx where
   pe : Bool
   /-- Dumped instances by symbol. -/
   inst : HashMap String Instance
-  /-- Certificates by symbol (the first, if there are several). -/
+  /-- The object's certificates (`Cert.functionsOf`) by symbol (the first, if there are
+  several). -/
   certs : HashMap String FuncCert
   islands : HashMap String String
+
+/-- The certificate images of the image object `o`: those whose CGU name hashes to its
+header's `cgu_hash` (exactly one, if the certificate is right). -/
+def Cert.imagesOf (cert : Cert) (o : ImageObject) : Array CertImage :=
+  cert.images.filter (cguHash ·.cgu == o.image.header.cguHash)
+
+/-- The certificates of the functions of `o`: its (first) certificate image's. -/
+def Cert.functionsOf (cert : Cert) (o : ImageObject) : Array (String × FuncCert) :=
+  ((cert.imagesOf o)[0]?.map (·.functions)).getD #[]
 
 def Ctx.make (prog : Program) (cert : Cert) (o : ImageObject) : Ctx :=
   { prog, o, pe := o.image.mode.pe,
     inst := prog.instances.foldl (init := {}) fun m i => m.insert i.symbol i,
-    certs := cert.functions.foldl (init := {}) fun m (s, c) => if m.contains s then m else m.insert s c,
+    certs := (cert.functionsOf o).foldl (init := {}) fun m (s, c) => if m.contains s then m else m.insert s c,
     islands := cert.islands.foldl (init := {}) fun m (s, t) => m.insert s t }
 
 /-- An operand of a native instruction by name. -/
@@ -465,8 +476,6 @@ def checkFunc (c : Ctx) (i : Nat) (d : Decoded) (fc : FuncCert) : FuncCheck := I
 /-- One object's report. -/
 structure Report where
   funcs : Nat := 0
-  /-- Copies of functions an earlier object defines (`owned`), not checked. -/
-  copies : Nat := 0
   certs : Nat := 0
   inDump : Nat := 0
   undecoded : Nat := 0
@@ -484,64 +493,48 @@ structure Report where
   /-- The dropped stores the facts-free check doesn't show dead (for comparison). -/
   notDeadPlain : Nat := 0
   errors : Array String := #[]
-  /-- The image functions' symbols that have a certificate. -/
-  matched : Array String := #[]
   deriving Inhabited
 
 def Report.ok (r : Report) : Bool := r.errors.isEmpty
 
-/-- Which functions of the image objects `objs`, given in CGU order, the certificate
-describes, and its order's mismatch if any (the module header, "Several images"). A function
-whose symbol an earlier object already defines is a copy (an `#[inline]` function's copy in
-another CGU): the certificate describes the first one only. The others' symbols, in object
-then function order, must be the certificate's (those both have; a function without a
-certificate or a certificate without a function is reported by `checkObject` and
-`unmatched`). -/
-def owned (cert : Cert) (objs : Array ImageObject) : Array (Array Bool) × Option String := Id.run do
-  let mut seen : HashSet String := {}
-  let mut own : Array (Array Bool) := #[]
-  let mut order : Array String := #[]
-  for o in objs do
-    let mut fs : Array Bool := #[]
-    for f in o.funcs do
-      let name := o.funcName f.codeOff
-      if seen.contains name then fs := fs.push false
-      else
-        seen := seen.insert name
-        order := order.push name
-        fs := fs.push true
-    own := own.push fs
-  let certSyms : HashSet String := cert.functions.foldl (init := {}) fun s (n, _) => s.insert n
-  let want := order.filter certSyms.contains
-  let mut listed : HashSet String := {}
-  let mut got : Array String := #[]
-  for (n, _) in cert.functions do
-    if seen.contains n && !listed.contains n then
-      listed := listed.insert n
-      got := got.push n
+/-- The mismatch of the certificate image's function symbols `syms` against the object's
+`names`, in image order (those both have: a function without a certificate or a certificate
+without a function is reported on its own). -/
+def orderError (cgu : String) (syms names : Array String) : Option String :=
+  let inSyms : HashSet String := syms.foldl (·.insert ·) {}
+  let inNames : HashSet String := names.foldl (·.insert ·) {}
+  let got := syms.filter inNames.contains
+  let want := names.filter inSyms.contains
   let bad := (List.range (min want.size got.size)).find? fun k => want[k]! != got[k]!
-  let msg := bad.map fun k =>
-    s!"certificate order: its function {k} (of those the objects define) is `{got[k]!}`, the objects' in CGU order `{want[k]!}`"
-  return (own, msg)
+  bad.map fun k =>
+    s!"certificate image `{cgu}`: its function {k} (of those the object defines) is `{got[k]!}`, the object's `{want[k]!}`"
 
-/-- Checks the image object `o` against the dump `prog` and the certificate `cert`; `own i`:
-the certificate describes function `i` (`owned`; the others are copies, counted only). -/
-def checkObject (prog : Program) (cert : Cert) (o : ImageObject) (own : Nat → Bool := fun _ => true) : Report := Id.run do
+/-- Checks the image object `o` against the dump `prog` and its certificate image in `cert`
+(`Cert.imagesOf`). -/
+def checkObject (prog : Program) (cert : Cert) (o : ImageObject) : Report := Id.run do
+  let mut rep : Report := { funcs := o.funcs.size }
+  let ims := cert.imagesOf o
+  if ims.size != 1 then
+    rep := { rep with errors := rep.errors.push s!"{ims.size} certificate images have the object's cgu_hash {hex16 o.image.header.cguHash}" }
+  let cgu := (ims[0]?.map (·.cgu)).getD ""
+  let fs := cert.functionsOf o
+  let names := o.funcs.map (o.funcName ·.codeOff)
+  if let some e := orderError cgu (fs.map (·.1)) names then rep := { rep with errors := rep.errors.push e }
   let c := Ctx.make prog cert o
-  let count : HashMap String Nat := cert.functions.foldl (init := {}) fun m (s, _) => m.insert s (m.getD s 0 + 1)
+  let count : HashMap String Nat := fs.foldl (init := {}) fun m (s, _) => m.insert s (m.getD s 0 + 1)
   let decs := decodeAll o
   let extents := Frame.incomingExtents (decs.map (·.decoded.toOption)) o.image.mode
-  let mut rep : Report := { funcs := o.funcs.size }
+  let inObj : HashSet String := names.foldl (·.insert ·) {}
+  for (s, _) in fs do
+    unless inObj.contains s do
+      rep := { rep with errors := rep.errors.push s!"certificate of `{s}` (image `{cgu}`) has no image function" }
   for h : i in [0:o.funcs.size] do
     let name := o.funcName o.funcs[i].codeOff
-    if !own i then
-      rep := { rep with copies := rep.copies + 1 }
-      continue
     let n := count.getD name 0
     if n != 1 then
       rep := { rep with errors := rep.errors.push s!"{funcLabel o i}: {n} certificates" }
       if n == 0 then continue
-    rep := { rep with certs := rep.certs + 1, matched := rep.matched.push name }
+    rep := { rep with certs := rep.certs + 1 }
     if c.inst[name]? matches some ⟨_, .body _⟩ then rep := { rep with inDump := rep.inDump + 1 }
     let some (Except.ok fi, Except.ok d) := decs[i]?.map fun x => (x.inputs, x.decoded)
       | rep := { rep with undecoded := rep.undecoded + 1, errors := rep.errors.push s!"{funcLabel o i}: not decoded" }
@@ -569,8 +562,7 @@ def checkObject (prog : Program) (cert : Cert) (o : ImageObject) (own : Nat → 
 
 /-- For `ryo-lean dead` with a certificate: per function of `o` the facts its certificate
 check gives (`Cert.facts`; none for a function without a certificate, not decoded, or whose
-check fails, as a copy of a function of another image may: `owned`), and the islands'
-templates by symbol. -/
+check fails), and the islands' templates by symbol. -/
 def deadFacts (prog : Program) (cert : Cert) (o : ImageObject) :
     (Nat → Frame.Facts) × (String → Option String) :=
   let c := Ctx.make prog cert o
@@ -585,13 +577,14 @@ def deadFacts (prog : Program) (cert : Cert) (o : ImageObject) :
 /-- The lines `ryo-lean check-cert` prints for one object: the summary, the dead-store totals,
 then the errors. -/
 def Report.render (r : Report) (path : String) : Array String :=
-  #[s!"cert-check {path}: funcs {r.funcs} copies {r.copies} certs {r.certs} in-dump {r.inDump} undecoded {r.undecoded} sig-abi {r.sigAbi} blocks {r.blocks} truncated {r.truncated} calls {r.calls} by-entry {r.byEntry} by-abi {r.byAbi} unverified {r.unverified} islands {r.islands} addrs {r.addrs.addrs} by-escape {r.addrs.inside} at-end {r.addrs.atEnd} zero-sized {r.addrs.zeroSized} addr-args {r.addrs.args} errors {r.errors.size}",
+  #[s!"cert-check {path}: funcs {r.funcs} certs {r.certs} in-dump {r.inDump} undecoded {r.undecoded} sig-abi {r.sigAbi} blocks {r.blocks} truncated {r.truncated} calls {r.calls} by-entry {r.byEntry} by-abi {r.byAbi} unverified {r.unverified} islands {r.islands} addrs {r.addrs.addrs} by-escape {r.addrs.inside} at-end {r.addrs.atEnd} zero-sized {r.addrs.zeroSized} addr-args {r.addrs.args} errors {r.errors.size}",
     s!"dead-check {path}: dropped {r.dropped} not-shown-dead {r.notDead} (without facts {r.notDeadPlain})"]
     ++ r.errors.map ("error: " ++ ·)
 
-/-- The certificates no checked object has a function for (the map's other direction). -/
-def unmatched (cert : Cert) (reps : Array Report) : Array String :=
-  let seen : HashSet String := reps.foldl (init := {}) fun s r => r.matched.foldl (·.insert ·) s
-  (cert.functions.filter fun (s, _) => !seen.contains s).map fun (s, _) => s!"certificate of `{s}` has no image function"
+/-- The certificate images no checked object has (the image map's other direction). -/
+def unmatched (cert : Cert) (objs : Array ImageObject) : Array String :=
+  let seen : HashSet Nat := objs.foldl (·.insert ·.image.header.cguHash) {}
+  (cert.images.filter fun im => !seen.contains (cguHash im.cgu)).map fun im =>
+    s!"certificate image `{im.cgu}` ({im.functions.size} functions) has no image object"
 
 end Ryo.Check.Lower

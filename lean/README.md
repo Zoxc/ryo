@@ -50,7 +50,8 @@ lake exe ryo-lean check-cert dump.json dump.cert.json x.ryo_image.rcgu.o [-v]
                                    # the lowering certificate (RYO_DUMP_LEAN's <crate>.cert.json)
                                    # against the objects' decoded code and the dump: function
                                    # map, signatures and plans, ranges, calls, islands; a
-                                   # crate's image objects (one per CGU) in CGU order
+                                   # crate's image objects (one per CGU) together, each
+                                   # against its own image's certificates
                                    # (docs/aot.md §C1, Ryo/Check/Lower/CertCheck.lean)
 ../scripts/lean-cert-check.py [--opt] [--codegen-units N] [--corpus DIR]
                                    # check-cert on the corpus, tabulated (each lean-*.py

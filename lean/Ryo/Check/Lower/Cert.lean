@@ -3,8 +3,9 @@ Ryo.Check.Lower.Cert — the lowering's certificate (aot.md §C1) and its JSON r
 
 `RYO_DUMP_LEAN=<dir>` makes the backend write `<dir>/<crate>.cert.json` next to the MIR dump
 (`backend/src/rustc_api/dump_lean.rs`, `write_certs`; per function `lower/cert.rs`,
-`cert_json` and `plan_json`): `{"functions": [{"symbol", "cert"}], "islands": [{"symbol",
-"template"}]}`. It is untrusted: `CertCheck.lean` checks what it uses against the decoded code
+`cert_json` and `plan_json`): `{"images": [{"cgu", "functions": [{"symbol", "cert"}]}],
+"islands": [{"symbol", "template"}]}`, per image of the crate (one per CGU with VM functions,
+named by its CGU) its functions in image order. It is untrusted: `CertCheck.lean` checks what it uses against the decoded code
 and the dump. Ranges are half-open `[lo, hi)` of instruction ids, which are indices of the
 decoded R instructions (`Decoded.insns`); frame offsets are signed and `fp`-relative.
 -/
@@ -131,18 +132,35 @@ structure IslandJ where
   template : String
 deriving FromJson
 
-/-- A crate's certificate file: per VM function (by symbol) its certificate, and per island
-instance symbol its template's diagnostic name. -/
-structure Cert where
+/-- One image's part of the certificate file: its CGU's name (`image::cgu_hash` of it is the
+image header's `cgu_hash`) and per VM function of the image, in image order, its symbol and
+certificate. -/
+structure CertImage where
+  cgu : String
   functions : Array (String × FuncCert)
+deriving Inhabited
+
+structure ImageJ where
+  cgu : String
+  functions : Array FuncEntryJ
+deriving FromJson
+
+/-- A crate's certificate file: its images' certificates, and per island instance symbol its
+template's diagnostic name. -/
+structure Cert where
+  images : Array CertImage
   islands : Array (String × String)
 deriving Inhabited
 
 instance : FromJson Cert where
   fromJson? j := do
-    let fs : Array FuncEntryJ ← j.getObjValAs? _ "functions"
+    let ims : Array ImageJ ← j.getObjValAs? _ "images"
     let is : Array IslandJ ← j.getObjValAs? _ "islands"
-    return { functions := fs.map fun f => (f.symbol, f.cert), islands := is.map fun i => (i.symbol, i.template) }
+    return { images := ims.map fun im => { cgu := im.cgu, functions := im.functions.map fun f => (f.symbol, f.cert) },
+             islands := is.map fun i => (i.symbol, i.template) }
+
+/-- The number of function certificates over all images. -/
+def Cert.size (c : Cert) : Nat := c.images.foldl (· + ·.functions.size) 0
 
 def Cert.ofJsonString (s : String) : Except String Cert := do
   fromJson? (← Json.parse s)

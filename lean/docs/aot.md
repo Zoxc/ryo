@@ -194,17 +194,17 @@ checker. `y test` fails on `rejected` and prints coverage.
 
 **Implemented: the certificate check** (`Ryo/Check/Lower/`, `ryo-lean check-cert <dump>
 <cert> <image objects>...`, over the corpus with `scripts/lean-cert-check.py`). The backend
-writes the certificate next to the dump (`RYO_DUMP_LEAN`, `<crate>.cert.json`: per VM function
-the frame map, its own `ArgPlan`, the ranges, and per call instruction its kind, return kind
-and size and the callee's `ArgPlan`; the islands' templates by symbol). The check, short of
-the relational spec: each image function has exactly one certificate (by symbol) and each
-certificate a function. A crate has an image object per CGU with VM functions, and the
-certificate file covers them all: its functions in CGU then image order, each symbol once, so
-an `#[inline]` function's copy in a later CGU's image (lowered there again, its calls of that
-CGU's VM functions direct, of another image's `call.sym`) has none. `check-cert` takes the
-objects in CGU order (rustc sorts the CGUs by name; the scripts pass the file names sorted),
-checks the certificate's order against them (`owned`), and counts the copies without checking
-them. Own signature: `argSize = plan.stackSize = FuncEntry.arg_size`,
+writes the certificate next to the dump (`RYO_DUMP_LEAN`, `<crate>.cert.json`: per image, by
+its CGU's name, and per VM function of it the frame map, its own `ArgPlan`, the ranges, and
+per call instruction its kind, return kind and size and the callee's `ArgPlan`; the islands'
+templates by symbol). The check, short of the relational spec: a crate has an image object
+per CGU with VM functions, and each object has exactly one certificate image, the one whose
+CGU name hashes to its header's `cgu_hash`, and each certificate image an object
+(`imagesOf`, `unmatched`); within it each image function has exactly one certificate (by
+symbol) and each certificate a function, in image order. An `#[inline]` function rustc copied
+into several CGUs is lowered once per copy, and the copies differ (calls of that CGU's VM
+functions direct, of another image's `call.sym`), so each copy is checked against its own
+image's certificate. Own signature: `argSize = plan.stackSize = FuncEntry.arg_size`,
 `ret_kind` the entry's, the frame size the decoded one, an sret slot iff `RET_SRET`, and the
 `arg` instructions are exactly the prologue's, the plan's register pieces in order; for a
 dumped body with an ABI, the return kind and plan recomputed from the dumped `FnAbiSummary`

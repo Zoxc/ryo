@@ -56,12 +56,12 @@
                                            escape coverage of the addresses taken), a
                                            `dead-check` line (the dead-store check with the
                                            certificate's facts) and the errors; then a
-                                           `cert-map` line (certificates without a function,
-                                           and the certificate's order against the objects'
-                                           functions); exit status 1 on an error. `-v` prints
-                                           every error. A crate's image objects (one per CGU)
-                                           go in CGU order, as their sorted file names are
-                                           (default: the first 50 per object)
+                                           `cert-map` line (certificate images without an
+                                           object); exit status 1 on an error. `-v` prints
+                                           every error (default: the first 50 per object). A
+                                           crate's image objects (one per CGU) go together,
+                                           each checked against its own certificate image
+                                           (by `cgu_hash`)
   ryo-lean check-image <image object>... [--registry <registry object>]
                                            the image checks that need no dump (aot.md §C4,
                                            `Ryo.Check.Image`) on a link's image objects and
@@ -194,19 +194,14 @@ def checkCert (dump certPath : String) (objs : List String) (verbose : Bool) : I
     | .error e =>
       IO.println s!"cert-check {path}: error: {e}"
       status := 1
-  let (own, order) := Ryo.Check.Lower.owned cert (read.map (·.2))
-  let mut reps := #[]
-  for h : k in [0:read.size] do
-    let (path, o) := read[k]
-    let fs := own[k]?.getD #[]
-    let r := Ryo.Check.Lower.checkObject p cert o (fs[·]?.getD true)
+  for (path, o) in read do
+    let r := Ryo.Check.Lower.checkObject p cert o
     let ls := r.render path
     for l in if verbose then ls else ls.extract 0 52 do IO.println l
     if !verbose && ls.size > 52 then IO.println s!"error: ... and {ls.size - 52} more"
     unless r.ok do status := 1
-    reps := reps.push r
-  let un := Ryo.Check.Lower.unmatched cert reps ++ order.toArray
-  IO.println s!"cert-map: certificates {cert.functions.size} unmatched {un.size}"
+  let un := Ryo.Check.Lower.unmatched cert (read.map (·.2))
+  IO.println s!"cert-map: images {cert.images.size} certificates {cert.size} unmatched {un.size}"
   for e in un do IO.println s!"error: {e}"
   unless un.isEmpty do status := 1
   pure status
@@ -257,14 +252,17 @@ def lsdaObj (path : String) : IO UInt32 := do
 
 /-- `ryo-lean rrun`, with `--cert <cert.json>` read here (`Ryo.Vm.R` doesn't import the
 certificate): per function symbol, the offsets of its certificate's locals of size 0 as
-`Code.zeroSized` (the first certificate of a symbol, as `check-cert` takes it). -/
+`Code.zeroSized`, from the image object's own certificate image (`Cert.functionsOf`; the
+first certificate of a symbol, as `check-cert` takes it). -/
 def rrun (args : List String) : IO UInt32 := do
   match args.idxOf? "--cert" with
   | none => Ryo.Vm.R.cli args
   | some i =>
     let some path := args[i + 1]? | IO.eprintln "--cert needs a certificate file"; return 2
     let cert ← IO.ofExcept (Ryo.Check.Lower.Cert.ofJsonString (← IO.FS.readFile path))
-    let zs : Std.HashMap String (List Int) := cert.functions.foldl (init := {}) fun m (sym, fc) =>
+    let some objPath := args.head? | IO.eprintln "rrun needs an image object"; return 2
+    let o ← IO.ofExcept (Ryo.Obj.readImageObject (← IO.FS.readBinFile objPath))
+    let zs : Std.HashMap String (List Int) := (cert.functionsOf o).foldl (init := {}) fun m (sym, fc) =>
       if m.contains sym then m
       else m.insert sym ((fc.locals.filter (·.size == 0)).toList.map (·.off))
     Ryo.Vm.R.cli (args.take i ++ args.drop (i + 2)) (fun sym => zs.getD sym [])

@@ -128,12 +128,12 @@ def win64 : Except String Unit := do
   expectNoSig true (sig [] (pair "i64" "f128" 16)) "f128 in a returned pair on Win64"
   expectSig false (sig [pair "f128" "i64" 16]) 0 [[x 0 16, r 0 8 16]] 0
 
-def certJson : String := "{\"functions\":[{\"symbol\":\"f\",\"cert\":{\"frameSize\":48,\"outgoing\":16,\"argSize\":16,\"retKind\":2147483648,\"locals\":[{\"off\":-16,\"size\":16},{\"off\":-24,\"size\":8}],\"localsEnd\":32,\"tempsEnd\":48,\"exception\":-40,\"sret\":-32,\"argHomes\":[-24,-48],\"argPtrs\":[null,-8],\"callerLocation\":null,\"spreadArg\":2,\"plan\":{\"stackSize\":16,\"locs\":[[{\"reg\":{\"xmm\":true,\"size\":8,\"index\":0},\"off\":0}],[{\"ptrReg\":1}],[{\"stack\":0,\"off\":8,\"size\":4}],[{\"ptrStack\":8}]]},\"prologue\":[0,3],\"blocks\":[{\"stmts\":[[3,3],[3,5]],\"term\":[5,7],\"fused\":true}],\"stubs\":[{\"reason\":\"abi\",\"insns\":[7,8]}],\"pads\":[{\"insns\":[8,10],\"block\":null}],\"calls\":[{\"insn\":6,\"kind\":\"dropVm\",\"retKind\":0,\"retSize\":0,\"plan\":null},{\"insn\":7,\"kind\":\"tailPtr\",\"retKind\":8,\"retSize\":8,\"plan\":{\"stackSize\":0,\"locs\":[]}}]}}],\"islands\":[{\"symbol\":\"isl\",\"template\":\"ryo_rt::island::call\"}]}"
+def certJson : String := "{\"images\":[{\"cgu\":\"x.abc-cgu.0\",\"functions\":[{\"symbol\":\"f\",\"cert\":{\"frameSize\":48,\"outgoing\":16,\"argSize\":16,\"retKind\":2147483648,\"locals\":[{\"off\":-16,\"size\":16},{\"off\":-24,\"size\":8}],\"localsEnd\":32,\"tempsEnd\":48,\"exception\":-40,\"sret\":-32,\"argHomes\":[-24,-48],\"argPtrs\":[null,-8],\"callerLocation\":null,\"spreadArg\":2,\"plan\":{\"stackSize\":16,\"locs\":[[{\"reg\":{\"xmm\":true,\"size\":8,\"index\":0},\"off\":0}],[{\"ptrReg\":1}],[{\"stack\":0,\"off\":8,\"size\":4}],[{\"ptrStack\":8}]]},\"prologue\":[0,3],\"blocks\":[{\"stmts\":[[3,3],[3,5]],\"term\":[5,7],\"fused\":true}],\"stubs\":[{\"reason\":\"abi\",\"insns\":[7,8]}],\"pads\":[{\"insns\":[8,10],\"block\":null}],\"calls\":[{\"insn\":6,\"kind\":\"dropVm\",\"retKind\":0,\"retSize\":0,\"plan\":null},{\"insn\":7,\"kind\":\"tailPtr\",\"retKind\":8,\"retSize\":8,\"plan\":{\"stackSize\":0,\"locs\":[]}}]}}]}],\"islands\":[{\"symbol\":\"isl\",\"template\":\"ryo_rt::island::call\"}]}"
 
 def parse : Except String Unit := do
   let c ← Cert.ofJsonString certJson
-  check (c.functions.size == 1 && c.islands == #[("isl", "ryo_rt::island::call")]) "functions and islands"
-  let (s, f) := c.functions[0]!
+  check (c.images.size == 1 && c.size == 1 && c.images[0]!.cgu == "x.abc-cgu.0" && c.islands == #[("isl", "ryo_rt::island::call")]) "functions and islands"
+  let (s, f) := c.images[0]!.functions[0]!
   check (s == "f" && f.frameSize == 48 && f.retKind == RET_SRET && f.sret == some (-32) && f.exception == some (-40)) "frame"
   check (f.argHomes == #[-24, -48] && f.argPtrs == #[none, some (-8)] && f.callerLocation == none && f.spreadArg == some 2) "homes"
   check (f.plan == some ⟨[[x 0 8], [.ptrReg 1], [.stack 0 8 4], [.ptrStack 8]], 16⟩) s!"plan {repr f.plan}"
@@ -150,7 +150,7 @@ def words (ps : List (Int × Nat)) : List (BitVec 32) := ps.flatMap fun (s, r) =
 
 def fc : FuncCert :=
   match Cert.ofJsonString certJson with
-  | .ok c => c.functions[0]!.2
+  | .ok c => c.images[0]!.functions[0]!.2
   | .error _ => default
 
 def argLists : Except String Unit := do
