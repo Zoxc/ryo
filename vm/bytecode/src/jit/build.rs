@@ -24,19 +24,10 @@ struct B<'a> {
     code: &'a Code,
     fr: &'a Frame,
     f: Func,
-    /// The current definition of each variable, per block (`NO`: none yet), allocated when
-    /// first used.
-    defs: Vec<Vec<u32>>,
-    sealed: Vec<bool>,
-    filled: Vec<u32>,
-    expected: Vec<u32>,
-    /// Per block, the parameters made before it was sealed, with their variables.
-    incomplete: Vec<Vec<(u32, Value)>>,
-    /// Per parameter value: its variable and operand row (by predecessor), and the
-    /// parameters whose rows use it.
-    rows: Vec<(u32, Vec<Value>)>,
-    row_of: Vec<u32>,
-    users: Vec<Vec<Value>>,
+    /// Per block.
+    blocks: Vec<BlockState>,
+    /// The phi-style parameters, by value (`None`: not one, such as an entry argument).
+    phis: Vec<Option<Phi>>,
     undef: [Option<Value>; 17],
     /// The IR block of each R block (`None` for an `lpad`'s).
     ir: Vec<Option<Block>>,
@@ -44,15 +35,34 @@ struct B<'a> {
     mode: crate::asm::Mode,
 }
 
+#[derive(Default)]
+struct BlockState {
+    /// The current definition of each variable, allocated when first used.
+    defs: Vec<Option<Value>>,
+    sealed: bool,
+    /// Predecessors filled, and expected.
+    filled: u32,
+    expected: u32,
+    /// The parameters made before it was sealed, with their variables.
+    incomplete: Vec<(u32, Value)>,
+}
+
+/// A block parameter's operand row (by predecessor), and the parameters whose rows use it.
+#[derive(Default)]
+struct Phi {
+    row: Vec<Value>,
+    users: Vec<Value>,
+}
+
 impl<'a> B<'a> {
     fn new_block(&mut self, kind: BlockKind, expected: u32) -> Block {
         let b = self.f.block(kind);
-        self.defs.push(Vec::new());
-        self.sealed.push(false);
-        self.filled.push(0);
-        self.expected.push(expected);
-        self.incomplete.push(Vec::new());
+        self.blocks.push(BlockState { expected, ..Default::default() });
         b
+    }
+
+    fn phi(&mut self, p: Value) -> &mut Phi {
+        self.phis[p.idx()].as_mut().expect("a phi parameter")
     }
 
     fn undef(&mut self, w: u8) -> Value {
@@ -64,39 +74,36 @@ impl<'a> B<'a> {
         v
     }
 
-    fn def_slot(&mut self, b: Block, var: u32) -> &mut u32 {
-        let d = &mut self.defs[b.idx()];
+    fn def_slot(&mut self, b: Block, var: u32) -> &mut Option<Value> {
+        let d = &mut self.blocks[b.idx()].defs;
         if d.is_empty() {
-            d.resize(self.fr.vars.len(), NO);
+            d.resize(self.fr.vars.len(), None);
         }
         &mut d[var as usize]
     }
 
     fn write_var(&mut self, var: u32, b: Block, v: Value) {
-        *self.def_slot(b, var) = v.0;
+        *self.def_slot(b, var) = Some(v);
     }
 
     fn new_param(&mut self, b: Block, var: u32) -> Value {
         let w = self.fr.vars[var as usize].w;
         let p = self.f.param(b, w);
-        if self.row_of.len() <= p.idx() {
-            self.row_of.resize(p.idx() + 1, NO);
+        if self.phis.len() <= p.idx() {
+            self.phis.resize_with(p.idx() + 1, || None);
         }
-        self.row_of[p.idx()] = self.rows.len() as u32;
-        self.rows.push((var, Vec::new()));
-        self.users.push(Vec::new());
+        self.phis[p.idx()] = Some(Phi::default());
         p
     }
 
     fn read_var(&mut self, var: u32, b: Block) -> Value {
-        let d = *self.def_slot(b, var);
-        if d != NO {
-            return self.f.resolve(Value(d));
+        if let Some(d) = *self.def_slot(b, var) {
+            return self.f.resolve(d);
         }
         let w = self.fr.vars[var as usize].w;
-        let v = if !self.sealed[b.idx()] {
+        let v = if !self.blocks[b.idx()].sealed {
             let p = self.new_param(b, var);
-            self.incomplete[b.idx()].push((var, p));
+            self.blocks[b.idx()].incomplete.push((var, p));
             p
         } else {
             match self.f.blocks[b.idx()].preds.len() {
@@ -142,22 +149,20 @@ impl<'a> B<'a> {
         }
         for &v in &row {
             if let ValueDef::Param(..) = self.f.def(v)
-                && self.row_of.get(v.idx()).is_some_and(|&r| r != NO)
+                && let Some(Some(u)) = self.phis.get_mut(v.idx())
             {
-                let r = self.row_of[v.idx()] as usize;
-                self.users[r].push(p);
+                u.users.push(p);
             }
         }
-        let r = self.row_of[p.idx()] as usize;
-        self.rows[r].1 = row;
+        self.phi(p).row = row;
         self.try_remove_trivial(p)
     }
 
     fn try_remove_trivial(&mut self, p: Value) -> Value {
-        let r = self.row_of[p.idx()] as usize;
         let mut same: Option<Value> = None;
-        for k in 0..self.rows[r].1.len() {
-            let op = self.f.resolve(self.rows[r].1[k]);
+        for k in 0..self.phi(p).row.len() {
+            let v = self.phi(p).row[k];
+            let op = self.f.resolve(v);
             if Some(op) == same || op == p {
                 continue;
             }
@@ -172,7 +177,7 @@ impl<'a> B<'a> {
             None => self.undef(w),
         };
         self.f.values[p.idx()].def = ValueDef::Alias(same);
-        let users = core::mem::take(&mut self.users[r]);
+        let users = core::mem::take(&mut self.phi(p).users);
         for u in users {
             if u != p && matches!(self.f.def(u), ValueDef::Param(..)) {
                 self.try_remove_trivial(u);
@@ -182,11 +187,11 @@ impl<'a> B<'a> {
     }
 
     fn seal(&mut self, b: Block) {
-        let inc = core::mem::take(&mut self.incomplete[b.idx()]);
+        let inc = core::mem::take(&mut self.blocks[b.idx()].incomplete);
         for (var, p) in inc {
             self.add_operands(var, p);
         }
-        self.sealed[b.idx()] = true;
+        self.blocks[b.idx()].sealed = true;
     }
 
     /// Ends `b` with `t`, and seals the successors whose predecessors are all filled.
@@ -194,8 +199,9 @@ impl<'a> B<'a> {
         let succ: Vec<Block> = t.edges().map(|e| e.to).collect();
         self.f.terminate(b, t);
         for s in succ {
-            self.filled[s.idx()] += 1;
-            if self.filled[s.idx()] == self.expected[s.idx()] && !self.sealed[s.idx()] {
+            let st = &mut self.blocks[s.idx()];
+            st.filled += 1;
+            if st.filled == st.expected && !st.sealed {
                 self.seal(s);
             }
         }
@@ -304,14 +310,8 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
             osr: alloc::vec![None; code.enterable.len()],
             ..Default::default()
         },
-        defs: Vec::new(),
-        sealed: Vec::new(),
-        filled: Vec::new(),
-        expected: Vec::new(),
-        incomplete: Vec::new(),
-        rows: Vec::new(),
-        row_of: Vec::new(),
-        users: Vec::new(),
+        blocks: Vec::new(),
+        phis: Vec::new(),
         undef: [None; 17],
         ir: alloc::vec![None; nb],
         scratch: 0,
@@ -339,12 +339,12 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
             let t = t as usize;
             let to = if is_lpad(t) { code.blocks[t].succ[0] as usize } else { t };
             let to = s.ir[to].ok_or(Unsupported("an lpad after an lpad"))?;
-            s.expected[to.idx()] += 1;
+            s.blocks[to.idx()].expected += 1;
         }
     }
     if separate {
         let first = s.ir[0].unwrap();
-        s.expected[first.idx()] += 1;
+        s.blocks[first.idx()].expected += 1;
     }
     s.seal(entry);
     // OSR entries, filled first.
@@ -356,14 +356,14 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
             s.seal(o);
             s.f.osr[h as usize] = Some(o);
             let head = s.ir[b].unwrap();
-            s.expected[head.idx()] += 1;
+            s.blocks[head.idx()].expected += 1;
             s.finish_block(o, Term::Jmp(Edge::to(head)));
         }
     }
     for b in 0..nb {
         if let Some(x) = s.ir[b]
-            && s.expected[x.idx()] == 0
-            && !s.sealed[x.idx()]
+            && s.blocks[x.idx()].expected == 0
+            && !s.blocks[x.idx()].sealed
         {
             s.seal(x);
         }
@@ -712,7 +712,7 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
     }
     // Parameters left incomplete belong to blocks never sealed: unreachable ones.
     for b in 0..s.f.blocks.len() {
-        if !s.sealed[b] {
+        if !s.blocks[b].sealed {
             s.seal(Block(b as u32));
         }
     }
@@ -726,12 +726,10 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
         for (j, &(p, k)) in preds.iter().enumerate() {
             let args: Vec<Value> = params
                 .iter()
-                .map(|&x| {
-                    if s.f.blocks[b].kind == BlockKind::Entry {
-                        return x;
-                    }
-                    let r = s.row_of[x.idx()] as usize;
-                    s.rows[r].1[j]
+                .map(|&x| match s.phis.get(x.idx()) {
+                    Some(Some(phi)) => phi.row[j],
+                    // An entry argument.
+                    _ => x,
                 })
                 .collect();
             let mut t = core::mem::replace(&mut s.f.blocks[p.idx()].term, Term::None);
