@@ -266,6 +266,81 @@ pub fn encode_reduced(
     encode_reduced_at(code, frame_size, cleanup, scopes, dropped, code_consts, mode).map(|(e, _)| e)
 }
 
+/// Checks a reduced `handler` of the handler `h` against what [`reduce`] gives for it, with
+/// arguments `args`, polarity `neg` and targets `ts`: its control flow (returned as the
+/// [`Then`]) by `h`'s shape, the registers `h`'s layout sets in `mode`, and a switch's lists
+/// against its targets, its case values taken from `code_consts` (returned).
+fn check_handler<'c>(h: Opcode, args: &[Arg], neg: bool, ts: Vec<Label>, code_consts: &'c [u8], mode: Mode) -> Result<(Then<Label>, &'c [u8]), ()> {
+    let then = match h.info().shape {
+        Shape::Br if ts.len() == 1 => Then::Branch { neg, target: ts[0] },
+        Shape::Switch if !ts.is_empty() && !neg => Then::Table(ts),
+        Shape::Trap if ts.is_empty() && !neg => Then::Trap,
+        Shape::Op | Shape::Lpad if ts.is_empty() && !neg => Then::Next,
+        _ => return Err(()),
+    };
+    // The registers the handler's layout sets: `fp` and the exception object where
+    // it takes them, and a switch's lists as its table has targets (an edited
+    // table must keep them in step).
+    let l = super::layout(h, mode);
+    let info = h.info();
+    if args.len() != l.regs as usize || mode.fp_arg && args[0] != Arg::Fp || info.shape == Shape::Lpad && args[l.first as usize - 1] != Arg::Exception
+    {
+        return Err(());
+    }
+    let mut values: &[u8] = &[];
+    let mut cases = 0;
+    let mut ro_args = 0;
+    for (k, o) in info.operands.iter().enumerate() {
+        let r = l.locs[k].reg as usize;
+        match o.kind {
+            OperandKind::List(ElemKind::Target) => match args[r] {
+                Arg::Imm(n) => cases += n,
+                _ => return Err(()),
+            },
+            OperandKind::List(e) if let Some(size) = e.case_bytes() => {
+                // A sparse switch's case values: as many as its cases, of its
+                // value size.
+                let (Arg::Ro(off), Arg::Imm(n)) = (args[r], args[r + 1]) else { return Err(()) };
+                let len = usize::try_from(n).ok().and_then(|n| n.checked_mul(size)).ok_or(())?;
+                values = code_consts.get(off as usize..).and_then(|b| b.get(..len)).ok_or(())?;
+                cases += n;
+                ro_args += 1;
+            }
+            _ => {}
+        }
+    }
+    if args.iter().filter(|a| matches!(a, Arg::Ro(_))).count() != ro_args || matches!(&then, Then::Table(ts) if ts.len() as u64 != cases + 1) {
+        return Err(());
+    }
+    Ok((then, values))
+}
+
+/// The unwind action of each instruction of `insns` (starting at the word offsets `starts`)
+/// by the cleanup entries: only instructions that may unwind have one, at most one each, and
+/// a landing pad is an `lpad`.
+fn cleanup_actions(cleanup: &[CleanupEntry], starts: &[u32], insns: &[reduced::Insn]) -> Result<Vec<Option<Unwind>>, EncodeError> {
+    let idx = |w: u32| starts.binary_search(&w).map_err(|_| EncodeError::BadTarget(w));
+    let mut action: Vec<Option<Unwind>> = alloc::vec![None; starts.len()];
+    for e in cleanup {
+        let bad = EncodeError::BadCleanup(e.offset);
+        let i = idx(e.offset).map_err(|_| bad)?;
+        if !crate::image::op_may_unwind(insns[i].full_opcode()) || action[i].is_some() {
+            return Err(bad);
+        }
+        action[i] = Some(match e.action() {
+            Cleanup::Continue => Unwind::Continue,
+            Cleanup::Pad(p, catch) => {
+                let p = idx(p).map_err(|_| bad)?;
+                if insns[p].full_opcode() != Opcode::Lpad {
+                    return Err(bad);
+                }
+                Unwind::Pad { pad: Label(p as u32), catch }
+            }
+        });
+    }
+    Ok(action)
+}
+
 /// [`encode_reduced`], and where each instruction starts in the code, by word offset (sorted
 /// pairs): after a loop head's padding, where branches to it land.
 pub fn encode_reduced_at(
@@ -289,24 +364,7 @@ pub fn encode_reduced_at(
     let idx = |w: u32| starts.binary_search(&w).map_err(|_| EncodeError::BadTarget(w));
     let label = |at: u32, t: u32| idx(at.wrapping_add(t)).map(|i| Label(i as u32));
 
-    let mut action: Vec<Option<Unwind>> = alloc::vec![None; starts.len()];
-    for e in cleanup {
-        let bad = EncodeError::BadCleanup(e.offset);
-        let i = idx(e.offset).map_err(|_| bad)?;
-        if !crate::image::op_may_unwind(insns[i].full_opcode()) || action[i].is_some() {
-            return Err(bad);
-        }
-        action[i] = Some(match e.action() {
-            Cleanup::Continue => Unwind::Continue,
-            Cleanup::Pad(p, catch) => {
-                let p = idx(p).map_err(|_| bad)?;
-                if insns[p].full_opcode() != Opcode::Lpad {
-                    return Err(bad);
-                }
-                Unwind::Pad { pad: Label(p as u32), catch }
-            }
-        });
-    }
+    let action = cleanup_actions(cleanup, &starts, &insns)?;
 
     let mut asm = Asm::new(mode);
     asm.drop_exactly();
@@ -342,52 +400,7 @@ pub fn encode_reduced_at(
                 let args: Vec<Arg> = args.iter().collect();
                 let neg = neg.0;
                 let ts = t.iter().map(|t| label(at, t.0 as u32)).collect::<Result<Vec<_>, _>>()?;
-                let bad = || EncodeError::BadHandler(at);
-                let then = match h.info().shape {
-                    Shape::Br if ts.len() == 1 => Then::Branch { neg, target: ts[0] },
-                    Shape::Switch if !ts.is_empty() && !neg => Then::Table(ts),
-                    Shape::Trap if ts.is_empty() && !neg => Then::Trap,
-                    Shape::Op | Shape::Lpad if ts.is_empty() && !neg => Then::Next,
-                    _ => return Err(bad()),
-                };
-                // The registers the handler's layout sets: `fp` and the exception object where
-                // it takes them, and a switch's lists as its table has targets (an edited
-                // table must keep them in step).
-                let l = super::layout(h, mode);
-                let info = h.info();
-                if args.len() != l.regs as usize
-                    || mode.fp_arg && args[0] != Arg::Fp
-                    || info.shape == Shape::Lpad && args[l.first as usize - 1] != Arg::Exception
-                {
-                    return Err(bad());
-                }
-                let mut values: &[u8] = &[];
-                let mut cases = 0;
-                let mut ro_args = 0;
-                for (k, o) in info.operands.iter().enumerate() {
-                    let r = l.locs[k].reg as usize;
-                    match o.kind {
-                        OperandKind::List(ElemKind::Target) => match args[r] {
-                            Arg::Imm(n) => cases += n,
-                            _ => return Err(bad()),
-                        },
-                        OperandKind::List(e) if let Some(size) = e.case_bytes() => {
-                            // A sparse switch's case values: as many as its cases, of its
-                            // value size.
-                            let (Arg::Ro(off), Arg::Imm(n)) = (args[r], args[r + 1]) else { return Err(bad()) };
-                            let len = usize::try_from(n).ok().and_then(|n| n.checked_mul(size)).ok_or_else(bad)?;
-                            values = code_consts.get(off as usize..).and_then(|b| b.get(..len)).ok_or_else(bad)?;
-                            cases += n;
-                            ro_args += 1;
-                        }
-                        _ => {}
-                    }
-                }
-                if args.iter().filter(|a| matches!(a, Arg::Ro(_))).count() != ro_args
-                    || matches!(&then, Then::Table(ts) if ts.len() as u64 != cases + 1)
-                {
-                    return Err(bad());
-                }
+                let (then, values) = check_handler(h, &args, neg, ts, code_consts, mode).map_err(|()| EncodeError::BadHandler(at))?;
                 if region.is_some() {
                     let (falls, ts) = match &then {
                         Then::Next => (true, Vec::new()),
