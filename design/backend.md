@@ -240,6 +240,48 @@ and `codegen_crate` reads them.
      `extern crate`. So it is in `CrateInfo`, its generics can be instantiated, and it gets
      linked.
 
+## Incremental
+
+Under `-Cincremental`, each CGU's image is a work product of its own, reused when nothing it
+depends on changed (`partition.rs`, `image_part`).
+
+- **Self-contained images.** An image is a function of its CGU's items (with rustc's linkage
+  and visibility) and of the queries its lowering reads, nothing else:
+  - classification is per CGU: only the CGU's own functions are direct callees, a VM
+    function of another CGU is called by symbol (`call.sym`) whether it is VM or native, so a
+    function that stays native only makes its own CGU's callers lower again (`lower_cgu`);
+  - a VM function's symbol is global if its linkage isn't `Internal`, if it is the entry fn,
+    or if it is unique in the crate (not `LocalCopy`), hidden then. A `LocalCopy` copy stays
+    local: the image refers to its own functions by their local symbols, and native code of
+    the CGU that refers to it gets a native copy (`native_ref`), as no two CGUs may define
+    the same global symbol;
+  - native items an image refers to are made linkable on the native side only:
+    `External` + `Hidden` if unique, `WeakODR` + `Hidden` if a `LocalCopy`, and items added
+    for an image `WeakODR` + `Hidden`, so no CGU depends on another's choices.
+- **The image's dep node** is a `CompileCodegenUnit` node named
+  `<cgu>.ryo.<fingerprint>`, the fingerprint covering the CGU name, its candidates' symbols,
+  linkage and visibility, the entry fn, the `asm::Mode`, the crate's `StableCrateId`,
+  `RYO_ASM_ALIGN` and the backend dylib's size and modification time. A change to any of
+  these gives a node the previous session didn't have. The lowering runs inside
+  `dep_graph.with_task(node, ..)`, so the queries it reads (MIR, layouts, ABIs, symbol
+  names, constants) are its edges; reading rustc's partition there would be a cycle (this
+  runs inside the partition query), which the fingerprint replaces.
+- **Reuse.** If the previous session has the work product `<cgu>.ryo` (files `o`, the image
+  object, and `ryo`, its side data) and `try_mark_green` marks the node green, the image
+  isn't lowered: the side data (`CguVm`: the VM functions and which have global symbols, the
+  islands they call, the items they refer to, the LTO roots, the `__ryo_main` target) is
+  decoded (`persist.rs`, `Instance`s and `MonoItem`s by `DefPathHash`), the native CGUs and
+  the exported-symbols queries are built from it as from a fresh image, and `codegen_crate`
+  hard-links the cached object into place. A reused image is byte-identical to a fresh one.
+- **Saving.** cg_ssa saves only its own modules' products, inside cg_llvm's join, so our
+  `join_codegen` saves each fresh image's object and side data with
+  `copy_cgu_workproduct_to_incr_comp_cache_dir`, and re-inserts each reused one's previous
+  `WorkProduct`, before rustc writes the work product index.
+- Not reused: with `RYO_DUMP`, `RYO_DUMP_CODE` or `RYO_DUMP_LEAN` (their output covers the
+  images built), and under `-Zdisable-incr-comp-backend-caching`. `RYO_STATS` prints
+  `ryo: <n> of <m> images reused`; the `incremental` check rebuilds each revision unchanged
+  and expects every image reused and the same executable.
+
 ## Query overrides (`provide`)
 
 - `collect_and_partition_mono_items` → the native CGU from step 4. `all_mono_items` keeps the

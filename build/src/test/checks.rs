@@ -238,6 +238,28 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
             };
             let reference = run(&build(Path::new("rustc"), None, &[], "rustc")?, &[])?;
             let exe = build(rustc_ryo, Some(&incr), chain_flags, "incr")?;
+            // Image reuse (design/backend.md#incremental): the same revision again reuses
+            // every image, and gives the same executable.
+            if env.is_empty() {
+                let read = |p: &Path| fs::read(p).map_err(|e| format!("reading {}: {e}", p.display()));
+                let first = read(&exe)?;
+                let mut c = cmd(rustc_ryo);
+                c.arg("--edition=2024").arg(&src).args(["--cfg", &cfg]).arg("-o").arg(&exe).args(flags).args(chain_flags);
+                c.arg(format!("-Cincremental={}", incr.display())).arg("-Zincremental-verify-ich").env("RYO_STATS", "1");
+                let res = c.output().map_err(|e| format!("{config} {cfg} again: {e}"))?;
+                let stderr = String::from_utf8_lossy(&res.stderr);
+                if !res.status.success() {
+                    return Err(format!("{config} {cfg} again: {}\n{stderr}", res.status));
+                }
+                let reused = stderr.lines().find_map(|l| l.strip_prefix("ryo: ")?.strip_suffix(" images reused"));
+                match reused.and_then(|r| r.split_once(" of ")) {
+                    Some((r, n)) if r == n && n != "0" => {}
+                    r => return Err(format!("{config} {cfg}: rebuilt unchanged, reused {r:?} images, expected all")),
+                }
+                if read(&exe)? != first {
+                    return Err(format!("{config} {cfg}: rebuilt unchanged, {} differs", exe.display()));
+                }
+            }
             for env in [&[][..], super::JIT_SYNC] {
                 let got = run(&exe, env)?;
                 if got != reference {

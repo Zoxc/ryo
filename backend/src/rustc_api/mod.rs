@@ -14,6 +14,7 @@ mod json;
 mod link;
 mod lower;
 mod partition;
+mod persist;
 mod switches;
 mod symbols;
 
@@ -212,16 +213,37 @@ impl CodegenBackend for RyoBackend {
         for img in &results.images {
             let image_name = format!("{}.ryo_image", img.cgu_name);
             let image_path = tcx.output_filenames(()).temp_path_for_cgu(OutputType::Object, &image_name);
-            let cgu_hash = ryo_bytecode::image::cgu_hash(img.cgu_name.as_str().as_bytes());
-            let bytes = objfile::write_image(&*fmt, &img.image, scid, cgu_hash, img.main_symbol.as_deref(), &rt_symbol)
-                .unwrap_or_else(|e| tcx.dcx().fatal(e));
-            if let Err(e) = std::fs::write(&image_path, bytes) {
-                tcx.dcx().fatal(format!("writing {}: {e}", image_path.display()));
-            }
-            images.push((image_name, image_path));
+            let save = match &img.image {
+                partition::ImageSrc::Fresh { image, side } => {
+                    let cgu_hash = ryo_bytecode::image::cgu_hash(img.cgu_name.as_str().as_bytes());
+                    let bytes = objfile::write_image(&*fmt, image, scid, cgu_hash, img.main_symbol.as_deref(), &rt_symbol)
+                        .unwrap_or_else(|e| tcx.dcx().fatal(e));
+                    let side_path = image_path.with_extension("ryo");
+                    for (p, b) in [(&image_path, &bytes), (&side_path, side)] {
+                        if let Err(e) = std::fs::write(p, b) {
+                            tcx.dcx().fatal(format!("writing {}: {e}", p.display()));
+                        }
+                    }
+                    ImageSave::Fresh(side_path)
+                }
+                // The previous session's object, as cg_ssa reuses a CGU's
+                // (`execute_copy_from_cache_work_item`).
+                partition::ImageSrc::Reused(wp) => {
+                    let incr = tcx.incr_comp_session.expect("a reused image without an incremental session");
+                    let from = rustc_incremental::in_incr_comp_dir_sess(incr, &wp.saved_files["o"]);
+                    let _ = std::fs::remove_file(&image_path);
+                    if std::fs::hard_link(&from, &image_path).is_err()
+                        && let Err(e) = std::fs::copy(&from, &image_path)
+                    {
+                        tcx.dcx().fatal(format!("copying {} from the incremental cache: {e}", from.display()));
+                    }
+                    ImageSave::Reused(wp.clone(), from)
+                }
+            };
+            images.push(OngoingImage { cgu: img.cgu_name.to_string(), name: image_name, path: image_path, save });
         }
         drop(write_t);
-        let modules = images.iter().map(|(name, _)| name.clone()).collect();
+        let modules = images.iter().map(|i| i.name.clone()).collect();
         let _ = self.link_info.set(link::LinkInfo { images: modules, linked_roots: linked_roots(), macho });
         dump_lean::dump(tcx, &self.switches, results);
         // The native CGUs (step 4), compiled by cg_llvm as usual.
@@ -239,11 +261,36 @@ impl CodegenBackend for RyoBackend {
     ) -> (CompiledModules, WorkProductMap) {
         let ongoing = ongoing_codegen.downcast::<RyoOngoingCodegen>().expect("expected RyoOngoingCodegen from RyoBackend::codegen_crate");
         // cg_llvm downcasts this to its own `OngoingCodegen` (`rustc_codegen_llvm/src/lib.rs:407-410`).
-        let (mut modules, work_products) = self.llvm.join_codegen(ongoing.llvm, sess, incr_comp_session, outputs, crate_info);
+        let (mut modules, mut work_products) = self.llvm.join_codegen(ongoing.llvm, sess, incr_comp_session, outputs, crate_info);
         // The images, so `link_rlib` and the object list include them
-        // (design/backend.md#pipeline step 5).
-        for (name, path) in ongoing.images {
-            modules.modules.push(object_module(name, path));
+        // (design/backend.md#pipeline step 5), and their work products: saved now (cg_ssa saves
+        // only its own modules', inside cg_llvm's join), or the previous session's kept, before
+        // rustc writes the index (design/backend.md#incremental).
+        for img in ongoing.images {
+            let mut m = object_module(img.name, img.path.clone());
+            let wp_name = partition::image_work_product_name(rustc_span::Symbol::intern(&img.cgu));
+            match img.save {
+                ImageSave::Fresh(side) => {
+                    if let Some(incr) = incr_comp_session {
+                        let (id, wp) = rustc_incremental::copy_cgu_workproduct_to_incr_comp_cache_dir(
+                            sess,
+                            incr,
+                            &wp_name,
+                            &[("o", &img.path), ("ryo", &side)],
+                            &[],
+                        );
+                        work_products.insert(id, wp);
+                    }
+                    if !sess.opts.cg.save_temps {
+                        let _ = std::fs::remove_file(&side);
+                    }
+                }
+                ImageSave::Reused(wp, from) => {
+                    m.links_from_incr_cache.push(from);
+                    work_products.insert(rustc_middle::dep_graph::WorkProductId::from_cgu_name(&wp_name), wp);
+                }
+            }
+            modules.modules.push(m);
         }
         (modules, work_products)
     }
@@ -309,6 +356,21 @@ fn binary_format(f: &rustc_target::spec::BinaryFormat) -> object::BinaryFormat {
 /// (design/backend.md#pipeline step 5).
 struct RyoOngoingCodegen {
     llvm: Box<dyn Any>,
-    /// The image objects: module name and path.
-    images: Vec<(String, PathBuf)>,
+    images: Vec<OngoingImage>,
+}
+
+/// An image object of `codegen_crate`: its CGU, module name and path, and how its work product
+/// is saved.
+struct OngoingImage {
+    cgu: String,
+    name: String,
+    path: PathBuf,
+    save: ImageSave,
+}
+
+enum ImageSave {
+    /// Written this session, with its side data at this path.
+    Fresh(PathBuf),
+    /// The previous session's work product, and the cached object it was copied from.
+    Reused(rustc_middle::dep_graph::WorkProduct, PathBuf),
 }
