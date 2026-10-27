@@ -7,6 +7,9 @@
   naming what the change is about: `Backend:`, `JIT:`, `JIT SSA:`, `Image:`, `Rt:`,
   `Build:`, `Test:`, `Bench:`, `Lean:`, `Scripts:`, `CI:`, `Docs:`. Put what needs saying
   under it, ideally in one short paragraph
+- One commit per piece of work. Squash a branch into a single commit, so that rebasing,
+  testing and regenerating dumps and Lean tables happen once; split it only for a good reason
+  (e.g. a fix that predates the branch, or work the user asked to land per task)
 - Codegen dumps. After every change that can affect the generated code (AOT or JIT), run
   `./y.sh build && ./y.sh bench codegen` and commit the regenerated `bench/codegen/`
   with that change, so its diff shows the effect.
