@@ -443,10 +443,10 @@ fn changed_paths(root: &Path) -> Result<Vec<String>, String> {
 
 /// Whether the ryo sysroot can be tested against, i.e. is there and built from the current
 /// inputs: `Err` with the reason if not.
-fn ryo_sysroot_usable(root: &Path) -> Result<(), String> {
+fn ryo_sysroot_usable(info: &crate::utils::RustcInfo, root: &Path) -> Result<(), String> {
     use crate::sysroot::{SYSROOT_DIR, SysrootStatus, ryo_sysroot_status};
     let dist = root.join("dist");
-    match ryo_sysroot_status(&crate::utils::RustcInfo::get()?, &dist) {
+    match ryo_sysroot_status(info, &dist) {
         SysrootStatus::Current => Ok(()),
         SysrootStatus::Missing => Err(format!("no ryo sysroot at {} (`./y.sh build --sysroot ryo`)", dist.join(SYSROOT_DIR).display())),
         SysrootStatus::Stale(why) => Err(format!("the ryo sysroot is stale: {why} (`./y.sh build --sysroot ryo`)")),
@@ -537,6 +537,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
     if !rustc_ryo.exists() {
         return Err("dist/ is missing; run `./y.sh build` first".to_owned());
     }
+    let info = crate::utils::RustcInfo::get()?;
     if opts.clif {
         crate::clif::ensure()?;
     }
@@ -555,7 +556,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
     // Whether any ryo-std variant is selected (also through `--only jit`, the JIT variants, or
     // a changed test program, which runs under every variant).
     let wants_std = variants.iter().any(|v| v.ryo_std && CORPUS.iter().any(|p| sel.corpus(p, v)));
-    if wants_std && let Err(why) = ryo_sysroot_usable(&root) {
+    if wants_std && let Err(why) = ryo_sysroot_usable(&info, &root) {
         // Only an explicit request fails; the fast suite and an escalation to `--full` from
         // the changed paths skip them.
         if opts.full || opts.only == Some(Area::Std) || opts.variants.iter().any(|v| v.starts_with("ryo-std")) {
@@ -569,8 +570,13 @@ pub fn run(opts: &Options) -> Result<(), String> {
 
     let out = root.join("target").join("tests");
     fs::create_dir_all(&out).map_err(|e| format!("creating {}: {e}", out.display()))?;
-    let ctx =
-        Ctx { tests: root.join("tests"), out: out.clone(), rustc_ryo: rustc_ryo.clone(), rustc_clif: crate::utils::dist_bin(&root, "rustc-clif") };
+    let ctx = Ctx {
+        tests: root.join("tests"),
+        out: out.clone(),
+        rustc_ryo: rustc_ryo.clone(),
+        rustc_clif: crate::utils::dist_bin(&root, "rustc-clif"),
+        info: &info,
+    };
     let failed = Mutex::new(Vec::new());
 
     // The runtime once more with handlers that read `fp` from `rbp`, so VM code keeps the
@@ -667,15 +673,15 @@ pub fn run(opts: &Options) -> Result<(), String> {
         let hello = root.join("tests").join("hello.rs");
         type Check<'a> = Box<dyn Fn() -> Result<(), String> + 'a>;
         let checks: [(&str, Check); 11] = [
-            ("rt-core-only", Box::new(|| rt_core_only(&root, &crate::utils::RustcInfo::get()?.host))),
-            ("jit-sealed", Box::new(|| jit_sealed(&root, &out))),
-            ("jit-private-std", Box::new(|| jit_private_std(&rustc_ryo, &root.join("tests").join("vm_jit_private.rs"), &out))),
+            ("rt-core-only", Box::new(|| rt_core_only(&info, &root, &info.host))),
+            ("jit-sealed", Box::new(|| jit_sealed(&info, &root, &out))),
+            ("jit-private-std", Box::new(|| jit_private_std(&info, &rustc_ryo, &root.join("tests").join("vm_jit_private.rs"), &out))),
             ("reject-randomize-layout", Box::new(|| reject_randomize_layout(&rustc_ryo, &hello, &out))),
             ("cgu-deterministic", Box::new(|| cgu_deterministic(&rustc_ryo, &root.join("tests").join("vm_cgu.rs"), &out))),
             ("incremental", Box::new(|| incremental(&rustc_ryo, &root.join("tests").join("incremental"), &out))),
             ("metadata-only", Box::new(|| metadata_only(&rustc_ryo, &hello, &out))),
             ("dump", Box::new(|| dump(&rustc_ryo, &root.join("tests").join("vm_statics.rs"), &out))),
-            ("exports", Box::new(|| same_exports(&rustc_ryo, &root.join("tests").join("vm_exports.rs"), &out))),
+            ("exports", Box::new(|| same_exports(&info, &rustc_ryo, &root.join("tests").join("vm_exports.rs"), &out))),
             ("backtrace", Box::new(|| backtrace(&rustc_ryo, &root.join("tests").join("vm_backtrace.rs"), &out))),
             // It runs the program it builds.
             ("cargo-ryo", Box::new(|| cargo_smoke(&root, &out))),
@@ -695,11 +701,12 @@ pub fn run(opts: &Options) -> Result<(), String> {
     Ok(())
 }
 
-struct Ctx {
+struct Ctx<'a> {
     tests: PathBuf,
     out: PathBuf,
     rustc_ryo: PathBuf,
     rustc_clif: PathBuf,
+    info: &'a crate::utils::RustcInfo,
 }
 
 /// What a test program did when run.
@@ -741,7 +748,7 @@ impl RunResult {
     }
 }
 
-impl Ctx {
+impl Ctx<'_> {
     /// Builds and runs `program` with plain rustc and under each of `variants`, and compares.
     fn test_program(&self, program: &Program, variants: &[&Variant], failed: &Mutex<Vec<String>>) {
         let t = Instant::now();
@@ -807,7 +814,7 @@ impl Ctx {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
         if let Some(lib) = &program.native_lib {
-            lib.build(&dir, None)?;
+            lib.build(self.info, &dir, None)?;
         }
         let mut exe = None;
         let mut vm_fns = Vec::new();

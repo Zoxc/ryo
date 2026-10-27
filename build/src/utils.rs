@@ -52,6 +52,8 @@ pub struct RustcInfo {
     /// The `rustc_driver` dylib the backend links against. The wrappers check that it still
     /// exists, which catches the toolchain being updated after `y build`.
     pub driver: PathBuf,
+    /// `rustc -vV`'s output.
+    pub version: String,
 }
 
 impl RustcInfo {
@@ -72,7 +74,7 @@ impl RustcInfo {
             _ => format!("stable-{host}"),
         };
         let driver = find_driver(&sysroot)?;
-        Ok(RustcInfo { host, sysroot, toolchain, driver })
+        Ok(RustcInfo { host, sysroot, toolchain, driver, version: vv })
     }
 
     /// The toolchain's host tool `name`, e.g. from `llvm-tools`.

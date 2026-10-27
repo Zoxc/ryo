@@ -62,8 +62,7 @@ pub struct NativeLib {
 
 impl NativeLib {
     /// Builds the library into `dir`, for `target` (the host if `None`).
-    pub fn build(&self, dir: &Path, target: Option<&str>) -> Result<(), String> {
-        let info = crate::utils::RustcInfo::get()?;
+    pub fn build(&self, info: &crate::utils::RustcInfo, dir: &Path, target: Option<&str>) -> Result<(), String> {
         let obj = dir.join(format!("{}.o", self.name));
         let mut c = cmd("rustc");
         c.args(["--edition=2024", "--crate-type=lib", "--emit=obj", "-Cpanic=abort", "--crate-name", self.name])

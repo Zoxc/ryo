@@ -66,7 +66,6 @@ pub fn ryo_sysroot_status(info: &RustcInfo, dist: &Path) -> SysrootStatus {
 /// the JIT (as [`build`] gets it).
 fn stamp(info: &RustcInfo, root: &Path, dist: &Path, jit: bool) -> Result<String, String> {
     use std::hash::Hasher;
-    let rustc = crate::utils::output(cmd("rustc").arg("-vV"))?;
     let mut vm = std::hash::DefaultHasher::new();
     hash_tree(&root.join("vm"), Path::new(""), &mut vm)?;
     // `prepare_sources` (how the library is patched) and the build's flags are in this file.
@@ -77,7 +76,7 @@ fn stamp(info: &RustcInfo, root: &Path, dist: &Path, jit: bool) -> Result<String
         "rustc={:x}\nrust-src={}\nbackend={:x}\nvm={:x}\ny={:x}\njit={jit}\n",
         {
             let mut h = std::hash::DefaultHasher::new();
-            h.write(rustc.as_bytes());
+            h.write(info.version.as_bytes());
             h.finish()
         },
         src.display(),

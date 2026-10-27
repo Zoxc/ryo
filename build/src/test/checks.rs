@@ -282,11 +282,10 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
 /// `-Clto`: the image's symbols are listed
 /// as exports for LTO, and `link` must remove those, and only those
 /// (design/backend.md#query-overrides). ELF and Mach-O (`llvm-nm -D`).
-pub(super) fn same_exports(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
+pub(super) fn same_exports(info: &crate::utils::RustcInfo, rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     if cfg!(windows) {
         return Ok(());
     }
-    let info = crate::utils::RustcInfo::get()?;
     let nm = info.tool("llvm-nm");
     let dir = out.join("exports");
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -346,11 +345,10 @@ pub(super) fn outside(s: &str) -> bool {
 /// ELF and Mach-O (`test --cross` checks a Mach-O target's). The JIT's trips are part of it; the JIT thread, which uses std, is the sealed object that
 /// the rlib bundles (design/jit.md#packaging), which `ryo_rt` reaches only through `ryo_jit_start`
 /// and `jit-sealed` checks: this check skips it.
-pub(crate) fn rt_core_only(root: &Path, triple: &str) -> Result<(), String> {
+pub(crate) fn rt_core_only(info: &crate::utils::RustcInfo, root: &Path, triple: &str) -> Result<(), String> {
     if triple.contains("-windows-") {
         return Ok(());
     }
-    let info = crate::utils::RustcInfo::get()?;
     let nm = info.tool("llvm-nm");
     let dist = root.join("dist");
     let mut libs = Vec::new();
@@ -410,13 +408,12 @@ pub(crate) fn rt_core_only(root: &Path, triple: &str) -> Result<(), String> {
 /// The sealed JIT that the native sysroot's `ryo_rt` bundles keeps its std to itself
 /// ([`crate::jit::check_sealed`]). Hosts with the JIT only; `test --cross` checks a cross
 /// target's.
-pub(super) fn jit_sealed(root: &Path, out: &Path) -> Result<(), String> {
-    let info = crate::utils::RustcInfo::get()?;
+pub(super) fn jit_sealed(info: &crate::utils::RustcInfo, root: &Path, out: &Path) -> Result<(), String> {
     if !crate::jit::supported(&info.host) {
         return Ok(());
     }
     let lib = crate::utils::ryo_rt_rlib(root, &info.host);
-    crate::jit::check_sealed(&info, &lib, &out.join("jit-sealed"), &info.host)
+    crate::jit::check_sealed(info, &lib, &out.join("jit-sealed"), &info.host)
 }
 
 /// The JIT's std is its own (design/jit.md#packaging), so the program's can't get in its way:
@@ -425,8 +422,8 @@ pub(super) fn jit_sealed(root: &Path, out: &Path) -> Result<(), String> {
 /// allocating through it), and built with `-Cpanic=abort` and run with `RYO_JIT_TEST_PANIC`
 /// it must still run as without the JIT: every compile panics, which fails the function
 /// instead of aborting. Hosts with the JIT only.
-pub(super) fn jit_private_std(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
-    if !crate::jit::supported(&crate::utils::RustcInfo::get()?.host) {
+pub(super) fn jit_private_std(info: &crate::utils::RustcInfo, rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
+    if !crate::jit::supported(&info.host) {
         return Ok(());
     }
     let want = "sum 499500 words w0,w97,w194,w291,w388,w485,w582,w679,w776,w873,w970\n";

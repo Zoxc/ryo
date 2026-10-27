@@ -127,7 +127,7 @@ pub fn run(target: &str) -> Result<(), String> {
     }
     let rt_imports = if macho { RT_IMPORTS_MACHO } else { RT_IMPORTS };
     let std_dir = dist.join("lib").join("rustlib").join(target).join("lib");
-    let link = Link { target, lld, stubs, macho, std_dir };
+    let link = Link { info: &info, target, lld, stubs, macho, std_dir };
 
     let mut failed = Vec::new();
     // The sealed JIT bundled into this target's `ryo_rt` (design/jit.md#packaging), and its
@@ -159,7 +159,7 @@ pub fn run(target: &str) -> Result<(), String> {
     }
     // `ryo_rt` keeps to `core` (ELF and Mach-O; `y test` checks the host's).
     if macho {
-        match crate::test::rt_core_only(&root, target) {
+        match crate::test::rt_core_only(&info, &root, target) {
             Ok(()) => eprintln!("[y] test --cross {target} rt-core-only: ok"),
             Err(msg) => {
                 eprintln!("[y] test --cross {target} rt-core-only: FAILED: {msg}");
@@ -258,6 +258,7 @@ fn registry_first(info: &RustcInfo, exe: &Path) -> Result<(), String> {
 }
 
 struct Link<'a> {
+    info: &'a RustcInfo,
     target: &'a str,
     lld: PathBuf,
     stubs: PathBuf,
@@ -282,7 +283,7 @@ impl Link<'_> {
         let mut undefined = BTreeSet::new();
         let mut vm_fns = Vec::new();
         if let Some(lib) = &program.native_lib {
-            lib.build(dir, Some(self.target))?;
+            lib.build(self.info, dir, Some(self.target))?;
         }
         for krate in program.crates {
             let mut c = cmd(compiler.get_program());
