@@ -274,7 +274,10 @@ pub struct Call {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Island {
-    pub isl: Sym,
+    /// The island function: a symbol of the unit's image ([`CallTarget::Sym`]), or for one
+    /// inlined from another image, the JIT's call form of its address ([`CallTarget::Func`]
+    /// with an [`crate::asm::FUNC_KINDS`] bit, [`super::inline::rebase`]).
+    pub isl: CallTarget,
     pub ops: Vec<SlotRef>,
     pub site: Site,
 }

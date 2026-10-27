@@ -338,6 +338,8 @@ impl jit::inline::Env for InlineEnv<'_> {
             Ref::Site(Site(s)) => h.data as usize + 8 * s as usize,
             Ref::Const(Const(k)) => ro + h.consts.off as usize + k as usize,
             Ref::Data(Data(k)) => h.data as usize + h.fixup_area as usize + k as usize,
+            // A code constant (sparse switch cases).
+            Ref::Ro(k) if (k as usize) < im.code_consts().len() => im.code_consts().as_ptr() as usize + k as usize,
             _ => return None,
         };
         Some(a as u64)

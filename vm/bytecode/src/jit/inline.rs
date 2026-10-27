@@ -74,9 +74,9 @@ pub trait Env {
     /// through a call slot, directly, or through `r11`), or a call of the root itself. For
     /// the root's image, `None` keeps `t`, as for the root's calls of itself.
     fn retarget(&mut self, img: ImageId, t: CallTarget) -> Option<CallTarget>;
-    /// The address of `r` (a constant, data area offset, symbol slot or site cache slot) of
-    /// image `img`, and for a symbol the value its slot holds (filled before any VM code
-    /// runs, and never again).
+    /// The address of `r` (a constant, data area offset, symbol slot, site cache slot or code
+    /// constant) of image `img`, and for a symbol the value its slot holds (filled before any
+    /// VM code runs, and never again).
     fn addr(&self, img: ImageId, r: Ref) -> Option<u64>;
     fn sym_value(&self, img: ImageId, s: Sym) -> Option<u64>;
     /// How many times function `g`'s AOT code was called and how many loop iterations it
@@ -171,17 +171,21 @@ fn apply_devirt(f: &mut Func, sites: &[(Block, Option<Inst>, CallTarget)]) -> Ve
 
 /// `c`, a function of image `img`, in the terms of the root's image (design/jit.md,
 /// "Inlining", across images): its constants', data's and site caches' addresses become constants, its
-/// symbols' values constants (loaded through for an indirect one), its calls the JIT's call
-/// forms. An error with what it can't express: islands, calls through a symbol's pointer, code
-/// constant arguments, tail calls.
+/// symbols' values constants (loaded through for an indirect one), its calls and islands the
+/// JIT's call forms of their targets, a call through a symbol's pointer (PE) a call of the
+/// loaded pointer, and code constant arguments (sparse switch cases) their addresses in the
+/// callee's image. An error with what it can't express: tail calls.
 pub fn rebase(c: &Func, img: ImageId, env: &mut dyn Env) -> Result<Func, &'static str> {
     let mut g = c.clone();
     for b in c.live_blocks() {
         if matches!(g.blocks[b.idx()].term, Term::TailCall { .. }) {
             return Err("a tail call");
         }
-        for k in 0..g.blocks[b.idx()].insts.len() {
+        // A `while`: a rebased call through a symbol's pointer adds a load before it.
+        let mut k = 0;
+        while k < g.blocks[b.idx()].insts.len() {
             let i = g.blocks[b.idx()].insts[k];
+            k += 1;
             let op = g.insts[i.idx()].op.clone();
             match op {
                 Op::RefAddr(Ref::Sym(s), ind) => {
@@ -205,7 +209,9 @@ pub fn rebase(c: &Func, img: ImageId, env: &mut dyn Env) -> Result<Func, &'stati
                             Arg::Data(x) => Ref::Data(x),
                             Arg::Sym(x) => Ref::Sym(x),
                             Arg::Site(x) => Ref::Site(x),
-                            Arg::Ro(_) => return Err("a code constant argument"),
+                            // A sparse switch's case values: in the callee image's code
+                            // constants, which stay mapped.
+                            Arg::Ro(x) => Ref::Ro(x),
                             _ => continue,
                         };
                         *a = Arg::Imm(env.addr(img, r).ok_or("an address")?);
@@ -216,12 +222,30 @@ pub fn rebase(c: &Func, img: ImageId, env: &mut dyn Env) -> Result<Func, &'stati
                 Op::Call(mut x) => {
                     match x.target {
                         CallTarget::Func(_) | CallTarget::Sym(_) => x.target = env.retarget(img, x.target).ok_or("a call")?,
-                        CallTarget::SymInd(_) => return Err("a call through a symbol's pointer"),
+                        // PE's `__imp_` indirection: a call of the pointer the slot's value
+                        // points at, loaded before the call (the loader fills it).
+                        CallTarget::SymInd(s) => {
+                            let v = env.sym_value(img, s).ok_or("a symbol")?;
+                            let kv = g.konst(v, 8);
+                            let ld = g.inst(b, Op::Load(8, 0), alloc::vec![kv], &[8]);
+                            let insts = &mut g.blocks[b.idx()].insts;
+                            insts.pop();
+                            insts.insert(k - 1, ld);
+                            k += 1;
+                            let p = g.result(ld);
+                            g.insts[i.idx()].args.insert(0, p);
+                            x.target = CallTarget::Ptr;
+                        }
                         CallTarget::Ptr => {}
                     }
                     g.insts[i.idx()].op = Op::Call(x);
                 }
-                Op::Island(_) => return Err("an island"),
+                // A native call with the island ABI (`fp`, the operand array), of the
+                // island's address: its slot is filled before VM code runs.
+                Op::Island(mut x) => {
+                    x.isl = env.retarget(img, x.isl).ok_or("an island")?;
+                    g.insts[i.idx()].op = Op::Island(x);
+                }
                 _ => {}
             }
         }

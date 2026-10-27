@@ -17,3 +17,12 @@ remove it once a Lean session has handled it.
   used to panic and leave the whole function in AOT code (`Vec::extend_with`). Only matters
   if the Lean model covers the SSA tier. Commit: "JIT inliner: skip call sites an earlier
   splice pruned".
+
+- The SSA tier inlines more callees of other images (`inline::rebase`): an island becomes
+  a call of the island's address in the JIT's call form (`Island::isl` is now a
+  `CallTarget`: `Sym` in the unit's image, or `Func` with a `FUNC_KINDS` bit), a
+  `call.sym.ind` a `Load` of the slot's value and a `CallTarget::Ptr` call of it, and a
+  handler's code constant argument (`Arg::Ro`, sparse switch cases) an `Arg::Imm` of its
+  address in the callee image's code constants (`Env::addr` takes `Ref::Ro`). Only matters
+  if the Lean model covers the SSA tier. Commit: "JIT: inline islands, indirect symbol calls
+  and sparse switches across images".

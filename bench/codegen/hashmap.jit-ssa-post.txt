@@ -4738,7 +4738,7 @@ b110(): ; Body
     AStore(AllocaId(277), 0, 8) (v250)
     AStore(AllocaId(275), 8, 8) (v249)
     AStore(AllocaId(275), 0, 8) (v251)
-    Island(Island { isl: Sym(43), ops: [Alloca(AllocaId(275), 8), Alloca(AllocaId(275), 0), Alloca(AllocaId(277), 0), Alloca(AllocaId(276), 0)], site: None }) ()
+    Island(Island { isl: image.sym43, ops: [Alloca(AllocaId(275), 8), Alloca(AllocaId(275), 0), Alloca(AllocaId(277), 0), Alloca(AllocaId(276), 0)], site: None }) ()
     v253:4 = ALoad(AllocaId(276), 0, 4) ()
     v254:1 = Cmp(Eq, 4) (v253, 0x0)
     jmp b114(v254)

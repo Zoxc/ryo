@@ -2137,7 +2137,7 @@ b4(v10:8, v39:8, v55:8, v58:8, v64:8, v72:1, v110:8, v126:8, v134:8, v142:8, v20
 b5(): ; Body
     AStore(AllocaId(0), 0, 8) (v10)
     AStore(AllocaId(0), 8, 8) (0x3)
-    Island(Island { isl: Sym(34), ops: [Alloca(AllocaId(0), 0), Alloca(AllocaId(11), 0)], site: None }) ()
+    Island(Island { isl: sym0, ops: [Alloca(AllocaId(0), 0), Alloca(AllocaId(11), 0)], site: None }) ()
     jmp b22()
 b6(v13:8, v16:8, v17:8, v37:8, v40:8, v65:8, v73:1, v112:8, v128:8, v136:8, v144:8, v207:8): ; Body head 1
     v12:8 = ALoad(AllocaId(13), 8, 8) ()
@@ -2391,7 +2391,7 @@ b4(v10:8, v39:8, v55:8, v58:8, v64:8, v72:1, v110:8, v126:8, v134:8, v142:8, v20
 b5(): ; Body
     AStore(AllocaId(0), 0, 8) (v10)
     AStore(AllocaId(0), 8, 8) (0x3)
-    Island(Island { isl: Sym(34), ops: [Alloca(AllocaId(0), 0), Alloca(AllocaId(11), 0)], site: None }) ()
+    Island(Island { isl: sym0, ops: [Alloca(AllocaId(0), 0), Alloca(AllocaId(11), 0)], site: None }) ()
     jmp b22()
 b6(v13:8, v16:8, v17:8, v37:8, v40:8, v65:8, v73:1, v112:8, v128:8, v136:8, v144:8, v207:8): ; Body head 1
     v12:8 = ALoad(AllocaId(13), 8, 8) ()
@@ -3345,11 +3345,11 @@ b0(v0:1, v1:8, v2:8): ; Entry
     AStore(AllocaId(0), 8, 1) (v0)
     AStore(AllocaId(0), 0, 8) (v4)
     AStore(AllocaId(0), 16, 8) (v6)
-    Island(Island { isl: Sym(12), ops: [Alloca(AllocaId(0), 0), Alloca(AllocaId(6), 0)], site: None }) ()
+    Island(Island { isl: sym0, ops: [Alloca(AllocaId(0), 0), Alloca(AllocaId(6), 0)], site: None }) ()
     AStore(AllocaId(0), 8, 1) (v0)
     AStore(AllocaId(0), 0, 8) (v6)
     AStore(AllocaId(0), 16, 8) (v4)
-    Island(Island { isl: Sym(12), ops: [Alloca(AllocaId(0), 0), Alloca(AllocaId(12), 0)], site: None }) ()
+    Island(Island { isl: sym0, ops: [Alloca(AllocaId(0), 0), Alloca(AllocaId(12), 0)], site: None }) ()
     v7:8 = ALoad(AllocaId(6), 0, 8) ()
     AStore(AllocaId(5), 0, 8) (v7)
     v8:8 = ALoad(AllocaId(12), 0, 8) ()
@@ -3360,7 +3360,7 @@ b0(v0:1, v1:8, v2:8): ; Entry
 b1(): ; Body
     jmp b6()
 b2(): ; Body head 0
-    Island(Island { isl: Sym(14), ops: [Scratch(0), Scratch(0)], site: None }) ()
+    Island(Island { isl: sym3, ops: [Scratch(0), Scratch(0)], site: None }) ()
     jmp b7()
 b3(): ; Body head 1
     hcall resume [(Fp, [None, None]), (Imm(4294967232), [Some(Scratch(0)), None])] ins [0] outs [] (v10)
@@ -3379,7 +3379,7 @@ b6(): ; Body
     AStore(AllocaId(0), 8, 1) (v0)
     AStore(AllocaId(0), 0, 8) (v16)
     AStore(AllocaId(0), 16, 8) (v17)
-    Island(Island { isl: Sym(15), ops: [Alloca(AllocaId(0), 0), Alloca(AllocaId(4), 0)], site: None }) ()
+    Island(Island { isl: sym5, ops: [Alloca(AllocaId(0), 0), Alloca(AllocaId(4), 0)], site: None }) ()
     jmp b2()
 b7(): ; Body
     v18:8 = ALoad(AllocaId(4), 0, 8) ()

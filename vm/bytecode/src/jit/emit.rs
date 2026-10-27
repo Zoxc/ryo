@@ -1410,8 +1410,11 @@ impl<'a> E<'a> {
                 let (fp, ops) = if self.mode.pe { (R::Rcx, R::Rdx) } else { (R::Rdi, R::Rsi) };
                 self.fp_into(fp);
                 self.a.x().lea(ops, Mem::Rip(Ref::Ro(o)));
-                let s = isl.isl;
-                self.call_with_site(isl.site, pad, |x| x.call_mem(Mem::Rip(Ref::Sym(s))));
+                match isl.isl {
+                    CallTarget::Sym(s) => self.call_with_site(isl.site, pad, |x| x.call_mem(Mem::Rip(Ref::Sym(s)))),
+                    CallTarget::Func(g) => self.call_with_site(isl.site, pad, |x| x.call_func(g)),
+                    t => unreachable!("an island called through {t:?}"),
+                }
             }
         }
         Ok(())

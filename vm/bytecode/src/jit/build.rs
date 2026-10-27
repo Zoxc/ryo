@@ -585,7 +585,7 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
                         let r = if ri.accs[k].size == 0 { Some(SlotRef::Scratch(0)) } else { s.slot_ref(i, k) };
                         refs.push(r.ok_or(Unsupported("a promoted island operand"))?);
                     }
-                    let isl = Island { isl: *isl, ops: refs, site };
+                    let isl = Island { isl: CallTarget::Sym(*isl), ops: refs, site };
                     s.f.inst(cur, Op::Island(Box::new(isl)), Vec::new(), &[]);
                     if let Unwind::Pad { pad, .. } = ri.unwind {
                         let cont = s.new_block(BlockKind::Body, 1);

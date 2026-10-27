@@ -135,6 +135,7 @@ fn syms() -> Vec<(&'static str, usize)> {
         ("throw", throw as *const () as usize),
         ("delete_exc", delete_exc as *const () as usize),
         ("throw_all", throw_all as *const () as usize),
+        ("isl", isl_mul10_add7 as *const () as usize),
     ]
 }
 
@@ -1426,6 +1427,150 @@ fn inline_across_images() {
     if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
         assert_eq!(state(&img_b, g), JIT_COLD, "g inlined into f");
         assert_eq!(state(&img_b, h), JIT_COLD, "h inlined into f");
+    }
+    check_stats(before, 1);
+}
+
+/// An island: `fp[ops[1]] = fp[ops[0]] * 10 + 7` (`ops` points past the count).
+extern "C" fn isl_mul10_add7(fp: *mut u8, ops: *const u32) {
+    unsafe {
+        let at = |k: usize| fp.offset(*ops.add(k) as i32 as isize) as *mut u64;
+        *at(1) = (*at(0)).wrapping_mul(10).wrapping_add(7);
+    }
+}
+
+/// Inlining across images, a callee with an island: `g` of image B runs `isl_mul10_add7`
+/// through its own symbol slot; inlined into `f` of image A, the island is called by its
+/// address in A's code (`rebase`), with the island ABI.
+#[test]
+fn inline_island_across_images() {
+    let (_g, before) = start();
+    // Image B. g(x) = isl(x) + 1. x@-8, r@-16.
+    let mut w = ImageWriter::new(unique_scid());
+    let mut defs = Defs::default();
+    let s_isl = w.symbol("isl", 0);
+    let mut a = Asm::new();
+    a.i(arg(-8, 0));
+    let at = a.i(Insn::Island { isl: s_isl, ops: List::from_words(&[-8i32 as u32, -16i32 as u32]) });
+    a.i(Insn::AddImmW64 { d: Slot(-16), a: Slot(-16), imm: 1 });
+    a.ret(Slot(-16), 8);
+    // The operands' extents (`Lend` scopes), as the backend gives them.
+    let lend = |off| Scope { code_offset: at, frame_offset: off, size: 8, kind: ScopeKind::Lend };
+    let g = defs.add(&mut w, func(a.done(), 16, 0, 8), vec![lend(-8), lend(-16)]);
+    let img_b = defs.build(w);
+
+    // Image A. f(x) = g(x) * 2, g through a symbol. x@16; x'@-8, r@-16.
+    let mut w = ImageWriter::new(unique_scid());
+    let s_g = w.symbol("g", 0);
+    let mut a = Asm::new();
+    a.i(Insn::MovW64 { d: Slot(-8), s: Slot(16) });
+    a.i(Insn::CallSym { d: Slot(-16), sym: s_g, k: 8, a: List::from_words(&regs(&[-8])) });
+    a.i(Insn::AddW64 { d: Slot(-16), a: Slot(-16), b: Slot(-16) });
+    a.ret(Slot(-16), 8);
+    let f = w.add_function(func(a.done(), 16, 8, 8));
+    let img_a = build(w, &[("g", img_b.code(g) as usize)]);
+
+    for x in [0u64, 3, 1 << 40] {
+        assert_eq!(ok::<_, u64>(img_a.id(f), (x,)), x.wrapping_mul(10).wrapping_add(8).wrapping_mul(2), "f({x})");
+    }
+    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
+        assert_eq!(state(&img_b, g), JIT_COLD, "g inlined into f");
+    }
+    check_stats(before, 1);
+}
+
+/// Inlining across images, a callee with a sparse switch: `g` of image B's case values are in
+/// B's code constants; inlined into `f` of image A, the switch handler gets their address in B
+/// (`rebase`).
+#[test]
+fn inline_sparse_switch_across_images() {
+    let (_g, before) = start();
+    // Image B. g(x) = switch x { v_i => 100 + i, _ => 99 }. x@-8, r@-16.
+    let mut w = ImageWriter::new(unique_scid());
+    let vals = [2u64, 17, 1 << 33, 0x1234_5678_9abc_def0, u64::MAX];
+    let mut a = Asm::new();
+    a.i(arg(-8, 0));
+    let cw = list_words(vals.iter().map(|&v| Case64 { value: v, target: Target(0) }));
+    let sw = a.i(Insn::SwitchSparseW64 { s: Slot(-8), default: Target(0), cases: List::from_words(&cw) });
+    let mut targets = vec![];
+    for i in 0..vals.len() {
+        targets.push(a.i(Insn::ImmW64 { d: Slot(-16), imm: 100 + i as u64 }));
+        a.ret(Slot(-16), 8);
+    }
+    let d = a.i(Insn::ImmW64 { d: Slot(-16), imm: 99 });
+    a.patch(sw, "default", d);
+    a.ret(Slot(-16), 8);
+    let mut code = a.done();
+    let ew = cw.len() / vals.len();
+    let base = sw as usize + ryo_bytecode::full::off::SwitchSparseW64::cases + 1;
+    for (i, t) in targets.iter().enumerate() {
+        code[base + i * ew + ew - 1] = t.wrapping_sub(sw);
+    }
+    let g = w.add_function(func(code, 16, 0, 8));
+    let img_b = build(w, &syms());
+
+    // Image A. f(x) = g(x) + 1, g through a symbol. x@16; x'@-8, r@-16.
+    let mut w = ImageWriter::new(unique_scid());
+    let s_g = w.symbol("g", 0);
+    let mut a = Asm::new();
+    a.i(Insn::MovW64 { d: Slot(-8), s: Slot(16) });
+    a.i(Insn::CallSym { d: Slot(-16), sym: s_g, k: 8, a: List::from_words(&regs(&[-8])) });
+    a.i(Insn::AddImmW64 { d: Slot(-16), a: Slot(-16), imm: 1 });
+    a.ret(Slot(-16), 8);
+    let f = w.add_function(func(a.done(), 16, 8, 8));
+    let img_a = build(w, &[("g", img_b.code(g) as usize)]);
+
+    let mut probes: Vec<u64> = vals.to_vec();
+    probes.extend([0, 3, 18, 1 << 32, u64::MAX - 1]);
+    for x in probes {
+        let want = vals.iter().position(|&v| v == x).map_or(99, |i| 100 + i as u64) + 1;
+        assert_eq!(ok::<_, u64>(img_a.id(f), (x,)), want, "f({x:#x})");
+    }
+    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
+        assert_eq!(state(&img_b, g), JIT_COLD, "g inlined into f");
+    }
+    check_stats(before, 1);
+}
+
+/// The import slot `call.sym.ind` loads `mul3` through (as PE's `__imp_mul3`).
+static MUL3_IMP: AtomicU64 = AtomicU64::new(0);
+
+/// Inlining across images, a callee calling through a symbol's pointer (PE's `__imp_`
+/// form): `g` of image B calls `mul3` through `MUL3_IMP`; inlined into `f` of image A, the
+/// call loads the pointer from the slot's address and calls it (`rebase`).
+#[test]
+fn inline_indirect_symbol_call_across_images() {
+    let (_g, before) = start();
+    MUL3_IMP.store(mul3 as *const () as u64, SeqCst);
+    // Image B. g(x) = mul3(x) + 1, through the slot's pointer. x@-8, r@-16.
+    let mut w = ImageWriter::new(unique_scid());
+    let s_imp = w.symbol("mul3_imp", ryo_bytecode::image::SYM_INDIRECT);
+    let mut a = Asm::new();
+    a.i(arg(-8, 0));
+    a.i(Insn::CallSymInd { d: Slot(-16), sym: s_imp, k: 8, a: List::from_words(&regs(&[-8])) });
+    a.i(Insn::AddImmW64 { d: Slot(-16), a: Slot(-16), imm: 1 });
+    a.ret(Slot(-16), 8);
+    let g = w.add_function(func(a.done(), 16, 0, 8));
+    let mut sy = syms();
+    sy.push(("mul3_imp", &raw const MUL3_IMP as usize));
+    let img_b = build(w, &sy);
+
+    // Image A. f(x) = g(x) * 2, g through a symbol. x@16; x'@-8, r@-16.
+    let mut w = ImageWriter::new(unique_scid());
+    let s_g = w.symbol("g", 0);
+    let mut a = Asm::new();
+    a.i(Insn::MovW64 { d: Slot(-8), s: Slot(16) });
+    a.i(Insn::CallSym { d: Slot(-16), sym: s_g, k: 8, a: List::from_words(&regs(&[-8])) });
+    a.i(Insn::AddW64 { d: Slot(-16), a: Slot(-16), b: Slot(-16) });
+    a.ret(Slot(-16), 8);
+    let f = w.add_function(func(a.done(), 16, 8, 8));
+    let img_a = build(w, &[("g", img_b.code(g) as usize)]);
+
+    for x in [0u64, 5, 1 << 40] {
+        assert_eq!(ok::<_, u64>(img_a.id(f), (x,)), x.wrapping_mul(3).wrapping_add(1).wrapping_mul(2), "f({x})");
+    }
+    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
+        assert_eq!(state(&img_b, g), JIT_COLD, "g inlined into f");
     }
     check_stats(before, 1);
 }

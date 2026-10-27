@@ -664,9 +664,13 @@ the units that inline it.
   handler arguments) become 64-bit constants, a symbol's `RefAddr` the value its slot held
   when compiling (slots are filled before VM code runs and never again; an indirect one
   loads through it at run time), its calls of its functions and symbols the JIT's call
-  forms (or a direct call of the root). Callees with islands, calls through a symbol's
-  pointer, code constant arguments (sparse switches) or tail calls aren't inlined across
-  images. Its counters are its own image's records. Unwinding needs nothing more: every
+  forms (or a direct call of the root), its islands the call form of the island's address
+  (the island ABI is unchanged: `fp` and the operand array the unit lays out), a call
+  through a symbol's pointer (PE's `__imp_`) a load of that pointer and a call of it, and
+  code constant arguments (a sparse switch's case values) their addresses in its image's
+  code constants. With one image per codegen unit ([backend.md](backend.md#pipeline)),
+  this is what lets calls between a crate's own CGUs be inlined as calls inside one image
+  are. Callees with tail calls aren't inlined (in any image). Its counters are its own image's records. Unwinding needs nothing more: every
   image's unwind information names the program's `rust_eh_personality`, which the unit's
   uses too. Images are never unregistered, so the inlined addresses stay valid; a symbol
   bound to another image's function is resolved when compiling, as the call forms already
