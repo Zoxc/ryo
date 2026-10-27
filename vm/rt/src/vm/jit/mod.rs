@@ -560,17 +560,12 @@ fn trip(rec: *mut JitRecord) -> u32 {
     }
     // With `sync`, a queued record keeps its counters unbiased, so that every thread that
     // trips meanwhile waits for the compile too, rather than running on in AOT code.
-    if !cfg.sync {
-        JitRecord::settle(rec);
-    }
-    if cfg.sync && JitRecord::state(rec).load(SeqCst) == JIT_QUEUED {
+    if cfg.sync {
         while JitRecord::state(rec).load(SeqCst) == JIT_QUEUED && !DISABLED.load(SeqCst) {
             futex_wait(JitRecord::state(rec), JIT_QUEUED);
         }
     }
-    if cfg.sync {
-        JitRecord::settle(rec);
-    }
+    JitRecord::settle(rec);
     JitRecord::state(rec).load(SeqCst)
 }
 
@@ -620,22 +615,15 @@ unsafe extern "C" {
 /// thread couldn't start.
 fn start() -> bool {
     let cfg = config();
-    let mut handlers = [ptr::null(); ryo_bytecode::Opcode::COUNT];
-    for (h, &op) in handlers.iter_mut().zip(ryo_bytecode::ALL_OPCODES.iter()) {
-        *h = super::interp::handler(op).unwrap_or(ptr::null());
-    }
-    let mut reg_handlers = [ptr::null(); ryo_bytecode::Opcode::COUNT];
-    for (h, &op) in reg_handlers.iter_mut().zip(ryo_bytecode::ALL_OPCODES.iter()) {
-        *h = super::interp::reg_handler(op).unwrap_or(ptr::null());
-    }
+    let table = |f: fn(ryo_bytecode::Opcode) -> Option<*const ()>| -> [*const (); ryo_bytecode::Opcode::COUNT] {
+        core::array::from_fn(|i| f(ryo_bytecode::ALL_OPCODES[i]).unwrap_or(ptr::null()))
+    };
+    let handlers = table(super::interp::handler);
+    let reg_handlers = table(super::interp::reg_handler);
     #[cfg(all(feature = "pe-test", not(windows)))]
     let (pe_handlers, pe_reg_handlers) = {
         static PE: Once<[[*const (); ryo_bytecode::Opcode::COUNT]; 2]> = Once(UnsafeCell::new(MaybeUninit::uninit()));
-        let mut t = [[ptr::null(); ryo_bytecode::Opcode::COUNT]; 2];
-        for (k, &op) in ryo_bytecode::ALL_OPCODES.iter().enumerate() {
-            t[0][k] = super::interp::pe_handler(op).unwrap_or(ptr::null());
-            t[1][k] = super::interp::pe_reg_handler(op).unwrap_or(ptr::null());
-        }
+        let t = [table(super::interp::pe_handler), table(super::interp::pe_reg_handler)];
         // SAFETY: only the first push gets here, once, as for `RT_API`.
         let t = unsafe { (*PE.0.get()).write(t) };
         (&raw const t[0], &raw const t[1])
