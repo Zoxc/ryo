@@ -436,7 +436,7 @@ impl Counts {
 /// simulation (as `compare-branches.py --metric cachegrind`).
 fn cachegrind(job: &Job) -> Result<Counts, String> {
     let mut c = cmd("valgrind");
-    c.args(["--tool=cachegrind", "--cache-sim=yes", "--branch-sim=yes", "--trace-children=yes", "--cachegrind-out-file=/dev/null"])
+    c.args(["--tool=cachegrind", "--vgdb=no", "--cache-sim=yes", "--branch-sim=yes", "--trace-children=yes", "--cachegrind-out-file=/dev/null"])
         .arg(&job.program)
         .args(&job.args)
         .envs(job.env.iter().copied())

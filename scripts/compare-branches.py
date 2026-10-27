@@ -284,7 +284,7 @@ class Metric:
     def wrap(self, cmd):
         if self.counts:
             sim = "yes" if self.cache_sim else "no"
-            cmd = ["valgrind", "--tool=cachegrind", f"--cache-sim={sim}", f"--branch-sim={sim}", "--trace-children=yes",
+            cmd = ["valgrind", "--tool=cachegrind", "--vgdb=no", f"--cache-sim={sim}", f"--branch-sim={sim}", "--trace-children=yes",
                    "--cachegrind-out-file=/dev/null", *cmd]
         if self.pin is not None:
             cmd = ["taskset", "-c", str(self.pin), *cmd]
