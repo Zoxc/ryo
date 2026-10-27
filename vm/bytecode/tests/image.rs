@@ -83,6 +83,8 @@ fn link(obj: &ImageObject, resolve: impl Fn(&SymbolDef) -> u64) -> Linked {
             RelocTarget::Probe => probe_addr(&l.text),
             RelocTarget::TripEntry => trip_addr(&l.text, false),
             RelocTarget::TripOsr => trip_addr(&l.text, true),
+            // Only `.xdata` refers to it.
+            RelocTarget::SehHandler => continue,
         };
         let v = target.wrapping_add(r.addend as u64);
         let buf = match r.section {
@@ -328,19 +330,40 @@ fn pe_unwind_info() {
     // Each function's body (without counters, no stub), and f0's pad region (its landing
     // pad's block resumes).
     assert_eq!(obj.unwind[0].1.len(), (3 + 1) * 12);
-    // f0: version 1, prologue 12 bytes, 5 codes (alloc small 48 - 16, set fpreg, push rsi,
-    // push rdi, push rbp), rbp at rsp + 16.
-    assert_eq!(&obj.unwind[1].1[..14], [1, 12, 5, 5 | 1 << 4, 12, 2 | (32 / 8 - 1) << 4, 8, 3, 3, 6 << 4, 2, 7 << 4, 1, 5 << 4]);
-    // Then the region's.
-    assert_eq!(&obj.unwind[1].1[16..24], ryo_bytecode::image::pe_region_unwind_info());
+    // f0: version 1, the handler flags, prologue 12 bytes, 5 codes (alloc small 48 - 16, set
+    // fpreg, push rsi, push rdi, push rbp), rbp at rsp + 16; then (codes padded to 6) the
+    // handler's RVA and its data: no offset, the region's, and the LSDA.
+    let infos = pe_infos(&obj);
     let f0 = &obj.functions[0];
+    let x = &obj.unwind[1].1;
+    assert_eq!(&x[..14], [1 | 0x18, 12, 5, 5 | 1 << 4, 12, 2 | (32 / 8 - 1) << 4, 8, 3, 3, 6 << 4, 2, 7 << 4, 1, 5 << 4]);
+    let lsda = ryo_bytecode::asm::lsda::write(&f0.call_sites);
+    assert_eq!(&x[20..infos[1]], &ryo_bytecode::image::pe_with_handler(&[0; 4], &ryo_bytecode::image::pe_handler_data(0, f0.region, &lsda)).0[8..]);
+    // Then the region's, with the handler, its data at the region's offset.
+    let region = ryo_bytecode::image::pe_with_handler(
+        &ryo_bytecode::image::pe_region_unwind_info(),
+        &ryo_bytecode::image::pe_handler_data(f0.region, f0.region, &lsda),
+    )
+    .0;
+    assert_eq!(&x[infos[1]..][..region.len()], region);
     assert!(f0.entry_stub == f0.region && f0.region < f0.len);
     // The region starts with its entry, `sub rsp, 40; jmp r11`, then the landing pad.
     assert_eq!(obj.text[(f0.start + f0.region) as usize..][..7], [0x48, 0x83, 0xec, 40, 0x41, 0xff, 0xe3]);
     assert_eq!(f0.call_sites[0].pad, Some(f0.region + 7));
-    assert_eq!(obj.relocs.iter().filter(|r| r.kind == RelocKind::Rva32).count(), 12);
+    // The `.pdata` fields, and every `UNWIND_INFO`'s handler.
+    assert_eq!(obj.relocs.iter().filter(|r| r.kind == RelocKind::Rva32).count(), 12 + 4);
+    let handlers: Vec<_> = obj.relocs.iter().filter(|r| r.target == RelocTarget::SehHandler).map(|r| (r.section, r.offset)).collect();
+    assert_eq!(handlers[..2], [(Section::Xdata, 16), (Section::Xdata, infos[1] as u64 + 8)]);
     // No personality on PE.
     assert_eq!(obj.symbols.len(), 4);
+}
+
+/// The `.xdata` offsets of a PE image object's `UNWIND_INFO`s, in `.pdata` order.
+fn pe_infos(obj: &ImageObject) -> Vec<usize> {
+    let mut out: Vec<(u64, usize)> =
+        obj.relocs.iter().filter(|r| r.section == Section::Pdata && r.offset % 12 == 8).map(|r| (r.offset, r.addend as usize)).collect();
+    out.sort();
+    out.into_iter().map(|(_, x)| x).collect()
 }
 
 /// `pe_unwind_info` byte for byte (hand-checked against the x64 `UNWIND_INFO` layout, and
@@ -426,6 +449,7 @@ fn pe_unwind_with_handler() {
     assert_eq!(unsafe { PeHandlerData::from_ptr(data.as_ptr()) }, Some(d));
     assert_eq!(PeHandlerData::parse(&data[..data.len() - 1]), None);
     for (pc, want) in [(9, None), (10, Some(sites[0])), (14, Some(sites[0])), (15, None), (25, Some(sites[1])), (134, Some(sites[2])), (500, None)] {
+        let want = want.map(|s: CallSite| lsda::Site { start: s.start, len: s.len, pad: s.pad, catch: s.catch });
         assert_eq!(lsda::find(d.lsda, pc), Some(want), "pc {pc}");
     }
     assert_eq!(lsda::find(&l[1..], 10), None);
@@ -931,7 +955,8 @@ fn jit_records() {
     let obj = sample().finish(Mode { pe: true, ..AOT }).unwrap();
     assert_eq!(obj.unwind[0].1.len(), (2 * 3 + 1) * 12);
     let x = &obj.unwind[1].1;
-    assert_eq!(&x[..14], [1, 21, 5, 5 | 1 << 4, 21, 2 | (32 / 8 - 1) << 4, 17, 3, 12, 6 << 4, 11, 7 << 4, 10, 5 << 4]);
-    assert_eq!(&x[16..20], [1, 0, 0, 0]);
-    assert_eq!(&x[20..28], ryo_bytecode::image::pe_region_unwind_info());
+    let infos = pe_infos(&obj);
+    assert_eq!(&x[..14], [1 | 0x18, 21, 5, 5 | 1 << 4, 21, 2 | (32 / 8 - 1) << 4, 17, 3, 12, 6 << 4, 11, 7 << 4, 10, 5 << 4]);
+    assert_eq!(&x[infos[1]..][..4], [1, 0, 0, 0]);
+    assert_eq!(&x[infos[2]..][..8], [&[1 | 0x18][..], &ryo_bytecode::image::pe_region_unwind_info()[1..]].concat());
 }

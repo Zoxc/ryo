@@ -46,7 +46,6 @@ pub mod frame;
 mod inline;
 pub(crate) mod leb;
 pub mod list;
-#[cfg(feature = "alloc")]
 pub mod lsda;
 #[cfg(feature = "alloc")]
 pub mod osr;

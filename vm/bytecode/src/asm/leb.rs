@@ -47,12 +47,11 @@ impl Reader<'_> {
     }
 
     /// A `u32` in its shortest encoding (no trailing `0x80`-continued zero byte).
-    #[cfg(feature = "alloc")]
     pub fn minimal_u32(&mut self) -> Option<u32> {
         let before = self.0;
         let v = self.u32()?;
         let n = before.len() - self.0.len();
-        (n == 1 || before[n - 1] != 0).then_some(v)
+        (n == 1 || before.get(n - 1) != Some(&0)).then_some(v)
     }
 
     pub fn zigzag_i32(&mut self) -> Option<i32> {

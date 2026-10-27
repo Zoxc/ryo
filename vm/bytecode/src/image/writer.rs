@@ -141,6 +141,8 @@ pub enum RelocTarget {
     /// start at.
     TripEntry,
     TripOsr,
+    /// `ryo_seh_handler` in `ryo_rt`: the language handler of PE unwind info.
+    SehHandler,
 }
 
 /// How a relocated field is written.
@@ -1057,34 +1059,43 @@ fn advance(fde: &mut Vec<u8>, loc: &mut u32, to: u32) {
     }
 }
 
-/// `.pdata` and `.xdata`: per function, its range and unwind info ([`pe_unwind_info`]).
-/// There is no exception handler: panics unwind through VM frames, but their landing pads
-/// don't run. The counter check before the prologue counts as part of it (it moves nothing),
-/// the entry's counter stub after the code, which runs before the prologue, has an entry of
-/// its own without unwind codes, as a leaf ([`PE_LEAF_UNWIND`]), and so has the pad region
-/// after it ([`pe_region_unwind_info`]).
+/// `.pdata` and `.xdata`: per function, its range and unwind info ([`pe_unwind_info`]), with
+/// `ryo_seh_handler` as the language handler of both phases and its handler data
+/// ([`pe_handler_data`]: the function's LSDA), so that its landing pads run
+/// (design/vm.md#unwinding). The counter check before the prologue counts as part of it (it
+/// moves nothing). The entry's counter stub after the code, which runs before the prologue
+/// and calls nothing that unwinds, has an entry of its own without unwind codes or a handler,
+/// as a leaf ([`PE_LEAF_UNWIND`]); the pad region after it has one with the handler
+/// ([`pe_region_unwind_info`]).
 fn unwind_pe(funcs: &[FuncCode], mode: Mode, relocs: &mut Vec<Reloc>) -> Vec<(Section, Vec<u8>)> {
-    let rva = |section, offset, target, addend| Reloc { section, offset, target: RelocTarget::Section(target), addend, kind: RelocKind::Rva32 };
+    let rva = |section, offset, target, addend| Reloc { section, offset, target, addend, kind: RelocKind::Rva32 };
     let (mut pdata, mut xdata) = (Vec::new(), Vec::new());
-    let mut entry = |pdata: &mut Vec<u8>, start: u32, end: u32, x: i64| {
+    let entry = |pdata: &mut Vec<u8>, relocs: &mut Vec<Reloc>, start: u32, end: u32, x: i64| {
         let p = pdata.len() as u64;
-        relocs.push(rva(Section::Pdata, p, Section::Text, start as i64));
-        relocs.push(rva(Section::Pdata, p + 4, Section::Text, end as i64));
-        relocs.push(rva(Section::Pdata, p + 8, Section::Xdata, x));
+        relocs.push(rva(Section::Pdata, p, RelocTarget::Section(Section::Text), start as i64));
+        relocs.push(rva(Section::Pdata, p + 4, RelocTarget::Section(Section::Text), end as i64));
+        relocs.push(rva(Section::Pdata, p + 8, RelocTarget::Section(Section::Xdata), x));
         pdata.extend_from_slice(&[0; 12]);
     };
+    // `info` with the handler and its data, the relocation of its RVA.
+    let with_handler = |xdata: &mut Vec<u8>, relocs: &mut Vec<Reloc>, info: &[u8], data: &[u8]| {
+        let (bytes, field) = pe_with_handler(info, data);
+        relocs.push(rva(Section::Xdata, (xdata.len() + field) as u64, RelocTarget::SehHandler, 0));
+        xdata.extend_from_slice(&bytes);
+    };
     for f in funcs {
-        let x = xdata.len() as i64;
-        entry(&mut pdata, f.start, f.start + f.entry_stub, x);
+        let lsda = asm::lsda::write(&f.call_sites);
+        let region = if f.region < f.len { f.region } else { 0 };
+        entry(&mut pdata, relocs, f.start, f.start + f.entry_stub, xdata.len() as i64);
         let ef = EhFunc { len: f.len, frame_size: f.frame_size, prologue: f.prologue, entry_stub: f.entry_stub };
-        xdata.extend_from_slice(&pe_unwind_info(&ef, mode));
+        with_handler(&mut xdata, relocs, &pe_unwind_info(&ef, mode), &pe_handler_data(0, region, &lsda));
         if f.entry_stub < f.region {
-            entry(&mut pdata, f.start + f.entry_stub, f.start + f.region, xdata.len() as i64);
+            entry(&mut pdata, relocs, f.start + f.entry_stub, f.start + f.region, xdata.len() as i64);
             xdata.extend_from_slice(&PE_LEAF_UNWIND);
         }
-        if f.region < f.len {
-            entry(&mut pdata, f.start + f.region, f.start + f.len, xdata.len() as i64);
-            xdata.extend_from_slice(&pe_region_unwind_info());
+        if region != 0 {
+            entry(&mut pdata, relocs, f.start + region, f.start + f.len, xdata.len() as i64);
+            with_handler(&mut xdata, relocs, &pe_region_unwind_info(), &pe_handler_data(region, region, &lsda));
         }
     }
     vec![(Section::Pdata, pdata), (Section::Xdata, xdata)]
@@ -1178,37 +1189,6 @@ pub fn pe_handler_data(begin: u32, region: u32, lsda: &[u8]) -> Vec<u8> {
     }
     out.extend_from_slice(lsda);
     out
-}
-
-/// [`pe_handler_data`] read back.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct PeHandlerData<'a> {
-    /// The offset of the `RUNTIME_FUNCTION`'s range from the function's start.
-    pub begin: u32,
-    /// The pad region's offset from the function's start, 0 if there is none.
-    pub region: u32,
-    pub lsda: &'a [u8],
-}
-
-impl<'a> PeHandlerData<'a> {
-    /// The handler data at the start of `data`. `None` if it doesn't fit.
-    pub fn parse(data: &'a [u8]) -> Option<PeHandlerData<'a>> {
-        let word = |i: usize| Some(u32::from_le_bytes(data.get(4 * i..4 * i + 4)?.try_into().ok()?));
-        let (begin, region, len) = (word(0)?, word(1)?, word(2)?);
-        Some(PeHandlerData { begin, region, lsda: data.get(12..)?.get(..len as usize)? })
-    }
-
-    /// The handler data at `data`, whose length is in its header.
-    ///
-    /// # Safety
-    /// `data` must point at handler data [`pe_handler_data`] wrote.
-    pub unsafe fn from_ptr(data: *const u8) -> Option<PeHandlerData<'a>> {
-        // SAFETY: the header's 12 bytes, then the LSDA's length.
-        unsafe {
-            let len = u32::from_le_bytes(core::slice::from_raw_parts(data.add(8), 4).try_into().ok()?);
-            PeHandlerData::parse(core::slice::from_raw_parts(data, 12 + len as usize))
-        }
-    }
 }
 
 /// [`pe_unwind_codes`] with the frame register byte `frame` (0 for none).

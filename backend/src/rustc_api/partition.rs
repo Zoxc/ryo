@@ -1159,7 +1159,9 @@ fn build_image<'tcx>(
         pool.roots.text(&rt_symbol(tcx, objfile::TRIP_ENTRY_SYMBOL));
         pool.roots.text(&rt_symbol(tcx, objfile::TRIP_OSR_SYMBOL));
     }
-    if !mode.pe {
+    if mode.pe {
+        pool.roots.text(&rt_symbol(tcx, objfile::SEH_HANDLER_SYMBOL));
+    } else {
         pool.roots.text(ryo_bytecode::image::PERSONALITY);
     }
     match w.finish_encoded(encoded) {

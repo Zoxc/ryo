@@ -43,6 +43,37 @@ use core::{fmt, mem, slice};
 
 use crate::asm::Mode;
 
+/// `pe_handler_data` read back: the handler data of a VM function's PE `UNWIND_INFO`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PeHandlerData<'a> {
+    /// The offset of the `RUNTIME_FUNCTION`'s range from the function's start.
+    pub begin: u32,
+    /// The pad region's offset from the function's start, 0 if there is none.
+    pub region: u32,
+    pub lsda: &'a [u8],
+}
+
+impl<'a> PeHandlerData<'a> {
+    /// The handler data at the start of `data`. `None` if it doesn't fit.
+    pub fn parse(data: &'a [u8]) -> Option<PeHandlerData<'a>> {
+        let word = |i: usize| Some(u32::from_le_bytes(data.get(4 * i..4 * i + 4)?.try_into().ok()?));
+        let (begin, region, len) = (word(0)?, word(1)?, word(2)?);
+        Some(PeHandlerData { begin, region, lsda: data.get(12..)?.get(..len as usize)? })
+    }
+
+    /// The handler data at `data`, whose length is in its header.
+    ///
+    /// # Safety
+    /// `data` must point at handler data [`pe_handler_data`] wrote.
+    pub unsafe fn from_ptr(data: *const u8) -> Option<PeHandlerData<'a>> {
+        // SAFETY: the header's 12 bytes, then the LSDA's length.
+        unsafe {
+            let len = u32::from_le_bytes(core::slice::from_raw_parts(data.add(8), 4).try_into().ok()?);
+            PeHandlerData::parse(core::slice::from_raw_parts(data, 12 + len as usize))
+        }
+    }
+}
+
 /// `Header::magic`.
 pub const MAGIC: [u8; 8] = *b"RYOIMAGE";
 

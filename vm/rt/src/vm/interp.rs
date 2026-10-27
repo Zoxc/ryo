@@ -724,7 +724,8 @@ unsafe extern "C-unwind" {
     fn _Unwind_Resume(exception: *mut u8) -> !;
 }
 
-/// `resume x` on PE, where VM code has no landing pads (design/platforms.md): unreachable.
+/// `resume x` on PE outside the pad region, which only unreachable cleanup code is (in the
+/// region `resume` returns to the trampoline that called the landing pad, design/vm.md#unwinding).
 #[cfg(windows)]
 #[rustc_std_internal_symbol]
 #[unsafe(export_name = "ryo_h_Resume")]

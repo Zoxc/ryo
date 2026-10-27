@@ -233,6 +233,7 @@ pub fn link(obj: ImageObject, syms: &[(&str, usize)]) -> Linked {
             RelocTarget::Probe => ryo_rt::vm::probe_stack as *const () as usize,
             RelocTarget::TripEntry => ryo_rt::vm::trip_entry as *const () as usize,
             RelocTarget::TripOsr => ryo_rt::vm::trip_osr as *const () as usize,
+            RelocTarget::SehHandler => panic!("PE relocation on ELF"),
         };
         let v = (target as u64).wrapping_add(r.addend as u64);
         let field = base(r.section) + r.offset as usize;

@@ -484,7 +484,7 @@ fn pe_pad_region() {
             let mut f = Fn { insns: Vec::new(), targets: Vec::new(), unwind: Vec::new() };
             let x = -8i32 as u32;
             // A call storing nothing (bare), or with a random return kind.
-            let mut call = |f: &mut Fn, rng: &mut Rng, bare: bool| {
+            let call = |f: &mut Fn, rng: &mut Rng, bare: bool| {
                 let mut w = insn(Opcode::Call, rng, 1, f, &mut |_| 0);
                 if bare {
                     // Kind 0 stores nothing, to slot 0.

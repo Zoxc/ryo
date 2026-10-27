@@ -18,6 +18,9 @@ mod interp;
 #[cfg_attr(not(feature = "jit"), path = "jit/noop.rs")]
 mod jit;
 mod registry;
+// The PE exception handler of VM code (its logic is tested on every host).
+#[cfg(any(windows, test))]
+mod seh;
 mod sys;
 
 pub use interp::{FP_ARG, MODE, RegRet, handler, probe_stack, reg_handler};

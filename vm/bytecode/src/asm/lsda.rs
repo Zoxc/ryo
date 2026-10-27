@@ -8,16 +8,32 @@
 //! per call site its start, length, landing pad (0: none, unwinding continues) and action,
 //! all `uleb128`; then, if a call site catches, the action record `01 00`.
 
+#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
+#[cfg(feature = "alloc")]
 use super::CallSite;
-use super::leb::{self, Reader};
+#[cfg(feature = "alloc")]
+use super::leb;
+use super::leb::Reader;
 
+#[cfg(feature = "alloc")]
 fn uleb(out: &mut Vec<u8>, v: u32) {
     leb::put(out, v.into());
 }
 
+/// A call site [`find`] found: its range, its landing pad (none: unwinding continues) and
+/// whether that catches.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Site {
+    pub start: u32,
+    pub len: u32,
+    pub pad: Option<u32>,
+    pub catch: bool,
+}
+
 /// The LSDA of a function with these call sites (sorted by position).
+#[cfg(feature = "alloc")]
 pub fn write(sites: &[CallSite]) -> Vec<u8> {
     let mut table = Vec::new();
     for s in sites {
@@ -37,9 +53,9 @@ pub fn write(sites: &[CallSite]) -> Vec<u8> {
 }
 
 /// The call site of the LSDA `lsda` (written by [`write`]) that contains the code offset
-/// `pc`: `Some(None)` if none does, `None` if `lsda` isn't one. Doesn't allocate, for the
-/// runtime's PE exception handler.
-pub fn find(lsda: &[u8], pc: u32) -> Option<Option<CallSite>> {
+/// `pc`: `Some(None)` if none does, `None` if `lsda` isn't one. Without allocating or
+/// panicking, for the runtime's PE exception handler.
+pub fn find(lsda: &[u8], pc: u32) -> Option<Option<Site>> {
     if lsda.get(..3)? != [0xff, 0xff, 0x01] {
         return None;
     }
@@ -52,7 +68,7 @@ pub fn find(lsda: &[u8], pc: u32) -> Option<Option<CallSite>> {
             return None;
         }
         if pc.wrapping_sub(start) < l {
-            return Some(Some(CallSite { start, len: l, pad: (pad != 0).then_some(pad), catch: action == 1 }));
+            return Some(Some(Site { start, len: l, pad: (pad != 0).then_some(pad), catch: action == 1 }));
         }
     }
     Some(None)
@@ -60,6 +76,7 @@ pub fn find(lsda: &[u8], pc: u32) -> Option<Option<CallSite>> {
 
 /// Reads an LSDA written by [`write`] back. `None` if it isn't one (also for a value not in
 /// its shortest encoding, as [`write`] never writes one).
+#[cfg(feature = "alloc")]
 pub fn parse(lsda: &[u8]) -> Option<Vec<CallSite>> {
     if lsda.get(..3)? != [0xff, 0xff, 0x01] {
         return None;

@@ -28,6 +28,8 @@ pub const REGISTER_SYMBOL: &str = "ryo_vm_register";
 
 /// The stack probe of large frames, in `ryo_rt` (before mangling).
 pub const PROBE_SYMBOL: &str = "ryo_probe_stack";
+/// `ryo_rt`'s language handler of VM code's PE unwind info (design/vm.md#unwinding).
+pub const SEH_HANDLER_SYMBOL: &str = "ryo_seh_handler";
 
 /// The no-op JIT's trip entry points in `ryo_rt`, which the JIT records' slots start at
 /// (before mangling).
@@ -655,7 +657,7 @@ pub fn write_image(
     let rt = |name: &str| fmt.mangle(&rt_symbol(name));
     // Handler symbols, by opcode: most relocations are handler calls.
     let mut handlers: Vec<Option<SymbolId>> = vec![None; ryo_bytecode::full::ALL_OPCODES.len()];
-    let (mut trip_entry, mut trip_osr) = (None, None);
+    let (mut trip_entry, mut trip_osr, mut seh_handler) = (None, None, None);
     // Mach-O's `.eh_frame` fields without relocations: (offset, target section, addend, size).
     let mut implicit = Vec::new();
     for r in &image.relocs {
@@ -686,6 +688,7 @@ pub fn write_image(
             RelocTarget::Probe => undefined(&mut obj, &rt(PROBE_SYMBOL), SymbolKind::Text),
             RelocTarget::TripEntry => *trip_entry.get_or_insert_with(|| undefined(&mut obj, &rt(TRIP_ENTRY_SYMBOL), SymbolKind::Text)),
             RelocTarget::TripOsr => *trip_osr.get_or_insert_with(|| undefined(&mut obj, &rt(TRIP_OSR_SYMBOL), SymbolKind::Text)),
+            RelocTarget::SehHandler => *seh_handler.get_or_insert_with(|| undefined(&mut obj, &rt(SEH_HANDLER_SYMBOL), SymbolKind::Text)),
         };
         obj.add_relocation(section(r.section), Relocation { offset: r.offset, symbol, addend: r.addend, flags: fmt.reloc(r.kind) })
             .map_err(|e| format!("image relocation: {e}"))?;
@@ -934,11 +937,50 @@ mod tests {
                 RelocTarget::Probe => assert_eq!(target_name, format!("_rt_{PROBE_SYMBOL}")),
                 RelocTarget::TripEntry => assert_eq!(target_name, format!("_rt_{TRIP_ENTRY_SYMBOL}")),
                 RelocTarget::TripOsr => assert_eq!(target_name, format!("_rt_{TRIP_OSR_SYMBOL}")),
+                RelocTarget::SehHandler => unreachable!("PE only"),
             }
             let data = sec.data().unwrap();
             let field = if r_length == 3 { le64(data, r.offset) } else { le32(data, r.offset) as i64 };
             assert_eq!(field, r.addend + if r_pcrel { 4 } else { 0 }, "{r:?}");
         }
+    }
+
+    /// PE: every function's `UNWIND_INFO` in `.xdata` names `ryo_seh_handler` (an
+    /// `IMAGE_REL_AMD64_ADDR32NB` relocation after its codes) and carries the handler data.
+    #[test]
+    fn pe_unwind_handler() {
+        use object::read::coff::CoffFile;
+        let mut w = ImageWriter::new(SCID);
+        let ext = w.symbol("ext_fn", 0);
+        let mut c = CodeBuf::default();
+        c.emit(&Insn::CallSym { d: Slot(-16), sym: ext, k: 8, a: List::from_words(&[]) });
+        c.emit(&Insn::Ret { s: Slot(0), k: 0 });
+        let def = |name: &str| FunctionDef { name: name.into(), code: c.words.clone(), frame_size: 32, ..Default::default() };
+        w.add_function(def("f"));
+        w.add_function(def("g"));
+        let img = w.finish(Mode { pe: true, ..MODE }).expect("image");
+        let bytes = write_image(&Coff, &img, SCID, CGU, None, &rt).expect("write_image");
+        let file = CoffFile::<&[u8]>::parse(&*bytes).unwrap();
+        let xdata = file.sections().find(|s| s.name() == Ok(".xdata")).expect(".xdata");
+        let data = xdata.data().unwrap();
+        let mut handlers = Vec::new();
+        for (at, rel) in xdata.relocations() {
+            assert_eq!(rel.flags(), RelocationFlags::Coff { typ: object::pe::IMAGE_REL_AMD64_ADDR32NB });
+            let RelocationTarget::Symbol(si) = rel.target() else { panic!() };
+            handlers.push((at, file.symbol_by_index(si).unwrap().name().unwrap().to_owned()));
+        }
+        // Each function: its body's info (with the handler), its entry stub's (a leaf).
+        assert_eq!(handlers.len(), 2, "{handlers:?}");
+        for (at, name) in &handlers {
+            assert_eq!(name, &format!("rt_{SEH_HANDLER_SYMBOL}"));
+            // The handler data after the RVA: no region, an LSDA of the function's one call
+            // site.
+            let d = ryo_bytecode::image::PeHandlerData::parse(&data[*at as usize + 4..]).unwrap();
+            assert_eq!((d.begin, d.region), (0, 0));
+            assert!(ryo_bytecode::asm::lsda::find(d.lsda, 0).is_some());
+        }
+        // The flags of the first: UNW_FLAG_EHANDLER | UNW_FLAG_UHANDLER.
+        assert_eq!(data[0], 1 | 3 << 3);
     }
 
     /// `__eh_frame` as LLVM writes it: the personality a GOT reference, the FDEs' first
