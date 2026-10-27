@@ -146,7 +146,7 @@ pub(crate) struct Jit {
     perfmap: Option<std::fs::File>,
     /// Call slots: JIT code calls (and tail-calls) a VM function, of any image, that wasn't
     /// compiled yet through an 8-byte slot in its region's read-write end (`call [rip +
-    /// slot]`), which holds the function's AOT entry and then its JIT code. By (region start,
+    /// slot]`), which holds the function's AOT entry and then its JIT code. By (region index,
     /// image header, function).
     slots: HashMap<(usize, usize, u32), usize>,
     /// The slots by (image header, function), which its publication updates.
@@ -486,7 +486,6 @@ impl Jit {
             return Err("too large".into());
         }
         let header = h as *const _ as usize;
-        let start = place.start;
         // The callees the code calls: the inliner may have given call forms to calls it then
         // inlined, or of callees it explored only.
         let mut used = std::vec![false; ext.len()];
@@ -498,14 +497,17 @@ impl Jit {
                 *u = true;
             }
         }
-        let new_slots =
-            ext.iter().zip(&used).filter_map(|(e, &u)| e.vm.filter(|_| u)).filter(|&(hd, g)| !self.slots.contains_key(&(start, hd, g))).count();
-        let region = self.regions.iter_mut().find(|r| r.start == start).ok_or(CompileError::Retry)?;
+        let new_slots = ext
+            .iter()
+            .zip(&used)
+            .filter_map(|(e, &u)| e.vm.filter(|_| u))
+            .filter(|&(hd, g)| !self.slots.contains_key(&(place.region, hd, g)))
+            .count();
+        let region = &mut self.regions[place.region];
+        debug_assert!(!region.retired, "a place is of a region in use");
         if region.code + size + eh_size + 8 * new_slots > region.data {
-            // Full: retire it (it reaches nothing any more), and compile again for another.
-            region.data = region.code;
-            region.start = usize::MAX;
-            region.end = usize::MAX;
+            // Full: retire it, and compile again for another.
+            region.retired = true;
             return Err(CompileError::Retry);
         }
         let base = region.code;
@@ -517,7 +519,7 @@ impl Jit {
         let mut slot_of = std::vec![0; ext.len()];
         for (k, e) in ext.iter().enumerate() {
             let Some((hd, g)) = e.vm.filter(|_| used[k]) else { continue };
-            slot_of[k] = *self.slots.entry((start, hd, g)).or_insert_with(|| {
+            slot_of[k] = *self.slots.entry((place.region, hd, g)).or_insert_with(|| {
                 region.data -= 8;
                 debug_assert!(region.data % 8 == 0, "call slots are 8-aligned (atomic stores)");
                 // `Ext::vm` names a registered image's function with a record.

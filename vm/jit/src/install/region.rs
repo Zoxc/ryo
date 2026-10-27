@@ -16,12 +16,14 @@ pub(super) struct Span {
 }
 
 /// A mapping near some images ([`REGION`]): code is taken from `code` up, unwind
-/// information from `data` down.
+/// information from `data` down. A full one is retired: it stays mapped (its code may run),
+/// but nothing is compiled for it any more.
 pub(super) struct Region {
     pub(super) start: usize,
     pub(super) end: usize,
     pub(super) code: usize,
     pub(super) data: usize,
+    pub(super) retired: bool,
 }
 
 impl Region {
@@ -45,6 +47,8 @@ impl Span {
 /// targets.
 #[derive(Clone, Copy)]
 pub(super) struct Place {
+    /// Its index in [`Jit::regions`].
+    pub(super) region: usize,
     pub(super) start: usize,
     pub(super) end: usize,
     /// The handlers and the probe are out of reach ([`Mode::far_rt`]).
@@ -64,21 +68,21 @@ impl Jit {
     /// from a shared `ryo_rt`.
     pub(super) fn place(&mut self, s: Span) -> Option<Place> {
         let rt = self.rt_span;
-        let r = match self.region(s.union(rt)) {
-            Some(r) => r,
+        let i = match self.region(s.union(rt)) {
+            Some(i) => i,
             None => self.region(s)?,
         };
-        let far_rt = !r.reaches(rt);
-        Some(Place { start: r.start, end: r.end, far_rt })
+        let r = &self.regions[i];
+        Some(Place { region: i, start: r.start, end: r.end, far_rt: !r.reaches(rt) })
     }
 
-    /// A region that reaches `s`, mapping a new one if none does.
-    pub(super) fn region(&mut self, s: Span) -> Option<&mut Region> {
+    /// The index of a region that reaches `s`, mapping a new one if none does.
+    fn region(&mut self, s: Span) -> Option<usize> {
         if s.hi - s.lo > REACH {
             return None;
         }
-        if let Some(i) = self.regions.iter().position(|r| r.reaches(s)) {
-            return Some(&mut self.regions[i]);
+        if let Some(i) = self.regions.iter().position(|r| !r.retired && r.reaches(s)) {
+            return Some(i);
         }
         const STEP: usize = 2 << 20;
         let above = s.hi.next_multiple_of(STEP);
@@ -97,8 +101,8 @@ impl Jit {
                     unsafe { vmem::release(p as *mut u8, REGION) };
                     continue;
                 }
-                self.regions.push(Region { start: p, end: p + REGION, code: p, data: p + REGION });
-                return self.regions.last_mut();
+                self.regions.push(Region { start: p, end: p + REGION, code: p, data: p + REGION, retired: false });
+                return Some(self.regions.len() - 1);
             }
         }
         None
