@@ -9,7 +9,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use super::encode::{
-    CallSite, DroppedStore, Encoded, Opnd, Ref, RegVal, Scope, arg_store, epilogue, fp_item, int_arg, prologue, push_words, result_stores, ret_loads,
+    ArgVal, CallSite, DroppedStore, Encoded, Opnd, Ref, Scope, arg_store, epilogue, fp_item, int_arg, prologue, push_words, result_stores, ret_loads,
     word_len,
 };
 use super::inline::Cache;
@@ -506,8 +506,8 @@ fn resume_slots(protos: &mut [Proto], rs: usize, mode: Mode, reduced: bool) -> R
             let args = super::encode::handler_args(Opcode::Resume, &[Opnd::<u32>::Slot(x)], mode, |_| 0)
                 .into_iter()
                 .map(|v| match v {
-                    super::encode::ArgVal::Fp => Arg::Fp,
-                    super::encode::ArgVal::Imm(v, _) => Arg::Imm(v),
+                    ArgVal::Fp => Arg::Fp,
+                    ArgVal::Imm(v, _) => Arg::Imm(v),
                     _ => unreachable!("resume takes fp and a slot"),
                 })
                 .collect();
@@ -1286,13 +1286,13 @@ fn handler_operands(op: Opcode, setup: &[(u32, Item)], fr: &Frame, ro: &[u8], co
     if info.shape == Shape::Lpad && it.next() != reg(l.first - 1).map(|r| Item::Mov(r, Reg::Rax)) {
         return Err(err("no exception object"));
     }
-    let mut regs: Vec<Option<RegVal>> = vec![None; l.regs as usize];
+    let mut regs: Vec<Option<ArgVal>> = vec![None; l.regs as usize];
     for r in l.first..l.regs {
         regs[r as usize] = Some(match (it.next(), reg(r)) {
-            (Some(Item::SetReg(g, v)), Some(want)) if g == want => RegVal::Imm(v),
-            (Some(Item::Lea(g, to)), Some(want)) if g == want => RegVal::Addr(to),
+            (Some(Item::SetReg(g, v)), Some(want)) if g == want => ArgVal::Imm(v, 0),
+            (Some(Item::Lea(g, to)), Some(want)) if g == want => ArgVal::Addr(to),
             // PE's stack argument, a 32-bit operand.
-            (Some(Item::StImm { w: W::D, m: STACK_ARG, imm }), None) => RegVal::Imm(imm as u32 as u64),
+            (Some(Item::StImm { w: W::D, m: STACK_ARG, imm }), None) => ArgVal::Imm(imm as u32 as u64, 0),
             _ => return Err(err("operand registers out of order")),
         });
     }
@@ -1300,11 +1300,11 @@ fn handler_operands(op: Opcode, setup: &[(u32, Item)], fr: &Frame, ro: &[u8], co
         return Err(err("extra operand registers"));
     }
     let imm = |r: u8| match regs[r as usize] {
-        Some(RegVal::Imm(v)) => Ok(v),
+        Some(ArgVal::Imm(v, _)) => Ok(v),
         _ => Err(err("an address where a value belongs")),
     };
     let addr = |r: u8| match regs[r as usize] {
-        Some(RegVal::Addr(to)) => Ok(to),
+        Some(ArgVal::Addr(to)) => Ok(to),
         _ => Err(err("a value where an address belongs")),
     };
     // A shared register: the other half must belong to the paired operand, which reads it.

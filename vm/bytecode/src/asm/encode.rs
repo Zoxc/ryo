@@ -891,13 +891,6 @@ pub struct Asm {
     bare_calls: Vec<usize>,
 }
 
-/// The register an operand register value goes in: a constant, or the address of a [`Ref`].
-#[derive(Clone, Copy)]
-pub(super) enum RegVal {
-    Imm(u64),
-    Addr(Ref),
-}
-
 /// A handler argument register's value: `fp`, the exception object (`lpad`), a constant
 /// with raw slots in the halves `slots` flags, a [`Ref`]'s address, or a code constant's.
 #[derive(Clone, Copy)]
@@ -907,6 +900,23 @@ pub(super) enum ArgVal {
     Imm(u64, u8),
     Addr(Ref),
     Ro(u32),
+}
+
+impl From<Arg> for ArgVal {
+    /// The value of a reduced `handler`'s argument; an [`Arg::Ro`]'s offset kept as the
+    /// code constant's index.
+    fn from(a: Arg) -> ArgVal {
+        match a {
+            Arg::Fp => ArgVal::Fp,
+            Arg::Exception => ArgVal::Exception,
+            Arg::Imm(v) => ArgVal::Imm(v, 0),
+            Arg::Const(k) => ArgVal::Addr(Ref::Const(k)),
+            Arg::Data(d) => ArgVal::Addr(Ref::Data(d)),
+            Arg::Sym(s) => ArgVal::Addr(Ref::Sym(s)),
+            Arg::Site(s) => ArgVal::Addr(Ref::Site(s)),
+            Arg::Ro(o) => ArgVal::Ro(o),
+        }
+    }
 }
 
 impl Asm {
@@ -1045,10 +1055,11 @@ impl Asm {
         self.ro.len() as u32 - 1
     }
 
-    /// Sets the argument registers of `op`'s handler from `ops` and calls it.
-    fn handler_call(&mut self, op: Opcode, ops: &[Opnd<Label>], site: Option<InsnId>) {
+    /// Sets the handler argument registers from `rdi` on to `vals` (PE's stack argument
+    /// last).
+    fn arg_regs(&mut self, vals: impl IntoIterator<Item = ArgVal>) {
         let pe = self.mode.pe;
-        for (k, v) in handler_args(op, ops, self.mode, |r| self.ro(r)).into_iter().enumerate() {
+        for (k, v) in vals.into_iter().enumerate() {
             let Some(reg) = handler_reg(pe, k as u8) else {
                 // PE's stack argument: one 32-bit operand ([`super::layout`]).
                 let ArgVal::Imm(v, slots) = v else { unreachable!("a 32-bit operand on the stack") };
@@ -1065,6 +1076,12 @@ impl Asm {
                 ArgVal::Ro(ro) => self.pieces.push(Piece::LeaRo { reg, ro }),
             }
         }
+    }
+
+    /// Sets the argument registers of `op`'s handler from `ops` and calls it.
+    fn handler_call(&mut self, op: Opcode, ops: &[Opnd<Label>], site: Option<InsnId>) {
+        let vals = handler_args(op, ops, self.mode, |r| self.ro(r));
+        self.arg_regs(vals);
         self.maybe_site(rt_call(Ref::Handler(op), self.mode), site);
     }
 
@@ -1152,27 +1169,18 @@ impl Asm {
             };
             super::inline::dense_index(op, arg("s")? as u32 as i32, arg("base")?, arg("table")?)
         })();
-        for (k, &a) in args.iter().enumerate().filter(|_| dense.is_none()) {
-            let Some(reg) = handler_reg(self.mode.pe, k as u8) else {
-                // PE's stack argument: one 32-bit operand ([`super::layout`]).
-                let Arg::Imm(v) = a else { unreachable!("a 32-bit operand on the stack") };
-                self.fixed(Item::StImm { w: W::D, m: STACK_ARG, imm: v as u32 as i32 });
-                continue;
-            };
-            match a {
-                Arg::Fp => self.pieces.push(Piece::Fp(reg)),
-                Arg::Exception => self.fixed(Item::Mov(reg, Reg::Rax)),
-                Arg::Imm(v) => self.fixed(Item::SetReg(reg, v)),
-                Arg::Const(k) => self.fixed(Item::Lea(reg, Ref::Const(k))),
-                Arg::Data(d) => self.fixed(Item::Lea(reg, Ref::Data(d))),
-                Arg::Sym(s) => self.fixed(Item::Lea(reg, Ref::Sym(s))),
-                Arg::Site(s) => self.fixed(Item::Lea(reg, Ref::Site(s))),
-                Arg::Ro(_) => {
-                    let size = op.case_elem().and_then(ElemKind::case_bytes).unwrap_or(1);
-                    let ro = self.ro(RoReq::Bytes { bytes: case_values.to_vec(), align: size.max(4) });
-                    self.pieces.push(Piece::LeaRo { reg, ro });
-                }
-            }
+        if dense.is_none() {
+            let vals: Vec<ArgVal> = args
+                .iter()
+                .map(|&a| match a {
+                    Arg::Ro(_) => {
+                        let size = op.case_elem().and_then(ElemKind::case_bytes).unwrap_or(1);
+                        ArgVal::Ro(self.ro(RoReq::Bytes { bytes: case_values.to_vec(), align: size.max(4) }))
+                    }
+                    a => ArgVal::from(a),
+                })
+                .collect();
+            self.arg_regs(vals);
         }
         let site = matches!(then, Then::Trap).then_some(id);
         match dense {
