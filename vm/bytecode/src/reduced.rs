@@ -79,22 +79,13 @@ impl Elem for Arg {
             4 => Arg::Data(Data(v as u32)),
             5 => Arg::Sym(Sym(v as u32)),
             6 => Arg::Site(Site(v as u32)),
+            // 7, and unknown tags (which `valid` rejects).
             _ => Arg::Ro(v as u32),
         }
     }
     #[cfg(feature = "alloc")]
     fn put(&self, out: &mut Vec<u32>) {
-        let (tag, v) = match *self {
-            Arg::Fp => (0, 0),
-            Arg::Exception => (1, 0),
-            Arg::Imm(v) => (2, v),
-            Arg::Const(k) => (3, k.0 as u64),
-            Arg::Data(d) => (4, d.0 as u64),
-            Arg::Sym(s) => (5, s.0 as u64),
-            Arg::Site(s) => (6, s.0 as u64),
-            Arg::Ro(o) => (7, o as u64),
-        };
-        out.extend([tag, v as u32, (v >> 32) as u32]);
+        out.extend(self.words());
     }
     fn fmt_elem(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -109,8 +100,26 @@ impl Elem for Arg {
         }
     }
     fn valid(w: &[u32]) -> bool {
-        // The 32-bit values have no high word.
-        w[0] <= 7 && (matches!(w[0], 2) || w[2] == 0) && (w[0] >= 2 || w[1] == 0)
+        // `get` maps every word triple to some `Arg`; the canonical ones (known tag, no
+        // stray value bits) are those it round-trips.
+        Self::get(w).words() == w[..3]
+    }
+}
+
+impl Arg {
+    /// The encoding `get` reads: the tag, then the value, low word first.
+    fn words(&self) -> [u32; 3] {
+        let (tag, v) = match *self {
+            Arg::Fp => (0, 0),
+            Arg::Exception => (1, 0),
+            Arg::Imm(v) => (2, v),
+            Arg::Const(k) => (3, k.0 as u64),
+            Arg::Data(d) => (4, d.0 as u64),
+            Arg::Sym(s) => (5, s.0 as u64),
+            Arg::Site(s) => (6, s.0 as u64),
+            Arg::Ro(o) => (7, o as u64),
+        };
+        [tag, v as u32, (v >> 32) as u32]
     }
 }
 
