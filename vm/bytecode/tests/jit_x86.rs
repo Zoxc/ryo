@@ -163,24 +163,20 @@ fn encoder_matches_objdump() {
                     let v = if w == 8 { imm } else { imm & ((1u64 << (w * 8)) - 1) };
                     c.add(format!("mov {},{}", mem(m, w), hex(v as i64, w)), |x| x.mov_imm(w, Rm::M(m), v));
                 }
-                c.add(format!("test {},{}", mem(m, w), hex(-2, w)), |x| x.test_imm(w, Rm::M(m), -2));
                 c.add(format!("shl {},0x3", mem(m, w)), |x| x.shift_imm(Shift::Shl, w, Rm::M(m), 3));
             }
             for s in regs() {
                 c.add(format!("test {},{}", reg(d, w), reg(s, w)), |x| x.test(w, Rm::R(d), s));
             }
-            c.add(format!("test {},{}", reg(d, w), hex(0x40, w)), |x| x.test_imm(w, Rm::R(d), 0x40));
             for (op, n) in [(Shift::Shl, "shl"), (Shift::Shr, "shr"), (Shift::Sar, "sar")] {
                 c.add(format!("{n} {},0x5", reg(d, w)), |x| x.shift_imm(op, w, Rm::R(d), 5));
             }
-            c.add(format!("neg {}", reg(d, w)), |x| x.neg(w, Rm::R(d)));
             if w == 8 {
                 c.add(format!("mul {}", reg(d, 8)), |x| x.mul(Rm::R(d)));
                 for m in some_mems() {
                     c.add(format!("mul {}", mem(m, 8)), |x| x.mul(Rm::M(m)));
                 }
             }
-            c.add(format!("not {}", reg(d, w)), |x| x.not(w, Rm::R(d)));
             if w != 1 {
                 for s in regs() {
                     c.add(format!("imul {},{}", reg(d, w), reg(s, w)), |x| x.imul(w, d, Rm::R(s)));
@@ -203,7 +199,6 @@ fn encoder_matches_objdump() {
             c.add(format!("mov {},{}", reg(d, 8), reg(s, 8)), |x| x.movzx(d, 8, Rm::R(s)));
             c.add(format!("movsxd {},{}", reg(d, 8), reg(s, 4)), |x| x.movsx(d, 4, Rm::R(s)));
             c.add(format!("mov {},{}", reg(d, 8), reg(s, 8)), |x| x.movsx(d, 8, Rm::R(s)));
-            c.add(format!("xchg {},{}", reg(d, 8), reg(s, 8)), |x| x.xchg(d, s));
             if s != R::Rsp {
                 let m = Mem::Base { base: d, index: Some((s, 4)), disp: 0 };
                 c.add(format!("movsxd {},{}", reg(d, 8), mem(m, 4)), |x| x.movsxd_table(d, d, s));

@@ -350,11 +350,6 @@ impl X86 {
         self.sized(w, 0x84, b.num(), true, a, &[]);
     }
 
-    pub fn test_imm(&mut self, w: u8, a: Rm, imm: i32) {
-        let (b, n) = imm_bytes(w, imm as i64);
-        self.sized(w, 0xf6, 0, false, a, &b[..n]);
-    }
-
     /// `mul r/m64`: `rdx:rax = rax * src`.
     pub fn mul(&mut self, src: Rm) {
         self.insn(false, true, false, &[0xf7], 4, src, &[]);
@@ -407,14 +402,6 @@ impl X86 {
             self.code.push(0x48);
         }
         self.code.push(0x99);
-    }
-
-    pub fn neg(&mut self, w: u8, dst: Rm) {
-        self.sized(w, 0xf6, 3, false, dst, &[]);
-    }
-
-    pub fn not(&mut self, w: u8, dst: Rm) {
-        self.sized(w, 0xf6, 2, false, dst, &[]);
     }
 
     pub fn setcc(&mut self, cc: Cc, dst: Rm) {
@@ -593,10 +580,6 @@ impl X86 {
             self.code.push(0x41);
         }
         self.code.push(0x58 | (r.num() & 7));
-    }
-
-    pub fn xchg(&mut self, a: R, b: R) {
-        self.insn(false, true, false, &[0x87], b.num(), Rm::R(a), &[]);
     }
 
     pub fn jcc_len(long: bool) -> u32 {
