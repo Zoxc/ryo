@@ -31,6 +31,9 @@ struct B<'a> {
     undef: [Option<Value>; 17],
     /// The IR block of each R block (`None` for an `lpad`'s).
     ir: Vec<Option<Block>>,
+    entry: Block,
+    /// The blocks in layout order, as filled.
+    layout: Vec<Block>,
     scratch: u32,
     mode: crate::asm::Mode,
 }
@@ -294,421 +297,490 @@ impl<'a> B<'a> {
     }
 }
 
-/// The IR of `code` with frame `fr`, before the optimizations ([`super::opt::run`]).
-pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -> Result<Func, Unsupported> {
-    let nb = code.blocks.len();
-    if fr.vars.len().saturating_mul(nb) > 8 << 20 {
-        return Err(Unsupported("too many variables and blocks"));
-    }
-    let mut s = B {
-        code,
-        fr,
-        f: Func {
-            allocas: fr.allocas.clone(),
-            aot_frame: frame_size,
-            pe: mode.pe,
-            osr: alloc::vec![None; code.enterable.len()],
-            ..Default::default()
-        },
-        blocks: Vec::new(),
-        phis: Vec::new(),
-        undef: [None; 17],
-        ir: alloc::vec![None; nb],
-        scratch: 0,
-        mode,
-    };
-    let is_lpad = |b: usize| code.insns[code.blocks[b].start as usize].kind == Kind::Lpad;
-    // The entry block: R block 0 itself unless something branches back to it.
-    let entry = s.new_block(BlockKind::Entry, 0);
-    let mut layout = Vec::new();
-    let separate = !code.blocks.is_empty() && !code.blocks[0].preds.is_empty();
-    for b in 0..nb {
-        if is_lpad(b) {
-            continue;
+/// How an instruction leaves its block.
+enum Flow {
+    /// It goes on to the next instruction (or falls through into the next block).
+    Next,
+    /// It ends the block with the terminator.
+    End(Term),
+    /// It ended the block itself (an invoke), making the blocks, for the layout.
+    Ended(Vec<Block>),
+}
+
+impl<'a> B<'a> {
+    fn new(code: &'a Code, fr: &'a Frame, frame_size: u32, mode: crate::asm::Mode) -> Result<Self, Unsupported> {
+        let nb = code.blocks.len();
+        if fr.vars.len().saturating_mul(nb) > 8 << 20 {
+            return Err(Unsupported("too many variables and blocks"));
         }
-        s.ir[b] = Some(if b == 0 && !separate { entry } else { s.new_block(BlockKind::Body, 0) });
-        s.f.blocks[s.ir[b].unwrap().idx()].head = code.blocks[b].head;
-    }
-    // Expected predecessors: the R edges, with landing pads' through their stubs to the
-    // block after the `lpad`.
-    for b in 0..nb {
-        if is_lpad(b) {
-            continue;
-        }
-        for &t in &code.blocks[b].succ {
-            let t = t as usize;
-            let to = if is_lpad(t) { code.blocks[t].succ[0] as usize } else { t };
-            let to = s.ir[to].ok_or(Unsupported("an lpad after an lpad"))?;
-            s.blocks[to.idx()].expected += 1;
-        }
-    }
-    if separate {
-        let first = s.ir[0].unwrap();
-        s.blocks[first.idx()].expected += 1;
-    }
-    s.seal(entry);
-    // OSR entries, filled first.
-    for (b, bl) in code.blocks.iter().enumerate() {
-        if let Some(h) = bl.head
-            && code.enterable[h as usize]
-        {
-            let o = s.new_block(BlockKind::Osr(h), 0);
-            s.seal(o);
-            s.f.osr[h as usize] = Some(o);
-            let head = s.ir[b].unwrap();
-            s.blocks[head.idx()].expected += 1;
-            s.finish_block(o, Term::Jmp(Edge::to(head)));
-        }
-    }
-    for b in 0..nb {
-        if let Some(x) = s.ir[b]
-            && s.blocks[x.idx()].expected == 0
-            && !s.blocks[x.idx()].sealed
-        {
-            s.seal(x);
-        }
-    }
-    if separate {
-        if matches!(code.insns.first().map(|i| &i.kind), Some(Kind::Arg(_))) {
-            return Err(Unsupported("arguments in a loop"));
-        }
-        layout.push(entry);
-        let first = s.ir[0].unwrap();
-        s.finish_block(entry, Term::Jmp(Edge::to(first)));
+        let mut s = B {
+            code,
+            fr,
+            f: Func {
+                allocas: fr.allocas.clone(),
+                aot_frame: frame_size,
+                pe: mode.pe,
+                osr: alloc::vec![None; code.enterable.len()],
+                ..Default::default()
+            },
+            blocks: Vec::new(),
+            phis: Vec::new(),
+            undef: [None; 17],
+            ir: alloc::vec![None; nb],
+            entry: Block(0),
+            layout: Vec::new(),
+            scratch: 0,
+            mode,
+        };
+        s.entry = s.new_block(BlockKind::Entry, 0);
+        Ok(s)
     }
 
-    for rb in 0..nb {
-        let Some(cur) = s.ir[rb] else { continue };
-        layout.push(cur);
-        let bl = &code.blocks[rb];
-        let mut term = None;
-        let mut extra: Vec<Block> = Vec::new();
+    fn is_lpad(&self, b: usize) -> bool {
+        self.code.insns[self.code.blocks[b].start as usize].kind == Kind::Lpad
+    }
+
+    /// Makes the IR blocks of the R blocks and the OSR entries, with their expected
+    /// predecessors, and fills the entry and OSR blocks.
+    fn layout_blocks(&mut self) -> Result<(), Unsupported> {
+        let code = self.code;
+        let nb = code.blocks.len();
+        let entry = self.entry;
+        // The entry block: R block 0 itself unless something branches back to it.
+        let separate = !code.blocks.is_empty() && !code.blocks[0].preds.is_empty();
+        for b in 0..nb {
+            if self.is_lpad(b) {
+                continue;
+            }
+            self.ir[b] = Some(if b == 0 && !separate { entry } else { self.new_block(BlockKind::Body, 0) });
+            self.f.blocks[self.ir[b].unwrap().idx()].head = code.blocks[b].head;
+        }
+        // Expected predecessors: the R edges, with landing pads' through their stubs to the
+        // block after the `lpad`.
+        for b in 0..nb {
+            if self.is_lpad(b) {
+                continue;
+            }
+            for &t in &code.blocks[b].succ {
+                let t = t as usize;
+                let to = if self.is_lpad(t) { code.blocks[t].succ[0] as usize } else { t };
+                let to = self.ir[to].ok_or(Unsupported("an lpad after an lpad"))?;
+                self.blocks[to.idx()].expected += 1;
+            }
+        }
+        if separate {
+            let first = self.ir[0].unwrap();
+            self.blocks[first.idx()].expected += 1;
+        }
+        self.seal(entry);
+        // OSR entries, filled first.
+        for (b, bl) in code.blocks.iter().enumerate() {
+            if let Some(h) = bl.head
+                && code.enterable[h as usize]
+            {
+                let o = self.new_block(BlockKind::Osr(h), 0);
+                self.seal(o);
+                self.f.osr[h as usize] = Some(o);
+                let head = self.ir[b].unwrap();
+                self.blocks[head.idx()].expected += 1;
+                self.finish_block(o, Term::Jmp(Edge::to(head)));
+            }
+        }
+        for b in 0..nb {
+            if let Some(x) = self.ir[b]
+                && self.blocks[x.idx()].expected == 0
+                && !self.blocks[x.idx()].sealed
+            {
+                self.seal(x);
+            }
+        }
+        if separate {
+            if matches!(code.insns.first().map(|i| &i.kind), Some(Kind::Arg(_))) {
+                return Err(Unsupported("arguments in a loop"));
+            }
+            self.layout.push(entry);
+            let first = self.ir[0].unwrap();
+            self.finish_block(entry, Term::Jmp(Edge::to(first)));
+        }
+        Ok(())
+    }
+
+    /// Fills `cur`, the IR block of R block `rb`.
+    fn lower_block(&mut self, rb: usize, cur: Block) -> Result<(), Unsupported> {
+        self.layout.push(cur);
+        let bl = &self.code.blocks[rb];
         for i in bl.start as usize..bl.end as usize {
-            let ri = &code.insns[i];
-            let last = i + 1 == bl.end as usize;
-            let next = || s_next(code, i);
-            let site = match ri.unwind {
-                Unwind::None => Site::None,
-                Unwind::Continue => Site::Continue,
-                Unwind::Pad { catch, .. } => Site::Pad { catch },
-            };
-            match &ri.kind {
-                Kind::Mov(w) => {
-                    let v = s.read(cur, i, 0, *w);
-                    s.write(cur, i, 1, v);
+            match self.lower_insn(cur, i)? {
+                Flow::Next => {}
+                Flow::End(t) => {
+                    debug_assert_eq!(i + 1, bl.end as usize, "a terminator inside a block");
+                    self.finish_block(cur, t);
+                    return Ok(());
                 }
-                Kind::Copy { dst, src, pieces, .. } => {
-                    use super::decode::Side;
-                    let mem = matches!(dst, Side::Mem(_)) || matches!(src, Side::Mem(_));
-                    let p = if mem {
-                        Some(s.read(cur, i, 0, 8))
-                    } else if let Side::Pool(k) = src {
-                        let a = s.f.inst(cur, Op::RefAddr(crate::asm::Ref::Const(crate::full::Const(*k)), false), Vec::new(), &[8]);
-                        Some(s.f.result(a))
-                    } else {
-                        None
-                    };
-                    let mut k = mem as usize;
-                    // Every piece read first, then written: exact when the two overlap.
-                    let mut vals = Vec::with_capacity(pieces.len());
-                    for &(off, w) in pieces {
-                        vals.push(match src {
-                            Side::Frame(_) => {
-                                k += 1;
-                                s.read(cur, i, k - 1, w)
-                            }
-                            Side::Mem(d) => {
-                                let l = s.f.inst(cur, Op::Load(w, d + off as i32), alloc::vec![p.unwrap()], &[w]);
-                                s.f.result(l)
-                            }
-                            Side::Zero => s.f.konst(0, w),
-                            Side::Pool(_) => {
-                                let l = s.f.inst(cur, Op::Load(w, off as i32), alloc::vec![p.unwrap()], &[w]);
-                                s.f.result(l)
-                            }
-                        });
-                    }
-                    for (&(off, w), v) in pieces.iter().zip(vals) {
-                        match dst {
-                            Side::Frame(_) => {
-                                s.write(cur, i, k, v);
-                                k += 1;
-                            }
-                            Side::Mem(d) => {
-                                s.f.inst(cur, Op::Store(w, d + off as i32), alloc::vec![p.unwrap(), v], &[]);
-                            }
-                            Side::Zero | Side::Pool(_) => unreachable!("a source-only side"),
+                Flow::Ended(extra) => {
+                    debug_assert_eq!(i + 1, bl.end as usize, "an invoke inside a block");
+                    self.layout.extend(extra);
+                    return Ok(());
+                }
+            }
+        }
+        // Falls through into the next block.
+        let e = self.edge(s_next(self.code, bl.end as usize - 1)?);
+        self.finish_block(cur, Term::Jmp(e));
+        Ok(())
+    }
+
+    /// Lowers instruction `i` into `cur`.
+    fn lower_insn(&mut self, cur: Block, i: usize) -> Result<Flow, Unsupported> {
+        let code = self.code;
+        let ri = &code.insns[i];
+        let next = || s_next(code, i);
+        let site = match ri.unwind {
+            Unwind::None => Site::None,
+            Unwind::Continue => Site::Continue,
+            Unwind::Pad { catch, .. } => Site::Pad { catch },
+        };
+        match &ri.kind {
+            Kind::Mov(w) => {
+                let v = self.read(cur, i, 0, *w);
+                self.write(cur, i, 1, v);
+            }
+            Kind::Copy { dst, src, pieces, .. } => {
+                use super::decode::Side;
+                let mem = matches!(dst, Side::Mem(_)) || matches!(src, Side::Mem(_));
+                let p = if mem {
+                    Some(self.read(cur, i, 0, 8))
+                } else if let Side::Pool(k) = src {
+                    let a = self.f.inst(cur, Op::RefAddr(crate::asm::Ref::Const(crate::full::Const(*k)), false), Vec::new(), &[8]);
+                    Some(self.f.result(a))
+                } else {
+                    None
+                };
+                let mut k = mem as usize;
+                // Every piece read first, then written: exact when the two overlap.
+                let mut vals = Vec::with_capacity(pieces.len());
+                for &(off, w) in pieces {
+                    vals.push(match src {
+                        Side::Frame(_) => {
+                            k += 1;
+                            self.read(cur, i, k - 1, w)
                         }
-                    }
-                }
-                Kind::Imm(w, v) => {
-                    let c = s.f.konst(*v, *w);
-                    s.write(cur, i, 0, c);
-                }
-                Kind::Load(w, k) => {
-                    let p = s.read(cur, i, 0, 8);
-                    let l = s.f.inst(cur, Op::Load(*w, *k), alloc::vec![p], &[*w]);
-                    let v = s.f.result(l);
-                    s.write(cur, i, 1, v);
-                }
-                Kind::Store(w, k) => {
-                    let p = s.read(cur, i, 0, 8);
-                    let v = s.read(cur, i, 1, *w);
-                    s.f.inst(cur, Op::Store(*w, *k), alloc::vec![p, v], &[]);
-                }
-                Kind::Addr => {
-                    let Res::Mem(a, off) = fr.res[i][0] else { return Err(Unsupported("an address of a promoted alloca")) };
-                    let l = s.f.inst(cur, Op::AllocaAddr(a, off), Vec::new(), &[8]);
-                    let v = s.f.result(l);
-                    s.write(cur, i, 1, v);
-                }
-                Kind::RefAddr { to, ind } => {
-                    let l = s.f.inst(cur, Op::RefAddr(*to, *ind), Vec::new(), &[8]);
-                    let v = s.f.result(l);
-                    s.write(cur, i, 0, v);
-                }
-                Kind::PtrAdd(imm) => {
-                    let p = s.read(cur, i, 0, 8);
-                    let l = s.f.inst(cur, Op::PtrAdd(*imm), alloc::vec![p], &[8]);
-                    let v = s.f.result(l);
-                    s.write(cur, i, 1, v);
-                }
-                Kind::PtrIndex(stride) => {
-                    let p = s.read(cur, i, 0, 8);
-                    let x = s.read(cur, i, 1, 8);
-                    let l = s.f.inst(cur, Op::PtrIndex(*stride), alloc::vec![p, x], &[8]);
-                    let v = s.f.result(l);
-                    s.write(cur, i, 2, v);
-                }
-                Kind::Bin(op, w, imm) => {
-                    let a = s.read(cur, i, 0, *w);
-                    let shift = matches!(*op, BinOp::Shl | BinOp::ShrS | BinOp::ShrU);
-                    let b = match imm {
-                        Some(v) if shift => s.f.konst(v & (8 * *w as u64 - 1), *w),
-                        Some(v) => s.f.konst(mask(*v, *w), *w),
-                        None => s.read(cur, i, 1, *w),
-                    };
-                    let l = s.f.inst(cur, Op::Bin(*op, *w), alloc::vec![a, b], &[*w]);
-                    let v = s.f.result(l);
-                    s.write(cur, i, ri.accs.len() - 1, v);
-                }
-                Kind::Cmp(cc, w, imm) => {
-                    let a = s.read(cur, i, 0, *w);
-                    let b = match imm {
-                        Some(v) => s.f.konst(mask(*v, *w), *w),
-                        None => s.read(cur, i, 1, *w),
-                    };
-                    let l = s.f.inst(cur, Op::Cmp(*cc, *w), alloc::vec![a, b], &[1]);
-                    let v = s.f.result(l);
-                    s.write(cur, i, ri.accs.len() - 1, v);
-                }
-                Kind::Ovf(op, signed, w) => {
-                    let a = s.read(cur, i, 0, *w);
-                    let b = s.read(cur, i, 1, *w);
-                    let l = s.f.inst(cur, Op::Ovf(*op, *signed, *w), alloc::vec![a, b], &[*w, 1]);
-                    let r = s.f.insts[l.idx()].res;
-                    s.write(cur, i, 2, Value(r));
-                    s.write(cur, i, 3, Value(r + 1));
-                }
-                Kind::Pure { op, ws, out } => {
-                    let args = ws.iter().enumerate().map(|(k, &w)| s.read(cur, i, k, w)).collect();
-                    let l = s.f.inst(cur, op.clone(), args, &[*out]);
-                    let v = s.f.result(l);
-                    s.write(cur, i, ws.len(), v);
-                }
-                Kind::Ext { from, to, sx } => {
-                    let a = s.read(cur, i, 0, *from);
-                    let l = s.f.inst(cur, Op::Ext { from: *from, to: *to, sx: *sx }, alloc::vec![a], &[*to]);
-                    let v = s.f.result(l);
-                    s.write(cur, i, 1, v);
-                }
-                Kind::Jmp(t) => term = Some(Term::Jmp(s.edge(*t))),
-                Kind::Br { cmp, neg, t } => {
-                    let (tt, ff) = (s.edge(*t), s.edge(next()?));
-                    let (tt, ff) = if *neg { (ff, tt) } else { (tt, ff) };
-                    term = Some(match cmp {
-                        None => Term::Br { cond: s.read(cur, i, 0, 1), t: tt, f: ff },
-                        Some((cc, w, imm)) => {
-                            let a = s.read(cur, i, 0, *w);
-                            let b = match imm {
-                                Some(v) => s.f.konst(mask(*v, *w), *w),
-                                None => s.read(cur, i, 1, *w),
-                            };
-                            Term::BrCmp { cc: *cc, w: *w, a, b, t: tt, f: ff }
+                        Side::Mem(d) => {
+                            let l = self.f.inst(cur, Op::Load(w, d + off as i32), alloc::vec![p.unwrap()], &[w]);
+                            self.f.result(l)
+                        }
+                        Side::Zero => self.f.konst(0, w),
+                        Side::Pool(_) => {
+                            let l = self.f.inst(cur, Op::Load(w, off as i32), alloc::vec![p.unwrap()], &[w]);
+                            self.f.result(l)
                         }
                     });
                 }
-                Kind::Call { target, regs, parts, .. } => {
-                    let (args, k) = s.call_args(cur, i, *target, regs)?;
-                    let ws: Vec<u8> = parts.iter().map(|p| if matches!(p.size, 1 | 2 | 4 | 8) { p.size as u8 } else { 8 }).collect();
-                    let call = Call { target: *target, regs: regs.clone(), parts: parts.clone(), site };
-                    let ci = s.f.inst(cur, Op::Call(Box::new(call)), args, &ws);
-                    let results: Vec<Value> = s.f.insts[ci.idx()].results().collect();
-                    if let Unwind::Pad { pad, .. } = ri.unwind {
-                        extra = s.invoke(cur, i, pad, Some((&results, k)))?;
-                        break;
-                    }
-                    for (n, v) in results.into_iter().enumerate() {
-                        s.write(cur, i, k + n, v);
+                for (&(off, w), v) in pieces.iter().zip(vals) {
+                    match dst {
+                        Side::Frame(_) => {
+                            self.write(cur, i, k, v);
+                            k += 1;
+                        }
+                        Side::Mem(d) => {
+                            self.f.inst(cur, Op::Store(w, d + off as i32), alloc::vec![p.unwrap(), v], &[]);
+                        }
+                        Side::Zero | Side::Pool(_) => unreachable!("a source-only side"),
                     }
                 }
-                Kind::TailCall { target, regs } => {
-                    let (args, _) = s.call_args(cur, i, *target, regs)?;
-                    term = Some(Term::TailCall {
-                        call: Box::new(Call { target: *target, regs: regs.clone(), parts: Vec::new(), site: Site::None }),
-                        args,
-                    });
-                }
-                Kind::Ret { k, parts } => {
-                    let vs = (0..parts.len()).map(|n| s.read(cur, i, n, parts[n].size as u8)).collect();
-                    term = Some(Term::Ret { k: *k, parts: vs });
-                }
-                Kind::Arg(r) => {
-                    if cur != entry {
-                        return Err(Unsupported("an arg outside the entry"));
-                    }
-                    let w = if matches!(r.size, 1 | 2 | 4 | 8) { r.size as u8 } else { 8 };
-                    let v = s.f.param(entry, w);
-                    s.f.entry_regs.push(*r);
-                    s.write(cur, i, 0, v);
-                }
-                Kind::Island { isl } => {
-                    let mut refs = Vec::with_capacity(ri.accs.len());
-                    for k in 0..ri.accs.len() {
-                        // A zero-sized operand: any frame address (it is never accessed).
-                        let r = if ri.accs[k].size == 0 { Some(SlotRef::Scratch(0)) } else { s.slot_ref(i, k) };
-                        refs.push(r.ok_or(Unsupported("a promoted island operand"))?);
-                    }
-                    let isl = Island { isl: CallTarget::Sym(*isl), ops: refs, site };
-                    s.f.inst(cur, Op::Island(Box::new(isl)), Vec::new(), &[]);
-                    if let Unwind::Pad { pad, .. } = ri.unwind {
-                        extra = s.invoke(cur, i, pad, Some((&[], 0)))?;
-                        break;
-                    }
-                }
-                Kind::Handler { h, then: Then::Next, .. } if let Some((op, w)) = native_bin(*h) => {
-                    // `d, a, b`: a native operation (fixed registers, not a call).
-                    let a = s.read(cur, i, 1, w);
-                    let b = if matches!(op, BinOp::Rotl | BinOp::Rotr) && w != 4 {
-                        // A rotate's amount is 4 bytes, extended or truncated to the width:
-                        // only its low bits count.
-                        let b = s.read(cur, i, 2, 4);
-                        let l = s.f.inst(cur, Op::Ext { from: 4, to: w, sx: false }, alloc::vec![b], &[w]);
-                        s.f.result(l)
-                    } else {
-                        s.read(cur, i, 2, w)
-                    };
-                    let l = s.f.inst(cur, Op::Bin(op, w), alloc::vec![a, b], &[w]);
-                    let v = s.f.result(l);
-                    s.write(cur, i, 0, v);
-                }
-                Kind::Handler { h, then: Then::Next, .. } if let Some(op) = super::decode::vector_op(*h) => {
-                    // `d` and its operands: a native vector operation.
-                    let ws: &[u8] = match &op {
-                        Op::V(o) => o.widths().0,
-                        _ => &[16, 16],
-                    };
-                    let args = ws.iter().enumerate().map(|(k, &w)| s.read(cur, i, k + 1, w)).collect();
-                    let rw = match &op {
-                        Op::V(o) => o.widths().1,
-                        _ => 16,
-                    };
-                    let l = s.f.inst(cur, op, args, &[rw]);
-                    let v = s.f.result(l);
-                    s.write(cur, i, 0, v);
-                }
-                // A dense switch's index computed in place of its handler call.
-                Kind::Handler { h, args, then: Then::Table(ts), .. } if let Some((w, base, n)) = dense_switch(*h, args, s.mode) => {
-                    let v = s.read(cur, i, 0, w);
-                    let l = s.f.inst(cur, Op::SwitchIdx { w, base, n }, alloc::vec![v], &[8]);
-                    let idx = s.f.result(l);
-                    let targets = ts.iter().map(|&t| s.edge(t)).collect();
-                    term = Some(Term::Switch { idx, targets });
-                }
-                Kind::Handler { h, args, slots, then } => {
-                    let mut regs: Vec<(Arg, [Option<SlotRef>; 2])> = args.iter().map(|&a| (a, [None, None])).collect();
-                    let mut ins = Vec::new();
-                    let mut outs = Vec::new();
-                    let mut in_vals = Vec::new();
-                    let mut out_ws = Vec::new();
-                    // The outputs' accesses, in order.
-                    let mut out_acc = Vec::new();
-                    let mut sc = 0u32;
-                    // Through the register entry when it has one and every frame operand is
-                    // a variable: the values go in registers, and the scratch area isn't used.
-                    let reg = super::effects::reg_entry(*h, s.mode).is_some() && (0..slots.len()).all(|k| s.slot_ref(i, k).is_none());
-                    for (k, &(reg, half)) in slots.iter().enumerate() {
-                        let a = ri.accs[k];
-                        let r = match s.slot_ref(i, k) {
-                            Some(r) => r,
-                            None => {
-                                let at = sc;
-                                sc += 8;
-                                if matches!(a.how, super::decode::How::Read | super::decode::How::Update) {
-                                    in_vals.push(s.read(cur, i, k, a.size as u8));
-                                    ins.push(at);
-                                }
-                                if matches!(a.how, super::decode::How::Write | super::decode::How::Update) {
-                                    outs.push(at);
-                                    out_ws.push(a.size as u8);
-                                    out_acc.push(k);
-                                }
-                                SlotRef::Scratch(at)
-                            }
+            }
+            Kind::Imm(w, v) => {
+                let c = self.f.konst(*v, *w);
+                self.write(cur, i, 0, c);
+            }
+            Kind::Load(w, k) => {
+                let p = self.read(cur, i, 0, 8);
+                let l = self.f.inst(cur, Op::Load(*w, *k), alloc::vec![p], &[*w]);
+                let v = self.f.result(l);
+                self.write(cur, i, 1, v);
+            }
+            Kind::Store(w, k) => {
+                let p = self.read(cur, i, 0, 8);
+                let v = self.read(cur, i, 1, *w);
+                self.f.inst(cur, Op::Store(*w, *k), alloc::vec![p, v], &[]);
+            }
+            Kind::Addr => {
+                let Res::Mem(a, off) = self.fr.res[i][0] else { return Err(Unsupported("an address of a promoted alloca")) };
+                let l = self.f.inst(cur, Op::AllocaAddr(a, off), Vec::new(), &[8]);
+                let v = self.f.result(l);
+                self.write(cur, i, 1, v);
+            }
+            Kind::RefAddr { to, ind } => {
+                let l = self.f.inst(cur, Op::RefAddr(*to, *ind), Vec::new(), &[8]);
+                let v = self.f.result(l);
+                self.write(cur, i, 0, v);
+            }
+            Kind::PtrAdd(imm) => {
+                let p = self.read(cur, i, 0, 8);
+                let l = self.f.inst(cur, Op::PtrAdd(*imm), alloc::vec![p], &[8]);
+                let v = self.f.result(l);
+                self.write(cur, i, 1, v);
+            }
+            Kind::PtrIndex(stride) => {
+                let p = self.read(cur, i, 0, 8);
+                let x = self.read(cur, i, 1, 8);
+                let l = self.f.inst(cur, Op::PtrIndex(*stride), alloc::vec![p, x], &[8]);
+                let v = self.f.result(l);
+                self.write(cur, i, 2, v);
+            }
+            Kind::Bin(op, w, imm) => {
+                let a = self.read(cur, i, 0, *w);
+                let shift = matches!(*op, BinOp::Shl | BinOp::ShrS | BinOp::ShrU);
+                let b = match imm {
+                    Some(v) if shift => self.f.konst(v & (8 * *w as u64 - 1), *w),
+                    Some(v) => self.f.konst(mask(*v, *w), *w),
+                    None => self.read(cur, i, 1, *w),
+                };
+                let l = self.f.inst(cur, Op::Bin(*op, *w), alloc::vec![a, b], &[*w]);
+                let v = self.f.result(l);
+                self.write(cur, i, ri.accs.len() - 1, v);
+            }
+            Kind::Cmp(cc, w, imm) => {
+                let a = self.read(cur, i, 0, *w);
+                let b = match imm {
+                    Some(v) => self.f.konst(mask(*v, *w), *w),
+                    None => self.read(cur, i, 1, *w),
+                };
+                let l = self.f.inst(cur, Op::Cmp(*cc, *w), alloc::vec![a, b], &[1]);
+                let v = self.f.result(l);
+                self.write(cur, i, ri.accs.len() - 1, v);
+            }
+            Kind::Ovf(op, signed, w) => {
+                let a = self.read(cur, i, 0, *w);
+                let b = self.read(cur, i, 1, *w);
+                let l = self.f.inst(cur, Op::Ovf(*op, *signed, *w), alloc::vec![a, b], &[*w, 1]);
+                let r = self.f.insts[l.idx()].res;
+                self.write(cur, i, 2, Value(r));
+                self.write(cur, i, 3, Value(r + 1));
+            }
+            Kind::Pure { op, ws, out } => {
+                let args = ws.iter().enumerate().map(|(k, &w)| self.read(cur, i, k, w)).collect();
+                let l = self.f.inst(cur, op.clone(), args, &[*out]);
+                let v = self.f.result(l);
+                self.write(cur, i, ws.len(), v);
+            }
+            Kind::Ext { from, to, sx } => {
+                let a = self.read(cur, i, 0, *from);
+                let l = self.f.inst(cur, Op::Ext { from: *from, to: *to, sx: *sx }, alloc::vec![a], &[*to]);
+                let v = self.f.result(l);
+                self.write(cur, i, 1, v);
+            }
+            Kind::Jmp(t) => return Ok(Flow::End(Term::Jmp(self.edge(*t)))),
+            Kind::Br { cmp, neg, t } => {
+                let (tt, ff) = (self.edge(*t), self.edge(next()?));
+                let (tt, ff) = if *neg { (ff, tt) } else { (tt, ff) };
+                return Ok(Flow::End(match cmp {
+                    None => Term::Br { cond: self.read(cur, i, 0, 1), t: tt, f: ff },
+                    Some((cc, w, imm)) => {
+                        let a = self.read(cur, i, 0, *w);
+                        let b = match imm {
+                            Some(v) => self.f.konst(mask(*v, *w), *w),
+                            None => self.read(cur, i, 1, *w),
                         };
-                        regs[reg as usize].1[half as usize] = Some(r);
+                        Term::BrCmp { cc: *cc, w: *w, a, b, t: tt, f: ff }
                     }
-                    if reg {
-                        ins.clear();
-                        outs.clear();
-                    } else {
-                        s.scratch = s.scratch.max(sc);
-                    }
-                    let ret = matches!(then, Then::Branch { .. } | Then::Table(_));
-                    let mut ws = out_ws.clone();
-                    match then {
-                        Then::Branch { .. } => ws.push(1),
-                        Then::Table(_) => ws.push(8),
-                        _ => {}
-                    }
-                    let hc = HCall { h: *h, regs, ins, outs, nout: out_ws.len() as u8, ret, reg, site };
-                    let hi = s.f.inst(cur, Op::HCall(Box::new(hc)), in_vals, &ws);
-                    let results: Vec<Value> = s.f.insts[hi.idx()].results().collect();
-                    for (n, &k) in out_acc.iter().enumerate() {
-                        s.write(cur, i, k, results[n]);
-                    }
-                    match then {
-                        Then::Next => {}
-                        Then::Branch { neg, t } => {
-                            let (tt, ff) = (s.edge(*t), s.edge(next()?));
-                            let (tt, ff) = if *neg { (ff, tt) } else { (tt, ff) };
-                            term = Some(Term::Br { cond: *results.last().unwrap(), t: tt, f: ff });
-                        }
-                        Then::Table(ts) => {
-                            let targets = ts.iter().map(|&t| s.edge(t)).collect();
-                            term = Some(Term::Switch { idx: *results.last().unwrap(), targets });
-                        }
-                        Then::Trap => {
-                            if let Unwind::Pad { pad, .. } = ri.unwind {
-                                extra = s.invoke(cur, i, pad, None)?;
-                                break;
+                }));
+            }
+            Kind::Call { target, regs, parts, .. } => {
+                let (args, k) = self.call_args(cur, i, *target, regs)?;
+                let ws: Vec<u8> = parts.iter().map(|p| if matches!(p.size, 1 | 2 | 4 | 8) { p.size as u8 } else { 8 }).collect();
+                let call = Call { target: *target, regs: regs.clone(), parts: parts.clone(), site };
+                let ci = self.f.inst(cur, Op::Call(Box::new(call)), args, &ws);
+                let results: Vec<Value> = self.f.insts[ci.idx()].results().collect();
+                if let Unwind::Pad { pad, .. } = ri.unwind {
+                    return Ok(Flow::Ended(self.invoke(cur, i, pad, Some((&results, k)))?));
+                }
+                for (n, v) in results.into_iter().enumerate() {
+                    self.write(cur, i, k + n, v);
+                }
+            }
+            Kind::TailCall { target, regs } => {
+                let (args, _) = self.call_args(cur, i, *target, regs)?;
+                return Ok(Flow::End(Term::TailCall {
+                    call: Box::new(Call { target: *target, regs: regs.clone(), parts: Vec::new(), site: Site::None }),
+                    args,
+                }));
+            }
+            Kind::Ret { k, parts } => {
+                let vs = (0..parts.len()).map(|n| self.read(cur, i, n, parts[n].size as u8)).collect();
+                return Ok(Flow::End(Term::Ret { k: *k, parts: vs }));
+            }
+            Kind::Arg(r) => {
+                if cur != self.entry {
+                    return Err(Unsupported("an arg outside the entry"));
+                }
+                let w = if matches!(r.size, 1 | 2 | 4 | 8) { r.size as u8 } else { 8 };
+                let v = self.f.param(self.entry, w);
+                self.f.entry_regs.push(*r);
+                self.write(cur, i, 0, v);
+            }
+            Kind::Island { isl } => {
+                let mut refs = Vec::with_capacity(ri.accs.len());
+                for k in 0..ri.accs.len() {
+                    // A zero-sized operand: any frame address (it is never accessed).
+                    let r = if ri.accs[k].size == 0 { Some(SlotRef::Scratch(0)) } else { self.slot_ref(i, k) };
+                    refs.push(r.ok_or(Unsupported("a promoted island operand"))?);
+                }
+                let isl = Island { isl: CallTarget::Sym(*isl), ops: refs, site };
+                self.f.inst(cur, Op::Island(Box::new(isl)), Vec::new(), &[]);
+                if let Unwind::Pad { pad, .. } = ri.unwind {
+                    return Ok(Flow::Ended(self.invoke(cur, i, pad, Some((&[], 0)))?));
+                }
+            }
+            Kind::Handler { h, then: Then::Next, .. } if let Some((op, w)) = native_bin(*h) => {
+                // `d, a, b`: a native operation (fixed registers, not a call).
+                let a = self.read(cur, i, 1, w);
+                let b = if matches!(op, BinOp::Rotl | BinOp::Rotr) && w != 4 {
+                    // A rotate's amount is 4 bytes, extended or truncated to the width:
+                    // only its low bits count.
+                    let b = self.read(cur, i, 2, 4);
+                    let l = self.f.inst(cur, Op::Ext { from: 4, to: w, sx: false }, alloc::vec![b], &[w]);
+                    self.f.result(l)
+                } else {
+                    self.read(cur, i, 2, w)
+                };
+                let l = self.f.inst(cur, Op::Bin(op, w), alloc::vec![a, b], &[w]);
+                let v = self.f.result(l);
+                self.write(cur, i, 0, v);
+            }
+            Kind::Handler { h, then: Then::Next, .. } if let Some(op) = super::decode::vector_op(*h) => {
+                // `d` and its operands: a native vector operation.
+                let ws: &[u8] = match &op {
+                    Op::V(o) => o.widths().0,
+                    _ => &[16, 16],
+                };
+                let args = ws.iter().enumerate().map(|(k, &w)| self.read(cur, i, k + 1, w)).collect();
+                let rw = match &op {
+                    Op::V(o) => o.widths().1,
+                    _ => 16,
+                };
+                let l = self.f.inst(cur, op, args, &[rw]);
+                let v = self.f.result(l);
+                self.write(cur, i, 0, v);
+            }
+            // A dense switch's index computed in place of its handler call.
+            Kind::Handler { h, args, then: Then::Table(ts), .. } if let Some((w, base, n)) = dense_switch(*h, args, self.mode) => {
+                let v = self.read(cur, i, 0, w);
+                let l = self.f.inst(cur, Op::SwitchIdx { w, base, n }, alloc::vec![v], &[8]);
+                let idx = self.f.result(l);
+                let targets = ts.iter().map(|&t| self.edge(t)).collect();
+                return Ok(Flow::End(Term::Switch { idx, targets }));
+            }
+            Kind::Handler { h, args, slots, then } => {
+                let mut regs: Vec<(Arg, [Option<SlotRef>; 2])> = args.iter().map(|&a| (a, [None, None])).collect();
+                let mut ins = Vec::new();
+                let mut outs = Vec::new();
+                let mut in_vals = Vec::new();
+                let mut out_ws = Vec::new();
+                // The outputs' accesses, in order.
+                let mut out_acc = Vec::new();
+                let mut sc = 0u32;
+                // Through the register entry when it has one and every frame operand is
+                // a variable: the values go in registers, and the scratch area isn't used.
+                let reg = super::effects::reg_entry(*h, self.mode).is_some() && (0..slots.len()).all(|k| self.slot_ref(i, k).is_none());
+                for (k, &(reg, half)) in slots.iter().enumerate() {
+                    let a = ri.accs[k];
+                    let r = match self.slot_ref(i, k) {
+                        Some(r) => r,
+                        None => {
+                            let at = sc;
+                            sc += 8;
+                            if matches!(a.how, super::decode::How::Read | super::decode::How::Update) {
+                                in_vals.push(self.read(cur, i, k, a.size as u8));
+                                ins.push(at);
                             }
-                            term = Some(Term::Trap);
+                            if matches!(a.how, super::decode::How::Write | super::decode::How::Update) {
+                                outs.push(at);
+                                out_ws.push(a.size as u8);
+                                out_acc.push(k);
+                            }
+                            SlotRef::Scratch(at)
                         }
+                    };
+                    regs[reg as usize].1[half as usize] = Some(r);
+                }
+                if reg {
+                    ins.clear();
+                    outs.clear();
+                } else {
+                    self.scratch = self.scratch.max(sc);
+                }
+                let ret = matches!(then, Then::Branch { .. } | Then::Table(_));
+                let mut ws = out_ws.clone();
+                match then {
+                    Then::Branch { .. } => ws.push(1),
+                    Then::Table(_) => ws.push(8),
+                    _ => {}
+                }
+                let hc = HCall { h: *h, regs, ins, outs, nout: out_ws.len() as u8, ret, reg, site };
+                let hi = self.f.inst(cur, Op::HCall(Box::new(hc)), in_vals, &ws);
+                let results: Vec<Value> = self.f.insts[hi.idx()].results().collect();
+                for (n, &k) in out_acc.iter().enumerate() {
+                    self.write(cur, i, k, results[n]);
+                }
+                match then {
+                    Then::Next => {}
+                    Then::Branch { neg, t } => {
+                        let (tt, ff) = (self.edge(*t), self.edge(next()?));
+                        let (tt, ff) = if *neg { (ff, tt) } else { (tt, ff) };
+                        return Ok(Flow::End(Term::Br { cond: *results.last().unwrap(), t: tt, f: ff }));
+                    }
+                    Then::Table(ts) => {
+                        let targets = ts.iter().map(|&t| self.edge(t)).collect();
+                        return Ok(Flow::End(Term::Switch { idx: *results.last().unwrap(), targets }));
+                    }
+                    Then::Trap => {
+                        if let Unwind::Pad { pad, .. } = ri.unwind {
+                            return Ok(Flow::Ended(self.invoke(cur, i, pad, None)?));
+                        }
+                        return Ok(Flow::End(Term::Trap));
                     }
                 }
-                Kind::Unreachable => term = Some(Term::Trap),
-                Kind::Lpad => return Err(Unsupported("an lpad in a block")),
             }
-            if last && term.is_none() && extra.is_empty() && !matches!(s.f.blocks[cur.idx()].term, Term::Invoke { .. }) {
-                // Falls through into the next block.
-                term = Some(Term::Jmp(s.edge(next()?)));
+            Kind::Unreachable => return Ok(Flow::End(Term::Trap)),
+            Kind::Lpad => return Err(Unsupported("an lpad in a block")),
+        }
+        Ok(Flow::Next)
+    }
+
+    /// The edges' arguments, from the operand rows.
+    fn write_edge_args(&mut self) {
+        for b in 0..self.f.blocks.len() {
+            let params = self.f.blocks[b].params.clone();
+            if params.is_empty() {
+                continue;
+            }
+            let preds = self.f.blocks[b].preds.clone();
+            for (j, &(p, k)) in preds.iter().enumerate() {
+                let args: Vec<Value> = params
+                    .iter()
+                    .map(|&x| match self.phis.get(x.idx()) {
+                        Some(Some(phi)) => phi.row[j],
+                        // An entry argument.
+                        _ => x,
+                    })
+                    .collect();
+                let mut t = core::mem::replace(&mut self.f.blocks[p.idx()].term, Term::None);
+                t.edge_mut(k as usize).args = args;
+                self.f.blocks[p.idx()].term = t;
             }
         }
-        if let Some(t) = term {
-            s.finish_block(cur, t);
+    }
+}
+
+/// The IR of `code` with frame `fr`, before the optimizations ([`super::opt::run`]).
+pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -> Result<Func, Unsupported> {
+    let mut s = B::new(code, fr, frame_size, mode)?;
+    s.layout_blocks()?;
+    for rb in 0..code.blocks.len() {
+        if let Some(cur) = s.ir[rb] {
+            s.lower_block(rb, cur)?;
         }
-        layout.extend(extra);
     }
     // Parameters left incomplete belong to blocks never sealed: unreachable ones.
     for b in 0..s.f.blocks.len() {
@@ -716,30 +788,10 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
             s.seal(Block(b as u32));
         }
     }
-    // The edges' arguments, from the operand rows.
-    for b in 0..s.f.blocks.len() {
-        let params = s.f.blocks[b].params.clone();
-        if params.is_empty() {
-            continue;
-        }
-        let preds = s.f.blocks[b].preds.clone();
-        for (j, &(p, k)) in preds.iter().enumerate() {
-            let args: Vec<Value> = params
-                .iter()
-                .map(|&x| match s.phis.get(x.idx()) {
-                    Some(Some(phi)) => phi.row[j],
-                    // An entry argument.
-                    _ => x,
-                })
-                .collect();
-            let mut t = core::mem::replace(&mut s.f.blocks[p.idx()].term, Term::None);
-            t.edge_mut(k as usize).args = args;
-            s.f.blocks[p.idx()].term = t;
-        }
-    }
+    s.write_edge_args();
     s.f.resolve_aliases();
     s.f.scratch = s.scratch;
-    s.f.layout = layout;
+    s.f.layout = s.layout;
     Ok(s.f)
 }
 
