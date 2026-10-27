@@ -98,24 +98,23 @@ pub(super) fn backtrace(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), 
     // Without the JIT, whose code has no symbols (and with `RYO_JIT_THRESHOLD=0` would run
     // every frame).
     let Captured { status, stdout, stderr } = capture(Command::new(&exe).env("RUST_BACKTRACE", "1").env("RYO_JIT", "off"))?;
-    // On PE the walk goes through the VM frames, but without their landing pads (no "guard
-    // dropped"), and the frames of functions with internal linkage, VM or native (`inner`,
-    // `outer`, `__rust_try`), are named after the nearest external symbol before them: the
-    // PDB lists only external symbols, and neither VM code nor a build without `-g` has
-    // CodeView records (design/platforms.md). Reaching `lang_start_internal` shows that the
-    // walk got through.
-    let (want, want_stdout): (&[&str], &str) = if MSVC {
-        (&["deep 7", "vm_backtrace::main", "std::rt::lang_start_internal"], "caught: true\n")
+    // On PE the frames of functions with internal linkage, VM or native (`inner`, `outer`,
+    // `__rust_try`), are named after the nearest external symbol before them: the PDB lists
+    // only external symbols, and neither VM code nor a build without `-g` has CodeView
+    // records (design/platforms.md). Reaching `lang_start_internal` shows that the walk got
+    // through.
+    let (want, in_drop_want): (&[&str], &[&str]) = if MSVC {
+        (&["deep 7", "vm_backtrace::main", "std::rt::lang_start_internal"], &["std::rt::lang_start_internal"])
     } else {
-        (&["vm_backtrace::inner", "vm_backtrace::outer", "__rust_try", "vm_backtrace::main"], "guard dropped\ncaught: true\n")
+        (&["vm_backtrace::inner", "vm_backtrace::outer", "__rust_try", "vm_backtrace::main"], &["vm_backtrace::outer", "vm_backtrace::main"])
     };
+    let want_stdout = "guard dropped\ncaught: true\n";
     let mut missing: Vec<_> = want.iter().filter(|w| !stderr.contains(*w)).collect();
     // The backtrace the guard's drop captures in the landing pad walks out of it, through
-    // `outer`, into `main`.
-    if !MSVC {
-        let in_drop = stderr.split_once("drop backtrace:").map_or("", |(_, b)| b);
-        missing.extend(["vm_backtrace::outer", "vm_backtrace::main"].iter().filter(|w| !in_drop.contains(*w)));
-    }
+    // `outer` (on PE through the pad region, the trampoline and the unwinder's frames), into
+    // `main`.
+    let in_drop = stderr.split_once("drop backtrace:").map_or("", |(_, b)| b);
+    missing.extend(in_drop_want.iter().filter(|w| !in_drop.contains(*w)));
     if !status.success() || stdout != want_stdout || !missing.is_empty() {
         return Err(format!("{status}, missing frames {missing:?}\nstdout:\n{stdout}stderr:\n{stderr}"));
     }

@@ -854,27 +854,10 @@ struct RunResult {
 }
 
 impl RunResult {
-    /// Compares with `reference`, which may print the `lost` lines (in order) that this run
-    /// doesn't ([`Program::pe_lost_cleanups`]).
-    fn compare(&self, reference: &RunResult, lost: &[&str]) -> Result<(), String> {
+    /// Compares with `reference`.
+    fn compare(&self, reference: &RunResult) -> Result<(), String> {
         if self == reference {
             return Ok(());
-        }
-        if !lost.is_empty() && self.code == reference.code && self.stderr == reference.stderr {
-            // Match this run's lines in the reference's in order; the reference's leftovers
-            // must be `lost`.
-            let mut have = self.stdout.lines().peekable();
-            let mut extra = Vec::new();
-            for line in reference.stdout.lines() {
-                if have.peek() == Some(&line) {
-                    have.next();
-                } else {
-                    extra.push(line);
-                }
-            }
-            if have.next().is_none() && extra == lost && self.stdout.ends_with('\n') == reference.stdout.ends_with('\n') {
-                return Ok(());
-            }
         }
         Err(format!(
             "output differs\n--- rustc: exit {:?} ---\nstdout:\n{}stderr:\n{}\
@@ -910,9 +893,7 @@ impl Ctx<'_> {
             } else {
                 &reference
             };
-            // PE runs no landing pads in VM frames (design/platforms.md).
-            let lost = if MSVC && variant.compiler == Compiler::Ryo && !variant.no_vm { program.pe_lost_cleanups } else { &[] };
-            report(&name, t, self.build_and_run(program, variant).and_then(|r| r.compare(reference, lost)), failed);
+            report(&name, t, self.build_and_run(program, variant).and_then(|r| r.compare(reference)), failed);
         }
     }
 
@@ -1163,17 +1144,6 @@ mod tests {
         assert_eq!(roots, ["6ryo_rt"]);
         let roots = super::crate_roots("_RINvNtCsabc_4core3ptr13drop_in_placeNtCsdef_3std6ThreadE");
         assert_eq!(roots, ["4core", "3std"]);
-    }
-
-    #[test]
-    fn compares_with_lost_cleanups() {
-        let run = |stdout: &str| super::RunResult { code: Some(0), stdout: stdout.to_owned(), stderr: String::new() };
-        let reference = run("drop a\n2\ndrop a\ncaught\n");
-        assert!(run("drop a\n2\ncaught\n").compare(&reference, &["drop a"]).is_ok());
-        assert!(run("drop a\n2\ncaught\n").compare(&reference, &[]).is_err());
-        assert!(run("2\ncaught\n").compare(&reference, &["drop a"]).is_err());
-        assert!(run("drop a\n2\ndrop a\ncaught\n").compare(&reference, &["drop a"]).is_ok());
-        assert!(run("drop a\n2\ncaught\nmore\n").compare(&reference, &["drop a"]).is_err());
     }
 
     #[test]

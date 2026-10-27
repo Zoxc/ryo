@@ -403,6 +403,11 @@ by its code offset, which the encoder turns into the function's LSDA call-site t
   landing. The cleanup code ends in `resume x`.
 - Calls inside cleanup blocks carry `Terminate`, so a panic during unwinding aborts, as with
   native code.
+- **PE**: the cleanup blocks come last ([vm.md](vm.md#pe-seh)): the other blocks, their
+  terminate stubs and landing pads, then, if any call has a cleanup landing pad, the pad
+  region: those landing pads, the cleanup blocks, and the terminate stubs and landing pads
+  of their calls. A call with stack arguments there keeps the function native (`rsp` isn't
+  `fp - F` in the region).
 - The `catch_unwind` intrinsic is an island (`ryo_island_catch_unwind<Data>`, without a
   cleanup entry: the intrinsic is `rustc_nounwind`). Its `try_fn`/`catch_fn` operands are fn
   pointers, VM functions or not, called natively, and the intrinsic catches a panic
@@ -473,8 +478,8 @@ definitions, C-variadic calls, over-aligned argument blocks and the `#[target_fe
 functions with features beyond the crate's or bodies that don't map (`avx2` and LLVM
 intrinsics in `memchr` and `std_detect`; `y build --sysroot ryo` prints the table).
 The PE fixup area is only cross-checked (objects and links), not run, like the rest of the
-PE column ([platforms.md](platforms.md)). On PE, landing pads don't run
-([vm.md](vm.md#unwinding)).
+PE column ([platforms.md](platforms.md)). On PE, landing pads run through
+`ryo_seh_handler` ([vm.md](vm.md#pe-seh)), only cross-checked too.
 
 ## Code optimization
 

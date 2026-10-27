@@ -862,8 +862,11 @@ frame.write(x, exception);  // the object, from the register before x's
 `UnwindResume`, continuing to unwind the exception object in slot `x`.
 
 Handler `ryo_h_Resume`, written in assembly: it loads the object and jumps to
-`_Unwind_Resume`, so the unwinder sees the VM function as its caller; on PE it aborts.
-`trap` shape: the handler call (a call site) then `ud2`.
+`_Unwind_Resume`, so the unwinder sees the VM function as its caller. `trap` shape: the
+handler call (a call site) then `ud2`. On PE, in the pad region (where all cleanup code
+with a landing pad is, [vm.md](vm.md#pe-seh)), it is `add rsp, 40; ret` instead, without a
+call site: the landing pad returns to the trampoline that called it; elsewhere the PE
+handler aborts.
 
 ```
 movsxd rsi, esi

@@ -193,20 +193,29 @@ section; its fields and the counter checks and stubs that use it are in
   prefix before the FDE's range runs before the frame exists and calls nothing.
 - **PE** (`sys/windows.rs`): per function one `RUNTIME_FUNCTION` over the body and the OSR
   code, and the AOT code's `UNWIND_INFO` (`image::pe_unwind_info`: `push rbp; push rdi;
-  push rsi; lea rbp, [rsp + 16]`, the probe, `sub`, `rbp` the frame register, no handler),
-  in the region's read-write end, registered with `RtlAddFunctionTable` (base: the
-  function's allocation, below both; never deleted, code is never freed). One entry covers
-  the OSR code too: there the AOT frame's `rbp` and saved `rdi`/`rsi` are already in place
-  (the stub's return address and the moving `rsp` don't matter with a frame register), so
-  the body's description past its prologue is the OSR code's at every instruction, and an
+  push rsi; lea rbp, [rsp + 16]`, the probe, `sub`, `rbp` the frame register), in the
+  region's read-write end, registered with `RtlAddFunctionTable` (base: the function's
+  allocation, below both; never deleted, code is never freed). One entry covers the OSR
+  code too: there the AOT frame's `rbp` and saved `rdi`/`rsi` are already in place (the
+  stub's return address and the moving `rsp` don't matter with a frame register), so the
+  body's description past its prologue is the OSR code's at every instruction, and an
   entry's `jmp` to its head stays inside the function, which the unwinder's epilogue check
   requires (a separate entry would make `pop rcx; jmp head` look like an epilogue). As in
-  the AOT code, panics unwind through JIT frames but their landing pads don't run
-  ([platforms.md](platforms.md)). The entry prefix has no entry: a leaf, the return address
-  at `rsp` (the AOT stub's, then the body's start, whose prologue hasn't run). The SSA
-  tier's functions get their own `UNWIND_INFO` (`jit::Output::pe_unwind`, [PE
-  frames](#back-end)), over the OSR code too: its entries keep `rbp`, `rdi` and `rsi`, and
-  store the other saves before they jump to the head.
+  the AOT code, the `UNWIND_INFO` names `ryo_seh_handler` ([vm.md](vm.md#pe-seh)), with the
+  LSDA of the JIT code's call sites as handler data: the handler RVA can't reach `ryo_rt`
+  from the allocation, so it is a thunk after the OSR code, `jmp [rip]; .quad` the handler's
+  address (`RtApi::seh_handler`). Re-encoded code keeps the AOT code's pad region at the end
+  of the code, with its own entry and handler; then the OSR code, after it, gets an entry
+  of its own, the body's `UNWIND_INFO` without a prologue (`SizeOfProlog` 0), and the
+  `pop rcx; jmp head` concern above holds there only for asynchronous unwinders (nothing
+  in it calls code that unwinds). The SSA tier doesn't lay out pad regions: it leaves
+  functions with cleanup landing pads, its inlined callees' included, to re-encoding
+  (`Unsupported`). The entry prefix has no entry: a leaf, the return address at `rsp` (the
+  AOT stub's, then the body's start, whose prologue hasn't run). The SSA tier's functions
+  get their own `UNWIND_INFO` (`jit::Output::pe_unwind`, [PE frames](#back-end)), over the
+  OSR code too: its entries keep `rbp`, `rdi` and `rsi`, and store the other saves before
+  they jump to the head; their terminate pads are entered by `RtlUnwindEx` with the SSA
+  frame's `rsp`, as the Itanium personality enters them.
 - **macOS** (`sys/macos.rs`): the same `.eh_frame` as on ELF (Mach-O images' VM code is
   SysV with DWARF unwind information), but registered one FDE at a time: libunwind's
   `__register_frame` (libSystem's) takes a single FDE, finds its CIE through the FDE's CIE

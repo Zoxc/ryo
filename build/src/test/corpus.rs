@@ -16,10 +16,6 @@ pub(crate) struct Program {
     pub(super) vm: &'static [&'static str],
     /// Functions the ryo build must not compile to bytecode.
     pub(super) native: &'static [&'static str],
-    /// Lines of the reference stdout, in order, that the ryo build doesn't print on PE: the
-    /// output of cleanups (drops) that run while a panic unwinds through VM frames, whose
-    /// landing pads don't run on PE (design/platforms.md, "Panics out of islands").
-    pub(super) pe_lost_cleanups: &'static [&'static str],
     /// A C `main` (relative to `tests/`), compiled with `cc` (`cl` on MSVC) and linked against
     /// the staticlib and cdylib crates, in order, or a C++ one (`.cpp`), compiled with `c++`
     /// (`cl /EHs`). Skipped without that compiler.
@@ -126,18 +122,8 @@ impl NativeLib {
 }
 
 /// Defaults for [`Program`] fields.
-pub(super) const PROGRAM: Program = Program {
-    name: "",
-    crates: &[],
-    flags: &[],
-    vm: &[],
-    native: &[],
-    pe_lost_cleanups: &[],
-    c_main: None,
-    msvc_only: false,
-    foreign_unwind: false,
-    native_lib: None,
-};
+pub(super) const PROGRAM: Program =
+    Program { name: "", crates: &[], flags: &[], vm: &[], native: &[], c_main: None, msvc_only: false, foreign_unwind: false, native_lib: None };
 
 pub(crate) struct Crate {
     /// The crate name, passed as `--crate-name`.
@@ -194,7 +180,7 @@ pub(crate) const CORPUS: &[Program] = &[
     single!("generics_traits"),
     single!("closures_iters"),
     single!("collections"),
-    single!("panics", pe_lost_cleanups: &["guard 1 dropped", "guard 3 dropped", "guard 99 dropped"]),
+    single!("panics"),
     single!("exit_code"),
     single!("end_ptrs"),
     Program {
@@ -236,7 +222,6 @@ pub(crate) const CORPUS: &[Program] = &[
     single!(
         "vm_calls",
         vm: &["main", "add", "swap", "bump", "sum", "fib", "talk", "<Dog as Speak>::speak", "constants", "apply", "double", "closures", "may_panic", "<Noisy as std::ops::Drop>::drop"],
-        pe_lost_cleanups: &["drop a"],
         // `speak` is a `call.ind` through the vtable; `P`'s `Debug` impl is called through a
         // vtable by native `fmt` code.
     ),
@@ -252,7 +237,6 @@ pub(crate) const CORPUS: &[Program] = &[
     single!(
         "vm_intrinsics",
         vm: &["main", "atomics", "atomic_ptrs", "unwinding", "misc", "dst", "direct", "contention"],
-        pe_lost_cleanups: &["drop D2", "drop D1"],
     ),
     single!(
         "vm_lowerings",

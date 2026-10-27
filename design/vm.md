@@ -595,7 +595,8 @@ panic runtime, as through native frames. The image carries the unwind informatio
   destination. The personality enters it with the exception object in `rax`, `rsp` at
   `fp - F` (and `rbp` restored); `ryo_h_Lpad` stores the object in the function's
   exception slot `x`. The cleanup code ends in `resume x`, whose handler (assembly) loads the
-  object and jumps to `_Unwind_Resume`, so the unwinder sees the VM function as its caller.
+  object and jumps to `_Unwind_Resume`, so the unwinder sees the VM function as its caller
+  (on PE the pads are called instead, [below](#pe-seh)).
 - **Panic state**: nothing is caught or re-raised on the way, so std's panic count, the
   panic hook, `std::thread::panicking()` in cleanup code and "panic in a destructor during
   cleanup" behave exactly as natively. A panic that leaves a VM function just continues
@@ -604,13 +605,66 @@ panic runtime, as through native frames. The image carries the unwind informatio
 - **Backtraces**: frames of VM functions are named by their own symbols, defined on their
   code ([Image format](#image-format)), so `RUST_BACKTRACE=1` and profilers show them between the native frames
   (`y test`'s `backtrace` check, [build.md](build.md#test-and-bench)).
-- **PE**: VM code keeps the frame pointer ([Frames](#frames)), and `.pdata`/`.xdata`
-  describe each function's prologue (`image/writer.rs`, `unwind_pe`: the pushes of `rbp`,
-  `rdi` and `rsi`, `rbp` as frame register at `rsp + 16`, the allocation, after the counter
-  check; the entry's counter stub has an entry of its own), so
-  the system unwinder can walk through VM frames, but they register no exception handler:
-  landing pads don't run on PE, and `resume` aborts. Like the rest of the PE column this is
-  only cross-checked ([platforms.md](platforms.md)).
+- **PE**: SEH, with the same LSDA and landing pads, called during the native unwind
+  ([below](#pe-seh)).
+
+### PE: SEH
+
+Windows unwinds in two phases, calling each frame's language handler: a search for a frame
+that catches, then an unwind to it (`RtlUnwindEx`). VM code keeps the frame pointer
+([Frames](#frames)); `.pdata`/`.xdata` (`image/writer.rs`, `unwind_pe`) describe each
+function's prologue (the pushes of `rbp`, `rdi` and `rsi`, `rbp` as frame register at
+`rsp + 16`, the allocation, after the counter check; the entry's counter stub has a leaf
+entry of its own) and name `ryo_rt`'s `ryo_seh_handler` (`vm/rt/src/vm/seh.rs`) for both
+phases, with its handler data (`image::pe_handler_data`): the entry's and the pad region's
+offsets in the function, and the function's LSDA, the ELF one.
+
+- **Search phase**: at a `Terminate` call site the handler catches every C++ exception
+  (`0xE06D7363`: Rust panics of any std, and foreign C++ ones), as rustc's catch-all
+  terminate pads do: `RtlUnwindEx` to its landing pad, so the frames below unwind (their
+  cleanups run) and the terminate stub calls the reason's lang item. Other exceptions pass
+  (`catch (...)` doesn't take SEH). At a pc without a call site a C++ exception aborts, as on
+  ELF. Cleanup sites do nothing: if nothing catches, the process ends without unwinding,
+  as natively.
+- **Unwind phase**: at a cleanup call site, but in the unwind's target frame, and for every
+  exception (a C++ catch's unwind is `STATUS_UNWIND_CONSOLIDATE`'s, an `__except`'s
+  `STATUS_UNWIND`), the handler calls the landing pad on the current stack, below the
+  unwinder's frames, as the funclets of cg_llvm's code are called. The trampoline
+  `ryo_seh_call_pad` (assembly with SEH directives) saves its own nonvolatile registers,
+  loads the VM frame's from the `CONTEXT` the unwinder unwound into it (`rbp` its `fp`, and
+  whatever the JIT keeps in callee-saved registers), puts the exception record in `rax` and
+  the pad in `r11`, and calls the function's pad region. The pad's `resume` returns there,
+  and the handler returns `ExceptionContinueSearch`: the same unwind goes on to the next
+  frame, still delivering the original exception. So there is one search and one unwind
+  per exception, however many VM frames and pads; nothing is copied, re-raised or caught on
+  the way, and the panic count, the hook, `__except` filters and foreign exceptions behave as
+  through native frames.
+- **Pad region**: on PE the lowering emits the cleanup blocks last
+  ([lowering.md](lowering.md#unwinding)): the body, its terminate stubs, then the cleanup
+  landing pads, the cleanup blocks and their own terminate stubs (`Asm::begin_region`; the
+  encoders find its start at the first cleanup landing pad, `asm::pe_region_start`). The
+  encoder lays it out after the counter stubs, behind its entry `sub rsp, 40; jmp r11`
+  (`asm::PE_REGION_ALLOC`: the shadow space of its calls, and `rsp` 16-aligned), with a
+  `.pdata` entry of its own (`image::pe_region_unwind_info`: that allocation, no frame
+  register, the handler), so that a stack walk or an exception from a pad goes through it,
+  the trampoline and the handler into the unwinder's frames. There `rsp` isn't `fp - F`:
+  slots are `[rbp + off]` as everywhere on PE, island calls use the entry's shadow space
+  rather than moving `rsp`, a call with stack arguments keeps the function native, loop
+  heads have neither counter checks nor padding, and `resume x` is `add rsp, 40; ret`
+  (`ryo_h_Resume` only serves cleanup code without a cleanup landing pad, which no unwind
+  reaches). Nothing branches across the region's start (`EncodeError::BadRegion`). A panic
+  in a pad's drop hits the drop call's `Terminate` site in the region: the handler unwinds
+  to the region's terminate stub, below the trampoline, which aborts through
+  `panic_in_cleanup` after the drop's own frames unwound.
+- **Epilogues**: the unwinder calls no handler for a frame whose pc is in an epilogue, which
+  it recognizes by the code at the pc. So on PE a call with a landing pad that ends its
+  instruction (one storing no result, an island in the region) is followed by a `nop`: its
+  return address is never an epilogue's start.
+- **JIT**: the JIT's code gets the same, through a thunk to the handler in its code memory
+  ([jit.md](jit.md#unwinding-and-profiling)); the SSA tier leaves functions with cleanup
+  landing pads to re-encoding.
+
+Like the rest of the PE column this is only cross-checked from Linux ([platforms.md](platforms.md)).
 
 ## Handlers
 

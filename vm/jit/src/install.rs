@@ -225,8 +225,8 @@ impl Jit {
         let (func, img) = unsafe { ((*rec).func, Image::from_header((*rec).header.cast()).map_err(|_| "invalid image")?) };
         let h = img.header();
         let info = self.image(&img);
-        // PE code has no personality: its unwind info has no handler, so landing pads don't
-        // run, as in the AOT code (design/platforms.md).
+        // PE code has no personality: its unwind info names `ryo_seh_handler` instead, as the
+        // AOT code's (design/vm.md#pe-seh).
         let personality = if img.mode().pe { 0 } else { info.personality.ok_or("no personality slot")? };
         let place = self.place(info.span).ok_or("no code memory near the image")?;
         // SAFETY: a linked image's text section.
