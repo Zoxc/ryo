@@ -1354,43 +1354,11 @@ impl Asm {
             }
             None => drop_dead_stores(&mut pieces, &target),
         }
-        // Storage ends matter only for the bytes of escaped objects.
-        let escapes: Vec<(u32, u32)> = pieces
-            .iter()
-            .filter_map(|p| match *p {
-                Piece::Scope { slot, size, kind: ScopeKind::Escape { .. } } => Some((slot, size)),
-                _ => None,
-            })
-            .collect();
-        for p in &mut pieces {
-            if let Piece::Scope { slot, size, kind: ScopeKind::End } = *p
-                && !escapes.iter().any(|&(e, n)| e.wrapping_sub(slot) < size || slot.wrapping_sub(e) < n)
-            {
-                *p = Piece::Gone;
-            }
-        }
-        // Code constants, in emission order (so deduplication matches the word encoder's).
-        let mut rodata = Rodata::default();
-        let ro_off: Vec<u32> = ro
-            .into_iter()
-            .map(|r| match r {
-                RoReq::Bytes { bytes, align } => rodata.add(bytes, align),
-                RoReq::Ops(ws) => rodata.ops(&ws.iter().map(|&s| fix(s)).collect::<Vec<_>>()),
-            })
-            .collect();
+        prune_storage_ends(&mut pieces);
+        let (rodata, ro_off) = build_rodata(ro, &fix);
 
-        // Loop heads: labels bound before a branch to them, but in the pad region, which has
-        // neither counters nor padding.
-        let mut head = vec![false; pieces.len() + 1];
-        if mode.align_loops || mode.counters {
-            for (to, k) in targets {
-                let at = labels[to.0 as usize];
-                debug_assert_ne!(at, usize::MAX, "unbound label");
-                if at <= k && region.is_none_or(|r| at < r) {
-                    head[at] = true;
-                }
-            }
-        }
+        let head =
+            if mode.align_loops || mode.counters { loop_heads(&targets, &labels, region, pieces.len()) } else { vec![false; pieces.len() + 1] };
 
         // The prologue, then the pieces with alignment padding, frame offsets and code
         // constants resolved. `remap[k]` is the element of piece `k` (after its padding).
@@ -1565,56 +1533,116 @@ impl Asm {
             None => stubs(&mut out, &checks),
         };
         let region_at = region_at.unwrap_or(out.len());
-        // Piece indices to element indices.
-        for &b in &branches {
-            if let Laid::Branch { to, .. } = &mut out[b] {
-                *to = remap[*to];
-            }
-        }
-        for &t in &tables {
-            if let Laid::Table(ts) = &mut out[t] {
-                for x in ts {
-                    *x = remap[*x];
-                }
-            }
-        }
-        for (e, pad) in sites {
-            if let Laid::Fixed { site: Some((p, _)), .. } = &mut out[e] {
-                *p = Some(remap[pad]);
-            }
-        }
-        let mut marks: Vec<usize> = labels.iter().map(|&at| if at == usize::MAX { usize::MAX } else { remap[at] }).collect();
+        remap_elems(&mut out, &remap, &branches, &tables, sites);
+        let labels = labels.iter().map(|&at| if at == usize::MAX { usize::MAX } else { remap[at] }).collect();
         // The instruction list's targets and instruction entries, positioned with the labels.
-        let nlabels = marks.len();
-        let mut target_elems: Vec<usize> = Vec::new();
+        let mut targets: Vec<usize> = Vec::new();
         for &b in &branches {
             if let Laid::Branch { to, .. } = out[b] {
-                target_elems.push(to);
+                targets.push(to);
             }
         }
         for &t in &tables {
             if let Laid::Table(ts) = &out[t] {
-                target_elems.extend(ts);
+                targets.extend(ts);
             }
         }
-        marks.extend(&target_elems);
+        let mut hints = Vec::with_capacity(sels.len());
         let hint_ops: Vec<(Opcode, u32)> = sels
             .iter()
             .map(|&(k, sel)| {
                 // A sequence at a loop head starts after its counter check.
                 let e = remap[k];
-                marks.push(if head_checks.binary_search(&e).is_ok() { e + 2 } else { e });
+                hints.push(if head_checks.binary_search(&e).is_ok() { e + 2 } else { e });
                 (seqs[seqs.binary_search_by_key(&k, |s| s.0).expect("a sequence's start")].1, sel)
             })
             .collect();
-        let (mut e, mut marks) = layout_code(out, [prologue_at, entry_stub, region_at], &marks);
+        let (mut e, marks) = layout_code(out, [prologue_at, entry_stub, region_at], Marks { labels, targets, hints });
         e.rodata = rodata.bytes;
-        e.hints = marks[nlabels + target_elems.len()..].iter().zip(hint_ops).map(|(&at, (op, sel))| Hint { at, op, sel }).collect();
-        e.targets = marks[nlabels..nlabels + target_elems.len()].to_vec();
+        e.hints = marks.hints.iter().zip(hint_ops).map(|(&at, (op, sel))| Hint { at, op, sel }).collect();
+        e.targets = marks.targets;
         e.targets.sort_unstable();
         e.targets.dedup();
-        marks.truncate(nlabels);
-        (e, marks)
+        (e, marks.labels)
+    }
+}
+
+/// Positions in the elements given to [`layout_code`] (`usize::MAX`: none), which it returns
+/// as code offsets (`u32::MAX`) in the same shape: the labels, the instruction list's branch
+/// targets and its hints.
+struct Marks<T> {
+    labels: Vec<T>,
+    targets: Vec<T>,
+    hints: Vec<T>,
+}
+
+/// Turns the storage ends that overlap no escaped object into [`Piece::Gone`]: they matter
+/// only for the bytes of escaped objects.
+fn prune_storage_ends(pieces: &mut [Piece]) {
+    let escapes: Vec<(u32, u32)> = pieces
+        .iter()
+        .filter_map(|p| match *p {
+            Piece::Scope { slot, size, kind: ScopeKind::Escape { .. } } => Some((slot, size)),
+            _ => None,
+        })
+        .collect();
+    for p in pieces {
+        if let Piece::Scope { slot, size, kind: ScopeKind::End } = *p
+            && !escapes.iter().any(|&(e, n)| e.wrapping_sub(slot) < size || slot.wrapping_sub(e) < n)
+        {
+            *p = Piece::Gone;
+        }
+    }
+}
+
+/// The code constants of `ro`, in emission order (so deduplication matches the word
+/// encoder's), and the offset of each; operand arrays' slots mapped by `fix`.
+fn build_rodata(ro: Vec<RoReq>, fix: &impl Fn(u32) -> u32) -> (Rodata, Vec<u32>) {
+    let mut rodata = Rodata::default();
+    let ro_off = ro
+        .into_iter()
+        .map(|r| match r {
+            RoReq::Bytes { bytes, align } => rodata.add(bytes, align),
+            RoReq::Ops(ws) => rodata.ops(&ws.iter().map(|&s| fix(s)).collect::<Vec<_>>()),
+        })
+        .collect();
+    (rodata, ro_off)
+}
+
+/// Which of `n` pieces (and the end) are loop heads: where labels bound before a branch to
+/// them (`targets`, label and branch piece) are, but in the pad region from `region`, which
+/// has neither counters nor padding.
+fn loop_heads(targets: &[(Label, usize)], labels: &[usize], region: Option<usize>, n: usize) -> Vec<bool> {
+    let mut head = vec![false; n + 1];
+    for &(to, k) in targets {
+        let at = labels[to.0 as usize];
+        debug_assert_ne!(at, usize::MAX, "unbound label");
+        if at <= k && region.is_none_or(|r| at < r) {
+            head[at] = true;
+        }
+    }
+    head
+}
+
+/// Maps the piece indices of the `branches`' and `tables`' targets and of the landing pads of
+/// `sites` (element, pad piece) to element indices by `remap`.
+fn remap_elems(out: &mut [Laid], remap: &[usize], branches: &[usize], tables: &[usize], sites: Vec<(usize, usize)>) {
+    for &b in branches {
+        if let Laid::Branch { to, .. } = &mut out[b] {
+            *to = remap[*to];
+        }
+    }
+    for &t in tables {
+        if let Laid::Table(ts) = &mut out[t] {
+            for x in ts {
+                *x = remap[*x];
+            }
+        }
+    }
+    for (e, pad) in sites {
+        if let Laid::Fixed { site: Some((p, _)), .. } = &mut out[e] {
+            *p = Some(remap[pad]);
+        }
     }
 }
 
@@ -1714,7 +1742,7 @@ fn layouts(mode: Mode) -> &'static [Layout] {
 }
 
 /// Lays out the elements (relaxing branches) and writes the code.
-fn layout_code(mut pieces: Vec<Laid>, [prologue, entry_stub, region]: [usize; 3], marks: &[usize]) -> (Encoded, Vec<u32>) {
+fn layout_code(mut pieces: Vec<Laid>, [prologue, entry_stub, region]: [usize; 3], marks: Marks<usize>) -> (Encoded, Marks<u32>) {
     const VAR: u32 = u32::MAX;
     let n = pieces.len();
     // Lengths that don't depend on the position (`VAR` for the others), and the short
@@ -1809,8 +1837,8 @@ fn layout_code(mut pieces: Vec<Laid>, [prologue, entry_stub, region]: [usize; 3]
     out.prologue = pos[prologue];
     out.entry_stub = pos[entry_stub];
     out.region = pos[region];
-    let marks = marks.iter().map(|&m| if m == usize::MAX { u32::MAX } else { pos[m] }).collect();
-    (out, marks)
+    let at = |ms: Vec<usize>| ms.into_iter().map(|m| if m == usize::MAX { u32::MAX } else { pos[m] }).collect();
+    (out, Marks { labels: at(marks.labels), targets: at(marks.targets), hints: at(marks.hints) })
 }
 
 /// The values of `op`'s handler argument positions for operands `ops`, from the first
