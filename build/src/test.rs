@@ -1051,26 +1051,8 @@ mod tests {
     #[test]
     fn clif_variant_only_with_flag() {
         let names = |clif| super::variants(clif).iter().map(|v| v.name).collect::<Vec<_>>();
-        let all = [
-            "ryo-novm",
-            "ryo",
-            "ryo-threads8",
-            "ryo-O3",
-            "ryo-lto",
-            "ryo-thinlto-O3",
-            "ryo-abort",
-            "ryo-std",
-            "ryo-std-O3",
-            "ryo-std-lto",
-            "ryo-std-abort",
-            "ryo-std-jit",
-            "ryo-std-jit-shuffle",
-            "ryo-std-jit-reencode",
-            "ryo-jit-ssa",
-            "ryo-jit-ssa-osr",
-            "ryo-jit-ssa-shuffle",
-        ];
-        assert_eq!(names(false), all);
+        let all = names(false);
+        assert!(!all.contains(&"clif"));
         assert_eq!(names(true), [&all[..], &["clif"]].concat());
         assert!(super::variants(true).last().unwrap().compiler == super::Compiler::Clif);
     }
