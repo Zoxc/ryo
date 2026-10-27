@@ -34,6 +34,33 @@ pub fn run(cmd: &mut Command) -> Result<(), String> {
     Ok(())
 }
 
+/// What a [`capture`]d command did.
+pub struct Captured {
+    pub status: std::process::ExitStatus,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+/// Runs `cmd` with its stdout and stderr captured (lossily decoded), failing only if it can't
+/// be spawned.
+pub fn capture(cmd: &mut Command) -> Result<Captured, String> {
+    let out = cmd.output().map_err(|e| format!("failed to run `{}`: {e}", describe(cmd)))?;
+    Ok(Captured {
+        status: out.status,
+        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+    })
+}
+
+/// [`capture`], failing with the output if `cmd` doesn't exit successfully.
+pub fn capture_ok(cmd: &mut Command) -> Result<Captured, String> {
+    let res = capture(cmd)?;
+    if !res.status.success() {
+        return Err(format!("`{}` failed with {}:\n{}{}", describe(cmd), res.status, res.stdout, res.stderr));
+    }
+    Ok(res)
+}
+
 /// Runs `cmd` and returns its stdout, failing if it doesn't exit successfully.
 pub fn output(cmd: &mut Command) -> Result<String, String> {
     let out = cmd.stderr(Stdio::inherit()).output().map_err(|e| format!("failed to run `{}`: {e}", describe(cmd)))?;

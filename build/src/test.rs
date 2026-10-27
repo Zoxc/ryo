@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
-use crate::utils::{cmd, describe, exe_name, output, root};
+use crate::utils::{cmd, exe_name, output, root};
 
 mod checks;
 mod corpus;
@@ -840,11 +840,7 @@ impl Ctx<'_> {
                     c.args(["--extern", dep.name]);
                 }
             }
-            let res = c.output().map_err(|e| format!("failed to run `{}`: {e}", describe(&c)))?;
-            let stderr = String::from_utf8_lossy(&res.stderr);
-            if !res.status.success() {
-                return Err(format!("`{}` failed:\n{stderr}", describe(&c)));
-            }
+            let stderr = crate::utils::capture_ok(&mut c)?.stderr;
             if variant.compiler == Compiler::Ryo {
                 if !stderr.contains(BACKEND_MARKER) || !stderr.contains(PARTITION_MARKER) {
                     return Err(format!("the ryo backend didn't build {}; stderr:\n{stderr}", krate.name));
@@ -902,11 +898,8 @@ impl Ctx<'_> {
         if libs.iter().any(|l| l.kind == CrateKind::Staticlib) {
             c.args(native_libs);
         }
-        let res = c.output().map_err(|e| format!("failed to run `{}`: {e}", describe(&c)))?;
-        if !res.status.success() {
-            // cl reports errors on stdout.
-            return Err(format!("`{}` failed:\n{}{}", describe(&c), String::from_utf8_lossy(&res.stdout), String::from_utf8_lossy(&res.stderr)));
-        }
+        // cl reports errors on stdout, which `capture_ok` includes.
+        crate::utils::capture_ok(&mut c)?;
         Ok(exe)
     }
 

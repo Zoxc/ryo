@@ -16,7 +16,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::test::{CORPUS, CrateKind, Program};
-use crate::utils::{RustcInfo, cmd, describe, dist_bin, exe_name, root, ryo_rt_rlib};
+use crate::utils::{RustcInfo, cmd, dist_bin, exe_name, root, ryo_rt_rlib};
 
 /// Import libraries std, `ryo_rt` and the corpus name on windows-msvc, replaced by empty
 /// archives. A library missing here fails the link with "could not open"; add it.
@@ -323,11 +323,7 @@ impl Link<'_> {
                     c.args(["--extern", dep.name]);
                 }
             }
-            let res = c.output().map_err(|e| format!("failed to run `{}`: {e}", describe(&c)))?;
-            let stderr = String::from_utf8_lossy(&res.stderr);
-            if !res.status.success() {
-                return Err(format!("`{}` failed:\n{stderr}", describe(&c)));
-            }
+            let stderr = crate::utils::capture_ok(&mut c)?.stderr;
             undefined.extend(undefined_symbols(&stderr));
             vm_fns.extend(crate::test::vm_functions(&stderr));
         }

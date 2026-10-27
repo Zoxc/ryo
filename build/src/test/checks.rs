@@ -5,7 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::utils::{cmd, dll_name, exe_name, output};
+use crate::utils::{Captured, capture, capture_ok, cmd, dll_name, exe_name, output};
 
 /// `cargo-ryo run` on a one-file package wrapping `tests/hello.rs`, then `cargo ryo build`
 /// (cargo's subcommand lookup, with `dist/bin` on `PATH`) between plain `cargo build`s in one
@@ -20,20 +20,19 @@ pub(super) fn cargo_smoke(root: &Path, out: &Path) -> Result<(), String> {
     );
     fs::write(pkg.join("Cargo.toml"), manifest).map_err(|e| e.to_string())?;
     let cargo_ryo = crate::utils::dist_bin(&root, "cargo-ryo");
-    let res = cmd(&cargo_ryo)
-        .args(["run", "--quiet", "--offline"])
-        .current_dir(&pkg)
-        .env("RYO_BACKEND_MARKER", "1")
-        // Force a rebuild, so the marker is printed. The dev profile compiles incrementally.
-        .env("CARGO_TARGET_DIR", pkg.join("target"))
-        .env_remove("CARGO_INCREMENTAL")
-        .output()
-        .map_err(|e| e.to_string())?;
-    let stdout = String::from_utf8_lossy(&res.stdout);
-    let stderr = String::from_utf8_lossy(&res.stderr);
-    if !res.status.success() || stdout != "Hello, world!\n" || !stderr.contains(BACKEND_MARKER) || !stderr.contains(PARTITION_MARKER) {
+    let res = capture(
+        cmd(&cargo_ryo)
+            .args(["run", "--quiet", "--offline"])
+            .current_dir(&pkg)
+            .env("RYO_BACKEND_MARKER", "1")
+            // Force a rebuild, so the marker is printed. The dev profile compiles incrementally.
+            .env("CARGO_TARGET_DIR", pkg.join("target"))
+            .env_remove("CARGO_INCREMENTAL"),
+    )?;
+    let Captured { status, stdout, stderr } = res;
+    if !status.success() || stdout != "Hello, world!\n" || !stderr.contains(BACKEND_MARKER) || !stderr.contains(PARTITION_MARKER) {
         let _ = fs::remove_dir_all(pkg.join("target"));
-        return Err(format!("{}\nstdout:\n{stdout}\nstderr:\n{stderr}", res.status));
+        return Err(format!("{status}\nstdout:\n{stdout}\nstderr:\n{stderr}"));
     }
     // As a cargo subcommand, cargo runs `cargo-ryo ryo build`, which must not recurse.
     let bin = cargo_ryo.parent().ok_or("dist/bin")?.to_path_buf();
@@ -51,16 +50,15 @@ pub(super) fn cargo_smoke(root: &Path, out: &Path) -> Result<(), String> {
         } else {
             c.env_remove("RUSTC").env("RUSTUP_TOOLCHAIN", &toolchain);
         }
-        let res = c
-            .args(["build", "--verbose", "--offline"])
-            .current_dir(&pkg)
-            .env("PATH", &path)
-            .env("RYO_BACKEND_MARKER", "1")
-            .env("CARGO_TARGET_DIR", &target_sub)
-            .env_remove("CARGO_INCREMENTAL")
-            .output()
-            .map_err(|e| e.to_string())?;
-        let stderr = String::from_utf8_lossy(&res.stderr).into_owned();
+        let res = capture(
+            c.args(["build", "--verbose", "--offline"])
+                .current_dir(&pkg)
+                .env("PATH", &path)
+                .env("RYO_BACKEND_MARKER", "1")
+                .env("CARGO_TARGET_DIR", &target_sub)
+                .env_remove("CARGO_INCREMENTAL"),
+        )?;
+        let stderr = res.stderr;
         let what = if ryo { "cargo ryo build" } else { "cargo build" };
         if !res.status.success() {
             return Err(format!("{what}: {}\nstderr:\n{stderr}", res.status));
@@ -99,9 +97,7 @@ pub(super) fn backtrace(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), 
     crate::utils::run(cmd(rustc_ryo).arg("--edition=2024").arg(src).arg("-o").arg(&exe))?;
     // Without the JIT, whose code has no symbols (and with `RYO_JIT_THRESHOLD=0` would run
     // every frame).
-    let res = Command::new(&exe).env("RUST_BACKTRACE", "1").env("RYO_JIT", "off").output().map_err(|e| e.to_string())?;
-    let stdout = String::from_utf8_lossy(&res.stdout);
-    let stderr = String::from_utf8_lossy(&res.stderr);
+    let Captured { status, stdout, stderr } = capture(Command::new(&exe).env("RUST_BACKTRACE", "1").env("RYO_JIT", "off"))?;
     // On PE the walk goes through the VM frames, but without their landing pads (no "guard
     // dropped"), and the frames of functions with internal linkage, VM or native (`inner`,
     // `outer`, `__rust_try`), are named after the nearest external symbol before them: the
@@ -114,8 +110,8 @@ pub(super) fn backtrace(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), 
         (&["vm_backtrace::inner", "vm_backtrace::outer", "__rust_try", "vm_backtrace::main"], "guard dropped\ncaught: true\n")
     };
     let missing: Vec<_> = want.iter().filter(|w| !stderr.contains(*w)).collect();
-    if !res.status.success() || stdout != want_stdout || !missing.is_empty() {
-        return Err(format!("{}, missing frames {missing:?}\nstdout:\n{stdout}stderr:\n{stderr}", res.status));
+    if !status.success() || stdout != want_stdout || !missing.is_empty() {
+        return Err(format!("{status}, missing frames {missing:?}\nstdout:\n{stdout}stderr:\n{stderr}"));
     }
     Ok(())
 }
@@ -564,16 +560,16 @@ pub(super) fn crate_roots(sym: &str) -> Vec<String> {
 
 /// `--emit=metadata` must not run the partitioning (no codegen, so no image).
 pub(super) fn metadata_only(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
-    let res = cmd(rustc_ryo)
-        .arg(src)
-        .args(["--crate-type=rlib", "--emit=metadata", "--crate-name=meta_only"])
-        .arg("--out-dir")
-        .arg(out)
-        .env("RYO_BACKEND_MARKER", "1")
-        .output()
-        .map_err(|e| e.to_string())?;
-    let stderr = String::from_utf8_lossy(&res.stderr);
-    if !res.status.success() || stderr.contains(PARTITION_MARKER) {
+    let stderr = capture_ok(
+        cmd(rustc_ryo)
+            .arg(src)
+            .args(["--crate-type=rlib", "--emit=metadata", "--crate-name=meta_only"])
+            .arg("--out-dir")
+            .arg(out)
+            .env("RYO_BACKEND_MARKER", "1"),
+    )?
+    .stderr;
+    if stderr.contains(PARTITION_MARKER) {
         return Err(format!("expected a metadata-only build without partitioning; stderr:\n{stderr}"));
     }
     Ok(())
@@ -583,18 +579,7 @@ pub(super) fn metadata_only(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<
 /// with trimmed paths outside a diagnostic made rustc panic as the session ended.
 pub(super) fn dump(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     let dump = out.join("dump.txt");
-    let res = cmd(rustc_ryo)
-        .args(["--edition=2024", "-O"])
-        .arg(src)
-        .arg("-o")
-        .arg(out.join(exe_name("dump")))
-        .env("RYO_DUMP", &dump)
-        .output()
-        .map_err(|e| e.to_string())?;
-    let stderr = String::from_utf8_lossy(&res.stderr);
-    if !res.status.success() {
-        return Err(format!("RYO_DUMP build failed; stderr:\n{stderr}"));
-    }
+    capture_ok(cmd(rustc_ryo).args(["--edition=2024", "-O"]).arg(src).arg("-o").arg(out.join(exe_name("dump"))).env("RYO_DUMP", &dump))?;
     let text = fs::read_to_string(&dump).map_err(|e| format!("reading {}: {e}", dump.display()))?;
     if !text.contains(" = static ") {
         return Err(format!("{} names no static", dump.display()));
@@ -603,11 +588,14 @@ pub(super) fn dump(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), Strin
 }
 
 pub(super) fn reject_randomize_layout(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
-    let res =
-        cmd(rustc_ryo).arg(src).arg("-Zrandomize-layout").arg("-o").arg(out.join(exe_name("randomized"))).output().map_err(|e| e.to_string())?;
-    let stderr = String::from_utf8_lossy(&res.stderr);
-    if res.status.success() || !stderr.contains("-Zrandomize-layout") {
-        return Err(format!("expected rustc-ryo to reject -Zrandomize-layout; stderr:\n{stderr}"));
+    expect_reject(cmd(rustc_ryo).arg(src).arg("-Zrandomize-layout").arg("-o").arg(out.join(exe_name("randomized"))), "-Zrandomize-layout")
+}
+
+/// Runs `c`, which must fail with `needle` in its stderr.
+fn expect_reject(c: &mut Command, needle: &str) -> Result<(), String> {
+    let res = capture(c)?;
+    if res.status.success() || !res.stderr.contains(needle) {
+        return Err(format!("expected `{}` to fail mentioning {needle}; stderr:\n{}", crate::utils::describe(c), res.stderr));
     }
     Ok(())
 }
@@ -619,15 +607,9 @@ pub(super) fn cgu_deterministic(rustc_ryo: &Path, src: &Path, out: &Path) -> Res
         let dir = out.join(name);
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let res = cmd(rustc_ryo)
-            .args(["--edition=2024", "-Ccodegen-units=16", "-Csave-temps", "--crate-name", "vm_cgu", "--out-dir"])
-            .arg(&dir)
-            .arg(src)
-            .output()
-            .map_err(|e| e.to_string())?;
-        if !res.status.success() {
-            return Err(format!("building {}: {}", src.display(), String::from_utf8_lossy(&res.stderr)));
-        }
+        capture_ok(
+            cmd(rustc_ryo).args(["--edition=2024", "-Ccodegen-units=16", "-Csave-temps", "--crate-name", "vm_cgu", "--out-dir"]).arg(&dir).arg(src),
+        )?;
         let mut images = Vec::new();
         for e in std::fs::read_dir(&dir).map_err(|e| e.to_string())? {
             let p = e.map_err(|e| e.to_string())?.path();

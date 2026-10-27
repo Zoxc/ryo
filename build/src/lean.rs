@@ -53,11 +53,7 @@ pub fn have_lake() -> bool {
 fn effects_table() -> Result<(PathBuf, String), String> {
     let path = root().join("vm/bytecode/src/jit/effects_table.rs");
     let exe = root().join("lean/.lake/build/bin").join(exe_name("ryo-lean"));
-    let out = cmd(&exe).arg("effects").output().map_err(|e| format!("{}: {e}", exe.display()))?;
-    if !out.status.success() {
-        return Err(format!("ryo-lean effects failed: {}", String::from_utf8_lossy(&out.stderr)));
-    }
-    Ok((path, String::from_utf8(out.stdout).map_err(|e| e.to_string())?))
+    Ok((path, crate::utils::capture_ok(cmd(&exe).arg("effects"))?.stdout))
 }
 
 /// `y lean gen`.
