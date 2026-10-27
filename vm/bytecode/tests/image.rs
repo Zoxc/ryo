@@ -836,7 +836,7 @@ fn linked_functions_decode() {
                     _ => *r,
                 })
                 .collect();
-            let want = asm::decode_reduced(&e.code, &relocs, cc, &e.call_sites, &e.dropped, &e.scopes, mode).unwrap();
+            let want = asm::decode_reduced(&asm::Encoded { relocs, rodata: cc.to_vec(), ..e.clone() }, mode).unwrap();
             assert_eq!(got, want, "f{i} {mode:?}");
         }
         // Not a function.

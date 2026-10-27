@@ -40,7 +40,7 @@ fn decoded_with_pads(insns: &[Insn<'_>], frame: u32, scopes: &[(usize, i32, u32,
     let cleanup: Vec<ryo_bytecode::image::CleanupEntry> =
         pads.iter().map(|&(c, p)| ryo_bytecode::image::CleanupEntry { offset: starts[c], target: starts[p] }).collect();
     let enc = asm::encode(&words, frame, &cleanup, &scopes, MODE).expect("encodes");
-    asm::decode_reduced(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, MODE).expect("decodes")
+    asm::decode_reduced(&enc, MODE).expect("decodes")
 }
 
 fn ir(d: &Decoded) -> ryo_bytecode::jit::ir::Func {

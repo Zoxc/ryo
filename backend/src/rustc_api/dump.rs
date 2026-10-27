@@ -27,7 +27,7 @@ pub(super) fn vm_text<'tcx>(tcx: TyCtxt<'tcx>, vm: &[VmFn<'tcx>], mode: asm::Mod
         let c = &l.code;
         let flags = func_flags_suffix(symbols::func_flags(tcx, v.instance));
         writeln!(out, "fn {name} (frame {}, args {}, ret {}){flags}", l.frame_size, l.arg_size, l.ret_size).unwrap();
-        match asm::decode(&c.code, &c.relocs, &c.rodata, &c.call_sites, &c.dropped, &c.scopes, mode) {
+        match asm::decode(&c, mode) {
             Ok(d) => dump_labeled(&mut out, &d.words, &d.cleanup, &d.scopes),
             Err(e) => writeln!(out, "  undecodable: {e:?}").unwrap(),
         }

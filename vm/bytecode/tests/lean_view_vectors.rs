@@ -299,8 +299,7 @@ fn opnd_text(o: &Opnd, index: &dyn Fn(u32) -> usize) -> String {
 
 /// What `asm::decode` makes of the function: one common-form line per instruction.
 fn full_lines(enc: &asm::Encoded, mode: Mode) -> Vec<String> {
-    let d = asm::decode(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, mode)
-        .unwrap_or_else(|e| panic!("decode: {e:?}"));
+    let d = asm::decode(&enc, mode).unwrap_or_else(|e| panic!("decode: {e:?}"));
     let mut starts = Vec::new();
     let mut at = 0;
     while at < d.words.len() {

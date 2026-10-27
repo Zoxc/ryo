@@ -265,11 +265,16 @@ impl Inputs {
         }
     }
 
+    /// The inputs as the encoder's output (without targets and hints).
+    fn encoded(&self) -> asm::Encoded {
+        let (code, relocs, rodata) = (self.code.clone(), self.relocs.clone(), self.rodata.clone());
+        let (call_sites, dropped, scopes) = (self.call_sites.clone(), self.dropped.clone(), self.scopes.clone());
+        asm::Encoded { code, relocs, rodata, call_sites, dropped, scopes, ..Default::default() }
+    }
+
     /// What `decode_reduced` makes of the inputs, as text.
     fn text(&self) -> String {
-        let r = catch_unwind(AssertUnwindSafe(|| {
-            asm::decode_reduced(&self.code, &self.relocs, &self.rodata, &self.call_sites, &self.dropped, &self.scopes, self.mode)
-        }));
+        let r = catch_unwind(AssertUnwindSafe(|| asm::decode_reduced(&self.encoded(), self.mode)));
         match r {
             Ok(Ok(d)) => text(&d),
             Ok(Err(e)) => format!("error at {}: {}\n", e.at, e.what),
@@ -943,7 +948,7 @@ fn shuffled(out: &mut Out) {
             break;
         }
         let i = out.bases[b].clone();
-        let Ok(d) = asm::decode_reduced(&i.code, &i.relocs, &i.rodata, &i.call_sites, &i.dropped, &i.scopes, i.mode) else { continue };
+        let Ok(d) = asm::decode_reduced(&i.encoded(), i.mode) else { continue };
         let Ok(map) = frame::shuffle_map(&d, i.mode) else { continue };
         if map.is_identity() {
             continue;

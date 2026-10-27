@@ -9,7 +9,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use super::encode::{
-    CallSite, DroppedStore, Opnd, Ref, RegVal, Reloc, Scope, arg_store, epilogue, fp_item, int_arg, prologue, push_words, result_stores, ret_loads,
+    CallSite, DroppedStore, Encoded, Opnd, Ref, RegVal, Scope, arg_store, epilogue, fp_item, int_arg, prologue, push_words, result_stores, ret_loads,
     word_len,
 };
 use super::inline::Cache;
@@ -110,19 +110,33 @@ fn insn_index(ipos: &[u32], at: u32, b: u32) -> Result<usize, AsmError> {
     ipos.binary_search(&b).map_err(|_| AsmError { at, what: "target isn't an instruction" })
 }
 
-/// Decodes one function's machine code, with its relocations (sorted), rodata, call sites and
-/// dropped stores ([`super::Encoded`]), to the full set.
-pub fn decode(
-    code: &[u8],
-    relocs: &[Reloc],
-    rodata: &[u8],
-    call_sites: &[CallSite],
-    dropped: &[DroppedStore],
-    scopes: &[Scope],
-    mode: Mode,
-) -> Result<Decoded, AsmError> {
+/// The side data the decoder reads alongside a function's machine code: its call sites, and
+/// the instruction list's dropped stores and scopes, with `index` its branch targets (sorted)
+/// and instruction entries (without, the decoder finds the targets in a first pass).
+#[derive(Clone, Copy)]
+struct Side<'a> {
+    call_sites: &'a [CallSite],
+    dropped: &'a [DroppedStore],
+    scopes: &'a [Scope],
+    index: Option<(&'a [u32], &'a [Hint])>,
+}
+
+impl<'a> Side<'a> {
+    /// `enc`'s side data, without the index.
+    fn unindexed(enc: &'a Encoded) -> Side<'a> {
+        Side { call_sites: &enc.call_sites, dropped: &enc.dropped, scopes: &enc.scopes, index: None }
+    }
+
+    fn of_list(call_sites: &'a [CallSite], list: &'a InsnList) -> Side<'a> {
+        Side { call_sites, dropped: &list.dropped, scopes: &list.scopes, index: Some((&list.targets, &list.hints)) }
+    }
+}
+
+/// Decodes one function's machine code, with its relocations (sorted), rodata, call sites,
+/// dropped stores and scopes ([`Encoded`]; not its targets and hints), to the full set.
+pub fn decode(enc: &Encoded, mode: Mode) -> Result<Decoded, AsmError> {
     let Read { protos, frame_size, actions, scopes, heads, ipos } =
-        read(code, Fields::Relocs(relocs), rodata, call_sites, dropped, scopes, None, mode, false)?;
+        read(&enc.code, Fields::Relocs(&enc.relocs), &enc.rodata, Side::unindexed(enc), mode, false)?;
     let mut wpos = Vec::with_capacity(protos.len());
     let mut w = 0u32;
     for p in &protos {
@@ -157,31 +171,16 @@ pub fn decode(
 /// Decodes one function's machine code, as [`decode`], to the reduced set
 /// ([`crate::reduced`]): handler calls are read from their argument registers, without their
 /// operand lists, so it doesn't check that they are of operands that aren't inlined.
-pub fn decode_reduced(
-    code: &[u8],
-    relocs: &[Reloc],
-    rodata: &[u8],
-    call_sites: &[CallSite],
-    dropped: &[DroppedStore],
-    scopes: &[Scope],
-    mode: Mode,
-) -> Result<Decoded, AsmError> {
-    reduced_of(read(code, Fields::Relocs(relocs), rodata, call_sites, dropped, scopes, None, mode, true)?, mode.pe)
+pub fn decode_reduced(enc: &Encoded, mode: Mode) -> Result<Decoded, AsmError> {
+    reduced_of(read(&enc.code, Fields::Relocs(&enc.relocs), &enc.rodata, Side::unindexed(enc), mode, true)?, mode.pe)
 }
 
-/// [`decode_reduced`] with the side data from the function's instruction list
-/// ([`InsnList`]), which it reads in one pass, using the list's targets and instruction
-/// entries as an index that it checks against the code.
-pub fn decode_reduced_indexed(
-    code: &[u8],
-    relocs: &[Reloc],
-    rodata: &[u8],
-    call_sites: &[CallSite],
-    list: &InsnList,
-    mode: Mode,
-) -> Result<Decoded, AsmError> {
-    let index = Some((&list.targets[..], &list.hints[..]));
-    reduced_of(read(code, Fields::Relocs(relocs), rodata, call_sites, &list.dropped, &list.scopes, index, mode, true)?, mode.pe)
+/// [`decode_reduced`] with all of the instruction list's side data ([`InsnList`]: also
+/// `enc`'s targets and hints), which it reads in one pass, using the list's targets and
+/// instruction entries as an index that it checks against the code.
+pub fn decode_reduced_indexed(enc: &Encoded, mode: Mode) -> Result<Decoded, AsmError> {
+    let side = Side { index: Some((&enc.targets, &enc.hints)), ..Side::unindexed(enc) };
+    reduced_of(read(&enc.code, Fields::Relocs(&enc.relocs), &enc.rodata, side, mode, true)?, mode.pe)
 }
 
 /// What the `rel32` fields of linked code point at, for [`decode_linked`].
@@ -215,8 +214,7 @@ pub fn decode_linked(
     mode: Mode,
 ) -> Result<Decoded, AsmError> {
     let fields = Fields::Linked { addr: code_addr, record, resolver };
-    let index = Some((&list.targets[..], &list.hints[..]));
-    reduced_of(read(code, fields, resolver.code_consts(), call_sites, &list.dropped, &list.scopes, index, mode, true)?, mode.pe)
+    reduced_of(read(code, fields, resolver.code_consts(), Side::of_list(call_sites, list), mode, true)?, mode.pe)
 }
 
 /// The reduced instruction words of a function read with handler calls in the reduced form.
@@ -250,20 +248,9 @@ fn reduced_of(r: Read, pe: bool) -> Result<Decoded, AsmError> {
 }
 
 /// Reads one function's machine code ([`decode`]), handler calls in the reduced form with
-/// `reduced`. With `index`, the instruction list's branch targets (sorted) and instruction
-/// entries, in one pass.
-#[allow(clippy::too_many_arguments)]
-fn read(
-    code: &[u8],
-    fields: Fields<'_>,
-    rodata: &[u8],
-    call_sites: &[CallSite],
-    dropped: &[DroppedStore],
-    scopes: &[Scope],
-    index: Option<(&[u32], &[Hint])>,
-    mode: Mode,
-    reduced: bool,
-) -> Result<Read, AsmError> {
+/// `reduced`. With the side data's index, in one pass.
+fn read(code: &[u8], fields: Fields<'_>, rodata: &[u8], side: Side<'_>, mode: Mode, reduced: bool) -> Result<Read, AsmError> {
+    let Side { call_sites, dropped, scopes, index } = side;
     let mut c = Cursor::new(code, fields);
     let err = |at: u32, what: &'static str| AsmError { at, what };
     // Prologue: the frame size is its `sub`'s (less the 8 bytes in place of the saved `rbp`

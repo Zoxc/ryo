@@ -605,11 +605,11 @@ fn dead_stores_match_handlers() {
         dropped += enc.dropped.len();
         hints += enc.hints.len();
         // Read back to the reduced set, it re-encodes exactly, dropped stores included.
-        let d = rasm::decode_reduced(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, ENC).expect("decodes");
+        let d = rasm::decode_reduced(&enc, ENC).expect("decodes");
         let re = rasm::encode_reduced(&d.words, d.frame_size, &d.cleanup, &d.scopes, &d.dropped, &enc.rodata, ENC).expect("re-encodes");
         assert_eq!(re, enc);
         // The same in one pass, with the instruction list.
-        let l = rasm::decode_reduced_indexed(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.list(), ENC).expect("decodes indexed");
+        let l = rasm::decode_reduced_indexed(&enc, ENC).expect("decodes indexed");
         assert_eq!(l, d);
         encoded.push(enc);
         fs.push(w.add_function(func(Vec::new(), 80, 64, 32)));

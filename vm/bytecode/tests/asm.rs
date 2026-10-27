@@ -242,8 +242,7 @@ fn check(f: &Fn, frame_size: u32, mode: Mode, what: &str) -> asm::Encoded {
     assert_eq!((&plain.code, &plain.dropped), (&enc.code, &enc.dropped), "{what}: scopes changed the code");
     let sites = lsda::parse(&lsda::write(&enc.call_sites)).expect("LSDA");
     assert_eq!(sites, enc.call_sites, "{what}");
-    let dec = asm::decode(&enc.code, &enc.relocs, &enc.rodata, &sites, &enc.dropped, &enc.scopes, mode)
-        .unwrap_or_else(|e| panic!("{what} {mode:?}: {e:?}\n{}\n{:02x?}", Disasm(&code), enc.code));
+    let dec = asm::decode(&enc, mode).unwrap_or_else(|e| panic!("{what} {mode:?}: {e:?}\n{}\n{:02x?}", Disasm(&code), enc.code));
     if dec.words != code {
         panic!("{what} {mode:?}:\n{}\n---\n{}", Disasm(&code), Disasm(&dec.words));
     }
@@ -264,8 +263,7 @@ fn check(f: &Fn, frame_size: u32, mode: Mode, what: &str) -> asm::Encoded {
     };
     assert!(dec.scopes.len() == kept.len() && dec.scopes.iter().zip(&kept).all(|(d, k)| same(d, k)), "{what} {mode:?}: {:?} != {kept:?}", dec.scopes);
     // The reduced decoder reads the same function as the full one, reduced.
-    let red = asm::decode_reduced(&enc.code, &enc.relocs, &enc.rodata, &sites, &enc.dropped, &enc.scopes, mode)
-        .unwrap_or_else(|e| panic!("{what} {mode:?} (reduced): {e:?}\n{}", Disasm(&code)));
+    let red = asm::decode_reduced(&enc, mode).unwrap_or_else(|e| panic!("{what} {mode:?} (reduced): {e:?}\n{}", Disasm(&code)));
     let want = asm::reduce(&dec.words, dec.frame_size, &dec.cleanup, &dec.scopes, &dec.dropped, mode).expect("reduces");
     for r in reduced::Decoder::new(&red.words) {
         r.unwrap_or_else(|e| panic!("{what} {mode:?} (reduced words): {e}"));
@@ -274,8 +272,7 @@ fn check(f: &Fn, frame_size: u32, mode: Mode, what: &str) -> asm::Encoded {
         panic!("{what} {mode:?} (reduced):\n{}\n---\n{}", reduced::Disasm(&want.words), reduced::Disasm(&red.words));
     }
     // The same in one pass, with the instruction list.
-    let ind = asm::decode_reduced_indexed(&enc.code, &enc.relocs, &enc.rodata, &sites, &enc.list(), mode)
-        .unwrap_or_else(|e| panic!("{what} {mode:?} (indexed): {e:?}\n{}", Disasm(&code)));
+    let ind = asm::decode_reduced_indexed(&enc, mode).unwrap_or_else(|e| panic!("{what} {mode:?} (indexed): {e:?}\n{}", Disasm(&code)));
     assert_eq!(ind, red, "{what} {mode:?} (indexed)");
     // The same from the linked code, its references recovered from the resolved fields.
     let linked = Fake::link(&enc);
@@ -317,8 +314,7 @@ fn check(f: &Fn, frame_size: u32, mode: Mode, what: &str) -> asm::Encoded {
 /// `encode_reduced` of what `decode_reduced` and `decode_linked` read from `enc` gives `enc`
 /// back exactly: code, relocations, code constants, call sites, dropped stores and scopes.
 fn reencodes(enc: &asm::Encoded, mode: Mode, what: &str) {
-    let red = asm::decode_reduced(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, mode)
-        .unwrap_or_else(|e| panic!("{what} {mode:?} (reduced): {e:?}"));
+    let red = asm::decode_reduced(&enc, mode).unwrap_or_else(|e| panic!("{what} {mode:?} (reduced): {e:?}"));
     let linked = Fake::link(enc);
     let lin =
         asm::decode_linked(&linked, Fake::CODE, mode.counters.then_some(Fake::RECORD), &Fake { ro: &enc.rodata }, &enc.call_sites, &enc.list(), mode)
@@ -353,8 +349,7 @@ fn shuffles(d: &asm::Decoded, rodata: &[u8], mode: Mode, what: &str) {
         d.scopes.iter().filter_map(|sc| Some(asm::Scope { frame_offset: map.map_range(sc.frame_offset, sc.size)?, ..*sc })).collect();
     let (enc, _) = asm::encode_reduced_at(&words, map.frame_size, &d.cleanup, &scopes, &d.dropped, rodata, mode)
         .unwrap_or_else(|e| panic!("{what} {mode:?} (shuffled): {e:?}\n{}", reduced::Disasm(&words)));
-    let back = asm::decode_reduced(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, mode)
-        .unwrap_or_else(|e| panic!("{what} {mode:?} (shuffled, decoding): {e:?}"));
+    let back = asm::decode_reduced(&enc, mode).unwrap_or_else(|e| panic!("{what} {mode:?} (shuffled, decoding): {e:?}"));
     assert_eq!((back.frame_size, &back.words), (map.frame_size, &words), "{what} {mode:?} (shuffled)\n{}", reduced::Disasm(&words));
 }
 
@@ -595,7 +590,7 @@ fn long_branches_and_loops() {
                 assert!(enc.code.len() > 16);
             }
             // Instructions 0 and 1 are the loop heads, in order.
-            let d = asm::decode(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, mode).unwrap();
+            let d = asm::decode(&enc, mode).unwrap();
             assert_eq!(d.heads, [0, 4], "{mode:?}");
         }
     }
@@ -705,7 +700,7 @@ fn label_at_a_dead_hint(mode: Mode) {
     a.insn(Opcode::AddImmW64, &[Slot(-8), Slot(-8), Imm(1)]);
     a.insn(Opcode::Jmp, &[Target(head)]);
     let enc = a.finish(16, |s| s);
-    asm::decode(&enc.code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, mode).expect("decodes");
+    asm::decode(&enc, mode).expect("decodes");
     assert_eq!(enc.scopes[0].code_offset % 16, 0, "{:?}", enc.scopes);
     if mode.counters {
         // Before the head's counter check, which the branches to the head pass.
@@ -836,16 +831,16 @@ fn rejects_non_canonical_code() {
     let mut code = enc.code.clone();
     code.splice(i..i + 5, [0x48, 0xc7, 0xc2, 70, 0, 0, 0]);
     let relocs: Vec<_> = enc.relocs.iter().map(|r| asm::Reloc { at: if r.at as usize > i { r.at + 2 } else { r.at }, ..*r }).collect();
-    assert!(asm::decode(&code, &relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, m).is_err());
+    assert!(asm::decode(&asm::Encoded { code, relocs, ..enc.clone() }, m).is_err());
     // Operand registers out of order.
     let j = enc.code.windows(5).position(|w| w[0] == 0xbf).unwrap();
     let mut code = enc.code.clone();
     code[j] = 0xbe; // `mov esi` instead of `mov edi`
-    assert!(asm::decode(&code, &enc.relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, m).is_err());
+    assert!(asm::decode(&asm::Encoded { code, ..enc.clone() }, m).is_err());
     // A call site that is no call.
     let mut sites = enc.call_sites.clone();
     sites.push(asm::CallSite { start: 4, len: 5, pad: None, catch: false });
-    assert!(asm::decode(&enc.code, &enc.relocs, &enc.rodata, &sites, &enc.dropped, &enc.scopes, m).is_err());
+    assert!(asm::decode(&asm::Encoded { call_sites: sites, ..enc.clone() }, m).is_err());
 }
 
 /// The inline sequences with every displacement and immediate form: frame slots and memory
@@ -916,7 +911,7 @@ fn rejects_handler_calls_of_inlined_ops() {
         .iter()
         .map(|r| if r.to == asm::Ref::Handler(Opcode::FaddF32) { asm::Reloc { to: asm::Ref::Handler(Opcode::AddW32), ..*r } } else { *r })
         .collect();
-    assert!(asm::decode(&enc.code, &relocs, &enc.rodata, &enc.call_sites, &enc.dropped, &enc.scopes, m).is_err());
+    assert!(asm::decode(&asm::Encoded { relocs, ..enc.clone() }, m).is_err());
 }
 
 /// Pins the canonical sequences: any change to how an opcode is encoded changes this hash.
@@ -984,10 +979,11 @@ fn rejects_overflowing_fields() {
         code[at..][..bytes.len()].copy_from_slice(bytes);
         let mut linked = Fake::link(enc);
         linked[at..][..bytes.len()].copy_from_slice(bytes);
-        let (sites, d, sc) = (&enc.call_sites, &enc.dropped, &enc.scopes);
-        assert!(asm::decode(&code, &enc.relocs, &enc.rodata, sites, d, sc, mode).is_err(), "{what}");
-        assert!(asm::decode_reduced(&code, &enc.relocs, &enc.rodata, sites, d, sc, mode).is_err(), "{what} (reduced)");
+        let mutated = asm::Encoded { code, ..enc.clone() };
+        assert!(asm::decode(&mutated, mode).is_err(), "{what}");
+        assert!(asm::decode_reduced(&mutated, mode).is_err(), "{what} (reduced)");
         let rec = mode.counters.then_some(Fake::RECORD);
+        let sites = &enc.call_sites;
         assert!(asm::decode_linked(&linked, Fake::CODE, rec, &Fake { ro: &enc.rodata }, sites, &enc.list(), mode).is_err(), "{what} (linked)");
     };
     // PE: `sub rsp, 0xfffffff0`, whose frame size `alloc + 16` doesn't fit in 32 bits.
@@ -1037,6 +1033,7 @@ fn decoders_survive_mutations() {
         let (code, cleanup) = f.words();
         let Ok(enc) = asm::encode(&code, frame_size, &cleanup, &random_scopes(&code), mode) else { continue };
         let linked = Fake::link(&enc);
+        let list = enc.list();
         for _ in 0..200 {
             let (mut code, mut lcode, mut ro) = (enc.code.clone(), linked.clone(), enc.rodata.clone());
             match rng.below(4) {
@@ -1061,10 +1058,10 @@ fn decoders_survive_mutations() {
                     lcode.truncate(n);
                 }
             }
-            let (sites, d, sc) = (&enc.call_sites, &enc.dropped, &enc.scopes);
-            let _ = asm::decode(&code, &enc.relocs, &ro, sites, d, sc, mode);
-            let _ = asm::decode_reduced(&code, &enc.relocs, &ro, sites, d, sc, mode);
-            let _ = asm::decode_linked(&lcode, Fake::CODE, mode.counters.then_some(Fake::RECORD), &Fake { ro: &ro }, sites, &enc.list(), mode);
+            let _ = asm::decode_linked(&lcode, Fake::CODE, mode.counters.then_some(Fake::RECORD), &Fake { ro: &ro }, &enc.call_sites, &list, mode);
+            let mutated = asm::Encoded { code, rodata: ro, ..enc.clone() };
+            let _ = asm::decode(&mutated, mode);
+            let _ = asm::decode_reduced(&mutated, mode);
         }
     }
 }
@@ -1086,7 +1083,7 @@ fn rejects_sse_argument_loads_off_the_frame() {
     let i = enc.code.windows(5).position(|p| p == [0xf2, 0x0f, 0x10, 0x45, 0xf8]).expect("argument load");
     let mut code = enc.code.clone();
     code[i + 3] = 0x40;
-    let (sites, d, sc) = (&enc.call_sites, &enc.dropped, &enc.scopes);
-    assert!(asm::decode(&code, &enc.relocs, &enc.rodata, sites, d, sc, m).is_err());
-    assert!(asm::decode_reduced(&code, &enc.relocs, &enc.rodata, sites, d, sc, m).is_err());
+    let mutated = asm::Encoded { code, ..enc.clone() };
+    assert!(asm::decode(&mutated, m).is_err());
+    assert!(asm::decode_reduced(&mutated, m).is_err());
 }

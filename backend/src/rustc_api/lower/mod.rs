@@ -673,8 +673,7 @@ where
 /// `RYO_ASM_CHECK`: the machine code read to the reduced set and encoded again must be the
 /// same, byte for byte, with the same side data.
 fn reencode_check(code: &asm::Encoded, mode: asm::Mode) {
-    let d = asm::decode_reduced(&code.code, &code.relocs, &code.rodata, &code.call_sites, &code.dropped, &code.scopes, mode)
-        .unwrap_or_else(|e| panic!("ryo: RYO_ASM_CHECK: decoding: {e:?}\n{code:?}"));
+    let d = asm::decode_reduced(&code, mode).unwrap_or_else(|e| panic!("ryo: RYO_ASM_CHECK: decoding: {e:?}\n{code:?}"));
     let re = asm::encode_reduced(&d.words, d.frame_size, &d.cleanup, &d.scopes, &d.dropped, &code.rodata, mode)
         .unwrap_or_else(|e| panic!("ryo: RYO_ASM_CHECK: re-encoding: {e:?}"));
     if re != *code {
