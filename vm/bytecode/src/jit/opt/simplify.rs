@@ -408,23 +408,8 @@ fn alias_params(f: &mut Func) -> bool {
                 if matches!(f.def(p), ValueDef::Alias(_)) {
                     continue;
                 }
-                let mut same = None;
-                let mut ok = true;
-                for &(pb, k) in &bd.preds {
-                    let a = f.resolve(f.blocks[pb.idx()].term.edge(k as usize).args[n]);
-                    if a == p {
-                        continue;
-                    }
-                    match same {
-                        None => same = Some(a),
-                        Some(x) if x == a => {}
-                        _ => {
-                            ok = false;
-                            break;
-                        }
-                    }
-                }
-                if let (true, Some(x)) = (ok, same)
+                let ops = bd.preds.iter().map(|&(pb, k)| f.resolve(f.blocks[pb.idx()].term.edge(k as usize).args[n]));
+                if let Ok(Some(x)) = super::unique_operand(p, ops)
                     && !matches!(f.def(x), ValueDef::Undef)
                 {
                     f.values[p.idx()].def = ValueDef::Alias(x);

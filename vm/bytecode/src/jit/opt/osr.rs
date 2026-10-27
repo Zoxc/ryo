@@ -41,18 +41,7 @@ pub fn edge_arg(f: &Func, p: Block, k: u16, n: usize) -> Value {
 /// normal predecessor.
 pub fn invariant(f: &Func, b: Block, n: usize) -> Option<Value> {
     let p = f.blocks[b.idx()].params[n];
-    let mut same = None;
-    for (pb, k) in normal_preds(f, b) {
-        let a = edge_arg(f, pb, k, n);
-        if a == p {
-            continue;
-        }
-        match same {
-            None => same = Some(a),
-            Some(x) if x == a => {}
-            _ => return None,
-        }
-    }
+    let same = super::unique_operand(p, normal_preds(f, b).map(|(pb, k)| edge_arg(f, pb, k, n))).ok()?;
     same.filter(|&x| !matches!(f.def(x), ValueDef::Undef))
 }
 

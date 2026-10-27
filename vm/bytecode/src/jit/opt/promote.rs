@@ -232,20 +232,7 @@ fn try_promote(f: &mut Func, mut ok: Vec<bool>) -> Result<bool, AllocaId> {
                 continue;
             }
             let p = *p;
-            let mut same = None;
-            let mut many = false;
-            for &o in ops {
-                let o = f.resolve(o);
-                if o == p || Some(o) == same {
-                    continue;
-                }
-                if same.is_some() {
-                    many = true;
-                    break;
-                }
-                same = Some(o);
-            }
-            if !many {
+            if let Ok(same) = super::unique_operand(p, ops.iter().map(|&o| f.resolve(o))) {
                 let w = f.w(p);
                 let to = same.unwrap_or_else(|| f.value(ValueDef::Undef, w));
                 f.values[p.idx()].def = ValueDef::Alias(to);

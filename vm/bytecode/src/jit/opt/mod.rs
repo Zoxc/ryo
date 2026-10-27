@@ -59,6 +59,22 @@ pub trait ConstMem {
     fn relocs(&self, k: u32, len: u32) -> Vec<u32>;
 }
 
+/// The one value the operands `ops` of parameter `p` pass but `p` itself (the trivial-phi
+/// rule, Braun et al.): `Ok(None)` if they all pass `p`, `Err(())` at a second value.
+pub(crate) fn unique_operand(p: Value, ops: impl IntoIterator<Item = Value>) -> Result<Option<Value>, ()> {
+    let mut same = None;
+    for o in ops {
+        if o == p || Some(o) == same {
+            continue;
+        }
+        if same.is_some() {
+            return Err(());
+        }
+        same = Some(o);
+    }
+    Ok(same)
+}
+
 /// Runs the passes on `f`, in order, folding loads from `mem`.
 pub fn run(f: &mut Func, mem: Option<&dyn ConstMem>) {
     lvn::lvn(f, mem);
