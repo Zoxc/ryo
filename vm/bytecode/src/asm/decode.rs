@@ -18,7 +18,7 @@ use super::reduced::{self, Then, addr_arg};
 use super::x86::{ARGS, BadItem, Cond, Cursor, Fields, Item, M, Reg, island_args};
 use super::{ARG_ADDR, ArgReg, Mode, RetPart, has_handler, layout, ret_kind};
 use crate::full::{ElemKind, Opcode, OperandKind, Shape, Sym};
-use crate::image::{CATCH, CONTINUE, CleanupEntry, op_may_unwind};
+use crate::image::{Cleanup, CleanupEntry, op_may_unwind};
 use crate::reduced::Arg;
 
 /// A function decoded from machine code.
@@ -131,7 +131,7 @@ pub fn decode(
         .enumerate()
         .filter_map(|(i, a)| {
             let (pad, catch) = (*a)?;
-            let target = pad.map_or(CONTINUE, |j| wpos[j] | if catch { CATCH } else { 0 });
+            let target = Cleanup::new(pad.map(|j| wpos[j]), catch).to_word();
             Some(CleanupEntry { offset: wpos[i], target })
         })
         .collect();

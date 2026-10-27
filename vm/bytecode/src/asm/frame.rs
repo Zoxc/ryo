@@ -16,7 +16,7 @@ use alloc::vec::Vec;
 use super::{ARG_ADDR, Decoded, Mode, ScopeKind, layout, param_reg, ret_parts};
 use crate::full::Elem;
 use crate::full::{self, OperandKind, Shape};
-use crate::image::CONTINUE;
+use crate::image::Cleanup;
 use crate::reduced::{self, Arg};
 
 /// How an instruction uses one of its frame operands.
@@ -485,9 +485,9 @@ pub fn head_liveness(d: &Decoded, mode: Mode) -> Result<Vec<Bytes>, FrameError> 
     // Unwinding edges: a call site to its landing pad, past nothing it writes.
     let mut pad: Vec<Option<usize>> = alloc::vec![None; n];
     for e in &d.cleanup {
-        if e.target != CONTINUE {
+        if let Cleanup::Pad(p, _) = e.action() {
             let at = index(e.offset).ok_or(FrameError { at: e.offset, what: "a cleanup entry" })?;
-            pad[at] = Some(index(e.target & !crate::image::CATCH).ok_or(FrameError { at: e.offset, what: "a landing pad" })?);
+            pad[at] = Some(index(p).ok_or(FrameError { at: e.offset, what: "a landing pad" })?);
         }
     }
     let f = d.frame_size;

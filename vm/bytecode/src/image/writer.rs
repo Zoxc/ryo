@@ -402,7 +402,10 @@ fn check_function(i: u32, f: &mut FunctionDef, lim: &CodeLimits, symbols: &[Symb
     for (j, e) in f.cleanup.iter().enumerate() {
         let op_at = |o: u32| (starts.get(o as usize) == Some(&true)).then(|| Opcode::from_u16(f.code[o as usize] as u16)).flatten();
         let call = op_at(e.offset).is_some_and(op_may_unwind);
-        let pad = e.target == CONTINUE || op_at(e.target & !CATCH) == Some(Opcode::Lpad);
+        let pad = match e.action() {
+            Cleanup::Pad(p, _) => op_at(p) == Some(Opcode::Lpad),
+            Cleanup::Continue => true,
+        };
         if !call || !pad || (j > 0 && f.cleanup[j - 1].offset == e.offset) {
             return Err(WriteError::Cleanup(i));
         }
@@ -853,11 +856,7 @@ impl ImageWriter {
 
 impl From<&CallSite> for CallSiteEntry {
     fn from(c: &CallSite) -> CallSiteEntry {
-        let pad = match c.pad {
-            Some(p) => p | if c.catch { CATCH } else { 0 },
-            None => CONTINUE,
-        };
-        CallSiteEntry { start: c.start, len: c.len, pad }
+        CallSiteEntry { start: c.start, len: c.len, pad: Cleanup::new(c.pad, c.catch).to_word() }
     }
 }
 

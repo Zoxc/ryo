@@ -16,7 +16,7 @@ use super::reduced::Then;
 use super::x86::{ARGS, Cond, Item, M, Reg, Sh, W, island_args, padding};
 use super::{ArgReg, Layout, Loc, Mode, RetPart, layout, ret_parts};
 use crate::full::{Const, Data, DecodeError, ElemKind, Func, Opcode, OperandKind, Shape, Site, Sym};
-use crate::image::{CATCH, CONTINUE, CleanupEntry};
+use crate::image::{Cleanup, CleanupEntry};
 use crate::reduced::Arg;
 
 /// What a relocated 4-byte field of the code refers to. Every field is PC-relative: once
@@ -754,14 +754,15 @@ pub fn encode(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], scopes: &
         if !crate::image::op_may_unwind(starts[i].1) || action[i].is_some() {
             return Err(EncodeError::BadCleanup(e.offset));
         }
-        action[i] = Some(if e.target == CONTINUE {
-            Unwind::Continue
-        } else {
-            let p = idx(e.target & !CATCH).map_err(|_| EncodeError::BadCleanup(e.offset))?;
-            if starts[p].1 != Opcode::Lpad {
-                return Err(EncodeError::BadCleanup(e.offset));
+        action[i] = Some(match e.action() {
+            Cleanup::Continue => Unwind::Continue,
+            Cleanup::Pad(p, catch) => {
+                let p = idx(p).map_err(|_| EncodeError::BadCleanup(e.offset))?;
+                if starts[p].1 != Opcode::Lpad {
+                    return Err(EncodeError::BadCleanup(e.offset));
+                }
+                Unwind::Pad { pad: Label(p as u32), catch }
             }
-            Unwind::Pad { pad: Label(p as u32), catch: e.target & CATCH != 0 }
         });
     }
 

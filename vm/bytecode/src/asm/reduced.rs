@@ -9,7 +9,7 @@ use super::encode::{
 };
 use super::{Mode, has_handler};
 use crate::full::{Elem, ElemKind, Opcode, OperandKind, Shape, insn_len};
-use crate::image::{CATCH, CONTINUE, CleanupEntry};
+use crate::image::{Cleanup, CleanupEntry};
 use crate::reduced::{self, Arg};
 
 /// Whether the full instruction `op` with operands `ops` is in the reduced set: it has no
@@ -105,7 +105,7 @@ pub(super) fn words(
     }
     let cleanup = cleanup
         .iter()
-        .map(|&(i, pad, catch)| CleanupEntry { offset: wpos[i], target: pad.map_or(CONTINUE, |p| wpos[p] | if catch { CATCH } else { 0 }) })
+        .map(|&(i, pad, catch)| CleanupEntry { offset: wpos[i], target: Cleanup::new(pad.map(|p| wpos[p]), catch).to_word() })
         .collect();
     let scopes = scopes.iter().map(|&(i, sc)| Scope { code_offset: wpos[i], ..sc }).collect();
     let dropped = dropped.iter().map(|&i| wpos[i]).collect();
@@ -200,9 +200,11 @@ pub fn reduce(
     let mut out = Vec::with_capacity(cleanup.len());
     for e in cleanup {
         let at = idx(e.offset).map_err(|_| EncodeError::BadCleanup(e.offset))? as usize;
-        let pad =
-            (e.target != CONTINUE).then(|| idx(e.target & !CATCH).map(|p| p as usize).map_err(|_| EncodeError::BadCleanup(e.offset))).transpose()?;
-        out.push((at, pad, pad.is_some() && e.target & CATCH != 0));
+        let (pad, catch) = match e.action() {
+            Cleanup::Pad(p, catch) => (Some(idx(p).map_err(|_| EncodeError::BadCleanup(e.offset))? as usize), catch),
+            Cleanup::Continue => (None, false),
+        };
+        out.push((at, pad, catch));
     }
     out.sort();
     let scopes = scopes
@@ -271,14 +273,15 @@ pub fn encode_reduced_at(
         if !crate::image::op_may_unwind(full_op(e.offset)) || action[i].is_some() {
             return Err(bad);
         }
-        action[i] = Some(if e.target == CONTINUE {
-            Unwind::Continue
-        } else {
-            let p = idx(e.target & !CATCH).map_err(|_| bad)?;
-            if full_op(starts[p]) != Opcode::Lpad {
-                return Err(bad);
+        action[i] = Some(match e.action() {
+            Cleanup::Continue => Unwind::Continue,
+            Cleanup::Pad(p, catch) => {
+                let p = idx(p).map_err(|_| bad)?;
+                if full_op(starts[p]) != Opcode::Lpad {
+                    return Err(bad);
+                }
+                Unwind::Pad { pad: Label(p as u32), catch }
             }
-            Unwind::Pad { pad: Label(p as u32), catch: e.target & CATCH != 0 }
         });
     }
 

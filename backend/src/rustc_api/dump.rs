@@ -4,7 +4,7 @@ use rustc_data_structures::fx::FxHashMap;
 use rustc_middle::ty::{Instance, TyCtxt};
 use ryo_bytecode::asm::{self, Ref};
 use ryo_bytecode::full::{Const, Data, Func, Site, Sym};
-use ryo_bytecode::image::{CATCH, CONTINUE};
+use ryo_bytecode::image::Cleanup;
 
 use super::lower::CodeReloc;
 use super::partition::{VmFn, path};
@@ -148,8 +148,8 @@ fn dump_labeled(out: &mut String, words: &[u32], cleanup: &[ryo_bytecode::image:
     }
     for e in cleanup {
         labeled.insert(e.offset as usize);
-        if e.target != CONTINUE {
-            labeled.insert((e.target & !CATCH) as usize);
+        if let Cleanup::Pad(p, _) = e.action() {
+            labeled.insert(p as usize);
         }
     }
     let label: FxHashMap<usize, usize> = labeled.iter().enumerate().map(|(i, &at)| (at, i)).collect();
@@ -178,10 +178,10 @@ fn dump_labeled(out: &mut String, words: &[u32], cleanup: &[ryo_bytecode::image:
     }
     scopes_at(out, usize::MAX);
     for e in cleanup {
-        let to = match e.target {
-            CONTINUE => "continue".to_owned(),
-            t if t & CATCH != 0 => format!("{} (catch)", name((t & !CATCH) as usize)),
-            t => name(t as usize),
+        let to = match e.action() {
+            Cleanup::Continue => "continue".to_owned(),
+            Cleanup::Pad(p, true) => format!("{} (catch)", name(p as usize)),
+            Cleanup::Pad(p, false) => name(p as usize),
         };
         writeln!(out, "  cleanup {} -> {to}", name(e.offset as usize)).unwrap();
     }

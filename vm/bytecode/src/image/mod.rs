@@ -422,7 +422,7 @@ pub struct CallSiteEntry {
 impl CallSiteEntry {
     /// The landing pad's byte offset and whether it catches, or `Continue`.
     pub fn action(&self) -> Cleanup {
-        if self.pad == CONTINUE { Cleanup::Continue } else { Cleanup::Pad(self.pad & !CATCH, self.pad & CATCH != 0) }
+        Cleanup::from_word(self.pad)
     }
 }
 
@@ -450,7 +450,31 @@ pub enum Cleanup {
 
 impl CleanupEntry {
     pub fn action(&self) -> Cleanup {
-        if self.target == CONTINUE { Cleanup::Continue } else { Cleanup::Pad(self.target & !CATCH, self.target & CATCH != 0) }
+        Cleanup::from_word(self.target)
+    }
+}
+
+impl Cleanup {
+    /// The landing pad `pad` (catching if `catch`), or `Continue` if there is none.
+    pub const fn new(pad: Option<u32>, catch: bool) -> Cleanup {
+        match pad {
+            Some(p) => Cleanup::Pad(p, catch),
+            None => Cleanup::Continue,
+        }
+    }
+
+    /// The action a packed pad word says ([`CleanupEntry::target`], [`CallSiteEntry::pad`]):
+    /// [`CONTINUE`], or the pad's offset with [`CATCH`] for a catch-all one.
+    pub const fn from_word(w: u32) -> Cleanup {
+        if w == CONTINUE { Cleanup::Continue } else { Cleanup::Pad(w & !CATCH, w & CATCH != 0) }
+    }
+
+    /// The packed pad word of the action ([`Cleanup::from_word`]).
+    pub const fn to_word(self) -> u32 {
+        match self {
+            Cleanup::Pad(p, catch) => p | if catch { CATCH } else { 0 },
+            Cleanup::Continue => CONTINUE,
+        }
     }
 }
 
