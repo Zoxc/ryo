@@ -302,6 +302,8 @@ struct Fresh<'tcx> {
     /// The CGU's name.
     cgu: Symbol,
     vm: Vec<VmFn<'tcx>>,
+    /// The image's constant pool size in bytes (`RYO_STATS`).
+    pool: usize,
     failed: Vec<(Instance<'tcx>, NeedsNative)>,
     dump: String,
     code_dump: String,
@@ -506,6 +508,9 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             let cross = self.cross_image_refs(&fresh);
             eprintln!("ryo: {n_images} images in {} codegen units, {cross} cross-image references to VM functions", self.units.len());
             eprintln!("ryo: {} of {n_images} images reused", self.stats.reused);
+            // Constants are deduplicated per image only: several images may each hold a copy.
+            let pool: usize = fresh.iter().map(|f| f.pool).sum();
+            eprintln!("ryo: {pool} bytes of constant pools in the {} images built", fresh.iter().filter(|f| !f.vm.is_empty()).count());
             print_coverage(&fresh, &failed);
         }
 
@@ -921,7 +926,7 @@ fn build_cgu<'tcx>(
         return ImagePart {
             vm: CguVm::empty(),
             image: None,
-            fresh: Some(Fresh { cgu: cgu.name(), vm, failed, dump: String::new(), code_dump: String::new() }),
+            fresh: Some(Fresh { cgu: cgu.name(), vm, pool: 0, failed, dump: String::new(), code_dump: String::new() }),
         };
     }
     let mut refs: Vec<MonoItem<'tcx>> = Vec::new();
@@ -947,6 +952,8 @@ fn build_cgu<'tcx>(
     let mut dump = String::new();
     let mut code_dump = String::new();
     let (image, roots) = build_image(tcx, rt, mode, switches, cgu.name(), &mut vm, &mut dump, &mut code_dump);
+    let at = std::mem::offset_of!(ryo_bytecode::image::Header, consts) + 4;
+    let pool = image.rodata.get(at..at + 4).map_or(0, |b| u32::from_le_bytes(b.try_into().unwrap()) as usize);
     let cgu_vm = CguVm {
         vm: vm.iter().map(|v| (v.instance, v.global)).collect(),
         islands,
@@ -955,7 +962,7 @@ fn build_cgu<'tcx>(
         main,
     };
     let side = cgu_vm.save(tcx);
-    ImagePart { vm: cgu_vm, image: Some(ImageSrc::Fresh { image, side }), fresh: Some(Fresh { cgu: cgu.name(), vm, failed, dump, code_dump }) }
+    ImagePart { vm: cgu_vm, image: Some(ImageSrc::Fresh { image, side }), fresh: Some(Fresh { cgu: cgu.name(), vm, pool, failed, dump, code_dump }) }
 }
 
 /// The coverage summary of `RYO_STATS` (design/backend.md#debugging-switches): island

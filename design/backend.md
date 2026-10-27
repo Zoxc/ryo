@@ -282,6 +282,15 @@ depends on changed (`partition.rs`, `image_part`).
   `ryo: <n> of <m> images reused`; the `incremental` check rebuilds each revision unchanged
   and expects every image reused and the same executable.
 
+**Constants across images.** Each image deduplicates its constant pool on its own, so a
+constant several CGUs use is in each of their images (and an image needs no other's pool,
+which keeps it a function of its CGU). Moving shared constants to mergeable native
+read-only data was the plan's optional last stage; measured, it isn't worth it: in
+`regex-syntax` (440 KB of pool at one CGU) the pools grow 1.4% at 16 CGUs and 1.7% at 256,
+in the benches and `tests/vm_cgu.rs` by 200 to 1500 bytes. The images' other per-image parts
+(headers, function tables, symbol slots) grow more (4.7% and 6.9% of the read-only parts in
+`regex-syntax`). `RYO_STATS` prints the pools' total.
+
 ## Query overrides (`provide`)
 
 - `collect_and_partition_mono_items` → the native CGU from step 4. `all_mono_items` keeps the
