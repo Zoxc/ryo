@@ -701,7 +701,7 @@ fn scopes_and_call_sites_round_trip() {
         assert!(matches!(validate_edited(&obj, |r, _| put32(r, offset_of!(Header, mode), MODE_PE)), Err(ImageError::BadMode)));
         assert!(matches!(validate_edited(&obj, |r, _| put32(r, offset_of!(Header, mode), 32)), Err(ImageError::BadMode)));
         // Counters need the JIT records, and the other way round.
-        let bits = mode_bits(mode) ^ MODE_COUNTERS;
+        let bits = mode.to_header_bits() ^ MODE_COUNTERS;
         assert!(matches!(validate_edited(&obj, |r, _| put32(r, offset_of!(Header, mode), bits)), Err(ImageError::BadData)));
     }
 }

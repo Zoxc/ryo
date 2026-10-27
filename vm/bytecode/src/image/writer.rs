@@ -731,7 +731,7 @@ impl ImageWriter {
             call_sites: call_sites_span,
             site_count: self.sites,
             fixup_area: fixup_area as u32,
-            mode: mode_bits(mode),
+            mode: mode.to_header_bits(),
             jit_records,
             const_relocs,
             cgu_hash: self.cgu_hash,

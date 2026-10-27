@@ -76,14 +76,32 @@ pub const MODE_FRAME_POINTER: u32 = 2;
 pub const MODE_ALIGN_LOOPS: u32 = 4;
 pub const MODE_PE: u32 = 8;
 pub const MODE_COUNTERS: u32 = 16;
+/// Every defined `Header::mode` bit.
+pub const MODE_ALL: u32 = MODE_FP_ARG | MODE_FRAME_POINTER | MODE_ALIGN_LOOPS | MODE_PE | MODE_COUNTERS;
 
-/// `Header::mode` of `mode`.
-pub const fn mode_bits(mode: Mode) -> u32 {
-    (mode.fp_arg as u32) * MODE_FP_ARG
-        | (mode.frame_pointer as u32) * MODE_FRAME_POINTER
-        | (mode.align_loops as u32) * MODE_ALIGN_LOOPS
-        | (mode.pe as u32) * MODE_PE
-        | (mode.counters as u32) * MODE_COUNTERS
+impl Mode {
+    /// `Header::mode` of the mode. [`Mode::far_rt`] has no bit: it is never an image's.
+    pub const fn to_header_bits(self) -> u32 {
+        (self.fp_arg as u32) * MODE_FP_ARG
+            | (self.frame_pointer as u32) * MODE_FRAME_POINTER
+            | (self.align_loops as u32) * MODE_ALIGN_LOOPS
+            | (self.pe as u32) * MODE_PE
+            | (self.counters as u32) * MODE_COUNTERS
+    }
+
+    /// The mode a `Header::mode` says, `None` if it has unknown bits or isn't
+    /// [`valid`](Mode::valid).
+    pub const fn from_header_bits(m: u32) -> Option<Mode> {
+        let mode = Mode {
+            fp_arg: m & MODE_FP_ARG != 0,
+            frame_pointer: m & MODE_FRAME_POINTER != 0,
+            align_loops: m & MODE_ALIGN_LOOPS != 0,
+            pe: m & MODE_PE != 0,
+            counters: m & MODE_COUNTERS != 0,
+            far_rt: false,
+        };
+        if m & !MODE_ALL != 0 || !mode.valid() { None } else { Some(mode) }
+    }
 }
 
 /// A function's JIT record, in the writable section ([`Header::jit_records`], one per
@@ -347,7 +365,7 @@ pub struct Header {
     pub site_count: u32,
     /// Byte offset of the fixup area in the writable section (after the site cache).
     pub fixup_area: u32,
-    /// The [`Mode`] the code was encoded in ([`mode_bits`]).
+    /// The [`Mode`] the code was encoded in ([`Mode::to_header_bits`]).
     pub mode: u32,
     /// The [`JitRecord`]s: their byte offset in the writable section (64-aligned) and count
     /// (the function count with [`Mode::counters`], else 0).
@@ -500,6 +518,8 @@ pub enum PoolRead {
 pub struct Image<'a> {
     bytes: &'a [u8],
     header: &'a Header,
+    /// `header.mode`, decoded.
+    mode: Mode,
 }
 
 /// Casts `count` elements of `T` at byte offset `span.off`. `T` must be a plain-data type
@@ -533,7 +553,8 @@ impl<'a> Image<'a> {
             return Err(ImageError::Truncated);
         }
         let bytes = &bytes[..header.size as usize];
-        let img = Image { bytes, header };
+        let mode = Mode::from_header_bits(header.mode).ok_or(ImageError::BadMode)?;
+        let img = Image { bytes, header, mode };
         cast::<FuncEntry>(bytes, header.functions, "functions")?;
         cast::<u8>(bytes, header.code_consts, "code constants")?;
         cast::<FixupEntry>(bytes, header.fixups, "fixups")?;
@@ -544,10 +565,6 @@ impl<'a> Image<'a> {
         cast::<u8>(bytes, header.lists, "instruction lists")?;
         cast::<CallSiteEntry>(bytes, header.call_sites, "call sites")?;
         cast::<u32>(bytes, header.const_relocs, "constant relocations")?;
-        let mode = MODE_FP_ARG | MODE_FRAME_POINTER | MODE_ALIGN_LOOPS | MODE_PE | MODE_COUNTERS;
-        if header.mode & !mode != 0 || !Self::mode_of(header.mode).valid() {
-            return Err(ImageError::BadMode);
-        }
         if header.sym_flags.count != header.symbols.count {
             return Err(ImageError::OutOfBounds("symbol flags"));
         }
@@ -675,18 +692,7 @@ impl<'a> Image<'a> {
 
     /// The [`Mode`] the code was encoded in.
     pub fn mode(&self) -> Mode {
-        Self::mode_of(self.header.mode)
-    }
-
-    fn mode_of(m: u32) -> Mode {
-        Mode {
-            fp_arg: m & MODE_FP_ARG != 0,
-            frame_pointer: m & MODE_FRAME_POINTER != 0,
-            align_loops: m & MODE_ALIGN_LOOPS != 0,
-            pe: m & MODE_PE != 0,
-            counters: m & MODE_COUNTERS != 0,
-            far_rt: false,
-        }
+        self.mode
     }
 
     /// The run of `entries` of `table` that `run` (an index range) names, empty if out of

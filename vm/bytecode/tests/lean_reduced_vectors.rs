@@ -276,10 +276,6 @@ impl Inputs {
     }
 }
 
-fn mode_bits(m: Mode) -> u32 {
-    m.fp_arg as u32 | (m.frame_pointer as u32) << 1 | (m.align_loops as u32) << 2 | (m.pe as u32) << 3 | (m.counters as u32) << 4
-}
-
 fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
@@ -336,7 +332,7 @@ fn inputs_json(i: &Inputs) -> String {
         .collect();
     format!(
         "{{\"mode\":{},\"code\":\"{}\",\"rodata\":\"{}\",\"relocs\":[{}],\"call_sites\":{},\"dropped\":{},\"scopes\":[{}]}}",
-        mode_bits(i.mode),
+        i.mode.to_header_bits(),
         hex(&i.code),
         hex(&i.rodata),
         relocs.join(","),
