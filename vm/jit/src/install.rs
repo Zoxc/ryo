@@ -549,7 +549,6 @@ impl Jit {
         }
         code[ro_at..][..rodata.len()].copy_from_slice(&rodata);
         let jit_f = base + CODE_AT;
-        let ro = img.bytes().as_ptr() as usize;
         let fs = img.functions();
         // The handlers of the image's form: PE code's own set if the runtime has one.
         let (hs, rhs) = match (img.mode().pe, self.rt.pe_handlers.is_null()) {
@@ -576,10 +575,7 @@ impl Jit {
                 }
                 // Every other call was retargeted.
                 Ref::Func(_) => return Err("an unexpected call".into()),
-                Ref::Sym(Sym(s)) => ro + h.symbols.off as usize + 8 * s as usize,
-                Ref::Site(Site(s)) => h.data as usize + 8 * s as usize,
-                Ref::Const(Const(k)) => ro + h.consts.off as usize + k as usize,
-                Ref::Data(Data(k)) => h.data as usize + h.fixup_area as usize + k as usize,
+                Ref::Sym(_) | Ref::Site(_) | Ref::Const(_) | Ref::Data(_) => image_ref_addr(img, r.to).ok_or("no such symbol")?,
                 Ref::Ro(o) => base + ro_at + o as usize,
                 Ref::Rec => rec as usize,
                 Ref::RecLoopCtr => rec as usize + ryo_bytecode::image::JIT_LOOP_CTR as usize,
@@ -681,6 +677,21 @@ impl Jit {
         let (func, header) = unsafe { ((*rec).func, (*rec).header) };
         std::format!("ryo-jit: f{func} of image {header:p}: {what}\n")
     }
+}
+
+/// The address of an image part `r` refers to (`Sym`, `Site`, `Const`, `Data`), as installed
+/// code relocates it and the SSA tier bakes it in ([`InlineEnv`]'s `addr`); `None` for other
+/// references and symbols out of range.
+fn image_ref_addr(img: &Image<'_>, r: Ref) -> Option<usize> {
+    let h = img.header();
+    let ro = img.bytes().as_ptr() as usize;
+    Some(match r {
+        Ref::Sym(Sym(s)) if (s as usize) < img.symbols().len() => ro + h.symbols.off as usize + 8 * s as usize,
+        Ref::Site(Site(s)) => h.data as usize + 8 * s as usize,
+        Ref::Const(Const(k)) => ro + h.consts.off as usize + k as usize,
+        Ref::Data(Data(k)) => h.data as usize + h.fixup_area as usize + k as usize,
+        _ => return None,
+    })
 }
 
 /// Writes the 32-bit field at the start of `field` as `target` relative to `from`.

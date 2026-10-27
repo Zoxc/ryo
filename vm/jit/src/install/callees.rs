@@ -158,18 +158,11 @@ impl jit::inline::Env for InlineEnv<'_> {
     }
 
     fn addr(&self, img: usize, r: Ref) -> Option<u64> {
-        // As `Jit::install` relocates them.
         let im = image_of(img);
-        let h = im.header();
-        let ro = im.bytes().as_ptr() as usize;
         let a = match r {
-            Ref::Sym(Sym(s)) if (s as usize) < im.symbols().len() => ro + h.symbols.off as usize + 8 * s as usize,
-            Ref::Site(Site(s)) => h.data as usize + 8 * s as usize,
-            Ref::Const(Const(k)) => ro + h.consts.off as usize + k as usize,
-            Ref::Data(Data(k)) => h.data as usize + h.fixup_area as usize + k as usize,
             // A code constant (sparse switch cases).
             Ref::Ro(k) if (k as usize) < im.code_consts().len() => im.code_consts().as_ptr() as usize + k as usize,
-            _ => return None,
+            _ => image_ref_addr(&im, r)?,
         };
         Some(a as u64)
     }
