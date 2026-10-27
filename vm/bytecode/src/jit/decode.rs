@@ -274,13 +274,30 @@ fn slot(op: full::Opcode, w: &[u32], name: &str) -> i32 {
     imm(op, w, name) as u32 as i32
 }
 
+/// Rejects a 16-byte SSE value (an argument or a result), which the SSA tier doesn't pass.
+fn no_wide_sse(xmm: bool, size: u32, what: &'static str) -> Result<(), Unsupported> {
+    if xmm && size > 8 { Err(Unsupported(what)) } else { Ok(()) }
+}
+
+/// The parts of a call's (or with `is_ret`, a `ret`'s) value of return kind `k` at `base`,
+/// each accessed `how`.
+fn ret_part_accs(k: u32, is_ret: bool, base: i32, how: How, accs: &mut Vec<Acc>) -> Result<Vec<RetPart>, Unsupported> {
+    if k == 0 {
+        return Ok(Vec::new());
+    }
+    let parts: Vec<RetPart> = asm::ret_parts(k, is_ret).ok_or(Unsupported("return kind"))?.into_iter().flatten().collect();
+    for p in &parts {
+        no_wide_sse(p.xmm, p.size, "a 16-byte SSE result")?;
+        accs.push(Acc { off: base.wrapping_add(p.off as i32), size: p.size, how });
+    }
+    Ok(parts)
+}
+
 /// The call argument list `a` (slot, register pairs): accesses and registers.
 fn arg_list(a: &[u32], accs: &mut Vec<Acc>, regs: &mut Vec<ArgReg>) -> Result<(), Unsupported> {
     for p in a.chunks(2) {
         let r = asm::param_reg(p[1]).ok_or(Unsupported("argument register"))?;
-        if r.xmm && r.size > 8 {
-            return Err(Unsupported("a 16-byte SSE argument"));
-        }
+        no_wide_sse(r.xmm, r.size, "a 16-byte SSE argument")?;
         let how = if p[1] & ARG_ADDR != 0 { How::Addr } else { How::Read };
         accs.push(Acc { off: p[0] as i32, size: if how == How::Addr { 1 } else { r.size }, how });
         regs.push(ArgReg { size: if how == How::Addr { 8 } else { r.size }, ..r });
@@ -523,14 +540,7 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
             if k == RET_SRET {
                 return Err(Unsupported("return kind"));
             }
-            let parts: Vec<RetPart> =
-                if k == 0 { Vec::new() } else { asm::ret_parts(k, false).ok_or(Unsupported("return kind"))?.into_iter().flatten().collect() };
-            for p in &parts {
-                if p.xmm && p.size > 8 {
-                    return Err(Unsupported("a 16-byte SSE result"));
-                }
-                accs.push(acc(d_.0.wrapping_add(p.off as i32), p.size, How::Write));
-            }
+            let parts = ret_part_accs(k, false, d_.0, How::Write, &mut accs)?;
             Kind::Call { target, regs, parts }
         }
         Insn::TailCall { .. } | Insn::TailCallPtr { .. } => {
@@ -550,21 +560,12 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
         }
         Insn::Ret { s, k } => {
             falls = false;
-            let parts: Vec<RetPart> =
-                if k == 0 { Vec::new() } else { asm::ret_parts(k, true).ok_or(Unsupported("return kind"))?.into_iter().flatten().collect() };
-            for p in &parts {
-                if p.xmm && p.size > 8 {
-                    return Err(Unsupported("a 16-byte SSE result"));
-                }
-                accs.push(acc(s.0.wrapping_add(p.off as i32), p.size, How::Read));
-            }
+            let parts = ret_part_accs(k, true, s.0, How::Read, &mut accs)?;
             Kind::Ret { k, parts }
         }
         Insn::Arg { d, r } => {
             let a = ArgReg::of(r, true).ok_or(Unsupported("argument register"))?;
-            if a.xmm && a.size > 8 {
-                return Err(Unsupported("a 16-byte SSE argument"));
-            }
+            no_wide_sse(a.xmm, a.size, "a 16-byte SSE argument")?;
             accs.push(acc(d.0, a.size, How::Write));
             Kind::Arg(a)
         }
