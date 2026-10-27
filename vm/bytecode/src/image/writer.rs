@@ -878,12 +878,7 @@ unsafe fn put<T: Copy>(buf: &mut [u8], off: u32, v: &[T]) {
 
 /// `.eh_frame` and `.gcc_except_table`: one CIE naming `rust_eh_personality` (through the
 /// symbol slot at `personality_slot` of the read-only section, `DW_EH_PE_indirect`), then per
-/// function an FDE for its prologue and its LSDA ([`asm::lsda`]). With a frame pointer, every
-/// function has the same rules (`push rbp; mov rbp, rsp`, after which the CFA is `rbp + 16`);
-/// without, the CFA is `rsp + F + 16` after the prologue's `sub rsp, F + 8`. Epilogues have
-/// no rules: they make no calls, so only asynchronous unwinding could stop there. The
-/// counter check before the prologue moves nothing, and the entry's counter stub at the end
-/// of the code runs before the prologue: there the CFA is `rsp + 8` again.
+/// function an FDE with the rules of [`eh_fde_rules`] and its LSDA ([`asm::lsda`]).
 fn unwind_elf(funcs: &[FuncCode], personality_slot: u64, mode: Mode, ptrs: EhPointers, relocs: &mut Vec<Reloc>) -> Vec<(Section, Vec<u8>)> {
     let pc = |offset, target, addend, kind| Reloc { section: Section::EhFrame, offset, target: RelocTarget::Section(target), addend, kind };
     let kind = match ptrs {
@@ -899,7 +894,7 @@ fn unwind_elf(funcs: &[FuncCode], personality_slot: u64, mode: Mode, ptrs: EhPoi
         let l = lsda.len() as u64;
         lsda.extend_from_slice(&asm::lsda::write(&f.call_sites));
         let ef = EhFunc { len: f.len, frame_size: f.frame_size, prologue: f.prologue, entry_stub: f.entry_stub };
-        let fields = eh_fde_with(&mut eh, 0, &ef, mode, ptrs);
+        let fields = eh_fde_rows_with(&mut eh, 0, f.len, &eh_fde_rules(&ef, mode), ptrs);
         relocs.push(pc(fields.pc_begin as u64, Section::Text, f.start as i64, kind));
         relocs.push(pc(fields.lsda as u64, Section::Lsda, l as i64, kind));
     }
@@ -964,18 +959,51 @@ pub struct EhFields {
 }
 
 /// Appends to `eh` the FDE of a function encoded in `mode`, for the CIE at position `cie` of
-/// `eh` ([`eh_cie`]). With a frame pointer, every function has the same rules (`push rbp;
-/// mov rbp, rsp`, after which the CFA is `rbp + 16`); without, the CFA is `rsp + F + 16`
-/// after the prologue's `sub rsp, F + 8`. Epilogues have no rules: they make no calls, so
-/// only asynchronous unwinding could stop there. The counter check before the prologue moves
-/// nothing, and the entry's counter stub at the end of the code runs before the prologue:
-/// there the CFA is `rsp + 8` again.
+/// `eh` ([`eh_cie`]), with the rules of [`eh_fde_rules`].
 pub fn eh_fde(eh: &mut Vec<u8>, cie: usize, f: &EhFunc, mode: Mode) -> EhFields {
-    eh_fde_with(eh, cie, f, mode, EhPointers::Sdata4)
+    eh_fde_rows(eh, cie, f.len, &eh_fde_rules(f, mode))
 }
 
-/// [`eh_fde`] with the first address, range and LSDA pointer of size `ptrs`.
-fn eh_fde_with(eh: &mut Vec<u8>, cie: usize, f: &EhFunc, mode: Mode, ptrs: EhPointers) -> EhFields {
+/// The CFA rows of a function encoded in `mode`, for [`eh_fde_rows`]. With a frame pointer,
+/// every function has the same rules (`push rbp; mov rbp, rsp`, after which the CFA is
+/// `rbp + 16`); without, the CFA is `rsp + F + 16` after the prologue's `sub rsp, F + 8`.
+/// Epilogues have no rules: they make no calls, so only asynchronous unwinding could stop
+/// there. The counter check before the prologue moves nothing, and the entry's counter stub
+/// at the end of the code runs before the prologue: there the CFA is `rsp + 8` again.
+fn eh_fde_rules(f: &EhFunc, mode: Mode) -> Vec<(u32, Vec<u8>)> {
+    let mut rows = Vec::new();
+    if mode.frame_pointer {
+        // After `push rbp`: CFA = rsp + 16, rbp at CFA - 16; after `mov rbp, rsp`: CFA = rbp + 16.
+        rows.push((f.prologue + 1, vec![0x0e, 16, 0x86, 2]));
+        rows.push((f.prologue + 4, vec![0x0d, 6]));
+    } else {
+        // After the prologue: CFA = rsp + F + 16 (`DW_CFA_def_cfa_offset`).
+        let mut r = vec![0x0e];
+        asm::leb::put(&mut r, (f.frame_size + 16).into());
+        rows.push((f.prologue + asm::prologue_len(f.frame_size, mode), r));
+    }
+    if f.entry_stub < f.len {
+        // The entry's stub: CFA = rsp + 8 (`DW_CFA_def_cfa`), and `rbp` not saved yet
+        // (`DW_CFA_restore`).
+        let mut r = vec![0x0c, 7, 8];
+        if mode.frame_pointer {
+            r.push(0xc6);
+        }
+        rows.push((f.entry_stub, r));
+    }
+    rows
+}
+
+/// Appends to `eh` an FDE for the CIE at `cie` ([`eh_cie`]) of `len` bytes of code whose
+/// rules are `rows`: at each code offset (ascending), call frame instructions on top of the
+/// CIE's initial `CFA = rsp + 8`. Its LSDA pointer is 0 until relocated (the JIT's OSR
+/// entries ([`crate::asm::osr`]) leave it 0: their code has no call sites).
+pub fn eh_fde_rows(eh: &mut Vec<u8>, cie: usize, len: u32, rows: &[(u32, Vec<u8>)]) -> EhFields {
+    eh_fde_rows_with(eh, cie, len, rows, EhPointers::Sdata4)
+}
+
+/// [`eh_fde_rows`] with the first address, range and LSDA pointer of size `ptrs`.
+fn eh_fde_rows_with(eh: &mut Vec<u8>, cie: usize, len: u32, rows: &[(u32, Vec<u8>)], ptrs: EhPointers) -> EhFields {
     let at = eh.len();
     let mut fde = Vec::new();
     fde.extend_from_slice(&((at + 4 - cie) as u32).to_le_bytes()); // back to the CIE
@@ -985,54 +1013,10 @@ fn eh_fde_with(eh: &mut Vec<u8>, cie: usize, f: &EhFunc, mode: Mode, ptrs: EhPoi
     };
     let pc_begin = at + 4 + fde.len();
     fde.extend_from_slice(&[0; 8][..size]);
-    fde.extend_from_slice(&u64::from(f.len).to_le_bytes()[..size]);
+    fde.extend_from_slice(&u64::from(len).to_le_bytes()[..size]);
     fde.push(size as u8); // augmentation length: the LSDA pointer
     let lsda = at + 4 + fde.len();
     fde.extend_from_slice(&[0; 8][..size]);
-    let mut loc = 0;
-    if mode.frame_pointer {
-        // After `push rbp`: CFA = rsp + 16, rbp at CFA - 16; after `mov rbp, rsp`: CFA = rbp + 16.
-        advance(&mut fde, &mut loc, f.prologue + 1);
-        fde.extend_from_slice(&[0x0e, 16, 0x86, 2]);
-        advance(&mut fde, &mut loc, f.prologue + 4);
-        fde.extend_from_slice(&[0x0d, 6]);
-    } else {
-        // After the prologue: CFA = rsp + F + 16 (`DW_CFA_def_cfa_offset`).
-        advance(&mut fde, &mut loc, f.prologue + asm::prologue_len(f.frame_size, mode));
-        fde.push(0x0e);
-        asm::leb::put(&mut fde, (f.frame_size + 16).into());
-    }
-    if f.entry_stub < f.len {
-        // The entry's stub: CFA = rsp + 8 (`DW_CFA_def_cfa`), and `rbp` not saved yet
-        // (`DW_CFA_restore`).
-        advance(&mut fde, &mut loc, f.entry_stub);
-        fde.extend_from_slice(&[0x0c, 7, 8]);
-        if mode.frame_pointer {
-            fde.push(0xc6);
-        }
-    }
-    while (fde.len() + 4) % 8 != 0 {
-        fde.push(0);
-    }
-    eh.extend_from_slice(&(fde.len() as u32).to_le_bytes());
-    eh.extend_from_slice(&fde);
-    EhFields { pc_begin, lsda }
-}
-
-/// Appends to `eh` an FDE for the CIE at `cie` ([`eh_cie`]) of `len` bytes of code whose
-/// rules are `rows`: at each code offset (ascending), call frame instructions on top of the
-/// CIE's initial `CFA = rsp + 8`. Its LSDA pointer is 0 (none): the code has no call sites.
-/// The JIT's OSR entries ([`crate::asm::osr`]) take one of their own.
-pub fn eh_fde_rows(eh: &mut Vec<u8>, cie: usize, len: u32, rows: &[(u32, Vec<u8>)]) -> EhFields {
-    let at = eh.len();
-    let mut fde = Vec::new();
-    fde.extend_from_slice(&((at + 4 - cie) as u32).to_le_bytes());
-    let pc_begin = at + 4 + fde.len();
-    fde.extend_from_slice(&[0; 4]);
-    fde.extend_from_slice(&len.to_le_bytes());
-    fde.push(4);
-    let lsda = at + 4 + fde.len();
-    fde.extend_from_slice(&[0; 4]);
     let mut loc = 0;
     for (to, insns) in rows {
         if *to > loc {
