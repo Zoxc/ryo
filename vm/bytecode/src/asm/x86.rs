@@ -1108,6 +1108,11 @@ impl<'a> Cursor<'a> {
         self.code.get(self.pos as usize..).and_then(|b| b.get(..n)).ok_or(BadItem(self.pos))
     }
 
+    /// The byte `i` bytes past the cursor.
+    fn byte(&self, i: usize) -> Result<u8, BadItem> {
+        Ok(self.bytes(i + 1)?[i])
+    }
+
     fn i32_at(&self, off: usize) -> Result<i32, BadItem> {
         let b = self.bytes(off + 4)?;
         Ok(i32::from_le_bytes([b[off], b[off + 1], b[off + 2], b[off + 3]]))
@@ -1168,17 +1173,11 @@ impl<'a> Cursor<'a> {
     /// bytes are the item's canonical encoding.
     fn native(&mut self) -> Result<Item, BadItem> {
         let bad = BadItem(self.pos);
-        let all = self.code.get(self.pos as usize..).unwrap_or(&[]);
-        let get = |i: usize| all.get(i).copied().ok_or(bad);
-        let i32_at = |i: usize| -> Result<i32, BadItem> {
-            let b = all.get(i..i + 4).ok_or(bad)?;
-            Ok(i32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-        };
         let usable = |r: Reg| !matches!(r, Reg::Rsp | Reg::Rbp);
-        let (mut w, mut i) = if get(0)? == 0x66 { (W::W, 1) } else { (W::D, 0) };
+        let (mut w, mut i) = if self.byte(0)? == 0x66 { (W::W, 1) } else { (W::D, 0) };
         // REX: `W`, and the high bits of the ModRM `reg` and `r/m` fields.
         let (mut rr, mut rb) = (0u8, 0u8);
-        if let rex @ 0x40..=0x4f = get(i)? {
+        if let rex @ 0x40..=0x4f = self.byte(i)? {
             if rex & 2 != 0 {
                 return Err(bad);
             }
@@ -1191,11 +1190,11 @@ impl<'a> Cursor<'a> {
             (rr, rb) = ((rex >> 2 & 1) << 3, (rex & 1) << 3);
             i += 1;
         }
-        let op = get(i)?;
+        let op = self.byte(i)?;
         i += 1;
         // The ModRM operand at `i`: the `reg` field, the `r/m` operand, and the next position.
         let modrm = |i: usize| -> Result<(u8, Rm, usize), BadItem> {
-            let m = get(i)?;
+            let m = self.byte(i)?;
             let (md, reg, rm) = (m >> 6, m >> 3 & 7 | rr, m & 7);
             if md == 3 {
                 return Ok((reg, Rm::Reg(Reg::from_num(rm | rb).ok_or(bad)?), i + 1));
@@ -1206,7 +1205,7 @@ impl<'a> Cursor<'a> {
                 return Err(bad);
             }
             let (base, i) = if rm == 4 {
-                if rb != 0 || get(i + 1)? != 0x24 {
+                if rb != 0 || self.byte(i + 1)? != 0x24 {
                     return Err(bad);
                 }
                 (Reg::Rsp, i + 1)
@@ -1215,8 +1214,8 @@ impl<'a> Cursor<'a> {
             };
             let (disp, n) = match md {
                 0 => (0, 0),
-                1 => (get(i + 1)? as i8 as i32, 1),
-                _ => (i32_at(i + 1)?, 4),
+                1 => (self.byte(i + 1)? as i8 as i32, 1),
+                _ => (self.i32_at(i + 1)?, 4),
             };
             Ok((reg, Rm::Mem(M { base, disp }), i + 1 + n))
         };
@@ -1232,16 +1231,16 @@ impl<'a> Cursor<'a> {
         // A full-width immediate at `j`.
         let imm_at = |w: W, j: usize| -> Result<i32, BadItem> {
             Ok(match w {
-                W::B => get(j)? as i8 as i32,
-                W::W => i16::from_le_bytes([get(j)?, get(j + 1)?]) as i32,
-                W::D | W::Q => i32_at(j)?,
+                W::B => self.byte(j)? as i8 as i32,
+                W::W => i16::from_le_bytes([self.byte(j)?, self.byte(j + 1)?]) as i32,
+                W::D | W::Q => self.i32_at(j)?,
             })
         };
         let dq = |w: W| if matches!(w, W::D | W::Q) { Ok(w) } else { Err(bad) };
         let item = match (w, op) {
-            (W::D | W::Q, 0x0f) if matches!(get(i)?, 0xc8..=0xcf) => Item::Bswap { w, reg: reg(get(i)? & 7 | rb)? },
+            (W::D | W::Q, 0x0f) if matches!(self.byte(i)?, 0xc8..=0xcf) => Item::Bswap { w, reg: reg(self.byte(i)? & 7 | rb)? },
             (W::D | W::Q, 0x0f) => {
-                let op2 = get(i)?;
+                let op2 = self.byte(i)?;
                 let (r, rm, _) = modrm(i + 1)?;
                 match op2 {
                     0xb6 | 0xb7 | 0xbe | 0xbf if w == W::D => {
@@ -1283,12 +1282,12 @@ impl<'a> Cursor<'a> {
             (_, 0x80 | 0x81 | 0x83) => {
                 let w = if op == 0x80 { if w == W::D { W::B } else { return Err(bad) } } else { w };
                 let (r, rm, j) = modrm(i)?;
-                let imm = if op == 0x81 { imm_at(w, j)? } else { get(j)? as i8 as i32 };
+                let imm = if op == 0x81 { imm_at(w, j)? } else { self.byte(j)? as i8 as i32 };
                 Item::AluImm { op: Alu::from_num(r).ok_or(bad)?, w, rm, imm }
             }
             (_, 0x69 | 0x6b) => {
                 let (r, rm, j) = modrm(i)?;
-                let imm = if op == 0x69 { i32_at(j)? } else { get(j)? as i8 as i32 };
+                let imm = if op == 0x69 { self.i32_at(j)? } else { self.byte(j)? as i8 as i32 };
                 Item::ImulImm { w: dq(w)?, reg: reg(r)?, rm, imm }
             }
             (_, 0xc1) => {
@@ -1299,7 +1298,7 @@ impl<'a> Cursor<'a> {
                     7 => Sh::Sar,
                     _ => return Err(bad),
                 };
-                Item::Shift { op, w: dq(w)?, reg: rm_reg(rm)?, amt: get(j)? }
+                Item::Shift { op, w: dq(w)?, reg: rm_reg(rm)?, amt: self.byte(j)? }
             }
             (_, 0xd2 | 0xd3) => {
                 let w = if op == 0xd2 { if w == W::D { W::B } else { return Err(bad) } } else { w };
@@ -1341,13 +1340,20 @@ impl<'a> Cursor<'a> {
         {
             reg(r as u8)?;
         }
+        self.accept_native(item)
+    }
+
+    /// Takes the native `item` read at the cursor if the bytes there are its canonical
+    /// encoding, without a relocation: its frame slots in the encoder's form (`[rbp + d]`)
+    /// from the mode's (`[rsp + F + d]` without a frame pointer), and moves past it.
+    fn accept_native(&mut self, item: Item) -> Result<Item, BadItem> {
+        let bad = BadItem(self.pos);
         let len = item.len();
         let mut want = Vec::with_capacity(len as usize);
         item.write(self.pos, &mut want, &mut Vec::new());
-        if all.get(..len as usize) != Some(&want[..]) || self.reloc_in(self.pos, len) {
+        if self.bytes(len as usize).ok() != Some(&want[..]) || self.reloc_in(self.pos, len) {
             return Err(bad);
         }
-        // Frame slots in the mode's form, returned in the encoder's.
         let item = match (item.mem().map(|m| m.base), self.sp_frame) {
             // PE's handler stack argument (with a frame pointer), outside the frame slots.
             (Some(Reg::Rsp), None) if matches!(item, Item::StImm { w: W::D, m: STACK_ARG, .. }) => item,
@@ -1362,24 +1368,22 @@ impl<'a> Cursor<'a> {
     fn base_item(&mut self) -> Result<Item, BadItem> {
         let bad = BadItem(self.pos);
         let b = self.bytes(1)?;
-        let all = self.code.get(self.pos as usize..).unwrap_or(&[]);
-        let get = |i: usize| all.get(i).copied().ok_or(bad);
         // An optional REX prefix (0x40..=0x4f), then the opcode.
         let (rex, at) = if (0x40..=0x4f).contains(&b[0]) { (b[0], 1) } else { (0, 0) };
         let (w, r, x, bx) = (rex & 8 != 0, rex & 4 != 0, rex & 2 != 0, rex & 1 != 0);
-        let op = get(at)?;
+        let op = self.byte(at)?;
         let item = match (rex, op) {
             (0, 0x55) => Item::PushRbp,
             (0, 0x5d) => Item::PopRbp,
             // A counter's `inc`: of the record's call counter or its loop counter.
-            (0x48, 0xff) if get(2)? == 0x05 => match self.field(3, 7)? {
+            (0x48, 0xff) if self.byte(2)? == 0x05 => match self.field(3, 7)? {
                 Field::Ref(Ref::Rec) => Item::CtrInc(false),
                 Field::Ref(Ref::RecLoopCtr) => Item::CtrInc(true),
                 _ => return Err(bad),
             },
             (0x48, 0x83 | 0x81) => {
-                let ext = get(2)?;
-                let (v, long) = if op == 0x83 { (get(3)? as u32, false) } else { (self.i32_at(3)? as u32, true) };
+                let ext = self.byte(2)?;
+                let (v, long) = if op == 0x83 { (self.byte(3)? as u32, false) } else { (self.i32_at(3)? as u32, true) };
                 if long != (v >= 128) || (op == 0x83 && v >= 128) {
                     return Err(bad);
                 }
@@ -1390,7 +1394,7 @@ impl<'a> Cursor<'a> {
                 }
             }
             (0 | 0x45, 0x31) if !x => {
-                let m = get(at + 1)?;
+                let m = self.byte(at + 1)?;
                 let (rr, rm) = (m >> 3 & 7, m & 7);
                 if m >> 6 != 3 || rr != rm || r != bx {
                     return Err(bad);
@@ -1407,7 +1411,7 @@ impl<'a> Cursor<'a> {
                 Item::SetReg(reg, v)
             }
             (0x48 | 0x49, 0xc7) => {
-                let m = get(2)?;
+                let m = self.byte(2)?;
                 if m & 0xf8 != 0xc0 {
                     return Err(bad);
                 }
@@ -1428,7 +1432,7 @@ impl<'a> Cursor<'a> {
                 Item::SetReg(reg, v)
             }
             (0x48 | 0x4c, 0x8d) if w && !x && !bx => {
-                let m = get(2)?;
+                let m = self.byte(2)?;
                 if m & 0xc7 != 0x05 {
                     return Err(bad);
                 }
@@ -1440,7 +1444,7 @@ impl<'a> Cursor<'a> {
                 }
             }
             (0x48..=0x4f, 0x89) if w && !x => {
-                let m = get(2)?;
+                let m = self.byte(2)?;
                 if m >> 6 != 3 {
                     return Err(bad);
                 }
@@ -1449,13 +1453,13 @@ impl<'a> Cursor<'a> {
                 Item::Mov(dst, src)
             }
             (0, 0xe8) => Item::Call(self.field_ref(1, 5)?),
-            (0x41, 0xff) if get(2)? == 0x53 => Item::CallR11(get(3)?),
-            (0x41, 0xff) if get(2)? == 0xe3 => Item::JmpR11,
-            (0x48 | 0x4c, 0x8b) if get(2)? & 0xc7 == 0x05 => {
-                let reg = Reg::from_num(get(2)? >> 3 & 7 | (r as u8) << 3).ok_or(bad)?;
+            (0x41, 0xff) if self.byte(2)? == 0x53 => Item::CallR11(self.byte(3)?),
+            (0x41, 0xff) if self.byte(2)? == 0xe3 => Item::JmpR11,
+            (0x48 | 0x4c, 0x8b) if self.byte(2)? & 0xc7 == 0x05 => {
+                let reg = Reg::from_num(self.byte(2)? >> 3 & 7 | (r as u8) << 3).ok_or(bad)?;
                 Item::LoadRip(reg, self.field_ref(3, 7)?)
             }
-            (0, 0xff) => match get(1)? {
+            (0, 0xff) => match self.byte(1)? {
                 0x15 => Item::CallMem(self.field_ref(2, 6)?),
                 0xd0 => Item::CallRax,
                 0x10 => Item::CallMemRax,
@@ -1468,34 +1472,34 @@ impl<'a> Cursor<'a> {
                 Field::Bad => return Err(bad),
             },
             (0, 0xeb | 0x70..=0x7f) => {
-                let d = get(1)? as i8 as i32 as u32;
+                let d = self.byte(1)? as i8 as i32 as u32;
                 let cond = if op == 0xeb { Cond::Always } else { Cond::from_cc(op & 0xf).ok_or(bad)? };
                 Item::Branch { cond, target: (self.pos + 2).wrapping_add(d), long: false }
             }
-            (0, 0x0f) => match get(1)? {
+            (0, 0x0f) => match self.byte(1)? {
                 cc @ 0x80..=0x8f => Item::Branch { cond: Cond::from_cc(cc & 0xf).ok_or(bad)?, target: self.local(2, 6)?, long: true },
                 0x0b => Item::Ud2,
                 op2 @ (0x10 | 0x11) => return self.sse(0, 16, op2 == 0x11),
                 _ => return Err(bad),
             },
-            (0, 0xf3 | 0xf2) if get(1)? == 0x0f && matches!(get(2)?, 0x10 | 0x11) => {
-                return self.sse(1, if op == 0xf3 { 4 } else { 8 }, get(2)? == 0x11);
+            (0, 0xf3 | 0xf2) if self.byte(1)? == 0x0f && matches!(self.byte(2)?, 0x10 | 0x11) => {
+                return self.sse(1, if op == 0xf3 { 4 } else { 8 }, self.byte(2)? == 0x11);
             }
             (0, 0x66) => {
-                let (r_ext, i) = if get(1)? == 0x41 { (8, 2) } else { (0, 1) };
-                let (op2, m) = (get(i + 1)?, get(i + 2)?);
-                if get(i)? != 0x0f || !matches!(op2, 0x6e | 0x7e) || m >> 6 != 3 {
+                let (r_ext, i) = if self.byte(1)? == 0x41 { (8, 2) } else { (0, 1) };
+                let (op2, m) = (self.byte(i + 1)?, self.byte(i + 2)?);
+                if self.byte(i)? != 0x0f || !matches!(op2, 0x6e | 0x7e) || m >> 6 != 3 {
                     return Err(bad);
                 }
                 let r = Reg::from_num(m & 7 | r_ext).filter(|r| !matches!(r, Reg::Rsp | Reg::Rbp)).ok_or(bad)?;
                 Item::Movd { to_xmm: op2 == 0x6e, x: m >> 3 & 7, r }
             }
-            (0, 0x84) if get(1)? == 0xc0 => Item::TestAl,
-            (0x48, 0x85) if get(2)? == 0xc0 => Item::TestRax,
+            (0, 0x84) if self.byte(1)? == 0xc0 => Item::TestAl,
+            (0x48, 0x85) if self.byte(2)? == 0xc0 => Item::TestRax,
             (0, 0xc9) => Item::Leave,
             (0, 0xc3) => Item::Ret,
             (0x48, 0x63) if self.bytes(4)? == [0x48, 0x63, 0x04, 0x81] => Item::LoadTableEntry,
-            (0x48, 0x01) if get(2)? == 0xc8 => Item::AddRaxRcx,
+            (0x48, 0x01) if self.byte(2)? == 0xc8 => Item::AddRaxRcx,
             _ => return Err(bad),
         };
         // A relocation must be the item's own field.
@@ -1519,37 +1523,22 @@ impl<'a> Cursor<'a> {
     /// opcode byte is `pre` bytes in.
     fn sse(&mut self, pre: usize, size: u8, st: bool) -> Result<Item, BadItem> {
         let bad = BadItem(self.pos);
-        let all = self.code.get(self.pos as usize..).unwrap_or(&[]);
-        let get = |i: usize| all.get(i).copied().ok_or(bad);
         let at = pre + 2;
-        let m = get(at)?;
+        let m = self.byte(at)?;
         let (md, x, rm) = (m >> 6, m >> 3 & 7, m & 7);
         let (base, d) = match rm {
             5 => (Reg::Rbp, at + 1),
-            4 if get(at + 1)? == 0x24 => (Reg::Rsp, at + 2),
+            4 if self.byte(at + 1)? == 0x24 => (Reg::Rsp, at + 2),
             _ => return Err(bad),
         };
         let disp = match md {
             // `[rsp]`, without a displacement.
             0 if base == Reg::Rsp => 0,
-            1 => get(d)? as i8 as i32,
+            1 => self.byte(d)? as i8 as i32,
             2 => self.i32_at(d)?,
             _ => return Err(bad),
         };
-        let item = Item::Sse { st, size, x, m: M { base, disp } };
-        let len = item.len();
-        let mut want = Vec::with_capacity(len as usize);
-        item.write(self.pos, &mut want, &mut Vec::new());
-        if all.get(..len as usize) != Some(&want[..]) || self.reloc_in(self.pos, len) {
-            return Err(bad);
-        }
-        let item = match (base, self.sp_frame) {
-            (Reg::Rbp, Some(_)) | (Reg::Rsp, None) => return Err(bad),
-            (Reg::Rsp, Some(f)) => item.map_mem(|m| M::frame(m.disp.wrapping_sub(f as i32))),
-            _ => item,
-        };
-        self.pos += len;
-        Ok(item)
+        self.accept_native(Item::Sse { st, size, x, m: M { base, disp } })
     }
 
     /// Reads padding: 9-byte `nop`s, then at most one shorter one. Returns its length.
