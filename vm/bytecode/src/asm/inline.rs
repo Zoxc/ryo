@@ -816,40 +816,40 @@ fn pool(r: Reg) -> Option<usize> {
     POOL.iter().position(|&p| p == r)
 }
 
-/// The frame slot `[rbp + d]` of an `r/m` operand that only reads it, and the width read.
-fn read_operand(it: &Item) -> Option<(M, W)> {
+/// The width an item reads its `r/m` operand at, if it only reads it (and it could be the
+/// frame or a register).
+fn rm_read_width(it: &Item) -> Option<W> {
     match *it {
-        Item::Alu { w, rm: Rm::Mem(m), .. } | Item::AluImm { op: Alu::Cmp, w, rm: Rm::Mem(m), .. } => Some((m, w)),
-        Item::Imul { w, rm: Rm::Mem(m), .. } | Item::ImulImm { w, rm: Rm::Mem(m), .. } => Some((m, w)),
-        Item::MulQ(Rm::Mem(m)) => Some((m, W::Q)),
-        Item::Div { w, rm: Rm::Mem(m), .. } => Some((m, w)),
+        Item::Alu { w, .. } | Item::AluImm { op: Alu::Cmp, w, .. } | Item::Imul { w, .. } | Item::ImulImm { w, .. } | Item::Div { w, .. } => Some(w),
+        Item::MulQ(_) => Some(W::Q),
         _ => None,
     }
-    .filter(|(m, _)| m.base == Reg::Rbp)
+}
+
+/// The frame slot `[rbp + d]` of an `r/m` operand that only reads it, and the width read.
+fn read_operand(it: &Item) -> Option<(M, W)> {
+    let w = rm_read_width(it)?;
+    match it.rm()? {
+        Rm::Mem(m) if m.base == Reg::Rbp => Some((m, w)),
+        _ => None,
+    }
 }
 
 /// The item with its `r/m` operand replaced.
-fn with_rm(it: Item, rm: Rm) -> Item {
-    match it {
-        Item::Alu { op, w, reg, .. } => Item::Alu { op, w, reg, rm },
-        Item::AluImm { op, w, imm, .. } => Item::AluImm { op, w, rm, imm },
-        Item::Imul { w, reg, .. } => Item::Imul { w, reg, rm },
-        Item::ImulImm { w, reg, imm, .. } => Item::ImulImm { w, reg, rm, imm },
-        Item::MulQ(_) => Item::MulQ(rm),
-        Item::Div { signed, w, .. } => Item::Div { signed, w, rm },
-        it => it,
+fn with_rm(mut it: Item, rm: Rm) -> Item {
+    if let Some(r) = it.rm_mut() {
+        *r = rm;
     }
+    it
 }
 
 /// The register read by an `r/m` register operand of an item that could have read the frame
 /// there instead.
 fn read_reg(it: &Item) -> Option<Reg> {
-    match *it {
-        Item::Alu { rm: Rm::Reg(r), .. } | Item::AluImm { op: Alu::Cmp, rm: Rm::Reg(r), .. } => Some(r),
-        Item::Imul { rm: Rm::Reg(r), .. } | Item::ImulImm { rm: Rm::Reg(r), .. } | Item::MulQ(Rm::Reg(r)) | Item::Div { rm: Rm::Reg(r), .. } => {
-            Some(r)
-        }
-        _ => None,
+    rm_read_width(it)?;
+    match it.rm()? {
+        Rm::Reg(r) => Some(r),
+        Rm::Mem(_) => None,
     }
 }
 

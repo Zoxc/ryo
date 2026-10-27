@@ -712,31 +712,51 @@ impl Item {
         self.map_mem(|m| if m.base == Reg::Rbp { M { disp: f(m.disp), ..m } } else { m })
     }
 
-    /// The item with its memory operand mapped by `f`.
-    pub fn map_mem(self, f: impl Fn(M) -> M) -> Item {
-        let frm = |rm: Rm| match rm {
-            Rm::Mem(m) => Rm::Mem(f(m)),
-            r => r,
-        };
+    /// The `r/m` operand of a native item that has one.
+    pub fn rm_mut(&mut self) -> Option<&mut Rm> {
         match self {
-            Item::Ld { w, sx, dst, m } => Item::Ld { w, sx, dst, m: f(m) },
-            Item::St { w, src, m } => Item::St { w, src, m: f(m) },
-            Item::StImm { w, m, imm } => Item::StImm { w, m: f(m), imm },
-            Item::LeaM { dst, m } => Item::LeaM { dst, m: f(m) },
-            Item::Alu { op, w, reg, rm } => Item::Alu { op, w, reg, rm: frm(rm) },
-            Item::AluImm { op, w, rm, imm } => Item::AluImm { op, w, rm: frm(rm), imm },
-            Item::Imul { w, reg, rm } => Item::Imul { w, reg, rm: frm(rm) },
-            Item::ImulImm { w, reg, rm, imm } => Item::ImulImm { w, reg, rm: frm(rm), imm },
-            Item::Setcc { cond, m } => Item::Setcc { cond, m: f(m) },
-            Item::TestM8(m) => Item::TestM8(f(m)),
-            Item::MulQ(rm) => Item::MulQ(frm(rm)),
-            Item::Div { signed, w, rm } => Item::Div { signed, w, rm: frm(rm) },
-            Item::Bsf { w, reg, rm } => Item::Bsf { w, reg, rm: frm(rm) },
-            Item::Bsr { w, reg, rm } => Item::Bsr { w, reg, rm: frm(rm) },
-            Item::Cmov { cond, w, reg, rm } => Item::Cmov { cond, w, reg, rm: frm(rm) },
-            Item::Sse { st, size, x, m } => Item::Sse { st, size, x, m: f(m) },
-            it => it,
+            Item::Alu { rm, .. }
+            | Item::AluImm { rm, .. }
+            | Item::Imul { rm, .. }
+            | Item::ImulImm { rm, .. }
+            | Item::MulQ(rm)
+            | Item::Div { rm, .. }
+            | Item::Bsf { rm, .. }
+            | Item::Bsr { rm, .. }
+            | Item::Cmov { rm, .. } => Some(rm),
+            _ => None,
         }
+    }
+
+    /// The `r/m` operand of a native item that has one.
+    pub fn rm(&self) -> Option<Rm> {
+        let mut it = *self;
+        it.rm_mut().copied()
+    }
+
+    /// The memory operand of a native item: its `m`, or its `r/m` operand's memory.
+    pub fn m_mut(&mut self) -> Option<&mut M> {
+        match self {
+            Item::Ld { m, .. }
+            | Item::St { m, .. }
+            | Item::StImm { m, .. }
+            | Item::LeaM { m, .. }
+            | Item::Setcc { m, .. }
+            | Item::Sse { m, .. }
+            | Item::TestM8(m) => Some(m),
+            it => match it.rm_mut()? {
+                Rm::Mem(m) => Some(m),
+                Rm::Reg(_) => None,
+            },
+        }
+    }
+
+    /// The item with its memory operand mapped by `f`.
+    pub fn map_mem(mut self, f: impl Fn(M) -> M) -> Item {
+        if let Some(m) = self.m_mut() {
+            *m = f(*m);
+        }
+        self
     }
 
     /// The item with its frame operand (`[rbp + d]`) as `[rsp + F + d]`: its form in a frame
@@ -747,25 +767,8 @@ impl Item {
 
     /// The memory operand of the item.
     pub fn mem(&self) -> Option<M> {
-        match *self {
-            Item::Ld { m, .. }
-            | Item::St { m, .. }
-            | Item::StImm { m, .. }
-            | Item::LeaM { m, .. }
-            | Item::Setcc { m, .. }
-            | Item::Sse { m, .. }
-            | Item::TestM8(m) => Some(m),
-            Item::Alu { rm: Rm::Mem(m), .. }
-            | Item::AluImm { rm: Rm::Mem(m), .. }
-            | Item::Imul { rm: Rm::Mem(m), .. }
-            | Item::ImulImm { rm: Rm::Mem(m), .. }
-            | Item::MulQ(Rm::Mem(m))
-            | Item::Div { rm: Rm::Mem(m), .. }
-            | Item::Bsf { rm: Rm::Mem(m), .. }
-            | Item::Bsr { rm: Rm::Mem(m), .. }
-            | Item::Cmov { rm: Rm::Mem(m), .. } => Some(m),
-            _ => None,
-        }
+        let mut it = *self;
+        it.m_mut().copied()
     }
 
     /// The frame slot the item reads, and how many bytes.
