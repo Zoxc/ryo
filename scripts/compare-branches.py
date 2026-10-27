@@ -234,7 +234,8 @@ CACHEGRIND = [
 ]
 
 # Weights of the cycle estimate: callgrind's usual heuristic (KCachegrind's "Cycle
-# Estimation"), not a model of any real CPU.
+# Estimation"), not a model of any real CPU. `y bench --metric cachegrind` uses the same
+# weights (`Counts::est_cycles` in build/src/bench.rs); keep them in sync.
 L1_MISS_CYCLES = 10
 LL_MISS_CYCLES = 100
 MISPREDICT_CYCLES = 10

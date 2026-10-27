@@ -40,7 +40,8 @@ const COMMON_FLAGS: &[&str] = &["-Ccodegen-units=1", "-Zthreads=1"];
 pub enum Metric {
     /// Compile and run time (hyperfine or the built-in timer).
     Time,
-    /// Instructions executed by one run (cachegrind's `I refs`); compile time isn't measured.
+    /// Instructions and estimated cycles of one run (cachegrind with cache and branch
+    /// simulation); compile time isn't measured.
     Cachegrind,
 }
 
@@ -186,7 +187,7 @@ impl Job {
 }
 
 /// How a benchmark is measured: timed (hyperfine or the built-in timer), or one run's
-/// instructions counted (`Metric::Cachegrind`, compilation untimed).
+/// instructions and estimated cycles counted (`Metric::Cachegrind`, compilation untimed).
 enum Timer {
     Hyperfine { json: PathBuf },
     Builtin,
@@ -294,8 +295,8 @@ fn shell_quote(s: &str) -> String {
 struct Cell {
     compile: Option<Stats>,
     run: Option<Stats>,
-    /// Instructions of one run (`Metric::Cachegrind`).
-    ir: Option<u64>,
+    /// Cachegrind counts of one run (`Metric::Cachegrind`).
+    ir: Option<Counts>,
 }
 
 pub fn run(opts: &Options) -> Result<(), String> {
@@ -307,7 +308,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
     let out = root.join("target").join("bench");
     crate::utils::create_dir(&out)?;
     let timer = if opts.metric == Metric::Cachegrind {
-        eprintln!("[y] bench: counting instructions of one run with cachegrind");
+        eprintln!("[y] bench: counting instructions and est. cycles of one run with cachegrind (cache and branch simulation)");
         Timer::Cachegrind
     } else if Command::new("hyperfine").arg("--version").output().is_ok_and(|o| o.status.success()) {
         eprintln!("[y] bench: timing with hyperfine, {runs} runs after 1 warmup");
@@ -368,13 +369,20 @@ pub fn run(opts: &Options) -> Result<(), String> {
             print!("{}", table("run time (ms, mean ± stddev)", &header, &rows, |c| c.run.map(ms)));
         }
         Timer::Cachegrind => {
-            print!("{}", table("run instructions (cachegrind Ir, millions)", &header, &rows, |c| c.ir.map(|n| format!("{:.1}", n as f64 / 1e6))));
+            let millions = |n: u64| format!("{:.1}", n as f64 / 1e6);
+            print!("{}", table("run instructions (cachegrind Ir, millions)", &header, &rows, |c| c.ir.map(|n| millions(n.instructions))));
             println!();
-            let title = format!("run instructions relative to {}", header[0]);
-            let base: HashMap<&str, Option<u64>> = rows.iter().map(|(p, c)| (*p, c[0].ir)).collect();
-            let ratio_rows: Vec<(&str, Vec<Option<String>>)> =
-                rows.iter().map(|(p, cells)| (*p, cells.iter().map(|c| Some(format!("{:.2}x", c.ir? as f64 / base[p]? as f64))).collect())).collect();
-            print!("{}", grid(&title, &header, &ratio_rows));
+            print!("{}", table("run est. cycles (millions)", &header, &rows, |c| c.ir.map(|n| millions(n.est_cycles()))));
+            for (what, get) in [("instructions", Counts::instructions as fn(&Counts) -> u64), ("est. cycles", Counts::est_cycles)] {
+                println!();
+                let title = format!("run {what} relative to {}", header[0]);
+                let base: HashMap<&str, Option<u64>> = rows.iter().map(|(p, c)| (*p, c[0].ir.as_ref().map(get))).collect();
+                let ratio_rows: Vec<(&str, Vec<Option<String>>)> = rows
+                    .iter()
+                    .map(|(p, cells)| (*p, cells.iter().map(|c| Some(format!("{:.2}x", get(c.ir.as_ref()?) as f64 / base[p]? as f64))).collect()))
+                    .collect();
+                print!("{}", grid(&title, &header, &ratio_rows));
+            }
         }
     }
     if !failures.is_empty() {
@@ -387,10 +395,42 @@ fn ms(s: Stats) -> String {
     format!("{:.1} ± {:.1}", s.mean * 1e3, s.stddev * 1e3)
 }
 
-/// The instructions `job` executes, its children included (cachegrind's `I refs`).
-fn cachegrind(job: &Job) -> Result<u64, String> {
+/// The cachegrind counts of one run, summed over its processes.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct Counts {
+    instructions: u64,
+    i1_misses: u64,
+    d1_misses: u64,
+    ll_misses: u64,
+    mispredicts: u64,
+}
+
+// Weights of the cycle estimate: callgrind's usual heuristic (KCachegrind's "Cycle
+// Estimation"), not a model of any real CPU. Keep in sync with `est_cycles` in
+// scripts/compare-branches.py, so both tools report the same numbers.
+const L1_MISS_CYCLES: u64 = 10;
+const LL_MISS_CYCLES: u64 = 100;
+const MISPREDICT_CYCLES: u64 = 10;
+
+impl Counts {
+    fn instructions(&self) -> u64 {
+        self.instructions
+    }
+
+    /// Instructions plus weighted I1/D1 misses, LL misses and branch mispredictions.
+    fn est_cycles(&self) -> u64 {
+        self.instructions
+            + L1_MISS_CYCLES * (self.i1_misses + self.d1_misses)
+            + LL_MISS_CYCLES * self.ll_misses
+            + MISPREDICT_CYCLES * self.mispredicts
+    }
+}
+
+/// The counts of `job`'s run, its children included, with cachegrind's cache and branch
+/// simulation (as `compare-branches.py --metric cachegrind`).
+fn cachegrind(job: &Job) -> Result<Counts, String> {
     let mut c = cmd("valgrind");
-    c.args(["--tool=cachegrind", "--cache-sim=no", "--trace-children=yes", "--cachegrind-out-file=/dev/null"])
+    c.args(["--tool=cachegrind", "--cache-sim=yes", "--branch-sim=yes", "--trace-children=yes", "--cachegrind-out-file=/dev/null"])
         .arg(&job.program)
         .args(&job.args)
         .envs(job.env.iter().copied())
@@ -403,10 +443,29 @@ fn cachegrind(job: &Job) -> Result<u64, String> {
     parse_cachegrind(&stderr).ok_or_else(|| format!("no cachegrind summary in:\n{stderr}"))
 }
 
-/// The sum of the `I refs:` summary lines (`==pid== I refs:  1,234`) of every process.
-fn parse_cachegrind(stderr: &str) -> Option<u64> {
-    let counts: Vec<u64> = stderr.lines().filter_map(|l| l.split_once("I refs:").and_then(|(_, n)| n.trim().replace(',', "").parse().ok())).collect();
-    (!counts.is_empty()).then(|| counts.iter().sum())
+/// The sums of the summary lines (`==pid== I refs:  1,234`, `==pid== Mispredicts:  56 (..)`)
+/// of every process; `None` without an `I refs:` line.
+fn parse_cachegrind(stderr: &str) -> Option<Counts> {
+    let mut c = Counts::default();
+    let mut found = false;
+    for line in stderr.lines().filter(|l| l.starts_with("==")) {
+        let fields: [(&str, &mut u64); 5] = [
+            ("I refs:", &mut c.instructions),
+            ("I1  misses:", &mut c.i1_misses),
+            ("D1  misses:", &mut c.d1_misses),
+            ("LL misses:", &mut c.ll_misses),
+            ("Mispredicts:", &mut c.mispredicts),
+        ];
+        for (key, field) in fields {
+            if let Some((_, rest)) = line.split_once(key)
+                && let Some(n) = rest.split_whitespace().next().and_then(|n| n.replace(',', "").parse::<u64>().ok())
+            {
+                *field += n;
+                found |= key == "I refs:";
+            }
+        }
+    }
+    found.then_some(c)
 }
 
 /// Runs a benchmark binary once and returns its stdout.
@@ -480,8 +539,11 @@ mod tests {
 
     #[test]
     fn cachegrind_summary() {
-        let e = "==1== I refs:        1,234\n==2== I refs: 10\n==1== I1  misses: 5\n";
-        assert_eq!(parse_cachegrind(e), Some(1244));
+        let e = "==1== I refs:        1,234\n==2== I refs: 10\n==1== I1  misses: 5\n==1== LLi misses: 7\n\
+                 ==1== D1  misses: 3 ( 2 rd + 1 wr)\n==1== LL misses: 2 ( 1 rd + 1 wr)\n==1== Mispredicts: 1,000 ( 900 cond + 100 ind)\n";
+        let c = Counts { instructions: 1244, i1_misses: 5, d1_misses: 3, ll_misses: 2, mispredicts: 1000 };
+        assert_eq!(parse_cachegrind(e), Some(c));
+        assert_eq!(c.est_cycles(), 1244 + 80 + 200 + 10000);
         assert_eq!(parse_cachegrind("nothing"), None);
     }
 

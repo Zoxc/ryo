@@ -267,9 +267,12 @@ This gives a third backend, built from the same toolchain, to compare against.
   `--llvm O0,O2d,..`, `--clif` and `--ryo aot,jit` pick the columns instead (`d`: with
   `-Cdebug-assertions=on`, which turns on overflow checks too, as `O0` and ryo have them;
   ryo `aot` runs with `RYO_JIT=off`, `jit` with `RYO_JIT_OPT=ssa`); the first column is the
-  output reference. `--metric cachegrind` builds once and reports one run's instructions
-  (cachegrind `I refs`, children included) and their ratios to the first column instead of
-  times.
+  output reference. `--metric cachegrind` builds once and reports, instead of times, one
+  run's instructions (cachegrind `I refs`, children included) and estimated cycles, each
+  also as ratios to the first column. It runs cachegrind with `--cache-sim=yes
+  --branch-sim=yes`; the estimate is instructions + 10 * (I1 + D1 misses) + 100 * LL misses
+  + 10 * branch mispredictions, the same as `scripts/compare-branches.py --metric
+  cachegrind` (whose other tables show the misses themselves).
 - `bench codegen`: compiles each program in `bench/` with `rustc-ryo`, `RYO_DUMP` and
   `RYO_DUMP_CODE` ([backend.md](backend.md#debugging-switches)), writing the VM instructions
   to `bench/codegen/<program>.txt` and the x86 code, disassembled with iced-x86, to

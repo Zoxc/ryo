@@ -41,7 +41,8 @@ commands:
                                `build --target T` first
   bench [--runs N] [--llvm O0,O2d,..] [--clif] [--ryo aot,jit] [--metric time|cachegrind]
                                compare LLVM -O0/-O3, Cranelift and ryo: compile and run time
-                               (or run Ir); the options pick the columns (`d`: debug assertions)
+                               (or, with cachegrind, run instructions and est. cycles); the options
+                               pick the columns (`d`: debug assertions)
   bench codegen                dump ryo's code for each bench program to bench/codegen/
   lean [gen | --proofs]        check the generated Lean tables, then `lake build` and
                                `lake test` in lean/; `gen` regenerates the tables;
