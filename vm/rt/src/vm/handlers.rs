@@ -900,11 +900,11 @@ macro_rules! for_each_handler {
         SwitchDenseW32 => switch_dense(u32) -> usize;
         SwitchDenseW64 => switch_dense(u64) -> usize;
         SwitchDenseW128 => switch_dense(u128) -> usize;
-        SwitchSparseW8 => switch_sparse(u8, Case32) -> usize;
-        SwitchSparseW16 => switch_sparse(u16, Case32) -> usize;
-        SwitchSparseW32 => switch_sparse(u32, Case32) -> usize;
-        SwitchSparseW64 => switch_sparse(u64, Case64) -> usize;
-        SwitchSparseW128 => switch_sparse(u128, Case128) -> usize;
+        SwitchSparseW8 => switch_sparse(u8) -> usize;
+        SwitchSparseW16 => switch_sparse(u16) -> usize;
+        SwitchSparseW32 => switch_sparse(u32) -> usize;
+        SwitchSparseW64 => switch_sparse(u64) -> usize;
+        SwitchSparseW128 => switch_sparse(u128) -> usize;
         Abort => abort_now() -> !;
         Lpad => lpad();
     } };

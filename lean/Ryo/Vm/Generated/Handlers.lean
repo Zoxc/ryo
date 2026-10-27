@@ -969,11 +969,11 @@ def handlers : Array (Option HandlerInfo) := #[
   some (HandlerInfo.mk HandlerKind.switch_dense ["u32"] (some "usize")), -- switch.dense.w32
   some (HandlerInfo.mk HandlerKind.switch_dense ["u64"] (some "usize")), -- switch.dense.w64
   some (HandlerInfo.mk HandlerKind.switch_dense ["u128"] (some "usize")), -- switch.dense.w128
-  some (HandlerInfo.mk HandlerKind.switch_sparse ["u8", "Case32"] (some "usize")), -- switch.sparse.w8
-  some (HandlerInfo.mk HandlerKind.switch_sparse ["u16", "Case32"] (some "usize")), -- switch.sparse.w16
-  some (HandlerInfo.mk HandlerKind.switch_sparse ["u32", "Case32"] (some "usize")), -- switch.sparse.w32
-  some (HandlerInfo.mk HandlerKind.switch_sparse ["u64", "Case64"] (some "usize")), -- switch.sparse.w64
-  some (HandlerInfo.mk HandlerKind.switch_sparse ["u128", "Case128"] (some "usize")), -- switch.sparse.w128
+  some (HandlerInfo.mk HandlerKind.switch_sparse ["u8"] (some "usize")), -- switch.sparse.w8
+  some (HandlerInfo.mk HandlerKind.switch_sparse ["u16"] (some "usize")), -- switch.sparse.w16
+  some (HandlerInfo.mk HandlerKind.switch_sparse ["u32"] (some "usize")), -- switch.sparse.w32
+  some (HandlerInfo.mk HandlerKind.switch_sparse ["u64"] (some "usize")), -- switch.sparse.w64
+  some (HandlerInfo.mk HandlerKind.switch_sparse ["u128"] (some "usize")), -- switch.sparse.w128
   none, -- unreachable
   some (HandlerInfo.mk HandlerKind.abort_now [] (some "!")), -- abort
   none, -- call

@@ -459,7 +459,7 @@ macro_rules! switch_dense {
     }};
 }
 macro_rules! switch_sparse {
-    ($a:ident, $fp:ident, $op:ident, $t:ty, $case:ident) => {{
+    ($a:ident, $fp:ident, $op:ident, $t:ty) => {{
         let c = v!($a, $op, cases);
         sparse::<$t>(c as u64 as usize as *const $t, (c >> 64) as usize, get!($t, $a, $fp, $op, s))
     }};

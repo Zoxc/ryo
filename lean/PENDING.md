@@ -3,6 +3,11 @@
 Rust-side changes that the Lean model or proofs don't reflect yet. Add an entry per change;
 remove it once a Lean session has handled it.
 
+- The `switch_sparse` handler kind lost its unused case-kind parameter (`Case32`/...), so
+  `Generated/Handlers.lean` (regenerated) lists only the key type for `switch.sparse.*`.
+  `Sem`/`Footprint` read only `p0`; check that the Lean build still passes. Commit: "Drop
+  switch_sparse's unused case-kind parameter".
+
 - Image writer: `ImageWriter::set_eh_pointers(EhPointers::Abs8)` (Mach-O images) writes
   the CIE's L and R encodings as `DW_EH_PE_pcrel | DW_EH_PE_absptr` (0x10), and each FDE's
   `pc_begin`, `pc_range` and LSDA pointer as 8 bytes (augmentation length 8), with
