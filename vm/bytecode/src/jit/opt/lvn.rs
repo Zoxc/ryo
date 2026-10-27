@@ -132,10 +132,7 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
         _ => None,
     };
     // The first two operands (the others take no more; a missing one is never read).
-    let args = {
-        let a = &f.insts[i.idx()].args;
-        [a.first().copied().unwrap_or(Value(u32::MAX)), a.get(1).copied().unwrap_or(Value(u32::MAX))]
-    };
+    let args = f.insts[i.idx()].args2();
     if let Op::HCall(h) = &f.insts[i.idx()].op {
         // `bit_count` checks there is exactly one operand.
         return match bit_count(f, i, h).and_then(|g| Some(g(konst(f, args[0])?))) {
@@ -703,10 +700,7 @@ pub fn lvn(f: &mut Func, pools: Option<&dyn ConstMem>) {
                 continue;
             }
             super::fold::fold_addr(f, i);
-            let args = {
-                let a = &f.insts[i.idx()].args;
-                [a.first().copied().unwrap_or(Value(u32::MAX)), a.get(1).copied().unwrap_or(Value(u32::MAX))]
-            };
+            let args = f.insts[i.idx()].args2();
             let lookup = |f: &Func, mem: &[(Loc, u8, Value)], l: Loc, w: u8| {
                 mem.iter().rev().find(|e| e.0 == l && e.1 >= w).map(|e| e.2).filter(|&v| f.w(v) >= w && (f.w(v) == 16) == (w == 16))
             };

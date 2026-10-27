@@ -446,8 +446,7 @@ pub fn checks(f: &mut Func) {
 fn block(f: &mut Func, w: &mut Walk, b: Block) -> bool {
     for k in 0..f.blocks[b.idx()].insts.len() {
         let i = f.blocks[b.idx()].insts[k];
-        let args = &f.insts[i.idx()].args;
-        let args = [args.first().copied().unwrap_or(Value(u32::MAX)), args.get(1).copied().unwrap_or(Value(u32::MAX))];
+        let args = f.insts[i.idx()].args2();
         match f.insts[i.idx()].op {
             Op::Ovf(o, signed, ow) if w.no_overflow(f, o, signed, ow, args[0], args[1]) => {
                 let flag = Value(f.insts[i.idx()].res + 1);

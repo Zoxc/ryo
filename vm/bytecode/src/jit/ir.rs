@@ -35,6 +35,11 @@ macro_rules! id {
     };
 }
 id!(Value, "v");
+
+impl Value {
+    /// No value: padding for a missing operand, never read (it indexes out of bounds).
+    pub const NONE: Value = Value(u32::MAX);
+}
 id!(Block, "b");
 id!(Inst, "i");
 id!(AllocaId, "a");
@@ -529,6 +534,12 @@ pub struct InstData {
 }
 
 impl InstData {
+    /// The first two operands, [`Value::NONE`] for missing ones.
+    pub fn args2(&self) -> [Value; 2] {
+        let a = |n: usize| self.args.get(n).copied().unwrap_or(Value::NONE);
+        [a(0), a(1)]
+    }
+
     pub fn results(&self) -> impl Iterator<Item = Value> + use<> {
         (self.res..self.res + self.nres as u32).map(Value)
     }
