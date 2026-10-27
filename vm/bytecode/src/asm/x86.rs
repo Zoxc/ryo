@@ -143,6 +143,21 @@ pub enum W {
 }
 
 impl W {
+    /// The width of `n` bytes, if 1, 2, 4 or 8.
+    pub fn from_bytes(n: u32) -> Option<W> {
+        match n {
+            1 => Some(W::B),
+            2 => Some(W::W),
+            4 => Some(W::D),
+            8 => Some(W::Q),
+            _ => None,
+        }
+    }
+
+    pub fn bytes(self) -> u32 {
+        self.bits() / 8
+    }
+
     pub fn bits(self) -> u32 {
         match self {
             W::B => 8,
@@ -695,7 +710,7 @@ impl Item {
             Item::TestM8(m) => (m, W::B),
             _ => return None,
         };
-        (m.base == Reg::Rbp).then_some((m, w.bits() / 8))
+        (m.base == Reg::Rbp).then_some((m, w.bytes()))
     }
 
     /// The frame slot the item writes, and how many bytes.
@@ -705,7 +720,7 @@ impl Item {
             Item::Setcc { m, .. } => (m, W::B),
             _ => return None,
         };
-        (m.base == Reg::Rbp).then_some((m, w.bits() / 8))
+        (m.base == Reg::Rbp).then_some((m, w.bytes()))
     }
 
     /// The immediate of the item, sign-extended.

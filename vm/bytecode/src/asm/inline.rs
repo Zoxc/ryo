@@ -556,10 +556,6 @@ fn overlaps(a: i32, n: u32, b: i32, m: u32) -> bool {
     (b.wrapping_sub(a) as u32) < n || (a.wrapping_sub(b) as u32) < m
 }
 
-fn bytes(w: W) -> u32 {
-    w.bits() / 8
-}
-
 fn pool(r: Reg) -> Option<usize> {
     POOL.iter().position(|&p| p == r)
 }
@@ -604,7 +600,7 @@ impl Cache {
         if m.base != Reg::Rbp {
             return None;
         }
-        self.regs.iter().position(|e| e.slot.is_some_and(|(s, sw)| s == m.disp && if exact { sw == w } else { bytes(sw) >= bytes(w) }))
+        self.regs.iter().position(|e| e.slot.is_some_and(|(s, sw)| s == m.disp && if exact { sw == w } else { sw.bytes() >= w.bytes() }))
     }
 
     /// The register a sequence that doesn't start by reloading a cached slot computes in: an
@@ -777,13 +773,13 @@ impl Cache {
         // (it may point into the frame).
         let mut write = |m: M, n: u32| {
             for e in &mut self.regs {
-                if m.base != Reg::Rbp || e.slot.is_some_and(|(s, w)| overlaps(s, bytes(w), m.disp, n)) {
+                if m.base != Reg::Rbp || e.slot.is_some_and(|(s, w)| overlaps(s, w.bytes(), m.disp, n)) {
                     e.slot = None;
                 }
             }
         };
         match *item {
-            Item::St { w, m, .. } | Item::StImm { w, m, .. } => write(m, bytes(w)),
+            Item::St { w, m, .. } | Item::StImm { w, m, .. } => write(m, w.bytes()),
             Item::Setcc { m, .. } => write(m, 1),
             _ => {}
         }
@@ -805,7 +801,7 @@ impl Cache {
                 // extension is no wider than the store.
                 if let Some(i) = pool(src)
                     && m.base == Reg::Rbp
-                    && self.regs[i].zx.is_some_and(|z| bytes(z) <= bytes(w))
+                    && self.regs[i].zx.is_some_and(|z| z.bytes() <= w.bytes())
                 {
                     self.regs[i].slot = Some((m.disp, w));
                 }

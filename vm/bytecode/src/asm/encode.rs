@@ -159,19 +159,13 @@ impl DroppedStore {
     /// by its x86 number, as an image stores it.
     pub fn parts(&self) -> (i32, u8, u8) {
         let Item::St { w, src, m } = self.item else { unreachable!("a dropped store is a register store") };
-        (m.disp, (w.bits() / 8) as u8, src as u8)
+        (m.disp, w.bytes() as u8, src as u8)
     }
 
     /// The dropped store [`DroppedStore::parts`] describe, at `at`, if they describe one: a
     /// register the inline sequences compute in.
     pub fn from_parts(at: u32, frame_offset: i32, size: u8, reg: u8) -> Option<DroppedStore> {
-        let w = match size {
-            1 => W::B,
-            2 => W::W,
-            4 => W::D,
-            8 => W::Q,
-            _ => return None,
-        };
+        let w = W::from_bytes(size as u32)?;
         let src = Reg::from_num(reg).filter(|r| super::inline::POOL.contains(r))?;
         Some(DroppedStore { at, item: Item::St { w, src, m: M::frame(frame_offset) } })
     }
@@ -364,12 +358,7 @@ const F16_TMP: Reg = Reg::R11;
 
 /// The operand width of 1, 2, 4 or 8 bytes.
 fn width(size: u32) -> W {
-    match size {
-        1 => W::B,
-        2 => W::W,
-        4 => W::D,
-        _ => W::Q,
-    }
+    W::from_bytes(size).expect("1, 2, 4 or 8 bytes")
 }
 
 /// The register parts of the kind `k` with their registers: `rax`, `rdx` for integers,

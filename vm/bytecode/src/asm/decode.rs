@@ -684,14 +684,14 @@ fn parts_of(items: &[Item]) -> Option<(i32, Vec<RetPart>)> {
     while let Some(&x) = it.next() {
         match x {
             Item::Ld { sx: false, dst: Reg::Rax | Reg::Rdx, w, m } => {
-                parts.push(RetPart { xmm: false, size: w.bits() / 8, off: off(m)? });
+                parts.push(RetPart { xmm: false, size: w.bytes(), off: off(m)? });
             }
             Item::St { src: r @ (Reg::Rax | Reg::Rdx), w, m } => {
                 let o = off(m)?;
                 match parts.last_mut() {
                     // The next piece of the same register, after its shift.
-                    Some(p) if !p.xmm && last_int == Some(r) && p.off.checked_add(p.size) == Some(o) => p.size += w.bits() / 8,
-                    _ => parts.push(RetPart { xmm: false, size: w.bits() / 8, off: o }),
+                    Some(p) if !p.xmm && last_int == Some(r) && p.off.checked_add(p.size) == Some(o) => p.size += w.bytes(),
+                    _ => parts.push(RetPart { xmm: false, size: w.bytes(), off: o }),
                 }
                 last_int = Some(r);
                 continue;
@@ -770,7 +770,7 @@ fn params(c: &mut Cursor<'_>, mode: Mode) -> Vec<u32> {
         let at = c.pos;
         let (s, w) = match c.item() {
             Ok(Item::Ld { w, sx: false, dst, m }) if m.base == Reg::Rbp && int_index(dst, mode).is_some() => {
-                (m.disp, ArgReg { xmm: false, size: w.bits() / 8, index: int_index(dst, mode).unwrap() }.word())
+                (m.disp, ArgReg { xmm: false, size: w.bytes(), index: int_index(dst, mode).unwrap() }.word())
             }
             Ok(Item::LeaM { dst, m }) if m.base == Reg::Rbp && int_index(dst, mode).is_some() => {
                 (m.disp, ArgReg { xmm: false, size: 8, index: int_index(dst, mode).unwrap() }.word() | ARG_ADDR)
@@ -852,14 +852,14 @@ fn arg(c: &mut Cursor<'_>, mode: Mode) -> Option<Proto> {
     let (a, m) = match c.item().ok()? {
         Item::St { w, src, m } => {
             // An integer of 3, 5, 6 or 7 bytes: its pieces, shifting the register down.
-            let mut size = w.bits() / 8;
+            let mut size = w.bytes();
             loop {
                 let at = c.pos;
                 match (c.item(), c.item()) {
                     (Ok(Item::Shift { reg, .. }), Ok(Item::St { w, src: s, m: m2 }))
                         if reg == src && s == src && m2.disp == m.disp.wrapping_add(size as i32) =>
                     {
-                        size += w.bits() / 8
+                        size += w.bytes()
                     }
                     _ => {
                         c.pos = at;
