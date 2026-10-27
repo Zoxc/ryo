@@ -77,8 +77,9 @@ hypothesis fails: those calls aren't covered).
 
 **Hypotheses** beyond the shape: `rsp = fp - F` in the body (`hsp`; `RRel` doesn't carry it; for
 the tail call, as `ret_step`, only without a frame pointer), no byte the relations read on the
-stack below `rsp` (`Handler.StackApart`) nor where the callee may write unless it's in the
-outgoing area (`CallApart`), the symbol slots off the stack (`SymsApart`, for the push),
+stack below `rsp` (`Handler.StackApart`: initialized private bytes and live allocations) nor
+where the callee may write unless it's in the outgoing area (`CallApart`: initialized private
+bytes; both from `FrameSep`, `FrameSep.stackApart`/`FrameSep.callApart`), the symbol slots off the stack (`SymsApart`, for the push),
 frame and stack sizes below `2^62`, and the result stores' displacements without 32-bit
 overflow (`d.toInt + 16 ≤ 2^31`). `call_return` also takes a valid return kind (`hk`: `answer`
 reads it; `call_sound` has it from the step) and `ResultApart` of each answer's world (`hres`):
@@ -260,11 +261,14 @@ structure CallContract (ctx : Ctx) (pe : Bool) (Owned : BitVec 64 → Prop) (lo 
 
 /-! ### Hypotheses about the layout -/
 
-/-- No private frame byte outside the outgoing area `[-F, -F + n)` is where the callee may write
-(`CallMayWrite` for the stack area at `sp`, the state's world). -/
+/-- No initialized private frame byte outside the outgoing area `[-F, -F + n)` is where the
+callee may write (`CallMayWrite` for the stack area at `sp`, the state's world). Only
+initialized ones: an `Uninit` byte relates to any x86 byte, and over all private bytes this
+would fail as soon as a live allocation lies outside the escaped objects (every address is
+`fp + o` for some private `o`). From `FrameSep` by `FrameSep.callApart`. -/
 def CallApart (Owned : BitVec 64 → Prop) (lo : BitVec 64) (F n sp : Nat) (st : OpSem.State)
     (x : X86.State) : Prop :=
-  ∀ o : Int, -2 ^ 63 ≤ o → o < 2 ^ 63 → (∃ b, st.byteAt o = .ok b) → st.escapedAt o = none →
+  ∀ o : Int, -2 ^ 63 ≤ o → o < 2 ^ 63 → st.escapedAt o = none → st.frame o ≠ .uninit →
     ¬ (-(F : Int) ≤ o ∧ o < -(F : Int) + n) →
     ¬ CallMayWrite Owned lo sp n ⟨st.mem, st.exposed⟩ (fpAddr x o)
 
@@ -442,7 +446,9 @@ theorem answer_rel {Owned : BitVec 64 → Prop} {lo : BitVec 64} {F n : Nat} {s 
       have hfr0 : st0.frame o = s.st.frame o := by rw [← hst0]; rfl
       have hb0 : s.st.byteAt o = .ok b := by
         unfold OpSem.State.byteAt; rw [hf', ← hb', hfr0]; rfl
-      rw [hfpx, hce.mem _ (hap o h1 h2 ⟨b, hb0⟩ hf' (by rw [hlen] at hout; exact hout))]
+      by_cases hu : s.st.frame o = .uninit
+      · rw [← hb', hfr0, hu]; trivial
+      rw [hfpx, hce.mem _ (hap o h1 h2 hf' hu (by rw [hlen] at hout; exact hout))]
       exact hr.rel.frame o h1 h2 b hb0
     | some e =>
       rw [hf] at hb'
@@ -981,15 +987,8 @@ theorem rbp_sub_eq {x : X86.State} {F : Nat} :
 theorem rel_push {st : OpSem.State} {x x1 : X86.State} {lo : BitVec 64} (hr : Rel st x)
     (hm : MemRel st x) (hap : Handler.StackApart lo st x)
     (hmem : ∀ b, ¬ InStack lo x.rsp b → x1.mem b = x.mem b) (hb : x1.reg .rbp = x.reg .rbp) :
-    Rel st x1 ∧ MemRel st x1 := by
-  have hfp : ∀ o, fpAddr x1 o = fpAddr x o := fun o => by simp [fpAddr, hb]
-  refine ⟨⟨fun o h1 h2 b hb' => ?_, fun e he a ha => ?_, fun p hp => ?_⟩, ?_⟩
-  · rw [hfp, hmem _ (hap.1 o h1 h2 ⟨b, hb'⟩)]; exact hr.frame o h1 h2 b hb'
-  · rw [hfp]; exact hr.layout e he a ha
-  · rw [hfp]; exact hr.zeroSized p hp
-  · intro id al hg hl i hi
-    rw [hmem _ (hap.2 id al hg hl i hi)]
-    exact hm id al hg hl i hi
+    Rel st x1 ∧ MemRel st x1 :=
+  hap.rel hr hm hb hmem
 
 /-- A tail call's head and its jump: the jump goes to the callee's address. -/
 theorem tailHead_exec (ctx : Ctx) {f : Full.Opcode} {fo : R.Opnd Nat} {pre : List Item} {j : Item}
@@ -1057,6 +1056,24 @@ theorem callApart_congr {Owned : BitVec 64 → Prop} {lo : BitVec 64} {F n sp : 
   intro o h1 h2 h3 h4 h5
   have : fpAddr x' o = fpAddr x o := by simp [fpAddr, hb]
   rw [this]; exact h o h1 h2 h3 h4 h5
+
+/-- `CallApart` from the frame separation over the window `[-F, K)`: an initialized private
+byte lies in the window (`FrameSep.init`), above the outgoing area's end `fp - F + n` when
+outside the area, so not on the stack below it; in no live allocation (`FrameApart`); and not
+runtime-owned (`hown`: the window holds no runtime-owned byte, an environment fact). -/
+theorem FrameSep.callApart {Owned : BitVec 64 → Prop} {lo : BitVec 64} {F n fp : Nat} {K : Int}
+    {st : OpSem.State} {x : X86.State} (hs : ScopeMem.FrameSep (-(F : Int)) K st x)
+    (hw : ScopeMem.Window (-(F : Int)) K fp) (hK : 0 ≤ K) (hb : x.reg .rbp = BitVec.ofNat 64 fp)
+    (hF : F ≤ fp) (hown : ∀ o, -(F : Int) ≤ o → o < K → ¬ Owned (fpAddr x o)) :
+    CallApart Owned lo F n (fp - F) st x := by
+  intro o h1 h2 he hu hout hmw
+  obtain ⟨i1, i2⟩ := hs.init o he hu
+  have htop := hw.top
+  rcases hmw with hst | ⟨id, al, hg, hl, hin⟩ | how
+  · simp only [InStack, fpAddr, hb, BitVec.toNat_add, BitVec.toNat_ofInt, BitVec.toNat_ofNat] at hst
+    omega
+  · exact hs.frameApart id al o hg hl he hu h1 h2 hin
+  · exact hown o i1 i2 how
 
 /-! ### Calls -/
 

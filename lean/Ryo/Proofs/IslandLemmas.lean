@@ -383,7 +383,7 @@ theorem inv_init {st0 : OpSem.State} {fp : Nat} {L : List (Int × Nat)} {x x' : 
     (hw : ∀ id a, w.mem.get? id = some a → a.live = true → ∀ i (h : i < a.data.size),
       ByteRel a.data[i] (x'.mem (BitVec.ofNat 64 (a.addr + i))))
     (hout : ∀ o : Int, -2 ^ 63 ≤ o → o < 2 ^ 63 → st0.escapedAt o = none →
-      (∀ l ∈ L, ¬ InR l o) → x'.mem (la fp o) = x.mem (la fp o)) :
+      st0.frame o ≠ .uninit → (∀ l ∈ L, ¬ InR l o) → x'.mem (la fp o) = x.mem (la fp o)) :
     Inv st0 fp L [] x'.mem { st0 with mem := w.mem, exposed := w.exposed } := by
   have hfa : ∀ o, fpAddr x o = la fp o := fun o => by simp [fpAddr, la, hrbp]
   refine ⟨rfl, rfl, hsize, fun e he => ?_, hw, fun o h1 h2 hn hD => ?_⟩
@@ -395,7 +395,9 @@ theorem inv_init {st0 : OpSem.State} {fp : Nat} {L : List (Int × Nat)} {x x' : 
   · rcases hD with ⟨l, hl, -⟩ | hall
     · simp at hl
     · simp only
-      rw [hout o h1 h2 hn hall, ← hfa]
+      by_cases hu : st0.frame o = .uninit
+      · rw [hu]; trivial
+      rw [hout o h1 h2 hn hu hall, ← hfa]
       apply hr.frame o h1 h2
       unfold OpSem.State.byteAt; rw [hn]; rfl
 

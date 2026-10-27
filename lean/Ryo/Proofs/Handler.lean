@@ -19,6 +19,10 @@ shape's control flow) implements R's step of that instruction (`Ryo.Vm.R.Sem.ste
   `rax`/`al` (`CtlIn`), `rsp` popped, the callee-saved registers kept, and x86 memory changed
   only at the frame's write ranges, in live allocations, in runtime-owned bytes and on the
   stack below `rsp`.
+- `StackApart` (no initialized private frame byte and no live allocation byte on the stack
+  below `rsp`, where the call pushes): `StackApart.rel` keeps `Rel` and `MemRel` across a
+  change confined to that stack; `FrameSep.stackApart` derives it from the frame separation;
+  `stackApart_all_false`: over every private byte, as first stated, it is unsatisfiable.
 - `handler_op_sound`, `handler_br_sound`: from `HRel st x`, the setup, the call and the
   shape's tail (nothing for `op`; `test al, al; jz/jnz t` for `br`) reach the state
   after the instruction, related to `opSem`'s, with the branch taken exactly when `Then.succ`
@@ -28,6 +32,7 @@ The x86 side is item lists run in order (`execItems`, with the call's return thr
 not fetched from memory: the composition into `decode_sound` places them at their positions.
 -/
 import Ryo.Proofs.Inline.Mem
+import Ryo.Proofs.ScopeMem
 import Ryo.Proofs.Counter
 
 set_option linter.constructorNameAsVariable false
@@ -319,12 +324,111 @@ private theorem push_other (lo sp a : BitVec 64) (hlo : lo.toNat + 8 ≤ sp.toNa
   · rw [Nat.mod_eq_of_lt (by omega)]
     omega
 
-/-- No byte the relations read is on the stack below `rsp` (where the call pushes). -/
+/-- No live allocation's byte is on the stack below `rsp` (`[lo, rsp)`, where calls push and
+callees write). -/
+def AllocsApart (lo : BitVec 64) (st : OpSem.State) (x : X86.State) : Prop :=
+  ∀ id al, st.mem.get? id = some al → al.live = true → ∀ i < al.size,
+    ¬ InStack lo x.rsp (BitVec.ofNat 64 (al.addr + i))
+
+/-- No byte the relations read is on the stack below `rsp` (where the call pushes): no
+initialized private frame byte (an `Uninit` one relates to any x86 byte), no live allocation's
+byte (`AllocsApart`; escaped frame bytes are allocation bytes). Over every private byte, as it
+was first stated, it was false whenever `[lo, rsp)` is non-empty (`stackApart_all_false`). -/
 def StackApart (lo : BitVec 64) (st : OpSem.State) (x : X86.State) : Prop :=
-  (∀ o : Int, -2 ^ 63 ≤ o → o < 2 ^ 63 → (∃ b, st.byteAt o = .ok b) →
+  (∀ o : Int, -2 ^ 63 ≤ o → o < 2 ^ 63 → st.escapedAt o = none → st.frame o ≠ .uninit →
     ¬ InStack lo x.rsp (fpAddr x o)) ∧
-  (∀ id al, st.mem.get? id = some al → al.live = true → ∀ i < al.size,
-    ¬ InStack lo x.rsp (BitVec.ofNat 64 (al.addr + i)))
+  AllocsApart lo st x
+
+/-- `StackApart` as it was first stated: over every frame byte `byteAt` reads. -/
+def StackApartAll (lo : BitVec 64) (st : OpSem.State) (x : X86.State) : Prop :=
+  ∀ o : Int, -2 ^ 63 ≤ o → o < 2 ^ 63 → (∃ b, st.byteAt o = .ok b) →
+    ¬ InStack lo x.rsp (fpAddr x o)
+
+/-- The old statement is unsatisfiable as soon as the stack area below `rsp` is non-empty and
+the byte at `rsp - 1` is private (e.g. no frame object has escaped): every address is `fp + o`
+for some `o`, and a private `o` always has a byte. -/
+theorem stackApart_all_false {lo : BitVec 64} {st : OpSem.State} {x : X86.State}
+    (hlo : lo.toNat < x.rsp.toNat)
+    (hp : st.escapedAt ((x.rsp - 1 - x.reg .rbp).toInt) = none) : ¬ StackApartAll lo st x := by
+  intro h
+  generalize ho : (x.rsp - 1 - x.reg .rbp).toInt = o at hp
+  have hb : st.byteAt o = .ok (st.frame o) := by
+    unfold OpSem.State.byteAt; rw [hp]; rfl
+  have hr := BitVec.le_toInt (x := x.rsp - 1 - x.reg .rbp)
+  have hr' := BitVec.toInt_lt (x := x.rsp - 1 - x.reg .rbp)
+  apply h o (by rw [← ho]; simpa using hr) (by rw [← ho]; simpa using hr') ⟨_, hb⟩
+  have ha : fpAddr x o = x.rsp - 1 := by
+    rw [fpAddr, ← ho, BitVec.ofInt_toInt]; bv_omega
+  rw [ha]
+  simp only [InStack]
+  have : (x.rsp - 1).toNat = x.rsp.toNat - 1 := by
+    rw [BitVec.toNat_sub]; simp; omega
+  omega
+
+/-- `StackApart` keeps the frame and memory relations across a change of x86 memory that is
+confined to the stack below `rsp`, with `rbp` kept. -/
+theorem StackApart.rel {lo : BitVec 64} {st : OpSem.State} {x y : X86.State}
+    (hap : StackApart lo st x) (hr : Rel st x) (hm : MemRel st x)
+    (hb : y.reg .rbp = x.reg .rbp) (hmem : ∀ a, ¬ InStack lo x.rsp a → y.mem a = x.mem a) :
+    Rel st y ∧ MemRel st y := by
+  have hfp : ∀ o, fpAddr y o = fpAddr x o := fun o => by simp [fpAddr, hb]
+  refine ⟨⟨fun o h1 h2 b hb' => ?_, fun e he a ha => ?_, fun p hp => ?_⟩, ?_⟩
+  · rw [hfp]
+    cases he : st.escapedAt o with
+    | none =>
+      have hbv : b = st.frame o := by
+        unfold OpSem.State.byteAt at hb'; rw [he] at hb'
+        simp only [pure, Except.pure, Except.ok.injEq] at hb'; exact hb'.symm
+      by_cases hu : st.frame o = .uninit
+      · rw [hbv, hu]; trivial
+      rw [hmem _ (hap.1 o h1 h2 he hu)]; exact hr.frame o h1 h2 b hb'
+    | some e =>
+      have hb2 := hb'
+      unfold OpSem.State.byteAt at hb2; rw [he] at hb2
+      simp only at hb2
+      split at hb2
+      · rename_i al hal
+        split at hb2
+        · cases hb2
+        · rename_i hlv
+          split at hb2
+          · rename_i b' hj
+            obtain ⟨hj, -⟩ := Array.getElem?_eq_some_iff.1 hj
+            obtain ⟨hem, h3, -⟩ := escapedAt_some he
+            have hA : fpAddr x o = BitVec.ofNat 64 (al.addr + (o - e.off).toNat) := by
+              rw [BitVec.ofNat_add, hr.layout e hem al hal, ← fpAddr_add]
+              congr 1; omega
+            rw [hmem _ (by rw [hA]; exact hap.2 e.id al hal (by simpa using hlv) _ hj)]
+            exact hr.frame o h1 h2 b hb'
+          · cases hb2
+      · cases hb2
+  · rw [hfp]; exact hr.layout e he a ha
+  · rw [hfp]; exact hr.zeroSized p hp
+  · intro id al hg hl i hi
+    rw [hmem _ (hap.2 id al hg hl i hi)]
+    exact hm id al hg hl i hi
+
+/-- `StackApart` from the frame separation: the initialized private bytes lie in the frame
+window (`FrameSep`), whose addresses are off the stack below `rsp` (`hwin`; `stack_off_window`
+in the body), and the allocations are off it too (`AllocsApart`, an environment fact: the
+stack below `rsp` is no allocation's). -/
+theorem FrameSep.stackApart {lo : BitVec 64} {wlo whi : Int} {st : OpSem.State} {x : X86.State}
+    (hs : ScopeMem.FrameSep wlo whi st x)
+    (hwin : ∀ o, wlo ≤ o → o < whi → ¬ InStack lo x.rsp (fpAddr x o))
+    (hal : AllocsApart lo st x) : StackApart lo st x :=
+  ⟨fun o _ _ he hu => let ⟨h1, h2⟩ := hs.init o he hu; hwin o h1 h2, hal⟩
+
+/-- The frame window `[wlo, whi)` is above `rsp` when `rsp ≤ fp + wlo` (in the body
+`rsp = fp - F`, `wlo = -F`) and its addresses don't wrap. -/
+theorem stack_off_window {lo : BitVec 64} {x : X86.State} {wlo whi : Int}
+    (hsp : (x.rsp.toNat : Int) ≤ (x.reg .rbp).toNat + wlo)
+    (htop : ((x.reg .rbp).toNat : Int) + whi ≤ 2 ^ 64) :
+    ∀ o, wlo ≤ o → o < whi → ¬ InStack lo x.rsp (fpAddr x o) := by
+  intro o h1 h2
+  simp only [InStack, fpAddr, BitVec.toNat_add, BitVec.toNat_ofInt]
+  have := (x.reg .rbp).isLt
+  have := x.rsp.isLt
+  omega
 
 /-- A handler call of shape `op`: the setup and `call h` reach the handler (`x1`), which
 returns if `opSem` can step; each return is at the next item, related to `opSem`'s result for
@@ -394,16 +498,8 @@ theorem handler_op_sound {ρ : R.Addrs} {mode : Ryo.Obj.Mode} {Owned : BitVec 64
     simp only [X86.argRegs, List.mem_cons, List.not_mem_nil, or_false] at hm
     rcases hm with rfl | rfl | rfl | rfl | rfl | rfl <;> decide
   have hat : AtHandler ctx h x2 := ⟨n, hn, by simp [x2, State.jump]⟩
-  have hH : HRel st x2 := by
-    obtain ⟨hr, hmr⟩ := hr
-    refine ⟨⟨fun o h1 h2 b hb => ?_, fun e he a ha => ?_, fun p hp => ?_⟩, ?_⟩
-    · rw [hfp, hmem2 _ (hap.1 o h1 h2 ⟨b, hb⟩)]; exact hr.frame o h1 h2 b hb
-    · rw [hfp]; exact hr.layout e he a ha
-    · rw [hfp]; exact hr.zeroSized p hp
-    · intro id al hg hlive i hi
-      have hsz : i < al.size := hi
-      rw [hmem2 _ (hap.2 id al hg hlive i hsz)]
-      exact hmr id al hg hlive i hi
+  have hH : HRel st x2 :=
+    let ⟨h1, h2⟩ := hap.rel hr.rel hr.mem hrbp hmem2; ⟨h1, h2⟩
   refine ⟨x2, hexec, fun hex => hC.returns h args vals st x2 hh hu hat hA hH hno hex, ?_⟩
   intro x' hR
   obtain ⟨ch, ctl, st', hop, hH', hctl, hsp', hrip', hsaved, -⟩ :=

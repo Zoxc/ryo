@@ -281,7 +281,16 @@ follows the decoder's structure:
   `Ryo/Proofs/Island.lean`: the setup reaches the callee with the query related (`EntryAt`,
   `IslandAt`), and a return or an unwind to the landing pad allowed by the trusted
   `CallContract`/`IslandContract` (given `Safe`, R's side having defined behavior on the query)
-  is related to R's `answer`.
+  is related to R's `answer`. The layout hypotheses they take (`StackApart`: nothing the
+  relations read on the stack below `rsp`; `CallApart`, `IslandApart`: nothing outside the
+  outgoing area or `Lend` extents where the callee or template may write) cover the
+  initialized private frame bytes and the live allocations only (over every private byte they
+  were false whenever the stack below `rsp` is non-empty: `stackApart_all_false`), and follow
+  from `FrameSep` over the window given the window off the stack and holding no runtime-owned
+  byte (`FrameSep.stackApart`, `FrameSep.callApart`, `FrameSep.islandApart`). `FrameSep`
+  after a call, island or handler is `FrameSep.extend` (`ScopeMem.lean`) from the
+  environment's facts on the allocations it leaves (`AllocsAfter`, `MemDisjoint`, `InSpace`)
+  and the answer's writes in the window (`frameInit_writeRanges`).
 - **Fetching from memory** (`Ryo/X86/Fetch.lean`): `Step ctx x x'` runs a canonical item whose
   linked bytes are at `rip`; `steps_of_run` turns an `execItems` run over code in memory
   (unchanged by the run) into `Steps`. Determinism: `ExecUnique` (canonical

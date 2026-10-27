@@ -9,7 +9,10 @@ allocation's bytes relate to the x86 bytes at its address), with the x86 state u
 - The separation facts (`FrameSep` over a frame window `[lo, hi)`: `FrameOwn`, `FrameInit`,
   `MemDisjoint`, `InSpace`; see that section): kept by `Escape` in the window (`sep_escape`)
   and by `End` (`sep_storageEnd`), so by the scopes (`sep_foldlM`); they give `FrameApart` and
-  `WrApart` (`FrameSep.frameApart`, `FrameSep.wrApart`). `Globals` from `MemRel`
+  `WrApart` (`FrameSep.frameApart`, `FrameSep.wrApart`). Across a call, island or handler
+  (`FrameSep.extend`): from the environment's facts on the allocations it leaves
+  (`AllocsAfter`, `MemDisjoint`, `InSpace`) and `FrameInit` after its writes
+  (`frameInit_writeFrame`, `frameInit_writeRanges`). `Globals` from `MemRel`
   (`globals_of_memRel`); `Private` after the scopes from before them (`private_foldlM`).
 -/
 import Ryo.Proofs.Scope
@@ -568,5 +571,93 @@ theorem private_foldlM {f : Full.Opcode} {vals : Operands} (l : List R.Scope) {s
   fun r hr o ho => escFree_foldlM (S := fun o => ∃ r ∈ wranges f vals, inRange o r = true) l
     (fun sc hsc al hk o ⟨r, hr, ho⟩ => hesc sc hsc al hk r hr o ho)
     (fun o ⟨r, hr, ho⟩ => hp r hr o ho) h o ⟨r, hr, ho⟩
+
+/-! #### Across calls, islands and handlers
+
+A handler, callee or template may create allocations (and free them), and writes frame bytes:
+the frame separation after it is not a consequence of the relations alone. `FrameSep.extend`
+gives it from facts of two kinds. The environment's (contract side, trusted where the code
+doesn't establish them): each live allocation afterwards is either one that was live before at
+the same address and size, or it lies off the window's addresses (`AllocsAfter`: the allocator
+doesn't hand out the frame), and the live allocations are disjoint and in the address space
+(`MemDisjoint`, `InSpace`). The frame's: the escaped objects are unchanged and the initialized
+private bytes stay in the window (`FrameInit`; for the answer's writes, `frameInit_writeFrame`
+and `frameInit_writeRanges` when the written ranges lie in the window, as the outgoing area
+`[-F, -F + n)` and the `Lend` extents do). -/
+
+/-- The live allocations of `st'` are live ones of `st` (same address and size) or off the
+window's addresses. -/
+def AllocsAfter (lo hi : Int) (st st' : OpSem.State) (x : X86.State) : Prop :=
+  ∀ id a, st'.mem.get? id = some a → a.live = true →
+    (∃ a0, st.mem.get? id = some a0 ∧ a0.live = true ∧ a0.addr = a.addr ∧ a0.size = a.size) ∨
+    ∀ o, lo ≤ o → o < hi → ¬ ((fpAddr x o - BitVec.ofNat 64 a.addr).toNat < a.size)
+
+theorem FrameSep.extend {lo hi : Int} {st st' : OpSem.State} {x x' : X86.State}
+    (hs : FrameSep lo hi st x) (hb : x'.reg .rbp = x.reg .rbp) (hesc : st'.escaped = st.escaped)
+    (hal : AllocsAfter lo hi st st' x) (hinit : FrameInit lo hi st') (hdis : MemDisjoint st')
+    (hsp : InSpace st') : FrameSep lo hi st' x' := by
+  have hfp : ∀ o, fpAddr x' o = fpAddr x o := fun o => by simp [fpAddr, hb]
+  refine ⟨fun id a o hg hl h1 h2 hin => ?_, hinit, hdis, hsp⟩
+  rw [hfp] at hin
+  rcases hal id a hg hl with ⟨a0, hg0, hl0, hadd, hsz⟩ | hoff
+  · rw [← hadd, ← hsz] at hin
+    obtain ⟨e, he, ho1, ho2, hid⟩ := hs.own id a0 o hg0 hl0 h1 h2 hin
+    exact ⟨e, hesc ▸ he, ho1, ho2, hid⟩
+  · exact absurd hin (hoff o h1 h2)
+
+/-- A frame write inside the window keeps `FrameInit`. -/
+theorem frameInit_writeFrame {lo hi : Int} {st st' : OpSem.State} {off : Int}
+    {bs : List AbstractByte} (hfi : FrameInit lo hi st) (h : st.writeFrame off bs = .ok st')
+    (hlo : lo ≤ off) (hhi : off + bs.length ≤ hi) : FrameInit lo hi st' := by
+  have hesc := writeFrame_escaped h
+  unfold OpSem.State.writeFrame at h
+  cases hm : st.writeEscaped off bs with
+  | error e => simp [hm, bind, Except.bind] at h
+  | ok m' =>
+  simp only [hm, bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h
+  subst h
+  intro o he hu
+  have he1 : st.escapedAt o = none := by
+    unfold OpSem.State.escapedAt at he ⊢; rw [← hesc]; exact he
+  simp only [OpSem.State.privateIn, he1, Option.isNone_none, Bool.and_true] at hu
+  by_cases hr : off ≤ o ∧ o < off + bs.length
+  · omega
+  · simp only [hr, decide_false, Bool.false_eq_true, ↓reduceIte] at hu
+    exact hfi o he1 hu
+
+theorem foldlM_inv {α σ : Type} (P : σ → Prop) (Q : α → Prop) (f : σ → α → OpSem.M σ)
+    (hf : ∀ s a s', P s → Q a → f s a = .ok s' → P s') :
+    ∀ (l : List α) (s s' : σ), P s → (∀ a ∈ l, Q a) → l.foldlM f s = .ok s' → P s'
+  | [], s, s', hs, _, h => by cases h; exact hs
+  | a :: l, s, s', hs, hl, h => by
+    simp only [List.foldlM_cons, bind, Except.bind] at h
+    cases h1 : f s a with
+    | error e => simp [h1] at h
+    | ok s1 =>
+      simp only [h1] at h
+      exact foldlM_inv P Q f hf l s1 s' (hf s a s1 hs (hl a (List.mem_cons_self ..)) h1)
+        (fun b hb => hl b (List.mem_cons_of_mem _ hb)) h
+
+/-- The answer's writes over ranges inside the window keep `FrameInit`. -/
+theorem frameInit_writeRanges {lo hi : Int} {st st' : OpSem.State} {rs : List (Int × Nat)}
+    {new : List (List AbstractByte)} (hfi : FrameInit lo hi st)
+    (hin : ∀ r ∈ rs, lo ≤ r.1 ∧ r.1 + r.2 ≤ hi) (h : R.writeRanges st rs new = .ok st') :
+    FrameInit lo hi st' := by
+  unfold R.writeRanges at h
+  split at h
+  · cases h; exact hfi
+  split at h
+  · cases h
+  simp only at h
+  refine foldlM_inv (FrameInit lo hi) (fun p : (Int × Nat) × List AbstractByte =>
+    lo ≤ p.1.1 ∧ p.1.1 + p.1.2 ≤ hi) _ ?_ _ st st' hfi
+    (fun p hp => hin p.1 (List.of_mem_zip hp).1) h
+  rintro s0 ⟨⟨off, n⟩, bs⟩ s1 h0 ⟨hp1, hp2⟩ hst
+  simp only at hst hp1 hp2
+  split at hst
+  · cases hst
+  · rename_i hlen
+    have hlen' : bs.length = n := by simpa using hlen
+    exact frameInit_writeFrame h0 hst hp1 (by rw [hlen']; exact hp2)
 
 end Ryo.Proofs.ScopeMem

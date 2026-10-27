@@ -103,7 +103,10 @@ the proofs ([verification.md](verification.md)) must justify. The model is R's
   `MemDisjoint` (stores) distinct allocation bytes at
   distinct addresses (`Mem.lean`); `EscWF` fresh, distinct ids for escaped objects
   (`Scope.lean`); `FrameSep` over the frame window, which the scopes keep and which gives
-  `FrameApart`, `WrApart` and `MemDisjoint` (`ScopeMem.lean`).
+  `FrameApart`, `WrApart` and `MemDisjoint` (`ScopeMem.lean`), and the calls' layout
+  hypotheses (`StackApart`, `CallApart`, `IslandApart`, also over initialized private bytes
+  only); across a call it is kept given the environment's facts on the allocations it leaves
+  (`FrameSep.extend`).
 - **L0 ↔ R** ([lean/docs/aot.md](../lean/docs/aot.md) §C1): provenance related by a renaming
   `ι` of allocation ids (escaped local ↔ its frame allocation, constant ↔ pool copy,
   zero-sized local ↔ no provenance), and pointers by `ProvLe`: an L0 pointer with an
