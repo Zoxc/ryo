@@ -212,6 +212,8 @@ pub fn configure_jit(sync: bool, threshold: Option<i64>) -> bool {
 /// The images whose functions the JIT compiles with another frame layout, as with
 /// `RYO_JIT_SHUFFLE` (tests), by header address; 0 for a free entry.
 static SHUFFLED: [AtomicUsize; 256] = [const { AtomicUsize::new(0) }; 256];
+/// Whether [`SHUFFLED`] has an entry: without, [`shuffled`] doesn't scan it.
+static SHUFFLED_ANY: AtomicBool = AtomicBool::new(false);
 
 /// Compiles the functions of the image with header `header` with another frame layout than
 /// their AOT code's, as `RYO_JIT_SHUFFLE=1` does for all (tests).
@@ -220,11 +222,12 @@ pub fn jit_shuffle_image(header: *const u8) {
     if !SHUFFLED.iter().any(|s| s.compare_exchange(0, header as usize, SeqCst, SeqCst).is_ok()) {
         fatal("jit_shuffle_image: too many images");
     }
+    SHUFFLED_ANY.store(true, SeqCst);
 }
 
 /// [`RtApi::shuffled`]: whether the image with header `header` gets shuffled frames.
 extern "C-unwind" fn shuffled(header: *const u8) -> bool {
-    config().shuffle || SHUFFLED.iter().any(|s| s.load(SeqCst) == header as usize)
+    config().shuffle || (SHUFFLED_ANY.load(SeqCst) && SHUFFLED.iter().any(|s| s.load(SeqCst) == header as usize))
 }
 
 /// [`RtApi::image_at`].

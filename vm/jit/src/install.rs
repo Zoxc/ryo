@@ -5,7 +5,7 @@
 
 use core::ptr;
 use core::sync::atomic::AtomicUsize;
-use core::sync::atomic::Ordering::{Acquire, Release, SeqCst};
+use core::sync::atomic::Ordering::{Acquire, Relaxed, Release, SeqCst};
 use std::collections::HashMap;
 use std::io::Write;
 use std::vec::Vec;
@@ -30,11 +30,12 @@ const REGION: usize = 32 << 20;
 /// How far apart a 32-bit PC-relative field and its target may be, with a margin.
 const REACH: usize = (1 << 31) - (1 << 20);
 /// Where a function's code starts in its allocation: 16-aligned, after the entry prefix.
-const CODE_AT: usize = 16;
+pub(crate) const CODE_AT: usize = 16;
 const _: () = assert!(JIT_ENTRY_PREFIX <= CODE_AT);
-
-/// The length of each installed function's code, by record address ([`crate::code_len`]).
-pub(crate) static CODE_LEN: std::sync::Mutex<Option<HashMap<usize, usize>>> = std::sync::Mutex::new(None);
+/// Where the allocation holds the code's length, a `u32` ([`crate::code_len`]): before the
+/// entry prefix.
+pub(crate) const CODE_LEN_AT: usize = 0;
+const _: () = assert!(CODE_LEN_AT + 4 <= CODE_AT - JIT_ENTRY_PREFIX);
 
 /// The profile of a function: how many times its AOT code was called, and how many loop
 /// iterations it ran, from its record's counters ([`JitRecord`]).
@@ -715,12 +716,12 @@ impl Jit {
                         osr: o.osr,
                         osr_at: o.osr_at as usize,
                     };
-                    SSA_COMPILED.fetch_add(1, SeqCst);
-                    SSA_DEVIRT.fetch_add(o.devirt, SeqCst);
+                    SSA_COMPILED.fetch_add(1, Relaxed);
+                    SSA_DEVIRT.fetch_add(o.devirt, Relaxed);
                     return self.install(rec, func, &img, place, personality, &ssa_ext, out, Tier::Ssa);
                 }
                 Err(jit::Error::Unsupported(u)) => {
-                    SSA_FALLBACK.fetch_add(1, SeqCst);
+                    SSA_FALLBACK.fetch_add(1, Relaxed);
                     if let Some(dir) = &self.dump {
                         let text = std::format!("; unsupported: {}\n{}", u.0, reduced::Disasm(&ds.words));
                         let _ = std::fs::write(std::format!("{dir}/f{func}-{:x}.txt", h as *const _ as usize), text);
@@ -732,7 +733,7 @@ impl Jit {
                 // A checker found a bug: always on stderr, so that tests see it, and the function
                 // stays in its AOT code (`Failed`), which tests that expect JIT code notice.
                 Err(jit::Error::Check(why)) => {
-                    SSA_FALLBACK.fetch_add(1, SeqCst);
+                    SSA_FALLBACK.fetch_add(1, Relaxed);
                     self.log(rec, &std::format!("ssa: check failed: {why}"));
                     return Err("the SSA tier's checkers failed".into());
                 }
@@ -900,6 +901,7 @@ impl Jit {
         let mut prefix = std::vec![0x4c, 0x8d, 0x1d];
         prefix.extend(lea.to_le_bytes());
         prefix.extend([0x4c, 0x89, 0x1c, 0x24, 0xc3]);
+        code[CODE_LEN_AT..][..4].copy_from_slice(&(code_len as u32).to_le_bytes());
         code[CODE_AT - JIT_ENTRY_PREFIX..CODE_AT].copy_from_slice(&prefix);
         code[CODE_AT..][..code_len].copy_from_slice(&enc_code);
         if let Some(o) = &osr {
@@ -1007,7 +1009,6 @@ impl Jit {
             let _ = writeln!(m, "{jit_f:x} {:x} ryo-jit:f{func}@{aot:x}", code_len);
         }
 
-        CODE_LEN.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(rec as usize, code_len);
         // The dispatcher, at the start of the OSR code: every head's stub calls it from now.
         let osr_entry = osr.as_ref().map(|_| (jit_f + osr_at) as *mut u8);
         // SAFETY: the record is this thread's until `Done`.

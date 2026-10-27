@@ -37,23 +37,30 @@ pub extern "C" fn ryo_jit_start(rt: &'static RtApi) -> bool {
 #[cfg(target_arch = "x86_64")]
 #[doc(hidden)]
 pub fn ssa_stats() -> (usize, usize) {
-    use core::sync::atomic::Ordering::SeqCst;
-    (install::SSA_COMPILED.load(SeqCst), install::SSA_FALLBACK.load(SeqCst))
+    use core::sync::atomic::Ordering::Relaxed;
+    (install::SSA_COMPILED.load(Relaxed), install::SSA_FALLBACK.load(Relaxed))
 }
 
 /// How many calls through a constant pointer the SSA tier made direct in its roots (tests).
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 #[doc(hidden)]
 pub fn ssa_devirt() -> usize {
-    install::SSA_DEVIRT.load(core::sync::atomic::Ordering::SeqCst)
+    install::SSA_DEVIRT.load(core::sync::atomic::Ordering::Relaxed)
 }
 
 /// The length of the code the JIT installed for the record at `rec`, 0 if none (tests).
 #[cfg(target_arch = "x86_64")]
 #[doc(hidden)]
 pub fn code_len(rec: *const ryo_bytecode::image::JitRecord) -> usize {
-    let lens = install::CODE_LEN.lock().unwrap_or_else(|e| e.into_inner());
-    lens.as_ref().and_then(|m| m.get(&(rec as usize)).copied()).unwrap_or(0)
+    // SAFETY: a live record; its JIT code, once published, starts `CODE_AT` bytes into its
+    // allocation, which holds the length at `CODE_LEN_AT`.
+    unsafe {
+        let code = (*rec).jit_code;
+        if code.is_null() {
+            return 0;
+        }
+        code.sub(install::CODE_AT - install::CODE_LEN_AT).cast::<u32>().read_unaligned() as usize
+    }
 }
 
 /// Without a JIT for this target: fails, so the runtime acts as the no-op JIT.
