@@ -108,7 +108,6 @@ pub enum Kind {
         target: super::ir::CallTarget,
         regs: Vec<ArgReg>,
         parts: Vec<RetPart>,
-        d: i32,
     },
     TailCall {
         target: super::ir::CallTarget,
@@ -121,10 +120,9 @@ pub enum Kind {
     },
     /// `arg d, r`: `d` write.
     Arg(ArgReg),
-    /// The operands' extents (blocks), from the island's `Lend` scopes.
+    /// Accesses: the operands' extents (blocks), from the island's `Lend` scopes.
     Island {
         isl: Sym,
-        ops: Vec<i32>,
     },
     /// A handler call: its frame operands' accesses, in operand order (each with the
     /// argument register and half it is in).
@@ -183,8 +181,6 @@ pub enum Unwind {
 
 #[derive(Clone, Debug)]
 pub struct RInsn {
-    /// Word offset.
-    pub at: u32,
     pub kind: Kind,
     pub accs: Vec<Acc>,
     /// Instruction indices it may continue at (but for unwinding), the fall-through first.
@@ -278,16 +274,12 @@ fn slot(op: full::Opcode, w: &[u32], name: &str) -> i32 {
     imm(op, w, name) as u32 as i32
 }
 
-fn bad(why: &'static str) -> Unsupported {
-    Unsupported(why)
-}
-
 /// The call argument list `a` (slot, register pairs): accesses and registers.
 fn arg_list(a: &[u32], accs: &mut Vec<Acc>, regs: &mut Vec<ArgReg>) -> Result<(), Unsupported> {
     for p in a.chunks(2) {
-        let r = asm::param_reg(p[1]).ok_or(bad("argument register"))?;
+        let r = asm::param_reg(p[1]).ok_or(Unsupported("argument register"))?;
         if r.xmm && r.size > 8 {
-            return Err(bad("a 16-byte SSE argument"));
+            return Err(Unsupported("a 16-byte SSE argument"));
         }
         let how = if p[1] & ARG_ADDR != 0 { How::Addr } else { How::Read };
         accs.push(Acc { off: p[0] as i32, size: if how == How::Addr { 1 } else { r.size }, how });
@@ -475,9 +467,9 @@ fn pure(accs: &mut Vec<Acc>, ins: &[i32], ws: &[u8], d: i32, out: u8) {
 }
 
 /// Classifies the instruction at word `at` of `d`.
-fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Result<(RInsn, usize), Unsupported> {
+fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Result<RInsn, Unsupported> {
     let words = &d.words[at..];
-    let len = reduced::insn_len(words).map_err(|_| bad("reduced code"))?;
+    let len = reduced::insn_len(words).map_err(|_| Unsupported("reduced code"))?;
     let mut w = &words[..len];
     // A native instruction the SSA tier has no operation for: its handler call.
     let as_handler;
@@ -485,7 +477,7 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
         as_handler = asm::as_handler(w, mode);
         w = &as_handler;
     }
-    let (ri, _) = Insn::decode(w).map_err(|_| bad("reduced code"))?;
+    let (ri, _) = Insn::decode(w).map_err(|_| Unsupported("reduced code"))?;
     let rel = |t: i32| (at as i64 + t as i64) as u32;
     let mut accs = Vec::new();
     let mut succ = Vec::new();
@@ -529,17 +521,17 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
             let mut regs = Vec::new();
             arg_list(a.words(), &mut accs, &mut regs)?;
             if k == RET_SRET {
-                return Err(bad("return kind"));
+                return Err(Unsupported("return kind"));
             }
             let parts: Vec<RetPart> =
-                if k == 0 { Vec::new() } else { asm::ret_parts(k, false).ok_or(bad("return kind"))?.into_iter().flatten().collect() };
+                if k == 0 { Vec::new() } else { asm::ret_parts(k, false).ok_or(Unsupported("return kind"))?.into_iter().flatten().collect() };
             for p in &parts {
                 if p.xmm && p.size > 8 {
-                    return Err(bad("a 16-byte SSE result"));
+                    return Err(Unsupported("a 16-byte SSE result"));
                 }
                 accs.push(acc(d_.0.wrapping_add(p.off as i32), p.size, How::Write));
             }
-            Kind::Call { target, regs, parts, d: d_.0 }
+            Kind::Call { target, regs, parts }
         }
         Insn::TailCall { .. } | Insn::TailCallPtr { .. } => {
             use super::ir::CallTarget as T;
@@ -559,34 +551,32 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
         Insn::Ret { s, k } => {
             falls = false;
             let parts: Vec<RetPart> =
-                if k == 0 { Vec::new() } else { asm::ret_parts(k, true).ok_or(bad("return kind"))?.into_iter().flatten().collect() };
+                if k == 0 { Vec::new() } else { asm::ret_parts(k, true).ok_or(Unsupported("return kind"))?.into_iter().flatten().collect() };
             for p in &parts {
                 if p.xmm && p.size > 8 {
-                    return Err(bad("a 16-byte SSE result"));
+                    return Err(Unsupported("a 16-byte SSE result"));
                 }
                 accs.push(acc(s.0.wrapping_add(p.off as i32), p.size, How::Read));
             }
             Kind::Ret { k, parts }
         }
         Insn::Arg { d, r } => {
-            let a = ArgReg::of(r, true).ok_or(bad("argument register"))?;
+            let a = ArgReg::of(r, true).ok_or(Unsupported("argument register"))?;
             if a.xmm && a.size > 8 {
-                return Err(bad("a 16-byte SSE argument"));
+                return Err(Unsupported("a 16-byte SSE argument"));
             }
             accs.push(acc(d.0, a.size, How::Write));
             Kind::Arg(a)
         }
         Insn::Island { isl, ops } => {
-            let mut offs = Vec::new();
             for o in ops.iter() {
                 let off = o as i32;
                 // The operand's extent: its `Lend` scope (the largest, should two operands
                 // share a slot).
-                let size = lends.iter().filter(|l| l.off == off).map(|l| l.size).max().ok_or(bad("an island operand without an extent"))?;
+                let size = lends.iter().filter(|l| l.off == off).map(|l| l.size).max().ok_or(Unsupported("an island operand without an extent"))?;
                 accs.push(acc(off, size, How::Block));
-                offs.push(off);
             }
-            Kind::Island { isl, ops: offs }
+            Kind::Island { isl }
         }
         Insn::Handler { h, args, neg, t } => {
             let h = h.0;
@@ -594,7 +584,7 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
             let l = asm::layout(h, mode);
             let args: Vec<Arg> = args.iter().collect();
             if args.len() != l.regs as usize {
-                return Err(bad("handler arguments"));
+                return Err(Unsupported("handler arguments"));
             }
             let ts: Vec<u32> = t.iter().map(|t| rel(t.0)).collect();
             let then = match info.shape {
@@ -608,7 +598,7 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
             if info.shape == Shape::Lpad {
                 let x = info.operand_index("x").expect("x");
                 let loc = l.locs[x];
-                let Arg::Imm(v) = args[loc.reg as usize] else { return Err(bad("handler arguments")) };
+                let Arg::Imm(v) = args[loc.reg as usize] else { return Err(Unsupported("handler arguments")) };
                 let off = if loc.shared { (v >> loc.shift) as u32 } else { v as u32 } as i32;
                 accs.push(acc(off, 8, How::Write));
                 Kind::Lpad
@@ -618,7 +608,7 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
                 }
                 Kind::Copy { len, dst, src, pieces: Vec::new() }
             } else {
-                let e = effects(h).ok_or(bad("handler"))?;
+                let e = effects(h).ok_or(Unsupported("handler"))?;
                 // The extent of block operands: the lengths the operands give.
                 let imm_of = |name: &str| -> Option<u64> {
                     let k = info.operand_index(name)?;
@@ -630,14 +620,14 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
                     }
                 };
                 let block = imm_of("len").or_else(|| Some(imm_of("elem_size")?.saturating_mul(imm_of("count")?))).unwrap_or(16);
-                let block = u32::try_from(block).map_err(|_| bad("a block too large"))?;
+                let block = u32::try_from(block).map_err(|_| Unsupported("a block too large"))?;
                 let mut slots = Vec::new();
                 for (k, o) in info.operands.iter().enumerate() {
                     let loc = l.locs[k];
                     if loc.count == 0 || !matches!(o.kind, OperandKind::Slot | OperandKind::Mem) {
                         continue;
                     }
-                    let Arg::Imm(v) = args[loc.reg as usize] else { return Err(bad("a slot operand that isn't an immediate")) };
+                    let Arg::Imm(v) = args[loc.reg as usize] else { return Err(Unsupported("a slot operand that isn't an immediate")) };
                     let off = if loc.shared { (v >> loc.shift) as u32 } else { v as u32 } as i32;
                     let (size, how) = match e.opnds[k] {
                         Some(Effect::Read(n)) => (n as u32, How::Read),
@@ -646,7 +636,7 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
                         Some(Effect::Addr) => (1, How::Addr),
                         Some(Effect::Block) if o.name == "d" => (block, How::BlockWrite),
                         Some(Effect::Block) => (block, How::Block),
-                        None => return Err(bad("handler operand")),
+                        None => return Err(Unsupported("handler operand")),
                     };
                     // `w128` scalars aren't promoted: blocks. A vector operation's operands are
                     // exact: whole 16-byte fields.
@@ -705,7 +695,7 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
                 }
                 "zext" | "sext" | "trunc" => {
                     let mut ws = segs.iter().filter_map(|s| width(s));
-                    let (from, to) = (ws.next().ok_or(bad("a native instruction"))?, ws.next().ok_or(bad("a native instruction"))?);
+                    let (from, to) = (ws.next().ok_or(Unsupported("a native instruction"))?, ws.next().ok_or(Unsupported("a native instruction"))?);
                     accs.extend([acc(s("s"), from as u32, How::Read), acc(s("d"), to as u32, How::Write)]);
                     Kind::Ext { from, to, sx: first == "sext" }
                 }
@@ -729,7 +719,7 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
                         "add" => BinOp::Add,
                         "sub" => BinOp::Sub,
                         "mul" => BinOp::Mul,
-                        _ => return Err(bad("a native instruction")),
+                        _ => return Err(Unsupported("a native instruction")),
                     };
                     accs.extend([
                         acc(s("a"), wd as u32, How::Read),
@@ -748,7 +738,7 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
                         accs.push(acc(s("s"), 1, How::Read));
                         Kind::Br { cmp: None, neg, t }
                     } else {
-                        let cc = cc_of(&segs[1..]).ok_or(bad("branch"))?;
+                        let cc = cc_of(&segs[1..]).ok_or(Unsupported("branch"))?;
                         accs.push(acc(s("a"), wd as u32, How::Read));
                         let b = if has_imm { Some(im("imm")) } else { None };
                         if b.is_none() {
@@ -777,7 +767,7 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
                             ("shl", _) => BinOp::Shl,
                             ("shr", Some("s")) => BinOp::ShrS,
                             ("shr", Some("u")) => BinOp::ShrU,
-                            _ => return Err(bad("a native instruction")),
+                            _ => return Err(Unsupported("a native instruction")),
                         };
                         accs.push(acc(s("d"), wd as u32, How::Write));
                         Kind::Bin(bin, wd, b)
@@ -790,7 +780,7 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
         let mut f = w.to_vec();
         f[0] = fo as u32;
         if !asm::return_ok(&f) {
-            return Err(bad("return kind"));
+            return Err(Unsupported("return kind"));
         }
     }
     if falls {
@@ -804,7 +794,7 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
             a.size = (-a.off) as u32;
         }
     }
-    Ok((RInsn { at: at as u32, kind, accs, succ, falls, unwind: Unwind::None }, len))
+    Ok(RInsn { kind, accs, succ, falls, unwind: Unwind::None })
 }
 
 /// Decodes `d` into instructions and blocks.
@@ -814,10 +804,10 @@ pub fn decode(d: &Decoded, mode: Mode, mem: Option<&dyn super::opt::ConstMem>) -
     let mut at = 0;
     while at < d.words.len() {
         starts.push(at as u32);
-        at += reduced::insn_len(&d.words[at..]).map_err(|_| bad("reduced code"))?;
+        at += reduced::insn_len(&d.words[at..]).map_err(|_| Unsupported("reduced code"))?;
     }
     let n = starts.len();
-    let idx = |w: u32| starts.binary_search(&w).map(|i| i as u32).map_err(|_| bad("a branch target"));
+    let idx = |w: u32| starts.binary_search(&w).map(|i| i as u32).map_err(|_| Unsupported("a branch target"));
     let mut scopes = Vec::with_capacity(d.scopes.len());
     for s in &d.scopes {
         let at = if s.code_offset as usize == d.words.len() { n as u32 } else { idx(s.code_offset)? };
@@ -830,9 +820,9 @@ pub fn decode(d: &Decoded, mode: Mode, mem: Option<&dyn super::opt::ConstMem>) -
             si += 1;
         }
         let lends: Vec<ScopeAt> = scopes[si..].iter().take_while(|s| s.at as usize == i).filter(|s| s.kind == ScopeKind::Lend).copied().collect();
-        let (mut ri, _) = insn(d, w as usize, &lends, mode, mem.is_some())?;
+        let mut ri = insn(d, w as usize, &lends, mode, mem.is_some())?;
         for s in ri.succ.iter_mut() {
-            *s = if *s as usize == d.words.len() { return Err(bad("falls off the end")) } else { idx(*s)? };
+            *s = if *s as usize == d.words.len() { return Err(Unsupported("falls off the end")) } else { idx(*s)? };
         }
         // The kinds' targets, to instruction indices too.
         match &mut ri.kind {
@@ -857,14 +847,14 @@ pub fn decode(d: &Decoded, mode: Mode, mem: Option<&dyn super::opt::ConstMem>) -
         } else {
             let p = idx(e.target & !CATCH)?;
             if insns[p as usize].kind != Kind::Lpad {
-                return Err(bad("a landing pad that isn't an lpad"));
+                return Err(Unsupported("a landing pad that isn't an lpad"));
             }
             Unwind::Pad { pad: p, catch: e.target & CATCH != 0 }
         };
     }
     for (i, ri) in insns.iter().enumerate() {
         if matches!(ri.kind, Kind::Arg(_)) && insns[..i].iter().any(|p| !matches!(p.kind, Kind::Arg(_))) {
-            return Err(bad("an arg after the start"));
+            return Err(Unsupported("an arg after the start"));
         }
     }
 
@@ -922,7 +912,7 @@ pub fn decode(d: &Decoded, mode: Mode, mem: Option<&dyn super::opt::ConstMem>) -
     // An `lpad` is reached only by unwinding.
     for (b, bl) in blocks.iter().enumerate() {
         if insns[bl.start as usize].kind == Kind::Lpad && bl.preds.iter().any(|&p| blocks[p as usize].pad != Some(b as u32)) {
-            return Err(bad("an lpad reached without unwinding"));
+            return Err(Unsupported("an lpad reached without unwinding"));
         }
     }
 

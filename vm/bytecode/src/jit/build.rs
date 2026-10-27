@@ -568,9 +568,9 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
                     s.f.entry_regs.push(*r);
                     s.write(cur, i, 0, v);
                 }
-                Kind::Island { isl, ops } => {
-                    let mut refs = Vec::with_capacity(ops.len());
-                    for k in 0..ops.len() {
+                Kind::Island { isl } => {
+                    let mut refs = Vec::with_capacity(ri.accs.len());
+                    for k in 0..ri.accs.len() {
                         // A zero-sized operand: any frame address (it is never accessed).
                         let r = if ri.accs[k].size == 0 { Some(SlotRef::Scratch(0)) } else { s.slot_ref(i, k) };
                         refs.push(r.ok_or(Unsupported("a promoted island operand"))?);
