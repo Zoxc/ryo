@@ -14,7 +14,6 @@
 
 use alloc::vec::Vec;
 
-use super::fold::set_term;
 use crate::jit::ir::*;
 
 /// A value's possible low `w` bytes: unsigned and signed intervals, both holding.
@@ -481,7 +480,7 @@ fn block(f: &mut Func, w: &mut Walk, b: Block) -> bool {
     };
     match to.cloned() {
         Some(e) => {
-            set_term(f, b.idx(), Term::Jmp(e));
+            f.set_term(b, Term::Jmp(e));
             true
         }
         None => false,

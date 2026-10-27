@@ -2,8 +2,6 @@
 //! numbering ([`super::lvn`]): compare- and overflow-branches, branches on negated booleans
 //! and on constants, and frame and constant-offset addresses.
 
-use alloc::vec::Vec;
-
 use crate::jit::ir::*;
 
 /// The folds instruction selection relies on, done on the IR (design/jit.md, "The SSA
@@ -44,16 +42,6 @@ pub fn fold(f: &mut Func) {
     fold_const_branches(f);
 }
 
-/// Replaces the terminator of `b` by `t`, keeping its successors' predecessor lists right.
-pub(super) fn set_term(f: &mut Func, b: usize, t: Term) {
-    let blk = Block(b as u32);
-    for e in f.blocks[b].term.edges().map(|e| e.to).collect::<Vec<_>>() {
-        f.blocks[e.idx()].preds.retain(|&(p, _)| p != blk);
-    }
-    f.blocks[b].term = Term::None;
-    f.terminate(blk, t);
-}
-
 /// A branch on `x ^ c` (the low byte of it) is a branch on `x != c`; when `x` is a boolean
 /// (a compare or an overflow flag) and `c` is 1, it is a branch on `x` with the targets
 /// swapped, which the compare-branch fold then takes. The `xor` goes when the branch was its
@@ -82,7 +70,7 @@ fn fold_not(f: &mut Func) {
             let k = f.konst(c, 1);
             Term::BrCmp { cc: Cc::Ne, w: 1, a: x, b: k, t, f: e }
         };
-        set_term(f, b, t2);
+        f.set_term(Block(b as u32), t2);
         if uses[cond.idx()] == 1 {
             let ib = f.insts[i.idx()].block.idx();
             f.blocks[ib].insts.retain(|&j| j != i);
@@ -109,7 +97,7 @@ fn fold_const_branches(f: &mut Func) {
             _ => None,
         };
         if let Some(e) = e.cloned() {
-            set_term(f, b, Term::Jmp(e));
+            f.set_term(Block(b as u32), Term::Jmp(e));
             changed = true;
         }
     }

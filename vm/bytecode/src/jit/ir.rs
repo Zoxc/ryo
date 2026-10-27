@@ -862,6 +862,15 @@ impl Func {
         self.blocks[b.idx()].term = t;
     }
 
+    /// Replaces the terminator of `b` by `t`, keeping its successors' predecessor lists right.
+    pub fn set_term(&mut self, b: Block, t: Term) {
+        for e in self.blocks[b.idx()].term.edges().map(|e| e.to).collect::<Vec<_>>() {
+            self.blocks[e.idx()].preds.retain(|&(p, _)| p != b);
+        }
+        self.blocks[b.idx()].term = Term::None;
+        self.terminate(b, t);
+    }
+
     /// Replaces every use of an alias by its target, and drops the block parameters that are
     /// aliases with their edges' arguments.
     pub fn resolve_aliases(&mut self) {

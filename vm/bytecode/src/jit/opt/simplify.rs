@@ -351,7 +351,7 @@ fn sccp(f: &mut Func) -> bool {
         }
         if let Some(k) = s.taken(f, b.idx()) {
             let e = edge_at(&f.blocks[b.idx()].term, k).clone();
-            super::fold::set_term(f, b.idx(), Term::Jmp(e));
+            f.set_term(b, Term::Jmp(e));
             folded = true;
         }
     }
